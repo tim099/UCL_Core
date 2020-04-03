@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace UCL {
+namespace UCL.Core {
     public class UCL_Singleton<T> : MonoBehaviour where T : MonoBehaviour {
         static T _instance;
         static bool m_Destroyed = false;

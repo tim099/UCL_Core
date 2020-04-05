@@ -5,7 +5,7 @@ using UnityEngine;
 namespace UCL.Core {
     public class UCL_Singleton<T> : MonoBehaviour where T : MonoBehaviour {
         static T _instance;
-        static bool m_Destroyed = false;
+        static protected bool m_Destroyed = false;
         public static T Instance {
             get {
                 if(m_Destroyed) return null;
@@ -19,12 +19,16 @@ namespace UCL.Core {
                 return _instance;
             }
             set {
+                if(_instance != null) {
+                    Debug.LogError("UCL_Singleton:" + typeof(T).Name + "Set Twice!!");
+                    return;
+                }
                 _instance = value;
                 _instance.name = typeof(T).Name + "(UCL_Singleton)";
                 DontDestroyOnLoad(_instance.gameObject);
             }
         }
-        private void OnDestroy() {
+        virtual protected void OnDestroy() {
             m_Destroyed = true;
             _instance = null;
         }

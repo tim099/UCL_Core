@@ -9,7 +9,6 @@ using System.Reflection;
 namespace UCL.Core {
     public class UCL_ButtonProperty : PropertyAttribute {
         Type m_Type;
-        //System.Action act = null;
         public UCL_ButtonProperty() {
 
         }
@@ -17,14 +16,14 @@ namespace UCL.Core {
             m_Type = _Type;
         }
         public void InvokeAct(string func_name,object obj) {
-            Debug.LogWarning("func_name:" + func_name + ",obj:" + obj.GetType().Name);
+            //Debug.LogWarning("func_name:" + func_name + ",obj:" + obj.GetType().Name);
             if(m_Type == null) {
                 m_Type = obj.GetType();
             }
             var method = m_Type.GetMethod(func_name);
             if(method != null) {
                 try {
-                    method?.Invoke(obj, null);//
+                    method?.Invoke(obj, null);
                 } catch(Exception e) {
                     Debug.LogError("UCL_ButtonProperty: " + m_Type.Name + "_" + func_name + ".Invoke Exception:" + e.ToString());
                 }
@@ -77,15 +76,8 @@ namespace UCL.Core {
 
             var pro = attribute as UCL_ButtonProperty;
             EditorGUI.BeginProperty(position, label, property);
-            /*
-            GUILayout.BeginVertical();
-            if(GUILayout.Button(property.displayName)) {
-                pro?.InvokeAct(property.stringValue);
-            }
-            GUILayout.EndVertical();
-            */
             if(GUI.Button(position, property.displayName)) {
-                Debug.LogWarning("Test!!");
+                //Debug.LogWarning("Test!!");
                 if(property.propertyType == SerializedPropertyType.String) {
                     pro?.InvokeAct(property.stringValue, GetParent(property));
                 } else {
@@ -93,21 +85,7 @@ namespace UCL.Core {
                 }
                 
             }
-            //base.OnGUI(position, property, label);
             EditorGUI.EndProperty();
-            /*
-            if(property.propertyType == SerializedPropertyType.String) {
-                int index = Mathf.Max(0, Array.IndexOf(list, property.stringValue));
-                index = EditorGUI.Popup(position, property.displayName, index, list);
-                if(list.Length > index) {
-                    property.stringValue = list[index];
-                }
-            } else if(property.propertyType == SerializedPropertyType.Integer) {
-                property.intValue = EditorGUI.Popup(position, property.displayName, property.intValue, list);
-            } else {
-                base.OnGUI(position, property, label);
-            }
-            */
         }
     }
 #endif

@@ -24,7 +24,7 @@ namespace UCL.Core {
                     return;
                 }
                 _instance = value;
-                _instance.name = typeof(T).Name + "(UCL_Singleton)";
+                _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
                 DontDestroyOnLoad(_instance.gameObject);
             }
         }

@@ -6,86 +6,136 @@ using System.Linq;
 using System;
 using System.Reflection;
 
-namespace UCL.Core {
+namespace UCL.Core.PA {
     public class UCL_ButtonProperty : PropertyAttribute {
         Type m_Type;
+        string m_FuncName;
         public UCL_ButtonProperty() {
 
         }
-        public UCL_ButtonProperty(Type _Type) {
+        /*
+        public UCL_ButtonProperty(Type _Type, string func_name="") {
             m_Type = _Type;
+            if(!string.IsNullOrEmpty(func_name)) {
+                m_FuncName = func_name;
+            }
         }
-        public void InvokeAct(string func_name,object obj) {
+        public UCL_ButtonProperty(string func_name) {
+            m_FuncName = func_name;
+        }
+        */
+        public UCL_ButtonProperty(params object[] par) {
+            for(int i = 0; i < par.Length; i++) {
+                SetParam(par[i]);
+            }
+        }
+        void SetParam(object obj) {
+            var tt = obj as Type;
+            if(tt != null) {
+                m_Type = tt;
+            }else{
+                var type = obj.GetType();
+                if(type == typeof(string)) {
+                    m_FuncName = obj as string;
+                }
+            }
+        }
+        public void InvokeAct(string func_name,object obj,params object[] par) {
             //Debug.LogWarning("func_name:" + func_name + ",obj:" + obj.GetType().Name);
+            if(!string.IsNullOrEmpty(m_FuncName)) {
+                func_name = m_FuncName;
+            }
             if(m_Type == null) {
                 m_Type = obj.GetType();
             }
-            var method = m_Type.GetMethod(func_name);
+            var methods = m_Type.GetMethods();
+
+            System.Reflection.MethodInfo method = null;
+            int par_len = 0;
+            int cur_len = 0;
+            if(par != null) par_len = par.Length;
+            //Debug.LogWarning("par_len:" + par_len);
+            foreach(var m in methods) {
+                if(m.Name == func_name) {
+                    var m_pars = m.GetParameters();
+                    int m_plen = m_pars.Length;
+                    if(method == null) {
+                        method = m;
+                        cur_len = m_plen;
+                    } else {
+                        if(par_len == m_plen || (cur_len != m_plen && m_plen <= cur_len)) {
+                            method = m;
+                            cur_len = m_plen;
+                        }
+                    }
+
+                    if(m_plen == par_len) {
+                        bool check_flag = true;
+                        for(int i = 0; i < m_plen; i++) {
+                            var p = m_pars[i];
+                            var pl = par[i];
+                            if(pl != null && p.GetType() != pl.GetType()) {
+                                check_flag = false;
+                            }
+                        }
+                        if(check_flag) break;//find!!
+                    }
+                }
+            }
+            //var method = m_Type.GetMethod(func_name);
             if(method != null) {
+                if(method.GetParameters().Length == 0) {
+                    par = null;
+                }
                 try {
-                    method?.Invoke(obj, null);
+                    if(m_Type == obj.GetType()) {
+                        
+                        method.Invoke(obj, par);
+                    } else {
+                        method.Invoke(null, par);//static!!
+                        /*
+                        var obj_arr = new object[1];
+                        obj_arr[0] = obj;
+                        method?.Invoke(null, obj_arr);
+                        */
+                    }
                 } catch(Exception e) {
                     Debug.LogError("UCL_ButtonProperty: " + m_Type.Name + "_" + func_name + ".Invoke Exception:" + e.ToString());
                 }
             } else {
-                Debug.LogError(m_Type.Name+"_func_name:" + func_name+" Not Exist!!");
+                Debug.LogError(m_Type.Name+" func_name:\"" + func_name+"\" Not Exist!!");
             }
         }
     }
+
 #if UNITY_EDITOR
     [CustomPropertyDrawer(typeof(UCL_ButtonProperty))]
     public class UCL_ButtonPropertyDrawer : PropertyDrawer {
-        public object GetParent(SerializedProperty prop) {
-            var path = prop.propertyPath.Replace(".Array.data[", "[");
-            object obj = prop.serializedObject.targetObject;
-            var elements = path.Split('.');
-            foreach(var element in elements.Take(elements.Length - 1)) {
-                if(element.Contains("[")) {
-                    var elementName = element.Substring(0, element.IndexOf("["));
-                    var index = Convert.ToInt32(element.Substring(element.IndexOf("[")).Replace("[", "").Replace("]", ""));
-                    obj = GetValue(obj, elementName, index);
-                } else {
-                    obj = GetValue(obj, element);
-                }
-            }
-            return obj;
-        }
-        public object GetValue(object source, string name) {
-            if(source == null)
-                return null;
-            var type = source.GetType();
-            var f = type.GetField(name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
-            if(f == null) {
-                var p = type.GetProperty(name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-                if(p == null)
-                    return null;
-                return p.GetValue(source, null);
-            }
-            return f.GetValue(source);
-        }
 
-        public object GetValue(object source, string name, int index) {
-            var enumerable = GetValue(source, name) as IEnumerable;
-            var enm = enumerable.GetEnumerator();
-            while(index-- >= 0)
-                enm.MoveNext();
-            return enm.Current;
-        }
+
 
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label) {
 
             var pro = attribute as UCL_ButtonProperty;
             EditorGUI.BeginProperty(position, label, property);
-            if(GUI.Button(position, property.displayName)) {
-                //Debug.LogWarning("Test!!");
-                if(property.propertyType == SerializedPropertyType.String) {
-                    pro?.InvokeAct(property.stringValue, GetParent(property));
-                } else {
-                    pro?.InvokeAct(property.displayName, GetParent(property));
-                }
+
+            var size = new Vector2(0.2f * position.size.x, position.size.y);
+            var size_2 = new Vector2(0.8f * position.size.x, position.size.y);
+            Rect but_rect = new Rect(position.position, size);
+            Rect text_rect = new Rect(new Vector2(position.position.x + size.x, position.position.y), size_2);
+
+            if(GUI.Button(but_rect, "Invoke")) {
+                var obj = property.serializedObject.targetObject;
                 
+                string func_name = System.Text.RegularExpressions.Regex.Replace(property.name, "m_", "");
+                var target = property.GetParent();
+                var value = property.GetValue();
+                pro?.InvokeAct(func_name, target , value);
             }
+            EditorGUI.PropertyField(text_rect, property, label, false);
+
             EditorGUI.EndProperty();
+            //base.OnGUI(position, property, label);
         }
     }
 #endif

@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEditor;
 using System;
 
-namespace UCL.Core {
+namespace UCL.Core.PA {
     public class UCL_StrListProperty : PropertyAttribute {
         public string[] m_List;
         public UCL_StrListProperty(params string[] list) {

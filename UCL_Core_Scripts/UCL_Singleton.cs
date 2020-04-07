@@ -20,7 +20,10 @@ namespace UCL.Core {
             }
             set {
                 if(_instance != null) {
-                    Debug.LogError("UCL_Singleton:" + typeof(T).Name + "Set Twice!!");
+                    if(value != _instance) {
+                        Debug.LogError("UCL_Singleton:" + typeof(T).Name + "Set Twice!! Destroy new Instance!!");
+                        Destroy(value.gameObject);
+                    }
                     return;
                 }
                 _instance = value;
@@ -29,8 +32,10 @@ namespace UCL.Core {
             }
         }
         virtual protected void OnDestroy() {
-            m_Destroyed = true;
-            _instance = null;
+            if(_instance == this) {
+                _instance = null;
+                m_Destroyed = true;
+            }
         }
 
     }

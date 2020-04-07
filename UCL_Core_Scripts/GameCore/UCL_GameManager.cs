@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace UCL.Core {
     public class UCL_GameManager : UCL_Singleton<UCL_GameManager> {
-        public UnityEngine.Events.UnityEvent m_ExitGameEvent;
+        public UnityEngine.Events.UnityEvent m_ExitGameEvent = new UnityEngine.Events.UnityEvent();
         public HashSet<string> m_BlockExitGameFlag = new HashSet<string>();
         public bool f_ExitGame { get; protected set; } = false;
         private void Awake() {

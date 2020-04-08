@@ -19,17 +19,24 @@ namespace UCL.Core {
                 return _instance;
             }
             set {
-                if(_instance != null) {
-                    if(value != _instance) {
-                        Debug.LogError("UCL_Singleton:" + typeof(T).Name + "Set Twice!! Destroy new Instance!!");
-                        Destroy(value.gameObject);
-                    }
-                    return;
+                if(!SetInstance(value)) {
+                    //Debug.LogError("UCL_Singleton:" + typeof(T).Name + "Set Twice!! Destroy new Instance!!");
+                    throw new System.Exception("UCL_Singleton:" + typeof(T).Name + "Set Twice!! Destroy new Instance!!");
+                    //return;
                 }
-                _instance = value;
-                _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
-                DontDestroyOnLoad(_instance.gameObject);
             }
+        }
+        static protected bool SetInstance(T value) {
+            if(_instance != null) {
+                if(value != _instance) {
+                    Destroy(value.gameObject);
+                }
+                return false;
+            }
+            _instance = value;
+            _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
+            DontDestroyOnLoad(_instance.gameObject);
+            return true;
         }
         virtual protected void OnDestroy() {
             if(_instance == this) {

@@ -6,7 +6,10 @@ namespace UCL.Core {
     public class UCL_Singleton<T> : MonoBehaviour where T : MonoBehaviour {
         static T _instance;
         static protected bool m_Destroyed = false;
-        public static T Instance {
+        /// <summary>
+        /// return instance, and auto create one if instance not exsit!!
+        /// </summary>
+        static public T Instance {
             get {
                 if(m_Destroyed) return null;
 
@@ -26,6 +29,18 @@ namespace UCL.Core {
                 }
             }
         }
+        /// <summary>
+        /// Won't auto create instance if not exist!!
+        /// </summary>
+        /// <returns></returns>
+        static public T GetInstance() {
+            return _instance;
+        }
+        /// <summary>
+        /// Set instance manually!!
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
         static protected bool SetInstance(T value) {
             if(_instance != null) {
                 if(value != _instance) {
@@ -38,6 +53,22 @@ namespace UCL.Core {
             DontDestroyOnLoad(_instance.gameObject);
             return true;
         }
+        /// <summary>
+        /// Create and set instance by value
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        static protected bool CreateInstance(T value) {
+            if(_instance != null) {
+                return false;
+            }
+            if(value == null) {
+                return false;
+            }
+            return SetInstance(Instantiate(value));
+        }
+
+
         virtual protected void OnDestroy() {
             if(_instance == this) {
                 _instance = null;

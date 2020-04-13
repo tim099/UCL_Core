@@ -8,8 +8,8 @@ using System.Reflection;
 
 namespace UCL.Core.PA {
     public class UCL_ButtonProperty : PropertyAttribute {
-        Type m_Type;
-        string m_FuncName;
+        public Type m_Type;
+        public string m_FuncName;
         public UCL_ButtonProperty() {
 
         }

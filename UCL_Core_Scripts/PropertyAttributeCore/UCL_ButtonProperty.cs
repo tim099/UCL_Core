@@ -13,17 +13,6 @@ namespace UCL.Core.PA {
         public UCL_ButtonProperty() {
 
         }
-        /*
-        public UCL_ButtonProperty(Type _Type, string func_name="") {
-            m_Type = _Type;
-            if(!string.IsNullOrEmpty(func_name)) {
-                m_FuncName = func_name;
-            }
-        }
-        public UCL_ButtonProperty(string func_name) {
-            m_FuncName = func_name;
-        }
-        */
         public UCL_ButtonProperty(params object[] par) {
             for(int i = 0; i < par.Length; i++) {
                 SetParam(par[i]);

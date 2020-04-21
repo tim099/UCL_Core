@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
-
+#if UNITY_EDITOR
 namespace UCL.Core.Editor {
     [InitializeOnLoad]
     static public class UCL_EditorUpdateManager {
@@ -11,11 +11,16 @@ namespace UCL.Core.Editor {
         //static public void Init() {}
         static System.Action m_EditorUpdateAction;
         static Dictionary<string, System.Action> m_EditorUpdateActionDic;
+        /// <summary>
+        /// Only trigger Once!!
+        /// </summary>
+        static Queue<System.Action> m_ActQue;
         static UCL_EditorUpdateManager() {
             Debug.LogWarning("UCL_EditorUpdateManager() Init!!");
             UnityEditor.EditorApplication.update += EditorUpdate;
             m_EditorUpdateAction = null;
             m_EditorUpdateActionDic = new Dictionary<string, System.Action>();
+            m_ActQue = new Queue<Action>();
         }
         static void EditorUpdate() {
             try {
@@ -31,7 +36,20 @@ namespace UCL.Core.Editor {
                 }
                 
             }
+            if(m_ActQue != null) {
+                while(m_ActQue.Count > 0) {
+                    try {
+                        m_ActQue.Dequeue()?.Invoke();
+                    } catch(Exception e) {
+                        Debug.LogError(e);
+                    }
+                }
+            }
+
             //Debug.Log("EditorUpdate()!!");
+        }
+        static public void AddAction(System.Action act) {
+            m_ActQue?.Enqueue(act);
         }
         static public void AddEditorUpdateAct(System.Action act) {
             m_EditorUpdateAction += act;
@@ -69,3 +87,4 @@ namespace UCL.Core.Editor {
     }
 }
 
+#endif

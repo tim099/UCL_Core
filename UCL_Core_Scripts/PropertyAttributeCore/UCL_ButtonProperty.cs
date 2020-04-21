@@ -112,17 +112,25 @@ namespace UCL.Core.PA {
             var size_2 = new Vector2(0.8f * position.size.x, position.size.y);
             Rect but_rect = new Rect(position.position, size);
             Rect text_rect = new Rect(new Vector2(position.position.x + size.x, position.position.y), size_2);
-
             if(GUI.Button(but_rect, "Invoke")) {
                 var obj = property.serializedObject.targetObject;
                 
                 string func_name = System.Text.RegularExpressions.Regex.Replace(property.name, "m_", "");
                 var target = property.GetParent();
                 var value = property.GetValue();
-                pro?.InvokeAct(func_name, target , value);
+                UCL.Core.Editor.UCL_EditorUpdateManager.AddAction(delegate () {
+                    pro?.InvokeAct(func_name, target, value);
+                });
             }
-            EditorGUI.PropertyField(text_rect, property, label, false);
-
+            if(label != null && property != null) {
+                try {
+                    EditorGUI.PropertyField(text_rect, property, label, false);
+                }catch(System.Exception e) {
+                    Debug.LogWarning(" UCL_ButtonPropertyDrawer EditorGUI.PropertyField Exception:" + e);
+                    return;
+                }
+                
+            }
             EditorGUI.EndProperty();
             //base.OnGUI(position, property, label);
         }

@@ -32,7 +32,9 @@ namespace UCL.Core {
         protected GUIStyle m_LogStyle = new GUIStyle();
 
         private void Awake() {
-            Instance = this;
+            if(!SetInstance(this)) {
+                return;
+            }
             Application.logMessageReceived += Log;
         }
         override protected void OnDestroy() {

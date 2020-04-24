@@ -54,6 +54,23 @@ namespace UCL.Core {
             return true;
         }
         /// <summary>
+        /// Replace current instance
+        /// </summary>
+        /// <param name="value"></param>
+        static protected void ReplaceInstance(T value) {
+            if(value == _instance) return;
+
+            if(_instance != null) {
+                Destroy(_instance.gameObject);
+            }
+
+            _instance = value;
+            _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
+            DontDestroyOnLoad(_instance.gameObject);
+        }
+
+
+        /// <summary>
         /// Create and set instance by value
         /// </summary>
         /// <param name="value"></param>

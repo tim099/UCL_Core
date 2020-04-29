@@ -30,6 +30,13 @@ namespace UCL.Core {
             }
         }
         /// <summary>
+        /// Auto create instance if not exist!!
+        /// </summary>
+        /// <returns></returns>
+        static public T Get() {
+            return Instance;
+        }
+        /// <summary>
         /// Won't auto create instance if not exist!!
         /// </summary>
         /// <returns></returns>
@@ -84,7 +91,6 @@ namespace UCL.Core {
             }
             return SetInstance(Instantiate(value));
         }
-
 
         virtual protected void OnDestroy() {
             if(_instance == this) {

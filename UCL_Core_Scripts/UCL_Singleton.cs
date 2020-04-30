@@ -14,9 +14,7 @@ namespace UCL.Core {
                 if(m_Destroyed) return null;
 
                 if(_instance == null) {
-                    GameObject singleton = new GameObject(typeof(T).Name+ "(AutoGen_UCL_Singleton)");
-                    _instance = singleton.AddComponent<T>();
-                    DontDestroyOnLoad(singleton);
+                    CreateInstance();
                 }
 
                 return _instance;
@@ -33,7 +31,17 @@ namespace UCL.Core {
         /// Auto create instance if not exist!!
         /// </summary>
         /// <returns></returns>
-        static public T Get() {
+        static public T CreateInstance() {
+            if(_instance != null) {
+                return _instance;
+            }
+            GameObject singleton = new GameObject(typeof(T).Name + "(UCL_Singleton_AutoGen)");
+            singleton.SetActive(false);
+            _instance = singleton.AddComponent<T>();//this trigger awake if gameobject enable!!
+            DontDestroyOnLoad(singleton);
+
+            singleton.SetActive(true);
+
             return Instance;
         }
         /// <summary>
@@ -45,6 +53,7 @@ namespace UCL.Core {
         }
         /// <summary>
         /// Set instance manually!!
+        /// return true if set Instance success
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
@@ -52,10 +61,13 @@ namespace UCL.Core {
             if(_instance != null) {
                 if(value != _instance) {
                     Destroy(value.gameObject);
+                    return false;
                 }
-                return false;
+                return true;//value == _instance
             }
+
             _instance = value;
+            //Debug.LogWarning("_instance.name:" + _instance.name);
             _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
             DontDestroyOnLoad(_instance.gameObject);
             return true;
@@ -89,9 +101,10 @@ namespace UCL.Core {
             if(value == null) {
                 return false;
             }
-            return SetInstance(Instantiate(value));
+            var ins = Instantiate(value);
+            ins.name = ins.name.Replace("(Clone)", "");
+            return SetInstance(ins);
         }
-
         virtual protected void OnDestroy() {
             if(_instance == this) {
                 _instance = null;

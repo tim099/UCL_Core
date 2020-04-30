@@ -1,20 +1,68 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System.IO;
 
 namespace UCL.Core {
     public class UCL_DebugLog : UCL_Singleton<UCL_DebugLog> {
+        [Flags]
+        public enum LogLevel {
+            None = 0,//     LogType used for Errors.
+            Error = 1,//     LogType used for Asserts. (These could also indicate an error inside Unity itself.)
+            Assert = 1<<1,//     LogType used for Warnings.
+            Warning = 1<<2,//     LogType used for regular log messages.
+            Log = 1<<3,//     LogType used for Exceptions.
+            Exception = 1<< 4//,All = Error|Assert|Warning|Log|Exception
+        }
         public class LogData {
             public LogData(string _Message, string _StackTrace, LogType _Type) {
                 m_Message = _Message;
                 m_StackTrace = _StackTrace;
                 m_Type = _Type;
+                var lines = m_Message.Split(new[] { "\r\n", "\r", "\n" },StringSplitOptions.None);//Environment.NewLine, 
+                if(lines.Length > 0) {
+                    m_Title = lines[0];
+                    //Debug.LogWarning("lines[0]:" + lines[0]);
+                } else {
+                    m_Title = m_Message;
+                    //Debug.LogWarning("lines.Length:" + 0);
+                }
+                switch(_Type) {
+                    case LogType.Error: {
+                            m_Level = LogLevel.Error;
+                            break;
+                        }
+                    case LogType.Assert: {
+                            m_Level = LogLevel.Assert;
+                            break;
+                        }
+                    case LogType.Warning: {
+                            m_Level = LogLevel.Warning;
+                            break;
+                        }
+                    case LogType.Log: {
+                            m_Level = LogLevel.Log;
+                            break;
+                        }
+                    case LogType.Exception: {
+                            m_Level = LogLevel.Exception;
+                            break;
+                        }
+                    default: {
+                            m_Level = LogLevel.Log;
+                            break;
+                        }
+                }
             }
+
+            public string m_Title;
             public string m_Message;
             public string m_StackTrace;
             public LogType m_Type = LogType.Log;
+            public LogLevel m_Level;
         }
-        static readonly Dictionary<LogType, Color> LogColors = new Dictionary<LogType, Color>()
+        static readonly Dictionary<LogType, Color> m_LogColors = new Dictionary<LogType, Color>()
         {
                 { LogType.Assert, Color.white },
                 { LogType.Error, Color.red },
@@ -30,32 +78,83 @@ namespace UCL.Core {
         protected Vector2 m_HoriScrollPosition;
         protected GUIStyle m_LogStyle = new GUIStyle();
         protected GUIStyle m_LogButtonStyle = null;
+        protected GUIStyle m_LogToggleStyle = null;
         protected float m_Scale;
 
-        public bool f_Show = true;
+        public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
+        [SerializeField] protected bool f_Show = true;
+
+        /// <summary>
+        /// Draw the show button when f_Show == false
+        /// </summary>
+        public bool f_DrawShowDebugLogButton = false;
+        public bool f_LogToFile = false;
+
         public int m_MaxLogCount = 100;
+
+        /// <summary>
+        /// Show debugLog while this key pressed!!
+        /// </summary>
+        public KeyCode m_ShowKeyCode = KeyCode.S;
+
+        protected StreamWriter m_StreamWriter = null;
         protected List<LogData> m_LogDataList = new List<LogData>();
         protected LogData m_SelectedLog = null;
         private void Awake() {
             if(!SetInstance(this)) {
                 return;
             }
-            Core.UI.UCL_CanvasBlocker.Get()?.SetBlockOnHotControl(true);
+            Core.UI.UCL_CanvasBlocker.CreateInstance()?.SetBlockOnHotControl(true);
             //Application.logMessageReceived += Log;
             Application.logMessageReceivedThreaded += ThreadedLog;
+
+            LoadSetting();
+        }
+        void LoadSetting() {
+            if(PlayerPrefs.HasKey("UCL_DebugLog_LogLevel")) {
+                m_LogLevel = (LogLevel)PlayerPrefs.GetInt("UCL_DebugLog_LogLevel");
+            }
+        }
+        void SaveSetting() {
+            PlayerPrefs.SetInt("UCL_DebugLog_LogLevel", (int)m_LogLevel);
         }
         override protected void OnDestroy() {
             base.OnDestroy();
             //Application.logMessageReceived -= Log;
             Application.logMessageReceivedThreaded -= ThreadedLog;
+            SaveSetting();
+        }
+        public void SetShow(bool show) {
+            f_Show = show;
+        }
+        public void Toggle() {
+            SetShow(!f_Show);
         }
         void OnGUI() {
-            if(!f_Show) {
-                return;
-            }
             if(m_LogButtonStyle == null) {
                 m_LogButtonStyle = new GUIStyle(GUI.skin.button);
+                m_LogButtonStyle.fontSize = 22;
+
+
+                m_LogToggleStyle = new GUIStyle(GUI.skin.button);//GUI.skin.toggle
+                m_LogToggleStyle.fontSize = 22;
+                //m_LogToggleStyle.onFocused.textColor = Color.red;
+                //m_LogToggleStyle.onActive.textColor = Color.red;
+                //m_LogToggleStyle. = Color.red;
             }
+            if(!f_Show) {
+                if(f_DrawShowDebugLogButton) {
+                    string key_str = "";
+                    if(m_ShowKeyCode != KeyCode.None) {
+                        key_str = "(" + m_ShowKeyCode.ToString() + ")";
+                    }
+                    if(GUILayout.Button("DebugLog"+ key_str, style: m_LogButtonStyle)) {
+                        f_Show = true;
+                    }
+                }
+                return;
+            }
+
             var m_ScreenOrientation = Screen.orientation;
             if(m_ScreenOrientation == ScreenOrientation.Landscape ||
                 m_ScreenOrientation == ScreenOrientation.LandscapeLeft ||
@@ -80,38 +179,58 @@ namespace UCL.Core {
             if(GUILayout.Button("Clear", style: m_LogButtonStyle)) {
                 ClearLog();
             }
-            if(GUILayout.Button("Log", style: m_LogButtonStyle)) {
-                Debug.LogWarning("Log");
+            /*
+            foreach(LogLevel level in Enum.GetValues(typeof(LogLevel))) {
+                if(GUILayout.Toggle(((m_LogLevel & level) != LogLevel.None), level.ToString(), style: m_LogToggleStyle)) {
+                    m_LogLevel |= level;
+                } else {
+                    m_LogLevel &= ~level;
+                }
             }
-            if(GUILayout.Button("Warning", style: m_LogButtonStyle)) {
-                Debug.LogWarning("Warning");
+            */
+            {
+                Core.UI.UCL_GUI.PushBackGroundColor(f_LogToFile ? Color.green : Color.red, true);
+                f_LogToFile = GUILayout.Toggle(f_LogToFile, "Log to File", style: m_LogToggleStyle);
+                Core.UI.UCL_GUI.Undo();
             }
-            if(GUILayout.Button("Error", style: m_LogButtonStyle)) {
-                Debug.LogWarning("Error");
-            }
+            System.Action<LogLevel> log_act = delegate (LogLevel level) {
+                bool is_on = ((m_LogLevel & level) != LogLevel.None);
+                Core.UI.UCL_GUI.PushBackGroundColor(is_on ? Color.green : Color.red, true);
+                if(GUILayout.Toggle(is_on , level.ToString(), style: m_LogToggleStyle)) {
+                    m_LogLevel |= level;
+                } else {
+                    m_LogLevel &= ~level;
+                }
+                Core.UI.UCL_GUI.Undo();
+            };
+            log_act(LogLevel.Log);
+            log_act(LogLevel.Warning);
+            log_act(LogLevel.Error);
+
             //GUI.backgroundColor
             if(GUILayout.Button("Close", style: m_LogButtonStyle)) {
                 f_Show = false;
             }
             GUILayout.EndHorizontal();
 
-            m_VertScrollPosition = GUILayout.BeginScrollView(m_VertScrollPosition, false, true);
+            m_VertScrollPosition = GUILayout.BeginScrollView(m_VertScrollPosition, false, true, GUILayout.Width(m_WindowRect.size.x - 5));
             //, GUILayout.Width(m_WindowRect.size.x - 20) , GUILayout.Height(m_WindowRect.size.y * h)
             const int scroll_width = 14;
+            float sw = scroll_width * m_Scale;
             ///*
-            GUI.skin.verticalScrollbar.fixedWidth = scroll_width * m_Scale;
-            GUI.skin.verticalScrollbarDownButton.fixedWidth = scroll_width * m_Scale;
-            GUI.skin.verticalScrollbarThumb.fixedWidth = scroll_width * m_Scale;
-            GUI.skin.verticalScrollbarUpButton.fixedWidth = scroll_width * m_Scale;
+            GUI.skin.verticalScrollbar.fixedWidth = sw;
+            GUI.skin.verticalScrollbarDownButton.fixedWidth = sw;
+            GUI.skin.verticalScrollbarThumb.fixedWidth = sw;
+            GUI.skin.verticalScrollbarUpButton.fixedWidth = sw;
 
             
-            GUI.skin.horizontalScrollbar.fixedHeight = scroll_width * m_Scale;
-            GUI.skin.horizontalScrollbarLeftButton.fixedHeight = scroll_width * m_Scale;
-            GUI.skin.horizontalScrollbarRightButton.fixedHeight = scroll_width * m_Scale;
-            GUI.skin.horizontalScrollbarThumb.fixedHeight = scroll_width * m_Scale;
+            GUI.skin.horizontalScrollbar.fixedHeight = sw;
+            GUI.skin.horizontalScrollbarLeftButton.fixedHeight = sw;
+            GUI.skin.horizontalScrollbarRightButton.fixedHeight = sw;
+            GUI.skin.horizontalScrollbarThumb.fixedHeight = sw;
             //*/
             m_LogButtonStyle.fontSize = 22;
-
+            m_LogButtonStyle.alignment = TextAnchor.MiddleLeft;
             for(int i = m_LogDataList.Count - 1; i >= 0; i--) {
                 var log = m_LogDataList[i];
 
@@ -122,18 +241,20 @@ namespace UCL.Core {
                     UCL.Core.UI.UCL_GUI.PushBackGroundColor(Color.blue, true);
                     //m_LogButtonStyle.normal.textColor = Color.cyan;
                 }
-                m_LogButtonStyle.normal.textColor = LogColors[log.m_Type];
+                m_LogButtonStyle.normal.textColor = m_LogColors[log.m_Type];
                 m_LogButtonStyle.hover.textColor = m_LogButtonStyle.normal.textColor;
                 //GUI.contentColor = logTypeColors[log.type];
-                if(GUILayout.Button(log.m_Message, style: m_LogButtonStyle)) {
-                    //Debug.LogWarning("Pressed:" + log.m_Message);
-                    if(m_SelectedLog == log) {
-                        m_SelectedLog = null;
-                    } else {
-                        m_SelectedLog = log;
+                if((log.m_Level & m_LogLevel) != LogLevel.None) {
+                    if(GUILayout.Button(log.m_Title, style: m_LogButtonStyle, GUILayout.Width(m_WindowRect.size.x - 15 - sw))) {
+                        //Debug.LogWarning("Pressed:" + log.m_Message);
+                        if(m_SelectedLog == log) {
+                            m_SelectedLog = null;
+                        } else {
+                            m_SelectedLog = log;
+                        }
                     }
-
                 }
+
 
                 if(flag) {
                     UCL.Core.UI.UCL_GUI.Undo();
@@ -142,15 +263,18 @@ namespace UCL.Core {
                 //GUILayout.Label(log.m_Message, m_LogStyle);
             }
             GUILayout.EndScrollView();
+
             if(m_SelectedLog != null) {
                 m_HoriScrollPosition = GUILayout.BeginScrollView(m_HoriScrollPosition,
-                GUILayout.Width(m_WindowRect.size.x - 20)
+                GUILayout.Width(m_WindowRect.size.x - 5)
                 , GUILayout.Height(m_WindowRect.size.y * 0.35f));
                 GUILayout.BeginHorizontal();
 
                 m_LogStyle.fontSize = 16;
                 m_LogStyle.normal.textColor = Color.white;
-                GUILayout.Label(m_SelectedLog.m_StackTrace, m_LogStyle);
+                string str = m_SelectedLog.m_Message;
+                str+= "\nStackTrace:" + m_SelectedLog.m_StackTrace;
+                GUILayout.Label(str, m_LogStyle);
 
                 GUILayout.EndHorizontal();
                 GUILayout.EndScrollView();
@@ -176,7 +300,28 @@ namespace UCL.Core {
                 m_LogQue.Enqueue(new LogData(message, stack_trace, type));
             }
         }
+        protected string GetDebugLogPath() {
+            return Core.File.Lib.GetFilesPath() + "/DebugLog/";
+        }
+        protected void LogToFile(LogData data) {
+            if(m_StreamWriter == null) {
+                string path = GetDebugLogPath()+ DateTime.Now.ToString("yyyy_MMdd_HHmm_") + "Log.txt";
+                Debug.LogWarning("Save to:" + path);
+                m_StreamWriter = Core.File.Lib.OpenWriteStream(path);
+                //m_StreamWriter.AutoFlush = true;
+            }
+            string str = "";
+            str += DateTime.Now.ToString("HH:mm:ss ");
+            str += data.m_Type.ToString() + ":";
+            str += data.m_Message;
+            
+            m_StreamWriter.WriteLine(str);
+            m_StreamWriter.Flush();
+        }
         public void Log(LogData data) {
+            if(f_LogToFile) {
+                LogToFile(data);
+            }
             m_LogDataList.Add(data);
             if(m_LogDataList.Count > 0 && m_LogDataList.Count >= m_MaxLogCount) {
                 if(m_SelectedLog == m_LogDataList[0]) {
@@ -193,6 +338,16 @@ namespace UCL.Core {
                 while(m_LogQue.Count > 0) {
                     Log(m_LogQue.Dequeue());
                 }
+            }
+            if(f_Show) {
+
+            } else {
+                if(m_ShowKeyCode != KeyCode.None) {
+                    if(Input.GetKeyDown(m_ShowKeyCode)) {
+                        SetShow(true);
+                    }
+                }
+
             }
         }
     }

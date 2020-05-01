@@ -11,6 +11,10 @@ namespace UCL.Core.File {
             return path;
         }
         public static void CreateDirectory(string path) {
+            if(string.IsNullOrEmpty(path)) return;
+            if(path[path.Length - 1] == '/') {
+                path.Remove(path.Length - 1);
+            }
             if(!Directory.Exists(path)) {
                 Directory.CreateDirectory(path);
             }

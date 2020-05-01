@@ -92,7 +92,12 @@ namespace UCL.Core.PA {
                     Debug.LogError("UCL_ButtonProperty: " + m_Type.Name + "_" + func_name + ".Invoke Exception:" + e.ToString());
                 }
             } else {
-                Debug.LogError(m_Type.Name+" func_name:\"" + func_name+"\" Not Exist!!");
+                string names = "";
+                foreach(var m in methods) {
+                    names += m.Name + "\n";
+                }
+                Debug.LogError(m_Type.Name+" func_name:\"" + func_name+"\" Not Exist!!,Functions:\n"+ names);
+
             }
         }
     }
@@ -118,7 +123,7 @@ namespace UCL.Core.PA {
                 string func_name = System.Text.RegularExpressions.Regex.Replace(property.name, "m_", "");
                 var target = property.GetParent();
                 var value = property.GetValue();
-                UCL.Core.Editor.UCL_EditorUpdateManager.AddAction(delegate () {
+                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddAction(delegate () {
                     pro?.InvokeAct(func_name, target, value);
                 });
             }

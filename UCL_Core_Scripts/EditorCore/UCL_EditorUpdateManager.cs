@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 #if UNITY_EDITOR
-namespace UCL.Core.Editor {
+namespace UCL.Core.EditorLib {
     [InitializeOnLoad]
     static public class UCL_EditorUpdateManager {
         //[InitializeOnLoadMethod]

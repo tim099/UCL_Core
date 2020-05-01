@@ -5,8 +5,9 @@ using UnityEngine;
 using System.IO;
 
 namespace UCL.Core {
+    [ATTR.EnableUCLEditor]
     public class UCL_DebugLog : UCL_Singleton<UCL_DebugLog> {
-        [Flags]
+        //[Flags]
         public enum LogLevel {
             None = 0,//     LogType used for Errors.
             Error = 1,//     LogType used for Asserts. (These could also indicate an error inside Unity itself.)
@@ -70,6 +71,19 @@ namespace UCL.Core {
                 { LogType.Log, Color.white },
                 { LogType.Warning, Color.yellow },
         };
+
+#if UNITY_EDITOR
+        //[SerializeField] [Core.PA.UCL_ButtonProperty("Editor_OpenLogFile")] bool m_Editor_OpenLogFile;
+        [ATTR.UCL_FunctionButton]
+        public void Editor_OpenLogFile() {
+            string folder = GetDebugLogPath().Replace("/", "\\");
+            File.Lib.CreateDirectory(folder);
+            string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
+            if(path != folder) Application.OpenURL(path);
+        }
+#endif
+
+
         const int m_Margin = 20;
 
         Rect m_WindowRect = new Rect(m_Margin, m_Margin, Screen.width - (m_Margin * 2), Screen.height - (m_Margin * 2));
@@ -81,7 +95,7 @@ namespace UCL.Core {
         protected GUIStyle m_LogToggleStyle = null;
         protected float m_Scale;
 
-        public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
+        [PA.UCL_EnumMaskProperty] public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
         [SerializeField] protected bool f_Show = true;
 
         /// <summary>
@@ -114,9 +128,11 @@ namespace UCL.Core {
             if(PlayerPrefs.HasKey("UCL_DebugLog_LogLevel")) {
                 m_LogLevel = (LogLevel)PlayerPrefs.GetInt("UCL_DebugLog_LogLevel");
             }
+            if(PlayerPrefs.HasKey("UCL_DebugLog_LogToFile")) f_LogToFile = (PlayerPrefs.GetInt("UCL_DebugLog_LogToFile") == 1);
         }
         void SaveSetting() {
             PlayerPrefs.SetInt("UCL_DebugLog_LogLevel", (int)m_LogLevel);
+            PlayerPrefs.SetInt("UCL_DebugLog_LogToFile", f_LogToFile ? 1 : 0);
         }
         override protected void OnDestroy() {
             base.OnDestroy();

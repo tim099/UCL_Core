@@ -79,7 +79,11 @@ namespace UCL.Core {
             string folder = GetDebugLogPath().Replace("/", "\\");
             File.Lib.CreateDirectory(folder);
             string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
-            if(path != folder) Application.OpenURL(path);
+
+            if(path != folder) {
+                Debug.LogWarning("path:" + path + ",folder:" + folder);
+                Application.OpenURL(path);
+            }
         }
 #endif
 

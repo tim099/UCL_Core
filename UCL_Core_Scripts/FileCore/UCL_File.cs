@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-namespace UCL.Core.File {
+namespace UCL.Core.FileLib {
     static public class Lib{
         public static string GetFilesPath(bool create_if_not_exist = false) {
             string path = Application.persistentDataPath + "/files";

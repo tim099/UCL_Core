@@ -77,7 +77,7 @@ namespace UCL.Core {
         [ATTR.UCL_FunctionButton]
         public void Editor_OpenLogFile() {
             string folder = GetDebugLogPath().Replace("/", "\\");
-            File.Lib.CreateDirectory(folder);
+            FileLib.Lib.CreateDirectory(folder);
             string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
 
             if(path != folder) {
@@ -336,13 +336,13 @@ namespace UCL.Core {
             }
         }
         protected string GetDebugLogPath() {
-            return Core.File.Lib.GetFilesPath() + "/DebugLog/";
+            return Core.FileLib.Lib.GetFilesPath() + "/DebugLog/";
         }
         protected void LogToFile(LogData data) {
             if(m_StreamWriter == null) {
                 string path = GetDebugLogPath()+ DateTime.Now.ToString("yyyy_MMdd_HHmm_") + "Log.txt";
                 Debug.LogWarning("Save to:" + path);
-                m_StreamWriter = Core.File.Lib.OpenWriteStream(path);
+                m_StreamWriter = Core.FileLib.Lib.OpenWriteStream(path);
                 //m_StreamWriter.AutoFlush = true;
             }
             string str = "";

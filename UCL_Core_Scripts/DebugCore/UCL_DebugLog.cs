@@ -107,7 +107,7 @@ namespace UCL.Core {
         /// </summary>
         public bool f_DrawShowDebugLogButton = false;
         public bool f_LogToFile = false;
-
+        public bool f_AutoStackTrace = true;
         public int m_MaxLogCount = 100;
 
         /// <summary>
@@ -133,10 +133,19 @@ namespace UCL.Core {
                 m_LogLevel = (LogLevel)PlayerPrefs.GetInt("UCL_DebugLog_LogLevel");
             }
             if(PlayerPrefs.HasKey("UCL_DebugLog_LogToFile")) f_LogToFile = (PlayerPrefs.GetInt("UCL_DebugLog_LogToFile") == 1);
+            if(PlayerPrefs.HasKey("UCL_DebugLog_AutoStackTrace")) f_AutoStackTrace = (PlayerPrefs.GetInt("UCL_DebugLog_AutoStackTrace") == 1);
         }
         void SaveSetting() {
             PlayerPrefs.SetInt("UCL_DebugLog_LogLevel", (int)m_LogLevel);
             PlayerPrefs.SetInt("UCL_DebugLog_LogToFile", f_LogToFile ? 1 : 0);
+            PlayerPrefs.SetInt("UCL_DebugLog_AutoStackTrace", f_AutoStackTrace ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+        private void OnApplicationPause(bool pause) {
+            if(pause) SaveSetting();
+        }
+        private void OnApplicationQuit() {
+            SaveSetting();
         }
         override protected void OnDestroy() {
             base.OnDestroy();
@@ -223,6 +232,15 @@ namespace UCL.Core {
                 }
                 Core.UI.UCL_GUI.Undo();
             };
+            {
+                Core.UI.UCL_GUI.PushBackGroundColor(f_AutoStackTrace ? Color.green : Color.red, true);
+                if(GUILayout.Toggle(f_AutoStackTrace, "StackTrace", style: m_LogToggleStyle)) {
+                    f_AutoStackTrace = true;
+                } else {
+                    f_AutoStackTrace = false;
+                }
+                Core.UI.UCL_GUI.Undo();
+            }
             log_act(LogLevel.Log);
             log_act(LogLevel.Warning);
             log_act(LogLevel.Error);
@@ -301,14 +319,8 @@ namespace UCL.Core {
             }
             GUI.DragWindow();//m_TitleBarRect
                              //GUI.contentColor = Color.white;
-        }
 
-
-        public void LogWarning(string message, string stack_trace = "") {
-            Log(message, stack_trace, LogType.Warning);
-        }
-        public void LogError(string message, string stack_trace = "") {
-            Log(message, stack_trace, LogType.Error);
+            //SaveSetting();
         }
         public void ClearLog() {
             m_LogDataList.Clear();
@@ -316,6 +328,9 @@ namespace UCL.Core {
         }
         Queue<LogData> m_LogQue = new Queue<LogData>();
         public void ThreadedLog(string message, string stack_trace = "", LogType type = LogType.Log) {
+            if(f_AutoStackTrace && string.IsNullOrEmpty(stack_trace)) {//type != LogType.Log
+                stack_trace = new System.Diagnostics.StackTrace(true).ToString();
+            }
             lock(m_LogQue) {
                 m_LogQue.Enqueue(new LogData(message, stack_trace, type));
             }
@@ -353,6 +368,27 @@ namespace UCL.Core {
         public void Log(string message, string stack_trace = "", LogType type = LogType.Log) {
             Log(new LogData(message, stack_trace, type));
         }
+        /*
+        public void LogWarning(string message) {
+            LogStackTrace(message, LogType.Warning);
+        }
+        public void LogError(string message) {
+            LogStackTrace(message, LogType.Error);
+        }
+        public void LogStackTrace(string message, LogType type = LogType.Log) {
+            var st = new System.Diagnostics.StackTrace(true);
+            string stack_trace = st.ToString();
+            /*
+            for(int i = 0,len = st.FrameCount; i < len; i++) {
+                var sf = st.GetFrame(i);
+                stack_trace += "" + sf.GetMethod();// +"\n";
+                stack_trace += "(" + sf.GetFileName()+":"+ sf.GetFileLineNumber() + ")\n";
+
+                //stack_trace += "\n";
+            }
+            Log(message, stack_trace, type);
+        }
+        */
         private void Update() {
             lock(m_LogQue) {
                 while(m_LogQue.Count > 0) {

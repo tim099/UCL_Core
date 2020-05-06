@@ -16,7 +16,7 @@ namespace UCL.Core.EditorLib {
         /// </summary>
         static Queue<System.Action> m_ActQue;
         static UCL_EditorUpdateManager() {
-            Debug.LogWarning("UCL_EditorUpdateManager() Init!!");
+            Debug.Log("UCL_EditorUpdateManager() Init UnityEditor.EditorApplication.update += EditorUpdate");
             UnityEditor.EditorApplication.update += EditorUpdate;
             m_EditorUpdateAction = null;
             m_EditorUpdateActionDic = new Dictionary<string, System.Action>();

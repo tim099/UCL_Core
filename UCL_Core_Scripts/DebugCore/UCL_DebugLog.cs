@@ -5,7 +5,9 @@ using UnityEngine;
 using System.IO;
 
 namespace UCL.Core {
+#if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
+#endif
     public class UCL_DebugLog : UCL_Singleton<UCL_DebugLog> {
         //[Flags]
         public enum LogLevel {
@@ -73,17 +75,12 @@ namespace UCL.Core {
         };
 
 #if UNITY_EDITOR
-        //[SerializeField] [Core.PA.UCL_ButtonProperty("Editor_OpenLogFile")] bool m_Editor_OpenLogFile;
         [ATTR.UCL_FunctionButton]
         public void Editor_OpenLogFile() {
             string folder = GetDebugLogPath().Replace("/", "\\");
             FileLib.Lib.CreateDirectory(folder);
-            string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
 
-            if(path != folder) {
-                Debug.LogWarning("path:" + path + ",folder:" + folder);
-                Application.OpenURL(path);
-            }
+            FileLib.EditorLib.ExploreFile(folder);
         }
 #endif
 
@@ -97,9 +94,9 @@ namespace UCL.Core {
         protected GUIStyle m_LogStyle = new GUIStyle();
         protected GUIStyle m_LogButtonStyle = null;
         protected GUIStyle m_LogToggleStyle = null;
-        protected float m_Scale;
+        [PA.UCL_ReadOnly][SerializeField]protected float m_Scale;
 
-        [PA.UCL_EnumMaskProperty] public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
+        [PA.UCL_EnumMask] public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
         [SerializeField] protected bool f_Show = true;
 
         /// <summary>
@@ -204,7 +201,7 @@ namespace UCL.Core {
             GUILayout.BeginHorizontal();
 
             m_LogButtonStyle.normal.textColor = Color.white;
-
+            m_LogButtonStyle.hover.textColor = Color.white;
             if(GUILayout.Button("Clear", style: m_LogButtonStyle)) {
                 ClearLog();
             }

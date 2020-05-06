@@ -7,13 +7,13 @@ using System;
 using System.Reflection;
 
 namespace UCL.Core.PA {
-    public class UCL_ButtonProperty : PropertyAttribute {
+    public class UCL_ButtonAttribute : PropertyAttribute {
         public Type m_Type;
         public string m_FuncName;
-        public UCL_ButtonProperty() {
+        public UCL_ButtonAttribute() {
 
         }
-        public UCL_ButtonProperty(params object[] par) {
+        public UCL_ButtonAttribute(params object[] par) {
             for(int i = 0; i < par.Length; i++) {
                 SetParam(par[i]);
             }
@@ -103,14 +103,14 @@ namespace UCL.Core.PA {
     }
 
 #if UNITY_EDITOR
-    [CustomPropertyDrawer(typeof(UCL_ButtonProperty))]
+    [CustomPropertyDrawer(typeof(UCL_ButtonAttribute))]
     public class UCL_ButtonPropertyDrawer : PropertyDrawer {
 
 
 
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label) {
 
-            var pro = attribute as UCL_ButtonProperty;
+            var pro = attribute as UCL_ButtonAttribute;
             EditorGUI.BeginProperty(position, label, property);
 
             var size = new Vector2(0.2f * position.size.x, position.size.y);

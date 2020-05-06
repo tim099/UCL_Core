@@ -5,12 +5,12 @@ using UnityEditor;
 using System;
 
 namespace UCL.Core.PA {
-    public class UCL_StrListProperty : PropertyAttribute {
+    public class UCL_StrListAttribute : PropertyAttribute {
         public string[] m_List;
-        public UCL_StrListProperty(params string[] list) {
+        public UCL_StrListAttribute(params string[] list) {
             m_List = list;
         }
-        public UCL_StrListProperty(Type type, string func_name) {
+        public UCL_StrListAttribute(Type type, string func_name) {
             var method = type.GetMethod(func_name);
             if(method != null) {
                 try {
@@ -26,10 +26,10 @@ namespace UCL.Core.PA {
     }
 
 #if UNITY_EDITOR
-    [CustomPropertyDrawer(typeof(UCL_StrListProperty))]
+    [CustomPropertyDrawer(typeof(UCL_StrListAttribute))]
     public class UCL_StrListPropertyDrawer : PropertyDrawer {
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label) {
-            var list_pro = attribute as UCL_StrListProperty;
+            var list_pro = attribute as UCL_StrListAttribute;
             var list = list_pro.m_List;
             if(list == null) return;
 

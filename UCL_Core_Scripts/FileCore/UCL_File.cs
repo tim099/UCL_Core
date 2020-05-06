@@ -4,9 +4,20 @@ using System.IO;
 using UnityEngine;
 
 namespace UCL.Core.FileLib {
+#if UNITY_EDITOR
+    static public class EditorLib {
+        public static void ExploreFile(string folder) {
+            string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
+
+            if(!string.IsNullOrEmpty(path) && path != folder) {
+                Application.OpenURL(path);
+            }
+        }
+    }
+#endif
     static public class Lib{
         public static string GetFilesPath(bool create_if_not_exist = false) {
-            string path = Application.persistentDataPath + "/files";
+            string path = Path.Combine(Application.persistentDataPath, "files");
             if(create_if_not_exist) CreateDirectory(path);
             return path;
         }

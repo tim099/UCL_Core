@@ -9,11 +9,11 @@ using UnityEditor;
 
 namespace UCL.Core.PA {
     [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
-    public class UCL_EnumMaskProperty : PropertyAttribute {
+    public class UCL_EnumMaskAttribute : PropertyAttribute {
 
     }
 #if UNITY_EDITOR
-    [UnityEditor.CustomPropertyDrawer(typeof(UCL_EnumMaskProperty))]
+    [UnityEditor.CustomPropertyDrawer(typeof(UCL_EnumMaskAttribute))]
     public class UCL_EnumMaskPropertyDrawer : UnityEditor.PropertyDrawer {
         const int m_BaseButtonCount = 2;
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label) {
@@ -31,7 +31,6 @@ namespace UCL.Core.PA {
             var target = fieldInfo.GetValue(property.serializedObject.targetObject);
             var type = target.GetType();
             var underlying_type = Enum.GetUnderlyingType(type);
-
             var val = Convert.ChangeType(target, underlying_type);
 
             EditorGUI.BeginProperty(position, label, property);

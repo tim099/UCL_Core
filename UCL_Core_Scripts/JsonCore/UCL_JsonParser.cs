@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 
 namespace UCL.Core.JsonLib {
-    public class JsonParser : IDisposable {
+    internal class JsonParser : IDisposable {
         enum Token {
             None,
             Brace_L,
@@ -20,16 +20,6 @@ namespace UCL.Core.JsonLib {
             Null
         };
         StringReader m_Reader;
-
-        public static JsonData ToJsonData(string str) {
-            using(var parser = new JsonParser(str)) {
-                var obj = parser.Parse();
-                if(obj == null) return null;
-
-                JsonData json = new JsonData(obj);
-                return json;
-            }
-        }
 
         public JsonParser(string str) {
             m_Reader = new StringReader(str);
@@ -90,7 +80,7 @@ namespace UCL.Core.JsonLib {
             return arr;
         }
 
-        object Parse() {
+        internal object Parse() {
             return ParseByToken(GetNextToken());
         }
 
@@ -102,11 +92,9 @@ namespace UCL.Core.JsonLib {
                 case Token.Bracket_L: return ParseArray();
                 case Token.True: return true;
                 case Token.False: return false;
-                case Token.Null: return null;
-
-                default:
-                    return null;
+                case Token.Null: return null;                    
             }
+            return null;
         }
 
         string ParseString() {
@@ -155,11 +143,9 @@ namespace UCL.Core.JsonLib {
                                 break;
                             case 'u':
                                 var hex = new char[4];
-
                                 for(int i = 0; i < 4; i++) {
                                     hex[i] = Convert.ToChar(m_Reader.Read());
                                 }
-
                                 s.Append((char)Convert.ToInt32(new string(hex), 16));
                                 break;
                         }
@@ -174,7 +160,7 @@ namespace UCL.Core.JsonLib {
         }
 
         object ParseNumber() {
-            string number = NextWord;
+            string number = GetNextWord();
 
             if(number.IndexOf('.') == -1) {
                 int parsedInt32;
@@ -204,18 +190,16 @@ namespace UCL.Core.JsonLib {
             return char.IsWhiteSpace(c) || BreakSet.Contains(c);
         }
 
-        string NextWord {
-            get {
-                int peek_val = m_Reader.Peek();
-                StringBuilder word = new StringBuilder();
-                
-                while(peek_val != -1 && !IsWordBreak(Convert.ToChar(peek_val))) {
-                    word.Append(Convert.ToChar(m_Reader.Read()));
-                    peek_val = m_Reader.Peek();
-                }
+        string GetNextWord() {
+            int peek_val = m_Reader.Peek();
+            StringBuilder word = new StringBuilder();
 
-                return word.ToString();
+            while(peek_val != -1 && !IsWordBreak(Convert.ToChar(peek_val))) {
+                word.Append(Convert.ToChar(m_Reader.Read()));
+                peek_val = m_Reader.Peek();
             }
+
+            return word.ToString();
         }
 
         Token GetNextToken() {
@@ -260,7 +244,7 @@ namespace UCL.Core.JsonLib {
                     return Token.Num;
             }
 
-            switch(NextWord) {
+            switch(GetNextWord()) {
                 case "false":
                     return Token.False;
                 case "true":

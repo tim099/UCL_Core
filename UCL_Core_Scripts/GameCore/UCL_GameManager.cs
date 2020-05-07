@@ -46,7 +46,6 @@ namespace UCL.Core.Game {
             m_GameConfig.Init();
 
             LoadGameConfig();
-            //m_GameConfig.Load();
         }
         /// <summary>
         /// overload this function to customize GameConfig

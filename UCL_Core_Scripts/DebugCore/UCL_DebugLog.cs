@@ -23,13 +23,12 @@ namespace UCL.Core {
                 m_Message = _Message;
                 m_StackTrace = _StackTrace;
                 m_Type = _Type;
+                m_LogTime = DateTime.Now;
                 var lines = m_Message.Split(new[] { "\r\n", "\r", "\n" },StringSplitOptions.None);//Environment.NewLine, 
                 if(lines.Length > 0) {
-                    m_Title = lines[0];
-                    //Debug.LogWarning("lines[0]:" + lines[0]);
+                    m_Title = m_LogTime.ToString("[HH:mm:ss] ")+lines[0];
                 } else {
                     m_Title = m_Message;
-                    //Debug.LogWarning("lines.Length:" + 0);
                 }
                 switch(_Type) {
                     case LogType.Error: {
@@ -58,7 +57,8 @@ namespace UCL.Core {
                         }
                 }
             }
-
+            public string GetTitle() { return m_Title; }
+            public DateTime m_LogTime;
             public string m_Title;
             public string m_Message;
             public string m_StackTrace;

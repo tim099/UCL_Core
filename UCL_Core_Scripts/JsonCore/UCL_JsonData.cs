@@ -146,7 +146,9 @@ namespace UCL.Core.JsonLib {
             }
         }
         #endregion
-
+        public object GetObj() {
+            return ToObject(this);
+        }
         public string GetString(string default_val = null) {
             if(m_Type == JsonType.String) return m_Obj as string;
             return default_val;
@@ -167,8 +169,18 @@ namespace UCL.Core.JsonLib {
             if(m_Type == JsonType.Long) return (long)m_Obj;
             return default_val;
         }
+        public Dictionary<string, object> GetDic() {
+            if(m_Dic == null) {
+                throw new Exception("JsonData LoadToDic Fail!!,m_Dic == null");
+            }
+            var dic = new Dictionary<string, object>();
+            foreach(var obj in m_Dic) {
+                dic.Add(obj.Key, obj.Value.GetObj());
+            }
+            return dic;
+        }
         public JsonData Get(string key) {
-            GetDic();
+            GetIDic();
             if(!m_Dic.ContainsKey(key)) {
                 return this;
             }
@@ -212,7 +224,7 @@ namespace UCL.Core.JsonLib {
         #region Interface
         object IDictionary.this[object key] {
             get {
-                return GetDic()[key];
+                return GetIDic()[key];
             }
             set {
                 string str = key as string;
@@ -333,11 +345,11 @@ namespace UCL.Core.JsonLib {
         #region Public Indexers
         public JsonData this[string prop_name] {
             get {
-                GetDic();
+                GetIDic();
                 return m_Dic[prop_name];
             }
             set {
-                GetDic();
+                GetIDic();
                 KeyValuePair<string, JsonData> entry = new KeyValuePair<string, JsonData>(prop_name, value);
                 if(m_Dic.ContainsKey(prop_name)) {
                     for(int i = 0; i < m_ObjectList.Count; i++) {
@@ -390,11 +402,11 @@ namespace UCL.Core.JsonLib {
         }
 
         public bool Contains(object key) {
-            return GetDic().Contains(key);
+            return GetIDic().Contains(key);
         }
 
         public IDictionaryEnumerator Enumerator() {
-            return GetDic().GetEnumerator();
+            return GetIDic().GetEnumerator();
         }
 
         public bool Equals(JsonData data) {
@@ -447,10 +459,10 @@ namespace UCL.Core.JsonLib {
         private ICollection GetCollection() {
             if(m_Type == JsonType.Array) return (ICollection)m_List;
             if(m_Type == JsonType.Object) return (ICollection)m_Dic;
-            return GetDic();
+            return GetIDic();
         }
 
-        private IDictionary GetDic() {
+        private IDictionary GetIDic() {
             if(m_Type == JsonType.Object) return (IDictionary)m_Dic;
             if(m_Type != JsonType.None) throw new InvalidOperationException("JsonData already has type:" + m_Type.ToString() 
                 + ",Cant convert to dictionary!!");
@@ -487,11 +499,11 @@ namespace UCL.Core.JsonLib {
         #endregion
 
         #region IDictionary Properties & Methods
-        bool IDictionary.IsFixedSize { get { return GetDic().IsFixedSize; } }
-        bool IDictionary.IsReadOnly { get { return GetDic().IsReadOnly; } }
+        bool IDictionary.IsFixedSize { get { return GetIDic().IsFixedSize; } }
+        bool IDictionary.IsReadOnly { get { return GetIDic().IsReadOnly; } }
         ICollection IDictionary.Keys {
             get {
-                GetDic();
+                GetIDic();
                 IList<string> keys = new List<string>();
                 foreach(KeyValuePair<string, JsonData> entry in m_ObjectList) {
                     keys.Add(entry.Key);
@@ -501,7 +513,7 @@ namespace UCL.Core.JsonLib {
         }
         ICollection IDictionary.Values {
             get {
-                GetDic();
+                GetIDic();
                 IList<JsonData> values = new List<JsonData>();
                 foreach(KeyValuePair<string, JsonData> entry in m_ObjectList) {
                     values.Add(entry.Value);
@@ -511,22 +523,22 @@ namespace UCL.Core.JsonLib {
         }
         void IDictionary.Add(object key, object value) {
             JsonData data = ToJsonData(value);
-            GetDic().Add(key, data);
+            GetIDic().Add(key, data);
             m_ObjectList.Add(new KeyValuePair<string, JsonData>((string)key, data));   
         }
         void IDictionary.Clear() {
-            GetDic().Clear();
+            GetIDic().Clear();
             m_ObjectList.Clear();
         }
         bool IDictionary.Contains(object key) {
-            return GetDic().Contains(key);
+            return GetIDic().Contains(key);
         }
         IDictionaryEnumerator IDictionary.GetEnumerator() {
-            GetDic();
+            GetIDic();
             return new JsonDataEnumerator(m_ObjectList.GetEnumerator());
         }
         void IDictionary.Remove(object key) {
-            GetDic().Remove(key);
+            GetIDic().Remove(key);
             for(int i = 0; i < m_ObjectList.Count; i++) {
                 if(m_ObjectList[i].Key == (string)key) {
                     m_ObjectList.RemoveAt(i);

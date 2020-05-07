@@ -69,7 +69,9 @@ namespace UCL.Core {
             _instance = value;
             //Debug.LogWarning("_instance.name:" + _instance.name);
             _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
-            DontDestroyOnLoad(_instance.gameObject);
+
+            if(_instance.transform.parent == null) DontDestroyOnLoad(_instance.gameObject);
+            
             return true;
         }
         /// <summary>
@@ -85,7 +87,7 @@ namespace UCL.Core {
 
             _instance = value;
             _instance.name += "(UCL_Singleton)"; //typeof(T).Name + "(UCL_Singleton)";
-            DontDestroyOnLoad(_instance.gameObject);
+            if(_instance.transform.parent == null) DontDestroyOnLoad(_instance.gameObject);
         }
 
 

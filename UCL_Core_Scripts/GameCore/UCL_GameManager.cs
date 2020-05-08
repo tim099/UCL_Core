@@ -28,7 +28,8 @@ namespace UCL.Core.Game {
 
         public string m_GameName = "UCL";
         public UCL_GameConfig m_GameConfig { get; protected set; }
-
+        [SerializeField] protected List<UCL_GameService> m_GameServices;
+        //protected List<UCL_IConfig> m_Configs = new List<UCL_IConfig>();
         protected bool f_Inited = false;
 
         [RuntimeInitializeOnLoadMethod]
@@ -42,10 +43,16 @@ namespace UCL.Core.Game {
             if(!SetInstance(this)) return;
             
             FileLib.Lib.CreateDirectory(GetGameFolderPath());
+
+
+            foreach(var service in m_GameServices) {
+                service.Init();
+            }
+
             CreateGameConfig();
             m_GameConfig.Init();
 
-            LoadGameConfig();
+            LoadAllSetting();
         }
         /// <summary>
         /// overload this function to customize GameConfig
@@ -53,6 +60,28 @@ namespace UCL.Core.Game {
         virtual protected void CreateGameConfig() {
             m_GameConfig = new UCL_GameConfig();
         }
+        #region Save & Load
+        virtual public void SaveAllSetting() {
+            SaveGameConfig();
+
+            var gameservice_path = GetGameServicePath();
+            FileLib.Lib.CreateDirectory(gameservice_path);
+
+            foreach(var service in m_GameServices) {
+                service.Save(gameservice_path);
+            }
+        }
+        virtual public void LoadAllSetting() {
+            LoadGameConfig();
+
+            var gameservice_path = GetGameServicePath();
+            FileLib.Lib.CreateDirectory(gameservice_path);
+
+            foreach(var service in m_GameServices) {
+                service.Load(gameservice_path);
+            }
+        }
+
         virtual public void SaveGameConfig() {
             if(m_GameConfig == null) {
                 Debug.LogError("SaveGameConfig() m_GameConfig == null");
@@ -67,6 +96,7 @@ namespace UCL.Core.Game {
                 m_GameConfig.Load(File.ReadAllText(config_path));
             }
         }
+        #endregion
 
         #region FolderPath
         virtual public string GetGameFolderPath() {
@@ -75,12 +105,15 @@ namespace UCL.Core.Game {
         virtual public string GetGameConfigPath() {
             return Path.Combine(GetGameFolderPath(), "GameConfig.txt");
         }
+        virtual public string GetGameServicePath() {
+            return Path.Combine(GetGameFolderPath(), "GameService");
+        }
         #endregion
         /// <summary>
         /// Called when OnDestroy
         /// </summary>
         virtual protected void GameExit() {
-            SaveGameConfig();
+            SaveAllSetting();
         }
         private void Awake() {
             Init();

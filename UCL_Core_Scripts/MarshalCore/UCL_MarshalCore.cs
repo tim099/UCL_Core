@@ -16,7 +16,6 @@ namespace UCL.Core.MarshalLib {
                 handle.Free();
             }
         }
-
         public static T ToStructure<T>(byte[] buffer) {
             int size = Marshal.SizeOf(typeof(T));
             IntPtr ptr = Marshal.AllocHGlobal(size);

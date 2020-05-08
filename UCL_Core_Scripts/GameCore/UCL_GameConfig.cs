@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.Game {
-    public class UCL_GameConfig {
+    public class UCL_GameConfig : UCL_IConfig {
         protected Dictionary<string, object> m_ConfigData;
         virtual public void Init() {
             m_ConfigData = new Dictionary<string, object>();

@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.Serialization.Formatters.Binary;
 using UnityEngine;
 
 namespace UCL.Core.FileLib {
@@ -13,9 +14,59 @@ namespace UCL.Core.FileLib {
                 Application.OpenURL(path);
             }
         }
+        /// <summary>
+        /// this funtion is for memo(not useful)
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        public static Object LoadAssets(string path) {
+           return  UnityEditor.AssetDatabase.LoadMainAssetAtPath(Path.Combine("Assets", path));
+        }
     }
 #endif
     static public class Lib{
+
+        public static void WriteBinaryToFile<T>(string path, T target, FileMode fileMode = FileMode.Create) {
+            using(Stream stream = File.Open(path, fileMode)) {
+                var formatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
+                formatter.Serialize(stream, target);
+            }
+        }
+        public static T ReadBinaryFromFile<T>(string path) {
+            if(!File.Exists(path)) return default;
+
+            using(Stream stream = File.Open(path, FileMode.Open)) {
+                var formatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
+                return (T)formatter.Deserialize(stream);
+            }
+        }
+        public static void SerializeToFile<T>(string path, T obj) {
+            var data = SerializeObject(obj);//MarshalLib.Lib.ToByteArray(obj);//SerializeObject(obj);
+            File.WriteAllBytes(path, data);
+        }
+        public static T ReadSerializeFromFile<T>(string path) {
+            if(!File.Exists(path)) return default;
+            var data = File.ReadAllBytes(path);
+            return (T)DeSerializeObject(data);//MarshalLib.Lib.ToStructure<T>(data); //DeSerializeObject(data);
+        }
+
+        public static object DeSerializeObject(byte[] data) {
+            using(MemoryStream ms = new MemoryStream()) {
+                BinaryFormatter binForm = new BinaryFormatter();
+                ms.Write(data, 0, data.Length);
+                ms.Seek(0, SeekOrigin.Begin);
+
+                return binForm.Deserialize(ms);
+            }
+
+        }
+        public static byte[] SerializeObject(object obj) {
+            using(MemoryStream ms = new MemoryStream()) {
+                BinaryFormatter bf = new BinaryFormatter();
+                bf.Serialize(ms, obj);
+                return ms.ToArray();
+            }
+        }
         public static string GetFilesPath(bool create_if_not_exist = false) {
             string path = Path.Combine(Application.persistentDataPath, "files");
             if(create_if_not_exist) CreateDirectory(path);

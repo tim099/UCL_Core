@@ -14,6 +14,13 @@ namespace UCL.Core.FileLib {
                 Application.OpenURL(path);
             }
         }
+        public static void ExploreFolder(string folder) {
+            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, "");
+
+            if(!string.IsNullOrEmpty(path) && path != folder) {
+                Application.OpenURL(path);
+            }
+        }
         /// <summary>
         /// this funtion is for memo(not useful)
         /// </summary>
@@ -41,13 +48,13 @@ namespace UCL.Core.FileLib {
             }
         }
         public static void SerializeToFile<T>(string path, T obj) {
-            var data = SerializeObject(obj);//MarshalLib.Lib.ToByteArray(obj);//SerializeObject(obj);
+            var data = MarshalLib.Lib.ToByteArray(obj);//SerializeObject(obj);
             File.WriteAllBytes(path, data);
         }
-        public static T ReadSerializeFromFile<T>(string path) {
+        public static T DeserializeFromFile<T>(string path) {
             if(!File.Exists(path)) return default;
             var data = File.ReadAllBytes(path);
-            return (T)DeSerializeObject(data);//MarshalLib.Lib.ToStructure<T>(data); //DeSerializeObject(data);
+            return MarshalLib.Lib.ToStructure<T>(data); //DeSerializeObject(data);
         }
 
         public static object DeSerializeObject(byte[] data) {
@@ -58,7 +65,6 @@ namespace UCL.Core.FileLib {
 
                 return binForm.Deserialize(ms);
             }
-
         }
         public static byte[] SerializeObject(object obj) {
             using(MemoryStream ms = new MemoryStream()) {

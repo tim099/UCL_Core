@@ -15,7 +15,7 @@ namespace UCL.Core.Game {
             string folder = GetGameFolderPath();
             FileLib.Lib.CreateDirectory(folder);//FileLib.Lib.GetFilesPath(true);
 
-            FileLib.EditorLib.ExploreFile(folder);
+            FileLib.EditorLib.ExploreFolder(folder);
         }
 #endif
 

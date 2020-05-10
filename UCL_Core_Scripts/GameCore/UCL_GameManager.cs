@@ -39,8 +39,9 @@ namespace UCL.Core.Game {
 
         virtual protected void Init() {
             if(f_Inited) return;
-            f_Inited = true;
             if(!SetInstance(this)) return;
+
+            f_Inited = true;
             
             FileLib.Lib.CreateDirectory(GetGameFolderPath());
 
@@ -113,6 +114,7 @@ namespace UCL.Core.Game {
         /// Called when OnDestroy
         /// </summary>
         virtual protected void GameExit() {
+            if(!f_Inited) return;
             SaveAllSetting();
         }
         private void Awake() {

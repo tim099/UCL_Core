@@ -25,7 +25,6 @@ namespace UCL.Core.Game {
                 Debug.LogWarning("Dic key:" + v.Key + ",v:" + v.Value);
             }
             Debug.LogWarning("cc:" + data["config"]);
-            //m_ConfigData["Test3"] = System.DateTime.Now.ToString();
         }
         #endregion
         #region Set & Get Value

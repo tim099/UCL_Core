@@ -42,14 +42,19 @@ namespace UCL.Core.Game {
             if(!File.Exists(path)) {
                 return;
             }
+            /*
             Debug.LogWarning("m_VolumeSetting.m_SE:" + m_VolumeSetting.m_SE);
             Debug.LogWarning("m_VolumeSetting.m_Volume:" + m_VolumeSetting.m_Volume);
             Debug.LogWarning("m_VolumeSetting.m_DD:" + m_VolumeSetting.m_DD);
+            */
             m_VolumeSetting = Core.FileLib.Lib.DeserializeFromFile<VolumeSetting>(path);
             //Core.FileLib.Lib.ReadBinaryFromFile<VolumeSetting>(path);
+
+            /*
             Debug.LogWarning("Prev m_VolumeSetting.m_SE:" + m_VolumeSetting.m_SE);
             Debug.LogWarning("Prev m_VolumeSetting.m_Volume:" + m_VolumeSetting.m_Volume);
             Debug.LogWarning("Prev m_VolumeSetting.m_DD:" + m_VolumeSetting.m_DD);
+            */
         }
     }
 }

@@ -11,6 +11,10 @@ namespace UCL.Core.EditorLib {
         //static public void Init() {}
         static System.Action m_EditorUpdateAction;
         static Dictionary<string, System.Action> m_EditorUpdateActionDic;
+
+
+        static Queue<System.Tuple<int,System.Action> > m_DelayActQue;
+        static Queue<System.Tuple<int, System.Action>> m_DelayActQueBuffer;
         /// <summary>
         /// Only trigger Once!!
         /// </summary>
@@ -21,6 +25,8 @@ namespace UCL.Core.EditorLib {
             m_EditorUpdateAction = null;
             m_EditorUpdateActionDic = new Dictionary<string, System.Action>();
             m_ActQue = new Queue<Action>();
+            m_DelayActQue = new Queue<Tuple<int, Action>>();
+            m_DelayActQueBuffer = new Queue<Tuple<int, Action>>();
         }
         static void EditorUpdate() {
             try {
@@ -45,11 +51,24 @@ namespace UCL.Core.EditorLib {
                     }
                 }
             }
-
+            if(m_DelayActQue != null) {
+                foreach(var act in m_DelayActQue) {
+                    if(act.Item1 > 0) {
+                        m_DelayActQueBuffer.Enqueue(new Tuple<int, Action>(act.Item1 - 1, act.Item2));
+                    } else {
+                        AddAction(act.Item2);
+                    }
+                }
+                m_DelayActQue.Clear();
+                Core.UCL_GameObjectLib.swap(ref m_DelayActQue, ref m_DelayActQueBuffer);
+            }
             //Debug.Log("EditorUpdate()!!");
         }
         static public void AddAction(System.Action act) {
             m_ActQue?.Enqueue(act);
+        }
+        static public void AddDelayAction(System.Action act,int delay_frame) {
+            m_DelayActQue?.Enqueue(new Tuple<int, Action>(delay_frame, act));
         }
         static public void AddEditorUpdateAct(System.Action act) {
             m_EditorUpdateAction += act;

@@ -21,6 +21,14 @@ namespace UCL.Core.FileLib {
                 Application.OpenURL(path);
             }
         }
+        public static string OpenAssetsFolderPanel(string folder) {
+            string asset_root = Application.dataPath.Replace("Assets", "");
+            string assets_path = asset_root + folder;
+            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", assets_path, "");
+            if(string.IsNullOrEmpty(path)) return folder;
+
+            return path.Replace(asset_root, "");
+        }
         /// <summary>
         /// this funtion is for memo(not useful)
         /// </summary>
@@ -32,7 +40,21 @@ namespace UCL.Core.FileLib {
     }
 #endif
     static public class Lib{
-
+        /// <summary>
+        /// Remove file name from path and return folder path
+        /// </summary>
+        /// <param name="file_path"></param>
+        /// <returns></returns>
+        public static string GetFolderPath(string file_path) {
+            for(int i = file_path.Length - 1; i >= 0; i--) {
+                var c = file_path[i];
+                if(c == '/' || c == '\\') {
+                    file_path = file_path.Substring(0, i);
+                    break;
+                }
+            }
+            return file_path;
+        }
         public static void WriteBinaryToFile<T>(string path, T target, FileMode fileMode = FileMode.Create) {
             using(Stream stream = File.Open(path, fileMode)) {
                 var formatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();

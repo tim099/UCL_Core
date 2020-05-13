@@ -18,13 +18,15 @@ namespace UCL.Core.Game {
             return data.ToJson();
         }
         virtual public void Load(string config) {
-            Debug.LogWarning("Config:" + config);
+            //Debug.LogWarning("Config:" + config);
             var data = JsonLib.JsonData.ParseJson(config);
             m_ConfigData = data.Get("m_ConfigData").GetDic();
+            /*
             foreach(var v in m_ConfigData) {
                 Debug.LogWarning("Dic key:" + v.Key + ",v:" + v.Value);
             }
             Debug.LogWarning("cc:" + data["config"]);
+            */
         }
         #endregion
         #region Set & Get Value

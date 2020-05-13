@@ -49,9 +49,6 @@ namespace UCL.Core.TextureLib {
             
             //UnityEditor.Selection.activeObject = gameObject;
         }
-        protected string GetOutputPath() {
-            return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
-        }
         [ATTR.UCL_FunctionButton]
         public void OpenOutputFolder() {
             m_OutputFolder = Core.FileLib.EditorLib.OpenAssetsFolderPanel(m_OutputFolder);
@@ -62,6 +59,9 @@ namespace UCL.Core.TextureLib {
             Debug.LogWarning("m_OutputFolder:" + m_OutputFolder);
         }
 #endif
+        protected string GetOutputPath() {
+            return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
+        }
         public void SavePNG() {
             TextureLib.Lib.SavePNG(GetOutputPath(), m_Texture);
         }

@@ -57,14 +57,6 @@ namespace UCL.Core.TextureLib {
             TextureLib.EditorLib.SaveTextureAsset(path, m_Texture);
             //UnityEditor.Selection.activeObject = gameObject;
         }
-        protected string GetOutputPath() {
-#if UNITY_EDITOR
-            if(string.IsNullOrEmpty(m_OutputFolder)) {
-                m_OutputFolder = Core.FileLib.Lib.GetFolderPath(UnityEditor.AssetDatabase.GetAssetPath(this));
-            }
-#endif
-            return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
-        }
         [ATTR.UCL_FunctionButton]
         public void OpenOutputFolder() {
             m_OutputFolder = Core.FileLib.EditorLib.OpenAssetsFolderPanel(m_OutputFolder);
@@ -75,6 +67,14 @@ namespace UCL.Core.TextureLib {
             Debug.LogWarning("m_OutputFolder:" + m_OutputFolder);
         }
 #endif
+        protected string GetOutputPath() {
+#if UNITY_EDITOR
+            if(string.IsNullOrEmpty(m_OutputFolder)) {
+                m_OutputFolder = Core.FileLib.Lib.GetFolderPath(UnityEditor.AssetDatabase.GetAssetPath(this));
+            }
+#endif
+            return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
+        }
         public void SavePNG() {
             string output_path = GetOutputPath();
             TextureLib.Lib.SavePNG(output_path, m_Texture);
@@ -82,16 +82,22 @@ namespace UCL.Core.TextureLib {
             m_Texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(output_path+ ".png");
 #endif
         }
+        //[UCL.Core.PA.UCL_ReadOnly]
+        //[SerializeField]
+        //protected List<Vector2Int> m_ConverPosVec = new List<Vector2Int>();
         public Vector2Int ConverPos(int at) {
-            if(m_Seg <= 0 || at < 0) return new Vector2Int(0, 0);
+            if(m_Seg <= 0 || at < 0) return Vector2Int.zero;//|| at>= m_ConverPosVec.Count
             int x = at % m_Seg;
             return new Vector2Int(x, (at - x) / m_Seg);
         }
         virtual public List<Texture2D> GetTextureList() {
             return m_Texture2Ds;
         }
+
         public Texture2D Create() {
-            var TextList = GetTextureList();
+            return Create(GetTextureList());
+        }
+        public Texture2D Create(List<Texture2D> TextList) {
             int tex_count = TextList.Count;
             Debug.Log("Create()Texture!!");
             if(tex_count == 0) {
@@ -102,6 +108,13 @@ namespace UCL.Core.TextureLib {
             m_Seg = Core.MathLib.Lib.SqrtInt(tex_count);
             m_AtlasSize = m_Seg * m_Size;
             var texture = new Texture2D(m_AtlasSize, m_AtlasSize, m_TextureFormat, false);
+            /*
+            m_ConverPosVec.Clear();
+            for(int i = 0; i < tex_count; i++) {
+                int x = i % m_Seg;
+                m_ConverPosVec.Add(new Vector2Int(x, (i - x) / m_Seg));
+            }
+            */
 
             for(int i = 0; i < tex_count; i++) {
                 var tex = TextList[i];
@@ -120,5 +133,6 @@ namespace UCL.Core.TextureLib {
 
             return texture;
         }
+
     }
 }

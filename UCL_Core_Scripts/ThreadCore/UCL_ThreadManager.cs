@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System;
 
-namespace UCL.Core.Thread {
+namespace UCL.Core.ThreadLib {
     public class ThreadCmd {
         public ThreadCmd() {
             End = false;

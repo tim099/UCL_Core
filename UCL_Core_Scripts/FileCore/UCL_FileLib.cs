@@ -40,6 +40,11 @@ namespace UCL.Core.FileLib {
     }
 #endif
     static public class Lib{
+
+        public static string GetProjectPath() {
+            return Application.dataPath.Replace("Assets", "");
+        }
+
         /// <summary>
         /// Remove file name from path and return folder path
         /// </summary>

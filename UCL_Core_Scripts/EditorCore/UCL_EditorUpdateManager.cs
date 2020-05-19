@@ -60,7 +60,7 @@ namespace UCL.Core.EditorLib {
                     }
                 }
                 m_DelayActQue.Clear();
-                Core.UCL_GameObjectLib.swap(ref m_DelayActQue, ref m_DelayActQueBuffer);
+                Core.GameObjectLib.swap(ref m_DelayActQue, ref m_DelayActQueBuffer);
             }
             //Debug.Log("EditorUpdate()!!");
         }

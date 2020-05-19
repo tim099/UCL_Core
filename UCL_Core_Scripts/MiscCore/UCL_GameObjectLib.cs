@@ -5,7 +5,7 @@ using UnityEngine;
 
 
 namespace UCL.Core {
-    public static class UCL_GameObjectLib {
+    public static class GameObjectLib {
         public static T CloneObject<T>(this T sourceObject) {
             System.Type t = sourceObject.GetType();
             PropertyInfo[] properties = t.GetProperties();

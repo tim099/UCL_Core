@@ -22,7 +22,7 @@ namespace UCL.Core.UI {
             m_Canvas.sortingOrder = short.MaxValue;
             gameObject.AddComponent<GraphicRaycaster>();
             #region CreateBlockImage
-            var img = Core.UCL_GameObjectLib.CreateGameObject("BlockImg", transform);
+            var img = Core.GameObjectLib.CreateGameObject("BlockImg", transform);
             m_BlockImage = img.AddComponent<Image>();
             m_BlockImage.color = Color.clear;
             RectTransform rect = img.GetComponent<RectTransform>();

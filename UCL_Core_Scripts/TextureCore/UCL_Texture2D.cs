@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.TextureLib {
-    public class UCL_Texture2D {
+    public class UCL_Texture2D : UCLI_Texture2D {
         public Vector2Int size { get { return m_Size; } }
         public int width { get { return m_Size.x; } }
         public int height { get { return m_Size.y; } }
@@ -36,7 +36,7 @@ namespace UCL.Core.TextureLib {
         virtual public Texture2D GetTexture() {
             if(m_Texture == null) {
                 m_Texture = Object.Instantiate(new Texture2D(width, height, m_TextureFormat, false));
-                Debug.LogWarning("Create Texture:" + width + "," + height);
+                //Debug.LogWarning("Create Texture:" + width + "," + height);
             }
             if(m_TextureUpdated) {
                 m_Texture.SetPixels(m_Col);

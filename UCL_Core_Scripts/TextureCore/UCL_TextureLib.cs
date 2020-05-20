@@ -2,6 +2,17 @@
 using System.Collections.Generic;
 using UnityEngine;
 namespace UCL.Core.TextureLib {
+
+    #region Interface
+    public interface UCLI_Texture {
+        Texture GetTexture();
+    }
+    public interface UCLI_Texture2D {
+        Texture2D GetTexture();
+    }
+    #endregion
+
+
 #if UNITY_EDITOR
     static public class EditorLib {
         public static void SaveTextureAsset(string _path, Texture Texture) {

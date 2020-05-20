@@ -1,32 +1,43 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace UCL.Core.TextureLib {
     public class UCL_AudioTexture2D : UCL_Texture2D {
+        public Color m_WaveCol = Color.yellow;
+
         public UCL_AudioTexture2D(Vector2Int _size, TextureFormat _TextureFormat = TextureFormat.ARGB32) 
             : base(_size, _TextureFormat) {
             Init();
         }
-        virtual public void SetData(float[] data) {
-            int m_DataLen = data.Length;
-            int seg = data.Length / width;
+        virtual public void SetAudioData(float[] data) {
+            int data_len = data.Length;
+            int seg = data_len / width;
+            int mid = height / 2;
             for(int i = 0; i < width; i++) {
                 float val = 0;
-                int end = i * (seg + 1);
-                if(end > m_DataLen) end = m_DataLen;
+                float m_val = 0;
+                int end = (i + 1) * seg;
+                if(end > data_len) end = data_len;
                 for(int j = i * seg; j < end; j++) {
-                    val += Mathf.Abs(data[j]);
+                    if(data[j] > 0) {
+                        val += data[j];
+                    } else {
+                        m_val += data[j];
+                    }
+
                 }
-                int h = Mathf.RoundToInt((val * height) / seg);
-            }
-            /*
-            for(int j = 0; j < m_PlayTexture.width; j++) {
-                for(int i = 0; i < m_PlayTexture.height; i++) {
-                    m_PlayTexture.SetPixel(j, i, m_DrawData[j] < i ? Color.black : Color.yellow);
+                int avg = Mathf.RoundToInt((val * height) / seg);
+                int m_avg = Mathf.RoundToInt((m_val * height) / seg);
+                int s = mid + m_avg;
+                int h = mid + avg;
+                for(int j = 0; j < height; j++) {
+                    if(j >= s && j <= h) {
+                        SetPixel(i, j, m_WaveCol);
+                    } else {
+                        SetPixel(i, j, Color.black);
+                    }
+                    //m_PlayTexture.SetPixel(i, j, avg < j ? Color.black : Color.yellow);
                 }
             }
-            */
         }
     }
 }

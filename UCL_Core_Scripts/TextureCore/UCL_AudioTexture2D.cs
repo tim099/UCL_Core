@@ -15,9 +15,10 @@ namespace UCL.Core.TextureLib {
             for(int i = 0; i < width; i++) {
                 float val = 0;
                 float m_val = 0;
-                int end = (i + 1) * seg;
+                int start = Mathf.RoundToInt(i * data.Length / (float)width);
+                int end = start + seg;
                 if(end > data_len) end = data_len;
-                for(int j = i * seg; j < end; j++) {
+                for(int j = start; j < end; j++) {
                     if(data[j] > 0) {
                         val += data[j];
                     } else {

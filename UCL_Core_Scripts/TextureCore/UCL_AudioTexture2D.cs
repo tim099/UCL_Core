@@ -15,7 +15,7 @@ namespace UCL.Core.TextureLib {
             for(int i = 0; i < width; i++) {
                 float val = 0;
                 float m_val = 0;
-                int start = Mathf.RoundToInt(i * data.Length / (float)width);
+                int start = Mathf.RoundToInt((i * data.Length) / (float)width);
                 int end = start + seg;
                 if(end > data_len) end = data_len;
                 for(int j = start; j < end; j++) {

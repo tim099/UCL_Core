@@ -22,12 +22,15 @@ namespace UCL.Core.EditorLib {
                     var method = methods[i];
                     var attr = method.GetCustomAttributes(typeof(ATTR.UCL_FunctionButtonAttribute), false);
                     if(attr.Length > 0) {
-                        var ba = (ATTR.UCL_FunctionButtonAttribute)attr[0];
-                        string but_name = ba.m_ButtonName;
-                        if(string.IsNullOrEmpty(but_name)) but_name = method.Name;
-                        if(GUILayout.Button(but_name)) {
-                            method.Invoke(target, null);
+                        for(int j = 0; j < attr.Length; j++) {
+                            var ba = (ATTR.UCL_FunctionButtonAttribute)attr[j];
+                            string but_name = ba.m_ButtonName;
+                            if(string.IsNullOrEmpty(but_name)) but_name = method.Name;
+                            if(GUILayout.Button(but_name)) {
+                                method.Invoke(target, ba.m_Params);
+                            }
                         }
+
                     }
                 }
                 GUILayout.EndVertical();

@@ -120,6 +120,22 @@ namespace UCL.Core.FileLib {
                 writer.Close();
             }
         }
+        public static void CopyDirectory(string source, string target) {
+            if(source == target) {
+                return;
+            }
+            if(!Directory.Exists(target)) {
+                Directory.CreateDirectory(target);
+            }
+            DirectoryInfo source_info = new DirectoryInfo(source), target_info = new DirectoryInfo(target);
+            foreach(FileInfo file_info in source_info.GetFiles()) {
+                file_info.CopyTo(Path.Combine(target.ToString(), file_info.Name), true);
+            }
+            foreach(DirectoryInfo diSourceSubDir in source_info.GetDirectories()) {
+                DirectoryInfo nextTargetSubDir = target_info.CreateSubdirectory(diSourceSubDir.Name);
+                CopyDirectory(diSourceSubDir.FullName, nextTargetSubDir.FullName);
+            }
+        }
         public static StreamWriter OpenWriteStream(string path) {
             string[] strs = path.Split('/');
             string tmp_path = "";

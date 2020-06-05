@@ -23,7 +23,17 @@ namespace UCL.Core.TextureLib {
         protected Vector2Int m_Size;
         protected bool m_TextureUpdated = false;
         protected bool m_SpriteUpdated = false;
+
+        /// <summary>
+        /// Constructor without Init
+        /// </summary>
+        public UCL_Texture2D() {
+
+        }
         public UCL_Texture2D(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
+            Init(size, _TextureFormat);
+        }
+        virtual public void Init(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
             m_Size = size;
             m_TextureFormat = _TextureFormat;
             Init();

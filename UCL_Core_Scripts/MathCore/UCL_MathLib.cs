@@ -5,10 +5,14 @@ using UnityEngine;
 
 namespace UCL.Core.MathLib {
     public class RangeChecker<T> where T: IComparable {
+        public void Init(T min,T max) {
+            Min = min;
+            Max = max;
+            Inited = true;
+        }
         public void AddValue(T val) {
-            if(first) {
-                first = false;
-                Min = Max = val;
+            if(!Inited) {
+                Init(val,val);
                 return;
             }
             if(val.CompareTo(Max) > 0) {
@@ -17,7 +21,7 @@ namespace UCL.Core.MathLib {
                 Min = val;
             }
         }
-        bool first = false;
+        bool Inited = false;
         public T Min;
         public T Max;
     }

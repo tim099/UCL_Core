@@ -43,6 +43,46 @@ namespace UCL.Core.TextureLib {
             m_TextureUpdated = true;
             m_SpriteUpdated = true;
         }
+        virtual public void SetColor(Color color) {
+            for(int i = 0,len = m_Col.Length; i < len ; i++) {
+                m_Col[i] = color;
+            }
+        }
+        /// <summary>
+        /// line_func take x as parameter and should return the value of y
+        /// </summary>
+        /// <param name="line_func"></param>
+        /// <param name="line_col"></param>
+        virtual public void DrawLine(System.Func<float,float> line_func,Color line_col) {
+            if(line_func == null) return;
+
+            int prev = 0;
+            for(int i = 0; i < m_Size.x; i++) {
+                float at = (i / (float)(m_Size.x - 1));
+                float val = line_func(at);
+
+                int cur = Mathf.RoundToInt(val * m_Size.y);
+                if(i == 0) prev = cur;
+                int min = Mathf.Min(prev, cur);
+                int max = Mathf.Max(prev, cur);
+
+                for(int j = 0; j < m_Size.y; j++) {
+                    if(j >= min && j <= max) {
+                        SetPixel(i, j, line_col);
+                    } else {
+                        //SetPixel(i, j, background_col);
+                        /*
+                        if(j == m_ZeroPos) {
+                            SetPixel(i, j, Color.white);
+                        } else {
+                            SetPixel(i, j, background_col);
+                        }
+                        */
+                    }
+                }
+                prev = cur;
+            }
+        }
         virtual public Texture2D GetTexture() {
             if(m_Texture == null) {
                 m_Texture = Object.Instantiate(new Texture2D(width, height, m_TextureFormat, false));

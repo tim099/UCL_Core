@@ -7,6 +7,9 @@ using UnityEngine;
 namespace UCL.Core.FileLib {
 #if UNITY_EDITOR
     static public class EditorLib {
+        public static string GetCoreFolderPath() {
+            return UCL_CoreSetting.GetFolderPath();
+        }
         public static void ExploreFile(string folder) {
             string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
 
@@ -28,6 +31,26 @@ namespace UCL.Core.FileLib {
             if(string.IsNullOrEmpty(path)) return folder;
 
             return path.Replace(asset_root, "");
+        }
+        public static string SelectScript(MonoBehaviour be) {
+            var path = GetScriptPath(be);
+            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path);
+            return path;
+        }
+        public static string SelectScript(ScriptableObject so) {
+            var path = GetScriptPath(so);
+            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path);
+            return path;
+        }
+        public static string GetScriptPath(MonoBehaviour be) {
+            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromMonoBehaviour(be);
+            //Debug.LogWarning("path:" + UnityEditor.AssetDatabase.GetAssetPath(monoScript));
+            return UnityEditor.AssetDatabase.GetAssetPath(monoScript);
+        }
+        public static string GetScriptPath(ScriptableObject so) {
+            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromScriptableObject(so);
+            //Debug.LogWarning("path:" + UnityEditor.AssetDatabase.GetAssetPath(monoScript));
+            return UnityEditor.AssetDatabase.GetAssetPath(monoScript);
         }
         /// <summary>
         /// this funtion is for memo(not useful)
@@ -60,11 +83,42 @@ namespace UCL.Core.FileLib {
             }
             return file_path;
         }
+        /// <summary>
+        /// Remove folder and file from path
+        /// Example path is "root/folder/c.txt" and remove_count is 2, then return "root" 
+        /// </summary>
+        /// <param name="path"></param>
+        /// <param name="remove_count"></param>
+        /// <returns></returns>
+        public static string RemoveFolderPath(string path,int remove_count = 1) {
+            if(remove_count <= 0) return path;
+
+            int i = path.Length - 1;
+            for(; i >= 0; i--) {
+                var c = path[i];
+                if(c == '/' || c == '\\') {
+
+                    //path = path.Substring(0, i);
+                    if(--remove_count <= 0) break;
+                }
+            }
+            if(i <= 0) return "";
+            return path.Substring(0, i);
+        }
         public static void WriteBinaryToFile<T>(string path, T target, FileMode fileMode = FileMode.Create) {
             using(Stream stream = File.Open(path, fileMode)) {
                 var formatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
                 formatter.Serialize(stream, target);
             }
+        }
+        public static string RemoveFileExtension(string path,char separator = '.') {
+            if(path.Length <= 1) return path;//No FileExtension
+            int i = path.Length - 1;
+            for(; i >= 0; i--) {
+                if(path[i] == separator) break;
+            }
+            if(i == 0) return path;//No FileExtension
+            return path.Substring(0, i);
         }
         public static T ReadBinaryFromFile<T>(string path) {
             if(!File.Exists(path)) return default;

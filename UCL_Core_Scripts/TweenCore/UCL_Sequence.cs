@@ -7,7 +7,7 @@ namespace UCL.Core.Tween {
     public class UCL_Sequence : UCL_Tween {
         static public UCL_Sequence Create() {
             var seq = new UCL_Sequence();
-            UCL_SequenceManager.Instance.Add(seq);
+            UCL_TweenManager.Instance.Add(seq);
             return seq;
         }
         UCL_Sequence() {

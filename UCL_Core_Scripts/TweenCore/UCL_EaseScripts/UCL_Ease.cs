@@ -25,7 +25,12 @@ namespace UCL.Core.Tween {
         Elastic,
         Sin,
         Quad,
-        Cubic
+        Cubic,
+        Quart,
+        Quint,
+        Expo,
+        Circ,
+        Back
     }
 
     public enum EaseType {
@@ -52,25 +57,25 @@ namespace UCL.Core.Tween {
         OutCubic = EaseClass.Cubic << Const.DirCount | EaseDir.Out,
         InOutCubic = EaseClass.Cubic << Const.DirCount | EaseDir.InOut,
 
-        InQuart,
-        OutQuart,
-        InOutQuart,
+        InQuart = EaseClass.Quart << Const.DirCount | EaseDir.In,
+        OutQuart = EaseClass.Quart << Const.DirCount | EaseDir.Out,
+        InOutQuart = EaseClass.Quart << Const.DirCount | EaseDir.InOut,
 
-        InQuint,
-        OutQuint,
-        InOutQuint,
+        InQuint = EaseClass.Quint << Const.DirCount | EaseDir.In,
+        OutQuint = EaseClass.Quint << Const.DirCount | EaseDir.Out,
+        InOutQuint = EaseClass.Quint << Const.DirCount | EaseDir.InOut,
 
-        InExpo,
-        OutExpo,
-        InOutExpo,
+        InExpo = EaseClass.Expo << Const.DirCount | EaseDir.In,
+        OutExpo = EaseClass.Expo << Const.DirCount | EaseDir.Out,
+        InOutExpo = EaseClass.Expo << Const.DirCount | EaseDir.InOut,
 
-        InCirc,
-        OutCirc,
-        InOutCirc,
+        InCirc = EaseClass.Circ << Const.DirCount | EaseDir.In,
+        OutCirc = EaseClass.Circ << Const.DirCount | EaseDir.Out,
+        InOutCirc = EaseClass.Circ << Const.DirCount | EaseDir.InOut,
 
-        InBack,
-        OutBack,
-        InOutBack,
+        InBack = EaseClass.Back << Const.DirCount | EaseDir.In,
+        OutBack = EaseClass.Back << Const.DirCount | EaseDir.Out,
+        InOutBack = EaseClass.Back << Const.DirCount | EaseDir.InOut,
     }
     public static class EaseCreator {
         //static Dictionary<EaseType, Ease.UCL_Ease> m_Dic = new Dictionary<EaseType, Ease.UCL_Ease>();
@@ -78,6 +83,7 @@ namespace UCL.Core.Tween {
             new Dictionary<EaseClass, Dictionary<EaseDir, Ease.UCL_Ease>>();
         public static Ease.UCL_Ease Create(EaseClass ease) {
             switch(ease) {
+                ///*
                 case EaseClass.Linear: return new Ease.Linear();
                 case EaseClass.Spring: return new Ease.Spring();
                 case EaseClass.Bounce: return new Ease.Bounce();
@@ -85,8 +91,25 @@ namespace UCL.Core.Tween {
                 case EaseClass.Sin: return new Ease.Sin();
                 case EaseClass.Quad: return new Ease.Quad();
                 case EaseClass.Cubic: return new Ease.Cubic();
-                default: return new Ease.UCL_Ease();
+                case EaseClass.Quart: return new Ease.Quart();
+                case EaseClass.Quint: return new Ease.Quint();
+                case EaseClass.Expo: return new Ease.Expo();
+                case EaseClass.Circ: return new Ease.Circ();
+                //*/
+                default:
+                    //Debug.LogWarning("Ease:" + ease.ToString());
+                    Type type = Type.GetType("UCL.Core.Tween.Ease." + ease.ToString());
+                    var e = Activator.CreateInstance(type) as Ease.UCL_Ease;
+                    if(e != null) return e;
+                    return new Ease.UCL_Ease();
             }
+            /*
+             * https://stackoverflow.com/questions/493490/converting-a-string-to-a-class-name
+            Type elementType = Type.GetType("FullyQualifiedName.Of.Customer");
+            Type listType = typeof(List<>).MakeGenericType(new Type[] { elementType });
+
+            object list = Activator.CreateInstance(listType);
+            */
         }
         public static EaseType GetType(EaseClass ec, EaseDir dir) {
             switch(ec) {
@@ -145,6 +168,18 @@ namespace UCL.Core.Tween.Ease {
     [System.Serializable]
     public class UCL_Ease {
         public EaseDir m_Dir = EaseDir.In;
+        /// <summary>
+        /// return the path of the script
+        /// </summary>
+        /// <param name="libpath"></param> Root directory of UCLib
+        /// <param name="class_name"></param> 
+        /// <returns></returns>
+        virtual public string GetScriptPath(string libpath,string class_name) {
+            string file_name = "UCL_Ease" + class_name + ".cs";
+            string sc_path = libpath + "/UCL_Core_Scripts/SequenceCore/UCL_EaseScripts/" + file_name;
+            return sc_path;
+        }
+
         virtual public float GetEase(float start, float end, float value) {
             return Mathf.Lerp(start, end, GetEase(value));
         }

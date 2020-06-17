@@ -24,6 +24,17 @@ namespace UCL.Core.TextureLib {
         protected bool m_TextureUpdated = false;
         protected bool m_SpriteUpdated = false;
 
+        public static UCL_Texture2D CreateTexture(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32, string type="") {
+            UCL_Texture2D tex = null;
+            switch(type) {
+                case "UCL_EaseTexture":tex = new Core.Tween.Ease.UCL_EaseTexture(size, _TextureFormat);
+                    break;
+            }
+            if(tex == null) {
+                tex = new UCL_Texture2D(size, _TextureFormat);
+            }
+            return tex;
+        }
         /// <summary>
         /// Constructor without Init
         /// </summary>

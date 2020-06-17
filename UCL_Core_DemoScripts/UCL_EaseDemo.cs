@@ -32,7 +32,20 @@ namespace UCL.Core.Tween.Demo {
 #if UNITY_EDITOR
         [ATTR.UCL_FunctionButton]
         public void OpenEaseScript() {
-            //System.Diagnostics.Process.Start("notepad.exe", @"C:\foo.txt");
+            var ease = EaseCreator.Get(m_Type, m_Dir);
+            if(ease == null) return;
+
+            string sc_path = ease.GetScriptPath(FileLib.EditorLib.GetCoreFolderPath(), ease.GetType().Name);
+            Debug.Log("EaseScript:" + sc_path);
+            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(sc_path);
+        }
+        [ATTR.UCL_DrawTexture2D(128,128, TextureFormat.ARGB32, "UCL_EaseTexture")]
+        public void DrawEaseCurve(Core.TextureLib.UCL_Texture2D texture) {
+            var ease = EaseCreator.Get(m_Type, m_Dir);
+            if(ease == null) return;
+            UCL_EaseTexture tex = texture as UCL_EaseTexture;
+            if(tex == null) return;
+            tex.SetEase(ease);
         }
 #endif
         private void Update() {

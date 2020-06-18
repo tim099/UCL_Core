@@ -4,21 +4,35 @@ using UnityEngine;
 
 namespace UCL.Core {
     static public class UCL_DrawGizmos {
+
         public static Vector3 TransformByPixel(Vector3 position, float x, float y) {
+#if UNITY_EDITOR
             return TransformByPixel(position, new Vector3(x, y));
+#else
+            return Vector3.zero;
+#endif
         }
 
         public static Vector3 TransformByPixel(Vector3 position, Vector3 translateBy) {
+#if UNITY_EDITOR
             Camera cam = UnityEditor.SceneView.currentDrawingSceneView.camera;
             if(cam == null) return position;
             return cam.ScreenToWorldPoint(cam.WorldToScreenPoint(position) + translateBy);
+#else
+            return Vector3.zero;
+#endif
         }
         public static Vector3 WorldToScreenPoint(Vector3 position) {
+#if UNITY_EDITOR
             Camera cam = UnityEditor.SceneView.currentDrawingSceneView.camera;
             if(cam == null) return position;
             return cam.WorldToScreenPoint(position);
+#else
+            return Vector3.zero;
+#endif
         }
         public static void DrawCube(Vector3 pos, float size, Color? color = null, bool with_wire = true) {
+#if UNITY_EDITOR
             var restoreColor = Gizmos.color;
             if(color.HasValue) {
                 Gizmos.color = color.Value;
@@ -27,16 +41,20 @@ namespace UCL.Core {
 
             Gizmos.DrawCube(pos, size * Vector3.one);
             Gizmos.color = restoreColor;
+#endif
         }
         public static void DrawLine(Vector3 start, Vector3 end, Color? color = null) {
+#if UNITY_EDITOR
             var restoreColor = Gizmos.color;
             if(color.HasValue) {
                 Gizmos.color = color.Value;
             }
             Gizmos.DrawLine(start, end);
             Gizmos.color = restoreColor;
+#endif
         }
         public static void DrawLine(Vector3 start, Vector3 end, float width, Color? color = null) {
+#if UNITY_EDITOR
             Vector3 del = WorldToScreenPoint(start) - WorldToScreenPoint(end);
             int half_width = (int)(width / 2);
             if(Mathf.Abs(del.x) < Mathf.Abs(del.y)) {
@@ -48,12 +66,15 @@ namespace UCL.Core {
                     DrawLine(TransformByPixel(start, 0, i - half_width), TransformByPixel(end, 0, i - half_width), color);
                 }
             }
-
+#endif
         }
         public static void DrawConstSizeSphere(Vector3 pos, float size) {
+#if UNITY_EDITOR
             Gizmos.DrawSphere(pos, size * GetGizmoSize(pos));
+#endif
         }
         public static float GetGizmoSize(Vector3 position) {
+#if UNITY_EDITOR
             Camera cam = UnityEditor.SceneView.currentDrawingSceneView.camera;
             if(cam == null) return 1;
 
@@ -67,10 +88,14 @@ namespace UCL.Core {
             Vector3 a = cam.WorldToScreenPoint(position2 + transform.TransformDirection(new Vector3(0f, 0f, z)));
             Vector3 b = cam.WorldToScreenPoint(position2 + transform.TransformDirection(new Vector3(1f, 0f, z)));
             float magnitude = (a - b).magnitude;
-
+            
             return 4 / Mathf.Max(magnitude, 0.0001f);
+#else
+            return 0;
+#endif
         }
         public static void DrawString(string text, Vector3 worldPos, int fontsize, Color? color = null, Color? outline_color = null) {
+#if UNITY_EDITOR
             var restoreColor = GUI.color;
             int oldsize = GUI.skin.label.fontSize;
             GUI.skin.label.fontSize = fontsize;
@@ -88,8 +113,10 @@ namespace UCL.Core {
             UnityEditor.Handles.Label(newPos, text);
             GUI.skin.label.fontSize = oldsize;
             GUI.color = restoreColor;
+#endif
         }
         public static Vector2 WorldPosToGUI(Vector3 worldPos) {
+#if UNITY_EDITOR
             var view = UnityEditor.SceneView.currentDrawingSceneView;
             var cam = view.camera;
 
@@ -97,10 +124,15 @@ namespace UCL.Core {
             //Debug.LogWarning("cam:" + cam.name);
             Vector3 sp = cam.WorldToViewportPoint(worldPos);
             sp.Scale(new Vector3(view.position.width, view.position.height, 1));
+            
             return new Vector2(sp.x, view.position.height - sp.y);
+#else
+            return Vector2.zero;
+#endif
         }
         public static bool DrawButtonGUI(string text, Vector3 worldPos, int fontsize, Vector2 but_size, Color text_col, Color but_col,
             Vector2? position_offset = null) {
+#if UNITY_EDITOR
             UnityEditor.Handles.BeginGUI();
             
             int oldsize = GUI.skin.label.fontSize;
@@ -122,10 +154,15 @@ namespace UCL.Core {
             GUI.contentColor = restoreColor;
             GUI.backgroundColor = res2;
             UnityEditor.Handles.EndGUI();
+            
             return result;
+#else
+            return false;
+#endif
         }
         public static void DrawStringGUI(string text, Vector3 worldPos, int fontsize, Color? color = null, Color? outline_color = null,
             float outline_offset = 0.08f) {
+#if UNITY_EDITOR
             UnityEditor.Handles.BeginGUI();
             var restoreColor = GUI.color;
             int oldsize = GUI.skin.label.fontSize;
@@ -179,8 +216,10 @@ namespace UCL.Core {
             GUI.skin.label.fontSize = oldsize;
             GUI.color = restoreColor;
             UnityEditor.Handles.EndGUI();
+#endif
         }
         public static void DrawCircleAtPointWithRadius(Vector3 point, Quaternion orient, float radius) {
+#if UNITY_EDITOR
             Matrix4x4 prevMatrix = Gizmos.matrix;
             Gizmos.matrix = Matrix4x4.TRS(point, orient, radius * Vector3.one);
 
@@ -193,8 +232,10 @@ namespace UCL.Core {
                 currPoint = nextPoint;
             }
             Gizmos.matrix = prevMatrix;
+#endif
         }
     }
+
 }
 
 

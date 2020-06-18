@@ -6,6 +6,9 @@ namespace UCL.Core.Tween.Ease {
     [System.Serializable]
     public class Elastic : UCL_Ease {
         public float m_C = (2 * Mathf.PI) / 3;
+        override public EaseClass GetClass() {
+            return EaseClass.Elastic;
+        }
         public override float GetEase(float value) {
             switch(m_Dir) {
                 case EaseDir.In: return (1.0f - GetEaseOut(1.0f - value));

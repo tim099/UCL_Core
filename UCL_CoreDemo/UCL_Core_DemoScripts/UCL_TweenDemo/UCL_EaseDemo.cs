@@ -37,7 +37,13 @@ namespace UCL.Core.Tween.Demo {
 
             string sc_path = ease.GetScriptPath(FileLib.EditorLib.GetCoreFolderPath(), ease.GetType().Name);
             Debug.Log("EaseScript:" + sc_path);
-            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(sc_path);
+            var obj = UnityEditor.AssetDatabase.LoadMainAssetAtPath(sc_path);
+            if(obj != null) {
+                UnityEditor.Selection.activeObject = obj;
+            } else {
+                Debug.LogWarning("EaseScript:" + sc_path + " ,Not Found!!");
+            }
+            
         }
         [ATTR.UCL_DrawTexture2D(128,128, TextureFormat.ARGB32, "UCL_EaseTexture")]
         public void DrawEaseCurve(Core.TextureLib.UCL_Texture2D texture) {

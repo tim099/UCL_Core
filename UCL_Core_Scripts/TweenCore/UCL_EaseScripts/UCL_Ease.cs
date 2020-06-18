@@ -176,12 +176,21 @@ namespace UCL.Core.Tween.Ease {
         /// <returns></returns>
         virtual public string GetScriptPath(string libpath,string class_name) {
             string file_name = "UCL_Ease" + class_name + ".cs";
-            string sc_path = libpath + "/UCL_Core_Scripts/SequenceCore/UCL_EaseScripts/" + file_name;
+            string sc_path = libpath + "/UCL_Core_Scripts/TweenCore/UCL_EaseScripts/" + file_name;
             return sc_path;
         }
 
         virtual public float GetEase(float start, float end, float value) {
             return Mathf.Lerp(start, end, GetEase(value));
+        }
+        virtual public EaseClass GetClass() {
+            return EaseClass.Linear;
+        }
+        virtual public EaseDir GetDir() {
+            return m_Dir;
+        }
+        virtual public EaseType GetEaseType() {
+            return EaseCreator.GetType(GetClass(), m_Dir);
         }
         /// <summary>
         /// assume start is 0 and end is 1

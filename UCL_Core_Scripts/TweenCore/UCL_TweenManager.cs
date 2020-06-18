@@ -4,9 +4,29 @@ using UnityEngine;
 
 namespace UCL.Core.Tween {
     public class UCL_TweenManager : UCL_Singleton<UCL_TweenManager> {
-        protected List<UCL_Tween> m_Tweens = new List<UCL_Tween>();
-        internal protected void Add(UCL_Tween tween) {
-            m_Tweens.Add(tween);
+        UCL_TweenTimeManager m_TimeManager;
+        bool m_Inited = false;
+
+        private void Awake() {
+            Init();
+        }
+        public void Init() {
+            if(m_Inited) return;
+
+            m_Inited = true;
+            m_TimeManager = UCL_TweenTimeManager.Create();
+        }
+
+        internal void Add(UCL_Tween tween) {
+            if(!m_Inited) Init();
+
+            m_TimeManager.Add(tween);
+        }
+
+        private void Update() {
+            if(!m_Inited) Init();
+
+            m_TimeManager.TimeUpdate(Time.deltaTime);
         }
     }
 }

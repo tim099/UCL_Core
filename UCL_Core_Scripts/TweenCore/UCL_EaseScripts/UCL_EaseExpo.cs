@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace UCL.Core.Tween.Ease {
     public class Expo : UCL_Ease {
+        override public EaseClass GetClass() {
+            return EaseClass.Expo;
+        }
         public override float GetEase(float x) {
             switch(m_Dir) {
                 case EaseDir.In:  return x == 0 ? 0 : Mathf.Pow(2, 10 * x - 10);

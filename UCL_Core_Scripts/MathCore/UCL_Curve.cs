@@ -97,7 +97,9 @@ namespace UCL.Core.MathLib {
             UpdatePathPoint();
         }
         #region OnDrawGizmos
+
         protected void DrawGizmos() {
+#if UNITY_EDITOR
             if(m_PathPoints.Length < 4) return;
             if(m_GenStartPos != transform.position ||
                 m_GenStartRot != transform.rotation ||
@@ -125,7 +127,9 @@ namespace UCL.Core.MathLib {
             }
 
             Gizmos.color = tmp;
+#endif
         }
+
         public void RemoveAt(int at) {
             if(at >= m_Points.Count || at < 0) return;
             m_Points.RemoveAt(at);
@@ -229,9 +233,9 @@ namespace UCL.Core.MathLib {
             if(points.Length < 4) return Vector3.zero;
 
             int numSections = points.Length - 3;
-            int cur = Mathf.Min(Mathf.FloorToInt(percent * (float)numSections), numSections - 1);
+            int cur = Mathf.Min(Mathf.FloorToInt(percent * numSections), numSections - 1);
             if(cur < 0) cur = 0;
-            float u = percent * (float)numSections - (float)cur;
+            float u = percent * numSections - cur;
 
             Vector3 a = points[cur];
             Vector3 b = points[cur + 1];

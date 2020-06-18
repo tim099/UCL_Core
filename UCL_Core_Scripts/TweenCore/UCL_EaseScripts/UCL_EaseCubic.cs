@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace UCL.Core.Tween.Ease {
     public class Cubic : UCL_Ease {
+        override public EaseClass GetClass() {
+            return EaseClass.Cubic;
+        }
         public override float GetEase(float x) {
             switch(m_Dir) {
                 case EaseDir.In: return x * x * x;

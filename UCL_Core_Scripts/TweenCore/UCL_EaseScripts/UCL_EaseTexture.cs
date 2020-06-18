@@ -5,6 +5,14 @@ using UnityEngine;
 
 namespace UCL.Core.Tween.Ease {
     public class UCL_EaseTexture : UCL_Texture2D {
+        public static void DrawEase(EaseType ease_type, UCL_Texture2D texture) {
+            var ease = EaseCreator.Get(ease_type);
+            if(ease == null) return;
+            UCL_EaseTexture tex = texture as UCL_EaseTexture;
+            if(tex == null) return;
+            tex.SetEase(ease);
+        }
+
         public UCL_Ease m_Ease;
         public UCL.Core.MathLib.RangeChecker<float> m_RangeCheck = new MathLib.RangeChecker<float>();
         public Color m_EaseCol = Color.green;

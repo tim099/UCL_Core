@@ -10,6 +10,9 @@ namespace UCL.Core.Tween.Ease {
         public float m_PowRate = 1.2f;
         public float m_Spring = 1.3f;
         public float m_Scale = 1.0f;// 1.0f / 1.531757f;
+        override public EaseClass GetClass() {
+            return EaseClass.Spring;
+        }
         public override float GetEase(float x) {
             x = Mathf.Clamp01(x);
             return m_Scale * 

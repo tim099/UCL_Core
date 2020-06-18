@@ -10,7 +10,9 @@ namespace UCL.Core.Tween.Ease {
         public float m_T3 = 2.5f;
         public float m_N = 7.5625f;
         public float m_D = 2.75f;
-
+        override public EaseClass GetClass() {
+            return EaseClass.Bounce;
+        }
         public override float GetEase(float x) {
             switch(m_Dir) {
                 case EaseDir.In:return (1.0f - GetEaseOut(1.0f - x));

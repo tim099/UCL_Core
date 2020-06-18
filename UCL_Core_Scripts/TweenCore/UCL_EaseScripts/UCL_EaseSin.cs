@@ -5,6 +5,9 @@ using UnityEngine;
 namespace UCL.Core.Tween.Ease {
     [System.Serializable]
     public class Sin : UCL_Ease {
+        override public EaseClass GetClass() {
+            return EaseClass.Sin;
+        }
         public override float GetEase(float x) {
             switch(m_Dir) {
                 case EaseDir.In: return (1.0f - Mathf.Cos(0.5f * Mathf.PI * x));

@@ -44,6 +44,12 @@ namespace UCL.Core.TextureLib {
         public UCL_Texture2D(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
             Init(size, _TextureFormat);
         }
+        ~UCL_Texture2D() {
+            if(m_Texture != null) {
+                //Debug.LogWarning("Dispose Not working Memory leak!!");
+                GameObject.Destroy(m_Texture);
+            }
+        }
         virtual public void Init(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
             m_Size = size;
             m_TextureFormat = _TextureFormat;
@@ -57,6 +63,37 @@ namespace UCL.Core.TextureLib {
         virtual public void SetColor(Color color) {
             for(int i = 0,len = m_Col.Length; i < len ; i++) {
                 m_Col[i] = color;
+            }
+        }
+        /// <summary>
+        /// Draw a dot on pos
+        /// </summary>
+        /// <param name="px"></param>dot position x
+        /// <param name="py"></param>dot position y
+        /// <param name="col"></param>dot color
+        /// <param name="radius"></param>dot radius
+        virtual public void DrawDot(float px, float py, Color col, int radius = 0) {
+            int x = Mathf.RoundToInt(px * m_Size.x);
+            int y = Mathf.RoundToInt(py * m_Size.y);
+            if(radius <= 0) {
+                SetPixel(x, y, col);
+            }
+            int sx = x - radius;
+            int ex = x + radius;
+            int sy = y - radius;
+            int ey = y + radius;
+            if(sx < 0) sx = 0;
+            if(sy < 0) sy = 0;
+            if(ex >= m_Size.x) sx = m_Size.x - 1;
+            if(ey >= m_Size.y) sy = m_Size.y - 1;
+            for(int i = sy; i <= ey; i++) {
+                for(int j = sx; j <= ex; j++) {
+                    int dx = j - x;
+                    int dy = i - y;
+                    if(Mathf.Sqrt(dx * dx + dy * dy) <= radius) {
+                        SetPixel(j, i, col);
+                    }
+                }
             }
         }
         /// <summary>

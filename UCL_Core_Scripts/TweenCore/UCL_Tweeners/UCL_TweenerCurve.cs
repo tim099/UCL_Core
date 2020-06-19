@@ -23,8 +23,12 @@ namespace UCL.Core.Tween {
             m_Target = target;
             return this;
         }
+        protected override void CompleteAction() {
+            TweenerUpdate(1);
+        }
         protected override void TweenerUpdate(float pos) {
             m_Target.transform.position = m_Curve.GetPoint(pos);
+            //Debug.LogWarning("TweenerUpdate:" + pos+ ",m_Target.transform.position:"+ m_Target.transform.position);
 
         }
     }

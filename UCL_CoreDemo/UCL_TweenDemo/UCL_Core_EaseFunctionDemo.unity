@@ -229,7 +229,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe8ffd58d1a528345b91572918eb161f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Ease: 8
+  m_Ease: 37
   m_Duration: 10
   m_Target: {fileID: 1602598621}
   m_Curve: {fileID: 1280916777}
@@ -670,6 +670,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Points:
   - {x: 0, y: 0, z: 0}
+  - {x: 58.681343, y: 212.3136, z: 0}
   - {x: 117.36269, y: 0, z: 0}
   m_PathCol: {r: 0, g: 1, b: 0.0004093647, a: 1}
   m_PointCol: {r: 1, g: 0, b: 0.06321812, a: 1}
@@ -678,15 +679,18 @@ MonoBehaviour:
   f_OnlyDrawGizmosOnSelected: 0
   m_WorldSpacePoints:
   - {x: -2.8000002, y: 46, z: -15.1}
+  - {x: 55.88134, y: 258.3136, z: -15.1}
   - {x: 114.56269, y: 46, z: -15.1}
   m_PathPoints:
-  - {x: -120.1627, y: 46, z: -15.1}
+  - {x: -61.48134, y: -166.3136, z: -15.1}
   - {x: -2.8000002, y: 46, z: -15.1}
+  - {x: 55.88134, y: 258.3136, z: -15.1}
   - {x: 114.56269, y: 46, z: -15.1}
-  - {x: 231.92538, y: 46, z: -15.1}
+  - {x: 173.24405, y: -166.3136, z: -15.1}
   m_PathSegLength:
-  - 66.08054
-  m_PathLength: 66.08054
+  - 169.8304
+  - 91.14947
+  m_PathLength: 260.97986
   m_GenStartPos: {x: -2.8000002, y: 46, z: -15.1}
   m_GenStartRot: {x: -0, y: -0, z: -0, w: 1}
   m_GenStartScale: {x: 1, y: 1, z: 1}
@@ -700,7 +704,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1602598621}
   m_Layer: 0
-  m_Name: TweenerDemoTarget
+  m_Name: DemoTarget
   m_TagString: Untagged
   m_Icon: {fileID: 5721338939258241955, guid: 0000000000000000d000000000000000, type: 0}
   m_NavMeshLayer: 0

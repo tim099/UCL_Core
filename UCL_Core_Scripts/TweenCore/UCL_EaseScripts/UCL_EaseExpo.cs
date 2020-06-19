@@ -9,8 +9,8 @@ namespace UCL.Core.Tween.Ease {
         }
         public override float GetEase(float x) {
             switch(m_Dir) {
-                case EaseDir.In:  return x == 0 ? 0 : Mathf.Pow(2, 10 * x - 10);
-                case EaseDir.Out: return x == 1? 1: 1 - Mathf.Pow(2, 10 - 10 * x);
+                case EaseDir.In:  return x == 0 ? 0 : Mathf.Pow(2, 10 * (x - 1));
+                case EaseDir.Out: return x == 1 ? 1 : 1 - Mathf.Pow(2, - 10 * x);
             }
             return x == 0 ? 0
                  : x == 1 ? 1

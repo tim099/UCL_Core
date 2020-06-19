@@ -74,12 +74,20 @@ namespace UCL.Core.Tween {
         }
         virtual internal protected void Complete() {
             if(m_Completed) return;
-            m_CompleteAct?.Invoke();
+
+            CompleteAction();
+
             m_Completed = true;
             m_End = true;
+
+            m_CompleteAct?.Invoke();
         }
-        virtual public void OnComplete(System.Action _CompleteAct) {
+        virtual protected void CompleteAction() {
+
+        }
+        virtual public UCL_Tween OnComplete(System.Action _CompleteAct) {
             m_CompleteAct = _CompleteAct;
+            return this;
         }
     }
 }

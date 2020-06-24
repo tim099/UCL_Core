@@ -8,11 +8,17 @@ namespace UCL.Core.ATTR {
         Vector2Int m_Size;
         Core.TextureLib.UCL_Texture2D m_Texture;
         TextureFormat m_TextureFormat;
-        string m_Type;
-        public UCL_DrawTexture2DAttribute(int size_x, int size_y, TextureFormat _TextureFormat = TextureFormat.ARGB32, string type = "") {
+        Type m_Type;
+        //static int m_Count = 0;
+        public UCL_DrawTexture2DAttribute(int size_x, int size_y, TextureFormat _TextureFormat = TextureFormat.ARGB32,
+            Type type = null) {
+            //m_Count++;
             //Debug.LogWarning("UCL_DrawTexture2DAttribute:" + size_x + "," + size_y);
             m_Size = new Vector2Int(size_x, size_y);
             m_TextureFormat = _TextureFormat;
+            if(type == null) {
+                type = typeof(TextureLib.UCL_Texture2D);
+            }
             m_Type = type;
         }
         public TextureLib.UCL_Texture2D GetTexture() {
@@ -22,6 +28,11 @@ namespace UCL.Core.ATTR {
             return m_Texture;
         }
         ~UCL_DrawTexture2DAttribute() {
+            //m_Count--;
+            //Debug.LogWarning("m_Count:"+ m_Count);
+            if(m_Texture != null) {
+                m_Texture.ClearTexture();
+            }
             //Debug.LogWarning("Destruct UCL_DrawTexture2DAttribute");
         }
     }

@@ -63,6 +63,7 @@ namespace UCL.Core.EditorLib {
                     }
                 }
                 GUILayout.EndVertical();
+                Resources.UnloadUnusedAssets();
                 //EditorGUILayout.EndVertical();
             }
 

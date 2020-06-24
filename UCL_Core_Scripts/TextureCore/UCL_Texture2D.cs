@@ -24,15 +24,24 @@ namespace UCL.Core.TextureLib {
         protected bool m_TextureUpdated = false;
         protected bool m_SpriteUpdated = false;
 
-        public static UCL_Texture2D CreateTexture(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32, string type="") {
+        public static UCL_Texture2D CreateTexture(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32, System.Type type = null) {
             UCL_Texture2D tex = null;
+            /*
             switch(type) {
-                case "UCL_EaseTexture":tex = new Core.Tween.Ease.UCL_EaseTexture(size, _TextureFormat);
+                case "UCL_EaseTexture":tex = System.Reflection.Assembly.GetExecutingAssembly()
+                .CreateInstance("UCL.Core.Tween.Ease.UCL_EaseTexture") as UCL_Texture2D; 
+                        //new Core.Tween.Ease.UCL_EaseTexture(size, _TextureFormat);
                     break;
             }
-            if(tex == null) {
-                tex = new UCL_Texture2D(size, _TextureFormat);
+            */
+            if(type != null) {
+                tex = System.Activator.CreateInstance(type) as UCL_Texture2D;
             }
+            if(tex == null) {
+                tex = new UCL_Texture2D();
+            }
+
+            tex.Init(size, _TextureFormat);
             return tex;
         }
         /// <summary>
@@ -45,9 +54,14 @@ namespace UCL.Core.TextureLib {
             Init(size, _TextureFormat);
         }
         ~UCL_Texture2D() {
+            ClearTexture();
+        }
+        public void ClearTexture() {
             if(m_Texture != null) {
-                //Debug.LogWarning("Dispose Not working Memory leak!!");
-                GameObject.Destroy(m_Texture);
+                //Debug.LogWarning("GameObject.Destroy Not working, Memory leak!!");
+                Texture2D.DestroyImmediate(m_Texture);
+                m_Texture = null;
+                //GameObject.Destroy();
             }
         }
         virtual public void Init(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {

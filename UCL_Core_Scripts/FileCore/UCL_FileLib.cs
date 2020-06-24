@@ -7,6 +7,12 @@ using UnityEngine;
 namespace UCL.Core.FileLib {
 #if UNITY_EDITOR
     static public class EditorLib {
+        public static string GetLibFolderPath(string LibName) {
+            var res = Resources.Load(LibName);// + ".txt"
+            string path = UnityEditor.AssetDatabase.GetAssetPath(res);
+
+            return FileLib.Lib.RemoveFolderPath(path, 2);
+        }
         public static string GetCoreFolderPath() {
             return UCL_CoreSetting.GetFolderPath();
         }

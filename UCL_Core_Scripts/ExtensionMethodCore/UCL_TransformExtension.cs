@@ -16,4 +16,10 @@ public static partial class ExtensionMethods {
     }
 
     #endregion
+
+    #region Position
+    public static void SetPosition(this Transform t, Transform target) {
+        t.position = target.position;
+    }
+    #endregion
 }

@@ -5,7 +5,7 @@ using UnityEditor;
 
 namespace UCL.Core {
 #if UNITY_EDITOR
-    static  public class UCL_ComponentEditor{
+    static public class UCL_ComponentEditor{
         static SerializedObject m_Src;
         [MenuItem("CONTEXT/Component/UCL_Copy value")]
         public static void CopySerialized(MenuCommand cmd) { m_Src = new SerializedObject(cmd.context); }

@@ -32,14 +32,18 @@ namespace UCL.Core.EditorLib {
                         try {
                             var attr = method.GetCustomAttributes(attr_type, false);
                             if(attr.Length > 0) {
-                                for(int j = 0; j < attr.Length; j++) {
-                                    var ba = (ATTR.UCL_FunctionButtonAttribute)attr[j];
-                                    string but_name = ba.m_ButtonName;
-                                    if(string.IsNullOrEmpty(but_name)) but_name = method.Name;
-                                    if(GUILayout.Button(but_name)) {
-                                        method.Invoke(target, ba.m_Params);
+                                bool run_time_only = method.GetCustomAttributes(typeof(ATTR.UCL_RuntimeOnlyAttribute), false).Length > 0;
+                                if(!run_time_only || Application.isPlaying) {
+                                    for(int j = 0; j < attr.Length; j++) {
+                                        var ba = (ATTR.UCL_FunctionButtonAttribute)attr[j];
+                                        string but_name = ba.m_ButtonName;
+                                        if(string.IsNullOrEmpty(but_name)) but_name = method.Name;
+                                        if(GUILayout.Button(but_name)) {
+                                            method.Invoke(target, ba.m_Params);
+                                        }
                                     }
                                 }
+
                             }
                         } catch(Exception e) {
                             Debug.LogError(class_name + " " + attr_type.Name + " Exception:" + e);

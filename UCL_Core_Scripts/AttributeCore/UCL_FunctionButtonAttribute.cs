@@ -18,5 +18,12 @@ namespace UCL.Core.ATTR {
             m_Params = _params;
         }
     }
+
+    [AttributeUsage(AttributeTargets.Method)]
+    public class UCL_RuntimeOnlyAttribute : Attribute {
+        public UCL_RuntimeOnlyAttribute() {
+
+        }
+    }
 }
 

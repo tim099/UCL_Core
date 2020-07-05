@@ -7,6 +7,9 @@ namespace UCL.Core.ComponentController {
         public void SetPosition(Transform target) {
             transform.SetPosition(target);
         }
+        public void SetValue(Transform target) {
+            transform.SetValue(target);
+        }
     }
 }
 

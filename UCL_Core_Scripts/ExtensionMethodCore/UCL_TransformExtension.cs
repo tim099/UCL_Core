@@ -21,5 +21,10 @@ public static partial class ExtensionMethods {
     public static void SetPosition(this Transform t, Transform target) {
         t.position = target.position;
     }
+    public static void SetValue(this Transform t, Transform target) {
+        t.position = target.position;
+        t.rotation = target.rotation;
+        t.localScale = target.localScale;
+    }
     #endregion
 }

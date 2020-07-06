@@ -193,6 +193,38 @@ namespace UCL.Core.MathLib {
         #endregion
     }
     public static class Lib {
+        #region Lerp
+        public static Vector3 Lerp(Vector3 a,Vector3 b,float val) {
+            var del = b - a;
+            return a + del * val;
+        }
+        public static Quaternion Lerp(Quaternion a, Quaternion b, float val) {
+            //return Slerp(a, b, val);
+            Quaternion r;
+            float _val = 1 - val;
+            r.x = _val * a.x + val * b.x;
+            r.y = _val * a.y + val * b.y;
+            r.z = _val * a.z + val * b.z;
+            r.w = _val * a.w + val * b.w;
+            r.Normalize();
+            return r;
+        }
+        public static Quaternion Slerp(Quaternion a, Quaternion b, float val) {
+            Quaternion r;
+            float _val = 1 - val;
+            float Wa, Wb;
+            float theta = Mathf.Acos(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+            float sn = Mathf.Sin(theta);
+            Wa = Mathf.Sin(_val * theta) / sn;
+            Wb = Mathf.Sin(val * theta) / sn;
+            r.x = Wa * a.x + Wb * b.x;
+            r.y = Wa * a.y + Wb * b.y;
+            r.z = Wa * a.z + Wb * b.z;
+            r.w = Wa * a.w + Wb * b.w;
+            r.Normalize();
+            return r;
+        }
+        #endregion
         public static int FindMaxAt<T>(T[] arr) where T : System.IComparable {
             if(arr.Length <= 1) return 0;
             T max = arr[0];

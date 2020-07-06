@@ -20,7 +20,7 @@ namespace UCL.Core.MathLib {
         /// if true then path Gizmos will only draw when selected
         /// </summary>
         public bool f_OnlyDrawGizmosOnSelected = true;
-
+        public bool m_Loop = false;
         #region ReadOnly
         [Header("ReadOnly")]
         [PA.UCL_ReadOnly] [SerializeField] protected Vector3[] m_WorldSpacePoints;
@@ -35,7 +35,53 @@ namespace UCL.Core.MathLib {
         private void OnValidate() {
             UpdatePathPoint();
         }
+
+
 #endif
+#if UNITY_EDITOR
+        [ATTR.UCL_FunctionButton("Reverse")]
+#endif
+        public void Reverse() {
+
+            for(int i = 0,len = (m_Points.Count/2); i < len ; i++) {
+                //m_PathPoints.Swap(0, 1);
+                m_Points.Swap(i, m_Points.Count - i - 1);
+                //UCL.Core.GameObjectLib.swap(ref m_Points[i], ref m_Points[m_Points.Count - i-1]);
+            }
+            UpdatePathPoint();
+        }
+#if UNITY_EDITOR
+        [ATTR.UCL_FunctionButton]
+#endif
+        public void CreateLoop() {
+            if(m_Points.Count < 2) return;
+            if(m_Points.LastElement() == m_Points.FirstElement()) {
+                Debug.LogWarning("CreateLoop() Fail,start point == end point!!");
+                return;
+            }
+            m_Loop = true;
+            m_Points.Add(m_Points[0]);
+            UpdatePathPoint();
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+        }
+#if UNITY_EDITOR
+        [ATTR.UCL_FunctionButton]
+#endif
+        public void RemoveLoop() {
+            if(m_Points.Count < 2) return;
+            if(m_Points.LastElement() != m_Points.FirstElement()) {
+                Debug.LogWarning("RemoveLoop() Fail,start point != end point!!");
+                return;
+            }
+            m_Loop = false;
+            m_Points.RemoveAt(m_Points.Count-1);
+            UpdatePathPoint();
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+        }
         public void UpdatePathPoint() {
             //Debug.LogWarning("UpdatePathPoint");
             if(m_Points.Count == 0) return;
@@ -56,7 +102,8 @@ namespace UCL.Core.MathLib {
                 for(int i = 0; i < m_Points.Count - 1; i++) {
                     float len = 0;
                     for(int j = 0; j < m_SmoothSeg; j++) {
-                        cur = GetPoint((i * m_SmoothSeg + j) / (float)(m_SmoothSeg * m_Points.Count));
+                        float pos = (i * m_SmoothSeg + j) / (float)(m_SmoothSeg * m_Points.Count);
+                        cur = GetPoint(pos);
                         len += (cur - prev).magnitude;
                         prev = cur;
                     }
@@ -68,13 +115,33 @@ namespace UCL.Core.MathLib {
                 m_PathSegLength = null;
                 m_PathLength = 0;
             }
+            if(!m_Loop) {
+                m_PathPoints = new Vector3[path.Length + 2];
+                Array.Copy(path, 0, m_PathPoints, 1, path.Length);
 
-            m_PathPoints = new Vector3[path.Length + 2];
-            Array.Copy(path, 0, m_PathPoints, 1, path.Length);
+                m_PathPoints[0] = (2 * m_PathPoints[1] - m_PathPoints[2]);
+                m_PathPoints[m_PathPoints.Length - 1] = (2 * m_PathPoints[m_PathPoints.Length - 2] - m_PathPoints[m_PathPoints.Length - 3]);
+            } else {
+                /*
+                m_PathPoints = new Vector3[path.Length + 4];
+                Array.Copy(path, 0, m_PathPoints, 2, path.Length);
 
-            m_PathPoints[0] = m_PathPoints[1] + (m_PathPoints[1] - m_PathPoints[2]);
-            m_PathPoints[m_PathPoints.Length - 1] = m_PathPoints[m_PathPoints.Length - 2] +
-                (m_PathPoints[m_PathPoints.Length - 2] - m_PathPoints[m_PathPoints.Length - 3]);
+                m_PathPoints[0] = path[path.Length - 2];
+                m_PathPoints[1] = path[path.Length - 1];
+                m_PathPoints[path.Length + 2] = path[0];
+                m_PathPoints[path.Length + 3] = path[1];
+                */
+                ///*
+                m_PathPoints = new Vector3[path.Length + 2];
+                Array.Copy(path, 0, m_PathPoints, 1, path.Length);
+
+                m_PathPoints[0] = path[path.Length-2];
+                m_PathPoints[m_PathPoints.Length - 1] = path[1];
+                //*/
+            }
+
+
+
 
             /*
             //is this a closed, continuous loop? yes? well then so let's make a continuous Catmull-Rom spline!
@@ -98,6 +165,10 @@ namespace UCL.Core.MathLib {
         }
         #region OnDrawGizmos
 
+#if UNITY_EDITOR
+        [SerializeField][Range(0,1)] float m_DemoPoint = 0f;
+        [SerializeField] Color m_DemoPointColor = Color.black;
+#endif
         protected void DrawGizmos() {
 #if UNITY_EDITOR
             if(m_PathPoints.Length < 4) return;
@@ -108,7 +179,7 @@ namespace UCL.Core.MathLib {
                 UpdatePathPoint();
             }
             var tmp = Gizmos.color;
-            Vector3 prev = Interpolation(m_PathPoints, 0);
+            Vector3 prev = Lerp(m_PathPoints, 0);
             Gizmos.color = m_PathCol;
             int SmoothAmount = m_WorldSpacePoints.Length * m_SmoothSeg;
             for(int i = 1; i <= SmoothAmount; i++) {
@@ -117,8 +188,13 @@ namespace UCL.Core.MathLib {
                 Gizmos.DrawLine(currPt, prev);
                 prev = currPt;
             }
+
+            Gizmos.color = m_DemoPointColor;
+            UCL_DrawGizmos.DrawConstSizeSphere(GetPos(m_DemoPoint), 0.75f*m_PointSize);
+
             Gizmos.color = m_PointCol;
             //UnityEditor.Handles.color = m_PointCol;
+            
 
             for(int i = 0; i < m_WorldSpacePoints.Length; i++) {
                 UCL_DrawGizmos.DrawConstSizeSphere(m_WorldSpacePoints[i], m_PointSize);
@@ -171,8 +247,16 @@ namespace UCL.Core.MathLib {
             m_Points.Add(pos);
             UpdatePathPoint();
         }
-        public Vector3 GetPoint(float percent) {
-            return Interpolation(m_PathPoints, percent);
+        public Vector3 Lerp(Vector3[] m_PathPoints ,int cur, float u) {
+            Vector3 a = m_PathPoints[cur];
+            Vector3 b = m_PathPoints[cur + 1];
+            Vector3 c = m_PathPoints[cur + 2];
+            Vector3 d = m_PathPoints[cur + 3];
+
+            return 0.5f * ((-a + 3f * (b - c) + d) * (u * u * u)
+                + (2f * a - 5f * b + 4f * c - d) * (u * u)
+                + (-a + c) * u + 2f * b
+            );
         }
         /// <summary>
         /// Get postion on the path by length
@@ -181,12 +265,19 @@ namespace UCL.Core.MathLib {
         /// <returns></returns>
         public Vector3 GetPosByLength(float length) {
             if(m_PathPoints.Length < 4) return Vector3.zero;
+
+            if(m_Loop) {
+                if(length > m_PathLength || length < 0) {
+                    float len = length / m_PathLength;
+                    length = m_PathLength * (len - Mathf.FloorToInt(len));
+                }
+            }
+
             float cur_len = 0;
             float seg_len = 1;
             int cur = 0;
             for(int i = 0; i < m_PathSegLength.Length; i++) {
                 seg_len = m_PathSegLength[i];
-                //Debug.LogWarning("seg_len:" + seg_len);
                 cur_len += seg_len;
                 if(cur_len >= length) {
                     cur = i;
@@ -196,29 +287,31 @@ namespace UCL.Core.MathLib {
             if(cur > m_PathPoints.Length - 4) {
                 cur = m_PathPoints.Length - 4;
             }
+
             if(seg_len <= 0.0001f) seg_len = 0.0001f;
             if(cur < 0) cur = 0;
+
             float u = 1.0f - (cur_len - length) / seg_len;
-            //Debug.LogWarning("u:" + u + ",seg_len:" + seg_len+ ",cur_len:"+ cur_len+ ",at:"+ at+ ",(cur_len - at):"+ (cur_len - at));
             if(u < 0) u = 0;
             if(u > 1.0f) u = 1.0f;
-            Vector3 a = m_PathPoints[cur];
-            Vector3 b = m_PathPoints[cur + 1];
-            Vector3 c = m_PathPoints[cur + 2];
-            Vector3 d = m_PathPoints[cur + 3];
-            //Debug.LogWarning("a:" + a + ",b:" + b + ",c:" + c + ",d:" + d);
-            return 0.5f * ((-a + 3f * (b - c) + d) * (u * u * u)
-                + (2f * a - 5f * b + 4f * c - d) * (u * u)
-                + (-a + c) * u + 2f * b
-            );
+
+            return Lerp(m_PathPoints, cur, u);
         }
         /// <summary>
-        /// Get position base on lenght of path
+        /// Get position base on length of path
         /// </summary>
         /// <param name="percent"></param>
         /// <returns></returns>
         public Vector3 GetPos(float percent) {
             return GetPosByLength(percent * m_PathLength);
+        }
+        /// <summary>
+        /// Get position base on Segment(ignore segment length)
+        /// </summary>
+        /// <param name="percent"></param>
+        /// <returns></returns>
+        public Vector3 GetPoint(float percent) {
+            return Lerp(m_PathPoints, percent);
         }
         public int GetPathPointsLength() { return m_PathPoints.Length; }
 
@@ -229,23 +322,18 @@ namespace UCL.Core.MathLib {
         private void OnDrawGizmos() {
             if(!f_OnlyDrawGizmosOnSelected) DrawGizmos();
         }
-        private static Vector3 Interpolation(Vector3[] points, float percent) {
+        protected Vector3 Lerp(Vector3[] points, float percent) {
             if(points.Length < 4) return Vector3.zero;
 
+            if(m_Loop) {
+                if(percent > 1 || percent < 0) percent -= Mathf.FloorToInt(percent);
+            }
             int numSections = points.Length - 3;
             int cur = Mathf.Min(Mathf.FloorToInt(percent * numSections), numSections - 1);
             if(cur < 0) cur = 0;
             float u = percent * numSections - cur;
 
-            Vector3 a = points[cur];
-            Vector3 b = points[cur + 1];
-            Vector3 c = points[cur + 2];
-            Vector3 d = points[cur + 3];
-
-            return 0.5f * ((-a + 3f * (b - c) + d) * (u * u * u)
-                + (2f * a - 5f * b + 4f * c - d) * (u * u)
-                + (-a + c) * u + 2f * b
-            );
+            return Lerp(points, cur, u);
         }
         #endregion
     }

@@ -361,5 +361,53 @@ namespace UCL.Core.MathLib {
             return (point - p_c).magnitude;
         }
     }
+    public static class LinearMapping {
+        /// <summary>
+        /// GetValue will return data at val position using lerp
+        /// </summary>
+        /// <param name="datas"></param> 
+        /// <param name="val"></param> val should between 0f ~ 1f
+        /// <returns></returns>
+        static public float GetValue(List<float> datas, float val) {
+            if(datas == null || datas.Count == 0) return val;
+            if(datas.Count == 1) return datas[0];
+            if(val > 1) val = 1;
+            if(val < 0) val = 0;
+            if(datas.Count == 2) return Mathf.Lerp(datas[0], datas[1], val);
+            float pos = val * (datas.Count - 1);
+            int cur = Mathf.FloorToInt(pos);
+            if(cur >= datas.Count - 1) cur = datas.Count - 2;
+            float lerp_pos = pos - cur;
+            float a = datas[cur];
+            float b = datas[cur + 1];
+            float magnitude = b - a;
+            float seg_val = lerp_pos / magnitude;
+            //Debug.LogWarning("a:" + a + ",b:" + b + ",val:" + val+ ",lerp_pos:"+ lerp_pos);
+            return Mathf.Lerp(a, b, lerp_pos);
+        }
+        static public float GetPosition(List<float> datas, float val) {
+            if(datas == null || datas.Count <= 1) return val;
+            float prev = datas[0];
+            float cur = prev;
+            int i = 1;
+            for(; i < datas.Count; i++) {
+                cur = datas[i];
+                if(prev <= val && val <= cur) {
+                    break;
+                }
+                prev = cur;
+            }
+            float del = cur - prev;
+            float seg_pos = 1;
+            if(del > 0) {
+                seg_pos = (val - prev) / del;
+            }
+            //Debug.LogWarning("GetPosition seg_pos:" + seg_pos+ ",i:"+ i);
+            float pos = ((i - 1 + seg_pos) / (float)(datas.Count - 1));
+            if(pos > 1) pos = 1;
+            //pos +=  / datas.Count;
+            return pos;
+        }
+    }
 }
 

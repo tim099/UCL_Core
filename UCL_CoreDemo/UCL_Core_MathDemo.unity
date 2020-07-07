@@ -345,6 +345,7 @@ MonoBehaviour:
   m_PointSize: 1.5
   m_SmoothSeg: 20
   f_OnlyDrawGizmosOnSelected: 0
+  m_Loop: 0
   m_WorldSpacePoints:
   - {x: -2.8000002, y: 46, z: -15.1}
   - {x: -15.504569, y: 46, z: -34.009384}
@@ -358,13 +359,84 @@ MonoBehaviour:
   - {x: 33.613136, y: 46, z: -15.1}
   - {x: 56.417583, y: 46, z: 15.15501}
   m_PathSegLength:
-  - 18.423258
-  - 18.021923
-  - 23.626978
-  m_PathLength: 60.07216
+  - 23.564444
+  - 30.178053
+  - 38.30554
+  m_PathLength: 92.048035
   m_GenStartPos: {x: -2.8000002, y: 46, z: -15.1}
   m_GenStartRot: {x: -0, y: -0, z: -0, w: 1}
   m_GenStartScale: {x: 1, y: 1, z: 1}
+  m_SegLengthDatas:
+  - m_Data:
+    - 0
+    - 0.049770683
+    - 0.10219929
+    - 0.15689617
+    - 0.21341963
+    - 0.2712936
+    - 0.33002043
+    - 0.38909027
+    - 0.44798857
+    - 0.50620276
+    - 0.56323063
+    - 0.6185874
+    - 0.67181844
+    - 0.72251415
+    - 0.77033395
+    - 0.81504166
+    - 0.8565597
+    - 0.89505273
+    - 0.9310388
+    - 0.96551347
+    - 1
+  - m_Data:
+    - 0
+    - 0.029879263
+    - 0.06464128
+    - 0.10407094
+    - 0.14777611
+    - 0.19527395
+    - 0.24603184
+    - 0.2994911
+    - 0.3550801
+    - 0.4122232
+    - 0.47034827
+    - 0.5288924
+    - 0.58730984
+    - 0.64507836
+    - 0.70171154
+    - 0.75677246
+    - 0.8098929
+    - 0.8608034
+    - 0.90937245
+    - 0.9556625
+    - 1
+  - m_Data:
+    - 0
+    - 0.035185274
+    - 0.07242796
+    - 0.11203525
+    - 0.15412833
+    - 0.198692
+    - 0.24561413
+    - 0.29471305
+    - 0.3457594
+    - 0.39848828
+    - 0.45261037
+    - 0.5078188
+    - 0.563795
+    - 0.62021226
+    - 0.67674035
+    - 0.7330473
+    - 0.7888034
+    - 0.84368485
+    - 0.8973759
+    - 0.9495749
+    - 1
+  m_DemoPoint: 0
+  m_DemoPointColor: {r: 0, g: 0, b: 0, a: 1}
+  m_DisPointCount: 0
+  m_GetPoint: 0
 --- !u!4 &691184020
 Transform:
   m_ObjectHideFlags: 0
@@ -552,24 +624,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9dcda1a2fcacab140a6883c12ecf05f6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  m_Ease: 0
+  m_CurEase: 0
+  m_Target: {fileID: 0}
+  m_Target2: {fileID: 0}
+  m_Target3: {fileID: 0}
+  m_LookTargets: []
+  m_RotTarget: {fileID: 0}
+  m_Y: 0
+  m_AutoLoop: 1
   m_Curve: {fileID: 0}
-  m_EaseSpring:
-    m_Dir: 0
-    m_Base: 0.5
-    m_Pow3: 3
-    m_PowRate: 1.2
-    m_Spring: 1.3
-    m_Scale: 0.6528451
-  m_EaseBounce:
-    m_Dir: 0
-    m_T1: 1
-    m_T2: 2
-    m_T3: 2.5
-    m_N: 7.5625
-    m_D: 2.75
-  m_Dir: 0
-  m_Type: 2
-  m_TextureSize: {x: 128, y: 128}
 --- !u!4 &1199710249
 Transform:
   m_ObjectHideFlags: 0
@@ -1030,3 +1094,61 @@ MonoBehaviour:
   m_Dir: 0
   m_Type: 3
   m_TextureSize: {x: 128, y: 128}
+--- !u!1 &1963933360
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1963933362}
+  - component: {fileID: 1963933361}
+  m_Layer: 0
+  m_Name: UCL_LinearMappingDemo
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1963933361
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1963933360}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b82022450e1b6a4696c76975dcfa36a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Datas:
+  - 0
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.75
+  - 0.8
+  - 0.9
+  m_Val: 0.85
+  m_OutPosition: 0.95000005
+  m_OutValue: 0.775
+--- !u!4 &1963933362
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1963933360}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 754.7541, y: 1432.8431, z: -8651.605}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 5
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

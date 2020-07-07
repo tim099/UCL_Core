@@ -54,6 +54,8 @@ namespace UCL.Core.EditorLib {
                         try {
                             var attr = method.GetCustomAttributes(attr_type, false);
                             if(attr.Length > 0) {
+                                //Debug.LogWarning("attr.Length:" + attr.Length);
+                                GUILayout.Box(method.Name);
                                 for(int j = 0; j < attr.Length; j++) {
                                     var ba = (ATTR.UCL_DrawTexture2DAttribute)attr[j];
                                     var tex = ba.GetTexture();

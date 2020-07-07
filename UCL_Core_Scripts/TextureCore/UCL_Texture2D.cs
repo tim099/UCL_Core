@@ -112,6 +112,7 @@ namespace UCL.Core.TextureLib {
         }
         /// <summary>
         /// line_func take x as parameter and should return the value of y
+        /// y range between 0 ~ 1
         /// </summary>
         /// <param name="line_func"></param>
         /// <param name="line_col"></param>
@@ -145,6 +146,102 @@ namespace UCL.Core.TextureLib {
                 prev = cur;
             }
         }
+        /// <summary>
+        /// line_func take x as parameter and should return the value of y
+        /// auto scale y value to fit in texture
+        /// </summary>
+        /// <param name="line_func"></param>
+        /// <param name="line_col"></param>
+        /// <param name="mark_zero"></param> true will draw a line on y = 0
+        /// <param name="mark_zero"></param> true will draw a line on y = 1
+        virtual public Vector2 DrawLineAutoFit(System.Func<float, float> line_func, Color line_col,bool mark_zero = false,bool mark_one = false) {
+            if(line_func == null) return Vector2.zero;
+            MathLib.RangeChecker<float> rangeChecker = new MathLib.RangeChecker<float>();
+            rangeChecker.Init(0, 0);
+            List<float> values = new List<float>();
+            for(int i = 0; i < m_Size.x; i++) {
+                float at = (i / (float)(m_Size.x - 1));
+                float val = line_func(at);
+                rangeChecker.AddValue(val);
+                values.Add(val);
+            }
+            float Min = rangeChecker.Min;
+            float Max = rangeChecker.Max;
+            float Range = Max - Min;
+            
+            if(Min < 0 && mark_zero) {
+                float z_pos = -Min / Range;
+                DrawLine(delegate (float y) {
+                    return z_pos;
+                }, Color.white);
+            }
+
+            if(Max > 1.0f && mark_one) {
+                float z_pos = (1.0f - Min) / Range;
+                DrawLine(delegate (float y) {
+                    return z_pos;
+                }, Color.blue);
+            }
+
+            int prev = 0;
+            for(int i = 0; i < m_Size.x; i++) {
+                //float at = (i / (float)(m_Size.x - 1));
+                float val = values[i];
+                val = ((val - Min) / Range);
+                int cur = Mathf.RoundToInt(val * m_Size.y);
+                if(i == 0) prev = cur;
+                int min = Mathf.Min(prev, cur);
+                int max = Mathf.Max(prev, cur);
+
+                for(int j = 0; j < m_Size.y; j++) {
+                    if(j >= min && j <= max) {
+                        SetPixel(i, j, line_col);
+                    }
+                }
+                prev = cur;
+            }
+            return new Vector2(Min, Max);
+        }
+        virtual public void DrawLineAutoFit(System.Func<float, float> line_func, Color line_col, float Min, float Max,
+            bool mark_zero = false, bool mark_one = false) {
+            if(line_func == null) return;
+
+            float Range = Max - Min;
+
+            if(Min < 0 && mark_zero) {
+                float z_pos = -Min / Range;
+                DrawLine(delegate (float y) {
+                    return z_pos;
+                }, Color.white);
+            }
+
+            if(Max > 1.0f && mark_one) {
+                float z_pos = (1.0f - Min) / Range;
+                DrawLine(delegate (float y) {
+                    return z_pos;
+                }, Color.blue);
+            }
+
+            int prev = 0;
+            for(int i = 0; i < m_Size.x; i++) {
+                float at = (i / (float)(m_Size.x - 1));
+                float val = line_func(at);
+                val = ((val - Min) / Range);
+                int cur = Mathf.RoundToInt(val * m_Size.y);
+                if(i == 0) prev = cur;
+                int min = Mathf.Min(prev, cur);
+                int max = Mathf.Max(prev, cur);
+
+                for(int j = 0; j < m_Size.y; j++) {
+                    if(j >= min && j <= max) {
+                        SetPixel(i, j, line_col);
+                    }
+                }
+                prev = cur;
+            }
+        }
+
+
         virtual public Texture2D GetTexture() {
             if(m_Texture == null) {
                 m_Texture = Object.Instantiate(new Texture2D(width, height, m_TextureFormat, false));

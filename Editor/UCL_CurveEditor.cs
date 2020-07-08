@@ -30,7 +30,9 @@ namespace UCL.Core.MathLib {
                     //node handle display:
                     Color but_col = new Color(1, 1, 1, 0.8f);
                     Vector2 but_offset = new Vector2(0, 30);
-                    for(int i = 0; i < path.m_Points.Count; i++) {
+                    int draw_count = path.m_Points.Count;
+                    //if(path.m_Loop) --draw_count;
+                    for(int i = 0; i < draw_count; i++) {
                         var p = path.m_Points[i];
                         Vector3 pos = path.transform.TransformPoint(p);
                         var new_pos = path.transform.InverseTransformPoint(Handles.PositionHandle(pos, Quaternion.identity));
@@ -38,11 +40,14 @@ namespace UCL.Core.MathLib {
                             //Debug.LogWarning("(new_pos - p).magnitude:" + (new_pos - p).magnitude);
                             path.SetPoint(i, new_pos);
                         }
-                        string str = "node " + i;
-                        UCL_DrawGizmos.DrawStringGUI(str, pos, 28, Color.black, Color.white);
-                        if(UCL_DrawGizmos.DrawButtonGUI("delete", pos, 28, new Vector2(50, 22), Color.red, but_col, but_offset)) {
-                            delete_node_at = i;
+                        if(!path.m_Loop || i < draw_count - 1) {
+                            string str = "node " + i;
+                            UCL_DrawGizmos.DrawStringGUI(str, pos, 28, Color.black, Color.white);
+                            if(UCL_DrawGizmos.DrawButtonGUI("delete", pos, 28, new Vector2(50, 22), Color.red, but_col, but_offset)) {
+                                delete_node_at = i;
+                            }
                         }
+
 
                         if(i > 0 && path.m_Points.Count >= 2) {
                             var at = ((float)(i-0.5f) / (path.m_Points.Count - 1));

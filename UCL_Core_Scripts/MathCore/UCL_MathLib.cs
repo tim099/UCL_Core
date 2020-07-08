@@ -363,18 +363,35 @@ namespace UCL.Core.MathLib {
     }
     public static class LinearMapping {
         /// <summary>
+        /// Convert function into line
+        /// </summary>
+        /// <param name="func"></param>
+        /// <param name="seg_count"></param>
+        /// <returns></returns>
+        static public List<float> ConvertFunction(System.Func<float,float> func,int seg_count) {
+            var datas = new List<float>();
+            float del = 1f / seg_count;
+            for(int i = 0; i < seg_count + 1; i++) {
+                var x = del * i;
+                datas.Add(func(x));
+            }
+            return datas;
+        }
+
+
+        /// <summary>
         /// GetValue will return data at val position using lerp
         /// </summary>
         /// <param name="datas"></param> 
-        /// <param name="val"></param> val should between 0f ~ 1f
+        /// <param name="x"></param> val should between 0f ~ 1f
         /// <returns></returns>
-        static public float GetValue(List<float> datas, float val) {
-            if(datas == null || datas.Count == 0) return val;
+        static public float GetY(List<float> datas, float x) {
+            if(datas == null || datas.Count == 0) return x;
             if(datas.Count == 1) return datas[0];
-            if(val > 1) val = 1;
-            if(val < 0) val = 0;
-            if(datas.Count == 2) return Mathf.Lerp(datas[0], datas[1], val);
-            float pos = val * (datas.Count - 1);
+            if(x > 1) x = 1;
+            if(x < 0) x = 0;
+            if(datas.Count == 2) return Mathf.Lerp(datas[0], datas[1], x);
+            float pos = x * (datas.Count - 1);
             int cur = Mathf.FloorToInt(pos);
             if(cur >= datas.Count - 1) cur = datas.Count - 2;
             float lerp_pos = pos - cur;
@@ -385,14 +402,14 @@ namespace UCL.Core.MathLib {
             //Debug.LogWarning("a:" + a + ",b:" + b + ",val:" + val+ ",lerp_pos:"+ lerp_pos);
             return Mathf.Lerp(a, b, lerp_pos);
         }
-        static public float GetPosition(List<float> datas, float val) {
-            if(datas == null || datas.Count <= 1) return val;
+        static public float GetX(List<float> datas, float y) {
+            if(datas == null || datas.Count <= 1) return y;
             float prev = datas[0];
             float cur = prev;
             int i = 1;
             for(; i < datas.Count; i++) {
                 cur = datas[i];
-                if(prev <= val && val <= cur) {
+                if(prev <= y && y <= cur) {
                     break;
                 }
                 prev = cur;
@@ -400,7 +417,7 @@ namespace UCL.Core.MathLib {
             float del = cur - prev;
             float seg_pos = 1;
             if(del > 0) {
-                seg_pos = (val - prev) / del;
+                seg_pos = (y - prev) / del;
             }
             //Debug.LogWarning("GetPosition seg_pos:" + seg_pos+ ",i:"+ i);
             float pos = ((i - 1 + seg_pos) / (float)(datas.Count - 1));

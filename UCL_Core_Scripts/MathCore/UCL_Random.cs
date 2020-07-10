@@ -65,19 +65,22 @@ namespace UCL.Core.MathLib {
         public Vector3 OnUnitSphere() {
             var xy = OnUnitCircle();
             var z = Range(-1f, 1f);
+            float r = Mathf.Sqrt(1 - z * z);//MathLib.Lib.Cbrt
+
+            return new Vector3(r*xy.x, r*xy.y, z);
+        }
+        public Vector3 InUnitSphere() {
+            var xy = InUnitCircle();
+            var z = Range(-1f, 1f);
             bool neg = false;
             if(z < 0) {
                 neg = true;
                 z = -z;
             }
-            //z = 1f - z;//MathLib.Lib.Cbrt(z * z);
-            //z = MathLib.Lib.Cbrt(z);//z * z * Mathf.Sqrt(z);
-
-
+            z = 1 - Mathf.Sqrt(z);
             float r = Mathf.Sqrt(1 - z * z);//MathLib.Lib.Cbrt
-
             if(neg) z = -z;
-            return new Vector3(r*xy.x, r*xy.y, z);
+            return new Vector3(r * xy.x, r * xy.y, z);
         }
         #region Range
         /// <summary>

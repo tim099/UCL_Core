@@ -84,6 +84,18 @@ namespace UCL.Core.MathLib.Demo {
         }
 
         [ATTR.UCL_FunctionButton]
+        public void Rand_InUnitSphere() {
+            if(m_Rnd == null) InitSeed();
+            m_UpdateVal = !m_UpdateVal;
+            m_RandomPoints3D.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.InUnitSphere();
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints3D.Add(point);
+            }
+        }
+
+        [ATTR.UCL_FunctionButton]
         public void InitSeedByTime() {
             Debug.LogWarning("Time:" + System.DateTime.Now.ToLongTimeString());
             m_Seed = MathLib.Crc32.Sum(System.DateTime.Now);
@@ -109,17 +121,44 @@ namespace UCL.Core.MathLib.Demo {
         public Color m_PointColor3D = Color.green;
         public List<Vector3> m_RandomPoints3D = new List<Vector3>();
         public bool m_UpdateVal;
+        [Range(0f,1f)]public float m_Points3D_ShowRange = 1.0f;
+        [Range(-1f, 1f)] public float m_Points3D_ShowPos = 0.5f;
+        /// <summary>
+        /// x=0,y=1,z=2
+        /// </summary>
+        [Range(0, 2)] public int m_RangeAxis = 1;
+        [PA.UCL_ReadOnly] [SerializeField] int m_Points3DShowCount = 0;
         private void OnDrawGizmos() {
 #if UNITY_EDITOR
             var prev = Gizmos.color;
             Gizmos.color = m_PointColor3D;
+            m_Points3DShowCount = 0;
+            if(m_Points3D_ShowRange < 1.0f) {
+                float min = m_Points3D_ShowPos - m_Points3D_ShowRange;
+                if(min < -1) min = -1;
+                float max = m_Points3D_ShowPos + m_Points3D_ShowRange;
+                if(max > 1) max = 1;
+                foreach(var point in m_RandomPoints3D) {
 
-            foreach(var point in m_RandomPoints3D) {
-                //Core.UCL_DrawGizmos.DrawConstSizeSphere(transform.TransformPoint(point), 1f);
-                //UCL_DrawGizmos.DrawCube
-                Core.UCL_DrawGizmos.DrawSphere(transform.TransformPoint(point), 1f);
-                //Gizmos.DrawCube(transform.TransformPoint(point), Vector3.one);
+                    var val = point.GetValue(m_RangeAxis);
+                    if(val >= min && val <= max) {
+                        m_Points3DShowCount++;
+                        Core.UCL_DrawGizmos.DrawSphere(transform.TransformPoint(point), 1f);
+                    }
+                }
+            } else {
+                m_Points3DShowCount = m_RandomPoints3D.Count;
+                foreach(var point in m_RandomPoints3D) {
+                    //Core.UCL_DrawGizmos.DrawConstSizeSphere(transform.TransformPoint(point), 1f);
+                    //UCL_DrawGizmos.DrawCube
+                    //float pos = 10 * point.y;
+                    //pos = pos - Mathf.FloorToInt(pos);
+                    //Gizmos.color = pos > 0.5f ? m_PointColor3D : Color.black;//Color.Lerp(m_PointColor3D, Color.black, pos);
+                    Core.UCL_DrawGizmos.DrawSphere(transform.TransformPoint(point), 1f);
+                    //Gizmos.DrawCube(transform.TransformPoint(point), Vector3.one);
+                }
             }
+
 
             Gizmos.color = prev;
 #endif

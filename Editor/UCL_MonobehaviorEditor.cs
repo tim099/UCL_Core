@@ -19,6 +19,7 @@ namespace UCL.Core.EditorLib {
             m_RequiresConstantRepaint = (type.GetCustomAttributes(typeof(ATTR.RequiresConstantRepaintAttribute), true).Length > 0);
             var methods = type.GetMethods();//.Where(m => m.GetCustomAttributes(typeof(ATTR.UCL_FunctionButtonAttribute), false).Length > 0).ToArray();
             //Debug.LogWarning("type:" + type.Name + ",methods:" + methods.Length);
+            Exception exception = null;
             if(methods.Length > 0) {
                 var class_type = this.GetType();
                 var class_name = class_type.Name;
@@ -43,10 +44,11 @@ namespace UCL.Core.EditorLib {
                                         }
                                     }
                                 }
-
                             }
                         } catch(Exception e) {
-                            Debug.LogError(class_name + " " + attr_type.Name + " Exception:" + e);
+                            exception = e;
+                            Debug.LogWarning("UCL_FunctionButton:"
+                                + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }
                     {
@@ -54,22 +56,38 @@ namespace UCL.Core.EditorLib {
                         try {
                             var attr = method.GetCustomAttributes(attr_type, false);
                             if(attr.Length > 0) {
+
+
                                 //Debug.LogWarning("attr.Length:" + attr.Length);
                                 GUILayout.Box(method.Name);
                                 for(int j = 0; j < attr.Length; j++) {
                                     var ba = (ATTR.UCL_DrawTexture2DAttribute)attr[j];
-                                    var tex = ba.GetTexture();
-                                    method.Invoke(target, new object[] { tex });
-                                    GUILayout.Box(tex.texture);
+                                    var return_type = method.ReturnType;
+                                    //Debug.LogWarning("return_type:" + return_type.Name);
+                                    if(return_type.IsAssignableFrom(typeof(Core.TextureLib.UCL_Texture2D))) {//IsSubclassOf
+                                        var tex = method.Invoke(target, null) as Core.TextureLib.UCL_Texture2D;
+                                        if(tex != null) GUILayout.Box(tex.texture);
+                                    } else {
+                                        var tex = ba.GetTexture();
+                                        method.Invoke(target, new object[] { tex });
+                                        GUILayout.Box(tex.texture);
+                                    }
+
                                 }
                             }
                         } catch(Exception e) {
-                            Debug.LogError(class_name + " " + attr_type.Name + " Exception:" + e);
+                            exception = e;
+                            Debug.LogWarning("UCL_DrawTexture2D:"
+                                + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }
                 }
                 GUILayout.EndVertical();
                 Resources.UnloadUnusedAssets();
+
+                if(exception != null) {
+                    throw exception;
+                }
                 //EditorGUILayout.EndVertical();
             }
 

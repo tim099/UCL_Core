@@ -192,11 +192,35 @@ namespace UCL.Core.MathLib {
         };
         #endregion
     }
+    public static partial class Extensions {
+        #region Vector2
+        public static Vector2 ToTextureSpace(this Vector2 pos) {
+            return new Vector2(0.5f + 0.5f * pos.x, 0.5f + 0.5f * pos.y);
+        }
+        public static Vector2 ToWorldSpace(this Vector2 pos) {
+            return new Vector2(2f * pos.x - 1f, 2f * pos.y - 1f);
+        }
+        #endregion
+    }
     public static class Lib {
         #region Lerp
+        /// <summary>
+        /// return the cubic
+        /// </summary>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        public static float Cbrt(float val) {
+            const float ot = 1f / 3f;
+            return Mathf.Pow(val, ot);
+        }
+        public static float Lerp(float a, float b, float val) {
+            return a * (1f - val) + b * val;
+        }
         public static Vector3 Lerp(Vector3 a,Vector3 b,float val) {
-            var del = b - a;
-            return a + del * val;
+            return a * (1f - val) + b * val;
+        }
+        public static Vector2 Lerp(Vector2 a, Vector2 b, float val) {
+            return a * (1f - val) + b * val;
         }
         public static Quaternion Lerp(Quaternion a, Quaternion b, float val) {
             //return Slerp(a, b, val);

@@ -10,6 +10,9 @@ namespace UCL.Core.ATTR {
         TextureFormat m_TextureFormat;
         Type m_Type;
         //static int m_Count = 0;
+        public UCL_DrawTexture2DAttribute() {
+            m_Size = Vector2Int.one;
+        }
         public UCL_DrawTexture2DAttribute(int size_x, int size_y, TextureFormat _TextureFormat = TextureFormat.ARGB32,
             Type type = null) {
             //m_Count++;

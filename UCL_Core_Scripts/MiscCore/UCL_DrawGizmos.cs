@@ -43,6 +43,19 @@ namespace UCL.Core {
             Gizmos.color = restoreColor;
 #endif
         }
+        /// <summary>
+        /// Not done yet!!
+        /// </summary>
+        /// <param name="pos"></param>
+        /// <param name="col"></param>
+        /// <param name="size"></param>
+        public static void DrawPoint(Vector3 pos, Color col ,float size) {
+#if UNITY_EDITOR
+
+#endif
+        }
+
+
         public static void DrawLine(Vector3 start, Vector3 end, Color? color = null) {
 #if UNITY_EDITOR
             var restoreColor = Gizmos.color;
@@ -66,6 +79,11 @@ namespace UCL.Core {
                     DrawLine(TransformByPixel(start, 0, i - half_width), TransformByPixel(end, 0, i - half_width), color);
                 }
             }
+#endif
+        }
+        public static void DrawSphere(Vector3 pos, float size) {
+#if UNITY_EDITOR
+            Gizmos.DrawSphere(pos, size);
 #endif
         }
         public static void DrawConstSizeSphere(Vector3 pos, float size) {

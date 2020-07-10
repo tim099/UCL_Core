@@ -105,11 +105,15 @@ namespace UCL.Core.TextureLib {
                     int dx = j - x;
                     int dy = i - y;
                     if(Mathf.Sqrt(dx * dx + dy * dy) <= radius) {
-                        SetPixel(j, i, col);
+                        DrawPixel(j, i, col);
                     }
                 }
             }
         }
+        virtual public void DrawDot(Vector2 pos, Color col, int radius = 0) {
+            DrawDot(pos.x, pos.y, col, radius);
+        }
+
         /// <summary>
         /// line_func take x as parameter and should return the value of y
         /// y range between 0 ~ 1
@@ -272,6 +276,24 @@ namespace UCL.Core.TextureLib {
             if(pos.y >= height) pos.y = height - 1;
             m_Col[pos.x + pos.y * width] = col;
         }
+        virtual public void DrawPixel(int x, int y, Color col) {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            if(x < 0) x = 0;
+            if(y < 0) y = 0;
+            if(x >= width) x = width - 1;
+            if(y >= height) y = height - 1;
+            int at = x + y * width;
+            if(col.a < 1f && m_Col[at] != null) {
+                Color o_col = m_Col[at];
+                Color new_col = Color.Lerp(o_col, col, col.a);
+                new_col.a = Mathf.Max(o_col.a, new_col.a);
+                m_Col[at] = new_col;
+            } else {
+                m_Col[at] = col;
+            }
+            //Debug.LogWarning(("Pos:") + (x + y * Width) + "Col:" + col);
+        }
         virtual public void SetPixel(int x,int y, Color col) {
             m_TextureUpdated = true;
             m_SpriteUpdated = true;
@@ -280,6 +302,7 @@ namespace UCL.Core.TextureLib {
             if(x >= width) x = width - 1;
             if(y >= height) y = height - 1;
             m_Col[x + y * width] = col;
+
             //Debug.LogWarning(("Pos:") + (x + y * Width) + "Col:" + col);
         }
         virtual public Color[] GetPixels() { return m_Col; }

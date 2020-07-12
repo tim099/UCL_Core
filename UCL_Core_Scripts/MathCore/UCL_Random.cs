@@ -40,6 +40,9 @@ namespace UCL.Core.MathLib {
                 }
                 return _Instance;
             }
+            set {
+                _Instance = value;
+            }
         }
         public int m_Seed;
         protected System.Random m_Rnd;

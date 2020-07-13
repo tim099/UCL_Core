@@ -2,15 +2,23 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UCL.Core.ExtensionMethod;
+using UCL.Core.ObjectOperatorExtension;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
+//https://docs.unity3d.com/ScriptReference/EditorGUILayout.PropertyField.html
+
 namespace UCL.Core.PA {
     [System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
     public class UCL_EnumMaskAttribute : PropertyAttribute {
+        public bool m_DrawProperty = false;
+        public UCL_EnumMaskAttribute() {
 
+        }
+        public UCL_EnumMaskAttribute(bool draw_property) {
+            m_DrawProperty = draw_property;
+        }
     }
 #if UNITY_EDITOR
     [UnityEditor.CustomPropertyDrawer(typeof(UCL_EnumMaskAttribute))]
@@ -28,17 +36,18 @@ namespace UCL.Core.PA {
         protected Array m_ValuesArr = null;
         protected bool m_Foldout = false;
         public override void OnGUI(Rect position, UnityEditor.SerializedProperty property, GUIContent label) {
-            var target = fieldInfo.GetValue(property.serializedObject.targetObject);
-            var type = target.GetType();
+            var attr = attribute as UCL_EnumMaskAttribute;
+            var target_val = fieldInfo.GetValue(property.serializedObject.targetObject);
+            var type = target_val.GetType();
             var underlying_type = Enum.GetUnderlyingType(type);
-            var val = Convert.ChangeType(target, underlying_type);
+            var val = Convert.ChangeType(target_val, underlying_type);
 
             EditorGUI.BeginProperty(position, label, property);
             bool prev = m_Foldout;
             m_Foldout = EditorGUI.Foldout(new Rect(position.x, position.y, position.width, EditorGUIUtility.singleLineHeight), m_Foldout, label, true);
             try {
                 if(m_Foldout) {
-                    var arr = Enum.GetValues(target.GetType());
+                    var arr = Enum.GetValues(target_val.GetType());
                     var name_arr = Enum.GetNames(fieldInfo.FieldType);
                     List<object> m_list = new List<object>();
                     List<string> m_namelist = new List<string>();
@@ -64,27 +73,32 @@ namespace UCL.Core.PA {
                     //GUILayout.EndHorizontal();
                     for(int i = 0; i < names.Length; i++) {
                         var enum_val = m_ValuesArr.GetValue(i);
-                        bool mask_check = target.EnumDoMaskCheck(enum_val);
+                        bool mask_check = target_val.EnumDoMaskCheck(enum_val);
                         if(EditorGUI.ToggleLeft(new Rect(position.x,
                             position.y + EditorGUIUtility.singleLineHeight * (m_BaseButtonCount + i), position.width,
                             EditorGUIUtility.singleLineHeight), names[i], mask_check)) {
                             if(!mask_check) {
-                                val = Convert.ChangeType(target.EnumOR(enum_val), underlying_type);
+                                val = Convert.ChangeType(target_val.EnumOR(enum_val), underlying_type);
                                 //target = n_val;
                                 //Debug.LogWarning("Do OR:" + names[i] + ",target:" + target.ToString());
                             }
                         } else {
                             if(mask_check) {
-                                val = Convert.ChangeType(target.EnumAND(enum_val.EnumNot()), underlying_type);
+                                val = Convert.ChangeType(target_val.EnumAND(enum_val.EnumNot()), underlying_type);
                                 //target.DoAND(enum_val.Not());
                                 //Debug.LogWarning("Do AND:" + names[i] + ",target:" + target.ToString());
                             }
 
                         }
                     }
+                    if(attr.m_DrawProperty) {
+                        GUILayout.Box(val.ToString());
+                        //EditorGUILayout.PropertyField(property);
+                    }
+
                 }
-                target = val;
-                fieldInfo.SetValue(property.serializedObject.targetObject, target);
+                target_val = val;
+                fieldInfo.SetValue(property.serializedObject.targetObject, target_val);
                 property.serializedObject.ApplyModifiedProperties();
             }catch (Exception e) {
                 Debug.LogError("UCL_EnumMaskPropertyDrawer Exception:" + e);

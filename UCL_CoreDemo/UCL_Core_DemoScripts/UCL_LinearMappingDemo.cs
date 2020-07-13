@@ -5,6 +5,7 @@ using UnityEngine;
 namespace UCL.Core.MathLib.Demo {
     [ATTR.EnableUCLEditor]
     public class UCL_LinearMappingDemo : MonoBehaviour {
+#if UNITY_EDITOR
         public List<float> m_Datas;
         [PA.UCL_ReadOnly] public List<float> m_OutPositions;
         [Range(0,1)]public float m_Val;
@@ -63,7 +64,7 @@ namespace UCL.Core.MathLib.Demo {
             */
             Gizmos.color = prev_col;
         }
-#if UNITY_EDITOR
+
         [Core.ATTR.UCL_DrawTexture2D(256, 256, TextureFormat.ARGB32, typeof(Core.TextureLib.UCL_Texture2D))]
         public void Editor_DebugCurve(Core.TextureLib.UCL_Texture2D m_CurveTexture) {
             m_CurveTexture.SetColor(Color.black);
@@ -96,7 +97,7 @@ namespace UCL.Core.MathLib.Demo {
         public void InitData() {
             m_Datas = MathLib.LinearMapping.ConvertFunction(CurveFunc, m_SegCount);
         }
-    }
 #endif
+    }
 }
 

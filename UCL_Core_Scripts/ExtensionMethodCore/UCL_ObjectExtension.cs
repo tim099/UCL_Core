@@ -2,7 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-namespace UCL.Core.ExtensionMethod {
+namespace UCL.Core.ObjectOperatorExtension {
     public static partial class ExtensionMethods {
         public static bool IsNumber(this object a) {
             return a is sbyte
@@ -272,4 +272,23 @@ namespace UCL.Core.ExtensionMethod {
         }
     }
 }
-
+namespace UCL.Core.ObjectReflectionExtension {
+    public static partial class ExtensionMethods {
+        public static object Invoke(this object obj, string function_name, params object[] parameters) {
+            return obj.InvokeFunc(function_name, parameters);
+        }
+        public static object InvokeFunc(this object obj, string function_name, object[] parameters) {
+            Type type = obj.GetType();
+            Type[] types = new Type[parameters.Length];
+            for(int i = 0; i < parameters.Length; i++) {
+                types[i] = parameters[i].GetType();
+            }
+            var method = type.GetMethod(function_name, types);
+            if(method == null) {
+                Debug.LogError("InvokeFunc Fail!!function_name:" + function_name + " not exist in type:" + type.Name);
+                return null;
+            }
+            return method.Invoke(obj, parameters);
+        }
+    }
+}

@@ -42,10 +42,10 @@ namespace UCL.Core.Game {
             if(!SetInstance(this)) return;
 
             f_Inited = true;
-            
+            if(m_GameServices == null) m_GameServices = new List<UCL_GameService>();
             FileLib.Lib.CreateDirectory(GetGameFolderPath());
 
-
+            
             foreach(var service in m_GameServices) {
                 service.Init();
             }

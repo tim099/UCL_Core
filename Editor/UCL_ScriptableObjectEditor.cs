@@ -13,9 +13,9 @@ namespace UCL.Core.EditorLib {
             Type type = target.GetType();
             if(type.GetCustomAttributes(typeof(ATTR.EnableUCLEditor), true).Length == 0) return;
 
+            Exception exception = null;
             var methods = type.GetMethods();
             if(methods.Length > 0) {
-                
                 var class_type = this.GetType();
                 var class_name = class_type.Name;
 
@@ -41,7 +41,9 @@ namespace UCL.Core.EditorLib {
                                 }
                             }
                         } catch(Exception e) {
-                            Debug.LogError(class_name + " " + attr_type.Name + " Exception:" + e);
+                            exception = e;
+                            Debug.LogWarning("UCL_FunctionButton:"
+                                + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }
                     {
@@ -57,13 +59,18 @@ namespace UCL.Core.EditorLib {
                                 }
                             }
                         } catch(Exception e) {
-                            Debug.LogError(class_name + " " + attr_type.Name + " Exception:" + e);
+                            exception = e;
+                            Debug.LogWarning("UCL_DrawTexture2D:"
+                                + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }
 
                 }
                 GUILayout.EndVertical();
                 Resources.UnloadUnusedAssets();
+                if(exception != null) {
+                    throw exception;
+                }
             }
 
         }

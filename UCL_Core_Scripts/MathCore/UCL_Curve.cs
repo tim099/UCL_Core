@@ -432,7 +432,9 @@ namespace UCL.Core.MathLib {
 
             return Lerp(cur, u);
         }
-
+        public float GetPathLength() {
+            return m_PathLength;
+        }
         public Vector3 GetPosByLengthLinear(float length) {
             if(m_PathPoints.Length < 4) return Vector3.zero;
 

@@ -9,11 +9,11 @@ namespace UCL.Core.DebugLib {
                 m_OnGUIact = new UnityEngine.Events.UnityEvent();
 
             }
-            public void Draw() {
+            internal protected void Draw() {
                 //Debug.LogWarning("Draw");
                 if(m_OnGUIact != null) m_OnGUIact.Invoke();
             }
-            public DebugData SetOnGUIAct(UnityEngine.Events.UnityAction act) {
+            public DebugData AddOnGUIAct(UnityEngine.Events.UnityAction act) {
                 m_OnGUIact.AddListener(act);
                 //m_OnGUIact.Invoke();
                 return this;

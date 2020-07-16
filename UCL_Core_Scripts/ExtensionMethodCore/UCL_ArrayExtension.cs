@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 
 public static partial class ExtensionMethods {
@@ -16,4 +18,7 @@ public static partial class ExtensionMethods {
         arr.SetValue(arr.GetValue(a), b);
     }
     */
+    public static T ToStructure<T>(this byte[] buffer) {
+        return UCL.Core.MarshalLib.Lib.ToStructure<T>(buffer);
+    }
 }

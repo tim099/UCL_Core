@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.IO;
 
-namespace UCL.Core {
+namespace UCL.Core.DebugLib {
 #if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
 #endif

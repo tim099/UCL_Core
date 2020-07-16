@@ -6,6 +6,18 @@ using UnityEngine;
 
 namespace UCL.Core.MarshalLib {
     static public class Lib {
+        public static byte[] ToByteArray(object obj) {
+            //var type = obj.GetType();
+            //Debug.LogWarning("Marshal.SizeOf(obj):" + Marshal.SizeOf(obj));
+            byte[] arr = new byte[Marshal.SizeOf(obj)];
+            GCHandle handle = GCHandle.Alloc(obj, GCHandleType.Pinned);
+            try {
+                Marshal.Copy(handle.AddrOfPinnedObject(), arr, 0, arr.Length);
+                return arr;
+            } finally {
+                handle.Free();
+            }
+        }
         public static byte[] ToByteArray<T>(T obj) {
             Byte[] arr = new Byte[Marshal.SizeOf(typeof(T))];
             GCHandle handle = GCHandle.Alloc(obj, GCHandleType.Pinned);

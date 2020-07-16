@@ -292,3 +292,8 @@ namespace UCL.Core.ObjectReflectionExtension {
         }
     }
 }
+public static partial class ExtensionMethods {
+    public static byte[] ToByteArray(this object obj) {
+        return UCL.Core.MarshalLib.Lib.ToByteArray(obj);
+    }
+}

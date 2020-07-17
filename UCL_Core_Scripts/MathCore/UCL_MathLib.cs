@@ -421,8 +421,8 @@ namespace UCL.Core.MathLib {
             float lerp_pos = pos - cur;
             float a = datas[cur];
             float b = datas[cur + 1];
-            float magnitude = b - a;
-            float seg_val = lerp_pos / magnitude;
+            //float magnitude = b - a;
+            //float seg_val = lerp_pos / magnitude;
             //Debug.LogWarning("a:" + a + ",b:" + b + ",val:" + val+ ",lerp_pos:"+ lerp_pos);
             return Mathf.Lerp(a, b, lerp_pos);
         }
@@ -448,6 +448,32 @@ namespace UCL.Core.MathLib {
             if(pos > 1) pos = 1;
             //pos +=  / datas.Count;
             return pos;
+        }
+
+        static public Vector3 GetValue(List<Vector3> datas,float x) {
+            return GetValue(datas, x, MathLib.Lib.Lerp);
+        }
+        static public Vector2 GetValue(List<Vector2> datas, float x) {
+            return GetValue(datas, x, MathLib.Lib.Lerp);
+        }
+        /// <summary>
+        /// GetValue will return data at val position using lerp
+        /// </summary>
+        /// <param name="datas"></param> 
+        /// <param name="x"></param> val should between 0f ~ 1f
+        /// <returns></returns>
+        static public T GetValue<T>(List<T> datas, float x , System.Func<T,T,float, T> lerp_func) {
+            if(datas == null || datas.Count == 0) return default;
+            if(datas.Count == 1) return datas[0];
+            if(x > 1) x = 1;
+            if(x < 0) x = 0;
+            if(datas.Count == 2) return lerp_func(datas[0], datas[1], x);
+            float pos = x * (datas.Count - 1);
+            int cur = Mathf.FloorToInt(pos);
+            if(cur >= datas.Count - 1) cur = datas.Count - 2;
+            float lerp_pos = pos - cur;
+            //Debug.LogWarning("a:" + a + ",b:" + b + ",val:" + val+ ",lerp_pos:"+ lerp_pos);
+            return lerp_func(datas[cur], datas[cur + 1], lerp_pos);
         }
     }
 }

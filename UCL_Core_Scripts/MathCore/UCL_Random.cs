@@ -32,7 +32,7 @@ namespace UCL.Core.MathLib {
         }
     }
     public class UCL_Random {
-        public static UCL_Random _Instance = null; 
+        protected static UCL_Random _Instance = null; 
         public static UCL_Random Instance {
             get {
                 if(_Instance == null) {

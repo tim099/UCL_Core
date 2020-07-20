@@ -402,7 +402,34 @@ namespace UCL.Core.MathLib {
             return datas;
         }
 
-
+        static public List<float> GetLength(List<Vector3> points) {
+            List<float> point_dis = new List<float>();
+            float total_len = 0;
+            point_dis.Add(0);
+            for(int i = 0, len = points.Count - 1; i < len; i++) {
+                float seg_len = (points[i] - points[i + 1]).magnitude;
+                total_len += seg_len;
+                point_dis.Add(total_len);
+            }
+            for(int i = 0, len = point_dis.Count; i < len; i++) {
+                point_dis[i] /= total_len;
+            }
+            return point_dis;
+        }
+        static public List<float> GetLength<T>(List<T> points, System.Func<T,T,float> magnitude_func) {
+            List<float> point_dis = new List<float>();
+            float total_len = 0;
+            point_dis.Add(0);
+            for(int i = 0, len = points.Count - 1; i < len; i++) {
+                float seg_len = magnitude_func(points[i], points[i + 1]);
+                total_len += seg_len;
+                point_dis.Add(total_len);
+            }
+            for(int i = 0, len = point_dis.Count; i < len; i++) {
+                point_dis[i] /= total_len;
+            }
+            return point_dis;
+        }
         /// <summary>
         /// GetValue will return data at val position using lerp
         /// </summary>

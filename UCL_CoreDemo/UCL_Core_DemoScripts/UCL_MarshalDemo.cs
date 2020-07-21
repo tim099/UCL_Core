@@ -34,12 +34,52 @@ namespace UCL.Core.MarshalLib.Demo {
             //public string m_Str;
             //public float[] m_F;
         }
+
+        public class ValT {
+            public ValT() {
+                m_Int = Core.MathLib.UCL_Random.Instance.Next(30);
+                m_F = Core.MathLib.UCL_Random.Instance.NextFloat(100f);
+                test = "Hi:" + m_Int + ",QWQ";
+            }
+            public string test;
+            public int m_Int;
+            public float m_F;
+        }
+
+        public class Demo3 {
+            public Demo3() {
+                m_Demo = new Demo4();
+                m_Demo.Init();
+            }
+            public int m_Int;
+            public float m_F;
+            public long m_L;
+            public Demo4 m_Demo;
+            public ValT[] m_Vals;
+            public Int64[] TestArr;
+            
+        }
+
+        public struct Demo4 {
+            public void Init() {
+                TestArr = new long[5];
+                for(int i = 0; i < TestArr.Length; i++) {
+                    TestArr[i] = 11 + i * 8 + i * i * 3;
+                }
+            }
+            public int m_Int;
+            public float m_F;
+            public long m_L;
+
+            public Int64[] TestArr;
+        }
         public byte[] m_Data;
         public Demo m_Demo;
         public Demo m_DemoTest;
         public Demo2 m_Demo2;
         [ATTR.UCL_FunctionButton]
         public void Test() {
+            /*
             unsafe {
                 m_Demo = new Demo();
                 //m_Demo.TestArr = new sbyte[1];
@@ -48,7 +88,19 @@ namespace UCL.Core.MarshalLib.Demo {
 
                 m_DemoTest = m_Demo.ToByteArray().ToStructure<Demo>();
             }
-
+            */
+            var test = new Demo3();
+            test.TestArr = new long[5];
+            for(int i = 0; i < test.TestArr.Length; i++) {
+                test.TestArr[i] = 37 + i * 5 + i * i * 2;
+            }
+            test.m_Vals = new ValT[3];
+            for(int i = 0; i < test.m_Vals.Length; i++) {
+                test.m_Vals[i] = new ValT();
+            }
+            int a = 17;
+            Debug.LogWarning(a.UCL_ToString());
+            Debug.LogWarning(test.UCL_ToString());
         }
 
         [ATTR.UCL_FunctionButton]

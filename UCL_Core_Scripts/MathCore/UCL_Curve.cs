@@ -61,11 +61,11 @@ namespace UCL.Core.MathLib {
 #endif
         public void CreateLoop() {
             if(m_Points.Count < 2) return;
+            m_Loop = true;
             if(m_Points.LastElement() == m_Points.FirstElement()) {
                 Debug.LogWarning("CreateLoop() Fail,start point == end point!!");
                 return;
             }
-            m_Loop = true;
             m_Points.Add(m_Points[0]);
             UpdatePathPoint();
             //UpdatePathPoint();
@@ -96,7 +96,13 @@ namespace UCL.Core.MathLib {
             //public List<float> m_Origin;
         }
         public void UpdatePathPoint() {
+            if(m_Points == null) {
+                m_Points = new List<Vector3>();
+                m_Points.Add(Vector3.zero);
+                m_Points.Add(Vector3.right);
+            }
             //Debug.LogWarning("UpdatePathPoint()");
+            if(m_Points == null) m_Points = new List<Vector3>();
             if(m_Points.Count == 0) return;
             m_SegLengthDatas.Clear();
             if(m_Loop && m_Points.Count > 2) {
@@ -242,7 +248,7 @@ namespace UCL.Core.MathLib {
 #endif
         protected void DrawGizmos() {
 #if UNITY_EDITOR
-            if(m_PathPoints.Length < 4) return;
+            if(m_PathPoints == null || m_PathPoints.Length < 4) return;
             if(m_GenStartPos != transform.position ||
                 m_GenStartRot != transform.rotation ||
                 m_GenStartScale != transform.lossyScale) {

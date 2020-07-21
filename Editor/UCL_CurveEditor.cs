@@ -34,13 +34,15 @@ namespace UCL.Core.MathLib {
                     //if(path.m_Loop) --draw_count;
                     for(int i = 0; i < draw_count; i++) {
                         var p = path.m_Points[i];
-                        Vector3 pos = path.transform.TransformPoint(p);
-                        var new_pos = path.transform.InverseTransformPoint(Handles.PositionHandle(pos, Quaternion.identity));
-                        if((new_pos - p).magnitude > 0.001f) {
-                            //Debug.LogWarning("(new_pos - p).magnitude:" + (new_pos - p).magnitude);
-                            path.SetPoint(i, new_pos);
-                        }
+
                         if(!path.m_Loop || i < draw_count - 1) {
+                            Vector3 pos = path.transform.TransformPoint(p);
+                            var new_pos = path.transform.InverseTransformPoint(Handles.PositionHandle(pos, Quaternion.identity));
+                            if((new_pos - p).magnitude > 0.001f) {
+                                //Debug.LogWarning("(new_pos - p).magnitude:" + (new_pos - p).magnitude);
+                                path.SetPoint(i, new_pos);
+                            }
+
                             string str = "node " + i;
                             UCL_DrawGizmos.DrawStringGUI(str, pos, 28, Color.black, Color.white);
                             if(UCL_DrawGizmos.DrawButtonGUI("delete", pos, 28, new Vector2(50, 22), Color.red, but_col, but_offset)) {

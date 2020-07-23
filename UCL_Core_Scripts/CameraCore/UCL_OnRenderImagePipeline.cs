@@ -4,7 +4,9 @@ using UnityEngine;
 
 
 namespace UCL.Core.CameraLib {
+    [ExecuteInEditMode]
     public class UCL_OnRenderImagePipeline : MonoBehaviour {
+        public bool m_RenderInEditMode = true;
         public List<UCL_OnRenderImageModule> m_Modules;
         RenderTexture m_TmpDes;
         Container.UCL_Vector<UCL_OnRenderImageModule> m_ActiveModules = new Container.UCL_Vector<UCL_OnRenderImageModule>();
@@ -16,8 +18,12 @@ namespace UCL.Core.CameraLib {
             RenderTexture.ReleaseTemporary(m_TmpDes);
             m_TmpDes = null;
         }
+        //public Material m_Mat;
         private void OnRenderImage(RenderTexture source, RenderTexture destination) {
-            if(m_Modules == null || m_Modules.Count == 0 || source == null) {
+            //Graphics.Blit(source, destination, m_Mat);
+
+            ///*
+            if(m_Modules == null || m_Modules.Count == 0 || source == null || (!m_RenderInEditMode && !Application.isPlaying)) {
                 Graphics.Blit(source, destination);
                 return;
             }
@@ -34,11 +40,10 @@ namespace UCL.Core.CameraLib {
             }
 
             RenderTexture cur_source = source;
-            if(m_TmpDes != null && (m_TmpDes.width != source.width || m_TmpDes.height != source.height)) {
+            if(m_TmpDes != null ) {//&& (m_TmpDes.width != source.width || m_TmpDes.height != source.height)
                 RenderTexture.ReleaseTemporary(m_TmpDes);
                 m_TmpDes = null;
             }
-
             if(m_TmpDes == null) {
                 m_TmpDes = RenderTexture.GetTemporary(source.width, source.height);
             }
@@ -46,14 +51,14 @@ namespace UCL.Core.CameraLib {
                 var module = m_ActiveModules[i];
                 if(!module.RenderOff()) {
                     if(i < count - 1) {
-                        module.Render(cur_source, m_TmpDes);
+                        module.Render(ref cur_source, ref m_TmpDes);
                         cur_source = m_TmpDes;
                     } else {
-                        module.Render(cur_source, destination);
+                        module.Render(ref cur_source, ref destination);
                     }
-
                 }
             }
+            //*/
         }
     }
 }

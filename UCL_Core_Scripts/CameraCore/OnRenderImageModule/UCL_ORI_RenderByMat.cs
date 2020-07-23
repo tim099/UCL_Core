@@ -23,9 +23,12 @@ namespace UCL.Core.CameraLib {
         public Material m_Mat;
         public string m_MainTexName = "_MainTex";
         public override bool RenderOff() {
-            return (m_Mat == null || !enabled || !gameObject.activeInHierarchy);
+            if(base.RenderOff()) return true;
+            return (m_Mat == null);
         }
-        public override void Render(RenderTexture source, RenderTexture destination) {
+        public override void Render(ref RenderTexture source, ref RenderTexture destination) {
+            //Graphics.Blit(source, destination);
+
             for(int i = 0; i < m_Textures.Count; i++) {
                 var tex = m_Textures[i];
                 m_Mat.SetTexture(tex.m_Name, tex.m_Texture);
@@ -34,7 +37,7 @@ namespace UCL.Core.CameraLib {
                 m_Mat.SetFloat(val.m_Name, val.m_Val);
             }
             m_Mat.SetTexture(m_MainTexName, source);
-            Graphics.Blit(source, destination, m_Mat, 0);
+            Graphics.Blit(source, destination, m_Mat);//, 0
         }
     }
 }

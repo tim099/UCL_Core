@@ -130,7 +130,7 @@ namespace UCL.Core.MathLib {
         /// <summary>
         /// Return a random float number between 0 [inclusive] and max [inclusive]
         /// </summary>
-        /// <param name="max"></param>
+        /// <param name="max">Max value of random number</param>
         /// <returns></returns>
         public float NextFloat(float max) {
             return max * (m_Rnd.Next() / (float)(int.MaxValue - 1));

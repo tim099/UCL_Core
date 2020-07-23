@@ -77,8 +77,44 @@ namespace UCL.Core.MarshalLib.Demo {
         public Demo m_Demo;
         public Demo m_DemoTest;
         public Demo2 m_Demo2;
+
+        enum ET {
+            a=0,
+            b,
+            c,
+        }
+        List<string> rec;
+        List<string> rec2;
+        [ATTR.UCL_FunctionButton]
+        public void Test2() {
+            rec = new List<string>();
+            rec2 = new List<string>();
+            int end_count = 0;
+            for(int i = 0; i < 10; i++) {
+                int at = i;
+                Core.ThreadLib.UCL_ThreadManager.Instance.Run(delegate () {
+                    Debug.LogWarning("Hi Hi:"+at);
+                    lock(rec) {
+                        rec.Add("Hi Hi:" + at);
+                        Core.ThreadLib.UCL_ThreadManager.Instance.RunOnUpdate(delegate () {
+                            Debug.LogWarning("Ho Ho:" + at);
+                            rec2.Add("Ho Ho:" + at);
+                            if(++end_count >= 10) {
+                                Core.ThreadLib.UCL_ThreadManager.Instance.RunOnUpdate(delegate () {
+                                    for(int j = 0; j < 10; j++) {
+                                        Debug.LogWarning("rec:" + rec[j] + ",rec2:" + rec2[j]);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+        }
+
         [ATTR.UCL_FunctionButton]
         public void Test() {
+
             /*
             unsafe {
                 m_Demo = new Demo();
@@ -98,9 +134,20 @@ namespace UCL.Core.MarshalLib.Demo {
             for(int i = 0; i < test.m_Vals.Length; i++) {
                 test.m_Vals[i] = new ValT();
             }
+            test.m_F = Core.MathLib.UCL_Random.Instance.NextFloat(2.0f);
+            Dictionary<string, int> dic = new Dictionary<string, int>();
+
+            dic.Add("hii", 3);
+            dic.Add("No QAQ", 142);
+            Debug.LogWarning(dic.UCL_ToString());
+            ET e = ET.b;
+            Debug.LogWarning(e.UCL_ToString());
             int a = 17;
             Debug.LogWarning(a.UCL_ToString());
             Debug.LogWarning(test.UCL_ToString());
+
+            Debug.LogWarning(test.GetMember("m_F").UCL_ToString());
+            Debug.LogWarning(test.GetMember("m_Demo").UCL_ToString());
         }
 
         [ATTR.UCL_FunctionButton]

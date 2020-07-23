@@ -67,25 +67,12 @@ namespace UCL.Core.ThreadLib {
         protected bool m_Stop;
     }
     public class UCL_ThreadManager : UCL_Singleton<UCL_ThreadManager> {
-
         List<ThreadCmd> m_Cmds = new List<ThreadCmd>();
-        /*
-        public void QueueOnUnity(Action action, float time) {
-            if(time != 0) {
-                lock(Instance.m_DelayedList) {
-                    Instance.m_DelayedList.Add(new ThreadCmd { m_DelayTime = Time.time + time, m_Action = action });
-                }
-            } else {
-                lock(Instance.m_ActionList) {
-                    Instance.m_ActionList.Add(action);
-                }
-            }
-        }
-        */
+        Queue<System.Action> m_RunOnUpdateQue = new Queue<Action>();
         public bool Run(Action act) {
-            //Interlocked.Increment(ref m_ThreadCount);
             return ThreadPool.QueueUserWorkItem(RunAction, act);
         }
+
         void RunAction(object action) {
             try {
                 ((Action)action)();
@@ -95,9 +82,13 @@ namespace UCL.Core.ThreadLib {
                 //Interlocked.Decrement(ref m_ThreadCount);
             }
         }
-
+        public void RunOnUpdate(System.Action act) {
+            lock(m_RunOnUpdateQue) {
+                m_RunOnUpdateQue.Enqueue(act);
+            }
+        }
         /// <summary>
-        /// 
+        /// Run action on thread
         /// </summary>
         /// <param name="act"></param>Run in thread!!
         /// <param name="end_act"></param>Run In Monobehavior Update()
@@ -119,7 +110,7 @@ namespace UCL.Core.ThreadLib {
             }
             cmd.I_Run();
         }
-        // Update is called once per frame
+
         void Update() {
             {
                 for(int i = m_Cmds.Count - 1; i >= 0; i--) {
@@ -134,10 +125,12 @@ namespace UCL.Core.ThreadLib {
                         m_Cmds.Remove(cmd);
                     }
                 }
-
-
-
+                while(m_RunOnUpdateQue.Count > 0) {
+                    var act = m_RunOnUpdateQue.Dequeue();
+                    act.Invoke();
+                }
             }
+
         }
     }
 }

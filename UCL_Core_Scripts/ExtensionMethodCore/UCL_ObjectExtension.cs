@@ -298,18 +298,61 @@ public static partial class ExtensionMethods {
     public static byte[] ToByteArray(this object obj) {
         return UCL.Core.MarshalLib.Lib.ToByteArray(obj);
     }
-    public static string UCL_ToString(this object obj, int space = 0) {
+    public static object GetMember(this object obj, string name) {
+        if(obj == null) return null;
         Type type = obj.GetType();
-        if(!type.IsStructOrClass()) {
+        var info = type.GetField(name);
+        if(info == null) return null;
+        return info.GetValue(obj);
+    }
+    public static T GetMember<T>(this object obj, string name) {
+        return (T)obj.GetMember(name);
+    }
+    public static string UCL_ToString(this object obj, int space = 0) {
+        if(obj == null) {
+            if(space == 0) return "UCL_ToString Error!! obj == null";
+            return string.Empty;
+        }
+        Type type = obj.GetType();
+        if(type.IsPrimitive || !type.IsStructOrClass() || obj is Enum) {
             if(space == 0) return "(" + type.Name + ") : " + obj.ToString();
             return obj.ToString();
         }
+        if(obj is string) {
+            if(space == 0) return "(" + type.Name + ") : " + (string)obj;
+            return (string)obj;
+        }
+
         string space_str = string.Empty;
         StringBuilder builder = new StringBuilder();
         if(space > 0) {
             builder.Append("\n");
             space_str = new string('\t', space);
         }
+        IEnumerable ienum = obj as IEnumerable;
+        if(ienum != null) {
+            var dic = obj as IDictionary;
+            if(dic != null) {
+                builder.Append(space_str + "(" + type.Name + ")" + " : [");
+                string arrStr = string.Empty;
+                foreach(var key in dic.Keys) {
+                    builder.Append("("+key.UCL_ToString(space + 1) + " , " + dic[key].UCL_ToString(space + 1) + "), ");
+                }
+                builder.RemoveLast();
+                builder.RemoveLast();
+                builder.Append("]");
+            } else {
+                builder.Append(space_str + "(" + type.Name + ")" + " : [");
+                string arrStr = string.Empty;
+                foreach(var val in ienum) {
+                    builder.Append(val.UCL_ToString(space + 1) + ",");
+                }
+                builder.RemoveLast();
+                builder.Append("]");
+            }
+            return builder.ToString();
+        }
+
         FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         if(fields.Length > 0) {
             if(space == 0) {
@@ -318,22 +361,7 @@ public static partial class ExtensionMethods {
             foreach(var field in fields) {
                 var value = field.GetValue(obj);
                 Type f_type = field.FieldType;
-                IEnumerable ienum = value as IEnumerable;
-                if(ienum != null) {
-                    if(value is string) {
-                        builder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + (string)value);
-                    } else {
-                        builder.Append(space_str + field.Name + "(" + f_type.Name + ")" + " : [");
-                        string arrStr = string.Empty;
-                        foreach(var val in ienum) {
-                            builder.Append(val.UCL_ToString(space + 1) + ",");
-                        }
-                        builder.RemoveLast();
-                        builder.AppendLine("]");
-                    }
-                } else {
-                    builder.AppendLine(space_str +"("+ f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(space + 1));
-                }
+                builder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(space + 1));
             }
         } else {
             return obj.ToString();

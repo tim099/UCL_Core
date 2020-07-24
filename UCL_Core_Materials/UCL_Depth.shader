@@ -15,7 +15,7 @@ Shader "Custom/UCL_Depth"
 
 			struct v2f {
 			   float4 pos : SV_POSITION;
-			   float4 scrPos:TEXCOORD1;
+			   float4 scrPos: TEXCOORD1;
 			};
 
 			//Vertex Shader  
@@ -23,6 +23,7 @@ Shader "Custom/UCL_Depth"
 			   v2f o;
 			   o.pos = UnityObjectToClipPos(v.vertex);
 			   o.scrPos = ComputeScreenPos(o.pos);
+			   //UNITY_TRANSFER_DEPTH(o.depth);
 			   return o;
 			}
 
@@ -30,6 +31,7 @@ Shader "Custom/UCL_Depth"
 			half4 frag(v2f i) : COLOR{
 			   float depthValue = Linear01Depth(tex2Dproj(_CameraDepthTexture,UNITY_PROJ_COORD(i.scrPos)).r);
 			   return half4(depthValue,depthValue,depthValue,1);
+				//UNITY_OUTPUT_DEPTH(i.depth);
 			}
 			ENDCG
 		}

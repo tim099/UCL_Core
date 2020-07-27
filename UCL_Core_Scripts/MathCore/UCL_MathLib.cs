@@ -249,6 +249,113 @@ namespace UCL.Core.MathLib {
             return r;
         }
         #endregion
+
+        #region Diamond-Square
+        //c++ reference
+        //autor: Nick O'Brien
+        //https://medium.com/@nickobrien/diamond-square-algorithm-explanation-and-c-implementation-5efa891e486f
+
+        public static void DiamondSquare(float[,] Arr, int size) {
+            DiamondSquare(Arr, size, MathLib.UCL_Random.Instance);
+        }
+
+        public static void DiamondSquare(float[,] Arr, int size, MathLib.UCL_Random rnd) {
+            int half = size / 2;
+            if(half < 1) return;
+
+            int CHUNK_X = Arr.GetLength(0);
+            int CHUNK_Z = Arr.GetLength(1);
+            //square steps
+            for(int z = half; z < CHUNK_Z; z += size)
+                for(int x = half; x < CHUNK_X; x += size)
+                    SquareStep(Arr, x % CHUNK_X, z % CHUNK_Z, half, rnd);
+            // diamond steps
+            int col = 0;
+            for(int x = 0; x < CHUNK_X; x += half) {
+                col++;
+                //If this is an odd column.
+                if(col % 2 == 1)
+                    for(int z = half; z < CHUNK_Z; z += size)
+                        DiamondStep(Arr, x % CHUNK_X, z % CHUNK_Z, half, rnd);
+                else
+                    for(int z = 0; z < CHUNK_Z; z += size)
+                        DiamondStep(Arr, x % CHUNK_X, z % CHUNK_Z, half, rnd);
+            }
+            DiamondSquare(Arr, size / 2, rnd);
+        }
+        static void SquareStep(float[,] Arr, int x, int z, int reach, MathLib.UCL_Random rnd) {
+            int count = 0;
+            float avg = 0.0f;
+            int CHUNK_X = Arr.GetLength(0);
+            int CHUNK_Z = Arr.GetLength(1);
+
+            if(x - reach >= 0 && z - reach >= 0) {
+                avg += Arr[x - reach,z - reach];
+                count++;
+            }
+            if(x - reach >= 0 && z + reach < CHUNK_Z) {
+                avg += Arr[x - reach,z + reach];
+                count++;
+            }
+            if(x + reach < CHUNK_X && z - reach >= 0) {
+                avg += Arr[x + reach,z - reach];
+                count++;
+            }
+            if(x + reach < CHUNK_X && z + reach < CHUNK_Z) {
+                avg += Arr[x + reach,z + reach];
+                count++;
+            }
+            avg += DiamondRandom(reach, rnd);
+            avg /= count;
+            Arr[x,z] = avg;
+
+        }
+        static void DiamondStep(float[,] Arr, int x, int z, int reach, MathLib.UCL_Random rnd) {
+            int count = 0;
+            float avg = 0f;
+            int CHUNK_X = Arr.GetLength(0);
+            int CHUNK_Z = Arr.GetLength(1);
+
+            if(x - reach >= 0) {
+                avg += Arr[x - reach,z];
+                count++;
+            }
+            if(x + reach < CHUNK_X) {
+                avg += Arr[x + reach,z];
+                count++;
+            }
+            if(z - reach >= 0) {
+                avg += Arr[x,z - reach];
+                count++;
+            }
+            if(z + reach < CHUNK_Z) {
+                avg += Arr[x,z + reach];
+                count++;
+            }
+            avg += DiamondRandom(reach, rnd);
+            avg /= count;
+            Arr[x,z] = avg;
+        }
+        static float DiamondRandom(int range, MathLib.UCL_Random rnd) {
+            return 0;// rnd.Next(range * 2) - range;
+        }
+        /*
+        static void DiamondSquare(float[,] Arr, int size, int x=0, int y=0) {
+            if(Arr.GetLength(0) < x+size || Arr.GetLength(1) < y+size) {
+                return;
+            }
+            int l = size - 1;
+            float a = Arr[x , y];
+            float b = Arr[x + l, y];
+            float c = Arr[x + l, y + l];
+            float d = Arr[x , y + l];
+            float avg = (a + b + c + d)/4f;
+            int h = l / 2;
+            Arr[x + h, y + h] = avg;
+        }
+        */
+        #endregion
+        #region Misc
         public static int FindMaxAt<T>(T[] arr) where T : System.IComparable {
             if(arr.Length <= 1) return 0;
             T max = arr[0];
@@ -384,6 +491,7 @@ namespace UCL.Core.MathLib {
             }
             return (point - p_c).magnitude;
         }
+        #endregion
     }
     public static class LinearMapping {
         /// <summary>

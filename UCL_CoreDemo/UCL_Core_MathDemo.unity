@@ -345,6 +345,11 @@ MonoBehaviour:
   m_SmoothSeg: 20
   f_OnlyDrawGizmosOnSelected: 0
   m_Loop: 0
+  m_FixLength: 1
+  m_PathSegLength:
+  - 13.959092
+  - 3.3636315
+  m_PathLength: 17.322723
   m_WorldSpacePoints:
   - {x: 0.91, y: 1.55, z: 0}
   - {x: 14.687869, y: -0.68512344, z: 0}
@@ -355,62 +360,57 @@ MonoBehaviour:
   - {x: 14.687869, y: -0.68512344, z: 0}
   - {x: 12.61058, y: -1.147671, z: 0}
   - {x: 10.533292, y: -1.6102185, z: 0}
-  m_PathSegLength:
-  - 13.956342
-  - 3.366474
-  m_PathLength: 17.322815
   m_GenStartPos: {x: 0.91, y: 1.55, z: 0}
   m_GenStartRot: {x: -0, y: -0, z: -0, w: 1}
   m_GenStartScale: {x: 1, y: 1, z: 1}
   m_SegLengthDatas:
   - m_Data:
     - 0
-    - 0.051351357
-    - 0.10512849
-    - 0.1609035
-    - 0.2182484
-    - 0.27673504
-    - 0.3359353
-    - 0.39542103
-    - 0.45476404
-    - 0.5135361
-    - 0.57130915
-    - 0.627655
-    - 0.68214566
-    - 0.734353
-    - 0.78384966
-    - 0.83020777
-    - 0.8730001
-    - 0.9118001
-    - 0.9461821
-    - 0.97572213
+    - 0.051351637
+    - 0.10512924
+    - 0.16090491
+    - 0.21825059
+    - 0.27673808
+    - 0.3359393
+    - 0.39542595
+    - 0.45476994
+    - 0.5135429
+    - 0.5713168
+    - 0.6276633
+    - 0.6821545
+    - 0.73436224
+    - 0.7838589
+    - 0.83021677
+    - 0.87300867
+    - 0.91180754
+    - 0.9461879
+    - 0.97572565
     - 1
   - m_Data:
     - 0
-    - 0.07771254
-    - 0.13378896
-    - 0.17027488
-    - 0.18988842
-    - 0.20033692
-    - 0.21844558
-    - 0.24816242
-    - 0.2886075
-    - 0.33826697
-    - 0.39547607
-    - 0.45851737
-    - 0.52565044
-    - 0.59512436
-    - 0.66518444
-    - 0.73407304
-    - 0.80003613
-    - 0.86132634
-    - 0.9162077
-    - 0.9629766
+    - 0.07777209
+    - 0.13387445
+    - 0.17034556
+    - 0.18987775
+    - 0.2001417
+    - 0.21815649
+    - 0.24783643
+    - 0.28827357
+    - 0.33794525
+    - 0.39517993
+    - 0.45825607
+    - 0.525431
+    - 0.5949501
+    - 0.66505617
+    - 0.7339892
+    - 0.799992
+    - 0.86131376
+    - 0.91621715
+    - 0.96299237
     - 1
   m_DemoPoint: 0.663
   m_DemoPointColor: {r: 0, g: 0, b: 0, a: 1}
   m_DisPointCount: 40
-  m_GetPoint: 0
 --- !u!4 &691184020
 Transform:
   m_ObjectHideFlags: 0
@@ -425,6 +425,78 @@ Transform:
   m_Father: {fileID: 1679235631}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &737391842
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 737391843}
+  - component: {fileID: 737391844}
+  m_Layer: 0
+  m_Name: UCL_DiamondSquareDemo
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &737391843
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 737391842}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 6
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &737391844
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 737391842}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0ed9f72f287bc474fa20ac10ec0b6f8c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Seed: 0
+  m_RandBySeed: 0
+  m_Result:
+  - 0.47747403
+  - -0.09888375
+  - 0.1432256
+  - -0.19763434
+  - 0.14667916
+  - -0.17850117
+  - 0.082649134
+  - -0.21285236
+  - 0.11719222
+  - 0.21240397
+  - -0.095626675
+  - -0.35561228
+  - -0.1944764
+  - 0.033181768
+  - 0.37334052
+  - -0.29349983
+  - -0.21499518
+  - -0.14320022
+  - -0.16332926
+  - -0.20738995
+  - 0.43012235
+  - 0.07170906
+  - 0
+  - -0.3318368
+  - 0.16781886
+  m_Size: 5
 --- !u!1 &1031277889
 GameObject:
   m_ObjectHideFlags: 0
@@ -631,8 +703,14 @@ MonoBehaviour:
   m_Ease: 0
   m_CurEase: 0
   m_Target: {fileID: 0}
-  m_Target2: {fileID: 0}
+  m_TargetChild: {fileID: 0}
   m_Target3: {fileID: 0}
+  m_AnimCurve:
+    serializedVersion: 2
+    m_Curve: []
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   m_LookTargets: []
   m_RotTarget: {fileID: 0}
   m_Y: 0
@@ -1159,27 +1237,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Datas:
   - 0
-  - 0.010000001
-  - 0.040000003
-  - 0.09
-  - 0.16000001
+  - 0.0625
   - 0.25
-  - 0.36
-  - 0.48999998
-  - 0.64000005
-  - 0.81000006
+  - 0.5625
   - 1
   m_OutPositions:
   - 0
-  - 0.3142857
-  - 0.44444445
-  - 0.54545456
-  - 0.63076925
-  - 0.70666665
-  - 0.7733333
-  - 0.83529407
-  - 0.8941176
-  - 0.94736844
+  - 0.5
+  - 0.7
+  - 0.85714287
   - 1
   m_Val: 0
   m_Curve: {fileID: 691184019}
@@ -1187,9 +1253,9 @@ MonoBehaviour:
   m_OutValue: 0
   m_S: {fileID: 1146976110}
   m_E: {fileID: 1659961521}
-  m_TargetVal: 0.3
-  m_RevTargetVal: 0.54545456
-  m_SegCount: 10
+  m_TargetVal: 0.376
+  m_RevTargetVal: 0.6008
+  m_SegCount: 4
 --- !u!4 &1963933362
 Transform:
   m_ObjectHideFlags: 0

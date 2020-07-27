@@ -251,111 +251,133 @@ namespace UCL.Core.MathLib {
         #endregion
 
         #region Diamond-Square
-        //c++ reference
-        //autor: Nick O'Brien
-        //https://medium.com/@nickobrien/diamond-square-algorithm-explanation-and-c-implementation-5efa891e486f
 
-        public static void DiamondSquare(float[,] Arr, int size) {
-            DiamondSquare(Arr, size, MathLib.UCL_Random.Instance);
+
+        public static void DiamondSquare(float[,] arr) {
+            DiamondSquare(arr, arr.GetLength(0), arr.GetLength(0) - 1, MathLib.UCL_Random.Instance);
         }
-
-        public static void DiamondSquare(float[,] Arr, int size, MathLib.UCL_Random rnd) {
+        public static void DiamondSquare(float[,] arr, MathLib.UCL_Random rnd) {
+            DiamondSquare(arr, arr.GetLength(0), arr.GetLength(0) - 1, rnd);
+        }
+        //Author Nick O'Brien
+        //reference https://medium.com/@nickobrien/diamond-square-algorithm-explanation-and-c-implementation-5efa891e486f
+        static void DiamondSquare(float[,] arr, int range, int size, MathLib.UCL_Random rnd) {
             int half = size / 2;
             if(half < 1) return;
 
-            int CHUNK_X = Arr.GetLength(0);
-            int CHUNK_Z = Arr.GetLength(1);
             //square steps
-            for(int z = half; z < CHUNK_Z; z += size)
-                for(int x = half; x < CHUNK_X; x += size)
-                    SquareStep(Arr, x % CHUNK_X, z % CHUNK_Z, half, rnd);
+            for(int z = half; z < range; z += size)
+                for(int x = half; x < range; x += size)
+                    SquareStep(arr, range, x, z, half, rnd);
+            
             // diamond steps
             int col = 0;
-            for(int x = 0; x < CHUNK_X; x += half) {
+            for(int x = 0; x < range; x += half) {
                 col++;
                 //If this is an odd column.
                 if(col % 2 == 1)
-                    for(int z = half; z < CHUNK_Z; z += size)
-                        DiamondStep(Arr, x % CHUNK_X, z % CHUNK_Z, half, rnd);
+                    for(int z = half; z < range; z += size)
+                        DiamondStep(arr, range, x, z, half, rnd);
                 else
-                    for(int z = 0; z < CHUNK_Z; z += size)
-                        DiamondStep(Arr, x % CHUNK_X, z % CHUNK_Z, half, rnd);
+                    for(int z = 0; z < range; z += size)
+                        DiamondStep(arr, range, x, z, half, rnd);
             }
-            DiamondSquare(Arr, size / 2, rnd);
+            //return;
+            DiamondSquare(arr, range, size / 2, rnd);
+            return;
         }
-        static void SquareStep(float[,] Arr, int x, int z, int reach, MathLib.UCL_Random rnd) {
+        static void SquareStep(float[,] arr, int range, int x, int z, int reach, MathLib.UCL_Random rnd) {
             int count = 0;
             float avg = 0.0f;
-            int CHUNK_X = Arr.GetLength(0);
-            int CHUNK_Z = Arr.GetLength(1);
-
             if(x - reach >= 0 && z - reach >= 0) {
-                avg += Arr[x - reach,z - reach];
+                avg += arr[x - reach,z - reach];
                 count++;
             }
-            if(x - reach >= 0 && z + reach < CHUNK_Z) {
-                avg += Arr[x - reach,z + reach];
+            if(x - reach >= 0 && z + reach < range) {
+                avg += arr[x - reach,z + reach];
                 count++;
             }
-            if(x + reach < CHUNK_X && z - reach >= 0) {
-                avg += Arr[x + reach,z - reach];
+            if(x + reach < range && z - reach >= 0) {
+                avg += arr[x + reach,z - reach];
                 count++;
             }
-            if(x + reach < CHUNK_X && z + reach < CHUNK_Z) {
-                avg += Arr[x + reach,z + reach];
+            if(x + reach < range && z + reach < range) {
+                avg += arr[x + reach,z + reach];
                 count++;
             }
-            avg += DiamondRandom(reach, rnd);
+            float val = reach / (float)range;
+            avg += rnd.Range(-val, val);
             avg /= count;
-            Arr[x,z] = avg;
-
+            arr[x,z] = avg;
         }
-        static void DiamondStep(float[,] Arr, int x, int z, int reach, MathLib.UCL_Random rnd) {
+        static void DiamondStep(float[,] arr, int range, int x, int z, int reach, MathLib.UCL_Random rnd) {
+            //Debug.LogWarning("diamondStep x:" + x +",z:" + z);
             int count = 0;
-            float avg = 0f;
-            int CHUNK_X = Arr.GetLength(0);
-            int CHUNK_Z = Arr.GetLength(1);
-
+            float avg = 0.0f;
             if(x - reach >= 0) {
-                avg += Arr[x - reach,z];
+                avg += arr[x - reach,z];
                 count++;
             }
-            if(x + reach < CHUNK_X) {
-                avg += Arr[x + reach,z];
+            if(x + reach < range) {
+                avg += arr[x + reach,z];
                 count++;
             }
             if(z - reach >= 0) {
-                avg += Arr[x,z - reach];
+                avg += arr[x,z - reach];
                 count++;
             }
-            if(z + reach < CHUNK_Z) {
-                avg += Arr[x,z + reach];
+            if(z + reach < range) {
+                avg += arr[x,z + reach];
                 count++;
             }
-            avg += DiamondRandom(reach, rnd);
+            float val = reach/(float)range;
+            avg += rnd.Range(-val, val);
             avg /= count;
-            Arr[x,z] = avg;
+            arr[x,z] = avg;
         }
+        ///Not done Yet!!
+        /*
+        static void DiamondSquare(float[,] Arr,int x,int z, int size, MathLib.UCL_Random rnd) {
+            if(size < 3) return;
+            int l = size - 1;
+            if(!IsPowerOfTwo(l)) return;
+            //Debug.LogWarning("x:" + x + ",z:" + z + ",l:" + l);
+            float a = Arr[x, z];
+            float b = Arr[x + l, z];
+            float c = Arr[x + l, z + l];
+            float d = Arr[x, z + l];
+
+            float o = (a + b + c + d) / 4f;
+            int h = l / 2;
+            Arr[x + h, z + h] = o;
+
+            Arr[x, z + h] = (a + o + d) / 3f;
+            Arr[x + h, z + l] = (c + o + d) / 3f;
+            Arr[x + h, z] = (a + o + b) / 3f; 
+            Arr[x + l, z + h] = (b + o + c) / 3f;
+            if(size >= 3) {
+                DiamondSquare(Arr, x, z, size - h, rnd);
+                DiamondSquare(Arr, x + h, z, size - h, rnd);
+                DiamondSquare(Arr, x + h, z + h, size - h, rnd);
+                DiamondSquare(Arr, x, z + h, size - h, rnd);
+            }
+
+            return;
+        }
+        */
         static float DiamondRandom(int range, MathLib.UCL_Random rnd) {
             return 0;// rnd.Next(range * 2) - range;
         }
-        /*
-        static void DiamondSquare(float[,] Arr, int size, int x=0, int y=0) {
-            if(Arr.GetLength(0) < x+size || Arr.GetLength(1) < y+size) {
-                return;
-            }
-            int l = size - 1;
-            float a = Arr[x , y];
-            float b = Arr[x + l, y];
-            float c = Arr[x + l, y + l];
-            float d = Arr[x , y + l];
-            float avg = (a + b + c + d)/4f;
-            int h = l / 2;
-            Arr[x + h, y + h] = avg;
-        }
-        */
         #endregion
         #region Misc
+        public static int PowTwo(int power) { return 1 << power; }
+        public static bool IsPowerOfTwo(long x) {
+            return (x != 0) && (x & (x - 1)) == 0;
+        }
+        public static bool IsPowerOfTwo(int x) {
+            //Debug.LogWarning("x:" + x + ",IsPowerOfTwo:" + ((x != 0) && (x & (x - 1)) == 0));
+            return (x != 0) && (x & (x - 1)) == 0;
+        }
         public static int FindMaxAt<T>(T[] arr) where T : System.IComparable {
             if(arr.Length <= 1) return 0;
             T max = arr[0];

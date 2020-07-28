@@ -45,7 +45,7 @@ namespace UCL.Core.MathLib {
         }
 #endif
         private void Start() {
-            UpdatePathPoint();
+            //UpdatePathPoint();
         }
 
 #if UNITY_EDITOR

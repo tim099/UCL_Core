@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using UCL.MeshLib;
 using UnityEngine;
 
 
@@ -10,13 +11,15 @@ namespace UCL.Core.MathLib.Demo {
         public bool m_RandBySeed = false;
 
         [HideInInspector] public List<float> m_Result;
-        [Range(1, 8)] public int m_SizeSlider = 1;
-        [Range(1, 8)] public int m_Seg = 1;
+        [Range(1, 10)] public int m_SizeSlider = 1;
+        [Range(1, 10)] public int m_Seg = 1;
         [UCL.Core.PA.UCL_ReadOnly] public int m_Size = 5;
         [Range(0.01f, 1f)] public float m_NoiseScale = 0.1f;
+        public UCL_MeshTerrainCreator m_Terrain;
         public bool m_DoDiamond = true;
         [ATTR.UCL_FunctionButton]
         public void GenResult() {
+            if(m_Seg > m_SizeSlider + 1) m_Seg = m_SizeSlider + 1;
             int len = m_Size - 1;
             int seg = MathLib.Lib.PowTwo(m_Seg-1);
 
@@ -36,32 +39,18 @@ namespace UCL.Core.MathLib.Demo {
                 }
             }
 
-            //for(int i = 0; i <= m_Seg; i++) {
-            //    for(int j = 0; j <= m_Seg; j++) {
-            //        Arr[j * len, i * len] = rnd.Range(0, 1f);
-            //        //0.5f + 0.5f*MathLib.Noise.PerlinNoise(sx+0.1f * j, sy+0.1f * i);//rnd.Range(0, 1f);
-            //    }
-            //}
-            //for(int i = 0; i < m_Seg; i++) {
-            //    for(int j = 0; j < m_Seg; j++) {
-            //        //MathLib.Lib.DiamondSquare(Arr, j * len, i * len, len+1, rnd);
-            //    }
-            //}
-
 
             if(m_DoDiamond) MathLib.Lib.DiamondSquare(Arr, size, seg_len, rnd);
-            //int len = size - 1;
-            //Arr[0, 0] = rnd.Range(0, 1f);
-            //Arr[len, 0] = rnd.Range(0, 1f);
-            //Arr[len, len] = rnd.Range(0, 1f);
-            //Arr[0, len] = rnd.Range(0, 1f);
-            //MathLib.Lib.DiamondSquare(Arr, 0, 0, size, rnd);
 
             m_Result = new List<float>();
             for(int i = 0; i < size; i++) {
                 for(int j = 0; j < size; j++) {
                     m_Result.Add(Arr[j,i]);
                 }
+            }
+
+            if(m_Terrain) {
+                m_Terrain.SetTerrain(Arr);
             }
             //m_Texture = null;
         }
@@ -70,8 +59,10 @@ namespace UCL.Core.MathLib.Demo {
         }
         public int m_PixelSize = 8;
         Core.TextureLib.UCL_Texture2D m_Texture;
+        public bool m_HideResultTexture = false;
         [ATTR.UCL_DrawTexture2D]
         public Core.TextureLib.UCL_Texture2D ResultTexture() {
+            if(m_HideResultTexture) return null;
             //int m_PixelSize = 25;
             int size = m_Size;//((m_Size - 1) * m_Seg) + 1;
             if(m_Texture == null || m_Texture.size.x != m_PixelSize * size) {

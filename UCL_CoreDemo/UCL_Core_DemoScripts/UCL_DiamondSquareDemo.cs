@@ -9,7 +9,7 @@ namespace UCL.Core.MathLib.Demo {
     public class UCL_DiamondSquareDemo : MonoBehaviour {
         public int m_Seed = 0;
         public bool m_RandBySeed = false;
-
+        public bool m_ClearResultListAfterGen = false;
         [HideInInspector] public List<float> m_Result;
         [Range(1, 10)] public int m_SizeSlider = 1;
         [Range(1, 10)] public int m_Seg = 1;
@@ -52,6 +52,8 @@ namespace UCL.Core.MathLib.Demo {
             if(m_Terrain) {
                 m_Terrain.SetTerrain(Arr);
             }
+            ResultTexture();
+            if(m_ClearResultListAfterGen) m_Result.Clear();
             //m_Texture = null;
         }
         private void OnValidate() {

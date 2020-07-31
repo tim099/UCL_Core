@@ -17,6 +17,16 @@ namespace UCL.Core.MathLib.Demo {
         [Range(0.01f, 1f)] public float m_NoiseScale = 0.1f;
         public UCL_MeshTerrainCreator m_Terrain;
         public bool m_DoDiamond = true;
+        /*
+        [ATTR.UCL_FunctionButton]
+        public void test() {
+            ulong val = 0b_00011111_11111111_00001111_11111111_11111111_11111111_11111111_11111101;
+            Debug.LogWarning(val.UCL_ToBitString());
+            uint val2 = 0b_11111110_11110011_11111111_11111111;
+            Debug.LogWarning(val2.UCL_ToBitString());
+        }
+        */
+
         [ATTR.UCL_FunctionButton]
         public void GenResult() {
             if(m_Seg > m_SizeSlider + 1) m_Seg = m_SizeSlider + 1;

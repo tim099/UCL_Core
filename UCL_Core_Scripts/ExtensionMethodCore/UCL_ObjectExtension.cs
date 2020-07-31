@@ -308,6 +308,39 @@ public static partial class ExtensionMethods {
     public static T GetMember<T>(this object obj, string name) {
         return (T)obj.GetMember(name);
     }
+    /*
+    public static string UCL_ToBitString(this long val, string seperator = "_") {
+        long mask = 1;
+        StringBuilder sb = new StringBuilder();
+        for(int i = 0; i < 64; i++) {
+            if((val & mask) != 0) {
+                sb.Append("1");
+            } else {
+                sb.Append("0");
+            }
+            mask <<= 1;
+        }
+        return sb.ToString();
+    }
+    */
+    public static string UCL_ToBitString(this object obj,string seperator = "_") {
+        var arr = obj.ToByteArray();
+        StringBuilder sb = new StringBuilder();
+        for(int i = arr.Length-1; i >= 0 ; i--) {
+            byte mask = 0b1000_0000;
+            byte val = arr[i];
+            for(int j = 0; j < 8; j++) {
+                if((val & mask) != 0) {
+                    sb.Append("1");
+                } else {
+                    sb.Append("0");
+                }
+                mask >>= 1;
+            }
+            if(i > 0)sb.Append(seperator);
+        }
+        return sb.ToString();
+    }
     public static string UCL_ToString(this object obj, int space = 0) {
         if(obj == null) {
             if(space == 0) return "UCL_ToString Error!! obj == null";

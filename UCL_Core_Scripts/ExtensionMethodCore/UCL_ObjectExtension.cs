@@ -403,3 +403,22 @@ public static partial class ExtensionMethods {
         return builder.ToString();
     }
 }
+
+//Misc
+public static partial class ExtensionMethods {
+    public static bool IsBetween(this Color col, Color min, Color max) {
+        if(min.r > col.r || col.r > max.r) {
+            return false;
+        }
+        if(min.g > col.g || col.g > max.g) {
+            return false;
+        }
+        if(min.b > col.b || col.b > max.b) {
+            return false;
+        }
+        if(min.a > col.a || col.a > max.a) {
+            return false;
+        }
+        return true;
+    }
+}

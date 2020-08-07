@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
-
+using System.Linq;
 public static partial class ExtensionMethods {
     public static MethodInfo[] GetAllMethods(this Type type) {
         var methods = new List<MethodInfo>();
@@ -27,5 +27,19 @@ public static partial class ExtensionMethods {
     public static bool IsStructOrClass(this Type type) {
         return type.IsStruct() | type.IsClass;
     }
-
+    /// <summary>
+    /// Get Fields Include parent
+    /// </summary>
+    /// <param name="type"></param>
+    /// <param name="bindingAttr"></param>
+    /// <returns></returns>
+    public static List<FieldInfo> GetAllFields(this Type type, BindingFlags bindingAttr) {
+        FieldInfo[] fields = type.GetFields(bindingAttr);
+        var list = fields.ToList();
+        var base_type = type.BaseType;
+        if(base_type != null) {
+            list.Concat(base_type.GetAllFields(bindingAttr));
+        }
+        return list;
+    }
 }

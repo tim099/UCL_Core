@@ -21,4 +21,11 @@ public static partial class ExtensionMethods {
     public static T ToStructure<T>(this byte[] buffer) {
         return UCL.Core.MarshalLib.Lib.ToStructure<T>(buffer);
     }
+    //public static List<T> ToList<T>(this T[] arr) {
+    //    List<T> list = new List<T>();
+    //    for(int i = 0, len = arr.Length; i < len; i++) {
+    //        list.Add(arr[i]);
+    //    }
+    //    return list;
+    //}
 }

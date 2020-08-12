@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using UnityEngine;
 namespace UCL.Core.ObjectOperatorExtension {
@@ -297,6 +298,12 @@ namespace UCL.Core.ObjectReflectionExtension {
 public static partial class ExtensionMethods {
     public static byte[] ToByteArray(this object obj) {
         return UCL.Core.MarshalLib.Lib.ToByteArray(obj);
+    }
+    public static byte[] ToByteArray(this Array arr) {
+        int arr_size = arr.Length * Marshal.SizeOf(arr.GetType().GetElementType());
+        var result = new byte[arr_size];
+        Buffer.BlockCopy(arr, 0, result, 0, arr_size);
+        return result;
     }
     public static object GetMember(this object obj, string name) {
         if(obj == null) return null;

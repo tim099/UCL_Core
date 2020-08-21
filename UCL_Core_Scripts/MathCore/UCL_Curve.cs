@@ -7,7 +7,7 @@ namespace UCL.Core.MathLib {
 #if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
 #endif
-    public class UCL_Curve : MonoBehaviour {
+    public class UCL_Curve : UCL_Path {
         public List<Vector3> m_Points;
 
         #region OnDrawGizmos Setting
@@ -41,7 +41,8 @@ namespace UCL.Core.MathLib {
         #endregion
 #if UNITY_EDITOR
         private void OnValidate() {
-            UpdatePathPoint();
+            if(!UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode
+                && !UnityEditor.EditorApplication.isUpdating) UpdatePathPoint();
         }
 #endif
         private void Start() {
@@ -432,9 +433,6 @@ namespace UCL.Core.MathLib {
                 cur = 0;
                 u = 0;
             }
-            
-
-
 
             return Lerp(cur, u);
         }
@@ -480,9 +478,9 @@ namespace UCL.Core.MathLib {
         /// <summary>
         /// Get position base on length of path
         /// </summary>
-        /// <param name="percent"></param>
+        /// <param name="percent">Range from 0.0f ~ 1.0f</param>
         /// <returns></returns>
-        public Vector3 GetPos(float percent) {
+        override public Vector3 GetPos(float percent) {
             return GetPosByLength(percent * m_PathLength);
         }
 
@@ -490,7 +488,7 @@ namespace UCL.Core.MathLib {
         /// <summary>
         /// Get position base on Segment(ignore segment length)
         /// </summary>
-        /// <param name="percent"></param>
+        /// <param name="percent">Range from 0.0f ~ 1.0f</param>
         /// <returns></returns>
         public Vector3 GetPoint(float percent) {
             return GetPoint(m_PathPoints, percent);

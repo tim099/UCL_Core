@@ -42,7 +42,9 @@ namespace UCL.Core.MathLib {
 #if UNITY_EDITOR
         private void OnValidate() {
             if(!UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode
-                && !UnityEditor.EditorApplication.isUpdating) UpdatePathPoint();
+                && !UnityEditor.EditorApplication.isUpdating && transform.lossyScale != Vector3.zero) {
+                UpdatePathPoint();
+            }
         }
 #endif
         private void Start() {
@@ -97,6 +99,10 @@ namespace UCL.Core.MathLib {
             //public List<float> m_Origin;
         }
         public void UpdatePathPoint() {
+            if(transform.lossyScale == Vector3.zero) {
+                Debug.LogError("UCL_Curve UpdatePathPoint() Error, transform.lossyScale == Vector3.zero");
+                return;
+            }
             if(m_Points == null) {
                 m_Points = new List<Vector3>();
                 m_Points.Add(Vector3.zero);
@@ -113,26 +119,8 @@ namespace UCL.Core.MathLib {
             m_GenStartRot = transform.rotation;
             m_GenStartScale = transform.lossyScale;
 
-            m_WorldSpacePoints = m_Points.ToArray();
-            for(int i = 0; i < m_WorldSpacePoints.Length; i++) {
-                m_WorldSpacePoints[i] = transform.TransformPoint(m_WorldSpacePoints[i]);
-            }
-            Vector3[] path = m_WorldSpacePoints;
-            if(!m_Loop) {
-                m_PathPoints = new Vector3[path.Length + 2];
-                Array.Copy(path, 0, m_PathPoints, 1, path.Length);
+            UpdateWorldSpacePoint();
 
-                m_PathPoints[0] = (2 * m_PathPoints[1] - m_PathPoints[2]);
-                m_PathPoints[m_PathPoints.Length - 1] = (2 * m_PathPoints[m_PathPoints.Length - 2] - m_PathPoints[m_PathPoints.Length - 3]);
-            } else {
-                m_PathPoints = new Vector3[path.Length + 2];
-                Array.Copy(path, 0, m_PathPoints, 1, path.Length);
-
-                m_PathPoints[0] = path[path.Length - 2];
-                m_PathPoints[m_PathPoints.Length - 1] = path[1];
-                //*/
-            }
-            
             if(m_Points.Count > 1) {
                 m_PathSegLength = new float[m_Points.Count - 1];
                 Vector3 prev = GetPoint(0);
@@ -191,7 +179,31 @@ namespace UCL.Core.MathLib {
             UnityEditor.EditorUtility.SetDirty(gameObject);
 #endif
         }
+        public void UpdateWorldSpacePoint() {
+            if(m_Points == null || m_Points.Count == 0) return;
 
+            if(m_WorldSpacePoints == null || m_WorldSpacePoints.Length != m_Points.Count) {
+                m_WorldSpacePoints = m_Points.ToArray();
+            }
+            for(int i = 0; i < m_WorldSpacePoints.Length; i++) {
+                m_WorldSpacePoints[i] = transform.TransformPoint(m_Points[i]);
+            }
+
+            if(m_PathPoints == null || m_PathPoints.Length != m_WorldSpacePoints.Length + 2) {
+                m_PathPoints = new Vector3[m_WorldSpacePoints.Length + 2];
+            }
+            if(!m_Loop) {
+                Array.Copy(m_WorldSpacePoints, 0, m_PathPoints, 1, m_WorldSpacePoints.Length);
+
+                m_PathPoints[0] = (2 * m_PathPoints[1] - m_PathPoints[2]);
+                m_PathPoints[m_PathPoints.Length - 1] = (2 * m_PathPoints[m_PathPoints.Length - 2] - m_PathPoints[m_PathPoints.Length - 3]);
+            } else {
+                Array.Copy(m_WorldSpacePoints, 0, m_PathPoints, 1, m_WorldSpacePoints.Length);
+
+                m_PathPoints[0] = m_WorldSpacePoints[m_WorldSpacePoints.Length - 2];
+                m_PathPoints[m_PathPoints.Length - 1] = m_WorldSpacePoints[1];
+            }
+        }
         protected float ConvertLinearPos(List<float> val, float target) {
             if(val.Count == 0) return 1f;
             float len = 0;

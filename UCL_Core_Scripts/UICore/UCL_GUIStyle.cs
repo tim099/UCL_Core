@@ -11,6 +11,8 @@ namespace UCL.Core.UI {
                 if(m_TextRed == null) {
                     m_TextRed = new GUIStyle(GUI.skin.button);
                     m_TextRed.normal.textColor = Color.red;
+                    m_TextRed.active.textColor = Color.red;
+                    m_TextRed.hover.textColor = new Color(1f,0.3f,0.3f);
                 }
                 return m_TextRed;
             }

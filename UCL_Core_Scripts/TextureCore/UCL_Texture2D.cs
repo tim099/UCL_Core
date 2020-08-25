@@ -50,6 +50,9 @@ namespace UCL.Core.TextureLib {
         public UCL_Texture2D() {
 
         }
+        public UCL_Texture2D(int width, int height, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
+            Init(new Vector2Int(width, height), _TextureFormat);
+        }
         public UCL_Texture2D(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
             Init(size, _TextureFormat);
         }
@@ -275,6 +278,102 @@ namespace UCL.Core.TextureLib {
             if(pos.x >= width) pos.x = width - 1;
             if(pos.y >= height) pos.y = height - 1;
             m_Col[pos.x + pos.y * width] = col;
+        }
+        /// <summary>
+        /// Draw a line start from sx,sy to ex,ey
+        /// </summary>
+        /// <param name="sx">start position of x</param>
+        /// <param name="sy">start position of y</param>
+        /// <param name="ex">end position of x</param>
+        /// <param name="ey">end position of y</param>
+        /// <param name="line_col">color of line</param>
+        virtual public void DrawLine(int sx,int sy, int ex,int ey, Color col) {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            if(sx < 0) sx = 0;
+            if(sy < 0) sy = 0;
+            if(sx >= width) sx = width - 1;
+            if(sy >= height) sy = height - 1;
+            if(ex < 0) ex = 0;
+            if(ey < 0) ey = 0;
+            if(ex >= width) ex = width - 1;
+            if(ey >= height) ey = height - 1;
+
+            int dx = ex - sx;
+            int dy = ey - sy;
+            if(dx == 0) {
+                for(int i = 0; i <= dy; i++) {
+                    m_Col[sx + (sy + i) * width] = col;
+                }
+            }else if(dy == 0) {
+                int sval = sx + sy * width;
+                for(int i = 0; i <= dx; i++) {
+                    m_Col[sval + i] = col;
+                }
+            } else {
+                int lx = MathLib.Lib.Abs(dx);
+                int ly = MathLib.Lib.Abs(dy);
+                if(lx >= ly) {
+                    int prev_y = sy;
+                    for(int i = 0; i <= lx; i++) {
+                        int x = sx + (dx > 0? i : -i);
+                        int y = sy + Mathf.RoundToInt((i * dy) / (float)lx);
+                        if(y != prev_y) {
+                            m_Col[x + prev_y * width] = col;
+                            prev_y = y;
+                        }
+                        m_Col[x + y * width] = col;
+                    }
+                } else {
+                    int prev_x = sx;
+                    for(int i = 0; i <= ly; i++) {
+                        int y = sy + (dy > 0 ? i : -i);
+                        int x = sx + Mathf.RoundToInt((i * dx) / (float)ly);
+                        if(x != prev_x) {
+                            m_Col[prev_x + y * width] = col;
+                            prev_x = x;
+                        }
+                        m_Col[x + y * width] = col;
+                    }
+                }
+            }
+
+            
+
+        }
+
+        /// <summary>
+        /// Draw a line start from sx,sy to ex,ey
+        /// </summary>
+        /// <param name="sx">start position of x</param>
+        /// <param name="sy">start position of y</param>
+        /// <param name="ex">end position of x</param>
+        /// <param name="ey">end position of y</param>
+        /// <param name="line_col">color of line</param>
+        virtual public void DrawLine(float sx, float sy, float ex, float ey, Color col) {
+            DrawLine(Mathf.RoundToInt(sx * m_Size.x), Mathf.RoundToInt(sy * m_Size.y)
+                , Mathf.RoundToInt(ex * m_Size.x), Mathf.RoundToInt(ey * m_Size.y), col);
+        }
+        virtual public void DrawPathXY(UCL.Core.MathLib.UCL_Path _Path, Vector2 size, Color col, int seg_count = 20) {
+            if(seg_count < 1) seg_count = 1;
+            Vector3 prev_pos = _Path.GetPos(0);
+            for(int i = 1; i <= seg_count; i++) {
+                float at = (i / (float)seg_count);
+                Vector3 pos = _Path.GetPos(at);
+                DrawLine(prev_pos.x/size.x, prev_pos.y / size.y, pos.x / size.x, pos.y / size.y, col);
+                prev_pos = pos;
+            }
+        }
+        virtual public void DrawPathXY(UCL.Core.MathLib.UCL_Path _Path, Vector2 start_pos, Vector2 size, Color col, int seg_count = 20) {
+            if(seg_count < 1) seg_count = 1;
+            Vector3 prev_pos = _Path.GetPos(0);
+            for(int i = 1; i <= seg_count; i++) {
+                float at = (i / (float)seg_count);
+                Vector3 pos = _Path.GetPos(at);
+                DrawLine((prev_pos.x-start_pos.x) / size.x, (prev_pos.y - start_pos.y) / size.y,
+                    (pos.x - start_pos.x) / size.x, (pos.y - start_pos.y) / size.y, col);
+                prev_pos = pos;
+            }
         }
         virtual public void DrawPixel(int x, int y, Color col) {
             m_TextureUpdated = true;

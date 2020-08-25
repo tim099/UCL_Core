@@ -213,6 +213,17 @@ namespace UCL.Core.MathLib {
             const float ot = 1f / 3f;
             return Mathf.Pow(val, ot);
         }
+        public static float Abs(float val) {
+            return val < 0 ? -val : val;
+        }
+        public static int Abs(int val) {
+            if(val >= 0) return val;
+            if(val == int.MinValue) {
+                //return int.MaxValue;
+                throw new OverflowException();//overflow!!
+            }
+            return -val;
+        }
         public static float Lerp(float a, float b, float val) {
             return a * (1f - val) + b * val;
         }

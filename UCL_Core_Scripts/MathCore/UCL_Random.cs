@@ -56,6 +56,42 @@ namespace UCL.Core.MathLib {
             m_Rnd = new System.Random(m_Seed);
         }
 
+        #region Color
+
+        public Color ColorHSV(float hueMin, float hueMax,
+            float saturationMin, float saturationMax,
+            float valueMin, float valueMax,
+            float alphaMin, float alphaMax) {
+            float hue = Range(hueMin, hueMax);
+            float saturation = Range(saturationMin, saturationMax);
+            float value = Range(valueMin, valueMax);
+            float alpha = Range(alphaMin, alphaMax);
+            Color col = Color.HSVToRGB(hue, saturation, value);
+            col.a = alpha;
+            return col;
+        }
+        public Color ColorHSV(float hueMin, float hueMax, float saturationMin, float saturationMax,float valueMin, float valueMax) {
+            float hue = Range(hueMin, hueMax);
+            float saturation = Range(saturationMin, saturationMax);
+            float value = Range(valueMin, valueMax);
+            return Color.HSVToRGB(hue, saturation, value);
+        }
+        public Color ColorHSV(float hueMin, float hueMax, float saturationMin, float saturationMax) {
+            float hue = Range(hueMin, hueMax);
+            float saturation = Range(saturationMin, saturationMax);
+            return Color.HSVToRGB(hue, saturation, 1f);
+        }
+        public Color ColorHSV(float hueMin, float hueMax) {
+            float hue = Range(hueMin, hueMax);
+            return Color.HSVToRGB(hue, 1f, 1f);
+        }
+        public Color ColorHSV() {
+            float hue = Range(0, 1f);
+            return Color.HSVToRGB(hue, 1f, 1f);
+        }
+        #endregion
+
+        #region Vector
         public Vector2 OnUnitCircle() {
             float angle = Range(0, Mathf.PI * 2f);
             return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
@@ -85,6 +121,7 @@ namespace UCL.Core.MathLib {
             if(neg) z = -z;
             return new Vector3(r * xy.x, r * xy.y, z);
         }
+        #endregion
         #region Range
         /// <summary>
         /// Return a random float number between min [inclusive] and max [inclusive]

@@ -14,6 +14,8 @@ namespace UCL.Core.TestLib {
             Debug.Log("-IntMin:" + (-val));
             Debug.Log("ABS(IntMin):" + MathLib.Lib.Abs(int.MinValue));
         }
+        public RectTransform m_Range;
+        public Vector3[] m_Corners;
         TextureLib.UCL_Texture2D m_Texture;
         Vector2Int line_s;
         Vector2Int line_e;
@@ -27,17 +29,33 @@ namespace UCL.Core.TestLib {
         }
         public UCL.Core.MathLib.UCL_Path m_Path;
         public int m_PathSeg = 60;
+        public int ex = 80;
+        public int ey = 50;
+        [Range(0,360)]public int m_Angle;
+        [Range(0,500f)]public float m_Len;
+        public Vector2 m_PathSize = Vector2.one;
+        private void OnValidate() {
+            ReDraw();
+        }
+
         [ATTR.UCL_FunctionButton]
         public void ReDraw() {
             if(m_Texture == null) {
                 m_Texture = new TextureLib.UCL_Texture2D(256, 256);
             }
+            
+            float rad = m_Angle * Mathf.Deg2Rad;
+            float sin = Mathf.Sin(rad);
+            float cos = Mathf.Cos(rad);
+            int sx = Mathf.RoundToInt(ex - m_Len * cos);
+            int sy = Mathf.RoundToInt(ey - m_Len * sin);
+            Debug.LogWarning("sin:" + sin + ",cos:" + cos + ",rad:" + rad+",sx:"+sx+",sy:"+sy);
             m_Texture.SetColor(Color.black);
-            m_Texture.DrawLine(25, 30, 40, 80, Color.yellow);
+            m_Texture.DrawLine(sx, sy, ex, ey, Color.yellow);
             m_Texture.DrawLine(85, 10, 10, 50, Color.green);
             m_Texture.DrawLine(0.1f, 0.88f, 0.9f, 0.6f, Color.red);
             if(m_Path) {
-                m_Texture.DrawPathXY(m_Path, Vector2.one, Color.cyan, m_PathSeg);
+                m_Texture.DrawPathXY(m_Path, m_Range, Color.cyan, m_PathSeg);
             }
         }
     }

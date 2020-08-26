@@ -354,7 +354,9 @@ public static partial class ExtensionMethods {
             return string.Empty;
         }
         Type type = obj.GetType();
-        if(type.IsPrimitive || !type.IsStructOrClass() || obj is Enum) {
+        if(type.IsPrimitive || !type.IsStructOrClass() || obj is Enum 
+            || obj is Vector4 || obj is Vector3 || obj is Vector2
+            || obj is Vector3Int || obj is Vector2Int) {
             if(space == 0) return "(" + type.Name + ") : " + obj.ToString();
             return obj.ToString();
         }

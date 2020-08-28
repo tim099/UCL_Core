@@ -12,7 +12,16 @@ namespace UCL.Core.MathLib {
         virtual public Vector3 GetPos(float percent) {
             return Vector3.zero;
         }
+        //virtual public rect3D
 
+        /// <summary>
+        /// Get the Rect cover hole path
+        /// </summary>
+        /// <param name="dir">the direction of rect(etc. xy</param>
+        /// <returns></returns>
+        virtual public Rect GetRect(ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy) {
+            return Rect.zero;
+        }
 
     }
 }

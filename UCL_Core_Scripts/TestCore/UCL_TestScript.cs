@@ -5,7 +5,7 @@ using UnityEngine;
 namespace UCL.Core.TestLib {
     [ATTR.EnableUCLEditor]
     public class UCL_TestScript : MonoBehaviour {
-        [ATTR.UCL_FunctionButton]
+        //[ATTR.UCL_FunctionButton]
         public void TestInt() {
             Debug.Log("IntMax:" + int.MaxValue);
             Debug.Log("IntMin:" + int.MinValue);
@@ -37,7 +37,7 @@ namespace UCL.Core.TestLib {
         private void OnValidate() {
             ReDraw();
         }
-
+        public ExtensionMethods.Vec3ToVec2 m_Dir = ExtensionMethods.Vec3ToVec2.xy;
         [ATTR.UCL_FunctionButton]
         public void ReDraw() {
             if(m_Texture == null) {
@@ -55,7 +55,7 @@ namespace UCL.Core.TestLib {
             //m_Texture.DrawLine(85, 10, 10, 50, Color.green);
             //m_Texture.DrawLine(0.1f, 0.88f, 0.9f, 0.6f, Color.red);
             if(m_Path) {
-                m_Texture.DrawPathXY(m_Path, m_Range, Color.cyan, m_PathSeg);
+                m_Texture.DrawPath(m_Path, m_Path.GetRect(m_Dir), Color.cyan, m_Dir, m_PathSeg);//m_Range
             }
         }
     }

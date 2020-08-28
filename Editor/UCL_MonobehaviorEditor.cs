@@ -92,7 +92,26 @@ namespace UCL.Core.EditorLib {
                                 + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }
-
+                    {
+                        //UnityEditor.EditorGUILayout.ObjectField()
+                        var attr_type = typeof(ATTR.UCL_DrawObjectAttribute);
+                        try {
+                            var attr = method.GetCustomAttributes(attr_type, false);
+                            if(attr.Length > 0) {
+                                for(int j = 0; j < attr.Length; j++) {
+                                    //var ba = (ATTR.UCL_DrawStringAttribute)attr[j];
+                                    //string str = method.Invoke(target, ba.m_Params) as string;
+                                    //if(!string.IsNullOrEmpty(str)) GUILayout.Box(str);
+                                    UnityEngine.Object obj = method.Invoke(target, null) as UnityEngine.Object;
+                                    UnityEditor.EditorGUILayout.ObjectField(obj, obj.GetType(), true);
+                                }
+                            }
+                        } catch(Exception e) {
+                            exception = e;
+                            Debug.LogWarning("UCL_FunctionButton:"
+                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                        }
+                    }
                 }
                 GUILayout.EndVertical();
 

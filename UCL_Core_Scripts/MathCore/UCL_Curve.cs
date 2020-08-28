@@ -496,6 +496,41 @@ namespace UCL.Core.MathLib {
             return GetPosByLength(percent * m_PathLength);
         }
 
+        /// <summary>
+        /// Get the Rect cover hole path
+        /// </summary>
+        /// <param name="dir">the direction of rect(etc. xy</param>
+        /// <returns></returns>
+        override public Rect GetRect(ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy) {
+            if(m_WorldSpacePoints == null || m_WorldSpacePoints.Length == 0) return Rect.zero;
+            Vector3 min = m_WorldSpacePoints[0];
+            Vector3 max = min;
+            for(int i = 1; i < m_WorldSpacePoints.Length; i++) {
+                var point = m_WorldSpacePoints[i];
+                if(point.x < min.x) {
+                    min.x = point.x;
+                } else if(point.x > max.x){
+                    max.x = point.x;
+                }
+
+                if(point.y < min.y) {
+                    min.y = point.y;
+                }else if(point.y > max.y) {
+                    max.y = point.y;
+                }
+
+                if(point.z < min.z) {
+                    min.z = point.z;
+                } else if(point.z > max.z) {
+                    max.z = point.z;
+                }
+            }
+            Vector2 minn = min.ToVec2(dir);
+            Vector2 maxx = max.ToVec2(dir);
+            float width = maxx.x - minn.x;
+            float height = maxx.y - minn.y;
+            return Rect.MinMaxRect(minn.x - 0.1f*width, minn.y - 0.1f*height, maxx.x + 0.1f*width, maxx.y + 0.1f*height);
+        }
 
         /// <summary>
         /// Get position base on Segment(ignore segment length)
@@ -572,6 +607,23 @@ namespace UCL.Core.MathLib {
         private void OnDrawGizmos() {
             if(!f_OnlyDrawGizmosOnSelected) DrawGizmos();
         }
+        #endregion
+
+        #region Editor
+#if UNITY_EDITOR
+        [NonSerialized] public ExtensionMethods.Vec3ToVec2 m_Dir = ExtensionMethods.Vec3ToVec2.xy;
+        TextureLib.UCL_Texture2D m_Texture;
+        [ATTR.UCL_DrawTexture2D]
+        UCL.Core.TextureLib.UCL_Texture2D CurveTexture() {
+            if(m_PathPoints == null || m_PathPoints.Length == 0) return null;
+            if(m_Texture == null) {
+                m_Texture = new TextureLib.UCL_Texture2D(256, 256);
+            }
+            m_Texture.SetColor(Color.black);
+            m_Texture.DrawPath(this, GetRect(m_Dir), Color.green, m_Dir, 5 * m_PathPoints.Length);
+            return m_Texture;
+        }
+#endif
         #endregion
     }
 }

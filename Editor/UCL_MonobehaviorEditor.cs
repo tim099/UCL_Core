@@ -99,11 +99,14 @@ namespace UCL.Core.EditorLib {
                             var attr = method.GetCustomAttributes(attr_type, false);
                             if(attr.Length > 0) {
                                 for(int j = 0; j < attr.Length; j++) {
-                                    //var ba = (ATTR.UCL_DrawStringAttribute)attr[j];
-                                    //string str = method.Invoke(target, ba.m_Params) as string;
-                                    //if(!string.IsNullOrEmpty(str)) GUILayout.Box(str);
-                                    UnityEngine.Object obj = method.Invoke(target, null) as UnityEngine.Object;
-                                    UnityEditor.EditorGUILayout.ObjectField(obj, obj.GetType(), true);
+                                    System.Func<System.Type, UnityEngine.Object, UnityEngine.Object> func = 
+                                        delegate (System.Type stype, UnityEngine.Object obj) {
+                                            return UnityEditor.EditorGUILayout.ObjectField(obj, stype, true);
+                                        };
+                                    method.Invoke(target, new object[1] { func });
+
+                                    //UnityEngine.Object obj = method.Invoke(target, null) as UnityEngine.Object;
+                                    //UnityEditor.EditorGUILayout.ObjectField(obj, obj.GetType(), true);
                                 }
                             }
                         } catch(Exception e) {

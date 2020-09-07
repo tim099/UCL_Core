@@ -39,7 +39,7 @@ namespace UCL.Core.TestLib {
         }
         public ExtensionMethods.Vec3ToVec2 m_Dir = ExtensionMethods.Vec3ToVec2.xy;
         [ATTR.UCL_FunctionButton]
-        public void ReDraw() {
+        void ReDraw() {
             if(m_Texture == null) {
                 m_Texture = new TextureLib.UCL_Texture2D(256, 256);
             }
@@ -57,6 +57,13 @@ namespace UCL.Core.TestLib {
             if(m_Path) {
                 m_Texture.DrawPath(m_Path, m_Path.GetRect(m_Dir), Color.cyan, m_Dir, m_PathSeg);//m_Range
             }
+        }
+
+
+        Transform m_Transform;
+        [ATTR.UCL_DrawObject]
+        void TransformTest(System.Func<System.Type, Object, Object> func) {
+            m_Transform = func(typeof(Transform), m_Transform) as Transform;
         }
     }
 }

@@ -252,13 +252,13 @@ namespace UCL.Core.MathLib {
         }
         #region OnDrawGizmos
 
-#if UNITY_EDITOR
+//#if UNITY_EDITOR
         [Header("Editor DrawGizmos Setting")]//m_DisPointCount
         [SerializeField] [Range(-0.2f,1.2f)] float m_DemoPoint = 0f;
         [SerializeField] Color m_DemoPointColor = Color.black;
         [SerializeField] int m_DisPointCount = 0;
         //[SerializeField] bool m_GetPoint = false;
-#endif
+//#endif
         protected void DrawGizmos() {
 #if UNITY_EDITOR
             if(m_PathPoints == null || m_PathPoints.Length < 4) return;
@@ -316,6 +316,14 @@ namespace UCL.Core.MathLib {
 #endif
         }
 
+        private void OnDrawGizmosSelected() {
+            if(f_OnlyDrawGizmosOnSelected) DrawGizmos();
+        }
+        private void OnDrawGizmos() {
+            if(!f_OnlyDrawGizmosOnSelected) DrawGizmos();
+        }
+
+        #endregion
         public void RemoveAt(int at) {
             if(at >= m_Points.Count || at < 0) return;
             m_Points.RemoveAt(at);
@@ -501,7 +509,7 @@ namespace UCL.Core.MathLib {
         /// </summary>
         /// <param name="dir">the direction of rect(etc. xy</param>
         /// <returns></returns>
-        override public Rect GetRect(ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy) {
+        override public Rect GetRect(VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy) {
             if(m_WorldSpacePoints == null || m_WorldSpacePoints.Length == 0) return Rect.zero;
             Vector3 min = m_WorldSpacePoints[0];
             Vector3 max = min;
@@ -601,17 +609,11 @@ namespace UCL.Core.MathLib {
         public int GetPathPointsLength() { return m_PathPoints.Length; }
 
 
-        private void OnDrawGizmosSelected() {
-            if(f_OnlyDrawGizmosOnSelected) DrawGizmos();
-        }
-        private void OnDrawGizmos() {
-            if(!f_OnlyDrawGizmosOnSelected) DrawGizmos();
-        }
-        #endregion
+
 
         #region Editor
 #if UNITY_EDITOR
-        [NonSerialized] public ExtensionMethods.Vec3ToVec2 m_Dir = ExtensionMethods.Vec3ToVec2.xy;
+        [NonSerialized] public VectorExtensionMethods.Vec3ToVec2 m_Dir = VectorExtensionMethods.Vec3ToVec2.xy;
         TextureLib.UCL_Texture2D m_Texture;
         [ATTR.UCL_DrawTexture2D]
         UCL.Core.TextureLib.UCL_Texture2D CurveTexture() {

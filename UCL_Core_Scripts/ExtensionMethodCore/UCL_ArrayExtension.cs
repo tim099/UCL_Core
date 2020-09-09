@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-public static partial class ExtensionMethods {
+public static partial class VectorExtensionMethods {
     /*
     /// <summary>
     /// this function don't check the range of a,b !!so use carefully

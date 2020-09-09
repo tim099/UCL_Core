@@ -709,7 +709,7 @@ namespace UCL.Core.TextureLib {
                 , Mathf.RoundToInt(ex * m_Size.x), Mathf.RoundToInt(ey * m_Size.y), col);
         }
         virtual public void DrawPath(UCL.Core.MathLib.UCL_Path _Path, RectTransform field, Color col,
-            ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
+            VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
             Vector3[] Corners = new Vector3[4];
             field.GetWorldCorners(Corners);
             Vector2 Min = Corners[0];
@@ -732,15 +732,15 @@ namespace UCL.Core.TextureLib {
             DrawPath(_Path, Min, Max - Min, col, dir, seg_count);
         }
         virtual public void DrawPath(UCL.Core.MathLib.UCL_Path _Path, Vector2 size, Color col,
-            ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
+            VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
             DrawPath(_Path, Vector2.zero, size, col, dir, seg_count);
         }
         virtual public void DrawPath(UCL.Core.MathLib.UCL_Path _Path, Rect rect, Color col,
-            ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
+            VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
             DrawPath(_Path, rect.min, rect.size, col, dir, seg_count);
         }
         virtual public void DrawPath(UCL.Core.MathLib.UCL_Path _Path, Vector2 start_pos, Vector2 size, Color col,
-            ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
+            VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy, int seg_count = 20) {
             if(seg_count < 1) seg_count = 1;
             Vector2 prev_pos = _Path.GetPos(0).ToVec2(dir);
             for(int i = 1; i <= seg_count; i++) {

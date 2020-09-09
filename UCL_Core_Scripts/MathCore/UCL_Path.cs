@@ -19,7 +19,7 @@ namespace UCL.Core.MathLib {
         /// </summary>
         /// <param name="dir">the direction of rect(etc. xy</param>
         /// <returns></returns>
-        virtual public Rect GetRect(ExtensionMethods.Vec3ToVec2 dir = ExtensionMethods.Vec3ToVec2.xy) {
+        virtual public Rect GetRect(VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy) {
             return Rect.zero;
         }
 

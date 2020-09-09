@@ -92,6 +92,41 @@ namespace UCL.Core.MathLib {
         #endregion
 
         #region Vector
+        /// <summary>
+        /// return a random point x,y,z range in 0 ~ 1
+        /// </summary>
+        /// <returns></returns>
+        public Vector3 InUnitCube() {
+            return new Vector3(Range(0f, 1f), Range(0f, 1f), Range(0f, 1f));
+        }
+        public Vector3 OnUnitCube() {
+            float pos = Range(0f, 1f);
+            float pos2 = Range(0f, 1f);
+            switch(Next(6)) {
+                case 0: return new Vector3(pos, pos2, 0);
+                case 1: return new Vector3(pos, pos2, 1);
+                case 2: return new Vector3(pos, 0, pos2);
+                case 3: return new Vector3(pos, 1, pos2);
+                case 4: return new Vector3(0, pos, pos2);
+            }
+            return new Vector3(1, pos, pos2);
+        }
+        /// <summary>
+        /// return a random point x,y range in 0 ~ 1
+        /// </summary>
+        /// <returns></returns>
+        public Vector2 InUnitSquare() {
+            return new Vector2(Range(0f, 1f), Range(0f, 1f));
+        }
+        public Vector2 OnUnitSquare() {
+            float pos = Range(0f, 1f);
+            switch(Next(4)) {
+                case 0:return new Vector2(pos, 0);
+                case 1: return new Vector2(pos, 1);
+                case 2: return new Vector2(0, pos);
+            }
+            return new Vector2(1, pos);
+        }
         public Vector2 OnUnitCircle() {
             float angle = Range(0, Mathf.PI * 2f);
             return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));

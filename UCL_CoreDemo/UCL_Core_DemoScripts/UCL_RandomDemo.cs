@@ -61,6 +61,26 @@ namespace UCL.Core.MathLib.Demo {
         }
 
         [ATTR.UCL_FunctionButton]
+        public void Rand_InUnitSquare() {
+            if(m_Rnd == null) InitSeed();
+            m_RandomPoints.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.InUnitSquare() * 2.0f - Vector2.one;
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints.Add(point);
+            }
+        }
+        [ATTR.UCL_FunctionButton]
+        public void Rand_OnUnitSquare() {
+            if(m_Rnd == null) InitSeed();
+            m_RandomPoints.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.OnUnitSquare()*2.0f - Vector2.one;
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints.Add(point);
+            }
+        }
+        [ATTR.UCL_FunctionButton]
         public void Rand_InUnitCircle() {
             if(m_Rnd == null) InitSeed();
             m_RandomPoints.Clear();
@@ -90,6 +110,29 @@ namespace UCL.Core.MathLib.Demo {
             m_RandomPoints3D.Clear();
             for(int i = 0; i < m_RandTimes; i++) {
                 var point = m_Rnd.InUnitSphere();
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints3D.Add(point);
+            }
+        }
+
+        [ATTR.UCL_FunctionButton]
+        public void Rand_OnUnitCube() {
+            if(m_Rnd == null) InitSeed();
+            m_UpdateVal = !m_UpdateVal;
+            m_RandomPoints3D.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.OnUnitCube();
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints3D.Add(point);
+            }
+        }
+        [ATTR.UCL_FunctionButton]
+        public void Rand_InUnitCube() {
+            if(m_Rnd == null) InitSeed();
+            m_UpdateVal = !m_UpdateVal;
+            m_RandomPoints3D.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.InUnitCube();
                 //Debug.LogWarning("point:" + point);
                 m_RandomPoints3D.Add(point);
             }

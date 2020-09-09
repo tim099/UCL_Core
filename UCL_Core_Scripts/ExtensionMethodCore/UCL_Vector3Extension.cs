@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public static partial class ExtensionMethods {
+public static partial class VectorExtensionMethods {
     public enum Vec3ToVec2 {
         xy,
         xz,

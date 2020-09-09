@@ -20,13 +20,13 @@ namespace UCL.Core.ComponentController {
             transform.SetZ(val);
         }
         public void SetLocalPositionX(float val) {
-            transform.SetLocalPositionX(val);
+            transform.SetLocalX(val);
         }
         public void SetLocalPositionY(float val) {
-            transform.SetLocalPositionY(val);
+            transform.SetLocalY(val);
         }
         public void SetLocalPositionZ(float val) {
-            transform.SetLocalPositionZ(val);
+            transform.SetLocalZ(val);
         }
     }
 }

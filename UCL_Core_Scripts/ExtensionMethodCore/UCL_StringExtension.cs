@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
-public static partial class ExtensionMethods {
+public static partial class VectorExtensionMethods {
     #region String
     public static string RemoveLast(this string str) {
         int len = str.Length;

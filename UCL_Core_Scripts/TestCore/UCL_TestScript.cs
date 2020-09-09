@@ -37,7 +37,7 @@ namespace UCL.Core.TestLib {
         private void OnValidate() {
             ReDraw();
         }
-        public ExtensionMethods.Vec3ToVec2 m_Dir = ExtensionMethods.Vec3ToVec2.xy;
+        public VectorExtensionMethods.Vec3ToVec2 m_Dir = VectorExtensionMethods.Vec3ToVec2.xy;
         [ATTR.UCL_FunctionButton]
         void ReDraw() {
             if(m_Texture == null) {

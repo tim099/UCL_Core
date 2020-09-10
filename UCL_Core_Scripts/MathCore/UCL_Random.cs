@@ -92,6 +92,28 @@ namespace UCL.Core.MathLib {
         #endregion
 
         #region Vector
+
+        public Vector2 InRect(float width, float height) {
+            return new Vector2(Range(0f, width), Range(0f, height));
+        }
+
+        public Vector2 OnRect(float width, float height) {
+            float dd = Range(0f, 2*(width+height));
+            dd -= width;
+            if(dd <= 0) {
+                return new Vector2(Range(0f, width), 0);
+            }
+            dd -= width;
+            if(dd <= 0) {
+                return new Vector2(Range(0f, width), height);
+            }
+            dd -= height;
+            if(dd <= 0) {
+                return new Vector2(0 , Range(0f, height));
+            }
+            return new Vector2(width, Range(0f, height));
+        }
+
         /// <summary>
         /// return a random point x,y,z range in 0 ~ 1
         /// </summary>

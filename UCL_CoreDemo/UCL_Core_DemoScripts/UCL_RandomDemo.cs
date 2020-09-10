@@ -80,6 +80,30 @@ namespace UCL.Core.MathLib.Demo {
                 m_RandomPoints.Add(point);
             }
         }
+        [Range(0, 1f)] public float m_RectWidth = 1f;
+        [Range(0, 1f)] public float m_RectHeight = 1f;
+
+        [ATTR.UCL_FunctionButton]
+        public void Rand_InRect() {
+            if(m_Rnd == null) InitSeed();
+            m_RandomPoints.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.InRect(m_RectWidth, m_RectHeight) * 2.0f - Vector2.one;
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints.Add(point);
+            }
+        }
+        [ATTR.UCL_FunctionButton]
+        public void Rand_OnRect() {
+            if(m_Rnd == null) InitSeed();
+            m_RandomPoints.Clear();
+            for(int i = 0; i < m_RandTimes; i++) {
+                var point = m_Rnd.OnRect(m_RectWidth, m_RectHeight) * 2.0f - Vector2.one;
+                //Debug.LogWarning("point:" + point);
+                m_RandomPoints.Add(point);
+            }
+        }
+
         [ATTR.UCL_FunctionButton]
         public void Rand_InUnitCircle() {
             if(m_Rnd == null) InitSeed();

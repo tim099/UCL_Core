@@ -60,11 +60,6 @@ namespace UCL.Core.MathLib {
                     var a = GetPos(i * seg);
                     //var a = m_GetPoint ? GetPoint(i * seg) : GetPos(i * seg);
                     UCL_DrawGizmos.DrawConstSizeSphere(a, 0.5f * m_PointSize);
-                    /*
-                    var b = GetPosLinear(i * seg);
-                    UCL_DrawGizmos.DrawConstSizeSphere(b, 0.5f * m_PointSize);
-                    Gizmos.DrawLine(a, b);
-                    */
                 }
                 /*
                 for(int i = 0; i < m_WorldSpacePoints.Length - 1; i++) {

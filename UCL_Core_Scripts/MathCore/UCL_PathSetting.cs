@@ -5,7 +5,6 @@ using UnityEngine;
 namespace UCL.Core.MathLib {
     public class UCL_PathSetting : UCL_Path {
 
-
         public UCL_Path m_Path;
         public VectorExtensionMethods.TransformMode m_TransformMode = VectorExtensionMethods.TransformMode.WorldSpace;
         //public bool m_IgnoreScale = false;
@@ -14,8 +13,8 @@ namespace UCL.Core.MathLib {
         [Header("Inverse the path")] public bool m_Inverse = false;
 
         public override Vector3 GetPos(float percent) {
-
             if(m_Path == null) return transform.position;
+
             if(m_Inverse) percent = 1 - percent;
 
             Vector3 pos = m_Path.GetPos(percent);
@@ -26,9 +25,17 @@ namespace UCL.Core.MathLib {
             return pos;
         }
         public override Rect GetRect(VectorExtensionMethods.Vec3ToVec2 dir = VectorExtensionMethods.Vec3ToVec2.xy) {
+            if(m_Path == null) return Rect.zero;
             return m_Path.GetRect();
         }
-
+        public override float GetPathLength() {
+            if(m_Path == null) return 0;
+            return m_Path.GetPathLength();
+        }
+        public override void UpdatePathPoint() {
+            if(m_Path == null) return;
+            m_Path.UpdatePathPoint();
+        }
         #region OnDrawGizmos
 
         [Header("Editor DrawGizmos Setting")]//m_DisPointCount

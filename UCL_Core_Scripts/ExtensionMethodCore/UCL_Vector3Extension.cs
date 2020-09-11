@@ -22,6 +22,8 @@ public static partial class VectorExtensionMethods {
     public static Vector3 ToVec3(this Vector2 a) {
         return new Vector3(a.x, a.y, 0);
     }
+
+    #region Vector2
     public static Vector2 XY(this Vector3 a) { return new Vector2(a.x, a.y); }
     public static Vector2 XZ(this Vector3 a) { return new Vector2(a.x, a.z); }
     public static Vector2 YZ(this Vector3 a) { return new Vector2(a.y, a.z); }
@@ -41,4 +43,9 @@ public static partial class VectorExtensionMethods {
         }
         return new Vector2(a.x, a.y);
     }
+    public static float Radius(this Vector2 a) {
+        return Mathf.Atan2(a.y,a.x);
+    }
+
+    #endregion
 }

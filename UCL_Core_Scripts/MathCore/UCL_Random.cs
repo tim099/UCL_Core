@@ -153,6 +153,16 @@ namespace UCL.Core.MathLib {
             float angle = Range(0, Mathf.PI * 2f);
             return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
         }
+        /// <summary>
+        /// return random point on circle between min_radius and max_radius
+        /// </summary>
+        /// <param name="min_radius">min radius of point</param>
+        /// <param name="max_radius">max angle of point</param>
+        /// <returns></returns>
+        public Vector2 OnUnitCircle(float min_radius, float max_radius) {
+            float angle = Range(min_radius, max_radius);//*Mathf.Deg2Rad
+            return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+        }
         public Vector2 InUnitCircle() {
             float r = NextFloat();
             return Mathf.Sqrt(r) * OnUnitCircle();

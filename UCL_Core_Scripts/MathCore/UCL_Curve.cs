@@ -98,7 +98,7 @@ namespace UCL.Core.MathLib {
             public List<float> m_Data;
             //public List<float> m_Origin;
         }
-        public void UpdatePathPoint() {
+        override public void UpdatePathPoint() {
             if(transform.lossyScale == Vector3.zero) {
                 Debug.LogError("UCL_Curve UpdatePathPoint() Error, transform.lossyScale == Vector3.zero");
                 return;
@@ -456,7 +456,7 @@ namespace UCL.Core.MathLib {
 
             return Lerp(cur, u);
         }
-        public float GetPathLength() {
+        override public float GetPathLength() {
             return m_PathLength;
         }
         public Vector3 GetPosByLengthLinear(float length) {
@@ -607,9 +607,6 @@ namespace UCL.Core.MathLib {
             //*/
         }
         public int GetPathPointsLength() { return m_PathPoints.Length; }
-
-
-
 
         #region Editor
 #if UNITY_EDITOR

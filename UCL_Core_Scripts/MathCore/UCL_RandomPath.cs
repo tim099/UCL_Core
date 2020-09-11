@@ -6,12 +6,15 @@ namespace UCL.Core.MathLib {
     [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_RandomPath : UCL_Path {
         [System.Serializable]
-        public struct MoveData {
-            //public Vector3 m_Acc;
-            public Vector3 m_Vel;
+        public class MoveData {
+            public float m_Acc = 0.1f;
+            public Vector3 m_Vel = Vector3.zero;
             public Vector3 m_Position;
+
+            public float m_VelDec = 0.99f;
         }
-        public int m_Seed = 0;
+        [Range(0,1000)]public int m_Seed = 0;
+        public MoveData m_MoveData;
         public Transform m_StartPosMin;
         public Transform m_StartPosMax;
         UCL.Core.MathLib.UCL_Random m_Rnd;
@@ -31,15 +34,22 @@ namespace UCL.Core.MathLib {
             if(m_PathPoints == null) {
                 m_PathPoints = new List<Vector3>();
             }
-            if(m_PathPoints.Count == 0) {
-                m_Rnd = new UCL_Random(m_Seed);
+            m_PathPoints.Clear();
+            m_Rnd = new UCL_Random(m_Seed);
 
-                Vector3 min = m_StartPosMin.position;
-                Vector3 max = m_StartPosMax.position;
-                Vector3 del = max - min;
-                Vector3 StartPos = min + m_Rnd.OnRect(del.x, del.y).ToVec3();
-                m_PathPoints.Add(StartPos);
+            Vector3 min = m_StartPosMin.position;
+            Vector3 max = m_StartPosMax.position;
+            Vector3 del = max - min;
+            
+            Vector3 StartPos = min + m_Rnd.OnRect(del.x, del.y).ToVec3();
+            m_MoveData.m_Position = StartPos;
+            m_PathPoints.Add(StartPos);
+
+            for(int i = 0; i < 10000; i++) {
+                m_MoveData.m_Vel += m_Rnd.OnUnitCircle().ToVec3() * m_MoveData.m_Acc;
+                m_MoveData.m_Position += m_MoveData.m_Vel;
             }
+            
         }
         List<Vector3> m_PathPoints;
         private void OnDrawGizmos() {

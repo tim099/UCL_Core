@@ -9,9 +9,6 @@ namespace UCL.Core.MathLib {
         public class MoveData {
             public float m_Acc = 0.1f;
             public float m_AngelDel = 10f;
-            public Vector2 m_Vel = Vector2.zero;
-            public Vector3 m_Position;
-
             public int m_RecordInterval = 5;
             public int m_StartRandomAt = 80;
             public float m_Inertia = 0.85f;
@@ -21,11 +18,17 @@ namespace UCL.Core.MathLib {
         }
         [Range(0, 1000)] public int m_Seed = 0;
         public MoveData m_MoveData;
+
+        [Header("Start Position Range")]
+        public bool m_UpdateSizeOnValidate = true;
         public Transform m_StartPosMin;
         public Transform m_StartPosMax;
+        public Vector3 m_Size;
+        [Space(10)]
+
         public int m_MaxMoveTimes = 3000;
         UCLI_Path m_Path;
-        [UCL.Core.PA.UCL_ReadOnly]public float m_PathLength;
+        [UCL.Core.PA.UCL_ReadOnly] public float m_PathLength;
         UCL.Core.MathLib.UCL_Random m_Rnd;
         public override Vector3 GetPos(float percent) {
             if(m_Path == null) {
@@ -37,7 +40,13 @@ namespace UCL.Core.MathLib {
             return base.GetRect(dir);
         }
         private void OnValidate() {
+#if UNITY_EDITOR
+            if(m_UpdateSizeOnValidate && !UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode
+                && !UnityEditor.EditorApplication.isUpdating && transform.lossyScale != Vector3.zero) {
+                UpdateSize();
+            }
             UpdatePath();
+#endif
         }
         public Color m_PathCol = Color.yellow;
         [UCL.Core.ATTR.UCL_FunctionButton]
@@ -55,9 +64,22 @@ namespace UCL.Core.MathLib {
         public float m_RecordPathMinLength = 500f;
         public float m_RecordPathRange = 100f;
         public List<int> m_RecordSeeds;
-        //public float m_Length
+
+
+        [ATTR.UCL_FunctionButton]
+        public void UpdateSize() {
+            if(m_StartPosMax == null || m_StartPosMin == null) return;
+            m_Size = m_StartPosMin.InverseTransformPoint(m_StartPosMax.transform.position);
+        }
+
+        [ATTR.UCL_DrawString]
+        virtual protected string RecordSeedCount() {
+            if(m_RecordSeeds == null) return "RecordSeedCount: 0";
+            return "RecordSeedCount: " + m_RecordSeeds.Count;
+        }
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void RecordSeed() {
+            UpdateSize();
             m_RecordSeeds = new List<int>();
             int end_at = m_RecordSeedStartAt + m_RecordSeedCount;
             for(int i = m_RecordSeedStartAt; i < end_at; i++) {
@@ -67,13 +89,15 @@ namespace UCL.Core.MathLib {
                     if(del >= 0 && del <= m_RecordPathRange) {
                         m_RecordSeeds.Add(i);
                         if(m_RecordSeeds.Count >= m_MaxRecordCount) return;
-                    } else {
-                        //Debug.LogWarning("path.GetPathLength():" + path.GetPathLength());
                     }
                 }
             }
         }
-
+        [ATTR.UCL_FunctionButton]
+        public void ClearRecordSeeds() {
+            if(m_RecordSeeds == null) return;
+            m_RecordSeeds.Clear();
+        }
         public void RandomSeed() {
             m_Seed = Core.MathLib.UCL_Random.Instance.Next();
             UpdatePath();
@@ -85,88 +109,131 @@ namespace UCL.Core.MathLib {
             points.Clear();
             float path_len = 0;
             var rnd = new UCL_Random(seed);
+            var size = m_Size;
+            bool inv_x = false;
+            bool inv_y = false;
+            if(size.x < 0) {
+                inv_x = true;
+                size.x = -size.x;
+            }
+            if(size.y < 0) {
+                inv_y = true;
+                size.y = -size.y;
+            }
+            float hx = 0.5f * size.x;
+            float hy = 0.5f * size.y;
+            var sp = rnd.OnRect(size.x, size.y);
 
-            Vector3 min = m_StartPosMin.position;
-            Vector3 max = m_StartPosMax.position;
-            Vector3 del = max - min;
-            float hx = 0.5f * m_StartPosMax.position.x;
-            float hy = 0.5f * m_StartPosMax.position.y;
-            var sp = rnd.OnRect(del.x, del.y);
+            Vector2 vel = Vector2.zero;
             if(sp.x == 0) {
                 if(sp.y > hy) {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(-0.2f * Mathf.PI, 0);
+                    vel = rnd.OnUnitCircle(-0.2f * Mathf.PI, 0);
                 } else {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(0, 0.2f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(0, 0.2f * Mathf.PI);
                 }
-                //m_MoveData.m_Vel = m_Rnd.OnUnitCircle(-0.2f*Mathf.PI, 0.2f * Mathf.PI);
-            } else if(sp.x == del.x) {
+            } else if(sp.x == size.x) {
                 if(sp.y > hy) {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(1f * Mathf.PI, 1.2f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(1f * Mathf.PI, 1.2f * Mathf.PI);
                 } else {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(0.8f * Mathf.PI, 1f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(0.8f * Mathf.PI, 1f * Mathf.PI);
                 }
-                //m_MoveData.m_Vel = m_Rnd.OnUnitCircle(0.8f * Mathf.PI, 1.2f * Mathf.PI);
             } else if(sp.y == 0) {
                 if(sp.x > hx) {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(0.5f * Mathf.PI, 0.7f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(0.5f * Mathf.PI, 0.7f * Mathf.PI);
                 } else {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(0.3f * Mathf.PI, 0.5f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(0.3f * Mathf.PI, 0.5f * Mathf.PI);
                 }
-                //m_MoveData.m_Vel = m_Rnd.OnUnitCircle(0.3f * Mathf.PI, 0.7f*Mathf.PI);
             } else {
                 if(sp.x > hx) {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(1.3f * Mathf.PI, 1.5f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(1.3f * Mathf.PI, 1.5f * Mathf.PI);
                 } else {
-                    m_MoveData.m_Vel = rnd.OnUnitCircle(1.5f * Mathf.PI, 1.7f * Mathf.PI);
+                    vel = rnd.OnUnitCircle(1.5f * Mathf.PI, 1.7f * Mathf.PI);
                 }
-                //m_MoveData.m_Vel = m_Rnd.OnUnitCircle(1.3f * Mathf.PI, 1.7f * Mathf.PI);
             }
-            Vector3 PrevPos = min + sp.ToVec3();
+            Vector2 pos = sp;
+            System.Func<Vector2, Vector3> ToWorldSpace = null;
+            if(inv_x && inv_y) {
+                ToWorldSpace =
+                    (o) => {
+                        o.x = -o.x;
+                        o.y = -o.y;
+                        return m_StartPosMin.TransformPoint(o);
+                    };
+            } else if(inv_x) {
+                ToWorldSpace =
+                    (o) => {
+                        o.x = -o.x;
+                        return m_StartPosMin.TransformPoint(o);
+                    };
+            } else if(inv_y) {
+                ToWorldSpace =
+                    (o) => {
+                        o.y = -o.y;
+                        return m_StartPosMin.TransformPoint(o);
+                    };
+            } else {
+                ToWorldSpace =
+                    (o) => {
+                        return m_StartPosMin.TransformPoint(o);
+                    };
+            }
 
-            m_MoveData.m_Vel *= m_MoveData.m_Acc;
+            float angle = m_StartPosMin.rotation.eulerAngles.z;
 
-            m_MoveData.m_Position = PrevPos;
-
+            Vector3 PrevPos = ToWorldSpace(pos);
+            float acc = m_MoveData.m_Acc * (1f/m_StartPosMin.lossyScale.x);
+            vel *= acc;
+#if PathDebug
+            Debug.LogWarning("m_Size:" + this.m_Size + ",sp:" + sp + ",vel:" + vel);
+#endif
             points.Add(PrevPos);
-            int swing_loop = m_MoveData.m_SwingLoop;//m_MoveData.m_SwingAngle * 2 + 1;
+            int swing_loop = m_MoveData.m_SwingLoop;
             int loop = swing_loop * 2 + 1;
             float rr = ((m_MoveData.m_SwingAngle * Mathf.Deg2Rad) / swing_loop);
-            float start_r = m_MoveData.m_Vel.Radius();
+            float start_r = vel.Radius();
             int start_random_at = m_MoveData.m_StartRandomAt;
             int record_interval = m_MoveData.m_RecordInterval;
+            var vel_dec = m_MoveData.m_VelDec;
             for(int i = 0; i < m_MaxMoveTimes; i++) {
                 if(i > start_random_at) {
-                    m_MoveData.m_Vel *= m_MoveData.m_VelDec;
-                    float r = m_MoveData.m_Vel.Radius();
+                    vel *= vel_dec;
+                    float r = vel.Radius();
                     float dr = r - start_r;
                     r += (i % loop - swing_loop) * rr;
                     Vector2 acc_vec = Vector2.zero;
                     if(dr > 0 && dr < Mathf.PI) {
                         acc_vec = rnd.OnUnitCircle(r - m_MoveData.m_AngelDel * Mathf.Deg2Rad,
-                            r + m_MoveData.m_Inertia * m_MoveData.m_AngelDel * Mathf.Deg2Rad);//
+                            r + m_MoveData.m_Inertia * m_MoveData.m_AngelDel * Mathf.Deg2Rad);
                     } else {
                         acc_vec = rnd.OnUnitCircle(r - m_MoveData.m_Inertia * m_MoveData.m_AngelDel * Mathf.Deg2Rad,
-                            r + m_MoveData.m_AngelDel * Mathf.Deg2Rad);//- m_MoveData.m_AngelDel * Mathf.Deg2Rad
-
+                            r + m_MoveData.m_AngelDel * Mathf.Deg2Rad);
                     }
-                    m_MoveData.m_Vel += acc_vec * m_MoveData.m_Acc;
+                    vel += acc_vec * acc;
                 }
-                m_MoveData.m_Position += m_MoveData.m_Vel.ToVec3();
+                pos += vel;
 
-                if(m_MoveData.m_Position.x < min.x || m_MoveData.m_Position.x > max.x
-                    || m_MoveData.m_Position.y < min.y || m_MoveData.m_Position.y > max.y) {
+                if(pos.x < 0 || pos.x > size.x
+                    || pos.y < 0 || pos.y > size.y) {
                     break;
                 }
                 if(i % record_interval == 0) {
-                    float len = (m_MoveData.m_Position - PrevPos).magnitude;
+                    var cur_pos = ToWorldSpace(pos);
+                    float len = (cur_pos - PrevPos).magnitude;
                     path_len += len;
-                    points.Add(m_MoveData.m_Position);
-                    PrevPos = m_MoveData.m_Position;
+                    points.Add(cur_pos);
+                    PrevPos = cur_pos;
                 }
             }
-
-            path_len += (m_MoveData.m_Position - PrevPos).magnitude;
-            points.Add(m_MoveData.m_Position);
+            {
+                var cur_pos = ToWorldSpace(pos);
+                path_len += (cur_pos - PrevPos).magnitude;
+                points.Add(cur_pos);
+            }
+#if PathDebug
+            for(int i = 0; i < points.Count; i++) {
+                Debug.LogWarning("" + i + ":" + points[i]);
+            }
+#endif
             var path = new CurvePath(points, path_len);
             return path;
         }

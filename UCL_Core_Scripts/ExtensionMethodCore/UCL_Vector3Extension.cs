@@ -11,7 +11,26 @@ public static partial class VectorExtensionMethods {
         zx,
         zy
     }
-
+    public static Vector3 Min(this Vector3 vec, params Vector3[] vecs) {
+        Vector3 min = vec;
+        for(int i = 0; i < vecs.Length; i++) {
+            Vector3 nvec = vecs[i];
+            if(nvec.x < min.x) min.x = nvec.x;
+            if(nvec.y < min.y) min.y = nvec.y;
+            if(nvec.z < min.z) min.z = nvec.z;
+        }
+        return min;
+    }
+    public static Vector3 Max(this Vector3 vec,params Vector3[] vecs) {
+        Vector3 max = vec;
+        for(int i = 0; i < vecs.Length; i++) {
+            Vector3 nvec = vecs[i];
+            if(nvec.x > max.x) max.x = nvec.x;
+            if(nvec.y > max.y) max.y = nvec.y;
+            if(nvec.z > max.z) max.z = nvec.z;
+        }
+        return max;
+    }
     public static float GetValue(this Vector3 t, int at) {
         return at == 0 ? t.x :
                at == 1 ? t.y : t.z;

@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
-#if UNITY_EDITOR
+
 namespace UCL.Core.EditorLib {
-    [InitializeOnLoad]
+#if UNITY_EDITOR
+    [UnityEditor.InitializeOnLoad]
+#endif
     static public class UCL_EditorUpdateManager {
-        //[InitializeOnLoadMethod]
-        //static public void Init() {}
         static System.Action m_EditorUpdateAction;
         static Dictionary<string, System.Action> m_EditorUpdateActionDic;
 
@@ -20,6 +19,7 @@ namespace UCL.Core.EditorLib {
         /// </summary>
         static Queue<System.Action> m_ActQue;
         static UCL_EditorUpdateManager() {
+#if UNITY_EDITOR
             Debug.Log("UCL_EditorUpdateManager() Init UnityEditor.EditorApplication.update += EditorUpdate");
             UnityEditor.EditorApplication.update += EditorUpdate;
             m_EditorUpdateAction = null;
@@ -27,8 +27,10 @@ namespace UCL.Core.EditorLib {
             m_ActQue = new Queue<Action>();
             m_DelayActQue = new Queue<Tuple<int, Action>>();
             m_DelayActQueBuffer = new Queue<Tuple<int, Action>>();
+#endif
         }
         static void EditorUpdate() {
+#if UNITY_EDITOR
             try {
                 m_EditorUpdateAction?.Invoke();
             }catch(Exception e) {
@@ -63,47 +65,61 @@ namespace UCL.Core.EditorLib {
                 Core.GameObjectLib.swap(ref m_DelayActQue, ref m_DelayActQueBuffer);
             }
             //Debug.Log("EditorUpdate()!!");
+#endif
         }
         static public void AddAction(System.Action act) {
+#if UNITY_EDITOR
             m_ActQue?.Enqueue(act);
+#endif
         }
         static public void AddDelayAction(System.Action act,int delay_frame) {
+#if UNITY_EDITOR
             m_DelayActQue?.Enqueue(new Tuple<int, Action>(delay_frame, act));
+#endif
         }
         static public void AddEditorUpdateAct(System.Action act) {
+#if UNITY_EDITOR
             m_EditorUpdateAction += act;
             Debug.LogWarning("AddEditorUpdateAct count:" + m_EditorUpdateAction.GetInvocationList().GetLength(0));
+#endif
         }
         static public void RemoveEditorUpdateAct(System.Action act) {
+#if UNITY_EDITOR
             m_EditorUpdateAction -= act;
             int count = 0;
             if(m_EditorUpdateAction != null) {
                 count = m_EditorUpdateAction.GetInvocationList().GetLength(0);
             }
             Debug.LogWarning("RemoveEditorUpdateAct count:" + count);
+#endif
         }
         static public void AddEditorUpdateAct(string key, System.Action act) {
+#if UNITY_EDITOR
             if(m_EditorUpdateActionDic.ContainsKey(key)) {
                 Debug.LogError("UCL_EditorUpdateManager AddEditorUpdateAct Fail!!key:" + key + ",already Exist!!");
                 return;
             }
             m_EditorUpdateActionDic.Add(key, act);
             Debug.Log("m_EditorUpdateActionDic.Count:" + m_EditorUpdateActionDic.Count);
+#endif
         }
         static public void RemoveEditorUpdateAct(string key) {
+#if UNITY_EDITOR
             if(!m_EditorUpdateActionDic.ContainsKey(key)) {
                 Debug.LogError("UCL_EditorUpdateManager AddEditorUpdateAct Fail!!key:" + key + ",not Exist!!");
                 return;
             }
             m_EditorUpdateActionDic.Remove(key);
             Debug.Log("m_EditorUpdateActionDic.Count:" + m_EditorUpdateActionDic.Count);
+#endif
         }
         static public void Clear() {
+#if UNITY_EDITOR
             m_EditorUpdateActionDic?.Clear();
             m_EditorUpdateAction = null;
+#endif
         }
 
     }
 }
 
-#endif

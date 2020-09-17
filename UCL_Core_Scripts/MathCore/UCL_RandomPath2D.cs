@@ -181,7 +181,7 @@ namespace UCL.Core.MathLib {
             float angle = m_StartPosMin.rotation.eulerAngles.z;
 
             Vector3 PrevPos = ToWorldSpace(pos);
-            float acc = m_MoveData.m_Acc * (1f/m_StartPosMin.lossyScale.x);
+            float acc = m_MoveData.m_Acc;// * (1f/m_StartPosMin.lossyScale.x);
             vel *= acc;
 #if PathDebug
             Debug.LogWarning("m_Size:" + this.m_Size + ",sp:" + sp + ",vel:" + vel);

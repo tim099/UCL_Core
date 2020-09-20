@@ -30,22 +30,28 @@ namespace UCL.Core.Game {
         public UCL_GameConfig m_GameConfig { get; protected set; }
         [SerializeField] protected List<UCL_GameService> m_GameServices;
         //protected List<UCL_IConfig> m_Configs = new List<UCL_IConfig>();
-        protected bool f_Inited = false;
-
+        protected bool m_Inited = false;
+        protected bool m_End = false;
         [RuntimeInitializeOnLoadMethod]
         static void RuntimeInitializeInit() {
             //UCL_GameManager.Get();
         }
 
         virtual protected void Init() {
-            if(f_Inited) return;
+            if(m_Inited) return;
             if(!SetInstance(this)) return;
 
-            f_Inited = true;
+            m_Inited = true;
             if(m_GameServices == null) m_GameServices = new List<UCL_GameService>();
             FileLib.Lib.CreateDirectory(GetGameFolderPath());
+#if UNITY_EDITOR
+            Core.EditorLib.UCL_EditorPlayStateNotifier.AddExitingPlayModeAct(
+            ()=> {
+                Debug.LogWarning("UCL_GameManager ExitingPlayMode");
+                GameExit();
+            });
+#endif
 
-            
             foreach(var service in m_GameServices) {
                 service.Init();
             }
@@ -114,7 +120,8 @@ namespace UCL.Core.Game {
         /// Called when OnDestroy
         /// </summary>
         virtual protected void GameExit() {
-            if(!f_Inited) return;
+            if(!m_Inited || m_End) return;
+            m_End = true;
             SaveAllSetting();
         }
         private void Awake() {

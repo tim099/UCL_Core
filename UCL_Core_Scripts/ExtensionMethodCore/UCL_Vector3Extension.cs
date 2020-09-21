@@ -62,6 +62,9 @@ public static partial class VectorExtensionMethods {
         }
         return new Vector2(a.x, a.y);
     }
+    public static float Degree(this Vector2 a) {
+        return Mathf.Atan2(a.y, a.x) * Mathf.Rad2Deg;
+    }
     public static float Radius(this Vector2 a) {
         return Mathf.Atan2(a.y,a.x);
     }

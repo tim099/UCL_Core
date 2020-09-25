@@ -26,6 +26,7 @@ namespace UCL.Core.MathLib {
         public Vector3 m_Size;
         [Space(10)]
 
+        public bool m_DrawGizmos = true;
         public int m_MaxMoveTimes = 3000;
         UCLI_Path m_Path;
         [UCL.Core.PA.UCL_ReadOnly] public float m_PathLength;
@@ -255,6 +256,8 @@ namespace UCL.Core.MathLib {
         private void OnDrawGizmos() {
 #if UNITY_EDITOR
             if(m_StartPosMin == null || m_StartPosMax == null) return;
+            if(!m_DrawGizmos) return;
+
             if(m_Path == null) {
                 UpdatePath();
             }

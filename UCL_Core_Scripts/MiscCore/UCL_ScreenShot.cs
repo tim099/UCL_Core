@@ -12,6 +12,10 @@ namespace UCL.Core.Misc {
         [Core.ATTR.UCL_RuntimeOnly]
         [Core.ATTR.UCL_FunctionButton]
         public void TakeScreenShot() {
+            StartCoroutine(ScreenShot());
+        }
+        IEnumerator ScreenShot() {
+            yield return new WaitForEndOfFrame();
             m_Texture = ScreenCapture.CaptureScreenshotAsTexture();
             if(m_Image != null) m_Image.texture = m_Texture;
         }

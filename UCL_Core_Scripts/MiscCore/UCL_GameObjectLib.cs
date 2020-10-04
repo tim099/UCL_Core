@@ -17,7 +17,7 @@ namespace UCL.Core {
             }
             return (T)System.Convert.ChangeType(p, typeof(T));
         }
-        public static void swap<type>(ref type a, ref type b) {
+        public static void Swap<type>(ref type a, ref type b) {
             type c = a; a = b; b = c;
         }
         public static GameObject CreateByName(string TypeName, Transform t) {
@@ -47,6 +47,15 @@ namespace UCL.Core {
             }
             SetParent(Obj.transform, parent);
             return Obj;
+        }
+        public static void SearchChild<T>(Transform parent,List<T> result) {
+            var res = parent.GetComponents<T>();
+            for(int i = 0; i < res.Length; i++) {
+                result.Add(res[i]);
+            }
+            foreach(Transform child in parent) {
+                SearchChild(child, result);
+            }
         }
     }
 }

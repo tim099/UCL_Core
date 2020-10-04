@@ -18,9 +18,8 @@ namespace UCL.Core.UI.Editor {
             if(obj != null) {
                 p = obj.transform;   
             }
-            var but = UCL.Core.GameObjectLib.Create<UCL_Button>("UCL_Button", p);
+            var but = UCL_Button.Create(p);
             UnityEditor.Selection.activeObject = but;
-            but.gameObject.AddComponent<Image>();
         }
     }
 }

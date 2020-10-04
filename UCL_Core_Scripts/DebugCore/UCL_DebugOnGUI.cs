@@ -35,7 +35,7 @@ namespace UCL.Core.DebugLib {
         private void LateUpdate() {
             //Debug.LogWarning("m_Datas.Clear() m_Datas.Count:" + m_Datas.Count);
             m_Datas.Clear();
-            GameObjectLib.swap(ref m_Datas, ref m_DatasBuffer);
+            GameObjectLib.Swap(ref m_Datas, ref m_DatasBuffer);
         }
         private void OnGUI() {
             //Debug.LogWarning("OnGUI() m_Datas.Count:" + m_Datas.Count);

@@ -2,32 +2,143 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace UCL.Core.UI {
-    public class UCL_Button : MonoBehaviour, IPointerDownHandler, IPointerExitHandler, IPointerUpHandler, IPointerEnterHandler {
-        public bool m_Pressed = false;
-        public bool m_Enter = false;
+    public class UCL_Button : MonoBehaviour, IPointerDownHandler, IPointerExitHandler, IPointerUpHandler, IPointerEnterHandler,
+        IDragHandler, IBeginDragHandler, IEndDragHandler {
+        public enum Transition {
+            None = 0,
+            ColorTint,
+        }
+        #region CreateButton
+        static public UCL_Button Create(Transform parent) {
+            var but = UCL.Core.GameObjectLib.Create<UCL_Button>("UCL_Button", parent);
+            var obj = but.gameObject;
+            var img = obj.AddComponent<Image>();
+            {
+                var rect = obj.GetComponent<RectTransform>();
+                if(rect == null) rect = obj.AddComponent<RectTransform>();
+                rect.sizeDelta = new Vector2(256, 64);
+#if UNITY_EDITOR
+                img.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+                //UnityEditor.EditorGUIUtility.IconContent("[texturename]");
+#endif
+                img.type = Image.Type.Sliced;
+                but.m_Image = img;
+            } 
 
-        public void OnPointerEnter(PointerEventData eventData) {
+            {
+                var text = UCL.Core.GameObjectLib.Create<Text>("Text", but.transform);
+                text.text = "Button";
+                text.color = Color.black;
+                text.resizeTextForBestFit = true;
+                text.resizeTextMaxSize = 50;
+                text.alignment = TextAnchor.MiddleCenter;
+                var rect = text.gameObject.GetComponent<RectTransform>();
+                if(rect == null) rect = text.gameObject.AddComponent<RectTransform>();
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.sizeDelta = Vector2.zero;
+
+                but.m_Text = text;
+            }
+            return but;
+        }
+        #endregion
+        public bool m_Pressed { get; protected set; } = false;
+        public bool m_Enter { get; protected set; } = false;
+        public bool m_Dragging { get; protected set; } = false;
+
+        public Transition m_Transition = Transition.ColorTint;
+        public bool m_Draggable = false;
+        
+        public float m_PressedTime = 0;
+
+        public Image m_Image = null;
+        public Text m_Text = null;
+        public Color m_NormalColor = Color.white;
+        public Color m_PressedColor = Color.gray;
+        public UCL.Core.UCL_Event m_OnClick = null;
+        public UCL.Core.UCL_Event m_OnPointerDown = null;
+        public UCL.Core.UCL_FloatEvent m_OnPressed = null;
+
+        virtual public void OnPointerEnter(PointerEventData eventData) {
             m_Enter = true;
             StateUpdate();
         }
-        public void OnPointerExit(PointerEventData eventData) {
+        virtual public void OnPointerExit(PointerEventData eventData) {
             m_Enter = false;
+            m_PressedTime = 0;
             StateUpdate();
         }
 
-        public void OnPointerDown(PointerEventData eventData) {
+        virtual public void OnPointerDown(PointerEventData eventData) {
+            if(m_OnPointerDown != null) {
+                m_OnPointerDown.Invoke();
+            }
             m_Pressed = true;
+            m_PressedTime = 0;
+
             StateUpdate();
         }
-        public void OnPointerUp(PointerEventData eventData) {
+        virtual public void OnPointerUp(PointerEventData eventData) {
+            if(m_Enter && m_Pressed) {
+                if(m_OnClick != null) m_OnClick.Invoke();
+            }
             m_Pressed = false;
+            m_PressedTime = 0;
             StateUpdate();
         }
-        int m_Times = 0;
+        #region drag
+        protected Vector3 m_DragStartPosition = Vector3.zero;
+        virtual public void OnDrag(PointerEventData eventData) {
+            Debug.LogWarning("OnDrag:"+ eventData.position);
+            transform.position = eventData.position.ToVec3() + m_DragStartPosition;
+            m_Dragging = true;
+            StateUpdate();
+        }
+        virtual public void OnBeginDrag(PointerEventData eventData) {
+            Debug.LogWarning("OnBeginDrag");
+            m_DragStartPosition = transform.position - eventData.position.ToVec3();
+            m_Dragging = true;
+            StateUpdate();
+        }
+        virtual public void OnEndDrag(PointerEventData eventData) {
+            m_Dragging = false;
+            Debug.LogWarning("OnEndDrag");
+            StateUpdate();
+        }
+        #endregion
+
         virtual protected void StateUpdate() {
-            Debug.LogWarning(++m_Times+"m_Pressed:" + m_Pressed + ",m_Enter:" + m_Enter);
+            switch(m_Transition) {
+                case Transition.ColorTint: {
+                        if(m_Image != null) {
+                            if(!m_Pressed) {
+                                m_Image.color = m_NormalColor;
+                            } else {
+                                m_Image.color = m_PressedColor;
+                            }
+                        }
+                        break;
+                    }
+            }
+
+            //Debug.LogWarning(++m_Times+"m_Pressed:" + m_PressedTime.ToString("0.0") + ",m_Enter:" + m_Enter);
+            if(m_Text != null) {
+                m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
+            }
+
+        }
+        virtual protected void Update() {
+            if(m_Pressed && m_Enter) {
+                m_PressedTime += Time.deltaTime;
+                m_OnPressed.Invoke(m_PressedTime);
+            }
+            if(m_Text != null) {
+                m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
+            }
         }
     }
 }

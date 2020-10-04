@@ -4,7 +4,7 @@ using UnityEngine;
 
 
 
-public static partial class VectorExtensionMethods {
+public static partial class ListExtensionMethods {
     /// <summary>
     /// this function don't check the range of a,b !!so use carefully
     /// </summary>

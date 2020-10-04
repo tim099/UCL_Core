@@ -75,20 +75,16 @@ namespace UCL.Core.UI {
         }
 
         virtual public void OnPointerDown(PointerEventData eventData) {
-            if(m_OnPointerDown != null) {
-                m_OnPointerDown.Invoke();
-            }
+            m_OnPointerDown.UCL_Invoke();
             m_Pressed = true;
             m_PressedTime = 0;
 
             StateUpdate();
         }
         virtual public void OnPointerUp(PointerEventData eventData) {
-            if(m_OnPointerUp != null) {
-                m_OnPointerUp.Invoke();
-            }
+            m_OnPointerUp.UCL_Invoke();
             if(m_Enter && m_Pressed) {
-                if(m_OnClick != null) m_OnClick.Invoke();
+                m_OnClick.UCL_Invoke();
             }
             m_Pressed = false;
             m_PressedTime = 0;
@@ -138,7 +134,7 @@ namespace UCL.Core.UI {
         virtual protected void Update() {
             if(m_Pressed && m_Enter) {
                 m_PressedTime += Time.deltaTime;
-                m_OnPressed.Invoke(m_PressedTime);
+                m_OnPressed.UCL_Invoke(m_PressedTime);
             }
             if(m_Text != null) {
                 m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");

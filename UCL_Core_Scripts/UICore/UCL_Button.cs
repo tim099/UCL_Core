@@ -61,6 +61,7 @@ namespace UCL.Core.UI {
         public Color m_PressedColor = Color.gray;
         public UCL.Core.UCL_Event m_OnClick = null;
         public UCL.Core.UCL_Event m_OnPointerDown = null;
+        public UCL.Core.UCL_Event m_OnPointerUp = null;
         public UCL.Core.UCL_FloatEvent m_OnPressed = null;
 
         virtual public void OnPointerEnter(PointerEventData eventData) {
@@ -83,6 +84,9 @@ namespace UCL.Core.UI {
             StateUpdate();
         }
         virtual public void OnPointerUp(PointerEventData eventData) {
+            if(m_OnPointerUp != null) {
+                m_OnPointerUp.Invoke();
+            }
             if(m_Enter && m_Pressed) {
                 if(m_OnClick != null) m_OnClick.Invoke();
             }

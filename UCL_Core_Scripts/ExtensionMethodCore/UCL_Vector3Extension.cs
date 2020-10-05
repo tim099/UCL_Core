@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 public static partial class VectorExtensionMethods {
+    #region Vector3
+
     public enum Vec3ToVec2 {
         xy,
         xz,
@@ -42,6 +44,8 @@ public static partial class VectorExtensionMethods {
         return new Vector3(a.x, a.y, 0);
     }
 
+    #endregion
+
     #region Vector2
     public static Vector2 XY(this Vector3 a) { return new Vector2(a.x, a.y); }
     public static Vector2 XZ(this Vector3 a) { return new Vector2(a.x, a.z); }
@@ -68,6 +72,31 @@ public static partial class VectorExtensionMethods {
     public static float Radius(this Vector2 a) {
         return Mathf.Atan2(a.y,a.x);
     }
-
+    public static Vector2 Min(this Vector2 vec, params Vector2[] vecs) {
+        Vector2 min = vec;
+        for(int i = 0; i < vecs.Length; i++) {
+            Vector2 nvec = vecs[i];
+            if(nvec.x < min.x) min.x = nvec.x;
+            if(nvec.y < min.y) min.y = nvec.y;
+        }
+        return min;
+    }
+    public static Vector2 Max(this Vector2 vec, params Vector2[] vecs) {
+        Vector2 max = vec;
+        for(int i = 0; i < vecs.Length; i++) {
+            Vector2 nvec = vecs[i];
+            if(nvec.x > max.x) max.x = nvec.x;
+            if(nvec.y > max.y) max.y = nvec.y;
+        }
+        return max;
+    }
+    public static bool CheckBetween(this Vector2 a, Vector2 start, Vector2 end) {
+        Vector2 min = start.Min(end);
+        Vector2 max = start.Max(end);
+        if(a.x >= min.x && a.x <= max.x && a.y >= min.y && a.y <= max.y) {
+            return true;
+        }
+        return false;
+    }
     #endregion
 }

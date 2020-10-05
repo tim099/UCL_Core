@@ -38,6 +38,19 @@ public static partial class VectorExtensionMethods {
     }
     #endregion
 
+    #region RectTransform
+
+    public static bool ContainPoint(this RectTransform rect_transform, Vector2 point) {
+        Rect rect = rect_transform.rect;
+        Vector3[] corners = new Vector3[4];
+        rect_transform.GetWorldCorners(corners);
+        if(point.CheckBetween(corners[0], corners[2])) {
+            return true;
+        }
+        return false;
+    }
+
+    #endregion
     public enum TransformMode {
         WorldSpace,
         Local,

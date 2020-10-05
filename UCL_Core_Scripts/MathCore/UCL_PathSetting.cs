@@ -5,7 +5,7 @@ using UnityEngine;
 namespace UCL.Core.MathLib {
     public class UCL_PathSetting : UCL_Path {
 
-        public UCL_Path m_Path;
+        public UCL_Path m_Path = null;
         public VectorExtensionMethods.TransformMode m_TransformMode = VectorExtensionMethods.TransformMode.WorldSpace;
         //public bool m_IgnoreScale = false;
         //public Vector3 m_OffSet = Vector3.zero;
@@ -42,7 +42,6 @@ namespace UCL.Core.MathLib {
         [SerializeField] [Range(-0.2f, 1.2f)] float m_DemoPoint = 0f;
         [SerializeField] Color m_DemoPointColor = Color.black;
         [SerializeField] int m_DisPointCount = 0;
-        [SerializeField] int m_SmoothAmount = 100;
         [SerializeField] Color m_PathCol = Color.green;
         [Range(0.5f, 5.0f)] public float m_PointSize = 1.5f;
         [SerializeField] bool f_OnlyDrawGizmosOnSelected = true;

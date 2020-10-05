@@ -260,7 +260,27 @@ namespace UCL.Core.MathLib {
             return r;
         }
         #endregion
-
+        #region Round & Floor & Ceil
+        public static long RoundToLong(float val) {
+            long result = (long)val;
+            float del = val - result;
+            if(del >= 0.5f) ++result;
+            else if(del < -0.5f) --result;
+            return result;
+        }
+        public static long FloorToLong(float val) {
+            long result = (long)val;
+            float del = val - result;
+            if(del < 0f) --result;
+            return result;
+        }
+        public static long CeilToLong(float val) {
+            long result = (long)val;
+            float del = val - result;
+            if(del > 0f) ++result;
+            return result;
+        }
+        #endregion
         #region Diamond-Square
 
 

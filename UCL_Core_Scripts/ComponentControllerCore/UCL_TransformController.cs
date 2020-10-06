@@ -28,6 +28,9 @@ namespace UCL.Core.ComponentController {
         public void SetLocalPositionZ(float val) {
             transform.SetLocalZ(val);
         }
+        public void DestroyGameObject() {
+            Destroy(gameObject);
+        }
     }
 }
 

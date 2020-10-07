@@ -5,18 +5,23 @@ using UnityEngine;
 namespace UCL.Core.UI {
     static public class UCL_GUILayout {
         static public void DrawSprite(Sprite sprite) {
+            if(sprite == null) return;
             DrawSprite(sprite, sprite.rect.width, sprite.rect.height);
         }
         static public void DrawSpriteFixedWidth(Sprite sprite, float width) {
+            if(sprite == null) return;
             DrawSprite(sprite, width, sprite.rect.height * (width / sprite.rect.width));
         }
         static public void DrawSpriteFixedHeight(Sprite sprite, float height) {
+            if(sprite == null) return;
             DrawSprite(sprite, sprite.rect.width * (height / sprite.rect.height), height);
         }
         static public void DrawSprite(Sprite sprite, float width, float height) {
+            if(sprite == null) return;
             DrawSprite(sprite, width, width, height, height);
         }
         static public void DrawSprite(Sprite sprite, float min_width, float max_width, float min_height, float max_height) {
+            if(sprite == null) return;
             Rect sprite_rect = sprite.rect;
             Rect rect = GUILayoutUtility.GetRect(min_width, max_width, min_height, max_height);
             if(rect.width > max_width) rect.width = max_width;

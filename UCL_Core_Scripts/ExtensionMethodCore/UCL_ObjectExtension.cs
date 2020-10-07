@@ -305,10 +305,17 @@ public static partial class VectorExtensionMethods {
         Buffer.BlockCopy(arr, 0, result, 0, arr_size);
         return result;
     }
+    public static object GetMember(this object obj, string name, BindingFlags flags) {
+        if(obj == null) return null;
+        Type type = obj.GetType();
+        var info = type.GetField(name, flags);
+        if(info == null) return null;
+        return info.GetValue(obj);
+    }
     public static object GetMember(this object obj, string name) {
         if(obj == null) return null;
         Type type = obj.GetType();
-        var info = type.GetField(name);
+        var info = type.GetField(name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
         if(info == null) return null;
         return info.GetValue(obj);
     }

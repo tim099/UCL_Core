@@ -21,6 +21,10 @@ public static partial class VectorExtensionMethods {
     public static T ToStructure<T>(this byte[] buffer) {
         return UCL.Core.MarshalLib.Lib.ToStructure<T>(buffer);
     }
+    public static bool IsNullOrEmpty<T>(this T[] arr) {
+        if(arr == null || arr.Length == 0) return true;
+        return false;
+    }
     //public static List<T> ToList<T>(this T[] arr) {
     //    List<T> list = new List<T>();
     //    for(int i = 0, len = arr.Length; i < len; i++) {

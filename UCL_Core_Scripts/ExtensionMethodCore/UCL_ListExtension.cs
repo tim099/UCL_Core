@@ -25,5 +25,9 @@ public static partial class ListExtensionMethods {
         if(list.Count == 0) return default;
         return list[list.Count-1];
     }
+    public static bool IsNullOrEmpty<T>(this IList<T> list) {
+        if(list == null || list.Count == 0) return true;
+        return false;
+    }
 }
 

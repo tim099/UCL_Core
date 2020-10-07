@@ -105,9 +105,6 @@ namespace UCL.Core.PA {
 #if UNITY_EDITOR
     [CustomPropertyDrawer(typeof(UCL_ButtonAttribute))]
     public class UCL_ButtonPropertyDrawer : PropertyDrawer {
-
-
-
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label) {
 
             var pro = attribute as UCL_ButtonAttribute;

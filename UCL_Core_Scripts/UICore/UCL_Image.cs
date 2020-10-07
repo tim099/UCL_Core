@@ -45,15 +45,18 @@ namespace UCL.Core.UI {
             if(cr == null) {
                 cr = obj.AddComponent<CanvasRenderer>();
             }
-            img.m_CanvasRenderer = cr;
             return img;
         }
+
+        /// How the Image is drawn.
+        [SerializeField] private DrawType m_Type = DrawType.Simple;
+
         #region UCL_Member
         public int TileSize { get { return m_Tile.x * m_Tile.y; } }
 
-        public Vector2Int m_Tile = Vector2Int.one;
-        public int m_TilePos = 0;
-        public int m_TileLoopTime = -1;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public Vector2Int m_Tile = Vector2Int.one;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public int m_TilePos = 0;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public int m_TileLoopTime = -1;
 
         protected int m_TileLoopTimer = 0;
         #endregion
@@ -88,25 +91,30 @@ namespace UCL.Core.UI {
             vh.AddTriangle(2, 3, 0);
         }
         virtual public void Update() {
-            if(m_TileLoopTime > 0) {
-                m_TileLoopTimer++;
-                if(m_TileLoopTimer >= m_TileLoopTime) {
-                    m_TileLoopTimer = 0;
-                    m_TilePos++;
-                    if(m_TilePos >= TileSize) {
-                        m_TilePos = 0;
+#if UNITY_EDITOR
+            if(!Application.isPlaying) {
+                return;
+            }
+#endif
+            if(m_Type == DrawType.SpriteSheet) {
+                if(m_TileLoopTime > 0) {
+                    m_TileLoopTimer++;
+                    if(m_TileLoopTimer >= m_TileLoopTime) {
+                        m_TileLoopTimer = 0;
+                        m_TilePos++;
+                        if(m_TilePos >= TileSize) {
+                            m_TilePos = 0;
+                        }
+                        SetAllDirty();
                     }
-                    SetAllDirty();
                 }
             }
         }
         #endregion
-
-        public CanvasRenderer m_CanvasRenderer = null;
         /// <summary>
         /// Image fill type controls how to display the image.
         /// </summary>
-        public enum FillType {
+        public enum DrawType {
             /// <summary>
             /// Displays the full Image
             /// </summary>
@@ -459,9 +467,6 @@ namespace UCL.Core.UI {
 
         private Sprite activeSprite { get { return m_OverrideSprite != null ? m_OverrideSprite : sprite; } }
 
-        /// How the Image is drawn.
-        [SerializeField] private FillType m_Type = FillType.Simple;
-
         /// <summary>
         /// How to display the image.
         /// </summary>
@@ -472,7 +477,7 @@ namespace UCL.Core.UI {
         /// - A tiled image with sections of the sprite repeated.
         /// - As a partial image, useful for wipes, fades, timers, status bars etc.
         /// </remarks>
-        public FillType type { get { return m_Type; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_Type, value)) SetVerticesDirty(); } }
+        public DrawType type { get { return m_Type; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_Type, value)) SetVerticesDirty(); } }
 
         [SerializeField] private bool m_PreserveAspect = false;
 
@@ -481,7 +486,7 @@ namespace UCL.Core.UI {
         /// </summary>
         public bool preserveAspect { get { return m_PreserveAspect; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_PreserveAspect, value)) SetVerticesDirty(); } }
 
-        [SerializeField] private bool m_FillCenter = true;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)] [SerializeField] private bool m_FillCenter = true;
 
         /// <summary>
         /// Whether or not to render the center of a Tiled or Sliced image.
@@ -510,12 +515,12 @@ namespace UCL.Core.UI {
         public bool fillCenter { get { return m_FillCenter; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillCenter, value)) SetVerticesDirty(); } }
 
         /// Filling method for filled sprites.
-        [SerializeField] private FillMethod m_FillMethod = FillMethod.Radial360;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)] [SerializeField] private FillMethod m_FillMethod = FillMethod.Radial360;
         public FillMethod fillMethod { get { return m_FillMethod; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillMethod, value)) { SetVerticesDirty(); m_FillOrigin = 0; } } }
 
         /// Amount of the Image shown. 0-1 range with 0 being nothing shown, and 1 being the full Image.
-        [Range(0, 1)]
-        [SerializeField]
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)]
+        [Range(0, 1)][SerializeField]
         private float m_FillAmount = 1.0f;
 
         /// <summary>
@@ -551,7 +556,7 @@ namespace UCL.Core.UI {
         public float fillAmount { get { return m_FillAmount; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillAmount, Mathf.Clamp01(value))) SetVerticesDirty(); } }
 
         /// Whether the Image should be filled clockwise (true) or counter-clockwise (false).
-        [SerializeField] private bool m_FillClockwise = true;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)] [SerializeField] private bool m_FillClockwise = true;
 
         /// <summary>
         /// Whether the Image should be filled clockwise (true) or counter-clockwise (false).
@@ -588,7 +593,7 @@ namespace UCL.Core.UI {
         public bool fillClockwise { get { return m_FillClockwise; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillClockwise, value)) SetVerticesDirty(); } }
 
         /// Controls the origin point of the Fill process. Value means different things with each fill method.
-        [SerializeField] private int m_FillOrigin;
+        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)][SerializeField] private int m_FillOrigin;
 
         /// <summary>
         /// Controls the origin point of the Fill process. Value means different things with each fill method.
@@ -892,22 +897,22 @@ namespace UCL.Core.UI {
             }
 
             switch(type) {
-                case FillType.Simple:
+                case DrawType.Simple:
                     if(!useSpriteMesh)
                         GenerateSimpleSprite(toFill, m_PreserveAspect);
                     else
                         GenerateSprite(toFill, m_PreserveAspect);
                     break;
-                case FillType.Sliced:
+                case DrawType.Sliced:
                     GenerateSlicedSprite(toFill);
                     break;
-                case FillType.Tiled:
+                case DrawType.Tiled:
                     GenerateTiledSprite(toFill);
                     break;
-                case FillType.Filled:
+                case DrawType.Filled:
                     GenerateFilledSprite(toFill, m_PreserveAspect);
                     break;
-                case FillType.SpriteSheet:
+                case DrawType.SpriteSheet:
                     GenerateSpriteSheet(toFill, m_PreserveAspect);
                     break;
             }
@@ -958,7 +963,7 @@ namespace UCL.Core.UI {
                 m_CachedReferencePixelsPerUnit = 100;
             } else if(canvas.referencePixelsPerUnit != m_CachedReferencePixelsPerUnit) {
                 m_CachedReferencePixelsPerUnit = canvas.referencePixelsPerUnit;
-                if(type == FillType.Sliced || type == FillType.Tiled) {
+                if(type == DrawType.Sliced || type == DrawType.Tiled) {
                     SetVerticesDirty();
                     SetLayoutDirty();
                 }
@@ -1634,7 +1639,7 @@ namespace UCL.Core.UI {
             get {
                 if(activeSprite == null)
                     return 0;
-                if(type == FillType.Sliced || type == FillType.Tiled)
+                if(type == DrawType.Sliced || type == DrawType.Tiled)
                     return UnityEngine.Sprites.DataUtility.GetMinSize(activeSprite).x / pixelsPerUnit;
                 return activeSprite.rect.size.x / pixelsPerUnit;
             }
@@ -1658,7 +1663,7 @@ namespace UCL.Core.UI {
             get {
                 if(activeSprite == null)
                     return 0;
-                if(type == FillType.Sliced || type == FillType.Tiled)
+                if(type == DrawType.Sliced || type == DrawType.Tiled)
                     return UnityEngine.Sprites.DataUtility.GetMinSize(activeSprite).y / pixelsPerUnit;
                 return activeSprite.rect.size.y / pixelsPerUnit;
             }
@@ -1718,7 +1723,7 @@ namespace UCL.Core.UI {
 
         private Vector2 MapCoordinate(Vector2 local, Rect rect) {
             Rect spriteRect = activeSprite.rect;
-            if(type == FillType.Simple || type == FillType.Filled)
+            if(type == DrawType.Simple || type == DrawType.Filled)
                 return new Vector2(local.x * spriteRect.width / rect.width, local.y * spriteRect.height / rect.height);
 
             Vector4 border = activeSprite.border;
@@ -1733,7 +1738,7 @@ namespace UCL.Core.UI {
                     continue;
                 }
 
-                if(type == FillType.Sliced) {
+                if(type == DrawType.Sliced) {
                     float lerp = Mathf.InverseLerp(adjustedBorder[i], rect.size[i] - adjustedBorder[i + 2], local[i]);
                     local[i] = Mathf.Lerp(border[i], spriteRect.size[i] - border[i + 2], lerp);
                     continue;

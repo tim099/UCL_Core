@@ -35,7 +35,7 @@ namespace UCL.Core.EditorLib {
                             }
                         } catch(Exception e) {
                             exception = e;
-                            Debug.LogWarning("UCL_FunctionButton:"
+                            Debug.LogWarning(attr_type.Name + ":"
                                 + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }

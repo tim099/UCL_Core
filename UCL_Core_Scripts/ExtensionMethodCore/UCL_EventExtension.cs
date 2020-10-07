@@ -4,6 +4,10 @@ using UnityEngine;
 
 
 public static partial class EventExtensionMethods {
+    public static bool IsNullOrEmpty(this UCL.Core.UCL_Event ucl_event) {
+        if(ucl_event != null && ucl_event.GetPersistentEventCount() > 0) return false;
+        return true;
+    }
     public static void UCL_Invoke(this UCL.Core.UCL_Event ucl_event) {
         if(ucl_event == null) return;
         try {

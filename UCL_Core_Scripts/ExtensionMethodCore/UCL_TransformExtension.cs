@@ -44,7 +44,11 @@ public static partial class VectorExtensionMethods {
         Rect rect = rect_transform.rect;
         Vector3[] corners = new Vector3[4];
         rect_transform.GetWorldCorners(corners);
-        if(point.CheckBetween(corners[0], corners[2])) {
+        //if(point.CheckBetween(corners[0], corners[2])) {
+        //    return true;
+        //}
+        if(UCL.Core.MathLib.Lib.CheckWithinTriangle(point, corners[0], corners[1], corners[2])
+            || UCL.Core.MathLib.Lib.CheckWithinTriangle(point, corners[0], corners[2], corners[3])) {
             return true;
         }
         return false;

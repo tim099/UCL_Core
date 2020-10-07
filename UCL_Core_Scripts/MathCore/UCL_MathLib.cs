@@ -203,6 +203,36 @@ namespace UCL.Core.MathLib {
         #endregion
     }
     public static class Lib {
+        #region Geometry 2D
+        /// <summary>
+        /// reference https://stackoverflow.com/questions/2049582/how-to-determine-if-a-point-is-in-a-2d-triangle
+        /// </summary>
+        /// <param name="p1"></param>
+        /// <param name="p2"></param>
+        /// <param name="p3"></param>
+        /// <returns></returns>
+        public static float Sign(Vector2 p1, Vector2 p2, Vector2 p3) {
+            return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+        }
+        /// <summary>
+        /// https://stackoverflow.com/questions/2049582/how-to-determine-if-a-point-is-in-a-2d-triangle
+        /// </summary>
+        /// <param name="pt"></param>
+        /// <param name="v1"></param>
+        /// <param name="v2"></param>
+        /// <param name="v3"></param>
+        /// <returns></returns>
+        public static bool CheckWithinTriangle(Vector2 pt, Vector2 v1, Vector2 v2, Vector2 v3) {
+            float d1 = Sign(pt, v1, v2);
+            float d2 = Sign(pt, v2, v3);
+            float d3 = Sign(pt, v3, v1);
+
+            return !(((d1 < 0) || (d2 < 0) || (d3 < 0)) && ((d1 > 0) || (d2 > 0) || (d3 > 0)));
+        }
+
+
+        #endregion
+
         #region Lerp
         /// <summary>
         /// return the cubic

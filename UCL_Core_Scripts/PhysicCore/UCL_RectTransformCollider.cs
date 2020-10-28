@@ -9,6 +9,7 @@ namespace UCL.Core.UI {
 
         public UCL.Core.UCL_Event m_OnMouseEnterEvent = null;
         public UCL.Core.UCL_Event m_OnMouseExitEvent = null;
+        public bool IsMouseEntered {get {return m_MouseEntered;} }
         protected bool m_MouseEntered = false;
         public override bool ContainPoint(Vector2 point) {
             if(m_Transform == null) {

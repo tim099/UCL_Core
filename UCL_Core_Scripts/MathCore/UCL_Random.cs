@@ -55,6 +55,35 @@ namespace UCL.Core.MathLib {
             m_Seed = MathLib.Crc32.Sum(System.DateTime.Now);
             m_Rnd = new System.Random(m_Seed);
         }
+        #region Array & List
+        /// <summary>
+        /// https://gaohaoyang.github.io/2016/10/16/shuffle-algorithm/
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public T[] Shuffle<T>(ref T[] input) {
+            for(var i = input.Length - 1; i >= 0; i--) {
+                var randomIndex = Next(i + 1);
+                var itemAtIndex = input[randomIndex];
+
+                input[randomIndex] = input[i];
+                input[i] = itemAtIndex;
+            }
+            return input;
+        }
+
+        public List<T> Shuffle<T>(ref List<T> input) {
+            for(var i = input.Count - 1; i >= 0; i--) {
+                var randomIndex = Next(i + 1);
+                var itemAtIndex = input[randomIndex];
+
+                input[randomIndex] = input[i];
+                input[i] = itemAtIndex;
+            }
+            return input;
+        }
+        #endregion
 
         #region Color
 

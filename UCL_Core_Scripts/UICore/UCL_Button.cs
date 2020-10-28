@@ -93,20 +93,20 @@ namespace UCL.Core.UI {
         #region drag
         protected Vector3 m_DragStartPosition = Vector3.zero;
         virtual public void OnDrag(PointerEventData eventData) {
-            Debug.LogWarning("OnDrag:"+ eventData.position);
+            //Debug.LogWarning("OnDrag:"+ eventData.position);
             transform.position = eventData.position.ToVec3() + m_DragStartPosition;
             m_Dragging = true;
             StateUpdate();
         }
         virtual public void OnBeginDrag(PointerEventData eventData) {
-            Debug.LogWarning("OnBeginDrag");
+            //Debug.LogWarning("OnBeginDrag");
             m_DragStartPosition = transform.position - eventData.position.ToVec3();
             m_Dragging = true;
             StateUpdate();
         }
         virtual public void OnEndDrag(PointerEventData eventData) {
             m_Dragging = false;
-            Debug.LogWarning("OnEndDrag");
+            //Debug.LogWarning("OnEndDrag");
             StateUpdate();
         }
         #endregion
@@ -127,7 +127,7 @@ namespace UCL.Core.UI {
 
             //Debug.LogWarning(++m_Times+"m_Pressed:" + m_PressedTime.ToString("0.0") + ",m_Enter:" + m_Enter);
             if(m_Text != null) {
-                m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
+                //m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
             }
 
         }
@@ -137,7 +137,7 @@ namespace UCL.Core.UI {
                 m_OnPressed.UCL_Invoke(m_PressedTime);
             }
             if(m_Text != null) {
-                m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
+                //m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
             }
         }
     }

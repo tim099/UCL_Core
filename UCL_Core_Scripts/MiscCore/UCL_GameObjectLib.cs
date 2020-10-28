@@ -57,6 +57,15 @@ namespace UCL.Core {
                 SearchChild(child, result);
             }
         }
+        public static T SearchChild<T>(Transform parent) {
+            var res = parent.GetComponent<T>();
+            if(res != null) return res;
+            foreach(Transform child in parent) {
+                var result = SearchChild<T>(child);
+                if(result != null) return result;
+            }
+            return default;
+        }
     }
 }
 

@@ -41,7 +41,6 @@ namespace UCL.Core {
             DontDestroyOnLoad(singleton);
 
             singleton.SetActive(true);
-
             return Instance;
         }
         /// <summary>

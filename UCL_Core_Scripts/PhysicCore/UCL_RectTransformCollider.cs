@@ -17,6 +17,9 @@ namespace UCL.Core.UI {
             }
             return m_Transform.ContainPoint(point);
         }
+        virtual public void OnDragEnterEvent() {
+
+        }
         virtual protected void Update() {
             if(!m_OnMouseEnterEvent.IsNullOrEmpty() || !m_OnMouseExitEvent.IsNullOrEmpty()) {
                 var val = ContainPoint(Input.mousePosition);

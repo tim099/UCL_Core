@@ -29,5 +29,13 @@ public static partial class ListExtensionMethods {
         if(list == null || list.Count == 0) return true;
         return false;
     }
+    public static void RemoveFirst<T>(this IList<T> list) {
+        if(list == null || list.Count == 0) return;
+        list.RemoveAt(0);
+    }
+    public static void RemoveLast<T>(this IList<T> list) {
+        if(list == null || list.Count == 0) return;
+        list.RemoveAt(list.Count-1);
+    }
 }
 

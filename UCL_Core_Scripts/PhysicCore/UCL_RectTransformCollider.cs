@@ -5,6 +5,7 @@ using UnityEngine;
 namespace UCL.Core.UI {
     [RequireComponent(typeof(RectTransform))]
     public class UCL_RectTransformCollider : UCL.Core.Physic.UCL_Collider2D {
+        public int m_ID = 0;
         public RectTransform m_Transform = null;
 
         public UCL.Core.UCL_Event m_OnMouseEnterEvent = null;

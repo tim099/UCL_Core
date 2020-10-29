@@ -22,4 +22,14 @@ public static partial class MiscExtensionMethods
         return text;
     }
     #endregion
+
+    #region Image
+    public static Image SetSprite(this Image target, Sprite val) {
+        if(target == null) {
+            return null;
+        }
+        target.sprite = val;
+        return target;
+    }
+    #endregion
 }

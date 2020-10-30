@@ -21,8 +21,22 @@ namespace UCL.Core.Physic
         }
         public List<Vector3> m_Points = new List<Vector3>();
         public Color m_Col = Color.red;
-        public int m_Width = 1;//One pixel
-        public int m_MaxLen = -1;//No Limit
+        /// <summary>
+        /// if clear then no outline!!
+        /// </summary>
+        public Color m_OutLineCol = Color.clear;
+        /// <summary>
+        /// One pixel default
+        /// </summary>
+        public int m_Width = 1;
+        /// <summary>
+        /// //-1 is No Limit
+        /// </summary>
+        public int m_MaxLen = -1;
+        /// <summary>
+        /// Is the line Loop?
+        /// </summary>
+        public bool m_Loop = false;
         public void Add(Vector3 p) {
             if(m_MaxLen > 0) {
                 if(m_Points.Count >= m_MaxLen) {
@@ -31,6 +45,9 @@ namespace UCL.Core.Physic
             }
             m_Points.Add(p);
         }
-
+        public Vector3 GetPoint(int at) {
+            return m_Points[at];
+        }
+        public int Count { get { return m_Points.Count; } }
     }
 }

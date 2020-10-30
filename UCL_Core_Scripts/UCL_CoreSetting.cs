@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 
@@ -11,6 +12,14 @@ namespace UCL.Core {
     public class UCL_CoreSetting : ScriptableObject {
         public static UCL_CoreSetting GetCoreSetting() {
             return Resources.Load<UCL_CoreSetting>("CoreSetting");
+        }
+        public static Material LoadMaterial(string name) {
+            Material mat = null;
+#if UNITY_EDITOR
+            var path = Path.Combine(Path.Combine(GetFolderPath(), "UCL_Core_Materials"), name+".mat");
+            mat = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path) as Material;
+#endif
+            return mat;
         }
 #if UNITY_EDITOR
         /// <summary>

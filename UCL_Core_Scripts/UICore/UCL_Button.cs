@@ -93,6 +93,7 @@ namespace UCL.Core.UI {
         #region drag
         protected Vector3 m_DragStartPosition = Vector3.zero;
         virtual public void OnDrag(PointerEventData eventData) {
+            if(!m_Draggable) return;
             //Debug.LogWarning("OnDrag:"+ eventData.position);
             var canvas = transform.GetComponentInParent<Canvas>();
             Vector3 drag_pos = eventData.position.ToVec3() + m_DragStartPosition;
@@ -104,6 +105,7 @@ namespace UCL.Core.UI {
             StateUpdate();
         }
         virtual public void OnBeginDrag(PointerEventData eventData) {
+            if(!m_Draggable) return;
             //Debug.LogWarning("OnBeginDrag");
             var canvas = transform.GetComponentInParent<Canvas>();
             Vector3 drag_pos = eventData.position.ToVec3();
@@ -116,6 +118,8 @@ namespace UCL.Core.UI {
             StateUpdate();
         }
         virtual public void OnEndDrag(PointerEventData eventData) {
+            if(!m_Draggable) return;
+
             m_Dragging = false;
             //Debug.LogWarning("OnEndDrag");
             StateUpdate();

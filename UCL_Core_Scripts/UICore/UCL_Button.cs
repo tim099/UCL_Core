@@ -94,13 +94,24 @@ namespace UCL.Core.UI {
         protected Vector3 m_DragStartPosition = Vector3.zero;
         virtual public void OnDrag(PointerEventData eventData) {
             //Debug.LogWarning("OnDrag:"+ eventData.position);
-            transform.position = eventData.position.ToVec3() + m_DragStartPosition;
+            var canvas = transform.GetComponentInParent<Canvas>();
+            Vector3 drag_pos = eventData.position.ToVec3() + m_DragStartPosition;
+            if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
+                drag_pos = canvas.worldCamera.ScreenToWorldPoint(drag_pos);
+            }
+            transform.position = drag_pos;
             m_Dragging = true;
             StateUpdate();
         }
         virtual public void OnBeginDrag(PointerEventData eventData) {
             //Debug.LogWarning("OnBeginDrag");
-            m_DragStartPosition = transform.position - eventData.position.ToVec3();
+            var canvas = transform.GetComponentInParent<Canvas>();
+            Vector3 drag_pos = eventData.position.ToVec3();
+            if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
+                drag_pos = canvas.worldCamera.ScreenToWorldPoint(drag_pos);
+            }
+            m_DragStartPosition = transform.position - drag_pos;
+
             m_Dragging = true;
             StateUpdate();
         }

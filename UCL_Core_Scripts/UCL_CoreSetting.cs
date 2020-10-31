@@ -3,8 +3,24 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
+namespace UCL
+{
+    #region Enum
+    public enum ComponentState : int
+    {
+        Null = 0,
+        OnAwake = 1,
+        OnStart = 1 << 1,
+        OnDestroy = 1 << 2,
+        OnEnable = 1 << 3,
+        OnDisable = 1 << 4,
+        OnReset = 1 << 5,
+    }
+    #endregion
+}
 
 namespace UCL.Core {
+
 #if UNITY_EDITOR
     [Core.ATTR.EnableUCLEditor]
 #endif

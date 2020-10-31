@@ -24,7 +24,8 @@ namespace UCL.Core.UI {
         }
         virtual protected void Update() {
             if(!m_OnMouseEnterEvent.IsNullOrEmpty() || !m_OnMouseExitEvent.IsNullOrEmpty()) {
-                var val = ContainPoint(Input.mousePosition);
+                Vector3 select_pos = Input.mousePosition;
+                var val = ContainPoint(select_pos);
                 if(!m_MouseEntered) {
                     if(val) {
                         m_OnMouseEnterEvent.Invoke();

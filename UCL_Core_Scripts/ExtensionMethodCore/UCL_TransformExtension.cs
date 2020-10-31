@@ -39,16 +39,28 @@ public static partial class VectorExtensionMethods {
     #endregion
 
     #region RectTransform
+    public static void ForceRebuildLayoutImmediate(this RectTransform rect_transform) {
+        UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(rect_transform);
+    }
 
     public static bool ContainPoint(this RectTransform rect_transform, Vector2 point) {
         Rect rect = rect_transform.rect;
         Vector3[] corners = new Vector3[4];
         rect_transform.GetWorldCorners(corners);
-        //if(point.CheckBetween(corners[0], corners[2])) {
-        //    return true;
-        //}
-        if(UCL.Core.MathLib.Lib.CheckWithinTriangle(point, corners[0], corners[1], corners[2])
-            || UCL.Core.MathLib.Lib.CheckWithinTriangle(point, corners[0], corners[2], corners[3])) {
+
+        var a = corners[0];
+        var b = corners[1];
+        var c = corners[2];
+        var d = corners[3];
+        var canvas = rect_transform.GetComponentInParent<Canvas>();
+        if(canvas && canvas.renderMode == RenderMode.ScreenSpaceCamera) {
+            a = canvas.worldCamera.WorldToScreenPoint(a);
+            b = canvas.worldCamera.WorldToScreenPoint(b);
+            c = canvas.worldCamera.WorldToScreenPoint(c);
+            d = canvas.worldCamera.WorldToScreenPoint(d);
+        }
+        if(UCL.Core.MathLib.Lib.CheckWithinTriangle(point, a, b, c)
+            || UCL.Core.MathLib.Lib.CheckWithinTriangle(point, a, c, d)) {
             return true;
         }
         return false;

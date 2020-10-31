@@ -30,7 +30,11 @@ namespace UCL.Core.CameraLib
                 m_Line.Add(transform.position);
             }
             m_Timer++;
-            UCL_PostRenderer.ins.DrawLine(m_Line);
+            if(UCL_PostRenderer.ins != null) {
+                UCL_PostRenderer.ins.DrawLine(m_Line);
+            } else {
+                Debug.LogError("UCL_PostRenderer.ins == null UCL_LineRecorder:" + name);
+            }
         }
     }
 }

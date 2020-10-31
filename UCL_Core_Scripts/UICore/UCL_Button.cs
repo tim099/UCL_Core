@@ -108,11 +108,11 @@ namespace UCL.Core.UI {
             if(!m_Draggable) return;
             //Debug.LogWarning("OnBeginDrag");
             var canvas = transform.GetComponentInParent<Canvas>();
-            Vector3 drag_pos = eventData.position.ToVec3();
+            Vector3 drag_pos = transform.position;
             if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
-                drag_pos = canvas.worldCamera.ScreenToWorldPoint(drag_pos);
+                drag_pos = canvas.worldCamera.WorldToScreenPoint(drag_pos);
             }
-            m_DragStartPosition = transform.position - drag_pos;
+            m_DragStartPosition = drag_pos - eventData.position.ToVec3();
 
             m_Dragging = true;
             StateUpdate();

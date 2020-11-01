@@ -62,14 +62,18 @@ namespace UCL.Core.UI {
         public UCL.Core.UCL_Event m_OnClick = null;
         public UCL.Core.UCL_Event m_OnPointerDown = null;
         public UCL.Core.UCL_Event m_OnPointerUp = null;
+        public UCL.Core.UCL_Event m_OnPointerEnter = null;
+        public UCL.Core.UCL_Event m_OnPointerExit = null;
         public UCL.Core.UCL_FloatEvent m_OnPressed = null;
 
         virtual public void OnPointerEnter(PointerEventData eventData) {
             m_Enter = true;
+            m_OnPointerEnter.UCL_Invoke();
             StateUpdate();
         }
         virtual public void OnPointerExit(PointerEventData eventData) {
             m_Enter = false;
+            m_OnPointerExit.UCL_Invoke();
             m_PressedTime = 0;
             StateUpdate();
         }

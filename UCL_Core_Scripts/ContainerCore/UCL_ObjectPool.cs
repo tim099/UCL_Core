@@ -20,4 +20,30 @@ namespace UCL.Core.Container {
             m_Pool.Enqueue(target);
         }
     }
+
+    public class ComponentPool<T> where T : Component
+    {
+        public string m_CreateName = typeof(T).ToString();
+        Stack<T> m_ObjPool = new Stack<T>();
+
+        public T Create(Transform parent = null) {
+            T target = null;
+            if(m_ObjPool.Count > 0) {
+                target = m_ObjPool.Pop();
+            } else {
+                GameObject obj = new GameObject(m_CreateName);
+                target = obj.AddComponent<T>();
+                if(parent) {
+                    obj.layer = parent.gameObject.layer;
+                }
+            }
+            target.gameObject.SetActive(true);
+            if(parent != target.transform.parent) target.transform.parent = parent;
+            return target;
+        }
+        public void Delete(T target) {
+            target.gameObject.SetActive(false);
+            m_ObjPool.Push(target);
+        }
+    }
 }

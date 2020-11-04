@@ -5,8 +5,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace UCL.Core.UI {
-    public class UCL_Button : MonoBehaviour, IPointerDownHandler, IPointerExitHandler, IPointerUpHandler, IPointerEnterHandler,
-        IDragHandler, IBeginDragHandler, IEndDragHandler {
+    public class UCL_Button : MonoBehaviour, IPointerDownHandler, IPointerExitHandler, IPointerUpHandler, IPointerEnterHandler {
         public enum Transition {
             None = 0,
             ColorTint,
@@ -48,10 +47,8 @@ namespace UCL.Core.UI {
         #endregion
         public bool m_Pressed { get; protected set; } = false;
         public bool m_Enter { get; protected set; } = false;
-        public bool m_Dragging { get; protected set; } = false;
 
         public Transition m_Transition = Transition.ColorTint;
-        public bool m_Draggable = false;
         
         public float m_PressedTime = 0;
 
@@ -94,42 +91,6 @@ namespace UCL.Core.UI {
             m_PressedTime = 0;
             StateUpdate();
         }
-        #region drag
-        protected Vector3 m_DragStartPosition = Vector3.zero;
-        virtual public void OnDrag(PointerEventData eventData) {
-            if(!m_Draggable) return;
-            //Debug.LogWarning("OnDrag:"+ eventData.position);
-            var canvas = transform.GetComponentInParent<Canvas>();
-            Vector3 drag_pos = eventData.position.ToVec3() + m_DragStartPosition;
-            if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
-                drag_pos = canvas.worldCamera.ScreenToWorldPoint(drag_pos);
-            }
-            transform.position = drag_pos;
-            m_Dragging = true;
-            StateUpdate();
-        }
-        virtual public void OnBeginDrag(PointerEventData eventData) {
-            if(!m_Draggable) return;
-            //Debug.LogWarning("OnBeginDrag");
-            var canvas = transform.GetComponentInParent<Canvas>();
-            Vector3 drag_pos = transform.position;
-            if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
-                drag_pos = canvas.worldCamera.WorldToScreenPoint(drag_pos);
-            }
-            m_DragStartPosition = drag_pos - eventData.position.ToVec3();
-
-            m_Dragging = true;
-            StateUpdate();
-        }
-        virtual public void OnEndDrag(PointerEventData eventData) {
-            if(!m_Draggable) return;
-
-            m_Dragging = false;
-            //Debug.LogWarning("OnEndDrag");
-            StateUpdate();
-        }
-        #endregion
-
         virtual protected void StateUpdate() {
             switch(m_Transition) {
                 case Transition.ColorTint: {

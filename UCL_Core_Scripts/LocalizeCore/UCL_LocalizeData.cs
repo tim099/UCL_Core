@@ -47,7 +47,7 @@ namespace UCL.Core.LocalizeLib
                                             if(m_Dic.ContainsKey(key)) {
                                                 Debug.LogError("ParseData key:" + key + " already exist!!");
                                             } else {
-                                                Debug.LogWarning("Add" + key + "," + s.ToString());
+                                                //Debug.LogWarning("Add" + key + "," + s.ToString());
                                                 m_Dic.Add(key, s.ToString());
                                             }
                                             s.Clear();

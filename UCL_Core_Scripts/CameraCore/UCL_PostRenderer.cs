@@ -34,6 +34,7 @@ namespace UCL.Core.CameraLib
         void Awake() {
             ins = this;
             if(m_Mat == null) m_Mat = new Material(Shader.Find("Unlit/Color"));
+            m_Mat = Instantiate(m_Mat);
             m_Camera = GetComponent<Camera>();
         }
         public void DrawLine(UCL.Core.Physic.UCL_Line3D line) {

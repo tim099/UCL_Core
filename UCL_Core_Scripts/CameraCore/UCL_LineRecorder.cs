@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace UCL.Core.CameraLib
 {
+    /// <summary>
+    /// Require UCL_PostRenderer attach on camera to render the line
+    /// </summary>
     public class UCL_LineRecorder : MonoBehaviour
     {
         public int m_RecordLen = 25;

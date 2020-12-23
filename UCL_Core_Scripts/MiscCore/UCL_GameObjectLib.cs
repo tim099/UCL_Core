@@ -30,6 +30,10 @@ namespace UCL.Core {
             GameObject Obj = CreateGameObject(name, parent);
             return Obj.AddComponent<T>();
         }
+        public static T Create<T>(Transform parent) where T : Component {
+            GameObject Obj = CreateGameObject(typeof(T).Name, parent);
+            return Obj.AddComponent<T>();
+        }
         public static Transform SetParent(Transform t, Transform parent) {
             t.SetParent(parent);
             t.localRotation = Quaternion.identity;

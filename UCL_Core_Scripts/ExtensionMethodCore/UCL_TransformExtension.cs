@@ -39,6 +39,28 @@ public static partial class VectorExtensionMethods {
     #endregion
 
     #region RectTransform
+
+    public static void SetFullScreen(this RectTransform rect) {
+        rect.anchorMin = new Vector2(0, 0);
+        rect.anchorMax = new Vector2(1, 1);
+        rect.sizeDelta = new Vector2(0, 0);
+    }
+    /// <summary>
+    /// Set the sizeDelta position and rotation of rect fit into point a and b
+    /// </summary>
+    /// <param name="rect">Target RectTransform</param>
+    /// <param name="a">target point a</param>
+    /// <param name="b">target point b</param>
+    public static void SetBetweenTwoPoint(this RectTransform rect, Vector2 a, Vector2 b) {
+        Vector2 del = b - a;
+        float x = 0.5f * (a.x + b.x);
+        float y = 0.5f * (a.y + b.y);
+        float dis = del.magnitude;
+        rect.sizeDelta = new Vector2(dis / rect.lossyScale.x, rect.sizeDelta.y);
+        rect.position = new Vector3(x, y, rect.transform.position.z);
+        rect.rotation = Quaternion.Euler(0, 0, Mathf.Rad2Deg * Mathf.Atan2(del.y, del.x));
+    }
+
     public static void ForceRebuildLayoutImmediate(this RectTransform rect_transform) {
         UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(rect_transform);
     }

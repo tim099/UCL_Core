@@ -5,42 +5,43 @@ using UnityEditor;
 namespace UCL.Core.MathLib {
     [CustomEditor(typeof(UCL_Curve))]
     public class UCL_CurveEditor : Core.EditorLib.UCL_MonobehaviorEditor {
-        UCL_Curve path;
-        GUIStyle style = new GUIStyle();
-        GUIStyle outline_style = new GUIStyle();
+        UCL_Curve m_Path;
+        /*
+        GUIStyle m_Style = new GUIStyle();
+        GUIStyle m_OutlineStyle = new GUIStyle();
         void OnEnable() {
-            outline_style.fontStyle = style.fontStyle = FontStyle.Bold;
+            m_OutlineStyle.fontStyle = m_Style.fontStyle = FontStyle.Bold;
 
-            style.normal.textColor = Color.black;
-            outline_style.normal.textColor = Color.white;
-            style.fontSize = 28;
-            outline_style.fontSize = 29;
+            m_Style.normal.textColor = Color.black;
+            m_OutlineStyle.normal.textColor = Color.white;
+            m_Style.fontSize = 28;
+            m_OutlineStyle.fontSize = 29;
             //style.border.top = style.border.bottom = style.border.left = style.border.right = 2;
 
         }
-
+        */
         void OnSceneGUI() {
-            path = target as UCL_Curve;
+            m_Path = target as UCL_Curve;
             int new_node_at = -1;
             int delete_node_at = -1;
-            if(path.enabled && path.gameObject.activeInHierarchy) {
-                if(path.m_Points != null && path.m_Points.Count > 0) {
+            if(m_Path.enabled && m_Path.gameObject.activeInHierarchy) {
+                if(m_Path.m_Points != null && m_Path.m_Points.Count > 0) {
                     //allow path adjustment undo
-                    Undo.RecordObject(path, "Alter Path");
+                    Undo.RecordObject(m_Path, "Alter Path");
                     //node handle display:
                     Color but_col = new Color(1, 1, 1, 0.8f);
                     Vector2 but_offset = new Vector2(0, 30);
-                    int draw_count = path.m_Points.Count;
+                    int draw_count = m_Path.m_Points.Count;
                     //if(path.m_Loop) --draw_count;
                     for(int i = 0; i < draw_count; i++) {
-                        var p = path.m_Points[i];
+                        var p = m_Path.m_Points[i];
 
-                        if(!path.m_Loop || i < draw_count - 1) {
-                            Vector3 pos = path.transform.TransformPoint(p);
-                            var new_pos = path.transform.InverseTransformPoint(Handles.PositionHandle(pos, Quaternion.identity));
+                        if(!m_Path.m_Loop || i < draw_count - 1) {
+                            Vector3 pos = m_Path.transform.TransformPoint(p);
+                            var new_pos = m_Path.transform.InverseTransformPoint(Handles.PositionHandle(pos, Quaternion.identity));
                             if((new_pos - p).magnitude > 0.001f) {
                                 //Debug.LogWarning("(new_pos - p).magnitude:" + (new_pos - p).magnitude);
-                                path.SetPoint(i, new_pos);
+                                m_Path.SetPoint(i, new_pos);
                             }
 
                             string str = "node " + i;
@@ -51,9 +52,9 @@ namespace UCL.Core.MathLib {
                         }
 
 
-                        if(i > 0 && path.m_Points.Count >= 2) {
-                            var at = ((float)(i-0.5f) / (path.m_Points.Count - 1));
-                            Vector3 m_pos = path.GetPoint(at);//0.5f*(prev_pos + pos); 
+                        if(i > 0 && m_Path.m_Points.Count >= 2) {
+                            var at = ((float)(i-0.5f) / (m_Path.m_Points.Count - 1));
+                            Vector3 m_pos = m_Path.GetPoint(at);//0.5f*(prev_pos + pos); 
 
                             if(UCL_DrawGizmos.DrawButtonGUI("Insert node", m_pos, 28, new Vector2(80, 22), Color.black, but_col)) {
                                 new_node_at = i;
@@ -72,10 +73,10 @@ namespace UCL.Core.MathLib {
                 }
             }
             if(new_node_at >= 0) {
-                path.InsertPoint(new_node_at);
+                m_Path.InsertPoint(new_node_at);
             }
             if(delete_node_at >= 0) {
-                path.RemoveAt(delete_node_at);
+                m_Path.RemoveAt(delete_node_at);
             }
         }
     }

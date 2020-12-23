@@ -133,6 +133,11 @@ namespace UCL.Core {
             GUI.color = restoreColor;
 #endif
         }
+        /// <summary>
+        /// convert the world space position to GUI space
+        /// </summary>
+        /// <param name="worldPos"></param>
+        /// <returns></returns>
         public static Vector2 WorldPosToGUI(Vector3 worldPos) {
 #if UNITY_EDITOR
             var view = UnityEditor.SceneView.currentDrawingSceneView;
@@ -148,6 +153,58 @@ namespace UCL.Core {
             return Vector2.zero;
 #endif
         }
+
+        public static Vector2 WorldPosToUI(Vector3 worldPos) {
+#if UNITY_EDITOR
+            var view = UnityEditor.SceneView.currentDrawingSceneView;
+            var cam = view.camera;
+
+            if(cam == null) return Vector2.zero;
+            //Debug.LogWarning("cam:" + cam.name);
+            Vector3 sp = cam.WorldToViewportPoint(worldPos);
+
+            return sp.XY();
+#else
+            return Vector2.zero;
+#endif
+        }
+
+        /// <summary>
+        /// Draw EditorGUI.Popup at world pos
+        /// </summary>
+        /// <param name="world_pos"></param>
+        /// <param name="size"></param>
+        /// <param name="selected_index"></param>
+        /// <param name="options"></param>
+        /// <returns></returns>
+        public static int DrawPopup(Vector3 world_pos, Vector2 size, int selected_index, string[] options, Vector2? position_offset = null) {
+#if UNITY_EDITOR
+            UnityEditor.Handles.BeginGUI();
+            var pos = WorldPosToGUI(world_pos);
+            pos -= 0.5f * size;
+            if(position_offset.HasValue) {
+                pos += position_offset.Value;
+            }
+            Rect rect = new Rect(pos.x, pos.y, size.x, size.y);
+            int at = UnityEditor.EditorGUI.Popup(rect, selected_index, options);
+            UnityEditor.Handles.EndGUI();
+            return at;
+#else
+            return 0;
+#endif
+        }
+
+        /// <summary>
+        /// Draw a GUI button at worldspace position
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="worldPos"></param>
+        /// <param name="fontsize"></param>
+        /// <param name="but_size"></param>
+        /// <param name="text_col"></param>
+        /// <param name="but_col"></param>
+        /// <param name="position_offset"></param>
+        /// <returns></returns>
         public static bool DrawButtonGUI(string text, Vector3 worldPos, int fontsize, Vector2 but_size, Color text_col, Color but_col,
             Vector2? position_offset = null) {
 #if UNITY_EDITOR
@@ -178,6 +235,32 @@ namespace UCL.Core {
             return false;
 #endif
         }
+
+        public static bool DrawButtonGUI(string text, Vector2 pos, int fontsize, Vector2 but_size, Color text_col, Color but_col) {
+#if UNITY_EDITOR
+            UnityEditor.Handles.BeginGUI();
+
+            int oldsize = GUI.skin.label.fontSize;
+            GUI.skin.label.fontSize = fontsize;
+
+            pos -= 0.5f * but_size;
+            var restoreColor = GUI.contentColor;
+            var res2 = GUI.backgroundColor;
+            GUI.backgroundColor = but_col;
+            GUI.contentColor = text_col;
+            var result = GUI.Button(new Rect(pos.x, pos.y, but_size.x, but_size.y), text);
+            GUI.skin.label.fontSize = oldsize;
+
+            GUI.contentColor = restoreColor;
+            GUI.backgroundColor = res2;
+            UnityEditor.Handles.EndGUI();
+
+            return result;
+#else
+            return false;
+#endif
+        }
+
         public static void DrawStringGUI(string text, Vector3 worldPos, int fontsize, Color? color = null, Color? outline_color = null,
             float outline_offset = 0.08f) {
 #if UNITY_EDITOR

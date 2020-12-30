@@ -793,6 +793,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fb7337fc6b2ed9a4e82824ed390367df, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  m_Test: 0
+  m_Val: 10
+  m_F: 0.731
+  str: Test String
+  m_IntList: 030000004200000015030000
+  m_FloatArr:
+  - 0.72
+  - 34.121
+  - 54
 --- !u!4 &2077347813
 Transform:
   m_ObjectHideFlags: 0

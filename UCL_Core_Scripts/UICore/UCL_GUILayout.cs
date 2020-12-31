@@ -5,7 +5,17 @@ using UnityEngine;
 namespace UCL.Core.UI {
     static public class UCL_GUILayout {
         #region property field
-        static public int IntField(string label, int val,int min_width = 80) {
+        static public object NumField(string label, object val, int min_width = 80) {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(label);
+            string result = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
+            GUILayout.EndHorizontal();
+
+            object res_val;
+            if(Core.MathLib.Num.TryParse(result, val.GetType(), out res_val)) return res_val;
+            return val;
+        }
+        static public int IntField(string label, int val, int min_width = 80) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(label);
             string result = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
@@ -37,16 +47,16 @@ namespace UCL.Core.UI {
             LabelAutoSize(label);
             GUILayout.FlexibleSpace();
             LabelAutoSize("X");
-            string x = GUILayout.TextField(val.x.ToString());
+            string x = GUILayout.TextField(val.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
             if(float.TryParse(x, out res_val))val.x = res_val;
 
             LabelAutoSize("Y");
-            string y = GUILayout.TextField(val.y.ToString());
+            string y = GUILayout.TextField(val.y.ToString(), GUILayout.MinWidth(80));
             if(float.TryParse(y, out res_val)) val.y = res_val;
 
             LabelAutoSize("Z");
-            string z = GUILayout.TextField(val.z.ToString());
+            string z = GUILayout.TextField(val.z.ToString(), GUILayout.MinWidth(80));
             if(float.TryParse(z, out res_val)) val.z = res_val;
             GUILayout.EndHorizontal();
             return val;

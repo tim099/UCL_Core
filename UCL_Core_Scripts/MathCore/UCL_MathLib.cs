@@ -743,5 +743,141 @@ namespace UCL.Core.MathLib {
             return lerp_func(datas[cur], datas[cur + 1], lerp_pos);
         }
     }
+    public static class Num {
+        public static bool IsNumber<T>() {
+            if(typeof(T) == typeof(sbyte)
+                || typeof(T) == typeof(byte)
+                || typeof(T) == typeof(short)
+                || typeof(T) == typeof(ushort)
+                || typeof(T) == typeof(int)
+                || typeof(T) == typeof(uint)
+                || typeof(T) == typeof(long)
+                || typeof(T) == typeof(ulong)
+                || typeof(T) == typeof(float)
+                || typeof(T) == typeof(double)
+                || typeof(T) == typeof(decimal)) {
+                return true;
+            }
+            return false;
+        }
+        /// <summary>
+        /// Can parse number into specify type
+        /// </summary>
+        /// <typeparam name="T">result Type</typeparam>
+        /// <param name="number">input number</param>
+        /// <param name="result">result value</param>
+        /// <returns>return true if success</returns>
+        public static bool TryParse<T>(string number, out T result) where T : IConvertible {
+            bool flag = false;
+            if(typeof(T) == typeof(int)) {
+                int res = 0;
+                flag = int.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(uint)) {
+                uint res = 0;
+                flag = uint.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(long)) {
+                long res = 0;
+                flag = long.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(ulong)) {
+                ulong res = 0;
+                flag = ulong.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(short)) {
+                short res = 0;
+                flag = short.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(ushort)) {
+                ushort res = 0;
+                flag = ushort.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(sbyte)) {
+                sbyte res = 0;
+                flag = sbyte.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(byte)) {
+                byte res = 0;
+                flag = byte.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(float)) {
+                float res = 0;
+                flag = float.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(double)) {
+                double res = 0;
+                flag = double.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else if(typeof(T) == typeof(decimal)) {
+                decimal res = 0;
+                flag = decimal.TryParse(number, out res);
+                result = (T)Convert.ChangeType(res, typeof(T));
+            } else {
+                result = default;
+            }
+
+            return flag;
+        }
+        /// <summary>
+        ///  Can parse number into specify type
+        /// </summary>
+        /// <param name="number">input number</param>
+        /// <param name="type">type of result</param>
+        /// <param name="result">result value</param>
+        /// <returns>return true if success</returns>
+        public static bool TryParse(string number, Type type, out object result){
+            bool flag = false;
+            if(type == typeof(int)) {
+                int res = 0;
+                flag = int.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(uint)) {
+                uint res = 0;
+                flag = uint.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(long)) {
+                long res = 0;
+                flag = long.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(ulong)) {
+                ulong res = 0;
+                flag = ulong.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(short)) {
+                short res = 0;
+                flag = short.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(ushort)) {
+                ushort res = 0;
+                flag = ushort.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(sbyte)) {
+                sbyte res = 0;
+                flag = sbyte.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(byte)) {
+                byte res = 0;
+                flag = byte.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(float)) {
+                float res = 0;
+                flag = float.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(double)) {
+                double res = 0;
+                flag = double.TryParse(number, out res);
+                result = res;
+            } else if(type == typeof(decimal)) {
+                decimal res = 0;
+                flag = decimal.TryParse(number, out res);
+                result = res;
+            } else {
+                result = default;
+            }
+
+            return flag;
+        }
+    }
 }
 

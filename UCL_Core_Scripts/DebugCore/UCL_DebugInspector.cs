@@ -15,12 +15,13 @@ namespace UCL.Core {
         protected HashSet<Component> m_ShowComponents = new HashSet<Component>();
         protected Transform m_CurRoot = null;
         protected Transform m_Selected = null;
-
+        protected GameObject m_ObjectToDelete = null;
+        protected bool m_LayerOpened = false;
         protected object m_EditData = null;
         protected Tuple<object, FieldInfo> m_EditTarget = null;
 
         #region Buffer
-        public string m_ObjectNameBuffer;
+        protected string m_ObjectNameBuffer;
         #endregion
         public static void Show() {
             if(ins == null) {
@@ -31,6 +32,10 @@ namespace UCL.Core {
         public static void Hide() {
             if(ins == null) return;
             ins.HideInspector();
+        }
+        public static bool GetShowing() {
+            if(ins == null) return false;
+            return ins.gameObject.activeSelf;
         }
         virtual public void ShowInspector() {
             gameObject.SetActive(true);
@@ -79,13 +84,19 @@ namespace UCL.Core {
             m_RootScrollPos = GUILayout.BeginScrollView(m_RootScrollPos);
             if(m_CurRoot == null) {
                 var active_scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-                GUILayout.Label(active_scene.name);
+                GUILayout.Label("Scene:" + active_scene.name);
                 var objs = active_scene.GetRootGameObjects();
                 foreach(var obj in objs) {
                     DrawNode(obj.transform);
                 }
             } else {
-                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("Back", 22)) {
+                string parent_name = string.Empty;
+                if(m_CurRoot.parent != null) {
+                    parent_name = "Back:" + m_CurRoot.parent.name;
+                } else {
+                    parent_name = "Scene:" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+                }
+                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(parent_name, 22)) {
                     m_CurRoot = m_CurRoot.parent;
                 }
                 DrawNode(m_CurRoot);
@@ -97,24 +108,29 @@ namespace UCL.Core {
             GUILayout.BeginHorizontal();
             if(node.childCount > 0) {
                 if(m_ShowTrans.Contains(node)) {
-                    if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("v", 22)) {
+                    if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("▼", 22)) {
                         m_ShowTrans.Remove(node);
                     }
                 } else {
-                    if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(">", 22)) {
+                    if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("►", 22)) {
                         m_ShowTrans.Add(node);
                     }
                 }
             } else {
-                UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("-", 22);
+                UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("▬", 22);
             }
             GUILayout.BeginVertical();
+            string draw_name = node.name;
+            if(draw_name.Length < 3) {
+                draw_name = "   " + draw_name + "   ";
+            }
+            var font_col = node.gameObject.activeInHierarchy ? Color.white : Color.grey;
             if(m_Selected == node) {
-                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(node.name, 22, Color.green)) {
+                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(draw_name, 22, Color.green, font_col)) {
                     m_CurRoot = m_Selected;
                 }
             } else {
-                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(node.name, 22)) {
+                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(draw_name, 22, Color.grey, font_col)) {
                     SetSelectedObject(node.gameObject);
                 }
             }
@@ -141,15 +157,46 @@ namespace UCL.Core {
         }
         virtual protected void DrawSelectedInfo(GameObject obj) {
             GUILayout.BeginVertical();
-            GUILayout.BeginHorizontal();
-            if(GUILayout.Button("Deselect", GUILayout.Width(80))) {
-                SetSelectedObject(null);
+            using(var scope = new GUILayout.VerticalScope("box")) {
+                GUILayout.BeginHorizontal();
+                if(obj.activeSelf) {
+                    if(GUILayout.Button("✔", GUILayout.Width(23))) {
+                        obj.SetActive(false);
+                    }
+                } else {
+                    if(GUILayout.Button(" ", GUILayout.Width(23))) {
+                        obj.SetActive(true);
+                    }
+                }
+                if(GUILayout.Button("Deselect", GUILayout.Width(80))) {
+                    SetSelectedObject(null);
+                }
+                m_ObjectNameBuffer = GUILayout.TextField(m_ObjectNameBuffer, 128);
+                if(GUILayout.Button("Rename", GUILayout.Width(80))) {
+                    obj.name = m_ObjectNameBuffer;
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                UCL.Core.UI.UCL_GUILayout.LabelAutoSize("Tag:");
+                GUILayout.Box(obj.tag);
+
+                UCL.Core.UI.UCL_GUILayout.LabelAutoSize("Layer");
+                var layers = UCL.Core.Physic.UCL_PhysicLib.GetAllLayerNames().ToArray();
+                int at = 0;
+                string layer_name = LayerMask.LayerToName(obj.layer);
+                for(int i = 0; i < layers.Length; i++) {
+                    if(layer_name == layers[i]) {
+                        at = i;
+                    }
+                }
+                obj.layer = LayerMask.NameToLayer(layers[UCL.Core.UI.UCL_GUILayout.Popup(at, layers, ref m_LayerOpened)]);
+                if(UCL.Core.UI.UCL_GUILayout.ButtonAutoSize("Delete", 15, Color.gray, Color.red)) {
+                    m_ObjectToDelete = obj;
+                }
+                
+                GUILayout.EndHorizontal();
             }
-            m_ObjectNameBuffer = GUILayout.TextField(m_ObjectNameBuffer, 128);
-            if(GUILayout.Button("Rename", GUILayout.Width(80))) {
-                obj.name = m_ObjectNameBuffer;
-            }
-            GUILayout.EndHorizontal();
             var coms = obj.GetComponents<Component>();
             foreach(var com in coms) {
                 using(var scope = new GUILayout.HorizontalScope("box")) {
@@ -164,16 +211,31 @@ namespace UCL.Core {
             bool draw_detail = false;
             if(m_ShowComponents.Contains(component)) {
                 draw_detail = true;
-                if(GUILayout.Button("v", GUILayout.Width(21))) {
+                if(GUILayout.Button("▼", GUILayout.Width(23))) {
                     m_ShowComponents.Remove(component);
                 }
             } else {
-                if(GUILayout.Button(">", GUILayout.Width(21))) {
+                if(GUILayout.Button("►", GUILayout.Width(23))) {
                     m_ShowComponents.Add(component);
                 }
             }
+
             GUILayout.BeginVertical();
+            GUILayout.BeginHorizontal();
+            Behaviour behaviour = component as Behaviour;
+            if(behaviour != null) {
+                if(behaviour.enabled) {
+                    if(GUILayout.Button("✔", GUILayout.Width(23))) {
+                        behaviour.enabled = false;
+                    }
+                } else {
+                    if(GUILayout.Button(" ", GUILayout.Width(23))) {
+                        behaviour.enabled = true;
+                    }
+                }
+            }
             GUILayout.Box(type.Name);
+            GUILayout.EndHorizontal();
             if(draw_detail) {
                 DrawComponentDetail(component);
             }
@@ -182,10 +244,30 @@ namespace UCL.Core {
 
         }
         public void DrawComponentDetail(Component obj) {
-            var type = obj.GetType();
-            FieldInfo[] fieldInfos = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach(var info in fieldInfos) {
-                DrawFieldInfo(info, obj);
+            if(obj is Transform) {
+                Transform t = obj as Transform;
+                t.localPosition = UCL.Core.UI.UCL_GUILayout.Vector3Field("Position", t.localPosition);
+
+
+                Vector3 prev_rot = t.localRotation.eulerAngles;
+                prev_rot.x = (float)Math.Round(prev_rot.x, 2, MidpointRounding.AwayFromZero);
+                prev_rot.y = (float)Math.Round(prev_rot.y, 2, MidpointRounding.AwayFromZero);
+                prev_rot.z = (float)Math.Round(prev_rot.z, 2, MidpointRounding.AwayFromZero);
+                Vector3 new_rot = UCL.Core.UI.UCL_GUILayout.Vector3Field("Rotation", prev_rot);
+                if(!new_rot.Equals(prev_rot)) {
+                    t.localRotation = Quaternion.Euler(
+                        (float)Math.Round(new_rot.x, 2, MidpointRounding.AwayFromZero),
+                        (float)Math.Round(new_rot.y, 2, MidpointRounding.AwayFromZero), 
+                        (float)Math.Round(new_rot.z, 2, MidpointRounding.AwayFromZero));
+                }
+                t.localScale = UCL.Core.UI.UCL_GUILayout.Vector3Field("Scale", t.localScale);
+            } else {
+                var type = obj.GetType();
+                var fieldInfos = type.GetAllFieldsUntil(typeof(Component),
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach(var info in fieldInfos) {
+                    DrawFieldInfo(info, obj);
+                }
             }
         }
         public void DrawValue(string title, FieldInfo info, object parent_obj,System.Action<string> save_act) {
@@ -231,13 +313,9 @@ namespace UCL.Core {
             bool delete = false;
             GUILayout.BeginHorizontal();
             
-            if(obj is int) {
-                int oval = (int)obj;
-                int val = UCL.Core.UI.UCL_GUILayout.IntField(title, oval);
-                if(val != oval) set_value_act(val);
-            } else if(obj is float) {
-                float oval = (float)obj;
-                float val = UCL.Core.UI.UCL_GUILayout.FloatField(title, oval);
+            if(obj.IsNumber()) {
+                object oval = obj;
+                object val = UCL.Core.UI.UCL_GUILayout.NumField(title, oval);
                 if(val != oval) set_value_act(val);
             } else if(obj is string) {
                 string oval = (string)obj;
@@ -276,11 +354,11 @@ namespace UCL.Core {
                     }
                     GUILayout.BeginHorizontal();
                     if(is_edit_target) {
-                        if(GUILayout.Button("v")) {
+                        if(GUILayout.Button("▼")) {
                             m_EditTarget = null;
                         }
                     } else {
-                        if(GUILayout.Button(">")) {
+                        if(GUILayout.Button("►")) {
                             m_EditTarget = new Tuple<object, FieldInfo>(obj, info);
                         }
                     }
@@ -340,27 +418,20 @@ namespace UCL.Core {
                     GUILayout.EndHorizontal();
                 } else {
                     log_info = true;
-                    //var debug_data2 = DebugCommon.DebugOnGUI.Instance.CreateData("Unknown GenericType_" + nameof(obj))
-                    //    .SetSize(m_ButtonSize).SetButAct(delegate () { });
-                    //var debug_data3 = DebugCommon.DebugOnGUI.Instance.CreateData(obj.ToString())
-                    //    .SetSize(m_ButtonSize).SetButAct(delegate () { });
-                    //debug_data.AddSubData(debug_data2);
-                    //debug_data2.AddSubData(debug_data3);
                 }
             } 
             else if(obj is Array) {
                 var ContentType = type.GetElementType();
                 GUILayout.BeginHorizontal();
                 if(is_edit_target) {
-                    if(GUILayout.Button("v")) {
+                    if(GUILayout.Button("▼")) {
                         m_EditTarget = null;
                     }
                 } else {
-                    if(GUILayout.Button(">")) {
+                    if(GUILayout.Button("►")) {
                         m_EditTarget = new Tuple<object, FieldInfo>(obj, info);
                     }
                 }
-
                 GUILayout.BeginVertical();
                 UCL.Core.UI.UCL_GUILayout.LabelAutoSize("(" + type.Name + ")" + info.Name);
                 if(is_edit_target) {
@@ -393,48 +464,12 @@ namespace UCL.Core {
                 GUILayout.EndHorizontal();
             }
             #region numerical
-            else if(obj is int) {
+            else if(obj.IsNumber()) {
                 editable = true;
                 if(is_edit_target) {
                     DrawValue(title, info, parent_obj, (str) => {
-                        int res_val = 0;
-                        if(int.TryParse(str, out res_val)) {
-                            info.SetValue(parent_obj, res_val);
-                        }
-                    });
-                } else {
-                    log_info = true;
-                }
-            } else if(obj is long) {
-                editable = true;
-                if(is_edit_target) {
-                    DrawValue(title, info, parent_obj, (str) => {
-                        long res_val = 0;
-                        if(long.TryParse(str, out res_val)) {
-                            info.SetValue(parent_obj, res_val);
-                        }
-                    });
-                } else {
-                    log_info = true;
-                }
-            } else if(obj is float) {
-                editable = true;
-                if(is_edit_target) {
-                    DrawValue(title, info, parent_obj, (str) => {
-                        float res_val = 0;
-                        if(float.TryParse((string)m_EditData, out res_val)) {
-                            info.SetValue(parent_obj, res_val);
-                        }
-                    });
-                } else {
-                    log_info = true;
-                }
-            } else if(obj is double) {
-                editable = true;
-                if(is_edit_target) {
-                    DrawValue(title, info, parent_obj, (str) => {
-                        double res_val = 0;
-                        if(double.TryParse((string)m_EditData, out res_val)) {
+                        object res_val;
+                        if(UCL.Core.MathLib.Num.TryParse(str, obj.GetType(), out res_val)) {
                             info.SetValue(parent_obj, res_val);
                         }
                     });
@@ -455,6 +490,21 @@ namespace UCL.Core {
                 }
             }
             #endregion
+            /*
+            #region Transform
+            else if(obj is Transform) {
+                editable = true;
+                if(is_edit_target) {
+
+                    DrawVec3Value(title, info, parent_obj, (vec) => {
+                        info.SetValue(parent_obj, vec);
+                    });
+                } else {
+                    log_info = true;
+                }
+            }
+            #endregion
+            */
             else if(obj is string) {
                 editable = true;
                 if(is_edit_target) {
@@ -512,9 +562,14 @@ namespace UCL.Core {
             System.Type info_type = info.FieldType;
             if(value != null) {
                 DrawObject(info, value, parent_obj);
-                //GUILayout.Label("(" + info.FieldType.Name + ")" + info.Name + " : " + value.ToString());
             } else {
                 GUILayout.Label("(" + info.FieldType.Name + ")" + info.Name + " : null");
+            }
+        }
+        private void Update() {
+            if(m_ObjectToDelete != null) {
+                Destroy(m_ObjectToDelete);
+                m_ObjectToDelete = null;
             }
         }
     }

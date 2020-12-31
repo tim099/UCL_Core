@@ -38,7 +38,37 @@ public static partial class VectorExtensionMethods {
         var list = fields.ToList();
         var base_type = type.BaseType;
         if(base_type != null) {
-            list.Concat(base_type.GetAllFields(bindingAttr));
+            if((bindingAttr & BindingFlags.Public) != 0) {
+                bindingAttr ^= BindingFlags.Public;
+            }
+            var list2 = base_type.GetAllFields(bindingAttr);
+            for(int i = 0; i < list.Count; i++) {
+                list2.Add(list[i]);
+            }
+            return list2;
+        }
+        return list;
+    }
+    /// <summary>
+    /// Get Fields Include parent,until parent is end_type
+    /// </summary>
+    /// <param name="type"></param>
+    /// <param name="end_type"></param>
+    /// <param name="bindingAttr"></param>
+    /// <returns></returns>
+    public static List<FieldInfo> GetAllFieldsUntil(this Type type, Type end_type, BindingFlags bindingAttr) {
+        FieldInfo[] fields = type.GetFields(bindingAttr);
+        var list = fields.ToList();
+        var base_type = type.BaseType;
+        if(base_type != null && base_type != end_type) {
+            if((bindingAttr & BindingFlags.Public) != 0) {
+                bindingAttr ^= BindingFlags.Public;
+            }
+            var list2 = base_type.GetAllFieldsUntil(end_type, bindingAttr);
+            for(int i = 0; i < list.Count; i++) {
+                list2.Add(list[i]);
+            }
+            return list2;
         }
         return list;
     }

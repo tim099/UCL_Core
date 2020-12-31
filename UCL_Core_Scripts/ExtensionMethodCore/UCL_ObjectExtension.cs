@@ -5,21 +5,25 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using UnityEngine;
+
+
+public static partial class ObjectExtensionMethods {
+    public static bool IsNumber(this object a) {
+        return a is sbyte
+                || a is byte
+                || a is short
+                || a is ushort
+                || a is int
+                || a is uint
+                || a is long
+                || a is ulong
+                || a is float
+                || a is double
+                || a is decimal;
+    }
+}
 namespace UCL.Core.ObjectOperatorExtension {
     public static partial class ExtensionMethods {
-        public static bool IsNumber(this object a) {
-            return a is sbyte
-                    || a is byte
-                    || a is short
-                    || a is ushort
-                    || a is int
-                    || a is uint
-                    || a is long
-                    || a is ulong
-                    || a is float
-                    || a is double
-                    || a is decimal;
-        }
         public static bool IsZero(this object value) {
             if(value is sbyte) {
                 return (sbyte)value == 0;

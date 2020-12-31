@@ -10,15 +10,15 @@ namespace UCL.Core.MarshalLib.Demo {
     public class UCL_MarshalDemo : MonoBehaviour {
         [System.Serializable]
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        public unsafe struct Demo {
+        public struct Demo {//public unsafe struct Demo 
             //public int m_Int;
             //public float m_F;
             //public long m_L;
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1, ArraySubType = UnmanagedType.I1)]
+            //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 1, ArraySubType = UnmanagedType.I1)]
 
-            public fixed sbyte TestArr[1]; 
-            //public string m_Str;
-            //public float[] m_F;
+            //public fixed sbyte TestArr[1]; 
+            public string m_Str;
+            public float[] m_F;
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]

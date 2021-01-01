@@ -44,6 +44,9 @@ public static partial class VectorExtensionMethods {
         return new Vector3(a.x, a.y, 0);
     }
 
+    public static System.Tuple<string,string,string> ToTupleString(this Vector3 vec) {
+        return new System.Tuple<string, string, string>(vec.x.ToString(), vec.y.ToString(), vec.z.ToString());
+    }
     #endregion
 
     #region Vector2

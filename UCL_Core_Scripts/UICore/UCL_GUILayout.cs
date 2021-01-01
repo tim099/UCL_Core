@@ -61,6 +61,22 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return val;
         }
+        static public System.Tuple<string,string,string> Vector3Field(string label, string x, string y, string z) {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(label);
+            GUILayout.FlexibleSpace();
+            LabelAutoSize("X");
+            x = GUILayout.TextField(x, GUILayout.MinWidth(80));
+
+            LabelAutoSize("Y");
+            y = GUILayout.TextField(y, GUILayout.MinWidth(80));
+
+            LabelAutoSize("Z");
+            z = GUILayout.TextField(z, GUILayout.MinWidth(80));
+
+            GUILayout.EndHorizontal();
+            return new System.Tuple<string, string, string>(x,y,z);
+        }
         static public string TextField(string label, string val, int min_width) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(label);

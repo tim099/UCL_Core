@@ -211,5 +211,15 @@ namespace UCL.Core.FileLib {
             return file;
         }
     }
+    static public class StreamingAssetsLib {
+        /// <summary>
+        /// Conver the path into StreamingAssetsPath
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        public static string GetStreamingAssetsPath(string path) {
+            return Path.Combine(Application.streamingAssetsPath, path.TrimStart('/')).Replace('\\', '/');
+        }
+    }
 }
 

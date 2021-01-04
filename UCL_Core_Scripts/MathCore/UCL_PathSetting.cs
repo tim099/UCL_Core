@@ -37,7 +37,9 @@ namespace UCL.Core.MathLib {
         #region OnDrawGizmos
 
         [Header("Editor DrawGizmos Setting")]//m_DisPointCount
+#pragma warning disable 0219
         [SerializeField] [Range(-0.2f, 1.2f)] float m_DemoPoint = 0f;
+#pragma warning restore 0219
         [SerializeField] Color m_DemoPointColor = Color.black;
         [SerializeField] int m_DisPointCount = 0;
         [SerializeField] Color m_PathCol = Color.green;

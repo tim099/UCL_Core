@@ -29,7 +29,7 @@ namespace UCL.Core.Game {
         public string m_GameName = "UCL";
         public UCL_GameConfig m_GameConfig { get; protected set; }
         [SerializeField] protected List<UCL_GameService> m_GameServices;
-        //protected List<UCL_IConfig> m_Configs = new List<UCL_IConfig>();
+
         protected bool m_Inited = false;
         protected bool m_End = false;
         [RuntimeInitializeOnLoadMethod]
@@ -47,7 +47,7 @@ namespace UCL.Core.Game {
 #if UNITY_EDITOR
             Core.EditorLib.UCL_EditorPlayStateNotifier.AddExitingPlayModeAct(
             ()=> {
-                Debug.LogWarning("UCL_GameManager ExitingPlayMode");
+                //Debug.LogWarning("UCL_GameManager ExitingPlayMode");
                 GameExit();
             });
 #endif
@@ -128,13 +128,13 @@ namespace UCL.Core.Game {
             Init();
         }
         private void OnApplicationQuit() {
-            Debug.LogWarning("UCL_GameManager OnApplicationQuit()");
+            //Debug.LogWarning("UCL_GameManager OnApplicationQuit()");
             f_ApplicationQuit = true;
         }
         protected override void OnDestroy() {
             base.OnDestroy();
             GameExit();
-            Debug.LogWarning("UCL_GameManager OnDestroy()");
+            //Debug.LogWarning("UCL_GameManager OnDestroy()");
         }
         virtual public void ExitGame() {
             Debug.LogWarning("ExitGame()");

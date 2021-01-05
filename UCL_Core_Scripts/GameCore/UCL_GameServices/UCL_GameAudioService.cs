@@ -11,7 +11,6 @@ namespace UCL.Core.Game {
             /// <summary>
             /// Base Volume
             /// </summary>
-            //[MarshalAs(UnmanagedType.I2, SizeConst = 32)]
             public float m_Volume;
 
             /// <summary>

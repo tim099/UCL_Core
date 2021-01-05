@@ -28,7 +28,7 @@ namespace UCL.Core.LocalizeLib
             }
             return m_LocalizeData.GetLocalize(key);
         }
-        virtual public string GetLocalize(string key,params object[] objs) {
+        virtual public string GetLocalize(string key, params object[] objs) {
             string str = GetLocalize(key);
             return string.Format(str, objs);
         }

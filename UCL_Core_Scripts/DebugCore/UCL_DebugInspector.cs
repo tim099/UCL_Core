@@ -252,7 +252,27 @@ namespace UCL.Core {
 
         }
         public void DrawComponentDetail(Component obj) {
-            if(obj is Transform) {
+            if(obj is RectTransform) {
+                RectTransform t = obj as RectTransform;
+                t.localPosition = UCL.Core.UI.UCL_GUILayout.Vector3Field("Position", t.localPosition);
+                t.sizeDelta = UCL.Core.UI.UCL_GUILayout.Vector2Field("Size", "Width", "Height", t.sizeDelta);
+                t.anchorMin = UCL.Core.UI.UCL_GUILayout.Vector2Field("AnchorMin", t.anchorMin);
+                t.anchorMax = UCL.Core.UI.UCL_GUILayout.Vector2Field("AnchorMax", t.anchorMax);
+                t.pivot = UCL.Core.UI.UCL_GUILayout.Vector2Field("Pivot", t.pivot);
+                Vector3 prev_rot = t.localRotation.eulerAngles;
+                prev_rot.x = (float)Math.Round(prev_rot.x, 2, MidpointRounding.AwayFromZero);
+                prev_rot.y = (float)Math.Round(prev_rot.y, 2, MidpointRounding.AwayFromZero);
+                prev_rot.z = (float)Math.Round(prev_rot.z, 2, MidpointRounding.AwayFromZero);
+                Vector3 new_rot = UCL.Core.UI.UCL_GUILayout.Vector3Field("Rotation", prev_rot);
+                if(!new_rot.Equals(prev_rot)) {
+                    t.localRotation = Quaternion.Euler(
+                        (float)Math.Round(new_rot.x, 2, MidpointRounding.AwayFromZero),
+                        (float)Math.Round(new_rot.y, 2, MidpointRounding.AwayFromZero),
+                        (float)Math.Round(new_rot.z, 2, MidpointRounding.AwayFromZero));
+                }
+                t.localScale = UCL.Core.UI.UCL_GUILayout.Vector3Field("Scale", t.localScale);
+            }
+            else if(obj is Transform) {
                 Transform t = obj as Transform;
                 t.localPosition = UCL.Core.UI.UCL_GUILayout.Vector3Field("Position", t.localPosition);
 

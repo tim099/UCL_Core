@@ -57,12 +57,13 @@ namespace UCL.Core.Game {
 
             OnLocalizationChanged.Invoke();
         }
-        virtual public string Get(string key) {
-            if(m_LocalizeData == null) {
+        static public string Get(string key) {
+            if(ins == null) return key;
+            if(ins.m_LocalizeData == null) {
                 Debug.LogWarning("UCL_LocalizeManager not Init yet!!");
                 return key;
             }
-            return m_LocalizeData.GetLocalize(key);
+            return ins.m_LocalizeData.GetLocalize(key);
         }
         virtual public string GetLocalize(string key, params object[] objs) {
             string str = Get(key);

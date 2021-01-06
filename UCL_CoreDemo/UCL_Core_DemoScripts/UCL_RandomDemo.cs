@@ -194,9 +194,9 @@ namespace UCL.Core.MathLib.Demo {
         /// x=0,y=1,z=2
         /// </summary>
         [Range(0, 2)] public int m_RangeAxis = 1;
-#pragma warning disable 0219
+#pragma warning disable 0414
         [PA.UCL_ReadOnly] [SerializeField] int m_Points3DShowCount = 0;
-#pragma warning restore 0219
+#pragma warning restore 0414
         private void OnDrawGizmos() {
 #if UNITY_EDITOR
             var prev = Gizmos.color;

@@ -52,7 +52,7 @@ namespace UCL.Core {
             SetParent(Obj.transform, parent);
             return Obj;
         }
-        public static void SearchChild<T>(Transform parent,List<T> result) {
+        public static void SearchChild<T>(Transform parent, List<T> result) {
             var res = parent.GetComponents<T>();
             for(int i = 0; i < res.Length; i++) {
                 result.Add(res[i]);

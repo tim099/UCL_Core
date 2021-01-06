@@ -221,5 +221,19 @@ namespace UCL.Core.FileLib {
             return Path.Combine(Application.streamingAssetsPath, path.TrimStart('/')).Replace('\\', '/');
         }
     }
+#if UNITY_EDITOR_WIN
+    static public class WindowsLib {
+        static public void OpenAssetExplorer(string folder) {
+            string asset_root = Application.dataPath.Replace("Assets", "");
+            var path = asset_root + folder;
+            Debug.LogWarning("asset_root + folder:" + asset_root + folder);
+            System.Diagnostics.Process.Start(asset_root + folder);//"explorer.exe", 
+        }
+        static public void OpenExplorer(string folder) {
+            Debug.LogWarning("folder:" + folder);
+            System.Diagnostics.Process.Start(folder);//"explorer.exe", 
+        }
+    }
+#endif
 }
 

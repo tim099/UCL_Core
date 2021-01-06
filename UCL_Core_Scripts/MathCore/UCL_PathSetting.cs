@@ -37,14 +37,14 @@ namespace UCL.Core.MathLib {
         #region OnDrawGizmos
 
         [Header("Editor DrawGizmos Setting")]//m_DisPointCount
-#pragma warning disable 0219
+#pragma warning disable 0414
         [SerializeField] [Range(-0.2f, 1.2f)] float m_DemoPoint = 0f;
-#pragma warning restore 0219
         [SerializeField] Color m_DemoPointColor = Color.black;
         [SerializeField] int m_DisPointCount = 0;
         [SerializeField] Color m_PathCol = Color.green;
         [Range(0.5f, 5.0f)] public float m_PointSize = 1.5f;
         [SerializeField] bool f_OnlyDrawGizmosOnSelected = true;
+#pragma warning restore 0414
         virtual protected void DrawGizmos() {
 #if UNITY_EDITOR
             var tmp = Gizmos.color;

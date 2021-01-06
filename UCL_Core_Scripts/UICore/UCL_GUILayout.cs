@@ -61,6 +61,36 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return val;
         }
+        static public Vector2 Vector2Field(string label, Vector2 val) {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(label);
+            GUILayout.FlexibleSpace();
+            LabelAutoSize("X");
+            string x = GUILayout.TextField(val.x.ToString(), GUILayout.MinWidth(80));
+            float res_val = 0;
+            if(float.TryParse(x, out res_val)) val.x = res_val;
+
+            LabelAutoSize("Y");
+            string y = GUILayout.TextField(val.y.ToString(), GUILayout.MinWidth(80));
+            if(float.TryParse(y, out res_val)) val.y = res_val;
+            GUILayout.EndHorizontal();
+            return val;
+        }
+        static public Vector2 Vector2Field(string label, string xstr, string ystr, Vector2 val) {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(label);
+            GUILayout.FlexibleSpace();
+            LabelAutoSize(xstr);
+            string x = GUILayout.TextField(val.x.ToString(), GUILayout.MinWidth(80));
+            float res_val = 0;
+            if(float.TryParse(x, out res_val)) val.x = res_val;
+
+            LabelAutoSize(ystr);
+            string y = GUILayout.TextField(val.y.ToString(), GUILayout.MinWidth(80));
+            if(float.TryParse(y, out res_val)) val.y = res_val;
+            GUILayout.EndHorizontal();
+            return val;
+        }
         static public System.Tuple<string,string,string> Vector3Field(string label, string x, string y, string z) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(label);

@@ -18,7 +18,7 @@ namespace UCL.Core.Game {
             if(UCL_LocalizeService.ins == null) return;
             var text = GetComponent<Text>();
             if(text != null) {
-                text.text = UCL_LocalizeService.ins.Get(m_Key);
+                text.text = UCL_LocalizeService.Get(m_Key);
             }
         }
     }

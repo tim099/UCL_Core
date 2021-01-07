@@ -11,9 +11,6 @@ namespace UCL.Core.Game {
         public string m_LoadLangPath = "Language";
         public string m_CurLang = "English";
 
-        public event System.Action OnLocalizationChanged = delegate() { };
-
-        protected LocalizeData m_LocalizeData = null;
         protected LocalizeData m_LocalizeSetting = null;
         public override void Init() {
             base.Init();
@@ -45,29 +42,7 @@ namespace UCL.Core.Game {
         
         public void LoadLanguage(string lang) {
             m_CurLang = lang;
-            string path = Path.Combine(Path.Combine(m_LoadLangPath, m_CurLang), "Lang");
-            TextAsset texts = Resources.Load(path) as TextAsset;
-            //Debug.Assert(texts != null);
-            if(texts == null) {
-                Debug.LogError("ResourceLoadLanguage path:" + path + ",not exist!!");
-                return;
-            }
-            string data = texts.ToString();
-            m_LocalizeData = new LocalizeData(data);
-
-            OnLocalizationChanged.Invoke();
-        }
-        static public string Get(string key) {
-            if(ins == null) return key;
-            if(ins.m_LocalizeData == null) {
-                Debug.LogWarning("UCL_LocalizeManager not Init yet!!");
-                return key;
-            }
-            return ins.m_LocalizeData.GetLocalize(key);
-        }
-        virtual public string GetLocalize(string key, params object[] objs) {
-            string str = Get(key);
-            return string.Format(str, objs);
+            UCL_LocalizeManager.Instance.ResourceLoadLanguage(m_LoadLangPath, m_CurLang);
         }
     }
 }

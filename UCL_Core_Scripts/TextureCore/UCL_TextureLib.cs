@@ -33,7 +33,12 @@ namespace UCL.Core.TextureLib {
             UnityEditor.AssetDatabase.Refresh();
 #endif
         }
-
+        public static void SaveJPG(string path, Texture2D Texture) {
+            System.IO.File.WriteAllBytes(path + ".jpg", Texture.EncodeToJPG());
+#if UNITY_EDITOR
+            UnityEditor.AssetDatabase.Refresh();
+#endif
+        }
         /// <summary>
         /// Scale the target texture to target size!!
         /// </summary>

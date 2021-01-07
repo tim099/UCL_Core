@@ -2,23 +2,22 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-namespace UCL.Core.Game {
+namespace UCL.Core.LocalizeLib {
     public class UCL_LocalizeText : MonoBehaviour {
         public string m_Key;
         private void Start() {
-            if(UCL_LocalizeService.ins == null) return;
+            UCL_LocalizeManager.OnLanguageChanged += SetText;
+
+            if(UCL_LocalizeManager.GetInstance() == null) return;
             SetText();
-            UCL_LocalizeService.ins.OnLocalizationChanged += SetText;
         }
         private void OnDestroy() {
-            if(UCL_LocalizeService.ins == null) return;
-            UCL_LocalizeService.ins.OnLocalizationChanged -= SetText;
+            UCL_LocalizeManager.OnLanguageChanged -= SetText;
         }
         public void SetText() {
-            if(UCL_LocalizeService.ins == null) return;
             var text = GetComponent<Text>();
             if(text != null) {
-                text.text = UCL_LocalizeService.Get(m_Key);
+                text.text = UCL_LocalizeManager.Get(m_Key);
             }
         }
     }

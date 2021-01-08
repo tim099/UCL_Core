@@ -7,6 +7,7 @@ namespace UCL.Core.TextureLib {
     public class UCL_TextureAtlas : MonoBehaviour {
         public List<Texture2D> m_Texture2Ds;
         [Header("Size per texture in atlas")]public int m_Size = 64;
+        public ImageFormat m_SaveFormat = ImageFormat.png;
         public TextureFormat m_TextureFormat = TextureFormat.ARGB32;
         public string m_OutputFolder = "Assets/Textures";
         public string m_SaveName = "TextureAtlas";
@@ -21,13 +22,11 @@ namespace UCL.Core.TextureLib {
 
         public Texture GetTexture() { return m_Texture; }
 
-#if UNITY_EDITOR
         [ATTR.UCL_FunctionButton]
-#endif
-        public void CreatePNG() {
+        public void CreateImage() {
             Debug.LogWarning("CreateAndSave()");
             if(Create()) {
-                SavePNG();
+                SaveImage();
             }
         }
 #if UNITY_EDITOR
@@ -62,8 +61,11 @@ namespace UCL.Core.TextureLib {
         protected string GetOutputPath() {
             return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
         }
-        public void SavePNG() {
-            TextureLib.Lib.SavePNG(GetOutputPath(), m_Texture);
+        public void SaveImage() {
+#if UNITY_EDITOR_WIN
+            Core.FileLib.WindowsLib.OpenAssetExplorer(m_OutputFolder);
+#endif
+            TextureLib.Lib.SaveTexture(GetOutputPath(), m_Texture, m_SaveFormat);
         }
         public Vector2Int ConverPos(int at) {
             if(m_Seg <= 0 || at < 0) return new Vector2Int(0, 0);

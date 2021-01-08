@@ -32,7 +32,7 @@ namespace UCL.Core.TextureLib {
 
                 }
             }
-            SavePNG(texture);
+            SaveTexture(texture);
         }
     }
 }

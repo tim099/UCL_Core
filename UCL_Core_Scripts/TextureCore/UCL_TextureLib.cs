@@ -2,7 +2,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 namespace UCL.Core.TextureLib {
-
+    public enum ImageFormat {
+        png = 0,
+        jpg,
+    }
     #region Interface
     public interface UCLI_Texture {
         Texture GetTexture();
@@ -27,14 +30,29 @@ namespace UCL.Core.TextureLib {
     }
 #endif
     static public class Lib {
-        public static void SavePNG(string path, Texture2D Texture) {
-            System.IO.File.WriteAllBytes(path + ".png", Texture.EncodeToPNG());
+        public static void SaveTexture(string path, Texture2D texture, ImageFormat format) {
+            switch(format) {
+                case ImageFormat.png: 
+                    {
+                        SavePNG(path, texture);
+                        break;
+                    }
+                case ImageFormat.jpg: {
+                        SaveJPG(path, texture);
+                        break;
+                    }
+            }
+        }
+        public static void SavePNG(string path, Texture2D texture) {
+            Core.FileLib.Lib.CreateDirectory(Core.FileLib.Lib.GetFolderPath(path));
+            System.IO.File.WriteAllBytes(path + ".png", texture.EncodeToPNG());
 #if UNITY_EDITOR
             UnityEditor.AssetDatabase.Refresh();
 #endif
         }
-        public static void SaveJPG(string path, Texture2D Texture) {
-            System.IO.File.WriteAllBytes(path + ".jpg", Texture.EncodeToJPG());
+        public static void SaveJPG(string path, Texture2D texture) {
+            Core.FileLib.Lib.CreateDirectory(Core.FileLib.Lib.GetFolderPath(path));
+            System.IO.File.WriteAllBytes(path + ".jpg", texture.EncodeToJPG());
 #if UNITY_EDITOR
             UnityEditor.AssetDatabase.Refresh();
 #endif
@@ -52,7 +70,7 @@ namespace UCL.Core.TextureLib {
             var cols = new Color[height * width];
             for(int y = 0; y < height; y++) {
                 for(int x = 0; x < width; x++) {
-                    var col = texture.GetPixelBilinear(x * w_mult, y * h_mult);
+                    var col = texture.GetPixelBilinear((x + 0.5f) * w_mult, (y + 0.5f) * h_mult);
                     cols[x + y * width] = col;
                 }
             }

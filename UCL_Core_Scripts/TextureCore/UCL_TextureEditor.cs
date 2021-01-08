@@ -10,6 +10,8 @@ namespace UCL.Core.TextureLib {
         public string m_SaveName = "NewTexture";
         public Vector2Int m_Split = Vector2Int.one;
         public TextureFormat m_TextureFormat = TextureFormat.ARGB32;
+        public ImageFormat m_SaveFormat = ImageFormat.png;
+        public Vector2Int m_Size = new Vector2Int(256, 256);
         protected string GetOutputPath() {
             return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
         }
@@ -17,7 +19,7 @@ namespace UCL.Core.TextureLib {
         public void SplitTexture() {
             if(m_Split.x == 0 || m_Split.y == 0) return;
             if(m_Split == Vector2Int.one) {
-                SavePNG();
+                SaveTexture();
                 return;
             }
             int width = m_Texture.width / m_Split.x;
@@ -41,13 +43,18 @@ namespace UCL.Core.TextureLib {
             }
         }
 
-
-
-        public void SavePNG(Texture2D _Texture) {
-            TextureLib.Lib.SavePNG(GetOutputPath(), _Texture);
+        public void SaveTexture(Texture2D _Texture) {
+#if UNITY_EDITOR_WIN
+            Core.FileLib.WindowsLib.OpenAssetExplorer(m_OutputFolder);
+#endif
+            TextureLib.Lib.SaveTexture(GetOutputPath(), _Texture, m_SaveFormat);
         }
-        public void SavePNG() {
-            SavePNG(m_Texture);
+        public void SaveTexture() {
+            var texture = m_Texture;
+            if(m_Size.x != m_Texture.width || m_Size.y != m_Texture.height) {
+                texture = texture.CreateResizeTexture(m_Size.x, m_Size.y, m_TextureFormat);
+            }
+            SaveTexture(texture);
         }
     }
 }

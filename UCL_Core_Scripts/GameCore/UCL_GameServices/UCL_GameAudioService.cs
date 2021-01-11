@@ -31,13 +31,13 @@ namespace UCL.Core.Game {
             m_VolumeSetting.m_DD = 33;
         }
         public override void Save(string dir) {
-            string path = Path.Combine(dir, "VolumeSetting");//+ ".txt"
+            string path = Path.Combine(dir, "VolumeSetting.txt");//+ ".txt"
             //Core.FileLib.Lib.WriteBinaryToFile(path, m_VolumeSetting);
             Core.FileLib.Lib.SerializeToFile(path, m_VolumeSetting);
             //File.WriteAllBytes(path,)
         }
         public override void Load(string dir) {
-            string path = Path.Combine(dir, "VolumeSetting");// + ".txt"
+            string path = Path.Combine(dir, "VolumeSetting.txt");// + ".txt"
             if(!File.Exists(path)) {
                 return;
             }

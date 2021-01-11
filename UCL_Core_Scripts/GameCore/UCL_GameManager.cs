@@ -9,13 +9,13 @@ namespace UCL.Core.Game {
 #endif
     public class UCL_GameManager : UCL_Singleton<UCL_GameManager> {
 
-#if UNITY_EDITOR
+#if UNITY_EDITOR_WIN
         [ATTR.UCL_FunctionButton]
         public void Editor_OpenGameFolder() {
             string folder = GetGameFolderPath();
             FileLib.Lib.CreateDirectory(folder);//FileLib.Lib.GetFilesPath(true);
 
-            FileLib.EditorLib.ExploreFolder(folder);
+            FileLib.WindowsLib.OpenExplorer(folder);
         }
 #endif
 
@@ -127,9 +127,12 @@ namespace UCL.Core.Game {
         private void Awake() {
             Init();
         }
-        private void OnApplicationQuit() {
+        virtual protected void OnApplicationQuit() {
             //Debug.LogWarning("UCL_GameManager OnApplicationQuit()");
             f_ApplicationQuit = true;
+        }
+        virtual protected void OnApplicationPause(bool pauseStatus) {
+            //pauseStatus == true if paused
         }
         protected override void OnDestroy() {
             base.OnDestroy();

@@ -459,6 +459,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Image: {fileID: 1232331592}
+  m_SavePath: Assets/UCL/UCL_Core/UCL_CoreTextures/UCL_ScreenShot
+  m_SaveFormat: 1
 --- !u!4 &711515920
 Transform:
   m_ObjectHideFlags: 0

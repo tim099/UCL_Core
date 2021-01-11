@@ -5,8 +5,17 @@ using System.Runtime.Serialization.Formatters.Binary;
 using UnityEngine;
 
 namespace UCL.Core.FileLib {
+    public enum LibName {
+        UCL_CoreLib = 0,
+        UCL_TweenLib,
+        UCL_GameLib,
+        UCL_BuildLib,
+    }
 #if UNITY_EDITOR
     static public class EditorLib {
+        public static string GetLibFolderPath(LibName libname) {
+            return GetLibFolderPath(libname.ToString());
+        }
         public static string GetLibFolderPath(string LibName) {
             var res = Resources.Load(LibName);// + ".txt"
             string path = UnityEditor.AssetDatabase.GetAssetPath(res);

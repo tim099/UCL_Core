@@ -23,14 +23,14 @@ namespace UCL.Core.Game {
             }
         }
         public override void Save(string dir) {
-            string path = Path.Combine(dir, "LocalizeSetting");
+            string path = Path.Combine(dir, "LocalizeSetting.txt");
             JsonLib.JsonData data = new JsonLib.JsonData();
             data["m_LoadLangPath"] = m_LoadLangPath;
             data["m_CurLang"] = m_CurLang;
             FileLib.Lib.WriteToFile(data.ToJson(), path);
         }
         public override void Load(string dir) {
-            string path = Path.Combine(dir, "LocalizeSetting");
+            string path = Path.Combine(dir, "LocalizeSetting.txt");
             if(File.Exists(path)) {
                 var str = File.ReadAllText(path);
                 JsonLib.JsonData data = JsonLib.JsonData.ParseJson(str);

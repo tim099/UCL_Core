@@ -59,7 +59,7 @@ namespace UCL.Core.TextureLib {
         }
         [ATTR.UCL_FunctionButton]
         public void OpenOutputFolder() {
-            m_OutputFolder = Core.FileLib.EditorLib.OpenAssetsFolderPanel(m_OutputFolder);
+            m_OutputFolder = Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_OutputFolder);
             /*
             string folder_path = Application.dataPath.Replace("Assets", m_OutputFolder);
             string path = UnityEditor.EditorUtility.OpenFolderPanel("Select Output Folder", folder_path, "");

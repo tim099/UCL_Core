@@ -39,7 +39,13 @@ namespace UCL.Core.FileLib {
                 Application.OpenURL(path);
             }
         }
-        public static string OpenAssetsFolderPanel(string folder) {
+        /// <summary>
+        /// Open folder explorer under assets folder
+        /// 在Assets資料夾中開啟資料夾瀏覽器
+        /// </summary>
+        /// <param name="folder"></param>
+        /// <returns></returns>
+        public static string OpenAssetsFolderExplorer(string folder) {
             string asset_root = Application.dataPath.Replace("Assets", "");
             string assets_path = asset_root + folder;
             string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", assets_path, "");
@@ -101,11 +107,12 @@ namespace UCL.Core.FileLib {
         /// <summary>
         /// Remove folder and file from path
         /// Example path is "root/folder/c.txt" and remove_count is 2, then return "root" 
+        /// 根據設定數量移除路徑
         /// </summary>
         /// <param name="path"></param>
         /// <param name="remove_count"></param>
         /// <returns></returns>
-        public static string RemoveFolderPath(string path,int remove_count = 1) {
+        public static string RemoveFolderPath(string path, int remove_count = 1) {
             if(remove_count <= 0) return path;
 
             int i = path.Length - 1;
@@ -119,6 +126,29 @@ namespace UCL.Core.FileLib {
             }
             if(i <= 0) return "";
             return path.Substring(0, i);
+        }
+        /// <summary>
+        /// Split a path into two part
+        /// Example path is "root/folder/c.txt" and split_at is 2, then return "root","folder/c.txt" 
+        /// 根據指定的位置切分路徑
+        /// </summary>
+        /// <param name="path">input path</param>
+        /// <param name="split_at">split position</param>
+        /// <returns></returns>
+        public static System.Tuple<string,string> SplitPath(string path, int split_at = 1) {
+            if(split_at <= 0) return new System.Tuple<string, string>(path,"");
+
+            int i = path.Length - 1;
+            for(; i >= 0; i--) {
+                var c = path[i];
+                if(c == '/' || c == '\\') {
+
+                    //path = path.Substring(0, i);
+                    if(--split_at <= 0) break;
+                }
+            }
+            if(i <= 0) return new System.Tuple<string, string>("", path);
+            return new System.Tuple<string, string>(path.Substring(0, i), path.Substring(i + 1, path.Length - i - 1));
         }
         public static void WriteBinaryToFile<T>(string path, T target, FileMode fileMode = FileMode.Create) {
             using(Stream stream = File.Open(path, fileMode)) {
@@ -175,6 +205,18 @@ namespace UCL.Core.FileLib {
             return path;
         }
         /// <summary>
+        /// return the file extension
+        /// Example path is "root/folder/c.txt", then return "txt" 
+        /// 抓取副檔名並回傳
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        public static string GetFileExtension(string path) {
+            var paths = path.Split('.');
+            if(paths.Length <= 1) return string.Empty;//No FileExtension
+            return paths[paths.Length - 1];
+        }
+        /// <summary>
         /// Returns the names of the subdirectories (including their paths) 
         /// that match the specified search pattern in the specified directory, and optionally searches subdirectories.
         /// </summary>
@@ -197,8 +239,9 @@ namespace UCL.Core.FileLib {
         /// <param name="searchPattern">The search string to match against the names of files in path. This parameter can contain a combination of valid literal path
         /// and wildcard (* and ?) characters, but it doesn't support regular expressions.</param>
         /// <returns></returns>
-        public static string[] GetFiles(string path, string searchPattern = "*") {
-            return Directory.GetFiles(path, searchPattern);
+        public static string[] GetFiles(string path, string searchPattern = "*", 
+            SearchOption searchOption = SearchOption.TopDirectoryOnly) {
+            return Directory.GetFiles(path, searchPattern, searchOption);
         }
         public static void CreateDirectory(string path) {
             if(string.IsNullOrEmpty(path)) return;

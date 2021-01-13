@@ -15,7 +15,7 @@ namespace UCL.Core.FileLib.Demo {
 
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void SelectPath() {
-            m_Path = Core.FileLib.EditorLib.OpenAssetsFolderPanel(m_Path);
+            m_Path = Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_Path);
         }
 
         [UCL.Core.ATTR.UCL_FunctionButton]

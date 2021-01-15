@@ -22,7 +22,7 @@ namespace UCL.Core.LocalizeLib
             m_LangDir = dir;
             m_LangName = lang_name;
             string path = m_LangName;
-            if(dir != string.Empty) path = Path.Combine(m_LangDir, m_LangName);
+            if(!string.IsNullOrEmpty(dir)) path = Path.Combine(m_LangDir, m_LangName);
             path = Path.Combine(path, "Lang");
             ResourceLoadLanguage(path);
         }

@@ -33,6 +33,16 @@ namespace UCL.Core.FileLib.Demo {
             }
         }
 #endif
+#if UNITY_EDITOR_WIN
+        [UCL.Core.ATTR.UCL_FunctionButton]
+        public void OpenDataPathExplorer() {
+            Core.FileLib.WindowsLib.OpenExplorer(Application.dataPath);
+        }
+        [UCL.Core.ATTR.UCL_FunctionButton]
+        public void OpenPersistentDataPathExplorer() {
+            Core.FileLib.WindowsLib.OpenExplorer(Application.persistentDataPath);
+        }
+#endif
     }
 }
 

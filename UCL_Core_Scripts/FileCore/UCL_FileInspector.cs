@@ -68,12 +68,12 @@ namespace UCL.Core.FileLib {
         /// </summary>
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void ExploreTargetDirectory() {
-            if(m_TargetDirectory == string.Empty) {
+            if(string.IsNullOrEmpty(m_TargetDirectory)) {
                 var path = UnityEditor.AssetDatabase.GetAssetPath(this);
                 m_TargetDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
             }
             var dir = Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_TargetDirectory);
-            if(dir != string.Empty) {
+            if(!string.IsNullOrEmpty(dir)) {
                 m_TargetDirectory = dir;
             }
         }
@@ -85,7 +85,7 @@ namespace UCL.Core.FileLib {
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void RefreshFileInfos() {
 #if UNITY_EDITOR
-            if(m_TargetDirectory == string.Empty) {
+            if(string.IsNullOrEmpty(m_TargetDirectory)) {
                 var path = UnityEditor.AssetDatabase.GetAssetPath(this);
                 m_TargetDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
             }

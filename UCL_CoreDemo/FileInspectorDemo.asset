@@ -1,0 +1,110 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 12c8bcbe96c9ac84d9273b177e6fac6a, type: 3}
+  m_Name: FileInspectorDemo
+  m_EditorClassIdentifier: 
+  m_IgnoreMetaFiles: 1
+  m_TargetDirectory: Assets/UCL/UCL_Core/UCL_CoreDemo
+  m_FileInfos:
+  - m_FileName: FileInspectorDemo
+    m_FolderPath: 
+    m_Extension: asset
+  - m_FileName: UCL_AssetBundleManagerDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_FileLibDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_MarshalDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_MathDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_MiscDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_OnRenderModuleDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_RandomDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_TestScene
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_TextureDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_UIDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_DebugInspectorDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: dummy
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: txt
+  - m_FileName: UCL_AssetBundleManagerDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_DebugInspectorDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_DebugInspectorParDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_FileLibDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_LinearMappingDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_MarshalDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_MathLibDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_RandomDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: desert_d
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: desert_n
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: grass_d
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: grass_n
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: lava_d
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: lava_n
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: stone_h
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: stone_n
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: TestTextureAtlas
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: jpg
+  - m_FileName: TextureEditorSplitDemo
+    m_FolderPath: UCL_Core_DemoTextures
+    m_Extension: png

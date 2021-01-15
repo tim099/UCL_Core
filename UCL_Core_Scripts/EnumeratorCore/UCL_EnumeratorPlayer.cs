@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+//using UCL_EnumeratorLib = UCL.Core.EnumeratorLib;
 namespace UCL.Core.EnumeratorLib {
     public static class Wait {
 
@@ -121,23 +122,26 @@ namespace UCL.Core.EnumeratorLib {
         protected object UpdateAction(int layer) {
             if(m_Enumerator == null) return null;
             var cur = m_Enumerator.Current;
-            bool have_next = m_Enumerator.MoveNext();
-
+            
+            //UnityEngine.Debug.LogWarning("cur:" + cur.ToString());
             if(cur != null) {
                 IEnumerator en = cur as IEnumerator;
                 if(en != null) {
-                    //if(cur is string) Debug.LogError("en is string!!");
-                    if(have_next) m_EnumeratorStack.Push(m_Enumerator);
+                    m_EnumeratorStack.Push(m_Enumerator);
                     m_Enumerator = en;
-                    return null;
-                    //if(layer > RecurseLimit) return null;//over limit!!
-                    //return UpdateAction(layer + 1);
+                    if(layer > RecurseLimit) return null;//over limit!!
+                    return UpdateAction(layer + 1);
                 }
             }
 
-            if(!have_next) {
-                if(m_EnumeratorStack.Count > 0) m_Enumerator = m_EnumeratorStack.Pop();
-                else m_Enumerator = null;
+            if(!m_Enumerator.MoveNext()) {//End
+                do {
+                    if(m_EnumeratorStack.Count > 0) {
+                        m_Enumerator = m_EnumeratorStack.Pop();
+                    } else {
+                        m_Enumerator = null;
+                    }
+                } while(m_Enumerator != null && !m_Enumerator.MoveNext());
             }
 
             return cur;

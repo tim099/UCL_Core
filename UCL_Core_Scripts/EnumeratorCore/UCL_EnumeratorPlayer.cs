@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
 //using UCL_EnumeratorLib = UCL.Core.EnumeratorLib;
 namespace UCL.Core.EnumeratorLib {
     public static class Wait {
@@ -28,7 +29,29 @@ namespace UCL.Core.EnumeratorLib {
         public static UCL_WaitForUpdate WaitForUpdate(int _WaitTimes) {
             return new UCL_WaitForUpdate(_WaitTimes);
         }
+        /// <summary>
+        /// Wait until AsyncOperation done.
+        /// </summary>
+        public static UCL_WaitAsyncOperation WaitAsyncOperation(AsyncOperation _AsyncOperation) {
+            return new UCL_WaitAsyncOperation(_AsyncOperation);
+        }
         #region WaitClass
+        /// <summary>
+        /// Wait until AsyncOperation done.
+        /// </summary>
+        public class UCL_WaitAsyncOperation : IEnumerator {
+            AsyncOperation m_AsyncOperation;
+            public UCL_WaitAsyncOperation(AsyncOperation _AsyncOperation) {
+                m_AsyncOperation = _AsyncOperation;
+            }
+            public object Current { get { return null; } }
+            public bool MoveNext() {
+                if(m_AsyncOperation == null) return false;
+                return !m_AsyncOperation.isDone;
+            }
+            public void Reset() { }
+        }
+
         /// <summary>
         /// Waits until target update times.
         /// </summary>
@@ -98,7 +121,10 @@ namespace UCL.Core.EnumeratorLib {
         static public EnumeratorPlayer Play(IEnumerator _Enumerator) {
             return new EnumeratorPlayer(_Enumerator);
         }
-
+        /// <summary>
+        /// true if play in UCL_EditorCoroutineManager
+        /// </summary>
+        internal bool m_PlayInEditor = false;
         protected Stack<IEnumerator> m_EnumeratorStack = new Stack<IEnumerator>();
         protected IEnumerator m_Enumerator = null;
         protected System.Action m_EntAct = null;
@@ -119,12 +145,43 @@ namespace UCL.Core.EnumeratorLib {
         public object Update() {
             return UpdateAction(0);
         }
+        /// <summary>
+        /// Stop Coroutine
+        /// </summary>
+        public void StopCoroutine() {
+            UCL_CoroutineManager.StopCoroutine(this);
+        }
         protected object UpdateAction(int layer) {
             if(m_Enumerator == null) return null;
             var cur = m_Enumerator.Current;
             
             //UnityEngine.Debug.LogWarning("cur:" + cur.ToString());
             if(cur != null) {
+                var type = cur.GetType();
+                if(type.IsSubclassOf(typeof(YieldInstruction))) {//handle Unity AsyncOperation
+                    AsyncOperation asyncop = cur as AsyncOperation;
+                    if(asyncop != null) {
+                        //Debug.LogWarning("Wait.WaitAsyncOperation:" + asyncop.UCL_ToString());
+                        cur = Wait.WaitAsyncOperation(asyncop);
+                    } else {
+                        try {
+                            if(cur is WaitForSeconds) {
+                                WaitForSeconds wait = cur as WaitForSeconds;
+                                System.Single wait_seconds = wait.GetMember<System.Single>("m_Seconds");
+                                //Debug.LogWarning("wait second:" + wait_seconds);
+                                cur = Wait.WaitSeconds(wait_seconds);
+                            }
+                            else if(cur is WaitForFixedUpdate) {
+                                cur = Wait.WaitForUpdate(1);
+                            } else {
+                                Debug.LogWarning("Unknwon YieldInstruction:" + cur.UCL_ToString());
+                            }
+                        } catch(System.Exception e) {
+                            Debug.LogError("YieldInstruction parsing Exception:" + e);
+                        }
+                    }
+                }
+
                 IEnumerator en = cur as IEnumerator;
                 if(en != null) {
                     m_EnumeratorStack.Push(m_Enumerator);

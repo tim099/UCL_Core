@@ -11,7 +11,7 @@ namespace UCL.Core.EnumeratorLib
         Core.EnumeratorLib.EnumeratorPlayer m_Player = null;
         public void EditorStartCoroutine(IEnumerator enumerator) {
             EditorStopCoroutine();
-            m_Player = Core.EditorLib.UCL_EditorCoroutineManager.StartCoroutine(enumerator);
+            m_Player = Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(enumerator);
         }
         IEnumerator EnumeratorTest(int num) {
             for(int i = 0; i < num; i++) {
@@ -39,7 +39,7 @@ namespace UCL.Core.EnumeratorLib
 
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void EditorStopCoroutine() {
-            Core.EditorLib.UCL_EditorCoroutineManager.StopCoroutine(m_Player);
+            Core.EnumeratorLib.UCL_CoroutineManager.StopCoroutine(m_Player);
         }
         void Update() {
 

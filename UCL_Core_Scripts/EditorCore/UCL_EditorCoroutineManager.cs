@@ -25,12 +25,14 @@ namespace UCL.Core.EditorLib {
             UCL.Core.EnumeratorLib.EnumeratorPlayer player = null;
 #if UNITY_EDITOR
             player = UCL.Core.EnumeratorLib.EnumeratorPlayer.Play(enumerator);
+            player.m_PlayInEditor = true;
             m_Players.Add(player);
 #endif
             return player;
         }
 
         public static void StopCoroutine(UCL.Core.EnumeratorLib.EnumeratorPlayer player) {
+            if(player == null) return;
 #if UNITY_EDITOR
             if(m_Players.Contains(player)) {
                 m_Players.Remove(player);

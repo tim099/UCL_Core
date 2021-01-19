@@ -146,11 +146,22 @@ namespace UCL.Core.JsonLib {
             }
         }
         #endregion
+        public JsonData ToArray() {
+            m_Type = JsonType.Array;
+            m_List = new List<JsonData>();
+            return this;
+        }
         public object GetObj() {
             return ToObject(this);
         }
         public string GetString(string default_val = null) {
             if(m_Type == JsonType.String) return m_Obj as string;
+            return default_val;
+        }
+        public string GetString(string key, string default_val = null) {
+            var val = Get(key);
+            if(val == this) return default_val;
+            if(val.m_Type == JsonType.String) return (string)val;
             return default_val;
         }
         public float GetFloat(float default_val = 0) {
@@ -159,6 +170,12 @@ namespace UCL.Core.JsonLib {
         }
         public double GetDouble(double default_val = 0) {
             if(m_Type == JsonType.Double) return (double)m_Obj;
+            return default_val;
+        }
+        public int GetInt(string key, int default_val = 0) {
+            var val = Get(key);
+            if(val == this) return default_val;
+            if(val.m_Type == JsonType.Int) return (int)val;
             return default_val;
         }
         public int GetInt(int default_val = 0) {
@@ -243,6 +260,10 @@ namespace UCL.Core.JsonLib {
         }
         #endregion
         #region ToJson
+        /// <summary>
+        /// Convert to json string
+        /// </summary>
+        /// <returns></returns>
         public string ToJson() {
             StringBuilder builder = new StringBuilder();
             SerializeValue(ToObject(this), builder);
@@ -340,7 +361,83 @@ namespace UCL.Core.JsonLib {
 
             builder.Append('\"');
         }
-
+        /// <summary>
+        /// Convert to beautify json string
+        /// </summary>
+        /// <returns></returns>
+        public string ToJsonBeautify() {
+            StringBuilder builder = new StringBuilder();
+            SerializeValueBeautify(ToObject(this), builder, 0);
+            return builder.ToString();
+        }
+        void SerializeValueBeautify(object value, StringBuilder builder, int layer) {
+            IList list;
+            IDictionary dic;
+            string layer_str = new string('\t', layer);
+            if(value == null) {
+                builder.Append("null");
+            } else if(value is string) {
+                SerializeString(value as string, builder);
+            } else if(value is bool) {
+                builder.Append((bool)value ? "true" : "false");
+            } else if((list = value as IList) != null) {
+                builder.Append(System.Environment.NewLine);
+                builder.Append(layer_str);
+                builder.Append('[');
+                builder.Append(System.Environment.NewLine);
+                bool first = true;
+                foreach(object obj in list) {
+                    if(!first) {
+                        builder.Append(',');
+                        builder.Append(System.Environment.NewLine);
+                    }
+                    SerializeValueBeautify(obj, builder, layer + 1);
+                    first = false;
+                }
+                builder.Append(System.Environment.NewLine);
+                builder.Append(layer_str);
+                builder.Append(']');
+                //builder.Append(System.Environment.NewLine);
+            } else if((dic = value as IDictionary) != null) {
+                bool first = true;
+                builder.Append(layer_str);
+                builder.Append('{');
+                builder.Append(System.Environment.NewLine);
+                foreach(object obj in dic.Keys) {
+                    if(!first) {
+                        builder.Append(',');
+                        builder.Append(System.Environment.NewLine);
+                    }
+                    builder.Append(layer_str);
+                    builder.Append('\t');
+                    SerializeString(obj.ToString(), builder);
+                    builder.Append(':');
+                    SerializeValueBeautify(dic[obj], builder, layer + 1);
+                    first = false;
+                }
+                builder.Append(System.Environment.NewLine);
+                builder.Append(layer_str);
+                builder.Append('}');
+                //builder.Append(System.Environment.NewLine);
+            } else if(value is char) {
+                SerializeString(new string((char)value, 1), builder);
+            } else if(value is float) {
+                builder.Append(((float)value).ToString("R"));
+            } else if(value is int
+                || value is uint
+                || value is long
+                || value is sbyte
+                || value is byte
+                || value is short
+                || value is ushort
+                || value is ulong) {
+                builder.Append(value);
+            } else if(value is double || value is decimal) {
+                builder.Append(Convert.ToDouble(value).ToString("R"));
+            } else {
+                SerializeString(value.ToString(), builder);
+            }
+        }
         #endregion
         #region Public Indexers
         public JsonData this[string prop_name] {

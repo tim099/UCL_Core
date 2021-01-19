@@ -21,7 +21,7 @@ namespace UCL.Core.EditorLib {
 #endif
         static UCL_EditorUpdateManager() {
 #if UNITY_EDITOR
-            Debug.Log("UCL_EditorUpdateManager() Init UnityEditor.EditorApplication.update += EditorUpdate");
+            //Debug.Log("UCL_EditorUpdateManager() Init UnityEditor.EditorApplication.update += EditorUpdate");
             UnityEditor.EditorApplication.update += UpdateAction;
 #endif
         }

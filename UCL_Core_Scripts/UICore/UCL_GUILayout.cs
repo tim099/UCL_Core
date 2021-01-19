@@ -163,6 +163,13 @@ namespace UCL.Core.UI {
 
             return flag;
         }
+        /// <summary>
+        /// Draw a GUILayout Button fit the size of text
+        /// </summary>
+        /// <param name="name">the content of button</param>
+        /// <param name="fontsize">font size</param>
+        /// <param name="but_color">button color</param>
+        /// <returns></returns>
         public static bool ButtonAutoSize(string name, int fontsize, Color but_color) {
             sButtonGuiStyle.fontSize = fontsize;
             Color col_tmp = GUI.backgroundColor;

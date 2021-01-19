@@ -12,7 +12,7 @@ namespace UCL.Core.EditorLib {
 #endif
         static UCL_EditorCoroutineManager() {
 #if UNITY_EDITOR
-            Debug.Log("UCL_EditorCoroutineManager() Init");
+            //Debug.Log("UCL_EditorCoroutineManager() Init");
             UCL_EditorUpdateManager.AddEditorUpdateAct(UpdateAction);
 #endif
         }

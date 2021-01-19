@@ -53,6 +53,18 @@ namespace UCL.Core.FileLib {
 
             return path.Replace(asset_root, "");
         }
+        /// <summary>
+        /// Open folder explorer
+        /// 開啟資料夾瀏覽器
+        /// </summary>
+        /// <param name="folder"></param>
+        /// <returns></returns>
+        public static string OpenFolderExplorer(string folder) {
+            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, "");
+            if(string.IsNullOrEmpty(path)) return folder;
+
+            return path;
+        }
         public static string SelectScript(MonoBehaviour be) {
             var path = GetScriptPath(be);
             UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path);

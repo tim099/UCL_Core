@@ -206,6 +206,8 @@ namespace UCL.Core.UI {
 
         #region Popup
         public static int Popup(int selectedIndex, string[] displayedOptions, ref bool opened) {
+            if(selectedIndex < 0) selectedIndex = 0;
+            if(selectedIndex >= displayedOptions.Length) selectedIndex = displayedOptions.Length - 1;
             string cur = displayedOptions[selectedIndex];
             if(opened) {
                 GUILayout.BeginVertical();
@@ -229,6 +231,8 @@ namespace UCL.Core.UI {
             return selectedIndex;
         }
         public static int Popup(int selectedIndex, List<string> displayedOptions, ref bool opened) {
+            if(selectedIndex < 0) selectedIndex = 0;
+            if(selectedIndex >= displayedOptions.Count) selectedIndex = displayedOptions.Count - 1;
             string cur = displayedOptions[selectedIndex];
             if(opened) {
                 GUILayout.BeginVertical();

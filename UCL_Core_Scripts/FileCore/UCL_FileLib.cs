@@ -311,7 +311,7 @@ namespace UCL.Core.FileLib {
             return Path.Combine(Application.streamingAssetsPath, path.TrimStart('/')).Replace('\\', '/');
         }
     }
-#if UNITY_EDITOR_WIN
+#if UNITY_STANDALONE_WIN
     static public class WindowsLib {
         /// <summary>
         /// Open explorer to folder within Assets folder

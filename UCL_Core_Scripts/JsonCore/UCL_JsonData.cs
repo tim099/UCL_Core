@@ -15,6 +15,13 @@ namespace UCL.Core.JsonLib {
         Double,
         Boolean
     }
+    /// <summary>
+    /// interface that support Json serialization
+    /// </summary>
+    public interface IJsonSerializable {
+        JsonData SerializeToJson();
+        void DeserializeFromJson(JsonData data);
+    }
     public class JsonData : IList, IDictionary {
         #region Properties
         object m_Obj;
@@ -54,10 +61,19 @@ namespace UCL.Core.JsonLib {
             if(obj is IList) {
                 m_Type = JsonType.Array;
                 List<object> lst = obj as List<object>;
-                m_List = new List<JsonData>(lst.Count);
-                foreach(object item in lst) {
-                    m_List.Add(ToJsonData(item));
+                if(lst != null) {
+                    m_List = new List<JsonData>(lst.Count);
+                    foreach(object item in lst) {
+                        m_List.Add(ToJsonData(item));
+                    }
+                } else {
+                    IList list = obj as IList;
+                    m_List = new List<JsonData>();
+                    foreach(object item in list) {
+                        m_List.Add(ToJsonData(item));
+                    }
                 }
+
             } else if(obj is IDictionary) {
                 m_Type = JsonType.Object;
                 Dictionary<string, object> dict = obj as Dictionary<string, object>;
@@ -79,7 +95,7 @@ namespace UCL.Core.JsonLib {
                     m_Type = JsonType.Double;
                 } else if(obj is float) {
                     m_Type = JsonType.Double;
-                    obj = (double)obj;
+                    obj = (double)(float)obj;
                 } else if(obj is int) {
                     m_Type = JsonType.Int;
                 } else if(obj is long) {
@@ -154,6 +170,24 @@ namespace UCL.Core.JsonLib {
         public object GetObj() {
             return ToObject(this);
         }
+        public object GetValue(Type type) {
+            if(type == typeof(string)) {
+                return GetString();
+            }
+            if(type == typeof(float)) {
+                return GetFloat();
+            }
+            if(type == typeof(double)) {
+                return GetDouble();
+            }
+            if(type == typeof(int) || type == typeof(uint)) {
+                return GetInt();
+            }
+            if(type == typeof(long) || type == typeof(ulong)) {
+                return GetLong();
+            }
+            return null;
+        }
         public string GetString(string default_val = null) {
             if(m_Type == JsonType.String) return m_Obj as string;
             return default_val;
@@ -184,6 +218,7 @@ namespace UCL.Core.JsonLib {
         }
         public long GetLong(long default_val = 0) {
             if(m_Type == JsonType.Long) return (long)m_Obj;
+            if(m_Type == JsonType.Int) return (int)m_Obj;
             return default_val;
         }
         public Dictionary<string, object> GetDic() {
@@ -391,6 +426,8 @@ namespace UCL.Core.JsonLib {
                         builder.Append(',');
                         builder.Append(System.Environment.NewLine);
                     }
+                    builder.Append(layer_str);
+                    builder.Append('\t');
                     SerializeValueBeautify(obj, builder, layer + 1);
                     first = false;
                 }
@@ -400,7 +437,6 @@ namespace UCL.Core.JsonLib {
                 //builder.Append(System.Environment.NewLine);
             } else if((dic = value as IDictionary) != null) {
                 bool first = true;
-                builder.Append(layer_str);
                 builder.Append('{');
                 builder.Append(System.Environment.NewLine);
                 foreach(object obj in dic.Keys) {
@@ -418,7 +454,6 @@ namespace UCL.Core.JsonLib {
                 builder.Append(System.Environment.NewLine);
                 builder.Append(layer_str);
                 builder.Append('}');
-                //builder.Append(System.Environment.NewLine);
             } else if(value is char) {
                 SerializeString(new string((char)value, 1), builder);
             } else if(value is float) {
@@ -499,6 +534,7 @@ namespace UCL.Core.JsonLib {
         }
 
         public bool Contains(object key) {
+            if(m_Type != JsonType.Object && m_Type != JsonType.None) return false;
             return GetIDic().Contains(key);
         }
 
@@ -561,9 +597,15 @@ namespace UCL.Core.JsonLib {
 
         private IDictionary GetIDic() {
             if(m_Type == JsonType.Object) return (IDictionary)m_Dic;
-            if(m_Type != JsonType.None) throw new InvalidOperationException("JsonData already has type:" + m_Type.ToString() 
+            if(m_Type != JsonType.None) {
+                //if(m_List != null) {
+                //    foreach(var item in m_List) {
+                //        Debug.LogError("JsonData data:" + item.ToString());
+                //    }
+                //}
+                throw new InvalidOperationException("JsonData already has type:" + m_Type.ToString()
                 + ",Cant convert to dictionary!!");
-
+            }
             m_Type = JsonType.Object;
             m_Dic = new Dictionary<string, JsonData>();
             m_ObjectList = new List<KeyValuePair<string, JsonData>>();
@@ -582,7 +624,8 @@ namespace UCL.Core.JsonLib {
         private JsonData ToJsonData(object obj) {
             if(obj == null) return null;
             if(obj is JsonData) return (JsonData)obj;
-
+            if(obj is IJsonSerializable) return ((IJsonSerializable)obj).SerializeToJson();
+            
             return new JsonData(obj);
         }
 

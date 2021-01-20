@@ -381,7 +381,7 @@ namespace UCL.Core {
             bool is_edit_target = false;
             bool log_info = false;
             bool editable = false;
-            if(m_EditTarget!=null && m_EditTarget.Item1.Equals(obj) && m_EditTarget.Item2.Equals(info)) {
+            if(m_EditTarget != null && m_EditTarget.Item1.Equals(obj) && m_EditTarget.Item2.Equals(info)) {
                 is_edit_target = true;
             }
             var type = obj.GetType();

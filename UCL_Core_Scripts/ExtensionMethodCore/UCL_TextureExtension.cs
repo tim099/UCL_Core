@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public static partial class VectorExtensionMethods {
+public static partial class TextureExtensionMethods {
     #region Texture2D
     /// <summary>
     /// Resize texture but keep the content

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using System.Linq;
-public static partial class VectorExtensionMethods {
+public static partial class TypeExtensionMethods {
     public static MethodInfo[] GetAllMethods(this Type type) {
         var methods = new List<MethodInfo>();
         methods.AddRange(type.GetMethods());

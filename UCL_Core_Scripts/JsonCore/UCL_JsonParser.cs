@@ -98,7 +98,7 @@ namespace UCL.Core.JsonLib {
         }
 
         string ParseString() {
-            StringBuilder s = new StringBuilder();
+            StringBuilder aStringBuilder = new StringBuilder();
             char c;
             m_Reader.Read();
 
@@ -124,39 +124,39 @@ namespace UCL.Core.JsonLib {
                             case '"':
                             case '\\':
                             case '/':
-                                s.Append(c);
+                                aStringBuilder.Append(c);
                                 break;
                             case 'b':
-                                s.Append('\b');
+                                aStringBuilder.Append('\b');
                                 break;
                             case 'f':
-                                s.Append('\f');
+                                aStringBuilder.Append('\f');
                                 break;
                             case 'n':
-                                s.Append('\n');
+                                aStringBuilder.Append('\n');
                                 break;
                             case 'r':
-                                s.Append('\r');
+                                aStringBuilder.Append('\r');
                                 break;
                             case 't':
-                                s.Append('\t');
+                                aStringBuilder.Append('\t');
                                 break;
                             case 'u':
                                 var hex = new char[4];
                                 for(int i = 0; i < 4; i++) {
                                     hex[i] = Convert.ToChar(m_Reader.Read());
                                 }
-                                s.Append((char)Convert.ToInt32(new string(hex), 16));
+                                aStringBuilder.Append((char)Convert.ToInt32(new string(hex), 16));
                                 break;
                         }
                         break;
                     default:
-                        s.Append(c);
+                        aStringBuilder.Append(c);
                         break;
                 }
             }
 
-            return s.ToString();
+            return aStringBuilder.ToString();
         }
 
         object ParseNumber() {

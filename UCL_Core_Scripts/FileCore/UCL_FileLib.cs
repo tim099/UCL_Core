@@ -40,6 +40,21 @@ namespace UCL.Core.FileLib {
             }
         }
         /// <summary>
+        /// Open file explorer under assets folder
+        /// 在Assets資料夾中開啟檔案瀏覽器
+        /// </summary>
+        /// <param name="iFilePath">file path</param>
+        /// <returns></returns>
+        public static string OpenAssetsFileExplorer(string iFilePath) {
+            string asset_root = Application.dataPath.Replace("Assets", "");
+            string assets_path = asset_root + iFilePath;
+            string path = UnityEditor.EditorUtility.OpenFilePanel("Open Folder", assets_path, "");
+            if(string.IsNullOrEmpty(path)) return iFilePath;
+
+            return path.Replace(asset_root, "");
+        }
+
+        /// <summary>
         /// Open folder explorer under assets folder
         /// 在Assets資料夾中開啟資料夾瀏覽器
         /// </summary>

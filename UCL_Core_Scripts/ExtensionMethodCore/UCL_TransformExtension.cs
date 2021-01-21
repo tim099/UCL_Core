@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public static partial class VectorExtensionMethods {
+public static partial class TransformExtensionMethods {
     #region LocalPosition
 
     public static void SetLocalX(this Transform t, float x) {

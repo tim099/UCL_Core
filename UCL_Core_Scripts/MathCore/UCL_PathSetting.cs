@@ -6,7 +6,7 @@ namespace UCL.Core.MathLib {
     public class UCL_PathSetting : UCL_Path {
 
         public UCL_Path m_Path = null;
-        public VectorExtensionMethods.TransformMode m_TransformMode = VectorExtensionMethods.TransformMode.WorldSpace;
+        public TransformExtensionMethods.TransformMode m_TransformMode = TransformExtensionMethods.TransformMode.WorldSpace;
 
         [Header("Inverse the path")] public bool m_Inverse = false;
 

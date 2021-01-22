@@ -30,6 +30,17 @@ public static partial class ListExtensionMethods {
         return false;
     }
     /// <summary>
+    /// Get element inside list
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="list"></param>
+    /// <param name="at"></param>
+    /// <returns></returns>
+    public static T Get<T>(this IList<T> list, int at) {
+        if(list == null || list.Count == 0 || at < 0 || at >= list.Count) return default;
+        return list[at];
+    }
+    /// <summary>
     /// Remove first element of list
     /// </summary>
     /// <typeparam name="T"></typeparam>

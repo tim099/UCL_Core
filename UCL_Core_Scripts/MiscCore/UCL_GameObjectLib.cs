@@ -52,6 +52,11 @@ namespace UCL.Core {
             SetParent(Obj.transform, parent);
             return Obj;
         }
+        public static void SearchChildNotIncludeParent<T>(Transform parent, List<T> result) {
+            foreach(Transform child in parent) {
+                SearchChild(child, result);
+            }
+        }
         public static void SearchChild<T>(Transform parent, List<T> result) {
             var res = parent.GetComponents<T>();
             for(int i = 0; i < res.Length; i++) {

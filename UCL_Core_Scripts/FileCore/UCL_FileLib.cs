@@ -285,6 +285,40 @@ namespace UCL.Core.FileLib {
                 writer.Close();
             }
         }
+        /// <summary>
+        /// Copy files from iSourceDirectory to iDestinationDirectory
+        /// </summary>
+        /// <param name="iSourceDirectory">Source Directory</param>
+        /// <param name="iDestinationDirectory">Destination Directory</param>
+        /// <param name="iIgnoreFileExtensions">File with this extensions will be ignore</param>
+        static public void CopyDirectory(string iSourceDirectory, string iDestinationDirectory, List<string> iIgnoreFileExtensions) {
+            if(!Directory.Exists(iDestinationDirectory)) {
+                Directory.CreateDirectory(iDestinationDirectory);
+            }
+            var aFiles = Directory.GetFiles(iSourceDirectory);
+            for(int i = 0; i < aFiles.Length; i++) {
+                var aFile = aFiles[i];
+                if(iIgnoreFileExtensions != null && iIgnoreFileExtensions.Count > 0) {
+                    var aFileExtension = GetFileExtension(aFile);
+                    bool aIsIgnoreFile = false;
+                    foreach(var aIgnoreFileExtension in iIgnoreFileExtensions) {
+                        if(aFileExtension == aIgnoreFileExtension) {
+                            aIsIgnoreFile = true;
+                            break;
+                        }
+                    }
+                    if(aIsIgnoreFile) {
+                        continue;
+                    }
+                }
+                File.Copy(aFile, aFile.Replace(iSourceDirectory, iDestinationDirectory), true);
+            }
+            var aSubDirs = Directory.GetDirectories(iSourceDirectory);
+            for(int i = 0; i < aSubDirs.Length; i++) {
+                var aSubDir = aSubDirs[i];
+                CopyDirectory(aSubDir, aSubDir.Replace(iSourceDirectory, iDestinationDirectory), iIgnoreFileExtensions);
+            }
+        }
         public static void CopyDirectory(string source, string target) {
             if(source == target) {
                 return;

@@ -507,7 +507,7 @@ namespace UCL.Core.MathLib {
         }
 
         /// <summary>
-        /// Get the Rect cover hole path
+        /// Get the Rect cover whole path
         /// </summary>
         /// <param name="dir">the direction of rect(etc. xy</param>
         /// <returns></returns>
@@ -575,38 +575,22 @@ namespace UCL.Core.MathLib {
             Vector3 b = m_PathPoints[cur + 1];
             Vector3 c = m_PathPoints[cur + 2];
             Vector3 d = m_PathPoints[cur + 3];
-            /*
-            float y2 = y * y;
-            float y3 = y * y2;
-            var aa = a * (-y + 2f * y2 - y3);
-            var bb = b * (2f - 5f * y2 + 3f * y3);
-            var cc = c * (y + 4f * y2 - 3f * y3);
-            var dd = d * (-y2 + y3);
-
-            return 0.5f * (aa + bb + cc + dd);
-            */
-            ///*
             return 0.5f * (
                 (-a + 3f * (b - c) + d) * (y * y * y)
                 + (2f * a - 5f * b + 4f * c - d) * (y * y)
                 + (-a + c) * y 
-                + 2f * b
-            );
-            //*/
+            ) + b;
         }
         public Vector3 Lerp(Vector3[] m_PathPoints, int cur, float y) {
             Vector3 a = m_PathPoints[cur];
             Vector3 b = m_PathPoints[cur + 1];
             Vector3 c = m_PathPoints[cur + 2];
             Vector3 d = m_PathPoints[cur + 3];
-            ///*
             return 0.5f * (
                 (-a + 3f * (b - c) + d) * (y * y * y)
                 + (2f * a - 5f * b + 4f * c - d) * (y * y)
                 + (-a + c) * y 
-                + 2f * b
-            );
-            //*/
+            ) + b;
         }
         public int GetPathPointsLength() { return m_PathPoints.Length; }
 

@@ -6,6 +6,43 @@ using UnityEngine;
 
 namespace UCL.Core.JsonLib {
     public static class JsonConvert {
+        /// <summary>
+        /// Convert Json string into object
+        /// </summary>
+        /// <param name="iJson"></param>
+        /// <returns></returns>
+        static public object JsonToObject(string iJson) {
+            return JsonToObject(JsonData.ParseJson(iJson));
+        }
+        /// <summary>
+        /// Convert JsonData into object
+        /// </summary>
+        /// <param name="iData"></param>
+        /// <returns></returns>
+        static public object JsonToObject(JsonData iData) {
+            if(!iData.Contains("ClassName") || !iData.Contains("ClassData")) {
+                Debug.LogError("!iData.Contains(ClassName) || !iData.Contains(ClassData)");
+                return null;
+            }
+            string aClassName = iData["ClassName"];
+            Type aClassType = Type.GetType(aClassName);
+            JsonData aClassData = iData["ClassData"];
+            object aObj = Activator.CreateInstance(aClassType);
+            LoadDataFromJson(aObj, aClassData);
+            return aObj;
+            //return JsonUtility.FromJson(aClassData.ToJson(), aClassType);
+        }
+        /// <summary>
+        /// Save object into JsonData
+        /// </summary>
+        /// <param name="iObj"></param>
+        /// <returns></returns>
+        static public JsonData ObjectToJson(object iObj) {
+            JsonData aData = new JsonData();
+            aData["ClassName"] = iObj.GetType().AssemblyQualifiedName;
+            aData["ClassData"] = SaveDataToJson(iObj);
+            return aData;
+        }
         static public List<T> LoadListFromJson<T>(JsonData data) where T : new() {
             List<T> list = new List<T>();
             for(int i = 0; i < data.Count; i++) {
@@ -17,11 +54,6 @@ namespace UCL.Core.JsonLib {
             Type type = typeof(T);
             var value = data.GetValue(type);
             if(value != null) return (T)value;
-            //if(type.IsSubclassOf(typeof(IJsonSerializable))) {
-            //    var t = new T();
-            //    ((IJsonSerializable)t).DeserializeFromJson(data);
-            //    return t;
-            //}
             return (T)LoadDataFromJson(new T(), data);
         }
         static public object LoadDataFromJson(object obj, JsonData data) {
@@ -31,16 +63,19 @@ namespace UCL.Core.JsonLib {
             foreach(var field in fields) {
                 if(data.Contains(field.Name)) {
                     var f_data = data[field.Name];
+                    var aFieldData = f_data.GetValue(field.FieldType);
+                    if(aFieldData == null) {
+                        aFieldData = Activator.CreateInstance(field.FieldType);
+                    }
                     if(field.FieldType == typeof(string)) {
-                        field.SetValue(obj, f_data.GetValue(field.FieldType));
+                        field.SetValue(obj, aFieldData);
                     }
                     else if(field.FieldType.IsStructOrClass()) {
-                        var f_val = field.GetValue(obj);
-                        var result = LoadDataFromJson(f_val, f_data);
+                        var result = LoadDataFromJson(aFieldData, f_data);
                         //Debug.LogWarning("result:" + result.UCL_ToString());
                         field.SetValue(obj, result);
                     } else {
-                        field.SetValue(obj, f_data.GetValue(field.FieldType));
+                        field.SetValue(obj, aFieldData);
                     }
                 }// else {
                     //Debug.LogError("LoadDataFromJson field.Name:" + field.Name + ",Not Exist!!");
@@ -48,18 +83,33 @@ namespace UCL.Core.JsonLib {
             }
             return obj;
         }
-        static public void SaveDataToJson(object obj, JsonData data) {
-            Type type = obj.GetType();
+        /// <summary>
+        /// Convert data in iObj into JsonData
+        /// </summary>
+        /// <param name="iObj"></param>
+        /// <returns></returns>
+        static public JsonData SaveDataToJson(object iObj) {
+            JsonData aData = new JsonData();
+            SaveDataToJson(iObj, aData);
+            return aData;
+        }
+        /// <summary>
+        /// Save iObj into iData
+        /// </summary>
+        /// <param name="iObj"></param>
+        /// <param name="iData"></param>
+        static public void SaveDataToJson(object iObj, JsonData iData) {
+            Type type = iObj.GetType();
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
-                var value = field.GetValue(obj);
+                var value = field.GetValue(iObj);
                 if(value == null) {
-                    data[field.Name] = "";
+                    iData[field.Name] = "";
                 } else if(value.IsNumber() || value is string) {// || value is IList || value is IDictionary
-                    data[field.Name] = new JsonData(value);
+                    iData[field.Name] = new JsonData(value);
                 }else if(field.FieldType.IsStructOrClass()) {
-                    data[field.Name] = new JsonData();
-                    SaveDataToJson(value, data[field.Name]);
+                    iData[field.Name] = new JsonData();
+                    SaveDataToJson(value, iData[field.Name]);
                 }
             }
         }

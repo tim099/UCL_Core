@@ -268,7 +268,7 @@ namespace UCL.Core.JsonLib {
             return (long)data.m_Obj;
         }
         public static implicit operator string(JsonData data) {
-            if(data.m_Type != JsonType.String) throw new InvalidCastException("JsonData doesn't hold a string");
+            if(data.m_Type != JsonType.String) data.ToJson();
             return data.m_Obj as string;
         }
         #endregion

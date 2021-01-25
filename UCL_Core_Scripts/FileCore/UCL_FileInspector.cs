@@ -102,6 +102,7 @@ namespace UCL.Core.FileLib {
                         file_extension));
                 } 
             }
+            UnityEditor.EditorUtility.SetDirty(this);
             RefreshFileInfosDic();
 #endif
         }

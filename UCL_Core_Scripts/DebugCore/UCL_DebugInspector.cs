@@ -41,6 +41,13 @@ namespace UCL.Core {
             if(ins == null) return false;
             return ins.gameObject.activeSelf;
         }
+        public void Toggle() {
+            if(gameObject.activeSelf) {
+                HideInspector();
+            } else {
+                ShowInspector();
+            }
+        }
         virtual public void ShowInspector() {
             gameObject.SetActive(true);
         }

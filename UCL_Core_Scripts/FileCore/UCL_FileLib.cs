@@ -146,13 +146,26 @@ namespace UCL.Core.FileLib {
             for(; i >= 0; i--) {
                 var c = path[i];
                 if(c == '/' || c == '\\') {
-
-                    //path = path.Substring(0, i);
                     if(--remove_count <= 0) break;
                 }
             }
-            if(i <= 0) return "";
+            if(i <= 0) return string.Empty;
             return path.Substring(0, i);
+        }
+        /// <summary>
+        /// return filename from input path
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        public static string GetFileName(string path) {
+            int i = path.Length - 1;
+            for(; i >= 0; i--) {
+                var c = path[i];
+                if(c == '/' || c == '\\') {
+                    return path.Substring(i + 1, path.Length - i - 1);
+                }
+            }
+            return path;
         }
         /// <summary>
         /// Split a path into two part
@@ -360,7 +373,7 @@ namespace UCL.Core.FileLib {
             return Path.Combine(Application.streamingAssetsPath, path.TrimStart('/')).Replace('\\', '/');
         }
     }
-#if UNITY_STANDALONE_WIN
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
     static public class WindowsLib {
         /// <summary>
         /// Open explorer to folder within Assets folder

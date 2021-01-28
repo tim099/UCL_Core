@@ -10,7 +10,9 @@ namespace UCL.Core.UI {
             LabelAutoSize(label);
             string result = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
             GUILayout.EndHorizontal();
-
+            if(string.IsNullOrEmpty(result)) {
+                return System.Convert.ChangeType(0, val.GetType());
+            }
             object res_val;
             if(Core.MathLib.Num.TryParse(result, val.GetType(), out res_val)) return res_val;
             return val;

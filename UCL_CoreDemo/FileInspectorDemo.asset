@@ -15,6 +15,9 @@ MonoBehaviour:
   m_IgnoreMetaFiles: 1
   m_TargetDirectory: Assets/UCL/UCL_Core/UCL_CoreDemo
   m_FileInfos:
+  - m_FileName: FileCopierDemo
+    m_FolderPath: 
+    m_Extension: asset
   - m_FileName: FileInspectorDemo
     m_FolderPath: 
     m_Extension: asset
@@ -22,6 +25,9 @@ MonoBehaviour:
     m_FolderPath: 
     m_Extension: unity
   - m_FileName: UCL_Core_FileLibDemo
+    m_FolderPath: 
+    m_Extension: unity
+  - m_FileName: UCL_Core_JsonDemo
     m_FolderPath: 
     m_Extension: unity
   - m_FileName: UCL_Core_MarshalDemo
@@ -51,9 +57,9 @@ MonoBehaviour:
   - m_FileName: UCL_DebugInspectorDemo
     m_FolderPath: 
     m_Extension: unity
-  - m_FileName: dummy
-    m_FolderPath: UCL_Core_DemoScripts
-    m_Extension: txt
+  - m_FileName: UCL_EditorCoroutineDemo
+    m_FolderPath: 
+    m_Extension: unity
   - m_FileName: UCL_AssetBundleManagerDemo
     m_FolderPath: UCL_Core_DemoScripts
     m_Extension: cs
@@ -63,7 +69,13 @@ MonoBehaviour:
   - m_FileName: UCL_DebugInspectorParDemo
     m_FolderPath: UCL_Core_DemoScripts
     m_Extension: cs
+  - m_FileName: UCL_EditorCoroutineDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
   - m_FileName: UCL_FileLibDemo
+    m_FolderPath: UCL_Core_DemoScripts
+    m_Extension: cs
+  - m_FileName: UCL_JsonDemo
     m_FolderPath: UCL_Core_DemoScripts
     m_Extension: cs
   - m_FileName: UCL_LinearMappingDemo
@@ -103,8 +115,8 @@ MonoBehaviour:
     m_FolderPath: UCL_Core_DemoTextures
     m_Extension: jpg
   - m_FileName: TestTextureAtlas
-    m_FolderPath: UCL_Core_DemoTextures
+    m_FolderPath: UCL_Core_DemoTextures\UCL_CoreDemo_OuputTextures
     m_Extension: jpg
   - m_FileName: TextureEditorSplitDemo
-    m_FolderPath: UCL_Core_DemoTextures
+    m_FolderPath: UCL_Core_DemoTextures\UCL_CoreDemo_OuputTextures
     m_Extension: png

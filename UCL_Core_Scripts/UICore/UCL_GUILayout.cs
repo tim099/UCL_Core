@@ -232,6 +232,30 @@ namespace UCL.Core.UI {
             }
             return selectedIndex;
         }
+        public static T Popup<T>(T iEnum, ref bool opened) where T : System.Enum {
+            System.Type aType = iEnum.GetType();
+            var aNames = System.Enum.GetNames(aType);
+            int aID = 0;
+            for(; aID < aNames.Length; aID++) {
+                if(iEnum.ToString() == aNames[aID]) {
+                    break;
+                }
+            }
+            aID = Popup(aID, aNames, ref opened);
+            return (T)System.Enum.Parse(aType, aNames[aID], true);
+        }
+        public static System.Enum Popup(System.Enum iEnum, ref bool opened) {
+            System.Type aType = iEnum.GetType();
+            var aNames = System.Enum.GetNames(aType);
+            int aID = 0;
+            for(; aID < aNames.Length; aID++) {
+                if(iEnum.ToString() == aNames[aID]) {
+                    break;
+                }
+            }
+            aID = Popup(aID, aNames, ref opened);
+            return System.Enum.Parse(aType, aNames[aID], true) as System.Enum;
+        }
         public static int Popup(int selectedIndex, List<string> displayedOptions, ref bool opened) {
             if(selectedIndex < 0) selectedIndex = 0;
             if(selectedIndex >= displayedOptions.Count) selectedIndex = displayedOptions.Count - 1;

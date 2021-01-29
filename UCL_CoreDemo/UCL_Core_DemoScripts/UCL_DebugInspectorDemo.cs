@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.Demo {
+    [AddComponentMenu("UCL_CoreDemo/DebugInspectorDemo")]
     [Core.ATTR.EnableUCLEditor]
     public class UCL_DebugInspectorDemo : UCL_DebugInspectorParDemo {
         public enum DemoEnum {

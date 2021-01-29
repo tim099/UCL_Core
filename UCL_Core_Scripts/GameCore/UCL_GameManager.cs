@@ -36,7 +36,9 @@ namespace UCL.Core.Game {
         static void RuntimeInitializeInit() {
             //UCL_GameManager.Get();
         }
-
+        private void Awake() {
+            Init();
+        }
         virtual protected void Init() {
             if(m_Inited) return;
             if(!SetInstance(this)) return;
@@ -123,9 +125,6 @@ namespace UCL.Core.Game {
             if(!m_Inited || m_End) return;
             m_End = true;
             SaveAllSetting();
-        }
-        private void Awake() {
-            Init();
         }
         virtual protected void OnApplicationQuit() {
             //Debug.LogWarning("UCL_GameManager OnApplicationQuit()");

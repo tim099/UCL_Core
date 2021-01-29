@@ -196,14 +196,13 @@ namespace UCL.Core.FileLib {
                 formatter.Serialize(stream, target);
             }
         }
-        public static string RemoveFileExtension(string path,char separator = '.') {
+        public static string RemoveFileExtension(string path, char separator = '.') {
             if(path.Length <= 1) return path;//No FileExtension
-            int i = path.Length - 1;
-            for(; i >= 0; i--) {
-                if(path[i] == separator) break;
+            for(int i = path.Length - 2; i >= 0; i--) {
+                if(path[i] == separator) return path.Substring(0, i);
             }
-            if(i == 0) return path;//No FileExtension
-            return path.Substring(0, i);
+            return path;//No FileExtension
+            
         }
         public static T ReadBinaryFromFile<T>(string path) {
             if(!File.Exists(path)) return default;
@@ -232,6 +231,11 @@ namespace UCL.Core.FileLib {
                 return binForm.Deserialize(ms);
             }
         }
+        /// <summary>
+        /// Serialize Object into byte array
+        /// </summary>
+        /// <param name="obj"></param>
+        /// <returns></returns>
         public static byte[] SerializeObject(object obj) {
             using(MemoryStream ms = new MemoryStream()) {
                 BinaryFormatter bf = new BinaryFormatter();
@@ -252,9 +256,12 @@ namespace UCL.Core.FileLib {
         /// <param name="path"></param>
         /// <returns></returns>
         public static string GetFileExtension(string path) {
-            var paths = path.Split('.');
-            if(paths.Length <= 1) return string.Empty;//No FileExtension
-            return paths[paths.Length - 1];
+            if(path.Length <= 1) return string.Empty;//No FileExtension
+            int i = path.Length - 2;
+            for(; i >= 0; i--) {
+                if(path[i] == '.') return path.Substring(i + 1, path.Length - i - 1);
+            }
+            return string.Empty;//No FileExtension
         }
         /// <summary>
         /// Returns the names of the subdirectories (including their paths) 

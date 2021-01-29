@@ -5,6 +5,8 @@ using System.Reflection;
 using UnityEngine;
 
 namespace UCL.Core {
+    [DisallowMultipleComponent]
+    [AddComponentMenu("UCL/UCL_DebugInspector")]
     public class UCL_DebugInspector : MonoBehaviour {
         public static UCL_DebugInspector ins = null;
         protected Rect m_WindowRect = Rect.zero;

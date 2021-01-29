@@ -70,6 +70,9 @@ namespace UCL.Core.JsonLib {
                     if(field.FieldType == typeof(string)) {
                         field.SetValue(obj, aFieldData);
                     }
+                    else if(field.FieldType.IsEnum) {
+                        field.SetValue(obj, Enum.Parse(field.FieldType, f_data, true));
+                    }
                     else if(field.FieldType.IsStructOrClass()) {
                         var result = LoadDataFromJson(aFieldData, f_data);
                         //Debug.LogWarning("result:" + result.UCL_ToString());
@@ -107,7 +110,9 @@ namespace UCL.Core.JsonLib {
                     iData[field.Name] = "";
                 } else if(value.IsNumber() || value is string) {// || value is IList || value is IDictionary
                     iData[field.Name] = new JsonData(value);
-                }else if(field.FieldType.IsStructOrClass()) {
+                } else if(field.FieldType.IsEnum) {
+                    iData[field.Name] = value.ToString();
+                } else if(field.FieldType.IsStructOrClass()) {
                     iData[field.Name] = new JsonData();
                     SaveDataToJson(value, iData[field.Name]);
                 }

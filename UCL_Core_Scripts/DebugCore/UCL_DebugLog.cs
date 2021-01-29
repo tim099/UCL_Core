@@ -8,6 +8,8 @@ namespace UCL.Core.DebugLib {
 #if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
 #endif
+    [AddComponentMenu("UCL/UCL_DebugLog")]
+    [DisallowMultipleComponent]
     public class UCL_DebugLog : UCL_Singleton<UCL_DebugLog> {
         //[Flags]
         public enum LogLevel {

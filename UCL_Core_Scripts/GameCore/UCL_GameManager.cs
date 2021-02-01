@@ -18,7 +18,13 @@ namespace UCL.Core.Game {
             FileLib.WindowsLib.OpenExplorer(folder);
         }
 #endif
-
+#if UNITY_EDITOR
+        /// <summary>
+        /// Refresh all game data
+        /// </summary>
+        [ATTR.UCL_FunctionButton]
+        virtual public void RefreshGamedata(){ }
+#endif
         public static bool f_ApplicationQuit = false;
 
         public UnityEngine.Events.UnityEvent m_ExitGameEvent = new UnityEngine.Events.UnityEvent();

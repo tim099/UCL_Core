@@ -55,6 +55,11 @@ namespace UCL.Core.FileLib {
         public string m_TargetDirectory = "";
 
         /// <summary>
+        /// Target file extension, if m_FileExtension == string.Empty then don't check file extensions
+        /// 目標副檔名 若為空時則不檢查副檔名
+        /// </summary>
+        public string m_FileExtension = string.Empty;
+        /// <summary>
         /// File Infos
         /// 檔案資訊
         /// </summary>
@@ -91,7 +96,12 @@ namespace UCL.Core.FileLib {
             }
 
             m_FileInfos = new List<FileInformation>();
-            var files = System.IO.Directory.GetFiles(m_TargetDirectory, "*", System.IO.SearchOption.AllDirectories);
+            string aFileFormat = "*";
+            if (!string.IsNullOrEmpty(m_FileExtension))
+            {
+                aFileFormat = "*." + m_FileExtension;
+            }
+            var files = System.IO.Directory.GetFiles(m_TargetDirectory, aFileFormat, System.IO.SearchOption.AllDirectories);
             for(int i = 0; i < files.Length; i++) {
                 var file = files[i].Substring(m_TargetDirectory.Length + 1);
                 var file_extension = FileLib.Lib.GetFileExtension(file);

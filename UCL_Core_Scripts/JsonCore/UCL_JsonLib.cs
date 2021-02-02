@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
@@ -78,6 +79,17 @@ namespace UCL.Core.JsonLib {
                             field.SetValue(obj, aEnum);
                         }
                     }
+                    else if (aFieldData is IList && field.FieldType.IsGenericType)
+                    {
+                        IList aList = aFieldData as IList;
+                        Type aElementType = aList.GetType().GetGenericArguments().Single();
+                        for (int i = 0; i < f_data.Count; i++)
+                        {
+                            var aObj = DataToObject(f_data[i], aElementType);
+                            if(aObj != null) aList.Add(aObj);
+                        }
+                        field.SetValue(obj, aList);
+                    }
                     else if(field.FieldType.IsStructOrClass()) {
                         var result = LoadDataFromJson(aFieldData, f_data);
                         //Debug.LogWarning("result:" + result.UCL_ToString());
@@ -101,6 +113,66 @@ namespace UCL.Core.JsonLib {
             SaveDataToJson(iObj, aData);
             return aData;
         }
+        static object DataToObject(JsonData iData, Type iType)
+        {
+            if (iType.IsEnum)
+            {
+                string aStr = iData.GetString();
+                if (!string.IsNullOrEmpty(aStr))
+                {
+                    return Enum.Parse(iType, aStr, true) as Enum;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            else if(iType == typeof(string))
+            {
+                return iData.GetString();
+            }
+            else if (iType == typeof(int))
+            {
+                return iData.GetInt();
+            }
+            else if (iType == typeof(float))
+            {
+                return iData.GetFloat();
+            }
+            else if (iType == typeof(double))
+            {
+                return iData.GetDouble();
+            }
+            else if (iType.IsStructOrClass())
+            {
+                object aObj = Activator.CreateInstance(iType);
+                return LoadDataFromJson(aObj, iData);
+            }
+
+
+            return iData.GetObj();
+        }
+        static JsonData ObjectToData(object iObj)
+        {
+            if (iObj == null) return null;
+            Type aType = iObj.GetType();
+            if (aType.IsEnum)
+            {
+                return new JsonData(iObj.ToString());
+            }
+            else if (iObj.IsNumber() || iObj is string)
+            {
+                return new JsonData(iObj);
+            }
+            else if (aType.IsStructOrClass())
+            {
+                JsonData aData = new JsonData();
+                SaveDataToJson(iObj, aData);
+                return aData;
+            }
+            
+            return new JsonData(iObj);
+        }
         /// <summary>
         /// Save iObj into iData
         /// </summary>
@@ -108,10 +180,6 @@ namespace UCL.Core.JsonLib {
         /// <param name="iData"></param>
         static public void SaveDataToJson(object iObj, JsonData iData) {
             Type type = iObj.GetType();
-            //if (type != null)
-            //{
-            //    Debug.LogWarning("type:" + type.Name);
-            //}
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
                 var value = field.GetValue(iObj);
@@ -131,18 +199,11 @@ namespace UCL.Core.JsonLib {
                 {
                     var aGenericData = new JsonData();
                     iData[field.Name] = aGenericData;
-                    //var GenericType = type.GetGenericTypeDefinition();
-                    //var TypeInfo = type.GetTypeInfo();
-                    //var GenericTypeArguments = TypeInfo.GenericTypeArguments;
-                    //var ContentType = GenericTypeArguments[0];
 
                     var aEnumerable = value as IEnumerable;
                     foreach (var aItem in aEnumerable)
                     {
-                        //Debug.LogWarning("aItem.GetType().Name:" + aItem.GetType().Name);
-                        var aData = new JsonData();
-                        SaveDataToJson(aItem, aData);
-                        aGenericData.Add(aData);
+                        aGenericData.Add(ObjectToData(aItem));
                     }
                 }
                 else if (field.FieldType.IsStructOrClass())

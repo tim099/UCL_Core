@@ -108,10 +108,10 @@ namespace UCL.Core.JsonLib {
         /// <param name="iData"></param>
         static public void SaveDataToJson(object iObj, JsonData iData) {
             Type type = iObj.GetType();
-            if (type != null)
-            {
-                Debug.LogWarning("type:" + type.Name);
-            }
+            //if (type != null)
+            //{
+            //    Debug.LogWarning("type:" + type.Name);
+            //}
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
                 var value = field.GetValue(iObj);
@@ -139,7 +139,7 @@ namespace UCL.Core.JsonLib {
                     var aEnumerable = value as IEnumerable;
                     foreach (var aItem in aEnumerable)
                     {
-                        Debug.LogWarning("aItem.GetType().Name:" + aItem.GetType().Name);
+                        //Debug.LogWarning("aItem.GetType().Name:" + aItem.GetType().Name);
                         var aData = new JsonData();
                         SaveDataToJson(aItem, aData);
                         aGenericData.Add(aData);

@@ -63,6 +63,7 @@ namespace UCL.Core.JsonLib {
             foreach(var field in fields) {
                 if(data.Contains(field.Name)) {
                     var f_data = data[field.Name];
+                    if (f_data == null) continue;
                     var aFieldData = f_data.GetValue(field.FieldType);
                     if(aFieldData == null) {
                         aFieldData = Activator.CreateInstance(field.FieldType);
@@ -71,7 +72,11 @@ namespace UCL.Core.JsonLib {
                         field.SetValue(obj, aFieldData);
                     }
                     else if(field.FieldType.IsEnum) {
-                        field.SetValue(obj, Enum.Parse(field.FieldType, f_data, true));
+                        Enum aEnum = Enum.Parse(field.FieldType, f_data, true) as Enum;
+                        if (aEnum != null)
+                        {
+                            field.SetValue(obj, aEnum);
+                        }
                     }
                     else if(field.FieldType.IsStructOrClass()) {
                         var result = LoadDataFromJson(aFieldData, f_data);
@@ -103,16 +108,45 @@ namespace UCL.Core.JsonLib {
         /// <param name="iData"></param>
         static public void SaveDataToJson(object iObj, JsonData iData) {
             Type type = iObj.GetType();
+            if (type != null)
+            {
+                Debug.LogWarning("type:" + type.Name);
+            }
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
                 var value = field.GetValue(iObj);
-                if(value == null) {
+                if (value == null)
+                {
                     iData[field.Name] = "";
-                } else if(value.IsNumber() || value is string) {// || value is IList || value is IDictionary
+                }
+                else if (value.IsNumber() || value is string)
+                {// || value is IList || value is IDictionary
                     iData[field.Name] = new JsonData(value);
-                } else if(field.FieldType.IsEnum) {
+                }
+                else if (field.FieldType.IsEnum)
+                {
                     iData[field.Name] = value.ToString();
-                } else if(field.FieldType.IsStructOrClass()) {
+                }
+                else if (value is IEnumerable)
+                {
+                    var aGenericData = new JsonData();
+                    iData[field.Name] = aGenericData;
+                    //var GenericType = type.GetGenericTypeDefinition();
+                    //var TypeInfo = type.GetTypeInfo();
+                    //var GenericTypeArguments = TypeInfo.GenericTypeArguments;
+                    //var ContentType = GenericTypeArguments[0];
+
+                    var aEnumerable = value as IEnumerable;
+                    foreach (var aItem in aEnumerable)
+                    {
+                        Debug.LogWarning("aItem.GetType().Name:" + aItem.GetType().Name);
+                        var aData = new JsonData();
+                        SaveDataToJson(aItem, aData);
+                        aGenericData.Add(aData);
+                    }
+                }
+                else if (field.FieldType.IsStructOrClass())
+                {
                     iData[field.Name] = new JsonData();
                     SaveDataToJson(value, iData[field.Name]);
                 }

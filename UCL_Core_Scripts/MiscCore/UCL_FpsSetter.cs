@@ -10,7 +10,11 @@ namespace UCL.Core.Misc {
     public class UCL_FpsSetter : MonoBehaviour {
 
         public int m_TargetFps = 60;
-
+        public bool m_SetOnAwake = true;
+        private void Awake()
+        {
+            if (m_SetOnAwake) SetTargetFps();
+        }
         [ATTR.UCL_FunctionButton("SetTargetFps")]
         public void SetTargetFps() {
             SetFps(m_TargetFps);
@@ -22,7 +26,7 @@ namespace UCL.Core.Misc {
         [ATTR.UCL_FunctionButton("SetFps 10", 10)]
         [ATTR.UCL_FunctionButton("SetFps 5", 5)]
         public void SetFps(int fps) {
-            Debug.LogWarning("SetFps:" + fps);
+            //Debug.LogWarning("SetFps:" + fps);
 #if UNITY_EDITOR
             QualitySettings.vSyncCount = 0; // VSync must be disabled.
 #endif

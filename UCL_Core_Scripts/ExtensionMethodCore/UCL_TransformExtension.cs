@@ -36,10 +36,32 @@ public static partial class TransformExtensionMethods {
         t.rotation = target.rotation;
         t.localScale = target.localScale;
     }
+    public static void SetLossyScale(this Transform t, Vector3 iScale)
+    {
+        if(t.parent == null)
+        {
+            t.localScale = iScale;
+            return;
+        }
+        Vector3 pScale = t.parent.lossyScale;
+        float x = iScale.x;
+        if (pScale.x != 0) x /= pScale.x;
+        float y = iScale.y;
+        if (pScale.y != 0) y /= pScale.y;
+        float z = iScale.z;
+        if (pScale.z != 0) z /= pScale.z;
+        t.localScale = new Vector3(x,  y, z);
+    }
     #endregion
 
     #region RectTransform
+    public static void CopyValue(this RectTransform iRect, RectTransform iTarget)
+    {
+        if (iRect == null || iTarget == null) return;
+        iRect.sizeDelta = iTarget.sizeDelta;
+        iRect.anchoredPosition = iTarget.anchoredPosition;
 
+    }
     public static void SetFullScreen(this RectTransform rect) {
         rect.anchorMin = new Vector2(0, 0);
         rect.anchorMax = new Vector2(1, 1);

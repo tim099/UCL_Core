@@ -10,6 +10,26 @@ namespace UCL.Core.ComponentController {
         public void SetValue(Transform target) {
             transform.SetValue(target);
         }
+        public void SetLocalScaleX(float iX)
+        {
+            transform.localScale = new Vector3(iX, transform.localScale.y, transform.localScale.z);
+        }
+        public void SetLocalScaleY(float iY)
+        {
+            transform.localScale = new Vector3(transform.localScale.x, iY,  transform.localScale.z);
+        }
+        public void SetLocalScaleZ(float iZ)
+        {
+            transform.localScale = new Vector3(transform.localScale.x, transform.localScale.y, iZ);
+        }
+        public void SetLocalScale(Vector3 iScale)
+        {
+            transform.localScale = iScale;
+        }
+        public void SetLossyScale(Vector3 iScale)
+        {
+            transform.SetLossyScale(iScale);
+        }
         public void SetX(float val) {
             transform.SetX(val);
         }

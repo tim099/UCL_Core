@@ -59,7 +59,7 @@ public static partial class TransformExtensionMethods {
     {
         if (iRect == null || iTarget == null) return;
         iRect.sizeDelta = iTarget.sizeDelta;
-        iRect.anchoredPosition = iTarget.anchoredPosition;
+        iRect.position = iTarget.position;
 
     }
     public static void SetFullScreen(this RectTransform rect) {

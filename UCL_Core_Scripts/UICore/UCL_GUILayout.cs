@@ -232,6 +232,13 @@ namespace UCL.Core.UI {
             }
             return selectedIndex;
         }
+        /// <summary>
+        /// Show enum popup
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iEnum"></param>
+        /// <param name="opened"></param>
+        /// <returns></returns>
         public static T Popup<T>(T iEnum, ref bool opened) where T : System.Enum {
             System.Type aType = iEnum.GetType();
             var aNames = System.Enum.GetNames(aType);

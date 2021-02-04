@@ -225,11 +225,11 @@ namespace UCL.Core.JsonLib {
             if(m_Dic == null) {
                 throw new Exception("JsonData LoadToDic Fail!!,m_Dic == null");
             }
-            var dic = new Dictionary<string, object>();
+            var aDic = new Dictionary<string, object>();
             foreach(var obj in m_Dic) {
-                dic.Add(obj.Key, obj.Value.GetObj());
+                aDic.Add(obj.Key, obj.Value.GetObj());
             }
-            return dic;
+            return aDic;
         }
         public JsonData Get(string key) {
             GetIDic();

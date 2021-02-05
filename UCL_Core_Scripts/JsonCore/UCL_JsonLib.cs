@@ -73,11 +73,19 @@ namespace UCL.Core.JsonLib {
                         field.SetValue(obj, aFieldData);
                     }
                     else if(field.FieldType.IsEnum) {
-                        Enum aEnum = Enum.Parse(field.FieldType, f_data, true) as Enum;
-                        if (aEnum != null)
+                        try
                         {
-                            field.SetValue(obj, aEnum);
+                            Enum aEnum = Enum.Parse(field.FieldType, f_data, true) as Enum;
+                            if (aEnum != null)
+                            {
+                                field.SetValue(obj, aEnum);
+                            }
                         }
+                        catch(System.Exception e)
+                        {
+                            Debug.LogError("System.Exception:" + e);
+                        }
+
                     }
                     else if (aFieldData is IList && field.FieldType.IsGenericType)
                     {

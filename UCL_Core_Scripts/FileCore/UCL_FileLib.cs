@@ -299,7 +299,7 @@ namespace UCL.Core.FileLib {
                 Directory.CreateDirectory(path);
             }
         }
-        public static void WriteToFile(string data,string path) {
+        public static void WriteToFile(string data, string path) {
             using(var writer = OpenWriteStream(path)) {
                 writer.WriteLine(data);
                 writer.Close();

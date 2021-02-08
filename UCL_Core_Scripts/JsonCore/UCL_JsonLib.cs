@@ -57,9 +57,21 @@ namespace UCL.Core.JsonLib {
             if(value != null) return (T)value;
             return (T)LoadDataFromJson(new T(), data);
         }
-        static public object LoadDataFromJson(object obj, JsonData data) {
-            if(obj == null) return null;
-            Type type = obj.GetType();
+        static public object LoadDataFromJson(object iObj, JsonData data) {
+            if(iObj == null) return null;
+            Type type = iObj.GetType();
+            if (iObj is IList && type.IsGenericType)
+            {
+                IList aList = iObj as IList;
+                Type aElementType = aList.GetType().GetGenericArguments().Single();
+                for (int i = 0; i < data.Count; i++)
+                {
+                    var aObj = DataToObject(data[i], aElementType);
+                    if (aObj != null) aList.Add(aObj);
+                }
+                return iObj;
+            }
+
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
                 if(data.Contains(field.Name)) {
@@ -67,10 +79,18 @@ namespace UCL.Core.JsonLib {
                     if (f_data == null) continue;
                     var aFieldData = f_data.GetValue(field.FieldType);
                     if(aFieldData == null) {
-                        aFieldData = Activator.CreateInstance(field.FieldType);
+                        try
+                        {
+                            aFieldData = Activator.CreateInstance(field.FieldType);
+                        }
+                        catch(System.Exception e)
+                        {
+                            Debug.LogError("field.Name:" + field.Name + "System.Exception:" + e);
+                            continue;
+                        }
                     }
                     if(field.FieldType == typeof(string)) {
-                        field.SetValue(obj, aFieldData);
+                        field.SetValue(iObj, aFieldData);
                     }
                     else if(field.FieldType.IsEnum) {
                         try
@@ -78,14 +98,13 @@ namespace UCL.Core.JsonLib {
                             Enum aEnum = Enum.Parse(field.FieldType, f_data, true) as Enum;
                             if (aEnum != null)
                             {
-                                field.SetValue(obj, aEnum);
+                                field.SetValue(iObj, aEnum);
                             }
                         }
                         catch(System.Exception e)
                         {
                             Debug.LogError("System.Exception:" + e);
                         }
-
                     }
                     else if (aFieldData is IList && field.FieldType.IsGenericType)
                     {
@@ -96,20 +115,20 @@ namespace UCL.Core.JsonLib {
                             var aObj = DataToObject(f_data[i], aElementType);
                             if(aObj != null) aList.Add(aObj);
                         }
-                        field.SetValue(obj, aList);
+                        field.SetValue(iObj, aList);
                     }
                     else if(field.FieldType.IsStructOrClass()) {
                         var result = LoadDataFromJson(aFieldData, f_data);
                         //Debug.LogWarning("result:" + result.UCL_ToString());
-                        field.SetValue(obj, result);
+                        field.SetValue(iObj, result);
                     } else {
-                        field.SetValue(obj, aFieldData);
+                        field.SetValue(iObj, aFieldData);
                     }
                 }// else {
                     //Debug.LogError("LoadDataFromJson field.Name:" + field.Name + ",Not Exist!!");
                 //}
             }
-            return obj;
+            return iObj;
         }
         /// <summary>
         /// Convert data in iObj into JsonData
@@ -189,7 +208,16 @@ namespace UCL.Core.JsonLib {
         static public void SaveDataToJson(object iObj, JsonData iData) {
             Type type = iObj.GetType();
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            foreach(var field in fields) {
+            if (iObj is IList)
+            {
+                IList aList = iObj as IList;
+                foreach (var aItem in aList)
+                {
+                    iData.Add(ObjectToData(aItem));
+                }
+                return;
+            }
+            foreach (var field in fields) {
                 var value = field.GetValue(iObj);
                 if (value == null)
                 {

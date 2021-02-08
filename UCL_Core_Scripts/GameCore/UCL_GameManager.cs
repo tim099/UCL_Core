@@ -70,7 +70,7 @@ namespace UCL.Core.Game {
             LoadAllSetting();
         }
         /// <summary>
-        /// overload this function to customize GameConfig
+        /// Override this function to customize GameConfig
         /// </summary>
         virtual protected void CreateGameConfig() {
             m_GameConfig = new UCL_GameConfig();
@@ -152,9 +152,9 @@ namespace UCL.Core.Game {
             StartCoroutine(ExitGameCoroutine());
         }
         IEnumerator ExitGameCoroutine() {
-            int n = 0;
-            while(m_BlockExitGameFlag.Count > 0 && n < m_ExitGameMaxWaitFrame) {
-                n++;
+            int aWaitFrame = 0;
+            while(m_BlockExitGameFlag.Count > 0 && aWaitFrame < m_ExitGameMaxWaitFrame) {
+                aWaitFrame++;
                 yield return null;
             }
 

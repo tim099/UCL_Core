@@ -25,15 +25,15 @@ namespace UCL.Core.FileLib {
         public static string GetCoreFolderPath() {
             return UCL_CoreSetting.GetFolderPath();
         }
-        public static void ExploreFile(string folder) {
-            string path = UnityEditor.EditorUtility.OpenFilePanel("Open LogFile", folder, "");
+        public static void ExploreFile(string iTitle, string iFolder, string iExtension = "") {
+            string path = UnityEditor.EditorUtility.OpenFilePanel(iTitle, iFolder, iExtension);
 
-            if(!string.IsNullOrEmpty(path) && path != folder) {
+            if(!string.IsNullOrEmpty(path) && path != iFolder) {
                 Application.OpenURL(path);
             }
         }
         public static void ExploreFolder(string folder) {
-            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, "");
+            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, string.Empty);
 
             if(!string.IsNullOrEmpty(path) && path != folder) {
                 Application.OpenURL(path);
@@ -46,9 +46,9 @@ namespace UCL.Core.FileLib {
         /// <param name="iFilePath">file path</param>
         /// <returns></returns>
         public static string OpenAssetsFileExplorer(string iFilePath) {
-            string asset_root = Application.dataPath.Replace("Assets", "");
+            string asset_root = Application.dataPath.Replace("Assets", string.Empty);
             string assets_path = asset_root + iFilePath;
-            string path = UnityEditor.EditorUtility.OpenFilePanel("Open Folder", assets_path, "");
+            string path = UnityEditor.EditorUtility.OpenFilePanel("Open Folder", assets_path, string.Empty);
             if(string.IsNullOrEmpty(path)) return iFilePath;
 
             return path.Replace(asset_root, "");
@@ -61,9 +61,9 @@ namespace UCL.Core.FileLib {
         /// <param name="folder"></param>
         /// <returns></returns>
         public static string OpenAssetsFolderExplorer(string folder) {
-            string asset_root = Application.dataPath.Replace("Assets", "");
+            string asset_root = Application.dataPath.Replace("Assets", string.Empty);
             string assets_path = asset_root + folder;
-            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", assets_path, "");
+            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", assets_path, string.Empty);
             if(string.IsNullOrEmpty(path)) return folder;
 
             return path.Replace(asset_root, "");
@@ -75,7 +75,7 @@ namespace UCL.Core.FileLib {
         /// <param name="folder"></param>
         /// <returns></returns>
         public static string OpenFolderExplorer(string folder) {
-            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, "");
+            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, string.Empty);
             if(string.IsNullOrEmpty(path)) return folder;
 
             return path;
@@ -113,7 +113,7 @@ namespace UCL.Core.FileLib {
     static public class Lib{
 
         public static string GetProjectPath() {
-            return Application.dataPath.Replace("Assets", "");
+            return Application.dataPath.Replace("Assets", string.Empty);
         }
 
         /// <summary>
@@ -387,7 +387,7 @@ namespace UCL.Core.FileLib {
         /// </summary>
         /// <param name="folder">target folder within Assets folder</param>
         static public void OpenAssetExplorer(string folder) {
-            string asset_root = Application.dataPath.Replace("Assets", "");
+            string asset_root = Application.dataPath.Replace("Assets", string.Empty);
             var path = asset_root + folder;
             //Debug.LogWarning("asset_root + folder:" + asset_root + folder);
             System.Diagnostics.Process.Start(asset_root + folder);//"explorer.exe", 

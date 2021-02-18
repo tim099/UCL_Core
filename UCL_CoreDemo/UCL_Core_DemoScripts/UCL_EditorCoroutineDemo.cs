@@ -41,6 +41,37 @@ namespace UCL.Core.EnumeratorLib
         public void EditorStopCoroutine() {
             Core.EnumeratorLib.UCL_CoroutineManager.StopCoroutine(m_Player);
         }
+        [UCL.Core.ATTR.UCL_FunctionButton]
+        public void EditorUpdateRigister()
+        {
+            if (Application.isPlaying)
+            {
+                UCL.Core.ServiceLib.UCL_UpdateService.Instance.AddUpdateAction(UpdateAct);
+            }
+            else
+            {
+                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddEditorUpdateAct(UpdateAct);
+            }
+
+        }
+        [UCL.Core.ATTR.UCL_FunctionButton]
+        public void EditorUpdateUnRigister()
+        {
+            if (Application.isPlaying)
+            {
+                UCL.Core.ServiceLib.UCL_UpdateService.Instance.RemoveUpdateAction(UpdateAct);
+            }
+            else
+            {
+                UCL.Core.EditorLib.UCL_EditorUpdateManager.RemoveEditorUpdateAct(UpdateAct);
+            }
+
+        }
+        int m_Timer = 0;
+        private void UpdateAct()
+        {
+            Debug.LogWarning("Hi:" + m_Timer++);
+        }
         void Update() {
 
         }

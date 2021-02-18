@@ -50,21 +50,21 @@ public static partial class TypeExtensionMethods {
         return list;
     }
     /// <summary>
-    /// Get Fields Include parent,until parent is end_type
+    /// Get Fields Include parent, until parent is iEndType
     /// </summary>
-    /// <param name="type"></param>
-    /// <param name="end_type"></param>
-    /// <param name="bindingAttr"></param>
+    /// <param name="iType"></param>
+    /// <param name="iEndType"></param>
+    /// <param name="iBindingAttr"></param>
     /// <returns></returns>
-    public static List<FieldInfo> GetAllFieldsUntil(this Type type, Type end_type, BindingFlags bindingAttr) {
-        FieldInfo[] fields = type.GetFields(bindingAttr);
+    public static List<FieldInfo> GetAllFieldsUntil(this Type iType, Type iEndType, BindingFlags iBindingAttr) {
+        FieldInfo[] fields = iType.GetFields(iBindingAttr);
         var list = fields.ToList();
-        var base_type = type.BaseType;
-        if(base_type != null && base_type != end_type) {
-            if((bindingAttr & BindingFlags.Public) != 0) {
-                bindingAttr ^= BindingFlags.Public;
+        var base_type = iType.BaseType;
+        if(base_type != null && base_type != iEndType) {
+            if((iBindingAttr & BindingFlags.Public) != 0) {
+                iBindingAttr ^= BindingFlags.Public;
             }
-            var list2 = base_type.GetAllFieldsUntil(end_type, bindingAttr);
+            var list2 = base_type.GetAllFieldsUntil(iEndType, iBindingAttr);
             for(int i = 0; i < list.Count; i++) {
                 list2.Add(list[i]);
             }

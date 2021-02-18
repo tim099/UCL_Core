@@ -82,7 +82,7 @@ namespace UCL.Core.DebugLib {
             string folder = GetDebugLogPath().Replace("/", "\\");
             FileLib.Lib.CreateDirectory(folder);
 
-            FileLib.EditorLib.ExploreFile(folder);
+            FileLib.EditorLib.ExploreFile("Open LogFile", folder);
         }
 #endif
 

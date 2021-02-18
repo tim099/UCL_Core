@@ -47,7 +47,7 @@ namespace UCL.Core.EditorLib {
         static public void AddEditorUpdateAct(System.Action act) {
 #if UNITY_EDITOR
             m_EditorUpdateAction += act;
-            Debug.Log("AddEditorUpdateAct count:" + m_EditorUpdateAction.GetInvocationList().GetLength(0));
+            Debug.Log("AddEditorUpdateAct count:" + m_EditorUpdateAction.GetInvocationCount());
 #endif
         }
         static public void RemoveEditorUpdateAct(System.Action act) {
@@ -55,7 +55,7 @@ namespace UCL.Core.EditorLib {
             m_EditorUpdateAction -= act;
             int count = 0;
             if(m_EditorUpdateAction != null) {
-                count = m_EditorUpdateAction.GetInvocationList().GetLength(0);
+                count = m_EditorUpdateAction.GetInvocationCount();
             }
             Debug.Log("RemoveEditorUpdateAct count:" + count);
 #endif

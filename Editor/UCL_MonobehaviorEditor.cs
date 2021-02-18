@@ -115,6 +115,24 @@ namespace UCL.Core.EditorLib {
                                 + class_name + " " + attr_type.Name + " Exception:" + e);
                         }
                     }
+                    {
+                        //UnityEditor.EditorGUILayout.ObjectField()
+                        var attr_type = typeof(ATTR.UCL_DrawOnGUIAttribute);
+                        try
+                        {
+                            var attr = method.GetCustomAttributes(attr_type, false);
+                            if (attr.Length > 0)
+                            {
+                                method.Invoke(target, null);
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            exception = e;
+                            Debug.LogWarning("UCL_FunctionButton:"
+                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                        }
+                    }
                 }
                 GUILayout.EndVertical();
 

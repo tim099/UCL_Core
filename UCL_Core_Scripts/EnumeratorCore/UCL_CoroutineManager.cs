@@ -4,16 +4,16 @@ using UnityEngine;
 
 namespace UCL.Core.EnumeratorLib {
     public class UCL_CoroutineManager : MonoBehaviour {
-        static UCL_CoroutineManager ins = null;
+        static UCL_CoroutineManager Instance = null;
         List<UCL.Core.EnumeratorLib.EnumeratorPlayer> m_Players = new List<EnumeratorLib.EnumeratorPlayer>();
 
         static UCL_CoroutineManager GetInstance() {
-            if(ins == null) {
-                ins = GameObjectLib.Create<UCL_CoroutineManager>("UCL_CoroutineManager", null);
-                DontDestroyOnLoad(ins.gameObject);
+            if(Instance == null) {
+                Instance = GameObjectLib.Create<UCL_CoroutineManager>("UCL_CoroutineManager", null);
+                DontDestroyOnLoad(Instance.gameObject);
             }
 
-            return ins;
+            return Instance;
         }
 
         /// <summary>
@@ -52,7 +52,11 @@ namespace UCL.Core.EnumeratorLib {
                 instance.m_Players.Remove(player);
             }
         }
-        private void FixedUpdate() {
+        //private void FixedUpdate() {
+        //    UpdateAction();
+        //}
+        private void LateUpdate()
+        {
             UpdateAction();
         }
         private void UpdateAction() {

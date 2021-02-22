@@ -44,6 +44,19 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return result;
         }
+        static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
+        {
+            GUILayout.BeginHorizontal();
+
+            LabelAutoSize(iLabel);
+            if (GUILayout.Button(iVal ? "✔" : " ", GUILayout.Width(iSize), GUILayout.Height(iSize)))
+            {
+                iVal = !iVal;
+            }
+            GUILayout.EndHorizontal();
+
+            return iVal;
+        }
         static public Vector3 Vector3Field(string label, Vector3 val) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(label);

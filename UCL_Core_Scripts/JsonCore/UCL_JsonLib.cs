@@ -92,6 +92,10 @@ namespace UCL.Core.JsonLib {
                     if(field.FieldType == typeof(string)) {
                         field.SetValue(iObj, aFieldData);
                     }
+                    else if (field.FieldType == typeof(bool))
+                    {
+                        field.SetValue(iObj, f_data.GetString() == "True");
+                    }
                     else if(field.FieldType.IsEnum) {
                         try
                         {
@@ -228,6 +232,10 @@ namespace UCL.Core.JsonLib {
                     iData[field.Name] = new JsonData(value);
                 }
                 else if (field.FieldType.IsEnum)
+                {
+                    iData[field.Name] = value.ToString();
+                }
+                else if (field.FieldType == typeof(bool))
                 {
                     iData[field.Name] = value.ToString();
                 }

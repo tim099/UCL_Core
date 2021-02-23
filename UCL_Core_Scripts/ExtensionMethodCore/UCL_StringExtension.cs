@@ -6,6 +6,10 @@ using UnityEngine;
 public static partial class StringExtensionMethods {
     public const string LineSeparator = "\r\n|\r|\n";
     #region String
+    public static string RichTextColor(this string iStr, string iCol = "FFFFFF")
+    {
+        return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
+    }
     public static string RemoveLast(this string str) {
         int len = str.Length;
         if(len == 0) return string.Empty;

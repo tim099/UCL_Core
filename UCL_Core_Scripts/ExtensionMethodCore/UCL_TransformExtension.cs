@@ -54,6 +54,14 @@ public static partial class TransformExtensionMethods {
     }
     #endregion
 
+    #region Transform
+    public static void SetPositionAndRotation(this Transform iTarget, Transform iMoveTarget)
+    {
+        iTarget.position = iMoveTarget.position;
+        iTarget.rotation = iMoveTarget.rotation;
+    }
+    #endregion
+
     #region RectTransform
     public static void CopyValue(this RectTransform iRect, RectTransform iTarget)
     {

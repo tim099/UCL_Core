@@ -117,8 +117,10 @@ namespace UCL.Core.DebugLib {
         protected StreamWriter m_StreamWriter = null;
         protected List<LogData> m_LogDataList = new List<LogData>();
         protected LogData m_SelectedLog = null;
-        private void Awake() {
-            if(!SetInstance(this)) {
+        public void Init()
+        {
+            if (!SetInstance(this))
+            {
                 return;
             }
             Core.UI.UCL_CanvasBlocker.CreateInstance()?.SetBlockOnHotControl(true);
@@ -126,6 +128,9 @@ namespace UCL.Core.DebugLib {
             Application.logMessageReceivedThreaded += ThreadedLog;
 
             LoadSetting();
+        }
+        private void Awake() {
+            Init();
         }
         void LoadSetting() {
             if(PlayerPrefs.HasKey("UCL_DebugLog_LogLevel")) {

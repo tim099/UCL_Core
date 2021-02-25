@@ -59,10 +59,20 @@ namespace UCL.Core.Game {
                 GameExit();
             });
 #endif
+            foreach (var service in m_GameServices)
+            {
+                try
+                {
+                    service.Init();
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError(service.name + ".Init() Exception:" + e);
+                }
 
-            foreach(var service in m_GameServices) {
-                service.Init();
             }
+
+
 
             CreateGameConfig();
             m_GameConfig.Init();

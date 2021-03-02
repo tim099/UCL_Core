@@ -57,31 +57,65 @@ namespace UCL.Core.MathLib {
         }
         #region Array & List
         /// <summary>
-        /// https://gaohaoyang.github.io/2016/10/16/shuffle-algorithm/
+        /// Using Fisher–Yates shuffle from https://gaohaoyang.github.io/2016/10/16/shuffle-algorithm/
+        /// Shuffle the element in the input Array
         /// </summary>
         /// <typeparam name="T"></typeparam>
-        /// <param name="input"></param>
+        /// <param name="iArray"></param>
         /// <returns></returns>
-        public T[] Shuffle<T>(ref T[] input) {
-            for(var i = input.Length - 1; i >= 0; i--) {
+        public T[] Shuffle<T>(ref T[] iArray) {
+            for(var i = iArray.Length - 1; i >= 0; i--) {
                 var randomIndex = Next(i + 1);
-                var itemAtIndex = input[randomIndex];
+                var itemAtIndex = iArray[randomIndex];
 
-                input[randomIndex] = input[i];
-                input[i] = itemAtIndex;
+                iArray[randomIndex] = iArray[i];
+                iArray[i] = itemAtIndex;
             }
-            return input;
+            return iArray;
         }
-
-        public List<T> Shuffle<T>(ref List<T> input) {
-            for(var i = input.Count - 1; i >= 0; i--) {
+        /// <summary>
+        /// Shuffle the element in the input list
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList">input list</param>
+        /// <returns></returns>
+        public List<T> Shuffle<T>(ref List<T> iList) {
+            for(var i = iList.Count - 1; i >= 0; i--) {
                 var randomIndex = Next(i + 1);
-                var itemAtIndex = input[randomIndex];
+                var itemAtIndex = iList[randomIndex];
 
-                input[randomIndex] = input[i];
-                input[i] = itemAtIndex;
+                iList[randomIndex] = iList[i];
+                iList[i] = itemAtIndex;
             }
-            return input;
+            return iList;
+        }
+        /// <summary>
+        /// Random pick a element in the input list
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <returns></returns>
+        public T RandomPick<T>(List<T> iList)
+        {
+            if(iList == null || iList.Count == 0)
+            {
+                return default;
+            }
+            return iList[Next(iList.Count)];
+        }
+        /// <summary>
+        /// Random pick a element in the input array
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <returns></returns>
+        public T RandomPick<T>(T[] iList)
+        {
+            if (iList == null || iList.Length == 0)
+            {
+                return default;
+            }
+            return iList[Next(iList.Length)];
         }
         #endregion
 
@@ -196,7 +230,10 @@ namespace UCL.Core.MathLib {
             float r = NextFloat();
             return Mathf.Sqrt(r) * OnUnitCircle();
         }
-
+        /// <summary>
+        /// return a random point on UnitSphere
+        /// </summary>
+        /// <returns></returns>
         public Vector3 OnUnitSphere() {
             var xy = OnUnitCircle();
             var z = Range(-1f, 1f);
@@ -204,6 +241,10 @@ namespace UCL.Core.MathLib {
 
             return new Vector3(r*xy.x, r*xy.y, z);
         }
+        /// <summary>
+        /// return a random point inside UnitSphere
+        /// </summary>
+        /// <returns></returns>
         public Vector3 InUnitSphere() {
             var xy = InUnitCircle();
             var z = Range(-1f, 1f);

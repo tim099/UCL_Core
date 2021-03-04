@@ -6,6 +6,7 @@ using UnityEngine.UI;
 
 namespace UCL.Core.UI {
     public class UCL_Button : MonoBehaviour, IPointerDownHandler, IPointerExitHandler, IPointerUpHandler, IPointerEnterHandler {
+        static Color DisableCol = new Color(0.5f, 0.5f, 0.5f, 0.5f);
         public enum Transition {
             None = 0,
             ColorTint,
@@ -45,8 +46,18 @@ namespace UCL.Core.UI {
             return but;
         }
         #endregion
-        public bool m_Pressed { get; protected set; } = false;
-        public bool m_Enter { get; protected set; } = false;
+        public bool Interactable
+        {
+            get { return m_Interactable; }
+            set
+            {
+                m_Interactable = value;
+                StateUpdate();
+            }
+        }
+        public bool Pressed { get; protected set; } = false;
+        public bool Enter { get; protected set; } = false;
+        [SerializeField] protected bool m_Interactable = true;
 
         public Transition m_Transition = Transition.ColorTint;
         
@@ -54,8 +65,9 @@ namespace UCL.Core.UI {
 
         public Image m_Image = null;
         public Text m_Text = null;
-        public Color m_NormalColor = Color.white;
-        public Color m_PressedColor = Color.gray;
+        [UCL.Core.PA.Conditional("m_Transition", false, Transition.ColorTint)] public Color m_NormalColor = Color.white;
+        [UCL.Core.PA.Conditional("m_Transition", false, Transition.ColorTint)] public Color m_PressedColor = Color.gray;
+        [UCL.Core.PA.Conditional("m_Transition", false, Transition.ColorTint)] public Color m_DisabledColor = DisableCol;
         public UCL.Core.UCL_Event m_OnClick = null;
         public UCL.Core.UCL_Event m_OnPointerDown = null;
         public UCL.Core.UCL_Event m_OnPointerUp = null;
@@ -63,31 +75,43 @@ namespace UCL.Core.UI {
         public UCL.Core.UCL_Event m_OnPointerExit = null;
         public UCL.Core.UCL_FloatEvent m_OnPressed = null;
 
+        private void Awake()
+        {
+            Interactable = m_Interactable;//Initialize Color
+        }
+        private void OnValidate()
+        {
+            StateUpdate();
+        }
         virtual public void OnPointerEnter(PointerEventData eventData) {
-            m_Enter = true;
+            if (!Interactable) return;
+            Enter = true;
             m_OnPointerEnter.UCL_Invoke();
             StateUpdate();
         }
         virtual public void OnPointerExit(PointerEventData eventData) {
-            m_Enter = false;
+            if (!Interactable) return;
+            Enter = false;
             m_OnPointerExit.UCL_Invoke();
             m_PressedTime = 0;
             StateUpdate();
         }
 
         virtual public void OnPointerDown(PointerEventData eventData) {
+            if (!Interactable) return;
             m_OnPointerDown.UCL_Invoke();
-            m_Pressed = true;
+            Pressed = true;
             m_PressedTime = 0;
 
             StateUpdate();
         }
         virtual public void OnPointerUp(PointerEventData eventData) {
+            if (!Interactable) return;
             m_OnPointerUp.UCL_Invoke();
-            if(m_Enter && m_Pressed) {
+            if(Enter && Pressed) {
                 m_OnClick.UCL_Invoke();
             }
-            m_Pressed = false;
+            Pressed = false;
             m_PressedTime = 0;
             StateUpdate();
         }
@@ -95,24 +119,35 @@ namespace UCL.Core.UI {
             switch(m_Transition) {
                 case Transition.ColorTint: {
                         if(m_Image != null) {
-                            if(!m_Pressed) {
-                                m_Image.color = m_NormalColor;
-                            } else {
-                                m_Image.color = m_PressedColor;
+                            if (Interactable)
+                            {
+                                if (!Pressed)
+                                {
+                                    m_Image.color = m_NormalColor;
+                                }
+                                else
+                                {
+                                    m_Image.color = m_PressedColor;
+                                }
                             }
+                            else
+                            {
+                                m_Image.color = m_DisabledColor;
+                            }
+
                         }
                         break;
                     }
             }
 
             //Debug.LogWarning(++m_Times+"m_Pressed:" + m_PressedTime.ToString("0.0") + ",m_Enter:" + m_Enter);
-            if(m_Text != null) {
+            //if(m_Text != null) {
                 //m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
-            }
+            //}
 
         }
         virtual protected void Update() {
-            if(m_Pressed && m_Enter) {
+            if(Pressed && Enter) {
                 m_PressedTime += Time.deltaTime;
                 m_OnPressed.UCL_Invoke(m_PressedTime);
             }

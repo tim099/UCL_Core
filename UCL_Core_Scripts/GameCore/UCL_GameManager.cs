@@ -71,7 +71,18 @@ namespace UCL.Core.Game {
                 }
 
             }
+            foreach (var service in m_GameServices)
+            {
+                try
+                {
+                    service.InitEnd();
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError(service.name + ".InitEnd() Exception:" + e);
+                }
 
+            }
 
 
             CreateGameConfig();

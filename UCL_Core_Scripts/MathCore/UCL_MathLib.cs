@@ -254,6 +254,10 @@ namespace UCL.Core.MathLib {
             }
             return -val;
         }
+        public static int Lerp(int a, int b, float val)
+        {
+            return Mathf.RoundToInt(a * (1f - val) + b * val);
+        }
         public static float Lerp(float a, float b, float val) {
             return a * (1f - val) + b * val;
         }
@@ -288,6 +292,19 @@ namespace UCL.Core.MathLib {
             r.w = Wa * a.w + Wb * b.w;
             r.Normalize();
             return r;
+        }
+        public static float BackFolding(float iVal, float iMidpoint)
+        {
+            if (iVal == iMidpoint)
+            {
+                return 1f;
+            }
+            if (iVal < iMidpoint)
+            {
+                return iVal / iMidpoint;
+            }
+
+            return (1f - iVal) / (1f - iMidpoint);
         }
         #endregion
         #region Round & Floor & Ceil

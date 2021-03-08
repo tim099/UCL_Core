@@ -63,7 +63,7 @@ namespace UCL.Core.MathLib {
         /// <typeparam name="T"></typeparam>
         /// <param name="iArray"></param>
         /// <returns></returns>
-        public T[] Shuffle<T>(ref T[] iArray) {
+        public T[] Shuffle<T>(T[] iArray) {
             for(var i = iArray.Length - 1; i >= 0; i--) {
                 var randomIndex = Next(i + 1);
                 var itemAtIndex = iArray[randomIndex];
@@ -79,7 +79,7 @@ namespace UCL.Core.MathLib {
         /// <typeparam name="T"></typeparam>
         /// <param name="iList">input list</param>
         /// <returns></returns>
-        public List<T> Shuffle<T>(ref List<T> iList) {
+        public List<T> Shuffle<T>(List<T> iList) {
             for(var i = iList.Count - 1; i >= 0; i--) {
                 var randomIndex = Next(i + 1);
                 var itemAtIndex = iList[randomIndex];

@@ -31,7 +31,11 @@ namespace UCL.Core.JsonLib {
         IDictionary<string, JsonData> m_Dic;
         IList<KeyValuePair<string, JsonData> > m_ObjectList;
         
-        public int Count { get { return GetCollection().Count; } }
+        public int Count { get {
+                var aCollection = GetCollection();
+                if (aCollection == null) return 0;
+                return aCollection.Count;
+            } }
         public bool IsArray { get { return m_Type == JsonType.Array; } }
         public bool IsBoolean { get { return m_Type == JsonType.Boolean; } }
         public bool IsDouble { get { return m_Type == JsonType.Double; } }
@@ -592,7 +596,8 @@ namespace UCL.Core.JsonLib {
         private ICollection GetCollection() {
             if(m_Type == JsonType.Array) return (ICollection)m_List;
             if(m_Type == JsonType.Object) return (ICollection)m_Dic;
-            return GetIDic();
+            if (m_Type == JsonType.None) return GetIDic();
+            return null;//Not avaliable
         }
 
         private IDictionary GetIDic() {

@@ -51,11 +51,11 @@ namespace UCL.Core.JsonLib {
             }
             return list;
         }
-        static public T LoadDataFromJson<T>(JsonData data) where T : new() {
-            Type type = typeof(T);
-            var value = data.GetValue(type);
-            if(value != null) return (T)value;
-            return (T)LoadDataFromJson(new T(), data);
+        static public T LoadDataFromJson<T>(JsonData iData) where T : new() {
+            Type aType = typeof(T);
+            var aValue = iData.GetValue(aType);
+            if(aValue != null) return (T)aValue;
+            return (T)LoadDataFromJson(new T(), iData);
         }
         static public object LoadDataFromJson(object iObj, JsonData data) {
             if(iObj == null) return null;

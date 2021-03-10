@@ -30,6 +30,22 @@ public static partial class ListExtensionMethods {
         return false;
     }
     /// <summary>
+    /// Return the index of target in iList
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList">Target list</param>
+    /// <param name="iTarget">Target to find index</param>
+    /// <returns></returns>
+    public static int GetIndex<T>(this IList<T> iList,T iTarget)
+    {
+        if (iList.Count == 0) return 0;
+        for(int i = 0; i < iList.Count; i++)
+        {
+            if (iList[i].Equals(iTarget)) return i;
+        }
+        return 0;
+    }
+    /// <summary>
     /// Get element inside list
     /// </summary>
     /// <typeparam name="T"></typeparam>

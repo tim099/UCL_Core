@@ -190,6 +190,17 @@ namespace UCL.Core.FileLib {
             if(i <= 0) return new System.Tuple<string, string>("", path);
             return new System.Tuple<string, string>(path.Substring(0, i), path.Substring(i + 1, path.Length - i - 1));
         }
+
+        public static void MoveDirectory(string iOldDir, string iNewDir)
+        {
+            if (!Directory.Exists(iOldDir))
+            {
+                Debug.LogError("MoveDirectory !Directory.Exists("+iOldDir+")");
+                return;
+            }
+            Directory.Move(iOldDir, iNewDir);
+        }
+
         public static void WriteBinaryToFile<T>(string path, T target, FileMode fileMode = FileMode.Create) {
             using(Stream stream = File.Open(path, fileMode)) {
                 var formatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
@@ -290,6 +301,11 @@ namespace UCL.Core.FileLib {
             SearchOption searchOption = SearchOption.TopDirectoryOnly) {
             return Directory.GetFiles(path, searchPattern, searchOption);
         }
+        public static string ConvertToAssetsPath(string iPath)
+        {
+            return "Assets" + Path.GetFullPath(iPath).Replace(Path.GetFullPath(Application.dataPath), string.Empty);
+        }
+
         public static void CreateDirectory(string path) {
             if(string.IsNullOrEmpty(path)) return;
             if(path[path.Length - 1] == '/') {

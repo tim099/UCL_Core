@@ -73,7 +73,18 @@ namespace UCL.Core.Game {
         bool m_IsPlaying = true;
         public AudioSource m_AudioSource;
     }
+
     public class UCL_GameAudioService : UCL_GameService {
+        public class BGMData
+        {
+            public BGMData(AudioClip iClip, float iVolume)
+            {
+                m_Clip = iClip;
+                m_Volume = iVolume;
+            }
+            public AudioClip m_Clip = null;
+            public float m_Volume = 1f;
+        }
         [System.Serializable]
         public class VolumeSetting {
             /// <summary>
@@ -102,10 +113,14 @@ namespace UCL.Core.Game {
         /// </summary>
         Queue<AudioPlayer> m_AvaliablePlayers = new Queue<AudioPlayer>();
 
+        Stack<BGMData> m_BGMStack = new Stack<BGMData>();
+        AudioSource m_BGMSource = null;
 
         public static UCL_GameAudioService Instance { get; protected set; }
         override public void Init() {
             Instance = this;
+            m_BGMSource = UCL.Core.GameObjectLib.Create<AudioSource>("BGM", transform);
+            m_BGMSource.loop = true;
         }
         public AudioPlayer GetAudioPlayer()
         {
@@ -137,6 +152,50 @@ namespace UCL.Core.Game {
             return aPlayer;
         }
         /// <summary>
+        /// Play new BGM and push old BGM into stack
+        /// </summary>
+        /// <param name="iClip"></param>
+        /// <param name="iVolume"></param>
+        public void PushBGM(AudioClip iClip, float iVolume = 1f)
+        {
+            if (m_BGMSource.clip != null)
+            {
+                m_BGMStack.Push(new BGMData(m_BGMSource.clip, m_BGMSource.volume));
+            }
+            PlayBGM(iClip, iVolume);
+        }
+        /// <summary>
+        /// Pop current BGM and Play previous BGM in stack
+        /// </summary>
+        public void PopBGM()
+        {
+            StopBGM();
+            if (m_BGMStack.Count > 0)
+            {
+                var aBGM = m_BGMStack.Pop();
+                PlayBGM(aBGM.m_Clip, aBGM.m_Volume);
+            }
+        }
+        public void StopBGM()
+        {
+            if(m_BGMSource == null)
+            {
+                return;
+            }
+            m_BGMSource.clip = null;
+            m_BGMSource.Stop();
+        }
+        public AudioPlayer PlayBGM(AudioClip iClip, float iVolume = 1f)
+        {
+            if(m_BGMSource == null)
+            {
+                return null;
+            }
+            m_BGMSource.clip = iClip;
+            m_BGMSource.Play();
+            return null;
+        }
+        /// <summary>
         /// Play Sound Effect
         /// </summary>
         /// <param name="iClip"></param>
@@ -149,13 +208,7 @@ namespace UCL.Core.Game {
 
             return aPlayer;
         }
-        public AudioPlayer PlayBGM(AudioClip iClip, float iVolume = 1f)
-        {
-            var aPlayer = GetAudioPlayer();
-            aPlayer.Play(iClip, iVolume);
 
-            return aPlayer;
-        }
         public AudioPlayer PlayVoice(AudioClip iClip, float iVolume = 1f)
         {
             var aPlayer = GetAudioPlayer();

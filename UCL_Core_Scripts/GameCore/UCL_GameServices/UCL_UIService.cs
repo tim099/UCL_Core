@@ -18,11 +18,15 @@ namespace UCL.Core.Game
         {
             Ins = this;
         }
-        public UCL_GameUI CreateUI(UCL_GameUI iTemplate)
+        public T CreateUI<T>(T iTemplate) where T : UCL_GameUI
         {
-            UCL_GameUI iUI = Instantiate(iTemplate, m_UIRoot);
+            T iUI = Instantiate(iTemplate, m_UIRoot);
             m_UIStack.Add(iUI);
             return iUI;
+        }
+        public void CloseUI(UCL_GameUI iUI)
+        {
+            m_UIStack.Remove(iUI);
         }
         public void EscapeKeyDown()
         {

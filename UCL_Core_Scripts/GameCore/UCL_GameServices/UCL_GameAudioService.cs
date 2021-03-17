@@ -242,7 +242,7 @@ namespace UCL.Core.Game {
                 string aPath = Path.Combine(iDir, "VolumeSetting.txt");
                 var aJson = JsonConvert.SaveDataToJson(m_VolumeSetting);
                 string aJsonText = aJson.ToJson();
-                Debug.LogWarning("Save aJsonText:" + aJsonText);
+                //Debug.LogWarning("Save aJsonText:" + aJsonText);
                 File.WriteAllText(aPath, aJsonText);
             }
             catch (System.Exception iException)
@@ -262,7 +262,7 @@ namespace UCL.Core.Game {
                 }
                 //m_VolumeSetting = Core.FileLib.Lib.DeserializeFromFile<VolumeSetting>(path);
                 string aJsonText = File.ReadAllText(aPath);
-                Debug.LogWarning($"Load aJsonText:{aJsonText}");
+                //Debug.LogWarning($"Load aJsonText:{aJsonText}");
                 m_VolumeSetting = (VolumeSetting)JsonConvert.LoadDataFromJson(m_VolumeSetting, JsonData.ParseJson(aJsonText));
             }
             catch(System.Exception iException)

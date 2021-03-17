@@ -57,16 +57,16 @@ namespace UCL.Core.JsonLib {
             if(aValue != null) return (T)aValue;
             return (T)LoadDataFromJson(new T(), iData);
         }
-        static public object LoadDataFromJson(object iObj, JsonData data) {
+        static public object LoadDataFromJson(object iObj, JsonData aData) {
             if(iObj == null) return null;
             Type type = iObj.GetType();
             if (iObj is IList && type.IsGenericType)
             {
                 IList aList = iObj as IList;
                 Type aElementType = aList.GetType().GetGenericArguments().Single();
-                for (int i = 0; i < data.Count; i++)
+                for (int i = 0; i < aData.Count; i++)
                 {
-                    var aObj = DataToObject(data[i], aElementType);
+                    var aObj = DataToObject(aData[i], aElementType);
                     if (aObj != null) aList.Add(aObj);
                 }
                 return iObj;
@@ -74,10 +74,10 @@ namespace UCL.Core.JsonLib {
 
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
-                if(data.Contains(field.Name)) {
-                    var f_data = data[field.Name];
-                    if (f_data == null) continue;
-                    var aFieldData = f_data.GetValue(field.FieldType);
+                if(aData.Contains(field.Name)) {
+                    var aJsonData = aData[field.Name];
+                    if (aJsonData == null) continue;
+                    var aFieldData = aJsonData.GetValue(field.FieldType);
                     if(aFieldData == null) {
                         try
                         {
@@ -94,12 +94,12 @@ namespace UCL.Core.JsonLib {
                     }
                     else if (field.FieldType == typeof(bool))
                     {
-                        field.SetValue(iObj, f_data.GetString() == "True");
+                        field.SetValue(iObj, aJsonData.GetString() == "True");
                     }
                     else if(field.FieldType.IsEnum) {
                         try
                         {
-                            Enum aEnum = Enum.Parse(field.FieldType, f_data, true) as Enum;
+                            Enum aEnum = Enum.Parse(field.FieldType, aJsonData, true) as Enum;
                             if (aEnum != null)
                             {
                                 field.SetValue(iObj, aEnum);
@@ -114,18 +114,19 @@ namespace UCL.Core.JsonLib {
                     {
                         IList aList = aFieldData as IList;
                         Type aElementType = aList.GetType().GetGenericArguments().Single();
-                        for (int i = 0; i < f_data.Count; i++)
+                        for (int i = 0; i < aJsonData.Count; i++)
                         {
-                            var aObj = DataToObject(f_data[i], aElementType);
+                            var aObj = DataToObject(aJsonData[i], aElementType);
                             if(aObj != null) aList.Add(aObj);
                         }
                         field.SetValue(iObj, aList);
                     }
                     else if(field.FieldType.IsStructOrClass()) {
-                        var result = LoadDataFromJson(aFieldData, f_data);
+                        var result = LoadDataFromJson(aFieldData, aJsonData);
                         //Debug.LogWarning("result:" + result.UCL_ToString());
                         field.SetValue(iObj, result);
-                    } else {
+                    } 
+                    else {
                         field.SetValue(iObj, aFieldData);
                     }
                 }// else {

@@ -99,32 +99,32 @@ namespace UCL.Core.JsonLib {
 
         string ParseString() {
             StringBuilder aStringBuilder = new StringBuilder();
-            char c;
+            char aChar;
             m_Reader.Read();
 
-            bool parsing = true;
-            while(parsing) {
+            bool aIsParsing = true;
+            while(aIsParsing) {
                 if(m_Reader.Peek() == -1) {
-                    parsing = false;
+                    aIsParsing = false;
                     break;
                 }
-                c = Convert.ToChar(m_Reader.Read());
-                switch(c) {
+                aChar = Convert.ToChar(m_Reader.Read());
+                switch(aChar) {
                     case '"':
-                        parsing = false;
+                        aIsParsing = false;
                         break;
                     case '\\':
                         if(m_Reader.Peek() == -1) {
-                            parsing = false;
+                            aIsParsing = false;
                             break;
                         }
 
-                        c = Convert.ToChar(m_Reader.Read());
-                        switch(c) {
+                        aChar = Convert.ToChar(m_Reader.Read());
+                        switch(aChar) {
                             case '"':
                             case '\\':
                             case '/':
-                                aStringBuilder.Append(c);
+                                aStringBuilder.Append(aChar);
                                 break;
                             case 'b':
                                 aStringBuilder.Append('\b');
@@ -142,16 +142,16 @@ namespace UCL.Core.JsonLib {
                                 aStringBuilder.Append('\t');
                                 break;
                             case 'u':
-                                var hex = new char[4];
+                                var aHex = new char[4];
                                 for(int i = 0; i < 4; i++) {
-                                    hex[i] = Convert.ToChar(m_Reader.Read());
+                                    aHex[i] = Convert.ToChar(m_Reader.Read());
                                 }
-                                aStringBuilder.Append((char)Convert.ToInt32(new string(hex), 16));
+                                aStringBuilder.Append((char)Convert.ToInt32(new string(aHex), 16));
                                 break;
                         }
                         break;
                     default:
-                        aStringBuilder.Append(c);
+                        aStringBuilder.Append(aChar);
                         break;
                 }
             }

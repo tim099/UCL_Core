@@ -15,7 +15,8 @@ namespace UCL.Core.Game
         /// </summary>
         virtual public void Close()
         {
-
+            UCL.Core.Game.UCL_UIService.Ins.CloseUI(this);
+            Destroy(gameObject);
         }
         /// <summary>
         /// When Input.GetKey(KeyCode.Escape) == true

@@ -8,7 +8,19 @@ namespace UCL.Core {
     [DisallowMultipleComponent]
     [AddComponentMenu("UCL/UCL_DebugInspector")]
     public class UCL_DebugInspector : MonoBehaviour {
-        public static UCL_DebugInspector ins = null;
+        public static UCL_DebugInspector Ins { 
+            get {
+                if(m_Ins == null)
+                {
+                    Show();
+                }
+                return m_Ins;
+            }
+            protected set {
+                m_Ins = value;
+            } 
+        }
+        static UCL_DebugInspector m_Ins = null;
         protected Rect m_WindowRect = Rect.zero;
         protected Vector2 m_ScrollPos = Vector2.zero;
         protected Vector2 m_RootScrollPos = Vector2.zero;
@@ -26,22 +38,22 @@ namespace UCL.Core {
         protected string m_ObjectNameBuffer;
         #endregion
         public static void Show() {
-            if(ins == null) {
-                ins = Core.GameObjectLib.Create<UCL_DebugInspector>("UCL_DebugInspector", null);
-                DontDestroyOnLoad(ins.gameObject);
+            if(m_Ins == null) {
+                m_Ins = Core.GameObjectLib.Create<UCL_DebugInspector>("UCL_DebugInspector", null);
+                DontDestroyOnLoad(m_Ins.gameObject);
             }
-            ins.ShowInspector();
+            m_Ins.ShowInspector();
         }
         public static void Hide() {
-            if(ins == null) return;
-            ins.HideInspector();
+            if(m_Ins == null) return;
+            Ins.HideInspector();
         }
         private void OnDestroy() {
-            if(ins == this) ins = null;
+            if(m_Ins == this) m_Ins = null;
         }
         public static bool GetShowing() {
-            if(ins == null) return false;
-            return ins.gameObject.activeSelf;
+            if(m_Ins == null) return false;
+            return Ins.gameObject.activeSelf;
         }
         public void Toggle() {
             if(gameObject.activeSelf) {

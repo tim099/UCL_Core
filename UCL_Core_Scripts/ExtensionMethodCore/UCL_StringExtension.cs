@@ -10,6 +10,10 @@ public static partial class StringExtensionMethods {
     {
         return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
     }
+    public static string RichTextColor(this string iStr, Color iCol)
+    {
+        return string.Format("<color=#{0}>{1}</color>", ColorUtility.ToHtmlStringRGB(iCol), iStr);
+    }
     public static string RemoveLast(this string str) {
         int len = str.Length;
         if(len == 0) return string.Empty;

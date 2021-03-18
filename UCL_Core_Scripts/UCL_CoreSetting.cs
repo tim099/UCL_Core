@@ -21,21 +21,19 @@ namespace UCL
 
 namespace UCL.Core {
 
-#if UNITY_EDITOR
     [Core.ATTR.EnableUCLEditor]
-#endif
     [CreateAssetMenu(fileName = "CoreSetting", menuName = "UCL/CoreSetting")]
     public class UCL_CoreSetting : ScriptableObject {
         public static UCL_CoreSetting GetCoreSetting() {
             return Resources.Load<UCL_CoreSetting>("CoreSetting");
         }
-        public static Material LoadMaterial(string name) {
-            Material mat = null;
+        public static Material LoadMaterial(string iName) {
+            Material aMat = null;
 #if UNITY_EDITOR
-            var path = Path.Combine(GetFolderPath(), "UCL_Core_Materials", name+".mat");
-            mat = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path) as Material;
+            var aPath = Path.Combine(GetFolderPath(), "UCL_Core_Materials", iName + ".mat");
+            aMat = UnityEditor.AssetDatabase.LoadMainAssetAtPath(aPath) as Material;
 #endif
-            return mat;
+            return aMat;
         }
 #if UNITY_EDITOR
         /// <summary>

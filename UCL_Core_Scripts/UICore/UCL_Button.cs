@@ -13,23 +13,18 @@ namespace UCL.Core.UI {
         }
         #region CreateButton
         static public UCL_Button Create(Transform parent) {
-            var but = UCL.Core.GameObjectLib.Create<UCL_Button>("UCL_Button", parent);
-            var obj = but.gameObject;
-            var img = obj.AddComponent<Image>();
+            var aBut = UCL.Core.GameObjectLib.Create<UCL_Button>("UCL_Button", parent);
+            var aObj = aBut.gameObject;
+            var aImg = aObj.AddComponent<Image>();
             {
-                var rect = obj.GetComponent<RectTransform>();
-                if(rect == null) rect = obj.AddComponent<RectTransform>();
+                var rect = aObj.GetComponent<RectTransform>();
+                if(rect == null) rect = aObj.AddComponent<RectTransform>();
                 rect.sizeDelta = new Vector2(256, 64);
-#if UNITY_EDITOR
-                img.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
-                //UnityEditor.EditorGUIUtility.IconContent("[texturename]");
-#endif
-                img.type = Image.Type.Sliced;
-                but.m_Image = img;
-            } 
-
+                aImg.type = Image.Type.Sliced;
+                aBut.m_Image = aImg;
+            }
             {
-                var text = UCL.Core.GameObjectLib.Create<Text>("Text", but.transform);
+                var text = UCL.Core.GameObjectLib.Create<Text>("Text", aBut.transform);
                 text.text = "Button";
                 text.color = Color.black;
                 text.resizeTextForBestFit = true;
@@ -41,9 +36,9 @@ namespace UCL.Core.UI {
                 rect.anchorMax = Vector2.one;
                 rect.sizeDelta = Vector2.zero;
 
-                but.m_Text = text;
+                aBut.m_Text = text;
             }
-            return but;
+            return aBut;
         }
         #endregion
         public bool Interactable
@@ -150,9 +145,6 @@ namespace UCL.Core.UI {
             if(Pressed && Enter) {
                 m_PressedTime += Time.deltaTime;
                 m_OnPressed.UCL_Invoke(m_PressedTime);
-            }
-            if(m_Text != null) {
-                //m_Text.text = "p:" + m_PressedTime.ToString("0.0") + ",E:" + (m_Enter ? "T" : "F") + ",D:" + (m_Dragging ? "T" : "F");
             }
         }
     }

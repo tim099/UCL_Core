@@ -1,10 +1,10 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 using UnityEngine;
 
-namespace UCL.Core.FileLib {
+namespace UCL.Core.FileLib
+{
     public enum LibName {
         UCL_CoreLib = 0,
         UCL_TweenLib,
@@ -155,17 +155,37 @@ namespace UCL.Core.FileLib {
         /// <summary>
         /// return filename from input path
         /// </summary>
-        /// <param name="path"></param>
+        /// <param name="iPath"></param>
         /// <returns></returns>
-        public static string GetFileName(string path) {
-            int i = path.Length - 1;
-            for(; i >= 0; i--) {
-                var c = path[i];
+        public static string GetFileName(string iPath) {
+            for(int i = iPath.Length - 1; i >= 0; i--) {
+                var c = iPath[i];
                 if(c == '/' || c == '\\') {
-                    return path.Substring(i + 1, path.Length - i - 1);
+                    return iPath.Substring(i + 1, iPath.Length - i - 1);
                 }
             }
-            return path;
+            return iPath;
+        }
+        /// <summary>
+        /// return all folders name in path
+        /// </summary>
+        /// <param name="iPath"></param>
+        /// <returns></returns>
+        public static List<string> GetFoldersName(string iPath)
+        {
+            List<string> aFoldersName = new List<string>();
+            int PrevAt = 0;
+            for (int i = 0; i < iPath.Length; i++)
+            {
+                var c = iPath[i];
+                if (c == '/' || c == '\\')
+                {
+                    string aFolderName = iPath.Substring(PrevAt, i - PrevAt);
+                    aFoldersName.Add(aFolderName);
+                    PrevAt = i + 1;
+                }
+            }
+            return aFoldersName;
         }
         /// <summary>
         /// Split a path into two part

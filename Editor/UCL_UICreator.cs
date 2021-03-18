@@ -18,8 +18,12 @@ namespace UCL.Core.UI.Editor {
             if(obj != null) {
                 p = obj.transform;   
             }
-            var but = UCL_Button.Create(p);
-            UnityEditor.Selection.activeObject = but;
+            
+            var aBut = UCL_Button.Create(p);
+            UnityEditor.Undo.RegisterCreatedObjectUndo(aBut.gameObject, "Create UCL_Button");
+            aBut.m_Image.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            //UnityEditor.EditorGUIUtility.IconContent("[texturename]");
+            UnityEditor.Selection.activeObject = aBut;
         }
         [UnityEditor.MenuItem("GameObject/UI/UCL/Image")]
         private static void CreateUCL_Image() {

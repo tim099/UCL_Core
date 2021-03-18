@@ -12,13 +12,33 @@ namespace UCL.Core.DebugLib {
     [DisallowMultipleComponent]
     public class UCL_DebugLog : UCL_Singleton<UCL_DebugLog> {
         //[Flags]
+        //UnityEngine.Debug.unityLogger.logEnabled
         public enum LogLevel {
-            None = 0,//     LogType used for Errors.
-            Error = 1,//     LogType used for Asserts. (These could also indicate an error inside Unity itself.)
-            Assert = 1<<1,//     LogType used for Warnings.
-            Warning = 1<<2,//     LogType used for regular log messages.
-            Log = 1<<3,//     LogType used for Exceptions.
-            Exception = 1<< 4//,All = Error|Assert|Warning|Log|Exception
+            None = 0,
+            /// <summary>
+            /// LogType used for Errors.
+            /// </summary>
+            Error = 1,
+            /// <summary>
+            /// LogType used for Asserts. (These could also indicate an error inside Unity itself.)
+            /// </summary>
+            Assert = 1<<1,
+            /// <summary>
+            /// LogType used for Warnings.
+            /// </summary>
+            Warning = 1<<2,
+            /// <summary>
+            /// LogType used for regular log messages.
+            /// </summary>
+            Log = 1<<3,
+            /// <summary>
+            /// LogType used for Exceptions.
+            /// </summary>
+            Exception = 1<< 4,
+            /// <summary>
+            /// Log All
+            /// </summary>
+            All = Error|Assert|Warning|Log|Exception,
         }
         public class LogData {
             public LogData(string _Message, string _StackTrace, LogType _Type) {

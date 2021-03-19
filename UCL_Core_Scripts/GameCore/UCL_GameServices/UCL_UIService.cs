@@ -22,6 +22,7 @@ namespace UCL.Core.Game
         {
             T iUI = Instantiate(iTemplate, m_UIRoot);
             m_UIStack.Add(iUI);
+            iUI.Init();
             return iUI;
         }
         public void CloseUI(UCL_GameUI iUI)

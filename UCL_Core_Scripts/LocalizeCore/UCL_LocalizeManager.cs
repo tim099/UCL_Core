@@ -39,8 +39,15 @@ namespace UCL.Core.LocalizeLib
             }
             string data = texts.ToString();
             m_LocalizeData = new LocalizeData(data);
-            Debug.LogWarning("ResourceLoadLanguage:" + path);
-            OnLanguageChanged.Invoke();
+            Debug.Log("ResourceLoadLanguage:" + path);
+            try
+            {
+                OnLanguageChanged.Invoke();
+            }catch(System.Exception iE)
+            {
+                Debug.LogException(iE);
+            }
+
         }
         static public string Get(string key) {
             var ins = GetInstance();

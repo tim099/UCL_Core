@@ -325,14 +325,17 @@ namespace UCL.Core.FileLib
         {
             return "Assets" + Path.GetFullPath(iPath).Replace(Path.GetFullPath(Application.dataPath), string.Empty);
         }
-
-        public static void CreateDirectory(string path) {
-            if(string.IsNullOrEmpty(path)) return;
-            if(path[path.Length - 1] == '/') {
-                path.Remove(path.Length - 1);
+        /// <summary>
+        /// Create the Directory if not exist
+        /// </summary>
+        /// <param name="iPath"></param>
+        public static void CreateDirectory(string iPath) {
+            if(string.IsNullOrEmpty(iPath)) return;
+            if(iPath[iPath.Length - 1] == '/') {
+                iPath.Remove(iPath.Length - 1);
             }
-            if(!Directory.Exists(path)) {
-                Directory.CreateDirectory(path);
+            if(!Directory.Exists(iPath)) {
+                Directory.CreateDirectory(iPath);
             }
         }
         public static void WriteToFile(string data, string path) {

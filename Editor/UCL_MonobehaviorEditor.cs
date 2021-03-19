@@ -8,136 +8,133 @@ using System.Reflection;
 
 namespace UCL.Core.EditorLib {
     public static class DrawATTR {
-        public static void Draw(UnityEngine.Object target, Type type, Type class_type) {
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic
+        public static void Draw(UnityEngine.Object iTarget, Type iType, Type iClassType) {
+            var aMethods = iType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic
                 | BindingFlags.Instance);
             //.Where(m => m.GetCustomAttributes(typeof(ATTR.UCL_FunctionButtonAttribute), false).Length > 0).ToArray();
             //Debug.LogWarning("type:" + type.Name + ",methods:" + methods.Length);
-            Exception exception = null;
-            if(methods.Length > 0) {
-                var class_name = class_type.Name;
+            Exception aException = null;
+            if(aMethods.Length > 0) {
+                var aClassName = iClassType.Name;
 
                 GUILayout.BeginVertical();
                 //EditorGUILayout.BeginVertical();
-                for(int i = 0; i < methods.Length; i++) {
-                    var method = methods[i];
+                for(int i = 0; i < aMethods.Length; i++) {
+                    var aMethod = aMethods[i];
 
                     {
-                        var attr_type = typeof(ATTR.UCL_DrawStringAttribute);
+                        var aAttrType = typeof(ATTR.UCL_DrawStringAttribute);
                         try {
-                            var attr = method.GetCustomAttributes(attr_type, false);
-                            if(attr.Length > 0) {
-                                for(int j = 0; j < attr.Length; j++) {
-                                    var ba = (ATTR.UCL_DrawStringAttribute)attr[j];
-                                    string str = method.Invoke(target, ba.m_Params) as string;
+                            var aAttr = aMethod.GetCustomAttributes(aAttrType, false);
+                            if(aAttr.Length > 0) {
+                                for(int j = 0; j < aAttr.Length; j++) {
+                                    var ba = (ATTR.UCL_DrawStringAttribute)aAttr[j];
+                                    string str = aMethod.Invoke(iTarget, ba.m_Params) as string;
                                     if(!string.IsNullOrEmpty(str)) GUILayout.Box(str);
                                 }
                             }
                         } catch(Exception e) {
-                            exception = e;
-                            Debug.LogWarning(attr_type.Name + ":"
-                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                            aException = e;
+                            Debug.LogWarning(aAttrType.Name + ":"
+                                + aClassName + " " + aAttrType.Name + " Exception:" + e);
                         }
                     }
                     {
-                        var attr_type = typeof(ATTR.UCL_FunctionButtonAttribute);
+                        var aAttrType = typeof(ATTR.UCL_FunctionButtonAttribute);
                         try {
-                            var attr = method.GetCustomAttributes(attr_type, false);
-                            if(attr.Length > 0) {
-                                bool run_time_only = method.GetCustomAttributes(typeof(ATTR.UCL_RuntimeOnlyAttribute), false).Length > 0;
+                            var aAttr = aMethod.GetCustomAttributes(aAttrType, false);
+                            if(aAttr.Length > 0) {
+                                bool run_time_only = aMethod.GetCustomAttributes(typeof(ATTR.UCL_RuntimeOnlyAttribute), false).Length > 0;
                                 if(!run_time_only || Application.isPlaying) {
-                                    for(int j = 0; j < attr.Length; j++) {
-                                        var ba = (ATTR.UCL_FunctionButtonAttribute)attr[j];
+                                    for(int j = 0; j < aAttr.Length; j++) {
+                                        var ba = (ATTR.UCL_FunctionButtonAttribute)aAttr[j];
                                         string but_name = ba.m_ButtonName;
-                                        if(string.IsNullOrEmpty(but_name)) but_name = method.Name;
+                                        if(string.IsNullOrEmpty(but_name)) but_name = aMethod.Name;
                                         if(GUILayout.Button(but_name)) {
-                                            method.Invoke(target, ba.m_Params);
+                                            aMethod.Invoke(iTarget, ba.m_Params);
                                         }
                                     }
                                 }
                             }
                         } catch(Exception e) {
-                            exception = e;
+                            aException = e;
                             Debug.LogWarning("UCL_FunctionButton:"
-                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                                + aClassName + " " + aAttrType.Name + " Exception:" + e);
                         }
                     }
                     {
-                        var attr_type = typeof(ATTR.UCL_DrawTexture2DAttribute);
+                        var aAttrType = typeof(ATTR.UCL_DrawTexture2DAttribute);
                         try {
-                            var attr = method.GetCustomAttributes(attr_type, false);
-                            if(attr.Length > 0) {
-
-
+                            var aAttr = aMethod.GetCustomAttributes(aAttrType, false);
+                            if(aAttr.Length > 0) {
                                 //Debug.LogWarning("attr.Length:" + attr.Length);
-                                GUILayout.Box(method.Name);
-                                for(int j = 0; j < attr.Length; j++) {
-                                    var ba = (ATTR.UCL_DrawTexture2DAttribute)attr[j];
-                                    var return_type = method.ReturnType;
+                                GUILayout.Box(aMethod.Name);
+                                for(int j = 0; j < aAttr.Length; j++) {
+                                    var ba = (ATTR.UCL_DrawTexture2DAttribute)aAttr[j];
+                                    var return_type = aMethod.ReturnType;
                                     //Debug.LogWarning("return_type:" + return_type.Name);
                                     if(return_type.IsAssignableFrom(typeof(Core.TextureLib.UCL_Texture2D))) {//IsSubclassOf
-                                        var tex = method.Invoke(target, null) as Core.TextureLib.UCL_Texture2D;
+                                        var tex = aMethod.Invoke(iTarget, null) as Core.TextureLib.UCL_Texture2D;
                                         if(tex != null) GUILayout.Box(tex.texture);
                                     } else {
                                         var tex = ba.GetTexture();
-                                        method.Invoke(target, new object[] { tex });
+                                        aMethod.Invoke(iTarget, new object[] { tex });
                                         GUILayout.Box(tex.texture);
                                     }
 
                                 }
                             }
                         } catch(Exception e) {
-                            exception = e;
+                            aException = e;
                             Debug.LogWarning("UCL_DrawTexture2D:"
-                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                                + aClassName + " " + aAttrType.Name + " Exception:" + e);
                         }
                     }
                     {
-                        //UnityEditor.EditorGUILayout.ObjectField()
-                        var attr_type = typeof(ATTR.UCL_DrawObjectAttribute);
+                        var aAttrType = typeof(ATTR.UCL_DrawObjectAttribute);
                         try {
-                            var attr = method.GetCustomAttributes(attr_type, false);
-                            if(attr.Length > 0) {
-                                for(int j = 0; j < attr.Length; j++) {
+                            var aAttr = aMethod.GetCustomAttributes(aAttrType, false);
+                            if(aAttr.Length > 0) {
+                                for(int j = 0; j < aAttr.Length; j++) {
                                     System.Func<System.Type, UnityEngine.Object, UnityEngine.Object> func = 
                                         delegate (System.Type stype, UnityEngine.Object obj) {
                                             return UnityEditor.EditorGUILayout.ObjectField(obj, stype, true);
                                         };
-                                    method.Invoke(target, new object[1] { func });
+                                    aMethod.Invoke(iTarget, new object[1] { func });
 
                                     //UnityEngine.Object obj = method.Invoke(target, null) as UnityEngine.Object;
                                     //UnityEditor.EditorGUILayout.ObjectField(obj, obj.GetType(), true);
                                 }
                             }
                         } catch(Exception e) {
-                            exception = e;
+                            aException = e;
                             Debug.LogWarning("UCL_FunctionButton:"
-                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                                + aClassName + " " + aAttrType.Name + " Exception:" + e);
                         }
                     }
                     {
                         //UnityEditor.EditorGUILayout.ObjectField()
-                        var attr_type = typeof(ATTR.UCL_DrawOnGUIAttribute);
+                        var aAttrType = typeof(ATTR.UCL_DrawOnGUIAttribute);
                         try
                         {
-                            var attr = method.GetCustomAttributes(attr_type, false);
-                            if (attr.Length > 0)
+                            var aAttr = aMethod.GetCustomAttributes(aAttrType, false);
+                            if (aAttr.Length > 0)
                             {
-                                method.Invoke(target, null);
+                                aMethod.Invoke(iTarget, null);
                             }
                         }
                         catch (Exception e)
                         {
-                            exception = e;
+                            aException = e;
                             Debug.LogWarning("UCL_FunctionButton:"
-                                + class_name + " " + attr_type.Name + " Exception:" + e);
+                                + aClassName + " " + aAttrType.Name + " Exception:" + e);
                         }
                     }
                 }
                 GUILayout.EndVertical();
 
-                if(exception != null) {
-                    throw exception;
+                if(aException != null) {
+                    Debug.LogException(aException);
                 }
                 //EditorGUILayout.EndVertical();
             }

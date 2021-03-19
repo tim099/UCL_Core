@@ -12,10 +12,7 @@ namespace UCL.Core.Game {
 #if UNITY_EDITOR_WIN
         [ATTR.UCL_FunctionButton]
         public void Editor_OpenGameFolder() {
-            string folder = GetGameFolderPath();
-            FileLib.Lib.CreateDirectory(folder);//FileLib.Lib.GetFilesPath(true);
-
-            FileLib.WindowsLib.OpenExplorer(folder);
+            FileLib.WindowsLib.OpenExplorer(GetGameFolderPath());
         }
 #endif
 #if UNITY_EDITOR
@@ -50,8 +47,9 @@ namespace UCL.Core.Game {
             if(!SetInstance(this)) return;
 
             m_Inited = true;
-            if(m_GameServices == null) m_GameServices = new List<UCL_GameService>();
-            FileLib.Lib.CreateDirectory(GetGameFolderPath());
+            GetGameFolderPath();
+            if (m_GameServices == null) m_GameServices = new List<UCL_GameService>();
+
 #if UNITY_EDITOR
             Core.EditorLib.UCL_EditorPlayStateNotifier.AddExitingPlayModeAct(
             ()=> {
@@ -63,6 +61,7 @@ namespace UCL.Core.Game {
             {
                 try
                 {
+                    service.SetGameManager(this);
                     service.Init();
                 }
                 catch (System.Exception e)
@@ -100,11 +99,10 @@ namespace UCL.Core.Game {
         virtual public void SaveAllSetting() {
             SaveGameConfig();
 
-            var gameservice_path = GetGameServicePath();
-            FileLib.Lib.CreateDirectory(gameservice_path);
+            var aGameServicePath = GetGameServicePath();
 
             foreach(var service in m_GameServices) {
-                service.Save(gameservice_path);
+                service.Save(aGameServicePath);
             }
         }
         virtual public void LoadAllSetting() {
@@ -136,13 +134,17 @@ namespace UCL.Core.Game {
 
         #region FolderPath
         virtual public string GetGameFolderPath() {
-            return Path.Combine(FileLib.Lib.GetFilesPath(), m_GameName);
+            string aPath = Path.Combine(FileLib.Lib.GetFilesPath(), m_GameName);
+            FileLib.Lib.CreateDirectory(aPath);
+            return aPath;
         }
         virtual public string GetGameConfigPath() {
             return Path.Combine(GetGameFolderPath(), "GameConfig.txt");
         }
         virtual public string GetGameServicePath() {
-            return Path.Combine(GetGameFolderPath(), "GameService");
+            string aPath = Path.Combine(GetGameFolderPath(), "GameService");
+            FileLib.Lib.CreateDirectory(aPath);
+            return aPath;
         }
         #endregion
         /// <summary>

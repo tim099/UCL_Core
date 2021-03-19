@@ -4,6 +4,12 @@ using UnityEngine;
 
 namespace UCL.Core.Game {
     public class UCL_GameService : MonoBehaviour {
+        protected UCL_GameManager p_GameManager;
+
+        public void SetGameManager(UCL_GameManager iGameManager)
+        {
+            p_GameManager = iGameManager;
+        }
         /// <summary>
         /// Init game service
         /// </summary>
@@ -22,6 +28,20 @@ namespace UCL.Core.Game {
         /// </summary>
         /// <param name="iDir"></param>
         virtual public void Load(string iDir) { }
+        /// <summary>
+        /// Save GameService Setting
+        /// </summary>
+        virtual public void Save()
+        {
+            Save(p_GameManager.GetGameServicePath());
+        }
+        /// <summary>
+        /// Load GameService Setting
+        /// </summary>
+        virtual public void Load()
+        {
+            Load(p_GameManager.GetGameServicePath());
+        }
     }
 }
 

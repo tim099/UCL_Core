@@ -35,9 +35,10 @@ namespace UCL.Core.PA
                 {
                     EditorGUI.PropertyField(text_rect, property, label, false);
                 }
-                catch (System.Exception e)
+                catch (System.Exception iE)
                 {
-                    Debug.LogWarning(" UCL_ButtonPropertyDrawer EditorGUI.PropertyField Exception:" + e);
+                    Debug.LogException(iE);
+                    //Debug.LogWarning(" UCL_ButtonPropertyDrawer EditorGUI.PropertyField Exception:" + e);
                     return;
                 }
 

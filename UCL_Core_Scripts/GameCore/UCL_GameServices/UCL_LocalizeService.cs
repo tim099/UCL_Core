@@ -19,7 +19,7 @@ namespace UCL.Core.Game {
             TextAsset texts = Resources.Load(path) as TextAsset;
             if(texts != null) {
                 m_LocalizeSetting = new LocalizeData(texts.ToString());
-                Debug.LogWarning(m_LocalizeSetting.GetDic().UCL_ToString());
+                Debug.Log(m_LocalizeSetting.GetDic().UCL_ToString());
             }
         }
         public override void Save(string dir) {

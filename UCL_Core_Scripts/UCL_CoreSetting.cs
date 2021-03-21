@@ -31,7 +31,7 @@ namespace UCL.Core {
             Material aMat = null;
 #if UNITY_EDITOR
             var aPath = Path.Combine(GetFolderPath(), "UCL_Core_Materials", iName + ".mat");
-            aMat = UnityEditor.AssetDatabase.LoadMainAssetAtPath(aPath) as Material;
+            aMat = UCL.Core.EditorLib.AssetDatabaseMapper.LoadMainAssetAtPath(aPath) as Material;
 #endif
             return aMat;
         }
@@ -41,14 +41,14 @@ namespace UCL.Core {
         /// </summary>
         /// <returns></returns>
         public static string GetFolderPath() {
-            var core_setting = GetCoreSetting();
-            if(core_setting == null) {
+            var aCoreSetting = GetCoreSetting();
+            if(aCoreSetting == null) {
                 Debug.LogError("UCL.Core.UCL_CoreSetting GetFolderPath() Fail!!core_setting == null");
                 return "";
             }
-            string path = UnityEditor.AssetDatabase.GetAssetPath(core_setting);
+            string aPath = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(aCoreSetting);
 
-            return FileLib.Lib.RemoveFolderPath(path, 2);
+            return FileLib.Lib.RemoveFolderPath(aPath, 2);
         }
 #endif
     }

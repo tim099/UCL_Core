@@ -9,7 +9,7 @@ namespace UCL.Core.Game
     {
         static public UCL_UIService Ins { get; protected set; }
 
-        [SerializeField] RectTransform m_UIRoot;
+        [SerializeField] RectTransform m_UIRoot = null;
         /// <summary>
         /// Use List to simulate Stack
         /// </summary>

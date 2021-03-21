@@ -17,23 +17,23 @@ namespace UCL.Core.FileLib
             return GetLibFolderPath(libname.ToString());
         }
         public static string GetLibFolderPath(string LibName) {
-            var res = Resources.Load(LibName);// + ".txt"
-            string path = UnityEditor.AssetDatabase.GetAssetPath(res);
+            var aRes = Resources.Load(LibName);
+            string aPath = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(aRes);
 
-            return FileLib.Lib.RemoveFolderPath(path, 2);
+            return FileLib.Lib.RemoveFolderPath(aPath, 2);
         }
         public static string GetCoreFolderPath() {
             return UCL_CoreSetting.GetFolderPath();
         }
         public static void ExploreFile(string iTitle, string iFolder, string iExtension = "") {
-            string path = UnityEditor.EditorUtility.OpenFilePanel(iTitle, iFolder, iExtension);
+            string path = UCL.Core.EditorLib.EditorUtilityMapper.OpenFilePanel(iTitle, iFolder, iExtension);
 
             if(!string.IsNullOrEmpty(path) && path != iFolder) {
                 Application.OpenURL(path);
             }
         }
         public static void ExploreFolder(string folder) {
-            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, string.Empty);
+            string path = UCL.Core.EditorLib.EditorUtilityMapper.OpenFolderPanel("Open Folder", folder, string.Empty);
 
             if(!string.IsNullOrEmpty(path) && path != folder) {
                 Application.OpenURL(path);
@@ -48,7 +48,7 @@ namespace UCL.Core.FileLib
         public static string OpenAssetsFileExplorer(string iFilePath) {
             string asset_root = Application.dataPath.Replace("Assets", string.Empty);
             string assets_path = asset_root + iFilePath;
-            string path = UnityEditor.EditorUtility.OpenFilePanel("Open Folder", assets_path, string.Empty);
+            string path = UCL.Core.EditorLib.EditorUtilityMapper.OpenFilePanel("Open Folder", assets_path, string.Empty);
             if(string.IsNullOrEmpty(path)) return iFilePath;
 
             return path.Replace(asset_root, "");
@@ -63,7 +63,7 @@ namespace UCL.Core.FileLib
         public static string OpenAssetsFolderExplorer(string folder) {
             string asset_root = Application.dataPath.Replace("Assets", string.Empty);
             string assets_path = asset_root + folder;
-            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", assets_path, string.Empty);
+            string path = UCL.Core.EditorLib.EditorUtilityMapper.OpenFolderPanel("Open Folder", assets_path, string.Empty);
             if(string.IsNullOrEmpty(path)) return folder;
 
             return path.Replace(asset_root, "");
@@ -75,38 +75,30 @@ namespace UCL.Core.FileLib
         /// <param name="folder"></param>
         /// <returns></returns>
         public static string OpenFolderExplorer(string folder) {
-            string path = UnityEditor.EditorUtility.OpenFolderPanel("Open Folder", folder, string.Empty);
+            string path = UCL.Core.EditorLib.EditorUtilityMapper.OpenFolderPanel("Open Folder", folder, string.Empty);
             if(string.IsNullOrEmpty(path)) return folder;
 
             return path;
         }
-        public static string SelectScript(MonoBehaviour be) {
-            var path = GetScriptPath(be);
-            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path);
+        public static string SelectScript(MonoBehaviour iMonoBehaviour) {
+            var aPath = GetScriptPath(iMonoBehaviour);
+            UCL.Core.EditorLib.SelectionMapper.activeObject = UCL.Core.EditorLib.AssetDatabaseMapper.LoadMainAssetAtPath(aPath);
+            return aPath;
+        }
+        public static string SelectScript(ScriptableObject iScriptableObject) {
+            var path = GetScriptPath(iScriptableObject);
+            UCL.Core.EditorLib.SelectionMapper.activeObject = UCL.Core.EditorLib.AssetDatabaseMapper.LoadMainAssetAtPath(path);
             return path;
         }
-        public static string SelectScript(ScriptableObject so) {
-            var path = GetScriptPath(so);
-            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path);
-            return path;
-        }
-        public static string GetScriptPath(MonoBehaviour be) {
-            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromMonoBehaviour(be);
+        public static string GetScriptPath(MonoBehaviour iMonoBehaviour) {
+            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromMonoBehaviour(iMonoBehaviour);
             //Debug.LogWarning("path:" + UnityEditor.AssetDatabase.GetAssetPath(monoScript));
             return UnityEditor.AssetDatabase.GetAssetPath(monoScript);
         }
-        public static string GetScriptPath(ScriptableObject so) {
-            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromScriptableObject(so);
+        public static string GetScriptPath(ScriptableObject iScriptableObject) {
+            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromScriptableObject(iScriptableObject);
             //Debug.LogWarning("path:" + UnityEditor.AssetDatabase.GetAssetPath(monoScript));
             return UnityEditor.AssetDatabase.GetAssetPath(monoScript);
-        }
-        /// <summary>
-        /// this funtion is for memo(not useful)
-        /// </summary>
-        /// <param name="path"></param>
-        /// <returns></returns>
-        public static Object LoadAssets(string path) {
-           return  UnityEditor.AssetDatabase.LoadMainAssetAtPath(Path.Combine("Assets", path));
         }
     }
 #endif

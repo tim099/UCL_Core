@@ -38,6 +38,7 @@ namespace UCL.Core.UI {
 
                 aBut.m_Text = text;
             }
+            aBut.m_Image.sprite = UCL.Core.EditorLib.AssetDatabaseMapper.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
             return aBut;
         }
         #endregion

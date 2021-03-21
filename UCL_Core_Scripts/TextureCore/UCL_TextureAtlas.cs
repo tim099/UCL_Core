@@ -41,7 +41,7 @@ namespace UCL.Core.TextureLib {
             var path = GetOutputPath() + ".asset";
             Debug.LogWarning("SaveAsset():" + path);
             TextureLib.EditorLib.SaveTextureAsset(path, m_Texture);
-            UnityEditor.Selection.activeObject = UnityEditor.AssetDatabase.LoadMainAssetAtPath(path);
+            UCL.Core.EditorLib.SelectionMapper.activeObject = UCL.Core.EditorLib.AssetDatabaseMapper.LoadMainAssetAtPath(path);
             Core.EditorLib.UCL_EditorUpdateManager.AddDelayAction(delegate () {
                 UnityEditor.Selection.activeGameObject = gameObject;
             },1);

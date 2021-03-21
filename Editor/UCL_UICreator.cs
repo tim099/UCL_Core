@@ -21,7 +21,7 @@ namespace UCL.Core.UI.Editor {
             
             var aBut = UCL_Button.Create(p);
             UnityEditor.Undo.RegisterCreatedObjectUndo(aBut.gameObject, "Create UCL_Button");
-            aBut.m_Image.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            //aBut.m_Image.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
             //UnityEditor.EditorGUIUtility.IconContent("[texturename]");
             UnityEditor.Selection.activeObject = aBut;
         }

@@ -3,18 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib {
-#if UNITY_EDITOR
-    [UnityEditor.InitializeOnLoad]
-#endif
     public static class UCL_EditorPlayStateNotifier {
         static List<System.Action> m_EnteredEditModeAct = new List<System.Action>();
         static List<System.Action> m_ExitingEditModeAct = new List<System.Action>();
         static List<System.Action> m_EnteredPlayModeAct = new List<System.Action>();
         static List<System.Action> m_ExitingPlayModeAct = new List<System.Action>();
-        static UCL_EditorPlayStateNotifier() {
+        public static void Init()
+        {
 #if UNITY_EDITOR
             Debug.Log("UCL_EditorPlayStateNotifier() UnityEditor.EditorApplication.playModeStateChanged += PlayModeStateChanged");
-            UnityEditor.EditorApplication.playModeStateChanged += PlayModeStateChanged;
+            EditorApplicationMapper.playModeStateChanged += PlayModeStateChanged;
 #endif
         }
         public static void AddEnteredEditModeAct(System.Action act) {
@@ -59,10 +57,10 @@ namespace UCL.Core.EditorLib {
 #endif
         }
 #if UNITY_EDITOR
-        static void PlayModeStateChanged(UnityEditor.PlayModeStateChange state) {
-
-            switch(state) {
-                case UnityEditor.PlayModeStateChange.EnteredEditMode: {
+        static void PlayModeStateChanged(PlayModeStateChangeMapper iState) {
+            //Debug.LogError("PlayModeStateChanged:" + iState.ToString());
+            switch(iState) {
+                case PlayModeStateChangeMapper.EnteredEditMode: {
                         List<System.Action> acts = m_EnteredEditModeAct;
                         for(int i = acts.Count-1 ; i >=0 ; i--) {
                             var act = acts[i];
@@ -72,7 +70,7 @@ namespace UCL.Core.EditorLib {
                                 try {
                                     act.Invoke();
                                 }catch(System.Exception e) {
-                                    Debug.LogError("UCL_EditorPlayStateNotifier "+state.ToString()+" Exception:" + e);
+                                    Debug.LogError("UCL_EditorPlayStateNotifier "+iState.ToString()+" Exception:" + e);
                                     acts.RemoveAt(i);
                                 }
                             }
@@ -80,7 +78,7 @@ namespace UCL.Core.EditorLib {
 
                         break;
                     }
-                case UnityEditor.PlayModeStateChange.ExitingEditMode: {
+                case PlayModeStateChangeMapper.ExitingEditMode: {
                         List<System.Action> acts = m_ExitingEditModeAct;
                         for(int i = acts.Count - 1; i >= 0; i--) {
                             var act = acts[i];
@@ -90,14 +88,14 @@ namespace UCL.Core.EditorLib {
                                 try {
                                     act.Invoke();
                                 } catch(System.Exception e) {
-                                    Debug.LogError("UCL_EditorPlayStateNotifier " + state.ToString() + " Exception:" + e);
+                                    Debug.LogError("UCL_EditorPlayStateNotifier " + iState.ToString() + " Exception:" + e);
                                     acts.RemoveAt(i);
                                 }
                             }
                         }
                         break;
                     }
-                case UnityEditor.PlayModeStateChange.EnteredPlayMode: {
+                case PlayModeStateChangeMapper.EnteredPlayMode: {
                         List<System.Action> acts = m_EnteredPlayModeAct;
                         for(int i = acts.Count - 1; i >= 0; i--) {
                             var act = acts[i];
@@ -107,14 +105,14 @@ namespace UCL.Core.EditorLib {
                                 try {
                                     act.Invoke();
                                 } catch(System.Exception e) {
-                                    Debug.LogError("UCL_EditorPlayStateNotifier " + state.ToString() + " Exception:" + e);
+                                    Debug.LogError("UCL_EditorPlayStateNotifier " + iState.ToString() + " Exception:" + e);
                                     acts.RemoveAt(i);
                                 }
                             }
                         }
                         break;
                     }
-                case UnityEditor.PlayModeStateChange.ExitingPlayMode: {
+                case PlayModeStateChangeMapper.ExitingPlayMode: {
                         List<System.Action> acts = m_ExitingPlayModeAct;
                         for(int i = acts.Count - 1; i >= 0; i--) {
                             var act = acts[i];
@@ -124,7 +122,7 @@ namespace UCL.Core.EditorLib {
                                 try {
                                     act.Invoke();
                                 } catch(System.Exception e) {
-                                    Debug.LogError("UCL_EditorPlayStateNotifier " + state.ToString() + " Exception:" + e);
+                                    Debug.LogError("UCL_EditorPlayStateNotifier " + iState.ToString() + " Exception:" + e);
                                     acts.RemoveAt(i);
                                 }
                             }

@@ -4,9 +4,6 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib {
-#if UNITY_EDITOR
-    [UnityEditor.InitializeOnLoad]
-#endif
     static public class UCL_EditorUpdateManager {
 #if UNITY_EDITOR
         static event System.Action m_EditorUpdateAction = null;
@@ -19,10 +16,11 @@ namespace UCL.Core.EditorLib {
         /// </summary>
         static Queue<System.Action> m_ActQue = new Queue<Action>();
 #endif
-        static UCL_EditorUpdateManager() {
+        static public void Init()
+        {
 #if UNITY_EDITOR
-            //Debug.Log("UCL_EditorUpdateManager() Init UnityEditor.EditorApplication.update += EditorUpdate");
-            UnityEditor.EditorApplication.update += UpdateAction;
+            //Debug.Log("UCL_EditorUpdateManager() Init EditorApplicationMapper.update");
+            EditorApplicationMapper.update += UpdateAction;
 #endif
         }
         /// <summary>

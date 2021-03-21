@@ -3,14 +3,12 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib {
-#if UNITY_EDITOR
-    [UnityEditor.InitializeOnLoad]
-#endif
     public static class UCL_EditorCoroutineManager {
 #if UNITY_EDITOR
         static List<UCL.Core.EnumeratorLib.EnumeratorPlayer> m_Players = new List<EnumeratorLib.EnumeratorPlayer>();
 #endif
-        static UCL_EditorCoroutineManager() {
+        static public void Init()
+        {
 #if UNITY_EDITOR
             //Debug.Log("UCL_EditorCoroutineManager() Init");
             UCL_EditorUpdateManager.AddEditorUpdateAct(UpdateAction);

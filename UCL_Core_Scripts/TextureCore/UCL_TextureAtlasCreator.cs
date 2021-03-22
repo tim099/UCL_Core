@@ -70,7 +70,7 @@ namespace UCL.Core.TextureLib {
         protected string GetOutputPath() {
 #if UNITY_EDITOR
             if(string.IsNullOrEmpty(m_OutputFolder)) {
-                m_OutputFolder = Core.FileLib.Lib.GetFolderPath(UnityEditor.AssetDatabase.GetAssetPath(this));
+                m_OutputFolder = Core.FileLib.Lib.GetFolderPath(UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this));
             }
 #endif
             return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
@@ -79,7 +79,7 @@ namespace UCL.Core.TextureLib {
             string output_path = GetOutputPath();
             TextureLib.Lib.SavePNG(output_path, m_Texture);
 #if UNITY_EDITOR
-            m_Texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(output_path+ ".png");
+            m_Texture = UCL.Core.EditorLib.AssetDatabaseMapper.LoadAssetAtPath<Texture2D>(output_path + ".png");
 #endif
         }
         //[UCL.Core.PA.UCL_ReadOnly]

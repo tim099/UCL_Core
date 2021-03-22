@@ -42,8 +42,8 @@ namespace UCL.Core.MathLib {
         }
         private void OnValidate() {
 #if UNITY_EDITOR
-            if(m_UpdateSizeOnValidate && !UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode
-                && !UnityEditor.EditorApplication.isUpdating && transform.lossyScale != Vector3.zero) {
+            if(m_UpdateSizeOnValidate && !UCL.Core.EditorLib.EditorApplicationMapper.isPlayingOrWillChangePlaymode
+                && !UCL.Core.EditorLib.EditorApplicationMapper.isUpdating && transform.lossyScale != Vector3.zero) {
                 UpdateSize();
             }
             UpdatePath();

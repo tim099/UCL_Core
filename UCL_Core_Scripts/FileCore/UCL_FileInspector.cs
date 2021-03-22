@@ -74,8 +74,8 @@ namespace UCL.Core.FileLib {
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void ExploreTargetDirectory() {
             if(string.IsNullOrEmpty(m_TargetDirectory)) {
-                var path = UnityEditor.AssetDatabase.GetAssetPath(this);
-                m_TargetDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
+                var aPath = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this);
+                m_TargetDirectory = FileLib.Lib.RemoveFolderPath(aPath, 1);
             }
             var dir = Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_TargetDirectory);
             if(!string.IsNullOrEmpty(dir)) {
@@ -91,7 +91,7 @@ namespace UCL.Core.FileLib {
         public void RefreshFileInfos() {
 #if UNITY_EDITOR
             if(string.IsNullOrEmpty(m_TargetDirectory)) {
-                var path = UnityEditor.AssetDatabase.GetAssetPath(this);
+                var path = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this);
                 m_TargetDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
             }
 
@@ -112,7 +112,7 @@ namespace UCL.Core.FileLib {
                         file_extension));
                 } 
             }
-            UnityEditor.EditorUtility.SetDirty(this);
+            UCL.Core.EditorLib.EditorUtilityMapper.SetDirty(this);
             RefreshFileInfosDic();
 #endif
         }

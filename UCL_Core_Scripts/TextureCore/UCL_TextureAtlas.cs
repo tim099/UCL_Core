@@ -43,7 +43,7 @@ namespace UCL.Core.TextureLib {
             TextureLib.EditorLib.SaveTextureAsset(path, m_Texture);
             UCL.Core.EditorLib.SelectionMapper.activeObject = UCL.Core.EditorLib.AssetDatabaseMapper.LoadMainAssetAtPath(path);
             Core.EditorLib.UCL_EditorUpdateManager.AddDelayAction(delegate () {
-                UnityEditor.Selection.activeGameObject = gameObject;
+                UCL.Core.EditorLib.SelectionMapper.activeGameObject = gameObject;
             },1);
             
             //UnityEditor.Selection.activeObject = gameObject;

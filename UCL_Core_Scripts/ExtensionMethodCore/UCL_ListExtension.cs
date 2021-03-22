@@ -87,11 +87,11 @@ public static partial class ListExtensionMethods {
     /// Clone the target list
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <param name="list">target to clone</param>
+    /// <param name="iList">target to clone</param>
     /// <returns></returns>
-    public static List<T> Clone<T>(this List<T> list) {
-        if(list == null) return null;
-        return new List<T>(list);
+    public static List<T> Clone<T>(this List<T> iList) {
+        if(iList == null) return null;
+        return new List<T>(iList);
     }
 }
 

@@ -14,7 +14,7 @@ namespace UCL.Core.Misc {
         void SetEditorOnlyTag() {
             if(gameObject.tag == "EditorOnly") return;
             gameObject.tag = "EditorOnly";
-            UnityEditor.EditorUtility.SetDirty(gameObject);
+            UCL.Core.EditorLib.EditorUtilityMapper.SetDirty(gameObject);
         }
         private void OnValidate() {
             SetEditorOnlyTag();

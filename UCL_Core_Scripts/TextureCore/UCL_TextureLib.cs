@@ -20,12 +20,12 @@ namespace UCL.Core.TextureLib {
     static public class EditorLib {
         public static void SaveTextureAsset(string _path, Texture Texture) {
             string path = _path;
-            if(UnityEditor.AssetDatabase.Contains(Texture)) {
-                UnityEditor.EditorUtility.CopySerialized(Texture, UnityEditor.AssetDatabase.LoadAssetAtPath<Texture>(path));
+            if(UCL.Core.EditorLib.AssetDatabaseMapper.Contains(Texture)) {
+                UCL.Core.EditorLib.EditorUtilityMapper.CopySerialized(Texture, UCL.Core.EditorLib.AssetDatabaseMapper.LoadAssetAtPath<Texture>(path));
             } else {
-                UnityEditor.AssetDatabase.CreateAsset(Texture, path);
+                UCL.Core.EditorLib.AssetDatabaseMapper.CreateAsset(Texture, path);
             }
-            UnityEditor.AssetDatabase.Refresh();
+            UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
         }
     }
 #endif
@@ -47,14 +47,14 @@ namespace UCL.Core.TextureLib {
             Core.FileLib.Lib.CreateDirectory(Core.FileLib.Lib.GetFolderPath(path));
             System.IO.File.WriteAllBytes(path + ".png", texture.EncodeToPNG());
 #if UNITY_EDITOR
-            UnityEditor.AssetDatabase.Refresh();
+            UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
 #endif
         }
         public static void SaveJPG(string path, Texture2D texture) {
             Core.FileLib.Lib.CreateDirectory(Core.FileLib.Lib.GetFolderPath(path));
             System.IO.File.WriteAllBytes(path + ".jpg", texture.EncodeToJPG());
 #if UNITY_EDITOR
-            UnityEditor.AssetDatabase.Refresh();
+            UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
 #endif
         }
         /// <summary>

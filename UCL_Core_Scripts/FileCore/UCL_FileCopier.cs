@@ -26,7 +26,7 @@ namespace UCL.Core.FileLib {
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void ExploreSourceDirectory() {
             if(string.IsNullOrEmpty(m_SourceDirectory)) {
-                var path = UnityEditor.AssetDatabase.GetAssetPath(this);
+                var path = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this);
                 m_SourceDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
             }
             var dir = Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_SourceDirectory);
@@ -40,7 +40,7 @@ namespace UCL.Core.FileLib {
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void ExploreDestinationDirectory() {
             if(string.IsNullOrEmpty(m_DestinationDirectory)) {
-                var path = UnityEditor.AssetDatabase.GetAssetPath(this);
+                var path = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this);
                 m_DestinationDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
             }
             var dir = Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_DestinationDirectory);

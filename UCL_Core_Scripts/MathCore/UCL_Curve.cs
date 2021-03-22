@@ -41,8 +41,8 @@ namespace UCL.Core.MathLib {
         #endregion
 #if UNITY_EDITOR
         private void OnValidate() {
-            if(!UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode
-                && !UnityEditor.EditorApplication.isUpdating && transform.lossyScale != Vector3.zero) {
+            if(!UCL.Core.EditorLib.EditorApplicationMapper.isPlayingOrWillChangePlaymode
+                && !UCL.Core.EditorLib.EditorApplicationMapper.isUpdating && transform.lossyScale != Vector3.zero) {
                 UpdatePathPoint();
             }
         }
@@ -73,7 +73,7 @@ namespace UCL.Core.MathLib {
             UpdatePathPoint();
             //UpdatePathPoint();
 #if UNITY_EDITOR
-            UnityEditor.EditorUtility.SetDirty(this);
+            UCL.Core.EditorLib.EditorUtilityMapper.SetDirty(this);
 #endif
         }
 
@@ -176,7 +176,7 @@ namespace UCL.Core.MathLib {
             }
 
 #if UNITY_EDITOR
-            UnityEditor.EditorUtility.SetDirty(gameObject);
+            UCL.Core.EditorLib.EditorUtilityMapper.SetDirty(gameObject);
 #endif
         }
         public void UpdateWorldSpacePoint() {

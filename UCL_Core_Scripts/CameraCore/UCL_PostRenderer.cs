@@ -41,7 +41,7 @@ namespace UCL.Core.CameraLib
             m_NextData.m_Lines.Add(line);//.Clone()
         }
         void WorldSpaceDrawLine(UCL.Core.Physic.UCL_Line3D line) {
-            if(line == null || line.m_Width <= 0 || line.m_Points.Count <= 1) {
+            if(line == null || line.m_Width <= 0 || line.Count <= 1) {
                 return;
             }
 
@@ -63,13 +63,13 @@ namespace UCL.Core.CameraLib
                 GL.Vertex(b);
                 GL.End();
             };
-            Vector3 PrevPoint = m_Camera.WorldToScreenPoint(line.m_Points[0]);
+            Vector3 PrevPoint = m_Camera.WorldToScreenPoint(line.Points[0]);
 
             Vector3 Point = PrevPoint;
             var StartP = Point;
-            int count = line.m_Points.Count;
+            int count = line.Count;
             for(int i = 1; i < count; i++) {
-                Point = m_Camera.WorldToScreenPoint(line.m_Points[i]);
+                Point = m_Camera.WorldToScreenPoint(line.Points[i]);
 
                 draw(PrevPoint, Point);
 
@@ -80,7 +80,7 @@ namespace UCL.Core.CameraLib
             }
         }
         void WorldSpace_DrawRect(UCL.Core.Physic.UCL_Line3D line) {
-            if(line == null || line.m_Width <= 0 || line.m_Points.Count <= 1) {
+            if(line == null || line.m_Width <= 0 || line.Count <= 1) {
                 return;
             }
             bool draw_out_line = line.m_OutLineCol != Color.clear;
@@ -191,11 +191,11 @@ namespace UCL.Core.CameraLib
         private void OnDrawGizmos() {
 #if UNITY_EDITOR
             foreach(var line in m_CurData.m_Lines) {
-                if(line!=null && line.m_Points.Count > 0) {
-                    int count = line.m_Points.Count;
-                    Vector3 prev = line.m_Points[0];
+                if(line!=null && line.Count > 0) {
+                    int count = line.Count;
+                    Vector3 prev = line.Points[0];
                     for(int j = 1; j < count; j++) {
-                        var cur = line.m_Points[j];
+                        var cur = line.Points[j];
                         UCL.Core.UCL_DrawGizmos.DrawLine(prev, cur, line.m_Width, line.m_Col);
                         prev = cur;
                     }

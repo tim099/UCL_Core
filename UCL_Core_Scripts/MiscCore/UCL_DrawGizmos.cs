@@ -15,16 +15,16 @@ namespace UCL.Core {
 
         public static Vector3 TransformByPixel(Vector3 position, Vector3 translateBy) {
 #if UNITY_EDITOR
-            Camera cam = UnityEditor.SceneView.currentDrawingSceneView.camera;
-            if(cam == null) return position;
-            return cam.ScreenToWorldPoint(cam.WorldToScreenPoint(position) + translateBy);
+            Camera aCam = UCL.Core.EditorLib.SceneViewMapper.CurrentDrawingSceneViewCamera;
+            if(aCam == null) return position;
+            return aCam.ScreenToWorldPoint(aCam.WorldToScreenPoint(position) + translateBy);
 #else
             return Vector3.zero;
 #endif
         }
         public static Vector3 WorldToScreenPoint(Vector3 position) {
 #if UNITY_EDITOR
-            Camera cam = UnityEditor.SceneView.currentDrawingSceneView.camera;
+            Camera cam = UCL.Core.EditorLib.SceneViewMapper.CurrentDrawingSceneViewCamera;
             if(cam == null) return position;
             return cam.WorldToScreenPoint(position);
 #else
@@ -93,7 +93,7 @@ namespace UCL.Core {
         }
         public static float GetGizmoSize(Vector3 position) {
 #if UNITY_EDITOR
-            Camera cam = UnityEditor.SceneView.currentDrawingSceneView.camera;
+            Camera cam = UCL.Core.EditorLib.SceneViewMapper.CurrentDrawingSceneViewCamera;
             if(cam == null) return 1;
 
             //Camera cam = Camera.current;
@@ -122,13 +122,13 @@ namespace UCL.Core {
             if(outline_color.HasValue) {
                 float offset = 0.09f * fontsize;
                 GUI.color = outline_color.Value;
-                UnityEditor.Handles.Label(TransformByPixel(newPos, offset, 0), text);
-                UnityEditor.Handles.Label(TransformByPixel(newPos, -offset, 0), text);
-                UnityEditor.Handles.Label(TransformByPixel(newPos, 0, offset), text);
-                UnityEditor.Handles.Label(TransformByPixel(newPos, 0, -offset), text);
+                UCL.Core.EditorLib.HandlesMapper.Label(TransformByPixel(newPos, offset, 0), text);
+                UCL.Core.EditorLib.HandlesMapper.Label(TransformByPixel(newPos, -offset, 0), text);
+                UCL.Core.EditorLib.HandlesMapper.Label(TransformByPixel(newPos, 0, offset), text);
+                UCL.Core.EditorLib.HandlesMapper.Label(TransformByPixel(newPos, 0, -offset), text);
             }
             if(color.HasValue) GUI.color = color.Value;
-            UnityEditor.Handles.Label(newPos, text);
+            UCL.Core.EditorLib.HandlesMapper.Label(newPos, text);
             GUI.skin.label.fontSize = oldsize;
             GUI.color = restoreColor;
 #endif
@@ -140,15 +140,14 @@ namespace UCL.Core {
         /// <returns></returns>
         public static Vector2 WorldPosToGUI(Vector3 worldPos) {
 #if UNITY_EDITOR
-            var view = UnityEditor.SceneView.currentDrawingSceneView;
-            var cam = view.camera;
-
-            if(cam == null) return Vector2.zero;
+            var aCam = UCL.Core.EditorLib.SceneViewMapper.CurrentDrawingSceneViewCamera;
+            var aViewPos = UCL.Core.EditorLib.SceneViewMapper.CurrentDrawingSceneViewPosition;
+            if (aCam == null) return Vector2.zero;
             //Debug.LogWarning("cam:" + cam.name);
-            Vector3 sp = cam.WorldToViewportPoint(worldPos);
-            sp.Scale(new Vector3(view.position.width, view.position.height, 1));
+            Vector3 sp = aCam.WorldToViewportPoint(worldPos);
+            sp.Scale(new Vector3(aViewPos.width, aViewPos.height, 1));
             
-            return new Vector2(sp.x, view.position.height - sp.y);
+            return new Vector2(sp.x, aViewPos.height - sp.y);
 #else
             return Vector2.zero;
 #endif
@@ -156,14 +155,13 @@ namespace UCL.Core {
 
         public static Vector2 WorldPosToUI(Vector3 worldPos) {
 #if UNITY_EDITOR
-            var view = UnityEditor.SceneView.currentDrawingSceneView;
-            var cam = view.camera;
+            var aCam = UCL.Core.EditorLib.SceneViewMapper.CurrentDrawingSceneViewCamera;
 
-            if(cam == null) return Vector2.zero;
+            if (aCam == null) return Vector2.zero;
             //Debug.LogWarning("cam:" + cam.name);
-            Vector3 sp = cam.WorldToViewportPoint(worldPos);
+            Vector3 aSp = aCam.WorldToViewportPoint(worldPos);
 
-            return sp.XY();
+            return aSp.XY();
 #else
             return Vector2.zero;
 #endif
@@ -179,15 +177,15 @@ namespace UCL.Core {
         /// <returns></returns>
         public static int DrawPopup(Vector3 world_pos, Vector2 size, int selected_index, string[] options, Vector2? position_offset = null) {
 #if UNITY_EDITOR
-            UnityEditor.Handles.BeginGUI();
+            UCL.Core.EditorLib.HandlesMapper.BeginGUI();
             var pos = WorldPosToGUI(world_pos);
             pos -= 0.5f * size;
             if(position_offset.HasValue) {
                 pos += position_offset.Value;
             }
             Rect rect = new Rect(pos.x, pos.y, size.x, size.y);
-            int at = UnityEditor.EditorGUI.Popup(rect, selected_index, options);
-            UnityEditor.Handles.EndGUI();
+            int at = UCL.Core.EditorLib.EditorGUIMapper.Popup(rect, selected_index, options);
+            UCL.Core.EditorLib.HandlesMapper.EndGUI();
             return at;
 #else
             return 0;
@@ -208,7 +206,7 @@ namespace UCL.Core {
         public static bool DrawButtonGUI(string text, Vector3 worldPos, int fontsize, Vector2 but_size, Color text_col, Color but_col,
             Vector2? position_offset = null) {
 #if UNITY_EDITOR
-            UnityEditor.Handles.BeginGUI();
+            UCL.Core.EditorLib.HandlesMapper.BeginGUI();
             
             int oldsize = GUI.skin.label.fontSize;
             GUI.skin.label.fontSize = fontsize;
@@ -228,7 +226,7 @@ namespace UCL.Core {
 
             GUI.contentColor = restoreColor;
             GUI.backgroundColor = res2;
-            UnityEditor.Handles.EndGUI();
+            UCL.Core.EditorLib.HandlesMapper.EndGUI();
             
             return result;
 #else
@@ -238,7 +236,7 @@ namespace UCL.Core {
 
         public static bool DrawButtonGUI(string text, Vector2 pos, int fontsize, Vector2 but_size, Color text_col, Color but_col) {
 #if UNITY_EDITOR
-            UnityEditor.Handles.BeginGUI();
+            UCL.Core.EditorLib.HandlesMapper.BeginGUI();
 
             int oldsize = GUI.skin.label.fontSize;
             GUI.skin.label.fontSize = fontsize;
@@ -253,7 +251,7 @@ namespace UCL.Core {
 
             GUI.contentColor = restoreColor;
             GUI.backgroundColor = res2;
-            UnityEditor.Handles.EndGUI();
+            UCL.Core.EditorLib.HandlesMapper.EndGUI();
 
             return result;
 #else
@@ -264,7 +262,7 @@ namespace UCL.Core {
         public static void DrawStringGUI(string text, Vector3 worldPos, int fontsize, Color? color = null, Color? outline_color = null,
             float outline_offset = 0.08f) {
 #if UNITY_EDITOR
-            UnityEditor.Handles.BeginGUI();
+            UCL.Core.EditorLib.HandlesMapper.BeginGUI();
             var restoreColor = GUI.color;
             int oldsize = GUI.skin.label.fontSize;
             GUI.skin.label.fontSize = fontsize;
@@ -316,7 +314,7 @@ namespace UCL.Core {
             GUI.Label(new Rect(DrawPos.x, DrawPos.y, size.x, size.y), text);
             GUI.skin.label.fontSize = oldsize;
             GUI.color = restoreColor;
-            UnityEditor.Handles.EndGUI();
+            UCL.Core.EditorLib.HandlesMapper.EndGUI();
 #endif
         }
         public static void DrawCircleAtPointWithRadius(Vector3 point, Quaternion orient, float radius) {

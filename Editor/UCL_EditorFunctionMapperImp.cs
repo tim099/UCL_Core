@@ -1,8 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using UnityEditor;
-using System;
+﻿using UnityEditor;
 
 namespace UCL.Core.EditorLib
 {
@@ -40,6 +36,11 @@ namespace UCL.Core.EditorLib
                 }
 
             };
+            EditorApplicationMapper.InitIsPlaying(() => EditorApplication.isPlaying, (iVal)=> { EditorApplication.isPlaying = iVal; });
+            EditorApplicationMapper.InitIsPaused(() => EditorApplication.isPaused, (iVal) => { EditorApplication.isPaused = iVal; });
+            EditorApplicationMapper.InitIsCompiling(() => EditorApplication.isCompiling);
+            EditorApplicationMapper.InitIsPlayingOrWillChangePlaymode(() => EditorApplication.isPlayingOrWillChangePlaymode);
+            EditorApplicationMapper.InitIsUpdating(() => EditorApplication.isUpdating);
             #endregion
 
             #region AssetDatabaseMapper
@@ -47,16 +48,43 @@ namespace UCL.Core.EditorLib
             AssetDatabaseMapper.InitGetBuiltinExtraResource(AssetDatabase.GetBuiltinExtraResource);
             AssetDatabaseMapper.InitGetAssetPath(AssetDatabase.GetAssetPath);
             AssetDatabaseMapper.InitLoadMainAssetAtPath(AssetDatabase.LoadMainAssetAtPath);
+            AssetDatabaseMapper.InitRefresh(AssetDatabase.Refresh);
+            AssetDatabaseMapper.InitContains(AssetDatabase.Contains);
+            AssetDatabaseMapper.InitCreateAsset(AssetDatabase.CreateAsset);
             #endregion
 
             #region EditorUtility
             EditorUtilityMapper.InitOpenFilePanel(EditorUtility.OpenFilePanel);
             EditorUtilityMapper.InitOpenFolderPanel(EditorUtility.OpenFolderPanel);
+            EditorUtilityMapper.InitCopySerialized(EditorUtility.CopySerialized);
+            EditorUtilityMapper.InitSetDirty(EditorUtility.SetDirty);
             #endregion
 
             #region SelectionMapper
             SelectionMapper.InitActiveObject(() => { return UnityEditor.Selection.activeObject; },
                 (iObj) => { UnityEditor.Selection.activeObject = iObj; });
+            SelectionMapper.InitActiveGameObject(() => { return UnityEditor.Selection.activeGameObject; },
+                (iObj) => { UnityEditor.Selection.activeGameObject = iObj; });
+            #endregion
+
+            #region MonoScriptMapper
+            MonoScriptMapper.InitFromMonoBehaviour(MonoScript.FromMonoBehaviour);
+            MonoScriptMapper.InitFromScriptableObject(MonoScript.FromScriptableObject);
+            #endregion
+
+            #region SceneViewMapper
+            SceneViewMapper.InitGetCurrentDrawingSceneViewCamera(() => SceneView.currentDrawingSceneView.camera);
+            SceneViewMapper.InitGetCurrentDrawingSceneViewPosition(() => SceneView.currentDrawingSceneView.position);
+            #endregion
+
+            #region HandlesMapper
+            HandlesMapper.InitLabel(Handles.Label);
+            HandlesMapper.InitBeginGUI(Handles.BeginGUI);
+            HandlesMapper.InitEndGUI(Handles.EndGUI);
+            #endregion
+
+            #region EditorGUIMapper
+            EditorGUIMapper.InitPopup(EditorGUI.Popup);
             #endregion
 
             #region Init

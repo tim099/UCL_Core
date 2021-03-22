@@ -1,13 +1,10 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-namespace UCL.Core.EditorLib
+﻿namespace UCL.Core.EditorLib
 {
     static public class SelectionMapper
     {
         #region activeObject
-        public static System.Func<UnityEngine.Object> m_GetActiveObject = null;
-        public static System.Action<UnityEngine.Object> m_SetActiveObject = null;
+        private static System.Func<UnityEngine.Object> m_GetActiveObject = null;
+        private static System.Action<UnityEngine.Object> m_SetActiveObject = null;
         public static void InitActiveObject(System.Func<UnityEngine.Object> iGetActiveObject,
             System.Action<UnityEngine.Object> iSetActiveObject)
         {
@@ -28,6 +25,33 @@ namespace UCL.Core.EditorLib
             {
                 if (m_SetActiveObject == null) return;
                 m_SetActiveObject.Invoke(value);
+            }
+        }
+        #endregion
+
+        #region activeGameObject
+        private static System.Func<UnityEngine.GameObject> m_GetActiveGameObject = null;
+        private static System.Action<UnityEngine.GameObject> m_SetActiveGameObject = null;
+        public static void InitActiveGameObject(System.Func<UnityEngine.GameObject> iGetActiveGameObject,
+            System.Action<UnityEngine.GameObject> iSetActiveGameObject)
+        {
+            m_GetActiveGameObject = iGetActiveGameObject;
+            m_SetActiveGameObject = iSetActiveGameObject;
+        }
+        /// <summary>
+        /// Mapper to UnityEditor.Selection.activeGameObject, Only work in Editor
+        /// </summary>
+        public static UnityEngine.GameObject activeGameObject
+        {
+            get
+            {
+                if (m_GetActiveGameObject == null) return null;
+                return m_GetActiveGameObject.Invoke();
+            }
+            set
+            {
+                if (m_SetActiveGameObject == null) return;
+                m_SetActiveGameObject.Invoke(value);
             }
         }
         #endregion

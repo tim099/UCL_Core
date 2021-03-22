@@ -11,7 +11,7 @@ namespace UCL.Core.EditorLib
     public static class AssetDatabaseMapper
     {
         #region LoadAssetAtPath
-        static System.Func<string, Type, UnityEngine.Object> m_LoadAssetAtPath = null;
+        private static System.Func<string, Type, UnityEngine.Object> m_LoadAssetAtPath = null;
         /// <summary>
         /// Mapping to AssetDatabase.LoadAssetAtPath Only work on Editor!!
         /// </summary>
@@ -43,7 +43,7 @@ namespace UCL.Core.EditorLib
         #endregion
 
         #region GetBuiltinExtraResource
-        static System.Func<Type, string, UnityEngine.Object> m_GetBuiltinExtraResource = null;
+        private static System.Func<Type, string, UnityEngine.Object> m_GetBuiltinExtraResource = null;
         /// <summary>
         /// Mapping to AssetDatabase.GetBuiltinExtraResource Only work on Editor!!
         /// </summary>
@@ -81,7 +81,7 @@ namespace UCL.Core.EditorLib
         #endregion
 
         #region GetAssetPath
-        static System.Func<UnityEngine.Object, string> m_GetAssetPath = null;
+        private static System.Func<UnityEngine.Object, string> m_GetAssetPath = null;
         /// <summary>
         /// Mapping to AssetDatabase.GetAssetPath, Only work in Editor!!
         /// </summary>
@@ -103,7 +103,7 @@ namespace UCL.Core.EditorLib
         #endregion
 
         #region LoadMainAssetAtPath
-        static System.Func<string, UnityEngine.Object> m_LoadMainAssetAtPath = null;
+        private static System.Func<string, UnityEngine.Object> m_LoadMainAssetAtPath = null;
         /// <summary>
         /// Mapping to AssetDatabase.LoadMainAssetAtPath Only work on Editor!!
         /// </summary>
@@ -121,6 +121,72 @@ namespace UCL.Core.EditorLib
         static public void InitLoadMainAssetAtPath(System.Func<string, UnityEngine.Object> iLoadMainAssetAtPath)
         {
             m_LoadMainAssetAtPath = iLoadMainAssetAtPath;
+        }
+        #endregion
+
+        #region Refresh
+
+        private static System.Action m_Refresh = null;
+        /// <summary>
+        /// Mapping to AssetDatabase.Refresh Only work on Editor!!
+        /// </summary>
+        /// <param name="iAssetPath"></param>
+        /// <returns></returns>
+        static public void Refresh()
+        {
+#if UNITY_EDITOR
+            if (m_Refresh == null) return;
+            m_Refresh.Invoke();
+#endif
+        }
+        static public void InitRefresh(System.Action iRefresh)
+        {
+            m_Refresh = iRefresh;
+        }
+        #endregion
+
+        #region Contains
+
+        private static System.Func<UnityEngine.Object, bool> m_Contains = null;
+        /// <summary>
+        /// Mapping to AssetDatabase.Contains Only work on Editor!!
+        /// </summary>
+        /// <param name="iAssetPath"></param>
+        /// <returns></returns>
+        static public bool Contains(UnityEngine.Object iObj)
+        {
+#if UNITY_EDITOR
+            if (m_Contains == null) return false;
+            return m_Contains.Invoke(iObj);
+#else
+            return false;
+#endif
+        }
+        public static void InitContains(System.Func<UnityEngine.Object, bool> iContains)
+        {
+            m_Contains = iContains;
+        }
+        #endregion
+
+        #region CreateAsset
+
+        private static System.Action<UnityEngine.Object, string> m_CreateAsset = null;
+        /// <summary>
+        /// Mapping to AssetDatabase.CreateAsset Only work on Editor!!
+        /// </summary>
+        /// <param name="iAssetPath"></param>
+        /// <returns></returns>
+        static public void CreateAsset([JetBrains.Annotations.NotNull] UnityEngine.Object iAsset, string iPath)
+        {
+#if UNITY_EDITOR
+            if (m_CreateAsset == null) return;
+            m_CreateAsset.Invoke(iAsset, iPath);
+#endif
+            return;
+        }
+        public static void InitCreateAsset(System.Action<UnityEngine.Object, string> iCreateAsset)
+        {
+            m_CreateAsset = iCreateAsset;
         }
         #endregion
     }

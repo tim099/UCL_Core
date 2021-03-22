@@ -91,14 +91,10 @@ namespace UCL.Core.FileLib
             return path;
         }
         public static string GetScriptPath(MonoBehaviour iMonoBehaviour) {
-            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromMonoBehaviour(iMonoBehaviour);
-            //Debug.LogWarning("path:" + UnityEditor.AssetDatabase.GetAssetPath(monoScript));
-            return UnityEditor.AssetDatabase.GetAssetPath(monoScript);
+            return UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(UCL.Core.EditorLib.MonoScriptMapper.FromMonoBehaviour(iMonoBehaviour));
         }
         public static string GetScriptPath(ScriptableObject iScriptableObject) {
-            UnityEditor.MonoScript monoScript = UnityEditor.MonoScript.FromScriptableObject(iScriptableObject);
-            //Debug.LogWarning("path:" + UnityEditor.AssetDatabase.GetAssetPath(monoScript));
-            return UnityEditor.AssetDatabase.GetAssetPath(monoScript);
+            return UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(UCL.Core.EditorLib.MonoScriptMapper.FromScriptableObject(iScriptableObject));
         }
     }
 #endif

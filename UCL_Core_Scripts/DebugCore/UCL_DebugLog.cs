@@ -11,6 +11,55 @@ namespace UCL.Core.DebugLib {
     [AddComponentMenu("UCL/UCL_DebugLog")]
     [DisallowMultipleComponent]
     public class UCL_DebugLog : UCL_Singleton<UCL_DebugLog> {
+        
+        protected class MousePressedData
+        {
+            const float OpenDebugLogDistance = 1200f;
+            public void Init(Vector2 iStartPos)
+            {
+                MoveDistance = 0;
+                m_StartPos = iStartPos;
+                m_PrePos = m_StartPos;
+                m_MaxPos = m_StartPos;
+                m_MinPos = m_StartPos;
+            }
+            public bool Update(Vector2 iCurPos)
+            {
+                MoveDistance += (iCurPos - m_PrePos).magnitude;
+                m_PrePos = iCurPos;
+                if (iCurPos.x > m_MaxPos.x)
+                {
+                    m_MaxPos.x = iCurPos.x;
+                }else if (iCurPos.x < m_MinPos.x)
+                {
+                    m_MinPos.x = iCurPos.x;
+                }
+                if (iCurPos.y > m_MaxPos.y)
+                {
+                    m_MaxPos.y = iCurPos.y;
+                }
+                else if (iCurPos.y < m_MinPos.y)
+                {
+                    m_MinPos.y = iCurPos.y;
+                }
+
+                if ((iCurPos - m_StartPos).magnitude > 0.35f * OpenDebugLogDistance)
+                {
+                    Init(iCurPos);
+                }
+                return (MoveDistance >= OpenDebugLogDistance) 
+                    && ((m_MaxPos.x - m_MinPos.x) > 0.2f * OpenDebugLogDistance) 
+                    && ((m_MaxPos.y - m_MinPos.y) > 0.2f * OpenDebugLogDistance); 
+            }
+            Vector2 m_MaxPos = Vector2.zero;
+            Vector2 m_MinPos = Vector2.zero;
+            public float MoveDistance { get; protected set; } = 0;
+            Vector2 m_PrePos = Vector2.zero;
+            Vector2 m_StartPos = Vector2.zero;
+        }
+        const string LogLevelKey = "UCL_DebugLog_LogLevel";
+        const string LogToFileKey = "UCL_DebugLog_LogToFile";
+        const string AutoStackTraceKey = "UCL_DebugLog_AutoStackTrace";
         //[Flags]
         //UnityEngine.Debug.unityLogger.logEnabled
         public enum LogLevel {
@@ -116,6 +165,7 @@ namespace UCL.Core.DebugLib {
         protected GUIStyle m_LogStyle = new GUIStyle();
         protected GUIStyle m_LogButtonStyle = null;
         protected GUIStyle m_LogToggleStyle = null;
+        protected MousePressedData m_MousePressedData = new MousePressedData();
         [PA.UCL_ReadOnly][SerializeField]protected float m_Scale;
 
         [PA.UCL_EnumMask] public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
@@ -125,6 +175,10 @@ namespace UCL.Core.DebugLib {
         /// Draw the show button when f_Show == false
         /// </summary>
         public bool f_DrawShowDebugLogButton = false;
+        /// <summary>
+        /// Show the DebugLog on user draw circle on screen
+        /// </summary>
+        public bool f_ShowDebugLogOnDrawCircle = true;
         public bool f_LogToFile = false;
         public bool f_AutoStackTrace = true;
         public int m_MaxLogCount = 100;
@@ -153,16 +207,14 @@ namespace UCL.Core.DebugLib {
             Init();
         }
         void LoadSetting() {
-            if(PlayerPrefs.HasKey("UCL_DebugLog_LogLevel")) {
-                m_LogLevel = (LogLevel)PlayerPrefs.GetInt("UCL_DebugLog_LogLevel");
-            }
-            if(PlayerPrefs.HasKey("UCL_DebugLog_LogToFile")) f_LogToFile = (PlayerPrefs.GetInt("UCL_DebugLog_LogToFile") == 1);
-            if(PlayerPrefs.HasKey("UCL_DebugLog_AutoStackTrace")) f_AutoStackTrace = (PlayerPrefs.GetInt("UCL_DebugLog_AutoStackTrace") == 1);
+            if(PlayerPrefs.HasKey(LogLevelKey)) m_LogLevel = (LogLevel)PlayerPrefs.GetInt(LogLevelKey);
+            if(PlayerPrefs.HasKey(LogToFileKey)) f_LogToFile = (PlayerPrefs.GetInt(LogToFileKey) == 1);
+            if(PlayerPrefs.HasKey(AutoStackTraceKey)) f_AutoStackTrace = (PlayerPrefs.GetInt(AutoStackTraceKey) == 1);
         }
         void SaveSetting() {
-            PlayerPrefs.SetInt("UCL_DebugLog_LogLevel", (int)m_LogLevel);
-            PlayerPrefs.SetInt("UCL_DebugLog_LogToFile", f_LogToFile ? 1 : 0);
-            PlayerPrefs.SetInt("UCL_DebugLog_AutoStackTrace", f_AutoStackTrace ? 1 : 0);
+            PlayerPrefs.SetInt(LogLevelKey, (int)m_LogLevel);
+            PlayerPrefs.SetInt(LogToFileKey, f_LogToFile ? 1 : 0);
+            PlayerPrefs.SetInt(AutoStackTraceKey, f_AutoStackTrace ? 1 : 0);
             PlayerPrefs.Save();
         }
         private void OnApplicationPause(bool pause) {
@@ -182,47 +234,6 @@ namespace UCL.Core.DebugLib {
         }
         public void Toggle() {
             SetShow(!f_Show);
-        }
-        void OnGUI() {
-            if(m_LogButtonStyle == null) {
-                m_LogButtonStyle = new GUIStyle(GUI.skin.button);
-                m_LogButtonStyle.fontSize = 22;
-
-
-                m_LogToggleStyle = new GUIStyle(GUI.skin.button);//GUI.skin.toggle
-                m_LogToggleStyle.fontSize = 22;
-                //m_LogToggleStyle.onFocused.textColor = Color.red;
-                //m_LogToggleStyle.onActive.textColor = Color.red;
-                //m_LogToggleStyle. = Color.red;
-            }
-            if(!f_Show) {
-                if(f_DrawShowDebugLogButton) {
-                    string key_str = "";
-                    if(m_ShowKeyCode != KeyCode.None) {
-                        key_str = "(" + m_ShowKeyCode.ToString() + ")";
-                    }
-                    if(GUILayout.Button("DebugLog"+ key_str, style: m_LogButtonStyle)) {
-                        f_Show = true;
-                    }
-                }
-                return;
-            }
-
-            var m_ScreenOrientation = Screen.orientation;
-            if(m_ScreenOrientation == ScreenOrientation.Landscape ||
-                m_ScreenOrientation == ScreenOrientation.LandscapeLeft ||
-                m_ScreenOrientation == ScreenOrientation.LandscapeRight) {
-                m_Scale = (Screen.width / 1280.0f);
-            } else if(m_ScreenOrientation == ScreenOrientation.Portrait ||
-                m_ScreenOrientation == ScreenOrientation.PortraitUpsideDown) {//Portrait!
-                m_Scale = (Screen.width / 720.0f);
-            } else {//unknown
-
-            }
-            int width = Screen.width - (m_Margin * 2);
-            int height = Screen.height - (m_Margin * 2);
-            m_WindowRect.size = new Vector2(width,height);
-            m_WindowRect = GUILayout.Window(122125, m_WindowRect, DebugConsole, "Debug Console");
         }
         void DebugConsole(int windowID) {
             GUILayout.BeginHorizontal();
@@ -392,28 +403,83 @@ namespace UCL.Core.DebugLib {
         public void Log(string message, string stack_trace = "", LogType type = LogType.Log) {
             Log(new LogData(message, stack_trace, type));
         }
-        /*
-        public void LogWarning(string message) {
-            LogStackTrace(message, LogType.Warning);
-        }
-        public void LogError(string message) {
-            LogStackTrace(message, LogType.Error);
-        }
-        public void LogStackTrace(string message, LogType type = LogType.Log) {
-            var st = new System.Diagnostics.StackTrace(true);
-            string stack_trace = st.ToString();
-            /*
-            for(int i = 0,len = st.FrameCount; i < len; i++) {
-                var sf = st.GetFrame(i);
-                stack_trace += "" + sf.GetMethod();// +"\n";
-                stack_trace += "(" + sf.GetFileName()+":"+ sf.GetFileLineNumber() + ")\n";
+        void OnGUI()
+        {
+            if (m_LogButtonStyle == null)
+            {
+                m_LogButtonStyle = new GUIStyle(GUI.skin.button);
+                m_LogButtonStyle.fontSize = 22;
 
-                //stack_trace += "\n";
+
+                m_LogToggleStyle = new GUIStyle(GUI.skin.button);//GUI.skin.toggle
+                m_LogToggleStyle.fontSize = 22;
+                //m_LogToggleStyle.onFocused.textColor = Color.red;
+                //m_LogToggleStyle.onActive.textColor = Color.red;
+                //m_LogToggleStyle. = Color.red;
             }
-            Log(message, stack_trace, type);
+            if (!f_Show)
+            {
+                //GUILayout.Box(m_MousePressedData.MoveDistance.ToString("N2"));
+                if (f_DrawShowDebugLogButton)
+                {
+                    string key_str = "";
+                    if (m_ShowKeyCode != KeyCode.None)
+                    {
+                        key_str = "(" + m_ShowKeyCode.ToString() + ")";
+                    }
+                    if (GUILayout.Button("DebugLog" + key_str, style: m_LogButtonStyle))
+                    {
+                        f_Show = true;
+                    }
+                }
+                return;
+            }
+
+            var m_ScreenOrientation = Screen.orientation;
+            if (m_ScreenOrientation == ScreenOrientation.Landscape ||
+                m_ScreenOrientation == ScreenOrientation.LandscapeLeft ||
+                m_ScreenOrientation == ScreenOrientation.LandscapeRight)
+            {
+                m_Scale = (Screen.width / 1280.0f);
+            }
+            else if (m_ScreenOrientation == ScreenOrientation.Portrait ||
+              m_ScreenOrientation == ScreenOrientation.PortraitUpsideDown)
+            {//Portrait!
+                m_Scale = (Screen.width / 720.0f);
+            }
+            else
+            {//unknown
+
+            }
+            int width = Screen.width - (m_Margin * 2);
+            int height = Screen.height - (m_Margin * 2);
+            m_WindowRect.size = new Vector2(width, height);
+            m_WindowRect = GUILayout.Window(122125, m_WindowRect, DebugConsole, "Debug Console");
         }
-        */
         private void Update() {
+            if (!f_Show)
+            {
+                if (f_ShowDebugLogOnDrawCircle)
+                {
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        m_MousePressedData.Init(Input.mousePosition);
+                    }
+                    else
+                    {
+                        if (Input.GetMouseButton(0))
+                        {
+                            //Debug.LogError("MoveDistance:" + m_MousePressedData.MoveDistance.ToString("N1"));
+                            if (m_MousePressedData.Update(Input.mousePosition))
+                            {
+                                SetShow(true);
+                            }
+                        }
+                    }
+                }
+            }
+
+
             lock(m_LogQue) {
                 while(m_LogQue.Count > 0) {
                     Log(m_LogQue.Dequeue());

@@ -42,7 +42,7 @@ namespace UCL.Core.Game {
         
         public void LoadLanguage(string lang) {
             m_CurLang = lang;
-            UCL_LocalizeManager.Instance.ResourceLoadLanguage(m_LoadLangPath, m_CurLang);
+            UCL_LocalizeManager.Instance.LoadLanguage(m_LoadLangPath, m_CurLang);
         }
     }
 }

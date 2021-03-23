@@ -105,6 +105,42 @@ namespace UCL.Core.EditorLib
 #endif
         }
         #endregion
-        //public static void SetDirty([NotNull] UnityEngine.Object target);
+
+
+        #region DisplayProgressBar
+        private static Action<string , string , float> m_DisplayProgressBar = null;
+        /// <summary>
+        /// Displays or updates a progress bar.
+        /// </summary>
+        /// <param name="title"></param>
+        /// <param name="info"></param>
+        /// <param name="progress"></param>
+        public static void DisplayProgressBar(string title, string info, float progress)
+        {
+            if (m_DisplayProgressBar == null) return;
+            m_DisplayProgressBar.Invoke(title, info, progress);
+        }
+        public static void InitDisplayProgressBar(Action<string, string, float> iDisplayProgressBar)
+        {
+            m_DisplayProgressBar = iDisplayProgressBar;
+        }
+        #endregion
+
+        #region ClearProgressBar
+        private static Action m_ClearProgressBar = null;
+
+        /// <summary>
+        /// Removes progress bar.
+        /// </summary>
+        public static void ClearProgressBar()
+        {
+            if (m_ClearProgressBar == null) return;
+            m_ClearProgressBar.Invoke();
+        }
+        public static void InitClearProgressBar(Action iClearProgressBar)
+        {
+            m_ClearProgressBar = iClearProgressBar;
+        }
+        #endregion
     }
 }

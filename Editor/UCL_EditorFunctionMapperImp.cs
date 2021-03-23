@@ -58,6 +58,8 @@ namespace UCL.Core.EditorLib
             EditorUtilityMapper.InitOpenFolderPanel(EditorUtility.OpenFolderPanel);
             EditorUtilityMapper.InitCopySerialized(EditorUtility.CopySerialized);
             EditorUtilityMapper.InitSetDirty(EditorUtility.SetDirty);
+            EditorUtilityMapper.InitDisplayProgressBar(EditorUtility.DisplayProgressBar);
+            EditorUtilityMapper.InitClearProgressBar(EditorUtility.ClearProgressBar);
             #endregion
 
             #region SelectionMapper

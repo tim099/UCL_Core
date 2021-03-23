@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8eb582bf52b8008448b2cd03f713bea8, type: 3}
+  m_Name: LocalizeDownloaderDemo
+  m_EditorClassIdentifier: 
+  m_TableId: 1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo
+  m_Gids: 
+  m_GidTable: 1018481382
+  m_SaveFolder: Assets/UCL/UCL_Core/UCL_CoreDemo/UCL_LocalizeDemo
+  m_FileName: Lang.txt

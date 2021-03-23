@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.LocalizeLib {
+
     [CreateAssetMenu(fileName = "New LocalizeEditor", menuName = "UCL/LocalizeEditor")]
     [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_LocalizeEditor : ScriptableObject {
@@ -15,15 +16,7 @@ namespace UCL.Core.LocalizeLib {
             }
             return false; // we did not handle the open
         }
-        [System.Serializable]
-        public struct KeyPair {
-            public KeyPair(string _Key, string _Localize) {
-                m_Key = _Key;
-                m_Localize = _Localize;
-            }
-            public string m_Key;
-            public string m_Localize;
-        }
+
         public TextAsset m_LocalizeData;
         public List<KeyPair> m_LocalizeDic = new List<KeyPair>();
 

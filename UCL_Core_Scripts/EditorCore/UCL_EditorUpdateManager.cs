@@ -93,13 +93,13 @@ namespace UCL.Core.EditorLib {
             try {
                 m_EditorUpdateAction?.Invoke();
             } catch(Exception e) {
-                Debug.LogError(e);
+                Debug.LogException(e);
             }
             foreach(System.Action act in m_EditorUpdateActionDic.Values) {
                 try {
                     act?.Invoke();
                 } catch(Exception e) {
-                    Debug.LogError(e);
+                    Debug.LogException(e);
                 }
 
             }

@@ -170,6 +170,13 @@ namespace UCL.Core.Game {
         /// Just Loaded the setting, need to refresh AudioMixer On Update!!
         /// </summary>
         bool m_Loaded = false;
+        virtual protected void Reset()
+        {
+            if (m_AudioMixer == null)
+            {
+                m_AudioMixer = Resources.Load<AudioMixer>("UCL_AudioMixer");
+            }
+        }
         override public void Init() {
             Instance = this;
             if (m_AudioMixer == null) m_AudioMixer = Resources.Load<AudioMixer>("UCL_AudioMixer");

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace UCL.Core.LocalizeLib
@@ -85,7 +86,9 @@ namespace UCL.Core.LocalizeLib
                 {
                     foreach (var aLangName in aLangDic.Keys)
                     {
+                        //Debug.LogError("aLangName:" + aLangName);
                         string aFolderName = Path.Combine(SavePath, aLangName);
+
                         if (!Directory.Exists(aFolderName))
                         {
                             Directory.CreateDirectory(aFolderName);
@@ -109,15 +112,40 @@ namespace UCL.Core.LocalizeLib
                     UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
 
                 };
+                Regex aRegex = new Regex(@"\r\n", RegexOptions.Compiled);
                 for (int aID = 0; aID < aGids.Count; aID++)
                 {
                     UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGids[aID]), delegate (byte[] iData) {
                         string aData = System.Text.Encoding.UTF8.GetString(iData);
-                        var aLines = aData.SplitByLine();
+                        StringBuilder aSB = new StringBuilder();
+                        for (int i = 0; i < aData.Length; i++)
+                        {
+                            if (aData[i] == '\n')
+                            {
+                                aSB.Append("0,");
+                            }
+                            else if (aData[i] == '\r')
+                            {
+                                aSB.Append("1,");
+                            }
+                            else if (aData[i] == ',')
+                            {
+                                aSB.Append("2,");
+                            }
+                            else
+                            {
+                                aSB.Append(aData[i]);
+                            }
+                        }
+                        //Debug.LogError("Origin:" + aData);
+                        //Debug.LogError(aSB.ToString());
+                        var aLines = aRegex.Split(aData);//SplitByLine(); RegexOptions.IgnoreCase
+                        //Debug.LogWarning("aLines:" + aLines.Length);
                         if (aLines.Length > 1)
                         {
                             var aLangs = new List<string>();
                             var aLangNames = aLines[0].Split(',');
+                            //Debug.LogWarning("aLines[0]:" + aLines[0]);
                             for (int i = 1; i < aLangNames.Length; i++)//0 is Key
                             {
                                 string aLangName = aLangNames[i];
@@ -130,6 +158,7 @@ namespace UCL.Core.LocalizeLib
                             }
                             for (int i = 1; i < aLines.Length; i++)
                             {
+                                //Debug.LogWarning("aLines["+i+"]:" + aLines[i]);
                                 var aDatas = aLines[i].Split(',');
                                 if (aDatas.Length > 1)
                                 {

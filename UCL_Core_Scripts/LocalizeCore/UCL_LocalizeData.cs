@@ -20,7 +20,7 @@ namespace UCL.Core.LocalizeLib
             using(StringReader reader = new StringReader(data)) {
                 var hex = new char[4];
                 bool parsing = true;
-                StringBuilder s = new StringBuilder();
+                StringBuilder aStringBuilder = new StringBuilder();
                 string key = null;
                 int phase = 0;
                 while(parsing) {
@@ -34,26 +34,27 @@ namespace UCL.Core.LocalizeLib
                         case '"': {
                                 phase++;
                                 switch(phase) {
-                                    case 1: {
-                                            s.Clear();
+                                    case 1:
+                                        {//Key Start
+                                            aStringBuilder.Clear();
                                             break;
                                         }
-                                    case 2: {
-                                            key = s.ToString();
+                                    case 2: {//Key Enter
+                                            key = aStringBuilder.ToString();
                                             break;
                                         }
-                                    case 3: {
-                                            s.Clear();
+                                    case 3: {//Value Start
+                                            aStringBuilder.Clear();
                                             break;
                                         }
-                                    case 4: {
+                                    case 4: {//Value End
                                             if(m_Dic.ContainsKey(key)) {
-                                                Debug.LogError("ParseData key:" + key + " already exist!!");
+                                                Debug.LogError("ParseData key:" + key + " already exist!!,Value:" + aStringBuilder.ToString());
                                             } else {
                                                 //Debug.LogWarning("Add" + key + "," + s.ToString());
-                                                m_Dic.Add(key, s.ToString());
+                                                m_Dic.Add(key, aStringBuilder.ToString());
                                             }
-                                            s.Clear();
+                                            aStringBuilder.Clear();
                                             phase = 0;
                                             break;
                                         }
@@ -72,34 +73,34 @@ namespace UCL.Core.LocalizeLib
                                     case '"':
                                     case '\\':
                                     case '/':
-                                        s.Append(c);
+                                        aStringBuilder.Append(c);
                                         break;
                                     case 'b':
-                                        s.Append('\b');
+                                        aStringBuilder.Append('\b');
                                         break;
                                     case 'f':
-                                        s.Append('\f');
+                                        aStringBuilder.Append('\f');
                                         break;
                                     case 'n':
-                                        s.Append('\n');
+                                        aStringBuilder.Append('\n');
                                         break;
                                     case 'r':
-                                        s.Append('\r');
+                                        aStringBuilder.Append('\r');
                                         break;
                                     case 't':
-                                        s.Append('\t');
+                                        aStringBuilder.Append('\t');
                                         break;
                                     case 'u':
                                         for(int i = 0; i < 4; i++) {
                                             hex[i] = System.Convert.ToChar(reader.Read());
                                         }
-                                        s.Append((char)System.Convert.ToInt32(new string(hex), 16));
+                                        aStringBuilder.Append((char)System.Convert.ToInt32(new string(hex), 16));
                                         break;
                                 }
                                 break;
                             }
                         default:
-                            s.Append(c);
+                            aStringBuilder.Append(c);
                             break;
                     }
                 }

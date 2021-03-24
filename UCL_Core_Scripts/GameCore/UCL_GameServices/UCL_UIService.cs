@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 
@@ -8,7 +9,10 @@ namespace UCL.Core.Game
     public class UCL_UIService : UCL_GameService
     {
         static public UCL_UIService Ins { get; protected set; }
-
+        /// <summary>
+        /// Root folder of UI Resource
+        /// </summary>
+        static public string UIResourceFolder = string.Empty;
         [SerializeField] RectTransform m_UIRoot = null;
         /// <summary>
         /// Use List to simulate Stack
@@ -24,6 +28,25 @@ namespace UCL.Core.Game
             m_UIStack.Add(iUI);
             iUI.Init();
             return iUI;
+        }
+        public T CreateUIFromResource<T>() where T : UCL_GameUI
+        {
+            string aPath = typeof(T).Name;
+            if (!string.IsNullOrEmpty(UIResourceFolder))
+            {
+                aPath = Path.Combine(UIResourceFolder, aPath);
+            }
+            return CreateUIFromResource<T>(aPath);
+        }
+        public T CreateUIFromResource<T>(string iPath) where T : UCL_GameUI
+        {
+            T aTemplate = Resources.Load<T>(iPath);
+            if(aTemplate == null)
+            {
+                Debug.LogError("CreateUIFromResource aTemplate == null iPath:" + iPath);
+                return null;
+            }
+            return CreateUI(aTemplate);
         }
         public void CloseUI(UCL_GameUI iUI)
         {

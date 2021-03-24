@@ -6,6 +6,7 @@ namespace UCL.Core.ATTR {
     /// <summary>
     /// Create a button trigger member function
     /// </summary>
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
     public class UCL_FunctionButtonAttribute : Attribute {
         public string m_ButtonName;

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.ATTR {
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
     public class UCL_DrawStringAttribute : Attribute {
         public object[] m_Params;

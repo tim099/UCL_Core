@@ -16,6 +16,7 @@ namespace UCL.Core.EditorLib {
         /// </summary>
         static Queue<System.Action> m_ActQue = new Queue<Action>();
 #endif
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void Init()
         {
 #if UNITY_EDITOR
@@ -27,6 +28,7 @@ namespace UCL.Core.EditorLib {
         /// Add action that only invoke once
         /// </summary>
         /// <param name="act"></param>
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void AddAction(System.Action act) {
 #if UNITY_EDITOR
             m_ActQue?.Enqueue(act);
@@ -37,17 +39,20 @@ namespace UCL.Core.EditorLib {
         /// </summary>
         /// <param name="act"></param>
         /// <param name="delay_frame"></param>
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void AddDelayAction(System.Action act, int delay_frame) {
 #if UNITY_EDITOR
             m_DelayActQue?.Enqueue(new Tuple<int, Action>(delay_frame, act));
 #endif
         }
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void AddEditorUpdateAct(System.Action act) {
 #if UNITY_EDITOR
             m_EditorUpdateAction += act;
             Debug.Log("AddEditorUpdateAct count:" + m_EditorUpdateAction.GetInvocationCount());
 #endif
         }
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void RemoveEditorUpdateAct(System.Action act) {
 #if UNITY_EDITOR
             m_EditorUpdateAction -= act;
@@ -58,6 +63,7 @@ namespace UCL.Core.EditorLib {
             Debug.Log("RemoveEditorUpdateAct count:" + count);
 #endif
         }
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void AddEditorUpdateAct(string key, System.Action act) {
 #if UNITY_EDITOR
             if(m_EditorUpdateActionDic.ContainsKey(key)) {
@@ -68,6 +74,7 @@ namespace UCL.Core.EditorLib {
             Debug.Log("m_EditorUpdateActionDic.Count:" + m_EditorUpdateActionDic.Count);
 #endif
         }
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void RemoveEditorUpdateAct(string key) {
 #if UNITY_EDITOR
             if(!m_EditorUpdateActionDic.ContainsKey(key)) {
@@ -78,6 +85,7 @@ namespace UCL.Core.EditorLib {
             Debug.Log("m_EditorUpdateActionDic.Count:" + m_EditorUpdateActionDic.Count);
 #endif
         }
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void Clear() {
 #if UNITY_EDITOR
             m_EditorUpdateActionDic?.Clear();

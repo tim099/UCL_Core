@@ -10,10 +10,47 @@ namespace UCL.Core.LocalizeLib
     [System.Serializable]
     public struct KeyPair
     {
-        public KeyPair(string _Key, string _Localize)
+        public KeyPair(string iKey, string iLocalize)
         {
-            m_Key = _Key;
-            m_Localize = _Localize;
+            m_Key = ParseString(iKey);
+            m_Localize = ParseString(iLocalize);
+            //Debug.LogError(m_Key + "," + m_Localize);
+        }
+        static public string ParseString(string iStr)
+        {
+            if (string.IsNullOrEmpty(iStr))
+            {
+                return string.Empty;
+            }
+            if(iStr[0] != '"') {
+                return iStr;
+            }
+            StringBuilder aSB = new StringBuilder();
+            for(int i = 1; i < iStr.Length - 1; i++)
+            {
+                char aC = iStr[i];
+                switch (aC) {
+                    case '"':
+                        {
+                            i++;
+                            aSB.Append('\\');
+                            aSB.Append('"');
+                            break;
+                        }
+                    case '\r':
+                        {
+                            i++;
+                            aSB.Append('\n');
+                            break;
+                        }
+                    default:
+                        {
+                            aSB.Append(aC);
+                            break;
+                        }
+                }
+            }
+            return aSB.ToString();
         }
         public void SaveToString(StringBuilder aSB)
         {
@@ -52,7 +89,7 @@ namespace UCL.Core.LocalizeLib
         public string m_SaveFolder = "";
         public string m_FileName = "Lang.txt";
         public string SavePath { get { return m_SaveFolder; } }
-
+        protected Regex m_SplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
 #if UNITY_EDITOR
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void ExploreSaveFolder()
@@ -98,7 +135,7 @@ namespace UCL.Core.LocalizeLib
                         for (int i = 0; i < aLangs.Count; i++)
                         {
                             aLangs[i].SaveToString(aSB);
-                            aSB.AppendLine();
+                            if(i < aLangs.Count - 1) aSB.AppendLine();
                         }
                         string aPath = Path.Combine(aFolderName, m_FileName);
                         File.WriteAllText(aPath, aSB.ToString());
@@ -112,77 +149,22 @@ namespace UCL.Core.LocalizeLib
                     UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
 
                 };
-                Regex aRegex = new Regex(@"\r\n", RegexOptions.Compiled);
+                string[] aDatas = new string[aGids.Count];
+                
                 for (int aID = 0; aID < aGids.Count; aID++)
                 {
+                    int aAt = aID;
                     UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGids[aID]), delegate (byte[] iData) {
                         string aData = System.Text.Encoding.UTF8.GetString(iData);
-                        StringBuilder aSB = new StringBuilder();
-                        for (int i = 0; i < aData.Length; i++)
-                        {
-                            if (aData[i] == '\n')
-                            {
-                                aSB.Append("0,");
-                            }
-                            else if (aData[i] == '\r')
-                            {
-                                aSB.Append("1,");
-                            }
-                            else if (aData[i] == ',')
-                            {
-                                aSB.Append("2,");
-                            }
-                            else
-                            {
-                                aSB.Append(aData[i]);
-                            }
-                        }
-                        //Debug.LogError("Origin:" + aData);
-                        //Debug.LogError(aSB.ToString());
-                        var aLines = aRegex.Split(aData);//SplitByLine(); RegexOptions.IgnoreCase
-                        //Debug.LogWarning("aLines:" + aLines.Length);
-                        if (aLines.Length > 1)
-                        {
-                            var aLangs = new List<string>();
-                            var aLangNames = aLines[0].Split(',');
-                            //Debug.LogWarning("aLines[0]:" + aLines[0]);
-                            for (int i = 1; i < aLangNames.Length; i++)//0 is Key
-                            {
-                                string aLangName = aLangNames[i];
-                                aLangs.Add(aLangName);
-                                if (!aLangDic.ContainsKey(aLangName))
-                                {
-                                    //Debug.LogError("Add aLangName:" + aLangName);
-                                    aLangDic.Add(aLangName, new List<KeyPair>());
-                                }
-                            }
-                            for (int i = 1; i < aLines.Length; i++)
-                            {
-                                //Debug.LogWarning("aLines["+i+"]:" + aLines[i]);
-                                var aDatas = aLines[i].Split(',');
-                                if (aDatas.Length > 1)
-                                {
-                                    string aKey = aDatas[0];
-                                    for (int j = 1; j < aLangNames.Length; j++)
-                                    {
-                                        string aLangName = aLangNames[j];
-                                        if (j < aDatas.Length)
-                                        {
-                                            //Debug.LogError("Get aLangName:" + aLangName);
-                                            aLangDic[aLangName].Add(new KeyPair(aKey, aDatas[j]));
-                                        }
-                                        else
-                                        {
-                                            aLangDic[aLangName].Add(new KeyPair(aKey, string.Empty));
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        aDatas[aAt] = aData;
                         float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
                         UCL.Core.EditorLib.EditorUtilityMapper.DisplayProgressBar("Download Localize", "Progress: " + (100f*aProgress).ToString("N1")+"%", aProgress);
                         if (++aCompleteCount >= aGids.Count)
                         {
+                            for (int i = 0; i < aGids.Count; i++)
+                            {
+                                ParseData(aDatas[i], aLangDic);
+                            }
                             aCompelteAct.Invoke();
                         }
                     }));
@@ -214,6 +196,50 @@ namespace UCL.Core.LocalizeLib
                 if (aGids != null && aGids.Count > 0)
                 {
                     aDownLoadAct();
+                }
+            }
+        }
+        public void ParseData(string iData, Dictionary<string, List<KeyPair>> iLangDic)
+        {
+            //Debug.LogError("iData:" + iData);
+            var aLines = m_SplitLineRegex.Split(iData);//SplitByLine(); RegexOptions.IgnoreCase
+                                             //Debug.LogWarning("aLines:" + aLines.Length);
+            if (aLines.Length > 1)
+            {
+                var aLangs = new List<string>();
+                var aLangNames = aLines[0].Split(',');
+                //Debug.LogWarning("aLines[0]:" + aLines[0]);
+                for (int i = 1; i < aLangNames.Length; i++)//0 is Key
+                {
+                    string aLangName = aLangNames[i];
+                    aLangs.Add(aLangName);
+                    if (!iLangDic.ContainsKey(aLangName))
+                    {
+                        //Debug.LogError("Add aLangName:" + aLangName);
+                        iLangDic.Add(aLangName, new List<KeyPair>());
+                    }
+                }
+                for (int i = 1; i < aLines.Length; i++)
+                {
+                    //Debug.LogWarning("aLines["+i+"]:" + aLines[i]);
+                    var aDatas = aLines[i].Split(',');
+                    if (aDatas.Length > 1)
+                    {
+                        string aKey = aDatas[0];
+                        for (int j = 1; j < aLangNames.Length; j++)
+                        {
+                            string aLangName = aLangNames[j];
+                            if (j < aDatas.Length)
+                            {
+                                //Debug.LogError("Get aLangName:" + aLangName);
+                                iLangDic[aLangName].Add(new KeyPair(aKey, aDatas[j]));
+                            }
+                            else
+                            {
+                                iLangDic[aLangName].Add(new KeyPair(aKey, string.Empty));
+                            }
+                        }
+                    }
                 }
             }
         }

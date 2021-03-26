@@ -9,12 +9,12 @@ namespace UCL.Core.EditorLib {
         static event System.Action m_EditorUpdateAction = null;
         static Dictionary<string, System.Action> m_EditorUpdateActionDic = new Dictionary<string, System.Action>();
 
-        static Queue<System.Tuple<int,System.Action> > m_DelayActQue = new Queue<Tuple<int, Action>>();
-        static Queue<System.Tuple<int, System.Action>> m_DelayActQueBuffer = new Queue<Tuple<int, Action>>();
+        static Queue<System.Tuple<int,System.Action> > m_DelayActQue = new Queue<Tuple<int, System.Action>>();
+        static Queue<System.Tuple<int, System.Action>> m_DelayActQueBuffer = new Queue<Tuple<int, System.Action>>();
         /// <summary>
         /// Action trigger once!!
         /// </summary>
-        static Queue<System.Action> m_ActQue = new Queue<Action>();
+        static Queue<System.Action> m_ActQue = new Queue<System.Action>();
 #endif
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void Init()

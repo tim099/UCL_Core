@@ -85,7 +85,7 @@ namespace UCL.Core.JsonLib {
                         }
                         catch(System.Exception e)
                         {
-                            Debug.LogError("field.Name:" + field.Name + "System.Exception:" + e);
+                            Debug.LogException(e);
                             continue;
                         }
                     }

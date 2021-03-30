@@ -10,6 +10,10 @@ namespace UCL.Core.ServiceLib
         /// Action trigger once!!
         /// </summary>
         private Queue<System.Action> m_ActQue = new Queue<System.Action>();
+        /// <summary>
+        /// Action with delay trigger once!!
+        /// </summary>
+        private Queue<System.Tuple<System.Action,float> > m_DelayQue = new Queue<System.Tuple<System.Action, float>>();
 
         private event System.Action m_UpdateAction = null;
 
@@ -33,10 +37,19 @@ namespace UCL.Core.ServiceLib
         /// <summary>
         /// Add action that only invoke once
         /// </summary>
-        /// <param name="act"></param>
-        public void AddAction(System.Action act)
+        /// <param name="iAct"></param>
+        public void AddAction(System.Action iAct)
         {
-            m_ActQue.Enqueue(act);
+            m_ActQue.Enqueue(iAct);
+        }
+        /// <summary>
+        /// Add action with delay that only invoke once!!
+        /// </summary>
+        /// <param name="iAct"></param>
+        /// <param name="iDelay"></param>
+        public void AddDelayAction(System.Action iAct,float iDelay)
+        {
+            m_DelayQue.Enqueue(new System.Tuple<System.Action, float>(iAct, iDelay));
         }
         public void Clear()
         {
@@ -49,17 +62,40 @@ namespace UCL.Core.ServiceLib
         }
         private void UpdateAction()
         {
+            float aTimeDel = Time.deltaTime;
             while (m_ActQue.Count > 0)
             {
                 try
                 {
                     m_ActQue.Dequeue()?.Invoke();
                 }
-                catch (System.Exception e)
+                catch (System.Exception iE)
                 {
-                    Debug.LogError(e);
+                    Debug.LogError(iE);
                 }
             }
+            int aCount = m_DelayQue.Count;
+            for(int i = 0; i < aCount; i++)
+            {
+                try
+                {
+                    var aAct = m_DelayQue.Dequeue();
+                    float aTime = aAct.Item2 - aTimeDel;
+                    if (aTime > 0)
+                    {
+                        m_DelayQue.Enqueue(new System.Tuple<System.Action, float>(aAct.Item1, aTime));
+                    }
+                    else
+                    {
+                        aAct.Item1?.Invoke();
+                    }
+                }
+                catch (System.Exception iE)
+                {
+                    Debug.LogError(iE);
+                }
+            }
+            //m_DelayQue
             try
             {
                 if (m_UpdateAction != null)

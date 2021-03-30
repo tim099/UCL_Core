@@ -13,7 +13,7 @@ public static partial class EventExtensionMethods {
         try {
             ucl_event.Invoke();
         } catch(System.Exception e) {
-            Debug.LogError("UCL_Event Invoke Exception:" + e);
+            Debug.LogException(e);
         }
     }
     public static void UCL_Invoke(this UCL.Core.UCL_FloatEvent ucl_event,float val) {
@@ -21,7 +21,7 @@ public static partial class EventExtensionMethods {
         try {
             ucl_event.Invoke(val);
         } catch(System.Exception e) {
-            Debug.LogError("UCL_Event Invoke Exception:" + e);
+            Debug.LogException(e);
         }
     }
     public static void UCL_Invoke(this UCL.Core.UCL_IntEvent ucl_event, int val) {
@@ -29,7 +29,7 @@ public static partial class EventExtensionMethods {
         try {
             ucl_event.Invoke(val);
         } catch(System.Exception e) {
-            Debug.LogError("UCL_Event Invoke Exception:" + e);
+            Debug.LogException(e);
         }
     }
     public static void UCL_Invoke(this UCL.Core.UCL_BoolEvent ucl_event, bool val) {
@@ -37,7 +37,7 @@ public static partial class EventExtensionMethods {
         try {
             ucl_event.Invoke(val);
         } catch(System.Exception e) {
-            Debug.LogError("UCL_Event Invoke Exception:" + e);
+            Debug.LogException(e);
         }
     }
 }

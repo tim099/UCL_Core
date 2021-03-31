@@ -34,7 +34,7 @@ namespace UCL.Core.JsonLib {
             //return JsonUtility.FromJson(aClassData.ToJson(), aClassType);
         }
         /// <summary>
-        /// Save object into JsonData
+        /// Save object into JsonData(also save AssemblyQualifiedName so can convert back to object)
         /// </summary>
         /// <param name="iObj"></param>
         /// <returns></returns>

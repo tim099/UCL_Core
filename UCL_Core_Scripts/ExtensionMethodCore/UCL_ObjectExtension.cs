@@ -299,7 +299,8 @@ namespace UCL.Core.ObjectReflectionExtension {
         }
     }
 }
-public static partial class VectorExtensionMethods {
+public static partial class ObjectExtensionMethods
+{
     public static byte[] ToByteArray(this object obj) {
         return UCL.Core.MarshalLib.Lib.ToByteArray(obj);
     }
@@ -431,7 +432,8 @@ public static partial class VectorExtensionMethods {
 }
 
 //Misc
-public static partial class VectorExtensionMethods {
+public static partial class ColorExtensionMethods
+{
     public static bool IsBetween(this Color col, Color min, Color max) {
         if(min.r > col.r || col.r > max.r) {
             return false;

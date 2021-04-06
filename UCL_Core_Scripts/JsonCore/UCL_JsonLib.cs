@@ -7,6 +7,8 @@ using UnityEngine;
 
 namespace UCL.Core.JsonLib {
     public static class JsonConvert {
+        const int MaxParsingLayer = 10;
+
         /// <summary>
         /// Convert Json string into object
         /// </summary>
@@ -57,16 +59,16 @@ namespace UCL.Core.JsonLib {
             if(aValue != null) return (T)aValue;
             return (T)LoadDataFromJson(new T(), iData);
         }
-        static public object LoadDataFromJson(object iObj, JsonData aData) {
-            if(iObj == null) return null;
+        static public object LoadDataFromJson(object iObj, JsonData iData, int iLayer = 0) {
+            if(iObj == null || MaxParsingLayer > 10) return null;
             Type type = iObj.GetType();
             if (iObj is IList && type.IsGenericType)
             {
                 IList aList = iObj as IList;
                 Type aElementType = aList.GetType().GetGenericArguments().Single();
-                for (int i = 0; i < aData.Count; i++)
+                for (int i = 0; i < iData.Count; i++)
                 {
-                    var aObj = DataToObject(aData[i], aElementType);
+                    var aObj = DataToObject(iData[i], aElementType);
                     if (aObj != null) aList.Add(aObj);
                 }
                 return iObj;
@@ -74,8 +76,8 @@ namespace UCL.Core.JsonLib {
 
             var fields = type.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             foreach(var field in fields) {
-                if(aData.Contains(field.Name)) {
-                    var aJsonData = aData[field.Name];
+                if(iData.Contains(field.Name)) {
+                    var aJsonData = iData[field.Name];
                     if (aJsonData == null) continue;
                     var aFieldData = aJsonData.GetValue(field.FieldType);
                     if(aFieldData == null) {
@@ -122,7 +124,7 @@ namespace UCL.Core.JsonLib {
                         field.SetValue(iObj, aList);
                     }
                     else if(field.FieldType.IsStructOrClass()) {
-                        var result = LoadDataFromJson(aFieldData, aJsonData);
+                        var result = LoadDataFromJson(aFieldData, aJsonData, iLayer + 1);
                         //Debug.LogWarning("result:" + result.UCL_ToString());
                         field.SetValue(iObj, result);
                     } 

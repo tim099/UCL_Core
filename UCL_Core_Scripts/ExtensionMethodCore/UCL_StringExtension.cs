@@ -25,10 +25,9 @@ public static partial class StringExtensionMethods {
     #endregion
 
     #region StringBuilder
-    public static void RemoveLast(this StringBuilder builder) {
-        int len = builder.Length;
-        if(len == 0) return;
-        builder.Remove(len - 1, 1);
+    public static void RemoveLast(this StringBuilder iBuilder) {
+        if(iBuilder.Length == 0) return;
+        iBuilder.Remove(iBuilder.Length - 1, 1);
     }
 
     #endregion

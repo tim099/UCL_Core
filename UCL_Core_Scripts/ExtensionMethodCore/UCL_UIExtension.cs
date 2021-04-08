@@ -14,10 +14,12 @@ public static partial class UIExtensionMethods
     //}
     //yourButton.Select();
     #endregion
-    public static void ToTop(this ScrollRect scrollRect) {
-        scrollRect.verticalNormalizedPosition = 1f;
+    public static void ToTop(this ScrollRect iScrollRect) {
+        if (iScrollRect == null) return;
+        iScrollRect.verticalNormalizedPosition = 1f;
     }
-    public static void ToBottom(this ScrollRect scrollRect) {
-        scrollRect.verticalNormalizedPosition = 0f;
+    public static void ToBottom(this ScrollRect iScrollRect) {
+        if (iScrollRect == null) return;
+        iScrollRect.verticalNormalizedPosition = 0f;
     }
 }

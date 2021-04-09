@@ -92,7 +92,7 @@ namespace UCL.Core.ServiceLib
                 }
                 catch (System.Exception iE)
                 {
-                    Debug.LogError(iE);
+                    Debug.LogException(iE);
                 }
             }
             //m_DelayQue

@@ -226,17 +226,20 @@ namespace UCL.Core.LocalizeLib
                     if (aDatas.Length > 1)
                     {
                         string aKey = aDatas[0];
-                        for (int j = 1; j < aLangNames.Length; j++)
+                        if (!string.IsNullOrEmpty(aKey))
                         {
-                            string aLangName = aLangNames[j];
-                            if (j < aDatas.Length)
+                            for (int j = 1; j < aLangNames.Length; j++)
                             {
-                                //Debug.LogError("Get aLangName:" + aLangName);
-                                iLangDic[aLangName].Add(new KeyPair(aKey, aDatas[j]));
-                            }
-                            else
-                            {
-                                iLangDic[aLangName].Add(new KeyPair(aKey, string.Empty));
+                                string aLangName = aLangNames[j];
+                                if (j < aDatas.Length)
+                                {
+                                    //Debug.LogError("Get aLangName:" + aLangName);
+                                    iLangDic[aLangName].Add(new KeyPair(aKey, aDatas[j]));
+                                }
+                                else
+                                {
+                                    iLangDic[aLangName].Add(new KeyPair(aKey, string.Empty));
+                                }
                             }
                         }
                     }

@@ -108,7 +108,7 @@ namespace UCL.Core.LocalizeLib
         }
         virtual public string GetLocalize(string key) {
             if(!m_Dic.ContainsKey(key)) {
-                Debug.Log("LocalizeData not contain key:" + key);
+                //Debug.Log("LocalizeData not contain key:" + key);
                 return key;
             }
             return m_Dic[key];

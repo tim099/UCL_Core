@@ -14,6 +14,7 @@ namespace UCL.Core.Game
         /// </summary>
         static public string UIResourceFolder = string.Empty;
         [SerializeField] RectTransform m_UIRoot = null;
+        [SerializeField] Canvas m_Canvas = null;
         /// <summary>
         /// Use List to simulate Stack
         /// </summary>
@@ -59,8 +60,19 @@ namespace UCL.Core.Game
                 m_UIStack.LastElement().OnEscape();
             }
         }
+        public void SetCanvasCamera(Camera iCamera)
+        {
+            if (m_Canvas.worldCamera != iCamera)
+            {
+                m_Canvas.worldCamera = iCamera;
+            }
+        }
         private void Update()
         {
+            //if(m_Canvas.worldCamera != Camera.main)
+            //{
+            //    m_Canvas.worldCamera = Camera.main;
+            //}
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 EscapeKeyDown();

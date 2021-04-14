@@ -21,13 +21,28 @@ namespace UCL.Core.MathLib {
     [System.Serializable]
     public struct RandomState {
         public byte[] m_State;
-        public RandomState(byte[] state) {
-            m_State = state;
+        public string HexStringState
+        {
+            get
+            {
+                return UCL.Core.MarshalLib.Lib.ByteArrayToHexString(m_State);
+            }
         }
+        public RandomState(string iHexStringState)
+        {
+            m_State = UCL.Core.MarshalLib.Lib.HexStringToByteArray(iHexStringState);
+        }
+        public RandomState(byte[] iState) {
+            m_State = iState;
+        }
+        /// <summary>
+        /// Create a System.Random by random state
+        /// </summary>
+        /// <returns></returns>
         public System.Random CreateRandom() {   
-            using(var temp = new MemoryStream(m_State)) {
-                var binaryFormatter = new BinaryFormatter();
-                return (System.Random)binaryFormatter.Deserialize(temp);
+            using(var aMemoryStream = new MemoryStream(m_State)) {
+                var aBinaryFormatter = new BinaryFormatter();
+                return (System.Random)aBinaryFormatter.Deserialize(aMemoryStream);
             }
         }
     }
@@ -45,10 +60,10 @@ namespace UCL.Core.MathLib {
             }
         }
         public int m_Seed;
-        protected System.Random m_Rnd;
+        protected System.Random m_Rnd = null;
 
-        public UCL_Random(int _Seed = 0) {
-            m_Seed = _Seed;
+        public UCL_Random(int iSeed = 0) {
+            m_Seed = iSeed;
             m_Rnd = new System.Random(m_Seed);
         }
         public UCL_Random() {
@@ -270,15 +285,6 @@ namespace UCL.Core.MathLib {
             return MathLib.Lib.Lerp(min, max, NextFloat());
         }
         /// <summary>
-        /// Return a random float number between min [inclusive] and max [exclusive]
-        /// </summary>
-        /// <param name="min"></param>
-        /// <param name="max"></param>
-        /// <returns></returns>
-        public int Range(int min, int max) {
-            return m_Rnd.Next(min, max);
-        }
-        /// <summary>
         /// Return a random Vector3 number between min [inclusive] and max [inclusive]
         /// </summary>
         /// <param name="min"></param>
@@ -291,11 +297,11 @@ namespace UCL.Core.MathLib {
         /// <summary>
         /// Return a random Vector2 number between min [inclusive] and max [inclusive]
         /// </summary>
-        /// <param name="min"></param>
-        /// <param name="max"></param>
+        /// <param name="iMin"></param>
+        /// <param name="iMax"></param>
         /// <returns></returns>
-        public Vector2 Range(Vector2 min, Vector2 max) {
-            return MathLib.Lib.Lerp(min, max, NextFloat());
+        public Vector2 Range(Vector2 iMin, Vector2 iMax) {
+            return MathLib.Lib.Lerp(iMin, iMax, NextFloat());
         }
         #endregion
 
@@ -304,10 +310,10 @@ namespace UCL.Core.MathLib {
         /// <summary>
         /// Return a random float number between 0 [inclusive] and max [inclusive]
         /// </summary>
-        /// <param name="max">Max value of random number</param>
+        /// <param name="iMax">Max value of random number</param>
         /// <returns></returns>
-        public float NextFloat(float max) {
-            return max * (m_Rnd.Next() / (float)(int.MaxValue - 1));
+        public float NextFloat(float iMax) {
+            return iMax * (Next() / (float)(int.MaxValue - 1));
         }
 
         /// <summary>
@@ -315,28 +321,43 @@ namespace UCL.Core.MathLib {
         /// </summary>
         /// <returns></returns>
         public float NextFloat() {
-            return (m_Rnd.Next() / (float)(int.MaxValue - 1));
+            return (Next() / (float)(int.MaxValue - 1));
         }
         /// <summary>
         /// Return a random double number between 0 [inclusive] and max [inclusive]
         /// </summary>
-        /// <param name="max"></param>
+        /// <param name="iMax"></param>
         /// <returns></returns>
-        public double NextDouble(double max) {
-            int val = m_Rnd.Next();
-            return max * (val / (double)(int.MaxValue - 1));
+        public double NextDouble(double iMax) {
+            int val = Next();
+            return iMax * (val / (double)(int.MaxValue - 1));
         }
         #endregion
 
         /// <summary>
-        /// Return a random float number between 0 [inclusive] and (int.MaxValue - 1) [inclusive]
+        /// Return a random int between 0 [inclusive] and (int.MaxValue - 1) [inclusive]
         /// </summary>
         /// <returns></returns>
         public int Next() {
             return m_Rnd.Next();
         }
-        public int Next(int max) {
-            return m_Rnd.Next(max);
+        /// <summary>
+        /// Return a random int between 0 [inclusive] and iMax [exclusive]
+        /// </summary>
+        /// <param name="iMax"></param>
+        /// <returns></returns>
+        public int Next(int iMax) {
+            return m_Rnd.Next(iMax);
+        }
+        /// <summary>
+        /// Return a random float number between iMin [inclusive] and iMax [exclusive]
+        /// </summary>
+        /// <param name="iMin"></param>
+        /// <param name="iMax"></param>
+        /// <returns></returns>
+        public int Range(int iMin, int iMax)
+        {
+            return m_Rnd.Next(iMin, iMax);
         }
         /// <summary>
         /// Get current random state
@@ -349,9 +370,9 @@ namespace UCL.Core.MathLib {
         /// <summary>
         /// Restore random state
         /// </summary>
-        /// <param name="state"></param>
-        public void SetState(RandomState state) {
-            m_Rnd = state.CreateRandom();
+        /// <param name="iState"></param>
+        public void SetState(RandomState iState) {
+            m_Rnd = iState.CreateRandom();
         }
     }
 }

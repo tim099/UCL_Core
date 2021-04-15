@@ -76,7 +76,7 @@ namespace UCL.Core {
             m_WindowRect = new Rect(edge, edge, Screen.width - 2 * edge, Screen.height - 2 * edge);
             m_WindowRect = GUILayout.Window(132125, m_WindowRect, ConsoleWindow, "UCL DebugInspector");
         }
-        virtual protected void ConsoleWindow(int id) {
+        virtual protected void ConsoleWindow(int iID) {
             m_ScrollPos = GUILayout.BeginScrollView(m_ScrollPos);
             GUILayout.BeginVertical();
             using(var scope = new GUILayout.HorizontalScope("box")) {

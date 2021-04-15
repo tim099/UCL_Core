@@ -104,7 +104,8 @@ namespace UCL.Core.UI {
         virtual public void OnPointerUp(PointerEventData eventData) {
             if (!Interactable) return;
             m_OnPointerUp.UCL_Invoke();
-            if(Enter && Pressed) {
+            if(Pressed)
+            {//Enter && 
                 m_OnClick.UCL_Invoke();
             }
             Pressed = false;

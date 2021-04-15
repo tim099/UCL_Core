@@ -235,7 +235,7 @@ namespace UCL.Core.DebugLib {
         public void Toggle() {
             SetShow(!f_Show);
         }
-        void DebugConsole(int windowID) {
+        void DebugConsole(int iWindowID) {
             GUILayout.BeginHorizontal();
 
             m_LogButtonStyle.normal.textColor = Color.white;
@@ -257,13 +257,13 @@ namespace UCL.Core.DebugLib {
                 f_LogToFile = GUILayout.Toggle(f_LogToFile, "Log to File", style: m_LogToggleStyle);
                 Core.UI.UCL_GUI.Undo();
             }
-            System.Action<LogLevel> log_act = delegate (LogLevel level) {
-                bool is_on = ((m_LogLevel & level) != LogLevel.None);
-                Core.UI.UCL_GUI.PushBackGroundColor(is_on ? Color.green : Color.red, true);
-                if(GUILayout.Toggle(is_on , level.ToString(), style: m_LogToggleStyle)) {
-                    m_LogLevel |= level;
+            System.Action<LogLevel> aLogAct = delegate (LogLevel iLevel) {
+                bool aIsOn = ((m_LogLevel & iLevel) != LogLevel.None);
+                Core.UI.UCL_GUI.PushBackGroundColor(aIsOn ? Color.green : Color.red, true);
+                if(GUILayout.Toggle(aIsOn , iLevel.ToString(), style: m_LogToggleStyle)) {
+                    m_LogLevel |= iLevel;
                 } else {
-                    m_LogLevel &= ~level;
+                    m_LogLevel &= ~iLevel;
                 }
                 Core.UI.UCL_GUI.Undo();
             };
@@ -276,9 +276,9 @@ namespace UCL.Core.DebugLib {
                 }
                 Core.UI.UCL_GUI.Undo();
             }
-            log_act(LogLevel.Log);
-            log_act(LogLevel.Warning);
-            log_act(LogLevel.Error);
+            aLogAct(LogLevel.Log);
+            aLogAct(LogLevel.Warning);
+            aLogAct(LogLevel.Error);
 
             //GUI.backgroundColor
             if(GUILayout.Button("Close", style: m_LogButtonStyle)) {

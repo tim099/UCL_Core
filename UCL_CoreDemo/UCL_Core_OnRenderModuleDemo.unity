@@ -177,7 +177,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Texture: {fileID: 8400000, guid: 384ddeceb94378848ba8c01d63aeb106, type: 2}
+  m_Texture: {fileID: 8400000, guid: 2fa47a63b2c838d4187fbedde9c9ea0c, type: 2}
   m_UVRect:
     serializedVersion: 2
     x: 0
@@ -448,7 +448,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1135290225}
   m_LocalRotation: {x: 0.47161785, y: 0.0749017, z: -0.040247597, w: 0.8776939}
-  m_LocalPosition: {x: 0.31, y: 0, z: 4.32}
+  m_LocalPosition: {x: 0.894, y: 0, z: 4.32}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 909413848}
@@ -876,7 +876,7 @@ Camera:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingPath: -1
-  m_TargetTexture: {fileID: 8400000, guid: 384ddeceb94378848ba8c01d63aeb106, type: 2}
+  m_TargetTexture: {fileID: 8400000, guid: 2fa47a63b2c838d4187fbedde9c9ea0c, type: 2}
   m_TargetDisplay: 0
   m_TargetEye: 3
   m_HDR: 1
@@ -899,7 +899,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Mode: 2
-  m_TargetTexture: {fileID: 8400000, guid: 384ddeceb94378848ba8c01d63aeb106, type: 2}
+  m_TargetTexture: {fileID: 8400000, guid: 2fa47a63b2c838d4187fbedde9c9ea0c, type: 2}
   m_Camera: {fileID: 1585449652}
   m_Mat: {fileID: 2100000, guid: 6e3d82f4a2e0a68498b3e17dff011013, type: 2}
 --- !u!114 &1585449654

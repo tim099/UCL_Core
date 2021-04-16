@@ -3,6 +3,19 @@ using System.Collections.Generic;
 using UnityEngine;
 
 public static partial class TextureExtensionMethods {
+    #region RenderTexture
+    public static Texture2D ToTexture2D(this RenderTexture iRenderTexture)
+    {
+        Texture2D aTexture2D = new Texture2D(iRenderTexture.width, iRenderTexture.height, TextureFormat.RGBA32, false);
+        var aPrev = RenderTexture.active;
+        RenderTexture.active = iRenderTexture;
+        aTexture2D.ReadPixels(new Rect(0, 0, iRenderTexture.width, iRenderTexture.height), 0, 0);
+        aTexture2D.Apply();
+        RenderTexture.active = aPrev;
+        return aTexture2D;
+    }
+    #endregion
+
     #region Texture2D
     /// <summary>
     /// Resize texture but keep the content

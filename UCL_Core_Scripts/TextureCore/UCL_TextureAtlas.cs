@@ -105,9 +105,6 @@ namespace UCL.Core.TextureLib {
 
             return texture;
         }
-
-
-
     }
 }
 

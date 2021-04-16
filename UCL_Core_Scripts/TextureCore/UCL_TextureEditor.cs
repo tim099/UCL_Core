@@ -5,7 +5,8 @@ using UnityEngine;
 namespace UCL.Core.TextureLib {
     [ATTR.EnableUCLEditor]
     public class UCL_TextureEditor : MonoBehaviour {
-        public Texture2D m_Texture;
+        public RenderTexture m_RenderTexture = null;
+        public Texture2D m_Texture = null;
         public string m_OutputFolder = "Assets/Textures";
         public string m_SaveName = "NewTexture";
         public Vector2Int m_Split = Vector2Int.one;
@@ -14,6 +15,12 @@ namespace UCL.Core.TextureLib {
         public Vector2Int m_Size = new Vector2Int(256, 256);
         protected string GetOutputPath() {
             return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
+        }
+        [ATTR.UCL_FunctionButton]
+        public void LoadTextureFromRenderTexture()
+        {
+            if (m_RenderTexture == null) return;
+            m_Texture = m_RenderTexture.ToTexture2D();
         }
         [ATTR.UCL_FunctionButton]
         public void SplitTexture() {
@@ -42,7 +49,11 @@ namespace UCL.Core.TextureLib {
                 }
             }
         }
-
+        [ATTR.UCL_FunctionButton]
+        public void SaveToTexture()
+        {
+            SaveTexture(m_Texture);
+        }
         public void SaveTexture(Texture2D _Texture) {
 #if UNITY_EDITOR_WIN
             Core.FileLib.WindowsLib.OpenAssetExplorer(m_OutputFolder);

@@ -112,12 +112,21 @@ namespace UCL.Core.LocalizeLib
             }
 #endif
             UCL.Core.EditorLib.EditorUtilityMapper.DisplayProgressBar("StartDownload", "Init", 0.1f);
-            List<long> aGids = m_Gids.Clone();
+            HashSet<long> aGids = new HashSet<long>();
+            foreach(long aGid in m_Gids)
+            {
+                if (aGids.Contains(aGid))
+                {
+                    Debug.LogError("StartDownload(), Gid Repeat:" + aGid);
+                }
+                else
+                {
+                    aGids.Add(aGid);
+                }
+            }
             System.Action aDownLoadAct = delegate ()
             {
                 int aCompleteCount = 0;
-                //List<string> aDatas = new List<string>();
-                //List<string> aLanguageNames = new List<string>();
                 Dictionary<string, List<KeyPair>> aLangDic = new Dictionary<string, List<KeyPair>>();
                 System.Action aCompelteAct = delegate ()
                 {
@@ -145,20 +154,20 @@ namespace UCL.Core.LocalizeLib
                     }
 #if UNITY_EDITOR
                     UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
-#endif
                     UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
+#endif
 
                 };
                 string[] aDatas = new string[aGids.Count];
-                
-                for (int aID = 0; aID < aGids.Count; aID++)
+                int aID = 0;
+                foreach (long aGid in aGids)
                 {
-                    int aAt = aID;
-                    UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGids[aID]), delegate (byte[] iData) {
+                    int aAt = aID++;
+                    UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGid), delegate (byte[] iData) {
                         string aData = System.Text.Encoding.UTF8.GetString(iData);
                         aDatas[aAt] = aData;
                         float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
-                        UCL.Core.EditorLib.EditorUtilityMapper.DisplayProgressBar("Download Localize", "Progress: " + (100f*aProgress).ToString("N1")+"%", aProgress);
+                        UCL.Core.EditorLib.EditorUtilityMapper.DisplayProgressBar("Download Localize", "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress);
                         if (++aCompleteCount >= aGids.Count)
                         {
                             for (int i = 0; i < aGids.Count; i++)
@@ -179,15 +188,32 @@ namespace UCL.Core.LocalizeLib
                         string[] aGidStrs = aData.SplitByLine();
                         for(int i = 0; i < aGidStrs.Length; i++)
                         {
-                            long aResult = 0;
-                            if(long.TryParse(aGidStrs[i],out aResult))
+                            string aStr = aGidStrs[i];
+                            long aGid = 0;
+                            if (long.TryParse(aStr, out aGid))
                             {
-                                aGids.Add(aResult);
+                                if (aGids.Contains(aGid))
+                                {
+                                    Debug.LogError("StartDownload(), Gid Repeat:" + aGid);
+                                }
+                                else
+                                {
+                                    aGids.Add(aGid);
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogError("aStr:" + aStr+ ",long.TryParse Fail!!");
                             }
                         }
                         if (aGids != null && aGids.Count > 0)
                         {
                             aDownLoadAct();
+                        }
+                        else
+                        {
+                            Debug.LogError("aGids == null || aGids.Count == 0");
+                            UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
                         }
                     }));
             }

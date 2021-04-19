@@ -80,21 +80,27 @@ namespace UCL.Core.UI {
             StateUpdate();
         }
         virtual public void OnPointerEnter(PointerEventData eventData) {
-            if (!Interactable) return;
             Enter = true;
+            if (!Interactable) return;
+
             m_OnPointerEnter.UCL_Invoke();
             StateUpdate();
         }
         virtual public void OnPointerExit(PointerEventData eventData) {
-            if (!Interactable) return;
             Enter = false;
+            if (!Interactable) return;
+
             m_OnPointerExit.UCL_Invoke();
             m_PressedTime = 0;
             StateUpdate();
         }
 
-        virtual public void OnPointerDown(PointerEventData eventData) {
+        virtual public void OnPointerDown(PointerEventData iEventData) {
             if (!Interactable) return;
+            if(iEventData.button != PointerEventData.InputButton.Left)
+            {
+                return;
+            }
             m_OnPointerDown.UCL_Invoke();
             Pressed = true;
             m_PressedTime = 0;
@@ -104,8 +110,8 @@ namespace UCL.Core.UI {
         virtual public void OnPointerUp(PointerEventData eventData) {
             if (!Interactable) return;
             m_OnPointerUp.UCL_Invoke();
-            if(Pressed)
-            {//Enter && 
+            if(Enter && Pressed)
+            {
                 m_OnClick.UCL_Invoke();
             }
             Pressed = false;

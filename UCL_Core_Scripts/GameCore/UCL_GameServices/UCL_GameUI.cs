@@ -6,6 +6,8 @@ namespace UCL.Core.Game
 {
     public class UCL_GameUI : MonoBehaviour
     {
+        virtual public bool IsUIOverlay { get { return m_IsUIOverlay; } }
+        [SerializeField] protected bool m_IsUIOverlay = false;
         virtual public void Init()
         {
 

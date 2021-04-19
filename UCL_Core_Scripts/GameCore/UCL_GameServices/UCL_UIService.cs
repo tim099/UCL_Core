@@ -14,7 +14,9 @@ namespace UCL.Core.Game
         /// </summary>
         static public string UIResourceFolder = string.Empty;
         [SerializeField] RectTransform m_UIRoot = null;
+        [SerializeField] RectTransform m_UIOverlayRoot = null;
         [SerializeField] Canvas m_Canvas = null;
+        [SerializeField] Canvas m_UIOverlayCanvas = null;
         /// <summary>
         /// Use List to simulate Stack
         /// </summary>
@@ -25,7 +27,8 @@ namespace UCL.Core.Game
         }
         public T CreateUI<T>(T iTemplate) where T : UCL_GameUI
         {
-            T iUI = Instantiate(iTemplate, m_UIRoot);
+            RectTransform aParent = iTemplate.IsUIOverlay ? m_UIOverlayRoot : m_UIRoot;
+            T iUI = Instantiate(iTemplate, aParent);
             m_UIStack.Add(iUI);
             iUI.Init();
             return iUI;
@@ -62,6 +65,7 @@ namespace UCL.Core.Game
         }
         public void SetCanvasCamera(Camera iCamera)
         {
+            if (m_Canvas == null) return;
             if (m_Canvas.worldCamera != iCamera)
             {
                 m_Canvas.worldCamera = iCamera;

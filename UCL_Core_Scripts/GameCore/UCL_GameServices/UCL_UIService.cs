@@ -36,14 +36,14 @@ namespace UCL.Core.Game
         public T CreateUIFromResource<T>() where T : UCL_GameUI
         {
             string aPath = typeof(T).Name;
-            if (!string.IsNullOrEmpty(UIResourceFolder))
-            {
-                aPath = Path.Combine(UIResourceFolder, aPath);
-            }
             return CreateUIFromResource<T>(aPath);
         }
         public T CreateUIFromResource<T>(string iPath) where T : UCL_GameUI
         {
+            if (!string.IsNullOrEmpty(UIResourceFolder))
+            {
+                iPath = Path.Combine(UIResourceFolder, iPath);
+            }
             T aTemplate = Resources.Load<T>(iPath);
             if(aTemplate == null)
             {

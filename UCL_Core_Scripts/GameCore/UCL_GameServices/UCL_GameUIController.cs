@@ -7,6 +7,10 @@ namespace UCL.Core.Game
     public class UCL_GameUIController : MonoBehaviour
     {
         [SerializeField] UCL_GameUI m_UITemplate = null;
+        /// <summary>
+        /// Load from resource
+        /// </summary>
+        [SerializeField] string m_UIName = string.Empty;
         UCL_GameUI m_UIIns = null;
         public void Toggle()
         {
@@ -25,7 +29,15 @@ namespace UCL.Core.Game
             {
                 return;
             }
-            m_UIIns = UCL.Core.Game.UCL_UIService.Ins.CreateUI(m_UITemplate);
+            if (m_UITemplate != null)
+            {
+                m_UIIns = UCL.Core.Game.UCL_UIService.Ins.CreateUI(m_UITemplate);
+            }
+            else if(!string.IsNullOrEmpty(m_UIName))
+            {
+                m_UIIns = UCL.Core.Game.UCL_UIService.Ins.CreateUIFromResource<UCL_GameUI>(m_UIName);
+            }
+            
         }
         public void Hide()
         {

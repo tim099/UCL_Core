@@ -192,63 +192,63 @@ namespace UCL.Core.JsonLib {
             }
             return null;
         }
-        public string GetString(string default_val = null) {
+        public string GetString(string iDefaultVal = null) {
             if(m_Type == JsonType.String) return m_Obj as string;
-            return default_val;
+            return iDefaultVal;
         }
-        public string GetString(string key, string default_val = null) {
-            var val = Get(key);
-            if(val == this) return default_val;
+        public string GetString(string iKey, string iDefaultVal = null) {
+            var val = Get(iKey);
+            if(val == this) return iDefaultVal;
             if(val.m_Type == JsonType.String) return (string)val;
-            return default_val;
+            return iDefaultVal;
         }
 
-        public float GetFloat(float default_val = 0) {
+        public float GetFloat(float iDefaultVal = 0) {
             if(m_Type == JsonType.Double) return (float) (double)m_Obj;
             if (m_Type == JsonType.Int) return (float) (int)m_Obj;
             if (m_Type == JsonType.Long) return (float) (long)m_Obj;
-            return default_val;
+            return iDefaultVal;
         }
-        public float GetFloat(string iKey, float DefaultVal = 0)
+        public float GetFloat(string iKey, float iDefaultVal = 0)
         {
             var aVal = Get(iKey);
-            if (aVal == this) return DefaultVal;
+            if (aVal == this) return iDefaultVal;
 
             if (aVal.m_Type == JsonType.Double) return (float)(double)aVal;
             if (aVal.m_Type == JsonType.Int) return (float)(int)aVal;
             if (aVal.m_Type == JsonType.Long) return (float)(long)aVal;
-            return DefaultVal;
+            return iDefaultVal;
         }
-        public double GetDouble(double default_val = 0) {
+        public double GetDouble(double iDefaultVal = 0) {
             if(m_Type == JsonType.Double) return (double)m_Obj;
             if (m_Type == JsonType.Int) return (double)(int)m_Obj;
             if (m_Type == JsonType.Long) return (double)(long)m_Obj;
-            return default_val;
+            return iDefaultVal;
         }
-        public double GetDouble(string iKey, double DefaultVal = 0)
+        public double GetDouble(string iKey, double iDefaultVal = 0)
         {
             var aVal = Get(iKey);
-            if (aVal == this) return DefaultVal;
+            if (aVal == this) return iDefaultVal;
 
             if (aVal.m_Type == JsonType.Double) return (double)aVal;
             if (aVal.m_Type == JsonType.Int) return (double)(int)aVal;
             if (aVal.m_Type == JsonType.Long) return (double)(long)aVal;
-            return DefaultVal;
+            return iDefaultVal;
         }
-        public int GetInt(string iKey, int DefaultVal = 0) {
+        public int GetInt(string iKey, int iDefaultVal = 0) {
             var aVal = Get(iKey);
-            if(aVal == this) return DefaultVal;
+            if(aVal == this) return iDefaultVal;
             if(aVal.m_Type == JsonType.Int) return (int)aVal;
-            return DefaultVal;
+            return iDefaultVal;
         }
-        public int GetInt(int default_val = 0) {
+        public int GetInt(int iDefaultVal = 0) {
             if(m_Type == JsonType.Int) return (int)m_Obj;  
-            return default_val;
+            return iDefaultVal;
         }
-        public long GetLong(long default_val = 0) {
+        public long GetLong(long iDefaultVal = 0) {
             if(m_Type == JsonType.Long) return (long)m_Obj;
             if(m_Type == JsonType.Int) return (int)m_Obj;
-            return default_val;
+            return iDefaultVal;
         }
         public bool GetBool(string iKey, bool iDefaultVal = false)
         {
@@ -260,10 +260,10 @@ namespace UCL.Core.JsonLib {
             }
             return iDefaultVal;
         }
-        public bool GetBool(bool default_val = false)
+        public bool GetBool(bool iDefaultVal = false)
         {
             if (m_Type == JsonType.Boolean) return (bool)m_Obj;
-            return default_val;
+            return iDefaultVal;
         }
         public Dictionary<string, object> GetDic() {
             if(m_Dic == null) {
@@ -275,12 +275,12 @@ namespace UCL.Core.JsonLib {
             }
             return aDic;
         }
-        public JsonData Get(string key) {
+        public JsonData Get(string iKey) {
             GetIDic();
-            if(!m_Dic.ContainsKey(key)) {
+            if(!m_Dic.ContainsKey(iKey)) {
                 return this;
             }
-            return this[key];
+            return this[iKey];
         }
         #region Conversions
         public static implicit operator JsonData(bool data) { return new JsonData(data); }

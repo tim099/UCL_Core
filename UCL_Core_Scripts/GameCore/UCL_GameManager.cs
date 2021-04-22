@@ -7,8 +7,26 @@ namespace UCL.Core.Game {
 #if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
 #endif
-    public class UCL_GameManager : UCL_Singleton<UCL_GameManager> {
-
+    public class UCL_GameManager : UCL_Singleton<UCL_GameManager>
+    {
+        //public static UCL_GameManager Instance { get; protected set; }
+        public static bool IsExitGame { get
+            {
+                if (m_Destroyed) return true;
+                if (GetInstance() == null) return false;
+                return GetInstance().m_IsExitGame;
+            } 
+        }
+        public static void RemoveExitGameFlag(string iFlag)
+        {
+            if (GetInstance() == null) return;
+            GetInstance().m_BlockExitGameFlag.Remove(iFlag);
+        }
+        public static void AddExitGameFlag(string iFlag)
+        {
+            if (GetInstance() == null) return;
+            GetInstance().m_BlockExitGameFlag.Add(iFlag);
+        }
 #if UNITY_EDITOR_WIN
         [ATTR.UCL_FunctionButton]
         public void Editor_OpenGameFolder() {
@@ -25,8 +43,8 @@ namespace UCL.Core.Game {
         public static bool f_ApplicationQuit = false;
 
         public UnityEngine.Events.UnityEvent m_ExitGameEvent = new UnityEngine.Events.UnityEvent();
-        public HashSet<string> m_BlockExitGameFlag = new HashSet<string>();
-        public bool f_ExitGame { get; protected set; } = false;
+        protected HashSet<string> m_BlockExitGameFlag = new HashSet<string>();
+        protected bool m_IsExitGame { get; set; } = false;
         public int m_ExitGameMaxWaitFrame = 1000;
 
         public string m_GameName = "UCL";
@@ -45,6 +63,7 @@ namespace UCL.Core.Game {
         virtual protected void Init() {
             if(m_Inited) return;
             if(!SetInstance(this)) return;
+            //Instance = this;
 
             m_Inited = true;
             GetGameFolderPath();
@@ -162,15 +181,14 @@ namespace UCL.Core.Game {
         virtual protected void OnApplicationPause(bool pauseStatus) {
             //pauseStatus == true if paused
         }
-        protected override void OnDestroy() {
-            base.OnDestroy();
+        override protected void OnDestroy() {
             GameExit();
             //Debug.LogWarning("UCL_GameManager OnDestroy()");
         }
         virtual public void ExitGame() {
             Debug.LogWarning("ExitGame()");
-            if(f_ExitGame) return;
-            f_ExitGame = true;
+            if(m_IsExitGame) return;
+            m_IsExitGame = true;
             m_ExitGameEvent?.Invoke();
             StartCoroutine(ExitGameCoroutine());
         }
@@ -181,7 +199,7 @@ namespace UCL.Core.Game {
                 yield return null;
             }
 
-            yield return new WaitForSeconds(1.0f);
+            yield return new WaitForSeconds(0.5f);
 
             Application.Quit();
         }

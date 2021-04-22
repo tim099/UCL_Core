@@ -47,6 +47,7 @@ namespace UCL.Core.EditorLib
             AssetDatabaseMapper.InitLoadAssetAtPath(AssetDatabase.LoadAssetAtPath);
             AssetDatabaseMapper.InitGetBuiltinExtraResource(AssetDatabase.GetBuiltinExtraResource);
             AssetDatabaseMapper.InitGetAssetPath(AssetDatabase.GetAssetPath);
+            AssetDatabaseMapper.InitGetAssetPath2(AssetDatabase.GetAssetPath);
             AssetDatabaseMapper.InitLoadMainAssetAtPath(AssetDatabase.LoadMainAssetAtPath);
             AssetDatabaseMapper.InitRefresh(AssetDatabase.Refresh);
             AssetDatabaseMapper.InitContains(AssetDatabase.Contains);

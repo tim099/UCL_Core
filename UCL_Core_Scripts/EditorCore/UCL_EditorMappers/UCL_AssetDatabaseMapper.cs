@@ -100,6 +100,25 @@ namespace UCL.Core.EditorLib
         {
             m_GetAssetPath = iGetAssetPath;
         }
+        private static System.Func<int, string> m_GetAssetPath2 = null;
+        /// <summary>
+        /// Returns the path name relative to the project folder where the asset is stored.
+        /// </summary>
+        /// <param name="iInstanceID">The instance ID of the asset.</param>
+        /// <returns>The asset path name, or null, or an empty string if the asset does not exist.</returns>
+        static public string GetAssetPath(int iInstanceID)
+        {
+#if UNITY_EDITOR
+            if (m_GetAssetPath == null) return string.Empty;
+            return m_GetAssetPath2.Invoke(iInstanceID);
+#else
+            return string.Empty;
+#endif
+        }
+        static public void InitGetAssetPath2(System.Func<int, string> iGetAssetPath2)
+        {
+            m_GetAssetPath2 = iGetAssetPath2;
+        }
         #endregion
 
         #region LoadMainAssetAtPath

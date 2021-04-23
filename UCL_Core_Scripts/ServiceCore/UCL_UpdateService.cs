@@ -46,7 +46,7 @@ namespace UCL.Core.ServiceLib
         /// Add action with delay that only invoke once!!
         /// </summary>
         /// <param name="iAct"></param>
-        /// <param name="iDelay"></param>
+        /// <param name="iDelay">delay in second</param>
         public void AddDelayAction(System.Action iAct,float iDelay)
         {
             m_DelayQue.Enqueue(new System.Tuple<System.Action, float>(iAct, iDelay));

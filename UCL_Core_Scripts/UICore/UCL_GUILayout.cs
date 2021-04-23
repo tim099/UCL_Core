@@ -209,12 +209,12 @@ namespace UCL.Core.UI {
 
         #region Label
         static GUIStyle sLabelGuiStyle = new GUIStyle(GUI.skin.label);
-        public static void LabelAutoSize(string name, int fontsize = 13) {
-            sLabelGuiStyle.fontSize = fontsize;
+        public static void LabelAutoSize(string iName, int iFontsize = 13) {
+            sLabelGuiStyle.fontSize = iFontsize;
             sLabelGuiStyle.normal.textColor = Color.white;
 
-            Vector2 size = sLabelGuiStyle.CalcSize(new GUIContent(name));
-            GUILayout.Label(name, style: sLabelGuiStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
+            Vector2 aSize = sLabelGuiStyle.CalcSize(new GUIContent(iName));
+            GUILayout.Label(iName, style: sLabelGuiStyle, GUILayout.Width(aSize.x + 1f), GUILayout.Height(aSize.y));
 
         }
         #endregion

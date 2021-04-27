@@ -265,6 +265,15 @@ namespace UCL.Core.Game {
                 PlayBGM(aBGM.m_Clip, aBGM.m_Volume);
             }
         }
+        /// <summary>
+        /// Clear current BGM stack and stop BGM
+        /// </summary>
+        public void PopAllBGM()
+        {
+            StopBGM();
+            m_BGMStack.Clear();
+        }
+
         public void StopBGM()
         {
             if(m_BGMSource == null)

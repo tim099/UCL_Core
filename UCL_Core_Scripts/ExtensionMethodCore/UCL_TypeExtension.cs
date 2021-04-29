@@ -30,24 +30,37 @@ public static partial class TypeExtensionMethods {
     /// <summary>
     /// Get Fields Include parent
     /// </summary>
-    /// <param name="type"></param>
-    /// <param name="bindingAttr"></param>
+    /// <param name="iType"></param>
+    /// <param name="iBindingAttr"></param>
     /// <returns></returns>
-    public static List<FieldInfo> GetAllFields(this Type type, BindingFlags bindingAttr) {
-        FieldInfo[] fields = type.GetFields(bindingAttr);
-        var list = fields.ToList();
-        var base_type = type.BaseType;
-        if(base_type != null) {
-            if((bindingAttr & BindingFlags.Public) != 0) {
-                bindingAttr ^= BindingFlags.Public;
-            }
-            var list2 = base_type.GetAllFields(bindingAttr);
-            for(int i = 0; i < list.Count; i++) {
-                list2.Add(list[i]);
-            }
-            return list2;
+    public static List<FieldInfo> GetAllFields(this Type iType, BindingFlags iBindingAttr) {
+        FieldInfo[] aFields = iType.GetFields(iBindingAttr);
+        List<FieldInfo> aList = new List<FieldInfo>();//aFields.ToList();
+        HashSet<string> aFieldNameHash = new HashSet<string>();
+        for (int i = 0; i < aFields.Length; i++)
+        {
+            var aField = aFields[i];
+            aFieldNameHash.Add(aField.Name);
+            aList.Add(aField);
         }
-        return list;
+        
+        var aBaseType = iType.BaseType;
+        
+        if(aBaseType != null) {
+            if((iBindingAttr & BindingFlags.Public) != 0) {
+                iBindingAttr ^= BindingFlags.Public;
+            }
+            var aList2 = aBaseType.GetAllFields(iBindingAttr);
+            for(int i = 0; i < aList2.Count; i++) {
+                var aField = aList2[i];
+                if (!aFieldNameHash.Contains(aField.Name))
+                {
+                    aFieldNameHash.Add(aField.Name);
+                    aList.Add(aField);
+                }
+            }
+        }
+        return aList;
     }
     /// <summary>
     /// Get Fields Include parent, until parent is iEndType
@@ -57,19 +70,92 @@ public static partial class TypeExtensionMethods {
     /// <param name="iBindingAttr"></param>
     /// <returns></returns>
     public static List<FieldInfo> GetAllFieldsUntil(this Type iType, Type iEndType, BindingFlags iBindingAttr) {
-        FieldInfo[] fields = iType.GetFields(iBindingAttr);
-        var list = fields.ToList();
-        var base_type = iType.BaseType;
-        if(base_type != null && base_type != iEndType) {
-            if((iBindingAttr & BindingFlags.Public) != 0) {
+        FieldInfo[] aFields = iType.GetFields(iBindingAttr);
+        List<FieldInfo> aList = new List<FieldInfo>();//aFields.ToList();
+        HashSet<string> aFieldNameHash = new HashSet<string>();
+        for (int i = 0; i < aFields.Length; i++)
+        {
+            var aField = aFields[i];
+            aFieldNameHash.Add(aField.Name);
+            aList.Add(aField);
+        }
+
+        var aBaseType = iType.BaseType;
+
+        if (aBaseType != null && aBaseType != iEndType)
+        {
+            if ((iBindingAttr & BindingFlags.Public) != 0)
+            {
                 iBindingAttr ^= BindingFlags.Public;
             }
-            var list2 = base_type.GetAllFieldsUntil(iEndType, iBindingAttr);
-            for(int i = 0; i < list.Count; i++) {
-                list2.Add(list[i]);
+            var aList2 = aBaseType.GetAllFieldsUntil(iEndType, iBindingAttr);
+            for (int i = 0; i < aList2.Count; i++)
+            {
+                var aField = aList2[i];
+                if (!aFieldNameHash.Contains(aField.Name))
+                {
+                    aFieldNameHash.Add(aField.Name);
+                    aList.Add(aField);
+                }
             }
-            return list2;
         }
-        return list;
+        return aList;
+    }
+
+    /// <summary>
+    /// Get Fields Include parent, until parent is iEndType
+    /// Ignore Fields with [HideInInspector] 
+    /// Ignore NonPublic Fields whithout[SerializeField]
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <param name="iEndType"></param>
+    /// <returns></returns>
+    public static List<FieldInfo> GetAllFieldsUnityVer(this Type iType, Type iEndType = null, int aLayer = 0)
+    {
+        List<FieldInfo> aList = new List<FieldInfo>();
+        HashSet<string> aFieldNameHash = new HashSet<string>();
+        if (aLayer == 0)//get Public field of root type
+        {
+            FieldInfo[] aPublicFields = iType.GetFields(BindingFlags.Instance | BindingFlags.Public);
+            
+            for (int i = 0; i < aPublicFields.Length; i++)
+            {
+                var aField = aPublicFields[i];
+                if (aField.GetCustomAttribute<HideInInspector>() == null)
+                {
+                    aFieldNameHash.Add(aField.Name);
+                    aList.Add(aField);
+                }
+            }
+        }
+        {//get NonPublicFields
+            FieldInfo[] aNonPublicFields = iType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
+            for (int i = 0; i < aNonPublicFields.Length; i++)
+            {
+                var aField = aNonPublicFields[i];
+                if (aField.GetCustomAttribute<SerializeField>() != null)//SerializeField Only!!
+                {
+                    aFieldNameHash.Add(aField.Name);
+                    aList.Add(aField);
+                }
+            }
+        }
+
+        var aBaseType = iType.BaseType;
+
+        if (aBaseType != null && aBaseType != iEndType)
+        {
+            var aList2 = aBaseType.GetAllFieldsUnityVer(iEndType, aLayer + 1);
+            for (int i = 0; i < aList2.Count; i++)
+            {
+                var aField = aList2[i];
+                if (!aFieldNameHash.Contains(aField.Name))
+                {
+                    aFieldNameHash.Add(aField.Name);
+                    aList.Add(aField);
+                }
+            }
+        }
+        return aList;
     }
 }

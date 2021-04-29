@@ -16,7 +16,7 @@ namespace UCL.Core.Game
         [SerializeField] RectTransform m_UIRoot = null;
         [SerializeField] RectTransform m_UIOverlayRoot = null;
         [SerializeField] Canvas m_Canvas = null;
-        [SerializeField] Canvas m_UIOverlayCanvas = null;
+        //[SerializeField] Canvas m_UIOverlayCanvas = null;
         /// <summary>
         /// Use List to simulate Stack
         /// </summary>

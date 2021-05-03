@@ -45,10 +45,14 @@ namespace UCL.Core.JsonLib {
         public bool IsString { get { return m_Type == JsonType.String; } }
         #endregion
 
-
-        static public JsonData ParseJson(string str) {
-            using(var parser = new JsonParser(str)) {
-                return new JsonData(parser.Parse());
+        /// <summary>
+        /// Parse Json string to JsonData
+        /// </summary>
+        /// <param name="iStr"></param>
+        /// <returns></returns>
+        static public JsonData ParseJson(string iStr) {
+            using(var aParser = new JsonParser(iStr)) {
+                return new JsonData(aParser.Parse());
             }
         }
 

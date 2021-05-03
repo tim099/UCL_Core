@@ -34,7 +34,7 @@ namespace UCL.Core.JsonLib {
             m_Reader = null;
         }
         Dictionary<string, object> ParseObject() {
-            Dictionary<string, object> table = new Dictionary<string, object>();
+            Dictionary<string, object> aTable = new Dictionary<string, object>();
             m_Reader.Read();
             while(true) {
                 switch(GetNextToken()) {
@@ -43,41 +43,41 @@ namespace UCL.Core.JsonLib {
                     case Token.Comma:
                         continue;
                     case Token.Brace_R:
-                        return table;
+                        return aTable;
                     default:
                         string name = ParseString();
                         if(name == null) return null;
                         if(GetNextToken() != Token.Col) return null;
                         
                         m_Reader.Read();
-                        table[name] = Parse();
+                        aTable[name] = Parse();
                         break;
                 }
             }
         }
 
         List<object> ParseArray() {
-            List<object> arr = new List<object>();
+            List<object> aArr = new List<object>();
             m_Reader.Read();
-            var parsing = true;
-            while(parsing) {
-                Token nextToken = GetNextToken();
+            var aIsParsing = true;
+            while(aIsParsing) {
+                Token aNextToken = GetNextToken();
 
-                switch(nextToken) {
+                switch(aNextToken) {
                     case Token.None:
                         return null;
                     case Token.Comma:
                         continue;
                     case Token.Bracket_R:
-                        parsing = false;
+                        aIsParsing = false;
                         break;
                     default:
-                        object value = ParseByToken(nextToken);
-                        arr.Add(value);
+                        object value = ParseByToken(aNextToken);
+                        aArr.Add(value);
                         break;
                 }
             }
-            return arr;
+            return aArr;
         }
 
         internal object Parse() {
@@ -160,21 +160,27 @@ namespace UCL.Core.JsonLib {
         }
 
         object ParseNumber() {
-            string number = GetNextWord();
+            string aNumber = GetNextWord();
 
-            if(number.IndexOf('.') == -1) {
-                int parsedInt32;
-                if(Int32.TryParse(number, out parsedInt32))
-                    return parsedInt32;
-
-                long parsedInt64;
-                Int64.TryParse(number, out parsedInt64);
-                return parsedInt64;
+            if(aNumber.IndexOf('.') == -1) {//Not float or double
+                int aParsedInt32;
+                if (Int32.TryParse(aNumber, out aParsedInt32))
+                {
+                    return aParsedInt32;
+                }
+                else // long
+                {
+                    {
+                        long aParsedInt64;
+                        Int64.TryParse(aNumber, out aParsedInt64);
+                        return aParsedInt64;
+                    }
+                }
             }
 
-            double parsedDouble;
-            Double.TryParse(number, out parsedDouble);
-            return parsedDouble;
+            double aParsedDouble;
+            Double.TryParse(aNumber, out aParsedDouble);
+            return aParsedDouble;
         }
 
         void SkipWhiteSpace() {
@@ -191,25 +197,25 @@ namespace UCL.Core.JsonLib {
         }
 
         string GetNextWord() {
-            int peek_val = m_Reader.Peek();
-            StringBuilder word = new StringBuilder();
+            int aPeekVal = m_Reader.Peek();
+            StringBuilder aWord = new StringBuilder();
 
-            while(peek_val != -1 && !IsWordBreak(Convert.ToChar(peek_val))) {
-                word.Append(Convert.ToChar(m_Reader.Read()));
-                peek_val = m_Reader.Peek();
+            while(aPeekVal != -1 && !IsWordBreak(Convert.ToChar(aPeekVal))) {
+                aWord.Append(Convert.ToChar(m_Reader.Read()));
+                aPeekVal = m_Reader.Peek();
             }
 
-            return word.ToString();
+            return aWord.ToString();
         }
 
         Token GetNextToken() {
             SkipWhiteSpace();
-            int peek_val = m_Reader.Peek();
-            if(peek_val == -1) {
+            int aPeekVal = m_Reader.Peek();
+            if(aPeekVal == -1) {
                 return Token.None;
             }
-            char peek = Convert.ToChar(peek_val);
-            switch(peek) {
+            char aPeek = Convert.ToChar(aPeekVal);
+            switch(aPeek) {
                 case '{': {
                         return Token.Brace_L;
                     }

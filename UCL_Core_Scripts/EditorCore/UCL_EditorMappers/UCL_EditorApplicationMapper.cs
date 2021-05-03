@@ -37,6 +37,9 @@ namespace UCL.Core.EditorLib
         #endregion
 
         #region playModeStateChanged
+        /// <summary>
+        /// Equivalent to UnityEditor.EditorApplication.playModeStateChanged in EditorMode
+        /// </summary>
         public static event Action<PlayModeStateChangeMapper> playModeStateChanged = null;
         public static void PlayModeStateChanged(PlayModeStateChangeMapper iPlayModeStateChangeMapper)
         {

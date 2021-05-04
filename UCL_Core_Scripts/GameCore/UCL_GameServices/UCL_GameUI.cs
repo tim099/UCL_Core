@@ -8,15 +8,29 @@ namespace UCL.Core.Game
     {
         virtual public bool IsUIOverlay { get { return m_IsUIOverlay; } }
         [SerializeField] protected bool m_IsUIOverlay = false;
+        protected System.Action m_OnCloseAction = null;
         virtual public void Init()
         {
 
+        }
+        /// <summary>
+        /// iOnCloseAction will be called when this UI Closed
+        /// </summary>
+        /// <param name="iOnCloseAction"></param>
+        virtual public void SetOnCloseAction(System.Action iOnCloseAction)
+        {
+            m_OnCloseAction = iOnCloseAction;
         }
         /// <summary>
         /// Close this UI
         /// </summary>
         virtual public void Close()
         {
+            if (m_OnCloseAction != null)
+            {
+                m_OnCloseAction.Invoke();
+            }
+            
             UCL.Core.Game.UCL_UIService.Ins.CloseUI(this);
             Destroy(gameObject);
         }

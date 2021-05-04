@@ -27,10 +27,19 @@ namespace UCL.Core.Game
         }
         public T CreateUI<T>(T iTemplate) where T : UCL_GameUI
         {
-            RectTransform aParent = iTemplate.IsUIOverlay ? m_UIOverlayRoot : m_UIRoot;
-            T iUI = Instantiate(iTemplate, aParent);
-            m_UIStack.Add(iUI);
-            iUI.Init();
+            T iUI = null;
+            try
+            {
+                RectTransform aParent = iTemplate.IsUIOverlay ? m_UIOverlayRoot : m_UIRoot;
+                iUI = Instantiate(iTemplate, aParent);
+                m_UIStack.Add(iUI);
+                iUI.Init();
+            }
+            catch (System.Exception iE)
+            {
+                Debug.LogException(iE);
+            }
+
             return iUI;
         }
         public T CreateUIFromResource<T>() where T : UCL_GameUI

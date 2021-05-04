@@ -119,6 +119,33 @@ namespace UCL.Core.MathLib {
             return iList[Next(iList.Count)];
         }
         /// <summary>
+        /// Random pick n elements from the input list(n is iPickCount)
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <param name="iPickCount"></param>
+        /// <returns></returns>
+        public List<T> RandomPick<T>(List<T> iList, int iPickCount)
+        {
+            if (iList == null || iList.Count == 0)
+            {
+                return default;
+            }
+            if (iPickCount >= iList.Count)
+            {
+                return iList.Clone();
+            }
+            List<T> aPool = iList.Clone();
+            List<T> aResult = new List<T>();
+            for(int i = 0; i < iPickCount; i++)
+            {
+                int aPickAt = Next(aPool.Count);
+                aResult.Add(aPool[aPickAt]);
+                aPool.RemoveAt(aPickAt);
+            }
+            return aResult;
+        }
+        /// <summary>
         /// Random pick a element in the input array
         /// </summary>
         /// <typeparam name="T"></typeparam>

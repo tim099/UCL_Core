@@ -14,6 +14,8 @@ public static partial class UIExtensionMethods
     //}
     //yourButton.Select();
     #endregion
+
+    #region ScrollRect
     public static void ToTop(this ScrollRect iScrollRect) {
         if (iScrollRect == null) return;
         iScrollRect.verticalNormalizedPosition = 1f;
@@ -22,4 +24,26 @@ public static partial class UIExtensionMethods
         if (iScrollRect == null) return;
         iScrollRect.verticalNormalizedPosition = 0f;
     }
+    #endregion
+
+    #region Toggle
+    /// <summary>
+    /// Set iToggle.isOn = true, if already == true ,then iToggle.onValueChanged.Invoke(true);
+    /// </summary>
+    /// <param name="iToggle"></param>
+    public static void SetIsOn(this Toggle iToggle)
+    {
+        if (iToggle == null) return;
+        if (iToggle.isOn)
+        {//Trigger action
+            iToggle.onValueChanged.Invoke(true);
+        }
+        else
+        {
+            iToggle.isOn = true;
+        }
+    }
+
+
+    #endregion
 }

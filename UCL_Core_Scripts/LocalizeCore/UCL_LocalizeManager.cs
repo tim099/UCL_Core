@@ -84,15 +84,19 @@ namespace UCL.Core.LocalizeLib
                 Debug.LogException(iE);
             }
         }
-
-        static public string Get(string key) {
-            var ins = GetInstance();
-            if(ins == null) return key;
-            if(ins.m_LocalizeData == null) {
+        /// <summary>
+        /// Get localized of the key
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <returns></returns>
+        static public string Get(string iKey) {
+            var aIns = GetInstance();
+            if(aIns == null) return iKey;
+            if(aIns.m_LocalizeData == null) {
                 Debug.LogWarning("UCL_LocalizeManager not Init yet!!");
-                return key;
+                return iKey;
             }
-            return ins.m_LocalizeData.GetLocalize(key);
+            return aIns.m_LocalizeData.GetLocalize(iKey);
         }
         static public string Get(string key, params object[] objs) {
             string str = Get(key);

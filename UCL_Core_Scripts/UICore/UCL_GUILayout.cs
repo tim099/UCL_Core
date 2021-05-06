@@ -37,10 +37,10 @@ namespace UCL.Core.UI {
             if(float.TryParse(result, out res_val)) return res_val;
             return val;
         }
-        static public string TextField(string label, string val) {
+        static public string TextField(string iLabel, string iVal) {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(label);
-            string result = GUILayout.TextField(val);
+            LabelAutoSize(iLabel);
+            string result = GUILayout.TextField(iVal);
             GUILayout.EndHorizontal();
             return result;
         }
@@ -264,7 +264,7 @@ namespace UCL.Core.UI {
             aID = Popup(aID, aNames, ref opened);
             return (T)System.Enum.Parse(aType, aNames[aID], true);
         }
-        public static System.Enum Popup(System.Enum iEnum, ref bool opened) {
+        public static System.Enum Popup(System.Enum iEnum, ref bool iOpened) {
             System.Type aType = iEnum.GetType();
             var aNames = System.Enum.GetNames(aType);
             int aID = 0;
@@ -273,33 +273,33 @@ namespace UCL.Core.UI {
                     break;
                 }
             }
-            aID = Popup(aID, aNames, ref opened);
+            aID = Popup(aID, aNames, ref iOpened);
             return System.Enum.Parse(aType, aNames[aID], true) as System.Enum;
         }
-        public static int Popup(int selectedIndex, List<string> displayedOptions, ref bool opened) {
-            if(selectedIndex < 0) selectedIndex = 0;
-            if(selectedIndex >= displayedOptions.Count) selectedIndex = displayedOptions.Count - 1;
-            string cur = displayedOptions[selectedIndex];
-            if(opened) {
-                GUILayout.BeginVertical();
-                if(GUILayout.Button(cur)) {
-                    opened = false;
+        public static int Popup(int iSelectedIndex, List<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
+            if(iSelectedIndex < 0) iSelectedIndex = 0;
+            if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
+            string cur = iDisplayedOptions[iSelectedIndex];
+            if(iOpened) {
+                GUILayout.BeginVertical(iOptions);
+                if(GUILayout.Button(cur, iOptions)) {
+                    iOpened = false;
                 }
-                using(var scope = new GUILayout.VerticalScope("box")) {
-                    for(int i = 0; i < displayedOptions.Count; i++) {
-                        if(GUILayout.Button(displayedOptions[i])) {
-                            opened = false;
+                using(var scope = new GUILayout.VerticalScope("box", iOptions)) {
+                    for(int i = 0; i < iDisplayedOptions.Count; i++) {
+                        if(GUILayout.Button(iDisplayedOptions[i], iOptions)) {
+                            iOpened = false;
                             return i;
                         }
                     }
                 }
                 GUILayout.EndVertical();
             } else {
-                if(GUILayout.Button(cur)) {
-                    opened = true;
+                if(GUILayout.Button(cur, iOptions)) {
+                    iOpened = true;
                 }
             }
-            return selectedIndex;
+            return iSelectedIndex;
         }
         #endregion
     }

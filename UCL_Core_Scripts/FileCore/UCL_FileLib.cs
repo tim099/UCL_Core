@@ -286,17 +286,24 @@ namespace UCL.Core.FileLib
         /// Returns the names of the subdirectories (including their paths) 
         /// that match the specified search pattern in the specified directory, and optionally searches subdirectories.
         /// </summary>
-        /// <param name="path">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
-        /// <param name="searchPattern">The search string to match against the names of subdirectories in path.
+        /// <param name="iPath">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
+        /// <param name="iSearchPattern">The search string to match against the names of subdirectories in path.
         /// This parameter can contain a combination of valid literal and wildcard characters, but it doesn't support regular expressions.</param>
-        /// <param name="searchOption">One of the enumeration values that specifies whether the search operation 
+        /// <param name="iSearchOption">One of the enumeration values that specifies whether the search operation 
         /// should include all subdirectories or only the current directory.</param>
         /// <returns></returns>
-        public static string[] GetDirectories(string path,
-            string searchPattern = "*",
-            SearchOption searchOption = SearchOption.AllDirectories) {
-
-            return Directory.GetDirectories(path, searchPattern, searchOption);
+        public static string[] GetDirectories(string iPath,
+            string iSearchPattern = "*",
+            SearchOption iSearchOption = SearchOption.AllDirectories, bool iRemoveRootPath = false) {
+            var aDirs = Directory.GetDirectories(iPath, iSearchPattern, iSearchOption);
+            if (iRemoveRootPath)
+            {
+                for(int i=0; i< aDirs.Length; i++)
+                {
+                    aDirs[i] = GetFileName(aDirs[i]);
+                }
+            }
+            return aDirs;
         }
         /// <summary>
         /// Returns the names of files (including their paths) that match the specified search pattern in the specified directory.

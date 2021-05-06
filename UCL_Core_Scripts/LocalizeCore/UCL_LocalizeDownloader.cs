@@ -164,7 +164,16 @@ namespace UCL.Core.LocalizeLib
                 {
                     int aAt = aID++;
                     UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGid), delegate (byte[] iData) {
-                        string aData = System.Text.Encoding.UTF8.GetString(iData);
+                        string aData = string.Empty;
+                        if (iData != null && iData.Length > 0)
+                        {
+                            aData = System.Text.Encoding.UTF8.GetString(iData);
+                        }
+                        else
+                        {
+                            Debug.LogError("aGid:" + aGid + ",iData == null || iData.Length > 0");
+                        }
+                        
                         aDatas[aAt] = aData;
                         float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
                         UCL.Core.EditorLib.EditorUtilityMapper.DisplayProgressBar("Download Localize", "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress);

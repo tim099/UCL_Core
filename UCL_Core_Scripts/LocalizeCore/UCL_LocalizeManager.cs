@@ -5,8 +5,34 @@ using UnityEngine;
 
 namespace UCL.Core.LocalizeLib
 {
-    public class UCL_LocalizeManager : UCL.Core.UCL_Singleton<UCL_LocalizeManager>
+    public class UCL_LocalizeManager// : UCL.Core.UCL_Singleton<UCL_LocalizeManager>
     {
+        static UCL_LocalizeManager m_Instance = null;
+        /// <summary>
+        /// Won't create new Instance if not exist!!
+        /// </summary>
+        /// <returns></returns>
+        static public UCL_LocalizeManager GetInstance() { return m_Instance; }
+        /// <summary>
+        /// Create new Instance if not exist!!
+        /// </summary>
+        static public UCL_LocalizeManager Instance
+        {
+            get
+            {
+                if (m_Instance == null)
+                {
+                    m_Instance = new UCL_LocalizeManager();
+                }
+
+                return m_Instance;
+            }
+            set
+            {
+                m_Instance = value;
+            }
+        }
+
         /// <summary>
         /// Assign function to customize your loading flow,
         /// pass in Dir, Language, and return LanguageData
@@ -14,9 +40,14 @@ namespace UCL.Core.LocalizeLib
         public static System.Func<string, string, string> m_LoadLanguageFunc = null;
 
         static public event System.Action OnLanguageChanged = delegate () { };
-        
-        public string m_LangDir = "Language";
-        public string m_LangName = "English";
+        /// <summary>
+        /// Root directory of languages files
+        /// </summary>
+        public string LangDir { get; protected set; } = "Language";
+        /// <summary>
+        /// Name of Language folder
+        /// </summary>
+        public string LangName { get; protected set; } = "English";
 
         protected LocalizeData m_LocalizeData = null;
 
@@ -27,8 +58,8 @@ namespace UCL.Core.LocalizeLib
         /// <param name="iLanguage">the language name</param>
         public void LoadLanguage(string iDir, string iLanguage)
         {
-            m_LangDir = iDir;
-            m_LangName = iLanguage;
+            LangDir = iDir;
+            LangName = iLanguage;
             string aLangData = string.Empty;
             if (m_LoadLanguageFunc != null)
             {
@@ -47,7 +78,7 @@ namespace UCL.Core.LocalizeLib
         /// <param name="iLanguage">the language name</param>
         string ResourceLoadLanguage(string iDir, string iLanguage)
         {
-            string aPath = m_LangName;
+            string aPath = LangName;
             if (!string.IsNullOrEmpty(iDir)) aPath = Path.Combine(iDir, iLanguage);
             aPath = Path.Combine(aPath, "Lang");
             return ResourceLoadLanguage(aPath);
@@ -90,7 +121,7 @@ namespace UCL.Core.LocalizeLib
         /// <param name="iKey"></param>
         /// <returns></returns>
         static public string Get(string iKey) {
-            var aIns = GetInstance();
+            var aIns = m_Instance;
             if(aIns == null) return iKey;
             if(aIns.m_LocalizeData == null) {
                 Debug.LogWarning("UCL_LocalizeManager not Init yet!!");

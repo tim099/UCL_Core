@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using UnityEngine;
 
@@ -55,7 +56,13 @@ namespace UCL.Core.JsonLib {
                 return new JsonData(aParser.Parse());
             }
         }
-
+        static public JsonData ParseJson(StringReader iStringReader)
+        {
+            using (var aParser = new JsonParser(iStringReader))
+            {
+                return new JsonData(aParser.Parse());
+            }
+        }
         #region Constructors
         public JsonData() {
             m_Type = JsonType.None;

@@ -250,18 +250,33 @@ namespace UCL.Core.UI {
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="iEnum"></param>
-        /// <param name="opened"></param>
+        /// <param name="iIsOpened"></param>
         /// <returns></returns>
-        public static T Popup<T>(T iEnum, ref bool opened) where T : System.Enum {
+        public static T Popup<T>(T iEnum, ref bool iIsOpened) where T : System.Enum {
             System.Type aType = iEnum.GetType();
             var aNames = System.Enum.GetNames(aType);
-            int aID = 0;
-            for(; aID < aNames.Length; aID++) {
-                if(iEnum.ToString() == aNames[aID]) {
-                    break;
-                }
+            int aID = aNames.GetIndex(iEnum.ToString());
+            aID = Popup(aID, aNames, ref iIsOpened);
+            return (T)System.Enum.Parse(aType, aNames[aID], true);
+        }
+        /// <summary>
+        /// Show enum popup
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iEnum"></param>
+        /// <param name="iIsOpened"></param>
+        /// <returns></returns>
+        public static T Popup<T>(T iEnum, ref bool iIsOpened, System.Func<string, string> iGetDisplayName) where T : System.Enum
+        {
+            System.Type aType = iEnum.GetType();
+            var aNames = System.Enum.GetNames(aType);
+            var aDisplayNames = new string[aNames.Length];
+            int aID = aNames.GetIndex(iEnum.ToString());
+            for(int i = 0; i < aNames.Length; i++)
+            {
+                aDisplayNames[i] = iGetDisplayName(aNames[i]);
             }
-            aID = Popup(aID, aNames, ref opened);
+            aID = Popup(aID, aDisplayNames, ref iIsOpened);
             return (T)System.Enum.Parse(aType, aNames[aID], true);
         }
         public static System.Enum Popup(System.Enum iEnum, ref bool iOpened) {

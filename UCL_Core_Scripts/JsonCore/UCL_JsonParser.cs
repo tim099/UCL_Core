@@ -21,9 +21,13 @@ namespace UCL.Core.JsonLib {
         };
         StringReader m_Reader;
 
-        public JsonParser(string str) {
-            m_Reader = new StringReader(str);
+        public JsonParser(string iStr) {
+            m_Reader = new StringReader(iStr);
             //GC.SuppressFinalize(this);
+        }
+        public JsonParser(StringReader iStringReader)
+        {
+            m_Reader = iStringReader;
         }
         ~JsonParser() {
             Dispose();
@@ -45,12 +49,12 @@ namespace UCL.Core.JsonLib {
                     case Token.Brace_R:
                         return aTable;
                     default:
-                        string name = ParseString();
-                        if(name == null) return null;
+                        string aName = ParseString();
+                        if(aName == null) return null;
                         if(GetNextToken() != Token.Col) return null;
                         
                         m_Reader.Read();
-                        aTable[name] = Parse();
+                        aTable[aName] = Parse();
                         break;
                 }
             }

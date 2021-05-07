@@ -89,6 +89,10 @@ namespace UCL.Core.LocalizeLib
         public string m_SaveFolder = "";
         public string m_FileName = "Lang.txt";
         public string SavePath { get { return m_SaveFolder; } }
+        /// <summary>
+        /// true if download success
+        /// </summary>
+        protected System.Action<bool> m_DownloadEndAct = null;
         protected Regex m_SplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
 #if UNITY_EDITOR
         [UCL.Core.ATTR.UCL_FunctionButton]
@@ -100,6 +104,11 @@ namespace UCL.Core.LocalizeLib
         public string GetDownloadPath(long iGID)
         {
             return string.Format(DownloadTemplate, m_TableId, iGID);
+        }
+        public void StartDownload(System.Action<bool> iEndAct)
+        {
+            m_DownloadEndAct = iEndAct;
+            StartDownload();
         }
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void StartDownload()
@@ -155,6 +164,7 @@ namespace UCL.Core.LocalizeLib
 #if UNITY_EDITOR
                     UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
                     UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
+                    m_DownloadEndAct.Invoke(true);
 #endif
 
                 };
@@ -223,6 +233,7 @@ namespace UCL.Core.LocalizeLib
                         {
                             Debug.LogError("aGids == null || aGids.Count == 0");
                             UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
+                            m_DownloadEndAct.Invoke(false);
                         }
                     }));
             }

@@ -22,15 +22,21 @@ namespace UCL.Core.Game {
                 Debug.Log(m_LocalizeSetting.GetDic().UCL_ToString());
             }
         }
-        public override void Save(string dir) {
-            string path = Path.Combine(dir, "LocalizeSetting.txt");
+        public override void Save(string iDir) {
+            string path = Path.Combine(iDir, "LocalizeSetting.txt");
             JsonLib.JsonData data = new JsonLib.JsonData();
             data["m_LoadLangPath"] = m_LoadLangPath;
             data["m_CurLang"] = m_CurLang;
+#if UNITY_EDITOR
+            //Debug.LogError("m_LoadLangPath:" + m_LoadLangPath + ",m_CurLang:" + m_CurLang);
+            //Editor下 PlayerPrefs紀錄起來以便非執行期使用
+            PlayerPrefs.SetString("CurLang", m_CurLang);
+            PlayerPrefs.SetString("LoadLangPath", m_LoadLangPath);
+#endif
             FileLib.Lib.WriteToFile(data.ToJson(), path);
         }
-        public override void Load(string dir) {
-            string path = Path.Combine(dir, "LocalizeSetting.txt");
+        public override void Load(string iDir) {
+            string path = Path.Combine(iDir, "LocalizeSetting.txt");
             if(File.Exists(path)) {
                 var str = File.ReadAllText(path);
                 JsonLib.JsonData data = JsonLib.JsonData.ParseJson(str);

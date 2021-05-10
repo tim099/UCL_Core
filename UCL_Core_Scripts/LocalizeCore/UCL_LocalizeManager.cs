@@ -117,6 +117,7 @@ namespace UCL.Core.LocalizeLib
         }
         /// <summary>
         /// Get localized of the key
+        /// if iKey not exist localize, then return iKey
         /// </summary>
         /// <param name="iKey"></param>
         /// <returns></returns>
@@ -124,10 +125,26 @@ namespace UCL.Core.LocalizeLib
             var aIns = m_Instance;
             if(aIns == null) return iKey;
             if(aIns.m_LocalizeData == null) {
-                Debug.LogWarning("UCL_LocalizeManager not Init yet!!");
+                Debug.LogError("UCL_LocalizeManager not Init yet!!");
                 return iKey;
             }
             return aIns.m_LocalizeData.GetLocalize(iKey);
+        }
+        /// <summary>
+        /// Check if localize of iKey exist
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <returns></returns>
+        static public bool ContainsKey(string iKey)
+        {
+            var aIns = m_Instance;
+            if (aIns == null) return false;
+            if (aIns.m_LocalizeData == null)
+            {
+                Debug.LogError("UCL_LocalizeManager not Init yet!!");
+                return false;
+            }
+            return aIns.m_LocalizeData.ContainsKey(iKey);
         }
         static public string Get(string key, params object[] objs) {
             string str = Get(key);

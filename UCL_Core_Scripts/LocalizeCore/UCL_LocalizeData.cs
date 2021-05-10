@@ -106,12 +106,27 @@ namespace UCL.Core.LocalizeLib
                 }
             }
         }
-        virtual public string GetLocalize(string key) {
-            if(!m_Dic.ContainsKey(key)) {
+        /// <summary>
+        /// Get localized of the key
+        /// if iKey not exist localize, then return iKey
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <returns></returns>
+        virtual public string GetLocalize(string iKey) {
+            if(!m_Dic.ContainsKey(iKey)) {
                 //Debug.Log("LocalizeData not contain key:" + key);
-                return key;
+                return iKey;
             }
-            return m_Dic[key];
+            return m_Dic[iKey];
+        }
+        /// <summary>
+        /// Check if localize of iKey exist
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <returns></returns>
+        virtual public bool ContainsKey(string iKey)
+        {
+            return m_Dic.ContainsKey(iKey);
         }
     }
 }

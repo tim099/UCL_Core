@@ -294,10 +294,10 @@ namespace UCL.Core.UI {
         public static int Popup(int iSelectedIndex, List<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
             if(iSelectedIndex < 0) iSelectedIndex = 0;
             if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
-            string cur = iDisplayedOptions[iSelectedIndex];
+            string aCur = iDisplayedOptions[iSelectedIndex];
             if(iOpened) {
                 GUILayout.BeginVertical(iOptions);
-                if(GUILayout.Button(cur, iOptions)) {
+                if(GUILayout.Button(aCur, iOptions)) {
                     iOpened = false;
                 }
                 using(var scope = new GUILayout.VerticalScope("box", iOptions)) {
@@ -310,7 +310,7 @@ namespace UCL.Core.UI {
                 }
                 GUILayout.EndVertical();
             } else {
-                if(GUILayout.Button(cur, iOptions)) {
+                if(GUILayout.Button(aCur, iOptions)) {
                     iOpened = true;
                 }
             }

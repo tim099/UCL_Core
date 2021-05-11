@@ -119,8 +119,8 @@ public static partial class TransformExtensionMethods {
             c = canvas.worldCamera.WorldToScreenPoint(c);
             d = canvas.worldCamera.WorldToScreenPoint(d);
         }
-        if(UCL.Core.MathLib.Lib.CheckWithinTriangle(point, a, b, c)
-            || UCL.Core.MathLib.Lib.CheckWithinTriangle(point, a, c, d)) {
+        if(UCL.Core.MathLib.Geometry.CheckWithinTriangle(point, a, b, c)
+            || UCL.Core.MathLib.Geometry.CheckWithinTriangle(point, a, c, d)) {
             return true;
         }
         return false;

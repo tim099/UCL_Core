@@ -4,16 +4,18 @@ using UnityEngine;
 
 namespace UCL.Core.EnumeratorLib {
     public class UCL_CoroutineManager : MonoBehaviour {
-        static UCL_CoroutineManager Instance = null;
+        static UCL_CoroutineManager m_Instance = null;
         List<UCL.Core.EnumeratorLib.EnumeratorPlayer> m_Players = new List<EnumeratorLib.EnumeratorPlayer>();
 
-        static UCL_CoroutineManager GetInstance() {
-            if(Instance == null) {
-                Instance = GameObjectLib.Create<UCL_CoroutineManager>("UCL_CoroutineManager", null);
-                DontDestroyOnLoad(Instance.gameObject);
+        static UCL_CoroutineManager Instance {
+            get{
+                if (m_Instance == null)
+                {
+                    m_Instance = GameObjectLib.Create<UCL_CoroutineManager>("UCL_CoroutineManager", null);
+                    DontDestroyOnLoad(m_Instance.gameObject);
+                }
+                return m_Instance;
             }
-
-            return Instance;
         }
 
         /// <summary>
@@ -24,7 +26,7 @@ namespace UCL.Core.EnumeratorLib {
         new public static EnumeratorPlayer StartCoroutine(IEnumerator enumerator) {
             UCL.Core.EnumeratorLib.EnumeratorPlayer player = null;
 #if UNITY_EDITOR
-            if(!Application.isPlaying) {
+            if(!Application.isPlaying) {//Edit Mode
                 player = UCL.Core.EditorLib.UCL_EditorCoroutineManager.StartCoroutine(enumerator);
                 //Debug.LogWarning("Editor Coroutine");
             }
@@ -33,23 +35,23 @@ namespace UCL.Core.EnumeratorLib {
                 //Debug.LogWarning("Runtime Coroutine");
                 player = EnumeratorPlayer.Play(enumerator);
                 player.m_PlayInEditor = false;
-                GetInstance().m_Players.Add(player);
+                Instance.m_Players.Add(player);
             }
             return player;
         }
-        public static void StopCoroutine(UCL.Core.EnumeratorLib.EnumeratorPlayer player) {
-            if(player == null) return;
+        public static void StopCoroutine(UCL.Core.EnumeratorLib.EnumeratorPlayer iPlayer) {
+            if(iPlayer == null) return;
 #if UNITY_EDITOR
-            if(player.m_PlayInEditor) {
-                UCL.Core.EditorLib.UCL_EditorCoroutineManager.StopCoroutine(player);
+            if(iPlayer.m_PlayInEditor) {
+                UCL.Core.EditorLib.UCL_EditorCoroutineManager.StopCoroutine(iPlayer);
                 //Debug.LogWarning("Editor Stop Coroutine");
                 return;
             }
 #endif
             //Debug.LogWarning("Runtime Stop Coroutine");
-            var instance = GetInstance();
-            if(instance.m_Players.Contains(player)) {
-                instance.m_Players.Remove(player);
+            var instance = Instance;
+            if(instance.m_Players.Contains(iPlayer)) {
+                instance.m_Players.Remove(iPlayer);
             }
         }
         //private void FixedUpdate() {

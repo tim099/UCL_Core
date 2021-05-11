@@ -6,6 +6,40 @@ namespace UCL.Core.ServiceLib
     [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_UpdateService : UCL_Singleton<UCL_UpdateService>
     {
+        #region static
+        /// <summary>
+        /// Add UpdateAction in both Edit mode and Play mode
+        /// </summary>
+        /// <param name="iAction"></param>
+        public static void AddUpdateActionStaticVer(System.Action iAction)
+        {
+            if (!Application.isPlaying)
+            {//Edit Mode
+                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddEditorUpdateAct(iAction);
+            }
+            else
+            {
+                Instance.AddUpdateAction(iAction);
+            }
+        }
+        /// <summary>
+        /// Remove UpdateAction in both Edit mode and Play mode
+        /// </summary>
+        /// <param name="iAction"></param>
+        public static void RemoveUpdateActionStaticVer(System.Action iAction)
+        {
+            if (!Application.isPlaying)
+            {//Edit Mode
+                UCL.Core.EditorLib.UCL_EditorUpdateManager.RemoveEditorUpdateAct(iAction);
+            }
+            else
+            {
+                Instance.RemoveUpdateAction(iAction);
+            }
+        }
+        #endregion
+
+
         /// <summary>
         /// Action trigger once!!
         /// </summary>

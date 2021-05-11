@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace UCL.Core {
     public class UCL_Singleton<T> : MonoBehaviour where T : MonoBehaviour {
-        static T m_Instance;
+        static T m_Instance = null;
         static protected bool m_Destroyed = false;
         /// <summary>
         /// return instance, and auto create one if instance not exsit!!

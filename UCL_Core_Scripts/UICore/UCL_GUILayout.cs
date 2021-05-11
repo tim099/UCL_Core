@@ -5,16 +5,120 @@ using UnityEngine;
 namespace UCL.Core.UI {
     static public class UCL_GUILayout {
         #region property field
+        /// <summary>
+        /// Draw iList using GUILayout
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        static public void ListField<T>(List<T> iList)
+        {
+            if(iList == null)
+            {
+                return;
+            }
+            System.Type aType = typeof(T);
+            GUILayout.BeginVertical();
+            if (GUILayout.Button("Add Element"))
+            {
+                if (aType == typeof(string))
+                {
+                    object aVal = string.Empty;
+                    iList.Add((T)aVal);
+                }
+                else
+                {
+                    iList.Add(System.Activator.CreateInstance<T>());
+                }
+                
+            }
+            int aDeleteAt = -1;
+            for (int i = 0; i < iList.Count; i++)
+            {
+                GUILayout.BeginHorizontal();
+                iList[i] = (T)ObjectField(iList[i]);
+                if (GUILayout.Button("Delete",GUILayout.Width(80)))
+                {
+                    aDeleteAt = i;
+                }
+                GUILayout.EndHorizontal();
+            }
+            if (aDeleteAt >= 0)
+            {
+                iList.RemoveAt(aDeleteAt);
+            }
+            GUILayout.EndVertical();
+        }
+
+        /// <summary>
+        /// Draw iList using GUILayout
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <param name="iDrawElementFunc">Draw element function</param>
+        /// <param name="iCreateElementFunc">Create element function</param>
+        static public void ListField<T>(List<T> iList, System.Func<T,T> iDrawElementFunc, System.Func<T> iCreateElementFunc
+            ,string iAddElementButtonName = "Add Element", string iDeleteButtonName = "Delete")
+        {
+            if (iList == null)
+            {
+                return;
+            }
+            System.Type aType = typeof(T);
+            GUILayout.BeginVertical();
+            if (GUILayout.Button(iAddElementButtonName))
+            {
+                iList.Add(iCreateElementFunc());
+            }
+            int aDeleteAt = -1;
+            for (int i = 0; i < iList.Count; i++)
+            {
+                GUILayout.BeginHorizontal();
+                iList[i] = iDrawElementFunc(iList[i]);
+                if (GUILayout.Button(iDeleteButtonName, GUILayout.Width(80)))
+                {
+                    aDeleteAt = i;
+                }
+                GUILayout.EndHorizontal();
+            }
+            if (aDeleteAt >= 0)
+            {
+                iList.RemoveAt(aDeleteAt);
+            }
+            GUILayout.EndVertical();
+        }
+        /// <summary>
+        /// Display target obj in TextField and return result value
+        /// </summary>
+        /// <param name="iObj"></param>
+        /// <returns></returns>
+        static public object ObjectField(object iObj)
+        {
+            if(iObj is string)
+            {
+                return GUILayout.TextField(iObj as string);
+            }
+            if (iObj.IsNumber())
+            {
+                string aResult = GUILayout.TextField(iObj.ToString());
+                if (string.IsNullOrEmpty(aResult))
+                {
+                    return System.Convert.ChangeType(0, iObj.GetType());
+                }
+                object aResultValue;
+                if (Core.MathLib.Num.TryParse(aResult, iObj.GetType(), out aResultValue)) return aResultValue;
+            }
+            return iObj;
+        }
         static public object NumField(string label, object val, int min_width = 80) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(label);
-            string result = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
+            string aResult = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
             GUILayout.EndHorizontal();
-            if(string.IsNullOrEmpty(result)) {
+            if(string.IsNullOrEmpty(aResult)) {
                 return System.Convert.ChangeType(0, val.GetType());
             }
-            object res_val;
-            if(Core.MathLib.Num.TryParse(result, val.GetType(), out res_val)) return res_val;
+            object aResultValue;
+            if(Core.MathLib.Num.TryParse(aResult, val.GetType(), out aResultValue)) return aResultValue;
             return val;
         }
         static public int IntField(string label, int val, int min_width = 80) {
@@ -220,30 +324,30 @@ namespace UCL.Core.UI {
         #endregion
 
         #region Popup
-        public static int Popup(int selectedIndex, string[] displayedOptions, ref bool opened) {
-            if(selectedIndex < 0) selectedIndex = 0;
-            if(selectedIndex >= displayedOptions.Length) selectedIndex = displayedOptions.Length - 1;
-            string cur = displayedOptions[selectedIndex];
-            if(opened) {
-                GUILayout.BeginVertical();
-                if(GUILayout.Button(cur)) {
-                    opened = false;
+        public static int Popup(int iSelectedIndex, string[] iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
+            if(iSelectedIndex < 0) iSelectedIndex = 0;
+            if(iSelectedIndex >= iDisplayedOptions.Length) iSelectedIndex = iDisplayedOptions.Length - 1;
+            string aCur = iDisplayedOptions[iSelectedIndex];
+            if(iOpened) {
+                GUILayout.BeginVertical(iOptions);
+                if(GUILayout.Button(aCur, iOptions)) {
+                    iOpened = false;
                 }
-                using(var scope = new GUILayout.VerticalScope("box")) {
-                    for(int i = 0; i < displayedOptions.Length; i++) {
-                        if(GUILayout.Button(displayedOptions[i])) {
-                            opened = false;
+                using(var scope = new GUILayout.VerticalScope("box", iOptions)) {
+                    for(int i = 0; i < iDisplayedOptions.Length; i++) {
+                        if(GUILayout.Button(iDisplayedOptions[i], iOptions)) {
+                            iOpened = false;
                             return i;
                         }
                     }
                 }
                 GUILayout.EndVertical();
             } else {
-                if(GUILayout.Button(cur)) {
-                    opened = true;
+                if(GUILayout.Button(aCur, iOptions)) {
+                    iOpened = true;
                 }
             }
-            return selectedIndex;
+            return iSelectedIndex;
         }
         /// <summary>
         /// Show enum popup

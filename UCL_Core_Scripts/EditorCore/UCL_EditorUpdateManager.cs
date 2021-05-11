@@ -45,10 +45,14 @@ namespace UCL.Core.EditorLib {
             m_DelayActQue?.Enqueue(new Tuple<int, Action>(delay_frame, act));
 #endif
         }
+        /// <summary>
+        /// iAct invoke on every editor update
+        /// </summary>
+        /// <param name="iAct"></param>
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
-        static public void AddEditorUpdateAct(System.Action act) {
+        static public void AddEditorUpdateAct(System.Action iAct) {
 #if UNITY_EDITOR
-            m_EditorUpdateAction += act;
+            m_EditorUpdateAction += iAct;
             Debug.Log("AddEditorUpdateAct count:" + m_EditorUpdateAction.GetInvocationCount());
 #endif
         }

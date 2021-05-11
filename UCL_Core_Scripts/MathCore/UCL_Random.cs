@@ -1,13 +1,10 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
-using System.Security.Cryptography;
-using System.Text;
 using UnityEngine;
 
-namespace UCL.Core.MathLib {
+namespace UCL.Core.MathLib
+{
     public static partial class Extensions {
         public static RandomState GetState(this System.Random random) {
             var binaryFormatter = new BinaryFormatter();
@@ -105,12 +102,12 @@ namespace UCL.Core.MathLib {
             return iList;
         }
         /// <summary>
-        /// Random pick a element in the input list
+        /// Random pick a element in the input IList
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="iList"></param>
         /// <returns></returns>
-        public T RandomPick<T>(List<T> iList)
+        public T RandomPick<T>(IList<T> iList)
         {
             if(iList == null || iList.Count == 0)
             {
@@ -125,23 +122,88 @@ namespace UCL.Core.MathLib {
         /// <param name="iList"></param>
         /// <param name="iPickCount"></param>
         /// <returns></returns>
-        public List<T> RandomPick<T>(List<T> iList, int iPickCount)
+        public List<T> RandomPick<T>(IList<T> iList, int iPickCount)
         {
             if (iList == null || iList.Count == 0)
             {
                 return default;
             }
+            List<T> aResult = new List<T>();
             if (iPickCount >= iList.Count)
             {
-                return iList.Clone();
+                for(int i = 0; i < iList.Count; i++)
+                {
+                    aResult.Add(iList[i]);
+                }
+                return aResult;
             }
-            List<T> aPool = iList.Clone();
-            List<T> aResult = new List<T>();
-            for(int i = 0; i < iPickCount; i++)
+            List<T> aPool = new List<T>();
+            for (int i = 0; i < iList.Count; i++)
+            {
+                aPool.Add(iList[i]);
+            }
+
+            for (int i = 0; i < iPickCount; i++)
             {
                 int aPickAt = Next(aPool.Count);
                 aResult.Add(aPool[aPickAt]);
                 aPool.RemoveAt(aPickAt);
+            }
+            return aResult;
+        }
+
+        /// <summary>
+        /// Random pick n elements from the input list(n is iPickCount)
+        /// Weight is the HitRate of item
+        /// etc. A,B,C in iList, and A weight is 3, B is 2, C is 1
+        /// then the HitRate of A is 1/2, B is 1/3 and c is 1/6
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <param name="iPickCount"></param>
+        /// <param name="iGetWeightFunc">input T and return the weight of T</param>
+        /// <returns></returns>
+        public List<T> RandomPick<T>(IList<T> iList, int iPickCount, System.Func<T,int> iGetWeightFunc)
+        {
+            if (iList == null || iList.Count == 0)
+            {
+                return default;
+            }
+            List<T> aResult = new List<T>();
+            if (iPickCount >= iList.Count)
+            {
+                for (int i = 0; i < iList.Count; i++)
+                {
+                    aResult.Add(iList[i]);
+                }
+                return aResult;
+            }
+            List<T> aPool = new List<T>();
+            int aTotalWeight = 0;
+            for (int i = 0; i < iList.Count; i++)
+            {
+                var aItem = iList[i];
+                aPool.Add(aItem);
+                aTotalWeight += iGetWeightFunc(aItem);
+            }
+
+            for (int i = 0; i < iPickCount; i++)
+            {
+                int aPickWeight = Next(aTotalWeight);
+                
+                for (int aPickAt = 0; aPickAt < aPool.Count; aPickAt++)
+                {
+                    var aItem = aPool[aPickAt];
+                    int aWeight = iGetWeightFunc(aItem);
+                    aPickWeight -= aWeight;
+                    if (aPickWeight < 0)
+                    {
+                        aTotalWeight -= aPickWeight;
+                        aResult.Add(aPool[aPickAt]);
+                        aPool.RemoveAt(aPickAt);
+                        break;
+                    }
+                }
             }
             return aResult;
         }

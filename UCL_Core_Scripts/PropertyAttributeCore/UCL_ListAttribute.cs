@@ -2,37 +2,50 @@
 using System;
 using System.Reflection;
 using UCL.Core.ObjectReflectionExtension;
+using System.Collections.Generic;
 
 namespace UCL.Core.PA {
     public class UCL_StrListAttribute : PropertyAttribute {
-        public string[] m_List;
-        public UCL_StrListAttribute(params string[] list) {
-            m_List = list;
+        public string[] m_StrArr;
+        public UCL_StrListAttribute(params string[] iList) {
+            m_StrArr = iList;
         }
-        public UCL_StrListAttribute(Type type, string func_name) {
-            var method = type.GetMethod(func_name);
-            if(method != null) {
+        public UCL_StrListAttribute(Type iType, string iFuncName) {
+            var aMethod = iType.GetMethod(iFuncName);
+            if(aMethod != null) {
                 try {
-                    m_List = method.Invoke(null, null) as string[];
+                    var aResult = aMethod.Invoke(null, null);
+                    m_StrArr = aResult as string[];
+                    if (m_StrArr == null)
+                    {
+                        if (aResult is List<string>)
+                        {
+                            var aList = aResult as List<string>;
+                            m_StrArr = new string[aList.Count];
+                            for (int j = 0; j < aList.Count; j++)
+                            {
+                                m_StrArr[j] = aList[j];
+                            }
+                        }
+
+                    }
                 } catch(Exception e) {
                     Debug.LogError("UCL_ListProperty method.Invoke Exception:" + e.ToString());
                 }
 
             } else { //might be accessor
-                PropertyInfo propInfo = type.GetProperty(func_name);
-                if(propInfo == null) { // not accessor!!
-                    Debug.LogError("UCL_ListProperty:" + type.Name + ",func_name == null :" + func_name);
+                PropertyInfo aPropInfo = iType.GetProperty(iFuncName);
+                if(aPropInfo == null) { // not accessor!!
+                    Debug.LogError("UCL_ListProperty:" + iType.Name + ",func_name == null :" + iFuncName);
                     return;
                 }
-                MethodInfo[] methInfos = propInfo.GetAccessors();
-                for(int i = 0; i < methInfos.Length; i++) {
-                    MethodInfo m = methInfos[i];
-                    //Console.WriteLine("Accessor #{0}:", ctr + 1);
-                    //Console.WriteLine("   Name: {0}", m.Name);
-                    //Console.WriteLine("   Visibility: {0}", GetVisibility(m));
-                    //Console.Write("   Property Type: ");
+                MethodInfo[] aMethodInfos = aPropInfo.GetAccessors();
+                for(int i = 0; i < aMethodInfos.Length; i++) {
+                    MethodInfo aMethodInfo = aMethodInfos[i];
+                    //Debug.LogWarning(string.Format("Name: {0}", aMethodInfo.Name));
+                    //Debug.LogWarning(string.Format("aMethodInfo.IsPrivate: {0}", aMethodInfo.IsPrivate));
                     // Determine if this is the property getter or setter.
-                    if(m.ReturnType == typeof(void)) {//setter
+                    if (aMethodInfo.ReturnType == typeof(void)) {//setter
                         //Console.WriteLine("Setter");
                         //Console.WriteLine("   Setting the property value.");
                         //  Set the value of the property.
@@ -41,8 +54,22 @@ namespace UCL.Core.PA {
                         //Console.WriteLine("Getter");
                         // Get the value of the property.
                         //Console.WriteLine("   Property Value: {0}", m.Invoke(test, new object[] { }));
-                        m_List = m.Invoke(null , new object[] { }) as string[];
-                        if(m_List != null) break;
+                        var aResult = aMethodInfo.Invoke(null, new object[] { });
+                        m_StrArr = aResult as string[];
+                        if(m_StrArr == null)
+                        {
+                            if(aResult is List<string>)
+                            {
+                                var aList = aResult as List<string>;
+                                m_StrArr = new string[aList.Count];
+                                for (int j = 0; j < aList.Count; j++)
+                                {
+                                    m_StrArr[j] = aList[j];
+                                }
+                            }
+
+                        }
+                        if(m_StrArr != null) break;
                     }
                 }
             }

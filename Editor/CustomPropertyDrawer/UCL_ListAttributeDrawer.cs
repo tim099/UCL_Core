@@ -9,21 +9,21 @@ namespace UCL.Core.PA
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
             var list_pro = attribute as UCL_StrListAttribute;
-            var list = list_pro.m_List;
-            if (list == null) return;
+            var aStrArr = list_pro.m_StrArr;
+            if (aStrArr == null) return;
 
             if (property.propertyType == SerializedPropertyType.String)
             {
-                int index = Mathf.Max(0, Array.IndexOf(list, property.stringValue));
-                index = EditorGUI.Popup(position, property.displayName, index, list);
-                if (list.Length > index)
+                int index = Mathf.Max(0, Array.IndexOf(aStrArr, property.stringValue));
+                index = EditorGUI.Popup(position, property.displayName, index, aStrArr);
+                if (aStrArr.Length > index)
                 {
-                    property.stringValue = list[index];
+                    property.stringValue = aStrArr[index];
                 }
             }
             else if (property.propertyType == SerializedPropertyType.Integer)
             {
-                property.intValue = EditorGUI.Popup(position, property.displayName, property.intValue, list);
+                property.intValue = EditorGUI.Popup(position, property.displayName, property.intValue, aStrArr);
             }
             else
             {

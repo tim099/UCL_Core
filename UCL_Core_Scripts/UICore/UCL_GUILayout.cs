@@ -131,15 +131,18 @@ namespace UCL.Core.UI {
             if(int.TryParse(result, out res_val)) return res_val;
             return val;
         }
-        static public float FloatField(string label, float val, int min_width = 80) {
+        static public float FloatField(string iLabel, float iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(label);
-            string result = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
+            LabelAutoSize(iLabel);
+            string result = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(iMinWidth));
             GUILayout.EndHorizontal();
 
-            float res_val = 0;
-            if(float.TryParse(result, out res_val)) return res_val;
-            return val;
+            float aResultVal = 0;
+            if (float.TryParse(result, out aResultVal))
+            {
+                return aResultVal;
+            }
+            return iVal;
         }
         static public string TextField(string iLabel, string iVal) {
             GUILayout.BeginHorizontal();
@@ -316,7 +319,7 @@ namespace UCL.Core.UI {
         public static void LabelAutoSize(string iName, int iFontsize = 13) {
             sLabelGuiStyle.fontSize = iFontsize;
             sLabelGuiStyle.normal.textColor = Color.white;
-
+            sLabelGuiStyle.richText = true;
             Vector2 aSize = sLabelGuiStyle.CalcSize(new GUIContent(iName));
             GUILayout.Label(iName, style: sLabelGuiStyle, GUILayout.Width(aSize.x + 1f), GUILayout.Height(aSize.y));
 
@@ -395,6 +398,14 @@ namespace UCL.Core.UI {
             aID = Popup(aID, aNames, ref iOpened);
             return System.Enum.Parse(aType, aNames[aID], true) as System.Enum;
         }
+        /// <summary>
+        /// Show a popup and return selected Index
+        /// </summary>
+        /// <param name="iSelectedIndex"></param>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iOpened"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
         public static int Popup(int iSelectedIndex, List<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
             if(iSelectedIndex < 0) iSelectedIndex = 0;
             if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;

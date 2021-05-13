@@ -52,6 +52,9 @@ namespace UCL.Core.UI {
             }
         }
         public bool Pressed { get; protected set; } = false;
+        /// <summary>
+        /// True if mouse pointer Entered
+        /// </summary>
         public bool Enter { get; protected set; } = false;
         [SerializeField] protected bool m_Interactable = true;
 

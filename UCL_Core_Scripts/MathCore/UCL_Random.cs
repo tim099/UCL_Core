@@ -217,12 +217,15 @@ namespace UCL.Core.MathLib
                 return aResult;
             }
             List<T> aPool = new List<T>();
+            List <int> aWeights = new List<int>();
             int aTotalWeight = 0;
             for (int i = 0; i < iList.Count; i++)
             {
                 var aItem = iList[i];
                 aPool.Add(aItem);
-                aTotalWeight += iGetWeightFunc(aItem);
+                int aWeight = iGetWeightFunc(aItem);
+                aWeights.Add(aWeight);
+                aTotalWeight += aWeight;
             }
 
             for (int i = 0; i < iPickCount; i++)
@@ -231,15 +234,19 @@ namespace UCL.Core.MathLib
                 
                 for (int aPickAt = 0; aPickAt < aPool.Count; aPickAt++)
                 {
-                    var aItem = aPool[aPickAt];
-                    int aWeight = iGetWeightFunc(aItem);
+                    int aWeight = aWeights[aPickAt];
                     aPickWeight -= aWeight;
                     if (aPickWeight < 0)
                     {
-                        aTotalWeight -= aPickWeight;
+                        aTotalWeight -= aWeight;
                         aResult.Add(aPool[aPickAt]);
                         aPool.RemoveAt(aPickAt);
+                        aWeights.RemoveAt(aPickAt);
                         break;
+                    }
+                    else if(aPickAt == aPool.Count - 1)
+                    {
+                        Debug.LogError("RandomPick Pick Fail!! aPickWeight:" + aPickWeight);
                     }
                 }
             }

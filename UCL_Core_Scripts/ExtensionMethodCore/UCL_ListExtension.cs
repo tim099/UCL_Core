@@ -58,12 +58,28 @@ public static partial class ListExtensionMethods {
     /// Get element inside list
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <param name="list"></param>
-    /// <param name="at"></param>
+    /// <param name="iList"></param>
+    /// <param name="iAt"></param>
     /// <returns></returns>
-    public static T Get<T>(this IList<T> list, int at) {
-        if(list == null || list.Count == 0 || at < 0 || at >= list.Count) return default;
-        return list[at];
+    public static T Get<T>(this IList<T> iList, int iAt) {
+        if(iList == null || iList.Count == 0 || iAt < 0 || iAt >= iList.Count) return default;
+        return iList[iAt];
+    }
+    /// <summary>
+    /// Get element inside list
+    /// if At < 0 then get the first element
+    /// if At >= iList.Count,then get the last element
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <param name="iAt"></param>
+    /// <returns></returns>
+    public static T SmartGet<T>(this IList<T> iList, int iAt)
+    {
+        if (iList == null || iList.Count == 0) return default;
+        if (iAt < 0) iAt = 0;
+        else if (iAt >= iList.Count) iAt = iList.Count - 1;
+        return iList[iAt];
     }
     /// <summary>
     /// Remove first element of list

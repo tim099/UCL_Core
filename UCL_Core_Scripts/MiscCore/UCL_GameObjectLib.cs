@@ -52,7 +52,7 @@ namespace UCL.Core {
             SetParent(Obj.transform, parent);
             return Obj;
         }
-        public static void SearchChildNotIncludeParent<T>(Transform parent, List<T> result) where T : Component
+        public static void SearchChildExcludeParent<T>(Transform parent, List<T> result) where T : Component
         {
             foreach(Transform child in parent) {
                 SearchChild(child, result);
@@ -73,14 +73,20 @@ namespace UCL.Core {
             }
             return null;
         }
-        public static void SearchChild<T>(Transform parent, List<T> result) where T : Component
+        /// <summary>
+        /// Search child contains T(Include parent)
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iParent"></param>
+        /// <param name="iResult"></param>
+        public static void SearchChild<T>(Transform iParent, List<T> iResult) where T : Component
         {
-            var res = parent.GetComponents<T>();
+            var res = iParent.GetComponents<T>();
             for(int i = 0; i < res.Length; i++) {
-                result.Add(res[i]);
+                iResult.Add(res[i]);
             }
-            foreach(Transform child in parent) {
-                SearchChild(child, result);
+            foreach(Transform child in iParent) {
+                SearchChild(child, iResult);
             }
         }
         public static T SearchChild<T>(Transform parent) where T : Component

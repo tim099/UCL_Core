@@ -110,6 +110,11 @@ namespace UCL.Core.LocalizeLib
             m_DownloadEndAct = iEndAct;
             StartDownload();
         }
+        protected void DownloadFail()
+        {
+            UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
+            m_DownloadEndAct?.Invoke(false);
+        }
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void StartDownload()
         {
@@ -203,6 +208,12 @@ namespace UCL.Core.LocalizeLib
             {
                 UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(m_GidTable)
                     , delegate (byte[] iData) {
+                        if(iData == null || iData.Length == 0)
+                        {
+                            Debug.LogError("GidTable download fail!!iData == null || iData.Length == 0");
+                            DownloadFail();
+                            return;
+                        }
                         string aData = System.Text.Encoding.UTF8.GetString(iData);
                         string[] aGidStrs = aData.SplitByLine();
                         for(int i = 0; i < aGidStrs.Length; i++)
@@ -232,8 +243,7 @@ namespace UCL.Core.LocalizeLib
                         else
                         {
                             Debug.LogError("aGids == null || aGids.Count == 0");
-                            UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
-                            m_DownloadEndAct.Invoke(false);
+                            DownloadFail();
                         }
                     }));
             }

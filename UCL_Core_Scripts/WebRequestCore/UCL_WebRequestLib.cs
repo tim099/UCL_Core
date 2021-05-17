@@ -15,7 +15,8 @@ namespace UCL.Core
 
             if (www.isNetworkError || www.isHttpError)
             {
-                Debug.LogError("LoadByWebRequest Error:" + iDownloadPath + ",Error:" + www.error);
+                Debug.LogError("LoadByWebRequest Error:" + iDownloadPath + ",Error:" + www.error+ ",www.isNetworkError:"+ www.isNetworkError
+                    + ",www.isHttpError:" + www.isHttpError);
                 if (DownloadCallback != null) DownloadCallback.Invoke(null);
             }
             else

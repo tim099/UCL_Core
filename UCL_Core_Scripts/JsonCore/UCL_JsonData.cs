@@ -246,6 +246,16 @@ namespace UCL.Core.JsonLib {
             if (aVal.m_Type == JsonType.Long) return (double)(long)aVal;
             return iDefaultVal;
         }
+        public T GetEnum<T>(string iKey, T iDefaultVal = default) where T : Enum
+        {
+            var aVal = Get(iKey);
+            if (aVal == this) return iDefaultVal;
+            if (aVal.m_Type == JsonType.String)
+            {
+                return (T)Enum.Parse(typeof(T), aVal);
+            }
+            return iDefaultVal;
+        }
         public int GetInt(string iKey, int iDefaultVal = 0) {
             var aVal = Get(iKey);
             if(aVal == this) return iDefaultVal;

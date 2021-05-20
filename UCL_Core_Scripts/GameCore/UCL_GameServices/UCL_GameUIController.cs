@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace UCL.Core.Game
 {
+    [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_GameUIController : MonoBehaviour
     {
         [SerializeField] UCL_GameUI m_UITemplate = null;
@@ -23,6 +24,7 @@ namespace UCL.Core.Game
                 Show();
             }
         }
+        [UCL.Core.ATTR.UCL_FunctionButton]
         public void Show()
         {
             if (m_UIIns != null)
@@ -39,6 +41,7 @@ namespace UCL.Core.Game
             }
             
         }
+        [UCL.Core.ATTR.UCL_FunctionButton]
         public void Hide()
         {
             if (m_UIIns == null)

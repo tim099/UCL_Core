@@ -21,7 +21,7 @@ namespace UCL.Core.LocalizeLib
                 var hex = new char[4];
                 bool parsing = true;
                 StringBuilder aStringBuilder = new StringBuilder();
-                string key = null;
+                string iKey = null;
                 int phase = 0;
                 while(parsing) {
                     if(reader.Peek() == -1) {
@@ -40,7 +40,7 @@ namespace UCL.Core.LocalizeLib
                                             break;
                                         }
                                     case 2: {//Key Enter
-                                            key = aStringBuilder.ToString();
+                                            iKey = aStringBuilder.ToString();
                                             break;
                                         }
                                     case 3: {//Value Start
@@ -48,11 +48,12 @@ namespace UCL.Core.LocalizeLib
                                             break;
                                         }
                                     case 4: {//Value End
-                                            if(m_Dic.ContainsKey(key)) {
-                                                Debug.LogError("ParseData key:" + key + " already exist!!,Value:" + aStringBuilder.ToString());
+                                            if(m_Dic.ContainsKey(iKey)) {
+                                                Debug.LogError("ParseData key:" + iKey + " already exist!!,New Value:" + aStringBuilder.ToString()
+                                                    +",OldValue:"+m_Dic[iKey]);
                                             } else {
                                                 //Debug.LogWarning("Add" + key + "," + s.ToString());
-                                                m_Dic.Add(key, aStringBuilder.ToString());
+                                                m_Dic.Add(iKey, aStringBuilder.ToString());
                                             }
                                             aStringBuilder.Clear();
                                             phase = 0;

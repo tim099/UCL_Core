@@ -67,7 +67,7 @@ namespace UCL.Core.JsonLib {
         /// <param name="iLayer"></param>
         /// <returns></returns>
         static public object LoadDataFromJson(object iObj, JsonData iData, int iLayer = 0) {
-            if(iObj == null || iLayer > MaxParsingLayer) return null;
+            if(iObj == null || iData == null || iLayer > MaxParsingLayer) return null;
             Type iType = iObj.GetType();
             if (iObj is IList && iType.IsGenericType)
             {
@@ -156,7 +156,7 @@ namespace UCL.Core.JsonLib {
         /// <returns></returns>
         static public object LoadDataFromJsonUnityVer(object iObj, JsonData iData, int iLayer = 0)
         {
-            if (iObj == null || iLayer > MaxParsingLayer) return null;
+            if (iObj == null || iData == null || iLayer > MaxParsingLayer) return null;
             Type iType = iObj.GetType();
             if (iObj is IList && iType.IsGenericType)
             {
@@ -202,15 +202,18 @@ namespace UCL.Core.JsonLib {
                     {
                         try
                         {
-                            Enum aEnum = Enum.Parse(aField.FieldType, aJsonData, true) as Enum;
-                            if (aEnum != null)
+                            if (aJsonData.IsString && !string.IsNullOrEmpty(aJsonData.GetString()))
                             {
-                                aField.SetValue(iObj, aEnum);
+                                Enum aEnum = Enum.Parse(aField.FieldType, aJsonData, true) as Enum;
+                                if (aEnum != null)
+                                {
+                                    aField.SetValue(iObj, aEnum);
+                                }
                             }
                         }
-                        catch (System.Exception e)
+                        catch (System.Exception iE)
                         {
-                            Debug.LogError("System.Exception:" + e);
+                            Debug.LogError("System.Exception:" + iE);
                         }
                     }
                     else if (aFieldData is IList && aField.FieldType.IsGenericType)

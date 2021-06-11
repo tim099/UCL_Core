@@ -38,7 +38,6 @@ namespace UCL.Core.FileLib {
             public string FilePath {
                 get { return System.IO.Path.Combine(m_FolderPath, FileName); }
             }
-
             public string m_FileName;
             public string m_FolderPath;
             public string m_Extension;

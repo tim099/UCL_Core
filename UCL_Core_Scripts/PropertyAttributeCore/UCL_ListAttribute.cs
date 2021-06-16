@@ -82,13 +82,18 @@ namespace UCL.Core.PA {
         /// 
         /// </summary>
         /// <param name="iMethodName">Member function that return a List</param>
-        /// <param name="para"></param>
-        public UCL_ListAttribute(string iMethodName, params object[] para) {
+        /// <param name="iParams"></param>
+        public UCL_ListAttribute(string iMethodName, params object[] iParams) {
             m_MethodName = iMethodName;
-            m_Params = para;
+            m_Params = iParams;
         }
-        public string[] GetList(object target) {
-            return (string[]) target.Invoke(m_MethodName, m_Params);
+        /// <summary>
+        /// Get the string list from target
+        /// </summary>
+        /// <param name="iTarget"></param>
+        /// <returns></returns>
+        public string[] GetList(object iTarget) {
+            return (string[]) iTarget.Invoke(m_MethodName, m_Params);
         }
         //public UCL_ListAttribute (System.Action<List<string>> get)
     }

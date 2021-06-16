@@ -78,8 +78,13 @@ namespace UCL.Core.PA {
     public class UCL_ListAttribute : PropertyAttribute {
         string m_MethodName = null;
         object[] m_Params = null;
-        public UCL_ListAttribute(string _MethodName, params object[] para) {
-            m_MethodName = _MethodName;
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="iMethodName">Member function that return a List</param>
+        /// <param name="para"></param>
+        public UCL_ListAttribute(string iMethodName, params object[] para) {
+            m_MethodName = iMethodName;
             m_Params = para;
         }
         public string[] GetList(object target) {

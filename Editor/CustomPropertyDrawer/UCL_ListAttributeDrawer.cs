@@ -38,17 +38,17 @@ namespace UCL.Core.PA
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
 
-            var list_pro = attribute as UCL_ListAttribute;
-            var list = list_pro.GetList(property.GetParent());
-            if (list == null) return;
+            var aListAttr = attribute as UCL_ListAttribute;
+            var aList = aListAttr.GetList(property.GetParent());
+            if (aList == null) return;
 
             if (property.propertyType == SerializedPropertyType.String)
             {
-                int index = Mathf.Max(0, Array.IndexOf(list, property.stringValue));
-                index = EditorGUI.Popup(position, property.displayName, index, list);
-                if (list.Length > index)
+                int aIndex = Mathf.Max(0, Array.IndexOf(aList, property.stringValue));
+                aIndex = EditorGUI.Popup(position, property.displayName, aIndex, aList);
+                if (aList.Length > aIndex)
                 {
-                    property.stringValue = list[index];
+                    property.stringValue = aList[aIndex];
                 }
             }
             else

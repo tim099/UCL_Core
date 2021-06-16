@@ -281,21 +281,33 @@ namespace UCL.Core.ObjectOperatorExtension {
 }
 namespace UCL.Core.ObjectReflectionExtension {
     public static partial class ExtensionMethods {
-        public static object Invoke(this object obj, string function_name, params object[] parameters) {
-            return obj.InvokeFunc(function_name, parameters);
+        public static object Invoke(this object iObj, string iFunctionName, params object[] iParameters) {
+            return iObj.InvokeFunc(iFunctionName, iParameters);
         }
-        public static object InvokeFunc(this object obj, string function_name, object[] parameters) {
-            Type type = obj.GetType();
-            Type[] types = new Type[parameters.Length];
-            for(int i = 0; i < parameters.Length; i++) {
-                types[i] = parameters[i].GetType();
+        public static object InvokeFunc(this object iObj, string iFunctionName, object[] iParameters) {
+            Type aType = iObj.GetType();
+            MethodInfo aMethod = null;
+
+            if (iParameters != null && iParameters.Length > 0)//Method with iParameters
+            {
+                Type[] aParameterTypes = new Type[iParameters.Length];
+                for (int i = 0; i < iParameters.Length; i++)
+                {
+                    aParameterTypes[i] = iParameters[i].GetType();
+                }
+                aMethod = aType.GetMethod(iFunctionName, aParameterTypes);
             }
-            var method = type.GetMethod(function_name, types);
-            if(method == null) {
-                Debug.LogError("InvokeFunc Fail!!function_name:" + function_name + " not exist in type:" + type.Name);
+            else//Method without iParameters
+            {
+                aMethod = aType.GetMethod(iFunctionName, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            }
+
+            
+            if (aMethod == null) {
+                Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in type:" + aType.Name);
                 return null;
             }
-            return method.Invoke(obj, parameters);
+            return aMethod.Invoke(iObj, iParameters);
         }
     }
 }

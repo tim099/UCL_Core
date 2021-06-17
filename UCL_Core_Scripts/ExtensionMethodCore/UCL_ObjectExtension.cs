@@ -281,11 +281,28 @@ namespace UCL.Core.ObjectOperatorExtension {
 }
 namespace UCL.Core.ObjectReflectionExtension {
     public static partial class ExtensionMethods {
-        public static object Invoke(this object iObj, string iFunctionName, params object[] iParameters) {
-            return iObj.InvokeFunc(iFunctionName, iParameters);
+        /// <summary>
+        /// Invoke the target function of iTarget
+        /// </summary>
+        /// <param name="iTarget">Target to invoke member function</param>
+        /// <param name="iFunctionName">FuncionName of function to invoke</param>
+        /// <param name="iParameters">params that pass to target function</param>
+        /// <returns></returns>
+        public static object Invoke(this object iTarget, string iFunctionName, params object[] iParameters) {
+            if (iTarget == null) return null;
+            return iTarget.InvokeFunc(iFunctionName, iParameters);
         }
-        public static object InvokeFunc(this object iObj, string iFunctionName, object[] iParameters) {
-            Type aType = iObj.GetType();
+        /// <summary>
+        /// Invoke the target function of iTarget
+        /// </summary>
+        /// <param name="iTarget">Target to invoke member function</param>
+        /// <param name="iFunctionName">FuncionName of function to invoke</param>
+        /// <param name="iParameters">params that pass to target function</param>
+        /// <returns></returns>
+        public static object InvokeFunc(this object iTarget, string iFunctionName, object[] iParameters) {
+            if (iTarget == null) return null;
+
+            Type aType = iTarget.GetType();
             MethodInfo aMethod = null;
 
             if (iParameters != null && iParameters.Length > 0)//Method with iParameters
@@ -299,15 +316,14 @@ namespace UCL.Core.ObjectReflectionExtension {
             }
             else//Method without iParameters
             {
-                aMethod = aType.GetMethod(iFunctionName, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                aMethod = aType.GetMethod(iFunctionName, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
             }
-
             
             if (aMethod == null) {
-                Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in type:" + aType.Name);
+                Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
                 return null;
             }
-            return aMethod.Invoke(iObj, iParameters);
+            return aMethod.Invoke(iTarget, iParameters);
         }
     }
 }
@@ -354,7 +370,7 @@ public static partial class ObjectExtensionMethods
         return sb.ToString();
     }
     */
-    public static string UCL_ToBitString(this object obj,string seperator = "_") {
+    public static string UCL_ToBitString(this object obj, string seperator = "_") {
         var arr = obj.ToByteArray();
         StringBuilder sb = new StringBuilder();
         for(int i = arr.Length-1; i >= 0 ; i--) {

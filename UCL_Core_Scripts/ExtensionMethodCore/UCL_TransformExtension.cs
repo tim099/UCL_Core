@@ -71,6 +71,15 @@ public static partial class TransformExtensionMethods {
     #endregion
 
     #region RectTransform
+    /// <summary>
+    /// Set the Top value of RectTransform
+    /// </summary>
+    /// <param name="iRect"></param>
+    /// <param name="iTop"></param>
+    public static void SetTop(this RectTransform iRect, float iTop)
+    {
+        iRect.offsetMax = new Vector2(iRect.offsetMax.x, -iTop);
+    }
     public static void CopyValue(this RectTransform iRect, RectTransform iTarget)
     {
         if (iRect == null || iTarget == null) return;

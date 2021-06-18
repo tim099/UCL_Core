@@ -6,10 +6,22 @@ using UnityEngine;
 public static partial class StringExtensionMethods {
     public const string LineSeparator = "\r\n|\r|\n";
     #region String
+    /// <summary>
+    /// Append RichText Color to the string
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <param name="iCol"></param>
+    /// <returns></returns>
     public static string RichTextColor(this string iStr, string iCol = "FFFFFF")
     {
         return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
     }
+    /// <summary>
+    /// Append RichText Color to the string
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <param name="iCol"></param>
+    /// <returns></returns>
     public static string RichTextColor(this string iStr, Color iCol)
     {
         return string.Format("<color=#{0}>{1}</color>", ColorUtility.ToHtmlStringRGB(iCol), iStr);

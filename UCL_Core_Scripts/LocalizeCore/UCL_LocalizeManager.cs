@@ -146,9 +146,22 @@ namespace UCL.Core.LocalizeLib
             }
             return aIns.m_LocalizeData.ContainsKey(iKey);
         }
-        static public string Get(string key, params object[] objs) {
-            string str = Get(key);
-            return string.Format(str, objs);
+        static public string Get(string iKey, params object[] iObjs) {
+            string aStr = Get(iKey);
+            if (iObjs.Length > 0)
+            {
+                try
+                {
+                    aStr = string.Format(aStr, iObjs);
+                }
+                catch (System.Exception iE)
+                {
+                    Debug.LogException(iE);
+                    Debug.LogError("LocalizeGet Str:" + aStr + ",iObjs:" + iObjs.UCL_ToString());
+                }
+            }
+
+            return aStr;
         }
     }
 }

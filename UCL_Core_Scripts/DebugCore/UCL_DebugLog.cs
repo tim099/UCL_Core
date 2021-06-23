@@ -17,6 +17,7 @@ namespace UCL.Core.DebugLib {
             const float OpenDebugLogDistance = 1200f;
             public void Init(Vector2 iStartPos)
             {
+                m_Timer = 0;
                 MoveDistance = 0;
                 m_StartPos = iStartPos;
                 m_PrePos = m_StartPos;
@@ -42,11 +43,12 @@ namespace UCL.Core.DebugLib {
                 {
                     m_MinPos.y = iCurPos.y;
                 }
-
-                if ((iCurPos - m_StartPos).magnitude > 0.35f * OpenDebugLogDistance)
+                m_Timer++;
+                if ((iCurPos - m_StartPos).magnitude > 0.35f * OpenDebugLogDistance || m_Timer > 100)
                 {
                     Init(iCurPos);
                 }
+
                 return (MoveDistance >= OpenDebugLogDistance) 
                     && ((m_MaxPos.x - m_MinPos.x) > 0.2f * OpenDebugLogDistance) 
                     && ((m_MaxPos.y - m_MinPos.y) > 0.2f * OpenDebugLogDistance); 
@@ -56,10 +58,12 @@ namespace UCL.Core.DebugLib {
             public float MoveDistance { get; protected set; } = 0;
             Vector2 m_PrePos = Vector2.zero;
             Vector2 m_StartPos = Vector2.zero;
+            int m_Timer = 0;
         }
         const string LogLevelKey = "UCL_DebugLog_LogLevel";
         const string LogToFileKey = "UCL_DebugLog_LogToFile";
         const string AutoStackTraceKey = "UCL_DebugLog_AutoStackTrace";
+        
         //[Flags]
         //UnityEngine.Debug.unityLogger.logEnabled
         public enum LogLevel {
@@ -176,9 +180,10 @@ namespace UCL.Core.DebugLib {
         /// </summary>
         public bool f_DrawShowDebugLogButton = false;
         /// <summary>
-        /// Show the DebugLog on user draw circle on screen
+        /// Show the DebugLog when user draw circle on screen
         /// </summary>
         public bool f_ShowDebugLogOnDrawCircle = true;
+
         public bool f_LogToFile = false;
         public bool f_AutoStackTrace = true;
         public int m_MaxLogCount = 100;

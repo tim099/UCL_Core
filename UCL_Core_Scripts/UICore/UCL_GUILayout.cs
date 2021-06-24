@@ -373,7 +373,7 @@ namespace UCL.Core.UI {
         /// <param name="iEnum"></param>
         /// <param name="iIsOpened"></param>
         /// <returns></returns>
-        public static T Popup<T>(T iEnum, ref bool iIsOpened, System.Func<string, string> iGetDisplayName) where T : System.Enum
+        public static T Popup<T>(T iEnum, ref bool iIsOpened, System.Func<string, string> iGetDisplayName, params GUILayoutOption[] iOptions) where T : System.Enum
         {
             System.Type aType = iEnum.GetType();
             var aNames = System.Enum.GetNames(aType);
@@ -383,7 +383,7 @@ namespace UCL.Core.UI {
             {
                 aDisplayNames[i] = iGetDisplayName(aNames[i]);
             }
-            aID = Popup(aID, aDisplayNames, ref iIsOpened);
+            aID = Popup(aID, aDisplayNames, ref iIsOpened, iOptions);
             return (T)System.Enum.Parse(aType, aNames[aID], true);
         }
         public static System.Enum Popup(System.Enum iEnum, ref bool iOpened) {

@@ -12,13 +12,13 @@ namespace UCL.Core.PA {
         public readonly object[] m_CompareValues;
         public readonly bool m_Inverse;
 
-        /// <param name="field_name">String name of field to check value</param>
-        /// <param name="inverse">Inverse check result</param>
-        /// <param name="compareValues">On which values field will be shown in inspector</param>
-        public ConditionalAttribute(string field_name, bool inverse = false, params object[] compareValues) {
-            m_FieldName = field_name;
-            m_Inverse = inverse;
-            m_CompareValues = compareValues;
+        /// <param name="iFieldName">String name of field to check value</param>
+        /// <param name="iInverse">Inverse check result</param>
+        /// <param name="iCompareValues">On which values field will be shown in inspector</param>
+        public ConditionalAttribute(string iFieldName, bool iInverse = false, params object[] iCompareValues) {
+            m_FieldName = iFieldName;
+            m_Inverse = iInverse;
+            m_CompareValues = iCompareValues;
         }
     }
 }

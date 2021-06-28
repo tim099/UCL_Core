@@ -264,20 +264,20 @@ namespace UCL.Core.PA
 
         #region Property Is Visible
 
-        public bool PropertyIsVisible(SerializedProperty property, object[] compareAgainst)
+        public bool PropertyIsVisible(SerializedProperty iProperty, object[] iCompareAgainst)
         {
-            if (property == null) return true;
-            var parent = property.GetParent();
-            var attr = attribute as ConditionalAttribute;
-            var member = parent.GetMember(attr.m_FieldName);
-            if (member == null)
+            if (iProperty == null) return true;
+            var aParent = iProperty.GetParent();
+            var aAttr = attribute as ConditionalAttribute;
+            var aMember = aParent.GetMember(aAttr.m_FieldName);
+            if (aMember == null)
             {
-                Debug.LogError("member == null attr.m_FieldName:" + attr.m_FieldName + " ,parent:" + parent.ToString());
+                Debug.LogError("member == null attr.m_FieldName:" + aAttr.m_FieldName + " ,parent:" + aParent.ToString());
                 return false;
             }
-            if (!compareAgainst.IsNullOrEmpty())
+            if (!iCompareAgainst.IsNullOrEmpty())
             {
-                return CompareAgainstValues(member, compareAgainst);
+                return CompareAgainstValues(aMember, iCompareAgainst);
             }
 
             return true;

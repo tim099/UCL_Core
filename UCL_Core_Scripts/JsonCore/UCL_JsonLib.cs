@@ -295,8 +295,20 @@ namespace UCL.Core.JsonLib {
             }
             else if (iType.IsStructOrClass())
             {
-                object aObj = Activator.CreateInstance(iType);
-                return LoadDataFromJson(aObj, iData);
+                object aObj = null;
+                try
+                {
+                    aObj = Activator.CreateInstance(iType);
+                }
+                catch(System.Exception iE)
+                {
+                    Debug.LogException(iE);
+                }
+                if (aObj != null)
+                {
+                    return LoadDataFromJson(aObj, iData);
+                }
+                return null;
             }
 
             return iData.GetObj();

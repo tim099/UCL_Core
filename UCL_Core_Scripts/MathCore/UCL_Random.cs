@@ -491,6 +491,8 @@ namespace UCL.Core.MathLib
         /// <returns></returns>
         public int Range(int iMin, int iMax)
         {
+            if (iMin > iMax) return m_Rnd.Next(iMax, iMin);
+
             return m_Rnd.Next(iMin, iMax);
         }
         /// <summary>

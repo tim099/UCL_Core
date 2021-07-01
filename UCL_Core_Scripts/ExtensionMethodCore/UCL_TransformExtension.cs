@@ -36,21 +36,21 @@ public static partial class TransformExtensionMethods {
         t.rotation = target.rotation;
         t.localScale = target.localScale;
     }
-    public static void SetLossyScale(this Transform t, Vector3 iScale)
+    public static void SetLossyScale(this Transform iTarget, Vector3 iScale)
     {
-        if(t.parent == null)
+        if(iTarget.parent == null)
         {
-            t.localScale = iScale;
+            iTarget.localScale = iScale;
             return;
         }
-        Vector3 pScale = t.parent.lossyScale;
-        float x = iScale.x;
-        if (pScale.x != 0) x /= pScale.x;
-        float y = iScale.y;
-        if (pScale.y != 0) y /= pScale.y;
-        float z = iScale.z;
-        if (pScale.z != 0) z /= pScale.z;
-        t.localScale = new Vector3(x,  y, z);
+        Vector3 pScale = iTarget.parent.lossyScale;
+        float aX = iScale.x;
+        if (pScale.x != 0) aX /= pScale.x;
+        float aY = iScale.y;
+        if (pScale.y != 0) aY /= pScale.y;
+        float aZ = iScale.z;
+        if (pScale.z != 0) aZ /= pScale.z;
+        iTarget.localScale = new Vector3(aX,  aY, aZ);
     }
     #endregion
 
@@ -80,12 +80,76 @@ public static partial class TransformExtensionMethods {
     {
         iRect.offsetMax = new Vector2(iRect.offsetMax.x, -iTop);
     }
+    /// <summary>
+    /// Copy the size and position from iTarget to iRect
+    /// </summary>
+    /// <param name="iRect"></param>
+    /// <param name="iTarget"></param>
     public static void CopyValue(this RectTransform iRect, RectTransform iTarget)
     {
         if (iRect == null || iTarget == null) return;
         iRect.sizeDelta = iTarget.sizeDelta;
         iRect.position = iTarget.position;
+    }
+    /// <summary>
+    /// Copy the size and position from iTarget to iRect
+    /// support cross canvas copy
+    /// </summary>
+    /// <param name="iRect"></param>
+    /// <param name="iTarget"></param>
+    static Vector3[] sCorners = null;
+    public static void CopyValueCorssCanvas(this RectTransform iRect, RectTransform iTarget)
+    {
+        if (iRect == null || iTarget == null) return;
+        var aParent = iRect.parent;
+        //Debug.LogError("iRect:" + iRect.rect + ",iTarget:" + iTarget.rect);
+        Canvas aCanvasA = iRect.GetComponentInParent<Canvas>();
+        Canvas aCanvasB = iTarget.GetComponentInParent<Canvas>();
+        if(sCorners == null)
+        {
+            sCorners = new Vector3[4];
+        }
+        iTarget.GetWorldCorners(sCorners);
+        for(int i = 0; i < 4; i++)
+        {
+            sCorners[i] = aCanvasB.transform.InverseTransformPoint(sCorners[i]);
+        }
+        Vector2 aHorVec = sCorners[0] - sCorners[3];
+        Vector2 aVerVec = sCorners[0] - sCorners[1];
+        Vector2 aMidPoint = 0.5f*(sCorners[0] + sCorners[2]);
+        Vector2 aSize = new Vector2(aHorVec.magnitude, aVerVec.magnitude);
+        //Debug.LogError("sCorners:" + sCorners.UCL_ToString());
 
+        iRect.sizeDelta = aSize;//iTarget.sizeDelta;
+        iRect.anchorMin = iTarget.anchorMin;
+        iRect.anchorMax = iTarget.anchorMax;
+        iRect.position = aCanvasA.transform.TransformPoint(aMidPoint);
+
+        //iRect.anchoredPosition = iTarget.anchoredPosition;
+        iRect.pivot = iTarget.pivot;
+        //iRect.localScale = iTarget.localScale;
+        if (aHorVec.y != 0)
+        {
+            float aRot = - Mathf.Atan2(aHorVec.y, -aHorVec.x) * Mathf.Rad2Deg;
+            iRect.transform.rotation = Quaternion.Euler(0, 0, aRot);
+            //Debug.LogError("aRot:" + aRot);
+        }
+        else
+        {
+            iRect.transform.rotation = Quaternion.Euler(0, 0, 0);
+        }
+
+        //Debug.LogError("Copied iRect:" + iRect.rect + ",iTarget:" + iTarget.rect);
+    }
+    /// <summary>
+    /// Get screen space rect of RectTransform
+    /// </summary>
+    /// <param name="iRect"></param>
+    /// <returns></returns>
+    public static Rect ScreenSpaceRect(this RectTransform iRect)
+    {
+        Vector2 aSize = Vector2.Scale(iRect.rect.size, iRect.lossyScale);
+        return new Rect((Vector2)iRect.position - (aSize * iRect.pivot), aSize);
     }
     public static void SetFullScreen(this RectTransform iTarget) {
         iTarget.anchorMin = new Vector2(0, 0);

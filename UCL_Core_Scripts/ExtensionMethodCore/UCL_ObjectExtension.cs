@@ -388,39 +388,39 @@ public static partial class ObjectExtensionMethods
         }
         return sb.ToString();
     }
-    public static string UCL_ToString(this object obj, int space = 0) {
+    public static string UCL_ToString(this object iObj, int iSpace = 0) {
         try {
-            if(space > 10) return string.Empty;
-            if(obj == null) {
-                if(space == 0) return "UCL_ToString Error!! obj == null";
+            if(iSpace > 10) return string.Empty;
+            if(iObj == null) {
+                if(iSpace == 0) return "UCL_ToString Error!! obj == null";
                 return string.Empty;
             }
-            Type type = obj.GetType();
-            if(type.IsPrimitive || !type.IsStructOrClass() || obj is Enum
-                || obj is Vector4 || obj is Vector3 || obj is Vector2
-                || obj is Vector3Int || obj is Vector2Int) {
-                if(space == 0) return "(" + type.Name + ") : " + obj.ToString();
-                return obj.ToString();
+            Type type = iObj.GetType();
+            if(type.IsPrimitive || !type.IsStructOrClass() || iObj is Enum
+                || iObj is Vector4 || iObj is Vector3 || iObj is Vector2
+                || iObj is Vector3Int || iObj is Vector2Int) {
+                if(iSpace == 0) return "(" + type.Name + ") : " + iObj.ToString();
+                return iObj.ToString();
             }
-            if(obj is string) {
-                if(space == 0) return "(" + type.Name + ") : " + (string)obj;
-                return (string)obj;
+            if(iObj is string) {
+                if(iSpace == 0) return "(" + type.Name + ") : " + (string)iObj;
+                return (string)iObj;
             }
 
             string space_str = string.Empty;
             StringBuilder builder = new StringBuilder();
-            if(space > 0) {
+            if(iSpace > 0) {
                 builder.Append("\n");
-                space_str = new string('\t', space);
+                space_str = new string('\t', iSpace);
             }
-            IEnumerable ienum = obj as IEnumerable;
+            IEnumerable ienum = iObj as IEnumerable;
             if(ienum != null) {
-                var dic = obj as IDictionary;
+                var dic = iObj as IDictionary;
                 if(dic != null) {
                     builder.Append(space_str + "(" + type.Name + ")" + " : [");
                     string arrStr = string.Empty;
                     foreach(var key in dic.Keys) {
-                        builder.Append("(" + key.UCL_ToString(space + 1) + " , " + dic[key].UCL_ToString(space + 1) + "), ");
+                        builder.Append("(" + key.UCL_ToString(iSpace + 1) + " , " + dic[key].UCL_ToString(iSpace + 1) + "), ");
                     }
                     builder.RemoveLast();
                     builder.RemoveLast();
@@ -429,7 +429,7 @@ public static partial class ObjectExtensionMethods
                     builder.Append(space_str + "(" + type.Name + ")" + " : [");
                     string arrStr = string.Empty;
                     foreach(var val in ienum) {
-                        builder.Append(val.UCL_ToString(space + 1) + ",");
+                        builder.Append(val.UCL_ToString(iSpace + 1) + ",");
                     }
                     builder.RemoveLast();
                     builder.Append("]");
@@ -439,16 +439,16 @@ public static partial class ObjectExtensionMethods
 
             FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             if(fields.Length > 0) {
-                if(space == 0) {
+                if(iSpace == 0) {
                     builder.AppendLine(space_str + type.Name);//",fields.Length:" + fields.Length+
                 }
                 foreach(var field in fields) {
-                    var value = field.GetValue(obj);
+                    var value = field.GetValue(iObj);
                     Type f_type = field.FieldType;
-                    builder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(space + 1));
+                    builder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(iSpace + 1));
                 }
             } else {
-                return obj.ToString();
+                return iObj.ToString();
             }
 
             return builder.ToString();

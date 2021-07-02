@@ -92,18 +92,16 @@ public static partial class TransformExtensionMethods {
         iRect.position = iTarget.position;
     }
     /// <summary>
-    /// Copy the size and position from iTarget to iRect
+    /// Copy the size ,position, and rotation from iTarget to iRect
     /// support cross canvas copy
     /// </summary>
     /// <param name="iRect"></param>
     /// <param name="iTarget"></param>
     static Vector3[] sCorners = null;
-    public static void CopyValueCorssCanvas(this RectTransform iRect, RectTransform iTarget)
+    public static void CopyValueWorldSpace(this RectTransform iRect, RectTransform iTarget)
     {
         if (iRect == null || iTarget == null) return;
-        var aParent = iRect.parent;
-        //Debug.LogError("iRect:" + iRect.rect + ",iTarget:" + iTarget.rect);
-        Canvas aCanvasA = iRect.GetComponentInParent<Canvas>();
+        Transform aTargetTransform = iRect.GetComponentInParent<Canvas>().transform;//iRect.parent;
         Canvas aCanvasB = iTarget.GetComponentInParent<Canvas>();
         if(sCorners == null)
         {
@@ -116,30 +114,24 @@ public static partial class TransformExtensionMethods {
         }
         Vector2 aHorVec = sCorners[0] - sCorners[3];
         Vector2 aVerVec = sCorners[0] - sCorners[1];
-        Vector2 aMidPoint = 0.5f*(sCorners[0] + sCorners[2]);
+        Vector2 aMidPoint = 0.5f * (sCorners[0] + sCorners[2]);
         Vector2 aSize = new Vector2(aHorVec.magnitude, aVerVec.magnitude);
         //Debug.LogError("sCorners:" + sCorners.UCL_ToString());
+        //Debug.LogError("aSize:" + aSize.ToString());
+        iRect.pivot = iTarget.pivot;
+        iRect.anchorMin = 0.5f * Vector2.one;
+        iRect.anchorMax = 0.5f * Vector2.one;
+        iRect.sizeDelta = aSize;//aTargetTransform.TransformPoint(aSize) - aTargetTransform.TransformPoint(Vector2.zero);//iTarget.sizeDelta;
 
-        iRect.sizeDelta = aSize;//iTarget.sizeDelta;
-        iRect.anchorMin = iTarget.anchorMin;
-        iRect.anchorMax = iTarget.anchorMax;
-        iRect.position = aCanvasA.transform.TransformPoint(aMidPoint);
+        //iRect.position = aCanvasA.transform.TransformPoint(aMidPoint);
+        iRect.position = aTargetTransform.TransformPoint(aMidPoint);
 
         //iRect.anchoredPosition = iTarget.anchoredPosition;
-        iRect.pivot = iTarget.pivot;
-        //iRect.localScale = iTarget.localScale;
-        if (aHorVec.y != 0)
-        {
-            float aRot = - Mathf.Atan2(aHorVec.y, -aHorVec.x) * Mathf.Rad2Deg;
-            iRect.transform.rotation = Quaternion.Euler(0, 0, aRot);
-            //Debug.LogError("aRot:" + aRot);
-        }
-        else
-        {
-            iRect.transform.rotation = Quaternion.Euler(0, 0, 0);
-        }
-
-        //Debug.LogError("Copied iRect:" + iRect.rect + ",iTarget:" + iTarget.rect);
+        float aX = -aHorVec.x;
+        float aY = -aHorVec.y;
+        float aRot = Mathf.Atan2(aY, aX) * Mathf.Rad2Deg;
+        iRect.transform.rotation = Quaternion.Euler(0, 0, aRot);
+        //Debug.LogError("aRot:" + aRot + ",aX:" + aX + ",aY:" + aY);
     }
     /// <summary>
     /// Get screen space rect of RectTransform

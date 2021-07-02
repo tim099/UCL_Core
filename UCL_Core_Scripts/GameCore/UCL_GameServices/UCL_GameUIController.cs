@@ -12,7 +12,19 @@ namespace UCL.Core.Game
         /// Load from resource
         /// </summary>
         [SerializeField] string m_UIName = string.Empty;
+        /// <summary>
+        /// if true then show the target UI on Start
+        /// </summary>
+        [SerializeField] bool m_ShowOnStart = false;
         UCL_GameUI m_UIIns = null;
+
+        private void Start()
+        {
+            if (m_ShowOnStart)
+            {
+                Show();
+            }
+        }
         public void Toggle()
         {
             if (m_UIIns != null)

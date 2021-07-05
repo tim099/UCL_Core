@@ -36,6 +36,8 @@ namespace UCL.Core.Game
                 Show();
             }
         }
+
+        [UCL.Core.ATTR.UCL_RuntimeOnly]
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void Show()
         {
@@ -53,6 +55,7 @@ namespace UCL.Core.Game
             }
             
         }
+        [UCL.Core.ATTR.UCL_RuntimeOnly]
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void Hide()
         {

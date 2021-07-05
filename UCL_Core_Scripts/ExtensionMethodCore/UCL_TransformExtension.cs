@@ -97,24 +97,20 @@ public static partial class TransformExtensionMethods {
     /// </summary>
     /// <param name="iRect"></param>
     /// <param name="iTarget"></param>
-    static Vector3[] sCorners = null;
     public static void CopyValueWorldSpace(this RectTransform iRect, RectTransform iTarget)
     {
         if (iRect == null || iTarget == null) return;
         Transform aTargetTransform = iRect.GetComponentInParent<Canvas>().transform;//iRect.parent;
         Canvas aCanvasB = iTarget.GetComponentInParent<Canvas>();
-        if(sCorners == null)
-        {
-            sCorners = new Vector3[4];
-        }
-        iTarget.GetWorldCorners(sCorners);
+        Vector3[] aCorners = new Vector3[4];
+        iTarget.GetWorldCorners(aCorners);
         for(int i = 0; i < 4; i++)
         {
-            sCorners[i] = aCanvasB.transform.InverseTransformPoint(sCorners[i]);
+            aCorners[i] = aCanvasB.transform.InverseTransformPoint(aCorners[i]);
         }
-        Vector2 aHorVec = sCorners[0] - sCorners[3];
-        Vector2 aVerVec = sCorners[0] - sCorners[1];
-        Vector2 aMidPoint = 0.5f * (sCorners[0] + sCorners[2]);
+        Vector2 aHorVec = aCorners[0] - aCorners[3];
+        Vector2 aVerVec = aCorners[0] - aCorners[1];
+        Vector2 aMidPoint = 0.5f * (aCorners[0] + aCorners[2]);
         Vector2 aSize = new Vector2(aHorVec.magnitude, aVerVec.magnitude);
         //Debug.LogError("sCorners:" + sCorners.UCL_ToString());
         //Debug.LogError("aSize:" + aSize.ToString());

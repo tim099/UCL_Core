@@ -89,15 +89,15 @@ namespace UCL.Core.Game {
                 }
 
             }
-            foreach (var service in m_GameServices)
+            foreach (var aService in m_GameServices)
             {
                 try
                 {
-                    service.InitEnd();
+                    aService.InitEnd();
                 }
                 catch (System.Exception e)
                 {
-                    Debug.LogError(service.name + ".InitEnd() Exception:" + e);
+                    Debug.LogError(aService.name + ".InitEnd() Exception:" + e);
                 }
 
             }
@@ -120,18 +120,32 @@ namespace UCL.Core.Game {
 
             var aGameServicePath = GetGameServicePath();
 
-            foreach(var service in m_GameServices) {
-                service.Save(aGameServicePath);
+            foreach(var aService in m_GameServices) {
+                try
+                {
+                    aService.Save(aGameServicePath);
+                }
+                catch (System.Exception iE)
+                {
+                    Debug.LogException(iE);
+                }
             }
         }
         virtual public void LoadAllSetting() {
             LoadGameConfig();
 
-            var gameservice_path = GetGameServicePath();
-            FileLib.Lib.CreateDirectory(gameservice_path);
+            var aGameServicePath = GetGameServicePath();
+            FileLib.Lib.CreateDirectory(aGameServicePath);
 
-            foreach(var service in m_GameServices) {
-                service.Load(gameservice_path);
+            foreach(var aService in m_GameServices) {
+                try
+                {
+                    aService.Load(aGameServicePath);
+                }
+                catch(System.Exception iE)
+                {
+                    Debug.LogException(iE);
+                }
             }
         }
 

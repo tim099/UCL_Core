@@ -88,6 +88,8 @@ public static partial class TransformExtensionMethods {
     public static void CopyValue(this RectTransform iRect, RectTransform iTarget)
     {
         if (iRect == null || iTarget == null) return;
+        iRect.pivot = iTarget.pivot;
+
         iRect.sizeDelta = iTarget.sizeDelta;
         iRect.position = iTarget.position;
     }

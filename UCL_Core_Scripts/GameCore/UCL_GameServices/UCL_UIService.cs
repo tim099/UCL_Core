@@ -9,6 +9,7 @@ namespace UCL.Core.Game
     public class UCL_UIService : UCL_GameService
     {
         static public UCL_UIService Ins { get; protected set; }
+        public RectTransform UIRoot { get => m_UIRoot; }
         /// <summary>
         /// Root folder of UI Resource
         /// </summary>

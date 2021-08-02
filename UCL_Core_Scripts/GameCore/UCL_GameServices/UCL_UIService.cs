@@ -43,6 +43,20 @@ namespace UCL.Core.Game
 
             return iUI;
         }
+        /// <summary>
+        /// return 
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        public T GetUI<T>() where T : UCL_GameUI
+        {
+            foreach(var aUI in m_UIStack)
+            {
+                T aTarget = aUI as T;
+                if (aTarget != null) return aTarget;
+            }
+            return null;
+        }
         public T CreateUIFromResource<T>() where T : UCL_GameUI
         {
             string aPath = typeof(T).Name;

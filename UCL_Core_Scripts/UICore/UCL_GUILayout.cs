@@ -407,6 +407,11 @@ namespace UCL.Core.UI {
         /// <param name="iOptions"></param>
         /// <returns></returns>
         public static int Popup(int iSelectedIndex, List<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
+            if(iDisplayedOptions.Count == 0)
+            {
+                Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
+                return 0;
+            }
             if(iSelectedIndex < 0) iSelectedIndex = 0;
             if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
             string aCur = iDisplayedOptions[iSelectedIndex];

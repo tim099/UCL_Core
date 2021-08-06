@@ -55,7 +55,7 @@ namespace UCL.Core.Game {
                 m_EndAct.Invoke();
             }
             m_EndAct = null;
-            var Ins = UCL_GameAudioService.Instance;
+            var Ins = UCL_GameAudioService.Ins;
             if (Ins != null)
             {
                 Ins.PlayEnd(this);
@@ -165,7 +165,7 @@ namespace UCL.Core.Game {
         Stack<BGMData> m_BGMStack = new Stack<BGMData>();
         AudioSource m_BGMSource = null;
         Dictionary<AudioType, AudioMixerGroup> m_AudioMixerGroupDic = new Dictionary<AudioType, AudioMixerGroup>();
-        public static UCL_GameAudioService Instance { get; protected set; }
+        public static UCL_GameAudioService Ins { get; protected set; }
         /// <summary>
         /// Just Loaded the setting, need to refresh AudioMixer On Update!!
         /// </summary>
@@ -178,7 +178,7 @@ namespace UCL.Core.Game {
             }
         }
         override public void Init() {
-            Instance = this;
+            Ins = this;
             if (m_AudioMixer == null) m_AudioMixer = Resources.Load<AudioMixer>("UCL_AudioMixer");
             foreach(AudioType aType in System.Enum.GetValues(typeof(AudioType)))
             {

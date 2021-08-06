@@ -33,7 +33,7 @@ namespace UCL.Core.Game
         public void Play()
         {
             //Debug.LogError("Play");
-            var Ins = UCL_GameAudioService.Instance;
+            var Ins = UCL_GameAudioService.Ins;
             if (Ins == null) return;
             Ins.Play(m_Clip, m_AudioType, m_Volume);
         }

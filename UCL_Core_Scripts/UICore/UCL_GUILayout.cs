@@ -303,6 +303,7 @@ namespace UCL.Core.UI {
         }
         public static bool ButtonAutoSize(string name, int fontsize, Color but_color, Color text_color) {
             sButtonGuiStyle.fontSize = fontsize;
+            var aOldTextCol = sButtonGuiStyle.normal.textColor;
             sButtonGuiStyle.normal.textColor = text_color;
 
             Color col_tmp = GUI.backgroundColor;
@@ -310,6 +311,7 @@ namespace UCL.Core.UI {
             Vector2 size = sButtonGuiStyle.CalcSize(new GUIContent(name));
             bool flag = GUILayout.Button(name, style: sButtonGuiStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
             GUI.backgroundColor = col_tmp;
+            sButtonGuiStyle.normal.textColor = aOldTextCol;
             return flag;
         }
         #endregion

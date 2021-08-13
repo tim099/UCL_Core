@@ -20,24 +20,25 @@ namespace UCL.Core.EnumeratorLib {
 
         /// <summary>
         /// Start playing Coroutine
+        /// Wrok in both Edit Mode and Play Mode
         /// </summary>
         /// <param name="enumerator"></param>
         /// <returns></returns>
         new public static EnumeratorPlayer StartCoroutine(IEnumerator enumerator) {
-            UCL.Core.EnumeratorLib.EnumeratorPlayer player = null;
+            UCL.Core.EnumeratorLib.EnumeratorPlayer aPlayer = null;
 #if UNITY_EDITOR
             if(!Application.isPlaying) {//Edit Mode
-                player = UCL.Core.EditorLib.UCL_EditorCoroutineManager.StartCoroutine(enumerator);
+                aPlayer = UCL.Core.EditorLib.UCL_EditorCoroutineManager.StartCoroutine(enumerator);
                 //Debug.LogWarning("Editor Coroutine");
             }
 #endif
-            if(player == null) {
+            if(aPlayer == null) {
                 //Debug.LogWarning("Runtime Coroutine");
-                player = EnumeratorPlayer.Play(enumerator);
-                player.m_PlayInEditor = false;
-                Instance.m_Players.Add(player);
+                aPlayer = EnumeratorPlayer.Play(enumerator);
+                aPlayer.m_PlayInEditor = false;
+                Instance.m_Players.Add(aPlayer);
             }
-            return player;
+            return aPlayer;
         }
         public static void StopCoroutine(UCL.Core.EnumeratorLib.EnumeratorPlayer iPlayer) {
             if(iPlayer == null) return;

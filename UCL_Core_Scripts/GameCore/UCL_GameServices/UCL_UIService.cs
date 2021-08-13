@@ -76,9 +76,24 @@ namespace UCL.Core.Game
             }
             return CreateUI(aTemplate);
         }
-        public void CloseUI(UCL_GameUI iUI)
+        /// <summary>
+        /// Remove closed ui from UIStack
+        /// </summary>
+        /// <param name="iUI"></param>
+        public void OnUIClosed(UCL_GameUI iUI)
         {
             m_UIStack.Remove(iUI);
+        }
+        /// <summary>
+        /// Close all UI
+        /// </summary>
+        public void CloseAllUI()
+        {
+            var aUIs = m_UIStack.ToArray();
+            for(int i = 0; i < aUIs.Length; i++)
+            {
+                aUIs[i].Close();
+            }
         }
         public void EscapeKeyDown()
         {

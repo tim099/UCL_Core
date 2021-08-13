@@ -169,7 +169,7 @@ namespace UCL.Core.LocalizeLib
 #if UNITY_EDITOR
                     UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
                     UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
-                    m_DownloadEndAct.Invoke(true);
+                    m_DownloadEndAct?.Invoke(true);
 #endif
 
                 };
@@ -188,7 +188,6 @@ namespace UCL.Core.LocalizeLib
                         {
                             Debug.LogError("aGid:" + aGid + ",iData == null || iData.Length > 0");
                         }
-                        
                         aDatas[aAt] = aData;
                         float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
                         UCL.Core.EditorLib.EditorUtilityMapper.DisplayProgressBar("Download Localize", "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress);

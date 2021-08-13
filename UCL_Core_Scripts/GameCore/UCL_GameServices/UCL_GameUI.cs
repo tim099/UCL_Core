@@ -9,6 +9,7 @@ namespace UCL.Core.Game
         virtual public bool IsUIOverlay { get { return m_IsUIOverlay; } }
         [SerializeField] protected bool m_IsUIOverlay = false;
         protected System.Action m_OnCloseAction = null;
+        protected bool m_IsClosed = false;
         virtual public void Init()
         {
 
@@ -26,12 +27,14 @@ namespace UCL.Core.Game
         /// </summary>
         virtual public void Close()
         {
+            if (m_IsClosed) return;
+            m_IsClosed = true;
             if (m_OnCloseAction != null)
             {
                 m_OnCloseAction.Invoke();
             }
             
-            UCL.Core.Game.UCL_UIService.Ins.CloseUI(this);
+            UCL.Core.Game.UCL_UIService.Ins.OnUIClosed(this);
             Destroy(gameObject);
         }
         /// <summary>

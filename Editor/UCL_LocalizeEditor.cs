@@ -8,8 +8,8 @@ namespace UCL.Core.LocalizeLib {
     [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_LocalizeEditor : ScriptableObject {
         [UnityEditor.Callbacks.OnOpenAssetAttribute(2)]
-        public static bool step2(int instanceID, int line) {
-            var data = UnityEditor.EditorUtility.InstanceIDToObject(instanceID) as UCL_LocalizeEditor;
+        public static bool OnOpenAsset(int iInstanceID, int iLine) {
+            var data = UnityEditor.EditorUtility.InstanceIDToObject(iInstanceID) as UCL_LocalizeEditor;
             if(data != null) {
                 //ShowWindow(data);
                 return true;
@@ -22,11 +22,11 @@ namespace UCL.Core.LocalizeLib {
 
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void ParseDataToDic() {
-            var data = new Core.LocalizeLib.LocalizeData(m_LocalizeData.text);
+            var aData = new Core.LocalizeLib.LocalizeData(m_LocalizeData.text);
             m_LocalizeDic = new List<KeyPair>();
-            var dic = data.GetDic();
-            foreach(var key in dic.Keys) {
-                m_LocalizeDic.Add(new KeyPair(key, dic[key]));
+            var aDic = aData.GetDic();
+            foreach(var aKey in aDic.Keys) {
+                m_LocalizeDic.Add(new KeyPair(aKey, aDic[aKey]));
             }
         }
     }

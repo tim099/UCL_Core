@@ -21,6 +21,16 @@ namespace UCL.Core.LocalizeLib {
         public List<KeyPair> m_LocalizeDic = new List<KeyPair>();
 
         [UCL.Core.ATTR.UCL_FunctionButton]
+        public void OpenEditWindow()
+        {
+            if (m_LocalizeData == null)
+            {
+                return;
+            }
+            UCL_LocalizeEditorWindow.ShowWindow(new Core.LocalizeLib.LocalizeData(m_LocalizeData.text));
+        }
+
+        [UCL.Core.ATTR.UCL_FunctionButton]
         public void ParseDataToDic() {
             var aData = new Core.LocalizeLib.LocalizeData(m_LocalizeData.text);
             m_LocalizeDic = new List<KeyPair>();

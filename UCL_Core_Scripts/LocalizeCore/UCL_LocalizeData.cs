@@ -121,6 +121,15 @@ namespace UCL.Core.LocalizeLib
             return m_Dic[iKey];
         }
         /// <summary>
+        /// Set localized by key
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <param name="iValue">Localized string</param>
+        virtual public void SetLocalize(string iKey,string iValue)
+        {
+            m_Dic[iKey] = iValue;
+        }
+        /// <summary>
         /// Check if localize of iKey exist
         /// </summary>
         /// <param name="iKey"></param>

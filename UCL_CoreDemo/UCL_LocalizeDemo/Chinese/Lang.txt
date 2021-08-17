@@ -1,0 +1,6 @@
+"Term_None":"無"
+"TermDes_None":"無"
+"Term_HighSpeedChant":"高速詠唱"
+"TermDes_HighSpeedChant":"立刻完成當前的詠唱"
+"Term_Purify":"淨化"
+"TermDes_Purify":"清除我方所有負面狀態"

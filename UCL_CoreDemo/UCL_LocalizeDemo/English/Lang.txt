@@ -1,0 +1,6 @@
+"Term_None":"None"
+"TermDes_None":"None"
+"Term_HighSpeedChant":"HighSpeedChant"
+"TermDes_HighSpeedChant":"Complete the ongoing chant immidetly"
+"Term_Purify":"Purify"
+"TermDes_Purify":"Clear all negative status "

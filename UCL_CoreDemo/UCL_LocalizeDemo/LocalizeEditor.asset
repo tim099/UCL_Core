@@ -12,5 +12,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7df14ca3e04856a46ab95ee34aed77a6, type: 3}
   m_Name: LocalizeEditor
   m_EditorClassIdentifier: 
-  m_LocalizeData: {fileID: 0}
-  m_LocalizeDic: []
+  m_LocalizeData: {fileID: 4900000, guid: abac6391329b4a24d9bd219e1cf11ce2, type: 3}
+  m_LocalizeDic:
+  - m_Key: Term_None
+    m_Localize: "\u7121"
+  - m_Key: TermDes_None
+    m_Localize: "\u7121"
+  - m_Key: Term_HighSpeedChant
+    m_Localize: "\u9AD8\u901F\u8A60\u5531"
+  - m_Key: TermDes_HighSpeedChant
+    m_Localize: "\u7ACB\u523B\u5B8C\u6210\u7576\u524D\u7684\u8A60\u5531"
+  - m_Key: Term_Purify
+    m_Localize: "\u6DE8\u5316"
+  - m_Key: TermDes_Purify
+    m_Localize: "\u6E05\u9664\u6211\u65B9\u6240\u6709\u8CA0\u9762\u72C0\u614B"

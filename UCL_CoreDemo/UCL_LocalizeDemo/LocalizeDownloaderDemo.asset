@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: LocalizeDownloaderDemo
   m_EditorClassIdentifier: 
   m_TableId: 1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo
-  m_Gids: 
-  m_GidTable: 1018481382
+  m_Gids: 3e1e9d2700000000
+  m_GidTable: -1
   m_SaveFolder: Assets/UCL/UCL_Core/UCL_CoreDemo/UCL_LocalizeDemo
   m_FileName: Lang.txt

@@ -31,6 +31,29 @@ namespace UCL.Core.TextureLib {
     }
 #endif
     static public class Lib {
+
+        /// <summary>
+        /// Create a Sprite from byte array
+        /// </summary>
+        /// <param name="iData"></param>
+        /// <param name="iPixelsPerUnit"></param>
+        /// <returns></returns>
+        public static Sprite CreateSprite(byte[] iData, float iPixelsPerUnit = 100f)
+        {
+            Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(iData);
+            return Sprite.Create(aTexture, new Rect(0.0f, 0.0f, aTexture.width, aTexture.height), new Vector2(0.5f, 0.5f), iPixelsPerUnit);
+        }
+        /// <summary>
+        /// Create a Texture2D from byte array
+        /// </summary>
+        /// <param name="iData"></param>
+        /// <returns></returns>
+        public static Texture2D CreateTexture(byte[] iData)
+        {
+            var aTex = new Texture2D(1, 1);
+            aTex.LoadImage(iData); //..this will auto-resize the texture dimensions.
+            return aTex;
+        }
         /// <summary>
         /// Save texture to file
         /// </summary>

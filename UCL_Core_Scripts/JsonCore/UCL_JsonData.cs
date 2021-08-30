@@ -540,17 +540,22 @@ namespace UCL.Core.JsonLib {
         }
         #endregion
         #region Public Indexers
-        public JsonData this[string prop_name] {
+        public JsonData this[string iPropName] {
             get {
                 GetIDic();
-                return m_Dic[prop_name];
+                if (!m_Dic.ContainsKey(iPropName))
+                {
+                    Debug.LogError("JsonData !m_Dic.ContainsKey:" + iPropName);
+                    return null;
+                }
+                return m_Dic[iPropName];
             }
             set {
                 GetIDic();
-                KeyValuePair<string, JsonData> entry = new KeyValuePair<string, JsonData>(prop_name, value);
-                if(m_Dic.ContainsKey(prop_name)) {
+                KeyValuePair<string, JsonData> entry = new KeyValuePair<string, JsonData>(iPropName, value);
+                if(m_Dic.ContainsKey(iPropName)) {
                     for(int i = 0; i < m_ObjectList.Count; i++) {
-                        if(m_ObjectList[i].Key == prop_name) {
+                        if(m_ObjectList[i].Key == iPropName) {
                             m_ObjectList[i] = entry;
                             break;
                         }
@@ -558,7 +563,7 @@ namespace UCL.Core.JsonLib {
                 } else {
                     m_ObjectList.Add(entry);
                 }
-                m_Dic[prop_name] = value;
+                m_Dic[iPropName] = value;
             }
         }
 

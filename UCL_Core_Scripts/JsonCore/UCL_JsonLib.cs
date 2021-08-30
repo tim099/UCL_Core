@@ -7,6 +7,16 @@ using UnityEngine;
 
 namespace UCL.Core.JsonLib {
     public static class JsonConvert {
+        public enum SaveMode
+        {
+            Normal,
+            /// <summary>
+            /// Ignore Fields with [HideInInspector] 
+            /// Ignore NonPublic Fields whithout[SerializeField]
+            /// </summary>
+            Unity,
+        }
+
         const int MaxParsingLayer = 10;
 
         /// <summary>
@@ -250,17 +260,19 @@ namespace UCL.Core.JsonLib {
             SaveDataToJson(iObj, aData);
             return aData;
         }
+
         /// <summary>
         /// Convert data in iObj into JsonData
         /// Ignore Fields with [HideInInspector] 
         /// Ignore NonPublic Fields whithout[SerializeField]
         /// </summary>
         /// <param name="iObj"></param>
+        /// <param name="iFieldNameAlterFunc">Input is the original fieldname, and return the name you want to save as json key</param>
         /// <returns></returns>
-        static public JsonData SaveDataToJsonUnityVer(object iObj)
+        static public JsonData SaveDataToJsonUnityVer(object iObj, SaveMode iSaveMode = SaveMode.Unity, System.Func<string, string> iFieldNameAlterFunc = null)
         {
             JsonData aData = new JsonData();
-            SaveDataToJsonUnityVer(iObj, aData);
+            SaveDataToJsonUnityVer(iObj, aData, iSaveMode, iFieldNameAlterFunc);
             return aData;
         }
         static object DataToObject(JsonData iData, Type iType)
@@ -321,6 +333,10 @@ namespace UCL.Core.JsonLib {
             {
                 return new JsonData(iObj.ToString());
             }
+            else if (iObj is IJsonSerializable)
+            {
+                return ((IJsonSerializable)iObj).SerializeToJson();
+            }
             else if (iObj.IsNumber() || iObj is string)
             {
                 return new JsonData(iObj);
@@ -334,6 +350,33 @@ namespace UCL.Core.JsonLib {
             
             return new JsonData(iObj);
         }
+
+        static JsonData ObjectToData(object iObj, SaveMode iSaveMode, System.Func<string, string> iFieldNameAlterFunc = null)
+        {
+            if (iObj == null) return null;
+            Type aType = iObj.GetType();
+            if (aType.IsEnum)
+            {
+                return new JsonData(iObj.ToString());
+            }
+            else if (iObj is IJsonSerializable)
+            {
+                return ((IJsonSerializable)iObj).SerializeToJson();
+            }
+            else if (iObj.IsNumber() || iObj is string)
+            {
+                return new JsonData(iObj);
+            }
+            else if (aType.IsStructOrClass())
+            {
+                JsonData aData = new JsonData();
+                SaveDataToJsonUnityVer(iObj, aData, iSaveMode, iFieldNameAlterFunc);
+                return aData;
+            }
+
+            return new JsonData(iObj);
+        }
+
         /// <summary>
         /// Save iObj into iData
         /// (Both Public and NonPublic field will be save to Json)
@@ -393,6 +436,7 @@ namespace UCL.Core.JsonLib {
             }
         }
 
+
         /// <summary>
         /// Save iObj into iData
         /// Ignore Fields with [HideInInspector] 
@@ -400,53 +444,79 @@ namespace UCL.Core.JsonLib {
         /// </summary>
         /// <param name="iObj"></param>
         /// <param name="iData"></param>
-        static public void SaveDataToJsonUnityVer(object iObj, JsonData iData)
+        /// <param name="iFieldNameAlterFunc">Input is the original fieldname, and return the name you want to save as json key</param>
+        static public void SaveDataToJsonUnityVer(object iObj, JsonData iData, SaveMode iSaveMode, System.Func<string, string> iFieldNameAlterFunc = null)
         {
             if (iObj is IList)
             {
                 IList aList = iObj as IList;
                 foreach (var aItem in aList)
                 {
-                    iData.Add(ObjectToData(aItem));
+                    iData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
                 }
                 return;
             }
             Type aType = iObj.GetType();
-            var aFields = aType.GetAllFieldsUnityVer(typeof(object));
+            List<FieldInfo> aFields = null;
+            switch (iSaveMode)
+            {
+
+                case SaveMode.Unity:
+                    {
+                        aFields = aType.GetAllFieldsUnityVer(typeof(object));
+                        break;
+                    }
+                case SaveMode.Normal:
+                default:
+                    {
+                        aFields = aType.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        break;
+                    }
+            }
+
             foreach (var aField in aFields)
             {
+                string aFieldName = aField.Name;
+                if (iFieldNameAlterFunc != null)
+                {
+                    aFieldName = iFieldNameAlterFunc(aFieldName);
+                }
                 var aValue = aField.GetValue(iObj);
                 if (aValue == null)
                 {
-                    iData[aField.Name] = "";
+                    iData[aFieldName] = "";
+                }
+                else if(aValue is IJsonSerializable)
+                {
+                    iData[aFieldName] = ((IJsonSerializable)aValue).SerializeToJson();
                 }
                 else if (aValue.IsNumber() || aValue is string)
                 {// || value is IList || value is IDictionary
-                    iData[aField.Name] = new JsonData(aValue);
+                    iData[aFieldName] = new JsonData(aValue);
                 }
                 else if (aField.FieldType.IsEnum)
                 {
-                    iData[aField.Name] = aValue.ToString();
+                    iData[aFieldName] = aValue.ToString();
                 }
                 else if (aField.FieldType == typeof(bool))
                 {
-                    iData[aField.Name] = aValue.ToString();
+                    iData[aFieldName] = aValue.ToString();
                 }
                 else if (aValue is IEnumerable)
                 {
                     var aGenericData = new JsonData();
-                    iData[aField.Name] = aGenericData;
+                    iData[aFieldName] = aGenericData;
 
                     var aEnumerable = aValue as IEnumerable;
                     foreach (var aItem in aEnumerable)
                     {
-                        aGenericData.Add(ObjectToData(aItem));
+                        aGenericData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
                     }
                 }
                 else if (aField.FieldType.IsStructOrClass())
                 {
-                    iData[aField.Name] = new JsonData();
-                    SaveDataToJsonUnityVer(aValue, iData[aField.Name]);
+                    iData[aFieldName] = new JsonData();
+                    SaveDataToJsonUnityVer(aValue, iData[aFieldName], iSaveMode, iFieldNameAlterFunc);
                 }
             }
         }

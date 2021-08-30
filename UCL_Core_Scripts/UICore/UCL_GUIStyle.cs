@@ -4,20 +4,42 @@ using UnityEngine;
 
 namespace UCL.Core.UI {
     static public class UCL_GUIStyle {
+        /// <summary>
+        /// GUIStyle for GUILayout.Box
+        /// </summary>
+        static public GUIStyle BoxStyle
+        {
+            get
+            {
+                if (m_BoxStyle == null)
+                {
+                    m_BoxStyle = new GUIStyle(GUI.skin.box);
+                    m_BoxStyle.richText = true;
+                    var aTextCol = Color.white;
+                    m_BoxStyle.normal.textColor = aTextCol;
+                    m_BoxStyle.focused.textColor = aTextCol;
+                    m_BoxStyle.hover.textColor = aTextCol;
+                }
+                return m_BoxStyle;
+            }
+        }
+        static GUIStyle m_BoxStyle = null;
+
+
         static Dictionary<Color, GUIStyle> m_ButtonTextColorDic;
 
-        public static GUIStyle GetButtonText(Color col) {
+        public static GUIStyle GetButtonText(Color iCol) {
             if(m_ButtonTextColorDic == null) {
                 m_ButtonTextColorDic = new Dictionary<Color, GUIStyle>();
             }
-            if(!m_ButtonTextColorDic.ContainsKey(col)) {
-                var text = new GUIStyle(GUI.skin.button);
-                text.normal.textColor = col;
-                text.active.textColor = col;
-                text.hover.textColor = col;
-                m_ButtonTextColorDic.Add(col, text);
+            if(!m_ButtonTextColorDic.ContainsKey(iCol)) {
+                var aText = new GUIStyle(GUI.skin.button);
+                aText.normal.textColor = iCol;
+                aText.active.textColor = iCol;
+                aText.hover.textColor = iCol;
+                m_ButtonTextColorDic.Add(iCol, aText);
             }
-            return m_ButtonTextColorDic[col];
+            return m_ButtonTextColorDic[iCol];
         }
 
         public static GUIStyle TextRed {

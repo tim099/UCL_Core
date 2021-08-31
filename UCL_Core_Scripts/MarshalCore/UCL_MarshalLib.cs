@@ -154,20 +154,20 @@ namespace UCL.Core.MarshalLib {
             return '0';
         }
         #endregion
-        public static byte[] ToByteArray(object obj)
+        public static byte[] ToByteArray(object iObj)
         {
             //var type = obj.GetType();
             //Debug.LogWarning("Marshal.SizeOf(obj):" + Marshal.SizeOf(obj));
-            byte[] arr = new byte[Marshal.SizeOf(obj)];
-            GCHandle handle = GCHandle.Alloc(obj, GCHandleType.Pinned);
+            byte[] aArr = new byte[Marshal.SizeOf(iObj)];
+            GCHandle aHandle = GCHandle.Alloc(iObj, GCHandleType.Pinned);
             try
             {
-                Marshal.Copy(handle.AddrOfPinnedObject(), arr, 0, arr.Length);
-                return arr;
+                Marshal.Copy(aHandle.AddrOfPinnedObject(), aArr, 0, aArr.Length);
+                return aArr;
             }
             finally
             {
-                handle.Free();
+                aHandle.Free();
             }
         }
         public static byte[] ToByteArray<T>(T obj) {

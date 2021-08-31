@@ -28,7 +28,7 @@ namespace UCL.Core.JsonLib.Demo {
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void LoadFromData() {
             m_SaveData = m_DataText.text;
-            var aObj = JsonLib.JsonConvert.JsonToObject(JsonLib.JsonData.ParseJson(m_SaveData));
+            var aObj = JsonLib.JsonConvert.JsonToObject(m_SaveData);
             if(aObj != null) {
                 Debug.LogWarning("aObj:" + aObj.UCL_ToString());
             } else {

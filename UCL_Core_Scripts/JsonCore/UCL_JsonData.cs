@@ -16,13 +16,6 @@ namespace UCL.Core.JsonLib {
         Double,
         Boolean
     }
-    /// <summary>
-    /// interface that support Json serialization
-    /// </summary>
-    public interface IJsonSerializable {
-        JsonData SerializeToJson();
-        void DeserializeFromJson(JsonData iJson);
-    }
     public class JsonData : IList, IDictionary {
         #region Properties
         object m_Obj;

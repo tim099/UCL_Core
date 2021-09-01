@@ -6,16 +6,16 @@ using UnityEngine;
 
 namespace UCL.Core {
     public static class GameObjectLib {
-        public static T CloneObject<T>(this T sourceObject) {
-            System.Type t = sourceObject.GetType();
-            PropertyInfo[] properties = t.GetProperties();
-            System.Object p = t.InvokeMember("", System.Reflection.BindingFlags.CreateInstance, null, sourceObject, null);
-            foreach(PropertyInfo pi in properties) {
-                if(pi.CanWrite) {
-                    pi.SetValue(p, pi.GetValue(sourceObject, null), null);
+        public static T CloneObject<T>(this T iSourceObject) {
+            System.Type aType = iSourceObject.GetType();
+            PropertyInfo[] aProperties = aType.GetProperties();
+            System.Object aObj = aType.InvokeMember("", System.Reflection.BindingFlags.CreateInstance, null, iSourceObject, null);
+            foreach(PropertyInfo aPropertie in aProperties) {
+                if(aPropertie.CanWrite) {
+                    aPropertie.SetValue(aObj, aPropertie.GetValue(iSourceObject, null), null);
                 }
             }
-            return (T)System.Convert.ChangeType(p, typeof(T));
+            return (T)System.Convert.ChangeType(aObj, typeof(T));
         }
         public static void Swap<type>(ref type a, ref type b) {
             type c = a; a = b; b = c;

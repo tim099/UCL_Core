@@ -151,6 +151,14 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return result;
         }
+        static public bool Toggle(bool iVal, int iSize = 21)
+        {
+            if (GUILayout.Button(iVal ? "▼" : "►", GUILayout.Width(iSize), GUILayout.Height(iSize)))
+            {
+                iVal = !iVal;
+            }
+            return iVal;
+        }
         static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
         {
             GUILayout.BeginHorizontal();

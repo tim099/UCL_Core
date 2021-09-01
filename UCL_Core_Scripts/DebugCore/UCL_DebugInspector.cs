@@ -370,25 +370,25 @@ namespace UCL.Core {
         /// <summary>
         /// this is use to draw GenericType element, return true if need to delete element
         /// </summary>
-        /// <param name="title"></param>
-        /// <param name="obj"></param>
-        /// <param name="set_value_act"></param>
+        /// <param name="iTitle"></param>
+        /// <param name="iObj"></param>
+        /// <param name="iSetValueAct"></param>
         /// <returns></returns>
-        public bool DrawElement(string title, object obj, System.Action<object> set_value_act) {
+        public bool DrawElement(string iTitle, object iObj, System.Action<object> iSetValueAct) {
             bool delete = false;
             GUILayout.BeginHorizontal();
             
-            if(obj.IsNumber()) {
-                object oval = obj;
-                object val = UCL.Core.UI.UCL_GUILayout.NumField(title, oval);
-                if(val != oval) set_value_act(val);
-            } else if(obj is string) {
-                string oval = (string)obj;
-                string val = UCL.Core.UI.UCL_GUILayout.TextField(title, oval);
-                if(val != oval) set_value_act(val);
+            if(iObj.IsNumber()) {
+                object oval = iObj;
+                object val = UCL.Core.UI.UCL_GUILayout.NumField(iTitle, oval);
+                if(val != oval) iSetValueAct(val);
+            } else if(iObj is string) {
+                string oval = (string)iObj;
+                string val = UCL.Core.UI.UCL_GUILayout.TextField(iTitle, oval);
+                if(val != oval) iSetValueAct(val);
             } else {
-                UCL.Core.UI.UCL_GUILayout.LabelAutoSize(title);
-                UCL.Core.UI.UCL_GUILayout.LabelAutoSize(obj.ToString());
+                UCL.Core.UI.UCL_GUILayout.LabelAutoSize(iTitle);
+                UCL.Core.UI.UCL_GUILayout.LabelAutoSize(iObj.ToString());
             }
             
             GUILayout.FlexibleSpace();
@@ -399,11 +399,11 @@ namespace UCL.Core {
             return delete;
         }
         public void DrawObject(FieldInfo info, object obj, object parent_obj, int layer) {
-            bool is_edit_target = false;
+            bool aIsEditTarget = false;
             bool log_info = false;
             bool editable = false;
             if(m_EditTarget != null && m_EditTarget.Item1.Equals(obj) && m_EditTarget.Item2.Equals(info)) {
-                is_edit_target = true;
+                aIsEditTarget = true;
             }
             var type = obj.GetType();
             string title = "(" + type.Name + ")" + info.Name + " : ";
@@ -418,7 +418,7 @@ namespace UCL.Core {
                         ContentType = GenericTypeArguments[1];//[0] is Key type [1] is Value type!!
                     }
                     GUILayout.BeginHorizontal();
-                    if(is_edit_target) {
+                    if(aIsEditTarget) {
                         if(GUILayout.Button("▼")) {
                             m_EditTarget = null;
                         }
@@ -430,21 +430,21 @@ namespace UCL.Core {
 
                     GUILayout.BeginVertical();
                     UCL.Core.UI.UCL_GUILayout.LabelAutoSize(type.Name + "(" + ContentType.Name + ")" + info.Name);
-                    if(is_edit_target) {
+                    if(aIsEditTarget) {
                         if(obj is IList) {
                             IList list = obj as IList;
                             UCL.Core.UI.UCL_GUILayout.LabelAutoSize("Element count : " + list.Count);
-                            int delete_at = -1;
+                            int aDeleteAt = -1;
                             for(int i = 0; i < list.Count; i++) {
                                 int at = i;
                                 if(DrawElement("Element " + at.ToString() + " : ", list[at], delegate (object val) {
                                     list[at] = val;
                                 })) {
-                                    delete_at = at;
+                                    aDeleteAt = at;
                                 }
                             }
-                            if(delete_at >= 0) {
-                                list.RemoveAt(delete_at);
+                            if(aDeleteAt >= 0) {
+                                list.RemoveAt(aDeleteAt);
                             }
                         } else if(obj is IDictionary) {
                             IDictionary dic = obj as IDictionary;
@@ -490,7 +490,7 @@ namespace UCL.Core {
             else if(obj is Array) {
                 var ContentType = type.GetElementType();
                 GUILayout.BeginHorizontal();
-                if(is_edit_target) {
+                if(aIsEditTarget) {
                     if(GUILayout.Button("▼")) {
                         m_EditTarget = null;
                     }
@@ -501,7 +501,7 @@ namespace UCL.Core {
                 }
                 GUILayout.BeginVertical();
                 UCL.Core.UI.UCL_GUILayout.LabelAutoSize("(" + type.Name + ")" + info.Name);
-                if(is_edit_target) {
+                if(aIsEditTarget) {
                     Array arr = obj as Array;
                     UCL.Core.UI.UCL_GUILayout.LabelAutoSize("Element count : " + arr.Length);
                     int delete_at = -1;
@@ -534,7 +534,7 @@ namespace UCL.Core {
             #region numerical
             else if(obj.IsNumber()) {
                 editable = true;
-                if(is_edit_target) {
+                if(aIsEditTarget) {
                     DrawValue(title, info, parent_obj, (str) => {
                         object res_val;
                         if(UCL.Core.MathLib.Num.TryParse(str, obj.GetType(), out res_val)) {
@@ -549,7 +549,7 @@ namespace UCL.Core {
             #region Vec
             else if(obj is Vector3) {
                 editable = true;
-                if(is_edit_target) {
+                if(aIsEditTarget) {
                     DrawVec3Value(title, info, parent_obj, (vec) => {
                         info.SetValue(parent_obj, vec);
                     });
@@ -567,7 +567,7 @@ namespace UCL.Core {
             //*/
             else if(obj is string) {
                 editable = true;
-                if(is_edit_target) {
+                if(aIsEditTarget) {
                     DrawValue(title, info, parent_obj, (str) => {
                         info.SetValue(parent_obj, str);
                     });
@@ -587,17 +587,17 @@ namespace UCL.Core {
                     }
                     strs.Add(item.ToString());
                 }
-                bool show = is_edit_target;
+                bool show = aIsEditTarget;
                 GUILayout.BeginHorizontal();
                 UCL.Core.UI.UCL_GUILayout.LabelAutoSize(title);
                 var next = UCL.Core.UI.UCL_GUILayout.Popup(at, strs, ref show);
 
                 if(show) {
-                    if(!is_edit_target) {
+                    if(!aIsEditTarget) {
                         m_EditTarget = new Tuple<object, FieldInfo>(obj, info);
                     }
                 } else {
-                    if(is_edit_target) {
+                    if(aIsEditTarget) {
                         m_EditTarget = null;
                     }
                 }

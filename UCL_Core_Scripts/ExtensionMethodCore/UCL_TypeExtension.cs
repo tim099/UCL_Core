@@ -21,11 +21,28 @@ public static partial class TypeExtensionMethods {
     //https://dotblogs.com.tw/Mystic_Pieces/2017/10/15/020448
     //All Primitive Type: Boolean, Byte, SByte, Int16, UInt16, Int32, UInt32, Int64, UInt64, IntPtr, UIntPtr, Char, Double, Single
 
-    public static bool IsStruct(this Type type) {
-        return type.IsValueType && !type.IsPrimitive;
+    public static bool IsStruct(this Type iType) {
+        return iType.IsValueType && !iType.IsPrimitive;
     }
-    public static bool IsStructOrClass(this Type type) {
-        return type.IsStruct() | type.IsClass;
+    public static bool IsStructOrClass(this Type iType) {
+        return iType.IsStruct() | iType.IsClass;
+    }
+    /// <summary>
+    /// return type of a GenericType(List,Array,Dic)
+    /// etc. List<T> will return type of T
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
+    public static Type GetGenericValueType(this Type iType)
+    {
+        var aGenericType = iType.GetGenericTypeDefinition();
+        var aGenericTypeArguments = iType.GetTypeInfo().GenericTypeArguments;
+        var aContentType = aGenericTypeArguments[0];
+        if (aGenericType == typeof(Dictionary<,>))
+        {
+            aContentType = aGenericTypeArguments[1];//[0] is Key type [1] is Value type!!
+        }
+        return aContentType;
     }
     /// <summary>
     /// Get Fields Include parent

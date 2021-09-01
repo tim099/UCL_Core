@@ -64,18 +64,18 @@ namespace UCL.Core.EditorLib {
             if(m_EditorUpdateAction != null) {
                 count = m_EditorUpdateAction.GetInvocationCount();
             }
-            Debug.Log("RemoveEditorUpdateAct count:" + count);
+            //Debug.Log("RemoveEditorUpdateAct count:" + count);
 #endif
         }
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
         static public void AddEditorUpdateAct(string key, System.Action act) {
 #if UNITY_EDITOR
             if(m_EditorUpdateActionDic.ContainsKey(key)) {
-                Debug.LogError("UCL_EditorUpdateManager AddEditorUpdateAct Fail!!key:" + key + ",already Exist!!");
+                //Debug.LogError("UCL_EditorUpdateManager AddEditorUpdateAct Fail!!key:" + key + ",already Exist!!");
                 return;
             }
             m_EditorUpdateActionDic.Add(key, act);
-            Debug.Log("m_EditorUpdateActionDic.Count:" + m_EditorUpdateActionDic.Count);
+            //Debug.Log("m_EditorUpdateActionDic.Count:" + m_EditorUpdateActionDic.Count);
 #endif
         }
         [System.Diagnostics.Conditional("UNITY_EDITOR")]

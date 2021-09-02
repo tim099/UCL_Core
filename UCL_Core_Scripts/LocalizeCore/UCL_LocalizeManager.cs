@@ -49,6 +49,8 @@ namespace UCL.Core.LocalizeLib
         /// </summary>
         public string LangName { get; protected set; } = "English";
 
+
+        static protected bool m_NotInitializeErrorLogged = false;
         protected LocalizeData m_LocalizeData = null;
 
         /// <summary>
@@ -125,7 +127,11 @@ namespace UCL.Core.LocalizeLib
             var aIns = m_Instance;
             if(aIns == null) return iKey;
             if(aIns.m_LocalizeData == null) {
-                Debug.LogError("UCL_LocalizeManager not Init yet!!");
+                if (!m_NotInitializeErrorLogged)
+                {
+                    m_NotInitializeErrorLogged = true;
+                    Debug.LogError("UCL_LocalizeManager.Get() fail, not Init yet!!");
+                }
                 return iKey;
             }
             return aIns.m_LocalizeData.GetLocalize(iKey);
@@ -141,11 +147,22 @@ namespace UCL.Core.LocalizeLib
             if (aIns == null) return false;
             if (aIns.m_LocalizeData == null)
             {
-                Debug.LogError("UCL_LocalizeManager not Init yet!!");
+                if (!m_NotInitializeErrorLogged)
+                {
+                    m_NotInitializeErrorLogged = true;
+                    Debug.LogError("UCL_LocalizeManager.ContainsKey() fail, not Init yet!!");
+                }
                 return false;
             }
             return aIns.m_LocalizeData.ContainsKey(iKey);
         }
+        /// <summary>
+        /// Get localized of the key
+        /// if iKey not exist localize, then return iKey
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <param name="iObjs"></param>
+        /// <returns></returns>
         static public string Get(string iKey, params object[] iObjs) {
             string aStr = Get(iKey);
             if (iObjs.Length > 0)

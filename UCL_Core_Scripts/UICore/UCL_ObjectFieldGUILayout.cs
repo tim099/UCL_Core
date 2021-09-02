@@ -12,29 +12,20 @@ namespace UCL.Core.UI
     public class UCL_ObjectFieldGUILayout
     {
         protected UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
-        virtual public void DrawFieldData(object iObj, string iID, System.Action<object> iSetValueAct = null)
+        public void ClearData()
+        {
+            m_DataDic.Clear();
+        }
+        virtual public object DrawFieldData(object iObj, string iID)
         {
             {
                 if(iObj is string)
                 {
-                    //UCL_DebugInspector
-                    //for (int i = 0; i < list.Count; i++)
-                    //{
-                    //    int at = i;
-                    //    if (DrawElement("Element " + at.ToString() + " : ", list[at], delegate (object val) {
-                    //        list[at] = val;
-                    //    }))
-                    //    {
-                    //        aDeleteAt = at;
-                    //    }
-                    //}
-                    var aValue = GUILayout.TextField((string)iObj);
-                    if (iSetValueAct != null)
-                    {
-                        iSetValueAct.Invoke(aValue);
-                    }
-                     
-                    return;
+                    return GUILayout.TextField((string)iObj);
+                }
+                else if (iObj.IsNumber())
+                {
+                    return UCL_GUILayout.NumField(string.Empty, iObj);
                 }
             }
             using (var aScope = new GUILayout.VerticalScope("box"))
@@ -45,11 +36,20 @@ namespace UCL.Core.UI
                 {
                     //GUILayout.Label(aField.FieldType.Name);
                     var aData = aField.GetValue(iObj);
-                    
+
                     if (aField.GetCustomAttribute<HideInInspector>() != null)
                     {
                         continue;
                     }
+                    if (aData == null)
+                    {
+                        if (typeof(IList).IsAssignableFrom(aField.FieldType))
+                        {
+                            aData = aField.FieldType.CreateInstance();
+                            aField.SetValue(iObj, aData);
+                        }
+                    }
+
                     string aDisplayName = aField.Name;
 
                     if (aDisplayName[0] == 'm' && aDisplayName[1] == '_')
@@ -77,6 +77,7 @@ namespace UCL.Core.UI
                     }
                     else if (aData == null)
                     {
+                        //Debug.LogError("aData == null aField:" + aField.Name);
 
                     }
                     else if (aData.IsNumber())
@@ -125,27 +126,35 @@ namespace UCL.Core.UI
                                         try
                                         {
                                             var aGenericType = aField.FieldType.GetGenericValueType();
-                                            if(aGenericType == typeof(string))
-                                            {
-                                                aList.Add(string.Empty);
-                                            }
-                                            else
-                                            {
-                                                aList.Add(Activator.CreateInstance(aGenericType));
-                                            }
-                                            
+                                            aList.Add(aGenericType.CreateInstance());                                       
                                         }
                                         catch(System.Exception iE)
                                         {
                                             Debug.LogException(iE);
                                         }
-                                        
                                     }
+                                }
+                            }
+                            else
+                            {
+                                if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add")))
+                                {
+                                    try
+                                    {
+                                        var aGenericType = aField.FieldType.GetGenericValueType();
+                                        aList.Add(aGenericType.CreateInstance());
+                                    }
+                                    catch (System.Exception iE)
+                                    {
+                                        Debug.LogException(iE);
+                                    }
+                                    m_DataDic.SetData(aCountKey, aList.Count);
                                 }
                             }
                             GUILayout.EndHorizontal();
                             int aAt = 0;
                             int aDeleteAt = -1;
+                            List<object> aResultList = new List<object>();
                             foreach (var aListData in aList)
                             {
                                 using (var aScope2 = new GUILayout.VerticalScope("box"))
@@ -156,19 +165,26 @@ namespace UCL.Core.UI
                                     {
                                         aDeleteAt = aAt;
                                     }
-                                    DrawFieldData(aListData, iID + "_" + (aAt++).ToString(),(iValue) => {
-                                        System.Action aSetAct = null;
-                                        aSetAct = () =>
-                                        {
-                                            aList[aDrawAt] = iValue;
-                                            UCL.Core.ServiceLib.UCL_UpdateService.RemoveUpdateActionStaticVer(aSetAct);
-                                        };
-                                        UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateActionStaticVer(aSetAct);
+                                    
+                                    aResultList.Add(DrawFieldData(aListData, iID + "_" + (aAt++).ToString()));
+
+                                    //DrawFieldData(aListData, iID + "_" + (aAt++).ToString(),(iValue) => {
+                                    //    System.Action aSetAct = null;
+                                    //    aSetAct = () =>
+                                    //    {
+                                    //        aList[aDrawAt] = iValue;
+                                    //        UCL.Core.ServiceLib.UCL_UpdateService.RemoveUpdateActionStaticVer(aSetAct);
+                                    //    };
+                                    //    UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateActionStaticVer(aSetAct);
                                         
-                                    });
+                                    //});
                                     GUILayout.EndHorizontal();
                                 }
 
+                            }
+                            for(int i=0;i< aResultList.Count; i++)
+                            {
+                                aList[i] = aResultList[i];
                             }
                             if (aDeleteAt >= 0)
                             {
@@ -204,9 +220,11 @@ namespace UCL.Core.UI
                         DrawFieldData(aData, iID);
                         aField.SetValue(iObj, aData);
                         GUILayout.EndHorizontal();
-                    }
+                    }  
                 }
+                
             }
+            return iObj;
         }
     }
 }

@@ -45,6 +45,19 @@ public static partial class TypeExtensionMethods {
         return aContentType;
     }
     /// <summary>
+    /// Create Instance of input type
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
+    public static object CreateInstance(this Type iType)
+    {
+        if(iType == typeof(string))
+        {
+            return string.Empty;
+        }
+        return Activator.CreateInstance(iType);
+    }
+    /// <summary>
     /// Get Fields Include parent
     /// </summary>
     /// <param name="iType"></param>

@@ -109,17 +109,17 @@ namespace UCL.Core.UI {
             }
             return iObj;
         }
-        static public object NumField(string label, object val, int min_width = 80) {
+        static public object NumField(string iLabel, object iVal, int min_width = 80) {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(label);
-            string aResult = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
+            if(!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
+            string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(min_width));
             GUILayout.EndHorizontal();
             if(string.IsNullOrEmpty(aResult)) {
-                return System.Convert.ChangeType(0, val.GetType());
+                return System.Convert.ChangeType(0, iVal.GetType());
             }
             object aResultValue;
-            if(Core.MathLib.Num.TryParse(aResult, val.GetType(), out aResultValue)) return aResultValue;
-            return val;
+            if(Core.MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return aResultValue;
+            return iVal;
         }
         static public int IntField(string label, int val, int min_width = 80) {
             GUILayout.BeginHorizontal();

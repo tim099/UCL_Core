@@ -27,12 +27,10 @@ namespace UCL.Core.PA {
                                 m_StrArr[j] = aList[j];
                             }
                         }
-
                     }
                 } catch(Exception e) {
                     Debug.LogError("UCL_ListProperty method.Invoke Exception:" + e.ToString());
                 }
-
             } else { //might be accessor
                 PropertyInfo aPropInfo = iType.GetProperty(iFuncName);
                 if(aPropInfo == null) { // not accessor!!
@@ -42,17 +40,10 @@ namespace UCL.Core.PA {
                 MethodInfo[] aMethodInfos = aPropInfo.GetAccessors();
                 for(int i = 0; i < aMethodInfos.Length; i++) {
                     MethodInfo aMethodInfo = aMethodInfos[i];
-                    //Debug.LogWarning(string.Format("Name: {0}", aMethodInfo.Name));
-                    //Debug.LogWarning(string.Format("aMethodInfo.IsPrivate: {0}", aMethodInfo.IsPrivate));
                     // Determine if this is the property getter or setter.
                     if (aMethodInfo.ReturnType == typeof(void)) {//setter
-                        //Console.WriteLine("Setter");
-                        //Console.WriteLine("   Setting the property value.");
-                        //  Set the value of the property.
                         //m.Invoke(test, new object[] { "The Modified Caption" });
                     } else {//getter
-                        //Console.WriteLine("Getter");
-                        // Get the value of the property.
                         //Console.WriteLine("   Property Value: {0}", m.Invoke(test, new object[] { }));
                         var aResult = aMethodInfo.Invoke(null, new object[] { });
                         m_StrArr = aResult as string[];
@@ -67,7 +58,6 @@ namespace UCL.Core.PA {
                                     m_StrArr[j] = aList[j];
                                 }
                             }
-
                         }
                         if(m_StrArr != null) break;
                     }

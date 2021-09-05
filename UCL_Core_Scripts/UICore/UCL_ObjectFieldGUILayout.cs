@@ -25,7 +25,6 @@ namespace UCL.Core.UI
         }
         virtual protected object DrawFieldData(object iObj, string iID = "", string iDisplayName = "")
         {
-
             //GUILayout.BeginHorizontal();
             bool aIsShowField = true;
             bool aIsDefaultType = true;
@@ -188,23 +187,21 @@ namespace UCL.Core.UI
                                     aDisplayName = UCL_LocalizeManager.Get(aKey);
                                 }
                             }
-                            var aDropDownAttr = aField.GetCustomAttribute<ATTR.UCL_DropDownAttribute>();
-                            if (aDropDownAttr != null)
+                            bool aIsDrawed = false;
+                            var aAttrs = aField.GetCustomAttributes();
+                            foreach(var aAttr in aAttrs)
                             {
-                                //int aIndex = Mathf.Max(0, Array.IndexOf(aList, property.stringValue));
-                                //aIndex = EditorGUI.Popup(position, property.displayName, aIndex, aList);
-                                //if (aList.Length > aIndex)
-                                //{
-                                //    property.stringValue = aList[aIndex];
-                                //}
-                                var aList = aDropDownAttr.GetList(iObj);
-                                int aIndex = Mathf.Max(0, Array.IndexOf(aList, aData));
-                                string aShowKey = iID.ToString() + "_" + aDisplayName + "_Show";
-                                bool aIsShow = m_DataDic.GetData(aShowKey, false);
-
-                                aIndex = UCL_GUILayout.Popup(aIndex, aList, ref aIsShow);
-                                m_DataDic.SetData(aShowKey, aIsShow);
-                                aField.SetValue(iObj, aList[aIndex]);
+                                var aStrArr = aAttr as IStringArr;
+                                if (aStrArr != null)
+                                {
+                                    aIsDrawed = true;
+                                    aField.SetValue(iObj, aStrArr.DrawOnGUI(iObj, aData, m_DataDic, iID.ToString() + "_" + aDisplayName));
+                                    break;
+                                }
+                            }
+                            if (aIsDrawed)
+                            {
+                                //aField.SetValue(iObj, aDropDownAttr.DrawOnGUI(iObj, aData, m_DataDic, iID.ToString() + "_" + aDisplayName));
                             }
                             else if (aField.FieldType == typeof(bool))
                             {

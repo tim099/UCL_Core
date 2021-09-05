@@ -2,11 +2,33 @@
 using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.ObjectReflectionExtension;
+using UCL.Core.UI;
 using UnityEngine;
+namespace UCL.Core
+{
+    public static partial class AttributeExtension
+    {
+        public static object DrawOnGUI(this IStringArr iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
+        {
+            var aList = iStrArr.GetList(iObj);
+            int aIndex = Mathf.Max(0, Array.IndexOf(aList, iData));
+            string aShowKey = iKey + "_Show";
+            bool aIsShow = iDataDic.GetData(aShowKey, false);
 
+            aIndex = UCL_GUILayout.Popup(aIndex, aList, ref aIsShow);
+            iDataDic.SetData(aShowKey, aIsShow);
+            return aList[aIndex];
+        }
+    }
+    public interface IStringArr
+    {
+        string[] GetList(object iTarget);
+    }
+}
 namespace UCL.Core.ATTR
 {
-    public class UCL_DropDownAttribute : Attribute
+
+    public class UCL_DropDownAttribute : Attribute ,IStringArr
     {
         string m_MethodName = null;
         object[] m_Params = null;

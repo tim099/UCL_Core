@@ -12,11 +12,7 @@ namespace UCL.Core
         {
             var aList = iStrArr.GetList(iObj);
             int aIndex = Mathf.Max(0, Array.IndexOf(aList, iData));
-            string aShowKey = iKey + "_Show";
-            bool aIsShow = iDataDic.GetData(aShowKey, false);
-
-            aIndex = UCL_GUILayout.Popup(aIndex, aList, ref aIsShow);
-            iDataDic.SetData(aShowKey, aIsShow);
+            aIndex = UCL_GUILayout.PopupSearch(aIndex, aList, iDataDic, iKey);
             return aList[aIndex];
         }
     }

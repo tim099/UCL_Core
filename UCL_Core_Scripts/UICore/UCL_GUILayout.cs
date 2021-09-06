@@ -337,17 +337,170 @@ namespace UCL.Core.UI {
         #endregion
 
         #region Popup
-        public static int Popup(int iSelectedIndex, string[] iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
-            if(iSelectedIndex < 0) iSelectedIndex = 0;
-            if(iSelectedIndex >= iDisplayedOptions.Length) iSelectedIndex = iDisplayedOptions.Length - 1;
+        /// <summary>
+        /// Show pop up
+        /// </summary>
+        /// <param name="iIndex"></param>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iKey"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static int Popup(int iIndex, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey, params GUILayoutOption[] iOptions)
+        {
+            string aShowKey = iKey + "_Show";
+            bool aIsShow = iDataDic.GetData(aShowKey, false);
+
+            iIndex = Popup(iIndex, iDisplayedOptions, ref aIsShow);
+            iDataDic.SetData(aShowKey, aIsShow);
+            return iIndex;
+        }
+
+
+        static public GUIStyle ButtonStyle
+        {
+            get
+            {
+                if (m_Button == null)
+                {
+                    m_Button = new GUIStyle(GUI.skin.button);
+                    m_Button.richText = true;
+                    var aTextCol = Color.white;
+                    m_Button.normal.textColor = aTextCol;
+                    m_Button.focused.textColor = aTextCol;
+                    m_Button.hover.textColor = aTextCol;
+                }
+                return m_Button;
+            }
+        }
+        static GUIStyle m_Button = null;
+
+        /// <summary>
+        /// Show pop up with a search input field
+        /// </summary>
+        /// <param name="iSelectedIndex"></param>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iKey"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static int PopupSearch(int iSelectedIndex, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey, params GUILayoutOption[] iOptions)
+        {
+            if (iDisplayedOptions.Count == 0)
+            {
+                Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
+                return 0;
+            }
+            if (iSelectedIndex < 0) iSelectedIndex = 0;
+            if (iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
+            string aCur = iDisplayedOptions[iSelectedIndex];
+
+            string aShowKey = iKey + "_Show";
+            bool aIsShow = iDataDic.GetData(aShowKey, false);
+            if (aIsShow)//show search field
+            {
+                string aSearchKey = iKey + "_Search";
+                string aInput = iDataDic.GetData(aSearchKey, string.Empty);
+                
+                GUILayout.BeginVertical(iOptions);
+                //GUILayout.BeginHorizontal();
+
+                if (GUILayout.Button(aCur, iOptions))
+                {
+                    aIsShow = false;
+                }
+                aInput = TextField("Search", aInput);
+                iDataDic.SetData(aSearchKey, aInput);
+                //GUILayout.EndHorizontal();
+
+                System.Text.RegularExpressions.Regex aRegex = null;
+                {
+                    if (!string.IsNullOrEmpty(aInput))
+                    {
+                        aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                    }
+                }
+
+
+                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+                {
+                    for (int i = 0; i < iDisplayedOptions.Count; i++)
+                    {
+                        var aOption = iDisplayedOptions[i];
+                        if (aRegex != null && !aRegex.IsMatch(aOption.ToLower()))//根據輸入 過濾顯示的卡牌
+                        {
+                            //GUILayout.Button(aInput + "," + aOption);
+                            continue;
+                        }
+
+                        string aDisplayName = aOption;
+                        if (aRegex != null)//標記符合搜尋條件的部分
+                        {
+                            var aMaches = aRegex.Matches(aDisplayName.ToLower());
+                            if (aMaches.Count > 0)
+                            {
+                                var aMach = aMaches[0];//aRegex.Matches(aDisplayName);
+                                if (aMach.Success)
+                                {
+                                    int aMatchAt = aMach.Index;
+                                    string aValue = aDisplayName.Substring(aMatchAt, aInput.Length);
+                                    aDisplayName = aDisplayName.Substring(0, aMatchAt)
+                                        + aValue.RichTextColor(Color.red)
+                                        + aDisplayName.Substring(aMatchAt + aValue.Length, aDisplayName.Length - aValue.Length - aMatchAt);
+                                }
+                            }
+                        }
+
+
+                        if (GUILayout.Button(aDisplayName, ButtonStyle, iOptions))
+                        {
+                            aIsShow = false;
+                            return i;
+                        }
+                    }
+                }
+                GUILayout.EndVertical();
+            }
+            else
+            {
+                if (GUILayout.Button(aCur, iOptions))
+                {
+                    aIsShow = true;
+                }
+            }
+            {
+                //iSelectedIndex = Popup(iSelectedIndex, iDisplayedOptions, ref aIsShow);
+            }
+
+
+            iDataDic.SetData(aShowKey, aIsShow);
+            return iSelectedIndex;
+        }
+
+        /// <summary>
+        /// Show pop up
+        /// </summary>
+        /// <param name="iSelectedIndex"></param>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iOpened"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static int Popup(int iSelectedIndex, IList<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
+            if (iDisplayedOptions.Count == 0)
+            {
+                Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
+                return 0;
+            }
+            if (iSelectedIndex < 0) iSelectedIndex = 0;
+            if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
             string aCur = iDisplayedOptions[iSelectedIndex];
             if(iOpened) {
                 GUILayout.BeginVertical(iOptions);
                 if(GUILayout.Button(aCur, iOptions)) {
                     iOpened = false;
                 }
-                using(var scope = new GUILayout.VerticalScope("box", iOptions)) {
-                    for(int i = 0; i < iDisplayedOptions.Length; i++) {
+                using(var aScope = new GUILayout.VerticalScope("box", iOptions)) {
+                    for(int i = 0; i < iDisplayedOptions.Count; i++) {
                         if(GUILayout.Button(iDisplayedOptions[i], iOptions)) {
                             iOpened = false;
                             return i;
@@ -416,36 +569,36 @@ namespace UCL.Core.UI {
         /// <param name="iOpened"></param>
         /// <param name="iOptions"></param>
         /// <returns></returns>
-        public static int Popup(int iSelectedIndex, List<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
-            if(iDisplayedOptions.Count == 0)
-            {
-                Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
-                return 0;
-            }
-            if(iSelectedIndex < 0) iSelectedIndex = 0;
-            if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
-            string aCur = iDisplayedOptions[iSelectedIndex];
-            if(iOpened) {
-                GUILayout.BeginVertical(iOptions);
-                if(GUILayout.Button(aCur, iOptions)) {
-                    iOpened = false;
-                }
-                using(var scope = new GUILayout.VerticalScope("box", iOptions)) {
-                    for(int i = 0; i < iDisplayedOptions.Count; i++) {
-                        if(GUILayout.Button(iDisplayedOptions[i], iOptions)) {
-                            iOpened = false;
-                            return i;
-                        }
-                    }
-                }
-                GUILayout.EndVertical();
-            } else {
-                if(GUILayout.Button(aCur, iOptions)) {
-                    iOpened = true;
-                }
-            }
-            return iSelectedIndex;
-        }
+        //public static int Popup(int iSelectedIndex, List<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions) {
+        //    if(iDisplayedOptions.Count == 0)
+        //    {
+        //        Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
+        //        return 0;
+        //    }
+        //    if(iSelectedIndex < 0) iSelectedIndex = 0;
+        //    if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
+        //    string aCur = iDisplayedOptions[iSelectedIndex];
+        //    if(iOpened) {
+        //        GUILayout.BeginVertical(iOptions);
+        //        if(GUILayout.Button(aCur, iOptions)) {
+        //            iOpened = false;
+        //        }
+        //        using(var scope = new GUILayout.VerticalScope("box", iOptions)) {
+        //            for(int i = 0; i < iDisplayedOptions.Count; i++) {
+        //                if(GUILayout.Button(iDisplayedOptions[i], iOptions)) {
+        //                    iOpened = false;
+        //                    return i;
+        //                }
+        //            }
+        //        }
+        //        GUILayout.EndVertical();
+        //    } else {
+        //        if(GUILayout.Button(aCur, iOptions)) {
+        //            iOpened = true;
+        //        }
+        //    }
+        //    return iSelectedIndex;
+        //}
         #endregion
     }
 }

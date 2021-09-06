@@ -195,7 +195,10 @@ namespace UCL.Core.UI
                                 if (aStrArr != null)
                                 {
                                     aIsDrawed = true;
+                                    GUILayout.BeginHorizontal();
+                                    UCL_GUILayout.LabelAutoSize(aDisplayName);
                                     aField.SetValue(iObj, aStrArr.DrawOnGUI(iObj, aData, m_DataDic, iID.ToString() + "_" + aDisplayName));
+                                    GUILayout.EndHorizontal();
                                     break;
                                 }
                             }

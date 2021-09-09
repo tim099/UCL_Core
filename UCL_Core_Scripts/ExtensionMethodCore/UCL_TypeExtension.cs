@@ -45,16 +45,40 @@ public static partial class TypeExtensionMethods {
         return aContentType;
     }
     /// <summary>
+    /// return type of a GenericType(List,Array,Dic)
+    /// etc. List<T> will return type of T
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
+    public static Type GetGenericKeyType(this Type iType)
+    {
+        var aGenericType = iType.GetGenericTypeDefinition();
+        var aGenericTypeArguments = iType.GetTypeInfo().GenericTypeArguments;
+        var aContentType = aGenericTypeArguments[0];
+        if (aGenericType == typeof(Dictionary<,>))
+        {
+            aContentType = aGenericTypeArguments[0];//[0] is Key type [1] is Value type!!
+        }
+        return aContentType;
+    }
+    /// <summary>
     /// Create Instance of input type
     /// </summary>
     /// <param name="iType"></param>
     /// <returns></returns>
     public static object CreateInstance(this Type iType)
     {
-        if(iType == typeof(string))
-        {
-            return string.Empty;
-        }
+        if (iType == typeof(string)) return string.Empty;
+        if (iType == typeof(int)) return (int)0;
+        if (iType == typeof(uint)) return (uint)0;
+        if (iType == typeof(long)) return (long)0;
+        if (iType == typeof(ulong)) return (ulong)0;
+        if (iType == typeof(short)) return (short)0;
+        if (iType == typeof(ushort)) return (ushort)0;
+        if (iType == typeof(byte)) return (byte)0;
+        if (iType == typeof(sbyte)) return (sbyte)0;
+        if (iType == typeof(float)) return (float)0;
+        if (iType == typeof(double)) return (double)0;
         return Activator.CreateInstance(iType);
     }
     /// <summary>

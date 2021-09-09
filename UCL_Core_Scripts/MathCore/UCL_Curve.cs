@@ -65,7 +65,7 @@ namespace UCL.Core.MathLib {
         public void CreateLoop() {
             if(m_Points.Count < 2) return;
             m_Loop = true;
-            if(m_Points.LastElement() == m_Points.FirstElement()) {
+            if(m_Points.LastElement<Vector3>() == m_Points.FirstElement<Vector3>()) {
                 Debug.LogWarning("CreateLoop() Fail,start point == end point!!");
                 return;
             }
@@ -82,7 +82,7 @@ namespace UCL.Core.MathLib {
 #endif
         public void RemoveLoop() {
             if(m_Points.Count < 2) return;
-            if(m_Points.LastElement() != m_Points.FirstElement()) {
+            if(m_Points.LastElement<Vector3>() != m_Points.FirstElement<Vector3>()) {
                 Debug.LogWarning("RemoveLoop() Fail,start point != end point!!");
                 return;
             }

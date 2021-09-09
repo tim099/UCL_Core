@@ -7,7 +7,7 @@ using UnityEngine;
 namespace UCL.Core.UI
 {
     /// <summary>
-    /// Render object field using GUILayout
+    /// Render field of object using GUILayout
     /// </summary>
     public class UCL_ObjectFieldGUILayout
     {
@@ -151,8 +151,7 @@ namespace UCL.Core.UI
                     GUILayout.EndHorizontal();
                 }
 
-                if (aIsShowField) using (var aScope = new GUILayout.VerticalScope("box"))
-                    {
+                if (aIsShowField) using (var aScope = new GUILayout.VerticalScope("box")) {
                         Type aType = iObj.GetType();
                         var aFields = aType.GetAllFieldsUnityVer(typeof(object));
                         foreach (var aField in aFields)
@@ -172,10 +171,15 @@ namespace UCL.Core.UI
                                     aData = aField.FieldType.CreateInstance();
                                     aField.SetValue(iObj, aData);
                                 }
+                                else if (typeof(IDictionary).IsAssignableFrom(aField.FieldType))
+                                {
+                                    aData = aField.FieldType.CreateInstance();
+                                    aField.SetValue(iObj, aData);
+                                }
                             }
 
                             string aDisplayName = aField.Name;
-
+                            string aDataKey = iID.ToString() + "_" + aDisplayName;
                             if (aDisplayName[0] == 'm' && aDisplayName[1] == '_')
                             {
                                 aDisplayName = aDisplayName.Substring(2, aDisplayName.Length - 2);
@@ -224,14 +228,13 @@ namespace UCL.Core.UI
                             }
                             else if (aData.IsNumber())
                             {
-                                string aKey = iID.ToString() + "_" + aDisplayName;
-                                if (!m_DataDic.ContainsKey(aKey))
+                                if (!m_DataDic.ContainsKey(aDataKey))
                                 {
-                                    m_DataDic.SetData(aKey, aData.ToString());
+                                    m_DataDic.SetData(aDataKey, aData.ToString());
                                 }
-                                string aNum = m_DataDic.GetData(aKey, string.Empty);
+                                string aNum = m_DataDic.GetData(aDataKey, string.Empty);
                                 var aResult = UCL.Core.UI.UCL_GUILayout.TextField(aDisplayName, (string)aNum);
-                                m_DataDic.SetData(aKey, aResult);
+                                m_DataDic.SetData(aDataKey, aResult);
                                 object aResVal;
                                 if (UCL.Core.MathLib.Num.TryParse(aResult, aData.GetType(), out aResVal))
                                 {
@@ -241,7 +244,7 @@ namespace UCL.Core.UI
                             else if (aData is IList)
                             {
                                 GUILayout.BeginHorizontal();
-                                string aShowKey = iID.ToString() + "_" + aDisplayName + "_Show";
+                                string aShowKey = aDataKey + "_Show";
                                 bool aIsShow = m_DataDic.GetData(aShowKey, false);
                                 m_DataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShow));
                                 UCL_GUILayout.LabelAutoSize(aDisplayName);
@@ -249,7 +252,7 @@ namespace UCL.Core.UI
                                 if (aIsShow)
                                 {
                                     IList aList = aData as IList;
-                                    string aCountKey = iID.ToString() + "_" + aDisplayName + "_Count";
+                                    string aCountKey = aDataKey + "_Count";
                                     int aCount = m_DataDic.GetData(aCountKey, aList.Count);
                                     GUILayout.BeginHorizontal();
                                     int aNewCount = UCL_GUILayout.IntField("Count", aCount);
@@ -279,7 +282,7 @@ namespace UCL.Core.UI
                                     }
                                     else
                                     {
-                                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add")))
+                                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                         {
                                             try
                                             {
@@ -301,7 +304,6 @@ namespace UCL.Core.UI
                                     {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
                                         {
-                                            int aDrawAt = aAt;
                                             GUILayout.BeginHorizontal();
                                             if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
                                             {
@@ -309,20 +311,8 @@ namespace UCL.Core.UI
                                             }
 
                                             aResultList.Add(DrawFieldData(aListData, iID + "_" + (aAt++).ToString()));
-
-                                            //DrawFieldData(aListData, iID + "_" + (aAt++).ToString(),(iValue) => {
-                                            //    System.Action aSetAct = null;
-                                            //    aSetAct = () =>
-                                            //    {
-                                            //        aList[aDrawAt] = iValue;
-                                            //        UCL.Core.ServiceLib.UCL_UpdateService.RemoveUpdateActionStaticVer(aSetAct);
-                                            //    };
-                                            //    UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateActionStaticVer(aSetAct);
-
-                                            //});
                                             GUILayout.EndHorizontal();
                                         }
-
                                     }
                                     for (int i = 0; i < aResultList.Count; i++)
                                     {
@@ -332,6 +322,70 @@ namespace UCL.Core.UI
                                     {
                                         aList.RemoveAt(aDeleteAt);
                                         m_DataDic.SetData(aCountKey, aList.Count);
+                                    }
+                                }
+                            }
+                            else if (aData is IDictionary)
+                            {
+                                GUILayout.BeginHorizontal();
+                                string aShowKey = aDataKey + "_Show";
+                                bool aIsShow = m_DataDic.GetData(aShowKey, false);
+                                m_DataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShow));
+                                UCL_GUILayout.LabelAutoSize(aDisplayName);
+                                GUILayout.EndHorizontal();
+                                if (aIsShow)
+                                {
+                                    IDictionary aDic = aData as IDictionary;
+                                    GUILayout.BeginHorizontal();
+                                    GUILayout.Box("Count : " + aDic.Count);
+                                    var aKeyType = aField.FieldType.GetGenericKeyType();
+                                    string aAddKey = aDataKey + "_Add";
+                                    if (!m_DataDic.ContainsKey(aAddKey))
+                                    {
+                                        m_DataDic.SetData(aAddKey, aKeyType.CreateInstance());
+                                    }
+                                    m_DataDic.SetData(aAddKey, DrawFieldData(m_DataDic.GetData(aAddKey),aDataKey+"_Add"));
+                                    if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                                    {
+                                        try
+                                        {
+                                            var aNewKey = m_DataDic.GetData(aAddKey);
+                                            if (!aDic.Contains(aNewKey))
+                                            {
+                                                var aGenericType = aField.FieldType.GetGenericValueType();
+                                                aDic.Add(m_DataDic.GetData(aAddKey), aGenericType.CreateInstance());
+                                            }
+                                        }
+                                        catch (System.Exception iE)
+                                        {
+                                            Debug.LogException(iE);
+                                        }
+                                    }
+                                    GUILayout.EndHorizontal();
+                                    object aDeleteAt = null;
+                                    List<Tuple<object,object> > aResultList = new List<Tuple<object, object> >();
+                                    foreach (var aKey in aDic.Keys)
+                                    {
+                                        using (var aScope2 = new GUILayout.VerticalScope("box"))
+                                        {
+                                            GUILayout.BeginHorizontal();
+                                            if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                            {
+                                                aDeleteAt = aKey;
+                                            }
+                                            GUILayout.BeginVertical();
+                                            aResultList.Add(new Tuple<object, object>(aKey, DrawFieldData(aDic[aKey], iID + "_" + aKey.ToString(), aKey.ToString())));
+                                            GUILayout.EndVertical();
+                                            GUILayout.EndHorizontal();
+                                        }
+                                    }
+                                    for (int i = 0; i < aResultList.Count; i++)
+                                    {
+                                        aDic[aResultList[i].Item1] = aResultList[i].Item2;
+                                    }
+                                    if (aDeleteAt != null)
+                                    {
+                                        aDic.Remove(aDeleteAt);
                                     }
                                 }
                             }

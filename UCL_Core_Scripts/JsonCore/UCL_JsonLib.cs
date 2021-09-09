@@ -124,6 +124,19 @@ namespace UCL.Core.JsonLib {
                 }
                 return iObj;
             }
+            else if (iObj is IDictionary && iType.IsGenericType)
+            {
+                IDictionary aDic = iObj as IDictionary;
+                Type aElementType = aDic.GetType().GetGenericValueType();
+                //foreach (var aKey in aDic.Keys)
+                //{
+                //    var aObj = DataToObject(iData[aKey.ToString()], aElementType, iSaveMode, iFieldNameAlterFunc);
+                //    if (aObj != null)
+                //    {
+                //        aDic[aKey] = aObj;
+                //    }
+                //}
+            }
             List<FieldInfo> aFields = null;
             switch (iSaveMode)
             {
@@ -199,6 +212,24 @@ namespace UCL.Core.JsonLib {
                             if (aObj != null) aList.Add(aObj);
                         }
                         aField.SetValue(iObj, aList);
+                    }
+                    else if (aFieldData is IList && aField.FieldType.IsGenericType)
+                    {
+                        //IDictionary aDic = aFieldData as IDictionary;
+                        //Type aElementType = aDic.GetType().GetGenericValueType();
+                        //foreach (var aKey in aDic.Keys)
+                        //{
+                        //    string aSKey = aKey.ToString();
+                        //    if (aJsonData.Contains(aSKey))
+                        //    {
+                        //        var aObj = DataToObject(aJsonData[], aElementType, iSaveMode, iFieldNameAlterFunc);
+                        //        if (aObj != null)
+                        //        {
+                        //            aDic[aKey] = aObj;
+                        //        }
+                        //    }
+                        //}
+                        //aField.SetValue(iObj, aDic);
                     }
                     else if (aField.FieldType.IsStructOrClass())
                     {
@@ -330,7 +361,15 @@ namespace UCL.Core.JsonLib {
                     iData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
                 }
                 return;
+            } else if(iObj is IDictionary)
+            {
+                IDictionary aDic = iObj as IDictionary;
+                foreach (var aKey in aDic.Keys)
+                {
+                    iData[aKey.ToString()] = ObjectToData(aDic[aKey], iSaveMode, iFieldNameAlterFunc);
+                }
             }
+            
             Type aType = iObj.GetType();
             List<FieldInfo> aFields = null;
             switch (iSaveMode)
@@ -376,6 +415,16 @@ namespace UCL.Core.JsonLib {
                 else if (aField.FieldType == typeof(bool))
                 {
                     iData[aFieldName] = aValue.ToString();
+                }
+                else if(aValue is IDictionary)
+                {
+                    var aGenericData = new JsonData();
+                    iData[aFieldName] = aGenericData;
+                    IDictionary aDic = aValue as IDictionary;
+                    foreach (var aKey in aDic.Keys)
+                    {
+                        aGenericData[aKey.ToString()] = ObjectToData(aDic[aKey], iSaveMode, iFieldNameAlterFunc);
+                    }
                 }
                 else if (aValue is IEnumerable)
                 {

@@ -99,7 +99,7 @@ namespace UCL.Core.Game
         {
             if (m_UIStack.Count > 0)
             {
-                m_UIStack.LastElement().OnEscape();
+                m_UIStack.LastElement<UCL_GameUI>().OnEscape();
             }
         }
         public void SetCanvasCamera(Camera iCamera)

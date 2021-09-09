@@ -6,24 +6,68 @@ using UnityEngine;
 
 public static partial class ListExtensionMethods {
     /// <summary>
+    /// return the first Element in iICollection
+    /// </summary>
+    /// <param name="iICollection"></param>
+    /// <returns></returns>
+    public static object FirstElement(this ICollection iICollection)
+    {
+        if (iICollection == null) return null;
+        foreach(var aItem in iICollection)
+        {
+            return aItem;
+        }
+        return null;
+    }
+    /// <summary>
+    /// return the last Element in ICollection
+    /// </summary>
+    /// <param name="iICollection"></param>
+    /// <returns></returns>
+    public static object LastElement(this ICollection iICollection)
+    {
+        if (iICollection == null) return null;
+        int aAt = 0;
+        foreach (var aItem in iICollection)
+        {
+            if(++aAt == iICollection.Count)//Last Item
+            {
+                return aItem;
+            }
+        }
+        return null;
+    }
+    /// <summary>
     /// this function don't check the range of a,b !!so use carefully
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <param name="list"></param>
+    /// <param name="iList"></param>
     /// <param name="a"></param>
     /// <param name="b"></param>
-    public static void Swap<T>(this IList<T> list, int a, int b) {
-        var tmp = list[a];
-        list[a] = list[b];
-        list[b] = tmp;
+    public static void Swap<T>(this IList<T> iList, int a, int b) {
+        var tmp = iList[a];
+        iList[a] = iList[b];
+        iList[b] = tmp;
     }
-    public static T FirstElement<T>(this IList<T> list) {
-        if(list.Count == 0) return default;
-        return list[0];
+    /// <summary>
+    /// return the first element of list
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <returns></returns>
+    public static T FirstElement<T>(this IList<T> iList) {
+        if(iList.Count == 0) return default;
+        return iList[0];
     }
-    public static T LastElement<T>(this IList<T> list) {
-        if(list.Count == 0) return default;
-        return list[list.Count-1];
+    /// <summary>
+    /// return the last element of list
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <returns></returns>
+    public static T LastElement<T>(this IList<T> iList) {
+        if(iList.Count == 0) return default;
+        return iList[iList.Count-1];
     }
     public static List<T> Append<T>(this List<T> iList, IEnumerable<T> iTarget)
     {
@@ -34,15 +78,15 @@ public static partial class ListExtensionMethods {
         }
         return iList;
     }
-    public static bool IsNullOrEmpty<T>(this IList<T> list) {
-        if(list == null || list.Count == 0) return true;
+    public static bool IsNullOrEmpty<T>(this IList<T> iList) {
+        if(iList == null || iList.Count == 0) return true;
         return false;
     }
     /// <summary>
     /// Return the index of target in iList
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <param name="iList">Target list</param>
+    /// <param name="iList">Target iList</param>
     /// <param name="iTarget">Target to find index</param>
     /// <returns></returns>
     public static int GetIndex<T>(this IList<T> iList,T iTarget)
@@ -55,7 +99,7 @@ public static partial class ListExtensionMethods {
         return 0;
     }
     /// <summary>
-    /// Get element inside list
+    /// Get element inside iList
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="iList"></param>
@@ -66,7 +110,7 @@ public static partial class ListExtensionMethods {
         return iList[iAt];
     }
     /// <summary>
-    /// Get element inside list
+    /// Get element inside iList
     /// if At < 0 then get the first element
     /// if At >= iList.Count,then get the last element
     /// </summary>
@@ -82,25 +126,25 @@ public static partial class ListExtensionMethods {
         return iList[iAt];
     }
     /// <summary>
-    /// Remove first element of list
+    /// Remove first element of iList
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <param name="list">target list</param>
-    public static void RemoveFirst<T>(this IList<T> list) {
-        if(list == null || list.Count == 0) return;
-        list.RemoveAt(0);
+    /// <param name="iList">target iList</param>
+    public static void RemoveFirst<T>(this IList<T> iList) {
+        if(iList == null || iList.Count == 0) return;
+        iList.RemoveAt(0);
     }
     /// <summary>
-    /// Remove last element of list
+    /// Remove last element of iList
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <param name="list">target list</param>
-    public static void RemoveLast<T>(this IList<T> list) {
-        if(list == null || list.Count == 0) return;
-        list.RemoveAt(list.Count-1);
+    /// <param name="iList">target iList</param>
+    public static void RemoveLast<T>(this IList<T> iList) {
+        if(iList == null || iList.Count == 0) return;
+        iList.RemoveAt(iList.Count-1);
     }
     /// <summary>
-    /// Clone the target list
+    /// Clone the target iList
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="iList">target to clone</param>

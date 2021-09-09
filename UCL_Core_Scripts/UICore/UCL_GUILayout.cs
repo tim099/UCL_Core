@@ -377,6 +377,27 @@ namespace UCL.Core.UI {
 
         /// <summary>
         /// Show pop up with a search input field
+        /// if iDisplayedOptions.Count >= iSearchThreshold then add search field
+        /// </summary>
+        /// <param name="iSelectedIndex"></param>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iKey"></param>
+        /// <param name="iSearchThreshold"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static int PopupAuto(int iSelectedIndex, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey,
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions)
+        {
+            if (iDisplayedOptions.Count >= iSearchThreshold)
+            {
+                return PopupSearch(iSelectedIndex, iDisplayedOptions, iDataDic, iKey, iOptions);
+            }
+
+            return Popup(iSelectedIndex, iDisplayedOptions, iDataDic, iKey, iOptions);
+        }
+        /// <summary>
+        /// Show pop up with a search input field
         /// </summary>
         /// <param name="iSelectedIndex"></param>
         /// <param name="iDisplayedOptions"></param>

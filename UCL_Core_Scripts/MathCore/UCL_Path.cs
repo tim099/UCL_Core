@@ -102,7 +102,7 @@ namespace UCL.Core.MathLib {
             }
             if(m_Points.Count >= 2) {
                 var s = 2 * m_Points[0] - m_Points[1];
-                var e = 2 * m_Points.LastElement() - m_Points[m_Points.Count - 2];
+                var e = 2 * m_Points.LastElement<Vector3>() - m_Points[m_Points.Count - 2];
                 m_Points.Insert(0, s);
                 m_Points.Add(e);
             }

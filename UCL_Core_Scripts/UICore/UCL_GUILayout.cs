@@ -387,8 +387,7 @@ namespace UCL.Core.UI {
         /// <param name="iOptions"></param>
         /// <returns></returns>
         public static int PopupAuto(int iSelectedIndex, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey,
-            int iSearchThreshold = 10, params GUILayoutOption[] iOptions)
-        {
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions) {
             if (iDisplayedOptions.Count >= iSearchThreshold)
             {
                 return PopupSearch(iSelectedIndex, iDisplayedOptions, iDataDic, iKey, iOptions);
@@ -476,7 +475,7 @@ namespace UCL.Core.UI {
                         if (GUILayout.Button(aDisplayName, ButtonStyle, iOptions))
                         {
                             aIsShow = false;
-                            return i;
+                            iSelectedIndex = i;
                         }
                     }
                 }
@@ -489,11 +488,6 @@ namespace UCL.Core.UI {
                     aIsShow = true;
                 }
             }
-            {
-                //iSelectedIndex = Popup(iSelectedIndex, iDisplayedOptions, ref aIsShow);
-            }
-
-
             iDataDic.SetData(aShowKey, aIsShow);
             return iSelectedIndex;
         }

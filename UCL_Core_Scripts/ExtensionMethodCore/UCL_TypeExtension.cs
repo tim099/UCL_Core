@@ -27,6 +27,134 @@ public static partial class TypeExtensionMethods {
     public static bool IsStructOrClass(this Type iType) {
         return iType.IsStruct() | iType.IsClass;
     }
+    public static bool IsString(this Type iType)
+    {
+        return iType == typeof(string);
+    }
+    public static bool IsNumber(this Type iType)
+    {
+        return iType == typeof(int)
+            || iType == typeof(float)
+                || iType == typeof(byte)
+                || iType == typeof(short)
+                || iType == typeof(ushort)
+                || iType == typeof(sbyte)
+                || iType == typeof(uint)
+                || iType == typeof(long)
+                || iType == typeof(ulong)
+                || iType == typeof(double)
+                || iType == typeof(decimal);
+    }
+    /// <summary>
+    /// Convert the string to number of type
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <param name="iString"></param>
+    /// <returns></returns>
+    public static object TryParseToNumber(this Type iType, string iString)
+    {
+        if (iType == typeof(int))
+        {
+            int aResult;
+            if (!int.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(float))
+        {
+            float aResult;
+            if (!float.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(sbyte))
+        {
+            sbyte aResult;
+            if (!sbyte.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(byte))
+        {
+            byte aResult;
+            if (!byte.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(short))
+        {
+            short aResult;
+            if (!short.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(ushort))
+        {
+            ushort aResult;
+            if (!ushort.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(uint))
+        {
+            uint aResult;
+            if (!uint.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(long))
+        {
+            long aResult;
+            if (!long.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(ulong))
+        {
+            ulong aResult;
+            if (!ulong.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(double))
+        {
+            double aResult;
+            if (!double.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+        if (iType == typeof(decimal))
+        {
+            decimal aResult;
+            if (!decimal.TryParse(iString, out aResult))
+            {
+                aResult = 0;
+            }
+            return aResult;
+        }
+
+        return 0;
+    }
     /// <summary>
     /// return type of a GenericType(List,Array,Dic)
     /// etc. List<T> will return type of T

@@ -60,31 +60,31 @@ namespace UCL.Core.JsonLib {
         public JsonData() {
             m_Type = JsonType.None;
         }
-        public JsonData(object obj) {
-            if(obj == null) {
+        public JsonData(object iObj) {
+            if(iObj == null) {
                 m_Type = JsonType.None;
                 return;
             }
 
-            if(obj is IList) {
+            if(iObj is IList) {
                 m_Type = JsonType.Array;
-                List<object> lst = obj as List<object>;
+                List<object> lst = iObj as List<object>;
                 if(lst != null) {
                     m_List = new List<JsonData>(lst.Count);
                     foreach(object item in lst) {
                         m_List.Add(ToJsonData(item));
                     }
                 } else {
-                    IList list = obj as IList;
+                    IList list = iObj as IList;
                     m_List = new List<JsonData>();
                     foreach(object item in list) {
                         m_List.Add(ToJsonData(item));
                     }
                 }
 
-            } else if(obj is IDictionary) {
+            } else if(iObj is IDictionary) {
                 m_Type = JsonType.Object;
-                Dictionary<string, object> dict = obj as Dictionary<string, object>;
+                Dictionary<string, object> dict = iObj as Dictionary<string, object>;
                 m_Dic = new Dictionary<string, JsonData>(dict.Count);
                 m_ObjectList = new List<KeyValuePair<string, JsonData>>(dict.Count);
 
@@ -97,23 +97,23 @@ namespace UCL.Core.JsonLib {
                     m_ObjectList.Add(entry);
                 }
             } else {
-                if(obj is bool) {
+                if(iObj is bool) {
                     m_Type = JsonType.Boolean;
-                } else if(obj is double) {
+                } else if(iObj is double) {
                     m_Type = JsonType.Double;
-                } else if(obj is float) {
+                } else if(iObj is float) {
                     m_Type = JsonType.Double;
-                    obj = (double)(float)obj;
-                } else if(obj is int) {
+                    iObj = (double)(float)iObj;
+                } else if(iObj is int) {
                     m_Type = JsonType.Int;
-                } else if(obj is long) {
+                } else if(iObj is long) {
                     m_Type = JsonType.Long;
-                } else if(obj is string) {
+                } else if(iObj is string) {
                     m_Type = JsonType.String;
                 } else {
                     m_Type = JsonType.Object;
                 }
-                m_Obj = obj;
+                m_Obj = iObj;
             }
         }
         public JsonData(bool boolean) {
@@ -178,20 +178,20 @@ namespace UCL.Core.JsonLib {
         public object GetObj() {
             return ToObject(this);
         }
-        public object GetValue(Type type) {
-            if(type == typeof(string)) {
+        public object GetValue(Type iType) {
+            if(iType == typeof(string)) {
                 return GetString();
             }
-            if(type == typeof(float)) {
+            if(iType == typeof(float)) {
                 return GetFloat();
             }
-            if(type == typeof(double)) {
+            if(iType == typeof(double)) {
                 return GetDouble();
             }
-            if(type == typeof(int) || type == typeof(uint)) {
+            if(iType == typeof(int) || iType == typeof(uint)) {
                 return GetInt();
             }
-            if(type == typeof(long) || type == typeof(ulong)) {
+            if(iType == typeof(long) || iType == typeof(ulong)) {
                 return GetLong();
             }
             return null;
@@ -201,9 +201,9 @@ namespace UCL.Core.JsonLib {
             return iDefaultVal;
         }
         public string GetString(string iKey, string iDefaultVal = null) {
-            var val = Get(iKey);
-            if(val == this) return iDefaultVal;
-            if(val.m_Type == JsonType.String) return (string)val;
+            var aVal = Get(iKey);
+            if(aVal == this) return iDefaultVal;
+            if(aVal.m_Type == JsonType.String) return aVal.GetString();
             return iDefaultVal;
         }
 
@@ -245,7 +245,7 @@ namespace UCL.Core.JsonLib {
             if (aVal == this) return iDefaultVal;
             if (aVal.m_Type == JsonType.String)
             {
-                return (T)Enum.Parse(typeof(T), aVal);
+                return (T)Enum.Parse(typeof(T), aVal.GetString());
             }
             return iDefaultVal;
         }
@@ -279,13 +279,21 @@ namespace UCL.Core.JsonLib {
             if (m_Type == JsonType.Boolean) return (bool)m_Obj;
             return iDefaultVal;
         }
+        public IDictionary<string, JsonData> GetJsonDic()
+        {
+            if (m_Dic == null)
+            {
+                return null;
+            }
+            return m_Dic;
+        }
         public Dictionary<string, object> GetDic() {
             if(m_Dic == null) {
-                throw new Exception("JsonData LoadToDic Fail!!,m_Dic == null");
+                return null;
             }
             var aDic = new Dictionary<string, object>();
-            foreach(var obj in m_Dic) {
-                aDic.Add(obj.Key, obj.Value.GetObj());
+            foreach(var aObj in m_Dic) {
+                aDic.Add(aObj.Key, aObj.Value.GetObj());
             }
             return aDic;
         }
@@ -325,10 +333,10 @@ namespace UCL.Core.JsonLib {
             if(data.m_Type != JsonType.Long) throw new InvalidCastException("JsonData doesn't hold an int");
             return (long)data.m_Obj;
         }
-        public static implicit operator string(JsonData data) {
-            if(data.m_Type != JsonType.String) data.ToJson();
-            return data.m_Obj as string;
-        }
+        //public static implicit operator string(JsonData data) {
+        //    if(data.m_Type != JsonType.String) data.ToJson();
+        //    return data.m_Obj as string;
+        //}
         #endregion
 
         #region Interface
@@ -667,8 +675,7 @@ namespace UCL.Core.JsonLib {
                 //        Debug.LogError("JsonData data:" + item.ToString());
                 //    }
                 //}
-                throw new InvalidOperationException("JsonData already has type:" + m_Type.ToString()
-                + ",Cant convert to dictionary!!");
+                throw new InvalidOperationException("JsonData already has type:" + m_Type.ToString() + ",Cant convert to dictionary!!");
             }
             m_Type = JsonType.Object;
             m_Dic = new Dictionary<string, JsonData>();

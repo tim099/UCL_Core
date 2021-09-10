@@ -344,7 +344,7 @@ namespace UCL.Core.UI
                                     {
                                         m_DataDic.SetData(aAddKey, aKeyType.CreateInstance());
                                     }
-                                    m_DataDic.SetData(aAddKey, DrawFieldData(m_DataDic.GetData(aAddKey),aDataKey+"_Add"));
+                                    m_DataDic.SetData(aAddKey, DrawFieldData(m_DataDic.GetData(aAddKey), aDataKey + "_Add"));
                                     if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                     {
                                         try
@@ -352,8 +352,9 @@ namespace UCL.Core.UI
                                             var aNewKey = m_DataDic.GetData(aAddKey);
                                             if (!aDic.Contains(aNewKey))
                                             {
+                                                m_DataDic.Remove(aAddKey);
                                                 var aGenericType = aField.FieldType.GetGenericValueType();
-                                                aDic.Add(m_DataDic.GetData(aAddKey), aGenericType.CreateInstance());
+                                                aDic.Add(aNewKey, aGenericType.CreateInstance());
                                             }
                                         }
                                         catch (System.Exception iE)
@@ -374,7 +375,8 @@ namespace UCL.Core.UI
                                                 aDeleteAt = aKey;
                                             }
                                             GUILayout.BeginVertical();
-                                            aResultList.Add(new Tuple<object, object>(aKey, DrawFieldData(aDic[aKey], iID + "_" + aKey.ToString(), aKey.ToString())));
+                                            string aKeyName = aKey.UCL_ToString();
+                                            aResultList.Add(new Tuple<object, object>(aKey, DrawFieldData(aDic[aKey], iID + "_" + aKeyName, aKeyName)));
                                             GUILayout.EndVertical();
                                             GUILayout.EndHorizontal();
                                         }

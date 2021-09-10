@@ -158,17 +158,25 @@ namespace UCL.Core.MarshalLib {
         {
             //var type = obj.GetType();
             //Debug.LogWarning("Marshal.SizeOf(obj):" + Marshal.SizeOf(obj));
-            byte[] aArr = new byte[Marshal.SizeOf(iObj)];
-            GCHandle aHandle = GCHandle.Alloc(iObj, GCHandleType.Pinned);
             try
             {
-                Marshal.Copy(aHandle.AddrOfPinnedObject(), aArr, 0, aArr.Length);
-                return aArr;
-            }
-            finally
+                byte[] aArr = new byte[Marshal.SizeOf(iObj)];
+                GCHandle aHandle = GCHandle.Alloc(iObj, GCHandleType.Pinned);
+                try
+                {
+                    Marshal.Copy(aHandle.AddrOfPinnedObject(), aArr, 0, aArr.Length);
+                    return aArr;
+                }
+                finally
+                {
+                    aHandle.Free();
+                }
+            }catch(System.Exception iE)
             {
-                aHandle.Free();
+                Debug.LogException(iE);
+                return null;
             }
+
         }
         public static byte[] ToByteArray<T>(T obj) {
             Byte[] arr = new Byte[Marshal.SizeOf(typeof(T))];
@@ -180,15 +188,25 @@ namespace UCL.Core.MarshalLib {
                 handle.Free();
             }
         }
-        public static T ToStructure<T>(byte[] buffer) {
-            int size = Marshal.SizeOf(typeof(T));
-            IntPtr ptr = Marshal.AllocHGlobal(size);
+        public static T ToStructure<T>(byte[] iByteArray) {
+            int aSize = Marshal.SizeOf(typeof(T));
+            IntPtr aPtr = Marshal.AllocHGlobal(aSize);
             //unsafe {}
-            Marshal.Copy(buffer, 0, ptr, size);
+            Marshal.Copy(iByteArray, 0, aPtr, aSize);
 
-            T data = (T)Marshal.PtrToStructure(ptr, typeof(T));
-            Marshal.FreeHGlobal(ptr);
-            return data;
+            T aData = (T)Marshal.PtrToStructure(aPtr, typeof(T));
+            Marshal.FreeHGlobal(aPtr);
+            return aData;
+        }
+        public static object ToStructure(byte[] iByteArray, Type iType)
+        {
+            int aSize = Marshal.SizeOf(iType);
+            IntPtr aPtr = Marshal.AllocHGlobal(aSize);
+            Marshal.Copy(iByteArray, 0, aPtr, aSize);
+
+            object aData = Marshal.PtrToStructure(aPtr, iType);
+            Marshal.FreeHGlobal(aPtr);
+            return aData;
         }
     }
 }

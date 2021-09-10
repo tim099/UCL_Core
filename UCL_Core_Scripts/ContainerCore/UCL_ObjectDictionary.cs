@@ -30,6 +30,14 @@ public class UCL_ObjectDictionary
         m_DataDic[iKey] = iObj;
     }
     /// <summary>
+    /// Remove data from Dic
+    /// </summary>
+    /// <param name="iKey"></param>
+    public void Remove(string iKey)
+    {
+        m_DataDic.Remove(iKey);
+    }
+    /// <summary>
     /// get data from Dic
     /// </summary>
     /// <typeparam name="T"></typeparam>

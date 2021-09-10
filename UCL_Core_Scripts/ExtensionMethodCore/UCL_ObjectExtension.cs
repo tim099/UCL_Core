@@ -277,6 +277,7 @@ namespace UCL.Core.ObjectOperatorExtension {
                 throw new System.Exception("object.Not() Fail!! Type:" + type.FullName + " not support!!");
             }
         }
+
     }
 }
 namespace UCL.Core.ObjectReflectionExtension {
@@ -408,53 +409,59 @@ public static partial class ObjectExtensionMethods
             }
 
             string space_str = string.Empty;
-            StringBuilder builder = new StringBuilder();
+            StringBuilder aBuilder = new StringBuilder();
             if(iSpace > 0) {
-                builder.Append("\n");
+                aBuilder.Append("\n");
                 space_str = new string('\t', iSpace);
             }
-            IEnumerable ienum = iObj as IEnumerable;
-            if(ienum != null) {
-                var dic = iObj as IDictionary;
-                if(dic != null) {
-                    builder.Append(space_str + "(" + type.Name + ")" + " : [");
-                    string arrStr = string.Empty;
-                    foreach(var key in dic.Keys) {
-                        builder.Append("(" + key.UCL_ToString(iSpace + 1) + " , " + dic[key].UCL_ToString(iSpace + 1) + "), ");
-                    }
-                    builder.RemoveLast();
-                    builder.RemoveLast();
-                    builder.Append("]");
-                } else {
-                    builder.Append(space_str + "(" + type.Name + ")" + " : [");
-                    string arrStr = string.Empty;
-                    foreach(var val in ienum) {
-                        builder.Append(val.UCL_ToString(iSpace + 1) + ",");
-                    }
-                    builder.RemoveLast();
-                    builder.Append("]");
+            IEnumerable aEnum = iObj as IEnumerable;
+            if(aEnum != null) {
+                if(iObj is UCL.Core.JsonLib.JsonData)
+                {
+                    aBuilder.Append(space_str + "(JsonData):");
+                    aBuilder.Append(((UCL.Core.JsonLib.JsonData)iObj).ToJsonBeautify());
+                    return aBuilder.ToString();
                 }
-                return builder.ToString();
+                var iDic = iObj as IDictionary;
+                if(iDic != null) {
+                    aBuilder.Append(space_str + "(" + type.Name + ")" + " : [");
+                    string arrStr = string.Empty;
+                    foreach(var key in iDic.Keys) {
+                        aBuilder.Append("(" + key.UCL_ToString(iSpace + 1) + " , " + iDic[key].UCL_ToString(iSpace + 1) + "), ");
+                    }
+                    aBuilder.RemoveLast();
+                    aBuilder.RemoveLast();
+                    aBuilder.Append("]");
+                } else {
+                    aBuilder.Append(space_str + "(" + type.Name + ")" + " : [");
+                    string arrStr = string.Empty;
+                    foreach(var val in aEnum) {
+                        aBuilder.Append(val.UCL_ToString(iSpace + 1) + ",");
+                    }
+                    aBuilder.RemoveLast();
+                    aBuilder.Append("]");
+                }
+                return aBuilder.ToString();
             }
 
             FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             if(fields.Length > 0) {
                 if(iSpace == 0) {
-                    builder.AppendLine(space_str + type.Name);//",fields.Length:" + fields.Length+
+                    aBuilder.AppendLine(space_str + type.Name);//",fields.Length:" + fields.Length+
                 }
                 foreach(var field in fields) {
                     var value = field.GetValue(iObj);
                     Type f_type = field.FieldType;
-                    builder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(iSpace + 1));
+                    aBuilder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(iSpace + 1));
                 }
             } else {
                 return iObj.ToString();
             }
 
-            return builder.ToString();
-        } catch (Exception e){
-            Debug.LogError("UCL_ToString Exception:" + e);
-            return "UCL_ToString Exception:" + e.ToString();
+            return aBuilder.ToString();
+        } catch (Exception iE){
+            Debug.LogException(iE);
+            return "UCL_ToString Exception:" + iE.ToString();
         }
     }
 }

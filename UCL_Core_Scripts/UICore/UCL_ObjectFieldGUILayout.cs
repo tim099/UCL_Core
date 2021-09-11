@@ -4,6 +4,18 @@ using System.Collections.Generic;
 using System.Reflection;
 using UCL.Core.LocalizeLib;
 using UnityEngine;
+
+namespace UCL.Core
+{
+    /// <summary>
+    /// The short name you want to display in UCL_ObjectFieldGUILayout
+    /// </summary>
+    public interface IUCL_ShortName
+    {
+        string GetShortName();
+    }
+}
+
 namespace UCL.Core.UI
 {
     /// <summary>
@@ -106,6 +118,7 @@ namespace UCL.Core.UI
                         int aAt = 0;
                         int aDeleteAt = -1;
                         List<object> aResultList = new List<object>();
+                        string aTypeName = iObj.GetType().GetGenericValueType().Name;
                         foreach (var aListData in aList)
                         {
                             using (var aScope2 = new GUILayout.VerticalScope("box"))
@@ -116,8 +129,7 @@ namespace UCL.Core.UI
                                 {
                                     aDeleteAt = aAt;
                                 }
-
-                                aResultList.Add(DrawFieldData(aListData, iID + "_" + (aAt++).ToString()));
+                                aResultList.Add(DrawFieldData(aListData, iID + "_" + (aAt++).ToString(), aListData.UCL_GetShortName(aTypeName)));
                                 GUILayout.EndHorizontal();
                             }
 
@@ -300,6 +312,7 @@ namespace UCL.Core.UI
                                     int aAt = 0;
                                     int aDeleteAt = -1;
                                     List<object> aResultList = new List<object>();
+                                    string aTypeName = aData.GetType().GetGenericValueType().Name;
                                     foreach (var aListData in aList)
                                     {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
@@ -309,8 +322,7 @@ namespace UCL.Core.UI
                                             {
                                                 aDeleteAt = aAt;
                                             }
-
-                                            aResultList.Add(DrawFieldData(aListData, iID + "_" + (aAt++).ToString()));
+                                            aResultList.Add(DrawFieldData(aListData, iID + "_" + (aAt++).ToString(), aListData.UCL_GetShortName(aTypeName)));
                                             GUILayout.EndHorizontal();
                                         }
                                     }
@@ -337,7 +349,7 @@ namespace UCL.Core.UI
                                 {
                                     IDictionary aDic = aData as IDictionary;
                                     GUILayout.BeginHorizontal();
-                                    GUILayout.Box("Count : " + aDic.Count);
+                                    UCL_GUILayout.LabelAutoSize("Count : " + aDic.Count);
                                     var aKeyType = aField.FieldType.GetGenericKeyType();
                                     string aAddKey = aDataKey + "_Add";
                                     if (!m_DataDic.ContainsKey(aAddKey))

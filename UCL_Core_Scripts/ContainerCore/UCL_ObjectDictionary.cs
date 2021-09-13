@@ -20,6 +20,25 @@ public class UCL_ObjectDictionary
     {
         m_DataDic.Clear();
     }
+
+    /// <summary>
+    /// Get sub UCL_ObjectDictionary inside this UCL_ObjectDictionary
+    /// if not exist, then this will create a new one
+    /// </summary>
+    /// <param name="iKey"></param>
+    /// <returns></returns>
+    public UCL_ObjectDictionary GetSubDic(string iKey)
+    {
+        if (!m_DataDic.ContainsKey(iKey))
+        {
+            m_DataDic.Add(iKey, new UCL_ObjectDictionary());
+        }
+        if(!(m_DataDic[iKey] is UCL_ObjectDictionary))
+        {
+            m_DataDic[iKey] = new UCL_ObjectDictionary();
+        }
+        return m_DataDic[iKey] as UCL_ObjectDictionary;
+    }
     /// <summary>
     /// Set data
     /// </summary>

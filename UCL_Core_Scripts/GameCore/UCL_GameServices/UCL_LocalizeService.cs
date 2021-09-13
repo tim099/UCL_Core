@@ -40,8 +40,8 @@ namespace UCL.Core.Game {
             if(File.Exists(path)) {
                 var str = File.ReadAllText(path);
                 JsonLib.JsonData data = JsonLib.JsonData.ParseJson(str);
-                m_LoadLangPath = data.Get("m_LoadLangPath").GetString(m_LoadLangPath);
-                m_CurLang = data.Get("m_CurLang").GetString(m_CurLang);
+                m_LoadLangPath = data.GetString("m_LoadLangPath", m_LoadLangPath);
+                m_CurLang = data.GetString("m_CurLang", m_CurLang);
             }
             LoadLanguage(m_CurLang);
         }

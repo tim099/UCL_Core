@@ -431,7 +431,7 @@ namespace UCL.Core.UI {
                 {
                     aIsShow = false;
                 }
-                aInput = TextField("Search", aInput);
+                aInput = TextField(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Search"), aInput);
                 iDataDic.SetData(aSearchKey, aInput);
                 //GUILayout.EndHorizontal();
 
@@ -439,7 +439,15 @@ namespace UCL.Core.UI {
                 {
                     if (!string.IsNullOrEmpty(aInput))
                     {
-                        aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                        try
+                        {
+                            aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                        }catch(System.Exception iE)
+                        {
+                            aRegex = null;
+                            Debug.LogException(iE);
+                        }
+
                     }
                 }
 
@@ -906,7 +914,7 @@ namespace UCL.Core.UI {
                                     {
                                         iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
                                     }
-                                    iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(aDisplayName + "_AddKey"), aDataKey + "_Add"));
+                                    iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(aDisplayName + "_AddKey"), aKeyType.Name));
                                     if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                     {
                                         try
@@ -937,7 +945,7 @@ namespace UCL.Core.UI {
                                                 aDeleteAt = aKey;
                                             }
                                             GUILayout.BeginVertical();
-                                            string aKeyName = aKey.UCL_ToString();
+                                            string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
                                             aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey], iDataDic.GetSubDic(aDisplayName + "Dic_" + aKeyName), aKeyName)));
                                             GUILayout.EndVertical();
                                             GUILayout.EndHorizontal();

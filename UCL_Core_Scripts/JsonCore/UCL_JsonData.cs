@@ -204,7 +204,7 @@ namespace UCL.Core.JsonLib {
         public string GetString(string iKey) {
             return GetString(iKey, string.Empty);
         }
-        public string GetString(string iKey, string iDefaultVal) {
+        public string GetString(string iKey, string iDefaultVal = "") {
             var aVal = Get(iKey);
             if(aVal == this) return iDefaultVal;
             if(aVal.m_Type == JsonType.String) return aVal.GetString();
@@ -710,7 +710,7 @@ namespace UCL.Core.JsonLib {
         int ICollection.Count { get { return Count; } }
         bool ICollection.IsSynchronized { get { return GetCollection().IsSynchronized; } }
         object ICollection.SyncRoot { get { return GetCollection().SyncRoot; } }
-        void ICollection.CopyTo(Array array, int index) { GetCollection().CopyTo(array, index); }
+        void ICollection.CopyTo(Array iArray, int iIndex) { GetCollection().CopyTo(iArray, iIndex); }
         #endregion
 
         #region IDictionary Properties & Methods
@@ -719,43 +719,43 @@ namespace UCL.Core.JsonLib {
         ICollection IDictionary.Keys {
             get {
                 GetIDic();
-                IList<string> keys = new List<string>();
-                foreach(KeyValuePair<string, JsonData> entry in m_ObjectList) {
-                    keys.Add(entry.Key);
+                IList<string> aKeys = new List<string>();
+                foreach(KeyValuePair<string, JsonData> aEntry in m_ObjectList) {
+                    aKeys.Add(aEntry.Key);
                 }
-                return (ICollection)keys;
+                return (ICollection)aKeys;
             }
         }
         ICollection IDictionary.Values {
             get {
                 GetIDic();
-                IList<JsonData> values = new List<JsonData>();
-                foreach(KeyValuePair<string, JsonData> entry in m_ObjectList) {
-                    values.Add(entry.Value);
+                IList<JsonData> aValues = new List<JsonData>();
+                foreach(KeyValuePair<string, JsonData> aEntry in m_ObjectList) {
+                    aValues.Add(aEntry.Value);
                 }
-                return (ICollection)values;
+                return (ICollection)aValues;
             }
         }
-        void IDictionary.Add(object key, object value) {
-            JsonData data = ToJsonData(value);
-            GetIDic().Add(key, data);
-            m_ObjectList.Add(new KeyValuePair<string, JsonData>((string)key, data));   
+        void IDictionary.Add(object iKey, object iValue) {
+            JsonData aData = ToJsonData(iValue);
+            GetIDic().Add(iKey, aData);
+            m_ObjectList.Add(new KeyValuePair<string, JsonData>((string)iKey, aData));   
         }
         void IDictionary.Clear() {
             GetIDic().Clear();
             m_ObjectList.Clear();
         }
-        bool IDictionary.Contains(object key) {
-            return GetIDic().Contains(key);
+        bool IDictionary.Contains(object iKey) {
+            return GetIDic().Contains(iKey);
         }
         IDictionaryEnumerator IDictionary.GetEnumerator() {
             GetIDic();
             return new JsonDataEnumerator(m_ObjectList.GetEnumerator());
         }
-        void IDictionary.Remove(object key) {
-            GetIDic().Remove(key);
+        void IDictionary.Remove(object iKey) {
+            GetIDic().Remove(iKey);
             for(int i = 0; i < m_ObjectList.Count; i++) {
-                if(m_ObjectList[i].Key == (string)key) {
+                if(m_ObjectList[i].Key == (string)iKey) {
                     m_ObjectList.RemoveAt(i);
                     break;
                 }

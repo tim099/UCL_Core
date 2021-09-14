@@ -7,13 +7,17 @@ namespace UCL.Core.TextureLib {
     public class UCL_TextureEditor : MonoBehaviour {
         public RenderTexture m_RenderTexture = null;
         public Texture2D m_Texture = null;
+        /// <summary>
+        /// if set to true, then the output texture will replace the original one
+        /// </summary>
+        public bool m_ReplaceOriginalTexture = false;
         public string m_OutputFolder = "Assets/Textures";
         public string m_SaveName = "NewTexture";
         public Vector2Int m_Split = Vector2Int.one;
         public TextureFormat m_TextureFormat = TextureFormat.ARGB32;
         public ImageFormat m_SaveFormat = ImageFormat.png;
         public Vector2Int m_Size = new Vector2Int(256, 256);
-        protected string GetOutputPath() {
+        virtual protected string GetOutputPath() {
             return System.IO.Path.Combine(m_OutputFolder, m_SaveName);
         }
         [ATTR.UCL_FunctionButton]
@@ -54,11 +58,20 @@ namespace UCL.Core.TextureLib {
         {
             SaveTexture(m_Texture);
         }
-        public void SaveTexture(Texture2D _Texture) {
+        public void SaveTexture(Texture2D iTexture) {
+            var aSavePath = GetOutputPath();
+#if UNITY_EDITOR
+            if (m_ReplaceOriginalTexture)
+            {
+                aSavePath = UnityEditor.AssetDatabase.GetAssetPath(m_Texture);
+                m_OutputFolder = UCL.Core.FileLib.Lib.GetFolderPath(aSavePath);
+                //Debug.LogError("aSavePath:" + aSavePath);
+            }
+#endif
 #if UNITY_EDITOR_WIN
             Core.FileLib.WindowsLib.OpenAssetExplorer(m_OutputFolder);
 #endif
-            TextureLib.Lib.SaveTexture(GetOutputPath(), _Texture, m_SaveFormat);
+            TextureLib.Lib.SaveTexture(aSavePath, iTexture, m_SaveFormat);
         }
         public void SaveTexture() {
             var texture = m_Texture;

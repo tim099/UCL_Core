@@ -13,6 +13,8 @@ namespace UCL.Core.TextureLib {
         public Color m_Color;
 
         public bool m_GreyScaleAlpha = false;
+
+
         [ATTR.UCL_FunctionButton]
         public void ReplaceColor() {
             int aWidth = m_Texture.width;

@@ -107,17 +107,17 @@ namespace UCL.Core.FileLib
         /// <summary>
         /// Remove file name from path and return folder path
         /// </summary>
-        /// <param name="file_path"></param>
+        /// <param name="iFilePath"></param>
         /// <returns></returns>
-        public static string GetFolderPath(string file_path) {
-            for(int i = file_path.Length - 1; i >= 0; i--) {
-                var c = file_path[i];
+        public static string GetFolderPath(string iFilePath) {
+            for(int i = iFilePath.Length - 1; i >= 0; i--) {
+                var c = iFilePath[i];
                 if(c == '/' || c == '\\') {
-                    file_path = file_path.Substring(0, i);
+                    iFilePath = iFilePath.Substring(0, i);
                     break;
                 }
             }
-            return file_path;
+            return iFilePath;
         }
         /// <summary>
         /// Remove folder and file from path
@@ -419,12 +419,21 @@ namespace UCL.Core.FileLib
         /// <summary>
         /// Open explorer to folder within Assets folder
         /// </summary>
-        /// <param name="folder">target folder within Assets folder</param>
-        static public void OpenAssetExplorer(string folder) {
-            string asset_root = Application.dataPath.Replace("Assets", string.Empty);
-            var path = asset_root + folder;
-            //Debug.LogWarning("asset_root + folder:" + asset_root + folder);
-            System.Diagnostics.Process.Start(asset_root + folder);//"explorer.exe", 
+        /// <param name="iFolder">target folder within Assets folder</param>
+        static public void OpenAssetExplorer(string iFolder) {
+            string aAssetRoot = Application.dataPath.Replace("Assets", string.Empty);
+            var aPath = aAssetRoot + iFolder;
+            try
+            {
+                //Debug.LogWarning("asset_root + folder:" + asset_root + folder);
+                System.Diagnostics.Process.Start(aPath);//"explorer.exe", 
+            }
+            catch(System.Exception iE)
+            {
+                Debug.LogException(iE);
+                Debug.LogError("OpenAssetExplorer Fail iFolder:" + iFolder);
+            }
+
         }
         /// <summary>
         /// Open explorer of target folder

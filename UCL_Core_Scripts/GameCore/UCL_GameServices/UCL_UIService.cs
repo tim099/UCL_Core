@@ -62,6 +62,10 @@ namespace UCL.Core.Game
             string aPath = typeof(T).Name;
             return CreateUIFromResource<T>(aPath);
         }
+        public UCL_GameUI CreateUIFromResource(string iPath)
+        {
+            return CreateUIFromResource<UCL_GameUI>(iPath);
+        }
         public T CreateUIFromResource<T>(string iPath) where T : UCL_GameUI
         {
             if (!string.IsNullOrEmpty(UIResourceFolder))

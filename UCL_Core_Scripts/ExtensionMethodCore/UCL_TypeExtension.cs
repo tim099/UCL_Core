@@ -31,6 +31,10 @@ public static partial class TypeExtensionMethods {
     {
         return iType == typeof(string);
     }
+    public static bool IsBool(this Type iType)
+    {
+        return iType == typeof(bool);
+    }
     public static bool IsNumber(this Type iType)
     {
         return iType == typeof(int)

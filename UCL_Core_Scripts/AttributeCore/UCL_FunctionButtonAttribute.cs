@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 namespace UCL.Core.ATTR {
     /// <summary>
@@ -8,7 +9,7 @@ namespace UCL.Core.ATTR {
     /// </summary>
     [System.Diagnostics.Conditional("UNITY_EDITOR")]
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
-    public class UCL_FunctionButtonAttribute : Attribute {
+    public class UCL_FunctionButtonAttribute : UCL_Attribute {
         public string m_ButtonName;
         public object[] m_Params;
         public UCL_FunctionButtonAttribute() {
@@ -20,6 +21,20 @@ namespace UCL.Core.ATTR {
         public UCL_FunctionButtonAttribute(string _ButtonName, params object[] _params) {
             m_ButtonName = _ButtonName;
             m_Params = _params;
+        }
+
+        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo)
+        {
+            bool aIsRunTimeOnly = iMethodInfo.GetCustomAttribute(typeof(ATTR.UCL_RuntimeOnlyAttribute), false) != null;
+            if (!aIsRunTimeOnly || Application.isPlaying)
+            {
+                string aButName = m_ButtonName;
+                if (string.IsNullOrEmpty(aButName)) aButName = iMethodInfo.Name;
+                if (GUILayout.Button(aButName))
+                {
+                    iMethodInfo.Invoke(iTarget, m_Params);
+                }
+            }
         }
     }
     /// <summary>

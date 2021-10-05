@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿using System;
+using UnityEditor;
+using UnityEngine;
 
 namespace UCL.Core.EditorLib
 {
@@ -88,6 +90,12 @@ namespace UCL.Core.EditorLib
 
             #region EditorGUIMapper
             EditorGUIMapper.InitPopup(EditorGUI.Popup);
+            #endregion
+
+            #region EditorGUILayoutMapper
+            EditorGUILayoutMapper.InitObjectField((UnityEngine.Object obj, Type objType, bool allowSceneObjects, GUILayoutOption[] options) => {
+                return EditorGUILayout.ObjectField(obj, objType, allowSceneObjects, options);
+            });
             #endregion
 
             #region Init

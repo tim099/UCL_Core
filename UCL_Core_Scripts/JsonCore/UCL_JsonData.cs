@@ -301,6 +301,32 @@ namespace UCL.Core.JsonLib {
             }
             return aDic;
         }
+        /// <summary>
+        /// Get IJsonSerializable from JsonData
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iKey"></param>
+        /// <returns></returns>
+        public T Get<T>(string iKey) where T : IJsonSerializable, new()
+        {
+            return Get(iKey, new T());
+        }
+        /// <summary>
+        /// Get IJsonSerializable from JsonData
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iKey"></param>
+        /// <param name="iData"></param>
+        /// <returns></returns>
+        public T Get<T>(string iKey, T iData) where T : IJsonSerializable
+        {
+            GetIDic();
+            if (m_Dic.ContainsKey(iKey))
+            {
+                iData.DeserializeFromJson(this[iKey]);
+            }
+            return iData;
+        }
         public JsonData Get(string iKey) {
             GetIDic();
             if(!m_Dic.ContainsKey(iKey)) {
@@ -315,7 +341,8 @@ namespace UCL.Core.JsonLib {
         public static implicit operator JsonData(int data) { return new JsonData(data); }
         public static implicit operator JsonData(long data) { return new JsonData(data); }
         public static implicit operator JsonData(string data) { return new JsonData(data); }
-
+        public static implicit operator JsonData(JsonSerializable data){ return data.SerializeToJson(); }
+        public static implicit operator JsonData(UnityJsonSerializable data) { return data.SerializeToJson(); }
         //explicit
         public static implicit operator bool(JsonData data) {
             if(data.m_Type != JsonType.Boolean) throw new InvalidCastException("JsonData doesn't hold a bool");

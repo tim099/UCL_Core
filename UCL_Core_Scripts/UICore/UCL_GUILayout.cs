@@ -58,18 +58,23 @@ namespace UCL.Core.UI {
         /// <param name="iList"></param>
         /// <param name="iDrawElementFunc">Draw element function</param>
         /// <param name="iCreateElementFunc">Create element function</param>
-        static public void ListField<T>(List<T> iList, System.Func<T,T> iDrawElementFunc, System.Func<T> iCreateElementFunc
+        /// <param name="iAddElementButtonName"></param>
+        /// <param name="iDeleteButtonName"></param>
+        /// <returns>return true if the list add or delete element</returns>
+        static public bool ListField<T>(List<T> iList, System.Func<T,T> iDrawElementFunc, System.Func<T> iCreateElementFunc
             ,string iAddElementButtonName = "Add Element", string iDeleteButtonName = "Delete")
         {
+            bool iIsModified = false;
             if (iList == null)
             {
-                return;
+                return iIsModified;
             }
             System.Type aType = typeof(T);
             GUILayout.BeginVertical();
             if (GUILayout.Button(iAddElementButtonName))
             {
                 iList.Add(iCreateElementFunc());
+                iIsModified = true;
             }
             int aDeleteAt = -1;
             for (int i = 0; i < iList.Count; i++)
@@ -85,8 +90,10 @@ namespace UCL.Core.UI {
             if (aDeleteAt >= 0)
             {
                 iList.RemoveAt(aDeleteAt);
+                iIsModified = true;
             }
             GUILayout.EndVertical();
+            return iIsModified;
         }
         /// <summary>
         /// Display target obj in TextField and return result value

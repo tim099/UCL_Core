@@ -88,15 +88,15 @@ public static partial class ListExtensionMethods {
     /// <typeparam name="T"></typeparam>
     /// <param name="iList">Target iList</param>
     /// <param name="iTarget">Target to find index</param>
-    /// <returns></returns>
+    /// <returns>return the index if iTarget, return -1 if not found Target in list</returns>
     public static int GetIndex<T>(this IList<T> iList,T iTarget)
     {
-        if (iList.Count == 0) return 0;
+        if (iList.Count == 0) return -1;
         for(int i = 0; i < iList.Count; i++)
         {
             if (iList[i].Equals(iTarget)) return i;
         }
-        return 0;
+        return -1;
     }
     /// <summary>
     /// Get element inside iList

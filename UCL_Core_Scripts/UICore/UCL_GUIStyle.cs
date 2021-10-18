@@ -23,6 +23,22 @@ namespace UCL.Core.UI {
                 return m_BoxStyle;
             }
         }
+        static public GUIStyle ButtonStyle
+        {
+            get
+            {
+                if (m_BoxStyle == null)
+                {
+                    m_BoxStyle = new GUIStyle(GUI.skin.button);
+                    m_BoxStyle.richText = true;
+                    var aTextCol = Color.white;
+                    m_BoxStyle.normal.textColor = aTextCol;
+                    m_BoxStyle.focused.textColor = aTextCol;
+                    m_BoxStyle.hover.textColor = aTextCol;
+                }
+                return m_BoxStyle;
+            }
+        }
         static GUIStyle m_BoxStyle = null;
 
 

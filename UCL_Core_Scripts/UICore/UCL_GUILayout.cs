@@ -464,28 +464,15 @@ namespace UCL.Core.UI {
                     for (int i = 0; i < iDisplayedOptions.Count; i++)
                     {
                         var aOption = iDisplayedOptions[i];
-                        if (aRegex != null && !aRegex.IsMatch(aOption.ToLower()))//根據輸入 過濾顯示的卡牌
+                        if (aRegex != null && !aRegex.IsMatch(aOption.ToLower()))
                         {
-                            //GUILayout.Button(aInput + "," + aOption);
                             continue;
                         }
 
                         string aDisplayName = aOption;
-                        if (aRegex != null)//標記符合搜尋條件的部分
+                        if (aRegex != null)
                         {
-                            var aMaches = aRegex.Matches(aDisplayName.ToLower());
-                            if (aMaches.Count > 0)
-                            {
-                                var aMach = aMaches[0];//aRegex.Matches(aDisplayName);
-                                if (aMach.Success)
-                                {
-                                    int aMatchAt = aMach.Index;
-                                    string aValue = aDisplayName.Substring(aMatchAt, aInput.Length);
-                                    aDisplayName = aDisplayName.Substring(0, aMatchAt)
-                                        + aValue.RichTextColor(Color.red)
-                                        + aDisplayName.Substring(aMatchAt + aValue.Length, aDisplayName.Length - aValue.Length - aMatchAt);
-                                }
-                            }
+                            aDisplayName = aRegex.HightLight(aDisplayName, aInput, Color.red);
                         }
 
 

@@ -204,7 +204,7 @@ namespace UCL.Core.JsonLib {
         public string GetString(string iKey) {
             return GetString(iKey, string.Empty);
         }
-        public string GetString(string iKey, string iDefaultVal = "") {
+        public string GetString(string iKey, string iDefaultVal) {
             var aVal = Get(iKey);
             if(aVal == this) return iDefaultVal;
             if(aVal.m_Type == JsonType.String) return aVal.GetString();

@@ -37,6 +37,22 @@ namespace UCL.Core.ServiceLib
                 Instance.RemoveUpdateAction(iAction);
             }
         }
+
+        /// <summary>
+        /// Add action that only invoke once
+        /// </summary>
+        /// <param name="iAct"></param>
+        public static void AddActionStaticVer(System.Action iAction)
+        {
+            if (!Application.isPlaying)
+            {//Edit Mode
+                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddAction(iAction);
+            }
+            else
+            {
+                Instance.AddAction(iAction);
+            }
+        }
         #endregion
 
 

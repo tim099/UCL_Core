@@ -11,12 +11,15 @@ namespace UCL.Core.EditorLib {
         public override bool RequiresConstantRepaint() {
             return m_RequiresConstantRepaint;
         }
-        public override void OnInspectorGUI() {
-            DrawDefaultInspector();
-            Type type = target.GetType();
-            if(type.GetCustomAttributes(typeof(ATTR.EnableUCLEditor), true).Length == 0) return;
-            m_RequiresConstantRepaint = (type.GetCustomAttribute(typeof(ATTR.RequiresConstantRepaintAttribute), true) != null);
-            DrawATTR.Draw(target, type, this.GetType());
+        public override void OnInspectorGUI() {    
+            Type aType = target.GetType();
+            if (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) == null)
+            {
+                DrawDefaultInspector();
+                return;
+            }
+            m_RequiresConstantRepaint = (aType.GetCustomAttribute<ATTR.RequiresConstantRepaintAttribute>(true) != null);
+            DrawATTR.Draw(target, aType, this.GetType(), () => DrawDefaultInspector());
             Resources.UnloadUnusedAssets();
         }
     }

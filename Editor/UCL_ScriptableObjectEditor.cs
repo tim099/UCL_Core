@@ -4,15 +4,28 @@ using UnityEngine;
 using UnityEditor;
 using System;
 using System.Linq;
+using System.Reflection;
 
 namespace UCL.Core.EditorLib {
     [CustomEditor(typeof(ScriptableObject), true)]
     public class UCL_ScriptableObjectEditor : Editor {
+
+        bool m_RequiresConstantRepaint = false;
+        public override bool RequiresConstantRepaint()
+        {
+            return m_RequiresConstantRepaint;
+        }
         public override void OnInspectorGUI() {
-            DrawDefaultInspector();
-            Type type = target.GetType();
-            if(type.GetCustomAttributes(typeof(ATTR.EnableUCLEditor), true).Length == 0) return;
-            DrawATTR.Draw(target, type, this.GetType());
+            Type aType = target.GetType();
+            if (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) == null)
+            {
+                DrawDefaultInspector();
+                return;
+            }
+
+            m_RequiresConstantRepaint = (aType.GetCustomAttribute<ATTR.RequiresConstantRepaintAttribute>(true) != null);
+            DrawATTR.Draw(target, aType, this.GetType(), ()=> DrawDefaultInspector());
+            Resources.UnloadUnusedAssets();
         }
     }
 }

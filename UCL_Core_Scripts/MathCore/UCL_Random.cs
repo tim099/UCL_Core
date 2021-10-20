@@ -203,12 +203,13 @@ namespace UCL.Core.MathLib
         /// <returns></returns>
         public List<T> RandomPick<T>(IList<T> iList, int iPickCount, System.Func<T,int> iGetWeightFunc)
         {
+            List<T> aResult = new List<T>();
             if (iList == null || iList.Count == 0)
             {
-                return default;
+                return aResult;
             }
-            List<T> aResult = new List<T>();
-            if (iPickCount >= iList.Count)
+
+            if (iPickCount >= iList.Count)//Pick all
             {
                 for (int i = 0; i < iList.Count; i++)
                 {
@@ -227,7 +228,10 @@ namespace UCL.Core.MathLib
                 aWeights.Add(aWeight);
                 aTotalWeight += aWeight;
             }
-
+            if(aTotalWeight <= 0)//Nothing to pick
+            {
+                return aResult;
+            }
             for (int i = 0; i < iPickCount; i++)
             {
                 int aPickWeight = Next(aTotalWeight);

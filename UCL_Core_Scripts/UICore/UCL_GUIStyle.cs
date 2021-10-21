@@ -46,7 +46,9 @@ namespace UCL.Core.UI {
         static GUIStyle m_ButtonStyle = null;
 
 
-        static Dictionary<Color, GUIStyle> m_ButtonTextColorDic;
+
+        #region ButtonText
+        static Dictionary<Color, GUIStyle> m_ButtonTextColorDic = null;
 
         public static GUIStyle GetButtonText(Color iCol) {
             if(m_ButtonTextColorDic == null) {
@@ -62,25 +64,48 @@ namespace UCL.Core.UI {
             return m_ButtonTextColorDic[iCol];
         }
 
-        public static GUIStyle TextRed {
+        public static GUIStyle ButtonTextRed {
             get {
                 return GetButtonText(Color.red);
             }
         }
-        public static GUIStyle TextYellow {
+        public static GUIStyle ButtonTextYellow {
             get {
                 return GetButtonText(Color.yellow);
             }
         }
-        public static GUIStyle TextGreen {
+        public static GUIStyle ButtonTextGreen {
             get {
                 return GetButtonText(Color.green);
             }
         }
-        // var style = new GUIStyle(GUI.skin.button);
-        //style.normal.textColor = Color.blue;
+        #endregion
 
-        // Start is called before the first frame update
+
+
+        #region Label
+
+        static Dictionary<System.Tuple<Color, int> , GUIStyle> m_LabelStyleDic = null;
+        public static GUIStyle GetLabelStyle(Color iCol, int iSize = 16)
+        {
+            if (m_LabelStyleDic == null)
+            {
+                m_LabelStyleDic = new Dictionary<System.Tuple<Color, int>, GUIStyle>();
+            }
+            System.Tuple<Color, int> aKey = new System.Tuple<Color, int>(iCol, iSize);
+            if (!m_LabelStyleDic.ContainsKey(aKey))
+            {
+                var aText = new GUIStyle(GUI.skin.label);
+                aText.normal.textColor = iCol;
+                aText.active.textColor = iCol;
+                aText.hover.textColor = iCol;
+                aText.fontSize = iSize;
+                m_LabelStyleDic.Add(aKey, aText);
+            }
+            return m_LabelStyleDic[aKey];
+        }
+        #endregion
+
 
     }
 }

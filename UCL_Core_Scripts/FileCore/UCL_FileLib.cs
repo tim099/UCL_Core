@@ -124,21 +124,21 @@ namespace UCL.Core.FileLib
         /// Example path is "root/folder/c.txt" and remove_count is 2, then return "root" 
         /// 根據設定數量移除路徑
         /// </summary>
-        /// <param name="path"></param>
-        /// <param name="remove_count"></param>
+        /// <param name="iPath"></param>
+        /// <param name="iRemoveCount"></param>
         /// <returns></returns>
-        public static string RemoveFolderPath(string path, int remove_count = 1) {
-            if(remove_count <= 0) return path;
+        public static string RemoveFolderPath(string iPath, int iRemoveCount = 1) {
+            if(iRemoveCount <= 0) return iPath;
 
-            int i = path.Length - 1;
+            int i = iPath.Length - 1;
             for(; i >= 0; i--) {
-                var c = path[i];
+                var c = iPath[i];
                 if(c == '/' || c == '\\') {
-                    if(--remove_count <= 0) break;
+                    if(--iRemoveCount <= 0) break;
                 }
             }
             if(i <= 0) return string.Empty;
-            return path.Substring(0, i);
+            return iPath.Substring(0, i);
         }
         /// <summary>
         /// return filename from input path

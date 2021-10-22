@@ -28,31 +28,31 @@ namespace UCL.Core.PA {
                 }
             }
         }
-        public void InvokeAct(string func_name,object obj,params object[] par) {
+        public void InvokeAct(string iFuncName, object iObj, params object[] iParams) {
             //Debug.LogWarning("func_name:" + func_name + ",obj:" + obj.GetType().Name);
             if(!string.IsNullOrEmpty(m_FuncName)) {
-                func_name = m_FuncName;
+                iFuncName = m_FuncName;
             }
             if(m_Type == null) {
-                m_Type = obj.GetType();
+                m_Type = iObj.GetType();
             }
-            var methods = m_Type.GetMethods();
+            var aMethods = m_Type.GetMethods();
 
-            System.Reflection.MethodInfo method = null;
+            MethodInfo aSelectedMethod = null;
             int par_len = 0;
             int cur_len = 0;
-            if(par != null) par_len = par.Length;
+            if(iParams != null) par_len = iParams.Length;
             //Debug.LogWarning("par_len:" + par_len);
-            foreach(var m in methods) {
-                if(m.Name == func_name) {
-                    var m_pars = m.GetParameters();
+            foreach(var aMethod in aMethods) {
+                if(aMethod.Name == iFuncName) {
+                    var m_pars = aMethod.GetParameters();
                     int m_plen = m_pars.Length;
-                    if(method == null) {
-                        method = m;
+                    if(aSelectedMethod == null) {
+                        aSelectedMethod = aMethod;
                         cur_len = m_plen;
                     } else {
                         if(par_len == m_plen || (cur_len != m_plen && m_plen <= cur_len)) {
-                            method = m;
+                            aSelectedMethod = aMethod;
                             cur_len = m_plen;
                         }
                     }
@@ -61,7 +61,7 @@ namespace UCL.Core.PA {
                         bool check_flag = true;
                         for(int i = 0; i < m_plen; i++) {
                             var p = m_pars[i];
-                            var pl = par[i];
+                            var pl = iParams[i];
                             if(pl != null && p.GetType() != pl.GetType()) {
                                 check_flag = false;
                             }
@@ -71,16 +71,16 @@ namespace UCL.Core.PA {
                 }
             }
             //var method = m_Type.GetMethod(func_name);
-            if(method != null) {
-                if(method.GetParameters().Length == 0) {
-                    par = null;
+            if(aSelectedMethod != null) {
+                if(aSelectedMethod.GetParameters().Length == 0) {
+                    iParams = null;
                 }
                 try {
-                    if(m_Type == obj.GetType()) {
+                    if(m_Type == iObj.GetType()) {
                         
-                        method.Invoke(obj, par);
+                        aSelectedMethod.Invoke(iObj, iParams);
                     } else {
-                        method.Invoke(null, par);//static!!
+                        aSelectedMethod.Invoke(null, iParams);//static!!
                         /*
                         var obj_arr = new object[1];
                         obj_arr[0] = obj;
@@ -88,14 +88,14 @@ namespace UCL.Core.PA {
                         */
                     }
                 } catch(Exception e) {
-                    Debug.LogError("UCL_ButtonProperty: " + m_Type.Name + "_" + func_name + ".Invoke Exception:" + e.ToString());
+                    Debug.LogError("UCL_ButtonProperty: " + m_Type.Name + "_" + iFuncName + ".Invoke Exception:" + e.ToString());
                 }
             } else {
                 string names = "";
-                foreach(var m in methods) {
+                foreach(var m in aMethods) {
                     names += m.Name + "\n";
                 }
-                Debug.LogError(m_Type.Name+" func_name:\"" + func_name+"\" Not Exist!!,Functions:\n"+ names);
+                Debug.LogError(m_Type.Name+" func_name:\"" + iFuncName+"\" Not Exist!!,Functions:\n"+ names);
 
             }
         }

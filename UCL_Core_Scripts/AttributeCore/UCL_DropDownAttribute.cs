@@ -20,6 +20,10 @@ namespace UCL.Core
     {
         string[] GetList(object iTarget);
     }
+    public interface ITexture2D
+    {
+        Texture2D GetTexture(object iObj, object iValue);
+    }
 }
 namespace UCL.Core.ATTR
 {

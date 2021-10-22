@@ -406,6 +406,24 @@ namespace UCL.Core.UI {
         }
         /// <summary>
         /// Show pop up with a search input field
+        /// if iDisplayedOptions.Count >= iSearchThreshold then add search field
+        /// </summary>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iKey"></param>
+        /// <param name="iSearchThreshold"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static int PopupAuto(IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey,
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions) {
+            string aKey = iKey + "_SelectedIndex";
+            int aSelectedIndex = iDataDic.GetData(aKey, 0);
+            aSelectedIndex = PopupAuto(aSelectedIndex, iDisplayedOptions, iDataDic, iKey, iSearchThreshold, iOptions);
+            iDataDic.SetData(aKey, aSelectedIndex);
+            return aSelectedIndex;
+        }
+        /// <summary>
+        /// Show pop up with a search input field
         /// </summary>
         /// <param name="iSelectedIndex"></param>
         /// <param name="iDisplayedOptions"></param>
@@ -759,15 +777,22 @@ namespace UCL.Core.UI {
                             var aAttrs = aField.GetCustomAttributes();
                             foreach (var aAttr in aAttrs)
                             {
-                                var aStrArr = aAttr as IStringArr;
-                                if (aStrArr != null)
+                                
+                                if (aAttr is IStringArr)
                                 {
+                                    var aStrArr = aAttr as IStringArr;
                                     aIsDrawed = true;
                                     GUILayout.BeginHorizontal();
                                     UCL_GUILayout.LabelAutoSize(aDisplayName);
                                     aField.SetValue(iObj, aStrArr.DrawOnGUI(iObj, aData, iDataDic, "_" + aDisplayName));
                                     GUILayout.EndHorizontal();
-                                    break;
+                                    //break;
+                                }else if(aAttr is ITexture2D)
+                                {
+                                    var aTextureArr = aAttr as ITexture2D;
+                                    GUILayout.BeginHorizontal();
+                                    GUILayout.Box(aTextureArr.GetTexture(iObj, aData), GUILayout.Width(64), GUILayout.Height(64));
+                                    GUILayout.EndHorizontal();
                                 }
                             }
                             if (aIsDrawed)

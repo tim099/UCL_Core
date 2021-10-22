@@ -86,19 +86,19 @@ namespace UCL.Core.UI {
         #region Label
 
         static Dictionary<System.Tuple<Color, int> , GUIStyle> m_LabelStyleDic = null;
-        public static GUIStyle GetLabelStyle(Color iCol, int iSize = 16)
+        public static GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16)
         {
             if (m_LabelStyleDic == null)
             {
                 m_LabelStyleDic = new Dictionary<System.Tuple<Color, int>, GUIStyle>();
             }
-            System.Tuple<Color, int> aKey = new System.Tuple<Color, int>(iCol, iSize);
+            System.Tuple<Color, int> aKey = new System.Tuple<Color, int>(iTextCol, iSize);
             if (!m_LabelStyleDic.ContainsKey(aKey))
             {
                 var aText = new GUIStyle(GUI.skin.label);
-                aText.normal.textColor = iCol;
-                aText.active.textColor = iCol;
-                aText.hover.textColor = iCol;
+                aText.normal.textColor = iTextCol;
+                aText.active.textColor = iTextCol;
+                aText.hover.textColor = iTextCol;
                 aText.fontSize = iSize;
                 m_LabelStyleDic.Add(aKey, aText);
             }

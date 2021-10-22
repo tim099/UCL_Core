@@ -10,7 +10,7 @@ namespace UCL.Core.PA
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
 
-            var pro = attribute as UCL_ButtonAttribute;
+            var aAttr = attribute as UCL_ButtonAttribute;
             EditorGUI.BeginProperty(position, label, property);
 
             var size = new Vector2(0.2f * position.size.x, position.size.y);
@@ -21,12 +21,12 @@ namespace UCL.Core.PA
             {
                 var obj = property.serializedObject.targetObject;
 
-                string func_name = System.Text.RegularExpressions.Regex.Replace(property.name, "m_", "");
+                string aFuncName = System.Text.RegularExpressions.Regex.Replace(property.name, "m_", "");
                 var target = property.GetParent();
                 var value = property.GetValue();
                 UCL.Core.EditorLib.UCL_EditorUpdateManager.AddAction(delegate ()
                 {
-                    pro?.InvokeAct(func_name, target, value);
+                    aAttr?.InvokeAct(aFuncName, target, value);
                 });
             }
             if (label != null && property != null)

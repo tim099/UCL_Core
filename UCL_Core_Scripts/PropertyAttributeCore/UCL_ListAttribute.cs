@@ -85,7 +85,11 @@ namespace UCL.Core.PA {
         /// <param name="iTarget"></param>
         /// <returns></returns>
         public string[] GetList(object iTarget) {
-            return (string[]) iTarget.Invoke(m_MethodName, m_Params);
+            var aResult = iTarget.Invoke(m_MethodName, m_Params);
+            if (aResult is string[]) return (string[])aResult;
+            if (aResult is List<string>) return ((List<string>)aResult).ToArray();
+
+            return new string[0];
         }
 
         //public UCL_ListAttribute (System.Action<List<string>> get)

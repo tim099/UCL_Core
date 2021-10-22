@@ -55,6 +55,18 @@ namespace UCL.Core.TextureLib {
             return aTex;
         }
         /// <summary>
+        ///  Create a Texture2D from texture Path
+        /// </summary>
+        /// <param name="iPath"></param>
+        /// <returns></returns>
+        public static Texture2D CreateTexture(string iPath)
+        {
+            var aData = File.ReadAllBytes(iPath);
+            var aTex = new Texture2D(1, 1);
+            aTex.LoadImage(aData); //..this will auto-resize the texture dimensions.
+            return aTex;
+        }
+        /// <summary>
         /// Save texture to file
         /// </summary>
         /// <param name="iPath"></param>

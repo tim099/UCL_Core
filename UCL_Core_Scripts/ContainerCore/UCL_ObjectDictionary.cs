@@ -22,7 +22,21 @@ namespace UCL.Core
         {
             m_DataDic.Clear();
         }
-
+        /// <summary>
+        /// Swap two element in this dic
+        /// </summary>
+        /// <param name="iKeyA"></param>
+        /// <param name="iKeyB"></param>
+        public void Swap(string iKeyA, string iKeyB)
+        {
+            if(iKeyA == iKeyB || !m_DataDic.ContainsKey(iKeyA) || !m_DataDic.ContainsKey(iKeyB))
+            {
+                return;
+            }
+            var aTmp = m_DataDic[iKeyA];
+            m_DataDic[iKeyA] = m_DataDic[iKeyB];
+            m_DataDic[iKeyB] = aTmp;
+        }
         /// <summary>
         /// Get sub UCL_ObjectDictionary inside this UCL_ObjectDictionary
         /// if not exist, then this will create a new one

@@ -24,6 +24,10 @@ namespace UCL.Core
     {
         Texture2D GetTexture(object iObj, object iValue);
     }
+    public interface IShowInCondition
+    {
+        bool IsShow(object iObj);
+    }
 }
 namespace UCL.Core.ATTR
 {

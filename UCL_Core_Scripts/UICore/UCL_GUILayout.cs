@@ -661,7 +661,7 @@ namespace UCL.Core.UI {
                         string aCountKey = "Count";
                         int aCount = iDataDic.GetData(aCountKey, aList.Count);
                         GUILayout.BeginHorizontal();
-                        int aNewCount = UCL_GUILayout.IntField("Count", aCount);
+                        int aNewCount = UCL_GUILayout.IntField(LocalizeLib.UCL_LocalizeManager.Get("Count"), aCount);
                         iDataDic.SetData(aCountKey, aNewCount);
                         if (aNewCount != aList.Count)
                         {
@@ -713,7 +713,7 @@ namespace UCL.Core.UI {
                             {
                                 int aDrawAt = aAt;
                                 GUILayout.BeginHorizontal();
-                                if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                if (UCL_GUILayout.ButtonAutoSize(LocalizeLib.UCL_LocalizeManager.Get("Delete")))
                                 {
                                     aDeleteAt = aAt;
                                 }
@@ -869,19 +869,19 @@ namespace UCL.Core.UI {
                             }
                             else if (aData is IList)
                             {
+                                IList aList = aData as IList;
                                 GUILayout.BeginHorizontal();
                                 string aShowKey = aDataKey + "_Show";
                                 bool aIsShow = iDataDic.GetData(aShowKey, false);
                                 iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShow));
-                                UCL_GUILayout.LabelAutoSize(aDisplayName);
+                                UCL_GUILayout.LabelAutoSize(string.Format("{0}({1})",aDisplayName, aList.Count));
                                 GUILayout.EndHorizontal();
                                 if (aIsShow)
                                 {
-                                    IList aList = aData as IList;
                                     string aCountKey = aDataKey + "_Count";
                                     int aCount = iDataDic.GetData(aCountKey, aList.Count);
                                     GUILayout.BeginHorizontal();
-                                    int aNewCount = UCL_GUILayout.IntField("Count", aCount);
+                                    int aNewCount = UCL_GUILayout.IntField(LocalizeLib.UCL_LocalizeManager.Get("Count"), aCount);
                                     iDataDic.SetData(aCountKey, aNewCount);
                                     if (aNewCount != aList.Count)
                                     {

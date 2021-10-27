@@ -162,11 +162,11 @@ namespace UCL.Core.MathLib
         /// <returns></returns>
         public List<T> RandomPick<T>(IList<T> iList, int iPickCount)
         {
+            List<T> aResult = new List<T>();
             if (iList == null || iList.Count == 0)
             {
-                return default;
+                return aResult;
             }
-            List<T> aResult = new List<T>();
             if (iPickCount >= iList.Count)
             {
                 for(int i = 0; i < iList.Count; i++)

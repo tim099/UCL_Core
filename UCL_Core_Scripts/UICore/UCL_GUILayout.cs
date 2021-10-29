@@ -179,6 +179,24 @@ namespace UCL.Core.UI {
             }
             return iVal;
         }
+        static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, int iSize = 21)
+        {
+            bool iVal = iObjectDic.GetData(iKey, false);
+            if (GUILayout.Button(iVal ? "▼" : "►", GUILayout.Width(iSize), GUILayout.Height(iSize)))
+            {
+                iVal = !iVal;
+            }
+            iObjectDic.SetData(iKey, iVal);
+            return iVal;
+        }
+        static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, string iLabel, int iSize = 21, int iLabelSize = 21)
+        {
+            GUILayout.BeginHorizontal();
+            bool iVal = Toggle(iObjectDic, iKey, iSize);
+            LabelAutoSize(iLabel, iLabelSize);
+            GUILayout.EndHorizontal();
+            return iVal;
+        }
         static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
         {
             GUILayout.BeginHorizontal();
@@ -798,6 +816,7 @@ namespace UCL.Core.UI {
                             {
                                 aDisplayName = iFieldNameFunc(aDisplayName);
                             }
+                            bool aIsAlwaysShowDetail = aField.FieldType.GetCustomAttribute<ATTR.AlwaysExpendOnGUI>() != null;
                             bool aIsDrawed = false;
                             var aAttrs = aField.GetCustomAttributes();
                             foreach (var aAttr in aAttrs)
@@ -822,6 +841,9 @@ namespace UCL.Core.UI {
                                     {
                                         aIsDrawed = true;
                                     }
+                                }else if(aAttr is ATTR.AlwaysExpendOnGUI)
+                                {
+                                    aIsAlwaysShowDetail = true;
                                 }
                             }
                             if (aIsDrawed)
@@ -1041,7 +1063,7 @@ namespace UCL.Core.UI {
                                 UCL.Core.UI.UCL_GUILayout.LabelAutoSize(aDisplayName);
                                 GUILayout.BeginHorizontal();
                                 GUILayout.Space(10);
-                                DrawObjectData(aData, iDataDic.GetSubDic(aDisplayName + "_FieldData"), iFieldNameFunc: iFieldNameFunc);
+                                DrawObjectData(aData, iDataDic.GetSubDic(aDisplayName + "_FieldData"), iFieldNameFunc: iFieldNameFunc, iIsAlwaysShowDetail: aIsAlwaysShowDetail);
                                 aField.SetValue(iObj, aData);
                                 GUILayout.EndHorizontal();
                             }

@@ -671,7 +671,7 @@ namespace UCL.Core.UI {
                     string aShowKey = "Show";
                     aIsShowField = iDataDic.GetData(aShowKey, true);
                     iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
-                    if (!string.IsNullOrEmpty(iDisplayName)) GUILayout.Label(iDisplayName);
+                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
                     GUILayout.EndHorizontal();
                     if (aIsShowField)
                     {
@@ -766,7 +766,7 @@ namespace UCL.Core.UI {
                     string aShowKey = "_Show";
                     aIsShowField = iDataDic.GetData(aShowKey, false);
                     iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
-                    if (!string.IsNullOrEmpty(iDisplayName)) GUILayout.Label(iDisplayName);
+                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
                     GUILayout.EndHorizontal();
                 }
 
@@ -1060,12 +1060,12 @@ namespace UCL.Core.UI {
                             }
                             else if (aField.FieldType.IsStructOrClass())
                             {
-                                UCL.Core.UI.UCL_GUILayout.LabelAutoSize(aDisplayName);
-                                GUILayout.BeginHorizontal();
-                                GUILayout.Space(10);
-                                DrawObjectData(aData, iDataDic.GetSubDic(aDisplayName + "_FieldData"), iFieldNameFunc: iFieldNameFunc, iIsAlwaysShowDetail: aIsAlwaysShowDetail);
+                                //UCL.Core.UI.UCL_GUILayout.LabelAutoSize(aDisplayName);
+                                //GUILayout.BeginHorizontal();
+                                //GUILayout.Space(10);
+                                DrawObjectData(aData, iDataDic.GetSubDic(aDisplayName + "_FieldData"), aDisplayName, iFieldNameFunc: iFieldNameFunc, iIsAlwaysShowDetail: aIsAlwaysShowDetail);
                                 aField.SetValue(iObj, aData);
-                                GUILayout.EndHorizontal();
+                                //GUILayout.EndHorizontal();
                             }
                         }
 

@@ -100,6 +100,7 @@ namespace UCL.Core.UI {
                 aText.active.textColor = iTextCol;
                 aText.hover.textColor = iTextCol;
                 aText.fontSize = iSize;
+                aText.richText = true;
                 m_LabelStyleDic.Add(aKey, aText);
             }
             return m_LabelStyleDic[aKey];

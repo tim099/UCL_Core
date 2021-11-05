@@ -438,10 +438,19 @@ namespace UCL.Core.FileLib
         /// <summary>
         /// Open explorer of target folder
         /// </summary>
-        /// <param name="folder"></param>
-        static public void OpenExplorer(string folder) {
+        /// <param name="iFolder"></param>
+        static public void OpenExplorer(string iFolder) {
             //Debug.LogWarning("folder:" + folder);
-            System.Diagnostics.Process.Start(folder);//"explorer.exe", 
+            try
+            {
+                System.Diagnostics.Process.Start(iFolder);//"explorer.exe", 
+            }
+            catch(System.Exception iE)
+            {
+                Debug.LogException(iE);
+                Debug.LogError("OpenExplorer iFolder:" + iFolder + ",Exception:" + iE);
+            }
+
         }
     }
 #endif

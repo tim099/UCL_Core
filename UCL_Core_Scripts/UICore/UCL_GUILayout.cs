@@ -451,6 +451,14 @@ namespace UCL.Core.UI {
             iDataDic.SetData(aKey, aSelectedIndex);
             return aSelectedIndex;
         }
+        public static int PopupAuto(IList<string> iDisplayedOptions, int iInitIndex, UCL_ObjectDictionary iDataDic, string iKey,
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions) {
+            string aKey = iKey + "_SelectedIndex";
+            int aSelectedIndex = iDataDic.GetData(aKey, iInitIndex);
+            aSelectedIndex = PopupAuto(aSelectedIndex, iDisplayedOptions, iDataDic, iKey, iSearchThreshold, iOptions);
+            iDataDic.SetData(aKey, aSelectedIndex);
+            return aSelectedIndex;
+        }
         /// <summary>
         /// Show pop up with a search input field
         /// </summary>
@@ -501,12 +509,10 @@ namespace UCL.Core.UI {
                             aRegex = null;
                             Debug.LogException(iE);
                         }
-
                     }
                 }
 
-
-                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+                //using (var aScope = new GUILayout.VerticalScope("box", iOptions))
                 {
                     for (int i = 0; i < iDisplayedOptions.Count; i++)
                     {
@@ -653,10 +659,29 @@ namespace UCL.Core.UI {
                 {
                     iDisplayName = iObj.GetType().Name;
                 }
+                Type aType = iObj.GetType();
                 if (iObj is string)
                 {
                     aIsShowField = false;
                     aResultObj = GUILayout.TextField((string)iObj);
+                }
+                else if (aType.IsEnum)
+                {
+                    string aTypeName = aType.Name;
+
+                    GUILayout.BeginHorizontal();
+                    string aKey = "EnumOpen";
+                    bool flag = iDataDic.GetData(aKey, false);
+                    aResultObj = UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)iObj, ref flag, (iEnum) => {
+                        string aLocalizeKey = aTypeName + "_" + iEnum;
+                        if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
+                        {
+                            iEnum = LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey);
+                        }
+                        return iEnum;
+                    });
+                    iDataDic.SetData(aKey, flag);
+                    GUILayout.EndHorizontal();
                 }
                 else if (iObj.IsNumber())
                 {

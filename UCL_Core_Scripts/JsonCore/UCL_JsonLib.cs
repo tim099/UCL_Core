@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace UCL.Core.JsonLib {
@@ -59,7 +60,7 @@ namespace UCL.Core.JsonLib {
             string aClassName = iData.GetString("ClassName");
             Type aClassType = Type.GetType(aClassName);
             JsonData aClassData = iData.GetString("ClassData");
-            object aObj = Activator.CreateInstance(aClassType);
+            object aObj = aClassType.CreateInstance();//Activator.CreateInstance();
             LoadDataFromJson(aObj, aClassData, iSaveMode);
             return aObj;
             //return JsonUtility.FromJson(aClassData.ToJson(), aClassType);
@@ -180,12 +181,27 @@ namespace UCL.Core.JsonLib {
             {
                 return iData.GetDouble();
             }
+            else if (iType.IsTuple())
+            {
+                Type[] aTypeArray = iType.GetGenericArguments();
+
+                var aConstructer = iType.GetConstructor(aTypeArray);
+                if (aConstructer != null && aTypeArray.Length == iData.Count)
+                {
+                    object[] aValues = new object[aTypeArray.Length];
+                    for (int i = 0; i < aTypeArray.Length; i++)
+                    {
+                        aValues[i] = DataToObject(iData[i], aTypeArray[i], iSaveMode, iFieldNameAlterFunc);
+                    }
+                    return aConstructer.Invoke(aValues);
+                }
+            }
             else if (iType.IsStructOrClass())
             {
                 object aObj = null;
                 try
                 {
-                    aObj = Activator.CreateInstance(iType);
+                    aObj = iType.CreateInstance();
                 }
                 catch(System.Exception iE)
                 {
@@ -222,6 +238,17 @@ namespace UCL.Core.JsonLib {
             else if (iObj.IsNumber() || iObj is string)
             {
                 return new JsonData(iObj);
+            }
+            else if (aType.IsTuple())
+            {
+                var aResult = iObj.GetTupleElements();
+                JsonData aData = new JsonData();
+                aData.ToArray();
+                for (int i = 0; i < aResult.Count; i++)
+                {
+                    aData.Add(ObjectToData(aResult[i], iSaveMode, iFieldNameAlterFunc));
+                }
+                return aData;
             }
             else if (aType.IsStructOrClass())
             {
@@ -414,7 +441,7 @@ namespace UCL.Core.JsonLib {
                     {
                         try
                         {
-                            aFieldData = Activator.CreateInstance(aField.FieldType);
+                            aFieldData = aField.FieldType.CreateInstance();
                         }
                         catch (System.Exception e)
                         {
@@ -432,9 +459,9 @@ namespace UCL.Core.JsonLib {
                     }
                     else if (aField.FieldType.IsEnum)
                     {
+                        string aStr = aJsonData.GetString();
                         try
                         {
-                            string aStr = aJsonData.GetString();
                             if (aJsonData.IsString && !string.IsNullOrEmpty(aStr))
                             {
                                 Enum aEnum = Enum.Parse(aField.FieldType, aStr, true) as Enum;
@@ -446,7 +473,8 @@ namespace UCL.Core.JsonLib {
                         }
                         catch (System.Exception iE)
                         {
-                            Debug.LogError("System.Exception:" + iE);
+                            Debug.LogError("aField.FieldType:"+ aField.FieldType.Name+ ",aField.Name:" + aField.Name + ",aStr:" + aStr + "\nSystem.Exception:" + iE);
+                            Debug.LogException(iE);
                         }
                     }
                     else if (aFieldData is IList && aField.FieldType.IsGenericType)

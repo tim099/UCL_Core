@@ -141,32 +141,36 @@ namespace UCL.Core.JsonLib {
             m_Obj = str;
         }
 
-        private object ToObject(object obj) {
-            if(obj is JsonData) {
-                JsonData data = obj as JsonData;
-                switch(data.m_Type) {
+        private object ToObject(object iObj) {
+            if(iObj is JsonData) {
+                JsonData aData = iObj as JsonData;
+                switch(aData.m_Type) {
                     case JsonType.Boolean:
                     case JsonType.Double:
                     case JsonType.Int:
                     case JsonType.Long:
                     case JsonType.String:
-                        return data.m_Obj;
+                        return aData.m_Obj;
                     case JsonType.Array:
                         List<object> list = new List<object>();
-                        foreach(JsonData item in data.m_List) {
+                        foreach(JsonData item in aData.m_List) {
                             list.Add(ToObject(item));
                         }
                         return list;
                     case JsonType.Object:
-                        Dictionary<string, object> dict = new Dictionary<string, object>();
-                        foreach(KeyValuePair<string, JsonData> item in data.m_Dic) {
-                            dict[item.Key] = ToObject(item.Value);
+                        Dictionary<string, object> aDict = new Dictionary<string, object>();
+                        if (aData.m_Dic != null)
+                        {
+                            foreach (KeyValuePair<string, JsonData> aItem in aData.m_Dic)
+                            {
+                                aDict[aItem.Key] = ToObject(aItem.Value);
+                            }
                         }
-                        return dict;
+                        return aDict;
                 }
                 return null;
             } else {
-                return obj;
+                return iObj;
             }
         }
         #endregion

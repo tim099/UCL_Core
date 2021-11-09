@@ -211,7 +211,51 @@ public static partial class TypeExtensionMethods {
         if (iType == typeof(sbyte)) return (sbyte)0;
         if (iType == typeof(float)) return (float)0;
         if (iType == typeof(double)) return (double)0;
+        if (iType.IsTuple())
+        {
+            //Debug.LogError("iType:" + iType.Name + "iType.IsTuple():" + iType.IsTuple());
+            Type[] aTypeArray = iType.GetGenericArguments();
+
+            var aConstructer = iType.GetConstructor(aTypeArray);
+            if (aConstructer != null)
+            {
+                object[] aValues = new object[aTypeArray.Length];
+                for (int i = 0; i < aTypeArray.Length; i++)
+                {
+                    aValues[i] = aTypeArray[i].CreateInstance();
+                }
+                return aConstructer.Invoke(aValues);
+            }
+        }
+
         return Activator.CreateInstance(iType);
+    }
+    private static HashSet<Type> s_TupleTypes = null;
+    /// <summary>
+    /// return true if iType is tuple
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
+    public static bool IsTuple(this Type iType)
+    {
+        if (!iType.IsGenericType) return false;
+        if(s_TupleTypes == null)
+        {
+            s_TupleTypes = new HashSet<Type>(){ 
+                 //typeof(ValueTuple<>), typeof(ValueTuple<,>),
+                 //typeof(ValueTuple<,,>), typeof(ValueTuple<,,,>),
+                 //typeof(ValueTuple<,,,,>), typeof(ValueTuple<,,,,,>),
+                 //typeof(ValueTuple<,,,,,,>), typeof(ValueTuple<,,,,,,,>),
+                 typeof(Tuple<>), typeof(Tuple<,>),
+                 typeof(Tuple<,,>), typeof(Tuple<,,,>),
+                 typeof(Tuple<,,,,>), typeof(Tuple<,,,,,>),
+                 typeof(Tuple<,,,,,,>), typeof(Tuple<,,,,,,,>)
+
+            };
+        }
+        var aGenType = iType.GetGenericTypeDefinition();
+        //Debug.LogError("aGenType:" + aGenType.Name+ ",iType:"+ iType.Name);
+        return s_TupleTypes.Contains(aGenType);
     }
     /// <summary>
     /// Get Fields Include parent

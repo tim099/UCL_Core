@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -20,6 +21,28 @@ public static partial class ObjectExtensionMethods {
                 || a is float
                 || a is double
                 || a is decimal;
+    }
+    /// <summary>
+    /// return true if iObj is tuple
+    /// </summary>
+    /// <param name="iObj"></param>
+    /// <returns></returns>
+    public static bool IsTuple(this object iObj)
+    {
+        if (iObj == null) return false;
+        return iObj.GetType().IsTuple();
+    }
+    public static List<object> GetTupleElements(this object iObj)
+    {
+        var aType = iObj.GetType();
+        if (!aType.IsTuple()) return new List<object>();
+
+        var aResult = aType.GetProperties()
+          .Where(iProp => iProp.CanRead)
+          //.Where(iProp => !iProp.GetIndexParameters().Any())
+          //.Where(iProp => Regex.IsMatch(iProp.Name, "^Item[0-9]+$"))
+          .Select(iProp => iProp.GetValue(iObj)).ToList();
+        return aResult;
     }
 }
 namespace UCL.Core.ObjectOperatorExtension {

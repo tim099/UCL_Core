@@ -688,6 +688,34 @@ namespace UCL.Core.UI {
                     aIsShowField = false;
                     aResultObj = UCL_GUILayout.NumField(string.Empty, iObj);
                 }
+                else if (aType.IsTuple())
+                {
+                    aIsShowField = false;
+                    var aResult = iObj.GetTupleElements();
+                    bool aIsValueChanged = false;
+                    GUILayout.BeginVertical();
+                    for(int i = 0; i < aResult.Count; i++)
+                    {
+                        var aTupleData = aResult[i];
+                        var aResultData = DrawObjectData(aTupleData, iDataDic.GetSubDic("_" + i.ToString()), aTupleData.UCL_GetShortName(), iFieldNameFunc: iFieldNameFunc);
+                        if (aResultData != aResult[i])
+                        {
+                            aIsValueChanged = true;
+                            aResult[i] = aResultData;
+                        }
+                    }
+                    if (aIsValueChanged)
+                    {
+                        Type[] aTypeArray = aType.GetGenericArguments();
+
+                        var aConstructer = aType.GetConstructor(aTypeArray);
+                        if (aConstructer != null && aTypeArray.Length == aResult.Count)
+                        {
+                            aResultObj = aConstructer.Invoke(aResult.ToArray());
+                        }
+                    }
+                    GUILayout.EndVertical();
+                }
                 else if (iObj is IList)
                 {
                     GUILayout.BeginVertical();

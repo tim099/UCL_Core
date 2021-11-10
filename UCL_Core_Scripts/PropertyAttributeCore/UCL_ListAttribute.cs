@@ -5,7 +5,7 @@ using UCL.Core.ObjectReflectionExtension;
 using System.Collections.Generic;
 
 namespace UCL.Core.PA {
-    public class UCL_StrListAttribute : PropertyAttribute
+    public class UCL_StrListAttribute : PropertyAttribute, IStringArr
     {
         public string[] m_StrArr;
         public UCL_StrListAttribute(params string[] iList) {
@@ -65,9 +65,15 @@ namespace UCL.Core.PA {
                 }
             }
         }
+
+        public string[] GetList(object iTarget)
+        {
+            return m_StrArr;
+        }
     }
     public class UCL_ListAttribute : PropertyAttribute, IStringArr
     {
+        //Type m_Type = null;
         string m_MethodName = null;
         object[] m_Params = null;
         /// <summary>
@@ -87,7 +93,7 @@ namespace UCL.Core.PA {
         public string[] GetList(object iTarget) {
             var aResult = iTarget.Invoke(m_MethodName, m_Params);
             if (aResult is string[]) return (string[])aResult;
-            if (aResult is List<string>) return ((List<string>)aResult).ToArray();
+            else if (aResult is List<string>) return ((List<string>)aResult).ToArray();
 
             return new string[0];
         }

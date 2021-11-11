@@ -874,7 +874,15 @@ namespace UCL.Core.UI {
                             var aAttrs = aField.GetCustomAttributes();
                             foreach (var aAttr in aAttrs)
                             {
-                                if (aAttr is IStringArr)
+                                if (aAttr is IShowInCondition)
+                                {
+                                    if (!((IShowInCondition)aAttr).IsShow(iObj))
+                                    {
+                                        aIsDrawed = true;
+                                        break;
+                                    }
+                                }
+                                else if (aAttr is IStringArr)
                                 {
                                     var aStrArr = aAttr as IStringArr;
                                     aIsDrawed = true;
@@ -888,12 +896,6 @@ namespace UCL.Core.UI {
                                     GUILayout.BeginHorizontal();
                                     GUILayout.Box(aTextureArr.GetTexture(iObj, aData), GUILayout.Width(64), GUILayout.Height(64));
                                     GUILayout.EndHorizontal();
-                                }else if(aAttr is IShowInCondition)
-                                {
-                                    if (!((IShowInCondition)aAttr).IsShow(iObj))
-                                    {
-                                        aIsDrawed = true;
-                                    }
                                 }else if(aAttr is ATTR.AlwaysExpendOnGUI)
                                 {
                                     aIsAlwaysShowDetail = true;

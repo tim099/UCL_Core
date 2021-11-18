@@ -58,6 +58,22 @@ namespace UCL.Core {
                 SearchChild(child, result);
             }
         }
+        public static GameObject SearchChild(Transform iParent, string iName)
+        {
+            if (iParent.name == iName)
+            {
+                return iParent.gameObject;
+            }
+
+            foreach (Transform aChild in iParent)
+            {
+                var aRes = SearchChild(aChild, iName);
+                if (aRes != null) return aRes;
+            }
+            return null;
+        }
+
+
         public static T SearchChild<T>(Transform iParent, string iName) where T : Component
         {
             if(iParent.name == iName)

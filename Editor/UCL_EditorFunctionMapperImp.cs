@@ -54,6 +54,15 @@ namespace UCL.Core.EditorLib
             AssetDatabaseMapper.InitRefresh(AssetDatabase.Refresh);
             AssetDatabaseMapper.InitContains(AssetDatabase.Contains);
             AssetDatabaseMapper.InitCreateAsset(AssetDatabase.CreateAsset);
+            AssetDatabaseMapper.InitAddObjectToAsset(AssetDatabase.AddObjectToAsset);
+            #endregion
+
+            #region PrefabUtility
+            //PrefabUtility.CreatePrefab
+            PrefabUtilityMapper.InitSaveAsPrefabAsset((iPath,iObj) => {
+                bool aSuccess = false;
+                return PrefabUtility.SaveAsPrefabAsset(iObj, iPath, out aSuccess);
+            });
             #endregion
 
             #region EditorUtility

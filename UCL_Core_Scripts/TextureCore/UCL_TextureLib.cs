@@ -19,12 +19,11 @@ namespace UCL.Core.TextureLib {
 
 #if UNITY_EDITOR
     static public class EditorLib {
-        public static void SaveTextureAsset(string _path, Texture Texture) {
-            string path = _path;
+        public static void SaveTextureAsset(string iPath, Texture Texture) {
             if(UCL.Core.EditorLib.AssetDatabaseMapper.Contains(Texture)) {
-                UCL.Core.EditorLib.EditorUtilityMapper.CopySerialized(Texture, UCL.Core.EditorLib.AssetDatabaseMapper.LoadAssetAtPath<Texture>(path));
+                UCL.Core.EditorLib.EditorUtilityMapper.CopySerialized(Texture, UCL.Core.EditorLib.AssetDatabaseMapper.LoadAssetAtPath<Texture>(iPath));
             } else {
-                UCL.Core.EditorLib.AssetDatabaseMapper.CreateAsset(Texture, path);
+                UCL.Core.EditorLib.AssetDatabaseMapper.CreateAsset(Texture, iPath);
             }
             UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
         }

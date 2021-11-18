@@ -58,15 +58,15 @@ namespace UCL.Core.FileLib
         /// Open folder explorer under assets folder
         /// 在Assets資料夾中開啟資料夾瀏覽器
         /// </summary>
-        /// <param name="folder"></param>
+        /// <param name="iFolder"></param>
         /// <returns></returns>
-        public static string OpenAssetsFolderExplorer(string folder) {
-            string asset_root = Application.dataPath.Replace("Assets", string.Empty);
-            string assets_path = asset_root + folder;
-            string path = UCL.Core.EditorLib.EditorUtilityMapper.OpenFolderPanel("Open Folder", assets_path, string.Empty);
-            if(string.IsNullOrEmpty(path)) return folder;
+        public static string OpenAssetsFolderExplorer(string iFolder) {
+            string aAssetsRoot = FileLib.Lib.AssetsRoot;
+            string aAssetsPath = aAssetsRoot + iFolder;
+            string aPath = UCL.Core.EditorLib.EditorUtilityMapper.OpenFolderPanel("Open Folder", aAssetsPath, string.Empty);
+            if(string.IsNullOrEmpty(aPath)) return iFolder;
 
-            return path.Replace(asset_root, "");
+            return aPath.Replace(aAssetsRoot, "");
         }
         /// <summary>
         /// Open folder explorer
@@ -99,7 +99,7 @@ namespace UCL.Core.FileLib
     }
 #endif
     static public class Lib{
-
+        public static string AssetsRoot => Application.dataPath.Replace("Assets", string.Empty);
         public static string GetProjectPath() {
             return Application.dataPath.Replace("Assets", string.Empty);
         }

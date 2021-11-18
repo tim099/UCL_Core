@@ -208,5 +208,27 @@ namespace UCL.Core.EditorLib
             m_CreateAsset = iCreateAsset;
         }
         #endregion
+
+        #region AddObjectToAsset
+        private static System.Action<UnityEngine.Object, string> m_AddObjectToAsset = null;
+        /// <summary>
+        /// Mapping to AssetDatabase.AddObjectToAsset Only work on Editor!!
+        /// </summary>
+        /// <param name="iAssetPath"></param>
+        /// <returns></returns>
+        static public void AddObjectToAsset([JetBrains.Annotations.NotNull] UnityEngine.Object iAsset, string iPath)
+        {
+#if UNITY_EDITOR
+            if (m_AddObjectToAsset == null) return;
+            m_AddObjectToAsset.Invoke(iAsset, iPath);
+#endif
+            return;
+        }
+        public static void InitAddObjectToAsset(System.Action<UnityEngine.Object, string> iCreateAsset)
+        {
+            m_AddObjectToAsset = iCreateAsset;
+        }
+
+        #endregion
     }
 }

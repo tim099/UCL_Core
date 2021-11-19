@@ -3,7 +3,16 @@ using System.Collections.Generic;
 
 namespace UCL.Core
 {
-    public class UCL_ObjectDictionary
+    public interface UCLI_ObjectDictionary
+    {
+        bool ContainsKey(string iKey);
+        void SetData(string iKey, object iObj);
+        void Remove(string iKey);
+        object GetData(string iKey, object iDefaultValue = null);
+        T GetData<T>(string iKey, T iDefaultValue = default);
+        //public UCLI_ObjectDictionary GetSubDic(string iKey);
+    }
+    public class UCL_ObjectDictionary : UCLI_ObjectDictionary
     {
         protected Dictionary<string, object> m_DataDic = new Dictionary<string, object>();
         /// <summary>

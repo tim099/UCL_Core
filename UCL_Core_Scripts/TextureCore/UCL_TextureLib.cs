@@ -37,9 +37,9 @@ namespace UCL.Core.TextureLib {
         /// <param name="iData"></param>
         /// <param name="iPixelsPerUnit"></param>
         /// <returns></returns>
-        public static Sprite CreateSprite(byte[] iData, float iPixelsPerUnit = 100f)
+        public static Sprite CreateSprite(byte[] iData, float iPixelsPerUnit = 100f, bool iIsInverse = false)
         {
-            Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(iData);
+            Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(iData, iIsInverse);
             return Sprite.Create(aTexture, new Rect(0.0f, 0.0f, aTexture.width, aTexture.height), new Vector2(0.5f, 0.5f), iPixelsPerUnit);
         }
         /// <summary>
@@ -47,10 +47,28 @@ namespace UCL.Core.TextureLib {
         /// </summary>
         /// <param name="iData"></param>
         /// <returns></returns>
-        public static Texture2D CreateTexture(byte[] iData)
+        public static Texture2D CreateTexture(byte[] iData, bool iIsInverse = false)
         {
             var aTex = new Texture2D(1, 1);
             aTex.LoadImage(iData); //..this will auto-resize the texture dimensions.
+            if (iIsInverse)
+            {
+                int aX = aTex.width / 2;
+                int aY = aTex.height;
+                int aW = aTex.width;
+                for (int i = 0; i < aX; i++)
+                {
+                    for (int j = 0; j < aY; j++)
+                    {
+                        var aA = aTex.GetPixel(i, j);
+                        var aB = aTex.GetPixel(aW - i - 1, j);
+                        aTex.SetPixel(i, j, aB);
+                        aTex.SetPixel(aW - i - 1, j, aA);
+                    }
+                }
+                aTex.Apply();
+            }
+
             return aTex;
         }
         /// <summary>

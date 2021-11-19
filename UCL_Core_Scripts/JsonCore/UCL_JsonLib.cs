@@ -153,7 +153,10 @@ namespace UCL.Core.JsonLib {
         /// <returns></returns>
         static object DataToObject(JsonData iData, Type iType, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
         {
-            if (iType.IsEnum)
+            if(iType == typeof(JsonData))
+            {
+                return iData;
+            } else if (iType.IsEnum)
             {
                 string aStr = iData.GetString();
                 if (!string.IsNullOrEmpty(aStr))
@@ -226,6 +229,8 @@ namespace UCL.Core.JsonLib {
         static JsonData ObjectToData(object iObj, SaveMode iSaveMode, System.Func<string, string> iFieldNameAlterFunc = null)
         {
             if (iObj == null) return null;
+            if (iObj is JsonData) return iObj as JsonData;
+
             Type aType = iObj.GetType();
             if (aType.IsEnum)
             {
@@ -456,6 +461,10 @@ namespace UCL.Core.JsonLib {
                     else if (aField.FieldType == typeof(bool))
                     {
                         aField.SetValue(iObj, aJsonData.GetString() == "True");
+                    }
+                    else if(aField.FieldType == typeof(JsonData))
+                    {
+                        aField.SetValue(iObj, aJsonData);
                     }
                     else if (aField.FieldType.IsEnum)
                     {

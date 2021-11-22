@@ -287,6 +287,18 @@ namespace UCL.Core.UI {
             if(sprite == null) return;
             DrawSprite(sprite, sprite.rect.width, sprite.rect.height);
         }
+        static public void DrawSpriteFixedSize(Sprite iSprite, float iSize = 128)
+        {
+            if (iSprite == null) return;
+            if(iSprite.rect.height < iSprite.rect.width)
+            {
+                DrawSpriteFixedHeight(iSprite, iSize);
+            }
+            else
+            {
+                DrawSpriteFixedWidth(iSprite, iSize);
+            }
+        }
         static public void DrawSpriteFixedWidth(Sprite sprite, float width) {
             if(sprite == null) return;
             DrawSprite(sprite, width, sprite.rect.height * (width / sprite.rect.width));

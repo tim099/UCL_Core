@@ -89,7 +89,7 @@ public static partial class TransformExtensionMethods {
     {
         if (iRect == null || iTarget == null) return;
         iRect.pivot = iTarget.pivot;
-
+        iRect.localScale = iTarget.localScale;
         iRect.sizeDelta = iTarget.sizeDelta;
         iRect.position = iTarget.position;
     }

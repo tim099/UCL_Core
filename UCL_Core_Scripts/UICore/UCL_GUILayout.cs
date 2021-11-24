@@ -25,7 +25,7 @@ namespace UCL.Core.UI {
         /// <param name="iList"></param>
         static public void ListField<T>(List<T> iList)
         {
-            if(iList == null)
+            if (iList == null)
             {
                 return;
             }
@@ -42,14 +42,14 @@ namespace UCL.Core.UI {
                 {
                     iList.Add(System.Activator.CreateInstance<T>());
                 }
-                
+
             }
             int aDeleteAt = -1;
             for (int i = 0; i < iList.Count; i++)
             {
                 GUILayout.BeginHorizontal();
                 iList[i] = (T)ObjectField(iList[i]);
-                if (GUILayout.Button("Delete",GUILayout.Width(80)))
+                if (GUILayout.Button("Delete", GUILayout.Width(80)))
                 {
                     aDeleteAt = i;
                 }
@@ -72,8 +72,8 @@ namespace UCL.Core.UI {
         /// <param name="iAddElementButtonName"></param>
         /// <param name="iDeleteButtonName"></param>
         /// <returns>return true if the list add or delete element</returns>
-        static public bool ListField<T>(List<T> iList, System.Func<T,T> iDrawElementFunc, System.Func<T> iCreateElementFunc
-            ,string iAddElementButtonName = "Add Element", string iDeleteButtonName = "Delete")
+        static public bool ListField<T>(List<T> iList, System.Func<T, T> iDrawElementFunc, System.Func<T> iCreateElementFunc
+            , string iAddElementButtonName = "Add Element", string iDeleteButtonName = "Delete")
         {
             bool iIsModified = false;
             if (iList == null)
@@ -113,7 +113,7 @@ namespace UCL.Core.UI {
         /// <returns></returns>
         static public object ObjectField(object iObj)
         {
-            if(iObj is string)
+            if (iObj is string)
             {
                 return GUILayout.TextField(iObj as string);
             }
@@ -131,14 +131,14 @@ namespace UCL.Core.UI {
         }
         static public object NumField(string iLabel, object iVal, int min_width = 80) {
             GUILayout.BeginHorizontal();
-            if(!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
+            if (!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
             string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(min_width));
             GUILayout.EndHorizontal();
-            if(string.IsNullOrEmpty(aResult)) {
+            if (string.IsNullOrEmpty(aResult)) {
                 return System.Convert.ChangeType(0, iVal.GetType());
             }
             object aResultValue;
-            if(Core.MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return aResultValue;
+            if (Core.MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return aResultValue;
             return iVal;
         }
         static public int IntField(string label, int val, int min_width = 80) {
@@ -148,7 +148,7 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
 
             int res_val = 0;
-            if(int.TryParse(result, out res_val)) return res_val;
+            if (int.TryParse(result, out res_val)) return res_val;
             return val;
         }
         static public float FloatField(string iLabel, float iVal, int iMinWidth = 80) {
@@ -217,15 +217,15 @@ namespace UCL.Core.UI {
             LabelAutoSize("X");
             string x = GUILayout.TextField(val.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
-            if(float.TryParse(x, out res_val))val.x = res_val;
+            if (float.TryParse(x, out res_val)) val.x = res_val;
 
             LabelAutoSize("Y");
             string y = GUILayout.TextField(val.y.ToString(), GUILayout.MinWidth(80));
-            if(float.TryParse(y, out res_val)) val.y = res_val;
+            if (float.TryParse(y, out res_val)) val.y = res_val;
 
             LabelAutoSize("Z");
             string z = GUILayout.TextField(val.z.ToString(), GUILayout.MinWidth(80));
-            if(float.TryParse(z, out res_val)) val.z = res_val;
+            if (float.TryParse(z, out res_val)) val.z = res_val;
             GUILayout.EndHorizontal();
             return val;
         }
@@ -236,11 +236,11 @@ namespace UCL.Core.UI {
             LabelAutoSize("X");
             string x = GUILayout.TextField(val.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
-            if(float.TryParse(x, out res_val)) val.x = res_val;
+            if (float.TryParse(x, out res_val)) val.x = res_val;
 
             LabelAutoSize("Y");
             string y = GUILayout.TextField(val.y.ToString(), GUILayout.MinWidth(80));
-            if(float.TryParse(y, out res_val)) val.y = res_val;
+            if (float.TryParse(y, out res_val)) val.y = res_val;
             GUILayout.EndHorizontal();
             return val;
         }
@@ -251,15 +251,15 @@ namespace UCL.Core.UI {
             LabelAutoSize(xstr);
             string x = GUILayout.TextField(val.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
-            if(float.TryParse(x, out res_val)) val.x = res_val;
+            if (float.TryParse(x, out res_val)) val.x = res_val;
 
             LabelAutoSize(ystr);
             string y = GUILayout.TextField(val.y.ToString(), GUILayout.MinWidth(80));
-            if(float.TryParse(y, out res_val)) val.y = res_val;
+            if (float.TryParse(y, out res_val)) val.y = res_val;
             GUILayout.EndHorizontal();
             return val;
         }
-        static public System.Tuple<string,string,string> Vector3Field(string label, string x, string y, string z) {
+        static public System.Tuple<string, string, string> Vector3Field(string label, string x, string y, string z) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(label);
             GUILayout.FlexibleSpace();
@@ -273,7 +273,7 @@ namespace UCL.Core.UI {
             z = GUILayout.TextField(z, GUILayout.MinWidth(80));
 
             GUILayout.EndHorizontal();
-            return new System.Tuple<string, string, string>(x,y,z);
+            return new System.Tuple<string, string, string>(x, y, z);
         }
         static public string TextField(string label, string val, int min_width) {
             GUILayout.BeginHorizontal();
@@ -284,13 +284,13 @@ namespace UCL.Core.UI {
         }
         #endregion
         static public void DrawSprite(Sprite sprite) {
-            if(sprite == null) return;
+            if (sprite == null) return;
             DrawSprite(sprite, sprite.rect.width, sprite.rect.height);
         }
         static public void DrawSpriteFixedSize(Sprite iSprite, float iSize = 128)
         {
             if (iSprite == null) return;
-            if(iSprite.rect.height < iSprite.rect.width)
+            if (iSprite.rect.height < iSprite.rect.width)
             {
                 DrawSpriteFixedHeight(iSprite, iSize);
             }
@@ -300,23 +300,23 @@ namespace UCL.Core.UI {
             }
         }
         static public void DrawSpriteFixedWidth(Sprite sprite, float width) {
-            if(sprite == null) return;
+            if (sprite == null) return;
             DrawSprite(sprite, width, sprite.rect.height * (width / sprite.rect.width));
         }
         static public void DrawSpriteFixedHeight(Sprite sprite, float height) {
-            if(sprite == null) return;
+            if (sprite == null) return;
             DrawSprite(sprite, sprite.rect.width * (height / sprite.rect.height), height);
         }
         static public void DrawSprite(Sprite sprite, float width, float height) {
-            if(sprite == null) return;
+            if (sprite == null) return;
             DrawSprite(sprite, width, width, height, height);
         }
         static public void DrawSprite(Sprite sprite, float min_width, float max_width, float min_height, float max_height) {
-            if(sprite == null) return;
+            if (sprite == null) return;
             Rect sprite_rect = sprite.rect;
             Rect rect = GUILayoutUtility.GetRect(min_width, max_width, min_height, max_height);
-            if(rect.width > max_width) rect.width = max_width;
-            if(rect.height > max_height) rect.height = max_height;
+            if (rect.width > max_width) rect.width = max_width;
+            if (rect.height > max_height) rect.height = max_height;
 
             var tex = sprite.texture;
             sprite_rect.xMin /= tex.width;
@@ -497,7 +497,7 @@ namespace UCL.Core.UI {
             {
                 string aSearchKey = iKey + "_Search";
                 string aInput = iDataDic.GetData(aSearchKey, string.Empty);
-                
+
                 GUILayout.BeginVertical(iOptions);
                 //GUILayout.BeginHorizontal();
 
@@ -516,7 +516,7 @@ namespace UCL.Core.UI {
                         try
                         {
                             aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
-                        }catch(System.Exception iE)
+                        } catch (System.Exception iE)
                         {
                             aRegex = null;
                             Debug.LogException(iE);
@@ -576,16 +576,16 @@ namespace UCL.Core.UI {
                 return 0;
             }
             if (iSelectedIndex < 0) iSelectedIndex = 0;
-            if(iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
+            if (iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
             string aCur = iDisplayedOptions[iSelectedIndex];
-            if(iOpened) {
+            if (iOpened) {
                 GUILayout.BeginVertical(iOptions);
-                if(GUILayout.Button(aCur, iOptions)) {
+                if (GUILayout.Button(aCur, iOptions)) {
                     iOpened = false;
                 }
-                using(var aScope = new GUILayout.VerticalScope("box", iOptions)) {
-                    for(int i = 0; i < iDisplayedOptions.Count; i++) {
-                        if(GUILayout.Button(iDisplayedOptions[i], iOptions)) {
+                using (var aScope = new GUILayout.VerticalScope("box", iOptions)) {
+                    for (int i = 0; i < iDisplayedOptions.Count; i++) {
+                        if (GUILayout.Button(iDisplayedOptions[i], iOptions)) {
                             iOpened = false;
                             return i;
                         }
@@ -593,7 +593,7 @@ namespace UCL.Core.UI {
                 }
                 GUILayout.EndVertical();
             } else {
-                if(GUILayout.Button(aCur, iOptions)) {
+                if (GUILayout.Button(aCur, iOptions)) {
                     iOpened = true;
                 }
             }
@@ -613,6 +613,22 @@ namespace UCL.Core.UI {
             aID = Popup(aID, aNames, ref iIsOpened);
             return (T)System.Enum.Parse(aType, aNames[aID], true);
         }
+        /// <summary>
+        /// Show enum popup
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iEnum"></param>
+        /// <param name="iIsOpened"></param>
+        /// <returns></returns>
+        public static T Popup<T>(T iEnum, System.Func<string, string> iGetDisplayName, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions) where T : System.Enum
+        {
+            bool aIsOpened = iDataDic.GetData("PopupIsOpened", false);
+            T aRes = Popup(iEnum, ref aIsOpened, iGetDisplayName, iOptions);
+            iDataDic.SetData("PopupIsOpened", aIsOpened);
+
+            return aRes;
+        }
+
         /// <summary>
         /// Show enum popup
         /// </summary>

@@ -129,10 +129,10 @@ namespace UCL.Core.UI {
             }
             return iObj;
         }
-        static public object NumField(string iLabel, object iVal, int min_width = 80) {
+        static public object NumField(string iLabel, object iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();
             if (!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
-            string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(min_width));
+            string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(iMinWidth));
             GUILayout.EndHorizontal();
             if (string.IsNullOrEmpty(aResult)) {
                 return System.Convert.ChangeType(0, iVal.GetType());
@@ -141,15 +141,28 @@ namespace UCL.Core.UI {
             if (Core.MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return aResultValue;
             return iVal;
         }
-        static public int IntField(string label, int val, int min_width = 80) {
+        static public int IntField(string iLabel, int iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(label);
-            string result = GUILayout.TextField(val.ToString(), GUILayout.MinWidth(min_width));
+            LabelAutoSize(iLabel);
+            string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(iMinWidth));
             GUILayout.EndHorizontal();
 
-            int res_val = 0;
-            if (int.TryParse(result, out res_val)) return res_val;
-            return val;
+            int aResVal = 0;
+            if (int.TryParse(aResult, out aResVal)) return aResVal;
+            return iVal;
+        }
+        static public int IntField(string iLabel, int iVal, UCL.Core.UCL_ObjectDictionary iDataDic, int iMinWidth = 80)
+        {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(iLabel);
+
+            string aResult = GUILayout.TextField(iDataDic.GetData("IntFieldValue", iVal.ToString()), GUILayout.MinWidth(iMinWidth));
+            iDataDic.SetData("IntFieldValue", aResult);
+            GUILayout.EndHorizontal();
+
+            int aResVal = 0;
+            if (int.TryParse(aResult, out aResVal)) return aResVal;
+            return iVal;
         }
         static public float FloatField(string iLabel, float iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();

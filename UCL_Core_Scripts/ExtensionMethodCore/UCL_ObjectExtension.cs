@@ -431,23 +431,23 @@ public static partial class ObjectExtensionMethods
                 return (string)iObj;
             }
 
-            string space_str = string.Empty;
+            string aSpaceStr = string.Empty;
             StringBuilder aBuilder = new StringBuilder();
             if(iSpace > 0) {
                 aBuilder.Append("\n");
-                space_str = new string('\t', iSpace);
+                aSpaceStr = new string('\t', iSpace);
             }
             IEnumerable aEnum = iObj as IEnumerable;
             if(aEnum != null) {
                 if(iObj is UCL.Core.JsonLib.JsonData)
                 {
-                    aBuilder.Append(space_str + "(JsonData):");
+                    aBuilder.Append(aSpaceStr + "(JsonData):");
                     aBuilder.Append(((UCL.Core.JsonLib.JsonData)iObj).ToJsonBeautify());
                     return aBuilder.ToString();
                 }
                 var iDic = iObj as IDictionary;
                 if(iDic != null) {
-                    aBuilder.Append(space_str + "(" + type.Name + ")" + " : [");
+                    aBuilder.Append(aSpaceStr + "(" + type.Name + ")" + " : [");
                     string arrStr = string.Empty;
                     foreach(var key in iDic.Keys) {
                         aBuilder.Append("(" + key.UCL_ToString(iSpace + 1) + " , " + iDic[key].UCL_ToString(iSpace + 1) + "), ");
@@ -456,12 +456,18 @@ public static partial class ObjectExtensionMethods
                     aBuilder.RemoveLast();
                     aBuilder.Append("]");
                 } else {
-                    aBuilder.Append(space_str + "(" + type.Name + ")" + " : [");
+                    aBuilder.Append(aSpaceStr + "(" + type.Name + ")" + " : [");
                     string arrStr = string.Empty;
+                    bool aFlag = false;
                     foreach(var val in aEnum) {
-                        aBuilder.Append(val.UCL_ToString(iSpace + 1) + ",");
+                        aFlag = true;
+                        aBuilder.Append(val.UCL_ToString(iSpace + 1) + ", ");
                     }
-                    aBuilder.RemoveLast();
+                    if (aFlag)
+                    {
+                        aBuilder.RemoveLast();
+                        aBuilder.RemoveLast();
+                    }
                     aBuilder.Append("]");
                 }
                 return aBuilder.ToString();
@@ -470,12 +476,12 @@ public static partial class ObjectExtensionMethods
             FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             if(fields.Length > 0) {
                 if(iSpace == 0) {
-                    aBuilder.AppendLine(space_str + type.Name);//",fields.Length:" + fields.Length+
+                    aBuilder.AppendLine(aSpaceStr + type.Name);//",fields.Length:" + fields.Length+
                 }
                 foreach(var field in fields) {
                     var value = field.GetValue(iObj);
                     Type f_type = field.FieldType;
-                    aBuilder.AppendLine(space_str + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(iSpace + 1));
+                    aBuilder.AppendLine(aSpaceStr + "(" + f_type.Name + ")" + field.Name + " : " + value.UCL_ToString(iSpace + 1));
                 }
             } else {
                 return iObj.ToString();

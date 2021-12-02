@@ -112,6 +112,28 @@ namespace UCL.Core.TextureLib {
                     }
             }
         }
+        public static Texture2D ToGrayScale(this Texture2D iTexture2D)
+        {
+            Texture2D aGrayScaleTexture = new Texture2D(iTexture2D.width, iTexture2D.height);
+            for (int y = 0; y < iTexture2D.height; y++)
+            {
+                for (int x = 0; x < iTexture2D.width; x++)
+                {
+                    Color aCol = iTexture2D.GetPixel(x, y);
+
+                    float aR = aCol.r;
+                    float aG = aCol.g;
+                    float aB = aCol.b;
+
+                    float aGrayCol = (aCol.r * 0.299f) + (aCol.g * 0.587f) + (aCol.b * 0.114f);
+
+                    aGrayScaleTexture.SetPixel(x, y, new Color(aGrayCol, aGrayCol, aGrayCol, aCol.a));
+                }
+            }
+            aGrayScaleTexture.Apply();
+
+            return aGrayScaleTexture;
+        }
         public static void SavePNG(string iPath, Texture2D texture) {
             Core.FileLib.Lib.CreateDirectory(Core.FileLib.Lib.GetFolderPath(iPath));
             if (iPath.Contains(".PNG"))

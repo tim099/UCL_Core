@@ -777,7 +777,7 @@ namespace UCL.Core.UI {
                         iDataDic.SetData(aCountKey, aNewCount);
                         if (aNewCount != aList.Count)
                         {
-                            if (GUILayout.Button("Set Count"))
+                            if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("SetCount")))
                             {
                                 if (aNewCount < 0) aNewCount = 0;
                                 while (aNewCount < aList.Count)
@@ -1003,7 +1003,7 @@ namespace UCL.Core.UI {
                                     iDataDic.SetData(aCountKey, aNewCount);
                                     if (aNewCount != aList.Count)
                                     {
-                                        if (GUILayout.Button("Set Count"))
+                                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("SetCount")))
                                         {
                                             if (aNewCount < 0) aNewCount = 0;
                                             while (aNewCount < aList.Count)

@@ -156,7 +156,17 @@ namespace UCL.Core.JsonLib {
             if(iType == typeof(JsonData))
             {
                 return iData;
-            } else if (iType.IsEnum)
+            }
+            else if (typeof(UnityJsonSerializableObject).IsAssignableFrom(iType))
+            {
+                string aClassName = iData.GetString("ClassName");
+                Type aClassType = Type.GetType(aClassName);
+                JsonData aClassData = iData.GetString("ClassData");
+                UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;
+                aObj.DeserializeFromJson(iData);
+                return aObj;
+            }
+            else if (iType.IsEnum)
             {
                 string aStr = iData.GetString();
                 if (!string.IsNullOrEmpty(aStr))
@@ -462,6 +472,15 @@ namespace UCL.Core.JsonLib {
                     {
                         aField.SetValue(iObj, aJsonData.GetString() == "True");
                     }
+                    else if (aField.FieldType.IsAssignableFrom(typeof(UnityJsonSerializableObject)))
+                    {
+                        string aClassName = iData.GetString("ClassName");
+                        Type aClassType = Type.GetType(aClassName);
+                        JsonData aClassData = iData.GetString("ClassData");
+                        UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;//Activator.CreateInstance();
+                        aObj.DeserializeFromJson(aClassData);
+                        aField.SetValue(iObj, aObj);
+                    }
                     else if(aField.FieldType == typeof(JsonData))
                     {
                         aField.SetValue(iObj, aJsonData);
@@ -493,7 +512,10 @@ namespace UCL.Core.JsonLib {
                         for (int i = 0; i < aJsonData.Count; i++)
                         {
                             var aObj = DataToObject(aJsonData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
-                            if (aObj != null) aList.Add(aObj);
+                            if (aObj != null)
+                            {
+                                aList.Add(aObj);
+                            }
                         }
                         aField.SetValue(iObj, aList);
                     }

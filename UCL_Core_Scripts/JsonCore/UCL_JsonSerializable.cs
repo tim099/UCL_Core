@@ -8,7 +8,23 @@
         JsonData SerializeToJson();
         void DeserializeFromJson(JsonData iJson);
     }
-
+    public class UnityJsonSerializableObject : IJsonSerializable
+    {
+        virtual public JsonData SerializeToJson()
+        {
+            var aData = new JsonData();
+            aData["ClassName"] = this.GetType().AssemblyQualifiedName;
+            aData["ClassData"] = JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, (iName) => iName.Replace("m_", string.Empty));
+            return aData;
+        }
+        virtual public void DeserializeFromJson(JsonData iJson)
+        {
+            if (iJson.Contains("ClassData"))
+            {
+                JsonConvert.LoadDataFromJson(this, iJson["ClassData"], JsonConvert.SaveMode.Unity, (iFName) => iFName.Replace("m_", string.Empty));
+            }
+        }
+    }
     public class UnityJsonSerializable : IJsonSerializable
     {
         virtual public JsonData SerializeToJson()

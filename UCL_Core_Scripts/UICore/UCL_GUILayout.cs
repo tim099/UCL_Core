@@ -15,7 +15,14 @@ namespace UCL.Core.UI {
         /// <returns></returns>
         bool OnGUI(string iFieldName, UCL_ObjectDictionary iEditTmpDatas);
     }
+    /// <summary>
+    /// return all types inherit base class
+    /// </summary>
+    public interface ITypeList
+    {
+        IList<Type> GetAllTypes();
 
+    }
     static public class UCL_GUILayout {
         #region property field
         /// <summary>
@@ -414,7 +421,7 @@ namespace UCL.Core.UI {
             string aShowKey = iKey + "_Show";
             bool aIsShow = iDataDic.GetData(aShowKey, false);
 
-            iIndex = Popup(iIndex, iDisplayedOptions, ref aIsShow);
+            iIndex = Popup(iIndex, iDisplayedOptions, ref aIsShow, iOptions);
             iDataDic.SetData(aShowKey, aIsShow);
             return iIndex;
         }
@@ -593,8 +600,12 @@ namespace UCL.Core.UI {
             string aCur = iDisplayedOptions[iSelectedIndex];
             if (iOpened) {
                 GUILayout.BeginVertical(iOptions);
-                if (GUILayout.Button(aCur, iOptions)) {
-                    iOpened = false;
+                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+                {
+                    if (GUILayout.Button(aCur, iOptions))
+                    {
+                        iOpened = false;
+                    }
                 }
                 using (var aScope = new GUILayout.VerticalScope("box", iOptions)) {
                     for (int i = 0; i < iDisplayedOptions.Count; i++) {
@@ -606,9 +617,15 @@ namespace UCL.Core.UI {
                 }
                 GUILayout.EndVertical();
             } else {
-                if (GUILayout.Button(aCur, iOptions)) {
-                    iOpened = true;
+                GUILayout.BeginVertical(iOptions);
+                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+                {
+                    if (GUILayout.Button(aCur, iOptions))
+                    {
+                        iOpened = true;
+                    }
                 }
+                GUILayout.EndVertical();
             }
             return iSelectedIndex;
         }
@@ -679,6 +696,7 @@ namespace UCL.Core.UI {
         #endregion
 
         #region DrawField
+
         /// <summary>
         /// Draw a object inspector using GUILayout
         /// </summary>
@@ -1026,12 +1044,56 @@ namespace UCL.Core.UI {
                                     }
                                     else
                                     {
+                                        string aITypeListKey = aField.Name + "ITypeList";
+                                        List<string> aTypeNameList = null;
+                                        if (iDataDic.ContainsKey(aITypeListKey))
+                                        {
+                                            aTypeNameList = iDataDic.GetData<List<string>>(aITypeListKey);
+                                        }
+                                        else
+                                        {
+                                            var aGenericType = aField.FieldType.GetGenericValueType();
+
+                                            if (typeof(ITypeList).IsAssignableFrom(aGenericType))
+                                            {
+                                                var aTypeList = aGenericType.CreateInstance() as ITypeList;
+                                                if (aTypeList != null)
+                                                {
+                                                    var aAllTypeList = aTypeList.GetAllTypes();
+                                                    aTypeNameList = new List<string>();
+                                                    for(int i = 0; i < aAllTypeList.Count; i++)
+                                                    {
+                                                        aTypeNameList.Add(LocalizeLib.UCL_LocalizeManager.Get(aAllTypeList[i].Name));
+                                                    }
+                                                    iDataDic.Add(aITypeListKey, aTypeNameList);
+                                                    iDataDic.Add(aITypeListKey + "Type", aAllTypeList);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                iDataDic.Add(aITypeListKey, null);
+                                            }
+                                        }
+                                        int aSelectedType = -1;
+                                        if (aTypeNameList != null)
+                                        {
+                                            aSelectedType = PopupAuto(aTypeNameList, iDataDic, aField.Name, 10, GUILayout.Width(160));
+                                        }
+                                        //ITypeList
                                         if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                         {
                                             try
                                             {
                                                 var aGenericType = aField.FieldType.GetGenericValueType();
-                                                aList.Add(aGenericType.CreateInstance());
+                                                if (aSelectedType >= 0)
+                                                {
+                                                    var aTypes = iDataDic.GetData<IList<Type>>(aITypeListKey + "Type");
+                                                    aList.Add(aTypes[aSelectedType].CreateInstance());
+                                                }
+                                                else
+                                                {
+                                                    aList.Add(aGenericType.CreateInstance());
+                                                }
                                             }
                                             catch (System.Exception iE)
                                             {

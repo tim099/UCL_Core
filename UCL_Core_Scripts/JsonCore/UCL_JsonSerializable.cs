@@ -8,6 +8,10 @@
         JsonData SerializeToJson();
         void DeserializeFromJson(JsonData iJson);
     }
+    /// <summary>
+    /// Object inherit from this class will save ClassName in JsonData
+    /// and if the object is inside a list, the object can be restore to it's original class instead of generic class of the list
+    /// </summary>
     public class UnityJsonSerializableObject : IJsonSerializable
     {
         virtual public JsonData SerializeToJson()

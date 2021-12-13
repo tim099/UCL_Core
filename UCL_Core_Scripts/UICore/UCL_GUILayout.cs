@@ -1182,6 +1182,7 @@ namespace UCL.Core.UI {
                                             }
                                             GUILayout.BeginVertical();
                                             string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
+                                            GUILayout.Label(aKeyName);
                                             aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey], iDataDic.GetSubDic(aDisplayName + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
                                             GUILayout.EndVertical();
                                             GUILayout.EndHorizontal();

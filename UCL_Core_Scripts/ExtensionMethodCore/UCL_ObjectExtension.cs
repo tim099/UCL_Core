@@ -501,6 +501,14 @@ public static partial class ObjectExtensionMethods
         {
             return (iObj as UCL.Core.IUCL_ShortName).GetShortName();
         }
+        if(iObj is Enum)
+        {
+            string aLocalizeKey = iObj.GetType().Name + "_" + iObj.ToString();
+            if (UCL.Core.LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
+            {
+                return UCL.Core.LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey);
+            }
+        }
         return iDefault;
     }
 }

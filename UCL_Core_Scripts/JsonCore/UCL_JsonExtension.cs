@@ -20,6 +20,10 @@ namespace UCL.Core.JsonLib
             {
                 return ((string)iObj).Replace("\"", "\\\"");
             }
+            if (iObj is Enum)
+            {
+                return iObj.ToString();
+            }
             Type aType = iObj.GetType();
             if (aType.IsNumber())
             {
@@ -40,6 +44,10 @@ namespace UCL.Core.JsonLib
             if (iType.IsString())
             {
                 return iJsonSafeString.Replace("\\\"", "\"");
+            }
+            if (iType.IsEnum)
+            {
+                return Enum.Parse(iType, iJsonSafeString);
             }
             if (iType.IsNumber())
             {

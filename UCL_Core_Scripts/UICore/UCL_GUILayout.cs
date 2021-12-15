@@ -865,6 +865,74 @@ namespace UCL.Core.UI {
                     }
                     GUILayout.EndVertical();
                 }
+                else if (iObj is IDictionary)
+                {
+                    GUILayout.BeginHorizontal();
+                    aIsShowField = false;
+                    string aShowKey = "Show";
+                    bool aIsShow = iDataDic.GetData(aShowKey, false);
+                    iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShow));
+                    UCL_GUILayout.LabelAutoSize(iDisplayName);
+                    GUILayout.EndHorizontal();
+                    if (aIsShow)
+                    {
+                        IDictionary aDic = iObj as IDictionary;
+                        GUILayout.BeginHorizontal();
+                        UCL_GUILayout.LabelAutoSize("Count : " + aDic.Count);
+                        var aKeyType = aType.GetGenericKeyType();
+                        string aAddKey = "AddData";
+                        if (!iDataDic.ContainsKey(aAddKey))
+                        {
+                            iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
+                        }
+                        iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyType.Name, iFieldNameFunc: iFieldNameFunc));
+                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                        {
+                            try
+                            {
+                                var aNewKey = iDataDic.GetData(aAddKey);
+                                if (!aDic.Contains(aNewKey))
+                                {
+                                    iDataDic.Remove(aAddKey);
+                                    var aGenericType = aType.GetGenericValueType();
+                                    aDic.Add(aNewKey, aGenericType.CreateInstance());
+                                }
+                            }
+                            catch (System.Exception iE)
+                            {
+                                Debug.LogException(iE);
+                            }
+                        }
+                        GUILayout.EndHorizontal();
+                        object aDeleteAt = null;
+                        List<Tuple<object, object>> aResultList = new List<Tuple<object, object>>();
+                        foreach (var aKey in aDic.Keys)
+                        {
+                            using (var aScope2 = new GUILayout.VerticalScope("box"))
+                            {
+                                GUILayout.BeginHorizontal();
+                                if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                {
+                                    aDeleteAt = aKey;
+                                }
+                                GUILayout.BeginVertical();
+                                string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
+                                GUILayout.Label(aKeyName);
+                                aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey], iDataDic.GetSubDic(iDisplayName + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
+                                GUILayout.EndVertical();
+                                GUILayout.EndHorizontal();
+                            }
+                        }
+                        for (int i = 0; i < aResultList.Count; i++)
+                        {
+                            aDic[aResultList[i].Item1] = aResultList[i].Item2;
+                        }
+                        if (aDeleteAt != null)
+                        {
+                            aDic.Remove(aDeleteAt);
+                        }
+                    }
+                }
                 else if (iObj.GetType().IsStructOrClass())
                 {
                     aIsDefaultType = false;

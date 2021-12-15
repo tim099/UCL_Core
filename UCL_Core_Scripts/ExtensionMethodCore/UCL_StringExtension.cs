@@ -1,10 +1,20 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System;
 using System.Text;
 using UnityEngine;
 
 public static partial class StringExtensionMethods {
     public const string LineSeparator = "\r\n|\r|\n";
+    public static string[] LineSeparatorArr {
+        get
+        {
+            if(s_LineSeparatorArr == null)
+            {
+                s_LineSeparatorArr = new string[] { "\r\n", "\r", "\n", @"\n" };
+            }
+            return s_LineSeparatorArr;
+        }       
+    }
+    public static string[] s_LineSeparatorArr = null;
     #region String
     /// <summary>
     /// Append RichText Color to the string
@@ -31,8 +41,36 @@ public static partial class StringExtensionMethods {
         if(len == 0) return string.Empty;
         return str.Remove(len - 1);
     }
-    public static string[] SplitByLine(this string str) {
-        return System.Text.RegularExpressions.Regex.Split(str, LineSeparator);
+    public static string[] SplitByLine(this string iStr) {
+        return System.Text.RegularExpressions.Regex.Split(iStr, LineSeparator);
+    }
+    public static string ConvertLineSeparator(this string iStr, string[] iLineSeparatorArr = null)
+    {
+        if (string.IsNullOrEmpty(iStr)) return iStr;
+        if(iLineSeparatorArr == null)
+        {
+            iLineSeparatorArr = LineSeparatorArr;
+        }
+        
+        var aLines = iStr.Split(iLineSeparatorArr, StringSplitOptions.None);
+        if (aLines.Length == 0)
+        {
+            return string.Empty;
+        }
+        else if (aLines.Length == 1)
+        {
+            return aLines[0];
+        }
+        else
+        {
+            StringBuilder aSB = new StringBuilder();
+            for(int i = 0; i < aLines.Length - 1; i++)
+            {
+                aSB.AppendLine(aLines[i]);
+            }
+            aSB.Append(aLines[aLines.Length - 1]);
+            return aSB.ToString();
+        }
     }
     #endregion
 

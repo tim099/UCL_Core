@@ -57,5 +57,119 @@ public static partial class TextureExtensionMethods {
         new_texture.SetPixels(cols);
         return new_texture;
     }
+    /// <summary>
+    /// Set the whole texture to iColor
+    /// </summary>
+    /// <param name="iTexture"></param>
+    /// <param name="iColor">Target color</param>
+    public static void SetColor(this Texture2D iTexture, Color iColor)
+    {
+        var aColorArray = iTexture.GetPixels();
+        for(int i = 0, aLen = aColorArray.Length; i < aLen; i++)
+        {
+            aColorArray[i] = iColor;
+        }
+        iTexture.SetPixels(aColorArray);
+        iTexture.Apply();
+    }
+    public static void DrawLine(this Texture2D iTexture, Vector2Int iStartPos, Vector2Int iEndPos, Color iLineColor)
+    {
+        if(iStartPos == iEndPos)
+        {
+            return;
+        }
+        //Debug.LogError("iStartPos:" + iStartPos + ",iEndPos:" + iEndPos);
+        if (iStartPos.x < 0) iStartPos.x = 0;
+        if (iStartPos.x >= iTexture.width) iStartPos.x = iTexture.width - 1;
+        if (iStartPos.y < 0) iStartPos.y = 0;
+        if (iStartPos.y >= iTexture.height) iStartPos.y = iTexture.height - 1;
+
+        if (iEndPos.x < 0) iEndPos.x = 0;
+        if (iEndPos.x >= iTexture.width) iEndPos.x = iTexture.width - 1;
+        if (iEndPos.y < 0) iEndPos.y = 0;
+        if (iEndPos.y >= iTexture.height) iEndPos.y = iTexture.height - 1;
+        var aDel = iEndPos - iStartPos;
+        int aX = iStartPos.x;
+        int aY = iStartPos.y;
+        int aWidth = Mathf.Abs(aDel.x);
+        int aHeight = Mathf.Abs(aDel.y);
+        if (aDel.x == 0)
+        {
+            if(aDel.y > 0)
+            {
+                for (int i = 0; i < aHeight; i++)
+                {
+                    iTexture.SetPixel(aX, aY + i, iLineColor);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < aHeight; i++)
+                {
+                    iTexture.SetPixel(aX, aY - i, iLineColor);
+                }
+            }
+
+        }
+        else if(aDel.y == 0)
+        {
+            if(aDel.x > 0)
+            {
+                for (int i = 0; i < aWidth; i++)
+                {
+                    iTexture.SetPixel(aX + i, aY, iLineColor);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < aWidth; i++)
+                {
+                    iTexture.SetPixel(aX - i, aY, iLineColor);
+                }
+            }
+        }
+        else
+        {
+
+            int aDirX = aDel.x > 0 ? 1 : -1;
+            int aDirY = aDel.y > 0 ? 1 : -1;
+            if (aWidth >= aHeight)
+            {
+                int aPrevY = aY;
+                float aSeg = 1.0f / aWidth;
+                for (int i = 0; i < aWidth; i++)
+                {
+                    int aCurY = aY + Mathf.RoundToInt(i * aSeg * aDel.y);
+                    int aCurX = aX + i * aDirX;
+
+                    int aSY = Mathf.Min(aCurY, aPrevY);
+                    int aEY = Mathf.Max(aCurY, aPrevY);
+                    for (int j = aSY; j <= aEY; j++)
+                    {
+                        iTexture.SetPixel(aCurX, j, iLineColor);
+                    }
+                    aPrevY = aCurY;
+                }
+            }
+            else
+            {
+                int aPrevX = aX;
+                float aSeg = 1.0f / aHeight;
+                for (int i = 0; i < aHeight; i++)
+                {
+                    int aCurY = aY + i * aDirY;
+                    int aCurX = aX + Mathf.RoundToInt(i * aSeg * aDel.x);
+                    int aSX = Mathf.Min(aCurX, aPrevX);
+                    int aEX = Mathf.Max(aCurX, aPrevX);
+                    for (int j = aSX; j <= aEX; j++)
+                    {
+                        iTexture.SetPixel(j, aCurY, iLineColor);
+                    }
+                    aPrevX = aCurX;
+                }
+            }
+        }
+        iTexture.Apply();
+    }
     #endregion
 }

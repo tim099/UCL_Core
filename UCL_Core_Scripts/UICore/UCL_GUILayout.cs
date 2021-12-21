@@ -303,49 +303,130 @@ namespace UCL.Core.UI {
             return result;
         }
         #endregion
-        static public void DrawSprite(Sprite sprite) {
-            if (sprite == null) return;
-            DrawSprite(sprite, sprite.rect.width, sprite.rect.height);
+        static public Rect DrawSprite(Sprite iSprite) {
+            if (iSprite == null) return default;
+            return DrawSprite(iSprite, iSprite.rect.width, iSprite.rect.height);
         }
-        static public void DrawSpriteFixedSize(Sprite iSprite, float iSize = 128)
+        static public Rect DrawSpriteFixedSize(Sprite iSprite, float iSize = 128)
         {
-            if (iSprite == null) return;
+            if (iSprite == null) return default;
             if (iSprite.rect.height < iSprite.rect.width)
             {
-                DrawSpriteFixedHeight(iSprite, iSize);
+                return DrawSpriteFixedHeight(iSprite, iSize);
             }
             else
             {
-                DrawSpriteFixedWidth(iSprite, iSize);
+                return DrawSpriteFixedWidth(iSprite, iSize);
             }
         }
-        static public void DrawSpriteFixedWidth(Sprite sprite, float width) {
-            if (sprite == null) return;
-            DrawSprite(sprite, width, sprite.rect.height * (width / sprite.rect.width));
+        static public Rect DrawSpriteFixedWidth(Sprite sprite, float width) {
+            if (sprite == null) return default;
+            return DrawSprite(sprite, width, sprite.rect.height * (width / sprite.rect.width));
         }
-        static public void DrawSpriteFixedHeight(Sprite sprite, float height) {
-            if (sprite == null) return;
-            DrawSprite(sprite, sprite.rect.width * (height / sprite.rect.height), height);
+        static public Rect DrawSpriteFixedHeight(Sprite sprite, float height) {
+            if (sprite == null) return default;
+            return DrawSprite(sprite, sprite.rect.width * (height / sprite.rect.height), height);
         }
-        static public void DrawSprite(Sprite sprite, float width, float height) {
-            if (sprite == null) return;
-            DrawSprite(sprite, width, width, height, height);
+        static public Rect DrawSprite(Sprite sprite, float width, float height) {
+            if (sprite == null) return default;
+            return DrawSprite(sprite, width, width, height, height);
         }
-        static public void DrawSprite(Sprite sprite, float min_width, float max_width, float min_height, float max_height) {
-            if (sprite == null) return;
-            Rect sprite_rect = sprite.rect;
-            Rect rect = GUILayoutUtility.GetRect(min_width, max_width, min_height, max_height);
-            if (rect.width > max_width) rect.width = max_width;
-            if (rect.height > max_height) rect.height = max_height;
+        static public Rect DrawSprite(Sprite iSprite, float iMinWidth, float iMaxWidth, float iMinHeight, float iMaxHeight) {
+            if (iSprite == null) return default;
+            Rect aSpriteRect = iSprite.rect;
+            Rect aRect = GUILayoutUtility.GetRect(iMinWidth, iMaxWidth, iMinHeight, iMaxHeight);
+            if (aRect.width > iMaxWidth) aRect.width = iMaxWidth;
+            if (aRect.height > iMaxHeight) aRect.height = iMaxHeight;
 
-            var tex = sprite.texture;
-            sprite_rect.xMin /= tex.width;
-            sprite_rect.xMax /= tex.width;
-            sprite_rect.yMin /= tex.height;
-            sprite_rect.yMax /= tex.height;
-            GUI.DrawTextureWithTexCoords(rect, tex, sprite_rect);
+            var aTex = iSprite.texture;
+            aSpriteRect.xMin /= aTex.width;
+            aSpriteRect.xMax /= aTex.width;
+            aSpriteRect.yMin /= aTex.height;
+            aSpriteRect.yMax /= aTex.height;
+            GUI.DrawTextureWithTexCoords(aRect, aTex, aSpriteRect);
+            return aRect;
         }
+        static public Rect DrawableTexture(Texture2D iTexture, UCL_ObjectDictionary iDataDic, float iWidth, float iHeight, Color iDrawCol)
+        {
+            var aRect = DrawTexture(iTexture, iWidth, iHeight);
+            var aCurrentEvent = Event.current;
 
+            var aMousePos = aCurrentEvent.mousePosition;
+            Vector2Int aPrevPos = iDataDic.GetData("PrevPos", Vector2Int.left);//Position in PrevFrame
+            Vector2Int aCurPos = aRect.GetPosIntInRect(aMousePos);
+            Vector2 aPrevMousePos = iDataDic.GetData("PrevMousePos", Vector2.negativeInfinity);
+            
+            if (aRect.Contains(aMousePos))
+            {
+                if (aCurrentEvent.type == EventType.MouseDown)
+                {
+                    aCurPos = aRect.GetPosIntInRect(aMousePos);
+                    iTexture.SetPixel(aCurPos.x, aCurPos.y, iDrawCol);
+                    iTexture.Apply();
+                    aPrevPos = aCurPos;
+                }
+                else if (aCurrentEvent.type == EventType.MouseDrag)
+                {
+                    if (aRect.Contains(aPrevMousePos))
+                    {
+                        iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
+                        aPrevPos = aCurPos;
+                    }
+                    else if(aPrevMousePos != Vector2.negativeInfinity)
+                    {
+                        var aPos = aRect.GetPosIntOnBorder(aMousePos, aPrevMousePos);
+                        iTexture.DrawLine(aPos, aCurPos, iDrawCol);
+                        aPrevPos = aCurPos;
+                    }
+                }
+                iDataDic.SetData("PrevPos", aPrevPos);
+                iDataDic.SetData("PrevMousePos", aMousePos);
+                iDataDic.SetData("OutTimer", 0);
+            }
+            else//out of range
+            {
+                int aOutTimer = iDataDic.GetData("OutTimer", 0);//the time ouside of border
+                iDataDic.SetData("OutTimer", aOutTimer++);
+                //if (aCurrentEvent.type == EventType.MouseDown)
+                //{
+                //    aCurPos = aRect.GetPosIntInRect(aMousePos);
+                //    aPrevPos = aCurPos;
+                //}
+                //else 
+                if (aCurrentEvent.type == EventType.MouseDrag)
+                {
+                    if (aRect.Contains(aPrevMousePos))//Prev pos in Rect
+                    {
+                        var aPos = aRect.GetPosIntOnBorder(aPrevMousePos, aMousePos);
+                        iTexture.DrawLine(aPrevPos, aPos, iDrawCol);
+                        iDataDic.SetData("PrevMousePos", aMousePos);
+                    }
+                    aPrevPos = aCurPos;
+                }
+                iDataDic.SetData("PrevPos", aPrevPos);
+                if (aOutTimer > 2)
+                {
+                    iDataDic.SetData("PrevMousePos", aMousePos);
+                }
+            }
+            
+            return aRect;
+        }
+        static public Rect DrawTexture(Texture iTexture, float width, float height)
+        {
+            if (iTexture == null) return default;
+            return DrawTexture(iTexture, width, width, height, height);
+        }
+        static public Rect DrawTexture(Texture iTexture, float iMinWidth, float iMaxWidth, float iMinHeight, float iMaxHeight)
+        {
+            if (iTexture == null) return default;
+            Rect aRect = GUILayoutUtility.GetRect(iMinWidth, iMaxWidth, iMinHeight, iMaxHeight);
+            if (aRect.width > iMaxWidth) aRect.width = iMaxWidth;
+            if (aRect.height > iMaxHeight) aRect.height = iMaxHeight;
+
+            GUI.DrawTexture(aRect, iTexture);
+            return aRect;
+        }
         #region Button
         static GUIStyle sButtonGuiStyle = new GUIStyle(GUI.skin.button);
         /// <summary>

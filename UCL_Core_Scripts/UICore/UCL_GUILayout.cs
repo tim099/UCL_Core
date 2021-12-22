@@ -731,6 +731,40 @@ namespace UCL.Core.UI {
         /// <param name="iEnum"></param>
         /// <param name="iIsOpened"></param>
         /// <returns></returns>
+        public static T Popup<T>(T iEnum, UCL_ObjectDictionary iDataDic, System.Func<T,string> iGetNameFunc = null, params GUILayoutOption[] iOptions) where T : System.Enum
+        {
+            System.Type aType = iEnum.GetType();
+            string[] aNames = System.Enum.GetNames(aType);
+            var aValues = System.Enum.GetValues(typeof(T));
+            int aID = 0;
+            for(int i = 0; i < aValues.Length; i++)
+            {
+                if(((T)aValues.GetValue(i)).Equals(iEnum))
+                {
+                    aID = i;
+                    break;
+                }
+            }
+            if (iGetNameFunc != null)
+            {
+                for (int i = 0; i < aNames.Length; i++)
+                {
+                    aNames[i] = iGetNameFunc((T)(aValues.GetValue(i)));
+                }
+            }
+
+            bool aIsOpened = iDataDic.GetData("IsOpened", false);
+            aID = Popup(aID, aNames, ref aIsOpened, iOptions);
+            iDataDic.SetData("IsOpened", aIsOpened);
+            return (T)aValues.GetValue(aID);
+        }
+        /// <summary>
+        /// Show enum popup
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iEnum"></param>
+        /// <param name="iIsOpened"></param>
+        /// <returns></returns>
         public static T Popup<T>(T iEnum, System.Func<string, string> iGetDisplayName, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions) where T : System.Enum
         {
             bool aIsOpened = iDataDic.GetData("PopupIsOpened", false);

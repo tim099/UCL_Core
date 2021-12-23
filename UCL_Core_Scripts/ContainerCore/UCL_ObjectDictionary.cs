@@ -110,7 +110,12 @@ namespace UCL.Core
             {
                 return iDefaultValue;
             }
-            return (T)m_DataDic[iKey];
+            object aData = m_DataDic[iKey];
+            if(aData is T)
+            {
+                return (T)aData;
+            }
+            return iDefaultValue;
         }
         /// <summary>
         /// get data from Dic

@@ -72,6 +72,28 @@ public static partial class TextureExtensionMethods {
         iTexture.SetPixels(aColorArray);
         iTexture.Apply();
     }
+    public static void DrawPixel(this Texture2D iTexture, int iX, int iY, Color iCol)
+    {
+        int aWidth = iTexture.width;
+        int aHeight = iTexture.height;
+        
+        if (iX < 0) iX = 0;
+        if (iY < 0) iY = 0;
+        if (iX >= aWidth) iX = aWidth - 1;
+        if (iY >= aHeight) iY = aHeight - 1;
+        if (iCol.a < 1f)//blend
+        {
+            Color aOriginCol = iTexture.GetPixel(iX, iY);
+            Color aNewCol = Color.Lerp(aOriginCol, iCol, iCol.a);
+            aNewCol.a = Mathf.Max(aOriginCol.a, aNewCol.a);
+            iTexture.SetPixel(iX,iY, aNewCol);
+        }
+        else
+        {
+            iTexture.SetPixel(iX, iY, iCol);
+        }
+        //Debug.LogWarning(("Pos:") + (x + y * Width) + "Col:" + col);
+    }
     public static void DrawLine(this Texture2D iTexture, Vector2Int iStartPos, Vector2Int iEndPos, Color iLineColor)
     {
         if(iStartPos == iEndPos)
@@ -99,17 +121,16 @@ public static partial class TextureExtensionMethods {
             {
                 for (int i = 0; i < aHeight; i++)
                 {
-                    iTexture.SetPixel(aX, aY + i, iLineColor);
+                    iTexture.DrawPixel(aX, aY + i, iLineColor);
                 }
             }
             else
             {
                 for (int i = 0; i < aHeight; i++)
                 {
-                    iTexture.SetPixel(aX, aY - i, iLineColor);
+                    iTexture.DrawPixel(aX, aY - i, iLineColor);
                 }
             }
-
         }
         else if(aDel.y == 0)
         {
@@ -117,14 +138,14 @@ public static partial class TextureExtensionMethods {
             {
                 for (int i = 0; i < aWidth; i++)
                 {
-                    iTexture.SetPixel(aX + i, aY, iLineColor);
+                    iTexture.DrawPixel(aX + i, aY, iLineColor);
                 }
             }
             else
             {
                 for (int i = 0; i < aWidth; i++)
                 {
-                    iTexture.SetPixel(aX - i, aY, iLineColor);
+                    iTexture.DrawPixel(aX - i, aY, iLineColor);
                 }
             }
         }
@@ -146,7 +167,7 @@ public static partial class TextureExtensionMethods {
                     int aEY = Mathf.Max(aCurY, aPrevY);
                     for (int j = aSY; j <= aEY; j++)
                     {
-                        iTexture.SetPixel(aCurX, j, iLineColor);
+                        iTexture.DrawPixel(aCurX, j, iLineColor);
                     }
                     aPrevY = aCurY;
                 }
@@ -163,7 +184,7 @@ public static partial class TextureExtensionMethods {
                     int aEX = Mathf.Max(aCurX, aPrevX);
                     for (int j = aSX; j <= aEX; j++)
                     {
-                        iTexture.SetPixel(j, aCurY, iLineColor);
+                        iTexture.DrawPixel(j, aCurY, iLineColor);
                     }
                     aPrevX = aCurX;
                 }

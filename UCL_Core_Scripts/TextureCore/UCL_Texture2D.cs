@@ -752,21 +752,21 @@ namespace UCL.Core.TextureLib {
                 prev_pos = pos;
             }
         }
-        virtual public void DrawPixel(int x, int y, Color col) {
+        virtual public void DrawPixel(int iX, int iY, Color iCol) {
             m_TextureUpdated = true;
             m_SpriteUpdated = true;
-            if(x < 0) x = 0;
-            if(y < 0) y = 0;
-            if(x >= width) x = width - 1;
-            if(y >= height) y = height - 1;
-            int at = x + y * width;
-            if(col.a < 1f && m_Col[at] != null) {
+            if(iX < 0) iX = 0;
+            if(iY < 0) iY = 0;
+            if(iX >= width) iX = width - 1;
+            if(iY >= height) iY = height - 1;
+            int at = iX + iY * width;
+            if(iCol.a < 1f && m_Col[at] != null) {
                 Color o_col = m_Col[at];
-                Color new_col = Color.Lerp(o_col, col, col.a);
+                Color new_col = Color.Lerp(o_col, iCol, iCol.a);
                 new_col.a = Mathf.Max(o_col.a, new_col.a);
                 m_Col[at] = new_col;
             } else {
-                m_Col[at] = col;
+                m_Col[at] = iCol;
             }
             //Debug.LogWarning(("Pos:") + (x + y * Width) + "Col:" + col);
         }

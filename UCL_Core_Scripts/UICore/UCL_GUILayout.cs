@@ -153,7 +153,18 @@ namespace UCL.Core.UI {
             LabelAutoSize(iLabel);
             string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(iMinWidth));
             GUILayout.EndHorizontal();
-
+            if (string.IsNullOrEmpty(aResult)) return 0;
+            int aResVal = 0;
+            if (int.TryParse(aResult, out aResVal)) return aResVal;
+            return iVal;
+        }
+        static public int IntField(string iLabel, int iVal, int iMinWidth, int iMaxWidth)
+        {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(iLabel);
+            string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(iMinWidth), GUILayout.MaxWidth(iMaxWidth));
+            GUILayout.EndHorizontal();
+            if (string.IsNullOrEmpty(aResult)) return 0;
             int aResVal = 0;
             if (int.TryParse(aResult, out aResVal)) return aResVal;
             return iVal;
@@ -346,6 +357,7 @@ namespace UCL.Core.UI {
             GUI.DrawTextureWithTexCoords(aRect, aTex, aSpriteRect);
             return aRect;
         }
+        static int aTimer = 0;
         static public Rect DrawableTexture(Texture2D iTexture, UCL_ObjectDictionary iDataDic, float iWidth, float iHeight, Color iDrawCol)
         {
             var aRect = DrawTexture(iTexture, iWidth, iHeight);
@@ -355,12 +367,23 @@ namespace UCL.Core.UI {
             Vector2Int aPrevPos = iDataDic.GetData("PrevPos", Vector2Int.left);//Position in PrevFrame
             Vector2Int aCurPos = aRect.GetPosIntInRect(aMousePos);
             Vector2 aPrevMousePos = iDataDic.GetData("PrevMousePos", Vector2.negativeInfinity);
+
             
+            int aOutTimer = iDataDic.GetData("OutTimer", 0);//the time ouside of border
+            //GUILayout.Label("Timer:" + (aTimer++) + ",OutTimer:" + aOutTimer);
+
+            if (aCurrentEvent.type == EventType.MouseUp)
+            {
+                aPrevMousePos = Vector2.negativeInfinity;
+                aPrevPos = Vector2Int.left;
+                iDataDic.SetData("PrevMousePos", Vector2.negativeInfinity);
+                iDataDic.SetData("PrevPos", Vector2Int.left);
+            }
+
             if (aRect.Contains(aMousePos))
             {
                 if (aCurrentEvent.type == EventType.MouseDown)
                 {
-                    aCurPos = aRect.GetPosIntInRect(aMousePos);
                     iTexture.SetPixel(aCurPos.x, aCurPos.y, iDrawCol);
                     iTexture.Apply();
                     aPrevPos = aCurPos;
@@ -369,15 +392,14 @@ namespace UCL.Core.UI {
                 {
                     if (aRect.Contains(aPrevMousePos))
                     {
-                        iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
-                        aPrevPos = aCurPos;
+                        if(aPrevPos != Vector2Int.left) iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
                     }
                     else if(aPrevMousePos != Vector2.negativeInfinity)
                     {
                         var aPos = aRect.GetPosIntOnBorder(aMousePos, aPrevMousePos);
                         iTexture.DrawLine(aPos, aCurPos, iDrawCol);
-                        aPrevPos = aCurPos;
                     }
+                    aPrevPos = aCurPos;
                 }
                 iDataDic.SetData("PrevPos", aPrevPos);
                 iDataDic.SetData("PrevMousePos", aMousePos);
@@ -385,28 +407,28 @@ namespace UCL.Core.UI {
             }
             else//out of range
             {
-                int aOutTimer = iDataDic.GetData("OutTimer", 0);//the time ouside of border
-                iDataDic.SetData("OutTimer", aOutTimer++);
-                //if (aCurrentEvent.type == EventType.MouseDown)
-                //{
-                //    aCurPos = aRect.GetPosIntInRect(aMousePos);
-                //    aPrevPos = aCurPos;
-                //}
-                //else 
-                if (aCurrentEvent.type == EventType.MouseDrag)
+                iDataDic.SetData("OutTimer", aOutTimer + 1);
+                if (aCurrentEvent.type == EventType.MouseDown)
                 {
-                    if (aRect.Contains(aPrevMousePos))//Prev pos in Rect
+                    iDataDic.SetData("PrevPos", aCurPos);
+                    iDataDic.SetData("PrevMousePos", aMousePos);
+                }
+                else if (aCurrentEvent.type == EventType.MouseDrag)
+                {
+                    if (aRect.Contains(aPrevMousePos) && aPrevPos != Vector2.left)//Prev pos in Rect
                     {
+                        //Debug.LogError("aPrevPos:" + aPrevPos + ",aPrevMousePos:" + aPrevMousePos+ ",aOutTimer:"+ aOutTimer);
                         var aPos = aRect.GetPosIntOnBorder(aPrevMousePos, aMousePos);
                         iTexture.DrawLine(aPrevPos, aPos, iDrawCol);
                         iDataDic.SetData("PrevMousePos", aMousePos);
                     }
-                    aPrevPos = aCurPos;
+                    iDataDic.SetData("PrevPos", aCurPos);
                 }
-                iDataDic.SetData("PrevPos", aPrevPos);
                 if (aOutTimer > 2)
                 {
+                    iDataDic.SetData("OutTimer", 0);
                     iDataDic.SetData("PrevMousePos", aMousePos);
+                    iDataDic.SetData("PrevPos", Vector2.left);
                 }
             }
             
@@ -483,7 +505,14 @@ namespace UCL.Core.UI {
             sLabelGuiStyle.richText = true;
             Vector2 aSize = sLabelGuiStyle.CalcSize(new GUIContent(iName));
             GUILayout.Label(iName, style: sLabelGuiStyle, GUILayout.Width(aSize.x + 1f), GUILayout.Height(aSize.y));
-
+        }
+        public static void LabelAutoSize(string iName, Color iColor, int iFontsize = 13)
+        {
+            sLabelGuiStyle.fontSize = iFontsize;
+            sLabelGuiStyle.normal.textColor = iColor;
+            sLabelGuiStyle.richText = true;
+            Vector2 aSize = sLabelGuiStyle.CalcSize(new GUIContent(iName));
+            GUILayout.Label(iName, style: sLabelGuiStyle, GUILayout.Width(aSize.x + 1f), GUILayout.Height(aSize.y));
         }
         #endregion
 
@@ -723,6 +752,36 @@ namespace UCL.Core.UI {
             int aID = aNames.GetIndex(iEnum.ToString());
             aID = Popup(aID, aNames, ref iIsOpened);
             return (T)System.Enum.Parse(aType, aNames[aID], true);
+        }
+        public static Color SelectColor(Color iColor)
+        {
+
+
+            System.Func<string, float, float> aSelectColField = (iName, iCol) =>
+            {
+                GUILayout.BeginHorizontal();
+                int aIntVal = Mathf.RoundToInt(iCol * 255f);
+                int aNewIntVal = IntField(iName, aIntVal, 50, 50);
+                if (aNewIntVal != aIntVal)
+                {
+                    if (aNewIntVal > 255) aNewIntVal = 255;
+                    if (aIntVal < 0) aIntVal = 0;
+                    iCol = aNewIntVal / 255f;
+                }
+                iCol = GUILayout.HorizontalSlider(iCol, 0, 1, GUILayout.Width(100));
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                return iCol;
+            };
+            GUILayout.BeginVertical();
+            LabelAutoSize("■", iColor, 32);
+            iColor.r = aSelectColField("R", iColor.r);
+            iColor.g = aSelectColField("G", iColor.g);
+            iColor.b = aSelectColField("B", iColor.b);
+            iColor.a = aSelectColField("A", iColor.a);
+            GUILayout.EndVertical();
+            return iColor;
         }
         /// <summary>
         /// Show enum popup

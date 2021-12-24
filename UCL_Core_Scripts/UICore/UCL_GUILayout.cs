@@ -358,8 +358,9 @@ namespace UCL.Core.UI {
             return aRect;
         }
         static int aTimer = 0;
-        static public Rect DrawableTexture(Texture2D iTexture, UCL_ObjectDictionary iDataDic, float iWidth, float iHeight, Color iDrawCol)
+        static public bool DrawableTexture(Texture2D iTexture, UCL_ObjectDictionary iDataDic, float iWidth, float iHeight, Color iDrawCol)
         {
+            bool aIsUpdated = false;
             var aRect = DrawTexture(iTexture, iWidth, iHeight);
             var aCurrentEvent = Event.current;
 
@@ -386,18 +387,24 @@ namespace UCL.Core.UI {
                 {
                     iTexture.SetPixel(aCurPos.x, aCurPos.y, iDrawCol);
                     iTexture.Apply();
+                    aIsUpdated = true;
                     aPrevPos = aCurPos;
                 }
                 else if (aCurrentEvent.type == EventType.MouseDrag)
                 {
                     if (aRect.Contains(aPrevMousePos))
                     {
-                        if(aPrevPos != Vector2Int.left) iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
+                        if (aPrevPos != Vector2Int.left)
+                        {
+                            iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
+                            aIsUpdated = true;
+                        }
                     }
                     else if(aPrevMousePos != Vector2.negativeInfinity)
                     {
                         var aPos = aRect.GetPosIntOnBorder(aMousePos, aPrevMousePos);
                         iTexture.DrawLine(aPos, aCurPos, iDrawCol);
+                        aIsUpdated = true;
                     }
                     aPrevPos = aCurPos;
                 }
@@ -421,6 +428,7 @@ namespace UCL.Core.UI {
                         var aPos = aRect.GetPosIntOnBorder(aPrevMousePos, aMousePos);
                         iTexture.DrawLine(aPrevPos, aPos, iDrawCol);
                         iDataDic.SetData("PrevMousePos", aMousePos);
+                        aIsUpdated = true;
                     }
                     iDataDic.SetData("PrevPos", aCurPos);
                 }
@@ -432,7 +440,7 @@ namespace UCL.Core.UI {
                 }
             }
             
-            return aRect;
+            return aIsUpdated;
         }
         static public Rect DrawTexture(Texture iTexture, float width, float height)
         {
@@ -755,27 +763,55 @@ namespace UCL.Core.UI {
         }
         public static Color SelectColor(Color iColor)
         {
-
-
             System.Func<string, float, float> aSelectColField = (iName, iCol) =>
             {
                 GUILayout.BeginHorizontal();
+
+                iCol = GUILayout.HorizontalSlider(iCol, 0, 1, GUILayout.Width(100));
                 int aIntVal = Mathf.RoundToInt(iCol * 255f);
                 int aNewIntVal = IntField(iName, aIntVal, 50, 50);
                 if (aNewIntVal != aIntVal)
                 {
                     if (aNewIntVal > 255) aNewIntVal = 255;
-                    if (aIntVal < 0) aIntVal = 0;
+                    if (aNewIntVal < 0) aNewIntVal = 0;
                     iCol = aNewIntVal / 255f;
                 }
-                iCol = GUILayout.HorizontalSlider(iCol, 0, 1, GUILayout.Width(100));
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
 
                 return iCol;
             };
             GUILayout.BeginVertical();
-            LabelAutoSize("■", iColor, 32);
+
+            GUILayout.BeginHorizontal();
+            LabelAutoSize("●", iColor, 64);
+            System.Action<Color> aSelectColButton = (iButColor) =>
+            {
+                if (ButtonAutoSize("■", 22, Color.gray, iButColor))
+                {
+                    iColor = iButColor;
+                }
+            };
+            GUILayout.BeginVertical();
+            GUILayout.BeginHorizontal();
+            aSelectColButton(Color.red);
+            aSelectColButton(Color.green);
+            aSelectColButton(Color.blue);
+            aSelectColButton(Color.yellow);
+            
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            aSelectColButton(Color.black);
+            aSelectColButton(Color.white);
+            aSelectColButton(Color.gray);
+            aSelectColButton(Color.cyan);
+            GUILayout.EndHorizontal();
+
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
+
             iColor.r = aSelectColField("R", iColor.r);
             iColor.g = aSelectColField("G", iColor.g);
             iColor.b = aSelectColField("B", iColor.b);

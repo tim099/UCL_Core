@@ -32,6 +32,18 @@ namespace UCL.Core.UI
             m_Height = iHeight;
             //Init(iWidth, iHeight);
         }
+        public void SetTexture(Texture2D iTexture)
+        {
+            m_Texture = iTexture;
+            m_Width = m_Texture.width;
+            m_Height = m_Texture.height;
+        }
+        public void SetTexture(byte[] iDatas)
+        {
+            if (!m_IsInited) Init(m_Width, m_Height);
+            m_Texture.LoadRawTextureData(iDatas);
+            m_Texture.Apply();
+        }
         public void OnTextureUpdate(System.Action<Texture2D> iOnTextureUpdateAct)
         {
             m_OnTextureUpdateAct = iOnTextureUpdateAct;

@@ -59,6 +59,7 @@ namespace UCL.Core.UI
         }
         virtual public void Clear()
         {
+            if (m_Texture == null) return;
             m_Texture.SetColor(Color.clear);
         }
         virtual public void OnGUI()

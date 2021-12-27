@@ -3,6 +3,8 @@ using UnityEngine;
 using System.Reflection;
 using System.Linq;
 using System;
+using System.Collections.Generic;
+using UnityEditor;
 
 namespace UCL.Core.PA
 {
@@ -50,31 +52,70 @@ namespace UCL.Core.PA
             return field.GetValue(property.serializedObject.targetObject);
         }
         */
-        static public object GetValue(this UnityEditor.SerializedProperty property)
+        static public object GetValue(this UnityEditor.SerializedProperty iProperty)
         {
-            var parent = property.GetParent();
-            var f_name = property.GetFieldName();
+            var aParent = iProperty.GetParent();
+            var aFieldName = iProperty.GetFieldName();
 
-            System.Type parent_type = parent.GetType();
-            System.Reflection.FieldInfo field = parent_type.GetField(f_name);
-            if (field == null)
+            System.Type aParentType = aParent.GetType();
+            System.Reflection.FieldInfo aField = aParentType.GetField(aFieldName);
+            if (aField == null)
             {
-                Debug.LogWarning("SerializedProperty.GetValue Fail!! field == null property.propertyPath:" + property.propertyPath);
+                Debug.LogWarning("SerializedProperty.GetValue Fail!! field == null property.propertyPath:" + iProperty.propertyPath);
                 return null;
             }
-            return field.GetValue(parent);
+            return aField.GetValue(aParent);
 
         }
-        static public void SetValue(this UnityEditor.SerializedProperty property, object value)
+        static public void SetValue(this UnityEditor.SerializedProperty iProperty, object iValue)
         {
-            System.Type parentType = property.serializedObject.targetObject.GetType();
-            System.Reflection.FieldInfo field = parentType.GetField(property.propertyPath);
-            if (field == null)
+            var aParent = iProperty.GetParent();
+            bool aIsModified = false;
+            List<KeyValuePair<FieldInfo, object>> aList = new List<KeyValuePair<FieldInfo, object>>();
+            var aObj = aParent;//aField.GetValue(aParent);
+            var aFieldNames = iProperty.propertyPath.Split('.');
+            for (int i = 1; i < aFieldNames.Length; i++)
             {
-                Debug.LogWarning("SerializedProperty.SetValue Fail!! field == null property.propertyPath:" + property.propertyPath);
-                return;
+                var aFieldName = aFieldNames[i];
+                var aType = aObj.GetType();
+                var aField = aType.GetField(aFieldName);
+                if (aField == null)
+                {
+                    //Debug.LogError("SetPropertyValue aField == null,aFieldName:" + aFieldName + ",aType:" + aType.Name+ ",i:"+ i);
+                    break;
+                }
+                else
+                {
+                    aList.Add(new KeyValuePair<FieldInfo, object>(aField, aObj));
+                    aObj = aField.GetValue(aObj);
+                }
             }
-            field.SetValue(property.serializedObject.targetObject, value);
+            for (int i = aList.Count - 1; i >= 0; --i)
+            {
+                
+                var aFieldInfo = aList[i].Key;
+                if (!aFieldInfo.GetValue(aList[i].Value).Equals(iValue))
+                {
+                    aIsModified = true;
+                    aFieldInfo.SetValue(aList[i].Value, iValue);
+                }
+
+                //Debug.LogError("aList[i].Value:" + aList[i].Value.GetType().Name + ",iValue:" + iValue.GetType().Name);
+                iValue = aList[i].Value;
+            }
+            if(iProperty.serializedObject.targetObject != null)
+            {
+
+                var aFieldName = aFieldNames[0];
+                FieldInfo aField = iProperty.serializedObject.targetObject.GetType().GetField(aFieldName);
+                //Debug.LogError("aFieldName:" + aFieldName+ ",aParent.GetType():"+ iProperty.serializedObject.targetObject.GetType().Name);
+                if (aField != null && !aField.GetValue(iProperty.serializedObject.targetObject).Equals(aParent))
+                {
+                    aIsModified = true;
+                    aField.SetValue(iProperty.serializedObject.targetObject, aParent);
+                }
+                if(aIsModified) EditorUtility.SetDirty(iProperty.serializedObject.targetObject);
+            }
         }
     }
 }

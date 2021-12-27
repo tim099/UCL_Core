@@ -26,6 +26,11 @@ namespace UCL.Core.UI
         {
 
         }
+        ~UCL_GUILayoutPainter()
+        {
+            if(m_Texture!=null) GameObject.DestroyImmediate(m_Texture);
+            m_Texture = null;
+        }
         public UCL_GUILayoutPainter(int iWidth, int iHeight)
         {
             m_Width = iWidth;

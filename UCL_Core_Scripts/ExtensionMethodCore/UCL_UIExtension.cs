@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public static partial class UIExtensionMethods
@@ -45,5 +46,17 @@ public static partial class UIExtensionMethods
     }
 
 
+    #endregion
+
+    #region Button
+    /// <summary>
+    /// Create a fake click event via script
+    /// </summary>
+    /// <param name="button"></param>
+    public static void Click(this Button button)
+    {
+        if (button == null) return;
+        ExecuteEvents.Execute(button.gameObject, new BaseEventData(EventSystem.current), ExecuteEvents.submitHandler);
+    }
     #endregion
 }

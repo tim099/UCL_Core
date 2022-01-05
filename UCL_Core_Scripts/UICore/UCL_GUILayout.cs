@@ -357,7 +357,6 @@ namespace UCL.Core.UI {
             GUI.DrawTextureWithTexCoords(aRect, aTex, aSpriteRect);
             return aRect;
         }
-        static int aTimer = 0;
         static public bool DrawableTexture(Texture2D iTexture, UCL_ObjectDictionary iDataDic, float iWidth, float iHeight, Color iDrawCol)
         {
             bool aIsUpdated = false;

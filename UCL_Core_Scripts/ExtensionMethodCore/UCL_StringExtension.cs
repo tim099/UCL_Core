@@ -82,3 +82,30 @@ public static partial class StringExtensionMethods {
 
     #endregion
 }
+namespace UCL.Core.StringExtensionMethods
+{
+    public static partial class ExtraStringExtensionMethods
+    {
+        public static void CopyToClipboard(this string iStr)
+        {
+            GUIUtility.systemCopyBuffer = iStr;
+        }
+    }
+}
+//internal static string Clipboard
+//{//https://flystone.tistory.com/138
+//    get
+//    {
+//        TextEditor _textEditor = new TextEditor();
+//        _textEditor.Paste();
+//        return _textEditor.text;
+//    }
+//    set
+//    {
+//        TextEditor _textEditor = new TextEditor
+//        { text = value };
+
+//        _textEditor.OnFocus();
+//        _textEditor.Copy();
+//    }
+//}

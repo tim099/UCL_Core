@@ -11,7 +11,7 @@ namespace UCL.Core.EditorLib {
         {
 #if UNITY_EDITOR
             //Debug.Log("UCL_EditorCoroutineManager() Init");
-            UCL_EditorUpdateManager.AddEditorUpdateAct(UpdateAction);
+            UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateAction(UpdateAction);
 #endif
         }
         /// <summary>

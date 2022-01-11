@@ -28,6 +28,14 @@ namespace UCL.Core {
             }
         }
         /// <summary>
+        /// Ensure Instance Exist
+        /// </summary>
+        /// <returns></returns>
+        static public T CheckInstance()
+        {
+            return Instance;
+        }
+        /// <summary>
         /// Auto create instance if not exist!!
         /// </summary>
         /// <returns></returns>

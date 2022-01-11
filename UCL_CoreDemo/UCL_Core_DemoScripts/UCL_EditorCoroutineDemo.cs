@@ -44,28 +44,20 @@ namespace UCL.Core.EnumeratorLib
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void EditorUpdateRigister()
         {
-            if (Application.isPlaying)
-            {
-                UCL.Core.ServiceLib.UCL_UpdateService.Instance.AddUpdateAction(UpdateAct);
-            }
-            else
-            {
-                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddEditorUpdateAct(UpdateAct);
-            }
-
+            UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateAction(UpdateAct);
+            //if (Application.isPlaying)
+            //{
+            //    UCL.Core.ServiceLib.UCL_UpdateService.Instance.AddUpdateAction(UpdateAct);
+            //}
+            //else
+            //{
+            //    UCL.Core.EditorLib.UCL_EditorUpdateManager.AddEditorUpdateAct(UpdateAct);
+            //}
         }
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void EditorUpdateUnRigister()
         {
-            if (Application.isPlaying)
-            {
-                UCL.Core.ServiceLib.UCL_UpdateService.Instance.RemoveUpdateAction(UpdateAct);
-            }
-            else
-            {
-                UCL.Core.EditorLib.UCL_EditorUpdateManager.RemoveEditorUpdateAct(UpdateAct);
-            }
-
+            UCL.Core.ServiceLib.UCL_UpdateService.RemoveUpdateAction(UpdateAct);
         }
         int m_Timer = 0;
         private void UpdateAct()

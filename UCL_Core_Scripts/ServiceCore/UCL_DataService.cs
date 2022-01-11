@@ -34,7 +34,7 @@ namespace UCL.Core.ServiceLib
         protected void Init()
         {
 #if UNITY_EDITOR
-            UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateActionStaticVer(Update);
+            UCL.Core.ServiceLib.UCL_UpdateService.AddUpdateAction(Update);
 #endif
         }
         /// <summary>

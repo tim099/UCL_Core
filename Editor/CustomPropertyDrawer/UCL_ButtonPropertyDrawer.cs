@@ -24,7 +24,7 @@ namespace UCL.Core.PA
                 string aFuncName = System.Text.RegularExpressions.Regex.Replace(property.name, "m_", "");
                 var target = property.GetParent();
                 var value = property.GetValue();
-                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddAction(delegate ()
+                UCL.Core.ServiceLib.UCL_UpdateService.AddAction(delegate ()
                 {
                     aAttr?.InvokeAct(aFuncName, target, value);
                 });

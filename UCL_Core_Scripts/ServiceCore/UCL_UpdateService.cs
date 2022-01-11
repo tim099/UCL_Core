@@ -3,75 +3,33 @@ using System.Collections.Generic;
 using UnityEngine;
 namespace UCL.Core.ServiceLib
 {
-    [UCL.Core.ATTR.EnableUCLEditor]
-    public class UCL_UpdateService : UCL_Singleton<UCL_UpdateService>
+    public class UCL_UpdateController
     {
-        #region static
-        /// <summary>
-        /// Add UpdateAction in both Edit mode and Play mode
-        /// </summary>
-        /// <param name="iAction"></param>
-        public static void AddUpdateActionStaticVer(System.Action iAction)
+        public static UCL_UpdateController Ins
         {
-            if (!Application.isPlaying)
-            {//Edit Mode
-                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddEditorUpdateAct(iAction);
-            }
-            else
+            get
             {
-                Instance.AddUpdateAction(iAction);
+                if (m_Ins == null) m_Ins = new UCL_UpdateController();
+                return m_Ins;
             }
         }
+        static UCL_UpdateController m_Ins = null;
         /// <summary>
-        /// Remove UpdateAction in both Edit mode and Play mode
+        /// total count of registered update
         /// </summary>
-        /// <param name="iAction"></param>
-        public static void RemoveUpdateActionStaticVer(System.Action iAction)
-        {
-            if (!Application.isPlaying)
-            {//Edit Mode
-                UCL.Core.EditorLib.UCL_EditorUpdateManager.RemoveEditorUpdateAct(iAction);
-            }
-            else
-            {
-                Instance.RemoveUpdateAction(iAction);
-            }
-        }
-
-        /// <summary>
-        /// Add action that only invoke once
-        /// </summary>
-        /// <param name="iAct"></param>
-        public static void AddActionStaticVer(System.Action iAction)
-        {
-            if (!Application.isPlaying)
-            {//Edit Mode
-                UCL.Core.EditorLib.UCL_EditorUpdateManager.AddAction(iAction);
-            }
-            else
-            {
-                Instance.AddAction(iAction);
-            }
-        }
-        #endregion
-
-
+        public int UpdateActionCount => m_UpdateAction.GetInvocationCount();
         /// <summary>
         /// Action trigger once!!
         /// </summary>
-        private Queue<System.Action> m_ActQue = new Queue<System.Action>();
+        protected Queue<System.Action> m_ActQue = new Queue<System.Action>();
         /// <summary>
         /// Action with delay trigger once!!
         /// </summary>
-        private Queue<System.Tuple<System.Action,float> > m_DelayQue = new Queue<System.Tuple<System.Action, float>>();
+        protected Queue<System.Tuple<System.Action, float>> m_DelaySecondsQue = new Queue<System.Tuple<System.Action, float>>();
+        protected Queue<System.Tuple<int, System.Action>> m_DelayActQue = new Queue<System.Tuple<int, System.Action>>();
+        protected static Queue<System.Tuple<int, System.Action>> m_DelayActQueBuffer = new Queue<System.Tuple<int, System.Action>>();
+        protected event System.Action m_UpdateAction = null;
 
-        private event System.Action m_UpdateAction = null;
-
-        [RuntimeInitializeOnLoadMethod]
-        private static void Initialize()
-        {
-
-        }
         /// <summary>
         /// Add action that invoke every Update
         /// </summary>
@@ -96,23 +54,47 @@ namespace UCL.Core.ServiceLib
         /// Add action with delay that only invoke once!!
         /// </summary>
         /// <param name="iAct"></param>
-        /// <param name="iDelay">delay in second</param>
-        public void AddDelayAction(System.Action iAct,float iDelay)
+        /// <param name="iDelay">delay in seconds</param>
+        public void AddDelayAction(System.Action iAct, float iDelay)
         {
-            m_DelayQue.Enqueue(new System.Tuple<System.Action, float>(iAct, iDelay));
+            m_DelaySecondsQue.Enqueue(new System.Tuple<System.Action, float>(iAct, iDelay));
         }
-        public void Clear()
+        /// <summary>
+        /// Add action that invoke after delay_frame
+        /// </summary>
+        /// <param name="iAct"></param>
+        /// <param name="iDelayFrames">Delay frame count</param>
+        public void AddDelayAction(System.Action iAct, int iDelayFrames)
+        {
+            m_DelayActQue.Enqueue(new System.Tuple<int, System.Action>(iDelayFrames, iAct));
+        }
+        public void ClearUpdateAction()
         {
             m_UpdateAction = null;
         }
-        [UCL.Core.ATTR.UCL_DrawString]
-        string UpdateCount()
+        
+        /// <summary>
+        /// Call this function per frame and pass the delta time
+        /// </summary>
+        /// <param name="aDeltaTime"></param>
+        virtual public void UpdateAction(float aDeltaTime)
         {
-            return "UpdateAction Count:" + m_UpdateAction.GetInvocationCount().ToString();
-        }
-        private void UpdateAction()
-        {
-            float aTimeDel = Time.deltaTime;
+            //Debug.LogWarning("UpdateAction:" + aDeltaTime);
+            foreach (var aAct in m_DelayActQue)
+            {
+                if (aAct.Item1 > 0)
+                {
+                    m_DelayActQueBuffer.Enqueue(new System.Tuple<int, System.Action>(aAct.Item1 - 1, aAct.Item2));
+                }
+                else
+                {
+                    AddAction(aAct.Item2);
+                }
+            }
+            m_DelayActQue.Clear();
+            Core.GameObjectLib.Swap(ref m_DelayActQue, ref m_DelayActQueBuffer);
+
+
             while (m_ActQue.Count > 0)
             {
                 try
@@ -124,16 +106,16 @@ namespace UCL.Core.ServiceLib
                     Debug.LogError(iE);
                 }
             }
-            int aCount = m_DelayQue.Count;
-            for(int i = 0; i < aCount; i++)
+            int aCount = m_DelaySecondsQue.Count;
+            for (int i = 0; i < aCount; i++)
             {
                 try
                 {
-                    var aAct = m_DelayQue.Dequeue();
-                    float aTime = aAct.Item2 - aTimeDel;
+                    var aAct = m_DelaySecondsQue.Dequeue();
+                    float aTime = aAct.Item2 - aDeltaTime;
                     if (aTime > 0)
                     {
-                        m_DelayQue.Enqueue(new System.Tuple<System.Action, float>(aAct.Item1, aTime));
+                        m_DelaySecondsQue.Enqueue(new System.Tuple<System.Action, float>(aAct.Item1, aTime));
                     }
                     else
                     {
@@ -145,7 +127,7 @@ namespace UCL.Core.ServiceLib
                     Debug.LogException(iE);
                 }
             }
-            //m_DelayQue
+
             try
             {
                 if (m_UpdateAction != null)
@@ -158,9 +140,89 @@ namespace UCL.Core.ServiceLib
                 Debug.LogException(e);
             }
         }
+    }
+    [UCL.Core.ATTR.EnableUCLEditor]
+    public class UCL_UpdateService : UCL_Singleton<UCL_UpdateService>
+    {
+        #region static
+        /// <summary>
+        /// Add UpdateAction in both Edit mode and Play mode
+        /// </summary>
+        /// <param name="iAction"></param>
+        public static void AddUpdateAction(System.Action iAction)
+        {
+            if (Application.isPlaying) CheckInstance();
+            UCL_UpdateController.Ins.AddUpdateAction(iAction);
+        }
+        /// <summary>
+        /// Remove UpdateAction in both Edit mode and Play mode
+        /// </summary>
+        /// <param name="iAction"></param>
+        public static void RemoveUpdateAction(System.Action iAction)
+        {
+            if (Application.isPlaying) CheckInstance();
+            UCL_UpdateController.Ins.RemoveUpdateAction(iAction);
+        }
+
+        /// <summary>
+        /// Add action that only invoke once
+        /// </summary>
+        /// <param name="iAct"></param>
+        public static void AddAction(System.Action iAction)
+        {
+            if (Application.isPlaying) CheckInstance();
+            UCL_UpdateController.Ins.AddAction(iAction);
+            //if (!Application.isPlaying)
+            //{//Edit Mode
+            //    UCL.Core.EditorLib.UCL_EditorUpdateManager.AddAction(iAction);
+            //}
+            //else
+            //{
+            //    Instance.AddAction(iAction);
+            //}
+        }
+        /// <summary>
+        /// Add action with delay that only invoke once!!
+        /// </summary>
+        /// <param name="iAct"></param>
+        /// <param name="iDelay">delay in second</param>
+        public static void AddDelayAction(System.Action iAction, float iDelay)
+        {
+            if (Application.isPlaying) CheckInstance();
+            UCL_UpdateController.Ins.AddDelayAction(iAction, iDelay);
+        }
+        /// <summary>
+        /// Add action with delay that only invoke once!!
+        /// </summary>
+        /// <param name="iAction"></param>
+        /// <param name="iDelay">Delay in frame</param>
+        public static void AddDelayAction(System.Action iAction, int iDelay)
+        {
+            if (Application.isPlaying) CheckInstance();
+            UCL_UpdateController.Ins.AddDelayAction(iAction, iDelay);
+        }
+        #endregion
+
+        [RuntimeInitializeOnLoadMethod]
+        private static void Initialize()
+        {
+
+        }
+        [UCL.Core.ATTR.UCL_DrawString]
+        private string UpdateCount()
+        {
+            return "UpdateAction Count:" + UCL_UpdateController.Ins.UpdateActionCount;
+        }
         private void Update()
         {
-            UpdateAction();
+            try
+            {
+                UCL_UpdateController.Ins.UpdateAction(Time.deltaTime);
+            }
+            catch (System.Exception iE)
+            {
+                Debug.LogException(iE);
+            }
         }
 
     }

@@ -938,17 +938,17 @@ namespace UCL.Core.UI {
                     string aTypeName = aType.Name;
 
                     GUILayout.BeginHorizontal();
-                    string aKey = "EnumOpen";
-                    bool flag = iDataDic.GetData(aKey, false);
-                    aResultObj = UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)iObj, ref flag, (iEnum) => {
+                    //string aKey = "EnumOpen";
+                    //bool flag = iDataDic.GetData(aKey, false);
+                    aResultObj = UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)iObj, (iEnum) => {
                         string aLocalizeKey = aTypeName + "_" + iEnum;
                         if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
                         {
-                            iEnum = LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey);
+                            iEnum = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey), iEnum);
                         }
                         return iEnum;
-                    });
-                    iDataDic.SetData(aKey, flag);
+                    }, iDataDic);
+                    //iDataDic.SetData(aKey, flag);
                     GUILayout.EndHorizontal();
                 }
                 else if (iObj.IsNumber())
@@ -1165,7 +1165,6 @@ namespace UCL.Core.UI {
                         var aFields = aType.GetAllFieldsUnityVer(typeof(object));
                         foreach (var aField in aFields)
                         {
-                            //GUILayout.Label(aField.FieldType.Name);
                             var aData = aField.GetValue(iObj);
 
                             if (aField.GetCustomAttribute<HideInInspector>() != null
@@ -1481,17 +1480,14 @@ namespace UCL.Core.UI {
 
                                 GUILayout.BeginHorizontal();
                                 UCL.Core.UI.UCL_GUILayout.LabelAutoSize(aDisplayName);
-                                string aKey = aDisplayName;
-                                bool flag = iDataDic.GetData(aKey, false);
-                                aField.SetValue(iObj, UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)aData, ref flag, (iEnum) => {
+                                aField.SetValue(iObj, UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)aData, (iEnum) => {
                                     string aLocalizeKey = aTypeName + "_" + iEnum;
                                     if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
                                     {
-                                        iEnum = LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey);
+                                        iEnum = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey), iEnum);
                                     }
                                     return iEnum;
-                                }));
-                                iDataDic.SetData(aKey, flag);
+                                }, iDataDic.GetSubDic(aField.Name)));
                                 GUILayout.EndHorizontal();
                             }
                             else if (aField.FieldType.IsStructOrClass())

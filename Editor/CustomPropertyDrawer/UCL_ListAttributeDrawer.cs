@@ -37,15 +37,16 @@ namespace UCL.Core.PA
     {
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
-
+            var aObj = property.GetParent();
             var aListAttr = attribute as UCL_ListAttribute;
-            var aList = aListAttr.GetList(property.GetParent());
+            var aList = aListAttr.GetList(aObj);
             if (aList == null) return;
 
             if (property.propertyType == SerializedPropertyType.String)
             {
                 int aIndex = Mathf.Max(0, Array.IndexOf(aList, property.stringValue));
-                aIndex = EditorGUI.Popup(position, property.displayName, aIndex, aList);
+                var aDisplayList = aListAttr.GetDisplayList(aObj);
+                aIndex = EditorGUI.Popup(position, property.displayName, aIndex, aDisplayList);
                 if (aList.Length > aIndex)
                 {
                     property.stringValue = aList[aIndex];

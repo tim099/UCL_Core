@@ -1223,7 +1223,7 @@ namespace UCL.Core.UI {
                                     aIsDrawed = true;
                                     GUILayout.BeginHorizontal();
                                     UCL_GUILayout.LabelAutoSize(aDisplayName);
-                                    aField.SetValue(iObj, aStrArr.DrawOnGUI(iObj, aData, iDataDic, "_" + aDisplayName));
+                                    aField.SetValue(iObj, aStrArr.DrawOnGUILocalized(iObj, aData, iDataDic, "_" + aDisplayName));
                                     GUILayout.EndHorizontal();
                                 }else if(aAttr is ITexture2D)
                                 {

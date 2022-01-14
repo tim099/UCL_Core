@@ -15,6 +15,26 @@ namespace UCL.Core
             aIndex = UCL_GUILayout.PopupAuto(aIndex, aList, iDataDic, iKey);
             return aList[aIndex];
         }
+        public static object DrawOnGUILocalized(this IStringArr iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
+        {
+            var aList = iStrArr.GetList(iObj);
+            string[] aDisplayList = new string[aList.Length];
+            for (int i = 0; i < aList.Length; i++)
+            {
+                string aKey = aList[i];
+                if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aKey))
+                {
+                    aDisplayList[i] = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aKey), aKey);
+                }
+                else
+                {
+                    aDisplayList[i] = aKey;
+                }
+            }
+            int aIndex = Mathf.Max(0, Array.IndexOf(aList, iData));
+            aIndex = UCL_GUILayout.PopupAuto(aIndex, aDisplayList, iDataDic, iKey);
+            return aList[aIndex];
+        }
     }
     public interface IStringArr
     {

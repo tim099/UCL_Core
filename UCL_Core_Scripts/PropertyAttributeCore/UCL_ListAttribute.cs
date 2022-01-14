@@ -97,7 +97,29 @@ namespace UCL.Core.PA {
 
             return new string[0];
         }
-
+        /// <summary>
+        /// Get the display list from target
+        /// </summary>
+        /// <param name="iTarget"></param>
+        /// <returns></returns>
+        public string[] GetDisplayList(object iTarget)
+        {
+            string[] aList = GetList(iTarget);
+            string[] aDisplayList = new string[aList.Length];
+            for (int i = 0; i < aList.Length; i++)
+            {
+                string aKey = aList[i];
+                if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aKey))
+                {
+                    aDisplayList[i] = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aKey), aKey);
+                }
+                else
+                {
+                    aDisplayList[i] = aKey;
+                }
+            }
+            return aDisplayList;
+        }
         //public UCL_ListAttribute (System.Action<List<string>> get)
     }
 }

@@ -1,10 +1,10 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 /// <summary>
 /// UCL_TextureAtlasCreator can merge multiple Textures into TextureAtlas
 /// </summary>
-namespace UCL.Core.TextureLib {
+namespace UCL.Core.TextureLib
+{
 #if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
 #endif
@@ -27,11 +27,21 @@ namespace UCL.Core.TextureLib {
         #region AutoGen
         [Header("Auto Generate Part")]
         [Core.PA.UCL_ReadOnly] public Texture2D m_Texture;
-        [Core.PA.UCL_ReadOnly] public int m_AtlasSize = 0;//Realsize of Atlas
-        [Core.PA.UCL_ReadOnly] public int m_Seg = 0;//m_Seg * m_Size = m_AtlasSize
+        /// <summary>
+        /// Realsize of Atlas
+        /// </summary>
+        [Core.PA.UCL_ReadOnly] public int m_AtlasSize = 0;
+        /// <summary>
+        /// m_Seg * m_Size = m_AtlasSize
+        /// </summary>
+        [Core.PA.UCL_ReadOnly] public int m_Seg = 0;
+        /// <summary>
+        /// Interval of texture (Pixels)
+        /// </summary>
+        public int m_Interval = 0;
         #endregion
 
-        public Texture GetTexture() { return m_Texture; }
+        public Texture TextureAtlas => m_Texture;
 
 #if UNITY_EDITOR
         [ATTR.UCL_FunctionButton]
@@ -85,53 +95,21 @@ namespace UCL.Core.TextureLib {
         //[UCL.Core.PA.UCL_ReadOnly]
         //[SerializeField]
         //protected List<Vector2Int> m_ConverPosVec = new List<Vector2Int>();
-        public Vector2Int ConverPos(int at) {
-            if(m_Seg <= 0 || at < 0) return Vector2Int.zero;//|| at>= m_ConverPosVec.Count
-            int x = at % m_Seg;
-            return new Vector2Int(x, (at - x) / m_Seg);
+        public Vector2Int ConverPos(int iAt) {
+            if(m_Seg <= 0 || iAt < 0) return Vector2Int.zero;//|| at>= m_ConverPosVec.Count
+            int aX = iAt % m_Seg;
+            return new Vector2Int(aX, (iAt - aX) / m_Seg);
         }
         virtual public List<Texture2D> GetTextureList() {
             return m_Texture2Ds;
         }
 
         public Texture2D Create() {
-            return Create(GetTextureList());
-        }
-        public Texture2D Create(List<Texture2D> TextList) {
-            int tex_count = TextList.Count;
-            Debug.Log("Create()Texture!!");
-            if(tex_count == 0) {
-                Debug.LogError("m_Texture2Ds.Count==0!!");
-                return null;
-            }
-
-            m_Seg = Core.MathLib.Lib.SqrtInt(tex_count);
-            m_AtlasSize = m_Seg * m_Size;
-            var texture = new Texture2D(m_AtlasSize, m_AtlasSize, m_TextureFormat, false);
-            /*
-            m_ConverPosVec.Clear();
-            for(int i = 0; i < tex_count; i++) {
-                int x = i % m_Seg;
-                m_ConverPosVec.Add(new Vector2Int(x, (i - x) / m_Seg));
-            }
-            */
-
-            for(int i = 0; i < tex_count; i++) {
-                var tex = TextList[i];
-                var pos = ConverPos(i);
-                Color[] cols = null;
-                if(m_Size != tex.width || m_Size != tex.height) {
-                    cols = TextureLib.Lib.GetPixels(tex, m_Size, m_Size);
-                } else {
-                    cols = tex.GetPixels(0);
-                }
-                texture.SetPixels(pos.x * m_Size, pos.y * m_Size, m_Size, m_Size, cols);
-            }
-            texture.Apply();
-
-            m_Texture = texture;
-
-            return texture;
+            var aData = TextureLib.Lib.CreateTextureAtlas(GetTextureList(), m_Size, m_TextureFormat, m_Interval);
+            m_Texture = aData.m_Texture;
+            m_AtlasSize = m_Texture.width;
+            m_Seg = aData.m_Seg;
+            return m_Texture;
         }
 
     }

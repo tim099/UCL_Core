@@ -3,6 +3,25 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 namespace UCL.Core.TextureLib {
+    public class TextureAtlasData
+    {
+        public Texture2D m_Texture;
+        /// <summary>
+        /// m_Seg * m_Size = m_AtlasSize
+        /// </summary>
+        public int m_Seg = 0;
+        /// <summary>
+        /// Texture that size not fit m_Size will be scale to fit m_Size
+        /// </summary>
+        public int m_Size = 64;
+
+        /// <summary>
+        /// Interval of texture (Pixels)
+        /// </summary>
+        public int m_Interval = 0;
+    }
+
+
     public enum ImageFormat {
         png = 0,
         jpg,
@@ -30,7 +49,50 @@ namespace UCL.Core.TextureLib {
     }
 #endif
     static public class Lib {
+        /// <summary>
+        /// Create TextureAtlas from input iTextList
+        /// </summary>
+        /// <param name="iTextList"></param>
+        /// <param name="iSize">Size per Texture</param>
+        /// <param name="iTextureFormat"></param>
+        /// <returns></returns>
+        public static TextureAtlasData CreateTextureAtlas(List<Texture2D> iTextList, int iSize, TextureFormat iTextureFormat, int iInterval = 0)
+        {
+            TextureAtlasData aData = new TextureAtlasData();
+            
+            if (iTextList.IsNullOrEmpty())
+            {
+                Debug.LogError("CreateTextureAtlas iTextList.IsNullOrEmpty()!!");
+                return aData;
+            }
+            aData.m_Interval = iInterval;
+            aData.m_Size = iSize;
+            aData.m_Seg = Core.MathLib.Lib.SqrtInt(iTextList.Count);
 
+            int aSeg = aData.m_Seg;
+            int aAtlasSize = aSeg * iSize + (aSeg-1) * iInterval;
+            var aTexture = new Texture2D(aAtlasSize, aAtlasSize, iTextureFormat, false);
+
+            for (int i = 0; i < iTextList.Count; i++)
+            {
+                var aTex = iTextList[i];
+                int aX = i % aSeg;
+                int aY = (i - aX) / aSeg;
+                Color[] aCols = null;
+                if (iSize != aTex.width || iSize != aTex.height)
+                {
+                    aCols = TextureLib.Lib.GetPixels(aTex, iSize, iSize);
+                }
+                else
+                {
+                    aCols = aTex.GetPixels(0);
+                }
+                aTexture.SetPixels(aX * (iSize + iInterval), aY * (iSize + iInterval), iSize, iSize, aCols);
+            }
+            aTexture.Apply();
+            aData.m_Texture = aTexture;
+            return aData;
+        }
         /// <summary>
         /// Create a Sprite from byte array
         /// </summary>

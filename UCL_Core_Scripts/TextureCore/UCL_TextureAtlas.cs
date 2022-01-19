@@ -9,6 +9,10 @@ namespace UCL.Core.TextureLib {
         [Header("Size per texture in atlas")]public int m_Size = 64;
         public ImageFormat m_SaveFormat = ImageFormat.png;
         public TextureFormat m_TextureFormat = TextureFormat.ARGB32;
+        /// <summary>
+        /// Interval of texture (Pixels)
+        /// </summary>
+        public int m_Interval = 0;
         public string m_OutputFolder = "Assets/Textures";
         public string m_SaveName = "TextureAtlas";
         
@@ -67,43 +71,16 @@ namespace UCL.Core.TextureLib {
 #endif
             TextureLib.Lib.SaveTexture(GetOutputPath(), m_Texture, m_SaveFormat);
         }
-        public Vector2Int ConverPos(int at) {
-            if(m_Seg <= 0 || at < 0) return new Vector2Int(0, 0);
-            int x = at % m_Seg;
-            return new Vector2Int(x, (at - x) / m_Seg);
-        }
         virtual public List<Texture2D> GetTextureList() {
             return m_Texture2Ds;
         }
         public Texture2D Create() {
             var TextList = GetTextureList();
-            int tex_count = TextList.Count;
-            Debug.Log("Create()Texture!!");
-            if(tex_count == 0) {
-                Debug.LogError("m_Texture2Ds.Count==0!!");
-                return null;
-            }
-
-            m_Seg = Core.MathLib.Lib.SqrtInt(tex_count);
-            m_AtlasSize = m_Seg * m_Size;
-            var texture = new Texture2D(m_AtlasSize, m_AtlasSize, m_TextureFormat, false);
-
-            for(int i = 0; i < tex_count; i++) {
-                var tex = TextList[i];
-                var pos = ConverPos(i);
-                Color[] cols = null;
-                if(m_Size != tex.width || m_Size != tex.height) {
-                    cols = TextureLib.Lib.GetPixels(tex, m_Size, m_Size);
-                } else {
-                    cols = tex.GetPixels(0);
-                }
-                texture.SetPixels(pos.x * m_Size, pos.y * m_Size, m_Size, m_Size, cols);
-            }
-            texture.Apply();
-
-            m_Texture = texture;
-
-            return texture;
+            var aData = TextureLib.Lib.CreateTextureAtlas(GetTextureList(), m_Size, m_TextureFormat, m_Interval);
+            m_Texture = aData.m_Texture;
+            m_AtlasSize = m_Texture.width;
+            m_Seg = aData.m_Seg;
+            return m_Texture;
         }
     }
 }

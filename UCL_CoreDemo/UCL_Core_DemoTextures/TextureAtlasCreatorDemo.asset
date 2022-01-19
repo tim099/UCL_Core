@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 63a9f8515bf2f404a951ca729dc58f88, type: 3}
+  m_Name: TextureAtlasCreatorDemo
+  m_EditorClassIdentifier: 
+  m_Texture2Ds:
+  - {fileID: 2800000, guid: f46d5713369f4c640a1b09b63df57300, type: 3}
+  - {fileID: 2800000, guid: 911b8efe2e2f1ab4c823b032b45cd476, type: 3}
+  - {fileID: 2800000, guid: adc6bab6db412ed47af54b51f412805c, type: 3}
+  - {fileID: 2800000, guid: 95b05f01b5ee3fc4aadb1e15b474becf, type: 3}
+  m_Size: 128
+  m_TextureFormat: 5
+  m_OutputFolder: Assets/UCL/UCL_Core/UCL_CoreDemo/UCL_Core_DemoTextures/
+  m_SaveName: TextureAtlasDemo
+  m_Texture: {fileID: 2800000, guid: 0cb27a18a20db0c48a1ad1f757774053, type: 2}
+  m_AtlasSize: 258
+  m_Seg: 2
+  m_Interval: 2

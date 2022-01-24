@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -348,6 +349,42 @@ namespace UCL.Core.ObjectReflectionExtension {
                 return null;
             }
             return aMethod.Invoke(iTarget, iParameters);
+        }
+    }
+}
+namespace UCL.Core.ObjectMemoryExtension
+{
+    public static partial class ExtensionMethods
+    {
+        /// <summary>
+        /// DeepClone the target
+        /// </summary>
+        /// <typeparam name="T"> type of target</typeparam>
+        /// <param name="iTarget">target to clone</param>
+        /// <returns>Clone of target</returns>
+        public static T DeepClone<T>(this T iTarget)
+        {
+
+            if (!typeof(T).IsSerializable)
+            {
+                Debug.LogError("DeepClone fail!! Target not Serializable!!");
+                return default(T);
+            }
+
+            if (iTarget != null)
+            {
+                using (MemoryStream aStream = new MemoryStream())
+                {
+                    var aFormatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
+                    aFormatter.Serialize(aStream, iTarget);
+                    aStream.Seek(0, SeekOrigin.Begin);
+                    T aClonedSource = (T)aFormatter.Deserialize(aStream);
+                    return aClonedSource;
+                }
+            }
+
+            return default(T);
+
         }
     }
 }

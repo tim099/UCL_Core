@@ -12,6 +12,7 @@ public static partial class UCL_ColorExtension
     /// <param name="iAlpha"></param>
     public static void SetAlpha(this Image iImage, float iAlpha)
     {
+        if (iImage == null) return;
         var iCol = iImage.color;
         iImage.color = new Color(iCol.r, iCol.g, iCol.b, iAlpha);
     }

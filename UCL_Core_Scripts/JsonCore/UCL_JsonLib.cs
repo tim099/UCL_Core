@@ -161,10 +161,18 @@ namespace UCL.Core.JsonLib {
             {
                 string aClassName = iData.GetString("ClassName");
                 Type aClassType = Type.GetType(aClassName);
-                JsonData aClassData = iData.GetString("ClassData");
-                UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;
-                aObj.DeserializeFromJson(iData);
-                return aObj;
+                if (aClassType != null)
+                {
+                    JsonData aClassData = iData.GetString("ClassData");
+                    UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;
+                    aObj.DeserializeFromJson(iData);
+                    return aObj;
+                }
+                else
+                {
+                    Debug.LogError("DataToObject aClassName:" + aClassName + ", Type not found!");
+                    return null;
+                }
             }
             else if (iType.IsEnum)
             {

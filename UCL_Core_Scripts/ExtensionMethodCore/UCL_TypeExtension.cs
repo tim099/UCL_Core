@@ -200,6 +200,7 @@ public static partial class TypeExtensionMethods {
     /// <returns></returns>
     public static object CreateInstance(this Type iType)
     {
+        if (iType == null) return null;
         if (iType == typeof(string)) return string.Empty;
         if (iType == typeof(int)) return (int)0;
         if (iType == typeof(uint)) return (uint)0;
@@ -238,6 +239,7 @@ public static partial class TypeExtensionMethods {
     /// <returns></returns>
     public static bool IsTuple(this Type iType)
     {
+        if (iType == null) return false;
         if (!iType.IsGenericType) return false;
         if(s_TupleTypes == null)
         {

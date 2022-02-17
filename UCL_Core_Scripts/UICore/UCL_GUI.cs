@@ -6,7 +6,7 @@ namespace UCL.Core.UI {
     public class DraggableButton
     {
         public string Name { get; set; }
-        Rect mButtonRect = new Rect(10, 10, 200, 100);
+        public Rect mButtonRect = new Rect(10, 10, 200, 100);
         Vector2 mMouseToPositionDelta = Vector2.zero;
         bool mButtonPressed = false;
         bool mDraged = false;
@@ -61,6 +61,23 @@ namespace UCL.Core.UI {
                 return;
             }
             GUI.backgroundColor = m_BackGroundColorStack.Pop();
+        }
+        /// <summary>
+        /// draw a Handle
+        /// </summary>
+        /// <param name="iPosition"></param>
+        /// <returns></returns>
+        public static Vector2 Handle(Vector2 iPosition, UCLI_ObjectDictionary iDic)
+        {
+            if (!iDic.ContainsKey("DragButton"))
+            {
+                DraggableButton aButton = new DraggableButton();
+                aButton.mButtonRect = new Rect(iPosition.x, iPosition.y, 100, 100);
+                iDic.SetData("DragButton", aButton);
+            }
+            var aDragButton = iDic.GetData<DraggableButton>("DragButton");
+            aDragButton.OnGUI();
+            return aDragButton.mButtonRect.position;
         }
     }
 }

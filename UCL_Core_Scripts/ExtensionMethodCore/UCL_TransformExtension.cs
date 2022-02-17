@@ -72,6 +72,20 @@ public static partial class TransformExtensionMethods {
 
     #region RectTransform
     /// <summary>
+    /// return rect in ScreenSpace
+    /// (you can use the rect in GUILayout.Window as input and have a window size fit iRectTransform exactly
+    /// </summary>
+    /// <param name="iRectTransform"></param>
+    /// <returns></returns>
+    public static Rect GetScreenSpaceRect(this RectTransform iRectTransform)
+    {
+        Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+        Vector2 aPos = (Vector2)iRectTransform.position - (aSize * iRectTransform.pivot);
+        aPos.y = Screen.height - aPos.y - aSize.y;
+        return new Rect(aPos, aSize);
+    }
+
+    /// <summary>
     /// Set the Top value of RectTransform
     /// </summary>
     /// <param name="iRect"></param>

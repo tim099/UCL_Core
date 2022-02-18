@@ -84,7 +84,14 @@ public static partial class TransformExtensionMethods {
         aPos.y = Screen.height - aPos.y - aSize.y;
         return new Rect(aPos, aSize);
     }
+    public static void SetPosition(this RectTransform iRectTransform, Rect iRect)
+    {
+        Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+        Vector2 aPos = iRect.position + (aSize * iRectTransform.pivot);
+        aPos.y = Screen.height - aPos.y;
 
+        iRectTransform.position = aPos;
+    }
     /// <summary>
     /// Set the Top value of RectTransform
     /// </summary>

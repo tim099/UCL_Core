@@ -67,9 +67,9 @@ namespace UCL.Core.UI {
         public void SetSize(int iSize)
         {
             m_Size = iSize;
-            ButtonRect = new Rect(Position.x + m_Size, Position.y, 2 * m_Size, 2 * m_Size);
-            ButtonRectV = new Rect(Position.x + m_Size, Position.y - 2 * m_Size - 10, 2 * m_Size, 2 * m_Size);
-            ButtonRectH = new Rect(Position.x + 3 * m_Size + 10, Position.y, 2 * m_Size, 2 * m_Size);
+            ButtonRect = new Rect(0, 0, 2 * m_Size, 2 * m_Size);
+            ButtonRectV = new Rect(0, 0, 2 * m_Size, 2 * m_Size);
+            ButtonRectH = new Rect(0, 0, 2 * m_Size, 2 * m_Size);
         }
         public void SetPosition(Vector2 iPosition)
         {

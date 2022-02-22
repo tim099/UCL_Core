@@ -154,8 +154,8 @@ namespace UCL.Core.Game {
                 Debug.LogError("SaveGameConfig() m_GameConfig == null");
                 return;
             }
-            var config_path = GetGameConfigPath();
-            File.WriteAllText(config_path, m_GameConfig.Save());
+            var aConfigPath = GetGameConfigPath();
+            File.WriteAllText(aConfigPath, m_GameConfig.Save());
         }
         virtual public void LoadGameConfig() {
             var config_path = GetGameConfigPath();

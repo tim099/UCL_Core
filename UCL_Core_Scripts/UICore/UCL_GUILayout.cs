@@ -228,6 +228,18 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return iVal;
         }
+        static public bool BoolField(bool iVal, int iSize = 21)
+        {
+            GUILayout.BeginHorizontal();
+
+            if (GUILayout.Button(iVal ? "✔" : " ", GUILayout.Width(iSize), GUILayout.Height(iSize)))
+            {
+                iVal = !iVal;
+            }
+            GUILayout.EndHorizontal();
+
+            return iVal;
+        }
         static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
         {
             GUILayout.BeginHorizontal();

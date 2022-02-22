@@ -205,6 +205,11 @@ namespace UCL.Core.JsonLib {
             if (m_Type == JsonType.String) return m_Obj as string;
             return string.Empty;
         }
+        public string GetStringWithDefaultValue(string iDefaultVal)
+        {
+            if (m_Type == JsonType.String) return m_Obj as string;
+            return iDefaultVal;
+        }
         public string GetString(string iKey) {
             return GetString(iKey, string.Empty);
         }

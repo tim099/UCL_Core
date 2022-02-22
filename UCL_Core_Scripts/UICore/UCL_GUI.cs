@@ -74,9 +74,9 @@ namespace UCL.Core.UI {
         public void SetPosition(Vector2 iPosition)
         {
             Position = iPosition;
-            ButtonRect.position = new Vector2(Position.x + m_Size, Position.y);
-            ButtonRectV.position = new Vector2(Position.x + m_Size, Position.y - 2 * m_Size - 10);
-            ButtonRectH.position = new Vector2(Position.x + 3 * m_Size + 10, Position.y);
+            ButtonRect.position = new Vector2(Position.x - m_Size, Position.y - m_Size);
+            ButtonRectV.position = new Vector2(Position.x - m_Size, Position.y - 3 * m_Size - 10);
+            ButtonRectH.position = new Vector2(Position.x + 1 * m_Size + 10, Position.y - m_Size);
         }
         public bool OnGUI()
         {
@@ -236,7 +236,7 @@ namespace UCL.Core.UI {
         /// <returns></returns>
         public static Vector2 PositionHandle(Vector2 iPosition, UCLI_ObjectDictionary iDic)
         {
-            const int Size = 20;
+            const int Size = 24;
             const string Key = "PositionHandle";
             if (!iDic.ContainsKey(Key))
             {

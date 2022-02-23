@@ -169,12 +169,33 @@ namespace UCL.Core.UI {
             if (int.TryParse(aResult, out aResVal)) return aResVal;
             return iVal;
         }
+        static HashSet<char> NumHash
+        {
+            get
+            {
+                if(s_NumHash == null)
+                {
+                    s_NumHash = new HashSet<char>() { '0','1','2','3','4','5','6','7','8','9','.'};
+                }
+                return s_NumHash;
+            }
+        }
+        static HashSet<char> s_NumHash = null;
         static public int IntField(string iLabel, int iVal, UCL.Core.UCL_ObjectDictionary iDataDic, int iMinWidth = 80)
         {
             GUILayout.BeginHorizontal();
             LabelAutoSize(iLabel);
 
             string aResult = GUILayout.TextField(iDataDic.GetData("IntFieldValue", iVal.ToString()), GUILayout.MinWidth(iMinWidth));
+            var aNumHash = NumHash;
+            for (int i = 0; i < aResult.Length; i++)
+            {
+                if (!aNumHash.Contains(aResult[i]))
+                {
+                    aResult = aResult.Remove(i, 1);
+                    break;
+                }
+            }
             iDataDic.SetData("IntFieldValue", aResult);
             GUILayout.EndHorizontal();
 

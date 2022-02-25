@@ -79,26 +79,53 @@ public static partial class TransformExtensionMethods {
     /// <returns></returns>
     public static Rect GetScreenSpaceRect(this RectTransform iRectTransform)
     {
-        Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
-        Vector2 aPos = (Vector2)iRectTransform.position - (aSize * iRectTransform.pivot);
-        aPos.y = Screen.height - aPos.y - aSize.y;
-        return new Rect(aPos, aSize);
-    }
-    public static void SetPosition(this RectTransform iRectTransform, Vector2 iRectPos)
-    {
-        Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
-        Vector2 aPos = iRectPos + (aSize * iRectTransform.pivot);
-        aPos.y = Screen.height - aPos.y;
+        var aCanvas = iRectTransform.GetComponentInParent<Canvas>();
+        if(aCanvas == null || aCanvas.renderMode == RenderMode.ScreenSpaceOverlay)
+        {
+            Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+            Vector2 aPos = (Vector2)iRectTransform.position - (aSize * iRectTransform.pivot);
+            aPos.y = Screen.height - aPos.y - aSize.y;
+            return new Rect(aPos, aSize);
+        }
+        {
+            var aCorners = new Vector3[4];
+            iRectTransform.GetWorldCorners(aCorners);
 
-        iRectTransform.position = aPos;
-    }
-    public static void SetPosition(this RectTransform iRectTransform, Rect iRect)
-    {
-        Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
-        Vector2 aPos = iRect.position + (aSize * iRectTransform.pivot);
-        aPos.y = Screen.height - aPos.y;
+            var aCamera = aCanvas.worldCamera;
+            if (aCamera == null) aCamera = Camera.main;
+            // getting the screen corners
+            for (var i = 0; i < aCorners.Length; i++) aCorners[i] = aCamera.WorldToScreenPoint(aCorners[i]);
+            
+            var aPosition = (Vector2)aCorners[1];// getting the top left position of the transform
+            
+            aPosition.y = Screen.height - aPosition.y;// inverting the y axis values, making the top left corner = 0.
+            
+            var aSize = aCorners[2] - aCorners[0];// calculate the siz, width and height, in pixle format
 
-        iRectTransform.position = aPos;
+            return new Rect(aPosition, aSize);
+        }
+
+    }
+    public static void SetPositionScreenSpace(this RectTransform iRectTransform, Vector2 iRectPos)
+    {
+        var aCanvas = iRectTransform.GetComponentInParent<Canvas>();
+        if (aCanvas == null || aCanvas.renderMode == RenderMode.ScreenSpaceOverlay)
+        {
+            Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+            Vector2 aPos = iRectPos + (aSize * iRectTransform.pivot);
+            aPos.y = Screen.height - aPos.y;
+            iRectTransform.position = aPos;
+        }
+        else
+        {
+            var aCamera = aCanvas.worldCamera;
+            if (aCamera == null) aCamera = Camera.main;
+            Vector3 aWorldPoint;
+            Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+            iRectPos.y = Screen.height - iRectPos.y - aSize.y;
+            RectTransformUtility.ScreenPointToWorldPointInRectangle(iRectTransform, iRectPos, aCamera, out aWorldPoint);
+            iRectTransform.position = aWorldPoint;
+        }
     }
     /// <summary>
     /// Set the Top value of RectTransform

@@ -353,7 +353,8 @@ namespace UCL.Core.UI {
         }
         static public Rect DrawSpriteFixedSize(Sprite iSprite, float iSize = 128)
         {
-            if (iSprite == null) return default;
+            if (iSprite == null) return GUILayoutUtility.GetRect(iSize, iSize);
+
             if (iSprite.rect.height < iSprite.rect.width)
             {
                 return DrawSpriteFixedHeight(iSprite, iSize);
@@ -363,22 +364,25 @@ namespace UCL.Core.UI {
                 return DrawSpriteFixedWidth(iSprite, iSize);
             }
         }
-        static public Rect DrawSpriteFixedWidth(Sprite sprite, float width) {
-            if (sprite == null) return default;
-            return DrawSprite(sprite, width, sprite.rect.height * (width / sprite.rect.width));
+        static public Rect DrawSpriteFixedWidth(Sprite iSprite, float iWidth) {
+            if (iSprite == null) return GUILayoutUtility.GetRect(iWidth, iWidth);
+            return DrawSprite(iSprite, iWidth, iSprite.rect.height * (iWidth / iSprite.rect.width));
         }
-        static public Rect DrawSpriteFixedHeight(Sprite sprite, float height) {
-            if (sprite == null) return default;
-            return DrawSprite(sprite, sprite.rect.width * (height / sprite.rect.height), height);
+        static public Rect DrawSpriteFixedHeight(Sprite iSprite, float iHeight) {
+            if (iSprite == null) return GUILayoutUtility.GetRect(iHeight, iHeight);
+            return DrawSprite(iSprite, iSprite.rect.width * (iHeight / iSprite.rect.height), iHeight);
         }
-        static public Rect DrawSprite(Sprite sprite, float width, float height) {
-            if (sprite == null) return default;
-            return DrawSprite(sprite, width, width, height, height);
+        static public Rect DrawSprite(Sprite iSprite, float iWidth, float iHeight) {
+            return DrawSprite(iSprite, iWidth, iWidth, iHeight, iHeight);
         }
         static public Rect DrawSprite(Sprite iSprite, float iMinWidth, float iMaxWidth, float iMinHeight, float iMaxHeight) {
-            if (iSprite == null) return default;
-            Rect aSpriteRect = iSprite.rect;
             Rect aRect = GUILayoutUtility.GetRect(iMinWidth, iMaxWidth, iMinHeight, iMaxHeight);
+            if (iSprite == null)
+            {
+                return aRect;
+            }
+            Rect aSpriteRect = iSprite.rect;
+            
             if (aRect.width > iMaxWidth) aRect.width = iMaxWidth;
             if (aRect.height > iMaxHeight) aRect.height = iMaxHeight;
 
@@ -1388,7 +1392,6 @@ namespace UCL.Core.UI {
                                         {
                                             aSelectedType = PopupAuto(aTypeNameList, iDataDic, aField.Name, 10, GUILayout.Width(160));
                                         }
-                                        //ITypeList
                                         if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                         {
                                             try

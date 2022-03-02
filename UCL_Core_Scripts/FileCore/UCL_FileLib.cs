@@ -155,6 +155,23 @@ namespace UCL.Core.FileLib
             return iPath;
         }
         /// <summary>
+        /// return FolderName from input path
+        /// </summary>
+        /// <param name="iPath"></param>
+        /// <returns></returns>
+        public static string GetFolderName(string iPath)
+        {
+            for (int i = iPath.Length - 1; i >= 0; i--)
+            {
+                var c = iPath[i];
+                if (c == '/' || c == '\\')
+                {
+                    return iPath.Substring(i + 1, iPath.Length - i - 1);
+                }
+            }
+            return iPath;
+        }
+        /// <summary>
         /// return all folders name in path
         /// </summary>
         /// <param name="iPath"></param>
@@ -295,6 +312,7 @@ namespace UCL.Core.FileLib
         public static string[] GetDirectories(string iPath,
             string iSearchPattern = "*",
             SearchOption iSearchOption = SearchOption.AllDirectories, bool iRemoveRootPath = false) {
+            if (!Directory.Exists(iPath)) return new string[0];
             var aDirs = Directory.GetDirectories(iPath, iSearchPattern, iSearchOption);
             if (iRemoveRootPath)
             {
@@ -308,13 +326,17 @@ namespace UCL.Core.FileLib
         /// <summary>
         /// Returns the names of files (including their paths) that match the specified search pattern in the specified directory.
         /// </summary>
-        /// <param name="path">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
-        /// <param name="searchPattern">The search string to match against the names of files in path. This parameter can contain a combination of valid literal path
+        /// <param name="iPath">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
+        /// <param name="iSearchPattern">The search string to match against the names of files in path. This parameter can contain a combination of valid literal path
         /// and wildcard (* and ?) characters, but it doesn't support regular expressions.</param>
         /// <returns></returns>
-        public static string[] GetFiles(string path, string searchPattern = "*", 
+        public static string[] GetFiles(string iPath, string iSearchPattern = "*", 
             SearchOption searchOption = SearchOption.TopDirectoryOnly) {
-            return Directory.GetFiles(path, searchPattern, searchOption);
+            if (!Directory.Exists(iPath))
+            {
+                return new string[0];
+            }
+            return Directory.GetFiles(iPath, iSearchPattern, searchOption);
         }
         public static string ConvertToAssetsPath(string iPath)
         {

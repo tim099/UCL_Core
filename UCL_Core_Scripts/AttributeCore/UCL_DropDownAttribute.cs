@@ -11,6 +11,7 @@ namespace UCL.Core
         public static object DrawOnGUI(this IStringArr iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
         {
             var aList = iStrArr.GetList(iObj);
+            if (aList.IsNullOrEmpty()) return null;
             int aIndex = Mathf.Max(0, Array.IndexOf(aList, iData));
             aIndex = UCL_GUILayout.PopupAuto(aIndex, aList, iDataDic, iKey);
             return aList[aIndex];
@@ -18,6 +19,7 @@ namespace UCL.Core
         public static object DrawOnGUILocalized(this IStringArr iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
         {
             var aList = iStrArr.GetList(iObj);
+            if (aList.IsNullOrEmpty()) return null;
             string[] aDisplayList = new string[aList.Length];
             for (int i = 0; i < aList.Length; i++)
             {

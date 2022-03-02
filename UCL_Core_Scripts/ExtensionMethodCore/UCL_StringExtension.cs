@@ -36,10 +36,16 @@ public static partial class StringExtensionMethods {
     {
         return string.Format("<color=#{0}>{1}</color>", ColorUtility.ToHtmlStringRGB(iCol), iStr);
     }
-    public static string RemoveLast(this string str) {
-        int len = str.Length;
-        if(len == 0) return string.Empty;
-        return str.Remove(len - 1);
+    public static string RemoveLast(this string iStr) {
+        int aLen = iStr.Length;
+        if(aLen == 0) return string.Empty;
+        return iStr.Remove(aLen - 1);
+    }
+    public static char LastElement(this string iStr)
+    {
+        int aLen = iStr.Length;
+        if (aLen == 0) return default;
+        return iStr[aLen - 1];
     }
     public static string[] SplitByLine(this string iStr) {
         return System.Text.RegularExpressions.Regex.Split(iStr, LineSeparator);

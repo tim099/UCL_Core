@@ -140,6 +140,10 @@ namespace UCL.Core.TextureLib {
         /// <returns></returns>
         public static Texture2D CreateTexture(string iPath)
         {
+            if (!File.Exists(iPath))
+            {
+                return null;
+            }
             var aData = File.ReadAllBytes(iPath);
             var aTex = new Texture2D(1, 1);
             aTex.LoadImage(aData); //..this will auto-resize the texture dimensions.
@@ -297,8 +301,9 @@ namespace UCL.Core.TextureLib {
             return cols;
         }
 
-        public static Sprite CreateSprite(Texture2D tex) {
-            return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
+        public static Sprite CreateSprite(Texture2D iTexture) {
+            if (iTexture == null) return null;
+            return Sprite.Create(iTexture, new Rect(0, 0, iTexture.width, iTexture.height), Vector2.zero);
         }
     }
 }

@@ -84,7 +84,23 @@ namespace UCL.Core.UI {
 
 
         #region Label
-
+        static public GUIStyle LabelStyle
+        {
+            get
+            {
+                if (s_LabelStyle == null)
+                {
+                    s_LabelStyle = new GUIStyle(GUI.skin.label);
+                    s_LabelStyle.richText = true;
+                    var aTextCol = Color.white;
+                    s_LabelStyle.normal.textColor = aTextCol;
+                    s_LabelStyle.focused.textColor = aTextCol;
+                    s_LabelStyle.hover.textColor = aTextCol;
+                }
+                return s_LabelStyle;
+            }
+        }
+        static GUIStyle s_LabelStyle = null;
         static Dictionary<System.Tuple<Color, int> , GUIStyle> m_LabelStyleDic = null;
         public static GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16)
         {

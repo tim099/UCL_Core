@@ -21,7 +21,9 @@ namespace UCL.Core.PA
             {
                 m_Type = iObj.GetType();
             }
-            var aMethod = m_Type.GetMethod(m_FuncName);//, types: new Type[1] { typeof(Texture2D)}
+            var aMethod = m_Type.GetMethod(m_FuncName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                 | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static);
+            //, types: new Type[1] { typeof(Texture2D)}
             if (aMethod != null)
             {
                 var aResult = aMethod.Invoke(iObj, null);

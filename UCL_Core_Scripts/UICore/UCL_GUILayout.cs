@@ -558,6 +558,13 @@ namespace UCL.Core.UI {
             Vector2 aSize = sLabelGuiStyle.CalcSize(new GUIContent(iName));
             GUILayout.Label(iName, style: sLabelGuiStyle, GUILayout.Width(aSize.x + 1f), GUILayout.Height(aSize.y));
         }
+        public static void Label(string iName, Color iColor)
+        {
+            var aOriginalCol = GUI.skin.label.normal.textColor;
+            GUI.skin.label.normal.textColor = iColor;
+            GUILayout.Label(iName);
+            GUI.skin.label.normal.textColor = aOriginalCol;
+        }
         #endregion
 
         #region Popup
@@ -652,8 +659,9 @@ namespace UCL.Core.UI {
         /// <param name="iPath">Current folder path</param>
         /// <param name="iRoot">Root of the path</param>
         /// <param name="iLabel">Title Label(etc. Folder Path)</param>
-        /// <returns></returns>
-        public static string FolderExplorer(UCL_ObjectDictionary iDataDic, string iPath, string iRoot = "", string iLabel = "")
+        /// <param name="iPathDisplayCount">max path button display on top, if iPathDisplayCount <= 0 then unlimited</param>
+        /// <returns>return the selected folder</returns>
+        public static string FolderExplorer(UCL_ObjectDictionary iDataDic, string iPath, string iRoot = "", string iLabel = "", int iPathDisplayCount = -1)
         {
             const string AllDirsNameKey = "AllDirsName";
             const string DirPathKey = "DirPath";
@@ -710,9 +718,11 @@ namespace UCL.Core.UI {
             }
 
 
+
             string aShowToggle = iDataDic.GetData(ShowToggleKey, string.Empty);
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(300)))
             {
+                //iDataDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDataDic.GetData<Vector2>("ScrollPos")));
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("<<", GUILayout.Width(40)))
                 {
@@ -720,28 +730,23 @@ namespace UCL.Core.UI {
                 }
                 if (!string.IsNullOrEmpty(iPath))//Path menu (on the top)
                 {
-                    var aTmpPath = iPath.LastElement() == '/'? iPath.RemoveLast() : iPath;
-                    string[] aPaths = aTmpPath.Split('/');
-                    int aCount = Math.Min(aPaths.Length, 3);
+                    var aTmpPath = (iPath.LastElement() == '/' || iPath.LastElement() == '\\') ? iPath.RemoveLast() : iPath;
+                    string[] aPaths = aTmpPath.Split('/', '\\');
+
+                    int aCount = aPaths.Length;
+                    if (iPathDisplayCount > 0)
+                    {
+                        aCount = Math.Min(aPaths.Length, iPathDisplayCount);
+                    }
+
                     for (int i = aCount; i >= 1; i--)
                     {
                         string aSelectPath = aPaths[aPaths.Length - i];
-                        if (GUILayout.Button(aSelectPath))
-                        {
-                            System.Text.StringBuilder aSB = new System.Text.StringBuilder();
-                            for (int j = 0; j <= aPaths.Length - i; j++)
-                            {
-                                if (j > 0) aSB.Append('/');
-                                aSB.Append(aPaths[j]);
-                            }
-                            aSetPath(aSB.ToString());
-                        }
-                        if (i > 1)
                         {
                             bool aIsCur = aShowToggle == aSelectPath;
                             if (aIsCur)
                             {
-                                if (!Toggle(aIsCur))
+                                if (!Toggle(aIsCur))//Hide
                                 {
                                     iDataDic.Remove(ShowToggleKey);
                                     iDataDic.Remove(AllDirsNameKey);
@@ -756,7 +761,7 @@ namespace UCL.Core.UI {
                                     iDataDic.Remove(AllDirsNameKey);
 
                                     System.Text.StringBuilder aSB = new System.Text.StringBuilder();
-                                    for (int j = 0; j <= aPaths.Length - i; j++)
+                                    for (int j = 0; j < aPaths.Length - i; j++)
                                     {
                                         if (j > 0) aSB.Append('/');
                                         aSB.Append(aPaths[j]);
@@ -765,11 +770,24 @@ namespace UCL.Core.UI {
                                 }
                             }
                         }
+
+                        if (GUILayout.Button(aSelectPath))
+                        {
+                            System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+                            for (int j = 0; j <= aPaths.Length - i; j++)
+                            {
+                                if (j > 0) aSB.Append('/');
+                                aSB.Append(aPaths[j]);
+                            }
+                            aSetPath(aSB.ToString());
+                        }
+
                     }
                 }
 
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
+                //GUILayout.EndScrollView();
                 if (!iDataDic.ContainsKey(AllDirsNameKey))
                 {
                     aSelectDir(iPath);
@@ -779,7 +797,7 @@ namespace UCL.Core.UI {
                 {
                     using (var aScope2 = new GUILayout.VerticalScope("box", GUILayout.Height(180)))
                     {
-                        iDataDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDataDic.GetData<Vector2>("ScrollPos")));
+                        iDataDic.SetData("FolderScrollPos", GUILayout.BeginScrollView(iDataDic.GetData<Vector2>("FolderScrollPos")));
                         for (int i = 0; i < aDirs.Length; i++)
                         {
                             string aDir = aDirs[i];
@@ -797,17 +815,16 @@ namespace UCL.Core.UI {
                                     aSetPath(aCurDirPath + "/" + aDir);
                                 }
                             }
-                            GUILayout.Box(aDir);
+                            Label(aDir, iDataDic.GetData(ShowToggleKey, string.Empty) == aDir ? Color.yellow : Color.white);
+                            //GUILayout.Label(aDir);
                             GUILayout.FlexibleSpace();
                             GUILayout.EndHorizontal();
                         }
-
                         GUILayout.EndScrollView();
                     }
                 }
+            }     
 
-
-            }
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
             return iPath;
@@ -1426,7 +1443,11 @@ namespace UCL.Core.UI {
                                     var aStrArr = aAttr as IStringArr;
                                     aIsDrawed = true;
                                     GUILayout.BeginHorizontal();
-                                    UCL_GUILayout.LabelAutoSize(aDisplayName);
+                                    //using(var aScope2 = new GUILayout.HorizontalScope("box", GUILayout.ExpandWidth(false)))
+                                    {
+                                        GUILayout.Label(aDisplayName, GUILayout.ExpandWidth(false));
+                                    }
+
                                     aField.SetValue(iObj, aStrArr.DrawOnGUILocalized(iObj, aData, iDataDic, "_" + aDisplayName));
                                     GUILayout.EndHorizontal();
                                 }else if(aAttr is ITexture2D)
@@ -1435,6 +1456,10 @@ namespace UCL.Core.UI {
                                     GUILayout.BeginHorizontal();
                                     GUILayout.Box(aTextureArr.GetTexture(iObj, aData), GUILayout.Width(64), GUILayout.Height(64));
                                     GUILayout.EndHorizontal();
+                                }
+                                else if(aAttr is SpaceAttribute)
+                                {
+                                    GUILayout.Space((aAttr as SpaceAttribute).height);
                                 }
                                 else if (aAttr is UCL.Core.PA.UCL_FolderExplorerAttribute)
                                 {
@@ -1450,7 +1475,6 @@ namespace UCL.Core.UI {
                                         GUILayout.EndHorizontal();
                                         aField.SetValue(iObj, aResult);
                                     }
-                                    
                                 }
                                 else if(aAttr is ATTR.AlwaysExpendOnGUI)
                                 {
@@ -1712,12 +1736,8 @@ namespace UCL.Core.UI {
                             }
                             else if (aField.FieldType.IsStructOrClass())
                             {
-                                //UCL.Core.UI.UCL_GUILayout.LabelAutoSize(aDisplayName);
-                                //GUILayout.BeginHorizontal();
-                                //GUILayout.Space(10);
                                 DrawObjectData(aData, iDataDic.GetSubDic(aDisplayName + "_FieldData"), aDisplayName, iFieldNameFunc: iFieldNameFunc, iIsAlwaysShowDetail: aIsAlwaysShowDetail);
                                 aField.SetValue(iObj, aData);
-                                //GUILayout.EndHorizontal();
                             }
                         }
 

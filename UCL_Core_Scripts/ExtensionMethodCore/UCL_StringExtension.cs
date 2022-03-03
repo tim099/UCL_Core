@@ -26,6 +26,16 @@ public static partial class StringExtensionMethods {
     {
         return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
     }
+
+    /// <summary>
+    /// string.IsNullOrEmpty(iStr);
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <returns></returns>
+    public static bool IsNullOrEmpty(this string iStr)
+    {
+        return string.IsNullOrEmpty(iStr);
+    }
     /// <summary>
     /// Append RichText Color to the string
     /// </summary>

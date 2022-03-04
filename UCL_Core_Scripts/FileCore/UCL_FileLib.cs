@@ -223,7 +223,14 @@ namespace UCL.Core.FileLib
                 Debug.LogError("MoveDirectory !Directory.Exists("+iOldDir+")");
                 return;
             }
-            Directory.Move(iOldDir, iNewDir);
+            try
+            {
+                Directory.Move(iOldDir, iNewDir);
+            }
+            catch(System.Exception iE)
+            {
+                Debug.LogException(iE);
+            }
         }
 
         public static void WriteBinaryToFile<T>(string path, T target, FileMode fileMode = FileMode.Create) {
@@ -331,12 +338,12 @@ namespace UCL.Core.FileLib
         /// and wildcard (* and ?) characters, but it doesn't support regular expressions.</param>
         /// <returns></returns>
         public static string[] GetFiles(string iPath, string iSearchPattern = "*", 
-            SearchOption searchOption = SearchOption.TopDirectoryOnly) {
+            SearchOption iSearchOption = SearchOption.TopDirectoryOnly) {
             if (!Directory.Exists(iPath))
             {
                 return new string[0];
             }
-            return Directory.GetFiles(iPath, iSearchPattern, searchOption);
+            return Directory.GetFiles(iPath, iSearchPattern, iSearchOption);
         }
         public static string ConvertToAssetsPath(string iPath)
         {

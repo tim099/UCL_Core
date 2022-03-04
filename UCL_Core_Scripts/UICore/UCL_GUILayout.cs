@@ -661,22 +661,24 @@ namespace UCL.Core.UI {
         /// <param name="iLabel">Title Label(etc. Folder Path)</param>
         /// <param name="iPathDisplayCount">max path button display on top, if iPathDisplayCount <= 0 then unlimited</param>
         /// <returns>return the selected folder</returns>
-        public static string FolderExplorer(UCL_ObjectDictionary iDataDic, string iPath, string iRoot = "", string iLabel = "", int iPathDisplayCount = -1)
+        public static string FolderExplorer(UCL_ObjectDictionary iDataDic, string iPath, string iRoot = "", string iLabel = "", int iPathDisplayCount = -1
+            ,bool iIsShowFiles = false)
         {
             const string AllDirsNameKey = "AllDirsName";
+            const string AllFilesNameKey = "AllFilesNameKey";
             const string DirPathKey = "DirPath";
             const string ShowToggleKey = "ShowToggle";//current showing toggle
             const string PathKey = "Path";
             System.Action<string> aSetPath = (iNewPath) => {
                 iPath = iNewPath; 
                 iDataDic.Remove(AllDirsNameKey);
+                iDataDic.Remove(AllFilesNameKey);
                 iDataDic.Remove(ShowToggleKey);
                 iDataDic.SetData(DirPathKey, iNewPath);
                 iDataDic.SetData(PathKey, iNewPath);
             };
             System.Action<string> aSelectDir = (iDirPath) =>
             {
-                iDataDic.Remove(AllDirsNameKey);
                 string aPath = string.IsNullOrEmpty(iRoot) ? iDirPath : iRoot + "/" + iDirPath;
                 var aAllDirsName = UCL.Core.FileLib.Lib.GetDirectories(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly);
                 for (int j = 0; j < aAllDirsName.Length; j++)
@@ -684,6 +686,15 @@ namespace UCL.Core.UI {
                     aAllDirsName[j] = FileLib.Lib.GetFolderName(aAllDirsName[j]);
                 }
                 iDataDic.SetData(AllDirsNameKey, aAllDirsName);
+                if (iIsShowFiles)
+                {
+                    var aAllFilesName = UCL.Core.FileLib.Lib.GetFiles(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly);
+                    for (int j = 0; j < aAllFilesName.Length; j++)
+                    {
+                        aAllFilesName[j] = FileLib.Lib.GetFileName(aAllFilesName[j]);
+                    }
+                    iDataDic.SetData(AllFilesNameKey, aAllFilesName);
+                }
                 iDataDic.SetData(DirPathKey, iDirPath.LastElement() == '/' ? iDirPath.RemoveLast() : iDirPath);
             };
 
@@ -717,8 +728,6 @@ namespace UCL.Core.UI {
                 return iPath;
             }
 
-
-
             string aShowToggle = iDataDic.GetData(ShowToggleKey, string.Empty);
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(300)))
             {
@@ -750,6 +759,7 @@ namespace UCL.Core.UI {
                                 {
                                     iDataDic.Remove(ShowToggleKey);
                                     iDataDic.Remove(AllDirsNameKey);
+                                    iDataDic.Remove(AllFilesNameKey);
                                 }
                             }
                             else
@@ -759,7 +769,7 @@ namespace UCL.Core.UI {
                                     iDataDic.SetData(ShowToggleKey, aSelectPath);
                                     aShowToggle = aSelectPath;
                                     iDataDic.Remove(AllDirsNameKey);
-
+                                    iDataDic.Remove(AllFilesNameKey);
                                     System.Text.StringBuilder aSB = new System.Text.StringBuilder();
                                     for (int j = 0; j < aPaths.Length - i; j++)
                                     {
@@ -793,11 +803,12 @@ namespace UCL.Core.UI {
                     aSelectDir(iPath);
                 }
                 string[] aDirs = iDataDic.GetData<string[]>(AllDirsNameKey);
-                if (!aDirs.IsNullOrEmpty())//Select folder menu
+                string[] aFiles = iDataDic.GetData<string[]>(AllFilesNameKey);
+                if (!aDirs.IsNullOrEmpty() || (iIsShowFiles && !aFiles.IsNullOrEmpty()))//Select folder menu
                 {
                     using (var aScope2 = new GUILayout.VerticalScope("box", GUILayout.Height(180)))
                     {
-                        iDataDic.SetData("FolderScrollPos", GUILayout.BeginScrollView(iDataDic.GetData<Vector2>("FolderScrollPos")));
+                        iDataDic.SetData("FolderScrollPos", GUILayout.BeginScrollView(iDataDic.GetData("FolderScrollPos", Vector2.zero)));
                         for (int i = 0; i < aDirs.Length; i++)
                         {
                             string aDir = aDirs[i];
@@ -819,6 +830,18 @@ namespace UCL.Core.UI {
                             //GUILayout.Label(aDir);
                             GUILayout.FlexibleSpace();
                             GUILayout.EndHorizontal();
+                        }
+
+                        if (iIsShowFiles)
+                        {
+                            
+                            if (!aFiles.IsNullOrEmpty())
+                            {
+                                for (int i = 0; i < aFiles.Length; i++)
+                                {
+                                    GUILayout.Label(aFiles[i]);
+                                }
+                            }
                         }
                         GUILayout.EndScrollView();
                     }
@@ -1471,7 +1494,8 @@ namespace UCL.Core.UI {
                                         string aPath = (string)aData;
                                         GUILayout.BeginHorizontal();
                                         //UCL_GUILayout.LabelAutoSize(aDisplayName);
-                                        var aResult = FolderExplorer(iDataDic.GetSubDic(aField.Name), aPath, aFolderExplorerAttribute.m_FolderRoot, aDisplayName);
+                                        var aResult = FolderExplorer(iDataDic.GetSubDic(aField.Name), aPath, aFolderExplorerAttribute.m_FolderRoot, aDisplayName,
+                                            iIsShowFiles : false);
                                         GUILayout.EndHorizontal();
                                         aField.SetValue(iObj, aResult);
                                     }

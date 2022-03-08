@@ -29,7 +29,7 @@ namespace UCL.Core.UI
         {
             m_DataDic.Clear();
         }
-        virtual public void DrawObject(object iObj, string iDisplayName = "", bool iWithScroll = true)
+        virtual public void DrawObject(object iObj, string iDisplayName = "", bool iWithScroll = true, Func<string, string> iFieldNameFunc = null)
         {
             GUILayout.BeginVertical();
             if (iWithScroll)
@@ -38,7 +38,7 @@ namespace UCL.Core.UI
                 m_DataDic.SetData(iDisplayName + "_ScrollPos", aPos);
             }
 
-            UCL.Core.UI.UCL_GUILayout.DrawObjectData(iObj, m_DataDic.GetSubDic(iDisplayName), iDisplayName);
+            UCL.Core.UI.UCL_GUILayout.DrawObjectData(iObj, m_DataDic.GetSubDic(iDisplayName), iDisplayName, iFieldNameFunc : iFieldNameFunc);
 
             if (iWithScroll) GUILayout.EndScrollView();
             GUILayout.EndVertical();

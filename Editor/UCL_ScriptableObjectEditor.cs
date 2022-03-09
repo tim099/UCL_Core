@@ -24,7 +24,7 @@ namespace UCL.Core.EditorLib {
             }
 
             m_RequiresConstantRepaint = (aType.GetCustomAttribute<ATTR.RequiresConstantRepaintAttribute>(true) != null);
-            DrawATTR.Draw(target, aType, this.GetType(), ()=> DrawDefaultInspector());
+            DrawATTR.DrawAllMethods(target, aType, this.GetType(), ()=> DrawDefaultInspector());
             Resources.UnloadUnusedAssets();
         }
     }

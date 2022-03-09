@@ -15,23 +15,22 @@ namespace UCL.Core.ATTR
             m_Params = iParams;
         }
         object[] m_Params = null;
-#if UNITY_EDITOR
-        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo)
+        public override void Draw(object iTarget, MethodInfo iMethodInfo)
         {
             try
             {
                 var aParams = iMethodInfo.GetParameters();
 
                 if (m_Params != null)
-                { 
-                    if(aParams.Length == m_Params.Length)
+                {
+                    if (aParams.Length == m_Params.Length)
                     {
                         iMethodInfo.Invoke(iTarget, m_Params);
                     }
                 }
                 else
                 {
-                    if(aParams.Length == 0)
+                    if (aParams.Length == 0)
                     {
                         iMethodInfo.Invoke(iTarget, null);
                     }
@@ -42,8 +41,6 @@ namespace UCL.Core.ATTR
             {
                 Debug.LogException(iE);
             }
-            
         }
-#endif
     }
 }

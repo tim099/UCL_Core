@@ -7,42 +7,12 @@ namespace UCL.Core.EditorLib
 {
     public static class DrawATTR
     {
-        public static void Draw(UnityEngine.Object iTarget, Type iType, Type iClassType, System.Action iDrawDefaultInspector)
+        public static void DrawAllMethods(UnityEngine.Object iTarget, Type iType, Type iClassType, System.Action iDrawDefaultInspector = null)
         {
- 
-            var aAllMethods = iType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            //.Where(m => m.GetCustomAttributes(typeof(ATTR.UCL_FunctionButtonAttribute), false).Length > 0).ToArray();
-            //Debug.LogWarning("type:" + type.Name + ",methods:" + methods.Length);
-            List<MethodInfo> aPreMethods = new List<MethodInfo>();
-            List<MethodInfo> aPostMethods = new List<MethodInfo>();
-            for(int i = 0; i < aAllMethods.Length; i++)
-            {
-                var aMethod = aAllMethods[i];
-                if (aMethod.GetCustomAttribute<ATTR.UCL_DrawBeforeDefaultInspectorAttribute>() != null)
-                {
-                    aPreMethods.Add(aMethod);
-                }
-                else
-                {
-                    aPostMethods.Add(aMethod);
-                }
-            }
-            aPreMethods.Sort((iA, iB) =>
-            {
-                int aA = iA.GetCustomAttribute<ATTR.UCL_DrawBeforeDefaultInspectorAttribute>().m_SortOrder;
-                int aB = iB.GetCustomAttribute<ATTR.UCL_DrawBeforeDefaultInspectorAttribute>().m_SortOrder;
-                if (aA > aB)
-                {
-                    return 1;
-                }
-                else if(aA < aB)
-                {
-                    return -1;
-                }
 
-                return 0;
-            });
-            System.Action<List<MethodInfo>> aDrawMethods = delegate (List<MethodInfo> iMethods)
+            var aAllMethods = iType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            System.Action<IList<MethodInfo>> aDrawMethods = delegate (IList<MethodInfo> iMethods)
             {
                 if (iMethods.Count > 0)
                 {
@@ -79,9 +49,47 @@ namespace UCL.Core.EditorLib
                 }
             };
 
-            aDrawMethods(aPreMethods);
-            iDrawDefaultInspector.Invoke();
-            aDrawMethods(aPostMethods);
+            if (iDrawDefaultInspector != null)
+            {
+                List<MethodInfo> aPreMethods = new List<MethodInfo>();
+                List<MethodInfo> aPostMethods = new List<MethodInfo>();
+                for (int i = 0; i < aAllMethods.Length; i++)
+                {
+                    var aMethod = aAllMethods[i];
+                    if (aMethod.GetCustomAttribute<ATTR.UCL_DrawBeforeDefaultInspectorAttribute>() != null)
+                    {
+                        aPreMethods.Add(aMethod);
+                    }
+                    else
+                    {
+                        aPostMethods.Add(aMethod);
+                    }
+                }
+                aPreMethods.Sort((iA, iB) =>
+                {
+                    int aA = iA.GetCustomAttribute<ATTR.UCL_DrawBeforeDefaultInspectorAttribute>().m_SortOrder;
+                    int aB = iB.GetCustomAttribute<ATTR.UCL_DrawBeforeDefaultInspectorAttribute>().m_SortOrder;
+                    if (aA > aB)
+                    {
+                        return 1;
+                    }
+                    else if (aA < aB)
+                    {
+                        return -1;
+                    }
+
+                    return 0;
+                });
+
+                aDrawMethods(aPreMethods);
+                iDrawDefaultInspector.Invoke();
+                aDrawMethods(aPostMethods);
+            }
+            else
+            {
+                aDrawMethods(aAllMethods);
+            }
+
         }
     }
 }

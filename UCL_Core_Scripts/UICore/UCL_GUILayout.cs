@@ -1165,13 +1165,14 @@ namespace UCL.Core.UI {
             bool aIsShowField = true;
             bool aIsDefaultType = true;
             object aResultObj = iObj;
+            Type aType = null;
             if (iObj != null)
             {
                 if (string.IsNullOrEmpty(iDisplayName))
                 {
                     iDisplayName = iObj.GetType().Name;
                 }
-                Type aType = iObj.GetType();
+                aType = iObj.GetType();
                 if (iObj is string)
                 {
                     aIsShowField = false;
@@ -1393,6 +1394,7 @@ namespace UCL.Core.UI {
             }
             if (!aIsDefaultType)
             {
+
                 GUILayout.BeginVertical();
                 if(!iIsAlwaysShowDetail) {
                     GUILayout.BeginHorizontal();
@@ -1403,9 +1405,42 @@ namespace UCL.Core.UI {
                     GUILayout.EndHorizontal();
                 }
 
-                if (aIsShowField) using (var aScope = new GUILayout.VerticalScope("box"))
-                    {
-                        Type aType = iObj.GetType();
+                if (aIsShowField) using (var aScope = new GUILayout.VerticalScope("box")) {
+                        if (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) != null)
+                        {
+                            IList<MethodInfo> aAllMethods = aType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (aAllMethods.Count > 0)
+                            {
+                                GUILayout.BeginVertical();
+                                for (int i = 0; i < aAllMethods.Count; i++)
+                                {
+                                    var aMethod = aAllMethods[i];
+
+                                    {
+                                        var aAttrType = typeof(ATTR.UCL_Attribute);
+                                        var aAttrs = aMethod.GetCustomAttributes(aAttrType, false);
+                                        if (aAttrs.Length > 0)
+                                        {
+                                            for (int j = 0; j < aAttrs.Length; j++)
+                                            {
+                                                var aAttr = (ATTR.UCL_Attribute)aAttrs[j];
+                                                try
+                                                {
+                                                    aAttr.Draw(iObj, aMethod);
+                                                }
+                                                catch (Exception iE)
+                                                {
+                                                    Debug.LogException(iE);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                GUILayout.EndVertical();
+                            }
+                        }
+
+
                         var aFields = aType.GetAllFieldsUnityVer(typeof(object));
                         foreach (var aField in aFields)
                         {
@@ -1768,6 +1803,7 @@ namespace UCL.Core.UI {
                     }
                 GUILayout.EndVertical();
             }
+
             GUILayout.EndVertical();
             //GUILayout.EndHorizontal();
             return aResultObj;

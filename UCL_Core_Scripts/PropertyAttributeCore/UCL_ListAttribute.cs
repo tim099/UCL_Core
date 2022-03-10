@@ -29,8 +29,9 @@ namespace UCL.Core.PA {
                             }
                         }
                     }
-                } catch(Exception e) {
-                    Debug.LogError("UCL_ListProperty method.Invoke Exception:" + e.ToString());
+                } catch(Exception iE) {
+                    Debug.LogException(iE);
+                    Debug.LogError("UCL_ListProperty method.Invoke iFuncName:" + iFuncName + " Exception:" + iE.ToString());
                 }
             } else { //might be accessor
                 PropertyInfo aPropInfo = iType.GetProperty(iFuncName);

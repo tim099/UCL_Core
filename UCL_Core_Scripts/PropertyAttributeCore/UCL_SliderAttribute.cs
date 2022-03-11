@@ -2,10 +2,10 @@
 
 namespace UCL.Core.PA {
     public class UCL_IntSliderAttribute : PropertyAttribute {
-        public readonly int m_RightValue, m_LeftValue;
-        public UCL_IntSliderAttribute(int left_value, int right_value) {
-            m_RightValue = right_value;
-            m_LeftValue = left_value;
+        public readonly int m_LeftValue, m_RightValue;
+        public UCL_IntSliderAttribute(int iLeftValue, int iRightValue) {
+            m_LeftValue = iLeftValue;
+            m_RightValue = iRightValue;
         }
     }
 }

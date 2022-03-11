@@ -72,6 +72,8 @@ public static partial class ListExtensionMethods {
     public static List<T> Append<T>(this List<T> iList, IEnumerable<T> iTarget)
     {
         if (iList == null) return null;
+        if (iTarget == null) return iList;
+
         foreach(var aElement in iTarget)
         {
             iList.Add(aElement);

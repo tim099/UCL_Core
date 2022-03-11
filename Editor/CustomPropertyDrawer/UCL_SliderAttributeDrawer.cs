@@ -8,13 +8,23 @@ namespace UCL.Core.PA
     {
         public override void OnGUI(Rect position, UnityEditor.SerializedProperty property, GUIContent label)
         {
+            var aAttr = attribute as UCL_IntSliderAttribute;
+
             EditorGUI.BeginProperty(position, label, property);
-            var attr = attribute as UCL_IntSliderAttribute;
             var prev = EditorGUI.indentLevel;
-            EditorGUI.indentLevel = 0;
-            property.intValue = EditorGUI.IntSlider(position, property.intValue, attr.m_LeftValue, attr.m_RightValue);
-            EditorGUI.indentLevel = prev;
+            //EditorGUI.indentLevel = 0;
+            const float SilderSize = 0.65f;
+            Rect aLabelRect = new Rect(new Vector2(position.position.x, position.position.y),
+                new Vector2((1 - SilderSize) * position.size.x, position.size.y));
+            EditorGUI.LabelField(aLabelRect, property.displayName);
+            Rect aSliderRect = new Rect(new Vector2(position.position.x + (1 - SilderSize) * position.size.x, position.position.y),
+                new Vector2(SilderSize * position.size.x, position.size.y));
+            property.intValue = EditorGUI.IntSlider(aSliderRect, property.intValue, aAttr.m_LeftValue, aAttr.m_RightValue);
+            //EditorGUI.indentLevel = prev;
+
             EditorGUI.EndProperty();
+
+
         }
     }
     public class UCL_SliderAttribute : PropertyAttribute

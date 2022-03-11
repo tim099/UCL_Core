@@ -158,6 +158,14 @@ namespace UCL.Core.UI {
             if (int.TryParse(aResult, out aResVal)) return aResVal;
             return iVal;
         }
+        static public int IntField(int iVal, params GUILayoutOption[] iOprions)
+        {
+            string aResult = GUILayout.TextField(iVal.ToString(), iOprions);
+            if (string.IsNullOrEmpty(aResult)) return 0;
+            int aResVal = 0;
+            if (int.TryParse(aResult, out aResVal)) return aResVal;
+            return iVal;
+        }
         static public int IntField(string iLabel, int iVal, int iMinWidth, int iMaxWidth)
         {
             GUILayout.BeginHorizontal();
@@ -1488,18 +1496,15 @@ namespace UCL.Core.UI {
                             var aAttrs = aField.GetCustomAttributes();
                             foreach (var aAttr in aAttrs)
                             {
-                                if (aAttr is IShowInCondition)
+                                if (aAttr is IShowInCondition && !((IShowInCondition)aAttr).IsShow(iObj))
                                 {
-                                    if (!((IShowInCondition)aAttr).IsShow(iObj))
-                                    {
-                                        aIsDrawed = true;
-                                        break;
-                                    }
+                                    aIsDrawed = true;
+                                    break;
                                 }
                                 else if (aAttr is IStringArr)
                                 {
-                                    var aStrArr = aAttr as IStringArr;
                                     aIsDrawed = true;
+                                    var aStrArr = aAttr as IStringArr;
                                     GUILayout.BeginHorizontal();
                                     //using(var aScope2 = new GUILayout.HorizontalScope("box", GUILayout.ExpandWidth(false)))
                                     {
@@ -1523,9 +1528,9 @@ namespace UCL.Core.UI {
                                 {
                                     if (aField.FieldType == typeof(string))
                                     {
+                                        aIsDrawed = true;
                                         var aFolderExplorerAttribute = aAttr as UCL.Core.PA.UCL_FolderExplorerAttribute;
                                         if (aData == null) aData = "";
-                                        aIsDrawed = true;
                                         string aPath = (string)aData;
                                         GUILayout.BeginHorizontal();
                                         //UCL_GUILayout.LabelAutoSize(aDisplayName);
@@ -1538,6 +1543,28 @@ namespace UCL.Core.UI {
                                 else if(aAttr is ATTR.AlwaysExpendOnGUI)
                                 {
                                     aIsAlwaysShowDetail = true;
+                                }
+                                else if(aAttr is PA.UCL_IntSliderAttribute)
+                                {
+                                    if(aData is int)
+                                    {
+                                        aIsDrawed = true;
+                                        var aSlider = aAttr as PA.UCL_IntSliderAttribute;
+                                        GUILayout.BeginHorizontal();
+                                        GUILayout.Label(aDisplayName, GUILayout.ExpandWidth(false));
+                                        int aVal = (int)aData;
+                                        int aResult = (int)GUILayout.HorizontalSlider(aVal, aSlider.m_LeftValue, aSlider.m_RightValue, GUILayout.ExpandWidth(true));
+                                        aResult = IntField(aResult, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+                                        int aMaxValue = Math.Max(aSlider.m_LeftValue, aSlider.m_RightValue);
+                                        int aMinValue = Math.Min(aSlider.m_LeftValue, aSlider.m_RightValue);
+                                        if (aResult > aMaxValue) aResult = aMaxValue;
+                                        else if (aResult < aMinValue) aResult = aMinValue;
+                                        if (aResult != aVal)
+                                        {
+                                            aField.SetValue(iObj, aResult);
+                                        }
+                                        GUILayout.EndHorizontal();
+                                    }
                                 }
                             }
                             if (aIsDrawed)

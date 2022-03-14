@@ -28,6 +28,13 @@
                 JsonConvert.LoadDataFromJson(this, iJson["ClassData"], JsonConvert.SaveMode.Unity, (iFName) => iFName.Replace("m_", string.Empty));
             }
         }
+        virtual public UnityJsonSerializableObject CloneObject()
+        {
+            JsonData aData = this.SerializeToJson();
+            var aObject = this.GetType().CreateInstance() as UnityJsonSerializableObject;
+            aObject.DeserializeFromJson(aData);
+            return aObject;
+        }
     }
     public class UnityJsonSerializable : IJsonSerializable
     {
@@ -38,6 +45,13 @@
         virtual public void DeserializeFromJson(JsonData iJson)
         {
             JsonConvert.LoadDataFromJson(this, iJson, JsonConvert.SaveMode.Unity, (iFName) => iFName.Replace("m_", string.Empty));
+        }
+        virtual public UnityJsonSerializable CloneObject()
+        {
+            JsonData aData = this.SerializeToJson();
+            var aObject = this.GetType().CreateInstance() as UnityJsonSerializable;
+            aObject.DeserializeFromJson(aData);
+            return aObject;
         }
     }
     public class JsonSerializable : IJsonSerializable

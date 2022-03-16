@@ -14,7 +14,19 @@ namespace UCL.Core.PA
     {
         public ExplorerType m_ExplorerType = ExplorerType.None;
         public string m_FolderRoot = string.Empty;
+        public UCL_FolderExplorerAttribute()
+        {
+            Init(ExplorerType.AssetsRoot);
+        }
         public UCL_FolderExplorerAttribute(ExplorerType iExplorerType) {
+            Init(iExplorerType);
+        }
+        public UCL_FolderExplorerAttribute(string iFolderRoot)
+        {
+            m_FolderRoot = iFolderRoot;
+        }
+        public void Init(ExplorerType iExplorerType)
+        {
             m_ExplorerType = iExplorerType;
             switch (m_ExplorerType)
             {
@@ -29,10 +41,6 @@ namespace UCL.Core.PA
                         break;
                     }
             }
-        }
-        public UCL_FolderExplorerAttribute(string iFolderRoot)
-        {
-            m_FolderRoot = iFolderRoot;
         }
     }
 }

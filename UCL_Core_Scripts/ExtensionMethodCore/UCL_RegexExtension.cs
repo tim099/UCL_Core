@@ -1,5 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 public static partial class RegexExtensionMethods
@@ -12,7 +14,7 @@ public static partial class RegexExtensionMethods
     /// <param name="iSearchName">the text you want to highlight</param>
     /// <param name="iColor">Highlight Color</param>
     /// <returns></returns>
-    public static string HightLight(this System.Text.RegularExpressions.Regex iRegex, string iDisplayName, string iSearchName, Color iColor)
+    public static string HightLight(this Regex iRegex, string iDisplayName, string iSearchName, Color iColor)
     {
         if (iRegex == null) return iDisplayName;
         if (iRegex != null)
@@ -35,5 +37,30 @@ public static partial class RegexExtensionMethods
         }
 
         return iDisplayName;
+    }
+
+    /// <summary>
+    /// Create a Regex to check file Extension match iFileExtensions
+    /// etc. iFileExtensions = new string[] {"json", "prefab" } , return Regex will match a.json and b.prefab
+    /// </summary>
+    /// <param name="iFileExtensions">etc. iFileExtensions = new string[] {"json", "prefab" }</param>
+    /// <returns>Regex that match iFileExtensions</returns>
+    public static Regex GetFileExtensionRegex(this string[] iFileExtensions)
+    {
+        
+        var aSB = new StringBuilder();
+        for (var i = 0; i < iFileExtensions.Length; i++)
+        {
+            if (i > 0)
+            {
+                aSB.Append("|");
+            }
+            aSB.Append(iFileExtensions[i]);
+        }
+
+        string aFormat = "([^\\s]+(\\.(?i)(" + aSB.ToString() + "))$)";
+
+        var aRegex = new Regex(aFormat, RegexOptions.Compiled);
+        return aRegex;
     }
 }

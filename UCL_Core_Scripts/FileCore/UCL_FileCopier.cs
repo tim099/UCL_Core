@@ -6,18 +6,31 @@ namespace UCL.Core.FileLib {
     [UCL.Core.ATTR.EnableUCLEditor]
     [CreateAssetMenu(fileName = "New FileCopier", menuName = "UCL/FileCopier")]
     public class UCL_FileCopier : ScriptableObject {
-        public string m_SourceDirectory = "";
-        public string m_DestinationDirectory = "";
+        [UCL.Core.PA.UCL_FolderExplorer] public string m_SourceDirectory = "";
+        [UCL.Core.PA.UCL_FolderExplorer] public string m_DestinationDirectory = "";
         /// <summary>
         /// File with this extensions will be ignore
         /// </summary>
-        public List<string> mIgnoreFileExtensions = null;
+        public List<string> m_IgnoreFileExtensions = null;
+
+        public List<UCL_FileCopier> m_SubFileCopiers = new List<UCL_FileCopier>();
         /// <summary>
         /// Copy files from SourceDirectory to DestinationDirectory
         /// </summary>
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void Copy() {
-            UCL.Core.FileLib.Lib.CopyDirectory(m_SourceDirectory, m_DestinationDirectory, mIgnoreFileExtensions);
+            if (m_SourceDirectory != m_DestinationDirectory)
+            {
+                UCL.Core.FileLib.Lib.CopyDirectory(m_SourceDirectory, m_DestinationDirectory, m_IgnoreFileExtensions);
+            }
+            
+            if (!m_SubFileCopiers.IsNullOrEmpty())
+            {
+                for (int i = 0; i < m_SubFileCopiers.Count; i++)
+                {
+                    m_SubFileCopiers[i].Copy();
+                }
+            }
         }
 #if UNITY_EDITOR
         /// <summary>

@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_SourceDirectory: Assets/UCL/UCL_Core/UCL_CoreDemo/UCL_Core_DemoTextures
   m_DestinationDirectory: Assets/UCL/UCL_Core/UCL_CoreDemo/.DemoFolder
-  mIgnoreFileExtensions:
+  m_IgnoreFileExtensions:
   - meta
   - png
+  m_SubFileCopiers: []

@@ -22,17 +22,26 @@ public static partial class RegexExtensionMethods
             var aMaches = iRegex.Matches(iDisplayName.ToLower());
             if (aMaches.Count > 0)
             {
-                var aMach = aMaches[0];
-                if (aMach.Success)
+                System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+                int aCurAt = 0;
+                foreach (Match aMach in aMaches)
                 {
-                    int aMatchAt = aMach.Index;
-                    System.Text.StringBuilder aSB = new System.Text.StringBuilder();
-                    string aValue = iDisplayName.Substring(aMatchAt, iSearchName.Length);
-                    aSB.Append(iDisplayName.Substring(0, aMatchAt));
-                    aSB.Append(aValue.RichTextColor(iColor));
-                    aSB.Append(iDisplayName.Substring(aMatchAt + aValue.Length, iDisplayName.Length - aValue.Length - aMatchAt));
-                    return aSB.ToString();
+                    if (aMach.Success)
+                    {
+                        int aMatchAt = aMach.Index;
+                        if(aMatchAt > aCurAt)
+                        {
+                            aSB.Append(iDisplayName.Substring(aCurAt, aMatchAt - aCurAt));
+                        }
+                        aSB.Append(iDisplayName.Substring(aMatchAt, aMach.Length).RichTextColor(iColor));
+                        aCurAt = aMatchAt + aMach.Length;
+                    }
                 }
+                if(aCurAt != iDisplayName.Length)
+                {
+                    aSB.Append(iDisplayName.Substring(aCurAt, iDisplayName.Length - aCurAt));
+                }
+                return aSB.ToString();
             }
         }
 

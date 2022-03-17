@@ -904,7 +904,8 @@ namespace UCL.Core.UI {
                     {
                         try
                         {
-                            aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                            //aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                            aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower(), System.Text.RegularExpressions.RegexOptions.Compiled);
                         } catch (System.Exception iE)
                         {
                             aRegex = null;

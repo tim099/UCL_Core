@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using UCL.Core.LocalizeLib;
 using UnityEngine;
 
 namespace UCL.Core.UI {
@@ -1189,19 +1190,9 @@ namespace UCL.Core.UI {
                 }
                 else if (aType.IsEnum)
                 {
-                    string aTypeName = aType.Name;
-
                     GUILayout.BeginHorizontal();
-                    //string aKey = "EnumOpen";
-                    //bool flag = iDataDic.GetData(aKey, false);
-                    aResultObj = UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)iObj, (iEnum) => {
-                        string aLocalizeKey = aTypeName + "_" + iEnum;
-                        if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
-                        {
-                            iEnum = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey), iEnum);
-                        }
-                        return iEnum;
-                    }, iDataDic);
+                    string aTypeName = aType.Name;
+                    aResultObj = UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)iObj, (iEnum) => UCL_LocalizeLib.GetEnumLocalize(aTypeName, iEnum), iDataDic);
                     //iDataDic.SetData(aKey, flag);
                     GUILayout.EndHorizontal();
                 }
@@ -1244,7 +1235,7 @@ namespace UCL.Core.UI {
                     aIsShowField = false;
                     GUILayout.BeginHorizontal();
                     string aShowKey = "Show";
-                    aIsShowField = iDataDic.GetData(aShowKey, true);
+                    aIsShowField = iDataDic.GetData(aShowKey, false);
                     iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
                     if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
                     GUILayout.EndHorizontal();

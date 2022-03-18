@@ -50,6 +50,20 @@ public static partial class ListExtensionMethods {
         iList[b] = tmp;
     }
     /// <summary>
+    /// Swap element by index
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <returns></returns>
+    public static IList<T> SwapElement<T>(this IList<T> iList, int iIndexA, int iIndexB)
+    {
+        if (iList.IsNullOrEmpty()) return default;
+        T aTmp = iList[iIndexA];
+        iList[iIndexA] = iList[iIndexB];
+        iList[iIndexB] = aTmp;
+        return iList;
+    }
+    /// <summary>
     /// return the first element of list
     /// </summary>
     /// <typeparam name="T"></typeparam>

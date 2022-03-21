@@ -733,12 +733,12 @@ namespace UCL.Core.JsonLib {
             return (IList)m_List;
         }
 
-        private JsonData ToJsonData(object obj) {
-            if(obj == null) return null;
-            if(obj is JsonData) return (JsonData)obj;
-            if(obj is IJsonSerializable) return ((IJsonSerializable)obj).SerializeToJson();
+        private JsonData ToJsonData(object iObj) {
+            if(iObj == null) return null;
+            if(iObj is JsonData) return (JsonData)iObj;
+            if(iObj is IJsonSerializable) return ((IJsonSerializable)iObj).SerializeToJson();
             
-            return new JsonData(obj);
+            return new JsonData(iObj);
         }
 
         #endregion

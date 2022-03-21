@@ -10,7 +10,7 @@ public static partial class ListExtensionMethods {
     /// </summary>
     /// <param name="iICollection"></param>
     /// <returns></returns>
-    public static object FirstElement(this ICollection iICollection)
+    public static object FirstElementInCollection(this ICollection iICollection)
     {
         if (iICollection == null) return null;
         foreach(var aItem in iICollection)
@@ -24,7 +24,7 @@ public static partial class ListExtensionMethods {
     /// </summary>
     /// <param name="iICollection"></param>
     /// <returns></returns>
-    public static object LastElement(this ICollection iICollection)
+    public static object LastElementInCollection(this ICollection iICollection)
     {
         if (iICollection == null) return null;
         int aAt = 0;
@@ -37,6 +37,7 @@ public static partial class ListExtensionMethods {
         }
         return null;
     }
+
     /// <summary>
     /// this function don't check the range of a,b !!so use carefully
     /// </summary>

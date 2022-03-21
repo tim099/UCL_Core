@@ -218,7 +218,7 @@ namespace UCL.Core.UI {
             if(m_UndoStack.Count == 0) return;
             m_UndoStack.Pop()?.Invoke();
         }
-        public static void PushBackGroundColor(Color col,bool record_undo = false) {
+        public static void PushBackGroundColor(Color col, bool record_undo = false) {
             m_BackGroundColorStack.Push(GUI.backgroundColor);
             GUI.backgroundColor = col;
             if(record_undo) m_UndoStack.Push(PopBackGroundColor);
@@ -254,6 +254,11 @@ namespace UCL.Core.UI {
                 return iPosition;
             }
             return aResult;
+        }
+
+        public static bool Button(RectTransform iRectTransform, string iText)
+        {
+            return GUI.Button(iRectTransform.GetScreenSpaceRect(), iText);
         }
     }
 }

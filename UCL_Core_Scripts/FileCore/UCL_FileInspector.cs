@@ -4,17 +4,15 @@ using UnityEngine;
 namespace UCL.Core.FileLib {
     [UCL.Core.ATTR.EnableUCLEditor]
     [CreateAssetMenu(fileName = "New FileInspector", menuName = "UCL/FileInspector")]
-    public class UCL_FileInspector : ScriptableObject {
-        [RuntimeInitializeOnLoadMethod]
-        public static void UpdateFilesData() {
+    public class UCL_FileInspector : ScriptableObject, ISerializationCallbackReceiver {
 
-        }
         [System.Serializable]
         public class FileInformation {
-            public FileInformation(string _FolderPath, string _FileName, string _Extension) {
-                m_FolderPath = _FolderPath;
-                m_FileName = _FileName;
-                m_Extension = _Extension;
+            public FileInformation() { }
+            public FileInformation(string iFileName, string iPath, string iExtension) {
+                m_FileName = iFileName;
+                m_Path = iPath;
+                m_Extension = iExtension;
             }
             /// <summary>
             /// File full name, include extension
@@ -31,16 +29,171 @@ namespace UCL.Core.FileLib {
                 get { return m_FileName; }
             }
 
+
+            public string m_Path;
             /// <summary>
             /// Full path of file
             /// 完整檔案路徑
             /// </summary>
-            public string FilePath {
-                get { return System.IO.Path.Combine(m_FolderPath, FileName); }
-            }
+            public string FilePath => System.IO.Path.Combine(m_Path, FileName);
+            /// <summary>
+            /// Full path of file(without wxtension
+            /// 完整檔案路徑(無副檔名
+            /// </summary>
+            public string FilePathWithoutExtension => System.IO.Path.Combine(m_Path, Name);
+            //public FolderInformation FolderInformation { get; set; }
             public string m_FileName;
-            public string m_FolderPath;
+
             public string m_Extension;
+        }
+        [System.Serializable]
+        public class SerializableFolderInformation
+        {
+            public string m_Name;
+            public string m_Path;
+            public List<FileInformation> m_FileInfos = new List<FileInformation>();
+            public int m_FolderInfosCount = 0;
+        }
+        [System.Serializable]
+        public class FolderInformation
+        {
+            public FolderInformation() { }
+            public FolderInformation(string iPath, string iFileFormat, bool iIgnoreMetaFiles) {
+                Init(iPath, iFileFormat, iIgnoreMetaFiles);
+            }
+            public FolderInformation(List<SerializableFolderInformation> iData)
+            {
+                if (iData.Count > 0)
+                {
+                    int aFolderInfosCount = 0;
+                    {
+                        var aData = iData[0];
+                        m_Name = aData.m_Name;
+                        m_Path = aData.m_Path;
+                        m_FileInfos = aData.m_FileInfos;
+                        aFolderInfosCount = aData.m_FolderInfosCount;
+                        iData.RemoveAt(0);
+                    }
+
+                    for(int i = 0; i < aFolderInfosCount; i++)
+                    {
+                        m_FolderInfos.Add(new FolderInformation(iData));
+                    }
+                }
+            }
+            public List<SerializableFolderInformation> GetSerializableFolderInformation()
+            {
+                List<SerializableFolderInformation> aResult = new List<SerializableFolderInformation>();
+                SerializableFolderInformation aData = new SerializableFolderInformation();
+                aData.m_Name = m_Name;
+                aData.m_Path = m_Path;
+                aData.m_FileInfos = m_FileInfos;
+                aData.m_FolderInfosCount = m_FolderInfos.Count;
+                aResult.Add(aData);
+                foreach (var aFolder in m_FolderInfos)
+                {
+                    aResult.Append(aFolder.GetSerializableFolderInformation());
+                }
+
+                return aResult;
+            }
+            public List<FileInformation> AllFileInfos
+            {
+                get
+                {
+                    var m_AllFileInfos = new List<FileInformation>();
+                    //for (int i = 0; i < m_FileInfos.Count; i++) m_FileInfos[i].FolderInformation = this;
+                    m_AllFileInfos.Append(m_FileInfos);
+                    for (int i = 0; i < m_FolderInfos.Count; i++)
+                    {
+                        m_AllFileInfos.Append(m_FolderInfos[i].AllFileInfos);
+                    }
+                    return m_AllFileInfos;
+                }
+            }
+            public void Init(string iPath, string iFileFormat, bool iIgnoreMetaFiles)
+            {
+                m_Path = iPath;
+                m_Name = UCL.Core.FileLib.Lib.GetFolderName(m_Path);
+
+                var aFiles = System.IO.Directory.GetFiles(m_Path, iFileFormat, System.IO.SearchOption.TopDirectoryOnly);
+                for (int i = 0; i < aFiles.Length; i++)
+                {
+                    var aFile = aFiles[i].Substring(m_Path.Length + 1);
+                    var aFileExtension = FileLib.Lib.GetFileExtension(aFile);
+                    if (iIgnoreMetaFiles && aFileExtension != "meta")
+                    {
+                        var aResult = FileLib.Lib.SplitPath(aFile, 1);
+                        m_FileInfos.Add(new FileInformation(aResult.Item2.Substring(0, aResult.Item2.Length - aFileExtension.Length - 1),
+                            m_Path,
+                            aFileExtension));
+                    }
+                }
+                var aDirs = System.IO.Directory.GetDirectories(m_Path);
+                for (int i = 0; i < aDirs.Length; i++)
+                {
+                    string aDir = aDirs[i];
+                    m_FolderInfos.Add(new FolderInformation(aDir, iFileFormat, iIgnoreMetaFiles));
+                }
+            }
+            public List<FileInformation> GetAllFileInfos(string iPath)
+            {
+                //Debug.LogError("GetFiles:" + iPath);
+                if (string.IsNullOrEmpty(iPath))
+                {
+                    return AllFileInfos;
+                }
+                var aFolderPath = UCL.Core.FileLib.Lib.SplitPath(iPath, -1);
+                //Debug.LogError("aFolderPath:" + aFolderPath.Item1+",2:"+ aFolderPath.Item2);
+                for (int i = 0; i < m_FolderInfos.Count; i++)
+                {
+                    var aFolderInfo = m_FolderInfos[i];
+                    if(aFolderInfo.m_Name == aFolderPath.Item1)
+                    {
+                        return aFolderInfo.GetAllFileInfos(aFolderPath.Item2);
+                    }
+                }
+                return new List<FileInformation>();
+            }
+            /// <summary>
+            /// folderName
+            /// </summary>
+            public string m_Name;
+            public string m_Path;
+            public List<FileInformation> m_FileInfos = new List<FileInformation>();
+            [HideInInspector] public List<FolderInformation> m_FolderInfos = new List<FolderInformation>();
+
+            /// <summary>
+            /// Get FileInfo by file name
+            /// 根據檔名取得檔案資訊
+            /// </summary>
+            /// <param name="iFileName"></param>
+            /// <returns></returns>
+            public FileInformation GetFileInfo(string iFileName)
+            {
+                if (!m_FileInfos.IsNullOrEmpty())
+                {
+                    for (int i = 0; i < m_FileInfos.Count; i++)
+                    {
+                        var aInfo = m_FileInfos[i];
+                        if (aInfo.FileName == iFileName)
+                        {
+                            //aInfo.FolderInformation = this;
+                            return aInfo;
+                        }
+                    }
+                }
+                if (!m_FolderInfos.IsNullOrEmpty())
+                {
+                    for (int i = 0; i < m_FolderInfos.Count; i++)
+                    {
+                        var aInfo = m_FolderInfos[i].GetFileInfo(iFileName);
+                        if (aInfo != null) return aInfo;
+                    }
+                }
+
+                return null;
+            }
         }
         /// <summary>
         /// ignore the meta files in dir
@@ -59,12 +212,13 @@ namespace UCL.Core.FileLib {
         /// </summary>
         public string m_FileExtension = string.Empty;
         /// <summary>
-        /// File Infos
-        /// 檔案資訊
+        /// Folder Infos
+        /// 資料夾資訊
         /// </summary>
-        public List<FileInformation> m_FileInfos = new List<FileInformation>();
+        [HideInInspector]
+        public FolderInformation FolderInformations { get; protected set; } = new FolderInformation();
 
-        private Dictionary<string, FileInformation> m_FileInfosDic = null;
+        public List<FileInformation> AllFileInfos => FolderInformations.AllFileInfos;
 #if UNITY_EDITOR
         /// <summary>
         /// Explore TargetDirectory
@@ -82,6 +236,26 @@ namespace UCL.Core.FileLib {
             }
         }
 #endif
+        //[SerializeField] string m_SerializeData = string.Empty;
+        [SerializeField] List<SerializableFolderInformation> m_SerializableFolderInformation = new List<SerializableFolderInformation>();
+        void ISerializationCallbackReceiver.OnBeforeSerialize()
+        {
+            m_SerializableFolderInformation = FolderInformations.GetSerializableFolderInformation();
+            //Debug.LogWarning("OnBeforeSerialize:" + m_SerializableFolderInformation.Count);
+            //m_SerializeData = UCL.Core.JsonLib.JsonConvert.SaveDataToJson(m_FolderInformation).ToJson();
+            //Debug.LogWarning("OnBeforeSerialize:" + m_SerializeData);
+            //m_FolderInformation = null;
+        }
+        void ISerializationCallbackReceiver.OnAfterDeserialize()
+        {
+            FolderInformations = new FolderInformation(m_SerializableFolderInformation);
+            //Debug.LogWarning("OnAfterDeserialize:" + m_SerializableFolderInformation.Count);
+            //if (!string.IsNullOrEmpty(m_SerializeData))
+            //{
+            //    m_FolderInformation = UCL.Core.JsonLib.JsonConvert.LoadDataFromJson<FolderInformation>(JsonLib.JsonData.ParseJson(m_SerializeData));
+            //}
+            //m_SerializeData = null;
+        }
         /// <summary>
         /// Refresh FileInfos
         /// 更新檔案資料
@@ -90,57 +264,28 @@ namespace UCL.Core.FileLib {
         public void RefreshFileInfos() {
 #if UNITY_EDITOR
             if(string.IsNullOrEmpty(m_TargetDirectory)) {
-                var path = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this);
-                m_TargetDirectory = FileLib.Lib.RemoveFolderPath(path, 1);
+                var aPath = UCL.Core.EditorLib.AssetDatabaseMapper.GetAssetPath(this);
+                m_TargetDirectory = FileLib.Lib.RemoveFolderPath(aPath, 1);
             }
-
-            m_FileInfos = new List<FileInformation>();
             string aFileFormat = "*";
             if (!string.IsNullOrEmpty(m_FileExtension))
             {
                 aFileFormat = "*." + m_FileExtension;
             }
-            var files = System.IO.Directory.GetFiles(m_TargetDirectory, aFileFormat, System.IO.SearchOption.AllDirectories);
-            for(int i = 0; i < files.Length; i++) {
-                var file = files[i].Substring(m_TargetDirectory.Length + 1);
-                var file_extension = FileLib.Lib.GetFileExtension(file);
-                if(m_IgnoreMetaFiles && file_extension != "meta") {
-                    var result = FileLib.Lib.SplitPath(file, 1);
-                    m_FileInfos.Add(new FileInformation(result.Item1,
-                        result.Item2.Substring(0, result.Item2.Length - file_extension.Length - 1),
-                        file_extension));
-                } 
-            }
+            FolderInformations = new FolderInformation(m_TargetDirectory, aFileFormat, m_IgnoreMetaFiles);
+
             UCL.Core.EditorLib.EditorUtilityMapper.SetDirty(this);
-            RefreshFileInfosDic();
 #endif
         }
-        /// <summary>
-        /// Refresh FileInfosDic
-        /// 更新FileInfosDic
-        /// </summary>
-        private void RefreshFileInfosDic() {
-            m_FileInfosDic = new Dictionary<string, FileInformation>();
-            for(int i = 0; i < m_FileInfos.Count; i++) {
-                FileInformation info = m_FileInfos[i];
-                m_FileInfosDic[info.Name] = info;
-            }
-        }
+
         /// <summary>
         /// Get FileInfo by file name
         /// 根據檔名取得檔案資訊
         /// </summary>
-        /// <param name="file_name"></param>
+        /// <param name="iFileName"></param>
         /// <returns></returns>
-        public FileInformation GetFileInfo(string file_name) {
-            if(m_FileInfos == null) return null;
-            if(m_FileInfosDic == null || m_FileInfosDic.Count != m_FileInfos.Count) {
-                RefreshFileInfosDic();
-            }
-            if(m_FileInfosDic.ContainsKey(file_name)) {
-                return m_FileInfosDic[file_name];
-            }
-            return null;
+        public FileInformation GetFileInfo(string iFileName) {
+            return FolderInformations.GetFileInfo(iFileName);
         }
     }
 }

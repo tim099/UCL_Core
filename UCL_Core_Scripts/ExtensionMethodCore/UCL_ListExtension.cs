@@ -95,6 +95,15 @@ public static partial class ListExtensionMethods {
         }
         return iList;
     }
+    public static string ConcatString<T>(this IList<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        foreach(var aT in iList)
+        {
+            aSB.Append(iFunc(aT)).Append(iSeperator);
+        }
+        return aSB.ToString();
+    }
     public static bool IsNullOrEmpty<T>(this IList<T> iList) {
         if(iList == null || iList.Count == 0) return true;
         return false;

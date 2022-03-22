@@ -197,23 +197,41 @@ namespace UCL.Core.FileLib
         /// Example path is "root/folder/c.txt" and split_at is 2, then return "root","folder/c.txt" 
         /// 根據指定的位置切分路徑
         /// </summary>
-        /// <param name="path">input path</param>
-        /// <param name="split_at">split position</param>
+        /// <param name="iPath">input path</param>
+        /// <param name="iSplitAt">split position, if negetive then reverse order</param>
         /// <returns></returns>
-        public static System.Tuple<string,string> SplitPath(string path, int split_at = 1) {
-            if(split_at <= 0) return new System.Tuple<string, string>(path,"");
-
-            int i = path.Length - 1;
-            for(; i >= 0; i--) {
-                var c = path[i];
-                if(c == '/' || c == '\\') {
-
-                    //path = path.Substring(0, i);
-                    if(--split_at <= 0) break;
+        public static System.Tuple<string,string> SplitPath(string iPath, int iSplitAt = 1) {
+            if(iSplitAt == 0) return new System.Tuple<string, string>(iPath, string.Empty);
+            if (iSplitAt > 0)
+            {
+                int i = iPath.Length - 1;
+                for (; i >= 0; i--)
+                {
+                    var c = iPath[i];
+                    if (c == '/' || c == '\\')
+                    {
+                        if (--iSplitAt <= 0) break;
+                    }
                 }
+                if (i <= 0) return new System.Tuple<string, string>(string.Empty, iPath);
+                return new System.Tuple<string, string>(iPath.Substring(0, i), iPath.Substring(i + 1, iPath.Length - i - 1));
             }
-            if(i <= 0) return new System.Tuple<string, string>("", path);
-            return new System.Tuple<string, string>(path.Substring(0, i), path.Substring(i + 1, path.Length - i - 1));
+            else//iSplitAt < 0
+            {
+                iSplitAt = -iSplitAt;
+                int i = 0;
+                for (; i < iPath.Length; i++)
+                {
+                    var c = iPath[i];
+                    if (c == '/' || c == '\\')
+                    {
+                        if (--iSplitAt <= 0) break;
+                    }
+                }
+                if (i >= iPath.Length - 1) return new System.Tuple<string, string>(iPath, string.Empty);
+                return new System.Tuple<string, string>(iPath.Substring(0, i), iPath.Substring(i + 1, iPath.Length - i - 1));
+            }
+
         }
 
         public static void MoveDirectory(string iOldDir, string iNewDir)

@@ -155,6 +155,37 @@ namespace UCL.Core.FileLib
             return iPath;
         }
         /// <summary>
+        /// return filename from input path
+        /// </summary>
+        /// <param name="iPath"></param>
+        /// <param name="iIsRemoveExtension"></param>
+        /// <returns></returns>
+        public static string GetFileName(string iPath, bool iIsRemoveExtension)
+        {
+            int aLastIndex = iPath.Length - 1;
+            if (iIsRemoveExtension)
+            {
+                for (int i = aLastIndex; i >= 0; i--)
+                {
+                    if (iPath[i] == '.')
+                    {
+                        aLastIndex = i - 1;
+                        break;
+                    }
+                }
+            }
+
+            for (int i = aLastIndex; i >= 0; i--)
+            {
+                var c = iPath[i];
+                if (c == '/' || c == '\\')
+                {
+                    return iPath.Substring(i + 1, aLastIndex - i);
+                }
+            }
+            return iPath;
+        }
+        /// <summary>
         /// return FolderName from input path
         /// </summary>
         /// <param name="iPath"></param>
@@ -304,9 +335,9 @@ namespace UCL.Core.FileLib
                 return ms.ToArray();
             }
         }
-        public static string GetFilesPath(bool create_if_not_exist = false) {
+        public static string GetFilesPath(bool iCreateIfNotExist = false) {
             string path = Path.Combine(Application.persistentDataPath, "files");
-            if(create_if_not_exist) CreateDirectory(path);
+            if(iCreateIfNotExist) CreateDirectory(path);
             return path;
         }
         /// <summary>
@@ -362,6 +393,19 @@ namespace UCL.Core.FileLib
                 return new string[0];
             }
             return Directory.GetFiles(iPath, iSearchPattern, iSearchOption);
+        }
+        public static string[] GetFilesName(string iPath, string iSearchPattern = "*",
+            SearchOption iSearchOption = SearchOption.TopDirectoryOnly, bool iIsRemoveExtension = false) {
+            if (!Directory.Exists(iPath))
+            {
+                return new string[0];
+            }
+            var aFiles = Directory.GetFiles(iPath, iSearchPattern, iSearchOption);
+            for(int i = 0; i < aFiles.Length; i++)
+            {
+                aFiles[i] = GetFileName(aFiles[i], iIsRemoveExtension);
+            }
+            return aFiles;
         }
         public static string ConvertToAssetsPath(string iPath)
         {

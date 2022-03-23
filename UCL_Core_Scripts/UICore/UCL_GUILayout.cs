@@ -756,10 +756,13 @@ namespace UCL.Core.UI {
                     {
                         aCount = Math.Min(aPaths.Length, iPathDisplayCount);
                     }
-
+                    System.Text.StringBuilder aPathSB = new System.Text.StringBuilder();
                     for (int i = aCount; i >= 1; i--)
                     {
-                        string aSelectPath = aPaths[aPaths.Length - i];
+                        string aFolderName = aPaths[aPaths.Length - i];
+                        if (i < aCount) aPathSB.Append('/');
+                        aPathSB.Append(aFolderName);
+                        string aSelectPath = aPathSB.ToString();//aPaths[aPaths.Length - i];
                         {
                             bool aIsCur = aShowToggle == aSelectPath;
                             if (aIsCur)
@@ -790,7 +793,7 @@ namespace UCL.Core.UI {
                             }
                         }
 
-                        if (GUILayout.Button(aSelectPath))
+                        if (GUILayout.Button(aFolderName))
                         {
                             System.Text.StringBuilder aSB = new System.Text.StringBuilder();
                             for (int j = 0; j <= aPaths.Length - i; j++)
@@ -815,14 +818,16 @@ namespace UCL.Core.UI {
                 string[] aFiles = iDataDic.GetData<string[]>(AllFilesNameKey);
                 if (!aDirs.IsNullOrEmpty() || (iIsShowFiles && !aFiles.IsNullOrEmpty()))//Select folder menu
                 {
-                    using (var aScope2 = new GUILayout.VerticalScope("box", GUILayout.Height(180)))
+                    const int DirHeight = 25;
+                    using (var aScope2 = new GUILayout.ScrollViewScope(iDataDic.GetData("FolderScrollPos", Vector2.zero), "box",
+                        GUILayout.Height(Math.Min(6, aDirs.Length) * DirHeight + 6)))
                     {
-                        iDataDic.SetData("FolderScrollPos", GUILayout.BeginScrollView(iDataDic.GetData("FolderScrollPos", Vector2.zero)));
+                        iDataDic.SetData("FolderScrollPos", aScope2.scrollPosition);
+                        //iDataDic.SetData("FolderScrollPos", GUILayout.BeginScrollView(iDataDic.GetData("FolderScrollPos", Vector2.zero)));
                         for (int i = 0; i < aDirs.Length; i++)
                         {
                             string aDir = aDirs[i];
                             GUILayout.BeginHorizontal();
-                            //UCL.Core.UI.UCL_GUIStyle.GetButtonText()
                             if (GUILayout.Button("  ❐   "))
                             {
                                 string aCurDirPath = iDataDic.GetData(DirPathKey, iPath);
@@ -835,7 +840,8 @@ namespace UCL.Core.UI {
                                     aSetPath(aCurDirPath + "/" + aDir);
                                 }
                             }
-                            Label(aDir, iDataDic.GetData(ShowToggleKey, string.Empty) == aDir ? Color.yellow : Color.white);
+                            Label(aDir, UCL.Core.FileLib.Lib.GetFolderName(iDataDic.GetData(ShowToggleKey, string.Empty)) == aDir ?
+                                Color.yellow : Color.white);
                             //GUILayout.Label(aDir);
                             GUILayout.FlexibleSpace();
                             GUILayout.EndHorizontal();
@@ -852,7 +858,7 @@ namespace UCL.Core.UI {
                                 }
                             }
                         }
-                        GUILayout.EndScrollView();
+                        //GUILayout.EndScrollView();
                     }
                 }
             }     
@@ -889,15 +895,13 @@ namespace UCL.Core.UI {
                 string aInput = iDataDic.GetData(aSearchKey, string.Empty);
 
                 GUILayout.BeginVertical(iOptions);
-                //GUILayout.BeginHorizontal();
 
                 if (GUILayout.Button(aCur, iOptions))
                 {
                     aIsShow = false;
                 }
-                aInput = TextField(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Search"), aInput);
+                aInput = TextField(UCL_LocalizeManager.Get("Search"), aInput);
                 iDataDic.SetData(aSearchKey, aInput);
-                //GUILayout.EndHorizontal();
 
                 System.Text.RegularExpressions.Regex aRegex = null;
                 {
@@ -1245,11 +1249,11 @@ namespace UCL.Core.UI {
                         string aCountKey = "Count";
                         int aCount = iDataDic.GetData(aCountKey, aList.Count);
                         GUILayout.BeginHorizontal();
-                        int aNewCount = UCL_GUILayout.IntField(LocalizeLib.UCL_LocalizeManager.Get("Count"), aCount);
+                        int aNewCount = UCL_GUILayout.IntField(UCL_LocalizeManager.Get("Count"), aCount);
                         iDataDic.SetData(aCountKey, aNewCount);
                         if (aNewCount != aList.Count)
                         {
-                            if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("SetCount")))
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("SetCount")))
                             {
                                 if (aNewCount < 0) aNewCount = 0;
                                 while (aNewCount < aList.Count)
@@ -1272,7 +1276,7 @@ namespace UCL.Core.UI {
                         }
                         else
                         {
-                            if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add")))
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Add")))
                             {
                                 try
                                 {
@@ -1297,7 +1301,7 @@ namespace UCL.Core.UI {
                             {
                                 int aDrawAt = aAt;
                                 GUILayout.BeginHorizontal();
-                                if (UCL_GUILayout.ButtonAutoSize(LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
                                 {
                                     aDeleteAt = aAt;
                                 }
@@ -1340,7 +1344,7 @@ namespace UCL.Core.UI {
                             iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
                         }
                         iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyType.Name, iFieldNameFunc: iFieldNameFunc));
-                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                         {
                             try
                             {
@@ -1365,7 +1369,7 @@ namespace UCL.Core.UI {
                             using (var aScope2 = new GUILayout.VerticalScope("box"))
                             {
                                 GUILayout.BeginHorizontal();
-                                if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
                                 {
                                     aDeleteAt = aKey;
                                 }
@@ -1474,9 +1478,9 @@ namespace UCL.Core.UI {
                                     aDisplayName = aDisplayName.Substring(2, aDisplayName.Length - 2);
                                 }
                                 string aKey = "DrawField_" + aDisplayName;
-                                if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aKey))
+                                if (UCL_LocalizeManager.ContainsKey(aKey))
                                 {
-                                    aDisplayName = LocalizeLib.UCL_LocalizeManager.Get(aKey);
+                                    aDisplayName = UCL_LocalizeManager.Get(aKey);
                                 }
                             }
                             else
@@ -1616,11 +1620,11 @@ namespace UCL.Core.UI {
                                     string aCountKey = aDataKey + "_Count";
                                     int aCount = iDataDic.GetData(aCountKey, aList.Count);
                                     GUILayout.BeginHorizontal();
-                                    int aNewCount = UCL_GUILayout.IntField(LocalizeLib.UCL_LocalizeManager.Get("Count"), aCount);
+                                    int aNewCount = UCL_GUILayout.IntField(UCL_LocalizeManager.Get("Count"), aCount);
                                     iDataDic.SetData(aCountKey, aNewCount);
                                     if (aNewCount != aList.Count)
                                     {
-                                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("SetCount")))
+                                        if (GUILayout.Button(UCL_LocalizeManager.Get("SetCount")))
                                         {
                                             if (aNewCount < 0) aNewCount = 0;
                                             while (aNewCount < aList.Count)
@@ -1662,7 +1666,7 @@ namespace UCL.Core.UI {
                                                     aTypeNameList = new List<string>();
                                                     for(int i = 0; i < aAllTypeList.Count; i++)
                                                     {
-                                                        aTypeNameList.Add(LocalizeLib.UCL_LocalizeManager.Get(aAllTypeList[i].Name));
+                                                        aTypeNameList.Add(UCL_LocalizeManager.Get(aAllTypeList[i].Name));
                                                     }
                                                     iDataDic.Add(aITypeListKey, aTypeNameList);
                                                     iDataDic.Add(aITypeListKey + "Type", aAllTypeList);
@@ -1678,7 +1682,7 @@ namespace UCL.Core.UI {
                                         {
                                             aSelectedType = PopupAuto(aTypeNameList, iDataDic, aField.Name, 10, GUILayout.Width(160));
                                         }
-                                        if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                         {
                                             try
                                             {
@@ -1710,7 +1714,7 @@ namespace UCL.Core.UI {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
                                         {
                                             GUILayout.BeginHorizontal();
-                                            if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                            if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
                                             {
                                                 aDeleteAt = aAt;
                                             }
@@ -1749,7 +1753,7 @@ namespace UCL.Core.UI {
                                         iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
                                     }
                                     iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(aDisplayName + "_AddKey"), aKeyType.Name, iFieldNameFunc: iFieldNameFunc));
-                                    if (GUILayout.Button(LocalizeLib.UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                     {
                                         try
                                         {
@@ -1774,7 +1778,7 @@ namespace UCL.Core.UI {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
                                         {
                                             GUILayout.BeginHorizontal();
-                                            if (UCL_GUILayout.ButtonAutoSize(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Delete")))
+                                            if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
                                             {
                                                 aDeleteAt = aKey;
                                             }
@@ -1804,9 +1808,9 @@ namespace UCL.Core.UI {
                                 UCL.Core.UI.UCL_GUILayout.LabelAutoSize(aDisplayName);
                                 aField.SetValue(iObj, UCL.Core.UI.UCL_GUILayout.Popup((System.Enum)aData, (iEnum) => {
                                     string aLocalizeKey = aTypeName + "_" + iEnum;
-                                    if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
+                                    if (UCL_LocalizeManager.ContainsKey(aLocalizeKey))
                                     {
-                                        iEnum = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey), iEnum);
+                                        iEnum = string.Format("{0}({1})", UCL_LocalizeManager.Get(aLocalizeKey), iEnum);
                                     }
                                     return iEnum;
                                 }, iDataDic.GetSubDic(aField.Name)));
@@ -1824,7 +1828,6 @@ namespace UCL.Core.UI {
             }
 
             GUILayout.EndVertical();
-            //GUILayout.EndHorizontal();
             return aResultObj;
         }
         #endregion

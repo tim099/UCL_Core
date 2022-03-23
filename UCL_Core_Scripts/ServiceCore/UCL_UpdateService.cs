@@ -103,7 +103,7 @@ namespace UCL.Core.ServiceLib
                 }
                 catch (System.Exception iE)
                 {
-                    Debug.LogError(iE);
+                    Debug.LogException(iE);
                 }
             }
             int aCount = m_DelaySecondsQue.Count;

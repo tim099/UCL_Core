@@ -14,6 +14,8 @@ namespace UCL.Core.UI {
             }
         }
         bool m_Inited = false;
+        bool m_Blocking = false;
+        bool m_HotControlBlocking = false;
         protected void Init() {
             if(m_Inited) return;
             m_Inited = true;
@@ -32,11 +34,17 @@ namespace UCL.Core.UI {
         }
         private void Awake() {
             Init();
-
         }
-        public void SetBlocking(bool active) {
-            if(!m_Inited) Init();
-            m_BlockImage.gameObject.SetActive(active);
+        public void SetBlocking(bool iIsActive) {
+            m_Blocking = iIsActive;
+        }
+        public void UpdateBlockingImage()
+        {
+            bool aBlock = (m_HotControlBlocking | m_Blocking);
+            if (m_BlockImage.gameObject.activeSelf != aBlock)
+            {
+                m_BlockImage.gameObject.SetActive(aBlock);
+            }
         }
         public void SetBlockOnHotControl(bool flag) {
             f_BlockOnHotControl = flag;
@@ -44,8 +52,9 @@ namespace UCL.Core.UI {
         private void Update() {
             //if(GUIUtility.hotControl!=0) Debug.LogWarning("GUIUtility.hotControl:" + GUIUtility.hotControl);
             if(f_BlockOnHotControl) {
-                SetBlocking(GUIUtility.hotControl != 0);
+                m_HotControlBlocking = GUIUtility.hotControl != 0;
             }
+            UpdateBlockingImage();
         }
     }
 }

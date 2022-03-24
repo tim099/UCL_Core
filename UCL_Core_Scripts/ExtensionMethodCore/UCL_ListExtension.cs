@@ -95,6 +95,15 @@ public static partial class ListExtensionMethods {
         }
         return iList;
     }
+    public static string ConcatString(this IList<string> iList, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        foreach (var aStr in iList)
+        {
+            aSB.Append(aStr).Append(iSeperator);
+        }
+        return aSB.ToString();
+    }
     public static string ConcatString<T>(this IList<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
     {
         System.Text.StringBuilder aSB = new System.Text.StringBuilder();

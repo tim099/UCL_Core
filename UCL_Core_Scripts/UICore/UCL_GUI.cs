@@ -255,10 +255,14 @@ namespace UCL.Core.UI {
             }
             return aResult;
         }
-
+        
         public static bool Button(RectTransform iRectTransform, string iText)
         {
             return GUI.Button(iRectTransform.GetScreenSpaceRect(), iText);
+        }
+        public static bool Button(RectTransform iRectTransform, string iText, GUIStyle iStyle)
+        {
+            return GUI.Button(iRectTransform.GetScreenSpaceRect(), iText, iStyle);
         }
     }
 }

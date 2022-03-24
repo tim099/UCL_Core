@@ -310,6 +310,7 @@ namespace UCL.Core.FileLib {
         public FileInformation GetFileInfo(string iFileName) {
             return FolderInformations.GetFileInfo(iFileName);
         }
+        public List<FileInformation> GetAllFileInfos(string iPath) => FolderInformations.GetAllFileInfos(iPath);
     }
 }
 

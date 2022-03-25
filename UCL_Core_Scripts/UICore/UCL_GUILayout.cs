@@ -258,6 +258,18 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return iVal;
         }
+        static public bool BoolField(bool iVal, params GUILayoutOption[] iOptions)
+        {
+            GUILayout.BeginHorizontal();
+
+            if (GUILayout.Button(iVal ? "✔" : " ", iOptions))
+            {
+                iVal = !iVal;
+            }
+            GUILayout.EndHorizontal();
+
+            return iVal;
+        }
         static public bool BoolField(bool iVal, int iSize = 21)
         {
             GUILayout.BeginHorizontal();
@@ -1185,6 +1197,8 @@ namespace UCL.Core.UI {
                 if (string.IsNullOrEmpty(iDisplayName))
                 {
                     iDisplayName = iObj.GetType().Name;
+                    //var aShortName = iObj as UCL.Core.IUCL_ShortName;
+                    //if (aShortName != null) iDisplayName += "(" + aShortName.GetShortName() + ")";
                 }
                 aType = iObj.GetType();
                 if (iObj is string)
@@ -1398,7 +1412,6 @@ namespace UCL.Core.UI {
             }
             if (!aIsDefaultType)
             {
-
                 GUILayout.BeginVertical();
                 if(!iIsAlwaysShowDetail) {
                     GUILayout.BeginHorizontal();
@@ -1487,6 +1500,11 @@ namespace UCL.Core.UI {
                             {
                                 aDisplayName = iFieldNameFunc(aDisplayName);
                             }
+                            var aShortName = aData as UCL.Core.IUCL_ShortName;
+                            if (aShortName != null)
+                            {
+                                aDisplayName += "(" + aShortName.GetShortName() + ")";
+                            }
                             bool aIsAlwaysShowDetail = aField.FieldType.GetCustomAttribute<ATTR.AlwaysExpendOnGUI>() != null;
                             bool aIsDrawed = false;
                             var aAttrs = aField.GetCustomAttributes();
@@ -1502,12 +1520,9 @@ namespace UCL.Core.UI {
                                     aIsDrawed = true;
                                     var aStrArr = aAttr as IStringArr;
                                     GUILayout.BeginHorizontal();
-                                    //using(var aScope2 = new GUILayout.HorizontalScope("box", GUILayout.ExpandWidth(false)))
-                                    {
-                                        GUILayout.Label(aDisplayName, GUILayout.ExpandWidth(false));
-                                    }
+                                    GUILayout.Label(aDisplayName, GUILayout.ExpandWidth(false));
 
-                                    aField.SetValue(iObj, aStrArr.DrawOnGUILocalized(iObj, aData, iDataDic, "_" + aDisplayName));
+                                    aField.SetValue(iObj, aStrArr.DrawOnGUILocalized(iObj, aData, iDataDic, aField.Name));
                                     GUILayout.EndHorizontal();
                                 }else if(aAttr is ITexture2D)
                                 {
@@ -1529,7 +1544,6 @@ namespace UCL.Core.UI {
                                         if (aData == null) aData = "";
                                         string aPath = (string)aData;
                                         GUILayout.BeginHorizontal();
-                                        //UCL_GUILayout.LabelAutoSize(aDisplayName);
                                         var aResult = FolderExplorer(iDataDic.GetSubDic(aField.Name), aPath, aFolderExplorerAttribute.m_FolderRoot, aDisplayName,
                                             iIsShowFiles : false);
                                         GUILayout.EndHorizontal();
@@ -1718,7 +1732,7 @@ namespace UCL.Core.UI {
                                             {
                                                 aDeleteAt = aAt;
                                             }
-                                            aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic(aDisplayName + "Dic_" + (aAt++).ToString()), aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
+                                            aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic(aField.Name + "Dic_" + (aAt++).ToString()), aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
                                             GUILayout.EndHorizontal();
                                         }
                                     }
@@ -1752,7 +1766,7 @@ namespace UCL.Core.UI {
                                     {
                                         iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
                                     }
-                                    iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(aDisplayName + "_AddKey"), aKeyType.Name, iFieldNameFunc: iFieldNameFunc));
+                                    iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(aField.Name + "_AddKey"), aKeyType.Name, iFieldNameFunc: iFieldNameFunc));
                                     if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                     {
                                         try
@@ -1785,7 +1799,7 @@ namespace UCL.Core.UI {
                                             GUILayout.BeginVertical();
                                             string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
                                             GUILayout.Label(aKeyName);
-                                            aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey], iDataDic.GetSubDic(aDisplayName + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
+                                            aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey], iDataDic.GetSubDic(aField.Name + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
                                             GUILayout.EndVertical();
                                             GUILayout.EndHorizontal();
                                         }
@@ -1818,7 +1832,7 @@ namespace UCL.Core.UI {
                             }
                             else if (aField.FieldType.IsStructOrClass())
                             {
-                                DrawObjectData(aData, iDataDic.GetSubDic(aDisplayName + "_FieldData"), aDisplayName, iFieldNameFunc: iFieldNameFunc, iIsAlwaysShowDetail: aIsAlwaysShowDetail);
+                                DrawObjectData(aData, iDataDic.GetSubDic(aField.Name + "_FieldData"), aDisplayName, iFieldNameFunc: iFieldNameFunc, iIsAlwaysShowDetail: aIsAlwaysShowDetail);
                                 aField.SetValue(iObj, aData);
                             }
                         }

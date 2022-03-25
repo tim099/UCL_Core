@@ -72,13 +72,22 @@ namespace UCL.Core.Game
             {
                 iPath = Path.Combine(UIResourceFolder, iPath);
             }
-            T aTemplate = Resources.Load<T>(iPath);
-            if(aTemplate == null)
+            try
             {
-                Debug.LogError("CreateUIFromResource aTemplate == null iPath:" + iPath);
-                return null;
+                T aTemplate = Resources.Load<T>(iPath);
+                if (aTemplate == null)
+                {
+                    Debug.LogError("CreateUIFromResource aTemplate == null iPath:" + iPath);
+                    return null;
+                }
+                return CreateUI(aTemplate);
             }
-            return CreateUI(aTemplate);
+            catch(System.Exception iE)
+            {
+                Debug.LogException(iE);
+            }
+
+            return default;//fail to create
         }
         /// <summary>
         /// Remove closed ui from UIStack

@@ -1194,6 +1194,7 @@ namespace UCL.Core.UI {
             Type aType = null;
             if (iObj != null)
             {
+
                 if (string.IsNullOrEmpty(iDisplayName))
                 {
                     iDisplayName = iObj.GetType().Name;
@@ -1315,7 +1316,7 @@ namespace UCL.Core.UI {
                             {
                                 int aDrawAt = aAt;
                                 GUILayout.BeginHorizontal();
-                                if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
+                                if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                 {
                                     aDeleteAt = aAt;
                                 }
@@ -1383,7 +1384,7 @@ namespace UCL.Core.UI {
                             using (var aScope2 = new GUILayout.VerticalScope("box"))
                             {
                                 GUILayout.BeginHorizontal();
-                                if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
+                                if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                 {
                                     aDeleteAt = aKey;
                                 }
@@ -1425,6 +1426,7 @@ namespace UCL.Core.UI {
                 if (aIsShowField) using (var aScope = new GUILayout.VerticalScope("box")) {
                         if (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) != null)
                         {
+                            
                             IList<MethodInfo> aAllMethods = aType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                             if (aAllMethods.Count > 0)
                             {
@@ -1432,7 +1434,6 @@ namespace UCL.Core.UI {
                                 for (int i = 0; i < aAllMethods.Count; i++)
                                 {
                                     var aMethod = aAllMethods[i];
-
                                     {
                                         var aAttrType = typeof(ATTR.UCL_Attribute);
                                         var aAttrs = aMethod.GetCustomAttributes(aAttrType, false);
@@ -1680,7 +1681,12 @@ namespace UCL.Core.UI {
                                                     aTypeNameList = new List<string>();
                                                     for(int i = 0; i < aAllTypeList.Count; i++)
                                                     {
-                                                        aTypeNameList.Add(UCL_LocalizeManager.Get(aAllTypeList[i].Name));
+                                                        string aName = aAllTypeList[i].Name;
+                                                        if (UCL_LocalizeManager.ContainsKey(aName))
+                                                        {
+                                                            aName = string.Format("{0}({1})", UCL_LocalizeManager.Get(aName), aName);
+                                                        }
+                                                        aTypeNameList.Add(aName);
                                                     }
                                                     iDataDic.Add(aITypeListKey, aTypeNameList);
                                                     iDataDic.Add(aITypeListKey + "Type", aAllTypeList);
@@ -1694,7 +1700,7 @@ namespace UCL.Core.UI {
                                         int aSelectedType = -1;
                                         if (aTypeNameList != null)
                                         {
-                                            aSelectedType = PopupAuto(aTypeNameList, iDataDic, aField.Name, 10, GUILayout.Width(160));
+                                            aSelectedType = PopupAuto(aTypeNameList, iDataDic, aField.Name, 10, GUILayout.Width(240));
                                         }
                                         if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                         {
@@ -1728,7 +1734,7 @@ namespace UCL.Core.UI {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
                                         {
                                             GUILayout.BeginHorizontal();
-                                            if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
+                                            if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                             {
                                                 aDeleteAt = aAt;
                                             }
@@ -1792,7 +1798,7 @@ namespace UCL.Core.UI {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
                                         {
                                             GUILayout.BeginHorizontal();
-                                            if (UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete")))
+                                            if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                             {
                                                 aDeleteAt = aKey;
                                             }

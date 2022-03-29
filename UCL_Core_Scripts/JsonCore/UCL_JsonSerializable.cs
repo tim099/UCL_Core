@@ -40,7 +40,7 @@
     {
         virtual public JsonData SerializeToJson()
         {
-            return UCL.Core.JsonLib.JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, (iName) => iName.Replace("m_", string.Empty));
+            return JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, (iName) => iName.Replace("m_", string.Empty));
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {

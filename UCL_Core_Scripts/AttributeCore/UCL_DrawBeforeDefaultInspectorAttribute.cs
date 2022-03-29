@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace UCL.Core.ATTR
 {
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    //[System.Diagnostics.Conditional("UNITY_EDITOR")]
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
     public class UCL_DrawBeforeDefaultInspectorAttribute : Attribute
     {

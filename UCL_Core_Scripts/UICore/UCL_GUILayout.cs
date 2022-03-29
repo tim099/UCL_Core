@@ -1420,6 +1420,21 @@ namespace UCL.Core.UI {
                     aIsShowField = iDataDic.GetData(aShowKey, false);
                     iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
                     if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+
+                    if(iObj is ICopyPaste)
+                    {
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
+                        {
+                            UCL.Core.CopyPaste.SetCopyData(iObj);
+                        }
+                        bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(aType);
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonText(aCanCopy ? Color.white : Color.red),
+                            GUILayout.ExpandWidth(false)))
+                        {
+                            if (aCanCopy) return UCL.Core.CopyPaste.GetCopyData(aType);
+                        }
+                    }
+
                     GUILayout.EndHorizontal();
                 }
 

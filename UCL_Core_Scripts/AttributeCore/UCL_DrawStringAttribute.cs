@@ -5,7 +5,7 @@ using System.Reflection;
 using UnityEngine;
 
 namespace UCL.Core.ATTR {
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    //[System.Diagnostics.Conditional("UNITY_EDITOR")]
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
     public class UCL_DrawStringAttribute : UCL_Attribute {
         public object[] m_Params;

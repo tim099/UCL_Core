@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 namespace UCL.Core.ATTR {
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    //[System.Diagnostics.Conditional("UNITY_EDITOR")]
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
     public class UCL_DrawTexture2DAttribute : UCL_Attribute
     {

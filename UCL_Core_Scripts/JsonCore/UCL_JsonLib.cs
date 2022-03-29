@@ -118,6 +118,7 @@ namespace UCL.Core.JsonLib {
             {
                 return aValue;
             }
+            
             return LoadDataFromJson(iType.CreateInstance(), iData, iSaveMode, iFieldNameAlterFunc);
         }
         /// <summary>
@@ -404,6 +405,7 @@ namespace UCL.Core.JsonLib {
                 return null;
             }
             Type iType = iObj.GetType();
+
             if (iObj is IList && iType.IsGenericType)
             {
                 IList aList = iObj as IList;
@@ -488,6 +490,11 @@ namespace UCL.Core.JsonLib {
                         UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;//Activator.CreateInstance();
                         aObj.DeserializeFromJson(aClassData);
                         aField.SetValue(iObj, aObj);
+                    }
+                    else if (typeof(UnityJsonSerializable).IsAssignableFrom(aField.FieldType))
+                    {
+                        (aFieldData as UnityJsonSerializable).DeserializeFromJson(aJsonData);
+                        aField.SetValue(iObj, aFieldData);
                     }
                     else if(aField.FieldType == typeof(JsonData))
                     {

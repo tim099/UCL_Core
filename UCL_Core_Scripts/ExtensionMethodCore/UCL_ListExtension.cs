@@ -170,6 +170,25 @@ public static partial class ListExtensionMethods {
         iList.RemoveAt(0);
     }
     /// <summary>
+    /// Reverse order of element in iList(Same as Linq.Reverse)
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    public static IList<T> Reverse<T>(this IList<T> iList)
+    {
+        if (!iList.IsNullOrEmpty())
+        {
+            for (int i = 0; i < iList.Count / 2; i++)
+            {
+                T aTmp = iList[i];
+                iList[i] = iList[iList.Count - i - 1];
+                iList[iList.Count - i - 1] = aTmp;
+            }
+        }
+
+        return iList;
+    }
+    /// <summary>
     /// Remove last element of iList
     /// </summary>
     /// <typeparam name="T"></typeparam>

@@ -22,8 +22,8 @@ namespace UCL.Core.UI {
     public interface ITypeList
     {
         IList<Type> GetAllTypes();
-
     }
+
     static public class UCL_GUILayout {
         #region property field
         /// <summary>
@@ -683,8 +683,9 @@ namespace UCL.Core.UI {
         /// <param name="iPathDisplayCount">max path button display on top, if iPathDisplayCount <= 0 then unlimited</param>
         /// <returns>return the selected folder</returns>
         public static string FolderExplorer(UCL_ObjectDictionary iDataDic, string iPath, string iRoot = "", string iLabel = "", int iPathDisplayCount = -1
-            ,bool iIsShowFiles = false)
+            , bool iIsShowFiles = false, UCLI_FileExplorer iFileExplorer = null)
         {
+            if (iFileExplorer == null) iFileExplorer = UCL_FileExplorer.Ins;
             const string AllDirsNameKey = "AllDirsName";
             const string AllFilesNameKey = "AllFilesNameKey";
             const string DirPathKey = "DirPath";
@@ -701,19 +702,11 @@ namespace UCL.Core.UI {
             System.Action<string> aSelectDir = (iDirPath) =>
             {
                 string aPath = string.IsNullOrEmpty(iRoot) ? iDirPath : iRoot + "/" + iDirPath;
-                var aAllDirsName = UCL.Core.FileLib.Lib.GetDirectories(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly);
-                for (int j = 0; j < aAllDirsName.Length; j++)
-                {
-                    aAllDirsName[j] = FileLib.Lib.GetFolderName(aAllDirsName[j]);
-                }
+                var aAllDirsName = iFileExplorer.GetDirectories(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly, iRemoveRootPath : true);
                 iDataDic.SetData(AllDirsNameKey, aAllDirsName);
                 if (iIsShowFiles)
                 {
-                    var aAllFilesName = UCL.Core.FileLib.Lib.GetFiles(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly);
-                    for (int j = 0; j < aAllFilesName.Length; j++)
-                    {
-                        aAllFilesName[j] = FileLib.Lib.GetFileName(aAllFilesName[j]);
-                    }
+                    var aAllFilesName = iFileExplorer.GetFiles(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly, iRemoveRootPath : true);
                     iDataDic.SetData(AllFilesNameKey, aAllFilesName);
                 }
                 iDataDic.SetData(DirPathKey, iDirPath.LastElement() == '/' ? iDirPath.RemoveLast() : iDirPath);
@@ -735,7 +728,7 @@ namespace UCL.Core.UI {
             iDataDic.SetData(PathKey, aNewPath);
             if (aNewPath != aCurPath)
             {
-                if (System.IO.Directory.Exists(string.IsNullOrEmpty(iRoot) ? aNewPath : iRoot + "/" + aNewPath))
+                if (iFileExplorer.DirectoryExists(string.IsNullOrEmpty(iRoot) ? aNewPath : iRoot + "/" + aNewPath))
                 {
                     aSetPath(aNewPath);
                 }
@@ -752,7 +745,6 @@ namespace UCL.Core.UI {
             string aShowToggle = iDataDic.GetData(ShowToggleKey, string.Empty);
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(300)))
             {
-                //iDataDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDataDic.GetData<Vector2>("ScrollPos")));
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("<<", GUILayout.Width(40)))
                 {
@@ -774,7 +766,7 @@ namespace UCL.Core.UI {
                         string aFolderName = aPaths[aPaths.Length - i];
                         if (i < aCount) aPathSB.Append('/');
                         aPathSB.Append(aFolderName);
-                        string aSelectPath = aPathSB.ToString();//aPaths[aPaths.Length - i];
+                        string aSelectPath = aPathSB.ToString();
                         {
                             bool aIsCur = aShowToggle == aSelectPath;
                             if (aIsCur)
@@ -815,13 +807,11 @@ namespace UCL.Core.UI {
                             }
                             aSetPath(aSB.ToString());
                         }
-
                     }
                 }
 
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
-                //GUILayout.EndScrollView();
                 if (!iDataDic.ContainsKey(AllDirsNameKey))
                 {
                     aSelectDir(iPath);
@@ -835,7 +825,6 @@ namespace UCL.Core.UI {
                         GUILayout.Height(Math.Min(6, aDirs.Length) * DirHeight + 6)))
                     {
                         iDataDic.SetData("FolderScrollPos", aScope2.scrollPosition);
-                        //iDataDic.SetData("FolderScrollPos", GUILayout.BeginScrollView(iDataDic.GetData("FolderScrollPos", Vector2.zero)));
                         for (int i = 0; i < aDirs.Length; i++)
                         {
                             string aDir = aDirs[i];
@@ -852,9 +841,8 @@ namespace UCL.Core.UI {
                                     aSetPath(aCurDirPath + "/" + aDir);
                                 }
                             }
-                            Label(aDir, UCL.Core.FileLib.Lib.GetFolderName(iDataDic.GetData(ShowToggleKey, string.Empty)) == aDir ?
+                            Label(aDir, FileLib.Lib.GetFolderName(iDataDic.GetData(ShowToggleKey, string.Empty)) == aDir ?
                                 Color.yellow : Color.white);
-                            //GUILayout.Label(aDir);
                             GUILayout.FlexibleSpace();
                             GUILayout.EndHorizontal();
                         }
@@ -870,7 +858,6 @@ namespace UCL.Core.UI {
                                 }
                             }
                         }
-                        //GUILayout.EndScrollView();
                     }
                 }
             }     

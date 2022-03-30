@@ -4,6 +4,13 @@ using UnityEngine;
 
 public static partial class TextureExtensionMethods {
     #region RenderTexture
+    public static void ReleaseTemporaryAndClearRef(this RenderTexture iRenderTexture)
+    {
+        if (RenderTexture.active == iRenderTexture) RenderTexture.active = null;
+        iRenderTexture.Release();
+        RenderTexture.ReleaseTemporary(iRenderTexture);
+    }
+
     public static Texture2D ToTexture2D(this RenderTexture iRenderTexture)
     {
         Texture2D aTexture2D = new Texture2D(iRenderTexture.width, iRenderTexture.height, TextureFormat.RGBA32, false);

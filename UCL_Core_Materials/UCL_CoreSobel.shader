@@ -2,7 +2,8 @@
 {
     Properties
     {
-        _MainTex ("Texture", 2D) = "white" {}
+        [PerRendererData] _MainTex ("Texture", 2D) = "white" {}
+        _LineCol("LineCol", Color) = (1.0, 1.0, 1.0, 1.0)
 		_Dx("Dx", Float) = 1
 		_Dy("Dy", Float) = 1
 		_Weight("Weight", Vector) = (1,1,1,1)
@@ -47,6 +48,7 @@
 			float4 _Weight;
 			float _Dx;
 			float _Dy;
+            float4 _LineCol;
             fixed4 frag (v2f i) : SV_Target
             {
 				float4 c = tex2D(_MainTex, i.uv);
@@ -70,8 +72,11 @@
 					+ _Weight.z * sqrt(GX.z * GX.z + GY.z * GY.z) + _Weight.w * sqrt(GX.w * GX.w + GY.w * GY.w);
 				//(c.r + c.g + c.b) / 3;
 				avg /= (_Weight.x + _Weight.y + _Weight.z + _Weight.w);
-				c.r = c.g = c.b = avg;
-				c.a = 1;
+                c.r = _LineCol.r * avg;
+                c.g = _LineCol.g * avg;
+                c.b = _LineCol.b * avg;
+				//c.r = c.g = c.b = avg;
+				c.a = _LineCol.a * avg;
 				//c.rgb *= c.a;
                 return c;
             }

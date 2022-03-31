@@ -55,6 +55,13 @@ public static partial class TransformExtensionMethods {
     #endregion
 
     #region Transform
+    public static void DestroyAllChildren(this Transform iTarget)
+    {
+        foreach (Transform aChild in iTarget)
+        {
+            GameObject.Destroy(aChild.gameObject);
+        }
+    }
     public static void SetPositionAndRotation(this Transform iTarget, Transform iMoveTarget)
     {
         iTarget.position = iMoveTarget.position;

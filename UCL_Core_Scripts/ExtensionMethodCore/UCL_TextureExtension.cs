@@ -6,6 +6,7 @@ public static partial class TextureExtensionMethods {
     #region RenderTexture
     public static void ReleaseTemporaryAndClearRef(this RenderTexture iRenderTexture)
     {
+        if (iRenderTexture == null) return;
         if (RenderTexture.active == iRenderTexture) RenderTexture.active = null;
         iRenderTexture.Release();
         RenderTexture.ReleaseTemporary(iRenderTexture);

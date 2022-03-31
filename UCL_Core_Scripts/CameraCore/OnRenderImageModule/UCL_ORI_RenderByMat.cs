@@ -43,18 +43,23 @@ namespace UCL.Core.CameraLib {
                 m_Mat.SetTexture(m_MainTexName, source);
                 if(m_OutputTexture != null) {
                     //Debug.LogWarning("Graphics.Blit(source, m_OutputTexture);");
+                    m_OutputTexture.Release();
                     Graphics.Blit(source, m_OutputTexture, m_Mat);
+                    destination.Release();
                     Graphics.Blit(m_OutputTexture, destination);
                 } else {
                     //Debug.LogWarning("Graphics.Blit(source, destination, m_Mat);");
+                    destination.Release();
                     Graphics.Blit(source, destination, m_Mat);
                 }
             } else {
                 //Debug.LogWarning("m_Mat == null");
+                destination.Release();
                 Graphics.Blit(source, destination);
                 if(m_OutputTexture != null) {
                     //Debug.LogWarning("Graphics.Blit(source, m_OutputTexture);");
-                    Graphics.Blit(destination,m_OutputTexture);
+                    m_OutputTexture.Release();
+                    Graphics.Blit(destination, m_OutputTexture);
                 }
             }
         }

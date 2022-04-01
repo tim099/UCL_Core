@@ -7,9 +7,10 @@ namespace UCL.Core.CameraLib {
     [ExecuteInEditMode]
     public class UCL_OnRenderImagePipeline : MonoBehaviour {
         public bool m_RenderInEditMode = true;
-        public List<UCL_OnRenderImageModule> m_Modules;
+        public List<UCL_OnRenderImageModule> m_Modules = new List<UCL_OnRenderImageModule>();
+        public List<UCLI_OnRenderImage> m_RuntimeModules = new List<UCLI_OnRenderImage>();
         RenderTexture m_TmpDes;
-        Container.UCL_Vector<UCL_OnRenderImageModule> m_ActiveModules = new Container.UCL_Vector<UCL_OnRenderImageModule>();
+        Container.UCL_Vector<UCLI_OnRenderImage> m_ActiveModules = new Container.UCL_Vector<UCLI_OnRenderImage>();
         private void OnDestroy() {
             ClearTmpDes();
         }
@@ -18,44 +19,60 @@ namespace UCL.Core.CameraLib {
             RenderTexture.ReleaseTemporary(m_TmpDes);
             m_TmpDes = null;
         }
+        public void AddModule(UCLI_OnRenderImage iModule)
+        {
+            m_RuntimeModules.Add(iModule);
+        }
+        public void RemoveModule(UCLI_OnRenderImage iModule)
+        {
+            m_RuntimeModules.Remove(iModule);
+        }
         //public Material m_Mat;
-        private void OnRenderImage(RenderTexture source, RenderTexture destination) {
+        private void OnRenderImage(RenderTexture iSource, RenderTexture iDestination) {
             //Graphics.Blit(source, destination, m_Mat);
-
+            if(!m_RenderInEditMode && !Application.isPlaying)
+            {
+                return;
+            }
             ///*
-            if(m_Modules == null || m_Modules.Count == 0 || source == null || (!m_RenderInEditMode && !Application.isPlaying)) {
-                Graphics.Blit(source, destination);
+            if((m_Modules.IsNullOrEmpty() && m_RuntimeModules.IsNullOrEmpty()) || iSource == null) {
+                Graphics.Blit(iSource, iDestination);
                 return;
             }
             m_ActiveModules.Clear();
             for(int i = 0; i < m_Modules.Count; i++) {
-                var module = m_Modules[i];
-                if(module != null && !module.RenderOff()) {
-                    m_ActiveModules.Add(module);
+                var aModule = m_Modules[i];
+                if(aModule != null && !aModule.RenderOff()) {
+                    m_ActiveModules.Add(aModule);
                 }
             }
+            for (int i = 0; i < m_RuntimeModules.Count; i++)
+            {
+                m_ActiveModules.Add(m_RuntimeModules[i]);
+            }
             if(m_ActiveModules.Count == 0) {
-                Graphics.Blit(source, destination);
+                Graphics.Blit(iSource, iDestination);
                 return;
             }
 
-            RenderTexture cur_source = source;
+            RenderTexture aCurSource = iSource;
             if(m_TmpDes != null ) {//&& (m_TmpDes.width != source.width || m_TmpDes.height != source.height)
                 RenderTexture.ReleaseTemporary(m_TmpDes);
                 m_TmpDes = null;
             }
             if(m_TmpDes == null) {
-                m_TmpDes = RenderTexture.GetTemporary(source.width, source.height);
+                m_TmpDes = RenderTexture.GetTemporary(iSource.width, iSource.height);
             }
-            for(int i = 0, count = m_ActiveModules.Count; i < count; i++) {
-                var module = m_ActiveModules[i];
-                if(!module.RenderOff()) {
-                    if(i < count - 1) {
-                        module.Render(ref cur_source, ref m_TmpDes);
-                        cur_source = m_TmpDes;
-                    } else {
-                        module.Render(ref cur_source, ref destination);
-                    }
+            for(int i = 0, aCount = m_ActiveModules.Count; i < aCount; i++) {
+                var aModule = m_ActiveModules[i];
+                if (i < aCount - 1)
+                {
+                    aModule.Render(ref aCurSource, ref m_TmpDes);
+                    aCurSource = m_TmpDes;
+                }
+                else
+                {
+                    aModule.Render(ref aCurSource, ref iDestination);
                 }
             }
             //*/

@@ -13,11 +13,25 @@ namespace UCL.Core.Game
             OnEnable,//Play On OnEnable()
             OnAwake,//Play On Awake()
         }
-
+        public enum EndOption
+        {
+            None = 0,//No Auto End
+            /// <summary>
+            /// Auto End On OnDestroy()
+            /// </summary>
+            OnDestroy,
+            /// <summary>
+            /// Auto End On OnDisable
+            /// </summary>
+            OnDisable,
+        }
         public float m_Volume = 1f;
         public AudioClip m_Clip = null;
         public AudioType m_AudioType = AudioType.None;
         public StartOption m_StartOption = StartOption.OnStart;
+        public EndOption m_EndOption = EndOption.None;
+        public AudioPlayer m_AudioPlayer = null;
+        public bool m_IsLoop = false;
         private void Awake()
         {
             if (m_StartOption == StartOption.OnAwake) Play();
@@ -25,6 +39,20 @@ namespace UCL.Core.Game
         void Start()
         {
             if (m_StartOption == StartOption.OnStart) Play();
+        }
+        private void OnDestroy()
+        {
+            if(m_EndOption == EndOption.OnDestroy)
+            {
+                if (m_AudioPlayer != null) m_AudioPlayer.Stop();
+            }
+        }
+        private void OnDisable()
+        {
+            if (m_EndOption == EndOption.OnDisable)
+            {
+                if (m_AudioPlayer != null) m_AudioPlayer.Stop();
+            }
         }
         private void OnEnable()
         {
@@ -35,7 +63,8 @@ namespace UCL.Core.Game
             //Debug.LogError("Play");
             var Ins = UCL_GameAudioService.Ins;
             if (Ins == null) return;
-            Ins.Play(m_Clip, m_AudioType, m_Volume);
+            m_AudioPlayer = Ins.Play(m_Clip, m_AudioType, m_Volume);
+            m_AudioPlayer.m_AudioSource.loop = m_IsLoop;
         }
     }
 }

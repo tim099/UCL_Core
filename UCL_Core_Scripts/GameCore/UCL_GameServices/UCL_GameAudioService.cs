@@ -33,11 +33,13 @@ namespace UCL.Core.Game {
         {
             m_AudioSource = iSource;
         }
-        public void Play(AudioClip iClip, float iVolume = 1f)
+        public void Play(AudioClip iClip, float iVolume = 1f, bool iLoop = false)
         {
             m_IsPlaying = true;
             m_AudioSource.gameObject.SetActive(true);
             m_AudioSource.clip = iClip;
+            m_AudioSource.loop = iLoop;
+            m_AudioSource.volume = iVolume;
             m_AudioSource.Play();
         }
         public void Stop()

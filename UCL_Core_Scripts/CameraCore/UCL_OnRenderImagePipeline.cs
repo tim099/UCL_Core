@@ -23,6 +23,10 @@ namespace UCL.Core.CameraLib {
         {
             m_RuntimeModules.Add(iModule);
         }
+        public void ClearRuntimeModules()
+        {
+            m_RuntimeModules.Clear();
+        }
         public void RemoveModule(UCLI_OnRenderImage iModule)
         {
             m_RuntimeModules.Remove(iModule);

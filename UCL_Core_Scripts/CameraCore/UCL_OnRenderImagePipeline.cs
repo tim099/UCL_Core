@@ -9,7 +9,7 @@ namespace UCL.Core.CameraLib {
         public bool m_RenderInEditMode = true;
         public List<UCL_OnRenderImageModule> m_Modules = new List<UCL_OnRenderImageModule>();
         public List<UCLI_OnRenderImage> m_RuntimeModules = new List<UCLI_OnRenderImage>();
-        RenderTexture m_TmpDes;
+        RenderTexture m_TmpDes = null;
         Container.UCL_Vector<UCLI_OnRenderImage> m_ActiveModules = new Container.UCL_Vector<UCLI_OnRenderImage>();
         private void OnDestroy() {
             ClearTmpDes();
@@ -36,6 +36,7 @@ namespace UCL.Core.CameraLib {
             //Graphics.Blit(source, destination, m_Mat);
             if(!m_RenderInEditMode && !Application.isPlaying)
             {
+                Graphics.Blit(iSource, iDestination);
                 return;
             }
             ///*
@@ -58,13 +59,14 @@ namespace UCL.Core.CameraLib {
                 Graphics.Blit(iSource, iDestination);
                 return;
             }
-
-            RenderTexture aCurSource = iSource;
-            if(m_TmpDes != null ) {//&& (m_TmpDes.width != source.width || m_TmpDes.height != source.height)
-                RenderTexture.ReleaseTemporary(m_TmpDes);
-                m_TmpDes = null;
+            if (m_ActiveModules.Count == 1)
+            {
+                m_ActiveModules[0].Render(ref iSource, ref iDestination);
+                return;
             }
-            if(m_TmpDes == null) {
+            RenderTexture aCurSource = iSource;
+            ClearTmpDes();
+            if (m_TmpDes == null) {
                 m_TmpDes = RenderTexture.GetTemporary(iSource.width, iSource.height);
             }
             for(int i = 0, aCount = m_ActiveModules.Count; i < aCount; i++) {
@@ -76,6 +78,7 @@ namespace UCL.Core.CameraLib {
                 }
                 else
                 {
+                    //Debug.LogError("RenderAt:" + i+ ",aCount:"+ aCount);
                     aModule.Render(ref aCurSource, ref iDestination);
                 }
             }

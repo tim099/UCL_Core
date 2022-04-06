@@ -441,7 +441,7 @@ namespace UCL.Core.DebugLib {
             }
 
             var m_ScreenOrientation = Screen.orientation;
-            if (m_ScreenOrientation == ScreenOrientation.Landscape ||
+            if (m_ScreenOrientation == ScreenOrientation.LandscapeLeft ||
                 m_ScreenOrientation == ScreenOrientation.LandscapeLeft ||
                 m_ScreenOrientation == ScreenOrientation.LandscapeRight)
             {

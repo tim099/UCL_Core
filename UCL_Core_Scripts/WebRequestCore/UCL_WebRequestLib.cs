@@ -12,17 +12,20 @@ namespace UCL.Core
             var www = UnityEngine.Networking.UnityWebRequest.Get(iDownloadPath);
             UnityWebRequestAsyncOperation request_opt = www.SendWebRequest();
             yield return request_opt;
-
-            if (www.isNetworkError || www.isHttpError)
+            switch (www.result)
             {
-                Debug.LogError("LoadByWebRequest Error:" + iDownloadPath + ",Error:" + www.error+ ",www.isNetworkError:"+ www.isNetworkError
-                    + ",www.isHttpError:" + www.isHttpError);
-                if (DownloadCallback != null) DownloadCallback.Invoke(null);
-            }
-            else
-            {
-                var results = www.downloadHandler.data;
-                if (DownloadCallback != null) DownloadCallback.Invoke(results);
+                case UnityWebRequest.Result.Success:
+                    {
+                        var results = www.downloadHandler.data;
+                        if (DownloadCallback != null) DownloadCallback.Invoke(results);
+                        break;
+                    }
+                default://Error
+                    {
+                        Debug.LogError("LoadByWebRequest Error Path:" + iDownloadPath + ",Result:" + www.result + ",Error:" + www.error);
+                        if (DownloadCallback != null) DownloadCallback.Invoke(null);
+                        break;
+                    }
             }
         }
         public static IEnumerator CheckHeaderAndDownload(string iDownloadPath, System.Action<byte[]> DownloadCallback)
@@ -46,17 +49,22 @@ namespace UCL.Core
             Debug.LogWarning("WebRequestLoad file_size:" + aFileSize);
 
             var www = UnityEngine.Networking.UnityWebRequest.Get(iDownloadPath);
-            UnityWebRequestAsyncOperation request_opt = www.SendWebRequest();
-            yield return request_opt;
+            UnityWebRequestAsyncOperation aRequestAsyncOperation = www.SendWebRequest();
+            yield return aRequestAsyncOperation;
 
-            if (www.isNetworkError || www.isHttpError)
+            switch (www.result)
             {
-                Debug.LogError("LoadByWebRequest Error:" + iDownloadPath + ",Error:" + www.error);
-            }
-            else
-            {
-                var results = www.downloadHandler.data;
-                if (DownloadCallback != null) DownloadCallback.Invoke(results);
+                case UnityWebRequest.Result.Success:
+                    {
+                        var results = www.downloadHandler.data;
+                        if (DownloadCallback != null) DownloadCallback.Invoke(results);
+                        break;
+                    }
+                default://Error
+                    {
+                        Debug.LogError("LoadByWebRequest Error:" + iDownloadPath + ",Error:" + www.error + ",result:"+ www.result);
+                        break;
+                    }
             }
         }
     }

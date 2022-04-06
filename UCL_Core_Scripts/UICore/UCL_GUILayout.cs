@@ -985,7 +985,8 @@ namespace UCL.Core.UI {
                     for (int i = 0; i < iDisplayedOptions.Count; i++) {
                         if (GUILayout.Button(iDisplayedOptions[i], iOptions)) {
                             iOpened = false;
-                            return i;
+                            iSelectedIndex = i;
+                            break;
                         }
                     }
                 }

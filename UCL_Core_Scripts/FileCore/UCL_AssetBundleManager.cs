@@ -85,55 +85,73 @@ namespace UCL.Core.FileLib {
             //DownloadHandlerAssetBundle handler = new DownloadHandlerAssetBundle(www.url, uint.MaxValue);
             //www.downloadHandler = handler;
             yield return www.SendWebRequest();
-
-            if(www.isNetworkError || www.isHttpError) {
-                Debug.LogError("LoadByWebRequest Error:" + path + ",Error:" + www.error);
-                file.m_LoadError = true;
-            } else {
-                var bundle = (www.downloadHandler as DownloadHandlerAssetBundle).assetBundle;
-                Debug.LogWarning("bundle:" + bundle.name);
-                file.m_AssetBundle = bundle;
-                m_BundleDic.Add(path, bundle);
-                #region Material & Shader
+            switch (www.result)
+            {
+                case UnityWebRequest.Result.Success:
+                    {
+                        var bundle = (www.downloadHandler as DownloadHandlerAssetBundle).assetBundle;
+                        Debug.LogWarning("bundle:" + bundle.name);
+                        file.m_AssetBundle = bundle;
+                        m_BundleDic.Add(path, bundle);
+                        #region Material & Shader
 #if UNITY_EDITOR_OSX || UNITY_EDITOR
-                {
-                    var mats = bundle.LoadAllAssets(typeof(Material));
-                    foreach(Material mat in mats) {
-                        var shaderName = mat.shader.name;
-                        var shaderInRuntime = Shader.Find(shaderName);
-                        if(shaderInRuntime != null) {
-                            mat.shader = shaderInRuntime;
-                            Debug.Log(string.Format("Found the shader: {0} used in mat: {1}", shaderName, mat.name));
-                        } else {
-                            Debug.Log(string.Format("Cant not find the shader: {0} used in mat: {1}", shaderName, mat.name));
-                        }
-                    }
-                }
-                {
-                    var objs = bundle.LoadAllAssets(typeof(GameObject));
-                    List<Renderer> rs = new List<Renderer>();
-                    foreach(GameObject obj in objs) {
-                        var rends = obj.GetComponentsInChildren<Renderer>();
-                        foreach(var r in rends) {
-                            rs.Add(r);
-                        }
-                    }
-                    foreach(Renderer r in rs) {
-                        var mats = r.sharedMaterials;
-                        foreach(Material mat in mats) {
-                            var shaderName = mat.shader.name;
-                            var shaderInRuntime = Shader.Find(shaderName);
-                            if(shaderInRuntime != null) {
-                                mat.shader = shaderInRuntime;
-                                Debug.Log(string.Format("Found the shader: {0} used in mat: {1}", shaderName, mat.name));
-                            } else {
-                                Debug.Log(string.Format("Cant not find the shader: {0} used in mat: {1}", shaderName, mat.name));
+                        {
+                            var mats = bundle.LoadAllAssets(typeof(Material));
+                            foreach (Material mat in mats)
+                            {
+                                var shaderName = mat.shader.name;
+                                var shaderInRuntime = Shader.Find(shaderName);
+                                if (shaderInRuntime != null)
+                                {
+                                    mat.shader = shaderInRuntime;
+                                    Debug.Log(string.Format("Found the shader: {0} used in mat: {1}", shaderName, mat.name));
+                                }
+                                else
+                                {
+                                    Debug.Log(string.Format("Cant not find the shader: {0} used in mat: {1}", shaderName, mat.name));
+                                }
                             }
                         }
-                    }
-                }
+                        {
+                            var objs = bundle.LoadAllAssets(typeof(GameObject));
+                            List<Renderer> rs = new List<Renderer>();
+                            foreach (GameObject obj in objs)
+                            {
+                                var rends = obj.GetComponentsInChildren<Renderer>();
+                                foreach (var r in rends)
+                                {
+                                    rs.Add(r);
+                                }
+                            }
+                            foreach (Renderer r in rs)
+                            {
+                                var mats = r.sharedMaterials;
+                                foreach (Material mat in mats)
+                                {
+                                    var shaderName = mat.shader.name;
+                                    var shaderInRuntime = Shader.Find(shaderName);
+                                    if (shaderInRuntime != null)
+                                    {
+                                        mat.shader = shaderInRuntime;
+                                        Debug.Log(string.Format("Found the shader: {0} used in mat: {1}", shaderName, mat.name));
+                                    }
+                                    else
+                                    {
+                                        Debug.Log(string.Format("Cant not find the shader: {0} used in mat: {1}", shaderName, mat.name));
+                                    }
+                                }
+                            }
+                        }
 #endif
-                #endregion
+                        #endregion
+                        break;
+                    }
+                default://Error
+                    {
+                        Debug.LogError("LoadByWebRequest Error:" + path + ",Error:" + www.error);
+                        file.m_LoadError = true;
+                        break;
+                    }
             }
             file.LoadEnd();
         }

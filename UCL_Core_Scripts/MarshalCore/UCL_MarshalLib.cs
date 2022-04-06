@@ -15,6 +15,7 @@ namespace UCL.Core.MarshalLib {
         /// <returns></returns>
         public static string ByteArrayToHexString(byte[] iBytes)
         {
+            if (iBytes.IsNullOrEmpty()) return string.Empty;
             System.Text.StringBuilder aSB = new System.Text.StringBuilder();
             for(int i = 0; i < iBytes.Length; i++)
             {

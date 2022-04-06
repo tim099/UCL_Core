@@ -393,11 +393,18 @@ public static partial class ObjectExtensionMethods
     public static byte[] ToByteArray(this object obj) {
         return UCL.Core.MarshalLib.Lib.ToByteArray(obj);
     }
-    public static byte[] ToByteArray(this Array arr) {
-        int arr_size = arr.Length * Marshal.SizeOf(arr.GetType().GetElementType());
-        var result = new byte[arr_size];
-        Buffer.BlockCopy(arr, 0, result, 0, arr_size);
-        return result;
+    public static byte[] ToByteArray(this Array iArr) {
+        int aArrLength = iArr.Length * Marshal.SizeOf(iArr.GetType().GetElementType());
+        var aResult = new byte[aArrLength];
+        Buffer.BlockCopy(iArr, 0, aResult, 0, aArrLength);
+        return aResult;
+    }
+    public static T[] ToArray<T>(this byte[] iArr)
+    {
+        int aArrLength = iArr.Length / Marshal.SizeOf(iArr.GetType().GetElementType());
+        var aResult = new T[aArrLength];
+        Buffer.BlockCopy(iArr, 0, aResult, 0, iArr.Length);
+        return aResult;
     }
     public static object GetMember(this object obj, string name, BindingFlags flags) {
         if(obj == null) return null;

@@ -6,43 +6,9 @@ using UnityEngine;
 namespace UCL.Core.MathLib
 {
     public static partial class Extensions {
-        public static RandomState GetState(this System.Random random) {
-            var binaryFormatter = new BinaryFormatter();
-            using(var temp = new MemoryStream()) {
-                binaryFormatter.Serialize(temp, random);
-                return new RandomState(temp.ToArray());
-            }
-        }
+
     }
 
-    [System.Serializable]
-    public struct RandomState {
-        public byte[] m_State;
-        public string HexStringState
-        {
-            get
-            {
-                return UCL.Core.MarshalLib.Lib.ByteArrayToHexString(m_State);
-            }
-        }
-        public RandomState(string iHexStringState)
-        {
-            m_State = UCL.Core.MarshalLib.Lib.HexStringToByteArray(iHexStringState);
-        }
-        public RandomState(byte[] iState) {
-            m_State = iState;
-        }
-        /// <summary>
-        /// Create a System.Random by random state
-        /// </summary>
-        /// <returns></returns>
-        public System.Random CreateRandom() {   
-            using(var aMemoryStream = new MemoryStream(m_State)) {
-                var aBinaryFormatter = new BinaryFormatter();
-                return (System.Random)aBinaryFormatter.Deserialize(aMemoryStream);
-            }
-        }
-    }
     public class UCL_Random {
         protected static UCL_Random _Instance = null; 
         public static UCL_Random Instance {
@@ -57,15 +23,15 @@ namespace UCL.Core.MathLib
             }
         }
         public int m_Seed;
-        protected System.Random m_Rnd = null;
+        protected UCL_RandomGenerator m_Rnd = null;
 
         public UCL_Random(int iSeed = 0) {
             m_Seed = iSeed;
-            m_Rnd = new System.Random(m_Seed);
+            m_Rnd = new UCL_RandomGenerator(m_Seed);
         }
         public UCL_Random() {
             m_Seed = MathLib.Crc32.Sum(System.DateTime.Now);
-            m_Rnd = new System.Random(m_Seed);
+            m_Rnd = new UCL_RandomGenerator(m_Seed);
         }
         #region Array & List
         /// <summary>
@@ -540,16 +506,14 @@ namespace UCL.Core.MathLib
         /// Get current random state
         /// </summary>
         /// <returns></returns>
-        public RandomState GetState() {
-            return m_Rnd.GetState();
-        }
+        public RandomState State => m_Rnd.State;
 
         /// <summary>
         /// Restore random state
         /// </summary>
         /// <param name="iState"></param>
         public void SetState(RandomState iState) {
-            m_Rnd = iState.CreateRandom();
+            m_Rnd = new UCL_RandomGenerator(iState.m_State);
         }
     }
 }

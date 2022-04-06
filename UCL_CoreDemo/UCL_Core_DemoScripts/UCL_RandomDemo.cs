@@ -239,7 +239,7 @@ namespace UCL.Core.MathLib.Demo {
         }
         [ATTR.UCL_FunctionButton]
         public void SaveState() {
-            m_RndState = m_Rnd.GetState();
+            m_RndState = m_Rnd.State;
         }
 
         [ATTR.UCL_FunctionButton]

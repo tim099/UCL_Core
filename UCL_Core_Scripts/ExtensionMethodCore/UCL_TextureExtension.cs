@@ -11,7 +11,21 @@ public static partial class TextureExtensionMethods {
         iRenderTexture.Release();
         RenderTexture.ReleaseTemporary(iRenderTexture);
     }
-
+    public static void Clear(this RenderTexture iRenderTexture, Color? iClearColor = null)
+    {
+        RenderTexture aCurActive = RenderTexture.active;
+        RenderTexture.active = iRenderTexture;
+        if (iClearColor.HasValue)
+        {
+            GL.Clear(true, true, iClearColor.Value);
+        }
+        else
+        {
+            GL.Clear(true, true, Color.clear);
+        }
+        
+        RenderTexture.active = aCurActive;
+    }
     public static Texture2D ToTexture2D(this RenderTexture iRenderTexture)
     {
         Texture2D aTexture2D = new Texture2D(iRenderTexture.width, iRenderTexture.height, TextureFormat.RGBA32, false);
@@ -34,7 +48,7 @@ public static partial class TextureExtensionMethods {
     /// <returns></returns>
     public static Texture2D ResizeTexture(this Texture2D texture, int width, int height) {
         var cols = UCL.Core.TextureLib.Lib.GetPixels(texture, width, height);
-        texture.Resize(width, height);
+        texture.Reinitialize(width, height);
         texture.SetPixels(cols);
         return texture;
     }

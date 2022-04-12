@@ -175,6 +175,20 @@ namespace UCL.Core.JsonLib {
                     return null;
                 }
             }
+            else if (typeof(IJsonSerializable).IsAssignableFrom(iType))
+            {
+                IJsonSerializable aObj = null;
+                try
+                {
+                    aObj = iType.CreateInstance() as IJsonSerializable;
+                }
+                catch (System.Exception iE)
+                {
+                    Debug.LogException(iE);
+                }
+                if (aObj != null) aObj.DeserializeFromJson(iData);
+                return aObj;
+            }
             else if (iType.IsEnum)
             {
                 string aStr = iData.GetString();

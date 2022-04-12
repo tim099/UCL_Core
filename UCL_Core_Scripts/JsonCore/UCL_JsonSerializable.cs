@@ -56,13 +56,14 @@
     }
     public class JsonSerializable : IJsonSerializable
     {
+        virtual public JsonConvert.SaveMode SaveMode => JsonConvert.SaveMode.Normal;
         virtual public JsonData SerializeToJson()
         {
-            return UCL.Core.JsonLib.JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Normal);
+            return UCL.Core.JsonLib.JsonConvert.SaveDataToJson(this, SaveMode);
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {
-            JsonConvert.LoadDataFromJson(this, iJson, JsonConvert.SaveMode.Normal);
+            JsonConvert.LoadDataFromJson(this, iJson, SaveMode);
         }
     }
 

@@ -1239,13 +1239,22 @@ namespace UCL.Core.UI {
                 else if (iObj is IList)
                 {
                     GUILayout.BeginVertical();
-                    aIsShowField = false;
-                    GUILayout.BeginHorizontal();
-                    string aShowKey = "Show";
-                    aIsShowField = iDataDic.GetData(aShowKey, false);
-                    iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
-                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
-                    GUILayout.EndHorizontal();
+                    
+                    if (iIsAlwaysShowDetail)
+                    {
+                        aIsShowField = true;
+                    }
+                    else
+                    {
+                        aIsShowField = false;
+                        GUILayout.BeginHorizontal();
+                        string aShowKey = "Show";
+                        aIsShowField = iDataDic.GetData(aShowKey, false);
+                        iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
+                        if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                        GUILayout.EndHorizontal();
+                    }
+
                     if (aIsShowField)
                     {
                         IList aList = iObj as IList;

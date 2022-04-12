@@ -102,17 +102,16 @@ namespace UCL.Core.Game
         /// </summary>
         public void CloseAllUI()
         {
-            var aUIs = m_UIStack.ToArray();
-            for(int i = 0; i < aUIs.Length; i++)
+            for(int i = 0; i < m_UIStack.Count; i++)
             {
-                aUIs[i].Close();
+                m_UIStack[i].Close();
             }
         }
         public void EscapeKeyDown()
         {
             if (m_UIStack.Count > 0)
             {
-                m_UIStack.LastElement<UCL_GameUI>().OnEscape();
+                m_UIStack.LastElement().OnEscape();
             }
         }
         public void SetCanvasCamera(Camera iCamera)

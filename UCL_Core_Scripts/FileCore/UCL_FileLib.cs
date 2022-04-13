@@ -264,7 +264,28 @@ namespace UCL.Core.FileLib
             }
 
         }
-
+        public static void DeleteFile(string iPath, bool iIsDeleteMeta = true)
+        {
+            if (File.Exists(iPath)) File.Delete(iPath);
+            if (iIsDeleteMeta)
+            {
+                string aMetaPath = iPath + ".meta";
+                if (File.Exists(aMetaPath)) File.Delete(aMetaPath);
+            }
+        }
+        public static void DeleteDirectory(string iPath,bool iIsDeleteMeta = true)
+        {
+            if (Directory.Exists(iPath))
+            {
+                Directory.Delete(iPath, true);
+            }
+            
+            if (iIsDeleteMeta)
+            {
+                string aMetaPath = iPath + ".meta";
+                if (File.Exists(aMetaPath)) File.Delete(aMetaPath);
+            }
+        }
         public static void MoveDirectory(string iOldDir, string iNewDir)
         {
             if (!Directory.Exists(iOldDir))

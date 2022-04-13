@@ -9,76 +9,14 @@ namespace UCL.Core.UI
     /// </summary>
     public class UCL_GUIPage
     {
-        #region static
-        protected static List<UCL_GUIPage> Pages
-        {
-            get
-            {
-                if (s_Pages == null) s_Pages = new List<UCL_GUIPage>();
-                return s_Pages;
-            }
-        }
-        protected static List<UCL_GUIPage> s_Pages = null;
-        public static UCL_GUIPage TopPage => s_Pages.IsNullOrEmpty() ? null : s_Pages.LastElement();
+        public UCL_GUIPageController p_Controller { get; protected set; } = null;
         /// <summary>
-        /// Draw page on gui
+        /// Close this page(remove this page from p_Controller)
         /// </summary>
-        /// <returns>return true if pages not empty</returns>
-        public static bool DrawOnGUI()
+        virtual public void Close()
         {
-            var aPage = TopPage;
-            if (aPage == null) return false;
-            aPage.OnGUI();
-            return true;
+            if (p_Controller != null) p_Controller.Remove(this);
         }
-        /// <summary>
-        /// push a page
-        /// </summary>
-        /// <param name="iPage"></param>
-        public static void Push(UCL_GUIPage iPage)
-        {
-            if (!Pages.IsNullOrEmpty())
-            {
-                Pages.LastElement().OnPause();
-            }
-            iPage.Init();
-            Pages.Add(iPage);
-        }
-        /// <summary>
-        /// pop a page
-        /// </summary>
-        public static void Pop()
-        {
-            if (Pages.IsNullOrEmpty()) return;
-            Pages.RemoveLast();
-            if (!Pages.IsNullOrEmpty())
-            {
-                Pages.LastElement().OnResume();
-            }
-        }
-        /// <summary>
-        /// pop pages until iTarget become the top page
-        /// </summary>
-        /// <param name="iTarget"></param>
-        public static void PopUntil(UCL_GUIPage iTarget)
-        {
-            while (!Pages.IsNullOrEmpty() && TopPage != iTarget)
-            {
-                Pop();
-            }
-        }
-        /// <summary>
-        /// Clear all pages
-        /// </summary>
-        public static void PopAll()
-        {
-            if (Pages.IsNullOrEmpty())
-            {
-                return;
-            }
-            Pages.Clear();
-        }
-        #endregion
         /// <summary>
         /// called when new page replace this page and became the TopPage
         /// </summary>
@@ -86,7 +24,9 @@ namespace UCL.Core.UI
         /// <summary>
         /// called when this page push into stack
         /// </summary>
-        virtual public void Init() { }
+        virtual public void Init(UCL_GUIPageController iGUIPageController) {
+            p_Controller = iGUIPageController;
+        }
         /// <summary>
         /// called when this page became the TopPage
         /// </summary>

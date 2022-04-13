@@ -11,11 +11,14 @@ namespace UCL.Core.EditorLib
         /// <param name="iTarget"></param>
         static public void RemoveMonoBehavioursWithMissingScript(Transform iTarget)
         {
+#if UNITY_EDITOR
             UnityEditor.GameObjectUtility.RemoveMonoBehavioursWithMissingScript(iTarget.gameObject);
             foreach (Transform aChild in iTarget)
             {
                 RemoveMonoBehavioursWithMissingScript(aChild);
+
             }
+#endif
         }
     }
 }

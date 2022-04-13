@@ -225,6 +225,15 @@ namespace UCL.Core.UI {
             }
             return iVal;
         }
+        static public string TextField(string iLabel, UCL.Core.UCLI_ObjectDictionary iDataDic, string iKey)
+        {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(iLabel);
+            string aResult = GUILayout.TextField(iDataDic.GetData(iKey,string.Empty));
+            iDataDic.SetData(iKey, aResult);
+            GUILayout.EndHorizontal();
+            return aResult;
+        }
         static public string TextField(string iLabel, string iVal) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(iLabel);

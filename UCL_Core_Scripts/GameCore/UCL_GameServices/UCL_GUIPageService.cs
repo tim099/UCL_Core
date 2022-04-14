@@ -26,7 +26,21 @@ namespace UCL.Core.Game
         }
         private void OnGUI()
         {
-            m_BlockImage.gameObject.SetActive(UCL.Core.UI.UCL_GUIPageController.Ins.DrawOnGUI());
+            var aPageController = UI.UCL_GUIPageController.Ins;
+            aPageController.DrawOnGUI();
+            if (aPageController.IsBlockCanvas)
+            {
+                m_BlockImage.color = aPageController.BlockCanvasColor;
+                m_BlockImage.gameObject.SetActive(true);
+            }
+            else
+            {
+                m_BlockImage.gameObject.SetActive(false);
+            }
+        }
+        private void Update()
+        {
+            UCL.Core.UI.UCL_GUIPageController.Ins.Update();
         }
     }
 }

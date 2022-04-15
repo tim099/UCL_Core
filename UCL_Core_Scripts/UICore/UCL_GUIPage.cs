@@ -10,6 +10,11 @@ namespace UCL.Core.UI
     public class UCL_GUIPage
     {
         /// <summary>
+        /// 視窗名稱(若非string.Empty則會變成視窗模式)
+        /// Window Name(if not null, then render in Window)
+        /// </summary>
+        virtual public string WindowName => string.Empty;
+        /// <summary>
         /// this will create a UIOverlay panel that block all UIs if BlockCanvas is true
         /// </summary>
         virtual public bool IsBlockCanvas => true;

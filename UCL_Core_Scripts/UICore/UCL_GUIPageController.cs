@@ -12,14 +12,27 @@ namespace UCL.Core.UI
                 if (_Ins == null) _Ins = new UCL_GUIPageController();
                 return _Ins;
             }
-            set
-            {
-                _Ins = value;
-            }
         }
         private static UCL_GUIPageController _Ins = null;
+        private static UCL_GUIPageController _CurrentRenderIns = null;
+        /// <summary>
+        /// Current UCL_GUIPageController whitch invoking DrawOnGUI()
+        /// </summary>
+        public static UCL_GUIPageController CurrentRenderIns {
+            get
+            {
+                if (_CurrentRenderIns == null) return Ins;
+                return _CurrentRenderIns;
+            }
+            protected set
+            {
+                _CurrentRenderIns = value;
+            }
+        }
         protected List<UCL_GUIPage> m_Pages = new List<UCL_GUIPage>();
         public List<UCL_GUIPage> Pages => m_Pages;
+        public string WindowName => IsEmpty ? string.Empty : TopPage.WindowName;
+        public bool IsEmpty => m_Pages.IsNullOrEmpty();
         public UCL_GUIPage TopPage => m_Pages.IsNullOrEmpty() ? null : m_Pages.LastElement();
         public bool IsBlockCanvas => m_Pages.IsNullOrEmpty() ? false : TopPage.IsBlockCanvas;
         public Color BlockCanvasColor => m_Pages.IsNullOrEmpty() ? Color.clear : TopPage.BlockCanvasColor;
@@ -31,7 +44,9 @@ namespace UCL.Core.UI
         {
             var aPage = TopPage;
             if (aPage == null) return false;
+            CurrentRenderIns = this;
             aPage.OnGUI();
+            CurrentRenderIns = null;
             return true;
         }
         public bool Update()

@@ -9,6 +9,7 @@ namespace UCL.Core.Game
     {
         Canvas m_Canvas = null;
         Image m_BlockImage = null;
+        Rect m_WindowRect;
         public override void Init()
         {
             m_Canvas = gameObject.AddComponent<Canvas>();
@@ -27,16 +28,45 @@ namespace UCL.Core.Game
         private void OnGUI()
         {
             var aPageController = UI.UCL_GUIPageController.Ins;
-            aPageController.DrawOnGUI();
-            if (aPageController.IsBlockCanvas)
+
+
+            if (!aPageController.IsEmpty)
             {
-                m_BlockImage.color = aPageController.BlockCanvasColor;
-                m_BlockImage.gameObject.SetActive(true);
+                string aWindowName = aPageController.WindowName;
+                if (!string.IsNullOrEmpty(aWindowName))
+                {
+                    const int Edge = 2;//5 pixel
+                    m_WindowRect = new Rect(Edge, Edge, Screen.width - 2 * Edge, Screen.height - 2 * Edge);
+
+                    m_WindowRect = GUILayout.Window(133126, m_WindowRect, (iID) => {
+                        aPageController.DrawOnGUI();
+                    }, aWindowName);
+                }
+                else
+                {
+                    aPageController.DrawOnGUI();
+                }
+
+
+                if (aPageController.IsBlockCanvas)
+                {
+                    m_BlockImage.color = aPageController.BlockCanvasColor;
+                    m_BlockImage.gameObject.SetActive(true);
+                }
+                else
+                {
+                    m_BlockImage.gameObject.SetActive(false);
+                }
             }
             else
             {
                 m_BlockImage.gameObject.SetActive(false);
             }
+
+
+
+            
+
         }
         private void Update()
         {

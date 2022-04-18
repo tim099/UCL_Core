@@ -5,6 +5,7 @@ using UnityEngine.UI;
 
 namespace UCL.Core.Game
 {
+    [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_GUIPageService : UCL_GameService
     {
         Canvas m_Canvas = null;
@@ -25,6 +26,22 @@ namespace UCL.Core.Game
             #endregion
             m_BlockImage.gameObject.SetActive(false);
         }
+        [UCL.Core.ATTR.UCL_DrawOnGUI]
+        virtual protected void DrawInfo()
+        {
+            System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+            var aPageController = UI.UCL_GUIPageController.Ins;
+            if (aPageController.IsEmpty)
+            {
+                aSB.Append("Page is Empty");
+            }
+            else
+            {
+                aSB.Append(aPageController.TopPage.GetType().Name);
+            }
+            GUILayout.Box(aSB.ToString());
+        }
+
         private void OnGUI()
         {
             var aPageController = UI.UCL_GUIPageController.Ins;

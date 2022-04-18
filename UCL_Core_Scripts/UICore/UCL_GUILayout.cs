@@ -259,7 +259,7 @@ namespace UCL.Core.UI {
             iObjectDic.SetData(iKey, iVal);
             return iVal;
         }
-        static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, string iLabel, int iSize = 21, int iLabelSize = 21)
+        static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, string iLabel, int iSize = 21, int iLabelSize = 16)
         {
             GUILayout.BeginHorizontal();
             bool iVal = Toggle(iObjectDic, iKey, iSize);

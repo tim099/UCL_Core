@@ -329,8 +329,8 @@ namespace UCL.Core.ObjectReflectionExtension {
 
             Type aType = iTarget.GetType();
             MethodInfo aMethod = null;
-
-            if (iParameters != null && iParameters.Length > 0)//Method with iParameters
+            bool aHasParams = !iParameters.IsNullOrEmpty();
+            if (aHasParams)//Method with iParameters
             {
                 Type[] aParameterTypes = new Type[iParameters.Length];
                 for (int i = 0; i < iParameters.Length; i++)
@@ -345,6 +345,31 @@ namespace UCL.Core.ObjectReflectionExtension {
             }
             
             if (aMethod == null) {
+                if (!aHasParams)//might be accessor
+                {
+                    
+                    PropertyInfo aPropInfo = aType.GetProperty(iFunctionName);
+                    if (aPropInfo == null)
+                    { // not accessor!!
+                        Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
+                        return null;
+                    }
+                    MethodInfo[] aAccessors = aPropInfo.GetAccessors();
+
+                    for (int i = 0; i < aAccessors.Length; i++)
+                    {
+                        MethodInfo aAccessor = aAccessors[i];
+                        // Determine if this is the property getter or setter.
+                        if (aAccessor.ReturnType == typeof(void))//setter
+                        {
+
+                        }
+                        else//getter
+                        {
+                            return aAccessor.Invoke(iTarget, null);
+                        }
+                    }
+                }
                 Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
                 return null;
             }

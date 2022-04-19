@@ -445,6 +445,15 @@ namespace UCL.Core.FileLib
                 Directory.CreateDirectory(iPath);
             }
         }
+        public static void WriteAllText(string iPath, string iContents)
+        {
+            string aFolderPath = GetFolderPath(iPath);
+            if (!Directory.Exists(aFolderPath))
+            {
+                CreateDirectory(aFolderPath);
+            }
+            File.WriteAllText(iPath, iContents);
+        }
         public static void WriteToFile(string data, string path) {
             using(var writer = OpenWriteStream(path)) {
                 writer.WriteLine(data);

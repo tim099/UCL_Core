@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,7 +10,7 @@ namespace UCL.Core.UI
     public class UCL_GUIPage
     {
         /// <summary>
-        /// µøµ¡¦WºÙ(­Y«Dstring.Empty«h·|ÅÜ¦¨µøµ¡¼Ò¦¡)
+        /// è¦–çª—åç¨±(è‹¥éstring.Emptyå‰‡æœƒè®Šæˆè¦–çª—æ¨¡å¼)
         /// Window Name(if not null, then render in Window)
         /// </summary>
         virtual public string WindowName => string.Empty;

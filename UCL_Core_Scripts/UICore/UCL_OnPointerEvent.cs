@@ -19,7 +19,8 @@ namespace UCL.Core.UI
             m_Enter = true;
         }
         virtual public void OnPointerExit(PointerEventData eventData) {
-            if (m_OldBehaviour && eventData.pointerCurrentRaycast.gameObject.transform.IsChildOf(transform)) return;
+            if (m_OldBehaviour && eventData != null && eventData.pointerCurrentRaycast.gameObject != null
+                && eventData.pointerCurrentRaycast.gameObject.transform.IsChildOf(transform)) return;
             m_OnPointerExit.UCL_Invoke();
             m_Enter = false;
         }

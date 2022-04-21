@@ -64,7 +64,10 @@ namespace UCL.Core.Game
             var Ins = UCL_GameAudioService.Ins;
             if (Ins == null) return;
             m_AudioPlayer = Ins.Play(m_Clip, m_AudioType, m_Volume);
-            m_AudioPlayer.m_AudioSource.loop = m_IsLoop;
+            if (m_AudioPlayer != null && m_AudioPlayer.m_AudioSource != null)
+            {
+                m_AudioPlayer.m_AudioSource.loop = m_IsLoop;
+            }
         }
     }
 }

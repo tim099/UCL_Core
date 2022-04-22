@@ -10,18 +10,30 @@ using UnityEngine;
 
 
 public static partial class ObjectExtensionMethods {
-    public static bool IsNumber(this object a) {
-        return a is sbyte
-                || a is byte
-                || a is short
-                || a is ushort
-                || a is int
-                || a is uint
-                || a is long
-                || a is ulong
-                || a is float
-                || a is double
-                || a is decimal;
+    /// <summary>
+    /// Create Instance of input iObj and copy value
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
+    public static object CopyInstance(this object iObj)
+    {
+        if (iObj == null) return null;
+        var aSaveMode = UCL.Core.JsonLib.JsonConvert.SaveMode.Unity;
+        return UCL.Core.JsonLib.JsonConvert.LoadDataFromJson(
+            UCL.Core.JsonLib.JsonConvert.SaveDataToJson(iObj, aSaveMode), iObj.GetType(), aSaveMode);
+    }
+    public static bool IsNumber(this object iObj) {
+        return iObj is sbyte
+                || iObj is byte
+                || iObj is short
+                || iObj is ushort
+                || iObj is int
+                || iObj is uint
+                || iObj is long
+                || iObj is ulong
+                || iObj is float
+                || iObj is double
+                || iObj is decimal;
     }
     /// <summary>
     /// return true if iObj is tuple

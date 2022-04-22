@@ -54,7 +54,7 @@ namespace UCL.Core.JsonLib
                 return iType.TryParseToNumber(iJsonSafeString);
             }
             string aJson = iJsonSafeString.Replace("\\\"", "\"");
-            object aObj = JsonConvert.LoadDataFromJson(aJson, iType);
+            object aObj = JsonConvert.LoadDataFromJson(JsonData.ParseJson(aJson), iType);
             //UnityEngine.Debug.LogError("aJson:" + aJson + ",iType:" + iType.ToString()+ ",aObj:"+ aObj.UCL_ToString());
             return aObj;
             //return iJsonSafeString.HexStringToByteArray().ToStructure(iType);

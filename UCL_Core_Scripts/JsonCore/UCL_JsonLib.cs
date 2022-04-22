@@ -122,19 +122,6 @@ namespace UCL.Core.JsonLib {
             return LoadDataFromJson(iType.CreateInstance(), iData, iSaveMode, iFieldNameAlterFunc);
         }
         /// <summary>
-        /// Load data from Json
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="iData"></param>
-        /// <param name="iType"></param>
-        /// <param name="iSaveMode"></param>
-        /// <param name="iFieldNameAlterFunc"></param>
-        /// <returns></returns>
-        static public object LoadDataFromJson(string iData, Type iType, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
-        {
-            return LoadDataFromJson(JsonData.ParseJson(iData), iType, iSaveMode, iFieldNameAlterFunc);
-        }
-        /// <summary>
         /// Convert data in iObj into JsonData
         /// </summary>
         /// <param name="iObj"></param>

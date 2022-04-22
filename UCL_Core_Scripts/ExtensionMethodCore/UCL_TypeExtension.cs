@@ -35,6 +35,40 @@ public static partial class TypeExtensionMethods {
     {
         return iType == typeof(bool);
     }
+    public static bool IsNumericType(this Type iType)
+    {
+        switch (Type.GetTypeCode(iType))
+        {
+            case TypeCode.Byte:
+            case TypeCode.SByte:
+            case TypeCode.UInt16:
+            case TypeCode.UInt32:
+            case TypeCode.UInt64:
+            case TypeCode.Int16:
+            case TypeCode.Int32:
+            case TypeCode.Int64:
+            case TypeCode.Decimal:
+            case TypeCode.Double:
+            case TypeCode.Single:
+                return true;            
+        }
+        switch (Type.GetTypeCode(Nullable.GetUnderlyingType(iType)))
+        {
+            case TypeCode.Byte:
+            case TypeCode.SByte:
+            case TypeCode.UInt16:
+            case TypeCode.UInt32:
+            case TypeCode.UInt64:
+            case TypeCode.Int16:
+            case TypeCode.Int32:
+            case TypeCode.Int64:
+            case TypeCode.Decimal:
+            case TypeCode.Double:
+            case TypeCode.Single:
+                return true;
+        }
+        return false;
+    }
     public static bool IsNumber(this Type iType)
     {
         return iType == typeof(int)
@@ -201,6 +235,7 @@ public static partial class TypeExtensionMethods {
     public static object CreateInstance(this Type iType)
     {
         if (iType == null) return null;
+
         if (iType == typeof(string)) return string.Empty;
         if (iType == typeof(int)) return (int)0;
         if (iType == typeof(uint)) return (uint)0;
@@ -212,6 +247,12 @@ public static partial class TypeExtensionMethods {
         if (iType == typeof(sbyte)) return (sbyte)0;
         if (iType == typeof(float)) return (float)0;
         if (iType == typeof(double)) return (double)0;
+        if (typeof(UnityEngine.Object).IsAssignableFrom(iType))
+        {
+            if (iType == typeof(Sprite)) return null;
+            //Debug.LogError("iType:" + iType.Name + ",is UnityEngine.Object!!");
+            //return null;
+        }
         if (iType.IsTuple())
         {
             //Debug.LogError("iType:" + iType.Name + "iType.IsTuple():" + iType.IsTuple());
@@ -228,8 +269,15 @@ public static partial class TypeExtensionMethods {
                 return aConstructer.Invoke(aValues);
             }
         }
-
-        return Activator.CreateInstance(iType);
+        object aObj = null;
+        try
+        {
+            aObj = Activator.CreateInstance(iType);
+        }catch(System.Exception iE)
+        {
+            Debug.LogException(iE);
+        }
+        return aObj;
     }
     private static HashSet<Type> s_TupleTypes = null;
     /// <summary>

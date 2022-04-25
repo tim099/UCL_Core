@@ -51,7 +51,9 @@ namespace UCL.Core.UI {
         static Dictionary<Color, GUIStyle> m_ButtonTextColorDic = null;
 
         public static GUIStyle GetButtonText(Color iCol) {
+            
             if(m_ButtonTextColorDic == null) {
+                //Debug.LogError("GetButtonText! m_ButtonTextColorDic == null");
                 m_ButtonTextColorDic = new Dictionary<Color, GUIStyle>();
             }
             if(!m_ButtonTextColorDic.ContainsKey(iCol)) {

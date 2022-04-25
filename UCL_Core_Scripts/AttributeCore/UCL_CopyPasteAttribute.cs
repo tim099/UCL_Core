@@ -11,6 +11,8 @@ namespace UCL.Core
     }
     public static class CopyPaste
     {
+        public static JsonData CopyData => s_CopyData;
+
         public static UCL.Core.JsonLib.JsonData s_CopyData = null;
         public static System.Type s_CopyType = null;
         public static bool HasCopyData(System.Type iType)
@@ -26,6 +28,19 @@ namespace UCL.Core
             }
             //Debug.LogError("s_CopyData:" + s_CopyData.ToJsonBeautify());
             return JsonConvert.LoadDataFromJson(s_CopyData, iType, iSaveMode);
+        }
+        public static void SetCopyData(JsonData iData, System.Type iType)
+        {
+            if (iData == null)
+            {
+                s_CopyData = null;
+                s_CopyType = null;
+                return;
+            }
+
+            s_CopyType = iType;
+            s_CopyData = iData;
+
         }
         public static void SetCopyData(object iData, JsonConvert.SaveMode iSaveMode = JsonConvert.SaveMode.Unity)
         {

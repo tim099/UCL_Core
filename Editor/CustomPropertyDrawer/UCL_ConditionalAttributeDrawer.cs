@@ -14,8 +14,8 @@ namespace UCL.Core.PA
         private ConditionalAttribute Conditional => _conditional ?? (_conditional = attribute as ConditionalAttribute);
         private ConditionalAttribute _conditional;
 
-        private bool _customDrawersCached;
-        private static IEnumerable<Type> _allPropertyDrawerAttributeTypes;
+        private bool m_CustomDrawersCached;
+        private static IEnumerable<Type> s_AllPropertyDrawerAttributeTypes;
         private bool _multipleAttributes;
         private bool _specialType;
         private PropertyAttribute _genericAttribute;
@@ -30,10 +30,10 @@ namespace UCL.Core.PA
 
         private void Initialize(SerializedProperty property)
         {
-            if (_customDrawersCached) return;
-            if (_allPropertyDrawerAttributeTypes == null)
+            if (m_CustomDrawersCached) return;
+            if (s_AllPropertyDrawerAttributeTypes == null)
             {
-                _allPropertyDrawerAttributeTypes = AppDomain.CurrentDomain.GetAssemblies().SelectMany(x => x.GetTypes())
+                s_AllPropertyDrawerAttributeTypes = AppDomain.CurrentDomain.GetAssemblies().SelectMany(x => x.GetTypes())
                     .Where(x => typeof(PropertyDrawer).IsAssignableFrom(x) && !x.IsInterface && !x.IsAbstract);
             }
 
@@ -48,7 +48,7 @@ namespace UCL.Core.PA
                 GetTypeDrawerType(property);
             }
 
-            _customDrawersCached = true;
+            m_CustomDrawersCached = true;
         }
 
         private bool HaveMultipleAttributes()
@@ -95,6 +95,7 @@ namespace UCL.Core.PA
                 {
                     EditorGUI.PropertyField(position, property, label);
                     LogWarning("Unable to instantiate " + _genericType + " : " + e, property);
+                    Debug.LogException(e);
                 }
             }
             else
@@ -126,7 +127,6 @@ namespace UCL.Core.PA
                 _genericAttribute = (PropertyAttribute)fieldInfo.GetCustomAttributes(typeof(PropertyAttribute), false)
                     .FirstOrDefault(a => !(a is ConditionalAttribute));
 
-                //TODO: wtf man
                 if (_genericAttribute is ContextMenuItemAttribute)
                 {
                     LogWarning("[ConditionalField] does not work with " + _genericAttribute.GetType(), property);
@@ -138,18 +138,30 @@ namespace UCL.Core.PA
             catch (Exception e)
             {
                 LogWarning("Can't find stacked propertyAttribute after ConditionalProperty: " + e, property);
+                Debug.LogException(e);
                 return;
             }
 
             //Get the associated attribute drawer
             try
             {
-                _genericAttributeDrawerType = _allPropertyDrawerAttributeTypes.First(x =>
-                    (Type)CustomAttributeData.GetCustomAttributes(x).First().ConstructorArguments.First().Value == _genericAttribute.GetType());
+
+                _genericAttributeDrawerType = s_AllPropertyDrawerAttributeTypes.First(iType =>
+                        {
+                            var aCustomAttrs = CustomAttributeData.GetCustomAttributes(iType);
+                            if(aCustomAttrs.Count == 0)
+                            {
+                                Debug.LogError("iType:"+iType.FullName+ ",aCustomAttrs.Count == 0");
+                                return false;
+                            }
+                            var aConstructorArguments = aCustomAttrs.First().ConstructorArguments.First();
+                            return (Type)aConstructorArguments.Value == _genericAttribute.GetType();
+                        });
             }
             catch (Exception e)
             {
                 LogWarning("Can't find property drawer from CustomPropertyAttribute of " + _genericAttribute.GetType() + " : " + e, property);
+                Debug.LogException(e);
                 return;
             }
 
@@ -192,6 +204,7 @@ namespace UCL.Core.PA
             catch (Exception e)
             {
                 LogWarning("No constructor available in " + _genericAttribute.GetType() + " : " + e, property);
+                Debug.LogException(e);
                 return;
             }
 
@@ -204,6 +217,7 @@ namespace UCL.Core.PA
             catch (Exception e)
             {
                 LogWarning("Unable to assign attribute to " + _genericAttributeDrawerInstance.GetType() + " : " + e, property);
+                Debug.LogException(e);
             }
         }
 
@@ -216,7 +230,7 @@ namespace UCL.Core.PA
             {
                 // Of all property drawers in the assembly we need to find one that affects target type
                 // or one of the base types of target type
-                foreach (Type propertyDrawerType in _allPropertyDrawerAttributeTypes)
+                foreach (Type propertyDrawerType in s_AllPropertyDrawerAttributeTypes)
                 {
                     _genericType = fieldInfo.FieldType;
                     var affectedType = (Type)CustomAttributeData.GetCustomAttributes(propertyDrawerType).First().ConstructorArguments.First().Value;
@@ -245,6 +259,7 @@ namespace UCL.Core.PA
             catch (Exception e)
             {
                 LogWarning("no constructor available in " + _genericType + " : " + e, property);
+                Debug.LogException(e);
                 return;
             }
 

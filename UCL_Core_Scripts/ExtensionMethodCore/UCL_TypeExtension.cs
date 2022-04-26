@@ -249,8 +249,10 @@ public static partial class TypeExtensionMethods {
         if (iType == typeof(double)) return (double)0;
         if (typeof(UnityEngine.Object).IsAssignableFrom(iType))
         {
+            if (typeof(Component).IsAssignableFrom(iType)) return null;
             if (iType == typeof(Sprite)) return null;
-            //Debug.LogError("iType:" + iType.Name + ",is UnityEngine.Object!!");
+            
+            Debug.LogError("iType:" + iType.Name + ",is UnityEngine.Object!!");
             //return null;
         }
         if (iType.IsTuple())

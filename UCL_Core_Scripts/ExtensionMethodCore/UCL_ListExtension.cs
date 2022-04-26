@@ -107,9 +107,13 @@ public static partial class ListExtensionMethods {
     public static string ConcatString<T>(this IList<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
     {
         System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
         foreach(var aT in iList)
         {
-            aSB.Append(iFunc(aT)).Append(iSeperator);
+            if (aIsFirst) aIsFirst = false;
+            else aSB.Append(iSeperator);
+            aSB.Append(iFunc(aT));
+
         }
         return aSB.ToString();
     }

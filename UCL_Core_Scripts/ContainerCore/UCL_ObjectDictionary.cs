@@ -64,6 +64,69 @@ namespace UCL.Core
             }
             return m_DataDic[iKey] as UCL_ObjectDictionary;
         }
+        /// <summary>
+        /// Get sub UCL_ObjectDictionary inside this UCL_ObjectDictionary
+        /// if not exist, then this will create a new one
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <param name="iID"></param>
+        /// <returns></returns>
+        public UCL_ObjectDictionary GetSubDic(string iKey, int iID)
+        {
+            var aList = GetSubDicList(iKey);
+            while (aList.Count <= iID) aList.Add(new UCL_ObjectDictionary());
+            return aList[iID];
+        }
+
+        /// <summary>
+        /// Remove data from SubDicList
+        /// </summary>
+        /// <param name="iKey">Key of SubDicList</param>
+        /// <param name="iID">Index of element</param>
+        public void Remove(string iKey, int iID)
+        {
+            if (!m_DataDic.ContainsKey(iKey))
+            {
+                return;
+            }
+            var aList = GetSubDicList(iKey);
+            if (aList.IsNullOrEmpty()) return;
+            if (iID < aList.Count) aList.RemoveAt(iID);
+        }
+        /// <summary>
+        /// Swap two element in SubDicList
+        /// </summary>
+        /// <param name="iKeyA"></param>
+        /// <param name="iKeyB"></param>
+        public void Swap(string iKey, int iIDA, int iIDB)
+        {
+            if (iIDA == iIDB || !m_DataDic.ContainsKey(iKey) || !(m_DataDic[iKey] is List<UCL_ObjectDictionary>))
+            {
+                return;
+            }
+            var aList = GetSubDicList(iKey);
+            var aTmp = aList[iIDA];
+            aList[iIDA] = aList[iIDB];
+            aList[iIDB] = aTmp;
+        }
+        /// <summary>
+        /// Get sub UCL_ObjectDictionary inside this UCL_ObjectDictionary
+        /// if not exist, then this will create a new one
+        /// </summary>
+        /// <param name="iKey"></param>
+        /// <returns></returns>
+        public List<UCL_ObjectDictionary> GetSubDicList(string iKey)
+        {
+            if (!m_DataDic.ContainsKey(iKey))
+            {
+                m_DataDic.Add(iKey, new List<UCL_ObjectDictionary>());
+            }
+            if (!(m_DataDic[iKey] is List<UCL_ObjectDictionary>))
+            {
+                m_DataDic[iKey] = new List<UCL_ObjectDictionary>();
+            }
+            return m_DataDic[iKey] as List<UCL_ObjectDictionary>;
+        }
         public object this[string iKey]
         {
             get { return m_DataDic[iKey]; }

@@ -179,12 +179,20 @@ namespace UCL.Core.JsonLib {
             else if (iType.IsEnum)
             {
                 string aStr = iData.GetString();
-                if (!string.IsNullOrEmpty(aStr))
+                try
                 {
-                    return Enum.Parse(iType, aStr, true) as Enum;
+                    if (!string.IsNullOrEmpty(aStr))
+                    {
+                        return Enum.Parse(iType, aStr, true) as Enum;
+                    }
+                    else
+                    {
+                        return null;
+                    }
                 }
-                else
+                catch(System.Exception iE)
                 {
+                    Debug.LogException(iE);
                     return null;
                 }
             }

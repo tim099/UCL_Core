@@ -5,30 +5,17 @@ using UCL.Core.ObjectReflectionExtension;
 using System.Collections.Generic;
 
 namespace UCL.Core.PA {
-    public class UCL_StrListAttribute : PropertyAttribute, IStringArr
+    public class UCL_StrListAttribute : PropertyAttribute, IStrList
     {
-        public string[] m_StrArr;
+        public IList<string> m_StrList;
         public UCL_StrListAttribute(params string[] iList) {
-            m_StrArr = iList;
+            m_StrList = iList;
         }
         public UCL_StrListAttribute(Type iType, string iFuncName) {
             var aMethod = iType.GetMethod(iFuncName);
             if(aMethod != null) {
                 try {
-                    var aResult = aMethod.Invoke(null, null);
-                    m_StrArr = aResult as string[];
-                    if (m_StrArr == null)
-                    {
-                        if (aResult is List<string>)
-                        {
-                            var aList = aResult as List<string>;
-                            m_StrArr = new string[aList.Count];
-                            for (int j = 0; j < aList.Count; j++)
-                            {
-                                m_StrArr[j] = aList[j];
-                            }
-                        }
-                    }
+                    m_StrList = aMethod.Invoke(null, null) as IList<string>;
                 } catch(Exception iE) {
                     Debug.LogException(iE);
                     Debug.LogError("UCL_ListProperty method.Invoke iFuncName:" + iFuncName + " Exception:" + iE.ToString());
@@ -39,40 +26,26 @@ namespace UCL.Core.PA {
                     Debug.LogError("UCL_ListProperty:" + iType.Name + ",func_name == null :" + iFuncName);
                     return;
                 }
-                MethodInfo[] aMethodInfos = aPropInfo.GetAccessors();
-                for(int i = 0; i < aMethodInfos.Length; i++) {
-                    MethodInfo aMethodInfo = aMethodInfos[i];
+                MethodInfo[] aAccessors = aPropInfo.GetAccessors();
+                for(int i = 0; i < aAccessors.Length; i++) {
+                    MethodInfo aMethodInfo = aAccessors[i];
                     // Determine if this is the property getter or setter.
                     if (aMethodInfo.ReturnType == typeof(void)) {//setter
                         //m.Invoke(test, new object[] { "The Modified Caption" });
                     } else {//getter
-                        //Console.WriteLine("   Property Value: {0}", m.Invoke(test, new object[] { }));
-                        var aResult = aMethodInfo.Invoke(null, new object[] { });
-                        m_StrArr = aResult as string[];
-                        if(m_StrArr == null)
-                        {
-                            if(aResult is List<string>)
-                            {
-                                var aList = aResult as List<string>;
-                                m_StrArr = new string[aList.Count];
-                                for (int j = 0; j < aList.Count; j++)
-                                {
-                                    m_StrArr[j] = aList[j];
-                                }
-                            }
-                        }
-                        if(m_StrArr != null) break;
+                        m_StrList = aMethodInfo.Invoke(null, new object[] { }) as IList<string>;
+                        if(m_StrList != null) break;
                     }
                 }
             }
         }
 
-        public string[] GetList(object iTarget)
+        public IList<string> GetStrList(object iTarget)
         {
-            return m_StrArr;
+            return m_StrList;
         }
     }
-    public class UCL_ListAttribute : PropertyAttribute, IStringArr
+    public class UCL_ListAttribute : PropertyAttribute, IStrList
     {
         //Type m_Type = null;
         string m_MethodName = null;
@@ -91,12 +64,11 @@ namespace UCL.Core.PA {
         /// </summary>
         /// <param name="iTarget"></param>
         /// <returns></returns>
-        public string[] GetList(object iTarget) {
+        public IList<string> GetStrList(object iTarget) {
             var aResult = iTarget.Invoke(m_MethodName, m_Params);
-            if (aResult is string[]) return (string[])aResult;
-            else if (aResult is List<string>) return ((List<string>)aResult).ToArray();
+            if (aResult is IList<string>) return aResult as IList<string>;
 
-            return new string[0];
+            return Array.Empty<string>();
         }
         /// <summary>
         /// Get the display list from target
@@ -105,9 +77,9 @@ namespace UCL.Core.PA {
         /// <returns></returns>
         public string[] GetDisplayList(object iTarget)
         {
-            string[] aList = GetList(iTarget);
-            string[] aDisplayList = new string[aList.Length];
-            for (int i = 0; i < aList.Length; i++)
+            var aList = GetStrList(iTarget);
+            string[] aDisplayList = new string[aList.Count];
+            for (int i = 0; i < aList.Count; i++)
             {
                 string aKey = aList[i];
                 if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aKey))

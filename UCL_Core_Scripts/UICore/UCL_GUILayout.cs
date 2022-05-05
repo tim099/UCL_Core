@@ -1551,10 +1551,10 @@ namespace UCL.Core.UI {
                                     aIsDrawed = true;
                                     break;
                                 }
-                                else if (aAttr is IStringArr)
+                                else if (aAttr is IStrList)
                                 {
                                     aIsDrawed = true;
-                                    var aStrArr = aAttr as IStringArr;
+                                    var aStrArr = aAttr as IStrList;
                                     GUILayout.BeginHorizontal();
                                     GUILayout.Label(aDisplayName, GUILayout.ExpandWidth(false));
 

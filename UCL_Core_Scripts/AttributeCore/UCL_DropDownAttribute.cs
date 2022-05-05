@@ -8,20 +8,20 @@ namespace UCL.Core
 {
     public static partial class AttributeExtension
     {
-        public static object DrawOnGUI(this IStringArr iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
+        public static object DrawOnGUI(this IStrList iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
         {
-            var aList = iStrArr.GetList(iObj);
+            var aList = iStrArr.GetStrList(iObj);
             if (aList.IsNullOrEmpty()) return null;
-            int aIndex = Mathf.Max(0, Array.IndexOf(aList, iData));
+            int aIndex = Mathf.Max(0, aList.IndexOf(iData as string));
             aIndex = UCL_GUILayout.PopupAuto(aIndex, aList, iDataDic, iKey);
             return aList[aIndex];
         }
-        public static object DrawOnGUILocalized(this IStringArr iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
+        public static object DrawOnGUILocalized(this IStrList iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
         {
-            var aList = iStrArr.GetList(iObj);
+            var aList = iStrArr.GetStrList(iObj);
             if (aList.IsNullOrEmpty()) return null;
-            string[] aDisplayList = new string[aList.Length];
-            for (int i = 0; i < aList.Length; i++)
+            string[] aDisplayList = new string[aList.Count];
+            for (int i = 0; i < aList.Count; i++)
             {
                 string aKey = aList[i];
                 if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aKey))
@@ -33,14 +33,14 @@ namespace UCL.Core
                     aDisplayList[i] = aKey;
                 }
             }
-            int aIndex = Mathf.Max(0, Array.IndexOf(aList, iData));
+            int aIndex = Mathf.Max(0, aList.IndexOf(iData as string));
             aIndex = UCL_GUILayout.PopupAuto(aIndex, aDisplayList, iDataDic, iKey);
             return aList[aIndex];
         }
     }
-    public interface IStringArr
+    public interface IStrList
     {
-        string[] GetList(object iTarget);
+        IList<string> GetStrList(object iTarget);
     }
     public interface ITexture2D
     {
@@ -54,7 +54,7 @@ namespace UCL.Core
 namespace UCL.Core.ATTR
 {
 
-    public class UCL_DropDownAttribute : Attribute ,IStringArr
+    public class UCL_DropDownAttribute : Attribute , IStrList
     {
         string m_MethodName = null;
         object[] m_Params = null;
@@ -73,9 +73,9 @@ namespace UCL.Core.ATTR
         /// </summary>
         /// <param name="iTarget"></param>
         /// <returns></returns>
-        public string[] GetList(object iTarget)
+        public IList<string> GetStrList(object iTarget)
         {
-            return (string[])iTarget.Invoke(m_MethodName, m_Params);
+            return (IList<string>)iTarget.Invoke(m_MethodName, m_Params);
         }
     }
 }

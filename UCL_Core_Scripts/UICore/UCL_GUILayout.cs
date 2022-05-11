@@ -1663,7 +1663,7 @@ namespace UCL.Core.UI {
                                 string aShowKey = aDataKey + "_Show";
                                 bool aIsShow = iDataDic.GetData(aShowKey, false);
                                 iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShow));
-                                UCL_GUILayout.LabelAutoSize(string.Format("{0}({1})",aDisplayName, aList.Count));
+                                UCL_GUILayout.LabelAutoSize(string.Format("{0}({1})", aDisplayName, aList.Count));
                                 GUILayout.EndHorizontal();
                                 if (aIsShow)
                                 {

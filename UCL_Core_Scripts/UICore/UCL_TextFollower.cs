@@ -42,7 +42,7 @@ namespace UCL.Core.UI
             
             if (m_IsFollowOnEnable)
             {
-                UCL.Core.ServiceLib.UCL_UpdateService.AddDelayAction(FollowPos, 0.1f);
+                UCL.Core.ServiceLib.UCL_UpdateService.AddFrameDelayAction(1, FollowPos);
             }
         }
         private void Update()

@@ -46,9 +46,9 @@ namespace UCL.Core.TextureLib {
             Debug.LogWarning("SaveAsset():" + path);
             TextureLib.EditorLib.SaveTextureAsset(path, m_Texture);
             UCL.Core.EditorLib.SelectionMapper.activeObject = UCL.Core.EditorLib.AssetDatabaseMapper.LoadMainAssetAtPath(path);
-            UCL.Core.ServiceLib.UCL_UpdateService.AddDelayAction(delegate () {
+            UCL.Core.ServiceLib.UCL_UpdateService.AddFrameDelayAction(1, delegate () {
                 UCL.Core.EditorLib.SelectionMapper.activeGameObject = gameObject;
-            },1);
+            });
             
             //UnityEditor.Selection.activeObject = gameObject;
         }

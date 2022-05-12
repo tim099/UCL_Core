@@ -3,6 +3,15 @@ namespace UCL.Core.JsonLib
 {
     public static partial class UCL_JsonExtension
     {
+        /// <summary>
+        /// Copy data from iSrc to iDst
+        /// </summary>
+        /// <param name="iDst"></param>
+        /// <param name="iSrc"></param>
+        public static void Copy(this IJsonSerializable iDst, IJsonSerializable iSrc)
+        {
+            iDst.DeserializeFromJson(iSrc.SerializeToJson());
+        }
         public static string ToHexString(this object iObj)
         {
             if (iObj == null) return string.Empty;

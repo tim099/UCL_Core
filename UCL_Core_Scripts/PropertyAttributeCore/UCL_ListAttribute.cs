@@ -53,7 +53,7 @@ namespace UCL.Core.PA {
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="iMethodName">Member function that return a List</param>
+        /// <param name="iMethodName">MethodName of member function that return a IList<string></param>
         /// <param name="iParams"></param>
         public UCL_ListAttribute(string iMethodName, params object[] iParams) {
             m_MethodName = iMethodName;

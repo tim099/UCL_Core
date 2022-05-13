@@ -121,6 +121,11 @@ public static partial class ListExtensionMethods {
         if(iList == null || iList.Count == 0) return true;
         return false;
     }
+    public static bool IsNullOrEmpty(this IDictionary iDic)
+    {
+        if (iDic == null || iDic.Count == 0) return true;
+        return false;
+    }
     /// <summary>
     /// Return the index of target in iList
     /// </summary>

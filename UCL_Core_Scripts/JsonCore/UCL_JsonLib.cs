@@ -364,6 +364,10 @@ namespace UCL.Core.JsonLib {
                 {
                     iData[aFieldName] = aValue.ToString();
                 }
+                else if(aValue is JsonData)
+                {
+                    iData[aFieldName] = (JsonData)aValue;
+                }
                 else if(aValue is IDictionary)
                 {
                     IDictionary aDic = aValue as IDictionary;
@@ -491,6 +495,10 @@ namespace UCL.Core.JsonLib {
                     {
                         aField.SetValue(iObj, aJsonData.GetString() == "True");
                     }
+                    else if (aField.FieldType.IsAssignableFrom(typeof(JsonData)))
+                    {
+                        aField.SetValue(iObj, aJsonData);
+                    }
                     else if (aField.FieldType.IsAssignableFrom(typeof(UnityJsonSerializableObject)))
                     {
                         string aClassName = iData.GetString("ClassName");
@@ -500,9 +508,14 @@ namespace UCL.Core.JsonLib {
                         aObj.DeserializeFromJson(aClassData);
                         aField.SetValue(iObj, aObj);
                     }
-                    else if (typeof(UnityJsonSerializable).IsAssignableFrom(aField.FieldType))
+                    //else if (typeof(UnityJsonSerializable).IsAssignableFrom(aField.FieldType))
+                    //{
+                    //    (aFieldData as UnityJsonSerializable).DeserializeFromJson(aJsonData);
+                    //    aField.SetValue(iObj, aFieldData);
+                    //}
+                    else if (typeof(IJsonSerializable).IsAssignableFrom(aField.FieldType))
                     {
-                        (aFieldData as UnityJsonSerializable).DeserializeFromJson(aJsonData);
+                        (aFieldData as IJsonSerializable).DeserializeFromJson(aJsonData);
                         aField.SetValue(iObj, aFieldData);
                     }
                     else if(aField.FieldType == typeof(JsonData))

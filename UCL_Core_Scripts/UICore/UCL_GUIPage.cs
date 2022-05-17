@@ -9,6 +9,12 @@ namespace UCL.Core.UI
     /// </summary>
     public class UCL_GUIPage
     {
+
+        /// <summary>
+        /// 若為true則會變成視窗模式
+        /// if true, then render in Window
+        /// </summary>
+        virtual public bool IsWindow => !string.IsNullOrEmpty(WindowName);
         /// <summary>
         /// 視窗名稱(若非string.Empty則會變成視窗模式)
         /// Window Name(if not null, then render in Window)

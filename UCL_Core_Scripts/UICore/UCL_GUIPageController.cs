@@ -31,6 +31,7 @@ namespace UCL.Core.UI
         }
         protected List<UCL_GUIPage> m_Pages = new List<UCL_GUIPage>();
         public List<UCL_GUIPage> Pages => m_Pages;
+        public bool IsWindow => IsEmpty ? false : TopPage.IsWindow;
         public string WindowName => IsEmpty ? string.Empty : TopPage.WindowName;
         public bool IsEmpty => m_Pages.IsNullOrEmpty();
         public UCL_GUIPage TopPage => m_Pages.IsNullOrEmpty() ? null : m_Pages.LastElement();
@@ -45,7 +46,9 @@ namespace UCL.Core.UI
             var aPage = TopPage;
             if (aPage == null) return false;
             CurrentRenderIns = this;
+
             aPage.OnGUI();
+
             CurrentRenderIns = null;
             return true;
         }

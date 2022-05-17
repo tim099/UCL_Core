@@ -49,15 +49,14 @@ namespace UCL.Core.Game
 
             if (!aPageController.IsEmpty)
             {
-                string aWindowName = aPageController.WindowName;
-                if (!string.IsNullOrEmpty(aWindowName))
+                if (aPageController.IsWindow)
                 {
                     const int Edge = 2;//5 pixel
                     m_WindowRect = new Rect(Edge, Edge, Screen.width - 2 * Edge, Screen.height - 2 * Edge);
 
                     m_WindowRect = GUILayout.Window(133126, m_WindowRect, (iID) => {
                         aPageController.DrawOnGUI();
-                    }, aWindowName);
+                    }, aPageController.WindowName);
                 }
                 else
                 {

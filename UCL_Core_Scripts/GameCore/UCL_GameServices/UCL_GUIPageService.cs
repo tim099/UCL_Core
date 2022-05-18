@@ -1,10 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
+using UCL.Core.StringExtensionMethods;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace UCL.Core.Game
 {
+    [UCL.Core.ATTR.RequiresConstantRepaint]
     [UCL.Core.ATTR.EnableUCLEditor]
     public class UCL_GUIPageService : UCL_GameService
     {
@@ -29,17 +31,33 @@ namespace UCL.Core.Game
         [UCL.Core.ATTR.UCL_DrawOnGUI]
         virtual protected void DrawInfo()
         {
-            System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+            //System.Text.StringBuilder aSB = new System.Text.StringBuilder();
             var aPageController = UI.UCL_GUIPageController.Ins;
-            if (aPageController.IsEmpty)
+            if (aPageController == null || aPageController.IsEmpty)
             {
-                aSB.Append("Page is Empty");
+                GUILayout.Box("Page is Empty");
             }
             else
             {
-                aSB.Append(aPageController.TopPage.GetType().Name);
+                //aSB.Append("TopPage:");
+                var aPages = aPageController.Pages;
+                for (int i = aPages.Count - 1; i >= 0; i--)
+                {
+                    //if (i < aPages.Count - 1) aSB.AppendLine();
+                    var aPage = aPages[i];
+                    string aName = aPage.GetType().Name;
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Button("CopyToClipboard", GUILayout.ExpandWidth(false)))
+                    {
+                        aName.CopyToClipboard();
+                    }
+                    GUILayout.Box(aName);
+                    GUILayout.FlexibleSpace();
+
+                    GUILayout.EndHorizontal();
+                }
             }
-            GUILayout.Box(aSB.ToString());
+            //GUILayout.Box(aSB.ToString());
         }
 
         private void OnGUI()
@@ -78,11 +96,6 @@ namespace UCL.Core.Game
             {
                 m_BlockImage.gameObject.SetActive(false);
             }
-
-
-
-            
-
         }
         private void Update()
         {

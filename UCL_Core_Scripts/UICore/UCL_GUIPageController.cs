@@ -29,6 +29,7 @@ namespace UCL.Core.UI
                 _CurrentRenderIns = value;
             }
         }
+        public static bool IsDrawingOnGUI = false;
         protected List<UCL_GUIPage> m_Pages = new List<UCL_GUIPage>();
         public List<UCL_GUIPage> Pages => m_Pages;
         public bool IsWindow => IsEmpty ? false : TopPage.IsWindow;
@@ -45,11 +46,15 @@ namespace UCL.Core.UI
         {
             var aPage = TopPage;
             if (aPage == null) return false;
+
             CurrentRenderIns = this;
+            IsDrawingOnGUI = true;
 
             aPage.OnGUI();
 
+            IsDrawingOnGUI = false;
             CurrentRenderIns = null;
+
             return true;
         }
         public bool Update()

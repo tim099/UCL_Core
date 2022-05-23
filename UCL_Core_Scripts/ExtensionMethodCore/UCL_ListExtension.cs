@@ -64,6 +64,18 @@ public static partial class ListExtensionMethods {
         iList[iIndexB] = aTmp;
         return iList;
     }
+    public static List<T> ConvertType<T>(this IList iList)
+    {
+        var aList = new List<T>();
+        if (iList == null) return aList;
+        
+        foreach(var aItem in iList)
+        {
+            T aItem1 = (T)aItem;
+            aList.Add(aItem1);
+        }
+        return aList;
+    }
     /// <summary>
     /// return the first element of list
     /// </summary>
@@ -83,6 +95,24 @@ public static partial class ListExtensionMethods {
     public static T LastElement<T>(this IList<T> iList) {
         if(iList.Count == 0) return default;
         return iList[iList.Count-1];
+    }
+    /// <summary>
+    /// Remove specific element from list
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <param name="iFilterFunc">return true if the element need to be remove from list</param>
+    /// <returns></returns>
+    public static List<T> FilterList<T>(this List<T> iList, System.Func<T,bool> iFilterFunc)
+    {
+        for (int i = iList.Count - 1; i >= 0; i--)
+        {
+            if (iFilterFunc(iList[i]))
+            {
+                iList.RemoveAt(i);
+            }
+        }
+        return iList;
     }
     public static List<T> Append<T>(this List<T> iList, IEnumerable<T> iTarget)
     {

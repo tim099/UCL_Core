@@ -128,6 +128,44 @@ namespace UCL.Core.MathLib
         /// <typeparam name="T"></typeparam>
         /// <param name="iList"></param>
         /// <param name="iGetWeightFunc"></param>
+        /// <returns></returns>
+        public T RandomPick<T>(IList<T> iList, System.Func<T, float> iGetWeightFunc)
+        {
+            if (iList == null || iList.Count == 0)
+            {
+                return default;
+            }
+            float aTotalWeight = 0;
+            float[] aWeights = new float[iList.Count];
+            for (int i = 0; i < iList.Count; i++)
+            {
+                float aWeight = iGetWeightFunc(iList[i]);
+                aTotalWeight += aWeight;
+                aWeights[i] = aWeight;
+            }
+
+            float aPickWeight = Range(0, aTotalWeight);
+
+            for (int aPickAt = 0; aPickAt < iList.Count; aPickAt++)
+            {
+                float aWeight = aWeights[aPickAt];
+                aPickWeight -= aWeight;
+                if (aPickWeight <= 0)
+                {
+                    return iList[aPickAt];
+                }
+            }
+            return iList.LastElement();
+        }
+        /// <summary>
+        /// Random pick a element in the input IList
+        /// Weight is the HitRate of item
+        /// etc. A,B,C in iList, and A weight is 3, B is 2, C is 1
+        /// then the HitRate of A is 1/2, B is 1/3 and c is 1/6
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <param name="iGetWeightFunc"></param>
         /// <returns>return Index instead of Item in list</returns>
         public int RandomPickIndex<T>(IList<T> iList, System.Func<T, int> iGetWeightFunc)
         {

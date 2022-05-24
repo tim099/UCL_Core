@@ -227,6 +227,7 @@ namespace UCL.Core.FileLib {
         /// Target directory, if m_TargetDirectory == "" then will set to the folder FileInspector located
         /// 目標路徑 會抓取該路徑下的所有檔案
         /// </summary>
+        [UCL.Core.PA.UCL_FolderExplorer]
         public string m_TargetDirectory = "";
 
         /// <summary>

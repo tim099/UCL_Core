@@ -578,9 +578,9 @@ public static partial class ObjectExtensionMethods
     public static string UCL_GetShortName(this object iObj, string iDefault = "")
     {
         if (iObj == null) return iDefault;
-        if(iObj is UCL.Core.IUCL_ShortName)
+        if(iObj is UCL.Core.UCLI_ShortName)
         {
-            return (iObj as UCL.Core.IUCL_ShortName).GetShortName();
+            return (iObj as UCL.Core.UCLI_ShortName).GetShortName();
         }
         if(iObj is Enum)
         {

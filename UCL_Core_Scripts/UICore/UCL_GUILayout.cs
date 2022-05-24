@@ -1330,20 +1330,38 @@ namespace UCL.Core.UI {
                         int aDeleteAt = -1;
                         List<object> aResultList = new List<object>();
                         string aTypeName = iObj.GetType().GetGenericValueType().Name;
+                        int aMove = -1;
                         foreach (var aListData in aList)
                         {
                             using (var aScope2 = new GUILayout.VerticalScope("box"))
                             {
                                 int aDrawAt = aAt;
                                 GUILayout.BeginHorizontal();
+                                const int Width = 21;
+                                const int Height = 12;
+                                GUILayout.BeginVertical(GUILayout.Width(Width));
+                                if (GUILayout.Button("▲", GUILayout.Width(Width), GUILayout.Height(Height)))
+                                {
+                                    aMove = aAt - 1;
+                                }
+                                if (GUILayout.Button("▼", GUILayout.Width(Width), GUILayout.Height(Height)))
+                                {
+                                    aMove = aAt;
+                                }
+                                GUILayout.EndVertical();
+
                                 if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                 {
                                     aDeleteAt = aAt;
                                 }
-                                aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic("_" + (aAt++).ToString()), aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
+                                aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic("IList" , aAt++), aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
                                 GUILayout.EndHorizontal();
                             }
-
+                        }
+                        if (aMove >= 0 && aMove < aResultList.Count - 1)
+                        {
+                            aResultList.SwapElement(aMove, aMove + 1);
+                            iDataDic.Swap("IList", aMove, aMove + 1);
                         }
                         for (int i = 0; i < aResultList.Count; i++)
                         {
@@ -1443,6 +1461,7 @@ namespace UCL.Core.UI {
 
                     if(iObj is ICopyPaste)
                     {
+                        GUILayout.FlexibleSpace();
                         if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
                         {
                             UCL.Core.CopyPaste.SetCopyData(iObj);
@@ -1451,7 +1470,20 @@ namespace UCL.Core.UI {
                         if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonText(aCanCopy ? Color.white : Color.red),
                             GUILayout.ExpandWidth(false)))
                         {
-                            if (aCanCopy) return UCL.Core.CopyPaste.GetCopyData(aType);
+                            if (aCanCopy)
+                            {
+                                iDataDic.Clear();
+                                
+                                if(iObj != null)
+                                {
+                                    UCL.Core.CopyPaste.LoadCopyData(iObj);
+                                    aResultObj = iObj;
+                                }
+                                else
+                                {
+                                    aResultObj = UCL.Core.CopyPaste.GetCopyData(aType);
+                                }
+                            }
                         }
                     }
 
@@ -1536,7 +1568,7 @@ namespace UCL.Core.UI {
                             {
                                 aDisplayName = iFieldNameFunc(aDisplayName);
                             }
-                            var aShortName = aData as UCL.Core.IUCL_ShortName;
+                            var aShortName = aData as UCL.Core.UCLI_ShortName;
                             if (aShortName != null)
                             {
                                 aDisplayName += "(" + aShortName.GetShortName() + ")";
@@ -1762,6 +1794,7 @@ namespace UCL.Core.UI {
                                     GUILayout.EndHorizontal();
                                     int aAt = 0;
                                     int aDeleteAt = -1;
+                                    int aMove = -1;
                                     List<object> aResultList = new List<object>();
                                     string aTypeName = aData.GetType().GetGenericValueType().Name;
                                     foreach (var aListData in aList)
@@ -1769,13 +1802,30 @@ namespace UCL.Core.UI {
                                         using (var aScope2 = new GUILayout.VerticalScope("box"))
                                         {
                                             GUILayout.BeginHorizontal();
+                                            const int Width = 21;
+                                            const int Height = 12;
+                                            GUILayout.BeginVertical(GUILayout.Width(Width));
+                                            if (GUILayout.Button("▲", GUILayout.Width(Width), GUILayout.Height(Height)))
+                                            {
+                                                aMove = aAt - 1;
+                                            }
+                                            if (GUILayout.Button("▼", GUILayout.Width(Width), GUILayout.Height(Height)))
+                                            {
+                                                aMove = aAt;
+                                            }
+                                            GUILayout.EndVertical();
                                             if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                             {
                                                 aDeleteAt = aAt;
                                             }
-                                            aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic(aField.Name + "Dic_" + (aAt++).ToString()), aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
+                                            aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic(aField.Name + "Dic_" , aAt++), aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
                                             GUILayout.EndHorizontal();
                                         }
+                                    }
+                                    if (aMove >= 0 && aMove < aResultList.Count - 1)
+                                    {
+                                        aResultList.SwapElement(aMove, aMove + 1);
+                                        iDataDic.Swap(aField.Name + "Dic_", aMove, aMove + 1);
                                     }
                                     for (int i = 0; i < aResultList.Count; i++)
                                     {

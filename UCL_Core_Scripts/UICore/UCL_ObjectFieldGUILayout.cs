@@ -10,7 +10,7 @@ namespace UCL.Core
     /// <summary>
     /// The short name you want to display in UCL_ObjectFieldGUILayout
     /// </summary>
-    public interface IUCL_ShortName
+    public interface UCLI_ShortName
     {
         string GetShortName();
     }

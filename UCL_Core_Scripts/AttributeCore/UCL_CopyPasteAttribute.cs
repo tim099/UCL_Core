@@ -29,6 +29,11 @@ namespace UCL.Core
             //Debug.LogError("s_CopyData:" + s_CopyData.ToJsonBeautify());
             return JsonConvert.LoadDataFromJson(s_CopyData, iType, iSaveMode);
         }
+        public static void LoadCopyData(object iObj, JsonConvert.SaveMode iSaveMode = JsonConvert.SaveMode.Unity)
+        {
+            if (iObj == null || !HasCopyData(iObj.GetType())) return;
+            JsonConvert.LoadDataFromJson(iObj, s_CopyData, iSaveMode);
+        }
         public static void SetCopyData(JsonData iData, System.Type iType)
         {
             if (iData == null)

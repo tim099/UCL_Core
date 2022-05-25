@@ -12,7 +12,7 @@ namespace UCL.Core.ATTR {
         public UCL_DrawStringAttribute(params object[] iParams) {
             m_Params = iParams;
         }
-        public override void Draw(object iTarget, MethodInfo iMethodInfo)
+        public override void Draw(object iTarget, MethodInfo iMethodInfo, UCL_ObjectDictionary iDic)
         {
             string aStr = iMethodInfo.Invoke(iTarget, m_Params) as string;
             if (!string.IsNullOrEmpty(aStr)) GUILayout.Box(aStr);

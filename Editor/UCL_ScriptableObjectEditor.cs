@@ -11,6 +11,7 @@ namespace UCL.Core.EditorLib {
     public class UCL_ScriptableObjectEditor : Editor {
 
         bool m_RequiresConstantRepaint = false;
+        UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
         public override bool RequiresConstantRepaint()
         {
             return m_RequiresConstantRepaint;
@@ -24,7 +25,7 @@ namespace UCL.Core.EditorLib {
             }
 
             m_RequiresConstantRepaint = (aType.GetCustomAttribute<ATTR.RequiresConstantRepaintAttribute>(true) != null);
-            DrawATTR.DrawAllMethods(target, aType, this.GetType(), ()=> DrawDefaultInspector());
+            DrawATTR.DrawAllMethods(target, aType, this.GetType(), m_Dic, ()=> DrawDefaultInspector());
             Resources.UnloadUnusedAssets();
         }
     }

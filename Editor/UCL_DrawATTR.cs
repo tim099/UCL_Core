@@ -7,7 +7,8 @@ namespace UCL.Core.EditorLib
 {
     public static class DrawATTR
     {
-        public static void DrawAllMethods(UnityEngine.Object iTarget, Type iType, Type iClassType, System.Action iDrawDefaultInspector = null)
+        public static void DrawAllMethods(UnityEngine.Object iTarget, Type iType, Type iClassType, UCL_ObjectDictionary iDic
+            , System.Action iDrawDefaultInspector = null)
         {
 
             var aAllMethods = iType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -22,18 +23,19 @@ namespace UCL.Core.EditorLib
                     for (int i = 0; i < iMethods.Count; i++)
                     {
                         var aMethod = iMethods[i];
-
+                        var aMethodDic = iDic.GetSubDic("Method", i);
                         {
                             var aAttrType = typeof(ATTR.UCL_Attribute);
                             var aAttrs = aMethod.GetCustomAttributes(aAttrType, false);
                             if (aAttrs.Length > 0)
                             {
+                                
                                 for (int j = 0; j < aAttrs.Length; j++)
                                 {
                                     var aAttr = (ATTR.UCL_Attribute)aAttrs[j];
                                     try
                                     {
-                                        aAttr.DrawAttribute(iTarget, aMethod);
+                                        aAttr.DrawAttribute(iTarget, aMethod, aMethodDic.GetSubDic("Attr", j));
                                     }
                                     catch (Exception iE)
                                     {

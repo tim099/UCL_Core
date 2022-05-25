@@ -32,7 +32,7 @@ namespace UCL.Core.ATTR {
             }
             return m_Texture;
         }
-        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo)
+        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo, UCL_ObjectDictionary iDic)
         {
             GUILayout.Box(iMethodInfo.Name);
             var aReturnType = iMethodInfo.ReturnType;

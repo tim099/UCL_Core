@@ -23,7 +23,7 @@ namespace UCL.Core.ATTR {
             m_Params = _params;
         }
 
-        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo)
+        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo, UCL_ObjectDictionary iDic)
         {
             bool aIsRunTimeOnly = iMethodInfo.GetCustomAttribute(typeof(ATTR.UCL_RuntimeOnlyAttribute), false) != null;
             if (!aIsRunTimeOnly || Application.isPlaying)

@@ -15,7 +15,7 @@ namespace UCL.Core.ATTR
             m_Params = iParams;
         }
         object[] m_Params = null;
-        public override void Draw(object iTarget, MethodInfo iMethodInfo)
+        public override void Draw(object iTarget, MethodInfo iMethodInfo, UCL_ObjectDictionary iDic)
         {
             try
             {
@@ -33,6 +33,9 @@ namespace UCL.Core.ATTR
                     if (aParams.Length == 0)
                     {
                         iMethodInfo.Invoke(iTarget, null);
+                    }else if(aParams.Length == 1 && aParams[0].ParameterType == typeof(UCL_ObjectDictionary))
+                    {
+                        iMethodInfo.Invoke(iTarget, new object[] { iDic });
                     }
                 }
 

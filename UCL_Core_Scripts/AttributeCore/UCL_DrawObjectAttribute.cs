@@ -9,7 +9,7 @@ namespace UCL.Core.ATTR {
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
     public class UCL_DrawObjectAttribute : UCL_Attribute {
 #if UNITY_EDITOR
-        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo)
+        public override void DrawAttribute(UnityEngine.Object iTarget, MethodInfo iMethodInfo, UCL_ObjectDictionary iDic)
         {
             System.Func<System.Type, UnityEngine.Object, UnityEngine.Object> aFunc =
                  delegate (System.Type iType, UnityEngine.Object iObj) {

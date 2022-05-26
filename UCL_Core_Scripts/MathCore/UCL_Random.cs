@@ -297,6 +297,73 @@ namespace UCL.Core.MathLib
             }
             return aResult;
         }
+
+        /// <summary>
+        /// Random pick n elements from the input list(n is iPickCount)
+        /// Weight is the HitRate of item
+        /// etc. A,B,C in iList, and A weight is 3, B is 2, C is 1
+        /// then the HitRate of A is 1/2, B is 1/3 and c is 1/6
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iList"></param>
+        /// <param name="iPickCount"></param>
+        /// <param name="iGetWeightFunc">input T and return the weight of T</param>
+        /// <returns></returns>
+        public List<T> RandomPick<T>(IList<T> iList, int iPickCount, System.Func<T, float> iGetWeightFunc)
+        {
+            List<T> aResult = new List<T>();
+            if (iList == null || iList.Count == 0)
+            {
+                return aResult;
+            }
+
+            if (iPickCount >= iList.Count)//Pick all
+            {
+                for (int i = 0; i < iList.Count; i++)
+                {
+                    aResult.Add(iList[i]);
+                }
+                return aResult;
+            }
+            List<T> aPool = new List<T>();
+            List<float> aWeights = new List<float>();
+            float aTotalWeight = 0;
+            for (int i = 0; i < iList.Count; i++)
+            {
+                var aItem = iList[i];
+                aPool.Add(aItem);
+                float aWeight = iGetWeightFunc(aItem);
+                aWeights.Add(aWeight);
+                aTotalWeight += aWeight;
+            }
+            if (aTotalWeight <= 0)//Nothing to pick
+            {
+                return aResult;
+            }
+            for (int i = 0; i < iPickCount; i++)
+            {
+                float aPickWeight = Range(0, aTotalWeight);
+
+                for (int aPickAt = 0; aPickAt < aPool.Count; aPickAt++)
+                {
+                    float aWeight = aWeights[aPickAt];
+                    aPickWeight -= aWeight;
+                    if (aPickWeight <= 0)
+                    {
+                        aTotalWeight -= aWeight;
+                        aResult.Add(aPool[aPickAt]);
+                        aPool.RemoveAt(aPickAt);
+                        aWeights.RemoveAt(aPickAt);
+                        break;
+                    }
+                    else if (aPickAt == aPool.Count - 1)
+                    {
+                        Debug.LogError("RandomPick Pick Fail!! aPickWeight:" + aPickWeight);
+                    }
+                }
+            }
+            return aResult;
+        }
         /// <summary>
         /// Random pick a element in the input array
         /// </summary>

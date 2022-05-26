@@ -16,13 +16,6 @@ namespace UCL.Core.UI {
         /// <returns></returns>
         bool OnGUI(string iFieldName, UCL_ObjectDictionary iEditTmpDatas);
     }
-    /// <summary>
-    /// return all types inherit base class
-    /// </summary>
-    public interface ITypeList
-    {
-        IList<Type> GetAllTypes();
-    }
 
     static public partial class UCL_GUILayout {
         #region NumField
@@ -52,6 +45,66 @@ namespace UCL.Core.UI {
             object aResultValue;
             if (MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return (T)aResultValue;
             return iVal;
+        }
+        static public T NumField<T>(string iLabel, T iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(iLabel);
+            iVal = NumField(iVal, iDataDic, iOptions);
+            GUILayout.EndHorizontal();
+            return iVal;
+        }
+        static public T NumField<T>(T iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            const string aKey = "NumField";
+            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), iOptions);
+            var aNumHash = NumHash;
+            for (int i = 0; i < aResult.Length; i++)
+            {
+                if (!aNumHash.Contains(aResult[i]))
+                {
+                    aResult = aResult.Remove(i, 1);
+                    break;
+                }
+            }
+            iDataDic.SetData(aKey, aResult);
+            if (string.IsNullOrEmpty(aResult))
+            {
+                return (T)System.Convert.ChangeType(0, iVal.GetType());
+            }
+            object aResultValue;
+            if (MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return (T)aResultValue;
+            return iVal;
+        }
+        static public int Slider(string iLabel, int iVal, int m_LeftValue, int m_RightValue, UCL_ObjectDictionary iDic)
+        {
+            GUILayout.BeginHorizontal();
+            if(!string.IsNullOrEmpty(iLabel))GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
+            int aResult = (int)GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
+            if (aResult != iVal) iDic.Clear();
+            aResult = UCL.Core.UI.UCL_GUILayout.IntField(aResult, iDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+            int aMaxValue = System.Math.Max(m_LeftValue, m_RightValue);
+            int aMinValue = System.Math.Min(m_LeftValue, m_RightValue);
+            if (aResult > aMaxValue) aResult = aMaxValue;
+            else if (aResult < aMinValue) aResult = aMinValue;
+
+            GUILayout.EndHorizontal();
+            return aResult;
+        }
+        static public float Slider(string iLabel, float iVal, float m_LeftValue, float m_RightValue, UCL_ObjectDictionary iDic)
+        {
+            GUILayout.BeginHorizontal();
+            if (!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
+            float aResult = GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
+            if (aResult != iVal) iDic.Clear();
+            aResult = UCL.Core.UI.UCL_GUILayout.NumField(aResult, iDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+            float aMaxValue = System.Math.Max(m_LeftValue, m_RightValue);
+            float aMinValue = System.Math.Min(m_LeftValue, m_RightValue);
+            if (aResult > aMaxValue) aResult = aMaxValue;
+            else if (aResult < aMinValue) aResult = aMinValue;
+
+            GUILayout.EndHorizontal();
+            return aResult;
         }
         static public object NumField(string iLabel, object iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();
@@ -91,7 +144,8 @@ namespace UCL.Core.UI {
         }
         static public int IntField(int iVal, UCL.Core.UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
         {
-            string aResult = GUILayout.TextField(iDataDic.GetData("IntFieldValue", iVal.ToString()), iOptions);
+            const string aKey = "IntFieldValue";
+            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), iOptions);
             var aNumHash = NumHash;
             for (int i = 0; i < aResult.Length; i++)
             {
@@ -101,7 +155,7 @@ namespace UCL.Core.UI {
                     break;
                 }
             }
-            iDataDic.SetData("IntFieldValue", aResult);
+            iDataDic.SetData(aKey, aResult);
 
             int aResVal = 0;
             if (int.TryParse(aResult, out aResVal)) return aResVal;
@@ -165,9 +219,9 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return iVal;
         }
-        static public bool BoolField(UCL_ObjectDictionary iDic, string iKey, int iSize = 21)
+        static public bool BoolField(UCL_ObjectDictionary iDic, string iKey, int iSize = 21, bool iDefaultValue = false)
         {
-            bool aVal = iDic.GetData(iKey, false);
+            bool aVal = iDic.GetData(iKey, iDefaultValue);
             if (GUILayout.Button(aVal ? "✔" : " ", GUILayout.Width(iSize), GUILayout.Height(iSize)))
             {
                 aVal = !aVal;

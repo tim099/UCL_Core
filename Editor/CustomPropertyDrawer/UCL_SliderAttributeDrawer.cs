@@ -27,15 +27,7 @@ namespace UCL.Core.PA
 
         }
     }
-    public class UCL_SliderAttribute : PropertyAttribute
-    {
-        public readonly float m_RightValue, m_LeftValue;
-        public UCL_SliderAttribute(float left_value, float right_value)
-        {
-            m_RightValue = right_value;
-            m_LeftValue = left_value;
-        }
-    }
+
     [UnityEditor.CustomPropertyDrawer(typeof(UCL_SliderAttribute))]
     public class SliderAttributeDrawer : UnityEditor.PropertyDrawer
     {

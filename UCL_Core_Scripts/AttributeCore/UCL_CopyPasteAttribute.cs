@@ -5,7 +5,7 @@ using UCL.Core.JsonLib;
 using System;
 namespace UCL.Core
 {
-    public interface ICopyPaste
+    public interface UCLI_CopyPaste
     {
 
     }
@@ -17,7 +17,7 @@ namespace UCL.Core
         public static System.Type s_CopyType = null;
         public static bool HasCopyData(System.Type iType)
         {
-            if (s_CopyType == null || iType == null || !s_CopyType.IsAssignableFrom(iType)) return false;
+            if (s_CopyType == null || iType == null || !iType.IsAssignableFrom(s_CopyType)) return false;
             return true;
         }
         public static object GetCopyData(System.Type iType, JsonConvert.SaveMode iSaveMode = JsonConvert.SaveMode.Unity)
@@ -28,6 +28,11 @@ namespace UCL.Core
             }
             //Debug.LogError("s_CopyData:" + s_CopyData.ToJsonBeautify());
             return JsonConvert.LoadDataFromJson(s_CopyData, iType, iSaveMode);
+        }
+        public static object GetCopyData(JsonConvert.SaveMode iSaveMode = JsonConvert.SaveMode.Unity)
+        {
+            //Debug.LogError("s_CopyData:" + s_CopyData.ToJsonBeautify());
+            return JsonConvert.LoadDataFromJson(s_CopyData, s_CopyType, iSaveMode);
         }
         public static void LoadCopyData(object iObj, JsonConvert.SaveMode iSaveMode = JsonConvert.SaveMode.Unity)
         {

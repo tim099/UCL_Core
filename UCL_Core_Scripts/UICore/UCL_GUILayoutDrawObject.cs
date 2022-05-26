@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -20,12 +20,10 @@ namespace UCL.Core.UI
         /// <param name="iIsAlwaysShowDetail">if set to true then will not show the detail toggle</param>
         /// <param name="iFieldNameFunc">param is the field name and return the display name</param>
         /// <returns></returns>
-        public static object DrawObjectData(object iObj, UCL_ObjectDictionary iDataDic, string iDisplayName = "", bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null)
+        public static object DrawObjectData(object iObj, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
+            bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null, System.Type iFieldType = null)
         {
-            if (iFieldNameFunc == null)
-            {
-                iFieldNameFunc = UCL_StaticFunctions.LocalizeFieldName;
-            }
+            if (iFieldNameFunc == null) iFieldNameFunc = UCL_StaticFunctions.LocalizeFieldName;
             GUILayout.BeginVertical();
             bool aIsShowField = true;
             bool aIsDefaultType = true;
@@ -38,6 +36,7 @@ namespace UCL.Core.UI
                     iDisplayName = iObj.GetType().Name;
                 }
                 aType = iObj.GetType();
+                if (iFieldType == null) iFieldType = aType;
                 if (iObj is string)
                 {
                     aIsShowField = false;
@@ -86,38 +85,37 @@ namespace UCL.Core.UI
                 }
                 else if (iObj is IList)
                 {
+                    bool aIsMoveElement = false;
+                    bool aIsDelete = false;
+
                     GUILayout.BeginHorizontal();
                     if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, "Show");
                     GUILayout.BeginVertical();
-                    bool aIsMoveElement = false;
-                    bool aIsDelete = false;
-                    if (iIsAlwaysShowDetail)
+                    using(new GUILayout.HorizontalScope())//Show Title(iDisplayName)
                     {
-                        aIsShowField = true;
-                    }
-                    else
-                    {
-                        GUILayout.BeginHorizontal();
-                        if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                        if (iIsAlwaysShowDetail)
+                        {
+                            aIsShowField = true;
+                        }
+                        else
+                        {
+                            if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                        }
+
                         if (aIsShowField)
                         {
-                            IList aList = iObj as IList;
-                            if (aList.Count >= 2)
                             {
                                 GUILayout.Space(5);
                                 aIsMoveElement = BoolField(iDataDic, "MoveElement");
                                 UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("MoveElement"));
                             }
-                            if (aList.Count > 0)
                             {
                                 GUILayout.Space(5);
                                 aIsDelete = BoolField(iDataDic, "Delete");
                                 UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
                             }
-
                         }
                         GUILayout.FlexibleSpace();
-                        GUILayout.EndHorizontal();
                     }
 
                     if (aIsShowField)
@@ -163,9 +161,9 @@ namespace UCL.Core.UI
                             {
                                 var aGenericType = aType.GetGenericValueType();
 
-                                if (typeof(ITypeList).IsAssignableFrom(aGenericType))
+                                if (typeof(UCLI_TypeList).IsAssignableFrom(aGenericType))
                                 {
-                                    var aTypeList = aGenericType.CreateInstance() as ITypeList;
+                                    var aTypeList = aGenericType.CreateInstance() as UCLI_TypeList;
                                     if (aTypeList != null)
                                     {
                                         var aAllTypeList = aTypeList.GetAllTypes();
@@ -219,7 +217,8 @@ namespace UCL.Core.UI
                         int aAt = 0;
                         int aDeleteAt = -1;
                         List<object> aResultList = new List<object>();
-                        string aTypeName = iObj.GetType().GetGenericValueType().Name;
+                        var aListType = iObj.GetType().GetGenericValueType();
+                        string aTypeName = aListType.Name;
                         int aMove = -1;
                         foreach (var aListData in aList)
                         {
@@ -229,11 +228,11 @@ namespace UCL.Core.UI
                                 using (new GUILayout.HorizontalScope("box"))//, GUILayout.Height(Height)
                                 {
                                     GUILayout.FlexibleSpace();//GUILayout.Space(25);
-                                    if (GUILayout.Button("¡¶", GUILayout.ExpandWidth(false)))//, GUILayout.Height(Height)
+                                    if (GUILayout.Button("â–²", GUILayout.ExpandWidth(false)))//, GUILayout.Height(Height)
                                     {
                                         aMove = aAt - 1;
                                     }
-                                    if (GUILayout.Button("¡¿", GUILayout.ExpandWidth(false)))//, GUILayout.Height(Height)
+                                    if (GUILayout.Button("â–¼", GUILayout.ExpandWidth(false)))//, GUILayout.Height(Height)
                                     {
                                         aMove = aAt - 1;
                                     }
@@ -251,7 +250,7 @@ namespace UCL.Core.UI
                                 }
 
                                 aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++),
-                                    aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc));
+                                    aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc, iFieldType: aListType));
                             }
                         }
                         if (aMove >= 0 && aMove < aResultList.Count - 1)
@@ -274,60 +273,88 @@ namespace UCL.Core.UI
                 }
                 else if (iObj is IDictionary)
                 {
+                    bool aIsDelete = false;
                     GUILayout.BeginHorizontal();
-                    aIsShowField = false;
-                    string aShowKey = "Show";
-                    bool aIsShow = iDataDic.GetData(aShowKey, false);
-                    iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShow));
-                    UCL_GUILayout.LabelAutoSize(iDisplayName);
-                    GUILayout.EndHorizontal();
-                    if (aIsShow)
+                    if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, "Show");
+                    GUILayout.BeginVertical();
+                    using (new GUILayout.HorizontalScope())//Show Title(iDisplayName)
+                    {
+                        if (iIsAlwaysShowDetail)
+                        {
+                            aIsShowField = true;
+                        }
+                        else
+                        {
+                            if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                        }
+
+                        if (aIsShowField)
+                        {
+                            {
+                                GUILayout.Space(5);
+                                aIsDelete = BoolField(iDataDic, "Delete");
+                                UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
+                            }
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+                    if (aIsShowField)
                     {
                         IDictionary aDic = iObj as IDictionary;
-                        GUILayout.BeginHorizontal();
-                        UCL_GUILayout.LabelAutoSize("Count : " + aDic.Count);
-                        var aKeyType = aType.GetGenericKeyType();
-                        string aAddKey = "AddData";
-                        if (!iDataDic.ContainsKey(aAddKey))
+                        using(new GUILayout.HorizontalScope("box"))
                         {
-                            iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
-                        }
-                        iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey), iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyType.Name, iFieldNameFunc: iFieldNameFunc));
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
-                        {
-                            try
+                            var aKeyType = aType.GetGenericKeyType();
+                            string aAddKey = "AddData";
+                            if (!iDataDic.ContainsKey(aAddKey))
                             {
-                                var aNewKey = iDataDic.GetData(aAddKey);
-                                if (!aDic.Contains(aNewKey))
+                                iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
+                            }
+                            iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey),
+                                iDataDic.GetSubDic(iDisplayName + "_AddKey"), UCL_LocalizeManager.Get(aKeyType.Name), iFieldNameFunc: iFieldNameFunc));
+                            using(new GUILayout.HorizontalScope("box"))
+                            {
+                                if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                 {
-                                    iDataDic.Remove(aAddKey);
-                                    var aGenericType = aType.GetGenericValueType();
-                                    aDic.Add(aNewKey, aGenericType.CreateInstance());
+                                    try
+                                    {
+                                        var aNewKey = iDataDic.GetData(aAddKey);
+                                        if (!aDic.Contains(aNewKey))
+                                        {
+                                            iDataDic.Remove(aAddKey);
+                                            var aGenericType = aType.GetGenericValueType();
+                                            aDic.Add(aNewKey, aGenericType.CreateInstance());
+                                        }
+                                    }
+                                    catch (System.Exception iE)
+                                    {
+                                        Debug.LogException(iE);
+                                    }
                                 }
                             }
-                            catch (System.Exception iE)
-                            {
-                                Debug.LogException(iE);
-                            }
+
                         }
-                        GUILayout.EndHorizontal();
+
+
                         object aDeleteAt = null;
                         List<Tuple<object, object>> aResultList = new List<Tuple<object, object>>();
                         foreach (var aKey in aDic.Keys)
                         {
-                            using (var aScope2 = new GUILayout.VerticalScope("box"))
+                            using (new GUILayout.HorizontalScope("box"))
                             {
-                                GUILayout.BeginHorizontal();
-                                if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
+                                if (aIsDelete)
                                 {
-                                    aDeleteAt = aKey;
+                                    if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
+                                    {
+                                        aDeleteAt = aKey;
+                                    }
                                 }
-                                GUILayout.BeginVertical();
-                                string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
-                                GUILayout.Label(aKeyName);
-                                aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey], iDataDic.GetSubDic(iDisplayName + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
-                                GUILayout.EndVertical();
-                                GUILayout.EndHorizontal();
+                                using(new GUILayout.VerticalScope())
+                                {
+                                    string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
+                                    GUILayout.Label(aKeyName);
+                                    aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey],
+                                        iDataDic.GetSubDic(iDisplayName + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
+                                }
                             }
                         }
                         for (int i = 0; i < aResultList.Count; i++)
@@ -339,6 +366,8 @@ namespace UCL.Core.UI
                             aDic.Remove(aDeleteAt);
                         }
                     }
+                    GUILayout.EndVertical();
+                    GUILayout.EndHorizontal();
                 }
                 else if (iObj is Color)
                 {
@@ -347,7 +376,7 @@ namespace UCL.Core.UI
                     {
                         bool aIsShow = Toggle(iDataDic, "Toggle");
                         GUILayout.BeginVertical();
-                        UCL_GUILayout.LabelAutoSize(string.Format("{0}{1}", iDisplayName, "¡½".RichTextColor(aOriginCol)));
+                        UCL_GUILayout.LabelAutoSize(string.Format("{0}{1}", iDisplayName, "â– ".RichTextColor(aOriginCol)));
                         if (aIsShow)
                         {
                             aResultObj = SelectColor(aOriginCol);
@@ -362,23 +391,24 @@ namespace UCL.Core.UI
             }
             if (!aIsDefaultType)
             {
+                GUILayout.BeginHorizontal();
+                if (!iIsAlwaysShowDetail) aIsShowField = UCL_GUILayout.Toggle(iDataDic, "IsShowField");
+                else aIsShowField = true;
                 GUILayout.BeginVertical();
                 if (!iIsAlwaysShowDetail)
                 {
                     GUILayout.BeginHorizontal();
-                    string aShowKey = "_Show";
-                    aIsShowField = iDataDic.GetData(aShowKey, false);
-                    iDataDic.SetData(aShowKey, UCL_GUILayout.Toggle(aIsShowField));
+                
                     if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
 
-                    if (iObj is ICopyPaste)
+                    if (iObj is UCLI_CopyPaste)
                     {
                         GUILayout.FlexibleSpace();
                         if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
                         {
                             UCL.Core.CopyPaste.SetCopyData(iObj);
                         }
-                        bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(aType);
+                        bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(iFieldType);
                         if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonText(aCanCopy ? Color.white : Color.red),
                             GUILayout.ExpandWidth(false)))
                         {
@@ -386,14 +416,14 @@ namespace UCL.Core.UI
                             {
                                 iDataDic.Clear();
 
-                                if (iObj != null)
+                                if (iObj != null && aType == CopyPaste.s_CopyType)
                                 {
                                     UCL.Core.CopyPaste.LoadCopyData(iObj);
                                     aResultObj = iObj;
                                 }
                                 else
                                 {
-                                    aResultObj = UCL.Core.CopyPaste.GetCopyData(aType);
+                                    iObj = aResultObj = UCL.Core.CopyPaste.GetCopyData();
                                 }
                             }
                         }
@@ -532,6 +562,20 @@ namespace UCL.Core.UI
                                             aField.SetValue(iObj, aResult);
                                         }
                                     }
+                                }else if(aAttr is PA.UCL_SliderAttribute)
+                                {
+                                    if (aData is float)
+                                    {
+                                        aIsDrawed = true;
+                                        var aSlider = aAttr as PA.UCL_SliderAttribute;
+                                        float aVal = (float)aData;
+                                        float aResult = aSlider.OnGUI(aDisplayName, aVal, iDataDic.GetSubDic(aField.Name));
+
+                                        if (aResult != aVal)
+                                        {
+                                            aField.SetValue(iObj, aResult);
+                                        }
+                                    }
                                 }
                             }
                             if (aIsDrawed)
@@ -610,6 +654,8 @@ namespace UCL.Core.UI
 
                     }
                 GUILayout.EndVertical();
+
+                GUILayout.EndHorizontal();
             }
 
             GUILayout.EndVertical();

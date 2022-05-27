@@ -23,27 +23,64 @@ namespace UCL.Core.Container {
 
     public class ComponentPool<T> where T : Component
     {
+        public ComponentPool() { }
+        public ComponentPool(T iTemplate)
+        {
+            m_Template = iTemplate;
+        }
+
         public string m_CreateName = typeof(T).ToString();
         Stack<T> m_ObjPool = new Stack<T>();
-
-        public T Create(Transform parent = null) {
-            T target = null;
+        /// <summary>
+        /// All Object that Created
+        /// </summary>
+        List<T> m_AllObjs = new List<T>();
+        T m_Template = null;
+        public T Create(Transform iParent = null) {
+            T aTarget = null;
             if(m_ObjPool.Count > 0) {
-                target = m_ObjPool.Pop();
+                aTarget = m_ObjPool.Pop();
             } else {
-                GameObject obj = new GameObject(m_CreateName);
-                target = obj.AddComponent<T>();
-                if(parent) {
-                    obj.layer = parent.gameObject.layer;
+                GameObject aObj = null;
+                if (m_Template != null)
+                {
+                    aTarget = GameObject.Instantiate(m_Template, iParent);
+                    aObj = aTarget.gameObject;
+                }
+                else
+                {
+                    aObj = new GameObject(m_CreateName);
+                    aTarget = aObj.AddComponent<T>();
+                }
+
+                if(iParent) {
+                    aObj.layer = iParent.gameObject.layer;
                 }
             }
-            target.gameObject.SetActive(true);
-            if(parent != target.transform.parent) target.transform.parent = parent;
-            return target;
+            aTarget.gameObject.SetActive(true);
+            if(iParent != aTarget.transform.parent) aTarget.transform.parent = iParent;
+
+            m_AllObjs.Add(aTarget);
+            return aTarget;
         }
-        public void Delete(T target) {
-            target.gameObject.SetActive(false);
-            m_ObjPool.Push(target);
+        public void Delete(T iTarget) {
+
+            iTarget.gameObject.SetActive(false);
+            m_ObjPool.Push(iTarget);
+            m_AllObjs.Remove(iTarget);
+        }
+        public void DeleteAll()
+        {
+            for(int i = 0; i < m_AllObjs.Count; i++)
+            {
+                var aTarget = m_AllObjs[i];
+                if(aTarget != null)
+                {
+                    m_ObjPool.Push(aTarget);
+                    aTarget.gameObject.SetActive(false);
+                }
+            }
+            m_AllObjs.Clear();
         }
     }
 }

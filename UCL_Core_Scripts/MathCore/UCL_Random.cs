@@ -214,7 +214,7 @@ namespace UCL.Core.MathLib
                 {
                     aResult.Add(iList[i]);
                 }
-                return aResult;
+                return Shuffle(aResult);
             }
             List<T> aPool = new List<T>();
             for (int i = 0; i < iList.Count; i++)
@@ -256,7 +256,7 @@ namespace UCL.Core.MathLib
                 {
                     aResult.Add(iList[i]);
                 }
-                return aResult;
+                return Shuffle(aResult);
             }
             List<T> aPool = new List<T>();
             List <int> aWeights = new List<int>();
@@ -323,7 +323,8 @@ namespace UCL.Core.MathLib
                 {
                     aResult.Add(iList[i]);
                 }
-                return aResult;
+                
+                return Shuffle(aResult);
             }
             List<T> aPool = new List<T>();
             List<float> aWeights = new List<float>();

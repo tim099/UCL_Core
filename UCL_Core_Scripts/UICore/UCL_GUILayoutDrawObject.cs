@@ -248,9 +248,14 @@ namespace UCL.Core.UI
                                         aDeleteAt = aAt;
                                     }
                                 }
+                                string aDisplayName = aListData.UCL_GetShortName(aListData != null? aListData.GetType().Name : aTypeName);
+                                if (aListData!= null)
+                                {
 
-                                aResultList.Add(DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++),
-                                    aListData.UCL_GetShortName(aTypeName), iFieldNameFunc: iFieldNameFunc, iFieldType: aListType));
+                                }
+                                var aResult = DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++),
+                                    aDisplayName, iFieldNameFunc: iFieldNameFunc, iFieldType: aListType);
+                                aResultList.Add(aResult);
                             }
                         }
                         if (aMove >= 0 && aMove < aResultList.Count - 1)

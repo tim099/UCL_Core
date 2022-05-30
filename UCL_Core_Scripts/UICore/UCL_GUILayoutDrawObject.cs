@@ -403,9 +403,16 @@ namespace UCL.Core.UI
                 if (!iIsAlwaysShowDetail)
                 {
                     GUILayout.BeginHorizontal();
-                
-                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
-
+                    if(iObj is UCLI_NameOnGUI)
+                    {
+                        var aNameOnGUI = iObj as UCLI_NameOnGUI;
+                        aNameOnGUI.NameOnGUI(iDataDic, iDisplayName);
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                    }
+                    
                     if (iObj is UCLI_CopyPaste)
                     {
                         GUILayout.FlexibleSpace();

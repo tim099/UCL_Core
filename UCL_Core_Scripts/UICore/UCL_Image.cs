@@ -52,8 +52,7 @@ namespace UCL.Core.UI {
         [SerializeField] private DrawType m_Type = DrawType.Simple;
 
         #region UCL_Member
-        public int TileSize { get { return m_Tile.x * m_Tile.y; } }
-
+        public int TileSize => m_Tile.x * m_Tile.y;
         [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public Vector2Int m_Tile = Vector2Int.one;
         [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public int m_TilePos = 0;
         [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public int m_TileLoopTime = -1;

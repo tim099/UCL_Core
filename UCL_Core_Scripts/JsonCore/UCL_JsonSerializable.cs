@@ -3,7 +3,7 @@
     /// <summary>
     /// interface that support Json serialization
     /// </summary>
-    public interface IJsonSerializable
+    public interface IJsonSerializable : UCL.Core.UCLI_CopyPaste
     {
         JsonData SerializeToJson();
         void DeserializeFromJson(JsonData iJson);

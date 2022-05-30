@@ -35,7 +35,32 @@ public static partial class ArrayExtensionMethods {
         if(arr == null || arr.Length == 0) return true;
         return false;
     }
+    /// <summary>
+    /// convert bytes array to float array
+    /// </summary>
+    /// <param name="iArray"></param>
+    /// <returns></returns>
+    public static float[] ToFloatArray(this byte[] iArray)
+    {
+        float[] aFloatArr = new float[iArray.Length / 4];
+        if (BitConverter.IsLittleEndian)
+        {
+            for (int i = 0; i < aFloatArr.Length; i++)
+            {
+                Array.Reverse(iArray, i * 4, 4);
+                aFloatArr[i] = BitConverter.ToSingle(iArray, i * 4) / 0x80000000;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < aFloatArr.Length; i++)
+            {
+                aFloatArr[i] = BitConverter.ToSingle(iArray, i * 4) / 0x80000000;
+            }
+        }
 
+        return aFloatArr;
+    }
 
     /// <summary>
     /// Convert byte array into Hexadecimal string

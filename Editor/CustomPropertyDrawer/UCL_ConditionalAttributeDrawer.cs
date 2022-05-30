@@ -1,10 +1,9 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using System.Reflection;
 using UnityEditor;
+using UnityEngine;
 
 namespace UCL.Core.PA
 {
@@ -16,14 +15,14 @@ namespace UCL.Core.PA
 
         private bool m_CustomDrawersCached;
         private static IEnumerable<Type> s_AllPropertyDrawerAttributeTypes;
-        private bool _multipleAttributes;
-        private bool _specialType;
-        private PropertyAttribute _genericAttribute;
-        private PropertyDrawer _genericAttributeDrawerInstance;
-        private Type _genericAttributeDrawerType;
-        private Type _genericType;
-        private PropertyDrawer _genericTypeDrawerInstance;
-        private Type _genericTypeDrawerType;
+        private bool IsMultipleAttributes;
+        private bool m_SpecialType;
+        private PropertyAttribute aGenericAttr;
+        private PropertyDrawer IsGenericAttributeDrawerInstance;
+        private Type m_GenericAttributeDrawerType;
+        private Type m_GenericType;
+        private PropertyDrawer m_GenericTypeDrawerInstance;
+        private Type m_GenericTypeDrawerType;
 
         private bool m_Show = true;
 
@@ -39,12 +38,12 @@ namespace UCL.Core.PA
 
             if (HaveMultipleAttributes())
             {
-                _multipleAttributes = true;
+                IsMultipleAttributes = true;
                 GetPropertyDrawerType(property);
             }
             else if (fieldInfo != null && !fieldInfo.FieldType.Module.ScopeName.Equals(typeof(int).Module.ScopeName))
             {
-                _specialType = true;
+                m_SpecialType = true;
                 GetTypeDrawerType(property);
             }
 
@@ -59,48 +58,52 @@ namespace UCL.Core.PA
             if (attributes.IsNullOrEmpty()) return false;
             return attributes.Length > 1;
         }
-
-        public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
+        public override float GetPropertyHeight(SerializedProperty iProperty, GUIContent label)
         {
             if (!m_Show) return 0;
-            return base.GetPropertyHeight(property, label);
+            return base.GetPropertyHeight(iProperty, label);
         }
-
-        public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
+        public override void OnGUI(Rect position, SerializedProperty iProperty, GUIContent label)
         {
-            Initialize(property);
-            bool visible = PropertyIsVisible(property, Conditional.m_CompareValues);
-            m_Show = Conditional.m_Inverse ^ visible;
+            Initialize(iProperty);
+
+            var aParent = iProperty.GetParent();
+            //Debug.LogError("aParent:" + aParent.GetType().Name);
+            m_Show = Conditional.IsShow(aParent);
             if (!m_Show) return;
 
-            if (_multipleAttributes && _genericAttributeDrawerInstance != null)
+            //bool aIsVisible = PropertyIsVisible(iProperty, Conditional.m_CompareValues);
+            //m_Show = Conditional.m_Inverse ^ aIsVisible;
+
+
+            if (IsMultipleAttributes && IsGenericAttributeDrawerInstance != null)
             {
                 try
                 {
-                    _genericAttributeDrawerInstance.OnGUI(position, property, label);
+                    IsGenericAttributeDrawerInstance.OnGUI(position, iProperty, label);
                 }
                 catch (Exception e)
                 {
-                    EditorGUI.PropertyField(position, property, label);
-                    LogWarning("Unable to instantiate " + _genericAttribute.GetType() + " : " + e, property);
+                    EditorGUI.PropertyField(position, iProperty, label);
+                    LogWarning("Unable to instantiate " + aGenericAttr.GetType() + " : " + e, iProperty);
                 }
             }
-            else if (_specialType && _genericTypeDrawerInstance != null)
+            else if (m_SpecialType && m_GenericTypeDrawerInstance != null)
             {
                 try
                 {
-                    _genericTypeDrawerInstance.OnGUI(position, property, label);
+                    m_GenericTypeDrawerInstance.OnGUI(position, iProperty, label);
                 }
                 catch (Exception e)
                 {
-                    EditorGUI.PropertyField(position, property, label);
-                    LogWarning("Unable to instantiate " + _genericType + " : " + e, property);
+                    EditorGUI.PropertyField(position, iProperty, label);
+                    LogWarning("Unable to instantiate " + m_GenericType + " : " + e, iProperty);
                     Debug.LogException(e);
                 }
             }
             else
             {
-                EditorGUI.PropertyField(position, property, label, true);
+                EditorGUI.PropertyField(position, iProperty, label, true);
             }
         }
 
@@ -119,21 +122,21 @@ namespace UCL.Core.PA
 
         private void GetPropertyDrawerType(SerializedProperty property)
         {
-            if (_genericAttributeDrawerInstance != null) return;
+            if (IsGenericAttributeDrawerInstance != null) return;
 
             //Get the second attribute flag
             try
             {
-                _genericAttribute = (PropertyAttribute)fieldInfo.GetCustomAttributes(typeof(PropertyAttribute), false)
+                aGenericAttr = (PropertyAttribute)fieldInfo.GetCustomAttributes(typeof(PropertyAttribute), false)
                     .FirstOrDefault(a => !(a is ConditionalAttribute));
 
-                if (_genericAttribute is ContextMenuItemAttribute)
+                if (aGenericAttr is ContextMenuItemAttribute)
                 {
-                    LogWarning("[ConditionalField] does not work with " + _genericAttribute.GetType(), property);
+                    LogWarning("[ConditionalField] does not work with " + aGenericAttr.GetType(), property);
                     return;
                 }
 
-                if (_genericAttribute is TooltipAttribute) return;
+                if (aGenericAttr is TooltipAttribute) return;
             }
             catch (Exception e)
             {
@@ -146,21 +149,21 @@ namespace UCL.Core.PA
             try
             {
 
-                _genericAttributeDrawerType = s_AllPropertyDrawerAttributeTypes.First(iType =>
+                m_GenericAttributeDrawerType = s_AllPropertyDrawerAttributeTypes.First(iType =>
                         {
                             var aCustomAttrs = CustomAttributeData.GetCustomAttributes(iType);
-                            if(aCustomAttrs.Count == 0)
+                            if(aCustomAttrs.IsNullOrEmpty())
                             {
-                                Debug.LogError("iType:"+iType.FullName+ ",aCustomAttrs.Count == 0");
+                                //Debug.LogError("iType:"+iType.FullName+ ",aCustomAttrs.Count == 0");
                                 return false;
                             }
                             var aConstructorArguments = aCustomAttrs.First().ConstructorArguments.First();
-                            return (Type)aConstructorArguments.Value == _genericAttribute.GetType();
+                            return (Type)aConstructorArguments.Value == aGenericAttr.GetType();
                         });
             }
             catch (Exception e)
             {
-                LogWarning("Can't find property drawer from CustomPropertyAttribute of " + _genericAttribute.GetType() + " : " + e, property);
+                LogWarning("Can't find property drawer from CustomPropertyAttribute of " + aGenericAttr.GetType() + " : " + e, property);
                 Debug.LogException(e);
                 return;
             }
@@ -168,10 +171,10 @@ namespace UCL.Core.PA
             //Create instances of each (including the arguments)
             try
             {
-                _genericAttributeDrawerInstance = (PropertyDrawer)Activator.CreateInstance(_genericAttributeDrawerType);
+                IsGenericAttributeDrawerInstance = (PropertyDrawer)Activator.CreateInstance(m_GenericAttributeDrawerType);
                 //Get arguments
                 IList<CustomAttributeTypedArgument> attributeParams = fieldInfo.GetCustomAttributesData()
-                .First(a => a.AttributeType == _genericAttribute.GetType()).ConstructorArguments;
+                .First(a => a.AttributeType == aGenericAttr.GetType()).ConstructorArguments;
                 IList<CustomAttributeTypedArgument> unpackedParams = new List<CustomAttributeTypedArgument>();
                 //Unpack any params object[] args
                 foreach (CustomAttributeTypedArgument singleParam in attributeParams)
@@ -194,16 +197,16 @@ namespace UCL.Core.PA
 
                 if (attributeParamsObj.Any())
                 {
-                    _genericAttribute = (PropertyAttribute)Activator.CreateInstance(_genericAttribute.GetType(), attributeParamsObj);
+                    aGenericAttr = (PropertyAttribute)Activator.CreateInstance(aGenericAttr.GetType(), attributeParamsObj);
                 }
                 else
                 {
-                    _genericAttribute = (PropertyAttribute)Activator.CreateInstance(_genericAttribute.GetType());
+                    aGenericAttr = (PropertyAttribute)Activator.CreateInstance(aGenericAttr.GetType());
                 }
             }
             catch (Exception e)
             {
-                LogWarning("No constructor available in " + _genericAttribute.GetType() + " : " + e, property);
+                LogWarning("No constructor available in " + aGenericAttr.GetType() + " : " + e, property);
                 Debug.LogException(e);
                 return;
             }
@@ -211,19 +214,19 @@ namespace UCL.Core.PA
             //Reassign the attribute field in the drawer so it can access the argument values
             try
             {
-                var genericDrawerAttributeField = _genericAttributeDrawerType.GetField("m_Attribute", BindingFlags.Instance | BindingFlags.NonPublic);
-                genericDrawerAttributeField.SetValue(_genericAttributeDrawerInstance, _genericAttribute);
+                var genericDrawerAttributeField = m_GenericAttributeDrawerType.GetField("m_Attribute", BindingFlags.Instance | BindingFlags.NonPublic);
+                genericDrawerAttributeField.SetValue(IsGenericAttributeDrawerInstance, aGenericAttr);
             }
             catch (Exception e)
             {
-                LogWarning("Unable to assign attribute to " + _genericAttributeDrawerInstance.GetType() + " : " + e, property);
+                LogWarning("Unable to assign attribute to " + IsGenericAttributeDrawerInstance.GetType() + " : " + e, property);
                 Debug.LogException(e);
             }
         }
 
         private void GetTypeDrawerType(SerializedProperty property)
         {
-            if (_genericTypeDrawerInstance != null) return;
+            if (m_GenericTypeDrawerInstance != null) return;
 
             //Get the associated attribute drawer
             try
@@ -232,15 +235,15 @@ namespace UCL.Core.PA
                 // or one of the base types of target type
                 foreach (Type propertyDrawerType in s_AllPropertyDrawerAttributeTypes)
                 {
-                    _genericType = fieldInfo.FieldType;
+                    m_GenericType = fieldInfo.FieldType;
                     var affectedType = (Type)CustomAttributeData.GetCustomAttributes(propertyDrawerType).First().ConstructorArguments.First().Value;
-                    while (_genericType != null)
+                    while (m_GenericType != null)
                     {
-                        if (_genericTypeDrawerType != null) break;
-                        if (affectedType == _genericType) _genericTypeDrawerType = propertyDrawerType;
-                        else _genericType = _genericType.BaseType;
+                        if (m_GenericTypeDrawerType != null) break;
+                        if (affectedType == m_GenericType) m_GenericTypeDrawerType = propertyDrawerType;
+                        else m_GenericType = m_GenericType.BaseType;
                     }
-                    if (_genericTypeDrawerType != null) break;
+                    if (m_GenericTypeDrawerType != null) break;
                 }
             }
             catch (Exception)
@@ -249,16 +252,16 @@ namespace UCL.Core.PA
                 //LogWarning("[ConditionalField] does not work with "+_genericType+". Unable to find property drawer from the Type", property);
                 return;
             }
-            if (_genericTypeDrawerType == null) return;
+            if (m_GenericTypeDrawerType == null) return;
 
             //Create instances of each (including the arguments)
             try
             {
-                _genericTypeDrawerInstance = (PropertyDrawer)Activator.CreateInstance(_genericTypeDrawerType);
+                m_GenericTypeDrawerInstance = (PropertyDrawer)Activator.CreateInstance(m_GenericTypeDrawerType);
             }
             catch (Exception e)
             {
-                LogWarning("no constructor available in " + _genericType + " : " + e, property);
+                LogWarning("no constructor available in " + m_GenericType + " : " + e, property);
                 Debug.LogException(e);
                 return;
             }
@@ -266,8 +269,8 @@ namespace UCL.Core.PA
             //Reassign the attribute field in the drawer so it can access the argument values
             try
             {
-                _genericTypeDrawerType.GetField("m_Attribute", BindingFlags.Instance | BindingFlags.NonPublic)
-                    .SetValue(_genericTypeDrawerInstance, fieldInfo);
+                m_GenericTypeDrawerType.GetField("m_Attribute", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .SetValue(m_GenericTypeDrawerInstance, fieldInfo);
             }
             catch (Exception)
             {
@@ -290,6 +293,7 @@ namespace UCL.Core.PA
                 Debug.LogError("member == null attr.m_FieldName:" + aAttr.m_FieldName + " ,parent:" + aParent.ToString());
                 return false;
             }
+            //return aAttr.IsShow(aParent);
             if (!iCompareAgainst.IsNullOrEmpty())
             {
                 return CompareAgainstValues(aMember, iCompareAgainst);

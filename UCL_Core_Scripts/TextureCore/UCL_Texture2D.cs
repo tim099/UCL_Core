@@ -77,28 +77,29 @@ namespace UCL.Core.TextureLib {
             m_TextureUpdated = true;
             m_SpriteUpdated = true;
         }
-        virtual public void SetColor(Color color) {
+        virtual public void ClearColor() => SetColor(Color.clear);
+        virtual public void SetColor(Color iColor) {
             for(int i = 0,len = m_Col.Length; i < len ; i++) {
-                m_Col[i] = color;
+                m_Col[i] = iColor;
             }
         }
         /// <summary>
         /// Draw a dot on pos
         /// </summary>
-        /// <param name="px"></param>dot position x
-        /// <param name="py"></param>dot position y
-        /// <param name="col"></param>dot color
-        /// <param name="radius"></param>dot radius
-        virtual public void DrawDot(float px, float py, Color col, int radius = 0) {
-            int x = Mathf.RoundToInt(px * m_Size.x);
-            int y = Mathf.RoundToInt(py * m_Size.y);
-            if(radius <= 0) {
-                SetPixel(x, y, col);
+        /// <param name="iX"></param>dot position x
+        /// <param name="iY"></param>dot position y
+        /// <param name="iCol"></param>dot color
+        /// <param name="iRadius"></param>dot radius
+        virtual public void DrawDot(float iX, float iY, Color iCol, int iRadius = 0) {
+            int x = Mathf.RoundToInt(iX * m_Size.x);
+            int y = Mathf.RoundToInt(iY * m_Size.y);
+            if(iRadius <= 0) {
+                SetPixel(x, y, iCol);
             }
-            int sx = x - radius;
-            int ex = x + radius;
-            int sy = y - radius;
-            int ey = y + radius;
+            int sx = x - iRadius;
+            int ex = x + iRadius;
+            int sy = y - iRadius;
+            int ey = y + iRadius;
             if(sx < 0) sx = 0;
             if(sy < 0) sy = 0;
             if(ex >= m_Size.x) sx = m_Size.x - 1;
@@ -107,8 +108,8 @@ namespace UCL.Core.TextureLib {
                 for(int j = sx; j <= ex; j++) {
                     int dx = j - x;
                     int dy = i - y;
-                    if(Mathf.Sqrt(dx * dx + dy * dy) <= radius) {
-                        DrawPixel(j, i, col);
+                    if(Mathf.Sqrt(dx * dx + dy * dy) <= iRadius) {
+                        DrawPixel(j, i, iCol);
                     }
                 }
             }
@@ -121,15 +122,15 @@ namespace UCL.Core.TextureLib {
         /// line_func take x as parameter and should return the value of y
         /// y range between 0 ~ 1
         /// </summary>
-        /// <param name="line_func"></param>
-        /// <param name="line_col"></param>
-        virtual public void DrawLine(System.Func<float,float> line_func,Color line_col) {
-            if(line_func == null) return;
+        /// <param name="iLineFunc"></param>
+        /// <param name="iLineCol"></param>
+        virtual public void DrawLine(System.Func<float,float> iLineFunc,Color iLineCol) {
+            if(iLineFunc == null) return;
 
             int prev = 0;
             for(int i = 0; i < m_Size.x; i++) {
                 float at = (i / (float)(m_Size.x - 1));
-                float val = line_func(at);
+                float val = iLineFunc(at);
 
                 int cur = Mathf.RoundToInt(val * m_Size.y);
                 if(i == 0) prev = cur;
@@ -138,7 +139,7 @@ namespace UCL.Core.TextureLib {
 
                 for(int j = 0; j < m_Size.y; j++) {
                     if(j >= min && j <= max) {
-                        SetPixel(i, j, line_col);
+                        SetPixel(i, j, iLineCol);
                     } else {
                         //SetPixel(i, j, background_col);
                         /*

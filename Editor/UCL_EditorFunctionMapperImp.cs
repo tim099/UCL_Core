@@ -72,6 +72,8 @@ namespace UCL.Core.EditorLib
             EditorUtilityMapper.InitSetDirty(EditorUtility.SetDirty);
             EditorUtilityMapper.InitDisplayProgressBar(EditorUtility.DisplayProgressBar);
             EditorUtilityMapper.InitClearProgressBar(EditorUtility.ClearProgressBar);
+            EditorUtilityMapper.InitDisplayCancelableProgressBar(EditorUtility.DisplayCancelableProgressBar);
+            
             #endregion
 
             #region SelectionMapper

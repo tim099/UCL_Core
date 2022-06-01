@@ -27,7 +27,8 @@ namespace UCL.Core.PA
             {
                 var aAttr = attribute as UCL_FolderExplorerAttribute;
                 string aPath = aTargetObject as string;
-                string aNewPath = UCL.Core.UI.UCL_GUILayout.FolderExplorer(m_DataDic, aPath, aAttr.m_FolderRoot, property.displayName);
+                string aNewPath = aAttr.OnGUI(m_DataDic, aPath, property.displayName);
+                //string aNewPath = UCL.Core.UI.UCL_GUILayout.FolderExplorer(m_DataDic, aPath, aAttr.m_FolderRoot, property.displayName);
                 if (aNewPath != aPath)
                 {
                     property.stringValue = aNewPath;

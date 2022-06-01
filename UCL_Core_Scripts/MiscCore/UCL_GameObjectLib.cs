@@ -6,7 +6,13 @@ using UnityEngine;
 
 namespace UCL.Core {
     public static class GameObjectLib {
-        public static T CloneObject<T>(this T iSourceObject) {
+        /// <summary>
+        /// Clone object using refelction
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iSourceObject"></param>
+        /// <returns></returns>
+        public static T ReflectionCloneObject<T>(this T iSourceObject) {
             System.Type aType = iSourceObject.GetType();
             PropertyInfo[] aProperties = aType.GetProperties();
             System.Object aObj = aType.InvokeMember("", System.Reflection.BindingFlags.CreateInstance, null, iSourceObject, null);

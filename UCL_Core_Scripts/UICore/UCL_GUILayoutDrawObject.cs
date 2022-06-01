@@ -549,10 +549,7 @@ namespace UCL.Core.UI
                                         var aFolderExplorerAttribute = aAttr as UCL.Core.PA.UCL_FolderExplorerAttribute;
                                         if (aData == null) aData = "";
                                         string aPath = (string)aData;
-                                        GUILayout.BeginHorizontal();
-                                        var aResult = FolderExplorer(iDataDic.GetSubDic(aField.Name), aPath, aFolderExplorerAttribute.m_FolderRoot, aDisplayName,
-                                            iIsShowFiles: false);
-                                        GUILayout.EndHorizontal();
+                                        var aResult = aFolderExplorerAttribute.OnGUI(iDataDic.GetSubDic(aField.Name), aPath, aDisplayName);
                                         aField.SetValue(iObj, aResult);
                                     }
                                 }

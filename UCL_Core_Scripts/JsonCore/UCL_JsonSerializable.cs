@@ -18,14 +18,14 @@
         {
             var aData = new JsonData();
             aData["ClassName"] = this.GetType().AssemblyQualifiedName;
-            aData["ClassData"] = JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, (iName) => iName.Replace("m_", string.Empty));
+            aData["ClassData"] = JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
             return aData;
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {
             if (iJson.Contains("ClassData"))
             {
-                JsonConvert.LoadDataFromJson(this, iJson["ClassData"], JsonConvert.SaveMode.Unity, (iFName) => iFName.Replace("m_", string.Empty));
+                JsonConvert.LoadDataFromJson(this, iJson["ClassData"], JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
             }
         }
         virtual public UnityJsonSerializableObject CloneObject()
@@ -40,18 +40,11 @@
     {
         virtual public JsonData SerializeToJson()
         {
-            return JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, (iName) => iName.Replace("m_", string.Empty));
+            return JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {
-            JsonConvert.LoadDataFromJson(this, iJson, JsonConvert.SaveMode.Unity, (iFName) => iFName.Replace("m_", string.Empty));
-        }
-        virtual public UnityJsonSerializable CloneObject()
-        {
-            JsonData aData = this.SerializeToJson();
-            var aObject = this.GetType().CreateInstance() as UnityJsonSerializable;
-            aObject.DeserializeFromJson(aData);
-            return aObject;
+            JsonConvert.LoadDataFromJson(this, iJson, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
         }
     }
     public class JsonSerializable : IJsonSerializable

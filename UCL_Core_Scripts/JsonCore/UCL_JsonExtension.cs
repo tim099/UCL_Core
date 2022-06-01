@@ -12,6 +12,20 @@ namespace UCL.Core.JsonLib
         {
             iDst.DeserializeFromJson(iSrc.SerializeToJson());
         }
+        public static IJsonSerializable CloneObject(this IJsonSerializable iTarget)
+        {
+            JsonData aData = iTarget.SerializeToJson();
+            var aObject = iTarget.GetType().CreateInstance() as IJsonSerializable;
+            aObject.DeserializeFromJson(aData);
+            return aObject;
+        }
+        public static T CloneObject<T>(this T iTarget) where T : IJsonSerializable
+        {
+            JsonData aData = iTarget.SerializeToJson();
+            var aObject = (T)iTarget.GetType().CreateInstance();
+            aObject.DeserializeFromJson(aData);
+            return aObject;
+        }
         public static string ToHexString(this object iObj)
         {
             if (iObj == null) return string.Empty;

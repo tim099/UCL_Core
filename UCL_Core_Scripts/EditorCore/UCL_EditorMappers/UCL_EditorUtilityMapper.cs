@@ -124,6 +124,22 @@ namespace UCL.Core.EditorLib
         {
             m_DisplayProgressBar = iDisplayProgressBar;
         }
+        private static Func<string, string, float, bool> m_DisplayCancelableProgressBar = null;
+
+        public static bool DisplayCancelableProgressBar(string title, string info, float progress)
+        {
+            if (m_DisplayCancelableProgressBar == null) return false;
+            return m_DisplayCancelableProgressBar.Invoke(title, info, progress);
+        }
+        /// <summary>
+        /// Displays or updates a progress bar that has a cancel button.
+        /// </summary>
+        /// <param name="iDisplayCancelableProgressBar"></param>
+        public static void InitDisplayCancelableProgressBar(Func<string, string, float, bool> iDisplayCancelableProgressBar)
+        {
+            m_DisplayCancelableProgressBar = iDisplayCancelableProgressBar;
+        }
+
         #endregion
 
         #region ClearProgressBar

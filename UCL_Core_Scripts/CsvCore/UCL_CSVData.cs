@@ -1,10 +1,12 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace UCL.Core.CsvLib {
     [System.Serializable]
     public class CSVRowData {
+        
         public int Count {
             get {
                 if(m_Columes == null) return 0;
@@ -33,19 +35,20 @@ namespace UCL.Core.CsvLib {
     }
     [System.Serializable]
     public class CSVData {
-        public int Count { get {
-                if(m_Rows == null) return 0;
-                return m_Rows.Count;
-            } }
+        /// <summary>
+        /// Row count
+        /// </summary>
+        public int Count => m_Rows == null ? 0 : m_Rows.Count;
         public CSVData()
         {
 
         }
         public CSVData(string iData) {
-            var rows = iData.SplitByLine();
-            for(int i = 0; i < rows.Length; i++) {
-                if(!string.IsNullOrEmpty(rows[i])) {
-                    m_Rows.Add(new CSVRowData(rows[i]));
+            var aSplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
+            var aRows = aSplitLineRegex.Split(iData);//.SplitByLine();
+            for(int i = 0; i < aRows.Length; i++) {
+                if(!string.IsNullOrEmpty(aRows[i])) {
+                    m_Rows.Add(new CSVRowData(aRows[i]));
                 }
             }
         }
@@ -60,7 +63,7 @@ namespace UCL.Core.CsvLib {
                     aSB.Append(aRow.Get(j));
                     aSB.Append(',');
                 }
-                aSB.AppendLine();
+                aSB.Append(@"\r\n");
             }
             return aSB.ToString();
         }

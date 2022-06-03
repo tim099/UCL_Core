@@ -8,7 +8,8 @@ using UnityEngine;
 namespace UCL.Core.LocalizeLib
 {
     [System.Serializable]
-    public class UCL_LocalizeSetting
+    [UCL.Core.ATTR.EnableUCLEditor]
+    public class UCL_LocalizeSetting : UCL.Core.JsonLib.UnityJsonSerializable
     {
         const string DownloadTemplate = "https://docs.google.com/spreadsheets/d/{0}/export?format=csv&gid={1}";
         /// <summary>
@@ -58,6 +59,21 @@ namespace UCL.Core.LocalizeLib
 #endif
             m_IsDownloading = false;
             m_DownloadEndAct?.Invoke(iSuccess);
+        }
+        [UCL.Core.ATTR.UCL_DrawOnGUI]
+        protected void DrawOnGUI()
+        {
+            using(new GUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
+                {
+                    this.Copy();
+                }
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste")))
+                {
+                    this.Paste();
+                }
+            }
         }
         protected bool CheckCancelDownload(string iTitle, string iInfo, float iProgress)
         {
@@ -141,7 +157,7 @@ namespace UCL.Core.LocalizeLib
                         }
                         aDatas[aAt] = aData;
                         float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
-                        if (CheckCancelDownload("Download Localize", "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress))
+                        if (CheckCancelDownload("Download Localize aGid:"+ aGid, "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress))
                         {
                             return;
                         }
@@ -221,6 +237,10 @@ namespace UCL.Core.LocalizeLib
                 if (aGids != null && aGids.Count > 0)
                 {
                     aDownLoadAct();
+                }
+                else
+                {
+                    DownloadEnd(true);
                 }
             }
         }

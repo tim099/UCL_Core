@@ -75,13 +75,28 @@ namespace UCL.Core.LocalizeLib
         /// </summary>
         protected System.Action<bool> m_DownloadEndAct = null;
         protected Regex m_SplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
-#if UNITY_EDITOR
-        [UCL.Core.ATTR.UCL_FunctionButton]
-        public void ExploreSaveFolder()
+        //#if UNITY_EDITOR
+        //        [UCL.Core.ATTR.UCL_FunctionButton]
+        //        public void ExploreSaveFolder()
+        //        {
+        //            m_LocalizeSetting.m_SaveFolder = UCL.Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_LocalizeSetting.m_SaveFolder);
+        //        }
+        //#endif
+        [UCL.Core.ATTR.UCL_DrawOnGUI]
+        protected void DrawOnGUI()
         {
-            m_LocalizeSetting.m_SaveFolder = UCL.Core.FileLib.EditorLib.OpenAssetsFolderExplorer(m_LocalizeSetting.m_SaveFolder);
+            using (new GUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
+                {
+                    m_LocalizeSetting.Copy();
+                }
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste")))
+                {
+                    m_LocalizeSetting = m_LocalizeSetting.Paste();
+                }
+            }
         }
-#endif
         public void StartDownload(System.Action<bool> iEndAct = null)
         {
 #if UNITY_EDITOR

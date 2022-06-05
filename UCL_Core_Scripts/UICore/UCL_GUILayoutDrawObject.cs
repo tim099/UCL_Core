@@ -270,6 +270,7 @@ namespace UCL.Core.UI
                         if (aDeleteAt >= 0)
                         {
                             aList.RemoveAt(aDeleteAt);
+                            iDataDic.Remove("IList", aDeleteAt);
                             iDataDic.SetData(aCountKey, aList.Count);
                         }
                     }

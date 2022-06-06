@@ -12,8 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8eb582bf52b8008448b2cd03f713bea8, type: 3}
   m_Name: LocalizeDownloaderDemo
   m_EditorClassIdentifier: 
-  m_TableId: 1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo
-  m_Gids: 3e1e9d2700000000
-  m_GidTable: -1
-  m_SaveFolder: Assets/UCL/UCL_Core/UCL_CoreDemo/UCL_LocalizeDemo
-  m_FileName: Lang.txt
+  m_LocalizeSetting:
+    m_TableId: 1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo
+    m_Gids: 
+    m_GidTable: 1018481382
+    m_SaveFolder: 
+    m_FileName: Lang.txt

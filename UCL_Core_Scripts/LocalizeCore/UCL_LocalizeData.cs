@@ -15,9 +15,10 @@ namespace UCL.Core.LocalizeLib
         virtual public Dictionary<string, string> GetDic() {
             return m_Dic;
         }
-        virtual public void ParseData(string data) {
+        virtual public void ParseData(string iData) {
+            //Debug.LogError("data:" + iData);
             m_Dic.Clear();
-            using(StringReader reader = new StringReader(data)) {
+            using(StringReader reader = new StringReader(iData)) {
                 var hex = new char[4];
                 bool parsing = true;
                 StringBuilder aStringBuilder = new StringBuilder();

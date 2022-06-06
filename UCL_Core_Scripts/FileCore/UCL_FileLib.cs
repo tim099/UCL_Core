@@ -203,6 +203,50 @@ namespace UCL.Core.FileLib
             return iPath;
         }
         /// <summary>
+        /// return RootFolder Name from input path
+        /// (etc. Resources/Datas this will return Resources)
+        /// </summary>
+        /// <param name="iPath"></param>
+        /// <returns></returns>
+        public static string GetRootFolderName(string iPath)
+        {
+            if (iPath.Length <= 1)
+            {
+                return iPath;
+            }
+            for (int i = 1; i < iPath.Length ; i++)
+            {
+                char aChar = iPath[i];
+                if (aChar == '/' || aChar == '\\')
+                {
+                    return iPath.Substring(0, i);
+                }
+            }
+            return iPath;
+        }
+        /// <summary>
+        /// return SubFolder Name from input path
+        /// (etc. Resources/Datas this will return Datas)
+        /// </summary>
+        /// <param name="iPath"></param>
+        /// <returns></returns>
+        public static string GetSubFolderName(string iPath)
+        {
+            if (iPath.Length <= 1)
+            {
+                return string.Empty;
+            }
+            for (int i = 0; i < iPath.Length - 1; i++)
+            {
+                char aChar = iPath[i];
+                if (aChar == '/' || aChar == '\\')
+                {
+                    return iPath.Substring(i + 1, iPath.Length - i - 1);
+                }
+            }
+            return string.Empty;
+        }
+        /// <summary>
         /// return all folders name in path
         /// </summary>
         /// <param name="iPath"></param>

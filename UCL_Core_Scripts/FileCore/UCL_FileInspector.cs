@@ -1,10 +1,12 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 namespace UCL.Core.FileLib {
     [UCL.Core.ATTR.EnableUCLEditor]
     [CreateAssetMenu(fileName = "New FileInspector", menuName = "UCL/FileInspector")]
-    public class UCL_FileInspector : ScriptableObject, ISerializationCallbackReceiver {
+    public class UCL_FileInspector : ScriptableObject, ISerializationCallbackReceiver, UCL.Core.UCLI_FileExplorer
+    {
 
         [System.Serializable]
         public class FileInformation {
@@ -48,12 +50,12 @@ namespace UCL.Core.FileLib {
             /// 完整檔名 包含副檔名
             /// </summary>
             public string FileName => m_FileName + "." + m_Extension;
+
             /// <summary>
             /// File name, exclude extension
             /// 檔名 不包含副檔名
             /// </summary>
             public string Name => m_FileName;
-
 
 
             /// <summary>
@@ -81,8 +83,11 @@ namespace UCL.Core.FileLib {
             public string m_Path;
             public List<FileInformation> m_FileInfos = new List<FileInformation>();
             public int m_SubDirCount = 0;
+
+            public string Name => m_Name;
+            public string FullPath => m_Path + "/" + m_Name;
         }
-        public class FolderInformation : SerializableFolderInformation
+        public class FolderInformation : SerializableFolderInformation, UCL.Core.UCLI_FileExplorer
         {
             public FolderInformation() { }
             public FolderInformation(string iPath, string iFileFormat, bool iIgnoreMetaFiles) {
@@ -183,7 +188,17 @@ namespace UCL.Core.FileLib {
                 }
                 return new List<FileInformation>();
             }
-
+            public List<string> GetAllFilesName(string iPath)
+            {
+                List<string> aFiles = new List<string>();
+                var aInfos = GetAllFileInfos(iPath);
+                for(int i = 0; i < aInfos.Count; i++)
+                {
+                    aFiles.Add(aInfos[i].Name);
+                }
+                return aFiles;
+            }
+            
             [HideInInspector] public List<FolderInformation> m_FolderInfos = new List<FolderInformation>();
 
             /// <summary>
@@ -217,6 +232,187 @@ namespace UCL.Core.FileLib {
 
                 return null;
             }
+            public List<FolderInformation> GetFolderInfos(SearchOption iSearchOption = SearchOption.AllDirectories)
+            {
+                List<FolderInformation> aFolderInfos = new List<FolderInformation>();
+
+                switch (iSearchOption)
+                {
+                    case SearchOption.TopDirectoryOnly:
+                        {
+                            foreach (var aDir in m_FolderInfos)
+                            {
+                                aFolderInfos.Add(aDir);
+                            }
+                            break;
+                        }
+                    case SearchOption.AllDirectories:
+                        {
+                            foreach (var aDir in m_FolderInfos)
+                            {
+                                aFolderInfos.Add(aDir);
+                                aFolderInfos.Append(aDir.GetFolderInfos(iSearchOption));
+                            }
+                            break;
+                        }
+                }
+                return aFolderInfos;
+            }
+            public List<FileInformation> GetFileInfos(SearchOption iSearchOption = SearchOption.AllDirectories)
+            {
+                List<FileInformation> aFileInfos = new List<FileInformation>();
+
+                switch (iSearchOption)
+                {
+                    case SearchOption.TopDirectoryOnly:
+                        {
+                            foreach (var aFileInfo in m_FileInfos)
+                            {
+                                aFileInfos.Add(aFileInfo);
+                            }
+                            break;
+                        }
+                    case SearchOption.AllDirectories:
+                        {
+                            foreach (var aFileInfo in m_FileInfos)
+                            {
+                                aFileInfos.Add(aFileInfo);
+                            }
+                            foreach (var aDir in m_FolderInfos)
+                            {
+                                aFileInfos.Append(aDir.GetFileInfos(iSearchOption));
+                            }
+                            break;
+                        }
+                }
+                return aFileInfos;
+            }
+            #region Interface
+            virtual public bool DirectoryExists(string iPath)
+            {
+                if (string.IsNullOrEmpty(iPath))//this dir
+                {
+                    return true;
+                }
+                //m_FolderInfos
+                var aRootFolderName = UCL.Core.FileLib.Lib.GetRootFolderName(iPath);
+                foreach(var aFolder in m_FolderInfos)
+                {
+                    if(aFolder.m_Name == aRootFolderName)
+                    {
+                        if (aRootFolderName == iPath) return true;//Target folder find!!
+                        
+                        string aSubFolderPath = UCL.Core.FileLib.Lib.GetSubFolderName(iPath);
+                        //Debug.LogError("aSubFolderPath:"+ aSubFolderPath);
+                        return aFolder.DirectoryExists(aSubFolderPath);
+                    }
+                }
+                //Debug.LogError("!DirectoryExists iPath:" + iPath+ ",aRootFolderName:"+ aRootFolderName
+                    //+ ",m_FolderInfos:"+ m_FolderInfos.ConcatString((iFolderInfo)=>iFolderInfo.m_Name));
+                return false;
+            }
+            /// <summary>
+            /// Returns the names of the subdirectories (including their paths) 
+            /// that match the specified search pattern in the specified directory, and optionally searches subdirectories.
+            /// </summary>
+            /// <param name="iPath">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
+            /// <param name="iSearchPattern">The search string to match against the names of subdirectories in path.
+            /// This parameter can contain a combination of valid literal and wildcard characters, but it doesn't support regular expressions.</param>
+            /// <param name="iSearchOption">One of the enumeration values that specifies whether the search operation 
+            /// should include all subdirectories or only the current directory.</param>
+            /// <returns></returns>
+            virtual public string[] GetDirectories(string iPath, string iSearchPattern = "*",
+                    SearchOption iSearchOption = SearchOption.AllDirectories, bool iRemoveRootPath = false)
+            {
+                if (!string.IsNullOrEmpty(iPath))
+                {
+                    if (!DirectoryExists(iPath)) return new string[0];
+                    var aRootFolderName = UCL.Core.FileLib.Lib.GetRootFolderName(iPath);
+                    foreach (var aFolder in m_FolderInfos)
+                    {
+                        if (aFolder.Name == aRootFolderName)
+                        {
+                            string aSubDir = string.Empty;
+                            if(iPath.Length > aRootFolderName.Length) aSubDir = UCL.Core.FileLib.Lib.GetSubFolderName(iPath);
+                            //Debug.LogError("aSubDir:" + aSubDir);
+                            return aFolder.GetDirectories(aSubDir, iSearchPattern, iSearchOption, iRemoveRootPath);
+                        }
+                    }
+                    return new string[0];//Folder Not Find!!
+                }
+
+
+                List<FolderInformation> aFolderInfos = GetFolderInfos(iSearchOption);
+
+                var aDirs = new string[aFolderInfos.Count];//Directory.GetDirectories(iPath, iSearchPattern, iSearchOption);
+                if (iRemoveRootPath)
+                {
+                    for (int i = 0; i < aDirs.Length; i++)
+                    {
+                        aDirs[i] = aFolderInfos[i].Name;//FileLib.Lib.GetFolderName(aDirs[i]);
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < aDirs.Length; i++)
+                    {
+                        aDirs[i] = aFolderInfos[i].FullPath;//FileLib.Lib.GetFolderName(aDirs[i]);
+                    }
+                }
+                //Debug.LogError("iPath:"+ iPath + ",aDirs:" + aDirs.ConcatString());
+                return aDirs;
+            }
+            /// <summary>
+            /// Returns the names of files (including their paths) that match the specified search pattern in the specified directory.
+            /// </summary>
+            /// <param name="iPath">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
+            /// <param name="iSearchPattern">The search string to match against the names of files in path. This parameter can contain a combination of valid literal path
+            /// and wildcard (* and ?) characters, but it doesn't support regular expressions.</param>
+            /// <returns></returns>
+            virtual public string[] GetFiles(string iPath, string iSearchPattern = "*", SearchOption iSearchOption = SearchOption.TopDirectoryOnly,
+                bool iRemoveRootPath = false)
+            {
+                if (!DirectoryExists(iPath))
+                {
+                    Debug.LogError("!DirectoryExists iPath:" + iPath);
+                    return new string[0];
+                }
+                if (!string.IsNullOrEmpty(iPath))
+                {
+                    var aRootFolderName = UCL.Core.FileLib.Lib.GetRootFolderName(iPath);
+                    foreach (var aFolder in m_FolderInfos)
+                    {
+                        if (aFolder.Name == aRootFolderName)
+                        {
+                            string aSubDir = string.Empty;
+                            if (iPath.Length > aRootFolderName.Length) aSubDir = UCL.Core.FileLib.Lib.GetSubFolderName(iPath);
+                            //Debug.LogError("aSubDir:" + aSubDir);
+                            return aFolder.GetFiles(aSubDir, iSearchPattern, iSearchOption, iRemoveRootPath);
+                        }
+                    }
+                    Debug.LogError("Folder Not Find!!aRootFolderName:" + aRootFolderName+ ",iPath:"+ iPath);
+                    return new string[0];//Folder Not Find!!
+                }
+                var aFileInfos = GetFileInfos(iSearchOption);
+
+                var aFilePaths = new string[aFileInfos.Count];//Directory.GetFiles(iPath, iSearchPattern, iSearchOption);
+                if (iRemoveRootPath)
+                {
+                    for (int i = 0; i < aFileInfos.Count; i++)
+                    {
+                        aFilePaths[i] = aFileInfos[i].FileName;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < aFileInfos.Count; i++)
+                    {
+                        aFilePaths[i] = aFileInfos[i].FullPath;
+                    }
+                }
+                return aFilePaths;
+            }
+            #endregion
         }
         /// <summary>
         /// ignore the meta files in dir
@@ -312,6 +508,33 @@ namespace UCL.Core.FileLib {
             return FolderInformations.GetFileInfo(iFileName);
         }
         public List<FileInformation> GetAllFileInfos(string iPath) => FolderInformations.GetAllFileInfos(iPath);
+        public List<string> GetAllFilesName(string iPath) => FolderInformations.GetAllFilesName(iPath);
+
+        #region Interface
+        virtual public bool DirectoryExists(string iPath) => FolderInformations.DirectoryExists(iPath);
+        /// <summary>
+        /// Returns the names of the subdirectories (including their paths) 
+        /// that match the specified search pattern in the specified directory, and optionally searches subdirectories.
+        /// </summary>
+        /// <param name="iPath">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
+        /// <param name="iSearchPattern">The search string to match against the names of subdirectories in path.
+        /// This parameter can contain a combination of valid literal and wildcard characters, but it doesn't support regular expressions.</param>
+        /// <param name="iSearchOption">One of the enumeration values that specifies whether the search operation 
+        /// should include all subdirectories or only the current directory.</param>
+        /// <returns></returns>
+        virtual public string[] GetDirectories(string iPath, string iSearchPattern = "*",
+                SearchOption iSearchOption = SearchOption.AllDirectories, bool iRemoveRootPath = false)
+            => FolderInformations.GetDirectories(iPath, iSearchPattern, iSearchOption, iRemoveRootPath);
+        /// <summary>
+        /// Returns the names of files (including their paths) that match the specified search pattern in the specified directory.
+        /// </summary>
+        /// <param name="iPath">The relative or absolute path to the directory to search. This string is not case-sensitive.</param>
+        /// <param name="iSearchPattern">The search string to match against the names of files in path. This parameter can contain a combination of valid literal path
+        /// and wildcard (* and ?) characters, but it doesn't support regular expressions.</param>
+        /// <returns></returns>
+        virtual public string[] GetFiles(string iPath, string iSearchPattern = "*", SearchOption iSearchOption = SearchOption.TopDirectoryOnly,
+            bool iRemoveRootPath = false) => FolderInformations.GetFiles(iPath, iSearchPattern, iSearchOption, iRemoveRootPath);
+        #endregion
     }
 }
 

@@ -16,6 +16,7 @@ namespace UCL.Core.PA
     {
         public ExplorerType m_ExplorerType = ExplorerType.None;
         public string m_FolderRoot = string.Empty;
+        public UCL.Core.UCLI_FileExplorer m_FileExplorer = null;
         public UCL_FolderExplorerAttribute()
         {
             Init(ExplorerType.AssetsRoot);
@@ -27,14 +28,41 @@ namespace UCL.Core.PA
         {
             m_FolderRoot = iFolderRoot;
         }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="iType">Type of the Target Class</param>
+        /// <param name="iFuncName">Static function of iType that return the folder root(string) or UCL.Core.UCLI_FileExplorer</param>
         public UCL_FolderExplorerAttribute(Type iType, string iFuncName)
+        {
+            Init(iType, iFuncName);
+        }
+        public UCL_FolderExplorerAttribute(Type iType, string iFuncName, string iFolderRoot)
+        {
+            Init(iType, iFuncName);
+            m_FolderRoot = iFolderRoot;
+        }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="iType">Type of the Target Class</param>
+        /// <param name="iFuncName">Static function of iType that return the folder root(string) or UCL.Core.UCLI_FileExplorer</param>
+        public void Init(Type iType, string iFuncName)
         {
             var aMethod = iType.GetMethod(iFuncName);
             if (aMethod != null)
             {
                 try
                 {
-                    m_FolderRoot = aMethod.Invoke(null, null) as string;
+                    var aResult = aMethod.Invoke(null, null);
+                    if (aResult is string)
+                    {
+                        m_FolderRoot = aResult as string;
+                    }
+                    else if (aResult is UCL.Core.UCLI_FileExplorer)
+                    {
+                        m_FileExplorer = aResult as UCL.Core.UCLI_FileExplorer;
+                    }
                 }
                 catch (Exception iE)
                 {
@@ -83,7 +111,7 @@ namespace UCL.Core.PA
         public string OnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iPath, string iDisplayName = "Folder Explorer")
         {
             var aResult = UCL.Core.UI.UCL_GUILayout.FolderExplorer(iDataDic, iPath, m_FolderRoot, iDisplayName,
-                iIsShowFiles: false);
+                iIsShowFiles: false, iFileExplorer : m_FileExplorer);
             return aResult;
         }
     }

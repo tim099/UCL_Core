@@ -201,9 +201,9 @@ namespace UCL.Core.UI {
             }
             return iVal;
         }
-        static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, int iSize = 21)
+        static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, int iSize = 21, bool iDefaultValue = false)
         {
-            bool iVal = iObjectDic.GetData(iKey, false);
+            bool iVal = iObjectDic.GetData(iKey, iDefaultValue);
             if (GUILayout.Button(iVal ? "▼" : "►", GUILayout.Width(iSize), GUILayout.Height(iSize)))
             {
                 iVal = !iVal;

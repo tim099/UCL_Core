@@ -246,14 +246,20 @@ namespace UCL.Core.UI
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="iEnum"></param>
-        /// <param name="iIsOpened"></param>
         /// <returns></returns>
-        public static T Popup<T>(T iEnum, ref bool iIsOpened) where T : System.Enum
+        public static T PopupAuto<T>(T iEnum, UCL_ObjectDictionary iDataDic, string iKey,
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions) where T : System.Enum
         {
             System.Type aType = iEnum.GetType();
             var aNames = System.Enum.GetNames(aType);
+            var aDisplayNames = new string[aNames.Length];
+            string aTypeName = aType.Name;
+            for (int i = 0; i < aNames.Length; i++)
+            {
+                aDisplayNames[i] = UCL_LocalizeLib.GetEnumLocalize(aTypeName, aNames[i]);
+            }
             int aID = aNames.GetIndex(iEnum.ToString());
-            aID = Popup(aID, aNames, ref iIsOpened);
+            aID = PopupAuto(aID, aDisplayNames, iDataDic, iKey, iSearchThreshold, iOptions);
             return (T)System.Enum.Parse(aType, aNames[aID], true);
         }
         public static Color SelectColor(Color iColor)

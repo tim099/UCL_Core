@@ -249,10 +249,6 @@ namespace UCL.Core.UI
                                     }
                                 }
                                 string aDisplayName = aListData.UCL_GetShortName(aListData != null? aListData.GetType().Name : aTypeName);
-                                if (aListData!= null)
-                                {
-
-                                }
                                 var aResult = DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++),
                                     aDisplayName, iFieldNameFunc: iFieldNameFunc, iFieldType: aListType);
                                 aResultList.Add(aResult);
@@ -340,26 +336,31 @@ namespace UCL.Core.UI
 
                         }
 
-
+                        var aValueType = aType.GetGenericValueType();
                         object aDeleteAt = null;
+                        string aDeleteKeyName = string.Empty;
                         List<Tuple<object, object>> aResultList = new List<Tuple<object, object>>();
                         foreach (var aKey in aDic.Keys)
                         {
                             using (new GUILayout.HorizontalScope("box"))
                             {
+                                string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
                                 if (aIsDelete)
                                 {
                                     if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
                                     {
                                         aDeleteAt = aKey;
+                                        aDeleteKeyName = "Dic_" + aKeyName;
                                     }
                                 }
                                 using(new GUILayout.VerticalScope())
                                 {
-                                    string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
+                                    
+                                    var aSubDic = iDataDic.GetSubDic("Dic_" + aKeyName);
+                                    var aDicData = aDic[aKey];
+                                    string aDisplayName = aDicData.UCL_GetShortName(aDicData != null ? aDicData.GetType().Name : aValueType.Name);
                                     GUILayout.Label(aKeyName);
-                                    aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDic[aKey],
-                                        iDataDic.GetSubDic(iDisplayName + "Dic_" + aKeyName), aKeyName, iFieldNameFunc: iFieldNameFunc)));
+                                    aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
                                 }
                             }
                         }
@@ -370,6 +371,7 @@ namespace UCL.Core.UI
                         if (aDeleteAt != null)
                         {
                             aDic.Remove(aDeleteAt);
+                            iDataDic.Remove(aDeleteKeyName);
                         }
                     }
                     GUILayout.EndVertical();

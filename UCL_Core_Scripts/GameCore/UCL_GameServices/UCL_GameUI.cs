@@ -35,7 +35,7 @@ namespace UCL.Core.Game
             }
             
             UCL.Core.Game.UCL_UIService.Ins.OnUIClosed(this);
-            Destroy(gameObject);
+            if(gameObject != null) Destroy(gameObject);
         }
         /// <summary>
         /// When Input.GetKey(KeyCode.Escape) == true

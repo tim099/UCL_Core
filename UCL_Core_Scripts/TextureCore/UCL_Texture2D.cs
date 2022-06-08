@@ -73,6 +73,11 @@ namespace UCL.Core.TextureLib {
                 m_Texture = null;
                 //GameObject.Destroy();
             }
+            if(m_Sprite != null)
+            {
+                Sprite.DestroyImmediate(m_Sprite);
+                m_Sprite = null;
+            }
         }
         virtual public void Init(Texture2D iTexture)
         {

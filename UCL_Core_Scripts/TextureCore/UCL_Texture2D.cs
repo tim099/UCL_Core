@@ -8,13 +8,11 @@ namespace UCL.Core.TextureLib {
         public int width { get { return m_Size.x; } }
         public int height { get { return m_Size.y; } }
         public TextureFormat m_TextureFormat = TextureFormat.ARGB32;
-        public Texture2D texture{ get {
-                return GetTexture();
-            }
-        }
+        public Texture2D Texture => m_Texture;
         public Sprite sprite {
             get {
-                return GetSprite();
+                if (m_Sprite == null) m_Sprite = Core.TextureLib.Lib.CreateSprite(m_Texture);
+                return m_Sprite;
             }
         }
         protected Texture2D m_Texture;
@@ -50,6 +48,14 @@ namespace UCL.Core.TextureLib {
         public UCL_Texture2D() {
 
         }
+        public UCL_Texture2D(byte[] iBytes)
+        {
+            Init(UCL.Core.TextureLib.Lib.CreateTexture(iBytes));
+        }
+        public UCL_Texture2D(Texture2D iTexture)
+        {
+            Init(iTexture);
+        }
         public UCL_Texture2D(int width, int height, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
             Init(new Vector2Int(width, height), _TextureFormat);
         }
@@ -60,12 +66,18 @@ namespace UCL.Core.TextureLib {
             ClearTexture();
         }
         public void ClearTexture() {
-            if(m_Texture != null) {
+            Debug.LogWarning("ClearTexture()!!");
+            if (m_Texture != null) {
                 //Debug.LogWarning("GameObject.Destroy Not working, Memory leak!!");
                 Texture2D.DestroyImmediate(m_Texture);
                 m_Texture = null;
                 //GameObject.Destroy();
             }
+        }
+        virtual public void Init(Texture2D iTexture)
+        {
+            m_Texture = iTexture;
+            Init(new Vector2Int(iTexture.width, iTexture.height), iTexture.format);
         }
         virtual public void Init(Vector2Int size, TextureFormat _TextureFormat = TextureFormat.ARGB32) {
             m_Size = size;

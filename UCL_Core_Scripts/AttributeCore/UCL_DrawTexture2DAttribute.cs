@@ -46,7 +46,7 @@ namespace UCL.Core.ATTR {
                 aTex = GetTexture();
                 iMethodInfo.Invoke(iTarget, new object[] { aTex });
             }
-            if (aTex != null) GUILayout.Box(aTex.texture);
+            if (aTex != null) GUILayout.Box(aTex.GetTexture());
         }
         ~UCL_DrawTexture2DAttribute() {
             //m_Count--;

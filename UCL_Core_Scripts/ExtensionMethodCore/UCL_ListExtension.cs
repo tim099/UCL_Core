@@ -248,3 +248,24 @@ public static partial class ListExtensionMethods {
     }
 }
 
+public static partial class DictionaryExtensionMethods
+{
+    public static string ConcatString<T,T2>(this IDictionary<T, T2> iDic, System.Func<T, T2, string> iFunc, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
+        foreach (var aKey in iDic.Keys)
+        {
+            if (aIsFirst) aIsFirst = false;
+            else aSB.Append(iSeperator);
+            aSB.Append(iFunc(aKey, iDic[aKey]));
+
+        }
+        return aSB.ToString();
+    }
+    public static string ConcatString<T, T2>(this IDictionary<T, T2> iDic, string iSeperator = ", ")
+    {
+        return iDic.ConcatString((iKey, iEnement) => string.Format("({0}:{1})", iKey.ToString() , iEnement.ToString()), iSeperator);
+    }
+}
+

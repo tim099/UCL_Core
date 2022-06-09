@@ -113,6 +113,27 @@ public static partial class TransformExtensionMethods {
         }
 
     }
+    public static void SetAnchorPositionScreenSpace(this RectTransform iRectTransform, Vector2 iRectPos)
+    {
+        var aCanvas = iRectTransform.GetComponentInParent<Canvas>();
+        if (aCanvas == null || aCanvas.renderMode == RenderMode.ScreenSpaceOverlay)
+        {
+            Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+            Vector2 aPos = iRectPos;// + (aSize * iRectTransform.pivot);
+            aPos.y = Screen.height - aPos.y;
+            iRectTransform.position = aPos;
+        }
+        else
+        {
+            var aCamera = aCanvas.worldCamera;
+            if (aCamera == null) aCamera = Camera.main;
+            Vector3 aWorldPoint;
+            Vector2 aSize = Vector2.Scale(iRectTransform.rect.size, iRectTransform.lossyScale);
+            iRectPos.y = Screen.height - iRectPos.y;// - aSize.y
+            RectTransformUtility.ScreenPointToWorldPointInRectangle(iRectTransform, iRectPos, aCamera, out aWorldPoint);
+            iRectTransform.position = aWorldPoint;
+        }
+    }
     public static void SetPositionScreenSpace(this RectTransform iRectTransform, Vector2 iRectPos)
     {
         var aCanvas = iRectTransform.GetComponentInParent<Canvas>();

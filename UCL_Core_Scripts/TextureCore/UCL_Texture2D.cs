@@ -66,7 +66,7 @@ namespace UCL.Core.TextureLib {
             ClearTexture();
         }
         public void ClearTexture() {
-            Debug.LogWarning("ClearTexture()!!");
+            //Debug.LogWarning("ClearTexture()!!");
             if (m_Texture != null) {
                 //Debug.LogWarning("GameObject.Destroy Not working, Memory leak!!");
                 Texture2D.DestroyImmediate(m_Texture);

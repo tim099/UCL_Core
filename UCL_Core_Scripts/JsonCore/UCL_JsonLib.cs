@@ -147,18 +147,26 @@ namespace UCL.Core.JsonLib {
             }
             else if (typeof(UnityJsonSerializableObject).IsAssignableFrom(iType))
             {
-                string aClassName = iData.GetString("ClassName");
-                Type aClassType = Type.GetType(aClassName);
-                if (aClassType != null)
+                try
                 {
-                    JsonData aClassData = iData.GetString("ClassData");
-                    UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;
-                    aObj.DeserializeFromJson(iData);
-                    return aObj;
+                    string aClassName = iData.GetString("ClassName");
+                    Type aClassType = Type.GetType(aClassName);
+                    if (aClassType != null)
+                    {
+                        JsonData aClassData = iData.GetString("ClassData");
+                        UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;
+                        aObj.DeserializeFromJson(iData);
+                        return aObj;
+                    }
+                    else
+                    {
+                        Debug.LogError("DataToObject aClassName:" + aClassName + ", Type not found!");
+                        return null;
+                    }
                 }
-                else
+                catch(System.Exception iE)
                 {
-                    Debug.LogError("DataToObject aClassName:" + aClassName + ", Type not found!");
+                    Debug.LogException(iE);
                     return null;
                 }
             }

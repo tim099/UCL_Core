@@ -33,7 +33,7 @@ namespace UCL.Core.PA
             var aTargetObject = property.GetValue();
             if (aTargetObject != null)
             {
-                UCL.Core.UI.IFieldOnGUI aOnGUI = aTargetObject as UCL.Core.UI.IFieldOnGUI;
+                UCL.Core.UI.UCLI_FieldOnGUI aOnGUI = aTargetObject as UCL.Core.UI.UCLI_FieldOnGUI;
                 if (aOnGUI != null)
                 {
                     EditorGUI.BeginProperty(position, GUIContent.none, property);

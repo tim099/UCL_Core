@@ -11,5 +11,9 @@ namespace UCL.Core
     {
         IList<System.Type> GetAllTypes();
     }
+    public interface UCLI_GetTypeName
+    {
+        string GetTypeName(string iName);
+    }
 }
 

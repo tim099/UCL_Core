@@ -361,21 +361,21 @@ namespace UCL.Core.UI
         /// <param name="iEnum"></param>
         /// <param name="iIsOpened"></param>
         /// <returns></returns>
-        public static T PopupAuto<T>(T iEnum, System.Func<string, string> iGetDisplayName, UCL_ObjectDictionary iDataDic,
+        public static T PopupAuto<T>(T iEnum, UCL_ObjectDictionary iDataDic,
             int iSearchThreshold = 10, params GUILayoutOption[] iOptions) where T : System.Enum
         {
             System.Type aType = iEnum.GetType();
-            var aNames = System.Enum.GetNames(aType);
-            var aDisplayNames = new string[aNames.Length];
-            for (int i = 0; i < aNames.Length; i++)
+            var aEnums = System.Enum.GetValues(aType);
+            var aDisplayNames = new string[aEnums.Length];
+            for (int i = 0; i < aEnums.Length; i++)
             {
-                aDisplayNames[i] = iGetDisplayName(aNames[i]);
+                aDisplayNames[i] = ((System.Enum)aEnums.GetValue(i)).GetLocalizeEnumName();
             }
 
-            int aID = PopupAuto(aDisplayNames, aNames.GetIndex(iEnum.ToString()), iDataDic, "Popup", iSearchThreshold);
+            int aID = PopupAuto(aDisplayNames, aEnums.GetArrayIndex(iEnum), iDataDic, "Popup", iSearchThreshold);
 
-            T aRes = (T)System.Enum.Parse(aType, aNames[aID], true);
-            return aRes;
+            //T aRes = (T)System.Enum.Parse(aType, aNames[aID], true);
+            return (T)aEnums.GetValue(aID);
         }
         #endregion
     }

@@ -6,7 +6,7 @@ using UCL.Core.LocalizeLib;
 using UnityEngine;
 
 namespace UCL.Core.UI {
-    public interface IFieldOnGUI
+    public interface UCLI_FieldOnGUI
     {
         /// <summary>
         /// return true if the data of field altered

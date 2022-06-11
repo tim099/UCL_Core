@@ -173,6 +173,22 @@ public static partial class ListExtensionMethods {
         return -1;
     }
     /// <summary>
+    /// Return the index of target in Array
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iArray">Target Array</param>
+    /// <param name="iTarget">Target to find index</param>
+    /// <returns>return the index if iTarget, return 0 if not found Target in list</returns>
+    public static int GetArrayIndex<T>(this System.Array iArray, T iTarget)
+    {
+        if (iArray.Length == 0) return 0;
+        for (int i = 0; i < iArray.Length; i++)
+        {
+            if (iArray.GetValue(i).Equals(iTarget)) return i;
+        }
+        return 0;
+    }
+    /// <summary>
     /// Get element inside iList
     /// </summary>
     /// <typeparam name="T"></typeparam>

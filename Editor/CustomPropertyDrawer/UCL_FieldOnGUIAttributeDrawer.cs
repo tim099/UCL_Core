@@ -38,13 +38,13 @@ namespace UCL.Core.PA
                 {
                     EditorGUI.BeginProperty(position, GUIContent.none, property);
                     GUILayout.BeginVertical();
-                    aOnGUI.OnGUI(label.text, m_ObjectDictionary);
+                    var aResult = aOnGUI.OnGUI(label.text, m_ObjectDictionary);
                     GUILayout.EndVertical();
                     //if (iIsGetPropertyHeight) m_DrawRect = GUILayoutUtility.GetLastRect();
                     m_IsDrawed = true;
                     if (!iIsGetPropertyHeight)
                     {
-                        property.SetValue(aOnGUI);
+                        property.SetValue(aResult);
                     }
                     EditorGUI.EndProperty();
                 }

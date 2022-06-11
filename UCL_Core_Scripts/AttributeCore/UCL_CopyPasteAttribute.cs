@@ -17,6 +17,11 @@ namespace UCL.Core
         public static System.Type s_CopyType = null;
         public static bool HasCopyData(System.Type iType)
         {
+            //if(s_CopyType != null && iType != null)
+            //{
+            //    Debug.LogError("s_CopyType:" + s_CopyType.Name + ",iType:" + iType.Name +
+            //        ",iType.IsAssignableFrom(s_CopyType):" + iType.IsAssignableFrom(s_CopyType));
+            //}
             if (s_CopyType == null || iType == null || !iType.IsAssignableFrom(s_CopyType)) return false;
             return true;
         }
@@ -63,7 +68,7 @@ namespace UCL.Core
 
             s_CopyType = iData.GetType();
             s_CopyData = JsonConvert.SaveDataToJson(iData, iSaveMode);
-
+            //Debug.LogError("SetCopyData s_CopyType:" + s_CopyType.Name + ",s_CopyData:" + s_CopyData.ToJsonBeautify());
         }
     }
 }

@@ -45,10 +45,7 @@ namespace UCL.Core.UI
                 if (iObj is UCLI_FieldOnGUI)
                 {
                     UCLI_FieldOnGUI aVar = (UCLI_FieldOnGUI)iObj;
-                    if (aVar.OnGUI(iDisplayName, iDataDic))
-                    {
-                        //aField.SetValue(iObj, aVar);
-                    }
+                    aResultObj = iObj = aVar.OnGUI(iDisplayName, iDataDic);
                 }
                 else if (aType.IsEnum)
                 {
@@ -437,6 +434,7 @@ namespace UCL.Core.UI
             bool aIsShowField = true;
             object aResultObj = iObj;
             Type aType = iObj.GetType();
+            if (iFieldType == null) iFieldType = aType;
             GUILayout.BeginHorizontal();
             if (!iIsAlwaysShowDetail) aIsShowField = UCL_GUILayout.Toggle(iDataDic, "IsShowField");
             else aIsShowField = true;
@@ -653,10 +651,7 @@ namespace UCL.Core.UI
                         else if (aData is UCLI_FieldOnGUI)
                         {
                             UCLI_FieldOnGUI aVar = (UCLI_FieldOnGUI)aData;
-                            if (aVar.OnGUI(aDisplayName, iDataDic.GetSubDic(aField.Name)))
-                            {
-                                aField.SetValue(iObj, aVar);
-                            }
+                            aField.SetValue(iObj, aVar.OnGUI(aDisplayName, iDataDic.GetSubDic(aField.Name)));
                         }
                         else if (aData.IsNumber())
                         {

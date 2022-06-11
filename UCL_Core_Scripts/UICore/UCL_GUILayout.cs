@@ -9,12 +9,12 @@ namespace UCL.Core.UI {
     public interface UCLI_FieldOnGUI
     {
         /// <summary>
-        /// return true if the data of field altered
+        /// return new data if the data of field altered
         /// </summary>
         /// <param name="iFieldName"></param>
         /// <param name="iEditTmpDatas"></param>
         /// <returns></returns>
-        bool OnGUI(string iFieldName, UCL_ObjectDictionary iEditTmpDatas);
+        object OnGUI(string iFieldName, UCL_ObjectDictionary iEditTmpDatas);
     }
 
     static public partial class UCL_GUILayout {

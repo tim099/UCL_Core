@@ -44,11 +44,13 @@ namespace UCL.Core.UI
                 }
                 if (iObj is UCLI_FieldOnGUI)
                 {
+                    aIsShowField = false;
                     UCLI_FieldOnGUI aVar = (UCLI_FieldOnGUI)iObj;
                     aResultObj = iObj = aVar.OnGUI(iDisplayName, iDataDic);
                 }
                 else if (aType.IsEnum)
                 {
+                    aIsShowField = false;
                     GUILayout.BeginHorizontal();
                     if (!string.IsNullOrEmpty(iDisplayName)) LabelAutoSize(iDisplayName);
                     string aTypeName = aType.Name;
@@ -389,6 +391,7 @@ namespace UCL.Core.UI
                 }
                 else if (iObj is Color)
                 {
+                    aIsShowField = false;
                     var aOriginCol = (Color)iObj;
                     using (new GUILayout.HorizontalScope())
                     {
@@ -402,13 +405,14 @@ namespace UCL.Core.UI
                         GUILayout.EndVertical();
                     }
                 }
-                else if (iObj.GetType().IsStructOrClass())
+                else if (aType.IsStructOrClass())
                 {
                     aIsDefaultType = false;
                 }
             }
-            if (!aIsDefaultType)
+            if (aIsShowField && !aIsDefaultType)
             {
+                //GUILayout.Label("!aIsDefaultType:" + aResultObj.GetType().Name);
                 aResultObj = DrawField(aResultObj, iDataDic, iDisplayName, iIsAlwaysShowDetail, iFieldNameFunc, iFieldType);
             }
 

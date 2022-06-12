@@ -38,30 +38,28 @@ namespace UCL.Core.JsonLib {
         const int MaxParsingLayer = 100;
 
         /// <summary>
-        /// Convert Json into object
-        /// 將Json轉換成物件
-        /// </summary>
-        /// <param name="iJson"></param>
-        /// <returns></returns>
-        static public object JsonToObject(string iJson, SaveMode iSaveMode = SaveMode.Normal) {
-            return JsonToObject(JsonData.ParseJson(iJson), iSaveMode);
-        }
-        /// <summary>
         /// Convert JsonData into object
         /// 將JsonData轉換成物件
         /// </summary>
         /// <param name="iData"></param>
         /// <returns></returns>
-        static public object JsonToObject(JsonData iData, SaveMode iSaveMode = SaveMode.Normal) {
+        static public object JsonToObject(JsonData iData, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null) {
             if(!iData.Contains("ClassName") || !iData.Contains("ClassData")) {
                 Debug.LogError("JsonToObject !iData.Contains(ClassName) || !iData.Contains(ClassData)");
                 return null;
             }
             string aClassName = iData.GetString("ClassName");
             Type aClassType = Type.GetType(aClassName);
-            JsonData aClassData = iData.GetString("ClassData");
+            JsonData aClassData = iData["ClassData"];
             object aObj = aClassType.CreateInstance();//Activator.CreateInstance();
-            LoadDataFromJson(aObj, aClassData, iSaveMode);
+            if (aObj is IJsonSerializable)
+            {
+                ((IJsonSerializable)aObj).DeserializeFromJson(aClassData);
+            }
+            else
+            {
+                LoadDataFromJson(aObj, aClassData, iSaveMode, iFieldNameAlterFunc);
+            }
             return aObj;
             //return JsonUtility.FromJson(aClassData.ToJson(), aClassType);
         }
@@ -70,25 +68,22 @@ namespace UCL.Core.JsonLib {
         /// </summary>
         /// <param name="iObj"></param>
         /// <returns></returns>
-        static public JsonData ObjectToJson(object iObj, SaveMode iSaveMode = SaveMode.Normal) {
+        static public JsonData ObjectToJson(object iObj, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null) {
             JsonData aData = new JsonData();
             aData["ClassName"] = iObj.GetType().AssemblyQualifiedName;
-            aData["ClassData"] = SaveDataToJson(iObj, iSaveMode);
+            JsonData aClassData = null;
+            if(iObj is IJsonSerializable)
+            {
+                aClassData = ((IJsonSerializable)iObj).SerializeToJson();
+            }
+            else
+            {
+                aClassData = SaveDataToJson(iObj, iSaveMode, iFieldNameAlterFunc);
+            }
+            aData["ClassData"] = aClassData;
             return aData;
         }
-        /// <summary>
-        /// Load List of <T> from Json
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="iData"></param>
-        /// <returns></returns>
-        static public List<T> LoadListFromJson<T>(JsonData iData, SaveMode iSaveMode = SaveMode.Normal) where T : new() {
-            List<T> aList = new List<T>();
-            for(int i = 0; i < iData.Count; i++) {
-                aList.Add(LoadDataFromJson<T>(iData[i], iSaveMode));
-            }
-            return aList;
-        }
+
         /// <summary>
         /// Load data from Json
         /// </summary>
@@ -135,9 +130,10 @@ namespace UCL.Core.JsonLib {
         }
         /// <summary>
         /// Create Object using JsonData
+        /// 根據傳入的Type與JsonData生成物件
         /// </summary>
         /// <param name="iData"></param>
-        /// <param name="iType"></param>
+        /// <param name="iType">type of objet</param>
         /// <returns></returns>
         static object DataToObject(JsonData iData, Type iType, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
         {
@@ -308,13 +304,30 @@ namespace UCL.Core.JsonLib {
         /// <param name="iFieldNameAlterFunc">Input is the original fieldname, and return the name you want to save as json key</param>
         static public void SaveDataToJson(object iObj, JsonData iData, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
         {
+            
+            Type aType = iObj.GetType();
+            //Debug.LogError("SaveDataToJson:" +aType.Name);
             if (iObj is IList)
             {
                 IList aList = iObj as IList;
-                foreach (var aItem in aList)
+                var aItemType = aType.GetGenericValueType();
+                //Debug.LogError("aItemType:" + aItemType.Name);
+                if (typeof(UCLI_TypeList).IsAssignableFrom(aItemType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aItemType))
                 {
-                    iData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
+                    //Debug.LogError("typeof(UCLI_TypeList).IsAssignableFrom(aItemType) aItemType:" + aItemType.Name);
+                    foreach (var aItem in aList)
+                    {
+                        iData.Add(ObjectToJson(aItem, iSaveMode, iFieldNameAlterFunc));
+                    }
                 }
+                else
+                {
+                    foreach (var aItem in aList)
+                    {
+                        iData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
+                    }
+                }
+
                 return;
             } else if(iObj is IDictionary)
             {
@@ -323,10 +336,10 @@ namespace UCL.Core.JsonLib {
                 {
                     iData[aKey.ConvertToJsonSafeString()] = ObjectToData(aDic[aKey], iSaveMode, iFieldNameAlterFunc);
                 }
-
+                return;
             }
             
-            Type aType = iObj.GetType();
+            
             List<FieldInfo> aFields = null;
             switch (iSaveMode)
             {
@@ -354,7 +367,7 @@ namespace UCL.Core.JsonLib {
                 var aValue = aField.GetValue(iObj);
                 if (aValue == null)
                 {
-                    iData[aFieldName] = "";
+                    //iData[aFieldName] = "";
                 }
                 else if(aValue is IJsonSerializable)
                 {
@@ -382,17 +395,25 @@ namespace UCL.Core.JsonLib {
                     if (aDic.Count > 0)
                     {
                         var aGenericData = new JsonData();
-                        iData[aFieldName] = aGenericData;
-
+                        
                         foreach (var aKey in aDic.Keys)
                         {
                             aGenericData[aKey.ConvertToJsonSafeString()] = ObjectToData(aDic[aKey], iSaveMode, iFieldNameAlterFunc);
                         }
+                        iData[aFieldName] = aGenericData;
                     }
-                    else
+                    //else
+                    //{
+                    //    iData[aFieldName] = null;
+                    //}
+                }
+                else if (aValue is IList)
+                {
+                    var aList = aValue as IList;
+                    if (aList.Count > 0)
                     {
-                        iData[aFieldName] = null;
-                    }
+                        iData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    }                
                 }
                 else if (aValue is IEnumerable)
                 {
@@ -430,12 +451,27 @@ namespace UCL.Core.JsonLib {
             if (iObj is IList && iType.IsGenericType)
             {
                 IList aList = iObj as IList;
-                Type aElementType = aList.GetType().GetGenericArguments().Single();
-                for (int i = 0; i < iData.Count; i++)
+                Type aElementType = iType.GetGenericValueType();
+                //Debug.LogError("IList aElementType:" + aElementType.Name);
+                if (typeof(UCLI_TypeList).IsAssignableFrom(aElementType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
                 {
-                    var aObj = DataToObject(iData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
-                    if (aObj != null) aList.Add(aObj);
+                    //Debug.LogError("1 IList aElementType:" + aElementType.Name);
+                    for (int i = 0; i < iData.Count; i++)
+                    {
+                        var aObj = JsonToObject(iData[i], iSaveMode, iFieldNameAlterFunc);
+                        if (aObj != null) aList.Add(aObj);
+                    }
                 }
+                else
+                {
+                    //Debug.LogError("2 IList aElementType:" + aElementType.Name);
+                    for (int i = 0; i < iData.Count; i++)
+                    {
+                        var aObj = DataToObject(iData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
+                        if (aObj != null) aList.Add(aObj);
+                    }
+                }
+
                 return iObj;
             }
             else if (iObj is IDictionary && iType.IsGenericType)
@@ -552,17 +588,18 @@ namespace UCL.Core.JsonLib {
                     }
                     else if (aFieldData is IList && aField.FieldType.IsGenericType)
                     {
-                        IList aList = aFieldData as IList;
-                        Type aElementType = aList.GetType().GetGenericArguments().Single();
-                        for (int i = 0; i < aJsonData.Count; i++)
-                        {
-                            var aObj = DataToObject(aJsonData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
-                            if (aObj != null)
-                            {
-                                aList.Add(aObj);
-                            }
-                        }
-                        aField.SetValue(iObj, aList);
+                        //IList aList = aFieldData as IList;
+                        //Type aElementType = aList.GetType().GetGenericArguments().Single();
+                        //for (int i = 0; i < aJsonData.Count; i++)
+                        //{
+                        //    var aObj = DataToObject(aJsonData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
+                        //    if (aObj != null)
+                        //    {
+                        //        aList.Add(aObj);
+                        //    }
+                        //}
+                        //aField.SetValue(iObj, aList);
+                        aField.SetValue(iObj, LoadDataFromJson(aFieldData, aJsonData, iSaveMode, iFieldNameAlterFunc, iLayer + 1));
                     }
                     else if (aFieldData is IDictionary && aField.FieldType.IsGenericType)
                     {

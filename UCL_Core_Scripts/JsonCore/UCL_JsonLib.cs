@@ -588,17 +588,7 @@ namespace UCL.Core.JsonLib {
                     }
                     else if (aFieldData is IList && aField.FieldType.IsGenericType)
                     {
-                        //IList aList = aFieldData as IList;
-                        //Type aElementType = aList.GetType().GetGenericArguments().Single();
-                        //for (int i = 0; i < aJsonData.Count; i++)
-                        //{
-                        //    var aObj = DataToObject(aJsonData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
-                        //    if (aObj != null)
-                        //    {
-                        //        aList.Add(aObj);
-                        //    }
-                        //}
-                        //aField.SetValue(iObj, aList);
+                        //Debug.LogError("IList FieldName:" + aField.Name);
                         aField.SetValue(iObj, LoadDataFromJson(aFieldData, aJsonData, iSaveMode, iFieldNameAlterFunc, iLayer + 1));
                     }
                     else if (aFieldData is IDictionary && aField.FieldType.IsGenericType)

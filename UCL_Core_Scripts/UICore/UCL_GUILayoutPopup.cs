@@ -128,7 +128,12 @@ namespace UCL.Core.UI
                 {
                     aIsShow = false;
                 }
-                aInput = TextField(UCL_LocalizeManager.Get("Search"), aInput);
+                GUILayout.BeginHorizontal(iOptions);
+                GUILayout.Label(UCL_LocalizeManager.Get("Search"), GUILayout.ExpandWidth(false));
+
+                aInput = GUILayout.TextField(aInput);//TextField(UCL_LocalizeManager.Get("Search"), aInput);
+                GUILayout.EndHorizontal();
+
                 iDataDic.SetData(aSearchKey, aInput);
 
                 System.Text.RegularExpressions.Regex aRegex = null;
@@ -195,26 +200,23 @@ namespace UCL.Core.UI
         /// <returns></returns>
         public static int Popup(int iSelectedIndex, IList<string> iDisplayedOptions, ref bool iOpened, params GUILayoutOption[] iOptions)
         {
-            if (iDisplayedOptions.Count == 0)
+            if (iDisplayedOptions.IsNullOrEmpty())
             {
-                Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
+                Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.IsNullOrEmpty()");
                 return 0;
             }
             if (iSelectedIndex < 0) iSelectedIndex = 0;
             if (iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
             string aCur = iDisplayedOptions[iSelectedIndex];
+            GUILayout.BeginVertical(iOptions);
             if (iOpened)
-            {
-                GUILayout.BeginVertical(iOptions);
-                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+            {    
+                //using (var aScope = new GUILayout.VerticalScope(iOptions))
                 {
                     if (GUILayout.Button(aCur, iOptions))
                     {
                         iOpened = false;
                     }
-                }
-                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
-                {
                     for (int i = 0; i < iDisplayedOptions.Count; i++)
                     {
                         if (GUILayout.Button(iDisplayedOptions[i], iOptions))
@@ -225,20 +227,18 @@ namespace UCL.Core.UI
                         }
                     }
                 }
-                GUILayout.EndVertical();
             }
             else
             {
-                GUILayout.BeginVertical(iOptions);
-                using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+                //using (var aScope = new GUILayout.VerticalScope(iOptions))
                 {
                     if (GUILayout.Button(aCur, iOptions))
                     {
                         iOpened = true;
                     }
                 }
-                GUILayout.EndVertical();
             }
+            GUILayout.EndVertical();
             return iSelectedIndex;
         }
         /// <summary>

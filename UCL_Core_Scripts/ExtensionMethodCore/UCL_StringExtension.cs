@@ -26,7 +26,10 @@ public static partial class StringExtensionMethods {
     {
         return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
     }
-
+    public static string CutToMaxLength(this string iStr, int iMaxLength, string iEndWith = "...")
+    {
+        return iStr.Length <= iMaxLength ? iStr : iStr.Substring(0, iMaxLength) + iEndWith;
+    }
     /// <summary>
     /// string.IsNullOrEmpty(iStr);
     /// </summary>

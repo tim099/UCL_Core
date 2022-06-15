@@ -590,6 +590,7 @@ public static partial class ObjectExtensionMethods
                 return UCL.Core.LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey);
             }
         }
+        if (iObj is string) return (string)iObj;
         return iDefault;
     }
 }

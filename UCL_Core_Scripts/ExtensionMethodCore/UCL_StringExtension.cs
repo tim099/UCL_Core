@@ -26,40 +26,97 @@ public static partial class StringExtensionMethods {
     {
         return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
     }
-    //static Regex s_ColorRegex = null;
+    static Regex s_ColorRegex = null;
+    /// <summary>
+    /// Return iStr if string length <= iMaxLength
+    /// otherwise return Substring of iMaxLength + iEndWith
+    /// etc. "HelloWorld" with MaxLength 6 will return "HelloW..."
+    /// this Version can detect rich text color(<color=#......>*.+?</color>)
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <param name="iMaxLength"></param>
+    /// <param name="iEndWith"></param>
+    /// <returns></returns>
+    public static string CutToMaxLengthRichText(this string iStr, int iMaxLength, string iEndWith = "...")
+    {
+        if (s_ColorRegex == null)
+        {
+            s_ColorRegex = new Regex("<color=#......>*.+?</color>");
+        }
+        var aMatches = s_ColorRegex.Matches(iStr);
+        if (!aMatches.IsNullOrEmpty())
+        {
+            System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+            int aCurAt = 0;
+            int aCurLength = 0;
+            foreach (Match aMach in aMatches)
+            {
+                if (aMach.Success)
+                {
+                    int aMatchAt = aMach.Index;
+
+                    {//None color part
+                        int aLen = aMatchAt - aCurAt;
+                        if (aMatchAt > aCurAt)
+                        {
+                            if (aCurLength + aLen < iMaxLength)
+                            {
+                                //aSB.Append("(" + aCurLength + ")");
+                                aSB.Append(iStr.Substring(aCurAt, aLen));
+                                //aSB.Append("@ ");
+                                aCurLength += aLen;
+                            }
+                            else
+                            {
+                                //aSB.Append("(" + aCurLength + ")");
+                                aSB.Append(iStr.Substring(aCurAt, iMaxLength - aCurLength));
+                                aSB.Append(iEndWith);
+                                //aSB.Append("&");
+                                return aSB.ToString();
+                            }
+                        }
+                    }
+
+                    {//Color Part(<color=#......>*.+</color>)
+
+                        int aLen = aMach.Length - 23;//15 = length of <color=#......>, 8 = length of </color>
+                        if(aCurLength + aLen <= iMaxLength)
+                        {
+                            //aSB.Append("($" + aCurLength + ")");
+                            aSB.Append(iStr.Substring(aMatchAt, aMach.Length));
+                            //aSB.Append("#");
+                            aCurLength += aLen;
+                        }
+                        else
+                        {
+                            //aSB.Append("($" + aCurLength + ")["+ aMach.Length + "]");
+                            aSB.Append(iStr.Substring(aMatchAt, (iMaxLength - aCurLength) + 15));
+                            aSB.Append("</color>");
+                            aSB.Append(iEndWith);
+                            return aSB.ToString();
+                        }
+                        
+                        aCurAt = aMatchAt + aMach.Length;
+                    }
+
+
+                }
+            }
+            return iStr;
+        }
+        return iStr.Length <= iMaxLength ? iStr : iStr.Substring(0, iMaxLength) + iEndWith;
+    }
+    /// <summary>
+    /// Return iStr if string length <= iMaxLength
+    /// otherwise return Substring of iMaxLength + iEndWith
+    /// etc. "HelloWorld" with MaxLength 6 will return "HelloW..."
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <param name="iMaxLength"></param>
+    /// <param name="iEndWith"></param>
+    /// <returns></returns>
     public static string CutToMaxLength(this string iStr, int iMaxLength, string iEndWith = "...")
     {
-        //if(s_ColorRegex == null)
-        //{
-        //    s_ColorRegex = new Regex("<color=#......>*.+</color>");
-        //}
-        //var aMatches = s_ColorRegex.Matches(iStr);
-        //if (!aMatches.IsNullOrEmpty())
-        //{
-        //    System.Text.StringBuilder aSB = new System.Text.StringBuilder();
-        //    int aCurAt = 0;
-        //    foreach (Match aMach in aMatches)
-        //    {
-        //        if (aMach.Success)
-        //        {
-        //            int aMatchAt = aMach.Index;
-        //            int aLen = aMatchAt - aCurAt;
-        //            if (aMatchAt > aCurAt)
-        //            {
-        //                aSB.Append(iStr.Substring(aCurAt, aLen));
-        //            }
-
-        //            aSB.Append(iStr.Substring(aMatchAt, aMach.Length));
-        //            aCurAt = aMatchAt + aMach.Length;
-        //            if (aSB.Length >= iMaxLength)
-        //            {
-        //                aSB.Append(iEndWith);
-        //                return aSB.ToString();
-        //            }
-                    
-        //        }
-        //    }
-        //}
         return iStr.Length <= iMaxLength ? iStr : iStr.Substring(0, iMaxLength) + iEndWith;
     }
     /// <summary>

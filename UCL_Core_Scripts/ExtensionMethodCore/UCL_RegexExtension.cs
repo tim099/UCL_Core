@@ -19,12 +19,12 @@ public static partial class RegexExtensionMethods
         if (iRegex == null) return iDisplayName;
         if (iRegex != null)
         {
-            var aMaches = iRegex.Matches(iDisplayName.ToLower());
-            if (aMaches.Count > 0)
+            var aMatches = iRegex.Matches(iDisplayName.ToLower());
+            if (aMatches.Count > 0)
             {
                 System.Text.StringBuilder aSB = new System.Text.StringBuilder();
                 int aCurAt = 0;
-                foreach (Match aMach in aMaches)
+                foreach (Match aMach in aMatches)
                 {
                     if (aMach.Success)
                     {

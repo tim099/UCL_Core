@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Text;
 using UnityEngine;
-
+using System.Text.RegularExpressions;
 public static partial class StringExtensionMethods {
     public const string LineSeparator = "\r\n|\r|\n";
     public static string[] LineSeparatorArr {
@@ -26,8 +26,40 @@ public static partial class StringExtensionMethods {
     {
         return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
     }
+    //static Regex s_ColorRegex = null;
     public static string CutToMaxLength(this string iStr, int iMaxLength, string iEndWith = "...")
     {
+        //if(s_ColorRegex == null)
+        //{
+        //    s_ColorRegex = new Regex("<color=#......>*.+</color>");
+        //}
+        //var aMatches = s_ColorRegex.Matches(iStr);
+        //if (!aMatches.IsNullOrEmpty())
+        //{
+        //    System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        //    int aCurAt = 0;
+        //    foreach (Match aMach in aMatches)
+        //    {
+        //        if (aMach.Success)
+        //        {
+        //            int aMatchAt = aMach.Index;
+        //            int aLen = aMatchAt - aCurAt;
+        //            if (aMatchAt > aCurAt)
+        //            {
+        //                aSB.Append(iStr.Substring(aCurAt, aLen));
+        //            }
+
+        //            aSB.Append(iStr.Substring(aMatchAt, aMach.Length));
+        //            aCurAt = aMatchAt + aMach.Length;
+        //            if (aSB.Length >= iMaxLength)
+        //            {
+        //                aSB.Append(iEndWith);
+        //                return aSB.ToString();
+        //            }
+                    
+        //        }
+        //    }
+        //}
         return iStr.Length <= iMaxLength ? iStr : iStr.Substring(0, iMaxLength) + iEndWith;
     }
     /// <summary>

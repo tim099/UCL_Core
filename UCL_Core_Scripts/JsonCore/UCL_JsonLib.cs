@@ -45,7 +45,7 @@ namespace UCL.Core.JsonLib {
         /// <returns></returns>
         static public object JsonToObject(JsonData iData, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null) {
             if(!iData.Contains("ClassName") || !iData.Contains("ClassData")) {
-                Debug.LogError("JsonToObject !iData.Contains(ClassName) || !iData.Contains(ClassData)");
+                Debug.LogError("JsonToObject !iData.Contains(ClassName) || !iData.Contains(ClassData) iData:"+ iData.ToJsonBeautify());
                 return null;
             }
             string aClassName = iData.GetString("ClassName");

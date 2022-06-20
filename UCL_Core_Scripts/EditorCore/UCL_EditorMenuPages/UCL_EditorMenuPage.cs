@@ -21,11 +21,6 @@ namespace UCL.Core.EditorLib.Page
         {
             using (var aScope = new GUILayout.VerticalScope("box"))//, GUILayout.MaxWidth(320)
             {
-                //GUILayout.Box("OuO");
-                //if (GUILayout.Button("Test"))
-                //{
-                //    Debug.LogError("Test!!");
-                //}
                 if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_LocalizeEditPage")))
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();

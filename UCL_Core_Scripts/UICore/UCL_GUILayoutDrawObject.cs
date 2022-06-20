@@ -405,6 +405,33 @@ namespace UCL.Core.UI
                         GUILayout.EndVertical();
                     }
                 }
+                else if (iObj is Component)
+                {
+                    if(iObj is Transform)
+                    {
+                        var aTransform = iObj as Transform;
+                        using (new GUILayout.VerticalScope("box"))
+                        {
+                            GUILayout.BeginHorizontal();
+                            aIsShowField = UCL_GUILayout.Toggle(iDataDic, "IsShowField");
+                            GUILayout.Label("Transform");
+                            GUILayout.EndHorizontal();
+
+                            if (aIsShowField)
+                            {
+                                aTransform.position = VectorField("Position", aTransform.position, iDataDic.GetSubDic("Position"));
+                                aTransform.eulerAngles = VectorField("Rotation", aTransform.eulerAngles, iDataDic.GetSubDic("Rotation"));
+                                aTransform.localScale = VectorField("Scale", aTransform.localScale, iDataDic.GetSubDic("Scale"));
+                            }
+                            aResultObj = aTransform;
+                        }
+
+                    }
+                    else
+                    {
+                        aResultObj = DrawField(aResultObj, iDataDic, iDisplayName, iIsAlwaysShowDetail, iFieldNameFunc, iFieldType);
+                    }
+                }
                 else if (aType.IsStructOrClass())
                 {
                     aIsDefaultType = false;

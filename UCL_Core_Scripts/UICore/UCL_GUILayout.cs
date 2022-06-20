@@ -76,6 +76,18 @@ namespace UCL.Core.UI {
             if (MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return (T)aResultValue;
             return iVal;
         }
+
+        static public Vector3 VectorField(string iLabel, Vector3 iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            using(new GUILayout.HorizontalScope("box", iOptions))
+            {
+                GUILayout.Label(iLabel, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+                float aX = NumField<float>("X", iVal.x, iDataDic.GetSubDic("X"));
+                float aY = NumField<float>("Y", iVal.y, iDataDic.GetSubDic("Y"));
+                float aZ = NumField<float>("Z", iVal.z, iDataDic.GetSubDic("Z"));
+                return new Vector3(aX, aY, aZ);
+            }
+        }
         static public int Slider(string iLabel, int iVal, int m_LeftValue, int m_RightValue, UCL_ObjectDictionary iDic)
         {
             GUILayout.BeginHorizontal();
@@ -231,13 +243,10 @@ namespace UCL.Core.UI {
         }
         static public bool BoolField(bool iVal, params GUILayoutOption[] iOptions)
         {
-            GUILayout.BeginHorizontal();
-
             if (GUILayout.Button(iVal ? "✔" : " ", iOptions))
             {
                 iVal = !iVal;
             }
-            GUILayout.EndHorizontal();
 
             return iVal;
         }

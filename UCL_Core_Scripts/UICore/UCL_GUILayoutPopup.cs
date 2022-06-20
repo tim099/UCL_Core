@@ -26,25 +26,6 @@ namespace UCL.Core.UI
             return iIndex;
         }
 
-
-        static public GUIStyle ButtonStyle
-        {
-            get
-            {
-                if (m_Button == null)
-                {
-                    m_Button = new GUIStyle(GUI.skin.button);
-                    m_Button.richText = true;
-                    var aTextCol = Color.white;
-                    m_Button.normal.textColor = aTextCol;
-                    m_Button.focused.textColor = aTextCol;
-                    m_Button.hover.textColor = aTextCol;
-                }
-                return m_Button;
-            }
-        }
-        static GUIStyle m_Button = null;
-
         /// <summary>
         /// Show pop up with a search input field
         /// if iDisplayedOptions.Count >= iSearchThreshold then add search field
@@ -170,7 +151,7 @@ namespace UCL.Core.UI
                         }
 
 
-                        if (GUILayout.Button(aDisplayName, ButtonStyle, iOptions))
+                        if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
                         {
                             aIsShow = false;
                             iSelectedIndex = i;

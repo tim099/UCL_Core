@@ -38,9 +38,17 @@ namespace UCL.Core.EditorLib.Page
         /// Action trigger after clicked Back Button
         /// 返回鍵點下後執行的行為(預設為回上一頁)
         /// </summary>
-        virtual protected void Back()
+        virtual protected void BackButtonClicked()
         {
             p_Controller.Pop();
+        }
+        /// <summary>
+        /// Action trigger after clicked Close Button
+        /// 返回鍵點下後執行的行為(預設為回上一頁)
+        /// </summary>
+        virtual protected void CloseButtonClicked()
+        {
+            p_Controller.PopAll();
         }
         /// <summary>
         /// Draw TopBar
@@ -54,7 +62,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Back"), GUILayout.ExpandWidth(false)))
                     {
-                        Back();
+                        BackButtonClicked();
                     }
                 }
 
@@ -62,7 +70,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Close"), GUILayout.ExpandWidth(false)))
                     {
-                        p_Controller.PopAll();
+                        CloseButtonClicked();
                     }
                 }
 

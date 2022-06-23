@@ -6,6 +6,10 @@ using UnityEngine;
 
 namespace UCL.Core.Game
 {
+    [UCL.Core.ATTR.EnableUCLEditor]
+#if UNITY_EDITOR
+    [UCL.Core.ATTR.RequiresConstantRepaint]
+#endif
     public class UCL_UIService : UCL_GameService
     {
         static public UCL_UIService Ins { get; protected set; }
@@ -26,6 +30,17 @@ namespace UCL.Core.Game
         {
             Ins = this;
         }
+
+        [UCL.Core.ATTR.UCL_DrawOnGUI]
+        public void DrawOnGUI(UCL.Core.UCL_ObjectDictionary iDic)
+        {
+            if (m_UIStack.IsNullOrEmpty()) return;
+            for (int i = 0; i < m_UIStack.Count; i++)
+            {
+                GUILayout.Box(string.Format("{0}. {1}", i, m_UIStack[i].name));
+            }
+        }
+
         public T CreateUI<T>(T iTemplate) where T : UCL_GameUI
         {
             T iUI = null;
@@ -102,9 +117,10 @@ namespace UCL.Core.Game
         /// </summary>
         public void CloseAllUI()
         {
-            for(int i = 0; i < m_UIStack.Count; i++)
+            var aList = m_UIStack.Clone();
+            for(int i = 0; i < aList.Count; i++)
             {
-                m_UIStack[i].Close();
+                aList[i].Close();
             }
         }
         public void EscapeKeyDown()

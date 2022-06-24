@@ -8,23 +8,23 @@ namespace UCL.Core.Container {
         Queue<T> m_Pool = new Queue<T>();
 
         public T Create() {
-            T target = default;
+            T aTarget = default;
             if(m_Pool.Count > 0) {
-                target = m_Pool.Dequeue();
+                aTarget = m_Pool.Dequeue();
             } else {
-                target = new T();
+                aTarget = new T();
             }
-            return target;
+            return aTarget;
         }
         public void Delete(T target) {
             m_Pool.Enqueue(target);
         }
     }
 
-    public class ComponentPool<T> where T : Component
+    public class UnityComponentPool<T> where T : Component
     {
-        public ComponentPool() { }
-        public ComponentPool(T iTemplate)
+        public UnityComponentPool() { }
+        public UnityComponentPool(T iTemplate)
         {
             m_Template = iTemplate;
         }

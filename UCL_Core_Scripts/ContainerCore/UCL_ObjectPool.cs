@@ -58,7 +58,7 @@ namespace UCL.Core.Container {
                 }
             }
             aTarget.gameObject.SetActive(true);
-            if(iParent != aTarget.transform.parent) aTarget.transform.parent = iParent;
+            if(iParent != aTarget.transform.parent) aTarget.transform.SetParent(iParent);
 
             m_AllObjs.Add(aTarget);
             return aTarget;

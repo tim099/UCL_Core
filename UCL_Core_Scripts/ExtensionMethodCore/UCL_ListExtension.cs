@@ -147,6 +147,19 @@ public static partial class ListExtensionMethods {
         }
         return aSB.ToString();
     }
+    public static string ConcatString<T>(this IList<T> iList, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
+        foreach (var aT in iList)
+        {
+            if (aIsFirst) aIsFirst = false;
+            else aSB.Append(iSeperator);
+            aSB.Append(aT.ToString());
+
+        }
+        return aSB.ToString();
+    }
     public static bool IsNullOrEmpty<T>(this IList<T> iList) {
         if(iList == null || iList.Count == 0) return true;
         return false;

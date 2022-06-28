@@ -134,6 +134,16 @@ namespace UCL.Core.TextureLib {
         virtual public void DrawDot(Vector2 pos, Color col, int radius = 0) {
             DrawDot(pos.x, pos.y, col, radius);
         }
+        virtual public void DrawVerticalLine(float iX, Color iLineCol)
+        {
+            int aX = Mathf.RoundToInt(iX * m_Size.x);
+            if (aX < 0) aX = 0;
+            if (aX >= m_Size.x) aX = m_Size.x - 1;
+            for (int aY = 0; aY < m_Size.y; aY++)
+            {
+                SetPixel(aX, aY, iLineCol);
+            }
+        }
 
         /// <summary>
         /// line_func take x as parameter and should return the value of y
@@ -141,7 +151,7 @@ namespace UCL.Core.TextureLib {
         /// </summary>
         /// <param name="iLineFunc"></param>
         /// <param name="iLineCol"></param>
-        virtual public void DrawLine(System.Func<float,float> iLineFunc,Color iLineCol) {
+        virtual public void DrawLine(System.Func<float,float> iLineFunc, Color iLineCol) {
             if(iLineFunc == null) return;
 
             int prev = 0;

@@ -134,6 +134,16 @@ namespace UCL.Core.TextureLib {
         virtual public void DrawDot(Vector2 pos, Color col, int radius = 0) {
             DrawDot(pos.x, pos.y, col, radius);
         }
+        virtual public void DrawHorizontalLine(float iY, Color iLineCol)
+        {
+            int aY = Mathf.RoundToInt(iY * m_Size.y);
+            if (aY < 0) aY = 0;
+            if (aY >= m_Size.y) aY = m_Size.y - 1;
+            for (int aX = 0; aX < m_Size.x; aX++)
+            {
+                SetPixel(aX, aY, iLineCol);
+            }
+        }
         virtual public void DrawVerticalLine(float iX, Color iLineCol)
         {
             int aX = Mathf.RoundToInt(iX * m_Size.x);
@@ -179,6 +189,28 @@ namespace UCL.Core.TextureLib {
                     }
                 }
                 prev = cur;
+            }
+        }
+        virtual public void DrawAudioWav(System.Func<float, float> iValFunc, Color iLineCol)
+        {
+            if (iValFunc == null) return;
+            int aMiddle = m_Size.y / 2;
+            for (int i = 0; i < m_Size.x; i++)
+            {
+                float aVal = iValFunc(i / (float)(m_Size.x - 1));
+
+                int aCur = Mathf.RoundToInt(aVal * m_Size.y);
+
+                int aMin = Mathf.Min(aMiddle, aCur);
+                int aMax = Mathf.Max(aMiddle, aCur);
+
+                for (int j = 0; j < m_Size.y; j++)
+                {
+                    if (j >= aMin && j <= aMax)
+                    {
+                        SetPixel(i, j, iLineCol);
+                    }
+                }
             }
         }
         /// <summary>

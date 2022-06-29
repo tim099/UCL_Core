@@ -18,6 +18,20 @@ public static partial class ArrayExtensionMethods {
         arr.SetValue(arr.GetValue(a), b);
     }
     */
+    public static T[,] CloneArray<T>(this T[,] iArray)
+    {
+        int aWidth = iArray.GetLength(0);
+        int aHeight = iArray.GetLength(1);
+        T[,] aNewArr = new T[aWidth, aHeight];
+        for (int aX = 0; aX < aWidth; aX++)
+        {
+            for (int aY = 0; aY < aHeight; aY++)
+            {
+                aNewArr[aX, aY] = iArray[aX, aY];
+            }
+        }
+        return aNewArr;
+    }
     /// <summary>
     /// Convert byte array into structure
     /// </summary>

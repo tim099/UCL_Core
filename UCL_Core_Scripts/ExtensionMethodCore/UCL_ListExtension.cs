@@ -5,6 +5,45 @@ using UnityEngine;
 
 
 public static partial class ListExtensionMethods {
+
+    #region HashSet
+    public static bool IsNullOrEmpty<T>(this HashSet<T> iHashSet)
+    {
+        if (iHashSet == null || iHashSet.Count == 0) return true;
+        return false;
+    }
+
+    #endregion
+
+    #region IEnumerable
+    public static string ConcatString<T>(this IEnumerable<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
+        foreach (var aT in iList)
+        {
+            if (aIsFirst) aIsFirst = false;
+            else aSB.Append(iSeperator);
+            aSB.Append(iFunc(aT));
+
+        }
+        return aSB.ToString();
+    }
+    public static string ConcatString<T>(this IEnumerable<T> iList, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
+        foreach (var aT in iList)
+        {
+            if (aIsFirst) aIsFirst = false;
+            else aSB.Append(iSeperator);
+            aSB.Append(aT.ToString());
+
+        }
+        return aSB.ToString();
+    }
+    #endregion
+
     /// <summary>
     /// return the first Element in iICollection
     /// </summary>
@@ -131,32 +170,6 @@ public static partial class ListExtensionMethods {
         foreach (var aStr in iList)
         {
             aSB.Append(aStr).Append(iSeperator);
-        }
-        return aSB.ToString();
-    }
-    public static string ConcatString<T>(this IList<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
-    {
-        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
-        bool aIsFirst = true;
-        foreach(var aT in iList)
-        {
-            if (aIsFirst) aIsFirst = false;
-            else aSB.Append(iSeperator);
-            aSB.Append(iFunc(aT));
-
-        }
-        return aSB.ToString();
-    }
-    public static string ConcatString<T>(this IList<T> iList, string iSeperator = ", ")
-    {
-        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
-        bool aIsFirst = true;
-        foreach (var aT in iList)
-        {
-            if (aIsFirst) aIsFirst = false;
-            else aSB.Append(iSeperator);
-            aSB.Append(aT.ToString());
-
         }
         return aSB.ToString();
     }

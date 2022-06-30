@@ -42,7 +42,7 @@ namespace UCL.Core.Game
         /// </summary>
         virtual public void OnEscape()
         {
-            Close();
+            //Close();
         }
     }
 }

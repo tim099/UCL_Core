@@ -24,18 +24,23 @@ namespace UCL.Core.Container {
     public class UnityComponentPool<T> where T : Component
     {
         public UnityComponentPool() { }
-        public UnityComponentPool(T iTemplate)
+        public UnityComponentPool(T iTemplate, System.Action<T> iInitAction = null)
         {
             m_Template = iTemplate;
+            m_InitAction = iInitAction;
         }
-
+        System.Action<T> m_InitAction = null;
         public string m_CreateName = typeof(T).ToString();
         Stack<T> m_ObjPool = new Stack<T>();
         /// <summary>
         /// All Object that Created
         /// </summary>
         List<T> m_AllObjs = new List<T>();
-        T m_Template = null;
+        /// <summary>
+        /// Template of created object
+        /// (if not null, will use Instantiate(m_Template, iParent) to create GameObject
+        /// </summary>
+        public T m_Template = null;
         public T Create(Transform iParent = null) {
             T aTarget = null;
             if(m_ObjPool.Count > 0) {
@@ -52,9 +57,13 @@ namespace UCL.Core.Container {
                     aObj = new GameObject(m_CreateName);
                     aTarget = aObj.AddComponent<T>();
                 }
-
                 if(iParent) {
                     aObj.layer = iParent.gameObject.layer;
+                }
+
+                if (m_InitAction != null)
+                {
+                    m_InitAction.Invoke(aTarget);
                 }
             }
             aTarget.gameObject.SetActive(true);

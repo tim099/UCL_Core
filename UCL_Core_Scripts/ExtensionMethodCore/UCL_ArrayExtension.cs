@@ -33,6 +33,26 @@ public static partial class ArrayExtensionMethods {
         return aNewArr;
     }
     /// <summary>
+    /// Set all element in iArray to iVal
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iArray"></param>
+    /// <param name="iVal"></param>
+    /// <returns></returns>
+    public static T[,] InitArray<T>(this T[,] iArray, T iVal)
+    {
+        int aWidth = iArray.GetLength(0);
+        int aHeight = iArray.GetLength(1);
+        for (int aX = 0; aX < aWidth; aX++)
+        {
+            for (int aY = 0; aY < aHeight; aY++)
+            {
+                iArray[aX, aY] = iVal;
+            }
+        }
+        return iArray;
+    }
+    /// <summary>
     /// Convert byte array into structure
     /// </summary>
     /// <typeparam name="T"></typeparam>

@@ -6,6 +6,11 @@ namespace UCL.Core.Game
 {
     public class UCL_GameUI : MonoBehaviour
     {
+        public static T CreateFromResource<T>() where T : UCL_GameUI
+        {
+           return  UCL_UIService.Ins.CreateUIFromResource<T>();
+        }
+
         virtual public bool IsUIOverlay { get { return m_IsUIOverlay; } }
         [SerializeField] protected bool m_IsUIOverlay = false;
         protected System.Action m_OnCloseAction = null;

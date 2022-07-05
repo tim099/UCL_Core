@@ -31,6 +31,11 @@ namespace UCL.Core.Container {
         }
         System.Action<T> m_InitAction = null;
         public string m_CreateName = typeof(T).ToString();
+        /// <summary>
+        /// if not null, deleted object will set this as parent
+        /// </summary>
+        public Transform m_DeleteRoot = null;
+
         Stack<T> m_ObjPool = new Stack<T>();
         /// <summary>
         /// All Object that Created
@@ -75,6 +80,10 @@ namespace UCL.Core.Container {
         public void Delete(T iTarget) {
 
             iTarget.gameObject.SetActive(false);
+            if (m_DeleteRoot != null)
+            {
+                iTarget.transform.SetParent(m_DeleteRoot);
+            }
             m_ObjPool.Push(iTarget);
             m_AllObjs.Remove(iTarget);
         }
@@ -85,6 +94,10 @@ namespace UCL.Core.Container {
                 var aTarget = m_AllObjs[i];
                 if(aTarget != null)
                 {
+                    if (m_DeleteRoot != null)
+                    {
+                        aTarget.transform.SetParent(m_DeleteRoot);
+                    }
                     m_ObjPool.Push(aTarget);
                     aTarget.gameObject.SetActive(false);
                 }

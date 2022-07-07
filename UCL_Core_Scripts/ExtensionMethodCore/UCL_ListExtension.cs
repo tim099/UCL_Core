@@ -164,6 +164,26 @@ public static partial class ListExtensionMethods {
         }
         return iList;
     }
+    /// <summary>
+    /// return SubList of iList
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <param name="iStartIndex">where the SubList start(0 will start at the first element)</param>
+    /// <param name="iLength">Length of SubList</param>
+    /// <returns></returns>
+    public static List<T> SubList<T>(this List<T> iList, int iStartIndex, int iLength)
+    {
+        List<T> aList = new List<T>();
+        if (iList.IsNullOrEmpty()) return aList;
+        int aLastIndex = iStartIndex + iLength;
+        if (aLastIndex > iList.Count) aLastIndex = iList.Count;
+        for(int i = iStartIndex; i < aLastIndex; i++)
+        {
+            aList.Add(iList[i]);
+        }
+        return aList;
+    }
     public static string ConcatString(this IList<string> iList, string iSeperator = ", ")
     {
         System.Text.StringBuilder aSB = new System.Text.StringBuilder();

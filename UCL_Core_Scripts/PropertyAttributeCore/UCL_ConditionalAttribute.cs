@@ -31,6 +31,12 @@ namespace UCL.Core.PA {
             m_Inverse = iInverse;
             m_CompareValues = iCompareValues;
         }
+        /// <summary>
+        /// Invoke mamber function and use the return value
+        /// if return true then show the field
+        /// </summary>
+        /// <param name="iFunctionName"></param>
+        /// <param name="iFunctionParams"></param>
         public ConditionalAttribute(string iFunctionName, params object[] iFunctionParams)
         {
             m_ConditionalMode = ConditionalMode.Function;

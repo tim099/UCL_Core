@@ -125,6 +125,8 @@ namespace UCL.Core.JsonLib {
         static public JsonData SaveDataToJson(object iObj, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
         {
             JsonData aData = new JsonData();
+            if (iObj == null) return aData;
+
             SaveDataToJson(iObj, aData, iSaveMode, iFieldNameAlterFunc);
             return aData;
         }

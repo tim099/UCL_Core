@@ -40,7 +40,9 @@
     {
         virtual public JsonData SerializeToJson()
         {
-            return JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
+            var aData = new JsonData();
+            JsonConvert.SaveFieldsToJson(this, aData, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
+            return aData;
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {

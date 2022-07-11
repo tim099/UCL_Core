@@ -485,34 +485,16 @@ namespace UCL.Core.UI
 
                 if (iObj is UCLI_CopyPaste)
                 {
-                    GUILayout.FlexibleSpace();
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
+                    if(DrawCopyPaste(ref iObj, iDataDic, iFieldType))
                     {
-                        UCL.Core.CopyPaste.SetCopyData(iObj);
-                    }
-                    bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(iFieldType);
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonText(aCanCopy ? Color.white : Color.red),
-                        GUILayout.ExpandWidth(false)))
-                    {
-                        if (aCanCopy)
-                        {
-                            iDataDic.Clear();
-
-                            if (iObj != null && aType == CopyPaste.s_CopyType)
-                            {
-                                UCL.Core.CopyPaste.LoadCopyData(iObj);
-                                aResultObj = iObj;
-                            }
-                            else
-                            {
-                                iObj = aResultObj = UCL.Core.CopyPaste.GetCopyData();
-                            }
-                            aIsShowField = false;
-                            iDataDic.Clear();
-                        }
+                        aIsShowField = false;
+                        aResultObj = iObj;
                     }
                 }
-
+                //else
+                //{
+                //    GUILayout.Label("!UCLI_CopyPaste :" + aType.Name);
+                //}
                 GUILayout.EndHorizontal();
             }
 
@@ -736,6 +718,43 @@ namespace UCL.Core.UI
 
             GUILayout.EndHorizontal();
             return aResultObj;
+        }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="iObj"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iFieldType"></param>
+        /// <returns>return true if paste data</returns>
+        public static bool DrawCopyPaste(ref object iObj, UCL_ObjectDictionary iDataDic, System.Type iFieldType = null)
+        {
+            bool aIsPaste = false;
+            Type aType = iObj.GetType();
+            if (iFieldType == null) iFieldType = aType;
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
+            {
+                UCL.Core.CopyPaste.SetCopyData(iObj);
+            }
+            bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(iFieldType);
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonText(aCanCopy ? Color.white : Color.red),
+                GUILayout.ExpandWidth(false)))
+            {
+                if (aCanCopy)
+                {
+                    if (iObj != null && aType == CopyPaste.s_CopyType)
+                    {
+                        UCL.Core.CopyPaste.LoadCopyData(iObj);
+                    }
+                    else
+                    {
+                        iObj = UCL.Core.CopyPaste.GetCopyData();
+                    }
+                    aIsPaste = true;
+                    iDataDic.Clear();
+                }
+            }
+            return aIsPaste;
         }
         #endregion
     }

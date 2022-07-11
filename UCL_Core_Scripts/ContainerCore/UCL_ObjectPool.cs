@@ -24,12 +24,20 @@ namespace UCL.Core.Container {
     public class UnityComponentPool<T> where T : Component
     {
         public UnityComponentPool() { }
-        public UnityComponentPool(T iTemplate, System.Action<T> iInitAction = null)
+        public UnityComponentPool(T iTemplate, System.Action<T> iInitAction = null, System.Func<T, Transform, T> iCreateAction = null)
         {
             m_Template = iTemplate;
             m_InitAction = iInitAction;
+            m_CreateAction = iCreateAction;
         }
-        System.Action<T> m_InitAction = null;
+        /// <summary>
+        /// call when object first time created
+        /// </summary>
+        public System.Action<T> m_InitAction = null;
+        /// <summary>
+        /// if not null, will create object using this instead of GameObject.Instantiate(m_Template, iParent)
+        /// </summary>
+        public System.Func<T, Transform, T> m_CreateAction = null;
         public string m_CreateName = typeof(T).ToString();
         /// <summary>
         /// if not null, deleted object will set this as parent
@@ -46,6 +54,12 @@ namespace UCL.Core.Container {
         /// (if not null, will use Instantiate(m_Template, iParent) to create GameObject
         /// </summary>
         public T m_Template = null;
+
+        /// <summary>
+        /// Create a object from pool
+        /// </summary>
+        /// <param name="iParent"></param>
+        /// <returns></returns>
         public T Create(Transform iParent = null) {
             T aTarget = null;
             if(m_ObjPool.Count > 0) {
@@ -54,7 +68,14 @@ namespace UCL.Core.Container {
                 GameObject aObj = null;
                 if (m_Template != null)
                 {
-                    aTarget = GameObject.Instantiate(m_Template, iParent);
+                    if(m_CreateAction != null)
+                    {
+                        aTarget = m_CreateAction(m_Template, iParent);
+                    }
+                    else
+                    {
+                        aTarget = GameObject.Instantiate(m_Template, iParent);
+                    }
                     aObj = aTarget.gameObject;
                 }
                 else
@@ -77,6 +98,10 @@ namespace UCL.Core.Container {
             m_AllObjs.Add(aTarget);
             return aTarget;
         }
+        /// <summary>
+        /// delete object(return to pool so object will be reusable
+        /// </summary>
+        /// <param name="iTarget"></param>
         public void Delete(T iTarget) {
 
             iTarget.gameObject.SetActive(false);
@@ -87,6 +112,9 @@ namespace UCL.Core.Container {
             m_ObjPool.Push(iTarget);
             m_AllObjs.Remove(iTarget);
         }
+        /// <summary>
+        /// delete all object created from pool
+        /// </summary>
         public void DeleteAll()
         {
             for(int i = 0; i < m_AllObjs.Count; i++)

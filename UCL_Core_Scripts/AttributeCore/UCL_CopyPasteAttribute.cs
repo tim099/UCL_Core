@@ -68,6 +68,10 @@ namespace UCL.Core
 
             s_CopyType = iData.GetType();
             s_CopyData = JsonConvert.SaveDataToJson(iData, iSaveMode);
+#if UNITY_EDITOR
+            var aJson = s_CopyData.ToJsonBeautify();
+            GUIUtility.systemCopyBuffer = aJson;
+#endif
             //Debug.LogError("SetCopyData s_CopyType:" + s_CopyType.Name + ",s_CopyData:" + s_CopyData.ToJsonBeautify());
         }
     }

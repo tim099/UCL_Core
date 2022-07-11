@@ -256,7 +256,7 @@ public static partial class ListExtensionMethods {
     /// <returns></returns>
     public static T SmartGet<T>(this IList<T> iList, int iAt)
     {
-        if (iList == null || iList.Count == 0) return default;
+        if (iList.IsNullOrEmpty()) return default;
         if (iAt < 0) iAt = 0;
         else if (iAt >= iList.Count) iAt = iList.Count - 1;
         return iList[iAt];

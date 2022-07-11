@@ -97,7 +97,11 @@ namespace UCL.Core.JsonLib {
             if(aValue != null) return (T)aValue;
             return (T)LoadDataFromJson(new T(), iData, iSaveMode, iFieldNameAlterFunc);
         }
-
+        /// <summary>
+        /// Load data from Json(UnityVer
+        /// </summary>
+        /// <returns></returns>
+        static public object LoadDataFromJsonUnityVer(JsonData iData, Type iType) => LoadDataFromJson(iData, iType, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
         /// <summary>
         /// Load data from Json
         /// </summary>
@@ -117,6 +121,13 @@ namespace UCL.Core.JsonLib {
             return LoadDataFromJson(iType.CreateInstance(), iData, iSaveMode, iFieldNameAlterFunc);
         }
         /// <summary>
+        /// Convert data in iObj into JsonData(UnityVer)
+        /// </summary>
+        /// <param name="iObj"></param>
+        /// <returns></returns>
+        static public JsonData SaveDataToJsonUnityVer(object iObj) => SaveDataToJson(iObj, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
+
+        /// <summary>
         /// Convert data in iObj into JsonData
         /// </summary>
         /// <param name="iObj"></param>
@@ -130,6 +141,7 @@ namespace UCL.Core.JsonLib {
             SaveDataToJson(iObj, aData, iSaveMode, iFieldNameAlterFunc);
             return aData;
         }
+
         /// <summary>
         /// Create Object using JsonData
         /// 根據傳入的Type與JsonData生成物件
@@ -340,8 +352,14 @@ namespace UCL.Core.JsonLib {
                 }
                 return;
             }
-            
-            
+            SaveFieldsToJson(iObj, iData, iSaveMode, iFieldNameAlterFunc);
+        }
+
+        static public void SaveFieldsToJson(object iObj, JsonData iData, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
+        {
+
+            Type aType = iObj.GetType();
+
             List<FieldInfo> aFields = null;
             switch (iSaveMode)
             {
@@ -371,7 +389,7 @@ namespace UCL.Core.JsonLib {
                 {
                     //iData[aFieldName] = "";
                 }
-                else if(aValue is IJsonSerializable)
+                else if (aValue is IJsonSerializable)
                 {
                     iData[aFieldName] = ((IJsonSerializable)aValue).SerializeToJson();
                 }
@@ -387,17 +405,17 @@ namespace UCL.Core.JsonLib {
                 {
                     iData[aFieldName] = aValue.ToString();
                 }
-                else if(aValue is JsonData)
+                else if (aValue is JsonData)
                 {
                     iData[aFieldName] = (JsonData)aValue;
                 }
-                else if(aValue is IDictionary)
+                else if (aValue is IDictionary)
                 {
                     IDictionary aDic = aValue as IDictionary;
                     if (aDic.Count > 0)
                     {
                         var aGenericData = new JsonData();
-                        
+
                         foreach (var aKey in aDic.Keys)
                         {
                             aGenericData[aKey.ConvertToJsonSafeString()] = ObjectToData(aDic[aKey], iSaveMode, iFieldNameAlterFunc);
@@ -415,7 +433,7 @@ namespace UCL.Core.JsonLib {
                     if (aList.Count > 0)
                     {
                         iData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
-                    }                
+                    }
                 }
                 else if (aValue is IEnumerable)
                 {

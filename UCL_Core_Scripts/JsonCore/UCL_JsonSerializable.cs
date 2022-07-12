@@ -18,47 +18,39 @@
         {
             var aData = new JsonData();
             aData["ClassName"] = this.GetType().AssemblyQualifiedName;
-            aData["ClassData"] = JsonConvert.SaveDataToJson(this, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
+            aData["ClassData"] = JsonConvert.SaveFieldsToJsonUnityVer(this);
             return aData;
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {
             if (iJson.Contains("ClassData"))
             {
-                JsonConvert.LoadDataFromJson(this, iJson["ClassData"], JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
+                JsonConvert.LoadFieldFromJsonUnityVer(this, iJson["ClassData"]);
             }
-        }
-        virtual public UnityJsonSerializableObject CloneObject()
-        {
-            JsonData aData = this.SerializeToJson();
-            var aObject = this.GetType().CreateInstance() as UnityJsonSerializableObject;
-            aObject.DeserializeFromJson(aData);
-            return aObject;
         }
     }
     public class UnityJsonSerializable : IJsonSerializable
     {
         virtual public JsonData SerializeToJson()
         {
-            var aData = new JsonData();
-            JsonConvert.SaveFieldsToJson(this, aData, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
-            return aData;
+            return JsonConvert.SaveFieldsToJsonUnityVer(this);
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {
-            JsonConvert.LoadDataFromJson(this, iJson, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
+            JsonConvert.LoadFieldFromJsonUnityVer(this, iJson);
         }
     }
     public class JsonSerializable : IJsonSerializable
     {
-        virtual public JsonConvert.SaveMode SaveMode => JsonConvert.SaveMode.Normal;
+        virtual public JsonConvert.SaveMode SaveMode => JsonConvert.SaveMode.Unity;
+        virtual public string FieldNameFunction(string iFieldName) => UCL.Core.UCL_StaticFunctions.FieldNameUnityVer(iFieldName);
         virtual public JsonData SerializeToJson()
         {
-            return UCL.Core.JsonLib.JsonConvert.SaveDataToJson(this, SaveMode);
+            return UCL.Core.JsonLib.JsonConvert.SaveFieldsToJson(this, SaveMode, FieldNameFunction);
         }
         virtual public void DeserializeFromJson(JsonData iJson)
         {
-            JsonConvert.LoadDataFromJson(this, iJson, SaveMode);
+            JsonConvert.LoadFieldFromJson(this, iJson, SaveMode, FieldNameFunction);
         }
     }
 

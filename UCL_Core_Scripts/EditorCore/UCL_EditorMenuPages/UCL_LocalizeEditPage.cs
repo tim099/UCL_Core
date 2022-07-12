@@ -42,13 +42,13 @@ namespace UCL.Core.EditorLib.Page
             if (PlayerPrefs.HasKey(LocalizeSettingKey))
             {
                 string aJson = PlayerPrefs.GetString(LocalizeSettingKey);
-                UCL.Core.JsonLib.JsonConvert.LoadDataFromJson(m_LocalizeSetting, JsonLib.JsonData.ParseJson(aJson), JsonLib.JsonConvert.SaveMode.Unity);
+                UCL.Core.JsonLib.JsonConvert.LoadDataFromJsonUnityVer(m_LocalizeSetting, JsonLib.JsonData.ParseJson(aJson));
             }
         }
         protected  void SaveLocalizeSetting()
         {
             if (m_LocalizeSetting == null) return;
-            var aData = UCL.Core.JsonLib.JsonConvert.SaveDataToJson(m_LocalizeSetting, JsonLib.JsonConvert.SaveMode.Unity);
+            var aData = UCL.Core.JsonLib.JsonConvert.SaveDataToJsonUnityVer(m_LocalizeSetting);
             PlayerPrefs.SetString(LocalizeSettingKey, aData.ToJson());
         }
         protected override void ContentOnGUI()

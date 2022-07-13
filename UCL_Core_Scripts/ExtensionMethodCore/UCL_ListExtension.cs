@@ -291,6 +291,29 @@ public static partial class ListExtensionMethods {
         return iList;
     }
     /// <summary>
+    /// Swap elements in List
+    /// (etc. iList[0] swap with iList[1], iList[2] swap with iList[3]...
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="iList"></param>
+    /// <returns></returns>
+    public static IList<T> SwapElements<T>(this IList<T> iList)
+    {
+        if (iList.IsNullOrEmpty())
+        {
+            return iList;
+        }
+        int aHalfCount = iList.Count / 2;
+        for (int i = 0; i < aHalfCount; i++)
+        {
+            int aAt = 2 * i;
+            T aTmp = iList[aAt];
+            iList[aAt] = iList[aAt + 1];
+            iList[aAt + 1] = aTmp;
+        }
+        return iList;
+    }
+    /// <summary>
     /// Remove last element of iList
     /// </summary>
     /// <typeparam name="T"></typeparam>

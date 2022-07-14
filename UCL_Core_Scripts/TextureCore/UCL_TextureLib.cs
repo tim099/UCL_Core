@@ -7,9 +7,15 @@ namespace UCL.Core.TextureLib {
     {
         public Texture2D m_Texture;
         /// <summary>
+        /// m_Seg = Sqrt(m_TextureCount)
         /// m_Seg * m_Size = m_AtlasSize
+        /// etc. m_Seg = 2 ,m_Size = 32, size of m_Texture will be 64 X 64 (32*2 X 32*2)
         /// </summary>
         public int m_Seg = 0;
+        /// <summary>
+        /// Texture count of Textures combine to this Atlas
+        /// </summary>
+        public int m_TextureCount = 1;
         /// <summary>
         /// Texture that size not fit m_Size will be scale to fit m_Size
         /// </summary>
@@ -19,6 +25,36 @@ namespace UCL.Core.TextureLib {
         /// Interval of texture (Pixels)
         /// </summary>
         public int m_Interval = 0;
+
+        /// <summary>
+        /// 1f / m_Seg
+        /// </summary>
+        public float SegSize => 1f / m_Seg;
+        public float AtlasMult => m_Seg < 1? 0 : m_Seg - 1;
+
+        Dictionary<int, Color> m_TextureUVDic = new Dictionary<int, Color>();
+        /// <summary>
+        /// Convert TextureID into UV color
+        /// </summary>
+        /// <param name="iID"></param>
+        /// <returns></returns>
+        public Color GetAtlasColor(int iID)
+        {
+            if (m_Seg <= 1 || iID <= 0) return Color.black;
+            if (iID >= m_TextureCount)
+            {
+                iID = m_TextureCount - 1;
+            }
+            if (!m_TextureUVDic.ContainsKey(iID))
+            {
+                float aSize = 1f / (m_Seg - 1);
+                int aX = iID % m_Seg;
+                int aY = (iID - aX) / m_Seg;
+                m_TextureUVDic.Add(iID, new Color(aSize * aX, aSize * aY, 0, 1));
+            }
+
+            return m_TextureUVDic[iID];
+        }
     }
 
 
@@ -68,7 +104,7 @@ namespace UCL.Core.TextureLib {
             aData.m_Interval = iInterval;
             aData.m_Size = iSize;
             aData.m_Seg = Core.MathLib.Lib.SqrtInt(iTextList.Count);
-
+            aData.m_TextureCount = iTextList.Count;
             int aSeg = aData.m_Seg;
             int aAtlasSize = aSeg * iSize + (aSeg-1) * iInterval;
             var aTexture = new Texture2D(aAtlasSize, aAtlasSize, iTextureFormat, false);

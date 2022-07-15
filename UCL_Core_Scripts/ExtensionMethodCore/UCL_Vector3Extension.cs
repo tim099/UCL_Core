@@ -102,4 +102,26 @@ public static partial class VectorExtensionMethods {
         return false;
     }
     #endregion
+
+    #region Vector2Int
+    /// <summary>
+    /// Get Vector2Int in range
+    /// (etc iTarget = (10, 3) iMaxX = 8, iMinY = 5, then return will be (7, 5)
+    /// </summary>
+    /// <param name="iTarget"></param>
+    /// <param name="iMinX">Min value of X(Inclusive)</param>
+    /// <param name="iMinY">Min value of Y(Inclusive)</param>
+    /// <param name="iMaxX">Max value of X(Exclusive)</param>
+    /// <param name="iMaxY">Max value of Y(Exclusive)</param>
+    /// <returns></returns>
+    public static Vector2Int GetVectorInRange(this Vector2Int iTarget,int iMinX,int iMinY,int iMaxX,int iMaxY) {
+        Vector2Int aResult = iTarget;
+        if (aResult.x < iMinX) aResult.x = iMinX;
+        if (aResult.y < iMinY) aResult.y = iMinY;
+        if (aResult.x >= iMaxX) aResult.x = iMaxX - 1;
+        if (aResult.y >= iMaxY) aResult.y = iMaxY - 1;
+
+        return aResult;
+    }
+    #endregion
 }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.TextureLib {
-    public class UCL_Texture2D : UCLI_Texture2D {
+    public class UCL_Texture2D : UCLI_Texture2D, System.IDisposable {
         public Vector2Int size { get { return m_Size; } }
         public int width { get { return m_Size.x; } }
         public int height { get { return m_Size.y; } }
@@ -42,6 +42,11 @@ namespace UCL.Core.TextureLib {
             tex.Init(size, _TextureFormat);
             return tex;
         }
+        public void Dispose()
+        {
+            ClearTexture();
+            m_Col = null;
+        }
         /// <summary>
         /// Constructor without Init
         /// </summary>
@@ -63,19 +68,17 @@ namespace UCL.Core.TextureLib {
             Init(size, _TextureFormat);
         }
         ~UCL_Texture2D() {
-            ClearTexture();
+            Dispose();
         }
         public void ClearTexture() {
             //Debug.LogWarning("ClearTexture()!!");
             if (m_Texture != null) {
-                //Debug.LogWarning("GameObject.Destroy Not working, Memory leak!!");
-                Texture2D.DestroyImmediate(m_Texture);
+                Object.DestroyImmediate(m_Texture);
                 m_Texture = null;
-                //GameObject.Destroy();
             }
             if(m_Sprite != null)
             {
-                Sprite.DestroyImmediate(m_Sprite);
+                Object.DestroyImmediate(m_Sprite);
                 m_Sprite = null;
             }
         }

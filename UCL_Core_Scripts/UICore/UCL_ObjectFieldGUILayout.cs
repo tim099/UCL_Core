@@ -14,6 +14,13 @@ namespace UCL.Core
     {
         string GetShortName();
     }
+    /// <summary>
+    /// class with this interface will show Icon in UCL.Core.UI.UCL_GUILayout.DrawField
+    /// </summary>
+    public interface UCLI_Icon
+    {
+        Texture2D IconTexture { get; }
+    }
 }
 
 namespace UCL.Core.UI

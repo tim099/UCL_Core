@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 namespace UCL.Core.TextureLib {
-    public class TextureAtlasData
+    public class TextureAtlasData : System.IDisposable
     {
         public Texture2D m_Texture;
         /// <summary>
@@ -32,6 +32,15 @@ namespace UCL.Core.TextureLib {
         public float SegSize => 1f / m_Seg;
         public float AtlasMult => m_Seg < 1? 0 : m_Seg - 1;
 
+        public void Dispose()
+        {
+            if(m_Texture != null)
+            {
+                GameObject.Destroy(m_Texture);
+                m_Texture = null;
+            }
+        }
+
         Dictionary<int, Color> m_TextureUVDic = new Dictionary<int, Color>();
         /// <summary>
         /// Convert TextureID into UV color
@@ -40,11 +49,9 @@ namespace UCL.Core.TextureLib {
         /// <returns></returns>
         public Color GetAtlasColor(int iID)
         {
-            if (m_Seg <= 1 || iID <= 0) return Color.black;
-            if (iID >= m_TextureCount)
-            {
-                iID = m_TextureCount - 1;
-            }
+            if (iID < 0 || iID >= m_TextureCount) return Color.clear;
+            if (m_Seg <= 1 || iID == 0) return Color.black;//Color.black == (0,0,0,1)
+
             if (!m_TextureUVDic.ContainsKey(iID))
             {
                 float aSize = 1f / (m_Seg - 1);

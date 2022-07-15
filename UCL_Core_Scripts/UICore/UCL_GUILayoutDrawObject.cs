@@ -480,6 +480,19 @@ namespace UCL.Core.UI
                 }
                 else
                 {
+                    if (iObj is UCL.Core.UCLI_Icon)
+                    {
+                        var aTexture = (iObj as UCLI_Icon).IconTexture;
+                        if (aTexture != null)
+                        {
+                            using(new GUILayout.VerticalScope(GUILayout.Width(24), GUILayout.Height(24)))
+                            {
+                                GUILayout.FlexibleSpace();
+                                GUILayout.Box(aTexture, GUILayout.Width(24), GUILayout.Height(24));
+                                GUILayout.FlexibleSpace();
+                            }
+                        }
+                    }
                     if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
                 }
 

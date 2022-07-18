@@ -72,8 +72,24 @@ namespace UCL.Core.TextureLib
             m_TileMapTexture.SetPixel(iX, iY, aCol);
             m_TileMapTexture.GetTexture();
         }
+        public void UpdateTileMap()
+        {
+            if (!m_Inited) return;
+            for (int aY = 0; aY < Height; aY++)
+            {
+                for (int aX = 0; aX < Width; aX++)
+                {
+                    int aID = m_TileMap[aX, aY];
+                    Color aCol = m_Atlas.GetAtlasColor(aID);
+                    m_TileMapTexture.SetPixel(aX, aY, aCol);
+                }
+            }
+            m_TileMapTexture.GetTexture();
+        }
         public void Init(int[,] iTileMap, List<Texture2D> iAtlasTextures, int iTextureSize)
         {
+            if (m_Inited) return;
+            m_Inited = true;
             TextureSize = iTextureSize;
             AtlasTextures = iAtlasTextures;
             m_TileMap = iTileMap;

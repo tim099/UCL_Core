@@ -36,7 +36,7 @@ namespace UCL.Core.TextureLib {
         {
             if(m_Texture != null)
             {
-                GameObject.Destroy(m_Texture);
+                GameObject.DestroyImmediate(m_Texture);
                 m_Texture = null;
             }
         }

@@ -597,7 +597,7 @@ namespace UCL.Core.MathLib
             return m_Rnd.Next(iMax);
         }
         /// <summary>
-        /// Return a random float number between iMin [inclusive] and iMax [exclusive]
+        /// Return a random number between iMin [inclusive] and iMax [exclusive]
         /// </summary>
         /// <param name="iMin"></param>
         /// <param name="iMax"></param>
@@ -607,6 +607,37 @@ namespace UCL.Core.MathLib
             if (iMin > iMax) return m_Rnd.Next(iMax, iMin);
 
             return m_Rnd.Next(iMin, iMax);
+        }
+        /// <summary>
+        /// Return a List of random number(no repeat) between iMin [inclusive] and iMax [exclusive]
+        /// </summary>
+        /// <param name="iMin"></param>
+        /// <param name="iMax"></param>
+        /// <returns></returns>
+        public List<int> Ranges(int iMin, int iMax, int iCount)
+        {
+            List<int> aNums = new List<int>();
+            int aDel = iMax - iMin;
+            if (iCount > aDel) iCount = aDel;
+
+            if (iCount <= 0) return aNums;
+            HashSet<int> aGenNums = new HashSet<int>();
+
+            for(int i = 0; i < iCount; i++)
+            {
+                int aID = Range(0, aDel - i);
+
+                for (int j = 0; j <= aID; j++)
+                {
+                    if (aGenNums.Contains(j))
+                    {
+                        ++aID;
+                    }
+                }
+                aGenNums.Add(aID);
+                aNums.Add(iMin + aID);
+            }
+            return aNums;
         }
         /// <summary>
         /// Get current random state

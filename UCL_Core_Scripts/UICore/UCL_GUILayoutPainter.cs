@@ -14,7 +14,6 @@ namespace UCL.Core.UI
         /// </summary>
         public Texture2D Texture => m_Texture;
 
-
         protected UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
         protected Texture2D m_Texture = null;
         protected Color m_LineColor = Color.red;

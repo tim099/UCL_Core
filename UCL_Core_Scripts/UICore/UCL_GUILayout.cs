@@ -18,6 +18,11 @@ namespace UCL.Core.UI {
     }
 
     static public partial class UCL_GUILayout {
+        /// <summary>
+        /// set to true if RequireRepaint
+        /// </summary>
+        static public bool s_RequireRepaint = false;
+
         #region NumField
         static HashSet<char> NumHash
         {
@@ -394,95 +399,7 @@ namespace UCL.Core.UI {
             GUI.DrawTextureWithTexCoords(aRect, aTex, aSpriteRect);
             return aRect;
         }
-        static public bool DrawableTexture(Texture2D iTexture, UCL_ObjectDictionary iDataDic, float iWidth, float iHeight, Color iDrawCol)
-        {
-            bool aIsUpdated = false;
-            var aRect = DrawTexture(iTexture, iWidth, iHeight);
-            var aCurrentEvent = Event.current;
-
-            var aMousePos = aCurrentEvent.mousePosition;
-            Vector2Int aPrevPos = iDataDic.GetData("PrevPos", Vector2Int.left);//Position in PrevFrame
-            Vector2Int aCurPos = aRect.GetPosIntInRect(aMousePos);
-            Vector2 aPrevMousePos = iDataDic.GetData("PrevMousePos", Vector2.negativeInfinity);
-
-            
-            int aOutTimer = iDataDic.GetData("OutTimer", 0);//the time ouside of border
-            //GUILayout.Label("Timer:" + (aTimer++) + ",OutTimer:" + aOutTimer);
-
-            if (aCurrentEvent.type == EventType.MouseUp)
-            {
-                aPrevMousePos = Vector2.negativeInfinity;
-                aPrevPos = Vector2Int.left;
-                iDataDic.SetData("PrevMousePos", Vector2.negativeInfinity);
-                iDataDic.SetData("PrevPos", Vector2Int.left);
-            }
-
-            if (aRect.Contains(aMousePos))
-            {
-                if (aCurrentEvent.type == EventType.MouseDown)
-                {
-                    iTexture.SetPixel(aCurPos.x, aCurPos.y, iDrawCol);
-                    iTexture.Apply();
-                    aIsUpdated = true;
-                    aPrevPos = aCurPos;
-                }
-                else if (aCurrentEvent.type == EventType.MouseDrag)
-                {
-                    if (aRect.Contains(aPrevMousePos))
-                    {
-                        if (aPrevPos != Vector2Int.left)
-                        {
-                            iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
-                            aIsUpdated = true;
-                        }
-                    }
-                    else if(aPrevMousePos != Vector2.negativeInfinity)
-                    {
-                        var aPos = aRect.GetPosIntOnBorder(aMousePos, aPrevMousePos);
-                        iTexture.DrawLine(aPos, aCurPos, iDrawCol);
-                        aIsUpdated = true;
-                    }
-                    aPrevPos = aCurPos;
-                }
-                iDataDic.SetData("PrevPos", aPrevPos);
-                iDataDic.SetData("PrevMousePos", aMousePos);
-                iDataDic.SetData("OutTimer", 0);
-            }
-            else//out of range
-            {
-                iDataDic.SetData("OutTimer", aOutTimer + 1);
-                if (aCurrentEvent.type == EventType.MouseDown)
-                {
-                    iDataDic.SetData("PrevPos", aCurPos);
-                    iDataDic.SetData("PrevMousePos", aMousePos);
-                }
-                else if (aCurrentEvent.type == EventType.MouseDrag)
-                {
-                    if (aRect.Contains(aPrevMousePos) && aPrevPos != Vector2.left)//Prev pos in Rect
-                    {
-                        //Debug.LogError("aPrevPos:" + aPrevPos + ",aPrevMousePos:" + aPrevMousePos+ ",aOutTimer:"+ aOutTimer);
-                        var aPos = aRect.GetPosIntOnBorder(aPrevMousePos, aMousePos);
-                        iTexture.DrawLine(aPrevPos, aPos, iDrawCol);
-                        iDataDic.SetData("PrevMousePos", aMousePos);
-                        aIsUpdated = true;
-                    }
-                    iDataDic.SetData("PrevPos", aCurPos);
-                }
-                if (aOutTimer > 2)
-                {
-                    iDataDic.SetData("OutTimer", 0);
-                    iDataDic.SetData("PrevMousePos", aMousePos);
-                    iDataDic.SetData("PrevPos", Vector2.left);
-                }
-            }
-            
-            return aIsUpdated;
-        }
-        static public Rect DrawTexture(Texture iTexture, float width, float height)
-        {
-            if (iTexture == null) return default;
-            return DrawTexture(iTexture, width, width, height, height);
-        }
+        
         static public Rect DrawTexture(Texture iTexture, float iMinWidth, float iMaxWidth, float iMinHeight, float iMaxHeight)
         {
             if (iTexture == null) return default;
@@ -491,6 +408,26 @@ namespace UCL.Core.UI {
             if (aRect.height > iMaxHeight) aRect.height = iMaxHeight;
 
             GUI.DrawTexture(aRect, iTexture);
+            return aRect;
+        }
+        static public Rect DrawTexture(Texture iTexture, float iWidth, float iHeight)
+        {
+            if (iTexture == null) return default;
+            return DrawTexture(iTexture, iWidth, iWidth, iHeight, iHeight);
+        }
+        static public Rect GraphicsDrawTexture(Texture iTexture, float iWidth, float iHeight, Material iMat)
+        {
+            if (iTexture == null) return default;
+            return GraphicsDrawTexture(iTexture, iWidth, iWidth, iHeight, iHeight, iMat);
+        }
+        static public Rect GraphicsDrawTexture(Texture iTexture, float iMinWidth, float iMaxWidth, float iMinHeight, float iMaxHeight, Material iMat)
+        {
+            if (iTexture == null) return default;
+            Rect aRect = GUILayoutUtility.GetRect(iMinWidth, iMaxWidth, iMinHeight, iMaxHeight);
+            if (aRect.width > iMaxWidth) aRect.width = iMaxWidth;
+            if (aRect.height > iMaxHeight) aRect.height = iMaxHeight;
+
+            Graphics.DrawTexture(aRect, iTexture, iMat);
             return aRect;
         }
         #region Button
@@ -566,7 +503,6 @@ namespace UCL.Core.UI {
             GUI.skin.label.normal.textColor = aOriginalCol;
         }
         #endregion
-
         /// <summary>
         /// Draw a FolderExplorer using GUILayout
         /// </summary>

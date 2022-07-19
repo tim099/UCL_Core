@@ -9,13 +9,13 @@ namespace UCL.Core.TextureLib
     public class UCL_TileMap : System.IDisposable
     {
         public TextureFormat m_TextureFormat = TextureFormat.ARGB32;
-
+        public Texture2D TextureAtlas => m_Atlas.m_Texture;
 
         public int TextureSize { get; protected set; }
         public int Width { get; protected set; }
         public int Height { get; protected set; }
         public List<Texture2D> AtlasTextures { get; protected set; }
-
+        public Material AtlasMaterial => m_Mat;
 
         int[,] m_TileMap = null;
         TextureAtlasData m_Atlas = null;
@@ -48,7 +48,7 @@ namespace UCL.Core.TextureLib
         }
         public void ClearMat()
         {
-            if (m_Mat != null) GameObject.Destroy(m_Mat);
+            if (m_Mat != null) GameObject.DestroyImmediate(m_Mat);
             m_Mat = null;
         }
         public Material CreateMaterial(Material iMat)
@@ -62,8 +62,17 @@ namespace UCL.Core.TextureLib
             m_Mat.SetInt("Seg", m_Atlas.m_Seg);
             m_Mat.SetFloat("SegSize", m_Atlas.SegSize);
             m_Mat.SetFloat("AtlasMult", m_Atlas.AtlasMult);
-            m_Mat.SetTexture("_TextureAtlas", m_Atlas.m_Texture);
+            m_Mat.SetTexture("_TextureAtlas", TextureAtlas);
             return m_Mat;
+        }
+        /// <summary>
+        /// Convert TextureID into UV color
+        /// </summary>
+        /// <param name="iID"></param>
+        /// <returns></returns>
+        public Color GetAtlasColor(int iID)
+        {
+            return m_Atlas.GetAtlasColor(iID);
         }
         public void SetTile(int iX, int iY, int iID)
         {

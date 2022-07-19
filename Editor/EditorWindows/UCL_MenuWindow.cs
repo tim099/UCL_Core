@@ -35,8 +35,9 @@ namespace UCL.Core.EditorLib {
             if (Event.current.type == EventType.Repaint)
             {
                 var aNewRgn = GUILayoutUtility.GetLastRect();
-                if (aNewRgn != m_GridRegion)
+                if (aNewRgn != m_GridRegion || UCL.Core.UI.UCL_GUILayout.s_RequireRepaint)
                 {
+                    UCL.Core.UI.UCL_GUILayout.s_RequireRepaint = false;
                     m_GridRegion = aNewRgn;
                     Repaint();
                 }

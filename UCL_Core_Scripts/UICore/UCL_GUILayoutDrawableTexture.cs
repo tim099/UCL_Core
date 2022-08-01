@@ -22,24 +22,30 @@ namespace UCL.Core.UI
             var aCurrentEvent = Event.current;
 
             var aMousePos = aCurrentEvent.mousePosition;
-            Vector2Int aPrevPos = iDataDic.GetData("PrevPos", Vector2Int.left);//Position in PrevFrame
+            Vector2Int aPrevDrawPos = iDataDic.GetData("PrevPos", Vector2Int.left);//Position in PrevFrame
             Vector2Int aCurPos = aRect.GetPosIntInRect(aMousePos);
 
             //Vector2Int aPrevDrawPos = iDataDic.GetData("PrevDrawPos", Vector2Int.left);
-            Vector2Int aDrawPos = aCurPos;
-
-            if (iTexture.width != iWidth)
+            
+            System.Func<Vector2Int, Vector2Int> GetDrawPos = (iPos) =>
             {
-                aDrawPos.x = Mathf.FloorToInt((aCurPos.x * iTexture.width) / iWidth);
-                if (aDrawPos.x < 0) aDrawPos.x = 0;
-                if (aDrawPos.x >= iTexture.width) aDrawPos.x = iTexture.width - 1;
-            }
-            if (iTexture.height != iHeight)
-            {
-                aDrawPos.y = Mathf.FloorToInt((aCurPos.y * iTexture.height) / iHeight);
-                if (aDrawPos.y < 0) aDrawPos.y = 0;
-                if (aDrawPos.y >= iTexture.height) aDrawPos.x = iTexture.height - 1;
-            }
+                Vector2Int aPos = iPos;
+                if (iTexture.width != iWidth)
+                {
+                    aPos.x = Mathf.FloorToInt((aCurPos.x * iTexture.width) / iWidth);
+                    if (aPos.x < 0) aPos.x = 0;
+                    if (aPos.x >= iTexture.width) aPos.x = iTexture.width - 1;
+                }
+                if (iTexture.height != iHeight)
+                {
+                    aPos.y = Mathf.FloorToInt((aCurPos.y * iTexture.height) / iHeight);
+                    if (aPos.y < 0) aPos.y = 0;
+                    if (aPos.y >= iTexture.height) aPos.y = iTexture.height - 1;
+                }
+                return aPos;
+            };
+            Vector2Int aDrawPos = GetDrawPos(aCurPos);
+            
             Vector2 aPrevMousePos = iDataDic.GetData("PrevMousePos", Vector2.negativeInfinity);
 
 
@@ -49,39 +55,43 @@ namespace UCL.Core.UI
             if (aCurrentEvent.type == EventType.MouseUp)
             {
                 aPrevMousePos = Vector2.negativeInfinity;
-                aPrevPos = Vector2Int.left;
+                aPrevDrawPos = Vector2Int.left;
                 iDataDic.SetData("PrevMousePos", Vector2.negativeInfinity);
                 iDataDic.SetData("PrevPos", Vector2Int.left);
             }
 
-            if (aRect.Contains(aMousePos))
+            if (aRect.Contains(aMousePos))//In paint range
             {
-                if (aCurrentEvent.type == EventType.MouseDown)
+                if (aCurrentEvent.type == EventType.MouseDown)//Draw a Dot
                 {
+                    //Debug.LogError("aDrawPos:" + aDrawPos);
                     iTexture.SetPixel(aDrawPos.x, aDrawPos.y, iDrawCol);
                     iTexture.Apply();
                     aIsUpdated = true;
-                    aPrevPos = aCurPos;
+                    aPrevDrawPos = aDrawPos;
                 }
                 else if (aCurrentEvent.type == EventType.MouseDrag)
                 {
                     if (aRect.Contains(aPrevMousePos))
                     {
-                        if (aPrevPos != Vector2Int.left)
+                        if (aPrevDrawPos != Vector2Int.left)
                         {
-                            iTexture.DrawLine(aPrevPos, aCurPos, iDrawCol);
+                            iTexture.SetPixel(aDrawPos.x, aDrawPos.y, iDrawCol);
+                            iTexture.DrawLine(aPrevDrawPos, aDrawPos, iDrawCol);
                             aIsUpdated = true;
                         }
                     }
-                    else if (aPrevMousePos != Vector2.negativeInfinity)
+                    else if (aPrevMousePos != Vector2.negativeInfinity)//out of range
                     {
-                        var aPos = aRect.GetPosIntOnBorder(aMousePos, aPrevMousePos);
-                        iTexture.DrawLine(aPos, aCurPos, iDrawCol);
+                        var aPos = GetDrawPos(aRect.GetPosIntOnBorder(aMousePos, aPrevMousePos));
+                        //Debug.LogError("aPrevDrawPos:" + aPrevDrawPos + ",aPos:" + aPos+ ",aPrevMousePos:"+ aPrevMousePos+ ",aMousePos:"+ aMousePos);
+                        iTexture.SetPixel(aPos.x, aPos.y, iDrawCol);
+                        iTexture.DrawLine(aPos, aDrawPos, iDrawCol);
                         aIsUpdated = true;
                     }
-                    aPrevPos = aCurPos;
+                    aPrevDrawPos = aDrawPos;
                 }
-                iDataDic.SetData("PrevPos", aPrevPos);
+                iDataDic.SetData("PrevPos", aPrevDrawPos);
                 iDataDic.SetData("PrevMousePos", aMousePos);
                 iDataDic.SetData("OutTimer", 0);
             }
@@ -95,11 +105,16 @@ namespace UCL.Core.UI
                 }
                 else if (aCurrentEvent.type == EventType.MouseDrag)
                 {
-                    if (aRect.Contains(aPrevMousePos) && aPrevPos != Vector2.left)//Prev pos in Rect
+                    if (aRect.Contains(aPrevMousePos) && aPrevDrawPos != Vector2.left)//Prev pos in Rect
                     {
-                        //Debug.LogError("aPrevPos:" + aPrevPos + ",aPrevMousePos:" + aPrevMousePos+ ",aOutTimer:"+ aOutTimer);
-                        var aPos = aRect.GetPosIntOnBorder(aPrevMousePos, aMousePos);
-                        iTexture.DrawLine(aPrevPos, aPos, iDrawCol);
+                        
+                        var aPos = GetDrawPos(aRect.GetPosIntOnBorder(aPrevMousePos, aMousePos));
+                        //Debug.LogError("aPrevDrawPos:" + aPrevDrawPos + ",aPos:" + aPos);
+                        if (aPrevDrawPos != aPos)
+                        {
+                            iTexture.DrawLine(aPrevDrawPos, aPos, iDrawCol);
+                        }
+                        
                         iDataDic.SetData("PrevMousePos", aMousePos);
                         aIsUpdated = true;
                     }

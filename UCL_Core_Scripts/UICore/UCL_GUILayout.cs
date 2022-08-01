@@ -415,6 +415,14 @@ namespace UCL.Core.UI {
             if (iTexture == null) return default;
             return DrawTexture(iTexture, iWidth, iWidth, iHeight, iHeight);
         }
+        /// <summary>
+        /// Draw with Graphics.DrawTexture
+        /// </summary>
+        /// <param name="iTexture"></param>
+        /// <param name="iWidth"></param>
+        /// <param name="iHeight"></param>
+        /// <param name="iMat"></param>
+        /// <returns></returns>
         static public Rect GraphicsDrawTexture(Texture iTexture, float iWidth, float iHeight, Material iMat)
         {
             if (iTexture == null) return default;
@@ -426,8 +434,11 @@ namespace UCL.Core.UI {
             Rect aRect = GUILayoutUtility.GetRect(iMinWidth, iMaxWidth, iMinHeight, iMaxHeight);
             if (aRect.width > iMaxWidth) aRect.width = iMaxWidth;
             if (aRect.height > iMaxHeight) aRect.height = iMaxHeight;
-
-            Graphics.DrawTexture(aRect, iTexture, iMat);
+            if (Event.current.type == EventType.Repaint)
+            {
+                Graphics.DrawTexture(aRect, iTexture, iMat);
+            }
+            
             return aRect;
         }
         #region Button

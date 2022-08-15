@@ -4,9 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core.MathLib {
-#if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
-#endif
     public class UCL_Curve : UCL_Path {
         public List<Vector3> m_Points;
 
@@ -51,17 +49,13 @@ namespace UCL.Core.MathLib {
             //UpdatePathPoint();
         }
 
-#if UNITY_EDITOR
         [ATTR.UCL_FunctionButton("Reverse")]
-#endif
         public void Reverse() {
             m_Points.Reverse();
             UpdatePathPoint();
         }
 
-#if UNITY_EDITOR
         [ATTR.UCL_FunctionButton]
-#endif
         public void CreateLoop() {
             if(m_Points.Count < 2) return;
             m_Loop = true;
@@ -77,9 +71,7 @@ namespace UCL.Core.MathLib {
 #endif
         }
 
-#if UNITY_EDITOR
         [ATTR.UCL_FunctionButton]
-#endif
         public void RemoveLoop() {
             if(m_Points.Count < 2) return;
             if(m_Points.LastElement<Vector3>() != m_Points.FirstElement<Vector3>()) {
@@ -333,21 +325,21 @@ namespace UCL.Core.MathLib {
         }
 
         /// <summary>
-        /// if at smaller then zero, at will set to m_Points.Count - 1;
+        /// if iIndex smaller then zero, iIndex will set to m_Points.Count - 1;
         /// </summary>
-        /// <param name="at"></param>
-        public void InsertPoint(int at) {
+        /// <param name="iIndex"></param>
+        public void InsertPoint(int iIndex) {
             if(m_Points.Count < 2) {
                 m_Points.Add(Vector3.zero);
                 return;
             }
-            if(at >= m_Points.Count) at = m_Points.Count - 1;
-            if(at < 0) at = m_Points.Count - 1;
+            if(iIndex >= m_Points.Count) iIndex = m_Points.Count - 1;
+            if(iIndex < 0) iIndex = m_Points.Count - 1;
 
-            var p = ((float)(at - 0.5f) / (m_Points.Count - 1));
+            var p = ((float)(iIndex - 0.5f) / (m_Points.Count - 1));
 
             Vector3 pos = GetPoint(p);
-            m_Points.Insert(at, transform.InverseTransformPoint(pos));
+            m_Points.Insert(iIndex, transform.InverseTransformPoint(pos));
             UpdatePathPoint();
         }
 

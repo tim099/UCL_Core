@@ -66,25 +66,25 @@ namespace UCL.Core.MathLib {
         virtual public UCLI_Path GetRandomPath(int seed) { return this; }
         virtual public void OnDrawGizmos(Color m_StartCol, Color m_EndCol) {
 #if UNITY_EDITOR
-            var tmp = Gizmos.color;
+            var aTmp = Gizmos.color;
 
             Gizmos.color = m_StartCol;
-            var prev = m_Points[0];
-            UCL_DrawGizmos.DrawConstSizeSphere(prev, 1.5f);
+            var aPrev = m_Points[0];
+            UCL_DrawGizmos.DrawConstSizeSphere(aPrev, 1.5f);
             for(int i = 1; i < m_Points.Count; i++) {
-                var cur = m_Points[i];
+                var aCur = m_Points[i];
                 //Gizmos.color = Color.Lerp(m_StartCol, m_EndCol, (i / (float)m_Points.Count));
-                UCL_DrawGizmos.DrawLine(prev, cur);
-                prev = cur;
+                UCL_DrawGizmos.DrawLine(aPrev, aCur);
+                aPrev = aCur;
             }
             Gizmos.color = m_EndCol;
             if(m_Points.Count > 1) {
-                UCL_DrawGizmos.DrawConstSizeSphere(prev, 1.5f);
+                UCL_DrawGizmos.DrawConstSizeSphere(aPrev, 1.5f);
             }
             
             //m_Rnd.OnRect(width, height);
 
-            Gizmos.color = tmp;
+            Gizmos.color = aTmp;
 #endif
         }
         public float m_PathLength;

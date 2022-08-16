@@ -7,14 +7,14 @@ namespace UCL.Core.EditorLib
     {
         [UnityEditor.MenuItem("GameObject/3D Object/UCL/Curve")]
         private static void CreateUCL_Curve() {
-            Object selectedObject = UnityEditor.Selection.activeObject;
-            GameObject obj = selectedObject as GameObject;
-            Transform p = null;
-            if(obj != null) {
-                p = obj.transform;
+            Object aSelectedObject = UnityEditor.Selection.activeObject;
+            GameObject aObj = aSelectedObject as GameObject;
+            Transform aParent = null;
+            if(aObj != null) {
+                aParent = aObj.transform;
             }
-            var curve = Core.GameObjectLib.Create<UCL.Core.MathLib.UCL_Curve>("UCL_Curve", p);
-            UnityEditor.Selection.activeObject = curve;
+            var aCurve = Core.GameObjectLib.Create<UCL.Core.MathLib.UCL_Curve>("UCL_Curve", aParent);
+            UnityEditor.Selection.activeObject = aCurve;
         }
     }
 }

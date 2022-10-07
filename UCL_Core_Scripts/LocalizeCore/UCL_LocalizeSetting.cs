@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -17,13 +17,20 @@ namespace UCL.Core.LocalizeLib
         /// etc. https://docs.google.com/spreadsheets/d/1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo/edit#gid=0
         /// TableId = 1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo
         /// </summary>
-        public string m_TableId = string.Empty;
+        [Header("etc. https://docs.google.com/spreadsheets/d/1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo/edit#gid=0" +
+            "\nTableId = 1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo")]
+        public string m_TableId = "1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo";
+
         /// <summary>
         /// SheetIds on Google Spreadsheet.
         /// etc. https://docs.google.com/spreadsheets/d/1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo/edit#gid=0
         /// Gid = 0(gid = 0)
         /// </summary>
+        [Header("SheetIds on Google Spreadsheet."
+            + "\netc. https://docs.google.com/spreadsheets/d/1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo/edit#gid=0"
+            + "\nGid = 0(gid = 0)")]
         public List<long> m_Gids = new List<long>();
+
         /// <summary>
         /// Gid of Table that contains all Gid
         /// </summary>
@@ -54,7 +61,7 @@ namespace UCL.Core.LocalizeLib
         protected void DownloadEnd(bool iSuccess)
         {
 #if UNITY_EDITOR
-            if(iSuccess) UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
+            if (iSuccess) UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
             UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
 #endif
             m_IsDownloading = false;
@@ -63,7 +70,7 @@ namespace UCL.Core.LocalizeLib
         [UCL.Core.ATTR.UCL_DrawOnGUI]
         protected void DrawOnGUI()
         {
-            using(new GUILayout.HorizontalScope())
+            using (new GUILayout.HorizontalScope())
             {
                 if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
                 {
@@ -116,25 +123,29 @@ namespace UCL.Core.LocalizeLib
                 {
                     foreach (var aLangName in aLangDic.Keys)
                     {
-                        //Debug.LogError("aLangName:" + aLangName);
-                        string aFolderName = Path.Combine(SavePath, aLangName);
+                        if (!aLangName.IsNullOrEmpty())
+                        {
+                            //Debug.LogError("aLangName:" + aLangName);
+                            string aFolderName = Path.Combine(SavePath, aLangName);
 
-                        if (!Directory.Exists(aFolderName))
-                        {
-                            Directory.CreateDirectory(aFolderName);
+                            if (!Directory.Exists(aFolderName))
+                            {
+                                Directory.CreateDirectory(aFolderName);
+                            }
+                            var aLangs = aLangDic[aLangName];
+                            StringBuilder aSB = new StringBuilder();
+                            for (int i = 0; i < aLangs.Count; i++)
+                            {
+                                aLangs[i].SaveToString(aSB);
+                                if (i < aLangs.Count - 1) aSB.AppendLine();
+                            }
+                            string aPath = Path.Combine(aFolderName, m_FileName);
+                            //Debug.Log(aPath + ",aLangName:" + aLangName);
+                            File.WriteAllText(aPath, aSB.ToString());
+                            //#if UNITY_EDITOR_WIN
+                            //Core.FileLib.WindowsLib.OpenAssetExplorer(aPath);
+                            //#endif
                         }
-                        var aLangs = aLangDic[aLangName];
-                        StringBuilder aSB = new StringBuilder();
-                        for (int i = 0; i < aLangs.Count; i++)
-                        {
-                            aLangs[i].SaveToString(aSB);
-                            if (i < aLangs.Count - 1) aSB.AppendLine();
-                        }
-                        string aPath = Path.Combine(aFolderName, m_FileName);
-                        File.WriteAllText(aPath, aSB.ToString());
-#if UNITY_EDITOR_WIN
-                        //Core.FileLib.WindowsLib.OpenAssetExplorer(aPath);
-#endif
                     }
 
                     DownloadEnd(true);
@@ -145,7 +156,8 @@ namespace UCL.Core.LocalizeLib
                 foreach (long aGid in aGids)
                 {
                     int aAt = aID++;
-                    UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGid), delegate (byte[] iData) {
+                    UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(aGid), delegate (byte[] iData)
+                    {
                         string aData = string.Empty;
                         if (iData != null && iData.Length > 0)
                         {
@@ -157,7 +169,7 @@ namespace UCL.Core.LocalizeLib
                         }
                         aDatas[aAt] = aData;
                         float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
-                        if (CheckCancelDownload("Download Localize aGid:"+ aGid, "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress))
+                        if (CheckCancelDownload("Download Localize aGid:" + aGid, "Progress: " + (100f * aProgress).ToString("N1") + "%", aProgress))
                         {
                             return;
                         }
@@ -178,7 +190,8 @@ namespace UCL.Core.LocalizeLib
             if (m_GidTable != -1)
             {
                 UCL.Core.EnumeratorLib.UCL_CoroutineManager.StartCoroutine(UCL.Core.WebRequestLib.Download(GetDownloadPath(m_GidTable)
-                    , delegate (byte[] iData) {
+                    , delegate (byte[] iData)
+                    {
                         if (iData == null || iData.Length == 0)
                         {
                             Debug.LogError("GidTable download fail!!iData == null || iData.Length == 0");
@@ -250,7 +263,7 @@ namespace UCL.Core.LocalizeLib
             if (aCSV.Count > 1)
             {
                 var aLangs = new List<string>();
-                
+
                 var aLangNames = aCSV.GetRow(0);
                 //Debug.LogWarning("aLines[0]:" + aLines[0]);
                 for (int i = 1; i < aLangNames.Count; i++)//0 is Key
@@ -262,13 +275,13 @@ namespace UCL.Core.LocalizeLib
                         //Debug.LogError("Add aLangName:" + aLangName);
                         iLangDic.Add(aLangName, new List<KeyPair>());
                     }
-                    for(int j = 1; j < aCSV.Count; j++)
+                    for (int j = 1; j < aCSV.Count; j++)
                     {
                         string aKey = aCSV.GetData(j, 0);
                         if (!string.IsNullOrEmpty(aKey))
                         {
                             iLangDic[aLangName].Add(new KeyPair(aKey, aCSV.GetData(j, i)));
-                        } 
+                        }
                     }
                 }
             }

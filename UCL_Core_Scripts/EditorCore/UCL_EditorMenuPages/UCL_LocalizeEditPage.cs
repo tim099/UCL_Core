@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.UI;
 using UnityEngine;
@@ -45,7 +45,7 @@ namespace UCL.Core.EditorLib.Page
                 UCL.Core.JsonLib.JsonConvert.LoadDataFromJsonUnityVer(m_LocalizeSetting, JsonLib.JsonData.ParseJson(aJson));
             }
         }
-        protected  void SaveLocalizeSetting()
+        protected void SaveLocalizeSetting()
         {
             if (m_LocalizeSetting == null) return;
             var aData = UCL.Core.JsonLib.JsonConvert.SaveDataToJsonUnityVer(m_LocalizeSetting);
@@ -53,13 +53,15 @@ namespace UCL.Core.EditorLib.Page
         }
         protected override void ContentOnGUI()
         {
-            GUILayout.Box("Localize");
-            UCL.Core.UI.UCL_GUILayout.DrawObjectData(m_LocalizeSetting,
-                m_DataDic, iIsAlwaysShowDetail: true, iFieldNameFunc: UCL.Core.UCL_StaticFunctions.LocalizeFieldName);
+            GUILayout.Box("Localize", UI.UCL_GUIStyle.BoxStyle);
+            UCL_GUILayout.DrawObjectData(m_LocalizeSetting,
+                m_DataDic, iIsAlwaysShowDetail: false, iFieldNameFunc: UCL_StaticFunctions.LocalizeFieldName);
+            //UCL_LocalizeManager.Get
             if (!m_IsDownloading)
             {
-                if (GUILayout.Button("Download"))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_Download")))
                 {
+                    SaveLocalizeSetting();
                     m_LocalizeSetting.StartDownload((iSuccess) =>
                     {
                         m_IsDownloading = false;

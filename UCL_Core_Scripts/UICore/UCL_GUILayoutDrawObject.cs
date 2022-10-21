@@ -98,7 +98,7 @@ namespace UCL.Core.UI
                     GUILayout.BeginHorizontal();
                     if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, "Show");
                     GUILayout.BeginVertical();
-                    using(new GUILayout.HorizontalScope())//Show Title(iDisplayName)
+                    using (new GUILayout.HorizontalScope())//Show Title(iDisplayName)
                     {
                         if (iIsAlwaysShowDetail)
                         {
@@ -174,7 +174,7 @@ namespace UCL.Core.UI
                                     if (aTypeList != null)
                                     {
                                         System.Func<string, string> aNameFunc = null;
-                                        if(aTypeList is UCLI_GetTypeName)
+                                        if (aTypeList is UCLI_GetTypeName)
                                         {
                                             var aListName = (UCLI_GetTypeName)(aTypeList);
                                             aNameFunc = (iName) => aListName.GetTypeName(iName);
@@ -260,7 +260,7 @@ namespace UCL.Core.UI
                                         aDeleteAt = aAt;
                                     }
                                 }
-                                string aDisplayName = aListData.UCL_GetShortName(aListData != null? aListData.GetType().Name : aTypeName);
+                                string aDisplayName = aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName);
                                 var aResult = DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++),
                                     aDisplayName, iFieldNameFunc: iFieldNameFunc, iFieldType: aListType);
                                 aResultList.Add(aResult);
@@ -315,7 +315,7 @@ namespace UCL.Core.UI
                     if (aIsShowField)
                     {
                         IDictionary aDic = iObj as IDictionary;
-                        using(new GUILayout.HorizontalScope("box"))
+                        using (new GUILayout.HorizontalScope("box"))
                         {
                             var aKeyType = aType.GetGenericKeyType();
                             string aAddKey = "AddData";
@@ -325,7 +325,7 @@ namespace UCL.Core.UI
                             }
                             iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey),
                                 iDataDic.GetSubDic(iDisplayName + "_AddKey"), UCL_LocalizeManager.Get(aKeyType.Name), iFieldNameFunc: iFieldNameFunc));
-                            using(new GUILayout.HorizontalScope("box"))
+                            using (new GUILayout.HorizontalScope("box"))
                             {
                                 if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
                                 {
@@ -365,9 +365,8 @@ namespace UCL.Core.UI
                                         aDeleteKeyName = "Dic_" + aKeyName;
                                     }
                                 }
-                                using(new GUILayout.VerticalScope())
+                                using (new GUILayout.VerticalScope())
                                 {
-                                    
                                     var aSubDic = iDataDic.GetSubDic("Dic_" + aKeyName);
                                     var aDicData = aDic[aKey];
                                     string aDisplayName = aDicData.UCL_GetShortName(aDicData != null ? aDicData.GetType().Name : aValueType.Name);
@@ -407,7 +406,7 @@ namespace UCL.Core.UI
                 }
                 else if (iObj is Component)
                 {
-                    if(iObj is Transform)
+                    if (iObj is Transform)
                     {
                         var aTransform = iObj as Transform;
                         using (new GUILayout.VerticalScope("box"))
@@ -485,7 +484,7 @@ namespace UCL.Core.UI
                         var aTexture = (iObj as UCLI_Icon).IconTexture;
                         if (aTexture != null)
                         {
-                            using(new GUILayout.VerticalScope(GUILayout.Width(24), GUILayout.Height(24)))
+                            using (new GUILayout.VerticalScope(GUILayout.Width(24), GUILayout.Height(24)))
                             {
                                 GUILayout.FlexibleSpace();
                                 GUILayout.Box(aTexture, GUILayout.Width(24), GUILayout.Height(24));
@@ -498,7 +497,7 @@ namespace UCL.Core.UI
 
                 if (iObj is UCLI_CopyPaste)
                 {
-                    if(DrawCopyPaste(ref iObj, iDataDic, iFieldType))
+                    if (DrawCopyPaste(ref iObj, iDataDic, iFieldType))
                     {
                         aIsShowField = false;
                         aResultObj = iObj;
@@ -547,7 +546,6 @@ namespace UCL.Core.UI
                             GUILayout.EndVertical();
                         }
                     }
-
                     var aFields = aType.GetAllFieldsUnityVer(typeof(object));
                     foreach (var aField in aFields)
                     {
@@ -557,6 +555,11 @@ namespace UCL.Core.UI
                             || aField.GetCustomAttribute<ATTR.UCL_HideOnGUIAttribute>(false) != null)
                         {
                             continue;
+                        }
+                        var aHeader = aField.GetCustomAttribute<HeaderAttribute>(true);
+                        if (aHeader != null)
+                        {
+                            GUILayout.Box(aHeader.header, UI.UCL_GUIStyle.BoxStyle);
                         }
                         if (aData == null)
                         {

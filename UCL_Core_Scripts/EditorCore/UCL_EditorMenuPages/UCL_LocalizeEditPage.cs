@@ -56,7 +56,6 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Box("Localize", UI.UCL_GUIStyle.BoxStyle);
             UCL_GUILayout.DrawObjectData(m_LocalizeSetting,
                 m_DataDic, iIsAlwaysShowDetail: false, iFieldNameFunc: UCL_StaticFunctions.LocalizeFieldName);
-            //UCL_LocalizeManager.Get
             if (!m_IsDownloading)
             {
                 if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_Download")))

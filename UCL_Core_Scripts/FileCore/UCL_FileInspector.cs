@@ -81,6 +81,7 @@ namespace UCL.Core.FileLib {
             /// folder path
             /// </summary>
             public string m_Path;
+            [NonReorderable]
             public List<FileInformation> m_FileInfos = new List<FileInformation>();
             public int m_SubDirCount = 0;
 
@@ -457,6 +458,7 @@ namespace UCL.Core.FileLib {
         }
 #endif
         //[SerializeField] string m_SerializeData = string.Empty;
+        [NonReorderable]
         [SerializeField] List<SerializableFolderInformation> m_SerializableFolderInformation = new List<SerializableFolderInformation>();
         void ISerializationCallbackReceiver.OnBeforeSerialize()
         {

@@ -62,7 +62,8 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Back"), GUILayout.ExpandWidth(false)))
                     {
-                        BackButtonClicked();
+                        UCL.Core.ServiceLib.UCL_UpdateService.AddAction(BackButtonClicked);
+                        //BackButtonClicked();
                     }
                 }
 
@@ -70,7 +71,8 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Close"), GUILayout.ExpandWidth(false)))
                     {
-                        CloseButtonClicked();
+                        UCL.Core.ServiceLib.UCL_UpdateService.AddAction(CloseButtonClicked);
+                        //CloseButtonClicked();
                     }
                 }
 

@@ -626,7 +626,9 @@ namespace UCL.Core.JsonLib {
                         }
                         catch (System.Exception iE)
                         {
-                            Debug.LogError("aField.FieldType:" + aField.FieldType.Name + ",aField.Name:" + aField.Name + ",aStr:" + aStr + "\nSystem.Exception:" + iE);
+                            Debug.LogError("aField.FieldType:" + aField.FieldType.Name + ",aField.Name:" + aField.Name + ",aStr:" + aStr
+                                + ",JsonData:" + iData.ToJsonBeautify()
+                                + "\nSystem.Exception:" + iE);
                             Debug.LogException(iE);
                         }
                     }

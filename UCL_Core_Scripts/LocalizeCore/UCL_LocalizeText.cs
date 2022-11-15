@@ -14,6 +14,11 @@ namespace UCL.Core.LocalizeLib {
         private void OnDestroy() {
             UCL_LocalizeManager.OnLanguageChanged -= SetText;
         }
+        public void SetKey(string iKey)
+        {
+            m_Key = iKey;
+            SetText();
+        }
         public void SetText() {
             var text = GetComponent<Text>();
             if(text != null) {

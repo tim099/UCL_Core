@@ -111,7 +111,17 @@ namespace UCL.Core.Game
         /// <param name="iUI"></param>
         public void OnUIClosed(UCL_GameUI iUI)
         {
+            if(iUI == null)
+            {
+                return;
+            }
+            if (!m_UIStack.Contains(iUI))
+            {
+                Debug.LogError("!m_UIStack.Contains:" + iUI.name);
+            }
             m_UIStack.Remove(iUI);
+            //Debug.LogError("OnCLose:" + iUI.name);
+            if(iUI.gameObject != null) Destroy(iUI.gameObject);
         }
         /// <summary>
         /// Close all UI

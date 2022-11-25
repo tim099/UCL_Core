@@ -25,6 +25,16 @@ public static partial class UIExtensionMethods
         if (iScrollRect == null) return;
         iScrollRect.verticalNormalizedPosition = 0f;
     }
+    public static void ToLeft(this ScrollRect iScrollRect)
+    {
+        if (iScrollRect == null) return;
+        iScrollRect.horizontalNormalizedPosition = 0f;
+    }
+    public static void ToRight(this ScrollRect iScrollRect)
+    {
+        if (iScrollRect == null) return;
+        iScrollRect.horizontalNormalizedPosition = 1f;
+    }
     #endregion
 
     #region Toggle

@@ -47,25 +47,28 @@ namespace UCL.Core.UI {
             GUIStyle m_ButtonStyle = null;
 
 
-            public GUIStyle GetButtonText(Color iCol)
+            public GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12)
             {
 
-                if (m_ButtonTextColorDic == null)
+                if (m_ButtonStyleDic == null)
                 {
                     //Debug.LogError("GetButtonText! m_ButtonTextColorDic == null");
-                    m_ButtonTextColorDic = new Dictionary<Color, GUIStyle>();
+                    m_ButtonStyleDic = new Dictionary<System.Tuple<Color, int>, GUIStyle>();
                 }
-                if (!m_ButtonTextColorDic.ContainsKey(iCol))
+                var aKey = new System.Tuple<Color, int>(iCol, iFontSize);
+                if (!m_ButtonStyleDic.ContainsKey(aKey))
                 {
                     var aText = new GUIStyle(GUI.skin.button);
                     aText.normal.textColor = iCol;
                     aText.active.textColor = iCol;
                     aText.hover.textColor = iCol;
-                    m_ButtonTextColorDic.Add(iCol, aText);
+                    aText.fontSize = iFontSize;
+                    //Debug.LogError("aText.fontSize:" + aText.fontSize); 12
+                    m_ButtonStyleDic.Add(aKey, aText);
                 }
-                return m_ButtonTextColorDic[iCol];
+                return m_ButtonStyleDic[aKey];
             }
-            Dictionary<Color, GUIStyle> m_ButtonTextColorDic = null;
+            Dictionary<System.Tuple<Color, int>, GUIStyle> m_ButtonStyleDic = null;
 
             public GUIStyle LabelStyle
             {
@@ -105,6 +108,7 @@ namespace UCL.Core.UI {
                 }
                 return m_LabelStyleDic[aKey];
             }
+
         }
 
 
@@ -131,10 +135,11 @@ namespace UCL.Core.UI {
 
 
         #region ButtonText
-        public static GUIStyle GetButtonText(Color iCol) => IsInEditorWindow? EditorWindowData.GetButtonText(iCol) : Data.GetButtonText(iCol);
-        public static GUIStyle ButtonTextRed => GetButtonText(Color.red);
-        public static GUIStyle ButtonTextYellow => GetButtonText(Color.yellow);
-        public static GUIStyle ButtonTextGreen => GetButtonText(Color.green);
+        public static GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12) => IsInEditorWindow? EditorWindowData.GetButtonStyle(iCol, iFontSize)
+            : Data.GetButtonStyle(iCol, iFontSize);
+        public static GUIStyle ButtonTextRed => GetButtonStyle(Color.red);
+        public static GUIStyle ButtonTextYellow => GetButtonStyle(Color.yellow);
+        public static GUIStyle ButtonTextGreen => GetButtonStyle(Color.green);
         #endregion
 
 

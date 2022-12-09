@@ -442,49 +442,27 @@ namespace UCL.Core.UI {
             return aRect;
         }
         #region Button
-        static GUIStyle sButtonGuiStyle = new GUIStyle(GUI.skin.button);
         /// <summary>
         /// Draw a GUILayout Button fit the size of text
         /// </summary>
-        /// <param name="name">the content of button</param>
-        /// <param name="fontsize">font size</param>
+        /// <param name="iName">the content of button</param>
+        /// <param name="iFontSize">font size</param>
         /// <returns></returns>
-        public static bool ButtonAutoSize(string name, int fontsize = 22) {
-            sButtonGuiStyle.fontSize = fontsize;
-            sButtonGuiStyle.normal.textColor = Color.white;
-
-            Vector2 size = sButtonGuiStyle.CalcSize(new GUIContent(name));
-            bool flag = GUILayout.Button(name, style: sButtonGuiStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
+        public static bool ButtonAutoSize(string iName, int iFontSize = 22) {
+            var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, iFontSize);
+            Vector2 size = aButtonStyle.CalcSize(new GUIContent(iName));
+            bool flag = GUILayout.Button(iName, style: aButtonStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
 
             return flag;
         }
-        /// <summary>
-        /// Draw a GUILayout Button fit the size of text
-        /// </summary>
-        /// <param name="name">the content of button</param>
-        /// <param name="fontsize">font size</param>
-        /// <param name="but_color">button color</param>
-        /// <returns></returns>
-        public static bool ButtonAutoSize(string name, int fontsize, Color but_color) {
-            sButtonGuiStyle.fontSize = fontsize;
-            Color col_tmp = GUI.backgroundColor;
-            GUI.backgroundColor = but_color;
-            Vector2 size = sButtonGuiStyle.CalcSize(new GUIContent(name));
-            bool flag = GUILayout.Button(name, style: sButtonGuiStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
-            GUI.backgroundColor = col_tmp;
-            return flag;
-        }
-        public static bool ButtonAutoSize(string name, int fontsize, Color but_color, Color text_color) {
-            sButtonGuiStyle.fontSize = fontsize;
-            var aOldTextCol = sButtonGuiStyle.normal.textColor;
-            sButtonGuiStyle.normal.textColor = text_color;
+        public static bool ButtonAutoSize(string iName, int iFontSize, Color iButtonColor, Color iTextColor) {
+            var aButtonStyle = UCL_GUIStyle.GetButtonStyle(iTextColor, iFontSize);
 
             Color col_tmp = GUI.backgroundColor;
-            GUI.backgroundColor = but_color;
-            Vector2 size = sButtonGuiStyle.CalcSize(new GUIContent(name));
-            bool flag = GUILayout.Button(name, style: sButtonGuiStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
+            GUI.backgroundColor = iButtonColor;
+            Vector2 size = aButtonStyle.CalcSize(new GUIContent(iName));
+            bool flag = GUILayout.Button(iName, style: aButtonStyle, GUILayout.Width(size.x), GUILayout.Height(size.y));
             GUI.backgroundColor = col_tmp;
-            sButtonGuiStyle.normal.textColor = aOldTextCol;
             return flag;
         }
         #endregion

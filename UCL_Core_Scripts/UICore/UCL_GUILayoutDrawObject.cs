@@ -753,7 +753,7 @@ namespace UCL.Core.UI
                 UCL.Core.CopyPaste.SetCopyData(iObj);
             }
             bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(iFieldType);
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonText(aCanCopy ? Color.white : Color.red),
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(aCanCopy ? Color.white : Color.red),
                 GUILayout.ExpandWidth(false)))
             {
                 if (aCanCopy)

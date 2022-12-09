@@ -91,10 +91,10 @@ namespace UCL.Core.EditorLib.Page
         protected virtual void DrawHierarchy(Transform iTransform, UCL.Core.UCL_ObjectDictionary iDataDic,bool iParentActive)
         {
             bool aIsActive = (iTransform.gameObject.activeSelf && iParentActive);
-            var aNameStyle = UI.UCL_GUIStyle.GetButtonText(aIsActive ? Color.white: Color.gray);
+            var aNameStyle = UI.UCL_GUIStyle.GetButtonStyle(aIsActive ? Color.white: Color.gray);
             if(m_Target == iTransform.gameObject)
             {
-                aNameStyle = UI.UCL_GUIStyle.GetButtonText(aIsActive ? Color.yellow : new Color(0.7f, 0.7f, 0f));
+                aNameStyle = UI.UCL_GUIStyle.GetButtonStyle(aIsActive ? Color.yellow : new Color(0.7f, 0.7f, 0f));
             }
             if (iTransform.childCount > 0)
             {

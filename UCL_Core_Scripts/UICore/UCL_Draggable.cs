@@ -17,22 +17,22 @@ namespace UCL.Core.UI
         #region drag
 
         virtual public void OnDrag(PointerEventData eventData) {
-            var canvas = transform.GetComponentInParent<Canvas>();
-            Vector3 drag_pos = eventData.position.ToVec3() + m_DragStartPosition;
-            if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
-                drag_pos = canvas.worldCamera.ScreenToWorldPoint(drag_pos);
+            var aCanvas = transform.GetComponentInParent<Canvas>();
+            Vector3 aDragPos = eventData.position.ToVec3() + m_DragStartPosition;
+            if(aCanvas.renderMode == RenderMode.ScreenSpaceCamera) {
+                aDragPos = aCanvas.worldCamera.ScreenToWorldPoint(aDragPos);
             }
-            transform.position = drag_pos;
+            transform.position = aDragPos;
             m_Dragging = true;
         }
         virtual public void OnBeginDrag(PointerEventData eventData) {
             m_OnBeginDragEvent.UCL_Invoke();
-            var canvas = transform.GetComponentInParent<Canvas>();
-            Vector3 drag_pos = transform.position;
-            if(canvas.renderMode == RenderMode.ScreenSpaceCamera) {
-                drag_pos = canvas.worldCamera.WorldToScreenPoint(drag_pos);
+            var aCanvas = transform.GetComponentInParent<Canvas>();
+            Vector3 aDragPos = transform.position;
+            if(aCanvas.renderMode == RenderMode.ScreenSpaceCamera) {
+                aDragPos = aCanvas.worldCamera.WorldToScreenPoint(aDragPos);
             }
-            m_DragStartPosition = drag_pos - eventData.position.ToVec3();
+            m_DragStartPosition = aDragPos - eventData.position.ToVec3();
 
             m_Dragging = true;
         }

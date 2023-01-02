@@ -431,14 +431,19 @@ public static partial class ObjectExtensionMethods
         return UCL.Core.MarshalLib.Lib.ToByteArray(obj);
     }
     public static byte[] ToByteArray(this Array iArr) {
-        int aArrLength = iArr.Length * Marshal.SizeOf(iArr.GetType().GetElementType());
+        int aElementSize = Marshal.SizeOf(iArr.GetType().GetElementType());
+        int aArrLength = iArr.Length * aElementSize;
+        //Debug.LogError("ToByteArray aElementSize:" + aElementSize + ",iArr.Length:" + iArr.Length + ",aArrLength:" + aArrLength);
         var aResult = new byte[aArrLength];
         Buffer.BlockCopy(iArr, 0, aResult, 0, aArrLength);
         return aResult;
     }
     public static T[] ToArray<T>(this byte[] iArr)
     {
-        int aArrLength = iArr.Length / Marshal.SizeOf(iArr.GetType().GetElementType());
+        int aElementSize = Marshal.SizeOf(typeof(T));
+        int aArrLength = iArr.Length / aElementSize;
+
+        //Debug.LogError("ToArray aElementSize:" + aElementSize + ",iArr.Length:" + iArr.Length + ",aArrLength:" + aArrLength);
         var aResult = new T[aArrLength];
         Buffer.BlockCopy(iArr, 0, aResult, 0, iArr.Length);
         return aResult;

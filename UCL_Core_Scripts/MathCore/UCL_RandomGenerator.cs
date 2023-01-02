@@ -8,6 +8,7 @@ namespace UCL.Core.MathLib
         public string HexStringState => UCL.Core.MarshalLib.Lib.ByteArrayToHexString(m_State);
         public RandomState(string iHexStringState)
         {
+            //UnityEngine.Debug.LogError("iHexStringState.Len:" + iHexStringState.Length+ ",iHexStringState:"+ iHexStringState);
             m_State = UCL.Core.MarshalLib.Lib.HexStringToByteArray(iHexStringState);
         }
         public RandomState(byte[] iState)

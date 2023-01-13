@@ -9,6 +9,7 @@ namespace UCL.Core
 {
     /// <summary>
     /// The short name you want to display in UCL_ObjectFieldGUILayout
+    /// 實作此interface的class在UCL_ObjectFieldGUILayout會優先顯示GetShortName()回傳的名稱
     /// </summary>
     public interface UCLI_ShortName
     {

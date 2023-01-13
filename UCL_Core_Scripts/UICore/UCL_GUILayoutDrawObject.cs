@@ -323,8 +323,13 @@ namespace UCL.Core.UI
                             {
                                 iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
                             }
-                            iDataDic.SetData(aAddKey, DrawObjectData(iDataDic.GetData(aAddKey),
-                                iDataDic.GetSubDic(iDisplayName + "_AddKey"), UCL_LocalizeManager.Get(aKeyType.Name), iFieldNameFunc: iFieldNameFunc));
+                            var aKey = iDataDic.GetData(aAddKey);
+                            string aKeyName = string.Empty;
+                            var aKeyShortName = aKey as UCL.Core.UCLI_ShortName;
+                            if (aKeyShortName != null) aKeyName = aKeyShortName.GetShortName();
+                            if (aKeyName.IsNullOrEmpty()) aKeyName = UCL_LocalizeManager.Get(aKeyType.Name);
+                            iDataDic.SetData(aAddKey, DrawObjectData(aKey,
+                                iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
                             using (new GUILayout.HorizontalScope("box"))
                             {
                                 if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))

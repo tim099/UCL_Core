@@ -152,7 +152,7 @@ namespace UCL.Core.TextureLib {
         /// </summary>
         /// <param name="iData"></param>
         /// <returns></returns>
-        public static Texture2D CreateTexture(byte[] iData, bool iIsInverse = false)
+        public static Texture2D CreateTexture(byte[] iData, bool iIsInverse = false, bool iUpdateMipmap = false)
         {
             var aTex = new Texture2D(1, 1);
             aTex.LoadImage(iData); //..this will auto-resize the texture dimensions.
@@ -171,7 +171,7 @@ namespace UCL.Core.TextureLib {
                         aTex.SetPixel(aW - i - 1, j, aA);
                     }
                 }
-                aTex.Apply();
+                aTex.Apply(iUpdateMipmap);
             }
 
             return aTex;

@@ -53,9 +53,9 @@ namespace UCL.Core.TextureLib {
         public UCL_Texture2D() {
 
         }
-        public UCL_Texture2D(byte[] iBytes)
+        public UCL_Texture2D(byte[] iBytes, bool iUpdateMipmap = false)
         {
-            Init(UCL.Core.TextureLib.Lib.CreateTexture(iBytes));
+            Init(UCL.Core.TextureLib.Lib.CreateTexture(iBytes, false, iUpdateMipmap));
         }
         public UCL_Texture2D(Texture2D iTexture)
         {

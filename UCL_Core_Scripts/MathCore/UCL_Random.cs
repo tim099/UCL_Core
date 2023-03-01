@@ -105,7 +105,10 @@ namespace UCL.Core.MathLib
                 aTotalWeight += aWeight;
                 aWeights[i] = aWeight;
             }
-
+            if(aTotalWeight == 0)
+            {
+                return iList[Next(iList.Count)];
+            }
             int aPickWeight = Next(aTotalWeight);
 
             for (int aPickAt = 0; aPickAt < iList.Count; aPickAt++)

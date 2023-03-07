@@ -553,6 +553,9 @@ namespace UCL.Core.JsonLib {
             }
             foreach (var aField in aFields)
             {
+                if (aField.FieldType.IsSubclassOf(typeof(MulticastDelegate))){
+                    continue;
+                }
                 string aFieldName = aField.Name;
                 if (iFieldNameAlterFunc != null)
                 {

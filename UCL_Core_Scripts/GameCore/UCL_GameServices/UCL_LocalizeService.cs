@@ -22,6 +22,11 @@ namespace UCL.Core.Game {
                 if (string.IsNullOrEmpty(aCurLang)) aCurLang = "Chinese";
                 return aCurLang;
             }
+            set
+            {
+                if (Ins != null) Ins.m_CurLang = value;
+                PlayerPrefs.SetString(CurLangKey, value);
+            }
         }
         static public UCL_LocalizeService Ins = null;
 

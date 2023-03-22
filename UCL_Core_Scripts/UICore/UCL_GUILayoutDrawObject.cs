@@ -40,7 +40,7 @@ namespace UCL.Core.UI
                 if (iObj is string)
                 {
                     aIsShowField = false;
-                    aResultObj = GUILayout.TextField((string)iObj);
+                    aResultObj = GUILayout.TextArea((string)iObj);
                 }
                 if (iObj is UCLI_FieldOnGUI)
                 {
@@ -675,7 +675,7 @@ namespace UCL.Core.UI
                         else if (aField.FieldType == typeof(string))
                         {
                             if (aData == null) aData = "";
-                            var aResult = UCL.Core.UI.UCL_GUILayout.TextField(aDisplayName, (string)aData);
+                            var aResult = UCL.Core.UI.UCL_GUILayout.TextArea(aDisplayName, (string)aData);
                             aField.SetValue(iObj, aResult);
                         }
                         else if (aData == null)

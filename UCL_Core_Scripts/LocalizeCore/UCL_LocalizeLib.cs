@@ -11,7 +11,8 @@ namespace UCL.Core.LocalizeLib
             string aLocalizeKey = iTypeName + "_" + iEnumName;
             if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
             {
-                iEnumName = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey), iEnumName);
+                string aLocalizdeName = UCL_LocalizeManager.Get(aLocalizeKey);
+                if(aLocalizdeName != iEnumName) iEnumName = string.Format("{0}({1})", aLocalizdeName, iEnumName);
             }
             return iEnumName;
         }
@@ -19,7 +20,8 @@ namespace UCL.Core.LocalizeLib
         {
             if (LocalizeLib.UCL_LocalizeManager.ContainsKey(iName))
             {
-                iName = string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(iName), iName);
+                string aLocalizdeName = LocalizeLib.UCL_LocalizeManager.Get(iName);
+                if (aLocalizdeName != iName) iName = string.Format("{0}({1})", aLocalizdeName, iName);
             }
             return iName;
         }
@@ -32,7 +34,8 @@ namespace UCL.Core.LocalizeLib
             string aLocalizeKey = iEnum.GetType().Name + "_" + aEnumName;
             if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
             {
-                return string.Format("{0}({1})", LocalizeLib.UCL_LocalizeManager.Get(aLocalizeKey), iEnum);
+                string aLocalizdeName = UCL_LocalizeManager.Get(aLocalizeKey);
+                if (aLocalizdeName != aEnumName) return string.Format("{0}({1})", aLocalizdeName, aEnumName);
             }
             return aEnumName;
         }

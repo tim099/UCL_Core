@@ -210,6 +210,14 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return result;
         }
+        static public string TextArea(string iLabel, string iVal)
+        {
+            GUILayout.BeginHorizontal();
+            LabelAutoSize(iLabel);
+            string result = GUILayout.TextArea(iVal);
+            GUILayout.EndHorizontal();
+            return result;
+        }
         static public bool Toggle(bool iVal, int iSize = 21)
         {
             if (GUILayout.Button(iVal ? "▼" : "►", GUILayout.Width(iSize), GUILayout.Height(iSize)))

@@ -102,9 +102,27 @@ public static partial class StringExtensionMethods {
 
                 }
             }
+            {
+                int aLen = iStr.Length - aCurAt;
+                if (aCurLength + aLen < iMaxLength)
+                {
+                    aSB.Append(iStr.Substring(aCurAt, aLen));
+                    aCurLength += aLen;
+                }
+                else
+                {
+                    aSB.Append(iStr.Substring(aCurAt, iMaxLength - aCurLength));
+                    aSB.Append(iEndWith);
+                }
+            }
+
+            return aSB.ToString();
+        }
+        if(iStr.Length <= iMaxLength)
+        {
             return iStr;
         }
-        return iStr.Length <= iMaxLength ? iStr : iStr.Substring(0, iMaxLength) + iEndWith;
+        return iStr.Substring(0, iMaxLength) + iEndWith;
     }
     /// <summary>
     /// Return iStr if string length <= iMaxLength

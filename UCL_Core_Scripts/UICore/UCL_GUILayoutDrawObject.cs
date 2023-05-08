@@ -375,7 +375,7 @@ namespace UCL.Core.UI
                                     var aSubDic = iDataDic.GetSubDic("Dic_" + aKeyName);
                                     var aDicData = aDic[aKey];
                                     string aDisplayName = aDicData.UCL_GetShortName(aDicData != null ? aDicData.GetType().Name : aValueType.Name);
-                                    GUILayout.Label(aKeyName);
+                                    GUILayout.Label(aKeyName, UCL_GUIStyle.LabelStyle);
                                     aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
                                 }
                             }

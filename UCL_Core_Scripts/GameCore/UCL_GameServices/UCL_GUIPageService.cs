@@ -19,13 +19,19 @@ namespace UCL.Core.Game
             m_Canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             m_Canvas.sortingOrder = short.MaxValue;
             gameObject.AddComponent<GraphicRaycaster>();
-            #region CreateBlockImage
+            CreateBlockImage();
+        }
+        private void CreateBlockImage()
+        {
+            if (m_BlockImage != null)
+            {
+                return;
+            }
             var aImageObj = Core.GameObjectLib.CreateGameObject("BlockImg", transform);
             m_BlockImage = aImageObj.AddComponent<Image>();
-            m_BlockImage.color = new Color(0,0,0,0.7f);
+            m_BlockImage.color = new Color(0, 0, 0, 0.7f);
             RectTransform aRect = aImageObj.GetComponent<RectTransform>();
             Core.UCL_RectTransformLib.SetFullScreen(aRect);
-            #endregion
             m_BlockImage.gameObject.SetActive(false);
         }
         [UCL.Core.ATTR.UCL_DrawOnGUI]
@@ -62,6 +68,10 @@ namespace UCL.Core.Game
 
         private void OnGUI()
         {
+            if (m_BlockImage == null)
+            {
+                CreateBlockImage();
+            }
             var aPageController = UI.UCL_GUIPageController.Ins;
 
 

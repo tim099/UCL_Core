@@ -86,6 +86,7 @@ namespace UCL.Core.Game {
                 catch (System.Exception e)
                 {
                     Debug.LogError(service.name + ".Init() Exception:" + e);
+                    Debug.LogException(e);
                 }
 
             }

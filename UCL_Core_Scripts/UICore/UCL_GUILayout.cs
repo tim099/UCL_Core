@@ -96,10 +96,22 @@ namespace UCL.Core.UI {
         static public int Slider(string iLabel, int iVal, int m_LeftValue, int m_RightValue, UCL_ObjectDictionary iDic)
         {
             GUILayout.BeginHorizontal();
-            if(!string.IsNullOrEmpty(iLabel))GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
-            int aResult = (int)GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
-            if (aResult != iVal) iDic.Clear();
-            aResult = UCL.Core.UI.UCL_GUILayout.IntField(aResult, iDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+            var aDic = iDic.GetSubDic("Slider");
+            if(!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
+            float aPrevVal = iDic.GetData("SliderVal", (float)iVal);
+            float aSliderVal = GUILayout.HorizontalSlider(aPrevVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
+            int aResult = Mathf.RoundToInt(aSliderVal);
+            if (Input.GetMouseButtonUp(0))
+            {
+                iDic.SetData("SliderVal", aResult);
+            }
+            else
+            {
+                iDic.SetData("SliderVal", aSliderVal);
+            }
+            
+            if (aResult != iVal) aDic.Clear();
+            aResult = UCL.Core.UI.UCL_GUILayout.IntField(aResult, aDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
             int aMaxValue = System.Math.Max(m_LeftValue, m_RightValue);
             int aMinValue = System.Math.Min(m_LeftValue, m_RightValue);
             if (aResult > aMaxValue) aResult = aMaxValue;

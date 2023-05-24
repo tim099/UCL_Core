@@ -109,9 +109,17 @@ namespace UCL.Core.UI {
             {
                 iDic.SetData("SliderVal", aSliderVal);
             }
-            
-            if (aResult != iVal) aDic.Clear();
-            aResult = UCL.Core.UI.UCL_GUILayout.IntField(aResult, aDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+
+            if (aResult != iVal)
+            {
+                aDic.Clear();
+            }
+            int aInput = UCL.Core.UI.UCL_GUILayout.IntField(aResult, aDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+            if(aInput != aResult)
+            {
+                aResult = aInput;
+                iDic.Clear();
+            }
             int aMaxValue = System.Math.Max(m_LeftValue, m_RightValue);
             int aMinValue = System.Math.Min(m_LeftValue, m_RightValue);
             if (aResult > aMaxValue) aResult = aMaxValue;

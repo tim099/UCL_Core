@@ -51,6 +51,40 @@ namespace UCL.Core.UI
         /// Show pop up with a search input field
         /// if iDisplayedOptions.Count >= iSearchThreshold then add search field
         /// </summary>
+        /// <param name="iSelectedIndex"></param>
+        /// <param name="iDisplayedOptions"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iKey"></param>
+        /// <param name="iSearchThreshold"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static string PopupAuto(string iCurID, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey,
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions)
+        {
+            if (iDisplayedOptions.IsNullOrEmpty())
+            {
+                return iCurID;
+            }
+            int aIndex = iDisplayedOptions.IndexOf(iCurID);
+            int aResultID;
+            if (iDisplayedOptions.Count >= iSearchThreshold)
+            {
+                aResultID = PopupSearch(aIndex, iDisplayedOptions, iDataDic, iKey, iOptions);
+            }
+            else
+            {
+                aResultID = Popup(aIndex, iDisplayedOptions, iDataDic, iKey, iOptions);
+            }
+            if (aResultID < 0 || aResultID >= iDisplayedOptions.Count)
+            {
+                return iCurID;
+            }
+            return iDisplayedOptions[aResultID];
+        }
+        /// <summary>
+        /// Show pop up with a search input field
+        /// if iDisplayedOptions.Count >= iSearchThreshold then add search field
+        /// </summary>
         /// <param name="iDisplayedOptions"></param>
         /// <param name="iDataDic"></param>
         /// <param name="iKey"></param>

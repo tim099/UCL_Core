@@ -9,6 +9,8 @@ namespace UCL.Core.UI
 {
     static public partial class UCL_GUILayout
     {
+        public const string IsShowFieldKey = "IsShowField";
+
         #region DrawObject
 
         /// <summary>
@@ -417,7 +419,7 @@ namespace UCL.Core.UI
                         using (new GUILayout.VerticalScope("box"))
                         {
                             GUILayout.BeginHorizontal();
-                            aIsShowField = UCL_GUILayout.Toggle(iDataDic, "IsShowField");
+                            aIsShowField = UCL_GUILayout.Toggle(iDataDic, IsShowFieldKey);
                             GUILayout.Label("Transform");
                             GUILayout.EndHorizontal();
 
@@ -471,7 +473,7 @@ namespace UCL.Core.UI
             Type aType = iObj.GetType();
             if (iFieldType == null) iFieldType = aType;
             GUILayout.BeginHorizontal();
-            if (!iIsAlwaysShowDetail) aIsShowField = UCL_GUILayout.Toggle(iDataDic, "IsShowField");
+            if (!iIsAlwaysShowDetail) aIsShowField = UCL_GUILayout.Toggle(iDataDic, IsShowFieldKey);
             else aIsShowField = true;
             GUILayout.BeginVertical();
             if (!iIsAlwaysShowDetail)

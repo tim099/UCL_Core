@@ -174,10 +174,18 @@ namespace UCL.Core.JsonLib {
                 }
                 else // long
                 {
+                    long aParsedInt64;
+                    if (Int64.TryParse(aNumber, out aParsedInt64))
                     {
-                        long aParsedInt64;
-                        Int64.TryParse(aNumber, out aParsedInt64);
                         return aParsedInt64;
+                    }
+                    else
+                    {
+                        ulong aParsedUInt64;
+                        if(UInt64.TryParse(aNumber, out aParsedUInt64))
+                        {
+                            return aParsedUInt64;
+                        }
                     }
                 }
             }

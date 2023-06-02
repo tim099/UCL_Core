@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using UCL.Core.UI;
 using UnityEngine;
 
 namespace UCL.Core.JsonLib {
@@ -17,14 +18,15 @@ namespace UCL.Core.JsonLib {
         Double,
         Boolean
     }
-    public class JsonData : IList, IDictionary {
+    public class JsonData : IList, IDictionary, UI.UCLI_FieldOnGUI
+    {
         #region Properties
         object m_Obj;
         JsonType m_Type;
 
         IList<JsonData> m_List;
         IDictionary<string, JsonData> m_Dic;
-        IList<KeyValuePair<string, JsonData> > m_ObjectList;
+        IList<KeyValuePair<string, JsonData>> m_ObjectList;
         public JsonType JsonType => m_Type;
         public object Obj => m_Obj;
         public int Count { get {
@@ -41,6 +43,55 @@ namespace UCL.Core.JsonLib {
         public bool IsString => m_Type == JsonType.String;
         #endregion
 
+        #region Interface
+        virtual public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
+        {
+            UCL_ObjectDictionary aSubDic = iDataDic.GetSubDic("JsonData");
+
+            GUILayout.BeginHorizontal();
+            bool aShow = true;
+            if (m_Type == JsonType.Object || m_Type == JsonType.Array)
+            {
+                aShow = UCL_GUILayout.Toggle(iDataDic.GetData("Show", false));
+                iDataDic.SetData("Show", aShow);
+            }
+
+            switch (m_Type)
+            {
+                case JsonType.Array:
+                    {
+                        GUILayout.BeginVertical();
+                        GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle);
+                        if (aShow) UCL_GUILayout.DrawObjectData(m_List, aSubDic, "List", true);
+                        GUILayout.EndVertical();
+                        break;
+                    }
+                case JsonType.Object:
+                    {
+                        GUILayout.BeginVertical();
+                        GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle);
+                        if (aShow) UCL_GUILayout.DrawObjectData(m_Dic, aSubDic, "Dic", true);
+                        GUILayout.EndVertical();
+                        break;
+                    }
+                case JsonType.None:
+                    {
+                        GUILayout.Label($"{iFieldName}: null", UCL_GUIStyle.LabelStyle);
+                        break;
+                    }
+                default:
+                    {
+                        GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        m_Obj = UCL_GUILayout.DrawObjectData(m_Obj, aSubDic, "Json", true);
+                        break;
+                    }
+            }
+
+            GUILayout.EndHorizontal();
+
+            return this;
+        }
+        #endregion
         /// <summary>
         /// Parse Json string to JsonData
         /// </summary>

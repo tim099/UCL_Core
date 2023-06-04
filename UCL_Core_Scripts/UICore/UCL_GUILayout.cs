@@ -295,6 +295,15 @@ namespace UCL.Core.UI {
 
             return iVal;
         }
+        static public bool CheckBox(bool iVal, int iSize = 21)
+        {
+            if (GUILayout.Button(iVal ? "✔" : " ", GUILayout.Width(iSize), GUILayout.Height(iSize)))
+            {
+                iVal = !iVal;
+            }
+
+            return iVal;
+        }
         static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
         {
             GUILayout.BeginHorizontal();

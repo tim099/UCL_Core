@@ -304,6 +304,28 @@ namespace UCL.Core.UI {
 
             return iVal;
         }
+        static public void DrawCopyPaste(UCL.Core.JsonLib.IJsonSerializable iTarget)
+        {
+            if (GUILayout.Button("Copy", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                GUIUtility.systemCopyBuffer = iTarget.SerializeToJson().ToJson();
+            }
+            if (GUILayout.Button("Paste", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                if (!string.IsNullOrEmpty(GUIUtility.systemCopyBuffer))
+                {
+                    try
+                    {
+                        var aJson = UCL.Core.JsonLib.JsonData.ParseJson(GUIUtility.systemCopyBuffer);
+                        iTarget.DeserializeFromJson(aJson);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogException(e);
+                    }
+                }
+            }
+        }
         static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
         {
             GUILayout.BeginHorizontal();

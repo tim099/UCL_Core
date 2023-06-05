@@ -4,6 +4,24 @@ using UnityEngine;
 
 public static partial class TextureExtensionMethods {
     #region RenderTexture
+    public static void ReadPixels(this Texture2D iTexture, RenderTexture iRenderTexture)
+    {
+        if (iRenderTexture == null || iTexture == null) return;
+        try
+        {
+            RenderTexture.active = iRenderTexture;
+            iTexture.ReadPixels(new Rect(0, 0, iTexture.width, iTexture.height), 0, 0);
+            iTexture.Apply();
+        }
+        catch(System.Exception e)
+        {
+            Debug.LogException(e);
+        }
+        finally
+        {
+            RenderTexture.active = null;
+        }
+    }
     public static void ReleaseTemporaryAndClearRef(this RenderTexture iRenderTexture)
     {
         if (iRenderTexture == null) return;

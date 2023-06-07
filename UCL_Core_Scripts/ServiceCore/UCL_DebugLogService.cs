@@ -17,15 +17,16 @@ namespace UCL.Core.ServiceLib
                 m_StackTrace = _StackTrace;
                 m_Type = iType;
                 m_LogTime = DateTime.Now;
-                var lines = m_Message.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);//Environment.NewLine, 
+                var lines = m_Message.SplitByLine();
                 if (lines.Length > 0)
                 {
-                    m_Title = m_LogTime.ToString("[HH:mm:ss] ") + lines[0];
+                    m_Title = lines[0];
                 }
                 else
                 {
                     m_Title = m_Message;
                 }
+                m_Title = $"[{m_LogTime.ToString("HH:mm:ss")}] {m_Title.CutToMaxLength(80)}";
             }
             public void OnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
             {
@@ -46,7 +47,7 @@ namespace UCL.Core.ServiceLib
                                 case LogType.Exception: aTextColor = Color.red; break;
                             }
                             GUILayout.BeginHorizontal();
-                            GUILayout.Label($"[{m_Type.ToString()}]", UCL_GUIStyle.GetLabelStyle(aTextColor), GUILayout.ExpandWidth(false));
+                            GUILayout.Label($"[{m_Type.ToString()}]", UCL_GUIStyle.GetLabelStyle(aTextColor), GUILayout.Width(80));
                             GUILayout.Label(m_Title, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                             GUILayout.EndHorizontal();
                             if (aIsShow)

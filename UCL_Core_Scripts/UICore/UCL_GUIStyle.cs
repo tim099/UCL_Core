@@ -122,21 +122,21 @@ namespace UCL.Core.UI {
         static StyleData s_EditorWindowData = null;
         static StyleData Data => s_Data == null? s_Data = new StyleData() : s_Data;
         static StyleData EditorWindowData => s_EditorWindowData == null ? s_EditorWindowData = new StyleData() : s_EditorWindowData;
+        static StyleData CurStyleData => IsInEditorWindow ? EditorWindowData : Data;
         /// <summary>
         /// GUIStyle for GUILayout.Box
         /// </summary>
-        static public GUIStyle BoxStyle => IsInEditorWindow ? EditorWindowData.BoxStyle : Data.BoxStyle;
+        static public GUIStyle BoxStyle => CurStyleData.BoxStyle;
 
         /// <summary>
         /// GUIStyle for GUILayout.Button
         /// </summary>
-        static public GUIStyle ButtonStyle => IsInEditorWindow ? EditorWindowData.ButtonStyle : Data.ButtonStyle;
+        static public GUIStyle ButtonStyle => CurStyleData.ButtonStyle;
 
 
 
         #region ButtonText
-        public static GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12) => IsInEditorWindow? EditorWindowData.GetButtonStyle(iCol, iFontSize)
-            : Data.GetButtonStyle(iCol, iFontSize);
+        public static GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12) => CurStyleData.GetButtonStyle(iCol, iFontSize);
         public static GUIStyle ButtonTextRed => GetButtonStyle(Color.red);
         public static GUIStyle ButtonTextYellow => GetButtonStyle(Color.yellow);
         public static GUIStyle ButtonTextGreen => GetButtonStyle(Color.green);
@@ -145,10 +145,9 @@ namespace UCL.Core.UI {
 
 
         #region Label
-        static public GUIStyle LabelStyle => IsInEditorWindow ? EditorWindowData.LabelStyle : Data.LabelStyle;
+        static public GUIStyle LabelStyle => CurStyleData.LabelStyle;
 
-        public static GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16) => IsInEditorWindow ? EditorWindowData.GetLabelStyle(iTextCol, iSize)
-            : Data.GetLabelStyle(iTextCol, iSize);
+        public static GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16) => CurStyleData.GetLabelStyle(iTextCol, iSize);
         #endregion
 
 

@@ -64,72 +64,17 @@ namespace UCL.Core.DebugLib {
         const string LogToFileKey = "UCL_DebugLog_LogToFile";
         const string AutoStackTraceKey = "UCL_DebugLog_AutoStackTrace";
         
-        //[Flags]
-        //UnityEngine.Debug.unityLogger.logEnabled
-        public enum LogLevel {
-            None = 0,
-            /// <summary>
-            /// LogType used for Errors.
-            /// </summary>
-            Error = 1,
-            /// <summary>
-            /// LogType used for Asserts. (These could also indicate an error inside Unity itself.)
-            /// </summary>
-            Assert = 1<<1,
-            /// <summary>
-            /// LogType used for Warnings.
-            /// </summary>
-            Warning = 1<<2,
-            /// <summary>
-            /// LogType used for regular log messages.
-            /// </summary>
-            Log = 1<<3,
-            /// <summary>
-            /// LogType used for Exceptions.
-            /// </summary>
-            Exception = 1<< 4,
-            /// <summary>
-            /// Log All
-            /// </summary>
-            All = Error|Assert|Warning|Log|Exception,
-        }
         public class LogData {
-            public LogData(string _Message, string _StackTrace, LogType _Type) {
+            public LogData(string _Message, string _StackTrace, LogType iType) {
                 m_Message = _Message;
                 m_StackTrace = _StackTrace;
-                m_Type = _Type;
+                m_Type = iType;
                 m_LogTime = DateTime.Now;
                 var lines = m_Message.Split(new[] { "\r\n", "\r", "\n" },StringSplitOptions.None);//Environment.NewLine, 
                 if(lines.Length > 0) {
                     m_Title = m_LogTime.ToString("[HH:mm:ss] ")+lines[0];
                 } else {
                     m_Title = m_Message;
-                }
-                switch(_Type) {
-                    case LogType.Error: {
-                            m_Level = LogLevel.Error;
-                            break;
-                        }
-                    case LogType.Assert: {
-                            m_Level = LogLevel.Assert;
-                            break;
-                        }
-                    case LogType.Warning: {
-                            m_Level = LogLevel.Warning;
-                            break;
-                        }
-                    case LogType.Log: {
-                            m_Level = LogLevel.Log;
-                            break;
-                        }
-                    case LogType.Exception: {
-                            m_Level = LogLevel.Exception;
-                            break;
-                        }
-                    default: {
-                            m_Level = LogLevel.Log;
-                            break;
-                        }
                 }
             }
             public string GetTitle() { return m_Title; }
@@ -138,7 +83,6 @@ namespace UCL.Core.DebugLib {
             public string m_Message;
             public string m_StackTrace;
             public LogType m_Type = LogType.Log;
-            public LogLevel m_Level;
         }
         static readonly Dictionary<LogType, Color> m_LogColors = new Dictionary<LogType, Color>()
         {
@@ -172,7 +116,7 @@ namespace UCL.Core.DebugLib {
         protected MousePressedData m_MousePressedData = new MousePressedData();
         [PA.UCL_ReadOnly][SerializeField]protected float m_Scale;
 
-        [PA.UCL_EnumMask] public LogLevel m_LogLevel = (LogLevel.Error | LogLevel.Assert | LogLevel.Warning | LogLevel.Log | LogLevel.Exception);
+        [PA.UCL_EnumMask] public LogType m_LogLevel = (LogType.Error | LogType.Assert | LogType.Warning | LogType.Log | LogType.Exception);
         [SerializeField] protected bool f_Show = true;
 
         /// <summary>
@@ -212,7 +156,7 @@ namespace UCL.Core.DebugLib {
             Init();
         }
         void LoadSetting() {
-            if(PlayerPrefs.HasKey(LogLevelKey)) m_LogLevel = (LogLevel)PlayerPrefs.GetInt(LogLevelKey);
+            if(PlayerPrefs.HasKey(LogLevelKey)) m_LogLevel = (LogType)PlayerPrefs.GetInt(LogLevelKey);
             if(PlayerPrefs.HasKey(LogToFileKey)) f_LogToFile = (PlayerPrefs.GetInt(LogToFileKey) == 1);
             if(PlayerPrefs.HasKey(AutoStackTraceKey)) f_AutoStackTrace = (PlayerPrefs.GetInt(AutoStackTraceKey) == 1);
         }
@@ -262,8 +206,8 @@ namespace UCL.Core.DebugLib {
                 f_LogToFile = GUILayout.Toggle(f_LogToFile, "Log to File", style: m_LogToggleStyle);
                 Core.UI.UCL_GUI.Undo();
             }
-            System.Action<LogLevel> aLogAct = delegate (LogLevel iLevel) {
-                bool aIsOn = ((m_LogLevel & iLevel) != LogLevel.None);
+            System.Action<LogType> aLogAct = delegate (LogType iLevel) {
+                bool aIsOn = ((m_LogLevel & iLevel) != LogType.Log);
                 Core.UI.UCL_GUI.PushBackGroundColor(aIsOn ? Color.green : Color.red, true);
                 if(GUILayout.Toggle(aIsOn , iLevel.ToString(), style: m_LogToggleStyle)) {
                     m_LogLevel |= iLevel;
@@ -281,9 +225,9 @@ namespace UCL.Core.DebugLib {
                 }
                 Core.UI.UCL_GUI.Undo();
             }
-            aLogAct(LogLevel.Log);
-            aLogAct(LogLevel.Warning);
-            aLogAct(LogLevel.Error);
+            aLogAct(LogType.Log);
+            aLogAct(LogType.Warning);
+            aLogAct(LogType.Error);
 
             //GUI.backgroundColor
             if(GUILayout.Button("Close", style: m_LogButtonStyle)) {
@@ -322,7 +266,7 @@ namespace UCL.Core.DebugLib {
                 m_LogButtonStyle.normal.textColor = m_LogColors[log.m_Type];
                 m_LogButtonStyle.hover.textColor = m_LogButtonStyle.normal.textColor;
                 //GUI.contentColor = logTypeColors[log.type];
-                if((log.m_Level & m_LogLevel) != LogLevel.None) {
+                if((log.m_Type & m_LogLevel) != LogType.Log) {
                     if(GUILayout.Button(log.m_Title, style: m_LogButtonStyle, GUILayout.Width(m_WindowRect.size.x - 15 - sw))) {
                         //Debug.LogWarning("Pressed:" + log.m_Message);
                         if(m_SelectedLog == log) {

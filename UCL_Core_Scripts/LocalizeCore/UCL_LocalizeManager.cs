@@ -7,12 +7,12 @@ namespace UCL.Core.LocalizeLib
 {
     public class UCL_LocalizeManager// : UCL.Core.UCL_Singleton<UCL_LocalizeManager>
     {
-        static UCL_LocalizeManager m_Instance = null;
+        private static UCL_LocalizeManager s_Instance = null;
         /// <summary>
         /// Won't create new Instance if not exist!!
         /// </summary>
         /// <returns></returns>
-        static public UCL_LocalizeManager GetInstance() { return m_Instance; }
+        static public UCL_LocalizeManager GetInstance() { return s_Instance; }
         /// <summary>
         /// Create new Instance if not exist!!
         /// </summary>
@@ -20,16 +20,16 @@ namespace UCL.Core.LocalizeLib
         {
             get
             {
-                if (m_Instance == null)
+                if (s_Instance == null)
                 {
-                    m_Instance = new UCL_LocalizeManager();
+                    s_Instance = new UCL_LocalizeManager();
                 }
 
-                return m_Instance;
+                return s_Instance;
             }
             set
             {
-                m_Instance = value;
+                s_Instance = value;
             }
         }
 
@@ -124,9 +124,10 @@ namespace UCL.Core.LocalizeLib
         /// <param name="iKey"></param>
         /// <returns></returns>
         static public string Get(string iKey) {
-            var aIns = m_Instance;
-            if(aIns == null) return iKey;
-            if(aIns.m_LocalizeData == null) {
+            if (s_Instance == null) return iKey;
+
+            if (s_Instance.m_LocalizeData == null)
+            {
                 if (!m_NotInitializeErrorLogged)
                 {
                     m_NotInitializeErrorLogged = true;
@@ -134,7 +135,7 @@ namespace UCL.Core.LocalizeLib
                 }
                 return iKey;
             }
-            return aIns.m_LocalizeData.GetLocalize(iKey);
+            return s_Instance.m_LocalizeData.GetLocalize(iKey);
         }
         /// <summary>
         /// Check if localize of iKey exist
@@ -143,7 +144,7 @@ namespace UCL.Core.LocalizeLib
         /// <returns></returns>
         static public bool ContainsKey(string iKey)
         {
-            var aIns = m_Instance;
+            var aIns = s_Instance;
             if (aIns == null) return false;
             if (aIns.m_LocalizeData == null)
             {

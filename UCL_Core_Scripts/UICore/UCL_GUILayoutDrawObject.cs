@@ -44,11 +44,10 @@ namespace UCL.Core.UI
                     aIsShowField = false;
                     aResultObj = GUILayout.TextArea((string)iObj);
                 }
-                if (iObj is UCLI_FieldOnGUI)
+                if (iObj is UCLI_FieldOnGUI aFieldOnGUI)
                 {
                     aIsShowField = false;
-                    UCLI_FieldOnGUI aVar = (UCLI_FieldOnGUI)iObj;
-                    aResultObj = iObj = aVar.OnGUI(iDisplayName, iDataDic);
+                    aResultObj = iObj = aFieldOnGUI.OnGUI(iDisplayName, iDataDic);
                 }
                 else if (aType.IsEnum)
                 {
@@ -92,308 +91,13 @@ namespace UCL.Core.UI
                     }
                     GUILayout.EndVertical();
                 }
-                else if (iObj is IList)
+                else if (iObj is IList aList)
                 {
-                    bool aIsMoveElement = false;
-                    bool aIsDelete = false;
-
-                    GUILayout.BeginHorizontal();
-                    if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, "Show");
-                    GUILayout.BeginVertical();
-                    using (new GUILayout.HorizontalScope())//Show Title(iDisplayName)
-                    {
-                        if (iIsAlwaysShowDetail)
-                        {
-                            aIsShowField = true;
-                        }
-                        else
-                        {
-                            if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
-                        }
-
-                        if (aIsShowField)
-                        {
-                            {
-                                GUILayout.Space(5);
-                                aIsMoveElement = BoolField(iDataDic, "MoveElement");
-                                UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("MoveElement"));
-                            }
-                            {
-                                GUILayout.Space(5);
-                                aIsDelete = BoolField(iDataDic, "Delete");
-                                UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
-                            }
-                        }
-                        GUILayout.FlexibleSpace();
-                    }
-
-                    if (aIsShowField)
-                    {
-                        IList aList = iObj as IList;
-                        string aCountKey = "Count";
-                        int aCount = iDataDic.GetData(aCountKey, aList.Count);
-                        GUILayout.BeginHorizontal();
-                        int aNewCount = UCL_GUILayout.IntField(UCL_LocalizeManager.Get("Count"), aCount, GUILayout.MinWidth(80));
-                        iDataDic.SetData(aCountKey, aNewCount);
-                        if (aNewCount != aList.Count)
-                        {
-                            if (GUILayout.Button(UCL_LocalizeManager.Get("SetCount")))
-                            {
-                                if (aNewCount < 0) aNewCount = 0;
-                                while (aNewCount < aList.Count)
-                                {
-                                    aList.RemoveAt(aList.Count - 1);
-                                }
-                                while (aNewCount > aList.Count)
-                                {
-                                    try
-                                    {
-                                        var aGenericType = iObj.GetType().GetGenericValueType();
-                                        aList.Add(aGenericType.CreateInstance());
-                                    }
-                                    catch (System.Exception iE)
-                                    {
-                                        Debug.LogException(iE);
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            string aITypeListKey = "ITypeList";
-                            List<string> aTypeNameList = null;
-                            if (iDataDic.ContainsKey(aITypeListKey))
-                            {
-                                aTypeNameList = iDataDic.GetData<List<string>>(aITypeListKey);
-                            }
-                            else
-                            {
-                                var aGenericType = aType.GetGenericValueType();
-
-                                if (typeof(UCLI_TypeList).IsAssignableFrom(aGenericType))
-                                {
-                                    var aTypeList = aGenericType.CreateInstance() as UCLI_TypeList;
-                                    if (aTypeList != null)
-                                    {
-                                        System.Func<string, string> aNameFunc = null;
-                                        if (aTypeList is UCLI_GetTypeName)
-                                        {
-                                            var aListName = (UCLI_GetTypeName)(aTypeList);
-                                            aNameFunc = (iName) => aListName.GetTypeName(iName);
-                                        }
-                                        else
-                                        {
-                                            aNameFunc = UCL.Core.LocalizeLib.UCL_LocalizeLib.GetLocalize;
-                                        }
-                                        var aAllTypeList = aTypeList.GetAllTypes();
-                                        aTypeNameList = new List<string>();
-                                        for (int i = 0; i < aAllTypeList.Count; i++)
-                                        {
-                                            aTypeNameList.Add(aNameFunc(aAllTypeList[i].Name));
-                                        }
-                                        iDataDic.Add(aITypeListKey, aTypeNameList);
-                                        iDataDic.Add(aITypeListKey + "Type", aAllTypeList);
-                                    }
-                                }
-                                else
-                                {
-                                    iDataDic.Add(aITypeListKey, null);
-                                }
-                            }
-                            int aSelectedType = -1;
-                            if (aTypeNameList != null)
-                            {
-                                aSelectedType = PopupAuto(aTypeNameList, iDataDic, "SelectType", 10, GUILayout.Width(240));
-                            }
-                            if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
-                            {
-                                try
-                                {
-                                    var aGenericType = aType.GetGenericValueType();
-                                    if (aSelectedType >= 0)
-                                    {
-                                        var aTypes = iDataDic.GetData<IList<Type>>(aITypeListKey + "Type");
-                                        aList.Add(aTypes[aSelectedType].CreateInstance());
-                                    }
-                                    else
-                                    {
-                                        aList.Add(aGenericType.CreateInstance());
-                                    }
-                                }
-                                catch (System.Exception iE)
-                                {
-                                    Debug.LogException(iE);
-                                }
-                                iDataDic.SetData(aCountKey, aList.Count);
-                            }
-                        }
-                        GUILayout.EndHorizontal();
-                        int aAt = 0;
-                        int aDeleteAt = -1;
-                        List<object> aResultList = new List<object>();
-                        var aListType = iObj.GetType().GetGenericValueType();
-                        string aTypeName = aListType.Name;
-                        int aMove = -1;
-                        foreach (var aListData in aList)
-                        {
-                            if (aAt > 0 && aIsMoveElement)
-                            {
-                                //const int Height = 16;
-                                using (new GUILayout.HorizontalScope("box"))//, GUILayout.Height(Height)
-                                {
-                                    GUILayout.FlexibleSpace();//GUILayout.Space(25);
-                                    if (GUILayout.Button("▲", GUILayout.ExpandWidth(false)))//, GUILayout.Height(Height)
-                                    {
-                                        aMove = aAt - 1;
-                                    }
-                                    if (GUILayout.Button("▼", GUILayout.ExpandWidth(false)))//, GUILayout.Height(Height)
-                                    {
-                                        aMove = aAt - 1;
-                                    }
-                                    GUILayout.FlexibleSpace();
-                                }
-                            }
-                            using (new GUILayout.HorizontalScope("box"))
-                            {
-                                if (aIsDelete)
-                                {
-                                    if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
-                                    {
-                                        aDeleteAt = aAt;
-                                    }
-                                }
-                                string aDisplayName = aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName);
-                                var aResult = DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++),
-                                    aDisplayName, iFieldNameFunc: iFieldNameFunc, iFieldType: aListType);
-                                aResultList.Add(aResult);
-                            }
-                        }
-                        if (aMove >= 0 && aMove < aResultList.Count - 1)
-                        {
-                            aResultList.SwapElement(aMove, aMove + 1);
-                            iDataDic.Swap("IList", aMove, aMove + 1);
-                        }
-                        for (int i = 0; i < aResultList.Count; i++)
-                        {
-                            aList[i] = aResultList[i];
-                        }
-                        if (aDeleteAt >= 0)
-                        {
-                            aList.RemoveAt(aDeleteAt);
-                            iDataDic.Remove("IList", aDeleteAt);
-                            iDataDic.SetData(aCountKey, aList.Count);
-                        }
-                    }
-                    GUILayout.EndVertical();
-                    GUILayout.EndHorizontal();
+                    DrawList(aList, iDataDic, iDisplayName, iIsAlwaysShowDetail, iFieldNameFunc);
                 }
-                else if (iObj is IDictionary)
+                else if (iObj is IDictionary aDic)
                 {
-                    bool aIsDelete = false;
-                    GUILayout.BeginHorizontal();
-                    if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, "Show");
-                    GUILayout.BeginVertical();
-                    using (new GUILayout.HorizontalScope())//Show Title(iDisplayName)
-                    {
-                        if (iIsAlwaysShowDetail)
-                        {
-                            aIsShowField = true;
-                        }
-                        else
-                        {
-                            if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
-                        }
-
-                        if (aIsShowField)
-                        {
-                            {
-                                GUILayout.Space(5);
-                                aIsDelete = BoolField(iDataDic, "Delete");
-                                UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
-                            }
-                        }
-                        GUILayout.FlexibleSpace();
-                    }
-                    if (aIsShowField)
-                    {
-                        IDictionary aDic = iObj as IDictionary;
-                        using (new GUILayout.HorizontalScope("box"))
-                        {
-                            var aKeyType = aType.GetGenericKeyType();
-                            string aAddKey = "AddData";
-                            if (!iDataDic.ContainsKey(aAddKey))
-                            {
-                                iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
-                            }
-                            var aKey = iDataDic.GetData(aAddKey);
-                            string aKeyName = string.Empty;
-                            var aKeyShortName = aKey as UCL.Core.UCLI_ShortName;
-                            if (aKeyShortName != null) aKeyName = aKeyShortName.GetShortName();
-                            if (aKeyName.IsNullOrEmpty()) aKeyName = UCL_LocalizeManager.Get(aKeyType.Name);
-                            iDataDic.SetData(aAddKey, DrawObjectData(aKey,
-                                iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
-                            using (new GUILayout.HorizontalScope("box"))
-                            {
-                                if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
-                                {
-                                    try
-                                    {
-                                        var aNewKey = iDataDic.GetData(aAddKey);
-                                        if (!aDic.Contains(aNewKey))
-                                        {
-                                            iDataDic.Remove(aAddKey);
-                                            var aGenericType = aType.GetGenericValueType();
-                                            aDic.Add(aNewKey, aGenericType.CreateInstance());
-                                        }
-                                    }
-                                    catch (System.Exception iE)
-                                    {
-                                        Debug.LogException(iE);
-                                    }
-                                }
-                            }
-
-                        }
-
-                        var aValueType = aType.GetGenericValueType();
-                        object aDeleteAt = null;
-                        string aDeleteKeyName = string.Empty;
-                        List<Tuple<object, object>> aResultList = new List<Tuple<object, object>>();
-                        foreach (var aKey in aDic.Keys)
-                        {
-                            using (new GUILayout.HorizontalScope("box"))
-                            {
-                                string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
-                                if (aIsDelete)
-                                {
-                                    if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), GUILayout.ExpandWidth(false)))
-                                    {
-                                        aDeleteAt = aKey;
-                                        aDeleteKeyName = "Dic_" + aKeyName;
-                                    }
-                                }
-                                using (new GUILayout.VerticalScope())
-                                {
-                                    var aSubDic = iDataDic.GetSubDic("Dic_" + aKeyName);
-                                    var aDicData = aDic[aKey];
-                                    string aDisplayName = aDicData.UCL_GetShortName(aDicData != null ? aDicData.GetType().Name : aValueType.Name);
-                                    GUILayout.Label(aKeyName, UCL_GUIStyle.LabelStyle);
-                                    aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
-                                }
-                            }
-                        }
-                        for (int i = 0; i < aResultList.Count; i++)
-                        {
-                            aDic[aResultList[i].Item1] = aResultList[i].Item2;
-                        }
-                        if (aDeleteAt != null)
-                        {
-                            aDic.Remove(aDeleteAt);
-                            iDataDic.Remove(aDeleteKeyName);
-                        }
-                    }
-                    GUILayout.EndVertical();
-                    GUILayout.EndHorizontal();
+                    DrawDictionary(aDic, iDataDic, iDisplayName, iIsAlwaysShowDetail, iFieldNameFunc);
                 }
                 else if (iObj is Color)
                 {
@@ -431,7 +135,6 @@ namespace UCL.Core.UI
                             }
                             aResultObj = aTransform;
                         }
-
                     }
                     else
                     {
@@ -755,12 +458,12 @@ namespace UCL.Core.UI
             Type aType = iObj.GetType();
             if (iFieldType == null) iFieldType = aType;
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL.Core.CopyPaste.SetCopyData(iObj);
             }
             bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(iFieldType);
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(aCanCopy ? Color.white : Color.red),
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.GetButtonStyle(aCanCopy ? Color.white : Color.red),
                 GUILayout.ExpandWidth(false)))
             {
                 if (aCanCopy)

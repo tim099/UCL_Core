@@ -545,13 +545,28 @@ namespace UCL.Core.FileLib
             if(!Directory.Exists(target)) {
                 Directory.CreateDirectory(target);
             }
-            DirectoryInfo source_info = new DirectoryInfo(source), target_info = new DirectoryInfo(target);
-            foreach(FileInfo file_info in source_info.GetFiles()) {
-                file_info.CopyTo(Path.Combine(target.ToString(), file_info.Name), true);
+            DirectoryInfo aSourceInfo = new DirectoryInfo(source);
+            DirectoryInfo aTargetInfo = new DirectoryInfo(target);
+            foreach(FileInfo aFileInfo in aSourceInfo.GetFiles()) {
+                try
+                {
+                    aFileInfo.CopyTo(Path.Combine(target.ToString(), aFileInfo.Name), true);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
-            foreach(DirectoryInfo diSourceSubDir in source_info.GetDirectories()) {
-                DirectoryInfo nextTargetSubDir = target_info.CreateSubdirectory(diSourceSubDir.Name);
-                CopyDirectory(diSourceSubDir.FullName, nextTargetSubDir.FullName);
+            foreach(DirectoryInfo diSourceSubDir in aSourceInfo.GetDirectories()) {
+                try
+                {
+                    DirectoryInfo aNextTargetSubDir = aTargetInfo.CreateSubdirectory(diSourceSubDir.Name);
+                    CopyDirectory(diSourceSubDir.FullName, aNextTargetSubDir.FullName);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
         }
         public static StreamWriter OpenWriteStream(string path) {

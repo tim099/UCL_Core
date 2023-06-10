@@ -202,7 +202,7 @@ namespace UCL.Core.UI
                             }
                         }
                     }
-                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                    if (!string.IsNullOrEmpty(iDisplayName)) GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 }
 
                 if (iObj is UCLI_CopyPaste)

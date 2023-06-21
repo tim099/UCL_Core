@@ -387,7 +387,7 @@ namespace UCL.Core.UI
                 aDisplayNames[i] = ((System.Enum)aEnums.GetValue(i)).GetLocalizeEnumName();
             }
 
-            int aID = PopupAuto(aDisplayNames, aEnums.GetArrayIndex(iEnum), iDataDic, "Popup", iSearchThreshold);
+            int aID = PopupAuto(aDisplayNames, aEnums.GetArrayIndex(iEnum), iDataDic, "Popup", iSearchThreshold, iOptions);
 
             //T aRes = (T)System.Enum.Parse(aType, aNames[aID], true);
             return (T)aEnums.GetValue(aID);

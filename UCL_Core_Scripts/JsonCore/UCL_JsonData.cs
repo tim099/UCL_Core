@@ -9,8 +9,11 @@ using UnityEngine;
 namespace UCL.Core.JsonLib {
     public enum JsonType {
         None,
-        Object,
-        Array,
+        /// <summary>
+        /// Dic of JsonData
+        /// </summary>
+        Dictionary,
+        List,
         String,
         Int,
         Long,
@@ -18,7 +21,7 @@ namespace UCL.Core.JsonLib {
         Double,
         Boolean
     }
-    public class JsonData : IList, IDictionary, UI.UCLI_FieldOnGUI
+    public class JsonData : IList, IDictionary, UI.UCLI_FieldOnGUI//, UCLI_ShortName
     {
         #region Properties
         object m_Obj;
@@ -34,55 +37,104 @@ namespace UCL.Core.JsonLib {
                 if (aCollection == null) return 0;
                 return aCollection.Count;
             } }
-        public bool IsArray => m_Type == JsonType.Array;
+        public bool IsArray => m_Type == JsonType.List;
         public bool IsBoolean => m_Type == JsonType.Boolean;
         public bool IsDouble => m_Type == JsonType.Double;
         public bool IsInt => m_Type == JsonType.Int;
         public bool IsLong => m_Type == JsonType.Long;
-        public bool IsObject => m_Type == JsonType.Object;
+        public bool IsObject => m_Type == JsonType.Dictionary;
         public bool IsString => m_Type == JsonType.String;
         #endregion
 
         #region Interface
+        //virtual public string GetShortName()
+        //{
+        //    switch (m_Type)
+        //    {
+        //        case JsonType.List:
+        //            {
+        //                return $"JsonData[{m_Type.ToString()}]";
+        //            }
+        //        case JsonType.Dictionary:
+        //            {
+        //                return $"JsonData[{m_Type.ToString()}]";
+        //            }
+        //        case JsonType.None:
+        //            {
+        //                return "JsonData(null)";
+        //            }
+        //        default:
+        //            {
+        //                if(m_Obj == null) return "JsonData(null)";
+        //                return $"JsonData[{m_Type.ToString()}]({m_Obj.ToString()})";
+        //            }
+        //    }
+        //    return "JsonData";
+        //}
         virtual public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
         {
             UCL_ObjectDictionary aSubDic = iDataDic.GetSubDic("JsonData");
 
             GUILayout.BeginHorizontal();
             bool aShow = true;
-            if (m_Type == JsonType.Object || m_Type == JsonType.Array)
+            var aType = m_Type;
+            if (m_Type == JsonType.Dictionary || m_Type == JsonType.List)
             {
-                aShow = UCL_GUILayout.Toggle(iDataDic.GetData("Show", false));
-                iDataDic.SetData("Show", aShow);
+                aShow = UCL_GUILayout.Toggle(iDataDic.GetData(UCL_GUILayout.IsShowFieldKey, false));
+                iDataDic.SetData(UCL_GUILayout.IsShowFieldKey, aShow);
             }
-
-            switch (m_Type)
+            System.Action aDrawFieldName = () => {
+                //GUILayout.BeginHorizontal(GUILayout.ExpandWidth(false));
+                //using(var aScope = new GUILayout.HorizontalScope(GUILayout.ExpandWidth(false)))
+                {
+                    var aNewType = UCL_GUILayout.PopupAuto(m_Type, iDataDic.GetSubDic("m_Type"), 10, GUILayout.Width(80));
+                    if (aNewType != m_Type)
+                    {
+                        //m_Type = aNewType;
+                        iDataDic.Clear();
+                        Init(aNewType);
+                    }
+                    GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                }
+                //GUILayout.EndHorizontal();
+            };
+            switch (aType)
             {
-                case JsonType.Array:
+                case JsonType.List:
                     {
                         GUILayout.BeginVertical();
-                        GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle);
+                        GUILayout.BeginHorizontal();
+                        aDrawFieldName();
+                        GUILayout.EndHorizontal();
                         if (aShow) UCL_GUILayout.DrawObjectData(m_List, aSubDic, "List", true);
                         GUILayout.EndVertical();
                         break;
                     }
-                case JsonType.Object:
+                case JsonType.Dictionary:
                     {
                         GUILayout.BeginVertical();
-                        GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle);
+                        GUILayout.BeginHorizontal();
+                        aDrawFieldName();
+                        GUILayout.EndHorizontal();
                         if (aShow) UCL_GUILayout.DrawObjectData(m_Dic, aSubDic, "Dic", true);
                         GUILayout.EndVertical();
                         break;
                     }
                 case JsonType.None:
                     {
-                        GUILayout.Label($"{iFieldName}: null", UCL_GUIStyle.LabelStyle);
+                        GUILayout.BeginHorizontal();
+                        aDrawFieldName();
+                        GUILayout.Label($": null", UCL_GUIStyle.LabelStyle);
+                        GUILayout.EndHorizontal();
                         break;
                     }
                 default:
                     {
-                        GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                        m_Obj = UCL_GUILayout.DrawObjectData(m_Obj, aSubDic, "Json", true);
+                        GUILayout.BeginHorizontal();
+                        aDrawFieldName();
+                        //GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        m_Obj = UCL_GUILayout.DrawObjectData(m_Obj, aSubDic, m_Type.ToString(), true);
+                        GUILayout.EndHorizontal();
                         break;
                     }
             }
@@ -113,64 +165,131 @@ namespace UCL.Core.JsonLib {
         public JsonData() {
             m_Type = JsonType.None;
         }
-        public JsonData(object iObj) {
-            if(iObj == null) {
+        public void Init(JsonType iJsonType)
+        {
+            m_Type = iJsonType;
+            m_Obj = null;
+            m_Dic = null;
+            m_List = null;
+            m_ObjectList = null;
+            switch (m_Type)
+            {
+                case JsonType.Dictionary:
+                    {
+                        Init(new Dictionary<string, object>()); 
+                        break;
+                    }
+                case JsonType.List:
+                    {
+                        Init(new List<object>()); 
+                        break;
+                    }
+                case JsonType.String:
+                    {
+                        m_Obj = string.Empty;
+                        break;
+                    }
+                case JsonType.Int:
+                    {
+                        m_Obj = (int)0; 
+                        break;
+                    }
+                case JsonType.Long:
+                    {
+                        m_Obj = (long)0;
+                        break;
+                    }
+                case JsonType.ULong:
+                    {
+                        m_Obj = (ulong)0;
+                        break;
+                    }
+                case JsonType.Double:
+                    {
+                        m_Obj = (double)0;
+                        break;
+                    }
+                case JsonType.Boolean:
+                    {
+                        m_Obj = false;
+                        break;
+                    }
+            }
+        }
+        public void Init(object iObj)
+        {
+            if (iObj == null)
+            {
                 m_Type = JsonType.None;
                 return;
             }
 
-            if(iObj is IList) {
-                m_Type = JsonType.Array;
-                List<object> lst = iObj as List<object>;
-                if(lst != null) {
-                    m_List = new List<JsonData>(lst.Count);
-                    foreach(object item in lst) {
-                        m_List.Add(ToJsonData(item));
-                    }
-                } else {
-                    IList list = iObj as IList;
-                    m_List = new List<JsonData>();
-                    foreach(object item in list) {
-                        m_List.Add(ToJsonData(item));
-                    }
+            if (iObj is IList aList)
+            {
+                m_Type = JsonType.List;
+                m_List = new List<JsonData>();
+                foreach (object item in aList)
+                {
+                    m_List.Add(ToJsonData(item));
                 }
-
-            } else if(iObj is IDictionary) {
-                m_Type = JsonType.Object;
+            }
+            else if (iObj is IDictionary)
+            {
+                m_Type = JsonType.Dictionary;
                 Dictionary<string, object> dict = iObj as Dictionary<string, object>;
                 m_Dic = new Dictionary<string, JsonData>(dict.Count);
                 m_ObjectList = new List<KeyValuePair<string, JsonData>>(dict.Count);
 
                 KeyValuePair<string, JsonData> entry;
                 JsonData value;
-                foreach(KeyValuePair<string, object> item in dict) {
+                foreach (KeyValuePair<string, object> item in dict)
+                {
                     value = ToJsonData(item.Value);
                     entry = new KeyValuePair<string, JsonData>(item.Key, value);
                     m_Dic.Add(entry);
                     m_ObjectList.Add(entry);
                 }
-            } else {
-                if(iObj is bool) {
+            }
+            else
+            {
+                if (iObj is bool)
+                {
                     m_Type = JsonType.Boolean;
-                } else if(iObj is double) {
+                }
+                else if (iObj is double)
+                {
                     m_Type = JsonType.Double;
-                } else if(iObj is float) {
+                }
+                else if (iObj is float)
+                {
                     m_Type = JsonType.Double;
                     iObj = (double)(float)iObj;
-                } else if(iObj is int) {
+                }
+                else if (iObj is int)
+                {
                     m_Type = JsonType.Int;
-                } else if(iObj is long) {
+                }
+                else if (iObj is long)
+                {
                     m_Type = JsonType.Long;
-                } else if (iObj is ulong) {
+                }
+                else if (iObj is ulong)
+                {
                     m_Type = JsonType.ULong;
                 }
-                else if(iObj is string) {
+                else if (iObj is string)
+                {
                     m_Type = JsonType.String;
-                } else {
-                    m_Type = JsonType.Object;
+                }
+                else
+                {
+                    m_Type = JsonType.Dictionary;
                 }
                 m_Obj = iObj;
             }
+        }
+        public JsonData(object iObj) {
+            Init(iObj);
         }
         public JsonData(bool boolean) {
             m_Type = JsonType.Boolean;
@@ -213,13 +332,13 @@ namespace UCL.Core.JsonLib {
                     case JsonType.ULong:
                     case JsonType.String:
                         return aData.m_Obj;
-                    case JsonType.Array:
+                    case JsonType.List:
                         List<object> list = new List<object>();
                         foreach(JsonData item in aData.m_List) {
                             list.Add(ToObject(item));
                         }
                         return list;
-                    case JsonType.Object:
+                    case JsonType.Dictionary:
                         Dictionary<string, object> aDict = new Dictionary<string, object>();
                         if (aData.m_Dic != null)
                         {
@@ -237,7 +356,7 @@ namespace UCL.Core.JsonLib {
         }
         #endregion
         public JsonData ToArray() {
-            m_Type = JsonType.Array;
+            m_Type = JsonType.List;
             m_List = new List<JsonData>();
             return this;
         }
@@ -691,12 +810,12 @@ namespace UCL.Core.JsonLib {
         public JsonData this[int index] {
             get {
                 GetCollection();
-                if(m_Type == JsonType.Array) return m_List[index];
+                if(m_Type == JsonType.List) return m_List[index];
                 return m_ObjectList[index].Value;
             }
             set {
                 GetCollection();
-                if(m_Type == JsonType.Array) {
+                if(m_Type == JsonType.List) {
                     m_List[index] = value;
                 } else {
                     var key = m_ObjectList[index].Key;
@@ -725,7 +844,7 @@ namespace UCL.Core.JsonLib {
         }
 
         public bool Contains(object key) {
-            if(m_Type != JsonType.Object && m_Type != JsonType.None) return false;
+            if(m_Type != JsonType.Dictionary && m_Type != JsonType.None) return false;
             return GetIDic().Contains(key);
         }
 
@@ -739,8 +858,8 @@ namespace UCL.Core.JsonLib {
 
             switch(m_Type) {
                 case JsonType.None: return true;
-                case JsonType.Object: return m_Dic.Equals(data.m_Dic);
-                case JsonType.Array: return m_List.Equals(data.m_List);
+                case JsonType.Dictionary: return m_Dic.Equals(data.m_Dic);
+                case JsonType.List: return m_List.Equals(data.m_List);
 
                 case JsonType.String:
                 case JsonType.Int:
@@ -762,9 +881,9 @@ namespace UCL.Core.JsonLib {
                 case JsonType.ULong:
                     return m_Obj.ToString();
 
-                case JsonType.Array:
+                case JsonType.List:
                     return "Array";
-                case JsonType.Object:
+                case JsonType.Dictionary:
                     return "Object";
 
                 case JsonType.String:
@@ -783,14 +902,14 @@ namespace UCL.Core.JsonLib {
 
         #region Private Methods
         private ICollection GetCollection() {
-            if(m_Type == JsonType.Array) return (ICollection)m_List;
-            if(m_Type == JsonType.Object) return (ICollection)m_Dic;
+            if(m_Type == JsonType.List) return (ICollection)m_List;
+            if(m_Type == JsonType.Dictionary) return (ICollection)m_Dic;
             if (m_Type == JsonType.None) return GetIDic();
             return null;//Not avaliable
         }
 
         private IDictionary GetIDic() {
-            if(m_Type == JsonType.Object) return (IDictionary)m_Dic;
+            if(m_Type == JsonType.Dictionary) return (IDictionary)m_Dic;
             if(m_Type != JsonType.None) {
                 //if(m_List != null) {
                 //    foreach(var item in m_List) {
@@ -799,17 +918,17 @@ namespace UCL.Core.JsonLib {
                 //}
                 throw new InvalidOperationException("JsonData already has type:" + m_Type.ToString() + ",Cant convert to dictionary!!");
             }
-            m_Type = JsonType.Object;
+            m_Type = JsonType.Dictionary;
             m_Dic = new Dictionary<string, JsonData>();
             m_ObjectList = new List<KeyValuePair<string, JsonData>>();
             return (IDictionary)m_Dic;
         }
 
         private IList GetList() {
-            if(m_Type == JsonType.Array) return (IList)m_List;
+            if(m_Type == JsonType.List) return (IList)m_List;
             if(m_Type != JsonType.None) throw new InvalidOperationException("JsonData already has type:"+m_Type.ToString()
                 + ",Cant convert to array!!");
-            m_Type = JsonType.Array;
+            m_Type = JsonType.List;
             m_List = new List<JsonData>();
             return (IList)m_List;
         }

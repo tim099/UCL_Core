@@ -39,10 +39,15 @@ namespace UCL.Core.UI
                 }
                 aType = iObj.GetType();
                 if (iFieldType == null) iFieldType = aType;
-                if (iObj is string)
+                if (iObj is string aStr)
                 {
                     aIsShowField = false;
-                    aResultObj = GUILayout.TextArea((string)iObj);
+                    aResultObj = GUILayout.TextArea(aStr);
+                }
+                if(iObj is bool aflag)
+                {
+                    aIsShowField = false;
+                    aResultObj = UCL_GUILayout.CheckBox(aflag);
                 }
                 if (iObj is UCLI_FieldOnGUI aFieldOnGUI)
                 {

@@ -10,7 +10,10 @@ namespace UCL.Core.UI
     static public partial class UCL_GUILayout
     {
         public const string IsShowFieldKey = "IsShowField";
-
+        public class DrawObjExSetting
+        {
+            public System.Action OnShowField;
+        }
         #region DrawObject
 
         /// <summary>
@@ -23,7 +26,8 @@ namespace UCL.Core.UI
         /// <param name="iFieldNameFunc">param is the field name and return the display name</param>
         /// <returns></returns>
         public static object DrawObjectData(object iObj, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
-            bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null, System.Type iFieldType = null)
+            bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null, System.Type iFieldType = null
+            , DrawObjExSetting iDrawObjExSetting = null)
         {
             if (iFieldNameFunc == null) iFieldNameFunc = UCL_StaticFunctions.LocalizeFieldName;
             GUILayout.BeginVertical();
@@ -155,6 +159,10 @@ namespace UCL.Core.UI
             {
                 //GUILayout.Label("!aIsDefaultType:" + aResultObj.GetType().Name);
                 aResultObj = DrawField(aResultObj, iDataDic, iDisplayName, iIsAlwaysShowDetail, iFieldNameFunc, iFieldType);
+                if (iDrawObjExSetting != null)
+                {
+                    iDrawObjExSetting.OnShowField?.Invoke();
+                }
             }
 
             GUILayout.EndVertical();
@@ -171,7 +179,8 @@ namespace UCL.Core.UI
         /// <param name="iFieldType"></param>
         /// <returns></returns>
         public static object DrawField(object iObj, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
-            bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null, System.Type iFieldType = null)
+            bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null, System.Type iFieldType = null
+            , DrawObjExSetting iDrawObjExSetting = null)
         {
             if (iObj == null) return null;
 
@@ -443,7 +452,10 @@ namespace UCL.Core.UI
                             aField.SetValue(iObj, aData);
                         }
                     }
-
+                    if (iDrawObjExSetting != null)
+                    {
+                        iDrawObjExSetting.OnShowField?.Invoke();
+                    }
                 }
             GUILayout.EndVertical();
 

@@ -203,9 +203,9 @@ namespace UCL.Core.UI
                 }
                 else
                 {
-                    if (iObj is UCL.Core.UCLI_Icon)
+                    if (iObj is UCL.Core.UCLI_Icon aIcon)
                     {
-                        var aTexture = (iObj as UCLI_Icon).IconTexture;
+                        var aTexture = aIcon.IconTexture;
                         if (aTexture != null)
                         {
                             using (new GUILayout.VerticalScope(GUILayout.Width(24), GUILayout.Height(24)))
@@ -215,6 +215,10 @@ namespace UCL.Core.UI
                                 GUILayout.FlexibleSpace();
                             }
                         }
+                    }
+                    if(iObj is UCL.Core.UI.UCLI_IsEnable aEnable)
+                    {
+                        aEnable.IsEnable = UCL_GUILayout.CheckBox(aEnable.IsEnable);
                     }
                     if (!string.IsNullOrEmpty(iDisplayName)) GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 }

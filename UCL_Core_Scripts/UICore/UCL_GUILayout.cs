@@ -6,6 +6,10 @@ using UCL.Core.LocalizeLib;
 using UnityEngine;
 
 namespace UCL.Core.UI {
+    public interface UCLI_IsEnable
+    {
+        bool IsEnable { get; set; }
+    }
     public interface UCLI_FieldOnGUI
     {
         /// <summary>

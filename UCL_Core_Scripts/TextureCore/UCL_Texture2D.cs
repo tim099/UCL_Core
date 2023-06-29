@@ -73,12 +73,20 @@ namespace UCL.Core.TextureLib {
         public void ClearTexture() {
             //Debug.LogWarning("ClearTexture()!!");
             if (m_Texture != null) {
+#if UNITY_EDITOR
                 Object.DestroyImmediate(m_Texture);
+#else
+                Object.Destroy(m_Texture);
+#endif
                 m_Texture = null;
             }
             if(m_Sprite != null)
             {
+#if UNITY_EDITOR
                 Object.DestroyImmediate(m_Sprite);
+#else
+                Object.Destroy(m_Sprite);
+#endif
                 m_Sprite = null;
             }
         }

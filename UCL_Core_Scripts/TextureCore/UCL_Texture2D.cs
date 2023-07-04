@@ -341,14 +341,35 @@ namespace UCL.Core.TextureLib {
             return m_Sprite;
 
         }
-        virtual public void SetPixel(Vector2Int pos, Color col) {
+        virtual public void SetPixel(Vector2Int iPos, Color iCol) {
             m_TextureUpdated = true;
             m_SpriteUpdated = true;
-            if(pos.x < 0) pos.x = 0;
-            if(pos.y < 0) pos.y = 0;
-            if(pos.x >= width) pos.x = width - 1;
-            if(pos.y >= height) pos.y = height - 1;
-            m_Col[pos.x + pos.y * width] = col;
+            if(iPos.x < 0) iPos.x = 0;
+            if(iPos.y < 0) iPos.y = 0;
+            if(iPos.x >= width) iPos.x = width - 1;
+            if(iPos.y >= height) iPos.y = height - 1;
+            m_Col[iPos.x + iPos.y * width] = iCol;
+        }
+        virtual public void DrawCircle(Vector2Int iPos, Color iCol, float iRadius = 1f)
+        {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            int aRad = Mathf.CeilToInt(iRadius);
+            int aMinX = Mathf.Clamp(iPos.x - aRad - 1, 0, width);
+            int aMaxX = Mathf.Clamp(iPos.x + aRad + 2, 0, width);
+            int aMinY = Mathf.Clamp(iPos.y - aRad - 1, 0, height);
+            int aMaxY = Mathf.Clamp(iPos.y + aRad + 2, 0, height);
+            for(int aX = aMinX; aX < aMaxX; aX++)
+            {
+                for (int aY = aMinY; aY < aMaxY; aY++)
+                {
+                    float aDis = (new Vector2(aX, aY) - iPos).magnitude;
+                    if (aDis < iRadius)
+                    {
+                        m_Col[aX + aY * width] = iCol;
+                    }
+                }
+            }
         }
         /// <summary>
         /// Draw a line start from sx,sy to ex,ey

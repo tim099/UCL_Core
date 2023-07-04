@@ -774,6 +774,575 @@ namespace UCL.Core.TextureLib {
             }
 
         }
+        virtual public void DrawLine(int iStartX, int iStartY, int iEndX, int iEndY, Color iStartCol, Color iEndCol)
+        {
+            if (iEndY < 0 && iStartY < 0) return;
+            if (iEndY >= height && iStartY >= height) return;
+            if (iEndX < 0 && iStartX < 0) return;
+            if (iEndX >= width && iStartX >= width) return;
+
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+
+            Vector2Int os = new Vector2Int(iStartX, iStartY);
+            Vector2Int oe = new Vector2Int(iEndX, iEndY);
+            //Debug.LogWarning("sx:" + sx + ",sy:" + sy + ",ex:" + ex + ",ey:" + ey+ ",width:"+ width+ ",height:" + height);
+            if (iEndX < 0)
+            {
+                if (iStartX < 0) return;
+
+                int dx = iEndX - iStartX;
+                int dy = iEndY - iStartY;
+
+                if (dy == 0)
+                {
+                    iEndX = 0;
+                }
+                else
+                {
+                    float tx = -iStartX / (float)dx;
+                    float ty = 0;
+                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
+                    if (dy > 0)
+                    {//up
+                        ty = (height - iStartY - 1) / (float)dy;
+                    }
+                    else if (dy < 0)
+                    {//down
+                        ty = -iStartY / (float)dy;
+                    }
+
+                    if (tx < ty)
+                    {//reach x border first
+                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
+                        iEndX = 0;
+                        iEndY = iStartY + Mathf.RoundToInt(dy * tx);
+                    }
+                    else if (tx > ty)
+                    {//tx > ty reach y border first
+                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
+                        iEndX = iStartX + Mathf.RoundToInt(dx * ty);
+                        if (dy > 0)
+                        {
+                            iEndY = height - 1;
+                        }
+                        else
+                        {
+                            iEndY = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
+                        iEndX = 0;
+                        if (dy > 0)
+                        {
+                            iEndY = height - 1;
+                        }
+                        else
+                        {
+                            iEndY = 0;
+                        }
+                    }
+                }
+            }
+            else if (iEndX >= width)
+            {
+                if (iStartX >= width)
+                {
+                    return;
+                }
+                int dx = iEndX - iStartX;
+                int dy = iEndY - iStartY;
+
+                if (dy == 0)
+                {
+                    iEndX = width - 1;
+                }
+                else
+                {
+                    float tx = (width - iStartX - 1) / (float)dx;
+                    float ty = 0;
+                    if (dy > 0)
+                    {//up
+                        ty = (height - iStartY - 1) / (float)dy;
+                    }
+                    else if (dy < 0)
+                    {//down
+                        ty = -iStartY / (float)dy;
+                    }
+
+                    if (tx < ty)
+                    {//reach x border first
+                        iEndX = width - 1;
+                        iEndY = iStartY + Mathf.RoundToInt(dy * tx);
+                    }
+                    else if (tx > ty)
+                    {//tx > ty reach y border first
+                        iEndX = iStartX + Mathf.RoundToInt(dx * ty);
+                        if (dy > 0)
+                        {
+                            iEndY = height - 1;
+                        }
+                        else
+                        {
+                            iEndY = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        iEndX = width - 1;
+                        if (dy > 0)
+                        {
+                            iEndY = height - 1;
+                        }
+                        else
+                        {
+                            iEndY = 0;
+                        }
+                    }
+                }
+            }
+
+            if (iEndY < 0)
+            {
+                if (iStartY < 0) return;
+                int dx = iEndX - iStartX;
+                int dy = iEndY - iStartY;
+
+                if (dx == 0)
+                {
+                    iEndY = 0;
+                }
+                else
+                {
+                    float tx = 0;
+                    float ty = -iStartY / (float)dy;
+                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
+                    if (dx > 0)
+                    {//right
+                        tx = (width - iStartX - 1) / (float)dx;
+                    }
+                    else if (dx < 0)
+                    {//left
+                        tx = -iStartX / (float)dx;
+                    }
+
+                    if (ty < tx)
+                    {//reach x border first
+                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
+                        iEndY = 0;
+                        iEndX = iStartX + Mathf.RoundToInt(dx * ty);
+                    }
+                    else if (ty > tx)
+                    {//tx > ty reach y border first
+                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
+                        iEndY = iStartY + Mathf.RoundToInt(dy * tx);
+                        if (dx > 0)
+                        {
+                            iEndX = width - 1;
+                        }
+                        else
+                        {
+                            iEndX = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
+                        iEndY = 0;
+                        if (dx > 0)
+                        {
+                            iEndX = width - 1;
+                        }
+                        else
+                        {
+                            iEndX = 0;
+                        }
+                    }
+                }
+            }
+            else if (iEndY >= height)
+            {
+                if (iStartY >= height) return;
+                int dx = iEndX - iStartX;
+                int dy = iEndY - iStartY;
+
+                if (dx == 0)
+                {
+                    iEndY = height - 1;
+                }
+                else
+                {
+                    float ty = (height - iStartY - 1) / (float)dy;
+                    float tx = 0;
+                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx + ",ex:" + ex + ",sx:" + sx);
+                    if (dx > 0)
+                    {//right
+                        tx = (width - iStartX - 1) / (float)dx;
+                    }
+                    else if (dx < 0)
+                    {//left
+                        tx = -iStartX / (float)dx;
+                    }
+
+                    if (ty < tx)
+                    {//reach y border first
+                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
+                        iEndY = height - 1;
+                        iEndX = iStartX + Mathf.RoundToInt(dx * ty);
+                    }
+                    else if (ty > tx)
+                    {//reach x border first
+                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
+                        iEndY = iStartY + Mathf.RoundToInt(dy * tx);
+                        if (dx > 0)
+                        {
+                            iEndX = width - 1;
+                        }
+                        else
+                        {
+                            iEndX = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
+                        iEndY = height - 1;
+                        if (dx > 0)
+                        {
+                            iEndX = width - 1;
+                        }
+                        else
+                        {
+                            iEndX = 0;
+                        }
+                    }
+                }
+            }
+
+
+            if (iStartX < 0)
+            {
+                if (iEndX < 0) return;
+
+                int dx = iStartX - iEndX;
+                int dy = iStartY - iEndY;
+
+                if (dy == 0)
+                {
+                    iStartX = 0;
+                }
+                else
+                {
+                    float tx = -iEndX / (float)dx;
+                    float ty = 0;
+                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
+                    if (dy > 0)
+                    {//up
+                        ty = (height - iEndY - 1) / (float)dy;
+                    }
+                    else if (dy < 0)
+                    {//down
+                        ty = -iEndY / (float)dy;
+                    }
+
+                    if (tx < ty)
+                    {//reach x border first
+                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
+                        iStartX = 0;
+                        iStartY = iEndY + Mathf.RoundToInt(dy * tx);
+                    }
+                    else if (tx > ty)
+                    {//tx > ty reach y border first
+                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
+                        iStartX = iEndX + Mathf.RoundToInt(dx * ty);
+                        if (dy > 0)
+                        {
+                            iStartY = height - 1;
+                        }
+                        else
+                        {
+                            iStartY = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
+                        iStartX = 0;
+                        if (dy > 0)
+                        {
+                            iStartY = height - 1;
+                        }
+                        else
+                        {
+                            iStartY = 0;
+                        }
+                    }
+                }
+            }
+            else if (iStartX >= width)
+            {
+                if (iEndX >= width)
+                {
+                    return;
+                }
+                int dx = iStartX - iEndX;
+                int dy = iStartY - iEndY;
+
+                if (dy == 0)
+                {
+                    iStartX = width - 1;
+                }
+                else
+                {
+                    float tx = (width - iEndX - 1) / (float)dx;
+                    float ty = 0;
+                    if (dy > 0)
+                    {//up
+                        ty = (height - iEndY - 1) / (float)dy;
+                    }
+                    else if (dy < 0)
+                    {//down
+                        ty = -iEndY / (float)dy;
+                    }
+
+                    if (tx < ty)
+                    {//reach x border first
+                        iStartX = width - 1;
+                        iStartY = iEndY + Mathf.RoundToInt(dy * tx);
+                    }
+                    else if (tx > ty)
+                    {//tx > ty reach y border first
+                        iStartX = iEndX + Mathf.RoundToInt(dx * ty);
+                        if (dy > 0)
+                        {
+                            iStartY = height - 1;
+                        }
+                        else
+                        {
+                            iStartY = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        iStartX = width - 1;
+                        if (dy > 0)
+                        {
+                            iStartY = height - 1;
+                        }
+                        else
+                        {
+                            iStartY = 0;
+                        }
+                    }
+                }
+            }
+
+            if (iStartY < 0)
+            {
+                if (iEndY < 0) return;
+                int dx = iStartX - iEndX;
+                int dy = iStartY - iEndY;
+
+                if (dx == 0)
+                {
+                    iStartY = 0;
+                }
+                else
+                {
+                    float tx = 0;
+                    float ty = -iEndY / (float)dy;
+                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
+                    if (dx > 0)
+                    {//right
+                        tx = (width - iEndX - 1) / (float)dx;
+                    }
+                    else if (dx < 0)
+                    {//left
+                        tx = -iEndX / (float)dx;
+                    }
+
+                    if (ty < tx)
+                    {//reach x border first
+                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
+                        iStartY = 0;
+                        iStartX = iEndX + Mathf.RoundToInt(dx * ty);
+                    }
+                    else if (ty > tx)
+                    {//tx > ty reach y border first
+                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
+                        iStartY = iEndY + Mathf.RoundToInt(dy * tx);
+                        if (dx > 0)
+                        {
+                            iStartX = width - 1;
+                        }
+                        else
+                        {
+                            iStartX = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
+                        iStartY = 0;
+                        if (dx > 0)
+                        {
+                            iStartX = width - 1;
+                        }
+                        else
+                        {
+                            iStartX = 0;
+                        }
+                    }
+                }
+            }
+            else if (iStartY >= height)
+            {
+                if (iEndY >= height) return;
+                int dx = iStartX - iEndX;
+                int dy = iStartY - iEndY;
+
+                if (dx == 0)
+                {
+                    iStartY = height - 1;
+                }
+                else
+                {
+                    float ty = (height - iEndY - 1) / (float)dy;
+                    float tx = 0;
+                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx + ",ex:" + ex + ",sx:" + sx);
+                    if (dx > 0)
+                    {//right
+                        tx = (width - iEndX - 1) / (float)dx;
+                    }
+                    else if (dx < 0)
+                    {//left
+                        tx = -iEndX / (float)dx;
+                    }
+
+                    if (ty < tx)
+                    {//reach y border first
+                        //Debug.LogWarning("ty < tx:" + ty + "<" + tx);
+                        iStartY = height - 1;
+                        iStartX = iEndX + Mathf.RoundToInt(dx * ty);
+                    }
+                    else if (ty > tx)
+                    {//reach x border first
+                        //Debug.LogWarning("ty > tx:" + ty + ">" + tx);
+                        iStartY = iEndY + Mathf.RoundToInt(dy * tx);
+                        if (dx > 0)
+                        {
+                            iStartX = width - 1;
+                        }
+                        else
+                        {
+                            iStartX = 0;
+                        }
+                    }
+                    else
+                    {//tx == ty reach corner
+                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
+                        iStartY = height - 1;
+                        if (dx > 0)
+                        {
+                            iStartX = width - 1;
+                        }
+                        else
+                        {
+                            iStartX = 0;
+                        }
+                    }
+                }
+            }
+
+
+            try
+            {
+                int dx = iEndX - iStartX;
+                int dy = iEndY - iStartY;
+                if (dx == 0)
+                {
+                    if (dy > 0)
+                    {
+                        for (int i = 0; i <= dy; i++)
+                        {
+                            m_Col[iStartX + (iStartY + i) * width] = Color.Lerp(iStartCol, iEndCol, (float)i/dy);
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i >= dy; i--)
+                        {
+                            m_Col[iStartX + (iStartY + i) * width] = Color.Lerp(iStartCol, iEndCol, (float)i / dy);
+                        }
+                    }
+
+                }
+                else if (dy == 0)
+                {
+                    int sval = iStartX + iStartY * width;
+                    if (dx > 0)
+                    {
+                        for (int i = 0; i <= dx; i++)
+                        {
+                            m_Col[sval + i] = Color.Lerp(iStartCol, iEndCol, (float)i / dx);
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i >= dx; i--)
+                        {
+                            m_Col[sval + i] = Color.Lerp(iStartCol, iEndCol, (float)i / dx);
+                        }
+                    }
+                }
+                else
+                {
+                    int lx = MathLib.Lib.Abs(dx);
+                    int ly = MathLib.Lib.Abs(dy);
+                    if (lx >= ly)
+                    {
+                        int prev_y = iStartY;
+                        for (int i = 0; i <= lx; i++)
+                        {
+                            int x = iStartX + (dx > 0 ? i : -i);
+                            int y = iStartY + Mathf.RoundToInt((i * dy) / (float)lx);
+                            Color aCol = Color.Lerp(iStartCol, iEndCol, (float)i / lx);
+                            if (y != prev_y)
+                            {
+                                m_Col[x + prev_y * width] = aCol;
+                                prev_y = y;
+                            }
+                            m_Col[x + y * width] = aCol;
+                        }
+                    }
+                    else
+                    {
+                        int prev_x = iStartX;
+                        for (int i = 0; i <= ly; i++)
+                        {
+                            int y = iStartY + (dy > 0 ? i : -i);
+                            int x = iStartX + Mathf.RoundToInt((i * dx) / (float)ly);
+                            Color aCol = Color.Lerp(iStartCol, iEndCol, (float)i / ly);
+                            if (x != prev_x)
+                            {
+                                m_Col[prev_x + y * width] = aCol;
+                                prev_x = x;
+                            }
+                            m_Col[x + y * width] = aCol;
+                        }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("Exception:" + e + "\n\n" +
+                    ("sx:" + iStartX + ",sy:" + iStartY + ",ex:" + iEndX + ",ey:" + iEndY + "width:" + width + ",height:" + height)
+                    + "\n\n" + "s:" + os.ToString() + ",e:" + oe.ToString());
+            }
+
+        }
         /// <summary>
         /// Draw a line start from sx,sy to ex,ey
         /// </summary>

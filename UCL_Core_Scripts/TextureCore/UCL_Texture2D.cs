@@ -4,6 +4,13 @@ using UnityEngine;
 
 namespace UCL.Core.TextureLib {
     public class UCL_Texture2D : UCLI_Texture2D, System.IDisposable {
+        public enum Shape
+        {
+            Circle = 0,
+            Square,
+            Diamond,
+            Star,
+        }
         public Vector2Int size { get { return m_Size; } }
         public int width { get { return m_Size.x; } }
         public int height { get { return m_Size.y; } }
@@ -350,6 +357,70 @@ namespace UCL.Core.TextureLib {
             if(iPos.y >= height) iPos.y = height - 1;
             m_Col[iPos.x + iPos.y * width] = iCol;
         }
+        virtual public void DrawShape(Shape iShape, Vector2Int iPos, Color iCol, float iRadius = 1f)
+        {
+            switch(iShape)
+            {
+                case Shape.Circle:
+                    {
+                        DrawCircle(iPos, iCol, iRadius);
+                        break;
+                    }
+                case Shape.Star:
+                    {
+                        DrawStar(iPos, iCol, iRadius);
+                        break;
+                    }
+                case Shape.Square:
+                    {
+                        DrawSquare(iPos, iCol, iRadius);
+                        break;
+                    }
+                case Shape.Diamond:
+                    {
+                        DrawDiamond(iPos, iCol, iRadius);
+                        break;
+                    }
+            }
+        }
+        virtual public void DrawDiamond(Vector2Int iPos, Color iCol, float iRadius = 1f)
+        {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            int aRad = Mathf.CeilToInt(iRadius);
+            int aMinX = Mathf.Clamp(iPos.x - aRad, 0, width);
+            int aMaxX = Mathf.Clamp(iPos.x + aRad + 1, 0, width);
+            int aMinY = Mathf.Clamp(iPos.y - aRad, 0, height);
+            int aMaxY = Mathf.Clamp(iPos.y + aRad + 1, 0, height);
+            for (int aX = aMinX; aX < aMaxX; aX++)
+            {
+                for (int aY = aMinY; aY < aMaxY; aY++)
+                {
+                    Vector2 aDel = new Vector2(aX, aY) - iPos;
+                    if (Mathf.Abs(aDel.x) + Mathf.Abs(aDel.y) <= aRad)
+                    {
+                        m_Col[aX + aY * width] = iCol;
+                    }
+                }
+            }
+        }
+        virtual public void DrawSquare(Vector2Int iPos, Color iCol, float iRadius = 1f)
+        {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            int aRad = Mathf.CeilToInt(iRadius);
+            int aMinX = Mathf.Clamp(iPos.x - aRad - 1, 0, width);
+            int aMaxX = Mathf.Clamp(iPos.x + aRad + 2, 0, width);
+            int aMinY = Mathf.Clamp(iPos.y - aRad - 1, 0, height);
+            int aMaxY = Mathf.Clamp(iPos.y + aRad + 2, 0, height);
+            for (int aX = aMinX; aX < aMaxX; aX++)
+            {
+                for (int aY = aMinY; aY < aMaxY; aY++)
+                {
+                    m_Col[aX + aY * width] = iCol;
+                }
+            }
+        }
         virtual public void DrawCircle(Vector2Int iPos, Color iCol, float iRadius = 1f)
         {
             m_TextureUpdated = true;
@@ -363,8 +434,32 @@ namespace UCL.Core.TextureLib {
             {
                 for (int aY = aMinY; aY < aMaxY; aY++)
                 {
-                    float aDis = (new Vector2(aX, aY) - iPos).magnitude;
+                    float aDis = (new Vector2(aX, aY) - iPos).magnitude - 0.4f;
                     if (aDis < iRadius)
+                    {
+                        m_Col[aX + aY * width] = iCol;
+                    }
+                }
+            }
+        }
+        virtual public void DrawStar(Vector2Int iPos, Color iCol, float iRadius = 1f)
+        {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            int aRad = Mathf.CeilToInt(iRadius);
+            int aMinX = Mathf.Clamp(iPos.x - aRad - 1, 0, width);
+            int aMaxX = Mathf.Clamp(iPos.x + aRad + 2, 0, width);
+            int aMinY = Mathf.Clamp(iPos.y - aRad - 1, 0, height);
+            int aMaxY = Mathf.Clamp(iPos.y + aRad + 2, 0, height);
+            for (int aX = aMinX; aX < aMaxX; aX++)
+            {
+                for (int aY = aMinY; aY < aMaxY; aY++)
+                {
+                    Vector2 aDel = new Vector2(aX, aY) - iPos;
+                    float aDis = aDel.magnitude - 0.5f;
+                    float aTan = Mathf.Atan2(aDel.x, aDel.y) + Mathf.PI;
+                    float aRadius = iRadius * (Mathf.Lerp(0.5f, 1, (2.5f * aTan / Mathf.PI) % 1));
+                    if (aDis < aRadius)
                     {
                         m_Col[aX + aY * width] = iCol;
                     }

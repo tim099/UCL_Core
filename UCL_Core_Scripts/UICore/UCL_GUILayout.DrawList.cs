@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.LocalizeLib;
@@ -168,11 +168,11 @@ namespace UCL.Core.UI
                             using (new GUILayout.HorizontalScope("box"))
                             {
                                 GUILayout.FlexibleSpace();
-                                if (GUILayout.Button("¡¶", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                if (GUILayout.Button("â–²", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                                 {
                                     aMove = aAt - 1;
                                 }
-                                if (GUILayout.Button("¡¿", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                if (GUILayout.Button("â–¼", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                                 {
                                     aMove = aAt - 1;
                                 }

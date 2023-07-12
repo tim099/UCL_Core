@@ -10,6 +10,7 @@ namespace UCL.Core.TextureLib {
             Square,
             Diamond,
             Star,
+            Cross,
         }
         public Vector2Int size { get { return m_Size; } }
         public int width { get { return m_Size.x; } }
@@ -381,6 +382,33 @@ namespace UCL.Core.TextureLib {
                         DrawDiamond(iPos, iCol, iRadius);
                         break;
                     }
+                case Shape.Cross:
+                    {
+                        DrawCross(iPos, iCol, iRadius);
+                        break;
+                    }
+            }
+        }
+        virtual public void DrawCross(Vector2Int iPos, Color iCol, float iRadius = 1f)
+        {
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            int aRad = Mathf.CeilToInt(iRadius);
+            int aMinX = Mathf.Clamp(iPos.x - aRad, 0, width);
+            int aMaxX = Mathf.Clamp(iPos.x + aRad + 1, 0, width);
+            int aMinY = Mathf.Clamp(iPos.y - aRad, 0, height);
+            int aMaxY = Mathf.Clamp(iPos.y + aRad + 1, 0, height);
+            int aSegLen = Mathf.FloorToInt(iRadius / 1.75f);
+            for (int aX = aMinX; aX < aMaxX; aX++)
+            {
+                for (int aY = aMinY; aY < aMaxY; aY++)
+                {
+                    Vector2 aDel = new Vector2(aX, aY) - iPos;
+                    if (Mathf.Abs(aDel.x) < aSegLen || Mathf.Abs(aDel.y) < aSegLen)
+                    {
+                        m_Col[aX + aY * width] = iCol;
+                    }
+                }
             }
         }
         virtual public void DrawDiamond(Vector2Int iPos, Color iCol, float iRadius = 1f)
@@ -869,7 +897,7 @@ namespace UCL.Core.TextureLib {
             }
 
         }
-        virtual public void DrawLine(int iStartX, int iStartY, int iEndX, int iEndY, Color iStartCol, Color iEndCol)
+        virtual public void DrawLine(int iStartX, int iStartY, int iEndX, int iEndY, System.Func<float, int, Color> iDrawFunc)
         {
             if (iEndY < 0 && iStartY < 0) return;
             if (iEndY >= height && iStartY >= height) return;
@@ -909,13 +937,11 @@ namespace UCL.Core.TextureLib {
 
                     if (tx < ty)
                     {//reach x border first
-                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
                         iEndX = 0;
                         iEndY = iStartY + Mathf.RoundToInt(dy * tx);
                     }
                     else if (tx > ty)
                     {//tx > ty reach y border first
-                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
                         iEndX = iStartX + Mathf.RoundToInt(dx * ty);
                         if (dy > 0)
                         {
@@ -928,7 +954,6 @@ namespace UCL.Core.TextureLib {
                     }
                     else
                     {//tx == ty reach corner
-                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
                         iEndX = 0;
                         if (dy > 0)
                         {
@@ -1013,7 +1038,6 @@ namespace UCL.Core.TextureLib {
                 {
                     float tx = 0;
                     float ty = -iStartY / (float)dy;
-                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
                     if (dx > 0)
                     {//right
                         tx = (width - iStartX - 1) / (float)dx;
@@ -1025,13 +1049,11 @@ namespace UCL.Core.TextureLib {
 
                     if (ty < tx)
                     {//reach x border first
-                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
                         iEndY = 0;
                         iEndX = iStartX + Mathf.RoundToInt(dx * ty);
                     }
                     else if (ty > tx)
                     {//tx > ty reach y border first
-                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
                         iEndY = iStartY + Mathf.RoundToInt(dy * tx);
                         if (dx > 0)
                         {
@@ -1044,7 +1066,6 @@ namespace UCL.Core.TextureLib {
                     }
                     else
                     {//tx == ty reach corner
-                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
                         iEndY = 0;
                         if (dx > 0)
                         {
@@ -1071,7 +1092,6 @@ namespace UCL.Core.TextureLib {
                 {
                     float ty = (height - iStartY - 1) / (float)dy;
                     float tx = 0;
-                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx + ",ex:" + ex + ",sx:" + sx);
                     if (dx > 0)
                     {//right
                         tx = (width - iStartX - 1) / (float)dx;
@@ -1083,13 +1103,11 @@ namespace UCL.Core.TextureLib {
 
                     if (ty < tx)
                     {//reach y border first
-                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
                         iEndY = height - 1;
                         iEndX = iStartX + Mathf.RoundToInt(dx * ty);
                     }
                     else if (ty > tx)
                     {//reach x border first
-                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
                         iEndY = iStartY + Mathf.RoundToInt(dy * tx);
                         if (dx > 0)
                         {
@@ -1102,7 +1120,6 @@ namespace UCL.Core.TextureLib {
                     }
                     else
                     {//tx == ty reach corner
-                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
                         iEndY = height - 1;
                         if (dx > 0)
                         {
@@ -1132,7 +1149,6 @@ namespace UCL.Core.TextureLib {
                 {
                     float tx = -iEndX / (float)dx;
                     float ty = 0;
-                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
                     if (dy > 0)
                     {//up
                         ty = (height - iEndY - 1) / (float)dy;
@@ -1144,13 +1160,11 @@ namespace UCL.Core.TextureLib {
 
                     if (tx < ty)
                     {//reach x border first
-                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
                         iStartX = 0;
                         iStartY = iEndY + Mathf.RoundToInt(dy * tx);
                     }
                     else if (tx > ty)
                     {//tx > ty reach y border first
-                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
                         iStartX = iEndX + Mathf.RoundToInt(dx * ty);
                         if (dy > 0)
                         {
@@ -1163,7 +1177,6 @@ namespace UCL.Core.TextureLib {
                     }
                     else
                     {//tx == ty reach corner
-                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
                         iStartX = 0;
                         if (dy > 0)
                         {
@@ -1248,7 +1261,6 @@ namespace UCL.Core.TextureLib {
                 {
                     float tx = 0;
                     float ty = -iEndY / (float)dy;
-                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx+",ex:"+ex+",sx:"+sx);
                     if (dx > 0)
                     {//right
                         tx = (width - iEndX - 1) / (float)dx;
@@ -1260,13 +1272,11 @@ namespace UCL.Core.TextureLib {
 
                     if (ty < tx)
                     {//reach x border first
-                        //Debug.LogWarning("tx < ty:" + tx + "<" + ty);
                         iStartY = 0;
                         iStartX = iEndX + Mathf.RoundToInt(dx * ty);
                     }
                     else if (ty > tx)
                     {//tx > ty reach y border first
-                        //Debug.LogWarning("tx > ty:" + tx + ">" + ty);
                         iStartY = iEndY + Mathf.RoundToInt(dy * tx);
                         if (dx > 0)
                         {
@@ -1279,7 +1289,6 @@ namespace UCL.Core.TextureLib {
                     }
                     else
                     {//tx == ty reach corner
-                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
                         iStartY = 0;
                         if (dx > 0)
                         {
@@ -1306,7 +1315,6 @@ namespace UCL.Core.TextureLib {
                 {
                     float ty = (height - iEndY - 1) / (float)dy;
                     float tx = 0;
-                    //Debug.LogWarning("sx:" + sx + ",dx:" + dx + ",ex:" + ex + ",sx:" + sx);
                     if (dx > 0)
                     {//right
                         tx = (width - iEndX - 1) / (float)dx;
@@ -1318,13 +1326,11 @@ namespace UCL.Core.TextureLib {
 
                     if (ty < tx)
                     {//reach y border first
-                        //Debug.LogWarning("ty < tx:" + ty + "<" + tx);
                         iStartY = height - 1;
                         iStartX = iEndX + Mathf.RoundToInt(dx * ty);
                     }
                     else if (ty > tx)
                     {//reach x border first
-                        //Debug.LogWarning("ty > tx:" + ty + ">" + tx);
                         iStartY = iEndY + Mathf.RoundToInt(dy * tx);
                         if (dx > 0)
                         {
@@ -1337,7 +1343,6 @@ namespace UCL.Core.TextureLib {
                     }
                     else
                     {//tx == ty reach corner
-                        //Debug.LogWarning("tx == ty:" + tx + "==" + ty);
                         iStartY = height - 1;
                         if (dx > 0)
                         {
@@ -1351,7 +1356,6 @@ namespace UCL.Core.TextureLib {
                 }
             }
 
-
             try
             {
                 int dx = iEndX - iStartX;
@@ -1362,14 +1366,23 @@ namespace UCL.Core.TextureLib {
                     {
                         for (int i = 0; i <= dy; i++)
                         {
-                            m_Col[iStartX + (iStartY + i) * width] = Color.Lerp(iStartCol, iEndCol, (float)i/dy);
+                            Color aCol = iDrawFunc((float)i / dy, dy);
+                            if (aCol != Color.clear)
+                            {
+                                m_Col[iStartX + (iStartY + i) * width] = aCol;
+                            }
+                            
                         }
                     }
                     else
                     {
                         for (int i = 0; i >= dy; i--)
                         {
-                            m_Col[iStartX + (iStartY + i) * width] = Color.Lerp(iStartCol, iEndCol, (float)i / dy);
+                            Color aCol = iDrawFunc((float)i / dy, -dy);
+                            if (aCol != Color.clear)
+                            {
+                                m_Col[iStartX + (iStartY + i) * width] = aCol;
+                            }
                         }
                     }
 
@@ -1381,14 +1394,22 @@ namespace UCL.Core.TextureLib {
                     {
                         for (int i = 0; i <= dx; i++)
                         {
-                            m_Col[sval + i] = Color.Lerp(iStartCol, iEndCol, (float)i / dx);
+                            Color aCol = iDrawFunc((float)i / dx, dx);
+                            if (aCol != Color.clear)
+                            {
+                                m_Col[sval + i] = aCol;
+                            }
                         }
                     }
                     else
                     {
                         for (int i = 0; i >= dx; i--)
                         {
-                            m_Col[sval + i] = Color.Lerp(iStartCol, iEndCol, (float)i / dx);
+                            Color aCol = iDrawFunc((float)i / dx, -dx);
+                            if (aCol != Color.clear)
+                            {
+                                m_Col[sval + i] = aCol;
+                            }
                         }
                     }
                 }
@@ -1403,13 +1424,14 @@ namespace UCL.Core.TextureLib {
                         {
                             int x = iStartX + (dx > 0 ? i : -i);
                             int y = iStartY + Mathf.RoundToInt((i * dy) / (float)lx);
-                            Color aCol = Color.Lerp(iStartCol, iEndCol, (float)i / lx);
+                            Color aCol = iDrawFunc((float)i / lx, lx);
+
                             if (y != prev_y)
                             {
-                                m_Col[x + prev_y * width] = aCol;
+                                if (aCol != Color.clear) m_Col[x + prev_y * width] = aCol;
                                 prev_y = y;
                             }
-                            m_Col[x + y * width] = aCol;
+                            if (aCol != Color.clear) m_Col[x + y * width] = aCol;
                         }
                     }
                     else
@@ -1419,13 +1441,13 @@ namespace UCL.Core.TextureLib {
                         {
                             int y = iStartY + (dy > 0 ? i : -i);
                             int x = iStartX + Mathf.RoundToInt((i * dx) / (float)ly);
-                            Color aCol = Color.Lerp(iStartCol, iEndCol, (float)i / ly);
+                            Color aCol = iDrawFunc((float)i / ly , ly);
                             if (x != prev_x)
                             {
-                                m_Col[prev_x + y * width] = aCol;
+                                if (aCol != Color.clear) m_Col[prev_x + y * width] = aCol;
                                 prev_x = x;
                             }
-                            m_Col[x + y * width] = aCol;
+                            if (aCol != Color.clear) m_Col[x + y * width] = aCol;
                         }
                     }
                 }
@@ -1437,6 +1459,12 @@ namespace UCL.Core.TextureLib {
                     + "\n\n" + "s:" + os.ToString() + ",e:" + oe.ToString());
             }
 
+        }
+        virtual public void DrawLine(int iStartX, int iStartY, int iEndX, int iEndY, Color iStartCol, Color iEndCol)
+        {
+            DrawLine(iStartX, iStartY, iEndX, iEndY, (iDis, iLen) => {
+                return Color.Lerp(iStartCol, iEndCol, iDis);
+            });
         }
         /// <summary>
         /// Draw a line start from sx,sy to ex,ey

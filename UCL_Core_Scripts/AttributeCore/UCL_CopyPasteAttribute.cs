@@ -7,7 +7,7 @@ namespace UCL.Core
 {
     public interface UCLI_CopyPaste
     {
-
+        public static bool s_Copying = false;
     }
     public static class CopyPaste
     {

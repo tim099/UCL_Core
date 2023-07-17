@@ -481,7 +481,9 @@ namespace UCL.Core.UI
             GUILayout.FlexibleSpace();
             if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
+                UCLI_CopyPaste.s_Copying = true;
                 UCL.Core.CopyPaste.SetCopyData(iObj);
+                UCLI_CopyPaste.s_Copying = false;
             }
             bool aCanCopy = UCL.Core.CopyPaste.HasCopyData(iFieldType);
             if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.GetButtonStyle(aCanCopy ? Color.white : Color.red),
@@ -489,6 +491,7 @@ namespace UCL.Core.UI
             {
                 if (aCanCopy)
                 {
+                    UCLI_CopyPaste.s_Copying = true;
                     if (iObj != null && aType == CopyPaste.s_CopyType)
                     {
                         UCL.Core.CopyPaste.LoadCopyData(iObj);
@@ -499,6 +502,7 @@ namespace UCL.Core.UI
                     }
                     aIsPaste = true;
                     iDataDic.Clear();
+                    UCLI_CopyPaste.s_Copying = false;
                 }
             }
             return aIsPaste;

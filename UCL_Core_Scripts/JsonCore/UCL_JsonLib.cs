@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using UCL.Core.ATTR;
 using UnityEngine;
 
 namespace UCL.Core.JsonLib {
@@ -377,7 +378,8 @@ namespace UCL.Core.JsonLib {
 
             foreach (var aField in aFields)
             {
-                if (aField.FieldType.IsSubclassOf(typeof(MulticastDelegate)))
+                if (aField.GetCustomAttribute<UCL_HideInJsonAttribute>() != null ||
+                    aField.FieldType.IsSubclassOf(typeof(MulticastDelegate)))
                 {
                     continue;
                 }

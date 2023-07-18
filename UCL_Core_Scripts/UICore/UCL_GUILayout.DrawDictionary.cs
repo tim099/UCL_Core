@@ -100,7 +100,17 @@ namespace UCL.Core.UI
                         {
                             var aSubDic = iDataDic.GetSubDic("Dic_" + aKeyName);
                             var aDicData = iDic[aKey];
-                            string aDisplayName = aDicData.UCL_GetShortName(aDicData != null ? aDicData.GetType().Name : aValueType.Name);
+                            string aDefaultName = aValueType.Name;
+                            if(aDicData != null)
+                            {
+                                var aDicDataType = aDicData.GetType();
+                                aDefaultName = aDicDataType.GetTypeName();
+                                if (aDicData is IList aDicDataList)
+                                {
+                                    aDefaultName = $"{aDefaultName}({aDicDataList.Count})";
+                                }
+                            }
+                            string aDisplayName = aDicData.UCL_GetShortName(aDefaultName);
                             GUILayout.Label(aKeyName, UCL_GUIStyle.LabelStyle);
                             aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
                         }

@@ -193,22 +193,29 @@ public static partial class TypeExtensionMethods {
 
         return 0;
     }
-    /// <summary>
-    /// return type of a GenericType(List,Array,Dic)
-    /// etc. List<T> will return type of T
-    /// </summary>
-    /// <param name="iType"></param>
-    /// <returns></returns>
-    public static Type GetGenericValueType(this Type iType)
+
+    public static string GetTypeName(this Type iType)
     {
-        var aGenericType = iType.GetGenericTypeDefinition();
-        var aGenericTypeArguments = iType.GetTypeInfo().GenericTypeArguments;
-        var aContentType = aGenericTypeArguments[0];
-        if (aGenericType == typeof(Dictionary<,>))
+        if (iType.IsGenericType)
         {
-            aContentType = aGenericTypeArguments[1];//[0] is Key type [1] is Value type!!
+            if (typeof(IList).IsAssignableFrom(iType))
+            {
+                var aGenericArguments = iType.GetGenericArguments();
+                if (!aGenericArguments.IsNullOrEmpty())
+                {
+                    return $"IList<{iType.GetGenericArguments()[0].Name}>";
+                }
+            }
+            else if (typeof(IDictionary).IsAssignableFrom(iType))
+            {
+                var aGenericArguments = iType.GetGenericArguments();
+                if (aGenericArguments.Length >= 2)
+                {
+                    return $"IDictionary<{aGenericArguments[0].Name}{aGenericArguments[1].Name}>";
+                }
+            }
         }
-        return aContentType;
+        return iType.Name;
     }
     /// <summary>
     /// return type of a GenericType(List,Array,Dic)
@@ -218,12 +225,22 @@ public static partial class TypeExtensionMethods {
     /// <returns></returns>
     public static Type GetGenericKeyType(this Type iType)
     {
-        var aGenericType = iType.GetGenericTypeDefinition();
-        var aGenericTypeArguments = iType.GetTypeInfo().GenericTypeArguments;
+        var aGenericTypeArguments = iType.GetGenericArguments();
+        return aGenericTypeArguments[0];
+    }
+    /// <summary>
+    /// return type of a GenericType(List,Array,Dic)
+    /// etc. List<T> will return type of T
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
+    public static Type GetGenericValueType(this Type iType)
+    {
+        var aGenericTypeArguments = iType.GetGenericArguments();//GetTypeInfo().
         var aContentType = aGenericTypeArguments[0];
-        if (aGenericType == typeof(Dictionary<,>))
+        if (typeof(IDictionary).IsAssignableFrom(iType))
         {
-            aContentType = aGenericTypeArguments[0];//[0] is Key type [1] is Value type!!
+            aContentType = aGenericTypeArguments[1];//[0] is Key type [1] is Value type!!
         }
         return aContentType;
     }

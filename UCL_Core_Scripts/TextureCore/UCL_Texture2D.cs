@@ -115,9 +115,12 @@ namespace UCL.Core.TextureLib {
         }
         virtual public void ClearColor() => SetColor(Color.clear);
         virtual public void SetColor(Color iColor) {
-            for(int i = 0,len = m_Col.Length; i < len ; i++) {
-                m_Col[i] = iColor;
-            }
+            m_TextureUpdated = true;
+            m_SpriteUpdated = true;
+            System.Array.Fill(m_Col, iColor);
+            //for (int i = 0,len = m_Col.Length; i < len ; i++) {
+            //    m_Col[i] = iColor;
+            //}
         }
         /// <summary>
         /// Draw a dot on pos

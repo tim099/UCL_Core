@@ -361,6 +361,202 @@ namespace UCL.Core.TextureLib {
             if(iPos.y >= height) iPos.y = height - 1;
             m_Col[iPos.x + iPos.y * width] = iCol;
         }
+        virtual public void DrawString(string iStr, Vector2Int iPos, Color iCol, int iSize = 1)
+        {
+            if (string.IsNullOrEmpty(iStr))
+            {
+                return;
+            }
+            int aInterVal = 7 * iSize;
+            for (int i = 0; i < iStr.Length; i++)
+            {
+                DrawChar(iStr[i], iPos + new Vector2Int(i * aInterVal, 0), iCol, iSize);
+            }
+        }
+        virtual public void DrawChar(char iChar, Vector2Int iPos, Color iCol, int iSize = 1)
+        {
+            List<Vector2Int> aDrawBuffer = new List<Vector2Int>();
+            switch(iChar)
+            {
+                case '0':
+                    {
+                        for (int i = 0; i < 7; i++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(0, i));
+                            aDrawBuffer.Add(new Vector2Int(4, i));
+                        }
+                        for (int i = 1; i < 4; i++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(i, 0));
+                            aDrawBuffer.Add(new Vector2Int(i, 6));
+                        }
+                        break;
+                    }
+                case '1':
+                    {
+                        for(int i = 0; i < 7; i++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(2, i));
+                        }
+                        break;
+                    }
+                case '2':
+                    {
+                        aDrawBuffer.Add(new Vector2Int(0, 4));
+                        aDrawBuffer.Add(new Vector2Int(1, 5));
+                        aDrawBuffer.Add(new Vector2Int(2, 6));
+                        aDrawBuffer.Add(new Vector2Int(3, 5));
+                        aDrawBuffer.Add(new Vector2Int(4, 4));
+                        aDrawBuffer.Add(new Vector2Int(3, 3));
+                        aDrawBuffer.Add(new Vector2Int(2, 2));
+                        aDrawBuffer.Add(new Vector2Int(1, 1));
+                        for (int i = 0; i < 5; i++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(i, 0));
+                        }
+                        break;
+                    }
+                case '3':
+                    {
+                        for (int i = 0; i < 7; i++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(4, i));
+                        }
+                        for (int aX = 0; aX < 4; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 0));
+                            aDrawBuffer.Add(new Vector2Int(aX, 3));
+                            aDrawBuffer.Add(new Vector2Int(aX, 6));
+                        }
+                        break;
+                    }
+                case '4':
+                    {
+                        for (int aY = 0; aY < 7; aY++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(4, aY));
+                        }
+                        for (int aY = 3; aY < 7; aY++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(0, aY));
+                        }
+                        for (int aX = 0; aX < 4; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 3));
+                        }
+                        break;
+                    }
+                case '5':
+                    {
+                        //iCol = Color.cyan;
+                        for (int aY = 1; aY < 6; aY++)
+                        {
+                            if (aY >= 4)
+                            {
+                                aDrawBuffer.Add(new Vector2Int(0, aY));
+                            }
+                            else
+                            {
+                                aDrawBuffer.Add(new Vector2Int(4, aY));
+                            }
+                        }
+                        for (int aX = 0; aX < 5; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 6));
+                            aDrawBuffer.Add(new Vector2Int(aX, 3));
+                            aDrawBuffer.Add(new Vector2Int(aX, 0));
+                        }
+                        break;
+                    }
+                case '6':
+                    {
+                        //iCol = Color.cyan;
+                        for (int aY = 1; aY < 6; aY++)
+                        {
+                            if (aY >= 4)
+                            {
+                                aDrawBuffer.Add(new Vector2Int(0, aY));
+                            }
+                            else
+                            {
+                                aDrawBuffer.Add(new Vector2Int(0, aY));
+                                aDrawBuffer.Add(new Vector2Int(4, aY));
+                            }
+                        }
+                        for (int aX = 0; aX < 5; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 6));
+                            aDrawBuffer.Add(new Vector2Int(aX, 3));
+                            aDrawBuffer.Add(new Vector2Int(aX, 0));
+                        }
+                        break;
+                    }
+                case '7':
+                    {
+                        for (int aX = 0; aX < 4; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 6));
+                        }
+                        for (int aY = 0; aY < 7; aY++)
+                        {
+                            if(aY >= 4)
+                            {
+                                aDrawBuffer.Add(new Vector2Int(0, aY));
+                            }
+                            aDrawBuffer.Add(new Vector2Int(4, aY));
+                        }
+                        break;
+                    }
+                case '8':
+                    {
+                        for (int aY = 0; aY < 7; aY++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(0, aY));
+                            aDrawBuffer.Add(new Vector2Int(4, aY));
+                        }
+                        for (int aX = 1; aX < 4; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 0));
+                            aDrawBuffer.Add(new Vector2Int(aX, 3));
+                            aDrawBuffer.Add(new Vector2Int(aX, 6));
+                        }
+                        break;
+                    }
+                case '9':
+                    {
+                        for (int aY = 0; aY < 7; aY++)
+                        {
+                            if (aY >= 4)
+                            {
+                                aDrawBuffer.Add(new Vector2Int(0, aY));
+                            }
+                            
+
+                            aDrawBuffer.Add(new Vector2Int(4, aY));
+                        }
+                        for (int aX = 0; aX < 5; aX++)
+                        {
+                            aDrawBuffer.Add(new Vector2Int(aX, 0));
+                            aDrawBuffer.Add(new Vector2Int(aX, 3));
+                            aDrawBuffer.Add(new Vector2Int(aX, 6));
+                        }
+                        break;
+                    }
+                default:
+                    {
+                        DrawDiamond(iPos, iCol, 2);
+                        break;
+                    }
+            }
+            for (int i = 0; i < aDrawBuffer.Count; i++)
+            {
+                Vector2Int aPos = aDrawBuffer[i] + iPos;
+                if (aPos.x < width && aPos.y < height && aPos.x >= 0 && aPos.y >= 0)
+                {
+                    m_Col[aPos.x + aPos.y * width] = iCol;
+                }
+            }
+        }
         virtual public void DrawShape(Shape iShape, Vector2Int iPos, Color iCol, float iRadius = 1f)
         {
             switch(iShape)

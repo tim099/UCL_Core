@@ -655,5 +655,9 @@ namespace UCL.Core.MathLib
         public void SetState(RandomState iState) {
             m_Rnd = new UCL_RandomGenerator(iState.m_State);
         }
+        public void SetStateByHex(string iHexString)
+        {
+            SetState(new RandomState(iHexString));
+        }
     }
 }

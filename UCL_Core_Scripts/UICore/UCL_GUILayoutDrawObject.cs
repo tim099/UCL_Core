@@ -412,17 +412,41 @@ namespace UCL.Core.UI
                         }
                         else if (aData.IsNumber())
                         {
+                            string aValKey = aDataKey + "_Val";
                             if (!iDataDic.ContainsKey(aDataKey))
                             {
-                                iDataDic.SetData(aDataKey, aData.ToString());
+                                iDataDic.SetData(aDataKey, aData.ToString());//Save NumberStr
                             }
-                            string aNum = iDataDic.GetData(aDataKey, string.Empty);
-                            var aResult = UCL.Core.UI.UCL_GUILayout.TextField(aDisplayName, (string)aNum);
-                            iDataDic.SetData(aDataKey, aResult);
-                            object aResVal;
-                            if (UCL.Core.MathLib.Num.TryParse(aResult, aData.GetType(), out aResVal))
+                            if (!iDataDic.ContainsKey(aValKey))
                             {
-                                aField.SetValue(iObj, aResVal);
+                                iDataDic.SetData(aValKey, aData);//Save Val
+                            }
+                            string aNumStr = iDataDic.GetData(aDataKey, string.Empty);
+                            var aResult = UCL_GUILayout.TextField(aDisplayName, aNumStr);
+                            if(aResult != aNumStr)//Set value
+                            {
+                                iDataDic.SetData(aDataKey, aResult);
+                                object aResVal;
+                                if (UCL.Core.MathLib.Num.TryParse(aResult, aField.FieldType, out aResVal))
+                                {
+                                    if (!aResVal.Equals(aData))
+                                    {
+                                        aField.SetValue(iObj, aResVal);
+                                        iDataDic.SetData(aValKey, aResVal);//Save Val
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                if (!iDataDic.GetData(aValKey, aData).Equals(aData))//Check if value changed
+                                {
+                                    string aDataStr = aData.ToString();
+                                    if (aDataStr != aNumStr)
+                                    {
+                                        iDataDic.SetData(aDataKey, aDataStr);
+                                    }
+                                    iDataDic.SetData(aValKey, aData);
+                                }
                             }
                         }
                         else if (aData is IList || aData is IDictionary)

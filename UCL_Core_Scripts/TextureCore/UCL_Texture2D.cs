@@ -362,18 +362,7 @@ namespace UCL.Core.TextureLib
             if(iPos.y >= height) iPos.y = height - 1;
             m_Col[iPos.x + iPos.y * width] = iCol;
         }
-        private static Texture2D s_FontTexture = null;
-        public static Texture2D FontTexture
-        {
-            get
-            {
-                if (s_FontTexture == null)
-                {
-                    s_FontTexture = Resources.Load<Texture2D>("font256");
-                }
-                return s_FontTexture;
-            }
-        }
+
         public class DrawFontSetting
         {
             public int m_Size = 13;
@@ -383,7 +372,7 @@ namespace UCL.Core.TextureLib
             public int m_MaxHeightIndex = 16;
             public Font m_Font;
         }
-        private const string FontAssetName = "Arial.ttf";//LegacyRuntime.ttf
+        //private const string FontAssetName = "Arial.ttf";//LegacyRuntime.ttf
         private static DrawFontSetting s_DefaultDrawFontSetting = null;
         public static DrawFontSetting DefaultDrawFontSetting
         {
@@ -393,23 +382,49 @@ namespace UCL.Core.TextureLib
                 {
                     
                     s_DefaultDrawFontSetting = new DrawFontSetting();
-                    s_DefaultDrawFontSetting.m_FontTexture = FontTexture;
-                    s_DefaultDrawFontSetting.m_Font = Resources.GetBuiltinResource<Font>(FontAssetName);
-
-                    //var aTexture = s_DefaultDrawFontSetting.m_Font.material.GetTexture("_MainTex") as Texture2D;
-                    //if(aTexture != null)
+                    //s_DefaultDrawFontSetting.m_FontTexture = FontTexture;
+                    //s_DefaultDrawFontSetting.m_Font = Resources.GetBuiltinResource<Font>(FontAssetName);
+                    s_DefaultDrawFontSetting.m_Font = Resources.Load<Font>("Tripfive");
+                    //s_DefaultDrawFontSetting.m_Font = Resources.Load<Font>("BLACKBOLD");
+                    //Font.textureRebuilt += (iFont) =>
                     //{
-                    //    s_DefaultDrawFontSetting.m_FontTexture = GameObject.Instantiate(aTexture) as Texture2D;
+                    //    if (iFont == (s_DefaultDrawFontSetting.m_Font))
+                    //    {
+                    //        Texture2D aTexture = s_DefaultDrawFontSetting.m_Font.material.mainTexture as Texture2D;
+                    //        s_DefaultDrawFontSetting.m_FontTexture = aTexture;
+                    //    }
+                    //};
+                    Texture2D aTexture = s_DefaultDrawFontSetting.m_Font.material.mainTexture as Texture2D;
+                    s_DefaultDrawFontSetting.m_FontTexture = aTexture;
+                    //if (aTexture != null)
+                    //{
+                    //    Texture2D texture2D = new Texture2D(aTexture.width, aTexture.height, TextureFormat.RGBA32, false);
+
+                    //    RenderTexture currentRT = RenderTexture.active;
+                    //    //RenderTexture renderTexture = RenderTexture.GetTemporary(aTexture.width, aTexture.height, 32);
+                    //    RenderTexture renderTexture = new RenderTexture(aTexture.width, aTexture.height, 32);
+                    //    Graphics.Blit(aTexture, renderTexture, s_DefaultDrawFontSetting.m_Font.material);
+
+                    //    RenderTexture.active = renderTexture;
+                    //    texture2D.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
+                    //    texture2D.Apply();
+                    //    //Color[] pixels = texture2D.GetPixels();
+                    //    RenderTexture.active = currentRT;
+                    //    //RenderTexture.ReleaseTemporary(renderTexture);
+                    //    renderTexture.Release();
+                    //    s_DefaultDrawFontSetting.m_FontTexture = texture2D;
                     //}
+                    //else
+                    //{
+                    //    Debug.LogError("s_DefaultDrawFontSetting aTexture != null");
+                    //}
+
                 }
                 return s_DefaultDrawFontSetting;
             }
         }
         virtual public void DrawString(string iStr, Vector2Int iPos, Color iCol, DrawFontSetting iDrawFontSetting = null)
         {
-            //const string AssetName = "Arial.ttf";//LegacyRuntime.ttf
-
-
             if (string.IsNullOrEmpty(iStr))
             {
                 return;
@@ -424,15 +439,19 @@ namespace UCL.Core.TextureLib
                 iDrawFontSetting.m_Font = DefaultDrawFontSetting.m_Font;
             }
             iDrawFontSetting.m_Font.RequestCharactersInTexture(iStr, 0);
-
-            int aInterVal = iDrawFontSetting.m_Size;//+ 2
-
+            if(iDrawFontSetting.m_FontTexture == null)
+            {
+                iDrawFontSetting.m_FontTexture = DefaultDrawFontSetting.m_FontTexture;
+            }
+            //int aInterVal = iDrawFontSetting.m_Size;//+ 2
+            int aCurX = 0;
             for (int i = 0; i < iStr.Length; i++)
             {
-                DrawChar(iStr[i], iPos + new Vector2Int(i * aInterVal, 0), iCol, iDrawFontSetting);
+                int aWidth = DrawChar(iStr[i], iPos + new Vector2Int(aCurX, 0), iCol, iDrawFontSetting);
+                aCurX += aWidth;
             }
         }
-        virtual public void DrawChar(char iChar, Vector2Int iPos, Color iCol, DrawFontSetting iDrawFontSetting = null)
+        virtual public int DrawChar(char iChar, Vector2Int iPos, Color iCol, DrawFontSetting iDrawFontSetting = null)
         {
             if (iDrawFontSetting == null)
             {
@@ -442,84 +461,67 @@ namespace UCL.Core.TextureLib
             if (aFont == null)
             {
                 Debug.LogError("DrawChar aFont == null");
-                return;
+                return 0;
             }
             m_TextureUpdated = true;
 
 
-            //CharacterInfo aCharacterInfo;
-            //var aHasChar = aFont.GetCharacterInfo(iChar, out aCharacterInfo);
-            //if (!aHasChar)
-            //{
-            //    Debug.LogError($"DrawChar ,!aHasChar iChar:{iChar}");
-            //    return;
-            //}
-            //var aTexture = iDrawFontSetting.m_FontTexture;//aFont.material.GetTexture("_MainTex") as Texture2D;
-            //Debug.LogError($"fontAsset:{aFont.name},Char:{iChar},aHasChar:{aHasChar},BottomLeft:{aCharacterInfo.uvBottomLeft}" +
+            CharacterInfo aCharacterInfo;
+            var aHasChar = aFont.GetCharacterInfo(iChar, out aCharacterInfo);
+            if (!aHasChar)
+            {
+                Debug.LogError($"DrawChar ,!aHasChar iChar:{iChar}");
+                return 0;
+            }
+            var aTexture = iDrawFontSetting.m_FontTexture;//aFont.material.GetTexture("_MainTex") as Texture2D;
+            //Debug.LogWarning($"fontAsset:{aFont.name},Char:{iChar},aHasChar:{aHasChar},BottomLeft:{aCharacterInfo.uvBottomLeft}" +
             //    $",uvTopRight:{aCharacterInfo.uvTopRight},(aTexture != null):{(aTexture != null)}");
-            //if(aTexture == null)
-            //{
-            //    Debug.LogError($"DrawChar ,aFont.material.GetTexture(\"_MainTex\") == null");
-            //    return;
-            //}
-
-            //int aSize = iDrawFontSetting.m_Size;
-            //for (int aY = 0; aY < aSize; aY++)
-            //{
-            //    for (int aX = 0; aX < aSize; aX++)
-            //    {
-            //        int aPosX = aX + iPos.x;
-            //        int aPosY = aY + iPos.y;
-            //        if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
-            //        {
-            //            float aFX = Mathf.Lerp((float)aX/aSize, aCharacterInfo.uvBottomLeft.x, aCharacterInfo.uvTopRight.x);
-            //            float aFY = Mathf.Lerp((float)aX / aSize, aCharacterInfo.uvBottomLeft.x, aCharacterInfo.uvTopRight.x);
-            //            m_Col[aPosX + aPosY * width] = aTexture.GetPixelBilinear(aFX, aFY);
-            //        }
-            //    }
-            //}
-
-            Texture2D aFontTexture = iDrawFontSetting.m_FontTexture;
-            int aSize = iDrawFontSetting.m_Size;
-
-            if (aFontTexture == null)
+            if (aTexture == null)
             {
-                aFontTexture = FontTexture;
+                Debug.LogError($"DrawChar ,aFont.material.GetTexture(\"_MainTex\") == null");
+                return 0;
             }
-
-            int aIndex = (int)iChar;
-            if (aIndex >= iDrawFontSetting.m_MaxWidthIndex * iDrawFontSetting.m_MaxHeightIndex)
-            {
-                aIndex = iDrawFontSetting.m_MaxWidthIndex * iDrawFontSetting.m_MaxHeightIndex - 1;// * MaxIndex - 1;
-            }
-            int aRow = (aIndex % iDrawFontSetting.m_MaxWidthIndex);
-            int aColumn = (aIndex / iDrawFontSetting.m_MaxWidthIndex) % iDrawFontSetting.m_MaxHeightIndex;
-            float aDivSizeX = 1f / (aSize * iDrawFontSetting.m_MaxWidthIndex);
-            float aDivSizeY = 1f / (aSize * iDrawFontSetting.m_MaxHeightIndex);
-            float aSX = aRow / (float)iDrawFontSetting.m_MaxWidthIndex;
-            float aSY = aColumn / (float)iDrawFontSetting.m_MaxHeightIndex;
-
+            float aTracking = 0.1f;
+            int aWidth = Mathf.RoundToInt(aTracking * iDrawFontSetting.m_Size * aCharacterInfo.glyphWidth);
+            int aHeight = Mathf.RoundToInt(aTracking * iDrawFontSetting.m_Size * aCharacterInfo.glyphHeight);
+            //Debug.LogError($"Char:{iChar},glyphWidth:{aCharacterInfo.glyphWidth},glyphHeight:{aCharacterInfo.glyphHeight}");
+            int aAdvance = Mathf.RoundToInt(aWidth + aTracking * aCharacterInfo.advance);
+            HashSet<Vector2Int> aSet = null;
             if (iDrawFontSetting.m_OutlineColor.HasValue)
             {
-                HashSet<Vector2Int> aSet = new();
-                for (int aY = 0; aY < aSize; aY++)
+                aSet = new();
+            }
+            for (int aY = 0; aY <= aHeight; aY++)
+            {
+                for (int aX = 0; aX <= aWidth ; aX++)
                 {
-                    for (int aX = 0; aX < aSize; aX++)
+                    int aPosX = aX + iPos.x;
+                    int aPosY = aY + iPos.y;
+                    if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
                     {
-                        int aPosX = aX + iPos.x;
-                        int aPosY = aY + iPos.y;
-                        if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
+                        float aFX = Mathf.Lerp(aCharacterInfo.uvBottomLeft.x, aCharacterInfo.uvTopRight.x, (float)aX / aWidth);
+                        float aFY = Mathf.Lerp(aCharacterInfo.uvBottomLeft.y, aCharacterInfo.uvTopRight.y, (float)aY / aHeight);
+                        var aCol = aTexture.GetPixelBilinear(aFX, aFY, 0);
+                        //if (aCol.a > 0.5f)
+                        if (aCol.a > 0.2f)
                         {
-                            float aFX = aDivSizeX * aX + aSX;
-                            float aFY = aDivSizeY * aY + aSY;
-                            if (aFontTexture.GetPixelBilinear(aFX, aFY).r > 0.2f)
+                            m_Col[aPosX + aPosY * width] = iCol;
+                            if (aCol.a > 0.8f)
                             {
-                                aSet.Add(new Vector2Int(aPosX, aPosY));
-                                m_Col[aPosX + aPosY * width] = iCol;
+                                m_Col[aPosX + aPosY * width] = aCol;
                             }
+                            else
+                            {
+                                m_Col[aPosX + aPosY * width] = Color.Lerp(m_Col[aPosX + aPosY * width], aCol, aCol.a);
+                            }
+                            
+                            if (aSet != null) aSet.Add(new Vector2Int(aPosX, aPosY));
                         }
                     }
                 }
+            }
+            if (aSet != null)//Draw Outline
+            {
                 Color aOutlineColor = iDrawFontSetting.m_OutlineColor.Value;
                 HashSet<Vector2Int> aOutlineSet = new();
                 foreach (var aPos in aSet)
@@ -540,26 +542,8 @@ namespace UCL.Core.TextureLib
                     }
                 }
             }
-            else
-            {
-                for (int aY = 0; aY < aSize; aY++)
-                {
-                    for (int aX = 0; aX < aSize; aX++)
-                    {
-                        int aPosX = aX + iPos.x;
-                        int aPosY = aY + iPos.y;
-                        if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
-                        {
-                            float aFX = aDivSizeX * aX + aSX;
-                            float aFY = aDivSizeY * aY + aSY;
-                            if (aFontTexture.GetPixelBilinear(aFX, aFY).r > 0.2f)
-                            {
-                                m_Col[aPosX + aPosY * width] = iCol;
-                            }
-                        }
-                    }
-                }
-            }
+
+            return aAdvance;
         }
         virtual public void DrawShape(Shape iShape, Vector2Int iPos, Color iCol, float iRadius = 1f)
         {

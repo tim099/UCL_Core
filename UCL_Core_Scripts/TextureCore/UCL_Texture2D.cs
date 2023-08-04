@@ -1,8 +1,9 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.TextCore.Text;
 
-namespace UCL.Core.TextureLib {
+namespace UCL.Core.TextureLib
+{
     public class UCL_Texture2D : UCLI_Texture2D, System.IDisposable {
         public enum Shape
         {
@@ -361,199 +362,202 @@ namespace UCL.Core.TextureLib {
             if(iPos.y >= height) iPos.y = height - 1;
             m_Col[iPos.x + iPos.y * width] = iCol;
         }
-        virtual public void DrawString(string iStr, Vector2Int iPos, Color iCol, int iSize = 1)
+        private static Texture2D s_FontTexture = null;
+        public static Texture2D FontTexture
         {
+            get
+            {
+                if (s_FontTexture == null)
+                {
+                    s_FontTexture = Resources.Load<Texture2D>("font256");
+                }
+                return s_FontTexture;
+            }
+        }
+        public class DrawFontSetting
+        {
+            public int m_Size = 13;
+            public Texture2D m_FontTexture = null;
+            public Color? m_OutlineColor = null;
+            public int m_MaxWidthIndex = 16;
+            public int m_MaxHeightIndex = 16;
+            public Font m_Font;
+        }
+        private const string FontAssetName = "Arial.ttf";//LegacyRuntime.ttf
+        private static DrawFontSetting s_DefaultDrawFontSetting = null;
+        public static DrawFontSetting DefaultDrawFontSetting
+        {
+            get
+            {
+                if(s_DefaultDrawFontSetting == null)
+                {
+                    
+                    s_DefaultDrawFontSetting = new DrawFontSetting();
+                    s_DefaultDrawFontSetting.m_FontTexture = FontTexture;
+                    s_DefaultDrawFontSetting.m_Font = Resources.GetBuiltinResource<Font>(FontAssetName);
+
+                    //var aTexture = s_DefaultDrawFontSetting.m_Font.material.GetTexture("_MainTex") as Texture2D;
+                    //if(aTexture != null)
+                    //{
+                    //    s_DefaultDrawFontSetting.m_FontTexture = GameObject.Instantiate(aTexture) as Texture2D;
+                    //}
+                }
+                return s_DefaultDrawFontSetting;
+            }
+        }
+        virtual public void DrawString(string iStr, Vector2Int iPos, Color iCol, DrawFontSetting iDrawFontSetting = null)
+        {
+            //const string AssetName = "Arial.ttf";//LegacyRuntime.ttf
+
+
             if (string.IsNullOrEmpty(iStr))
             {
                 return;
             }
-            int aInterVal = 7 * iSize;
+            if(iDrawFontSetting == null)
+            {
+                iDrawFontSetting = DefaultDrawFontSetting;
+            }
+            
+            if (iDrawFontSetting.m_Font == null)
+            {
+                iDrawFontSetting.m_Font = DefaultDrawFontSetting.m_Font;
+            }
+            iDrawFontSetting.m_Font.RequestCharactersInTexture(iStr, 0);
+
+            int aInterVal = iDrawFontSetting.m_Size;//+ 2
+
             for (int i = 0; i < iStr.Length; i++)
             {
-                DrawChar(iStr[i], iPos + new Vector2Int(i * aInterVal, 0), iCol, iSize);
+                DrawChar(iStr[i], iPos + new Vector2Int(i * aInterVal, 0), iCol, iDrawFontSetting);
             }
         }
-        virtual public void DrawChar(char iChar, Vector2Int iPos, Color iCol, int iSize = 1)
+        virtual public void DrawChar(char iChar, Vector2Int iPos, Color iCol, DrawFontSetting iDrawFontSetting = null)
         {
-            List<Vector2Int> aDrawBuffer = new List<Vector2Int>();
-            switch(iChar)
+            if (iDrawFontSetting == null)
             {
-                case '0':
-                    {
-                        for (int i = 0; i < 7; i++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(0, i));
-                            aDrawBuffer.Add(new Vector2Int(4, i));
-                        }
-                        for (int i = 1; i < 4; i++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(i, 0));
-                            aDrawBuffer.Add(new Vector2Int(i, 6));
-                        }
-                        break;
-                    }
-                case '1':
-                    {
-                        for(int i = 0; i < 7; i++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(2, i));
-                        }
-                        break;
-                    }
-                case '2':
-                    {
-                        aDrawBuffer.Add(new Vector2Int(0, 4));
-                        aDrawBuffer.Add(new Vector2Int(1, 5));
-                        aDrawBuffer.Add(new Vector2Int(2, 6));
-                        aDrawBuffer.Add(new Vector2Int(3, 5));
-                        aDrawBuffer.Add(new Vector2Int(4, 4));
-                        aDrawBuffer.Add(new Vector2Int(3, 3));
-                        aDrawBuffer.Add(new Vector2Int(2, 2));
-                        aDrawBuffer.Add(new Vector2Int(1, 1));
-                        for (int i = 0; i < 5; i++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(i, 0));
-                        }
-                        break;
-                    }
-                case '3':
-                    {
-                        for (int i = 0; i < 7; i++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(4, i));
-                        }
-                        for (int aX = 0; aX < 4; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 0));
-                            aDrawBuffer.Add(new Vector2Int(aX, 3));
-                            aDrawBuffer.Add(new Vector2Int(aX, 6));
-                        }
-                        break;
-                    }
-                case '4':
-                    {
-                        for (int aY = 0; aY < 7; aY++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(4, aY));
-                        }
-                        for (int aY = 3; aY < 7; aY++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(0, aY));
-                        }
-                        for (int aX = 0; aX < 4; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 3));
-                        }
-                        break;
-                    }
-                case '5':
-                    {
-                        //iCol = Color.cyan;
-                        for (int aY = 1; aY < 6; aY++)
-                        {
-                            if (aY >= 4)
-                            {
-                                aDrawBuffer.Add(new Vector2Int(0, aY));
-                            }
-                            else
-                            {
-                                aDrawBuffer.Add(new Vector2Int(4, aY));
-                            }
-                        }
-                        for (int aX = 0; aX < 5; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 6));
-                            aDrawBuffer.Add(new Vector2Int(aX, 3));
-                            aDrawBuffer.Add(new Vector2Int(aX, 0));
-                        }
-                        break;
-                    }
-                case '6':
-                    {
-                        //iCol = Color.cyan;
-                        for (int aY = 1; aY < 6; aY++)
-                        {
-                            if (aY >= 4)
-                            {
-                                aDrawBuffer.Add(new Vector2Int(0, aY));
-                            }
-                            else
-                            {
-                                aDrawBuffer.Add(new Vector2Int(0, aY));
-                                aDrawBuffer.Add(new Vector2Int(4, aY));
-                            }
-                        }
-                        for (int aX = 0; aX < 5; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 6));
-                            aDrawBuffer.Add(new Vector2Int(aX, 3));
-                            aDrawBuffer.Add(new Vector2Int(aX, 0));
-                        }
-                        break;
-                    }
-                case '7':
-                    {
-                        for (int aX = 0; aX < 4; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 6));
-                        }
-                        for (int aY = 0; aY < 7; aY++)
-                        {
-                            if(aY >= 4)
-                            {
-                                aDrawBuffer.Add(new Vector2Int(0, aY));
-                            }
-                            aDrawBuffer.Add(new Vector2Int(4, aY));
-                        }
-                        break;
-                    }
-                case '8':
-                    {
-                        for (int aY = 0; aY < 7; aY++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(0, aY));
-                            aDrawBuffer.Add(new Vector2Int(4, aY));
-                        }
-                        for (int aX = 1; aX < 4; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 0));
-                            aDrawBuffer.Add(new Vector2Int(aX, 3));
-                            aDrawBuffer.Add(new Vector2Int(aX, 6));
-                        }
-                        break;
-                    }
-                case '9':
-                    {
-                        for (int aY = 0; aY < 7; aY++)
-                        {
-                            if (aY >= 4)
-                            {
-                                aDrawBuffer.Add(new Vector2Int(0, aY));
-                            }
-                            
-
-                            aDrawBuffer.Add(new Vector2Int(4, aY));
-                        }
-                        for (int aX = 0; aX < 5; aX++)
-                        {
-                            aDrawBuffer.Add(new Vector2Int(aX, 0));
-                            aDrawBuffer.Add(new Vector2Int(aX, 3));
-                            aDrawBuffer.Add(new Vector2Int(aX, 6));
-                        }
-                        break;
-                    }
-                default:
-                    {
-                        DrawDiamond(iPos, iCol, 2);
-                        break;
-                    }
+                iDrawFontSetting = DefaultDrawFontSetting;
             }
-            for (int i = 0; i < aDrawBuffer.Count; i++)
+            Font aFont = iDrawFontSetting.m_Font;// Asset
+            if (aFont == null)
             {
-                Vector2Int aPos = aDrawBuffer[i] + iPos;
-                if (aPos.x < width && aPos.y < height && aPos.x >= 0 && aPos.y >= 0)
+                Debug.LogError("DrawChar aFont == null");
+                return;
+            }
+            m_TextureUpdated = true;
+
+
+            //CharacterInfo aCharacterInfo;
+            //var aHasChar = aFont.GetCharacterInfo(iChar, out aCharacterInfo);
+            //if (!aHasChar)
+            //{
+            //    Debug.LogError($"DrawChar ,!aHasChar iChar:{iChar}");
+            //    return;
+            //}
+            //var aTexture = iDrawFontSetting.m_FontTexture;//aFont.material.GetTexture("_MainTex") as Texture2D;
+            //Debug.LogError($"fontAsset:{aFont.name},Char:{iChar},aHasChar:{aHasChar},BottomLeft:{aCharacterInfo.uvBottomLeft}" +
+            //    $",uvTopRight:{aCharacterInfo.uvTopRight},(aTexture != null):{(aTexture != null)}");
+            //if(aTexture == null)
+            //{
+            //    Debug.LogError($"DrawChar ,aFont.material.GetTexture(\"_MainTex\") == null");
+            //    return;
+            //}
+
+            //int aSize = iDrawFontSetting.m_Size;
+            //for (int aY = 0; aY < aSize; aY++)
+            //{
+            //    for (int aX = 0; aX < aSize; aX++)
+            //    {
+            //        int aPosX = aX + iPos.x;
+            //        int aPosY = aY + iPos.y;
+            //        if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
+            //        {
+            //            float aFX = Mathf.Lerp((float)aX/aSize, aCharacterInfo.uvBottomLeft.x, aCharacterInfo.uvTopRight.x);
+            //            float aFY = Mathf.Lerp((float)aX / aSize, aCharacterInfo.uvBottomLeft.x, aCharacterInfo.uvTopRight.x);
+            //            m_Col[aPosX + aPosY * width] = aTexture.GetPixelBilinear(aFX, aFY);
+            //        }
+            //    }
+            //}
+
+            Texture2D aFontTexture = iDrawFontSetting.m_FontTexture;
+            int aSize = iDrawFontSetting.m_Size;
+
+            if (aFontTexture == null)
+            {
+                aFontTexture = FontTexture;
+            }
+
+            int aIndex = (int)iChar;
+            if (aIndex >= iDrawFontSetting.m_MaxWidthIndex * iDrawFontSetting.m_MaxHeightIndex)
+            {
+                aIndex = iDrawFontSetting.m_MaxWidthIndex * iDrawFontSetting.m_MaxHeightIndex - 1;// * MaxIndex - 1;
+            }
+            int aRow = (aIndex % iDrawFontSetting.m_MaxWidthIndex);
+            int aColumn = (aIndex / iDrawFontSetting.m_MaxWidthIndex) % iDrawFontSetting.m_MaxHeightIndex;
+            float aDivSizeX = 1f / (aSize * iDrawFontSetting.m_MaxWidthIndex);
+            float aDivSizeY = 1f / (aSize * iDrawFontSetting.m_MaxHeightIndex);
+            float aSX = aRow / (float)iDrawFontSetting.m_MaxWidthIndex;
+            float aSY = aColumn / (float)iDrawFontSetting.m_MaxHeightIndex;
+
+            if (iDrawFontSetting.m_OutlineColor.HasValue)
+            {
+                HashSet<Vector2Int> aSet = new();
+                for (int aY = 0; aY < aSize; aY++)
                 {
-                    m_Col[aPos.x + aPos.y * width] = iCol;
+                    for (int aX = 0; aX < aSize; aX++)
+                    {
+                        int aPosX = aX + iPos.x;
+                        int aPosY = aY + iPos.y;
+                        if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
+                        {
+                            float aFX = aDivSizeX * aX + aSX;
+                            float aFY = aDivSizeY * aY + aSY;
+                            if (aFontTexture.GetPixelBilinear(aFX, aFY).r > 0.2f)
+                            {
+                                aSet.Add(new Vector2Int(aPosX, aPosY));
+                                m_Col[aPosX + aPosY * width] = iCol;
+                            }
+                        }
+                    }
+                }
+                Color aOutlineColor = iDrawFontSetting.m_OutlineColor.Value;
+                HashSet<Vector2Int> aOutlineSet = new();
+                foreach (var aPos in aSet)
+                {
+                    for (int aX = -1; aX <= 1; aX++)
+                    {
+                        for (int aY = -1; aY <= 1; aY++)
+                        {
+                            if (aX == 0 && aY == 0) continue;
+                            Vector2Int aNewPos = new Vector2Int(aX + aPos.x, aY + aPos.y);
+                            if (aSet.Contains(aNewPos) || aOutlineSet.Contains(aNewPos)) continue;
+                            aOutlineSet.Add(aNewPos);
+                            if (aNewPos.x < width && aNewPos.y < height && aNewPos.x >= 0 && aNewPos.y >= 0)
+                            {
+                                m_Col[aNewPos.x + aNewPos.y * width] = aOutlineColor;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                for (int aY = 0; aY < aSize; aY++)
+                {
+                    for (int aX = 0; aX < aSize; aX++)
+                    {
+                        int aPosX = aX + iPos.x;
+                        int aPosY = aY + iPos.y;
+                        if (aPosX < width && aPosY < height && aPosX >= 0 && aPosY >= 0)
+                        {
+                            float aFX = aDivSizeX * aX + aSX;
+                            float aFY = aDivSizeY * aY + aSY;
+                            if (aFontTexture.GetPixelBilinear(aFX, aFY).r > 0.2f)
+                            {
+                                m_Col[aPosX + aPosY * width] = iCol;
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -187,9 +187,18 @@ public static partial class ListExtensionMethods {
     public static string ConcatString(this IList<string> iList, string iSeperator = ", ")
     {
         System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
         foreach (var aStr in iList)
         {
-            aSB.Append(aStr).Append(iSeperator);
+            if (aIsFirst)
+            {
+                aIsFirst = false;
+            }
+            else
+            {
+                aSB.Append(iSeperator);
+            }
+            aSB.Append(aStr);
         }
         return aSB.ToString();
     }

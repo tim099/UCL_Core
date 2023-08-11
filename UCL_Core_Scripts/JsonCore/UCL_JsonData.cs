@@ -44,6 +44,7 @@ namespace UCL.Core.JsonLib {
         public bool IsLong => m_Type == JsonType.Long;
         public bool IsObject => m_Type == JsonType.Dictionary;
         public bool IsString => m_Type == JsonType.String;
+        public IDictionary<string, JsonData> Dic => m_Dic;
         #endregion
 
         #region Interface

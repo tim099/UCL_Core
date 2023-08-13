@@ -848,7 +848,11 @@ namespace UCL.Core.JsonLib {
             if(m_Type != JsonType.Dictionary && m_Type != JsonType.None) return false;
             return GetIDic().Contains(key);
         }
-
+        public void Remove(object key)
+        {
+            if (m_Type != JsonType.Dictionary && m_Type != JsonType.None) return;
+            GetIDic().Remove(key);
+        }
         public IDictionaryEnumerator Enumerator() {
             return GetIDic().GetEnumerator();
         }

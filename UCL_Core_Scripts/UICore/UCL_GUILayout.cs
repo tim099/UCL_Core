@@ -159,6 +159,37 @@ namespace UCL.Core.UI {
             if (Core.MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue)) return aResultValue;
             return iVal;
         }
+        static public object NumField(string iLabel, object iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            const string aKey = "NumStr";
+            const string aValKey = "Num";
+            
+            object aOldVal = iDataDic.GetData(aValKey, iVal);
+            if(aOldVal != iVal)//Data changed
+            {
+                iDataDic.Remove(aKey);
+            }
+            string aNumStr = iDataDic.GetData(aKey, iVal.ToString());
+            GUILayout.BeginHorizontal();
+            if (!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
+            string aResult = GUILayout.TextField(aNumStr, iOptions);
+            GUILayout.EndHorizontal();
+
+            iDataDic.SetData(aKey, aResult);
+
+            if (string.IsNullOrEmpty(aResult))
+            {
+                return System.Convert.ChangeType(0, iVal.GetType());
+            }
+
+            object aResultValue;
+            if (Core.MathLib.Num.TryParse(aResult, iVal.GetType(), out aResultValue))
+            {
+                iDataDic.SetData(aValKey, aResultValue);
+                return aResultValue;
+            }
+            return iVal;
+        }
         static public int IntField(string iLabel, int iVal, params GUILayoutOption[] iOptions)
         {
             GUILayout.BeginHorizontal();

@@ -70,7 +70,7 @@ namespace UCL.Core.UI
                 else if (iObj.IsNumber())
                 {
                     aIsShowField = false;
-                    aResultObj = UCL_GUILayout.NumField(string.Empty, iObj);
+                    aResultObj = UCL_GUILayout.NumField(string.Empty, iObj, iDataDic);
                 }
                 else if (aType.IsTuple())
                 {

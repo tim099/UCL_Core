@@ -12,7 +12,7 @@ namespace UCL.Core.Game {
         #region key
         public const string CurLangKey = "CurLang";
         #endregion
-        public static string LoadLangPath => "Install/Language";
+        public static string LoadLangPath => "Install/.Language";
         public static string CurLang
         {
             get

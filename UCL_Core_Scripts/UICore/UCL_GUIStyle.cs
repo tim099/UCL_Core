@@ -63,6 +63,7 @@ namespace UCL.Core.UI {
                     aText.active.textColor = iCol;
                     aText.hover.textColor = iCol;
                     aText.fontSize = iFontSize;
+                    aText.richText = true;
                     //Debug.LogError("aText.fontSize:" + aText.fontSize); 12
                     m_ButtonStyleDic.Add(aKey, aText);
                 }

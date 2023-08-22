@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.ServiceLib;
+using UCL.Core.UI;
 using UnityEngine;
 
 
@@ -17,11 +18,15 @@ namespace UCL.Core.EditorLib.Page
         protected override bool ShowCloseButton => false;
 
         UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
-        public void Init()
+        //public void Init()
+        //{
+        //    UCL_DebugLogService.Init();
+        //}
+        public override void Init(UCL_GUIPageController iGUIPageController)
         {
+            base.Init(iGUIPageController);
             UCL_DebugLogService.Init();
         }
-
         public override void OnClose()
         {
             base.OnClose();

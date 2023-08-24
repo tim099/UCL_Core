@@ -1,7 +1,8 @@
 {
     "name": "UCL_CoreEditor",
+    "rootNamespace": "",
     "references": [
-        "GUID:fb313712d3efc8045821678f6c8743af"
+        "UCL_Core"
     ],
     "includePlatforms": [
         "Editor"
@@ -12,5 +13,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": []
+    "versionDefines": [],
+    "noEngineReferences": false
 }

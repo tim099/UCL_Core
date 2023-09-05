@@ -334,7 +334,7 @@ namespace UCL.Core.TextureLib
 
         virtual public Texture2D GetTexture() {
             if(m_Texture == null) {
-                m_Texture = Object.Instantiate(new Texture2D(width, height, m_TextureFormat, false));
+                m_Texture = new Texture2D(width, height, m_TextureFormat, false);//Object.Instantiate(new Texture2D(width, height, m_TextureFormat, false));
                 //Debug.LogWarning("Create Texture:" + width + "," + height);
             }
             if(m_TextureUpdated) {

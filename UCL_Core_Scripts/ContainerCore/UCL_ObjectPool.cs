@@ -54,7 +54,48 @@ namespace UCL.Core.Container {
         /// (if not null, will use Instantiate(m_Template, iParent) to create GameObject
         /// </summary>
         public T m_Template = null;
+        public void Prewarm(int iCount)
+        {
+            Transform aParent = null;
+            if (m_DeleteRoot != null)
+            {
+                aParent = m_DeleteRoot;
+            }
 
+            for(int i = 0; i < iCount; i++)
+            {
+                T aTarget = null;
+                GameObject aObj = null;
+                if (m_Template != null)
+                {
+                    if (m_CreateAction != null)
+                    {
+                        aTarget = m_CreateAction(m_Template, aParent);
+                    }
+                    else
+                    {
+                        aTarget = GameObject.Instantiate(m_Template, aParent);
+                    }
+                    aObj = aTarget.gameObject;
+                }
+                else
+                {
+                    aObj = new GameObject(m_CreateName);
+                    aTarget = aObj.AddComponent<T>();
+                }
+                if (aParent)
+                {
+                    aObj.layer = aParent.gameObject.layer;
+                }
+
+                if (m_InitAction != null)
+                {
+                    m_InitAction.Invoke(aTarget);
+                }
+                m_ObjPool.Push(aTarget);
+            }
+
+        }
         /// <summary>
         /// Create a object from pool
         /// </summary>

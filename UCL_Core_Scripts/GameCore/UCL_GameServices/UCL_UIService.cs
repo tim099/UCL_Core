@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -22,6 +23,7 @@ namespace UCL.Core.Game
         [SerializeField] RectTransform m_UIRoot = null;
         [SerializeField] RectTransform m_UIOverlayRoot = null;
         [SerializeField] Canvas m_Canvas = null;
+        Dictionary<Type, Queue<UCL_GameUI>> m_UIPools = new();
         //[SerializeField] Canvas m_UIOverlayCanvas = null;
         /// <summary>
         /// Use List to simulate Stack
@@ -47,8 +49,26 @@ namespace UCL.Core.Game
             T iUI = null;
             try
             {
+                var aType = typeof(T);
+
+
                 RectTransform aParent = iTemplate.IsUIOverlay ? m_UIOverlayRoot : m_UIRoot;
-                iUI = Instantiate(iTemplate, aParent);
+
+                if (m_UIPools.ContainsKey(aType) && m_UIPools[aType].Count > 0)
+                {
+                    iUI = m_UIPools[aType].Dequeue() as T;
+
+                    //iUI.transform.SetParent(aParent, false);
+                    iUI.transform.SetAsLastSibling();
+                    iUI.transform.localPosition = Vector3.zero;
+                    iUI.transform.localScale = Vector3.one;
+                }
+                else
+                {
+                    iUI = Instantiate(iTemplate, aParent);
+                }
+
+                
                 m_UIStack.Add(iUI);
                 iUI.Init();
             }
@@ -121,7 +141,28 @@ namespace UCL.Core.Game
             }
             m_UIStack.Remove(iUI);
             //Debug.LogError("OnCLose:" + iUI.name);
-            if(iUI.gameObject != null) Destroy(iUI.gameObject);
+            if (iUI.gameObject != null)
+            {
+                if (iUI.Reusable)
+                {
+                    iUI.gameObject.SetActive(false);
+                    //iUI.transform.SetParent(transform);
+                    var aType = iUI.GetType();
+                    //Debug.LogError($"OnUIClosed Reusable aType:{aType}");
+                    if (!m_UIPools.ContainsKey(aType))
+                    {
+                        m_UIPools[aType] = new Queue<UCL_GameUI>();
+                    }
+
+                    iUI.OnRecycle();
+                    m_UIPools[aType].Enqueue(iUI);
+                }
+                else
+                {
+                    Destroy(iUI.gameObject);
+                }
+            }
+
         }
         /// <summary>
         /// Close all UI

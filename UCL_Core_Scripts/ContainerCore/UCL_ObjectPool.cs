@@ -92,6 +92,8 @@ namespace UCL.Core.Container {
                 {
                     m_InitAction.Invoke(aTarget);
                 }
+                
+                aObj.gameObject.SetActive(false);
                 m_ObjPool.Push(aTarget);
             }
 

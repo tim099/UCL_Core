@@ -11,7 +11,8 @@ namespace UCL.Core.Game
            return  UCL_UIService.Ins.CreateUIFromResource<T>();
         }
 
-        virtual public bool IsUIOverlay { get { return m_IsUIOverlay; } }
+        virtual public bool IsUIOverlay => m_IsUIOverlay;
+        virtual public bool Reusable => false;
         [SerializeField] protected bool m_IsUIOverlay = false;
         protected System.Action m_OnCloseAction = null;
         protected bool m_IsClosed = false;
@@ -41,6 +42,13 @@ namespace UCL.Core.Game
             
             UCL.Core.Game.UCL_UIService.Ins.OnUIClosed(this);
             //if(gameObject != null) Destroy(gameObject); 改到UCL.Core.Game.UCL_UIService.Ins.OnUIClosed
+        }
+        /// <summary>
+        /// Reusable UI enqueue
+        /// </summary>
+        virtual public void OnRecycle()
+        {
+            m_IsClosed = false;
         }
         /// <summary>
         /// When Input.GetKey(KeyCode.Escape) == true

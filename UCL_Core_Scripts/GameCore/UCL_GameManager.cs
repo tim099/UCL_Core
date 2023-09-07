@@ -57,10 +57,11 @@ namespace UCL.Core.Game {
         static void RuntimeInitializeInit() {
             //UCL_GameManager.Get();
         }
-        private void Awake() {
+        virtual protected void Awake() {
+            Debug.LogError("Awake");
             Init();
         }
-        virtual protected void Init() {
+        virtual public void Init() {
             if(m_Inited) return;
             if(!SetInstance(this)) return;
             //Instance = this;

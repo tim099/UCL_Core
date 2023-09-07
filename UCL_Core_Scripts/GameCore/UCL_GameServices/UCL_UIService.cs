@@ -20,15 +20,16 @@ namespace UCL.Core.Game
         /// Root folder of UI Resource
         /// </summary>
         static public string UIResourceFolder = string.Empty;
-        [SerializeField] RectTransform m_UIRoot = null;
-        [SerializeField] RectTransform m_UIOverlayRoot = null;
-        [SerializeField] Canvas m_Canvas = null;
-        Dictionary<Type, Queue<UCL_GameUI>> m_UIPools = new();
+
+        [SerializeField] protected RectTransform m_UIRoot = null;
+        [SerializeField] protected RectTransform m_UIOverlayRoot = null;
+        [SerializeField] protected Canvas m_Canvas = null;
+        protected Dictionary<Type, Queue<UCL_GameUI>> m_UIPools = new();
         //[SerializeField] Canvas m_UIOverlayCanvas = null;
         /// <summary>
         /// Use List to simulate Stack
         /// </summary>
-        List<UCL_GameUI> m_UIStack = new List<UCL_GameUI>();
+        protected List<UCL_GameUI> m_UIStack = new List<UCL_GameUI>();
         public override void Init()
         {
             Ins = this;

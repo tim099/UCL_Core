@@ -383,12 +383,19 @@ namespace UCL.Core.JsonLib {
                 {
                     continue;
                 }
+                var aConditional = aField.GetCustomAttribute<UCL.Core.PA.ConditionalAttribute>();
+                if (aConditional != null && !aConditional.IsShow(iObj))
+                {
+                    continue;
+                }
+
+                var aValue = aField.GetValue(iObj);
+
                 string aFieldName = aField.Name;
                 if (iFieldNameAlterFunc != null)
                 {
                     aFieldName = iFieldNameAlterFunc(aFieldName);
                 }
-                var aValue = aField.GetValue(iObj);
                 if (aValue == null)
                 {
                     //iData[aFieldName] = "";

@@ -30,6 +30,12 @@ namespace UCL.Core.Container {
             m_InitAction = iInitAction;
             m_CreateAction = iCreateAction;
         }
+        public void Init(T iTemplate, System.Action<T> iInitAction = null, System.Func<T, Transform, T> iCreateAction = null)
+        {
+            m_Template = iTemplate;
+            m_InitAction = iInitAction;
+            m_CreateAction = iCreateAction;
+        }
         /// <summary>
         /// call when object first time created
         /// </summary>

@@ -5,6 +5,20 @@ using System.Reflection;
 using UnityEngine;
 using System.Linq;
 public static partial class TypeExtensionMethods {
+    public static IEnumerable<Type> GetAllSubclass(this Type iType)
+    {
+        var aAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        var aTypes = aAssemblies.SelectMany(iAssembly => iAssembly.GetTypes());
+        var aSubclassTypes = aTypes.Where(iSubclassType => iSubclassType.IsSubclassOf(iType));
+        return aSubclassTypes;
+    }
+    public static IEnumerable<Type> GetAllITypesAssignableFrom(this Type iType)
+    {
+        var aAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        var aTypes = aAssemblies.SelectMany(iAssembly => iAssembly.GetTypes());
+        var aSubclassTypes = aTypes.Where(iSubclassType => iType.IsAssignableFrom(iSubclassType));
+        return aSubclassTypes;
+    }
     public static MethodInfo[] GetAllMethods(this Type type) {
         var methods = new List<MethodInfo>();
         methods.AddRange(type.GetMethods());

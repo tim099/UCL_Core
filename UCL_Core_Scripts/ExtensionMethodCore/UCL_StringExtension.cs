@@ -16,6 +16,20 @@ public static partial class StringExtensionMethods {
     }
     public static string[] s_LineSeparatorArr = null;
     #region String
+
+    public static string ConvertToMD5(this string iStr)
+    {
+        using (var aCryptoMD5 = System.Security.Cryptography.MD5.Create())
+        {
+            var aBytes = Encoding.UTF8.GetBytes(iStr);
+            var aHash = aCryptoMD5.ComputeHash(aBytes);
+
+            var aMd5Str = BitConverter.ToString(aHash).Replace("-", string.Empty).ToUpper();
+
+            return aMd5Str;
+        }
+    }
+
     /// <summary>
     /// Append RichText Color to the string
     /// </summary>

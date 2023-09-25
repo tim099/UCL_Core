@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 
@@ -24,6 +25,9 @@ namespace UCL.Core.Game
         [SerializeField] protected RectTransform m_UIRoot = null;
         [SerializeField] protected RectTransform m_UIOverlayRoot = null;
         [SerializeField] protected Canvas m_Canvas = null;
+
+        protected Dictionary<int, RectTransform> m_UIRootLayer = new Dictionary<int, RectTransform>();
+        protected Dictionary<int, RectTransform> m_UIOverlayRootLayer = new Dictionary<int, RectTransform>();
         protected Dictionary<Type, Queue<UCL_GameUI>> m_UIPools = new();
         //[SerializeField] Canvas m_UIOverlayCanvas = null;
         /// <summary>
@@ -44,7 +48,40 @@ namespace UCL.Core.Game
                 GUILayout.Box(string.Format("{0}. {1}", i, m_UIStack[i].name));
             }
         }
+        virtual protected RectTransform GetRoot(UCL_GameUI iTemplate)
+        {
+            RectTransform aRoot = iTemplate.IsUIOverlay ? m_UIOverlayRoot : m_UIRoot;
+            var aLayerDic = iTemplate.IsUIOverlay ? m_UIOverlayRootLayer : m_UIRootLayer;
+            int aLayer = iTemplate.Layer;
+            if (!aLayerDic.ContainsKey(aLayer))
+            {
+                var aLayerObj = new GameObject($"UILayer_{aLayer}");
+                
+                var aRectTransform = aLayerObj.GetOrAddComponent<RectTransform>();
+                aRectTransform.SetParent(aRoot);
 
+                //aRectTransform.CopyValue(aRoot.GetOrAddComponent<RectTransform>());
+                aRectTransform.localScale = Vector3.one;
+                aRectTransform.anchorMin = Vector2.zero;
+                aRectTransform.anchorMax = Vector2.one;
+                aRectTransform.anchoredPosition3D = Vector3.zero;
+                aRectTransform.sizeDelta = aRoot.sizeDelta;
+                aLayerDic[aLayer] = aRectTransform;
+
+                if(aLayerDic.Count > 1)
+                {
+                    var aKeys = aLayerDic.Keys.ToList();
+                    aKeys.Sort();
+                    foreach (var aKey in aKeys)
+                    {
+                        //Debug.LogError($"aKey:{aKey}");
+                        aLayerDic[aKey].SetAsLastSibling();
+                    }
+                }
+
+            }
+            return aLayerDic[aLayer];
+        }
         public T CreateUI<T>(T iTemplate) where T : UCL_GameUI
         {
             T iUI = null;
@@ -53,14 +90,14 @@ namespace UCL.Core.Game
                 var aType = typeof(T);
 
 
-                RectTransform aParent = iTemplate.IsUIOverlay ? m_UIOverlayRoot : m_UIRoot;
+                RectTransform aParent = GetRoot(iTemplate);
 
                 if (m_UIPools.ContainsKey(aType) && m_UIPools[aType].Count > 0)
                 {
                     iUI = m_UIPools[aType].Dequeue() as T;
 
                     //iUI.transform.SetParent(aParent, false);
-                    iUI.transform.SetAsLastSibling();
+                    iUI.transform.SetAsLastSibling();//To Top
                     iUI.transform.localPosition = Vector3.zero;
                     iUI.transform.localScale = Vector3.one;
                 }

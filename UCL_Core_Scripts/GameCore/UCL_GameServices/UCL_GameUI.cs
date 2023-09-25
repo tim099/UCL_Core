@@ -12,8 +12,13 @@ namespace UCL.Core.Game
         }
 
         virtual public bool IsUIOverlay => m_IsUIOverlay;
+        virtual public int Layer => m_Layer;
         virtual public bool Reusable => false;
+
+
         [SerializeField] protected bool m_IsUIOverlay = false;
+        [SerializeField] protected int m_Layer = 100;
+
         protected System.Action m_OnCloseAction = null;
         protected bool m_IsClosed = false;
         virtual public void Init()

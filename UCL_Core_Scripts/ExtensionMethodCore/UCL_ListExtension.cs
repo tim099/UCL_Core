@@ -37,8 +37,14 @@ public static partial class ListExtensionMethods {
         {
             if (aIsFirst) aIsFirst = false;
             else aSB.Append(iSeperator);
-            aSB.Append(aT.ToString());
-
+            if (aT == null)
+            {
+                aSB.Append("Null");
+            }
+            else
+            {
+                aSB.Append(aT.ToString());
+            }
         }
         return aSB.ToString();
     }

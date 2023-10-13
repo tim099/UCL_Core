@@ -535,8 +535,16 @@ namespace UCL.Core.JsonLib {
                     }
                 }
             }
-
-            LoadFieldFromJson(iObj, iData, iSaveMode, iFieldNameAlterFunc, iLayer);
+            try
+            {
+                LoadFieldFromJson(iObj, iData, iSaveMode, iFieldNameAlterFunc, iLayer);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                Debug.LogError($"LoadDataFromJson Type.FullName:{aType.FullName}, Exception:{e}");
+            }
+            
             return iObj;
         }
 

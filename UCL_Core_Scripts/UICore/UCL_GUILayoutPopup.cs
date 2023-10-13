@@ -266,10 +266,35 @@ namespace UCL.Core.UI
             int iSearchThreshold = 10, params GUILayoutOption[] iOptions) where T : System.Enum
         {
             System.Type aType = iEnum.GetType();
-            var aNames = System.Enum.GetNames(aType);
-            var aDisplayNames = new string[aNames.Length];
+            string[] aNames = System.Enum.GetNames(aType);
+            string[] aDisplayNames = new string[aNames.Length];
             string aTypeName = aType.Name;
             for (int i = 0; i < aNames.Length; i++)
+            {
+                aDisplayNames[i] = UCL_LocalizeLib.GetEnumLocalize(aTypeName, aNames[i]);
+            }
+            int aID = aNames.GetIndex(iEnum.ToString());
+            aID = PopupAuto(aID, aDisplayNames, iDataDic, iKey, iSearchThreshold, iOptions);
+            return (T)System.Enum.Parse(aType, aNames[aID], true);
+        }
+        /// <summary>
+        /// Show enum popup
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="iEnum"></param>
+        /// <returns></returns>
+        public static T PopupAuto<T>(T iEnum, IList<T> iEnums, UCL_ObjectDictionary iDataDic,  string iKey,
+            int iSearchThreshold = 10, params GUILayoutOption[] iOptions) where T : System.Enum
+        {
+            System.Type aType = iEnum.GetType();
+            string[] aNames = new string[iEnums.Count];
+            for (int i = 0; i < iEnums.Count; i++)
+            {
+                aNames[i] = iEnums[i].ToString();
+            }
+            string[] aDisplayNames = new string[iEnums.Count];
+            string aTypeName = aType.Name;
+            for (int i = 0; i < iEnums.Count; i++)
             {
                 aDisplayNames[i] = UCL_LocalizeLib.GetEnumLocalize(aTypeName, aNames[i]);
             }

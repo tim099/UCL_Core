@@ -16,7 +16,7 @@ namespace UCL.Core.LocalizeLib
             return m_Dic;
         }
         virtual public void ParseData(string iData) {
-            //Debug.LogError("data:" + iData);
+            //Debug.LogError($"LocalizeData.ParseData iData:{iData}");
             m_Dic.Clear();
             using(StringReader aReader = new StringReader(iData)) {
                 var hex = new char[4];
@@ -126,7 +126,7 @@ namespace UCL.Core.LocalizeLib
         /// </summary>
         /// <param name="iKey"></param>
         /// <param name="iValue">Localized string</param>
-        virtual public void SetLocalize(string iKey,string iValue)
+        virtual public void SetLocalize(string iKey, string iValue)
         {
             m_Dic[iKey] = iValue;
         }

@@ -48,7 +48,7 @@ namespace UCL.Core.LocalizeLib
         /// Name of Language folder
         /// </summary>
         public string LangName { get; protected set; } = "English";
-        public static string sLangName { get; protected set; } = "English";
+        public static string s_LangName { get; protected set; } = "English";
 
         static protected bool m_NotInitializeErrorLogged = false;
         protected LocalizeData m_LocalizeData = null;
@@ -61,7 +61,7 @@ namespace UCL.Core.LocalizeLib
         public void LoadLanguage(string iDir, string iLanguage)
         {
             LangDir = iDir;
-            sLangName = LangName = iLanguage;
+            s_LangName = LangName = iLanguage;
             string aLangData = string.Empty;
             if (m_LoadLanguageFunc != null)
             {

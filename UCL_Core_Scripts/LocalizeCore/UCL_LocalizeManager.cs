@@ -65,7 +65,14 @@ namespace UCL.Core.LocalizeLib
             string aLangData = string.Empty;
             if (m_LoadLanguageFunc != null)
             {
-                aLangData = m_LoadLanguageFunc.Invoke(iDir, iLanguage);
+                try
+                {
+                    aLangData = m_LoadLanguageFunc.Invoke(iDir, iLanguage);
+                }
+                catch(System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
             else
             {

@@ -57,6 +57,10 @@ public static partial class TransformExtensionMethods {
     #region Transform
     public static void DestroyAllChildren(this Transform iTarget)
     {
+        if(iTarget == null)
+        {
+            return;
+        }
         foreach (Transform aChild in iTarget)
         {
             GameObject.Destroy(aChild.gameObject);

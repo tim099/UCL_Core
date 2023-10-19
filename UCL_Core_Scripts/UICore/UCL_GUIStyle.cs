@@ -77,12 +77,14 @@ namespace UCL.Core.UI {
                 {
                     if (s_LabelStyle == null)
                     {
-                        s_LabelStyle = new GUIStyle(GUI.skin.label);
-                        s_LabelStyle.richText = true;
-                        var aTextCol = Color.white;
-                        s_LabelStyle.normal.textColor = aTextCol;
-                        s_LabelStyle.focused.textColor = aTextCol;
-                        s_LabelStyle.hover.textColor = aTextCol;
+                        s_LabelStyle = GetLabelStyle(Color.white, 12);
+                        //s_LabelStyle = new GUIStyle(GUI.skin.label);
+                        //s_LabelStyle.richText = true;
+                        //var aTextCol = Color.white;
+                        //s_LabelStyle.normal.textColor = aTextCol;
+                        //s_LabelStyle.focused.textColor = aTextCol;
+                        //s_LabelStyle.hover.textColor = aTextCol;
+                        //s_LabelStyle.fontSize = 16;
                     }
                     return s_LabelStyle;
                 }

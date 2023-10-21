@@ -14,19 +14,19 @@ namespace UCL.Core.UI
             }
         }
         private static UCL_GUIPageController _Ins = null;
-        private static UCL_GUIPageController _CurrentRenderIns = null;
+        private static UCL_GUIPageController s_CurrentRenderIns = null;
         /// <summary>
         /// Current UCL_GUIPageController whitch invoking DrawOnGUI()
         /// </summary>
         public static UCL_GUIPageController CurrentRenderIns {
             get
             {
-                if (_CurrentRenderIns == null) return Ins;
-                return _CurrentRenderIns;
+                if (s_CurrentRenderIns == null) return Ins;
+                return s_CurrentRenderIns;
             }
             protected set
             {
-                _CurrentRenderIns = value;
+                s_CurrentRenderIns = value;
             }
         }
         public static bool IsDrawingOnGUI = false;

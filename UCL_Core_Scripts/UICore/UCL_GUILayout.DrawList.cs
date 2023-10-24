@@ -14,14 +14,19 @@ namespace UCL.Core.UI
 
         private const string ListElementCountKey = "ListElementCount";
         private const string ITypeListKey = "ITypeList";
-        public static void DrawList(IList aList, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
+        public static void DrawList(IList iList, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
+            bool iIsAlwaysShowDetail = false)
+        {
+            DrawList(iList, iDataDic, iDisplayName, iIsAlwaysShowDetail, null);
+        }
+        public static void DrawList(IList iList, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
             bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null,
             System.Action<System.Action> iOverrideDrawElement = null)
         {
             bool aIsMoveElement = false;
             bool aIsDelete = false;
             bool aIsShowField = false;
-            var aType = aList.GetType();
+            var aType = iList.GetType();
             GUILayout.BeginHorizontal();
             if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, IsShowFieldKey);
             GUILayout.BeginVertical();
@@ -54,25 +59,25 @@ namespace UCL.Core.UI
 
             if (aIsShowField)
             {
-                int aCount = iDataDic.GetData(ListElementCountKey, aList.Count);
+                int aCount = iDataDic.GetData(ListElementCountKey, iList.Count);
                 GUILayout.BeginHorizontal();
                 int aNewCount = UCL_GUILayout.IntField(UCL_LocalizeManager.Get("Count"), aCount, GUILayout.MinWidth(80));
                 iDataDic.SetData(ListElementCountKey, aNewCount);
-                if (aNewCount != aList.Count)
+                if (aNewCount != iList.Count)
                 {
                     if (GUILayout.Button(UCL_LocalizeManager.Get("SetCount"), UCL_GUIStyle.ButtonStyle))
                     {
                         if (aNewCount < 0) aNewCount = 0;
-                        while (aNewCount < aList.Count)
+                        while (aNewCount < iList.Count)
                         {
-                            aList.RemoveAt(aList.Count - 1);
+                            iList.RemoveAt(iList.Count - 1);
                         }
-                        while (aNewCount > aList.Count)
+                        while (aNewCount > iList.Count)
                         {
                             try
                             {
                                 var aGenericType = aType.GetGenericValueType();
-                                aList.Add(aGenericType.CreateInstance());
+                                iList.Add(aGenericType.CreateInstance());
                             }
                             catch (System.Exception iE)
                             {
@@ -136,18 +141,18 @@ namespace UCL.Core.UI
                             if (aSelectedType >= 0)
                             {
                                 var aTypes = iDataDic.GetData<IList<Type>>(ITypeListKey + "Type");
-                                aList.Add(aTypes[aSelectedType].CreateInstance());
+                                iList.Add(aTypes[aSelectedType].CreateInstance());
                             }
                             else
                             {
-                                aList.Add(aGenericType.CreateInstance());
+                                iList.Add(aGenericType.CreateInstance());
                             }
                         }
                         catch (System.Exception iE)
                         {
                             Debug.LogException(iE);
                         }
-                        iDataDic.SetData(ListElementCountKey, aList.Count);
+                        iDataDic.SetData(ListElementCountKey, iList.Count);
                     }
                 }
                 GUILayout.EndHorizontal();
@@ -161,7 +166,7 @@ namespace UCL.Core.UI
                     var aListType = aType.GetGenericValueType();
                     string aTypeName = aListType.Name;
                     int aMove = -1;
-                    foreach (var aListData in aList)
+                    foreach (var aListData in iList)
                     {
                         if (aAt > 0 && aIsMoveElement)
                         {
@@ -201,13 +206,13 @@ namespace UCL.Core.UI
                     }
                     for (int i = 0; i < aResultList.Count; i++)
                     {
-                        aList[i] = aResultList[i];
+                        iList[i] = aResultList[i];
                     }
                     if (aDeleteAt >= 0)
                     {
-                        aList.RemoveAt(aDeleteAt);
+                        iList.RemoveAt(aDeleteAt);
                         iDataDic.Remove("IList", aDeleteAt);
-                        iDataDic.SetData(ListElementCountKey, aList.Count);
+                        iDataDic.SetData(ListElementCountKey, iList.Count);
                     }
                 };
                 if (iOverrideDrawElement != null)

@@ -592,6 +592,28 @@ namespace UCL.Core.MathLib
             return m_Rnd.Next();
         }
         /// <summary>
+        /// Return a random int between long.MinValue [inclusive] and long.MaxValue [inclusive]
+        /// </summary>
+        /// <returns></returns>
+        public long NextLong()
+        {
+            long aMask = 0b11111111_11111111;//16 bit Mask
+            long aResult = 0;
+            //Debug.LogError($"aResult:{aResult.UCL_ToBitString()}");
+            for (int i = 0; i < 4; i++)
+            {
+                long aVal = m_Rnd.Next();
+                if(i > 0) aVal <<= (i * 16);
+                //Debug.LogError($"aVal({i}):{aVal.UCL_ToBitString()}");
+                //Debug.LogError($"aMask({i}):{aMask.UCL_ToBitString()}");
+                aResult |= (aVal & aMask);//Next only have 31 bit(0~(int.MaxValue - 1) [inclusive]), and this take the last 16 bit from result of Next
+                aMask <<= 16;
+                //Debug.LogError($"aResult({i}):{aResult.UCL_ToBitString()}");
+            }
+
+            return aResult;
+        }
+        /// <summary>
         /// Return a random int between 0 [inclusive] and iMax [exclusive]
         /// </summary>
         /// <param name="iMax"></param>

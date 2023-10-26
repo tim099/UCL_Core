@@ -58,7 +58,7 @@ namespace UCL.Core.Game {
             //UCL_GameManager.Get();
         }
         virtual protected void Awake() {
-            Debug.LogError("Awake");
+            //Debug.LogError("Awake");
             Init();
         }
         virtual public void Init() {

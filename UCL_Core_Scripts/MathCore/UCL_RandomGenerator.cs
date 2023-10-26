@@ -96,7 +96,10 @@ namespace UCL.Core.MathLib
 
         }
         protected virtual double Sample() => Next() * (1.0 / Int32.MaxValue);
-
+        /// <summary>
+        /// Return a random int between 0 [inclusive] and (int.MaxValue - 1) [inclusive]
+        /// </summary>
+        /// <returns></returns>
         public virtual int Next()
         {
             int aRetVal;
@@ -118,7 +121,6 @@ namespace UCL.Core.MathLib
 
             return aRetVal;
         }
-
         private double GetSampleForLargeRange()
         {
             int aResult = Next();

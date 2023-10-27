@@ -53,11 +53,11 @@ namespace UCL.Core.Game {
             JsonLib.JsonData aData = new JsonLib.JsonData();
             //aData["m_LoadLangPath"] = m_LoadLangPath;
             aData["m_CurLang"] = m_CurLang;
-#if UNITY_EDITOR
+//#if UNITY_EDITOR
             //Debug.LogError("m_LoadLangPath:" + m_LoadLangPath + ",m_CurLang:" + m_CurLang);
             //Editor下 PlayerPrefs紀錄起來以便非執行期使用
             PlayerPrefs.SetString(CurLangKey, m_CurLang);
-#endif
+//#endif
             FileLib.Lib.WriteToFile(aData.ToJson(), aPath);
         }
         public override void Load(string iDir) {
@@ -66,7 +66,7 @@ namespace UCL.Core.Game {
                 var aStr = File.ReadAllText(aPath);
                 JsonLib.JsonData aData = JsonLib.JsonData.ParseJson(aStr);
                 //m_LoadLangPath = aData.GetString("m_LoadLangPath", m_LoadLangPath);
-                m_CurLang = aData.GetString("m_CurLang", m_CurLang);
+                m_CurLang = PlayerPrefs.GetString(CurLangKey, m_CurLang);//aData.GetString("m_CurLang", m_CurLang);
             }
             LoadLanguage(m_CurLang);
         }

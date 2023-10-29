@@ -446,6 +446,10 @@ namespace UCL.Core.JsonLib {
                         aData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
                     }
                 }
+                else if (aValue is UnityEngine.Object)
+                {
+                    //Pass
+                }
                 else if (aValue is IEnumerable)
                 {
                     var aGenericData = new JsonData();

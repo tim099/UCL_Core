@@ -172,6 +172,7 @@ namespace UCL.Core.UI
             {
                 using (new GUILayout.HorizontalScope("box"))
                 {
+                    GUILayout.Label(UCL_LocalizeManager.Get("UCL_Key"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     var aKeyType = aType.GetGenericKeyType();
                     string aAddKey = "AddData";
                     if (!iDataDic.ContainsKey(aAddKey))

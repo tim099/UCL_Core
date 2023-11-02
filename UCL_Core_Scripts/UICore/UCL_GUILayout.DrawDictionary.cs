@@ -49,6 +49,7 @@ namespace UCL.Core.UI
                     {
                         iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
                     }
+                    GUILayout.Label(UCL_LocalizeManager.Get("UCL_Key"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     var aKey = iDataDic.GetData(aAddKey);
                     string aKeyName = string.Empty;
                     var aKeyShortName = aKey as UCL.Core.UCLI_ShortName;

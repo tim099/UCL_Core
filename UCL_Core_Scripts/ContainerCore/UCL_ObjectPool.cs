@@ -206,7 +206,7 @@ namespace UCL.Core.Container {
         /// if not null, deleted object will set this as parent
         /// </summary>
         public Transform m_DeleteRoot = null;
-
+        public int Count => m_ObjPool.Count;
         Stack<GameObject> m_ObjPool = new Stack<GameObject>();
         /// <summary>
         /// All Object that Created

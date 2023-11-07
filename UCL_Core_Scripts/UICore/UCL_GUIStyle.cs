@@ -22,6 +22,9 @@ namespace UCL.Core.UI {
                         m_BoxStyle.normal.textColor = aTextCol;
                         m_BoxStyle.focused.textColor = aTextCol;
                         m_BoxStyle.hover.textColor = aTextCol;
+                        //m_BoxStyle.clipping = TextClipping.Clip;
+                        //m_BoxStyle.stretchWidth = false;
+                        m_BoxStyle.wordWrap = true;
                     }
                     return m_BoxStyle;
                 }

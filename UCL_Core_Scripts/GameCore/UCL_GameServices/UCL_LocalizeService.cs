@@ -10,6 +10,7 @@ namespace UCL.Core.Game {
     /// </summary>
     public class UCL_LocalizeService : UCL_GameService {
         #region key
+        public const string DefaultLangKey = "en";
         public const string CurLangKey = "CurLang";
         #endregion
         public static string LoadLangPath => "Install/.Language";
@@ -19,7 +20,7 @@ namespace UCL.Core.Game {
             {
                 if (Ins != null) return Ins.m_CurLang;
                 string aCurLang = PlayerPrefs.GetString(CurLangKey);
-                if (string.IsNullOrEmpty(aCurLang)) aCurLang = "Chinese";
+                if (string.IsNullOrEmpty(aCurLang)) aCurLang = DefaultLangKey;
                 return aCurLang;
             }
             set
@@ -31,7 +32,7 @@ namespace UCL.Core.Game {
         static public UCL_LocalizeService Ins = null;
 
         public string m_LoadLangPath = "Install/Language";
-        public string m_CurLang = "Chinese";
+        public string m_CurLang = DefaultLangKey;
 
         protected LocalizeData m_LocalizeSetting = null;
         public override void Init() {

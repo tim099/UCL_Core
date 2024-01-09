@@ -32,6 +32,7 @@ namespace UCL.Core.MarshalLib {
         /// <returns></returns>
         public static byte[] HexStringToByteArray(string iHexString)
         {
+            if(string.IsNullOrEmpty(iHexString)) return Array.Empty<byte>();
             byte[] aBytes = new byte[iHexString.Length / 2];
             System.Text.StringBuilder aSB = new System.Text.StringBuilder();
             for (int i = 0; i < aBytes.Length; i++)

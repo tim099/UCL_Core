@@ -264,6 +264,10 @@ namespace UCL.Core.MathLib {
         {
             return Mathf.RoundToInt(a * (1f - val) + b * val);
         }
+        public static int Lerp(long iA, long iB, float iVal)
+        {
+            return Mathf.RoundToInt(iA * (1f - iVal) + iB * iVal);
+        }
         public static float Lerp(float a, float b, float val) {
             return a * (1f - val) + b * val;
         }

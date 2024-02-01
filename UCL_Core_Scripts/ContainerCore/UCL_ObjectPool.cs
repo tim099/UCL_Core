@@ -112,9 +112,11 @@ namespace UCL.Core.Container {
         /// <returns></returns>
         public T Create(Transform iParent = null) {
             T aTarget = null;
-            if(m_ObjPool.Count > 0) {
+            while(m_ObjPool.Count > 0 && aTarget == null) {
                 aTarget = m_ObjPool.Pop();
-            } else {
+            }
+            
+            if(aTarget == null) {
                 GameObject aObj = null;
                 if (m_Template != null)
                 {

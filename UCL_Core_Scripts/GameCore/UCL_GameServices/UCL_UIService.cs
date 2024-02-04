@@ -87,21 +87,30 @@ namespace UCL.Core.Game
             T iUI = null;
             try
             {
-                var aType = typeof(T);
+                var aType = iTemplate.GetType();//typeof(T);
 
 
                 RectTransform aParent = GetRoot(iTemplate);
-
-                if (m_UIPools.ContainsKey(aType) && m_UIPools[aType].Count > 0)
+                //Debug.LogError($"CreateUI aType:{aType},m_UIPools.Keys:{m_UIPools.Keys.ConcatString(iKey => iKey.FullName)}");
+                if (m_UIPools.ContainsKey(aType))
                 {
-                    iUI = m_UIPools[aType].Dequeue() as T;
+                    var aPool = m_UIPools[aType];
+                    while(aPool.Count > 0)
+                    {
+                        iUI = aPool.Dequeue() as T;
+                        if(iUI != null)//Create from pool success
+                        {
+                            //iUI.transform.SetParent(aParent, false);
+                            iUI.transform.SetAsLastSibling();//To Top
+                            iUI.transform.localPosition = Vector3.zero;
+                            iUI.transform.localScale = Vector3.one;
+                            break;
+                        }
+                    }
 
-                    //iUI.transform.SetParent(aParent, false);
-                    iUI.transform.SetAsLastSibling();//To Top
-                    iUI.transform.localPosition = Vector3.zero;
-                    iUI.transform.localScale = Vector3.one;
                 }
-                else
+
+                if(iUI == null)
                 {
                     iUI = Instantiate(iTemplate, aParent);
                 }

@@ -62,7 +62,7 @@ namespace UCL.Core.UI
                 {
                     aIsShowField = false;
                     GUILayout.BeginHorizontal();
-                    if (!string.IsNullOrEmpty(iDisplayName)) LabelAutoSize(iDisplayName);
+                    if (!string.IsNullOrEmpty(iDisplayName)) GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     string aTypeName = aType.Name;
                     aResultObj = PopupAuto((System.Enum)iObj, iDataDic);
                     GUILayout.EndHorizontal();

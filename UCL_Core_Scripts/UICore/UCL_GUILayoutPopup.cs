@@ -100,15 +100,6 @@ namespace UCL.Core.UI
             iDataDic.SetData(aKey, aSelectedIndex);
             return aSelectedIndex;
         }
-        public static int PopupAuto(IList<string> iDisplayedOptions, int iInitIndex, UCL_ObjectDictionary iDataDic, string iKey,
-            int iSearchThreshold = 10, params GUILayoutOption[] iOptions)
-        {
-            string aKey = iKey + "_SelectedIndex";
-            int aSelectedIndex = iDataDic.GetData(aKey, iInitIndex);
-            aSelectedIndex = PopupAuto(aSelectedIndex, iDisplayedOptions, iDataDic, iKey, iSearchThreshold, iOptions);
-            iDataDic.SetData(aKey, aSelectedIndex);
-            return aSelectedIndex;
-        }
 
         /// <summary>
         /// Show pop up with a search input field
@@ -411,8 +402,8 @@ namespace UCL.Core.UI
             {
                 aDisplayNames[i] = ((System.Enum)aEnums.GetValue(i)).GetLocalizeEnumName();
             }
-
-            int aID = PopupAuto(aDisplayNames, aEnums.GetArrayIndex(iEnum), iDataDic, "Popup", iSearchThreshold, iOptions);
+            int aID = PopupAuto(aEnums.GetArrayIndex(iEnum), aDisplayNames, iDataDic, "Popup", iSearchThreshold, iOptions);
+            //int aID = PopupAuto(aDisplayNames, aEnums.GetArrayIndex(iEnum), iDataDic, "Popup", iSearchThreshold, iOptions);
 
             //T aRes = (T)System.Enum.Parse(aType, aNames[aID], true);
             return (T)aEnums.GetValue(aID);

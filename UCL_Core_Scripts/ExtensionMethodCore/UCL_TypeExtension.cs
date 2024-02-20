@@ -5,31 +5,50 @@ using System.Reflection;
 using UnityEngine;
 using System.Linq;
 public static partial class TypeExtensionMethods {
+
+    private static Assembly[] s_Assemblys = null;
+    public static Assembly[] GetAssemblies()
+    {
+        if(s_Assemblys == null)
+        {
+            s_Assemblys = AppDomain.CurrentDomain.GetAssemblies();
+        }
+        return s_Assemblys;
+    }
+    private static List<Type> s_Types = null;
+    public static List<Type> GetAllTypes()
+    {
+        if(s_Types == null)
+        {
+            var aAssemblies = GetAssemblies();
+            s_Types = aAssemblies.SelectMany(iAssembly => iAssembly.GetTypes()).ToList();
+        }
+
+        return s_Types;
+    }
     public static IEnumerable<Type> GetAllSubclass(this Type iType)
     {
-        var aAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-        var aTypes = aAssemblies.SelectMany(iAssembly => iAssembly.GetTypes());
+        var aTypes = GetAllTypes();
         var aSubclassTypes = aTypes.Where(iSubclassType => iSubclassType.IsSubclassOf(iType));
         return aSubclassTypes;
     }
     public static IEnumerable<Type> GetAllITypesAssignableFrom(this Type iType)
     {
-        var aAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-        var aTypes = aAssemblies.SelectMany(iAssembly => iAssembly.GetTypes());
+        var aTypes = GetAllTypes();
         var aSubclassTypes = aTypes.Where(iSubclassType => iType.IsAssignableFrom(iSubclassType));
         return aSubclassTypes;
     }
     public static MethodInfo[] GetAllMethods(this Type type) {
-        var methods = new List<MethodInfo>();
-        methods.AddRange(type.GetMethods());
+        var aMethods = new List<MethodInfo>();
+        aMethods.AddRange(type.GetMethods());
 
-        var base_type = type.BaseType;
-        while(base_type != null) {
-            methods.AddRange(base_type.GetMethods());
-            base_type = base_type.BaseType;
+        var aBaseType = type.BaseType;
+        while(aBaseType != null) {
+            aMethods.AddRange(aBaseType.GetMethods());
+            aBaseType = aBaseType.BaseType;
         }
 
-        return methods.ToArray();
+        return aMethods.ToArray();
     }
     //Primitive Type、Reference Type、Value Type
     //https://dotblogs.com.tw/Mystic_Pieces/2017/10/15/020448

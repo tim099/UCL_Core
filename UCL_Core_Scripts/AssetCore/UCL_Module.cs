@@ -23,11 +23,13 @@ namespace UCL.Core
         /// </summary>
         SteamMods,
     }
+
     /// <summary>
     /// UCL_Module contains info about how to load assets in this module
     /// </summary>
     public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID
     {
+        public const string FileInfoID = "FileInfos.json";
         /// <summary>
         /// StreamingAssets for BuiltinModules
         /// and PersistentDatas for Runtime
@@ -36,13 +38,23 @@ namespace UCL.Core
 
         [SerializeField] protected string m_ID;
 
+
+        protected bool m_IsLoading = false;
+        protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
         /// <summary>
         /// Unique ID of this Module
         /// </summary>
         public string ID { get => m_ID; set => m_ID = value; }
         #endregion
+        public bool IsLoading => m_IsLoading;
 
+
+        public string RelativeSavePath => UCL_ModulePath.GetBuiltinModuleRelativePath(ID);
+        protected string RelativeFileInfosPath => Path.Combine(SavePath, FileInfoID);
+
+        public string SavePath => UCL_ModulePath.GetBuiltinModulePath(ID);
+        protected string FileInfosPath => Path.Combine(SavePath, FileInfoID);
         public void Init(string iID)
         {
             m_ID = iID;
@@ -62,9 +74,8 @@ namespace UCL.Core
         /// </summary>
         public void Save()
         {
-            string aFolderPath = UCL_ModuleService.Ins.ModuleConfig.GetBuiltinModulesPath(m_AssetType);
             //Debug.LogError($"aFolderPath:{aFolderPath}");
-            string aPath = Path.Combine(aFolderPath, ID);
+            string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
             if(!Directory.Exists(aPath))
             {
                 Directory.CreateDirectory(aPath);
@@ -78,33 +89,101 @@ namespace UCL.Core
                 {
                     Directory.CreateDirectory(aResFolder);
                     string aResReadMe = "Please put Mod resources in this folder";
-                    File.WriteAllText(Path.Combine(aResFolder,"Readme.txt"), aResReadMe);
+                    File.WriteAllText(Path.Combine(aResFolder, "Readme.txt"), aResReadMe);
                 }
+                m_FileInfo.m_TargetDirectory = RelativeSavePath;
+                m_FileInfo.RefreshFileInfos();
+                File.WriteAllText(FileInfosPath, m_FileInfo.SerializeToJson().ToJsonBeautify());
             }
         }
-        public async UniTask Load(string iFolderPath)
+        public void Load()
         {
-            switch (m_AssetType)
+            if (m_IsLoading)
+            {
+                return;
+            }
+            LoadAsync().Forget();
+        }
+        /// <summary>
+        /// Install to Application.persistentDataPath
+        /// </summary>
+        public void Install()
+        {
+            //Debug.LogError($"Install m_AssetType:{m_AssetType},Application.platform:{Application.platform}");
+            switch (m_AssetType)//Only install StreamingAssets
             {
                 case UCL_AssetType.StreamingAssets:
                     {
-                        break;
-                    }
-                case UCL_AssetType.PersistentDatas:
-                    {
-                        string aPath = Path.Combine(iFolderPath, ID);
-                        if (Directory.Exists(aPath))
+                        switch (Application.platform)
                         {
-                            var aConfigPath = GetConfigPath(aPath);
-                            string aJson = File.ReadAllText(aConfigPath);
-                            JsonData aJsonData = JsonData.ParseJson(aJson);
-                            DeserializeFromJson(aJsonData);
+                            case RuntimePlatform.WindowsEditor:
+                            case RuntimePlatform.IPhonePlayer:
+                            case RuntimePlatform.WindowsPlayer:
+                                {
+                                    var aPath = UCL_ModulePath.GetBuiltinModulePath(ID);//Get the mod folder path
+                                    var aInstallPath = UCL_ModulePath.GetModulePath(ID);
+                                    Debug.LogError($"BuiltinPath:{aPath}");
+                                    Debug.LogError($"InstallPath:{aInstallPath}");
+                                    if (Directory.Exists(aPath))
+                                    {
+                                        UCL.Core.FileLib.Lib.CopyDirectory(aPath, aInstallPath);
+                                    }
+                                    break;
+                                }
                         }
+
+
+                        //TODO StreamingAssets on Android can't load by File System
                         break;
                     }
             }
+        }
+        protected async UniTask LoadAsync()
+        {
+            m_IsLoading = true;
+            try
+            {
+                string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
+                if (Application.isEditor)
+                {
+                    var aConfigPath = GetConfigPath(aPath);
+                    string aJson = File.ReadAllText(aConfigPath);
+                    DeserializeFromJson(JsonData.ParseJson(aJson));
 
+                    //m_FileInfo.m_TargetDirectory = aPath;
+                    //m_FileInfo.RefreshFileInfos();
+                    //File.WriteAllText(FileInfosPath, m_FileInfo.SerializeToJson().ToJsonBeautify());
+                }
+                else
+                {
+                    switch (m_AssetType)
+                    {
+                        case UCL_AssetType.StreamingAssets:
+                            {
+                                break;
+                            }
+                        case UCL_AssetType.PersistentDatas:
+                            {
+                                if (Directory.Exists(aPath))
+                                {
+                                    var aConfigPath = GetConfigPath(aPath);
+                                    string aJson = File.ReadAllText(aConfigPath);
+                                    JsonData aJsonData = JsonData.ParseJson(aJson);
+                                    DeserializeFromJson(aJsonData);
+                                }
+                                break;
+                            }
+                    }
+                }
+            }
+            catch(System.Exception ex)
+            {
 
+            }
+            finally
+            {
+                m_IsLoading = false;
+            }
 
         }
         public override JsonData SerializeToJson()

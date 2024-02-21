@@ -5,17 +5,52 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UCL.Core.JsonLib;
+using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
 
 namespace UCL.Core
 {
+    public static class UCL_ModulePath
+    {
+        public const string RootRelativePath = ".ModuleService";
+        public const string ModulesRootRelativePath = "ModulesRoot";
+        #region RelativePath
+        public static string BuiltinModulesRelativePath => Path.Combine(RootRelativePath, "BuiltinModules");
+        public static string ModulesRelativePath => Path.Combine(ModulesRootRelativePath, "Modules");
+
+        public static string GetBuiltinModuleRelativePath(string iID) => Path.Combine(BuiltinModulesRelativePath, iID);
+
+        public static string GetModuleRelativePath(string iID) => Path.Combine(ModulesRelativePath, iID);
+        #endregion
+
+        #region Builtin
+        public static string BuiltinModulesPath => Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.StreamingAssets), BuiltinModulesRelativePath);
+
+        public static string GetBuiltinModulePath(string iID)
+        {
+            return Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.StreamingAssets), GetBuiltinModuleRelativePath(iID));
+        }
+        #endregion
+
+        #region Builtin
+        public static string ModulesPath => Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.PersistentDatas), ModulesRelativePath);
+
+        public static string GetModulePath(string iID)
+        {
+            string aFolder = UCL_AssetPath.GetPath(UCL_AssetType.PersistentDatas);
+            string aModuleRelativePath = GetModuleRelativePath(iID);
+            //Debug.LogError($"aFolder:{aFolder},aModuleRelativePath:{aModuleRelativePath}");
+            return Path.Combine(aFolder, aModuleRelativePath);
+        }
+        #endregion
+    }
     /// <summary>
     /// Responsible for all operations related to Module
     /// </summary>
     public class UCL_ModuleService//: UCLI_FieldOnGUI
     {
-        public const string RootRelativePath = ".ModuleService";
+        public const string CoreModuleID = "Core";
         public class ModuleEntry
         {
             public string m_ID;
@@ -27,8 +62,6 @@ namespace UCL.Core
         }
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
-            public const string CoreModuleID = "Core";
-
             public string m_CurrentEditModule = string.Empty;
 
             /// <summary>
@@ -40,8 +73,7 @@ namespace UCL.Core
             public string m_Version = "1.0.0";
 
 
-            virtual protected string BuiltinModulesPath => GetBuiltinModulesPath(UCL_AssetType.StreamingAssets);
-            virtual public string SaveRelativePath => Path.Combine(RootRelativePath, "BuiltinModules");
+            virtual public string SaveRelativePath => UCL_ModulePath.BuiltinModulesRelativePath;
             virtual public string GetBuiltinModulesPath(UCL_AssetType iAssetType)
             {
                 var aPath = UCL_AssetPath.GetPath(iAssetType);
@@ -51,6 +83,22 @@ namespace UCL.Core
             {
                 //GUILayout.Label("Config", UCL_GUIStyle.LabelStyle);
                 UCL_GUILayout.DrawField(this, iDataDic, "Config");
+                using(var aScope = new GUILayout.HorizontalScope())
+                {
+                    List<string> aModules = new List<string>();
+                    aModules.Add(string.Empty);//Null
+                    aModules.Append(m_BuiltinModules);
+                    if (!string.IsNullOrEmpty(m_CurrentEditModule))
+                    {
+                        if (GUILayout.Button("Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(150)))
+                        {
+
+                        }
+                    }
+                    m_CurrentEditModule = UCL_GUILayout.PopupAuto(m_CurrentEditModule, aModules, iDataDic, "SelectModules");
+
+                }
+
             }
             public override JsonData SerializeToJson()
             {
@@ -58,13 +106,13 @@ namespace UCL.Core
 //#endif
                 if (Application.isEditor)//Check streamming assets for BuiltinModules
                 {
-                    var aBuiltinModulesPath = BuiltinModulesPath;
+                    var aBuiltinModulesPath = UCL_ModulePath.BuiltinModulesPath;
                     if (!Directory.Exists(aBuiltinModulesPath))//Init
                     {
                         InitBuiltinModules();
                     }
                     //Debug.LogError($"aBuiltinModulesPath:{aBuiltinModulesPath}");
-                    var aDirs = UCL.Core.FileLib.Lib.GetDirectories(aBuiltinModulesPath, iRemoveRootPath : true);
+                    var aDirs = UCL.Core.FileLib.Lib.GetDirectories(aBuiltinModulesPath, iSearchOption: SearchOption.TopDirectoryOnly, iRemoveRootPath : true);
                     //Debug.LogError($"aDirs:{aDirs.ConcatString()}");
                     m_BuiltinModules = aDirs.ToList();
                     if (!m_BuiltinModules.Contains(CoreModuleID))//Create Core Module!!
@@ -77,7 +125,7 @@ namespace UCL.Core
             }
             private void InitBuiltinModules()
             {
-                var aBuiltinModulesPath = BuiltinModulesPath;
+                var aBuiltinModulesPath = UCL_ModulePath.BuiltinModulesPath;
                 if (!Directory.Exists(aBuiltinModulesPath))
                 {
                     Directory.CreateDirectory(aBuiltinModulesPath);
@@ -90,6 +138,13 @@ namespace UCL.Core
                 aModule.Init(iID);
                 //var aPath = GetBuiltinModulesPath(aModule.m_AssetType);
                 aModule.Save();//aPath
+                return aModule;
+            }
+            public UCL_Module LoadModule(string iID)
+            {
+                UCL_Module aModule = new UCL_Module();
+                aModule.ID = iID;
+                aModule.Load();
                 return aModule;
             }
         }
@@ -121,24 +176,9 @@ namespace UCL.Core
         protected bool m_LoadingConfig = false;
         protected Config m_Config = new Config();
 
+        protected UCL_Module m_CurEditModule = null;
 
-        /// <summary>
-        /// 暫定固定會有一個核心設定模組 放在StreammingAssets
-        /// 只有在Editor內能夠編輯 Build出來的版本只能夠讀取(用UnityWebRequest讀取StreammingAssets 避免跨平台出問題)
-        /// </summary>
-        virtual protected void Init()
-        {
-            InitAsync().Forget();
-        }
 
-        virtual protected async UniTask InitAsync()
-        {
-            //Debug.LogError("InitAsync()");
-            //string aStr = await UCL_StreamingAssets.LoadString(".Install/CommonData/ATS_IconSprite/Icon_Heal.json");
-            //Debug.LogError($"InitAsync() End aStr:{aStr}");
-            await LoadConfig();
-            m_Initialized = true;
-        }
         virtual protected string SavePath
         {
             get
@@ -152,7 +192,33 @@ namespace UCL.Core
                 return GetSavePath(UCL_AssetType.PersistentDatas);//save to Application.persistentDataPath path
             }
         }
-        virtual protected string SaveRelativePath => Path.Combine(RootRelativePath, "Config.json");
+        virtual protected string SaveRelativePath => Path.Combine(UCL_ModulePath.RootRelativePath, "Config.json");
+
+
+        /// <summary>
+        /// 暫定固定會有一個核心設定模組 放在StreammingAssets
+        /// 只有在Editor內能夠編輯 Build出來的版本只能夠讀取(用UnityWebRequest讀取StreammingAssets 避免跨平台出問題)
+        /// </summary>
+        virtual protected void Init()
+        {
+            InitAsync().Forget();
+        }
+
+        virtual protected async UniTask InitAsync()
+        {
+            var aModulesPath = UCL_ModulePath.ModulesPath;
+            if (!Directory.Exists(aModulesPath))
+            {
+                Directory.CreateDirectory(aModulesPath);
+            }
+            //Debug.LogError("InitAsync()");
+            //string aStr = await UCL_StreamingAssets.LoadString(".Install/CommonData/ATS_IconSprite/Icon_Heal.json");
+            //Debug.LogError($"InitAsync() End aStr:{aStr}");
+            await LoadConfig();
+            //Cheack and Install all Builtin Module to PersistantData path
+            m_Initialized = true;
+        }
+
         virtual protected string GetSavePath(UCL_AssetType iAssetType)
         {
             var aPath = UCL_AssetPath.GetPath(iAssetType);
@@ -236,8 +302,53 @@ namespace UCL.Core
                     LoadConfig().Forget();
                 }
             }
-            
+
             m_Config.OnGUI(iDataDic.GetSubDic("Config"));
+            string aCurrentEditModule = m_Config.m_CurrentEditModule;
+            if (m_CurEditModule != null && m_CurEditModule.ID != aCurrentEditModule)
+            {
+                m_CurEditModule = null;//Clear
+            }
+
+            if (m_CurEditModule == null && !string.IsNullOrEmpty(aCurrentEditModule))
+            {
+                m_CurEditModule = m_Config.LoadModule(aCurrentEditModule);
+            }
+            if(m_CurEditModule != null && !m_CurEditModule.IsLoading)
+            {
+                bool aLoadModule = false;
+                using (var aScope = new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Save Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_CurEditModule.Save();
+                    }
+                    if (GUILayout.Button("Load Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        aLoadModule = true;
+                    }
+                    if (GUILayout.Button("Install Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        //Debug.LogError("Install Module");
+                        m_CurEditModule.Install();
+                    }
+#if UNITY_STANDALONE_WIN
+                    if (GUILayout.Button(UCL_LocalizeManager.Get($"Open Module Folder"), UCL_GUIStyle.ButtonStyle))
+                    {
+                        UCL.Core.FileLib.WindowsLib.OpenExplorer(UCL_ModulePath.ModulesPath);
+                    }
+#endif
+                }
+
+
+
+                UCL_GUILayout.DrawObjectData(m_CurEditModule, iDataDic.GetSubDic("CurEditModule"), "CurEditModule");
+                if (aLoadModule)
+                {
+                    m_CurEditModule = null;
+                }
+                
+            }
         }
     }
 }

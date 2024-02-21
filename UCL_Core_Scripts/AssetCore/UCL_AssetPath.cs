@@ -24,7 +24,7 @@ namespace UCL.Core
                     {
                         return Application.streamingAssetsPath;
                     }
-                case UCL_AssetType.PersistentData:
+                case UCL_AssetType.PersistentDatas:
                     {
                         return Application.persistentDataPath;
                     }

@@ -437,7 +437,7 @@ namespace UCL.Core.FileLib
             var aDirs = Directory.GetDirectories(iPath, iSearchPattern, iSearchOption);
             if (iRemoveRootPath)
             {
-                for(int i=0; i< aDirs.Length; i++)
+                for (int i = 0; i < aDirs.Length; i++)
                 {
                     aDirs[i] = GetFileName(aDirs[i]);
                 }

@@ -120,10 +120,11 @@ namespace UCL.Core
                             case RuntimePlatform.IPhonePlayer:
                             case RuntimePlatform.WindowsPlayer:
                                 {
+                                    //System.IO.Compression.ZipFile.ExtractToDirectory
                                     var aPath = UCL_ModulePath.GetBuiltinModulePath(ID);//Get the mod folder path
                                     var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-                                    Debug.LogError($"BuiltinPath:{aPath}");
-                                    Debug.LogError($"InstallPath:{aInstallPath}");
+                                    //Debug.LogError($"BuiltinPath:{aPath}");
+                                    //Debug.LogError($"InstallPath:{aInstallPath}");
                                     if (Directory.Exists(aPath))
                                     {
                                         UCL.Core.FileLib.Lib.CopyDirectory(aPath, aInstallPath);

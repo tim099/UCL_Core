@@ -7,8 +7,13 @@ namespace UCL.Core
 {
     public interface UCLI_ID
     {
+        /// <summary>
+        /// Unique ID of this Data
+        /// </summary>
         string ID { get; set; }
     }
+
+
     public class UCL_Asset<T> : UnityJsonSerializable, UCLI_ID where T : class, new()
     {
         #region static

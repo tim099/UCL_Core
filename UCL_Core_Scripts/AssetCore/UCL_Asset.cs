@@ -215,7 +215,12 @@ namespace UCL.Core
         /// <param name="iID"></param>
         public void Delete(string iID)
         {
-            Debug.LogError($"TODO {GetType().Name}.Delete {iID}");
+            //Debug.LogError($"TODO {GetType().Name}.Delete {iID}");
+            string aPath = GetSavePath(iID);
+            if (File.Exists(aPath))
+            {
+                File.Delete(aPath);
+            }
             //FileDatas.DeleteFile(iID);
             ClearCache();
         }
@@ -293,8 +298,8 @@ namespace UCL.Core
         virtual public string ID { get; set; }
 
 
-        private CommonDataMeta m_CommonDataMeta = null;
-        public CommonDataMeta CommonDataMetaIns
+        private UCL_AssetMeta m_CommonDataMeta = null;
+        public UCL_AssetMeta CommonDataMetaIns
         {
             get
             {
@@ -305,9 +310,9 @@ namespace UCL.Core
                 return m_CommonDataMeta;
             }
         }
-        virtual public CommonDataMeta CreateCommonDataMeta()
+        virtual public UCL_AssetMeta CreateCommonDataMeta()
         {
-            CommonDataMeta aCommonDataMeta = new CommonDataMeta();
+            UCL_AssetMeta aCommonDataMeta = new UCL_AssetMeta();
             
             aCommonDataMeta.Init(GetType().FullName, SaveCommonDataMetaJson);
 

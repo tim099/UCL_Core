@@ -42,7 +42,16 @@ namespace UCL.Core.Page
         /// <returns></returns>
         static public UCL_OptionPage ConfirmDelete(string iDeleteTarget, System.Action iConfirmAct)
         {
-            var aPage = new UCL_OptionPage(UCL_LocalizeManager.Get("ConfirmDelete", iDeleteTarget), string.Empty
+            string aTitle = string.Empty;
+            if (UCL_LocalizeManager.ContainsKey(iDeleteTarget))
+            {
+                aTitle = UCL_LocalizeManager.Get("ConfirmDelete", iDeleteTarget);
+            }
+            else
+            {
+                aTitle = $"Delete {iDeleteTarget}?";
+            }
+            var aPage = new UCL_OptionPage(aTitle, string.Empty
                         , new ButtonData(UCL_LocalizeManager.Get("Delete"), () => {
                             iConfirmAct?.Invoke();
                         }, UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red))

@@ -25,7 +25,7 @@ namespace UCL.Core.Page
         protected UCLI_Preview m_Preview = null;
         protected string m_CreateDes = string.Empty;
         protected string m_TypeName = string.Empty;
-        protected CommonDataMeta m_Meta = null;
+        protected UCL_AssetMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
         public override bool IsWindow => true;
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
@@ -131,7 +131,7 @@ namespace UCL.Core.Page
         /// <param name="FontSize"></param>
         static public void DrawSelectTargetList(IList<string> iIDs, UCL.Core.UCL_ObjectDictionary iDic,
             System.Action<string> iEditAct, System.Action<string> iPreviewAct, System.Action<string> iDeleteAct,
-            CommonDataMeta iMeta = null,
+            UCL_AssetMeta iMeta = null,
             int FontSize = 20)
         {
             GUILayout.BeginVertical();

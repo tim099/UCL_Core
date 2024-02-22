@@ -15,7 +15,7 @@ namespace UCL.Core
 {
     public static class FileMetaExtensions
     {
-        public static string GetGroupID(this CommonDataMeta.FileMeta iFileMeta)
+        public static string GetGroupID(this UCL_AssetMeta.FileMeta iFileMeta)
         {
             if(iFileMeta == null)
             {
@@ -24,7 +24,7 @@ namespace UCL.Core
             return iFileMeta.m_Group;
         }
     }
-    public class CommonDataMeta : UnityJsonSerializable, UCLI_NameOnGUI
+    public class UCL_AssetMeta : UnityJsonSerializable, UCLI_NameOnGUI
     {
         /// <summary>
         /// Save in PlayerPrefs
@@ -56,7 +56,7 @@ namespace UCL.Core
 
             public Dictionary<string, GroupData> m_GroupDatas = new();
 
-            public void OnGUI(UCL_ObjectDictionary iDic, CommonDataMeta iCommonDataMeta)
+            public void OnGUI(UCL_ObjectDictionary iDic, UCL_AssetMeta iCommonDataMeta)
             {
                 var aExternalGroups = iCommonDataMeta.m_Groups;
                 List<string> aDeletedKeys = new List<string>();

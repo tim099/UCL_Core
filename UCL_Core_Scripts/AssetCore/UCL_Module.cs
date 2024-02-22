@@ -30,22 +30,28 @@ namespace UCL.Core
     public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID
     {
         public const string FileInfoID = "FileInfos.json";
+        public const string NotInstalledID = "None";
+        public class Config : UCL.Core.JsonLib.UnityJsonSerializable
+        {
+            public string m_Version = "1.0.0";
+            public string m_ID;
+        }
         /// <summary>
         /// StreamingAssets for BuiltinModules
         /// and PersistentDatas for Runtime
         /// </summary>
-        public UCL_AssetType m_AssetType = UCL_AssetType.StreamingAssets;
+        public UCL_AssetType AssetType { get ; set ; }
 
-        [SerializeField] protected string m_ID;
-
+        public Config m_Config = new Config();
 
         protected bool m_IsLoading = false;
+        protected bool m_Installing = false;
         protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
         /// <summary>
         /// Unique ID of this Module
         /// </summary>
-        public string ID { get => m_ID; set => m_ID = value; }
+        public string ID { get => m_Config.m_ID; set => m_Config.m_ID = value; }
         #endregion
         public bool IsLoading => m_IsLoading;
 
@@ -55,17 +61,10 @@ namespace UCL.Core
 
         public string SavePath => UCL_ModulePath.GetBuiltinModulePath(ID);
         protected string FileInfosPath => Path.Combine(SavePath, FileInfoID);
-        public void Init(string iID)
+        public void Init(string iID, UCL_AssetType iAssetType)
         {
-            m_ID = iID;
-            if (Application.isEditor)//Create BuiltinModule in streamming assets
-            {
-                m_AssetType = UCL_AssetType.StreamingAssets;
-            }
-            else//Create Module in PersistentDatas
-            {
-                m_AssetType = UCL_AssetType.PersistentDatas;
-            }
+            ID = iID;
+            AssetType = iAssetType;
         }
         protected string GetConfigPath(string iFolderPath) => Path.Combine(iFolderPath, "Config.json");
         protected string GetResourcePath(string iFolderPath) => Path.Combine(iFolderPath, "ModResources");
@@ -81,7 +80,7 @@ namespace UCL.Core
                 Directory.CreateDirectory(aPath);
             }
             var aConfigPath = GetConfigPath(aPath);
-            File.WriteAllText(aConfigPath, SerializeToJson().ToJsonBeautify());//SaveConfig
+            File.WriteAllText(aConfigPath, m_Config.SerializeToJson().ToJsonBeautify());//SaveConfig
             if (Application.isEditor)
             {
                 var aResFolder = GetResourcePath(aPath);
@@ -96,81 +95,166 @@ namespace UCL.Core
                 File.WriteAllText(FileInfosPath, m_FileInfo.SerializeToJson().ToJsonBeautify());
             }
         }
-        public void Load()
+        public void Load(UCL_AssetType iAssetType)
         {
             if (m_IsLoading)
             {
                 return;
             }
+            AssetType = iAssetType;
             LoadAsync().Forget();
+        }
+        public string GetFolderPath(string iRelativeFolderPath)
+        {
+            string aPath = Path.Combine(SavePath, iRelativeFolderPath);
+            //Debug.LogError($"GetFolderPath SavePath:{SavePath}");
+            //Debug.LogError($"GetFolderPath aPath:{aPath}");
+            if (!Directory.Exists(aPath))
+            {
+                Directory.CreateDirectory(aPath);
+            }
+            return aPath;
+        }
+        protected Config LoadInstalledConfig()
+        {
+            Config aConfig = new Config();
+            var aInstallPath = UCL_ModulePath.GetModulePath(ID);
+            string aConfigPath = GetConfigPath(aInstallPath);
+            if (File.Exists(aConfigPath))//Get config
+            {
+                string aJson = File.ReadAllText(aConfigPath);
+                aConfig.DeserializeFromJson(JsonData.ParseJson(aJson));
+            }
+            else
+            {
+                aConfig.m_Version = NotInstalledID;//Not Installed!!
+            }
+            return aConfig;
+        }
+        protected void SaveInstalledConfig(Config iConfig)
+        {
+            var aInstallPath = UCL_ModulePath.GetModulePath(ID);
+            if (!Directory.Exists(aInstallPath))//Not installed yet
+            {
+                return;
+            }
+            string aConfigPath = GetConfigPath(aInstallPath);
+            File.WriteAllText(aConfigPath, iConfig.SerializeToJson().ToJsonBeautify());
+        }
+        /// <summary>
+        /// Check if this Module is installed, if not than install this module
+        /// </summary>
+        /// <returns></returns>
+        public async UniTask CheckAndInstall()
+        {
+            if (m_IsLoading)
+            {
+                await UniTask.WaitUntil(() => !m_IsLoading);
+            }
+
+            var aInstallPath = UCL_ModulePath.GetModulePath(ID);
+            bool aNeedInstall = true;
+            if(Directory.Exists(aInstallPath))//Installed, check version
+            {
+                Config aConfig = LoadInstalledConfig();
+                if (aConfig.m_Version == m_Config.m_Version)//Same Version!!
+                {
+                    aNeedInstall = false;
+                }
+                Debug.LogError($"Version:{m_Config.m_Version},aConfig.m_Version:{aConfig.m_Version},aNeedInstall:{aNeedInstall}");
+            }
+            if(aNeedInstall)
+            {
+                await Install();
+            }
         }
         /// <summary>
         /// Install to Application.persistentDataPath
         /// </summary>
-        public void Install()
+        public async UniTask Install()
         {
-            //Debug.LogError($"Install m_AssetType:{m_AssetType},Application.platform:{Application.platform}");
-            switch (m_AssetType)//Only install StreamingAssets
+            if(m_Installing)
             {
-                case UCL_AssetType.StreamingAssets:
-                    {
-                        switch (Application.platform)
-                        {
-                            case RuntimePlatform.WindowsEditor:
-                            case RuntimePlatform.IPhonePlayer:
-                            case RuntimePlatform.WindowsPlayer:
-                                {
-                                    //System.IO.Compression.ZipFile.ExtractToDirectory
-                                    var aPath = UCL_ModulePath.GetBuiltinModulePath(ID);//Get the mod folder path
-                                    var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-                                    //Debug.LogError($"BuiltinPath:{aPath}");
-                                    //Debug.LogError($"InstallPath:{aInstallPath}");
-                                    if (Directory.Exists(aPath))
-                                    {
-                                        UCL.Core.FileLib.Lib.CopyDirectory(aPath, aInstallPath);
-                                    }
-                                    break;
-                                }
-                        }
-
-
-                        //TODO StreamingAssets on Android can't load by File System
-                        break;
-                    }
+                return;
             }
+            if (m_IsLoading)
+            {
+                await UniTask.WaitUntil(() => !m_IsLoading);
+            }
+            m_Installing = true;
+            try
+            {
+                //Debug.LogError($"Install m_AssetType:{m_AssetType},Application.platform:{Application.platform}");
+                switch (AssetType)//Only install StreamingAssets(Builtin)
+                {
+                    case UCL_AssetType.StreamingAssets:
+                        {
+                            switch (Application.platform)
+                            {
+                                case RuntimePlatform.WindowsEditor:
+                                case RuntimePlatform.IPhonePlayer:
+                                case RuntimePlatform.WindowsPlayer:
+                                    {
+                                        //System.IO.Compression.ZipFile.ExtractToDirectory
+                                        var aPath = UCL_ModulePath.GetBuiltinModulePath(ID);//Get the mod folder path
+                                        var aInstallPath = UCL_ModulePath.GetModulePath(ID);
+                                        //Debug.LogError($"BuiltinPath:{aPath}");
+                                        //Debug.LogError($"InstallPath:{aInstallPath}");
+                                        if (Directory.Exists(aPath))
+                                        {
+                                            UCL.Core.FileLib.Lib.CopyDirectory(aPath, aInstallPath);
+                                        }
+                                        break;
+                                    }
+                            }
+
+
+                            //TODO StreamingAssets on Android can't load by File System
+                            break;
+                        }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
+            }
+            finally
+            {
+                m_Installing = false;
+            }
+
         }
         protected async UniTask LoadAsync()
         {
             m_IsLoading = true;
             try
             {
-                string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
-                if (Application.isEditor)
-                {
-                    var aConfigPath = GetConfigPath(aPath);
-                    string aJson = File.ReadAllText(aConfigPath);
-                    DeserializeFromJson(JsonData.ParseJson(aJson));
 
-                    //m_FileInfo.m_TargetDirectory = aPath;
-                    //m_FileInfo.RefreshFileInfos();
-                    //File.WriteAllText(FileInfosPath, m_FileInfo.SerializeToJson().ToJsonBeautify());
-                }
-                else
+                //if (Application.isEditor)
+                //{
+                //    string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
+                //    var aConfigPath = GetConfigPath(aPath);
+                //    string aJson = File.ReadAllText(aConfigPath);
+                //    m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
+                //}
+                //else
                 {
-                    switch (m_AssetType)
+                    switch (AssetType)
                     {
                         case UCL_AssetType.StreamingAssets:
                             {
+                                string aJson = await UCL_StreamingAssets.LoadString(GetConfigPath(UCL_ModulePath.GetBuiltinModuleRelativePath(ID)));
+                                m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
                                 break;
                             }
                         case UCL_AssetType.PersistentDatas:
                             {
+                                string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
                                 if (Directory.Exists(aPath))
                                 {
                                     var aConfigPath = GetConfigPath(aPath);
                                     string aJson = File.ReadAllText(aConfigPath);
-                                    JsonData aJsonData = JsonData.ParseJson(aJson);
-                                    DeserializeFromJson(aJsonData);
+                                    m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
                                 }
                                 break;
                             }
@@ -179,17 +263,13 @@ namespace UCL.Core
             }
             catch(System.Exception ex)
             {
-
+                Debug.LogException(ex);
             }
             finally
             {
                 m_IsLoading = false;
             }
 
-        }
-        public override JsonData SerializeToJson()
-        {
-            return base.SerializeToJson();
         }
     }
 }

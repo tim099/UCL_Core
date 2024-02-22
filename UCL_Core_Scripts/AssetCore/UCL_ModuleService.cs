@@ -117,7 +117,7 @@ namespace UCL.Core
                     m_BuiltinModules = aDirs.ToList();
                     if (!m_BuiltinModules.Contains(CoreModuleID))//Create Core Module!!
                     {
-                        CreateModule(CoreModuleID);
+                        CreateModule(CoreModuleID, UCL_AssetType.StreamingAssets);
                         m_BuiltinModules.Add(CoreModuleID);
                     }
                 }
@@ -132,19 +132,19 @@ namespace UCL.Core
                 }
                 
             }
-            public UCL_Module CreateModule(string iID)
+            public UCL_Module CreateModule(string iID, UCL_AssetType iAssetType)
             {
                 UCL_Module aModule = new UCL_Module();
-                aModule.Init(iID);
+                aModule.Init(iID, iAssetType);
                 //var aPath = GetBuiltinModulesPath(aModule.m_AssetType);
                 aModule.Save();//aPath
                 return aModule;
             }
-            public UCL_Module LoadModule(string iID)
+            public UCL_Module LoadModule(string iID, UCL_AssetType iAssetType)
             {
                 UCL_Module aModule = new UCL_Module();
                 aModule.ID = iID;
-                aModule.Load();
+                aModule.Load(iAssetType);
                 return aModule;
             }
         }
@@ -159,6 +159,13 @@ namespace UCL.Core
                     s_Ins.Init();
                 }
                 return s_Ins;
+            }
+        }
+        public static UCL_Module CurEditModule
+        {
+            get
+            {
+                return Ins.m_CurEditModule;
             }
         }
         protected static UCL_ModuleService s_Ins = null;
@@ -177,7 +184,7 @@ namespace UCL.Core
         protected Config m_Config = new Config();
 
         protected UCL_Module m_CurEditModule = null;
-
+        protected List<UCL_Module> m_LoadedModules = new List<UCL_Module>();
 
         virtual protected string SavePath
         {
@@ -215,6 +222,24 @@ namespace UCL.Core
             //string aStr = await UCL_StreamingAssets.LoadString(".Install/CommonData/ATS_IconSprite/Icon_Heal.json");
             //Debug.LogError($"InitAsync() End aStr:{aStr}");
             await LoadConfig();
+            foreach(var aModuleID in m_Config.m_BuiltinModules)//Check if BuiltinModules installed
+            {
+                var aModule = m_Config.LoadModule(aModuleID, UCL_AssetType.StreamingAssets);
+                await aModule.CheckAndInstall();
+                if (Application.isEditor)
+                {
+                    m_LoadedModules.Add(aModule);
+                }
+            }
+            if (!Application.isEditor)//Runtime using Modules from PersistentDatas
+            {
+                foreach (var aModuleID in m_Config.m_BuiltinModules)
+                {
+                    var aModule = m_Config.LoadModule(aModuleID, UCL_AssetType.PersistentDatas);
+                    m_LoadedModules.Add(aModule);
+                }
+            }
+
             //Cheack and Install all Builtin Module to PersistantData path
             m_Initialized = true;
         }
@@ -288,6 +313,15 @@ namespace UCL.Core
             JsonData aJsonData = JsonData.ParseJson(iJson);
             m_Config.DeserializeFromJson(aJsonData);
         }
+        virtual public string GetFolderPath(string iRelativeFolderPath)
+        {
+            if(m_CurEditModule == null)
+            {
+                return string.Empty;
+            }
+            return m_CurEditModule.GetFolderPath(iRelativeFolderPath);
+            //return $".Install/CommonData/{iType.Name}";
+        }
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
             using(var aScope = new GUILayout.HorizontalScope("box"))
@@ -312,7 +346,7 @@ namespace UCL.Core
 
             if (m_CurEditModule == null && !string.IsNullOrEmpty(aCurrentEditModule))
             {
-                m_CurEditModule = m_Config.LoadModule(aCurrentEditModule);
+                m_CurEditModule = m_Config.LoadModule(aCurrentEditModule, UCL_AssetType.StreamingAssets);
             }
             if(m_CurEditModule != null && !m_CurEditModule.IsLoading)
             {
@@ -330,7 +364,7 @@ namespace UCL.Core
                     if (GUILayout.Button("Install Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         //Debug.LogError("Install Module");
-                        m_CurEditModule.Install();
+                        m_CurEditModule.Install().Forget();
                     }
 #if UNITY_STANDALONE_WIN
                     if (GUILayout.Button(UCL_LocalizeManager.Get($"Open Module Folder"), UCL_GUIStyle.ButtonStyle))

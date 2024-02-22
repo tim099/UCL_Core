@@ -4,7 +4,7 @@ using UCL.Core;
 using UCL.Core.JsonLib;
 using UnityEngine;
 
-namespace ATS
+namespace UCL.Core
 {
     /// <summary>
     /// 預覽介面

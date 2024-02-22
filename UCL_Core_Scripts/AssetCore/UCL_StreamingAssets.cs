@@ -85,7 +85,6 @@ namespace UCL.Core
         public static async Task<string> LoadString(string iPath)
         {
             var aLoadingRequest = UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, iPath));
-            await Task.Yield();
             var aOperation = aLoadingRequest.SendWebRequest();
 
             var aResult = await aOperation;

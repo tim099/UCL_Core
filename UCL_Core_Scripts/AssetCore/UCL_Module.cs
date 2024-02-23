@@ -56,11 +56,12 @@ namespace UCL.Core
         public bool IsLoading => m_IsLoading;
 
 
-        public string RelativeSavePath => UCL_ModulePath.GetBuiltinModuleRelativePath(ID);
-        protected string RelativeFileInfosPath => Path.Combine(SavePath, FileInfoID);
+        public string RelativeModulePath => UCL_ModuleService.PathConfig.GetModulesRelativePath(ID);
+        protected string RelativeFileInfosPath => Path.Combine(RelativeModulePath, FileInfoID);
 
-        public string SavePath => UCL_ModulePath.GetBuiltinModulePath(ID);
-        protected string FileInfosPath => Path.Combine(SavePath, FileInfoID);
+        public string ModulePath => UCL_ModuleService.PathConfig.GetModulesPath(ID);
+
+        protected string FileInfosPath => Path.Combine(ModulePath, FileInfoID);
         public void Init(string iID, UCL_AssetType iAssetType)
         {
             ID = iID;
@@ -90,7 +91,7 @@ namespace UCL.Core
                     string aResReadMe = "Please put Mod resources in this folder";
                     File.WriteAllText(Path.Combine(aResFolder, "Readme.txt"), aResReadMe);
                 }
-                m_FileInfo.m_TargetDirectory = RelativeSavePath;
+                m_FileInfo.m_TargetDirectory = RelativeModulePath;
                 m_FileInfo.RefreshFileInfos();
                 File.WriteAllText(FileInfosPath, m_FileInfo.SerializeToJson().ToJsonBeautify());
             }
@@ -106,7 +107,7 @@ namespace UCL.Core
         }
         public string GetFolderPath(string iRelativeFolderPath)
         {
-            string aPath = Path.Combine(SavePath, iRelativeFolderPath);
+            string aPath = Path.Combine(ModulePath, iRelativeFolderPath);
             //Debug.LogError($"GetFolderPath SavePath:{SavePath}");
             //Debug.LogError($"GetFolderPath aPath:{aPath}");
             if (!Directory.Exists(aPath))

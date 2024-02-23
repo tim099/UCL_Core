@@ -239,7 +239,7 @@ namespace UCL.Core
                 JsonData aConfigJson = await m_PathConfig.LoadConfig();
                 if(aConfigJson != null)
                 {
-                    LoadConfig(string.Empty);
+                    LoadConfig(aConfigJson);
                 }
             }
             catch (System.Exception ex)

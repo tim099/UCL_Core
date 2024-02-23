@@ -16,7 +16,7 @@ namespace UCL.Core
         public const string BuiltinRootRelativePath = ".ModuleService";
         public const string ModulesRootRelativePath = "ModulesRoot";
         #region RelativePath
-        public static string BuiltinModulesRelativePath => Path.Combine(BuiltinRootRelativePath, "BuiltinModules");
+        public static string BuiltinModulesRelativePath => Path.Combine(BuiltinRootRelativePath, "Modules");
         public static string ModulesRelativePath => Path.Combine(ModulesRootRelativePath, "Modules");
 
         public static string GetBuiltinModuleRelativePath(string iID) => Path.Combine(BuiltinModulesRelativePath, iID);
@@ -79,9 +79,13 @@ namespace UCL.Core
         #region RelativePath
         public string ModulesRelativePath => Path.Combine(RootFolder, "Modules");
         public string ConfigRelativePath => Path.Combine(RootFolder, "Config.json");
-        public string GetModulesRelativePath(string iID)
+        public string GetModuleRelativePath(string iID)
         {
             return Path.Combine(ModulesRelativePath, iID);
+        }
+        public string GetModuleConfigRelativePath(string iID)
+        {
+            return Path.Combine(ModulesRelativePath, iID, "Config.json");
         }
         #endregion
 
@@ -94,6 +98,10 @@ namespace UCL.Core
         public string GetModulesPath(string iID)
         {
             return Path.Combine(ModulesPath, iID);
+        }
+        public string GetModuleConfigPath(string iID)
+        {
+            return Path.Combine(ModulesPath, iID, "Config.json");
         }
         #endregion
 
@@ -147,5 +155,71 @@ namespace UCL.Core
             }
             return JsonData.ParseJson(aJson);
         }
+
+
+
+
+        #region ModulePath
+        protected string GetModuleResourcePath(string iFolderPath) => Path.Combine(iFolderPath, "ModResources");
+        protected string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, "FileInfos.json");
+        public void SaveModuleConfig(string iID, JsonData iJson)
+        {
+            if(AssetType == UCL_AssetType.StreamingAssets && !Application.isEditor)
+            {
+                return;
+            }
+            string aFolderPath = GetModulesPath(iID);
+            if(!Directory.Exists(aFolderPath))
+            {
+                Directory.CreateDirectory(aFolderPath);
+            }
+            UCL.Core.FileLib.Lib.WriteAllText(GetModuleConfigPath(iID), iJson.ToJsonBeautify());
+            var aResFolder = GetModuleResourcePath(aFolderPath);
+            if (!Directory.Exists(aResFolder))
+            {
+                Directory.CreateDirectory(aResFolder);
+                string aResReadMe = "Please put Mod resources in this folder";
+                File.WriteAllText(Path.Combine(aResFolder, "Readme.txt"), aResReadMe);
+            }
+
+            if (AssetType == UCL_AssetType.StreamingAssets && Application.isEditor)
+            {
+                UCL_StreamingAssetFileInspector m_FileInfo = new ();
+                m_FileInfo.m_TargetDirectory = aFolderPath;
+                m_FileInfo.RefreshFileInfos();
+                File.WriteAllText(GetModuleFileInfoPath(aFolderPath), m_FileInfo.SerializeToJson().ToJsonBeautify());
+            }
+        }
+        public async UniTask<JsonData> LoadModuleConfig(string iID)
+        {
+            string aJson = string.Empty;
+            switch (AssetType)
+            {
+                case UCL_AssetType.StreamingAssets:
+                    {
+                        try
+                        {
+                            aJson = await UCL_StreamingAssets.LoadString(GetModuleConfigRelativePath(iID));
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogException(e);
+                        }
+                        break;
+                    }
+                case UCL_AssetType.PersistentDatas:
+                    {
+                        aJson = File.ReadAllText(GetModuleConfigPath(iID));
+                        break;
+                    }
+            }
+
+            if (string.IsNullOrEmpty(aJson))
+            {
+                return null;
+            }
+            return JsonData.ParseJson(aJson);
+        }
+        #endregion
     }
 }

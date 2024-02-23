@@ -29,7 +29,6 @@ namespace UCL.Core
     /// </summary>
     public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID
     {
-        public const string FileInfoID = "FileInfos.json";
         public const string NotInstalledID = "None";
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
@@ -46,7 +45,7 @@ namespace UCL.Core
 
         protected bool m_IsLoading = false;
         protected bool m_Installing = false;
-        protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
+        //protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
         /// <summary>
         /// Unique ID of this Module
@@ -56,12 +55,10 @@ namespace UCL.Core
         public bool IsLoading => m_IsLoading;
 
 
-        public string RelativeModulePath => UCL_ModuleService.PathConfig.GetModulesRelativePath(ID);
-        protected string RelativeFileInfosPath => Path.Combine(RelativeModulePath, FileInfoID);
+        public string RelativeModulePath => UCL_ModuleService.PathConfig.GetModuleRelativePath(ID);
 
         public string ModulePath => UCL_ModuleService.PathConfig.GetModulesPath(ID);
 
-        protected string FileInfosPath => Path.Combine(ModulePath, FileInfoID);
         public void Init(string iID, UCL_AssetType iAssetType)
         {
             ID = iID;
@@ -75,26 +72,17 @@ namespace UCL.Core
         public void Save()
         {
             //Debug.LogError($"aFolderPath:{aFolderPath}");
-            string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
-            if(!Directory.Exists(aPath))
-            {
-                Directory.CreateDirectory(aPath);
-            }
-            var aConfigPath = GetConfigPath(aPath);
-            File.WriteAllText(aConfigPath, m_Config.SerializeToJson().ToJsonBeautify());//SaveConfig
-            if (Application.isEditor)
-            {
-                var aResFolder = GetResourcePath(aPath);
-                if (!Directory.Exists(aResFolder))
-                {
-                    Directory.CreateDirectory(aResFolder);
-                    string aResReadMe = "Please put Mod resources in this folder";
-                    File.WriteAllText(Path.Combine(aResFolder, "Readme.txt"), aResReadMe);
-                }
-                m_FileInfo.m_TargetDirectory = RelativeModulePath;
-                m_FileInfo.RefreshFileInfos();
-                File.WriteAllText(FileInfosPath, m_FileInfo.SerializeToJson().ToJsonBeautify());
-            }
+            UCL_ModuleService.PathConfig.SaveModuleConfig(ID, m_Config.SerializeToJson());
+
+
+            //string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
+            //if(!Directory.Exists(aPath))
+            //{
+            //    Directory.CreateDirectory(aPath);
+            //}
+            //var aConfigPath = GetConfigPath(aPath);
+            //File.WriteAllText(aConfigPath, m_Config.SerializeToJson().ToJsonBeautify());//SaveConfig
+
         }
         public void Load(UCL_AssetType iAssetType)
         {
@@ -121,6 +109,7 @@ namespace UCL.Core
             Config aConfig = new Config();
             var aInstallPath = UCL_ModulePath.GetModulePath(ID);
             string aConfigPath = GetConfigPath(aInstallPath);
+            //Debug.LogError($"LoadInstalledConfig aConfigPath:{aConfigPath}");
             if (File.Exists(aConfigPath))//Get config
             {
                 string aJson = File.ReadAllText(aConfigPath);
@@ -203,7 +192,15 @@ namespace UCL.Core
                                         //Debug.LogError($"InstallPath:{aInstallPath}");
                                         if (Directory.Exists(aPath))
                                         {
+                                            if (Directory.Exists(aInstallPath))
+                                            {
+                                                Directory.Delete(aInstallPath, true);
+                                            }
                                             UCL.Core.FileLib.Lib.CopyDirectory(aPath, aInstallPath);
+                                        }
+                                        else
+                                        {
+                                            Debug.LogError($"Install Fail aPath:{aPath}");
                                         }
                                         break;
                                     }
@@ -231,36 +228,34 @@ namespace UCL.Core
             try
             {
 
-                //if (Application.isEditor)
-                //{
-                //    string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
-                //    var aConfigPath = GetConfigPath(aPath);
-                //    string aJson = File.ReadAllText(aConfigPath);
-                //    m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
-                //}
-                //else
+                var aJson = await UCL_ModuleService.PathConfig.LoadModuleConfig(ID);
+                if(aJson != null)
                 {
-                    switch (AssetType)
-                    {
-                        case UCL_AssetType.StreamingAssets:
-                            {
-                                string aJson = await UCL_StreamingAssets.LoadString(GetConfigPath(UCL_ModulePath.GetBuiltinModuleRelativePath(ID)));
-                                m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
-                                break;
-                            }
-                        case UCL_AssetType.PersistentDatas:
-                            {
-                                string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
-                                if (Directory.Exists(aPath))
-                                {
-                                    var aConfigPath = GetConfigPath(aPath);
-                                    string aJson = File.ReadAllText(aConfigPath);
-                                    m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
-                                }
-                                break;
-                            }
-                    }
+                    m_Config.DeserializeFromJson(aJson);
                 }
+
+                //{
+                //    switch (AssetType)
+                //    {
+                //        case UCL_AssetType.StreamingAssets:
+                //            {
+                //                string aJson = await UCL_StreamingAssets.LoadString(GetConfigPath(UCL_ModulePath.GetBuiltinModuleRelativePath(ID)));
+                //                m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
+                //                break;
+                //            }
+                //        case UCL_AssetType.PersistentDatas:
+                //            {
+                //                string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
+                //                if (Directory.Exists(aPath))
+                //                {
+                //                    var aConfigPath = GetConfigPath(aPath);
+                //                    string aJson = File.ReadAllText(aConfigPath);
+                //                    m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
+                //                }
+                //                break;
+                //            }
+                //    }
+                //}
             }
             catch(System.Exception ex)
             {

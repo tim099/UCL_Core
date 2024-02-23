@@ -3,10 +3,12 @@
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/20 2024 22:46
 using Cysharp.Threading.Tasks;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UCL.Core.JsonLib;
+using UCL.Core.UI;
 using UnityEngine;
 
 namespace UCL.Core
@@ -27,7 +29,7 @@ namespace UCL.Core
     /// <summary>
     /// UCL_Module contains info about how to load assets in this module
     /// </summary>
-    public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID
+    public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID, UCLI_ShortName
     {
         public const string NotInstalledID = "None";
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
@@ -51,6 +53,7 @@ namespace UCL.Core
         /// Unique ID of this Module
         /// </summary>
         public string ID { get => m_Config.m_ID; set => m_Config.m_ID = value; }
+        public string GetShortName() => $"UCL_Module({ID})";
         #endregion
         public bool IsLoading => m_IsLoading;
 
@@ -233,29 +236,6 @@ namespace UCL.Core
                 {
                     m_Config.DeserializeFromJson(aJson);
                 }
-
-                //{
-                //    switch (AssetType)
-                //    {
-                //        case UCL_AssetType.StreamingAssets:
-                //            {
-                //                string aJson = await UCL_StreamingAssets.LoadString(GetConfigPath(UCL_ModulePath.GetBuiltinModuleRelativePath(ID)));
-                //                m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
-                //                break;
-                //            }
-                //        case UCL_AssetType.PersistentDatas:
-                //            {
-                //                string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
-                //                if (Directory.Exists(aPath))
-                //                {
-                //                    var aConfigPath = GetConfigPath(aPath);
-                //                    string aJson = File.ReadAllText(aConfigPath);
-                //                    m_Config.DeserializeFromJson(JsonData.ParseJson(aJson));
-                //                }
-                //                break;
-                //            }
-                //    }
-                //}
             }
             catch(System.Exception ex)
             {
@@ -266,6 +246,45 @@ namespace UCL.Core
                 m_IsLoading = false;
             }
 
+        }
+        virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
+        {
+            var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
+            var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
+            foreach (var aType in UCLI_Asset.GetAllAssetTypes())
+            {
+                try
+                {
+                    string aPropInfosStr = string.Empty;
+                    try
+                    {
+                        UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
+                        if (aUtil != null)
+                        {
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
+                            if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.Width(100)))
+                            {
+                                aUtil.CreateSelectPage();
+                            }
+                            //GUILayout.Label($"{aType.FullName}");
+                            //aUtil.RefreshAllDatas();
+                            //Debug.LogWarning($"Util:{aUtil.GetType().FullName}.RefreshAllDatas()");
+                            GUILayout.EndHorizontal();
+                        }
+                    }
+                    catch (Exception iE)
+                    {
+                        Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
+                        Debug.LogException(iE);
+                    }
+                }
+                catch (Exception iE)
+                {
+                    Debug.LogException(iE);
+                }
+
+            }
         }
     }
 }

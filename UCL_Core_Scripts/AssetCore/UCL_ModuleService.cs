@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
+using UCL.Core.Page;
 using UCL.Core.UI;
 using UnityEngine;
 
@@ -44,13 +45,7 @@ namespace UCL.Core
             get => Ins.m_PathConfig.m_ModuleEditType;
             private set => Ins.m_PathConfig.m_ModuleEditType = value;
         }
-        public static UCL_Module CurEditModule
-        {
-            get
-            {
-                return Ins.m_CurEditModule;
-            }
-        }
+        public static UCL_Module CurEditModule => Ins.m_CurEditModule;
         protected static UCL_ModuleService s_Ins = null;
         public static bool Initialized
         {
@@ -85,10 +80,12 @@ namespace UCL.Core
             /// All BuiltinModules are in StreammingAssets
             /// </summary>
             public List<string> m_BuiltinModules = new List<string>();
-
+            /// <summary>
+            /// All module in this list will be loaded
+            /// </summary>
+            public List<string> m_ModulePlayList = new List<string>();
 
             public string m_Version = "1.0.0";
-
 
             virtual public string SaveRelativePath => UCL_ModulePath.BuiltinModulesRelativePath;
             virtual public string GetBuiltinModulesPath(UCL_AssetType iAssetType)
@@ -99,9 +96,7 @@ namespace UCL.Core
             public void OnGUI(UCL_ObjectDictionary iDataDic)
             {
                 //GUILayout.Label("Config", UCL_GUIStyle.LabelStyle);
-                UCL_GUILayout.DrawField(this, iDataDic, "Config");
-
-
+                UCL_GUILayout.DrawField(this, iDataDic, "ModuleService Config");
             }
             public override JsonData SerializeToJson()
             {
@@ -159,7 +154,7 @@ namespace UCL.Core
             }
             var aModulesPath = m_PathConfig.ModulesPath;
             //Debug.LogError($"aModulesPath:{aModulesPath},FileSystemRootPath:{m_PathConfig.FileSystemRootPath}");
-            if (!Directory.Exists(aModulesPath))
+            if (!Directory.Exists(aModulesPath))//Not Installed
             {
                 Directory.CreateDirectory(aModulesPath);
             }
@@ -258,11 +253,18 @@ namespace UCL.Core
         }
         virtual public string GetFolderPath(string iRelativeFolderPath)
         {
-            if(m_CurEditModule == null)
-            {
-                return string.Empty;
-            }
-            return m_CurEditModule.GetFolderPath(iRelativeFolderPath);
+            //Temporay get form Core
+
+            string aPath = PathConfig.GetModulesPath(CoreModuleID);
+            return Path.Combine(aPath, iRelativeFolderPath);
+
+
+            //if (m_CurEditModule == null)
+            //{
+            //    Debug.LogError("UCL_ModuleService.GetFolderPath, m_CurEditModule == null");
+            //    return string.Empty;
+            //}
+            //return m_CurEditModule.GetFolderPath(iRelativeFolderPath);
             //return $".Install/CommonData/{iType.Name}";
         }
         virtual public List<string> GetModulesID(UCL_AssetType iAssetType)
@@ -324,88 +326,15 @@ namespace UCL.Core
                 {
                     if (GUILayout.Button("Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(150)))
                     {
-
+                        m_CurEditModule = m_Config.LoadModule(m_Config.m_CurrentEditModule, UCL_AssetType.StreamingAssets);
+                        UCL_ModuleEditPage.Create(m_CurEditModule);
                     }
                 }
                 m_Config.m_CurrentEditModule = UCL_GUILayout.PopupAuto(m_Config.m_CurrentEditModule, aModules, iDataDic, "SelectModules");
 
             }
 
-            string aCurrentEditModule = m_Config.m_CurrentEditModule;
-            if (m_CurEditModule != null && m_CurEditModule.ID != aCurrentEditModule)
-            {
-                m_CurEditModule = null;//Clear
-            }
-
-            if (m_CurEditModule == null && !string.IsNullOrEmpty(aCurrentEditModule))
-            {
-                m_CurEditModule = m_Config.LoadModule(aCurrentEditModule, UCL_AssetType.StreamingAssets);
-            }
-            if(m_CurEditModule != null && !m_CurEditModule.IsLoading)
-            {
-                bool aLoadModule = false;
-                using (var aScope = new GUILayout.HorizontalScope())
-                {
-                    if (GUILayout.Button("Save Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        m_CurEditModule.Save();
-                    }
-                    if (GUILayout.Button("Load Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        aLoadModule = true;
-                    }
-                    if (GUILayout.Button("Install Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        //Debug.LogError("Install Module");
-                        m_CurEditModule.Install().Forget();
-                    }
-
-                }
-
-                UCL_GUILayout.DrawObjectData(m_CurEditModule, iDataDic.GetSubDic("CurEditModule"), "CurEditModule");
-                if (aLoadModule)
-                {
-                    m_CurEditModule = null;
-                }
-
-                var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
-                var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
-                foreach (var aType in UCLI_Asset.GetAllAssetTypes())
-                {
-                    try
-                    {
-                        string aPropInfosStr = string.Empty;
-                        try
-                        {
-                            UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
-                            if (aUtil != null)
-                            {
-                                GUILayout.BeginHorizontal();
-                                GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
-                                if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.Width(100)))
-                                {
-                                    aUtil.CreateSelectPage();
-                                }
-                                //GUILayout.Label($"{aType.FullName}");
-                                //aUtil.RefreshAllDatas();
-                                //Debug.LogWarning($"Util:{aUtil.GetType().FullName}.RefreshAllDatas()");
-                                GUILayout.EndHorizontal();
-                            }
-                        }
-                        catch (Exception iE)
-                        {
-                            Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
-                            Debug.LogException(iE);
-                        }
-                    }
-                    catch (Exception iE)
-                    {
-                        Debug.LogException(iE);
-                    }
-
-                }
-
-            }
+            UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), "LoadedModules");
         }
     }
 }

@@ -40,30 +40,52 @@ namespace UCL.Core
         /// 當前正在CreateData的RCGI_CommonData
         /// </summary>
         public static UCLI_Asset s_CurCreateData = null;
+        private static Dictionary<Type, UCLI_Asset> s_TypeToUtilDic = null;
         public static UCLI_Asset GetUtilByType(System.Type iType)
         {
-            var aPropInfoUtil = iType.GetProperty("Util", BindingFlags.FlattenHierarchy | BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
-            if (aPropInfoUtil != null)
+            if(s_TypeToUtilDic == null)
             {
-                MethodInfo[] aMethodInfos = aPropInfoUtil.GetAccessors();
-                //aMethInfosStr = $",MethodInfos:{aMethodInfos.ConcatString(iMethod => iMethod.Name)}";
-                if (aMethodInfos.Length > 0)
+                s_TypeToUtilDic = new Dictionary<Type, UCLI_Asset>();
+            }
+            if (!s_TypeToUtilDic.ContainsKey(iType))//Get Util with reflection
+            {
+                UCLI_Asset aAsset = null;
+                try
                 {
-                    try
+                    var aPropInfoUtil = iType.GetProperty("Util", BindingFlags.FlattenHierarchy | BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
+                    if (aPropInfoUtil != null)
                     {
-                        MethodInfo aMethodInfo = aMethodInfos[0];
-                        var aUtil = aMethodInfo.Invoke(null, null);//Get Util
-                        return aUtil as UCLI_Asset;
-                    }
-                    catch (Exception iE)
-                    {
-                        Debug.LogError($"UCLI_Asset.GetUtilByType aType:{iType.FullName},Exception:{iE}");
-                        Debug.LogException(iE);
+                        MethodInfo[] aMethodInfos = aPropInfoUtil.GetAccessors();
+                        //aMethInfosStr = $",MethodInfos:{aMethodInfos.ConcatString(iMethod => iMethod.Name)}";
+                        if (aMethodInfos.Length > 0)
+                        {
+                            try
+                            {
+                                MethodInfo aMethodInfo = aMethodInfos[0];
+                                var aUtil = aMethodInfo.Invoke(null, null);//Get Util
+                                aAsset = aUtil as UCLI_Asset;
+                            }
+                            catch (Exception iE)
+                            {
+                                Debug.LogError($"UCLI_Asset.GetUtilByType aType:{iType.FullName},Exception:{iE}");
+                                Debug.LogException(iE);
+                            }
+                        }
                     }
                 }
+                catch(Exception e)
+                {
+                    Debug.LogException(e);
+                    Debug.LogError($"UCLI_Asset.GetUtilByType aType:{iType.FullName},Exception:{e}");
+                }
+                finally
+                {
+                    s_TypeToUtilDic[iType] = aAsset;
+                }
             }
-            Debug.LogError($"UCLI_Asset.GetUtilByType aType:{iType.FullName},Fail!!");
-            return default;
+
+            
+            return s_TypeToUtilDic[iType];
         }
         private static List<Type> s_AllCommonDataTypes = null;
         /// <summary>

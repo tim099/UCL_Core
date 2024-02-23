@@ -1,6 +1,10 @@
 
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
+// Create time : 02/23 2024 18:24
+
+// ATS_AutoHeader
+// to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/22 2024 13:52
 using System;
 using System.Collections;
@@ -13,18 +17,18 @@ using UnityEngine;
 
 namespace UCL.Core.Page
 {
-    public class UCL_EditCommonDataPage : UCL_CommonEditorPage
+    public class UCL_ModuleServiceEditPage : UCL_CommonEditorPage
     {
 
-        public override string WindowName => UCL_LocalizeManager.Get("EditCommonDataPage");
+        public override string WindowName => UCL_LocalizeManager.Get("UCL_ModuleServiceEditPage");
 
-        static public UCL_EditCommonDataPage Create() => UCL_EditorPage.Create<UCL_EditCommonDataPage>();
+        static public UCL_ModuleServiceEditPage Create() => UCL_EditorPage.Create<UCL_ModuleServiceEditPage>();
         UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
-        public UCL_EditCommonDataPage()
+        public UCL_ModuleServiceEditPage()
         {
 
         }
-        ~UCL_EditCommonDataPage()
+        ~UCL_ModuleServiceEditPage()
         {
 
         }

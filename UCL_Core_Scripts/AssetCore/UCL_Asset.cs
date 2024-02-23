@@ -132,7 +132,9 @@ namespace UCL.Core
         /// <returns></returns>
         public bool ContainsAsset(string iID)// => FileDatas.FileExists(iID);
         {
-            return File.Exists(GetSavePath(iID));
+            string aPath = GetSavePath(iID);
+            //Debug.LogError($"ContainsAsset aPath:{aPath}");
+            return File.Exists(aPath);
         }
         public string ReadAssetJson(string iID)
         {
@@ -225,6 +227,7 @@ namespace UCL.Core
             ClearCache();
         }
         /// <summary>
+        /// Create a page to select UCL_Asset to edit
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)
         /// </summary>
         virtual public void CreateSelectPage()
@@ -232,6 +235,7 @@ namespace UCL.Core
             CreateCommonSelectPage();
         }
         /// <summary>
+        /// Create a page to select UCL_Asset to edit
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)
         /// </summary>
         /// <returns></returns>

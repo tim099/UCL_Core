@@ -15,12 +15,24 @@ namespace UCL.Core
     {
         public const string BuiltinRootRelativePath = ".ModuleService";
         public const string ModulesRootRelativePath = "ModulesRoot";
+        public const string ModulesFolderName = "Modules";
+        public const string ConfigFileName = "Config.json";
+        public const string FileInfosFileName = "FileInfos.json";
         #region RelativePath
-        public static string BuiltinModulesRelativePath => Path.Combine(BuiltinRootRelativePath, "Modules");
-        public static string ModulesRelativePath => Path.Combine(ModulesRootRelativePath, "Modules");
-
+        public static string BuiltinConfigRelativePath => Path.Combine(BuiltinRootRelativePath, ConfigFileName);
+        public static string BuiltinModulesRelativePath => Path.Combine(BuiltinRootRelativePath, ModulesFolderName);
+        public static string ModulesRelativePath => Path.Combine(ModulesRootRelativePath, ModulesFolderName);
+        /// <summary>
+        /// .ModuleService\Modules\{iID}
+        /// </summary>
+        /// <param name="iID"></param>
+        /// <returns></returns>
         public static string GetBuiltinModuleRelativePath(string iID) => Path.Combine(BuiltinModulesRelativePath, iID);
-
+        /// <summary>
+        /// ModulesRoot\Modules\{iID}
+        /// </summary>
+        /// <param name="iID"></param>
+        /// <returns></returns>
         public static string GetModuleRelativePath(string iID) => Path.Combine(ModulesRelativePath, iID);
         #endregion
 
@@ -29,6 +41,7 @@ namespace UCL.Core
 
         public static string GetBuiltinModulePath(string iID)
         {
+            
             return Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.StreamingAssets), GetBuiltinModuleRelativePath(iID));
         }
         #endregion
@@ -45,6 +58,7 @@ namespace UCL.Core
         }
         #endregion
     }
+
     public class UCL_ModulePathConfig
     {
         public UCL_ModuleEditType m_ModuleEditType = UCL_ModuleEditType.Builtin;
@@ -77,15 +91,15 @@ namespace UCL.Core
             }
         }
         #region RelativePath
-        public string ModulesRelativePath => Path.Combine(RootFolder, "Modules");
-        public string ConfigRelativePath => Path.Combine(RootFolder, "Config.json");
+        public string ModulesRelativePath => Path.Combine(RootFolder, UCL_ModulePath.ModulesFolderName);
+        public string ConfigRelativePath => Path.Combine(RootFolder, UCL_ModulePath.ConfigFileName);
         public string GetModuleRelativePath(string iID)
         {
             return Path.Combine(ModulesRelativePath, iID);
         }
         public string GetModuleConfigRelativePath(string iID)
         {
-            return Path.Combine(ModulesRelativePath, iID, "Config.json");
+            return Path.Combine(ModulesRelativePath, iID, UCL_ModulePath.ConfigFileName);
         }
         #endregion
 
@@ -101,7 +115,7 @@ namespace UCL.Core
         }
         public string GetModuleConfigPath(string iID)
         {
-            return Path.Combine(ModulesPath, iID, "Config.json");
+            return Path.Combine(ModulesPath, iID, UCL_ModulePath.ConfigFileName);
         }
         #endregion
 
@@ -134,7 +148,7 @@ namespace UCL.Core
                     {
                         try
                         {
-                            aJson = await UCL_StreamingAssets.LoadString(ConfigRelativePath);
+                            aJson = await UCL_StreamingAssets.LoadString(UCL_ModulePath.BuiltinConfigRelativePath);
                         }
                         catch (System.Exception e)
                         {
@@ -144,7 +158,25 @@ namespace UCL.Core
                     }
                 case UCL_AssetType.PersistentDatas:
                     {
-                        aJson = File.ReadAllText(ConfigPath);
+                        string aPath = ConfigPath;
+                        try
+                        {
+                            if (File.Exists(aPath))
+                            {
+                                aJson = File.ReadAllText(ConfigPath);
+                            }
+                            else
+                            {
+                                //Try to load from StreamingAssets(Builtin)
+                                aJson = await UCL_StreamingAssets.LoadString(UCL_ModulePath.BuiltinConfigRelativePath);
+                            }
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogException(e);
+                        }
+
+
                         break;
                     }
             }
@@ -161,7 +193,7 @@ namespace UCL.Core
 
         #region ModulePath
         protected string GetModuleResourcePath(string iFolderPath) => Path.Combine(iFolderPath, "ModResources");
-        protected string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, "FileInfos.json");
+        protected string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, UCL_ModulePath.FileInfosFileName);
         public void SaveModuleConfig(string iID, JsonData iJson)
         {
             if(AssetType == UCL_AssetType.StreamingAssets && !Application.isEditor)
@@ -209,7 +241,11 @@ namespace UCL.Core
                     }
                 case UCL_AssetType.PersistentDatas:
                     {
-                        aJson = File.ReadAllText(GetModuleConfigPath(iID));
+                        string aPath = GetModuleConfigPath(iID);
+                        if(File.Exists(aPath))
+                        {
+                            aJson = File.ReadAllText(aPath);
+                        }
                         break;
                     }
             }

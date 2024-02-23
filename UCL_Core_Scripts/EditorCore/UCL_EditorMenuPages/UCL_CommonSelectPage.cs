@@ -229,7 +229,10 @@ namespace UCL.Core.Page
         virtual protected void DrawSelectTargets()
         {
             GUILayout.BeginHorizontal();
-            DrawSelectTargetList(Util.GetEditableIDs(), m_DataDic.GetSubDic("SelectTarget"),
+            var aModule = UCL_ModuleService.CurEditModule;
+            var aIDs = Util.GetEditableIDs();//aModule.GetFolderPath;
+
+            DrawSelectTargetList(aIDs, m_DataDic.GetSubDic("SelectTarget"),
                 (iID) => {
                     UCL_CommonEditPage.Create(Util.GetData(iID));
                 },

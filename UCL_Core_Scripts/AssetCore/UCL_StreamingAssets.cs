@@ -110,11 +110,6 @@ namespace UCL.Core
             //return BetterStreamingAssets.ReadAllText(iPath);
         }
 
-        public static async Task<string> ReadAllTextAsync(string iPath, CancellationToken cancellationToken = default)
-        {
-            return await File.ReadAllTextAsync(GetFileSystemPath(iPath), cancellationToken);
-        }
-
         public static byte[] ReadAllBytes(string iPath)
         {
             var aPath = GetFileSystemPath(iPath);
@@ -159,11 +154,6 @@ namespace UCL.Core
         //    iToken.ThrowIfCancellationRequested();
         //    return aBytes;
         //}
-        public static bool FileExists(string iPath)
-        {
-            return File.Exists(GetFileSystemPath(iPath));
-            //return BetterStreamingAssets.FileExists(iPath);
-        }
         public static bool DirectoryExists(string iPath)
         {
             return Directory.Exists(GetFileSystemPath(iPath));
@@ -179,38 +169,6 @@ namespace UCL.Core
             {
                 Directory.CreateDirectory(aPath);
             }
-        }
-        public static void DeleteFile(string iPath)
-        {
-            string aPath = GetFileSystemPath(iPath);
-            if (!File.Exists(aPath))
-            {
-                Debug.LogError("FileDelete Fail!!aPath:" + aPath);
-                return;
-            }
-#if UNITY_EDITOR
-            string aMetaPath = aPath + ".meta";
-            if (File.Exists(aMetaPath)) File.Delete(aMetaPath);
-#endif
-            File.Delete(aPath);
-        }
-
-        public static string[] GetFiles(string iPath)
-        {
-            return Directory.GetFiles(GetFileSystemPath(iPath));
-            //return BetterStreamingAssets.GetFiles(iPath);
-        }
-
-        public static string[] GetFiles(string iPath, string iSearchPattern)
-        {
-            return Directory.GetFiles(GetFileSystemPath(iPath), iSearchPattern);
-            //return BetterStreamingAssets.GetFiles(iPath, iSearchPattern);
-        }
-
-        public static string[] GetFiles(string iPath, string iSearchPattern, SearchOption iSearchOption)
-        {
-            return Directory.GetFiles(GetFileSystemPath(iPath), iSearchPattern, iSearchOption);
-            //return BetterStreamingAssets.GetFiles(iPath, iSearchPattern, iSearchOption);
         }
 
         public static List<string> GetFilesName(string iPath, string iSearchPattern, bool iIsRemoveExtension = true)
@@ -238,12 +196,6 @@ namespace UCL.Core
             }
             return aFileNames;
             //return BetterStreamingAssets.GetFiles(iPath, iSearchPattern, iSearchOption);
-        }
-
-        public static void WriteAllText(string iPath, string iContents)
-        {
-            string aPath = GetFileSystemPath(iPath);
-            File.WriteAllText(aPath, iContents);
         }
     }
 }

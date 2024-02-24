@@ -159,8 +159,6 @@ namespace UCL.Core
                 Directory.CreateDirectory(aModulesPath);
             }
             //Debug.LogError("InitAsync()");
-            //string aStr = await UCL_StreamingAssets.LoadString(".Install/CommonData/ATS_IconSprite/Icon_Heal.json");
-            //Debug.LogError($"InitAsync() End aStr:{aStr}");
             await LoadConfig();
 
 
@@ -169,6 +167,7 @@ namespace UCL.Core
             {
                 var aModule = m_Config.LoadModule(aModuleID, UCL_AssetType.StreamingAssets);
                 await aModule.CheckAndInstall();
+                //Debug.LogError($"CheckAndInstall() aModuleID:{aModuleID}");
                 if (Application.isEditor)
                 {
                     m_LoadedModules.Add(aModule);

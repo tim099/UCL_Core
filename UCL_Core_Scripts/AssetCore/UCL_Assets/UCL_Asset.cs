@@ -150,7 +150,6 @@ namespace UCL.Core
             string aPath = GetSavePath(iID);
             File.WriteAllText(aPath, iJson);
         }
-        virtual public UCL_StreamingAssetsFileData FileDatas => UCL_StreamingAssetsFileData.GetFileData(RelativeFolderPath);
         #endregion
 
 

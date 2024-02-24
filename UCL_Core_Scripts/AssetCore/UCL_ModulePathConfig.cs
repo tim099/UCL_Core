@@ -224,13 +224,13 @@ namespace UCL.Core
         }
         public async UniTask<UCL_StreamingAssetFileInspector> GetModuleStreamingAssetFileInspector(string iID)
         {
-            string aFolderPath = GetModuleRelativePath(iID);
+            string aFolderPath = UCL_ModulePath.GetBuiltinModuleRelativePath(iID);
             string aPath = GetModuleFileInfoPath(aFolderPath);
             UCL_StreamingAssetFileInspector aFileInfos = new();
             string aJson = string.Empty;
             try
             {
-                aJson = await UCL_StreamingAssets.ReadAllTextAsync(aPath);
+                aJson = await UCL_StreamingAssets.LoadString(aPath);
             }
             catch(System.Exception e)
             {

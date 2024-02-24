@@ -101,7 +101,7 @@ namespace UCL.Core
 
         public static string GetFileSystemPath(string iPath)
         {
-            return Path.Combine(StreamingAssetsPath, iPath);
+            return Path.Combine(Application.streamingAssetsPath, iPath);
         }
 
         public static string ReadAllText(string iPath)

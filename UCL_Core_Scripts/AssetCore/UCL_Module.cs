@@ -68,7 +68,6 @@ namespace UCL.Core
             AssetType = iAssetType;
         }
         protected string GetConfigPath(string iFolderPath) => Path.Combine(iFolderPath, "Config.json");
-        protected string GetResourcePath(string iFolderPath) => Path.Combine(iFolderPath, "ModResources");
         /// <summary>
         /// Save Module Config
         /// </summary>

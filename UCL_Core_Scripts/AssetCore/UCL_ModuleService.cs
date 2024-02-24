@@ -40,6 +40,31 @@ namespace UCL.Core
                 return s_Ins;
             }
         }
+
+        public const string ReflectKeyModResourcesPath = "ModResourcesPath";
+        public static string ModResourcesPath
+        {
+            get
+            {
+                return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(CurEditModuleID));
+                //return UCL_ModulePath.GetModulePath(CurEditModuleID);
+            }
+        }
+        public static string GetModResourcesPath(string iID)
+        {
+            return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(iID));
+        }
+        public static string CurEditModuleID
+        {
+            get
+            {
+                if(Ins.m_CurEditModule == null)
+                {
+                    return CoreModuleID;
+                }
+                return Ins.m_CurEditModule.ID;
+            }
+        }
         public static UCL_ModuleEditType ModuleEditType
         {
             get => Ins.m_PathConfig.m_ModuleEditType;
@@ -253,8 +278,12 @@ namespace UCL.Core
         virtual public string GetFolderPath(string iRelativeFolderPath)
         {
             //Temporay get form Core
-
-            string aPath = PathConfig.GetModulePath(CoreModuleID);
+            string aModuleID = CoreModuleID;
+            if(m_CurEditModule !=  null)
+            {
+                aModuleID = m_CurEditModule.ID;
+            }
+            string aPath = PathConfig.GetModulePath(aModuleID);
             return Path.Combine(aPath, iRelativeFolderPath);
 
 

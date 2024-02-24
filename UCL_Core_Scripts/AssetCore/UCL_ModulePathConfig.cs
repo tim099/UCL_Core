@@ -18,6 +18,7 @@ namespace UCL.Core
         public const string ModulesFolderName = "Modules";
         public const string ConfigFileName = "Config.json";
         public const string FileInfosFileName = "FileInfos.json";
+        public const string ModResourcesName = "ModResources";
         #region RelativePath
         public static string BuiltinConfigRelativePath => Path.Combine(BuiltinRootRelativePath, ConfigFileName);
         public static string BuiltinModulesRelativePath => Path.Combine(BuiltinRootRelativePath, ModulesFolderName);
@@ -46,7 +47,7 @@ namespace UCL.Core
         }
         #endregion
 
-        #region Builtin
+        #region Runtime
         public static string ModulesPath => Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.PersistentDatas), ModulesRelativePath);
 
         public static string GetModulePath(string iID)
@@ -56,6 +57,13 @@ namespace UCL.Core
             //Debug.LogError($"aFolder:{aFolder},aModuleRelativePath:{aModuleRelativePath}");
             return Path.Combine(aFolder, aModuleRelativePath);
         }
+
+
+        #endregion
+
+        #region Module
+        public static string GetModResourcesPath(string iFolderPath) => Path.Combine(iFolderPath, ModResourcesName);
+        public static string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, UCL_ModulePath.FileInfosFileName);
         #endregion
     }
 
@@ -191,8 +199,7 @@ namespace UCL.Core
 
 
         #region ModulePath
-        protected string GetModuleResourcePath(string iFolderPath) => Path.Combine(iFolderPath, "ModResources");
-        protected string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, UCL_ModulePath.FileInfosFileName);
+
         public void SaveModuleConfig(string iID, JsonData iJson)
         {
             if(AssetType == UCL_AssetType.StreamingAssets && !Application.isEditor)
@@ -205,7 +212,7 @@ namespace UCL.Core
                 Directory.CreateDirectory(aFolderPath);
             }
             UCL.Core.FileLib.Lib.WriteAllText(GetModuleConfigPath(iID), iJson.ToJsonBeautify());
-            var aResFolder = GetModuleResourcePath(aFolderPath);
+            var aResFolder = UCL_ModulePath.GetModResourcesPath(aFolderPath);
             if (!Directory.Exists(aResFolder))
             {
                 Directory.CreateDirectory(aResFolder);
@@ -215,7 +222,7 @@ namespace UCL.Core
 
             if (AssetType == UCL_AssetType.StreamingAssets && Application.isEditor)
             {
-                string aPath = GetModuleFileInfoPath(aFolderPath);
+                string aPath = UCL_ModulePath.GetModuleFileInfoPath(aFolderPath);
                 UCL_StreamingAssetFileInspector aFileInfos = new ();
                 aFileInfos.m_TargetDirectory = aFolderPath;
                 aFileInfos.RefreshFileInfos();
@@ -225,7 +232,7 @@ namespace UCL.Core
         public async UniTask<UCL_StreamingAssetFileInspector> GetModuleStreamingAssetFileInspector(string iID)
         {
             string aFolderPath = UCL_ModulePath.GetBuiltinModuleRelativePath(iID);
-            string aPath = GetModuleFileInfoPath(aFolderPath);
+            string aPath = UCL_ModulePath.GetModuleFileInfoPath(aFolderPath);
             UCL_StreamingAssetFileInspector aFileInfos = new();
             string aJson = string.Empty;
             try

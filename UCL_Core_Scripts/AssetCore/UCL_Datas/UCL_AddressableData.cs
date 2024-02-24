@@ -30,6 +30,9 @@ namespace UCL.Core
             }
         }
         #region static
+        /// <summary>
+        /// Release all loaded addressables
+        /// </summary>
         public static void ReleaseAll()
         {
             foreach (var aKey in s_LoadedDic.Keys)
@@ -39,6 +42,7 @@ namespace UCL.Core
             }
             s_LoadedDic.Clear();
         }
+        private static Dictionary<string, LoadedAddressable> s_LoadedDic = new();
         #endregion
 
 
@@ -52,52 +56,30 @@ namespace UCL.Core
         [UCL.Core.PA.UCL_List("GetAddressableKeys")]
         public string m_AddressableKey = string.Empty;
 
+
+        #region interface
         /// <summary>
+        /// Is the Empty(Null)
         /// 是否是空的(不考慮檔案格式不符)
         /// </summary>
-        public bool IsEmpty => string.IsNullOrEmpty(m_AddressableKey);
-        public string Key => m_AddressableKey;
-        public string FileName => UCL.Core.FileLib.Lib.GetFileName(m_AddressableKey);
-        private static Dictionary<string, LoadedAddressable> s_LoadedDic = new();
+        public override bool IsEmpty => string.IsNullOrEmpty(m_AddressableKey);
+        public override string Key => m_AddressableKey;
+
+        public override string Name => UCL.Core.FileLib.Lib.GetFileName(m_AddressableKey);
+        public override async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
+        {
+            return await LoadAsync<UnityEngine.Object>(iToken);
+        }
+        #endregion
+
         //virtual public async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
         //{
         //    var aObj = await Addressables.LoadAssetAsync<UnityEngine.Object>(m_AddressableKey);
         //    iToken.ThrowIfCancellationRequested();
         //    return aObj;
         //}
-        virtual public async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
-        {
-            return await LoadAsync<UnityEngine.Object>(iToken);
-        }
-        virtual public async UniTask<T> LoadComponentAsync<T>(CancellationToken iToken) where T : UnityEngine.Component
-        {
-            if (string.IsNullOrEmpty(m_AddressableKey)) return null;
 
-            LoadedAddressable aData = await GetLoadedAddressable<GameObject>(iToken);
-
-
-            if (aData.m_Object == null)
-            {
-                Debug.LogError($"UCL_AddressableData.LoadComponentAsync, aData.m_Object == null,m_AddressableKey:{m_AddressableKey}");
-                return null;
-            }
-
-            GameObject aGameObject = aData.m_Object as GameObject;
-            if (aGameObject == null)
-            {
-                Debug.LogError($"UCL_AddressableData.LoadAsync aGameObject == null,m_AddressableKey:{m_AddressableKey}");
-                return null;
-            }
-            T aComponent = aGameObject.GetComponent<T>();
-            if (aComponent == null)
-            {
-                Debug.LogError($"UCL_AddressableData.LoadAsync,aGameObject:{aGameObject.name},Component({typeof(T).FullName}) == null,m_AddressableKey:{m_AddressableKey}");
-                return null;
-            }
-            return aComponent;
-        }
-
-        virtual public async UniTask<T> LoadAsync<T>(CancellationToken iToken) where T : UnityEngine.Object
+        private async UniTask<T> LoadAsync<T>(CancellationToken iToken) where T : UnityEngine.Object
         {
             if (string.IsNullOrEmpty(m_AddressableKey)) return null;
 

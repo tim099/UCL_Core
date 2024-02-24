@@ -73,19 +73,30 @@ namespace UCL.Core
         }
         public static async Task<byte[]> LoadBytes(string iPath)
         {
-            var aLoadingRequest = UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, iPath));
-            var aOperation = aLoadingRequest.SendWebRequest();
-            await aOperation;
 
-            var aResult =  await aOperation;
-
-            if(aResult.result != UnityWebRequest.Result.Success)
+            try
             {
-                Debug.LogError($"ATS_StreamingAssets.LoadBytes Fail,iPath:{iPath},result:{aResult.result}");
-                return Array.Empty<byte>();
+                var aLoadingRequest = UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, iPath));
+                var aOperation = aLoadingRequest.SendWebRequest();
+                await aOperation;
+
+                var aResult = await aOperation;
+
+                if (aResult.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogError($"ATS_StreamingAssets.LoadBytes Fail,iPath:{iPath},result:{aResult.result}");
+                    return Array.Empty<byte>();
+                }
+
+                return aLoadingRequest.downloadHandler.data;
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                Debug.LogError($"UCL_StreamingAssets.LoadBytes iPath:{iPath},Exception:{e}");
             }
 
-            return aLoadingRequest.downloadHandler.data;
+            return Array.Empty<byte>();
         }
 
         public static string GetFileSystemPath(string iPath)

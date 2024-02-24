@@ -109,7 +109,7 @@ namespace UCL.Core
         public string ModulesPath => Path.Combine(FileSystemRootPath, ModulesRelativePath);
         public string ConfigPath => Path.Combine(FileSystemRootPath, ConfigRelativePath);
 
-        public string GetModulesPath(string iID)
+        public string GetModulePath(string iID)
         {
             return Path.Combine(ModulesPath, iID);
         }
@@ -190,7 +190,6 @@ namespace UCL.Core
 
 
 
-
         #region ModulePath
         protected string GetModuleResourcePath(string iFolderPath) => Path.Combine(iFolderPath, "ModResources");
         protected string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, UCL_ModulePath.FileInfosFileName);
@@ -200,7 +199,7 @@ namespace UCL.Core
             {
                 return;
             }
-            string aFolderPath = GetModulesPath(iID);
+            string aFolderPath = GetModulePath(iID);
             if(!Directory.Exists(aFolderPath))
             {
                 Directory.CreateDirectory(aFolderPath);
@@ -216,11 +215,33 @@ namespace UCL.Core
 
             if (AssetType == UCL_AssetType.StreamingAssets && Application.isEditor)
             {
-                UCL_StreamingAssetFileInspector m_FileInfo = new ();
-                m_FileInfo.m_TargetDirectory = aFolderPath;
-                m_FileInfo.RefreshFileInfos();
-                File.WriteAllText(GetModuleFileInfoPath(aFolderPath), m_FileInfo.SerializeToJson().ToJsonBeautify());
+                string aPath = GetModuleFileInfoPath(aFolderPath);
+                UCL_StreamingAssetFileInspector aFileInfos = new ();
+                aFileInfos.m_TargetDirectory = aFolderPath;
+                aFileInfos.RefreshFileInfos();
+                File.WriteAllText(aPath, aFileInfos.SerializeToJson().ToJsonBeautify());
             }
+        }
+        public async UniTask<UCL_StreamingAssetFileInspector> GetModuleStreamingAssetFileInspector(string iID)
+        {
+            string aFolderPath = GetModuleRelativePath(iID);
+            string aPath = GetModuleFileInfoPath(aFolderPath);
+            UCL_StreamingAssetFileInspector aFileInfos = new();
+            string aJson = string.Empty;
+            try
+            {
+                aJson = await UCL_StreamingAssets.ReadAllTextAsync(aPath);
+            }
+            catch(System.Exception e)
+            {
+                Debug.LogException(e);
+            }
+            if (!string.IsNullOrEmpty(aJson))
+            {
+                aFileInfos.DeserializeFromJson(JsonData.ParseJson(aJson));
+            }
+
+            return aFileInfos;
         }
         public async UniTask<JsonData> LoadModuleConfig(string iID)
         {

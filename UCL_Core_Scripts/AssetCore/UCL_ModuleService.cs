@@ -255,7 +255,7 @@ namespace UCL.Core
         {
             //Temporay get form Core
 
-            string aPath = PathConfig.GetModulesPath(CoreModuleID);
+            string aPath = PathConfig.GetModulePath(CoreModuleID);
             return Path.Combine(aPath, iRelativeFolderPath);
 
 

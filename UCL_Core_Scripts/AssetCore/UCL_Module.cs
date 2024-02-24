@@ -60,7 +60,7 @@ namespace UCL.Core
 
         public string RelativeModulePath => UCL_ModuleService.PathConfig.GetModuleRelativePath(ID);
 
-        public string ModulePath => UCL_ModuleService.PathConfig.GetModulesPath(ID);
+        public string ModulePath => UCL_ModuleService.PathConfig.GetModulePath(ID);
 
         public void Init(string iID, UCL_AssetType iAssetType)
         {
@@ -180,7 +180,7 @@ namespace UCL.Core
                 //Debug.LogError($"Install m_AssetType:{m_AssetType},Application.platform:{Application.platform}");
                 switch (AssetType)//Only install StreamingAssets(Builtin)
                 {
-                    case UCL_AssetType.StreamingAssets:
+                    case UCL_AssetType.StreamingAssets://(Builtin)
                         {
                             switch (Application.platform)
                             {
@@ -207,6 +207,22 @@ namespace UCL.Core
                                         }
                                         break;
                                     }
+                                case RuntimePlatform.Android:
+                                    {//Load from streaming asset!!
+                                        UCL_StreamingAssetFileInspector aFileInfos = await UCL_ModuleService.PathConfig.GetModuleStreamingAssetFileInspector(ID);
+                                        var aRelativePath = UCL_ModulePath.GetBuiltinModuleRelativePath(ID);
+                                        var aInstallPath = UCL_ModulePath.GetModulePath(ID);
+
+                                        if (Directory.Exists(aInstallPath))
+                                        {
+                                            Directory.Delete(aInstallPath, true);
+                                        }
+                                        Directory.CreateDirectory(aInstallPath);
+                                        
+                                        await InstallFolder(aFileInfos, aFileInfos.m_FolderInformations, aRelativePath, aInstallPath);
+
+                                        break;
+                                    }
                             }
 
 
@@ -224,6 +240,49 @@ namespace UCL.Core
                 m_Installing = false;
             }
 
+        }
+        protected async UniTask InstallFolder(UCL_StreamingAssetFileInspector iFileInfos, UCL_StreamingAssetFileInspector.FolderInformation iFolderInfos,
+            string iRelativePath, string iInstallPath)
+        {
+            //Debug.LogError($"InstallFolder iInstallPath:{iInstallPath}");
+            if (!Directory.Exists(iInstallPath))
+            {
+                Directory.CreateDirectory(iInstallPath);
+            }
+            foreach(var aFile in iFolderInfos.m_FileInfos)//Install Files
+            {
+                try
+                {
+                    string aName = aFile.FileName;
+                    string aRelativePath = Path.Combine(iRelativePath, aName);
+                    string aInstallPath = Path.Combine(iInstallPath, aName);
+                    byte[] aBytes = await UCL_StreamingAssets.LoadBytes(aRelativePath);
+                    if (aBytes != null)
+                    {
+                        File.WriteAllBytes(aInstallPath, aBytes);
+                    }
+                    else
+                    {
+                        Debug.LogError($"InstallFolder aFile:{aName},iRelativePath:{iRelativePath},aBytes == null");
+                    }
+                }
+                catch(System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
+
+            }
+            foreach(var aFolder in iFolderInfos.m_FolderInfos)
+            {
+                try
+                {
+                    await InstallFolder(iFileInfos, aFolder, Path.Combine(iRelativePath, aFolder.Name), Path.Combine(iInstallPath, aFolder.Name));
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
+            }
         }
         protected async UniTask LoadAsync()
         {

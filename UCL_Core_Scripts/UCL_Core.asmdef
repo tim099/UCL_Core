@@ -2,7 +2,10 @@
     "name": "UCL_Core",
     "rootNamespace": "",
     "references": [
-        "UniTask"
+        "Unity.Addressables",
+        "Unity.ResourceManager",
+        "UniTask",
+        "UniTask.Addressables"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

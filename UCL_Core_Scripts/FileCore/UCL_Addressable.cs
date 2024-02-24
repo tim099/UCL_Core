@@ -13,38 +13,66 @@ namespace UCL.Core
     {
 
         #region Addressable
+        private static List<string> s_AddressablePath = null;
         public static List<string> GetAddressablePath()
         {
-            HashSet<string> aSet = new HashSet<string>();
-            aSet.Add(string.Empty);
-            foreach (var aKey in GetAllAddressableKeys())
+            bool aRefreshAddressablePath = true;
+#if UNITY_EDITOR
+            //aRefreshAddressablePath = true;
+#else
+            aRefreshAddressablePath = (s_AddressablePath == null);//refresh if (s_AddressablePath == null)
+#endif
+            if (aRefreshAddressablePath)
             {
-                if (aKey.Contains("/"))
+                HashSet<string> aSet = new HashSet<string>();
+                aSet.Add(string.Empty);
+                foreach (var aKey in GetAllAddressableKeys())
                 {
-                    aSet.Add(UCL.Core.FileLib.Lib.RemoveFolderPath(aKey, 1));
+                    if (aKey.Contains("/"))
+                    {
+                        aSet.Add(UCL.Core.FileLib.Lib.RemoveFolderPath(aKey, 1));
+                    }
                 }
+                s_AddressablePath = aSet.ToList();
             }
-            var aList = aSet.ToList();
             //Debug.LogError($"aList:{aList.ConcatString()}");
-            return aList;
+            return s_AddressablePath;
         }
+
+        private static List<string> s_AllAddressableKeys = null;
         public static List<string> GetAllAddressableKeys()
         {
-            List<string> aList = new List<string>();
-            foreach (var aResourceLocator in UnityEngine.AddressableAssets.Addressables.ResourceLocators)
+            bool aRefreshAddressableKeys = true;
+#if !UNITY_EDITOR
+            aRefreshAddressableKeys = (s_AllAddressableKeys == null);//refresh if (s_AllAddressableKeys == null)
+#endif
+            if (aRefreshAddressableKeys)
             {
-                int aIndex = 0;
-                foreach (var aKey in aResourceLocator.Keys)
+                if(s_AllAddressableKeys == null)
                 {
-                    if (aKey is string aStr)
+                    s_AllAddressableKeys = new List<string>();
+                }
+                else
+                {
+                    s_AllAddressableKeys.Clear();
+                }
+                
+                foreach (var aResourceLocator in UnityEngine.AddressableAssets.Addressables.ResourceLocators)
+                {
+                    int aIndex = 0;
+                    foreach (var aKey in aResourceLocator.Keys)
                     {
-                        aList.Add(aStr);
-                        ++aIndex;
+                        if (aKey is string aStr)
+                        {
+                            s_AllAddressableKeys.Add(aStr);
+                            ++aIndex;
+                        }
                     }
                 }
             }
+
             //Debug.LogError($"GetAllAddressableKeys.aList:{aList.ConcatString()}");
-            return aList;
+            return s_AllAddressableKeys;
         }
         public static List<string> GetAllAddressableKeys(string iAddressablePath)
         {

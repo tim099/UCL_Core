@@ -17,9 +17,9 @@ namespace UCL.Core
     /// https://docs.unity3d.com/Packages/com.unity.addressables@1.3/manual/MemoryManagement.html
     /// </summary>
     [System.Serializable]
-    public class UCL_AddressableData : UCL.Core.JsonLib.UnityJsonSerializable
+    public class UCL_AddressableData : UCL_Data
     {
-        public class AddressableLoaded : IDisposable
+        public class LoadedAddressable : IDisposable
         {
             public UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationHandle m_Handle;
             public UnityEngine.Object m_Object;
@@ -29,6 +29,18 @@ namespace UCL.Core
                 Addressables.Release(m_Handle);
             }
         }
+        #region static
+        public static void ReleaseAll()
+        {
+            foreach (var aKey in s_LoadedDic.Keys)
+            {
+                var aData = s_LoadedDic[aKey];
+                aData.Dispose();
+            }
+            s_LoadedDic.Clear();
+        }
+        #endregion
+
 
         virtual protected List<string> GetAddressablePath() => UCL_Addressable.GetAddressablePath();
 
@@ -46,103 +58,88 @@ namespace UCL.Core
         public bool IsEmpty => string.IsNullOrEmpty(m_AddressableKey);
         public string Key => m_AddressableKey;
         public string FileName => UCL.Core.FileLib.Lib.GetFileName(m_AddressableKey);
-        private static Dictionary<string, AddressableLoaded> s_LoadedDic = new();
+        private static Dictionary<string, LoadedAddressable> s_LoadedDic = new();
+        //virtual public async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
+        //{
+        //    var aObj = await Addressables.LoadAssetAsync<UnityEngine.Object>(m_AddressableKey);
+        //    iToken.ThrowIfCancellationRequested();
+        //    return aObj;
+        //}
         virtual public async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
         {
-
-            var aObj = await Addressables.LoadAssetAsync<UnityEngine.Object>(m_AddressableKey);
-            iToken.ThrowIfCancellationRequested();
-            return aObj;
+            return await LoadAsync<UnityEngine.Object>(iToken);
         }
-        
-        virtual public async UniTask<T> LoadAsync<T>(CancellationToken iToken) where T : UnityEngine.Object
+        virtual public async UniTask<T> LoadComponentAsync<T>(CancellationToken iToken) where T : UnityEngine.Component
         {
             if (string.IsNullOrEmpty(m_AddressableKey)) return null;
-            bool aIsComponent = typeof(Component).IsAssignableFrom(typeof(T));
 
-            if (s_LoadedDic.ContainsKey(m_AddressableKey))//Need to Fix
+            LoadedAddressable aData = await GetLoadedAddressable<GameObject>(iToken);
+
+
+            if (aData.m_Object == null)
             {
-                var aData = s_LoadedDic[m_AddressableKey];
-                if (!aData.m_Loaded)//Wait Until Loaded
-                {
-                    await UniTask.WaitUntil(() => aData.m_Loaded, cancellationToken: iToken);
-                }
-                if(aData.m_Object == null)
-                {
-                    Debug.LogError($"RCG_PrefabResData.LoadAsync, aData.m_Object == null");
-                    
-                    s_LoadedDic.Remove(m_AddressableKey);
-                    aData.Dispose();
-                }
-                else if (aIsComponent)
-                {
-                    return TryGetComponent<T>(aData);
-                }
-                else if (aData.m_Object is T aTmp)
-                {
-                    return aTmp;
-                }
-                else
-                {
-                    Debug.LogError($"RCG_PrefabResData.LoadAsync, aData.m_Object:{aData.m_Object.GetType().FullName},T:{typeof(T).FullName}");
-
-                    s_LoadedDic.Remove(m_AddressableKey);
-                    aData.Dispose();
-                }
-                
+                Debug.LogError($"UCL_AddressableData.LoadComponentAsync, aData.m_Object == null,m_AddressableKey:{m_AddressableKey}");
+                return null;
             }
 
-            if (aIsComponent)
-            {
-                AddressableLoaded aData = await CreateAddressableLoaded<GameObject>(iToken);
-                
-                return TryGetComponent<T>(aData);
-            }
-
-            {
-                AddressableLoaded aData = await CreateAddressableLoaded<T>(iToken);
-                return aData.m_Object as T;
-            }
-
-        }
-        private T TryGetComponent<T>(AddressableLoaded iData) where T : UnityEngine.Object
-        {
-            GameObject aGameObject = iData.m_Object as GameObject;
+            GameObject aGameObject = aData.m_Object as GameObject;
             if (aGameObject == null)
             {
-                Debug.LogError($"RCG_PrefabResData.LoadAsync aGameObject == null,m_AddressableKey:{m_AddressableKey}");
+                Debug.LogError($"UCL_AddressableData.LoadAsync aGameObject == null,m_AddressableKey:{m_AddressableKey}");
                 return null;
             }
             T aComponent = aGameObject.GetComponent<T>();
             if (aComponent == null)
             {
-                Debug.LogError($"RCG_PrefabResData.LoadAsync,aGameObject:{aGameObject.name} aComponent == null,m_AddressableKey:{m_AddressableKey}");
+                Debug.LogError($"UCL_AddressableData.LoadAsync,aGameObject:{aGameObject.name},Component({typeof(T).FullName}) == null,m_AddressableKey:{m_AddressableKey}");
                 return null;
             }
             return aComponent;
         }
-        private async UniTask<AddressableLoaded> CreateAddressableLoaded<T>(CancellationToken iToken) where T : UnityEngine.Object
-        {
-            var aHandle = Addressables.LoadAssetAsync<T>(m_AddressableKey);
-            UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationHandle aAsyncOperationHandle = aHandle;
 
-            AddressableLoaded aData = new AddressableLoaded();
-            aData.m_Handle = aAsyncOperationHandle;
-
-            aData.m_Object = await aHandle;
-            s_LoadedDic[m_AddressableKey] = aData;
-            aData.m_Loaded = true;
-            iToken.ThrowIfCancellationRequested();
-            return aData;
-        } 
-        public static void ReleaseAll()
+        virtual public async UniTask<T> LoadAsync<T>(CancellationToken iToken) where T : UnityEngine.Object
         {
-            foreach(var aKey in s_LoadedDic.Keys)
+            if (string.IsNullOrEmpty(m_AddressableKey)) return null;
+
+            LoadedAddressable aData = await GetLoadedAddressable<T>(iToken);
+            var aObj = aData.m_Object;
+            if (aObj == null)
             {
-                var aData = s_LoadedDic[aKey];
-                aData.Dispose();
+                Debug.LogError($"UCL_AddressableData.LoadAsync aData.m_Object == null,m_AddressableKey:{m_AddressableKey}");
+                return null;
             }
-            s_LoadedDic.Clear();
+            T aResult = aObj as T;
+            if(aResult == null)//Type mismatch
+            {
+                Debug.LogError($"UCL_AddressableData.LoadAsync aObj.GetType():{aObj.GetType().FullName},TargetType:{typeof(T).FullName},m_AddressableKey:{m_AddressableKey}");
+                return null;
+            }
+            return aResult;
         }
+        private async UniTask<LoadedAddressable> GetLoadedAddressable<T>(CancellationToken iToken) where T : UnityEngine.Object
+        {
+            if (!s_LoadedDic.ContainsKey(m_AddressableKey))
+            {
+                var aHandle = Addressables.LoadAssetAsync<T>(m_AddressableKey);
+                UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationHandle aAsyncOperationHandle = aHandle;
+
+                LoadedAddressable aData = new LoadedAddressable();
+                aData.m_Handle = aAsyncOperationHandle;
+                s_LoadedDic[m_AddressableKey] = aData;
+
+                aData.m_Object = await aHandle;
+                aData.m_Loaded = true;
+            }
+            {
+                var aData = s_LoadedDic[m_AddressableKey];
+                if(!aData.m_Loaded)
+                {
+                    await UniTask.WaitUntil(() => aData.m_Loaded, cancellationToken: iToken);
+                }
+                return aData;
+            }
+        }
+
+
     }
 }

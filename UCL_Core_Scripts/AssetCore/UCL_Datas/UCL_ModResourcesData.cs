@@ -150,10 +150,10 @@ namespace UCL.Core
         public string FileSystemFolderPath => Path.Combine(UCL_ModuleService.GetModResourcesPath(m_ModuleID), m_FolderPath);
         public string FilePath => Path.Combine(FileSystemFolderPath, m_FileName);
 
-        ~UCL_ModResourcesData()
-        {
-            Release();
-        }
+        //~UCL_ModResourcesData()
+        //{
+        //    Release();
+        //}
 
         /// <summary>
         /// Release Object load from UCL_Data

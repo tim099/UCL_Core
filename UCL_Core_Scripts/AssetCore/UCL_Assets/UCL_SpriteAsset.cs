@@ -53,6 +53,11 @@ namespace UCL.Core
         }
         
 
+        public async UniTask<Texture2D> GetTextureAsync(CancellationToken iToken)
+        {
+            await Data.LoadAsync(iToken);
+            return Data.GetSprite().texture;
+        }
 
         /// <summary>
         /// 預覽
@@ -117,10 +122,10 @@ namespace UCL.Core
         {
             Init(iID);
         }
-        ~UCL_SpriteAsset()
-        {
-            Dispose();
-        }
+        //~UCL_SpriteAsset()
+        //{
+        //    Dispose();
+        //}
 
 
         public void Dispose()
@@ -163,6 +168,31 @@ namespace UCL.Core
         public const string DefaultID = "Default";
         public UCL_SpriteAssetEntry() { m_ID = DefaultID; }
         public UCL_SpriteAssetEntry(string iID) { m_ID = iID; }
+
+        public Texture2D Texture
+        {
+            get
+            {
+                var aData = GetData();
+                if(aData == null)
+                {
+                    return null;
+                }
+                return aData.Texture;
+            }
+        }
+        public Sprite Sprite
+        {
+            get
+            {
+                var aData = GetData();
+                if (aData == null)
+                {
+                    return null;
+                }
+                return aData.Sprite;
+            }
+        }
     }
 }
 

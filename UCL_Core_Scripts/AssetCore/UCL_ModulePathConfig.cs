@@ -207,7 +207,8 @@ namespace UCL.Core
                 return;
             }
             string aFolderPath = GetModulePath(iID);
-            if(!Directory.Exists(aFolderPath))
+            string aModuleRelativePath = UCL_ModulePath.GetBuiltinModuleRelativePath(iID);
+            if (!Directory.Exists(aFolderPath))
             {
                 Directory.CreateDirectory(aFolderPath);
             }
@@ -224,7 +225,8 @@ namespace UCL.Core
             {
                 string aPath = UCL_ModulePath.GetModuleFileInfoPath(aFolderPath);
                 UCL_StreamingAssetFileInspector aFileInfos = new ();
-                aFileInfos.m_TargetDirectory = aFolderPath;
+                aFileInfos.m_TargetDirectory = aModuleRelativePath;
+                //Debug.LogError($"aModuleRelativePath:{aModuleRelativePath}");
                 aFileInfos.RefreshFileInfos();
                 File.WriteAllText(aPath, aFileInfos.SerializeToJson().ToJsonBeautify());
             }

@@ -135,7 +135,7 @@ namespace UCL.Core.UI {
         static public float Slider(string iLabel, float iVal, float m_LeftValue, float m_RightValue, UCL_ObjectDictionary iDic)
         {
             GUILayout.BeginHorizontal();
-            if (!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
+            if (!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             float aResult = GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
             if (aResult != iVal) iDic.Clear();
             aResult = UCL.Core.UI.UCL_GUILayout.NumField(aResult, iDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
@@ -276,7 +276,7 @@ namespace UCL.Core.UI {
         static public bool Toggle(bool iVal, int iSize = 21)
         {
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);
-            if (GUILayout.Button(iVal ? "▼" : "►", GUILayout.Width(aSize), GUILayout.Height(aSize)))
+            if (GUILayout.Button(iVal ? "▼" : "►", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
                 iVal = !iVal;
             }
@@ -286,7 +286,7 @@ namespace UCL.Core.UI {
         {
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);
             bool iVal = iObjectDic.GetData(iKey, iDefaultValue);
-            if (GUILayout.Button(iVal ? "▼" : "►", GUILayout.Width(aSize), GUILayout.Height(aSize)))
+            if (GUILayout.Button(iVal ? "▼" : "►", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
                 iVal = !iVal;
             }
@@ -305,7 +305,7 @@ namespace UCL.Core.UI {
         {
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);
             bool aVal = iDic.GetData(iKey, iDefaultValue);
-            if (GUILayout.Button(aVal ? "✔" : " ", GUILayout.Width(aSize), GUILayout.Height(aSize)))
+            if (GUILayout.Button(aVal ? "✔" : " ", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
                 aVal = !aVal;
             }
@@ -315,7 +315,7 @@ namespace UCL.Core.UI {
         [Obsolete("this will be deleted soon")]
         static public bool BoolField(bool iVal, params GUILayoutOption[] iOptions)
         {
-            if (GUILayout.Button(iVal ? "✔" : " ", iOptions))
+            if (GUILayout.Button(iVal ? "✔" : " ", UCL_GUIStyle.ButtonStyle, iOptions))
             {
                 iVal = !iVal;
             }
@@ -326,7 +326,7 @@ namespace UCL.Core.UI {
         {
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);
 
-            if (GUILayout.Button(iVal ? "✔" : " ", GUILayout.Width(aSize), GUILayout.Height(aSize)))
+            if (GUILayout.Button(iVal ? "✔" : " ", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
                 iVal = !iVal;
             }
@@ -336,7 +336,7 @@ namespace UCL.Core.UI {
         static public bool CheckBox(bool iVal, int iSize = 21)
         {
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);
-            if (GUILayout.Button(iVal ? "✔" : " ", GUILayout.Width(aSize), GUILayout.Height(aSize)))
+            if (GUILayout.Button(iVal ? "✔" : " ", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
                 iVal = !iVal;
             }
@@ -371,7 +371,7 @@ namespace UCL.Core.UI {
             GUILayout.BeginHorizontal();
             GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
             //LabelAutoSize(iLabel);
-            if (GUILayout.Button(iVal ? "✔" : " ", GUILayout.Width(aSize), GUILayout.Height(aSize)))
+            if (GUILayout.Button(iVal ? "✔" : " ", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
                 iVal = !iVal;
             }

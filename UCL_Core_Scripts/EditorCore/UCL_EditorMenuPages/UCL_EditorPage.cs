@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UCL.Core.LocalizeLib;
+using UCL.Core.UI;
 using UnityEngine;
 namespace UCL.Core.EditorLib.Page
 {
@@ -61,7 +62,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 if (ShowBackButton)
                 {
-                    if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Back"), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Back"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         aAction = 1;
                     }
@@ -69,7 +70,7 @@ namespace UCL.Core.EditorLib.Page
 
                 if (ShowCloseButton)//Close all pages
                 {
-                    if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Close"), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Close"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         aAction = 2;
                     }

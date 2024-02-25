@@ -136,7 +136,8 @@ namespace UCL.Core.UI {
         {
             GUILayout.BeginHorizontal();
             if (!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            float aResult = GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
+            float aResult = GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue,UCL_GUIStyle.CurStyleData.HorizontalSliderStyle,
+                UCL_GUIStyle.CurStyleData.HorizontalSliderThumbStyle, GUILayout.ExpandWidth(true));
             if (aResult != iVal) iDic.Clear();
             aResult = UCL.Core.UI.UCL_GUILayout.NumField(aResult, iDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
             float aMaxValue = System.Math.Max(m_LeftValue, m_RightValue);
@@ -569,7 +570,6 @@ namespace UCL.Core.UI {
         #endregion
 
         #region Label
-        static GUIStyle sLabelGuiStyle = new GUIStyle(GUI.skin.label);
         public static void LabelAutoSize(string iName, int iFontsize = 13) {
             var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, iFontsize);
             Vector2 aSize = aLabelStyle.CalcSize(new GUIContent(iName));

@@ -8,13 +8,16 @@ namespace UCL.Core.UI {
         public class StyleData
         {
             public const int DefaultFontSize = 12;
-
+            public const float ThumbStyleSize = 10;
+            public const float SliderHeight = 3;
             private float m_Scale = 1f;
+
             private int m_FontSize = DefaultFontSize;
             private GUIStyle m_BoxStyle = null;
             private GUIStyle m_ButtonStyle = null;
             private GUIStyle m_LabelStyle = null;
-
+            private GUIStyle m_HorizontalSliderStyle = null;
+            private GUIStyle m_HorizontalSliderThumbStyle = null;
             Dictionary<System.Tuple<Color, int>, GUIStyle> m_ButtonStyleDic = null;
             Dictionary<System.Tuple<Color, int>, GUIStyle> m_LabelStyleDic = null;
 
@@ -37,7 +40,11 @@ namespace UCL.Core.UI {
                 //{
                 //    m_LabelStyle.fontSize = m_FontSize;
                 //}
-                foreach(var aKey in m_ButtonStyleDic.Keys)
+                m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+
+                m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
+                foreach (var aKey in m_ButtonStyleDic.Keys)
                 {
                     var aStyle = m_ButtonStyleDic[aKey];
                     aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
@@ -162,6 +169,33 @@ namespace UCL.Core.UI {
                 return m_LabelStyleDic[aKey];
             }
 
+
+            public GUIStyle HorizontalSliderStyle
+            {
+                get
+                {
+                    if (m_HorizontalSliderStyle == null)
+                    {
+                        m_HorizontalSliderStyle = new GUIStyle(GUI.skin.horizontalSlider);
+                        m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
+                        //m_HorizontalSliderStyle.alignment = TextAnchor.MiddleCenter;
+                    }
+                    return m_HorizontalSliderStyle;
+                }
+            }
+            public GUIStyle HorizontalSliderThumbStyle
+            {
+                get
+                {
+                    if (m_HorizontalSliderThumbStyle == null)
+                    {
+                        m_HorizontalSliderThumbStyle = new GUIStyle(GUI.skin.horizontalSliderThumb);
+                        m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                        m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                    }
+                    return m_HorizontalSliderThumbStyle;
+                }
+            }
         }
 
 

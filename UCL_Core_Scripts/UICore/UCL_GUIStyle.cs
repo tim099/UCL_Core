@@ -5,8 +5,49 @@ using UnityEngine;
 namespace UCL.Core.UI {
 
     static public class UCL_GUIStyle {
-        private class StyleData
+        public class StyleData
         {
+            public const int DefaultFontSize = 12;
+
+            private float m_Scale = 1f;
+            private int m_FontSize = DefaultFontSize;
+            private GUIStyle m_BoxStyle = null;
+            private GUIStyle m_ButtonStyle = null;
+            private GUIStyle m_LabelStyle = null;
+
+            Dictionary<System.Tuple<Color, int>, GUIStyle> m_ButtonStyleDic = null;
+            Dictionary<System.Tuple<Color, int>, GUIStyle> m_LabelStyleDic = null;
+
+            public float Scale => m_Scale;
+            public void SetScale(float iScale)
+            {
+                if(iScale == m_Scale) return;
+
+                m_Scale = iScale;
+
+                m_FontSize = Mathf.RoundToInt(m_Scale * DefaultFontSize);
+                if (m_BoxStyle != null) {
+                    m_BoxStyle.fontSize = m_FontSize;
+                }
+                //if(m_ButtonStyle != null)
+                //{
+                //    m_ButtonStyle.fontSize = m_FontSize;
+                //}
+                //if(m_LabelStyle != null)
+                //{
+                //    m_LabelStyle.fontSize = m_FontSize;
+                //}
+                foreach(var aKey in m_ButtonStyleDic.Keys)
+                {
+                    var aStyle = m_ButtonStyleDic[aKey];
+                    aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                }
+                foreach (var aKey in m_LabelStyleDic.Keys)
+                {
+                    var aStyle = m_LabelStyleDic[aKey];
+                    aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                }
+            }
             /// <summary>
             /// GUIStyle for GUILayout.Box
             /// </summary>
@@ -25,11 +66,13 @@ namespace UCL.Core.UI {
                         //m_BoxStyle.clipping = TextClipping.Clip;
                         //m_BoxStyle.stretchWidth = false;
                         m_BoxStyle.wordWrap = true;
+
+                        m_BoxStyle.fontSize = m_FontSize;
                     }
                     return m_BoxStyle;
                 }
             }
-            GUIStyle m_BoxStyle = null;
+            
 
             public GUIStyle ButtonStyle
             {
@@ -37,17 +80,20 @@ namespace UCL.Core.UI {
                 {
                     if (m_ButtonStyle == null)
                     {
-                        m_ButtonStyle = new GUIStyle(GUI.skin.button);
-                        m_ButtonStyle.richText = true;
-                        var aTextCol = Color.white;
-                        m_ButtonStyle.normal.textColor = aTextCol;
-                        m_ButtonStyle.focused.textColor = aTextCol;
-                        m_ButtonStyle.hover.textColor = aTextCol;
+                        m_ButtonStyle = GetButtonStyle(Color.white, DefaultFontSize);
+                        //m_ButtonStyle = new GUIStyle(GUI.skin.button);
+                        //m_ButtonStyle.richText = true;
+                        //var aTextCol = Color.white;
+                        //m_ButtonStyle.normal.textColor = aTextCol;
+                        //m_ButtonStyle.focused.textColor = aTextCol;
+                        //m_ButtonStyle.hover.textColor = aTextCol;
+
+                        //m_ButtonStyle.fontSize = m_FontSize;
                     }
                     return m_ButtonStyle;
                 }
             }
-            GUIStyle m_ButtonStyle = null;
+            
 
 
             public GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12)
@@ -61,26 +107,26 @@ namespace UCL.Core.UI {
                 var aKey = new System.Tuple<Color, int>(iCol, iFontSize);
                 if (!m_ButtonStyleDic.ContainsKey(aKey))
                 {
-                    var aText = new GUIStyle(GUI.skin.button);
-                    aText.normal.textColor = iCol;
-                    aText.active.textColor = iCol;
-                    aText.hover.textColor = iCol;
-                    aText.fontSize = iFontSize;
-                    aText.richText = true;
+                    var aButtonStyle = new GUIStyle(GUI.skin.button);
+                    aButtonStyle.normal.textColor = iCol;
+                    aButtonStyle.active.textColor = iCol;
+                    aButtonStyle.hover.textColor = iCol;
+                    aButtonStyle.fontSize = Mathf.RoundToInt(iFontSize * m_Scale);
+                    aButtonStyle.richText = true;
                     //Debug.LogError("aText.fontSize:" + aText.fontSize); 12
-                    m_ButtonStyleDic.Add(aKey, aText);
+                    m_ButtonStyleDic.Add(aKey, aButtonStyle);
                 }
                 return m_ButtonStyleDic[aKey];
             }
-            Dictionary<System.Tuple<Color, int>, GUIStyle> m_ButtonStyleDic = null;
+            
 
             public GUIStyle LabelStyle
             {
                 get
                 {
-                    if (s_LabelStyle == null)
+                    if (m_LabelStyle == null)
                     {
-                        s_LabelStyle = GetLabelStyle(Color.white, 12);
+                        m_LabelStyle = GetLabelStyle(Color.white, DefaultFontSize);
                         //s_LabelStyle = new GUIStyle(GUI.skin.label);
                         //s_LabelStyle.richText = true;
                         //var aTextCol = Color.white;
@@ -89,12 +135,12 @@ namespace UCL.Core.UI {
                         //s_LabelStyle.hover.textColor = aTextCol;
                         //s_LabelStyle.fontSize = 16;
                     }
-                    return s_LabelStyle;
+                    return m_LabelStyle;
                 }
             }
-            GUIStyle s_LabelStyle = null;
+            
 
-            Dictionary<System.Tuple<Color, int>, GUIStyle> m_LabelStyleDic = null;
+            
             public GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16)
             {
                 if (m_LabelStyleDic == null)
@@ -110,6 +156,7 @@ namespace UCL.Core.UI {
                     aText.hover.textColor = iTextCol;
                     aText.fontSize = iSize;
                     aText.richText = true;
+                    aText.fontSize = m_FontSize;
                     m_LabelStyleDic.Add(aKey, aText);
                 }
                 return m_LabelStyleDic[aKey];
@@ -124,11 +171,12 @@ namespace UCL.Core.UI {
         /// </summary>
         static public bool IsInEditorWindow = false;
 
+
         static StyleData s_Data = null;
         static StyleData s_EditorWindowData = null;
         static StyleData Data => s_Data == null? s_Data = new StyleData() : s_Data;
         static StyleData EditorWindowData => s_EditorWindowData == null ? s_EditorWindowData = new StyleData() : s_EditorWindowData;
-        static StyleData CurStyleData => IsInEditorWindow ? EditorWindowData : Data;
+        static public StyleData CurStyleData => IsInEditorWindow ? EditorWindowData : Data;
         /// <summary>
         /// GUIStyle for GUILayout.Box
         /// </summary>

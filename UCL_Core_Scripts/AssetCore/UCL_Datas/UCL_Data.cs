@@ -45,13 +45,17 @@ namespace UCL.Core
         /// Release Object load from UCL_Data
         /// </summary>
         /// <param name=""></param>
-        virtual public void Release(UnityEngine.Object iObject)
+        virtual public void Release()
         {
 
         }
         virtual public UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
         {
             return default;
+        }
+        virtual public Sprite GetSprite()
+        {
+            return null;
         }
         virtual public UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
         {

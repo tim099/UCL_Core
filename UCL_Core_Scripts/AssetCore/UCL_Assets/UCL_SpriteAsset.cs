@@ -20,6 +20,7 @@ namespace UCL.Core
             Addressable,
         }
 
+
         public DataLoadType m_DataLoadType = DataLoadType.ModResources;
 
         //[UCL.Core.ATTR.AlwaysExpendOnGUI]
@@ -30,10 +31,6 @@ namespace UCL.Core
         [UCL.Core.PA.Conditional("m_DataLoadType", false, DataLoadType.Addressable)]
         public UCL_AddressableData m_AddressableData = new UCL_AddressableData();
 
-
-
-        private Sprite m_Sprite;
-        private bool m_Loading = false;
 
         public bool IsEmpty => Data.IsEmpty;
         private UCL_Data Data
@@ -73,10 +70,13 @@ namespace UCL.Core
                 {
                     GUILayout.Box(aTexture, GUILayout.Width(64), GUILayout.Height(64));
                 }
-                else
-                {
-                    GUILayout.Label($"Texture == null,Key:{Data.Key}");
-                }
+                //else
+                //{
+                //    if(!m_Loading)
+                //    {
+                //        GUILayout.Label($"Texture == null,Key:{Data.Key}");
+                //    }
+                //}
                 //UCL.Core.UI.UCL_GUILayout.LabelAutoSize(LocalizeName);
 
                 if (iIsShowEditButton)
@@ -89,23 +89,24 @@ namespace UCL.Core
             }
             GUILayout.EndHorizontal();
         }
+        public Sprite Sprite
+        {
+            get
+            {
+                if (IsEmpty) return null;
+
+                return Data.GetSprite();
+            }
+        }
 
         public Texture2D Texture
         {
             get
             {
-                if (IsEmpty) return null;
-                if (m_Loading)
-                {
-                    return null;
-                }
-                if(m_Sprite == null)//try to load
-                {
-                    LoadSprite().Forget();
-                    return null;
-                }
+                var aSprite = Sprite;
+                if (aSprite == null) return null;
 
-                return m_Sprite.texture;
+                return aSprite.texture;
             }
         }
         public UCL_SpriteAsset()
@@ -121,45 +122,16 @@ namespace UCL.Core
             Dispose();
         }
 
-        public async UniTask<Sprite> LoadSprite(CancellationToken iToken = default)
-        {
-            if (IsEmpty)
-            {
-                Debug.LogError("UCL_SpriteAsset.LoadSprite() IsEmpty");
-                return null;
-            }
-            if (m_Loading)
-            {
-                await UniTask.WaitUntil(() => !m_Loading, cancellationToken: iToken);
-            }
-
-            try
-            {
-                if (m_Sprite == null)
-                {
-                    m_Sprite = await Data.LoadSpriteAsync(iToken);
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogException(e);
-            }
-            finally
-            {
-                m_Loading = false;
-            }
-
-            return m_Sprite;
-        }
 
         public void Dispose()
         {
-            if (m_Sprite != null)
-            {
-                Data.Release(m_Sprite);
-                //GameObject.Destroy(m_Sprite);
-                m_Sprite = null;
-            }
+            Data.Release();
+            //if (m_Sprite != null)
+            //{
+            //    Data.Release(m_Sprite);
+            //    //GameObject.Destroy(m_Sprite);
+            //    m_Sprite = null;
+            //}
         }
         public void Init(DataLoadType iDataLoadType, string iPath, string iName)
         {
@@ -184,6 +156,13 @@ namespace UCL.Core
 
         }
 
+    }
+
+    public class UCL_SpriteAssetEntry : UCL_AssetEntryDefault<UCL_SpriteAsset>
+    {
+        public const string DefaultID = "Default";
+        public UCL_SpriteAssetEntry() { m_ID = DefaultID; }
+        public UCL_SpriteAssetEntry(string iID) { m_ID = iID; }
     }
 }
 

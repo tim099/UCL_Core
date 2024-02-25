@@ -23,10 +23,54 @@ namespace UCL.Core
         {
             public UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationHandle m_Handle;
             public UnityEngine.Object m_Object;
+            public List<UnityEngine.Object> m_CreatedAssets = new List<UnityEngine.Object>();
             public bool m_Loaded = false;
+            private Sprite m_Sprite = null;
             public void Dispose()
             {
+                if (!m_CreatedAssets.IsNullOrEmpty())
+                {
+                    foreach(var aObj in m_CreatedAssets)
+                    {
+                        if(aObj != null)
+                        {
+                            UnityEngine.Object.Destroy(aObj);
+                        }
+                    }
+                }
                 Addressables.Release(m_Handle);
+            }
+
+            public Sprite Sprite
+            {
+                get
+                {
+                    if (!m_Loaded || m_Object == null)
+                    {
+                        return null;
+                    }
+                    if (m_Sprite == null)
+                    {
+                        if (m_Object is Sprite aSprite)
+                        {
+                            m_Sprite = aSprite;
+                        }
+                        else if (m_Object is Texture2D aTexture)
+                        {
+                            m_Sprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
+                            m_CreatedAssets.Add(m_Sprite);
+                        }
+                        else
+                        {
+                            //Type Error!!
+                            Debug.LogError($"UCL_AddressableData m_Object.Type:{m_Object.GetType().FullName},Not Sprite!!");
+                        }
+                    }
+
+
+
+                    return m_Sprite;
+                }
             }
         }
         #region static
@@ -65,7 +109,6 @@ namespace UCL.Core
         public string m_AddressableKey = string.Empty;
 
 
-        private List<UnityEngine.Object> m_CreatedAssets = new List<UnityEngine.Object>();
         #region interface
         /// <summary>
         /// Is the Empty(Null)
@@ -79,34 +122,27 @@ namespace UCL.Core
         {
             return await LoadAsync<UnityEngine.Object>(iToken);
         }
+        public override Sprite GetSprite()
+        {
+            var aLoadedAddressable = GetLoadedAddressable();
+            if (aLoadedAddressable == null)//Not Loaded yet start loading!
+            {
+                LoadSpriteAsync(default).Forget();
+                return null;
+            }
+
+            return aLoadedAddressable.Sprite;
+        }
         public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
         {
-            var aTarget = await LoadAsync<UnityEngine.Object>(iToken);
+            await LoadAsync<UnityEngine.Object>(iToken);
+            var aLoadedAddressable = GetLoadedAddressable();
+            if(aLoadedAddressable == null)
             {
-                if (aTarget is Sprite aSprite)
-                {
-                    return aSprite;
-                }
+                Debug.LogError($"UCL_AddressableData.LoadSpriteAsync aLoadedAddressable == null,m_AddressableKey:{m_AddressableKey}");
+                return null;
             }
-
-            if (aTarget is Texture2D aTexture)
-            {
-                if(m_CreatedAssets.Count > 0)
-                {
-                    if (m_CreatedAssets[0] is Sprite aSprite)
-                    {
-                        return aSprite;
-                    }
-                }
-                else
-                {
-                    var aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
-                    m_CreatedAssets.Add(aSprite);
-                    return aSprite;
-                }
-
-            }
-            return default;
+            return aLoadedAddressable.Sprite;
         }
         #endregion
 
@@ -136,6 +172,15 @@ namespace UCL.Core
             }
             return aResult;
         }
+        private bool CheckLoaded() => s_LoadedDic.ContainsKey(m_AddressableKey);
+        private LoadedAddressable GetLoadedAddressable()
+        {
+            if (!s_LoadedDic.ContainsKey(m_AddressableKey))
+            {
+                return null;
+            }
+            return s_LoadedDic[m_AddressableKey];
+        }
         private async UniTask<LoadedAddressable> GetLoadedAddressable<T>(CancellationToken iToken) where T : UnityEngine.Object
         {
             if (!s_LoadedDic.ContainsKey(m_AddressableKey))
@@ -163,13 +208,8 @@ namespace UCL.Core
         /// Release Object load from UCL_Data
         /// </summary>
         /// <param name=""></param>
-        public override void Release(UnityEngine.Object iObject)
+        public override void Release()
         {
-            foreach(var aCreatedAssets in m_CreatedAssets)
-            {
-                UnityEngine.Object.Destroy(aCreatedAssets);
-            }
-            m_CreatedAssets.Clear();
             Release(m_AddressableKey);
         }
 

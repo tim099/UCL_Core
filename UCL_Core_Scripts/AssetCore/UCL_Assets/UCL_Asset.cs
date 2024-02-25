@@ -301,16 +301,16 @@ namespace UCL.Core
         virtual public string ID { get; set; }
 
 
-        private UCL_AssetMeta m_CommonDataMeta = null;
-        public UCL_AssetMeta CommonDataMetaIns
+        private UCL_AssetMeta m_AssetMeta = null;
+        public UCL_AssetMeta AssetMetaIns
         {
             get
             {
-                if (m_CommonDataMeta == null)
+                if (m_AssetMeta == null)
                 {
-                    m_CommonDataMeta = CreateCommonDataMeta();
+                    m_AssetMeta = CreateCommonDataMeta();
                 }
-                return m_CommonDataMeta;
+                return m_AssetMeta;
             }
         }
         virtual public UCL_AssetMeta CreateCommonDataMeta()
@@ -361,7 +361,7 @@ namespace UCL.Core
         {
             get
             {
-                var aMeta = CommonDataMetaIns.GetFileMeta(ID);
+                var aMeta = AssetMetaIns.GetFileMeta(ID);
                 return aMeta.m_Group;
             }
         }

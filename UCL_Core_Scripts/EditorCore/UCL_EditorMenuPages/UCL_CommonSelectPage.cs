@@ -44,7 +44,7 @@ namespace UCL.Core.Page
             {
                 m_CreateDes = UCL_LocalizeManager.Get("CreateNew");
             }
-            m_Meta = Util.CommonDataMetaIns;
+            m_Meta = Util.AssetMetaIns;
             //Debug.LogError("m_CreateDes:" + m_CreateDes);
             OnResume();
         }
@@ -64,7 +64,7 @@ namespace UCL.Core.Page
         {
             m_Preview = null;
             Util.ClearCache();
-            m_Meta = Util.CommonDataMetaIns;
+            m_Meta = Util.AssetMetaIns;
             //Debug.LogError($"OnResume m_Meta:{m_Meta.m_FileMetas.ConcatString(iMeta => $"{iMeta.Key}:{iMeta.Value.m_Group}")}");
         }
         public override void OnClose()

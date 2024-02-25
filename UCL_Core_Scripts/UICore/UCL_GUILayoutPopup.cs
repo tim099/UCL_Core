@@ -130,7 +130,7 @@ namespace UCL.Core.UI
 
                 GUILayout.BeginVertical(iOptions);
 
-                if (GUILayout.Button(aCur, iOptions))
+                if (GUILayout.Button(aCur, UCL_GUIStyle.ButtonStyle, iOptions))
                 {
                     aIsShow = false;
                 }
@@ -187,7 +187,7 @@ namespace UCL.Core.UI
             }
             else
             {
-                if (GUILayout.Button(aCur, iOptions))
+                if (GUILayout.Button(aCur, UCL_GUIStyle.ButtonStyle, iOptions))
                 {
                     aIsShow = true;
                 }
@@ -219,13 +219,13 @@ namespace UCL.Core.UI
             {    
                 //using (var aScope = new GUILayout.VerticalScope(iOptions))
                 {
-                    if (GUILayout.Button(aCur, iOptions))
+                    if (GUILayout.Button(aCur, UCL_GUIStyle.ButtonStyle, iOptions))
                     {
                         iOpened = false;
                     }
                     for (int i = 0; i < iDisplayedOptions.Count; i++)
                     {
-                        if (GUILayout.Button(iDisplayedOptions[i], iOptions))
+                        if (GUILayout.Button(iDisplayedOptions[i], UCL_GUIStyle.ButtonStyle, iOptions))
                         {
                             iOpened = false;
                             iSelectedIndex = i;
@@ -238,7 +238,7 @@ namespace UCL.Core.UI
             {
                 //using (var aScope = new GUILayout.VerticalScope(iOptions))
                 {
-                    if (GUILayout.Button(aCur, iOptions))
+                    if (GUILayout.Button(aCur, UCL_GUIStyle.ButtonStyle, iOptions))
                     {
                         iOpened = true;
                     }

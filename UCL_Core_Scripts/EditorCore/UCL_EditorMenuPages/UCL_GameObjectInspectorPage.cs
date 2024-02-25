@@ -65,7 +65,7 @@ namespace UCL.Core.EditorLib.Page
                         {
                             using (new GUILayout.HorizontalScope())
                             {
-                                m_Target.SetActive(UCL.Core.UI.UCL_GUILayout.BoolField(m_Target.activeSelf, GUILayout.Width(21), GUILayout.Height(21), GUILayout.ExpandWidth(false)));
+                                m_Target.SetActive(UCL.Core.UI.UCL_GUILayout.BoolField(m_Target.activeSelf));
                                 m_Target.name = GUILayout.TextField(m_Target.name);
                             }
                             using (new GUILayout.HorizontalScope())

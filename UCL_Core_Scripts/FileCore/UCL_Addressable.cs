@@ -59,19 +59,21 @@ namespace UCL.Core
                 
                 foreach (var aResourceLocator in UnityEngine.AddressableAssets.Addressables.ResourceLocators)
                 {
-                    int aIndex = 0;
                     foreach (var aKey in aResourceLocator.Keys)
                     {
                         if (aKey is string aStr)
                         {
                             s_AllAddressableKeys.Add(aStr);
-                            ++aIndex;
                         }
+                        //else
+                        //{
+                        //    Debug.LogError($"aKey:{aKey}");
+                        //}
                     }
                 }
             }
 
-            //Debug.LogError($"GetAllAddressableKeys.aList:{aList.ConcatString()}");
+            //Debug.LogError($"aRefreshAddressableKeys:{aRefreshAddressableKeys}, GetAllAddressableKeys.aList:{s_AllAddressableKeys.ConcatString()}");
             return s_AllAddressableKeys;
         }
         public static List<string> GetAllAddressableKeys(string iAddressablePath)

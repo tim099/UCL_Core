@@ -42,6 +42,14 @@ namespace UCL.Core
             }
             s_LoadedDic.Clear();
         }
+        public static void Release(string aKey)
+        {
+            if (s_LoadedDic.ContainsKey(aKey))
+            {
+                s_LoadedDic[aKey].Dispose();
+                s_LoadedDic.Remove(aKey);
+            }
+        }
         private static Dictionary<string, LoadedAddressable> s_LoadedDic = new();
         #endregion
 
@@ -57,6 +65,7 @@ namespace UCL.Core
         public string m_AddressableKey = string.Empty;
 
 
+        private List<UnityEngine.Object> m_CreatedAssets = new List<UnityEngine.Object>();
         #region interface
         /// <summary>
         /// Is the Empty(Null)
@@ -69,6 +78,35 @@ namespace UCL.Core
         public override async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
         {
             return await LoadAsync<UnityEngine.Object>(iToken);
+        }
+        public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
+        {
+            var aTarget = await LoadAsync<UnityEngine.Object>(iToken);
+            {
+                if (aTarget is Sprite aSprite)
+                {
+                    return aSprite;
+                }
+            }
+
+            if (aTarget is Texture2D aTexture)
+            {
+                if(m_CreatedAssets.Count > 0)
+                {
+                    if (m_CreatedAssets[0] is Sprite aSprite)
+                    {
+                        return aSprite;
+                    }
+                }
+                else
+                {
+                    var aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
+                    m_CreatedAssets.Add(aSprite);
+                    return aSprite;
+                }
+
+            }
+            return default;
         }
         #endregion
 
@@ -121,7 +159,19 @@ namespace UCL.Core
                 return aData;
             }
         }
-
+        /// <summary>
+        /// Release Object load from UCL_Data
+        /// </summary>
+        /// <param name=""></param>
+        public override void Release(UnityEngine.Object iObject)
+        {
+            foreach(var aCreatedAssets in m_CreatedAssets)
+            {
+                UnityEngine.Object.Destroy(aCreatedAssets);
+            }
+            m_CreatedAssets.Clear();
+            Release(m_AddressableKey);
+        }
 
     }
 }

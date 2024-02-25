@@ -41,7 +41,19 @@ namespace UCL.Core
         virtual public string Name => string.Empty;
 
 
+        /// <summary>
+        /// Release Object load from UCL_Data
+        /// </summary>
+        /// <param name=""></param>
+        virtual public void Release(UnityEngine.Object iObject)
+        {
+
+        }
         virtual public UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
+        {
+            return default;
+        }
+        virtual public UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
         {
             return default;
         }

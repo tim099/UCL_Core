@@ -1,4 +1,4 @@
-
+ï»¿
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/21 2024 17:10
@@ -52,25 +52,25 @@ namespace UCL.Core
             }
             /// <summary>
             /// File full name, include extension
-            /// §¹¾ãÀÉ¦W ¥]§t°ÆÀÉ¦W
+            /// å®Œæ•´æª”å åŒ…å«å‰¯æª”å
             /// </summary>
             public string FileName => m_FileName + "." + m_Extension;
 
             /// <summary>
             /// File name, exclude extension
-            /// ÀÉ¦W ¤£¥]§t°ÆÀÉ¦W
+            /// æª”å ä¸åŒ…å«å‰¯æª”å
             /// </summary>
             public string Name => m_FileName;
 
 
             /// <summary>
             /// Full path of file
-            /// §¹¾ãÀÉ®×¸ô®|
+            /// å®Œæ•´æª”æ¡ˆè·¯å¾‘
             /// </summary>
             public string FullPath => System.IO.Path.Combine(RelativePath, FileName);
             /// <summary>
             /// Full path of file(without wxtension
-            /// §¹¾ãÀÉ®×¸ô®|(µL°ÆÀÉ¦W
+            /// å®Œæ•´æª”æ¡ˆè·¯å¾‘(ç„¡å‰¯æª”å
             /// </summary>
             public string FilePathWithoutExtension => System.IO.Path.Combine(RelativePath, Name);
 
@@ -173,7 +173,7 @@ namespace UCL.Core
 
             /// <summary>
             /// Get FileInfo by file name
-            /// ®Ú¾ÚÀÉ¦W¨ú±oÀÉ®×¸ê°T
+            /// æ ¹æ“šæª”åå–å¾—æª”æ¡ˆè³‡è¨Š
             /// </summary>
             /// <param name="iFileName"></param>
             /// <returns></returns>
@@ -397,24 +397,24 @@ namespace UCL.Core
         }
         /// <summary>
         /// ignore the meta files in dir
-        /// µLµømetaÀÉ
+        /// ç„¡è¦–metaæª”
         /// </summary>
         public bool m_IgnoreMetaFiles = true;
         /// <summary>
         /// Target directory, if m_TargetDirectory == "" then will set to the folder FileInspector located
-        /// ¥Ø¼Ğ¸ô®| ·|§ì¨ú¸Ó¸ô®|¤Uªº©Ò¦³ÀÉ®×
+        /// ç›®æ¨™è·¯å¾‘ æœƒæŠ“å–è©²è·¯å¾‘ä¸‹çš„æ‰€æœ‰æª”æ¡ˆ
         /// </summary>
         [UCL.Core.PA.UCL_FolderExplorer]
         public string m_TargetDirectory = "";
 
         /// <summary>
         /// Target file extension, if m_FileExtension == string.Empty then don't check file extensions
-        /// ¥Ø¼Ğ°ÆÀÉ¦W ­Y¬°ªÅ®É«h¤£ÀË¬d°ÆÀÉ¦W
+        /// ç›®æ¨™å‰¯æª”å è‹¥ç‚ºç©ºæ™‚å‰‡ä¸æª¢æŸ¥å‰¯æª”å
         /// </summary>
         public string m_FileExtension = string.Empty;
         /// <summary>
         /// Folder Infos
-        /// ¸ê®Æ§¨¸ê°T
+        /// è³‡æ–™å¤¾è³‡è¨Š
         /// </summary>
         public FolderInformation m_FolderInformations = new FolderInformation();
 
@@ -423,7 +423,7 @@ namespace UCL.Core
 
         /// <summary>
         /// Refresh FileInfos
-        /// §ó·sÀÉ®×¸ê®Æ
+        /// æ›´æ–°æª”æ¡ˆè³‡æ–™
         /// </summary>
         public void RefreshFileInfos()
         {
@@ -437,7 +437,7 @@ namespace UCL.Core
 
         /// <summary>
         /// Get FileInfo by file name
-        /// ®Ú¾ÚÀÉ¦W¨ú±oÀÉ®×¸ê°T
+        /// æ ¹æ“šæª”åå–å¾—æª”æ¡ˆè³‡è¨Š
         /// </summary>
         /// <param name="iFileName"></param>
         /// <returns></returns>

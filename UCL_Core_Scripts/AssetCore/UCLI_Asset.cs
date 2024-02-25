@@ -1,4 +1,4 @@
-
+ï»¿
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/22 2024 10:44
@@ -23,21 +23,21 @@ namespace UCL.Core
         UCLI_Asset CreateCommonData(string iID);
         List<string> GetAllIDs();
         /// <summary>
-        /// ®Ú¾ÚID§ì¨úª««~³]©w
+        /// æ ¹æ“šIDæŠ“å–ç‰©å“è¨­å®š
         /// </summary>
         /// <param name="iID">ID</param>
-        /// <param name="iUseCache">¨Ï§_¨Ï¥Î½w¦sªº¸ê®Æ</param>
+        /// <param name="iUseCache">ä½¿å¦ä½¿ç”¨ç·©å­˜çš„è³‡æ–™</param>
         /// <returns></returns>
         UCLI_Asset GetCommonData(string iID, bool iUseCache = true);
         void RefreshAllDatas();
         /// <summary>
-        /// ¥Í¦¨¤@­Ó½s¿è¿ï³æ­¶­±(¥Î¨Ó¿ï¨ú­n½s¿èªºª««~)
+        /// ç”Ÿæˆä¸€å€‹ç·¨è¼¯é¸å–®é é¢(ç”¨ä¾†é¸å–è¦ç·¨è¼¯çš„ç‰©å“)
         /// </summary>
         void CreateSelectPage();
 
         #region static
         /// <summary>
-        /// ·í«e¥¿¦bCreateDataªºRCGI_CommonData
+        /// ç•¶å‰æ­£åœ¨CreateDataçš„RCGI_CommonData
         /// </summary>
         public static UCLI_Asset s_CurCreateData = null;
         private static Dictionary<Type, UCLI_Asset> s_TypeToUtilDic = null;
@@ -89,7 +89,7 @@ namespace UCL.Core
         }
         private static List<Type> s_AllCommonDataTypes = null;
         /// <summary>
-        /// §ì¨ú©Ò¦³UCLI_AssetªºType
+        /// æŠ“å–æ‰€æœ‰UCLI_Assetçš„Type
         /// Get all Types of UCLI_Asset
         /// </summary>
         /// <returns></returns>

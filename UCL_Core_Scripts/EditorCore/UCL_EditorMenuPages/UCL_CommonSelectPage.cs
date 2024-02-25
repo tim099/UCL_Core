@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UCL.Core;
@@ -121,13 +121,13 @@ namespace UCL.Core.Page
             //}
         }
         /// <summary>
-        /// Ã¸»s¿ï¨ú½s¿è¥Ø¼Ğªº¦Cªí(¥Ø«e ¸Ë³Æ ¹D¨ã³£¥Î³o­ÓÃ¸»s)
+        /// ç¹ªè£½é¸å–ç·¨è¼¯ç›®æ¨™çš„åˆ—è¡¨(ç›®å‰ è£å‚™ é“å…·éƒ½ç”¨é€™å€‹ç¹ªè£½)
         /// </summary>
-        /// <param name="iIDs2">©Ò¦³¥Ø¼ĞID</param>
-        /// <param name="iDic">½w¦s</param>
-        /// <param name="iEditAct">ÂI¤U½s¿è®É©I¥s</param>
-        /// <param name="iPreviewAct">ÂI¤U¹wÄı®É©I¥s</param>
-        /// <param name="iDeleteAct">ÂI¤U§R°£®É©I¥s</param>
+        /// <param name="iIDs2">æ‰€æœ‰ç›®æ¨™ID</param>
+        /// <param name="iDic">ç·©å­˜</param>
+        /// <param name="iEditAct">é»ä¸‹ç·¨è¼¯æ™‚å‘¼å«</param>
+        /// <param name="iPreviewAct">é»ä¸‹é è¦½æ™‚å‘¼å«</param>
+        /// <param name="iDeleteAct">é»ä¸‹åˆªé™¤æ™‚å‘¼å«</param>
         /// <param name="FontSize"></param>
         static public void DrawSelectTargetList(IList<string> iIDs, UCL.Core.UCL_ObjectDictionary iDic,
             System.Action<string> iEditAct, System.Action<string> iPreviewAct, System.Action<string> iDeleteAct,
@@ -178,7 +178,7 @@ namespace UCL.Core.Page
                     //{
                     //    continue;
                     //}
-                    if (aRegex != null && !aRegex.IsMatch(aID.ToLower()))//®Ú¾Ú¿é¤J ¹LÂoÅã¥Üªº¥Ø¼Ğ
+                    if (aRegex != null && !aRegex.IsMatch(aID.ToLower()))//æ ¹æ“šè¼¸å…¥ éæ¿¾é¡¯ç¤ºçš„ç›®æ¨™
                     {
                         continue;
                     }
@@ -186,7 +186,7 @@ namespace UCL.Core.Page
                     using (var aScope2 = new GUILayout.HorizontalScope("box"))
                     {
                         string aDisplayName = aID;
-                        if (aRegex != null)//¼Ğ°O²Å¦X·j´M±ø¥óªº³¡¤À
+                        if (aRegex != null)//æ¨™è¨˜ç¬¦åˆæœå°‹æ¢ä»¶çš„éƒ¨åˆ†
                         {
                             aDisplayName = aRegex.HightLight(aDisplayName, aSearchName, Color.red);
                         }

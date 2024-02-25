@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UCL.Core.LocalizeLib;
 using UnityEngine;
 using UCL.Core.EditorLib.Page;
+using UCL.Core.UI;
 namespace UCL.Core.Page
 {
     public class ButtonData
@@ -103,7 +104,7 @@ namespace UCL.Core.Page
                         }
                         else
                         {
-                            aIsClicked = GUILayout.Button(aButtonData.m_Text, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                            aIsClicked = GUILayout.Button(aButtonData.m_Text, UCL_GUIStyle.ButtonStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
                         }
                         if (aIsClicked)
                         {

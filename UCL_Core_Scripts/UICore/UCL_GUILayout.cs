@@ -368,9 +368,10 @@ namespace UCL.Core.UI {
         }
         static public bool BoolField(string iLabel, bool iVal, int iSize = 21)
         {
+            //GUILayout.Label("Test");
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);
             GUILayout.BeginHorizontal();
-            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //LabelAutoSize(iLabel);
             if (GUILayout.Button(iVal ? "✔" : " ", UCL_GUIStyle.ButtonStyle, GUILayout.Width(aSize), GUILayout.Height(aSize)))
             {
@@ -383,18 +384,18 @@ namespace UCL.Core.UI {
         static public Vector3 Vector3Field(string iLabel, Vector3 iVec3) {
             GUILayout.BeginHorizontal();
             //LabelAutoSize(label);
-            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             GUILayout.FlexibleSpace();
             //LabelAutoSize("X");
-            GUILayout.Label("X", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("X", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             string x = GUILayout.TextField(iVec3.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
             if (float.TryParse(x, out res_val)) iVec3.x = res_val;
-            GUILayout.Label("Y", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("Y", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //LabelAutoSize("Y");
             string y = GUILayout.TextField(iVec3.y.ToString(), GUILayout.MinWidth(80));
             if (float.TryParse(y, out res_val)) iVec3.y = res_val;
-            GUILayout.Label("Z", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("Z", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //LabelAutoSize("Z");
             string z = GUILayout.TextField(iVec3.z.ToString(), GUILayout.MinWidth(80));
             if (float.TryParse(z, out res_val)) iVec3.z = res_val;
@@ -403,14 +404,14 @@ namespace UCL.Core.UI {
         }
         static public Vector2 Vector2Field(string iLabel, Vector2 iVec2) {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             GUILayout.FlexibleSpace();
-            GUILayout.Label("X", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("X", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             string x = GUILayout.TextField(iVec2.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
             if (float.TryParse(x, out res_val)) iVec2.x = res_val;
 
-            GUILayout.Label("Y", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("Y", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             string y = GUILayout.TextField(iVec2.y.ToString(), GUILayout.MinWidth(80));
             if (float.TryParse(y, out res_val)) iVec2.y = res_val;
             GUILayout.EndHorizontal();
@@ -418,14 +419,14 @@ namespace UCL.Core.UI {
         }
         static public Vector2 Vector2Field(string iLabel, string iXstr, string iYstr, Vector2 iVec2) {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             GUILayout.FlexibleSpace();
-            GUILayout.Label(iXstr, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iXstr, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             string x = GUILayout.TextField(iVec2.x.ToString(), GUILayout.MinWidth(80));
             float res_val = 0;
             if (float.TryParse(x, out res_val)) iVec2.x = res_val;
 
-            GUILayout.Label(iYstr, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iYstr, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             string y = GUILayout.TextField(iVec2.y.ToString(), GUILayout.MinWidth(80));
             if (float.TryParse(y, out res_val)) iVec2.y = res_val;
             GUILayout.EndHorizontal();
@@ -433,15 +434,15 @@ namespace UCL.Core.UI {
         }
         static public System.Tuple<string, string, string> Vector3Field(string iLabel, string x, string y, string z) {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             GUILayout.FlexibleSpace();
-            GUILayout.Label("X", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("X", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             x = GUILayout.TextField(x, GUILayout.MinWidth(80));
 
-            GUILayout.Label("Y", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("Y", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             y = GUILayout.TextField(y, GUILayout.MinWidth(80));
 
-            GUILayout.Label("Z", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label("Z", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             z = GUILayout.TextField(z, GUILayout.MinWidth(80));
 
             GUILayout.EndHorizontal();
@@ -449,7 +450,7 @@ namespace UCL.Core.UI {
         }
         static public string TextField(string iLabel, string val, int min_width) {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             string result = GUILayout.TextField(val, GUILayout.MinWidth(min_width));
             GUILayout.EndHorizontal();
             return result;

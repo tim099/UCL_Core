@@ -95,14 +95,14 @@ namespace UCL.Core.Page
         protected override void TopBarButtons()
         {
             m_Data.ID = UCL.Core.UI.UCL_GUILayout.TextField(UCL_LocalizeManager.Get("ID"), m_Data.ID, 260);
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 //var aJson = m_Data.Save();
                 //m_InitJson = aJson.ToJson();
                 m_Data.Save();
                 UpdateInitJson();
             }
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 var aData = m_Data.SerializeToJson();
                 string aSaveData = aData.ToJsonBeautify();
@@ -110,7 +110,7 @@ namespace UCL.Core.Page
             }
             if (!string.IsNullOrEmpty(GUIUtility.systemCopyBuffer))
             {
-                if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     try
                     {
@@ -123,6 +123,14 @@ namespace UCL.Core.Page
                         Debug.LogException(iE);
                     }
                 }
+            }
+            GUILayout.Space(10);
+            var aType = m_Data.GetType();
+            GUILayout.Label(aType.Name, UCL_GUIStyle.LabelStyle);
+
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                aType.Name.CopyToClipboard();
             }
             //if (GUILayout.Button(UCL_LocalizeManager.Get("Rename"), GUILayout.ExpandWidth(false)))
             //{

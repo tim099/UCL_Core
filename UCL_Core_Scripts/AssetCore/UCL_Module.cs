@@ -320,11 +320,12 @@ namespace UCL.Core
                         if (aUtil != null)
                         {
                             GUILayout.BeginHorizontal();
-                            GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
                             if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.Width(100)))
                             {
                                 aUtil.CreateSelectPage();
                             }
+                            GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
+
                             //GUILayout.Label($"{aType.FullName}");
                             //aUtil.RefreshAllDatas();
                             //Debug.LogWarning($"Util:{aUtil.GetType().FullName}.RefreshAllDatas()");

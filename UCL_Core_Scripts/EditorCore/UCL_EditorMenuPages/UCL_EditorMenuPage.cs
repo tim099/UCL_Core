@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.LocalizeLib;
+using UCL.Core.Page;
+using UCL.Core.UI;
 using UnityEngine;
 
 
@@ -21,7 +23,12 @@ namespace UCL.Core.EditorLib.Page
         {
             using (var aScope = new GUILayout.VerticalScope("box"))//, GUILayout.MaxWidth(320)
             {
-                if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_LocalizeEditPage")))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Edit CommonData"), UCL_GUIStyle.ButtonStyle))
+                {
+                    UCL_ModuleServiceEditPage.Create();
+                }
+
+                if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_LocalizeEditPage"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();
                 }

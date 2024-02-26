@@ -229,8 +229,8 @@ namespace UCL.Core.UI {
         /// GUIStyle for GUILayout.Button
         /// </summary>
         static public GUIStyle ButtonStyle => CurStyleData.ButtonStyle;
-
-
+        static public GUIStyle TextAreaStyle => CurStyleData.TextAreaStyle;
+        static public GUIStyle TextFieldStyle => CurStyleData.TextFieldStyle;
 
         #region ButtonText
         public static GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12) => CurStyleData.GetButtonStyle(iCol, iFontSize);

@@ -133,7 +133,7 @@ namespace UCL.Core.UI
                     {
                         aSelectedType = PopupAuto(aTypeNameList, iDataDic, "SelectType", 10, GUILayout.Width(240));
                     }
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
                     {
                         try
                         {
@@ -341,7 +341,7 @@ namespace UCL.Core.UI
                     {
                         aSelectedType = PopupAuto(aTypeNameList, iDataDic, "SelectType", 10, GUILayout.Width(240));
                     }
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), GUILayout.Width(80)))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
                     {
                         try
                         {

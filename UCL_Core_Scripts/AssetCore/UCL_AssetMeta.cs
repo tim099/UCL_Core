@@ -87,18 +87,18 @@ namespace UCL.Core
                 using (var aScope = new GUILayout.HorizontalScope("box"))
                 {
                     GUILayout.Label(UCL_LocalizeManager.Get("FilterMode"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    m_FilterType = UCL_GUILayout.PopupAuto(m_FilterType, iDic, "FilterType", 6, GUILayout.Width(140));
+                    m_FilterType = UCL_GUILayout.PopupAuto(m_FilterType, iDic, "FilterType", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                     switch (m_FilterType)
                     {
                         case FilterType.CheckBox:
                             {
                                 m_ShowAll = UCL_GUILayout.CheckBox(m_ShowAll);
-                                GUILayout.Label("Show All", UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                                GUILayout.Label("Show All", UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(60)), GUILayout.ExpandWidth(false));
 
                                 if (!m_ShowAll)
                                 {
                                     m_ShowOthers = UCL_GUILayout.CheckBox(m_ShowOthers);
-                                    GUILayout.Label("Others", UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                                    GUILayout.Label("Others", UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(60)), GUILayout.ExpandWidth(false));
                                     int aCurShowCount = Mathf.Min(aKeys.Count, ShowCount);
                                     aRemainCheckBoxCount = aKeys.Count - aCurShowCount;
 
@@ -107,7 +107,7 @@ namespace UCL.Core
                                         var aKey = aKeys[i];
                                         var aGroup = m_GroupDatas[aKey];
                                         aGroup.m_IsEnable = UCL_GUILayout.CheckBox(aGroup.m_IsEnable);
-                                        GUILayout.Label(aKey, UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                                        GUILayout.Label(aKey, UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(60)), GUILayout.ExpandWidth(false));
                                     }
 
                                 }
@@ -121,7 +121,7 @@ namespace UCL.Core
                                 List<string> aList = new List<string>();
                                 aList.Add(string.Empty);
                                 aList.Append(aExternalGroups.Keys);
-                                m_SelectedGroup = aList[UCL_GUILayout.PopupAuto(aList.IndexOf(m_SelectedGroup), aList, iDic, "SelectedGroup", 6, GUILayout.Width(300))];
+                                m_SelectedGroup = aList[UCL_GUILayout.PopupAuto(aList.IndexOf(m_SelectedGroup), aList, iDic, "SelectedGroup", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)))];
                                 break;
                             }
                     }
@@ -148,7 +148,7 @@ namespace UCL.Core
                                     var aKey = aKeys[aIndex];
                                     var aGroup = m_GroupDatas[aKey];
                                     aGroup.m_IsEnable = UCL_GUILayout.CheckBox(aGroup.m_IsEnable);
-                                    GUILayout.Label(aKey, UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                                    GUILayout.Label(aKey, UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(60)), GUILayout.ExpandWidth(false));
                                 }
                             }
                         }
@@ -342,28 +342,6 @@ namespace UCL.Core
 
             PlayerPrefsMeta.OnGUI(iDic.GetSubDic("PlayerPrefsMeta"), this);
 
-            //using (var aScope = new GUILayout.HorizontalScope("box"))
-            //{
-            //    GUILayout.Label("Filter Group", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            //    PlayerPrefsMeta.m_ShowAll = UCL_GUILayout.CheckBox(PlayerPrefsMeta.m_ShowAll);
-            //    GUILayout.Label("Show All", UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
-            //    foreach (var aKey in m_Groups.Keys)
-            //    {
-            //        GroupsPopup.Add(aKey);
-            //        if (!PlayerPrefsMeta.m_ShowAll)
-            //        {
-                        
-            //            var aGroup = m_Groups[aKey];
-            //            aGroup.IsEnable = UCL_GUILayout.CheckBox(aGroup.IsEnable);
-            //            GUILayout.Label(aKey, UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
-            //        }
-            //    }
-            //    if (!PlayerPrefsMeta.m_ShowAll)
-            //    {
-            //        PlayerPrefsMeta.m_ShowOthers = UCL_GUILayout.CheckBox(PlayerPrefsMeta.m_ShowOthers);
-            //        GUILayout.Label("Others", UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
-            //    }
-            //}
         }
         /// <summary>
         /// 抓取全部要顯示的物品ID

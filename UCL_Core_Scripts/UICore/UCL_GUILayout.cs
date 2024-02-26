@@ -173,7 +173,7 @@ namespace UCL.Core.UI {
             string aNumStr = iDataDic.GetData(aKey, iVal.ToString());
             GUILayout.BeginHorizontal();
             if (!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
-            string aResult = GUILayout.TextField(aNumStr, iOptions);
+            string aResult = GUILayout.TextField(aNumStr, UCL_GUIStyle.TextFieldStyle, iOptions);
             GUILayout.EndHorizontal();
 
             iDataDic.SetData(aKey, aResult);
@@ -194,14 +194,14 @@ namespace UCL.Core.UI {
         static public int IntField(string iLabel, int iVal, params GUILayoutOption[] iOptions)
         {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(iLabel);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             iVal = IntField(iVal, iOptions);
             GUILayout.EndHorizontal();
             return iVal;
         }
         static public int IntField(int iVal, params GUILayoutOption[] iOptions)
         {
-            string aResult = GUILayout.TextField(iVal.ToString(), iOptions);
+            string aResult = GUILayout.TextField(iVal.ToString(), UCL_GUIStyle.TextFieldStyle, iOptions);
             if (string.IsNullOrEmpty(aResult)) return 0;
             int aResVal = 0;
             if (int.TryParse(aResult, out aResVal)) return aResVal;
@@ -210,7 +210,8 @@ namespace UCL.Core.UI {
         static public int IntField(string iLabel, int iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
         {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(iLabel);
+            //LabelAutoSize(iLabel);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             int aResult = IntField(iVal, iDataDic, iOptions);
             GUILayout.EndHorizontal();
             return aResult;
@@ -254,7 +255,7 @@ namespace UCL.Core.UI {
         {
             GUILayout.BeginHorizontal();
             LabelAutoSize(iLabel);
-            string aResult = GUILayout.TextField(iDataDic.GetData(iKey,string.Empty), UCL_GUIStyle.CurStyleData.TextFieldStyle);
+            string aResult = GUILayout.TextField(iDataDic.GetData(iKey,string.Empty), UCL_GUIStyle.TextFieldStyle);
             iDataDic.SetData(iKey, aResult);
             GUILayout.EndHorizontal();
             return aResult;
@@ -263,7 +264,7 @@ namespace UCL.Core.UI {
             GUILayout.BeginHorizontal();
             GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //LabelAutoSize(iLabel);
-            string result = GUILayout.TextField(iVal, UCL_GUIStyle.CurStyleData.TextFieldStyle);
+            string result = GUILayout.TextField(iVal, UCL_GUIStyle.TextFieldStyle);
             GUILayout.EndHorizontal();
             return result;
         }
@@ -272,7 +273,7 @@ namespace UCL.Core.UI {
             GUILayout.BeginHorizontal();
             GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //LabelAutoSize(iLabel);
-            string result = GUILayout.TextArea(iVal, UCL_GUIStyle.CurStyleData.TextAreaStyle);
+            string result = GUILayout.TextArea(iVal, UCL_GUIStyle.TextAreaStyle);
             GUILayout.EndHorizontal();
             return result;
         }
@@ -453,7 +454,7 @@ namespace UCL.Core.UI {
         static public string TextField(string iLabel, string iVal, int iMinWidth) {
             GUILayout.BeginHorizontal();
             GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            string result = GUILayout.TextField(iVal, UCL_GUIStyle.CurStyleData.TextFieldStyle, GUILayout.MinWidth(iMinWidth));
+            string result = GUILayout.TextField(iVal, UCL_GUIStyle.TextFieldStyle, GUILayout.MinWidth(iMinWidth));
             GUILayout.EndHorizontal();
             return result;
         }

@@ -46,7 +46,7 @@ namespace UCL.Core.UI
                 if (iObj is string aStr)
                 {
                     aIsShowField = false;
-                    aResultObj = GUILayout.TextArea(aStr);
+                    aResultObj = GUILayout.TextArea(aStr, UCL_GUIStyle.TextAreaStyle);
                 }
                 if(iObj is bool aflag)
                 {

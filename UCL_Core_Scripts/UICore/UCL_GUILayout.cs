@@ -641,11 +641,11 @@ namespace UCL.Core.UI {
 
             if (!string.IsNullOrEmpty(iLabel))
             {
-                GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
+                GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             }
 
             var aCurPath = iDataDic.GetData(PathKey, iPath);
-            var aNewPath = GUILayout.TextField(aCurPath);
+            var aNewPath = GUILayout.TextField(aCurPath, UCL_GUIStyle.TextFieldStyle);
             iDataDic.SetData(PathKey, aNewPath);
             if (aNewPath != aCurPath)
             {
@@ -664,10 +664,10 @@ namespace UCL.Core.UI {
             }
 
             string aShowToggle = iDataDic.GetData(ShowToggleKey, string.Empty);
-            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(300)))
+            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(300))))
             {
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("<<", GUILayout.Width(40)))
+                if (GUILayout.Button("<<", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))))
                 {
                     aSetPath(string.Empty);
                 }
@@ -718,7 +718,7 @@ namespace UCL.Core.UI {
                             }
                         }
 
-                        if (GUILayout.Button(aFolderName))
+                        if (GUILayout.Button(aFolderName, UCL_GUIStyle.ButtonStyle))
                         {
                             System.Text.StringBuilder aSB = new System.Text.StringBuilder();
                             for (int j = 0; j <= aPaths.Length - i; j++)
@@ -743,14 +743,14 @@ namespace UCL.Core.UI {
                 {
                     const int DirHeight = 25;
                     using (var aScope2 = new GUILayout.ScrollViewScope(iDataDic.GetData("FolderScrollPos", Vector2.zero), "box",
-                        GUILayout.Height(System.Math.Min(6, aDirs.Length) * DirHeight + 6)))
+                        GUILayout.Height(UCL_GUIStyle.GetScaledSize(System.Math.Min(6, aDirs.Length) * DirHeight + 6))))
                     {
                         iDataDic.SetData("FolderScrollPos", aScope2.scrollPosition);
                         for (int i = 0; i < aDirs.Length; i++)
                         {
                             string aDir = aDirs[i];
                             GUILayout.BeginHorizontal();
-                            if (GUILayout.Button("  ❐   "))
+                            if (GUILayout.Button("  ❐   ", UCL_GUIStyle.ButtonStyle))
                             {
                                 string aCurDirPath = iDataDic.GetData(DirPathKey, iPath);
                                 if (string.IsNullOrEmpty(aCurDirPath))

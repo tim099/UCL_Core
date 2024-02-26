@@ -26,7 +26,11 @@ namespace UCL.Core.UI
                 }
                 else
                 {
-                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                    if (!string.IsNullOrEmpty(iDisplayName))
+                    {
+                        GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        //UCL_GUILayout.LabelAutoSize(iDisplayName);
+                    }
                 }
 
                 if (aIsShowField)
@@ -34,7 +38,8 @@ namespace UCL.Core.UI
                     {
                         GUILayout.Space(5);
                         aIsDelete = BoolField(iDataDic, "Delete");
-                        UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
+                        GUILayout.Label(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        //UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
                     }
                 }
                 GUILayout.FlexibleSpace();
@@ -44,18 +49,18 @@ namespace UCL.Core.UI
                 using (new GUILayout.HorizontalScope("box"))
                 {
                     var aKeyType = aType.GetGenericKeyType();
-                    string aAddKey = "AddData";
-                    if (!iDataDic.ContainsKey(aAddKey))
+                    const string AddKey = "AddData";
+                    if (!iDataDic.ContainsKey(AddKey))
                     {
-                        iDataDic.SetData(aAddKey, aKeyType.CreateInstance());
+                        iDataDic.SetData(AddKey, aKeyType.CreateInstance());
                     }
                     GUILayout.Label(UCL_LocalizeManager.Get("Key"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    var aKey = iDataDic.GetData(aAddKey);
+                    var aKey = iDataDic.GetData(AddKey);
                     string aKeyName = string.Empty;
                     var aKeyShortName = aKey as UCL.Core.UCLI_ShortName;
                     if (aKeyShortName != null) aKeyName = aKeyShortName.GetShortName();
                     if (aKeyName.IsNullOrEmpty()) aKeyName = UCL_LocalizeManager.Get(aKeyType.Name);
-                    iDataDic.SetData(aAddKey, DrawObjectData(aKey,
+                    iDataDic.SetData(AddKey, DrawObjectData(aKey,
                         iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
                     using (new GUILayout.HorizontalScope("box"))
                     {
@@ -63,10 +68,10 @@ namespace UCL.Core.UI
                         {
                             try
                             {
-                                var aNewKey = iDataDic.GetData(aAddKey);
+                                var aNewKey = iDataDic.GetData(AddKey);
                                 if (!iDic.Contains(aNewKey))
                                 {
-                                    iDataDic.Remove(aAddKey);
+                                    iDataDic.Remove(AddKey);
                                     var aGenericType = aType.GetGenericValueType();
                                     iDic.Add(aNewKey, aGenericType.CreateInstance());
                                 }

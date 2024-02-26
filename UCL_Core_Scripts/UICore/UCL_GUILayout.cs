@@ -254,23 +254,25 @@ namespace UCL.Core.UI {
         {
             GUILayout.BeginHorizontal();
             LabelAutoSize(iLabel);
-            string aResult = GUILayout.TextField(iDataDic.GetData(iKey,string.Empty));
+            string aResult = GUILayout.TextField(iDataDic.GetData(iKey,string.Empty), UCL_GUIStyle.CurStyleData.TextFieldStyle);
             iDataDic.SetData(iKey, aResult);
             GUILayout.EndHorizontal();
             return aResult;
         }
         static public string TextField(string iLabel, string iVal) {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(iLabel);
-            string result = GUILayout.TextField(iVal);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            //LabelAutoSize(iLabel);
+            string result = GUILayout.TextField(iVal, UCL_GUIStyle.CurStyleData.TextFieldStyle);
             GUILayout.EndHorizontal();
             return result;
         }
         static public string TextArea(string iLabel, string iVal)
         {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(iLabel);
-            string result = GUILayout.TextArea(iVal);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            //LabelAutoSize(iLabel);
+            string result = GUILayout.TextArea(iVal, UCL_GUIStyle.CurStyleData.TextAreaStyle);
             GUILayout.EndHorizontal();
             return result;
         }
@@ -448,10 +450,10 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return new System.Tuple<string, string, string>(x, y, z);
         }
-        static public string TextField(string iLabel, string val, int min_width) {
+        static public string TextField(string iLabel, string iVal, int iMinWidth) {
             GUILayout.BeginHorizontal();
             GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            string result = GUILayout.TextField(val, GUILayout.MinWidth(min_width));
+            string result = GUILayout.TextField(iVal, UCL_GUIStyle.CurStyleData.TextFieldStyle, GUILayout.MinWidth(iMinWidth));
             GUILayout.EndHorizontal();
             return result;
         }

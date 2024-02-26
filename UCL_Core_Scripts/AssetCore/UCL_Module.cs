@@ -320,7 +320,7 @@ namespace UCL.Core
                         if (aUtil != null)
                         {
                             GUILayout.BeginHorizontal();
-                            if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.Width(100)))
+                            if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.ExpandWidth(false)))
                             {
                                 aUtil.CreateSelectPage();
                             }

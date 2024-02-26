@@ -35,14 +35,14 @@ namespace UCL.Core.Page
             base.Init(iGUIPageController);
             string aTypeName = typeof(T).Name;
             m_TypeName = aTypeName;
-            string aKey = "Create_" + aTypeName.Replace("RCG_", string.Empty);
+            string aKey = $"Create_{aTypeName}";
             if (UCL_LocalizeManager.ContainsKey(aKey))
             {
                 m_CreateDes = UCL_LocalizeManager.Get(aKey);
             }
             else
             {
-                m_CreateDes = UCL_LocalizeManager.Get("CreateNew");
+                m_CreateDes = UCL_LocalizeManager.Get("Create New");
             }
             m_Meta = Util.AssetMetaIns;
             //Debug.LogError("m_CreateDes:" + m_CreateDes);

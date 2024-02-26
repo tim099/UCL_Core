@@ -306,7 +306,7 @@ namespace UCL.Core.UI
                         if (aShortName != null)
                         {
                             var aName = aShortName.GetShortName();
-                            if (!string.IsNullOrEmpty(aName)) aDisplayName += "(" + aName + ")";
+                            if (!string.IsNullOrEmpty(aName)) aDisplayName += $"({aName})";
                         }
                         bool aIsAlwaysShowDetail = aField.FieldType.GetCustomAttribute<ATTR.AlwaysExpendOnGUI>() != null;
                         bool aIsDrawed = false;
@@ -398,6 +398,7 @@ namespace UCL.Core.UI
                         else if (aField.FieldType == typeof(string))
                         {
                             if (aData == null) aData = "";
+                            //UCL_GUIStyle.CurStyleData.TextAreaStyle
                             var aResult = UCL.Core.UI.UCL_GUILayout.TextArea(aDisplayName, (string)aData);
                             aField.SetValue(iObj, aResult);
                         }

@@ -1,4 +1,8 @@
-﻿using System.Collections;
+
+// ATS_AutoHeader
+// to change the auto header please go to ATS_AutoHeader.cs
+// Create time : 02/26 2024 12:53
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -14,10 +18,10 @@ namespace UCL.Core.UI {
 
             private int m_FontSize = DefaultFontSize;
             private GUIStyle m_BoxStyle = null;
-            private GUIStyle m_ButtonStyle = null;
-            private GUIStyle m_LabelStyle = null;
             private GUIStyle m_HorizontalSliderStyle = null;
             private GUIStyle m_HorizontalSliderThumbStyle = null;
+            private GUIStyle m_TextFieldStyle = null;
+            private GUIStyle m_TextAreaStyle = null;
             Dictionary<System.Tuple<Color, int>, GUIStyle> m_ButtonStyleDic = null;
             Dictionary<System.Tuple<Color, int>, GUIStyle> m_LabelStyleDic = null;
 
@@ -32,15 +36,16 @@ namespace UCL.Core.UI {
                 if (m_BoxStyle != null) {
                     m_BoxStyle.fontSize = m_FontSize;
                 }
-                //if(m_ButtonStyle != null)
-                //{
-                //    m_ButtonStyle.fontSize = m_FontSize;
-                //}
-                //if(m_LabelStyle != null)
-                //{
-                //    m_LabelStyle.fontSize = m_FontSize;
-                //}
-                if(m_HorizontalSliderThumbStyle != null)
+                if (m_TextFieldStyle != null)
+                {
+                    m_TextFieldStyle.fontSize = m_FontSize;
+                }
+                if (m_TextAreaStyle != null)
+                {
+                    m_TextAreaStyle.fontSize = m_FontSize;
+                }
+
+                if (m_HorizontalSliderThumbStyle != null)
                 {
                     m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
                     m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
@@ -50,6 +55,7 @@ namespace UCL.Core.UI {
                 {
                     m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
                 }
+
                 if(m_ButtonStyleDic != null)
                 {
                     foreach (var aKey in m_ButtonStyleDic.Keys)
@@ -94,26 +100,8 @@ namespace UCL.Core.UI {
             }
             
 
-            public GUIStyle ButtonStyle
-            {
-                get
-                {
-                    if (m_ButtonStyle == null)
-                    {
-                        m_ButtonStyle = GetButtonStyle(Color.white, DefaultFontSize);
-                        //m_ButtonStyle = new GUIStyle(GUI.skin.button);
-                        //m_ButtonStyle.richText = true;
-                        //var aTextCol = Color.white;
-                        //m_ButtonStyle.normal.textColor = aTextCol;
-                        //m_ButtonStyle.focused.textColor = aTextCol;
-                        //m_ButtonStyle.hover.textColor = aTextCol;
+            public GUIStyle ButtonStyle => GetButtonStyle(Color.white, DefaultFontSize);
 
-                        //m_ButtonStyle.fontSize = m_FontSize;
-                    }
-                    return m_ButtonStyle;
-                }
-            }
-            
 
 
             public GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12)
@@ -140,27 +128,10 @@ namespace UCL.Core.UI {
             }
             
 
-            public GUIStyle LabelStyle
-            {
-                get
-                {
-                    if (m_LabelStyle == null)
-                    {
-                        m_LabelStyle = GetLabelStyle(Color.white, DefaultFontSize);
-                        //s_LabelStyle = new GUIStyle(GUI.skin.label);
-                        //s_LabelStyle.richText = true;
-                        //var aTextCol = Color.white;
-                        //s_LabelStyle.normal.textColor = aTextCol;
-                        //s_LabelStyle.focused.textColor = aTextCol;
-                        //s_LabelStyle.hover.textColor = aTextCol;
-                        //s_LabelStyle.fontSize = 16;
-                    }
-                    return m_LabelStyle;
-                }
-            }
-            
+            public GUIStyle LabelStyle => GetLabelStyle(Color.white, DefaultFontSize);
 
-            
+
+
             public GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16)
             {
                 if (m_LabelStyleDic == null)
@@ -174,9 +145,9 @@ namespace UCL.Core.UI {
                     aText.normal.textColor = iTextCol;
                     aText.active.textColor = iTextCol;
                     aText.hover.textColor = iTextCol;
-                    aText.fontSize = iSize;
+                    aText.fontSize = Mathf.RoundToInt(m_Scale * iSize);
                     aText.richText = true;
-                    aText.fontSize = m_FontSize;
+                    //aText.fontSize = m_FontSize;
                     m_LabelStyleDic.Add(aKey, aText);
                 }
                 return m_LabelStyleDic[aKey];
@@ -207,6 +178,30 @@ namespace UCL.Core.UI {
                         m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
                     }
                     return m_HorizontalSliderThumbStyle;
+                }
+            }
+            public GUIStyle TextFieldStyle
+            {
+                get
+                {
+                    if (m_TextFieldStyle == null)
+                    {
+                        m_TextFieldStyle = new GUIStyle(GUI.skin.textField);
+                        m_TextFieldStyle.fontSize = m_FontSize;
+                    }
+                    return m_TextFieldStyle;
+                }
+            }
+            public GUIStyle TextAreaStyle
+            {
+                get
+                {
+                    if (m_TextAreaStyle == null)
+                    {
+                        m_TextAreaStyle = new GUIStyle(GUI.skin.textArea);
+                        m_TextAreaStyle.fontSize = m_FontSize;
+                    }
+                    return m_TextAreaStyle;
                 }
             }
         }

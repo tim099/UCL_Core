@@ -40,20 +40,33 @@ namespace UCL.Core.UI {
                 //{
                 //    m_LabelStyle.fontSize = m_FontSize;
                 //}
-                m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
-                m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                if(m_HorizontalSliderThumbStyle != null)
+                {
+                    m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                    m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                }
 
-                m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
-                foreach (var aKey in m_ButtonStyleDic.Keys)
+                if(m_HorizontalSliderStyle != null)
                 {
-                    var aStyle = m_ButtonStyleDic[aKey];
-                    aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                    m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
                 }
-                foreach (var aKey in m_LabelStyleDic.Keys)
+                if(m_ButtonStyleDic != null)
                 {
-                    var aStyle = m_LabelStyleDic[aKey];
-                    aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                    foreach (var aKey in m_ButtonStyleDic.Keys)
+                    {
+                        var aStyle = m_ButtonStyleDic[aKey];
+                        aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                    }
                 }
+                if(m_LabelStyleDic != null)
+                {
+                    foreach (var aKey in m_LabelStyleDic.Keys)
+                    {
+                        var aStyle = m_LabelStyleDic[aKey];
+                        aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                    }
+                }
+
             }
             /// <summary>
             /// GUIStyle for GUILayout.Box

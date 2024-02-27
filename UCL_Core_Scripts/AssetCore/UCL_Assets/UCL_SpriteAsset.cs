@@ -60,13 +60,13 @@ namespace UCL.Core
         }
 
         /// <summary>
-        /// 預覽
+        /// Preview(OnGUI)
         /// </summary>
-        /// <param name="iIsShowEditButton">是否顯示編輯按鈕</param>
+        /// <param name="iIsShowEditButton">Show edit button in preview window?</param>
         override public void Preview(UCL.Core.UCL_ObjectDictionary iDataDic, bool iIsShowEditButton = false)
         {
-            GUILayout.BeginHorizontal();
-            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(130)))
+            //GUILayout.BeginHorizontal();
+            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))
             {
 
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
@@ -92,7 +92,7 @@ namespace UCL.Core
                     }
                 }
             }
-            GUILayout.EndHorizontal();
+            //GUILayout.EndHorizontal();
         }
         public Sprite Sprite
         {

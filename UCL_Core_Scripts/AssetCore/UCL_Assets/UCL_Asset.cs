@@ -49,8 +49,8 @@ namespace UCL.Core
         /// <param name="iIsShowEditButton"></param>
         virtual public void Preview(UCL.Core.UCL_ObjectDictionary iDataDic, bool iIsShowEditButton = false)
         {
-            GUILayout.BeginHorizontal();
-            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(130)))
+            //GUILayout.BeginHorizontal();
+            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))//, GUILayout.MinWidth(130)
             {
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
 
@@ -62,7 +62,7 @@ namespace UCL.Core
                     }
                 }
             }
-            GUILayout.EndHorizontal();
+            //GUILayout.EndHorizontal();
         }
         public static string LocalizeFieldName(string iDisplayName)
         {

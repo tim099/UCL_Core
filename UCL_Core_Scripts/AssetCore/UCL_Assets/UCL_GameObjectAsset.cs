@@ -32,7 +32,6 @@ namespace UCL.Core
         /// <param name="iIsShowEditButton">Show edit button in preview window?</param>
         override public void Preview(UCL.Core.UCL_ObjectDictionary iDataDic, bool iIsShowEditButton = false)
         {
-            //GUILayout.BeginHorizontal();
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))//, GUILayout.MinWidth(130)
             {
 
@@ -54,13 +53,12 @@ namespace UCL.Core
 
                 if (iIsShowEditButton)
                 {
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit")))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
                     {
                         UCL_CommonEditPage.Create(this);
                     }
                 }
             }
-            //GUILayout.EndHorizontal();
         }
 
         public UCL_GameObjectAsset()

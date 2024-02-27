@@ -18,7 +18,7 @@ using UCL.Core.Page;
 namespace UCL.Core.Page
 {
     /// <summary>
-    /// 通用編輯頁面(目前整合了Item,Equipment,DropTable)
+    /// Common edit page of UCLI_CommonEditable
     /// </summary>
     public class UCL_CommonEditPage : UCL_EditorPage
     {
@@ -46,8 +46,8 @@ namespace UCL.Core.Page
         UCLI_CommonEditable m_Data = null;
         string m_WindowName = string.Empty;
         /// <summary>
-        /// 開始編輯時的資料轉為Json(存檔會刷新這個值)
-        /// (在離開時用來判斷資料是否被修改過 若改過則彈窗提示存檔)
+        /// Init value of m_Data.SerializeToJson()(Refresh when save data)
+        /// Show "SaveBeforeExit?" popup if data modified when exit this page
         /// </summary>
         string m_InitJson = string.Empty;
         protected UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL.Core.UCL_ObjectDictionary();
@@ -68,7 +68,7 @@ namespace UCL.Core.Page
         protected override void BackButtonClicked()
         {
             //string aCurJson = m_Data.SerializeToJson().ToJson();
-            if (!IsModified())//沒改過
+            if (!IsModified())//Not Modified
             {
                 base.BackButtonClicked();
             }

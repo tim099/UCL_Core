@@ -1,9 +1,11 @@
-﻿using System;
+﻿using Cysharp.Threading.Tasks;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 
 
 namespace UCL.Core.Game
@@ -14,13 +16,19 @@ namespace UCL.Core.Game
 #endif
     public class UCL_UIService : UCL_GameService
     {
+        #region static
         static public UCL_UIService Ins { get => s_Ins; protected set => s_Ins = value; }
         static public UCL_UIService s_Ins = null;
-        public RectTransform UIRoot { get => m_UIRoot; }
         /// <summary>
         /// Root folder of UI Resource
         /// </summary>
         static public string UIResourceFolder = string.Empty;
+        #endregion
+
+        
+
+
+
 
         [SerializeField] protected RectTransform m_UIRoot = null;
         [SerializeField] protected RectTransform m_UIOverlayRoot = null;
@@ -34,6 +42,9 @@ namespace UCL.Core.Game
         /// Use List to simulate Stack
         /// </summary>
         protected List<UCL_GameUI> m_UIStack = new List<UCL_GameUI>();
+
+        virtual public RectTransform UIRoot => m_UIRoot;
+        virtual protected string UIAddressablesPathFormat => "Assets/Addressables/UI/{0}.prefab";
         public override void Init()
         {
             Ins = this;
@@ -172,6 +183,41 @@ namespace UCL.Core.Game
 
             return default;//fail to create
         }
+
+        virtual public async UniTask<UCL_GameUI> CreateUIFromAddressable(string iPath)
+        {
+            try
+            {
+                var aObject = await Addressables.LoadAssetAsync<GameObject>(iPath);
+                if (aObject == null)
+                {
+                    Debug.LogError("CreateUIFromAddressable aObject == null iPath:" + iPath);
+                    return null;
+                }
+                UCL_GameUI aTemplate = aObject.GetComponent<UCL_GameUI>();
+                if (aTemplate == null)
+                {
+                    Debug.LogError("CreateUIFromAddressable aTemplate == null iPath:" + iPath);
+                    return null;
+                }
+                return CreateUI(aTemplate);
+            }
+            catch (System.Exception iE)
+            {
+                Debug.LogException(iE);
+            }
+
+            return null;//fail to create
+        }
+        virtual public async UniTask<T> CreateUIFromAddressable<T>(string iPath = "") where T : UCL_GameUI
+        {
+            if (string.IsNullOrEmpty(iPath))
+            {
+                iPath = string.Format(UIAddressablesPathFormat, typeof(T).Name);// $"Assets/Addressables/UI/{typeof(T).Name}.prefab";
+            }
+            return await CreateUIFromAddressable(iPath) as T;
+        }
+
         /// <summary>
         /// Remove closed ui from UIStack
         /// </summary>

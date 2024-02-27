@@ -56,7 +56,7 @@ namespace UCL.Core
 
                 if (iIsShowEditButton)
                 {
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit")))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
                     {
                         UCL_CommonEditPage.Create(this);
                     }
@@ -85,7 +85,7 @@ namespace UCL.Core
             {
                 UCL.Core.UI.UCL_GUILayout.DrawObjectData(this, iDataDic, string.Empty, true, LocalizeFieldName);
             }
-            using (new GUILayout.VerticalScope("box"))//預覽
+            using (new GUILayout.VerticalScope("box"))//Preview
             {
                 bool aIsShow = false;
                 using (new GUILayout.HorizontalScope())
@@ -96,7 +96,7 @@ namespace UCL.Core
 
                 if (aIsShow)
                 {
-                    using (new GUILayout.VerticalScope(GUILayout.Width(200)))
+                    //using (new GUILayout.VerticalScope(GUILayout.Width(200)))
                     {
                         Preview(iDataDic.GetSubDic("Preview"), false);
                     }

@@ -27,6 +27,7 @@ namespace UCL.Core.Page
         protected string m_TypeName = string.Empty;
         protected UCL_AssetMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
+        public override string WindowName => $"UCL_CommonSelectPage({m_TypeName})";
         public override bool IsWindow => true;
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {
@@ -104,7 +105,7 @@ namespace UCL.Core.Page
                 UCL.Core.FileLib.WindowsLib.OpenExplorer(Util.SaveFolderPath);
             }
 #endif
-            using (new GUILayout.HorizontalScope("box"))
+            //using (new GUILayout.HorizontalScope("box"))
             {
                 //GUILayout.Label("Type:", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 //GUILayout.Space(10);

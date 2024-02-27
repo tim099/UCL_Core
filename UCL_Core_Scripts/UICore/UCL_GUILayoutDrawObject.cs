@@ -323,7 +323,7 @@ namespace UCL.Core.UI
                                 aIsDrawed = true;
                                 var aStrArr = aAttr as IStrList;
                                 GUILayout.BeginHorizontal();
-                                GUILayout.Label(aDisplayName, GUILayout.ExpandWidth(false));
+                                GUILayout.Label(aDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
                                 aField.SetValue(iObj, aStrArr.DrawOnGUILocalized(iObj, aData, iDataDic, aField.Name));
                                 GUILayout.EndHorizontal();

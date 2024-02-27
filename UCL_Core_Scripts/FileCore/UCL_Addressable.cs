@@ -51,6 +51,7 @@ namespace UCL.Core
                 if(s_AllAddressableKeys == null)
                 {
                     s_AllAddressableKeys = new List<string>();
+                    UnityEngine.AddressableAssets.Addressables.InitializeAsync();
                 }
                 else
                 {

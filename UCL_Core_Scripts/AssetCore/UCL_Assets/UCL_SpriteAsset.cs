@@ -163,6 +163,7 @@ namespace UCL.Core
 
     }
 
+    [System.Serializable]
     public class UCL_SpriteAssetEntry : UCL_AssetEntryDefault<UCL_SpriteAsset>
     {
         public const string DefaultID = "Default";

@@ -31,7 +31,7 @@ namespace UCL.Core.ServiceLib
             public void OnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
             {
                 if (!s_Inited) return ;
-                using(var aScope = new GUILayout.VerticalScope("box"))
+                //using(var aScope = new GUILayout.VerticalScope("box"))
                 {
                     bool aIsShow = false;
                     using (var aScope2 = new GUILayout.HorizontalScope())
@@ -90,7 +90,7 @@ namespace UCL.Core.ServiceLib
             if (!s_Inited) return;
             using (var aScope = new GUILayout.HorizontalScope("box"))
             {
-                if (GUILayout.Button("Clear"))
+                if (GUILayout.Button("Clear", UCL_GUIStyle.ButtonStyle))
                 {
                     s_Logs.Clear();
                 }

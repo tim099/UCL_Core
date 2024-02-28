@@ -153,7 +153,7 @@ namespace UCL.Core
                 {
                     aNeedInstall = false;
                 }
-                Debug.LogError($"Version:{m_Config.m_Version},aConfig.m_Version:{aConfig.m_Version},aNeedInstall:{aNeedInstall}");
+                Debug.LogWarning($"Version:{m_Config.m_Version},aConfig.m_Version:{aConfig.m_Version},aNeedInstall:{aNeedInstall}");
             }
             if(aNeedInstall)
             {

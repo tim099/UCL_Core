@@ -11,8 +11,8 @@ namespace UCL.Core.EditorLib.Page
     {
         #region static
         static public UCL_DebugLogPage Create() => UCL_EditorPage.Create<UCL_DebugLogPage>();
-
         #endregion
+
         public override bool IsWindow => true;
         public override string WindowName => $"UCL_DebugLogPage";
         protected override bool ShowCloseButton => false;

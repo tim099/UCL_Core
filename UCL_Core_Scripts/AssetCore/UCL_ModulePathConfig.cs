@@ -19,6 +19,33 @@ namespace UCL.Core
         public const string ConfigFileName = "Config.json";
         public const string FileInfosFileName = "FileInfos.json";
         public const string ModResourcesName = "ModResources";
+
+        #region Common
+
+        public static string GetModulesFolderPath(UCL_ModuleEditType iModuleEditType)
+        {
+            switch (iModuleEditType)
+            {
+                case UCL_ModuleEditType.Builtin:
+                    {
+                        return BuiltinModulesPath;
+                    }
+                    case UCL_ModuleEditType.Runtime:
+                    {
+                        return ModulesPath;
+                    }
+            }
+            return string.Empty;
+        }
+        public static IList<string> GetAllModulesID(UCL_ModuleEditType iModuleEditType)
+        {
+            string aPath = GetModulesFolderPath(iModuleEditType);
+            var aIDs = UCL.Core.FileLib.Lib.GetDirectories(aPath, iSearchOption: SearchOption.TopDirectoryOnly, iRemoveRootPath: true);
+            return aIDs;
+        }
+        #endregion
+
+
         #region RelativePath
         public static string BuiltinConfigRelativePath => Path.Combine(BuiltinRootRelativePath, ConfigFileName);
         public static string BuiltinModulesRelativePath => Path.Combine(BuiltinRootRelativePath, ModulesFolderName);

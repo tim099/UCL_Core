@@ -70,6 +70,20 @@ namespace UCL.Core
             get => Ins.m_PathConfig.m_ModuleEditType;
             private set => Ins.m_PathConfig.m_ModuleEditType = value;
         }
+        public static UCL_AssetType AssetType
+        {
+            get
+            {
+                switch(ModuleEditType)
+                {
+                    case UCL_ModuleEditType.Builtin:
+                        {
+                            return UCL_AssetType.Addressables;
+                        }
+                }
+                return UCL_AssetType.PersistentDatas;
+            }
+        }
         public static UCL_Module CurEditModule => Ins.m_CurEditModule;
         protected static UCL_ModuleService s_Ins = null;
         public static bool Initialized
@@ -154,7 +168,7 @@ namespace UCL.Core
         protected bool m_LoadingConfig = false;
         protected Config m_Config = new Config();
 
-
+        protected string m_NewModuleName = "New Module";
         protected UCL_Module m_CurEditModule = null;
         protected List<UCL_Module> m_LoadedModules = new List<UCL_Module>();
 
@@ -228,10 +242,14 @@ namespace UCL.Core
                     {
                         Directory.CreateDirectory(aModulesPath);
                     }
+                    
                     //Debug.LogError($"aBuiltinModulesPath:{aBuiltinModulesPath}");
-                    var aDirs = UCL.Core.FileLib.Lib.GetDirectories(aModulesPath, iSearchOption: SearchOption.TopDirectoryOnly, iRemoveRootPath: true);
+                    //var aDirs = UCL.Core.FileLib.Lib.GetDirectories(aModulesPath, iSearchOption: SearchOption.TopDirectoryOnly, iRemoveRootPath: true);
+                    var aAllModulesID = UCL_ModulePath.GetAllModulesID(ModuleEditType);
                     //Debug.LogError($"aDirs:{aDirs.ConcatString()}");
-                    m_Config.m_BuiltinModules = aDirs.ToList();
+
+
+                    m_Config.m_BuiltinModules = aAllModulesID.ToList();
                     if (!m_Config.m_BuiltinModules.Contains(CoreModuleID))//Create Core Module!!
                     {
                         m_Config.CreateModule(CoreModuleID, UCL_AssetType.StreamingAssets);
@@ -315,14 +333,13 @@ namespace UCL.Core
         }
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
-            if(Application.isEditor)
+            if(Application.isEditor)//ModuleEditType Builtin can only edit in Editor
             {
                 using (var aScope = new GUILayout.HorizontalScope("box"))
                 {
                     GUILayout.Label("EditType", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     ModuleEditType = UCL_GUILayout.PopupAuto(ModuleEditType, iDataDic.GetSubDic("EditType"));
                 }
-                    
             }
             using(var aScope = new GUILayout.HorizontalScope("box"))
             {
@@ -345,11 +362,25 @@ namespace UCL.Core
 
             m_Config.OnGUI(iDataDic.GetSubDic("Config"));
 
+            using (var aScope = new GUILayout.HorizontalScope("box"))
+            {
+                if (GUILayout.Button("Create", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    m_Config.CreateModule(m_NewModuleName, AssetType);
+                    SaveConfig();
+                }
+                GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
+
+            }
+
             using (var aScope = new GUILayout.HorizontalScope())
             {
                 List<string> aModules = new List<string>();
                 aModules.Add(string.Empty);//Null
-                aModules.Append(m_Config.m_BuiltinModules);
+                //aModules.Append(m_Config.m_BuiltinModules);
+                aModules.Append(UCL_ModulePath.GetAllModulesID(ModuleEditType));
+
                 if (!string.IsNullOrEmpty(m_Config.m_CurrentEditModule))
                 {
                     if (GUILayout.Button("Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(150)))

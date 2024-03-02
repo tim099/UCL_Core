@@ -31,7 +31,11 @@ namespace UCL.Core.Page
             m_ID = iModule.ID;
         }
 
-
+        public override void OnClose()
+        {
+            UCL_ModuleService.Ins.ClearCurrentEditModule();
+            base.OnClose();
+        }
         protected override void ContentOnGUI()
         {
             if (m_CurEditModule == null || m_CurEditModule.IsLoading)

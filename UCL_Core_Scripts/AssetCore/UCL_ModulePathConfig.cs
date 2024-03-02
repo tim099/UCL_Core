@@ -92,6 +92,10 @@ namespace UCL.Core
         public static string GetModResourcesPath(string iFolderPath) => Path.Combine(iFolderPath, ModResourcesName);
         public static string GetModuleFileInfoPath(string iFolderPath) => Path.Combine(iFolderPath, UCL_ModulePath.FileInfosFileName);
         #endregion
+
+        #region AssetRelativePath
+        public static string GetAssetRelativePath(System.Type iType) => $"UCL_Assets/{iType.Name}";
+        #endregion
     }
 
     public class UCL_ModulePathConfig

@@ -11,11 +11,11 @@ using UnityEngine;
 
 namespace UCL.Core.Page
 {
-    public class UCL_CommonSelectPage<T> : UCL_EditorPage where T : class, UCLI_Asset, new()
+    public class UCL_SelectAssetPage<T> : UCL_EditorPage where T : class, UCLI_Asset, new()
     {
-        static public UCL_CommonSelectPage<T> Create()
+        static public UCL_SelectAssetPage<T> Create()
         {
-            var aPage = new UCL_CommonSelectPage<T>();
+            var aPage = new UCL_SelectAssetPage<T>();
             UCL_GUIPageController.CurrentRenderIns.Push(aPage);
 
             return aPage;
@@ -27,7 +27,7 @@ namespace UCL.Core.Page
         protected string m_TypeName = string.Empty;
         protected UCL_AssetMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
-        public override string WindowName => $"UCL_CommonSelectPage({m_TypeName})";
+        public override string WindowName => $"UCL_SelectAssetPage({m_TypeName})";
         public override bool IsWindow => true;
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {

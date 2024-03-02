@@ -32,7 +32,7 @@ namespace UCL.Core
             {
                 if(s_RelativeFolderPath == null)
                 {
-                    s_RelativeFolderPath = $"UCL_Assets/{GetType().Name}";
+                    s_RelativeFolderPath = UCL_ModulePath.GetAssetRelativePath(GetType()); //$"UCL_Assets/{GetType().Name}";
                 }
                 return s_RelativeFolderPath;
                 //return UCL_ModuleService.Ins.GetFolderPath(GetType());
@@ -126,10 +126,10 @@ namespace UCL.Core
             return Path.Combine(SaveFolderPath, $"{iID}.json");
         }
         /// <summary>
-        /// 檢查物品是否存在
+        /// Check if asset exist
         /// </summary>
-        /// <param name="iID"></param>
-        /// <returns></returns>
+        /// <param name="iID">ID of asset</param>
+        /// <returns>true if asset exist</returns>
         public bool ContainsAsset(string iID)// => FileDatas.FileExists(iID);
         {
             string aPath = GetSavePath(iID);
@@ -156,7 +156,7 @@ namespace UCL.Core
         #region FakeStatic
 
         /// <summary>
-        /// 生成一個編輯選單頁面(用來選取要編輯的物品)
+        /// cached data
         /// </summary>
         /// <returns></returns>
         private Dictionary<string, T> s_DataDic = null;
@@ -166,7 +166,7 @@ namespace UCL.Core
         {
             if (!ContainsAsset(iID))
             {
-                string aLog = $"Create {GetType().Name} ID: {iID},Not Exist!!";
+                string aLog = $"Create {GetType().FullName} ID: {iID},Not Exist!!";
                 Debug.LogError(aLog);
                 //throw new System.Exception(aLog);
                 return null;
@@ -189,7 +189,7 @@ namespace UCL.Core
         {
             if (string.IsNullOrEmpty(iID))
             {
-                Debug.LogError("GetData, string.IsNullOrEmpty(iID)");
+                Debug.LogError($"GetData, string.IsNullOrEmpty(iID)");
                 return default;
             }
             if (!iUseCache)
@@ -238,9 +238,9 @@ namespace UCL.Core
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)
         /// </summary>
         /// <returns></returns>
-        virtual public Page.UCL_CommonSelectPage<T> CreateCommonSelectPage()
+        virtual public Page.UCL_SelectAssetPage<T> CreateCommonSelectPage()
         {
-            return Page.UCL_CommonSelectPage<T>.Create();
+            return Page.UCL_SelectAssetPage<T>.Create();
         }
         #endregion
 
@@ -368,12 +368,17 @@ namespace UCL.Core
 
 
         /// <summary>
-        /// 抓取所有資料的ID(有緩存)
+        /// get all assets ID of this AssetType
         /// </summary>
         /// <returns></returns>
         virtual public List<string> GetAllIDs()
         {
-            return UCL.Core.FileLib.Lib.GetFilesName(SaveFolderPath, "*.json", SearchOption.TopDirectoryOnly, true).ToList();
+            //this should base on current module and dependencies modules of current module
+
+            return UCL_ModuleService.Ins.GetAllAssetsID(this.GetType());
+
+            //return UCL.Core.FileLib.Lib.GetFilesName(SaveFolderPath, "*.json", SearchOption.TopDirectoryOnly, true).ToList();
+
             //return FileDatas.GetFileIDs();
         }
 
@@ -383,7 +388,9 @@ namespace UCL.Core
         /// <returns></returns>
         virtual public List<string> GetEditableIDs()
         {
-            return GetAllIDs();
+            return UCL_ModuleService.Ins.GetAllEditableAssetsID(this.GetType());
+
+            //return GetAllIDs();
         }
         /// <summary>
         /// 通過讀檔 再存檔更新所有資料

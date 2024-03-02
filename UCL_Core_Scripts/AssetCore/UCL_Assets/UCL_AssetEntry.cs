@@ -178,7 +178,7 @@ namespace UCL.Core
             GUILayout.BeginHorizontal();
             bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, "PreviewToggle");
             //Debug.LogError($"aIsPreview:{aIsPreview}");
-            GUILayout.Label(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.LabelStyle);
             GUILayout.EndHorizontal();
             if (aIsPreview)
             {

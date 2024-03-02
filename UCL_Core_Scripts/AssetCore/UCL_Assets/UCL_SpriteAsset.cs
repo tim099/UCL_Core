@@ -118,10 +118,6 @@ namespace UCL.Core
         {
             ID = "New SpriteAsset";
         }
-        public UCL_SpriteAsset(string iID)
-        {
-            Init(iID);
-        }
         //~UCL_SpriteAsset()
         //{
         //    Dispose();

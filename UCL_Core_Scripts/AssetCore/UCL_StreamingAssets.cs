@@ -49,7 +49,28 @@ namespace UCL.Core
 
         public static async Task<string> LoadString(string iPath)
         {
-            try
+
+            switch (Application.platform)
+            {
+                case RuntimePlatform.WindowsEditor:
+                case RuntimePlatform.IPhonePlayer:
+                case RuntimePlatform.WindowsPlayer:
+                    {
+                        string aPath = Path.Combine(Application.streamingAssetsPath, iPath);
+                        if (!File.Exists(aPath))
+                        {
+                            Debug.LogError($"LoadString !File.Exists aPath:{aPath}");
+                            return string.Empty;
+                        }
+                        return File.ReadAllText(aPath);
+                    }
+                //case RuntimePlatform.Android:
+                //    {
+                //        break;
+                //    }
+            }
+
+            try//Load from streaming asset!!
             {
                 var aLoadingRequest = UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, iPath));
                 var aOperation = aLoadingRequest.SendWebRequest();
@@ -64,11 +85,12 @@ namespace UCL.Core
 
                 return aLoadingRequest.downloadHandler.text;
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 Debug.LogException(e);
                 Debug.LogError($"UCL_StreamingAssets.LoadString iPath:{iPath},Exception:{e}");
             }
+
             return string.Empty;
         }
         public static async Task<byte[]> LoadBytes(string iPath)

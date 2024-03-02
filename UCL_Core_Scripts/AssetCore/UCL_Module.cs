@@ -7,6 +7,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UnityEngine;
@@ -230,8 +231,6 @@ namespace UCL.Core
                                     }
                             }
 
-
-                            //TODO StreamingAssets on Android can't load by File System
                             break;
                         }
                 }
@@ -311,6 +310,42 @@ namespace UCL.Core
             }
 
         }
+
+        /// <summary>
+        /// All assets of iAssetType's ID in this module
+        /// </summary>
+        /// <param name="iAssetType"></param>
+        /// <returns></returns>
+        public IList<string> GetAllAssetsID(Type iAssetType)
+        {
+            string aFolderPath = GetAssetFolderPath(iAssetType);
+            return UCL.Core.FileLib.Lib.GetFilesName(aFolderPath, "*.json", SearchOption.TopDirectoryOnly, true);
+        }
+        public string GetAssetFolderPath(Type iAssetType)
+        {
+            string aAssetRelativePath = UCL_ModulePath.GetAssetRelativePath(iAssetType);
+            string aFolderPath = UCL_ModuleService.Ins.GetFolderPath(ID, aAssetRelativePath);
+            return aFolderPath;
+        }
+        /// <summary>
+        /// Check if asset exist
+        /// </summary>
+        /// <param name="iID">ID of asset</param>
+        /// <returns>true if asset exist</returns>
+        public bool ContainsAsset(Type iAssetType, string iID)// => FileDatas.FileExists(iID);
+        {
+            string aPath = GetAssetPath(iAssetType, iID);
+            //Debug.LogError($"ContainsAsset aPath:{aPath}");
+            return File.Exists(aPath);
+        }
+        public string GetAssetPath(Type iAssetType, string iID)
+        {
+            string aFolderPath = GetAssetFolderPath(iAssetType);
+            string aPath = Path.Combine(aFolderPath, $"{iID}.json");
+            return aPath;
+        }
+
+
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
             var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);

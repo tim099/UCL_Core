@@ -164,26 +164,39 @@ namespace UCL.Core
 
         virtual public T CreateData(string iID)
         {
-            if (!ContainsAsset(iID))
+            var aType = GetType();
+            string aPath = UCL_ModuleService.Ins.GetAssetPath(aType, iID);
+
+            if (!File.Exists(aPath))
             {
-                string aLog = $"Create {GetType().FullName} ID: {iID},Not Exist!!";
+                string aLog = $"Create {aType.FullName} ID: {iID},Not Exist!!,aPath:{aPath}";
                 Debug.LogError(aLog);
                 //throw new System.Exception(aLog);
                 return null;
             }
             var aData = new T();
             UCLI_Asset.s_CurCreateData = aData;
-            var aTmp = aData as UCL_Asset<T>;
-            aTmp.Init(iID);
+
+            try
+            {
+                aData.ID = iID;
+                string aJsonData = File.ReadAllText(aPath); //ReadAssetJson(ID);
+                aData.DeserializeFromJson(JsonData.ParseJson(aJsonData));
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+
             UCLI_Asset.s_CurCreateData = null;
             return aData;
         }
 
         /// <summary>
-        /// 根據ID抓取物品設定
+        /// Get Asset by ID
         /// </summary>
         /// <param name="iID">ID</param>
-        /// <param name="iUseCache">使否使用緩存的資料</param>
+        /// <param name="iUseCache">Use cache data?</param>
         /// <returns></returns>
         virtual public T GetData(string iID, bool iUseCache = true)
         {
@@ -243,40 +256,6 @@ namespace UCL.Core
             return Page.UCL_SelectAssetPage<T>.Create();
         }
         #endregion
-
-
-        private UCL.Core.UCL_ObjectDictionary m_PreviewDic = null;
-        protected UCL.Core.UCL_ObjectDictionary PreviewDic
-        {
-            get
-            {
-                if (m_PreviewDic == null) m_PreviewDic = new UCL.Core.UCL_ObjectDictionary();
-                return m_PreviewDic;
-            }
-        }
-
-
-        virtual public void Init(string iID)
-        {
-            ID = iID;
-            try
-            {
-                if (ContainsAsset(ID))
-                {
-                    string aData = ReadAssetJson(ID);
-                    DeserializeFromJson(JsonData.ParseJson(aData));
-                }
-                else
-                {
-                    Debug.LogError("Init ID:" + iID + ",file not exist!!");
-                }
-            }
-            catch (System.Exception iE)
-            {
-                Debug.LogException(iE);
-            }
-
-        }
 
         virtual public JsonData Save()
         {
@@ -354,7 +333,7 @@ namespace UCL.Core
             File.WriteAllText(CommonDataMetaPath, iJson);
         }
         /// <summary>
-        /// 抓取此資料所屬的分組
+        /// GroupID of this asset
         /// </summary>
         /// <returns></returns>
         public string GroupID

@@ -65,10 +65,6 @@ namespace UCL.Core
         {
             ID = "New GameObject";
         }
-        public UCL_GameObjectAsset(string iID)
-        {
-            Init(iID);
-        }
 
         public void Dispose()
         {

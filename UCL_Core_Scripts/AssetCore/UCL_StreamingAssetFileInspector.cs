@@ -6,11 +6,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Cysharp.Threading.Tasks;
-using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using UCL.Core.JsonLib;
-using UnityEngine;
 
 namespace UCL.Core
 {

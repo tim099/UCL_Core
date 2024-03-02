@@ -224,7 +224,10 @@ namespace UCL.Core
             //Cheack and Install all Builtin Module to PersistantData path
             m_Initialized = true;
         }
-
+        public IList<string> GetAllModulesID()
+        {
+            return UCL_ModulePath.GetAllModulesID(ModuleEditType);
+        }
         virtual protected string GetSavePath(UCL_AssetType iAssetType)
         {
             var aPath = UCL_AssetPath.GetPath(iAssetType);
@@ -245,7 +248,7 @@ namespace UCL.Core
                     
                     //Debug.LogError($"aBuiltinModulesPath:{aBuiltinModulesPath}");
                     //var aDirs = UCL.Core.FileLib.Lib.GetDirectories(aModulesPath, iSearchOption: SearchOption.TopDirectoryOnly, iRemoveRootPath: true);
-                    var aAllModulesID = UCL_ModulePath.GetAllModulesID(ModuleEditType);
+                    var aAllModulesID = GetAllModulesID();
                     //Debug.LogError($"aDirs:{aDirs.ConcatString()}");
 
 
@@ -368,6 +371,7 @@ namespace UCL.Core
                 {
                     m_Config.CreateModule(m_NewModuleName, AssetType);
                     SaveConfig();
+                    m_Config.m_CurrentEditModule = m_NewModuleName;
                 }
                 GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
@@ -379,8 +383,9 @@ namespace UCL.Core
                 List<string> aModules = new List<string>();
                 aModules.Add(string.Empty);//Null
                 //aModules.Append(m_Config.m_BuiltinModules);
-                aModules.Append(UCL_ModulePath.GetAllModulesID(ModuleEditType));
+                aModules.Append(GetAllModulesID());
 
+                
                 if (!string.IsNullOrEmpty(m_Config.m_CurrentEditModule))
                 {
                     if (GUILayout.Button("Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(150)))
@@ -389,6 +394,7 @@ namespace UCL.Core
                         UCL_ModuleEditPage.Create(m_CurEditModule);
                     }
                 }
+                GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 m_Config.m_CurrentEditModule = UCL_GUILayout.PopupAuto(m_Config.m_CurrentEditModule, aModules, iDataDic, "SelectModules");
 
             }

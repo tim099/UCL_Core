@@ -147,7 +147,22 @@ namespace UCL.Core
 
         public override string Key => FilePath;
         public override bool IsEmpty => string.IsNullOrEmpty(m_FileName);
-        public string FileSystemFolderPath => Path.Combine(UCL_ModuleService.GetModResourcesPath(m_ModuleID), m_FolderPath);
+        public string FileSystemFolderPath
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(m_ModuleID))
+                {
+                    m_ModuleID = UCL_ModuleService.CurEditModuleID;
+                }
+                string aPath = UCL_ModuleService.GetModResourcesPath(m_ModuleID);
+                if(string.IsNullOrEmpty(m_FolderPath))
+                {
+                    return aPath;
+                }
+                return Path.Combine(aPath, m_FolderPath);
+            }
+        }
         public string FilePath => Path.Combine(FileSystemFolderPath, m_FileName);
 
         //~UCL_ModResourcesData()
@@ -188,6 +203,7 @@ namespace UCL.Core
                 GUILayout.Label(iDisplayName, UCL.Core.UI.UCL_GUIStyle.LabelStyle);
             }
 #if UNITY_STANDALONE_WIN
+
             var aPath = FileSystemFolderPath;
             if (Directory.Exists(aPath))
             {

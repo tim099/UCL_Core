@@ -36,6 +36,8 @@ namespace UCL.Core
         {
             public string m_Version = "1.0.0";
             public string m_ID;
+
+            public List<UCL_ModuleEntry> m_DependenciesModules = new ();
         }
         /// <summary>
         /// StreamingAssets for BuiltinModules
@@ -66,6 +68,10 @@ namespace UCL.Core
         {
             ID = iID;
             AssetType = iAssetType;
+            if(ID != UCL_ModuleService.CoreModuleID)
+            {
+                m_Config.m_DependenciesModules.Add(new UCL_ModuleEntry(UCL_ModuleService.CoreModuleID));
+            }
         }
         protected string GetConfigPath(string iFolderPath) => Path.Combine(iFolderPath, "Config.json");
         /// <summary>

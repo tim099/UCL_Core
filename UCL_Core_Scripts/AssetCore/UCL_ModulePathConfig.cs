@@ -146,6 +146,11 @@ namespace UCL.Core
 
         public string GetModulePath(string iID)
         {
+            if(iID == null)
+            {
+                Debug.LogError("GetModulePath iID == null");
+                return string.Empty;
+            }
             return Path.Combine(ModulesPath, iID);
         }
         public string GetModuleConfigPath(string iID)

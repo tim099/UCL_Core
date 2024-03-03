@@ -205,10 +205,12 @@ namespace UCL.Core
                 Debug.LogError($"GetData, string.IsNullOrEmpty(iID)");
                 return default;
             }
-            if (!iUseCache)
+            if (!iUseCache)//Create new asset
             {
                 return CreateData(iID);
             }
+
+            //TODO refactor cache!!
             if (s_DataDic == null) s_DataDic = new Dictionary<string, T>();
             if (!s_DataDic.ContainsKey(iID))
             {

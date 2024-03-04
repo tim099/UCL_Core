@@ -47,7 +47,7 @@ namespace UCL.Core.ServiceLib
                                 case LogType.Exception: aTextColor = Color.red; break;
                             }
                             GUILayout.BeginHorizontal();
-                            GUILayout.Label($"[{m_Type.ToString()}]", UCL_GUIStyle.GetLabelStyle(aTextColor), GUILayout.Width(80));
+                            GUILayout.Label($"[{m_Type}]", UCL_GUIStyle.GetLabelStyle(aTextColor), GUILayout.ExpandWidth(false));
                             GUILayout.Label(m_Title, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                             GUILayout.EndHorizontal();
                             if (aIsShow)
@@ -78,12 +78,32 @@ namespace UCL.Core.ServiceLib
 
         private static bool s_Inited = false;
         private static List<LogData> s_Logs = null;
+        private static Dictionary<LogType, bool> s_LogTypeFilter = null;
         public static void Init()
         {
             if(s_Inited) return;
             s_Inited = true;
             s_Logs = new();
+            s_LogTypeFilter = new();
+            foreach (LogType aLogType in Enum.GetValues(typeof(LogType)))
+            {
+                s_LogTypeFilter[aLogType] = true;
+            }
             Application.logMessageReceivedThreaded += ThreadedLog;
+        }
+        public static void TopBarButtons(UCL.Core.UCL_ObjectDictionary iDataDic)
+        {
+            if (!s_Inited) return;
+
+            foreach(LogType aLogType in Enum.GetValues(typeof(LogType)))
+            {
+                if(aLogType != LogType.Assert)
+                {
+                    s_LogTypeFilter[aLogType] = UCL_GUILayout.CheckBox(s_LogTypeFilter[aLogType]);
+                    GUILayout.Label($"{aLogType}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(20));
+                }
+            }
         }
         public static void OnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
         {
@@ -99,10 +119,13 @@ namespace UCL.Core.ServiceLib
             {
                 return;
             }
-            for(int i = 0;i< s_Logs.Count; i++)
+            for (int i = 0; i < s_Logs.Count; i++)
             {
                 var aLog = s_Logs[i];
-                aLog.OnGUI(iDataDic.GetSubDic("Logs", i));
+                if (s_LogTypeFilter[aLog.m_Type])
+                {
+                    aLog.OnGUI(iDataDic.GetSubDic("Logs", i));
+                }
             }
         }
         public static void ThreadedLog(string message, string stack_trace = "", LogType type = LogType.Log)

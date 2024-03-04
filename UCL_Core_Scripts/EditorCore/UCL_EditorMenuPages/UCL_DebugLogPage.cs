@@ -31,6 +31,11 @@ namespace UCL.Core.EditorLib.Page
         {
             base.OnClose();
         }
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            UCL_DebugLogService.TopBarButtons(m_DataDic.GetSubDic("DebugLog_TopBarButtons"));
+        }
         protected override void ContentOnGUI()
         {
             //GUILayout.Box("Console", UI.UCL_GUIStyle.BoxStyle);

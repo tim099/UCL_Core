@@ -1,6 +1,8 @@
-﻿using System.Collections;
+﻿using Cysharp.Threading.Tasks;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using UnityEngine;
 
 namespace UCL.Core.Game {
@@ -50,7 +52,7 @@ namespace UCL.Core.Game {
         public string m_GameName = "UCL";
         public UCL_GameConfig m_GameConfig { get; protected set; }
         [SerializeField] protected List<UCL_GameService> m_GameServices;
-
+        [SerializeField] protected bool m_InitOnAwake = true;
         protected bool m_Inited = false;
         protected bool m_End = false;
         [RuntimeInitializeOnLoadMethod]
@@ -58,8 +60,31 @@ namespace UCL.Core.Game {
             //UCL_GameManager.Get();
         }
         virtual protected void Awake() {
-            //Debug.LogError("Awake");
+            if (m_InitOnAwake)
+            {
+                Init();
+            }
+        }
+        virtual public async UniTask InitAsync()
+        {
+            CancellationToken aToken = gameObject.GetCancellationTokenOnDestroy();
+            await UnityEngine.AddressableAssets.Addressables.InitializeAsync();
+
             Init();
+
+            foreach (var aService in m_GameServices)
+            {
+                try
+                {
+                    await aService.InitAsync(aToken);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError(aService.name + ".InitAsync() Exception:" + e);
+                    Debug.LogException(e);
+                }
+                
+            }
         }
         virtual public void Init() {
             if(m_Inited) return;

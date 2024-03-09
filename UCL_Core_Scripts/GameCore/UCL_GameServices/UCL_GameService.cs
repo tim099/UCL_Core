@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using Cysharp.Threading.Tasks;
+using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 
 namespace UCL.Core.Game {
@@ -14,6 +16,13 @@ namespace UCL.Core.Game {
         /// Init game service
         /// </summary>
         virtual public void Init() { }
+
+        virtual public UniTask InitAsync(CancellationToken iToken)
+        {
+            //await UniTask.Yield(cancellationToken: iToken);
+            return default;
+        }
+
         /// <summary>
         /// this will call after all GameService Init
         /// </summary>

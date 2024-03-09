@@ -214,6 +214,23 @@ namespace UCL.Core.TextureLib
                 prev = cur;
             }
         }
+        virtual public void Draw(System.Func<float, float, Color> iFunc)
+        {
+            if (iFunc == null) return;
+
+            int aWidth = m_Size.x;
+            int aHeight = m_Size.y;
+            for (int i = 0; i < aWidth; i++)
+            {
+                float aX = ((i + 0.5f) / (float)(aWidth));
+
+                for (int j = 0; j < aHeight; j++)
+                {
+                    float aY = ((j + 0.5f) / (float)(aHeight - 1));
+                    SetPixel(i, j, iFunc(aX, aY));
+                }
+            }
+        }
         virtual public void DrawAudioWav(System.Func<float, float> iValFunc, Color iLineCol)
         {
             if (iValFunc == null) return;

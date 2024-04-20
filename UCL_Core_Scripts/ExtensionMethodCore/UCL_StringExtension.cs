@@ -213,7 +213,12 @@ public static partial class StringExtensionMethods {
         }
     }
     #endregion
-
+    #region Vector
+    public static string ToStringDetailValue(this Vector3 vec3)
+    {
+        return $"({vec3.x},{ vec3.y},{ vec3.z})";
+    }
+    #endregion
     #region StringBuilder
     public static void RemoveLast(this StringBuilder iBuilder) {
         if(iBuilder.Length == 0) return;

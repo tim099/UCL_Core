@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 
 namespace UCL.Core
@@ -72,6 +73,25 @@ namespace UCL.Core
             }
 
             return iValue;
+        }
+
+        /// <summary>
+        /// Get enum CustomAttributes of type T2
+        /// </summary>
+        public static T2[] GetCustomAttributes<T, T2>(this T iEnum, bool iInherit) where T : Enum where T2 : Attribute  
+        {
+            Type aEnumType = typeof(T);
+            FieldInfo aFieldInfo = aEnumType.GetField(Enum.GetName(aEnumType, iEnum));
+            return aFieldInfo.GetCustomAttributes(typeof(T2), iInherit) as T2[];
+        }
+        /// <summary>
+        /// Get enum all CustomAttributes
+        /// </summary>
+        public static object[] GetCustomAttributes<T>(this T iEnum, bool iInherit) where T : Enum
+        {
+            Type aEnumType = typeof(T);
+            FieldInfo aFieldInfo = aEnumType.GetField(Enum.GetName(aEnumType, iEnum));
+            return aFieldInfo.GetCustomAttributes(iInherit);
         }
     }
 }

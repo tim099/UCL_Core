@@ -79,6 +79,18 @@ public static partial class TransformExtensionMethods {
             UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(aRectTransform);
         }
     }
+
+    public static void ForceRebuildLayoutRecursively(this RectTransform iTarget)
+    {
+        foreach (Transform aChild in iTarget)
+        {
+            if (aChild is RectTransform aRectTransform)
+            {
+                aRectTransform.ForceRebuildLayoutRecursively();
+            }
+        }
+        UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(iTarget);
+    }
     #endregion
 
     #region RectTransform

@@ -97,7 +97,7 @@ namespace UCL.Core
                 /// </summary>
                 public async UniTask Install()
                 {
-                    await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig Install() ID:{ID}", "");
+                    //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig Install() ID:{ID}", "");
 
                     try
                     {
@@ -121,7 +121,7 @@ namespace UCL.Core
                             return;
                         }
 #endif
-                        await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_StreamingAssets.FullPath.LoadBytes", $"ZipFilePath:{ZipFilePath}");
+                        //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_StreamingAssets.FullPath.LoadBytes", $"ZipFilePath:{ZipFilePath}");
 
 
                         try
@@ -135,7 +135,7 @@ namespace UCL.Core
 
 
 
-                            await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
+                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
 
                             //var aStream = await UCL_StreamingAssets.FullPath.LoadNativeData(ZipFilePath);
                             UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
@@ -239,13 +239,13 @@ namespace UCL.Core
                         }
                         catch(System.Exception ex)
                         {
-                            await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory ", $"Exception:{ex}");
+                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory ", $"Exception:{ex}");
                             Debug.LogException(ex);
                         }
 
-                        await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aZip.ExtractToDirectory Done!!", "");
-                        Debug.LogError($"Install ID:{ID},aTargetPath:{aTargetPath}" +
-                            $"\nZipFilePath:{ZipFilePath}");
+                        //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aZip.ExtractToDirectory Done!!", "");
+                        //Debug.LogError($"Install ID:{ID},aTargetPath:{aTargetPath}" +
+                        //    $"\nZipFilePath:{ZipFilePath}");
                     }
                     catch (System.Exception ex)
                     {

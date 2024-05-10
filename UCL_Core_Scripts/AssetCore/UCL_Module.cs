@@ -20,6 +20,9 @@ namespace UCL.Core
         PersistentDatas,
 
         Addressables,
+
+
+        BuiltinModules,
         /// <summary>
         /// Path xxx\SteamLibrary\steamapps\workshop\content\xxxx
         /// Example D:\SteamLibrary\steamapps\workshop\content\1158310\2973143830
@@ -39,268 +42,108 @@ namespace UCL.Core
             public string m_ID;
 
             public List<UCL_ModuleEntry> m_DependenciesModules = new ();
+
+            /// <summary>
+            /// return true if Installed
+            /// </summary>
+            public bool Installed => m_Version != NotInstalledID;
         }
         /// <summary>
         /// StreamingAssets for BuiltinModules
         /// and PersistentDatas for Runtime
         /// </summary>
         public UCL_AssetType AssetType { get ; set ; }
+        public UCL_ModuleEditType ModuleEditType {
+            get => m_ModuleEditType;
+            private set
+            {
+                m_ModuleEditType = value;
+                m_ModuleConfig = UCL_ModulePath.PersistantPath.GetModulePathConfig(ModuleEditType).GetModuleConfig(ID);
+            } 
+        }
+        private UCL_ModuleEditType m_ModuleEditType;
+        public UCL_ModulePath.PersistantPath.ModuleConfig ModuleConfig => m_ModuleConfig;
+
+
+        public UCL_ModulePath.PersistantPath.ModuleConfig BuiltinModuleConfig
+        {
+            get => UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID);
+        }
+        public UCL_ModulePath.PersistantPath.ModuleConfig RuntimeModuleConfig
+        {
+            get => UCL_ModulePath.PersistantPath.Runtime.GetModuleConfig(ID);
+        }
 
         public Config m_Config = new Config();
 
         protected bool m_IsLoading = false;
         protected bool m_Installing = false;
+        protected UCL_ModulePath.PersistantPath.ModuleConfig m_ModuleConfig;
         //protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
         /// <summary>
         /// Unique ID of this Module
         /// </summary>
-        public string ID { get => m_Config.m_ID; set => m_Config.m_ID = value; }
+        public string ID { 
+            get => m_ID; 
+            set
+            {
+                m_ID = value;
+                m_Config.m_ID = value;
+            }
+        }
+        private string m_ID = string.Empty;
         public string GetShortName() => $"UCL_Module({ID})";
         #endregion
         public bool IsLoading => m_IsLoading;
 
-
-        public string RelativeModulePath => UCL_ModuleService.PathConfig.GetModuleRelativePath(ID);
-
-        public string ModulePath => UCL_ModuleService.PathConfig.GetModulePath(ID);
-
-        public void Init(string iID, UCL_AssetType iAssetType)
+        public void Init(string iID, UCL_ModuleEditType iModuleEditType)
         {
             ID = iID;
-            AssetType = iAssetType;
-            if(ID != UCL_ModuleService.CoreModuleID)
+            //AssetType = iAssetType;
+            ModuleEditType = iModuleEditType;
+            if (ID != UCL_ModuleService.CoreModuleID)
             {
                 m_Config.m_DependenciesModules.Add(new UCL_ModuleEntry(UCL_ModuleService.CoreModuleID));
             }
         }
-        protected string GetConfigPath(string iFolderPath) => Path.Combine(iFolderPath, "Config.json");
+        public void Load(string iID, UCL_ModuleEditType iModuleEditType)
+        {
+            //Debug.LogError($"UCL_Module.Load, iID:{iID},iModuleEditType:{iModuleEditType}");
+            if (m_IsLoading)
+            {
+                Debug.LogError("UCL_Module.Load, m_IsLoading");
+                return;
+            }
+            ID = iID;
+            ModuleEditType = iModuleEditType;
+            LoadAsync().Forget();
+        }
         /// <summary>
         /// Save Module Config
         /// </summary>
         public void Save()
         {
             //Debug.LogError($"aFolderPath:{aFolderPath}");
-            UCL_ModuleService.PathConfig.SaveModuleConfig(ID, m_Config.SerializeToJson());
+            ModuleConfig.SaveConfig(m_Config);
 
-
-            //string aPath = UCL_ModulePath.GetBuiltinModulePath(ID);
-            //if(!Directory.Exists(aPath))
-            //{
-            //    Directory.CreateDirectory(aPath);
-            //}
-            //var aConfigPath = GetConfigPath(aPath);
-            //File.WriteAllText(aConfigPath, m_Config.SerializeToJson().ToJsonBeautify());//SaveConfig
-
+            //UCL_ModuleService.PathConfig.SaveModuleConfig(ID, m_Config.SerializeToJson());
         }
-        public void Load(UCL_AssetType iAssetType)
-        {
-            if (m_IsLoading)
-            {
-                return;
-            }
-            AssetType = iAssetType;
-            LoadAsync().Forget();
-        }
-        public string GetFolderPath(string iRelativeFolderPath)
-        {
-            string aPath = Path.Combine(ModulePath, iRelativeFolderPath);
-            //Debug.LogError($"GetFolderPath SavePath:{SavePath}");
-            //Debug.LogError($"GetFolderPath aPath:{aPath}");
-            if (!Directory.Exists(aPath))
-            {
-                Directory.CreateDirectory(aPath);
-            }
-            return aPath;
-        }
-        protected Config LoadInstalledConfig()
-        {
-            Config aConfig = new Config();
-            var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-            string aConfigPath = GetConfigPath(aInstallPath);
-            //Debug.LogError($"LoadInstalledConfig aConfigPath:{aConfigPath}");
-            if (File.Exists(aConfigPath))//Get config
-            {
-                string aJson = File.ReadAllText(aConfigPath);
-                aConfig.DeserializeFromJson(JsonData.ParseJson(aJson));
-            }
-            else
-            {
-                aConfig.m_Version = NotInstalledID;//Not Installed!!
-            }
-            return aConfig;
-        }
-        protected void SaveInstalledConfig(Config iConfig)
-        {
-            var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-            if (!Directory.Exists(aInstallPath))//Not installed yet
-            {
-                return;
-            }
-            string aConfigPath = GetConfigPath(aInstallPath);
-            File.WriteAllText(aConfigPath, iConfig.SerializeToJson().ToJsonBeautify());
-        }
-        /// <summary>
-        /// Check if this Module is installed, if not than install this module
-        /// </summary>
-        /// <returns></returns>
-        public async UniTask CheckAndInstall()
-        {
-            if (m_IsLoading)
-            {
-                await UniTask.WaitUntil(() => !m_IsLoading);
-            }
 
-            var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-            bool aNeedInstall = true;
-            if(Directory.Exists(aInstallPath))//Installed, check version
-            {
-                Config aConfig = LoadInstalledConfig();
-                if (aConfig.m_Version == m_Config.m_Version)//Same Version!!
-                {
-                    aNeedInstall = false;
-                }
-                Debug.LogWarning($"Version:{m_Config.m_Version},aConfig.m_Version:{aConfig.m_Version},aNeedInstall:{aNeedInstall}");
-            }
-            if(aNeedInstall)
-            {
-                await Install();
-            }
-        }
-        /// <summary>
-        /// Install to Application.persistentDataPath
-        /// </summary>
-        public async UniTask Install()
-        {
-            if(m_Installing)
-            {
-                return;
-            }
-            if (m_IsLoading)
-            {
-                await UniTask.WaitUntil(() => !m_IsLoading);
-            }
-            m_Installing = true;
-            try
-            {
-                //Debug.LogError($"Install m_AssetType:{m_AssetType},Application.platform:{Application.platform}");
-                switch (AssetType)//Only install StreamingAssets(Builtin)
-                {
-                    case UCL_AssetType.StreamingAssets://(Builtin)
-                        {
-                            switch (Application.platform)
-                            {
-                                case RuntimePlatform.WindowsEditor:
-                                case RuntimePlatform.IPhonePlayer:
-                                case RuntimePlatform.WindowsPlayer:
-                                    {
-                                        //System.IO.Compression.ZipFile.ExtractToDirectory
-                                        var aPath = UCL_ModulePath.GetBuiltinModulePath(ID);//Get the mod folder path
-                                        var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-                                        //Debug.LogError($"BuiltinPath:{aPath}");
-                                        //Debug.LogError($"InstallPath:{aInstallPath}");
-                                        if (Directory.Exists(aPath))
-                                        {
-                                            if (Directory.Exists(aInstallPath))
-                                            {
-                                                Directory.Delete(aInstallPath, true);
-                                            }
-                                            UCL.Core.FileLib.Lib.CopyDirectory(aPath, aInstallPath);
-                                        }
-                                        else
-                                        {
-                                            Debug.LogError($"Install Fail aPath:{aPath}");
-                                        }
-                                        break;
-                                    }
-                                case RuntimePlatform.Android:
-                                    {//Load from streaming asset!!
-                                        UCL_StreamingAssetFileInspector aFileInfos = await UCL_ModuleService.PathConfig.GetModuleStreamingAssetFileInspector(ID);
-                                        var aRelativePath = UCL_ModulePath.GetBuiltinModuleRelativePath(ID);
-                                        var aInstallPath = UCL_ModulePath.GetModulePath(ID);
-
-                                        if (Directory.Exists(aInstallPath))
-                                        {
-                                            Directory.Delete(aInstallPath, true);
-                                        }
-                                        Directory.CreateDirectory(aInstallPath);
-                                        
-                                        await InstallFolder(aFileInfos, aFileInfos.m_FolderInformations, aRelativePath, aInstallPath);
-
-                                        break;
-                                    }
-                            }
-
-                            break;
-                        }
-                }
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogException(e);
-            }
-            finally
-            {
-                m_Installing = false;
-            }
-
-        }
-        protected async UniTask InstallFolder(UCL_StreamingAssetFileInspector iFileInfos, UCL_StreamingAssetFileInspector.FolderInformation iFolderInfos,
-            string iRelativePath, string iInstallPath)
-        {
-            //Debug.LogError($"InstallFolder iInstallPath:{iInstallPath}");
-            if (!Directory.Exists(iInstallPath))
-            {
-                Directory.CreateDirectory(iInstallPath);
-            }
-            foreach(var aFile in iFolderInfos.m_FileInfos)//Install Files
-            {
-                try
-                {
-                    string aName = aFile.FileName;
-                    string aRelativePath = Path.Combine(iRelativePath, aName);
-                    string aInstallPath = Path.Combine(iInstallPath, aName);
-                    byte[] aBytes = await UCL_StreamingAssets.LoadBytes(aRelativePath);
-                    if (aBytes != null)
-                    {
-                        File.WriteAllBytes(aInstallPath, aBytes);
-                    }
-                    else
-                    {
-                        Debug.LogError($"InstallFolder aFile:{aName},iRelativePath:{iRelativePath},aBytes == null");
-                    }
-                }
-                catch(System.Exception e)
-                {
-                    Debug.LogException(e);
-                }
-
-            }
-            foreach(var aFolder in iFolderInfos.m_FolderInfos)
-            {
-                try
-                {
-                    await InstallFolder(iFileInfos, aFolder, Path.Combine(iRelativePath, aFolder.Name), Path.Combine(iInstallPath, aFolder.Name));
-                }
-                catch (System.Exception e)
-                {
-                    Debug.LogException(e);
-                }
-            }
-        }
         protected async UniTask LoadAsync()
         {
             m_IsLoading = true;
             try
             {
+                m_Config = ModuleConfig.GetConfig();
 
-                var aJson = await UCL_ModuleService.PathConfig.LoadModuleConfig(ID);
-                if(aJson != null)
-                {
-                    m_Config.DeserializeFromJson(aJson);
-                }
+                //var aJson = await UCL_ModuleService.PathConfig.LoadModuleConfig(ID);
+                //if (aJson != null)
+                //{
+                //    m_Config.DeserializeFromJson(aJson);
+                //}
             }
-            catch(System.Exception ex)
+            catch (System.Exception ex)
             {
                 Debug.LogException(ex);
             }
@@ -312,38 +155,121 @@ namespace UCL.Core
         }
 
         /// <summary>
-        /// All assets of iAssetType's ID in this module
+        /// Check if this Module is installed, if not than install this module
         /// </summary>
-        /// <param name="iAssetType"></param>
         /// <returns></returns>
-        public IList<string> GetAllAssetsID(Type iAssetType)
+        public async UniTask CheckAndInstall()
         {
-            string aFolderPath = GetAssetFolderPath(iAssetType);
-            return UCL.Core.FileLib.Lib.GetFilesName(aFolderPath, "*.json", SearchOption.TopDirectoryOnly, true);
-        }
-        public string GetAssetFolderPath(Type iAssetType)
-        {
-            string aAssetRelativePath = UCL_ModulePath.GetAssetRelativePath(iAssetType);
-            string aFolderPath = UCL_ModuleService.Ins.GetFolderPath(ID, aAssetRelativePath);
-            return aFolderPath;
+            if (m_IsLoading)
+            {
+                await UniTask.WaitUntil(() => !m_IsLoading);
+            }
+            //Debug.LogError($"UCL_Module.CheckAndInstall, iID:{ID},iModuleEditType:{ModuleEditType}");
+            bool aNeedInstall = true;
+            if(m_Config.Installed && RuntimeModuleConfig.Installed)//Installed, check version
+            {
+                Config aBuiltinConfig = await BuiltinModuleConfig.GetBuiltinConfig();
+                if (aBuiltinConfig.m_Version == m_Config.m_Version)//Same Version!!
+                {
+                    aNeedInstall = false;
+                }
+                Debug.LogWarning($"ID:{ID},Cur Version:{m_Config.m_Version},Builtin Version:{aBuiltinConfig.m_Version},aNeedInstall:{aNeedInstall}");
+            }
+
+            if(aNeedInstall)
+            {
+                await Install();
+            }
         }
         /// <summary>
-        /// Check if asset exist
+        /// Install to Application.persistentDataPath
         /// </summary>
-        /// <param name="iID">ID of asset</param>
-        /// <returns>true if asset exist</returns>
-        public bool ContainsAsset(Type iAssetType, string iID)// => FileDatas.FileExists(iID);
+        public async UniTask Install()
         {
-            string aPath = GetAssetPath(iAssetType, iID);
-            //Debug.LogError($"ContainsAsset aPath:{aPath}");
-            return File.Exists(aPath);
+            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"UCL_Module.Install() ID:{ID}", "");
+
+            //Debug.LogError($"Install() ID:{ID}");
+            if (m_Installing)
+            {
+                return;
+            }
+            if (m_IsLoading)
+            {
+                await UniTask.WaitUntil(() => !m_IsLoading);
+            }
+            m_Installing = true;
+            try
+            {
+                UCL_ModulePath.PersistantPath.ModuleConfig aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID);
+
+                await aModuleConfig.Install();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
+            }
+            finally
+            {
+                m_Installing = false;
+            }
+
         }
-        public string GetAssetPath(Type iAssetType, string iID)
+        public void UnInstall()
         {
-            string aFolderPath = GetAssetFolderPath(iAssetType);
-            string aPath = Path.Combine(aFolderPath, $"{iID}.json");
-            return aPath;
+            if (m_Installing || m_IsLoading)
+            {
+                Debug.LogError($"UnInstall() ID:{ID},m_Installing:{m_Installing},m_IsLoading:{m_IsLoading}");
+                return;
+            }
+
+            UCL_ModulePath.PersistantPath.ModuleConfig aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID);
+            aModuleConfig.UnInstall();
         }
+
+
+        //protected async UniTask InstallFolder(UCL_StreamingAssetFileInspector iFileInfos, UCL_StreamingAssetFileInspector.FolderInformation iFolderInfos,
+        //    string iRelativePath, string iInstallPath)
+        //{
+        //    //Debug.LogError($"InstallFolder iInstallPath:{iInstallPath}");
+        //    if (!Directory.Exists(iInstallPath))
+        //    {
+        //        Directory.CreateDirectory(iInstallPath);
+        //    }
+        //    foreach(var aFile in iFolderInfos.m_FileInfos)//Install Files
+        //    {
+        //        try
+        //        {
+        //            string aName = aFile.FileName;
+        //            string aRelativePath = Path.Combine(iRelativePath, aName);
+        //            string aInstallPath = Path.Combine(iInstallPath, aName);
+        //            byte[] aBytes = await UCL_StreamingAssets.LoadBytes(aRelativePath);
+        //            if (aBytes != null)
+        //            {
+        //                File.WriteAllBytes(aInstallPath, aBytes);
+        //            }
+        //            else
+        //            {
+        //                Debug.LogError($"InstallFolder aFile:{aName},iRelativePath:{iRelativePath},aBytes == null");
+        //            }
+        //        }
+        //        catch(System.Exception e)
+        //        {
+        //            Debug.LogException(e);
+        //        }
+
+        //    }
+        //    foreach(var aFolder in iFolderInfos.m_FolderInfos)
+        //    {
+        //        try
+        //        {
+        //            await InstallFolder(iFileInfos, aFolder, Path.Combine(iRelativePath, aFolder.Name), Path.Combine(iInstallPath, aFolder.Name));
+        //        }
+        //        catch (System.Exception e)
+        //        {
+        //            Debug.LogException(e);
+        //        }
+        //    }
+        //}
 
 
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)

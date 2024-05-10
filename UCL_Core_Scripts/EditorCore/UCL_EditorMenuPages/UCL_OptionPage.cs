@@ -8,6 +8,8 @@ using UCL.Core.LocalizeLib;
 using UnityEngine;
 using UCL.Core.EditorLib.Page;
 using UCL.Core.UI;
+using Cysharp.Threading.Tasks;
+
 namespace UCL.Core.Page
 {
     public class ButtonData
@@ -66,6 +68,13 @@ namespace UCL.Core.Page
             UCL.Core.UI.UCL_GUIPageController.CurrentRenderIns.Push(aPage);
             return aPage;
         }
+        static public async UniTask ShowAlertAsync(string iTitle, string iContext)
+        {
+            bool aIsEnd = false;
+            UCL.Core.Page.UCL_OptionPage.Create(iTitle, iContext, new UCL.Core.Page.ButtonData("OK", () => aIsEnd = true));
+            await UniTask.WaitUntil(() => aIsEnd);
+        }
+
         //public override bool IsPopup => true;
         public override bool IsWindow => true;
         //public override string WindowName => UCL_LocalizeManager.Get("Alert");

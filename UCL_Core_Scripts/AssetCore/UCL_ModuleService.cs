@@ -42,17 +42,19 @@ namespace UCL.Core
         }
 
         public const string ReflectKeyModResourcesPath = "ModResourcesPath";
-        public static string ModResourcesPath
-        {
-            get
-            {
-                return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(CurEditModuleID));
-                //return UCL_ModulePath.GetModulePath(CurEditModuleID);
-            }
-        }
+        public static string ModResourcesPath => CurEditModule.ModuleConfig.ModResourcesPath;
+        //{
+        //    get
+        //    {
+                
+        //        return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(CurEditModuleID));
+        //        //return UCL_ModulePath.GetModulePath(CurEditModuleID);
+        //    }
+        //}
         public static string GetModResourcesPath(string iID)
         {
-            return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(iID));
+            return UCL_ModulePath.PersistantPath.GetModulePathConfig(ModuleEditType).GetModuleConfig(iID).ModResourcesPath;
+            //return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(iID));
         }
         public static string CurEditModuleID
         {
@@ -126,16 +128,21 @@ namespace UCL.Core
 
             public string m_Version = "1.0.0";
 
-            virtual public string SaveRelativePath => UCL_ModulePath.BuiltinModulesRelativePath;
-            virtual public string GetBuiltinModulesPath(UCL_AssetType iAssetType)
-            {
-                var aPath = UCL_AssetPath.GetPath(iAssetType);
-                return Path.Combine(aPath, SaveRelativePath);
-            }
             public void OnGUI(UCL_ObjectDictionary iDataDic)
             {
                 //GUILayout.Label("Config", UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button("Zip all modules"))
+                {
+                    Debug.LogError($"{UCL_AssetPath.GetPath(UCL_AssetType.BuiltinModules)}");
+                    UCL_ModulePath.ZipAllModules();
+                }
+                if (GUILayout.Button("Remove all Zip modules"))
+                {
+                    UCL_ModulePath.RemoveAllZipAllModules();
+                }
+
                 UCL_GUILayout.DrawField(this, iDataDic, "ModuleService Config");
+
             }
             public override JsonData SerializeToJson()
             {
@@ -144,19 +151,17 @@ namespace UCL.Core
 
                 return base.SerializeToJson();
             }
-            public UCL_Module CreateModule(string iID, UCL_AssetType iAssetType)
+            public UCL_Module CreateModule(string iID, UCL_ModuleEditType iModuleEditType)
             {
                 UCL_Module aModule = new UCL_Module();
-                aModule.Init(iID, iAssetType);
-                //var aPath = GetBuiltinModulesPath(aModule.m_AssetType);
-                aModule.Save();//aPath
+                aModule.Init(iID, iModuleEditType);
+                aModule.Save();
                 return aModule;
             }
-            public UCL_Module LoadModule(string iID, UCL_AssetType iAssetType)
+            public UCL_Module LoadModule(string iID, UCL_ModuleEditType iModuleEditType)
             {
                 UCL_Module aModule = new UCL_Module();
-                aModule.ID = iID;
-                aModule.Load(iAssetType);
+                aModule.Load(iID, iModuleEditType);
                 return aModule;
             }
         }
@@ -184,6 +189,7 @@ namespace UCL.Core
 
         virtual protected async UniTask InitAsync()
         {
+            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync("UCL_ModuleService.InitAsync()", "");
             if (Application.isEditor)
             {
                 ModuleEditType = UCL_ModuleEditType.Builtin;
@@ -198,21 +204,20 @@ namespace UCL.Core
             {
                 Directory.CreateDirectory(aModulesPath);
             }
+
             //Debug.LogError("InitAsync()");
             await LoadConfig();
 
 
-
-            foreach(var aModuleID in m_Config.m_BuiltinModules)//Check if BuiltinModules installed
+            //List<UniTask> aTasks = new List<UniTask>();
+            foreach(var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
             {
-                var aModule = m_Config.LoadModule(aModuleID, UCL_AssetType.StreamingAssets);
+                var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Builtin);
                 await aModule.CheckAndInstall();
-                //Debug.LogError($"CheckAndInstall() aModuleID:{aModuleID}");
-                //if (Application.isEditor)
-                //{
-                //    m_LoadedModules.Add(aModule);
-                //}
+                //aTasks.Add(aModule.CheckAndInstall());
             }
+            //await UniTask.WhenAll(aTasks);
+
             if (m_Config.m_ModulePlayList.IsNullOrEmpty())
             {
                 m_Config.m_ModulePlayList.Add(new UCL_ModuleEntry(CoreModuleID));
@@ -228,7 +233,7 @@ namespace UCL.Core
                 aLoadedModule.Add(aID);
                 try
                 {
-                    var aModule = m_Config.LoadModule(aModuleID.ID, UCL_AssetType.PersistentDatas);
+                    var aModule = m_Config.LoadModule(aModuleID.ID, UCL_ModuleEditType.Runtime);
                     m_LoadedModules.Add(aModule);
                 }
                 catch (Exception ex)
@@ -248,32 +253,30 @@ namespace UCL.Core
             //Cheack and Install all Builtin Module to PersistantData path
             m_Initialized = true;
         }
+        /// <summary>
+        /// get all modules ID of current ModuleEditType
+        /// </summary>
+        /// <returns></returns>
         public IList<string> GetAllModulesID()
         {
-            return UCL_ModulePath.GetAllModulesID(ModuleEditType);
+            return UCL_ModulePath.PersistantPath.GetModulePathConfig(ModuleEditType).GetAllModulesID();
+            //return UCL_ModulePath.GetAllModulesID(ModuleEditType);
         }
+
+
         public List<string> GetAllEditableAssetsID(Type iAssetType)
         {
-            string aAssetRelativePath = UCL_ModulePath.GetAssetRelativePath(iAssetType);
-
-            string aFolderPath = GetFolderPath(aAssetRelativePath);
-            //Debug.LogError($"aFolderPath:{aFolderPath}");
-            return UCL.Core.FileLib.Lib.GetFilesName(aFolderPath, "*.json", SearchOption.TopDirectoryOnly, true).ToList();
-        }
-        public string GetAssetPath(Type iType, string iID)
-        {
-            var aModules = Modules;
-            foreach (var aModule in aModules)
+            if(m_CurEditModule == null)
             {
-                string aPath = aModule.GetAssetPath(iType, iID);
-                //Debug.LogError(aPath);
-                if (File.Exists(aPath))//Asset Exist!!
-                {
-                    return aPath;
-                }
+                return new List<string>();
             }
-            Debug.LogError($"GetAssetPath iType:{iType}, iID:{iID}, File not exist!!,Modules:{aModules.ConcatString(iModule => iModule.ID)}");
-            return string.Empty;
+            return m_CurEditModule.ModuleConfig.GetAllAssetsID(iAssetType).ToList();
+            //string aAssetRelativePath = UCL_ModulePath.ModuleRelativePath.GetAssetRelativePath(iAssetType);
+
+            //string aFolderPath = GetCurEditModuleFolder(aAssetRelativePath);
+            //var aIDs = UCL.Core.FileLib.Lib.GetFilesName(aFolderPath, "*.json", SearchOption.TopDirectoryOnly, true).ToList();
+            //Debug.LogError($"GetAllEditableAssetsID aFolderPath:{aFolderPath},aIDs:{aIDs.ConcatString()}");
+            //return aIDs;
         }
         /// <summary>
         /// All assets ID(include assets in dependencies modules)
@@ -283,11 +286,11 @@ namespace UCL.Core
         public List<string> GetAllAssetsID(Type iAssetType)
         {
             var aModules = Modules;
-            //Debug.LogError($"GetAllAssetsID aModules:{aModules.ConcatString(iModule => iModule.ID)}");
+            Debug.LogError($"GetAllAssetsID aModules:{aModules.ConcatString(iModule => iModule.ID)}");
             var aIDSet = new HashSet<string>();
             foreach (var aModule in aModules)
             {
-                var aIDs = aModule.GetAllAssetsID(iAssetType);
+                var aIDs = aModule.ModuleConfig.GetAllAssetsID(iAssetType);
 
                 foreach (var aID in aIDs)
                 {
@@ -295,9 +298,25 @@ namespace UCL.Core
                 }
             }
 
-
             return aIDSet.ToList();
         }
+
+        public string GetAssetPath(Type iType, string iID)
+        {
+            var aModules = Modules;
+            foreach (var aModule in aModules)
+            {
+                string aPath = aModule.ModuleConfig.GetAssetPath(iType, iID);
+                //Debug.LogError(aPath);
+                if (File.Exists(aPath))//Asset Exist!!
+                {
+                    return aPath;
+                }
+            }
+            Debug.LogError($"GetAssetPath iType:{iType}, iID:{iID}, File not exist!!,Modules:{aModules.ConcatString(iModule => iModule.ID)}");
+            return string.Empty;
+        }
+
         public List<UCL_Module> Modules
         {
             get {
@@ -318,9 +337,9 @@ namespace UCL.Core
         /// <returns>true if asset exist</returns>
         public bool ContainsAsset(Type iAssetType, string iID)// => FileDatas.FileExists(iID);
         {
-            foreach(var aModule in Modules)
+            foreach(UCL_Module aModule in Modules)
             {
-                if(aModule.ContainsAsset(iAssetType, iID))
+                if(aModule.ModuleConfig.ContainsAsset(iAssetType, iID))
                 {
                     return true;
                 }
@@ -355,7 +374,7 @@ namespace UCL.Core
                     m_Config.m_BuiltinModules = aAllModulesID.ToList();
                     if (!m_Config.m_BuiltinModules.Contains(CoreModuleID))//Create Core Module!!
                     {
-                        m_Config.CreateModule(CoreModuleID, UCL_AssetType.StreamingAssets);
+                        m_Config.CreateModule(CoreModuleID, UCL_ModuleEditType.Builtin);
                         m_Config.m_BuiltinModules.Add(CoreModuleID);
                     }
                 }
@@ -396,7 +415,7 @@ namespace UCL.Core
             //JsonData aJsonData = JsonData.ParseJson(iJson);
             m_Config.DeserializeFromJson(iJson);
         }
-        virtual public string GetFolderPath(string iRelativeFolderPath)
+        virtual public string GetCurEditModuleFolder(string iRelativeFolderPath)
         {
             string aModuleID = CoreModuleID;
             if(m_CurEditModule !=  null)
@@ -404,31 +423,11 @@ namespace UCL.Core
                 aModuleID = m_CurEditModule.ID;
             }
             return GetFolderPath(aModuleID, iRelativeFolderPath);
-            //string aPath = PathConfig.GetModulePath(aModuleID);
-            //return Path.Combine(aPath, iRelativeFolderPath);
         }
         virtual public string GetFolderPath(string iModuleID, string iRelativeFolderPath)
         {
             string aPath = PathConfig.GetModulePath(iModuleID);
             return Path.Combine(aPath, iRelativeFolderPath);
-        }
-        virtual public List<string> GetModulesID(UCL_AssetType iAssetType)
-        {
-            List<string> aIDs = new List<string>();
-            switch (iAssetType)
-            {
-                case UCL_AssetType.StreamingAssets://BuiltIn Modules
-                    {
-                        aIDs.Append(m_Config.m_BuiltinModules);
-                        break;
-                    }
-                case UCL_AssetType.PersistentDatas:
-                    {
-                        GetSavePath(iAssetType);
-                        break;
-                    }
-            }
-            return aIDs;
         }
         public void ClearCurrentEditModule()
         {
@@ -437,6 +436,7 @@ namespace UCL.Core
         }
         protected void SetCurrentEditModule(string iModuleID)
         {
+            ClearCurrentEditModule();
             m_CurEditModule = LoadModuleAndDependencies(iModuleID, new HashSet<string>());//m_Config.LoadModule(iModuleID, AssetType);
 
             Debug.LogError($"m_CurEditModuleDependenciesModules:{m_CurEditModuleDependenciesModules.ConcatString(iModule => iModule.ID)}");
@@ -449,7 +449,7 @@ namespace UCL.Core
             }
             iLoadedModulesID.Add(iModuleID);
 
-            var aModule = m_Config.LoadModule(iModuleID, AssetType);
+            var aModule = m_Config.LoadModule(iModuleID, ModuleEditType);
             m_CurEditModuleDependenciesModules.Add(aModule);
 
             List<UCL_ModuleEntry> aDependenciesModules = aModule.m_Config.m_DependenciesModules;
@@ -501,7 +501,7 @@ namespace UCL.Core
             {
                 if (GUILayout.Button("Create", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    m_Config.CreateModule(m_NewModuleName, AssetType);
+                    m_Config.CreateModule(m_NewModuleName, ModuleEditType);
                     SaveConfig();
                     m_Config.m_CurrentEditModule = m_NewModuleName;
                 }

@@ -4,6 +4,7 @@
 // Create time : 02/20 2024 22:48
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace UCL.Core
@@ -23,6 +24,10 @@ namespace UCL.Core
                 case UCL_AssetType.StreamingAssets:
                     {
                         return Application.streamingAssetsPath;
+                    }
+                case UCL_AssetType.BuiltinModules:
+                    {
+                        return Path.Combine(Application.dataPath, ".BuiltinModules");
                     }
                 case UCL_AssetType.PersistentDatas:
                     {

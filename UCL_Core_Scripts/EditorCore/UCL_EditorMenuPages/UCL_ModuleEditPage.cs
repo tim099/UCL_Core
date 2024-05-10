@@ -9,6 +9,7 @@ using UCL.Core.EditorLib.Page;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
+
 namespace UCL.Core.Page
 {
     public class UCL_ModuleEditPage : UCL_CommonEditorPage
@@ -24,6 +25,7 @@ namespace UCL.Core.Page
         }
         private UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
         private UCL_Module m_CurEditModule;
+        private UCL_ModulePath.PersistantPath.ModuleConfig ModuleConfig => m_CurEditModule.ModuleConfig;
         private string m_ID;
         public void Init(UCL_Module iModule)
         {
@@ -36,6 +38,21 @@ namespace UCL.Core.Page
             UCL_ModuleService.Ins.ClearCurrentEditModule();
             base.OnClose();
         }
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            GUILayout.Label($"ID: {m_CurEditModule.ID}", UCL_GUIStyle.LabelStyle);
+#if UNITY_EDITOR_WIN
+            if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleConfig.RootFolder);
+            }
+            if (GUILayout.Button("Open Install Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleConfig.InstallFolder);
+            }
+#endif
+        }
         protected override void ContentOnGUI()
         {
             if (m_CurEditModule == null || m_CurEditModule.IsLoading)
@@ -44,20 +61,29 @@ namespace UCL.Core.Page
             }
             using (var aScope = new GUILayout.HorizontalScope())
             {
+
+                if (GUILayout.Button("Zip Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    ModuleConfig.ZipModule();
+                }
                 if (GUILayout.Button("Save Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     m_CurEditModule.Save();
                 }
                 if (GUILayout.Button("Load Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    m_CurEditModule.Load(m_CurEditModule.AssetType);
+                    m_CurEditModule.Load(m_CurEditModule.ID, m_CurEditModule.ModuleEditType);
                 }
                 if (GUILayout.Button("Install Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     //Debug.LogError("Install Module");
                     m_CurEditModule.Install().Forget();
                 }
-
+                if (GUILayout.Button("UnInstall Module", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    //Debug.LogError("Install Module");
+                    m_CurEditModule.UnInstall();
+                }
             }
 
 

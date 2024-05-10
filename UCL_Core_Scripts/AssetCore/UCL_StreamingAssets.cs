@@ -46,79 +46,120 @@ namespace UCL.Core
             }
         }
         static string s_StreamingAssetsPath = null;
+        /// <summary>
+        /// without Path.Combine(Application.streamingAssetsPath, iPath)
+        /// </summary>
+        public static class FullPath
+        {
+            public static async Task<Unity.Collections.NativeArray<byte>.ReadOnly> LoadNativeData(string iPath)
+            {
+                try
+                {
+                    var aLoadingRequest = UnityWebRequest.Get(iPath);
+                    var aOperation = aLoadingRequest.SendWebRequest();
+                    await aOperation;
+
+                    var aResult = await aOperation;
+
+                    if (aResult.result != UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogError($"ATS_StreamingAssets.LoadBytes Fail,iPath:{iPath},result:{aResult.result}");
+                        return default;
+                    }
+
+                    return aLoadingRequest.downloadHandler.nativeData;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    Debug.LogError($"UCL_StreamingAssets.LoadBytes iPath:{iPath},Exception:{e}");
+                }
+
+                return default;
+            }
+            public static async Task<byte[]> LoadBytes(string iPath)
+            {
+                try
+                {
+                    var aLoadingRequest = UnityWebRequest.Get(iPath);
+                    var aOperation = aLoadingRequest.SendWebRequest();
+                    await aOperation;
+
+                    var aResult = await aOperation;
+
+                    if (aResult.result != UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogError($"ATS_StreamingAssets.LoadBytes Fail,iPath:{iPath},result:{aResult.result}");
+                        return Array.Empty<byte>();
+                    }
+
+                    return aLoadingRequest.downloadHandler.data;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    Debug.LogError($"UCL_StreamingAssets.LoadBytes iPath:{iPath},Exception:{e}");
+                }
+
+                return Array.Empty<byte>();
+            }
+
+            public static async Task<string> LoadString(string iPath)
+            {
+
+                switch (Application.platform)
+                {
+                    case RuntimePlatform.WindowsEditor:
+                    case RuntimePlatform.IPhonePlayer:
+                    case RuntimePlatform.WindowsPlayer:
+                        {
+                            string aPath = Path.Combine(Application.streamingAssetsPath, iPath);
+                            if (!File.Exists(aPath))
+                            {
+                                Debug.LogError($"LoadString !File.Exists aPath:{aPath}");
+                                return string.Empty;
+                            }
+                            return File.ReadAllText(aPath);
+                        }
+                        //case RuntimePlatform.Android:
+                        //    {
+                        //        break;
+                        //    }
+                }
+
+                try//Load from streaming asset!!
+                {
+                    var aLoadingRequest = UnityWebRequest.Get(iPath);
+                    var aOperation = aLoadingRequest.SendWebRequest();
+
+                    var aResult = await aOperation;
+
+                    if (aResult.result != UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogError($"ATS_StreamingAssets.LoadString Fail,iPath:{iPath},result:{aResult.result}");
+                        return string.Empty;
+                    }
+
+                    return aLoadingRequest.downloadHandler.text;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    Debug.LogError($"UCL_StreamingAssets.LoadString iPath:{iPath},Exception:{e}");
+                }
+
+                return string.Empty;
+            }
+        }
+
 
         public static async Task<string> LoadString(string iPath)
         {
-
-            switch (Application.platform)
-            {
-                case RuntimePlatform.WindowsEditor:
-                case RuntimePlatform.IPhonePlayer:
-                case RuntimePlatform.WindowsPlayer:
-                    {
-                        string aPath = Path.Combine(Application.streamingAssetsPath, iPath);
-                        if (!File.Exists(aPath))
-                        {
-                            Debug.LogError($"LoadString !File.Exists aPath:{aPath}");
-                            return string.Empty;
-                        }
-                        return File.ReadAllText(aPath);
-                    }
-                //case RuntimePlatform.Android:
-                //    {
-                //        break;
-                //    }
-            }
-
-            try//Load from streaming asset!!
-            {
-                var aLoadingRequest = UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, iPath));
-                var aOperation = aLoadingRequest.SendWebRequest();
-
-                var aResult = await aOperation;
-
-                if (aResult.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogError($"ATS_StreamingAssets.LoadString Fail,iPath:{iPath},result:{aResult.result}");
-                    return string.Empty;
-                }
-
-                return aLoadingRequest.downloadHandler.text;
-            }
-            catch (Exception e)
-            {
-                Debug.LogException(e);
-                Debug.LogError($"UCL_StreamingAssets.LoadString iPath:{iPath},Exception:{e}");
-            }
-
-            return string.Empty;
+            return await FullPath.LoadString(Path.Combine(Application.streamingAssetsPath, iPath));
         }
         public static async Task<byte[]> LoadBytes(string iPath)
         {
-
-            try
-            {
-                var aLoadingRequest = UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, iPath));
-                var aOperation = aLoadingRequest.SendWebRequest();
-                await aOperation;
-
-                var aResult = await aOperation;
-
-                if (aResult.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogError($"ATS_StreamingAssets.LoadBytes Fail,iPath:{iPath},result:{aResult.result}");
-                    return Array.Empty<byte>();
-                }
-
-                return aLoadingRequest.downloadHandler.data;
-            }
-            catch (Exception e)
-            {
-                Debug.LogException(e);
-                Debug.LogError($"UCL_StreamingAssets.LoadBytes iPath:{iPath},Exception:{e}");
-            }
-
-            return Array.Empty<byte>();
+            return await FullPath.LoadBytes(Path.Combine(Application.streamingAssetsPath, iPath));
         }
 
         public static string GetFileSystemPath(string iPath)

@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using Cysharp.Threading.Tasks;
+using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.Serialization.Formatters.Binary;
 using UnityEngine;
 
@@ -406,6 +408,35 @@ namespace UCL.Core.FileLib
             return path;
         }
         /// <summary>
+        /// https://stackoverflow.com/questions/411592/how-do-i-save-a-stream-to-a-file-in-c
+        /// </summary>
+        /// <param name="stream"></param>
+        /// <param name="destinationFile"></param>
+        /// <param name="mode"></param>
+        /// <param name="access"></param>
+        /// <param name="share"></param>
+        public static void WriteToFile(Stream stream, string destinationFile, FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite, FileShare share = FileShare.ReadWrite)
+        {
+            //stream.Position = 0;
+            using (var destinationFileStream = new FileStream(destinationFile, mode, access, share))
+            {
+                CopyStream(stream, destinationFileStream);
+            }
+        }
+        /// <summary>
+        /// Copies the contents of input to output. Doesn't close either stream.
+        /// https://stackoverflow.com/questions/411592/how-do-i-save-a-stream-to-a-file-in-c/411605#411605
+        /// </summary>
+        public static void CopyStream(Stream input, Stream output, int bufferSize = 8)
+        {
+            byte[] buffer = new byte[bufferSize * 1024];
+            int len;
+            while ((len = input.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                output.Write(buffer, 0, len);
+            }
+        }
+        /// <summary>
         /// return the file extension
         /// Example path is "root/folder/c.txt", then return "txt" 
         /// 抓取副檔名並回傳
@@ -584,6 +615,41 @@ namespace UCL.Core.FileLib
             return file;
         }
     }
+
+    static public class ZipLib
+    {
+        public static void UnzipFromBytes(byte[] iBytes, string iTargetPath)
+        {
+            using (Stream aStream = new MemoryStream(iBytes))
+            {
+                //using(GZipStream aGZipStream = new GZipStream(aStream, System.IO.Compression.CompressionLevel.NoCompression, true))
+                {
+                    using (ZipArchive aZip = new ZipArchive(aStream, ZipArchiveMode.Read, true))
+                    {
+                        foreach (var aEntry in aZip.Entries)
+                        {
+                            string aCompleteFileName = Path.Combine(iTargetPath, aEntry.FullName);
+                            string aDirectory = Path.GetDirectoryName(aCompleteFileName);
+                            if (!Directory.Exists(aDirectory))
+                            {
+                                Directory.CreateDirectory(aDirectory);
+                            }
+                            using (Stream aEntryStream = aEntry.Open())
+                            {
+                                if (File.Exists(aCompleteFileName))
+                                {
+                                    File.Delete(aCompleteFileName);
+                                }
+                                UCL.Core.FileLib.Lib.WriteToFile(aEntryStream, aCompleteFileName, FileMode.Create, FileAccess.Write, FileShare.Write);
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+
     static public class StreamingAssetsLib {
         /// <summary>
         /// Conver the path into StreamingAssetsPath

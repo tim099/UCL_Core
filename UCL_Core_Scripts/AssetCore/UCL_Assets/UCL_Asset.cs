@@ -26,21 +26,9 @@ namespace UCL.Core
         /// <summary>
         /// 檔案路徑
         /// </summary>
-        virtual public string RelativeFolderPath
-        {
-            get
-            {
-                if(s_RelativeFolderPath == null)
-                {
-                    s_RelativeFolderPath = UCL_ModulePath.GetAssetRelativePath(GetType()); //$"UCL_Assets/{GetType().Name}";
-                }
-                return s_RelativeFolderPath;
-                //return UCL_ModuleService.Ins.GetFolderPath(GetType());
-                //return ATS_FileData.GetFolderPath(GetType());
-            }
-        }
-        static string s_RelativeFolderPath = null;
-        virtual public string SaveFolderPath => UCL_ModuleService.Ins.GetFolderPath(RelativeFolderPath);
+        virtual public string RelativeFolderPath => UCL_ModulePath.ModuleRelativePath.GetAssetRelativePath(GetType());
+
+        virtual public string SaveFolderPath => UCL_ModuleService.Ins.GetCurEditModuleFolder(RelativeFolderPath);
         virtual public UCLI_Asset CreateCommonData(string iID) => CreateData(iID) as UCLI_Asset;
 
         /// <summary>
@@ -355,12 +343,9 @@ namespace UCL.Core
         virtual public List<string> GetAllIDs()
         {
             //this should base on current module and dependencies modules of current module
-
-            return UCL_ModuleService.Ins.GetAllAssetsID(this.GetType());
-
-            //return UCL.Core.FileLib.Lib.GetFilesName(SaveFolderPath, "*.json", SearchOption.TopDirectoryOnly, true).ToList();
-
-            //return FileDatas.GetFileIDs();
+            var aIDs = UCL_ModuleService.Ins.GetAllAssetsID(this.GetType());
+            //Debug.LogError($"GetAllIDs(),aIDs:{aIDs}");
+            return aIDs;
         }
 
         /// <summary>

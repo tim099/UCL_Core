@@ -167,7 +167,7 @@ namespace UCL.Core
                 {
                     var aIDs = GetAllModulesID();
 
-                    Debug.LogError($"ZipAllModules aIDs:{aIDs.ConcatString()}");
+                    Debug.LogWarning($"ZipAllModules aIDs:{aIDs.ConcatString()}");
                     if (aIDs.IsNullOrEmpty())//No modules exist
                     {
                         return;

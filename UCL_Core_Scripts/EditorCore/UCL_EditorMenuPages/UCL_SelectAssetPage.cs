@@ -64,7 +64,7 @@ namespace UCL.Core.Page
         public override void OnResume()
         {
             m_Preview = null;
-            Util.ClearCache();
+            Util.ClearAllCache();
             m_Meta = Util.AssetMetaIns;
             //Debug.LogError($"OnResume m_Meta:{m_Meta.m_FileMetas.ConcatString(iMeta => $"{iMeta.Key}:{iMeta.Value.m_Group}")}");
         }
@@ -80,6 +80,7 @@ namespace UCL.Core.Page
         }
         protected override void TopBarButtons()
         {
+            GUILayout.Label(WindowName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             if (GUILayout.Button(m_CreateDes, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_CommonEditPage.Create(new T());

@@ -133,8 +133,6 @@ namespace UCL.Core
                                 return;
                             }
 
-
-
                             //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
 
                             //var aStream = await UCL_StreamingAssets.FullPath.LoadNativeData(ZipFilePath);
@@ -268,14 +266,19 @@ namespace UCL.Core
                 /// </summary>
                 public void UnInstall()
                 {
-                    Directory.Delete(InstallFolder, true);
+                    string aPath = InstallFolder;
+                    if (!Directory.Exists(aPath))
+                    {
+                        return;
+                    }
+                    Directory.Delete(aPath, true);
                 }
 
                 public UCL_Module.Config GetConfig()
                 {
                     UCL_Module.Config aConfig = new UCL_Module.Config();
                     string aConfigPath = ConfigPath;
-                    Debug.LogError($"GetConfig ID:{ID}, aConfigPath:{aConfigPath}");
+                    //Debug.Log($"GetConfig ID:{ID}, aConfigPath:{aConfigPath}");
                     if (File.Exists(aConfigPath))//Get config
                     {
                         string aJson = File.ReadAllText(aConfigPath);
@@ -329,7 +332,7 @@ namespace UCL.Core
                 }
 
 
-                public string GetAssetFolderPath(Type iAssetType) => Path.Combine(RootFolder, GetAssetRelativePath(iAssetType));
+                private string GetAssetFolderPath(Type iAssetType) => Path.Combine(RootFolder, GetAssetRelativePath(iAssetType));
 
                 public string GetAssetPath(Type iAssetType, string iID)
                 {

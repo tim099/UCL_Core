@@ -62,7 +62,7 @@ namespace UCL.Core.Page
         }
         public override void OnClose()
         {
-            m_Data.ClearCache();
+            m_Data.ClearAllCache();
             base.OnClose();
         }
         protected override void BackButtonClicked()

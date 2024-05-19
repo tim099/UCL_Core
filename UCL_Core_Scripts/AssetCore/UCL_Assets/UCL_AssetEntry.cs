@@ -60,9 +60,13 @@ namespace UCL.Core
         /// <param name="iUseCache">是否使用緩存的資料 false會直接生成一份新的</param>
         /// <returns></returns>
         public T GetData(bool iUseCache = true) => Util.GetCommonData(ID, iUseCache) as T;
+        /// <summary>
+        /// return true if asset exist
+        /// </summary>
+        /// <returns></returns>
         public bool Exist() => Util.GetAllIDs().Contains(ID);
         /// <summary>
-        /// Get all ID in this UCL_Asset
+        /// Get all ID of this UCL_Asset
         /// 抓取此類型中所有的ID
         /// </summary>
         /// <returns></returns>

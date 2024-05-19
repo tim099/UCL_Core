@@ -22,20 +22,22 @@ namespace UCL.Core
     public interface UCLI_CommonEditable : IJsonSerializable, UCLI_ID
     {
         /// <summary>
-        /// 路徑
         /// Save path in file system
         /// </summary>
-        string SavePath { get; }
+        string AssetPath { get; }
         /// <summary>
+        /// Save data
         /// 存檔
         /// </summary>
         JsonData Save();
         /// <summary>
+        /// Delete data by ID
         /// 根據ID刪除資料
         /// </summary>
         /// <param name="iID"></param>
         void Delete(string iID);
         /// <summary>
+        /// Draw editor OnGUI
         /// 繪製編輯器
         /// </summary>
         void OnGUI(UCL.Core.UCL_ObjectDictionary iDataDic);
@@ -48,6 +50,6 @@ namespace UCL.Core
         /// <summary>
         /// 清除緩存
         /// </summary>
-        void ClearCache();
+        void ClearAllCache();
     }
 }

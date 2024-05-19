@@ -33,7 +33,7 @@ namespace UCL.Core
     /// <summary>
     /// UCL_Module contains info about how to load assets in this module
     /// </summary>
-    public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID, UCLI_ShortName
+    public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID, UCLI_ShortName//, UCLI_FieldOnGUI
     {
         public const string NotInstalledID = "None";
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
@@ -48,6 +48,8 @@ namespace UCL.Core
             /// </summary>
             public bool Installed => m_Version != NotInstalledID;
         }
+
+
         /// <summary>
         /// StreamingAssets for BuiltinModules
         /// and PersistentDatas for Runtime
@@ -129,8 +131,9 @@ namespace UCL.Core
 
             //UCL_ModuleService.PathConfig.SaveModuleConfig(ID, m_Config.SerializeToJson());
         }
-
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
         protected async UniTask LoadAsync()
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
         {
             m_IsLoading = true;
             try
@@ -271,46 +274,139 @@ namespace UCL.Core
         //    }
         //}
 
-
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
-            var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
-            var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
-            foreach (var aType in UCLI_Asset.GetAllAssetTypes())
+            //var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
+            //var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
+
+
+
+            var aAllAssetTypeNames = UCLI_Asset.GetAllAssetTypeNames();
+            if (!aAllAssetTypeNames.IsNullOrEmpty())
             {
-                try
+                using (var aScope = new GUILayout.HorizontalScope())
                 {
-                    string aPropInfosStr = string.Empty;
-                    try
+                    bool aEdit = false;
+                    if (GUILayout.Button($"Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(160)))
                     {
-                        UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
-                        if (aUtil != null)
+                        aEdit = true;
+                    }
+
+
+                    const string SelectedIDKey = "SelectedID";
+                    int aSelectedID = iDataDic.GetData(SelectedIDKey, 0);
+                    aSelectedID = UCL_GUILayout.PopupAuto(aSelectedID, aAllAssetTypeNames, iDataDic, "SelectAssetType");
+                    iDataDic.SetData(SelectedIDKey, aSelectedID);
+
+
+                    if (aEdit)
+                    {
+                        var aAllAssetsTypes = UCLI_Asset.GetAllAssetTypes();
+                        var aType = aAllAssetsTypes[aSelectedID];
+                        try
                         {
-                            GUILayout.BeginHorizontal();
-                            if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.ExpandWidth(false)))
+                            UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
+                            if (aUtil != null)
                             {
                                 aUtil.CreateSelectPage();
                             }
-                            GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
-
-                            //GUILayout.Label($"{aType.FullName}");
-                            //aUtil.RefreshAllDatas();
-                            //Debug.LogWarning($"Util:{aUtil.GetType().FullName}.RefreshAllDatas()");
-                            GUILayout.EndHorizontal();
+                        }
+                        catch (Exception iE)
+                        {
+                            Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
+                            Debug.LogException(iE);
                         }
                     }
-                    catch (Exception iE)
-                    {
-                        Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
-                        Debug.LogException(iE);
-                    }
-                }
-                catch (Exception iE)
-                {
-                    Debug.LogException(iE);
-                }
 
+                }
             }
         }
+        //virtual public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
+        //{
+        //    UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName);
+
+        //    //var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
+        //    //var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
+
+
+
+        //    var aAllAssetTypeNames = UCLI_Asset.GetAllAssetTypeNames();
+        //    if (!aAllAssetTypeNames.IsNullOrEmpty())
+        //    {
+        //        using(var aScope = new GUILayout.HorizontalScope())
+        //        {
+        //            bool aEdit = false;
+        //            if (GUILayout.Button($"Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(160)))
+        //            {
+        //                aEdit = true;
+        //            }
+
+
+        //            const string SelectedIDKey = "SelectedID";
+        //            int aSelectedID = iDataDic.GetData(SelectedIDKey, 0);
+        //            aSelectedID = UCL_GUILayout.PopupAuto(aSelectedID, aAllAssetTypeNames, iDataDic, "SelectAssetType");
+        //            iDataDic.SetData(SelectedIDKey, aSelectedID);
+
+
+        //            if(aEdit)
+        //            {
+        //                var aAllAssetsTypes = UCLI_Asset.GetAllAssetTypes();
+        //                var aType = aAllAssetsTypes[aSelectedID];
+        //                try
+        //                {
+        //                    UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
+        //                    if (aUtil != null)
+        //                    {
+        //                        aUtil.CreateSelectPage();
+        //                    }
+        //                }
+        //                catch (Exception iE)
+        //                {
+        //                    Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
+        //                    Debug.LogException(iE);
+        //                }
+        //            }
+
+        //        }
+        //    }
+
+        //    return this;
+
+        //    //foreach (var aType in aAllAssetsTypes)
+        //    //{
+        //    //    try
+        //    //    {
+        //    //        string aPropInfosStr = string.Empty;
+        //    //        try
+        //    //        {
+        //    //            UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
+        //    //            if (aUtil != null)
+        //    //            {
+        //    //                GUILayout.BeginHorizontal();
+        //    //                if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.ExpandWidth(false)))
+        //    //                {
+        //    //                    aUtil.CreateSelectPage();
+        //    //                }
+        //    //                GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
+
+        //    //                //GUILayout.Label($"{aType.FullName}");
+        //    //                //aUtil.RefreshAllDatas();
+        //    //                //Debug.LogWarning($"Util:{aUtil.GetType().FullName}.RefreshAllDatas()");
+        //    //                GUILayout.EndHorizontal();
+        //    //            }
+        //    //        }
+        //    //        catch (Exception iE)
+        //    //        {
+        //    //            Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
+        //    //            Debug.LogException(iE);
+        //    //        }
+        //    //    }
+        //    //    catch (Exception iE)
+        //    //    {
+        //    //        Debug.LogException(iE);
+        //    //    }
+
+        //    //}
+        //}
     }
 }

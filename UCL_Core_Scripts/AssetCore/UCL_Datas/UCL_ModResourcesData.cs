@@ -15,14 +15,33 @@ using UnityEngine;
 
 namespace UCL.Core
 {
+#if UNITY_EDITOR
+    [UnityEditor.InitializeOnLoad]
+#endif
     public static class UCL_ModResourcesService
     {
+        public enum DataType
+        {
+            Default = 0,
+            Sprite,
+        }
+
+        private static Dictionary<string, LoadedData> s_LoadedDatas = new Dictionary<string, LoadedData>();
+
+        #region LoadedData
         public class LoadedData : IDisposable
         {
             public string m_FilePath;
 
             public List<UnityEngine.Object> m_CreatedAssets = new List<UnityEngine.Object>();
-            public void Dispose()
+
+            virtual public DataType DataType => DataType.Default;
+
+            virtual public void Init(string iPath)
+            {
+                m_FilePath = iPath;
+            }
+            virtual public void Dispose()
             {
                 foreach(var aAsset in m_CreatedAssets)
                 {
@@ -33,13 +52,36 @@ namespace UCL.Core
                 }
                 m_CreatedAssets.Clear();
             }
+        }
+        public class LoadedSpriteData : LoadedData
+        {
+            const int TextureIndex = 0;
+            const int SpriteIndex = TextureIndex + 1;
+
+            override public DataType DataType => DataType.Sprite;
+
+            override public void Init(string iPath)
+            {
+                base.Init(iPath);
+                if (!File.Exists(iPath))
+                {
+                    Debug.LogError($"LoadedSpriteData.Init !File.Exists,iPath:{iPath}");
+                    return;
+                }
+
+                var aBytes = File.ReadAllBytes(iPath);
+                Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(aBytes);
+                m_CreatedAssets.Add(aTexture);
+                Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
+                m_CreatedAssets.Add(aSprite);
+            }
             public Sprite Sprite
             {
                 get
                 {
-                    if(m_CreatedAssets.Count > 1)
+                    if (m_CreatedAssets.Count > SpriteIndex)
                     {
-                        return m_CreatedAssets[1] as Sprite;
+                        return m_CreatedAssets[SpriteIndex] as Sprite;
                     }
                     return null;
                 }
@@ -48,56 +90,70 @@ namespace UCL.Core
             {
                 get
                 {
-                    if (m_CreatedAssets.Count > 0)
+                    if (m_CreatedAssets.Count > TextureIndex)
                     {
-                        return m_CreatedAssets[0] as Texture2D;
+                        return m_CreatedAssets[TextureIndex] as Texture2D;
                     }
                     return null;
                 }
             }
         }
+        #endregion
+
+
         public static Sprite LoadSprite(string iPath)
         {
-            //Debug.LogError("LoadSpriteAsync");
-            if (s_LoadedDatas.ContainsKey(iPath))
+            //Debug.LogError($"LoadSprite iPath:{iPath}");
+            if (!s_LoadedDatas.ContainsKey(iPath))
             {
-                var aData = s_LoadedDatas[iPath];
-                return aData.Sprite;
+                try
+                {
+                    LoadedSpriteData aLoadedData = new LoadedSpriteData();
+                    s_LoadedDatas[iPath] = aLoadedData;
+                    aLoadedData.Init(iPath);
+                }
+                catch(System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                    Debug.LogError($"LoadSprite iPath:{iPath},Exception:{ex}");
+                    return null;
+                }
             }
-            if(!File.Exists(iPath))
-            {
-                Debug.LogError($"UCL_ModResourcesService.LoadSprite !File.Exists,iPath:{iPath}");
-                return null;
-            }
-            var aBytes = File.ReadAllBytes(iPath);
-            if (aBytes == null)
-            {
-                Debug.LogError($"UCL_ModResourcesService.LoadSprite File.ReadAllBytes() == null,iPath:{iPath}");
-                return null;
-            }
-            LoadedData aLoadedData = new LoadedData();
-            s_LoadedDatas[iPath] = aLoadedData;
 
-            Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(aBytes);
-            if (aTexture == null)
-            {
-                Debug.LogError($"UCL_ModResourcesService.LoadSprite CreateTexture() == null,iPath:{iPath}");
-                return null;
-            }
-            aLoadedData.m_CreatedAssets.Add(aTexture);
 
-            Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
-            if (aSprite == null)
+            var aData = s_LoadedDatas[iPath];
+            if (aData is LoadedSpriteData aSpriteData)
             {
-                Debug.LogError($"UCL_ModResourcesService.LoadSprite CreateSprite() == null,iPath:{iPath}");
+                return aSpriteData.Sprite;
+            }
+            else
+            {
+                Debug.LogError($"UCL_ModResourcesService.LoadSprite aData.GetType().FullName:{aData.GetType().FullName}");
                 return null;
             }
-            aLoadedData.m_CreatedAssets.Add(aSprite);
-            return aSprite;
         }
+
+        static UCL_ModResourcesService()
+        {
+            //Debug.LogError("UCL_ModResourcesService.InitializeOnLoad");
+            EditorLib.EditorApplicationMapper.playModeStateChanged += (iPlayModeStateChangeMapper) =>
+            {
+                //Debug.LogError($"playModeStateChanged iPlayModeStateChangeMapper:{iPlayModeStateChangeMapper}");
+                switch (iPlayModeStateChangeMapper)
+                {
+                    case EditorLib.PlayModeStateChangeMapper.ExitingPlayMode:
+                        {
+                            ReleaseAll();
+                            break;
+                        }
+                }
+            };
+        }
+
         public static void ReleaseAll()
         {
-            foreach(var aData in s_LoadedDatas.Values)
+            //UnityEditor.EditorApplication.playModeStateChanged
+            foreach (var aData in s_LoadedDatas.Values)
             {
                 aData.Dispose();
             }
@@ -111,7 +167,7 @@ namespace UCL.Core
                 s_LoadedDatas.Remove(iKey);
             }
         }
-        private static Dictionary<string, LoadedData> s_LoadedDatas = new Dictionary<string, LoadedData>();
+
     }
 
     /// <summary>

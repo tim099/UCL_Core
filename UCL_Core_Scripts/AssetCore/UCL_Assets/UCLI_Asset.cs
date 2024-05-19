@@ -87,30 +87,53 @@ namespace UCL.Core
             
             return s_TypeToUtilDic[iType];
         }
-        private static List<Type> s_AllCommonDataTypes = null;
+        private static List<Type> s_AllAssetTypes = null;
         /// <summary>
         /// 抓取所有UCLI_Asset的Type
-        /// Get all Types of UCLI_Asset
+        /// Get all types of UCLI_Asset
         /// </summary>
         /// <returns></returns>
         public static List<Type> GetAllAssetTypes()
         {
-            if (s_AllCommonDataTypes == null)
+            if (s_AllAssetTypes == null)
             {
                 var aAllTypes = typeof(UCLI_Asset).GetAllITypesAssignableFrom();
-                s_AllCommonDataTypes = new List<Type>();
+                s_AllAssetTypes = new List<Type>();
                 foreach (var aType in aAllTypes)
                 {
                     if (aType.IsGenericType || aType.IsInterface)
                     {
                         continue;
                     }
-                    s_AllCommonDataTypes.Add(aType);
+                    s_AllAssetTypes.Add(aType);
                 }
             }
 
-            return s_AllCommonDataTypes;
+            return s_AllAssetTypes;
         }
+
+        private static List<string> s_AllAssetTypeNames = null;
+        /// <summary>
+        /// Get all types name of UCLI_Asset
+        /// </summary>
+        /// <returns></returns>
+        public static List<string> GetAllAssetTypeNames()
+        {
+            if (s_AllAssetTypeNames == null)
+            {
+                s_AllAssetTypeNames = new List<string>();
+                var aAllTypes = GetAllAssetTypes();
+                foreach(var aType in aAllTypes)
+                {
+                    s_AllAssetTypeNames.Add(aType.Name);
+                }
+            }
+
+            return s_AllAssetTypeNames;
+        }
+
+
+
         public static void RefreshAllAssetsWithReflection()
         {
             //RCG_GameInitData.Ins.Save();

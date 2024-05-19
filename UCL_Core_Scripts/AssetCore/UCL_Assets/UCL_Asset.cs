@@ -12,6 +12,7 @@ using UCL.Core;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
+using UCL.Core.UI;
 using UnityEngine;
 
 namespace UCL.Core
@@ -41,7 +42,8 @@ namespace UCL.Core
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))//, GUILayout.MinWidth(130)
             {
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
-
+                GUILayout.Label($"{this.UCL_ToString()}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                //UCL_GUILayout.DrawObjectData(this, iDataDic.GetSubDic("Preview Data"), string.Empty, true);
                 if (iIsShowEditButton)
                 {
                     if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
@@ -96,22 +98,23 @@ namespace UCL.Core
         #endregion
 
         #region FileSystem
-        virtual public UCL_Module Module => UCL_ModuleService.CurEditModule;
+        public static UCL_ModuleService.AssetConfig GetAssetConfig(string iID) => UCL_ModuleService.Ins.GetAssetConfig(typeof(T), iID);
+
+        virtual public UCL_ModuleService.AssetConfig AssetConfig => GetAssetConfig(ID);
+        virtual public UCL_Module Module => AssetConfig.p_Module;
+
         public const string CommonDataMetaName = ".CommonDataMeta";
         public string CommonDataMetaPath => System.IO.Path.Combine(SaveFolderPath, CommonDataMetaName);
+
         /// <summary>
         /// 存檔路徑
         /// </summary>
-        public string SavePath //=> FileDatas.GetFileSystemPath(ID);
+        public string AssetPath => AssetConfig.AssetPath;
+
+        virtual public string GetAssetPath(string iID)
         {
-            get
-            {
-                return GetSavePath(ID);
-            }
-        }
-        virtual public string GetSavePath(string iID)
-        {
-            return Path.Combine(SaveFolderPath, $"{iID}.json");
+            return GetAssetConfig(iID).AssetPath;
+            //return Path.Combine(SaveFolderPath, $"{iID}.json");
         }
         /// <summary>
         /// Check if asset exist
@@ -120,56 +123,31 @@ namespace UCL.Core
         /// <returns>true if asset exist</returns>
         public bool ContainsAsset(string iID)// => FileDatas.FileExists(iID);
         {
-            string aPath = GetSavePath(iID);
+            string aPath = GetAssetPath(iID);
             //Debug.LogError($"ContainsAsset aPath:{aPath}");
             return File.Exists(aPath);
-        }
-        public string ReadAssetJson(string iID)
-        {
-            string aPath = GetSavePath(iID);
-            if (!File.Exists(aPath))
-            {
-                return string.Empty;
-            }
-            return File.ReadAllText(aPath);
-        }
-        public void SaveAssetJson(string iID, string iJson)
-        {
-            string aPath = GetSavePath(iID);
-            File.WriteAllText(aPath, iJson);
         }
         #endregion
 
 
         #region FakeStatic
-
-        /// <summary>
-        /// cached data
-        /// </summary>
-        /// <returns></returns>
-        private Dictionary<string, T> s_DataDic = null;
-
-
         virtual public T CreateData(string iID)
         {
-            var aType = GetType();
-            string aPath = UCL_ModuleService.Ins.GetAssetPath(aType, iID);
-
-            if (!File.Exists(aPath))
+            var aType = typeof(T);
+            var aConfig = GetAssetConfig(iID);
+            if (!aConfig.Exist)
             {
-                string aLog = $"Create {aType.FullName} ID: {iID},Not Exist!!,aPath:{aPath}";
-                Debug.LogError(aLog);
-                //throw new System.Exception(aLog);
+                Debug.LogError($"CreateData Type:{aType}, ID:{iID}, !Config.Exist");
                 return null;
             }
+
             var aData = new T();
             UCLI_Asset.s_CurCreateData = aData;
 
             try
             {
                 aData.ID = iID;
-                string aJsonData = File.ReadAllText(aPath); //ReadAssetJson(ID);
-                aData.DeserializeFromJson(JsonData.ParseJson(aJsonData));
+                aData.DeserializeFromJson(aConfig.GetJsonData());
             }
             catch (Exception e)
             {
@@ -188,23 +166,18 @@ namespace UCL.Core
         /// <returns></returns>
         virtual public T GetData(string iID, bool iUseCache = true)
         {
-            if (string.IsNullOrEmpty(iID))
-            {
-                Debug.LogError($"GetData, string.IsNullOrEmpty(iID)");
-                return default;
-            }
             if (!iUseCache)//Create new asset
             {
                 return CreateData(iID);
             }
 
-            //TODO refactor cache!!
-            if (s_DataDic == null) s_DataDic = new Dictionary<string, T>();
-            if (!s_DataDic.ContainsKey(iID))
+            var aConfig = GetAssetConfig(iID);
+            if (aConfig.AssetCache == null)
             {
-                s_DataDic[iID] = CreateData(iID);
+                aConfig.AssetCache = CreateData(iID);
             }
-            return s_DataDic[iID];
+
+            return aConfig.AssetCache as T;
         }
         /// <summary>
         /// 根據ID抓取物品設定
@@ -219,14 +192,11 @@ namespace UCL.Core
         /// <param name="iID"></param>
         public void Delete(string iID)
         {
-            //Debug.LogError($"TODO {GetType().Name}.Delete {iID}");
-            string aPath = GetSavePath(iID);
-            if (File.Exists(aPath))
-            {
-                File.Delete(aPath);
-            }
+            var aAssetConfig = GetAssetConfig(iID);
+            aAssetConfig.DeleteAsset();
+
             //FileDatas.DeleteFile(iID);
-            ClearCache();
+            ClearCache(iID);
         }
         /// <summary>
         /// Create a page to select UCL_Asset to edit
@@ -234,14 +204,14 @@ namespace UCL.Core
         /// </summary>
         virtual public void CreateSelectPage()
         {
-            CreateCommonSelectPage();
+            CreateSelectAssetPage();
         }
         /// <summary>
         /// Create a page to select UCL_Asset to edit
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)
         /// </summary>
         /// <returns></returns>
-        virtual public Page.UCL_SelectAssetPage<T> CreateCommonSelectPage()
+        virtual public Page.UCL_SelectAssetPage<T> CreateSelectAssetPage()
         {
             return Page.UCL_SelectAssetPage<T>.Create();
         }
@@ -250,21 +220,26 @@ namespace UCL.Core
         virtual public JsonData Save()
         {
             var aJson = SerializeToJson();
-            SaveAssetJson(ID, aJson.ToJsonBeautify());
-            //FileDatas.WriteAllText(ID, aJson.ToJsonBeautify());
+            AssetConfig.SaveAsset(aJson);
             //Debug.LogError("Save:" + ID);
-            ClearCache();
+            ClearCache(ID);
             return aJson;
         }
 
         /// <summary>
         /// 清除緩存
         /// </summary>
-        virtual public void ClearCache()
+        virtual public void ClearAllCache()
         {
-            if (this != Util) Util.ClearCache();
-            if (s_DataDic != null) s_DataDic.Clear();
-            //s_DataDic = null;
+            UCL_ModuleService.Ins.ClearAssetsCache(typeof(T));
+            //Debug.LogError("ClearCache:" + ID);
+        }
+        /// <summary>
+        /// 清除緩存
+        /// </summary>
+        virtual public void ClearCache(string iID)
+        {
+            UCL_ModuleService.Ins.ClearAssetsCache(typeof(T), iID);
             //Debug.LogError("ClearCache:" + ID);
         }
         virtual public string ID { get; set; }
@@ -337,7 +312,7 @@ namespace UCL.Core
 
 
         /// <summary>
-        /// get all assets ID of this AssetType
+        /// get all assets ID
         /// </summary>
         /// <returns></returns>
         virtual public List<string> GetAllIDs()
@@ -349,6 +324,7 @@ namespace UCL.Core
         }
 
         /// <summary>
+        /// get all editable assets ID
         /// 抓取所有可編輯資料的ID
         /// </summary>
         /// <returns></returns>

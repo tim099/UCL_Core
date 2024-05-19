@@ -140,10 +140,10 @@ namespace UCL.Core.Page
             //{
             //    RCG_FindReferencePage.Create(m_Data);//開啟尋找連接分頁
             //}
-#if UNITY_STANDALONE_WIN
+#if !UNITY_STANDALONE_WIN
             if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFile"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
-                UCL.Core.FileLib.WindowsLib.OpenExplorer(m_Data.SavePath);
+                UCL.Core.FileLib.WindowsLib.OpenExplorer(m_Data.AssetPath);
             }
 #endif
         }

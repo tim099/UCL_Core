@@ -15,17 +15,17 @@ namespace UCL.Core
 
         public static partial class PersistantPath
         {
- 
+
             #region ModuleConfig
             /// <summary>
-            /// module path config of each module(child of ModulePathConfig)
+            /// module path config of each module(child of ModulesEntry)
             /// </summary>
-            public class ModuleConfig
+            public class ModuleEntry
             {
                 public const string ConfigName = "Config.json";
                 public const string AssetFolderName = "UCL_Assets";
                 public const string ModResourcesFolderName = "ModResources";
-                public ModulePathConfig p_ModulePathConfig { get; private set; }
+                public ModulesEntry p_ModulePathConfig { get; private set; }
 
 
                 public string ID { get; private set; }
@@ -63,7 +63,7 @@ namespace UCL.Core
                 public static string GetAssetRelativePath(System.Type iType) => Path.Combine(AssetFolderName, iType.Name);
 
 
-                public ModuleConfig(ModulePathConfig iModulePathConfig, string iD)
+                public ModuleEntry(ModulesEntry iModulePathConfig, string iD)
                 {
                     p_ModulePathConfig = iModulePathConfig;
                     ID = iD;
@@ -298,7 +298,7 @@ namespace UCL.Core
                 { 
                     if (Application.isEditor)
                     {
-                        return UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID).GetConfig();
+                        return UCL_ModulePath.PersistantPath.Builtin.GetModuleEntry(ID).GetConfig();
                     }
 
 
@@ -360,7 +360,7 @@ namespace UCL.Core
                 {
                     string aFolderPath = GetAssetFolderPath(iAssetType);
                     var aIDs = UCL.Core.FileLib.Lib.GetFilesName(aFolderPath, "*.json", SearchOption.TopDirectoryOnly, true);
-                    Debug.Log($"GetAllAssetsID iAssetType:{iAssetType.FullName}, aFolderPath:{aFolderPath},aIDs:{aIDs.ConcatString()}");
+                    //Debug.Log($"GetAllAssetsID iAssetType:{iAssetType.FullName}, aFolderPath:{aFolderPath},aIDs:{aIDs.ConcatString()}");
                     return aIDs;
                 }
             }

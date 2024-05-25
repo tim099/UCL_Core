@@ -13,6 +13,8 @@ namespace UCL.Core
 {
     public class UCL_ModuleEntry : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ShortName
     {
+        public const string CoreModuleID = "Core";
+
         protected const string FuncKeyGetAllIDs = "GetAllIDs";
         /// <summary>
         /// Get all modules ID
@@ -23,7 +25,7 @@ namespace UCL.Core
             return UCL_ModuleService.Ins.GetAllModulesID();
         }
         [UCL.Core.PA.UCL_List(FuncKeyGetAllIDs)]
-        public string m_ID = UCL_ModuleService.CoreModuleID;
+        public string m_ID = CoreModuleID;
 
 
         public UCL_ModuleEntry() { }

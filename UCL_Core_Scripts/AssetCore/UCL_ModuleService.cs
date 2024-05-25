@@ -25,8 +25,6 @@ namespace UCL.Core
     /// </summary>
     public class UCL_ModuleService//: UCLI_FieldOnGUI
     {
-        public const string CoreModuleID = "Core";
-
         #region static
         public static UCL_ModuleService Ins
         {
@@ -42,18 +40,14 @@ namespace UCL.Core
         }
 
         public const string ReflectKeyModResourcesPath = "ModResourcesPath";
-        public static string ModResourcesPath => CurEditModule.ModuleConfig.ModResourcesPath;
-        //{
-        //    get
-        //    {
-                
-        //        return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(CurEditModuleID));
-        //        //return UCL_ModulePath.GetModulePath(CurEditModuleID);
-        //    }
-        //}
+        /// <summary>
+        /// for reflection
+        /// </summary>
+        public static string ModResourcesPath => CurEditModule.ModuleEntry.ModResourcesPath;
+
         public static string GetModResourcesPath(string iID)
         {
-            return UCL_ModulePath.PersistantPath.GetModulePathConfig(ModuleEditType).GetModuleConfig(iID).ModResourcesPath;
+            return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetModuleEntry(iID).ModResourcesPath;
             //return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(iID));
         }
         public static string CurEditModuleID
@@ -62,7 +56,7 @@ namespace UCL.Core
             {
                 if(Ins.m_CurEditModule == null)
                 {
-                    return CoreModuleID;
+                    return UCL_ModuleEntry.CoreModuleID;
                 }
                 return Ins.m_CurEditModule.ID;
             }
@@ -90,15 +84,6 @@ namespace UCL.Core
         }
         #endregion
 
-        public class ModuleEntry
-        {
-            public string m_ID;
-            /// <summary>
-            /// relative path in file system
-            /// </summary>
-            public string m_Path;
-
-        }
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
             public string m_CurrentEditModule = string.Empty;
@@ -107,11 +92,11 @@ namespace UCL.Core
             /// All BuiltinModules are in StreammingAssets
             /// </summary>
             public List<string> m_BuiltinModules = new List<string>();
+
             /// <summary>
             /// All module in this list will be loaded
             /// </summary>
-            public List<UCL_ModuleEntry> m_ModulePlayList = new ();
-
+            public UCL_ModulePlaylist m_Playlist = new UCL_ModulePlaylist();
             public string m_Version = "1.0.0";
 
             public void OnGUI(UCL_ObjectDictionary iDataDic)
@@ -179,7 +164,7 @@ namespace UCL.Core
             public object AssetCache { get; set; }
 
             public bool Exist => p_Module != null;
-            public string AssetPath => p_Module.ModuleConfig.GetAssetPath(AssetType, ID);
+            public string AssetPath => p_Module.ModuleEntry.GetAssetPath(AssetType, ID);
 
             public void Init(UCL_Module iModule, Type iAssetType, string iID)
             {
@@ -218,6 +203,11 @@ namespace UCL.Core
         }
         public class AssetsCache
         {
+            public Dictionary<string, AssetConfig> m_AssetConfigDic = new Dictionary<string, AssetConfig>();
+
+            public AssetsCache() { }
+
+
             public AssetConfig GetAssetConfig(string iID)
             {
                 if (!m_AssetConfigDic.ContainsKey(iID))
@@ -233,7 +223,7 @@ namespace UCL.Core
                     m_AssetConfigDic.Remove(iID);
                 }
             }
-            public Dictionary<string, AssetConfig> m_AssetConfigDic = new Dictionary<string, AssetConfig>();
+            
         }
         /// <summary>
         /// Loaded Modules
@@ -282,38 +272,34 @@ namespace UCL.Core
                 //aTasks.Add(aModule.CheckAndInstall());
             }
             //await UniTask.WhenAll(aTasks);
+            m_Config.m_Playlist.LoadPlaylist();
 
-            if (m_Config.m_ModulePlayList.IsNullOrEmpty())
-            {
-                m_Config.m_ModulePlayList.Add(new UCL_ModuleEntry(CoreModuleID));
-            }
-            HashSet<string> aLoadedModule = new HashSet<string>();
-            foreach (var aModuleID in m_Config.m_ModulePlayList)
-            {
-                string aID = aModuleID.ID;
-                if (aLoadedModule.Contains(aID))//Loaded
-                {
-                    continue;
-                }
-                aLoadedModule.Add(aID);
-                try
-                {
-                    var aModule = m_Config.LoadModule(aModuleID.ID, UCL_ModuleEditType.Runtime);
-                    m_LoadedModules.Add(aModule);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogException(ex);
-                }
-            }
-            //if (!Application.isEditor)//Runtime using Modules from PersistentDatas
+
+            //if (m_Config.m_ModulePlayList.IsNullOrEmpty())
             //{
-            //    foreach (var aModuleID in m_Config.m_BuiltinModules)
+            //    m_Config.m_ModulePlayList.Add(new UCL_ModuleEntry(UCL_ModuleEntry.CoreModuleID));
+            //}
+            //HashSet<string> aLoadedModule = new HashSet<string>();
+            //foreach (var aModuleID in m_Config.m_ModulePlayList)
+            //{
+            //    string aID = aModuleID.ID;
+            //    if (aLoadedModule.Contains(aID))//Loaded
             //    {
-            //        var aModule = m_Config.LoadModule(aModuleID, UCL_AssetType.PersistentDatas);
+            //        continue;
+            //    }
+            //    aLoadedModule.Add(aID);
+            //    try
+            //    {
+            //        var aModule = m_Config.LoadModule(aModuleID.ID, UCL_ModuleEditType.Runtime);
             //        m_LoadedModules.Add(aModule);
             //    }
+            //    catch (Exception ex)
+            //    {
+            //        Debug.LogException(ex);
+            //    }
             //}
+
+
             m_LoadedModules.Reverse();//Modules that are loaded later will overwrite the previous modules(if asset have same ID)
             //Cheack and Install all Builtin Module to PersistantData path
             m_Initialized = true;
@@ -324,18 +310,18 @@ namespace UCL.Core
         /// <returns></returns>
         public IList<string> GetAllModulesID()
         {
-            return UCL_ModulePath.PersistantPath.GetModulePathConfig(ModuleEditType).GetAllModulesID();
+            return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetAllModulesID();
             //return UCL_ModulePath.GetAllModulesID(ModuleEditType);
         }
 
 
-        public List<string> GetAllEditableAssetsID(Type iAssetType)
+        public IList<string> GetAllEditableAssetsID(Type iAssetType)
         {
             if(m_CurEditModule == null)
             {
-                return new List<string>();
+                return Array.Empty<string>();//new List<string>();
             }
-            return m_CurEditModule.ModuleConfig.GetAllAssetsID(iAssetType).ToList();
+            return m_CurEditModule.ModuleEntry.GetAllAssetsID(iAssetType);
         }
         /// <summary>
         /// All assets ID(include assets in dependencies modules)
@@ -345,11 +331,11 @@ namespace UCL.Core
         public List<string> GetAllAssetsID(Type iAssetType)
         {
             var aModules = LoadedModules;
-            Debug.Log($"GetAllAssetsID aModules:{aModules.ConcatString(iModule => iModule.ID)}");
+            //Debug.Log($"GetAllAssetsID aModules:{aModules.ConcatString(iModule => iModule.ID)}");
             var aIDSet = new HashSet<string>();
             foreach (var aModule in aModules)
             {
-                var aIDs = aModule.ModuleConfig.GetAllAssetsID(iAssetType);
+                var aIDs = aModule.ModuleEntry.GetAllAssetsID(iAssetType);
 
                 foreach (var aID in aIDs)
                 {
@@ -358,22 +344,6 @@ namespace UCL.Core
             }
 
             return aIDSet.ToList();
-        }
-
-        public string GetAssetPath(Type iType, string iID)
-        {
-            var aModules = LoadedModules;
-            foreach (var aModule in aModules)
-            {
-                string aPath = aModule.ModuleConfig.GetAssetPath(iType, iID);
-                //Debug.LogError(aPath);
-                if (File.Exists(aPath))//Asset Exist!!
-                {
-                    return aPath;
-                }
-            }
-            Debug.LogError($"GetAssetPath iType:{iType}, iID:{iID}, File not exist!!,Modules:{aModules.ConcatString(iModule => iModule.ID)}");
-            return string.Empty;
         }
 
         public List<UCL_Module> LoadedModules => m_LoadedModules;
@@ -410,7 +380,7 @@ namespace UCL.Core
             {
                 foreach (UCL_Module aModule in LoadedModules)
                 {
-                    if (aModule.ModuleConfig.ContainsAsset(iAssetType, iID))
+                    if (aModule.ModuleEntry.ContainsAsset(iAssetType, iID))
                     {
                         aConfig.Init(aModule, iAssetType, iID);
                         return aConfig;//return config
@@ -451,10 +421,10 @@ namespace UCL.Core
 
 
                     m_Config.m_BuiltinModules = aAllModulesID.ToList();
-                    if (!m_Config.m_BuiltinModules.Contains(CoreModuleID))//Create Core Module!!
+                    if (!m_Config.m_BuiltinModules.Contains(UCL_ModuleEntry.CoreModuleID))//Create Core Module!!
                     {
-                        m_Config.CreateModule(CoreModuleID, UCL_ModuleEditType.Builtin);
-                        m_Config.m_BuiltinModules.Add(CoreModuleID);
+                        m_Config.CreateModule(UCL_ModuleEntry.CoreModuleID, UCL_ModuleEditType.Builtin);
+                        m_Config.m_BuiltinModules.Add(UCL_ModuleEntry.CoreModuleID);
                     }
                 }
 
@@ -496,7 +466,7 @@ namespace UCL.Core
         }
         virtual public string GetCurEditModuleFolder(string iRelativeFolderPath)
         {
-            string aModuleID = CoreModuleID;
+            string aModuleID = UCL_ModuleEntry.CoreModuleID;
             if(m_CurEditModule !=  null)
             {
                 aModuleID = m_CurEditModule.ID;

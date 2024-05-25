@@ -41,9 +41,6 @@ namespace UCL.Core
             //GUILayout.BeginHorizontal();
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))//, GUILayout.MinWidth(130)
             {
-                GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
-                GUILayout.Label($"{this.UCL_ToString()}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
-                //UCL_GUILayout.DrawObjectData(this, iDataDic.GetSubDic("Preview Data"), string.Empty, true);
                 if (iIsShowEditButton)
                 {
                     if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
@@ -51,6 +48,13 @@ namespace UCL.Core
                         UCL_CommonEditPage.Create(this);
                     }
                 }
+                GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+
+                
+                //GUILayout.Label($"{this.UCL_ToString()}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                UCL_GUILayout.Preview.OnGUI(this, iDataDic.GetSubDic("DrawPreview"));
+                //UCL_GUILayout.DrawObjectData(this, iDataDic.GetSubDic("Preview Data"), string.Empty, true);
+
             }
             //GUILayout.EndHorizontal();
         }
@@ -261,9 +265,9 @@ namespace UCL.Core
         {
             UCL_AssetMeta aCommonDataMeta = new UCL_AssetMeta();
             
-            aCommonDataMeta.Init(GetType().FullName, SaveCommonDataMetaJson);
+            aCommonDataMeta.Init(GetType().FullName, SaveAssetMetaJson);
 
-            string aJson = GetCommonDataMetaJson();
+            string aJson = GetAssetMetaJson();
             if (!string.IsNullOrEmpty(aJson))
             {
                 JsonData aData = JsonData.ParseJson(aJson);
@@ -273,13 +277,10 @@ namespace UCL.Core
 
             return aCommonDataMeta;
         }
-        public string GetCommonDataMetaJson()
+        public string GetAssetMetaJson()
         {
-            string aSaveFolderPath = SaveFolderPath;
-            if (!Directory.Exists(aSaveFolderPath))
-            {
-                Directory.CreateDirectory(aSaveFolderPath);
-            }
+            //if (!Directory.Exists(SaveFolderPath)) https://stackoverflow.com/questions/27575384/c-sharp-directory-createdirectory-path-should-i-check-if-path-exists-first
+            Directory.CreateDirectory(SaveFolderPath);
             string aCommonDataMetaPath = CommonDataMetaPath;
             if(!File.Exists(aCommonDataMetaPath))
             {
@@ -288,13 +289,10 @@ namespace UCL.Core
 
             return File.ReadAllText(aCommonDataMetaPath);
         }
-        public void SaveCommonDataMetaJson(string iJson)
+        public void SaveAssetMetaJson(string iJson)
         {
-            string aSaveFolderPath = SaveFolderPath;
-            if (!Directory.Exists(aSaveFolderPath))
-            {
-                Directory.CreateDirectory(aSaveFolderPath);
-            }
+            //if (!Directory.Exists(SaveFolderPath)) https://stackoverflow.com/questions/27575384/c-sharp-directory-createdirectory-path-should-i-check-if-path-exists-first
+            Directory.CreateDirectory(SaveFolderPath);
             File.WriteAllText(CommonDataMetaPath, iJson);
         }
         /// <summary>
@@ -328,7 +326,7 @@ namespace UCL.Core
         /// 抓取所有可編輯資料的ID
         /// </summary>
         /// <returns></returns>
-        virtual public List<string> GetEditableIDs()
+        virtual public IList<string> GetEditableIDs()
         {
             return UCL_ModuleService.Ins.GetAllEditableAssetsID(this.GetType());
 

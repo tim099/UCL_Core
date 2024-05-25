@@ -53,7 +53,14 @@ public static partial class TypeExtensionMethods {
     //Primitive Type、Reference Type、Value Type
     //https://dotblogs.com.tw/Mystic_Pieces/2017/10/15/020448
     //All Primitive Type: Boolean, Byte, SByte, Int16, UInt16, Int32, UInt32, Int64, UInt64, IntPtr, UIntPtr, Char, Double, Single
-
+    public static bool IsGenericList(this Type iType)
+    {
+        return (iType.IsGenericType && (iType.GetGenericTypeDefinition() == typeof(List<>)));
+    }
+    public static bool IsGenericDictionary(this Type iType)
+    {
+        return (iType.IsGenericType && (iType.GetGenericTypeDefinition() == typeof(Dictionary<,>)));
+    }
     public static bool IsStruct(this Type iType) {
         return iType.IsValueType && !iType.IsPrimitive;
     }
@@ -102,19 +109,52 @@ public static partial class TypeExtensionMethods {
         }
         return false;
     }
+    public static HashSet<Type> NumberTypes
+    {
+        get
+        {
+            if (s_NumberTypes == null)
+            {
+                s_NumberTypes = new HashSet<Type>()
+                {
+                    typeof(int),
+                    typeof(float),
+                    typeof(byte),
+                    typeof(short),
+                    typeof(ushort),
+                    typeof(sbyte),
+                    typeof(uint),
+                    typeof(long),
+                    typeof(ulong),
+                    typeof(double),
+                    typeof(decimal),
+                };
+            }
+            return s_NumberTypes;
+        }
+    }
+    private static HashSet<Type> s_NumberTypes = null;
+    //https://stackoverflow.com/questions/4478464/c-sharp-switch-on-type
+    /// <summary>
+    /// return true if iType is type of number
+    /// </summary>
+    /// <param name="iType"></param>
+    /// <returns></returns>
     public static bool IsNumber(this Type iType)
     {
-        return iType == typeof(int)
-            || iType == typeof(float)
-                || iType == typeof(byte)
-                || iType == typeof(short)
-                || iType == typeof(ushort)
-                || iType == typeof(sbyte)
-                || iType == typeof(uint)
-                || iType == typeof(long)
-                || iType == typeof(ulong)
-                || iType == typeof(double)
-                || iType == typeof(decimal);
+        return NumberTypes.Contains(iType);
+
+        //return iType == typeof(int)
+        //    || iType == typeof(float)
+        //        || iType == typeof(byte)
+        //        || iType == typeof(short)
+        //        || iType == typeof(ushort)
+        //        || iType == typeof(sbyte)
+        //        || iType == typeof(uint)
+        //        || iType == typeof(long)
+        //        || iType == typeof(ulong)
+        //        || iType == typeof(double)
+        //        || iType == typeof(decimal);
     }
     /// <summary>
     /// Convert the string to number of type

@@ -16,12 +16,16 @@ namespace UCL.Core
 
 
         #region Common
+        public static void OnPreprocessBuild()
+        {
+            ZipAllModules();
+        }
         /// <summary>
         /// zip all Builtin modules to Streamimg assets folder
         /// </summary>
         public static void ZipAllModules()
         {
-            var aModulePath = UCL_ModulePath.PersistantPath.GetModulePathConfig(UCL_ModuleEditType.Builtin);
+            var aModulePath = UCL_ModulePath.PersistantPath.GetModulesEntry(UCL_ModuleEditType.Builtin);
             aModulePath.ZipAllModules();
         }
         /// <summary>

@@ -25,7 +25,7 @@ namespace UCL.Core.Page
         }
         private UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
         private UCL_Module m_CurEditModule;
-        private UCL_ModulePath.PersistantPath.ModuleConfig ModuleConfig => m_CurEditModule.ModuleConfig;
+        private UCL_ModulePath.PersistantPath.ModuleEntry ModuleConfig => m_CurEditModule.ModuleEntry;
         private string m_ID;
         public void Init(UCL_Module iModule)
         {

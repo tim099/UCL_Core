@@ -14,33 +14,33 @@ namespace UCL.Core
     {
         public static partial class PersistantPath
         {
-            public static ModulePathConfig Builtin
+            public static ModulesEntry Builtin
             {
                 get
                 {
                     if (s_Builtin == null)
                     {
-                        s_Builtin = new ModulePathConfig(UCL_ModuleEditType.Builtin);
+                        s_Builtin = new ModulesEntry(UCL_ModuleEditType.Builtin);
                     }
                     return s_Builtin;
                 }
             }
-            private static ModulePathConfig s_Builtin = null;
+            private static ModulesEntry s_Builtin = null;
 
-            public static ModulePathConfig Runtime
+            public static ModulesEntry Runtime
             {
                 get
                 {
                     if (s_Runtime == null)
                     {
-                        s_Runtime = new ModulePathConfig(UCL_ModuleEditType.Runtime);
+                        s_Runtime = new ModulesEntry(UCL_ModuleEditType.Runtime);
                     }
                     return s_Runtime;
                 }
             }
-            private static ModulePathConfig s_Runtime = null;
+            private static ModulesEntry s_Runtime = null;
 
-            public static ModulePathConfig GetModulePathConfig(UCL_ModuleEditType iModuleEditType)
+            public static ModulesEntry GetModulesEntry(UCL_ModuleEditType iModuleEditType)
             {
                 switch (iModuleEditType)
                 {
@@ -64,7 +64,7 @@ namespace UCL.Core
             /// <summary>
             /// Path config of all modules base on UCL_ModuleEditType(Builtin or Runtime)
             /// </summary>
-            public class ModulePathConfig
+            public class ModulesEntry
             {
 
                 public UCL_ModuleEditType ModuleEditType;
@@ -83,9 +83,9 @@ namespace UCL.Core
                 /// </summary>
                 public string ConfigPath;
 
-                private Dictionary<string, ModuleConfig> m_ModuleConfigDic = new Dictionary<string, ModuleConfig>();
+                private Dictionary<string, ModuleEntry> m_ModuleConfigDic = new Dictionary<string, ModuleEntry>();
 
-                public ModulePathConfig(UCL_ModuleEditType iModuleEditType)
+                public ModulesEntry(UCL_ModuleEditType iModuleEditType)
                 {
                     ModuleEditType = iModuleEditType;
                     switch (ModuleEditType)
@@ -125,13 +125,13 @@ namespace UCL.Core
                 /// </summary>
                 /// <param name="iID">id of module</param>
                 /// <returns></returns>
-                public ModuleConfig GetModuleConfig(string iID)
+                public ModuleEntry GetModuleEntry(string iID)
                 {
                     try
                     {
                         if (!m_ModuleConfigDic.ContainsKey(iID))
                         {
-                            m_ModuleConfigDic[iID] = new ModuleConfig(this, iID);
+                            m_ModuleConfigDic[iID] = new ModuleEntry(this, iID);
                         }
                     }
                     catch(System.Exception ex)
@@ -181,7 +181,7 @@ namespace UCL.Core
 
                     foreach (var aID in aIDs)
                     {
-                        ModuleConfig aConfig = GetModuleConfig(aID);
+                        ModuleEntry aConfig = GetModuleEntry(aID);
                         aConfig.ZipModule(aZipFolderPath);
 
                         //string aPath = GetModulePath(aID);

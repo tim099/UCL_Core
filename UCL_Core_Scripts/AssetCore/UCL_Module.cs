@@ -60,27 +60,27 @@ namespace UCL.Core
             private set
             {
                 m_ModuleEditType = value;
-                m_ModuleConfig = UCL_ModulePath.PersistantPath.GetModulePathConfig(ModuleEditType).GetModuleConfig(ID);
+                m_ModuleEntry = UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetModuleEntry(ID);
             } 
         }
         private UCL_ModuleEditType m_ModuleEditType;
-        public UCL_ModulePath.PersistantPath.ModuleConfig ModuleConfig => m_ModuleConfig;
+        public UCL_ModulePath.PersistantPath.ModuleEntry ModuleEntry => m_ModuleEntry;
 
 
-        public UCL_ModulePath.PersistantPath.ModuleConfig BuiltinModuleConfig
+        public UCL_ModulePath.PersistantPath.ModuleEntry BuiltinModuleEntry
         {
-            get => UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID);
+            get => UCL_ModulePath.PersistantPath.Builtin.GetModuleEntry(ID);
         }
-        public UCL_ModulePath.PersistantPath.ModuleConfig RuntimeModuleConfig
+        public UCL_ModulePath.PersistantPath.ModuleEntry RuntimeModuleEntry
         {
-            get => UCL_ModulePath.PersistantPath.Runtime.GetModuleConfig(ID);
+            get => UCL_ModulePath.PersistantPath.Runtime.GetModuleEntry(ID);
         }
 
         public Config m_Config = new Config();
 
         protected bool m_IsLoading = false;
         protected bool m_Installing = false;
-        protected UCL_ModulePath.PersistantPath.ModuleConfig m_ModuleConfig;
+        protected UCL_ModulePath.PersistantPath.ModuleEntry m_ModuleEntry;
         //protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
         /// <summary>
@@ -104,9 +104,9 @@ namespace UCL.Core
             ID = iID;
             //AssetType = iAssetType;
             ModuleEditType = iModuleEditType;
-            if (ID != UCL_ModuleService.CoreModuleID)
+            if (ID != UCL_ModuleEntry.CoreModuleID)
             {
-                m_Config.m_DependenciesModules.Add(new UCL_ModuleEntry(UCL_ModuleService.CoreModuleID));
+                m_Config.m_DependenciesModules.Add(new UCL_ModuleEntry(UCL_ModuleEntry.CoreModuleID));
             }
         }
         public void Load(string iID, UCL_ModuleEditType iModuleEditType)
@@ -127,7 +127,7 @@ namespace UCL.Core
         public void Save()
         {
             //Debug.LogError($"aFolderPath:{aFolderPath}");
-            ModuleConfig.SaveConfig(m_Config);
+            ModuleEntry.SaveConfig(m_Config);
 
             //UCL_ModuleService.PathConfig.SaveModuleConfig(ID, m_Config.SerializeToJson());
         }
@@ -138,7 +138,7 @@ namespace UCL.Core
             m_IsLoading = true;
             try
             {
-                m_Config = ModuleConfig.GetConfig();
+                m_Config = ModuleEntry.GetConfig();
 
                 //var aJson = await UCL_ModuleService.PathConfig.LoadModuleConfig(ID);
                 //if (aJson != null)
@@ -169,9 +169,9 @@ namespace UCL.Core
             }
             //Debug.LogError($"UCL_Module.CheckAndInstall, iID:{ID},iModuleEditType:{ModuleEditType}");
             bool aNeedInstall = true;
-            if(m_Config.Installed && RuntimeModuleConfig.Installed)//Installed, check version
+            if(m_Config.Installed && RuntimeModuleEntry.Installed)//Installed, check version
             {
-                Config aBuiltinConfig = await BuiltinModuleConfig.GetBuiltinConfig();
+                Config aBuiltinConfig = await BuiltinModuleEntry.GetBuiltinConfig();
                 if (aBuiltinConfig.m_Version == m_Config.m_Version)//Same Version!!
                 {
                     aNeedInstall = false;
@@ -203,7 +203,7 @@ namespace UCL.Core
             m_Installing = true;
             try
             {
-                UCL_ModulePath.PersistantPath.ModuleConfig aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID);
+                UCL_ModulePath.PersistantPath.ModuleEntry aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleEntry(ID);
 
                 await aModuleConfig.Install();
             }
@@ -225,7 +225,7 @@ namespace UCL.Core
                 return;
             }
 
-            UCL_ModulePath.PersistantPath.ModuleConfig aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleConfig(ID);
+            UCL_ModulePath.PersistantPath.ModuleEntry aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleEntry(ID);
             aModuleConfig.UnInstall();
         }
 

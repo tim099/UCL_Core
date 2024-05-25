@@ -15,10 +15,15 @@ namespace UCL.Core
         }
         public Dictionary<string, UCL_Module> LoadPlaylist()
         {
-            if (!UCL_ModuleService.Initialized)
+            //if (!UCL_ModuleService.Initialized)
+            //{
+            //    Debug.LogError("UCL_ModulePlaylist.LoadPlaylist(), !UCL_ModuleService.Initialized");
+            //    return null;
+            //}
+
+            if (m_Playlist.Count == 0)
             {
-                Debug.LogError("UCL_ModulePlaylist.LoadPlaylist(), !UCL_ModuleService.Initialized");
-                return null;
+                m_Playlist.Add(new UCL_ModuleEntry(UCL_ModuleEntry.CoreModuleID));
             }
             return UCL_ModuleService.Ins.LoadModulePlaylist(this);
         }

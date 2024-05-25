@@ -273,7 +273,7 @@ namespace UCL.Core
         }
 
 
-        public void CheckFileMetas(List<string> iIDs)
+        public void CheckFileMetas(IList<string> iIDs)
         {
             if (m_FileMetas.Count > 0)
             {

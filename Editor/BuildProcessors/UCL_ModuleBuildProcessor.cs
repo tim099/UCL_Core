@@ -22,7 +22,7 @@ namespace UCL.Core
         {
             var summary = report.summary;
             Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPreprocessBuild report:{report.UCL_ToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
-            UCL_ModulePath.ZipAllModules();
+            UCL_ModulePath.OnPreprocessBuild();
             //System.IO.Compression.ZipFile.CreateFromDirectory("zipdir", "todir");
 
         }

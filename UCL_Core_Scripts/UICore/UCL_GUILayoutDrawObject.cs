@@ -532,6 +532,179 @@ namespace UCL.Core.UI
             }
             return aIsPaste;
         }
+        public static class Preview
+        {
+            const int MaxRecursive = 10;
+            static private Dictionary<Type, System.Action<object, UCL_ObjectDictionary, int>> s_OnGUICacheDic = new();
+            public static void OnGUI(object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+            {
+                try
+                {
+                    if (iSpace > MaxRecursive) return;
+                    if (iObj == null)
+                    {
+                        GUILayout.Label("Null", UCL_GUIStyle.LabelStyle);
+                        return;
+                    }
+                    Type aType = iObj.GetType();
+                    if(!s_OnGUICacheDic.ContainsKey(aType))
+                    {
+                        if (aType.IsPrimitive || !aType.IsStructOrClass()
+                            || (iObj is Enum or Vector4 or Vector3 or Vector2 or Vector3Int or Vector2Int))
+                        {
+                            void PrimitiveOnGUI(object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+                            {
+                                GUILayout.Label(iObj.ToString(), UCL_GUIStyle.LabelStyle);
+                            }
+                            s_OnGUICacheDic[aType] = PrimitiveOnGUI;
+                        }
+                        else if (iObj is string)
+                        {
+                            void StringOnGUI(object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+                            {
+                                GUILayout.Label((string)iObj, UCL_GUIStyle.LabelStyle);
+                            }
+                            s_OnGUICacheDic[aType] = StringOnGUI;
+                        }
+                        else if(iObj is JsonLib.JsonData)
+                        {
+                            void JsonDataOnGUI(object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+                            {
+                                JsonLib.JsonData aJson = iObj as JsonLib.JsonData;
+                                using (var aScope = new GUILayout.HorizontalScope())
+                                {
+                                    GUILayout.Label($"(Json):{aJson.ToJsonBeautify()}", UCL_GUIStyle.LabelStyle);
+                                }
+                            }
+                            s_OnGUICacheDic[aType] = JsonDataOnGUI;
+                        }
+                        else if (iObj is IEnumerable)
+                        {
+                            s_OnGUICacheDic[aType] = IEnumerableOnGUI;
+                        }
+                        else
+                        {
+                            s_OnGUICacheDic[aType] = AllFieldsOnGUI;
+                        }
+                    }
+
+                    s_OnGUICacheDic[aType].Invoke(iObj, iDataDic, iSpace);
+                }
+                catch (Exception iE)
+                {
+                    Debug.LogException(iE);
+                    GUILayout.Label($"Exception:{iE}", UCL_GUIStyle.LabelStyle);
+                }
+            }
+            //static private Dictionary<Type, System.Action<object, UCL_ObjectDictionary, int>> s_FieldOnGUICacheDic = new();
+            public static void AllFieldsOnGUI(object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+            {
+                Type aType = iObj.GetType();
+                FieldInfo[] aFields = aType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (aFields.Length > 0)
+                {
+                    using (var aHScope = new GUILayout.HorizontalScope())
+                    {
+                        bool aIsShowField = UCL_GUILayout.Toggle(iDataDic, IsShowFieldKey);
+                        using (var aScope = new GUILayout.VerticalScope())
+                        {
+                            using (var aScope2 = new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label(aType.Name, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            }
+                            if (aIsShowField)
+                            {
+                                foreach (var aField in aFields)
+                                {
+                                    using (var aScope2 = new GUILayout.VerticalScope())
+                                    {
+                                        var aVal = aField.GetValue(iObj);
+                                        Type aFieldType = aField.FieldType;
+                                        if(aVal is string aStr)
+                                        {
+                                            GUILayout.Label($"({aFieldType.Name}){aField.Name} : {aStr}", UCL_GUIStyle.LabelStyle);
+                                        }
+                                        else if (aVal.IsNumber())
+                                        {
+                                            GUILayout.Label($"({aFieldType.Name}){aField.Name} : {aVal}", UCL_GUIStyle.LabelStyle);
+                                        }
+                                        else
+                                        {
+                                            using (var aScope3 = new GUILayout.HorizontalScope())
+                                            {
+                                                GUILayout.Label($"({aFieldType.GetTypeName()}){aField.Name} : ", UCL_GUIStyle.LabelStyle);
+                                            }
+                                            using (var aScope3 = new GUILayout.HorizontalScope())//"box"
+                                            {
+                                                OnGUI(aVal, iDataDic.GetSubDic($"Field_{aField.Name}"), iSpace + 1);
+                                            }
+                                        }
+
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return;
+                }
+                GUILayout.Label(iObj.ToString(), UCL_GUIStyle.LabelStyle);
+            }
+
+            public static void IEnumerableOnGUI(object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+            {
+                IEnumerable aEnum = iObj as IEnumerable;
+                if(aEnum == null)
+                {
+                    return;
+                }
+                using (var aScope = new GUILayout.VerticalScope())
+                {
+                    if (aEnum is IDictionary aDic)
+                    {
+                        using (var aScope2 = new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"({aEnum.GetType().Name}) : [", UCL_GUIStyle.LabelStyle);
+                        }
+                        foreach (var aKey in aDic.Keys)
+                        {
+
+                            using (var aScope2 = new GUILayout.HorizontalScope())
+                            {
+                                var aVal = aDic[aKey];
+                                string aHash = aKey.GetHashCode().ToString();
+                                OnGUI(aKey, iDataDic.GetSubDic($"{aHash}_Key"), iSpace + 1);
+                                GUILayout.Label($":", UCL_GUIStyle.LabelStyle);
+                                OnGUI(aVal, iDataDic.GetSubDic($"{aHash}_Val"), iSpace + 1);
+                                GUILayout.Label($",", UCL_GUIStyle.LabelStyle);
+                            }
+                        }
+                        using (var aScope2 = new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"]", UCL_GUIStyle.LabelStyle);
+                        }
+                    }
+                    else
+                    {
+                        bool aIsShowField = UCL_GUILayout.Toggle(iDataDic, IsShowFieldKey);
+                        if (aIsShowField)
+                        {
+                            int aIndex = 0;
+                            foreach (var aVal in aEnum)
+                            {
+                                using (var aScope2 = new GUILayout.HorizontalScope())
+                                {
+                                    OnGUI(aVal, iDataDic.GetSubDic($"{++aIndex}_Val"), iSpace + 1);
+                                    //GUILayout.Label($",", UCL_GUIStyle.LabelStyle);
+                                }
+                            }
+                        }
+
+                    }
+                }
+            }
+        }
+
         #endregion
     }
 }

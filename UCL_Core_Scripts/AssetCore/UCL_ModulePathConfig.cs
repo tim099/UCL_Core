@@ -55,7 +55,8 @@ namespace UCL.Core
         public string FileSystemRootPath => UCL_AssetPath.GetPath(AssetType);
         public string RootPath => Path.Combine(FileSystemRootPath, RootFolder);
         public string ModulesPath => Path.Combine(FileSystemRootPath, ModulesRelativePath);
-        public string ConfigPath => Path.Combine(FileSystemRootPath, ConfigRelativePath);
+
+        public string ConfigPath => UCL_ModulePath.PersistantPath.GetModulesEntry(m_ModuleEditType).ConfigPath;
 
         public string GetModulePath(string iID)
         {
@@ -74,33 +75,36 @@ namespace UCL.Core
 
         public void SaveConfig(JsonData iJson)
         {
-            string aPath = UCL_ModulePath.PersistantPath.GetModulePathConfig(m_ModuleEditType).ConfigPath;
+            string aPath = ConfigPath;
             Debug.LogError($"Save Config aPath:{aPath}");
-            switch (m_ModuleEditType)
-            {
-                case UCL_ModuleEditType.Builtin:
-                    {
-                        if (Application.isEditor)//Only in Editor can save to StreamingAssets
-                        {
-                            UCL.Core.FileLib.Lib.WriteAllText(aPath, iJson.ToJsonBeautify());
-                        }
-                        break;
-                    }
-                case UCL_ModuleEditType.Runtime:
-                    {
-                        UCL.Core.FileLib.Lib.WriteAllText(aPath, iJson.ToJsonBeautify());
-                        break;
-                    }
-            }
+            UCL.Core.FileLib.Lib.WriteAllText(aPath, iJson.ToJsonBeautify());
+            //switch (m_ModuleEditType)
+            //{
+            //    case UCL_ModuleEditType.Builtin:
+            //        {
+            //            if (Application.isEditor)//Only in Editor can save to StreamingAssets
+            //            {
+            //                UCL.Core.FileLib.Lib.WriteAllText(aPath, iJson.ToJsonBeautify());
+            //            }
+            //            break;
+            //        }
+            //    case UCL_ModuleEditType.Runtime:
+            //        {
+            //            UCL.Core.FileLib.Lib.WriteAllText(aPath, iJson.ToJsonBeautify());
+            //            break;
+            //        }
+            //}
 
         }
         public async UniTask<JsonData> LoadConfig()
         {
             string aJson = string.Empty;
-            string aPath = UCL_ModulePath.RelativePath.BuiltinConfigPath;
+            string aPath = ConfigPath;
+            //string aPath = UCL_ModulePath.RelativePath.BuiltinConfigPath;
             try
             {
-                aJson = await UCL_StreamingAssets.LoadString(aPath);
+                aJson = File.ReadAllText(aPath);
+                //aJson = await UCL_StreamingAssets.LoadString(aPath);
             }
             catch (System.Exception e)
             {

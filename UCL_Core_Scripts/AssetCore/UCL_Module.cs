@@ -190,10 +190,9 @@ namespace UCL.Core
         public async UniTask Install()
         {
             //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"UCL_Module.Install() ID:{ID}", "");
-
-            //Debug.LogError($"Install() ID:{ID}");
             if (m_Installing)
             {
+                Debug.LogError($"UCL_Module.Install() ID:{ID} ,m_Installing!!");
                 return;
             }
             if (m_IsLoading)

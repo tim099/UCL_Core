@@ -1,4 +1,4 @@
-
+﻿
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/23 2024 14:46
@@ -55,9 +55,10 @@ namespace UCL.Core
         public string FileSystemRootPath => UCL_AssetPath.GetPath(AssetType);
         public string RootPath => Path.Combine(FileSystemRootPath, RootFolder);
         public string ModulesPath => Path.Combine(FileSystemRootPath, ModulesRelativePath);
-
+        /// <summary>
+        /// UCL_ModuleService的Config路徑
+        /// </summary>
         public string ConfigPath => UCL_ModulePath.PersistantPath.GetModulesEntry(m_ModuleEditType).ConfigPath;
-
         public string GetModulePath(string iID)
         {
             if(iID == null)
@@ -96,6 +97,10 @@ namespace UCL.Core
             //}
 
         }
+        /// <summary>
+        /// 讀取UCL_ModuleService的Config(Json格式)
+        /// </summary>
+        /// <returns></returns>
         public async UniTask<JsonData> LoadConfig()
         {
             string aJson = string.Empty;
@@ -103,7 +108,17 @@ namespace UCL.Core
             //string aPath = UCL_ModulePath.RelativePath.BuiltinConfigPath;
             try
             {
-                aJson = File.ReadAllText(aPath);
+                if (!File.Exists(aPath))//檔案不存在 嘗試讀取StreamingAssets內的Builtin Config
+                {
+                    Debug.LogError($"UCL_ModulePathConfig.LoadConfig() !File.Exists(aPath) aPath:{aPath}");
+                    aJson = await UCL_StreamingAssets.FullPath.LoadString(UCL_ModulePath.PersistantPath.ConfigInstallPath);
+                    //return null;
+                }
+                else
+                {
+                    aJson = File.ReadAllText(aPath);
+                }
+                
                 //aJson = await UCL_StreamingAssets.LoadString(aPath);
             }
             catch (System.Exception e)

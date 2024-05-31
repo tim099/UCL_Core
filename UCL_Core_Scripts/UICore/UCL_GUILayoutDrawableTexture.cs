@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +7,37 @@ namespace UCL.Core.UI
 {
     static public partial class UCL_GUILayout
     {
+        /// <summary>
+        /// return mouse postion in Grid
+        /// return Vector2Int.left if out of range
+        /// </summary>
+        /// <param name="iRect">Grid Rect</param>
+        /// <param name="iWidth">Cell count of grid(Width)</param>
+        /// <param name="iHeight">Cell count of grid(iHeight)</param>
+        /// <returns></returns>
+        public static Vector2Int GetMousePosInGrid(Rect iRect, int iWidth, int iHeight)
+        {
+            var aCurrentEvent = Event.current;
+            var aMousePos = aCurrentEvent.mousePosition;
+            float aCellWidth = iRect.width / iWidth;
+            float aCellHeight = iRect.height / iHeight;
+            Vector2 aPos = aMousePos - iRect.position;
+            int x = Mathf.FloorToInt(aPos.x / aCellWidth);
+            if(x < 0 || x >= iWidth)
+            {
+                return Vector2Int.left;
+            }
+            int y = iHeight - Mathf.CeilToInt(aPos.y / aCellHeight);
+            if (y < 0 || y >= iHeight)
+            {
+                return Vector2Int.left;
+            }
+            //x = Math.Clamp(x,0, iWidth - 1);
+            //y = Math.Clamp(y,0, iHeight - 1);
+            return new Vector2Int(x, y);//iRect.GetPosInRect(aMousePos)
+
+        }
+
         /// <summary>
         /// Draw on iTexture
         /// </summary>
@@ -26,8 +58,8 @@ namespace UCL.Core.UI
             Vector2Int aCurPos = aRect.GetPosIntInRect(aMousePos);
 
             //Vector2Int aPrevDrawPos = iDataDic.GetData("PrevDrawPos", Vector2Int.left);
-            
-            System.Func<Vector2Int, Vector2Int> GetDrawPos = (iPos) =>
+
+            Vector2Int GetDrawPos(Vector2Int iPos)
             {
                 Vector2Int aPos = iPos;
                 if (iTexture.width != iWidth)

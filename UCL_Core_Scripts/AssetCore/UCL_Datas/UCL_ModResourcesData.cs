@@ -8,6 +8,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
@@ -27,7 +28,34 @@ namespace UCL.Core
         }
 
         private static Dictionary<string, LoadedData> s_LoadedDatas = new Dictionary<string, LoadedData>();
+        public static void OnGUI(UCL_ObjectDictionary iDataDic)
+        {
+            if(GUILayout.Button("Release All", UCL_GUIStyle.ButtonStyle))
+            {
+                ReleaseAll();
+            }
+            using(var aScope = new GUILayout.VerticalScope())
+            {
+                foreach (var aKey in s_LoadedDatas.Keys.ToList())
+                {
+                    GUILayout.BeginHorizontal();
+                    bool aRelease = false;
+                    if (GUILayout.Button("Release", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        aRelease = true;
+                    }
+                    var aData = s_LoadedDatas[aKey];
+                    GUILayout.Label($"{aKey}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    aData.OnGUI();
+                    if (aRelease)
+                    {
+                        Release(aKey);
+                    }
+                    GUILayout.EndHorizontal();
+                }
+            }
 
+        }
         #region LoadedData
         public class LoadedData : IDisposable
         {
@@ -43,14 +71,33 @@ namespace UCL.Core
             }
             virtual public void Dispose()
             {
-                foreach(var aAsset in m_CreatedAssets)
+                if (Application.isPlaying)
                 {
-                    if(aAsset != null)
+                    foreach (var aAsset in m_CreatedAssets)
                     {
-                        UnityEngine.Object.Destroy(aAsset);
+                        if (aAsset != null)
+                        {
+                            UnityEngine.Object.Destroy(aAsset);
+                        }
                     }
                 }
+                else
+                {
+                    foreach (var aAsset in m_CreatedAssets)
+                    {
+                        if (aAsset != null)
+                        {
+                            UnityEngine.Object.DestroyImmediate(aAsset);
+                        }
+                    }
+                }
+
                 m_CreatedAssets.Clear();
+            }
+
+            virtual public void OnGUI()
+            {
+                GUILayout.Label($"{GetType().FullName}", UCL_GUIStyle.LabelStyle);
             }
         }
         public class LoadedSpriteData : LoadedData
@@ -97,13 +144,23 @@ namespace UCL.Core
                     return null;
                 }
             }
+            public override void OnGUI()
+            {
+                var aTexture = Texture2D;
+                if (aTexture != null)
+                {
+                    float aSize = UCL_GUIStyle.GetScaledSize(16);
+                    GUILayout.Box(aTexture, GUILayout.Height(aSize), GUILayout.ExpandWidth(false));//GUILayout.Height((aSize * aTexture.height)/aTexture.width)
+                }
+                GUILayout.Label($"{GetType().FullName}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            }
         }
         #endregion
 
 
         public static Sprite LoadSprite(string iPath)
         {
-            //Debug.LogError($"LoadSprite iPath:{iPath}");
+            //Debug.LogError($"LoadSprite iPath:{iPath},s_LoadedDatas.Keys:{s_LoadedDatas.Keys.ConcatString()}");
             if (!s_LoadedDatas.ContainsKey(iPath))
             {
                 try
@@ -152,6 +209,7 @@ namespace UCL.Core
 
         public static void ReleaseAll()
         {
+            //Debug.LogError("UCL_ModResourcesService.ReleaseAll()");
             //UnityEditor.EditorApplication.playModeStateChanged
             foreach (var aData in s_LoadedDatas.Values)
             {

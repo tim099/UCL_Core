@@ -173,9 +173,15 @@ namespace UCL.Core
                 var aData = GetData();
                 if(aData == null)
                 {
+                    Debug.LogError($"UCL_SpriteAssetEntry m_ID:{m_ID},aData == null");
                     return null;
                 }
-                return aData.Texture;
+                var aTexture = aData.Texture;
+                if(aTexture == null)
+                {
+                    Debug.LogError($"UCL_SpriteAssetEntry m_ID:{m_ID},aTexture == null");
+                }
+                return aTexture;
             }
         }
         public Sprite Sprite

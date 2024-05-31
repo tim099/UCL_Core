@@ -60,6 +60,11 @@ namespace UCL.Core
             /// ModulesZipFolder always in Streamming assets!!
             /// </summary>
             public static string ModulesZipFolder => Path.Combine(Application.streamingAssetsPath, RelativePath.ModuleServicePath, RelativePath.BuiltinModulesZipFolder);
+
+            /// <summary>
+            /// Config直接放在StreamingAssets中
+            /// </summary>
+            public static string ConfigInstallPath => Path.Combine(Application.streamingAssetsPath, RelativePath.ModuleServicePath, UCL_ModulePath.ConfigFileName);
             #region ModulePathConfig
             /// <summary>
             /// Path config of all modules base on UCL_ModuleEditType(Builtin or Runtime)

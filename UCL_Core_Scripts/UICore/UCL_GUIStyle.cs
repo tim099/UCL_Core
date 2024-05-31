@@ -9,9 +9,11 @@ using UnityEngine;
 namespace UCL.Core.UI {
 
     static public class UCL_GUIStyle {
+        public const int DefaultFontSize = 12;
+        public const int MediumFontSize = 16;
         public class StyleData
         {
-            public const int DefaultFontSize = 12;
+            
             public const float ThumbStyleSize = 10;
             public const float SliderHeight = 3;
             private float m_Scale = 1f;
@@ -104,7 +106,7 @@ namespace UCL.Core.UI {
 
 
 
-            public GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12)
+            public GUIStyle GetButtonStyle(Color iCol, int iFontSize = DefaultFontSize)
             {
 
                 if (m_ButtonStyleDic == null)
@@ -233,18 +235,34 @@ namespace UCL.Core.UI {
         static public GUIStyle TextFieldStyle => CurStyleData.TextFieldStyle;
 
         #region ButtonText
-        public static GUIStyle GetButtonStyle(Color iCol, int iFontSize = 12) => CurStyleData.GetButtonStyle(iCol, iFontSize);
+        public static GUIStyle GetButtonStyle(Color iCol, int iFontSize = DefaultFontSize) => CurStyleData.GetButtonStyle(iCol, iFontSize);
         public static GUIStyle ButtonTextRed => GetButtonStyle(Color.red);
         public static GUIStyle ButtonTextYellow => GetButtonStyle(Color.yellow);
         public static GUIStyle ButtonTextGreen => GetButtonStyle(Color.green);
         #endregion
 
+        #region GUI
+        static Stack<Color> s_ColorStack = new Stack<Color>();
+        public static void PushGUIColor(Color iCol)
+        {
+            s_ColorStack.Push(GUI.color);
+            GUI.color = iCol;
+        }
+        public static void PopGUIColor()
+        {
+            if(s_ColorStack.Count == 0)
+            {
+                return;
+            }
+            GUI.color = s_ColorStack.Pop();
+        }
+        #endregion
 
 
         #region Label
         static public GUIStyle LabelStyle => CurStyleData.LabelStyle;
 
-        public static GUIStyle GetLabelStyle(Color iTextCol, int iSize = 16) => CurStyleData.GetLabelStyle(iTextCol, iSize);
+        public static GUIStyle GetLabelStyle(Color iTextCol, int iSize = MediumFontSize) => CurStyleData.GetLabelStyle(iTextCol, iSize);
         #endregion
 
 

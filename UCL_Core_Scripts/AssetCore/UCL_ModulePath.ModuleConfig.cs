@@ -108,11 +108,12 @@ namespace UCL.Core
                         }
 
 #if UNITY_EDITOR
-                        if (!File.Exists(ZipFilePath))//if in Editor and Zip file not exist
+                        //if (!File.Exists(ZipFilePath))//if in Editor and Zip file not exist
+                        if(Application.isEditor)
                         {
-                            Debug.LogWarning($"Install in Editor:{ID},!File.Exists({ZipFilePath}),CopyDirectory({RootFolder},{aTargetPath})");
-                            //ZipModule();//Zip the moudle before install
-                            //Install from dir
+                            //Debug.LogWarning($"Install in Editor:{ID},!File.Exists({ZipFilePath}),CopyDirectory({RootFolder},{aTargetPath})");
+
+                            //Editor內改為永遠使用當前Builtin資料夾安裝
                             if (Directory.Exists(RootFolder))
                             {
                                 UCL.Core.FileLib.Lib.CopyDirectory(RootFolder, aTargetPath);

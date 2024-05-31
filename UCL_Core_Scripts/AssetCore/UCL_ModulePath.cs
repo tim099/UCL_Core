@@ -19,6 +19,16 @@ namespace UCL.Core
         public static void OnPreprocessBuild()
         {
             ZipAllModules();
+            //Save Builtin config to StreamingAssets
+            string aConfigPath = UCL_ModulePath.PersistantPath.GetModulesEntry(UCL_ModuleEditType.Builtin).ConfigPath;
+            if (File.Exists(aConfigPath))
+            {
+                File.Copy(aConfigPath, UCL_ModulePath.PersistantPath.ConfigInstallPath, true);
+            }
+            else
+            {
+                Debug.LogError($"OnPreprocessBuild, !File.Exists(aConfigPath) aConfigPath:{aConfigPath}");
+            }
         }
         /// <summary>
         /// zip all Builtin modules to Streamimg assets folder

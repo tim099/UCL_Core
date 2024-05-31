@@ -97,6 +97,12 @@ namespace UCL.Core
             /// All module in this list will be loaded
             /// </summary>
             public UCL_ModulePlaylist m_Playlist = new UCL_ModulePlaylist();
+
+            /// <summary>
+            /// Editor中 強制每次啟動時安裝所有模組
+            /// </summary>
+            public bool m_ForceInstallInEditor = false;
+
             public string m_Version = "1.0.0";
 
             public void OnGUI(UCL_ObjectDictionary iDataDic)
@@ -263,15 +269,28 @@ namespace UCL.Core
             //Debug.LogError("InitAsync()");
             await LoadConfig();
 
+            bool aForceInstall = m_Config.m_ForceInstallInEditor;
 
-            //List<UniTask> aTasks = new List<UniTask>();
-            foreach(var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
+            if (aForceInstall)
             {
-                var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Builtin);
-                await aModule.CheckAndInstall();
-                //aTasks.Add(aModule.CheckAndInstall());
+                foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
+                {
+                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Builtin);
+                    await aModule.Install();
+                }
             }
-            //await UniTask.WhenAll(aTasks);
+            else
+            {
+                //List<UniTask> aTasks = new List<UniTask>();
+                foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
+                {
+                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Builtin);
+                    await aModule.CheckAndInstall();
+                    //aTasks.Add(aModule.CheckAndInstall());
+                }
+                //await UniTask.WhenAll(aTasks);
+            }
+
             m_Config.m_Playlist.LoadPlaylist();
 
 
@@ -508,7 +527,7 @@ namespace UCL.Core
             //}
             //m_CurEditModule = LoadModuleAndDependencies(iModuleID, new HashSet<string>());//m_Config.LoadModule(iModuleID, AssetType);
 
-            Debug.LogError($"m_LoadedModules:{m_LoadedModules.ConcatString(iModule => iModule.ID)}");
+            Debug.LogWarning($"m_LoadedModules:{m_LoadedModules.ConcatString(iModule => iModule.ID)}");
         }
         protected UCL_Module LoadModuleAndDependencies(string iModuleID, Dictionary<string, UCL_Module> iLoadedModules)
         {

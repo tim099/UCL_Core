@@ -4,6 +4,7 @@
 // Create time : 02/26 2024 12:53
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace UCL.Core.UI {
@@ -266,5 +267,30 @@ namespace UCL.Core.UI {
         #endregion
 
 
+    }
+    static public class UCL_Color
+    {
+        public static class Half
+        {
+            public static Color White
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => new Color(1, 1, 1, 0.5f);
+            }
+            public static Color Red
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => new Color(1, 0, 0, 0.5f);
+            }
+        }
+
+        public static class OneThird
+        {
+            public static Color White
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => new Color(1, 1, 1, 0.33333333f);
+            }
+        }
     }
 }

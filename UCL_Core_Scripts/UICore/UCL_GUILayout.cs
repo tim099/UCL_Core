@@ -18,7 +18,7 @@ namespace UCL.Core.UI {
         /// <param name="iFieldName"></param>
         /// <param name="iEditTmpDatas"></param>
         /// <returns></returns>
-        object OnGUI(string iFieldName, UCL_ObjectDictionary iEditTmpDatas);
+        object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic);
     }
 
     static public partial class UCL_GUILayout {

@@ -282,6 +282,11 @@ namespace UCL.Core.UI {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get => new Color(1, 0, 0, 0.5f);
             }
+            public static Color Green
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => new Color(0, 1, 0, 0.5f);
+            }
         }
 
         public static class OneThird

@@ -309,13 +309,21 @@ public static partial class TypeExtensionMethods {
     /// <returns></returns>
     public static Type GetGenericValueType(this Type iType)
     {
+        if (iType.IsArray)
+        {
+            return iType.GetElementType();
+        }
         var aGenericTypeArguments = iType.GetGenericArguments();//GetTypeInfo().
-        var aContentType = aGenericTypeArguments[0];
+        if (aGenericTypeArguments.IsNullOrEmpty())
+        {
+            Debug.LogError($"GetGenericValueType aGenericTypeArguments.IsNullOrEmpty() iType:{iType.FullName}");
+            return iType;
+        }
         if (typeof(IDictionary).IsAssignableFrom(iType))
         {
-            aContentType = aGenericTypeArguments[1];//[0] is Key type [1] is Value type!!
+            return aGenericTypeArguments[1];//[0] is Key type [1] is Value type!!
         }
-        return aContentType;
+        return aGenericTypeArguments[0];
     }
     /// <summary>
     /// Create Instance of input type
@@ -342,9 +350,14 @@ public static partial class TypeExtensionMethods {
             if (typeof(Component).IsAssignableFrom(iType)) return null;
             if (iType == typeof(Sprite)) return null;
             
-            Debug.LogError("iType:" + iType.Name + ",is UnityEngine.Object!!");
+            Debug.LogError($"CreateInstance iType:{iType.FullName},is UnityEngine.Object!!");
             //return null;
         }
+        //https://stackoverflow.com/questions/3419456/how-do-i-create-a-c-sharp-array-using-reflection-and-only-type-info
+        //if (iType.IsArray)
+        //{
+        //    return Array.CreateInstance(iType.GetElementType(), 0);
+        //}
         if (iType.IsTuple())
         {
             //Debug.LogError("iType:" + iType.Name + "iType.IsTuple():" + iType.IsTuple());

@@ -122,7 +122,10 @@ namespace UCL.Core
                         UCL_ModulePath.RemoveAllZipAllModules();
                     }
                 };
-                UCL_GUILayout.DrawField(this, iDataDic, "ModuleService Config", iDrawObjExSetting: aDrawObjExSetting);
+
+                var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic, "ModuleService Config", iDrawObjExSetting: aDrawObjExSetting);
+                UCL_GUILayout.DrawField(this, aParams);
+                //UCL_GUILayout.DrawField(this, iDataDic, "ModuleService Config", iDrawObjExSetting: aDrawObjExSetting);
 
             }
             public override JsonData SerializeToJson()

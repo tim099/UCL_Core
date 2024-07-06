@@ -12,10 +12,19 @@ namespace UCL.Core.UI
         public static void DrawDictionary(IDictionary iDic, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
             bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null)
         {
+            var aParams = new DrawObjectParams(iDataDic, iDisplayName, iIsAlwaysShowDetail, null, null, new DrawObjectConfigs(iFieldNameFunc));
+            DrawDictionary(iDic, aParams);
+        }
+        public static void DrawDictionary(IDictionary iDic, DrawObjectParams iParams)
+        {
             bool aIsDelete = false;
             bool aIsShowField = false;
             var aType = iDic.GetType();
             GUILayout.BeginHorizontal();
+            var iIsAlwaysShowDetail = iParams.m_IsAlwaysShowDetail;
+            var iDataDic = iParams.m_DataDic;
+            var iDisplayName = iParams.m_DisplayName;
+
             if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, IsShowFieldKey);
             GUILayout.BeginVertical();
             using (new GUILayout.HorizontalScope())//Show Title(iDisplayName)
@@ -60,8 +69,10 @@ namespace UCL.Core.UI
                     var aKeyShortName = aKey as UCL.Core.UCLI_ShortName;
                     if (aKeyShortName != null) aKeyName = aKeyShortName.GetShortName();
                     if (aKeyName.IsNullOrEmpty()) aKeyName = UCL_LocalizeManager.Get(aKeyType.Name);
-                    iDataDic.SetData(AddKey, DrawObjectData(aKey,
-                        iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
+                    var aParams = iParams.CreateChild(iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName);
+
+                    iDataDic.SetData(AddKey, DrawObjectData(aKey, aParams));
+                    //iDataDic.SetData(AddKey, DrawObjectData(aKey, iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
                     using (new GUILayout.HorizontalScope("box"))
                     {
                         if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
@@ -104,10 +115,9 @@ namespace UCL.Core.UI
                         }
                         using (new GUILayout.VerticalScope())
                         {
-                            var aSubDic = iDataDic.GetSubDic("Dic_" + aKeyName);
                             var aDicData = iDic[aKey];
                             string aDefaultName = aValueType.Name;
-                            if(aDicData != null)
+                            if (aDicData != null)
                             {
                                 var aDicDataType = aDicData.GetType();
                                 aDefaultName = aDicDataType.GetTypeName();
@@ -116,9 +126,11 @@ namespace UCL.Core.UI
                                     aDefaultName = $"{aDefaultName}({aDicDataList.Count})";
                                 }
                             }
-                            string aDisplayName = aDicData.UCL_GetShortName(aDefaultName);
                             GUILayout.Label(aKeyName, UCL_GUIStyle.LabelStyle);
-                            aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
+
+                            var aParams = iParams.CreateChild(iDataDic.GetSubDic("Dic_" + aKeyName), aDicData.UCL_GetShortName(aDefaultName));
+                            aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aParams)));
+                            //aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
                         }
                     }
                 }
@@ -189,8 +201,7 @@ namespace UCL.Core.UI
                     var aKeyShortName = aKey as UCL.Core.UCLI_ShortName;
                     if (aKeyShortName != null) aKeyName = aKeyShortName.GetShortName();
                     if (aKeyName.IsNullOrEmpty()) aKeyName = UCL_LocalizeManager.Get(aKeyType.Name);
-                    iDataDic.SetData(aAddKey, DrawObjectData(aKey,
-                        iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName));
+                    iDataDic.SetData(aAddKey, DrawObjectData(aKey, iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName));
                     using (new GUILayout.HorizontalScope("box"))
                     {
                         if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))

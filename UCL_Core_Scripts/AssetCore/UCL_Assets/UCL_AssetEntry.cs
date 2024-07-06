@@ -170,8 +170,9 @@ namespace UCL.Core
             //    }
             //};
 
-
-            UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false);//, iDrawObjExSetting : aSetting
+            var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false);
+            UCL_GUILayout.DrawField(this, aParams);
+            //UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false);//, iDrawObjExSetting : aSetting
             return this;
         }
 
@@ -264,9 +265,9 @@ namespace UCL.Core
                     }
                 }
             };
-
-
-            UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
+            var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
+            UCL_GUILayout.DrawField(this, aParams);
+            //UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
             return this;
         }
     }

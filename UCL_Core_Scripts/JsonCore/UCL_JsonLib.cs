@@ -314,10 +314,27 @@ namespace UCL.Core.JsonLib {
         {
             Type aType = iObj.GetType();
             //Debug.LogError("SaveDataToJson:" +aType.Name);
-            if(iObj is IJsonSerializable)
+            if (iObj is IJsonSerializable)
             {
                 return ((IJsonSerializable)iObj).SerializeToJson();
-            } else if (iObj is IList)
+            }
+            //else if (aType.IsArray)
+            //{
+            //    JsonData iData = new JsonData();
+            //    Array aArray = iObj as Array;
+            //    var aItemType = aType.GetGenericValueType();
+            //    int aRank = aArray.Rank;
+            //    int[] aLen = new int[aRank];
+            //    for(int i = 0; i < aRank; i++)
+            //    {
+            //        aLen[i] = aArray.GetLength(i);
+            //    }
+            //    foreach (var aItem in aArray)
+            //    {
+            //        iData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
+            //    }
+            //}
+            else if (iObj is IList)
             {
                 JsonData iData = new JsonData();
                 IList aList = iObj as IList;
@@ -438,9 +455,11 @@ namespace UCL.Core.JsonLib {
                     //    iData[aFieldName] = null;
                     //}
                 }
-                else if (aValue is IList)
+                //else if(aField.FieldType.IsArray)
+                //{
+                //}
+                else if (aValue is IList aList)
                 {
-                    var aList = aValue as IList;
                     if (aList.Count > 0)
                     {
                         aData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);

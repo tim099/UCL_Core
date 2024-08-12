@@ -29,7 +29,16 @@ public static partial class StringExtensionMethods {
             return aMd5Str;
         }
     }
-
+    /// <summary>
+    /// Append RichText Color to the string
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <param name="iCol"></param>
+    /// <returns></returns>
+    public static string RichTextColor(this string iStr, Color iCol)
+    {
+        return $"<color=#{ColorUtility.ToHtmlStringRGB(iCol)}>{iStr}</color>";
+    }
     /// <summary>
     /// Append RichText Color to the string
     /// </summary>
@@ -38,7 +47,7 @@ public static partial class StringExtensionMethods {
     /// <returns></returns>
     public static string RichTextColor(this string iStr, string iCol = "FFFFFF")
     {
-        return string.Format("<color=#{0}>{1}</color>", iCol, iStr);
+        return $"<color=#{iCol}>{iStr}</color>";
     }
     static Regex s_ColorRegex = null;
     /// <summary>
@@ -160,16 +169,7 @@ public static partial class StringExtensionMethods {
     {
         return string.IsNullOrEmpty(iStr);
     }
-    /// <summary>
-    /// Append RichText Color to the string
-    /// </summary>
-    /// <param name="iStr"></param>
-    /// <param name="iCol"></param>
-    /// <returns></returns>
-    public static string RichTextColor(this string iStr, Color iCol)
-    {
-        return string.Format("<color=#{0}>{1}</color>", ColorUtility.ToHtmlStringRGB(iCol), iStr);
-    }
+
     public static string RemoveLast(this string iStr) {
         int aLen = iStr.Length;
         if(aLen == 0) return string.Empty;

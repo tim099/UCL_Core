@@ -35,13 +35,14 @@ namespace UCL.Core.Page
 
         public override void OnClose()
         {
-            UCL_ModuleService.Ins.ClearCurrentEditModule();
+            //UCL_ModuleService.Ins.ClearCurrentEditModule();
+            UCL_ModuleService.Ins.SetState(UCL_ModuleService.State.Main);//¦^¨ì¥D­¶
             base.OnClose();
         }
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            GUILayout.Label($"ID: {m_CurEditModule.ID}", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label($"[{m_CurEditModule.ID}]", UCL_GUIStyle.LabelStyle);
 #if UNITY_EDITOR_WIN
             if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {

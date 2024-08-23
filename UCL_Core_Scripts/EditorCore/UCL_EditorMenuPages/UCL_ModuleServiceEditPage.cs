@@ -17,7 +17,10 @@ namespace UCL.Core.Page
 
         public override string WindowName => UCL_LocalizeManager.Get("UCL_ModuleServiceEditPage");
 
-        static public UCL_ModuleServiceEditPage Create() => UCL_EditorPage.Create<UCL_ModuleServiceEditPage>();
+        public static UCL_ModuleServiceEditPage Create()
+        {
+            return UCL_EditorPage.Create<UCL_ModuleServiceEditPage>();
+        }
         UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
         public UCL_ModuleServiceEditPage()
         {
@@ -27,7 +30,20 @@ namespace UCL.Core.Page
         {
 
         }
-
+        public override void Init(UCL_GUIPageController iGUIPageController)
+        {
+            base.Init(iGUIPageController);
+            //UCL_ModuleService.Ins.SetState(UCL_ModuleService.State.Main);
+        }
+        //public override void OnResume()
+        //{
+        //    base.OnResume();
+        //    UCL_ModuleService.Ins.SetState(UCL_ModuleService.State.Main);
+        //}
+        public void ResumeState()
+        {
+            UCL_ModuleService.Ins.ResumeState();
+        }
         protected override void ContentOnGUI()
         {
             if (!UCL_ModuleService.Initialized)

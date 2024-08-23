@@ -77,7 +77,7 @@ namespace UCL.Core
         public void SaveConfig(JsonData iJson)
         {
             string aPath = ConfigPath;
-            Debug.LogError($"Save Config aPath:{aPath}");
+            Debug.Log($"Save Config aPath:{aPath}");
             UCL.Core.FileLib.Lib.WriteAllText(aPath, iJson.ToJsonBeautify());
             //switch (m_ModuleEditType)
             //{

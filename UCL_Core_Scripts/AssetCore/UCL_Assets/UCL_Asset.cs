@@ -12,11 +12,17 @@ using UCL.Core;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
+using UCL.Core.ServiceLib;
 using UCL.Core.UI;
 using UnityEngine;
 
 namespace UCL.Core
 {
+    public static class UCL_AssetGroup
+    {
+        public const string Data = "Data";
+        public const string Config = "Config";
+    }
 
 
     public class UCL_Asset<T> : UCL_Util<T>, UCLI_Asset where T : class, UCLI_Asset, UCLI_CommonEditable, new()
@@ -30,6 +36,15 @@ namespace UCL.Core
         virtual public string RelativeFolderPath => UCL_ModulePath.ModuleRelativePath.GetAssetRelativePath(GetType());
 
         virtual public string SaveFolderPath => UCL_ModuleService.Ins.GetCurEditModuleFolder(RelativeFolderPath);
+        /// <summary>
+        /// UCL_SelectAssetPage call this before Edit
+        /// </summary>
+        virtual public void OnEdit()
+        {
+            Directory.CreateDirectory(SaveFolderPath);
+        }
+
+
         virtual public UCLI_Asset CreateCommonData(string iID) => CreateData(iID) as UCLI_Asset;
 
         /// <summary>
@@ -43,10 +58,7 @@ namespace UCL.Core
             {
                 if (iIsShowEditButton)
                 {
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
-                    {
-                        UCL_CommonEditPage.Create(this);
-                    }
+                    ShowEditButtonOnGUI();
                 }
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
 
@@ -58,6 +70,14 @@ namespace UCL.Core
             }
             //GUILayout.EndHorizontal();
         }
+        virtual protected void ShowEditButtonOnGUI()
+        {
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
+            {
+                UCL_CommonEditPage.Create(this);
+            }
+        }
+
         public static string LocalizeFieldName(string iDisplayName)
         {
             if (iDisplayName[0] == 'm' && iDisplayName[1] == '_')
@@ -104,17 +124,35 @@ namespace UCL.Core
         #region FileSystem
         public static UCL_ModuleService.AssetConfig GetAssetConfig(string iID) => UCL_ModuleService.Ins.GetAssetConfig(typeof(T), iID);
 
+        /// <summary>
+        /// 這個Asset對應的AssetConfig
+        /// </summary>
         virtual public UCL_ModuleService.AssetConfig AssetConfig => GetAssetConfig(ID);
+        /// <summary>
+        /// GroupID of this asset
+        /// 這個Asset的分組
+        /// </summary>
+        virtual public string GroupID
+        {
+            get => AssetConfig.GroupID;
+            set => AssetConfig.GroupID = value;
+        }
+
+        /// <summary>
+        /// 所屬的模組
+        /// </summary>
         virtual public UCL_Module Module => AssetConfig.p_Module;
 
-        public const string CommonDataMetaName = ".CommonDataMeta";
-        public string CommonDataMetaPath => System.IO.Path.Combine(SaveFolderPath, CommonDataMetaName);
 
         /// <summary>
         /// 存檔路徑
         /// </summary>
         public string AssetPath => AssetConfig.AssetPath;
-
+        /// <summary>
+        /// Asset的存檔路徑
+        /// </summary>
+        /// <param name="iID"></param>
+        /// <returns></returns>
         virtual public string GetAssetPath(string iID)
         {
             return GetAssetConfig(iID).AssetPath;
@@ -201,6 +239,8 @@ namespace UCL.Core
 
             //FileDatas.DeleteFile(iID);
             ClearCache(iID);
+
+            UCL_ModuleService.Ins.OnModuleEdit();
         }
         /// <summary>
         /// Create a page to select UCL_Asset to edit
@@ -220,11 +260,19 @@ namespace UCL.Core
             return Page.UCL_SelectAssetPage<T>.Create();
         }
         #endregion
-
+        virtual public void Init(string iID)
+        {
+            ID = iID;
+        }
         virtual public JsonData Save()
         {
+            //存檔前先清除當前Config 確保存檔位置是當前編輯的模組
+            //UCL_ModuleService.Ins.ClearAssetsCache(typeof(T), ID);
+
+            var aConfig = UCL_ModuleService.Ins.CreateAssetConfig(typeof(T), ID);
             var aJson = SerializeToJson();
-            AssetConfig.SaveAsset(aJson);
+            aConfig.SaveAsset(aJson);
+            //AssetConfig.SaveAsset(aJson);
             //Debug.LogError("Save:" + ID);
             ClearCache(ID);
             return aJson;
@@ -249,65 +297,8 @@ namespace UCL.Core
         virtual public string ID { get; set; }
 
 
-        private UCL_AssetMeta m_AssetMeta = null;
-        public UCL_AssetMeta AssetMetaIns
-        {
-            get
-            {
-                if (m_AssetMeta == null)
-                {
-                    m_AssetMeta = CreateCommonDataMeta();
-                }
-                return m_AssetMeta;
-            }
-        }
-        virtual public UCL_AssetMeta CreateCommonDataMeta()
-        {
-            UCL_AssetMeta aCommonDataMeta = new UCL_AssetMeta();
-            
-            aCommonDataMeta.Init(GetType().FullName, SaveAssetMetaJson);
-
-            string aJson = GetAssetMetaJson();
-            if (!string.IsNullOrEmpty(aJson))
-            {
-                JsonData aData = JsonData.ParseJson(aJson);
-                aCommonDataMeta.DeserializeFromJson(aData);
-                aCommonDataMeta.CheckFileMetas(GetEditableIDs());
-            }
-
-            return aCommonDataMeta;
-        }
-        public string GetAssetMetaJson()
-        {
-            //if (!Directory.Exists(SaveFolderPath)) https://stackoverflow.com/questions/27575384/c-sharp-directory-createdirectory-path-should-i-check-if-path-exists-first
-            Directory.CreateDirectory(SaveFolderPath);
-            string aCommonDataMetaPath = CommonDataMetaPath;
-            if(!File.Exists(aCommonDataMetaPath))
-            {
-                return string.Empty;
-            }
-
-            return File.ReadAllText(aCommonDataMetaPath);
-        }
-        public void SaveAssetMetaJson(string iJson)
-        {
-            //if (!Directory.Exists(SaveFolderPath)) https://stackoverflow.com/questions/27575384/c-sharp-directory-createdirectory-path-should-i-check-if-path-exists-first
-            Directory.CreateDirectory(SaveFolderPath);
-            File.WriteAllText(CommonDataMetaPath, iJson);
-        }
-        /// <summary>
-        /// GroupID of this asset
-        /// </summary>
-        /// <returns></returns>
-        public string GroupID
-        {
-            get
-            {
-                var aMeta = AssetMetaIns.GetFileMeta(ID);
-                return aMeta.m_Group;
-            }
-        }
-
+        public UCL_ModuleService.AssetsCache AssetsCache => UCL_ModuleService.Ins.GetAssetsCache(typeof(T));
+        public UCL_AssetCommonMeta AssetMetaIns => UCL_ModuleService.Ins.GetAssetMeta(this.GetType().Name);
 
         /// <summary>
         /// get all assets ID
@@ -345,6 +336,7 @@ namespace UCL.Core
                 var aData = CreateData(aID);
                 aData.Save();
             }
+            UCL_ModuleService.Ins.OnModuleEdit();
         }
         /// <summary>
         /// 複製一份

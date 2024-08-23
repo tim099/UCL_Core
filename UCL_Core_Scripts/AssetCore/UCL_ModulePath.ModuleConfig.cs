@@ -19,6 +19,7 @@ namespace UCL.Core
             #region ModuleConfig
             /// <summary>
             /// module path config of each module(child of ModulesEntry)
+            /// 模組路徑相關的所有設定
             /// </summary>
             public class ModuleEntry
             {
@@ -60,7 +61,13 @@ namespace UCL.Core
                 /// </summary>
                 /// <param name="iType"></param>
                 /// <returns></returns>
-                public static string GetAssetRelativePath(System.Type iType) => Path.Combine(AssetFolderName, iType.Name);
+                public static string GetAssetRelativePath(System.Type iType) => GetAssetRelativePath(iType.Name);
+                /// <summary>
+                /// e.g. UCL_Assets/UCL_SpriteAsset
+                /// </summary>
+                /// <param name="iType"></param>
+                /// <returns></returns>
+                public static string GetAssetRelativePath(string iTypeName) => Path.Combine(AssetFolderName, iTypeName);
 
 
                 public ModuleEntry(ModulesEntry iModulePathConfig, string iD)
@@ -332,8 +339,20 @@ namespace UCL.Core
                     }
                 }
 
-
-                private string GetAssetFolderPath(Type iAssetType) => Path.Combine(RootFolder, GetAssetRelativePath(iAssetType));
+                /// <summary>
+                /// root folder of UCL_Assets
+                /// 抓取模組根目錄
+                /// </summary>
+                /// <param name="iAssetType"></param>
+                /// <returns></returns>
+                public string GetAssetFolderPath(Type iAssetType) => Path.Combine(RootFolder, GetAssetRelativePath(iAssetType));
+                /// <summary>
+                /// root folder of UCL_Assets
+                /// 抓取模組根目錄
+                /// </summary>
+                /// <param name="iAssetName"></param>
+                /// <returns></returns>
+                public string GetAssetFolderPath(string iAssetName) => Path.Combine(RootFolder, GetAssetRelativePath(iAssetName));
 
                 public string GetAssetPath(Type iAssetType, string iID)
                 {
@@ -354,6 +373,7 @@ namespace UCL.Core
                 }
                 /// <summary>
                 /// All assets of iAssetType's ID in this module
+                /// 回傳所有可編輯的AssetsID
                 /// </summary>
                 /// <param name="iAssetType"></param>
                 /// <returns></returns>
@@ -363,6 +383,22 @@ namespace UCL.Core
                     var aIDs = UCL.Core.FileLib.Lib.GetFilesName(aFolderPath, "*.json", SearchOption.TopDirectoryOnly, true);
                     //Debug.Log($"GetAllAssetsID iAssetType:{iAssetType.FullName}, aFolderPath:{aFolderPath},aIDs:{aIDs.ConcatString()}");
                     return aIDs;
+                }
+                public T GetAsset<T>(string iID) where T : UCLI_Asset, new()
+                {
+                    string aPath = GetAssetPath(typeof(T), iID);
+                    if (!File.Exists(aPath))
+                    {
+                        Debug.LogError($"{GetType().Name}.GetAsset<{typeof(T).Name}> !File.Exists iID:{iID},aPath:{aPath}");
+                        return default;
+                    }
+                    string aJson = File.ReadAllText(aPath);
+                    JsonData aJsonData = JsonData.ParseJson(aJson);
+                    T asset = new T();
+                    asset.DeserializeFromJson(aJsonData);
+                    asset.ID = iID;
+
+                    return asset;
                 }
             }
             #endregion

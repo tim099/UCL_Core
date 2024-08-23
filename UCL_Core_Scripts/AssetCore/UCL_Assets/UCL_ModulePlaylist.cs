@@ -6,6 +6,7 @@ using UnityEngine;
 
 namespace UCL.Core
 {
+    [System.Configuration.SettingsGroupName(UCL_AssetGroup.Config)]
     public class UCL_ModulePlaylist : UCL_Asset<UCL_ModulePlaylist>
     {
         public UCL_ModulePlaylist() { }

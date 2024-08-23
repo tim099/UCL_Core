@@ -15,16 +15,19 @@ namespace UCL.Core
 {
     public static class FileMetaExtensions
     {
-        public static string GetGroupID(this UCL_AssetMeta.FileMeta iFileMeta)
-        {
-            if(iFileMeta == null)
-            {
-                return string.Empty;
-            }
-            return iFileMeta.m_Group;
-        }
+        //public static string GetGroupID(this UCL_AssetCommonMeta.FileMeta iFileMeta)
+        //{
+        //    if(iFileMeta == null)
+        //    {
+        //        return string.Empty;
+        //    }
+        //    return iFileMeta.m_Group;
+        //}
     }
-    public class UCL_AssetMeta : UnityJsonSerializable, UCLI_NameOnGUI
+    /// <summary>
+    /// 模組內同類Asset共用的Meta(例如UCL_SpriteAsset)
+    /// </summary>
+    public class UCL_AssetCommonMeta : UnityJsonSerializable, UCLI_NameOnGUI
     {
         /// <summary>
         /// Save in PlayerPrefs
@@ -56,7 +59,7 @@ namespace UCL.Core
 
             public Dictionary<string, GroupData> m_GroupDatas = new();
 
-            public void OnGUI(UCL_ObjectDictionary iDic, UCL_AssetMeta iCommonDataMeta)
+            public void OnGUI(UCL_ObjectDictionary iDic, UCL_AssetCommonMeta iCommonDataMeta)
             {
                 var aExternalGroups = iCommonDataMeta.m_Groups;
                 List<string> aDeletedKeys = new List<string>();
@@ -78,7 +81,7 @@ namespace UCL.Core
                         m_GroupDatas.Add(aKey, new GroupData());
                     }
 
-                    iCommonDataMeta.GroupsPopup.Add(aKey);
+                    iCommonDataMeta.GroupsPopupID.Add(aKey);
                 }
                 const int MaxColumn = 8;
                 const int ShowCount = MaxColumn - 2;
@@ -156,7 +159,7 @@ namespace UCL.Core
 
                 }
             }
-            public bool CheckShowData(string iGroup, string iSelectedGroup, FilterType iFilterType)
+            public bool CheckShowData(UCLI_Asset iUtil, string iGroup, string iSelectedGroup, FilterType iFilterType)
             {
                 switch (iFilterType)
                 {
@@ -215,10 +218,10 @@ namespace UCL.Core
         {
             public string m_ID;
             public string m_MD5;
-            public string m_Group;
+            //public string m_Group;
         }
-        public string PlayerPrefsKey => m_TypeName;
-        public string m_TypeName;
+        public string PlayerPrefsKey => TypeName;
+        public string TypeName { get; private set; }
         //public string m_SaveDate;
 
         //public string m_MD5;
@@ -226,7 +229,9 @@ namespace UCL.Core
         public bool RequireClearDic { get; set; } = false;
 
         public Dictionary<string, Group> m_Groups = new();
-        public Dictionary<string, FileMeta> m_FileMetas = new();
+        //public Dictionary<string, FileMeta> m_FileMetas = new();
+
+
         //public bool m_ShowAll = true;
         //public bool m_ShowOthers = true;
         public bool m_EditGroup = false;
@@ -235,7 +240,8 @@ namespace UCL.Core
 
         public void Init(string iTypeName, System.Action<string> iSaveAct)
         {
-            m_TypeName = iTypeName;
+            //Debug.LogError($"iTypeName:{iTypeName}");
+            TypeName = iTypeName;
             m_SaveAct = iSaveAct;
             PlayerPrefsMeta = new PlayerPrefsData();
             if (PlayerPrefs.HasKey(PlayerPrefsKey))
@@ -263,34 +269,6 @@ namespace UCL.Core
             }
         }
 
-        public FileMeta GetFileMeta(string iID)
-        {
-            if (!m_FileMetas.ContainsKey(iID))
-            {
-                m_FileMetas.Add(iID, new FileMeta());
-            }
-            return m_FileMetas[iID];
-        }
-
-
-        public void CheckFileMetas(IList<string> iIDs)
-        {
-            if (m_FileMetas.Count > 0)
-            {
-                List<string> aRemoveList = new List<string>();
-                foreach (var aKey in m_FileMetas.Keys)
-                {
-                    if (!iIDs.Contains(aKey))
-                    {
-                        aRemoveList.Add(aKey);
-                    }
-                }
-                foreach (var aKey in aRemoveList)
-                {
-                    m_FileMetas.Remove(aKey);
-                }
-            }
-        }
         public override void DeserializeFromJson(JsonData iJson)
         {
             base.DeserializeFromJson(iJson);
@@ -320,7 +298,7 @@ namespace UCL.Core
             //string aMd5 = aMetaStr.ConvertToMD5();
             //FileDatas.SaveCommonDataMetaJson(aMetaStr.Replace(MD5SaveKey, aMd5));
         }
-        private List<string> GroupsPopup { get; set; } = new List<string>();
+        private List<string> GroupsPopupID { get; set; } = new List<string>();
         private bool IsModified { get; set; } = false;
         public void OnGUI(UCL_ObjectDictionary iDic)
         {
@@ -330,15 +308,23 @@ namespace UCL.Core
                 iDic.Clear();
             }
             IsModified = false;
+
+            
+
             int aGroupCount = m_Groups.Count;
-            UCL_GUILayout.DrawObjectData(this, iDic.GetSubDic("Data"));
+
+            var aParams = new UCL_GUILayout.DrawObjectParams(iDic.GetSubDic("Data"), string.Empty);
+
+            UCL_GUILayout.DrawObjectData(this, aParams);
+
+
             if (aGroupCount != m_Groups.Count)
             {
                 IsModified = true;
             }
 
-            GroupsPopup.Clear();
-            GroupsPopup.Add(string.Empty);//No Group
+            GroupsPopupID.Clear();
+            GroupsPopupID.Add(string.Empty);//No Group
 
             PlayerPrefsMeta.OnGUI(iDic.GetSubDic("PlayerPrefsMeta"), this);
 
@@ -347,9 +333,9 @@ namespace UCL.Core
         /// 抓取全部要顯示的物品ID
         /// </summary>
         /// <returns></returns>
-        public List<string> GetAllShowData(IList<string> iIDs, PlayerPrefsData.FilterType? iFilterType = null)
+        public List<string> GetAllShowData(UCLI_Asset iUtil, IList<string> iIDs, PlayerPrefsData.FilterType? iFilterType = null)
         {
-            return GetAllShowData(iIDs, PlayerPrefsMeta.m_SelectedGroup, iFilterType);
+            return GetAllShowData(iUtil, iIDs, PlayerPrefsMeta.m_SelectedGroup, iFilterType);
         }
 
         /// <summary>
@@ -358,13 +344,13 @@ namespace UCL.Core
         /// <param name="iIDs"></param>
         /// <param name="iTargetGroup">分組ID 空字串則顯示全部</param>
         /// <returns></returns>
-        public List<string> GetAllShowData(IList<string> iIDs, string iTargetGroup, PlayerPrefsData.FilterType? iFilterType = null)
+        public List<string> GetAllShowData(UCLI_Asset iUtil, IList<string> iIDs, string iTargetGroup, PlayerPrefsData.FilterType? iFilterType = null)
         {
             List<string> aResult = new List<string>();
             for (int i = 0; i < iIDs.Count; i++)
             {
                 string aID = iIDs[i];
-                if (CheckShowData(aID, iTargetGroup, iFilterType))
+                if (CheckShowData(iUtil, aID, iTargetGroup, iFilterType))
                 {
                     aResult.Add(aID);
                     continue;
@@ -374,11 +360,8 @@ namespace UCL.Core
             {
                 aResult.Sort((iA, iB) =>
                 {
-                    var aMetaA = GetFileMeta(iA);
-
-                    var aMetaB = GetFileMeta(iB);
-                    string aGroupA = aMetaA.GetGroupID();
-                    string aGroupB = aMetaB.GetGroupID();
+                    string aGroupA = iUtil.GetCommonData(iA).GroupID;
+                    string aGroupB = iUtil.GetCommonData(iB).GroupID;
                     if (aGroupA == aGroupB)
                     {
                         return iA.CompareTo(iB);
@@ -425,36 +408,40 @@ namespace UCL.Core
 
             return aResult;
         }
-        public bool CheckShowData(string iID, string iTargetGroup, PlayerPrefsData.FilterType? iFilterType = null)
+        public bool CheckShowData(UCLI_Asset iUtil, string iID, string iTargetGroup, PlayerPrefsData.FilterType? iFilterType = null)
         {
-            var aFile = GetFileMeta(iID);
-            string aGroup = aFile.GetGroupID();
+            var aAsset = iUtil.GetCommonData(iID);
+            //var aFile = GetFileMeta(iID);
+            //string aGroup = aFile.GetGroupID();
+            string aGroup = aAsset.GroupID;
             PlayerPrefsData.FilterType aFilterType = PlayerPrefsMeta.m_FilterType;
             if (iFilterType.HasValue)
             {
                 aFilterType = iFilterType.Value;
             }
-            return PlayerPrefsMeta.CheckShowData(aGroup, iTargetGroup, aFilterType);
+            return PlayerPrefsMeta.CheckShowData(iUtil, aGroup, iTargetGroup, aFilterType);
         }
-        public bool CheckShowGroup(string iID, string iTargetGroup)
+        public void OnGUI_ShowData(UCLI_Asset iUtil, string iID, UCL_ObjectDictionary iDic, int iWidth)
         {
-            var aFile = GetFileMeta(iID);
-            string aGroup = aFile.GetGroupID();
-            return PlayerPrefsMeta.CheckShowGroup(aGroup, iTargetGroup);
-        }
-        public void OnGUI_ShowData(string iID, UCL_ObjectDictionary iDic, int iWidth)
-        {
-            var aFile = GetFileMeta(iID);
-            var aGroupsPopup = GroupsPopup;
-            if (!aGroupsPopup.IsNullOrEmpty())
+            //var aFile = GetFileMeta(iID);
+            var aGroupsPopupID = GroupsPopupID;//所有的分組ID
+            if (!aGroupsPopupID.IsNullOrEmpty())
             {
-                int aOldIndex = aGroupsPopup.IndexOf(aFile.m_Group);
-                var aIndex = UCL_GUILayout.PopupAuto(aOldIndex, aGroupsPopup, iDic, "Group", 6, GUILayout.MinWidth(iWidth));//, GUILayout.MinWidth(80)
+                var aAsset = iUtil.GetCommonData(iID);
+                int aOldIndex = aGroupsPopupID.IndexOf(aAsset.GroupID);
+                var aIndex = UCL_GUILayout.PopupAuto(aOldIndex, aGroupsPopupID, iDic, "Group", 6, GUILayout.MinWidth(iWidth));//, GUILayout.MinWidth(80)
                 if (aOldIndex != aIndex)
                 {
                     IsModified = true;
-                    aFile.m_Group = aGroupsPopup[aIndex];
+                    aAsset.GroupID = aGroupsPopupID[aIndex];
                 }
+                //int aOldIndex = aGroupsPopupID.IndexOf(aFile.m_Group);
+                //var aIndex = UCL_GUILayout.PopupAuto(aOldIndex, aGroupsPopupID, iDic, "Group", 6, GUILayout.MinWidth(iWidth));//, GUILayout.MinWidth(80)
+                //if (aOldIndex != aIndex)
+                //{
+                //    IsModified = true;
+                //    aFile.m_Group = aGroupsPopupID[aIndex];
+                //}
             }
         }
         public void OnGUIEnd()

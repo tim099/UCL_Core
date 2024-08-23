@@ -25,13 +25,12 @@ namespace UCL.Core.Page
         protected UCLI_Preview m_Preview = null;
         protected string m_CreateDes = string.Empty;
         protected string m_TypeName = string.Empty;
-        protected UCL_AssetMeta m_Meta = null;
+        protected UCL_AssetCommonMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
-        public override string WindowName => $"UCL_SelectAssetPage({m_TypeName})";
+        public override string WindowName => $"UCL_SelectAssetPage";//({m_TypeName})
         public override bool IsWindow => true;
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {
-
 
             base.Init(iGUIPageController);
             string aTypeName = typeof(T).Name;
@@ -43,8 +42,10 @@ namespace UCL.Core.Page
             }
             else
             {
-                m_CreateDes = UCL_LocalizeManager.Get("Create New");
+                m_CreateDes = UCL_LocalizeManager.Get("CreateNew");
             }
+            Util.OnEdit();
+
             m_Meta = Util.AssetMetaIns;
             //Debug.LogError("m_CreateDes:" + m_CreateDes);
             OnResume();
@@ -71,7 +72,16 @@ namespace UCL.Core.Page
         public override void OnClose()
         {
             base.OnClose();
-            m_Meta.Save();
+            try
+            {
+                m_Meta.Save();
+            }
+            catch(System.Exception ex)
+            {
+                Debug.LogException(ex);
+                Debug.LogError($"{GetType().FullName}.OnClose, Exception:{ex}");
+            }
+            
         }
         protected override void ContentOnGUI()
         {
@@ -83,7 +93,8 @@ namespace UCL.Core.Page
             GUILayout.Label(WindowName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             if (GUILayout.Button(m_CreateDes, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
-                UCL_CommonEditPage.Create(new T());
+                UCL_CreateAssetPage<T>.Create();
+                //UCL_CommonEditPage.Create(new T());
             }
 #if UNITY_EDITOR
             if (GUILayout.Button(UCL_LocalizeManager.Get("RefreshData"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -110,7 +121,7 @@ namespace UCL.Core.Page
             {
                 //GUILayout.Label("Type:", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 //GUILayout.Space(10);
-                GUILayout.Label($"Type : {m_TypeName}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label($"[{UCL_ModuleService.CurEditModuleID}] {m_TypeName}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     GUIUtility.systemCopyBuffer = m_TypeName;
@@ -131,9 +142,11 @@ namespace UCL.Core.Page
         /// <param name="iPreviewAct">點下預覽時呼叫</param>
         /// <param name="iDeleteAct">點下刪除時呼叫</param>
         /// <param name="iFontSize"></param>
-        static public void DrawSelectTargetList(IList<string> iIDs, UCL.Core.UCL_ObjectDictionary iDic,
+        static public void DrawSelectTargetList(
+            UCLI_Asset iUtil,
+            IList<string> iIDs, UCL.Core.UCL_ObjectDictionary iDic,
             System.Action<string> iEditAct, System.Action<string> iPreviewAct, System.Action<string> iDeleteAct,
-            UCL_AssetMeta iMeta = null,
+            UCL_AssetCommonMeta iMeta = null,
             int iFontSize = 20)
         {
             using(var aScopeV = new GUILayout.VerticalScope("box"))
@@ -172,7 +185,7 @@ namespace UCL.Core.Page
                 {
                     if (iMeta != null)
                     {
-                        iIDs = iMeta.GetAllShowData(iIDs);
+                        iIDs = iMeta.GetAllShowData(iUtil, iIDs);
                     }
 
                     for (int i = 0; i < iIDs.Count; i++)
@@ -212,11 +225,11 @@ namespace UCL.Core.Page
                             }
 
                         }
-                        if (aIsEditGroup)
+                        if (aIsEditGroup)//編輯分組
                         {
                             using (var aScope2 = new GUILayout.HorizontalScope("box", GUILayout.MinWidth(EditGroupWidth)))
                             {
-                                iMeta.OnGUI_ShowData(aID, iDic.GetSubDic(aID), EditGroupWidth - Mathf.RoundToInt(aScale * 5));
+                                iMeta.OnGUI_ShowData(iUtil, aID, iDic.GetSubDic(aID), EditGroupWidth - Mathf.RoundToInt(aScale * 5));
                             }
                         }
                         GUILayout.EndHorizontal();
@@ -238,7 +251,8 @@ namespace UCL.Core.Page
             var aModule = UCL_ModuleService.CurEditModule;
             var aIDs = Util.GetEditableIDs();//aModule.GetFolderPath;
 
-            DrawSelectTargetList(aIDs, m_DataDic.GetSubDic("SelectTarget"),
+            DrawSelectTargetList(Util,
+                aIDs, m_DataDic.GetSubDic("SelectTarget"),
                 (iID) => {
                     UCL_CommonEditPage.Create(Util.GetData(iID));
                 },

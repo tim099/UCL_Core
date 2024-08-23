@@ -1,4 +1,4 @@
-
+﻿
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/20 2024 22:46
@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UCL.Core.JsonLib;
+using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
 
@@ -38,7 +39,13 @@ namespace UCL.Core
         public const string NotInstalledID = "None";
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
+            const string DateFormat = "yyyy/MM/dd/HH:mm:ss.ffff";
+
             public string m_Version = "1.0.0";
+            /// <summary>
+            /// 最後編輯的時間(用來判斷是否要安裝)
+            /// </summary>
+            public string m_LastEditTime = string.Empty;
             public string m_ID;
 
             public List<UCL_ModuleEntry> m_DependenciesModules = new ();
@@ -47,6 +54,23 @@ namespace UCL.Core
             /// return true if Installed
             /// </summary>
             public bool Installed => m_Version != NotInstalledID;
+            /// <summary>
+            /// return true if Config version is same
+            /// </summary>
+            /// <param name="iConfig"></param>
+            /// <returns></returns>
+            public bool CheckVersion(Config iConfig)
+            {
+                if (m_Version != iConfig.m_Version) return false;
+                if (m_LastEditTime != iConfig.m_LastEditTime) return false;
+
+                return true;
+            }
+
+            public void OnModuleEdit()
+            {
+                m_LastEditTime = System.DateTime.Now.ToString(DateFormat);
+            }
         }
 
 
@@ -80,6 +104,11 @@ namespace UCL.Core
 
         protected bool m_IsLoading = false;
         protected bool m_Installing = false;
+        /// <summary>
+        /// 編輯器內 選取的GroupID
+        /// </summary>
+        protected string m_SelectedGroupID = string.Empty;
+        protected string m_SelectedAssetID = string.Empty;
         protected UCL_ModulePath.PersistantPath.ModuleEntry m_ModuleEntry;
         //protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
@@ -131,6 +160,15 @@ namespace UCL.Core
 
             //UCL_ModuleService.PathConfig.SaveModuleConfig(ID, m_Config.SerializeToJson());
         }
+        /// <summary>
+        /// 當前模組被編輯時觸發
+        /// (例如UCL_Asset存檔或刪除時)
+        /// </summary>
+        public void OnModuleEdit()
+        {
+            m_Config.OnModuleEdit();
+            Save();
+        }
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
         protected async UniTask LoadAsync()
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
@@ -172,11 +210,13 @@ namespace UCL.Core
             if(m_Config.Installed && RuntimeModuleEntry.Installed)//Installed, check version
             {
                 Config aBuiltinConfig = await BuiltinModuleEntry.GetBuiltinConfig();
-                if (aBuiltinConfig.m_Version == m_Config.m_Version)//Same Version!!
+                if (aBuiltinConfig.CheckVersion(m_Config))//Same Version!!
                 {
                     aNeedInstall = false;
                 }
-                Debug.LogWarning($"ID:{ID},Cur Version:{m_Config.m_Version},Builtin Version:{aBuiltinConfig.m_Version},aNeedInstall:{aNeedInstall}");
+                Debug.LogWarning($"ID:{ID},Cur Version:{m_Config.m_Version},Builtin Version:{aBuiltinConfig.m_Version}" +
+                    $"LastEditTime:{m_Config.m_LastEditTime},Builtin LastEditTime:{aBuiltinConfig.m_LastEditTime}" +
+                    $",aNeedInstall:{aNeedInstall}");
             }
 
             if(aNeedInstall)
@@ -228,80 +268,70 @@ namespace UCL.Core
             aModuleConfig.UnInstall();
         }
 
-
-        //protected async UniTask InstallFolder(UCL_StreamingAssetFileInspector iFileInfos, UCL_StreamingAssetFileInspector.FolderInformation iFolderInfos,
-        //    string iRelativePath, string iInstallPath)
-        //{
-        //    //Debug.LogError($"InstallFolder iInstallPath:{iInstallPath}");
-        //    if (!Directory.Exists(iInstallPath))
-        //    {
-        //        Directory.CreateDirectory(iInstallPath);
-        //    }
-        //    foreach(var aFile in iFolderInfos.m_FileInfos)//Install Files
-        //    {
-        //        try
-        //        {
-        //            string aName = aFile.FileName;
-        //            string aRelativePath = Path.Combine(iRelativePath, aName);
-        //            string aInstallPath = Path.Combine(iInstallPath, aName);
-        //            byte[] aBytes = await UCL_StreamingAssets.LoadBytes(aRelativePath);
-        //            if (aBytes != null)
-        //            {
-        //                File.WriteAllBytes(aInstallPath, aBytes);
-        //            }
-        //            else
-        //            {
-        //                Debug.LogError($"InstallFolder aFile:{aName},iRelativePath:{iRelativePath},aBytes == null");
-        //            }
-        //        }
-        //        catch(System.Exception e)
-        //        {
-        //            Debug.LogException(e);
-        //        }
-
-        //    }
-        //    foreach(var aFolder in iFolderInfos.m_FolderInfos)
-        //    {
-        //        try
-        //        {
-        //            await InstallFolder(iFileInfos, aFolder, Path.Combine(iRelativePath, aFolder.Name), Path.Combine(iInstallPath, aFolder.Name));
-        //        }
-        //        catch (System.Exception e)
-        //        {
-        //            Debug.LogException(e);
-        //        }
-        //    }
-        //}
+        /// <summary>
+        /// 將模組輸出到指定目錄下
+        /// </summary>
+        public void ExportModule()
+        {
+            string aFolderPath = Path.Combine(Application.dataPath, ".ExportedModules");
+            Directory.CreateDirectory(aFolderPath);
+            m_ModuleEntry.ZipModule(aFolderPath);
+        }
 
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
             //var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
             //var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
 
-
-
-            var aAllAssetTypeNames = UCLI_Asset.GetAllAssetTypeNames();
-            if (!aAllAssetTypeNames.IsNullOrEmpty())
+            var aAllAssetTypeInfos = UCLI_Asset.GetAllAssetTypesInfo();
+            if (!aAllAssetTypeInfos.IsNullOrEmpty())
             {
                 using (var aScope = new GUILayout.HorizontalScope())
                 {
+                    GUILayout.Label("Asset Group", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    var groups = UCLI_Asset.GetAssetGroups().ToList();
+                    groups.Insert(0, string.Empty);
+
+                    var localizedGroups = UCLI_Asset.GetLocalizedAssetGroups().ToList();
+                    localizedGroups.Insert(0, string.Empty);
+
+                    int index = groups.IndexOf(m_SelectedGroupID);
+                    int newIndex = UCL_GUILayout.PopupAuto(index, localizedGroups, iDataDic, "SelectedGroupID");
+                    m_SelectedGroupID = groups[newIndex];
+                }
+                using (var aScope = new GUILayout.HorizontalScope())
+                {
                     bool aEdit = false;
-                    if (GUILayout.Button($"Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(160)))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(160)))
                     {
                         aEdit = true;
                     }
 
 
-                    const string SelectedIDKey = "SelectedID";
-                    int aSelectedID = iDataDic.GetData(SelectedIDKey, 0);
-                    aSelectedID = UCL_GUILayout.PopupAuto(aSelectedID, aAllAssetTypeNames, iDataDic, "SelectAssetType");
-                    iDataDic.SetData(SelectedIDKey, aSelectedID);
-
-
-                    if (aEdit)
+                    var aAllAssetTypeNames = new List<string>();
+                    var aAllAssetTypeLocalizedNames = new List<string>();
+                    foreach (var info in aAllAssetTypeInfos.Values)
                     {
-                        var aAllAssetsTypes = UCLI_Asset.GetAllAssetTypes();
-                        var aType = aAllAssetsTypes[aSelectedID];
+                        if(string.IsNullOrEmpty(m_SelectedGroupID) || string.IsNullOrEmpty(info.m_Group) || info.m_Group == m_SelectedGroupID)
+                        {
+                            aAllAssetTypeLocalizedNames.Add(info.m_LocalizedName);
+                            aAllAssetTypeNames.Add(info.m_Name);
+                        }
+                    }
+                    if (aAllAssetTypeNames.Count == 0)
+                    {
+                        aAllAssetTypeLocalizedNames.Add(string.Empty);
+                        aAllAssetTypeNames.Add(string.Empty);
+                    }
+
+                    int aSelectedID = aAllAssetTypeNames.IndexOf(m_SelectedAssetID);
+                    aSelectedID = UCL_GUILayout.PopupAuto(aSelectedID, aAllAssetTypeLocalizedNames, iDataDic, "SelectAssetType");//選取要編輯的UCL_Asset類型
+                    m_SelectedAssetID = aAllAssetTypeNames[aSelectedID];
+
+
+                    if (aEdit)//編輯按鈕被按下
+                    {
+                        var aType = aAllAssetTypeInfos[m_SelectedAssetID].m_Type;
                         try
                         {
                             UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
@@ -319,93 +349,67 @@ namespace UCL.Core
 
                 }
             }
+            GUILayout.Space(40);
+            if(GUILayout.Button("Export Module", UCL_GUIStyle.ButtonStyle))
+            {
+                ExportModule();
+            }
         }
-        //virtual public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
-        //{
-        //    UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName);
 
-        //    //var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
-        //    //var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);
+        #region AssetCommonMeta
 
+        public const string AssetMetaMetaName = ".CommonDataMeta";
 
+        private Dictionary<string, UCL_AssetCommonMeta> m_AssetMetaDic = new ();
 
-        //    var aAllAssetTypeNames = UCLI_Asset.GetAllAssetTypeNames();
-        //    if (!aAllAssetTypeNames.IsNullOrEmpty())
-        //    {
-        //        using(var aScope = new GUILayout.HorizontalScope())
-        //        {
-        //            bool aEdit = false;
-        //            if (GUILayout.Button($"Edit", UCL_GUIStyle.ButtonStyle, GUILayout.Width(160)))
-        //            {
-        //                aEdit = true;
-        //            }
+        private string GetAssetMetaPath(string iTypeName) => Path.Combine(ModuleEntry.GetAssetFolderPath(iTypeName), AssetMetaMetaName);
+        public UCL_AssetCommonMeta GetAssetMeta(string iTypeName)
+        {
+            if (!m_AssetMetaDic.ContainsKey(iTypeName))
+            {
+                void SaveAssetMetaJson(string iJson)
+                {
+                    //if (!Directory.Exists(SaveFolderPath))
+                    string path = GetAssetMetaPath(iTypeName);
+                    var folderPath = Path.GetDirectoryName(path);
+                    //https://stackoverflow.com/questions/27575384/c-sharp-directory-createdirectory-path-should-i-check-if-path-exists-first
+                    Directory.CreateDirectory(folderPath);
+                    File.WriteAllText(path, iJson);
+                }
+                UCL_AssetCommonMeta CreateAssetCommonMeta()
+                {
+                    UCL_AssetCommonMeta aCommonDataMeta = new UCL_AssetCommonMeta();
 
+                    aCommonDataMeta.Init(iTypeName, SaveAssetMetaJson);
 
-        //            const string SelectedIDKey = "SelectedID";
-        //            int aSelectedID = iDataDic.GetData(SelectedIDKey, 0);
-        //            aSelectedID = UCL_GUILayout.PopupAuto(aSelectedID, aAllAssetTypeNames, iDataDic, "SelectAssetType");
-        //            iDataDic.SetData(SelectedIDKey, aSelectedID);
+                    string aJson = GetAssetMetaJson(iTypeName);
+                    if (!string.IsNullOrEmpty(aJson))
+                    {
+                        JsonData aData = JsonData.ParseJson(aJson);
+                        aCommonDataMeta.DeserializeFromJson(aData);
+                    }
 
+                    return aCommonDataMeta;
+                }
+                m_AssetMetaDic[iTypeName] = CreateAssetCommonMeta();
+            }
 
-        //            if(aEdit)
-        //            {
-        //                var aAllAssetsTypes = UCLI_Asset.GetAllAssetTypes();
-        //                var aType = aAllAssetsTypes[aSelectedID];
-        //                try
-        //                {
-        //                    UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
-        //                    if (aUtil != null)
-        //                    {
-        //                        aUtil.CreateSelectPage();
-        //                    }
-        //                }
-        //                catch (Exception iE)
-        //                {
-        //                    Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
-        //                    Debug.LogException(iE);
-        //                }
-        //            }
+            return m_AssetMetaDic[iTypeName];
+        }
 
-        //        }
-        //    }
+        public string GetAssetMetaJson(string iTypeName)
+        {
+            //if (!Directory.Exists(SaveFolderPath)) https://stackoverflow.com/questions/27575384/c-sharp-directory-createdirectory-path-should-i-check-if-path-exists-first
+            //Directory.CreateDirectory(SaveFolderPath);
+            string path = GetAssetMetaPath(iTypeName);
+            if (!File.Exists(path))
+            {
+                return string.Empty;
+            }
 
-        //    return this;
+            return File.ReadAllText(path);
+        }
 
-        //    //foreach (var aType in aAllAssetsTypes)
-        //    //{
-        //    //    try
-        //    //    {
-        //    //        string aPropInfosStr = string.Empty;
-        //    //        try
-        //    //        {
-        //    //            UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util
-        //    //            if (aUtil != null)
-        //    //            {
-        //    //                GUILayout.BeginHorizontal();
-        //    //                if (GUILayout.Button($"Edit", aButtonStyle, GUILayout.ExpandWidth(false)))
-        //    //                {
-        //    //                    aUtil.CreateSelectPage();
-        //    //                }
-        //    //                GUILayout.Label(aType.Name, aLabelStyle, GUILayout.ExpandWidth(false));
-
-        //    //                //GUILayout.Label($"{aType.FullName}");
-        //    //                //aUtil.RefreshAllDatas();
-        //    //                //Debug.LogWarning($"Util:{aUtil.GetType().FullName}.RefreshAllDatas()");
-        //    //                GUILayout.EndHorizontal();
-        //    //            }
-        //    //        }
-        //    //        catch (Exception iE)
-        //    //        {
-        //    //            Debug.LogError($"RCGI_CommonData aType:{aType.FullName},Exception:{iE}");
-        //    //            Debug.LogException(iE);
-        //    //        }
-        //    //    }
-        //    //    catch (Exception iE)
-        //    //    {
-        //    //        Debug.LogException(iE);
-        //    //    }
-
-        //    //}
-        //}
+        #endregion
     }
 }

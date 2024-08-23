@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
@@ -25,6 +26,20 @@ namespace UCL.Core
     /// </summary>
     public class UCL_ModuleService//: UCLI_FieldOnGUI
     {
+        private const string CurStateKey = "UCL_ModuleService.CurState";
+
+        public enum State
+        {
+            /// <summary>
+            /// 選取要編輯模組的主頁面
+            /// </summary>
+            Main,
+            /// <summary>
+            /// 編輯模組
+            /// </summary>
+            EditModule,
+        }
+
         #region static
         public static UCL_ModuleService Ins
         {
@@ -67,6 +82,8 @@ namespace UCL.Core
             private set => Ins.m_PathConfig.m_ModuleEditType = value;
         }
         public static UCL_Module CurEditModule => Ins.m_CurEditModule;
+
+
         protected static UCL_ModuleService s_Ins = null;
         public static bool Initialized
         {
@@ -86,6 +103,7 @@ namespace UCL.Core
 
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
+            public State m_State = State.Main;
             public string m_CurrentEditModule = string.Empty;
 
             /// <summary>
@@ -112,12 +130,12 @@ namespace UCL.Core
                 aDrawObjExSetting.OnShowField = () =>
                 {
                     //GUILayout.Label("Config", UCL_GUIStyle.LabelStyle);
-                    if (GUILayout.Button("Zip all modules"))
+                    if (GUILayout.Button("Zip all modules", UCL_GUIStyle.ButtonStyle))
                     {
                         Debug.LogError($"{UCL_AssetPath.GetPath(UCL_AssetType.BuiltinModules)}");
                         UCL_ModulePath.ZipAllModules();
                     }
-                    if (GUILayout.Button("Remove all Zip modules"))
+                    if (GUILayout.Button("Remove all Zip modules", UCL_GUIStyle.ButtonStyle))
                     {
                         UCL_ModulePath.RemoveAllZipAllModules();
                     }
@@ -162,9 +180,14 @@ namespace UCL.Core
         //protected List<UCL_Module> m_CurEditModuleDependenciesModules = new List<UCL_Module>();
 
         #region Enviroment
+        /// <summary>
+        /// 每個UCL_Asset會有一份(同ID的UCL_Asset共用一份)
+        /// </summary>
         public class AssetConfig
         {
-            
+            /// <summary>
+            /// 所屬的UCL_Module
+            /// </summary>
             public UCL_Module p_Module;
 
             public bool Inited { get; private set; }
@@ -173,8 +196,61 @@ namespace UCL.Core
             public object AssetCache { get; set; }
 
             public bool Exist => p_Module != null;
-            public string AssetPath => p_Module.ModuleEntry.GetAssetPath(AssetType, ID);
+            /// <summary>
+            /// ModuleEntry of this asset
+            /// 路徑相關的所有設定
+            /// </summary>
+            public UCL_ModulePath.PersistantPath.ModuleEntry ModuleEntry => p_Module.ModuleEntry;
+            /// <summary>
+            /// 存檔路徑
+            /// </summary>
+            public string AssetPath => ModuleEntry.GetAssetPath(AssetType, ID);
+            public string AssetFolderPath => ModuleEntry.GetAssetFolderPath(AssetType);
 
+            virtual protected string GroupFolderPath => Path.Combine(AssetFolderPath, $".Group");
+            virtual protected string GroupIDPath => Path.Combine(GroupFolderPath, ID);
+            private string m_GroupID = null;
+            /// <summary>
+            /// GroupID of this asset
+            /// 這個Asset的分組
+            /// </summary>
+            virtual public string GroupID
+            {
+                get
+                {
+                    if (m_GroupID == null)
+                    {
+                        if (File.Exists(GroupIDPath))
+                        {
+                            m_GroupID = File.ReadAllText(GroupIDPath);
+                        }
+                        else
+                        {
+                            m_GroupID = string.Empty;
+                        }
+                    }
+                    return m_GroupID;
+                }
+                set
+                {
+                    m_GroupID = value;
+                    if (string.IsNullOrEmpty(m_GroupID))
+                    {
+                        if (File.Exists(GroupIDPath))
+                        {
+                            File.Delete(GroupIDPath);
+                        }
+                    }
+                    else
+                    {
+                        Directory.CreateDirectory(GroupFolderPath);
+                        File.WriteAllText(GroupIDPath, m_GroupID);
+                    }
+
+                }
+            }
+
+            public AssetConfig() { }
             public void Init(UCL_Module iModule, Type iAssetType, string iID)
             {
                 Inited = true;
@@ -199,7 +275,11 @@ namespace UCL.Core
             }
             public void SaveAsset(JsonData iJson)
             {
-                System.IO.File.WriteAllText(AssetPath, iJson.ToJsonBeautify());
+                var path = AssetPath;
+                string folderPath = System.IO.Path.GetDirectoryName(path);
+                //Debug.LogError($"path:{path},folderPath:{folderPath}");
+                Directory.CreateDirectory(folderPath);
+                System.IO.File.WriteAllText(path, iJson.ToJsonBeautify());
             }
             public void DeleteAsset()
             {
@@ -210,12 +290,34 @@ namespace UCL.Core
                 }
             }
         }
+
+        /// <summary>
+        /// 每種UCL_Asset共用一份
+        /// </summary>
         public class AssetsCache
         {
             public Dictionary<string, AssetConfig> m_AssetConfigDic = new Dictionary<string, AssetConfig>();
+            /// <summary>
+            /// 該UCL_Asset內所有的GroupID
+            /// </summary>
+            public List<string> m_GroupIDs = new List<string>();
 
+            public Type m_AssetType;
             public AssetsCache() { }
-
+            public AssetsCache(Type iAssetType, List<UCL_Module> iLoadedModules)
+            {
+                m_AssetType = iAssetType;
+                HashSet<string> aGroupIDs = new HashSet<string>();
+                foreach (var aModule in iLoadedModules)
+                {
+                    var aMeta = aModule.GetAssetMeta(iAssetType.Name);
+                    foreach(var groupID in aMeta.m_Groups.Keys)
+                    {
+                        aGroupIDs.Add(groupID);
+                    }
+                }
+                m_GroupIDs = aGroupIDs.ToList();
+            }
 
             public AssetConfig GetAssetConfig(string iID)
             {
@@ -239,8 +341,19 @@ namespace UCL.Core
         /// 當前已載入的模組 讀取UCL_Assets時會按照順序判斷(若ID相同則選取排序在前面的模組中的Asset)
         /// </summary>
         protected List<UCL_Module> m_LoadedModules = new List<UCL_Module>();
-        protected Dictionary<Type, AssetsCache> m_AssetsCacheDic = new Dictionary<Type, AssetsCache>();
+        protected Dictionary<string, AssetsCache> m_AssetsCacheDic = new ();
         #endregion
+
+        /// <summary>
+        /// 等待UCL_ModuleService初始化完成
+        /// </summary>
+        /// <param name="iToken"></param>
+        /// <returns></returns>
+        public static async UniTask WaitUntilInitialized(CancellationToken iToken)
+        {
+            var moduleService = UCL_ModuleService.Ins;
+            await UniTask.WaitUntil(() => Initialized, cancellationToken: iToken);
+        }
         /// <summary>
         /// Init UCL_ModuleService
         /// 暫定固定會有一個核心設定模組 放在StreammingAssets
@@ -296,38 +409,23 @@ namespace UCL.Core
 
             m_Config.m_Playlist.LoadPlaylist();
 
-
-            //if (m_Config.m_ModulePlayList.IsNullOrEmpty())
-            //{
-            //    m_Config.m_ModulePlayList.Add(new UCL_ModuleEntry(UCL_ModuleEntry.CoreModuleID));
-            //}
-            //HashSet<string> aLoadedModule = new HashSet<string>();
-            //foreach (var aModuleID in m_Config.m_ModulePlayList)
-            //{
-            //    string aID = aModuleID.ID;
-            //    if (aLoadedModule.Contains(aID))//Loaded
-            //    {
-            //        continue;
-            //    }
-            //    aLoadedModule.Add(aID);
-            //    try
-            //    {
-            //        var aModule = m_Config.LoadModule(aModuleID.ID, UCL_ModuleEditType.Runtime);
-            //        m_LoadedModules.Add(aModule);
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        Debug.LogException(ex);
-            //    }
-            //}
-
-
             m_LoadedModules.Reverse();//Modules that are loaded later will overwrite the previous modules(if asset have same ID)
             //Cheack and Install all Builtin Module to PersistantData path
             m_Initialized = true;
         }
+
+
+        public UCL_AssetCommonMeta GetAssetMeta(string iTypeName)
+        {
+            if(m_CurEditModule == null)
+            {
+                return m_LoadedModules[0].GetAssetMeta(iTypeName);
+            }
+            return m_CurEditModule.GetAssetMeta(iTypeName);
+        }
         /// <summary>
         /// get all modules ID of current ModuleEditType
+        /// 獲取所有模組ID(根據ModuleEditType)
         /// </summary>
         /// <returns></returns>
         public IList<string> GetAllModulesID()
@@ -335,8 +433,22 @@ namespace UCL.Core
             return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetAllModulesID();
             //return UCL_ModulePath.GetAllModulesID(ModuleEditType);
         }
-
-
+        public UCL_Module GetLoadedModule(string iID)
+        {
+            foreach(var aModule in m_LoadedModules)
+            {
+                if(aModule.ID == iID)
+                {
+                    return aModule;
+                }
+            }
+            return m_CurEditModule;
+        }
+        /// <summary>
+        /// 回傳所有可編輯的AssetsID
+        /// </summary>
+        /// <param name="iAssetType"></param>
+        /// <returns></returns>
         public IList<string> GetAllEditableAssetsID(Type iAssetType)
         {
             if(m_CurEditModule == null)
@@ -369,31 +481,67 @@ namespace UCL.Core
         }
 
         public List<UCL_Module> LoadedModules => m_LoadedModules;
-
-        private AssetsCache GetAssetsCache(Type iAssetType)
+        /// <summary>
+        /// 抓取指定UCL_Asset的AssetsCache
+        /// </summary>
+        /// <param name="iAssetType">typeof(UCL_Asset)</param>
+        /// <returns></returns>
+        public AssetsCache GetAssetsCache(Type iAssetType)
         {
-            if (!m_AssetsCacheDic.ContainsKey(iAssetType))
+            string key = iAssetType.Name;
+            if (!m_AssetsCacheDic.ContainsKey(key))
             {
-                m_AssetsCacheDic[iAssetType] = new AssetsCache();
+                m_AssetsCacheDic[key] = new AssetsCache(iAssetType, m_LoadedModules);
             }
-            return m_AssetsCacheDic[iAssetType];
+            return m_AssetsCacheDic[key];
         }
         public void ClearAssetsCache(Type iAssetType)
         {
-            if (m_AssetsCacheDic.ContainsKey(iAssetType))
+            string key = iAssetType.Name;
+            if (m_AssetsCacheDic.ContainsKey(key))
             {
-                m_AssetsCacheDic.Remove(iAssetType);
+                m_AssetsCacheDic.Remove(key);
             }
         }
         public void ClearAssetsCache(Type iAssetType, string iID)
         {
-            if (!m_AssetsCacheDic.ContainsKey(iAssetType))
+            string key = iAssetType.Name;
+            if (!m_AssetsCacheDic.ContainsKey(key))
             {
                 return;
             }
-            var aAssetsCache = m_AssetsCacheDic[iAssetType];
+            var aAssetsCache = m_AssetsCacheDic[key];
             aAssetsCache.ClearAssetsCache(iID);
         }
+        /// <summary>
+        /// 生成當前編輯模組的Config 確保存檔位置是當前編輯的模組
+        /// </summary>
+        /// <param name="iAssetType"></param>
+        /// <param name="iID"></param>
+        /// <returns></returns>
+        public AssetConfig CreateAssetConfig(Type iAssetType, string iID)
+        {
+            if(m_CurEditModule == null)
+            {
+                Debug.LogError($"{GetType().Name}.CreateAssetConfig, m_CurEditModule == null");
+                return GetAssetConfig(iAssetType,iID);
+            }
+            
+            //ClearAssetsCache(iAssetType, iID);
+            var aAssetsCache = GetAssetsCache(iAssetType);
+            //存檔前先清除當前Config 確保存檔位置是當前編輯的模組
+            aAssetsCache.ClearAssetsCache(iID);
+
+            var aConfig = aAssetsCache.GetAssetConfig(iID);
+            aConfig.Init(m_CurEditModule, iAssetType, iID);
+            return aConfig;
+        }
+        /// <summary>
+        /// 抓取指定UCL_Asset的AssetConfig
+        /// </summary>
+        /// <param name="iAssetType">typeof(UCL_Asset)</param>
+        /// <param name="iID">ID of UCL_Asset</param>
+        /// <returns></returns>
         public AssetConfig GetAssetConfig(Type iAssetType, string iID)
         {
             var aAssetsCache = GetAssetsCache(iAssetType);
@@ -505,7 +653,12 @@ namespace UCL.Core
             m_CurEditModule = null;
             //m_LoadedModules.Clear();
         }
-
+        /// <summary>
+        /// Load Modules and its dependencies
+        /// 載入指定的Module及其相依模組
+        /// </summary>
+        /// <param name="iModulePlayist"></param>
+        /// <returns></returns>
         public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist iModulePlayist)
         {
             m_LoadedModules.Clear();
@@ -557,7 +710,71 @@ namespace UCL.Core
 
             return aModule;
         }
+        /// <summary>
+        /// 當前模組是否可以編輯
+        /// </summary>
+        virtual protected bool CanEdit => !string.IsNullOrEmpty(m_Config.m_CurrentEditModule);
+        
+        virtual public void ResumeState()
+        {
+            var aStateStr = PlayerPrefs.GetString(CurStateKey, string.Empty);
+            if (string.IsNullOrEmpty(aStateStr))
+            {
+                return;
+            }
+            if(Enum.TryParse(typeof(State), aStateStr, out var aState))
+            {
+                //Debug.LogError($"ResumeState aState:{aState}");
+                switch (aState)
+                {
+                    case State.EditModule:
+                        {
+                            EditModule(m_Config.m_CurrentEditModule);
+                            break;
+                        }
+                }
+            }
 
+            //EditModule(m_Config.m_CurrentEditModule);
+        }
+        virtual public void EditModule(string iModuleID)
+        {
+            if (!CanEdit)//不可編輯
+            {
+                return;
+            }
+            SetCurrentEditModule(iModuleID);
+            UCL_ModuleEditPage.Create(m_CurEditModule);
+            SetState(State.EditModule);
+        }
+        
+        virtual public void SetState(State iState)
+        {
+            //Debug.LogError($"SetState:{iState}");
+            PlayerPrefs.SetString(CurStateKey, $"{iState}");//紀錄當前頁面狀態
+            m_Config.m_State = iState;
+            switch (iState) 
+            {
+                case State.Main:
+                    {
+                        ClearCurrentEditModule();
+                        break;
+                    }
+            }
+        }
+        /// <summary>
+        /// 當前模組被編輯時觸發
+        /// (例如UCL_Asset存檔或刪除時)
+        /// </summary>
+        virtual public void OnModuleEdit()
+        {
+            if(m_CurEditModule == null)
+            {
+                Debug.LogError($"{GetType().FullName}.OnModuleEdit, m_CurEditModule == null");
+                return;
+            }
+            m_CurEditModule.OnModuleEdit();
+        }
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
             if(Application.isEditor)//ModuleEditType Builtin can only edit in Editor
@@ -613,17 +830,23 @@ namespace UCL.Core
                 {
                     if (aCanEdit)
                     {
-                        SetCurrentEditModule(m_Config.m_CurrentEditModule);
-                        UCL_ModuleEditPage.Create(m_CurEditModule);
+                        EditModule(m_Config.m_CurrentEditModule);
+                        //SetCurrentEditModule(m_Config.m_CurrentEditModule);
+                        //UCL_ModuleEditPage.Create(m_CurEditModule);
                     }
                 }
 
                 GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                m_Config.m_CurrentEditModule = UCL_GUILayout.PopupAuto(m_Config.m_CurrentEditModule, aModules, iDataDic, "SelectModules");
-
+                var aID = UCL_GUILayout.PopupAuto(m_Config.m_CurrentEditModule, aModules, iDataDic, "SelectModules");
+                if(aID != m_Config.m_CurrentEditModule)
+                {
+                    m_Config.m_CurrentEditModule = aID;
+                    SaveConfig();
+                }
             }
 
             UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), "LoadedModules");
+            UCL_GUILayout.DrawObjectData(m_AssetsCacheDic, iDataDic.GetSubDic("AssetsCache"), "AssetsCache");
         }
     }
 }

@@ -345,6 +345,8 @@ public static partial class TypeExtensionMethods {
         if (iType == typeof(sbyte)) return (sbyte)0;
         if (iType == typeof(float)) return (float)0;
         if (iType == typeof(double)) return (double)0;
+        //if (iType == typeof(System.Type)) return System.Type.Missing;
+
         if (typeof(UnityEngine.Object).IsAssignableFrom(iType))
         {
             if (typeof(Component).IsAssignableFrom(iType)) return null;
@@ -381,6 +383,7 @@ public static partial class TypeExtensionMethods {
         }catch(System.Exception iE)
         {
             Debug.LogException(iE);
+            Debug.LogError($"CreateInstance Type:{iType.FullName},Exception:{iE}");
         }
         return aObj;
     }

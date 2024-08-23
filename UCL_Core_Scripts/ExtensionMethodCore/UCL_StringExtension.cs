@@ -235,6 +235,27 @@ namespace UCL.Core.StringExtensionMethods
         {
             GUIUtility.systemCopyBuffer = iStr;
         }
+        /// <summary>
+        /// 將該Transform與所有子Transform的active狀態轉換為字串輸出
+        /// 可以用來記錄當下gameobject開關情況
+        /// </summary>
+        /// <param name=""transform""></param>
+        /// <param name=""stringBuilder""></param>
+        /// <returns></returns>
+        public static string ActiveStateToString(this Transform iTransform, System.Text.StringBuilder stringBuilder = null, int space = 0)
+        {
+            if (stringBuilder == null)
+            {
+                stringBuilder = new System.Text.StringBuilder();
+            }
+            stringBuilder.Append('\t', space);
+            stringBuilder.AppendLine($"[{iTransform.name}] activeSelf:{(iTransform.gameObject.activeSelf ? "O" : "X")},activeInHierarchy: {(iTransform.gameObject.activeInHierarchy ? "O" : "X")}");
+            foreach (Transform child in iTransform)
+            {
+                ActiveStateToString(child, stringBuilder, space + 1);
+            }
+            return stringBuilder.ToString();
+        }
     }
 }
 //internal static string Clipboard

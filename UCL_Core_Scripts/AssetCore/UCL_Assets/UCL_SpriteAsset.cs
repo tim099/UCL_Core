@@ -10,8 +10,10 @@ using System.Threading;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
 using UnityEngine;
+using UnityEngine.UI;
 namespace UCL.Core
 {
+    [System.Configuration.SettingsGroupName(UCL_AssetGroup.Data)]
     public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable
     {
         public enum DataLoadType
@@ -51,8 +53,12 @@ namespace UCL.Core
                 return m_AddressableData;
             }
         }
-        
 
+        public async UniTask<Sprite> GetSpriteAsync(CancellationToken iToken)
+        {
+            await Data.LoadAsync(iToken);
+            return Data.GetSprite();
+        }
         public async UniTask<Texture2D> GetTextureAsync(CancellationToken iToken)
         {
             await Data.LoadAsync(iToken);
@@ -195,6 +201,42 @@ namespace UCL.Core
                 }
                 return aData.Sprite;
             }
+        }
+
+        public void SetImage(Image iImage)
+        {
+            if (IsEmpty)
+            {
+                iImage.sprite = null;
+                return;
+            }
+            iImage.sprite = Sprite;
+            //iImage.preserveAspect = IsPreserveAspect;
+        }
+        public async UniTask SetImageAsync(Image iImage, CancellationToken iToken)
+        {
+            if (IsEmpty)
+            {
+                iImage.sprite = null;
+                return;
+            }
+            var aSprite = await GetData().GetSpriteAsync(iToken);
+            iToken.ThrowIfCancellationRequested();
+            if (iImage == null)//Image Destroyed
+            {
+                return;
+            }
+            iImage.sprite = aSprite;
+
+
+            //var aSprite = await GetSpriteAsync(iToken);
+            //iToken.ThrowIfCancellationRequested();
+            //if(iImage == null)//Image Destroyed
+            //{
+            //    return;
+            //}
+            //iImage.sprite = aSprite;
+            //iImage.preserveAspect = IsPreserveAspect;
         }
     }
 }

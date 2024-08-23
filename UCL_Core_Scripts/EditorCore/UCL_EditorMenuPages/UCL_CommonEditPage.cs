@@ -37,9 +37,7 @@ namespace UCL.Core.Page
         public UCL_CommonEditPage() { }
         public UCL_CommonEditPage(UCLI_CommonEditable iData)
         {
-            m_Data = iData;
-            m_WindowName = UCL_LocalizeManager.Get(iData.GetType().Name.Replace("RCG_", string.Empty).Replace("Data", string.Empty) + "Editor");
-            UpdateInitJson();
+            SetData(iData);
         }
         override public string WindowName => m_WindowName;
         protected override bool ShowCloseButton => false;
@@ -51,6 +49,12 @@ namespace UCL.Core.Page
         /// </summary>
         string m_InitJson = string.Empty;
         protected UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL.Core.UCL_ObjectDictionary();
+        public void SetData(UCLI_CommonEditable iData)
+        {
+            m_Data = iData;
+            m_WindowName = UCL_LocalizeManager.Get($"{iData.GetType().Name}Editor");
+            UpdateInitJson();
+        }
         void UpdateInitJson()
         {
             m_InitJson = m_Data.SerializeToJson().ToJson();
@@ -84,6 +88,7 @@ namespace UCL.Core.Page
                     new ButtonData(UCL_LocalizeManager.Get("Save"), () =>
                     {
                         m_Data.Save();
+                        UCL_ModuleService.Ins.OnModuleEdit();
                         base.BackButtonClicked();
                     }),
                     new ButtonData(UCL_LocalizeManager.Get("Cancel"))
@@ -100,6 +105,7 @@ namespace UCL.Core.Page
                 //var aJson = m_Data.Save();
                 //m_InitJson = aJson.ToJson();
                 m_Data.Save();
+                UCL_ModuleService.Ins.OnModuleEdit();
                 UpdateInitJson();
             }
             if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -126,12 +132,13 @@ namespace UCL.Core.Page
             }
             GUILayout.Space(10);
             var aType = m_Data.GetType();
-            GUILayout.Label(aType.Name, UCL_GUIStyle.LabelStyle);
-
+            GUILayout.Label($"[{UCL_ModuleService.CurEditModuleID}] {aType.Name}", UCL_GUIStyle.LabelStyle);
+#if UNITY_EDITOR
             if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 aType.Name.CopyToClipboard();
             }
+#endif
             //if (GUILayout.Button(UCL_LocalizeManager.Get("Rename"), GUILayout.ExpandWidth(false)))
             //{
             //    RCG_RenamePage.Create(m_Data);//開啟重新命名分頁

@@ -5,7 +5,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using UCL.Core.LocalizeLib;
 using UnityEngine;
 
 namespace UCL.Core
@@ -16,6 +18,40 @@ namespace UCL.Core
         /// Unique ID of this Data
         /// </summary>
         string ID { get; set; }
+    }
+    public class UCL_AssetTypeInfo
+    {
+        public System.Type m_Type;
+        public string m_Name;
+        public string m_LocalizedName;
+        public string m_Group;
+
+        public UCL_AssetTypeInfo()
+        {
+
+        }
+
+        public UCL_AssetTypeInfo(System.Type type)
+        {
+            m_Type = type;
+            m_Name = m_Type.Name;
+
+            string aLocalizeName = UCL_LocalizeManager.Get(m_Name);
+            if (aLocalizeName != m_Name)
+            {
+                m_LocalizedName = $"{aLocalizeName}({m_Name})";
+            }
+            else
+            {
+                m_LocalizedName = m_Name;
+            }
+
+            var attr = type.GetCustomAttribute<System.Configuration.SettingsGroupNameAttribute>();
+            if (attr != null)
+            {
+                m_Group = attr.GroupName;
+            }
+        }
     }
     public interface UCLI_Asset : UCLI_CommonEditable, UCLI_Preview
     {
@@ -34,6 +70,10 @@ namespace UCL.Core
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)
         /// </summary>
         void CreateSelectPage();
+        /// <summary>
+        /// 記錄這個Asset的分組
+        /// </summary>
+        string GroupID { get; set; }
 
         #region static
         /// <summary>
@@ -112,6 +152,58 @@ namespace UCL.Core
             return s_AllAssetTypes;
         }
 
+
+        private static Dictionary<string, UCL_AssetTypeInfo> s_AllAssetTypesInfo = null;
+        public static Dictionary<string, UCL_AssetTypeInfo> GetAllAssetTypesInfo()
+        {
+            if(s_AllAssetTypesInfo == null)
+            {
+                s_AllAssetTypesInfo = new Dictionary<string, UCL_AssetTypeInfo>();
+                foreach(var type in GetAllAssetTypes())
+                {
+                    var info = new UCL_AssetTypeInfo(type);
+                    s_AllAssetTypesInfo.Add(info.m_Name, info);
+                }
+            }
+            return s_AllAssetTypesInfo;
+        }
+
+        private static List<string> s_AssetGroups = null;
+        public static List<string> GetAssetGroups()
+        {
+            if(s_AssetGroups == null)
+            {
+                HashSet<string> groups = new HashSet<string>();
+                foreach(var info in GetAllAssetTypesInfo().Values)
+                {
+                    if (!string.IsNullOrEmpty(info.m_Group))
+                    {
+                        groups.Add(info.m_Group);
+                    }
+                }
+                s_AssetGroups = groups.ToList();
+            }
+            return s_AssetGroups;
+        }
+        private static List<string> s_LocalizedAssetGroups = null;
+        public static List<string> GetLocalizedAssetGroups()
+        {
+            if (s_LocalizedAssetGroups == null)
+            {
+                s_LocalizedAssetGroups = new List<string>();
+                foreach (var group in GetAssetGroups())
+                {
+                    string localizedName = UCL_LocalizeManager.Get(group);
+                    if(localizedName != group)
+                    {
+                        localizedName = $"{localizedName}({group})";
+                    }
+                    s_LocalizedAssetGroups.Add(localizedName);
+                }
+            }
+            return s_LocalizedAssetGroups;
+        }
+
         private static List<string> s_AllAssetTypeNames = null;
         /// <summary>
         /// Get all types name of UCLI_Asset
@@ -122,10 +214,9 @@ namespace UCL.Core
             if (s_AllAssetTypeNames == null)
             {
                 s_AllAssetTypeNames = new List<string>();
-                var aAllTypes = GetAllAssetTypes();
-                foreach(var aType in aAllTypes)
+                foreach(var aType in GetAllAssetTypesInfo().Values)
                 {
-                    s_AllAssetTypeNames.Add(aType.Name);
+                    s_AllAssetTypeNames.Add(aType.m_Name);
                 }
             }
 

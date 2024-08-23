@@ -92,19 +92,31 @@ namespace UCL.Core
             }
             return aDisplayList;
         }
-        virtual protected void SelectGroupIDOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
+        virtual protected void SelectGroupIDOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, List<string> iGroupIDs = null)
         {
             var aUtil = AssetUtil;
             var aCommonDataMeta = aUtil.AssetMetaIns;
-            var aGroups = aCommonDataMeta.m_Groups;
-            if (!aGroups.IsNullOrEmpty())
+            List<string> aGroupIDs = null;
+            if (!iGroupIDs.IsNullOrEmpty())
             {
-                List<string> aGroupIDs = new List<string>();
-                aGroupIDs.Add(string.Empty);
-                foreach (var aGroup in aGroups.Keys)
+                aGroupIDs = iGroupIDs.Clone();
+                aGroupIDs.Insert(0, string.Empty);
+            }
+            else
+            {
+                var aGroups = aCommonDataMeta.m_Groups;
+                if (!aGroups.IsNullOrEmpty())
                 {
-                    aGroupIDs.Add(aGroup);
+                    aGroupIDs = new List<string>();
+                    aGroupIDs.Add(string.Empty);
+                    foreach (var aGroup in aGroups.Keys)
+                    {
+                        aGroupIDs.Add(aGroup);
+                    }
                 }
+            }
+            if (!aGroupIDs.IsNullOrEmpty())
+            {
                 var aAt = UCL.Core.UI.UCL_GUILayout.PopupAuto(aGroupIDs.IndexOf(GroupID), aGroupIDs, iDataDic, "GroupID", 8, GUILayout.ExpandWidth(true));
                 GroupID = aGroupIDs[aAt];
             }
@@ -115,8 +127,8 @@ namespace UCL.Core
             if (!GroupID.IsNullOrEmpty())
             {
                 //GUILayout.Label(GroupID);
-                var aCommonDataMeta = AssetUtil.AssetMetaIns;
-                aIDs = aCommonDataMeta.GetAllShowData(aIDs, GroupID, UCL_AssetMeta.PlayerPrefsData.FilterType.Dropdown);
+                var assetMeta = AssetUtil.AssetMetaIns;
+                aIDs = assetMeta.GetAllShowData(Util, aIDs, GroupID, UCL_AssetCommonMeta.PlayerPrefsData.FilterType.Dropdown);
             }
             if (!aIDs.IsNullOrEmpty())
             {
@@ -130,16 +142,17 @@ namespace UCL.Core
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName)
         {
             GUILayout.Label(iDisplayName, UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-
-            if (!AssetUtil.AssetMetaIns.m_Groups.IsNullOrEmpty())
+            //篩選時採用所有模組內可選的分組ID
+            //Filter whith all groupIDs in all modules
+            var groupIDs = AssetUtil.AssetsCache.m_GroupIDs;
+            if (!groupIDs.IsNullOrEmpty())
             {
                 using (var aHorizontalScope = new GUILayout.HorizontalScope(GUILayout.MinWidth(140)))
                 {
-                    SelectGroupIDOnGUI(iDataDic);
+                    SelectGroupIDOnGUI(iDataDic, groupIDs);
                 }
             }
 
-                
             using (var aHorizontalScope = new GUILayout.HorizontalScope(GUILayout.MinWidth(200)))
             {
                 SelectIDOnGUI(iDataDic);

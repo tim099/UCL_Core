@@ -135,9 +135,9 @@ namespace UCL.Core.UI
                     aIsShow = false;
                 }
                 GUILayout.BeginHorizontal(iOptions);
-                GUILayout.Label(UCL_LocalizeManager.Get("Search"), GUILayout.ExpandWidth(false));
+                GUILayout.Label(UCL_LocalizeManager.Get("Search"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
-                aInput = GUILayout.TextField(aInput);//TextField(UCL_LocalizeManager.Get("Search"), aInput);
+                aInput = GUILayout.TextField(aInput, UCL_GUIStyle.TextFieldStyle);//TextField(UCL_LocalizeManager.Get("Search"), aInput);
                 GUILayout.EndHorizontal();
 
                 iDataDic.SetData(aSearchKey, aInput);

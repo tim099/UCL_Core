@@ -305,10 +305,11 @@ namespace UCL.Core
                         aEdit = true;
                     }
 
-
+                    var assetInfos = aAllAssetTypeInfos.Values.ToList();
+                    assetInfos.Sort((a, b) => a.m_SortOrder.CompareTo(b.m_SortOrder));
                     var aAllAssetTypeNames = new List<string>();
                     var aAllAssetTypeLocalizedNames = new List<string>();
-                    foreach (var info in aAllAssetTypeInfos.Values)
+                    foreach (var info in assetInfos)
                     {
                         if(string.IsNullOrEmpty(m_SelectedGroupID) || string.IsNullOrEmpty(info.m_Group) || info.m_Group == m_SelectedGroupID)
                         {

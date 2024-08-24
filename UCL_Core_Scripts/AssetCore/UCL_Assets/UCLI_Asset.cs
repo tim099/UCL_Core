@@ -25,6 +25,7 @@ namespace UCL.Core
         public string m_Name;
         public string m_LocalizedName;
         public string m_Group;
+        public int m_SortOrder;
 
         public UCL_AssetTypeInfo()
         {
@@ -45,12 +46,26 @@ namespace UCL.Core
             {
                 m_LocalizedName = m_Name;
             }
-
-            var attr = type.GetCustomAttribute<System.Configuration.SettingsGroupNameAttribute>();
-            if (attr != null)
             {
-                m_Group = attr.GroupName;
+                var attr = type.GetCustomAttribute<System.Configuration.SettingsGroupNameAttribute>();
+                if (attr != null)
+                {
+                    m_Group = attr.GroupName;
+                }
             }
+            {
+                var attr = type.GetCustomAttribute<UCL.Core.ATTR.UCL_SortAttribute>();
+                if (attr != null)
+                {
+                    m_SortOrder = attr.m_SortOrder;
+                }
+                else
+                {
+                    m_SortOrder = int.MaxValue;
+                }
+                //[UCL.Core.ATTR.UCL_Sort(1)]
+            }
+
         }
     }
     public interface UCLI_Asset : UCLI_CommonEditable, UCLI_Preview

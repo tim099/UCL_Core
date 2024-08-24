@@ -89,6 +89,7 @@ namespace UCL.Core
         {
             get
             {
+                if (s_Ins == null) return false;
                 return Ins.m_Initialized;
             }
         }
@@ -362,8 +363,12 @@ namespace UCL.Core
         /// <returns></returns>
         public static async UniTask WaitUntilInitialized(CancellationToken iToken)
         {
+            if (Initialized)
+            {
+                return;
+            }
             var moduleService = UCL_ModuleService.Ins;
-            await UniTask.WaitUntil(() => Initialized, cancellationToken: iToken);
+            await UniTask.WaitUntil(() => moduleService.m_Initialized, cancellationToken: iToken);
         }
         /// <summary>
         /// Init UCL_ModuleService

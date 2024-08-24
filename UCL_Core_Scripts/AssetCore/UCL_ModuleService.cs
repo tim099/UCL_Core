@@ -123,9 +123,20 @@ namespace UCL.Core
 
             public string m_Version = "1.0.0";
 
+            /// <summary>
+            /// 用來設定AssetGroup排序
+            /// </summary>
+            public Dictionary<string, int> m_AssetGroupSortingOrder = new ();
+
             public void OnGUI(UCL_ObjectDictionary iDataDic)
             {
-
+                foreach(var group in UCLI_Asset.GetAssetGroups())
+                {
+                    if (!m_AssetGroupSortingOrder.ContainsKey(group))
+                    {
+                        m_AssetGroupSortingOrder[group] = 99;
+                    }
+                }
                 UCL_GUILayout.DrawObjExSetting aDrawObjExSetting = new UCL_GUILayout.DrawObjExSetting();
                 aDrawObjExSetting.OnShowField = () =>
                 {
@@ -414,7 +425,37 @@ namespace UCL.Core
             m_Initialized = true;
         }
 
+        private List<string> m_AssetGroups = null;
+        public List<string> GetAssetGroups()
+        {
+            if (m_AssetGroups == null)
+            {
+                var assetGroupSortingOrder = m_Config.m_AssetGroupSortingOrder;
+                foreach (var group in UCLI_Asset.GetAssetGroups())
+                {
+                    if (!assetGroupSortingOrder.ContainsKey(group))
+                    {
+                        assetGroupSortingOrder[group] = 99;
+                    }
+                }
+                int GetGroupIndex(string iGroup)
+                {
+                    if (!assetGroupSortingOrder.ContainsKey(iGroup))
+                    {
+                        return int.MaxValue;
+                    }
+                    return assetGroupSortingOrder[iGroup];
+                }
+                m_AssetGroups = UCLI_Asset.GetAssetGroups();
+                m_AssetGroups.Sort((a, b) =>
+                {
+                    return GetGroupIndex(a).CompareTo(GetGroupIndex(b));
+                });
+            }
 
+
+            return m_AssetGroups;
+        }
         public UCL_AssetCommonMeta GetAssetMeta(string iTypeName)
         {
             if(m_CurEditModule == null)

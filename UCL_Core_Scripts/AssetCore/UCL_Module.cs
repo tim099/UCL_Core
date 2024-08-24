@@ -289,11 +289,9 @@ namespace UCL.Core
                 using (var aScope = new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("Asset Group", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    var groups = UCLI_Asset.GetAssetGroups().ToList();
-                    groups.Insert(0, string.Empty);
+                    var groups = UCL_ModuleService.Ins.GetAssetGroups();//UCLI_Asset.GetAssetGroups();
 
-                    var localizedGroups = UCLI_Asset.GetLocalizedAssetGroups().ToList();
-                    localizedGroups.Insert(0, string.Empty);
+                    var localizedGroups = UCLI_Asset.GetLocalizedAssetGroups();
 
                     int index = groups.IndexOf(m_SelectedGroupID);
                     int newIndex = UCL_GUILayout.PopupAuto(index, localizedGroups, iDataDic, "SelectedGroupID");

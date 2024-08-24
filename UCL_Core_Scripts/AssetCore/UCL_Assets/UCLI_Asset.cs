@@ -182,6 +182,7 @@ namespace UCL.Core
                     }
                 }
                 s_AssetGroups = groups.ToList();
+                s_AssetGroups.Insert(0, string.Empty);//string.Empty == Any
             }
             return s_AssetGroups;
         }

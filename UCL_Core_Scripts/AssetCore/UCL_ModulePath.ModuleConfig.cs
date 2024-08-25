@@ -356,8 +356,21 @@ namespace UCL.Core
 
                 public string GetAssetPath(Type iAssetType, string iID)
                 {
-                    string aFolderPath = GetAssetFolderPath(iAssetType);
-                    string aPath = Path.Combine(aFolderPath, $"{iID}.json");
+                    string aFolderPath = string.Empty;
+                    string aPath = string.Empty;
+                    try
+                    {
+                        aFolderPath = GetAssetFolderPath(iAssetType);
+                        aPath = Path.Combine(aFolderPath, $"{iID}.json");
+                    }catch (Exception ex)
+                    {
+                        Debug.LogException(ex);
+                        Debug.LogError($"{GetType().Name}.GetAssetPath iAssetType:{iAssetType},iID:{iID}" +
+                            $"\nPath:{aPath}" +
+                            $"\nFolderPath:{aFolderPath}" +
+                            $", Exception:{ex}");
+                    }
+
                     return aPath;
                 }
                 /// <summary>

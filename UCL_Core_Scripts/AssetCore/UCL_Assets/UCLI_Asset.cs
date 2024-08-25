@@ -7,6 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using UCL.Core.ATTR;
 using UCL.Core.LocalizeLib;
 using UnityEngine;
 
@@ -157,6 +158,10 @@ namespace UCL.Core
                 foreach (var aType in aAllTypes)
                 {
                     if (aType.IsGenericType || aType.IsInterface)
+                    {
+                        continue;
+                    }
+                    if (aType.GetCustomAttribute<UCL_IgnoreAssetAttribute>() != null)
                     {
                         continue;
                     }

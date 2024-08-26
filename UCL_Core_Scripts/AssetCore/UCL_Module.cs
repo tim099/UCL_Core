@@ -104,11 +104,20 @@ namespace UCL.Core
 
         protected bool m_IsLoading = false;
         protected bool m_Installing = false;
+
         /// <summary>
         /// 編輯器內 選取的GroupID
         /// </summary>
-        protected string m_SelectedGroupID = string.Empty;
-        protected string m_SelectedAssetID = string.Empty;
+        static protected string SelectedGroupID {
+            get => PlayerPrefs.GetString("SelectedGroupID", string.Empty);
+            set => PlayerPrefs.SetString("SelectedGroupID", value);
+        }
+
+        static protected string SelectedAssetID
+        {
+            get => PlayerPrefs.GetString("SelectedAssetID", string.Empty);
+            set => PlayerPrefs.SetString("SelectedAssetID", value);
+        }
         protected UCL_ModulePath.PersistantPath.ModuleEntry m_ModuleEntry;
         //protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
         #region Interface
@@ -293,9 +302,9 @@ namespace UCL.Core
 
                     var localizedGroups = UCLI_Asset.GetLocalizedAssetGroups();
 
-                    int index = groups.IndexOf(m_SelectedGroupID);
+                    int index = groups.IndexOf(SelectedGroupID);
                     int newIndex = UCL_GUILayout.PopupAuto(index, localizedGroups, iDataDic, "SelectedGroupID");
-                    m_SelectedGroupID = groups[newIndex];
+                    SelectedGroupID = groups[newIndex];
                 }
                 using (var aScope = new GUILayout.HorizontalScope())
                 {
@@ -311,7 +320,7 @@ namespace UCL.Core
                     var aAllAssetTypeLocalizedNames = new List<string>();
                     foreach (var info in assetInfos)
                     {
-                        if(string.IsNullOrEmpty(m_SelectedGroupID) || string.IsNullOrEmpty(info.m_Group) || info.m_Group == m_SelectedGroupID)
+                        if(string.IsNullOrEmpty(SelectedGroupID) || string.IsNullOrEmpty(info.m_Group) || info.m_Group == SelectedGroupID)
                         {
                             aAllAssetTypeLocalizedNames.Add(info.m_LocalizedName);
                             aAllAssetTypeNames.Add(info.m_Name);
@@ -323,14 +332,14 @@ namespace UCL.Core
                         aAllAssetTypeNames.Add(string.Empty);
                     }
 
-                    int aSelectedID = aAllAssetTypeNames.IndexOf(m_SelectedAssetID);
+                    int aSelectedID = aAllAssetTypeNames.IndexOf(SelectedAssetID);
                     aSelectedID = UCL_GUILayout.PopupAuto(aSelectedID, aAllAssetTypeLocalizedNames, iDataDic, "SelectAssetType");//選取要編輯的UCL_Asset類型
-                    m_SelectedAssetID = aAllAssetTypeNames[aSelectedID];
+                    SelectedAssetID = aAllAssetTypeNames[aSelectedID];
 
 
                     if (aEdit)//編輯按鈕被按下
                     {
-                        var aType = aAllAssetTypeInfos[m_SelectedAssetID].m_Type;
+                        var aType = aAllAssetTypeInfos[SelectedAssetID].m_Type;
                         try
                         {
                             UCLI_Asset aUtil = UCLI_Asset.GetUtilByType(aType);//Get Util

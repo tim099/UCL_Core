@@ -619,7 +619,7 @@ namespace UCL.Core
         }
         virtual protected void SaveConfig()
         {
-
+            m_AssetGroups = null;//Clear cache
             if (Application.isEditor)//Check streamming assets for BuiltinModules
             {
                 if(ModuleEditType == UCL_ModuleEditType.Builtin)

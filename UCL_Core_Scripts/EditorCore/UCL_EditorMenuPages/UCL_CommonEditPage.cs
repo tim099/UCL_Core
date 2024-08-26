@@ -161,7 +161,9 @@ namespace UCL.Core.Page
                 GUILayout.Box("m_Data == null");
                 return;
             }
+            UCLI_Asset.s_CurOnGUIAsset = m_Data;
             m_Data.OnGUI(m_DataDic);
+            UCLI_Asset.s_CurOnGUIAsset = null;
         }
     }
 }

@@ -92,6 +92,9 @@ namespace UCL.Core
         string GroupID { get; set; }
 
         #region static
+
+        public static UCLI_CommonEditable s_CurOnGUIAsset = null;
+
         /// <summary>
         /// 當前正在CreateData的RCGI_CommonData
         /// </summary>

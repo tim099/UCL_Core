@@ -52,6 +52,10 @@ namespace UCL.Core.Page
             {
                 UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleConfig.InstallFolder);
             }
+            if (GUILayout.Button("RefreshAllDatas(With Reflection)", UCL_GUIStyle.ButtonStyle))
+            {
+                UCLI_Asset.RefreshAllAssetsWithReflection();
+            }
 #endif
         }
         protected override void ContentOnGUI()

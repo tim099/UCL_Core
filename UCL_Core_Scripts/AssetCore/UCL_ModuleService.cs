@@ -82,7 +82,21 @@ namespace UCL.Core
             private set => Ins.m_PathConfig.m_ModuleEditType = value;
         }
         public static UCL_Module CurEditModule => Ins.m_CurEditModule;
-
+        public UCL_Module CurModule
+        {
+            get
+            {
+                if(m_CurEditModule != null)
+                {
+                    return m_CurEditModule;
+                }
+                if(!m_LoadedModules.IsNullOrEmpty())
+                {
+                    return m_LoadedModules[0];
+                }
+                return null;
+            }
+        }
 
         protected static UCL_ModuleService s_Ins = null;
         public static bool Initialized
@@ -212,7 +226,17 @@ namespace UCL.Core
             /// ModuleEntry of this asset
             /// 路徑相關的所有設定
             /// </summary>
-            public UCL_ModulePath.PersistantPath.ModuleEntry ModuleEntry => p_Module.ModuleEntry;
+            public UCL_ModulePath.PersistantPath.ModuleEntry ModuleEntry {
+                get
+                {
+                    if(p_Module == null)
+                    {
+                        Debug.LogError($"{GetType().Name}.ModuleEntry p_Module == null,AssetType:{AssetType.Name}, ID:{ID}");
+                        return null;
+                    }
+                    return p_Module.ModuleEntry;
+                }
+            }
             /// <summary>
             /// 存檔路徑
             /// </summary>
@@ -463,11 +487,7 @@ namespace UCL.Core
         }
         public UCL_AssetCommonMeta GetAssetMeta(string iTypeName)
         {
-            if(m_CurEditModule == null)
-            {
-                return m_LoadedModules[0].GetAssetMeta(iTypeName);
-            }
-            return m_CurEditModule.GetAssetMeta(iTypeName);
+            return CurModule.GetAssetMeta(iTypeName);
         }
         /// <summary>
         /// get all modules ID of current ModuleEditType
@@ -603,7 +623,7 @@ namespace UCL.Core
                     }
                 }
                 //Debug.LogError($"GetAssetConfig iAssetType:{iAssetType},iID:{iID}, Asset not exist!!");
-                aConfig.Init(m_CurEditModule, iAssetType, iID);
+                aConfig.Init(CurModule, iAssetType, iID);
             }
             return aConfig;
         }

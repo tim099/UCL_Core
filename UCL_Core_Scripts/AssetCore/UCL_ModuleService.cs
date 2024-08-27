@@ -40,6 +40,18 @@ namespace UCL.Core
             EditModule,
         }
 
+        public enum EditorInstallMode
+        {
+            /// <summary>
+            /// 預設直接複製模組資料夾到安裝處
+            /// </summary>
+            Default,
+            /// <summary>
+            /// 模擬實機運行時的安裝方式
+            /// </summary>
+            UnZip,
+        }
+
         #region static
         public static UCL_ModuleService Ins
         {
@@ -136,12 +148,17 @@ namespace UCL.Core
             /// </summary>
             public bool m_ForceInstallInEditor = false;
 
+
             public string m_Version = "1.0.0";
 
             /// <summary>
             /// 用來設定AssetGroup排序
             /// </summary>
             public Dictionary<string, int> m_AssetGroupSortingOrder = new ();
+
+
+
+            public EditorInstallMode m_EditorInstallMode = EditorInstallMode.Default;
 
             public void OnGUI(UCL_ObjectDictionary iDataDic)
             {
@@ -590,7 +607,7 @@ namespace UCL.Core
             if(m_CurEditModule == null)
             {
                 Debug.LogError($"{GetType().Name}.CreateAssetConfig, m_CurEditModule == null");
-                return GetAssetConfig(iAssetType,iID);
+                return GetAssetConfig(iAssetType, iID);
             }
             
             //ClearAssetsCache(iAssetType, iID);
@@ -776,10 +793,6 @@ namespace UCL.Core
 
             return aModule;
         }
-        /// <summary>
-        /// 當前模組是否可以編輯
-        /// </summary>
-        virtual protected bool CanEdit => !string.IsNullOrEmpty(m_Config.m_CurrentEditModule);
         
         virtual public void ResumeState()
         {
@@ -803,14 +816,17 @@ namespace UCL.Core
 
             //EditModule(m_Config.m_CurrentEditModule);
         }
-        virtual public void EditModule(string iModuleID)
+        virtual public void EditModule(string iModuleID, bool iShowModuleEditPage = true)
         {
-            if (!CanEdit)//不可編輯
+            if (string.IsNullOrEmpty(iModuleID))//不可編輯
             {
                 return;
             }
             SetCurrentEditModule(iModuleID);
-            UCL_ModuleEditPage.Create(m_CurEditModule);
+            if (iShowModuleEditPage)
+            {
+                UCL_ModuleEditPage.Create(m_CurEditModule);
+            }
             SetState(State.EditModule);
         }
         

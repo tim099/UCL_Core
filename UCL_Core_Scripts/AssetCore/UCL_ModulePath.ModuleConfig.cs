@@ -114,140 +114,86 @@ namespace UCL.Core
                             Directory.Delete(aTargetPath, true);//Delete all old files before install
                         }
 
-#if UNITY_EDITOR
-                        //if (!File.Exists(ZipFilePath))//if in Editor and Zip file not exist
-                        if(Application.isEditor)
+                        async UniTask InstallModule()
                         {
-                            //Debug.LogWarning($"Install in Editor:{ID},!File.Exists({ZipFilePath}),CopyDirectory({RootFolder},{aTargetPath})");
-
-                            //Editor內改為永遠使用當前Builtin資料夾安裝
-                            if (Directory.Exists(RootFolder))
+                            try
                             {
-                                UCL.Core.FileLib.Lib.CopyDirectory(RootFolder, aTargetPath);
+                                byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
+                                if (aBytes == null)
+                                {
+                                    Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
+                                    return;
+                                }
+
+                                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
+
+                                //var aStream = await UCL_StreamingAssets.FullPath.LoadNativeData(ZipFilePath);
+                                UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
+                            }
+                            catch (System.Exception ex)
+                            {
+                                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory ", $"Exception:{ex}");
+                                Debug.LogException(ex);
+                            }
+                        }
+
+
+#if UNITY_EDITOR
+                        //模擬Runtime安裝流程
+                        if (Application.isEditor)
+                        {
+                            var aInstallMode = UCL_ModuleService.Ins.ModuleConfig.m_EditorInstallMode;
+                            Debug.LogWarning($"Install:{ID},aInstallMode:{aInstallMode}");
+                            switch (aInstallMode)
+                            {
+                                case UCL_ModuleService.EditorInstallMode.Default:
+                                    {
+                                        if (Directory.Exists(RootFolder))
+                                        {
+                                            UCL.Core.FileLib.Lib.CopyDirectory(RootFolder, aTargetPath);
+                                        }
+                                        break;
+                                    }
+                                case UCL_ModuleService.EditorInstallMode.UnZip:
+                                    {
+                                        var aZipFilePath = ZipFilePath;
+                                        if (File.Exists(aZipFilePath))//if in Editor and Zip file not exist
+                                        {
+                                            File.Delete(aZipFilePath);
+                                        }
+                                        ZipModule();
+                                        await InstallModule();
+                                        File.Delete(aZipFilePath);
+                                        break;
+                                    }
                             }
 
                             return;
                         }
+
+
+                        //Editor專用的安裝流程
+                        //if(Application.isEditor)
+                        //{
+                        //    //Debug.LogWarning($"Install in Editor:{ID},!File.Exists({ZipFilePath}),CopyDirectory({RootFolder},{aTargetPath})");
+
+                        //    //Editor內改為永遠使用當前Builtin資料夾安裝
+                        //    if (Directory.Exists(RootFolder))
+                        //    {
+                        //        UCL.Core.FileLib.Lib.CopyDirectory(RootFolder, aTargetPath);
+                        //    }
+
+                        //    return;
+                        //}
+
+
 #endif
                         //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_StreamingAssets.FullPath.LoadBytes", $"ZipFilePath:{ZipFilePath}");
 
 
-                        try
-                        {
-                            byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
-                            if (aBytes == null)
-                            {
-                                Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
-                                return;
-                            }
 
-                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
+                        await InstallModule();
 
-                            //var aStream = await UCL_StreamingAssets.FullPath.LoadNativeData(ZipFilePath);
-                            UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
-
-                            //using (Stream aStream = new MemoryStream(aBytes))
-                            //{
-                            //    await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig Create ZipArchive", $"aStream.Length:{aStream.Length}");
-                            //    using (ZipArchive aZip = new ZipArchive(aStream, ZipArchiveMode.Read, true))
-                            //    {
-                            //        //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aZip.ExtractToDirectory", $"aZip.Entries:{aZip.Entries.ConcatString(iEntry => iEntry.Name)}");
-                            //        //aZip.ExtractToDirectory(aTargetPath, true);
-                            //        foreach (var aEntry in aZip.Entries)
-                            //        {
-                            //            string aCompleteFileName = Path.Combine(aTargetPath, aEntry.FullName);
-                            //            string aDirectory = Path.GetDirectoryName(aCompleteFileName);
-                            //            if (!Directory.Exists(aDirectory))
-                            //            {
-                            //                Directory.CreateDirectory(aDirectory);
-                            //            }
-                            //            await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntry.ExtractToFile", 
-                            //                $"aCompleteFileName:{aCompleteFileName},aDirectory:{aDirectory}" +
-                            //                $"\nCompressedLength:{aEntry.CompressedLength},Length:{aEntry.Length}");
-                            //            //aEntry.ExtractToFile(aCompleteFileName, true);
-
-                            //            using (Stream aEntryStream = aEntry.Open())
-                            //            {
-                            //                await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"UCL.Core.FileLib.Lib.WriteToFile", $"CanSeek:{aEntryStream.CanSeek}" +
-                            //                    $",CanRead:{aEntryStream.CanRead},Type:{aEntryStream.GetType().FullName},aEntryStream:{aEntryStream.UCL_ToString()}");
-                            //                //if(aEntryStream is DeflateStream aDeflateStream)
-                            //                //{
-
-                            //                //}
-                            //                //Stream aEntryStream2 = new MemoryStream();
-                            //                //aEntryStream.CopyTo(aEntryStream2);
-
-                            //                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream2.WriteToFile", $"CanSeek:{aEntryStream2.CanSeek}" +
-                            //                //    $",CanRead:{aEntryStream2.CanRead},Type:{aEntryStream2.GetType().FullName}");
-                            //                if (File.Exists(aCompleteFileName))
-                            //                {
-                            //                    File.Delete(aCompleteFileName);
-                            //                }
-
-
-                            //                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream Read", $"aEntryStream.ReadByte():{aEntryStream2.ReadByte()}");
-                            //                await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream Read", $"aEntryStream.ReadByte():{aEntryStream.ReadByte()}");
-                            //                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream Read", $"aEntryStream.ReadByte():{aEntryStream.ReadByte()}");
-                            //                UCL.Core.FileLib.Lib.WriteToFile(aEntryStream, aCompleteFileName, FileMode.Create);
-                            //                //File.WriteAllText(aCompleteFileName, "Test");
-                            //            }
-
-                                        
-                            //        }
-                            //    }
-                            //}
-
-                            //UCL_ZipFile.ExtractToDirectory(aBytes, aTargetPath);
-
-                            //try to write to file before unzip
-                            //string aTmpZipPath = Path.Combine(Application.persistentDataPath, $"{ID}.zip");
-                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"File.WriteAllBytes", $"aTmpZipPath:{aTmpZipPath}");
-                            //Unity.IO.Compression
-                            //File.WriteAllBytes(aTmpZipPath, aBytes);
-
-                            //using (ZipArchive aZip = ZipFile.Open(aTmpZipPath, ZipArchiveMode.Read))
-                            //{
-                            //    foreach (var aEntry in aZip.Entries)
-                            //    {
-                            //        string aCompleteFileName = Path.Combine(aTargetPath, aEntry.FullName);
-                            //        string aDirectory = Path.GetDirectoryName(aCompleteFileName);
-                            //        if (!Directory.Exists(aDirectory))
-                            //        {
-                            //            Directory.CreateDirectory(aDirectory);
-                            //        }
-                            //        await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntry.ExtractToFile", $"aCompleteFileName:{aCompleteFileName},aDirectory:{aDirectory}");
-                            //        using (Stream aEntryStream = aEntry.Open())
-                            //        {
-                            //            await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"UCL.Core.FileLib.Lib.WriteToFile", $"aEntryStream.CanSeek:{aEntryStream.CanSeek}" +
-                            //                $",aEntryStream.CanRead:{aEntryStream.CanRead}");
-                            //            if (File.Exists(aCompleteFileName))
-                            //            {
-                            //                File.Delete(aCompleteFileName);
-                            //            }
-                            //            await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream Read", $"aEntryStream.ReadByte():{aEntryStream.ReadByte()}");
-                            //            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream Read", $"aEntryStream.ReadByte():{aEntryStream.ReadByte()}");
-                            //            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aEntryStream Read", $"aEntryStream.ReadByte():{aEntryStream.ReadByte()}");
-                            //            //UCL.Core.FileLib.Lib.WriteToFile(aEntryStream, aCompleteFileName, FileMode.Create);
-                            //            File.WriteAllText(aCompleteFileName, "Test");
-                            //        }
-
-                            //        //aEntry.ExtractToFile(aCompleteFileName, true);
-                            //    }
-                            //}
-                            //if (Directory.Exists(aTargetPath))
-                            //{
-                            //    Directory.Delete(aTargetPath);
-                            //}
-                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ZipFile.ExtractToDirectory", $"aTargetPath:{aTargetPath}");
-                            //ZipFile.ExtractToDirectory(aTmpZipPath, aTargetPath, true);
-                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"File.Delete", $"aTmpZipPath:{aTmpZipPath}");
-                            //File.Delete(aTmpZipPath);
-                        }
-                        catch(System.Exception ex)
-                        {
-                            //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory ", $"Exception:{ex}");
-                            Debug.LogException(ex);
-                        }
 
                         //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aZip.ExtractToDirectory Done!!", "");
                         //Debug.LogError($"Install ID:{ID},aTargetPath:{aTargetPath}" +

@@ -628,20 +628,36 @@ namespace UCL.Core.FileLib
                     {
                         foreach (var aEntry in aZip.Entries)
                         {
-                            string aCompleteFileName = Path.Combine(iTargetPath, aEntry.FullName);
-                            string aDirectory = Path.GetDirectoryName(aCompleteFileName);
-                            if (!Directory.Exists(aDirectory))
+                            try
                             {
+                                string aCompleteFileName = Path.Combine(iTargetPath, aEntry.FullName);
+                                string aDirectory = Path.GetDirectoryName(aCompleteFileName);
                                 Directory.CreateDirectory(aDirectory);
-                            }
-                            using (Stream aEntryStream = aEntry.Open())
-                            {
-                                if (File.Exists(aCompleteFileName))
+
+                                try
                                 {
-                                    File.Delete(aCompleteFileName);
+                                    using (Stream aEntryStream = aEntry.Open())
+                                    {
+                                        if (File.Exists(aCompleteFileName))
+                                        {
+                                            File.Delete(aCompleteFileName);
+                                        }
+                                        UCL.Core.FileLib.Lib.WriteToFile(aEntryStream, aCompleteFileName, FileMode.Create, FileAccess.Write, FileShare.Write);
+                                    }
                                 }
-                                UCL.Core.FileLib.Lib.WriteToFile(aEntryStream, aCompleteFileName, FileMode.Create, FileAccess.Write, FileShare.Write);
+                                catch (System.Exception ex)
+                                {
+                                    Debug.LogException(ex);
+                                    Debug.LogError($"ZipLib.UnzipFromBytes aDirectory:{aDirectory},Exception:{ex}");
+                                }
                             }
+                            catch (System.Exception ex)
+                            {
+                                Debug.LogException(ex);
+                                Debug.LogError($"ZipLib.UnzipFromBytes Entry:{aEntry.FullName},Exception:{ex}");
+                            }
+
+
                         }
                     }
                 }

@@ -146,8 +146,7 @@ namespace UCL.Core.Page
             UCLI_Asset iUtil,
             IList<string> iIDs, UCL.Core.UCL_ObjectDictionary iDic,
             System.Action<string> iEditAct, System.Action<string> iPreviewAct, System.Action<string> iDeleteAct,
-            UCL_AssetCommonMeta iMeta = null,
-            int iFontSize = 20)
+            UCL_AssetCommonMeta iMeta = null)
         {
             using(var aScopeV = new GUILayout.VerticalScope("box"))
             {
@@ -164,30 +163,38 @@ namespace UCL.Core.Page
                         Debug.LogException(iE);
                     }
                 }
-                float aScale = UCL_GUIStyle.CurStyleData.Scale;
-                int aVerticalScopeWidth = Mathf.RoundToInt(aScale * 420);
+                float scale = UCL_GUIStyle.CurStyleData.Scale;
+                int aVerticalScopeWidth = Mathf.RoundToInt(scale * 420);
 
-                int EditGroupWidth = Mathf.RoundToInt(aScale * 150);
-                bool aIsEditGroup = false;
+                int EditGroupWidth = Mathf.RoundToInt(scale * 150);
+                bool editGroup = false;
+                bool showDeleteButton = false;
                 if (iMeta != null)
                 {
-                    aIsEditGroup = iMeta.m_EditGroup;
+                    editGroup = iMeta.m_EditGroup;
+                    showDeleteButton = iMeta.ShowDeleteButton;
                 }
-                if (aIsEditGroup)
+                if (editGroup)
                 {
-                    aVerticalScopeWidth += (EditGroupWidth + Mathf.RoundToInt(aScale * 10));
+                    aVerticalScopeWidth += (EditGroupWidth + Mathf.RoundToInt(scale * 10));
                 }
-                int aScrollWidth = aVerticalScopeWidth + Mathf.RoundToInt(aScale * 40);
-                GUILayout.BeginHorizontal();
-                iDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDic.GetData("ScrollPos", Vector2.zero), GUILayout.MinWidth(aScrollWidth)));
+                int buttonWidth = Mathf.RoundToInt(60 * scale);
+                if (showDeleteButton)
+                {
+                    aVerticalScopeWidth += buttonWidth;
+                }
 
-                using (var aScope = new GUILayout.VerticalScope("box", GUILayout.Width(aVerticalScopeWidth)))//
+                int aScrollWidth = aVerticalScopeWidth;// + Mathf.RoundToInt(scale * 50);
+                //GUILayout.BeginHorizontal();
+                iDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDic.GetData("ScrollPos", Vector2.zero), GUILayout.Width(aScrollWidth)));
+                
+                //using (var aScope = new GUILayout.VerticalScope("box", GUILayout.Width(aVerticalScopeWidth)))//
                 {
                     if (iMeta != null)
                     {
                         iIDs = iMeta.GetAllShowData(iUtil, iIDs);
                     }
-                    float buttonWidth = 50 * aScale;
+                    
                     for (int i = 0; i < iIDs.Count; i++)
                     {
                         string aID = iIDs[i];
@@ -199,8 +206,9 @@ namespace UCL.Core.Page
                         {
                             continue;
                         }
+                        var heightStyle = GUILayout.Height(30 * scale);
                         GUILayout.BeginHorizontal();
-                        using (var aScope2 = new GUILayout.HorizontalScope("box"))
+                        using (var aScope2 = new GUILayout.HorizontalScope("box", heightStyle))
                         {
                             string aDisplayName = UCL_LocalizeManager.GetID(aID);
                             
@@ -209,32 +217,43 @@ namespace UCL.Core.Page
                             {
                                 aDisplayName = aRegex.HightLight(aDisplayName, aSearchName, Color.red);
                             }
-
-                            if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.GetButtonStyle(Color.red, 16), GUILayout.Width(buttonWidth)))
+                            const int FontSize = 14;
+                            if (showDeleteButton)
                             {
-                                Page.UCL_OptionPage.ConfirmDelete(aID, () => iDeleteAct(aID));
+                                if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"),
+                                    UCL_GUIStyle.GetButtonStyle(Color.red, FontSize), heightStyle, GUILayout.Width(buttonWidth)))
+                                {
+                                    Page.UCL_OptionPage.ConfirmDelete(aID, () => iDeleteAct(aID));
+                                }
                             }
 
-                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, GUILayout.Width(200 * aScale));
-                            if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.GetButtonStyle(Color.white, 16), GUILayout.Width(buttonWidth)))
+
+                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, heightStyle, GUILayout.Width(200 * scale));
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), 
+                                UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), heightStyle, GUILayout.Width(buttonWidth)))
                             {
                                 iEditAct(aID);
                                 //RCG_EditItemPage.Create(RCG_ItemData.GetItemData(aID));
                             }
-                            if (GUILayout.Button(UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.GetButtonStyle(Color.white, 16), GUILayout.Width(buttonWidth)))
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Preview"), 
+                                UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), heightStyle, GUILayout.Width(buttonWidth)))
                             //if (UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Preview"), iFontSize))
                             {
                                 iPreviewAct(aID);
                             }
-
-                        }
-                        if (aIsEditGroup)//編輯分組
-                        {
-                            using (var aScope2 = new GUILayout.HorizontalScope("box", GUILayout.MinWidth(EditGroupWidth)))
+                            if (editGroup)//編輯分組
                             {
-                                iMeta.OnGUI_ShowData(iUtil, aID, iDic.GetSubDic(aID), EditGroupWidth - Mathf.RoundToInt(aScale * 5));
+                                using (var aScope3 = new GUILayout.HorizontalScope("box", GUILayout.MinWidth(EditGroupWidth)))
+                                {
+                                    iMeta.OnGUI_ShowData(iUtil, aID, iDic.GetSubDic(aID), EditGroupWidth - Mathf.RoundToInt(scale * 5));
+                                }
                             }
+                            GUILayout.Space(scale * 20);
+                            //GUILayout.FlexibleSpace();
                         }
+
+                        //GUILayout.FlexibleSpace();
+                        //GUILayout.Space(scale * 10);
                         GUILayout.EndHorizontal();
                     }
                 }
@@ -242,10 +261,11 @@ namespace UCL.Core.Page
                 {
                     iMeta.OnGUIEnd();
                 }
+
                 GUILayout.EndScrollView();
 
 
-                GUILayout.EndHorizontal();
+                //GUILayout.EndHorizontal();
             }
         }
         virtual protected void DrawSelectTargets()

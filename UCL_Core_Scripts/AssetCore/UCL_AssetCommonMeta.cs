@@ -54,7 +54,10 @@ namespace UCL.Core
             /// </summary>
             public string m_SelectedGroup = string.Empty;
             #endregion
-
+            /// <summary>
+            /// Show delete button
+            /// </summary>
+            public bool m_ShowDeleteButton = false;
 
 
             public Dictionary<string, GroupData> m_GroupDatas = new();
@@ -235,6 +238,12 @@ namespace UCL.Core
         //public bool m_ShowAll = true;
         //public bool m_ShowOthers = true;
         public bool m_EditGroup = false;
+
+        public bool ShowDeleteButton
+        {
+            get => PlayerPrefsMeta.m_ShowDeleteButton;
+            set => PlayerPrefsMeta.m_ShowDeleteButton = value;
+        }
         private System.Action<string> m_SaveAct = null;
 
 
@@ -261,8 +270,14 @@ namespace UCL.Core
 
             m_EditGroup = UCL_GUILayout.CheckBox(m_EditGroup);
             GUILayout.Label(UCL_LocalizeManager.Get("EditGroup"), UCL_GUIStyle.LabelStyle);
+            float space = UCL_GUIStyle.GetScaledSize(10);
+            GUILayout.Space(space);
 
-            GUILayout.Space(10);
+            ShowDeleteButton = UCL_GUILayout.CheckBox(ShowDeleteButton);
+            GUILayout.Label(UCL_LocalizeManager.Get("ShowDeleteButton"), UCL_GUIStyle.LabelStyle);
+            
+
+            GUILayout.Space(space);
             if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), UCL_GUIStyle.ButtonStyle))
             {
                 Save();

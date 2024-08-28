@@ -48,17 +48,19 @@ namespace UCL.Core.Page
             string aTitle = string.Empty;
             if (UCL_LocalizeManager.ContainsKey(iDeleteTarget))
             {
-                aTitle = UCL_LocalizeManager.Get("ConfirmDelete", iDeleteTarget);
+                aTitle = UCL_LocalizeManager.Get("ConfirmDelete", UCL_LocalizeManager.GetID(iDeleteTarget));
             }
             else
             {
                 aTitle = $"Delete {iDeleteTarget}?";
             }
+            const int FontSize = 20;
             var aPage = new UCL_OptionPage(aTitle, string.Empty
                         , new ButtonData(UCL_LocalizeManager.Get("Delete"), () => {
                             iConfirmAct?.Invoke();
-                        }, UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red))
-                        , new ButtonData(UCL_LocalizeManager.Get("Cancel")));
+                        }, UCL_GUIStyle.GetButtonStyle(Color.red, FontSize))
+                        , new ButtonData(UCL_LocalizeManager.Get("Cancel"), 
+                        iStyle: UCL_GUIStyle.GetButtonStyle(Color.white, FontSize)));
             UCL.Core.UI.UCL_GUIPageController.CurrentRenderIns.Push(aPage);
             return aPage;
         }

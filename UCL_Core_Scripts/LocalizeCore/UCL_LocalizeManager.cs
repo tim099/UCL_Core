@@ -152,7 +152,7 @@ namespace UCL.Core.LocalizeLib
             string localizedId = Get(iKey);
             if(localizedId != iKey)
             {
-                localizedId = $"{localizedId}({iKey})";
+                localizedId = $"{localizedId} ({iKey})";
             }
 
             return localizedId;

@@ -14,6 +14,7 @@ using System.IO.Compression;
 using UCL.Core.UI;
 using UCL.Core;
 using UCL.Core.Page;
+using RCG.Page;
 
 namespace UCL.Core.Page
 {
@@ -133,6 +134,15 @@ namespace UCL.Core.Page
             GUILayout.Space(10);
             var aType = m_Data.GetType();
             GUILayout.Label($"[{UCL_ModuleService.CurEditModuleID}] {aType.Name}", UCL_GUIStyle.LabelStyle);
+
+            if(m_Data is UCLI_Asset asset)
+            {
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Rename"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    UCL_RenamePage.Create(asset);//open rename page
+                }
+            }
+
 #if UNITY_EDITOR
             if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {

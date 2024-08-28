@@ -6,9 +6,22 @@ using UnityEngine;
 
 namespace UCL.Core
 {
-    [System.Configuration.SettingsGroupName(UCL_AssetGroup.Config)]
+    [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Config)]
     public class UCL_ModulePlaylist : UCL_Asset<UCL_ModulePlaylist>
     {
+        public static UCL_ModulePlaylist DefaultPlaylist
+        {
+            get
+            {
+                if(s_DefaultPlaylist == null)
+                {
+                    s_DefaultPlaylist = new UCL_ModulePlaylist(UCL_ModuleEntry.CoreModuleID);
+                }
+                return s_DefaultPlaylist;
+            }
+        }
+        private static UCL_ModulePlaylist s_DefaultPlaylist;
+
         public UCL_ModulePlaylist() { }
         public UCL_ModulePlaylist(string iModuleID)
         {

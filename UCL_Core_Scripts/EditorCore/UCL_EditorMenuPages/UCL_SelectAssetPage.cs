@@ -165,7 +165,7 @@ namespace UCL.Core.Page
                     }
                 }
                 float aScale = UCL_GUIStyle.CurStyleData.Scale;
-                int aVerticalScopeWidth = Mathf.RoundToInt(aScale * 450);
+                int aVerticalScopeWidth = Mathf.RoundToInt(aScale * 420);
 
                 int EditGroupWidth = Mathf.RoundToInt(aScale * 150);
                 bool aIsEditGroup = false;
@@ -181,13 +181,13 @@ namespace UCL.Core.Page
                 GUILayout.BeginHorizontal();
                 iDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDic.GetData("ScrollPos", Vector2.zero), GUILayout.MinWidth(aScrollWidth)));
 
-                using (var aScope = new GUILayout.VerticalScope("box"))//, GUILayout.MinWidth(aVerticalScopeWidth)
+                using (var aScope = new GUILayout.VerticalScope("box", GUILayout.Width(aVerticalScopeWidth)))//
                 {
                     if (iMeta != null)
                     {
                         iIDs = iMeta.GetAllShowData(iUtil, iIDs);
                     }
-
+                    float buttonWidth = 50 * aScale;
                     for (int i = 0; i < iIDs.Count; i++)
                     {
                         string aID = iIDs[i];
@@ -202,24 +202,27 @@ namespace UCL.Core.Page
                         GUILayout.BeginHorizontal();
                         using (var aScope2 = new GUILayout.HorizontalScope("box"))
                         {
-                            string aDisplayName = aID;
+                            string aDisplayName = UCL_LocalizeManager.GetID(aID);
+                            
+
                             if (aRegex != null)//標記符合搜尋條件的部分
                             {
                                 aDisplayName = aRegex.HightLight(aDisplayName, aSearchName, Color.red);
                             }
 
-                            if (UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Delete"), iFontSize, Color.red, Color.white))
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.GetButtonStyle(Color.red, 16), GUILayout.Width(buttonWidth)))
                             {
                                 Page.UCL_OptionPage.ConfirmDelete(aID, () => iDeleteAct(aID));
                             }
 
-                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, GUILayout.MinWidth(160), GUILayout.MaxWidth(250));
-                            if (UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Edit"), iFontSize))
+                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, GUILayout.Width(200 * aScale));
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.GetButtonStyle(Color.white, 16), GUILayout.Width(buttonWidth)))
                             {
                                 iEditAct(aID);
                                 //RCG_EditItemPage.Create(RCG_ItemData.GetItemData(aID));
                             }
-                            if (UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Preview"), iFontSize))
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.GetButtonStyle(Color.white, 16), GUILayout.Width(buttonWidth)))
+                            //if (UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Preview"), iFontSize))
                             {
                                 iPreviewAct(aID);
                             }

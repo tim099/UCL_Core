@@ -13,7 +13,7 @@ using UnityEngine;
 using UnityEngine.UI;
 namespace UCL.Core
 {
-    [System.Configuration.SettingsGroupName(UCL_AssetGroup.Data)]
+    [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable
     {
         public enum DataLoadType

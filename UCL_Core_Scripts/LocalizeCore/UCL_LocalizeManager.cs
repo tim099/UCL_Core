@@ -144,6 +144,19 @@ namespace UCL.Core.LocalizeLib
             }
             return s_Instance.m_LocalizeData.GetLocalize(iKey);
         }
+
+
+        static public string GetID(string iKey)
+        {
+            if (s_Instance == null) return iKey;
+            string localizedId = Get(iKey);
+            if(localizedId != iKey)
+            {
+                localizedId = $"{localizedId}({iKey})";
+            }
+
+            return localizedId;
+        }
         /// <summary>
         /// Check if localize of iKey exist
         /// </summary>

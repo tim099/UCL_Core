@@ -43,15 +43,18 @@ namespace UCL.Core.Page
         {
             base.TopBarButtons();
             GUILayout.Label($"[{m_CurEditModule.ID}]", UCL_GUIStyle.LabelStyle);
-#if UNITY_EDITOR_WIN
-            if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+            if (GUILayout.Button(UCL_LocalizeManager.Get("OpenModuleRootFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleConfig.RootFolder);
             }
-            if (GUILayout.Button("Open Install Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_LocalizeManager.Get("OpenModuleInstallFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleConfig.InstallFolder);
             }
+
+#endif
+#if UNITY_EDITOR
             if (GUILayout.Button("RefreshAllDatas(With Reflection)", UCL_GUIStyle.ButtonStyle))
             {
                 UCLI_Asset.RefreshAllAssetsWithReflection();

@@ -48,10 +48,10 @@ namespace UCL.Core
                 m_LocalizedName = m_Name;
             }
             {
-                var attr = type.GetCustomAttribute<System.Configuration.SettingsGroupNameAttribute>();
+                var attr = type.GetCustomAttribute<UCL.Core.ATTR.UCL_GroupIDAttribute>();
                 if (attr != null)
                 {
-                    m_Group = attr.GroupName;
+                    m_Group = attr.m_ID;
                 }
             }
             {

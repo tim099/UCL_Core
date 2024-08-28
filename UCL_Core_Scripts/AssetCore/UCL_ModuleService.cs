@@ -65,6 +65,7 @@ namespace UCL.Core
                 return s_Ins;
             }
         }
+        public static event System.Action OnLoadModule;
 
         public const string ReflectKeyModResourcesPath = "ModResourcesPath";
         /// <summary>
@@ -744,6 +745,8 @@ namespace UCL.Core
         /// <returns></returns>
         public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist iModulePlayist)
         {
+            OnLoadModule?.Invoke();
+
             m_LoadedModules.Clear();
             m_AssetsCacheDic.Clear();
 

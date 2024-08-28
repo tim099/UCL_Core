@@ -12,7 +12,7 @@ using UCL.Core.Page;
 using UnityEngine;
 namespace UCL.Core
 {
-    [System.Configuration.SettingsGroupName(UCL_AssetGroup.Data)]
+    [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     public class UCL_GameObjectAsset : UCL_Asset<UCL_GameObjectAsset>, IDisposable
     {
         //[UCL.Core.ATTR.AlwaysExpendOnGUI]

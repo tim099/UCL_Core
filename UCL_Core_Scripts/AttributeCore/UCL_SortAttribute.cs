@@ -13,4 +13,16 @@ namespace UCL.Core.ATTR
             m_SortOrder = iSortOrder;
         }
     }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+    public class UCL_GroupIDAttribute : Attribute
+    {
+        public string m_ID;
+
+        public UCL_GroupIDAttribute(string iID)
+        {
+            m_ID = iID;
+        }
+    }
+
 }

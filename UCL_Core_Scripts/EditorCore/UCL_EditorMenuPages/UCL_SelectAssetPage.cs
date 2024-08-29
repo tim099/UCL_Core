@@ -215,7 +215,7 @@ namespace UCL.Core.Page
                         curPage = pageCount - 1;
                     }
 
-                    using (var scope = new GUILayout.HorizontalScope("box"))
+                    using (var scope = new GUILayout.HorizontalScope("box", GUILayout.Width(aScrollWidth)))
                     {
                         int state = 0;
                         int startIndex = curPage * MaxAssetPerPage;
@@ -237,10 +237,11 @@ namespace UCL.Core.Page
                         {
                             state = -1;//prev page
                         }
-                        GUILayout.Space(space);
-                        GUILayout.Label($"{(curPage + 1)} / {pageCount}",
-                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                        GUILayout.Space(space);
+                        //GUILayout.Space(space);
+
+                        GUILayout.Box($"{(curPage + 1)} / {pageCount}",
+                            UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));//, GUILayout.ExpandWidth(false)
+                        //GUILayout.Space(space);
                         if (GUILayout.Button(UCL_LocalizeManager.Get("NextPage"),
                             UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), GUILayout.ExpandWidth(false)))
                         {
@@ -258,7 +259,7 @@ namespace UCL.Core.Page
 
                         using (var scope2 = new GUILayout.HorizontalScope(GUILayout.Width(UCL_GUIStyle.GetScaledSize(100))))
                         {
-                            GUILayout.Label(UCL_LocalizeManager.Get("PageID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            //GUILayout.Label(UCL_LocalizeManager.Get("PageID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                             curPage = UCL_GUILayout.IntField(curPage + 1) - 1;
                             curPage = Mathf.Clamp(curPage, 0, pageCount - 1);
                         }

@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using UCL.Core;
 using UCL.Core.EditorLib.Page;
@@ -20,11 +21,16 @@ namespace UCL.Core.Page
 
             return aPage;
         }
+        public const int MaxAssetPerPage = 20;
 
         protected UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL.Core.UCL_ObjectDictionary();
         protected UCLI_Preview m_Preview = null;
+        protected string m_PreviewID = string.Empty;
         protected string m_CreateDes = string.Empty;
         protected string m_TypeName = string.Empty;
+        //protected int m_CurPage = 0;
+
+
         protected UCL_AssetCommonMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
         public override string WindowName => $"UCL_SelectAssetPage";//({m_TypeName})
@@ -64,7 +70,16 @@ namespace UCL.Core.Page
         }//RCG_CommonData<T>.Util as RCG_CommonData<T>;
         public override void OnResume()
         {
-            m_Preview = null;
+            //m_Preview = null;
+            if(!string.IsNullOrEmpty(m_PreviewID))
+            {
+                m_Preview = Util.CreateData(m_PreviewID);
+            }
+            else
+            {
+                m_Preview = null;
+            }
+            
             Util.ClearAllCache();
             m_Meta = Util.AssetMetaIns;
             //Debug.LogError($"OnResume m_Meta:{m_Meta.m_FileMetas.ConcatString(iMeta => $"{iMeta.Key}:{iMeta.Value.m_Group}")}");
@@ -101,15 +116,6 @@ namespace UCL.Core.Page
             {
                 Util.RefreshAllDatas();
             }
-            //if (GUILayout.Button(UCL_LocalizeManager.Get("RemoveMetas"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            //{
-            //    var aPath = Util.StreamingAssetFolderPath;
-            //    var aFiles = UCL.Core.FileLib.Lib.GetFiles(aPath, "*.meta");
-            //    foreach (var aFile in aFiles)
-            //    {
-            //        System.IO.File.Delete(aFile);
-            //    }
-            //}
 #endif
 #if UNITY_STANDALONE_WIN
             if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -164,7 +170,7 @@ namespace UCL.Core.Page
                     }
                 }
                 float scale = UCL_GUIStyle.CurStyleData.Scale;
-                int aVerticalScopeWidth = Mathf.RoundToInt(scale * 420);
+                int aVerticalScopeWidth = Mathf.RoundToInt(scale * 380);
 
                 int EditGroupWidth = Mathf.RoundToInt(scale * 150);
                 bool editGroup = false;
@@ -185,28 +191,141 @@ namespace UCL.Core.Page
                 }
 
                 int aScrollWidth = aVerticalScopeWidth;// + Mathf.RoundToInt(scale * 50);
+
+                if (iMeta != null)
+                {
+                    iIDs = iMeta.GetAllShowData(iUtil, iIDs);
+                }
+                if (aRegex != null)//根據輸入 過濾顯示的目標 Filter targets
+                {
+                    iIDs = iIDs.Where(iID => aRegex.IsMatch(iID.ToLower())).ToList();
+                }
+                int pageCount = 1;
+                if (iIDs.Count > MaxAssetPerPage)
+                {
+                    pageCount = 1 + ((iIDs.Count - 1) / MaxAssetPerPage);
+                }
+                const int FontSize = 14;
+
+                if (pageCount > 1)
+                {
+                    int curPage = iDic.GetData("CurPage", 0);
+                    if (curPage >= pageCount)
+                    {
+                        curPage = pageCount - 1;
+                    }
+
+                    using (var scope = new GUILayout.HorizontalScope("box"))
+                    {
+                        int state = 0;
+                        int startIndex = curPage * MaxAssetPerPage;
+                        int lastIndex = startIndex + MaxAssetPerPage;
+                        if (lastIndex > iIDs.Count)
+                        {
+                            lastIndex = iIDs.Count;
+                        }
+
+                        float space = UCL_GUIStyle.GetScaledSize(10);
+
+                        if (GUILayout.Button("<", UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), GUILayout.ExpandWidth(false)))
+                        {
+                            state = -2;//first page
+                        }
+                        GUILayout.Space(space);
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("PrevPage"),
+                            UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), GUILayout.ExpandWidth(false)))
+                        {
+                            state = -1;//prev page
+                        }
+                        GUILayout.Space(space);
+                        GUILayout.Label($"{(curPage + 1)} / {pageCount}",
+                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.Space(space);
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("NextPage"),
+                            UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), GUILayout.ExpandWidth(false)))
+                        {
+                            state = 1;//next page
+                        }
+                        GUILayout.Space(space);
+                        if (GUILayout.Button(">", UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), GUILayout.ExpandWidth(false)))
+                        {
+                            state = 2;//lase page
+                        }
+                        GUILayout.Space(space);
+                        GUILayout.Label($"[{startIndex + 1} ~ {lastIndex}]", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                        GUILayout.FlexibleSpace();
+
+                        using (var scope2 = new GUILayout.HorizontalScope(GUILayout.Width(UCL_GUIStyle.GetScaledSize(100))))
+                        {
+                            GUILayout.Label(UCL_LocalizeManager.Get("PageID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            curPage = UCL_GUILayout.IntField(curPage + 1) - 1;
+                            curPage = Mathf.Clamp(curPage, 0, pageCount - 1);
+                        }
+
+                        if (state != 0)
+                        {
+                            switch (state)
+                            {
+                                case -1:
+                                    {
+                                        if (curPage <= 0)
+                                        {
+                                            curPage = pageCount - 1;
+                                        }
+                                        else
+                                        {
+                                            curPage--;
+                                        }
+                                        break;
+                                    }
+                                case 1:
+                                    {
+                                        if (curPage >= pageCount - 1)
+                                        {
+                                            curPage = 0;
+                                        }
+                                        else
+                                        {
+                                            curPage++;
+                                        }
+                                        break;
+                                    }
+                                case -2:
+                                    {
+                                        curPage = 0;
+                                        break;
+                                    }
+                                case 2:
+                                    {
+                                        curPage = pageCount - 1;
+                                        break;
+                                    }
+                            }
+                        }
+
+                        iDic.SetData("CurPage", curPage);
+                        iIDs = iIDs.ToList().SubList(startIndex, MaxAssetPerPage);
+                    }
+
+                }
+
+
                 //GUILayout.BeginHorizontal();
                 iDic.SetData("ScrollPos", GUILayout.BeginScrollView(iDic.GetData("ScrollPos", Vector2.zero), GUILayout.Width(aScrollWidth)));
                 
                 //using (var aScope = new GUILayout.VerticalScope("box", GUILayout.Width(aVerticalScopeWidth)))//
                 {
-                    if (iMeta != null)
-                    {
-                        iIDs = iMeta.GetAllShowData(iUtil, iIDs);
-                    }
-                    
+
+                    string previewID = iDic.GetData("PreviewID", string.Empty);
                     for (int i = 0; i < iIDs.Count; i++)
                     {
                         string aID = iIDs[i];
-                        //if(iMeta != null && !iMeta.CheckShowData(aID))
+                        //if (aRegex != null && !aRegex.IsMatch(aID.ToLower()))//根據輸入 過濾顯示的目標 Filter targets
                         //{
                         //    continue;
                         //}
-                        if (aRegex != null && !aRegex.IsMatch(aID.ToLower()))//根據輸入 過濾顯示的目標 Filter targets
-                        {
-                            continue;
-                        }
-                        var heightStyle = GUILayout.Height(30 * scale);
+                        var heightStyle = GUILayout.Height(35 * scale);
                         GUILayout.BeginHorizontal();
                         using (var aScope2 = new GUILayout.HorizontalScope("box", heightStyle))
                         {
@@ -217,7 +336,7 @@ namespace UCL.Core.Page
                             {
                                 aDisplayName = aRegex.HightLight(aDisplayName, aSearchName, Color.red);
                             }
-                            const int FontSize = 14;
+                            
                             if (showDeleteButton)
                             {
                                 if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"),
@@ -228,7 +347,7 @@ namespace UCL.Core.Page
                             }
 
 
-                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, heightStyle, GUILayout.Width(200 * scale));
+                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, heightStyle, GUILayout.Width(210 * scale));
                             if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), 
                                 UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), heightStyle, GUILayout.Width(buttonWidth)))
                             {
@@ -236,9 +355,10 @@ namespace UCL.Core.Page
                                 //RCG_EditItemPage.Create(RCG_ItemData.GetItemData(aID));
                             }
                             if (GUILayout.Button(UCL_LocalizeManager.Get("Preview"), 
-                                UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), heightStyle, GUILayout.Width(buttonWidth)))
-                            //if (UCL.Core.UI.UCL_GUILayout.ButtonAutoSize(UCL_LocalizeManager.Get("Preview"), iFontSize))
+                                UCL_GUIStyle.GetButtonStyle((previewID == aID)?Color.yellow : Color.white, FontSize)
+                                , heightStyle, GUILayout.Width(buttonWidth)))
                             {
+                                iDic.SetData("PreviewID", aID);
                                 iPreviewAct(aID);
                             }
                             if (editGroup)//編輯分組
@@ -248,7 +368,7 @@ namespace UCL.Core.Page
                                     iMeta.OnGUI_ShowData(iUtil, aID, iDic.GetSubDic(aID), EditGroupWidth - Mathf.RoundToInt(scale * 5));
                                 }
                             }
-                            GUILayout.Space(scale * 20);
+                            //GUILayout.Space(scale * 20);
                             //GUILayout.FlexibleSpace();
                         }
 
@@ -280,12 +400,23 @@ namespace UCL.Core.Page
                     UCL_CommonEditPage.Create(Util.GetData(iID));
                 },
                 (iID) => {
+                    m_PreviewID = iID;
                     m_Preview = Util.CreateData(iID);
                 },
                 (iID) => {
                     Util.Delete(iID);
                 }, m_Meta);
-            m_Preview?.Preview(m_DataDic.GetSubDic("Preview"), true);
+
+            if (m_Preview != null)
+            {
+                m_DataDic.SetData("ScrollPosPreview", GUILayout.BeginScrollView(m_DataDic.GetData("ScrollPosPreview", Vector2.zero)));
+
+                //, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(220))
+                m_Preview?.Preview(m_DataDic.GetSubDic("Preview"), true);
+                GUILayout.EndScrollView();
+            }
+
+
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }

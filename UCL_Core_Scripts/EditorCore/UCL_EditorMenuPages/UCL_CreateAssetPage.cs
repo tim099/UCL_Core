@@ -27,7 +27,9 @@ namespace UCL.Core.Page
         protected string m_CreateDes = string.Empty;
         protected string m_TypeName = string.Empty;
         protected string m_TypeLocalizedName = string.Empty;
+        protected string m_GroupID = string.Empty;
         protected string m_AssetID = string.Empty;
+        List<string> m_AssetIDs = new List<string>();
 
         protected UCL_AssetCommonMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
@@ -94,6 +96,7 @@ namespace UCL.Core.Page
         public override void OnResume()
         {
             m_Preview = null;
+            SetGroupID(string.Empty);
             //Util.ClearAllCache();
             //m_Meta = Util.AssetMetaIns;
             //Debug.LogError($"OnResume m_Meta:{m_Meta.m_FileMetas.ConcatString(iMeta => $"{iMeta.Key}:{iMeta.Value.m_Group}")}");
@@ -132,27 +135,68 @@ namespace UCL.Core.Page
             //    System.Diagnostics.Process.Start("explorer.exe", @"c:\teste");
             //}
         }
-
+        protected void SetGroupID(string iID)
+        {
+            UCL_Module module = UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
+            m_GroupID = iID;
+            m_AssetIDs = module.ModuleEntry.GetAllAssetsID(typeof(T)).ToList();
+            if (!m_AssetIDs.IsNullOrEmpty() && !string.IsNullOrEmpty(m_GroupID))
+            {
+                for (int i = m_AssetIDs.Count - 1; i >= 0; i--)
+                {
+                    var assetId = m_AssetIDs[i];
+                    var asset = module.ModuleEntry.GetAsset<T>(assetId);
+                    string groupID = asset.GroupID;
+                    if (!string.IsNullOrEmpty(groupID) && groupID != m_GroupID)
+                    {
+                        m_AssetIDs.RemoveAt(i);
+                    }
+                }
+            }
+            if (!m_AssetIDs.IsNullOrEmpty())
+            {
+                m_AssetID = m_AssetIDs[0];
+            }
+            m_AssetIDs.Insert(0, string.Empty);
+        }
         protected override void ContentOnGUI()
         {
 
             GUILayout.Label(UCL_LocalizeManager.Get("SelectAssetTemplateDes", m_TypeLocalizedName), UCL_GUIStyle.LabelStyle);
             using (var scope = new GUILayout.HorizontalScope())
             {
+                //TODO 切換Module後要SetGroupID(string.Empty)
                 GUILayout.Label("Module", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-
+                string id = m_Module.ID;
                 UCL_GUILayout.DrawObjectData(m_Module, new UCL_GUILayout.DrawObjectParams(m_DataDic.GetSubDic("Module"), "Module", true));
+                if(m_Module.ID != id)
+                {
+                    SetGroupID(string.Empty);
+                }
             }
-            UCL_Module module = null;
+            UCL_Module module = UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
+
+            using (var scope = new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("Group ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                var meta = module.GetAssetMeta(typeof(T).Name);
+                var groups = meta.m_Groups.Keys.ToList();
+                groups.Insert(0, string.Empty);
+
+                var newGroupID = UCL_GUILayout.PopupAuto(m_GroupID, groups, m_DataDic, "GroupID");
+                if (m_GroupID != newGroupID)
+                {
+                    SetGroupID(newGroupID);
+                }
+            }
             using (var scope = new GUILayout.HorizontalScope())
             {
                 GUILayout.Label("Asset ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
-                module = UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
-                var assetIDs = module.ModuleEntry.GetAllAssetsID(typeof(T)).ToList();
-                assetIDs.Insert(0, string.Empty);
 
-                m_AssetID = UCL_GUILayout.PopupAuto(m_AssetID, assetIDs, m_DataDic, "AssetID");
+                
+                m_AssetID = UCL_GUILayout.PopupAuto(m_AssetID, m_AssetIDs, m_DataDic, "AssetID");
             }
             if(m_Preview != null)
             {

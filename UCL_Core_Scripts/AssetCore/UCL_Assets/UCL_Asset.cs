@@ -165,6 +165,10 @@ namespace UCL.Core
         /// <returns>true if asset exist</returns>
         public bool ContainsAsset(string iID)// => FileDatas.FileExists(iID);
         {
+            if (string.IsNullOrEmpty(iID))
+            {
+                return false;
+            }
             string aPath = GetAssetPath(iID);
             //Debug.LogError($"ContainsAsset aPath:{aPath}");
             return File.Exists(aPath);

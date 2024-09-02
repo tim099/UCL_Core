@@ -410,7 +410,9 @@ namespace UCL.Core.Page
 
             if (m_Preview != null)
             {
-                m_DataDic.SetData("ScrollPosPreview", GUILayout.BeginScrollView(m_DataDic.GetData("ScrollPosPreview", Vector2.zero)));
+                var scrollPos = GUILayout.BeginScrollView(m_DataDic.GetData("ScrollPosPreview", Vector2.zero),
+                    GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(310)));
+                m_DataDic.SetData("ScrollPosPreview", scrollPos);
 
                 //, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(220))
                 m_Preview?.Preview(m_DataDic.GetSubDic("Preview"), true);

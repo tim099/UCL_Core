@@ -78,7 +78,7 @@ namespace UCL.Core
                 }
 
 
-                public void ZipModule(string iTargetPath = "")
+                public void ZipModule(string iTargetPath = "", bool iExportConfig = true)
                 {
                     if (string.IsNullOrEmpty(iTargetPath))
                     {
@@ -93,9 +93,12 @@ namespace UCL.Core
                         File.Delete(aZipPath);
                     }
                     System.IO.Compression.ZipFile.CreateFromDirectory(RootFolder, aZipPath, System.IO.Compression.CompressionLevel.NoCompression, false);
-                    if (File.Exists(aConfigPath))//Copy config
+                    if (iExportConfig)
                     {
-                        File.Copy(aConfigPath, Path.Combine(iTargetPath, ZipConfigName), true);
+                        if (File.Exists(aConfigPath))//Copy config
+                        {
+                            File.Copy(aConfigPath, Path.Combine(iTargetPath, ZipConfigName), true);
+                        }
                     }
                 }
 

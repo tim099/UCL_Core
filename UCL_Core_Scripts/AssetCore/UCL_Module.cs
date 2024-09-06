@@ -280,11 +280,15 @@ namespace UCL.Core
         /// <summary>
         /// 將模組輸出到指定目錄下
         /// </summary>
-        public void ExportModule()
+        public void ExportModule(bool iExportConfig = true)
         {
-            string aFolderPath = Path.Combine(Application.dataPath, ".ExportedModules");
+            string aFolderPath = Path.Combine(Application.persistentDataPath, "ExportedModules");
             Directory.CreateDirectory(aFolderPath);
-            m_ModuleEntry.ZipModule(aFolderPath);
+            m_ModuleEntry.ZipModule(aFolderPath, iExportConfig);
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+            UCL.Core.FileLib.WindowsLib.OpenExplorer(aFolderPath);
+#endif
         }
 
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
@@ -360,7 +364,7 @@ namespace UCL.Core
             GUILayout.Space(40);
             if(GUILayout.Button("Export Module", UCL_GUIStyle.ButtonStyle))
             {
-                ExportModule();
+                ExportModule(false);
             }
         }
 

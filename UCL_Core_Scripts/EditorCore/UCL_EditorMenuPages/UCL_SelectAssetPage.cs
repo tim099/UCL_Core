@@ -71,7 +71,7 @@ namespace UCL.Core.Page
         public override void OnResume()
         {
             //m_Preview = null;
-            if(!string.IsNullOrEmpty(m_PreviewID))
+            if(!string.IsNullOrEmpty(m_PreviewID) && Util.ContainsAsset(m_PreviewID))
             {
                 m_Preview = Util.CreateData(m_PreviewID);
             }

@@ -42,7 +42,7 @@ namespace UCL.Core.Game {
             TextAsset aTexts = Resources.Load(aPath) as TextAsset;
             if(aTexts != null) {
                 m_LocalizeSetting = new LocalizeData(aTexts.ToString());
-                Debug.Log(m_LocalizeSetting.GetDic().UCL_ToString());
+                Debug.Log(m_LocalizeSetting.GetDic().AllFieldToString());
             }
         }
         /// <summary>

@@ -21,7 +21,7 @@ namespace UCL.Core
         public void OnPreprocessBuild(BuildReport report)
         {
             var summary = report.summary;
-            Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPreprocessBuild report:{report.UCL_ToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
+            Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPreprocessBuild report:{report.AllFieldToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
             UCL_ModulePath.OnPreprocessBuild();
             //System.IO.Compression.ZipFile.CreateFromDirectory("zipdir", "todir");
 
@@ -29,7 +29,7 @@ namespace UCL.Core
         public void OnPostprocessBuild(BuildReport report)
         {
             var summary = report.summary;
-            Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPostprocessBuild report:{report.UCL_ToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
+            Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPostprocessBuild report:{report.AllFieldToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
             UCL_ModulePath.RemoveAllZipAllModules();
         }
 

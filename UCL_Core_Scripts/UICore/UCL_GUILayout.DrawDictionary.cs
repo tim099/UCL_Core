@@ -104,7 +104,7 @@ namespace UCL.Core.UI
                 {
                     using (new GUILayout.HorizontalScope("box"))
                     {
-                        string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
+                        string aKeyName = aKey.UCL_GetShortName(aKey.AllFieldToString());
                         if (aIsDelete)
                         {
                             if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -243,7 +243,7 @@ namespace UCL.Core.UI
                 {
                     using (new GUILayout.HorizontalScope("box"))
                     {
-                        string aKeyName = aKey.UCL_GetShortName(aKey.UCL_ToString());
+                        string aKeyName = aKey.UCL_GetShortName(aKey.AllFieldToString());
                         if (aIsDelete)
                         {
                             if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))

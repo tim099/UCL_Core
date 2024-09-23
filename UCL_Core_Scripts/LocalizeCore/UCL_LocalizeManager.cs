@@ -195,7 +195,7 @@ namespace UCL.Core.LocalizeLib
                 catch (System.Exception iE)
                 {
                     Debug.LogException(iE);
-                    Debug.LogError("LocalizeGet Str:" + aStr + ",iObjs:" + iObjs.UCL_ToString());
+                    Debug.LogError("LocalizeGet Str:" + aStr + ",iObjs:" + iObjs.AllFieldToString());
                 }
             }
 

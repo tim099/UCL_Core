@@ -139,15 +139,15 @@ namespace UCL.Core.MarshalLib.Demo {
 
             dic.Add("hii", 3);
             dic.Add("No QAQ", 142);
-            Debug.LogWarning(dic.UCL_ToString());
+            Debug.LogWarning(dic.AllFieldToString());
             ET e = ET.b;
-            Debug.LogWarning(e.UCL_ToString());
+            Debug.LogWarning(e.AllFieldToString());
             int a = 17;
-            Debug.LogWarning(a.UCL_ToString());
-            Debug.LogWarning(test.UCL_ToString());
+            Debug.LogWarning(a.AllFieldToString());
+            Debug.LogWarning(test.AllFieldToString());
 
-            Debug.LogWarning(test.GetMember("m_F").UCL_ToString());
-            Debug.LogWarning(test.GetMember("m_Demo").UCL_ToString());
+            Debug.LogWarning(test.GetMember("m_F").AllFieldToString());
+            Debug.LogWarning(test.GetMember("m_Demo").AllFieldToString());
         }
 
         [ATTR.UCL_FunctionButton]

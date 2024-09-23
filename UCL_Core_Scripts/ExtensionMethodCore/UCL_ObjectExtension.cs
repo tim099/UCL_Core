@@ -579,7 +579,106 @@ public static partial class ObjectExtensionMethods
             return "UCL_ToString Exception:" + iE.ToString();
         }
     }
+    public static string AllFieldToString(this object iObj, int iSpace = 0)
+    {
+        try
+        {
+            if (iSpace > 10) return string.Empty;
+            if (iObj == null)
+            {
+                if (iSpace == 0) return "AllFieldToString Error!! obj == null";
+                return string.Empty;
+            }
+            Type type = iObj.GetType();
+            if (type.IsPrimitive || !type.IsStructOrClass() || iObj is Enum
+                || iObj is Vector4 || iObj is Vector3 || iObj is Vector2
+                || iObj is Vector3Int || iObj is Vector2Int)
+            {
+                if (iSpace == 0) return "(" + type.Name + ") : " + iObj.ToString();
+                return iObj.ToString();
+            }
+            if (iObj is string)
+            {
+                if (iSpace == 0) return "(" + type.Name + ") : " + (string)iObj;
+                return (string)iObj;
+            }
 
+            string aSpaceStr = string.Empty;
+            StringBuilder aBuilder = new StringBuilder();
+            if (iSpace > 0)
+            {
+                aBuilder.Append("\n");
+                aSpaceStr = new string('\t', iSpace);
+            }
+            IEnumerable aEnum = iObj as IEnumerable;
+            if (aEnum != null)
+            {
+                if (iObj is UCL.Core.JsonLib.JsonData)
+                {
+                    aBuilder.Append(aSpaceStr + "(JsonData):");
+                    aBuilder.Append(((UCL.Core.JsonLib.JsonData)iObj).ToJsonBeautify());
+                    return aBuilder.ToString();
+                }
+                var iDic = iObj as IDictionary;
+                if (iDic != null)
+                {
+                    aBuilder.Append(aSpaceStr + "(" + type.Name + ")" + " : [");
+                    string arrStr = string.Empty;
+                    foreach (var key in iDic.Keys)
+                    {
+                        aBuilder.Append("(" + key.AllFieldToString(iSpace + 1) + " , " + iDic[key].AllFieldToString(iSpace + 1) + "), ");
+                    }
+                    aBuilder.RemoveLast();
+                    aBuilder.RemoveLast();
+                    aBuilder.Append("]");
+                }
+                else
+                {
+                    aBuilder.Append(aSpaceStr + "(" + type.Name + ")" + " : [");
+                    string arrStr = string.Empty;
+                    bool aFlag = false;
+                    foreach (var val in aEnum)
+                    {
+                        aFlag = true;
+                        aBuilder.Append(val.AllFieldToString(iSpace + 1) + ", ");
+                    }
+                    if (aFlag)
+                    {
+                        aBuilder.RemoveLast();
+                        aBuilder.RemoveLast();
+                    }
+                    aBuilder.Append("]");
+                }
+                return aBuilder.ToString();
+            }
+
+            FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            if (fields.Length > 0)
+            {
+                if (iSpace == 0)
+                {
+                    aBuilder.AppendLine(aSpaceStr + type.Name);//",fields.Length:" + fields.Length+
+                }
+                foreach (var field in fields)
+                {
+                    var value = field.GetValue(iObj);
+                    Type f_type = field.FieldType;
+                    aBuilder.AppendLine(aSpaceStr + "(" + f_type.Name + ")" + field.Name + " : " + value.AllFieldToString(iSpace + 1));
+                }
+            }
+            else
+            {
+                return iObj.ToString();
+            }
+
+            return aBuilder.ToString();
+        }
+        catch (Exception iE)
+        {
+            Debug.LogException(iE);
+            return "AllFieldToString Exception:" + iE.ToString();
+        }
+    }
     public static string UCL_GetShortName(this object iObj, string iDefault = "")
     {
         if (iObj == null) return iDefault;

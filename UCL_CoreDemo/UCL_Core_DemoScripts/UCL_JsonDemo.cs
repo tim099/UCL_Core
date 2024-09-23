@@ -30,7 +30,7 @@ namespace UCL.Core.JsonLib.Demo {
             m_SaveData = m_DataText.text;
             var aObj = JsonLib.JsonConvert.JsonToObject(JsonData.ParseJson(m_SaveData));
             if(aObj != null) {
-                Debug.LogWarning("aObj:" + aObj.UCL_ToString());
+                Debug.LogWarning("aObj:" + aObj.AllFieldToString());
             } else {
                 Debug.LogError("aObj == null");
             }

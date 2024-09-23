@@ -174,7 +174,7 @@ namespace UCL.Core.EnumeratorLib {
                             else if(cur is WaitForFixedUpdate) {
                                 cur = Wait.WaitForUpdate(1);
                             } else {
-                                Debug.LogWarning("Unknwon YieldInstruction:" + cur.UCL_ToString());
+                                Debug.LogWarning("Unknwon YieldInstruction:" + cur.AllFieldToString());
                             }
                         } catch(System.Exception e) {
                             Debug.LogError("YieldInstruction parsing Exception:" + e);

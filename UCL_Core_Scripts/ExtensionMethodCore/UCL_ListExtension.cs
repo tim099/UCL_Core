@@ -29,6 +29,19 @@ public static partial class ListExtensionMethods {
         }
         return aSB.ToString();
     }
+    public static string ConcatToString<T>(this IEnumerable<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
+    {
+        System.Text.StringBuilder aSB = new System.Text.StringBuilder();
+        bool aIsFirst = true;
+        foreach (var aT in iList)
+        {
+            if (aIsFirst) aIsFirst = false;
+            else aSB.Append(iSeperator);
+            aSB.Append(iFunc(aT));
+
+        }
+        return aSB.ToString();
+    }
     public static string ConcatString<T>(this IEnumerable<T> iList, string iSeperator = ", ")
     {
         System.Text.StringBuilder aSB = new System.Text.StringBuilder();

@@ -44,6 +44,7 @@ namespace UCL.Core.Page
         {
             //m_CurEditModule = iModule;
             //m_ID = iModule.ID;
+            Directory.CreateDirectory(SavePath);
         }
 
         public override void OnClose()

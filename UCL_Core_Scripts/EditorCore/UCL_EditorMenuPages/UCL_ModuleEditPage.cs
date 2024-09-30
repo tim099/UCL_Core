@@ -1,7 +1,7 @@
 
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
-// Create time : 02/23 2024 18:25
+// Create time : 02/23 2024
 using Cysharp.Threading.Tasks;
 using System.Collections;
 using System.Collections.Generic;
@@ -97,7 +97,7 @@ namespace UCL.Core.Page
 
             UCL_GUILayout.DrawObjectData(m_CurEditModule, m_DataDic.GetSubDic("CurEditModule"), "CurEditModule");
 
-            m_CurEditModule.OnGUI(m_DataDic.GetSubDic("Module"));
+            m_CurEditModule.ContentOnGUI(m_DataDic.GetSubDic("Module"));
             //GUILayout.Label("Test", UCL_GUIStyle.LabelStyle);
 
         }

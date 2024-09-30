@@ -92,28 +92,15 @@ namespace UCL.Core.Page
                 return m_Util;
             }
 
-        }//RCG_CommonData<T>.Util as RCG_CommonData<T>;
+        }
         public override void OnResume()
         {
             m_Preview = null;
             SetGroupID(string.Empty);
-            //Util.ClearAllCache();
-            //m_Meta = Util.AssetMetaIns;
-            //Debug.LogError($"OnResume m_Meta:{m_Meta.m_FileMetas.ConcatString(iMeta => $"{iMeta.Key}:{iMeta.Value.m_Group}")}");
         }
         public override void OnClose()
         {
             base.OnClose();
-            //try
-            //{
-            //    m_Meta.Save();
-            //}
-            //catch (System.Exception ex)
-            //{
-            //    Debug.LogException(ex);
-            //    Debug.LogError($"{GetType().FullName}.OnClose, Exception:{ex}");
-            //}
-
         }
         protected override void TopBarButtons()
         {

@@ -68,6 +68,23 @@ namespace UCL.Core
             }
 
         }
+
+        #region PA
+        public override int GetHashCode()
+        {
+            return m_Type.GetHashCode();
+        }
+        public override bool Equals(object iObj)
+        {
+            return Equals(iObj as UCL_AssetTypeInfo);
+        }
+
+        public virtual bool Equals(UCL_AssetTypeInfo iObj)
+        {
+            if (iObj == null) return false;
+            return iObj.m_Type.Equals(m_Type);
+        }
+        #endregion
     }
     public interface UCLI_Asset : UCLI_CommonEditable, UCLI_Preview
     {

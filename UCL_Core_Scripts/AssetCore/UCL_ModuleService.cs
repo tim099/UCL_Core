@@ -655,6 +655,13 @@ namespace UCL.Core
             var aAssetConfig = GetAssetConfig(iAssetType, iID);
             return aAssetConfig.Exist;
         }
+        public void ClearCache()
+        {
+            foreach (UCL_Module aModule in LoadedModules)
+            {
+                aModule.ClearCache();
+            }
+        }
         virtual protected void SaveConfig()
         {
             m_AssetGroups = null;//Clear cache
@@ -751,7 +758,7 @@ namespace UCL.Core
             m_AssetsCacheDic.Clear();
 
             var aLoadedModules = new Dictionary<string, UCL_Module>();
-            foreach (var aModule in iModulePlayist.m_Playlist)
+            foreach (var aModule in iModulePlayist.EnablePlaylist)
             {
                 LoadModuleAndDependencies(aModule.ID, aLoadedModules);
             }

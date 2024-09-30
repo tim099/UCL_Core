@@ -2,6 +2,7 @@
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/20 2024 22:46
+using Codice.Client.BaseCommands.Merge;
 using Cysharp.Threading.Tasks;
 using System;
 using System.Collections;
@@ -34,7 +35,7 @@ namespace UCL.Core
     /// <summary>
     /// UCL_Module contains info about how to load assets in this module
     /// </summary>
-    public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID, UCLI_ShortName//, UCLI_FieldOnGUI
+    public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID, UCLI_ShortName, UCLI_FieldOnGUI
     {
         public const string NotInstalledID = "None";
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
@@ -177,6 +178,7 @@ namespace UCL.Core
         {
             m_Config.OnModuleEdit();
             Save();
+            ClearCache();
         }
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
         protected async UniTask LoadAsync()
@@ -290,8 +292,80 @@ namespace UCL.Core
             UCL.Core.FileLib.WindowsLib.OpenExplorer(aFolderPath);
 #endif
         }
+        public void ClearCache()
+        {
+            ModuleEntry.ClearCache();
+        }
+        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic)
+        {
+            UCL.Core.UI.UCL_GUILayout.DrawObjExSetting aSetting = new UCL_GUILayout.DrawObjExSetting();
+            aSetting.OnShowField = () =>
+            {
+                using(var scope = new GUILayout.HorizontalScope())
+                {
+                    bool showInfo = UCL_GUILayout.Toggle(iDataDic, "ContentToggle");
+                    using (var scope2 = new GUILayout.VerticalScope())
+                    {
+                        GUILayout.Label("Content", UCL_GUIStyle.LabelStyle);
 
-        virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
+                        if (showInfo)
+                        {
+                            var cache = ModuleEntry.GetAssetsInfoCache(true);
+                            var assetsInfo = cache.m_AssetsInfo;
+                            if (!assetsInfo.IsNullOrEmpty())
+                            {
+                                var dic = iDataDic.GetSubDic("PreviewDatas");
+                                using (var aVerticalScope = new GUILayout.VerticalScope())
+                                {
+                                    foreach (var typeInfo in cache.m_AssetsInfo.Keys)
+                                    {
+                                        var type = typeInfo.m_Type;
+                                        var typeDic = dic.GetSubDic(type.FullName);
+
+                                        GUILayout.BeginHorizontal();
+                                        bool show = UCL_GUILayout.Toggle(typeDic, "ShowInfo");
+                                        using(var scope3 = new GUILayout.VerticalScope())
+                                        {
+                                            GUILayout.Label(UCL_LocalizeLib.GetLocalize(type.Name), UCL_GUIStyle.LabelStyle);
+                                            if (show)
+                                            {
+                                                UCL_ModulePath.PersistantPath.AssetInfo assetInfo = assetsInfo[typeInfo];
+                                                foreach (var id in assetInfo.m_IDs)
+                                                {
+                                                    var previewDic = typeDic.GetSubDic($"preview_{id}");
+                                                    GUILayout.BeginHorizontal();
+
+                                                    bool preview = UCL_GUILayout.Toggle(previewDic, "PreviewToggle");
+                                                    using(var scope4 = new GUILayout.VerticalScope())
+                                                    {
+                                                        GUILayout.Label(UCL_LocalizeLib.GetLocalize(id), UCL_GUIStyle.LabelStyle);
+                                                        if (preview)
+                                                        {
+                                                            var data = assetInfo.GetAsset(id);
+                                                            data.Preview(previewDic);
+                                                        }
+                                                    }
+                                                    GUILayout.EndHorizontal();
+                                                }
+                                                //GUILayout.Label(ids.ConcatToString(), UCL_GUIStyle.LabelStyle);
+                                            }
+                                        }
+
+                                        GUILayout.EndHorizontal();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+
+
+            UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
+            return this;
+        }
+        virtual public void ContentOnGUI(UCL_ObjectDictionary iDataDic)
         {
             //var aLabelStyle = UCL_GUIStyle.GetLabelStyle(Color.white, 18);
             //var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, 18);

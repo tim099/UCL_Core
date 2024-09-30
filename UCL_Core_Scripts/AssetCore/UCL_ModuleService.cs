@@ -762,6 +762,7 @@ namespace UCL.Core
             {
                 LoadModuleAndDependencies(aModule.ID, aLoadedModules);
             }
+            m_LoadedModules.Reverse();//reverse
             return aLoadedModules;
         }
         protected void SetCurrentEditModule(string iModuleID)

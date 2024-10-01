@@ -62,6 +62,7 @@ namespace UCL.Core
         public async UniTask<Texture2D> GetTextureAsync(CancellationToken iToken)
         {
             await Data.LoadAsync(iToken);
+            iToken.ThrowIfCancellationRequested();
             return Data.GetSprite().texture;
         }
 

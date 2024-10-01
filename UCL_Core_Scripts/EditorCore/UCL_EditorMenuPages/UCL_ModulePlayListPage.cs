@@ -3,6 +3,7 @@
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 09/30 2024
 
+using Cysharp.Threading.Tasks;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -161,10 +162,23 @@ namespace UCL.Core.Page
                 {
                     UCL_ModulePlaylist.SaveRuntimePlaylist(m_ModulePlaylist);
                 }
-                if (GUILayout.Button($"Load", UCL_GUIStyle.GetButtonStyle(Color.white, 24), GUILayout.ExpandWidth(false)))
+                if (UCL_ModuleService.Ins.LoadingPlaylist)
                 {
-                    LoadCurModulePlaylist(UCL_ModulePlaylist.CurPlaylistID);
+                    
+                    var now = System.DateTime.Now.Second % 4;
+                    string dynamicStr = new string('.', now);
+                    GUILayout.Label($"Loading Playlist{dynamicStr}", UCL_GUIStyle.LabelStyle);
                 }
+                else
+                {
+                    if (GUILayout.Button($"Load current playlist", UCL_GUIStyle.GetButtonStyle(Color.white, 24), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ModuleService.Ins.LoadModulePlaylistAsync(m_ModulePlaylist, default).Forget();
+
+                        //LoadCurModulePlaylist(UCL_ModulePlaylist.CurPlaylistID);
+                    }
+                }
+
             }
             m_ModulePlaylist.OnGUI(m_DataDic.GetSubDic("m_ModulePlaylist"));
             //string edit = string.Empty;

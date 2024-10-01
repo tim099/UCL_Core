@@ -66,7 +66,37 @@ namespace UCL.Core
             }
         }
         public static event System.Action OnLoadModule;
-
+        public static event System.Action OnLoadedModule;
+        private static List<System.Func<CancellationToken, UniTask>> s_OnLoadedModuleFunc = new();
+        public static void AddLoadedModuleFunc(System.Func<CancellationToken, UniTask> func)
+        {
+            s_OnLoadedModuleFunc.Add(func);
+        }
+        public static void RemoveLoadedModuleFunc(System.Func<CancellationToken, UniTask> func)
+        {
+            s_OnLoadedModuleFunc.Remove(func);
+        }
+        private static async UniTask OnLoadedModuleAsync(CancellationToken token)
+        {
+            if(s_OnLoadedModuleFunc.IsNullOrEmpty())
+            {
+                return;
+            }
+            List<UniTask> tasks = new();
+            foreach(var func in s_OnLoadedModuleFunc)
+            {
+                if (func != null)
+                {
+                    tasks.Add(func.Invoke(token));
+                    //await func.Invoke(token);
+                }
+            }
+            if(tasks.IsNullOrEmpty())
+            {
+                return;
+            }
+            await UniTask.WhenAll(tasks);
+        }
         public const string ReflectKeyModResourcesPath = "ModResourcesPath";
         /// <summary>
         /// for reflection
@@ -214,9 +244,12 @@ namespace UCL.Core
 
         public Config ModuleConfig => m_Config;
         public UCL_ModulePathConfig m_PathConfig = new UCL_ModulePathConfig();
+        public bool LoadingPlaylist => m_LoadingPlaylist;
+
 
         protected bool m_Initialized = false;
         protected bool m_LoadingConfig = false;
+        protected bool m_LoadingPlaylist = false;
         protected Config m_Config = new Config();
 
         protected string m_NewModuleName = "New Module";
@@ -744,13 +777,52 @@ namespace UCL.Core
             m_CurEditModule = null;
             //m_LoadedModules.Clear();
         }
+
         /// <summary>
         /// Load Modules and its dependencies
         /// 載入指定的Module及其相依模組
         /// </summary>
-        /// <param name="iModulePlayist"></param>
+        /// <param name="modulePlayist"></param>
         /// <returns></returns>
-        public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist iModulePlayist)
+        public async UniTask<Dictionary<string, UCL_Module>> LoadModulePlaylistAsync(UCL_ModulePlaylist modulePlayist, CancellationToken token)
+        {
+            Dictionary<string, UCL_Module> result = null;
+            try
+            {
+                if (m_LoadingPlaylist)//Loading
+                {
+                    await UniTask.WaitUntil(() => m_LoadingPlaylist, cancellationToken: token);
+                    token.ThrowIfCancellationRequested();
+                }
+                m_LoadingPlaylist = true;
+                await UCL_ModuleService.WaitUntilInitialized(token);
+                token.ThrowIfCancellationRequested();
+
+                result = LoadModulePlaylist(modulePlayist);
+                await OnLoadedModuleAsync(token);
+            }
+            catch (OperationCanceledException)
+            {
+
+            }catch(System.Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+            finally
+            {
+                m_LoadingPlaylist = false;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Load Modules and its dependencies
+        /// 載入指定的Module及其相依模組
+        /// </summary>
+        /// <param name="modulePlayist"></param>
+        /// <returns></returns>
+        public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist modulePlayist)
         {
             OnLoadModule?.Invoke();
 
@@ -758,11 +830,13 @@ namespace UCL.Core
             m_AssetsCacheDic.Clear();
 
             var aLoadedModules = new Dictionary<string, UCL_Module>();
-            foreach (var aModule in iModulePlayist.EnablePlaylist)
+            foreach (var aModule in modulePlayist.EnablePlaylist)
             {
                 LoadModuleAndDependencies(aModule.ID, aLoadedModules);
             }
             m_LoadedModules.Reverse();//reverse
+
+            OnLoadedModule?.Invoke();
             return aLoadedModules;
         }
         protected void SetCurrentEditModule(string iModuleID)

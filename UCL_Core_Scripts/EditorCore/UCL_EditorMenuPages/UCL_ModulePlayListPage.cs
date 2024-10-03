@@ -58,7 +58,7 @@ namespace UCL.Core.Page
         {
             base.TopBarButtons();
             //            GUILayout.Label($"[{m_CurEditModule.ID}]", UCL_GUIStyle.LabelStyle);
-            //#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
             if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 var path = SavePath;
@@ -70,7 +70,7 @@ namespace UCL.Core.Page
             //                UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleConfig.InstallFolder);
             //            }
 
-            //#endif
+#endif
 
         }
         protected override void ContentOnGUI()

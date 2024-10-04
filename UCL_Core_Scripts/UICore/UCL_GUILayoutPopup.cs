@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UCL.Core.LocalizeLib;
 using UnityEngine;
 namespace UCL.Core.UI
@@ -142,14 +143,14 @@ namespace UCL.Core.UI
 
                 iDataDic.SetData(aSearchKey, aInput);
 
-                System.Text.RegularExpressions.Regex aRegex = null;
+                Regex aRegex = null;
                 {
                     if (!string.IsNullOrEmpty(aInput))
                     {
                         try
                         {
                             //aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
-                            aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower(), System.Text.RegularExpressions.RegexOptions.Compiled);
+                            aRegex = new Regex(aInput, RegexOptions.Compiled | RegexOptions.IgnoreCase);
                         }
                         catch (System.Exception iE)
                         {
@@ -164,7 +165,7 @@ namespace UCL.Core.UI
                     for (int i = 0; i < iDisplayedOptions.Count; i++)
                     {
                         var aOption = iDisplayedOptions[i];
-                        if (aRegex != null && !aRegex.IsMatch(aOption.ToLower()))
+                        if (aRegex != null && !aRegex.IsMatch(aOption))
                         {
                             continue;
                         }

@@ -209,6 +209,33 @@ namespace UCL.Core
                 }
                 return false;
             }
+
+            virtual public string HashKey
+            {
+                get
+                {
+                    switch (m_FilterType)
+                    {
+                        case PlayerPrefsData.FilterType.Dropdown:
+                            {
+                                return $"{m_FilterType},{m_SelectedGroup}";
+                            }
+                    }
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    //m_GroupDatas.Keys
+                    sb.Append($"{m_FilterType},{m_SelectedGroup},");
+                    sb.Append((m_ShowAll ? "1" : "0"));
+                    sb.Append((m_ShowOthers ? "1" : "0"));
+                    foreach(var group in m_GroupDatas.Values)
+                    {
+                        sb.Append((group.m_IsEnable ? "1" : "0"));
+                    }
+                    return sb.ToString();
+                    
+                    //$"{m_FilterType},{m_SelectedGroup}," +
+                        //$"{(m_ShowAll ? "1" : "0")},{(m_ShowOthers ? "1" : "0")}";
+                }
+            }
         }
         public class Group : UnityJsonSerializable//, UCLI_IsEnable
         {
@@ -260,7 +287,14 @@ namespace UCL.Core
                 PlayerPrefsMeta.DeserializeFromJson(aData);
             }
         }
+        virtual public string HashKey
+        {
+            get
+            {
 
+                return PlayerPrefsMeta.HashKey;
+            }
+        }
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName)
         {
             {

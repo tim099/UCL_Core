@@ -193,17 +193,47 @@ namespace UCL.Core.Page
                 }
 
 
+                const string LastUpdateTimeKey = "LastUpdateTime";
+                const string AllIDKeys = "AllIDKeys";
+                const string HashKey = "HashKey";
+                bool requireUpdate = true;
 
-                
+                string hashKey = $"{iIDs.Count},{aSearchName},{iMeta.HashKey}";
 
-                if (iMeta != null)
+                if (iDic.GetData(HashKey, hashKey) == hashKey &&
+                    iDic.ContainsKey(LastUpdateTimeKey))
                 {
-                    iIDs = iMeta.GetAllShowData(iUtil, iIDs);
+                    var lastUpdateTime = iDic.GetData(LastUpdateTimeKey, System.DateTime.Now);
+                    if ((System.DateTime.Now - lastUpdateTime).TotalSeconds < 0.3f)
+                    {
+                        requireUpdate = false;
+                    }
                 }
-                if (aRegex != null)//根據輸入 過濾顯示的目標 Filter targets
+
+                if (requireUpdate)
                 {
-                    iIDs = iIDs.Where(iID => aRegex.IsMatch(iID.ToLower())).ToList();
+                    iDic.SetData(LastUpdateTimeKey, System.DateTime.Now);
+                    iDic.SetData(HashKey, hashKey);
+                    if (iMeta != null)
+                    {
+                        iIDs = iMeta.GetAllShowData(iUtil, iIDs);
+                    }
+                    if (aRegex != null)//Filter targets base on input
+                    {
+                        iIDs = iIDs.Where(iID => aRegex.IsMatch(iID.ToLower())).ToList();
+                    }
+                    iDic.SetData(AllIDKeys, iIDs);
                 }
+                else
+                {
+                    iIDs = iDic.GetData(AllIDKeys, iIDs);
+                }
+
+
+
+
+
+
                 int pageCount = 1;
                 if (iIDs.Count > MaxAssetPerPage)
                 {
@@ -397,10 +427,9 @@ namespace UCL.Core.Page
         {
             GUILayout.BeginHorizontal();
             var aModule = UCL_ModuleService.CurEditModule;
-            var aIDs = Util.GetEditableIDs();//aModule.GetFolderPath;
 
             DrawSelectTargetList(Util,
-                aIDs, m_DataDic.GetSubDic("SelectTarget"),
+                Util.GetEditableIDs(), m_DataDic.GetSubDic("SelectTarget"),
                 (iID) => {
                     UCL_CommonEditPage.Create(Util.GetData(iID));
                 },

@@ -268,6 +268,10 @@ namespace UCL.Core
         {
             ID = iID;
         }
+        /// <summary>
+        /// Save file(in json format) and return JsonData
+        /// </summary>
+        /// <returns></returns>
         virtual public JsonData Save()
         {
             //存檔前先清除當前Config 確保存檔位置是當前編輯的模組

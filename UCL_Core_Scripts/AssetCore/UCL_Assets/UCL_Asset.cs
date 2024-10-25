@@ -183,8 +183,10 @@ namespace UCL.Core
             var aConfig = GetAssetConfig(iID);
             if (!aConfig.Exist)
             {
-                Debug.LogError($"CreateData Type:{aType}, ID:{iID}, !Config.Exist");
-                return null;
+                string log = $"CreateData Type:{aType}, ID:{iID}, !Config.Exist";
+                Debug.LogError(log);
+                //return null;
+                throw new Exception(log);
             }
 
             var aData = new T();
@@ -198,9 +200,14 @@ namespace UCL.Core
             catch (Exception e)
             {
                 Debug.LogException(e);
+                throw e;
+            }
+            finally
+            {
+                UCLI_Asset.s_CurCreateData = null;
             }
 
-            UCLI_Asset.s_CurCreateData = null;
+            
             return aData;
         }
 

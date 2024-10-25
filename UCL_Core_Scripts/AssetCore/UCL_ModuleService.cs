@@ -353,9 +353,9 @@ namespace UCL.Core
                 if (!File.Exists(aPath))
                 {
                     string aLog = $"AssetConfig.GetJsonData AssetType:{AssetType} ID: {ID},!File.Exists,aPath:{aPath}";
-                    Debug.LogError(aLog);
-                    //throw new System.Exception(aLog);
-                    return null;
+                    //Debug.LogError(aLog);
+                    throw new System.Exception(aLog);
+                    //return null;
                 }
                 string aJsonData = File.ReadAllText(aPath);
                 return JsonData.ParseJson(aJsonData);

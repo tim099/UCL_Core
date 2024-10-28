@@ -214,6 +214,15 @@ namespace UCL.Core.UI
                         s_DrawObjectDic[aType] = Draw;
                         
                     }
+                    else if (aType.IsHashSet())
+                    {
+                        object Draw(object iObj, DrawObjectParams aParams)
+                        {
+                            DrawHashSet(iObj, aParams);
+                            return iObj;
+                        }
+                        s_DrawObjectDic[aType] = Draw;
+                    }
                     else if (iTarget is IDictionary)
                     {
                         object Draw(object iObj, DrawObjectParams aParams)

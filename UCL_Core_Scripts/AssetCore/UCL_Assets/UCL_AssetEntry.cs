@@ -250,7 +250,10 @@ namespace UCL.Core
     public class UCL_AssetEntryDefault<T> : UCL_AssetEntry<T> where T : class, UCLI_Asset, UCLI_Preview, new()
     {
         override public string ID { get => m_ID; set => m_ID = value; }
-
+        public override string ToString()
+        {
+            return $"{ID}({GetShortName()})";
+        }
         [UCL.Core.PA.UCL_List(FuncKeyGetAllIDs)] 
         [UCL.Core.ATTR.UCL_HideOnGUI]
         public string m_ID = "Default";

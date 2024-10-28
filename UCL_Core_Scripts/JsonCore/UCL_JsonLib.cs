@@ -509,7 +509,7 @@ namespace UCL.Core.JsonLib {
                 return null;
             }
             Type aType = iObj.GetType();
-            if(iObj is IJsonSerializable) 
+            if (iObj is IJsonSerializable)
             {
                 ((IJsonSerializable)iObj).DeserializeFromJson(iData);
                 return iObj;
@@ -558,6 +558,40 @@ namespace UCL.Core.JsonLib {
                     }
                 }
             }
+            else if(aType.IsHashSet() && aType.IsGenericType && iObj is IEnumerable aEnumerable)
+            {
+
+                Type aElementType = aType.GetGenericValueType();
+                //Debug.LogError("IList aElementType:" + aElementType.Name);
+                var addMethod = aType.GetMethod("Add");
+
+                if (typeof(UCLI_TypeList).IsAssignableFrom(aElementType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
+                {
+                    //Debug.LogError("1 IList aElementType:" + aElementType.Name);  
+                    for (int i = 0; i < iData.Count; i++)
+                    {
+                        var aObj = JsonToObject(iData[i], iSaveMode, iFieldNameAlterFunc);
+                        if (aObj != null) 
+                        {
+                            addMethod.Invoke(aEnumerable, new[] { aObj });
+                        }
+                    }
+                }
+                else
+                {
+                    //Debug.LogError("2 IList aElementType:" + aElementType.Name);
+                    for (int i = 0; i < iData.Count; i++)
+                    {
+                        var aObj = DataToObject(iData[i], aElementType, iSaveMode, iFieldNameAlterFunc);
+                        if (aObj != null)
+                        {
+                            addMethod.Invoke(aEnumerable, new[] { aObj });
+                        }
+                    }
+                }
+
+                return iObj;
+            }
             try
             {
                 LoadFieldFromJson(iObj, iData, iSaveMode, iFieldNameAlterFunc, iLayer);
@@ -565,7 +599,7 @@ namespace UCL.Core.JsonLib {
             catch (Exception e)
             {
                 Debug.LogException(e);
-                Debug.LogError($"LoadDataFromJson Type.FullName:{aType.FullName}, Exception:{e}");
+                Debug.LogError($"LoadDataFromJson Type:{aType.GetTypeName()}, Exception:{e}");
             }
             
             return iObj;

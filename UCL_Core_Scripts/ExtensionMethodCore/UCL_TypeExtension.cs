@@ -287,6 +287,15 @@ public static partial class TypeExtensionMethods {
                     return $"IDictionary<{aGenericArguments[0].Name}{aGenericArguments[1].Name}>";
                 }
             }
+            else if (iType.IsGenericType && typeof(IEnumerable).IsAssignableFrom(iType))
+            {
+                var aGenericType = iType.GetGenericTypeDefinition();
+                var aGenericArguments = iType.GetGenericArguments();
+                if (aGenericArguments.Length >= 1)
+                {
+                    return $"{aGenericType.Name}<{aGenericArguments[0].Name}>";
+                }
+            }
         }
         return iType.Name;
     }
@@ -414,6 +423,12 @@ public static partial class TypeExtensionMethods {
         var aGenType = iType.GetGenericTypeDefinition();
         //Debug.LogError("aGenType:" + aGenType.Name+ ",iType:"+ iType.Name);
         return s_TupleTypes.Contains(aGenType);
+    }
+    public static bool IsHashSet(this Type iType)
+    {
+        if (iType == null) return false;
+
+        return iType.IsGenericType && iType.GetGenericTypeDefinition() == typeof(HashSet<>);
     }
     /// <summary>
     /// Get Fields Include parent

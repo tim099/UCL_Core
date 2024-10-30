@@ -599,6 +599,7 @@ namespace UCL.Core.JsonLib {
                 this[index] = ToJsonData(value);
             }
         }
+        public ICollection<string> Keys => m_Dic.Keys;
         #endregion
         #region ToJson
         /// <summary>
@@ -780,6 +781,7 @@ namespace UCL.Core.JsonLib {
             }
         }
         #endregion
+
         #region Public Indexers
         public JsonData this[string iPropName] {
             get {

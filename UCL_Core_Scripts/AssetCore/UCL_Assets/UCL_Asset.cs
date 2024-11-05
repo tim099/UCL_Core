@@ -319,10 +319,10 @@ namespace UCL.Core
         /// get all assets ID
         /// </summary>
         /// <returns></returns>
-        virtual public List<string> GetAllIDs()
+        virtual public List<string> GetAllIDs(bool iUseCache = false)
         {
             //this should base on current module and dependencies modules of current module
-            var aIDs = UCL_ModuleService.Ins.GetAllAssetsID(this.GetType());
+            var aIDs = UCL_ModuleService.Ins.GetAllAssetsID(this.GetType(), iUseCache);
             //Debug.LogError($"GetAllIDs(),aIDs:{aIDs}");
             return aIDs;
         }

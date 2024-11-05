@@ -141,7 +141,7 @@ public static partial class ListExtensionMethods {
         iList[iIndexB] = aTmp;
         return iList;
     }
-    public static List<T> ConvertType<T>(this IList iList)
+    public static List<T> ConvertType<T>(this IEnumerable iList)
     {
         var aList = new List<T>();
         if (iList == null) return aList;

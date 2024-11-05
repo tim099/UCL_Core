@@ -70,7 +70,7 @@ namespace UCL.Core
         /// 抓取此類型中所有的ID
         /// </summary>
         /// <returns></returns>
-        public List<string> GetAllIDs() => Util.GetAllIDs();
+        public List<string> GetAllIDs(bool iUseCache = false) => Util.GetAllIDs(iUseCache);
         public IList<string> GetLocalizeIDs()
         {
             return GetLocalizeIDs(GetAllIDs());
@@ -83,7 +83,7 @@ namespace UCL.Core
                 string aKey = iList[i];
                 if (UCL.Core.LocalizeLib.UCL_LocalizeManager.ContainsKey(aKey))
                 {
-                    aDisplayList[i] = string.Format("{0}({1})", UCL.Core.LocalizeLib.UCL_LocalizeManager.Get(aKey), aKey);
+                    aDisplayList[i] = $"{UCL.Core.LocalizeLib.UCL_LocalizeManager.Get(aKey)}({aKey})";
                 }
                 else
                 {

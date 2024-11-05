@@ -90,7 +90,7 @@ namespace UCL.Core
     {
         string RelativeFolderPath { get; }
         UCLI_Asset CreateCommonData(string iID);
-        List<string> GetAllIDs();
+        List<string> GetAllIDs(bool iUseCache = false);
         /// <summary>
         /// 根據ID抓取物品設定
         /// </summary>

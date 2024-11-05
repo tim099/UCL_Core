@@ -428,6 +428,10 @@ namespace UCL.Core
         /// 當前已載入的模組 讀取UCL_Assets時會按照順序判斷(若ID相同則選取排序在前面的模組中的Asset)
         /// </summary>
         protected List<UCL_Module> m_LoadedModules = new List<UCL_Module>();
+        /// <summary>
+        /// ID緩存
+        /// </summary>
+        protected Dictionary<string, (System.DateTime timeStamp, List<string> list)> m_IDsCache = new();
         protected Dictionary<string, AssetsCache> m_AssetsCacheDic = new ();
         #endregion
 
@@ -579,22 +583,46 @@ namespace UCL.Core
         /// </summary>
         /// <param name="iAssetType"></param>
         /// <returns></returns>
-        public List<string> GetAllAssetsID(Type iAssetType)
+        public List<string> GetAllAssetsID(Type iAssetType, bool iUseCache = false)
         {
             var aModules = LoadedModules;
-            //Debug.Log($"GetAllAssetsID aModules:{aModules.ConcatString(iModule => iModule.ID)}");
-            var aIDSet = new HashSet<string>();
-            foreach (var aModule in aModules)
-            {
-                var aIDs = aModule.ModuleEntry.GetAllAssetsID(iAssetType);
+            string key = iAssetType.Name;
 
-                foreach (var aID in aIDs)
+            bool refresh = iUseCache;
+            if (!refresh)
+            {
+                if (m_IDsCache.ContainsKey(key))
                 {
-                    aIDSet.Add(aID);
+                    var timeStamp = m_IDsCache[key].timeStamp;
+                    if ((System.DateTime.Now - timeStamp).TotalSeconds >= 0.3f)
+                    {
+                        refresh = true;
+                    }
+                }
+                else
+                {
+                    refresh = true;
                 }
             }
 
-            return aIDSet.ToList();
+            if (refresh)
+            {
+                var aIDSet = new HashSet<string>();
+                foreach (var aModule in aModules)
+                {
+                    var aIDs = aModule.ModuleEntry.GetAllAssetsID(iAssetType);
+
+                    foreach (var aID in aIDs)
+                    {
+                        aIDSet.Add(aID);
+                    }
+                }
+                m_IDsCache[key] = (System.DateTime.Now, aIDSet.ToList());
+            }
+            //Debug.Log($"GetAllAssetsID aModules:{aModules.ConcatString(iModule => iModule.ID)}");
+
+
+            return m_IDsCache[key].list;
         }
 
         public List<UCL_Module> LoadedModules => m_LoadedModules;
@@ -618,6 +646,10 @@ namespace UCL.Core
             if (m_AssetsCacheDic.ContainsKey(key))
             {
                 m_AssetsCacheDic.Remove(key);
+            }
+            if (m_IDsCache.ContainsKey(key))
+            {
+                m_IDsCache.Remove(key);
             }
         }
         public void ClearAssetsCache(Type iAssetType, string iID)
@@ -828,7 +860,7 @@ namespace UCL.Core
 
             m_LoadedModules.Clear();
             m_AssetsCacheDic.Clear();
-
+            m_IDsCache.Clear();
             var aLoadedModules = new Dictionary<string, UCL_Module>();
             foreach (var aModule in modulePlayist.EnablePlaylist)
             {

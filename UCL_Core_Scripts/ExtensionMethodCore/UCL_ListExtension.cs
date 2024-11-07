@@ -153,6 +153,15 @@ public static partial class ListExtensionMethods {
         }
         return aList;
     }
+    public static IEnumerable<T> ConvertTo<T>(this IEnumerable iList)
+    {
+        if (iList == null) yield break;
+
+        foreach (var aItem in iList)
+        {
+            yield return (T)aItem;
+        }
+    }
     /// <summary>
     /// return the first element of list
     /// </summary>

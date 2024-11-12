@@ -25,7 +25,10 @@ namespace UCL.Core.UI
             var iDataDic = iParams.m_DataDic;
             var iDisplayName = iParams.m_DisplayName;
 
-            if (!iIsAlwaysShowDetail) aIsShowField = Toggle(iDataDic, IsShowFieldKey);
+            if (!iIsAlwaysShowDetail)
+            {
+                aIsShowField = Toggle(iDataDic, IsShowFieldKey);
+            }
             GUILayout.BeginVertical();
             using (new GUILayout.HorizontalScope())//Show Title(iDisplayName)
             {
@@ -52,6 +55,15 @@ namespace UCL.Core.UI
                     }
                 }
                 GUILayout.FlexibleSpace();
+
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
+                {
+                    UCL.Core.CopyPaste.SetCopyData(iDic);
+                }
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste")))
+                {
+                    UCL.Core.CopyPaste.LoadCopyData(iDic);
+                }
             }
             if (aIsShowField)
             {

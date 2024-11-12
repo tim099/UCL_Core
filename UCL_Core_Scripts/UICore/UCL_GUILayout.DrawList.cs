@@ -60,6 +60,15 @@ namespace UCL.Core.UI
                     }
                 }
                 GUILayout.FlexibleSpace();
+
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
+                {
+                    UCL.Core.CopyPaste.SetCopyData(iList);
+                }
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste")))
+                {
+                    UCL.Core.CopyPaste.LoadCopyData(iList);
+                }
             }
 
             if (aIsShowField)

@@ -188,7 +188,8 @@ namespace UCL.Core.UI
                 if (pageCount > 1)
                 {
                     GUILayout.BeginHorizontal();
-                    float space = UCL_GUIStyle.GetScaledSize(10);
+                    GUILayout.FlexibleSpace();
+                    float space = UCL_GUIStyle.GetScaledSize(2);
 
                     if (GUILayout.Button("|<", UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
                     {
@@ -202,9 +203,8 @@ namespace UCL.Core.UI
                     }
                     //GUILayout.Space(space);
 
-                    GUILayout.Box($"{(curPage + 1)} / {pageCount}",
-                        UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));//, GUILayout.ExpandWidth(false)
-                                                                                                //GUILayout.Space(space);
+                    GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                    //GUILayout.Label($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
                     if (GUILayout.Button(UCL_LocalizeManager.Get(" > "),
                         UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
                     {
@@ -216,7 +216,8 @@ namespace UCL.Core.UI
                         state = 2;//lase page
                     }
                     //GUILayout.Space(space);
-                    GUILayout.Label($"{startIndex + 1} ~ {lastIndex}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    //GUILayout.Label($"{startIndex + 1} ~ {lastIndex}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
                     GUILayout.EndHorizontal();
                 }
                 //index of current display option

@@ -39,7 +39,6 @@ namespace UCL.Core
     public class UCL_AssetEntry<T> : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_AssetEntry, UCLI_ShortName, UCLI_NameOnGUI, UCLI_FieldOnGUI
         , IEquatable<UCL_AssetEntry<T>> where T : class, UCLI_Asset, UCLI_Preview, new()
     {
-        protected const string FuncKeyGetAllIDs = "GetAllIDs";
 
         //[UCL.Core.PA.UCL_List(FuncKeyGetAllIDs)] public string m_ID = string.Empty;
 
@@ -71,6 +70,13 @@ namespace UCL.Core
         /// </summary>
         /// <returns></returns>
         public List<string> GetAllIDs(bool iUseCache = false) => Util.GetAllIDs(iUseCache);
+        /// <summary>
+        /// Get all ID of this UCL_Asset with cache
+        /// 抓取此類型中所有的ID
+        /// </summary>
+        /// <returns></returns>
+        public List<string> GetAllIDsWithCache() => GetAllIDs(true);
+
         public IList<string> GetLocalizeIDs()
         {
             return GetLocalizeIDs(GetAllIDs());
@@ -254,7 +260,7 @@ namespace UCL.Core
         {
             return $"{ID}({GetShortName()})";
         }
-        [UCL.Core.PA.UCL_List(FuncKeyGetAllIDs)] 
+        [UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] 
         [UCL.Core.ATTR.UCL_HideOnGUI]
         public string m_ID = "Default";
 

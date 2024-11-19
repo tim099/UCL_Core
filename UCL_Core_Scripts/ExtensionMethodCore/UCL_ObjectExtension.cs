@@ -338,54 +338,74 @@ namespace UCL.Core.ObjectReflectionExtension {
         /// <returns></returns>
         public static object InvokeFunc(this object iTarget, string iFunctionName, object[] iParameters) {
             if (iTarget == null) return null;
+            object result = null;
 
             Type aType = iTarget.GetType();
             MethodInfo aMethod = null;
             bool aHasParams = !iParameters.IsNullOrEmpty();
-            if (aHasParams)//Method with iParameters
-            {
-                Type[] aParameterTypes = new Type[iParameters.Length];
-                for (int i = 0; i < iParameters.Length; i++)
-                {
-                    aParameterTypes[i] = iParameters[i].GetType();
-                }
-                aMethod = aType.GetMethod(iFunctionName, aParameterTypes);
-            }
-            else//Method without iParameters
-            {
-                aMethod = aType.GetMethod(iFunctionName, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
-            }
-            
-            if (aMethod == null) {
-                if (!aHasParams)//might be accessor
-                {
-                    
-                    PropertyInfo aPropInfo = aType.GetProperty(iFunctionName);
-                    if (aPropInfo == null)
-                    { // not accessor!!
-                        Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
-                        return null;
-                    }
-                    MethodInfo[] aAccessors = aPropInfo.GetAccessors();
 
-                    for (int i = 0; i < aAccessors.Length; i++)
+            try
+            {
+                if (aHasParams)//Method with iParameters
+                {
+                    Type[] aParameterTypes = new Type[iParameters.Length];
+                    for (int i = 0; i < iParameters.Length; i++)
                     {
-                        MethodInfo aAccessor = aAccessors[i];
-                        // Determine if this is the property getter or setter.
-                        if (aAccessor.ReturnType == typeof(void))//setter
-                        {
+                        aParameterTypes[i] = iParameters[i].GetType();
+                    }
+                    aMethod = aType.GetMethod(iFunctionName, aParameterTypes);
+                }
+                else//Method without iParameters
+                {
+                    aMethod = aType.GetMethod(iFunctionName, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+                }
 
+                if (aMethod == null)
+                {
+                    if (!aHasParams)//might be accessor
+                    {
+
+                        PropertyInfo aPropInfo = aType.GetProperty(iFunctionName);
+                        if (aPropInfo == null)
+                        { // not accessor!!
+                            Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
+                            return null;
                         }
-                        else//getter
+                        MethodInfo[] aAccessors = aPropInfo.GetAccessors();
+
+                        for (int i = 0; i < aAccessors.Length; i++)
                         {
-                            return aAccessor.Invoke(iTarget, null);
+                            MethodInfo aAccessor = aAccessors[i];
+                            // Determine if this is the property getter or setter.
+                            if (aAccessor.ReturnType == typeof(void))//setter
+                            {
+
+                            }
+                            else//getter
+                            {
+                                return aAccessor.Invoke(iTarget, null);
+                            }
                         }
                     }
+                    Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
+                    return null;
                 }
-                Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
-                return null;
+                result = aMethod.Invoke(iTarget, iParameters);
             }
-            return aMethod.Invoke(iTarget, iParameters);
+            catch (System.Exception ex)
+            {
+                if(aMethod != null)
+                {
+                    Debug.LogError($"aMethod:{aMethod.Name},iParameters:{iParameters.AllFieldToString()},Parameters:{aMethod.GetParameters().AllFieldToString()},Exception:{ex}");
+                }
+                else
+                {
+                    Debug.LogError($"iFunctionName:{iFunctionName},iParameters:{iParameters.AllFieldToString()},Exception:{ex}");
+                }
+                
+                Debug.LogException(ex);
+            }
+            return result;
         }
     }
 }

@@ -157,7 +157,7 @@ namespace UCL.Core.Page
             float scale = UCL_GUIStyle.CurStyleData.Scale;
             int aVerticalScopeWidth = Mathf.RoundToInt(scale * 380);
             int buttonWidth = Mathf.RoundToInt(60 * scale);
-            int EditGroupWidth = Mathf.RoundToInt(scale * 150);
+            int EditGroupWidth = Mathf.RoundToInt(scale * 180);
             bool editGroup = false;
             bool showDeleteButton = false;
             if (iMeta != null)

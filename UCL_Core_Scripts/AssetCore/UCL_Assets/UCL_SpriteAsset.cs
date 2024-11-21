@@ -26,11 +26,11 @@ namespace UCL.Core
         public DataLoadType m_DataLoadType = DataLoadType.ModResources;
 
         //[UCL.Core.ATTR.AlwaysExpendOnGUI]
-        [UCL.Core.PA.Conditional("m_DataLoadType", false, DataLoadType.ModResources)]
+        [UCL.Core.PA.Conditional(nameof(m_DataLoadType), false, DataLoadType.ModResources)]
         public UCL_ModResourcesData m_ModResourcesData = new UCL_ModResourcesData();
 
         //[UCL.Core.ATTR.AlwaysExpendOnGUI]
-        [UCL.Core.PA.Conditional("m_DataLoadType", false, DataLoadType.Addressable)]
+        [UCL.Core.PA.Conditional(nameof(m_DataLoadType), false, DataLoadType.Addressable)]
         public UCL_AddressableData m_AddressableData = new UCL_AddressableData();
 
 

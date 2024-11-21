@@ -64,9 +64,9 @@ namespace UCL.Core.UI {
 
         public Image m_Image = null;
         public Text m_Text = null;
-        [UCL.Core.PA.Conditional("m_Transition", false, Transition.ColorTint)] public Color m_NormalColor = Color.white;
-        [UCL.Core.PA.Conditional("m_Transition", false, Transition.ColorTint)] public Color m_PressedColor = Color.gray;
-        [UCL.Core.PA.Conditional("m_Transition", false, Transition.ColorTint)] public Color m_DisabledColor = DisableCol;
+        [UCL.Core.PA.Conditional(nameof(m_Transition), false, Transition.ColorTint)] public Color m_NormalColor = Color.white;
+        [UCL.Core.PA.Conditional(nameof(m_Transition), false, Transition.ColorTint)] public Color m_PressedColor = Color.gray;
+        [UCL.Core.PA.Conditional(nameof(m_Transition), false, Transition.ColorTint)] public Color m_DisabledColor = DisableCol;
         public UCL.Core.UCL_Event m_OnClick = null;
         public UCL.Core.UCL_Event m_OnPointerDown = null;
         public UCL.Core.UCL_Event m_OnPointerUp = null;

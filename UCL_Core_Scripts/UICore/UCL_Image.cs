@@ -53,9 +53,9 @@ namespace UCL.Core.UI {
 
         #region UCL_Member
         public int TileSize => m_Tile.x * m_Tile.y;
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public Vector2Int m_Tile = Vector2Int.one;
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public int m_TilePos = 0;
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.SpriteSheet)] public int m_TileLoopTime = -1;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.SpriteSheet)] public Vector2Int m_Tile = Vector2Int.one;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.SpriteSheet)] public int m_TilePos = 0;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.SpriteSheet)] public int m_TileLoopTime = -1;
 
         protected int m_TileLoopTimer = 0;
         #endregion
@@ -485,7 +485,7 @@ namespace UCL.Core.UI {
         /// </summary>
         public bool preserveAspect { get { return m_PreserveAspect; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_PreserveAspect, value)) SetVerticesDirty(); } }
 
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)] [SerializeField] private bool m_FillCenter = true;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.Filled)] [SerializeField] private bool m_FillCenter = true;
 
         /// <summary>
         /// Whether or not to render the center of a Tiled or Sliced image.
@@ -514,11 +514,11 @@ namespace UCL.Core.UI {
         public bool fillCenter { get { return m_FillCenter; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillCenter, value)) SetVerticesDirty(); } }
 
         /// Filling method for filled sprites.
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)] [SerializeField] private FillMethod m_FillMethod = FillMethod.Radial360;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.Filled)] [SerializeField] private FillMethod m_FillMethod = FillMethod.Radial360;
         public FillMethod fillMethod { get { return m_FillMethod; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillMethod, value)) { SetVerticesDirty(); m_FillOrigin = 0; } } }
 
         /// Amount of the Image shown. 0-1 range with 0 being nothing shown, and 1 being the full Image.
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)]
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.Filled)]
         [Range(0, 1)][SerializeField]
         private float m_FillAmount = 1.0f;
 
@@ -555,7 +555,7 @@ namespace UCL.Core.UI {
         public float fillAmount { get { return m_FillAmount; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillAmount, Mathf.Clamp01(value))) SetVerticesDirty(); } }
 
         /// Whether the Image should be filled clockwise (true) or counter-clockwise (false).
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)] [SerializeField] private bool m_FillClockwise = true;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.Filled)] [SerializeField] private bool m_FillClockwise = true;
 
         /// <summary>
         /// Whether the Image should be filled clockwise (true) or counter-clockwise (false).
@@ -592,7 +592,7 @@ namespace UCL.Core.UI {
         public bool fillClockwise { get { return m_FillClockwise; } set { if(UCL_SetPropertyUtility.SetStruct(ref m_FillClockwise, value)) SetVerticesDirty(); } }
 
         /// Controls the origin point of the Fill process. Value means different things with each fill method.
-        [UCL.Core.PA.Conditional("m_Type", false, DrawType.Filled)][SerializeField] private int m_FillOrigin;
+        [UCL.Core.PA.Conditional(nameof(m_Type), false, DrawType.Filled)][SerializeField] private int m_FillOrigin;
 
         /// <summary>
         /// Controls the origin point of the Fill process. Value means different things with each fill method.

@@ -131,7 +131,22 @@ namespace UCL.Core.LocalizeLib
         /// <param name="iKey"></param>
         /// <returns></returns>
         static public string Get(string iKey) {
-            if (s_Instance == null) return iKey;
+            var asset = UCL_LocalizeAsset.Default;
+            if (asset != null)
+            {
+                var result = asset.GetLocalize(s_LangName, iKey);
+                if (result.success)
+                {
+                    //Debug.LogError($"Get:{iKey},result.value:{result.value}");
+                    return result.value;
+                }
+            }
+
+
+            if (s_Instance == null)
+            {
+                return iKey;
+            }
 
             if (s_Instance.m_LocalizeData == null)
             {
@@ -164,6 +179,14 @@ namespace UCL.Core.LocalizeLib
         /// <returns></returns>
         static public bool ContainsKey(string iKey)
         {
+            var asset = UCL_LocalizeAsset.Default;
+            if (asset != null)
+            {
+                if (asset.ContainsKey(s_LangName, iKey))
+                {
+                    return true;
+                }
+            }
             var aIns = s_Instance;
             if (aIns == null) return false;
             if (aIns.m_LocalizeData == null)

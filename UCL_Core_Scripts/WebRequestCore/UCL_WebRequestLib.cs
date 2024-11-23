@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Cysharp.Threading.Tasks;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -7,6 +8,26 @@ namespace UCL.Core
 {
     public static class WebRequestLib
     {
+        public static async UniTask<byte[]> Download(string iDownloadPath)
+        {
+            var www = UnityEngine.Networking.UnityWebRequest.Get(iDownloadPath);
+            await www.SendWebRequest();
+            switch (www.result)
+            {
+                case UnityWebRequest.Result.Success:
+                    {
+                        return www.downloadHandler.data;
+                    }
+                default://Error
+                    {
+                        string log = $"LoadByWebRequest Error Path:{iDownloadPath},Result:{www.result},Error:{www.error}";
+                        Debug.LogError(log);
+                        throw new System.Exception(log);
+                        //break;
+                    }
+            }
+            //return null;
+        }
         public static IEnumerator Download(string iDownloadPath, System.Action<byte[]> DownloadCallback)
         {
             var www = UnityEngine.Networking.UnityWebRequest.Get(iDownloadPath);

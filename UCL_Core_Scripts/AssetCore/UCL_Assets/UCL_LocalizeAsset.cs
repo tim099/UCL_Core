@@ -58,6 +58,31 @@ namespace UCL.Core
         {
             public Dictionary<string, string> m_LocalizeDic = new();
         }
+        public class GidData : UCLI_ShortName
+        {
+            /// <summary>
+            /// SheetIds on Google Spreadsheet.
+            /// etc. https://docs.google.com/spreadsheets/d/1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo/edit#gid=0
+            /// Gid = 0(gid = 0)
+            /// </summary>
+            [Header("SheetIds on Google Spreadsheet."
+                + "\netc. https://docs.google.com/spreadsheets/d/1zLXwb8ASmI0B5_GxuUtQUopPFEOE29K18jp9mC9Auxo/edit#gid=0"
+                + "\nGid = 0(gid = 0)")]
+
+            /// <summary>
+            /// Gid of Table that contains all Gid
+            /// </summary>
+            public long m_Gid = -1;
+
+            /// <summary>
+            /// info of Table
+            /// </summary>
+            public string m_Note;
+
+
+            public GidData() { }
+            public string GetShortName() => $"{m_Note}({m_Gid})";
+        }
         public LocalizeType m_LocalizeType = LocalizeType.Default;
         public Dictionary<string, LocalizeData> m_LocalizeDatas = new();
 
@@ -86,9 +111,10 @@ namespace UCL.Core
         public long m_GidTable = -1;
 
         /// <summary>
-        /// true if download success
+        /// All Gid Table
         /// </summary>
-        protected System.Action<bool> m_DownloadEndAct = null;
+        public List<GidData> m_GidDatas = new();
+
         protected Regex m_SplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
         protected bool m_IsCancelDownload = false;
         protected bool m_IsDownloading = false;
@@ -124,12 +150,7 @@ namespace UCL.Core
         {
             return string.Format(DownloadTemplate, m_TableId, iGID, iFormat);
         }
-        public void StartDownload(System.Action<bool> iEndAct)
-        {
-            if (m_IsDownloading) return;
-            m_DownloadEndAct = iEndAct;
-            StartDownload();
-        }
+
         protected void DownloadEnd(bool iSuccess)
         {
 #if UNITY_EDITOR
@@ -137,20 +158,7 @@ namespace UCL.Core
             //UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
 #endif
             m_IsDownloading = false;
-            m_DownloadEndAct?.Invoke(iSuccess);
         }
-        //protected bool CheckCancelDownload(string iTitle, string iInfo, float iProgress)
-        //{
-        //    if (m_IsCancelDownload)//Already Cancel
-        //    {
-        //        return m_IsCancelDownload;
-        //    }
-
-        //    m_IsCancelDownload = UCL.Core.EditorLib.EditorUtilityMapper.DisplayCancelableProgressBar(iTitle, iInfo, iProgress);
-        //    if (m_IsCancelDownload) DownloadEnd(false);
-
-        //    return m_IsCancelDownload;
-        //}
         public async void StartDownload()
         {
             //Debug.LogError($"StartDownload m_IsDownloading:{m_IsDownloading}");
@@ -161,7 +169,6 @@ namespace UCL.Core
             //Debug.LogError($"2 StartDownload");
             m_LocalizeDatas.Clear();//Clear old datas
 
-            HashSet<long> aGids = new HashSet<long>();
             if (m_IsCancelDownload) return;
 
             if (m_GidTable != -1)
@@ -179,6 +186,7 @@ namespace UCL.Core
                 //Debug.LogError($"Data:{aData}");
                 UCL.Core.CsvLib.CSVData aCSV = new UCL.Core.CsvLib.CSVData(aData);
                 //Debug.LogError("CSV:" + aSB.ToString());
+                m_GidDatas.Clear();
                 foreach (var aRow in aCSV.m_Rows)
                 {
                     if (aRow.Count == 0)
@@ -189,14 +197,7 @@ namespace UCL.Core
                     long aGid = 0;
                     if (long.TryParse(aStr, out aGid))
                     {
-                        if (aGids.Contains(aGid))
-                        {
-                            Debug.LogError("StartDownload(), Gid Repeat:" + aGid);
-                        }
-                        else
-                        {
-                            aGids.Add(aGid);
-                        }
+                        m_GidDatas.Add(new GidData() { m_Gid = aGid, m_Note = aRow.Get(1) });
                     }
                     else
                     {
@@ -205,15 +206,16 @@ namespace UCL.Core
                 }
             }
 
-            if (!aGids.IsNullOrEmpty())
+            if (!m_GidDatas.IsNullOrEmpty())
             {
                 int aCompleteCount = 0;
                 Dictionary<string, List<KeyPair>> aLangDic = new Dictionary<string, List<KeyPair>>();
-                string[] aDatas = new string[aGids.Count];
+                string[] aDatas = new string[m_GidDatas.Count];
                 int aID = 0;
                 List<UniTask> aTasks = new();
-                foreach (long aGid in aGids)
+                foreach (var aGidData in m_GidDatas)
                 {
+                    long aGid = aGidData.m_Gid;
                     if (m_IsCancelDownload)
                     {
                         DownloadEnd(false);
@@ -260,7 +262,7 @@ namespace UCL.Core
                             }
                             aDatas[aAt] = aData;
                             ++aCompleteCount;
-                            float aProgress = 0.1f + ((0.9f * aCompleteCount) / aGids.Count);
+                            float aProgress = 0.1f + ((0.9f * aCompleteCount) / m_GidDatas.Count);
 
                             m_DownloadingInfo = $"Download Localize aGid:{aGid}, Progress: {(100f * aProgress).ToString("N1")}%";
                         }
@@ -270,7 +272,7 @@ namespace UCL.Core
                 }
                 await UniTask.WhenAll(aTasks);
                 //Debug.LogError($"Download End");
-                for (int i = 0; i < aGids.Count; i++)
+                for (int i = 0; i < aDatas.Length; i++)
                 {
                     ParseData(aDatas[i], aLangDic);
                 }

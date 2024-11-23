@@ -10,6 +10,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
 using UCL.Core.UI;
@@ -33,17 +34,18 @@ namespace UCL.Core
                 if (!s_DefaultInited)
                 {
                     s_DefaultInited = true;
-                    string id = UCL_LocalizeAssetEntry.DefaultID;
-                    if (Util.ContainsAsset(id))
-                    {
-                        s_Default = Util.GetData(id);
-                    }
+                    s_DefaultExist = Util.ContainsAsset(UCL_LocalizeAssetEntry.DefaultID);
                 }
-                return s_Default;
+                return Util.GetData(UCL_LocalizeAssetEntry.DefaultID);
             }
         }
+        public override JsonData Save()
+        {
+            s_DefaultInited = false;
+            return base.Save();
+        }
         private static bool s_DefaultInited = false;
-        private static UCL_LocalizeAsset s_Default = null;
+        private static bool s_DefaultExist;
         public enum LocalizeType
         {
             Default = 0,

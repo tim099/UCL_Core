@@ -7,6 +7,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -489,8 +490,45 @@ namespace UCL.Core
 
                 GUILayout.EndHorizontal();
             }
+            
+            var langs = m_LocalizeDatas.Keys.ToList();
+            if (!langs.IsNullOrEmpty())
+            {
+                GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(UCL_LocalizeManager.Get("Lang"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                int langIndex = iDataDic.GetData(nameof(langIndex), 0);
+                langIndex = UCL_GUILayout.PopupAuto(langIndex, langs, iDataDic, "langs");
+                iDataDic.SetData(nameof(langIndex), langIndex);
+                GUILayout.EndHorizontal();
+
+                var lang = langs[langIndex];
+
+                var dic = m_LocalizeDatas[lang].m_LocalizeDic;
+
+                var keys = dic.Keys.ToList();
+                if (!keys.IsNullOrEmpty())
+                {
+                    GUILayout.BeginHorizontal();
+
+                    GUILayout.Label(UCL_LocalizeManager.Get("Key"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    int keyIndex = iDataDic.GetData(nameof(keyIndex), 0);
+                    keyIndex = UCL_GUILayout.PopupAuto(keyIndex, keys, iDataDic, "keys");
+                    iDataDic.SetData(nameof(keyIndex), keyIndex);
+                    var key = keys[keyIndex];
+
+                    GUILayout.EndHorizontal();
 
 
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(UCL_LocalizeManager.Get("Value"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    dic[key] = GUILayout.TextArea(dic[key], UCL_GUIStyle.TextAreaStyle);
+                    GUILayout.EndHorizontal();
+                    //GUILayout.Label($"{dic[key]}", UCL_GUIStyle.LabelStyle);
+                }
+
+            }
+            
 
             using (new GUILayout.VerticalScope("box"))//Preview
             {

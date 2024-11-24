@@ -215,7 +215,8 @@ namespace UCL.Core
                     }
                 };
 
-                var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic, "ModuleService Config", iDrawObjExSetting: aDrawObjExSetting);
+                var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic, UCL_LocalizeManager.Get("ModuleService Config"),
+                    iDrawObjExSetting: aDrawObjExSetting);
                 UCL_GUILayout.DrawField(this, aParams);
                 //UCL_GUILayout.DrawField(this, iDataDic, "ModuleService Config", iDrawObjExSetting: aDrawObjExSetting);
 
@@ -727,7 +728,7 @@ namespace UCL.Core
                 aModule.ClearCache();
             }
         }
-        virtual protected void SaveConfig()
+        virtual public void SaveConfig()
         {
             m_AssetGroups = null;//Clear cache
             if (Application.isEditor)//Check streamming assets for BuiltinModules
@@ -976,24 +977,31 @@ namespace UCL.Core
             }
             m_CurEditModule.OnModuleEdit();
         }
+        virtual public void CreateNewModule(string newModuleName)
+        {
+            m_Config.CreateModule(newModuleName, ModuleEditType);
+            SaveConfig();
+            m_Config.m_CurrentEditModule = newModuleName;
+        }
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
             if(Application.isEditor)//ModuleEditType Builtin can only edit in Editor
             {
                 using (var aScope = new GUILayout.HorizontalScope("box"))
                 {
-                    GUILayout.Label("EditType", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    
+                    GUILayout.Label(UCL_LocalizeManager.Get("EditType"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     ModuleEditType = UCL_GUILayout.PopupAuto(ModuleEditType, iDataDic.GetSubDic("EditType"));
                 }
             }
             using (var aScope = new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label("UCL_ModuleService", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                if(GUILayout.Button("Save Config", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                //GUILayout.Label("UCL_ModuleService", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                if(GUILayout.Button(UCL_LocalizeManager.Get("Save Config"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     SaveConfig();
                 }
-                if (GUILayout.Button("Load Config", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Load Config"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     LoadConfig().Forget();
                 }
@@ -1004,21 +1012,25 @@ namespace UCL.Core
                 }
 #endif
             }
-
             m_Config.OnGUI(iDataDic.GetSubDic("Config"));
 
-            using (var aScope = new GUILayout.HorizontalScope("box"))
+            GUILayout.Box(UCL_LocalizeManager.Get("EditModulewarning"), UCL_GUIStyle.BoxStyle);
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Create new module"), UCL_GUIStyle.ButtonStyle))
             {
-                if (GUILayout.Button("Create", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    m_Config.CreateModule(m_NewModuleName, ModuleEditType);
-                    SaveConfig();
-                    m_Config.m_CurrentEditModule = m_NewModuleName;
-                }
-                GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
-
+                UCL_CreateNewModulePage.Create();
             }
+            //using (var aScope = new GUILayout.HorizontalScope("box"))
+            //{
+            //    if (GUILayout.Button("Create", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            //    {
+            //        m_Config.CreateModule(m_NewModuleName, ModuleEditType);
+            //        SaveConfig();
+            //        m_Config.m_CurrentEditModule = m_NewModuleName;
+            //    }
+            //    GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            //    m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
+
+            //}
 
             using (var aScope = new GUILayout.HorizontalScope())
             {
@@ -1027,7 +1039,7 @@ namespace UCL.Core
                 //aModules.Append(m_Config.m_BuiltinModules);
                 aModules.Append(GetAllModulesID());
                 bool aCanEdit = !string.IsNullOrEmpty(m_Config.m_CurrentEditModule);
-                if (GUILayout.Button("Edit", UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
                 {
                     if (aCanEdit)
                     {
@@ -1037,7 +1049,7 @@ namespace UCL.Core
                     }
                 }
 
-                GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label(UCL_LocalizeManager.Get("Module ID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 var aID = UCL_GUILayout.PopupAuto(m_Config.m_CurrentEditModule, aModules, iDataDic, "SelectModules");
                 if(aID != m_Config.m_CurrentEditModule)
                 {
@@ -1046,7 +1058,7 @@ namespace UCL.Core
                 }
             }
 
-            UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), "LoadedModules");
+            UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), UCL_LocalizeManager.Get("Loaded modules"));
             UCL_GUILayout.DrawObjectData(m_AssetsCacheDic, iDataDic.GetSubDic("AssetsCache"), "AssetsCache");
         }
     }

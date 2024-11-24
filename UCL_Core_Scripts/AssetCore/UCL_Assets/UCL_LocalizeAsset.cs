@@ -27,21 +27,17 @@ namespace UCL.Core
         {
             get
             {
-                if(!UCL_ModuleService.Initialized)
-                {
-                    return null;
-                }
+                if(!UCL_ModuleService.Initialized) return null;
                 try
                 {
                     return Util.GetData(UCL_LocalizeAssetEntry.DefaultID);
                 }
-                catch (Exception ex)
-                {
-
-                }
+                catch { }
                 return null;
             }
         }
+
+
         public override JsonData Save()
         {
             return base.Save();

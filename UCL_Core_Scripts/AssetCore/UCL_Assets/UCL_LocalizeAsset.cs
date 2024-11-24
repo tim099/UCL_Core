@@ -31,21 +31,21 @@ namespace UCL.Core
                 {
                     return null;
                 }
-                if (!s_DefaultInited)
+                try
                 {
-                    s_DefaultInited = true;
-                    s_DefaultExist = Util.ContainsAsset(UCL_LocalizeAssetEntry.DefaultID);
+                    return Util.GetData(UCL_LocalizeAssetEntry.DefaultID);
                 }
-                return Util.GetData(UCL_LocalizeAssetEntry.DefaultID);
+                catch (Exception ex)
+                {
+
+                }
+                return null;
             }
         }
         public override JsonData Save()
         {
-            s_DefaultInited = false;
             return base.Save();
         }
-        private static bool s_DefaultInited = false;
-        private static bool s_DefaultExist;
         public enum LocalizeType
         {
             Default = 0,

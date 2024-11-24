@@ -862,11 +862,13 @@ namespace UCL.Core
             m_AssetsCacheDic.Clear();
             m_IDsCache.Clear();
             var aLoadedModules = new Dictionary<string, UCL_Module>();
-            foreach (var aModule in modulePlayist.EnablePlaylist)
+            var playList = modulePlayist.EnablePlaylist.ToList();
+            playList.Reverse();
+            foreach (var aModule in playList)
             {
                 LoadModuleAndDependencies(aModule.ID, aLoadedModules);
             }
-            m_LoadedModules.Reverse();//reverse
+            //m_LoadedModules.Reverse();//reverse
 
             OnLoadedModule?.Invoke();
             return aLoadedModules;

@@ -157,7 +157,7 @@ namespace UCL.Core
             }
             ID = iID;
             ModuleEditType = iModuleEditType;
-            LoadAsync().Forget();
+            LoadConfig();
         }
         /// <summary>
         /// Save Module Config
@@ -179,9 +179,9 @@ namespace UCL.Core
             Save();
             ClearCache();
         }
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-        protected async UniTask LoadAsync()
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+//#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
+        protected void LoadConfig()
+//#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
         {
             m_IsLoading = true;
             try

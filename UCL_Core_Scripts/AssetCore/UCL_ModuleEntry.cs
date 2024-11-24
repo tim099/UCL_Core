@@ -14,6 +14,9 @@ namespace UCL.Core
     public class UCL_ModuleEntry : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ShortName
     {
         public const string CoreModuleID = "Core";
+        public static UCL_ModuleEntry CoreModule => new UCL_ModuleEntry(CoreModuleID);
+
+
 
         protected const string FuncKeyGetAllIDs = "GetAllIDs";
         /// <summary>
@@ -36,6 +39,21 @@ namespace UCL.Core
         public string GetShortName() => $"UCL_ModuleEntry({ID})";
         virtual public string ID { get => m_ID; set => m_ID = value; }
 
+        #region PA
+        public override int GetHashCode()
+        {
+            return ID.GetHashCode();
+        }
+        public override bool Equals(object iObj)
+        {
+            return Equals(iObj as UCL_ModuleEntry);
+        }
 
+        public virtual bool Equals(UCL_ModuleEntry iObj)
+        {
+            if (iObj == null) return false;
+            return iObj.ID == ID;
+        }
+        #endregion
     }
 }

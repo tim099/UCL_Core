@@ -24,6 +24,7 @@ namespace UCL.Core.Page
         }
         UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
         protected string m_NewModuleName = "New Module";
+        private UCL_Module.Config m_Config = new();
         public UCL_CreateNewModulePage()
         {
 
@@ -44,7 +45,7 @@ namespace UCL.Core.Page
                 var moduleService = UCL_ModuleService.Ins;
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Create new module"), UCL_GUIStyle.ButtonStyle))
                 {
-                    UCL_ModuleService.Ins.CreateNewModule(m_NewModuleName);
+                    var module = UCL_ModuleService.Ins.CreateNewModule(m_NewModuleName, m_Config);
                     Close();
                 }
                 using (var aScope2 = new GUILayout.HorizontalScope())
@@ -53,7 +54,7 @@ namespace UCL.Core.Page
                     m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
                 }
             }
-            //UCL_ModuleService.Ins.OnGUI(m_DataDic.GetSubDic("ModuleService"));
+            UCL_GUILayout.DrawObjectData(m_Config, m_DataDic.GetSubDic("Config"), UCL_LocalizeManager.Get("Config"));
             //GUILayout.Label("Test", UCL_GUIStyle.LabelStyle);
 
         }

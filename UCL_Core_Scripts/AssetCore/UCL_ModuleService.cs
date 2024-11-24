@@ -228,10 +228,10 @@ namespace UCL.Core
 
                 return base.SerializeToJson();
             }
-            public UCL_Module CreateModule(string iID, UCL_ModuleEditType iModuleEditType)
+            public UCL_Module CreateModule(string iID, UCL_ModuleEditType iModuleEditType, UCL_Module.Config config)
             {
                 UCL_Module aModule = new UCL_Module();
-                aModule.Init(iID, iModuleEditType);
+                aModule.Init(iID, iModuleEditType, config);
                 aModule.Save();
                 return aModule;
             }
@@ -750,7 +750,7 @@ namespace UCL.Core
                     m_Config.m_BuiltinModules = aAllModulesID.ToList();
                     if (!m_Config.m_BuiltinModules.Contains(UCL_ModuleEntry.CoreModuleID))//Create Core Module!!
                     {
-                        m_Config.CreateModule(UCL_ModuleEntry.CoreModuleID, UCL_ModuleEditType.Builtin);
+                        m_Config.CreateModule(UCL_ModuleEntry.CoreModuleID, UCL_ModuleEditType.Builtin, null);
                         m_Config.m_BuiltinModules.Add(UCL_ModuleEntry.CoreModuleID);
                     }
                 }
@@ -977,11 +977,12 @@ namespace UCL.Core
             }
             m_CurEditModule.OnModuleEdit();
         }
-        virtual public void CreateNewModule(string newModuleName)
+        virtual public UCL_Module CreateNewModule(string newModuleName, UCL_Module.Config config)
         {
-            m_Config.CreateModule(newModuleName, ModuleEditType);
+            var module = m_Config.CreateModule(newModuleName, ModuleEditType, config);
             SaveConfig();
             m_Config.m_CurrentEditModule = newModuleName;
+            return module;
         }
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
         {
@@ -1019,18 +1020,6 @@ namespace UCL.Core
             {
                 UCL_CreateNewModulePage.Create();
             }
-            //using (var aScope = new GUILayout.HorizontalScope("box"))
-            //{
-            //    if (GUILayout.Button("Create", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            //    {
-            //        m_Config.CreateModule(m_NewModuleName, ModuleEditType);
-            //        SaveConfig();
-            //        m_Config.m_CurrentEditModule = m_NewModuleName;
-            //    }
-            //    GUILayout.Label("Module ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            //    m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
-
-            //}
 
             using (var aScope = new GUILayout.HorizontalScope())
             {
@@ -1057,7 +1046,14 @@ namespace UCL.Core
                     SaveConfig();
                 }
             }
+            GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
 
+            GUILayout.Box(UCL_LocalizeManager.Get("ModulePlayListTip"), UCL_GUIStyle.BoxStyle);
+            if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_ModulePlayListPage"), UCL_GUIStyle.ButtonStyle))
+            {
+                UCL_ModulePlayListPage.Create();
+            }
+            GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
             UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), UCL_LocalizeManager.Get("Loaded modules"));
             UCL_GUILayout.DrawObjectData(m_AssetsCacheDic, iDataDic.GetSubDic("AssetsCache"), "AssetsCache");
         }

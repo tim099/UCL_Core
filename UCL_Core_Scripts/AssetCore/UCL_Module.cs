@@ -47,7 +47,9 @@ namespace UCL.Core
             /// </summary>
             public string m_LastEditTime = string.Empty;
             public string m_ID;
-
+            /// <summary>
+            /// 相依模組 載入此模組時會同時載入相依模組
+            /// </summary>
             public List<UCL_ModuleEntry> m_DependenciesModules = new ();
 
             /// <summary>
@@ -137,14 +139,25 @@ namespace UCL.Core
         #endregion
         public bool IsLoading => m_IsLoading;
 
-        public void Init(string iID, UCL_ModuleEditType iModuleEditType)
+        public void Init(string iID, UCL_ModuleEditType iModuleEditType, UCL_Module.Config config)
         {
             ID = iID;
             //AssetType = iAssetType;
             ModuleEditType = iModuleEditType;
+
+            if(config != null)
+            {
+                m_Config = config;
+            }
+
             if (ID != UCL_ModuleEntry.CoreModuleID)
             {
-                m_Config.m_DependenciesModules.Add(new UCL_ModuleEntry(UCL_ModuleEntry.CoreModuleID));
+                var coreModule = UCL_ModuleEntry.CoreModule;
+                if (!m_Config.m_DependenciesModules.Contains(coreModule))
+                {
+                    m_Config.m_DependenciesModules.Insert(0, coreModule);
+                }
+                //m_Config.m_DependenciesModules.Add(new UCL_ModuleEntry(UCL_ModuleEntry.CoreModuleID));
             }
         }
         public void Load(string iID, UCL_ModuleEditType iModuleEditType)

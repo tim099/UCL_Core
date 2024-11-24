@@ -116,6 +116,9 @@ namespace UCL.Core.Page
         }
         protected void DrawSelectMode()
         {
+            GUILayout.Box(UCL_LocalizeManager.Get("UCL_ModulePlayListPageTip"), UCL_GUIStyle.BoxStyle);
+
+
             string format = $"*{UCL_ModulePlaylist.FileFormat}";
             var files = Directory.GetFiles(SavePath, format, SearchOption.TopDirectoryOnly);
             if (files.IsNullOrEmpty())//Add default!!
@@ -128,7 +131,7 @@ namespace UCL.Core.Page
 
             using (var scope = new GUILayout.HorizontalScope())
             {
-                GUILayout.Label("Current Playlist", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label(UCL_LocalizeManager.Get("Current playlist"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 string id = UCL_ModulePlaylist.CurPlaylistID;
                 string newID = UCL_GUILayout.PopupAuto(id, fileNames, m_DataDic, "fileNames");
                 if(newID != id)//Update!!
@@ -143,7 +146,7 @@ namespace UCL.Core.Page
             }
             using (var scope = new GUILayout.HorizontalScope())
             {
-                if (GUILayout.Button($"Create New", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Create new playlist"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     var newPlaylist = new UCL_ModulePlaylist(UCL_ModuleEntry.CoreModuleID);
                     newPlaylist.ID = m_NewPlaylistID;
@@ -156,9 +159,12 @@ namespace UCL.Core.Page
                 m_NewPlaylistID = GUILayout.TextField(m_NewPlaylistID, UCL_GUIStyle.TextFieldStyle);
                 
             }
+            GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
+            GUILayout.Box(UCL_LocalizeManager.Get("UCL_ModulePlayListPageSaveTip"), UCL_GUIStyle.BoxStyle);
+
             using (var scope = new GUILayout.HorizontalScope())
             {
-                if (GUILayout.Button($"Save", UCL_GUIStyle.GetButtonStyle(Color.white, 24), GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     UCL_ModulePlaylist.SaveRuntimePlaylist(m_ModulePlaylist);
                 }
@@ -171,7 +177,7 @@ namespace UCL.Core.Page
                 }
                 else
                 {
-                    if (GUILayout.Button($"Load current playlist", UCL_GUIStyle.GetButtonStyle(Color.white, 24), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Load current playlist"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         UCL_ModuleService.Ins.LoadModulePlaylistAsync(m_ModulePlaylist, default).Forget();
 

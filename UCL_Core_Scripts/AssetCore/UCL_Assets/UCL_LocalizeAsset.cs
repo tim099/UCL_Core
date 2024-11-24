@@ -54,7 +54,7 @@ namespace UCL.Core
         {
             public Dictionary<string, string> m_LocalizeDic = new();
         }
-        public class GidData : UCLI_ShortName
+        public class GidData : UCLI_ShortName, UCLI_FieldOnGUI
         {
             /// <summary>
             /// SheetIds on Google Spreadsheet.
@@ -78,6 +78,46 @@ namespace UCL.Core
 
             public GidData() { }
             public string GetShortName() => $"{m_Note}({m_Gid})";
+            //UCLI_Asset.s_CurOnGUIAsset
+            /// <summary>
+            /// return new data if the data of field altered
+            /// </summary>
+            /// <param name="iFieldName"></param>
+            /// <param name="iEditTmpDatas"></param>
+            /// <returns></returns>
+            public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
+            {
+                
+                UCL_GUILayout.DrawObjExSetting aDrawObjExSetting = null;
+
+
+
+                if (UCLI_Asset.s_CurOnGUIAsset is UCL_LocalizeAsset asset)
+                {
+                    aDrawObjExSetting = new UCL_GUILayout.DrawObjExSetting();
+                    aDrawObjExSetting.OnShowField = () =>
+                    {
+                        if (asset.IsDownloading)
+                        {
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Cancel"), UCL_GUIStyle.ButtonStyle))
+                            {
+                                asset.Cancel();
+                            }
+                        }
+                        else
+                        {
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Download"), UCL_GUIStyle.ButtonStyle))
+                            {
+                                asset.StartDownloadTable(m_Gid).Forget();
+                            }
+                        }
+                    };
+                }
+
+
+                UCL_GUILayout.DrawField(this, iDataDic, iFieldName, iDrawObjExSetting : aDrawObjExSetting);
+                return this;
+            }
         }
         public LocalizeType m_LocalizeType = LocalizeType.Default;
         public Dictionary<string, LocalizeData> m_LocalizeDatas = new();
@@ -112,11 +152,14 @@ namespace UCL.Core
         public List<GidData> m_GidDatas = new();
 
         protected Regex m_SplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
+
+        protected CancellationTokenSource m_CTS = null;
         protected bool m_IsCancelDownload = false;
-        protected bool m_IsDownloading = false;
+        
         protected string m_DownloadingInfo;
+        protected int m_CompleteCount = 0;
 
-
+        public bool IsDownloading => m_CTS != null;
         public bool ContainsKey(string lang, string key)
         {
             if (!m_LocalizeDatas.ContainsKey(lang))
@@ -149,151 +192,190 @@ namespace UCL.Core
 
         protected void DownloadEnd(bool iSuccess)
         {
-#if UNITY_EDITOR
-            if (iSuccess) UCL.Core.EditorLib.AssetDatabaseMapper.Refresh();
-            //UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
-#endif
-            m_IsDownloading = false;
+            DisposeCTS();
+        }
+        private void DisposeCTS()
+        {
+            if (m_CTS == null)
+            {
+                return;
+            }
+            m_CTS.Dispose();
+            m_CTS = null;
+        }
+        private void Cancel()
+        {
+            if(m_CTS == null)
+            {
+                return;
+            }
+            m_IsCancelDownload = true;
+
+            if (!m_CTS.IsCancellationRequested)
+            {
+                m_CTS.Cancel();
+            }
+            
+            m_CTS.Dispose();
+            m_CTS = null;
+        }
+        private async UniTask LoadGidTable(CancellationToken token)
+        {
+            var path = GetDownloadPath(m_GidTable);
+            byte[] iData = await WebRequestLib.Download(path);
+            token.ThrowIfCancellationRequested();
+
+            if (iData.IsNullOrEmpty())
+            {
+                Debug.LogError("GidTable download fail!!iData == null || iData.Length == 0");
+                DisposeCTS();
+                return;
+            }
+            string aData = System.Text.Encoding.UTF8.GetString(iData);
+            //Debug.LogError($"Data:{aData}");
+            UCL.Core.CsvLib.CSVData aCSV = new UCL.Core.CsvLib.CSVData(aData);
+            //Debug.LogError("CSV:" + aSB.ToString());
+            m_GidDatas.Clear();
+            foreach (var aRow in aCSV.m_Rows)
+            {
+                if (aRow.Count == 0)
+                {
+                    continue;
+                }
+                string aStr = aRow.Get(0);
+                long aGid = 0;
+                if (long.TryParse(aStr, out aGid))
+                {
+                    m_GidDatas.Add(new GidData() { m_Gid = aGid, m_Note = aRow.Get(1) });
+                }
+                else
+                {
+                    Debug.LogError("aStr:" + aStr + ",long.TryParse Fail!!");
+                }
+            }
+        }
+        public async UniTask StartDownloadTable(long gid)
+        {
+            if (m_CTS != null)
+            {
+                Cancel();//Cancel if downloading
+            }
+            m_CTS = new CancellationTokenSource();
+            var token = m_CTS.Token;
+            try
+            {
+                await DownloadTable(token, gid, true);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+            finally
+            {
+                DisposeCTS();
+            }
+        }
+
+        private async UniTask DownloadTable(CancellationToken token, long gid, bool replaceOldKey = false)
+        {
+            const string Format = "csv";//"xlsx","ods"
+            string aURL = GetDownloadPath(gid, Format);
+            //Debug.LogError($"Download table: {aURL}");
+            byte[] iData = null;
+            try
+            {
+                iData = await UCL.Core.WebRequestLib.Download(aURL);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
+                //retry once
+                try
+                {
+                    await UniTask.WaitForSeconds(0.3f);//Delay
+                    iData = await UCL.Core.WebRequestLib.Download(aURL);
+                }
+                catch { }
+            }
+            token.ThrowIfCancellationRequested();
+            string aData = string.Empty;
+            if (iData == null)
+            {
+                Debug.LogError($"aGid:{gid},iData == null");
+            }
+            else if (iData.Length == 0)
+            {
+                Debug.LogError($"aGid:{gid},iData.Length == 0");
+            }
+            else
+            {
+                aData = System.Text.Encoding.UTF8.GetString(iData);
+            }
+
+            ParseData(aData, replaceOldKey);
+
+            ++m_CompleteCount;
+            float aProgress = 0.1f + ((0.9f * m_CompleteCount) / m_GidDatas.Count);
+
+            m_DownloadingInfo = $"Download Localize aGid:{gid}, Progress: {(100f * aProgress).ToString("N1")}%";
         }
         public async void StartDownload()
         {
-            //Debug.LogError($"StartDownload m_IsDownloading:{m_IsDownloading}");
-            if (m_IsDownloading) return;
-            m_IsDownloading = true;
-            m_IsCancelDownload = false;
-            m_DownloadingInfo = "StartDownload";
-            //Debug.LogError($"2 StartDownload");
-            m_LocalizeDatas.Clear();//Clear old datas
-
-            if (m_IsCancelDownload) return;
-
-            if (m_GidTable != -1)
+            //Debug.LogError($"StartDownload m_IsDownloading:{IsDownloading}");
+            if(m_CTS != null)
             {
-                var path = GetDownloadPath(m_GidTable);
-                byte[] iData = await WebRequestLib.Download(path);
-
-                if (iData.IsNullOrEmpty())
-                {
-                    Debug.LogError("GidTable download fail!!iData == null || iData.Length == 0");
-                    DownloadEnd(false);
-                    return;
-                }
-                string aData = System.Text.Encoding.UTF8.GetString(iData);
-                //Debug.LogError($"Data:{aData}");
-                UCL.Core.CsvLib.CSVData aCSV = new UCL.Core.CsvLib.CSVData(aData);
-                //Debug.LogError("CSV:" + aSB.ToString());
-                m_GidDatas.Clear();
-                foreach (var aRow in aCSV.m_Rows)
-                {
-                    if (aRow.Count == 0)
-                    {
-                        continue;
-                    }
-                    string aStr = aRow.Get(0);
-                    long aGid = 0;
-                    if (long.TryParse(aStr, out aGid))
-                    {
-                        m_GidDatas.Add(new GidData() { m_Gid = aGid, m_Note = aRow.Get(1) });
-                    }
-                    else
-                    {
-                        Debug.LogError("aStr:" + aStr + ",long.TryParse Fail!!");
-                    }
-                }
+                Cancel();//Cancel if downloading
             }
 
-            if (!m_GidDatas.IsNullOrEmpty())
+            try
             {
-                int aCompleteCount = 0;
-                Dictionary<string, List<KeyPair>> aLangDic = new Dictionary<string, List<KeyPair>>();
-                string[] aDatas = new string[m_GidDatas.Count];
-                int aID = 0;
-                List<UniTask> aTasks = new();
-                foreach (var aGidData in m_GidDatas)
-                {
-                    long aGid = aGidData.m_Gid;
-                    if (m_IsCancelDownload)
-                    {
-                        DownloadEnd(false);
-                        return;
-                    }
-                    int aAt = aID++;
-                    const string Format = "csv";//"xlsx","ods"
-                    string aURL = GetDownloadPath(aGid, Format);
-                    
-                    aTasks.Add(Download());
-                    //await Download();
-                    async UniTask Download()
-                    {
-                        //Debug.LogError($"Download aURL:{aURL}");
-                        byte[] iData = null;
-                        try
-                        {
-                            iData = await UCL.Core.WebRequestLib.Download(aURL);
-                        }
-                        catch(System.Exception e)
-                        {
-                            Debug.LogException(e);
-                            //retry once
-                            try
-                            {
-                                await UniTask.WaitForSeconds(0.3f);//Delay
-                                iData = await UCL.Core.WebRequestLib.Download(aURL);
-                            }
-                            catch { }
-                        }
-                        {
-                            string aData = string.Empty;
-                            if (iData == null)
-                            {
-                                Debug.LogError($"aGid:{aGid},iData == null");
-                            }
-                            else if (iData.Length == 0)
-                            {
-                                Debug.LogError($"aGid:{aGid},iData.Length == 0");
-                            }
-                            else
-                            {
-                                aData = System.Text.Encoding.UTF8.GetString(iData);
-                            }
-                            aDatas[aAt] = aData;
-                            ++aCompleteCount;
-                            float aProgress = 0.1f + ((0.9f * aCompleteCount) / m_GidDatas.Count);
+                m_CompleteCount = 0;
+                
+                m_CTS = new CancellationTokenSource();
+                var token = m_CTS.Token;
+                m_IsCancelDownload = false;
+                m_DownloadingInfo = "StartDownload";
+                //Debug.LogError($"2 StartDownload");
+                m_LocalizeDatas.Clear();//Clear old datas
 
-                            m_DownloadingInfo = $"Download Localize aGid:{aGid}, Progress: {(100f * aProgress).ToString("N1")}%";
-                        }
-                    }
-                    
-                    await UniTask.WaitForSeconds(0.1f);
-                }
-                await UniTask.WhenAll(aTasks);
-                //Debug.LogError($"Download End");
-                for (int i = 0; i < aDatas.Length; i++)
+                if (m_IsCancelDownload) return;
+
+                if (m_GidTable != -1)
                 {
-                    ParseData(aDatas[i], aLangDic);
+                    await LoadGidTable(token);
                 }
-                foreach (var aLangName in aLangDic.Keys)
+
+                if (!m_GidDatas.IsNullOrEmpty())
                 {
-                    if (!aLangName.IsNullOrEmpty())
+                    List<UniTask> aTasks = new();
+                    for (int i = 0; i < m_GidDatas.Count; i++)
                     {
-                        if (!m_LocalizeDatas.ContainsKey(aLangName))
+                        if (i > 0)
                         {
-                            m_LocalizeDatas[aLangName] = new();
+                            await UniTask.WaitForSeconds(0.1f, cancellationToken: token);
+                            token.ThrowIfCancellationRequested();
                         }
-                        var dic = m_LocalizeDatas[aLangName].m_LocalizeDic;
-                        var aLangs = aLangDic[aLangName];
-                        for (int i = 0; i < aLangs.Count; i++)
-                        {
-                            var lang = aLangs[i];
-                            dic[lang.m_Key] = lang.m_Localize;
-                        }
+                        var aGidData = m_GidDatas[i];
+                        long aGid = aGidData.m_Gid;
+                        aTasks.Add(DownloadTable(token, aGid));
+                        token.ThrowIfCancellationRequested();
                     }
+                    await UniTask.WhenAll(aTasks);
+                    //Debug.LogError($"Download End");
                 }
+
+                DisposeCTS();
             }
-
-            DownloadEnd(true);
+            catch(OperationCanceledException ex)
+            {
+                Debug.Log($"{GetType().Name}.{nameof(StartDownload)}, OperationCanceledException");
+            }catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
         }
-        public void ParseData(string iData, Dictionary<string, List<KeyPair>> iLangDic)
+        public void ParseData(string iData, bool replaceOldKey)
         {
             //Debug.LogError($"ParseData:{iData}");
             UCL.Core.CsvLib.CSVData aCSV = new UCL.Core.CsvLib.CSVData(iData);
@@ -308,17 +390,43 @@ namespace UCL.Core
                     string aLangName = aLangNames.Get(i);
                     //Debug.LogError($"aLangName:{aLangName}");
                     aLangs.Add(aLangName);
-                    if (!iLangDic.ContainsKey(aLangName))
+                    if (!m_LocalizeDatas.ContainsKey(aLangName))
                     {
                         //Debug.LogError("Add aLangName:" + aLangName);
-                        iLangDic.Add(aLangName, new List<KeyPair>());
+                        m_LocalizeDatas.Add(aLangName, new());
                     }
-                    for (int j = 1; j < aCSV.Count; j++)
+
+                    if (replaceOldKey)
                     {
-                        string aKey = aCSV.GetData(j, 0);
-                        if (!string.IsNullOrEmpty(aKey))
+                        for (int j = 1; j < aCSV.Count; j++)
                         {
-                            iLangDic[aLangName].Add(new KeyPair(aKey, aCSV.GetData(j, i)));
+                            string key = aCSV.GetData(j, 0);
+                            if (!string.IsNullOrEmpty(key))
+                            {
+                                var val = aCSV.GetData(j, i);
+                                var dic = m_LocalizeDatas[aLangName].m_LocalizeDic;
+                                dic[key] = val;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (int j = 1; j < aCSV.Count; j++)
+                        {
+                            string key = aCSV.GetData(j, 0);
+                            if (!string.IsNullOrEmpty(key))
+                            {
+                                var val = aCSV.GetData(j, i);
+                                var dic = m_LocalizeDatas[aLangName].m_LocalizeDic;
+                                if (dic.ContainsKey(key))
+                                {
+                                    Debug.LogError($"ParseData:{iData}, key:{key}, val:{val}, key exist!!");
+                                }
+                                else
+                                {
+                                    dic.Add(key, val);
+                                }
+                            }
                         }
                     }
                 }
@@ -362,7 +470,7 @@ namespace UCL.Core
             {
                 UCL.Core.UI.UCL_GUILayout.DrawObjectData(this, iDataDic, string.Empty, true, LocalizeFieldName);
             }
-            if (!m_IsDownloading)
+            if (!IsDownloading)
             {
                 if (GUILayout.Button("Download", UCL_GUIStyle.ButtonStyle))
                 {
@@ -375,8 +483,7 @@ namespace UCL.Core
 
                 if (GUILayout.Button("Cancel", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    m_IsCancelDownload = true;
-                    DownloadEnd(false);
+                    Cancel();
                 }
                 GUILayout.Label($"{m_DownloadingInfo}", UCL_GUIStyle.LabelStyle);
 

@@ -52,7 +52,7 @@ namespace UCL.Core.Page
             }
             else
             {
-                aTitle = $"Delete {iDeleteTarget}?";
+                aTitle = UCL_LocalizeManager.Get("ConfirmDelete", iDeleteTarget);
             }
             const int FontSize = 20;
             var aPage = new UCL_OptionPage(aTitle, string.Empty

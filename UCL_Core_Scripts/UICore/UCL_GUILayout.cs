@@ -235,6 +235,35 @@ namespace UCL.Core.UI {
             if (int.TryParse(aResult, out aResVal)) return aResVal;
             return iVal;
         }
+        static public int IntFieldAuto(int iVal, UCL.Core.UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            const string aKey = "IntFieldValue";
+            const string PrevVal = "PrevVal";
+            if (iDataDic.ContainsKey(PrevVal))
+            {
+                if (iDataDic.GetData(PrevVal, -1) != iVal)//Clear cache
+                {
+                    iDataDic.Remove(aKey);
+                }
+            }
+
+            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), iOptions);
+            var aNumHash = NumHash;
+            for (int i = 0; i < aResult.Length; i++)
+            {
+                if (!aNumHash.Contains(aResult[i]))
+                {
+                    aResult = aResult.Remove(i, 1);
+                    break;
+                }
+            }
+            iDataDic.SetData(aKey, aResult);
+
+            int.TryParse(aResult, out iVal);
+
+            iDataDic.SetData(PrevVal, iVal);
+            return iVal;
+        }
         static public float FloatField(string iLabel, float iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();
             LabelAutoSize(iLabel);

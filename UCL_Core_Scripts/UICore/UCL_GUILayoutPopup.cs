@@ -114,8 +114,6 @@ namespace UCL.Core.UI
         /// <returns></returns>
         public static int PopupSearch(int iSelectedIndex, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey, params GUILayoutOption[] iOptions)
         {
-            const int MaxItemsPerPage = 20;
-
             if (iDisplayedOptions.Count == 0)
             {
                 Debug.LogError("UCL_GUILayoyt.Popup iDisplayedOptions.Count == 0");
@@ -169,15 +167,18 @@ namespace UCL.Core.UI
                 {
                     aIDs = iDisplayedOptions.Where(option => aRegex.IsMatch(option)).ToList();
                 }
+
+                const int MaxItemsPerPage = 20;
+
                 int pageCount = 1;
                 if (aIDs.Count > MaxItemsPerPage)
                 {
                     pageCount = 1 + ((aIDs.Count - 1) / MaxItemsPerPage);
                 }
                 int state = 0;
-                int curPage = iDataDic.GetData("CurPage", 0);
+                int curPage = iDataDic.GetData(nameof(curPage), 0);
                 if(curPage >= pageCount) curPage = pageCount - 1;
-
+                if(curPage < 0) curPage = 0;
 
                 int startIndex = curPage * MaxItemsPerPage;
                 int lastIndex = startIndex + MaxItemsPerPage;
@@ -202,8 +203,21 @@ namespace UCL.Core.UI
                         state = -1;//prev page
                     }
                     //GUILayout.Space(space);
+                    if (pageCount < 10)
+                    {
+                        GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                    }
+                    else
+                    {
+                        int len = Mathf.CeilToInt(Mathf.Log10((int)pageCount));
+                        int width = 30 + 10 * len;
+                        float size = UCL_GUIStyle.GetScaledSize(width);
+                        curPage = UCL_GUILayout.IntFieldAuto(curPage + 1, iDataDic.GetSubDic("PageInput"), GUILayout.Width(size)) - 1;
 
-                    GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                        GUILayout.Box($"/{pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(size));
+                        //GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(width)));
+                    }
+                    
                     //GUILayout.Label($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
                     if (GUILayout.Button(UCL_LocalizeManager.Get(" > "),
                         UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
@@ -297,7 +311,7 @@ namespace UCL.Core.UI
                     }
                 }
 
-                iDataDic.SetData("CurPage", curPage);
+                iDataDic.SetData(nameof(curPage), curPage);
             }
             else
             {

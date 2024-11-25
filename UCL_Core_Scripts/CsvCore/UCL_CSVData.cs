@@ -17,8 +17,8 @@ namespace UCL.Core.CsvLib {
         {
 
         }
-        public CSVRowData(string iData) {
-            var columes = iData.Split(new[] { ',' });//, System.StringSplitOptions.RemoveEmptyEntries
+        public CSVRowData(string iData, char iSeperator = ',') {
+            var columes = iData.Split(new[] { iSeperator });//, System.StringSplitOptions.RemoveEmptyEntries
             for(int i = 0; i < columes.Length; i++) {
                 m_Columes.Add(columes[i]);
             }
@@ -43,12 +43,12 @@ namespace UCL.Core.CsvLib {
         {
 
         }
-        public CSVData(string iData) {
+        public CSVData(string iData, char iSeperator = ',') {
             var aSplitLineRegex = new Regex(@"\r\n", RegexOptions.Compiled);
             var aRows = aSplitLineRegex.Split(iData);//.SplitByLine();
             for(int i = 0; i < aRows.Length; i++) {
                 if(!string.IsNullOrEmpty(aRows[i])) {
-                    m_Rows.Add(new CSVRowData(aRows[i]));
+                    m_Rows.Add(new CSVRowData(aRows[i], iSeperator));
                 }
             }
         }

@@ -58,7 +58,7 @@ namespace UCL.Core
         /// </summary>
         /// <param name="iUseCache">是否使用緩存的資料 false會直接生成一份新的</param>
         /// <returns></returns>
-        public T GetData(bool iUseCache = true) => Util.GetCommonData(ID, iUseCache) as T;
+        public T GetData(bool iUseCache = true) => Util.GetAsset(ID, iUseCache) as T;
         /// <summary>
         /// return true if asset exist
         /// </summary>
@@ -206,7 +206,7 @@ namespace UCL.Core
             GUILayout.EndHorizontal();
             if (aIsPreview)
             {
-                var aData = Util.GetCommonData(ID);
+                var aData = Util.GetAsset(ID);
                 if (aData != null)
                 {
                     aData.Preview(iDic.GetSubDic("Preview"), true);

@@ -238,7 +238,7 @@ namespace UCL.Core
         /// <param name="iID">ID</param>
         /// <param name="iUseCache">使否使用緩存的資料</param>
         /// <returns></returns>
-        virtual public UCLI_Asset GetCommonData(string iID, bool iUseCache = true) => GetData(iID, iUseCache);
+        virtual public UCLI_Asset GetAsset(string iID, bool iUseCache = true) => GetData(iID, iUseCache);
         /// <summary>
         /// 刪除
         /// </summary>

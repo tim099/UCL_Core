@@ -409,8 +409,8 @@ namespace UCL.Core
             {
                 aResult.Sort((iA, iB) =>
                 {
-                    string aGroupA = iUtil.GetCommonData(iA).GroupID;
-                    string aGroupB = iUtil.GetCommonData(iB).GroupID;
+                    string aGroupA = iUtil.GetAsset(iA).GroupID;
+                    string aGroupB = iUtil.GetAsset(iB).GroupID;
                     if (aGroupA == aGroupB)
                     {
                         return iA.CompareTo(iB);
@@ -459,7 +459,7 @@ namespace UCL.Core
         }
         public bool CheckShowData(UCLI_Asset iUtil, string iID, string iTargetGroup, PlayerPrefsData.FilterType? iFilterType = null)
         {
-            var aAsset = iUtil.GetCommonData(iID);
+            var aAsset = iUtil.GetAsset(iID);
             //var aFile = GetFileMeta(iID);
             //string aGroup = aFile.GetGroupID();
             string aGroup = aAsset.GroupID;
@@ -476,7 +476,7 @@ namespace UCL.Core
             var aGroupsPopupID = GroupsPopupID;//所有的分組ID
             if (!aGroupsPopupID.IsNullOrEmpty())
             {
-                var aAsset = iUtil.GetCommonData(iID);
+                var aAsset = iUtil.GetAsset(iID);
                 int aOldIndex = aGroupsPopupID.IndexOf(aAsset.GroupID);
                 var aIndex = UCL_GUILayout.PopupAuto(aOldIndex, aGroupsPopupID, iDic, "Group", 6, GUILayout.MinWidth(iWidth));//, GUILayout.MinWidth(80)
                 if (aOldIndex != aIndex)

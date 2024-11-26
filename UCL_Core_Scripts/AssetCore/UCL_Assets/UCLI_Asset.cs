@@ -97,7 +97,7 @@ namespace UCL.Core
         /// <param name="iID">ID</param>
         /// <param name="iUseCache">使否使用緩存的資料</param>
         /// <returns></returns>
-        UCLI_Asset GetCommonData(string iID, bool iUseCache = true);
+        UCLI_Asset GetAsset(string iID, bool iUseCache = true);
         void RefreshAllDatas();
         /// <summary>
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)

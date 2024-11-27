@@ -721,6 +721,17 @@ namespace UCL.Core
 
 
         }
+
+        public IList<string> GetAllKeys()
+        {
+            if (m_LocalizeDatas.IsNullOrEmpty())
+            {
+                return Array.Empty<string>();
+            }
+            var dic = m_LocalizeDatas.Values.First().m_LocalizeDic;
+
+            return dic.Keys.ToList();
+        }
     }
 
     [System.Serializable]
@@ -731,5 +742,83 @@ namespace UCL.Core
         public UCL_LocalizeAssetEntry() { m_ID = DefaultID; }
         public UCL_LocalizeAssetEntry(string iID) { m_ID = iID; }
 
+    }
+
+    public class UCL_LocalizeData : UCL.Core.JsonLib.UnityJsonSerializable, UCL.Core.UCLI_ShortName
+    {
+        public UCL_LocalizeData() { }
+
+        public UCL_LocalizeAssetEntry m_Localize = new();
+
+        [UCL.Core.PA.UCL_List(nameof(GetAllKeys))]
+        public string m_Key;
+
+        /// <summary>
+        /// Get all ID of this UCL_Asset with cache
+        /// 抓取此類型中所有的ID
+        /// </summary>
+        /// <returns></returns>
+        public IList<string> GetAllKeys()
+        {
+            try
+            {
+                var data = m_Localize.GetData();
+                return data.GetAllKeys();
+            }
+            catch { }//No Data Exception
+
+            return Array.Empty<string>();
+        }
+        virtual public string GetShortName()
+        {
+            string name = null;
+            try
+            {
+                name = GetLocalize();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+            if (string.IsNullOrEmpty(name))
+            {
+                return "N/A";
+            }
+            return name.Replace("\n", " ").CutToMaxLengthRichText(20);
+        }
+        public string GetLocalize()
+        {
+            if (string.IsNullOrEmpty(m_Key))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var data = m_Localize.GetData();
+                var result = data.GetLocalize(UCL_LocalizeManager.s_LangName, m_Key);
+                if (result.success)
+                {
+                    return result.value;
+                }
+            }
+            catch { }//No Data Exception
+
+            return m_Key;
+        }
+
+        public bool HasLocalize
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(m_Key)) return false;
+                if (m_Localize.IsEmpty)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
     }
 }

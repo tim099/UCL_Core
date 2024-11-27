@@ -239,8 +239,8 @@ namespace UCL.Core
 
         [UCL.Core.PA.UCL_FolderExplorer(typeof(UCL_ModuleService), UCL_ModuleService.ReflectKeyModResourcesPath)]
         public string m_FolderPath;
+
         #region ReflectionGetAllFileNames
-        const string ReflectionID_GetAllFileNames = "GetAllFileNames";
         public List<string> GetAllFileNames()
         {
             m_ModuleID = UCL_ModuleService.CurEditModuleID;
@@ -255,7 +255,7 @@ namespace UCL.Core
         /// <summary>
         /// 檔案名稱
         /// </summary>
-        [UCL.Core.PA.UCL_List(ReflectionID_GetAllFileNames)]
+        [UCL.Core.PA.UCL_List(nameof(GetAllFileNames))]
         public string m_FileName = string.Empty;
 
 
@@ -292,6 +292,7 @@ namespace UCL.Core
         {
             UCL_ModResourcesService.Release(FilePath);
         }
+
         override public Sprite GetSprite()
         {
             if (IsEmpty)
@@ -339,6 +340,11 @@ namespace UCL.Core
         }
         public byte[] ReadAllBytes()
         {
+            if (IsEmpty)
+            {
+                Debug.LogError($"{GetType().Name}.ReadAllBytes IsEmpty!,FileSystemFolderPath:{FileSystemFolderPath}");
+                return null;
+            }
             string aPath = FilePath;
             if (!File.Exists(aPath))
             {

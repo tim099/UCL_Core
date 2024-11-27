@@ -466,6 +466,7 @@ namespace UCL.Core
             if (Application.isEditor)
             {
                 ModuleEditType = UCL_ModuleEditType.Builtin;
+                //ModuleEditType = UCL_ModuleEditType.Runtime;
             }
             else
             {
@@ -487,7 +488,7 @@ namespace UCL.Core
             {
                 foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
                 {
-                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Builtin);
+                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
                     await aModule.Install();
                 }
             }
@@ -496,7 +497,7 @@ namespace UCL.Core
                 //List<UniTask> aTasks = new List<UniTask>();
                 foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
                 {
-                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Builtin);
+                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
                     await aModule.CheckAndInstall();
                     //aTasks.Add(aModule.CheckAndInstall());
                 }

@@ -514,10 +514,10 @@ namespace UCL.Core.JsonLib {
                 ((IJsonSerializable)iObj).DeserializeFromJson(iData);
                 return iObj;
             }
-            else if (iObj is IList && aType.IsGenericType)
+            else if (iObj is IList aList && aType.IsGenericType)
             {
-                IList aList = iObj as IList;
                 Type aElementType = aType.GetGenericValueType();
+                aList.Clear();
                 //Debug.LogError("IList aElementType:" + aElementType.Name);
                 if (typeof(UCLI_TypeList).IsAssignableFrom(aElementType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
                 {

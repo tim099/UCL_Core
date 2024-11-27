@@ -155,13 +155,13 @@ namespace UCL.Core
             {
                 using (var aHorizontalScope = new GUILayout.HorizontalScope(GUILayout.MinWidth(140)))
                 {
-                    SelectGroupIDOnGUI(iDataDic, groupIDs);
+                    SelectGroupIDOnGUI(iDataDic.GetSubDic(nameof(groupIDs)), groupIDs);
                 }
             }
 
             using (var aHorizontalScope = new GUILayout.HorizontalScope(GUILayout.MinWidth(200)))
             {
-                SelectIDOnGUI(iDataDic);
+                SelectIDOnGUI(iDataDic.GetSubDic(nameof(SelectIDOnGUI)));
             }
 
         }

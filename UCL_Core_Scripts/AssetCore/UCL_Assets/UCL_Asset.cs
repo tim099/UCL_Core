@@ -22,6 +22,12 @@ namespace UCL.Core
     {
         public const string Data = "Data";
         public const string Config = "Config";
+
+
+        public enum EditDataType : int
+        {
+            UCL_ModResourceAsset = 1,
+        }
     }
 
 

@@ -93,10 +93,7 @@ namespace UCL.Core
 
                 if (iIsShowEditButton)
                 {
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
-                    {
-                        UCL_CommonEditPage.Create(this);
-                    }
+                    ShowEditButtonOnGUI();
                 }
             }
             //GUILayout.EndHorizontal();

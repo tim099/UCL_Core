@@ -46,6 +46,11 @@ namespace UCL.Core
             /// 最後編輯的時間(用來判斷是否要安裝)
             /// </summary>
             public string m_LastEditTime = string.Empty;
+            /// <summary>
+            /// 編輯過的次數(用來判斷是否要安裝)
+            /// </summary>
+            public long m_UTC_TimeStamp;
+
             public string m_ID;
             /// <summary>
             /// 相依模組 載入此模組時會同時載入相依模組
@@ -63,15 +68,34 @@ namespace UCL.Core
             /// <returns></returns>
             public bool CheckVersion(Config iConfig)
             {
+                //Debug.LogError($"CheckVersion m_Version:({m_Version},{iConfig.m_Version})");
+                //Debug.LogError($"CheckVersion m_UTC_TimeStamp:({m_UTC_TimeStamp},{iConfig.m_UTC_TimeStamp})");
+
                 if (m_Version != iConfig.m_Version) return false;
-                if (m_LastEditTime != iConfig.m_LastEditTime) return false;
+
+                //aBuiltinConfig.CheckVersion(m_Config) 比較方式是用內建版本與已安裝版本進行比較
+                if (m_UTC_TimeStamp < iConfig.m_UTC_TimeStamp)//當前"內建版本"比"已安裝版本"更舊 代表玩家編輯過 不強制更新
+                {
+                    //Debug.LogError($"CheckVersion m_UTC_TimeStamp({m_UTC_TimeStamp}) < iConfig.m_UTC_TimeStamp({iConfig.m_UTC_TimeStamp})");
+                    return true;
+                }
+
+                if (m_LastEditTime != iConfig.m_LastEditTime)//edited!!
+                {
+                    return false;
+                }
 
                 return true;
             }
-
+            public long GetTimeStamp()
+            {
+                long timeStamp = Convert.ToInt64((DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds);
+                return timeStamp;
+            }
             public void OnModuleEdit()
             {
                 m_LastEditTime = System.DateTime.Now.ToString(DateFormat);
+                m_UTC_TimeStamp = GetTimeStamp();
             }
         }
 

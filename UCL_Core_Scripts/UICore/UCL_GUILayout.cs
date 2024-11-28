@@ -515,6 +515,16 @@ namespace UCL.Core.UI {
         static public Rect DrawSprite(Sprite iSprite, float iWidth, float iHeight) {
             return DrawSprite(iSprite, iWidth, iWidth, iHeight, iHeight);
         }
+        static public Rect GetSpriteRect(Sprite iSprite)
+        {
+            Rect aSpriteRect = iSprite.rect;
+            var aTex = iSprite.texture;
+            aSpriteRect.xMin /= aTex.width;
+            aSpriteRect.xMax /= aTex.width;
+            aSpriteRect.yMin /= aTex.height;
+            aSpriteRect.yMax /= aTex.height;
+            return aSpriteRect;
+        }
         static public Rect DrawSprite(Sprite iSprite, float iMinWidth, float iMaxWidth, float iMinHeight, float iMaxHeight) {
             Rect aRect = GUILayoutUtility.GetRect(iMinWidth, iMaxWidth, iMinHeight, iMaxHeight);
             if (iSprite == null)

@@ -66,7 +66,7 @@ namespace UCL.Core.UI {
         static public T NumField<T>(T iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
         {
             const string aKey = "NumField";
-            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), iOptions);
+            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), UCL_GUIStyle.TextFieldStyle, iOptions);
             var aNumHash = NumHash;
             for (int i = 0; i < aResult.Length; i++)
             {
@@ -139,7 +139,7 @@ namespace UCL.Core.UI {
             float aResult = GUILayout.HorizontalSlider(iVal, m_LeftValue, m_RightValue,UCL_GUIStyle.CurStyleData.HorizontalSliderStyle,
                 UCL_GUIStyle.CurStyleData.HorizontalSliderThumbStyle, GUILayout.ExpandWidth(true));
             if (aResult != iVal) iDic.Clear();
-            aResult = UCL.Core.UI.UCL_GUILayout.NumField(aResult, iDic, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+            aResult = UCL.Core.UI.UCL_GUILayout.NumField(aResult, iDic, GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(80)), GUILayout.ExpandWidth(false));
             float aMaxValue = System.Math.Max(m_LeftValue, m_RightValue);
             float aMinValue = System.Math.Min(m_LeftValue, m_RightValue);
             if (aResult > aMaxValue) aResult = aMaxValue;
@@ -247,7 +247,7 @@ namespace UCL.Core.UI {
                 }
             }
 
-            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), iOptions);
+            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), UCL_GUIStyle.TextFieldStyle, iOptions);
             var aNumHash = NumHash;
             for (int i = 0; i < aResult.Length; i++)
             {

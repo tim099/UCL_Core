@@ -43,7 +43,7 @@ namespace UCL.Core.UI
                 }
                 else
                 {
-                    if (!string.IsNullOrEmpty(iDisplayName)) UCL_GUILayout.LabelAutoSize(iDisplayName);
+                    if (!string.IsNullOrEmpty(iDisplayName)) GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle);
                 }
 
                 if (aIsShowField)
@@ -51,21 +51,21 @@ namespace UCL.Core.UI
                     {
                         GUILayout.Space(UCL_GUIStyle.GetScaledSize(5));
                         aIsMoveElement = BoolField(iParams.m_DataDic, IsMoveElementKey);
-                        UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("MoveElement"));
+                        GUILayout.Label(UCL_LocalizeManager.Get("MoveElement"), UCL_GUIStyle.LabelStyle);
                     }
                     {
                         GUILayout.Space(UCL_GUIStyle.GetScaledSize(5));
                         aIsDelete = BoolField(iParams.m_DataDic, IsDeleteElementKey);
-                        UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Delete"));
+                        GUILayout.Label(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.LabelStyle);
                     }
                 }
                 GUILayout.FlexibleSpace();
 
-                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL.Core.CopyPaste.SetCopyData(iList);
                 }
-                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste")))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL.Core.CopyPaste.LoadCopyData(iList);
                 }
@@ -76,29 +76,49 @@ namespace UCL.Core.UI
                 void DrawAllElements()
                 {
 
-                    int aAt = 0;
+                    const int MaxItemsPerPage = 10;
+                    int itemCount = iList.Count;
+                    var result = DrawSelectPage(iParams.m_DataDic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                    int startIndex = result.startIndex;
+                    int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                    int index = 0;
+
                     int aDeleteAt = -1;
-                    List<object> aResultList = new List<object>();
+                    Dictionary<int, object> aResultList = new();
                     var aListType = aType.GetGenericValueType();
                     string aTypeName = aListType.Name;
                     int aMove = -1;
+                    void DrawMove(int index)
+                    {
+                        using (new GUILayout.HorizontalScope("box"))
+                        {
+                            GUILayout.FlexibleSpace();
+                            if (GUILayout.Button(" ▲ ▼ ", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                aMove = index;
+                            }
+                            GUILayout.FlexibleSpace();
+                        }
+                    }
                     foreach (var aListData in iList)
                     {
+                        if (index >= lastIndex)
+                        {
+                            if (index < itemCount && aIsMoveElement)
+                            {
+                                DrawMove(index - 1);
+                            }
+                            break;
+                        }
+                        if (index++ < startIndex)
+                        {
+                            continue;
+                        }
+                        int aAt = index - 1;
+
                         if (aAt > 0 && aIsMoveElement)
                         {
-                            using (new GUILayout.HorizontalScope("box"))
-                            {
-                                GUILayout.FlexibleSpace();
-                                if (GUILayout.Button("▲", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                                {
-                                    aMove = aAt - 1;
-                                }
-                                if (GUILayout.Button("▼", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                                {
-                                    aMove = aAt - 1;
-                                }
-                                GUILayout.FlexibleSpace();
-                            }
+                            DrawMove(aAt - 1);
                         }
                         using (new GUILayout.HorizontalScope("box"))
                         {
@@ -110,27 +130,50 @@ namespace UCL.Core.UI
                                 }
                             }
                             //string aDisplayName = aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName);
-                            var aParams = iParams.CreateChild(iParams.m_DataDic.GetSubDic("IList", aAt),
+                            var aParams = iParams.CreateChild(iParams.m_DataDic.GetSubDic(nameof(iList), aAt),
                                 $"({aAt}) {aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName)}");
                             aParams.m_FieldType = aListType;
 
-                            //aParams.m_DisplayName += $"({aAt})";
-                            //GUILayout.Label(aParams.m_DisplayName, UCL_GUIStyle.LabelStyle);
                             var aResult = DrawObjectData(aListData, aParams);
-                            //var aResult = DrawObjectData(aListData, iDataDic.GetSubDic("IList", aAt++), aDisplayName, iFieldNameFunc: iFieldNameFunc, iFieldType: aListType);
-                            aResultList.Add(aResult);
-                            ++aAt;
+                            aResultList[aAt] = aResult;
                         }
                     }
-                    if (aMove >= 0 && aMove < aResultList.Count - 1)
+                    //if (aMove >= 0) Debug.LogError($"aMove:{aMove}, itemCount:{itemCount}");
+                    if (aMove >= 0 && aMove < itemCount - 1)
                     {
-                        aResultList.SwapElement(aMove, aMove + 1);
-                        iParams.m_DataDic.Swap("IList", aMove, aMove + 1);
+                        try
+                        {
+                            if (!aResultList.ContainsKey(aMove))
+                            {
+                                aResultList[aMove] = iList[aMove];
+                            }
+                            if (!aResultList.ContainsKey(aMove + 1))
+                            {
+                                aResultList[aMove + 1] = iList[aMove + 1];
+                            }
+
+                            object val = aResultList[aMove];
+                            aResultList[aMove] = aResultList[aMove + 1];
+                            aResultList[aMove + 1] = val;
+
+                            //aResultList.SwapElement(aMove, aMove + 1);
+                            iParams.m_DataDic.Swap(nameof(iList), aMove, aMove + 1);
+                        }
+                        catch(System.Exception ex)
+                        {
+                            Debug.LogError($"aMove:{aMove}, itemCount:{itemCount}, Exception:{ex}");
+                            Debug.LogException(ex);
+                        }
+
                     }
-                    for (int i = 0; i < aResultList.Count; i++)
+                    foreach(var key in aResultList.Keys)
                     {
-                        iList[i] = aResultList[i];
+                        iList[key] = aResultList[key];
                     }
+                    //for (int i = 0; i < aResultList.Count; i++)
+                    //{
+                    //    iList[i] = aResultList[i];
+                    //}
                     if (aDeleteAt >= 0)
                     {
                         iList.RemoveAt(aDeleteAt);

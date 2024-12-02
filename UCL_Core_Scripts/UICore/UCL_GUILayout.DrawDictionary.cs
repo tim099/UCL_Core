@@ -56,11 +56,11 @@ namespace UCL.Core.UI
                 }
                 GUILayout.FlexibleSpace();
 
-                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy")))
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL.Core.CopyPaste.SetCopyData(iDic);
                 }
-                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste")))
+                if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL.Core.CopyPaste.LoadCopyData(iDic);
                 }
@@ -87,7 +87,7 @@ namespace UCL.Core.UI
                     //iDataDic.SetData(AddKey, DrawObjectData(aKey, iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
                     using (new GUILayout.HorizontalScope("box"))
                     {
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                         {
                             try
                             {
@@ -108,12 +108,29 @@ namespace UCL.Core.UI
 
                 }
 
+                const int MaxItemsPerPage = 10;
+                int itemCount = iDic.Keys.Count;
+                var result = DrawSelectPage(iDataDic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                int startIndex = result.startIndex;
+                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                int index = 0;
+
+
                 var aValueType = aType.GetGenericValueType();
                 object aDeleteAt = null;
                 string aDeleteKeyName = string.Empty;
                 List<Tuple<object, object>> aResultList = new List<Tuple<object, object>>();
                 foreach (var aKey in iDic.Keys)
                 {
+                    if (index >= lastIndex)
+                    {
+                        break;
+                    }
+                    if (index++ < startIndex)
+                    {
+                        continue;
+                    }
+
                     using (new GUILayout.HorizontalScope("box"))
                     {
                         string aKeyName = aKey.UCL_GetShortName(aKey.AllFieldToString());

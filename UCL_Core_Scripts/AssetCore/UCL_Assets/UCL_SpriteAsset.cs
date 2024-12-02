@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Threading;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
+using UCL.Core.UI;
 using UnityEngine;
 using UnityEngine.UI;
 namespace UCL.Core
@@ -80,7 +81,8 @@ namespace UCL.Core
                 var aTexture = Texture;
                 if (aTexture != null)
                 {
-                    GUILayout.Box(aTexture, GUILayout.Width(64), GUILayout.Height(64));
+                    float size = UCL_GUIStyle.GetScaledSize(64);
+                    GUILayout.Box(aTexture, GUILayout.Width(size), GUILayout.Height(size));
                 }
                 //else
                 //{

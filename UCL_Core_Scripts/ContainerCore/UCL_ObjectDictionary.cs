@@ -105,9 +105,10 @@ namespace UCL.Core
                 return;
             }
             var aList = GetSubDicList(iKey);
-            var aTmp = aList[iIDA];
-            aList[iIDA] = aList[iIDB];
-            aList[iIDB] = aTmp;
+            var valA = GetSubDic(iKey, iIDA);
+
+            aList[iIDA] = GetSubDic(iKey, iIDB);
+            aList[iIDB] = valA;
         }
         /// <summary>
         /// Get sub UCL_ObjectDictionary inside this UCL_ObjectDictionary

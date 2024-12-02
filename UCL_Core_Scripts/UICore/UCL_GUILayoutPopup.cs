@@ -102,7 +102,128 @@ namespace UCL.Core.UI
             iDataDic.SetData(aKey, aSelectedIndex);
             return aSelectedIndex;
         }
+        /// <summary>
+        /// return cur page index(start from 0)
+        /// </summary>
+        /// <param name="iDataDic"></param>
+        /// <param name="itemsCount"></param>
+        /// <param name="maxItemsPerPage"></param>
+        /// <returns></returns>
+        public static (int pageIndex, int startIndex) DrawSelectPage(UCL_ObjectDictionary iDataDic, int itemsCount, int maxItemsPerPage)
+        {
+            int pageCount = 1;
+            if (itemsCount > maxItemsPerPage)
+            {
+                pageCount = 1 + ((itemsCount - 1) / maxItemsPerPage);
+            }
+            int state = 0;
+            int curPage = iDataDic.GetData(nameof(curPage), 0);
+            if (curPage >= pageCount) curPage = pageCount - 1;
+            if (curPage < 0) curPage = 0;
 
+            int startIndex = curPage * maxItemsPerPage;
+            int lastIndex = startIndex + maxItemsPerPage;
+            if (lastIndex > itemsCount)
+            {
+                lastIndex = itemsCount;
+            }
+            if(pageCount <= 1)
+            {
+                return (0, 0);
+            }
+
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            float space = UCL_GUIStyle.GetScaledSize(2);
+
+            if (GUILayout.Button("|<", UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
+            {
+                state = -2;//first page
+            }
+            GUILayout.Space(space);
+            if (GUILayout.Button(UCL_LocalizeManager.Get(" < "),
+                UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
+            {
+                state = -1;//prev page
+            }
+            //GUILayout.Space(space);
+            if (pageCount < 10)
+            {
+                GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+            }
+            else
+            {
+                int len = Mathf.CeilToInt(Mathf.Log10((int)pageCount));
+                int width = 30 + 10 * len;
+                float size = UCL_GUIStyle.GetScaledSize(width);
+                curPage = UCL_GUILayout.IntFieldAuto(curPage + 1, iDataDic.GetSubDic("PageInput"), GUILayout.Width(size)) - 1;
+
+                GUILayout.Box($"/{pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(size));
+                //GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(width)));
+            }
+
+            //GUILayout.Label($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+            if (GUILayout.Button(UCL_LocalizeManager.Get(" > "),
+                UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
+            {
+                state = 1;//next page
+            }
+            GUILayout.Space(space);
+            if (GUILayout.Button(">|", UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
+            {
+                state = 2;//lase page
+            }
+            //GUILayout.Space(space);
+            //GUILayout.Label($"{startIndex + 1} ~ {lastIndex}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            int newPage = curPage;
+            if (state != 0)
+            {
+
+                switch (state)
+                {
+                    case -1:
+                        {
+                            if (newPage <= 0)
+                            {
+                                newPage = pageCount - 1;
+                            }
+                            else
+                            {
+                                newPage--;
+                            }
+                            break;
+                        }
+                    case 1:
+                        {
+                            if (newPage >= pageCount - 1)
+                            {
+                                newPage = 0;
+                            }
+                            else
+                            {
+                                newPage++;
+                            }
+                            break;
+                        }
+                    case -2:
+                        {
+                            newPage = 0;
+                            break;
+                        }
+                    case 2:
+                        {
+                            newPage = pageCount - 1;
+                            break;
+                        }
+                }
+            }
+            iDataDic.SetData(nameof(curPage), newPage);
+
+            return (curPage,curPage * maxItemsPerPage);
+        }
         /// <summary>
         /// Show pop up with a search input field
         /// </summary>
@@ -167,73 +288,13 @@ namespace UCL.Core.UI
                 {
                     aIDs = iDisplayedOptions.Where(option => aRegex.IsMatch(option)).ToList();
                 }
-
                 const int MaxItemsPerPage = 20;
+                int itemCount = aIDs.Count;
+                var result = DrawSelectPage(iDataDic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                int startIndex = result.startIndex;
+                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
 
-                int pageCount = 1;
-                if (aIDs.Count > MaxItemsPerPage)
-                {
-                    pageCount = 1 + ((aIDs.Count - 1) / MaxItemsPerPage);
-                }
-                int state = 0;
-                int curPage = iDataDic.GetData(nameof(curPage), 0);
-                if(curPage >= pageCount) curPage = pageCount - 1;
-                if(curPage < 0) curPage = 0;
 
-                int startIndex = curPage * MaxItemsPerPage;
-                int lastIndex = startIndex + MaxItemsPerPage;
-                if (lastIndex > aIDs.Count)
-                {
-                    lastIndex = aIDs.Count;
-                }
-                if (pageCount > 1)
-                {
-                    GUILayout.BeginHorizontal();
-                    GUILayout.FlexibleSpace();
-                    float space = UCL_GUIStyle.GetScaledSize(2);
-
-                    if (GUILayout.Button("|<", UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
-                    {
-                        state = -2;//first page
-                    }
-                    GUILayout.Space(space);
-                    if (GUILayout.Button(UCL_LocalizeManager.Get(" < "),
-                        UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
-                    {
-                        state = -1;//prev page
-                    }
-                    //GUILayout.Space(space);
-                    if (pageCount < 10)
-                    {
-                        GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
-                    }
-                    else
-                    {
-                        int len = Mathf.CeilToInt(Mathf.Log10((int)pageCount));
-                        int width = 30 + 10 * len;
-                        float size = UCL_GUIStyle.GetScaledSize(width);
-                        curPage = UCL_GUILayout.IntFieldAuto(curPage + 1, iDataDic.GetSubDic("PageInput"), GUILayout.Width(size)) - 1;
-
-                        GUILayout.Box($"/{pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(size));
-                        //GUILayout.Box($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.BoxStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(width)));
-                    }
-                    
-                    //GUILayout.Label($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
-                    if (GUILayout.Button(UCL_LocalizeManager.Get(" > "),
-                        UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
-                    {
-                        state = 1;//next page
-                    }
-                    GUILayout.Space(space);
-                    if (GUILayout.Button(">|", UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
-                    {
-                        state = 2;//lase page
-                    }
-                    //GUILayout.Space(space);
-                    //GUILayout.Label($"{startIndex + 1} ~ {lastIndex}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    GUILayout.FlexibleSpace();
-                    GUILayout.EndHorizontal();
-                }
                 //index of current display option
                 int index = 0;
                 //using (var aScope = new GUILayout.VerticalScope("box", iOptions))
@@ -245,7 +306,7 @@ namespace UCL.Core.UI
                         {
                             continue;
                         }
-                        if (index >= startIndex + MaxItemsPerPage)
+                        if (index >= lastIndex)
                         {
                             break;
                         }
@@ -269,49 +330,6 @@ namespace UCL.Core.UI
                     }
                 }
                 GUILayout.EndVertical();
-
-                if (state != 0)
-                {
-                    switch (state)
-                    {
-                        case -1:
-                            {
-                                if (curPage <= 0)
-                                {
-                                    curPage = pageCount - 1;
-                                }
-                                else
-                                {
-                                    curPage--;
-                                }
-                                break;
-                            }
-                        case 1:
-                            {
-                                if (curPage >= pageCount - 1)
-                                {
-                                    curPage = 0;
-                                }
-                                else
-                                {
-                                    curPage++;
-                                }
-                                break;
-                            }
-                        case -2:
-                            {
-                                curPage = 0;
-                                break;
-                            }
-                        case 2:
-                            {
-                                curPage = pageCount - 1;
-                                break;
-                            }
-                    }
-                }
-
-                iDataDic.SetData(nameof(curPage), curPage);
             }
             else
             {

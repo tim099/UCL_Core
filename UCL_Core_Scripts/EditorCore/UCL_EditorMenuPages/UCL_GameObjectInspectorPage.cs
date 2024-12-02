@@ -66,12 +66,12 @@ namespace UCL.Core.EditorLib.Page
                             using (new GUILayout.HorizontalScope())
                             {
                                 m_Target.SetActive(UCL.Core.UI.UCL_GUILayout.BoolField(m_Target.activeSelf));
-                                m_Target.name = GUILayout.TextField(m_Target.name);
+                                m_Target.name = GUILayout.TextField(m_Target.name, UCL.Core.UI.UCL_GUIStyle.TextFieldStyle);
                             }
                             using (new GUILayout.HorizontalScope())
                             {
                                 GUILayout.Label("Tag", GUILayout.ExpandWidth(false));
-                                m_Target.tag = GUILayout.TextField(m_Target.tag);
+                                m_Target.tag = GUILayout.TextField(m_Target.tag, UCL.Core.UI.UCL_GUIStyle.TextFieldStyle);
                                 //var aTags = UnityEditorInternal.InternalEditorUtility.tags;
                                 //m_Target.tag = aTags[UCL.Core.UI.UCL_GUILayout.PopupAuto(aTags.GetArrayIndex(m_Target.tag), aTags, m_Dic.GetSubDic("Tag"), "Tag", 8)];
                             }

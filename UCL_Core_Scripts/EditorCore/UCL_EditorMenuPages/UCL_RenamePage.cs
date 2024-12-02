@@ -74,7 +74,7 @@ namespace RCG.Page
             using (var aScope = new GUILayout.HorizontalScope())
             {
                 GUILayout.Label("New ID", UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                m_NewID = GUILayout.TextField(m_NewID);
+                m_NewID = GUILayout.TextField(m_NewID, UCL_GUIStyle.TextFieldStyle);
             }
 
             using (var aScope = new GUILayout.HorizontalScope())

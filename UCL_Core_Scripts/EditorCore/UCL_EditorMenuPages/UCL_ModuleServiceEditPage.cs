@@ -1,6 +1,7 @@
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/22 2024 13:52
+using Cysharp.Threading.Tasks;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -32,6 +33,11 @@ namespace UCL.Core.Page
         }
         public override void Init(UCL_GUIPageController iGUIPageController)
         {
+            if (!UCL_ModuleService.Initialized)
+            {
+                UCL_ModuleService.WaitUntilInitialized(default).Forget();
+            }
+
             base.Init(iGUIPageController);
             //UCL_ModuleService.Ins.SetState(UCL_ModuleService.State.Main);
         }
@@ -48,6 +54,8 @@ namespace UCL.Core.Page
         {
             if (!UCL_ModuleService.Initialized)
             {
+                
+                GUILayout.Label($"!UCL_ModuleService.Initialized", UCL_GUIStyle.LabelStyle);
                 return;
             }
             UCL_ModuleService.Ins.OnGUI(m_DataDic.GetSubDic("ModuleService"));

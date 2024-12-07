@@ -219,7 +219,7 @@ namespace UCL.Core.UI {
         static public int IntField(int iVal, UCL.Core.UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
         {
             const string aKey = "IntFieldValue";
-            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), iOptions);
+            string aResult = GUILayout.TextField(iDataDic.GetData(aKey, iVal.ToString()), UCL_GUIStyle.TextFieldStyle, iOptions);
             var aNumHash = NumHash;
             for (int i = 0; i < aResult.Length; i++)
             {

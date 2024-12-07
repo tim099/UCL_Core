@@ -71,6 +71,14 @@ namespace UCL.Core
 
         public override JsonData Save()
         {
+            foreach(var key in m_LocalizeDatas.Keys)
+            {
+                if (!UCL_LanguageCodeAsset.Util.ContainsAsset(key))
+                {
+                    UCL_LanguageCodeAsset lang = new UCL_LanguageCodeAsset(key);
+                    lang.Save();//Add key
+                }
+            }
             return base.Save();
         }
         public enum LocalizeType

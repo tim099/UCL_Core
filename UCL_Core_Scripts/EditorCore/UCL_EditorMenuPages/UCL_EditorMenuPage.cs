@@ -55,7 +55,7 @@ namespace UCL.Core.EditorLib.Page
                 }
 
 
-                if (GUILayout.Button(UCL_LocalizeManager.Get("Edit CommonData"), UCL_GUIStyle.ButtonStyle))
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Edit Modules"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_ModuleServiceEditPage.Create();
                 }

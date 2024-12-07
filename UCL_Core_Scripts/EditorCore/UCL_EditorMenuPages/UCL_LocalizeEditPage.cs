@@ -6,13 +6,14 @@ using System.Text.RegularExpressions;
 using UCL.Core.LocalizeLib;
 using System.IO;
 using System.Text;
+using UCL.Core.Game;
 
 namespace UCL.Core.EditorLib.Page
 {
     public class UCL_LocalizeEditPage : UCL.Core.EditorLib.Page.UCL_EditorPage
     {
         UCL_LocalizeSetting m_LocalizeSetting = null;
-        UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
+        UCL.Core.UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
         const string LocalizeSettingKey = "LocalizeEditPageSetting";
         bool m_IsDownloading = false;
         public override void Init(UCL_GUIPageController iGUIPageController)
@@ -54,19 +55,33 @@ namespace UCL.Core.EditorLib.Page
         protected override void ContentOnGUI()
         {
             GUILayout.Box("Localize", UI.UCL_GUIStyle.BoxStyle);
-            UCL_GUILayout.DrawObjectData(m_LocalizeSetting,
-                m_DataDic, iIsAlwaysShowDetail: false, iFieldNameFunc: UCL_StaticFunctions.LocalizeFieldName);
-            if (!m_IsDownloading)
+            using (new GUILayout.HorizontalScope("box"))
             {
-                if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_Download")))
+                GUILayout.Box("Language", UCL_GUIStyle.BoxStyle, GUILayout.ExpandWidth(false));
+                string aLangCode = UCL_LocalizeManager.s_LangName;
+                UCL_LanguageCodeEntry aLanguageCodeGenData = new UCL_LanguageCodeEntry(aLangCode);
+                UCL_GUILayout.DrawObjectData(aLanguageCodeGenData, m_Dic.GetSubDic("LanguageCode"), "LanguageCode", false);
+                string aNewLangCode = aLanguageCodeGenData.ID;
+                if (aNewLangCode != aLangCode)
                 {
-                    SaveLocalizeSetting();
-                    m_LocalizeSetting.StartDownload((iSuccess) =>
-                    {
-                        m_IsDownloading = false;
-                    });
+                    UCL_LocalizeService.SetLanguage(aNewLangCode);
                 }
             }
+
+
+            //UCL_GUILayout.DrawObjectData(m_LocalizeSetting,
+            //    m_DataDic, iIsAlwaysShowDetail: false, iFieldNameFunc: UCL_StaticFunctions.LocalizeFieldName);
+            //if (!m_IsDownloading)
+            //{
+            //    if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_Download")))
+            //    {
+            //        SaveLocalizeSetting();
+            //        m_LocalizeSetting.StartDownload((iSuccess) =>
+            //        {
+            //            m_IsDownloading = false;
+            //        });
+            //    }
+            //}
         }
     }
 }

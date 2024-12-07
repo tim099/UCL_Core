@@ -12,7 +12,7 @@ namespace UCL.Core
     public class UCL_LanguageCodeEntry : UCL_AssetEntryDefault<UCL_LanguageCodeAsset>
     {
         public const string DefaultID = "en";
-
+        public static UCL_LanguageCodeEntry s_DefaultLang = new UCL_LanguageCodeEntry(DefaultID);
         public UCL_LanguageCodeEntry() { ID = DefaultID; }
         public UCL_LanguageCodeEntry(string iID) { ID = iID; }
 
@@ -50,7 +50,7 @@ namespace UCL.Core
 
         public UCL_LanguageCodeAsset()
         {
-            ID = "en";
+            ID = UCL_LanguageCodeEntry.DefaultID;
         }
         public UCL_LanguageCodeAsset(string iID)
         {
@@ -117,7 +117,7 @@ namespace UCL.Core
         }
         public void SetLanguage()
         {
-            //RCG_LocalizeService.SetLanguage(ID);
+            UCL.Core.Game.UCL_LocalizeService.SetLanguage(ID);
         }
     }
 }

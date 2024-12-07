@@ -76,5 +76,12 @@ namespace UCL.Core.Game {
             m_CurLang = iLang;
             UCL_LocalizeManager.Instance.LoadLanguage(m_LoadLangPath, m_CurLang);
         }
+
+        public static void SetLanguage(string iLangCode)
+        {
+            CurLang = iLangCode;
+
+            UCL_LocalizeManager.Instance.LoadLanguage(LoadLangPath, iLangCode);
+        }
     }
 }

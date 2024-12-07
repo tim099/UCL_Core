@@ -863,6 +863,9 @@ namespace UCL.Core
             m_LoadedModules.Clear();
             m_AssetsCacheDic.Clear();
             m_IDsCache.Clear();
+
+            Resources.UnloadUnusedAssets();
+
             var aLoadedModules = new Dictionary<string, UCL_Module>();
             var playList = modulePlayist.EnablePlaylist.ToList();
             playList.Reverse();

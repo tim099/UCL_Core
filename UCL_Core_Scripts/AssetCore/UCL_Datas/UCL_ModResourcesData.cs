@@ -277,8 +277,11 @@ namespace UCL.Core
                 return Path.Combine(aPath, m_FolderPath);
             }
         }
+        /// <summary>
+        /// 完整的檔案路徑
+        /// </summary>
         public string FilePath => Path.Combine(FileSystemFolderPath, m_FileName);
-
+        public string UnityWebrequestURL => $"file://{FilePath}";
         //~UCL_ModResourcesData()
         //{
         //    Release();

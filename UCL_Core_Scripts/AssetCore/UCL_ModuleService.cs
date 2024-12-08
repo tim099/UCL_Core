@@ -321,20 +321,27 @@ namespace UCL.Core
                 }
                 set
                 {
-                    m_GroupID = value;
-                    if (string.IsNullOrEmpty(m_GroupID))
+                    try
                     {
-                        if (File.Exists(GroupIDPath))
+                        m_GroupID = value;
+                        if (string.IsNullOrEmpty(m_GroupID))
                         {
-                            File.Delete(GroupIDPath);
+                            if (File.Exists(GroupIDPath))
+                            {
+                                File.Delete(GroupIDPath);
+                            }
+                        }
+                        else
+                        {
+                            Directory.CreateDirectory(GroupFolderPath);
+                            File.WriteAllText(GroupIDPath, m_GroupID);
                         }
                     }
-                    else
+                    catch(System.Exception ex)
                     {
-                        Directory.CreateDirectory(GroupFolderPath);
-                        File.WriteAllText(GroupIDPath, m_GroupID);
+                        Debug.LogError($"{GetType().Name}.set GroupID,ID:{ID},GroupID:{value},Exception:{ex}");
+                        Debug.LogException(ex);
                     }
-
                 }
             }
 

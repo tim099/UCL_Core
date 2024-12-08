@@ -133,7 +133,7 @@ namespace UCL.Core.UI
             }
 
             GUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
+            //GUILayout.FlexibleSpace();
             float space = UCL_GUIStyle.GetScaledSize(2);
 
             if (GUILayout.Button("|<", UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))

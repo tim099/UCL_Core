@@ -35,6 +35,23 @@ namespace UCL.Core.Page
             UCL.Core.UI.UCL_GUIPageController.CurrentRenderIns.Push(aPage);
             return aPage;
         }
+        /// <summary>
+        /// 編輯時不額外複製一份 會修改到原資料
+        /// </summary>
+        /// <param name="iData"></param>
+        /// <returns></returns>
+        static public UCL_CommonEditPage CreateWithoutClone(UCLI_CommonEditable iData)
+        {
+            if (iData == null)
+            {
+                Debug.LogError("CommonEditPage Create() iData == null");
+                return null;
+            }
+            //var aPage = new RCG_CommonEditPage(iData);
+            var aPage = new UCL_CommonEditPage(iData);
+            UCL.Core.UI.UCL_GUIPageController.CurrentRenderIns.Push(aPage);
+            return aPage;
+        }
         public UCL_CommonEditPage() { }
         public UCL_CommonEditPage(UCLI_CommonEditable iData)
         {

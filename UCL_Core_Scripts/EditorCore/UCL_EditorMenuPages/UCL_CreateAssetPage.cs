@@ -222,8 +222,13 @@ namespace UCL.Core.Page
                 if (asset == null)
                 {
                     asset = new T();
+                    UCL_CommonEditPage.CreateWithoutClone(asset);
                 }
-                UCL_CommonEditPage.Create(asset);
+                else
+                {
+                    UCL_CommonEditPage.Create(asset);
+                }
+                
             }
         }
     }

@@ -58,7 +58,19 @@ namespace UCL.Core
         /// </summary>
         /// <param name="iUseCache">是否使用緩存的資料 false會直接生成一份新的</param>
         /// <returns></returns>
-        public T GetData(bool iUseCache = true) => Util.GetAsset(ID, iUseCache) as T;
+        public T GetData(bool iUseCache = true)
+        {
+            try
+            {
+                return Util.GetAsset(ID, iUseCache) as T;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"{nameof(T)}.GetData, ID:{ID},iUseCache:{iUseCache},Exception:{e}");
+                Debug.LogException(e);
+            }
+            return null;
+        }
         /// <summary>
         /// return true if asset exist
         /// </summary>

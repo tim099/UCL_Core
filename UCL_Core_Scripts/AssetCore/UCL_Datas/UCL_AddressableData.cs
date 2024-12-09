@@ -100,12 +100,12 @@ namespace UCL.Core
 
         virtual protected List<string> GetAddressablePath() => UCL_Addressable.GetAddressablePath();
 
-        [UCL.Core.PA.UCL_List("GetAddressablePath")]
+        [UCL.Core.PA.UCL_List(nameof(GetAddressablePath))]
         public string m_AddressablePath = string.Empty;
 
         virtual public List<string> GetAddressableKeys() => UCL_Addressable.GetAllAddressableKeys(m_AddressablePath);
 
-        [UCL.Core.PA.UCL_List("GetAddressableKeys")]
+        [UCL.Core.PA.UCL_List(nameof(GetAddressableKeys))]
         public string m_AddressableKey = string.Empty;
 
 

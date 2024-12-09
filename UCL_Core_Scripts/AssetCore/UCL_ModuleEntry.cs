@@ -17,8 +17,6 @@ namespace UCL.Core
         public static UCL_ModuleEntry CoreModule => new UCL_ModuleEntry(CoreModuleID);
 
 
-
-        protected const string FuncKeyGetAllIDs = "GetAllIDs";
         /// <summary>
         /// Get all modules ID
         /// </summary>
@@ -27,7 +25,7 @@ namespace UCL.Core
         {
             return UCL_ModuleService.Ins.GetAllModulesID();
         }
-        [UCL.Core.PA.UCL_List(FuncKeyGetAllIDs)]
+        [UCL.Core.PA.UCL_List(nameof(GetAllIDs))]
         public string m_ID = CoreModuleID;
 
 

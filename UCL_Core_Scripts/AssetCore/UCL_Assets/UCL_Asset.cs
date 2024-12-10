@@ -27,6 +27,7 @@ namespace UCL.Core
         public enum EditDataType : int
         {
             UCL_ModResourceAsset = 1,
+            UCL_BundleAsset,
         }
     }
 

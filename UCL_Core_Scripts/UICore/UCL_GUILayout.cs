@@ -101,7 +101,7 @@ namespace UCL.Core.UI {
         {
             GUILayout.BeginHorizontal();
             var aDic = iDic.GetSubDic("Slider");
-            if(!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, GUILayout.ExpandWidth(false));
+            if(!string.IsNullOrEmpty(iLabel)) GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             float aPrevVal = iDic.GetData("SliderVal", (float)iVal);
             float aSliderVal = GUILayout.HorizontalSlider(aPrevVal, m_LeftValue, m_RightValue, GUILayout.ExpandWidth(true));
             int aResult = Mathf.RoundToInt(aSliderVal);

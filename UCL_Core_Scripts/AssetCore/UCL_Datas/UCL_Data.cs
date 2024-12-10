@@ -61,6 +61,15 @@ namespace UCL.Core
         {
             return default;
         }
+        virtual public async UniTask<Texture2D> LoadTextureAsync(CancellationToken iToken)
+        {
+            var sprite = await LoadSpriteAsync(iToken);
+            if(sprite == null)
+            {
+                return null;
+            }
+            return sprite.texture;
+        }
         virtual public async UniTask<T> LoadComponentAsync<T>(CancellationToken iToken) where T : UnityEngine.Component
         {
 

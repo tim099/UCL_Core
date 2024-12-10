@@ -13,6 +13,7 @@ using System.Threading;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace UCL.Core
 {
@@ -64,7 +65,10 @@ namespace UCL.Core
             public List<UnityEngine.Object> m_CreatedAssets = new List<UnityEngine.Object>();
 
             virtual public DataType DataType => DataType.Default;
-
+            virtual public UniTask InitAsync(string iPath)
+            {
+                throw new System.NotImplementedException();
+            }
             virtual public void Init(string iPath)
             {
                 m_FilePath = iPath;
@@ -104,6 +108,7 @@ namespace UCL.Core
         {
             const int TextureIndex = 0;
             const int SpriteIndex = TextureIndex + 1;
+            public bool IsLoading = true;
 
             override public DataType DataType => DataType.Sprite;
 
@@ -121,16 +126,32 @@ namespace UCL.Core
                 m_CreatedAssets.Add(aTexture);
                 Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
                 m_CreatedAssets.Add(aSprite);
+                IsLoading = false;
+            }
+            override public async UniTask InitAsync(string iPath)
+            {
+                base.Init(iPath);
+                Texture2D aTexture = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(iPath);
+                m_CreatedAssets.Add(aTexture);
+                //Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
+                //m_CreatedAssets.Add(aSprite);
+                IsLoading = false;
             }
             public Sprite Sprite
             {
                 get
                 {
-                    if (m_CreatedAssets.Count > SpriteIndex)
+                    if(m_CreatedAssets.Count <= TextureIndex)
                     {
-                        return m_CreatedAssets[SpriteIndex] as Sprite;
+                        return null;
                     }
-                    return null;
+                    if (m_CreatedAssets.Count <= SpriteIndex)
+                    {
+                        Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(Texture2D);
+                        m_CreatedAssets.Add(aSprite);
+                    }
+
+                    return m_CreatedAssets[SpriteIndex] as Sprite;
                 }
             }
             public Texture2D Texture2D
@@ -157,7 +178,41 @@ namespace UCL.Core
         }
         #endregion
 
+        public static async UniTask<LoadedSpriteData> LoadTextureAsync(string iPath)
+        {
+            //Debug.LogError($"LoadSpriteAsync:{iPath}");
+            if (!s_LoadedDatas.ContainsKey(iPath))
+            {
+                try
+                {
+                    LoadedSpriteData aLoadedData = new LoadedSpriteData();
+                    s_LoadedDatas[iPath] = aLoadedData;
+                    await aLoadedData.InitAsync(iPath);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                    Debug.LogError($"LoadSprite iPath:{iPath},Exception:{ex}");
+                    return null;
+                }
+            }
 
+            var aData = s_LoadedDatas[iPath];
+
+            if (aData is LoadedSpriteData aSpriteData)
+            {
+                if (aSpriteData.IsLoading)
+                {
+                    await UniTask.WaitUntil(() => !aSpriteData.IsLoading);
+                }
+                return aSpriteData;
+            }
+            else
+            {
+                Debug.LogError($"UCL_ModResourcesService.LoadSprite aData.GetType().FullName:{aData.GetType().FullName}");
+                return null;
+            }
+        }
         public static Sprite LoadSprite(string iPath)
         {
             //Debug.LogError($"LoadSprite iPath:{iPath},s_LoadedDatas.Keys:{s_LoadedDatas.Keys.ConcatString()}");
@@ -282,6 +337,13 @@ namespace UCL.Core
         /// </summary>
         public string FilePath => Path.Combine(FileSystemFolderPath, m_FileName);
         public string UnityWebrequestURL => $"file://{FilePath}";
+
+
+        public UCL_ModResourcesData() { }
+        //public UCL_ModResourcesData(string folderPath)
+        //{
+        //    m_FolderPath = folderPath;
+        //}
         //~UCL_ModResourcesData()
         //{
         //    Release();
@@ -309,12 +371,34 @@ namespace UCL.Core
         {
             return default;
         }
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
+//#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
         public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+//#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
         {
-            return GetSprite();
+            if (IsEmpty)
+            {
+                Debug.LogError($"UCL_ModResourcesData.LoadSprite IsEmpty!,FileSystemFolderPath:{FileSystemFolderPath}");
+                return null;
+            }
+            //var result = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(FilePath);
+            var result = await UCL_ModResourcesService.LoadTextureAsync(FilePath);
+            return result.Sprite;
+
+            //return GetSprite();
         }
+        override public async UniTask<Texture2D> LoadTextureAsync(CancellationToken iToken)
+        {
+            var result = await UCL_ModResourcesService.LoadTextureAsync(FilePath);
+            return result.Texture2D;
+
+            //var sprite = await LoadSpriteAsync(iToken);
+            //if (sprite == null)
+            //{
+            //    return null;
+            //}
+            //return sprite.texture;
+        }
+
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName)
         {
             {

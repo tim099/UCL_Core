@@ -1,7 +1,9 @@
-﻿using System.Collections;
+﻿using Cysharp.Threading.Tasks;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Networking;
 namespace UCL.Core.TextureLib {
     public class TextureAtlasData : System.IDisposable
     {
@@ -146,6 +148,19 @@ namespace UCL.Core.TextureLib {
         {
             Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(iData, iIsInverse);
             return Sprite.Create(aTexture, new Rect(0.0f, 0.0f, aTexture.width, aTexture.height), new Vector2(0.5f, 0.5f), iPixelsPerUnit);
+        }
+        /// <summary>
+        /// Load Texture2D from local file
+        /// </summary>
+        /// <param name="filePath"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public static async UniTask<Texture2D> LoadTextureFromFile(string filePath)
+        {
+            var path = $"file://{filePath}";
+            var webRequest = UnityWebRequestTexture.GetTexture(path);
+            await webRequest.SendWebRequest();
+            return DownloadHandlerTexture.GetContent(webRequest);
         }
         /// <summary>
         /// Create a Texture2D from byte array

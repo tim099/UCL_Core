@@ -1,6 +1,5 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 
 
 
@@ -16,6 +15,19 @@ public static partial class ListExtensionMethods {
     #endregion
 
     #region IEnumerable
+    public static int GetCount(this IEnumerable iIEnumerable)
+    {
+        if(iIEnumerable == null)
+        {
+            return 0;
+        }
+        int count = 0;
+        foreach (var aT in iIEnumerable)
+        {
+            ++count;
+        }
+        return count;
+    }
     public static string ConcatString<T>(this IEnumerable<T> iList, System.Func<T, string> iFunc, string iSeperator = ", ")
     {
         System.Text.StringBuilder aSB = new System.Text.StringBuilder();

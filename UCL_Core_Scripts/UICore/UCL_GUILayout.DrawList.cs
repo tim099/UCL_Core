@@ -648,6 +648,13 @@ namespace UCL.Core.UI
                             }
                         }
                     }
+
+                    const int MaxItemsPerPage = 10;
+                    int itemCount = aEnumerable.GetCount();
+                    var result = DrawSelectPage(aDataDic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                    int startIndex = result.startIndex;
+                    int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                    //GUILayout.Label($"startIndex:{startIndex},lastIndex:{lastIndex}", UCL_GUIStyle.LabelStyle);
                     int aAt = 0;
                     const string SetDataKey = "HashSet";
                     int aDeleteAt = -1;
@@ -657,8 +664,19 @@ namespace UCL.Core.UI
                     string aTypeName = aListType.Name;
                     foreach (var aListData in aEnumerable)
                     {
+                        if (aAt >= lastIndex)
+                        {
+                            break;
+                        }
+                        if (aAt < startIndex)
+                        {
+                            ++aAt;
+                            continue;
+                        }
+
                         using (new GUILayout.HorizontalScope("box"))
                         {
+                            //GUILayout.Label($"At:{aAt}", UCL_GUIStyle.LabelStyle);
                             if (aIsDelete)
                             {
                                 if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))

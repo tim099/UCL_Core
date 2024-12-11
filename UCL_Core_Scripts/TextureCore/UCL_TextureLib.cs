@@ -158,9 +158,21 @@ namespace UCL.Core.TextureLib {
         public static async UniTask<Texture2D> LoadTextureFromFile(string filePath)
         {
             var path = $"file://{filePath}";
-            var webRequest = UnityWebRequestTexture.GetTexture(path);
+            var webRequest = UnityWebRequestTexture.GetTexture(path, false);
             await webRequest.SendWebRequest();
-            return DownloadHandlerTexture.GetContent(webRequest);
+            var texture = DownloadHandlerTexture.GetContent(webRequest);
+            //Debug.LogError($"1 MipMap Count = {texture.mipmapCount},texture:{texture.format}");
+            //if (texture != null)
+            //{
+            //    texture.Apply(true);
+            //}
+            //Debug.LogError($"2 MipMap Count = {texture.mipmapCount},texture:{texture.format}");
+            return texture;
+
+            //var aTex = new Texture2D(1, 1, TextureFormat.RGBA32, true, true);
+            //aTex.LoadImage(webRequest.downloadHandler.data, false);
+            //Debug.LogError($"MipMap Count = {aTex.mipmapCount}");
+            //return aTex;
         }
         /// <summary>
         /// Create a Texture2D from byte array
@@ -188,7 +200,7 @@ namespace UCL.Core.TextureLib {
                 }
                 aTex.Apply(iUpdateMipmap);
             }
-
+            //Debug.LogError($"MipMap Count = {aTex.mipmapCount}");
             return aTex;
         }
         /// <summary>

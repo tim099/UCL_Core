@@ -9,6 +9,7 @@ using UnityEngine;
 
 namespace UCL.Core.JsonLib {
     public static class JsonConvert {
+        public const string ClassNameID = "ClassName";
         public enum SaveMode
         {
             /// <summary>
@@ -71,7 +72,8 @@ namespace UCL.Core.JsonLib {
         /// <returns></returns>
         static public JsonData ObjectToJson(object iObj, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null) {
             JsonData aData = new JsonData();
-            aData["ClassName"] = iObj.GetType().AssemblyQualifiedName;
+            //aData[ClassNameID] = iObj.GetType().FullName;
+            aData[ClassNameID] = iObj.GetType().AssemblyQualifiedName;
             JsonData aClassData = null;
             if(iObj is IJsonSerializable)
             {
@@ -154,7 +156,7 @@ namespace UCL.Core.JsonLib {
             {
                 try
                 {
-                    string aClassName = iData.GetString("ClassName");
+                    string aClassName = iData.GetString(ClassNameID);
                     Type aClassType = Type.GetType(aClassName);
                     if (aClassType != null)
                     {

@@ -17,7 +17,8 @@
         virtual public JsonData SerializeToJson()
         {
             var aData = new JsonData();
-            aData["ClassName"] = this.GetType().AssemblyQualifiedName;
+            //aData[JsonConvert.ClassNameID] = this.GetType().FullName;
+            aData[JsonConvert.ClassNameID] = this.GetType().AssemblyQualifiedName;
             aData["ClassData"] = JsonConvert.SaveFieldsToJsonUnityVer(this);
             return aData;
         }

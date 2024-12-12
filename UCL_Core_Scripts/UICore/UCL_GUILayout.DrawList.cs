@@ -301,9 +301,9 @@ namespace UCL.Core.UI
                         int aSelectedType = -1;
                         if (aTypeNameList != null)
                         {
-                            aSelectedType = PopupAuto(aTypeNameList, iParams.m_DataDic, "SelectType", 10, GUILayout.Width(240));
+                            aSelectedType = PopupAuto(aTypeNameList, iParams.m_DataDic, "SelectType", 10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
                         }
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                         {
                             try
                             {
@@ -457,9 +457,9 @@ namespace UCL.Core.UI
                     int aSelectedType = -1;
                     if (aTypeNameList != null)
                     {
-                        aSelectedType = PopupAuto(aTypeNameList, iDataDic, "SelectType", 10, GUILayout.Width(240));
+                        aSelectedType = PopupAuto(aTypeNameList, iDataDic, "SelectType", 10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
                     }
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                     {
                         try
                         {

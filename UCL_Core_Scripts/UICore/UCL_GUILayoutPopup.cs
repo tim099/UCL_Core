@@ -321,12 +321,20 @@ namespace UCL.Core.UI
                             aDisplayName = aRegex.HightLight(aDisplayName, aInput, Color.red);
                         }
 
-
-                        if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
+                        try
                         {
-                            aIsShow = false;
-                            iSelectedIndex = i;
+                            if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
+                            {
+                                aIsShow = false;
+                                iSelectedIndex = i;
+                            }
                         }
+                        catch(System.Exception ex)
+                        {
+                            Debug.LogError($"aDisplayName:{aDisplayName}, iOptions:{iOptions.ConcatToString(option => option.ToString())},Exception:{ex}");
+                            Debug.LogException(ex);
+                        }
+
                     }
                 }
                 GUILayout.EndVertical();

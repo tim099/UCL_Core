@@ -321,18 +321,12 @@ namespace UCL.Core.UI
                             aDisplayName = aRegex.HightLight(aDisplayName, aInput, Color.red);
                         }
 
-                        try
+                        //Assertion failed on expression: '!(o->TestHideFlag(Object::kDontSaveInEditor) && (options & kAllowDontSaveObjectsToBePersistent) == 0)'
+                        //UnityEngine.GUILayout:Button(string, UnityEngine.GUIStyle, UnityEngine.GUILayoutOption[])
+                        if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
                         {
-                            if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
-                            {
-                                aIsShow = false;
-                                iSelectedIndex = i;
-                            }
-                        }
-                        catch(System.Exception ex)
-                        {
-                            Debug.LogError($"aDisplayName:{aDisplayName}, iOptions:{iOptions.ConcatToString(option => option.ToString())},Exception:{ex}");
-                            Debug.LogException(ex);
+                            aIsShow = false;
+                            iSelectedIndex = i;
                         }
 
                     }

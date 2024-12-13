@@ -361,7 +361,10 @@ namespace UCL.Core
 
             m_DownloadingInfo = $"Download Localize aGid:{gid}, Progress: {(100f * aProgress).ToString("N1")}%";
         }
-        public async void StartDownload()
+        /// <summary>
+        /// 下載
+        /// </summary>
+        public async UniTask StartDownload()
         {
             //Debug.LogError($"StartDownload m_IsDownloading:{IsDownloading}");
             if(m_CTS != null)

@@ -177,7 +177,7 @@ namespace UCL.Core.UI
                     if (aDeleteAt >= 0)
                     {
                         iList.RemoveAt(aDeleteAt);
-                        iParams.m_DataDic.Remove("IList", aDeleteAt);
+                        iParams.m_DataDic.Remove(nameof(iList), aDeleteAt);
                         iParams.m_DataDic.SetData(ListElementCountKey, iList.Count);
                     }
                 };

@@ -17,7 +17,7 @@ public static partial class ListExtensionMethods {
     #region IEnumerable
     public static int GetCount(this IEnumerable iIEnumerable)
     {
-        if(iIEnumerable == null)
+        if (iIEnumerable == null)
         {
             return 0;
         }
@@ -267,12 +267,12 @@ public static partial class ListExtensionMethods {
     }
     public static bool IsNullOrEmpty(this IEnumerable enumerable)
     {
-        if (enumerable == null) return true;
+        if (enumerable == null) return true;//null
         foreach(var element in enumerable)
         {
             return false;//has any element
         }
-        return true;
+        return true;//empty
     }
     public static bool IsNullOrEmpty(this IDictionary iDic)
     {

@@ -10,6 +10,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
@@ -83,7 +84,14 @@ namespace UCL.Core
         //{
         //    Release();
         //}
-
+        //public override void DeserializeFromJson(JsonData iJson)
+        //{
+        //    base.DeserializeFromJson(iJson);
+        //    if (string.IsNullOrEmpty(m_ModuleID))
+        //    {
+        //        m_ModuleID = UCL_ModuleService.CurEditModuleID;
+        //    }
+        //}
         /// <summary>
         /// Release Object load from UCL_Data
         /// </summary>

@@ -30,6 +30,15 @@ public static partial class StringExtensionMethods {
         }
     }
     /// <summary>
+    /// remove RichTextColor from iStr
+    /// </summary>
+    /// <param name="iStr"></param>
+    /// <returns></returns>
+    public static string RemoveRichTextColor(this string iStr)
+    {
+        return Regex.Replace(iStr, "<color=[^>]+>", "").Replace("</color>", "");
+    }
+    /// <summary>
     /// Append RichText Color to the string
     /// </summary>
     /// <param name="iStr"></param>

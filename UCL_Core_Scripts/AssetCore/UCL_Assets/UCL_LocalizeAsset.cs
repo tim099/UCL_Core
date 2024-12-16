@@ -360,6 +360,12 @@ namespace UCL.Core
             float aProgress = 0.1f + ((0.9f * m_CompleteCount) / m_GoogleSheetData.m_GidDatas.Count);
 
             m_DownloadingInfo = $"Download Localize aGid:{gid}, Progress: {(100f * aProgress).ToString("N1")}%";
+            m_IsCancelDownload = UCL.Core.EditorLib.EditorUtilityMapper.DisplayCancelableProgressBar($"Download Localize Gid:{gid}",
+                m_DownloadingInfo, aProgress);
+            if (m_IsCancelDownload) 
+            {
+                Cancel();
+            }
         }
         /// <summary>
         /// 下載
@@ -375,7 +381,7 @@ namespace UCL.Core
             try
             {
                 m_CompleteCount = 0;
-                
+
                 m_CTS = new CancellationTokenSource();
                 var token = m_CTS.Token;
                 m_IsCancelDownload = false;
@@ -410,12 +416,18 @@ namespace UCL.Core
 
                 DisposeCTS();
             }
-            catch(OperationCanceledException ex)
+            catch (OperationCanceledException ex)
             {
                 Debug.Log($"{GetType().Name}.{nameof(StartDownload)}, OperationCanceledException");
-            }catch (Exception ex)
+            } catch (Exception ex)
             {
                 Debug.LogException(ex);
+            }
+            finally
+            {
+#if UNITY_EDITOR
+                UCL.Core.EditorLib.EditorUtilityMapper.ClearProgressBar();
+#endif
             }
         }
         static public string ParseString(string iStr)

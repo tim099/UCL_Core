@@ -463,6 +463,7 @@ namespace UCL.Core
 
         virtual protected async UniTask InitAsync()
         {
+            Debug.LogWarning($"{GetType().Name}.InitAsync");
             //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync("UCL_ModuleService.InitAsync()", "");
             if (Application.isEditor)
             {
@@ -475,14 +476,16 @@ namespace UCL.Core
             }
             var aModulesPath = m_PathConfig.ModulesPath;
             //Debug.LogError($"aModulesPath:{aModulesPath},FileSystemRootPath:{m_PathConfig.FileSystemRootPath}");
-            if (!Directory.Exists(aModulesPath))//Not Installed
-            {
-                Directory.CreateDirectory(aModulesPath);
-            }
+            //if (!Directory.Exists(aModulesPath))//Not Installed
+            //{
+            //    Directory.CreateDirectory(aModulesPath);
+            //}
+            Directory.CreateDirectory(aModulesPath);
 
+            //Debug.LogWarning($"1 m_Config.m_BuiltinModules:{m_Config.m_BuiltinModules.AllFieldToString()}");
             //Debug.LogError("InitAsync()");
             await LoadConfig();
-
+            Debug.LogWarning($"m_Config.m_BuiltinModules:{m_Config.m_BuiltinModules.AllFieldToString()}");
             bool aForceInstall = m_Config.m_ForceInstallInEditor;
 
             if (aForceInstall)
@@ -498,6 +501,7 @@ namespace UCL.Core
                 //List<UniTask> aTasks = new List<UniTask>();
                 foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
                 {
+                    //Debug.LogWarning($"ModuleID:{aModuleID}, CheckAndInstall");
                     var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
                     await aModule.CheckAndInstall();
                     //aTasks.Add(aModule.CheckAndInstall());
@@ -505,9 +509,10 @@ namespace UCL.Core
                 //await UniTask.WhenAll(aTasks);
             }
 
+            //LoadModuleAndDependencies(UCL_ModuleEntry.CoreModuleID, new());//Load Core
             m_Config.m_Playlist.LoadPlaylist();
 
-            m_LoadedModules.Reverse();//Modules that are loaded later will overwrite the previous modules(if asset have same ID)
+            //m_LoadedModules.Reverse();//Modules that are loaded later will overwrite the previous modules(if asset have same ID)
             //Cheack and Install all Builtin Module to PersistantData path
             m_Initialized = true;
         }

@@ -220,7 +220,7 @@ namespace UCL.Core.Page
                     }
                     if (aRegex != null)//Filter targets base on input
                     {
-                        iIDs = iIDs.Where(iID => aRegex.IsMatch(iID.ToLower())).ToList();
+                        iIDs = iIDs.Where(iID => aRegex.IsMatch(UCL_LocalizeManager.GetID(iID).ToLower())).ToList();
                     }
                     iDic.SetData(AllIDKeys, iIDs);
                 }

@@ -72,6 +72,9 @@ namespace UCL.Core
         /// 完整的檔案路徑
         /// </summary>
         public string FilePath => Path.Combine(FileSystemFolderPath, m_FileName);
+        /// <summary>
+        /// URL for UnityWebrequest
+        /// </summary>
         public string UnityWebrequestURL => $"file://{FilePath}";
 
 

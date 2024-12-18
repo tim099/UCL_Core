@@ -4,6 +4,8 @@
 // Create time : 03/02 2024 11:01
 using System.Collections;
 using System.Collections.Generic;
+using UCL.Core.LocalizeLib;
+using UCL.Core.UI;
 using UnityEngine;
 
 
@@ -11,10 +13,11 @@ using UnityEngine;
 
 namespace UCL.Core
 {
-    public class UCL_ModuleEntry : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ShortName
+    public class UCL_ModuleEntry : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ShortName, UCLI_FieldOnGUI
     {
         public const string CoreModuleID = "Core";
         public static UCL_ModuleEntry CoreModule => new UCL_ModuleEntry(CoreModuleID);
+
 
 
         /// <summary>
@@ -36,7 +39,36 @@ namespace UCL.Core
         }
         public string GetShortName() => $"UCL_ModuleEntry({ID})";
         virtual public string ID { get => m_ID; set => m_ID = value; }
+        /// <summary>
+        /// 在編輯器中繪製
+        /// </summary>
+        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDic)
+        {
+            UCL.Core.UI.UCL_GUILayout.DrawField(this, iDic, iFieldName, true, UCL.Core.UCL_StaticFunctions.LocalizeFieldName);
+            //GUILayout.BeginHorizontal();
+            //bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, "PreviewToggle");
+            //Debug.LogError($"aIsPreview:{aIsPreview}");
+            //GUILayout.Label(UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.LabelStyle);
+            //GUILayout.EndHorizontal();
+            //if (aIsPreview)
+            {
+                UCL_Module module = null;
+                module = iDic.GetData(nameof(module), module);
+                if (module != null && module.ID != m_ID)//已經切換 需要重新載入
+                {
+                    module = null;
+                }
+                if(module == null)
+                {
+                    module = UCL_ModuleService.Ins.GetModule(m_ID);
+                    iDic.SetData(nameof(module), module);
+                }
+                module.OnGUI(m_ID, iDic.GetSubDic("ModuleContentOnGUI"));
 
+
+            }
+            return this;
+        }
         #region PA
         public override int GetHashCode()
         {

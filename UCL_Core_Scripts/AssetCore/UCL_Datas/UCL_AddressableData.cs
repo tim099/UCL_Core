@@ -120,7 +120,7 @@ namespace UCL.Core
         public override string Name => UCL.Core.FileLib.Lib.GetFileName(m_AddressableKey);
         public override async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
         {
-            return await LoadAsync<UnityEngine.Object>(iToken);
+            return await LoadObjectAsync<UnityEngine.Object>(iToken);
         }
         public override Sprite GetSprite()
         {
@@ -135,7 +135,7 @@ namespace UCL.Core
         }
         public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
         {
-            await LoadAsync<UnityEngine.Object>(iToken);
+            await LoadObjectAsync<UnityEngine.Object>(iToken);
             var aLoadedAddressable = GetLoadedAddressable();
             if(aLoadedAddressable == null)
             {
@@ -153,7 +153,7 @@ namespace UCL.Core
         //    return aObj;
         //}
 
-        private async UniTask<T> LoadAsync<T>(CancellationToken iToken) where T : UnityEngine.Object
+        public async UniTask<T> LoadObjectAsync<T>(CancellationToken iToken) where T : UnityEngine.Object
         {
             if (string.IsNullOrEmpty(m_AddressableKey)) return null;
 

@@ -15,6 +15,7 @@ using UnityEngine.UI;
 namespace UCL.Core
 {
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
+    [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditDataType.UCL_SpriteAsset)]
     public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable
     {
         public enum DataLoadType
@@ -135,17 +136,9 @@ namespace UCL.Core
         public void Dispose()
         {
             Data.Release();
-            //if (m_Sprite != null)
-            //{
-            //    Data.Release(m_Sprite);
-            //    //GameObject.Destroy(m_Sprite);
-            //    m_Sprite = null;
-            //}
         }
         public void Init(DataLoadType iDataLoadType, string iPath, string iName)
         {
-            //m_FolderPath = iFolderPath;
-            //m_SpriteName = iSpriteName;
             m_DataLoadType = iDataLoadType;
             switch (m_DataLoadType)
             {
@@ -162,7 +155,6 @@ namespace UCL.Core
                         break;
                     }
             }
-
         }
 
     }
@@ -229,16 +221,6 @@ namespace UCL.Core
                 return;
             }
             iImage.sprite = aSprite;
-
-
-            //var aSprite = await GetSpriteAsync(iToken);
-            //iToken.ThrowIfCancellationRequested();
-            //if(iImage == null)//Image Destroyed
-            //{
-            //    return;
-            //}
-            //iImage.sprite = aSprite;
-            //iImage.preserveAspect = IsPreserveAspect;
         }
     }
 }

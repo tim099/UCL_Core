@@ -332,6 +332,12 @@ namespace UCL.Core
         {
             ModuleEntry.ClearCache();
         }
+        /// <summary>
+        /// 顯示模組內容
+        /// </summary>
+        /// <param name="iFieldName"></param>
+        /// <param name="iDataDic"></param>
+        /// <returns></returns>
         virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic)
         {
             UCL.Core.UI.UCL_GUILayout.DrawObjExSetting aSetting = new UCL_GUILayout.DrawObjExSetting();
@@ -366,8 +372,24 @@ namespace UCL.Core
                                             if (show)
                                             {
                                                 UCL_ModulePath.PersistantPath.AssetInfo assetInfo = assetsInfo[typeInfo];
-                                                foreach (var id in assetInfo.m_IDs)
+
+                                                const int MaxItemsPerPage = 10;
+                                                int itemCount = assetInfo.m_IDs.Count;
+                                                var result = UCL_GUILayout.DrawSelectPage(typeDic.GetSubDic(nameof(UCL_GUILayout.DrawSelectPage)), itemCount, MaxItemsPerPage);
+                                                int startIndex = result.startIndex;
+                                                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                                                for (int i = 0; i < itemCount; i++)
                                                 {
+                                                    string id = assetInfo.m_IDs[i];
+                                                    if (i >= lastIndex)
+                                                    {
+                                                        break;
+                                                    }
+                                                    if (i < startIndex)
+                                                    {
+                                                        continue;
+                                                    }
+
                                                     var previewDic = typeDic.GetSubDic($"preview_{id}");
                                                     GUILayout.BeginHorizontal();
 

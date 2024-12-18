@@ -235,12 +235,6 @@ namespace UCL.Core
                 aModule.Save();
                 return aModule;
             }
-            public UCL_Module LoadModule(string iID, UCL_ModuleEditType iModuleEditType)
-            {
-                UCL_Module aModule = new UCL_Module();
-                aModule.Load(iID, iModuleEditType);
-                return aModule;
-            }
         }
 
         public Config ModuleConfig => m_Config;
@@ -495,7 +489,7 @@ namespace UCL.Core
             {
                 foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
                 {
-                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                    var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
                     await aModule.Install();
                 }
             }
@@ -504,7 +498,7 @@ namespace UCL.Core
                 //List<UniTask> aTasks = new List<UniTask>();
                 foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
                 {
-                    var aModule = m_Config.LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                    var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
                     await aModule.CheckAndInstall();
                     //aTasks.Add(aModule.CheckAndInstall());
                 }
@@ -563,6 +557,11 @@ namespace UCL.Core
             return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetAllModulesID();
             //return UCL_ModulePath.GetAllModulesID(ModuleEditType);
         }
+        /// <summary>
+        /// 根據ID抓取當前載入的模組
+        /// </summary>
+        /// <param name="iID"></param>
+        /// <returns></returns>
         public UCL_Module GetLoadedModule(string iID)
         {
             foreach(var aModule in m_LoadedModules)
@@ -899,6 +898,24 @@ namespace UCL.Core
 
             Debug.LogWarning($"m_LoadedModules:{m_LoadedModules.ConcatString(iModule => iModule.ID)}");
         }
+
+        /// <summary>
+        /// 回傳對應ID的UCL_Module
+        /// </summary>
+        /// <returns></returns>
+        public UCL_Module GetModule(string iID)
+        {
+            //UCL_ModuleEditType type = Application.isEditor
+            var aModule = LoadModule(iID, ModuleEditType);
+            return aModule;
+        }
+
+        protected UCL_Module LoadModule(string iID, UCL_ModuleEditType iModuleEditType)
+        {
+            UCL_Module aModule = new UCL_Module();
+            aModule.Load(iID, iModuleEditType);
+            return aModule;
+        }
         protected UCL_Module LoadModuleAndDependencies(string iModuleID, Dictionary<string, UCL_Module> iLoadedModules)
         {
             if (iLoadedModules.ContainsKey(iModuleID))//Already in dependencies
@@ -907,7 +924,7 @@ namespace UCL.Core
             }
             
 
-            var aModule = m_Config.LoadModule(iModuleID, ModuleEditType);
+            var aModule = LoadModule(iModuleID, ModuleEditType);
             iLoadedModules[iModuleID] = aModule;
             m_LoadedModules.Add(aModule);
 

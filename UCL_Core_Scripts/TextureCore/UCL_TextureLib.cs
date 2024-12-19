@@ -157,6 +157,10 @@ namespace UCL.Core.TextureLib {
         /// <returns></returns>
         public static async UniTask<Texture2D> LoadTextureFromFile(string filePath)
         {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
             var path = $"file://{filePath}";
             var webRequest = UnityWebRequestTexture.GetTexture(path, false);
             await webRequest.SendWebRequest();

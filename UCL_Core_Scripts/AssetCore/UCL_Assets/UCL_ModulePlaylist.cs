@@ -142,7 +142,7 @@ namespace UCL.Core
         }
     }
 
-    public class ModuleSetting : UnityJsonSerializable, UCLI_IsEnable, UCLI_ShortName
+    public class ModuleSetting : UnityJsonSerializable, UCLI_IsEnable, UCLI_ShortName, UCLI_NameOnGUI
     {
         public string GetShortName() => this.ToString();
 
@@ -162,5 +162,18 @@ namespace UCL.Core
         {
             m_Module.ID = id;
         }
+
+        #region Interface
+        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDic, string iDisplayName)
+        {
+            using(var scope = new GUILayout.HorizontalScope(GUILayout.Width(UCL_GUIStyle.GetScaledSize(260))))
+            {
+                m_IsEnable = UCL_GUILayout.CheckBox(m_IsEnable);
+                m_Module.ID = UCL_GUILayout.PopupAuto(m_Module.ID, m_Module.GetAllIDs(), iDic, nameof(m_Module), 10);
+            }
+
+            //GUILayout.Label(string.Format("{0}({1})", iDisplayName, CardCount), UCL.Core.UI.UCL_GUIStyle.LabelStyle);//GetShortName()
+        }
+        #endregion
     }
 }

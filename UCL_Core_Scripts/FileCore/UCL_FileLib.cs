@@ -516,9 +516,10 @@ namespace UCL.Core.FileLib
             if(iPath[iPath.Length - 1] == '/') {
                 iPath.Remove(iPath.Length - 1);
             }
-            if(!Directory.Exists(iPath)) {
-                Directory.CreateDirectory(iPath);
-            }
+            Directory.CreateDirectory(iPath);
+            //if(!Directory.Exists(iPath)) {
+            //    Directory.CreateDirectory(iPath);
+            //}
         }
         public static void WriteAllText(string iPath, string iContents)
         {

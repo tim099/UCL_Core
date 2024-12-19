@@ -49,6 +49,11 @@ namespace UCL.Core
                 /// ConfigPath in file system
                 /// </summary>
                 public string ConfigPath => Path.Combine(RootFolder, ConfigName);
+                /// <summary>
+                /// 創意工坊使用的Logo
+                /// </summary>
+                public string LogoPath => Path.Combine(RootFolder, "Logo.png");
+
                 public string ModResourcesPath => Path.Combine(RootFolder, ModResourcesFolderName);
                 public string ZipConfigName => $"{ID}.json";
                 public string ZipFileName => $"{ID}.zip";

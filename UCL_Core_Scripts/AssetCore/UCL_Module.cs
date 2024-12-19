@@ -51,11 +51,18 @@ namespace UCL.Core
             /// </summary>
             public long m_UTC_TimeStamp;
 
+            /// <summary>
+            /// 模組ID(用在Steam上傳? 理論上會跟創建模組資料夾同名)
+            /// </summary>
             public string m_ID;
+
             /// <summary>
             /// 相依模組 載入此模組時會同時載入相依模組
             /// </summary>
             public List<UCL_ModuleEntry> m_DependenciesModules = new ();
+
+
+
 
             /// <summary>
             /// return true if Installed
@@ -134,15 +141,16 @@ namespace UCL.Core
         /// <summary>
         /// 編輯器內 選取的GroupID
         /// </summary>
-        static protected string SelectedGroupID {
-            get => PlayerPrefs.GetString("SelectedGroupID", string.Empty);
-            set => PlayerPrefs.SetString("SelectedGroupID", value);
+        static protected string SelectedGroupID 
+        {
+            get => PlayerPrefs.GetString(nameof(SelectedGroupID), string.Empty);
+            set => PlayerPrefs.SetString(nameof(SelectedGroupID), value);
         }
 
         static protected string SelectedAssetID
         {
-            get => PlayerPrefs.GetString("SelectedAssetID", string.Empty);
-            set => PlayerPrefs.SetString("SelectedAssetID", value);
+            get => PlayerPrefs.GetString(nameof(SelectedAssetID), string.Empty);
+            set => PlayerPrefs.SetString(nameof(SelectedAssetID), value);
         }
         protected UCL_ModulePath.PersistantPath.ModuleEntry m_ModuleEntry;
         //protected UCL_StreamingAssetFileInspector m_FileInfo = new UCL_StreamingAssetFileInspector();
@@ -343,79 +351,211 @@ namespace UCL.Core
             UCL.Core.UI.UCL_GUILayout.DrawObjExSetting aSetting = new UCL_GUILayout.DrawObjExSetting();
             aSetting.OnShowField = () =>
             {
-                using(var scope = new GUILayout.HorizontalScope())
+                using (var scope = new GUILayout.HorizontalScope())
+                {
+                    bool showLogo = UCL_GUILayout.Toggle(iDataDic, "showLogoToggle");
+                    GUILayout.BeginVertical();
+                    GUILayout.Label("Logo", UCL_GUIStyle.LabelStyle);
+                    if (showLogo)
+                    {
+                        Texture2D logo = null;
+                        if(!iDataDic.ContainsKey(nameof(logo)))//尚未讀取Logo
+                        {
+                            async void LoadLogo()
+                            {
+                                var result = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(ModuleEntry.LogoPath);
+                                if(iDataDic != null)
+                                {
+                                    iDataDic.SetData(nameof(logo), result);
+                                }
+                            }
+
+                            iDataDic.SetData(nameof(logo), null);
+                            LoadLogo();
+                        }
+                        logo = iDataDic.GetData<Texture2D>(nameof(logo), null);
+                        if(logo != null)
+                        {
+                            float size = UCL_GUIStyle.GetScaledSize(128);
+                            GUILayout.Box(logo, UCL_GUIStyle.BoxStyle, GUILayout.Height(size));
+                        }
+                    }
+                    
+
+                    GUILayout.EndVertical();
+                }
+                    
+
+                using (var scope = new GUILayout.HorizontalScope())
                 {
                     bool showInfo = UCL_GUILayout.Toggle(iDataDic, "ContentToggle");
                     using (var scope2 = new GUILayout.VerticalScope())
                     {
-                        GUILayout.Label("Content", UCL_GUIStyle.LabelStyle);
-
+                        GUILayout.Label(UCL_LocalizeManager.Get("Module Content"), UCL_GUIStyle.LabelStyle);
                         if (showInfo)
                         {
+                            var dic = iDataDic.GetSubDic("PreviewDatas");
                             var cache = ModuleEntry.GetAssetsInfoCache(true);
                             var assetsInfo = cache.m_AssetsInfo;
                             if (!assetsInfo.IsNullOrEmpty())
                             {
-                                var dic = iDataDic.GetSubDic("PreviewDatas");
-                                using (var aVerticalScope = new GUILayout.VerticalScope())
+                                
+                                List<string> typeNameList = dic.GetData<List<string>>(nameof(typeNameList), null);
+                                List<UCL_AssetTypeInfo> typeInfoList = dic.GetData<List<UCL_AssetTypeInfo>>(nameof(typeInfoList), null);
+                                if (typeNameList == null)
                                 {
-                                    foreach (var typeInfo in cache.m_AssetsInfo.Keys)
+                                    typeNameList = new();
+                                    typeInfoList = new();
+                                    foreach (var asset in assetsInfo.Keys)
                                     {
-                                        var type = typeInfo.m_Type;
-                                        var typeDic = dic.GetSubDic(type.FullName);
+                                        typeNameList.Add(UCL_LocalizeLib.GetLocalize(asset.m_Type.Name));
+                                        typeInfoList.Add(asset);
+                                    }
+                                    dic.SetData(nameof(typeNameList), typeNameList);
+                                    dic.SetData(nameof(typeInfoList), typeInfoList);
+                                }
 
-                                        GUILayout.BeginHorizontal();
-                                        bool show = UCL_GUILayout.Toggle(typeDic, "ShowInfo");
-                                        using(var scope3 = new GUILayout.VerticalScope())
-                                        {
-                                            GUILayout.Label(UCL_LocalizeLib.GetLocalize(type.Name), UCL_GUIStyle.LabelStyle);
-                                            if (show)
-                                            {
-                                                UCL_ModulePath.PersistantPath.AssetInfo assetInfo = assetsInfo[typeInfo];
+                                int selectedIndex = dic.GetData(nameof(selectedIndex), 0);
+                                GUILayout.BeginHorizontal();
+                                GUILayout.Label(UCL_LocalizeManager.Get("Asset Type"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                selectedIndex = UCL_GUILayout.PopupAuto(selectedIndex, typeNameList, dic, "selectedIndexPopup");
+                                GUILayout.EndHorizontal();
+                                dic.SetData(nameof(selectedIndex), selectedIndex);
 
-                                                const int MaxItemsPerPage = 10;
-                                                int itemCount = assetInfo.m_IDs.Count;
-                                                var result = UCL_GUILayout.DrawSelectPage(typeDic.GetSubDic(nameof(UCL_GUILayout.DrawSelectPage)), itemCount, MaxItemsPerPage);
-                                                int startIndex = result.startIndex;
-                                                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
-                                                for (int i = 0; i < itemCount; i++)
-                                                {
-                                                    string id = assetInfo.m_IDs[i];
-                                                    if (i >= lastIndex)
-                                                    {
-                                                        break;
-                                                    }
-                                                    if (i < startIndex)
-                                                    {
-                                                        continue;
-                                                    }
+                                var typeInfo = typeInfoList[selectedIndex];
+                                var type = typeInfo.m_Type;
+                                var typeDic = dic.GetSubDic(type.FullName);
 
-                                                    var previewDic = typeDic.GetSubDic($"preview_{id}");
-                                                    GUILayout.BeginHorizontal();
+                                UCL_ModulePath.PersistantPath.AssetInfo assetInfo = assetsInfo[typeInfo];
 
-                                                    bool preview = UCL_GUILayout.Toggle(previewDic, "PreviewToggle");
-                                                    using(var scope4 = new GUILayout.VerticalScope())
-                                                    {
-                                                        GUILayout.Label(UCL_LocalizeLib.GetLocalize(id), UCL_GUIStyle.LabelStyle);
-                                                        if (preview)
-                                                        {
-                                                            var data = assetInfo.GetAsset(id);
-                                                            data.Preview(previewDic);
-                                                        }
-                                                    }
-                                                    GUILayout.EndHorizontal();
-                                                }
-                                                //GUILayout.Label(ids.ConcatToString(), UCL_GUIStyle.LabelStyle);
-                                            }
-                                        }
+                                List<string> assetNameList = typeDic.GetData<List<string>>(nameof(assetNameList), null);
+                                if (assetNameList == null)
+                                {
+                                    assetNameList = new();
+                                    foreach (var id in assetInfo.m_IDs)
+                                    {
+                                        assetNameList.Add(UCL_LocalizeLib.GetLocalize(id));
+                                    }
+                                    typeDic.SetData(nameof(assetNameList), assetNameList);
+                                }
+                                GUILayout.BeginHorizontal();
+                                int assetIndex = typeDic.GetData(nameof(assetIndex), 0);
+                                GUILayout.Label("ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                //選取要查看的AssetID
+                                assetIndex = UCL_GUILayout.PopupAuto(assetIndex, assetNameList, typeDic, "assetIndexPopup");
 
-                                        GUILayout.EndHorizontal();
+                                typeDic.SetData(nameof(assetIndex), assetIndex);
+                                GUILayout.EndHorizontal();
+                                var previewDic = typeDic.GetSubDic($"preview_{assetIndex}");
+                                GUILayout.BeginHorizontal();
+                                string assetId = assetInfo.m_IDs[assetIndex];
+                                bool preview = UCL_GUILayout.Toggle(previewDic, "PreviewToggle", iDefaultValue:false);
+                                using (var scope4 = new GUILayout.VerticalScope())
+                                {
+                                    GUILayout.Label(UCL_LocalizeLib.GetLocalize(assetId), UCL_GUIStyle.LabelStyle);
+                                    if (preview)
+                                    {
+                                        var data = assetInfo.GetAsset(assetId);
+                                        data.Preview(previewDic);
                                     }
                                 }
+                                GUILayout.EndHorizontal();
                             }
                         }
                     }
                 }
+
+                //const int MaxItemsPerPage = 10;
+                //using(var scope = new GUILayout.HorizontalScope())
+                //{
+                //    bool showInfo = UCL_GUILayout.Toggle(iDataDic, "ContentToggle");
+                //    using (var scope2 = new GUILayout.VerticalScope())
+                //    {
+                //        GUILayout.Label(UCL_LocalizeManager.Get("Module Content"), UCL_GUIStyle.LabelStyle);
+
+                //        if (showInfo)
+                //        {
+                //            var cache = ModuleEntry.GetAssetsInfoCache(true);
+                //            var assetsInfo = cache.m_AssetsInfo;
+                //            if (!assetsInfo.IsNullOrEmpty())
+                //            {
+                //                var dic = iDataDic.GetSubDic("PreviewDatas");
+                //                using (var aVerticalScope = new GUILayout.VerticalScope())
+                //                {
+                //                    int typeCount = cache.m_AssetsInfo.Count;
+                //                    var typeResult = UCL_GUILayout.DrawSelectPage(dic.GetSubDic(nameof(UCL_GUILayout.DrawSelectPage)),
+                //                        typeCount, MaxItemsPerPage);
+
+                //                    int typeStartIndex = typeResult.startIndex;
+                //                    int typeLastIndex = Mathf.Min(typeCount, typeStartIndex + MaxItemsPerPage);
+
+                //                    int index = 0;
+                //                    foreach (var typeInfo in cache.m_AssetsInfo.Keys)
+                //                    {
+                //                        if (index >= typeLastIndex)
+                //                        {
+                //                            break;
+                //                        }
+                //                        if (index++ < typeStartIndex)
+                //                        {
+                //                            continue;
+                //                        }
+
+
+                //                        var type = typeInfo.m_Type;
+                //                        var typeDic = dic.GetSubDic(type.FullName);
+
+                //                        GUILayout.BeginHorizontal();
+                //                        bool show = UCL_GUILayout.Toggle(typeDic, "ShowInfo");
+                //                        using(var scope3 = new GUILayout.VerticalScope())
+                //                        {
+                //                            GUILayout.Label(UCL_LocalizeLib.GetLocalize(type.Name), UCL_GUIStyle.LabelStyle);
+                //                            if (show)
+                //                            {
+                //                                UCL_ModulePath.PersistantPath.AssetInfo assetInfo = assetsInfo[typeInfo];
+
+                //                                int itemCount = assetInfo.m_IDs.Count;
+                //                                var result = UCL_GUILayout.DrawSelectPage(typeDic.GetSubDic(nameof(UCL_GUILayout.DrawSelectPage)), itemCount, MaxItemsPerPage);
+                //                                int startIndex = result.startIndex;
+                //                                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                //                                for (int i = 0; i < itemCount; i++)
+                //                                {
+                //                                    string id = assetInfo.m_IDs[i];
+                //                                    if (i >= lastIndex)
+                //                                    {
+                //                                        break;
+                //                                    }
+                //                                    if (i < startIndex)
+                //                                    {
+                //                                        continue;
+                //                                    }
+
+                //                                    var previewDic = typeDic.GetSubDic($"preview_{id}");
+                //                                    GUILayout.BeginHorizontal();
+
+                //                                    bool preview = UCL_GUILayout.Toggle(previewDic, "PreviewToggle");
+                //                                    using(var scope4 = new GUILayout.VerticalScope())
+                //                                    {
+                //                                        GUILayout.Label(UCL_LocalizeLib.GetLocalize(id), UCL_GUIStyle.LabelStyle);
+                //                                        if (preview)
+                //                                        {
+                //                                            var data = assetInfo.GetAsset(id);
+                //                                            data.Preview(previewDic);
+                //                                        }
+                //                                    }
+                //                                    GUILayout.EndHorizontal();
+                //                                }
+                //                                //GUILayout.Label(ids.ConcatToString(), UCL_GUIStyle.LabelStyle);
+                //                            }
+                //                        }
+
+                //                        GUILayout.EndHorizontal();
+                //                    }
+                //                }
+                //            }
+                //        }
+                //    }
+                //}
             };
 
 

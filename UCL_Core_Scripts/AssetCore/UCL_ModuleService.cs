@@ -97,7 +97,6 @@ namespace UCL.Core
             }
             await UniTask.WhenAll(tasks);
         }
-        public const string ReflectKeyModResourcesPath = "ModResourcesPath";
         /// <summary>
         /// for reflection
         /// </summary>
@@ -108,6 +107,9 @@ namespace UCL.Core
             return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetModuleEntry(iID).ModResourcesPath;
             //return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(iID));
         }
+        /// <summary>
+        /// 當前編輯的模組ID
+        /// </summary>
         public static string CurEditModuleID
         {
             get
@@ -119,11 +121,20 @@ namespace UCL.Core
                 return Ins.m_CurEditModule.ID;
             }
         }
+        /// <summary>
+        /// 當前選取要編輯的模組ID
+        /// </summary>
+        protected static string CurrentEditModuleID
+        {
+            get => PlayerPrefs.GetString(nameof(CurrentEditModuleID), UCL_ModuleEntry.CoreModuleID);
+            set => PlayerPrefs.SetString(nameof(CurrentEditModuleID), value);
+        }
         public static UCL_ModuleEditType ModuleEditType
         {
             get => Ins.m_PathConfig.m_ModuleEditType;
             private set => Ins.m_PathConfig.m_ModuleEditType = value;
         }
+
         public static UCL_Module CurEditModule => Ins.m_CurEditModule;
         public UCL_Module CurModule
         {
@@ -162,7 +173,7 @@ namespace UCL.Core
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
             public State m_State = State.Main;
-            public string m_CurrentEditModule = string.Empty;
+            //public string m_CurrentEditModule = string.Empty;
 
             /// <summary>
             /// All BuiltinModules are in StreammingAssets
@@ -961,7 +972,7 @@ namespace UCL.Core
                 {
                     case State.EditModule:
                         {
-                            EditModule(m_Config.m_CurrentEditModule);
+                            EditModule(CurrentEditModuleID);
                             break;
                         }
                 }
@@ -1014,7 +1025,7 @@ namespace UCL.Core
         {
             var module = m_Config.CreateModule(newModuleName, ModuleEditType, config);
             SaveConfig();
-            m_Config.m_CurrentEditModule = newModuleName;
+            CurrentEditModuleID = newModuleName;
             return module;
         }
         virtual public void OnGUI(UCL_ObjectDictionary iDataDic)
@@ -1060,22 +1071,22 @@ namespace UCL.Core
                 aModules.Add(string.Empty);//Null
                 //aModules.Append(m_Config.m_BuiltinModules);
                 aModules.Append(GetAllModulesID());
-                bool aCanEdit = !string.IsNullOrEmpty(m_Config.m_CurrentEditModule);
+                bool aCanEdit = !string.IsNullOrEmpty(CurrentEditModuleID);
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
                 {
                     if (aCanEdit)
                     {
-                        EditModule(m_Config.m_CurrentEditModule);
+                        EditModule(CurrentEditModuleID);
                         //SetCurrentEditModule(m_Config.m_CurrentEditModule);
                         //UCL_ModuleEditPage.Create(m_CurEditModule);
                     }
                 }
 
                 GUILayout.Label(UCL_LocalizeManager.Get("Module ID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                var aID = UCL_GUILayout.PopupAuto(m_Config.m_CurrentEditModule, aModules, iDataDic, "SelectModules");
-                if(aID != m_Config.m_CurrentEditModule)
+                var aID = UCL_GUILayout.PopupAuto(CurrentEditModuleID, aModules, iDataDic, "SelectModules");
+                if(aID != CurrentEditModuleID)
                 {
-                    m_Config.m_CurrentEditModule = aID;
+                    CurrentEditModuleID = aID;
                     SaveConfig();
                 }
             }

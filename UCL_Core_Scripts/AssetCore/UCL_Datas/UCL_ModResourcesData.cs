@@ -28,7 +28,7 @@ namespace UCL.Core
         [ReadOnly(true)]
         public string m_ModuleID;
 
-        [UCL.Core.PA.UCL_FolderExplorer(typeof(UCL_ModuleService), UCL_ModuleService.ReflectKeyModResourcesPath)]
+        [UCL.Core.PA.UCL_FolderExplorer(typeof(UCL_ModuleService), nameof(UCL_ModuleService.ModResourcesPath))]
         public string m_FolderPath;
 
         #region ReflectionGetAllFileNames

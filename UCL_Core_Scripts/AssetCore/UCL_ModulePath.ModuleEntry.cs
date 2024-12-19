@@ -87,7 +87,7 @@ namespace UCL.Core
                 }
 
 
-                public void ZipModule(string iTargetPath = "", bool iExportConfig = true)
+                public string ZipModule(string iTargetPath = "", bool iExportConfig = true)
                 {
                     if (string.IsNullOrEmpty(iTargetPath))
                     {
@@ -109,6 +109,7 @@ namespace UCL.Core
                             File.Copy(aConfigPath, Path.Combine(iTargetPath, ZipConfigName), true);
                         }
                     }
+                    return aZipPath;
                 }
 
                 /// <summary>

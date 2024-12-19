@@ -40,6 +40,11 @@ namespace UCL.Core
         public string GetShortName() => $"UCL_ModuleEntry({ID})";
         virtual public string ID { get => m_ID; set => m_ID = value; }
         /// <summary>
+        /// 抓取對應的模組
+        /// </summary>
+        virtual public UCL_Module Module => UCL_ModuleService.Ins.GetModule(m_ID);
+
+        /// <summary>
         /// 在編輯器中繪製
         /// </summary>
         virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDic)
@@ -60,7 +65,7 @@ namespace UCL.Core
                 }
                 if(module == null)
                 {
-                    module = UCL_ModuleService.Ins.GetModule(m_ID);
+                    module = Module;
                     iDic.SetData(nameof(module), module);
                 }
                 module.OnGUI(m_ID, iDic.GetSubDic("ModuleContentOnGUI"));

@@ -52,9 +52,21 @@ namespace UCL.Core
             public long m_UTC_TimeStamp;
 
             /// <summary>
-            /// 模組ID(用在Steam上傳? 理論上會跟創建模組資料夾同名)
+            /// 模組ID 理論上會跟創建模組資料夾同名
             /// </summary>
             public string m_ID;
+            /// <summary>
+            /// 用在Steam工作坊的Title
+            /// </summary>
+            public string m_Title = "Mod Title";
+            /// <summary>
+            /// 模組描述
+            /// </summary>
+            public string m_Description = "Mod Description";
+            /// <summary>
+            /// 模組標籤
+            /// </summary>
+            public List<string> m_Tags = new List<string>();
 
             /// <summary>
             /// 相依模組 載入此模組時會同時載入相依模組
@@ -326,15 +338,16 @@ namespace UCL.Core
         /// <summary>
         /// 將模組輸出到指定目錄下
         /// </summary>
-        public void ExportModule(bool iExportConfig = true)
+        public string ExportModule(bool iExportConfig = true)
         {
             string aFolderPath = Path.Combine(Application.persistentDataPath, "ExportedModules");
             Directory.CreateDirectory(aFolderPath);
-            m_ModuleEntry.ZipModule(aFolderPath, iExportConfig);
+            string path = m_ModuleEntry.ZipModule(aFolderPath, iExportConfig);
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
             UCL.Core.FileLib.WindowsLib.OpenExplorer(aFolderPath);
 #endif
+            return path;
         }
         public void ClearCache()
         {

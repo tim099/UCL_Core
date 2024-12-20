@@ -30,6 +30,91 @@ namespace UCL.Core
         /// </summary>
         SteamMods,
     }
+    #region Steam
+
+    /// <summary>
+    /// 用在SteamWorkshop
+    /// </summary>
+    public enum WorkshopFileType
+    {
+        k_EWorkshopFileTypeFirst = 0,
+        /// <summary>
+        /// 這種類型主要用於描述將上傳到 Steam 社區的文件。這些文件通常是由用戶生成的內容，如模組、地圖、皮膚等，供其他玩家下載和使用
+        /// 通常是由玩家創建並分享的內容，旨在增強遊戲體驗。
+        /// </summary>
+        k_EWorkshopFileTypeCommunity = 0,
+        /// <summary>
+        /// 這種類型用於描述包含微交易的文件。這些文件通常是遊戲內購買的內容，如特殊道具、裝備等。
+        /// </summary>
+        k_EWorkshopFileTypeMicrotransaction = 1,
+        /// <summary>
+        /// 這種類型用於描述集合文件。集合文件是由多個單獨的工作坊項目組成的集合，方便玩家一次性訂閱多個項目。
+        /// </summary>
+        k_EWorkshopFileTypeCollection = 2,
+        /// <summary>
+        /// 這種類型用於描述藝術作品文件。這些文件通常是用戶創建的藝術作品，如壁紙、概念藝術等。
+        /// </summary>
+        k_EWorkshopFileTypeArt = 3,
+        /// <summary>
+        /// 這種類型用於描述視頻文件。這些文件通常是用戶創建的遊戲視頻、教程等。
+        /// </summary>
+        k_EWorkshopFileTypeVideo = 4,
+
+        /// <summary>
+        /// 這種類型用於描述截圖文件。這些文件通常是用戶在遊戲中截取的圖片，展示遊戲中的精彩瞬間。
+        /// </summary>
+        k_EWorkshopFileTypeScreenshot = 5,
+
+        /// <summary>
+        /// 這種類型用於描述完整的遊戲文件。這些文件通常是由開發者創建的完整遊戲或遊戲模組。
+        /// 通常是完整的遊戲或大型遊戲模組，而不是單純的附加內容。
+        /// 通常是由遊戲開發者創建並上傳，而不是由普通玩家生成的內容。
+        /// </summary>
+        k_EWorkshopFileTypeGame = 6,
+        /// <summary>
+        /// 這種類型用於描述軟件文件。這些文件通常是用戶創建的應用程序或工具。
+        /// </summary>
+        k_EWorkshopFileTypeSoftware = 7,
+        /// <summary>
+        /// 這種類型用於描述概念文件。這些文件通常是用戶創建的遊戲或項目的概念設計。
+        /// </summary>
+        k_EWorkshopFileTypeConcept = 8,
+        /// <summary>
+        /// 這種類型用於描述網絡指南文件。這些文件通常是用戶創建的遊戲指南、教程等。
+        /// </summary>
+        k_EWorkshopFileTypeWebGuide = 9,
+        /// <summary>
+        /// 這種類型用於描述集成指南文件。這些文件通常是遊戲內部的指南或教程。
+        /// </summary>
+        k_EWorkshopFileTypeIntegratedGuide = 10,
+        /// <summary>
+        /// 這種類型用於描述商品文件。這些文件通常是與遊戲相關的實物商品，如T恤、海報等。
+        /// </summary>
+        k_EWorkshopFileTypeMerch = 11,
+        /// <summary>
+        /// 這種類型用於描述控制器綁定文件。這些文件通常是用戶創建的遊戲控制器配置。
+        /// </summary>
+        k_EWorkshopFileTypeControllerBinding = 12,
+        /// <summary>
+        /// 這種類型用於描述 Steamworks 訪問邀請文件。這些文件通常是用於邀請其他用戶訪問特定的 Steamworks 功能。
+        /// </summary>
+        k_EWorkshopFileTypeSteamworksAccessInvite = 13,
+        /// <summary>
+        /// 這種類型用於描述 Steam 上的視頻文件。這些文件通常是用戶創建的遊戲視頻、教程、實況錄像等。
+        /// </summary>
+        k_EWorkshopFileTypeSteamVideo = 14,
+        /// <summary>
+        /// 這種類型用於描述由遊戲管理的項目文件。這些文件通常是由遊戲內部系統管理和更新的內容，如遊戲內的物品、資源等。
+        /// </summary>
+        k_EWorkshopFileTypeGameManagedItem = 15,
+        /// <summary>
+        /// 這種類型用於描述短視頻片段文件。這些文件通常是用戶創建的遊戲精彩瞬間、短片等。
+        /// </summary>
+        k_EWorkshopFileTypeClip = 16,
+        k_EWorkshopFileTypeMax = 17
+    }
+
+    #endregion
 
     /// <summary>
     /// UCL_Module contains info about how to load assets in this module
@@ -37,6 +122,7 @@ namespace UCL.Core
     public class UCL_Module : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_ID, UCLI_ShortName, UCLI_FieldOnGUI
     {
         public const string NotInstalledID = "None";
+
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
             const string DateFormat = "yyyy/MM/dd/HH:mm:ss.ffff";
@@ -63,6 +149,19 @@ namespace UCL.Core
             /// 模組描述
             /// </summary>
             public string m_Description = "Mod Description";
+
+            /// <summary>
+            /// 用在SteamWorkshop的檔案類型
+            /// </summary>
+            public WorkshopFileType m_WorkshopFileType = WorkshopFileType.k_EWorkshopFileTypeCommunity;
+
+            /// <summary>
+            /// 模組語言(Steam)
+            /// </summary>
+            public SteamAPILangCode m_SteamAPILangCode = SteamAPILangCode.english;
+
+
+
             /// <summary>
             /// 模組標籤
             /// </summary>
@@ -570,8 +669,6 @@ namespace UCL.Core
                 //    }
                 //}
             };
-
-
 
             UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
             return this;

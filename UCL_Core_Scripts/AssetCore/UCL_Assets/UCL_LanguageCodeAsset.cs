@@ -8,6 +8,163 @@ using UnityEngine;
 
 namespace UCL.Core
 {
+
+    /// <summary>
+    /// Steam 支援的語言
+    /// https://partner.steamgames.com/doc/store/localization/languages
+    /// </summary>
+    public enum SteamAPILangCode
+    {
+        /// <summary>
+        /// 阿拉伯文 العربية
+        /// </summary>
+        arabic,
+
+        /// <summary>
+        /// 保加利亞文 български език
+        /// </summary>
+        bulgarian,
+
+        /// <summary>
+        /// 簡體中文 简体中文
+        /// </summary>
+        schinese,
+
+        /// <summary>
+        /// 繁體中文 繁體中文
+        /// </summary>
+        tchinese,
+
+        /// <summary>
+        /// 捷克文 čeština
+        /// </summary>
+        czech,
+
+        /// <summary>
+        /// 丹麥文 Dansk
+        /// </summary>
+        danish,
+
+        /// <summary>
+        /// 荷蘭文 Nederlands
+        /// </summary>
+        dutch,
+
+        /// <summary>
+        /// 英文 English
+        /// </summary>
+        english,
+
+        /// <summary>
+        /// 芬蘭文 Suomi
+        /// </summary>
+        finnish,
+
+        /// <summary>
+        /// 法文 Français
+        /// </summary>
+        french,
+
+        /// <summary>
+        /// 德文 Deutsch
+        /// </summary>
+        german,
+
+        /// <summary>
+        /// 希臘文 Ελληνικά
+        /// </summary>
+        greek,
+
+        /// <summary>
+        /// 匈牙利文 Magyar
+        /// </summary>
+        hungarian,
+
+        /// <summary>
+        /// 印尼文 Bahasa Indonesia
+        /// </summary>
+        indonesian,
+
+        /// <summary>
+        /// 義大利文 Italiano
+        /// </summary>
+        italian,
+
+        /// <summary>
+        /// 日文 日本語
+        /// </summary>
+        japanese,
+
+        /// <summary>
+        /// 韓文 한국어
+        /// </summary>
+        koreana,
+
+        /// <summary>
+        /// 挪威文 Norsk
+        /// </summary>
+        norwegian,
+
+        /// <summary>
+        /// 波蘭文 Polski
+        /// </summary>
+        polish,
+
+        /// <summary>
+        /// 葡萄牙文 Português
+        /// </summary>
+        portuguese,
+
+        /// <summary>
+        /// 葡萄牙文 - 巴西 Português-Brasil
+        /// </summary>
+        brazilian,
+
+        /// <summary>
+        /// 羅馬尼亞文 Română
+        /// </summary>
+        romanian,
+
+        /// <summary>
+        /// 俄文 Русский
+        /// </summary>
+        russian,
+
+        /// <summary>
+        /// 西班牙文 - 西班牙 Español-España
+        /// </summary>
+        spanish,
+
+        /// <summary>
+        /// 西班牙文 - 拉丁美洲 Español-Latinoamérica
+        /// </summary>
+        latam,
+
+        /// <summary>
+        /// 瑞典文 Svenska
+        /// </summary>
+        swedish,
+
+        /// <summary>
+        /// 泰文 ไทย
+        /// </summary>
+        thai,
+
+        /// <summary>
+        /// 土耳其文 Türkçe
+        /// </summary>
+        turkish,
+
+        /// <summary>
+        /// 烏克蘭文 Українська
+        /// </summary>
+        ukrainian,
+
+        /// <summary>
+        /// 越南文 Tiếng Việt
+        /// </summary>
+        vietnamese
+    }
     [System.Serializable]
     public class UCL_LanguageCodeEntry : UCL_AssetEntryDefault<UCL_LanguageCodeAsset>
     {
@@ -19,7 +176,7 @@ namespace UCL.Core
     }
 
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Config)]
-    //[UCL.Core.ATTR.UCL_Sort((int)AssetGroup.EditLocalizeSettingType.RCG_LanguageCodeData)]
+    [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditConfigType.UCL_LanguageCodeAsset)]
     public class UCL_LanguageCodeAsset : UCL_Asset<UCL_LanguageCodeAsset>
     {
         #region must override 一定要override的部份
@@ -33,6 +190,14 @@ namespace UCL.Core
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(130)))
             {
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})[{LanguageName}]", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"SteamAPILangCode:{m_SteamAPILangCode}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                if (!m_SupportedLanguages.IsNullOrEmpty())
+                {
+                    foreach(var lang in m_SupportedLanguages)
+                    {
+                        GUILayout.Label($"SupportedLanguage:{lang}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                    }
+                }
                 //UCL.Core.UI.UCL_GUILayout.LabelAutoSize(UCL_LocalizeManager.Get("Preview"));
                 //UCL.Core.UI.UCL_GUILayout.LabelAutoSize(ItemName);
 
@@ -105,7 +270,12 @@ namespace UCL.Core
         /// <summary>
         /// 在選擇語言UI標註 翻譯完整度
         /// </summary>
-        public bool isPolished = false;
+        public bool m_IsPolished = false;
+
+        /// <summary>
+        /// 對應的SteamAPILangCode
+        /// </summary>
+        public SteamAPILangCode m_SteamAPILangCode = SteamAPILangCode.english;
 
         public bool CheckSupported(SystemLanguage iSystemLanguage)
         {

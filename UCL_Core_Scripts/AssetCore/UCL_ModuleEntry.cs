@@ -37,7 +37,7 @@ namespace UCL.Core
         {
             m_ID = iID;
         }
-        public string GetShortName() => $"UCL_ModuleEntry({ID})";
+        public string GetShortName() => ID;//$"UCL_ModuleEntry({ID})";
         virtual public string ID { get => m_ID; set => m_ID = value; }
         /// <summary>
         /// 抓取對應的模組
@@ -49,13 +49,18 @@ namespace UCL.Core
         /// </summary>
         virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDic)
         {
-            UCL.Core.UI.UCL_GUILayout.DrawField(this, iDic, iFieldName, true, UCL.Core.UCL_StaticFunctions.LocalizeFieldName);
+            GUILayout.BeginHorizontal();
+            bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, nameof(aIsPreview));
+            GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            ID = UCL_GUILayout.PopupAuto(ID, GetAllIDs(), iDic, nameof(ID));
+            //UCL.Core.UI.UCL_GUILayout.DrawField(this, iDic, iFieldName, true, UCL.Core.UCL_StaticFunctions.LocalizeFieldName);
+            GUILayout.EndHorizontal();
             //GUILayout.BeginHorizontal();
             //bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, "PreviewToggle");
             //Debug.LogError($"aIsPreview:{aIsPreview}");
             //GUILayout.Label(UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.LabelStyle);
             //GUILayout.EndHorizontal();
-            //if (aIsPreview)
+            if (aIsPreview)
             {
                 UCL_Module module = null;
                 module = iDic.GetData(nameof(module), module);

@@ -31,6 +31,12 @@ namespace UCL.Core
             UCL_BundleAsset,
             UCL_VideoAsset,
         }
+        public enum EditConfigType : int
+        {
+            UCL_LanguageCodeAsset = 1,
+            UCL_ModulePlaylist,
+            UCL_SteamWorkshopAsset,
+        }
     }
 
 

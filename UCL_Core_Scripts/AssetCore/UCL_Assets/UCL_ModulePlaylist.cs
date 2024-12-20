@@ -12,6 +12,7 @@ using UnityEngine;
 namespace UCL.Core
 {
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Config)]
+    [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditConfigType.UCL_ModulePlaylist)]
     public class UCL_ModulePlaylist : UCL_Asset<UCL_ModulePlaylist>
     {
         #region static

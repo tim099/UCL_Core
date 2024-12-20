@@ -18,11 +18,10 @@ using UnityEngine;
 
 namespace UCL.Core
 {
-    public static class UCL_AssetGroup
+    public static partial class UCL_AssetGroup
     {
         public const string Data = "Data";
         public const string Config = "Config";
-
 
         public enum EditDataType : int
         {
@@ -35,7 +34,6 @@ namespace UCL.Core
         {
             UCL_LanguageCodeAsset = 1,
             UCL_ModulePlaylist,
-            UCL_SteamWorkshopAsset,
         }
     }
 

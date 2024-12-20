@@ -166,6 +166,30 @@ namespace UCL.Core
         public UCL_SpriteAssetEntry() { m_ID = DefaultID; }
         public UCL_SpriteAssetEntry(string iID) { m_ID = iID; }
 
+        public override bool IsEmpty
+        {
+            get
+            {
+                if (!Util.ContainsAsset(ID))//Asset not exist!!
+                {
+                    return true;
+                }
+
+                try
+                {
+                    var data = GetData();
+                    if (data == null) return true;
+                    return data.IsEmpty;
+                }
+                catch (Exception)
+                {
+
+                }
+
+                return true;//Exception
+            }
+        }
+
         public Texture2D Texture
         {
             get

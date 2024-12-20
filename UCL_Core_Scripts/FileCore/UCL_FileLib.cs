@@ -100,7 +100,14 @@ namespace UCL.Core.FileLib
         }
     }
 #endif
-    static public class Lib{
+    static public class Lib
+    {
+        /// <summary>
+        /// Application.dataPath = .../Game/Assets
+        /// GameFolder = .../Game
+        /// </summary>
+        public static string GameFolder => Path.GetDirectoryName(Application.dataPath);
+
         public static string AssetsRoot => Application.dataPath.Replace("Assets", string.Empty);
         public static string GetProjectPath() {
             return Application.dataPath.Replace("Assets", string.Empty);

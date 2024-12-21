@@ -16,6 +16,7 @@ namespace UCL.Core.JsonLib {
         List,
         String,
         Int,
+        UInt,
         Long,
         ULong,
         Double,
@@ -195,6 +196,11 @@ namespace UCL.Core.JsonLib {
                         m_Obj = (int)0; 
                         break;
                     }
+                case JsonType.UInt:
+                    {
+                        m_Obj = (uint)0;
+                        break;
+                    }
                 case JsonType.Long:
                     {
                         m_Obj = (long)0;
@@ -270,6 +276,10 @@ namespace UCL.Core.JsonLib {
                 {
                     m_Type = JsonType.Int;
                 }
+                else if (iObj is uint)
+                {
+                    m_Type = JsonType.UInt;
+                }
                 else if (iObj is long)
                 {
                     m_Type = JsonType.Long;
@@ -308,6 +318,11 @@ namespace UCL.Core.JsonLib {
             m_Type = JsonType.Int;
             m_Obj = number;
         }
+        public JsonData(uint number)
+        {
+            m_Type = JsonType.UInt;
+            m_Obj = number;
+        }
         public JsonData(long number) {
             m_Type = JsonType.Long;
             m_Obj = number;
@@ -325,17 +340,20 @@ namespace UCL.Core.JsonLib {
         private object ToObject(object iObj) {
             if(iObj is JsonData) {
                 JsonData aData = iObj as JsonData;
-                switch(aData.m_Type) {
+                switch (aData.m_Type)
+                {
                     case JsonType.Boolean:
                     case JsonType.Double:
                     case JsonType.Int:
+                    case JsonType.UInt:
                     case JsonType.Long:
                     case JsonType.ULong:
                     case JsonType.String:
                         return aData.m_Obj;
                     case JsonType.List:
                         List<object> list = new List<object>();
-                        foreach(JsonData item in aData.m_List) {
+                        foreach (JsonData item in aData.m_List)
+                        {
                             list.Add(ToObject(item));
                         }
                         return list;
@@ -374,8 +392,12 @@ namespace UCL.Core.JsonLib {
             if(iType == typeof(double)) {
                 return GetDouble();
             }
-            if(iType == typeof(int) || iType == typeof(uint)) {
+            if(iType == typeof(int)) {
                 return GetInt();
+            }
+            if(iType == typeof(uint))
+            {
+                return GetUInt();
             }
             if(iType == typeof(long)) {
                 return GetLong();
@@ -410,7 +432,9 @@ namespace UCL.Core.JsonLib {
         public float GetFloat(float iDefaultVal = 0) {
             if(m_Type == JsonType.Double) return (float) (double)m_Obj;
             if (m_Type == JsonType.Int) return (float) (int)m_Obj;
+            if (m_Type == JsonType.UInt) return (float)(uint)m_Obj;
             if (m_Type == JsonType.Long) return (float) (long)m_Obj;
+            if (m_Type == JsonType.ULong) return (float)(ulong)m_Obj;
             return iDefaultVal;
         }
         public float GetFloat(string iKey, float iDefaultVal = 0)
@@ -420,6 +444,7 @@ namespace UCL.Core.JsonLib {
 
             if (aVal.m_Type == JsonType.Double) return (float)(double)aVal;
             if (aVal.m_Type == JsonType.Int) return (float)(int)aVal;
+            if (aVal.m_Type == JsonType.UInt) return (float)(uint)aVal;
             if (aVal.m_Type == JsonType.Long) return (float)(long)aVal;
             return iDefaultVal;
         }
@@ -457,6 +482,11 @@ namespace UCL.Core.JsonLib {
         }
         public int GetInt(int iDefaultVal = 0) {
             if(m_Type == JsonType.Int) return (int)m_Obj;  
+            return iDefaultVal;
+        }
+        public uint GetUInt(uint iDefaultVal = 0)
+        {
+            if (m_Type == JsonType.UInt) return (uint)m_Obj;
             return iDefaultVal;
         }
         public long GetLong(long iDefaultVal = 0) {
@@ -542,8 +572,10 @@ namespace UCL.Core.JsonLib {
         public static implicit operator JsonData(double data) { return new JsonData(data); }
         public static implicit operator JsonData(float data) { return new JsonData((double)data); }
         public static implicit operator JsonData(int data) { return new JsonData(data); }
+        public static implicit operator JsonData(uint data) { return new JsonData(data); }
         public static implicit operator JsonData(long data) { return new JsonData(data); }
         public static implicit operator JsonData(ulong data) { return new JsonData(data); }
+
         public static implicit operator JsonData(string data) { return new JsonData(data); }
         public static implicit operator JsonData(JsonSerializable data){ return data.SerializeToJson(); }
         public static implicit operator JsonData(UnityJsonSerializable data) { return data.SerializeToJson(); }
@@ -563,6 +595,11 @@ namespace UCL.Core.JsonLib {
         public static implicit operator int(JsonData data) {
             if(data.m_Type != JsonType.Int) throw new InvalidCastException($"JsonData doesn't hold an int,Type:{data.m_Type}");
             return (int)data.m_Obj;
+        }
+        public static implicit operator uint(JsonData data)
+        {
+            if (data.m_Type != JsonType.UInt) throw new InvalidCastException($"JsonData doesn't hold an uint,Type:{data.m_Type}");
+            return (uint)data.m_Obj;
         }
         public static implicit operator long(JsonData data) {
             if(data.m_Type != JsonType.Long) throw new InvalidCastException($"JsonData doesn't hold an long,Type:{data.m_Type}");

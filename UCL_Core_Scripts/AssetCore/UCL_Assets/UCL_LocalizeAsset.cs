@@ -93,6 +93,7 @@ namespace UCL.Core
         {
             csv,
             tsv,
+            //xlsx,
         }
         public class LocalizeData
         {
@@ -340,7 +341,7 @@ namespace UCL.Core
                 catch { }
             }
             token.ThrowIfCancellationRequested();
-            string aData = string.Empty;
+            //string aData = string.Empty;
             if (iData == null)
             {
                 Debug.LogError($"aGid:{gid},iData == null");
@@ -349,12 +350,12 @@ namespace UCL.Core
             {
                 Debug.LogError($"aGid:{gid},iData.Length == 0");
             }
-            else
-            {
-                aData = System.Text.Encoding.UTF8.GetString(iData);
-            }
+            //else
+            //{
+            //    aData = System.Text.Encoding.UTF8.GetString(iData);
+            //}
             //Debug.LogError($"aData:{aData}, Format:{format}");
-            ParseData(aData, replaceOldKey, format);
+            ParseData(iData, replaceOldKey, format);
 
             ++m_CompleteCount;
             float aProgress = 0.1f + ((0.9f * m_CompleteCount) / m_GoogleSheetData.m_GidDatas.Count);
@@ -490,8 +491,26 @@ namespace UCL.Core
             
 
         }
-        public void ParseData(string iData, bool replaceOldKey, Format format)
+        protected void ParseData(byte[] iBytes, bool replaceOldKey, Format format)
         {
+            switch (format)
+            {
+                case Format.csv:
+                case Format.tsv:
+                    {
+                        ParseCsvData(iBytes, replaceOldKey, format);
+                        break;
+                    }
+                //case Format.xlsx:
+                //    {
+                //        ParseXlsxData(iBytes, replaceOldKey, format);
+                //        break;
+                //    }
+            }
+        }
+        public void ParseCsvData(byte[] iBytes, bool replaceOldKey, Format format)
+        {
+            string iData = System.Text.Encoding.UTF8.GetString(iBytes);
             //Debug.LogError($"ParseData:{iData}");
             char seperator = ',';
             switch (format)

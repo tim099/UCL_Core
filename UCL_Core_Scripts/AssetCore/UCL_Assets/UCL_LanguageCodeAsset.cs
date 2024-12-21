@@ -273,6 +273,10 @@ namespace UCL.Core
         public bool m_IsPolished = false;
 
         /// <summary>
+        /// 排序用
+        /// </summary>
+        public int m_Order = 9999;
+        /// <summary>
         /// 對應的SteamAPILangCode
         /// </summary>
         public SteamAPILangCode m_SteamAPILangCode = SteamAPILangCode.english;

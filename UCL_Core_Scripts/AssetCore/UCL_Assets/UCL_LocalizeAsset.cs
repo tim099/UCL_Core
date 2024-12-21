@@ -211,6 +211,9 @@ namespace UCL.Core
             }
             if (m_SaveToModResources)
             {
+                m_SavaPath.m_ModuleID = UCL_ModuleService.CurEditModuleID;
+
+                Directory.CreateDirectory(m_SavaPath.FileSystemFolderPath);
                 foreach (var langKey in m_LocalizeDatas.Keys)
                 {
                     var dic = m_LocalizeDatas[langKey].m_LocalizeDic;
@@ -759,7 +762,7 @@ namespace UCL.Core
                 {
                     if (GUILayout.Button("Download", UCL_GUIStyle.ButtonStyle))
                     {
-                        StartDownload();
+                        StartDownload().Forget();
                     }
                 }
                 else if (!m_IsCancelDownload)
@@ -775,7 +778,10 @@ namespace UCL.Core
                     GUILayout.EndHorizontal();
                 }
             }
-
+            foreach(var key in m_LocalizeDatas.Keys)//同步語言到m_LangKeys
+            {
+                m_LangKeys.Add(key);
+            }
             
             var langs = m_LocalizeDatas.Keys.ToList();
             if (!langs.IsNullOrEmpty())

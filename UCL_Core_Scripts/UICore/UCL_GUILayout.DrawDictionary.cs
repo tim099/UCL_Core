@@ -75,6 +75,11 @@ namespace UCL.Core.UI
                     {
                         iDataDic.SetData(AddKey, aKeyType.CreateInstance());
                     }
+                    bool add = false;
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                    {
+                        add = true;
+                    }
                     GUILayout.Label(UCL_LocalizeManager.Get("Key"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     var aKey = iDataDic.GetData(AddKey);
                     string aKeyName = string.Empty;
@@ -85,24 +90,21 @@ namespace UCL.Core.UI
 
                     iDataDic.SetData(AddKey, DrawObjectData(aKey, aParams));
                     //iDataDic.SetData(AddKey, DrawObjectData(aKey, iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName, iFieldNameFunc: iFieldNameFunc));
-                    using (new GUILayout.HorizontalScope("box"))
+                    if (add)
                     {
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        try
                         {
-                            try
+                            var aNewKey = iDataDic.GetData(AddKey);
+                            if (!iDic.Contains(aNewKey))
                             {
-                                var aNewKey = iDataDic.GetData(AddKey);
-                                if (!iDic.Contains(aNewKey))
-                                {
-                                    iDataDic.Remove(AddKey);
-                                    var aGenericType = aType.GetGenericValueType();
-                                    iDic.Add(aNewKey, aGenericType.CreateInstance());
-                                }
+                                iDataDic.Remove(AddKey);
+                                var aGenericType = aType.GetGenericValueType();
+                                iDic.Add(aNewKey, aGenericType.CreateInstance());
                             }
-                            catch (System.Exception iE)
-                            {
-                                Debug.LogException(iE);
-                            }
+                        }
+                        catch (System.Exception iE)
+                        {
+                            Debug.LogException(iE);
                         }
                     }
 
@@ -218,6 +220,11 @@ namespace UCL.Core.UI
             {
                 using (new GUILayout.HorizontalScope("box"))
                 {
+                    bool add = false;
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
+                    {
+                        add = true;
+                    }
                     GUILayout.Label(UCL_LocalizeManager.Get("Key"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     var aKeyType = aType.GetGenericKeyType();
                     string aAddKey = "AddData";
@@ -231,24 +238,21 @@ namespace UCL.Core.UI
                     if (aKeyShortName != null) aKeyName = aKeyShortName.GetShortName();
                     if (aKeyName.IsNullOrEmpty()) aKeyName = UCL_LocalizeManager.Get(aKeyType.Name);
                     iDataDic.SetData(aAddKey, DrawObjectData(aKey, iDataDic.GetSubDic(iDisplayName + "_AddKey"), aKeyName));
-                    using (new GUILayout.HorizontalScope("box"))
+                    if (add)
                     {
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
+                        try
                         {
-                            try
+                            var aNewKey = iDataDic.GetData(aAddKey);
+                            if (!iDic.Contains(aNewKey))
                             {
-                                var aNewKey = iDataDic.GetData(aAddKey);
-                                if (!iDic.Contains(aNewKey))
-                                {
-                                    iDataDic.Remove(aAddKey);
-                                    var aGenericType = aType.GetGenericValueType();
-                                    iDic.Add(aNewKey, aGenericType.CreateInstance());
-                                }
+                                iDataDic.Remove(aAddKey);
+                                var aGenericType = aType.GetGenericValueType();
+                                iDic.Add(aNewKey, aGenericType.CreateInstance());
                             }
-                            catch (System.Exception iE)
-                            {
-                                Debug.LogException(iE);
-                            }
+                        }
+                        catch (System.Exception iE)
+                        {
+                            Debug.LogException(iE);
                         }
                     }
 

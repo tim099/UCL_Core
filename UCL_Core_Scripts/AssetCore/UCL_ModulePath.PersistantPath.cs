@@ -113,6 +113,36 @@ namespace UCL.Core
                     //    $"\nModulesZipFolder:{PersistantPath.ModulesZipFolder}" +
                     //    $"\nModulesPath:{ModulesPath}");
                 }
+
+                /// <summary>
+                /// Only work in Editor
+                /// </summary>
+                /// <returns></returns>
+                public UCL_ModuleService.Config LoadConfig()
+                {
+                    var config = new UCL_ModuleService.Config();
+
+                    try
+                    {
+                        var path = ConfigPath;
+                        if (!File.Exists(path))
+                        {
+                            Debug.LogError($"{GetType().Name}.LoadConfig path:{path},!File.Exists(path)");
+                            return config;
+                        }
+                        string json = File.ReadAllText(path);
+                        JsonData jsonData = JsonData.ParseJson(json);
+                        config.DeserializeFromJson(jsonData);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogException(e);
+                    }
+                    
+
+
+                    return config;
+                }
                 /// <summary>
                 /// return root path of module
                 /// </summary>
@@ -168,10 +198,25 @@ namespace UCL.Core
                 /// <summary>
                 /// zip all Builtin modules to Streamimg assets folder
                 /// </summary>
-                public void ZipAllModules()
+                public void ZipAllModules(UCL_ModuleService.Config config = null)
                 {
-                    var aIDs = GetAllModulesID();
-
+                    IList<string> aIDs = null;
+                    if(config != null)//TODO 檢查模組是否需要輸出
+                    {
+                        aIDs = new List<string>();
+                        foreach (var moduleId in config.m_ExportModules.Keys)
+                        {
+                            var exportConfig = config.m_ExportModules[moduleId];
+                            if (exportConfig.m_ExportModule)
+                            {
+                                aIDs.Add(moduleId);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        aIDs = GetAllModulesID();
+                    }
                     Debug.LogWarning($"ZipAllModules aIDs:{aIDs.ConcatString()}");
                     if (aIDs.IsNullOrEmpty())//No modules exist
                     {

@@ -128,11 +128,26 @@ namespace UCL.Core
         {
             base.DeserializeFromJson(iJson);
             HashSet<string> idSet = new HashSet<string>();
+            var service = UCL_ModuleService.Ins;
+
+            if(service != null)//TODO check exist!!
+            {
+                var allIds = new HashSet<string>(service.GetAllModulesID());
+                for (int i = m_Playlist.Count - 1; i >= 0; i--)
+                {
+                    string id = m_Playlist[i].ID;
+
+                    if (!allIds.Contains(id))//not exist!!
+                    {
+                        Debug.LogError($"{GetType().Name}.DeserializeFromJson id:{id}, !allIds.Contains(id),allIds:{allIds.ConcatToString()}");
+                        m_Playlist.RemoveAt(i);
+                    }
+                }
+            }
             //Remove repeated module
             for(int i = m_Playlist.Count - 1; i >= 0 ; i--)
             {
                 string id = m_Playlist[i].ID;
-                //TODO check exist!!
 
                 if (idSet.Contains(id))//repeated
                 {

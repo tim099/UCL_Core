@@ -169,6 +169,14 @@ namespace UCL.Core
             }
         }
         #endregion
+        public class ModuleExportConfig : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_IsEnable
+        {
+            public bool IsEnable { get => m_ExportModule; set => m_ExportModule = value; }
+
+            public bool m_ExportModule = true;
+
+            public ModuleExportConfig() { }
+        }
 
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
@@ -179,6 +187,11 @@ namespace UCL.Core
             /// All BuiltinModules are in StreammingAssets
             /// </summary>
             public List<string> m_BuiltinModules = new List<string>();
+            /// <summary>
+            /// 需要輸出的模組
+            /// </summary>
+            public Dictionary<string, ModuleExportConfig> m_ExportModules = new();
+
 
             /// <summary>
             /// All module in this list will be loaded
@@ -496,25 +509,34 @@ namespace UCL.Core
             //Debug.LogWarning($"1 m_Config.m_BuiltinModules:{m_Config.m_BuiltinModules.AllFieldToString()}");
             //Debug.LogError("InitAsync()");
             await LoadConfig();
-            Debug.LogWarning($"m_Config.m_BuiltinModules:{m_Config.m_BuiltinModules.AllFieldToString()}");
+            var exportModules = m_Config.m_ExportModules;
+            Debug.LogWarning($"exportModules:{exportModules.AllFieldToString()}");
             bool aForceInstall = m_Config.m_ForceInstallInEditor;
 
             if (aForceInstall)
             {
-                foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
+                foreach (var aModuleID in exportModules.Keys)//Check if all builtin modules installed
                 {
-                    var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
-                    await aModule.Install();
+                    var exportConfig = exportModules[aModuleID];
+                    if (exportConfig.m_ExportModule)
+                    {
+                        var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                        await aModule.Install();
+                    }
                 }
             }
             else
             {
                 //List<UniTask> aTasks = new List<UniTask>();
-                foreach (var aModuleID in m_Config.m_BuiltinModules)//Check if all builtin modules installed
+                foreach (var aModuleID in exportModules.Keys)//Check if all builtin modules installed
                 {
-                    //Debug.LogWarning($"ModuleID:{aModuleID}, CheckAndInstall");
-                    var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
-                    await aModule.CheckAndInstall();
+                    var exportConfig = exportModules[aModuleID];
+                    if (exportConfig.m_ExportModule)
+                    {
+                        //Debug.LogWarning($"ModuleID:{aModuleID}, CheckAndInstall");
+                        var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                        await aModule.CheckAndInstall();
+                    }
                     //aTasks.Add(aModule.CheckAndInstall());
                 }
                 //await UniTask.WhenAll(aTasks);
@@ -775,6 +797,13 @@ namespace UCL.Core
                     {
                         m_Config.CreateModule(UCL_ModuleEntry.CoreModuleID, UCL_ModuleEditType.Builtin, null);
                         m_Config.m_BuiltinModules.Add(UCL_ModuleEntry.CoreModuleID);
+                    }
+                    foreach(var moduleId in m_Config.m_BuiltinModules)
+                    {
+                        if (!m_Config.m_ExportModules.ContainsKey(moduleId))
+                        {
+                            m_Config.m_ExportModules[moduleId] = new ModuleExportConfig();
+                        }
                     }
                 }
 
@@ -1057,7 +1086,7 @@ namespace UCL.Core
                 }
 #endif
             }
-            m_Config.OnGUI(iDataDic.GetSubDic("Config"));
+            m_Config.OnGUI(iDataDic.GetSubDic(nameof(m_Config)));
 
             GUILayout.Box(UCL_LocalizeManager.Get("EditModulewarning"), UCL_GUIStyle.BoxStyle);
             if (GUILayout.Button(UCL_LocalizeManager.Get("Create new module"), UCL_GUIStyle.ButtonStyle))

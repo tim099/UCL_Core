@@ -18,10 +18,14 @@ namespace UCL.Core
         #region Common
         public static void OnPreprocessBuild()
         {
-            ZipAllModules();
+            //UCL_ModulePath.PersistantPath.GetModulesEntry(m_ModuleEditType).ConfigPath;
+            var entry = UCL_ModulePath.PersistantPath.GetModulesEntry(UCL_ModuleEditType.Builtin);
+            var config =  entry.LoadConfig();
+
+            entry.ZipAllModules(config);
             //Save Builtin config to StreamingAssets
-            string aConfigPath = UCL_ModulePath.PersistantPath.GetModulesEntry(UCL_ModuleEditType.Builtin).ConfigPath;
-            if (File.Exists(aConfigPath))
+            string aConfigPath = entry.ConfigPath;
+            if (File.Exists(aConfigPath))//Copy config to streaming asset
             {
                 File.Copy(aConfigPath, UCL_ModulePath.PersistantPath.ConfigInstallPath, true);
             }

@@ -105,6 +105,7 @@ namespace UCL.Core
         {
             m_Playlist.Add(new ModuleSetting(iModuleID));
         }
+
         public Dictionary<string, UCL_Module> LoadPlaylist()
         {
             //if (!UCL_ModuleService.Initialized)
@@ -131,6 +132,8 @@ namespace UCL.Core
             for(int i = m_Playlist.Count - 1; i >= 0 ; i--)
             {
                 string id = m_Playlist[i].ID;
+                //TODO check exist!!
+
                 if (idSet.Contains(id))//repeated
                 {
                     m_Playlist.RemoveAt(i);

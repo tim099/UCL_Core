@@ -493,7 +493,6 @@ namespace UCL.Core
                         }
                     }
                     
-
                     GUILayout.EndVertical();
                 }
                     
@@ -577,6 +576,12 @@ namespace UCL.Core
                     }
                 }
 
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Open Folder"), UCL_GUIStyle.ButtonStyle))
+                {
+                    UCL.Core.FileLib.WindowsLib.OpenExplorer(ModuleEntry.RootFolder);
+                }
+#endif
                 //const int MaxItemsPerPage = 10;
                 //using(var scope = new GUILayout.HorizontalScope())
                 //{

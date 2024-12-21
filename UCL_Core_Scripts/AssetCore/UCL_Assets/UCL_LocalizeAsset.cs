@@ -69,18 +69,7 @@ namespace UCL.Core
             public List<GidData> m_GidDatas = new();
         }
 
-        public override JsonData Save()
-        {
-            foreach(var key in m_LocalizeDatas.Keys)
-            {
-                if (!UCL_LanguageCodeAsset.Util.ContainsAsset(key))
-                {
-                    UCL_LanguageCodeAsset lang = new UCL_LanguageCodeAsset(key);
-                    lang.Save();//Add key
-                }
-            }
-            return base.Save();
-        }
+
         public enum LocalizeType
         {
             Default = 0,
@@ -166,8 +155,24 @@ namespace UCL.Core
             }
         }
         public LocalizeType m_LocalizeType = LocalizeType.Default;
-        public Dictionary<string, LocalizeData> m_LocalizeDatas = new();
 
+
+        [UCL.Core.PA.Conditional(nameof(m_SaveToModResources), false, false)]
+        public Dictionary<string, LocalizeData> m_LocalizeDatas = new();
+        /// <summary>
+        /// 所有支援的語言Key
+        /// </summary>
+        public HashSet<string> m_LangKeys = new();
+        /// <summary>
+        /// 保存到ModResources(優化讀取速度)
+        /// </summary>
+        public bool m_SaveToModResources = false;
+
+        /// <summary>
+        /// 有設定的話 會保存到這裡
+        /// </summary>
+        [UCL.Core.PA.Conditional(nameof(m_SaveToModResources), false, true)]
+        public UCL_ModResourcesData m_SavaPath = new UCL_ModResourcesData();
 
         [UCL.Core.PA.Conditional(nameof(m_LocalizeType), false, LocalizeType.GoogleSheet)]
         public GoogleSheetConfig m_GoogleSheetData = new();
@@ -184,9 +189,128 @@ namespace UCL.Core
 
         public bool IsDownloading => m_CTS != null;
 
+        public string GetModResourcePath(string langKey)
+        {
+            return Path.Combine(m_SavaPath.FileSystemFolderPath, $"{ID}_{langKey}.txt");
+        }
+        public override JsonData Save()
+        {
+            foreach (var key in m_LocalizeDatas.Keys)
+            {
+                m_LangKeys.Add(key);//紀錄LangKey
+                if (!UCL_LanguageCodeAsset.Util.ContainsAsset(key))
+                {
+                    UCL_LanguageCodeAsset lang = new UCL_LanguageCodeAsset(key);
+                    lang.Save();//Add key
+                }
+            }
+            if (m_SaveToModResources)
+            {
+                foreach (var langKey in m_LocalizeDatas.Keys)
+                {
+                    var dic = m_LocalizeDatas[langKey].m_LocalizeDic;
+                    var path = GetModResourcePath(langKey);
+                    using (FileStream fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        using (StreamWriter writer = new StreamWriter(fileStream, Encoding.UTF8))
+                        {
+                            writer.WriteLine(dic.Keys.Count);//紀錄有多少筆資料
+                            foreach (var key in dic.Keys)//寫入所有Key
+                            {
+                                var val = dic[key];
+                                writer.Write(key.Length);
+                                writer.Write(",");
+                                writer.Write(val.Length);
+                                writer.WriteLine();
+
+                                writer.Write(key);
+                                writer.Write(":");
+                                writer.Write(val);
+                                writer.WriteLine();
+                            }
+                        }
+                    }
+                    //System.Text.StringBuilder sb = new StringBuilder();
+
+                }
+                //m_LocalizeDatas.Clear();//清除LocalizeDatas 避免存進json
+            }
+            
+            return base.Save();
+        }
+        public override JsonData SerializeToJson()
+        {
+            return base.SerializeToJson();
+        }
         public override void DeserializeFromJson(JsonData iJson)
         {
             base.DeserializeFromJson(iJson);
+            if (m_SaveToModResources)//從ModResourcesData讀取
+            {
+                m_LocalizeDatas.Clear();
+                foreach(var langKey in m_LangKeys)
+                {
+                    var path = GetModResourcePath(langKey);
+                    if (!File.Exists(path))
+                    {
+                        Debug.LogError($"{GetType().Name}.DeserializeFromJson path:{path}, !File.Exists(path)");
+                        continue;
+                    }
+                    try
+                    {
+                        var localizeData = m_LocalizeDatas[langKey] = new LocalizeData();
+                        var dic = localizeData.m_LocalizeDic;
+                        using (FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read))
+                        {
+                            using (StreamReader reader = new StreamReader(fileStream, Encoding.UTF8))
+                            {
+                                int keyNum = 0;
+                                string keyNumStr = reader.ReadLine();
+                                if (!int.TryParse(keyNumStr, out keyNum))
+                                {
+                                    keyNum = 0;//ParseFail
+                                    Debug.LogError($"{GetType().Name}.DeserializeFromJson keyNumStr:{keyNumStr}, !int.TryParse(keyNumStr, out keyNum)");
+                                }
+                                //Debug.LogError($"langKey:{langKey}, keyNum:{keyNum}");
+                                for (int i = 0; i < keyNum; i++)
+                                {
+                                    try
+                                    {
+                                        string keyLenStr = reader.ReadLine();//Format x,y
+                                        //Debug.LogError($"({i})langKey:{langKey}, keyLenStr:{keyLenStr}");
+                                        var keyLens = keyLenStr.Split(',');
+                                        int keyLen = int.Parse(keyLens[0]);
+                                        int valLen = int.Parse(keyLens[1]);
+
+                                        char[] keyBuffer = new char[keyLen];
+                                        keyLen = reader.ReadBlock(keyBuffer, 0, keyLen);
+                                        string key = new string(keyBuffer, 0, keyLen);
+                                        reader.Read();//read :
+
+                                        char[] valBuffer = new char[valLen];
+                                        valLen = reader.ReadBlock(valBuffer, 0, valLen);
+                                        string val = new string(valBuffer, 0, valLen);
+                                        dic[key] = val;
+                                        //Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
+                                        reader.ReadLine();//read nextline
+                                    }
+                                    catch (System.Exception e)
+                                    {
+                                        Debug.LogException(e);
+                                    }
+
+
+                                }
+                            }
+                        }
+                    }
+                    catch(Exception ex)
+                    {
+                        Debug.LogException(ex);
+                    }
+
+                }
+            }
             //m_GoogleSheetData.m_GidDatas = m_GidDatas.Clone();
             //m_GoogleSheetData.m_GidTable = m_GidTable;
             //m_GoogleSheetData.m_TableId = m_TableId;

@@ -173,8 +173,13 @@ namespace UCL.Core
         /// </summary>
         [UCL.Core.PA.Conditional(nameof(m_SaveToModResources), false, true)]
         public UCL_ModResourcesData m_SavaPath = new UCL_ModResourcesData();
+        /// <summary>
+        /// 有設定的話 會保存到這裡
+        /// </summary>
+        [UCL.Core.PA.Conditional(nameof(m_SaveToModResources), false, true)]
+        public string m_SaveFileID = "Default";
 
-        [UCL.Core.PA.Conditional(nameof(m_LocalizeType), false, LocalizeType.GoogleSheet)]
+
         public GoogleSheetConfig m_GoogleSheetData = new();
 
         const string DownloadTemplate = "https://docs.google.com/spreadsheets/d/{0}/export?format={2}&gid={1}";
@@ -191,7 +196,7 @@ namespace UCL.Core
 
         public string GetModResourcePath(string langKey)
         {
-            return Path.Combine(m_SavaPath.FileSystemFolderPath, $"{ID}_{langKey}.txt");
+            return Path.Combine(m_SavaPath.FileSystemFolderPath, $"{m_SaveFileID}_{langKey}.txt");
         }
         public override JsonData Save()
         {
@@ -246,13 +251,13 @@ namespace UCL.Core
         /// 複製一份
         /// </summary>
         /// <returns></returns>
-        override public UCLI_CommonEditable CloneInstance()
-        {
-            var aClone = new UCL_LocalizeAsset();
-            aClone.ID = this.ID;
-            aClone.DeserializeFromJson(SerializeToJson());
-            return aClone;
-        }
+        //override public UCLI_CommonEditable CloneInstance()
+        //{
+        //    var aClone = new UCL_LocalizeAsset();
+        //    aClone.ID = this.ID;
+        //    aClone.DeserializeFromJson(SerializeToJson());
+        //    return aClone;
+        //}
         public override void DeserializeFromJson(JsonData iJson)
         {
             base.DeserializeFromJson(iJson);

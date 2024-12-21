@@ -23,7 +23,7 @@ namespace UCL.Core.Page
             return UCL_EditorPage.Create<UCL_CreateNewModulePage>();
         }
         UCL_ObjectDictionary m_DataDic = new UCL_ObjectDictionary();
-        protected string m_NewModuleName = "New Module";
+        protected string m_NewModuleID = "New Module";
         private UCL_Module.Config m_Config = new();
         public UCL_CreateNewModulePage()
         {
@@ -36,6 +36,7 @@ namespace UCL.Core.Page
 
         protected override void ContentOnGUI()
         {
+            GUILayout.Box(UCL_LocalizeManager.Get("UCL_CreateNewModulePageTip"), UCL_GUIStyle.BoxStyle);
             if (!UCL_ModuleService.Initialized)
             {
                 return;
@@ -45,13 +46,14 @@ namespace UCL.Core.Page
                 var moduleService = UCL_ModuleService.Ins;
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Create new module"), UCL_GUIStyle.ButtonStyle))
                 {
-                    var module = UCL_ModuleService.Ins.CreateNewModule(m_NewModuleName, m_Config);
+                    m_Config.m_ID = m_NewModuleID;
+                    var module = UCL_ModuleService.Ins.CreateNewModule(m_NewModuleID, m_Config);
                     Close();
                 }
                 using (var aScope2 = new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(UCL_LocalizeManager.Get("Module ID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    m_NewModuleName = GUILayout.TextField(m_NewModuleName, UCL_GUIStyle.TextFieldStyle);
+                    m_NewModuleID = GUILayout.TextField(m_NewModuleID, UCL_GUIStyle.TextFieldStyle);
                 }
             }
             UCL_GUILayout.DrawObjectData(m_Config, m_DataDic.GetSubDic("Config"), UCL_LocalizeManager.Get("Config"));

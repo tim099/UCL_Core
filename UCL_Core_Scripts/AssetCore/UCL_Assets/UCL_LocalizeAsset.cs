@@ -242,6 +242,17 @@ namespace UCL.Core
         {
             return base.SerializeToJson();
         }
+        /// <summary>
+        /// 複製一份
+        /// </summary>
+        /// <returns></returns>
+        override public UCLI_CommonEditable CloneInstance()
+        {
+            var aClone = new UCL_LocalizeAsset();
+            aClone.ID = this.ID;
+            aClone.DeserializeFromJson(SerializeToJson());
+            return aClone;
+        }
         public override void DeserializeFromJson(JsonData iJson)
         {
             base.DeserializeFromJson(iJson);

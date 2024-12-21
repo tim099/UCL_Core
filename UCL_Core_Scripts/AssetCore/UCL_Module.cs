@@ -273,6 +273,7 @@ namespace UCL.Core
             get => m_ID; 
             set
             {
+                //Debug.LogError($"Set ID:{value}");
                 m_ID = value;
                 m_Config.m_ID = value;
             }

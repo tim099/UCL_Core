@@ -192,11 +192,11 @@ namespace UCL.Core
         #region FakeStatic
         virtual public T CreateData(string iID)
         {
-            var aType = typeof(T);
+            //var aType = typeof(T);
             var aConfig = GetAssetConfig(iID);
             if (!aConfig.Exist)
             {
-                string log = $"CreateData Type:{aType}, ID:{iID}, !Config.Exist";
+                string log = $"CreateData Type:{nameof(T)}, ID:{iID}, !Config.Exist";
                 Debug.LogError(log);
                 //return null;
                 throw new Exception(log);
@@ -204,7 +204,7 @@ namespace UCL.Core
 
             var aData = new T();
             UCLI_Asset.s_CurCreateData = aData;
-
+            UCL_ModuleService.AssetConfig.s_CurCreateDataConfig = aConfig;
             try
             {
                 aData.ID = iID;
@@ -219,8 +219,9 @@ namespace UCL.Core
             {
                 UCLI_Asset.s_CurCreateData = null;
             }
+            UCL_ModuleService.AssetConfig.s_CurCreateDataConfig = null;
 
-            
+
             return aData;
         }
 

@@ -132,7 +132,11 @@ namespace UCL.Core
         public static UCL_ModuleEditType ModuleEditType
         {
             get => Ins.m_PathConfig.m_ModuleEditType;
-            private set => Ins.m_PathConfig.m_ModuleEditType = value;
+            private set
+            {
+                Ins.m_ModuleCache.Clear();//切換後要清除緩存
+                Ins.m_PathConfig.m_ModuleEditType = value;
+            }
         }
 
         public static UCL_Module CurEditModule => Ins.m_CurEditModule;
@@ -281,6 +285,9 @@ namespace UCL.Core
         /// </summary>
         public class AssetConfig
         {
+            public static AssetConfig s_CurCreateDataConfig = null;
+
+
             /// <summary>
             /// 所屬的UCL_Module
             /// </summary>
@@ -454,6 +461,10 @@ namespace UCL.Core
         /// 當前已載入的模組 讀取UCL_Assets時會按照順序判斷(若ID相同則選取排序在前面的模組中的Asset)
         /// </summary>
         protected List<UCL_Module> m_LoadedModules = new List<UCL_Module>();
+        /// <summary>
+        /// 緩存的模組資訊
+        /// </summary>
+        protected Dictionary<string, UCL_Module> m_ModuleCache = new();
         /// <summary>
         /// ID緩存
         /// </summary>
@@ -912,6 +923,7 @@ namespace UCL.Core
             OnLoadModule?.Invoke();
 
             m_LoadedModules.Clear();
+            m_ModuleCache.Clear();
             m_AssetsCacheDic.Clear();
             m_IDsCache.Clear();
 
@@ -948,11 +960,22 @@ namespace UCL.Core
         /// 回傳對應ID的UCL_Module
         /// </summary>
         /// <returns></returns>
-        public UCL_Module GetModule(string iID)
+        public UCL_Module GetModule(string iID, bool iUseCache = true)
         {
+            if (!iUseCache)
+            {
+                return LoadModule(iID, ModuleEditType);
+            }
+            if (!m_ModuleCache.ContainsKey(iID))
+            {
+                m_ModuleCache[iID] = LoadModule(iID, ModuleEditType);
+            }
+            return m_ModuleCache[iID];
+            //m_ModuleCache
             //UCL_ModuleEditType type = Application.isEditor
-            var aModule = LoadModule(iID, ModuleEditType);
-            return aModule;
+            //var aModule = LoadModule(iID, ModuleEditType);
+
+            //return aModule;
         }
 
         protected UCL_Module LoadModule(string iID, UCL_ModuleEditType iModuleEditType)

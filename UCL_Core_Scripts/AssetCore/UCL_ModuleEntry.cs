@@ -1,4 +1,4 @@
-
+Ôªø
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 03/02 2024 11:01
@@ -40,12 +40,12 @@ namespace UCL.Core
         public string GetShortName() => ID;//$"UCL_ModuleEntry({ID})";
         virtual public string ID { get => m_ID; set => m_ID = value; }
         /// <summary>
-        /// ßÏ®˙πÔ¿≥™∫º“≤’
+        /// ÊäìÂèñÂ∞çÊáâÁöÑÊ®°ÁµÑ
         /// </summary>
         virtual public UCL_Module Module => UCL_ModuleService.Ins.GetModule(m_ID);
 
         /// <summary>
-        /// ¶bΩsøËæπ§§√∏ªs
+        /// Âú®Á∑®ËºØÂô®‰∏≠Áπ™Ë£Ω
         /// </summary>
         virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDic)
         {
@@ -55,6 +55,8 @@ namespace UCL.Core
             ID = UCL_GUILayout.PopupAuto(ID, GetAllIDs(), iDic, nameof(ID));
             //UCL.Core.UI.UCL_GUILayout.DrawField(this, iDic, iFieldName, true, UCL.Core.UCL_StaticFunctions.LocalizeFieldName);
             GUILayout.EndHorizontal();
+
+            
             //GUILayout.BeginHorizontal();
             //bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, "PreviewToggle");
             //Debug.LogError($"aIsPreview:{aIsPreview}");
@@ -62,20 +64,11 @@ namespace UCL.Core
             //GUILayout.EndHorizontal();
             if (aIsPreview)
             {
-                UCL_Module module = null;
-                module = iDic.GetData(nameof(module), module);
-                if (module != null && module.ID != m_ID)//§w∏g§¡¥´ ª›≠n≠´∑s∏¸§J
+                UCL_Module module = Module;
+                if (module != null)
                 {
-                    module = null;
+                    module.OnGUI(m_ID, iDic.GetSubDic("ModuleContentOnGUI"));
                 }
-                if(module == null)
-                {
-                    module = Module;
-                    iDic.SetData(nameof(module), module);
-                }
-                module.OnGUI(m_ID, iDic.GetSubDic("ModuleContentOnGUI"));
-
-
             }
             return this;
         }

@@ -87,6 +87,18 @@ namespace UCL.Core
         //{
         //    Release();
         //}
+        public override void DeserializeFromJson(JsonData iJson)
+        {
+            base.DeserializeFromJson(iJson);
+            if(UCL_ModuleService.AssetConfig.s_CurCreateDataConfig != null)
+            {
+                var module = UCL_ModuleService.AssetConfig.s_CurCreateDataConfig.p_Module;
+                if(module != null)
+                {
+                    m_ModuleID = module.ID;
+                }
+            }
+        }
         //public override void DeserializeFromJson(JsonData iJson)
         //{
         //    base.DeserializeFromJson(iJson);

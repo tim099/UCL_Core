@@ -37,6 +37,44 @@ namespace UCL.Core
             return Data.GetSprite().texture;
         }
 
+        //public override UCL_ModResourceAsset CreateData(string iID)
+        //{
+        //    var aConfig = GetAssetConfig(iID);
+        //    if (!aConfig.Exist)
+        //    {
+        //        string log = $"CreateData Type:{nameof(UCL_ModResourceAsset)}, ID:{iID}, !Config.Exist";
+        //        Debug.LogError(log);
+        //        //return null;
+        //        throw new Exception(log);
+        //    }
+
+        //    var aData = new UCL_ModResourceAsset();
+        //    UCLI_Asset.s_CurCreateData = aData;
+
+        //    try
+        //    {
+        //        aData.ID = iID;
+        //        aData.DeserializeFromJson(aConfig.GetJsonData());
+        //        var module = aConfig.p_Module;
+        //        if (module != null)
+        //        {
+        //            aData.m_ModResourcesData.m_ModuleID = module.ID;//Set ModuleID!!
+        //        }
+        //    }
+        //    catch (Exception e)
+        //    {
+        //        Debug.LogException(e);
+        //        throw e;
+        //    }
+        //    finally
+        //    {
+        //        UCLI_Asset.s_CurCreateData = null;
+        //    }
+
+            
+        //    return aData;
+        //}
+
         /// <summary>
         /// Preview(OnGUI)
         /// </summary>

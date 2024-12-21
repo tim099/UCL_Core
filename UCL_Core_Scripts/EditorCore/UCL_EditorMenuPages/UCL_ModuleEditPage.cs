@@ -1,4 +1,4 @@
-
+Ôªø
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/23 2024
@@ -36,7 +36,7 @@ namespace UCL.Core.Page
         public override void OnClose()
         {
             //UCL_ModuleService.Ins.ClearCurrentEditModule();
-            UCL_ModuleService.Ins.SetState(UCL_ModuleService.State.Main);//¶^®Ï•D≠∂
+            UCL_ModuleService.Ins.SetState(UCL_ModuleService.State.Main);//ÂõûÂà∞‰∏ªÈ†Å
             base.OnClose();
         }
         protected override void TopBarButtons()

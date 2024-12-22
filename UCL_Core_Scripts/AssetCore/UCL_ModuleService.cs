@@ -150,7 +150,7 @@ namespace UCL.Core
                 }
                 if(!m_LoadedModules.IsNullOrEmpty())
                 {
-                    return m_LoadedModules[0];
+                    return m_LoadedModules.Last();
                 }
                 return null;
             }
@@ -754,14 +754,23 @@ namespace UCL.Core
             var aConfig = aAssetsCache.GetAssetConfig(iID);
             if (!aConfig.Inited)
             {
-                foreach (UCL_Module aModule in LoadedModules)
+                for(int i = m_LoadedModules.Count - 1; i >= 0; i--)//根據模組的覆蓋規則 先從後面的模組找
                 {
+                    var aModule = m_LoadedModules[i];
                     if (aModule.ModuleEntry.ContainsAsset(iAssetType, iID))
                     {
                         aConfig.Init(aModule, iAssetType, iID);
                         return aConfig;//return config
                     }
                 }
+                //foreach (UCL_Module aModule in LoadedModules)
+                //{
+                //    if (aModule.ModuleEntry.ContainsAsset(iAssetType, iID))
+                //    {
+                //        aConfig.Init(aModule, iAssetType, iID);
+                //        return aConfig;//return config
+                //    }
+                //}
                 //Debug.LogError($"GetAssetConfig iAssetType:{iAssetType},iID:{iID}, Asset not exist!!");
                 aConfig.Init(CurModule, iAssetType, iID);
             }
@@ -931,7 +940,7 @@ namespace UCL.Core
 
             var aLoadedModules = new Dictionary<string, UCL_Module>();
             var playList = modulePlayist.EnablePlaylist.ToList();
-            playList.Reverse();
+            //playList.Reverse();
             foreach (var aModule in playList)
             {
                 LoadModuleAndDependencies(aModule.ID, aLoadedModules);
@@ -984,29 +993,54 @@ namespace UCL.Core
             aModule.Load(iID, iModuleEditType);
             return aModule;
         }
-        protected UCL_Module LoadModuleAndDependencies(string iModuleID, Dictionary<string, UCL_Module> iLoadedModules)
+        /// <summary>
+        /// 載入模組(不含相依模組)
+        /// </summary>
+        /// <param name="iModuleID"></param>
+        /// <param name="iLoadedModules"></param>
+        /// <returns></returns>
+        protected UCL_Module LoadModule(string iModuleID, Dictionary<string, UCL_Module> iLoadedModules)
         {
-            if (iLoadedModules.ContainsKey(iModuleID))//Already in dependencies
+            if (iLoadedModules.ContainsKey(iModuleID))//Already loaded
             {
                 return iLoadedModules[iModuleID];
             }
-            
+            var aModule = LoadModule(iModuleID, ModuleEditType);
+            m_LoadedModules.Add(aModule);
+            return aModule;
+        }
+        /// <summary>
+        /// 載入模組與相依模組
+        /// </summary>
+        /// <param name="iModuleID"></param>
+        /// <param name="iLoadedModules"></param>
+        /// <returns></returns>
+        protected UCL_Module LoadModuleAndDependencies(string iModuleID, Dictionary<string, UCL_Module> iLoadedModules)
+        {
+            if (iLoadedModules.ContainsKey(iModuleID))//Already loaded
+            {
+                return iLoadedModules[iModuleID];
+            }
+            //Debug.LogError($"LoadModuleAndDependencies:{iModuleID},iLoadedModules:{iLoadedModules.Keys.ConcatToString()}");
 
             var aModule = LoadModule(iModuleID, ModuleEditType);
             iLoadedModules[iModuleID] = aModule;
-            m_LoadedModules.Add(aModule);
+            //m_LoadedModules.Add(aModule);
 
             List<UCL_ModuleEntry> aDependenciesModules = aModule.m_Config.m_DependenciesModules;
             if (aDependenciesModules.IsNullOrEmpty())//No extra dependencies modules
             {
+                m_LoadedModules.Add(aModule);
                 return aModule;
             }
-            for (int i = aDependenciesModules.Count - 1; i >= 0; i--)
+            //for (int i = aDependenciesModules.Count - 1; i >= 0; i--)//先載入相依模組
+            for(int i = 0; i < aDependenciesModules.Count; i++)
             {
                 var aModuleEntry = aDependenciesModules[i];
                 LoadModuleAndDependencies(aModuleEntry.ID, iLoadedModules);
             }
-
+            m_LoadedModules.Add(aModule);
+            //m_LoadedModules.Reverse();
             return aModule;
         }
         

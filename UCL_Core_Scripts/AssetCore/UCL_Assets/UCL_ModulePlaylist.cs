@@ -185,17 +185,34 @@ namespace UCL.Core
         #region Interface
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDic, string iDisplayName)
         {
-            using(var scope = new GUILayout.HorizontalScope())
+            var module = m_Module.Module;
+            using (var scopeV = new GUILayout.VerticalScope())
             {
-                m_IsEnable = UCL_GUILayout.CheckBox(m_IsEnable);
+                using (var scope = new GUILayout.HorizontalScope())
+                {
+                    m_IsEnable = UCL_GUILayout.CheckBox(m_IsEnable);
 
-                m_Module.ID = UCL_GUILayout.PopupAuto(m_Module.ID, m_Module.GetAllIDs(), iDic, nameof(m_Module), 10,
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                var module = m_Module.Module;
+                    m_Module.ID = UCL_GUILayout.PopupAuto(m_Module.ID, m_Module.GetAllIDs(), iDic, nameof(m_Module), 10,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+
+                    if (module != null)
+                    {
+                        string id = module.m_Config.m_ID;
+                        GUILayout.Label(id, UCL_GUIStyle.LabelStyle);
+                    }
+                }
                 if (module != null)
                 {
-                    string id = module.m_Config.m_ID;
-                    GUILayout.Label(id, UCL_GUIStyle.LabelStyle);
+                    var logo = module.Logo;
+                    if (logo != null)
+                    {
+                        using (var scope = new GUILayout.HorizontalScope())
+                        {
+                            float size = UCL_GUIStyle.GetScaledSize(40);
+                            GUILayout.Box(logo, UCL_GUIStyle.BoxStyle, GUILayout.Width(size), GUILayout.Height(size));
+                            GUILayout.Label(module.m_Config.m_Description, UCL_GUIStyle.LabelStyle);
+                        }
+                    }
                 }
             }
 

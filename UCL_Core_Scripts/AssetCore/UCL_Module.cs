@@ -30,6 +30,13 @@ namespace UCL.Core
         /// </summary>
         SteamMods,
     }
+
+    public enum ELoadingState
+    {
+        None,
+        Loading,
+        Complete,
+    }
     #region Steam
 
     /// <summary>
@@ -248,7 +255,8 @@ namespace UCL.Core
 
         protected bool m_IsLoading = false;
         protected bool m_Installing = false;
-
+        protected ELoadingState m_LoadLogoState = ELoadingState.None;
+        protected Texture2D m_Logo;
         /// <summary>
         /// 編輯器內 選取的GroupID
         /// </summary>
@@ -453,6 +461,42 @@ namespace UCL.Core
         {
             ModuleEntry.ClearCache();
         }
+        public Texture2D Logo
+        {
+            get
+            {
+                if(m_LoadLogoState == ELoadingState.None)
+                {
+                    GetLogoAsync().Forget();
+                }
+                return m_Logo;
+            }
+        }
+        public async UniTask<Texture2D> GetLogoAsync()
+        {
+            switch (m_LoadLogoState)
+            {
+                case ELoadingState.Loading://等待載入完成
+                    {
+                        await UniTask.WaitUntil(() => m_LoadLogoState != ELoadingState.Loading);
+                        break;
+                    }
+                case ELoadingState.None:
+                    {
+                        m_LoadLogoState = ELoadingState.Loading;
+                        var path = ModuleEntry.LogoPath;
+                        if (!File.Exists(path))
+                        {
+                            return null;
+                        }
+                        m_Logo = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(path);
+                        m_LoadLogoState = ELoadingState.Complete;
+                        break;
+                    }
+            }
+
+            return m_Logo;
+        }
         /// <summary>
         /// 顯示模組內容
         /// </summary>
@@ -471,22 +515,22 @@ namespace UCL.Core
                     GUILayout.Label("Logo", UCL_GUIStyle.LabelStyle);
                     if (showLogo)
                     {
-                        Texture2D logo = null;
-                        if(!iDataDic.ContainsKey(nameof(logo)))//尚未讀取Logo
-                        {
-                            async void LoadLogo()
-                            {
-                                var result = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(ModuleEntry.LogoPath);
-                                if(iDataDic != null)
-                                {
-                                    iDataDic.SetData(nameof(logo), result);
-                                }
-                            }
+                        Texture2D logo = Logo;
+                        //if(!iDataDic.ContainsKey(nameof(logo)))//尚未讀取Logo
+                        //{
+                        //    async void LoadLogo()
+                        //    {
+                        //        var result = await GetLogoAsync();
+                        //        if(iDataDic != null)
+                        //        {
+                        //            iDataDic.SetData(nameof(logo), result);
+                        //        }
+                        //    }
 
-                            iDataDic.SetData(nameof(logo), null);
-                            LoadLogo();
-                        }
-                        logo = iDataDic.GetData<Texture2D>(nameof(logo), null);
+                        //    iDataDic.SetData(nameof(logo), null);
+                        //    LoadLogo();
+                        //}
+                        //logo = iDataDic.GetData<Texture2D>(nameof(logo), null);
                         if(logo != null)
                         {
                             float size = UCL_GUIStyle.GetScaledSize(128);

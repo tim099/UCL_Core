@@ -36,6 +36,8 @@ namespace UCL.Core
         None,
         Loading,
         Complete,
+
+        Disposed,
     }
     #region Steam
 

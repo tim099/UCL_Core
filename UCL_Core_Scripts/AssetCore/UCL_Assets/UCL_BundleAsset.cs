@@ -369,6 +369,20 @@ namespace UCL.Core
 
                 return m_AssetBundle;
             }
+            public async UniTask Dispose()
+            {
+                if (m_LoadingState == ELoadingState.Loading)
+                {
+                    await UniTask.WaitUntil(() => m_LoadingState == ELoadingState.Complete);
+                }
+
+                if (m_AssetBundle != null)
+                {
+                    m_AssetBundle.Unload(true);
+                }
+                m_AssetBundle = null;
+                m_LoadingState = ELoadingState.Disposed;
+            }
         }
         private static Dictionary<string, UCL_LoadBundleSetting> s_LoadedBundles = new();
 
@@ -379,8 +393,12 @@ namespace UCL.Core
         /// objects loaded from AssetBundles will also be unloaded.</param>
         public static void UnloadAllAssetBundles(bool unloadAllObjects)
         {
+            foreach(var bundle in s_LoadedBundles.Values)
+            {
+                bundle.Dispose().Forget();
+            }
             s_LoadedBundles.Clear();
-            AssetBundle.UnloadAllAssetBundles(unloadAllObjects);
+            //AssetBundle.UnloadAllAssetBundles(unloadAllObjects);
         }
 
         /// <summary>

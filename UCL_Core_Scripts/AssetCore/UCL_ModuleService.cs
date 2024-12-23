@@ -936,6 +936,7 @@ namespace UCL.Core
             m_AssetsCacheDic.Clear();
             m_IDsCache.Clear();
 
+            UCL_BundleService.UnloadAllAssetBundles(true);//Unload All AssetBundles
             Resources.UnloadUnusedAssets();
 
             var aLoadedModules = new Dictionary<string, UCL_Module>();

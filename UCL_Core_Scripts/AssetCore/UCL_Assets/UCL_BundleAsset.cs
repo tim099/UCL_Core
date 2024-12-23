@@ -7,6 +7,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -26,6 +27,9 @@ namespace UCL.Core
         [UCL.Core.PA.UCL_FolderExplorer(UCL.Core.PA.ExplorerType.AssetsRoot)]
         public string m_SourceFolder;
 
+        /// <summary>
+        /// 要保存到ModResources的哪個位置
+        /// </summary>
         public UCL_ModResourcesData m_ModResourcesData = new UCL_ModResourcesData();
 //#if UNITY_EDITOR
 //        private static IList<string> GetBundlesName() => UnityEditor.AssetDatabase.GetAllAssetBundleNames();
@@ -33,9 +37,31 @@ namespace UCL.Core
 //#endif
         public string m_BundleName = "BundleName";
 
-        public bool IsEmpty => m_ModResourcesData.IsEmpty;
+        /// <summary>
+        /// 輸出的資料夾
+        /// </summary>
+        public string FolderPath => m_ModResourcesData.FileSystemFolderPath;
 
+        /// <summary>
+        /// Bundle路徑
+        /// </summary>
+        public string BundlePath => Path.Combine(FolderPath, m_BundleName);
 
+        /// <summary>
+        /// Manifest路徑
+        /// </summary>
+        public string ManifestPath => Path.Combine(FolderPath, $"{m_BundleName}.manifest");
+
+        /// <summary>
+        /// 載入的Bundle
+        /// </summary>
+        //private AssetBundle m_AssetBundle = null;
+        /// <summary>
+        /// 所有在這個Bundle內的Asset的名稱(路徑)
+        /// </summary>
+        public List<string> m_AllAssetNames = new List<string>();
+
+        //private ELoadingState m_LoadingState = ELoadingState.None;
         /// <summary>
         /// Preview(OnGUI)
         /// </summary>
@@ -69,6 +95,8 @@ namespace UCL.Core
         {
             UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName);
 
+
+            
 #if UNITY_EDITOR
 
             UnityEditor.BuildTarget buildTarget;
@@ -92,14 +120,114 @@ namespace UCL.Core
                 BuildBundle(buildTarget);
             }
 #endif
+
+
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Load Bundle"), UCL_GUIStyle.ButtonStyle))
+            {
+                LoadBundle().Forget();
+            }
+            if (GUILayout.Button(UCL_LocalizeManager.Get("UnloadAllAssetBundles"), UCL_GUIStyle.ButtonStyle))
+            {
+                UCL_BundleService.UnloadAllAssetBundles(true);
+                //AssetBundle.UnloadAllAssetBundles(true);
+            }
             return this;
         }
 
+        /// <summary>
+        /// Load AssetBundle
+        /// </summary>
+        /// <returns></returns>
+        public async UniTask<AssetBundle> LoadBundle()
+        {
+            //"file://path/to/your/AssetBundles";
+            var bundle = await UCL_BundleService.LoadBundle(BundlePath);
+            if (bundle != null)
+            {
+                m_AllAssetNames = bundle.GetAllAssetNames().ToList();
+                //Debug.LogError($"name:{m_AssetBundle.name},AllAssetNames:{m_AllAssetNames.ConcatToString()}");
+            }
+            return bundle;
+
+            //string path = BundlePath;
+            //if (!File.Exists(path))
+            //{
+            //    Debug.LogError($"LoadManifest path:{path}, !File.Exists(path)");
+            //    return null;
+            //}
+            ////Debug.LogError($"LoadBundle path:{path}");
+            ////if (m_LoadingState == ELoadingState.Loading)//還在載入中 等待載入結束
+            ////{
+            ////    await UniTask.WaitUntil(() => m_LoadingState != ELoadingState.Loading);
+            ////}
+            
+            //if (m_LoadingState != ELoadingState.Complete)
+            //{
+            //    m_LoadingState = ELoadingState.Loading;
+            //    m_AssetBundle = await AssetBundle.LoadFromFileAsync(path);
+            //    if (m_AssetBundle != null)
+            //    {
+            //        m_AllAssetNames = m_AssetBundle.GetAllAssetNames().ToList();
+            //        //Debug.LogError($"name:{m_AssetBundle.name},AllAssetNames:{m_AllAssetNames.ConcatToString()}");
+            //    }
+            //    else
+            //    {
+            //        Debug.LogError($"LoadBundle path:{path}, Fail");
+            //    }
+            //    m_LoadingState = ELoadingState.Complete;
+            //}
+
+
+            //return m_AssetBundle;
+
+
+            //AssetBundle.UnloadAllAssetBundles(true);
+
+            //string manifestBundleURL = path;//$"file://{path}";  
+            //AssetBundle manifestBundle = await AssetBundle.LoadFromFileAsync(manifestBundleURL);
+            //var allAssetNames = manifestBundle.GetAllAssetNames();
+            //Debug.LogError($"name:{manifestBundle.name},bundles:{allAssetNames.ConcatToString()}");
+            //return manifestBundle;
+            //foreach(var assetName in allAssetNames)
+            //{
+            //    var asset = manifestBundle.LoadAsset(assetName);
+            //    Debug.LogError($"assetName:{assetName},asset:{asset.name}, Type:{asset.GetType().Name}");
+            //    if (Application.isPlaying)
+            //    {
+            //        if(asset is GameObject obj)
+            //        {
+            //            GameObject.Instantiate(obj);//Test
+            //        }
+            //    }
+            //}
+            //AssetBundleManifest manifest = manifestBundle.LoadAsset<AssetBundleManifest>("AssetBundleManifest");
+
+            //Debug.LogError($"manifest:{manifest.name},bundles:{manifest.GetAllAssetBundles().ConcatToString()}");
+        }
+        public async UniTask<T> LoadAsset<T>(string assetName) where T : UnityEngine.Object
+        {
+            T asset = null;
+            try
+            {
+                var bundle = await LoadBundle();
+                if (bundle == null)
+                {
+                    return null;
+                }
+                asset = bundle.LoadAsset<T>(assetName);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+
+            return asset;
+        }
         #region Editor
 #if UNITY_EDITOR
         private void BuildBundle(UnityEditor.BuildTarget buildTarget)
         {
-            string outputPath = m_ModResourcesData.FileSystemFolderPath;
+            string outputPath = FolderPath;
 
             Debug.LogWarning($"BuildBundle m_SourceFolder:{m_SourceFolder},outputPath:{outputPath}");
             System.IO.Directory.CreateDirectory(outputPath);
@@ -157,22 +285,124 @@ namespace UCL.Core
         public UCL_BundleEntry() { m_ID = DefaultID; }
         public UCL_BundleEntry(string iID) { m_ID = iID; }
 
-        public UCL_ModResourcesData Data => GetData().m_ModResourcesData;
+        [UCL.Core.PA.UCL_List(nameof(GetAllAssetNames))]
+        public string m_AssetName = string.Empty;
+
         public override bool IsEmpty
         {
             get
             {
                 if (base.IsEmpty) return true;
-                try
-                {
-                    var data = GetData();
-                    return data.IsEmpty;
-                }
-                catch //Data not exist!!
-                {
-                    return true;
-                }
+                return string.IsNullOrEmpty(m_AssetName);
+                //try
+                //{
+                //    var data = GetData();
+                //    return data.IsEmpty;
+                //}
+                //catch //Data not exist!!
+                //{
+                //    return true;
+                //}
             }
         }
+
+        public IList<string> GetAllAssetNames()
+        {
+            try
+            {
+                var data = GetData();
+                return data.m_AllAssetNames;
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+            return Array.Empty<string>();
+        }
+
+        public async UniTask<T> LoadAsset<T>() where T : UnityEngine.Object 
+        {
+            if (IsEmpty) return null;
+            try
+            {
+                var data = GetData();
+                return await data.LoadAsset<T>(m_AssetName);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+
+            return null;
+        }
+    }
+
+
+    public static class UCL_BundleService
+    {
+        public class UCL_LoadBundleSetting
+        {
+            public ELoadingState m_LoadingState = ELoadingState.None;
+            /// <summary>
+            /// 載入的Bundle
+            /// </summary>
+            public AssetBundle m_AssetBundle = null;
+
+            /// <summary>
+            /// Load AssetBundle
+            /// </summary>
+            /// <returns></returns>
+            public async UniTask<AssetBundle> LoadBundle(string bundlePath)
+            {
+                if (!File.Exists(bundlePath))
+                {
+                    Debug.LogError($"LoadBundle bundlePath:{bundlePath}, !File.Exists(path)");
+                    return null;
+                }
+
+                if (m_LoadingState != ELoadingState.Complete)
+                {
+                    m_LoadingState = ELoadingState.Loading;
+                    m_AssetBundle = await AssetBundle.LoadFromFileAsync(bundlePath);
+                    m_LoadingState = ELoadingState.Complete;
+                }
+
+                return m_AssetBundle;
+            }
+        }
+        private static Dictionary<string, UCL_LoadBundleSetting> s_LoadedBundles = new();
+
+        /// <summary>
+        /// Unloads all currently loaded AssetBundles.
+        /// </summary>
+        /// <param name="unloadAllObjects">Determines whether the current instances of 
+        /// objects loaded from AssetBundles will also be unloaded.</param>
+        public static void UnloadAllAssetBundles(bool unloadAllObjects)
+        {
+            s_LoadedBundles.Clear();
+            AssetBundle.UnloadAllAssetBundles(unloadAllObjects);
+        }
+
+        /// <summary>
+        /// Load AssetBundle
+        /// </summary>
+        /// <returns></returns>
+        public static async UniTask<AssetBundle> LoadBundle(string bundlePath)
+        {
+            if (!s_LoadedBundles.ContainsKey(bundlePath))//Load bundle
+            {
+                var setting = s_LoadedBundles[bundlePath] = new UCL_LoadBundleSetting();
+                await setting.LoadBundle(bundlePath);
+            }
+            {
+                var setting = s_LoadedBundles[bundlePath];
+                if (setting.m_LoadingState == ELoadingState.Loading)
+                {
+                    await UniTask.WaitUntil(() => setting.m_LoadingState != ELoadingState.Loading);//等待載入完成
+                }
+                return setting.m_AssetBundle;
+            }
+        }
+
     }
 }

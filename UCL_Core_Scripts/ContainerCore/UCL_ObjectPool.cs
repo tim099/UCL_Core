@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -21,7 +22,7 @@ namespace UCL.Core.Container {
         }
     }
 
-    public class UnityComponentPool<T> where T : Component
+    public class UnityComponentPool<T> : IDisposable where T : Component
     {
         public UnityComponentPool() { }
         public UnityComponentPool(T iTemplate, System.Action<T> iInitAction = null, System.Func<T, Transform, T> iCreateAction = null)
@@ -184,9 +185,33 @@ namespace UCL.Core.Container {
             }
             m_AllObjs.Clear();
         }
+
+        /// <summary>
+        /// Destroy all object created from this pool
+        /// </summary>
+        public void Dispose()
+        {
+            for (int i = 0; i < m_AllObjs.Count; i++)
+            {
+                var aTarget = m_AllObjs[i];
+                if (aTarget != null)
+                {
+                    GameObject.Destroy(aTarget);
+                }
+            }
+            m_AllObjs.Clear();
+            while (!m_ObjPool.IsNullOrEmpty())
+            {
+                var aTarget = m_ObjPool.Pop();
+                if (aTarget != null)
+                {
+                    GameObject.Destroy(aTarget);
+                }
+            }
+        }
     }
 
-    public class UnityGameObjectPool
+    public class UnityGameObjectPool : IDisposable
     {
         public UnityGameObjectPool() { }
         public UnityGameObjectPool(GameObject iTemplate, System.Action<GameObject> iInitAction = null, System.Func<GameObject, Transform, GameObject> iCreateAction = null)
@@ -343,6 +368,30 @@ namespace UCL.Core.Container {
                 }
             }
             m_AllObjs.Clear();
+        }
+
+        /// <summary>
+        /// Destroy all object created from this pool
+        /// </summary>
+        public void Dispose()
+        {
+            for (int i = 0; i < m_AllObjs.Count; i++)
+            {
+                var aTarget = m_AllObjs[i];
+                if (aTarget != null)
+                {
+                    GameObject.Destroy(aTarget);
+                }
+            }
+            m_AllObjs.Clear();
+            while (!m_ObjPool.IsNullOrEmpty())
+            {
+                var aTarget = m_ObjPool.Pop();
+                if (aTarget != null)
+                {
+                    GameObject.Destroy(aTarget);
+                }
+            }
         }
     }
 }

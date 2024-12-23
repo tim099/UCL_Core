@@ -293,9 +293,12 @@ namespace UCL.Core
                                 //Debug.LogError($"langKey:{langKey}, keyNum:{keyNum}");
                                 for (int i = 0; i < keyNum; i++)
                                 {
+                                    string keyLenStr = null;
+                                    string key = null;
+                                    string val = null;
                                     try
                                     {
-                                        string keyLenStr = reader.ReadLine();//Format x,y
+                                        keyLenStr = reader.ReadLine();//Format x,y
                                         //Debug.LogError($"({i})langKey:{langKey}, keyLenStr:{keyLenStr}");
                                         var keyLens = keyLenStr.Split(',');
                                         int keyLen = int.Parse(keyLens[0]);
@@ -303,18 +306,19 @@ namespace UCL.Core
 
                                         char[] keyBuffer = new char[keyLen];
                                         keyLen = reader.ReadBlock(keyBuffer, 0, keyLen);
-                                        string key = new string(keyBuffer, 0, keyLen);
+                                        key = new string(keyBuffer, 0, keyLen);
                                         reader.Read();//read :
 
                                         char[] valBuffer = new char[valLen];
                                         valLen = reader.ReadBlock(valBuffer, 0, valLen);
-                                        string val = new string(valBuffer, 0, valLen);
+                                        val = new string(valBuffer, 0, valLen);
                                         dic[key] = val;
                                         //Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
                                         reader.ReadLine();//read nextline
                                     }
                                     catch (System.Exception e)
                                     {
+                                        Debug.LogError($"langKey:{langKey}, keyLenStr:{keyLenStr}, key:{key}, val:{val}, Exception:{e}");
                                         Debug.LogException(e);
                                     }
 
@@ -462,7 +466,7 @@ namespace UCL.Core
             }
         }
 
-        private async UniTask DownloadTable(CancellationToken token, long gid, bool replaceOldKey, Format format)
+        private async UniTask DownloadTable(CancellationToken token, long gid, bool replaceOldKey, Format format, int order = -1)
         {
             //const string Format = "csv";//"xlsx","ods"
             string aURL = GetDownloadPath(gid, format.ToString());
@@ -498,6 +502,13 @@ namespace UCL.Core
             //    aData = System.Text.Encoding.UTF8.GetString(iData);
             //}
             //Debug.LogError($"aData:{aData}, Format:{format}");
+            if(order >= 0)//wait until for prev DownloadTable complete
+            {
+                if(order > m_CompleteCount)//wait until for prev DownloadTable complete
+                {
+                    await UniTask.WaitUntil(() => order <= m_CompleteCount);
+                }
+            }
             ParseData(iData, replaceOldKey, format);
 
             ++m_CompleteCount;
@@ -543,6 +554,7 @@ namespace UCL.Core
                 if (!m_GoogleSheetData.m_GidDatas.IsNullOrEmpty())
                 {
                     List<UniTask> aTasks = new();
+
                     for (int i = 0; i < m_GoogleSheetData.m_GidDatas.Count; i++)
                     {
                         if (i > 0)
@@ -551,7 +563,7 @@ namespace UCL.Core
                             token.ThrowIfCancellationRequested();
                         }
                         var aGidData = m_GoogleSheetData.m_GidDatas[i];
-                        aTasks.Add(DownloadTable(token, aGidData.m_Gid, false, aGidData.m_Format));
+                        aTasks.Add(DownloadTable(token, aGidData.m_Gid, false, aGidData.m_Format, i));
                         token.ThrowIfCancellationRequested();
                     }
                     await UniTask.WhenAll(aTasks);

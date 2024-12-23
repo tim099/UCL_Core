@@ -25,11 +25,6 @@ namespace UCL.Core.Game
         static public string UIResourceFolder = string.Empty;
         #endregion
 
-        
-
-
-
-
         [SerializeField] protected RectTransform m_UIRoot = null;
         [SerializeField] protected RectTransform m_UIOverlayRoot = null;
         [SerializeField] protected Canvas m_Canvas = null;
@@ -48,8 +43,28 @@ namespace UCL.Core.Game
         public override void Init()
         {
             Ins = this;
+            UCL_ModuleService.OnLoadModule += OnLoadModule;
         }
-
+        private void OnDestroy()
+        {
+            UCL_ModuleService.OnLoadModule -= OnLoadModule;
+        }
+        virtual protected void OnLoadModule()
+        {
+            foreach(var key in m_UIPools.Keys)
+            {
+                var pool = m_UIPools[key];
+                while (!pool.IsNullOrEmpty())
+                {
+                    var ui = pool.Dequeue();
+                    if(ui != null)
+                    {
+                        GameObject.Destroy(ui.gameObject);
+                    }
+                }
+            }
+            m_UIPools.Clear();
+        }
         [UCL.Core.ATTR.UCL_DrawOnGUI]
         public void DrawOnGUI(UCL.Core.UCL_ObjectDictionary iDic)
         {

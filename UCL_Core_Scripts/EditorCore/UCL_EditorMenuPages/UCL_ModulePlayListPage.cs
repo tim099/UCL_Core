@@ -170,10 +170,7 @@ namespace UCL.Core.Page
                 }
                 if (UCL_ModuleService.Ins.LoadingPlaylist)
                 {
-                    
-                    var now = System.DateTime.Now.Second % 4;
-                    string dynamicStr = new string('.', now);
-                    GUILayout.Label($"Loading Playlist{dynamicStr}", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label($"Loading Playlist{UCL_MiscUtil.LoadingDot()}", UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {

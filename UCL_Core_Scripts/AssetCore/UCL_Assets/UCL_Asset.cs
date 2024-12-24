@@ -336,7 +336,7 @@ namespace UCL.Core
         virtual public List<string> GetAllIDs(bool iUseCache = false)
         {
             //this should base on current module and dependencies modules of current module
-            var aIDs = UCL_ModuleService.Ins.GetAllAssetsID(this.GetType(), iUseCache);
+            var aIDs = UCL_ModuleService.Ins.GetAllAssetIDs(this.GetType(), iUseCache);
             //Debug.LogError($"GetAllIDs(),aIDs:{aIDs}");
             return aIDs;
         }

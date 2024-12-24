@@ -131,11 +131,13 @@ namespace UCL.Core
         }
         public static UCL_ModuleEditType ModuleEditType
         {
-            get => Ins.m_PathConfig.m_ModuleEditType;
+            get => UCL_PlayerPrefs.GetEnum(nameof(ModuleEditType), UCL_ModuleEditType.Builtin);
+                //Ins.m_PathConfig.m_ModuleEditType;
             private set
             {
                 Ins.m_ModuleCache.Clear();//切換後要清除緩存
-                Ins.m_PathConfig.m_ModuleEditType = value;
+                UCL_PlayerPrefs.SetEnum(nameof(ModuleEditType), value);
+                Ins.m_PathConfig.m_ModuleEditType = value;//要同步到PathConfig
             }
         }
 
@@ -501,11 +503,12 @@ namespace UCL.Core
             Debug.LogWarning($"{GetType().Name}.InitAsync");
             //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync("UCL_ModuleService.InitAsync()", "");
             if (Application.isEditor)
-            {
-                ModuleEditType = UCL_ModuleEditType.Builtin;
+            {//Editor內編輯方式可以動態調整
+                //ModuleEditType = UCL_ModuleEditType.Builtin;
                 //ModuleEditType = UCL_ModuleEditType.Runtime;
+                Ins.m_PathConfig.m_ModuleEditType = ModuleEditType;//同步到PathConfig
             }
-            else
+            else//非Editor鎖死Runtime
             {
                 ModuleEditType = UCL_ModuleEditType.Runtime;
             }
@@ -596,15 +599,49 @@ namespace UCL.Core
         {
             return CurModule.GetAssetMeta(iTypeName);
         }
+
+
+        private IList<string> m_ModuleIDs = null;
+        private IList<string> m_ModuleNames = null;
+        private System.DateTime m_ModuleCacheTime = System.DateTime.MinValue;
         /// <summary>
         /// get all modules ID of current ModuleEditType
         /// 獲取所有模組ID(根據ModuleEditType)
         /// </summary>
         /// <returns></returns>
-        public IList<string> GetAllModulesID()
+        public IList<string> GetAllModuleIDs(bool iUseCache = true)
         {
-            return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetAllModulesID();
+            const float UpdateInterval = 0.5f;
+            if (m_ModuleIDs == null || !iUseCache || (System.DateTime.Now - m_ModuleCacheTime).TotalSeconds > UpdateInterval)
+            {
+                m_ModuleNames = null;//Clear cache
+                m_ModuleIDs = UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetAllModulesID();
+                m_ModuleCacheTime = System.DateTime.Now;
+            }
+            return m_ModuleIDs;
             //return UCL_ModulePath.GetAllModulesID(ModuleEditType);
+        }
+        /// <summary>
+        /// 所有模組的名稱
+        /// </summary>
+        /// <returns></returns>
+        public IList<string> GetAllModuleNames()
+        {
+            if (m_ModuleNames == null)
+            {
+                m_ModuleNames = new List<string>();
+                foreach (var id in GetAllModuleIDs())
+                {
+                    var module = GetModule(id);
+                    string name = module.m_Config.m_Title;
+                    if (!name.Equals(id))
+                    {
+                        name = $"{name}({id})";
+                    }
+                    m_ModuleNames.Add(name);
+                }
+            }
+            return m_ModuleNames;
         }
         /// <summary>
         /// 根據ID抓取當前載入的模組
@@ -624,6 +661,7 @@ namespace UCL.Core
         }
         /// <summary>
         /// 回傳所有可編輯的AssetsID
+        /// (只包含目前編輯的模組)
         /// </summary>
         /// <param name="iAssetType"></param>
         /// <returns></returns>
@@ -640,7 +678,7 @@ namespace UCL.Core
         /// </summary>
         /// <param name="iAssetType"></param>
         /// <returns></returns>
-        public List<string> GetAllAssetsID(Type iAssetType, bool iUseCache = false)
+        public List<string> GetAllAssetIDs(Type iAssetType, bool iUseCache = false)
         {
             var aModules = LoadedModules;
             string key = iAssetType.Name;
@@ -801,14 +839,11 @@ namespace UCL.Core
                 if(ModuleEditType == UCL_ModuleEditType.Builtin)
                 {
                     string aModulesPath = m_PathConfig.ModulesPath;
-                    if (Directory.Exists(aModulesPath))
-                    {
-                        Directory.CreateDirectory(aModulesPath);
-                    }
-                    
+                    Directory.CreateDirectory(aModulesPath);
+
                     //Debug.LogError($"aBuiltinModulesPath:{aBuiltinModulesPath}");
                     //var aDirs = UCL.Core.FileLib.Lib.GetDirectories(aModulesPath, iSearchOption: SearchOption.TopDirectoryOnly, iRemoveRootPath: true);
-                    var aAllModulesID = GetAllModulesID();
+                    var aAllModulesID = GetAllModuleIDs();
                     //Debug.LogError($"aDirs:{aDirs.ConcatString()}");
 
 
@@ -1157,7 +1192,7 @@ namespace UCL.Core
                 List<string> aModules = new List<string>();
                 aModules.Add(string.Empty);//Null
                 //aModules.Append(m_Config.m_BuiltinModules);
-                aModules.Append(GetAllModulesID());
+                aModules.Append(GetAllModuleIDs());
                 bool aCanEdit = !string.IsNullOrEmpty(CurrentEditModuleID);
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
                 {

@@ -34,7 +34,7 @@ namespace UCL.Core.Page
         protected UCL_AssetCommonMeta m_Meta = null;
         protected UCL_Asset<T> m_Util = default;
         protected UCL_ModuleEntry m_Module = new UCL_ModuleEntry();
-        public override string WindowName => $"UCL_CreateAssetPage({m_TypeName})";
+        public override string WindowName => $"UCL_CreateAssetPage";//({m_TypeName})
         public override bool IsWindow => true;
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {
@@ -93,6 +93,10 @@ namespace UCL.Core.Page
             }
 
         }
+        /// <summary>
+        /// 當前選取的模組
+        /// </summary>
+        protected UCL_Module Module => m_Module.Module;
         public override void OnResume()
         {
             m_Preview = null;
@@ -124,7 +128,7 @@ namespace UCL.Core.Page
         }
         protected void SetGroupID(string iID)
         {
-            UCL_Module module = UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
+            UCL_Module module = Module; //UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
             m_GroupID = iID;
             m_AssetIDs = module.ModuleEntry.GetAllAssetsID(typeof(T)).ToList();
             if (!m_AssetIDs.IsNullOrEmpty() && !string.IsNullOrEmpty(m_GroupID))
@@ -161,7 +165,7 @@ namespace UCL.Core.Page
                     SetGroupID(string.Empty);
                 }
             }
-            UCL_Module module = UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
+            UCL_Module module = Module;//UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
 
             using (var scope = new GUILayout.HorizontalScope())
             {

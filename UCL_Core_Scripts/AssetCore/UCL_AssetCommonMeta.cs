@@ -43,7 +43,7 @@ namespace UCL.Core
             {
                 public bool m_IsEnable = true;
             }
-            public FilterType m_FilterType = FilterType.CheckBox;
+            public FilterType m_FilterType = FilterType.Dropdown;
             #region CheckBox
             public bool m_ShowAll = true;
             public bool m_ShowOthers = true;

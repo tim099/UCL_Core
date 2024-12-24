@@ -26,7 +26,7 @@ namespace UCL.Core
         /// <returns></returns>
         public IList<string> GetAllIDs()
         {
-            return UCL_ModuleService.Ins.GetAllModulesID();
+            return UCL_ModuleService.Ins.GetAllModuleIDs();
         }
         [UCL.Core.PA.UCL_List(nameof(GetAllIDs))]
         public string m_ID = CoreModuleID;
@@ -52,7 +52,13 @@ namespace UCL.Core
             GUILayout.BeginHorizontal();
             bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, nameof(aIsPreview));
             GUILayout.Label(iFieldName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            ID = UCL_GUILayout.PopupAuto(ID, GetAllIDs(), iDic, nameof(ID));
+            
+            var aIDs = GetAllIDs();
+            var allModuleNames = UCL_ModuleService.Ins.GetAllModuleNames();
+
+            var index = UCL_GUILayout.PopupAuto(aIDs.IndexOf(ID), allModuleNames, iDic, nameof(ID));
+            ID = aIDs[index];
+
             //UCL.Core.UI.UCL_GUILayout.DrawField(this, iDic, iFieldName, true, UCL.Core.UCL_StaticFunctions.LocalizeFieldName);
             GUILayout.EndHorizontal();
 

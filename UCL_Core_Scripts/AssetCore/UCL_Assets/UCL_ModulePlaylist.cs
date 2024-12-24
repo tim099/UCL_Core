@@ -132,7 +132,7 @@ namespace UCL.Core
 
             if(service != null)//TODO check exist!!
             {
-                var allIds = new HashSet<string>(service.GetAllModulesID());
+                var allIds = new HashSet<string>(service.GetAllModuleIDs());
                 for (int i = m_Playlist.Count - 1; i >= 0; i--)
                 {
                     string id = m_Playlist[i].ID;
@@ -191,15 +191,18 @@ namespace UCL.Core
                 using (var scope = new GUILayout.HorizontalScope())
                 {
                     m_IsEnable = UCL_GUILayout.CheckBox(m_IsEnable);
+                    var aAllIDs = m_Module.GetAllIDs();
+                    var aAllNames = UCL_ModuleService.Ins.GetAllModuleNames();
+                    var index = UCL_GUILayout.PopupAuto(aAllIDs.IndexOf(m_Module.ID), aAllNames, iDic, nameof(m_Module), 10
+                        , GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)));
 
-                    m_Module.ID = UCL_GUILayout.PopupAuto(m_Module.ID, m_Module.GetAllIDs(), iDic, nameof(m_Module), 10,
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                    m_Module.ID = aAllIDs[index];
 
-                    if (module != null)
-                    {
-                        string id = module.m_Config.m_ID;
-                        GUILayout.Label(id, UCL_GUIStyle.LabelStyle);
-                    }
+                    //if (module != null)
+                    //{
+                    //    string id = module.m_Config.m_ID;
+                    //    GUILayout.Label(id, UCL_GUIStyle.LabelStyle);
+                    //}
                 }
                 if (module != null)
                 {

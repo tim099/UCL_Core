@@ -177,8 +177,7 @@ namespace UCL.Core
         /// 有設定的話 會保存到這裡
         /// </summary>
         [UCL.Core.PA.Conditional(nameof(m_SaveToModResources), false, true)]
-        public string m_SaveFileID = "Default";
-
+        public string m_SaveFolderName = "Default";
 
         public GoogleSheetConfig m_GoogleSheetData = new();
 
@@ -194,9 +193,16 @@ namespace UCL.Core
 
         public bool IsDownloading => m_CTS != null;
 
-        public string GetModResourcePath(string langKey)
+        /// <summary>
+        /// 存檔位置
+        /// </summary>
+        public string FolderPath => Path.Combine(m_SavaPath.FileSystemFolderPath, m_SaveFolderName);
+
+        private static Encoding FileEncoding => Encoding.UTF8;
+        private const char seperator = '\0';
+        public string GetSavePath(string langKey)
         {
-            return Path.Combine(m_SavaPath.FileSystemFolderPath, $"{m_SaveFileID}_{langKey}.txt");
+            return Path.Combine(FolderPath, $"{langKey}.txt");
         }
         public override JsonData Save()
         {
@@ -212,15 +218,15 @@ namespace UCL.Core
             if (m_SaveToModResources)
             {
                 m_SavaPath.m_ModuleID = UCL_ModuleService.CurEditModuleID;
-
-                Directory.CreateDirectory(m_SavaPath.FileSystemFolderPath);
+                Directory.CreateDirectory(FolderPath);
+                //Directory.CreateDirectory(m_SavaPath.FileSystemFolderPath);
                 foreach (var langKey in m_LocalizeDatas.Keys)
                 {
                     var dic = m_LocalizeDatas[langKey].m_LocalizeDic;
-                    var path = GetModResourcePath(langKey);
+                    var path = GetSavePath(langKey);
                     using (FileStream fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
-                        using (StreamWriter writer = new StreamWriter(fileStream, Encoding.UTF8))
+                        using (StreamWriter writer = new StreamWriter(fileStream, FileEncoding))
                         {
                             writer.WriteLine(dic.Keys.Count);//紀錄有多少筆資料
                             foreach (var key in dic.Keys)//寫入所有Key
@@ -229,12 +235,14 @@ namespace UCL.Core
                                 writer.Write(key.Length);
                                 writer.Write(",");
                                 writer.Write(val.Length);
-                                writer.WriteLine();
+                                writer.Write('\n');
+                                //writer.WriteLine();
 
                                 writer.Write(key);
                                 writer.Write(":");
                                 writer.Write(val);
-                                writer.WriteLine();
+                                writer.Write('\n');
+                                //writer.WriteLine();
                             }
                         }
                     }
@@ -269,7 +277,7 @@ namespace UCL.Core
                 m_LocalizeDatas.Clear();
                 foreach(var langKey in m_LangKeys)
                 {
-                    var path = GetModResourcePath(langKey);
+                    var path = GetSavePath(langKey);
                     if (!File.Exists(path))
                     {
                         Debug.LogError($"{GetType().Name}.DeserializeFromJson path:{path}, !File.Exists(path)");
@@ -281,7 +289,7 @@ namespace UCL.Core
                         var dic = localizeData.m_LocalizeDic;
                         using (FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read))
                         {
-                            using (StreamReader reader = new StreamReader(fileStream, Encoding.UTF8))
+                            using (StreamReader reader = new StreamReader(fileStream, FileEncoding))
                             {
                                 int keyNum = 0;
                                 string keyNumStr = reader.ReadLine();
@@ -306,12 +314,32 @@ namespace UCL.Core
 
                                         char[] keyBuffer = new char[keyLen];
                                         keyLen = reader.ReadBlock(keyBuffer, 0, keyLen);
-                                        key = new string(keyBuffer, 0, keyLen);
+                                        key = new string(keyBuffer);
                                         reader.Read();//read :
 
                                         char[] valBuffer = new char[valLen];
-                                        valLen = reader.ReadBlock(valBuffer, 0, valLen);
-                                        val = new string(valBuffer, 0, valLen);
+                                        int readLen = reader.ReadBlock(valBuffer, 0, valLen);
+
+                                        val = new string(valBuffer);
+
+                                        if (valLen != readLen || valLen != val.Length)
+                                        {
+                                            Debug.LogError($"({i})langKey:{langKey}, valLen:{valLen}, readLen:{readLen}, val.Length:{val.Length}, key:{key},val:{val}");
+                                            valLen = readLen;
+                                        }
+                                        //{
+                                        //    System.Text.StringBuilder sb = new();
+                                        //    sb.Append($"valLen:{valLen},");
+                                        //    int index = 0;
+                                        //    foreach (var c in valBuffer)
+                                        //    {
+                                        //        sb.Append(c);
+                                        //        sb.Append($"({(int)c})");
+                                        //    }
+                                        //    val = sb.ToString();
+                                        //}
+
+
                                         dic[key] = val;
                                         //Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
                                         reader.ReadLine();//read nextline

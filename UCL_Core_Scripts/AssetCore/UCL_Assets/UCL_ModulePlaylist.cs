@@ -106,7 +106,7 @@ namespace UCL.Core
             m_Playlist.Add(new ModuleSetting(iModuleID));
         }
 
-        public Dictionary<string, UCL_Module> LoadPlaylist()
+        public Dictionary<string, UCL_Module> LoadPlaylist(bool loadDependencies)
         {
             //if (!UCL_ModuleService.Initialized)
             //{
@@ -118,7 +118,7 @@ namespace UCL.Core
             {
                 m_Playlist.Add(new ModuleSetting(UCL_ModuleEntry.CoreModuleID));
             }
-            return UCL_ModuleService.Ins.LoadModulePlaylist(this);
+            return UCL_ModuleService.Ins.LoadModulePlaylist(this, loadDependencies);
         }
 
         public IEnumerable<ModuleSetting> EnablePlaylist => m_Playlist.Where(module => module.IsEnable);
@@ -130,20 +130,22 @@ namespace UCL.Core
             HashSet<string> idSet = new HashSet<string>();
             var service = UCL_ModuleService.Ins;
 
-            if(service != null)//TODO check exist!!
-            {
-                var allIds = new HashSet<string>(service.GetAllModuleIDs());
-                for (int i = m_Playlist.Count - 1; i >= 0; i--)
-                {
-                    string id = m_Playlist[i].ID;
+            //if(service != null)//TODO check exist!!
+            //{
+            //    var allIds = new HashSet<string>(service.GetAllModuleIDs());
+            //    //allIds.Add(UCL_ModuleEntry.CoreModuleID);//Core不能移除
+            //    for (int i = m_Playlist.Count - 1; i >= 0; i--)
+            //    {
+            //        string id = m_Playlist[i].ID;
 
-                    if (!allIds.Contains(id))//not exist!!
-                    {
-                        Debug.LogError($"{GetType().Name}.DeserializeFromJson id:{id}, !allIds.Contains(id),allIds:{allIds.ConcatToString()}");
-                        m_Playlist.RemoveAt(i);
-                    }
-                }
-            }
+            //        if (!allIds.Contains(id))//not exist!!
+            //        {
+            //            Debug.LogError($"{GetType().Name}.DeserializeFromJson id:{id}, !allIds.Contains(id),allIds:{allIds.ConcatToString()}");
+            //            m_Playlist.RemoveAt(i);
+            //        }
+            //    }
+            //}
+
             //Remove repeated module
             for(int i = m_Playlist.Count - 1; i >= 0 ; i--)
             {

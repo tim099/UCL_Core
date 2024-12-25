@@ -555,9 +555,14 @@ namespace UCL.Core
                 }
                 //await UniTask.WhenAll(aTasks);
             }
-
+            //TODO 安裝後 清除模組緩存資訊緩存
+            //m_ModuleCache.Clear();
+            m_ModuleIDs = null;
+            m_ModuleNames = null;
             //LoadModuleAndDependencies(UCL_ModuleEntry.CoreModuleID, new());//Load Core
-            m_Config.m_Playlist.LoadPlaylist();
+
+            var playList = m_Config.m_Playlist;
+            playList.LoadPlaylist(false);
 
             //m_LoadedModules.Reverse();//Modules that are loaded later will overwrite the previous modules(if asset have same ID)
             //Cheack and Install all Builtin Module to PersistantData path
@@ -938,7 +943,7 @@ namespace UCL.Core
                 await UCL_ModuleService.WaitUntilInitialized(token);
                 token.ThrowIfCancellationRequested();
 
-                result = LoadModulePlaylist(modulePlayist);
+                result = LoadModulePlaylist(modulePlayist, false);
                 await OnLoadedModuleAsync(token);
             }
             catch (OperationCanceledException)
@@ -956,13 +961,15 @@ namespace UCL.Core
             return result;
         }
 
+
         /// <summary>
         /// Load Modules and its dependencies
         /// 載入指定的Module及其相依模組
         /// </summary>
         /// <param name="modulePlayist"></param>
+        /// <param name="loadDependencies">是否載入相依模組(目前只有編輯時載入)</param>
         /// <returns></returns>
-        public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist modulePlayist)
+        public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist modulePlayist, bool loadDependencies)
         {
             OnLoadModule?.Invoke();
 
@@ -990,7 +997,7 @@ namespace UCL.Core
         {
             ClearCurrentEditModule();
             UCL_ModulePlaylist aModulePlaylist = new UCL_ModulePlaylist(iModuleID);
-            var aLoadedModules = aModulePlaylist.LoadPlaylist();
+            var aLoadedModules = aModulePlaylist.LoadPlaylist(true);
             m_CurEditModule = aLoadedModules[iModuleID];
             //if(!m_LoadedModules.IsNullOrEmpty())
             //{
@@ -1053,31 +1060,40 @@ namespace UCL.Core
         /// <returns></returns>
         protected UCL_Module LoadModuleAndDependencies(string iModuleID, Dictionary<string, UCL_Module> iLoadedModules)
         {
-            if (iLoadedModules.ContainsKey(iModuleID))//Already loaded
+            try
             {
-                return iLoadedModules[iModuleID];
-            }
-            //Debug.LogError($"LoadModuleAndDependencies:{iModuleID},iLoadedModules:{iLoadedModules.Keys.ConcatToString()}");
+                if (iLoadedModules.ContainsKey(iModuleID))//Already loaded
+                {
+                    return iLoadedModules[iModuleID];
+                }
+                //Debug.LogError($"LoadModuleAndDependencies:{iModuleID},iLoadedModules:{iLoadedModules.Keys.ConcatToString()}");
 
-            var aModule = LoadModule(iModuleID, ModuleEditType);
-            iLoadedModules[iModuleID] = aModule;
-            //m_LoadedModules.Add(aModule);
+                var aModule = LoadModule(iModuleID, ModuleEditType);
+                iLoadedModules[iModuleID] = aModule;
+                //m_LoadedModules.Add(aModule);
 
-            List<UCL_ModuleEntry> aDependenciesModules = aModule.m_Config.m_DependenciesModules;
-            if (aDependenciesModules.IsNullOrEmpty())//No extra dependencies modules
-            {
+                List<UCL_ModuleEntry> aDependenciesModules = aModule.m_Config.m_DependenciesModules;
+                if (aDependenciesModules.IsNullOrEmpty())//No extra dependencies modules
+                {
+                    m_LoadedModules.Add(aModule);
+                    return aModule;
+                }
+                //for (int i = aDependenciesModules.Count - 1; i >= 0; i--)//先載入相依模組
+                for (int i = 0; i < aDependenciesModules.Count; i++)
+                {
+                    var aModuleEntry = aDependenciesModules[i];
+                    LoadModuleAndDependencies(aModuleEntry.ID, iLoadedModules);
+                }
                 m_LoadedModules.Add(aModule);
+                //m_LoadedModules.Reverse();
                 return aModule;
             }
-            //for (int i = aDependenciesModules.Count - 1; i >= 0; i--)//先載入相依模組
-            for(int i = 0; i < aDependenciesModules.Count; i++)
+            catch(System.Exception ex)
             {
-                var aModuleEntry = aDependenciesModules[i];
-                LoadModuleAndDependencies(aModuleEntry.ID, iLoadedModules);
+                Debug.LogError($"LoadModuleAndDependencies iModuleID:{iModuleID}, Exception:{ex}");
+                Debug.LogException(ex);
             }
-            m_LoadedModules.Add(aModule);
-            //m_LoadedModules.Reverse();
-            return aModule;
+            return null;
         }
         
         virtual public void ResumeState()

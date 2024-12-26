@@ -164,6 +164,11 @@ namespace UCL.Core
         /// </summary>
         public HashSet<string> m_LangKeys = new();
         /// <summary>
+        /// 預設語言
+        /// </summary>
+        public UCL_LanguageCodeEntry m_DefaultLang = new();
+
+        /// <summary>
         /// 保存到ModResources(優化讀取速度)
         /// </summary>
         public bool m_SaveToModResources = false;
@@ -180,6 +185,9 @@ namespace UCL.Core
         public string m_SaveFolderName = "Default";
 
         public GoogleSheetConfig m_GoogleSheetData = new();
+
+
+
 
         const string DownloadTemplate = "https://docs.google.com/spreadsheets/d/{0}/export?format={2}&gid={1}";
 
@@ -209,10 +217,29 @@ namespace UCL.Core
             foreach (var key in m_LocalizeDatas.Keys)
             {
                 m_LangKeys.Add(key);//紀錄LangKey
-                if (!UCL_LanguageCodeAsset.Util.ContainsAsset(key))
+                if (!UCL_LanguageCodeAsset.Util.ContainsAsset(key))//如果有目前不包含的語言 自動新增到UCL_LanguageCodeAsset
                 {
                     UCL_LanguageCodeAsset lang = new UCL_LanguageCodeAsset(key);
                     lang.Save();//Add key
+                }
+            }
+            string defaultLang = m_DefaultLang.ID;
+            if (m_LocalizeDatas.ContainsKey(defaultLang))//有預設語言的資料
+            {
+                var defaultLangDic = m_LocalizeDatas[defaultLang].m_LocalizeDic;
+                foreach (var langKey in m_LocalizeDatas.Keys)
+                {
+                    if (langKey != defaultLang)//
+                    {
+                        var langDic = m_LocalizeDatas[langKey].m_LocalizeDic;
+                        foreach(var key in defaultLangDic.Keys)
+                        {
+                            if (!langDic.ContainsKey(key))
+                            {
+                                langDic[key] = defaultLangDic[key];
+                            }
+                        }
+                    }
                 }
             }
             if (m_SaveToModResources)
@@ -231,7 +258,8 @@ namespace UCL.Core
                             writer.WriteLine(dic.Keys.Count);//紀錄有多少筆資料
                             foreach (var key in dic.Keys)//寫入所有Key
                             {
-                                var val = dic[key];
+                                var val = dic[key].Replace("\r\n", "\n");
+                                
                                 writer.Write(key.Length);
                                 writer.Write(",");
                                 writer.Write(val.Length);
@@ -330,7 +358,7 @@ namespace UCL.Core
                                         //{
                                         //    System.Text.StringBuilder sb = new();
                                         //    sb.Append($"valLen:{valLen},");
-                                        //    int index = 0;
+                                        //    //int index = 0;
                                         //    foreach (var c in valBuffer)
                                         //    {
                                         //        sb.Append(c);
@@ -339,10 +367,43 @@ namespace UCL.Core
                                         //    val = sb.ToString();
                                         //}
 
+                                        //{
+                                        //    System.Text.StringBuilder sb = new();
+                                        //    sb.Append($"valLen:{valLen},");
+                                        //    int index = 0;
+                                        //    foreach (var c in valBuffer)
+                                        //    {
+                                        //        sb.Append(c);
+                                        //        sb.Append($"({++index})");
+                                        //    }
+                                        //    val = sb.ToString();
+                                        //}
 
                                         dic[key] = val;
                                         //Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
                                         reader.ReadLine();//read nextline
+
+                                        //{
+                                        //    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                                        //    for (int x = 0; x < 999; x++)
+                                        //    {
+                                        //        char c = (char)reader.Read();
+                                        //        sb.Append(c);
+                                        //        if (c == '\n')//read until new line
+                                        //        {
+                                        //            c = (char)reader.Peek();
+                                        //            if (Char.IsDigit(c))
+                                        //            {
+                                        //                break;
+                                        //            }
+                                        //        }
+                                        //    }
+                                        //    if(sb.Length > 2)
+                                        //    {
+                                        //        Debug.LogError($"langKey:{langKey}, keyLenStr:{keyLenStr}, key:{key}, val:{val}, sb:{sb.ToString()}");
+                                        //    }
+                                        //}
+                                        
                                     }
                                     catch (System.Exception e)
                                     {

@@ -165,15 +165,7 @@ namespace UCL.Core
         /// </summary>
         vietnamese
     }
-    [System.Serializable]
-    public class UCL_LanguageCodeEntry : UCL_AssetEntryDefault<UCL_LanguageCodeAsset>
-    {
-        public const string DefaultID = "en";
-        public static UCL_LanguageCodeEntry s_DefaultLang = new UCL_LanguageCodeEntry(DefaultID);
-        public UCL_LanguageCodeEntry() { ID = DefaultID; }
-        public UCL_LanguageCodeEntry(string iID) { ID = iID; }
 
-    }
 
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Config)]
     [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditConfigType.UCL_LanguageCodeAsset)]
@@ -261,7 +253,7 @@ namespace UCL.Core
                 return s_CultureInfoDic[ID];
             }
         }
-        public string m_LanguageName;
+        public string m_LanguageName = "";
 
         public List<SystemLanguage> m_SupportedLanguages = new List<SystemLanguage>();
 
@@ -271,7 +263,10 @@ namespace UCL.Core
         /// 在選擇語言UI標註 翻譯完整度
         /// </summary>
         public bool m_IsPolished = false;
-
+        /// <summary>
+        /// 在語言選單中隱藏此選項
+        /// </summary>
+        public bool m_HideThisOption = false;
         /// <summary>
         /// 排序用
         /// </summary>
@@ -294,4 +289,15 @@ namespace UCL.Core
             UCL.Core.Game.UCL_LocalizeService.SetLanguage(ID);
         }
     }
+
+    [System.Serializable]
+    public class UCL_LanguageCodeEntry : UCL_AssetEntryDefault<UCL_LanguageCodeAsset>
+    {
+        public const string DefaultID = "en";
+        public static UCL_LanguageCodeEntry s_DefaultLang = new UCL_LanguageCodeEntry(DefaultID);
+        public UCL_LanguageCodeEntry() { ID = DefaultID; }
+        public UCL_LanguageCodeEntry(string iID) { ID = iID; }
+
+    }
+
 }

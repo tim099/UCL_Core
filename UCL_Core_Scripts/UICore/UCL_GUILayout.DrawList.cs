@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using UCL.Core.LocalizeLib;
 using UnityEngine;
 
@@ -288,6 +290,31 @@ namespace UCL.Core.UI
                                     for (int i = 0; i < aAllTypeList.Count; i++)
                                     {
                                         aTypeNameList.Add(aNameFunc(aAllTypeList[i].Name));
+                                    }
+                                    iParams.m_DataDic.Add(ITypeListKey, aTypeNameList);
+                                    iParams.m_DataDic.Add(ITypeListKey + "Type", aAllTypeList);
+                                }
+                            }
+                            else if (typeof(UCLI_TypeListable).IsAssignableFrom(aGenericType))
+                            {
+                                var aTypeList = aGenericType.GetAllITypesAssignableFrom();
+                                if (aTypeList != null)
+                                {
+                                    //UCL_IgnoreInTypeListable
+                                    List<Type> aAllTypeList = new List<Type>();
+                                    foreach(var type in aTypeList)
+                                    {
+                                        if (type.GetCustomAttribute<UCL.Core.ATTR.UCL_IgnoreInTypeListableAttribute>(false) != null)
+                                        {
+                                            continue;
+                                        }
+                                        aAllTypeList.Add(type);
+                                    }
+                                    //var aAllTypeList = aGenericType.GetAllITypesAssignableFrom().ToList();
+                                    aTypeNameList = new List<string>();
+                                    for (int i = 0; i < aAllTypeList.Count; i++)
+                                    {
+                                        aTypeNameList.Add(UCL_LocalizeLib.GetLocalize(aAllTypeList[i].Name));
                                     }
                                     iParams.m_DataDic.Add(ITypeListKey, aTypeNameList);
                                     iParams.m_DataDic.Add(ITypeListKey + "Type", aAllTypeList);

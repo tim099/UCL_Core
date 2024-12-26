@@ -342,7 +342,8 @@ namespace UCL.Core.JsonLib {
                 IList aList = iObj as IList;
                 var aItemType = aType.GetGenericValueType();
                 //Debug.LogError("aItemType:" + aItemType.Name);
-                if (typeof(UCLI_TypeList).IsAssignableFrom(aItemType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aItemType))
+                if ((typeof(UCLI_TypeList).IsAssignableFrom(aItemType) || typeof(UCLI_TypeListable).IsAssignableFrom(aItemType)) 
+                    && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aItemType))
                 {
                     //Debug.LogError("typeof(UCLI_TypeList).IsAssignableFrom(aItemType) aItemType:" + aItemType.Name);
                     foreach (var aItem in aList)
@@ -521,7 +522,8 @@ namespace UCL.Core.JsonLib {
                 Type aElementType = aType.GetGenericValueType();
                 aList.Clear();
                 //Debug.LogError("IList aElementType:" + aElementType.Name);
-                if (typeof(UCLI_TypeList).IsAssignableFrom(aElementType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
+                if ((typeof(UCLI_TypeList).IsAssignableFrom(aElementType) || typeof(UCLI_TypeListable).IsAssignableFrom(aElementType))
+                    && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
                 {
                     //Debug.LogError("1 IList aElementType:" + aElementType.Name);
                     for (int i = 0; i < iData.Count; i++)
@@ -567,7 +569,8 @@ namespace UCL.Core.JsonLib {
                 //Debug.LogError("IList aElementType:" + aElementType.Name);
                 var addMethod = aType.GetMethod("Add");
 
-                if (typeof(UCLI_TypeList).IsAssignableFrom(aElementType) && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
+                if ((typeof(UCLI_TypeList).IsAssignableFrom(aElementType) || typeof(UCLI_TypeListable).IsAssignableFrom(aElementType))
+                    && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
                 {
                     //Debug.LogError("1 IList aElementType:" + aElementType.Name);  
                     for (int i = 0; i < iData.Count; i++)

@@ -315,6 +315,7 @@ namespace UCL.Core
                     {
                         var localizeData = m_LocalizeDatas[langKey] = new LocalizeData();
                         var dic = localizeData.m_LocalizeDic;
+                        System.Text.StringBuilder stringBuilder = new System.Text.StringBuilder();
                         using (FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read))
                         {
                             using (StreamReader reader = new StreamReader(fileStream, FileEncoding))
@@ -340,21 +341,62 @@ namespace UCL.Core
                                         int keyLen = int.Parse(keyLens[0]);
                                         int valLen = int.Parse(keyLens[1]);
 
-                                        char[] keyBuffer = new char[keyLen];
-                                        keyLen = reader.ReadBlock(keyBuffer, 0, keyLen);
-                                        key = new string(keyBuffer);
+                                        //char[] keyBuffer = new char[keyLen];
+                                        //keyLen = reader.ReadBlock(keyBuffer, 0, keyLen);
+                                        //key = new string(keyBuffer);
+                                        {
+                                            stringBuilder.Clear();
+                                            for (int j = 0; j < keyLen; j++)
+                                            {
+                                                var c = reader.Read();
+                                                if (c == '\r')
+                                                {
+                                                    if (reader.Peek() == '\n')//convert \r\n to \n
+                                                    {
+                                                        reader.Read();
+                                                        stringBuilder.Append('\n');
+                                                        continue;
+                                                    }
+                                                }
+                                                stringBuilder.Append((char)c);
+                                            }
+                                            key = stringBuilder.ToString();
+                                        }
+
+
                                         reader.Read();//read :
 
-                                        char[] valBuffer = new char[valLen];
-                                        int readLen = reader.ReadBlock(valBuffer, 0, valLen);
-
-                                        val = new string(valBuffer);
-
-                                        if (valLen != readLen || valLen != val.Length)
                                         {
-                                            Debug.LogError($"({i})langKey:{langKey}, valLen:{valLen}, readLen:{readLen}, val.Length:{val.Length}, key:{key},val:{val}");
-                                            valLen = readLen;
+                                            stringBuilder.Clear();
+                                            for (int j = 0; j < valLen; j++)
+                                            {
+                                                var c = reader.Read();
+                                                if (c == '\r')
+                                                {
+                                                    if (reader.Peek() == '\n')//convert \r\n to \n
+                                                    {
+                                                        reader.Read();
+                                                        stringBuilder.Append('\n');
+                                                        continue;
+                                                    }
+                                                }
+                                                stringBuilder.Append((char)c);
+                                            }
                                         }
+                                        reader.ReadLine();//read nextline
+                                        val = stringBuilder.ToString();
+                                        dic[key] = val;
+
+                                        //char[] valBuffer = new char[valLen];
+                                        //int readLen = reader.ReadBlock(valBuffer, 0, valLen);
+
+                                        //val = new string(valBuffer);
+
+                                        //if (valLen != readLen || valLen != val.Length)
+                                        //{
+                                        //    Debug.LogError($"({i})langKey:{langKey}, valLen:{valLen}, readLen:{readLen}, val.Length:{val.Length}, key:{key},val:{val}");
+                                        //    valLen = readLen;
+                                        //}
                                         //{
                                         //    System.Text.StringBuilder sb = new();
                                         //    sb.Append($"valLen:{valLen},");
@@ -379,37 +421,9 @@ namespace UCL.Core
                                         //    val = sb.ToString();
                                         //}
 
-                                        dic[key] = val;
-                                        //Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
-                                        //reader.ReadLine();//read nextline
-                                        char c = (char)reader.Read();
-
-                                        if(c != '\n')//try to read until new line
-                                        {
-                                            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                                            sb.Append(c);
-                                            
-                                            for (int x = 0; x < valLen; x++)
-                                            {
-                                                c = (char)reader.Read();
-                                                sb.Append(c);
-                                                if (c == '\n')//read until new line
-                                                {
-                                                    c = (char)reader.Peek();
-                                                    if (Char.IsDigit(c))//check if next char is digit
-                                                    {
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            string restVal = sb.ToString();
-                                            dic[key] += restVal;
-                                            //if (sb.Length > 1)
-                                            {
-                                                Debug.LogError($"langKey:{langKey}, keyLenStr:{keyLenStr}, key:{key}, val:{val}, sb:{restVal}");
-                                            }
-                                        }
-
+                                        //dic[key] = val;
+                                        ////Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
+                                        ////reader.ReadLine();//read nextline
                                     }
                                     catch (System.Exception e)
                                     {

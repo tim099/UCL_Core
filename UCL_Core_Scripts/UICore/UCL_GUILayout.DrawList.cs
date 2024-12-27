@@ -297,20 +297,10 @@ namespace UCL.Core.UI
                             }
                             else if (typeof(UCLI_TypeListable).IsAssignableFrom(aGenericType))
                             {
-                                var aTypeList = aGenericType.GetAllITypesAssignableFrom();
-                                if (aTypeList != null)
+                                var aAllTypeList = UCLI_TypeListable.GetAllITypes(aGenericType);
+
+                                if (aAllTypeList != null)
                                 {
-                                    //UCL_IgnoreInTypeListable
-                                    List<Type> aAllTypeList = new List<Type>();
-                                    foreach(var type in aTypeList)
-                                    {
-                                        if (type.GetCustomAttribute<UCL.Core.ATTR.UCL_IgnoreInTypeListableAttribute>(false) != null)
-                                        {
-                                            continue;
-                                        }
-                                        aAllTypeList.Add(type);
-                                    }
-                                    //var aAllTypeList = aGenericType.GetAllITypesAssignableFrom().ToList();
                                     aTypeNameList = new List<string>();
                                     for (int i = 0; i < aAllTypeList.Count; i++)
                                     {

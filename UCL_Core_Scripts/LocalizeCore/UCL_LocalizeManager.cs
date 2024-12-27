@@ -8,6 +8,8 @@ namespace UCL.Core.LocalizeLib
     public class UCL_LocalizeManager// : UCL.Core.UCL_Singleton<UCL_LocalizeManager>
     {
         private static UCL_LocalizeManager s_Instance = null;
+
+        public static event System.Action<string> OnGet;
         /// <summary>
         /// Won't create new Instance if not exist!!
         /// </summary>
@@ -131,6 +133,9 @@ namespace UCL.Core.LocalizeLib
         /// <param name="iKey"></param>
         /// <returns></returns>
         static public string Get(string iKey) {
+
+            OnGet?.Invoke(iKey);
+
             var asset = UCL_LocalizeAsset.Default;
             if (asset != null)
             {

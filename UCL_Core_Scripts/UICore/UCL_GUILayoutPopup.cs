@@ -141,7 +141,7 @@ namespace UCL.Core.UI
                 state = -2;//first page
             }
             GUILayout.Space(space);
-            if (GUILayout.Button(UCL_LocalizeManager.Get(" < "),
+            if (GUILayout.Button(" < ",
                 UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
             {
                 state = -1;//prev page
@@ -163,7 +163,7 @@ namespace UCL.Core.UI
             }
 
             //GUILayout.Label($"{(curPage + 1)} / {pageCount}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
-            if (GUILayout.Button(UCL_LocalizeManager.Get(" > "),
+            if (GUILayout.Button(" > ",
                 UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.ExpandWidth(false)))
             {
                 state = 1;//next page

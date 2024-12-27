@@ -197,5 +197,19 @@ namespace UCL.Core
             }
             return File.ReadAllBytes(aPath);
         }
+        public string ReadAllText()
+        {
+            if (IsEmpty)
+            {
+                Debug.LogError($"{GetType().Name}.ReadAllText IsEmpty!,FileSystemFolderPath:{FileSystemFolderPath}");
+                return null;
+            }
+            string aPath = FilePath;
+            if (!File.Exists(aPath))
+            {
+                return null;//System.Array.Empty<byte>()
+            }
+            return File.ReadAllText(aPath);
+        }
     }
 }

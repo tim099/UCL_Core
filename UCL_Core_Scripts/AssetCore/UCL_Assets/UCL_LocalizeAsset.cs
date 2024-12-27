@@ -381,29 +381,35 @@ namespace UCL.Core
 
                                         dic[key] = val;
                                         //Debug.LogError($"({i})langKey:{langKey}, key:{key},val:{val}");
-                                        reader.ReadLine();//read nextline
+                                        //reader.ReadLine();//read nextline
+                                        char c = (char)reader.Read();
 
-                                        //{
-                                        //    System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                                        //    for (int x = 0; x < 999; x++)
-                                        //    {
-                                        //        char c = (char)reader.Read();
-                                        //        sb.Append(c);
-                                        //        if (c == '\n')//read until new line
-                                        //        {
-                                        //            c = (char)reader.Peek();
-                                        //            if (Char.IsDigit(c))
-                                        //            {
-                                        //                break;
-                                        //            }
-                                        //        }
-                                        //    }
-                                        //    if(sb.Length > 2)
-                                        //    {
-                                        //        Debug.LogError($"langKey:{langKey}, keyLenStr:{keyLenStr}, key:{key}, val:{val}, sb:{sb.ToString()}");
-                                        //    }
-                                        //}
-                                        
+                                        if(c != '\n')//try to read until new line
+                                        {
+                                            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                                            sb.Append(c);
+                                            
+                                            for (int x = 0; x < valLen; x++)
+                                            {
+                                                c = (char)reader.Read();
+                                                sb.Append(c);
+                                                if (c == '\n')//read until new line
+                                                {
+                                                    c = (char)reader.Peek();
+                                                    if (Char.IsDigit(c))//check if next char is digit
+                                                    {
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            string restVal = sb.ToString();
+                                            dic[key] += restVal;
+                                            //if (sb.Length > 1)
+                                            {
+                                                Debug.LogError($"langKey:{langKey}, keyLenStr:{keyLenStr}, key:{key}, val:{val}, sb:{restVal}");
+                                            }
+                                        }
+
                                     }
                                     catch (System.Exception e)
                                     {

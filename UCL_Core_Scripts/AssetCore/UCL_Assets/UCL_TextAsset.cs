@@ -83,8 +83,11 @@ namespace UCL.Core
             //GUILayout.BeginHorizontal();
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))
             {
-
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                if (iIsShowEditButton)
+                {
+                    ShowEditButtonOnGUI();
+                }
                 GUILayout.Label(Text, UCL_GUIStyle.LabelStyle);
                 //var aTexture = Texture;
                 //if (aTexture != null)
@@ -93,10 +96,7 @@ namespace UCL.Core
                 //    GUILayout.Box(aTexture, GUILayout.Width(size), GUILayout.Height(size));
                 //}
 
-                if (iIsShowEditButton)
-                {
-                    ShowEditButtonOnGUI();
-                }
+
             }
             //GUILayout.EndHorizontal();
         }

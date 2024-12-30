@@ -45,7 +45,8 @@ namespace UCL.Core.UI {
         {
             GUILayout.BeginHorizontal();
             if (!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);
-            string aResult = GUILayout.TextField(iVal.ToString(), GUILayout.MinWidth(iMinWidth));
+            string aResult = GUILayout.TextField(iVal.ToString(), UCL_GUIStyle.TextFieldStyle,
+                GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(iMinWidth)));
             GUILayout.EndHorizontal();
             if (string.IsNullOrEmpty(aResult))
             {

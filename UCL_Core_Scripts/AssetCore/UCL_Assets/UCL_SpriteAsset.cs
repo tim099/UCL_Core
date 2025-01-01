@@ -81,24 +81,16 @@ namespace UCL.Core
             {
 
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                if (iIsShowEditButton)
+                {
+                    ShowEditButtonOnGUI();
+                }
+
                 var aTexture = Texture;
                 if (aTexture != null)
                 {
                     float size = UCL_GUIStyle.GetScaledSize(64);
                     GUILayout.Box(aTexture, GUILayout.Width(size), GUILayout.Height(size));
-                }
-                //else
-                //{
-                //    if(!m_Loading)
-                //    {
-                //        GUILayout.Label($"Texture == null,Key:{Data.Key}");
-                //    }
-                //}
-                //UCL.Core.UI.UCL_GUILayout.LabelAutoSize(LocalizeName);
-
-                if (iIsShowEditButton)
-                {
-                    ShowEditButtonOnGUI();
                 }
             }
             //GUILayout.EndHorizontal();

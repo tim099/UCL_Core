@@ -11,6 +11,12 @@ namespace UCL.Core.UI
 {
     static public partial class UCL_GUILayout
     {
+        public enum ListOperation
+        {
+            None,
+            Add,
+            SetCount,
+        }
         public const string IsMoveElementKey = "MoveElement";
         public const string IsDeleteElementKey = "Delete";
 
@@ -231,46 +237,54 @@ namespace UCL.Core.UI
                 }
                 else
                 {
-                    int aCount = iParams.m_DataDic.GetData(ListElementCountKey, iList.Count);
                     GUILayout.BeginHorizontal();
-                    int aNewCount = UCL_GUILayout.IntField(UCL_LocalizeManager.Get("Count"), aCount, GUILayout.MinWidth(80));
-                    iParams.m_DataDic.SetData(ListElementCountKey, aNewCount);
-                    if (aNewCount != iList.Count)
+                    float width = UCL_GUIStyle.GetScaledSize(80);
+                    var aGenericType = aType.GetGenericValueType();
+                    bool isTypeList = typeof(UCLI_TypeList).IsAssignableFrom(aGenericType);
+                    bool isTypeListable = typeof(UCLI_TypeListable).IsAssignableFrom(aGenericType);
+                    bool hasTypeList = iParams.m_DataDic.ContainsKey(ITypeListKey);
+                    int aCount = iParams.m_DataDic.GetData(ListElementCountKey, iList.Count);
+                    ListOperation listOperation = ListOperation.None;
+                    if (aCount != iList.Count)
                     {
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("SetCount"), UCL_GUIStyle.ButtonStyle))
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("SetCount"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(width)))
                         {
-                            if (aNewCount < 0) aNewCount = 0;
-                            while (aNewCount < iList.Count)
-                            {
-                                iList.RemoveAt(iList.Count - 1);
-                            }
-                            while (aNewCount > iList.Count)
-                            {
-                                try
-                                {
-                                    var aGenericType = aType.GetGenericValueType();
-                                    iList.Add(aGenericType.CreateInstance());
-                                }
-                                catch (System.Exception iE)
-                                {
-                                    Debug.LogException(iE);
-                                }
-                            }
+                            listOperation = ListOperation.SetCount;
                         }
                     }
                     else
                     {
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(width)))
+                        {
+                            listOperation = ListOperation.Add;
+                        }
+                    } 
+                    
+                    int aNewCount = aCount;
+                    if (isTypeList || isTypeListable)
+                    {
+                        //GUILayout.Label($"({aCount})", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    }
+                    else
+                    {
+                        aNewCount = UCL_GUILayout.IntField(UCL_LocalizeManager.Get("Count"), aCount, GUILayout.MinWidth(width));
+                        iParams.m_DataDic.SetData(ListElementCountKey, aNewCount);
+                    }
+
+
+                    int aSelectedType = -1;
+                    {
 
                         List<string> aTypeNameList = null;
-                        if (iParams.m_DataDic.ContainsKey(ITypeListKey))
+                        if (hasTypeList)
                         {
                             aTypeNameList = iParams.m_DataDic.GetData<List<string>>(ITypeListKey);
                         }
                         else
                         {
-                            var aGenericType = aType.GetGenericValueType();
+                            
 
-                            if (typeof(UCLI_TypeList).IsAssignableFrom(aGenericType))
+                            if (isTypeList)
                             {
                                 var aTypeList = aGenericType.CreateInstance() as UCLI_TypeList;
                                 if (aTypeList != null)
@@ -295,7 +309,7 @@ namespace UCL.Core.UI
                                     iParams.m_DataDic.Add(ITypeListKey + "Type", aAllTypeList);
                                 }
                             }
-                            else if (typeof(UCLI_TypeListable).IsAssignableFrom(aGenericType))
+                            else if (isTypeListable)
                             {
                                 var aAllTypeList = UCLI_TypeListable.GetAllITypes(aGenericType);
 
@@ -315,33 +329,58 @@ namespace UCL.Core.UI
                                 iParams.m_DataDic.Add(ITypeListKey, null);
                             }
                         }
-                        int aSelectedType = -1;
+                        
                         if (aTypeNameList != null)
                         {
-                            aSelectedType = PopupAuto(aTypeNameList, iParams.m_DataDic, "SelectType", 10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
-                        }
-                        if (GUILayout.Button(UCL_LocalizeManager.Get("Add"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
-                        {
-                            try
-                            {
-                                var aGenericType = aType.GetGenericValueType();
-                                if (aSelectedType >= 0)
-                                {
-                                    var aTypes = iParams.m_DataDic.GetData<IList<Type>>(ITypeListKey + "Type");
-                                    iList.Add(aTypes[aSelectedType].CreateInstance());
-                                }
-                                else
-                                {
-                                    iList.Add(aGenericType.CreateInstance());
-                                }
-                            }
-                            catch (System.Exception iE)
-                            {
-                                Debug.LogException(iE);
-                            }
-                            iParams.m_DataDic.SetData(ListElementCountKey, iList.Count);
+                            aSelectedType = PopupAuto(aTypeNameList, iParams.m_DataDic, "SelectType", 10);//, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240))
                         }
                     }
+
+                    switch (listOperation)
+                    {
+                        case ListOperation.Add:
+                            {
+                                try
+                                {
+                                    if (aSelectedType >= 0)
+                                    {
+                                        var aTypes = iParams.m_DataDic.GetData<IList<Type>>(ITypeListKey + "Type");
+                                        iList.Add(aTypes[aSelectedType].CreateInstance());
+                                    }
+                                    else
+                                    {
+                                        iList.Add(aGenericType.CreateInstance());
+                                    }
+                                }
+                                catch (System.Exception iE)
+                                {
+                                    Debug.LogException(iE);
+                                }
+                                iParams.m_DataDic.SetData(ListElementCountKey, iList.Count);
+                                break;
+                            }
+                        case ListOperation.SetCount:
+                            {
+                                if (aNewCount < 0) aNewCount = 0;
+                                while (aNewCount < iList.Count)
+                                {
+                                    iList.RemoveAt(iList.Count - 1);
+                                }
+                                while (aNewCount > iList.Count)
+                                {
+                                    try
+                                    {
+                                        iList.Add(aGenericType.CreateInstance());
+                                    }
+                                    catch (System.Exception iE)
+                                    {
+                                        Debug.LogException(iE);
+                                    }
+                                }
+                                break;
+                            }
+                    }
+
                     GUILayout.EndHorizontal();
 
 

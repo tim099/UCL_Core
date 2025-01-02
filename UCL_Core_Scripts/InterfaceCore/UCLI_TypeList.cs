@@ -37,7 +37,8 @@ namespace UCL.Core
                 List<Type> aAllTypeList = new List<Type>();
                 foreach (var type in orderResult)
                 {
-                    if (type.GetCustomAttribute<UCL.Core.ATTR.UCL_IgnoreInTypeListableAttribute>(false) != null)
+                    if (type.IsAbstract ||
+                        type.GetCustomAttribute<UCL.Core.ATTR.UCL_IgnoreInTypeListableAttribute>(false) != null)
                     {
                         continue;
                     }

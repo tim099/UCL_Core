@@ -640,118 +640,127 @@ namespace UCL.Core.JsonLib {
                     continue;
                 }
                 string aFieldName = aField.Name;
-                if (iFieldNameAlterFunc != null)
+                try
                 {
-                    aFieldName = iFieldNameAlterFunc(aFieldName);
-                }
-                if (iData.Contains(aFieldName))
-                {
-                    var aJsonData = iData[aFieldName];
-                    if (aJsonData == null) continue;
-                    var aFieldData = aJsonData.GetValue(aField.FieldType);
-                    if (aFieldData == null)
+                    if (iFieldNameAlterFunc != null)
                     {
-                        try
+                        aFieldName = iFieldNameAlterFunc(aFieldName);
+                    }
+                    if (iData.Contains(aFieldName))
+                    {
+                        var aJsonData = iData[aFieldName];
+                        if (aJsonData == null) continue;
+                        var aFieldData = aJsonData.GetValue(aField.FieldType);
+                        if (aFieldData == null)
                         {
-                            aFieldData = aField.FieldType.CreateInstance();
-                        }
-                        catch (System.Exception e)
-                        {
-                            Debug.LogException(e);
-                            continue;
-                        }
-                    }
-                    if (aField.FieldType == typeof(string))
-                    {
-                        aField.SetValue(iObj, aFieldData);
-                    }
-                    else if (aField.FieldType == typeof(bool))
-                    {
-                        aField.SetValue(iObj, aJsonData.GetString() == "True");
-                    }
-                    else if (aField.FieldType.IsAssignableFrom(typeof(JsonData)))
-                    {
-                        aField.SetValue(iObj, aJsonData);
-                    }
-                    else if (aField.FieldType.IsAssignableFrom(typeof(UnityJsonSerializableObject)))
-                    {
-                        string aClassName = iData.GetString("ClassName");
-                        Type aClassType = Type.GetType(aClassName);
-                        JsonData aClassData = iData.GetString("ClassData");
-                        UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;//Activator.CreateInstance();
-                        aObj.DeserializeFromJson(aClassData);
-                        aField.SetValue(iObj, aObj);
-                    }
-                    //else if (typeof(UnityJsonSerializable).IsAssignableFrom(aField.FieldType))
-                    //{
-                    //    (aFieldData as UnityJsonSerializable).DeserializeFromJson(aJsonData);
-                    //    aField.SetValue(iObj, aFieldData);
-                    //}
-                    else if (typeof(IJsonSerializable).IsAssignableFrom(aField.FieldType))
-                    {
-                        (aFieldData as IJsonSerializable).DeserializeFromJson(aJsonData);
-                        aField.SetValue(iObj, aFieldData);
-                    }
-                    else if (aField.FieldType == typeof(JsonData))
-                    {
-                        aField.SetValue(iObj, aJsonData);
-                    }
-                    else if (aField.FieldType.IsEnum)
-                    {
-                        string aStr = aJsonData.GetString();
-                        try
-                        {
-                            if (aJsonData.IsString && !string.IsNullOrEmpty(aStr))
+                            try
                             {
-                                Enum aEnum = Enum.Parse(aField.FieldType, aStr, true) as Enum;
-                                if (aEnum != null)
-                                {
-                                    aField.SetValue(iObj, aEnum);
-                                }
+                                aFieldData = aField.FieldType.CreateInstance();
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogException(e);
+                                continue;
                             }
                         }
-                        catch (System.Exception iE)
+                        if (aField.FieldType == typeof(string))
                         {
-                            Debug.LogError("aField.FieldType:" + aField.FieldType.Name + ",aField.Name:" + aField.Name + ",aStr:" + aStr
-                                + ",JsonData:" + iData.ToJsonBeautify()
-                                + "\nSystem.Exception:" + iE);
-                            Debug.LogException(iE);
+                            aField.SetValue(iObj, aFieldData);
                         }
-                    }
-                    else if (aFieldData is IList && aField.FieldType.IsGenericType)
-                    {
-                        //Debug.LogError("IList FieldName:" + aField.Name);
-                        aField.SetValue(iObj, LoadDataFromJson(aFieldData, aJsonData, iSaveMode, iFieldNameAlterFunc, iLayer + 1));
-                    }
-                    else if (aFieldData is IDictionary && aField.FieldType.IsGenericType)
-                    {
-                        IDictionary aDic = aFieldData as IDictionary;
-                        Type aKeyType = aDic.GetType().GetGenericKeyType();
-                        Type aElementType = aDic.GetType().GetGenericValueType();
-                        IDictionary aJsonDic = aJsonData.GetJsonDic() as IDictionary;
-                        if (aJsonDic != null)
+                        else if (aField.FieldType == typeof(bool))
                         {
-                            foreach (string aKey in aJsonDic.Keys)
+                            aField.SetValue(iObj, aJsonData.GetString() == "True");
+                        }
+                        else if (aField.FieldType.IsAssignableFrom(typeof(JsonData)))
+                        {
+                            aField.SetValue(iObj, aJsonData);
+                        }
+                        else if (aField.FieldType.IsAssignableFrom(typeof(UnityJsonSerializableObject)))
+                        {
+                            string aClassName = iData.GetString("ClassName");
+                            Type aClassType = Type.GetType(aClassName);
+                            JsonData aClassData = iData.GetString("ClassData");
+                            UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;//Activator.CreateInstance();
+                            aObj.DeserializeFromJson(aClassData);
+                            aField.SetValue(iObj, aObj);
+                        }
+                        //else if (typeof(UnityJsonSerializable).IsAssignableFrom(aField.FieldType))
+                        //{
+                        //    (aFieldData as UnityJsonSerializable).DeserializeFromJson(aJsonData);
+                        //    aField.SetValue(iObj, aFieldData);
+                        //}
+                        else if (typeof(IJsonSerializable).IsAssignableFrom(aField.FieldType))
+                        {
+                            (aFieldData as IJsonSerializable).DeserializeFromJson(aJsonData);
+                            aField.SetValue(iObj, aFieldData);
+                        }
+                        else if (aField.FieldType == typeof(JsonData))
+                        {
+                            aField.SetValue(iObj, aJsonData);
+                        }
+                        else if (aField.FieldType.IsEnum)
+                        {
+                            string aStr = aJsonData.GetString();
+                            try
                             {
-                                var aObj = DataToObject(aJsonData[aKey], aElementType, iSaveMode, iFieldNameAlterFunc);
-                                if (aObj != null)
+                                if (aJsonData.IsString && !string.IsNullOrEmpty(aStr))
                                 {
-                                    aDic[aKey.JsonSafeStringToObject(aKeyType)] = aObj;
+                                    Enum aEnum = Enum.Parse(aField.FieldType, aStr, true) as Enum;
+                                    if (aEnum != null)
+                                    {
+                                        aField.SetValue(iObj, aEnum);
+                                    }
                                 }
                             }
+                            catch (System.Exception iE)
+                            {
+                                Debug.LogError("aField.FieldType:" + aField.FieldType.Name + ",aField.Name:" + aField.Name + ",aStr:" + aStr
+                                    + ",JsonData:" + iData.ToJsonBeautify()
+                                    + "\nSystem.Exception:" + iE);
+                                Debug.LogException(iE);
+                            }
                         }
-                        aField.SetValue(iObj, aDic);
-                    }
-                    else if (aField.FieldType.IsStructOrClass())
-                    {
-                        var aResult = LoadDataFromJson(aFieldData, aJsonData, SaveMode.Unity, iFieldNameAlterFunc, iLayer + 1);
-                        aField.SetValue(iObj, aResult);
-                    }
-                    else
-                    {
-                        aField.SetValue(iObj, aFieldData);
+                        else if (aFieldData is IList && aField.FieldType.IsGenericType)
+                        {
+                            //Debug.LogError("IList FieldName:" + aField.Name);
+                            aField.SetValue(iObj, LoadDataFromJson(aFieldData, aJsonData, iSaveMode, iFieldNameAlterFunc, iLayer + 1));
+                        }
+                        else if (aFieldData is IDictionary && aField.FieldType.IsGenericType)
+                        {
+                            IDictionary aDic = aFieldData as IDictionary;
+                            Type aKeyType = aDic.GetType().GetGenericKeyType();
+                            Type aElementType = aDic.GetType().GetGenericValueType();
+                            IDictionary aJsonDic = aJsonData.GetJsonDic() as IDictionary;
+                            if (aJsonDic != null)
+                            {
+                                foreach (string aKey in aJsonDic.Keys)
+                                {
+                                    var aObj = DataToObject(aJsonData[aKey], aElementType, iSaveMode, iFieldNameAlterFunc);
+                                    if (aObj != null)
+                                    {
+                                        aDic[aKey.JsonSafeStringToObject(aKeyType)] = aObj;
+                                    }
+                                }
+                            }
+                            aField.SetValue(iObj, aDic);
+                        }
+                        else if (aField.FieldType.IsStructOrClass())
+                        {
+                            var aResult = LoadDataFromJson(aFieldData, aJsonData, SaveMode.Unity, iFieldNameAlterFunc, iLayer + 1);
+                            aField.SetValue(iObj, aResult);
+                        }
+                        else
+                        {
+                            aField.SetValue(iObj, aFieldData);
+                        }
                     }
                 }
+                catch(System.Exception ex)
+                {
+                    Debug.LogError($"Type:{aType.Name}, Field:{aFieldName}, Exception:{ex}");
+                    Debug.LogException(ex);
+                }
+
             }
             return iObj;
         }

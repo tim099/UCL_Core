@@ -229,6 +229,23 @@ public static partial class StringExtensionMethods {
     }
     #endregion
     #region StringBuilder
+    public static void RemoveLastNewLine(this StringBuilder iBuilder)
+    {
+        if (iBuilder.Length == 0) return;
+        var c = iBuilder[iBuilder.Length - 1];
+        if (iBuilder.Length >= 2)
+        {
+            if (c == '\n' && iBuilder[iBuilder.Length - 2] == '\r')//remove \r\n
+            {
+                iBuilder.Remove(iBuilder.Length - 2, 2);
+                return;
+            }
+        }
+        if(c == '\n')
+        {
+            iBuilder.Remove(iBuilder.Length - 1, 1);
+        }
+    }
     public static void RemoveLast(this StringBuilder iBuilder) {
         if(iBuilder.Length == 0) return;
         iBuilder.Remove(iBuilder.Length - 1, 1);

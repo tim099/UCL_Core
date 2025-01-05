@@ -40,12 +40,17 @@ namespace UCL.Core.UI
             /// the name show when hide detail
             /// </summary>
             public string m_DisplayName;
+
+            public FieldInfo m_FieldInfo;
             public bool m_IsAlwaysShowDetail;
             
             public System.Type m_FieldType;
             public DrawObjExSetting m_DrawObjExSetting;
             public DrawObjectConfigs m_DrawObjectConfigs;
-            public DrawObjectParams() { }
+            public DrawObjectParams() 
+            {
+                m_DataDic = new();
+            }
 
             public DrawObjectParams(UCL_ObjectDictionary iDataDic, string iDisplayName, bool iIsAlwaysShowDetail = false, 
                 System.Type iFieldType = null, DrawObjExSetting iDrawObjExSetting = null, DrawObjectConfigs iDrawObjectConfigs = null) {
@@ -68,13 +73,24 @@ namespace UCL.Core.UI
                 m_DrawObjExSetting = iDrawObjExSetting;
             }
 
-            public DrawObjectParams CreateChild(UCL_ObjectDictionary iDataDic = null, string iDisplayName = null, bool iIsAlwaysShowDetail = false)
+            public DrawObjectParams CreateChild(UCL_ObjectDictionary iDataDic = null, string iDisplayName = null,
+                FieldInfo iFieldInfo = null, bool iIsAlwaysShowDetail = false)
             {
+                
                 var aChild = new DrawObjectParams();
                 aChild.m_DrawObjectConfigs = m_DrawObjectConfigs;//inherit config
                 aChild.m_DataDic = iDataDic;
                 aChild.m_DisplayName = iDisplayName;
                 aChild.m_IsAlwaysShowDetail = iIsAlwaysShowDetail;
+                if(iFieldInfo != null)
+                {
+                    aChild.m_FieldInfo = iFieldInfo;
+                }
+                else
+                {
+                    aChild.m_FieldInfo = m_FieldInfo;
+                }
+                
                 return aChild;
             }
             public string GetDisplayName(Type iType)
@@ -144,7 +160,11 @@ namespace UCL.Core.UI
                     {
                         object Draw(object iObj, DrawObjectParams aParams)
                         {
-                            return (iObj as UCLI_FieldOnGUI).OnGUI(aParams.GetDisplayName(aType), aParams.m_DataDic);
+                            //if(aParams.m_FieldType == null)
+                            //{
+                            //    Debug.LogError($"{aType.Name}, aParams.m_FieldType == null");
+                            //}
+                            return (iObj as UCLI_FieldOnGUI).OnGUI(aParams.GetDisplayName(aType), aParams.m_DataDic, aParams);
                         }
                         s_DrawObjectDic[aType] = Draw;
                     }
@@ -434,7 +454,7 @@ namespace UCL.Core.UI
                 GUILayout.BeginHorizontal();
                 if (iObj is UCLI_NameOnGUI aNameOnGUI)
                 {
-                    aNameOnGUI.NameOnGUI(iDataDic, iDisplayName);
+                    aNameOnGUI.NameOnGUI(iDataDic, iDisplayName, iParams);
                 }
                 else
                 {
@@ -581,7 +601,8 @@ namespace UCL.Core.UI
                             {
                                 var aTextureArr = aAttr as ITexture2D;
                                 GUILayout.BeginHorizontal();
-                                GUILayout.Box(aTextureArr.GetTexture(iObj, aData), GUILayout.Width(64), GUILayout.Height(64));
+                                float size = UCL_GUIStyle.GetScaledSize(64);
+                                GUILayout.Box(aTextureArr.GetTexture(iObj, aData), GUILayout.Width(size), GUILayout.Height(size));
                                 GUILayout.EndHorizontal();
                             }
                             else if (aAttr is SpaceAttribute)
@@ -658,7 +679,9 @@ namespace UCL.Core.UI
                         else if (aData is UCLI_FieldOnGUI)
                         {
                             UCLI_FieldOnGUI aVar = (UCLI_FieldOnGUI)aData;
-                            aFieldInfo.SetValue(iObj, aVar.OnGUI(aDisplayName, iDataDic.GetSubDic(aFieldInfo.Name)));
+                            var aDic = iDataDic.GetSubDic(aFieldInfo.Name);
+                            var aParams = iParams.CreateChild(aDic, aDisplayName, aFieldInfo);
+                            aFieldInfo.SetValue(iObj, aVar.OnGUI(aDisplayName, aDic, aParams));
                         }
                         else if (aData.IsNumber())
                         {
@@ -702,7 +725,7 @@ namespace UCL.Core.UI
                         else if (aData is IList or IDictionary)//aData is IList || aData is IDictionary
                         {
                             ICollection aList = aData as ICollection;//IList and IDictionary is ICollection
-                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), $"{aDisplayName}({aList.Count})", aIsAlwaysShowDetail);
+                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), $"{aDisplayName}({aList.Count})", aFieldInfo, aIsAlwaysShowDetail);
                             var aResult = DrawObjectData(aData, aParams);
                             //var aResult = DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name), $"{aDisplayName}({aList.Count})", aAlwaysExpendOnGUI, iFieldNameFunc);
                             aFieldInfo.SetValue(iObj, aResult);
@@ -710,7 +733,7 @@ namespace UCL.Core.UI
                         else if (aData is Color)
                         {
                             var aCol = (Color)aData;
-                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), aDisplayName, aIsAlwaysShowDetail);
+                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), aDisplayName, aFieldInfo, aIsAlwaysShowDetail);
                             var aNewCol = (Color)DrawObjectData(aData, aParams);
                             //var aNewCol = (Color)DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name), aDisplayName, aIsAlwaysShowDetail, iFieldNameFunc);
                             if (aNewCol != aCol)
@@ -720,7 +743,7 @@ namespace UCL.Core.UI
                         }
                         else if (aFieldInfo.FieldType.IsEnum)
                         {
-                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), aDisplayName, aIsAlwaysShowDetail);
+                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), aDisplayName, aFieldInfo, aIsAlwaysShowDetail);
                             var aResult = DrawObjectData(aData, aParams);
                             //var aResult = DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name), aDisplayName, aIsAlwaysShowDetail, iFieldNameFunc);
                             if (aResult != aData)
@@ -730,7 +753,7 @@ namespace UCL.Core.UI
                         }
                         else if (aFieldInfo.FieldType.IsStructOrClass())
                         {
-                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aIsAlwaysShowDetail);
+                            var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aFieldInfo, aIsAlwaysShowDetail);
                             DrawObjectData(aData, aParams);
                             //DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aIsAlwaysShowDetail, iFieldNameFunc);
                             aFieldInfo.SetValue(iObj, aData);

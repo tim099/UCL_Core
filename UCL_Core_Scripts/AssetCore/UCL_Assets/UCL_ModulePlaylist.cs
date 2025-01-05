@@ -185,7 +185,7 @@ namespace UCL.Core
         }
 
         #region Interface
-        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDic, string iDisplayName)
+        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
             var module = m_Module.Module;
             using (var scopeV = new GUILayout.VerticalScope())

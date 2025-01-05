@@ -38,7 +38,7 @@ namespace UCL.Core.PA
                 {
                     EditorGUI.BeginProperty(position, GUIContent.none, property);
                     GUILayout.BeginVertical();
-                    var aResult = aOnGUI.OnGUI(label.text, m_ObjectDictionary);
+                    var aResult = aOnGUI.OnGUI(label.text, m_ObjectDictionary, new UI.UCL_GUILayout.DrawObjectParams());
                     GUILayout.EndVertical();
                     //if (iIsGetPropertyHeight) m_DrawRect = GUILayoutUtility.GetLastRect();
                     m_IsDrawed = true;

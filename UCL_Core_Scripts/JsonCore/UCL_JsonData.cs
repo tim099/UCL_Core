@@ -73,7 +73,7 @@ namespace UCL.Core.JsonLib {
         //    }
         //    return "JsonData";
         //}
-        virtual public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
+        virtual public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic, UCL_GUILayout.DrawObjectParams iParams)
         {
             UCL_ObjectDictionary aSubDic = iDataDic.GetSubDic("JsonData");
 

@@ -22,7 +22,7 @@ namespace UCL.Core
 
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditDataType.UCL_SpriteAsset)]
-    public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable ,UCLI_LoadTextureConfig
+    public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable, UCLI_LoadTextureConfig
     {
         public enum DataLoadType
         {

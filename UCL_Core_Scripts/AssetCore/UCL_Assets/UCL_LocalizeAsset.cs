@@ -120,7 +120,7 @@ namespace UCL.Core
             /// <param name="iFieldName"></param>
             /// <param name="iEditTmpDatas"></param>
             /// <returns></returns>
-            public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic)
+            public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic, UCL_GUILayout.DrawObjectParams iParams)
             {
                 
                 UCL_GUILayout.DrawObjExSetting aDrawObjExSetting = null;

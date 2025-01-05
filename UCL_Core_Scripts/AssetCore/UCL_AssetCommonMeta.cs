@@ -295,7 +295,7 @@ namespace UCL.Core
                 return PlayerPrefsMeta.HashKey;
             }
         }
-        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName)
+        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
             {
                 GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle);//, GUILayout.Width(180), GUILayout.ExpandWidth(true)

@@ -505,7 +505,8 @@ namespace UCL.Core
         /// <param name="iFieldName"></param>
         /// <param name="iDataDic"></param>
         /// <returns></returns>
-        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic)
+        /// <param name="iParams"></param>
+        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic, UCL_GUILayout.DrawObjectParams iParams)
         {
             UCL.Core.UI.UCL_GUILayout.DrawObjExSetting aSetting = new UCL_GUILayout.DrawObjExSetting();
             aSetting.OnShowField = () =>

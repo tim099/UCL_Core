@@ -91,7 +91,7 @@ namespace UCL.Core
 
         }
 
-        public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic)
+        public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic, UCL_GUILayout.DrawObjectParams iParams)
         {
             UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName);
 

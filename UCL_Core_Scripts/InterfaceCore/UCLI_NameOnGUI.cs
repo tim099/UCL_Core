@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 namespace UCL.Core
 {
@@ -9,6 +10,6 @@ namespace UCL.Core
     /// </summary>
     public interface UCLI_NameOnGUI
     {
-        void NameOnGUI(UCL_ObjectDictionary iDic, string iDisplayName);
+        void NameOnGUI(UCL_ObjectDictionary iDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams);
     }
 }

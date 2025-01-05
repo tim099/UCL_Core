@@ -47,7 +47,7 @@ namespace UCL.Core
         /// <summary>
         /// 在編輯器中繪製
         /// </summary>
-        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDic)
+        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDic, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
             GUILayout.BeginHorizontal();
             bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, nameof(aIsPreview));
@@ -73,7 +73,7 @@ namespace UCL.Core
                 UCL_Module module = Module;
                 if (module != null)
                 {
-                    module.OnGUI(m_ID, iDic.GetSubDic("ModuleContentOnGUI"));
+                    module.OnGUI(m_ID, iDic.GetSubDic("ModuleContentOnGUI"), iParams);
                 }
             }
             return this;

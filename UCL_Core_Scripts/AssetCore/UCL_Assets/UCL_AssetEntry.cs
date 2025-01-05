@@ -157,9 +157,35 @@ namespace UCL.Core
                 }
             }
         }
-        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName)
+        virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
-            GUILayout.Label(iDisplayName, UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            string fieldName = iDisplayName;
+            if(iParams != null && iParams.m_FieldInfo != null)
+            {
+                fieldName = iParams.m_FieldInfo.Name;
+                if(iParams.m_DrawObjectConfigs.m_FieldNameFunc != null)
+                {
+                    fieldName = iParams.m_DrawObjectConfigs.m_FieldNameFunc(fieldName);
+                }
+            }
+            //else
+            //{
+            //    if(iParams != null)
+            //    {
+            //        fieldName = $"iParams.m_FieldInfo != null:{iParams.m_FieldInfo != null}";
+            //        if(iParams.m_FieldInfo == null)
+            //        {
+            //            Debug.LogError($"{iDisplayName},iParams.m_FieldInfo == null");
+            //        }
+            //    }
+            //    else
+            //    {
+            //        fieldName = $"iParams == null";
+            //    }
+                
+            //}
+
+            GUILayout.Label(fieldName, UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //篩選時採用所有模組內可選的分組ID
             //Filter whith all groupIDs in all modules
             var groupIDs = AssetUtil.AssetsCache.m_GroupIDs;
@@ -177,7 +203,7 @@ namespace UCL.Core
             }
 
         }
-        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic)
+        virtual public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
             //UCL.Core.UI.UCL_GUILayout.DrawObjExSetting aSetting = new UCL_GUILayout.DrawObjExSetting();
             //aSetting.OnShowField = () =>
@@ -200,9 +226,9 @@ namespace UCL.Core
             //        }
             //    }
             //};
-
-            var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false);
-            UCL_GUILayout.DrawField(this, aParams);
+            //var aParams = iParams.CreateChild(iDataDic.GetSubDic("Data"), iFieldName, iIsAlwaysShowDetail: false);
+            //var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false);
+            UCL_GUILayout.DrawField(this, iParams);
             //UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false);//, iDrawObjExSetting : aSetting
             return this;
         }
@@ -276,7 +302,7 @@ namespace UCL.Core
         [UCL.Core.ATTR.UCL_HideOnGUI]
         public string m_ID = "Default";
 
-        override public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic)
+        override public object OnGUI(string iFieldName, UCL.Core.UCL_ObjectDictionary iDataDic, UCL_GUILayout.DrawObjectParams iParams)
         {
             UCL.Core.UI.UCL_GUILayout.DrawObjExSetting aSetting = new UCL_GUILayout.DrawObjExSetting();
             aSetting.OnShowField = () =>
@@ -299,7 +325,13 @@ namespace UCL.Core
                     }
                 }
             };
-            var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
+            //if (iParams != null)
+            //{
+            //    GUILayout.Label($"iFieldName:{iFieldName},DisplayName:{iParams.m_DisplayName},FieldInfo:{iParams.m_FieldInfo.AllFieldToString()}", UCL_GUIStyle.LabelStyle);
+            //}
+            var aParams = iParams.CreateChild(iDataDic.GetSubDic("Data"), iFieldName, null, false);
+            aParams.m_DrawObjExSetting = aSetting;
+            //var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
             UCL_GUILayout.DrawField(this, aParams);
             //UCL_GUILayout.DrawField(this, iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
             return this;

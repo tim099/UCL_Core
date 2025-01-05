@@ -40,13 +40,15 @@ namespace UCL.Core.UI
             /// the name show when hide detail
             /// </summary>
             public string m_DisplayName;
-
+            public string m_FieldName;
             public FieldInfo m_FieldInfo;
             public bool m_IsAlwaysShowDetail;
             
             public System.Type m_FieldType;
             public DrawObjExSetting m_DrawObjExSetting;
             public DrawObjectConfigs m_DrawObjectConfigs;
+
+
             public DrawObjectParams() 
             {
                 m_DataDic = new();
@@ -90,9 +92,32 @@ namespace UCL.Core.UI
                 {
                     aChild.m_FieldInfo = m_FieldInfo;
                 }
+                aChild.m_FieldName = m_FieldName;
                 
                 return aChild;
             }
+
+            public string FieldName
+            {
+                get
+                {
+                    if (!string.IsNullOrEmpty(m_FieldName))
+                    {
+                        return m_FieldName;
+                    }
+                    var name = m_DisplayName;
+                    if (m_FieldInfo != null)
+                    {
+                        name = m_FieldInfo.Name;
+                        if (m_DrawObjectConfigs.m_FieldNameFunc != null)
+                        {
+                            name = m_DrawObjectConfigs.m_FieldNameFunc(name);
+                        }
+                    }
+                    return name;
+                }
+            }
+
             public string GetDisplayName(Type iType)
             {
                 if (string.IsNullOrEmpty(m_DisplayName))

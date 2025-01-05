@@ -160,13 +160,9 @@ namespace UCL.Core
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
             string fieldName = iDisplayName;
-            if(iParams != null && iParams.m_FieldInfo != null)
+            if(iParams != null)
             {
-                fieldName = iParams.m_FieldInfo.Name;
-                if(iParams.m_DrawObjectConfigs.m_FieldNameFunc != null)
-                {
-                    fieldName = iParams.m_DrawObjectConfigs.m_FieldNameFunc(fieldName);
-                }
+                fieldName = iParams.FieldName;
             }
             //else
             //{

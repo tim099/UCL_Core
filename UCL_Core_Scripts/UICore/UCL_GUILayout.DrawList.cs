@@ -141,7 +141,8 @@ namespace UCL.Core.UI
                             var aParams = iParams.CreateChild(iParams.m_DataDic.GetSubDic(nameof(iList), aAt),
                                 $"({aAt}) {aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName)}");
                             aParams.m_FieldType = aListType;
-
+                            aParams.m_FieldName = $"({aAt})";
+                            //aParams.m_FieldInfo = null;
                             var aResult = DrawObjectData(aListData, aParams);
                             aResultList[aAt] = aResult;
                         }
@@ -224,6 +225,7 @@ namespace UCL.Core.UI
                                 var aParams = iParams.CreateChild(iParams.m_DataDic.GetSubDic("IList", x + y * aWidth),
                                     aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName));
                                 aParams.m_FieldType = aListType;
+                                aParams.m_FieldName = $"({x},{y})";
                                 var aResult = DrawObjectData(aListData, aParams);
                                 //var aResult = DrawObjectData(aListData, iDataDic.GetSubDic("IList", x + y * aWidth), aDisplayName, iFieldNameFunc: iFieldNameFunc, iFieldType: aListType);
                                 aArray.SetValue(aResult, x, y);

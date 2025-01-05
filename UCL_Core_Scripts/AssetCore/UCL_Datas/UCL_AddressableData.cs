@@ -127,13 +127,13 @@ namespace UCL.Core
             var aLoadedAddressable = GetLoadedAddressable();
             if (aLoadedAddressable == null)//Not Loaded yet start loading!
             {
-                LoadSpriteAsync(default).Forget();
+                LoadSpriteAsync(default, null).Forget();
                 return null;
             }
 
             return aLoadedAddressable.Sprite;
         }
-        public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
+        public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken, UCLI_LoadTextureConfig config)
         {
             await LoadObjectAsync<UnityEngine.Object>(iToken);
             var aLoadedAddressable = GetLoadedAddressable();

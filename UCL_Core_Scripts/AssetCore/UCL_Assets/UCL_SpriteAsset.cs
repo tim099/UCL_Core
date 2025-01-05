@@ -14,9 +14,15 @@ using UnityEngine;
 using UnityEngine.UI;
 namespace UCL.Core
 {
+    public interface UCLI_LoadTextureConfig
+    {
+        public FilterMode FilterMode { get; }
+    }
+
+
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditDataType.UCL_SpriteAsset)]
-    public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable
+    public class UCL_SpriteAsset : UCL_Asset<UCL_SpriteAsset>, IDisposable ,UCLI_LoadTextureConfig
     {
         public enum DataLoadType
         {
@@ -36,6 +42,11 @@ namespace UCL.Core
         public UCL_AddressableData m_AddressableData = new UCL_AddressableData();
 
 
+        [UCL.Core.PA.Conditional(nameof(m_DataLoadType), false, DataLoadType.ModResources)]
+        public FilterMode m_FilterMode = FilterMode.Bilinear;
+
+
+        public FilterMode FilterMode => m_FilterMode;
         public bool IsEmpty => Data.IsEmpty;
 
         private UCL_Data Data
@@ -64,7 +75,7 @@ namespace UCL.Core
         }
         public async UniTask<Texture2D> GetTextureAsync(CancellationToken iToken)
         {
-            return await Data.LoadTextureAsync(iToken);
+            return await Data.LoadTextureAsync(iToken, this);
             //await Data.LoadAsync(iToken);
             //iToken.ThrowIfCancellationRequested();
             //return Data.GetSprite().texture;

@@ -128,10 +128,14 @@ namespace UCL.Core
                 m_CreatedAssets.Add(aSprite);
                 IsLoading = false;
             }
-            override public async UniTask InitAsync(string iPath)
+            public async UniTask InitAsync(string iPath, UCLI_LoadTextureConfig config)
             {
                 base.Init(iPath);
                 Texture2D aTexture = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(iPath);
+                if(config != null)
+                {
+                    aTexture.filterMode = config.FilterMode;
+                }
                 m_CreatedAssets.Add(aTexture);
                 //Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
                 //m_CreatedAssets.Add(aSprite);
@@ -178,7 +182,7 @@ namespace UCL.Core
         }
         #endregion
 
-        public static async UniTask<LoadedSpriteData> LoadTextureAsync(string iPath)
+        public static async UniTask<LoadedSpriteData> LoadTextureAsync(string iPath, UCLI_LoadTextureConfig config)
         {
             //Debug.LogError($"LoadSpriteAsync:{iPath}");
             if (!s_LoadedDatas.ContainsKey(iPath))
@@ -187,7 +191,7 @@ namespace UCL.Core
                 {
                     LoadedSpriteData aLoadedData = new LoadedSpriteData();
                     s_LoadedDatas[iPath] = aLoadedData;
-                    await aLoadedData.InitAsync(iPath);
+                    await aLoadedData.InitAsync(iPath, config);
                 }
                 catch (System.Exception ex)
                 {

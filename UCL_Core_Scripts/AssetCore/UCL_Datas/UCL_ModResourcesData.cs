@@ -130,7 +130,7 @@ namespace UCL.Core
             return default;
         }
 //#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-        public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
+        public override async UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken, UCLI_LoadTextureConfig config)
 //#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
         {
             if (IsEmpty)
@@ -139,14 +139,14 @@ namespace UCL.Core
                 return null;
             }
             //var result = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(FilePath);
-            var result = await UCL_ModResourcesService.LoadTextureAsync(FilePath);
+            var result = await UCL_ModResourcesService.LoadTextureAsync(FilePath, config);
             return result.Sprite;
 
             //return GetSprite();
         }
-        override public async UniTask<Texture2D> LoadTextureAsync(CancellationToken iToken)
+        override public async UniTask<Texture2D> LoadTextureAsync(CancellationToken iToken, UCLI_LoadTextureConfig config)
         {
-            var result = await UCL_ModResourcesService.LoadTextureAsync(FilePath);
+            var result = await UCL_ModResourcesService.LoadTextureAsync(FilePath, config);
             return result.Texture2D;
 
             //var sprite = await LoadSpriteAsync(iToken);

@@ -57,13 +57,13 @@ namespace UCL.Core
         {
             return null;
         }
-        virtual public UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken)
+        virtual public UniTask<Sprite> LoadSpriteAsync(CancellationToken iToken, UCLI_LoadTextureConfig config)
         {
             return default;
         }
-        virtual public async UniTask<Texture2D> LoadTextureAsync(CancellationToken iToken)
+        virtual public async UniTask<Texture2D> LoadTextureAsync(CancellationToken iToken, UCLI_LoadTextureConfig config)
         {
-            var sprite = await LoadSpriteAsync(iToken);
+            var sprite = await LoadSpriteAsync(iToken, config);
             if(sprite == null)
             {
                 return null;

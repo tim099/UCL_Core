@@ -115,7 +115,7 @@ namespace UCL.Core.UI
                     int startIndex = result.startIndex;
                     int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
                     //GUILayout.Label($"startIndex:{startIndex},lastIndex:{lastIndex}", UCL_GUIStyle.LabelStyle);
-                    int aAt = 0;
+                    int index = 0;
                     const string SetDataKey = "HashSet";
                     int aDeleteAt = -1;
                     object aDeleteTarget = null;
@@ -124,13 +124,13 @@ namespace UCL.Core.UI
                     string aTypeName = aListType.Name;
                     foreach (var aListData in aEnumerable)
                     {
-                        if (aAt >= lastIndex)
+                        if (index >= lastIndex)
                         {
                             break;
                         }
-                        if (aAt < startIndex)
+                        if (index < startIndex)
                         {
-                            ++aAt;
+                            ++index;
                             continue;
                         }
 
@@ -141,18 +141,18 @@ namespace UCL.Core.UI
                             {
                                 if (GUILayout.Button(UCL_LocalizeManager.Get("Delete"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                                 {
-                                    aDeleteAt = aAt;
+                                    aDeleteAt = index;
                                     aDeleteTarget = aListData;
                                 }
                             }
-                            var aParams = iParams.CreateChild(iParams.m_DataDic.GetSubDic(SetDataKey, aAt),
-                                $"({aAt}) {aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName)}");
+                            var aParams = iParams.CreateChild(iParams.m_DataDic.GetSubDic(SetDataKey, index),
+                                $"({index}) {aListData.UCL_GetShortName(aListData != null ? aListData.GetType().Name : aTypeName)}");
                             aParams.m_FieldType = aListType;
-
+                            aParams.m_FieldName = $"({index})";
 
                             GUILayout.Label($"{aListData}", UCL_GUIStyle.LabelStyle);
 
-                            ++aAt;
+                            ++index;
                         }
                     }
                     if (aDeleteTarget != null)

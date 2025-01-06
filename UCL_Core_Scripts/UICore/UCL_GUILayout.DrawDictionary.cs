@@ -160,6 +160,7 @@ namespace UCL.Core.UI
                             GUILayout.Label(aKeyName, UCL_GUIStyle.LabelStyle);
 
                             var aParams = iParams.CreateChild(iDataDic.GetSubDic("Dic_" + aKeyName), aDicData.UCL_GetShortName(aDefaultName));
+                            aParams.m_FieldName = $"({index})";
                             aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aParams)));
                             //aResultList.Add(new Tuple<object, object>(aKey, DrawObjectData(aDicData, aSubDic, aDisplayName, iFieldNameFunc: iFieldNameFunc)));
                         }

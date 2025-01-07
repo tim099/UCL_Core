@@ -88,6 +88,21 @@ namespace UCL.Core
         {
             public Dictionary<string, string> m_LocalizeDic = new();
         }
+        public class ParseStringConfig
+        {
+            public List<UCL_ParseString> m_Parsers = new();
+
+            public string Parse(string str)
+            {
+                if(m_Parsers.IsNullOrEmpty()) return str;
+
+                foreach(var parser in m_Parsers)
+                {
+                    str = parser.Parse(str);
+                }
+                return str;
+            }
+        }
         public class GidData : UCLI_ShortName, UCLI_FieldOnGUI
         {
             /// <summary>
@@ -143,7 +158,7 @@ namespace UCL.Core
                         {
                             if (GUILayout.Button(UCL_LocalizeManager.Get("Download"), UCL_GUIStyle.ButtonStyle))
                             {
-                                asset.StartDownloadTable(m_Gid, m_Format).Forget();
+                                asset.StartDownloadTable(this).Forget();
                             }
                         }
                     };
@@ -186,7 +201,7 @@ namespace UCL.Core
 
         public GoogleSheetConfig m_GoogleSheetData = new();
 
-
+        public Dictionary<string, ParseStringConfig> m_ParseStringConfigs = new();
 
 
         const string DownloadTemplate = "https://docs.google.com/spreadsheets/d/{0}/export?format={2}&gid={1}";
@@ -552,7 +567,7 @@ namespace UCL.Core
                 }
             }
         }
-        public async UniTask StartDownloadTable(long gid, Format format)
+        public async UniTask StartDownloadTable(GidData data)
         {
             if (m_CTS != null)
             {
@@ -562,7 +577,7 @@ namespace UCL.Core
             var token = m_CTS.Token;
             try
             {
-                await DownloadTable(token, gid, true, format);
+                await DownloadTable(token, data, true);
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
@@ -575,8 +590,10 @@ namespace UCL.Core
             }
         }
 
-        private async UniTask DownloadTable(CancellationToken token, long gid, bool replaceOldKey, Format format, int order = -1)
+        private async UniTask DownloadTable(CancellationToken token, GidData data, bool replaceOldKey, int order = -1)
         {
+            var gid = data.m_Gid;
+            Format format = data.m_Format;
             //const string Format = "csv";//"xlsx","ods"
             string aURL = GetDownloadPath(gid, format.ToString());
             //Debug.LogError($"Download table: {aURL}");
@@ -672,7 +689,7 @@ namespace UCL.Core
                             token.ThrowIfCancellationRequested();
                         }
                         var aGidData = m_GoogleSheetData.m_GidDatas[i];
-                        aTasks.Add(DownloadTable(token, aGidData.m_Gid, false, aGidData.m_Format, i));
+                        aTasks.Add(DownloadTable(token, aGidData, false, i));
                         token.ThrowIfCancellationRequested();
                     }
                     await UniTask.WhenAll(aTasks);
@@ -695,7 +712,7 @@ namespace UCL.Core
 #endif
             }
         }
-        static public string ParseString(string iStr)
+        public string ParseString(string iLangName, string iStr)
         {
             //{
             //    StringBuilder aSB = new StringBuilder();
@@ -711,7 +728,10 @@ namespace UCL.Core
             {
                 return string.Empty;
             }
-
+            if(m_ParseStringConfigs.TryGetValue(iLangName, out ParseStringConfig config))
+            {
+                iStr = config.Parse(iStr);
+            }
             int len = iStr.Length;
             if (len < 2 || iStr[0] != '"' || iStr[len - 1] != '"')
             {
@@ -810,7 +830,7 @@ namespace UCL.Core
                             string key = aCSV.GetData(j, 0);
                             if (!string.IsNullOrEmpty(key))
                             {
-                                var val = ParseString(aCSV.GetData(j, i));
+                                var val = ParseString(aLangName, aCSV.GetData(j, i));
                                 var dic = m_LocalizeDatas[aLangName].m_LocalizeDic;
                                 dic[key] = val;
                             }
@@ -823,7 +843,7 @@ namespace UCL.Core
                             string key = aCSV.GetData(j, 0);
                             if (!string.IsNullOrEmpty(key))
                             {
-                                var val = ParseString(aCSV.GetData(j, i));
+                                var val = ParseString(aLangName, aCSV.GetData(j, i));
                                 var dic = m_LocalizeDatas[aLangName].m_LocalizeDic;
                                 if (dic.ContainsKey(key))
                                 {

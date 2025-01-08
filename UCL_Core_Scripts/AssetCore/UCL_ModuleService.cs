@@ -27,7 +27,11 @@ namespace UCL.Core
     public class UCL_ModuleService//: UCLI_FieldOnGUI
     {
         private const string CurStateKey = "UCL_ModuleService.CurState";
-
+        public static State CurState
+        {
+            get => UCL_PlayerPrefs.GetEnum(CurStateKey, State.Main);
+            set => UCL_PlayerPrefs.SetEnum(CurStateKey, value);//紀錄當前頁面狀態
+        }
         public enum State
         {
             /// <summary>
@@ -186,7 +190,7 @@ namespace UCL.Core
 
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
         {
-            public State m_State = State.Main;
+            //public State m_State = State.Main;
             //public string m_CurrentEditModule = string.Empty;
 
             /// <summary>
@@ -1098,15 +1102,16 @@ namespace UCL.Core
         
         virtual public void ResumeState()
         {
-            var aStateStr = PlayerPrefs.GetString(CurStateKey, string.Empty);
-            if (string.IsNullOrEmpty(aStateStr))
-            {
-                return;
-            }
-            if(Enum.TryParse(typeof(State), aStateStr, out var aState))
+
+            //var aStateStr = PlayerPrefs.GetString(CurStateKey, string.Empty);
+            //if (string.IsNullOrEmpty(aStateStr))
+            //{
+            //    return;
+            //}
+            //if(Enum.TryParse(typeof(State), aStateStr, out var aState))
             {
                 //Debug.LogError($"ResumeState aState:{aState}");
-                switch (aState)
+                switch (CurState)
                 {
                     case State.EditModule:
                         {
@@ -1135,8 +1140,10 @@ namespace UCL.Core
         virtual public void SetState(State iState)
         {
             //Debug.LogError($"SetState:{iState}");
-            PlayerPrefs.SetString(CurStateKey, $"{iState}");//紀錄當前頁面狀態
-            m_Config.m_State = iState;
+            
+            CurState = iState;
+            //PlayerPrefs.SetString(CurStateKey, $"{iState}");//紀錄當前頁面狀態
+            //m_Config.m_State = iState;
             switch (iState) 
             {
                 case State.Main:

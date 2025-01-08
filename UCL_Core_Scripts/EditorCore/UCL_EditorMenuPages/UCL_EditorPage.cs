@@ -75,8 +75,15 @@ namespace UCL.Core.EditorLib.Page
                         aAction = 2;
                     }
                 }
-
-                TopBarButtons();
+                try
+                {
+                    TopBarButtons();
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
+                
                 GUILayout.FlexibleSpace();
             }
             switch (aAction)
@@ -108,13 +115,25 @@ namespace UCL.Core.EditorLib.Page
         public override void OnGUI()
         {
             GUILayout.BeginVertical();
+            try
             {
                 TopBar();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
             }
             using (var aScope = new GUILayout.ScrollViewScope(m_GUIScrollPos2))
             {
                 m_GUIScrollPos2 = aScope.scrollPosition;
-                ContentOnGUI();
+                try
+                {
+                    ContentOnGUI();
+                }
+                catch(System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
             GUILayout.EndVertical();
         }

@@ -19,9 +19,7 @@ namespace UCL.Core.Game {
             get
             {
                 if (Ins != null) return Ins.m_CurLang;
-                string aCurLang = PlayerPrefs.GetString(CurLangKey);
-                if (string.IsNullOrEmpty(aCurLang)) aCurLang = DefaultLangKey;
-                return aCurLang;
+                return PlayerPrefs.GetString(CurLangKey, DefaultLangKey);
             }
             set
             {

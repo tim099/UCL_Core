@@ -9,9 +9,16 @@ namespace UCL.Core.LocalizeLib
     public class LocalizeData
     {
         protected Dictionary<string, string> m_Dic = new Dictionary<string, string>();
+
+
+        public LocalizeData()
+        {
+
+        }
         public LocalizeData(string data) {
             ParseData(data);
         }
+
         virtual public Dictionary<string, string> GetDic() {
             return m_Dic;
         }

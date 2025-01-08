@@ -75,18 +75,15 @@ namespace UCL.Core.LocalizeLib
                 {
                     Debug.LogException(e);
                 }
+                LoadLanguageData(aLangData);
             }
             else
             {
-                aLangData = ResourceLoadLanguage(iDir, iLanguage);
+                m_LocalizeData = new LocalizeData();
             }
-            LoadLanguageData(aLangData);
+            
         }
-        /// <summary>
-        /// Load LanguageData from resource files
-        /// </summary>
-        /// <param name="iDir">the directory contains language files</param>
-        /// <param name="iLanguage">the language name</param>
+        [System.Obsolete]
         string ResourceLoadLanguage(string iDir, string iLanguage)
         {
             string aPath = LangName;
@@ -94,10 +91,7 @@ namespace UCL.Core.LocalizeLib
             aPath = Path.Combine(aPath, "Lang");
             return ResourceLoadLanguage(aPath);
         }
-        /// <summary>
-        /// Load LanguageData from resource files
-        /// </summary>
-        /// <param name="iPath">the language file path</param>
+        [System.Obsolete]
         string ResourceLoadLanguage(string iPath)
         {
             TextAsset aTexts = Resources.Load(iPath) as TextAsset;

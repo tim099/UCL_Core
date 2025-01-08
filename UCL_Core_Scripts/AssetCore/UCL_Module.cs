@@ -736,7 +736,7 @@ namespace UCL.Core
             {
                 using (var aScope = new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Asset Group", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(UCL_LocalizeManager.Get("Asset Group"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     var groups = UCL_ModuleService.Ins.GetAssetGroups();//UCLI_Asset.GetAssetGroups();
 
                     var localizedGroups = UCLI_Asset.GetLocalizedAssetGroups();

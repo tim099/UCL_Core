@@ -24,6 +24,7 @@ namespace UCL.Core
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     public class UCL_LocalizeAsset : UCL_Asset<UCL_LocalizeAsset>
     {
+        #region static
         public static UCL_LocalizeAsset Default
         {
             get
@@ -37,6 +38,44 @@ namespace UCL.Core
                 return null;
             }
         }
+        public static void ClearLocalizeCache()
+        {
+            s_LocalizeDics = null;
+        }
+        public static Dictionary<string, string> GetLocalizeDic(string lang)
+        {
+            if(s_LocalizeDics == null)
+            {
+                if (!UCL_ModuleService.Initialized) return null;
+                UCL_ModuleService.OnLoadModule += ClearLocalizeCache;//Clear Cache OnLoadModule
+                s_LocalizeDics = new();
+            }
+
+            if (!s_LocalizeDics.ContainsKey(lang))
+            {
+                var dic = new Dictionary<string, string>();
+                
+                var util = UCL_LocalizeAsset.Util;
+                var ids = util.GetAllIDs();
+                var datas = ids.Select(id => util.GetData(id)).OrderBy(data => data.m_LoadOrder);//按照LoadOrder讀取
+                foreach (var data in datas)
+                {
+                    if (data.m_LocalizeDatas.TryGetValue(lang, out var result))
+                    {
+                        var localizeDic = result.m_LocalizeDic;
+                        foreach (var key in localizeDic.Keys)
+                        {
+                            dic[key] = localizeDic[key];
+                        }
+                    }
+                }
+                s_LocalizeDics[lang] = dic;
+            }
+
+            return s_LocalizeDics[lang];
+        }
+        private static Dictionary<string, Dictionary<string, string>> s_LocalizeDics = null;
+        #endregion
 
         public class GoogleSheetConfig
         {
@@ -171,6 +210,12 @@ namespace UCL.Core
         }
         public LocalizeType m_LocalizeType = LocalizeType.Default;
 
+        /// <summary>
+        /// 載入優先順序(值越小越先載入)
+        /// 當多個語言表有同個Key時
+        /// 後載入的會覆蓋先載入的
+        /// </summary>
+        public int m_LoadOrder = 0;
 
         [UCL.Core.PA.Conditional(nameof(m_SaveToModResources), false, false)]
         public Dictionary<string, LocalizeData> m_LocalizeDatas = new();
@@ -229,6 +274,8 @@ namespace UCL.Core
         }
         public override JsonData Save()
         {
+            ClearLocalizeCache();
+
             foreach (var key in m_LocalizeDatas.Keys)
             {
                 m_LangKeys.Add(key);//紀錄LangKey

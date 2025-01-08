@@ -136,16 +136,24 @@ namespace UCL.Core.LocalizeLib
 
             OnGet?.Invoke(iKey);
 
-            var asset = UCL_LocalizeAsset.Default;
-            if (asset != null)
+            var dic = UCL_LocalizeAsset.GetLocalizeDic(s_LangName);
+            if(dic != null)
             {
-                var result = asset.GetLocalize(s_LangName, iKey);
-                if (result.success)
+                if (dic.TryGetValue(iKey, out var result))
                 {
-                    //Debug.LogError($"Get:{iKey},result.value:{result.value}");
-                    return result.value;
+                    return result;
                 }
             }
+            //var asset = UCL_LocalizeAsset.Default;
+            //if (asset != null)
+            //{
+            //    var result = asset.GetLocalize(s_LangName, iKey);
+            //    if (result.success)
+            //    {
+            //        //Debug.LogError($"Get:{iKey},result.value:{result.value}");
+            //        return result.value;
+            //    }
+            //}
 
 
             if (s_Instance == null)
@@ -184,14 +192,24 @@ namespace UCL.Core.LocalizeLib
         /// <returns></returns>
         static public bool ContainsKey(string iKey)
         {
-            var asset = UCL_LocalizeAsset.Default;
-            if (asset != null)
+            //var asset = UCL_LocalizeAsset.Default;
+            //if (asset != null)
+            //{
+            //    if (asset.ContainsKey(s_LangName, iKey))
+            //    {
+            //        return true;
+            //    }
+            //}
+            var dic = UCL_LocalizeAsset.GetLocalizeDic(s_LangName);
+            if (dic != null)
             {
-                if (asset.ContainsKey(s_LangName, iKey))
+                if (dic.ContainsKey(iKey))
                 {
                     return true;
                 }
             }
+
+
             var aIns = s_Instance;
             if (aIns == null) return false;
             if (aIns.m_LocalizeData == null)

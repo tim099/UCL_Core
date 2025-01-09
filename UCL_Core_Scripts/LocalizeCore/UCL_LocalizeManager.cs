@@ -80,6 +80,14 @@ namespace UCL.Core.LocalizeLib
             else
             {
                 m_LocalizeData = new LocalizeData();
+                try
+                {
+                    OnLanguageChanged.Invoke();
+                }
+                catch (System.Exception iE)
+                {
+                    Debug.LogException(iE);
+                }
             }
             
         }

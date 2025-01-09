@@ -154,7 +154,7 @@ namespace UCL.Core.Page
             System.Action<string> iEditAct, System.Action<string> iPreviewAct, System.Action<string> iDeleteAct,
             UCL_AssetCommonMeta iMeta = null)
         {
-            float scale = UCL_GUIStyle.CurStyleData.Scale;
+            float scale = UCL_GUIStyle.StyleData.Scale;
             int aVerticalScopeWidth = Mathf.RoundToInt(scale * 380);
             int buttonWidth = Mathf.RoundToInt(60 * scale);
             int EditGroupWidth = Mathf.RoundToInt(scale * 180);

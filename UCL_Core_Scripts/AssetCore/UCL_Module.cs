@@ -162,22 +162,21 @@ namespace UCL.Core
             /// <summary>
             /// 用在SteamWorkshop的檔案類型
             /// </summary>
-            public WorkshopFileType m_WorkshopFileType = WorkshopFileType.k_EWorkshopFileTypeCommunity;
+            //public WorkshopFileType m_WorkshopFileType = WorkshopFileType.k_EWorkshopFileTypeCommunity;
 
             /// <summary>
             /// 模組語言(Steam)
             /// </summary>
-            public SteamAPILangCode m_SteamAPILangCode = SteamAPILangCode.english;
-
-
+            //public SteamAPILangCode m_SteamAPILangCode = SteamAPILangCode.english;
 
             /// <summary>
             /// 模組標籤
             /// </summary>
-            public List<string> m_Tags = new List<string>();
+            //public List<string> m_Tags = new List<string>();
 
             /// <summary>
             /// 相依模組 載入此模組時會同時載入相依模組
+            /// (目前只有編輯時會載入相依模組)
             /// </summary>
             public List<UCL_ModuleEntry> m_DependenciesModules = new ();
 

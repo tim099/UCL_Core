@@ -84,19 +84,31 @@ namespace UCL.Core.UI
                 aChild.m_DataDic = iDataDic;
                 aChild.m_DisplayName = iDisplayName;
                 aChild.m_IsAlwaysShowDetail = iIsAlwaysShowDetail;
-                if(iFieldInfo != null)
-                {
-                    aChild.m_FieldInfo = iFieldInfo;
-                }
-                else
-                {
-                    aChild.m_FieldInfo = m_FieldInfo;
-                }
-                aChild.m_FieldName = m_FieldName;
-                
+                aChild.m_FieldInfo = iFieldInfo;
+                //if(iFieldInfo != null)
+                //{
+                //    aChild.m_FieldInfo = iFieldInfo;
+                //}
+                //else
+                //{
+                //    aChild.m_FieldInfo = m_FieldInfo;
+                //}
+                //aChild.m_FieldName = m_FieldName;
+
                 return aChild;
             }
+            public DrawObjectParams Copy()
+            {
+                var aChild = new DrawObjectParams();
+                aChild.m_DrawObjectConfigs = m_DrawObjectConfigs;//inherit config
+                aChild.m_DataDic = m_DataDic;
+                aChild.m_DisplayName = m_DisplayName;
+                aChild.m_IsAlwaysShowDetail = m_IsAlwaysShowDetail;
+                aChild.m_FieldInfo = m_FieldInfo;
+                aChild.m_FieldName = m_FieldName;
 
+                return aChild;
+            }
             public string FieldName
             {
                 get
@@ -158,7 +170,7 @@ namespace UCL.Core.UI
             if (iTarget != null)
             {
                 aType = iTarget.GetType();
-
+                //GUILayout.Label($"FieldName:{iDrawObjectParams.FieldName}", UCL_GUIStyle.LabelStyle);
                 if (s_DrawObjectDic == null)
                 {
                     s_DrawObjectDic = new Dictionary<Type, Func<object, DrawObjectParams, object>>();
@@ -311,7 +323,7 @@ namespace UCL.Core.UI
                                 {
                                     GUILayout.BeginHorizontal();
                                     aIsShowField = UCL_GUILayout.Toggle(aDataDic, IsShowFieldKey);
-                                    GUILayout.Label("Transform", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                    GUILayout.Label(nameof(Transform), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                                     GUILayout.EndHorizontal();
 
                                     if (aIsShowField)
@@ -448,8 +460,11 @@ namespace UCL.Core.UI
         public static object DrawField(object iObj, DrawObjectParams iParams)
         {
             if (iObj == null) return null;
-
-
+            //GUILayout.Label($"DrawField:{iParams.FieldName}", UCL_GUIStyle.LabelStyle);
+            //if (GUILayout.Button("Log", UCL_GUIStyle.ButtonStyle))
+            //{
+            //    Debug.LogError($"DrawField FieldName:{iParams.FieldName}");
+            //}
             var iFieldNameFunc = iParams.m_DrawObjectConfigs.m_FieldNameFunc;
             var iFieldType = iParams.m_FieldType;
             var iIsAlwaysShowDetail = iParams.m_IsAlwaysShowDetail;

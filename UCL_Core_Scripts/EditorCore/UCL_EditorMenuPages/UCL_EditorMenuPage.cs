@@ -26,32 +26,7 @@ namespace UCL.Core.EditorLib.Page
                 using (var aScopeH = new GUILayout.HorizontalScope("box"))
                 {
                     var aStyleData = UCL_GUIStyle.CurStyleData;
-                    float aScale = aStyleData.Scale;
-                    if (aScale < 0.1f)
-                    {
-                        aScale = 0.1f;
-                    }
-                    int aSize = Mathf.RoundToInt(30f / aScale);
-                    var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, aSize);
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Small"), aButtonStyle))
-                    {
-                        aStyleData.SetScale(1f);
-                    }
-                    GUILayout.Space(30);
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Medium"), aButtonStyle))
-                    {
-                        aStyleData.SetScale(1.5f);
-                    }
-                    GUILayout.Space(30);
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("Big"), aButtonStyle))
-                    {
-                        aStyleData.SetScale(2.5f);
-                    }
-                    GUILayout.Space(30);
-                    if (GUILayout.Button(UCL_LocalizeManager.Get("XL"), aButtonStyle))
-                    {
-                        aStyleData.SetScale(4f);
-                    }
+                    UCL_GUIStyle.SetSizeOnGUI();
                 }
 
 

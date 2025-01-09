@@ -294,7 +294,7 @@ namespace UCL.Core
         {
             return $"{ID}({GetShortName()})";
         }
-        [UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] 
+        //[UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] 
         [UCL.Core.ATTR.UCL_HideOnGUI]
         public string m_ID = "Default";
 
@@ -325,7 +325,8 @@ namespace UCL.Core
             //{
             //    GUILayout.Label($"iFieldName:{iFieldName},DisplayName:{iParams.m_DisplayName},FieldInfo:{iParams.m_FieldInfo.AllFieldToString()}", UCL_GUIStyle.LabelStyle);
             //}
-            var aParams = iParams.CreateChild(iDataDic.GetSubDic("Data"), iFieldName, null, false);
+            var aParams = iParams.Copy();
+            aParams.m_DataDic = iDataDic.GetSubDic("Data");
             aParams.m_DrawObjExSetting = aSetting;
             //var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic.GetSubDic("Data"), iFieldName, false, iDrawObjExSetting: aSetting);
             UCL_GUILayout.DrawField(this, aParams);

@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using UCL.Core.UI;
 using UnityEngine;
 
@@ -75,6 +77,7 @@ namespace UCL.Core.ServiceLib
             [UCL.Core.ATTR.UCL_HideOnGUI]
             public LogType m_Type = LogType.Log;
         }
+        public static List<LogData> Logs => s_Logs;
 
         private static bool s_Inited = false;
         private static List<LogData> s_Logs = null;
@@ -90,6 +93,26 @@ namespace UCL.Core.ServiceLib
                 s_LogTypeFilter[aLogType] = true;
             }
             Application.logMessageReceivedThreaded += ThreadedLog;
+        }
+        public static void WriteToFile(string path, params LogType[] logLevel)
+        {
+            IEnumerable<LogData> logs = s_Logs;
+            if (logLevel != null)
+            {
+                HashSet<LogType> logTypes = new HashSet<LogType>(logLevel);
+                logs = logs.Where(log => logTypes.Contains(log.m_Type));
+            }
+            using (StreamWriter writer = new StreamWriter(path))
+            {
+                foreach (var log in logs)
+                {
+                    //writer.WriteLine($"[{log.m_LogTime.ToString("HH:mm:ss.ff")}]{log.m_Title}");
+                    writer.WriteLine(log.m_Title);
+                    writer.WriteLine(log.m_Message);
+                    writer.WriteLine(log.m_StackTrace);
+                }
+            }
+
         }
         public static void TopBarButtons(UCL.Core.UCL_ObjectDictionary iDataDic)
         {

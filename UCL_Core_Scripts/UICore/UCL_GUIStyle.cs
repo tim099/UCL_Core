@@ -5,6 +5,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using UCL.Core.LocalizeLib;
 using UnityEngine;
 
 namespace UCL.Core.UI {
@@ -17,7 +18,9 @@ namespace UCL.Core.UI {
             
             public const float ThumbStyleSize = 10;
             public const float SliderHeight = 3;
-            private float m_Scale = 1f;
+            private const string ScaleKey = "UCL_GUIStyle.Scale";
+
+
 
             private int m_FontSize = DefaultFontSize;
             private GUIStyle m_BoxStyle = null;
@@ -28,15 +31,22 @@ namespace UCL.Core.UI {
             Dictionary<System.Tuple<Color, int>, GUIStyle> m_ButtonStyleDic = null;
             Dictionary<System.Tuple<Color, int>, GUIStyle> m_LabelStyleDic = null;
 
-            public float Scale => m_Scale;
-            public void SetScale(float iScale)
+            public const float MinScale = 0.1f;
+            public static float Scale
             {
-                if(iScale == m_Scale) return;
+                get => PlayerPrefs.GetFloat(ScaleKey, 1f);
+                private set => PlayerPrefs.SetFloat(ScaleKey, value);
+            }
 
-                m_Scale = iScale;
-
-                m_FontSize = Mathf.RoundToInt(m_Scale * DefaultFontSize);
-                if (m_BoxStyle != null) {
+            public StyleData()
+            {
+                ApplyScale();
+            }
+            public void ApplyScale()
+            {
+                m_FontSize = Mathf.RoundToInt(Scale * DefaultFontSize);
+                if (m_BoxStyle != null)
+                {
                     m_BoxStyle.fontSize = m_FontSize;
                 }
                 if (m_TextFieldStyle != null)
@@ -50,32 +60,40 @@ namespace UCL.Core.UI {
 
                 if (m_HorizontalSliderThumbStyle != null)
                 {
-                    m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
-                    m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                    m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(Scale * ThumbStyleSize);
+                    m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(Scale * ThumbStyleSize);
                 }
 
-                if(m_HorizontalSliderStyle != null)
+                if (m_HorizontalSliderStyle != null)
                 {
-                    m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
+                    m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(Scale * SliderHeight);
                 }
 
-                if(m_ButtonStyleDic != null)
+                if (m_ButtonStyleDic != null)
                 {
                     foreach (var aKey in m_ButtonStyleDic.Keys)
                     {
                         var aStyle = m_ButtonStyleDic[aKey];
-                        aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                        aStyle.fontSize = Mathf.RoundToInt(Scale * aKey.Item2);
                     }
                 }
-                if(m_LabelStyleDic != null)
+                if (m_LabelStyleDic != null)
                 {
                     foreach (var aKey in m_LabelStyleDic.Keys)
                     {
                         var aStyle = m_LabelStyleDic[aKey];
-                        aStyle.fontSize = Mathf.RoundToInt(m_Scale * aKey.Item2);
+                        aStyle.fontSize = Mathf.RoundToInt(Scale * aKey.Item2);
                     }
                 }
 
+            }
+            public void SetScale(float iScale)
+            {
+                if(iScale == Scale) return;
+                iScale = Mathf.Max(iScale, MinScale);//Scale must >= MinScale
+
+                Scale = iScale;
+                ApplyScale();
             }
             /// <summary>
             /// GUIStyle for GUILayout.Box
@@ -122,7 +140,7 @@ namespace UCL.Core.UI {
                     aButtonStyle.normal.textColor = iCol;
                     aButtonStyle.active.textColor = iCol;
                     aButtonStyle.hover.textColor = iCol;
-                    aButtonStyle.fontSize = Mathf.RoundToInt(iFontSize * m_Scale);
+                    aButtonStyle.fontSize = Mathf.RoundToInt(iFontSize * Scale);
                     aButtonStyle.richText = true;
                     //Debug.LogError("aText.fontSize:" + aText.fontSize); 12
                     m_ButtonStyleDic.Add(aKey, aButtonStyle);
@@ -148,7 +166,7 @@ namespace UCL.Core.UI {
                     aText.normal.textColor = iTextCol;
                     aText.active.textColor = iTextCol;
                     aText.hover.textColor = iTextCol;
-                    aText.fontSize = Mathf.RoundToInt(m_Scale * iSize);
+                    aText.fontSize = Mathf.RoundToInt(Scale * iSize);
                     aText.richText = true;
                     //aText.fontSize = m_FontSize;
                     m_LabelStyleDic.Add(aKey, aText);
@@ -164,7 +182,7 @@ namespace UCL.Core.UI {
                     if (m_HorizontalSliderStyle == null)
                     {
                         m_HorizontalSliderStyle = new GUIStyle(GUI.skin.horizontalSlider);
-                        m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(m_Scale * SliderHeight);
+                        m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(Scale * SliderHeight);
                         //m_HorizontalSliderStyle.alignment = TextAnchor.MiddleCenter;
                     }
                     return m_HorizontalSliderStyle;
@@ -177,8 +195,8 @@ namespace UCL.Core.UI {
                     if (m_HorizontalSliderThumbStyle == null)
                     {
                         m_HorizontalSliderThumbStyle = new GUIStyle(GUI.skin.horizontalSliderThumb);
-                        m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
-                        m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(m_Scale * ThumbStyleSize);
+                        m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(Scale * ThumbStyleSize);
+                        m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(Scale * ThumbStyleSize);
                     }
                     return m_HorizontalSliderThumbStyle;
                 }
@@ -221,8 +239,7 @@ namespace UCL.Core.UI {
         static StyleData s_EditorWindowData = null;
         static StyleData Data => s_Data == null? s_Data = new StyleData() : s_Data;
         static StyleData EditorWindowData => s_EditorWindowData == null ? s_EditorWindowData = new StyleData() : s_EditorWindowData;
-        public static int GetScaledSize(float iSize) => Mathf.RoundToInt(iSize * CurStyleData.Scale);
-        public static float CurScale => CurStyleData.Scale;
+        public static int GetScaledSize(float iSize) => Mathf.RoundToInt(iSize * StyleData.Scale);
         public static StyleData CurStyleData => IsInEditorWindow ? EditorWindowData : Data;
         /// <summary>
         /// GUIStyle for GUILayout.Box
@@ -244,6 +261,38 @@ namespace UCL.Core.UI {
         #endregion
 
         #region GUI
+
+        public static void SetSizeOnGUI()
+        {
+            using (var aScopeH = new GUILayout.HorizontalScope("box"))
+            {
+                var aStyleData = UCL_GUIStyle.CurStyleData;
+                float aScale = UCL_GUIStyle.StyleData.Scale;
+                aScale = Mathf.Max(aScale, StyleData.MinScale);
+                int aSize = Mathf.RoundToInt(30f / aScale);
+                var aButtonStyle = UCL_GUIStyle.GetButtonStyle(Color.white, aSize);
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Small"), aButtonStyle))
+                {
+                    aStyleData.SetScale(1f);
+                }
+                GUILayout.Space(30);
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Medium"), aButtonStyle))
+                {
+                    aStyleData.SetScale(1.5f);
+                }
+                GUILayout.Space(30);
+                if (GUILayout.Button(UCL_LocalizeManager.Get("Big"), aButtonStyle))
+                {
+                    aStyleData.SetScale(2.5f);
+                }
+                GUILayout.Space(30);
+                if (GUILayout.Button(UCL_LocalizeManager.Get("XL"), aButtonStyle))
+                {
+                    aStyleData.SetScale(4f);
+                }
+            }
+        }
+
         static Stack<Color> s_ColorStack = new Stack<Color>();
         public static void PushGUIColor(Color iCol)
         {

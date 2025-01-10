@@ -40,7 +40,7 @@ namespace UCL.Core
         }
         public static void ClearLocalizeCache()
         {
-            s_LocalizeDics = null;
+            s_LocalizeDics.Clear();
         }
         public static Dictionary<string, string> GetLocalizeDic(string lang)
         {
@@ -60,7 +60,8 @@ namespace UCL.Core
                 var datas = ids.Select(id => util.GetData(id)).OrderBy(data => data.m_LoadOrder);//按照LoadOrder讀取
                 foreach (var data in datas)
                 {
-                    if (data.m_LocalizeDatas.TryGetValue(lang, out var result))
+                    var result = data.GetLocalizeData(lang);
+                    if (result != null)
                     {
                         var localizeDic = result.m_LocalizeDic;
                         foreach (var key in localizeDic.Keys)
@@ -271,6 +272,29 @@ namespace UCL.Core
         public string GetSavePath(string langKey)
         {
             return Path.Combine(FolderPath, $"{langKey}.txt");
+        }
+        /// <summary>
+        /// Get LocalizeData of target language
+        /// </summary>
+        /// <param name="language">language</param>
+        /// <returns></returns>
+        public LocalizeData GetLocalizeData(string language)
+        {
+            if (m_LocalizeDatas.IsNullOrEmpty()) return null;
+
+            {
+                if (m_LocalizeDatas.TryGetValue(language, out var result))
+                {
+                    return result;
+                }
+            }
+            {//return DefaultLang
+                if (m_LocalizeDatas.TryGetValue(m_DefaultLang.ID, out var result))
+                {
+                    return result;
+                }
+            }
+            return m_LocalizeDatas.Values.FirstOrDefault();
         }
         public override JsonData Save()
         {

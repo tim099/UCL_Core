@@ -35,7 +35,11 @@ namespace UCL.Core.UI {
             public static float Scale
             {
                 get => PlayerPrefs.GetFloat(ScaleKey, 1f);
-                private set => PlayerPrefs.SetFloat(ScaleKey, value);
+                private set 
+                {
+                    //Debug.LogError($"Scale:{value}");
+                    PlayerPrefs.SetFloat(ScaleKey, value);
+                }
             }
 
             public StyleData()
@@ -44,7 +48,9 @@ namespace UCL.Core.UI {
             }
             public void ApplyScale()
             {
-                m_FontSize = Mathf.RoundToInt(Scale * DefaultFontSize);
+                var scale = Scale;
+                //Debug.LogError($"ApplyScale Scale:{scale}");
+                m_FontSize = Mathf.RoundToInt(scale * DefaultFontSize);
                 if (m_BoxStyle != null)
                 {
                     m_BoxStyle.fontSize = m_FontSize;
@@ -60,13 +66,13 @@ namespace UCL.Core.UI {
 
                 if (m_HorizontalSliderThumbStyle != null)
                 {
-                    m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(Scale * ThumbStyleSize);
-                    m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(Scale * ThumbStyleSize);
+                    m_HorizontalSliderThumbStyle.fixedWidth = Mathf.RoundToInt(scale * ThumbStyleSize);
+                    m_HorizontalSliderThumbStyle.fixedHeight = Mathf.RoundToInt(scale * ThumbStyleSize);
                 }
 
                 if (m_HorizontalSliderStyle != null)
                 {
-                    m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(Scale * SliderHeight);
+                    m_HorizontalSliderStyle.fixedHeight = Mathf.RoundToInt(scale * SliderHeight);
                 }
 
                 if (m_ButtonStyleDic != null)
@@ -74,7 +80,7 @@ namespace UCL.Core.UI {
                     foreach (var aKey in m_ButtonStyleDic.Keys)
                     {
                         var aStyle = m_ButtonStyleDic[aKey];
-                        aStyle.fontSize = Mathf.RoundToInt(Scale * aKey.Item2);
+                        aStyle.fontSize = Mathf.RoundToInt(scale * aKey.Item2);
                     }
                 }
                 if (m_LabelStyleDic != null)
@@ -82,7 +88,7 @@ namespace UCL.Core.UI {
                     foreach (var aKey in m_LabelStyleDic.Keys)
                     {
                         var aStyle = m_LabelStyleDic[aKey];
-                        aStyle.fontSize = Mathf.RoundToInt(Scale * aKey.Item2);
+                        aStyle.fontSize = Mathf.RoundToInt(scale * aKey.Item2);
                     }
                 }
 

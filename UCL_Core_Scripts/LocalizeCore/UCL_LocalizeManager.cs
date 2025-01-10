@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -39,6 +40,7 @@ namespace UCL.Core.LocalizeLib
         /// Assign function to customize your loading flow,
         /// pass in Dir, Language, and return LanguageData
         /// </summary>
+        [Obsolete]
         public static System.Func<string, string, string> m_LoadLanguageFunc = null;
 
         static public event System.Action OnLanguageChanged = delegate () { };
@@ -64,9 +66,9 @@ namespace UCL.Core.LocalizeLib
         {
             LangDir = iDir;
             s_LangName = LangName = iLanguage;
-            string aLangData = string.Empty;
             if (m_LoadLanguageFunc != null)
             {
+                string aLangData = string.Empty;
                 try
                 {
                     aLangData = m_LoadLanguageFunc.Invoke(iDir, iLanguage);
@@ -90,27 +92,6 @@ namespace UCL.Core.LocalizeLib
                 }
             }
             
-        }
-        [System.Obsolete]
-        string ResourceLoadLanguage(string iDir, string iLanguage)
-        {
-            string aPath = LangName;
-            if (!string.IsNullOrEmpty(iDir)) aPath = Path.Combine(iDir, iLanguage);
-            aPath = Path.Combine(aPath, "Lang");
-            return ResourceLoadLanguage(aPath);
-        }
-        [System.Obsolete]
-        string ResourceLoadLanguage(string iPath)
-        {
-            TextAsset aTexts = Resources.Load(iPath) as TextAsset;
-            if (aTexts == null)
-            {
-                Debug.LogError("UCL_LocalizeManager ResourceLoadLanguage path:" + iPath + ",not exist!!");
-                return string.Empty;
-            }
-            Debug.Log("ResourceLoadLanguage:" + iPath);
-            return aTexts.ToString();
-            //LoadLanguageData(texts.ToString());
         }
         /// <summary>
         /// Load language from LanguageData(Data format "Key":"Value")
@@ -146,17 +127,6 @@ namespace UCL.Core.LocalizeLib
                     return result;
                 }
             }
-            //var asset = UCL_LocalizeAsset.Default;
-            //if (asset != null)
-            //{
-            //    var result = asset.GetLocalize(s_LangName, iKey);
-            //    if (result.success)
-            //    {
-            //        //Debug.LogError($"Get:{iKey},result.value:{result.value}");
-            //        return result.value;
-            //    }
-            //}
-
 
             if (s_Instance == null)
             {
@@ -194,14 +164,6 @@ namespace UCL.Core.LocalizeLib
         /// <returns></returns>
         static public bool ContainsKey(string iKey)
         {
-            //var asset = UCL_LocalizeAsset.Default;
-            //if (asset != null)
-            //{
-            //    if (asset.ContainsKey(s_LangName, iKey))
-            //    {
-            //        return true;
-            //    }
-            //}
             var dic = UCL_LocalizeAsset.GetLocalizeDic(s_LangName);
             if (dic != null)
             {

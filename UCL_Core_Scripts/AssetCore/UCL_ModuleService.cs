@@ -82,24 +82,43 @@ namespace UCL.Core
         }
         private static async UniTask OnLoadedModuleAsync(CancellationToken token)
         {
-            if(s_OnLoadedModuleFunc.IsNullOrEmpty())
+            var util = UCL_OnModuleLoadedAsset.Util;
+            var ids = util.GetAllIDs();
+            if (!ids.IsNullOrEmpty())
             {
-                return;
-            }
-            List<UniTask> tasks = new();
-            foreach(var func in s_OnLoadedModuleFunc)
-            {
-                if (func != null)
+                var onModuleLoadedAssets = ids.Select(id => util.GetData(id)).OrderBy(data => data.m_Order);
+                foreach (var asset in onModuleLoadedAssets)
                 {
-                    tasks.Add(func.Invoke(token));
-                    //await func.Invoke(token);
+                    try
+                    {
+                        await asset.OnModuleLoaded(token);
+                    }
+                    catch (System.OperationCanceledException) { }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogException(e);
+                        Debug.LogError($"OnModuleLoaded asset:{asset.ID}, Exception:{e}");
+                    }
                 }
             }
-            if(tasks.IsNullOrEmpty())
+
+
+            if(!s_OnLoadedModuleFunc.IsNullOrEmpty())
             {
-                return;
+                List<UniTask> tasks = new();
+                foreach (var func in s_OnLoadedModuleFunc)
+                {
+                    if (func != null)
+                    {
+                        tasks.Add(func.Invoke(token));
+                        //await func.Invoke(token);
+                    }
+                }
+                if (!tasks.IsNullOrEmpty())
+                {
+                    await UniTask.WhenAll(tasks);
+                }
             }
-            await UniTask.WhenAll(tasks);
         }
         /// <summary>
         /// for reflection

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UCL.Core;
 using UCL.Core.LocalizeLib;
+using UCL.Core.Page;
 using UCL.Core.UI;
 using UnityEngine;
 
@@ -228,36 +229,12 @@ namespace UCL.Core
                 return $"{aInfo.NativeName}";
             }
         }
-        System.Globalization.CultureInfo CultureInfo
-        {
-            get
-            {
-                if (!s_CultureInfoDic.ContainsKey(ID))
-                {
-                    System.Globalization.CultureInfo aInfo = null;
-                    try
-                    {
-                        aInfo = new System.Globalization.CultureInfo(ID);
-                    }
-                    catch (System.Globalization.CultureNotFoundException e)
-                    {
-                        Debug.LogWarning(e);
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogException(e);
-                    }
+        private System.Globalization.CultureInfo CultureInfo => UCL_CultureInfoUtil.GetCultureInfo(ID);
 
-                    s_CultureInfoDic[ID] = aInfo;
-                }
-                return s_CultureInfoDic[ID];
-            }
-        }
         public string m_LanguageName = "";
 
         public List<SystemLanguage> m_SupportedLanguages = new List<SystemLanguage>();
 
-        public static Dictionary<string, System.Globalization.CultureInfo> s_CultureInfoDic = new Dictionary<string, System.Globalization.CultureInfo>();
 
         /// <summary>
         /// 在選擇語言UI標註 翻譯完整度
@@ -288,6 +265,10 @@ namespace UCL.Core
         {
             UCL.Core.Game.UCL_LocalizeService.SetLanguage(ID);
         }
+        public override UCL_SelectAssetPage<UCL_LanguageCodeAsset> CreateSelectAssetPage()
+        {
+            return UCL_LanguageCodeAssetEditorPage.Create();
+        }
     }
 
     [System.Serializable]
@@ -300,4 +281,47 @@ namespace UCL.Core
 
     }
 
+    public static class UCL_CultureInfoUtil
+    {
+        public static System.Globalization.CultureInfo GetCultureInfo(string id)
+        {
+            if (!s_CultureInfoDic.ContainsKey(id))
+            {
+                System.Globalization.CultureInfo aInfo = null;
+                try
+                {
+                    aInfo = new System.Globalization.CultureInfo(id);
+                }
+                catch (System.Globalization.CultureNotFoundException e)
+                {
+                    Debug.LogWarning(e);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
+
+                s_CultureInfoDic[id] = aInfo;
+            }
+            return s_CultureInfoDic[id];
+        }
+        private static Dictionary<string, System.Globalization.CultureInfo> s_CultureInfoDic = new Dictionary<string, System.Globalization.CultureInfo>();
+
+    }
+    public class UCL_LanguageCodeAssetEditorPage : UCL_SelectAssetPage<UCL_LanguageCodeAsset>
+    {
+        static new public UCL_LanguageCodeAssetEditorPage Create()
+        {
+            var aPage = new UCL_LanguageCodeAssetEditorPage();
+            UCL_GUIPageController.CurrentRenderIns.Push(aPage);
+
+            return aPage;
+        }
+        public override string WindowName => $"{GetType().Name}";
+        protected override string GetAssetName(string id)
+        {
+            return UCL_LocalizeManager.GetLanguageCodeID(id);
+        }
+
+    }
 }

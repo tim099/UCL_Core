@@ -956,6 +956,11 @@ namespace UCL.Core
                         UCL_CommonEditPage.Create(this);
                     }
                 }
+
+                foreach(var key in m_LocalizeDatas.Keys)
+                {
+                    GUILayout.Label($"{UCL_LocalizeManager.GetLanguageCodeName(key)}({key})", UCL_GUIStyle.LabelStyle);
+                }
             }
             //GUILayout.EndHorizontal();
         }

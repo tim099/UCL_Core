@@ -139,6 +139,10 @@ namespace UCL.Core.Page
             //    System.Diagnostics.Process.Start("explorer.exe", @"c:\teste");
             //}
         }
+        virtual protected string GetAssetName(string id)
+        {
+            return UCL_LocalizeManager.GetID(id);
+        }
         /// <summary>
         /// 繪製選取編輯目標的列表(目前 裝備 道具都用這個繪製)
         /// </summary>
@@ -148,7 +152,7 @@ namespace UCL.Core.Page
         /// <param name="iPreviewAct">點下預覽時呼叫</param>
         /// <param name="iDeleteAct">點下刪除時呼叫</param>
         /// <param name="iFontSize"></param>
-        static public void DrawSelectTargetList(
+        virtual protected void DrawSelectTargetList(
             UCLI_Asset iUtil,
             IList<string> iIDs, UCL.Core.UCL_ObjectDictionary iDic,
             System.Action<string> iEditAct, System.Action<string> iPreviewAct, System.Action<string> iDeleteAct,
@@ -364,12 +368,12 @@ namespace UCL.Core.Page
                         GUILayout.BeginHorizontal();
                         using (var aScope2 = new GUILayout.HorizontalScope("box", heightStyle))
                         {
-                            string aDisplayName = UCL_LocalizeManager.GetID(aID);
+                            string assetName = GetAssetName(aID);
                             
 
                             if (aRegex != null)//標記符合搜尋條件的部分
                             {
-                                aDisplayName = aRegex.HightLight(aDisplayName, aSearchName, Color.red);
+                                assetName = aRegex.HightLight(assetName, aSearchName, Color.red);
                             }
                             
                             if (showDeleteButton)
@@ -382,7 +386,7 @@ namespace UCL.Core.Page
                             }
 
 
-                            GUILayout.Box(aDisplayName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, heightStyle, GUILayout.Width(210 * scale));
+                            GUILayout.Box(assetName, UCL.Core.UI.UCL_GUIStyle.BoxStyle, heightStyle, GUILayout.Width(210 * scale));
                             if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), 
                                 UCL_GUIStyle.GetButtonStyle(Color.white, FontSize), heightStyle, GUILayout.Width(buttonWidth)))
                             {

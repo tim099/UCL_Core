@@ -144,8 +144,29 @@ namespace UCL.Core.LocalizeLib
             }
             return s_Instance.m_LocalizeData.GetLocalize(iKey);
         }
-
-
+        static public string GetLanguageCodeName(string id)
+        {
+            if (UCL_ModuleService.Initialized)
+            {
+                var util = UCL_LanguageCodeAsset.Util;
+                if (util.ContainsAsset(id))
+                {
+                    return util.GetData(id).LanguageName;
+                }
+            }
+            var info = UCL_CultureInfoUtil.GetCultureInfo(id);
+            if(info == null)
+            {
+                return id;
+            }
+            return info.Name;
+        }
+        static public string GetLanguageCodeID(string id)
+        {
+            string name = GetLanguageCodeName(id);
+            if (name == id) return name;
+            return $"{id}({name})";
+        }
         static public string GetID(string iKey)
         {
             if (s_Instance == null) return iKey;

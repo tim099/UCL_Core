@@ -100,7 +100,7 @@ namespace UCL.Core
                 var aTexture = Texture;
                 if (aTexture != null)
                 {
-                    float size = UCL_GUIStyle.GetScaledSize(64);
+                    float size = UCL_GUIStyle.GetScaledSize(128);
                     GUILayout.Box(aTexture, GUILayout.Width(size), GUILayout.Height(size));
                 }
             }

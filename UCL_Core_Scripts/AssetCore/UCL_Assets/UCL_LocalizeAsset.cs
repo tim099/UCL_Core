@@ -634,7 +634,7 @@ namespace UCL.Core
                 }
                 else
                 {
-                    Debug.LogError("aStr:" + aStr + ",long.TryParse Fail!!");
+                    if(!string.IsNullOrEmpty(aStr)) Debug.LogError("aStr:" + aStr + ",long.TryParse Fail!!");
                 }
             }
         }

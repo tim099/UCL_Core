@@ -387,7 +387,7 @@ namespace UCL.Core.ObjectReflectionExtension {
                             }
                         }
                     }
-                    Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
+                    Debug.LogError($"InvokeFunc Fail!!FunctionName:{iFunctionName} not exist in Type:{aType.Name}");
                     return null;
                 }
                 result = aMethod.Invoke(iTarget, iParameters);

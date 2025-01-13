@@ -5,7 +5,8 @@
         "Unity.Addressables",
         "Unity.ResourceManager",
         "UniTask",
-        "UniTask.Addressables"
+        "UniTask.Addressables",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

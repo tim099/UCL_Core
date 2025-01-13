@@ -1,6 +1,10 @@
 ﻿
+using Cysharp.Threading.Tasks;
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
+using TMPro;
 using UCL.Core;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -180,7 +184,7 @@ namespace UCL.Core
         override public void Preview(UCL.Core.UCL_ObjectDictionary iDataDic, bool iIsShowEditButton = false)
         {
             GUILayout.BeginHorizontal();
-            using (var aScope = new GUILayout.VerticalScope("box", GUILayout.MinWidth(130)))
+            using (var aScope = new GUILayout.VerticalScope("box"))//, GUILayout.MinWidth(130)
             {
                 GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})[{LanguageName}]", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
                 GUILayout.Label($"SteamAPILangCode:{m_SteamAPILangCode}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
@@ -253,6 +257,15 @@ namespace UCL.Core
         /// </summary>
         public SteamAPILangCode m_SteamAPILangCode = SteamAPILangCode.english;
 
+        /// <summary>
+        /// 對應的TMP_FontAsset
+        /// </summary>
+        public UCL_TMPFontEntry m_FontAsset = new();
+        /// <summary>
+        /// 對應的TMP_Settings
+        /// </summary>
+        //public UCL_AddressableData m_TMPSettings = new();
+
         public bool CheckSupported(SystemLanguage iSystemLanguage)
         {
             foreach (var aLang in m_SupportedLanguages)
@@ -264,7 +277,24 @@ namespace UCL.Core
         public void SetLanguage()
         {
             UCL.Core.Game.UCL_LocalizeService.SetLanguage(ID);
+            if (Application.isPlaying)
+            {
+                m_FontAsset.SetFontAsset().Forget();
+            }
+            //SetTMPSettings().Forget();
+
         }
+        //protected async UniTask SetTMPSettings()
+        //{
+        //    TMPro.TMP_Settings setting = null;
+        //    if (!m_TMPSettings.IsEmpty)
+        //    {
+        //        setting = await m_TMPSettings.LoadAsync(default) as TMP_Settings;
+        //    }
+        //    UCL_TMPUtil.SetTMPSettings(setting);
+        //}
+
+
         public override UCL_SelectAssetPage<UCL_LanguageCodeAsset> CreateSelectAssetPage()
         {
             return UCL_LanguageCodeAssetEditorPage.Create();
@@ -278,6 +308,23 @@ namespace UCL.Core
         public static UCL_LanguageCodeEntry s_DefaultLang = new UCL_LanguageCodeEntry(DefaultID);
         public UCL_LanguageCodeEntry() { ID = DefaultID; }
         public UCL_LanguageCodeEntry(string iID) { ID = iID; }
+
+    }
+
+    public class UCL_LanguageCodeAssetEditorPage : UCL_SelectAssetPage<UCL_LanguageCodeAsset>
+    {
+        static new public UCL_LanguageCodeAssetEditorPage Create()
+        {
+            var aPage = new UCL_LanguageCodeAssetEditorPage();
+            UCL_GUIPageController.CurrentRenderIns.Push(aPage);
+
+            return aPage;
+        }
+        public override string WindowName => $"{GetType().Name}";
+        protected override string GetAssetName(string id)
+        {
+            return UCL_LocalizeManager.GetLanguageCodeID(id);
+        }
 
     }
 
@@ -308,20 +355,5 @@ namespace UCL.Core
         private static Dictionary<string, System.Globalization.CultureInfo> s_CultureInfoDic = new Dictionary<string, System.Globalization.CultureInfo>();
 
     }
-    public class UCL_LanguageCodeAssetEditorPage : UCL_SelectAssetPage<UCL_LanguageCodeAsset>
-    {
-        static new public UCL_LanguageCodeAssetEditorPage Create()
-        {
-            var aPage = new UCL_LanguageCodeAssetEditorPage();
-            UCL_GUIPageController.CurrentRenderIns.Push(aPage);
 
-            return aPage;
-        }
-        public override string WindowName => $"{GetType().Name}";
-        protected override string GetAssetName(string id)
-        {
-            return UCL_LocalizeManager.GetLanguageCodeID(id);
-        }
-
-    }
 }

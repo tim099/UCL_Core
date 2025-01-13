@@ -30,6 +30,7 @@ namespace UCL.Core
             UCL_BundleAsset,
             UCL_VideoAsset,
             UCL_TextAsset,
+            UCL_TMPFontAsset,
         }
         public enum EditConfigType : int
         {

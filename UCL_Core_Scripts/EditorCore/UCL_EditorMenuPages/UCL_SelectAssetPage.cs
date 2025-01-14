@@ -21,7 +21,7 @@ namespace UCL.Core.Page
 
             return aPage;
         }
-        public const int MaxAssetPerPage = 20;
+        public const int MaxAssetPerPage = 10;
 
         protected UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL.Core.UCL_ObjectDictionary();
         protected UCLI_Preview m_Preview = null;
@@ -233,11 +233,6 @@ namespace UCL.Core.Page
                     iIDs = iDic.GetData(AllIDKeys, iIDs);
                 }
 
-
-
-
-
-
                 int pageCount = 1;
                 if (iIDs.Count > MaxAssetPerPage)
                 {
@@ -355,7 +350,7 @@ namespace UCL.Core.Page
                 
                 //using (var aScope = new GUILayout.VerticalScope("box", GUILayout.Width(aVerticalScopeWidth)))//
                 {
-
+                    var heightStyle = GUILayout.Height(32 * scale);
                     string previewID = iDic.GetData("PreviewID", string.Empty);
                     for (int i = 0; i < iIDs.Count; i++)
                     {
@@ -364,7 +359,7 @@ namespace UCL.Core.Page
                         //{
                         //    continue;
                         //}
-                        var heightStyle = GUILayout.Height(35 * scale);
+                        
                         GUILayout.BeginHorizontal();
                         using (var aScope2 = new GUILayout.HorizontalScope("box", heightStyle))
                         {

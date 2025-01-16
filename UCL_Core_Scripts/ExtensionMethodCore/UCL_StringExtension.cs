@@ -17,6 +17,15 @@ public static partial class StringExtensionMethods {
     public static string[] s_LineSeparatorArr = null;
     #region String
 
+    public static string ToSignedString(this int val)
+    {
+        if(val > 0)
+        {
+            return $"+{val}";
+        }
+        return val.ToString();//val == 0
+    }
+
     public static string ConvertToMD5(this string iStr)
     {
         using (var aCryptoMD5 = System.Security.Cryptography.MD5.Create())

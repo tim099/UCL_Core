@@ -294,7 +294,7 @@ namespace UCL.Core
         {
             return $"{ID}({GetShortName()})";
         }
-        //[UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] 
+        [UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] //For gameobject
         [UCL.Core.ATTR.UCL_HideOnGUI]
         public string m_ID = "Default";
 

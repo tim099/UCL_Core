@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -168,21 +169,21 @@ namespace UCL.Core.JsonLib {
 
             if(aNumber.IndexOf('.') == -1) {//Not float or double
                 int aParsedInt32;
-                if (Int32.TryParse(aNumber, out aParsedInt32))
+                if (Int32.TryParse(aNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out aParsedInt32))
                 {
                     return aParsedInt32;
                 }
                 else // long
                 {
                     long aParsedInt64;
-                    if (Int64.TryParse(aNumber, out aParsedInt64))
+                    if (Int64.TryParse(aNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out aParsedInt64))
                     {
                         return aParsedInt64;
                     }
                     else
                     {
                         ulong aParsedUInt64;
-                        if(UInt64.TryParse(aNumber, out aParsedUInt64))
+                        if(UInt64.TryParse(aNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out aParsedUInt64))
                         {
                             return aParsedUInt64;
                         }
@@ -191,7 +192,7 @@ namespace UCL.Core.JsonLib {
             }
 
             double aParsedDouble;
-            Double.TryParse(aNumber, out aParsedDouble);
+            Double.TryParse(aNumber, NumberStyles.Float, CultureInfo.InvariantCulture, out aParsedDouble);
             return aParsedDouble;
         }
 

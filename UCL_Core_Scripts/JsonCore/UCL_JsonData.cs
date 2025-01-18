@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using UCL.Core.UI;
@@ -682,7 +683,7 @@ namespace UCL.Core.JsonLib {
             } else if(value is char) {
                 SerializeString(new string((char)value, 1), builder);
             } else if(value is float) {
-                builder.Append(((float)value).ToString("R"));
+                builder.Append(((float)value).ToString("R", CultureInfo.InvariantCulture));
             } else if(value is int
                 || value is uint
                 || value is long
@@ -693,7 +694,7 @@ namespace UCL.Core.JsonLib {
                 || value is ulong) {
                 builder.Append(value);
             } else if(value is double || value is decimal) {
-                builder.Append(Convert.ToDouble(value).ToString("R"));
+                builder.Append(Convert.ToDouble(value).ToString("R", CultureInfo.InvariantCulture));
             } else {
                 SerializeString(value.ToString(), builder);
             }

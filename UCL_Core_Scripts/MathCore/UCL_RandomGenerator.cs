@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 namespace UCL.Core.MathLib
 {
     [System.Serializable]
@@ -66,6 +66,7 @@ namespace UCL.Core.MathLib
         }
         /// <summary>
         /// Init Random state with Seed
+        /// base on Linear Congruential Generator, LCG)
         /// </summary>
         /// <param name="iSeed"></param>
         public void InitState(int iSeed)
@@ -95,6 +96,24 @@ namespace UCL.Core.MathLib
             }
 
         }
+        /// <summary>
+        /// Fisher–Yates shuffle ShuffleState base on iSeed
+        /// </summary>
+        /// <param name="iSeed"></param>
+        public void ShuffleState(int iSeed)
+        {
+            var rng = new UCL_RandomGenerator(iSeed);
+            //UnityEngine.Debug.LogError($"1 m_State:{m_State.ConcatToString()}");
+            for (int i = StateCount - 1; i > 1; i--)
+            {
+                int j = rng.Next(i) + 1;//ignore m_State[0]
+                int temp = m_State[i];
+                m_State[i] = m_State[j];
+                m_State[j] = temp;
+            }
+            //UnityEngine.Debug.LogError($"2 m_State:{m_State.ConcatToString()}");
+        }
+
         protected virtual double Sample() => Next() * (1.0 / Int32.MaxValue);
         /// <summary>
         /// Return a random int between 0 [inclusive] and (int.MaxValue - 1) [inclusive]
@@ -106,8 +125,8 @@ namespace UCL.Core.MathLib
             int aLocINext = NextID;
             int aLocINextp = NextPID;
 
-            if (++aLocINext >= 56) aLocINext = 1;
-            if (++aLocINextp >= 56) aLocINextp = 1;
+            if (++aLocINext >= StateCount) aLocINext = 1;
+            if (++aLocINextp >= StateCount) aLocINextp = 1;
 
             aRetVal = m_State[aLocINext] - m_State[aLocINextp];
 

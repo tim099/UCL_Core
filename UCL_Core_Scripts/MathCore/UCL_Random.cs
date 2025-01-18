@@ -33,6 +33,7 @@ namespace UCL.Core.MathLib
             m_Seed = MathLib.Crc32.Sum(System.DateTime.Now);
             m_Rnd = new UCL_RandomGenerator(m_Seed);
         }
+        public UCL_RandomGenerator Rnd => m_Rnd;
         #region Array & List
         /// <summary>
         /// Using Fisher–Yates shuffle from https://gaohaoyang.github.io/2016/10/16/shuffle-algorithm/

@@ -175,6 +175,23 @@ public static partial class ListExtensionMethods {
         }
     }
     /// <summary>
+    /// Linq.Select conflict with Cysharp.Threading.Tasks.Select so add ConvertTo replace Linq.Select
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <typeparam name="T2"></typeparam>
+    /// <param name="list"></param>
+    /// <param name="func"></param>
+    /// <returns></returns>
+    public static IEnumerable<T> ConvertTo<T, T2>(this IEnumerable<T2> list, System.Func<T2,T> func)
+    {
+        if (list == null) yield break;
+
+        foreach (var item in list)
+        {
+            yield return func(item);
+        }
+    }
+    /// <summary>
     /// return the first element of list
     /// </summary>
     /// <typeparam name="T"></typeparam>

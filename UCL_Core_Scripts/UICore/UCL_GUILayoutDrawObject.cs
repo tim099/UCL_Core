@@ -416,6 +416,10 @@ namespace UCL.Core.UI
                 if (aHeader != null)
                 {
                     m_Header = aHeader.header;
+                    if (UCL_LocalizeManager.ContainsKey(m_Header))
+                    {
+                        m_Header = UCL_LocalizeManager.Get(m_Header);
+                    }
                 }
                 m_AlwaysExpendOnGUI = (m_FieldInfo.FieldType.GetCustomAttribute<ATTR.AlwaysExpendOnGUI>() != null);
                 m_Attrs = m_FieldInfo.GetCustomAttributes();

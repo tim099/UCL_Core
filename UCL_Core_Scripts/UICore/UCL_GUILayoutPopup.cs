@@ -556,6 +556,199 @@ namespace UCL.Core.UI
             //T aRes = (T)System.Enum.Parse(aType, aNames[aID], true);
             return (T)aEnums.GetValue(aID);
         }
+
+
+        /// <summary>
+        /// cache version of PopupSearch(Performance-Optimized Version)
+        /// </summary>
+        /// <param name="iIndex"></param>
+        /// <param name="iDisplayOptions"></param>
+        /// <param name="iDataDic"></param>
+        /// <param name="iKey"></param>
+        /// <param name="iOptions"></param>
+        /// <returns></returns>
+        public static int PopupSearchCache(int iIndex, IList<string> iDisplayOptions, UCL_ObjectDictionary iDataDic, string iKey, params GUILayoutOption[] iOptions)
+        {
+            if (iDisplayOptions.Count == 0)
+            {
+                Debug.LogError($"{nameof(UCL_GUILayout)}.{nameof(PopupSearchCache)} iDisplayedOptions.Count == 0");
+                return 0;
+            }
+            var dic = iDataDic.GetSubDic(iKey);
+            bool clearCache = false;
+            int count = dic.GetData(nameof(count), -1);
+            if(count != iDisplayOptions.Count)
+            {
+                count = iDisplayOptions.Count;
+                clearCache = true;
+                dic.SetData(nameof(count), count);
+            }
+            if (iIndex < 0) iIndex = 0;
+            if (iIndex >= count) iIndex = count - 1;
+
+            string curOption = iDisplayOptions[iIndex];
+
+            bool aIsShow = dic.GetData(nameof(aIsShow), false);
+            if (aIsShow)//show search field
+            {
+                const string SearchKey = "Search";
+                string input = iDataDic.GetData(SearchKey, string.Empty);
+
+                GUILayout.BeginVertical(iOptions);
+
+                if (GUILayout.Button(curOption, UCL_GUIStyle.ButtonStyle, iOptions))
+                {
+                    aIsShow = false;
+                }
+                GUILayout.BeginHorizontal(iOptions);
+                GUILayout.Label(UCL_LocalizeManager.Get("Search"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                var newInput = GUILayout.TextField(input, UCL_GUIStyle.TextFieldStyle);//TextField(UCL_LocalizeManager.Get("Search"), aInput);
+                if(newInput != input)
+                {
+                    clearCache = true;
+                    input = newInput;
+                }
+                GUILayout.EndHorizontal();
+
+                iDataDic.SetData(SearchKey, input);
+
+                Regex regex = null;
+                {
+
+                    if (!string.IsNullOrEmpty(input))
+                    {
+                        string key = nameof(regex);
+                        if (clearCache)
+                        {
+                            dic.Remove(key);
+                        }
+                        if (!dic.ContainsKey(key))
+                        {
+                            try
+                            {
+                                //aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                                regex = new Regex(input, RegexOptions.Compiled | RegexOptions.IgnoreCase);
+                                dic.Add(key, regex);
+                            }
+                            catch (System.Exception iE)
+                            {
+                                regex = null;
+                                Debug.LogException(iE);
+                            }
+                        }
+                        else//use cache
+                        {
+                            regex = dic.GetData(key, regex);
+                        }
+                        
+                    }
+                }
+
+                var aIDs = iDisplayOptions;
+                //aRegex != null && !aRegex.IsMatch(aOption)
+
+                Dictionary<int, int> indexMapping = null;
+
+                if (regex != null)
+                {
+                    string key = nameof(aIDs);
+                    if (clearCache)
+                    {
+                        dic.Remove(key);
+                        dic.Remove(nameof(indexMapping));
+                    }
+                    if (!dic.ContainsKey(key))
+                    {
+                        try
+                        {
+                            indexMapping = new();
+                            List<string> options = new();
+                            for (int i = 0; i < iDisplayOptions.Count; i++)
+                            {
+                                var id = iDisplayOptions[i];
+                                if (regex.IsMatch(id))
+                                {
+                                    indexMapping[options.Count] = i;
+                                    options.Add(id);
+                                }
+                            }
+                            //var options = iDisplayOptions.Where(option => !string.IsNullOrEmpty(option) && regex.IsMatch(option)).ToList();
+                            aIDs = options;
+
+                            dic.Add(key, aIDs);
+                            dic.Add(nameof(indexMapping), indexMapping);
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogException(e);
+                        }
+                    }
+                    else//use cache
+                    {
+                        aIDs = dic.GetData(key, aIDs);
+                        indexMapping = dic.GetData(nameof(indexMapping), indexMapping);
+                    }
+
+                }
+                const int MaxItemsPerPage = 20;
+                int itemCount = aIDs.Count;
+                var result = DrawSelectPage(iDataDic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                int startIndex = result.startIndex;
+                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                //var pageOptions = iDisplayOptions;
+                //if(pagec)
+
+                //index of current display option
+                //using (var aScope = new GUILayout.VerticalScope("box", iOptions))
+                {
+                    for (int i = 0; i < aIDs.Count; i++)
+                    {
+                        if (i >= lastIndex)
+                        {
+                            break;
+                        }
+                        if (i < startIndex)
+                        {
+                            continue;
+                        }
+                        var aOption = aIDs[i];
+                        string aDisplayName = aOption;
+                        if (regex != null)
+                        {
+                            aDisplayName = regex.HightLight(aDisplayName, input, Color.red);
+                        }
+
+                        //Assertion failed on expression: '!(o->TestHideFlag(Object::kDontSaveInEditor) && (options & kAllowDontSaveObjectsToBePersistent) == 0)'
+                        //UnityEngine.GUILayout:Button(string, UnityEngine.GUIStyle, UnityEngine.GUILayoutOption[])
+                        if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
+                        {
+                            aIsShow = false;
+                            
+                            if(indexMapping != null)
+                            {
+                                iIndex = indexMapping[i];
+                            }
+                            else
+                            {
+                                iIndex = i;
+                            }
+                        }
+
+                    }
+                }
+                GUILayout.EndVertical();
+            }
+            else
+            {
+                if (GUILayout.Button(curOption, UCL_GUIStyle.ButtonStyle, iOptions))
+                {
+                    aIsShow = true;
+                }
+            }
+            dic.SetData(nameof(aIsShow), aIsShow);
+            return iIndex;
+        }
         #endregion
     }
 }

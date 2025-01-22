@@ -26,6 +26,34 @@ public static partial class TypeExtensionMethods {
 
         return s_Types;
     }
+    private static List<string> s_TypeFullNames = null;
+    public static List<string> GetAllTypeFullNames()
+    {
+        if (s_TypeFullNames == null)
+        {
+            var types = GetAllTypes();
+            s_TypeFullNames = types.Select(type => type.FullName).ToList();
+        }
+        return s_TypeFullNames;
+    }
+    private static List<string> s_AllNameSpaces = null;
+    public static List<string> GetAllNameSpaces()
+    {
+        if (s_AllNameSpaces == null)
+        {
+            var types = GetAllTypes();
+            HashSet<string> nameSpaces = new HashSet<string>();
+            nameSpaces.Add(string.Empty);//Any namespace
+            foreach (var type in types)
+            {
+                nameSpaces.Add(type.Namespace);
+            }
+            nameSpaces.Remove(null);
+            s_AllNameSpaces = nameSpaces.ToList();
+        }
+        return s_AllNameSpaces;
+    }
+
     public static IEnumerable<Type> GetAllSubclass(this Type iType)
     {
         var aTypes = GetAllTypes();
@@ -429,6 +457,18 @@ public static partial class TypeExtensionMethods {
         if (iType == null) return false;
 
         return iType.IsGenericType && iType.GetGenericTypeDefinition() == typeof(HashSet<>);
+    }
+
+    private static Dictionary<(Type, BindingFlags), List<FieldInfo>> s_FieldsCache = new();
+
+    public static List<FieldInfo> GetAllFieldsWithCache(this Type iType, BindingFlags iBindingAttr) 
+    {
+        var key = (iType, iBindingAttr);
+        if (!s_FieldsCache.ContainsKey(key))
+        {
+            s_FieldsCache[key] = GetAllFields(iType, iBindingAttr);
+        }
+        return s_FieldsCache[key];
     }
     /// <summary>
     /// Get Fields Include parent

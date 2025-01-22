@@ -11,6 +11,10 @@ namespace UCL.Core.ServiceLib
 {
     public static class UCL_DebugLogService
     {
+        public class Config
+        {
+            public int m_MaxLogCount = 1000;
+        }
         public class LogData
         {
             public LogData(string _Message, string _StackTrace, LogType iType)
@@ -82,16 +86,29 @@ namespace UCL.Core.ServiceLib
         private static bool s_Inited = false;
         private static List<LogData> s_Logs = null;
         private static Dictionary<LogType, bool> s_LogTypeFilter = null;
-        public static void Init()
+        private static Config s_Config = null;
+        public static void Init(Config config = null)
         {
             if(s_Inited) return;
             s_Inited = true;
             s_Logs = new();
             s_LogTypeFilter = new();
+
+            if(config == null)
+            {
+                s_Config = new();
+            }
+            else
+            {
+                s_Config = config;
+            }
+
             foreach (LogType aLogType in Enum.GetValues(typeof(LogType)))
             {
                 s_LogTypeFilter[aLogType] = true;
             }
+
+            Application.logMessageReceivedThreaded -= ThreadedLog;
             Application.logMessageReceivedThreaded += ThreadedLog;
         }
         public static void WriteToFile(string path, params LogType[] logLevel)
@@ -159,6 +176,10 @@ namespace UCL.Core.ServiceLib
             }
             lock (s_Logs)
             {
+                if(s_Logs.Count >= s_Config.m_MaxLogCount)
+                {
+                    s_Logs.RemoveAt(0);
+                }
                 s_Logs.Add(new LogData(message, stack_trace, type));
             }
         }

@@ -320,22 +320,6 @@ namespace UCL.Core.JsonLib {
             {
                 return ((IJsonSerializable)iObj).SerializeToJson();
             }
-            //else if (aType.IsArray)
-            //{
-            //    JsonData iData = new JsonData();
-            //    Array aArray = iObj as Array;
-            //    var aItemType = aType.GetGenericValueType();
-            //    int aRank = aArray.Rank;
-            //    int[] aLen = new int[aRank];
-            //    for(int i = 0; i < aRank; i++)
-            //    {
-            //        aLen[i] = aArray.GetLength(i);
-            //    }
-            //    foreach (var aItem in aArray)
-            //    {
-            //        iData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
-            //    }
-            //}
             else if (iObj is IList)
             {
                 JsonData iData = new JsonData();

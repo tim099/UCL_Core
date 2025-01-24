@@ -37,6 +37,12 @@ namespace UCL.Core.Page
     /// </summary>
     public class UCL_OptionPage : UCL_EditorPage
     {
+        public enum EConfirmState
+        {
+            None = 0,
+            Confirm,
+            Cancel,
+        }
         /// <summary>
         /// 確認刪除彈窗
         /// </summary>
@@ -76,7 +82,18 @@ namespace UCL.Core.Page
             UCL.Core.Page.UCL_OptionPage.Create(iTitle, iContext, new UCL.Core.Page.ButtonData("OK", () => aIsEnd = true));
             await UniTask.WaitUntil(() => aIsEnd);
         }
+        static public async UniTask<EConfirmState> ShowConfirmAsync(string iTitle, string iContext)
+        {
+            EConfirmState confirmState = EConfirmState.None;
 
+            UCL.Core.Page.UCL_OptionPage.Create(iTitle, iContext, 
+                new UCL.Core.Page.ButtonData(UCL_LocalizeManager.Get("Confirm"), () => confirmState = EConfirmState.Confirm),
+                new UCL.Core.Page.ButtonData(UCL_LocalizeManager.Get("Cancel"), () => confirmState = EConfirmState.Cancel)
+                );
+            await UniTask.WaitUntil(() => confirmState != EConfirmState.None);
+
+            return confirmState;
+        }
         //public override bool IsPopup => true;
         public override bool IsWindow => true;
         //public override string WindowName => UCL_LocalizeManager.Get("Alert");
@@ -99,11 +116,12 @@ namespace UCL.Core.Page
         }
         protected override void ContentOnGUI()
         {
-            if (!string.IsNullOrEmpty(m_Context)) GUILayout.Label(m_Context);
+            if (!string.IsNullOrEmpty(m_Context)) GUILayout.Label(m_Context, UCL_GUIStyle.LabelStyle);
             if (!m_ButtonDatas.IsNullOrEmpty())
             {
                 using (var aScope = new GUILayout.HorizontalScope("box"))
                 {
+                    float width = UCL_GUIStyle.GetScaledSize(60);
                     for (int i = 0; i < m_ButtonDatas.Length; i++)
                     {
                         var aButtonData = m_ButtonDatas[i];
@@ -111,11 +129,11 @@ namespace UCL.Core.Page
                         bool aIsClicked = false;
                         if(aButtonData.m_Style != null)
                         {
-                            aIsClicked = GUILayout.Button(aButtonData.m_Text, aButtonData.m_Style, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                            aIsClicked = GUILayout.Button(aButtonData.m_Text, aButtonData.m_Style, GUILayout.MinWidth(width), GUILayout.ExpandWidth(false));
                         }
                         else
                         {
-                            aIsClicked = GUILayout.Button(aButtonData.m_Text, UCL_GUIStyle.ButtonStyle, GUILayout.MinWidth(60), GUILayout.ExpandWidth(false));
+                            aIsClicked = GUILayout.Button(aButtonData.m_Text, UCL_GUIStyle.ButtonStyle, GUILayout.MinWidth(width), GUILayout.ExpandWidth(false));
                         }
                         if (aIsClicked)
                         {

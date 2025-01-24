@@ -89,12 +89,7 @@ namespace UCL.Core.ServiceLib
         private static Config s_Config = null;
         public static void Init(Config config = null)
         {
-            if(s_Inited) return;
-            s_Inited = true;
-            s_Logs = new();
-            s_LogTypeFilter = new();
-
-            if(config == null)
+            if (config == null)
             {
                 s_Config = new();
             }
@@ -102,6 +97,11 @@ namespace UCL.Core.ServiceLib
             {
                 s_Config = config;
             }
+
+            if (s_Inited) return;
+            s_Inited = true;
+            s_Logs = new();
+            s_LogTypeFilter = new();
 
             foreach (LogType aLogType in Enum.GetValues(typeof(LogType)))
             {

@@ -141,7 +141,14 @@ namespace UCL.Core
                                 //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
 
                                 //var aStream = await UCL_StreamingAssets.FullPath.LoadNativeData(ZipFilePath);
-                                UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
+
+
+                                //UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
+
+                                string zipFile = System.IO.Path.Combine(Application.temporaryCachePath, $"{ID}.zip");
+                                File.WriteAllBytes(zipFile, aBytes);
+                                System.IO.Compression.ZipFile.ExtractToDirectory(zipFile, aTargetPath);
+                                File.Delete(zipFile);//remove cache file
                             }
                             catch (System.Exception ex)
                             {
@@ -170,7 +177,7 @@ namespace UCL.Core
                                 case UCL_ModuleService.EditorInstallMode.UnZip:
                                     {
                                         var aZipFilePath = ZipFilePath;
-                                        if (File.Exists(aZipFilePath))//if in Editor and Zip file not exist
+                                        if (File.Exists(aZipFilePath))//if in Editor and Zip file exist
                                         {
                                             File.Delete(aZipFilePath);
                                         }

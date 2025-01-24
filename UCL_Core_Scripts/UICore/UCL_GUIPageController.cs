@@ -9,11 +9,11 @@ namespace UCL.Core.UI
         {
             get
             {
-                if (_Ins == null) _Ins = new UCL_GUIPageController();
-                return _Ins;
+                if (s_Ins == null) s_Ins = new UCL_GUIPageController();
+                return s_Ins;
             }
         }
-        private static UCL_GUIPageController _Ins = null;
+        private static UCL_GUIPageController s_Ins = null;
         private static UCL_GUIPageController s_CurrentRenderIns = null;
         /// <summary>
         /// Current UCL_GUIPageController whitch invoking DrawOnGUI()

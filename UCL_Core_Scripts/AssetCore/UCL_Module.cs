@@ -415,12 +415,17 @@ namespace UCL.Core
             {
                 await UniTask.WaitUntil(() => !m_IsLoading);
             }
+            Debug.Log($"UCL_Module.Install() ID:{ID}");
+            System.DateTime startTime = DateTime.Now;
             m_Installing = true;
             try
             {
+                
                 UCL_ModulePath.PersistantPath.ModuleEntry aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleEntry(ID);
-
+                await UniTask.SwitchToThreadPool();
                 await aModuleConfig.Install();
+                await UniTask.SwitchToMainThread();
+
             }
             catch (System.Exception e)
             {
@@ -429,6 +434,7 @@ namespace UCL.Core
             finally
             {
                 m_Installing = false;
+                Debug.Log($"UCL_Module.Install:{ID}, {(DateTime.Now - startTime).TotalSeconds.ToString("0.00")}s");
             }
 
         }

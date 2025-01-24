@@ -523,7 +523,7 @@ namespace UCL.Core
 
         virtual protected async UniTask InitAsync()
         {
-            Debug.LogWarning($"{GetType().Name}.InitAsync");
+            Debug.Log($"{GetType().Name}.InitAsync");
             //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync("UCL_ModuleService.InitAsync()", "");
             if (Application.isEditor)
             {//Editor內編輯方式可以動態調整
@@ -547,8 +547,9 @@ namespace UCL.Core
             //Debug.LogError("InitAsync()");
             await LoadConfig();
             var exportModules = m_Config.m_ExportModules;
-            Debug.LogWarning($"exportModules:{exportModules.AllFieldToString()}");
-            bool aForceInstall = m_Config.m_ForceInstallInEditor;
+            Debug.Log($"exportModules:{exportModules.AllFieldToString()}");
+
+            bool aForceInstall = Application.isEditor && m_Config.m_ForceInstallInEditor;
 
             if (aForceInstall)
             {

@@ -107,18 +107,15 @@ namespace UCL.Core
             //string aPath = ConfigPath;
             try
             {
-                //if (!File.Exists(aPath))//檔案不存在 嘗試讀取StreamingAssets內的Builtin Config
-                {//改為固定讀取StreamingAssets內的Config
-                    //Debug.LogError($"UCL_ModulePathConfig.LoadConfig() !File.Exists(aPath) aPath:{aPath}");
-                    aJson = await UCL_StreamingAssets.FullPath.LoadString(UCL_ModulePath.PersistantPath.ConfigInstallPath);
-                    //return null;
+                if (Application.isEditor)
+                {
+                    string aPath = ConfigPath;
+                    if (File.Exists(aPath)) aJson = File.ReadAllText(aPath);
                 }
-                //else
-                //{
-                //    aJson = File.ReadAllText(aPath);
-                //}
-                
-                //aJson = await UCL_StreamingAssets.LoadString(aPath);
+                else
+                {//改為固定讀取StreamingAssets內的Config
+                    aJson = await UCL_StreamingAssets.FullPath.LoadString(UCL_ModulePath.PersistantPath.ConfigInstallPath);
+                }
             }
             catch (System.Exception e)
             {

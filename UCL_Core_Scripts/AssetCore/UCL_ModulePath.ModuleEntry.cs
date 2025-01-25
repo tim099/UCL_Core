@@ -131,12 +131,33 @@ namespace UCL.Core
                         {
                             try
                             {
-                                byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
-                                if (aBytes == null)
+                                switch (Application.platform)
                                 {
-                                    Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
-                                    return;
+                                    case RuntimePlatform.WindowsEditor:
+                                    case RuntimePlatform.WindowsPlayer:
+                                        {
+                                            System.IO.Compression.ZipFile.ExtractToDirectory(ZipFilePath, aTargetPath);
+                                            Debug.LogError($"1 ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
+                                            break;
+                                        }
+                                    default:
+                                        {
+                                            byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
+                                            if (aBytes == null)
+                                            {
+                                                Debug.LogError($"2 ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
+                                                return;
+                                            }
+                                            UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
+                                            break;
+                                        }
                                 }
+                                //byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
+                                //if (aBytes == null)
+                                //{
+                                //    Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
+                                //    return;
+                                //}
 
                                 //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
 
@@ -145,10 +166,10 @@ namespace UCL.Core
 
                                 //UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
 
-                                string zipFile = System.IO.Path.Combine(Application.temporaryCachePath, $"{ID}.zip");
-                                File.WriteAllBytes(zipFile, aBytes);
-                                System.IO.Compression.ZipFile.ExtractToDirectory(zipFile, aTargetPath);
-                                File.Delete(zipFile);//remove cache file
+                                //string zipFile = System.IO.Path.Combine(Application.temporaryCachePath, $"{ID}.zip");
+                                //File.WriteAllBytes(zipFile, aBytes);
+                                //System.IO.Compression.ZipFile.ExtractToDirectory(zipFile, aTargetPath);
+                                //File.Delete(zipFile);//remove cache file
                             }
                             catch (System.Exception ex)
                             {

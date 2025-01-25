@@ -18,19 +18,21 @@ namespace UCL.Core.Game {
         {
             get
             {
-                if (Ins != null) return Ins.m_CurLang;
-                return PlayerPrefs.GetString(CurLangKey, DefaultLangKey);
+                string lang = PlayerPrefs.GetString(CurLangKey, DefaultLangKey);
+                //Debug.LogError($"Get CurLang:{lang}");
+                //if (Ins != null) return Ins.m_CurLang;
+                return lang;
             }
             set
             {
-                if (Ins != null) Ins.m_CurLang = value;
+                //Debug.LogError($"Set CurLang:{value}");
+                //if (Ins != null) Ins.m_CurLang = value;
                 PlayerPrefs.SetString(CurLangKey, value);
             }
         }
         static public UCL_LocalizeService Ins = null;
 
         public string m_LoadLangPath = "Install/Language";
-        public string m_CurLang = DefaultLangKey;
 
         protected LocalizeData m_LocalizeSetting = null;
         public override void Init() {
@@ -51,11 +53,11 @@ namespace UCL.Core.Game {
             string aPath = Path.Combine(iDir, "LocalizeSetting.txt");
             JsonLib.JsonData aData = new JsonLib.JsonData();
             //aData["m_LoadLangPath"] = m_LoadLangPath;
-            aData["m_CurLang"] = m_CurLang;
+            aData["m_CurLang"] = CurLang;
 //#if UNITY_EDITOR
             //Debug.LogError("m_LoadLangPath:" + m_LoadLangPath + ",m_CurLang:" + m_CurLang);
             //Editor下 PlayerPrefs紀錄起來以便非執行期使用
-            PlayerPrefs.SetString(CurLangKey, m_CurLang);
+            //PlayerPrefs.SetString(CurLangKey, m_CurLang);
 //#endif
             FileLib.Lib.WriteToFile(aData.ToJson(), aPath);
         }
@@ -65,14 +67,15 @@ namespace UCL.Core.Game {
                 var aStr = File.ReadAllText(aPath);
                 JsonLib.JsonData aData = JsonLib.JsonData.ParseJson(aStr);
                 //m_LoadLangPath = aData.GetString("m_LoadLangPath", m_LoadLangPath);
-                m_CurLang = PlayerPrefs.GetString(CurLangKey, m_CurLang);//aData.GetString("m_CurLang", m_CurLang);
+                //m_CurLang = PlayerPrefs.GetString(CurLangKey, m_CurLang);//aData.GetString("m_CurLang", m_CurLang);
             }
-            LoadLanguage(m_CurLang);
+            LoadLanguage(CurLang);
         }
         
         public void LoadLanguage(string iLang) {
-            m_CurLang = iLang;
-            UCL_LocalizeManager.Instance.LoadLanguage(m_LoadLangPath, m_CurLang);
+            //m_CurLang = iLang;
+            CurLang = iLang;
+            UCL_LocalizeManager.Instance.LoadLanguage(m_LoadLangPath, CurLang);
         }
 
         public static void SetLanguage(string iLangCode)

@@ -137,7 +137,7 @@ namespace UCL.Core
                                     case RuntimePlatform.WindowsPlayer:
                                         {
                                             System.IO.Compression.ZipFile.ExtractToDirectory(ZipFilePath, aTargetPath);
-                                            Debug.LogError($"1 ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
+                                            Debug.Log($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
                                             break;
                                         }
                                     default:
@@ -145,7 +145,7 @@ namespace UCL.Core
                                             byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
                                             if (aBytes == null)
                                             {
-                                                Debug.LogError($"2 ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
+                                                Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}, aBytes == null");
                                                 return;
                                             }
                                             UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);

@@ -2,7 +2,8 @@
     "name": "UCL_CoreEditor",
     "rootNamespace": "",
     "references": [
-        "UCL_Core"
+        "UCL_Core",
+        "UniTask"
     ],
     "includePlatforms": [
         "Editor"

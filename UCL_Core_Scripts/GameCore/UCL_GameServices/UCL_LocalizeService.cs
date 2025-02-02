@@ -50,25 +50,25 @@ namespace UCL.Core.Game {
         /// </summary>
         /// <param name="iDir"></param>
         public override void Save(string iDir) {
-            string aPath = Path.Combine(iDir, "LocalizeSetting.txt");
-            JsonLib.JsonData aData = new JsonLib.JsonData();
+            //string aPath = Path.Combine(iDir, "LocalizeSetting.txt");
+            //JsonLib.JsonData aData = new JsonLib.JsonData();
             //aData["m_LoadLangPath"] = m_LoadLangPath;
-            aData["m_CurLang"] = CurLang;
+            //aData["m_CurLang"] = CurLang;
 //#if UNITY_EDITOR
             //Debug.LogError("m_LoadLangPath:" + m_LoadLangPath + ",m_CurLang:" + m_CurLang);
             //Editor下 PlayerPrefs紀錄起來以便非執行期使用
             //PlayerPrefs.SetString(CurLangKey, m_CurLang);
 //#endif
-            FileLib.Lib.WriteToFile(aData.ToJson(), aPath);
+            //FileLib.Lib.WriteToFile(aData.ToJson(), aPath);
         }
         public override void Load(string iDir) {
-            string aPath = Path.Combine(iDir, "LocalizeSetting.txt");
-            if(File.Exists(aPath)) {
-                var aStr = File.ReadAllText(aPath);
-                JsonLib.JsonData aData = JsonLib.JsonData.ParseJson(aStr);
-                //m_LoadLangPath = aData.GetString("m_LoadLangPath", m_LoadLangPath);
-                //m_CurLang = PlayerPrefs.GetString(CurLangKey, m_CurLang);//aData.GetString("m_CurLang", m_CurLang);
-            }
+            //string aPath = Path.Combine(iDir, "LocalizeSetting.txt");
+            //if(File.Exists(aPath)) {
+            //    var aStr = File.ReadAllText(aPath);
+            //    JsonLib.JsonData aData = JsonLib.JsonData.ParseJson(aStr);
+            //    //m_LoadLangPath = aData.GetString("m_LoadLangPath", m_LoadLangPath);
+            //    //m_CurLang = PlayerPrefs.GetString(CurLangKey, m_CurLang);//aData.GetString("m_CurLang", m_CurLang);
+            //}
             LoadLanguage(CurLang);
         }
         

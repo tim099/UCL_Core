@@ -58,7 +58,7 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope("box"))
             {
                 GUILayout.Box("Language", UCL_GUIStyle.BoxStyle, GUILayout.ExpandWidth(false));
-                string aLangCode = UCL_LocalizeManager.s_LangName;
+                string aLangCode = UCL_LocalizeService.CurLang;
                 UCL_LanguageCodeEntry aLanguageCodeGenData = new UCL_LanguageCodeEntry(aLangCode);
                 UCL_GUILayout.DrawObjectData(aLanguageCodeGenData, m_Dic.GetSubDic("LanguageCode"), "LanguageCode", false);
                 string aNewLangCode = aLanguageCodeGenData.ID;

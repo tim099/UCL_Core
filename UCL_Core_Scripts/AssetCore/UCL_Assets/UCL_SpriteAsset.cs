@@ -103,6 +103,7 @@ namespace UCL.Core
                     float size = UCL_GUIStyle.GetScaledSize(128);
                     GUILayout.Box(aTexture, GUILayout.Width(size), GUILayout.Height(size));
                 }
+                GUILayout.Label($"Texture == null", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
             }
             //GUILayout.EndHorizontal();
         }

@@ -1145,7 +1145,7 @@ namespace UCL.Core
         }
         virtual public void EditModule(string iModuleID, bool iShowModuleEditPage = true)
         {
-            if (string.IsNullOrEmpty(iModuleID))//不可編輯
+            if (string.IsNullOrEmpty(iModuleID))//not Editable 不可編輯
             {
                 return;
             }

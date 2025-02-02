@@ -720,6 +720,18 @@ namespace UCL.Core
             }
         }
         /// <summary>
+        /// Download if LocalizeType is GoogleSheet
+        /// </summary>
+        /// <returns></returns>
+        public async UniTask Refresh()
+        {
+            if(m_LocalizeType == LocalizeType.GoogleSheet)
+            {
+                await StartDownload();
+                Save();
+            }
+        }
+        /// <summary>
         /// 下載
         /// </summary>
         public async UniTask StartDownload()
@@ -865,6 +877,11 @@ namespace UCL.Core
         }
         public void ParseCsvData(byte[] iBytes, bool replaceOldKey, Format format)
         {
+            if(iBytes == null)
+            {
+                Debug.LogError($"{GetType().Name}.ParseCsvData iBytes == null");
+                return;
+            }
             string iData = System.Text.Encoding.UTF8.GetString(iBytes);
             //Debug.LogError($"ParseData:{iData}");
             char seperator = ',';

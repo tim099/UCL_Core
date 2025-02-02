@@ -33,6 +33,28 @@ namespace UCL.Core.EditorLib
             }
 
         }
+
+        [UnityEditor.MenuItem("UCL/Refresh All Localize Datas")]
+        public static async void Refresh()
+        {
+            await UCL_ModuleService.WaitUntilInitialized(default);
+            var curEditModuleID = UCL_ModuleService.CurEditModuleID;
+            var ids = UCL_ModuleService.Ins.GetAllModuleIDs();
+            foreach(var moduleId in ids)
+            {
+                UCL_ModuleService.Ins.EditModule(moduleId);//Set EditModule
+                var module = UCL_ModuleService.Ins.CurModule;
+                var type = typeof(UCL_LocalizeAsset);
+                foreach (var id in module.ModuleEntry.GetAllAssetsID(type))
+                {
+                    //Refresh all UCL_LocalizeAsset
+                    var asset = module.ModuleEntry.GetAsset<UCL_LocalizeAsset>(id);
+                    await asset.Refresh();
+                }
+                UCL_ModuleService.Ins.OnModuleEdit();
+            }
+            UCL_ModuleService.Ins.EditModule(curEditModuleID);//reset EditModule
+        }
     }
 }
 

@@ -15,6 +15,26 @@ namespace UCL.Core.UI
             public System.Action OnShowField;
         }
         #region DrawObject
+        public enum EObjectType
+        {
+            None = 0,
+
+            String,
+            Bool,
+            FieldOnGUI,
+            Enum,
+            Number,
+            Tuple,
+            IList,
+            HashSet,
+            IDictionary,
+            Color,
+            Component,
+            StructOrClass,
+
+            Unknown,
+        }
+
         public class DrawObjectConfigs
         {
             public Func<string, string> m_FieldNameFunc;
@@ -154,7 +174,7 @@ namespace UCL.Core.UI
         {
             return DrawObjectData(iObj, new DrawObjectParams(iDataDic, iDisplayName, iIsAlwaysShowDetail, iFieldType, iDrawObjExSetting, new DrawObjectConfigs(iFieldNameFunc)));
         }
-        private static Dictionary<System.Type, System.Func<object, DrawObjectParams, object>> s_DrawObjectDic = null;
+        private static Dictionary<System.Type, EObjectType> s_DrawObjectDic = null;
         /// <summary>
         /// Draw a object inspector using GUILayout
         /// </summary>
@@ -173,77 +193,111 @@ namespace UCL.Core.UI
                 //GUILayout.Label($"FieldName:{iDrawObjectParams.FieldName}", UCL_GUIStyle.LabelStyle);
                 if (s_DrawObjectDic == null)
                 {
-                    s_DrawObjectDic = new Dictionary<Type, Func<object, DrawObjectParams, object>>();
+                    s_DrawObjectDic = new();
                 }
                 if (!s_DrawObjectDic.ContainsKey(aType))
                 {
                     if (iTarget is string)
                     {
-                        object DrawString(object iObj, DrawObjectParams aParams)
-                        {
-                            return GUILayout.TextArea((string)iObj, UCL_GUIStyle.TextAreaStyle);
-                        }
-                        s_DrawObjectDic[aType] = DrawString;
+                        s_DrawObjectDic[aType] = EObjectType.String;
                     }
                     else if (iTarget is bool)
                     {
-                        object DrawFlag(object iObj, DrawObjectParams aParams)
-                        {
-                            return UCL_GUILayout.CheckBox((bool)iObj);
-                        }
-                        s_DrawObjectDic[aType] = DrawFlag;
+                        s_DrawObjectDic[aType] = EObjectType.Bool;
                     }
                     else if (iTarget is UCLI_FieldOnGUI)
                     {
-                        object Draw(object iObj, DrawObjectParams aParams)
-                        {
-                            //if(aParams.m_FieldType == null)
-                            //{
-                            //    Debug.LogError($"{aType.Name}, aParams.m_FieldType == null");
-                            //}
-                            return (iObj as UCLI_FieldOnGUI).OnGUI(aParams.GetDisplayName(aType), aParams.m_DataDic, aParams);
-                        }
-                        s_DrawObjectDic[aType] = Draw;
+                        s_DrawObjectDic[aType] = EObjectType.FieldOnGUI;
                     }
                     else if (aType.IsEnum)
                     {
-                        object Draw(object iObj, DrawObjectParams aParams)
-                        {
-                            GUILayout.BeginHorizontal();
-                            GUILayout.Label(aParams.GetDisplayName(aType), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                            var resultObj = PopupAuto((System.Enum)iObj, aParams.m_DataDic);
-                            GUILayout.EndHorizontal();
-                            return resultObj;
-                        }
-                        s_DrawObjectDic[aType] = Draw;
+                        s_DrawObjectDic[aType] = EObjectType.Enum;
                     }
                     else if (iTarget.IsNumber())
                     {
-                        object Draw(object iObj, DrawObjectParams aParams)
-                        {
-                            return UCL_GUILayout.NumField(string.Empty, iObj, aParams.m_DataDic);
-                        }
-                        s_DrawObjectDic[aType] = Draw;
+                        s_DrawObjectDic[aType] = EObjectType.Number;
                     }
                     else if (aType.IsTuple())
                     {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                        s_DrawObjectDic[aType] = EObjectType.Tuple;
+                    }
+                    else if (iTarget is IList)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.IList;
+                    }
+                    else if (aType.IsHashSet())
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.HashSet;
+                    }
+                    else if (iTarget is IDictionary)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.IDictionary;
+                    }
+                    else if (iTarget is Color)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Color;
+                    }
+                    else if (iTarget is Component)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Component;
+                    }
+                    else if (aType.IsStructOrClass())
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.StructOrClass;
+                    }
+                    else
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Unknown;
+                    }
+                }
+                //GUILayout.Label($"Type:{aType.FullName}", UCL_GUIStyle.LabelStyle);
+                switch (s_DrawObjectDic[aType])
+                {
+                    case EObjectType.String:
                         {
-                            object aResultObj = iObj;
+                            aResult = GUILayout.TextArea((string)iTarget, UCL_GUIStyle.TextAreaStyle);
+                            break;
+                        }
+                    case EObjectType.Bool:
+                        {
+                            aResult = UCL_GUILayout.CheckBox((bool)iTarget);
+                            break;
+                        }
+                    case EObjectType.FieldOnGUI:
+                        {
+                            aResult = (iTarget as UCLI_FieldOnGUI).OnGUI(iDrawObjectParams.GetDisplayName(aType), iDrawObjectParams.m_DataDic, iDrawObjectParams);
+                            break;
+                        }
+                    case EObjectType.Enum:
+                        {
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label(iDrawObjectParams.GetDisplayName(aType), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            aResult = PopupAuto((System.Enum)iTarget, iDrawObjectParams.m_DataDic);
+                            GUILayout.EndHorizontal();
+                            break;
+                        }
+                    case EObjectType.Number:
+                        {
+                            aResult = UCL_GUILayout.NumField(string.Empty, iTarget, iDrawObjectParams.m_DataDic);
+                            break;
+                        }
+                    case EObjectType.Tuple:
+                        {
+                            aResult = iTarget;
                             aIsShowField = false;
-                            var aResult = iObj.GetTupleElements();
+                            var tupleElements = iTarget.GetTupleElements();
                             bool aIsValueChanged = false;
                             GUILayout.BeginVertical();
-                            for (int i = 0; i < aResult.Count; i++)
+                            for (int i = 0; i < tupleElements.Count; i++)
                             {
-                                var aTupleData = aResult[i];
-                                var aResultData = DrawObjectData(aTupleData, 
-                                    aParams.CreateChild(aParams.m_DataDic.GetSubDic("_" + i.ToString()), aTupleData.UCL_GetShortName()));
+                                var aTupleData = tupleElements[i];
+                                var aResultData = DrawObjectData(aTupleData,
+                                    iDrawObjectParams.CreateChild(iDrawObjectParams.m_DataDic.GetSubDic("_" + i.ToString()), aTupleData.UCL_GetShortName()));
                                 //var aResultData = DrawObjectData(aTupleData, aDataDic.GetSubDic("_" + i.ToString()), aTupleData.UCL_GetShortName(), iFieldNameFunc: aFieldNameFunc);
-                                if (aResultData != aResult[i])
+                                if (aResultData != tupleElements[i])
                                 {
                                     aIsValueChanged = true;
-                                    aResult[i] = aResultData;
+                                    tupleElements[i] = aResultData;
                                 }
                             }
                             if (aIsValueChanged)
@@ -251,74 +305,51 @@ namespace UCL.Core.UI
                                 Type[] aTypeArray = aType.GetGenericArguments();
 
                                 var aConstructer = aType.GetConstructor(aTypeArray);
-                                if (aConstructer != null && aTypeArray.Length == aResult.Count)
+                                if (aConstructer != null && aTypeArray.Length == tupleElements.Count)
                                 {
-                                    aResultObj = aConstructer.Invoke(aResult.ToArray());
+                                    aResult = aConstructer.Invoke(tupleElements.ToArray());
                                 }
                             }
                             GUILayout.EndVertical();
-                            return aResultObj;
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
-                    else if (iTarget is IList)
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.IList:
                         {
-                            DrawList(iObj as IList, aParams);
-                            return iObj;
+                            DrawList(iTarget as IList, iDrawObjectParams);
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                        
-                    }
-                    else if (aType.IsHashSet())
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.HashSet:
                         {
-                            DrawHashSet(iObj, aParams);
-                            return iObj;
+                            DrawHashSet(iTarget, iDrawObjectParams);
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
-                    else if (iTarget is IDictionary)
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.IDictionary:
                         {
-                            DrawDictionary(iObj as IDictionary, aParams);
-                            return iObj;
+                            DrawDictionary(iTarget as IDictionary, iDrawObjectParams);
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
-                    else if (iTarget is Color)
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.Color:
                         {
-                            object aResultObj = iObj;
-                            var aOriginCol = (Color)iObj;
+                            var aOriginCol = (Color)iTarget;
                             using (new GUILayout.HorizontalScope())
                             {
-                                bool aIsShow = Toggle(aParams.m_DataDic, "Toggle");
+                                bool aIsShow = Toggle(iDrawObjectParams.m_DataDic, "Toggle");
                                 GUILayout.BeginVertical();
-                                UCL_GUILayout.LabelAutoSize(string.Format("{0}{1}", aParams.GetDisplayName(aType), "■".RichTextColor(aOriginCol)));
+                                UCL_GUILayout.LabelAutoSize(string.Format("{0}{1}", iDrawObjectParams.GetDisplayName(aType), "■".RichTextColor(aOriginCol)));
                                 if (aIsShow)
                                 {
-                                    aResultObj = SelectColor(aOriginCol);
+                                    aResult = SelectColor(aOriginCol);
                                 }
                                 GUILayout.EndVertical();
                             }
-                            return aResultObj;
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
-                    else if (iTarget is Component)
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.Component:
                         {
-                            object aResultObj = iObj;
-                            if (iObj is Transform)
+                            if (iTarget is Transform)
                             {
-                                var aDataDic = aParams.m_DataDic;
-                                var aTransform = iObj as Transform;
+                                var aDataDic = iDrawObjectParams.m_DataDic;
+                                var aTransform = iTarget as Transform;
                                 using (new GUILayout.VerticalScope("box"))
                                 {
                                     GUILayout.BeginHorizontal();
@@ -332,50 +363,37 @@ namespace UCL.Core.UI
                                         aTransform.eulerAngles = VectorField("Rotation", aTransform.eulerAngles, aDataDic.GetSubDic("Rotation"));
                                         aTransform.localScale = VectorField("Scale", aTransform.localScale, aDataDic.GetSubDic("Scale"));
                                     }
-                                    aResultObj = aTransform;
+                                    aResult = aTransform;
                                 }
                             }
                             else
                             {
-                                aResultObj = DrawField(aResultObj, aParams);
+                                aResult = DrawField(iTarget, iDrawObjectParams);
                                 //aResultObj = DrawField(aResultObj, aDataDic, aDisplayName, aIsAlwaysShowDetail, aFieldNameFunc, aFieldType);
                             }
-                            return aResultObj;
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
-                    else if (aType.IsStructOrClass())
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.StructOrClass:
                         {
-                            var aResultObj = iObj;
                             if (aIsShowField)
                             {
-                                aResultObj = DrawField(iObj, aParams);
+                                aResult = DrawField(iTarget, iDrawObjectParams);
                                 //aResultObj = DrawField(aResultObj, aDataDic, aDisplayName, aIsAlwaysShowDetail, aFieldNameFunc, aFieldType);
-                                var aDrawObjExSetting = aParams.m_DrawObjExSetting;
+                                var aDrawObjExSetting = iDrawObjectParams.m_DrawObjExSetting;
                                 if (aDrawObjExSetting != null)
                                 {
                                     aDrawObjExSetting.OnShowField?.Invoke();
                                 }
                             }
-                            return aResultObj;
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
-                    else
-                    {
-                        object Draw(object iObj, DrawObjectParams aParams)
+                    case EObjectType.Unknown:
                         {
-
-                            GUILayout.Label($"{iObj}, Type:{aType.FullName}, not supported yet!", UCL_GUIStyle.LabelStyle);
-                            return iObj;
+                            GUILayout.Label($"{iTarget}, Type:{aType.FullName}, not supported yet!", UCL_GUIStyle.LabelStyle);
+                            break;
                         }
-                        s_DrawObjectDic[aType] = Draw;
-                    }
                 }
-                //GUILayout.Label($"Type:{aType.FullName}", UCL_GUIStyle.LabelStyle);
-                aResult = s_DrawObjectDic[aType].Invoke(iTarget, iDrawObjectParams);
+                //aResult = s_DrawObjectDic[aType].Invoke(iTarget, iDrawObjectParams);
             }
 
 

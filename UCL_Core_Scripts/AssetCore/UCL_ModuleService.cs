@@ -531,7 +531,7 @@ namespace UCL.Core
                 //ModuleEditType = UCL_ModuleEditType.Runtime;
                 Ins.m_PathConfig.m_ModuleEditType = ModuleEditType;//同步到PathConfig
             }
-            else//非Editor鎖死Runtime
+            else//not in Editor, always set to Runtime
             {
                 ModuleEditType = UCL_ModuleEditType.Runtime;
             }
@@ -549,19 +549,46 @@ namespace UCL.Core
             var exportModules = m_Config.m_ExportModules;
             Debug.Log($"exportModules:{exportModules.AllFieldToString()}");
 
-            bool aForceInstall = Application.isEditor && m_Config.m_ForceInstallInEditor;
-
-            if (aForceInstall)
+            if (Application.isEditor)
             {
-                foreach (var aModuleID in exportModules.Keys)//Check if all builtin modules installed
+                if (m_Config.m_ForceInstallInEditor)
                 {
-                    var exportConfig = exportModules[aModuleID];
-                    if (exportConfig.m_ExportModule)
+                    foreach (var aModuleID in exportModules.Keys)//Check if all builtin modules installed
                     {
-                        var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
-                        await aModule.Install();
+                        var exportConfig = exportModules[aModuleID];
+                        if (exportConfig.m_ExportModule)
+                        {
+                            var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                            await aModule.Install();
+                        }
                     }
                 }
+                else
+                {
+                    switch (ModuleEditType)
+                    {
+                        case UCL_ModuleEditType.Runtime:
+                            {//check and install if in Runtime mode
+                                foreach (var aModuleID in exportModules.Keys)//Check if all builtin modules installed
+                                {
+                                    var exportConfig = exportModules[aModuleID];
+                                    if (exportConfig.m_ExportModule)
+                                    {
+                                        //Debug.LogWarning($"ModuleID:{aModuleID}, CheckAndInstall");
+                                        var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                                        await aModule.CheckAndInstall();
+                                    }
+                                    //aTasks.Add(aModule.CheckAndInstall());
+                                }
+                                break;
+                            }
+                        case UCL_ModuleEditType.Builtin:
+                            {
+                                break;
+                            }
+                    }
+                }
+
             }
             else
             {

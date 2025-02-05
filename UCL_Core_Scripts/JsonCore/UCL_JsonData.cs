@@ -90,7 +90,7 @@ namespace UCL.Core.JsonLib {
                 //GUILayout.BeginHorizontal(GUILayout.ExpandWidth(false));
                 //using(var aScope = new GUILayout.HorizontalScope(GUILayout.ExpandWidth(false)))
                 {
-                    var aNewType = UCL_GUILayout.PopupAuto(m_Type, iDataDic.GetSubDic("m_Type"), 10, GUILayout.Width(80));
+                    var aNewType = UCL_GUILayout.PopupAuto(m_Type, iDataDic.GetSubDic(nameof(m_Type)), 10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     if (aNewType != m_Type)
                     {
                         //m_Type = aNewType;

@@ -246,7 +246,11 @@ namespace UCL.Core.UI {
         static StyleData Data => s_Data == null? s_Data = new StyleData() : s_Data;
         static StyleData EditorWindowData => s_EditorWindowData == null ? s_EditorWindowData = new StyleData() : s_EditorWindowData;
         public static int GetScaledSize(float iSize) => Mathf.RoundToInt(iSize * StyleData.Scale);
+#if UNITY_EDITOR
         public static StyleData CurStyleData => IsInEditorWindow ? EditorWindowData : Data;
+#else
+        public static StyleData CurStyleData => Data;
+#endif
         /// <summary>
         /// GUIStyle for GUILayout.Box
         /// </summary>

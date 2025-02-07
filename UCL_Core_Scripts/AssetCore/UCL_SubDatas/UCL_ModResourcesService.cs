@@ -31,7 +31,7 @@ namespace UCL.Core
         private static Dictionary<string, LoadedData> s_LoadedDatas = new Dictionary<string, LoadedData>();
         public static void OnGUI(UCL_ObjectDictionary iDataDic)
         {
-            if (GUILayout.Button("Release All", UCL_GUIStyle.ButtonStyle))
+            if (GUILayout.Button(UCL_LocalizeManager.Get("Release All"), UCL_GUIStyle.ButtonStyle))
             {
                 ReleaseAll();
             }
@@ -41,7 +41,7 @@ namespace UCL.Core
                 {
                     GUILayout.BeginHorizontal();
                     bool aRelease = false;
-                    if (GUILayout.Button("Release", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Release"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         aRelease = true;
                     }
@@ -63,7 +63,7 @@ namespace UCL.Core
             public string m_FilePath;
 
             public List<UnityEngine.Object> m_CreatedAssets = new List<UnityEngine.Object>();
-
+            virtual public bool IsValid => true;
             virtual public DataType DataType => DataType.Default;
             virtual public UniTask InitAsync(string iPath)
             {
@@ -111,7 +111,15 @@ namespace UCL.Core
             public bool IsLoading = true;
 
             override public DataType DataType => DataType.Sprite;
-
+            override public bool IsValid 
+            {
+                get
+                {
+                    if(IsLoading) return true;
+                    if (m_CreatedAssets.Count == 0) return true;//null texture
+                    return Texture2D != null;//Texture destroyed or not
+                }
+            }
             override public void Init(string iPath)
             {
                 base.Init(iPath);
@@ -123,20 +131,29 @@ namespace UCL.Core
 
                 var aBytes = File.ReadAllBytes(iPath);
                 Texture2D aTexture = UCL.Core.TextureLib.Lib.CreateTexture(aBytes);
-                m_CreatedAssets.Add(aTexture);
-                Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
-                m_CreatedAssets.Add(aSprite);
+                if(aTexture != null)
+                {
+                    m_CreatedAssets.Add(aTexture);
+                    Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
+                    m_CreatedAssets.Add(aSprite);
+                }
+
                 IsLoading = false;
             }
             public async UniTask InitAsync(string iPath, UCLI_LoadTextureConfig config)
             {
                 base.Init(iPath);
                 Texture2D aTexture = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(iPath);
-                if(config != null)
+
+                if(aTexture != null)
                 {
-                    aTexture.filterMode = config.FilterMode;
+                    if (config != null)
+                    {
+                        aTexture.filterMode = config.FilterMode;
+                    }
+                    m_CreatedAssets.Add(aTexture);
                 }
-                m_CreatedAssets.Add(aTexture);
+
                 //Sprite aSprite = UCL.Core.TextureLib.Lib.CreateSprite(aTexture);
                 //m_CreatedAssets.Add(aSprite);
                 IsLoading = false;
@@ -184,6 +201,7 @@ namespace UCL.Core
 
         public static async UniTask<LoadedSpriteData> LoadTextureAsync(string iPath, UCLI_LoadTextureConfig config)
         {
+            RemoveInvalidData(iPath);
             //Debug.LogError($"LoadSpriteAsync:{iPath}");
             if (!s_LoadedDatas.ContainsKey(iPath))
             {
@@ -217,9 +235,26 @@ namespace UCL.Core
                 return null;
             }
         }
+        /// <summary>
+        /// Remove invalid data from s_LoadedDatas
+        /// </summary>
+        /// <param name="iPath"></param>
+        private static void RemoveInvalidData(string iPath)
+        {
+            if (s_LoadedDatas.TryGetValue(iPath, out var aData))
+            {
+                if (!aData.IsValid)
+                {
+                    aData.Dispose();
+                    s_LoadedDatas.Remove(iPath);
+                }
+            }
+        }
         public static Sprite LoadSprite(string iPath)
         {
             //Debug.LogError($"LoadSprite iPath:{iPath},s_LoadedDatas.Keys:{s_LoadedDatas.Keys.ConcatString()}");
+            RemoveInvalidData(iPath);
+
             if (!s_LoadedDatas.ContainsKey(iPath))
             {
                 try

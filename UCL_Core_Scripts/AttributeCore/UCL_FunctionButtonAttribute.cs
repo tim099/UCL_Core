@@ -29,7 +29,7 @@ namespace UCL.Core.ATTR {
             {
                 string aButName = m_ButtonName;
                 if (string.IsNullOrEmpty(aButName)) aButName = iMethodInfo.Name;
-                if (GUILayout.Button(aButName))
+                if (GUILayout.Button(aButName, UI.UCL_GUIStyle.ButtonStyle))
                 {
                     iMethodInfo.Invoke(iTarget, m_Params);
                 }

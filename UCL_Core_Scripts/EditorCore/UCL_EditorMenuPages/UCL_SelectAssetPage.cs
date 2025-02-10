@@ -162,11 +162,10 @@ namespace UCL.Core.Page
             int aVerticalScopeWidth = Mathf.RoundToInt(scale * 380);
             int buttonWidth = Mathf.RoundToInt(60 * scale);
             int EditGroupWidth = Mathf.RoundToInt(scale * 180);
-            bool editGroup = false;
+            bool editGroup = UCL_AssetCommonMeta.EditGroup;
             bool showDeleteButton = false;
             if (iMeta != null)
             {
-                editGroup = iMeta.m_EditGroup;
                 showDeleteButton = iMeta.ShowDeleteButton;
             }
             if (editGroup)

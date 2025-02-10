@@ -43,24 +43,40 @@ namespace UCL.Core
             {
                 public bool m_IsEnable = true;
             }
-            public FilterType m_FilterType = FilterType.Dropdown;
+            public FilterType AssetFilterType
+            {
+                get => UCL_PlayerPrefs.GetEnum($"{m_TypeName}.AssetFilterType", FilterType.Dropdown);
+                set => UCL_PlayerPrefs.SetEnum($"{m_TypeName}.AssetFilterType", value);
+            }
             #region CheckBox
             public bool m_ShowAll = true;
             public bool m_ShowOthers = true;
+            private string m_TypeName;
             #endregion
             #region Dropdown
             /// <summary>
-            /// if m_SelectedGroup is string.Empty, then show all
+            /// if SelectedGroup is string.Empty, then show all
             /// </summary>
-            public string m_SelectedGroup = string.Empty;
+            public string SelectedGroup
+            {
+                get => PlayerPrefs.GetString($"{m_TypeName}.SelectedGroup", string.Empty);
+                set => PlayerPrefs.SetString($"{m_TypeName}.SelectedGroup", value);
+            }
             #endregion
             /// <summary>
             /// Show delete button
             /// </summary>
-            public bool m_ShowDeleteButton = false;
+            //public bool m_ShowDeleteButton = false;
 
 
             public Dictionary<string, GroupData> m_GroupDatas = new();
+
+
+            public PlayerPrefsData() { }
+            public PlayerPrefsData(string iTypeName)
+            {
+                m_TypeName = iTypeName;
+            }
 
             public void OnGUI(UCL_ObjectDictionary iDic, UCL_AssetCommonMeta iCommonDataMeta)
             {
@@ -93,8 +109,8 @@ namespace UCL.Core
                 using (var aScope = new GUILayout.HorizontalScope("box"))
                 {
                     GUILayout.Label(UCL_LocalizeManager.Get("FilterMode"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    m_FilterType = UCL_GUILayout.PopupAuto(m_FilterType, iDic, "FilterType", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                    switch (m_FilterType)
+                    AssetFilterType = UCL_GUILayout.PopupAuto(AssetFilterType, iDic, "FilterType", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    switch (AssetFilterType)
                     {
                         case FilterType.CheckBox:
                             {
@@ -127,7 +143,7 @@ namespace UCL.Core
                                 List<string> aList = new List<string>();
                                 aList.Add(string.Empty);
                                 aList.Append(aExternalGroups.Keys);
-                                m_SelectedGroup = aList[UCL_GUILayout.PopupAuto(aList.IndexOf(m_SelectedGroup), aList, iDic, "SelectedGroup", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)))];
+                                SelectedGroup = aList[UCL_GUILayout.PopupAuto(aList.IndexOf(SelectedGroup), aList, iDic, "SelectedGroup", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)))];
                                 break;
                             }
                     }
@@ -214,16 +230,16 @@ namespace UCL.Core
             {
                 get
                 {
-                    switch (m_FilterType)
+                    switch (AssetFilterType)
                     {
                         case PlayerPrefsData.FilterType.Dropdown:
                             {
-                                return $"{m_FilterType},{m_SelectedGroup}";
+                                return $"{AssetFilterType},{SelectedGroup}";
                             }
                     }
                     System.Text.StringBuilder sb = new System.Text.StringBuilder();
                     //m_GroupDatas.Keys
-                    sb.Append($"{m_FilterType},{m_SelectedGroup},");
+                    sb.Append($"{AssetFilterType},{SelectedGroup},");
                     sb.Append((m_ShowAll ? "1" : "0"));
                     sb.Append((m_ShowOthers ? "1" : "0"));
                     foreach(var group in m_GroupDatas.Values)
@@ -264,12 +280,16 @@ namespace UCL.Core
 
         //public bool m_ShowAll = true;
         //public bool m_ShowOthers = true;
-        public bool m_EditGroup = false;
+        public static bool EditGroup
+        {
+            get => PlayerPrefs.GetInt("PlayerPrefsData.EditGroup", 0) != 0;
+            set => PlayerPrefs.SetInt("PlayerPrefsData.EditGroup", value? 1:0);
+        }
 
         public bool ShowDeleteButton
         {
-            get => PlayerPrefsMeta.m_ShowDeleteButton;
-            set => PlayerPrefsMeta.m_ShowDeleteButton = value;
+            get => PlayerPrefs.GetInt("PlayerPrefsData.ShowDeleteButton", 0) != 0;
+            set => PlayerPrefs.SetInt("PlayerPrefsData.ShowDeleteButton", value ? 1 : 0);
         }
         private System.Action<string> m_SaveAct = null;
 
@@ -279,7 +299,7 @@ namespace UCL.Core
             //Debug.LogError($"iTypeName:{iTypeName}");
             TypeName = iTypeName;
             m_SaveAct = iSaveAct;
-            PlayerPrefsMeta = new PlayerPrefsData();
+            PlayerPrefsMeta = new PlayerPrefsData(iTypeName);
             if (PlayerPrefs.HasKey(PlayerPrefsKey))
             {
                 string aJson = PlayerPrefs.GetString(PlayerPrefsKey);
@@ -302,7 +322,7 @@ namespace UCL.Core
             }
 
 
-            m_EditGroup = UCL_GUILayout.CheckBox(m_EditGroup);
+            EditGroup = UCL_GUILayout.CheckBox(EditGroup);
             GUILayout.Label(UCL_LocalizeManager.Get("EditGroup"), UCL_GUIStyle.LabelStyle);
             float space = UCL_GUIStyle.GetScaledSize(10);
             GUILayout.Space(space);
@@ -384,7 +404,7 @@ namespace UCL.Core
         /// <returns></returns>
         public List<string> GetAllShowData(UCLI_Asset iUtil, IList<string> iIDs, PlayerPrefsData.FilterType? iFilterType = null)
         {
-            return GetAllShowData(iUtil, iIDs, PlayerPrefsMeta.m_SelectedGroup, iFilterType);
+            return GetAllShowData(iUtil, iIDs, PlayerPrefsMeta.SelectedGroup, iFilterType);
         }
 
         /// <summary>
@@ -463,7 +483,7 @@ namespace UCL.Core
             //var aFile = GetFileMeta(iID);
             //string aGroup = aFile.GetGroupID();
             string aGroup = aAsset.GroupID;
-            PlayerPrefsData.FilterType aFilterType = PlayerPrefsMeta.m_FilterType;
+            PlayerPrefsData.FilterType aFilterType = PlayerPrefsMeta.AssetFilterType;
             if (iFilterType.HasValue)
             {
                 aFilterType = iFilterType.Value;

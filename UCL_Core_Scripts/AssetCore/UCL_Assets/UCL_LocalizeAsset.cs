@@ -40,7 +40,10 @@ namespace UCL.Core
         }
         public static void ClearLocalizeCache()
         {
-            s_LocalizeDics.Clear();
+            if (s_LocalizeDics != null)
+            {
+                s_LocalizeDics.Clear();
+            }
         }
         public static Dictionary<string, string> GetLocalizeDic(string lang)
         {

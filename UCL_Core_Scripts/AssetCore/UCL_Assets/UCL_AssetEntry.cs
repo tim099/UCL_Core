@@ -141,7 +141,8 @@ namespace UCL.Core
         }
         virtual protected void SelectIDOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
         {
-            var aIDs = GetAllIDs();
+            var aIDs = GetAllIDs(true);
+
             if (!GroupID.IsNullOrEmpty())
             {
                 //GUILayout.Label(GroupID);

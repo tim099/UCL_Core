@@ -139,24 +139,87 @@ namespace UCL.Core
                 GroupID = aGroupIDs[aAt];
             }
         }
+        public class SelectIDOnGUICache
+        {
+            public List<string> m_IDs = null;
+            public IList<string> m_LocalizeIDs = null;
+            public string m_GroupID = null;
+            public System.DateTime? lastUpdateTime = null;
+        }
         virtual protected void SelectIDOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
         {
-            var aIDs = GetAllIDs(true);
+            SelectIDOnGUICache cache = null;
+            void RefreshCache(SelectIDOnGUICache cache)
+            {
+                cache.m_IDs = GetAllIDs(true);
+                cache.lastUpdateTime = System.DateTime.Now;
+                if (!GroupID.IsNullOrEmpty())
+                {
+                    //if (cache.m_GroupID != GroupID)//Update Filter
+                    {
+                        cache.m_GroupID = GroupID;
+                        //GUILayout.Label(GroupID);
+                        var assetMeta = AssetUtil.AssetMetaIns;
+                        cache.m_IDs = assetMeta.GetAllShowData(Util, cache.m_IDs, GroupID, UCL_AssetCommonMeta.PlayerPrefsData.FilterType.Dropdown);
+                    }
+                }
+
+                if (!cache.m_IDs.IsNullOrEmpty())
+                {
+                    cache.m_LocalizeIDs = GetLocalizeIDs(cache.m_IDs);
+                }
+            }
+            if (!iDataDic.ContainsKey(nameof(SelectIDOnGUICache)))
+            {
+                cache = new();
+                iDataDic.Add(nameof(SelectIDOnGUICache), cache);
+                RefreshCache(cache);
+            }
+            else
+            {
+                cache = iDataDic.GetData<SelectIDOnGUICache>(nameof(SelectIDOnGUICache));
+            }
 
             if (!GroupID.IsNullOrEmpty())
             {
-                //GUILayout.Label(GroupID);
-                var assetMeta = AssetUtil.AssetMetaIns;
-                aIDs = assetMeta.GetAllShowData(Util, aIDs, GroupID, UCL_AssetCommonMeta.PlayerPrefsData.FilterType.Dropdown);
+                if (cache.m_GroupID != GroupID)//Update Filter
+                {
+                    RefreshCache(cache);
+                }
             }
+            if((System.DateTime.Now - cache.lastUpdateTime.Value).TotalSeconds > 1.0f)//Refresh every second
+            {
+                RefreshCache(cache);
+            }
+            var aIDs = cache.m_IDs;
+            var aLocalizeIDs = cache.m_LocalizeIDs;
             if (!aIDs.IsNullOrEmpty())
             {
-                var aAt = UCL.Core.UI.UCL_GUILayout.PopupAuto(aIDs.IndexOf(ID), GetLocalizeIDs(aIDs), iDataDic, "ID", 8, GUILayout.ExpandWidth(true));
+
+                var aAt = UCL.Core.UI.UCL_GUILayout.PopupAuto(aIDs.IndexOf(ID), aLocalizeIDs, iDataDic, "ID", 8, GUILayout.ExpandWidth(true));
                 if (aAt >= 0 && aAt < aIDs.Count)
                 {
                     ID = aIDs[aAt];
                 }
             }
+
+            //var aIDs = GetAllIDs(true);
+
+            //if (!GroupID.IsNullOrEmpty())
+            //{
+            //    //GUILayout.Label(GroupID);
+            //    var assetMeta = AssetUtil.AssetMetaIns;
+            //    aIDs = assetMeta.GetAllShowData(Util, aIDs, GroupID, UCL_AssetCommonMeta.PlayerPrefsData.FilterType.Dropdown);
+            //}
+            //if (!aIDs.IsNullOrEmpty())
+            //{
+
+            //    var aAt = UCL.Core.UI.UCL_GUILayout.PopupAuto(aIDs.IndexOf(ID), GetLocalizeIDs(aIDs), iDataDic, "ID", 8, GUILayout.ExpandWidth(true));
+            //    if (aAt >= 0 && aAt < aIDs.Count)
+            //    {
+            //        ID = aIDs[aAt];
+            //    }
+            //}
         }
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams)
         {

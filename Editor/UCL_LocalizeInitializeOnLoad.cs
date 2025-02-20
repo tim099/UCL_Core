@@ -35,7 +35,7 @@ namespace UCL.Core.EditorLib
         }
 
         [UnityEditor.MenuItem("UCL/Refresh All Localize Datas")]
-        public static async void Refresh()
+        public static async void RefreshAllLocalize()
         {
             await UCL_ModuleService.WaitUntilInitialized(default);
             var curEditModuleID = UCL_ModuleService.CurEditModuleID;
@@ -54,6 +54,31 @@ namespace UCL.Core.EditorLib
                 UCL_ModuleService.Ins.OnModuleEdit();
             }
             UCL_ModuleService.Ins.EditModule(curEditModuleID);//reset EditModule
+        }
+
+        [UnityEditor.MenuItem("UCL/Refresh Localize Datas")]
+        public static async void RefreshLocalize()
+        {
+            if (!UCL_ModuleService.Initialized)
+            {
+                Debug.LogError("Refresh Localize Datas, !UCL_ModuleService.Initialized");
+                return;
+            }
+            var module = UCL_ModuleService.CurEditModule;
+            if (module == null)
+            {
+                Debug.LogError("Refresh Localize Datas, UCL_ModuleService.CurEditModule == null");
+                return;
+            }
+            var entry = module.ModuleEntry;
+            var type = typeof(UCL_LocalizeAsset);
+            foreach (var id in entry.GetAllAssetsID(type))
+            {
+                //Refresh all UCL_LocalizeAsset
+                var asset = entry.GetAsset<UCL_LocalizeAsset>(id);
+                await asset.Refresh();
+            }
+            UCL_ModuleService.Ins.OnModuleEdit();
         }
     }
 }

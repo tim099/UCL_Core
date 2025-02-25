@@ -50,7 +50,7 @@ namespace UCL.Core
             if(s_LocalizeDics == null)
             {
                 if (!UCL_ModuleService.Initialized) return null;
-                UCL_ModuleService.OnLoadModule += ClearLocalizeCache;//Clear Cache OnLoadModule
+                UCL_ModuleService.OnLoadedModule += ClearLocalizeCache;//Clear Cache OnLoadModule
                 s_LocalizeDics = new();
             }
 

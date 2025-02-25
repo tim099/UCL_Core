@@ -113,7 +113,17 @@ namespace UCL.Core.MathLib
             }
             //UnityEngine.Debug.LogError($"2 m_State:{m_State.ConcatToString()}");
         }
-
+        /// <summary>
+        /// skil N step
+        /// </summary>
+        /// <param name="step"></param>
+        public void RandomSkip(int step)
+        {
+            for (int i = 0; i < step; i++)
+            {
+                Next();
+            }
+        }
         protected virtual double Sample() => Next() * (1.0 / Int32.MaxValue);
         /// <summary>
         /// Return a random int between 0 [inclusive] and (int.MaxValue - 1) [inclusive]

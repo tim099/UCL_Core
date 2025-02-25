@@ -14,7 +14,10 @@ namespace UCL.Core.Game
         virtual public bool IsUIOverlay => m_IsUIOverlay;
         virtual public int Layer => m_Layer;
         virtual public bool Reusable => false;
-
+        /// <summary>
+        /// This UI will cover the entire screen?
+        /// </summary>
+        virtual public bool IsFullScreen => false;
 
         [SerializeField] protected bool m_IsUIOverlay = false;
         [SerializeField] protected int m_Layer = 100;
@@ -22,6 +25,22 @@ namespace UCL.Core.Game
         protected System.Action m_OnCloseAction = null;
         protected bool m_IsClosed = false;
         virtual public void Init()
+        {
+
+        }
+
+        /// <summary>
+        /// Triggered when the UI is on the top layer
+        /// </summary>
+        virtual public void OnTop()
+        {
+
+        }
+
+        /// <summary>
+        /// Triggered when the UI is covered by another UI
+        /// </summary>
+        virtual public void OnCovered()
         {
 
         }

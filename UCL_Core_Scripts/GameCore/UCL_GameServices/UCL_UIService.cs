@@ -110,7 +110,7 @@ namespace UCL.Core.Game
         }
         public T CreateUI<T>(T iTemplate) where T : UCL_GameUI
         {
-            T iUI = null;
+            T ui = null;
             try
             {
                 var aType = iTemplate.GetType();//typeof(T);
@@ -123,34 +123,43 @@ namespace UCL.Core.Game
                     var aPool = m_UIPools[aType];
                     while(aPool.Count > 0)
                     {
-                        iUI = aPool.Dequeue() as T;
-                        if(iUI != null)//Create from pool success
+                        ui = aPool.Dequeue() as T;
+                        if(ui != null)//Create from pool success
                         {
                             //iUI.transform.SetParent(aParent, false);
-                            iUI.transform.SetAsLastSibling();//To Top
-                            iUI.transform.localPosition = Vector3.zero;
-                            iUI.transform.localScale = Vector3.one;
+                            ui.transform.SetAsLastSibling();//To Top
+                            ui.transform.localPosition = Vector3.zero;
+                            ui.transform.localScale = Vector3.one;
                             break;
                         }
                     }
 
                 }
 
-                if(iUI == null)
+                if(ui == null)
                 {
-                    iUI = Instantiate(iTemplate, aParent);
+                    ui = Instantiate(iTemplate, aParent);
                 }
 
-                
-                m_UIStack.Add(iUI);
-                iUI.Init();
+                if (!m_UIStack.IsNullOrEmpty())
+                {
+                    if (ui.IsFullScreen)
+                    {
+                        m_UIStack.LastElement().OnCovered();//UI is covered by another UI
+                    }
+                }
+
+                m_UIStack.Add(ui);
+
+                ui.OnTop();
+                ui.Init();
             }
             catch (System.Exception iE)
             {
                 Debug.LogException(iE);
             }
 
-            return iUI;
+            return ui;
         }
         /// <summary>
         /// return 
@@ -248,6 +257,10 @@ namespace UCL.Core.Game
                 Debug.LogError("!m_UIStack.Contains:" + iUI.name);
             }
             m_UIStack.Remove(iUI);
+            if (!m_UIStack.IsNullOrEmpty())
+            {
+                m_UIStack.LastElement().OnTop();
+            }
             //Debug.LogError("OnCLose:" + iUI.name);
             if (iUI.gameObject != null)
             {

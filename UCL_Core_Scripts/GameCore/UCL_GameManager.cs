@@ -1,4 +1,5 @@
 ﻿using Cysharp.Threading.Tasks;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -69,6 +70,7 @@ namespace UCL.Core.Game {
         {
             CancellationToken aToken = gameObject.GetCancellationTokenOnDestroy();
             await UnityEngine.AddressableAssets.Addressables.InitializeAsync();
+            aToken.ThrowIfCancellationRequested();
 
             Init();
 
@@ -78,12 +80,13 @@ namespace UCL.Core.Game {
                 {
                     await aService.InitAsync(aToken);
                 }
+                catch (OperationCanceledException) { }
                 catch (System.Exception e)
                 {
                     Debug.LogError(aService.name + ".InitAsync() Exception:" + e);
                     Debug.LogException(e);
                 }
-                
+                aToken.ThrowIfCancellationRequested();
             }
         }
         virtual public void Init() {

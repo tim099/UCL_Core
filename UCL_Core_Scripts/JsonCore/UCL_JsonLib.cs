@@ -401,22 +401,20 @@ namespace UCL.Core.JsonLib {
                 {
                     aFieldName = iFieldNameAlterFunc(aFieldName);
                 }
+
+                if (aValue != null && aField.GetCustomAttribute<UCL_SerializeReference>() != null)
+                {
+                    aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    continue;
+                }
+
                 if (aValue == null)
                 {
                     //iData[aFieldName] = "";
                 }
                 else if (aValue is IJsonSerializable)//
                 {
-                    bool serializeReference = (aField.GetCustomAttribute<UCL_SerializeReference>() != null);
-                    //Debug.LogError($"aField:{aField.Name},UCL_SerializeReference:{serializeReference}");
-                    if (serializeReference)
-                    {
-                        aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
-                    }
-                    else
-                    {
-                        aData[aFieldName] = ((IJsonSerializable)aValue).SerializeToJson();
-                    }
+                    aData[aFieldName] = ((IJsonSerializable)aValue).SerializeToJson();
                 }
                 else if (aValue.IsNumber() || aValue is string)
                 {// || value is IList || value is IDictionary
@@ -477,18 +475,9 @@ namespace UCL.Core.JsonLib {
                         aGenericData.Add(ObjectToData(aItem, iSaveMode, iFieldNameAlterFunc));
                     }
                 }
-                else if (aField.FieldType.IsStructOrClass())
+                else
                 {
-                    bool serializeReference = (aField.GetCustomAttribute<UCL_SerializeReference>() != null);
-                    //Debug.LogError($"aField:{aField.Name},UCL_SerializeReference:{serializeReference}");
-                    if (serializeReference)
-                    {
-                        aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
-                    }
-                    else
-                    {
-                        aData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
-                    }
+                    aData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
                 }
             }
             return aData;

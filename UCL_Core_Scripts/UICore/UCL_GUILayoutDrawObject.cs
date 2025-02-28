@@ -721,6 +721,36 @@ namespace UCL.Core.UI
                                 }
                             }
                         }
+
+                        if (!aIsDrawed && aFieldInfoCache.m_SerializeReference)
+                        {
+                            var types = UCLI_TypeListable.GetAllITypes(aFieldInfo.FieldType);
+                            //GUILayout.Label($"types:{types.ConcatToString(type => type.Name)}");
+                            if (!types.IsNullOrEmpty())
+                            {
+                                var typeNames = UCLI_TypeListable.GetTypeNames(types);
+                                int index = 0;
+                                if (aData != null)
+                                {
+                                    index = types.IndexOf(aData.GetType());
+                                }
+                                int newIndex = UCL_GUILayout.PopupAuto(index, typeNames, iDataDic, "SerializeReference");
+                                if (aData == null || newIndex != index)
+                                {
+                                    try
+                                    {
+                                        var newType = types[newIndex];
+                                        aData = newType.CreateInstance();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.LogException(ex);
+                                    }
+                                }
+                            }
+                        }
+
+
                         if (aIsDrawed)
                         {
                             //aField.SetValue(iObj, aDropDownAttr.DrawOnGUI(iObj, aData, m_DataDic, "_" + aDisplayName));
@@ -816,38 +846,9 @@ namespace UCL.Core.UI
                                 aFieldInfo.SetValue(iObj, aResult);
                             }
                         }
-                        else if (aFieldInfo.FieldType.IsStructOrClass())
+                        else if (aFieldInfoCache.m_SerializeReference || aFieldInfo.FieldType.IsStructOrClass())
                         {
                             //GUILayout.Label($"aFieldInfoCache.m_SerializeReference:{aFieldInfoCache.m_SerializeReference}");
-                            if (aFieldInfoCache.m_SerializeReference)
-                            {
-                                var types = UCLI_TypeListable.GetAllITypes(aFieldInfo.FieldType);
-                                //GUILayout.Label($"types:{types.ConcatToString(type => type.Name)}");
-                                if (!types.IsNullOrEmpty())
-                                {
-                                    var typeNames = UCLI_TypeListable.GetTypeNames(types);
-                                    int index = 0;
-                                    if (aData != null)
-                                    {
-                                        index = types.IndexOf(aData.GetType());
-                                    }
-                                    int newIndex = UCL_GUILayout.PopupAuto(index, typeNames, iDataDic, "SerializeReference");
-                                    if (aData == null || newIndex != index)
-                                    {
-                                        try
-                                        {
-                                            var newType = types[newIndex];
-                                            aData = newType.CreateInstance();
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Debug.LogException(ex);
-                                        }
-                                    }
-                                }
-
-
-                            }
                             var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aFieldInfo, aIsAlwaysShowDetail);
                             DrawObjectData(aData, aParams);
                             //DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aIsAlwaysShowDetail, iFieldNameFunc);

@@ -25,6 +25,8 @@ namespace UCL.Core
         /// </summary>
         string Name => string.Empty;
     }
+
+    [UCL.Core.ATTR.UCL_IgnoreInTypeListable]
     public class UCL_Data : UCL.Core.JsonLib.UnityJsonSerializable
     {
         /// <summary>

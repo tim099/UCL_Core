@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using UCL.Core.LocalizeLib;
 using UnityEngine;
 
 namespace UCL.Core
@@ -49,6 +50,16 @@ namespace UCL.Core
 
 
             return s_TypeListableDic[iType];
+        }
+
+        public static List<string> GetTypeNames(List<System.Type> types)
+        {
+            var typeNameList = new List<string>();
+            for (int i = 0; i < types.Count; i++)
+            {
+                typeNameList.Add(UCL_LocalizeLib.GetLocalize(types[i].Name));
+            }
+            return typeNameList;
         }
     }
 

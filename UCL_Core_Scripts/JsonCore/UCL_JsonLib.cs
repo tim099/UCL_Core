@@ -10,6 +10,7 @@ using UnityEngine;
 namespace UCL.Core.JsonLib {
     public static class JsonConvert {
         public const string ClassNameID = "ClassName";
+        public const string ClassDataID = "ClassData";
         public enum SaveMode
         {
             /// <summary>
@@ -46,13 +47,13 @@ namespace UCL.Core.JsonLib {
         /// <param name="iData"></param>
         /// <returns></returns>
         static public object JsonToObject(JsonData iData, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null) {
-            if(!iData.Contains("ClassName") || !iData.Contains("ClassData")) {
+            if(!iData.Contains(ClassNameID) || !iData.Contains(ClassDataID)) {
                 Debug.LogError("JsonToObject !iData.Contains(ClassName) || !iData.Contains(ClassData) iData:"+ iData.ToJsonBeautify());
                 return null;
             }
-            string aClassName = iData.GetString("ClassName");
+            string aClassName = iData.GetString(ClassNameID);
             Type aClassType = Type.GetType(aClassName);
-            JsonData aClassData = iData["ClassData"];
+            JsonData aClassData = iData[ClassDataID];
             object aObj = aClassType.CreateInstance();//Activator.CreateInstance();
             if (aObj is IJsonSerializable)
             {
@@ -83,7 +84,7 @@ namespace UCL.Core.JsonLib {
             {
                 aClassData = SaveDataToJson(iObj, iSaveMode, iFieldNameAlterFunc);
             }
-            aData["ClassData"] = aClassData;
+            aData[ClassDataID] = aClassData;
             return aData;
         }
         /// <summary>
@@ -160,7 +161,7 @@ namespace UCL.Core.JsonLib {
                     Type aClassType = Type.GetType(aClassName);
                     if (aClassType != null)
                     {
-                        JsonData aClassData = iData.GetString("ClassData");
+                        JsonData aClassData = iData.GetString(ClassDataID);
                         UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;
                         aObj.DeserializeFromJson(iData);
                         return aObj;
@@ -360,9 +361,10 @@ namespace UCL.Core.JsonLib {
             => SaveFieldsToJson(iObj, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
         static public JsonData SaveFieldsToJson(object iObj, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
         {
+            
             JsonData aData = new JsonData();
             Type aType = iObj.GetType();
-
+            //Debug.LogError($"SaveFieldsToJson aType:{aType.FullName}");
             List<FieldInfo> aFields = null;
             switch (iSaveMode)
             {
@@ -392,7 +394,6 @@ namespace UCL.Core.JsonLib {
                 {
                     continue;
                 }
-
                 var aValue = aField.GetValue(iObj);
 
                 string aFieldName = aField.Name;
@@ -404,9 +405,18 @@ namespace UCL.Core.JsonLib {
                 {
                     //iData[aFieldName] = "";
                 }
-                else if (aValue is IJsonSerializable)
+                else if (aValue is IJsonSerializable)//
                 {
-                    aData[aFieldName] = ((IJsonSerializable)aValue).SerializeToJson();
+                    bool serializeReference = (aField.GetCustomAttribute<UCL_SerializeReference>() != null);
+                    //Debug.LogError($"aField:{aField.Name},UCL_SerializeReference:{serializeReference}");
+                    if (serializeReference)
+                    {
+                        aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    }
+                    else
+                    {
+                        aData[aFieldName] = ((IJsonSerializable)aValue).SerializeToJson();
+                    }
                 }
                 else if (aValue.IsNumber() || aValue is string)
                 {// || value is IList || value is IDictionary
@@ -469,7 +479,16 @@ namespace UCL.Core.JsonLib {
                 }
                 else if (aField.FieldType.IsStructOrClass())
                 {
-                    aData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    bool serializeReference = (aField.GetCustomAttribute<UCL_SerializeReference>() != null);
+                    //Debug.LogError($"aField:{aField.Name},UCL_SerializeReference:{serializeReference}");
+                    if (serializeReference)
+                    {
+                        aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    }
+                    else
+                    {
+                        aData[aFieldName] = SaveDataToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    }
                 }
             }
             return aData;
@@ -634,7 +653,19 @@ namespace UCL.Core.JsonLib {
                     {
                         var aJsonData = iData[aFieldName];
                         if (aJsonData == null) continue;
-                        var aFieldData = aJsonData.GetValue(aField.FieldType);
+                        object aFieldData = null;
+                        if (aField.GetCustomAttribute<UCL_SerializeReference>() != null)
+                        {
+                            string className = aJsonData.GetString(ClassNameID, null);
+                            if(className != null)
+                            {
+                                aFieldData = JsonToObject(aJsonData, iSaveMode, iFieldNameAlterFunc);
+                                aField.SetValue(iObj, aFieldData);
+                                continue;
+                            }
+                        }
+
+                        aFieldData = aJsonData.GetValue(aField.FieldType);
                         if (aFieldData == null)
                         {
                             try
@@ -647,6 +678,7 @@ namespace UCL.Core.JsonLib {
                                 continue;
                             }
                         }
+
                         if (aField.FieldType == typeof(string))
                         {
                             aField.SetValue(iObj, aFieldData);
@@ -661,9 +693,9 @@ namespace UCL.Core.JsonLib {
                         }
                         else if (aField.FieldType.IsAssignableFrom(typeof(UnityJsonSerializableObject)))
                         {
-                            string aClassName = iData.GetString("ClassName");
+                            string aClassName = iData.GetString(ClassNameID);
                             Type aClassType = Type.GetType(aClassName);
-                            JsonData aClassData = iData.GetString("ClassData");
+                            JsonData aClassData = iData.GetString(ClassDataID);
                             UnityJsonSerializableObject aObj = aClassType.CreateInstance() as UnityJsonSerializableObject;//Activator.CreateInstance();
                             aObj.DeserializeFromJson(aClassData);
                             aField.SetValue(iObj, aObj);

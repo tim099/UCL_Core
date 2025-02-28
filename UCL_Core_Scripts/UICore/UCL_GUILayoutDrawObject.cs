@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using UCL.Core.ATTR;
 using UCL.Core.LocalizeLib;
 using UnityEngine;
 
@@ -425,6 +426,7 @@ namespace UCL.Core.UI
             public FieldInfo m_FieldInfo;
             public bool m_AlwaysExpendOnGUI;
             public IEnumerable<Attribute> m_Attrs;
+            public bool m_SerializeReference;
             public string m_Header;
             public FieldInfoCache() { }
             public FieldInfoCache(FieldInfo iFieldInfo)
@@ -439,6 +441,7 @@ namespace UCL.Core.UI
                         m_Header = UCL_LocalizeManager.Get(m_Header);
                     }
                 }
+                m_SerializeReference = (m_FieldInfo.GetCustomAttribute<ATTR.UCL_SerializeReference>() != null);
                 m_AlwaysExpendOnGUI = (m_FieldInfo.FieldType.GetCustomAttribute<ATTR.AlwaysExpendOnGUI>() != null);
                 m_Attrs = m_FieldInfo.GetCustomAttributes();
             }
@@ -815,6 +818,36 @@ namespace UCL.Core.UI
                         }
                         else if (aFieldInfo.FieldType.IsStructOrClass())
                         {
+                            //GUILayout.Label($"aFieldInfoCache.m_SerializeReference:{aFieldInfoCache.m_SerializeReference}");
+                            if (aFieldInfoCache.m_SerializeReference)
+                            {
+                                var types = UCLI_TypeListable.GetAllITypes(aFieldInfo.FieldType);
+                                //GUILayout.Label($"types:{types.ConcatToString(type => type.Name)}");
+                                if (!types.IsNullOrEmpty())
+                                {
+                                    var typeNames = UCLI_TypeListable.GetTypeNames(types);
+                                    int index = 0;
+                                    if (aData != null)
+                                    {
+                                        index = types.IndexOf(aData.GetType());
+                                    }
+                                    int newIndex = UCL_GUILayout.PopupAuto(index, typeNames, iDataDic, "SerializeReference");
+                                    if (aData == null || newIndex != index)
+                                    {
+                                        try
+                                        {
+                                            var newType = types[newIndex];
+                                            aData = newType.CreateInstance();
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Debug.LogException(ex);
+                                        }
+                                    }
+                                }
+
+
+                            }
                             var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aFieldInfo, aIsAlwaysShowDetail);
                             DrawObjectData(aData, aParams);
                             //DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name + "_FieldData"), aDisplayName, aIsAlwaysShowDetail, iFieldNameFunc);

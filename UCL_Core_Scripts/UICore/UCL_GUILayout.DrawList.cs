@@ -317,11 +317,7 @@ namespace UCL.Core.UI
 
                                 if (aAllTypeList != null)
                                 {
-                                    aTypeNameList = new List<string>();
-                                    for (int i = 0; i < aAllTypeList.Count; i++)
-                                    {
-                                        aTypeNameList.Add(UCL_LocalizeLib.GetLocalize(aAllTypeList[i].Name));
-                                    }
+                                    aTypeNameList = UCLI_TypeListable.GetTypeNames(aAllTypeList);
                                     iParams.m_DataDic.Add(ITypeListKey, aTypeNameList);
                                     iParams.m_DataDic.Add(ITypeListKey + "Type", aAllTypeList);
                                 }

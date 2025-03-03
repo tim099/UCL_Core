@@ -11,12 +11,23 @@ namespace UCL.Core.PA
         None = 0,
         StreamingAssets,
         AssetsRoot,
+        /// <summary>
+        /// Get FolderRoot by Type and FuncName
+        /// ex. [UCL.Core.PA.UCL_FolderExplorer(typeof(UCL_ModuleService), nameof(UCL_ModuleService.ModResourcesPath))]
+        /// </summary>
+        FuncName,
+        /// <summary>
+        /// Refresh when OnGUI
+        /// ex. [PA.UCL_FolderExplorer(PA.ExplorerType.FuncNameWithRefresh, typeof(UCL_ModuleService), nameof(UCL_ModuleService.ModResourcesPath))]
+        /// </summary>
+        FuncNameWithRefresh,
     }
     public class UCL_FolderExplorerAttribute : PropertyAttribute
     {
         public ExplorerType m_ExplorerType = ExplorerType.None;
         public string m_FolderRoot = string.Empty;
         public UCL.Core.UCLI_FileExplorer m_FileExplorer = null;
+        private System.Action m_RefreshAct = null;
         public UCL_FolderExplorerAttribute()
         {
             Init(ExplorerType.AssetsRoot);
@@ -35,34 +46,53 @@ namespace UCL.Core.PA
         /// <param name="iFuncName">Static function of iType that return the folder root(string) or UCL.Core.UCLI_FileExplorer</param>
         public UCL_FolderExplorerAttribute(Type iType, string iFuncName)
         {
-            Init(iType, iFuncName);
+            InitFuncName(ExplorerType.FuncName, iType, iFuncName);
         }
+
         public UCL_FolderExplorerAttribute(Type iType, string iFuncName, string iFolderRoot)
         {
-            Init(iType, iFuncName);
+            InitFuncName(ExplorerType.FuncName, iType, iFuncName);
             m_FolderRoot = iFolderRoot;
+        }
+        public UCL_FolderExplorerAttribute(ExplorerType iExplorerType, Type iType, string iFuncName)
+        {
+            InitFuncName(iExplorerType, iType, iFuncName);
         }
         /// <summary>
         /// 
         /// </summary>
         /// <param name="iType">Type of the Target Class</param>
         /// <param name="iFuncName">Static function of iType that return the folder root(string) or UCL.Core.UCLI_FileExplorer</param>
-        public void Init(Type iType, string iFuncName)
+        public void InitFuncName(ExplorerType iExplorerType, Type iType, string iFuncName)
         {
+            m_ExplorerType = iExplorerType;
             var aMethod = iType.GetMethod(iFuncName);
             if (aMethod != null)
             {
                 try
                 {
-                    var aResult = aMethod.Invoke(null, null);
-                    if (aResult is string)
+                    void Refresh()
                     {
-                        m_FolderRoot = aResult as string;
+                        var aResult = aMethod.Invoke(null, null);
+                        if (aResult is string)
+                        {
+                            m_FolderRoot = aResult as string;
+                        }
+                        else if (aResult is UCL.Core.UCLI_FileExplorer)
+                        {
+                            m_FileExplorer = aResult as UCL.Core.UCLI_FileExplorer;
+                        }
                     }
-                    else if (aResult is UCL.Core.UCLI_FileExplorer)
+                    if (iExplorerType == ExplorerType.FuncNameWithRefresh)
                     {
-                        m_FileExplorer = aResult as UCL.Core.UCLI_FileExplorer;
+                        m_RefreshAct = Refresh;
                     }
+                    else
+                    {
+                        m_RefreshAct = null;
+                    }
+                    
+                    Refresh();
                 }
                 catch (Exception iE)
                 {
@@ -110,6 +140,8 @@ namespace UCL.Core.PA
         }
         public string OnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iPath, string iDisplayName = "Folder Explorer")
         {
+            m_RefreshAct?.Invoke();
+
             var aResult = UCL.Core.UI.UCL_GUILayout.FolderExplorer(iDataDic, iPath, m_FolderRoot, iDisplayName,
                 iIsShowFiles: false, iFileExplorer : m_FileExplorer);
             return aResult;

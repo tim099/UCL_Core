@@ -662,7 +662,20 @@ namespace UCL.Core.UI {
             const string DirPathKey = "DirPath";
             const string ShowToggleKey = "ShowToggle";//current showing toggle
             const string PathKey = "Path";
-            System.Action<string> aSetPath = (iNewPath) => {
+            if (!iDataDic.ContainsKey(nameof(iRoot)))
+            {
+                iDataDic.Add(nameof(iRoot), iRoot);
+            }
+            else
+            {
+                if (iDataDic.GetData(nameof(iRoot), iRoot) != iRoot)//Root changed
+                {
+                    iDataDic.Clear();//Clear all cache
+                }
+            }
+            //GUILayout.Label(iRoot, UCL_GUIStyle.LabelStyle);
+
+            void SetPath(string iNewPath){
                 iPath = iNewPath;
                 iDataDic.Remove(AllDirsNameKey);
                 iDataDic.Remove(AllFilesNameKey);
@@ -670,7 +683,7 @@ namespace UCL.Core.UI {
                 iDataDic.SetData(DirPathKey, iNewPath);
                 iDataDic.SetData(PathKey, iNewPath);
             };
-            System.Action<string> aSelectDir = (iDirPath) =>
+            void SelectDir(string iDirPath)
             {
                 string aPath = string.IsNullOrEmpty(iRoot) ? iDirPath : iRoot + "/" + iDirPath;
                 var aAllDirsName = iFileExplorer.GetDirectories(aPath, iSearchOption: System.IO.SearchOption.TopDirectoryOnly, iRemoveRootPath: true);
@@ -701,7 +714,7 @@ namespace UCL.Core.UI {
             {
                 if (iFileExplorer.DirectoryExists(string.IsNullOrEmpty(iRoot) ? aNewPath : iRoot + "/" + aNewPath))
                 {
-                    aSetPath(aNewPath);
+                    SetPath(aNewPath);
                 }
             }
             GUILayout.EndHorizontal();
@@ -719,7 +732,7 @@ namespace UCL.Core.UI {
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("<<", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))))
                 {
-                    aSetPath(string.Empty);
+                    SetPath(string.Empty);
                 }
                 if (!string.IsNullOrEmpty(iPath))//Path menu (on the top)
                 {
@@ -763,7 +776,7 @@ namespace UCL.Core.UI {
                                         if (j > 0) aSB.Append('/');
                                         aSB.Append(aPaths[j]);
                                     }
-                                    aSelectDir(aSB.ToString());
+                                    SelectDir(aSB.ToString());
                                 }
                             }
                         }
@@ -776,7 +789,7 @@ namespace UCL.Core.UI {
                                 if (j > 0) aSB.Append('/');
                                 aSB.Append(aPaths[j]);
                             }
-                            aSetPath(aSB.ToString());
+                            SetPath(aSB.ToString());
                         }
                     }
                 }
@@ -785,7 +798,7 @@ namespace UCL.Core.UI {
                 GUILayout.EndHorizontal();
                 if (!iDataDic.ContainsKey(AllDirsNameKey))
                 {
-                    aSelectDir(iPath);
+                    SelectDir(iPath);
                 }
                 string[] aDirs = iDataDic.GetData<string[]>(AllDirsNameKey);
                 string[] aFiles = iDataDic.GetData<string[]>(AllFilesNameKey);
@@ -805,11 +818,11 @@ namespace UCL.Core.UI {
                                 string aCurDirPath = iDataDic.GetData(DirPathKey, iPath);
                                 if (string.IsNullOrEmpty(aCurDirPath))
                                 {
-                                    aSetPath(aDir);
+                                    SetPath(aDir);
                                 }
                                 else
                                 {
-                                    aSetPath(aCurDirPath + "/" + aDir);
+                                    SetPath(aCurDirPath + "/" + aDir);
                                 }
                             }
                             Label(aDir, FileLib.Lib.GetFolderName(iDataDic.GetData(ShowToggleKey, string.Empty)) == aDir ?

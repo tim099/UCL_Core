@@ -28,7 +28,7 @@ namespace UCL.Core
         [ReadOnly(true)]
         public string m_ModuleID;
 
-        [UCL.Core.PA.UCL_FolderExplorer(typeof(UCL_ModuleService), nameof(UCL_ModuleService.ModResourcesPath))]
+        [PA.UCL_FolderExplorer(PA.ExplorerType.FuncNameWithRefresh, typeof(UCL_ModuleService), nameof(UCL_ModuleService.ModResourcesPath))]
         public string m_FolderPath;
 
         #region ReflectionGetAllFileNames
@@ -162,7 +162,7 @@ namespace UCL.Core
             {
                 GUILayout.Label(iDisplayName, UCL.Core.UI.UCL_GUIStyle.LabelStyle);
             }
-#if UNITY_STANDALONE_WIN
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
 
             var aPath = FileSystemFolderPath;
             if (Directory.Exists(aPath))
@@ -170,6 +170,13 @@ namespace UCL.Core
                 if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     UCL.Core.FileLib.WindowsLib.OpenExplorer(aPath);
+                }
+            }
+            else
+            {
+                if (GUILayout.Button(UCL_LocalizeManager.Get("CreateFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    Directory.CreateDirectory(aPath);
                 }
             }
 #endif

@@ -123,7 +123,20 @@ namespace UCL.Core
         /// <summary>
         /// for reflection
         /// </summary>
-        public static string ModResourcesPath => CurEditModule.ModuleEntry.ModResourcesPath;
+        public static string ModResourcesPath
+        {
+            get
+            {
+                try
+                {
+                    return CurEditModule.ModuleEntry.ModResourcesPath;
+                }catch(System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+                return string.Empty;
+            }
+        }
 
         public static string GetModResourcesPath(string iID)
         {

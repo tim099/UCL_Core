@@ -5,6 +5,7 @@ using UnityEditor;
 using System;
 using System.Linq;
 using System.Reflection;
+using UCL.Core.UI;
 
 namespace UCL.Core.EditorLib {
     [CustomEditor(typeof(ScriptableObject), true)]
@@ -17,16 +18,29 @@ namespace UCL.Core.EditorLib {
             return m_RequiresConstantRepaint;
         }
         public override void OnInspectorGUI() {
-            Type aType = target.GetType();
-            if (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) == null)
-            {
-                DrawDefaultInspector();
-                return;
-            }
 
-            m_RequiresConstantRepaint = (aType.GetCustomAttribute<ATTR.RequiresConstantRepaintAttribute>(true) != null);
-            DrawATTR.DrawAllMethods(target, aType, this.GetType(), m_Dic, ()=> DrawDefaultInspector());
-            Resources.UnloadUnusedAssets();
+            try
+            {
+                UCL_GUIStyle.IsInEditorWindow = true;
+                Type aType = target.GetType();
+                if (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) == null)
+                {
+                    DrawDefaultInspector();
+                    return;
+                }
+
+                m_RequiresConstantRepaint = (aType.GetCustomAttribute<ATTR.RequiresConstantRepaintAttribute>(true) != null);
+                DrawATTR.DrawAllMethods(target, aType, this.GetType(), m_Dic, () => DrawDefaultInspector());
+                Resources.UnloadUnusedAssets();
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+            finally
+            {
+                UCL_GUIStyle.IsInEditorWindow = false;
+            }
         }
     }
 }

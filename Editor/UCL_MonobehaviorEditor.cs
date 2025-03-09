@@ -31,7 +31,7 @@ namespace UCL.Core.EditorLib {
             }
             catch (Exception e)
             {
-                Debug.LogException(e);
+                throw e;
             }
             finally
             {

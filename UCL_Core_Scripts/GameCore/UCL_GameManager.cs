@@ -6,7 +6,8 @@ using System.IO;
 using System.Threading;
 using UnityEngine;
 
-namespace UCL.Core.Game {
+namespace UCL.Core.Game
+{
 #if UNITY_EDITOR
     [ATTR.EnableUCLEditor]
 #endif
@@ -74,19 +75,23 @@ namespace UCL.Core.Game {
 
             Init();
 
-            foreach (var aService in m_GameServices)
+            foreach (var service in m_GameServices)
             {
-                try
+                if (service != null)
                 {
-                    await aService.InitAsync(aToken);
+                    try
+                    {
+                        await service.InitAsync(aToken);
+                    }
+                    catch (OperationCanceledException) { }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError(service.name + ".InitAsync() Exception:" + e);
+                        Debug.LogException(e);
+                    }
+                    aToken.ThrowIfCancellationRequested();
                 }
-                catch (OperationCanceledException) { }
-                catch (System.Exception e)
-                {
-                    Debug.LogError(aService.name + ".InitAsync() Exception:" + e);
-                    Debug.LogException(e);
-                }
-                aToken.ThrowIfCancellationRequested();
+
             }
         }
         virtual public void Init() {
@@ -105,31 +110,36 @@ namespace UCL.Core.Game {
                 GameExit();
             });
 #endif
+
             foreach (var service in m_GameServices)
             {
-                try
+                if(service != null)
                 {
-                    service.SetGameManager(this);
-                    service.Init();
+                    try
+                    {
+                        service.SetGameManager(this);
+                        service.Init();
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError(service.name + ".Init() Exception:" + e);
+                        Debug.LogException(e);
+                    }
                 }
-                catch (System.Exception e)
-                {
-                    Debug.LogError(service.name + ".Init() Exception:" + e);
-                    Debug.LogException(e);
-                }
-
             }
-            foreach (var aService in m_GameServices)
+            foreach (var service in m_GameServices)
             {
-                try
+                if(service != null)
                 {
-                    aService.InitEnd();
+                    try
+                    {
+                        service.InitEnd();
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError(service.name + ".InitEnd() Exception:" + e);
+                    }
                 }
-                catch (System.Exception e)
-                {
-                    Debug.LogError(aService.name + ".InitEnd() Exception:" + e);
-                }
-
             }
 
 
@@ -150,15 +160,21 @@ namespace UCL.Core.Game {
 
             var aGameServicePath = GetGameServicePath();
 
-            foreach(var aService in m_GameServices) {
-                try
+
+            foreach(var service in m_GameServices) {
+                if (service != null)
                 {
-                    aService.Save(aGameServicePath);
+                    try
+                    {
+                        service.Save(aGameServicePath);
+                    }
+                    catch (System.Exception iE)
+                    {
+                        Debug.LogError($"{service.name}, Exception:{iE}");
+                        Debug.LogException(iE);
+                    }
                 }
-                catch (System.Exception iE)
-                {
-                    Debug.LogException(iE);
-                }
+
             }
         }
         virtual public void LoadAllSetting() {
@@ -167,14 +183,17 @@ namespace UCL.Core.Game {
             var aGameServicePath = GetGameServicePath();
             FileLib.Lib.CreateDirectory(aGameServicePath);
 
-            foreach(var aService in m_GameServices) {
-                try
+            foreach (var service in m_GameServices) {
+                if (service != null)
                 {
-                    aService.Load(aGameServicePath);
-                }
-                catch(System.Exception iE)
-                {
-                    Debug.LogException(iE);
+                    try
+                    {
+                        service.Load(aGameServicePath);
+                    }
+                    catch (System.Exception iE)
+                    {
+                        Debug.LogException(iE);
+                    }
                 }
             }
         }

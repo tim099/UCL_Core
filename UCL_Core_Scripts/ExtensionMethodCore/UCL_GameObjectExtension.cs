@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace UCL.Core
 {
-    public static partial class RCG_GameObjectExtensions
+    public static partial class UCL_GameObjectExtensions
     {
         public static void TrySetActive(this GameObject iObj, bool iValue)
         {

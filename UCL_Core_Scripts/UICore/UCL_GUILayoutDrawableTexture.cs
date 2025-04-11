@@ -165,5 +165,46 @@ namespace UCL.Core.UI
             }
             return aIsUpdated;
         }
+        /// <summary>
+        /// Draw a line between two points
+        /// </summary>
+        /// <param name="points"></param>
+        /// <param name="color"></param>
+        /// <param name="width"></param>
+        static public void DrawPolyLine(Vector2[] points, Color color, float width)
+        {
+            if (points.Length < 2) return;
+
+            Color originalColor = GUI.color;
+            GUI.color = color;
+
+            for (int i = 0; i < points.Length - 1; i++)
+            {
+                Vector2 start = points[i];
+                Vector2 end = points[i + 1];
+                DrawLine(start, end, width);
+            }
+
+            GUI.color = originalColor;
+        }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="start"></param>
+        /// <param name="end"></param>
+        /// <param name="width"></param>
+        static public void DrawLine(Vector2 start, Vector2 end, float width)
+        {
+            
+            Vector2 delta = end - start;
+            float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+            float length = delta.magnitude;
+
+            Matrix4x4 originalMatrix = GUI.matrix;
+            GUIUtility.RotateAroundPivot(angle, start);
+            GUI.DrawTexture(new Rect(start.x, start.y, length, width), Texture2D.whiteTexture);
+            //GUIUtility.RotateAroundPivot(-angle, start);
+            GUI.matrix = originalMatrix;
+        }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -195,16 +195,82 @@ namespace UCL.Core.UI
         /// <param name="width"></param>
         static public void DrawLine(Vector2 start, Vector2 end, float width)
         {
-            
-            Vector2 delta = end - start;
-            float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
-            float length = delta.magnitude;
-
+            Color originalColor = GUI.color;
             Matrix4x4 originalMatrix = GUI.matrix;
-            GUIUtility.RotateAroundPivot(angle, start);
-            GUI.DrawTexture(new Rect(start.x, start.y, length, width), Texture2D.whiteTexture);
-            //GUIUtility.RotateAroundPivot(-angle, start);
-            GUI.matrix = originalMatrix;
+            try
+            {
+                Vector2 delta = end - start;
+                float length = delta.magnitude;
+
+                if (delta.y == 0)
+                {
+                    GUIUtility.RotateAroundPivot(0, start);//Rotate around pivot
+                    GUI.DrawTexture(new Rect(start.x, start.y, length, width), Texture2D.whiteTexture);
+                }
+                else if (delta.x == 0)
+                {
+                    GUIUtility.RotateAroundPivot(0, start);//Rotate around pivot
+                    float minY = Mathf.Min(start.y, end.y);
+                    GUI.DrawTexture(new Rect(start.x, minY, width, length), Texture2D.whiteTexture);
+                }
+                else
+                {
+                    float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+
+                    GUIUtility.RotateAroundPivot(angle, start);//Rotate around pivot
+                    GUI.DrawTexture(new Rect(start.x, start.y, length, width), Texture2D.whiteTexture);
+                    //GUIUtility.RotateAroundPivot(-angle, start);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError(e);
+            }
+            finally
+            {
+                GUI.matrix = originalMatrix;//restore matrix
+            }
+        }
+
+        static public void DrawLine(Vector2 start, Vector2 end, float width, Color color)
+        {
+            Color originalColor = GUI.color;
+            Matrix4x4 originalMatrix = GUI.matrix;
+            try
+            {
+                GUI.color = color;// Set color
+                Vector2 delta = end - start;
+                float length = delta.magnitude;
+
+                if (delta.y == 0)
+                {
+                    GUIUtility.RotateAroundPivot(0, start);//Rotate around pivot
+                    GUI.DrawTexture(new Rect(start.x, start.y, length, width), Texture2D.whiteTexture);
+                }
+                else if (delta.x == 0)
+                {
+                    GUIUtility.RotateAroundPivot(0, start);//Rotate around pivot
+                    float minY = Mathf.Min(start.y, end.y);
+                    GUI.DrawTexture(new Rect(start.x, minY, width, length), Texture2D.whiteTexture);
+                }
+                else
+                {
+                    float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+
+                    GUIUtility.RotateAroundPivot(angle, start);//Rotate around pivot
+                    GUI.DrawTexture(new Rect(start.x, start.y, length, width), Texture2D.whiteTexture);
+                    //GUIUtility.RotateAroundPivot(-angle, start);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError(e);
+            }
+            finally
+            {
+                GUI.matrix = originalMatrix;//restore matrix
+                GUI.color = originalColor;//restore color
+            }
         }
     }
 }

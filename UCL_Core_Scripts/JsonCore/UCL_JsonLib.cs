@@ -402,7 +402,7 @@ namespace UCL.Core.JsonLib {
                     aFieldName = iFieldNameAlterFunc(aFieldName);
                 }
 
-                if (aValue != null && aField.GetCustomAttribute<UCL_SerializeReference>() != null)
+                if (aValue != null && aField.GetCustomAttribute<SerializeReference>() != null)
                 {
                     aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
                     continue;
@@ -643,7 +643,7 @@ namespace UCL.Core.JsonLib {
                         var aJsonData = iData[aFieldName];
                         if (aJsonData == null) continue;
                         object aFieldData = null;
-                        if (aField.GetCustomAttribute<UCL_SerializeReference>() != null)
+                        if (aField.GetCustomAttribute<SerializeReference>() != null)
                         {
                             string className = aJsonData.GetString(ClassNameID, null);
                             if(className != null)

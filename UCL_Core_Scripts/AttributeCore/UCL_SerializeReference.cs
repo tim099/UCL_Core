@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using UnityEngine;
 namespace UCL.Core.ATTR
 {
+    
+    [Obsolete("Please use UnityEngine.SerializeReference instead")]
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
     public class UCL_SerializeReference : Attribute
     {

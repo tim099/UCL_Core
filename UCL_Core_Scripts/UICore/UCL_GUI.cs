@@ -264,5 +264,13 @@ namespace UCL.Core.UI {
         {
             return GUI.Button(iRectTransform.GetScreenSpaceRect(), iText, iStyle);
         }
+        public static void Label(string label, Color color, Vector2 pos)
+        {
+            var restoreColor = GUI.color;
+            GUI.color = color;
+            Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
+            GUI.Label(new Rect(pos.x, pos.y, size.x, size.y), label);
+            GUI.color = restoreColor;
+        }
     }
 }

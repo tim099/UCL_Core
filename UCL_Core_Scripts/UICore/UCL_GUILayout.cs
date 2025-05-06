@@ -20,7 +20,24 @@ namespace UCL.Core.UI {
         /// <returns></returns>
         object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic, UCL_GUILayout.DrawObjectParams iParams);
     }
+    public static class UCL_StaticTextures
+    {
+        public static Texture2D White
+        {
+            get
+            {
+                if (s_White == null)
+                {
+                    s_White = new Texture2D(1, 1);
+                    s_White.SetPixel(0, 0, Color.white);
+                    s_White.Apply();
+                }
+                return s_White;
+            }
+        }
+        public static Texture2D s_White = null;
 
+    }
     static public partial class UCL_GUILayout {
         /// <summary>
         /// set to true if RequireRepaint
@@ -149,6 +166,29 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return aResult;
         }
+
+        static public void ProgressBar(Rect rect, float progress, Color? color = null, Color? baseColor = null, float offSet = 1.0f)
+        {
+            progress = Mathf.Clamp01(progress);
+            if (!baseColor.HasValue) baseColor = Color.black;
+            if (!color.HasValue) color = Color.green;
+            using (new UCL_GUIStyle.UCL_GUIColorScope(baseColor.Value))
+            {
+                GUI.DrawTexture(rect, UCL_StaticTextures.White);
+            }
+            //float h = rect.height - 2f * offSet;
+            //Debug.LogError($"rect.height:{rect.height}, h:{h}");
+            //rect.width = progress * (rect.width - 2f * offSet);
+            //rect.height = h;
+            //rect.x += offSet;
+            //rect.y -= offSet;
+            var rect2 = new Rect(rect.x + offSet, rect.y + offSet, progress * (rect.width - 2f * offSet), rect.height - 2f * offSet);
+            using (new UCL_GUIStyle.UCL_GUIColorScope(color.Value))
+            {
+                GUI.DrawTexture(rect2, UCL_StaticTextures.White);
+            }
+        }
+
         static public object NumField(string iLabel, object iVal, int iMinWidth = 80) {
             GUILayout.BeginHorizontal();
             if (!string.IsNullOrEmpty(iLabel)) LabelAutoSize(iLabel);

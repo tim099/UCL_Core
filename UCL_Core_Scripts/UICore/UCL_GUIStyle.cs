@@ -1,7 +1,8 @@
-
+﻿
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/26 2024 12:53
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -304,6 +305,23 @@ namespace UCL.Core.UI {
         }
 
         static Stack<Color> s_ColorStack = new Stack<Color>();
+
+        public class UCL_GUIColorScope : IDisposable
+        {
+            private Color m_PrevColor;
+            public UCL_GUIColorScope(Color col) 
+            {
+                m_PrevColor = GUI.color;
+                GUI.color = col;
+                //PushGUIColor(iCol);
+            }
+            public void Dispose()
+            {
+                //PopGUIColor();
+                GUI.color = m_PrevColor;
+            }
+        }
+
         public static void PushGUIColor(Color iCol)
         {
             s_ColorStack.Push(GUI.color);

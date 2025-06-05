@@ -272,6 +272,13 @@ namespace UCL.Core
 
         private static Encoding FileEncoding => Encoding.UTF8;
         private const char seperator = '\0';
+
+        public void ClearAllDatas()
+        {
+            m_LangKeys.Clear();
+            m_LocalizeDatas.Clear();
+
+        }
         public string GetSavePath(string langKey)
         {
             return Path.Combine(FolderPath, $"{langKey}.txt");

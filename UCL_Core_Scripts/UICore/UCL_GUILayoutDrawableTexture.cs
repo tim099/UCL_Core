@@ -187,6 +187,66 @@ namespace UCL.Core.UI
 
             GUI.color = originalColor;
         }
+
+        static private Material s_LineMaterial;
+
+        static public Material LineMaterial
+        {
+            get
+            {
+                if (s_LineMaterial == null)
+                {
+                    s_LineMaterial = new Material(Shader.Find("Hidden/Internal-Colored"));
+                    s_LineMaterial.hideFlags = HideFlags.HideAndDontSave;
+                    s_LineMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    s_LineMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    s_LineMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                    s_LineMaterial.SetInt("_ZWrite", 0);
+                }
+
+                return s_LineMaterial;
+            }
+        }
+
+        static public void GL_DrawPolyLine(Vector2[] points, Color color, float width)
+        {
+            if (points.Length < 2) return;
+
+            LineMaterial.SetPass(0);
+
+            GL.Begin(GL.QUADS);
+            GL.Color(color);
+
+            for (int i = 0; i < points.Length - 1; i++)
+            {
+                Vector3 start = points[i];
+                Vector3 end = points[i + 1];
+                Vector3 perpendicular = Vector3.Cross(end - start, Vector3.forward).normalized * 0.5f * width;
+
+                GL.Vertex(start - perpendicular);
+                GL.Vertex(start + perpendicular);
+                GL.Vertex(end + perpendicular);
+                GL.Vertex(end - perpendicular);
+            }
+
+            GL.End();
+        }
+        static public void GL_DrawLine(Vector3 start, Vector3 end, float width, Color color)
+        {
+            LineMaterial.SetPass(0);
+
+            GL.Begin(GL.QUADS);
+            GL.Color(color);
+
+            Vector3 perpendicular = Vector3.Cross(end - start, Vector3.forward).normalized * 0.5f * width;
+
+            GL.Vertex(start - perpendicular);
+            GL.Vertex(start + perpendicular);
+            GL.Vertex(end + perpendicular);
+            GL.Vertex(end - perpendicular);
+
+            GL.End();
+        }
         /// <summary>
         /// 
         /// </summary>

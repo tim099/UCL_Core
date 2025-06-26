@@ -1,6 +1,6 @@
 {
     "name": "UCL_Core",
-    "rootNamespace": "",
+    "rootNamespace": "UCL.Core",
     "references": [
         "Unity.Addressables",
         "Unity.ResourceManager",

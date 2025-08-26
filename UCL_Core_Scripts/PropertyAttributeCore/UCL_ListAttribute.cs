@@ -3,6 +3,7 @@ using System;
 using System.Reflection;
 using UCL.Core.ObjectReflectionExtension;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace UCL.Core.PA {
     public class UCL_StrListAttribute : PropertyAttribute, IStrList
@@ -66,7 +67,8 @@ namespace UCL.Core.PA {
         /// <returns></returns>
         public IList<string> GetStrList(object iTarget) {
             var aResult = iTarget.Invoke(m_MethodName, m_Params);
-            if (aResult is IList<string>) return aResult as IList<string>;
+            if (aResult is IList<string> list) return list;
+            if (aResult is IEnumerable<string> enumerable) return enumerable.ToList();
 
             return Array.Empty<string>();
         }

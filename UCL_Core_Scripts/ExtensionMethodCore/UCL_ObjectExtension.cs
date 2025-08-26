@@ -364,11 +364,13 @@ namespace UCL.Core.ObjectReflectionExtension {
                 {
                     if (!aHasParams)//might be accessor
                     {
-
-                        PropertyInfo aPropInfo = aType.GetProperty(iFunctionName);
+                        const BindingFlags bindingFlag = BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+                        PropertyInfo aPropInfo = aType.GetProperty(iFunctionName, bindingFlag);
+                        
                         if (aPropInfo == null)
                         { // not accessor!!
-                            Debug.LogError("InvokeFunc Fail!!FunctionName:" + iFunctionName + " not exist in Type:" + aType.Name);
+                            Debug.LogError($"InvokeFunc Fail!!FunctionName:{iFunctionName} not exist in Type:{aType.Name}" +
+                                $", Properties():{aType.GetProperties(bindingFlag).ConcatToString(property => property.Name)}");
                             return null;
                         }
                         MethodInfo[] aAccessors = aPropInfo.GetAccessors();

@@ -376,4 +376,20 @@ namespace UCL.Core.UI {
             }
         }
     }
+
+    public class IsInEditorWindowScope : IDisposable
+    {
+        public bool prev;
+        public IsInEditorWindowScope(bool flag)
+        {
+            prev = UCL_GUIStyle.IsInEditorWindow;
+            UCL_GUIStyle.IsInEditorWindow = flag;
+        }
+
+
+        public void Dispose()
+        {
+            UCL_GUIStyle.IsInEditorWindow = prev;
+        }
+    }
 }

@@ -2,6 +2,7 @@
 using System;
 using UnityEditor;
 using System.Linq;
+using UCL.Core.UI;
 namespace UCL.Core.PA
 {
     [CustomPropertyDrawer(typeof(UCL_StrListAttribute))]
@@ -36,6 +37,7 @@ namespace UCL.Core.PA
     [CustomPropertyDrawer(typeof(UCL_ListAttribute))]
     public class UCL_ListAttributeDrawer : PropertyDrawer
     {
+        UCL_ObjectDictionary m_Dictionary;
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
             var aObj = property.GetParent();
@@ -45,13 +47,29 @@ namespace UCL.Core.PA
 
             if (property.propertyType == SerializedPropertyType.String)
             {
-                int aIndex = Mathf.Max(0, aList.IndexOf(property.stringValue));
-                var aDisplayList = aListAttr.GetDisplayList(aObj);
-                aIndex = EditorGUI.Popup(position, property.displayName, aIndex, aDisplayList);
-                if (aList.Count > aIndex)
+                using(new IsInEditorWindowScope(true))
                 {
-                    property.stringValue = aList[aIndex];
+                    
+                    var aDisplayList = aListAttr.GetDisplayList(aObj);
+                    if (m_Dictionary == null) m_Dictionary = new UCL_ObjectDictionary();
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        int aIndex = Mathf.Max(0, aList.IndexOf(property.stringValue));
+                        GUILayout.Label(label.text, GUILayout.ExpandWidth(false));
+                        aIndex = UCL_GUILayout.PopupAuto(aIndex, aDisplayList, m_Dictionary, "Popup", 5);
+                        if (aIndex < aList.Count)
+                        {
+                            property.stringValue = aList[aIndex];
+                        }
+                    }
+                    //int aIndex = Mathf.Max(0, aList.IndexOf(property.stringValue));
+                    //aIndex = EditorGUI.Popup(position, property.displayName, aIndex, aDisplayList);
+                    //if (aList.Count > aIndex)
+                    //{
+                    //    property.stringValue = aList[aIndex];
+                    //}
                 }
+
             }
             else
             {

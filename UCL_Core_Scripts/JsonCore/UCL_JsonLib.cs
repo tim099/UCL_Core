@@ -638,6 +638,14 @@ namespace UCL.Core.JsonLib {
                     {
                         aFieldName = iFieldNameAlterFunc(aFieldName);
                     }
+                    if (!iData.Contains(aFieldName))//try find UnityEngine.Serialization.FormerlySerializedAs
+                    {
+                        var formerlySerializedAs = aField.GetCustomAttribute<UCL_FormerlySerializedAsAttribute>();
+                        if(formerlySerializedAs != null)
+                        {
+                            aFieldName = formerlySerializedAs.oldName;//try old name
+                        }
+                    }
                     if (iData.Contains(aFieldName))
                     {
                         var aJsonData = iData[aFieldName];

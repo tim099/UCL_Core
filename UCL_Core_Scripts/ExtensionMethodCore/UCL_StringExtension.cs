@@ -61,6 +61,16 @@ public static partial class StringExtensionMethods {
     /// Append RichText Color to the string
     /// </summary>
     /// <param name="iStr"></param>
+    /// <param name="col"></param>
+    /// <returns></returns>
+    public static string ToHtmlStringRGB(this Color col)
+    {
+        return ColorUtility.ToHtmlStringRGB(col);
+    }
+    /// <summary>
+    /// Append RichText Color to the string
+    /// </summary>
+    /// <param name="iStr"></param>
     /// <param name="iCol"></param>
     /// <returns></returns>
     public static string RichTextColor(this string iStr, string iCol = "FFFFFF")

@@ -1,4 +1,4 @@
-
+﻿
 // AutoHeader
 // to change the auto header please go to AutoHeader.cs
 // Create time : 09/25 2023
@@ -7,8 +7,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
+using UCL.Core.UI;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 //using UnityEngine.ResourceManagement.AsyncOperations;
 
 namespace UCL.Core
@@ -17,7 +19,7 @@ namespace UCL.Core
     /// https://docs.unity3d.com/Packages/com.unity.addressables@1.3/manual/MemoryManagement.html
     /// </summary>
     [System.Serializable]
-    public class UCL_AddressableData : UCL_Data
+    public class UCL_AddressableData : UCL_Data, UCLI_NameOnGUI
     {
         public class LoadedAddressable : IDisposable
         {
@@ -118,6 +120,25 @@ namespace UCL.Core
         public override string Key => m_AddressableKey;
 
         public override string Name => UCL.Core.FileLib.Lib.GetFileName(m_AddressableKey);
+
+        virtual public void NameOnGUI(UCL_ObjectDictionary iDataDic, string iDisplayName, UCL_GUILayout.DrawObjectParams iParams)
+        {
+            GUILayout.Label($"{iDisplayName}({Name})", UCL_GUIStyle.LabelStyle);//, GUILayout.Width(180), GUILayout.ExpandWidth(true)
+        }
+        public AsyncOperationHandle<T> LoadAssetAsync<T>() where T : UnityEngine.Object
+        {
+            return Addressables.LoadAssetAsync<T>(m_AddressableKey);
+        }
+        public T LoadComponentAsset<T>() where T : UnityEngine.Component
+        {
+            GameObject obj = Addressables.LoadAssetAsync<GameObject>(m_AddressableKey).WaitForCompletion();
+            if (obj == null)
+            {
+                Debug.LogError($"LoadComponentAsset:{m_AddressableKey}, obj == null");
+                return null;
+            }
+            return obj.GetComponent<T>();
+        }
         public override async UniTask<UnityEngine.Object> LoadAsync(CancellationToken iToken)
         {
             return await LoadObjectAsync<UnityEngine.Object>(iToken);
@@ -213,5 +234,8 @@ namespace UCL.Core
             Release(m_AddressableKey);
         }
 
+
+        public UCL_AddressableData() { }
+        public UCL_AddressableData(string path, string key) { m_AddressablePath = path; m_AddressableKey = key; }
     }
 }

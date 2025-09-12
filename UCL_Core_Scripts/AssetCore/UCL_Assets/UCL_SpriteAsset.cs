@@ -229,6 +229,21 @@ namespace UCL.Core
             }
         }
 
+
+        override public void NameOnGUI(UCL_ObjectDictionary iDataDic, string iDisplayName, UCL_GUILayout.DrawObjectParams iParams)
+        {
+            
+            GUILayout.BeginHorizontal();
+            var texture = Texture;
+            if (texture != null)
+            {
+                int size = UCL_GUIStyle.GetScaledSize(16);
+
+                UCL_GUILayout.DrawTextureFixedSize(texture, size);
+            }
+            base.NameOnGUI(iDataDic, iDisplayName, iParams);
+            GUILayout.EndHorizontal();
+        }
         public void SetImage(Image iImage)
         {
             if (IsEmpty)

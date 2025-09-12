@@ -1,4 +1,4 @@
-
+﻿
 // ATS_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 02/20 2024 19:50
@@ -80,7 +80,7 @@ namespace UCL.Core
 
                 
                 //GUILayout.Label($"{this.UCL_ToString()}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
-                UCL_GUILayout.Preview.OnGUI(this, iDataDic.GetSubDic("DrawPreview"));
+                UCL_GUILayout.Preview.OnGUI("Preview", this, iDataDic.GetSubDic("DrawPreview"));
                 //UCL_GUILayout.DrawObjectData(this, iDataDic.GetSubDic("Preview Data"), string.Empty, true);
 
             }

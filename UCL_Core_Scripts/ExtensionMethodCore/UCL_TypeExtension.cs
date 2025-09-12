@@ -312,7 +312,7 @@ public static partial class TypeExtensionMethods {
                 var aGenericArguments = iType.GetGenericArguments();
                 if (aGenericArguments.Length >= 2)
                 {
-                    return $"IDictionary<{aGenericArguments[0].Name}{aGenericArguments[1].Name}>";
+                    return $"IDictionary<{aGenericArguments[0].Name},{aGenericArguments[1].Name}>";
                 }
             }
             else if (iType.IsGenericType && typeof(IEnumerable).IsAssignableFrom(iType))

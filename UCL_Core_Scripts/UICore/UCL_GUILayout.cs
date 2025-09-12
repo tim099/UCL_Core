@@ -585,7 +585,19 @@ namespace UCL.Core.UI {
             GUI.DrawTextureWithTexCoords(aRect, aTex, aSpriteRect);
             return aRect;
         }
+        static public Rect DrawTextureFixedSize(Texture iTexture, float iSize = 128)
+        {
+            if (iTexture == null) return GUILayoutUtility.GetRect(iSize, iSize);
 
+            if (iTexture.height < iTexture.width)
+            {
+                return DrawTextureFixedHeight(iTexture, iSize);
+            }
+            else
+            {
+                return DrawTextureFixedWidth(iTexture, iSize);
+            }
+        }
         static public Rect DrawTextureFixedWidth(Texture iTexture, float iWidth)
         {
             if (iTexture == null) return GUILayoutUtility.GetRect(iWidth, iWidth);

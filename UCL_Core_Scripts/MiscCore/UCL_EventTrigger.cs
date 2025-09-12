@@ -13,6 +13,7 @@ namespace UCL.Core.Misc
             OnStart,//Invoke StartTween() On Start()
             OnEnable,//Invoke StartTween() On OnEnable()
             OnAwake,//Invoke StartTween() On Awake()
+            OnDisable,
         }
         public TriggerOn m_TriggerOn = TriggerOn.OnStart;
         public UnityEngine.Events.UnityEvent m_Events;
@@ -28,6 +29,10 @@ namespace UCL.Core.Misc
         private void OnEnable()
         {
             if (m_TriggerOn == TriggerOn.OnEnable) TriggerEvent();
+        }
+        private void OnDisable()
+        {
+            if (m_TriggerOn == TriggerOn.OnDisable) TriggerEvent();
         }
         [UCL.Core.ATTR.UCL_FunctionButton]
         public void TriggerEvent()

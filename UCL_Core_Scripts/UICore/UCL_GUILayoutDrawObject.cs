@@ -954,11 +954,19 @@ namespace UCL.Core.UI
                             }
                             s_OnGUICacheDic[aType] = PrimitiveOnGUI;
                         }
-                        else if (target is string str)
+                        else if (target is string)
                         {
                             void StringOnGUI(string fieldName, object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
                             {
                                 GUILayout.Label($"{fieldName}: {iObj}", UCL_GUIStyle.LabelStyle);
+                            }
+                            s_OnGUICacheDic[aType] = StringOnGUI;
+                        }
+                        else if (target is UCLI_AssetEntry)
+                        {
+                            void StringOnGUI(string fieldName, object iObj, UCL_ObjectDictionary iDataDic, int iSpace = 0)
+                            {
+                                GUILayout.Label($"{fieldName}: {(iObj as UCLI_AssetEntry).ID}", UCL_GUIStyle.LabelStyle);
                             }
                             s_OnGUICacheDic[aType] = StringOnGUI;
                         }

@@ -22,7 +22,7 @@ namespace UCL.Core
     {
         public const string Data = "Data";
         public const string Config = "Config";
-
+        public const string Editor = "Editor";
         public enum EditDataType : int
         {
             UCL_ModResourceAsset = 1,
@@ -37,6 +37,11 @@ namespace UCL.Core
             UCL_LanguageCodeAsset = 1,
             UCL_ModulePlaylist,
             UCL_OnModuleLoadedAsset,
+        }
+        public enum EditEditorType : int
+        {
+            UCL_ImageEditor = 1,
+
         }
     }
 

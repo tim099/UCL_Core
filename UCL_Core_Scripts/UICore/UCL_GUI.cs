@@ -269,7 +269,7 @@ namespace UCL.Core.UI {
             var restoreColor = GUI.color;
             GUI.color = color;
             Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
-            GUI.Label(new Rect(pos.x, pos.y, size.x, size.y), label);
+            GUI.Label(new Rect(pos.x, pos.y - 0.5f * size.y, size.x, size.y), label);
             GUI.color = restoreColor;
         }
     }

@@ -422,9 +422,9 @@ namespace UCL.Core
             {
                 
                 UCL_ModulePath.PersistantPath.ModuleEntry aModuleConfig = UCL_ModulePath.PersistantPath.Builtin.GetModuleEntry(ID);
-                await UniTask.SwitchToThreadPool();
+                //await UniTask.SwitchToThreadPool();
                 await aModuleConfig.Install();
-                await UniTask.SwitchToMainThread();
+                //await UniTask.SwitchToMainThread();
 
             }
             catch (System.Exception e)

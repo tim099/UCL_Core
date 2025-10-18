@@ -534,10 +534,20 @@ namespace UCL.Core.UI
                 GUILayout.BeginHorizontal();
                 if (iObj is UCLI_NameOnGUI aNameOnGUI)
                 {
+                    var helpURL = aType.GetCustomAttribute<HelpURLAttribute>();
+                    if (helpURL != null)
+                    {
+                        float size = UCL_GUIStyle.GetScaledSize(20);
+                        if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.Width(size), GUILayout.Height(size)))
+                        {
+                            Application.OpenURL(helpURL.URL);
+                        }
+                    }
                     aNameOnGUI.NameOnGUI(iDataDic, iDisplayName, iParams);
                 }
                 else
                 {
+                    
                     if (iObj is UCL.Core.UCLI_Icon aIcon)
                     {
                         var aTexture = aIcon.IconTexture;
@@ -556,6 +566,16 @@ namespace UCL.Core.UI
                     {
                         aEnable.IsEnable = UCL_GUILayout.CheckBox(aEnable.IsEnable);
                     }
+                    var helpURL = aType.GetCustomAttribute<HelpURLAttribute>();
+                    if (helpURL != null)
+                    {
+                        float size = UCL_GUIStyle.GetScaledSize(20);
+                        if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.Width(size), GUILayout.Height(size)))
+                        {
+                            Application.OpenURL(helpURL.URL);
+                        }
+                    }
+
                     GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (iParams.m_SerializeReference && iParams.m_FieldType != null)
                     {

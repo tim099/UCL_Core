@@ -1,4 +1,4 @@
-
+﻿
 // ATS_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 02/20 2024 18:29
@@ -15,6 +15,7 @@ using UCL.Core.UI;
 using UCL.Core;
 using UCL.Core.Page;
 using RCG.Page;
+using System.Reflection;
 
 namespace UCL.Core.Page
 {
@@ -60,6 +61,7 @@ namespace UCL.Core.Page
         override public string WindowName => m_WindowName;
         protected override bool ShowCloseButton => false;
         UCLI_CommonEditable m_Data = null;
+        string m_HelpURL = null;
         string m_WindowName = string.Empty;
         /// <summary>
         /// Init value of m_Data.SerializeToJson()(Refresh when save data)
@@ -70,7 +72,14 @@ namespace UCL.Core.Page
         public void SetData(UCLI_CommonEditable iData)
         {
             m_Data = iData;
-            m_WindowName = UCL_LocalizeManager.Get($"{iData.GetType().Name}Editor");
+            var type = iData.GetType();
+            var url = type.GetCustomAttribute<HelpURLAttribute>();
+            if(url != null)
+            {
+                m_HelpURL = url.URL;
+                //Debug.LogError($"m_HelpURL:{m_HelpURL}");
+            }
+            m_WindowName = UCL_LocalizeManager.Get($"{type.Name}Editor");
             UpdateInitJson();
         }
         void UpdateInitJson()
@@ -117,6 +126,13 @@ namespace UCL.Core.Page
         }
         protected override void TopBarButtons()
         {
+            if(!string.IsNullOrEmpty(m_HelpURL))
+            {
+                if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    Application.OpenURL(m_HelpURL);
+                }
+            }
             m_Data.ID = UCL.Core.UI.UCL_GUILayout.TextField(UCL_LocalizeManager.Get("ID"), m_Data.ID, 260);
             if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {

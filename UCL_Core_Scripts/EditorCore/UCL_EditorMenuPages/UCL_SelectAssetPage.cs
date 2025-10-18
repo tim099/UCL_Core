@@ -7,7 +7,6 @@ using UCL.Core.EditorLib.Page;
 using UCL.Core.LocalizeLib;
 using UCL.Core.MathLib;
 using UCL.Core.UI;
-using UnityEditor;
 using UnityEngine;
 
 namespace UCL.Core.Page

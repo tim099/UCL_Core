@@ -239,7 +239,7 @@ namespace UCL.Core
             {
                 int size = UCL_GUIStyle.GetScaledSize(16);
 
-                UCL_GUILayout.DrawTextureFixedSize(texture, size);
+                UCL_GUILayout.DrawTextureFixedHeight(texture, size);
             }
             base.NameOnGUI(iDataDic, iDisplayName, iParams);
             GUILayout.EndHorizontal();

@@ -263,7 +263,7 @@ namespace UCL.Core.UI
                     } 
                     
                     int aNewCount = aCount;
-                    if (isTypeList || isTypeListable)
+                    if (isTypeList || isTypeListable || iParams.m_SerializeReference)
                     {
                         //GUILayout.Label($"({aCount})", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     }
@@ -311,7 +311,7 @@ namespace UCL.Core.UI
                                     iParams.m_DataDic.Add(ITypeListKey + "Type", aAllTypeList);
                                 }
                             }
-                            else if (isTypeListable)
+                            else if (isTypeListable || iParams.m_SerializeReference)//TODO SerializeReference Json support
                             {
                                 var aAllTypeList = UCLI_TypeListable.GetAllITypes(aGenericType);
 

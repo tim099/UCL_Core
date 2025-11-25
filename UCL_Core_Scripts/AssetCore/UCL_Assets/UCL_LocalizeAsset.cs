@@ -945,7 +945,7 @@ namespace UCL.Core
                                 var dic = m_LocalizeDatas[aLangName].m_LocalizeDic;
                                 if (dic.ContainsKey(key))
                                 {
-                                    Debug.LogError($"ParseData:{iData}, key:{key}, val:{val}, key exist!!");
+                                    Debug.LogError($"ParseData key:{key}, val:{val}, key exist!!, data:{iData}");
                                 }
                                 else
                                 {

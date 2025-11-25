@@ -39,6 +39,16 @@ namespace UCL.Core.LocalizeLib
             }
             return aEnumName;
         }
+        public static string GetLocalize(this System.Enum iEnum)
+        {
+            string aEnumName = iEnum.ToString();
+            string aLocalizeKey = iEnum.GetType().Name + "_" + aEnumName;
+            if (LocalizeLib.UCL_LocalizeManager.ContainsKey(aLocalizeKey))
+            {
+                return UCL_LocalizeManager.Get(aLocalizeKey);
+            }
+            return aEnumName;
+        }
     }
 }
 

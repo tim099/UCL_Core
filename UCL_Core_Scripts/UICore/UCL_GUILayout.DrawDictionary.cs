@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.LocalizeLib;
@@ -9,8 +9,8 @@ namespace UCL.Core.UI
 {
     static public partial class UCL_GUILayout
     {
-        public static void DrawDictionary(IDictionary iDic, UCL_ObjectDictionary iDataDic, string iDisplayName = "",
-            bool iIsAlwaysShowDetail = false, Func<string, string> iFieldNameFunc = null)
+        public static void DrawDictionary(IDictionary iDic, UCL_ObjectDictionary iDataDic, string iDisplayName,
+            bool iIsAlwaysShowDetail, Func<string, string> iFieldNameFunc)
         {
             var aParams = new DrawObjectParams(iDataDic, iDisplayName, iIsAlwaysShowDetail, null, null, new DrawObjectConfigs(iFieldNameFunc));
             DrawDictionary(iDic, aParams);

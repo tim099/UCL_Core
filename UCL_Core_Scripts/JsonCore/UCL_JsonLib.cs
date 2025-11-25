@@ -243,6 +243,22 @@ namespace UCL.Core.JsonLib {
                     return aConstructer.Invoke(aValues);
                 }
             }
+            else if (typeof(Vector2).IsAssignableFrom(iType))
+            {
+                return new Vector2(iData[0].GetFloat(), iData[1].GetFloat());
+            }
+            else if (typeof(Vector2Int).IsAssignableFrom(iType))
+            {
+                return new Vector2Int(iData[0].GetInt(), iData[1].GetInt());
+            }
+            else if (typeof(Vector3).IsAssignableFrom(iType))
+            {
+                return new Vector3(iData[0].GetFloat(), iData[1].GetFloat(), iData[2].GetFloat());
+            }
+            else if (typeof(Vector3Int).IsAssignableFrom(iType))
+            {
+                return new Vector3Int(iData[0].GetInt(), iData[1].GetInt(), iData[2].GetInt());
+            }
             else if (iType.IsStructOrClass())
             {
                 object aObj = null;
@@ -297,6 +313,35 @@ namespace UCL.Core.JsonLib {
                 {
                     aData.Add(ObjectToData(aResult[i], iSaveMode, iFieldNameAlterFunc));
                 }
+                return aData;
+            }
+            else if (iObj is Vector2 vec2)
+            {
+                var aResult = iObj.GetTupleElements();
+                JsonData aData = new JsonData().ToArray();
+
+                for (int i = 0; i < 2; i++) aData.Add(vec2[i]);
+                return aData;
+            }
+            else if (iObj is Vector2Int vec2Int)
+            {
+                var aResult = iObj.GetTupleElements();
+                JsonData aData = new JsonData().ToArray();
+                for (int i = 0; i < 2; i++) aData.Add(vec2Int[i]);
+                return aData;
+            }
+            else if (iObj is Vector3 vec3)
+            {
+                var aResult = iObj.GetTupleElements();
+                JsonData aData = new JsonData().ToArray();
+                for (int i = 0; i < 3; i++) aData.Add(vec3[i]);
+                return aData;
+            }
+            else if (iObj is Vector3Int vec3Int)
+            {
+                var aResult = iObj.GetTupleElements();
+                JsonData aData = new JsonData().ToArray();
+                for (int i = 0; i < 3; i++) aData.Add(vec3Int[i]);
                 return aData;
             }
             else if (aType.IsStructOrClass())

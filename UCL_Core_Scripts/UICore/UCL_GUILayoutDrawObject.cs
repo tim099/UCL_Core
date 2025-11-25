@@ -30,6 +30,12 @@ namespace UCL.Core.UI
             HashSet,
             IDictionary,
             Color,
+
+            Vector2,
+            Vector3,
+            Vector2Int,
+            Vector3Int,
+
             Component,
             StructOrClass,
 
@@ -242,6 +248,22 @@ namespace UCL.Core.UI
                     {
                         s_DrawObjectDic[aType] = EObjectType.Component;
                     }
+                    else if (iTarget is Vector2)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Vector2;
+                    }
+                    else if (iTarget is Vector3)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Vector3;
+                    }
+                    else if (iTarget is Vector2Int)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Vector2Int;
+                    }
+                    else if (iTarget is Vector3Int)
+                    {
+                        s_DrawObjectDic[aType] = EObjectType.Vector3Int;
+                    }
                     else if (aType.IsStructOrClass())
                     {
                         s_DrawObjectDic[aType] = EObjectType.StructOrClass;
@@ -256,6 +278,11 @@ namespace UCL.Core.UI
                 {
                     case EObjectType.String:
                         {
+                            //string displayName = iDrawObjectParams.GetDisplayName(aType);
+                            //if (!string.IsNullOrEmpty(displayName))
+                            //{
+                            //    GUILayout.Label(displayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            //}
                             aResult = GUILayout.TextArea((string)iTarget, UCL_GUIStyle.TextAreaStyle);
                             break;
                         }
@@ -342,6 +369,39 @@ namespace UCL.Core.UI
                                     aResult = SelectColor(aOriginCol);
                                 }
                                 GUILayout.EndVertical();
+                            }
+                            break;
+                        }
+                    case EObjectType.Vector2:
+                        {
+                            if (iTarget is Vector2 vector)
+                            {
+                                aResult = VectorField(iDrawObjectParams.GetDisplayName(aType), vector, iDrawObjectParams.m_DataDic);
+                            }
+
+                            break;
+                        }
+                    case EObjectType.Vector3:
+                        {
+                            if (iTarget is Vector3 vector)
+                            {
+                                aResult = VectorField(iDrawObjectParams.GetDisplayName(aType), vector, iDrawObjectParams.m_DataDic);
+                            }
+                            break;
+                        }
+                    case EObjectType.Vector2Int:
+                        {
+                            if (iTarget is Vector2Int vector)
+                            {
+                                aResult = VectorField(iDrawObjectParams.GetDisplayName(aType), vector, iDrawObjectParams.m_DataDic);
+                            }
+                            break;
+                        }
+                    case EObjectType.Vector3Int:
+                        {
+                            if (iTarget is Vector3Int vector)
+                            {
+                                aResult = VectorField(iDrawObjectParams.GetDisplayName(aType), vector, iDrawObjectParams.m_DataDic);
                             }
                             break;
                         }
@@ -854,8 +914,10 @@ namespace UCL.Core.UI
                         }
                         else if (aData is IList or IDictionary)//aData is IList || aData is IDictionary
                         {
+
                             ICollection aList = aData as ICollection;//IList and IDictionary is ICollection
                             var aParams = iParams.CreateChild(iDataDic.GetSubDic(aFieldInfo.Name), $"{aDisplayName}({aList.Count})", aFieldInfo, aIsAlwaysShowDetail);
+                            aParams.m_SerializeReference = aFieldInfoCache.m_SerializeReference;
                             var aResult = DrawObjectData(aData, aParams);
                             //var aResult = DrawObjectData(aData, iDataDic.GetSubDic(aFieldInfo.Name), $"{aDisplayName}({aList.Count})", aAlwaysExpendOnGUI, iFieldNameFunc);
                             aFieldInfo.SetValue(iObj, aResult);

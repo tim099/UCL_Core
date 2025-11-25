@@ -76,7 +76,8 @@ namespace UCL.Core.UI {
         static public T NumField<T>(string iLabel, T iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
         {
             GUILayout.BeginHorizontal();
-            LabelAutoSize(iLabel);
+            //LabelAutoSize(iLabel);
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             iVal = NumField(iVal, iDataDic, iOptions);
             GUILayout.EndHorizontal();
             return iVal;
@@ -108,11 +109,42 @@ namespace UCL.Core.UI {
         {
             using(new GUILayout.HorizontalScope("box", iOptions))
             {
-                GUILayout.Label(iLabel, GUILayout.MinWidth(80), GUILayout.ExpandWidth(false));
+                GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 float aX = NumField<float>("X", iVal.x, iDataDic.GetSubDic("X"));
                 float aY = NumField<float>("Y", iVal.y, iDataDic.GetSubDic("Y"));
                 float aZ = NumField<float>("Z", iVal.z, iDataDic.GetSubDic("Z"));
                 return new Vector3(aX, aY, aZ);
+            }
+        }
+        static public Vector3Int VectorField(string iLabel, Vector3Int iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            using (new GUILayout.HorizontalScope("box", iOptions))
+            {
+                GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                int x = NumField("X", iVal.x, iDataDic.GetSubDic("X"));
+                int y = NumField("Y", iVal.y, iDataDic.GetSubDic("Y"));
+                int z = NumField("Z", iVal.z, iDataDic.GetSubDic("Z"));
+                return new Vector3Int(x, y, z);
+            }
+        }
+        static public Vector2 VectorField(string iLabel, Vector2 iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            using (new GUILayout.HorizontalScope("box", iOptions))
+            {
+                GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                float x = NumField("X", iVal.x, iDataDic.GetSubDic("X"));
+                float y = NumField("Y", iVal.y, iDataDic.GetSubDic("Y"));
+                return new Vector2(x, y);
+            }
+        }
+        static public Vector2Int VectorField(string iLabel, Vector2Int iVal, UCL_ObjectDictionary iDataDic, params GUILayoutOption[] iOptions)
+        {
+            using (new GUILayout.HorizontalScope("box", iOptions))
+            {
+                GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                int x = NumField("X", iVal.x, iDataDic.GetSubDic("X"));
+                int y = NumField("Y", iVal.y, iDataDic.GetSubDic("Y"));
+                return new Vector2Int(x, y);
             }
         }
         static public int Slider(string iLabel, int iVal, int m_LeftValue, int m_RightValue, UCL_ObjectDictionary iDic)

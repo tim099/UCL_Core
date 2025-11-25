@@ -15,7 +15,7 @@ namespace UCL.Core.EditorLib.Page
         UCL_LocalizeSetting m_LocalizeSetting = null;
         UCL.Core.UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
         const string LocalizeSettingKey = "LocalizeEditPageSetting";
-        bool m_IsDownloading = false;
+        //bool m_IsDownloading = false;
         public override void Init(UCL_GUIPageController iGUIPageController)
         {
             base.Init(iGUIPageController);

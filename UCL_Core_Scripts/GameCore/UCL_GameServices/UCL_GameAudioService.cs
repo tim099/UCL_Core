@@ -152,6 +152,7 @@ namespace UCL.Core.Game {
         }
 
         public VolumeSetting m_VolumeSetting = new VolumeSetting();// { get; protected set; } 
+        public float m_BaseDB = 10f;
         [SerializeField] AudioMixer m_AudioMixer = null;
 
         /// <summary>
@@ -206,7 +207,7 @@ namespace UCL.Core.Game {
             }
             else
             {
-                aVolume = 30f * Mathf.Log10(iVal) + 9f;//Mathf.Pow(10f, 0.05f * iVal);
+                aVolume = 30f * Mathf.Log10(iVal) + m_BaseDB;//Mathf.Pow(10f, 0.05f * iVal);
             }
             //Debug.LogWarning("iVal:" + iVal + ",aVolume:" + aVolume);
             if (aVolume < -80) aVolume = -80;

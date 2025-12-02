@@ -622,10 +622,6 @@ namespace UCL.Core.UI
                             }
                         }
                     }
-                    if (iObj is UCL.Core.UI.UCLI_IsEnable aEnable)
-                    {
-                        aEnable.IsEnable = UCL_GUILayout.CheckBox(aEnable.IsEnable);
-                    }
                     var helpURL = aType.GetCustomAttribute<HelpURLAttribute>();
                     if (helpURL != null)
                     {
@@ -635,6 +631,12 @@ namespace UCL.Core.UI
                             Application.OpenURL(helpURL.URL);
                         }
                     }
+
+                    if (iObj is UCL.Core.UI.UCLI_IsEnable aEnable)
+                    {
+                        aEnable.IsEnable = UCL_GUILayout.CheckBox(aEnable.IsEnable);
+                    }
+
 
                     GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (iParams.m_SerializeReference && iParams.m_FieldType != null)

@@ -155,7 +155,7 @@ namespace UCL.Core.TextureLib {
         /// <param name="filePath"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public static async UniTask<Texture2D> LoadTextureFromFile(string filePath)
+        public static async UniTask<Texture2D> LoadTextureFromFile(string filePath, UCLI_LoadTextureConfig config = null)
         {
             if (!File.Exists(filePath))
             {
@@ -165,6 +165,15 @@ namespace UCL.Core.TextureLib {
             var webRequest = UnityWebRequestTexture.GetTexture(path, false);
             await webRequest.SendWebRequest();
             var texture = DownloadHandlerTexture.GetContent(webRequest);
+            if (config != null)
+            {
+                if (config.AlphaIsTransparency)
+                {
+                    
+                    //Debug.LogError($"LoadTextureFromFile AlphaIsTransparency:{filePath}");
+                    texture.SetAlphaIsTransparency();
+                }
+            }
             //Debug.LogError($"1 MipMap Count = {texture.mipmapCount},texture:{texture.format}");
             //if (texture != null)
             //{

@@ -122,6 +122,7 @@ namespace UCL.Core
             }
             override public void Init(string iPath)
             {
+                //Debug.LogError($"Init:{iPath}");
                 base.Init(iPath);
                 if (!File.Exists(iPath))
                 {
@@ -142,8 +143,9 @@ namespace UCL.Core
             }
             public async UniTask InitAsync(string iPath, UCLI_LoadTextureConfig config)
             {
+                //Debug.LogError($"InitAsync:{iPath}");
                 base.Init(iPath);
-                Texture2D aTexture = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(iPath);
+                Texture2D aTexture = await UCL.Core.TextureLib.Lib.LoadTextureFromFile(iPath, config);
 
                 if(aTexture != null)
                 {

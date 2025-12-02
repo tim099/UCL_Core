@@ -112,6 +112,27 @@ public static partial class TextureExtensionMethods {
         iTexture.SetPixels(aColorArray);
         iTexture.Apply();
     }
+    public static bool SetAlphaIsTransparency(this Texture2D texture)
+    {
+        Color[] pixels = texture.GetPixels();
+        bool flag = false;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Color c = pixels[i];
+            if (c.a < 0.0001f)
+            {
+                flag = true;
+                c.r = c.g = c.b = 1f;
+                pixels[i] = c;
+            }
+        }
+        if (flag)
+        {
+            texture.SetPixels(pixels);
+            texture.Apply();
+        }
+        return flag;
+    }
     public static void DrawPixel(this Texture2D iTexture, int iX, int iY, Color iCol)
     {
         int aWidth = iTexture.width;

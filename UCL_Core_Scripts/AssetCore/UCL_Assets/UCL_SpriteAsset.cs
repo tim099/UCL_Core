@@ -6,6 +6,7 @@ using Cysharp.Threading.Tasks;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -17,8 +18,13 @@ namespace UCL.Core
     public interface UCLI_LoadTextureConfig
     {
         public FilterMode FilterMode { get; }
+        public bool AlphaIsTransparency { get; }
     }
-
+    public class UCL_LoadTextureConfig : UCLI_LoadTextureConfig
+    {
+        public FilterMode FilterMode { get; set; }
+        public bool AlphaIsTransparency { get; set; }
+    }
 
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditDataType.UCL_SpriteAsset)]
@@ -45,8 +51,10 @@ namespace UCL.Core
         [UCL.Core.PA.Conditional(nameof(m_DataLoadType), false, DataLoadType.ModResources)]
         public FilterMode m_FilterMode = FilterMode.Bilinear;
 
+        public bool m_AlphaIsTransparency = false;
 
         public FilterMode FilterMode => m_FilterMode;
+        public bool AlphaIsTransparency => m_AlphaIsTransparency;
         public bool IsEmpty => Data.IsEmpty;
 
         private UCL_Data Data
@@ -70,8 +78,9 @@ namespace UCL.Core
 
         public async UniTask<Sprite> GetSpriteAsync(CancellationToken iToken)
         {
-            await Data.LoadAsync(iToken);
-            return Data.GetSprite();
+            return await Data.LoadSpriteAsync(iToken, this);
+            //await Data.LoadAsync(iToken);
+            //return Data.GetSprite();
         }
         public async UniTask<Texture2D> GetTextureAsync(CancellationToken iToken)
         {
@@ -79,6 +88,22 @@ namespace UCL.Core
             //await Data.LoadAsync(iToken);
             //iToken.ThrowIfCancellationRequested();
             //return Data.GetSprite().texture;
+        }
+
+        public void ApplyAlphaIsTransparencyToTexture()
+        {
+            //Debug.LogError($"m_DataLoadType:{m_DataLoadType}");
+            if(m_DataLoadType == DataLoadType.ModResources)
+            {
+                var texture = Texture;
+                if (texture != null)
+                {
+                    texture.SetAlphaIsTransparency();
+                    var path = m_ModResourcesData.FilePath;
+                    //Debug.LogError($"path:{path}");
+                    File.WriteAllBytes(path, texture.EncodeToPNG());
+                }
+            }
         }
 
         /// <summary>

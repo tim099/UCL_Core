@@ -295,7 +295,7 @@ namespace UCL.Core
         //}
 
 
-        public override UCL_SelectAssetPage<UCL_LanguageCodeAsset> CreateSelectAssetPage()
+        public override UCL_SelectAssetPage CreateSelectAssetPage()
         {
             return UCL_LanguageCodeAssetEditorPage.Create();
         }
@@ -311,11 +311,12 @@ namespace UCL.Core
 
     }
 
-    public class UCL_LanguageCodeAssetEditorPage : UCL_SelectAssetPage<UCL_LanguageCodeAsset>
+    public class UCL_LanguageCodeAssetEditorPage : UCL_SelectAssetPage
     {
-        static new public UCL_LanguageCodeAssetEditorPage Create()
+        static public UCL_LanguageCodeAssetEditorPage Create()
         {
             var aPage = new UCL_LanguageCodeAssetEditorPage();
+            aPage.m_Type = typeof(UCL_LanguageCodeAsset);
             UCL_GUIPageController.CurrentRenderIns.Push(aPage);
 
             return aPage;

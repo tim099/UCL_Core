@@ -160,7 +160,12 @@ namespace UCL.Core
             var aLoadedAddressable = GetLoadedAddressable();
             if(aLoadedAddressable == null)
             {
-                Debug.LogError($"UCL_AddressableData.LoadSpriteAsync aLoadedAddressable == null,m_AddressableKey:{m_AddressableKey}");
+                string log = $"UCL_AddressableData.LoadSpriteAsync aLoadedAddressable == null,m_AddressableKey:{m_AddressableKey}";
+                if (Application.isEditor)
+                {
+                    throw new Exception(log);
+                }
+                Debug.LogError(log);
                 return null;
             }
             return aLoadedAddressable.Sprite;

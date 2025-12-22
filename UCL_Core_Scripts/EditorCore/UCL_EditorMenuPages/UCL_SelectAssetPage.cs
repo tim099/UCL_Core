@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -11,11 +12,18 @@ using UnityEngine;
 
 namespace UCL.Core.Page
 {
-    public class UCL_SelectAssetPage<T> : UCL_EditorPage where T : class, UCLI_Asset, new()
+    public class UCL_SelectAssetPage : UCL_EditorPage
     {
-        static public UCL_SelectAssetPage<T> Create()
+        static public UCL_SelectAssetPage Create<T>() where T : class, UCLI_Asset, new ()
         {
-            var aPage = new UCL_SelectAssetPage<T>();
+            var aPage = new UCL_SelectAssetPage(typeof(T));
+            UCL_GUIPageController.CurrentRenderIns.Push(aPage);
+
+            return aPage;
+        }
+        static public UCL_SelectAssetPage Create(Type type)
+        {
+            var aPage = new UCL_SelectAssetPage(type);
             UCL_GUIPageController.CurrentRenderIns.Push(aPage);
 
             return aPage;
@@ -31,14 +39,19 @@ namespace UCL.Core.Page
 
 
         protected UCL_AssetCommonMeta m_Meta = null;
-        protected UCL_Asset<T> m_Util = default;
+        protected UCLI_Asset m_Util = default;
+        public Type m_Type;
         public override string WindowName => $"UCL_SelectAssetPage";//({m_TypeName})
         public override bool IsWindow => true;
+
+        public UCL_SelectAssetPage() { }
+        public UCL_SelectAssetPage(Type type) { m_Type = type; }
+
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {
 
             base.Init(iGUIPageController);
-            string aTypeName = typeof(T).Name;
+            string aTypeName = m_Type.Name;
             m_TypeName = aTypeName;
             string aKey = $"Create_{aTypeName}";
             if (UCL_LocalizeManager.ContainsKey(aKey))
@@ -55,13 +68,13 @@ namespace UCL.Core.Page
             //Debug.LogError("m_CreateDes:" + m_CreateDes);
             OnResume();
         }
-        public UCL_Asset<T> Util
+        public UCLI_Asset Util
         {
             get
             {
                 if (m_Util == null)
                 {
-                    m_Util = UCLI_Asset.GetUtilByType(typeof(T)) as UCL_Asset<T>;
+                    m_Util = UCLI_Asset.GetUtilByType(m_Type);
                 }
                 return m_Util;
             }
@@ -72,7 +85,7 @@ namespace UCL.Core.Page
             //m_Preview = null;
             if(!string.IsNullOrEmpty(m_PreviewID) && Util.ContainsAsset(m_PreviewID))
             {
-                m_Preview = Util.CreateData(m_PreviewID);
+                m_Preview = Util.CreateAsset(m_PreviewID);
             }
             else
             {
@@ -107,7 +120,7 @@ namespace UCL.Core.Page
             GUILayout.Label(WindowName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             if (GUILayout.Button(m_CreateDes, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
-                UCL_CreateAssetPage<T>.Create();
+                UCL_CreateAssetPage.Create(m_Type);
                 //UCL_CommonEditPage.Create(new T());
             }
 #if UNITY_EDITOR
@@ -428,11 +441,11 @@ namespace UCL.Core.Page
             DrawSelectTargetList(Util,
                 Util.GetEditableIDs(), m_DataDic.GetSubDic("SelectTarget"),
                 (iID) => {
-                    UCL_CommonEditPage.Create(Util.GetData(iID));
+                    UCL_CommonEditPage.Create(Util.GetAsset(iID));
                 },
                 (iID) => {
                     m_PreviewID = iID;
-                    m_Preview = Util.CreateData(iID);
+                    m_Preview = Util.CreateAsset(iID);
                 },
                 (iID) => {
                     Util.Delete(iID);

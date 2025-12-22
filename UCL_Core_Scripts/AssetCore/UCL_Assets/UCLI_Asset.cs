@@ -108,6 +108,19 @@ namespace UCL.Core
         /// </summary>
         string GroupID { get; set; }
 
+        /// <summary>
+        /// Check if asset exist
+        /// </summary>
+        /// <param name="iID">ID of asset</param>
+        /// <returns>true if asset exist</returns>
+        bool ContainsAsset(string iID);
+
+        UCL_AssetCommonMeta AssetMetaIns { get; }
+        string SaveFolderPath { get; }
+        UCLI_Asset CreateAsset(string iID);
+        IList<string> GetEditableIDs();
+        void OnEdit();
+
         #region static
 
         public static UCLI_CommonEditable s_CurOnGUIAsset = null;

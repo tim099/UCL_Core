@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -12,11 +13,12 @@ using UnityEngine;
 
 namespace UCL.Core.Page
 {
-    public class UCL_CreateAssetPage<T> : UCL_EditorPage where T : class, UCLI_Asset, new()
+    public class UCL_CreateAssetPage : UCL_EditorPage
     {
-        static public UCL_CreateAssetPage<T> Create()
+        static public UCL_CreateAssetPage Create(Type type)
         {
-            var aPage = new UCL_CreateAssetPage<T>();
+            var aPage = new UCL_CreateAssetPage();
+            aPage.m_Type = type;
             UCL_GUIPageController.CurrentRenderIns.Push(aPage);
 
             return aPage;
@@ -32,15 +34,16 @@ namespace UCL.Core.Page
         List<string> m_AssetIDs = new List<string>();
 
         protected UCL_AssetCommonMeta m_Meta = null;
-        protected UCL_Asset<T> m_Util = default;
+        protected UCLI_Asset m_Util = default;
         protected UCL_ModuleEntry m_Module = new UCL_ModuleEntry();
+        protected Type m_Type;
         public override string WindowName => $"UCL_CreateAssetPage";//({m_TypeName})
         public override bool IsWindow => true;
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {
 
             base.Init(iGUIPageController);
-            string aTypeName = typeof(T).Name;
+            string aTypeName = m_Type.Name;
             m_TypeName = aTypeName;
             m_TypeLocalizedName = UCL_LocalizeManager.Get(aTypeName);
             string aKey = $"Create_{aTypeName}";
@@ -55,7 +58,7 @@ namespace UCL.Core.Page
             Util.OnEdit();
 
             m_Meta = Util.AssetMetaIns;
-            var assetIDs = UCL_ModuleService.CurEditModule.ModuleEntry.GetAllAssetsID(typeof(T));
+            var assetIDs = UCL_ModuleService.CurEditModule.ModuleEntry.GetAllAssetsID(m_Type);
             m_Module.ID = UCL_ModuleService.CurEditModuleID;
 
             if (assetIDs.Count > 0)
@@ -66,7 +69,7 @@ namespace UCL.Core.Page
             {
                 foreach (var aModule in UCL_ModuleService.Ins.LoadedModules)
                 {
-                    assetIDs = aModule.ModuleEntry.GetAllAssetsID(typeof(T));
+                    assetIDs = aModule.ModuleEntry.GetAllAssetsID(m_Type);
                     if (assetIDs.Count > 0)
                     {
                         m_AssetID = assetIDs[0];
@@ -81,13 +84,13 @@ namespace UCL.Core.Page
             //Debug.LogError("m_CreateDes:" + m_CreateDes);
             OnResume();
         }
-        public UCL_Asset<T> Util
+        public UCLI_Asset Util
         {
             get
             {
                 if (m_Util == null)
                 {
-                    m_Util = UCLI_Asset.GetUtilByType(typeof(T)) as UCL_Asset<T>;
+                    m_Util = UCLI_Asset.GetUtilByType(m_Type);
                 }
                 return m_Util;
             }
@@ -130,13 +133,13 @@ namespace UCL.Core.Page
         {
             UCL_Module module = Module; //UCL_ModuleService.Ins.GetLoadedModule(m_Module.ID);
             m_GroupID = iID;
-            m_AssetIDs = module.ModuleEntry.GetAllAssetsID(typeof(T)).ToList();
+            m_AssetIDs = module.ModuleEntry.GetAllAssetsID(m_Type).ToList();
             if (!m_AssetIDs.IsNullOrEmpty() && !string.IsNullOrEmpty(m_GroupID))
             {
                 for (int i = m_AssetIDs.Count - 1; i >= 0; i--)
                 {
                     var assetId = m_AssetIDs[i];
-                    var asset = module.ModuleEntry.GetAsset<T>(assetId);
+                    var asset = module.ModuleEntry.GetAsset(m_Type, assetId);
                     string groupID = asset.GroupID;
                     if (!string.IsNullOrEmpty(groupID) && groupID != m_GroupID)
                     {
@@ -171,7 +174,7 @@ namespace UCL.Core.Page
             {
                 GUILayout.Label("Group ID", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
-                var meta = module.GetAssetMeta(typeof(T).Name);
+                var meta = module.GetAssetMeta(m_Type.Name);
                 var groups = meta.m_Groups.Keys.ToList();
                 groups.Insert(0, string.Empty);
 
@@ -199,7 +202,7 @@ namespace UCL.Core.Page
 
             if (!string.IsNullOrEmpty(m_AssetID) && m_Preview == null)
             {
-                var aAsset = module.ModuleEntry.GetAsset<T>(m_AssetID);
+                var aAsset = module.ModuleEntry.GetAsset(m_Type, m_AssetID);
                 m_Preview = aAsset;
             }
             GUILayout.Space(20);
@@ -222,10 +225,10 @@ namespace UCL.Core.Page
             {
                 Close();
 
-                T asset = m_Preview as T;
+                UCLI_Asset asset = m_Preview;
                 if (asset == null)
                 {
-                    asset = new T();
+                    asset = System.Activator.CreateInstance(m_Type) as UCLI_Asset;
                     UCL_CommonEditPage.CreateWithoutClone(asset);
                 }
                 else

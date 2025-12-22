@@ -198,6 +198,7 @@ namespace UCL.Core
 
 
         #region FakeStatic
+        virtual public UCLI_Asset CreateAsset(string iID) => CreateData(iID);
         virtual public T CreateData(string iID)
         {
             //var aType = typeof(T);
@@ -232,7 +233,6 @@ namespace UCL.Core
 
             return aData;
         }
-
         /// <summary>
         /// Get Asset by ID
         /// </summary>
@@ -288,9 +288,9 @@ namespace UCL.Core
         /// 生成一個編輯選單頁面(用來選取要編輯的物品)
         /// </summary>
         /// <returns></returns>
-        virtual public Page.UCL_SelectAssetPage<T> CreateSelectAssetPage()
+        virtual public Page.UCL_SelectAssetPage CreateSelectAssetPage()
         {
-            return Page.UCL_SelectAssetPage<T>.Create();
+            return Page.UCL_SelectAssetPage.Create(this.GetType());
         }
         #endregion
         virtual public void Init(string iID)

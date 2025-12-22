@@ -61,25 +61,30 @@ namespace UCL.Core.Page
         override public string WindowName => m_WindowName;
         protected override bool ShowCloseButton => false;
         UCLI_CommonEditable m_Data = null;
-        string m_HelpURL = null;
-        string m_WindowName = string.Empty;
+        protected string m_HelpURL = null;
+        protected string m_WindowName = string.Empty;
         /// <summary>
         /// Init value of m_Data.SerializeToJson()(Refresh when save data)
         /// Show "SaveBeforeExit?" popup if data modified when exit this page
         /// </summary>
-        string m_InitJson = string.Empty;
+        protected string m_InitJson = string.Empty;
+
+        protected bool m_TopBarToggle = false;
+        protected Type m_Type;
+
         protected UCL.Core.UCL_ObjectDictionary m_DataDic = new UCL.Core.UCL_ObjectDictionary();
+
         public void SetData(UCLI_CommonEditable iData)
         {
             m_Data = iData;
-            var type = iData.GetType();
-            var url = type.GetCustomAttribute<HelpURLAttribute>();
+            m_Type = iData.GetType();
+            var url = m_Type.GetCustomAttribute<HelpURLAttribute>();
             if(url != null)
             {
                 m_HelpURL = url.URL;
                 //Debug.LogError($"m_HelpURL:{m_HelpURL}");
             }
-            m_WindowName = UCL_LocalizeManager.Get($"{type.Name}Editor");
+            m_WindowName = UCL_LocalizeManager.Get($"{m_Type.Name}Editor");
             UpdateInitJson();
         }
         void UpdateInitJson()
@@ -126,76 +131,99 @@ namespace UCL.Core.Page
         }
         protected override void TopBarButtons()
         {
-            if(!string.IsNullOrEmpty(m_HelpURL))
+            using (new GUILayout.VerticalScope())
             {
-                if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                using (new GUILayout.HorizontalScope())
                 {
-                    Application.OpenURL(m_HelpURL);
-                }
-            }
-            m_Data.ID = UCL.Core.UI.UCL_GUILayout.TextField(UCL_LocalizeManager.Get("ID"), m_Data.ID, 260);
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                //var aJson = m_Data.Save();
-                //m_InitJson = aJson.ToJson();
-                m_Data.Save();
-                UCL_ModuleService.Ins.OnModuleEdit();
-                UpdateInitJson();
-            }
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                var aData = m_Data.SerializeToJson();
-                string aSaveData = aData.ToJsonBeautify();
-                aSaveData.CopyToClipboard();
-            }
-            if (!string.IsNullOrEmpty(GUIUtility.systemCopyBuffer))
-            {
-                if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    try
+                    if (!string.IsNullOrEmpty(m_HelpURL))
                     {
-                        JsonData aJson = JsonData.ParseJson(GUIUtility.systemCopyBuffer);
-                        m_Data.DeserializeFromJson(aJson);
-                        m_DataDic.Clear();
+                        if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            Application.OpenURL(m_HelpURL);
+                        }
                     }
-                    catch (System.Exception iE)
-                    {
-                        Debug.LogException(iE);
-                    }
-                }
-            }
-            GUILayout.Space(10);
-            var aType = m_Data.GetType();
-            GUILayout.Label($"[{UCL_ModuleService.CurEditModuleID}] {aType.Name}", UCL_GUIStyle.LabelStyle);
+                    m_TopBarToggle = UCL_GUILayout.Toggle(m_TopBarToggle);
 
-            if(m_Data is UCLI_Asset asset)
-            {
-                if (GUILayout.Button(UCL_LocalizeManager.Get("Rename"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    UCL_RenamePage.Create(asset);//open rename page
-                }
-            }
+                    m_Data.ID = UCL.Core.UI.UCL_GUILayout.TextField(UCL_LocalizeManager.Get("ID"), m_Data.ID, 260);
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Save"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        //var aJson = m_Data.Save();
+                        //m_InitJson = aJson.ToJson();
+                        m_Data.Save();
+                        UCL_ModuleService.Ins.OnModuleEdit();
+                        UpdateInitJson();
+                    }
+                    
+
+
+
+                    GUILayout.Space(10);
+                    var aType = m_Data.GetType();
+                    GUILayout.Label($"[{UCL_ModuleService.CurEditModuleID}] {aType.Name}", UCL_GUIStyle.LabelStyle);
+
+
 
 #if UNITY_EDITOR
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                aType.Name.CopyToClipboard();
-            }
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        aType.Name.CopyToClipboard();
+                    }
 #endif
-            //if (GUILayout.Button(UCL_LocalizeManager.Get("Rename"), GUILayout.ExpandWidth(false)))
-            //{
-            //    RCG_RenamePage.Create(m_Data);//開啟重新命名分頁
-            //}
-            //if (GUILayout.Button(UCL_LocalizeManager.Get("FindReference"), GUILayout.ExpandWidth(false)))
-            //{
-            //    RCG_FindReferencePage.Create(m_Data);//開啟尋找連接分頁
-            //}
+
+
+                }
+                if (m_TopBarToggle)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            var aData = m_Data.SerializeToJson();
+                            string aSaveData = aData.ToJsonBeautify();
+                            aSaveData.CopyToClipboard();
+                        }
+                        if (!string.IsNullOrEmpty(GUIUtility.systemCopyBuffer))
+                        {
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Paste"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                try
+                                {
+                                    JsonData aJson = JsonData.ParseJson(GUIUtility.systemCopyBuffer);
+                                    m_Data.DeserializeFromJson(aJson);
+                                    m_DataDic.Clear();
+                                }
+                                catch (System.Exception iE)
+                                {
+                                    Debug.LogException(iE);
+                                }
+                            }
+                        }
+
+                        if (m_Data is UCLI_Asset asset)
+                        {
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Rename"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                UCL_RenamePage.Create(asset);//open rename page
+                            }
+                            if (GUILayout.Button(UCL_LocalizeManager.Get("Select Asset"), UCL_GUIStyle.ButtonStyle,
+                                GUILayout.ExpandWidth(false)))
+                            {
+                                UCL_SelectAssetPage.Create(m_Type);
+                            }
+                        }
+
 #if UNITY_STANDALONE_WIN
-            if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFile"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                UCL.Core.FileLib.WindowsLib.OpenExplorer(m_Data.AssetPath);
-            }
+                        if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFile"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            UCL.Core.FileLib.WindowsLib.OpenExplorer(m_Data.AssetPath);
+                        }
 #endif
+                    }
+                }
+            }
+
+
+
         }
         protected override void ContentOnGUI()
         {

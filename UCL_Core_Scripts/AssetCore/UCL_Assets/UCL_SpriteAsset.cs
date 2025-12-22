@@ -78,7 +78,16 @@ namespace UCL.Core
 
         public async UniTask<Sprite> GetSpriteAsync(CancellationToken iToken)
         {
-            return await Data.LoadSpriteAsync(iToken, this);
+            if (Data.IsEmpty) return null;
+            try
+            {
+                return await Data.LoadSpriteAsync(iToken, this);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) {
+                Debug.LogError($"{GetType().Name}, ID:{ID}, Exception:{ex}");
+            }
+            return null;
             //await Data.LoadAsync(iToken);
             //return Data.GetSprite();
         }

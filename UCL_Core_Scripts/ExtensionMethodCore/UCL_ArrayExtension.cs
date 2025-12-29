@@ -32,6 +32,54 @@ public static partial class ArrayExtensionMethods {
         }
         return aNewArr;
     }
+    public static void MoveRight<T>(this T[,] array, int y)
+    {
+        int width = array.GetLength(0);
+        int height = array.GetLength(1);
+
+        var sym = array[width - 1, y]; // 先存最後一個元素
+        for (int x = width - 1; x > 0; x--) // 從右往左移
+        {
+            array[x, y] = array[x - 1, y];
+        }
+        array[0, y] = sym; // 把原本最後的元素放到最前面
+    }
+    public static void MoveLeft<T>(this T[,] array, int y)
+    {
+        int width = array.GetLength(0);
+        int height = array.GetLength(1);
+
+        var sym = array[0, y]; // 先存最左邊的元素
+        for (int x = 0; x < width - 1; x++) // 從左往右移
+        {
+            array[x, y] = array[x + 1, y];
+        }
+        array[width - 1, y] = sym; // 把原本最左的元素放到最右邊
+    }
+    public static void MoveUp<T>(this T[,] array, int x)
+    {
+        int width = array.GetLength(0);
+        int height = array.GetLength(1);
+
+        var sym = array[x, 0];
+        for (int y = 1; y < height; y++)
+        {
+            array[x, y - 1] = array[x, y];
+        }
+        array[x, height - 1] = sym;
+    }
+    public static void MoveDown<T>(this T[,] array, int x)
+    {
+        int width = array.GetLength(0);
+        int height = array.GetLength(1);
+
+        var sym = array[x, height - 1]; // 先存最後一個元素
+        for (int y = height - 1; y > 0; y--) // 從底往上移
+        {
+            array[x, y] = array[x, y - 1];
+        }
+        array[x, 0] = sym; // 把原本最後的元素放到最上面
+    }
     /// <summary>
     /// Set all element in iArray to iVal
     /// </summary>

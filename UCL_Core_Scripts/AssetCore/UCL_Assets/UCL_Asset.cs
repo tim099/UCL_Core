@@ -41,7 +41,7 @@ namespace UCL.Core
         public enum EditEditorType : int
         {
             UCL_ImageEditor = 1,
-
+            UCL_TypeViewer,
         }
     }
 

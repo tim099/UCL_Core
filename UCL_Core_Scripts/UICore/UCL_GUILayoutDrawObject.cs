@@ -775,14 +775,22 @@ namespace UCL.Core.UI
                                 aIsDrawed = true;
                                 break;
                             }
-                            else if (aAttr is IStrList)
+                            else if (aAttr is IStrList aStrArr)
                             {
                                 aIsDrawed = true;
-                                var aStrArr = aAttr as IStrList;
                                 GUILayout.BeginHorizontal();
                                 GUILayout.Label(aDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
                                 aFieldInfo.SetValue(iObj, aStrArr.DrawOnGUILocalized(iObj, aData, iDataDic, aFieldInfo.Name));
+                                GUILayout.EndHorizontal();
+                            }
+                            else if (aAttr is IValueDropdown valueDropdown)
+                            {
+                                aIsDrawed = true;
+                                GUILayout.BeginHorizontal();
+                                GUILayout.Label(aDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                var list = valueDropdown.GetStrList(iObj);
+                                aFieldInfo.SetValue(iObj, list.DrawValueDropdown(iObj, aData, iDataDic, aFieldInfo.Name));
                                 GUILayout.EndHorizontal();
                             }
                             else if (aAttr is ITexture2D)

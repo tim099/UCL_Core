@@ -8,6 +8,13 @@ namespace UCL.Core
 {
     public static partial class AttributeExtension
     {
+        public static object DrawValueDropdown(this IList<string> aList, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
+        {
+            if (aList.IsNullOrEmpty()) return null;
+            int index = Mathf.Max(0, aList.IndexOf(iData as string));
+            index = UCL_GUILayout.ValueDropdown(index, aList, iDataDic, iKey);
+            return aList[index];
+        }
         public static object DrawOnGUI(this IStrList iStrArr, object iObj, object iData, UCL_ObjectDictionary iDataDic, string iKey)
         {
             var aList = iStrArr.GetStrList(iObj);
@@ -39,6 +46,10 @@ namespace UCL.Core
         }
     }
     public interface IStrList
+    {
+        IList<string> GetStrList(object iTarget);
+    }
+    public interface IValueDropdown
     {
         IList<string> GetStrList(object iTarget);
     }

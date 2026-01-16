@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using System.Linq;
-public static partial class TypeExtensionMethods {
+public static partial class AssemblyExtensions {
 
     private static Assembly[] s_Assemblys = null;
     public static Assembly[] GetAssemblies()
@@ -25,6 +25,32 @@ public static partial class TypeExtensionMethods {
         }
 
         return s_Types;
+    }
+    private static Dictionary<string, Type> s_TypeDic = null;
+    public static Dictionary<string,Type> TypeDic
+    {
+        get
+        {
+            if(s_TypeDic == null)
+            {
+                var types = GetAllTypes();
+                s_TypeDic = new();
+                foreach(var type in types)
+                {
+                    s_TypeDic[type.FullName] = type;
+                }
+            }
+            return s_TypeDic;
+        }
+    }
+    public static Type GetTypeByFullName(string iTypeFullName)
+    {
+        var typeDic = TypeDic;
+        if(typeDic.TryGetValue(iTypeFullName, out var type))
+        {
+            return type;
+        }
+        return null;
     }
     private static List<string> s_TypeFullNames = null;
     public static List<string> GetAllTypeFullNames()
@@ -370,18 +396,24 @@ public static partial class TypeExtensionMethods {
     public static object CreateInstance(this Type iType)
     {
         if (iType == null) return null;
+        if (iType.IsArray) return Array.CreateInstance(iType.GetElementType(), 0);// 陣列型別：建立長度 0 的陣列
 
-        if (iType == typeof(string)) return string.Empty;
-        if (iType == typeof(int)) return (int)0;
-        if (iType == typeof(uint)) return (uint)0;
-        if (iType == typeof(long)) return (long)0;
-        if (iType == typeof(ulong)) return (ulong)0;
-        if (iType == typeof(short)) return (short)0;
-        if (iType == typeof(ushort)) return (ushort)0;
-        if (iType == typeof(byte)) return (byte)0;
-        if (iType == typeof(sbyte)) return (sbyte)0;
-        if (iType == typeof(float)) return (float)0;
-        if (iType == typeof(double)) return (double)0;
+        // 基本型別與字串
+        switch (Type.GetTypeCode(iType))
+        {
+            case TypeCode.String: return string.Empty;
+            case TypeCode.Int32: return 0;
+            case TypeCode.UInt32: return (uint)0;
+            case TypeCode.Int64: return (long)0;
+            case TypeCode.UInt64: return (ulong)0;
+            case TypeCode.Int16: return (short)0;
+            case TypeCode.UInt16: return (ushort)0;
+            case TypeCode.Byte: return (byte)0;
+            case TypeCode.SByte: return (sbyte)0;
+            case TypeCode.Single: return 0f;
+            case TypeCode.Double: return 0d;
+        }
+
         //if (iType == typeof(System.Type)) return System.Type.Missing;
 
         if (typeof(UnityEngine.Object).IsAssignableFrom(iType))
@@ -392,11 +424,6 @@ public static partial class TypeExtensionMethods {
             Debug.LogError($"CreateInstance iType:{iType.FullName},is UnityEngine.Object!!");
             //return null;
         }
-        //https://stackoverflow.com/questions/3419456/how-do-i-create-a-c-sharp-array-using-reflection-and-only-type-info
-        //if (iType.IsArray)
-        //{
-        //    return Array.CreateInstance(iType.GetElementType(), 0);
-        //}
         if (iType.IsTuple())
         {
             //Debug.LogError("iType:" + iType.Name + "iType.IsTuple():" + iType.IsTuple());

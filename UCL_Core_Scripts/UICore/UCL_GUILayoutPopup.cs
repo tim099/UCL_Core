@@ -750,5 +750,155 @@ namespace UCL.Core.UI
             return iIndex;
         }
         #endregion
+
+
+        #region ValueDropdown
+        public static int ValueDropdown(int iSelectedIndex, IList<string> iDisplayedOptions, UCL_ObjectDictionary iDataDic, string iKey,
+            params GUILayoutOption[] iOptions)
+        {
+            if (iDisplayedOptions.Count == 0)
+            {
+                Debug.LogError("UCL_GUILayoyt.ValueDropdown iDisplayedOptions.Count == 0");
+                return 0;
+            }
+            if (iSelectedIndex < 0) iSelectedIndex = 0;
+            if (iSelectedIndex >= iDisplayedOptions.Count) iSelectedIndex = iDisplayedOptions.Count - 1;
+
+            string curOption = iDisplayedOptions[iSelectedIndex];
+            
+
+
+            var dic = iDataDic.GetSubDic(iKey);
+            int hash = iDisplayedOptions.GetListHashCode();
+            if(dic.GetData("OptionsHash", 0) != hash)//list changed
+            {
+                dic.Clear();
+                dic.SetData("OptionsHash", hash);
+                //Debug.LogWarning($"ValueDropdown hash:{hash}");
+            }
+            const string ShowKey = "Show";
+            bool aIsShow = dic.GetData(ShowKey, false);
+            if (aIsShow)//show search field
+            {
+
+
+                GUILayout.BeginVertical(iOptions);
+
+                if (GUILayout.Button(curOption, UCL_GUIStyle.ButtonStyle, iOptions))
+                {
+                    aIsShow = false;
+                }
+                GUILayout.BeginHorizontal(iOptions);
+                GUILayout.Label(UCL_LocalizeManager.Get("Search"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                string searchInput = dic.GetData(nameof(searchInput), string.Empty);
+                string newSearchInput = GUILayout.TextField(searchInput, UCL_GUIStyle.TextFieldStyle);
+                
+
+                IList<string> ids = iDisplayedOptions;
+                Regex regex = null;
+                Dictionary<int, int> indexMapping = null;
+
+                if (searchInput != newSearchInput)
+                {
+                    searchInput = newSearchInput;
+                    //Refresh cache
+                    dic.Remove(nameof(ids));
+                    dic.Remove(nameof(regex));
+                    dic.Remove(nameof(indexMapping));
+                    dic.SetData(nameof(searchInput), searchInput);
+                }
+
+                GUILayout.EndHorizontal();
+
+                if (!string.IsNullOrEmpty(searchInput))
+                {
+                    if (!dic.ContainsKey(nameof(ids)))
+                    {
+                        //Debug.LogWarning($"ValueDropdown Refresh, searchInput:{searchInput}");
+                        try
+                        {
+                            //aRegex = new System.Text.RegularExpressions.Regex(aInput.ToLower() + ".*", System.Text.RegularExpressions.RegexOptions.Compiled);
+                            regex = new Regex(searchInput, RegexOptions.Compiled | RegexOptions.IgnoreCase);
+                        }
+                        catch (System.Exception iE)
+                        {
+                            regex = null;
+                            Debug.LogException(iE);
+                        }
+
+                        //aRegex != null && !aRegex.IsMatch(aOption)
+                        if (regex != null)
+                        {
+                            ids = new List<string>();
+                            indexMapping = new();
+                            for (int i = 0; i < iDisplayedOptions.Count; i++)
+                            {
+                                string option = iDisplayedOptions[i];
+                                if (regex.IsMatch(option))
+                                {
+                                    indexMapping[ids.Count] = i;
+                                    ids.Add(option);
+                                }
+                            }
+
+                            //filterResult = iDisplayedOptions.Where(option => regex.IsMatch(option)).ToList();
+                        }
+                        dic.SetData(nameof(ids), ids);
+                        dic.SetData(nameof(regex), regex);
+                        dic.SetData(nameof(indexMapping), indexMapping);
+                    }
+                    else
+                    {
+                        ids = dic.GetData<IList<string>>(nameof(ids));
+                        regex = dic.GetData<Regex>(nameof(regex));
+                        indexMapping = dic.GetData<Dictionary<int, int>>(nameof(indexMapping));
+                    }
+                    
+
+                }
+
+                const int MaxItemsPerPage = 10;
+                int itemCount = ids.Count;
+                var result = DrawSelectPage(dic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                int startIndex = result.startIndex;
+                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+
+                for (int i = startIndex; i < lastIndex; i++)
+                {
+                    var option = ids[i];
+
+                    string displayName = option;
+                    if (regex != null)
+                    {
+                        displayName = regex.HightLight(displayName, searchInput, Color.red);
+                    }
+                    if (GUILayout.Button(displayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
+                    {
+                        aIsShow = false;
+                        if(indexMapping != null)
+                        {
+                            iSelectedIndex = indexMapping[i];
+                        }
+                        else
+                        {
+                            iSelectedIndex = i;
+                        }
+                    }
+
+                }
+                GUILayout.EndVertical();
+            }
+            else
+            {
+                if (GUILayout.Button(curOption, UCL_GUIStyle.ButtonStyle, iOptions))
+                {
+                    aIsShow = true;
+                }
+            }
+            dic.SetData(ShowKey, aIsShow);
+            return iSelectedIndex;
+        }
+        #endregion
     }
 }

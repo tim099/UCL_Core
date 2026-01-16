@@ -15,6 +15,22 @@ public static partial class ListExtensionMethods {
     #endregion
 
     #region IEnumerable
+    public static int GetListHashCode(this IEnumerable enumerables)
+    {
+        if (enumerables == null) return 0;
+
+        unchecked // 允許溢位，不會丟出例外
+        {
+            int hash = 17;
+            foreach (var option in enumerables)
+            {
+                // 處理 null 值，避免 NullReferenceException
+                hash = hash * 23 + (option?.GetHashCode() ?? 0);
+            }
+            return hash;
+        }
+    }
+
     public static int GetCount(this IEnumerable iIEnumerable)
     {
         if (iIEnumerable == null)
@@ -93,6 +109,7 @@ public static partial class ListExtensionMethods {
         return aSB.ToString();
     }
     #endregion
+
 
     /// <summary>
     /// return the first Element in iICollection

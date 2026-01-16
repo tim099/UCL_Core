@@ -34,8 +34,17 @@ namespace UCL.Core.PA {
                     if (aMethodInfo.ReturnType == typeof(void)) {//setter
                         //m.Invoke(test, new object[] { "The Modified Caption" });
                     } else {//getter
-                        m_StrList = aMethodInfo.Invoke(null, new object[] { }) as IList<string>;
-                        if(m_StrList != null) break;
+                        var result = aMethodInfo.Invoke(null, new object[] { });
+                        if (result is IList<string> list)
+                        {
+                            m_StrList = list;
+                        }
+                        else if (result is IEnumerable<string> enumerable)
+                        {
+                            m_StrList = enumerable.ToList();
+                        }
+
+                        if (m_StrList != null) break;
                     }
                 }
             }
@@ -96,5 +105,53 @@ namespace UCL.Core.PA {
             return aDisplayList;
         }
         //public UCL_ListAttribute (System.Action<List<string>> get)
+    }
+
+    public class UCL_ValueDropdownAttribute : PropertyAttribute, IValueDropdown
+    {
+        public MethodInfo methodInfo;
+
+        public UCL_ValueDropdownAttribute(Type iType, string iFuncName)
+        {
+            var eType = typeof(IEnumerable<string>);
+            var eType2 = typeof(IList<string>);
+            var methods = iType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
+            methodInfo = methods.First(a => a.Name == iFuncName && 
+                (eType.IsAssignableFrom(a.ReturnType) || eType2.IsAssignableFrom(a.ReturnType)));
+
+            if (methodInfo == null) //might be accessor
+            { 
+                PropertyInfo aPropInfo = iType.GetProperty(iFuncName);
+                if (aPropInfo == null)
+                { // not accessor!!
+                    Debug.LogError("UCL_ListProperty:" + iType.Name + ",func_name == null :" + iFuncName);
+                    return;
+                }
+                MethodInfo[] accessors = aPropInfo.GetAccessors();
+                methodInfo = accessors.First(a => a.Name == iFuncName &&
+                    (eType.IsAssignableFrom(a.ReturnType) || eType2.IsAssignableFrom(a.ReturnType)));
+            }
+        }
+
+        public IList<string> GetStrList(object iTarget)
+        {
+            if(methodInfo == null)
+            {
+                Debug.LogError("UCL_ValueDropdownAttribute methodInfo == null");
+                return Array.Empty<string>();
+            } 
+
+            var result = methodInfo.Invoke(iTarget, new object[] { });
+            if(result == null)
+            {
+                Debug.LogError("UCL_ValueDropdownAttribute result == null");
+                return Array.Empty<string>();
+            }
+            if (result is IList<string> list) return list;
+            if (result is IEnumerable<string> enumerable) return enumerable.ToList();
+
+            Debug.LogError($"UCL_ValueDropdownAttribute result.GetType:{result.GetType()}");
+            return Array.Empty<string>();
+        }
     }
 }

@@ -26,8 +26,31 @@ public static partial class AssemblyExtensions {
 
         return s_Types;
     }
+
+    private static List<Type> s_StaticTypes = null;
+    public static List<Type> GetAllStaticTypes()
+    {
+        if (s_StaticTypes == null)
+        {
+            var types = GetAllTypes();
+            s_StaticTypes = types.Where(type => type.IsAbstract && type.IsSealed).ToList();
+        }
+        return s_StaticTypes;
+    }
+    private static List<string> s_StaticTypeFullName = null;
+    public static List<string> GetAllStaticTypesFullName()
+    {
+        if (s_StaticTypeFullName == null)
+        {
+            var types = GetAllStaticTypes();
+            s_StaticTypeFullName = types.Select(type => type.FullName).ToList();
+        }
+        return s_StaticTypeFullName;
+    }
+
+
     private static Dictionary<string, Type> s_TypeDic = null;
-    public static Dictionary<string,Type> TypeDic
+    public static Dictionary<string, Type> TypeDic
     {
         get
         {
@@ -45,6 +68,7 @@ public static partial class AssemblyExtensions {
     }
     public static Type GetTypeByFullName(string iTypeFullName)
     {
+        if(string.IsNullOrEmpty(iTypeFullName)) return null;
         var typeDic = TypeDic;
         if(typeDic.TryGetValue(iTypeFullName, out var type))
         {

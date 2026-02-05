@@ -320,7 +320,8 @@ namespace UCL.Core.UI
                             {
                                 var aTupleData = tupleElements[i];
                                 var aResultData = DrawObjectData(aTupleData,
-                                    iDrawObjectParams.CreateChild(iDrawObjectParams.m_DataDic.GetSubDic("_" + i.ToString()), aTupleData.UCL_GetShortName()));
+                                    iDrawObjectParams.CreateChild(iDrawObjectParams.m_DataDic.GetSubDic("_" + i.ToString()),
+                                    aTupleData.UCL_GetShortName()));
                                 //var aResultData = DrawObjectData(aTupleData, aDataDic.GetSubDic("_" + i.ToString()), aTupleData.UCL_GetShortName(), iFieldNameFunc: aFieldNameFunc);
                                 if (aResultData != tupleElements[i])
                                 {

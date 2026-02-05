@@ -110,32 +110,71 @@ namespace UCL.Core.PA {
     public class UCL_ValueDropdownAttribute : PropertyAttribute, IValueDropdown
     {
         public MethodInfo methodInfo;
-
+        public string methodName;
+        private bool getMethod = false;
         public UCL_ValueDropdownAttribute(Type iType, string iFuncName)
         {
+            methodInfo = GetMethodInfo(iType, iFuncName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
+        }
+        public UCL_ValueDropdownAttribute(string iMethodName)
+        {
+            methodName = iMethodName;
+            getMethod = true;
+        }
+        public MethodInfo GetMethodInfo(Type iType, string iMethodName, BindingFlags bindingFlags)
+        {
+            string getterName = $"get_{iMethodName}";
+            //Debug.LogError($"GetMethodInfo:{iType.FullName},iMethodName:{iMethodName},getterName:{getterName}");
             var eType = typeof(IEnumerable<string>);
             var eType2 = typeof(IList<string>);
-            var methods = iType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
-            methodInfo = methods.First(a => a.Name == iFuncName && 
-                (eType.IsAssignableFrom(a.ReturnType) || eType2.IsAssignableFrom(a.ReturnType)));
-
-            if (methodInfo == null) //might be accessor
-            { 
-                PropertyInfo aPropInfo = iType.GetProperty(iFuncName);
-                if (aPropInfo == null)
-                { // not accessor!!
-                    Debug.LogError("UCL_ListProperty:" + iType.Name + ",func_name == null :" + iFuncName);
-                    return;
+            var methods = iType.GetMethods(bindingFlags);
+            MethodInfo methodInfo = null;
+            foreach (var method in methods)
+            {
+                if(method.Name == iMethodName || method.Name == getterName)//Name fit
+                {
+                    bool typeCheck = eType.IsAssignableFrom(method.ReturnType) || eType2.IsAssignableFrom(method.ReturnType);
+                    if (typeCheck)
+                    {
+                        //Debug.LogError($"GetMethodInfo method:{method.GetSignature()}, typeCheck:{typeCheck}");
+                        methodInfo = method;
+                    }
+                    break;
                 }
-                MethodInfo[] accessors = aPropInfo.GetAccessors();
-                methodInfo = accessors.First(a => a.Name == iFuncName &&
-                    (eType.IsAssignableFrom(a.ReturnType) || eType2.IsAssignableFrom(a.ReturnType)));
             }
+            
+
+            //MethodInfo methodInfo = methods.FirstOrDefault(a => (a.Name == iMethodName || a.Name == getterName) &&
+            //    (eType.IsAssignableFrom(a.ReturnType) || eType2.IsAssignableFrom(a.ReturnType)));
+            //Debug.LogError($"methodInfo:{methods.ConcatToString(a => a.Name)}");
+            //if (methodInfo == null) //might be accessor
+            //{
+            //    PropertyInfo aPropInfo = iType.GetProperty(iMethodName);
+            //    if (aPropInfo == null)
+            //    { // not accessor!!
+            //        Debug.LogError("UCL_ListProperty:" + iType.Name + ",func_name == null :" + iMethodName);
+            //        return methodInfo;
+            //    }
+            //    MethodInfo[] accessors = aPropInfo.GetAccessors();
+            //    methodInfo = accessors.FirstOrDefault(a => a.Name == iMethodName &&
+            //        (eType.IsAssignableFrom(a.ReturnType) || eType2.IsAssignableFrom(a.ReturnType)));
+            //}
+            return methodInfo;
         }
+
 
         public IList<string> GetStrList(object iTarget)
         {
-            if(methodInfo == null)
+            if (getMethod)
+            {
+                getMethod = false;
+                if (iTarget != null)
+                {
+                    methodInfo = GetMethodInfo(iTarget.GetType(), methodName,
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
+                }
+            }
+            if (methodInfo == null)
             {
                 Debug.LogError("UCL_ValueDropdownAttribute methodInfo == null");
                 return Array.Empty<string>();

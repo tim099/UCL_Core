@@ -7,11 +7,11 @@ using UnityEngine;
 
 namespace UCL.Core.PA
 {
-    [CustomPropertyDrawer(typeof(ConditionalAttribute))]
+    [CustomPropertyDrawer(typeof(IShowInCondition))]
     public class UCL_ConditionalAttributeDrawer : PropertyDrawer
     {
-        private ConditionalAttribute Conditional => _conditional ?? (_conditional = attribute as ConditionalAttribute);
-        private ConditionalAttribute _conditional;
+        private IShowInCondition Conditional => _conditional ?? (_conditional = attribute as IShowInCondition);
+        private IShowInCondition _conditional;
 
         private bool m_CustomDrawersCached;
         private static IEnumerable<Type> s_AllPropertyDrawerAttributeTypes;
@@ -128,7 +128,7 @@ namespace UCL.Core.PA
             try
             {
                 aGenericAttr = (PropertyAttribute)fieldInfo.GetCustomAttributes(typeof(PropertyAttribute), false)
-                    .FirstOrDefault(a => !(a is ConditionalAttribute));
+                    .FirstOrDefault(a => !(a is IShowInCondition));
 
                 if (aGenericAttr is ContextMenuItemAttribute)
                 {

@@ -78,4 +78,43 @@ namespace UCL.Core.PA {
             return true;
         }
     }
+
+
+    [AttributeUsage(AttributeTargets.Field)]
+    public class ShowIfFieldAttribute : PropertyAttribute, UCL.Core.IShowInCondition
+    {
+        public readonly string m_FieldName;
+        public readonly object[] m_CompareValues;
+
+        public object[] FunctionParams => m_CompareValues;
+        public string FunctionName => m_FieldName;
+
+        /// <summary>
+        /// Invoke mamber function and use the return value
+        /// if return true then show the field
+        /// </summary>
+        /// <param name="iName"></param>
+        /// <param name="iCompareValues"></param>
+        public ShowIfFieldAttribute(string iName, params object[] iCompareValues)
+        {
+            m_FieldName = iName;
+            m_CompareValues = iCompareValues;
+        }
+        public bool IsShow(object iObj)
+        {
+            var aObj = iObj.GetMember(m_FieldName);
+            if (m_CompareValues != null)
+            {
+                for (int i = 0; i < m_CompareValues.Length; i++)
+                {
+                    var aComp = m_CompareValues[i];
+                    if (aComp.Equals(aObj))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
 }

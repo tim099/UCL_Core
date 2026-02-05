@@ -23,6 +23,7 @@ namespace UCL.Core
         public const string Data = "Data";
         public const string Config = "Config";
         public const string Editor = "Editor";
+        public const string Assembly = "Assembly";
         public enum EditDataType : int
         {
             UCL_ModResourceAsset = 1,
@@ -41,7 +42,11 @@ namespace UCL.Core
         public enum EditEditorType : int
         {
             UCL_ImageEditor = 1,
-            UCL_TypeViewer,
+        }
+        public enum AssemblyDataType : int
+        {
+            UCL_TypeViewer = 1,
+            UCL_RuntimeScript,
         }
     }
 

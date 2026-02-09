@@ -1,4 +1,4 @@
-﻿
+﻿#if ADDRESSABLE_SUPPORT
 // AutoHeader
 // to change the auto header please go to AutoHeader.cs
 // Create time : 09/25 2023
@@ -244,3 +244,5 @@ namespace UCL.Core
         public UCL_AddressableData(string path, string key) { m_AddressablePath = path; m_AddressableKey = key; }
     }
 }
+
+#endif

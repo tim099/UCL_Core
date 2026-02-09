@@ -2,6 +2,8 @@
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/24 2024 09:46
+#if ADDRESSABLE_SUPPORT
+
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -98,3 +100,5 @@ namespace UCL.Core
         #endregion
     }
 }
+
+#endif

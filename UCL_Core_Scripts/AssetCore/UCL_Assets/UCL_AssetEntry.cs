@@ -312,23 +312,18 @@ namespace UCL.Core
             }
         }
 
+        public override JsonData SerializeToJson()
+        {
+            return new JsonData(ID);
+        }
         public override void DeserializeFromJson(JsonData iJson)
         {
-            base.DeserializeFromJson(iJson);
-
+            if(iJson.IsString) ID = iJson.GetString();
+            else
+            {
+                base.DeserializeFromJson(iJson);
+            }
             UCLI_AssetEntry.s_DeserializeAction?.Invoke(this);
-
-            //if(RCG_RenamePage.s_IsRenaming)//check rename
-            //{
-            //    var aData = RCG_RenamePage.s_RenameData;
-            //    if(aData.m_Type == typeof(T))//this is the rename type!!
-            //    {
-            //        if(aData.m_ID == ID)//Rename!!
-            //        {
-            //            ID = aData.m_NewID;
-            //        }
-            //    }
-            //}
         }
 
 

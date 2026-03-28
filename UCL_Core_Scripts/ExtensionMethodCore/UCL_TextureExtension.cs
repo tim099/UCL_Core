@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -44,9 +44,9 @@ public static partial class TextureExtensionMethods {
         
         RenderTexture.active = aCurActive;
     }
-    public static Texture2D ToTexture2D(this RenderTexture iRenderTexture)
+    public static Texture2D ToTexture2D(this RenderTexture iRenderTexture, bool iLinear = false)
     {
-        Texture2D aTexture2D = new Texture2D(iRenderTexture.width, iRenderTexture.height, TextureFormat.RGBA32, false);
+        Texture2D aTexture2D = new Texture2D(iRenderTexture.width, iRenderTexture.height, TextureFormat.RGBA32, false, iLinear);
         var aPrev = RenderTexture.active;
         RenderTexture.active = iRenderTexture;
         aTexture2D.ReadPixels(new Rect(0, 0, iRenderTexture.width, iRenderTexture.height), 0, 0);

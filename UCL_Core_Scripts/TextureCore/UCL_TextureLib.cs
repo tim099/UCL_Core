@@ -1,4 +1,4 @@
-﻿using Cysharp.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -192,9 +192,9 @@ namespace UCL.Core.TextureLib {
         /// </summary>
         /// <param name="iData"></param>
         /// <returns></returns>
-        public static Texture2D CreateTexture(byte[] iData, bool iIsInverse = false, bool iUpdateMipmap = false)
+        public static Texture2D CreateTexture(byte[] iData, bool iIsInverse = false, bool iUpdateMipmap = false, bool iLinear = false, bool iMipmap = false)
         {
-            var aTex = new Texture2D(1, 1);
+            var aTex = new Texture2D(1, 1, TextureFormat.RGBA32, iMipmap, iLinear);
             aTex.LoadImage(iData); //..this will auto-resize the texture dimensions.
             if (iIsInverse)
             {
@@ -221,14 +221,14 @@ namespace UCL.Core.TextureLib {
         /// </summary>
         /// <param name="iPath"></param>
         /// <returns></returns>
-        public static Texture2D CreateTexture(string iPath)
+        public static Texture2D CreateTexture(string iPath, bool iLinear = false, bool iMipmap = false)
         {
             if (!File.Exists(iPath))
             {
                 return null;
             }
             var aData = File.ReadAllBytes(iPath);
-            var aTex = new Texture2D(1, 1);
+            var aTex = new Texture2D(1, 1, TextureFormat.RGBA32, iMipmap, iLinear);
             aTex.LoadImage(aData); //..this will auto-resize the texture dimensions.
             return aTex;
         }

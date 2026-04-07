@@ -1069,7 +1069,7 @@ namespace UCL.Core
             //}
             //m_CurEditModule = LoadModuleAndDependencies(iModuleID, new HashSet<string>());//m_Config.LoadModule(iModuleID, AssetType);
 
-            Debug.LogWarning($"m_LoadedModules:{m_LoadedModules.ConcatToString(iModule => iModule.ID)}");
+            Debug.Log($"m_LoadedModules:{m_LoadedModules.ConcatToString(iModule => iModule.ID)}");
         }
 
         /// <summary>

@@ -82,6 +82,13 @@ namespace UCL.Core.Page
             if(url != null)
             {
                 m_HelpURL = url.URL;
+                // [職責] 判定 URL 是否為外部網頁連結或專案內的相對路徑。
+                // [物理意義] 如果字串中不包含 "://"（常見於 http:// 或 https:// 等協定），則視為本地檔案路徑。
+                if (!m_HelpURL.Contains("://"))
+                {
+                    // [計算邏輯] 透過 GetFullPath 將相對於專案根目錄的路徑轉換為絕對路徑，以確保 Application.OpenURL 能順利調用系統預設程式開啟。
+                    m_HelpURL = System.IO.Path.GetFullPath(m_HelpURL);
+                }
                 //Debug.LogError($"m_HelpURL:{m_HelpURL}");
             }
             m_WindowName = UCL_LocalizeManager.Get($"{m_Type.Name}Editor");
@@ -137,10 +144,7 @@ namespace UCL.Core.Page
                 {
                     if (!string.IsNullOrEmpty(m_HelpURL))
                     {
-                        if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        {
-                            Application.OpenURL(m_HelpURL);
-                        }
+                        UCL_GUILayout.DrawHelpButton(m_HelpURL);
                     }
                     m_TopBarToggle = UCL_GUILayout.Toggle(m_TopBarToggle);
 

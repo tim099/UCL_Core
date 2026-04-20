@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -38,6 +38,11 @@ namespace UCL.Core.EditorLib.Page
                 if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_LocalizeEditPage"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();
+                }
+
+                if (GUILayout.Button("PlayerPrefs", UCL_GUIStyle.ButtonStyle))
+                {
+                    UCL_EditorPage.Create<UCL_PlayerPrefsEditPage>();
                 }
             }
         }

@@ -1,4 +1,4 @@
-﻿
+
 // ATS_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 02/20 2024 19:50
@@ -32,6 +32,7 @@ namespace UCL.Core
             UCL_VideoAsset,
             UCL_TextAsset,
             UCL_TMPFontAsset,
+            UCL_CSVAsset,
         }
         public enum EditConfigType : int
         {

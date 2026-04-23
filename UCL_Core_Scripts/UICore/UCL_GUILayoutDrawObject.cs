@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -539,28 +539,24 @@ namespace UCL.Core.UI
         /// [職責] 繪製 HelpURL 對應的幫助按鈕，並處理點擊開啟邏輯。
         /// [物理意義] 如果存在 HelpURLAttribute，則在介面上顯示一個 "?" 按鈕。點擊時自動判斷路徑類型並開啟。
         /// </summary>
-        /// <param name="iType">要檢查 HelpURLAttribute 的類別類型。</param>
+        /// <param name="url">要開啟的 URL 字串或相對路徑。</param>
         public static void DrawHelpButton(string url)
         {
             if (string.IsNullOrEmpty(url))
             {
                 return;
             }
+
             // [數值影響] 按鈕大小會隨螢幕缩放比例調整。
             float size = UCL_GUIStyle.GetScaledSize(20);
             if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.Width(size), GUILayout.Height(size)))
             {
-                // [職責] 判定 URL 是否為外部網頁連結或專案內的相對路徑。
-                // [物理意義] 如果字串中不包含 "://"（常見於 http:// 或 https:// 等協定），則視為本地檔案路徑。
-                if (!url.Contains("://"))
-                {
-                    // [計算邏輯] 透過 GetFullPath 將相對於專案根目錄的路徑轉換為絕對路徑，以確保 Application.OpenURL 能順利調用系統預設程式開啟。
-                    url = System.IO.Path.GetFullPath(url);
-                }
-                // [職責] 開啟目標 URL 或本地檔案。
-                Application.OpenURL(url);
+                // [職責] 透過 UCL_URLLib 解析並開啟 URL。
+                UCL_URL.OpenURL(url);
             }
         }
+
+
         private static Dictionary<System.Type, TypeFieldInfoCache> s_TypeFieldInfoCacheDic = null;
         /// <summary>
         /// Draw all Field OnGUI

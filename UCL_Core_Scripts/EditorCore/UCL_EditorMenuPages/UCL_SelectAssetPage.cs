@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +9,8 @@ using UCL.Core.LocalizeLib;
 using UCL.Core.MathLib;
 using UCL.Core.UI;
 using UnityEngine;
+using System.Reflection;
+
 
 namespace UCL.Core.Page
 {
@@ -35,7 +37,12 @@ namespace UCL.Core.Page
         protected string m_PreviewID = string.Empty;
         protected string m_CreateDes = string.Empty;
         protected string m_TypeName = string.Empty;
+        // [職責] 存儲從資產類型提取的幫助說明連結。
+        // [物理意義] 用於在介面上顯示幫助按鈕，點擊後可開啟網頁或本地文件。
+        // [數值影響] 影響 TopBarButtons 是否繪製 DrawHelpButton。
+        protected string m_HelpURL = null;
         //protected int m_CurPage = 0;
+
 
 
         protected UCL_AssetCommonMeta m_Meta = null;
@@ -47,27 +54,37 @@ namespace UCL.Core.Page
         public UCL_SelectAssetPage() { }
         public UCL_SelectAssetPage(Type type) { m_Type = type; }
 
+        // [職責] 初始化頁面狀態，包含類型名稱、本地化描述、元數據與幫助連結。
+        // [物理意義] 確保在頁面開啟前，所有必要的資產處理工具與顯示資訊都已就緒。
+        // [數值影響] 設定 m_TypeName, m_CreateDes 等成員變數，並從反射中提取幫助 URL。
         public override void Init(UCL.Core.UI.UCL_GUIPageController iGUIPageController)
         {
 
-            base.Init(iGUIPageController);
-            string aTypeName = m_Type.Name;
-            m_TypeName = aTypeName;
-            string aKey = $"Create_{aTypeName}";
-            if (UCL_LocalizeManager.ContainsKey(aKey))
+            base.Init(iGUIPageController);// 調用基底類別初始化邏輯
+            string aTypeName = m_Type.Name;// 取得當前資產類型的名稱 (string)
+            m_TypeName = aTypeName;// 存儲類型名稱用於介面顯示 (string)
+            string aKey = $"Create_{aTypeName}";// 組合本地化查找鍵值 (string)
+            if (UCL_LocalizeManager.ContainsKey(aKey))// 檢查是否存在特定的建立描述 (bool)
             {
-                m_CreateDes = UCL_LocalizeManager.Get(aKey);
+                m_CreateDes = UCL_LocalizeManager.Get(aKey);// 取得特定類型的建立描述文字 (string)
             }
             else
             {
-                m_CreateDes = UCL_LocalizeManager.Get("CreateNew");
+                m_CreateDes = UCL_LocalizeManager.Get("CreateNew");// 取得通用的建立文字 (string)
             }
-            Util.OnEdit();
 
-            m_Meta = Util.AssetMetaIns;
+            // [計算邏輯] 透過反射取得資產類型上標註的 HelpURLAttribute。
+            // [數值影響] 如果存在屬性，則將 URL 字串存儲至 m_HelpURL 以供 UI 繪製使用。
+            var aHelpAttr = m_Type.GetCustomAttribute<HelpURLAttribute>();// 獲取 HelpURL 屬性 (HelpURLAttribute)
+            if (aHelpAttr != null) m_HelpURL = aHelpAttr.URL;// 提取 URL 路徑 (string)
+
+            Util.OnEdit();// 觸發資產工具的編輯事件
+
+            m_Meta = Util.AssetMetaIns;// 取得資產的元數據實例 (UCL_AssetCommonMeta)
             //Debug.LogError("m_CreateDes:" + m_CreateDes);
-            OnResume();
+            OnResume();// 重新整理頁面內容
         }
+
         public UCLI_Asset Util
         {
             get
@@ -115,9 +132,13 @@ namespace UCL.Core.Page
             m_Meta.OnGUI(m_DataDic.GetSubDic("Meta"));
             DrawSelectTargets();
         }
+        // [職責] 繪製頁面頂部的功能按鈕列。
+        // [物理意義] 提供頁面標題顯示、幫助說明、資產建立、資料刷新及目錄開啟等核心操作入口。
+        // [數值影響] 渲染 GUI 元素，並根據點擊行為觸發對應的頁面跳轉或系統調用。
         protected override void TopBarButtons()
         {
-            GUILayout.Label(WindowName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            GUILayout.Label(WindowName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));// 繪製視窗名稱標籤 (void)
+
             if (GUILayout.Button(m_CreateDes, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_CreateAssetPage.Create(m_Type);
@@ -139,6 +160,10 @@ namespace UCL.Core.Page
             {
                 //GUILayout.Label("Type:", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 //GUILayout.Space(10);
+
+                // [職責] 繪製幫助按鈕與視窗標題。
+                // [數值影響] 如果 m_HelpURL 不為空，則在視窗標籤旁繪製一個可點擊的 "?" 按鈕。
+                if (!string.IsNullOrEmpty(m_HelpURL)) UCL_GUILayout.DrawHelpButton(m_HelpURL);// 繪製幫助連結按鈕 (void)
                 GUILayout.Label($"[{UCL_ModuleService.CurEditModuleID}] {m_TypeName}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {

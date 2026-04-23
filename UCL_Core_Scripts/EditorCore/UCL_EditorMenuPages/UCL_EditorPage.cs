@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UCL.Core.LocalizeLib;
@@ -32,6 +32,10 @@ namespace UCL.Core.EditorLib.Page
         /// </summary>
         virtual protected bool ShowBackButton => (!ShowCloseButton || p_Controller.Pages.Count > 1);
 
+        /// <summary>
+        /// [物理意義] 快取當前頁面的 HelpURL 字串，避免重複反射讀取。
+        /// </summary>
+        protected string m_PageHelpURL = null;
 
         protected Vector2 m_GUIScrollPos = Vector2.zero;
         protected Vector2 m_GUIScrollPos2 = Vector2.zero;
@@ -51,6 +55,21 @@ namespace UCL.Core.EditorLib.Page
         {
             p_Controller.PopAll();
         }
+
+        /// <summary>
+        /// [職責] 獲取並快取類別定義中的 HelpURLAttribute。
+        /// [計算邏輯] 透過反射讀取類別屬性，若無則快取為空字串。
+        /// </summary>
+        protected string GetPageHelpURL()
+        {
+            if (m_PageHelpURL == null)
+            {
+                var aHelpURLAttr = System.Attribute.GetCustomAttribute(GetType(), typeof(HelpURLAttribute)) as HelpURLAttribute;
+                m_PageHelpURL = aHelpURLAttr != null ? aHelpURLAttr.URL : string.Empty;
+            }
+            return m_PageHelpURL;
+        }
+
         /// <summary>
         /// Draw TopBar
         /// 繪製上方按鈕列
@@ -75,6 +94,15 @@ namespace UCL.Core.EditorLib.Page
                         aAction = 2;
                     }
                 }
+
+                // [職責] 在 TopBarButtons 區域的第一個位置繪製 Help 按鈕。
+                // [物理意義] 讓使用者能快速開啟該功能頁面的說明文件。
+                string aHelpURL = GetPageHelpURL();
+                if (!string.IsNullOrEmpty(aHelpURL))
+                {
+                    UCL_GUILayout.DrawHelpButton(aHelpURL);
+                }
+
                 try
                 {
                     TopBarButtons();

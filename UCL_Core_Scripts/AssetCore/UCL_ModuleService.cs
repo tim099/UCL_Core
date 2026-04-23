@@ -1,4 +1,4 @@
-﻿using Cysharp.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -15,113 +15,199 @@ using UnityEngine;
 namespace UCL.Core
 {
 
+    /// <summary>
+    /// Module edit type: determines the storage location and access method of module data.
+    /// Builtin = StreamingAssets (Read-only, packaged with Build);
+    /// Runtime = PersistentDataPath (Read-write, supports Mod and user customization).
+    /// </summary>
     public enum UCL_ModuleEditType
     {
+        /// <summary>Built-in module, data located in StreamingAssets, only editable in Editor.</summary>
         Builtin,
+        /// <summary>Runtime module, data located in PersistentDataPath, supports runtime read/write.</summary>
         Runtime,
     }
 
     /// <summary>
-    /// Responsible for all operations related to Module
+    /// UCL Module Lifecycle Management Service (Singleton).
+    /// Responsible for module initialization, loading, installation, Asset path resolution, cache management, and Inspector GUI rendering.
+    /// All UCL_Asset access paths are determined by this service, serving as the core entry point for the entire UCL asset framework.
     /// </summary>
     public class UCL_ModuleService//: UCLI_FieldOnGUI
     {
+        // ─────────────────────────────────────────────
+        // [GUI Page State Persistence]
+        // CurState records which page the Inspector is currently on across scenes via UCL_PlayerPrefs,
+        // allowing it to automatically restore to the last edited page when re-entering Play Mode.
+        // ─────────────────────────────────────────────
+
+        // PlayerPrefs key for storing the current GUI page state
         private const string CurStateKey = "UCL_ModuleService.CurState";
+
+        /// <summary>
+        /// Current Inspector GUI page state, persisted via UCL_PlayerPrefs.
+        /// Default value is State.Main.
+        /// </summary>
         public static State CurState
         {
+            // Read enum value from PlayerPrefs; return default State.Main if not found
             get => UCL_PlayerPrefs.GetEnum(CurStateKey, State.Main);
-            set => UCL_PlayerPrefs.SetEnum(CurStateKey, value);//紀錄當前頁面狀態
+            // Serialize enum value and write to PlayerPrefs to ensure page state is not lost after restart
+            set => UCL_PlayerPrefs.SetEnum(CurStateKey, value);
         }
+
+        /// <summary>
+        /// Page state enumeration for UCL_ModuleService Inspector GUI.
+        /// Controls whether the user sees the main menu or the module edit page.
+        /// </summary>
         public enum State
         {
             /// <summary>
-            /// 選取要編輯模組的主頁面
+            /// Main page: Displays a list of all selectable modules for the user to choose from.
             /// </summary>
             Main,
             /// <summary>
-            /// 編輯模組
+            /// Module edit page: Enters the asset editing process for the specified module; m_CurEditModule is not null at this point.
             /// </summary>
             EditModule,
         }
 
+        /// <summary>
+        /// Module installation mode enumeration in Editor environment.
+        /// Determines the method used to copy Builtin modules to PersistentDataPath.
+        /// </summary>
         public enum EditorInstallMode
         {
             /// <summary>
-            /// 預設直接複製模組資料夾到安裝處
+            /// Default mode: Directly copy module folders to the target installation path (fast, suitable for development iterations).
             /// </summary>
             Default,
             /// <summary>
-            /// 模擬實機運行時的安裝方式
+            /// UnZip mode: Simulates installation by extracting from a .zip package (used to verify packaging process correctness).
             /// </summary>
             UnZip,
         }
 
+        // ════════════════════════════════════════════════════════
+        // [Static Area] Singleton, Events, Asynchronous Loading Callback Pipeline
+        // Responsibility: Provides a global unique entry point (Ins) and manages event broadcasting before and after module loading.
+        // ════════════════════════════════════════════════════════
         #region static
+
+        /// <summary>
+        /// Lazy-loaded singleton property. Automatically creates an instance and starts the async initialization process on first access.
+        /// ⚠ Note: Init() internally calls the async method InitAsync(),
+        ///   so initialization completion is not guaranteed after the first access.
+        ///   To ensure completion, use WaitUntilInitialized(token).
+        /// </summary>
         public static UCL_ModuleService Ins
         {
             get
             {
+                // If the singleton hasn't been created yet, perform lazy-loaded initialization
                 if (s_Ins == null)
                 {
-                    s_Ins = new UCL_ModuleService();
-                    s_Ins.Init();
+                    s_Ins = new UCL_ModuleService(); // Create instance
+                    s_Ins.Init();                    // Start async initialization (InitAsync runs in background)
                 }
-                return s_Ins;
+                return s_Ins; // Return singleton instance
             }
         }
+
+        /// <summary>
+        /// Synchronous event triggered before module loading starts.
+        /// Subscribers can clear old resources or reset states here.
+        /// </summary>
         public static event System.Action OnLoadModule;
+
+        /// <summary>
+        /// Event triggered immediately after synchronous module loading is complete (excluding async callbacks).
+        /// Subscribers can re-acquire module references here.
+        /// </summary>
         public static event System.Action OnLoadedModule;
+
+        // List of asynchronous callback functions after module loading is complete.
+        // Each Func receives a CancellationToken and returns a UniTask;
+        // All registered Funcs will be executed in parallel within OnLoadedModuleAsync.
         private static List<System.Func<CancellationToken, UniTask>> s_OnLoadedModuleFunc = new();
+
+        /// <summary>
+        /// Registers an asynchronous callback to be executed after module loading is complete.
+        /// Suitable for systems that require module data to be ready before initialization (e.g., ClimateSim, Earth).
+        /// </summary>
+        /// <param name="func">Asynchronous callback function receiving a CancellationToken</param>
         public static void AddLoadedModuleFunc(System.Func<CancellationToken, UniTask> func)
         {
-            s_OnLoadedModuleFunc.Add(func);
+            s_OnLoadedModuleFunc.Add(func); // Add to the asynchronous callback list
         }
+
+        /// <summary>
+        /// Removes a registered asynchronous callback. Typically called in OnDestroy to avoid memory leaks.
+        /// </summary>
+        /// <param name="func">Async callback function to remove (must be the same delegate instance as when added)</param>
         public static void RemoveLoadedModuleFunc(System.Func<CancellationToken, UniTask> func)
         {
-            s_OnLoadedModuleFunc.Remove(func);
+            s_OnLoadedModuleFunc.Remove(func); // Remove specified callback from the list
         }
+
+        // ─────────────────────────────────────────────
+        // [Module Loading Completion Async Pipeline]
+        // Execution order:
+        //   1. Execute all UCL_OnModuleLoadedAsset in ascending order of m_Order (await each to ensure sequence)
+        //   2. Execute all registered s_OnLoadedModuleFunc in parallel (UniTask.WhenAll for performance)
+        // ─────────────────────────────────────────────
         private static async UniTask OnLoadedModuleAsync(CancellationToken token)
         {
+            // Get utility instance for UCL_OnModuleLoadedAsset to enumerate all registered assets
             var util = UCL_OnModuleLoadedAsset.Util;
+            // Get ID list for all UCL_OnModuleLoadedAsset
             var ids = util.GetAllIDs();
-            if (!ids.IsNullOrEmpty())
+
+            if (!ids.IsNullOrEmpty()) // Only execute if there are registered OnModuleLoaded assets
             {
+                // Sort by m_Order field ascending to ensure predictable execution sequence (lower values execute first)
                 var onModuleLoadedAssets = ids.Select(id => util.GetData(id)).OrderBy(data => data.m_Order);
+
+                // Wait for each asset's OnModuleLoaded to complete sequentially (ensures execution order)
                 foreach (var asset in onModuleLoadedAssets)
                 {
                     try
                     {
+                        // Wait for asset's module loading callback to finish
                         await asset.OnModuleLoaded(token);
                     }
-                    catch (System.OperationCanceledException) { }
+                    catch (System.OperationCanceledException) { } // Silently skip if task is canceled
                     catch (System.Exception e)
                     {
+                        // Failure of a single asset does not interrupt the overall flow; log error and continue
                         Debug.LogException(e);
                         Debug.LogError($"OnModuleLoaded asset:{asset.ID}, Exception:{e}");
                     }
                 }
             }
 
-
+            // Execute all registered async callback functions in parallel (performance first, order not guaranteed)
             if(!s_OnLoadedModuleFunc.IsNullOrEmpty())
             {
-                List<UniTask> tasks = new();
+                List<UniTask> tasks = new(); // Collect all UniTasks to be executed
                 foreach (var func in s_OnLoadedModuleFunc)
                 {
-                    if (func != null)
+                    if (func != null) // Prevent NullReferenceException from null delegates
                     {
-                        tasks.Add(func.Invoke(token));
-                        //await func.Invoke(token);
+                        tasks.Add(func.Invoke(token)); // Start async task and add to wait list
                     }
                 }
                 if (!tasks.IsNullOrEmpty())
                 {
+                    // Parallel wait for all tasks to complete; any task exception will propagate here
                     await UniTask.WhenAll(tasks);
                 }
             }
         }
         /// <summary>
-        /// for reflection
+        /// Resources path of the current edited module.
+        /// Provided for reflection use to avoid direct access to the CurEditModule property.
+        /// Returns string.Empty if retrieval fails (e.g., m_CurEditModule is null).
         /// </summary>
         public static string ModResourcesPath
         {
@@ -129,22 +215,32 @@ namespace UCL.Core
             {
                 try
                 {
+                    // Get Resources directory path via the current edited module's ModuleEntry
                     return CurEditModule.ModuleEntry.ModResourcesPath;
                 }catch(System.Exception ex)
                 {
+                    // Log exception and return empty string if CurEditModule is null or ModuleEntry is invalid
                     Debug.LogException(ex);
                 }
-                return string.Empty;
+                return string.Empty; // Fallback: Return empty string to prevent NullReference at caller
             }
         }
 
+        /// <summary>
+        /// Gets the corresponding Resources path based on the module ID.
+        /// Uses current ModuleEditType to determine data source.
+        /// </summary>
+        /// <param name="iID">Module ID to query</param>
+        /// <returns>ModResourcesPath of the module, i.e., [ModulesRoot]/{iID}/Resources</returns>
         public static string GetModResourcesPath(string iID)
         {
+            // Determine path source by ModuleEditType (Builtin=StreamingAssets / Runtime=PersistentDataPath)
+            // Then get the corresponding module entry by GetModuleEntry(iID), and finally read ModResourcesPath
             return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetModuleEntry(iID).ModResourcesPath;
-            //return UCL_ModulePath.GetModResourcesPath(PathConfig.GetModulePath(iID));
         }
         /// <summary>
-        /// 當前編輯的模組ID
+        /// ID of the module currently being edited.
+        /// Returns Core module ID if m_CurEditModule is null (no module selected).
         /// </summary>
         public static string CurEditModuleID
         {
@@ -152,72 +248,112 @@ namespace UCL.Core
             {
                 if(Ins.m_CurEditModule == null)
                 {
+                    // Not in edit state yet, return Core module as Fallback
                     return UCL_ModuleEntry.CoreModuleID;
                 }
-                return Ins.m_CurEditModule.ID;
-            }
-        }
-        /// <summary>
-        /// 當前選取要編輯的模組ID
-        /// </summary>
-        protected static string CurrentEditModuleID
-        {
-            get => PlayerPrefs.GetString(nameof(CurrentEditModuleID), UCL_ModuleEntry.CoreModuleID);
-            set => PlayerPrefs.SetString(nameof(CurrentEditModuleID), value);
-        }
-        public static UCL_ModuleEditType ModuleEditType
-        {
-            get => UCL_PlayerPrefs.GetEnum(nameof(ModuleEditType), UCL_ModuleEditType.Builtin);
-                //Ins.m_PathConfig.m_ModuleEditType;
-            private set
-            {
-                Ins.m_ModuleCache.Clear();//切換後要清除緩存
-                UCL_PlayerPrefs.SetEnum(nameof(ModuleEditType), value);
-                Ins.m_PathConfig.m_ModuleEditType = value;//要同步到PathConfig
+                return Ins.m_CurEditModule.ID; // Return ID of current edited module
             }
         }
 
+        /// <summary>
+        /// Module ID selected by user in GUI Popup, persisted via PlayerPrefs.
+        /// Different from m_CurEditModule: This is "selected for editing" rather than "currently editing" ID.
+        /// Default value is CoreModuleID.
+        /// </summary>
+        protected static string CurrentEditModuleID
+        {
+            // Read last selected module ID from PlayerPrefs
+            get => PlayerPrefs.GetString(nameof(CurrentEditModuleID), UCL_ModuleEntry.CoreModuleID);
+            // Write selected module ID to PlayerPrefs to restore after restart
+            set => PlayerPrefs.SetString(nameof(CurrentEditModuleID), value);
+        }
+
+        /// <summary>
+        /// Current module edit type (Builtin / Runtime).
+        /// Persisted via UCL_PlayerPrefs.
+        /// Setting this property has side effects: Clears m_ModuleCache and syncs to m_PathConfig.
+        /// </summary>
+        public static UCL_ModuleEditType ModuleEditType
+        {
+            // Read from UCL_PlayerPrefs; return Builtin (safe default) if not found
+            get => UCL_PlayerPrefs.GetEnum(nameof(ModuleEditType), UCL_ModuleEditType.Builtin);
+            private set
+            {
+                Ins.m_ModuleCache.Clear(); // Old module instances are invalid after type switch, must clear
+                UCL_PlayerPrefs.SetEnum(nameof(ModuleEditType), value); // Write to PlayerPrefs for persistence
+                Ins.m_PathConfig.m_ModuleEditType = value; // Sync to PathConfig to ensure correct path calculation
+            }
+        }
+
+        /// <summary>
+        /// Module currently being edited (equivalent to Ins.m_CurEditModule).
+        /// </summary>
         public static UCL_Module CurEditModule => Ins.m_CurEditModule;
+
+        /// <summary>
+        /// Property for the current active module (with Fallback mechanism).
+        /// Priority: m_CurEditModule > m_LoadedModules.Last() > null
+        /// </summary>
         public UCL_Module CurModule
         {
             get
             {
                 if(m_CurEditModule != null)
                 {
-                    return m_CurEditModule;
+                    return m_CurEditModule; // Return editing module as top priority
                 }
                 if(!m_LoadedModules.IsNullOrEmpty())
                 {
+                    // Return the last loaded module (highest priority, can overwrite previous assets with same ID)
                     return m_LoadedModules.Last();
                 }
-                return null;
+                return null; // No modules loaded
             }
         }
 
+        // Static storage field for the singleton instance, managed by lazy loading in the Ins property
         protected static UCL_ModuleService s_Ins = null;
+
+        /// <summary>
+        /// Returns whether UCL_ModuleService has completed initialization.
+        /// Returns false if the instance is not created yet, otherwise returns the m_Initialized flag.
+        /// </summary>
         public static bool Initialized
         {
             get
             {
-                if (s_Ins == null) return false;
-                return Ins.m_Initialized;
+                if (s_Ins == null) return false; // Instance not yet created
+                return Ins.m_Initialized;         // Return whether InitAsync() has completed
             }
         }
+
+        /// <summary>
+        /// Static access property for the global path configuration object.
+        /// All module-related path calculations are handled by this object.
+        /// </summary>
         public static UCL_ModulePathConfig PathConfig
         {
             get
             {
-                return Ins.m_PathConfig;
+                return Ins.m_PathConfig; // Return the path configuration object of the instance
             }
         }
         #endregion
+
+        // ════════════════════════════════════════════════════════
+        // [ModuleExportConfig] Module export configuration
+        // Responsibility: Controls whether a single module participates in export and installation processes.
+        // Implements UCLI_IsEnable interface for unified enable/disable control via IsEnable.
+        // ════════════════════════════════════════════════════════
         public class ModuleExportConfig : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_IsEnable
         {
+            // UCLI_IsEnable implementation: directly mapped to the m_ExportModule field
             public bool IsEnable { get => m_ExportModule; set => m_ExportModule = value; }
 
+            /// <summary>true means this module should be exported and installed to PersistentDataPath. Defaults to true.</summary>
             public bool m_ExportModule = true;
 
-            public ModuleExportConfig() { }
+            public ModuleExportConfig() { } // Default constructor for JSON deserialization
         }
 
         public class Config : UCL.Core.JsonLib.UnityJsonSerializable
@@ -230,7 +366,7 @@ namespace UCL.Core
             /// </summary>
             public List<string> m_BuiltinModules = new List<string>();
             /// <summary>
-            /// 需要輸出的模組
+            /// Modules to be exported
             /// </summary>
             public Dictionary<string, ModuleExportConfig> m_ExportModules = new();
 
@@ -241,7 +377,7 @@ namespace UCL.Core
             public UCL_ModulePlaylist m_Playlist = new UCL_ModulePlaylist();
 
             /// <summary>
-            /// Editor中 強制每次啟動時安裝所有模組
+            /// Force install all modules every time starting in Editor
             /// </summary>
             public bool m_ForceInstallInEditor = false;
 
@@ -249,7 +385,7 @@ namespace UCL.Core
             public string m_Version = "1.0.0";
 
             /// <summary>
-            /// 用來設定AssetGroup排序
+            /// Used to set AssetGroup sorting
             /// </summary>
             public Dictionary<string, int> m_AssetGroupSortingOrder = new ();
 
@@ -319,7 +455,7 @@ namespace UCL.Core
 
         #region Enviroment
         /// <summary>
-        /// 每個UCL_Asset會有一份(同ID的UCL_Asset共用一份)
+        /// Each UCL_Asset will have one copy (shared for UCL_Assets with the same ID)
         /// </summary>
         public class AssetConfig
         {
@@ -327,7 +463,7 @@ namespace UCL.Core
 
 
             /// <summary>
-            /// 所屬的UCL_Module
+            /// Belongs to UCL_Module
             /// </summary>
             public UCL_Module p_Module;
 
@@ -339,7 +475,7 @@ namespace UCL.Core
             public bool Exist => p_Module != null;
             /// <summary>
             /// ModuleEntry of this asset
-            /// 路徑相關的所有設定
+            /// All path-related settings
             /// </summary>
             public UCL_ModulePath.PersistantPath.ModuleEntry ModuleEntry {
                 get
@@ -353,7 +489,7 @@ namespace UCL.Core
                 }
             }
             /// <summary>
-            /// 存檔路徑
+            /// Save path
             /// </summary>
             public string AssetPath => ModuleEntry.GetAssetPath(AssetType, ID);
             public string AssetFolderPath => ModuleEntry.GetAssetFolderPath(AssetType);
@@ -363,7 +499,7 @@ namespace UCL.Core
             private string m_GroupID = null;
             /// <summary>
             /// GroupID of this asset
-            /// 這個Asset的分組
+            /// Group for this asset
             /// </summary>
             virtual public string GroupID
             {
@@ -450,13 +586,13 @@ namespace UCL.Core
         }
 
         /// <summary>
-        /// 每種UCL_Asset共用一份
+        /// Shared for each type of UCL_Asset
         /// </summary>
         public class AssetsCache
         {
             public Dictionary<string, AssetConfig> m_AssetConfigDic = new Dictionary<string, AssetConfig>();
             /// <summary>
-            /// 該UCL_Asset內所有的GroupID
+            /// All GroupIDs within this UCL_Asset
             /// </summary>
             public List<string> m_GroupIDs = new List<string>();
 
@@ -496,22 +632,22 @@ namespace UCL.Core
         }
         /// <summary>
         /// Loaded Modules
-        /// 當前已載入的模組 讀取UCL_Assets時會按照順序判斷(若ID相同則選取排序在前面的模組中的Asset)
+        /// Currently loaded modules. When reading UCL_Assets, modules are checked in order (if IDs are the same, the asset from the module with higher priority is selected).
         /// </summary>
         protected List<UCL_Module> m_LoadedModules = new List<UCL_Module>();
-        /// <summary>
-        /// 緩存的模組資訊
-        /// </summary>
-        protected Dictionary<string, UCL_Module> m_ModuleCache = new();
-        /// <summary>
-        /// ID緩存
-        /// </summary>
-        protected Dictionary<string, (System.DateTime timeStamp, List<string> list)> m_IDsCache = new();
+            /// <summary>
+            /// Cached module information
+            /// </summary>
+            protected Dictionary<string, UCL_Module> m_ModuleCache = new();
+            /// <summary>
+            /// ID Cache
+            /// </summary>
+            protected Dictionary<string, (System.DateTime timeStamp, List<string> list)> m_IDsCache = new();
         protected Dictionary<string, AssetsCache> m_AssetsCacheDic = new ();
         #endregion
 
         /// <summary>
-        /// 等待UCL_ModuleService初始化完成
+        /// Wait for UCL_ModuleService initialization to complete
         /// </summary>
         /// <param name="iToken"></param>
         /// <returns></returns>
@@ -526,8 +662,8 @@ namespace UCL.Core
         }
         /// <summary>
         /// Init UCL_ModuleService
-        /// 暫定固定會有一個核心設定模組 放在StreammingAssets
-        /// 只有在Editor內能夠編輯 Build出來的版本只能夠讀取(用UnityWebRequest讀取StreammingAssets 避免跨平台出問題)
+        /// Currently assumed to have a core configuration module located in StreamingAssets.
+        /// Editable only in the Editor; the built version can only be read (using UnityWebRequest to read StreamingAssets to avoid cross-platform issues).
         /// </summary>
         virtual protected void Init()
         {
@@ -539,10 +675,10 @@ namespace UCL.Core
             Debug.Log($"{GetType().Name}.InitAsync");
             //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync("UCL_ModuleService.InitAsync()", "");
             if (Application.isEditor)
-            {//Editor內編輯方式可以動態調整
+            {//Edit mode can be dynamically adjusted in Editor
                 //ModuleEditType = UCL_ModuleEditType.Builtin;
                 //ModuleEditType = UCL_ModuleEditType.Runtime;
-                Ins.m_PathConfig.m_ModuleEditType = ModuleEditType;//同步到PathConfig
+                Ins.m_PathConfig.m_ModuleEditType = ModuleEditType;//Sync to PathConfig
             }
             else//not in Editor, always set to Runtime
             {
@@ -619,7 +755,7 @@ namespace UCL.Core
                 }
                 //await UniTask.WhenAll(aTasks);
             }
-            //TODO 安裝後 清除模組緩存資訊緩存
+            //TODO Clear module information cache after installation
             //m_ModuleCache.Clear();
             m_ModuleIDs = null;
             m_ModuleNames = null;
@@ -675,7 +811,7 @@ namespace UCL.Core
         private System.DateTime m_ModuleCacheTime = System.DateTime.MinValue;
         /// <summary>
         /// get all modules ID of current ModuleEditType
-        /// 獲取所有模組ID(根據ModuleEditType)
+        /// Get all module IDs (based on ModuleEditType)
         /// </summary>
         /// <returns></returns>
         public IList<string> GetAllModuleIDs(bool iUseCache = true)
@@ -691,7 +827,7 @@ namespace UCL.Core
             //return UCL_ModulePath.GetAllModulesID(ModuleEditType);
         }
         /// <summary>
-        /// 所有模組的名稱
+        /// All module names
         /// </summary>
         /// <returns></returns>
         public IList<string> GetAllModuleNames()
@@ -713,7 +849,7 @@ namespace UCL.Core
             return m_ModuleNames;
         }
         /// <summary>
-        /// 根據ID抓取當前載入的模組
+        /// Get currently loaded module by ID
         /// </summary>
         /// <param name="iID"></param>
         /// <returns></returns>
@@ -729,8 +865,8 @@ namespace UCL.Core
             return m_CurEditModule;
         }
         /// <summary>
-        /// 回傳所有可編輯的AssetsID
-        /// (只包含目前編輯的模組)
+        /// Returns all editable Asset IDs
+        /// (Only includes assets from the currently edited module)
         /// </summary>
         /// <param name="iAssetType"></param>
         /// <returns></returns>
@@ -791,7 +927,7 @@ namespace UCL.Core
 
         public List<UCL_Module> LoadedModules => m_LoadedModules;
         /// <summary>
-        /// 抓取指定UCL_Asset的AssetsCache
+        /// Fetch AssetsCache for specified UCL_Asset
         /// </summary>
         /// <param name="iAssetType">typeof(UCL_Asset)</param>
         /// <returns></returns>
@@ -827,7 +963,7 @@ namespace UCL.Core
             aAssetsCache.ClearAssetsCache(iID);
         }
         /// <summary>
-        /// 生成當前編輯模組的Config 確保存檔位置是當前編輯的模組
+        /// Create Config for the current edited module to ensure save location is correct
         /// </summary>
         /// <param name="iAssetType"></param>
         /// <param name="iID"></param>
@@ -842,7 +978,7 @@ namespace UCL.Core
             
             //ClearAssetsCache(iAssetType, iID);
             var aAssetsCache = GetAssetsCache(iAssetType);
-            //存檔前先清除當前Config 確保存檔位置是當前編輯的模組
+            // Clear current Config before saving to ensure the save location is the current edited module
             aAssetsCache.ClearAssetsCache(iID);
 
             var aConfig = aAssetsCache.GetAssetConfig(iID);
@@ -850,7 +986,7 @@ namespace UCL.Core
             return aConfig;
         }
         /// <summary>
-        /// 抓取指定UCL_Asset的AssetConfig
+        /// Fetch AssetConfig for specified UCL_Asset
         /// </summary>
         /// <param name="iAssetType">typeof(UCL_Asset)</param>
         /// <param name="iID">ID of UCL_Asset</param>
@@ -861,7 +997,7 @@ namespace UCL.Core
             var aConfig = aAssetsCache.GetAssetConfig(iID);
             if (!aConfig.Inited)
             {
-                for(int i = m_LoadedModules.Count - 1; i >= 0; i--)//根據模組的覆蓋規則 先從後面的模組找
+                for(int i = m_LoadedModules.Count - 1; i >= 0; i--)// According to module override rules, search from the last modules first
                 {
                     var aModule = m_LoadedModules[i];
                     if (aModule.ModuleEntry.ContainsAsset(iAssetType, iID))
@@ -989,7 +1125,7 @@ namespace UCL.Core
 
         /// <summary>
         /// Load Modules and its dependencies
-        /// 載入指定的Module及其相依模組
+        /// Load the specified module and its dependent modules
         /// </summary>
         /// <param name="modulePlayist"></param>
         /// <returns></returns>
@@ -1028,10 +1164,10 @@ namespace UCL.Core
 
         /// <summary>
         /// Load Modules and its dependencies
-        /// 載入指定的Module及其相依模組
+        /// Load the specified module and its dependent modules
         /// </summary>
         /// <param name="modulePlayist"></param>
-        /// <param name="loadDependencies">是否載入相依模組(目前只有編輯時載入)</param>
+        /// <param name="loadDependencies">Whether to load dependent modules (currently only loaded during editing)</param>
         /// <returns></returns>
         public Dictionary<string, UCL_Module> LoadModulePlaylist(UCL_ModulePlaylist modulePlayist, bool loadDependencies)
         {
@@ -1073,7 +1209,7 @@ namespace UCL.Core
         }
 
         /// <summary>
-        /// 回傳對應ID的UCL_Module
+        /// Returns the UCL_Module corresponding to the ID
         /// </summary>
         /// <returns></returns>
         public UCL_Module GetModule(string iID, bool iUseCache = true)
@@ -1101,7 +1237,7 @@ namespace UCL.Core
             return aModule;
         }
         /// <summary>
-        /// 載入模組(不含相依模組)
+        /// Load module (excluding dependencies)
         /// </summary>
         /// <param name="iModuleID"></param>
         /// <param name="iLoadedModules"></param>
@@ -1117,7 +1253,7 @@ namespace UCL.Core
             return aModule;
         }
         /// <summary>
-        /// 載入模組與相依模組
+        /// Load module and its dependencies
         /// </summary>
         /// <param name="iModuleID"></param>
         /// <param name="iLoadedModules"></param>
@@ -1142,7 +1278,7 @@ namespace UCL.Core
                     m_LoadedModules.Add(aModule);
                     return aModule;
                 }
-                //for (int i = aDependenciesModules.Count - 1; i >= 0; i--)//先載入相依模組
+                //for (int i = aDependenciesModules.Count - 1; i >= 0; i--)//Load dependencies modules first
                 for (int i = 0; i < aDependenciesModules.Count; i++)
                 {
                     var aModuleEntry = aDependenciesModules[i];
@@ -1185,7 +1321,7 @@ namespace UCL.Core
         }
         virtual public void EditModule(string iModuleID, bool iShowModuleEditPage = true)
         {
-            if (string.IsNullOrEmpty(iModuleID))//not Editable 不可編輯
+            if (string.IsNullOrEmpty(iModuleID))//not Editable
             {
                 return;
             }
@@ -1202,7 +1338,7 @@ namespace UCL.Core
             //Debug.LogError($"SetState:{iState}");
             
             CurState = iState;
-            //PlayerPrefs.SetString(CurStateKey, $"{iState}");//紀錄當前頁面狀態
+            //PlayerPrefs.SetString(CurStateKey, $"{iState}");//Record current page state
             //m_Config.m_State = iState;
             switch (iState) 
             {
@@ -1214,8 +1350,8 @@ namespace UCL.Core
             }
         }
         /// <summary>
-        /// 當前模組被編輯時觸發
-        /// (例如UCL_Asset存檔或刪除時)
+        /// Triggered when the current module is edited
+        /// (e.g., when saving or deleting UCL_Asset)
         /// </summary>
         virtual public void OnModuleEdit()
         {

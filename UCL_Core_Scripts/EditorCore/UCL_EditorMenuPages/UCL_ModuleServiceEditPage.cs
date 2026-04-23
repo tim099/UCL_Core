@@ -13,6 +13,10 @@ using UnityEngine;
 
 namespace UCL.Core.Page
 {
+    /// <summary>
+    /// [職責] 提供 UCL 模組服務的編輯介面，允許使用者管理模組清單、安裝狀態與版本。
+    /// </summary>
+    [HelpURL("ucl_core:Docs~/UCL_EditorPage/ModuleInstallation_CN.md")]
     public class UCL_ModuleServiceEditPage : UCL_CommonEditorPage
     {
 

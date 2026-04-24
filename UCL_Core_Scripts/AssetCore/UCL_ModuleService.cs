@@ -33,7 +33,8 @@ namespace UCL.Core
     /// Responsible for module initialization, loading, installation, Asset path resolution, cache management, and Inspector GUI rendering.
     /// All UCL_Asset access paths are determined by this service, serving as the core entry point for the entire UCL asset framework.
     /// </summary>
-    public class UCL_ModuleService//: UCLI_FieldOnGUI
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_ModuleService/ModuleInstallation.md")]
+    public class UCL_ModuleService
     {
         // ─────────────────────────────────────────────
         // [GUI Page State Persistence]
@@ -417,7 +418,7 @@ namespace UCL.Core
                     }
                 };
 
-                var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic, UCL_LocalizeManager.Get("ModuleService Config"),
+                var aParams = new UI.UCL_GUILayout.DrawObjectParams(iDataDic, UCL_CodeLocalize.Get("ModuleService Config"),
                     iDrawObjExSetting: aDrawObjExSetting);
                 UCL_GUILayout.DrawField(this, aParams);
                 //UCL_GUILayout.DrawField(this, iDataDic, "ModuleService Config", iDrawObjExSetting: aDrawObjExSetting);
@@ -1376,23 +1377,23 @@ namespace UCL.Core
                 using (var aScope = new GUILayout.HorizontalScope("box"))
                 {
                     
-                    GUILayout.Label(UCL_LocalizeManager.Get("EditType"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(UCL_CodeLocalize.Get("EditType"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     ModuleEditType = UCL_GUILayout.PopupAuto(ModuleEditType, iDataDic.GetSubDic("EditType"));
                 }
             }
             using (var aScope = new GUILayout.HorizontalScope("box"))
             {
                 //GUILayout.Label("UCL_ModuleService", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                if(GUILayout.Button(UCL_LocalizeManager.Get("Save Config"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if(GUILayout.Button(UCL_CodeLocalize.Get("Save Config"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     SaveConfig();
                 }
-                if (GUILayout.Button(UCL_LocalizeManager.Get("Load Config"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Load Config"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     LoadConfig().Forget();
                 }
 #if UNITY_STANDALONE_WIN
-                if (GUILayout.Button(UCL_LocalizeManager.Get($"Open Module Folder"), UCL_GUIStyle.ButtonStyle))
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Open Module Folder"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL.Core.FileLib.WindowsLib.OpenExplorer(m_PathConfig.RootPath);
                 }
@@ -1400,8 +1401,8 @@ namespace UCL.Core
             }
             m_Config.OnGUI(iDataDic.GetSubDic(nameof(m_Config)));
 
-            GUILayout.Box(UCL_LocalizeManager.Get("EditModulewarning"), UCL_GUIStyle.BoxStyle);
-            if (GUILayout.Button(UCL_LocalizeManager.Get("Create new module"), UCL_GUIStyle.ButtonStyle))
+            GUILayout.Box(UCL_CodeLocalize.Get("EditModulewarning"), UCL_GUIStyle.BoxStyle);
+            if (GUILayout.Button(UCL_CodeLocalize.Get("Create new module"), UCL_GUIStyle.ButtonStyle))
             {
                 UCL_CreateNewModulePage.Create();
             }
@@ -1413,7 +1414,7 @@ namespace UCL.Core
                 //aModules.Append(m_Config.m_BuiltinModules);
                 aModules.Append(GetAllModuleIDs());
                 bool aCanEdit = !string.IsNullOrEmpty(CurrentEditModuleID);
-                if (GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Edit"), UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
                 {
                     if (aCanEdit)
                     {
@@ -1423,7 +1424,7 @@ namespace UCL.Core
                     }
                 }
 
-                GUILayout.Label(UCL_LocalizeManager.Get("Module ID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label(UCL_CodeLocalize.Get("Module ID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 var aID = UCL_GUILayout.PopupAuto(CurrentEditModuleID, aModules, iDataDic, "SelectModules");
                 if(aID != CurrentEditModuleID)
                 {
@@ -1433,13 +1434,13 @@ namespace UCL.Core
             }
             GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
 
-            GUILayout.Box(UCL_LocalizeManager.Get("ModulePlayListTip"), UCL_GUIStyle.BoxStyle);
-            if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_ModulePlayListPage"), UCL_GUIStyle.ButtonStyle))
+            GUILayout.Box(UCL_CodeLocalize.Get("ModulePlayListTip"), UCL_GUIStyle.BoxStyle);
+            if (GUILayout.Button(UCL_CodeLocalize.Get("UCL_ModulePlayListPage"), UCL_GUIStyle.ButtonStyle))
             {
                 UCL_ModulePlayListPage.Create();
             }
             GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
-            UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), UCL_LocalizeManager.Get("Loaded modules"));
+            UCL_GUILayout.DrawObjectData(m_LoadedModules, iDataDic.GetSubDic("LoadedModules"), UCL_CodeLocalize.Get("Loaded modules"));
             UCL_GUILayout.DrawObjectData(m_AssetsCacheDic, iDataDic.GetSubDic("AssetsCache"), "AssetsCache");
         }
     }

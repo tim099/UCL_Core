@@ -1,6 +1,3 @@
-// ATS_AutoHeader
-// to change the auto header please go to ATS_AutoHeader.cs
-// Create time : 02/22 2024 13:52
 using Cysharp.Threading.Tasks;
 using System;
 using System.Collections;
@@ -16,11 +13,11 @@ namespace UCL.Core.Page
     /// <summary>
     /// [職責] 提供 UCL 模組服務的編輯介面，允許使用者管理模組清單、安裝狀態與版本。
     /// </summary>
-    [HelpURL("ucl_core:Docs~/UCL_EditorPage/ModuleInstallation_CN.md")]
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ModuleServiceEditPage.md")]
     public class UCL_ModuleServiceEditPage : UCL_CommonEditorPage
     {
 
-        public override string WindowName => UCL_LocalizeManager.Get("UCL_ModuleServiceEditPage");
+        public override string WindowName => m_TypeName;
 
         public static UCL_ModuleServiceEditPage Create()
         {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -793,6 +793,25 @@ namespace UCL.Core.UI {
 
             var aCurPath = iDataDic.GetData(PathKey, iPath);
             var aNewPath = GUILayout.TextField(aCurPath, UCL_GUIStyle.TextFieldStyle);
+            
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+            string aFullPath = string.IsNullOrEmpty(iRoot) ? aNewPath : iRoot + "/" + aNewPath;
+            if (System.IO.Directory.Exists(aFullPath))
+            {
+                if (GUILayout.Button(UCL_LocalizeManager.Get("OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    UCL.Core.FileLib.WindowsLib.OpenExplorer(aFullPath);
+                }
+            }
+            else
+            {
+                if (GUILayout.Button(UCL_LocalizeManager.Get("CreateFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    System.IO.Directory.CreateDirectory(aFullPath);
+                }
+            }
+#endif
+            
             iDataDic.SetData(PathKey, aNewPath);
             if (aNewPath != aCurPath)
             {

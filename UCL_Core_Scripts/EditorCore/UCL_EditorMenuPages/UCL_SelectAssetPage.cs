@@ -14,6 +14,7 @@ using System.Reflection;
 
 namespace UCL.Core.Page
 {
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_SelectAssetPage.md")]
     public class UCL_SelectAssetPage : UCL_EditorPage
     {
         static public UCL_SelectAssetPage Create<T>() where T : class, UCLI_Asset, new ()

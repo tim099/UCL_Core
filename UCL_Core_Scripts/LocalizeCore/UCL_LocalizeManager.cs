@@ -51,8 +51,8 @@ namespace UCL.Core.LocalizeLib
         /// <summary>
         /// Name of Language folder
         /// </summary>
-        public string LangName { get; protected set; } = "English";
-        public static string s_LangName { get; protected set; } = "English";
+        public string LangName { get; protected set; } = "en";
+        public static string s_LangName { get; protected set; } = "en";
 
         static protected bool m_NotInitializeErrorLogged = false;
         protected LocalizeData m_LocalizeData = null;

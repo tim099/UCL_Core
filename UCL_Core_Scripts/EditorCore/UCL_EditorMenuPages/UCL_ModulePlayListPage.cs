@@ -1,4 +1,4 @@
-﻿
+
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 09/30 2024
@@ -16,6 +16,7 @@ using UnityEngine.UI;
 
 namespace UCL.Core.Page
 {
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ModulePlayListPage.md")]
     public class UCL_ModulePlayListPage : UCL_CommonEditorPage
     {
         public enum EditMode

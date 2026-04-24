@@ -1,4 +1,4 @@
-﻿
+
 // ATS_AutoHeader
 // to change the auto header please go to ATS_AutoHeader.cs
 // Create time : 02/23 2024
@@ -12,6 +12,7 @@ using UnityEngine;
 
 namespace UCL.Core.Page
 {
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ModuleEditPage.md")]
     public class UCL_ModuleEditPage : UCL_CommonEditorPage
     {
 

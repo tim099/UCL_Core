@@ -21,7 +21,7 @@ namespace UCL.Core
     /// </summary>
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditDataType.UCL_ModResourceAsset)]
-    [HelpURL("ucl_core:Docs~/API/UCL_Asset/ModResourceAsset.md")]
+    [HelpURL("ucl_core:Docs~/{lang}/API/UCL_Asset/UCL_ModResourceAsset.md")]
     public class UCL_ModResourceAsset : UCL_Asset<UCL_ModResourceAsset>, IDisposable
     {
         // [職責] 存儲模組資源的核心資料。

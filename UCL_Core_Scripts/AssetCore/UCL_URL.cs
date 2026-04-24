@@ -1,4 +1,4 @@
-﻿
+
 // AutoHeader
 // to change the auto header please go to AutoHeader.cs
 using System;
@@ -40,11 +40,28 @@ namespace UCL.Core
 #endif
             }
 
+            // [本地化支援] 處理 {lang} 佔位符。
+            // [計算邏輯] 將 {lang} 替換為當前的語言代碼 (如 en, zh-Hans)。
+            if (url.Contains("{lang}"))
+            {
+                string aLangCode = UCL.Core.Game.UCL_LocalizeService.CurLang;
+                url = url.Replace("{lang}", aLangCode);
+            }
+
             // [物理意義] 如果字串中不包含 "://"（常見於 http:// 或 https:// 等協定），則視為本地檔案路徑。
             if (!url.Contains("://"))
             {
                 // [計算邏輯] 透過 GetFullPath 將相對於專案根目錄的路徑轉換為絕對路徑。
                 url = System.IO.Path.GetFullPath(url);
+
+                // [Editor 友善回退] 如果本地檔案不存在，嘗試回退到預設語言 (en)。
+#if UNITY_EDITOR
+                if (!System.IO.File.Exists(url) && url.Contains(UCL.Core.Game.UCL_LocalizeService.CurLang))
+                {
+                    string aFallbackUrl = url.Replace(UCL.Core.Game.UCL_LocalizeService.CurLang, "en");
+                    if (System.IO.File.Exists(aFallbackUrl)) url = aFallbackUrl;
+                }
+#endif
             }
 
             return url;

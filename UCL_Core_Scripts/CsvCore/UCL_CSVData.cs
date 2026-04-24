@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UnityEngine;
@@ -63,7 +63,7 @@ namespace UCL.Core.CsvLib {
                     aSB.Append(aRow.Get(j));
                     aSB.Append(',');
                 }
-                aSB.Append(@"\r\n");
+                aSB.Append("\r\n");
             }
             return aSB.ToString();
         }

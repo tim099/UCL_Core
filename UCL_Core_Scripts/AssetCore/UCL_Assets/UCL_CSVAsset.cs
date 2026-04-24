@@ -11,6 +11,7 @@ using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
 using UnityEngine;
 using UCL.Core.CsvLib;
+using UCL.Core.UI;
 
 namespace UCL.Core
 {
@@ -21,9 +22,149 @@ namespace UCL.Core
     /// </summary>
     [UCL.Core.ATTR.UCL_GroupIDAttribute(UCL_AssetGroup.Data)]
     [UCL.Core.ATTR.UCL_Sort((int)UCL_AssetGroup.EditDataType.UCL_CSVAsset)]
-    [HelpURL("ucl_core:Docs~/API/UCL_Asset/CSVAsset.md")]
-    public class UCL_CSVAsset : UCL_Asset<UCL_CSVAsset>
+    [HelpURL("ucl_core:Docs~/{lang}/API/UCL_Asset/UCL_CSVAsset.md")]
+    public class UCL_CSVAsset : UCL_Asset<UCL_CSVAsset>, UCL.Core.UI.UCLI_FieldOnGUI
     {
+        #region OnGUI
+        // [職責] 實作 UCLI_FieldOnGUI，提供整合式的 CSV 編輯器介面。
+        // [物理意義] 在 Inspector 中直接顯示表格編輯格點，並支援與實體檔案的同步讀寫。
+        // [參數說明] iFieldName: 欄位名稱。 iDataDic: 介面狀態快取。 iParams: 繪製參數。
+        public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic, UCL.Core.UI.UCL_GUILayout.DrawObjectParams iParams)
+        {
+            var result = UCL_GUILayout.DrawField(this, iParams);
+
+            // [職責] 折疊選單控制。
+            bool aIsShow = UCL.Core.UI.UCL_GUILayout.Toggle(iDataDic, "CSV_Editor_Show", iFieldName);
+            if (!aIsShow) return result;
+            void Read()
+            {
+                CSVData data = GetCSVData();
+                if (data != null)
+                {
+                    iDataDic.SetData("CSV_Rows", data.Count);
+                    int maxCols = 0;
+                    for (int r = 0; r < data.Count; r++)
+                    {
+                        var row = data.GetRow(r);
+                        maxCols = Mathf.Max(maxCols, row.Count);
+                        for (int c = 0; c < row.Count; c++)
+                        {
+                            iDataDic.SetData($"CSV_Cell_{r}_{c}", row.Get(c));
+                        }
+                    }
+                    iDataDic.SetData("CSV_Cols", maxCols);
+                }
+            }
+            if (!iDataDic.ContainsKey("CSV_Rows"))
+            {
+                Read();
+            }
+            using (new GUILayout.VerticalScope("box"))
+            {
+                var width = GUILayout.Width(UCL_GUIStyle.GetScaledSize(400));
+                // --- 工具列 ---
+                using (new GUILayout.HorizontalScope(width))
+                {
+                    // [職責] 設定表格大小（行與列）。
+                    int aRows = iDataDic.GetData("CSV_Rows", 1);
+                    int aCols = iDataDic.GetData("CSV_Cols", 1);
+
+                    aRows = UCL.Core.UI.UCL_GUILayout.NumField("Rows", aRows, iDataDic.GetSubDic("Rows"));
+                    aCols = UCL.Core.UI.UCL_GUILayout.NumField("Cols", aCols, iDataDic.GetSubDic("Cols"));
+
+                    iDataDic.SetData("CSV_Rows", aRows);
+                    iDataDic.SetData("CSV_Cols", aCols);
+
+                    // [職責] 從當前指向的實體檔案讀取數據。
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Read"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle)) Read();
+                }
+
+                // --- 輸出控制 ---
+                using (new GUILayout.HorizontalScope(width))
+                {
+                    // [職責] 設定輸出檔案的 ID（檔名）。
+                    string aExportID = iDataDic.GetData("CSV_ExportID", ID);
+                    GUILayout.Label("Export ID", UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    aExportID = GUILayout.TextField(aExportID, UCL.Core.UI.UCL_GUIStyle.TextFieldStyle);
+                    iDataDic.SetData("CSV_ExportID", aExportID);
+
+                    // [職責] 將編輯器內容匯出為實體檔案，並更新資產引用。
+                    if (GUILayout.Button(UCL_LocalizeManager.Get("Export"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle))
+                    {
+                        int aRows = iDataDic.GetData("CSV_Rows", 1);
+                        int aCols = iDataDic.GetData("CSV_Cols", 1);
+                        CSVData data = new CSVData();
+                        for (int r = 0; r < aRows; r++)
+                        {
+                            var row = data.AddRow();
+                            for (int c = 0; c < aCols; c++)
+                            {
+                                row.AddColume(iDataDic.GetData($"CSV_Cell_{r}_{c}", string.Empty));
+                            }
+                        }
+
+                        string csvContent = data.ToCSV();
+                        string folder = m_ModResourcesData.FileSystemFolderPath;
+                        if (!System.IO.Directory.Exists(folder)) System.IO.Directory.CreateDirectory(folder);
+
+                        string fileName = $"{aExportID}.csv";
+                        string fullPath = System.IO.Path.Combine(folder, fileName);
+                        System.IO.File.WriteAllText(fullPath, csvContent);
+
+                        m_ModResourcesData.m_FileName = fileName;
+                        Debug.Log($"CSV Exported to {fullPath}");
+                    }
+                }
+
+                // --- 資料格點 ---
+                int rows = iDataDic.GetData("CSV_Rows", 1);
+                int cols = iDataDic.GetData("CSV_Cols", 1);
+
+                float aRowLabelWidth = UCL.Core.UI.UCL_GUIStyle.GetScaledSize(30);
+                float aColWidth = UCL.Core.UI.UCL_GUIStyle.GetScaledSize(60);
+
+                // [職責] 繪製頂部欄位代號（A, B, C...）。
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Space(aRowLabelWidth); // 預留行號空間
+                    for (int c = 0; c < cols; c++)
+                    {
+                        GUILayout.Label(GetExcelColumnName(c), UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.Width(aColWidth));
+                    }
+                }
+
+                for (int r = 0; r < rows; r++)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        // [職責] 繪製行號（1, 2, 3...）。
+                        GUILayout.Label((r + 1).ToString(), UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.Width(aRowLabelWidth));
+
+                        for (int c = 0; c < cols; c++)
+                        {
+                            string key = $"CSV_Cell_{r}_{c}";
+                            string val = iDataDic.GetData(key, string.Empty);
+                            val = GUILayout.TextField(val, UCL.Core.UI.UCL_GUIStyle.TextFieldStyle, GUILayout.Width(aColWidth));
+                            iDataDic.SetData(key, val);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+        // [職責] 將欄位索引轉換為 Excel 格式的字母（如 0->A, 25->Z, 26->AA）。
+        private string GetExcelColumnName(int iCol)
+        {
+            string aName = string.Empty;
+            while (iCol >= 0)
+            {
+                aName = (char)('A' + (iCol % 26)) + aName;
+                iCol = (iCol / 26) - 1;
+            }
+            return aName;
+        }
+        #endregion
         // [職責] 存儲模組資源的核心定位資料。
         // [物理意義] 指向實體磁碟上的 .csv 檔案路徑與名稱。
         // [數值影響] 決定了 ReadAllText 等操作的目標檔案。
@@ -71,16 +212,23 @@ namespace UCL.Core
                 // [職責] 讀取並顯示前 5 行內容作為摘要。
                 if (!IsEmpty)
                 {
-                    string aText = m_ModResourcesData.ReadAllText();
-                    if (!string.IsNullOrEmpty(aText))
+                    try
                     {
-                        var aLines = aText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-                        int aDisplayCount = Mathf.Min(aLines.Length, 5);// 限制最大顯示行數為 5 (int)
-                        for (int i = 0; i < aDisplayCount; i++)
+                        string aText = m_ModResourcesData.ReadAllText();
+                        if (!string.IsNullOrEmpty(aText))
                         {
-                            GUILayout.Label(aLines[i], UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                            var aLines = aText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                            int aDisplayCount = Mathf.Min(aLines.Length, 5);// 限制最大顯示行數為 5 (int)
+                            for (int i = 0; i < aDisplayCount; i++)
+                            {
+                                GUILayout.Label(aLines[i], UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                            }
+                            if (aLines.Length > 5) GUILayout.Label("...", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
                         }
-                        if (aLines.Length > 5) GUILayout.Label("...", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogException(ex);
                     }
                 }
             }

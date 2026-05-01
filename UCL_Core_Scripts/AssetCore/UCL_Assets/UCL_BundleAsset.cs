@@ -1,4 +1,4 @@
-﻿
+
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 12/10 2024
@@ -284,6 +284,16 @@ namespace UCL.Core
         public const string DefaultID = "Default";
         public UCL_BundleEntry() { m_ID = DefaultID; }
         public UCL_BundleEntry(string iID) { m_ID = iID; }
+
+        public override UCL.Core.JsonLib.JsonData SerializeToJson()
+        {
+            return UCL.Core.JsonLib.JsonConvert.SaveFieldsToJsonUnityVer(this);
+        }
+        public override void DeserializeFromJson(UCL.Core.JsonLib.JsonData iJson)
+        {
+            UCL.Core.JsonLib.JsonConvert.LoadFieldFromJsonUnityVer(this, iJson);
+            UCLI_AssetEntry.s_DeserializeAction?.Invoke(this);
+        }
 
         [UCL.Core.PA.UCL_List(nameof(GetAllAssetNames))]
         public string m_AssetName = string.Empty;

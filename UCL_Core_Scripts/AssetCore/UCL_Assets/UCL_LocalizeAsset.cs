@@ -405,6 +405,7 @@ namespace UCL.Core
                     if (!File.Exists(path))
                     {
                         Debug.LogError($"{GetType().Name}.DeserializeFromJson path:{path}, !File.Exists(path)");
+                        m_LocalizeDatas[langKey] = new LocalizeData();
                         continue;
                     }
                     try

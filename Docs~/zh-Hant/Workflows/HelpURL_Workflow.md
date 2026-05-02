@@ -26,7 +26,7 @@ Resolver 介面提供可選的 `Exists(relativePath)` 方法，**預設回傳 tr
 | 環境 | 典型 `Exists` 實作 |
 |---|---|
 | **Editor** | `File.Exists(localPath)` — 直接查 submodule 內檔案 |
-| **Build** | 查詢 build-time 產生的 manifest（每個下游模組自備） |
+| **Build** | 查詢 build-time 產生的 manifest（每個模組自備） |
 
 UCL_URL 的呼叫流程（簡化版）：
 1. 切出 prefix，找對應 Resolver。
@@ -34,8 +34,22 @@ UCL_URL 的呼叫流程（簡化版）：
 3. 呼叫 `Resolver.Exists(rel)`：若 false 且當前非 en，把 lang 換成 `en` 再 `Exists` 一次；命中則改用 en 路徑。
 4. 呼叫 `Resolver.Resolve(rel)` 取得最終 URL / 路徑。
 
+### 1.5 UCL_Core 自家的 Build-time Manifest
+UCL_Core 內建一份 manifest 機制，使 `ucl_core:` 在 **Build 模式下也能 fallback 到 en**：
+
+| 元件 | 路徑 | 角色 |
+|---|---|---|
+| **Generator** | [`UCL_Core_Scripts/EditorCore/UCL_LocalizedDocsManifestGenerator.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_LocalizedDocsManifestGenerator.cs) | 掃 `Docs~/**/*.md`，產生 manifest |
+| **Build hook** | 同檔內的 `UCL_LocalizedDocsManifestBuildHook` | 每次 build 前自動跑（`IPreprocessBuildWithReport`） |
+| **Manifest 檔** | `UCL_Core/Resources/UCL_LocalizedDocsManifest.txt` | 純文字，每行一條相對路徑（`Docs~/{lang}/...`） |
+| **Runtime Reader** | [`UCL_Core_Scripts/AssetCore/UCL_LocalizedDocsManifest.cs`](../../../UCL_Core_Scripts/AssetCore/UCL_LocalizedDocsManifest.cs) | Lazy load 為 `HashSet<string>` |
+
+**手動產生**：`Tools / UCL / Generate Localized Docs Manifest`
+
+**自動產生**：每次 Build 前自動跑。
+
 > [!NOTE]
-> UCL_Core 自己的 `ucl_core:` resolver 在 **Editor 端**已啟用 `File.Exists` 檢查；**Build 端預設不啟用**（UCL_Core 不附 manifest）。下游若要在 Build 啟用 fallback，請自家 resolver 透過 `existsChecker` 委派提供 manifest 查詢。
+> 下游模組（例如非開源遊戲）需要自家的 manifest 機制 — UCL_Core 的 manifest 只覆蓋 `ucl_core:` prefix。範例見 §3 「為下游模組擴充自定 Prefix」中的 `existsChecker` 寫法。
 
 ### 1.3 隱藏資料夾：`Docs~`
 *   **物理意義**：Unity 會自動忽略以 `~` 結尾的資料夾。因此我們將文件放在 `Docs~` 下，這樣既能保存在模組目錄內，又不會產生 `.meta` 檔案。

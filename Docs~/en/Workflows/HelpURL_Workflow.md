@@ -26,7 +26,7 @@ The resolver interface provides an optional `Exists(relativePath)` method. **Def
 | Environment | Typical `Exists` impl |
 |---|---|
 | **Editor** | `File.Exists(localPath)` — direct submodule lookup |
-| **Build** | Query a build-time manifest (each downstream module supplies its own) |
+| **Build** | Query a build-time manifest (each module supplies its own) |
 
 UCL_URL flow (simplified):
 1. Split prefix → find resolver.
@@ -34,8 +34,22 @@ UCL_URL flow (simplified):
 3. Call `Resolver.Exists(rel)`: if false and current lang ≠ en, swap lang → `en` and `Exists` again; on hit, use the en path.
 4. Call `Resolver.Resolve(rel)` for the final URL / path.
 
+### 1.5 UCL_Core's own build-time manifest
+UCL_Core ships its own manifest pipeline so `ucl_core:` **also gets lang→en fallback in Build mode**:
+
+| Component | Path | Role |
+|---|---|---|
+| **Generator** | [`UCL_Core_Scripts/EditorCore/UCL_LocalizedDocsManifestGenerator.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_LocalizedDocsManifestGenerator.cs) | Scans `Docs~/**/*.md`, writes manifest |
+| **Build hook** | `UCL_LocalizedDocsManifestBuildHook` (same file) | Runs before every build (`IPreprocessBuildWithReport`) |
+| **Manifest file** | `UCL_Core/Resources/UCL_LocalizedDocsManifest.txt` | Plain text, one path per line (`Docs~/{lang}/...`) |
+| **Runtime reader** | [`UCL_Core_Scripts/AssetCore/UCL_LocalizedDocsManifest.cs`](../../../UCL_Core_Scripts/AssetCore/UCL_LocalizedDocsManifest.cs) | Lazy-loads into a `HashSet<string>` |
+
+**Manual generation**: `Tools / UCL / Generate Localized Docs Manifest`
+
+**Auto generation**: runs before every build.
+
 > [!NOTE]
-> UCL_Core's own `ucl_core:` resolver enables `File.Exists` checking on the **Editor side**; on the **Build side it doesn't enable** fallback (UCL_Core ships no manifest). Downstream modules wanting Build-time fallback should provide an `existsChecker` delegate that queries their own manifest.
+> Downstream modules (e.g. closed-source games) still need their own manifest pipelines — UCL_Core's manifest only covers the `ucl_core:` prefix. See §3 below for an `existsChecker` example.
 
 ### 1.3 Hidden Folder: `Docs~`
 *   **Physical Significance**: Unity ignores folders ending with `~`. We store documents in `Docs~` so they stay within the module directory without generating `.meta` files.

@@ -116,7 +116,9 @@ namespace UCL.Core
             // 區塊職責：註冊 UCL_Core 的預設 Resolver。
             // 物理意義：Editor 端使用 UCL_EditorPath.CorePath 自動定位模組根目錄；Build 端拼接 GitHub Dev 分支 URL。
             // 數值影響：影響 [HelpURL("ucl_core:...")] 在開發與發佈兩種版本中的目標位置。
-            // 存在檢查：Editor 端以 File.Exists 啟用 lang→en fallback；Build 端不啟用（UCL_Core 自身不附 manifest）。
+            // 存在檢查：
+            //   - Editor 端：File.Exists 直接查 submodule，啟用 lang→en fallback。
+            //   - Build 端：查 UCL_LocalizedDocsManifest（build 前由 UCL_LocalizedDocsManifestGenerator 產生），啟用 lang→en fallback。
             RegisterResolver(new UCL_UrlPrefixResolver(
                 prefix: CORE_PREFIX,
 #if UNITY_EDITOR
@@ -127,8 +129,8 @@ namespace UCL.Core
 #else
                 // [Build 解析] 將相對路徑接於 GitHub Dev 分支 URL 之後，形成可瀏覽器開啟的雲端連結。
                 resolver: (aRelativePath) => CORE_BUILD_BASE_URL + aRelativePath,
-                // [Build 存在檢查] UCL_Core 自身不附 manifest，因此預設 null（不啟用 fallback）。下游若需 Build 期 fallback，請於自家 Resolver 提供 existsChecker。
-                existsChecker: null
+                // [Build 存在檢查] 查 UCL_Core 自家的 manifest（build 前由 UCL_LocalizedDocsManifestGenerator 產生），啟用 lang→en fallback。
+                existsChecker: (aRelativePath) => UCL_LocalizedDocsManifest.Contains(aRelativePath)
 #endif
             ));
         }

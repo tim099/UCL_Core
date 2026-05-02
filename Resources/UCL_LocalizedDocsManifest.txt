@@ -1,0 +1,52 @@
+# UCL_LocalizedDocsManifest
+# Auto-generated bootstrap (the in-Editor build hook will refresh this on next build).
+# DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate Localized Docs Manifest" instead.
+# Source: UCL_Core/Docs~/
+Docs~/en/API/UCL_Asset/UCL_CSVAsset.md
+Docs~/en/API/UCL_Asset/UCL_ModResourceAsset.md
+Docs~/en/UCL_EditorPage/UCL_ModuleEditPage.md
+Docs~/en/UCL_EditorPage/UCL_ModulePlayListPage.md
+Docs~/en/UCL_EditorPage/UCL_ModuleServiceEditPage.md
+Docs~/en/UCL_EditorPage/UCL_SelectAssetPage.md
+Docs~/en/UCL_ModuleService/UCL_ModulePath_API.md
+Docs~/en/UCL_ModuleService/UCL_ModuleService_API.md
+Docs~/en/UCL_ModuleService/UCL_ModuleSystem_Architecture.md
+Docs~/en/UCL_ModuleService/UCL_Module_API.md
+Docs~/en/Workflows/Hardcoded_Localize.md
+Docs~/en/Workflows/HelpURL_Workflow.md
+Docs~/ja/API/UCL_Asset/UCL_CSVAsset.md
+Docs~/ja/API/UCL_Asset/UCL_ModResourceAsset.md
+Docs~/ja/UCL_EditorPage/UCL_ModuleEditPage.md
+Docs~/ja/UCL_EditorPage/UCL_ModulePlayListPage.md
+Docs~/ja/UCL_EditorPage/UCL_ModuleServiceEditPage.md
+Docs~/ja/UCL_EditorPage/UCL_SelectAssetPage.md
+Docs~/ja/UCL_ModuleService/UCL_ModulePath_API.md
+Docs~/ja/UCL_ModuleService/UCL_ModuleService_API.md
+Docs~/ja/UCL_ModuleService/UCL_ModuleSystem_Architecture.md
+Docs~/ja/UCL_ModuleService/UCL_Module_API.md
+Docs~/ja/Workflows/Hardcoded_Localize.md
+Docs~/ja/Workflows/HelpURL_Workflow.md
+Docs~/zh-Hans/API/UCL_Asset/UCL_CSVAsset.md
+Docs~/zh-Hans/API/UCL_Asset/UCL_ModResourceAsset.md
+Docs~/zh-Hans/UCL_EditorPage/UCL_ModuleEditPage.md
+Docs~/zh-Hans/UCL_EditorPage/UCL_ModulePlayListPage.md
+Docs~/zh-Hans/UCL_EditorPage/UCL_ModuleServiceEditPage.md
+Docs~/zh-Hans/UCL_EditorPage/UCL_SelectAssetPage.md
+Docs~/zh-Hans/UCL_ModuleService/UCL_ModulePath_API.md
+Docs~/zh-Hans/UCL_ModuleService/UCL_ModuleService_API.md
+Docs~/zh-Hans/UCL_ModuleService/UCL_ModuleSystem_Architecture.md
+Docs~/zh-Hans/UCL_ModuleService/UCL_Module_API.md
+Docs~/zh-Hans/Workflows/Hardcoded_Localize.md
+Docs~/zh-Hans/Workflows/HelpURL_Workflow.md
+Docs~/zh-Hant/API/UCL_Asset/UCL_CSVAsset.md
+Docs~/zh-Hant/API/UCL_Asset/UCL_ModResourceAsset.md
+Docs~/zh-Hant/UCL_EditorPage/UCL_ModuleEditPage.md
+Docs~/zh-Hant/UCL_EditorPage/UCL_ModulePlayListPage.md
+Docs~/zh-Hant/UCL_EditorPage/UCL_ModuleServiceEditPage.md
+Docs~/zh-Hant/UCL_EditorPage/UCL_SelectAssetPage.md
+Docs~/zh-Hant/UCL_ModuleService/UCL_ModulePath_API.md
+Docs~/zh-Hant/UCL_ModuleService/UCL_ModuleService_API.md
+Docs~/zh-Hant/UCL_ModuleService/UCL_ModuleSystem_Architecture.md
+Docs~/zh-Hant/UCL_ModuleService/UCL_Module_API.md
+Docs~/zh-Hant/Workflows/Hardcoded_Localize.md
+Docs~/zh-Hant/Workflows/HelpURL_Workflow.md

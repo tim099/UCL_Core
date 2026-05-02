@@ -17,8 +17,25 @@ UCL_URL 採用 **Resolver 註冊表** 架構。任何一段 `xxx:RelativePath` �
 ### 1.2 本地化佔位符：`{lang}`
 *   **用途**：根據當前語系自動切換文件。
 *   **計算邏輯**：系統會自動將 `{lang}` 替換為 `UCL_LocalizeService.CurLang`（例如 `en`, `zh-Hans`, `ja`）。
-*   **Editor 回退機制**：若當前語系文件不存在，系統在 Editor 下會嘗試尋找 `en` 版本作為回退，避免 404。
+*   **回退機制 (lang → en)**：當前語系文件不存在時，系統會自動把 `lang` 換成 `en` 再試一次。**Editor 與 Build 都支援**（前提是 Resolver 提供了 `Exists` 檢查 — 見 §1.4）。
 *   **歸屬**：`{lang}` 由 `UCL_URL` 共用層處理，**Resolver 端不必各自重複實作**。
+
+### 1.4 存在檢查與 fallback：`IUCL_UrlPrefixResolver.Exists`
+Resolver 介面提供可選的 `Exists(relativePath)` 方法，**預設回傳 true**（不檢查、不啟用 fallback）。覆寫此方法即可啟用「**lang 缺檔自動 fallback 到 en**」：
+
+| 環境 | 典型 `Exists` 實作 |
+|---|---|
+| **Editor** | `File.Exists(localPath)` — 直接查 submodule 內檔案 |
+| **Build** | 查詢 build-time 產生的 manifest（每個下游模組自備） |
+
+UCL_URL 的呼叫流程（簡化版）：
+1. 切出 prefix，找對應 Resolver。
+2. 把 `{lang}` 在相對路徑內替換為當前語系。
+3. 呼叫 `Resolver.Exists(rel)`：若 false 且當前非 en，把 lang 換成 `en` 再 `Exists` 一次；命中則改用 en 路徑。
+4. 呼叫 `Resolver.Resolve(rel)` 取得最終 URL / 路徑。
+
+> [!NOTE]
+> UCL_Core 自己的 `ucl_core:` resolver 在 **Editor 端**已啟用 `File.Exists` 檢查；**Build 端預設不啟用**（UCL_Core 不附 manifest）。下游若要在 Build 啟用 fallback，請自家 resolver 透過 `existsChecker` 委派提供 manifest 查詢。
 
 ### 1.3 隱藏資料夾：`Docs~`
 *   **物理意義**：Unity 會自動忽略以 `~` 結尾的資料夾。因此我們將文件放在 `Docs~` 下，這樣既能保存在模組目錄內，又不會產生 `.meta` 檔案。
@@ -82,17 +99,22 @@ public static class EoV_DocsResolverBootstrap
 #endif
     private static void Register()
     {
-        // 區塊職責：建立並註冊 EoV 專屬的 Prefix Resolver。
+        // 區塊職責：建立並註冊 EoV 專屬的 Prefix Resolver（含 lang fallback 支援）。
         // 物理意義：Editor 端組合本地 submodule 路徑；Build 端拼接雲端 URL。
-        // 數值影響：影響所有以 "eov_docs:" 起頭的 HelpURL 連結最終目標。
+        //         Editor 端用 File.Exists 啟用 fallback；Build 端查 manifest（build-time 產生）。
+        // 數值影響：影響所有以 "eov_docs:" 起頭的 HelpURL 連結最終目標；fallback 讓非 en 語系玩家在缺檔時自動取 en。
         UCL_URL.RegisterResolver(new UCL_UrlPrefixResolver(
             prefix: "eov_docs",
 #if UNITY_EDITOR
-            // [Editor] 直接接於本地 submodule 路徑之後，便於離線閱讀。
-            resolver: (aRelativePath) => System.IO.Path.Combine(EoV_DocsPath.Root, aRelativePath)
+            // [Editor 解析] 直接接於本地 submodule 路徑之後，便於離線閱讀。
+            resolver: (aRelativePath) => System.IO.Path.Combine(EoV_DocsPath.Root, aRelativePath),
+            // [Editor 存在檢查] File.Exists 啟用 lang→en fallback。
+            existsChecker: (aRelativePath) => System.IO.File.Exists(System.IO.Path.Combine(EoV_DocsPath.Root, aRelativePath))
 #else
-            // [Build] 拼接 GitHub blob 連結，玩家可以直接用瀏覽器開啟。
-            resolver: (aRelativePath) => BUILD_BASE_URL + aRelativePath
+            // [Build 解析] 拼接 GitHub blob 連結，玩家可以直接用瀏覽器開啟。
+            resolver: (aRelativePath) => BUILD_BASE_URL + aRelativePath,
+            // [Build 存在檢查] 查 build-time manifest；啟用 lang→en fallback。
+            existsChecker: (aRelativePath) => MyDocsManifest.Contains(aRelativePath)
 #endif
         ));
     }

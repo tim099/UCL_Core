@@ -17,8 +17,25 @@ UCL extends Unity's native `HelpURLAttribute` to create a help system that suppo
 ### 1.2 Localization Placeholder: `{lang}`
 *   **Purpose**: Automatically switches document paths based on the current language.
 *   **Logic**: Replaced by `UCL_LocalizeService.CurLang` (e.g., `en`, `zh-Hans`, `ja`).
-*   **Editor Fallback**: If a localized file is missing, the system in Editor will attempt to find the `en` version as a fallback to avoid 404 errors.
+*   **Fallback (lang → en)**: If a localized file is missing, the system swaps `lang` for `en` and retries. **Works in both Editor and Build** (provided the resolver implements `Exists` — see §1.4).
 *   **Ownership**: `{lang}` substitution is handled centrally by `UCL_URL`. **Resolvers do not need to handle it themselves.**
+
+### 1.4 Existence check & fallback: `IUCL_UrlPrefixResolver.Exists`
+The resolver interface provides an optional `Exists(relativePath)` method. **Default returns true** (no check, no fallback). Override to enable "**lang missing → fall back to en**":
+
+| Environment | Typical `Exists` impl |
+|---|---|
+| **Editor** | `File.Exists(localPath)` — direct submodule lookup |
+| **Build** | Query a build-time manifest (each downstream module supplies its own) |
+
+UCL_URL flow (simplified):
+1. Split prefix → find resolver.
+2. Substitute `{lang}` in the relative path.
+3. Call `Resolver.Exists(rel)`: if false and current lang ≠ en, swap lang → `en` and `Exists` again; on hit, use the en path.
+4. Call `Resolver.Resolve(rel)` for the final URL / path.
+
+> [!NOTE]
+> UCL_Core's own `ucl_core:` resolver enables `File.Exists` checking on the **Editor side**; on the **Build side it doesn't enable** fallback (UCL_Core ships no manifest). Downstream modules wanting Build-time fallback should provide an `existsChecker` delegate that queries their own manifest.
 
 ### 1.3 Hidden Folder: `Docs~`
 *   **Physical Significance**: Unity ignores folders ending with `~`. We store documents in `Docs~` so they stay within the module directory without generating `.meta` files.

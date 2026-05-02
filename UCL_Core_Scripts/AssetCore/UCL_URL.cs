@@ -26,21 +26,37 @@ namespace UCL.Core
         /// [物理意義]
         ///   - Editor 編譯：通常回傳本地絕對路徑，便於以系統預設應用程式直接開啟本地 Markdown。
         ///   - Build 編譯：通常回傳雲端 URL（例如 GitHub blob 連結），讓玩家透過瀏覽器存取。
+        /// [呼叫前置] UCL_URL 會先把 {lang} 佔位符替換為當前語系代碼，再把替換後的相對路徑交給此方法 — 因此 relativePath 不會再含有 {lang}。
         /// </summary>
-        /// <param name="relativePath">prefix 後方的相對路徑（不含 "prefix:" 段落）。</param>
+        /// <param name="relativePath">prefix 後方的相對路徑（不含 "prefix:" 段落）；{lang} 已被替換。</param>
         /// <returns>解析後的完整 URL 或本地路徑；不支援解析時可回傳 null。</returns>
         string Resolve(string relativePath);
+
+        /// <summary>
+        /// [職責] 檢查指定的相對路徑（{lang} 已替換）對應的文件是否實際存在。
+        /// [物理意義] 用於驅動「找不到當前語系時自動回退到 en」的 fallback 機制：
+        ///   - Editor：通常以 File.Exists 檢查本地 submodule 文件。
+        ///   - Build：通常查詢 build-time 產生的 manifest。
+        /// [預設行為] 回傳 true（不啟用 fallback，維持原始 URL）。要啟用 fallback 請覆寫此方法。
+        /// [呼叫時機] UCL_URL 在 Resolve 之前呼叫；命中失敗時會嘗試把 lang 換成 "en" 再呼叫一次。
+        /// </summary>
+        /// <param name="relativePath">與 Resolve 同一份相對路徑（{lang} 已替換）。</param>
+        /// <returns>true 表示該路徑指向的文件存在；false 觸發 fallback。</returns>
+        bool Exists(string relativePath) => true;
     }
 
     /// <summary>
     /// [職責] 以 Lambda 委派為基礎的 Resolver 輕量實作，方便下游不必為了一個 prefix 多寫一個 class。
-    /// [物理意義] 將「解析策略」以 Func 注入，行為上等同於實作 IUCL_UrlPrefixResolver。
+    /// [物理意義] 將「解析策略」與「存在檢查策略」以 Func 注入，行為上等同於實作 IUCL_UrlPrefixResolver。
     /// [使用情境] 大部分下游模組（含 UCL_Core 自己）只需要簡單的 Path.Combine / 字串拼接，使用此類別即可。
     /// </summary>
     public sealed class UCL_UrlPrefixResolver : IUCL_UrlPrefixResolver
     {
         // [欄位] 解析委派；建構後不可變，由建構式注入。可為 null（視為 Resolver 對當前環境不提供解析）。
         private readonly Func<string, string> m_Resolver;
+
+        // [欄位] 存在檢查委派；可為 null（代表此 Resolver 不參與 fallback，預設視為「永遠存在」）。
+        private readonly Func<string, bool> m_ExistsChecker;
 
         /// <summary>
         /// [職責] 提供此 Resolver 對應的 prefix 字串。
@@ -50,18 +66,24 @@ namespace UCL.Core
 
         /// <summary>
         /// [職責] 建構一個以委派為策略的 Resolver。
-        /// [使用慣例] 註冊端應使用 #if UNITY_EDITOR 切換要傳入哪一個委派（Editor 用本地路徑、Build 用雲端 URL）。
+        /// [使用慣例] 註冊端應使用 #if UNITY_EDITOR 切換要傳入哪一個解析委派（Editor 用本地路徑、Build 用雲端 URL）。
+        /// [選用功能] 若要啟用「找不到當前語系時 fallback 到 en」，請傳入 existsChecker；不傳則維持原本「不檢查存在」的行為。
         /// </summary>
         /// <param name="prefix">prefix 字串（不含結尾冒號），例如 "ucl_core"。</param>
         /// <param name="resolver">解析委派；負責將相對路徑轉換為當前編譯目標適用的 URL / 路徑。</param>
-        public UCL_UrlPrefixResolver(string prefix, Func<string, string> resolver)
+        /// <param name="existsChecker">（選用）存在檢查委派。Editor 端常用 File.Exists；Build 端常查 build-time manifest。為 null 時 Exists 永遠回傳 true（無 fallback）。</param>
+        public UCL_UrlPrefixResolver(string prefix, Func<string, string> resolver, Func<string, bool> existsChecker = null)
         {
             Prefix = prefix;
             m_Resolver = resolver;
+            m_ExistsChecker = existsChecker;
         }
 
         /// <inheritdoc />
         public string Resolve(string relativePath) => m_Resolver?.Invoke(relativePath);
+
+        /// <inheritdoc />
+        public bool Exists(string relativePath) => m_ExistsChecker?.Invoke(relativePath) ?? true;
     }
 
     /// <summary>
@@ -81,6 +103,10 @@ namespace UCL.Core
         private const string CORE_PREFIX = "ucl_core";
         private const string CORE_BUILD_BASE_URL = "https://github.com/tim099/UCL_Core/blob/Dev/";
 
+        // [常數] fallback 目標語系。en 文件作為「保底文件」，其他語系若缺檔則回退到此。
+        // [物理意義] 與 UCL_LocalizeAsset 的 DefaultLang 對齊；改動時請同步檢查。
+        private const string FALLBACK_LANG = "en";
+
         /// <summary>
         /// [職責] 型別初始化時，將 UCL_Core 自己的 "ucl_core:" Resolver 註冊進 s_Resolvers。
         /// [物理意義] 讓核心模組與下游模組走同一條註冊流程，避免在 ResolveURL 中存在「核心 prefix 特例」的硬編碼分支。
@@ -90,14 +116,19 @@ namespace UCL.Core
             // 區塊職責：註冊 UCL_Core 的預設 Resolver。
             // 物理意義：Editor 端使用 UCL_EditorPath.CorePath 自動定位模組根目錄；Build 端拼接 GitHub Dev 分支 URL。
             // 數值影響：影響 [HelpURL("ucl_core:...")] 在開發與發佈兩種版本中的目標位置。
+            // 存在檢查：Editor 端以 File.Exists 啟用 lang→en fallback；Build 端不啟用（UCL_Core 自身不附 manifest）。
             RegisterResolver(new UCL_UrlPrefixResolver(
                 prefix: CORE_PREFIX,
 #if UNITY_EDITOR
                 // [Editor 解析] 將相對路徑接於 UCL_Core 模組根目錄之後，形成本地檔案路徑。
-                resolver: (aRelativePath) => System.IO.Path.Combine(UCL_EditorPath.CorePath ?? string.Empty, aRelativePath)
+                resolver: (aRelativePath) => System.IO.Path.Combine(UCL_EditorPath.CorePath ?? string.Empty, aRelativePath),
+                // [Editor 存在檢查] File.Exists 啟用 lang→en fallback。
+                existsChecker: (aRelativePath) => System.IO.File.Exists(System.IO.Path.Combine(UCL_EditorPath.CorePath ?? string.Empty, aRelativePath))
 #else
                 // [Build 解析] 將相對路徑接於 GitHub Dev 分支 URL 之後，形成可瀏覽器開啟的雲端連結。
-                resolver: (aRelativePath) => CORE_BUILD_BASE_URL + aRelativePath
+                resolver: (aRelativePath) => CORE_BUILD_BASE_URL + aRelativePath,
+                // [Build 存在檢查] UCL_Core 自身不附 manifest，因此預設 null（不啟用 fallback）。下游若需 Build 期 fallback，請於自家 Resolver 提供 existsChecker。
+                existsChecker: null
 #endif
             ));
         }
@@ -144,12 +175,13 @@ namespace UCL.Core
         }
 
         /// <summary>
-        /// [職責] 解析 URL 字串，依序處理「自定 prefix → {lang} 替換 → 本地路徑補全 → en fallback」。
+        /// [職責] 解析 URL 字串，依序處理「自定 prefix → {lang} 替換 → 存在檢查 / fallback → Resolve → 本地路徑補全」。
         /// [計算邏輯]
         /// 1. 嘗試從字串拆出 "prefix:"（排除 "://" 形式的 protocol）並查詢 s_Resolvers。
-        /// 2. 命中時呼叫 Resolver.Resolve（Editor / Build 差異由註冊端在編譯期決定）。
-        /// 3. 將 {lang} 替換為當前語系代碼。
-        /// 4. 若結果不含 "://"，視為本地路徑並轉為絕對路徑；Editor 下若檔案不存在則嘗試以 en 替換語系碼。
+        /// 2. 命中時把 {lang} 在相對路徑內替換為當前語系。
+        /// 3. 呼叫 Resolver.Exists 檢查；失敗且非 en 時把 lang 換成 en 再 Exists；仍失敗則維持原值（最終由 Resolve 回傳的 URL 自行處理 404）。
+        /// 4. 呼叫 Resolver.Resolve 取得最終路徑 / URL。
+        /// 5. 若結果不含 "://"，視為本地路徑並轉為絕對路徑；Editor 下若檔案不存在則嘗試以 en 替換語系碼（針對「無 prefix」的舊式 URL 仍保留此行為）。
         /// </summary>
         /// <param name="url">原始 URL 字串或相對路徑。</param>
         /// <returns>解析後的完整 URL 或本地絕對路徑。</returns>
@@ -158,9 +190,12 @@ namespace UCL.Core
             // [快速返回] 空字串或 null 直接回傳，避免後續判斷誤觸 IndexOf。
             if (string.IsNullOrEmpty(url)) return url;
 
-            // 區塊職責：從 URL 切出 "prefix:" 並查表。
+            // [預先取出] 後續多處共用，避免重複 property 存取。
+            string aLang = UCL.Core.Game.UCL_LocalizeService.CurLang;
+
+            // 區塊職責：從 URL 切出 "prefix:" 並查表 → {lang} 替換 → Exists 檢查 / fallback → Resolve。
             // 物理意義：prefix 為「不含 ://」的命名空間標識；http/https 等 protocol 因為冒號後接 "//" 而被排除。
-            // 數值影響：唯一決定哪一個 Resolver 會被派發，從而決定後續路徑/URL 的根。
+            // 數值影響：唯一決定哪一個 Resolver 會被派發，從而決定後續路徑/URL 的根；fallback 機制讓非 en 玩家在缺檔時自動取得 en 文件。
             int aColonIdx = url.IndexOf(':');
             if (aColonIdx > 0)
             {
@@ -174,25 +209,42 @@ namespace UCL.Core
                     string aPrefix = url.Substring(0, aColonIdx);
                     if (s_Resolvers.TryGetValue(aPrefix, out var aResolver))
                     {
-                        // [計算邏輯] 取出 "prefix:" 之後的相對路徑，交給對應 Resolver。
-                        // [編譯期分流] Editor / Build 差異由 Resolver 註冊端在 #if UNITY_EDITOR 中決定，此處無需感知。
+                        // [計算邏輯] 取出 "prefix:" 之後的相對路徑。
                         string aRelativePath = url.Substring(aColonIdx + 1);
+
+                        // [{lang} 前置替換] 在交給 Resolver 之前先把 {lang} 替換為當前語系，使 Exists / Resolve 拿到的 relativePath 已是「最終的語系版本」。
+                        if (aRelativePath.Contains("{lang}"))
+                        {
+                            aRelativePath = aRelativePath.Replace("{lang}", aLang);
+                        }
+
+                        // [存在檢查 + fallback] 當前語系檔不存在 → 嘗試以 en 取代後再檢查一次。
+                        // 條件：Exists 檢查失敗（Resolver 預設都是 true，除非主動覆寫）、且當前語系非 fallback 目標自身、且 relativePath 確實含有當前語系字串。
+                        if (aLang != FALLBACK_LANG && aRelativePath.Contains(aLang) && !aResolver.Exists(aRelativePath))
+                        {
+                            string aFallbackPath = aRelativePath.Replace(aLang, FALLBACK_LANG);
+                            if (aResolver.Exists(aFallbackPath))
+                            {
+                                aRelativePath = aFallbackPath;
+                            }
+                        }
+
+                        // [編譯期分流] Editor / Build 差異由 Resolver 註冊端在 #if UNITY_EDITOR 中決定，此處無需感知。
                         string aResolved = aResolver.Resolve(aRelativePath);
                         if (!string.IsNullOrEmpty(aResolved)) url = aResolved;
                     }
                 }
             }
 
-            // 區塊職責：本地化佔位符替換。
-            // 物理意義：將 {lang} 替換為當前語系代碼（如 en、zh-Hans、ja），實現多語系文件切換。
-            // 數值影響：影響最終目標檔案的語系版本；Resolver 端不必各自處理 {lang}。
+            // 區塊職責：本地化佔位符替換（後備）。
+            // 物理意義：若 URL 沒被任何 prefix resolver 處理，{lang} 仍可能殘留於原 URL 中，於此補上替換。
+            // 數值影響：影響無 prefix 的舊式 URL 的最終目標檔案。
             if (url.Contains("{lang}"))
             {
-                string aLangCode = UCL.Core.Game.UCL_LocalizeService.CurLang;
-                url = url.Replace("{lang}", aLangCode);
+                url = url.Replace("{lang}", aLang);
             }
 
-            // 區塊職責：本地路徑補全與 en 回退。
+            // 區塊職責：本地路徑補全與 en 回退（針對無 prefix 的舊式 URL）。
             // 物理意義：若解析結果非雲端 URL，則視為相對於專案根的路徑並轉為絕對路徑；Editor 下若當前語系檔案缺失，回退到 en。
             // 數值影響：避免因尚未翻譯的語系版本造成 404；不影響非 Editor 流程。
             if (!url.Contains("://"))
@@ -201,9 +253,9 @@ namespace UCL.Core
                 url = System.IO.Path.GetFullPath(url);
 
 #if UNITY_EDITOR
-                if (!System.IO.File.Exists(url) && url.Contains(UCL.Core.Game.UCL_LocalizeService.CurLang))
+                if (!System.IO.File.Exists(url) && url.Contains(aLang))
                 {
-                    string aFallbackUrl = url.Replace(UCL.Core.Game.UCL_LocalizeService.CurLang, "en");
+                    string aFallbackUrl = url.Replace(aLang, FALLBACK_LANG);
                     if (System.IO.File.Exists(aFallbackUrl)) url = aFallbackUrl;
                 }
 #endif

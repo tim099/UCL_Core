@@ -98,42 +98,12 @@ namespace UCL.Core
         private static readonly Dictionary<string, IUCL_UrlPrefixResolver> s_Resolvers
             = new Dictionary<string, IUCL_UrlPrefixResolver>(StringComparer.OrdinalIgnoreCase);
 
-        // [常數] UCL_Core 預設 prefix 與雲端文件根 URL。
-        // [物理意義] 集中此處避免散落於程式各處；若 Dev 分支日後改名請於此修改。
-        private const string CORE_PREFIX = "ucl_core";
-        private const string CORE_BUILD_BASE_URL = "https://github.com/tim099/UCL_Core/blob/Dev/";
-
         // [常數] fallback 目標語系。en 文件作為「保底文件」，其他語系若缺檔則回退到此。
         // [物理意義] 與 UCL_LocalizeAsset 的 DefaultLang 對齊；改動時請同步檢查。
         private const string FALLBACK_LANG = "en";
 
-        /// <summary>
-        /// [職責] 型別初始化時，將 UCL_Core 自己的 "ucl_core:" Resolver 註冊進 s_Resolvers。
-        /// [物理意義] 讓核心模組與下游模組走同一條註冊流程，避免在 ResolveURL 中存在「核心 prefix 特例」的硬編碼分支。
-        /// </summary>
-        static UCL_URL()
-        {
-            // 區塊職責：註冊 UCL_Core 的預設 Resolver。
-            // 物理意義：Editor 端使用 UCL_EditorPath.CorePath 自動定位模組根目錄；Build 端拼接 GitHub Dev 分支 URL。
-            // 數值影響：影響 [HelpURL("ucl_core:...")] 在開發與發佈兩種版本中的目標位置。
-            // 存在檢查：
-            //   - Editor 端：File.Exists 直接查 submodule，啟用 lang→en fallback。
-            //   - Build 端：查 UCL_LocalizedDocsManifest（build 前由 UCL_LocalizedDocsManifestGenerator 產生），啟用 lang→en fallback。
-            RegisterResolver(new UCL_UrlPrefixResolver(
-                prefix: CORE_PREFIX,
-#if UNITY_EDITOR
-                // [Editor 解析] 將相對路徑接於 UCL_Core 模組根目錄之後，形成本地檔案路徑。
-                resolver: (aRelativePath) => System.IO.Path.Combine(UCL_EditorPath.CorePath ?? string.Empty, aRelativePath),
-                // [Editor 存在檢查] File.Exists 啟用 lang→en fallback。
-                existsChecker: (aRelativePath) => System.IO.File.Exists(System.IO.Path.Combine(UCL_EditorPath.CorePath ?? string.Empty, aRelativePath))
-#else
-                // [Build 解析] 將相對路徑接於 GitHub Dev 分支 URL 之後，形成可瀏覽器開啟的雲端連結。
-                resolver: (aRelativePath) => CORE_BUILD_BASE_URL + aRelativePath,
-                // [Build 存在檢查] 查 UCL_Core 自家的 manifest（build 前由 UCL_LocalizedDocsManifestGenerator 產生），啟用 lang→en fallback。
-                existsChecker: (aRelativePath) => UCL_LocalizedDocsManifest.Contains(aRelativePath)
-#endif
-            ));
-        }
+        // [註記] UCL_Core 自家的 "ucl_core:" prefix 由 UCL_CoreDocsBootstrap 透過 UCL_DocsModuleRegistry 註冊，
+        //       與其他下游模組走同一條路徑，不再於此 static ctor 中做硬編碼註冊。
 
         /// <summary>
         /// [職責] 註冊（或覆寫）一個自定 prefix 的 Resolver。

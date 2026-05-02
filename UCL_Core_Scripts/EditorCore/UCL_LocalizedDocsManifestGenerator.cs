@@ -112,7 +112,8 @@ namespace UCL.Core.EditorTools
 
             // [Asset 重新匯入] 讓 Unity 立即看到新內容；UCL_EditorPath.CorePath 已是專案內 Asset 路徑。
             string aAssetPath = $"{aCoreRoot}/{ManifestRelativePath}".Replace('\\', '/');
-            AssetDatabase.ImportAsset(aAssetPath);
+            // [ForceSynchronousImport] 阻塞直到匯入完成 — Build hook 中必須同步，避免新 manifest 寫入後但尚未匯入就被打包進 Build 的時序問題。
+            AssetDatabase.ImportAsset(aAssetPath, ImportAssetOptions.ForceSynchronousImport);
 
             Debug.Log($"[UCL_LocalizedDocsManifestGenerator] Wrote {aRelativePaths.Count} entries to {aAssetPath}");
             return aContent;

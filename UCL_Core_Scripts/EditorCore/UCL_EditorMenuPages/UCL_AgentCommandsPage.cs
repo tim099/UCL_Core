@@ -254,7 +254,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         if (GUILayout.Button("查看說明", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
-                            Application.OpenURL(selected.HelpURL);
+                            Application.OpenURL(UCL_URL.ResolveURL(selected.HelpURL));
                         }
                     }
                 }

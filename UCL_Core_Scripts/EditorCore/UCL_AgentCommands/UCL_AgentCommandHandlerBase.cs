@@ -1,7 +1,11 @@
-﻿
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/04 2026
+// 文件關聯：對應的多語系說明文件
+// English: Docs~/en/UCL_EditorPage/UCL_AgentCommandsPage.md
+// 日本語: Docs~/ja/UCL_EditorPage/UCL_AgentCommandsPage.md
+// 简体中文: Docs~/zh-Hans/UCL_EditorPage/UCL_AgentCommandsPage.md
+// 繁體中文: Docs~/zh-Hant/UCL_EditorPage/UCL_AgentCommandsPage.md
 // Abstract base class for Agent Command handlers.
 // 子類自動被 UCL_AgentCommandRegistry 反射掃描並註冊。
 #if UNITY_EDITOR

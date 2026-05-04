@@ -7,7 +7,9 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using Cysharp.Threading.Tasks;
 using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.LocalizeLib;
@@ -74,6 +76,32 @@ namespace UCL.Core.EditorLib.Page
             {
                 UCL_AgentCommandRunner.Menu_OpenQueueFolder();
             }
+            if (GUILayout.Button("Export Cmd Catalog", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                ExportCommandCatalog();
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Export Cmd Catalog 按鈕
+        // 職責：把所有透過 UCL_AgentCommandRegistry 自動註冊的 Handler 一次性匯出成單一 Markdown 檔
+        // 物理意義：與 Cmd_ExportCommandCatalog 共用渲染邏輯，按鈕只是 UI 觸發點；同一份 catalog 可由
+        //          UI 按鈕 / queue.json Cmd / Unity batchmode 三種方式產出，內容一致
+        // 數值影響：在 AgentCommands/commands_catalog.md 寫入或覆寫
+        // ===========================================================
+        void ExportCommandCatalog()
+        {
+            // 輸出落在 CardGame/AgentCommands/（Unity 專案根目錄，避開外層 git root + submodule）
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
+
+            string outDir = Path.Combine(projectRoot, "AgentCommands");
+            if (!Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
+            string outPath = Path.Combine(outDir, "commands_catalog.md");
+
+            var handlers = UCL_AgentCommandRegistry.ListHandlers();
+            string content = Cmd_ExportCommandCatalog.RenderCatalogMarkdown(handlers);
+            File.WriteAllText(outPath, content, new UTF8Encoding(false));
+            Debug.Log($"[UCL_AgentCmd UI] Exported {handlers.Count} command(s) catalog → {outPath}");
         }
 
         protected override void ContentOnGUI()

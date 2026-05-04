@@ -29,6 +29,14 @@
 
 ⭐ **重點推薦**：[`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統的整體架構文件（元件圖 / 生命週期 / 觸發方式對照 / 擴充點）。
 
+### 🖥 如何開啟 UCL_EditorMenu 與 Agent Commands
+
+1. 在 Unity 編輯器的上方選單列，點選 **UCL** -> **Menu** 即可開啟 **UCL_EditorMenu**。
+2. 在開啟的選單介面中，可以點選 **Agent Commands** 按鈕來開啟 Agent Commands 主管理面板。
+3. **UCL_CodeLocalize 翻譯按鈕文字速查**：
+   - 編輯模組按鈕文字：`Edit Modules`
+   - Agent 指令集按鈕文字：`Agent Commands`
+
 ### 🚀 快速使用範例
 
 新增一條 Agent Command（給 AI agent 用）：
@@ -99,6 +107,14 @@ Full multi-language documentation lives under [`Docs~/`](Docs~/):
 - 🇬🇧 [English](Docs~/en/index.md)
 
 ⭐ **Recommended starting point**: [`UCL_AgentCommand_Architecture`](Docs~/en/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — the architectural overview of the Agent Command system (component diagram / lifecycle / trigger comparison / extension points).
+
+### 🖥 How to open UCL_EditorMenu and Agent Commands
+
+1. On the top Unity menu bar, click on **UCL** -> **Menu** to open **UCL_EditorMenu**.
+2. From the menu interface, you can click the **Agent Commands** button to open the Agent Commands management panel.
+3. **UCL_CodeLocalize quick reference for translated button text**:
+   - Edit Modules button text: `Edit Modules`
+   - Agent Commands button text: `Agent Commands`
 
 ### 🚀 Quick Start
 

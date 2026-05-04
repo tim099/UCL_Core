@@ -29,7 +29,6 @@ namespace UCL.Core.EditorLib.Page
                     UCL_GUIStyle.SetSizeOnGUI();
                 }
 
-
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Edit Modules"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_ModuleServiceEditPage.Create();
@@ -38,6 +37,14 @@ namespace UCL.Core.EditorLib.Page
                 if (GUILayout.Button(UCL_LocalizeManager.Get("UCL_LocalizeEditPage"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();
+                }
+
+                // 區塊職責：提供按鈕以開啟 Agent Commands 頁面
+                // 物理意義：快速導向 Agent Command 隊列與手動觸發管理面板
+                // 數值影響：無
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Agent Commands"), UCL_GUIStyle.ButtonStyle))
+                {
+                    UCL_AgentCommandsPage.Create();
                 }
 
                 if (GUILayout.Button("PlayerPrefs", UCL_GUIStyle.ButtonStyle))

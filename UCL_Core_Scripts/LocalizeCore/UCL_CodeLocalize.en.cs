@@ -12,6 +12,7 @@ namespace UCL.Core.LocalizeLib
             {
                 "UCL" => "Unity CommonLib",
                 "Edit Modules" => "Edit Modules",
+                "Agent Commands" => "Agent Commands",
                 "Playlist" => "Playlist",
                 "UCL_ModulePlayListPage" => "Edit playlist",
                 "Create new module" => "Create new module",

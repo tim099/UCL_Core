@@ -52,13 +52,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ===========================================================
-# 路徑常數
+# 路徑解析 — 跨專案通用（不假設 UCL_Core 放在哪一層）
 # ===========================================================
-# 本檔位於 <gitRoot>/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py
-# parents[0]=AgentCommands/  [1]=Tools~/  [2]=UCL_Core/  [3]=UCL/
-# parents[4]=Assets/  [5]=CardGame/  [6]=<gitRoot>
+# 上層專案可能把 UCL_Core 放在不同位置（CardGame/Assets/UCL/ 或 Assets/UCL/ 或 root）
+# 解析優先序：
+#   1. 環境變數 CLAUDE_PROJECT_DIR（Claude Code hook 注入；最權威）
+#   2. 從本檔位置往上找第一個含 .git 「資料夾」（避開 submodule 的 .git file）
+#   3. fallback：用 parents[2]（UCL_Core 根）
 
-GIT_ROOT = Path(__file__).resolve().parents[6]
+import os as _os
+
+
+def _find_git_root_by_walk(start: Path):
+    p = start.resolve()
+    while p != p.parent:
+        if (p / ".git").is_dir():
+            return p
+        p = p.parent
+    return None
+
+
+_env_root = _os.environ.get("CLAUDE_PROJECT_DIR")
+if _env_root and Path(_env_root).is_dir():
+    GIT_ROOT = Path(_env_root).resolve()
+else:
+    _walked = _find_git_root_by_walk(Path(__file__))
+    GIT_ROOT = _walked if _walked else Path(__file__).resolve().parents[2]
 QUEUE_DIR = GIT_ROOT / "AgentCommands"
 QUEUE_PATH = QUEUE_DIR / "queue.json"
 TRIGGER_PATH = QUEUE_DIR / "pending.trigger"

@@ -44,7 +44,7 @@ Plus a separate `reference_check` axis: `Skipped | OK | Missing`.
 ## Quick example
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat     --arg assetType=RCG_ItemData --arg assetId=ManaCore_Shard --arg checkRefs=1
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat     --arg assetType=RCG_ItemData --arg assetId=ManaCore_Shard --arg checkRefs=1
 ```
 
 See the [Traditional Chinese version](../../../zh-Hant/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md) for full report structure, diagnostic patterns, and known limits.

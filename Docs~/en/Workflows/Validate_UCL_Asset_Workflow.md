@@ -17,7 +17,7 @@ Mandatory validation step at the end of any workflow that creates or modifies a 
 - **Reference integrity** (with `checkRefs=N`) — sub-assets referenced but not on disk
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat     --arg assetType=<C# Type> --arg assetId=<ID> --arg checkRefs=1     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat     --arg assetType=<C# Type> --arg assetId=<ID> --arg checkRefs=1     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
 
 verdict must be `PASS` (or `FormattingOnly` + apply `.fixed.json`) to consider the workflow complete.

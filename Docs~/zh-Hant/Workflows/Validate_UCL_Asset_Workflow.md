@@ -14,7 +14,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ```bash
 # 寫完 asset 後，立刻驗證（路徑相對 git root）
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
     --arg assetType=<C# Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 
@@ -69,7 +69,7 @@ python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run Validate
 ### 3.1 最小驗證（schema only）
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
@@ -77,7 +77,7 @@ python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run Validate
 ### 3.2 含直接引用檢查（推薦預設）
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
@@ -85,7 +85,7 @@ python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run Validate
 ### 3.3 跨資產 deep validation（複雜引用鏈）
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=2 --arg verbose=true \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
@@ -162,7 +162,7 @@ python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run Validate
 寫完 JSON 後 **必跑**：
 
 \`\`\`bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 \`\`\`

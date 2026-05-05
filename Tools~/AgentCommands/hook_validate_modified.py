@@ -33,18 +33,49 @@ import json
 import re
 import subprocess
 import sys
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 # ===========================================================
-# 路徑 — 與 run_cmd.py 共享同一套定位邏輯
+# 路徑解析 — 跨專案通用（不假設 UCL_Core 放在哪一層）
 # ===========================================================
-# 本檔位於 <gitRoot>/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py
-# parents[0]=AgentCommands  [1]=Tools~  [2]=UCL_Core  [3]=UCL  [4]=Assets  [5]=CardGame  [6]=<gitRoot>
+# 上層專案可能把 UCL_Core 放在不同位置：
+#   Emblem of Valor:    <gitRoot>/CardGame/Assets/UCL/UCL_Core/
+#   別的 UCL_Game 專案: <gitRoot>/Assets/UCL/UCL_Core/
+#   獨立工具專案:        <gitRoot>/UCL_Core/
+# 因此不能用固定的 parents[N] 定位 git root，必須動態找。
+#
+# 解析優先序：
+#   1. 環境變數 CLAUDE_PROJECT_DIR（Claude Code hook 執行時注入；最權威）
+#   2. 從本檔位置往上找第一個含 .git 「資料夾」（不是 .git file，避開 submodule pointer）
+#   3. fallback：用 parents[2]（UCL_Core 根）— 不太對但起碼讓 import 不爆
 
-GIT_ROOT = Path(__file__).resolve().parents[6]
-RUN_CMD = GIT_ROOT / "CardGame" / "Assets" / "UCL" / "UCL_Core" / "Tools~" / "AgentCommands" / "run_cmd.py"
+
+def _find_git_root_by_walk(start: Path) -> Path | None:
+    """從 start 往上找第一個含 .git 為資料夾的目錄；submodule 的 .git 是檔案會被略過。"""
+    p = start.resolve()
+    while p != p.parent:
+        git_path = p / ".git"
+        if git_path.is_dir():  # 真實 repo 根；submodule 的 .git 是 file，不會匹配
+            return p
+        p = p.parent
+    return None
+
+
+# 區塊職責：依序嘗試三種解析方式定出 git root
+# 物理意義：hook 一定要找到 git root 才能找到 AgentCommands/queue.json + .claude/state/
+# 數值影響：找錯 root 會讓 state file / queue 寫到錯位置，整套機制失靈
+_env_root = os.environ.get("CLAUDE_PROJECT_DIR")
+if _env_root and Path(_env_root).is_dir():
+    GIT_ROOT = Path(_env_root).resolve()
+else:
+    _walked = _find_git_root_by_walk(Path(__file__))
+    GIT_ROOT = _walked if _walked else Path(__file__).resolve().parents[2]
+
+# run_cmd.py 一定與本檔同目錄（Tools~/AgentCommands/）
+RUN_CMD = Path(__file__).resolve().parent / "run_cmd.py"
 STATE_DIR = GIT_ROOT / ".claude" / "state"
 STATE_FILE = STATE_DIR / "pending_validations.txt"
 REPORT_DIR_REL = Path("CardGame") / "AgentCommands"

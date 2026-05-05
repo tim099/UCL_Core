@@ -13,9 +13,17 @@ target_audience: [Tools_Maintainer, Gameplay_Programmer]
 ## 0. 適用前提
 
 - 使用 [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
-- 專案內含 UCL_Core 作為 submodule（無論放哪都行，但本文件範例以 `<gitRoot>/CardGame/Assets/UCL/UCL_Core/` 為例）
+- 專案內含 UCL_Core（無論放哪都行）
 - Python 3.10+（hook 腳本依賴）
 - Unity Editor 在開發時保持開啟（讓 `UCL_AgentCommandWatcher` 可以接手 trigger；詳見 [DevLog 00001](../../DevLogs~/00001_2026-05-05.md)）
+
+> [!IMPORTANT]
+> **本文件用 `<UCL_CORE>` 代表 UCL_Core 在你專案內的相對路徑**（相對 git root）。視專案結構而定，可能是：
+> - `Assets/UCL/UCL_Core` — Unity 專案以 git root 為 Unity project root 時
+> - `CardGame/Assets/UCL/UCL_Core` — Unity project 在 git root 下一層子目錄時（如 Emblem of Valor）
+> - `UCL_Core` — 純工具 / 後端專案，UCL_Core 直接放 root
+>
+> 套用 settings.json 範本時請把 `<UCL_CORE>` 替換成你的實際路徑。
 
 ## 1. 兩段式設計
 
@@ -44,7 +52,7 @@ AI agent 寫 / 改 RCG_*Data JSON
 └──────────────────────────────────────────────────────────────┘
 ```
 
-兩段共用 **同一支 hook 腳本**：[`CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py`](../../Tools~/AgentCommands/hook_validate_modified.py)，靠 `--mode post` / `--mode stop` 區分。
+兩段共用 **同一支 hook 腳本**：[`<UCL_CORE>/Tools~/AgentCommands/hook_validate_modified.py`](../../Tools~/AgentCommands/hook_validate_modified.py)（其中 `<UCL_CORE>` 是 UCL_Core 在你專案內的相對路徑），靠 `--mode post` / `--mode stop` 區分。
 
 ## 2. 設定步驟
 
@@ -61,7 +69,7 @@ AI agent 寫 / 改 RCG_*Data JSON
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true",
+            "command": "python \"$CLAUDE_PROJECT_DIR/<UCL_CORE>/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true",
             "timeout": 10
           }
         ]
@@ -72,7 +80,7 @@ AI agent 寫 / 改 RCG_*Data JSON
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode stop",
+            "command": "python \"$CLAUDE_PROJECT_DIR/<UCL_CORE>/Tools~/AgentCommands/hook_validate_modified.py\" --mode stop",
             "timeout": 180
           }
         ]
@@ -97,25 +105,40 @@ state file 記錄當前 session 內待驗證的 asset，是 transient 資料，�
 .claude/state/
 ```
 
-### 2.3 確認 Python 路徑
+### 2.3 把範本內的 `<UCL_CORE>` 替換成實際路徑
+
+從 git root 看你的 UCL_Core 在哪：
+
+```bash
+# 在 git root 跑
+find . -type d -name UCL_Core | grep -v Library | grep -v node_modules
+```
+
+用輸出的相對路徑（去掉開頭 `./`）取代 §2.1 範本的兩個 `<UCL_CORE>`。例：
+
+| 找到的路徑 | 替換後的 hook command |
+|---|---|
+| `Assets/UCL/UCL_Core` | `python "$CLAUDE_PROJECT_DIR/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py" --mode post ...` |
+| `CardGame/Assets/UCL/UCL_Core` | `python "$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py" --mode post ...` |
+| `UCL_Core` | `python "$CLAUDE_PROJECT_DIR/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py" --mode post ...` |
+
+### 2.4 確認 Python 路徑
 
 Hook 腳本用 `python` 呼叫（依靠 `PATH`）。如果你的環境用 `python3` 或特定路徑：
 
 ```json
-"command": "python3 \"CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true"
+"command": "python3 \"$CLAUDE_PROJECT_DIR/<UCL_CORE>/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true"
 ```
 
-### 2.4 路徑調整（若 UCL_Core 不在 `CardGame/Assets/UCL/UCL_Core/`）
+### 2.5 腳本內部如何找 git root（自動，不必改）
 
-腳本透過 `Path(__file__).resolve().parents[6]` 定位 git root。若你的 UCL_Core 在不同層級，需修改 `parents[N]` 數字。預設假設：
+腳本 `hook_validate_modified.py` 與 `run_cmd.py` 內部用以下三段優先序找 git root：
 
-```
-<gitRoot>/
-└── CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py
-       ↑ 6 層上去就是 gitRoot
-```
+1. **環境變數 `CLAUDE_PROJECT_DIR`**（Claude Code hook 注入；最權威）
+2. **從本檔位置往上找第一個含 `.git` 「資料夾」**（避開 submodule 的 `.git` file，這樣能跨「UCL_Core 是 submodule」的情境）
+3. **fallback：使用 UCL_Core 本身為 root**（罕見，僅 UCL_Core 獨立用時）
 
-如果你的結構不同（例：UCL_Core 直接在 `<gitRoot>/UCL_Core/`），fork 一份 hook script 並改 `parents[N]` 即可。
+所以**不論 UCL_Core 放在你專案的哪一層級，腳本本身不需要改**。只要 §2.1 settings.json 內的路徑正確指到腳本位置即可。
 
 ## 3. 行為示意
 

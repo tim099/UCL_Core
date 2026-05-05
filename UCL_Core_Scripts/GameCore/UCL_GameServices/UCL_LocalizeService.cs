@@ -11,7 +11,39 @@ namespace UCL.Core.Game {
     public class UCL_LocalizeService : UCL_GameService {
         #region key
         public const string DefaultLangKey = "en";
-        public const string CurLangKey = "CurLang";
+
+        /// <summary>
+        /// 預設 PlayerPrefs key（保留 const 提供向後相容；未覆寫時 <see cref="CurLangKey"/> 會回傳此值）。
+        /// </summary>
+        public const string DefaultCurLangKey = "CurLang";
+
+        // 區塊職責：當前語言用的 PlayerPrefs key 儲存欄位（可被上層專案覆寫）
+        // 物理意義：UCL_Core 預設用 "CurLang" 當 key，但有些第三方 plugin（例：Utage）也用同名 key →
+        //          跨專案撞 key 會互相覆蓋。讓 key 變成 settable，上層專案可在 bootstrap 改成自己的命名空間
+        // 數值影響：影響後續 PlayerPrefs.GetString / SetString 的 key；**改動必須在第一次讀寫 CurLang
+        //          之前完成**，否則用舊 key 寫入的值讀不回來
+        private static string s_CurLangKey = DefaultCurLangKey;
+
+        /// <summary>
+        /// 用來存「當前語言」的 PlayerPrefs key。預設 <see cref="DefaultCurLangKey"/> = "CurLang"。
+        ///
+        /// **跨專案撞 key 場景**（例如另一個專案同時使用 Utage，Utage 也用 "CurLang"）→
+        /// 在專案 bootstrap 程式中改寫：
+        /// <code>
+        /// UCL_LocalizeService.CurLangKey = "MyProj_CurLang";
+        /// </code>
+        /// 必須在第一次存取 <see cref="CurLang"/> 之前設定，否則會讀不到先前用舊 key 寫入的值。
+        /// 設為 <c>null</c> 或空字串會被忽略（保留先前的值）。
+        /// </summary>
+        public static string CurLangKey
+        {
+            get => s_CurLangKey;
+            set
+            {
+                if (string.IsNullOrEmpty(value)) return;
+                s_CurLangKey = value;
+            }
+        }
         #endregion
         public static string LoadLangPath => "Install/.Language";
         public static string CurLang

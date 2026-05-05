@@ -7,15 +7,12 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using Cysharp.Threading.Tasks;
 using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
-
 namespace UCL.Core.EditorLib.Page
 {
     /// <summary>
@@ -76,32 +73,6 @@ namespace UCL.Core.EditorLib.Page
             {
                 UCL_AgentCommandRunner.Menu_OpenQueueFolder();
             }
-            if (GUILayout.Button("Export Cmd Catalog", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                ExportCommandCatalog();
-            }
-        }
-
-        // ===========================================================
-        // 區塊：Export Cmd Catalog 按鈕
-        // 職責：把所有透過 UCL_AgentCommandRegistry 自動註冊的 Handler 一次性匯出成單一 Markdown 檔
-        // 物理意義：與 Cmd_ExportCommandCatalog 共用渲染邏輯，按鈕只是 UI 觸發點；同一份 catalog 可由
-        //          UI 按鈕 / queue.json Cmd / Unity batchmode 三種方式產出，內容一致
-        // 數值影響：在 AgentCommands/commands_catalog.md 寫入或覆寫
-        // ===========================================================
-        void ExportCommandCatalog()
-        {
-            // 輸出落在 CardGame/AgentCommands/（Unity 專案根目錄，避開外層 git root + submodule）
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
-
-            string outDir = Path.Combine(projectRoot, "AgentCommands");
-            if (!Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
-            string outPath = Path.Combine(outDir, "commands_catalog.md");
-
-            var handlers = UCL_AgentCommandRegistry.ListHandlers();
-            string content = Cmd_ExportCommandCatalog.RenderCatalogMarkdown(handlers);
-            File.WriteAllText(outPath, content, new UTF8Encoding(false));
-            Debug.Log($"[UCL_AgentCmd UI] Exported {handlers.Count} command(s) catalog → {outPath}");
         }
 
         protected override void ContentOnGUI()
@@ -117,6 +88,13 @@ namespace UCL.Core.EditorLib.Page
             {
                 GUILayout.Label($"Queue: {UCL_AgentCommandQueue.GetQueuePath()}", UCL_GUIStyle.LabelStyle);
             }
+
+            // ==== Watcher 狀態列 ====
+            // 區塊職責：顯示 lock-file watcher 啟用狀態 + 當前 trigger 狀態 + 最近一次觸發時間
+            // 物理意義：watcher 啟用時，外部（Python）寫入 pending.trigger 後此 Editor 會自動接手執行；
+            //          停用時則退回為「僅手動 Run Pending」的舊行為
+            // 數值影響：toggle 寫入 EditorPrefs，Watcher 在 OnEditorUpdate 中讀取此值決定是否輪詢
+            DrawWatcherStatusBar();
 
             // ==== 統計列 ====
             // 區塊職責：在頂端顯示 queue 內的指令數量分布
@@ -158,6 +136,8 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("- Repeatable：每次 Run 都會再執行一次，並把 RunCount +1", UCL_GUIStyle.LabelStyle);
                 GUILayout.Label("- Run 之前自動 await UCL_ModuleService.WaitUntilInitialized — 確保模組系統已就緒", UCL_GUIStyle.LabelStyle);
                 GUILayout.Label("- 失敗的指令會把錯誤訊息寫進 LastRunError 並留在 queue（不會被移除）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("- Auto-Watcher 啟用時：外部寫入 AgentCommands/pending.trigger 即會自動觸發 Run Pending（無需手動點按鈕）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("- 想匯出 Cmd 目錄？加一筆 'ExportCommandCatalog' Cmd 即可（不再有獨立按鈕）", UCL_GUIStyle.LabelStyle);
             }
 
             GUILayout.EndScrollView();
@@ -317,6 +297,47 @@ namespace UCL.Core.EditorLib.Page
                     // 清空僅與本次新增有關的欄位（保留 Mode / 選定的 Command 方便連續新增）
                     m_NewDescription = "";
                     m_NewArgsRaw = "";
+                }
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Watcher 狀態列
+        // 職責：toggle 啟用 / 顯示 trigger 狀態 / 顯示最近觸發時間
+        // 物理意義：lock-file 機制的可視化入口 — 使用者可一眼確認 watcher 是否在跑
+        // 數值影響：toggle 寫 EditorPrefs；其餘為唯讀資訊顯示
+        // ===========================================================
+        void DrawWatcherStatusBar()
+        {
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                bool prevEnabled = UCL_AgentCommandWatcher.Enabled;
+                bool newEnabled = GUILayout.Toggle(prevEnabled, " Auto-Watcher", UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
+                if (newEnabled != prevEnabled)
+                {
+                    UCL_AgentCommandWatcher.Enabled = newEnabled;
+                }
+
+                var state = UCL_AgentCommandTrigger.GetState();
+                Color stateColor = state switch
+                {
+                    UCL_AgentCommandTrigger.TriggerState.Running => Color.cyan,
+                    UCL_AgentCommandTrigger.TriggerState.Pending => Color.yellow,
+                    _ => Color.gray,
+                };
+                GUILayout.Label($"<color=#{ColorUtility.ToHtmlStringRGB(stateColor)}>● {state}</color>",
+                    UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
+
+                var last = UCL_AgentCommandWatcher.LastTriggerAt;
+                string lastText = last == DateTime.MinValue ? "(never)" : last.ToString("HH:mm:ss");
+                GUILayout.Label($"Last trigger: {lastText}", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
+
+                GUILayout.FlexibleSpace();
+
+                // 給人類測試 watcher 的便利按鈕：手動寫一個 pending.trigger
+                if (GUILayout.Button("Simulate Trigger", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    UCL_AgentCommandTrigger.CreatePending("editor-simulate");
                 }
             }
         }

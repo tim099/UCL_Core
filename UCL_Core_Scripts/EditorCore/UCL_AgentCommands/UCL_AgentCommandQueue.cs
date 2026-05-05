@@ -28,6 +28,14 @@ namespace UCL.Core.EditorLib.AgentCommands
         public const string QueueDirRelative = "AgentCommands";
         public const string QueueFileName = "queue.json";
 
+        // 區塊職責：lock-file 機制使用的兩個 trigger 檔名
+        // 物理意義：
+        //   TriggerFileName        — Python / 外部寫入後留下的「請執行」訊號
+        //   RunningTriggerFileName — Watcher 偵測到 Trigger 後 File.Move 為此名，代表「Editor 已接手」
+        // 數值影響：兩檔皆為跨 process 同步用的 marker；Runner finally 結束時刪除 .running 檔，外部可監聽該事件作為「執行完成」訊號。
+        public const string TriggerFileName = "pending.trigger";
+        public const string RunningTriggerFileName = "pending.trigger.running";
+
         /// <summary>取得 queue.json 的絕對路徑（不保證檔案存在）。</summary>
         public static string GetQueuePath()
         {
@@ -40,6 +48,18 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static string GetQueueDir()
         {
             return Path.GetDirectoryName(GetQueuePath());
+        }
+
+        /// <summary>取得 pending.trigger 的絕對路徑（外部寫入此檔以請求 Editor 執行 queue）。</summary>
+        public static string GetTriggerPath()
+        {
+            return Path.Combine(GetQueueDir(), TriggerFileName);
+        }
+
+        /// <summary>取得 pending.trigger.running 的絕對路徑（Editor 接手後 trigger 會被改名為此）。</summary>
+        public static string GetRunningTriggerPath()
+        {
+            return Path.Combine(GetQueueDir(), RunningTriggerFileName);
         }
 
         /// <summary>確保 AgentCommands 資料夾存在。</summary>

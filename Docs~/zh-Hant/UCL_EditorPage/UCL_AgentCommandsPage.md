@@ -3,7 +3,7 @@ title: UCL_AgentCommandsPage
 description: 用於排隊、檢視、觸發儲存於 AgentCommands/queue.json 的 agent 指令的編輯器頁面。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AgentCommandsPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-04
+last_updated: 2026-05-05
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -19,24 +19,29 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 - **UCL Core 選單**：`Tools/UCL/Agent Commands/...`（由 [`UCL_AgentCommandRunner`](#5-相關類別) 提供）
 - **專案入口（RCG / Emblem of Valor）**：`EditorMenu → Agent Commands` 按鈕
 
-它是個薄薄的 IMGUI 殼，組合四個協作型別：
+它是個薄薄的 IMGUI 殼，組合多個協作型別：
 
 | 型別 | 角色 |
 |---|---|
 | `UCL_AgentCommand` | 一筆排隊指令的資料模型（Id / Type / Mode / Args / 執行結果） |
-| `UCL_AgentCommandQueue` | 讀寫 `<repoRoot>/AgentCommands/queue.json` |
+| `UCL_AgentCommandQueue` | 讀寫 `<repoRoot>/AgentCommands/queue.json` + trigger 路徑 helpers |
+| `UCL_AgentCommandTrigger` ★ | lock-file ops 封裝（Pending/Running/Idle 狀態機；File.Move 接手） |
+| `UCL_AgentCommandWatcher` ★ | `[InitializeOnLoad]` + `EditorApplication.update` 1Hz；偵測 `pending.trigger` 自動觸發 Runner |
 | `UCL_AgentCommandHandlerBase` | 所有 handler 的抽象基底 — 反射自動發現 |
 | `UCL_AgentCommandRegistry` | 收集已發現的 handler，依 `CommandType`（大小寫不敏感）索引 |
-| `UCL_AgentCommandRunner` | 非同步 runner — 在分派前先 await `UCL_ModuleService.WaitUntilInitialized` |
+| `UCL_AgentCommandRunner` | 非同步 runner — 分派前先 await `UCL_ModuleService.WaitUntilInitialized`，finally 清 trigger |
 
 ## 2. 頁面佈局
 
 ```
 ┌─ TopBar ────────────────────────────────────────────────────────────┐
-│ [Back] [Close] | UCL_AgentCommandsPage [Copy] [Refresh] [Run] [...] │
-├─ Queue 路徑 / 統計 ─────────────────────────────────────────────────┤
+│ [Back] [Close] | UCL_AgentCommandsPage [Copy] [Refresh] [Run] [Open]│
+├─ Queue 路徑 ────────────────────────────────────────────────────────┤
 │ Queue: <repo>/AgentCommands/queue.json                              │
-│ Total: 3 | Pending: 1 | Done: 1 | Repeatable: 1                     │
+├─ Watcher 狀態列 ★ ──────────────────────────────────────────────────┤
+│ ☑ Auto-Watcher  ● Idle/Pending/Running  Last trigger: HH:MM:SS  [Simulate]│
+├─ 統計 ──────────────────────────────────────────────────────────────┤
+│ Total: 3 | OneShot: 1 | Repeatable: 2                               │
 ├─ Commands（queue.json 內容） ───────────────────────────────────────┤
 │ ● [Pending] ExportEquipmentNotes (OneShot)            [Remove]      │
 │ ● [Done]    Ping                  (Repeatable)        [Remove]      │
@@ -61,8 +66,20 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 按鈕 | 行為 |
 |---|---|
 | `Refresh` | 從硬碟重新讀 `queue.json` 進記憶體快取 |
-| `Run Pending Commands` | 呼叫 `UCL_AgentCommandRunner.Menu_RunPending()`（async）；約 1.5 秒後自動 refresh |
+| `Run Pending Commands` | 呼叫 `UCL_AgentCommandRunner.Menu_RunPending()`（async）；約 1.5 秒後自動 refresh。**Auto-Watcher 啟用時通常不必手動按**。 |
 | `Open Folder` | 直接打開 `AgentCommands/` 資料夾 |
+
+> [!NOTE]
+> 舊版的「Export Cmd Catalog」獨立按鈕已移除。改用方式：在 Add Command 區塊加一筆 `ExportCommandCatalog` Cmd（與其他 Cmd 走同一管線，內容一致）。
+
+## 3a. Watcher 狀態列 ★ NEW
+
+| 元素 | 意義 |
+|---|---|
+| `☑ Auto-Watcher` toggle | 啟 / 停用 `UCL_AgentCommandWatcher`（寫入 EditorPrefs `UCL.AgentCmd.Watcher.Enabled`）；停用時退回為純手動模式 |
+| `● Idle / Pending / Running` 燈號 | 當前 trigger 檔狀態（Idle = 都沒有 / Pending = 有 `pending.trigger` / Running = 有 `pending.trigger.running`）|
+| `Last trigger` | Watcher 最近一次接手 trigger 的時間（給除錯用）|
+| `Simulate Trigger` 按鈕 | 手動寫一個 `pending.trigger`（驗證 watcher 是否在跑）|
 
 ## 4. 如何新增一個指令類型
 

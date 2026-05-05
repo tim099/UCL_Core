@@ -42,7 +42,7 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
        │   ┌──────────────────────────────────────────────────┐
        ├──→│ a) UCL_AgentCommandsPage（Editor IMGUI）          │
        ├──→│ b) Tools/UCL/Agent Commands/Run Pending（Menu）    │
-       ├──→│ c) Tools/AgentCommands/run_cmd.py（Python CLI）   │
+       ├──→│ c) Tools~/AgentCommands/run_cmd.py（Python CLI）   │
        └──→│ d) Unity batchmode -executeMethod（headless CI）  │
            └──────────────────────────────────────────────────┘
                                 │
@@ -166,23 +166,23 @@ public class Cmd_MyCustom : UCL_AgentCommandHandlerBase
 | 1 | `UCL_AgentCommandsPage` UI 內 **Run Pending** 按鈕 | 半 | 人類 | 即時 |
 | 2 | `Tools/UCL/Agent Commands/Run Pending` Editor 選單 | 半 | 人類 | 即時 |
 | 3 | 直接編輯 `queue.json` + 上面任一觸發 | 半 | Agent + 人類點按鈕 | 即時 |
-| 4 | **Python 包裝器** [`Tools/AgentCommands/run_cmd.py`](../../../../Tools/AgentCommands/run_cmd.py) ⭐ | 半（Editor 必須開）| **Agent CLI 推薦** | 即時 |
+| 4 | **Python 包裝器** [`Tools~/AgentCommands/run_cmd.py`](../../../../Tools~/AgentCommands/run_cmd.py) ⭐ | 半（Editor 必須開）| **Agent CLI 推薦** | 即時 |
 | 5 | **Unity Batchmode** `-batchmode -executeMethod` | **全** | CI / 排程 | ~30 秒（啟 Unity）|
 
 ### Python 包裝器範例
 
 ```bash
 # submit + wait（適合 Agent CLI）
-python Tools/AgentCommands/run_cmd.py run ResolveAssetReferences \
+python Tools~/AgentCommands/run_cmd.py run ResolveAssetReferences \
     --arg assetType=RCG_StoryData --arg assetIds=AbandonedTemple \
     --arg maxDepth=3 --arg format=md \
     --output-file CardGame/AgentCommands/asset_refs_AbandonedTemple.md
 
 # 列 queue
-python Tools/AgentCommands/run_cmd.py list
+python Tools~/AgentCommands/run_cmd.py list
 
 # 顯示 catalog
-python Tools/AgentCommands/run_cmd.py catalog
+python Tools~/AgentCommands/run_cmd.py catalog
 ```
 
 ### Unity Batchmode 範例（CI / 排程）
@@ -297,4 +297,4 @@ foreach (var cmd in queue.Commands)
 - [`docs/Workflows/AgentCommands_Workflow.md`](../../../../../../../docs/Workflows/AgentCommands_Workflow.md) — 專案層工作流（含完整觸發方式對照、新增指令 SOP、命名空間踩雷紀錄）
 
 ### 工具
-- [`Tools/AgentCommands/run_cmd.py`](../../../../Tools/AgentCommands/run_cmd.py) — Python CLI 包裝器
+- [`Tools~/AgentCommands/run_cmd.py`](../../../../Tools~/AgentCommands/run_cmd.py) — Python CLI 包裝器

@@ -12,7 +12,8 @@
 
 | 系統 | 說明 |
 |---|---|
-| 🤖 **Agent Command 系統** | AI agent 與 Unity Editor 的跨 process 指令系統 — agent 寫 `queue.json`、Editor 執行、結果回寫；含自動發現 / 反射註冊 / async 執行流程；支援 4 種觸發方式（Editor UI / Menu / Python CLI / batchmode）|
+| 🤖 **Agent Command 系統** | AI agent 與 Unity Editor 的跨 process 指令系統 — agent 寫 `queue.json` + `pending.trigger`（lock-file），Editor 端 `UCL_AgentCommandWatcher`（`[InitializeOnLoad]`）1Hz 自動偵測接手；含自動發現 / 反射註冊 / async 執行流程；支援 5 種觸發方式（**Python CLI + lock-file 自動觸發** ⭐ / Editor UI / Menu / 手寫 queue.json / batchmode）|
+| 🐍 **Tools~/AgentCommands/** | Python wrapper（`Tools~/` 字尾讓 Unity 略過 import）— `run_cmd.py` 提供 `submit/wait/run/list/catalog` 子命令，含 `ensure_idle()` pre-flight 串行化保證 |
 | 🧱 **UCL_Asset 資產系統** | `UCL_Asset<T>` 通用 JSON 序列化資產容器，含 `UCLI_AssetEntry<T>` 跨資產引用 + 模組載入順序 + cache 管理 |
 | 🗂 **UCL_ModuleService** | 模組系統 — 多模組（Core + 子模組）並存、跨模組 ID lookup、Persistent / Built-in 路徑切換 |
 | 🖥 **Editor IMGUI Pages** | `UCL_CommonEditorPage` / `UCL_AgentCommandsPage` / `UCL_SelectAssetPage` 等可繼承的編輯器頁面 |
@@ -26,6 +27,10 @@
 - 🇨🇳 [简体中文](Docs~/zh-Hans/index.md)
 - 🇯🇵 [日本語](Docs~/ja/index.md)
 - 🇬🇧 [English](Docs~/en/index.md)
+
+### 📝 更新紀錄
+
+[`DevLogs~/`](DevLogs~/) — 給插件使用者的更新內容說明（一筆一檔，檔名 `NNNNN_YYYY-MM-DD.md`）。最新一筆 → [00001_2026-05-05](DevLogs~/00001_2026-05-05.md)：Agent Command 系統新增 Lock-file 自動觸發機制。
 
 ⭐ **重點推薦**：[`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統的整體架構文件（元件圖 / 生命週期 / 觸發方式對照 / 擴充點）。
 

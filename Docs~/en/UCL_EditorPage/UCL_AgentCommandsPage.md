@@ -162,3 +162,13 @@ The runner calls `UCL_ModuleService.WaitUntilInitialized(token)` before dispatch
 
 > [!IMPORTANT]
 > Editor-only. The whole system is wrapped in `#if UNITY_EDITOR` and must not be referenced from runtime code paths.
+
+## ★ NEW: Lock-file Watcher (auto-trigger)
+
+Since 2026-05-05, `UCL_AgentCommandWatcher` (`[InitializeOnLoad]`) polls `<repoRoot>/AgentCommands/pending.trigger` once per second; when present, it does an atomic `File.Move` to `pending.trigger.running` and invokes the Runner. The page now shows a Watcher status row (Auto-Watcher toggle / Idle/Pending/Running indicator / Last trigger time / Simulate Trigger button).
+
+The "Export Cmd Catalog" stand-alone button is removed — add an `ExportCommandCatalog` cmd via the Add Command form instead (same code path, same output).
+
+Python wrapper: `CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py` (writes the trigger; `ensure_idle()` blocks if a previous batch hasn't finished).
+
+For the full design (state machine, ensure_idle, failure modes), see the project workflow doc: `docs/Workflows/AgentCommands_Workflow.md` §8a.0.

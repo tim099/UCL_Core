@@ -33,7 +33,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 1. Editor UI (`UCL_AgentCommandsPage`) buttons
 2. `Tools/UCL/Agent Commands/Run Pending` Editor menu
 3. Directly edit `AgentCommands/queue.json` + invoke any above triggers
-4. **Python CLI wrapper** — `Tools/AgentCommands/run_cmd.py` (recommended for agents)
+4. **Python CLI wrapper** — `Tools~/AgentCommands/run_cmd.py` (recommended for agents)
 5. **Unity Batchmode** (CI / fully automated)
 
 Complete comparison and examples can be found in [UCL_AgentCommand_Architecture §7](API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md#7-觸發方式對照).
@@ -95,7 +95,7 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 ## Cross-Repo Resources
 
 - Project-level workflow (including complete Agent Command workflow and troubleshooting): [`docs/Workflows/AgentCommands_Workflow.md`](../../../../../../docs/Workflows/AgentCommands_Workflow.md)
-- Python CLI wrapper: [`Tools/AgentCommands/run_cmd.py`](../../../../Tools/AgentCommands/run_cmd.py)
+- Python CLI wrapper: [`Tools~/AgentCommands/run_cmd.py`](../../Tools~/AgentCommands/run_cmd.py)
 - queue.json location: `AgentCommands/queue.json` (Project root directory)
 
 ---

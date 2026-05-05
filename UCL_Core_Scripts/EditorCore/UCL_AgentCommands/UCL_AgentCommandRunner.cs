@@ -36,6 +36,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>是否正在執行（防止重複觸發）。</summary>
         static bool s_Running = false;
 
+        /// <summary>對外查詢：runner 是否正忙著跑 batch。Watcher 用此避免重入。</summary>
+        public static bool IsRunning => s_Running;
+
         // ===========================================================
         // Menu Items（Tools/UCL/Agent Commands/）
         // ===========================================================
@@ -183,6 +186,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             finally
             {
+                // 區塊職責：無論成功 / 失敗 / 例外都要清掉 trigger 檔
+                // 物理意義：pending.trigger.running 是 Python 端「Editor 是否還在執行」的判定依據；
+                //          殘留會導致下一次 Python ensure_idle() 永遠等不到 idle，整個流程鎖死。
+                // 數值影響：刪除 .running（與保險用的 .trigger）→ 狀態回到 idle，外部可繼續 submit。
+                UCL_AgentCommandTrigger.Clear();
                 s_Running = false;
             }
         }

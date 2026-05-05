@@ -33,7 +33,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 1. エディター UI（`UCL_AgentCommandsPage`）ボタン
 2. `Tools/UCL/Agent Commands/Run Pending` エディターメニュー
 3. `AgentCommands/queue.json` を直接編集し、上記のいずれかのトリガーを呼び出す
-4. **Python CLI ラッパー** — `Tools/AgentCommands/run_cmd.py`（エージェント推奨）
+4. **Python CLI ラッパー** — `Tools~/AgentCommands/run_cmd.py`（エージェント推奨）
 5. **Unity Batchmode**（CI / 完全自動）
 
 詳細な比較と例については、[UCL_AgentCommand_Architecture §7](API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md#7-觸發方式對照) を参照してください。
@@ -95,7 +95,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ## クロスリポジトリリソース
 
 - プロジェクトレベルのワークフロー（完全な Agent Command ワークフローおよびトラブルシューティングを含む）: [`docs/Workflows/AgentCommands_Workflow.md`](../../../../../../docs/Workflows/AgentCommands_Workflow.md)
-- Python CLI ラッパー: [`Tools/AgentCommands/run_cmd.py`](../../../../Tools/AgentCommands/run_cmd.py)
+- Python CLI ラッパー: [`Tools~/AgentCommands/run_cmd.py`](../../Tools~/AgentCommands/run_cmd.py)
 - queue.json の場所: `AgentCommands/queue.json` (プロジェクトルートディレクトリ)
 
 ---

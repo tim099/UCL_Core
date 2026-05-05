@@ -33,7 +33,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 1. Editor UI（`UCL_AgentCommandsPage`）按鈕
 2. `Tools/UCL/Agent Commands/Run Pending` Editor 選單
 3. 直接編輯 `AgentCommands/queue.json` + 上面任一觸發
-4. **Python CLI 包裝器** — `Tools/AgentCommands/run_cmd.py`（推薦給 Agent）
+4. **Python CLI 包裝器** — `Tools~/AgentCommands/run_cmd.py`（推薦給 Agent）
 5. **Unity Batchmode**（CI / 全自動）
 
 完整對照與範例見 [UCL_AgentCommand_Architecture §7](API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md#7-觸發方式對照)。
@@ -95,7 +95,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ## 跨 repo 資源
 
 - 專案層工作流（含完整 Agent Command 工作流、踩雷紀錄）：[`docs/Workflows/AgentCommands_Workflow.md`](../../../../../../docs/Workflows/AgentCommands_Workflow.md)
-- Python CLI 包裝器：[`Tools/AgentCommands/run_cmd.py`](../../../../Tools/AgentCommands/run_cmd.py)
+- Python CLI 包裝器：[`Tools~/AgentCommands/run_cmd.py`](../../Tools~/AgentCommands/run_cmd.py)
 - queue.json 位置：`AgentCommands/queue.json`（專案根目錄）
 
 ---

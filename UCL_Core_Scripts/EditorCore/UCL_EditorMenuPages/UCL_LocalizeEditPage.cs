@@ -11,7 +11,7 @@ using UCL.Core.Game;
 
 namespace UCL.Core.EditorLib.Page
 {
-    public class UCL_LocalizeEditPage : UCL.Core.EditorLib.Page.UCL_EditorPage
+    public class UCL_LocalizeEditPage : UCL_CommonEditorPage
     {
         UCL_LocalizeSetting m_LocalizeSetting = null;
         UCL.Core.UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
@@ -151,15 +151,22 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("Key:", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
-                    m_PendingCurLangKey = GUILayout.TextField(m_PendingCurLangKey ?? "", UCL_GUIStyle.LabelStyle);
+                    m_PendingCurLangKey = GUILayout.TextField(m_PendingCurLangKey ?? "", UCL_GUIStyle.TextFieldStyle);
 
                     GUI.enabled = !string.IsNullOrEmpty(m_PendingCurLangKey) && m_PendingCurLangKey != aCurKey;
-                    if (GUILayout.Button("Apply", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    // 區塊職責：Apply 按鈕 — 同時更新 session 內的 static 欄位 + 透過 UCL_Config 持久化到 ConfigAsset
+                    // 物理意義：兩段式更新確保「session 立即生效」且「下次啟動仍記得」。順序很重要：
+                    //          1. 先寫 session 值（CurLangKey setter）→ 後續呼叫立刻看到新 key
+                    //          2. 再寫 UCL_Config + Save → 落地到 ConfigAsset JSON（git-tracked）
+                    //          3. 最後呼叫 SetLanguage 觸發用新 key 重讀對應 PlayerPrefs 值並 reload
+                    // 數值影響：寫一筆 UCL_ConfigAsset/Default.json 到 disk
+                    if (GUILayout.Button("Apply (Persist)", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                     {
                         UCL_LocalizeService.CurLangKey = m_PendingCurLangKey;
-                        // 改完 key → 用新 key 重新讀對應語言並 reload；若新 key 沒寫過會回 DefaultLangKey
+                        UCL_Config.SetString(UCL_LocalizeService.ConfigKey_CurLangKey, m_PendingCurLangKey);
+                        UCL_Config.Save();
                         UCL_LocalizeService.SetLanguage(UCL_LocalizeService.CurLang);
-                        Debug.Log($"[UCL_LocalizeEditPage] CurLangKey: '{aCurKey}' → '{m_PendingCurLangKey}'");
+                        Debug.Log($"[UCL_LocalizeEditPage] CurLangKey: '{aCurKey}' → '{m_PendingCurLangKey}' (persisted via UCL_Config)");
                     }
                     GUI.enabled = true;
 
@@ -169,10 +176,31 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
+                // 區塊職責：清除 ConfigAsset 內的 override，讓系統回到 DefaultCurLangKey
+                // 物理意義：若使用者過去設過 override 想退回預設，按此即可（會同時清 session + persist）
+                // 數值影響：刪 UCL_ConfigAsset 內 ConfigKey_CurLangKey 那筆 entry + Save
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool aHasOverride = UCL_Config.HasKey(UCL_LocalizeService.ConfigKey_CurLangKey);
+                    GUI.enabled = aHasOverride;
+                    if (GUILayout.Button("Clear Persisted Override", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_Config.DeleteKey(UCL_LocalizeService.ConfigKey_CurLangKey);
+                        UCL_Config.Save();
+                        UCL_LocalizeService.CurLangKey = UCL_LocalizeService.DefaultCurLangKey;
+                        m_PendingCurLangKey = UCL_LocalizeService.DefaultCurLangKey;
+                        UCL_LocalizeService.SetLanguage(UCL_LocalizeService.CurLang);
+                        Debug.Log("[UCL_LocalizeEditPage] CurLangKey override cleared, reverted to default.");
+                    }
+                    GUI.enabled = true;
+
+                    GUILayout.Label(aHasOverride ? "  (override 存在於 ConfigAsset)" : "  (目前用預設值)",
+                        UCL_GUIStyle.LabelStyle);
+                }
+
                 GUILayout.Label($"  Default: \"{UCL_LocalizeService.DefaultCurLangKey}\"", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  ⚠ 此處改動只活在當前 Editor/Player session。要永久化請在專案 bootstrap：", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("      UCL_LocalizeService.CurLangKey = \"<your_key>\";", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  （在第一次存取 CurLang 之前設定，避免讀到舊 key 寫入的值）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("  💾 Apply 會持久化到 UCL_ConfigAsset/Default.json，下次啟動自動載入。", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("  ⌨ 程式控制（純 session）：UCL_LocalizeService.CurLangKey = \"<your_key>\";", UCL_GUIStyle.LabelStyle);
             }
         }
     }

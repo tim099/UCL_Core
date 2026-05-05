@@ -20,30 +20,75 @@ namespace UCL.Core.Game {
         // 區塊職責：當前語言用的 PlayerPrefs key 儲存欄位（可被上層專案覆寫）
         // 物理意義：UCL_Core 預設用 "CurLang" 當 key，但有些第三方 plugin（例：Utage）也用同名 key →
         //          跨專案撞 key 會互相覆蓋。讓 key 變成 settable，上層專案可在 bootstrap 改成自己的命名空間
-        // 數值影響：影響後續 PlayerPrefs.GetString / SetString 的 key；**改動必須在第一次讀寫 CurLang
-        //          之前完成**，否則用舊 key 寫入的值讀不回來
+        // 數值影響：影響後續 PlayerPrefs.GetString / SetString 的 key；改動可由：
+        //          (a) 程式設定 (UCL_LocalizeService.CurLangKey = "MyKey")
+        //          (b) UCL_Config 持久化（自動於 ModuleService 就緒後第一次讀 CurLang 時 load）
         private static string s_CurLangKey = DefaultCurLangKey;
+
+        /// <summary>
+        /// 用來持久化 CurLangKey 的 UCL_Config key（meta-key — 存「key 的 key」）。
+        /// </summary>
+        public const string ConfigKey_CurLangKey = "CurLangKey";
+
+        // 區塊職責：標記是否已嘗試從 UCL_ConfigAsset 載入 CurLangKey（lazy + 一次性）
+        // 物理意義：第一次讀 CurLangKey 時若 ModuleService 已 init，就試著從 UCL_Config 拿，
+        //          找到就覆寫 s_CurLangKey；找不到 / 還沒 init 都退回預設值。重複嘗試浪費，
+        //          所以用 flag 鎖一次。後續呼叫 ResetConfigLoadFlag 可重新嘗試（測試用）
+        // 數值影響：純效能優化，不影響行為
+        private static bool s_LoadedFromConfig = false;
 
         /// <summary>
         /// 用來存「當前語言」的 PlayerPrefs key。預設 <see cref="DefaultCurLangKey"/> = "CurLang"。
         ///
-        /// **跨專案撞 key 場景**（例如另一個專案同時使用 Utage，Utage 也用 "CurLang"）→
-        /// 在專案 bootstrap 程式中改寫：
+        /// <para><b>三層解析優先序</b>（高到低）：</para>
+        /// <list type="number">
+        ///   <item>程式 setter（最高）：<c>UCL_LocalizeService.CurLangKey = "MyKey"</c></item>
+        ///   <item>UCL_ConfigAsset 持久化值（透過 UCL_Config）— 第一次讀此屬性時 lazy load</item>
+        ///   <item>編譯期常數 <see cref="DefaultCurLangKey"/> = "CurLang"</item>
+        /// </list>
+        ///
+        /// <para><b>跨專案撞 key 場景</b>（例：另一專案同時使用 Utage，Utage 也用 "CurLang"）：</para>
+        /// 推薦在 UCL_LocalizeEditPage 透過 UI 改 + Apply 持久化 — 不必動程式碼且設定會跟著 git。
+        /// 或在專案 bootstrap 程式中改寫（純 session 內有效）：
         /// <code>
         /// UCL_LocalizeService.CurLangKey = "MyProj_CurLang";
         /// </code>
-        /// 必須在第一次存取 <see cref="CurLang"/> 之前設定，否則會讀不到先前用舊 key 寫入的值。
+        ///
         /// 設為 <c>null</c> 或空字串會被忽略（保留先前的值）。
         /// </summary>
         public static string CurLangKey
         {
-            get => s_CurLangKey;
+            get
+            {
+                // 區塊職責：lazy 從 UCL_Config 載入持久化值；一次性
+                // 物理意義：避免每次讀 CurLangKey 都重 IO；ModuleService 還沒就緒時退回預設、
+                //          但會留 flag false 讓下次 init 後仍有機會嘗試
+                if (!s_LoadedFromConfig)
+                {
+                    string aFromConfig = UCL_Config.GetString(ConfigKey_CurLangKey, null);
+                    // 注意：UCL_Config.GetString 內部會檢查 ModuleService.Initialized；未就緒時回 null（=default 值）
+                    if (UCL_ModuleService.Initialized)
+                    {
+                        s_LoadedFromConfig = true;
+                        if (!string.IsNullOrEmpty(aFromConfig))
+                        {
+                            s_CurLangKey = aFromConfig;
+                        }
+                    }
+                }
+                return s_CurLangKey;
+            }
             set
             {
                 if (string.IsNullOrEmpty(value)) return;
                 s_CurLangKey = value;
+                // 一旦程式 setter 改過，就不需要再從 Config 載入（避免下次讀又被 Config 值覆蓋）
+                s_LoadedFromConfig = true;
             }
         }
+
+        /// <summary>重置「已從 Config 載入」旗標 — 給測試 / 編輯器強制 reload 用。一般不必呼叫。</summary>
+        public static void ResetConfigLoadFlag() => s_LoadedFromConfig = false;
         #endregion
         public static string LoadLangPath => "Install/.Language";
         public static string CurLang

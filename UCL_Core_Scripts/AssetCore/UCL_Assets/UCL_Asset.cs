@@ -39,6 +39,7 @@ namespace UCL.Core
             UCL_LanguageCodeAsset = 1,
             UCL_ModulePlaylist,
             UCL_OnModuleLoadedAsset,
+            UCL_ConfigAsset,
         }
         public enum EditEditorType : int
         {

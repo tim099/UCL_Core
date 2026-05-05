@@ -92,13 +92,13 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("Language", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_Language"), UCL_GUIStyle.LabelStyle);
 
                 // 取所有語言 ID（會走 UCL_ModuleService → 跨模組）
                 var aAllIDs = UCL_LanguageCodeAsset.Util.GetAllIDs(true);
                 if (aAllIDs == null || aAllIDs.Count == 0)
                 {
-                    GUILayout.Label("(no UCL_LanguageCodeAsset registered)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_NoLanguageAsset"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -118,7 +118,7 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Current:", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                    GUILayout.Label(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_Current"), UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
                     int aNewIdx = UCL_GUILayout.PopupSearchCache(aCurIdx, aDisplayOptions, m_Dic, "LangPicker");
                     if (aNewIdx != aCurIdx && aNewIdx >= 0 && aNewIdx < aAllIDs.Count)
                     {
@@ -143,14 +143,14 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("PlayerPrefs Key (CurLangKey)", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_CurLangKey"), UCL_GUIStyle.LabelStyle);
 
                 string aCurKey = UCL_LocalizeService.CurLangKey;
                 if (m_PendingCurLangKey == null) m_PendingCurLangKey = aCurKey;
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Key:", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                    GUILayout.Label(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_Key"), UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
                     m_PendingCurLangKey = GUILayout.TextField(m_PendingCurLangKey ?? "", UCL_GUIStyle.TextFieldStyle);
 
                     GUI.enabled = !string.IsNullOrEmpty(m_PendingCurLangKey) && m_PendingCurLangKey != aCurKey;
@@ -159,8 +159,8 @@ namespace UCL.Core.EditorLib.Page
                     //          1. 先寫 session 值（CurLangKey setter）→ 後續呼叫立刻看到新 key
                     //          2. 再寫 UCL_Config + Save → 落地到 ConfigAsset JSON（git-tracked）
                     //          3. 最後呼叫 SetLanguage 觸發用新 key 重讀對應 PlayerPrefs 值並 reload
-                    // 數值影響：寫一筆 UCL_ConfigAsset/Default.json 到 disk
-                    if (GUILayout.Button("Apply (Persist)", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    // 數值影響：寫一筆 UCL_ConfigAsset/<ConfigKey_CurLangKey>.json 到 disk
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_ApplyPersist"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                     {
                         UCL_LocalizeService.CurLangKey = m_PendingCurLangKey;
                         UCL_Config.SetString(UCL_LocalizeService.ConfigKey_CurLangKey, m_PendingCurLangKey);
@@ -170,7 +170,7 @@ namespace UCL.Core.EditorLib.Page
                     }
                     GUI.enabled = true;
 
-                    if (GUILayout.Button("Reset", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_Reset"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_PendingCurLangKey = UCL_LocalizeService.DefaultCurLangKey;
                     }
@@ -183,7 +183,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     bool aHasOverride = UCL_Config.HasKey(UCL_LocalizeService.ConfigKey_CurLangKey);
                     GUI.enabled = aHasOverride;
-                    if (GUILayout.Button("Clear Persisted Override", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_ClearOverride"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         UCL_Config.DeleteKey(UCL_LocalizeService.ConfigKey_CurLangKey);
                         UCL_Config.Save();
@@ -194,13 +194,16 @@ namespace UCL.Core.EditorLib.Page
                     }
                     GUI.enabled = true;
 
-                    GUILayout.Label(aHasOverride ? "  (override 存在於 ConfigAsset)" : "  (目前用預設值)",
+                    GUILayout.Label(aHasOverride
+                            ? UCL_CodeLocalize.Get("UCL_LocalizeEditPage_OverrideExists")
+                            : UCL_CodeLocalize.Get("UCL_LocalizeEditPage_UsingDefault"),
                         UCL_GUIStyle.LabelStyle);
                 }
 
-                GUILayout.Label($"  Default: \"{UCL_LocalizeService.DefaultCurLangKey}\"", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  💾 Apply 會持久化到 UCL_ConfigAsset/Default.json，下次啟動自動載入。", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  ⌨ 程式控制（純 session）：UCL_LocalizeService.CurLangKey = \"<your_key>\";", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_DefaultFmt"), UCL_LocalizeService.DefaultCurLangKey), UCL_GUIStyle.LabelStyle);
+                // 顯示實際 asset 檔路徑：UCL_ConfigAsset/<ConfigKey_CurLangKey>.json（每 key 一檔）
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_ApplyHintFmt"), UCL_LocalizeService.ConfigKey_CurLangKey), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("UCL_LocalizeEditPage_BootstrapHint"), UCL_GUIStyle.LabelStyle);
             }
         }
     }

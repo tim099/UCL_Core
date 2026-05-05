@@ -1003,6 +1003,10 @@ namespace UCL.Core
             }
             if(m_LocalizeType == LocalizeType.GoogleSheet)
             {
+                if (GUILayout.Button("Open URL", UCL_GUIStyle.ButtonStyle))
+                {
+                    Application.OpenURL($"https://docs.google.com/spreadsheets/d/{m_GoogleSheetData.m_TableId}");
+                }
                 if (!IsDownloading)
                 {
                     if (GUILayout.Button("Download", UCL_GUIStyle.ButtonStyle))

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -478,28 +478,53 @@ namespace UCL.Core.JsonLib {
         public int GetInt(string iKey, int iDefaultVal = 0) {
             var aVal = Get(iKey);
             if(aVal == this) return iDefaultVal;
-            if(aVal.m_Type == JsonType.Int) return (int)aVal;
-            return iDefaultVal;
+            return aVal.GetInt(iDefaultVal);
         }
+        // 區塊職責：數值取值器 (Getter)
+        // 物理意義：從 JsonData 中嘗試提取目標類型的數值。
+        // 數值影響：不直接影響模擬，但影響資料讀取的正確性。若類型不匹配但數值範圍相容，則進行強制轉型。
+
+        /// <summary>
+        /// 取得 int 數值。支援從 Int, UInt, Long, ULong 自動轉型。
+        /// </summary>
         public int GetInt(int iDefaultVal = 0) {
             if(m_Type == JsonType.Int) return (int)m_Obj;  
+            if(m_Type == JsonType.UInt) return (int)(uint)m_Obj;
+            if(m_Type == JsonType.Long) return (int)(long)m_Obj;
+            if(m_Type == JsonType.ULong) return (int)(ulong)m_Obj;
             return iDefaultVal;
         }
+        /// <summary>
+        /// 取得 uint 數值。支援從 UInt, Int, Long, ULong 自動轉型。
+        /// 解決了 Unix Timestamp (如 1734834037) 被解析器判定為 int 時，無法以 uint 讀取的問題。
+        /// </summary>
         public uint GetUInt(uint iDefaultVal = 0)
         {
             if (m_Type == JsonType.UInt) return (uint)m_Obj;
+            if (m_Type == JsonType.Int) return (uint)(int)m_Obj;
+            if (m_Type == JsonType.Long) return (uint)(long)m_Obj;
+            if (m_Type == JsonType.ULong) return (uint)(ulong)m_Obj;
             return iDefaultVal;
         }
+        /// <summary>
+        /// 取得 long 數值。支援從 Long, Int, UInt, ULong 自動轉型。
+        /// </summary>
         public long GetLong(long iDefaultVal = 0) {
             if(m_Type == JsonType.Long) return (long)m_Obj;
-            if(m_Type == JsonType.Int) return (int)m_Obj;
+            if(m_Type == JsonType.Int) return (long)(int)m_Obj;
+            if(m_Type == JsonType.UInt) return (long)(uint)m_Obj;
+            if(m_Type == JsonType.ULong) return (long)(ulong)m_Obj;
             return iDefaultVal;
         }
+        /// <summary>
+        /// 取得 ulong 數值。支援從 ULong, Long, Int, UInt 自動轉型。
+        /// </summary>
         public ulong GetULong(ulong iDefaultVal = 0)
         {
             if (m_Type == JsonType.ULong) return (ulong)m_Obj;
             if (m_Type == JsonType.Long) return (ulong)(long)m_Obj;
             if (m_Type == JsonType.Int) return (ulong)(int)m_Obj;
+            if (m_Type == JsonType.UInt) return (ulong)(uint)m_Obj;
             return iDefaultVal;
         }
         public bool GetBool(string iKey, bool iDefaultVal = false)

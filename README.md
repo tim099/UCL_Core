@@ -30,9 +30,13 @@
 
 ### 📝 更新紀錄
 
-[`DevLogs~/`](DevLogs~/) — 給插件使用者的更新內容說明（一筆一檔，檔名 `NNNNN_YYYY-MM-DD.md`）。最新一筆 → [00001_2026-05-05](DevLogs~/00001_2026-05-05.md)：Agent Command 系統新增 Lock-file 自動觸發機制。
+[`DevLogs~/`](DevLogs~/) — 給插件使用者的更新內容說明（一筆一檔，檔名 `NNNNN_YYYY-MM-DD.md`）。最新：
+- [00002_2026-05-05](DevLogs~/00002_2026-05-05.md)：新增 `Cmd_ValidateAssetFormat` — UCL_Asset schema + 引用完整性檢查
+- [00001_2026-05-05](DevLogs~/00001_2026-05-05.md)：Agent Command 系統新增 Lock-file 自動觸發機制
 
-⭐ **重點推薦**：[`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統的整體架構文件（元件圖 / 生命週期 / 觸發方式對照 / 擴充點）。
+⭐ **重點推薦**：
+- [`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統的整體架構文件（元件圖 / 生命週期 / 觸發方式對照 / 擴充點）
+- 🔍 [`Validate_UCL_Asset_Workflow`](Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md) — 任何寫完 / 改完 UCL_Asset JSON 後的驗收 SOP（搭配 [`Cmd_ValidateAssetFormat`](Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md)）
 
 ### 🖥 如何開啟 UCL_EditorMenu 與 Agent Commands
 

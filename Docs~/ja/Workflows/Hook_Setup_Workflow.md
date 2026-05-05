@@ -20,14 +20,14 @@ Add to your project's `.claude/settings.json`:
       "matcher": "Edit|Write|MultiEdit",
       "hooks": [{
         "type": "command",
-        "command": "python \"CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true",
+        "command": "python \"$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true",
         "timeout": 10
       }]
     }],
     "Stop": [{
       "hooks": [{
         "type": "command",
-        "command": "python \"CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode stop",
+        "command": "python \"$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode stop",
         "timeout": 180
       }]
     }]

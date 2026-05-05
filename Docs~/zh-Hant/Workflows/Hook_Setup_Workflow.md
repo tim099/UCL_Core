@@ -61,7 +61,7 @@ AI agent 寫 / 改 RCG_*Data JSON
         "hooks": [
           {
             "type": "command",
-            "command": "python \"CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true",
+            "command": "python \"$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode post 2>&1 || true",
             "timeout": 10
           }
         ]
@@ -72,7 +72,7 @@ AI agent 寫 / 改 RCG_*Data JSON
         "hooks": [
           {
             "type": "command",
-            "command": "python \"CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode stop",
+            "command": "python \"$CLAUDE_PROJECT_DIR/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/hook_validate_modified.py\" --mode stop",
             "timeout": 180
           }
         ]
@@ -84,6 +84,10 @@ AI agent 寫 / 改 RCG_*Data JSON
 
 > [!NOTE]
 > **為什麼 PostToolUse 結尾有 `|| true`** — 那是 best-effort（不阻塞當前 tool 流程）；Stop 沒有 `|| true`，因為它**就是**要當失敗時 block。
+
+> [!IMPORTANT]
+> **路徑用 `$CLAUDE_PROJECT_DIR/...` 不是相對路徑** — Hook 執行時的 cwd 不保證是專案根（先前 Bash tool 用 `cd ...` 切過去後會持續生效）。寫成相對路徑會在 cwd 漂移時噴 `[Errno 2] No such file or directory` 路徑重複拼接。
+> `$CLAUDE_PROJECT_DIR` 是 Claude Code 注入的環境變數，永遠指向專案根目錄。
 
 ### 2.2 加 `.claude/state/` 到 `.gitignore`
 

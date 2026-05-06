@@ -114,6 +114,38 @@ namespace UCL.Core.LocalizeLib
                 "UCL_SelectAsset" => "Select Asset",
                 "UCL_CreateAsset" => "Create Asset",
                 "UCL_SaveSuccess" => "Save Success!",
+
+                // ==== UCL_WelcomePage ====
+                "Welcome.MenuButton" => "👋 Welcome / Overview",
+                "Welcome.Title" => "👋  Welcome to UCL_Core",
+                "Welcome.Subtitle" => "Cross-project Unity foundation library  ·  Welcome page v{0}",
+                "Welcome.IntroTitle" => "What is UCL_Core?",
+                "Welcome.IntroBody" => "UCL_Core is a cross-project Unity foundation library providing core components: data assets (UCL_Asset), module system, localization, Editor Pages, and the Agent Command cross-process system.\nWant to get started? Pick whichever feature card below matches what you're working on.",
+                "Welcome.FeaturesTitle" => "Core features (click to open)",
+                "Welcome.Asset.Title" => "🧱  UCL_Asset System",
+                "Welcome.Asset.Desc" => "JSON-serialized design assets (cards / items / monsters / ...) — Editor-side visual editing, cross-platform IO, SerializeReference polymorphism support.",
+                "Welcome.Asset.Btn" => "Open Modules Editor",
+                "Welcome.Localize.Title" => "🌐  Localization",
+                "Welcome.Localize.Desc" => "Multi-language Asset + LoadOrder override mechanism + Editor IMGUI editing page.",
+                "Welcome.Localize.Btn" => "Open Localize Editor",
+                "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor cross-process)",
+                "Welcome.Agent.Desc" => "AI agent writes queue.json, Editor Watcher auto-executes — built-ins include ExportDocsCatalog / SearchDocs / FindAssetUsages / ValidateAssetFormat.",
+                "Welcome.Agent.Btn" => "Open Agent Commands Page",
+                "Welcome.Editor.Title" => "🪟  Editor Pages Framework",
+                "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — consistent IMGUI page stack with searchable dropdowns, HelpURL routing, TopBar customization.",
+                "Welcome.Editor.Btn" => "PlayerPrefs Editor (sample)",
+                "Welcome.DocBtn" => "📖 Docs",
+                "Welcome.DocsTitle" => "📚 Documentation index",
+                "Welcome.Docs.Index" => "UCL_Core docs index",
+                "Welcome.Docs.Architecture" => "Agent Command Architecture",
+                "Welcome.Docs.CreateCmd" => "Create Cmd SOP",
+                "Welcome.Docs.Validate" => "Validate UCL_Asset format",
+                "Welcome.AutoOpenToggle" => " Don't auto-open this page again (still available via UCL → Welcome menu)",
+                "Welcome.ResetButton" => "Reset first-open (will pop once on next domain reload)",
+                "Welcome.ResetLog" => "[UCL_Welcome] First-open state reset. Will display again on next domain reload.",
+                "Welcome.PrefKeyLabel" => "PrefKey_ShownVersion: {0}",
+                "Welcome.NotSet" => "(unset)",
+
                 _ => iKey
             };
         }

@@ -114,6 +114,38 @@ namespace UCL.Core.LocalizeLib
                 "UCL_SelectAsset" => "アセットを選択",
                 "UCL_CreateAsset" => "アセットを作成",
                 "UCL_SaveSuccess" => "保存に成功しました！",
+
+                // ==== UCL_WelcomePage ====
+                "Welcome.MenuButton" => "👋 Welcome / 概要",
+                "Welcome.Title" => "👋  UCL_Core へようこそ",
+                "Welcome.Subtitle" => "プロジェクト横断の Unity 基盤ライブラリ  ·  Welcome ページ v{0}",
+                "Welcome.IntroTitle" => "UCL_Core とは？",
+                "Welcome.IntroBody" => "UCL_Core はプロジェクト横断で共有する Unity 基盤ライブラリです。データアセット (UCL_Asset)、モジュールシステム、ローカライズ、Editor Page、Agent Command クロスプロセスシステムなどの主要コンポーネントを提供します。\n素早く始めたい？下の機能カードから普段使うものを 1 つ選んで開始してください。",
+                "Welcome.FeaturesTitle" => "主要機能 (ボタンで直接開く)",
+                "Welcome.Asset.Title" => "🧱  UCL_Asset システム",
+                "Welcome.Asset.Desc" => "JSON シリアライズされた設計アセット (カード / アイテム / モンスターなど)。Editor 側ビジュアル編集、クロスプラットフォーム IO、SerializeReference 多態サポート。",
+                "Welcome.Asset.Btn" => "Modules エディタを開く",
+                "Welcome.Localize.Title" => "🌐  ローカライズ",
+                "Welcome.Localize.Desc" => "多言語 Asset + LoadOrder オーバーライド + Editor 内 IMGUI 編集ページ。",
+                "Welcome.Localize.Btn" => "Localize エディタを開く",
+                "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor クロスプロセス)",
+                "Welcome.Agent.Desc" => "AI agent が queue.json に書き込み、Editor Watcher が自動実行 — ExportDocsCatalog / SearchDocs / FindAssetUsages / ValidateAssetFormat などの組み込み Cmd を含む。",
+                "Welcome.Agent.Btn" => "Agent Commands ページを開く",
+                "Welcome.Editor.Title" => "🪟  Editor Pages フレームワーク",
+                "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — 統一スタイルの IMGUI ページスタック、検索可能ドロップダウン、HelpURL ジャンプ、TopBar カスタマイズ対応。",
+                "Welcome.Editor.Btn" => "PlayerPrefs 編集サンプル",
+                "Welcome.DocBtn" => "📖 ドキュメント",
+                "Welcome.DocsTitle" => "📚 ドキュメント入口",
+                "Welcome.Docs.Index" => "UCL_Core ドキュメント index",
+                "Welcome.Docs.Architecture" => "Agent Command 全体アーキテクチャ",
+                "Welcome.Docs.CreateCmd" => "新規 Cmd SOP",
+                "Welcome.Docs.Validate" => "UCL_Asset フォーマット検証",
+                "Welcome.AutoOpenToggle" => " このページを自動表示しない (UCL → Welcome メニューから手動で開けます)",
+                "Welcome.ResetButton" => "初回表示をリセット (次回 Editor 再起動時に再度表示)",
+                "Welcome.ResetLog" => "[UCL_Welcome] 初回表示状態をリセットしました。次回の domain reload で再度表示されます。",
+                "Welcome.PrefKeyLabel" => "PrefKey_ShownVersion: {0}",
+                "Welcome.NotSet" => "(未設定)",
+
                 _ => null
             };
         }

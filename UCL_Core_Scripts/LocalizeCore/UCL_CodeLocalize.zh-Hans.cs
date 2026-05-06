@@ -114,6 +114,38 @@ namespace UCL.Core.LocalizeLib
                 "UCL_SelectAsset" => "选取资产",
                 "UCL_CreateAsset" => "建立资产",
                 "UCL_SaveSuccess" => "保存成功！",
+
+                // ==== UCL_WelcomePage ====
+                "Welcome.MenuButton" => "👋 Welcome / 总览",
+                "Welcome.Title" => "👋  欢迎使用 UCL_Core",
+                "Welcome.Subtitle" => "跨项目共用的 Unity 基础框架  ·  Welcome 内容版本 v{0}",
+                "Welcome.IntroTitle" => "UCL_Core 是什么？",
+                "Welcome.IntroBody" => "UCL_Core 是一套跨项目共用的 Unity 基础框架，提供「数据资产 (UCL_Asset) / 模块系统 / 本地化 / Editor Page / Agent Command 跨进程指令系统」等核心组件。\n想快速上手？从下方功能卡片挑一个你最常用的开始。",
+                "Welcome.FeaturesTitle" => "核心功能 (点按钮直达)",
+                "Welcome.Asset.Title" => "🧱  UCL_Asset 系统",
+                "Welcome.Asset.Desc" => "JSON 序列化的设计资产 (卡牌 / 道具 / 怪物等)，编辑器可视化编辑、跨平台读写、SerializeReference 多态支持。",
+                "Welcome.Asset.Btn" => "打开 Modules 编辑器",
+                "Welcome.Localize.Title" => "🌐  Localize 本地化",
+                "Welcome.Localize.Desc" => "多语系 Asset + LoadOrder 覆写机制 + Editor 内 IMGUI 编辑页。",
+                "Welcome.Localize.Btn" => "打开 Localize 编辑器",
+                "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor 跨进程)",
+                "Welcome.Agent.Desc" => "AI agent 写 queue.json、Editor Watcher 自动执行 — 含 ExportDocsCatalog / SearchDocs / FindAssetUsages / ValidateAssetFormat 等内建 Cmd。",
+                "Welcome.Agent.Btn" => "打开 Agent Commands 页",
+                "Welcome.Editor.Title" => "🪟  Editor Pages 框架",
+                "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — 一致风格的 IMGUI 页面堆栈，支持搜索下拉、HelpURL 跳转、TopBar 客制。",
+                "Welcome.Editor.Btn" => "PlayerPrefs 编辑范例",
+                "Welcome.DocBtn" => "📖 文档",
+                "Welcome.DocsTitle" => "📚 文档总入口",
+                "Welcome.Docs.Index" => "UCL_Core 文档 index",
+                "Welcome.Docs.Architecture" => "Agent Command 整体架构",
+                "Welcome.Docs.CreateCmd" => "新增 Cmd SOP",
+                "Welcome.Docs.Validate" => "验证 UCL_Asset 格式",
+                "Welcome.AutoOpenToggle" => " 不再自动弹出此页 (仍可从菜单 UCL → Welcome 手动开启)",
+                "Welcome.ResetButton" => "重置首次弹出 (下次重启 Editor 会再显示一次)",
+                "Welcome.ResetLog" => "[UCL_Welcome] 已重置首次弹出状态。下次 domain reload 会再次显示。",
+                "Welcome.PrefKeyLabel" => "PrefKey_ShownVersion: {0}",
+                "Welcome.NotSet" => "(未设)",
+
                 _ => null
             };
         }

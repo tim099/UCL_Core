@@ -61,6 +61,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 | 文件 | 說明 |
 |---|---|
+| 👋 [UCL_WelcomePage](UCL_EditorPage/UCL_WelcomePage.md) ⭐ | **歡迎/總覽頁** — 首次安裝自動彈出，介紹 UCL_Core 主要功能與快速跳轉按鈕；可從選單 `UCL → Welcome` 隨時開啟 |
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |
 | [UCL_ModuleEditPage](UCL_EditorPage/UCL_ModuleEditPage.md) | 模組編輯頁面 |
@@ -88,6 +89,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` 等 prefix 機制 |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬寫本地化字串的處理 |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **建立新的 `Cmd_<Name>.cs` 子類 SOP** — 命名 / 檔案位置決策樹（UCL_Core vs 下游模組） / 標準範本（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync 守則 / Editor 驗收 / 8 大常見地雷 / **§9 文件放置自動判斷方案**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
+| 🔧 [CompileError_Diagnose_Workflow](Workflows/CompileError_Diagnose_Workflow.md) ⭐ | **Unity Compile Error 排查 SOP** — `UCL_CompileErrorTracker` + `check_compile.py` standalone Python 工具，讓 agent 在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下也能讀到 dedup 過的錯誤清單。含 4 步排查 SOP、8 大常見 CS 錯誤對照、asmdef 跨界 / namespace 陷阱、Editor.log session 邊界偵測演算法、實戰 case study |
 
 ---
 

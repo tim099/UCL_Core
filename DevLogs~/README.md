@@ -5,11 +5,19 @@
 ## 檔名規範
 
 ```
-NNNNN_YYYY-MM-DD.md
+NNNNN_YYYY-MM-DD_slug.md
 ```
 
-- **日期**：當天日期（不記時間，當天多筆用 index 區分）
 - **NNNNN**：序號，從 `00001` 開始，五位數補零
+- **日期**：當天日期（不記時間，當天多筆用 index 區分）
+- **slug**：簡短描述（kebab-case，英文小寫＋數字＋`-`），方便 `ls` 一眼辨識內容；不需與 `title` 完全對應，抓核心關鍵字即可
+
+範例：
+
+```
+00001_2026-05-05_agent-command-lockfile-trigger.md
+00005_2026-05-06_serializeref-symmetry-fix.md
+```
 
 ## frontmatter
 

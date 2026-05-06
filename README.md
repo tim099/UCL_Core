@@ -30,10 +30,15 @@
 
 ### 📝 更新紀錄
 
-[`DevLogs~/`](DevLogs~/) — 給插件使用者的更新內容說明（一筆一檔，檔名 `NNNNN_YYYY-MM-DD.md`）。最新：
-- [00003_2026-05-05](DevLogs~/00003_2026-05-05.md)：Claude Code Hook 自動化 — UCL_Asset 驗證從 SOP 升級為強制門檻
-- [00002_2026-05-05](DevLogs~/00002_2026-05-05.md)：新增 `Cmd_ValidateAssetFormat` — UCL_Asset schema + 引用完整性檢查
-- [00001_2026-05-05](DevLogs~/00001_2026-05-05.md)：Agent Command 系統新增 Lock-file 自動觸發機制
+[`DevLogs~/`](DevLogs~/) — 給插件使用者的更新內容說明（一筆一檔，檔名 `NNNNN_YYYY-MM-DD_slug.md`）。最新：
+- [00008_2026-05-07](DevLogs~/00008_2026-05-07_welcome-compile-tracker.md)：UCL_WelcomePage（跨專案歡迎頁，i18n + 語言切換列）+ UCL_CompileErrorTracker + check_compile.py（雞生蛋編譯錯誤排查工具）
+- [00007_2026-05-07](DevLogs~/00007_2026-05-07_docs-catalog-fuzzy-search.md)：文件目錄索引 + 模糊搜尋系統 — Cmd_ExportDocsCatalog / Cmd_SearchDocs / UCL_DocSearchPage（aliases 同義詞 + 語系偏好排序）
+- [00006_2026-05-07](DevLogs~/00006_2026-05-07_agent-cmd-ux.md)：Agent Command UX — Fill Example 按鈕 + Failed 自動清理 + Clear Failed 按鈕
+- [00005_2026-05-06](DevLogs~/00005_2026-05-06_serializeref-symmetry-fix.md)：SerializeReference 對稱性修復（GUI ↔ JSON）
+- [00004_2026-05-06](DevLogs~/00004_2026-05-06_find-asset-usages-reflect.md)：Cmd_FindAssetUsages 反向引用查詢 + 反射診斷
+- [00003_2026-05-05](DevLogs~/00003_2026-05-05_claude-hook-asset-validate.md)：Claude Code Hook 自動化 — UCL_Asset 驗證從 SOP 升級為強制門檻
+- [00002_2026-05-05](DevLogs~/00002_2026-05-05_validate-asset-format.md)：新增 `Cmd_ValidateAssetFormat` — UCL_Asset schema + 引用完整性檢查
+- [00001_2026-05-05](DevLogs~/00001_2026-05-05_agent-command-lockfile-trigger.md)：Agent Command 系統新增 Lock-file 自動觸發機制
 
 ⭐ **重點推薦**：
 - [`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統的整體架構文件（元件圖 / 生命週期 / 觸發方式對照 / 擴充點）
@@ -199,10 +204,15 @@ MIT License — see [`COPYING.txt`](COPYING.txt).
 
 ### 📝 更新ログ
 
-[`DevLogs~/`](DevLogs~/) — プラグイン利用者向けの更新内容説明 (1 件 1 ファイル、ファイル名 `NNNNN_YYYY-MM-DD.md`)。最新:
-- [00003_2026-05-05](DevLogs~/00003_2026-05-05.md): Claude Code Hook 自動化 — UCL_Asset 検証を SOP から強制ゲートへ昇格
-- [00002_2026-05-05](DevLogs~/00002_2026-05-05.md): `Cmd_ValidateAssetFormat` 追加 — UCL_Asset スキーマ + 参照整合性チェック
-- [00001_2026-05-05](DevLogs~/00001_2026-05-05.md): Agent Command システムに Lock-file 自動トリガー機構を追加
+[`DevLogs~/`](DevLogs~/) — プラグイン利用者向けの更新内容説明 (1 件 1 ファイル、ファイル名 `NNNNN_YYYY-MM-DD_slug.md`)。最新:
+- [00008_2026-05-07](DevLogs~/00008_2026-05-07_welcome-compile-tracker.md): UCL_WelcomePage (プロジェクト横断ウェルカムページ、i18n + 言語切替バー) + UCL_CompileErrorTracker + check_compile.py (鶏卵問題のコンパイルエラー診断ツール)
+- [00007_2026-05-07](DevLogs~/00007_2026-05-07_docs-catalog-fuzzy-search.md): ドキュメント索引 + ファジー検索システム — Cmd_ExportDocsCatalog / Cmd_SearchDocs / UCL_DocSearchPage (aliases 同義語 + 言語優先ランキング)
+- [00006_2026-05-07](DevLogs~/00006_2026-05-07_agent-cmd-ux.md): Agent Command UX — Fill Example ボタン + Failed 自動クリア + Clear Failed ボタン
+- [00005_2026-05-06](DevLogs~/00005_2026-05-06_serializeref-symmetry-fix.md): SerializeReference 対称性修正 (GUI ↔ JSON)
+- [00004_2026-05-06](DevLogs~/00004_2026-05-06_find-asset-usages-reflect.md): Cmd_FindAssetUsages 逆引き参照クエリ + リフレクション診断
+- [00003_2026-05-05](DevLogs~/00003_2026-05-05_claude-hook-asset-validate.md): Claude Code Hook 自動化 — UCL_Asset 検証を SOP から強制ゲートへ昇格
+- [00002_2026-05-05](DevLogs~/00002_2026-05-05_validate-asset-format.md): `Cmd_ValidateAssetFormat` 追加 — UCL_Asset スキーマ + 参照整合性チェック
+- [00001_2026-05-05](DevLogs~/00001_2026-05-05_agent-command-lockfile-trigger.md): Agent Command システムに Lock-file 自動トリガー機構を追加
 
 ⭐ **おすすめ**:
 - [`UCL_AgentCommand_Architecture`](Docs~/ja/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command システム全体アーキテクチャ (コンポーネント図 / ライフサイクル / トリガー方法対比 / 拡張ポイント)

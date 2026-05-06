@@ -507,11 +507,11 @@ namespace UCL.Core.EditorLib.AgentCommands
         private static string MakeKey(Type t, string id) => MakeKey(t.Name, id);
         private static string MakeKey(string typeName, string id) => $"{typeName}:{id}";
 
-        private static string GetArg(Dictionary<string, string> args, string key, string fallback)
-        {
-            if (args == null) return fallback;
-            return args.TryGetValue(key, out var v) ? v : fallback;
-        }
+        // GetArg 已上移至 UCL_AgentCommandHandlerBase（從原本寬鬆版改用嚴格版：
+        //   原：key 存在就回 value（包括空字串）
+        //   新：key 存在且 value 非空字串才回 value，否則回 fallback
+        // 行為差異僅在「使用者填了 key 但 value 為空字串」這個 corner case，新行為更安全
+        // — 避免空字串被當合法輸入往下傳。所有原呼叫點審視過：沒有依賴「空字串為合法值」的情境）
 
         private static int TryParseInt(string s, int fallback)
         {

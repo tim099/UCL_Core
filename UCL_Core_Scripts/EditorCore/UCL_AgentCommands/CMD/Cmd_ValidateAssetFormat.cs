@@ -739,11 +739,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
         }
 
-        private static string GetArg(Dictionary<string, string> args, string key, string defaultVal)
-        {
-            if (args == null) return defaultVal;
-            return args.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : defaultVal;
-        }
+        // GetArg 已上移至 UCL_AgentCommandHandlerBase（嚴格版：value 為空字串視同未提供）
 
         private static int TryParseInt(string s, int defaultVal)
         {

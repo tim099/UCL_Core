@@ -574,11 +574,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         // ===== helpers =====
-        private static string GetArg(Dictionary<string, string> args, string key, string fallback)
-        {
-            if (args == null) return fallback;
-            return args.TryGetValue(key, out var v) ? v : fallback;
-        }
+        // GetArg 已上移至 UCL_AgentCommandHandlerBase（從原本寬鬆版改用嚴格版：value 為空字串視同未提供）
         private static int TryParseInt(string s, int fallback)
         {
             return int.TryParse(s, out var v) ? v : fallback;

@@ -49,6 +49,14 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ---
 
+## Architecture
+
+| 文件 | 说明 |
+|---|---|
+| [Architecture/Polymorphism_In_UCL](Architecture/Polymorphism_In_UCL.md) ⭐ | **多型支援整体架构** — `[SerializeReference]` × `UCLI_TypeListable` × `UCL_PolymorphicHelper` × `UCL_TypeReflectCache` 四者在 GUI 编辑与 JSON 序列化两条路径的角色与互动；新增多型字段的标准写法、UnityJsonSerializableObject 双边例外、为何 cache ctor 不能碰 service |
+
+---
+
 ## 编辑器页面（UCL_EditorPage）
 
 | 文件 | 说明 |

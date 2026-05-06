@@ -49,6 +49,14 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 
 ---
 
+## Architecture
+
+| Document | Description |
+|---|---|
+| [Architecture/Polymorphism_In_UCL](Architecture/Polymorphism_In_UCL.md) ⭐ | **Polymorphism architecture** — roles and interactions of `[SerializeReference]` × `UCLI_TypeListable` × `UCL_PolymorphicHelper` × `UCL_TypeReflectCache` across GUI editing and JSON serialization paths; recommended pattern for new polymorphic fields, UnityJsonSerializableObject symmetric exception, why cache ctor must not call services |
+
+---
+
 ## Editor Pages (UCL_EditorPage)
 
 | Document | Description |

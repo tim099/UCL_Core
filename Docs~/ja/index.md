@@ -49,6 +49,14 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ---
 
+## Architecture
+
+| ドキュメント | 説明 |
+|---|---|
+| [Architecture/Polymorphism_In_UCL](Architecture/Polymorphism_In_UCL.md) ⭐ | **ポリモーフィズム支援アーキテクチャ** — `[SerializeReference]` × `UCLI_TypeListable` × `UCL_PolymorphicHelper` × `UCL_TypeReflectCache` の四者が GUI 編集と JSON シリアライズパスでどう連携するか；新ポリモーフィックフィールドの推奨パターン、UnityJsonSerializableObject 双方向例外、cache ctor が service を呼んではいけない理由 |
+
+---
+
 ## エディターページ (UCL_EditorPage)
 
 | ドキュメント | 説明 |

@@ -236,11 +236,11 @@ if (aValue != null && UCL_PolymorphicHelper.IsPolymorphicField(aField))
 ## 6. 完成定義
 
 - ✅ Step 1：`UCL_PolymorphicHelper` 抽出，保留純重構性質
-- ⬜ Step 1.5：`UCL_TypeReflectCache` 抽出，GUI cache 變 adapter，JSON 改讀 cache，**位元等價** round-trip pass
-- ⬜ Step 2：GUI 改用 helper（讀 cache 內的 `m_IsPolymorphicField`），`[SerializeReference]` 單獨可觸發 dropdown
-- ⬜ Step 3a：JSON List 路徑尊重 `[SerializeReference]`（透過 cache entry 取得旗標）
-- ⬜ DevLog 紀錄 breaking-but-additive change
-- ⬜ 補一份 `Docs~/{lang}/Architecture/Polymorphism_In_UCL.md` 解釋兩個訊號 + cache 架構（推薦 4 langs，因為是核心概念）
+- ✅ Step 1.5：`UCL_TypeReflectCache` 抽出，GUI cache 變 adapter，JSON 改讀 cache，**位元等價** round-trip pass
+- ✅ Step 2：GUI 改用 helper（讀 cache 內的 `m_IsPolymorphicField`），純 SSOT 替換
+- ✅ Step 3a：JSON List 路徑尊重 `[SerializeReference]`（含 UnityJsonSerializableObject 雙邊例外）
+- ✅ DevLog [`00005_2026-05-06.md`](../../../DevLogs~/00005_2026-05-06.md) 紀錄整輪過程
+- ✅ [`Architecture/Polymorphism_In_UCL.md`](../Architecture/Polymorphism_In_UCL.md)（4 langs）解釋兩個訊號 + cache 架構
 
 ## 7. 相關文件
 

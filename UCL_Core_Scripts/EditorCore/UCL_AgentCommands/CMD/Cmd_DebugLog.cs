@@ -41,6 +41,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </summary>
         public override string ArgsSchema => "msg=The text message to print in the console (optional, default: 'Hello World')";
 
+        /// <summary>Page「Fill Example」按鈕一鍵填入用 — 印一句測試訊息。</summary>
+        public override string ExampleArgs => "msg=Hello from Editor";
+
         /// <summary>
         /// [職責] 開啟說明的 URL。
         /// </summary>

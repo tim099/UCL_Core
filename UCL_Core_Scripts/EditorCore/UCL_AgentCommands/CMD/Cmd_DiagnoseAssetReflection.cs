@@ -56,6 +56,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             "maxFieldDepth=Recursion depth cap for deep mode (default 16)\n" +
             "outputPath=Output md path relative to project root (default AgentCommands/asset_reflect_diagnose_<ts>.md)";
 
+        /// <summary>Page「Fill Example」按鈕一鍵填入用 — 每型別只測 5 筆，shallow 模式。</summary>
+        public override string ExampleArgs => "maxIdsPerType=5";
+
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_DiagnoseAssetReflection.md";
 

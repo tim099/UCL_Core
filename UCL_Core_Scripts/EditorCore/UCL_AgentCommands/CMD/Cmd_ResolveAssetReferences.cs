@@ -61,6 +61,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             "format=Output format: json (default) or md\n" +
             "module=Optional module name to restrict lookup (default: all modules)";
 
+        /// <summary>Page「Fill Example」按鈕一鍵填入用 — 順向解析 AbandonedTemple Story 的依賴鏈，以 md 輸出。</summary>
+        public override string ExampleArgs =>
+            "assetType=RCG_StoryData;assetIds=AbandonedTemple;maxDepth=3;format=md";
+
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md";
 

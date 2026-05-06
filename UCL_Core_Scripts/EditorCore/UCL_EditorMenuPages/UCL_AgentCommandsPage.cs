@@ -258,6 +258,10 @@ namespace UCL.Core.EditorLib.Page
                     {
                         GUILayout.Label($"  Args Schema: {selected.ArgsSchema}", UCL_GUIStyle.LabelStyle);
                     }
+                    if (!string.IsNullOrEmpty(selected.ExampleArgs))
+                    {
+                        GUILayout.Label($"  Example: {selected.ExampleArgs}", UCL_GUIStyle.LabelStyle);
+                    }
                     if (!string.IsNullOrEmpty(selected.HelpURL))
                     {
                         if (GUILayout.Button("查看說明", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -280,7 +284,7 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("Description:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
-                    m_NewDescription = GUILayout.TextField(m_NewDescription ?? "", UCL_GUIStyle.LabelStyle);
+                    m_NewDescription = GUILayout.TextField(m_NewDescription ?? "", UCL_GUIStyle.TextFieldStyle);
                 }
 
                 using (new GUILayout.HorizontalScope())
@@ -288,6 +292,18 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("Args:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_NewArgsRaw = GUILayout.TextField(m_NewArgsRaw ?? "", UCL_GUIStyle.TextFieldStyle);
                     GUILayout.Label("(format: k=v;k=v)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    // 區塊職責：將選定 handler 的 ExampleArgs 一鍵塞進 Args 欄位
+                    // 物理意義：人類使用者測試新 Cmd 時不必查文件就能看到可直接執行的參數樣本
+                    // 數值影響：覆寫 m_NewArgsRaw；不修改 queue
+                    bool hasExample = !string.IsNullOrEmpty(selected.ExampleArgs);
+                    using (new UnityEditor.EditorGUI.DisabledScope(!hasExample))
+                    {
+                        if (GUILayout.Button("Fill Example", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            m_NewArgsRaw = selected.ExampleArgs;
+                            GUI.FocusControl(null);
+                        }
+                    }
                 }
 
                 if (GUILayout.Button($"Add '{selected.CommandType}' ({m_NewMode})",

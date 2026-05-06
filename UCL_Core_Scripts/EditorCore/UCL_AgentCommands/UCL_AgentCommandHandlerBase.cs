@@ -32,6 +32,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>支援的 Args 格式說明（純文字 / Markdown，給 Page 顯示）。</summary>
         public virtual string ArgsSchema => "";
 
+        /// <summary>
+        /// 範例 Args（給 Page「Fill Example」按鈕用，格式為 <c>k1=v1;k2=v2</c>）。
+        /// 子類覆寫此屬性以提供「一鍵填入即可執行」的預設參數，方便人類在 Editor 內快速試跑。
+        /// 空字串表示沒有範例（按鈕會被禁用）。
+        /// </summary>
+        public virtual string ExampleArgs => "";
+
         /// <summary>HelpURL — Page 上「查看說明」按鈕跳轉的目標。可使用 ucl_core: / eov_docs: prefix。</summary>
         public virtual string HelpURL => "";
 

@@ -69,6 +69,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             "checkRefs=N (default 0) - BFS depth to validate that referenced sub-assets exist on disk; 0=off, 1=direct refs only, 2+=walk further\n" +
             "ignoreEmptyIds=true|false (default true) - empty asset entry IDs (\"\") are treated as 'intentionally unset' and skipped";
 
+        /// <summary>Page「Fill Example」按鈕一鍵填入用 — 驗證 RCG_ItemData/SoundOfLife 的 JSON roundtrip。</summary>
+        public override string ExampleArgs => "assetType=RCG_ItemData;assetId=SoundOfLife";
+
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md";
 

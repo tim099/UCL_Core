@@ -68,6 +68,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             "module=Optional module name to restrict the using-side (default: all modules)\n" +
             "maxFieldDepth=Reflection recursion cap to guard cycles (default 16)";
 
+        /// <summary>Page「Fill Example」按鈕一鍵填入用 — 反向查詢誰引用了 RCG_CustomStatusData/Stun。</summary>
+        public override string ExampleArgs =>
+            "targetType=RCG_CustomStatusData;targetIds=Stun;format=md";
+
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_FindAssetUsages.md";
 

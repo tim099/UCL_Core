@@ -41,6 +41,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string ArgsSchema =>
             "outputPath=Output file path relative to project root (default AgentCommands/commands_catalog.md)";
 
+        /// <summary>Page「Fill Example」按鈕一鍵填入用 — 用預設輸出路徑匯出 catalog。</summary>
+        public override string ExampleArgs => "outputPath=AgentCommands/commands_catalog.md";
+
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md";
 

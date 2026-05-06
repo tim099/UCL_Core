@@ -28,15 +28,21 @@ target_audience: [Tools_Maintainer, AI_Agent]
 
 ## 2. 不對稱具體在哪
 
+> [!NOTE]
+> 修正紀錄（2026-05-06）：原 Plan 對「單欄位無 UCLI_TypeListable」case 判定 GUI 失敗 — 經實機驗證錯誤。
+> `UCLI_TypeListable.GetAllITypes(base)` 底層走 `GetAllITypesAssignableFrom`，**不**檢查 base 是否實作
+> UCLI_TypeListable，對任意 abstract base 都能列出 concrete subs。GUI 單欄位實際已工作。
+> List 元素的不對稱仍真實存在（line 375-381 / 562-570 確實檢查 `UCLI_TypeListable.IsAssignableFrom`）。
+
 | 場景 | GUI | JSON 存 | JSON 載 | 結果 |
 |---|:-:|:-:|:-:|---|
-| 單欄位 `[SerializeReference] Base m_X`，Base **無** UCLI_TypeListable | ❌ 下拉空 | ✅ 包 ClassName | ✅ 還原 | **GUI 不能編，JSON OK** |
+| 單欄位 `[SerializeReference] Base m_X`，Base **無** UCLI_TypeListable | ✅（已工作）| ✅ 包 ClassName | ✅ 還原 | **完整工作** |
 | 單欄位 `[SerializeReference] Base m_X`，Base **有** UCLI_TypeListable | ✅ | ✅ | ✅ | 完整工作 |
-| `[SerializeReference] List<Base>`，元素**無** UCLI_TypeListable | ❌ | ⚠ 包外層 list 但 item 失型 | ⚠ item 變 base | **List item 失子類** |
+| `[SerializeReference] List<Base>`，元素**無** UCLI_TypeListable | ⚠ item 級下拉缺 | ⚠ 包外層 list 但 item 失型 | ⚠ item 變 base | **List item 失子類** ⭐ 真正的破口 |
 | `[SerializeReference] List<Base>`，元素**有** UCLI_TypeListable | ✅ | ✅ | ✅ | 完整工作 |
 | `List<Base>`（無 `[SerializeReference]`），元素**有** UCLI_TypeListable | ❌ | ✅ per-item 包 | ✅ per-item 還原 | **JSON OK 但 GUI 不能編** |
 
-**結論**：「完整 round-trip + 可編輯」目前**強制要求**兩個條件同時成立 — `[SerializeReference]` 屬性 + `UCLI_TypeListable` 介面。少一個就有破口。
+**結論修正**：單欄位 case 早就工作；真正的破口是 **List 元素層**的不對稱 — `[SerializeReference]` 加在 list 欄位上對 item 多型沒幫助，必須讓 element type 實作 `UCLI_TypeListable` 才行。Step 3a 解決此項。
 
 ## 3. 設計原則
 
@@ -170,14 +176,18 @@ public class UCL_TypeReflectCache
 | Domain reload 殘留舊 cache | `static Dictionary` 模式 — Unity domain reload 自動清 |
 | 兩條路徑改完 JSON 結果不同 | 位元等價測試是強制 gate |
 
-### Step 2 — 修 GUI：`[SerializeReference]` 單獨即可觸發
+### Step 2 — 修 GUI：純 SSOT 替換，行為等價
 
-`UCL_GUILayoutDrawObject.cs:650` 把 `UCLI_TypeListable.GetAllITypes(fieldType)` 改用 `UCL_PolymorphicHelper.GetConcreteSubtypes(fieldType)`。
-觸發條件從「`SerializeReference && fieldType is UCLI_TypeListable`」放寬到「`SerializeReference`」。
+> [!NOTE]
+> 修正：原計畫以為要「放寬觸發條件」，實機驗證後發現 GUI 對單欄位本來就工作（見 §2 的修正紀錄）。
+> 因此本步驟降級為**純 SSOT cleanup** — 把兩處 `UCLI_TypeListable.GetAllITypes(...)` 替換為 `UCL_PolymorphicHelper.GetConcreteSubtypes(...)`，
+> 後者目前 delegate 給前者，行為位元等價。意義：未來若要調整多型判定政策（例：加 fallback 訊號），只改 helper 一處。
 
-**效果**：單欄位 `[SerializeReference] Base m_X`（Base 無 UCLI_TypeListable）也能在 GUI 編輯。
+`UCL_GUILayoutDrawObject.cs:589`（DrawField null-instance 自動建構）+ `:668`（dropdown）兩處改用 helper。
 
-**風險**：GUI 變寬鬆 — 過去無 dropdown 的欄位現在會顯示。對既有 asset 是 additive。
+**效果**：行為等價；helper 成為 GUI / JSON 兩條路徑共用的多型 SSOT。
+
+**風險**：無（純 facade 替換）。
 
 ### Step 3 — 修 JSON List 路徑：尊重欄位上的 `[SerializeReference]`
 

@@ -12,7 +12,9 @@
 //   - [InitializeOnLoad] 讓 Unity Editor 載入 / domain reload 後自動啟動
 //   - EditorPrefs 提供開關，使用者可暫時停用（Page 上會有 toggle）
 #if UNITY_EDITOR
+using Cysharp.Threading.Tasks;
 using System;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
@@ -62,13 +64,21 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         static UCL_AgentCommandWatcher()
         {
-            Register();
+            // 區塊職責：[InitializeOnLoad] cctor 內延到下一個 editor tick 才啟動 Register
+            // 物理意義：cctor 在 EditorAssemblies.ProcessInitializeOnLoadAttributes 連續呼叫，
+            //          此時 UniTask 的 PlayerLoopHelper 內部尚未 init —— 直接 await UniTask
+            //          會在 PlayerLoopHelper.AddAction 撞 NRE。delayCall 推到下一個 editor
+            //          tick，UniTask 基礎設施已就緒，後續 await WaitUntilInitialized 才安全。
+            // 數值影響：Register chain 啟動延後 ~16ms；對既有「Register 完成前不訂閱 update」
+            //          的保證無影響（Register() 函式體不動）。
+            EditorApplication.delayCall += () => Register().Forget();
         }
 
         /// <summary>確保 update 訂閱已註冊（idempotent）。</summary>
-        public static void Register()
+        public static async UniTask Register()
         {
             if (s_Registered) return;
+            await UCL_ModuleService.WaitUntilInitialized(default); // 等 ModuleService 就緒（通常很快），確保 UCL_AgentCommandQueue.GetTriggerPath() 可用
             EditorApplication.update += OnEditorUpdate;
             s_Registered = true;
             Debug.Log($"[UCL_AgentCmdWatcher] Registered. Watching: {UCL_AgentCommandQueue.GetTriggerPath()}");

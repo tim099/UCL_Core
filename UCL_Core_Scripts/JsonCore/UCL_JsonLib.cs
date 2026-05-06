@@ -444,7 +444,45 @@ namespace UCL.Core.JsonLib {
                 // entry.m_IsPolymorphicField 來自 UCL_PolymorphicHelper（SSOT），與原邏輯等價
                 if (aValue != null && aEntry.m_IsPolymorphicField)
                 {
-                    aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    // Step 3a：若 [SerializeReference] 修飾的是 List/Array，per-item 也要 ObjectToJson 包，
+                    // 不依賴 element type 實作 UCLI_TypeListable（修正 List 元素層的不對稱破口）。
+                    // 對既有 UCLI_TypeListable list 來說輸出 byte-identical（原路徑也是 per-item 包）。
+                    //
+                    // 例外：element 是 UnityJsonSerializableObject 子類時，**回退原 ObjectToJson(整個 list)** 路徑。
+                    // 因為 UnityJsonSerializableObject.SerializeToJson() 自身就產出 {ClassName, ClassData}，
+                    // 若再 per-item 套 ObjectToJson 會 double-wrap。原路徑由 SaveDataToJson IList branch
+                    // 走 ObjectToData → SerializeToJson 已正確產生單層 wrap 格式。
+                    if (aValue is IList aPolyList)
+                    {
+                        Type aFieldType = aField.FieldType;
+                        Type aListElemType = aFieldType.IsArray
+                            ? aFieldType.GetElementType()
+                            : (aFieldType.IsGenericType ? aFieldType.GetGenericValueType() : null);
+                        bool aSkipNewPath = aListElemType != null
+                            && typeof(UnityJsonSerializableObject).IsAssignableFrom(aListElemType);
+                        if (!aSkipNewPath)
+                        {
+                            var aWrap = new JsonData();
+                            aWrap[ClassNameID] = aValue.GetType().AssemblyQualifiedName;
+                            var aArr = new JsonData();
+                            foreach (var aItem in aPolyList)
+                            {
+                                aArr.Add(aItem == null
+                                    ? new JsonData()
+                                    : ObjectToJson(aItem, iSaveMode, iFieldNameAlterFunc));
+                            }
+                            aWrap[ClassDataID] = aArr;
+                            aData[aFieldName] = aWrap;
+                        }
+                        else
+                        {
+                            aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                        }
+                    }
+                    else
+                    {
+                        aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
+                    }
                     continue;
                 }
 
@@ -554,8 +592,25 @@ namespace UCL.Core.JsonLib {
                 Type aElementType = aType.GetGenericValueType();
                 aList.Clear();
                 //Debug.LogError("IList aElementType:" + aElementType.Name);
-                if ((typeof(UCLI_TypeList).IsAssignableFrom(aElementType) || typeof(UCLI_TypeListable).IsAssignableFrom(aElementType))
-                    && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType))
+
+                // 區塊職責：判斷 list items 是否需要走 per-item polymorphic 反序列化
+                // 物理意義：
+                //   訊號 A（既有）— 元素型別實作 UCLI_TypeList / UCLI_TypeListable（且非 UnityJsonSerializableObject）
+                //   訊號 B（Step 3a 新增）— 第一個 item 為 wrapped 格式（含 ClassNameID 鍵）— 自動偵測
+                //                          [SerializeReference] List<NonTypeListable> 等場景的存檔
+                // 數值影響：兩個訊號擇一觸發 per-item JsonToObject；否則維持原 DataToObject 路徑（行為不變）
+                bool aIsPolyByInterface = (typeof(UCLI_TypeList).IsAssignableFrom(aElementType)
+                                         || typeof(UCLI_TypeListable).IsAssignableFrom(aElementType))
+                                         && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType);
+                // 排除 UnityJsonSerializableObject — 該子類的 ClassName 包裝是其自身機制，
+                // 載入由下方 else 分支的 DataToObject 內專屬 handler 處理（line 156-170 區段），
+                // 走 JsonToObject 會誤跳過 DeserializeFromJson 導致資料破損
+                bool aIsPolyByWrapper = !aIsPolyByInterface
+                                      && !typeof(UnityJsonSerializableObject).IsAssignableFrom(aElementType)
+                                      && iData.Count > 0
+                                      && iData[0] != null
+                                      && iData[0].Contains(ClassNameID);
+                if (aIsPolyByInterface || aIsPolyByWrapper)
                 {
                     //Debug.LogError("1 IList aElementType:" + aElementType.Name);
                     for (int i = 0; i < iData.Count; i++)

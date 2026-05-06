@@ -586,7 +586,8 @@ namespace UCL.Core.UI
             {
                 if (iParams.m_SerializeReference && iParams.m_FieldType != null)
                 {
-                    var types = UCLI_TypeListable.GetAllITypes(iParams.m_FieldType);
+                    // Step 2：用 SSOT helper 取得 concrete subtype 清單（與既有 GetAllITypes 行為等價）
+                    var types = UCL_PolymorphicHelper.GetConcreteSubtypes(iParams.m_FieldType);
                     if (!types.IsNullOrEmpty())
                     {
                         iObj = types[0].CreateInstance();
@@ -665,7 +666,8 @@ namespace UCL.Core.UI
                     GUILayout.Label(iDisplayName, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (iParams.m_SerializeReference && iParams.m_FieldType != null)
                     {
-                        var types = UCLI_TypeListable.GetAllITypes(iParams.m_FieldType);
+                        // Step 2：用 SSOT helper 取得 concrete subtype 清單（與既有 GetAllITypes 行為等價）
+                        var types = UCL_PolymorphicHelper.GetConcreteSubtypes(iParams.m_FieldType);
                         //GUILayout.Label($"types:{types.ConcatToString(type => type.Name)}");
                         if (!types.IsNullOrEmpty())
                         {

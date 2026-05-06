@@ -99,13 +99,22 @@ namespace UCL.Core
         /// </para>
         /// </summary>
         /// <param name="iBaseType">基底型別（abstract class / interface）</param>
-        /// <returns>合法的具體子類清單（已 sort、已 filter）；找不到回空 list 不為 null</returns>
-        public static IList<Type> GetConcreteSubtypes(Type iBaseType)
+        /// <returns>
+        /// 合法的具體子類清單（已 sort、已 filter）；找不到回空 list 不為 null。
+        /// 回傳型別刻意用 <see cref="List{Type}"/>（非 IList&lt;Type&gt;）以與
+        /// <see cref="UCLI_TypeListable.GetTypeNames(List{Type})"/> 等既有 API 簽章相容。
+        /// </returns>
+        public static List<Type> GetConcreteSubtypes(Type iBaseType)
         {
             // 防呆：null 基底回空清單
-            if (iBaseType == null) return System.Array.Empty<Type>();
+            if (iBaseType == null) return s_Empty;
             // 直接走既有 cache 與 filter 邏輯，行為等價
             return UCLI_TypeListable.GetAllITypes(iBaseType);
         }
+
+        // 區塊職責：null 輸入時返回的共享空清單，避免每次都 new
+        // 物理意義：caller 拿到的是 List<Type> 型空清單，與 GetTypeNames 等下游 API 簽章相容
+        // 數值影響：節省 null-input case 的 GC 壓力
+        private static readonly List<Type> s_Empty = new List<Type>(0);
     }
 }

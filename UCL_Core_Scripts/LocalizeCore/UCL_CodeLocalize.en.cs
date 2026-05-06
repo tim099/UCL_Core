@@ -145,6 +145,19 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.ResetLog" => "[UCL_Welcome] First-open state reset. Will display again on next domain reload.",
                 "Welcome.PrefKeyLabel" => "PrefKey_ShownVersion: {0}",
                 "Welcome.NotSet" => "(unset)",
+                "Welcome.Search.Title" => "🔍 Search Docs",
+                "Welcome.Search.Button" => "Search",
+                "Welcome.Search.Hint" => "Synonym expansion supported (reads Docs/_synonyms.txt) — e.g. searching 'items' will hit docs titled '道具'. Space-separate multiple terms (AND mode).",
+                "Welcome.Search.NoResults" => "(no hits)",
+                "Welcome.Search.ResultsCount" => "{0} hit(s) out of {1} scanned",
+                "Welcome.Search.OpenButton" => "📖 Open",
+                "Welcome.Search.OpenPageButton" => "🔍 Open Doc Search Page",
+                "DocSearch.Advanced" => "Advanced options",
+                "DocSearch.Mode" => "Search mode",
+                "DocSearch.Limit" => "Result limit",
+                "DocSearch.SynonymsPath" => "Synonyms path",
+                "DocSearch.IncludeArchived" => "Include archived docs",
+                "DocSearch.Reveal" => "📂 Reveal",
 
                 _ => iKey
             };

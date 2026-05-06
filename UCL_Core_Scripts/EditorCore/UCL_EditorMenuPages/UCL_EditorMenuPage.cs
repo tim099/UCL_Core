@@ -66,6 +66,15 @@ namespace UCL.Core.EditorLib.Page
                 {
                     UCL_WelcomePage.Create();
                 }
+
+                // 區塊職責：文件搜尋頁入口
+                // 物理意義：跨專案 200+ 篇 markdown 的即時模糊搜尋（含同義詞展開 / 當前語系優先），
+                //          直接點按鈕就能搜，不必先進 Welcome 頁。
+                // 數值影響：push 一個 UCL_DocSearchPage 到當前 controller。
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Search.OpenPageButton"), UCL_GUIStyle.GetButtonStyle(Color.cyan)))
+                {
+                    UCL_DocSearchPage.Create();
+                }
 #endif
 
                 if (GUILayout.Button(UCL_LocalizeManager.Get("Edit Modules"), UCL_GUIStyle.ButtonStyle))

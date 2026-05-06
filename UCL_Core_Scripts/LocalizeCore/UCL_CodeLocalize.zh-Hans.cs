@@ -145,6 +145,19 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.ResetLog" => "[UCL_Welcome] 已重置首次弹出状态。下次 domain reload 会再次显示。",
                 "Welcome.PrefKeyLabel" => "PrefKey_ShownVersion: {0}",
                 "Welcome.NotSet" => "(未设)",
+                "Welcome.Search.Title" => "🔍 文档搜索",
+                "Welcome.Search.Button" => "搜索",
+                "Welcome.Search.Hint" => "支持同义词展开 (读 Docs/_synonyms.txt) — 例：搜「物品」也能命中标题写「道具」的文档。多词以空格分隔 (AND 模式)。",
+                "Welcome.Search.NoResults" => "(无命中)",
+                "Welcome.Search.ResultsCount" => "命中 {0} 篇 (共扫 {1} 篇)",
+                "Welcome.Search.OpenButton" => "📖 打开文件",
+                "Welcome.Search.OpenPageButton" => "🔍 打开文件搜索页",
+                "DocSearch.Advanced" => "高级选项",
+                "DocSearch.Mode" => "搜索模式",
+                "DocSearch.Limit" => "结果上限",
+                "DocSearch.SynonymsPath" => "同义词文件路径",
+                "DocSearch.IncludeArchived" => "包含 archived 文档",
+                "DocSearch.Reveal" => "📂 定位",
 
                 _ => null
             };

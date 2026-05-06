@@ -102,36 +102,27 @@ namespace UCL.Core.EditorLib.AgentCommands
             // 1) live scan — 每次都 cold；catalog 不被讀也不被寫
             var entries = UCL_DocCatalogScanner.ScanRoots(roots, gitRoot, excludes, includeArchived: false, token);
 
-            // 2) 切詞 + 同義詞展開
+            // 2) 切詞 + 同義詞展開（委由 UCL_DocSearchEngine 處理）
             var rawTerms = query.Split(new[] { ' ', '　', '\t' }, StringSplitOptions.RemoveEmptyEntries)
                                 .Select(t => t.Trim()).Where(t => t.Length > 0).ToList();
             if (rawTerms.Count == 0)
             {
                 throw new ArgumentException("query is empty after tokenization");
             }
-            var synonymGroups = LoadSynonyms(gitRoot, synonymsPath);
-            var expandedSets = rawTerms.Select(t => ExpandTerm(t, synonymGroups)).ToList();
+            var synonymGroups = UCL_DocSearchEngine.LoadSynonyms(gitRoot, synonymsPath);
+            var expandedSets = rawTerms.Select(t => UCL_DocSearchEngine.ExpandTerm(t, synonymGroups)).ToList();
 
-            // 3) 計分 — 對每個 entry 算 score
-            var hits = new List<ScoredHit>();
-            foreach (var e in entries)
-            {
-                token.ThrowIfCancellationRequested();
-                var (score, matched) = ScoreEntry(e, expandedSets, orMode);
-                if (score > 0)
-                {
-                    hits.Add(new ScoredHit { Entry = e, Score = score, MatchedFields = matched });
-                }
-            }
+            // 3+4) 計分 / 排序 / top-N（一條 Search call 搞定，與 WelcomePage 共用同一份邏輯）
+            //      preferredLang 用 UCL_LocalizeManager 當前語系 → 對應語系版本優先
+            token.ThrowIfCancellationRequested();
+            string preferredLang = UCL.Core.LocalizeLib.UCL_LocalizeManager.s_LangName;
+            var hits = UCL_DocSearchEngine.Search(entries, expandedSets, orMode, limit, preferredLang);
 
-            // 4) 排序 → top-N
-            hits.Sort((a, b) => b.Score.CompareTo(a.Score));
-            if (hits.Count > limit) hits = hits.Take(limit).ToList();
-
-            // 5) 渲染 → 輸出
+            // 5) 渲染 → 輸出（同時把 preferredLang 印進 stdout 方便除錯）
+            Debug.Log($"[Cmd:SearchDocs] preferredLang=\"{preferredLang ?? "<null>"}\"");
             string content = format == "json"
                 ? RenderJson(hits, query, expandedSets, entries.Count)
-                : RenderMarkdown(hits, query, expandedSets, entries.Count, orMode);
+                : RenderMarkdown(hits, query, expandedSets, entries.Count, orMode, preferredLang);
 
             if (!string.IsNullOrEmpty(outputPath))
             {
@@ -152,122 +143,20 @@ namespace UCL.Core.EditorLib.AgentCommands
             await UniTask.CompletedTask;
         }
 
-        // ===========================================================
-        // 計分：對每個 entry 計算分數
-        // 物理意義：title 命中最有信心、aliases 是模糊搜尋的主軸、filename 兜底
-        // 數值影響：score=0 表不命中；AND 模式下任一 term miss 即 0
-        // ===========================================================
-        static (int score, List<string> matched) ScoreEntry(
-            UCL_DocCatalogEntry e, List<HashSet<string>> termSets, bool orMode)
-        {
-            int totalScore = 0;
-            int termsHit = 0;
-            var matchedFields = new HashSet<string>();
-
-            // 各欄位轉小寫一次（搜尋大小寫無視）
-            string filename = (Path.GetFileNameWithoutExtension(e.RelativePath) ?? "").ToLowerInvariant();
-            string title = (e.Title ?? "").ToLowerInvariant();
-            string description = (e.Description ?? "").ToLowerInvariant();
-            string tagsConcat = string.Join(",", e.Tags ?? new List<string>()).ToLowerInvariant();
-            string aliasesConcat = string.Join(",", e.Aliases ?? new List<string>()).ToLowerInvariant();
-
-            foreach (var termSet in termSets)
-            {
-                int termScore = 0;
-                foreach (var v in termSet)
-                {
-                    string vlow = v.ToLowerInvariant();
-                    if (string.IsNullOrEmpty(vlow)) continue;
-                    if (title.Contains(vlow))         { termScore = Math.Max(termScore, 10); matchedFields.Add("title"); }
-                    if (aliasesConcat.Contains(vlow)) { termScore = Math.Max(termScore, 8);  matchedFields.Add("aliases"); }
-                    if (tagsConcat.Contains(vlow))    { termScore = Math.Max(termScore, 6);  matchedFields.Add("tags"); }
-                    if (description.Contains(vlow))   { termScore = Math.Max(termScore, 5);  matchedFields.Add("description"); }
-                    if (filename.Contains(vlow))      { termScore = Math.Max(termScore, 4);  matchedFields.Add("filename"); }
-                }
-                if (termScore > 0)
-                {
-                    termsHit++;
-                    totalScore += termScore;
-                }
-            }
-
-            // AND 語義：要求所有 term 都命中
-            if (!orMode && termsHit < termSets.Count) return (0, null);
-            // OR 語義：任一命中即可
-            if (orMode && termsHit == 0) return (0, null);
-
-            // bonus：命中 term 數越多分越高
-            totalScore += termsHit * 2;
-            return (totalScore, matchedFields.OrderBy(s => s).ToList());
-        }
-
-        // ===========================================================
-        // 同義詞展開
-        // 物理意義：query 端的展開（中央詞表），與 doc 端的 aliases（個別文件）互補
-        // ===========================================================
-        static HashSet<string> ExpandTerm(string term, List<List<string>> synonymGroups)
-        {
-            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { term };
-            if (synonymGroups == null) return set;
-            foreach (var grp in synonymGroups)
-            {
-                if (grp.Any(g => string.Equals(g, term, StringComparison.OrdinalIgnoreCase)))
-                {
-                    foreach (var g in grp) set.Add(g);
-                }
-            }
-            return set;
-        }
-
-        // 同義詞檔格式（純文本，避免依賴 YAML lib）：
-        //   # 註解行以 # 起始
-        //   物品, 道具, item, items, 消耗品
-        //   狀態, status, buff, debuff
-        // 每非空非註解行 = 一組同義詞集合
-        static List<List<string>> LoadSynonyms(string gitRoot, string path)
-        {
-            var groups = new List<List<string>>();
-            if (string.IsNullOrEmpty(path)) return groups;
-            string abs = Path.IsPathRooted(path) ? path : Path.Combine(gitRoot, path);
-            if (!File.Exists(abs))
-            {
-                Debug.LogWarning($"[Cmd:SearchDocs] synonyms file not found, skipped: {path}");
-                return groups;
-            }
-            try
-            {
-                foreach (var line in File.ReadAllLines(abs))
-                {
-                    string l = line.Trim();
-                    if (l.Length == 0 || l.StartsWith("#")) continue;
-                    var parts = l.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
-                    if (parts.Count >= 2) groups.Add(parts);
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[Cmd:SearchDocs] synonyms read failed: {e.Message}");
-            }
-            return groups;
-        }
-
-        class ScoredHit
-        {
-            public UCL_DocCatalogEntry Entry;
-            public int Score;
-            public List<string> MatchedFields;
-        }
+        // 區塊備註：ScoreEntry / ExpandTerm / LoadSynonyms / ScoredHit 已抽出至 UCL_DocSearchEngine
+        //          （同 namespace），由本 Cmd 與 UCL_WelcomePage 共用。
 
         // ===========================================================
         // Markdown 渲染
         // ===========================================================
-        static string RenderMarkdown(List<ScoredHit> hits, string query,
-            List<HashSet<string>> termSets, int totalScanned, bool orMode)
+        static string RenderMarkdown(List<UCL_DocSearchHit> hits, string query,
+            List<HashSet<string>> termSets, int totalScanned, bool orMode, string preferredLang)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"# 🔍 SearchDocs — \"{query}\"");
             sb.AppendLine();
-            sb.AppendLine($"> Mode: **{(orMode ? "OR" : "AND")}** · Scanned **{totalScanned}** docs · Found **{hits.Count}** hit(s)");
+            string langStr = string.IsNullOrEmpty(preferredLang) ? "(none)" : preferredLang;
+            sb.AppendLine($"> Mode: **{(orMode ? "OR" : "AND")}** · Scanned **{totalScanned}** docs · Found **{hits.Count}** hit(s) · PreferredLang: **{langStr}** (+5 bonus on path-match)");
             // 列出展開過的同義詞群（讓使用者知道實際搜了哪些變體）
             if (termSets.Any(s => s.Count > 1))
             {
@@ -306,7 +195,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         // JSON 渲染
         // ===========================================================
-        static string RenderJson(List<ScoredHit> hits, string query,
+        static string RenderJson(List<UCL_DocSearchHit> hits, string query,
             List<HashSet<string>> termSets, int totalScanned)
         {
             var sb = new StringBuilder();

@@ -10,9 +10,9 @@
 //          並附「重設首次彈出」按鈕方便日後重新體驗。
 // 數值影響：唯讀 GUI；使用者按鈕可開啟其他 Page，或寫 EditorPrefs 控制自動彈出狀態。
 #if UNITY_EDITOR
-using System;
-using UCL.Core.LocalizeLib;   // for UCL_CodeLocalize.Get(...)
-using UCL.Core.Page;          // for UCL_ModuleServiceEditPage（住在 UCL.Core.Page，非本檔的 UCL.Core.EditorLib.Page）
+using System;                             // for Action（FeatureCard 簽名）
+using UCL.Core.LocalizeLib;               // for UCL_CodeLocalize.Get(...)
+using UCL.Core.Page;                      // for UCL_ModuleServiceEditPage（住在 UCL.Core.Page）
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
@@ -51,6 +51,9 @@ namespace UCL.Core.EditorLib.Page
 
         Vector2 m_Scroll = Vector2.zero;
 
+        // 區塊備註：原本的內嵌文件搜尋已搬出至 UCL_DocSearchPage；
+        //          本頁只保留一顆「🔍 文件搜尋」按鈕跳轉過去。
+
         /// <summary>從外部建立一份 Welcome 頁（不開新視窗）。</summary>
         public static UCL_WelcomePage Create()
         {
@@ -87,6 +90,8 @@ namespace UCL.Core.EditorLib.Page
             DrawHeader();
             GUILayout.Space(8);
             DrawIntro();
+            GUILayout.Space(8);
+            DrawSearchEntry();
             GUILayout.Space(8);
             DrawFeatureGrid();
             GUILayout.Space(8);
@@ -130,6 +135,25 @@ namespace UCL.Core.EditorLib.Page
             {
                 GUILayout.Label(UCL_CodeLocalize.Get("Welcome.IntroTitle"), UCL_GUIStyle.LabelStyle);
                 GUILayout.Label(UCL_CodeLocalize.Get("Welcome.IntroBody"), UCL_GUIStyle.LabelStyle);
+            }
+        }
+
+        // ===========================================================
+        // 區塊：文件搜尋入口 — 點按鈕 push UCL_DocSearchPage 到當前 controller
+        // 物理意義：搜尋功能複雜（進階選項 / 結果列表 / 同義詞檔路徑），獨立成 Page 比塞在 Welcome 裡乾淨
+        // 數值影響：純 push page，搜尋邏輯都在 UCL_DocSearchPage 內
+        // ===========================================================
+        void DrawSearchEntry()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Title"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Hint"), UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Search.OpenPageButton"),
+                    UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                {
+                    UCL_DocSearchPage.Create();
+                }
             }
         }
 

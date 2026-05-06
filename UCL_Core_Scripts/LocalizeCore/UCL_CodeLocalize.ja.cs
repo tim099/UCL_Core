@@ -145,6 +145,19 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.ResetLog" => "[UCL_Welcome] 初回表示状態をリセットしました。次回の domain reload で再度表示されます。",
                 "Welcome.PrefKeyLabel" => "PrefKey_ShownVersion: {0}",
                 "Welcome.NotSet" => "(未設定)",
+                "Welcome.Search.Title" => "🔍 ドキュメント検索",
+                "Welcome.Search.Button" => "検索",
+                "Welcome.Search.Hint" => "同義語展開対応 (Docs/_synonyms.txt 読み込み) — 例：「アイテム」で検索すると「道具」と書かれたドキュメントもヒット。複数語はスペース区切り (AND モード)。",
+                "Welcome.Search.NoResults" => "(ヒットなし)",
+                "Welcome.Search.ResultsCount" => "{0} 件ヒット ({1} 件中)",
+                "Welcome.Search.OpenButton" => "📖 ファイルを開く",
+                "Welcome.Search.OpenPageButton" => "🔍 ドキュメント検索ページを開く",
+                "DocSearch.Advanced" => "詳細オプション",
+                "DocSearch.Mode" => "検索モード",
+                "DocSearch.Limit" => "結果上限",
+                "DocSearch.SynonymsPath" => "同義語ファイルパス",
+                "DocSearch.IncludeArchived" => "archived ドキュメントを含む",
+                "DocSearch.Reveal" => "📂 場所を開く",
 
                 _ => null
             };

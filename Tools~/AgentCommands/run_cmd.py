@@ -177,6 +177,21 @@ def save_queue(data: dict) -> None:
         f.write("\n")
 
 
+def remove_cmd_from_queue(cmd_id: str) -> bool:
+    """從 queue.json 移除指定 Id 的 cmd；用於 cmd_wait 偵測到 Failed 時的自動清理。
+
+    回傳 True 表示有移除；False 表示找不到（已被別的 process 移走或 id 拼錯）。
+    """
+    queue = load_queue()
+    cmds = queue.get("Commands", [])
+    new_cmds = [c for c in cmds if c.get("Id") != cmd_id]
+    if len(new_cmds) == len(cmds):
+        return False
+    queue["Commands"] = new_cmds
+    save_queue(queue)
+    return True
+
+
 def make_id(cmd_type: str) -> str:
     """產生人讀且唯一的 Cmd Id。格式 yyyymmdd-HHMMSS-<short-uuid>-<type-slug>。"""
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -274,6 +289,18 @@ def cmd_wait(args: argparse.Namespace) -> int:
             if result == "Failed":
                 err = cmd.get("LastRunError") or "(no error message)"
                 print(f"  ✗ Cmd failed: {err}", file=sys.stderr)
+                sys.stderr.flush()
+                # 區塊職責：失敗的 OneShot 預設會留在 queue.json（runner 設計如此），
+                #          但這會讓「下一次 submit 時整個 batch 把舊的失敗 cmd 一起重跑」
+                #          → agent / 人類體感「每次都卡住」。
+                # 物理意義：失敗訊息已透過 stderr 印出 + return code 2 通知 caller，
+                #          原始記錄不再有保留價值；移除 queue 條目讓下一輪乾淨。
+                # 數值影響：寫回 queue.json，刪除單筆。--keep-failed 可關閉此自動清理。
+                if not getattr(args, "keep_failed", False):
+                    remove_cmd_from_queue(cmd_id)
+                    print(f"  ↳ removed failed cmd from queue (use --keep-failed to retain)",
+                          file=sys.stderr)
+                    sys.stderr.flush()
                 return 2
 
             # 沒 trigger 但 cmd 仍在且 LastRunResult 是 None → trigger 被 Watcher 接走前可能 race，
@@ -309,6 +336,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     wait_args = argparse.Namespace(
         id=cmd_id, output_file=args.output_file,
         timeout=args.timeout, poll_interval=args.poll_interval,
+        keep_failed=getattr(args, "keep_failed", False),
     )
     return cmd_wait(wait_args)
 
@@ -407,6 +435,9 @@ def main() -> int:
                         help=f"Max seconds to wait (default {DEFAULT_RUN_TIMEOUT})")
     p_wait.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL,
                         help=f"Seconds between polls (default {DEFAULT_POLL_INTERVAL:.1f})")
+    p_wait.add_argument("--keep-failed", action="store_true",
+                        help="On Failed, keep the cmd entry in queue.json (default: auto-remove "
+                             "to prevent the next batch from re-running the dead entry).")
     p_wait.set_defaults(func=cmd_wait)
 
     # run = submit + wait
@@ -415,6 +446,8 @@ def main() -> int:
     add_common_submit_args(p_run)
     p_run.add_argument("--output-file", default=None)
     p_run.add_argument("--timeout", type=int, default=DEFAULT_RUN_TIMEOUT)
+    p_run.add_argument("--keep-failed", action="store_true",
+                       help="On Failed, keep the cmd entry in queue.json (default: auto-remove).")
     p_run.set_defaults(func=cmd_run)
 
     # list

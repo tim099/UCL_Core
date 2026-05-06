@@ -69,6 +69,14 @@ namespace UCL.Core.EditorLib.Page
                 UCL_AgentCommandRunner.Menu_RunPending();
                 DelayedRefresh().Forget();
             }
+            // 區塊職責：清除 queue 內所有 LastRunResult == "Failed" 的條目，避免下次 Run 重跑壞掉的舊指令。
+            // 物理意義：失敗的 OneShot 預設會留在 queue（保留 LastRunError 給作者除錯），但若 cmd 本身打錯字
+            //          (例 Type 拼錯 → Unknown command type)，留著也只會每次重試都失敗，不如一鍵清掉。
+            // 數值影響：寫回 queue.json；不影響任何成功跑過的條目與 Repeatable。
+            if (GUILayout.Button("Clear Failed", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
+            {
+                ClearFailedCommands();
+            }
             if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_AgentCommandRunner.Menu_OpenQueueFolder();
@@ -379,6 +387,24 @@ namespace UCL.Core.EditorLib.Page
             }
             // OneShot 在 queue 內就是還沒成功跑過
             return "Pending";
+        }
+
+        // 區塊職責：批次移除所有 LastRunResult == "Failed" 的 cmd
+        // 物理意義：失敗 OneShot 預設留在 queue 給作者除錯，但若是 Type 拼錯之類的死局，
+        //          留著只會每次 Run Pending 都重試失敗。這顆按鈕一鍵清空。
+        // 數值影響：寫回 queue.json；只清失敗的，不動 Pending / Success / Repeatable
+        void ClearFailedCommands()
+        {
+            if (m_Cached?.Commands == null || m_Cached.Commands.Count == 0)
+            {
+                Debug.Log("[UCL_AgentCmd UI] queue is empty — nothing to clear.");
+                return;
+            }
+            int before = m_Cached.Commands.Count;
+            m_Cached.Commands.RemoveAll(c => c != null && c.LastRunResult == "Failed");
+            int removed = before - m_Cached.Commands.Count;
+            UCL_AgentCommandQueue.Save(m_Cached);
+            Debug.Log($"[UCL_AgentCmd UI] Cleared {removed} failed cmd(s) from queue (kept {m_Cached.Commands.Count}).");
         }
 
         void AddCommand(string type, UCL_AgentCommandMode mode, string description, Dictionary<string, string> args)

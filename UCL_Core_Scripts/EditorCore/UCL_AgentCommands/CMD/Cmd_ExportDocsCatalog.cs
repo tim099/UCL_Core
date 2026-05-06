@@ -84,38 +84,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             bool includeArchived = string.Equals(
                 GetArg(args, "includeArchived", "false"), "true", StringComparison.OrdinalIgnoreCase);
 
-            string gitRoot = GetGitRoot();
+            string gitRoot = UCL_DocCatalogScanner.GetGitRoot();
 
-            var roots = SplitList(rootsArg);
-            var excludes = SplitList(excludeArg);
+            var roots = UCL_DocCatalogScanner.SplitList(rootsArg);
+            var excludes = UCL_DocCatalogScanner.SplitList(excludeArg);
 
-            // 2) 遞迴掃描每個 root，解析 frontmatter
-            var entries = new List<DocEntry>();
-            foreach (var root in roots)
-            {
-                token.ThrowIfCancellationRequested();
-                string absRoot = Path.IsPathRooted(root) ? root : Path.Combine(gitRoot, root);
-                if (!Directory.Exists(absRoot))
-                {
-                    Debug.LogWarning($"[Cmd:ExportDocsCatalog] root not found, skipped: {root} → {absRoot}");
-                    continue;
-                }
-                foreach (var file in Directory.EnumerateFiles(absRoot, "*.md", SearchOption.AllDirectories))
-                {
-                    token.ThrowIfCancellationRequested();
-                    string normalized = file.Replace('\\', '/');
-                    // 排除規則：路徑含任一 excludeDirs 片段（前後加 / 比對避免子字串誤判）
-                    if (excludes.Any(ex => normalized.IndexOf("/" + ex + "/", StringComparison.OrdinalIgnoreCase) >= 0
-                                          || normalized.EndsWith("/" + ex, StringComparison.OrdinalIgnoreCase)))
-                        continue;
-                    var entry = ParseDoc(file, gitRoot);
-                    if (!includeArchived && entry.Archived) continue;
-                    entries.Add(entry);
-                }
-            }
-
-            // 路徑排序（先 top-dir 後檔名）讓 catalog 視覺穩定
-            entries.Sort((a, b) => string.Compare(a.RelativePath, b.RelativePath, StringComparison.OrdinalIgnoreCase));
+            // 2) 委由共用 scanner 完成「遞迴掃 *.md + 解 frontmatter + 排序」
+            //    (與 Cmd_SearchDocs 共用同一份解析邏輯，避免重複實作)
+            var entries = UCL_DocCatalogScanner.ScanRoots(roots, gitRoot, excludes, includeArchived, token);
 
             // 3) 寫檔
             string absOut = Path.IsPathRooted(outputPath) ? outputPath : Path.Combine(gitRoot, outputPath);
@@ -136,142 +112,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             await UniTask.CompletedTask;
         }
 
-        // ===========================================================
-        // DocEntry：單一 .md 文件的索引列
-        // ===========================================================
-        class DocEntry
-        {
-            public string RelativePath;       // git-root 相對路徑
-            public string Title;              // frontmatter.title 或 fallback 至檔名 / 第一個 H1
-            public string Description;        // frontmatter.description（可空）
-            public List<string> Tags = new();         // frontmatter.tags
-            public List<string> Aliases = new();      // frontmatter.aliases — 模糊搜尋的關鍵
-            public List<string> TargetAudience = new();
-            public string LastUpdated;        // frontmatter.last_updated
-            public bool Archived;             // frontmatter.archived: true → 預設不列入
-            public bool HasFrontmatter;
-        }
-
-        // ===========================================================
-        // Frontmatter parser：手刻簡易 YAML（只支援 scalar / `[a, b]` 行內 list）
-        // 物理意義：避免引入完整 YAML lib；專案 frontmatter 都符合此 subset
-        // ===========================================================
-        static DocEntry ParseDoc(string absPath, string gitRoot)
-        {
-            var entry = new DocEntry
-            {
-                RelativePath = MakeRelative(absPath, gitRoot),
-            };
-
-            string[] lines;
-            try { lines = File.ReadAllLines(absPath); }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[Cmd:ExportDocsCatalog] read failed: {absPath} ({e.Message})");
-                return entry;
-            }
-
-            if (lines.Length == 0 || lines[0].Trim() != "---")
-            {
-                // 沒有 frontmatter — 從第一個 H1 取 title，仍納入 catalog
-                foreach (var line in lines)
-                {
-                    if (line.StartsWith("# "))
-                    {
-                        entry.Title = line.Substring(2).Trim();
-                        break;
-                    }
-                }
-                if (string.IsNullOrEmpty(entry.Title))
-                {
-                    entry.Title = Path.GetFileNameWithoutExtension(absPath);
-                }
-                return entry;
-            }
-
-            entry.HasFrontmatter = true;
-            for (int i = 1; i < lines.Length; i++)
-            {
-                string line = lines[i];
-                if (line.Trim() == "---") break;
-                int sep = line.IndexOf(':');
-                if (sep < 0) continue;
-                string key = line.Substring(0, sep).Trim().ToLowerInvariant();
-                string val = line.Substring(sep + 1).Trim();
-                switch (key)
-                {
-                    case "title": entry.Title = StripQuotes(val); break;
-                    case "description": entry.Description = StripQuotes(val); break;
-                    case "last_updated": entry.LastUpdated = StripQuotes(val); break;
-                    case "tags": entry.Tags = ParseInlineList(val); break;
-                    case "aliases": entry.Aliases = ParseInlineList(val); break;
-                    case "target_audience": entry.TargetAudience = ParseInlineList(val); break;
-                    case "archived":
-                        entry.Archived = string.Equals(StripQuotes(val), "true", StringComparison.OrdinalIgnoreCase);
-                        break;
-                }
-            }
-
-            if (string.IsNullOrEmpty(entry.Title))
-            {
-                entry.Title = Path.GetFileNameWithoutExtension(absPath);
-            }
-            return entry;
-        }
-
-        static string StripQuotes(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return s;
-            if (s.Length >= 2 &&
-                ((s[0] == '"' && s[s.Length - 1] == '"') ||
-                 (s[0] == '\'' && s[s.Length - 1] == '\'')))
-            {
-                return s.Substring(1, s.Length - 2);
-            }
-            return s;
-        }
-
-        // 解析 `[a, b, c]` 行內列表；非此格式則退回單值（也可能是空字串）
-        static List<string> ParseInlineList(string val)
-        {
-            var list = new List<string>();
-            if (string.IsNullOrWhiteSpace(val)) return list;
-            val = val.Trim();
-            if (val.StartsWith("[") && val.EndsWith("]"))
-            {
-                val = val.Substring(1, val.Length - 2);
-            }
-            foreach (var part in val.Split(','))
-            {
-                string p = StripQuotes(part.Trim());
-                if (!string.IsNullOrWhiteSpace(p)) list.Add(p);
-            }
-            return list;
-        }
-
-        static List<string> SplitList(string raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) return new List<string>();
-            return raw.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                      .Select(s => s.Trim())
-                      .Where(s => s.Length > 0)
-                      .ToList();
-        }
-
-        static string MakeRelative(string abs, string root)
-        {
-            string a = abs.Replace('\\', '/');
-            string r = root.Replace('\\', '/').TrimEnd('/');
-            return a.StartsWith(r + "/", StringComparison.OrdinalIgnoreCase)
-                ? a.Substring(r.Length + 1)
-                : a;
-        }
+        // 區塊備註：DocEntry / ParseDoc / StripQuotes / ParseInlineList / SplitList / MakeRelative
+        //          已抽出至 UCL_DocCatalogScanner（同 namespace），由本 Cmd 與 Cmd_SearchDocs 共用。
 
         // ===========================================================
         // Markdown 渲染
         // 物理意義：catalog 主檔，人類 Ctrl+F + agent grep 都用此檔
         // ===========================================================
-        static string RenderMarkdown(List<DocEntry> entries, List<string> roots, string outputPath)
+        static string RenderMarkdown(List<UCL_DocCatalogEntry> entries, List<string> roots, string outputPath)
         {
             var sb = new StringBuilder();
             sb.AppendLine("---");
@@ -389,7 +237,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         // JSON 渲染（給程式用）
         // ===========================================================
-        static string RenderJson(List<DocEntry> entries, List<string> roots)
+        static string RenderJson(List<UCL_DocCatalogEntry> entries, List<string> roots)
         {
             var sb = new StringBuilder();
             sb.AppendLine("{");
@@ -426,13 +274,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                     .Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
         }
 
-        // 區塊職責：取得 git-root（CardGame/ 的上一層）
-        // 物理意義：Docs/ 與 CardGame/ 並存於 git root；catalog 自然屬於 git-root 層級
-        // 數值影響：純路徑計算，不修改任何檔案
-        static string GetGitRoot()
-        {
-            return Path.GetFullPath(Path.Combine(Application.dataPath, "../..")).Replace('\\', '/');
-        }
+        // GetGitRoot 已搬移到 UCL_DocCatalogScanner — 本檔以 UCL_DocCatalogScanner.GetGitRoot() 取代
     }
 }
 #endif

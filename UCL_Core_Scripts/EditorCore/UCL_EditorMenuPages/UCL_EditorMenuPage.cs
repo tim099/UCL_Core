@@ -38,7 +38,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();
                 }
-
+#if UNITY_EDITOR
                 // 區塊職責：提供按鈕以開啟 Agent Commands 頁面
                 // 物理意義：快速導向 Agent Command 隊列與手動觸發管理面板
                 // 數值影響：無
@@ -46,7 +46,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     UCL_AgentCommandsPage.Create();
                 }
-
+#endif
                 if (GUILayout.Button("PlayerPrefs", UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_EditorPage.Create<UCL_PlayerPrefsEditPage>();

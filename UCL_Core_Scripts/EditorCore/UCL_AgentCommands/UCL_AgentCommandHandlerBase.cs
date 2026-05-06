@@ -37,6 +37,27 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>實際執行邏輯（async）。</summary>
         public abstract UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token);
+
+        // ===== 共用 helper（給子類使用） =====
+
+        // 區塊職責：從 args dict 取出指定 key 的字串值，缺 key 或 value 為空字串時回 defaultVal。
+        // 物理意義：UCL Runner 會把 queue.json 的 Args 餵成 Dictionary<string,string>；子類解析 args 時最常用的取值動作。
+        //          採「嚴格版」語意 — value="" 也視為「未提供」，避免「使用者誤填空字串」陷阱。
+        //          若子類需要區分「key 不存在」vs「value 是空字串」（例如允許空字串作為合法輸入），
+        //          請改用 args.TryGetValue 自行處理，不要呼叫此 helper。
+        // 數值影響：純讀取，不修改 args；對所有子類安全。
+        /// <summary>
+        /// Args dict 取值 helper：缺 key / null args / value 為空字串時回傳 <paramref name="defaultVal"/>。
+        /// </summary>
+        /// <param name="args">queue.json 傳進來的參數 dict（可為 null）</param>
+        /// <param name="key">參數名稱（大小寫敏感，與 ArgsSchema 對齊）</param>
+        /// <param name="defaultVal">缺值時回傳的預設值（可為 null）</param>
+        /// <returns>有效字串值；否則 <paramref name="defaultVal"/></returns>
+        protected static string GetArg(Dictionary<string, string> args, string key, string defaultVal)
+        {
+            if (args == null) return defaultVal;
+            return args.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : defaultVal;
+        }
     }
 }
 #endif

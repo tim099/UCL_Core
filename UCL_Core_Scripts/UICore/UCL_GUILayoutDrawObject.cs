@@ -482,6 +482,17 @@ namespace UCL.Core.UI
             return DrawField(iObj, aParams);
         }
 
+        // 區塊職責：FieldInfoCache / TypeFieldInfoCache 自 Step 1.5 起改為 adapter
+        // 物理意義：原本 GUI 私有的 cache（內含全套反射呼叫）已抽到 UCL_TypeReflectCache（共用層）。
+        //          這裡保留兩個 class 名稱與公開欄位 — DrawObject 主流程的所有呼叫點不變，
+        //          僅 ctor 內部改成讀共用 cache 後 copy 出 GUI 所需子集。
+        // 數值影響：行為等價（相同欄位順序、相同 Header / SerializeReference / Attrs）；
+        //          原 GUI 構造期就丟掉的 [HideInInspector] / [UCL_HideOnGUI] 仍在這裡過濾。
+
+        /// <summary>
+        /// GUI 端對單一欄位的 metadata wrapper。Step 1.5 起改為 <see cref="UCL_FieldEntry"/> 的 adapter，
+        /// 所有 attribute 抓取已收斂到共用層 — 本類別只負責挑出 GUI 用得到的欄位。
+        /// </summary>
         public class FieldInfoCache
         {
             public FieldInfo m_FieldInfo;
@@ -490,48 +501,53 @@ namespace UCL.Core.UI
             public bool m_SerializeReference;
             public string m_Header;
             public FieldInfoCache() { }
-            public FieldInfoCache(FieldInfo iFieldInfo)
+            // 區塊職責：從共用 entry 抽出 GUI 用的子集
+            // 物理意義：與舊版直接從 FieldInfo 反射的結果完全等價（共用層執行同樣邏輯）；
+            //          [Header] 在地化在這裡做（共用 entry 不做，避免 JSON 載入路徑撞 LocalizeManager 循環）
+            // 數值影響：m_Header 套 UCL_LocalizeManager；其餘欄位 1:1 映射
+            public FieldInfoCache(UCL_FieldEntry iEntry)
             {
-                m_FieldInfo = iFieldInfo;
-                var aHeader = m_FieldInfo.GetCustomAttribute<HeaderAttribute>(true);
-                if (aHeader != null)
+                m_FieldInfo = iEntry.m_FieldInfo;
+                // [Header] localize — 只在 GUI 路徑構造 wrapper 時觸發 LocalizeManager
+                m_Header = iEntry.m_HeaderRaw;
+                if (!string.IsNullOrEmpty(m_Header) && UCL_LocalizeManager.ContainsKey(m_Header))
                 {
-                    m_Header = aHeader.header;
-                    if (UCL_LocalizeManager.ContainsKey(m_Header))
-                    {
-                        m_Header = UCL_LocalizeManager.Get(m_Header);
-                    }
+                    m_Header = UCL_LocalizeManager.Get(m_Header);
                 }
-                m_SerializeReference = (m_FieldInfo.GetCustomAttribute<SerializeReference>() != null);
-                m_AlwaysExpendOnGUI = (m_FieldInfo.FieldType.GetCustomAttribute<ATTR.AlwaysExpendOnGUI>() != null);
-                m_Attrs = m_FieldInfo.GetCustomAttributes();
+                m_SerializeReference = iEntry.m_IsPolymorphicField;
+                m_AlwaysExpendOnGUI = iEntry.m_AlwaysExpendOnGUI;
+                // 全 attribute 在這裡 lazy 取（GUI render 時 service 已 ready；不在共用 cache 算以避開
+                // 早期載入 NRE，詳見 UCL_TypeReflectCache.UCL_FieldEntry 上方註解）
+                m_Attrs = iEntry.m_FieldInfo.GetCustomAttributes();
             }
         }
 
+        /// <summary>
+        /// GUI 端對單一型別的 metadata wrapper。Step 1.5 起改為 <see cref="UCL_TypeReflectCache"/> 的
+        /// adapter — 構造時讀共用 cache（Unity 模式），按 GUI 規則過濾出 <see cref="m_FieldInfos"/>。
+        /// </summary>
         public class TypeFieldInfoCache
         {
             public bool m_EnableUCLEditor;
             public List<FieldInfoCache> m_FieldInfos = new List<FieldInfoCache>();
             public IList<MethodInfo> m_AllMethods;
-            
+
 
             public TypeFieldInfoCache() { }
+            // 區塊職責：從共用反射 cache 取得 type metadata 並過濾出 GUI 可顯示欄位
+            // 物理意義：取代舊版的 GetAllFieldsUnityVer + per-field FieldInfoCache 反射。
+            //          GUI 過濾規則：跳過 entry.m_HideOnGUI（[HideInInspector] || [UCL_HideOnGUI]）。
+            // 數值影響：m_FieldInfos 順序與內容應與舊版完全等價（共用層走訪函式相同、過濾條件相同）
             public TypeFieldInfoCache(System.Type aType)
             {
-                m_EnableUCLEditor = (aType.GetCustomAttribute<ATTR.EnableUCLEditor>(true) != null);
-                if (m_EnableUCLEditor)
+                // GUI 一律走 Unity 模式（與原 GetAllFieldsUnityVer 路徑一致）
+                var aShared = UCL_TypeReflectCache.Get(aType, JsonLib.JsonConvert.SaveMode.Unity);
+                m_EnableUCLEditor = aShared.m_EnableUCLEditor;
+                m_AllMethods = aShared.m_AllMethods;
+                foreach (var aEntry in aShared.m_Entries)
                 {
-                    m_AllMethods = aType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                }
-                var aFieldInfos = aType.GetAllFieldsUnityVer(typeof(object));
-                foreach(var aFieldInfo in aFieldInfos)
-                {
-                    bool aHideInInspector = (aFieldInfo.GetCustomAttribute<HideInInspector>() != null || aFieldInfo.GetCustomAttribute<ATTR.UCL_HideOnGUIAttribute>(false) != null);
-                    if (!aHideInInspector)//Ignore HideInInspector Field
-                    {
-                        var aFieldInfoCache = new FieldInfoCache(aFieldInfo);
-                        m_FieldInfos.Add(aFieldInfoCache);
-                    }
+                    if (aEntry.m_HideOnGUI) continue; // 等價舊版 [HideInInspector] || [UCL_HideOnGUI] 過濾
+                    m_FieldInfos.Add(new FieldInfoCache(aEntry));
                 }
             }
         }

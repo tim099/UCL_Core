@@ -406,36 +406,29 @@ namespace UCL.Core.JsonLib {
             => SaveFieldsToJson(iObj, JsonConvert.SaveMode.Unity, UCL.Core.UCL_StaticFunctions.FieldNameUnityVer);
         static public JsonData SaveFieldsToJson(object iObj, SaveMode iSaveMode = SaveMode.Normal, System.Func<string, string> iFieldNameAlterFunc = null)
         {
-            
+
             JsonData aData = new JsonData();
             Type aType = iObj.GetType();
             //Debug.LogError($"SaveFieldsToJson aType:{aType.FullName}");
-            List<FieldInfo> aFields = null;
-            switch (iSaveMode)
-            {
 
-                case SaveMode.Unity:
-                    {
-                        aFields = aType.GetAllFieldsUnityVer(typeof(object));
-                        break;
-                    }
-                case SaveMode.Normal:
-                default:
-                    {
-                        aFields = aType.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                        break;
-                    }
-            }
+            // 區塊職責：欄位走訪與 attribute 查詢改讀共用反射 cache（Step 1.5）
+            // 物理意義：原本每次呼叫都重走 GetAllFieldsUnityVer / GetAllFieldsUntil 並對每個欄位
+            //          逐一 GetCustomAttribute<X>() — 改成從 UCL_TypeReflectCache 一次拿到所有
+            //          metadata snapshot。GUI 端走相同 cache，雙邊 metadata 由此收斂到一個來源。
+            // 數值影響：行為等價（cache 用同樣的走訪函式 + 同樣的 attribute 條件，順序不變）。
+            //          [UCL_Conditional].IsShow(iObj) 是 instance-level 判斷 → 仍 runtime 呼叫。
+            var aCache = UCL.Core.UCL_TypeReflectCache.Get(aType, iSaveMode);
 
-            foreach (var aField in aFields)
+            foreach (var aEntry in aCache.m_Entries)
             {
-                if (aField.GetCustomAttribute<UCL_HideInJsonAttribute>() != null ||
-                    aField.FieldType.IsSubclassOf(typeof(MulticastDelegate)))
+                var aField = aEntry.m_FieldInfo;
+                // 對應原 line 432-436：[UCL_HideInJson] 或 MulticastDelegate 一律跳過
+                if (aEntry.m_HideInJson || aEntry.m_IsMulticastDelegate)
                 {
                     continue;
                 }
-                var aConditional = aField.GetCustomAttribute<UCL.Core.PA.ConditionalAttribute>();
-                if (aConditional != null && !aConditional.IsShow(iObj))
+                // 對應原 line 437-441：[UCL_Conditional].IsShow(iObj) — instance-level，runtime 算
+                if (aEntry.m_Conditional != null && !aEntry.m_Conditional.IsShow(iObj))
                 {
                     continue;
                 }
@@ -447,7 +440,9 @@ namespace UCL.Core.JsonLib {
                     aFieldName = iFieldNameAlterFunc(aFieldName);
                 }
 
-                if (aValue != null && aField.GetCustomAttribute<SerializeReference>() != null)
+                // 對應原 line 450-454：[SerializeReference] → 包 ClassName/ClassData
+                // entry.m_IsPolymorphicField 來自 UCL_PolymorphicHelper（SSOT），與原邏輯等價
+                if (aValue != null && aEntry.m_IsPolymorphicField)
                 {
                     aData[aFieldName] = ObjectToJson(aValue, iSaveMode, iFieldNameAlterFunc);
                     continue;
@@ -656,24 +651,19 @@ namespace UCL.Core.JsonLib {
                 return null;
             }
             Type aType = iObj.GetType();
-            List<FieldInfo> aFields = null;
-            switch (iSaveMode)
+
+            // 區塊職責：欄位走訪與 attribute 查詢改讀共用反射 cache（Step 1.5）
+            // 物理意義：與 SaveFieldsToJson 同 cache 來源，確保 save/load 看到同一份欄位集合與
+            //          metadata snapshot。原本每次呼叫都 GetAllFieldsUnityVer + per-field
+            //          GetCustomAttribute<X>() 的反射成本省下；行為應與舊版完全等價。
+            // 數值影響：欄位處理順序、attribute 判定條件不變。
+            var aCache = UCL.Core.UCL_TypeReflectCache.Get(aType, iSaveMode);
+
+            foreach (var aEntry in aCache.m_Entries)
             {
-                case SaveMode.Unity:
-                    {
-                        aFields = aType.GetAllFieldsUnityVer(typeof(object));
-                        break;
-                    }
-                case SaveMode.Normal:
-                default:
-                    {
-                        aFields = aType.GetAllFieldsUntil(typeof(object), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                        break;
-                    }
-            }
-            foreach (var aField in aFields)
-            {
-                if (aField.FieldType.IsSubclassOf(typeof(MulticastDelegate))){
+                var aField = aEntry.m_FieldInfo;
+                // 對應原 line 676-678：MulticastDelegate 跳過（JSON 不可序列化 delegate）
+                if (aEntry.m_IsMulticastDelegate) {
                     continue;
                 }
                 string aFieldName = aField.Name;
@@ -685,10 +675,10 @@ namespace UCL.Core.JsonLib {
                     }
                     if (!iData.Contains(aFieldName))//try find UnityEngine.Serialization.FormerlySerializedAs
                     {
-                        var formerlySerializedAs = aField.GetCustomAttribute<UCL_FormerlySerializedAsAttribute>();
-                        if(formerlySerializedAs != null)
+                        // 對應原 line 686-693：fallback 用 [UCL_FormerlySerializedAs] 的舊名重試
+                        if (aEntry.m_FormerlyAs != null)
                         {
-                            aFieldName = formerlySerializedAs.oldName;//try old name
+                            aFieldName = aEntry.m_FormerlyAs.oldName;//try old name
                         }
                     }
                     if (iData.Contains(aFieldName))
@@ -696,7 +686,8 @@ namespace UCL.Core.JsonLib {
                         var aJsonData = iData[aFieldName];
                         if (aJsonData == null) continue;
                         object aFieldData = null;
-                        if (aField.GetCustomAttribute<SerializeReference>() != null)
+                        // 對應原 line 699-707：[SerializeReference] → 從 ClassName 還原子類
+                        if (aEntry.m_IsPolymorphicField)
                         {
                             string className = aJsonData.GetString(ClassNameID, null);
                             if(className != null)

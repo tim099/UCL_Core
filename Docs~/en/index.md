@@ -28,6 +28,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | `DebugLog` | [Cmd_DebugLog](API/UCL_AgentCommand/Cmd_DebugLog.md) | Sanity testing / simplest example |
 | **`ResolveAssetReferences`** ⭐ | [Cmd_ResolveAssetReferences](API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) | **Batch resolve UCL_Asset chain** — BFS + reflection + maxDepth + deduplication, outputs a list of (AssetType, ID, JSON path) to the AI agent |
 | **`ExportCommandCatalog`** ⭐ | [Cmd_ExportCommandCatalog](API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md) | **Export all currently registered handlers as a Markdown catalog** — shares rendering logic with the page button |
+| **`FindAssetUsages`** ⭐ | [Cmd_FindAssetUsages](API/UCL_AgentCommand/Cmd_FindAssetUsages.md) | **Reverse lookup of asset references** — given a target asset (e.g. RCG_CustomStatusData/Stun), scan every UCL_Asset subclass for usage points, with dotted field paths |
 
 ### Trigger Methods (4 ways)
 1. Editor UI (`UCL_AgentCommandsPage`) buttons
@@ -78,6 +79,7 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 |---|---|
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | Prefix mechanisms such as `ucl_core:` / `eov_docs:` |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | Handling hard-coded localization strings |
+| 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **SOP for creating a new `Cmd_<Name>.cs` subclass** — naming / file-placement decision tree (UCL_Core vs downstream module) / standard template (CommandType / ShortDescription / ArgsSchema / HelpURL) / ExecuteAsync conventions / in-Editor verification / 8 common pitfalls / **§9 auto-classification scheme for doc placement** (`source_root` frontmatter + `Cmd_ValidateDocPlacement`) |
 
 ---
 

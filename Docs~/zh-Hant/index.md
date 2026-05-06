@@ -28,6 +28,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | `DebugLog` | [Cmd_DebugLog](API/UCL_AgentCommand/Cmd_DebugLog.md) | 連線測試 / 最簡範例 |
 | **`ResolveAssetReferences`** ⭐ | [Cmd_ResolveAssetReferences](API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) | **批次解析 UCL_Asset 連動鏈** — BFS + 反射 + maxDepth + 去重，輸出 (AssetType, ID, JSON 路徑) 清單給 AI agent |
 | **`ExportCommandCatalog`** ⭐ | [Cmd_ExportCommandCatalog](API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md) | **匯出當前所有已註冊 Handler 為 Markdown 目錄** — 與 Page 按鈕共用渲染邏輯 |
+| **`FindAssetUsages`** ⭐ | [Cmd_FindAssetUsages](API/UCL_AgentCommand/Cmd_FindAssetUsages.md) | **反向查詢被引用位置** — 給定目標 Asset（例 RCG_CustomStatusData/Stun），掃描所有 UCL_Asset 子類找出所有引用點，附 dotted field path |
 
 ### 觸發方式（4 種）
 1. Editor UI（`UCL_AgentCommandsPage`）按鈕
@@ -78,6 +79,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 |---|---|
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` 等 prefix 機制 |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬寫本地化字串的處理 |
+| 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **建立新的 `Cmd_<Name>.cs` 子類 SOP** — 命名 / 檔案位置決策樹（UCL_Core vs 下游模組） / 標準範本（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync 守則 / Editor 驗收 / 8 大常見地雷 / **§9 文件放置自動判斷方案**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
 
 ---
 

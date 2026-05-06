@@ -28,6 +28,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | `DebugLog` | [Cmd_DebugLog](API/UCL_AgentCommand/Cmd_DebugLog.md) | 疎通確認 / 最もシンプルな例 |
 | **`ResolveAssetReferences`** ⭐ | [Cmd_ResolveAssetReferences](API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) | **UCL_Asset チェーンの一括解決** — BFS + リフレクション + maxDepth + 重複排除。AI エージェント用に (AssetType, ID, JSON パス) のリストを出力します。 |
 | **`ExportCommandCatalog`** ⭐ | [Cmd_ExportCommandCatalog](API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md) | **現在登録されている全ハンドラーを Markdown カタログとして出力** — ページのボタンと描画ロジックを共有します。 |
+| **`FindAssetUsages`** ⭐ | [Cmd_FindAssetUsages](API/UCL_AgentCommand/Cmd_FindAssetUsages.md) | **Asset 参照の逆引き** — ターゲット Asset（例：RCG_CustomStatusData/Stun）について全 UCL_Asset サブクラスから参照箇所を抽出（dotted field path 付き）|
 
 ### トリガー方法（4 つ）
 1. エディター UI（`UCL_AgentCommandsPage`）ボタン
@@ -78,6 +79,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 |---|---|
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` などのプレフィックスメカニズム |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | ハードコードされたローカライズ文字列の処理 |
+| 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **新しい `Cmd_<Name>.cs` サブクラス作成 SOP** — 命名 / ファイル配置デシジョンツリー（UCL_Core vs 下流モジュール） / 標準テンプレート（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync の指針 / Editor 内検証 / 8 つのよくある落とし穴 / **§9 文書配置の自動判定スキーム**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
 
 ---
 

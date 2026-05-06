@@ -286,7 +286,7 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("Args:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
-                    m_NewArgsRaw = GUILayout.TextField(m_NewArgsRaw ?? "", UCL_GUIStyle.LabelStyle);
+                    m_NewArgsRaw = GUILayout.TextField(m_NewArgsRaw ?? "", UCL_GUIStyle.TextFieldStyle);
                     GUILayout.Label("(format: k=v;k=v)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 }
 

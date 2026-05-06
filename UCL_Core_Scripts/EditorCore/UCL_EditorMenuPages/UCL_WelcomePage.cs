@@ -11,6 +11,8 @@
 // 數值影響：唯讀 GUI；使用者按鈕可開啟其他 Page，或寫 EditorPrefs 控制自動彈出狀態。
 #if UNITY_EDITOR
 using System;                             // for Action（FeatureCard 簽名）
+using System.Linq;                        // for .Select / .ToList（語言下拉組裝顯示名）
+using UCL.Core.Game;                      // for UCL_LocalizeService（語言切換）
 using UCL.Core.LocalizeLib;               // for UCL_CodeLocalize.Get(...)
 using UCL.Core.Page;                      // for UCL_ModuleServiceEditPage（住在 UCL.Core.Page）
 using UCL.Core.UI;
@@ -51,6 +53,9 @@ namespace UCL.Core.EditorLib.Page
 
         Vector2 m_Scroll = Vector2.zero;
 
+        // PopupSearchCache 需要的容器 — 給語言下拉選單用
+        readonly UCL_ObjectDictionary m_LangDic = new UCL_ObjectDictionary();
+
         // 區塊備註：原本的內嵌文件搜尋已搬出至 UCL_DocSearchPage；
         //          本頁只保留一顆「🔍 文件搜尋」按鈕跳轉過去。
 
@@ -88,6 +93,8 @@ namespace UCL.Core.EditorLib.Page
             m_Scroll = GUILayout.BeginScrollView(m_Scroll);
 
             DrawHeader();
+            GUILayout.Space(4);
+            DrawLanguageBar();
             GUILayout.Space(8);
             DrawIntro();
             GUILayout.Space(8);
@@ -123,6 +130,57 @@ namespace UCL.Core.EditorLib.Page
                     fontStyle = FontStyle.Italic,
                 };
                 GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Welcome.Subtitle"), CurrentVersion), sub);
+            }
+        }
+
+        // ===========================================================
+        // 區塊：語言切換列 — 直接在 Welcome 頁切，不用跳到 LocalizeEditPage
+        // 物理意義：使用者最常做的本地化操作就是「切語言看翻譯效果」，把它放在最顯眼的地方
+        //          （跟其他 UCL_Core/EOV Editor 頁連動 — 切完後所有走 UCL_LocalizeManager
+        //          / UCL_CodeLocalize 的字串都會更新）
+        // 數值影響：UCL_LocalizeService.SetLanguage 寫 PlayerPrefs + 觸發 reload + raise
+        //          OnLanguageChanged event
+        // ===========================================================
+        void DrawLanguageBar()
+        {
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Lang.Label"),
+                    UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+
+                var allIds = UCL_LanguageCodeAsset.Util.GetAllIDs(true);
+                if (allIds == null || allIds.Count == 0)
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Lang.NoneAvailable"),
+                        UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
+                string curLang = UCL_LocalizeService.CurLang;
+                int curIdx = allIds.IndexOf(curLang);
+                if (curIdx < 0) curIdx = 0;
+
+                // 顯示「en — English」這種「ID — DisplayName」組合
+                var displayOptions = allIds
+                    .Select(id =>
+                    {
+                        var asset = UCL_LanguageCodeAsset.Util.GetData(id);
+                        string name = asset != null && !string.IsNullOrEmpty(asset.LanguageName) ? asset.LanguageName : id;
+                        return name == id ? id : $"{id} — {name}";
+                    })
+                    .ToList();
+
+                int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, displayOptions, m_LangDic, "WelcomeLangPicker");
+                if (newIdx != curIdx && newIdx >= 0 && newIdx < allIds.Count)
+                {
+                    string newLang = allIds[newIdx];
+                    UCL_LocalizeService.SetLanguage(newLang);
+                    Debug.Log($"[UCL_Welcome] Language switched: {curLang} → {newLang}");
+                }
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Lang.OpenEditor"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    UCL_EditorPage.Create<UCL_LocalizeEditPage>();
+                }
             }
         }
 
@@ -242,6 +300,11 @@ namespace UCL.Core.EditorLib.Page
                     "ucl_core:Docs~/{lang}/Workflows/Create_Cmd_Workflow.md");
                 LinkRow(UCL_CodeLocalize.Get("Welcome.Docs.Validate"),
                     "ucl_core:Docs~/{lang}/Workflows/Validate_UCL_Asset_Workflow.md");
+                // 區塊備註：CompileError_Diagnose_Workflow 是「最需要查錯誤時 Cmd 系統反而
+                //          因 compile error 載不進來」雞生蛋情境的解法（standalone Python 工具
+                //          + Tracker JSON），新人特別容易踩到，放進總入口顯眼處
+                LinkRow(UCL_CodeLocalize.Get("Welcome.Docs.CompileError"),
+                    "ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md");
             }
         }
 

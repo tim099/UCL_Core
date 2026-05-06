@@ -1,6 +1,6 @@
 # UCL_Core
 
-[繁體中文](#繁體中文) | [English](#english)
+[繁體中文](#繁體中文) | [English](#english) | [日本語](#日本語)
 
 ---
 
@@ -170,3 +170,93 @@ git submodule update --init --recursive
 ### 📜 License
 
 MIT License — see [`COPYING.txt`](COPYING.txt).
+
+---
+
+## 日本語
+
+**UCL_Core** は [UCL Framework](https://github.com/tim099/UCL) のコアモジュールです — Unity Editor 側のアセットシステム、モジュールサービス、AI 協調ツール、そして再利用可能な Editor UI コンポーネント群を提供します。本モジュールは単独で使用することも、UCL の上位モジュール (UCL_Game / UCL_Audio / UCL_Build など) の共通基盤として使うこともできます。
+
+### ✨ 主要機能
+
+| システム | 説明 |
+|---|---|
+| 🤖 **Agent Command システム** | AI agent と Unity Editor のクロスプロセス指令システム — agent が `queue.json` + `pending.trigger` (lock-file) を書き、Editor 側 `UCL_AgentCommandWatcher` (`[InitializeOnLoad]`) が 1Hz で自動検出して引き継ぎ。自動発見 / リフレクション登録 / 非同期実行フロー含む。5 種類のトリガー方法をサポート (**Python CLI + lock-file 自動トリガー** ⭐ / Editor UI / メニュー / 手書き queue.json / batchmode) |
+| 🐍 **Tools~/AgentCommands/** | Python wrapper (`Tools~/` サフィックスにより Unity がインポートをスキップ) — `run_cmd.py` が `submit/wait/run/list/catalog` サブコマンドを提供。`ensure_idle()` pre-flight による直列化保証付き |
+| 🧱 **UCL_Asset アセットシステム** | `UCL_Asset<T>` 汎用 JSON シリアライズアセットコンテナ。`UCLI_AssetEntry<T>` クロスアセット参照 + モジュール読み込み順 + キャッシュ管理を含む |
+| 🗂 **UCL_ModuleService** | モジュールシステム — 複数モジュール (Core + サブモジュール) 共存、クロスモジュール ID ルックアップ、Persistent / Built-in パス切替 |
+| 🖥 **Editor IMGUI Pages** | `UCL_CommonEditorPage` / `UCL_AgentCommandsPage` / `UCL_SelectAssetPage` など継承可能な Editor ページ |
+| 📚 **多言語 HelpURL** | `ucl_core:` / `eov_docs:` プレフィックス機構。Editor 内の ? ボタンが現在の言語に対応する markdown ドキュメントへジャンプ |
+
+### 📁 ドキュメント索引
+
+完全な多言語ドキュメントは [`Docs~/`](Docs~/) 配下:
+
+- 🇹🇼 [繁體中文](Docs~/zh-Hant/index.md)
+- 🇨🇳 [简体中文](Docs~/zh-Hans/index.md)
+- 🇯🇵 [日本語](Docs~/ja/index.md)
+- 🇬🇧 [English](Docs~/en/index.md)
+
+### 📝 更新ログ
+
+[`DevLogs~/`](DevLogs~/) — プラグイン利用者向けの更新内容説明 (1 件 1 ファイル、ファイル名 `NNNNN_YYYY-MM-DD.md`)。最新:
+- [00003_2026-05-05](DevLogs~/00003_2026-05-05.md): Claude Code Hook 自動化 — UCL_Asset 検証を SOP から強制ゲートへ昇格
+- [00002_2026-05-05](DevLogs~/00002_2026-05-05.md): `Cmd_ValidateAssetFormat` 追加 — UCL_Asset スキーマ + 参照整合性チェック
+- [00001_2026-05-05](DevLogs~/00001_2026-05-05.md): Agent Command システムに Lock-file 自動トリガー機構を追加
+
+⭐ **おすすめ**:
+- [`UCL_AgentCommand_Architecture`](Docs~/ja/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command システム全体アーキテクチャ (コンポーネント図 / ライフサイクル / トリガー方法対比 / 拡張ポイント)
+- 🔍 [`Validate_UCL_Asset_Workflow`](Docs~/ja/Workflows/Validate_UCL_Asset_Workflow.md) — UCL_Asset JSON を書いた / 修正した後の検収 SOP ([`Cmd_ValidateAssetFormat`](Docs~/ja/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md) と組み合わせ)
+- 🔗 [`Hook_Setup_Workflow`](Docs~/ja/Workflows/Hook_Setup_Workflow.md) — Claude Code hooks で上記 SOP を**自動化** — `PostToolUse` 早期警告 + `Stop` 強制検収ゲート。UCL_Core を使う各上位プロジェクトに settings.json テンプレートをコピー
+
+### 🖥 UCL_EditorMenu と Agent Commands を開く方法
+
+1. Unity Editor 上部メニューバーで **UCL** -> **Menu** をクリック → **UCL_EditorMenu** が開きます。
+2. 開いたメニュー画面から **Agent Commands** ボタンをクリックして Agent Commands 管理パネルを開きます。
+3. **UCL_CodeLocalize 翻訳されたボタンテキストの早見表**:
+   - モジュール編集ボタンテキスト: `Edit Modules`
+   - Agent コマンド集ボタンテキスト: `Agent Commands`
+
+### 🚀 クイックスタート
+
+新しい Agent Command を追加 (AI agent から呼び出される):
+
+```csharp
+public class Cmd_MyCustom : UCL_AgentCommandHandlerBase
+{
+    public override string CommandType => "MyCustom";
+    public override string ShortDescription => "私のカスタムコマンド";
+    public override string ArgsSchema => "key1=説明\nkey2=説明";
+
+    public override async UniTask ExecuteAsync(
+        Dictionary<string,string> args, CancellationToken token)
+    {
+        // ... ロジックをここに
+        await UniTask.CompletedTask;
+    }
+}
+```
+
+書いたら reflection が自動登録します。agent は `AgentCommands/queue.json` に 1 件追加するだけでトリガー可能:
+
+```json
+{ "Type": "MyCustom", "Mode": "OneShot", "Args": { "key1": "value1" } }
+```
+
+### 📦 インストール
+
+UCL_Core は [UCL Framework](https://github.com/tim099/UCL) のサブモジュールです — **UCL と一緒にインストール**してください。
+
+```bash
+git clone --recursive https://github.com/tim099/UCL.git
+```
+
+すでに UCL を持っている場合、すべてのサブモジュールを更新:
+
+```bash
+git submodule update --init --recursive
+```
+
+### 📜 ライセンス
+
+MIT License — [`COPYING.txt`](COPYING.txt) を参照。

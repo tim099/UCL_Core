@@ -105,7 +105,7 @@ The styles returned by `LabelStyle` / `GetLabelStyle(...)` **lack the two-state 
 |---|---|
 | Plain checkbox toggle | `GUILayout.Toggle(value, label)` (drop the third parameter; default `GUI.skin.toggle` applies) |
 | Button-like two-state (AND/OR, Tab) | Pass `UCL_GUIStyle.ButtonStyle` as the third param |
-| Colored / large-font label | `UCL_GUIStyle.GetLabelStyle(Color, size)` or `UCL_GUILayout.Label(name, color)` |
+| Colored / large-font label | `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(Color, size))` |
 
 ---
 

@@ -63,7 +63,7 @@ tags: [api, ui, imgui, editor]
 
 | 檔案 | 職責 | 主要對外 API |
 |---|---|---|
-| `UCL_GUILayout.cs` | 基礎欄位、Sprite/Texture 繪製、FolderExplorer | `NumField` / `IntField` / `FloatField` / `TextField` / `TextArea` / `Toggle` / `BoolField` / `CheckBox` / `Slider` / `Vector2/3Field` / `DrawSprite` / `DrawTexture` / `LabelAutoSize` / `ButtonAutoSize` / `Label(name, Color)` / `FolderExplorer` |
+| `UCL_GUILayout.cs` | 基礎欄位、Sprite/Texture 繪製、FolderExplorer | `NumField` / `IntField` / `FloatField` / `TextField` / `TextArea` / `Toggle` / `BoolField` / `CheckBox` / `Slider` / `Vector2/3Field` / `DrawSprite` / `DrawTexture` / `LabelAutoSize` / `ButtonAutoSize` / `FolderExplorer` |
 | `UCL_GUILayout.DrawList.cs` | `IList`（含 1D/2D 陣列）編輯，分頁 + 多型 Add | `DrawList(IList, ...)`（4 個多載） |
 | `UCL_GUILayout.DrawDictionary.cs` | `IDictionary` 編輯 | `DrawDictionary(IDictionary, ...)`（3 個多載） |
 | `UCL_GUILayout.DrawHashSet.cs` | `HashSet` 編輯（反射呼叫 Add/Remove，可吃任何 IEnumerable + Add/Remove 的型別） | `DrawHashSet(object, DrawObjectParams)` |
@@ -93,7 +93,7 @@ tags: [api, ui, imgui, editor]
 | `Vector2Field` / `Vector3Field` / `VectorField` | 向量分量編輯（含 IntVec 變體） |
 | `DrawSprite(sprite, ...)` / `DrawTexture(tex, ...)` / `GraphicsDrawTexture(...)` | 繪圖（普通版 / Graphics.DrawTexture 支援自訂 Material） |
 | `LabelAutoSize(name, fontSize, color)` / `ButtonAutoSize(name, fontSize, ...)` | 自適應寬度 |
-| `Label(name, Color color)` | 一行帶色 Label（不必走 rich text） |
+| ~~`Label(name, Color color)`~~ | **已廢棄** — 改用 `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(color))` |
 | `FolderExplorer(dic, path, ...)` | 路徑導航 + 檔案篩選 UI |
 
 ### 3.2 集合編輯（`DrawList` / `DrawDictionary` / `DrawHashSet`）

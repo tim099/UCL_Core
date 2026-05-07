@@ -742,13 +742,18 @@ namespace UCL.Core.UI {
             Vector2 aSize = aLabelStyle.CalcSize(new GUIContent(iName));
             GUILayout.Label(iName, style: aLabelStyle, GUILayout.Width(aSize.x + 1f), GUILayout.Height(aSize.y));
         }
+        /// <summary>
+        /// 著色 Label。<b>準備廢棄</b>，請改用以下兩種寫法之一：
+        /// <list type="bullet">
+        ///   <item>純文字（不需上色）→ <c>GUILayout.Label(text, UCL_GUIStyle.LabelStyle)</c></item>
+        ///   <item>需上色 → <c>GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(color))</c></item>
+        /// </list>
+        /// 統一回 GUILayout 直呼 + UCL_GUIStyle 取樣式，避免多一層包裝；新程式碼請勿使用本 API。
+        /// </summary>
+        [Obsolete("改用 GUILayout.Label(text, UCL_GUIStyle.LabelStyle) 或 UCL_GUIStyle.GetLabelStyle(color)；本 API 將被移除")]
         public static void Label(string iName, Color iColor)
         {
             GUILayout.Label(iName, UCL_GUIStyle.GetLabelStyle(iColor));
-            //var aOriginalCol = GUI.skin.label.normal.textColor;
-            //GUI.skin.label.normal.textColor = iColor;
-            //GUILayout.Label(iName);
-            //GUI.skin.label.normal.textColor = aOriginalCol;
         }
         #endregion
         /// <summary>

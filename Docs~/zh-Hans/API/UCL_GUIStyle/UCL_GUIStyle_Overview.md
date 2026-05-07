@@ -105,7 +105,7 @@ EditorWindow 的 OnGUI 开头请设 `IsInEditorWindow = true`，结尾还原；�
 |---|---|
 | 纯 checkbox toggle | `GUILayout.Toggle(value, label)`（省略第三参数，吃 `GUI.skin.toggle` 默认） |
 | Button-like 两态（AND/OR、Tab） | 第三参传 `UCL_GUIStyle.ButtonStyle` |
-| 想要彩色 / 大字 label | `UCL_GUIStyle.GetLabelStyle(Color, size)` 或 `UCL_GUILayout.Label(name, color)` |
+| 想要彩色 / 大字 label | `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(Color, size))` |
 
 ---
 

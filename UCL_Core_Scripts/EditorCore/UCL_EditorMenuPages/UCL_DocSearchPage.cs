@@ -73,7 +73,11 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(4);
             DrawResults();
         }
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Title"), UCL_GUIStyle.LabelStyle);
+        }
         // ===========================================================
         // 區塊：搜尋輸入列 — text field + Search 按鈕 + Enter 觸發
         // ===========================================================
@@ -81,8 +85,6 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Title"), UCL_GUIStyle.LabelStyle);
-
                 using (new GUILayout.HorizontalScope())
                 {
                     bool clicked = GUILayout.Button(
@@ -231,9 +233,9 @@ namespace UCL.Core.EditorLib.Page
 
 
                     GUILayout.Label($"#{idx + 1}", UCL_GUIStyle.LabelStyle, GUILayout.Width(40));
-                    // 區塊職責：score 用 UCL_GUILayout.Label(name, Color) 直接吃顏色，不用手寫 rich-text
-                    //          見 UCL_GUILayout Overview §3.1
-                    UCL_GUILayout.Label($"★ {hit.Score}", new Color(1f, 0.83f, 0.48f));
+                    // 區塊職責：score 用 GUILayout.Label + UCL_GUIStyle.GetLabelStyle(color) 取彩色 label
+                    //          UCL_GUILayout.Label(name, Color) 已標示廢棄；統一回 GUILayout 直呼避免多一層包裝
+                    GUILayout.Label($"★ {hit.Score}", UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.83f, 0.48f)));
                     // titleStyle 已從每 row new 改為 page 級 cache（§Workflow 地雷 5）
                     GUILayout.Label(hit.Entry.Title ?? "(no title)", TitleStyle);
                     GUILayout.FlexibleSpace();

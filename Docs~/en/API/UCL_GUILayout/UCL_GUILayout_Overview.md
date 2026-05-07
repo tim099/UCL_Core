@@ -63,7 +63,7 @@ It is a `partial class` made up of 8 files (plus a standalone `UCL_GUILayoutPain
 
 | File | Responsibility | Main public API |
 |---|---|---|
-| `UCL_GUILayout.cs` | Basic fields, Sprite/Texture drawing, FolderExplorer | `NumField` / `IntField` / `FloatField` / `TextField` / `TextArea` / `Toggle` / `BoolField` / `CheckBox` / `Slider` / `Vector2/3Field` / `DrawSprite` / `DrawTexture` / `LabelAutoSize` / `ButtonAutoSize` / `Label(name, Color)` / `FolderExplorer` |
+| `UCL_GUILayout.cs` | Basic fields, Sprite/Texture drawing, FolderExplorer | `NumField` / `IntField` / `FloatField` / `TextField` / `TextArea` / `Toggle` / `BoolField` / `CheckBox` / `Slider` / `Vector2/3Field` / `DrawSprite` / `DrawTexture` / `LabelAutoSize` / `ButtonAutoSize` / `FolderExplorer` |
 | `UCL_GUILayout.DrawList.cs` | `IList` editing (incl. 1D/2D arrays), paging + polymorphic Add | `DrawList(IList, ...)` (4 overloads) |
 | `UCL_GUILayout.DrawDictionary.cs` | `IDictionary` editing | `DrawDictionary(IDictionary, ...)` (3 overloads) |
 | `UCL_GUILayout.DrawHashSet.cs` | `HashSet` editing (reflection-based Add/Remove; works for any IEnumerable + Add/Remove type) | `DrawHashSet(object, DrawObjectParams)` |
@@ -93,7 +93,7 @@ It is a `partial class` made up of 8 files (plus a standalone `UCL_GUILayoutPain
 | `Vector2Field` / `Vector3Field` / `VectorField` | Per-component vector editing (with IntVec variants) |
 | `DrawSprite(sprite, ...)` / `DrawTexture(tex, ...)` / `GraphicsDrawTexture(...)` | Drawing (plain / Graphics.DrawTexture with custom Material) |
 | `LabelAutoSize(name, fontSize, color)` / `ButtonAutoSize(name, fontSize, ...)` | Auto-sized width |
-| `Label(name, Color color)` | One-line colored label (no need for rich text) |
+| ~~`Label(name, Color color)`~~ | **Deprecated** — use `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(color))` instead |
 | `FolderExplorer(dic, path, ...)` | Path navigation + file filter UI |
 
 ### 3.2 Collection Editing (`DrawList` / `DrawDictionary` / `DrawHashSet`)

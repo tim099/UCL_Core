@@ -1,8 +1,9 @@
 ﻿// 區塊職責：在 Editor 內以 IMGUI 直接渲染 markdown 文件，免切到 OS 預設 viewer
 //          被 UCL_DocSearchPage 的「📄 預覽」按鈕呼叫；TopBar 仍保留 Reveal / OS Open 入口。
-// 物理意義：把 .md 拆成 block list（heading / paragraph / code fence / bullet / quote / hr / empty），
-//          再對 paragraph/heading/bullet 內的 inline 語法（** / * / ` / [text](url) / ![alt](path)）
-//          做 rich-text 替換。為簡化 v1 範圍，連結只做著色提示、不做點擊跳轉；表格與巢狀清單不處理。
+// 物理意義：把 .md 拆成 block list（heading / paragraph / code fence / bullet / quote / hr / empty / table），
+//          再對 paragraph/heading/bullet/cell 內的 inline 語法（** / * / ` / [text](url) / ![alt](path)）
+//          做 rich-text 替換。表格偵測 header + 分隔列（|---|---|）後消費連續資料列，
+//          渲染成 HorizontalScope 平均分欄；連結 v1 僅著色不點擊、巢狀清單不處理。
 // 數值影響：純讀取 + 字串處理；單檔載入後 m_Blocks 快取，重繪不重 parse。
 #if UNITY_EDITOR
 using System.Collections.Generic;
@@ -46,16 +47,18 @@ namespace UCL.Core.EditorLib.Page
         GUIStyle m_BodyStyle;
         GUIStyle m_CodeBlockStyle;
         GUIStyle m_BulletStyle;
+        GUIStyle m_TableHeaderStyle;
 
         // ==== block model ====
-        enum MdBlockType { Heading, Paragraph, CodeFence, Bullet, Quote, HorizontalRule, Empty }
+        enum MdBlockType { Heading, Paragraph, CodeFence, Bullet, Quote, HorizontalRule, Empty, Table }
         class MdBlock
         {
             public MdBlockType Type;
-            public int HeadingLevel;   // Heading 用：1~6
-            public string Text;        // Heading / Paragraph / Bullet / Quote 用
-            public string CodeLang;    // CodeFence 用：```lang
-            public string CodeBody;    // CodeFence 用
+            public int HeadingLevel;        // Heading 用：1~6
+            public string Text;             // Heading / Paragraph / Bullet / Quote 用
+            public string CodeLang;         // CodeFence 用：```lang
+            public string CodeBody;         // CodeFence 用
+            public List<string[]> TableRows;// Table 用：第 0 列為 header；分隔列（|---|---|）已剃除
         }
 
         /// <summary>
@@ -180,6 +183,24 @@ namespace UCL.Core.EditorLib.Page
                     continue;
                 }
 
+                // table：偵測 `|...|` 開頭結尾的 row + 緊接著的 `|---|---|` 分隔列
+                // 物理意義：標準 GitHub markdown 表格 — 第一列 header、第二列 ---/--- 分隔、之後是資料列
+                // 數值影響：消費連續 |...| 列直到非表格行；不支援對齊符號（:--/--:/:-:）— v1 一律左對齊
+                if (IsTableLine(line) && i + 1 < lines.Length && IsTableSeparator(lines[i + 1]))
+                {
+                    FlushParagraph(paraBuf);
+                    var rows = new List<string[]> { SplitTableRow(line) };
+                    i += 2; // 跳過 header + separator
+                    while (i < lines.Length && IsTableLine(lines[i]))
+                    {
+                        rows.Add(SplitTableRow(lines[i]));
+                        i++;
+                    }
+                    i--; // 抵銷 outer for 的 i++（讓非表格行下一輪重新處理）
+                    m_Blocks.Add(new MdBlock { Type = MdBlockType.Table, TableRows = rows });
+                    continue;
+                }
+
                 // bullet（- / * / + / 1.）
                 var bulletMatch = Regex.Match(line, @"^(\s*)([-*+]|\d+\.)\s+(.*)$");
                 if (bulletMatch.Success)
@@ -219,6 +240,48 @@ namespace UCL.Core.EditorLib.Page
             buf.Clear();
         }
 
+        // 區塊職責：判斷 line 是否為表格資料列（首尾皆 `|` 且至少含一個內部 `|`）
+        // 物理意義：標準 markdown 表格列必有兩端 `|`；只有一端會誤判 inline 引文
+        static bool IsTableLine(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return false;
+            string t = line.Trim();
+            if (t.Length < 3) return false;
+            if (!t.StartsWith("|") || !t.EndsWith("|")) return false;
+            // 至少要有兩個 `|`（首尾）+ 中間至少 1 個內部 `|`
+            int count = 0;
+            foreach (char c in t) if (c == '|') count++;
+            return count >= 3;
+        }
+
+        // 區塊職責：判斷 line 是否為表格分隔列（|---|---|；可帶 :- / -: / :-: 對齊符號 + 空白）
+        // 物理意義：用來確認上一行 `|...|` 是 table header 而不是普通 inline 引文
+        static bool IsTableSeparator(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return false;
+            string t = line.Trim();
+            if (t.Length < 3 || !t.StartsWith("|") || !t.EndsWith("|")) return false;
+            string inner = t.Substring(1, t.Length - 2);
+            bool hasDash = false;
+            foreach (char c in inner)
+            {
+                if (c == '-') hasDash = true;
+                else if (c != '|' && c != ':' && c != ' ') return false;
+            }
+            return hasDash;
+        }
+
+        // 區塊職責：把 `| a | b | c |` 切成 ["a", "b", "c"] 並 trim
+        static string[] SplitTableRow(string line)
+        {
+            string t = line.Trim();
+            if (t.StartsWith("|")) t = t.Substring(1);
+            if (t.EndsWith("|")) t = t.Substring(0, t.Length - 1);
+            var cells = t.Split('|');
+            for (int k = 0; k < cells.Length; k++) cells[k] = cells[k].Trim();
+            return cells;
+        }
+
         static bool TryParseHeading(string line, out int level, out string text)
         {
             level = 0; text = null;
@@ -252,6 +315,13 @@ namespace UCL.Core.EditorLib.Page
             }
             m_BodyStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true, wordWrap = true };
             m_BulletStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true, wordWrap = true };
+            // 表格 header：粗體 + 微亮黃，視覺把 header 列從資料列分出來
+            m_TableHeaderStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
+            {
+                richText = true,
+                wordWrap = true,
+                fontStyle = FontStyle.Bold,
+            };
             // 區塊職責：code block 專用樣式 — 關掉 rich-text（避免 <T> 等被解析）、開 wordWrap 防破版
             // 物理意義：code 內容是純文字，不該再吃 rich-text；fontSize 略小讓螢幕能塞更多字
             m_CodeBlockStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
@@ -292,6 +362,11 @@ namespace UCL.Core.EditorLib.Page
                     GUIUtility.systemCopyBuffer = m_RawContent;
                 }
             }
+
+            // 頂部：相對路徑
+            // 物理意義：統一走 GUILayout.Label + UCL_GUIStyle.LabelStyle 模式，
+            //          避免 UCL_GUILayout.Label 多一層包裝（該 API 已標示廢棄）
+            GUILayout.Label(m_RelativePath ?? "", UCL_GUIStyle.LabelStyle);
         }
 
         // ===========================================================
@@ -306,14 +381,6 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
             if (m_Blocks == null) return;
-
-            // 頂部：相對路徑（淡灰）
-            // 物理意義：用 UCL_GUILayout.Label(name, Color) 直接吃顏色，省掉手寫 rich-text tag
-            //          見 Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md §3.1
-            using (new GUILayout.VerticalScope("box"))
-            {
-                UCL_GUILayout.Label(m_RelativePath ?? "", new Color(0.55f, 0.55f, 0.55f));
-            }
 
             // frontmatter（折疊）：保留原樣 YAML 顯示供 debug / 校稿
             // 區塊職責：用 UCL_GUILayout.Toggle(bool, int size) — 顯示 ▼/► 折疊圖示，
@@ -382,6 +449,40 @@ namespace UCL.Core.EditorLib.Page
                 case MdBlockType.Empty:
                     GUILayout.Space(4);
                     break;
+                case MdBlockType.Table:
+                    DrawTable(b.TableRows);
+                    break;
+            }
+        }
+
+        // 區塊職責：渲染 markdown 表格 — 每列一個 HorizontalScope，cell 用 ExpandWidth 平均分配欄寬
+        // 物理意義：第 0 列為 header（粗體 style）；header 下方畫一條 1px 分隔線；之後是資料列
+        // 數值影響：colCount 取自 header；資料列若 cell 數不足，缺的位置補空字串避免 IndexOutOfRange
+        void DrawTable(List<string[]> rows)
+        {
+            if (rows == null || rows.Count == 0) return;
+            int colCount = rows[0].Length;
+            using (new GUILayout.VerticalScope("box"))
+            {
+                for (int r = 0; r < rows.Count; r++)
+                {
+                    var row = rows[r];
+                    GUIStyle style = (r == 0) ? m_TableHeaderStyle : m_BodyStyle;
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        for (int c = 0; c < colCount; c++)
+                        {
+                            string cell = c < row.Length ? row[c] : "";
+                            GUILayout.Label(InlineFormat(cell), style,
+                                GUILayout.ExpandWidth(true), GUILayout.MinWidth(60));
+                        }
+                    }
+                    if (r == 0)
+                    {
+                        // header 與資料列之間畫細線分隔（取代 |---|---| 在原 markdown 的視覺）
+                        GUILayout.Box(GUIContent.none, GUILayout.Height(1), GUILayout.ExpandWidth(true));
+                    }
+                }
             }
         }
 

@@ -63,7 +63,7 @@ tags: [api, ui, imgui, editor]
 
 | ファイル | 責務 | 主な公開 API |
 |---|---|---|
-| `UCL_GUILayout.cs` | 基本フィールド、Sprite/Texture 描画、FolderExplorer | `NumField` / `IntField` / `FloatField` / `TextField` / `TextArea` / `Toggle` / `BoolField` / `CheckBox` / `Slider` / `Vector2/3Field` / `DrawSprite` / `DrawTexture` / `LabelAutoSize` / `ButtonAutoSize` / `Label(name, Color)` / `FolderExplorer` |
+| `UCL_GUILayout.cs` | 基本フィールド、Sprite/Texture 描画、FolderExplorer | `NumField` / `IntField` / `FloatField` / `TextField` / `TextArea` / `Toggle` / `BoolField` / `CheckBox` / `Slider` / `Vector2/3Field` / `DrawSprite` / `DrawTexture` / `LabelAutoSize` / `ButtonAutoSize` / `FolderExplorer` |
 | `UCL_GUILayout.DrawList.cs` | `IList`（1D/2D 配列含む）編集、ページング + ポリモーフィック Add | `DrawList(IList, ...)`（4 つのオーバーロード） |
 | `UCL_GUILayout.DrawDictionary.cs` | `IDictionary` 編集 | `DrawDictionary(IDictionary, ...)`（3 つのオーバーロード） |
 | `UCL_GUILayout.DrawHashSet.cs` | `HashSet` 編集（リフレクションで Add/Remove を呼ぶ。IEnumerable + Add/Remove を持つ任意の型に対応） | `DrawHashSet(object, DrawObjectParams)` |
@@ -93,7 +93,7 @@ tags: [api, ui, imgui, editor]
 | `Vector2Field` / `Vector3Field` / `VectorField` | ベクトル成分編集（IntVec バリアント含む） |
 | `DrawSprite(sprite, ...)` / `DrawTexture(tex, ...)` / `GraphicsDrawTexture(...)` | 描画（通常版 / Graphics.DrawTexture でカスタム Material 対応） |
 | `LabelAutoSize(name, fontSize, color)` / `ButtonAutoSize(name, fontSize, ...)` | 幅自動調整 |
-| `Label(name, Color color)` | 一行カラーラベル（rich text を経由しない） |
+| ~~`Label(name, Color color)`~~ | **非推奨** — 代わりに `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(color))` を使用 |
 | `FolderExplorer(dic, path, ...)` | パスナビゲーション + ファイルフィルタ UI |
 
 ### 3.2 コレクション編集（`DrawList` / `DrawDictionary` / `DrawHashSet`）

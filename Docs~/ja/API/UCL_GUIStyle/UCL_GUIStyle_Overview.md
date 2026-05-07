@@ -105,7 +105,7 @@ EditorWindow の OnGUI 冒頭で `IsInEditorWindow = true` を設定し、終端
 |---|---|
 | 純粋なチェックボックス Toggle | `GUILayout.Toggle(value, label)`（第三引数を省略し、デフォルトの `GUI.skin.toggle` を使う） |
 | Button-like 二状態（AND/OR、Tab） | 第三引数に `UCL_GUIStyle.ButtonStyle` を渡す |
-| カラー / 大文字 label が欲しい | `UCL_GUIStyle.GetLabelStyle(Color, size)` または `UCL_GUILayout.Label(name, color)` |
+| カラー / 大文字 label が欲しい | `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(Color, size))` |
 
 ---
 

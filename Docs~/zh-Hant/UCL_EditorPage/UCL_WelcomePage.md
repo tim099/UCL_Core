@@ -40,13 +40,15 @@ TryAutoOpen():
 
 控制 EditorPrefs：
 
-| Key | 型別 | 預設 | 說明 |
+| Key（樣板） | 型別 | 預設 | 說明 |
 |---|---|---|---|
-| `UCL_Core.Welcome.ShownVersion` | string | `""` | 已展示的內容版本；與 `CurrentVersion` 不同則彈出 |
-| `UCL_Core.Welcome.AutoOpenDisabled` | bool | `false` | 使用者主動關閉自動彈出（保留手動入口）|
+| `UCL_Core.Welcome.ShownVersion@<projHash>` | string | `""` | 已展示的內容版本；與 `CurrentVersion` 不同則彈出 |
+| `UCL_Core.Welcome.AutoOpenDisabled@<projHash>` | bool | `false` | 使用者主動關閉自動彈出（保留手動入口）|
+
+`<projHash>` = `Application.dataPath.GetHashCode()` 16 進位字串。
 
 > [!IMPORTANT]
-> EditorPrefs 是**每使用者 / 每機器**的，跟著 OS 帳號而非專案。新人 clone 專案時會自動觸發第一次彈出，等於對該名開發者「介紹一次本框架」。
+> EditorPrefs 在 Unity 內是**每使用者 / 每機器**全域共用，per-project hash 後綴把每個專案各自隔離 — A 專案看過 Welcome **不會**再把 B 專案的彈出抑制掉。新人 clone 任何含 UCL_Core 的專案，第一次都會看到 Welcome 一次。
 
 ## 3. 內容區塊
 

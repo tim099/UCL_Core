@@ -45,11 +45,26 @@ namespace UCL.Core.EditorLib.Page
         /// <summary>當前 Welcome 內容版本 — 若 EditorPrefs 內紀錄的版本不同，會自動彈出一次。</summary>
         public const string CurrentVersion = "1";
 
-        /// <summary>EditorPrefs key — 已展示版本（首次安裝時為空）。</summary>
-        public const string PrefKey_ShownVersion = "UCL_Core.Welcome.ShownVersion";
+        // EditorPrefs 是 per-machine（HKCU\...\Unity Editor 5.x 全域），跨專案共用會導致
+        // A 專案看過 Welcome 後 B 專案不再自動彈。把 key 加上 Application.dataPath hash 後綴
+        // 達成 per-project namespace。dataPath 在專案存活期間穩定；移動專案資料夾會視為新安裝
+        // 重新彈一次（可接受）。
 
-        /// <summary>EditorPrefs key — 使用者主動關閉自動彈出（即使新版也不再彈）。</summary>
-        public const string PrefKey_AutoOpenDisabled = "UCL_Core.Welcome.AutoOpenDisabled";
+        static string s_PrefKey_ShownVersion;
+        static string s_PrefKey_AutoOpenDisabled;
+        static string s_ProjectFingerprint;
+
+        /// <summary>專案指紋 — Application.dataPath 的 hash，用於 EditorPrefs key 加綴。</summary>
+        static string ProjectFingerprint =>
+            s_ProjectFingerprint ??= Application.dataPath.GetHashCode().ToString("X");
+
+        /// <summary>EditorPrefs key — 已展示版本（首次安裝時為空）。Per-project namespaced。</summary>
+        public static string PrefKey_ShownVersion =>
+            s_PrefKey_ShownVersion ??= $"UCL_Core.Welcome.ShownVersion@{ProjectFingerprint}";
+
+        /// <summary>EditorPrefs key — 使用者主動關閉自動彈出（即使新版也不再彈）。Per-project namespaced。</summary>
+        public static string PrefKey_AutoOpenDisabled =>
+            s_PrefKey_AutoOpenDisabled ??= $"UCL_Core.Welcome.AutoOpenDisabled@{ProjectFingerprint}";
 
         Vector2 m_Scroll = Vector2.zero;
 

@@ -220,7 +220,7 @@ namespace UCL.Core.EditorLib.Page
                     // 區塊職責：「📄 預覽」— 在 Editor 內以 IMGUI 直接渲染這份 .md（不離開 Unity 視窗）
                     // 物理意義：與右側「📖 Open」並存：Open 走 OS 預設應用、預覽走內嵌 page；兩條入口皆保留
                     // 數值影響：點擊後 Push 一頁 UCL_MarkdownViewerPage 到 GUIPageController，使用者按 Back 返回搜尋
-                    if (GUILayout.Button("📄",
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("DocSearch.Preview"),
                         UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         UCL_MarkdownViewerPage.Create(rel, abs);
@@ -271,12 +271,34 @@ namespace UCL.Core.EditorLib.Page
         void DoSearch(string query)
         {
             string gitRoot = UCL_DocCatalogScanner.GetGitRoot();
-            var roots = new List<string> { "Docs", "CardGame/Assets/UCL/UCL_Core/Docs~" };
+
+            // 動態組 search roots：
+            //   1) git-root 下的 user-level "Docs" 資料夾（如果存在）
+            //   2) 所有 UCL_DocsModuleRegistry 註冊的 docs 模組根 — 沿用 HelpURL ("ucl_core:" /
+            //      其他下游 prefix) 的同一份註冊表，未來新模組註冊後自動納入搜尋。
+            //      每個 module 的 absolute docs root = ResolveBaseProvider() + DocsSubfolder。
+            //   ScanRoots 的 root 接受絕對路徑，無須轉相對於 gitRoot。
+            var roots = new List<string> { "Docs" };
+            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? "";
+            foreach (var module in UCL_DocsModuleRegistry.All)
+            {
+                string baseDir = module.ResolveBaseProvider?.Invoke();
+                if (string.IsNullOrEmpty(baseDir)) continue;
+                string absBase = Path.IsPathRooted(baseDir) ? baseDir : Path.Combine(projectRoot, baseDir);
+                string absDocs = string.IsNullOrEmpty(module.DocsSubfolder)
+                    ? absBase
+                    : Path.Combine(absBase, module.DocsSubfolder);
+                if (Directory.Exists(absDocs)) roots.Add(absDocs);
+                else Debug.LogWarning($"[UCL_DocSearch] Module '{module.DisplayName ?? module.Prefix}' docs not found: {absDocs}");
+            }
+            Debug.Log($"[UCL_DocSearch] gitRoot={gitRoot}; roots=[{string.Join(", ", roots)}]");
+
             var excludes = new List<string> { "node_modules", ".git", "_Drafts" };
 
             var entries = UCL_DocCatalogScanner.ScanRoots(roots, gitRoot, excludes,
                 m_IncludeArchived, CancellationToken.None);
             m_LastScannedCount = entries.Count;
+            Debug.Log($"[UCL_DocSearch] Scanned {entries.Count} entries.");
 
             var synonymGroups = UCL_DocSearchEngine.LoadSynonyms(gitRoot, m_SynonymsPath);
             // 區塊職責：用當前語系作為 preferredLang，讓對應語系的文件排前

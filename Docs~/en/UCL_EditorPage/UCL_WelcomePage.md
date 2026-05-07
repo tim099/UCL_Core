@@ -40,12 +40,12 @@ TryAutoOpen():
 
 Controlled EditorPrefs:
 
-| Key | Type | Default | Meaning |
+| Key (template) | Type | Default | Meaning |
 |---|---|---|---|
-| `UCL_Core.Welcome.ShownVersion` | string | `""` | Last shown content version; mismatch with `CurrentVersion` triggers popup |
-| `UCL_Core.Welcome.AutoOpenDisabled` | bool | `false` | User opt-out (manual entry still works) |
+| `UCL_Core.Welcome.ShownVersion@<projHash>` | string | `""` | Last shown content version; mismatch with `CurrentVersion` triggers popup |
+| `UCL_Core.Welcome.AutoOpenDisabled@<projHash>` | bool | `false` | User opt-out (manual entry still works) |
 
-EditorPrefs is **per-user / per-machine** — new clones trigger first popup for each developer.
+`<projHash>` = `Application.dataPath.GetHashCode()` in hex. EditorPrefs is per-user/per-machine globally, so the per-project suffix isolates state between projects — opening Welcome in project A no longer suppresses the popup in project B.
 
 ## 3. Content sections
 

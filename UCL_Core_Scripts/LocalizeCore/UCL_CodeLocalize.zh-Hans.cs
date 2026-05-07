@@ -163,6 +163,7 @@ namespace UCL.Core.LocalizeLib
                 "DocSearch.SynonymsPath" => "同义词文件路径",
                 "DocSearch.IncludeArchived" => "包含 archived 文档",
                 "DocSearch.Reveal" => "📂 定位",
+                "DocSearch.Preview" => "📄 预览",
 
                 // ==== UCL_AgentCommandsPage ====
                 "AgentCmd.Refresh" => "刷新",

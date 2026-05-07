@@ -47,27 +47,57 @@ namespace UCL.Core.EditorLib
 
         // 區塊職責：實際的彈出判定 + 觸發
         // 物理意義：使用者主動關掉就尊重；未來想再看可重設 PrefKey 或從 UCL→Welcome 手動開
-        static void TryAutoOpen()
+        // public 改：Cmd_Invoke 可直接觸發，便於重啟 Editor 之外的測試流程
+        public static void TryAutoOpen()
         {
-            // 使用者主動關閉自動彈出 → 尊重
-            if (EditorPrefs.GetBool(UCL_WelcomePage.PrefKey_AutoOpenDisabled, false))
+            string disabledKey = UCL_WelcomePage.PrefKey_AutoOpenDisabled;
+            string versionKey = UCL_WelcomePage.PrefKey_ShownVersion;
+            string current = UCL_WelcomePage.CurrentVersion;
+
+            Debug.Log($"[UCL_Welcome] TryAutoOpen begin. " +
+                      $"disabledKey='{disabledKey}', versionKey='{versionKey}', current='{current}'");
+
+            // Gate 1：使用者主動關閉自動彈出 → 尊重
+            bool disabled = EditorPrefs.GetBool(disabledKey, false);
+            if (disabled)
             {
+                Debug.Log("[UCL_Welcome] Gate 1: AutoOpenDisabled=true → skip.");
                 return;
             }
 
-            string shown = EditorPrefs.GetString(UCL_WelcomePage.PrefKey_ShownVersion, "");
-            if (shown == UCL_WelcomePage.CurrentVersion)
+            // Gate 2：已展示過當前版本 → 不再彈
+            string shown = EditorPrefs.GetString(versionKey, "");
+            if (shown == current)
             {
-                // 已展示過當前版本 → 不再彈
+                Debug.Log($"[UCL_Welcome] Gate 2: shown='{shown}' == current='{current}' → skip.");
                 return;
             }
 
-            // 標記版本（在開窗前先寫；萬一 OpenAndShow 過程出錯也不會無限重試）
-            EditorPrefs.SetString(UCL_WelcomePage.PrefKey_ShownVersion, UCL_WelcomePage.CurrentVersion);
+            // Gates passed — 寫版本 + 開窗
+            EditorPrefs.SetString(versionKey, current);
+            Debug.Log($"[UCL_Welcome] Gates passed (prev='{shown}', current='{current}'). " +
+                      $"Calling ShowWindow + OpenAndShow.");
 
-            Debug.Log($"[UCL_Welcome] First-install / version-bump detected " +
-                      $"(prev='{shown}', current='{UCL_WelcomePage.CurrentVersion}'). Opening Welcome page.");
+            // 先強制開啟 UCL_MenuWindow — 否則 OpenAndShow 內的 ExecuteMenuItem("UCL/Menu") 在
+            // [InitializeOnLoad] + delayCall 早期時序可能不會真的在當輪 frame 把 window 帶進
+            // OnGUI cycle，導致 s_OnFirstDraw hook 沒人消費，Welcome 不彈。
+            // 同 asmdef 可直接 reference UCL_MenuWindow，比走 ExecuteMenuItem 可靠。
+            var window = UCL_MenuWindow.ShowWindow(new UCL_EditorMenu());
+            Debug.Log($"[UCL_Welcome] UCL_MenuWindow.ShowWindow returned: {window} (null={window == null})");
+
             UCL_WelcomePage.OpenAndShow();
+            Debug.Log("[UCL_Welcome] OpenAndShow returned. Hook s_OnFirstDraw set; will fire on next OnGUI.");
+        }
+
+        // 區塊職責：跳過所有 gate，直接觸發開窗流程；給 Cmd_Invoke / 手動測試用
+        // 物理意義：不寫 / 不讀 EditorPrefs，純流程驗證。如果 Welcome 沒彈，問題不在 pref。
+        public static void ForceOpen()
+        {
+            Debug.Log("[UCL_Welcome] ForceOpen — bypassing gates.");
+            var window = UCL_MenuWindow.ShowWindow(new UCL_EditorMenu());
+            Debug.Log($"[UCL_Welcome] (Force) UCL_MenuWindow.ShowWindow returned: {window} (null={window == null})");
+            UCL_WelcomePage.OpenAndShow();
+            Debug.Log("[UCL_Welcome] (Force) OpenAndShow returned.");
         }
     }
 }

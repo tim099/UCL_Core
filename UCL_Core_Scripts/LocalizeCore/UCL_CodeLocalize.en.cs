@@ -163,6 +163,7 @@ namespace UCL.Core.LocalizeLib
                 "DocSearch.SynonymsPath" => "Synonyms path",
                 "DocSearch.IncludeArchived" => "Include archived docs",
                 "DocSearch.Reveal" => "📂 Reveal",
+                "DocSearch.Preview" => "📄 Preview",
 
                 // ==== UCL_AgentCommandsPage ====
                 "AgentCmd.Refresh" => "Refresh",

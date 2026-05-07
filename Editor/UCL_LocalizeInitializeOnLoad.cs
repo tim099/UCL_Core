@@ -12,7 +12,11 @@ namespace UCL.Core.EditorLib
         public static void InitializeOnLoad()
         {
             //Debug.Log("UCL_LocalizeInitializeOnLoad InitializeOnLoad");
-            EditorInitLocalize();
+            // Defer one editor tick — UniTask.PlayerLoopHelper.runners is initialized by its own
+            // [InitializeOnLoadMethod]; calling WaitUntilInitialized() synchronously here races
+            // with that init, throwing NullReferenceException at PlayerLoopHelper.AddAction:494.
+            // delayCall guarantees we run after both init phases complete.
+            UnityEditor.EditorApplication.delayCall += EditorInitLocalize;
         }
         /// <summary>
         /// 初始化LocalizeManager 讓非PlayMode也可以抓取翻譯文本(編輯器用)

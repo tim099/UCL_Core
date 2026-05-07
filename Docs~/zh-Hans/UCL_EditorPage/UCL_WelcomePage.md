@@ -23,10 +23,10 @@ tags: [editor_page, onboarding, welcome]
 
 ## 3. EditorPrefs
 
-- `UCL_Core.Welcome.ShownVersion` (string) — 已展示版本
-- `UCL_Core.Welcome.AutoOpenDisabled` (bool) — 主动关闭
+- `UCL_Core.Welcome.ShownVersion@<projHash>` (string) — 已展示版本
+- `UCL_Core.Welcome.AutoOpenDisabled@<projHash>` (bool) — 主动关闭
 
-per-user / per-machine。
+`<projHash>` = `Application.dataPath.GetHashCode()` 十六进制字串。EditorPrefs 在 Unity 是 per-user / per-machine 全局共用，加上 per-project hash 后缀把每个项目分开 — A 项目看过 Welcome 不会让 B 项目不再弹。
 
 ## 4. 关联文档
 

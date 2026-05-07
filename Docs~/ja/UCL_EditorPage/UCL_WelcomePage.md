@@ -23,10 +23,10 @@ tags: [editor_page, onboarding, welcome]
 
 ## 3. EditorPrefs
 
-- `UCL_Core.Welcome.ShownVersion` (string) — 表示済みバージョン
-- `UCL_Core.Welcome.AutoOpenDisabled` (bool) — 自動表示を停止
+- `UCL_Core.Welcome.ShownVersion@<projHash>` (string) — 表示済みバージョン
+- `UCL_Core.Welcome.AutoOpenDisabled@<projHash>` (bool) — 自動表示を停止
 
-per-user / per-machine です。
+`<projHash>` = `Application.dataPath.GetHashCode()` の 16 進文字列。EditorPrefs は Unity の per-user / per-machine グローバル共有のため、per-project ハッシュサフィックスで各プロジェクトを分離 — プロジェクト A で Welcome を見ても B では再度表示されます。
 
 ## 4. 関連ドキュメント
 

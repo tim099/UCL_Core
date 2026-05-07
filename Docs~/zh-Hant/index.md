@@ -99,6 +99,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬寫本地化字串的處理 |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **建立新的 `Cmd_<Name>.cs` 子類 SOP** — 命名 / 檔案位置決策樹（UCL_Core vs 下游模組） / 標準範本（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync 守則 / Editor 驗收 / 8 大常見地雷 / **§9 文件放置自動判斷方案**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
 | 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **建立新的 `UCL_CommonEditorPage` 子類 SOP** — 繼承關係 / 必/選 override / TopBarButtons 客製 / 入口點掛接（父頁 / Welcome 卡片 / 選單） / UI 元件選用對照（連結 UCL_GUILayout 與 UCL_GUIStyle 文件） / HelpURL `{lang}` 佔位 / 8 大常見地雷 / 驗收清單 |
+| 🔁 [Edit_Recompile_Loop_Workflow](Workflows/Edit_Recompile_Loop_Workflow.md) ⭐ | **agent 改 .cs 後的強制同步 SOP** — `Cmd_Recompile` + Python `recompile` 子命令 + `.compile_status.json` 三件套；Edit → recompile → 0 errors 才繼續，否則讀 messages 修錯 loop（≤5 輪），故障模式對照表 |
 | 🔧 [CompileError_Diagnose_Workflow](Workflows/CompileError_Diagnose_Workflow.md) ⭐ | **Unity Compile Error 排查 SOP** — `UCL_CompileErrorTracker` + `check_compile.py` standalone Python 工具，讓 agent 在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下也能讀到 dedup 過的錯誤清單。含 4 步排查 SOP、8 大常見 CS 錯誤對照、asmdef 跨界 / namespace 陷阱、Editor.log session 邊界偵測演算法、實戰 case study |
 
 ---

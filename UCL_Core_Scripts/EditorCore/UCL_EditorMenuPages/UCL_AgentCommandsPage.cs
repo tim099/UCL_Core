@@ -335,8 +335,11 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.HorizontalScope("box"))
             {
+                // 區塊職責：Auto-Watcher 開關 — 用 UCL_GUILayout.CheckBox(value, label) 而非
+                //          原生 GUILayout.Toggle + LabelStyle（Workflow §7 地雷 1：傳 LabelStyle 會讓
+                //          toggle 圖示失效、熱區壞掉，使用者根本點不到 → 永遠停在預設狀態）
                 bool prevEnabled = UCL_AgentCommandWatcher.Enabled;
-                bool newEnabled = GUILayout.Toggle(prevEnabled, " Auto-Watcher", UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
+                bool newEnabled = UCL_GUILayout.CheckBox(prevEnabled, "Auto-Watcher");
                 if (newEnabled != prevEnabled)
                 {
                     UCL_AgentCommandWatcher.Enabled = newEnabled;

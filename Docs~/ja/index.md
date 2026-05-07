@@ -98,6 +98,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | ハードコードされたローカライズ文字列の処理 |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **新しい `Cmd_<Name>.cs` サブクラス作成 SOP** — 命名 / ファイル配置デシジョンツリー（UCL_Core vs 下流モジュール） / 標準テンプレート（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync の指針 / Editor 内検証 / 8 つのよくある落とし穴 / **§9 文書配置の自動判定スキーム**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
 | 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **新しい `UCL_CommonEditorPage` サブクラス作成 SOP** — 継承関係 / 必須・任意 override / TopBarButtons カスタマイズ / エントリポイントの接続（親ページ / Welcome カード / メニュー） / UI コンポーネント選択ガイド（UCL_GUILayout と UCL_GUIStyle ドキュメントへリンク） / HelpURL の `{lang}` プレースホルダ / 8 つのよくある落とし穴 / 受け入れチェックリスト |
+| 🔁 [Edit_Recompile_Loop_Workflow](Workflows/Edit_Recompile_Loop_Workflow.md) ⭐ | **agent が .cs を編集した後の強制同期 SOP** — `Cmd_Recompile` + Python `recompile` サブコマンド + `.compile_status.json` の三点セット；Edit → recompile → 0 errors になって初めて継続、そうでなければ messages を読んでループで修正（≤ 5 ラウンド）、故障モード対応表付き |
 
 ---
 

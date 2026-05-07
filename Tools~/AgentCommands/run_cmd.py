@@ -18,11 +18,12 @@ Agent Command CLI wrapper — 讓 AI agent / 人類用 CLI 提交與等待 Agent
                                 └────────────────────────────────────┘
 
 子命令：
-  1. submit   — 寫 queue.json + 寫 pending.trigger（前置 ensure_idle）
-  2. wait     — 輪詢 .running 消失 → 讀 queue.json 判定 cmd 結果
-  3. run      — submit + wait（一次跑完）
-  4. list     — 列出 queue 內現存指令
-  5. catalog  — 顯示 commands_catalog.md
+  1. submit    — 寫 queue.json + 寫 pending.trigger（前置 ensure_idle）
+  2. wait      — 輪詢 .running 消失 → 讀 queue.json 判定 cmd 結果
+  3. run       — submit + wait（一次跑完）
+  4. recompile — 觸發 Unity 重編 + 等到 .compile_status.json 推進（agent 改完 .cs 後逼 Unity 接收）
+  5. list      — 列出 queue 內現存指令
+  6. catalog   — 顯示 commands_catalog.md
 
 使用範例：
     # 把 ResolveAssetReferences 加進 queue 並等到 Unity 執行完
@@ -82,6 +83,8 @@ QUEUE_DIR = GIT_ROOT / "AgentCommands"
 QUEUE_PATH = QUEUE_DIR / "queue.json"
 TRIGGER_PATH = QUEUE_DIR / "pending.trigger"
 RUNNING_PATH = QUEUE_DIR / "pending.trigger.running"
+# UCL_CompileErrorTracker 寫入：mtime 推進 + errors/warnings 計數 → recompile 子命令的「完成」依據
+COMPILE_STATUS_PATH = QUEUE_DIR / ".compile_status.json"
 # Cmd 輸出（如 commands_catalog.md）落在 CardGame/AgentCommands/，避開外層 git root + submodule
 CARDGAME_AGENT_CMDS = GIT_ROOT / "CardGame" / "AgentCommands"
 CATALOG_PATH = CARDGAME_AGENT_CMDS / "commands_catalog.md"
@@ -341,6 +344,74 @@ def cmd_run(args: argparse.Namespace) -> int:
     return cmd_wait(wait_args)
 
 
+def cmd_recompile(args: argparse.Namespace) -> int:
+    """
+    觸發 Unity 重編 + 等到 compile 真正完成。
+
+    流程：
+      1. 記錄當前 .compile_status.json mtime（pre-mtime）
+      2. submit Cmd_Recompile（Unity 收到後呼叫 CompilationPipeline.RequestScriptCompilation）
+      3. 等 cmd 從 queue 消失（=Unity 已接手，但 compile 可能還沒跑完）
+      4. poll .compile_status.json 直到 mtime > pre-mtime（=tracker 寫了新 status，compile 完成）
+      5. 讀新 status 的 total_errors / total_warnings，依結果回 exit code
+    """
+    pre_mtime = COMPILE_STATUS_PATH.stat().st_mtime if COMPILE_STATUS_PATH.exists() else 0.0
+    print(f"Recompile request — pre-compile mtime: {pre_mtime:.3f}")
+
+    # 1) submit + ensure_idle
+    ensure_idle(timeout_sec=args.ack_timeout, poll_interval=args.poll_interval)
+    cmd_id = append_cmd(
+        cmd_type="Recompile",
+        mode="OneShot",
+        args={"refresh": "true" if args.refresh else "false"},
+        description=args.description or "recompile via run_cmd.py",
+    )
+    write_trigger(f"recompile {cmd_id}")
+    print(f"  Submitted: {cmd_id}")
+
+    # 2) wait for cmd queue removal — 這只代表「Unity 已接手 ExecuteAsync 並返回」
+    deadline = time.time() + args.timeout
+    while time.time() < deadline:
+        time.sleep(args.poll_interval)
+        q = load_queue()
+        if not find_cmd(q, cmd_id):
+            print("  ✓ Recompile request accepted by Unity (Cmd removed from queue).")
+            break
+    else:
+        print(f"  ⚠ Cmd_Recompile didn't leave queue within {args.timeout}s — Unity may not be running.",
+              file=sys.stderr)
+        return 2
+
+    # 3) wait for compile_status.json mtime to advance — 這才是「compile 真正完成」
+    print(f"  Waiting for {COMPILE_STATUS_PATH.name} mtime to advance past {pre_mtime:.3f}...")
+    deadline = time.time() + args.timeout
+    while time.time() < deadline:
+        if COMPILE_STATUS_PATH.exists():
+            now_mtime = COMPILE_STATUS_PATH.stat().st_mtime
+            if now_mtime > pre_mtime + 0.001:  # 容忍 fs 精度
+                # 4) 讀新 status 報告
+                try:
+                    with COMPILE_STATUS_PATH.open("r", encoding="utf-8-sig") as f:
+                        st = json.load(f)
+                except Exception as e:
+                    print(f"  ⚠ failed to parse compile_status.json: {e}", file=sys.stderr)
+                    return 3
+                errors = st.get("total_errors", 0)
+                warnings = st.get("total_warnings", 0)
+                duration = st.get("duration_seconds", 0)
+                ts = st.get("timestamp", "?")
+                print(f"  ✓ Compile finished at {ts} ({duration}s) — errors={errors}, warnings={warnings}")
+                if errors > 0:
+                    # 印前幾條訊息給呼叫端看
+                    for m in (st.get("messages") or [])[:5]:
+                        print(f"    × {m.get('type', '?')} {m.get('file', '')}:{m.get('line', '')} — {m.get('message', '')}")
+                    return 1
+                return 0
+        time.sleep(args.poll_interval)
+    print(f"  ⚠ compile_status.json didn't advance within {args.timeout}s.", file=sys.stderr)
+    return 4
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     """列出 queue 內現存指令。"""
     queue = load_queue()
@@ -449,6 +520,19 @@ def main() -> int:
     p_run.add_argument("--keep-failed", action="store_true",
                        help="On Failed, keep the cmd entry in queue.json (default: auto-remove).")
     p_run.set_defaults(func=cmd_run)
+
+    # recompile = submit Cmd_Recompile + wait for compile_status.json mtime to advance
+    p_rc = sub.add_parser("recompile",
+                          help="Trigger Unity recompile + wait until .compile_status.json updates")
+    p_rc.add_argument("--no-refresh", dest="refresh", action="store_false",
+                      help="Skip AssetDatabase.Refresh() (only call RequestScriptCompilation)")
+    p_rc.set_defaults(refresh=True)
+    p_rc.add_argument("--description", default=None)
+    p_rc.add_argument("--ack-timeout", type=float, default=DEFAULT_ACK_TIMEOUT)
+    p_rc.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL)
+    p_rc.add_argument("--timeout", type=int, default=DEFAULT_RUN_TIMEOUT,
+                      help=f"Max seconds to wait for compile to finish (default {DEFAULT_RUN_TIMEOUT})")
+    p_rc.set_defaults(func=cmd_recompile)
 
     # list
     p_list = sub.add_parser("list", help="List commands currently in queue.json")

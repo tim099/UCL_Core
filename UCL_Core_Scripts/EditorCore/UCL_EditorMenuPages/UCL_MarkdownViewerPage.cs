@@ -1,9 +1,10 @@
-﻿// 區塊職責：在 Editor 內以 IMGUI 直接渲染 markdown 文件，免切到 OS 預設 viewer
+﻿// 區塊職責：在 Editor 內以 IMGUI 直接渲染 markdown 文件（**只負責渲染**），免切到 OS 預設 viewer
 //          被 UCL_DocSearchPage 的「📄 預覽」按鈕呼叫；TopBar 仍保留 Reveal / OS Open 入口。
-// 物理意義：把 .md 拆成 block list（heading / paragraph / code fence / bullet / quote / hr / empty / table），
-//          再對 paragraph/heading/bullet/cell 內的 inline 語法（** / * / ` / [text](url) / ![alt](path)）
-//          做 rich-text 替換。表格偵測 header + 分隔列（|---|---|）後消費連續資料列，
-//          渲染成 HorizontalScope 平均分欄；連結 v1 僅著色不點擊、巢狀清單不處理。
+// 物理意義：解析交給 UCL_MarkdownParser（同 namespace，純邏輯、無 IMGUI 依賴）；本頁拿到
+//          UCL_MarkdownDocument 後依 block 類型 switch 渲染 — heading 字級分層、code 用無 richText
+//          的 box、table 用 HorizontalScope 平均分欄、mermaid 以樹狀縮排顯示節點 shape 與邊 label。
+//          inline 語法（** / * / ` / [text](url) / ![alt](path)）由本頁的 InlineFormat 轉成
+//          IMGUI rich-text tag（與 parser 解耦：parser 不產生 UI tag）。
 // 數值影響：純讀取 + 字串處理；單檔載入後 m_Blocks 快取，重繪不重 parse。
 #if UNITY_EDITOR
 using System.Collections.Generic;
@@ -40,7 +41,9 @@ namespace UCL.Core.EditorLib.Page
         bool m_ShowFrontmatter;
         bool m_LoadFailed;
         string m_LoadError;
-        List<MdBlock> m_Blocks;
+        // 區塊職責：parse 結果 cache 在 page 實例 — 重繪不重 parse
+        // 物理意義：型別與 parser 解耦，全部來自 UCL_MarkdownParser；本頁只負責渲染
+        List<UCL_MdBlock> m_Blocks;
 
         // ==== styles（lazy 建立、頁內共用） ====
         GUIStyle[] m_HeadingStyles;
@@ -49,17 +52,9 @@ namespace UCL.Core.EditorLib.Page
         GUIStyle m_BulletStyle;
         GUIStyle m_TableHeaderStyle;
 
-        // ==== block model ====
-        enum MdBlockType { Heading, Paragraph, CodeFence, Bullet, Quote, HorizontalRule, Empty, Table }
-        class MdBlock
-        {
-            public MdBlockType Type;
-            public int HeadingLevel;        // Heading 用：1~6
-            public string Text;             // Heading / Paragraph / Bullet / Quote 用
-            public string CodeLang;         // CodeFence 用：```lang
-            public string CodeBody;         // CodeFence 用
-            public List<string[]> TableRows;// Table 用：第 0 列為 header；分隔列（|---|---|）已剃除
-        }
+        // 區塊與 mermaid 的所有資料型別已抽到 UCL_MarkdownParser.cs（同 namespace），請見：
+        //   UCL_MdBlockType / UCL_MdBlock / UCL_MermaidNode / UCL_MermaidEdge / UCL_MermaidGraph / UCL_MarkdownDocument
+        // 本頁只負責「拿到 parse 結果後怎麼渲染」。
 
         /// <summary>
         /// 由外部入口（搜尋結果、welcome page 等）呼叫。
@@ -74,7 +69,8 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
-        // 載入 + parse
+        // 載入：讀檔 → 委由 UCL_MarkdownParser 拆 block list
+        // 物理意義：本頁不持有任何 parse 邏輯，純做 IO + 把結果塞進渲染 cache
         // ===========================================================
         void LoadFile(string relPath, string absPath)
         {
@@ -82,7 +78,7 @@ namespace UCL.Core.EditorLib.Page
             m_AbsolutePath = absPath;
             m_LoadFailed = false; m_LoadError = null;
             m_RawContent = null; m_Frontmatter = null;
-            m_Blocks = new List<MdBlock>();
+            m_Blocks = new List<UCL_MdBlock>();
             try
             {
                 if (string.IsNullOrEmpty(absPath) || !File.Exists(absPath))
@@ -92,207 +88,15 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
                 m_RawContent = File.ReadAllText(absPath);
-                Parse(m_RawContent);
+                var doc = UCL_MarkdownParser.Parse(m_RawContent);
+                m_Frontmatter = doc.Frontmatter;
+                m_Blocks = doc.Blocks;
             }
             catch (System.Exception e)
             {
                 m_LoadFailed = true;
                 m_LoadError = e.Message;
             }
-        }
-
-        // 區塊職責：把 raw text 切成 MdBlock list
-        // 物理意義：line-based 掃描 + 簡易狀態機（in-code-fence 開關）
-        // 數值影響：只在 LoadFile 時跑一次；m_Blocks 之後當 cache 用
-        void Parse(string content)
-        {
-            m_Blocks.Clear();
-            m_Frontmatter = null;
-            if (string.IsNullOrEmpty(content)) return;
-
-            var lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            int idx = 0;
-
-            // frontmatter：必須從第一行 "---" 起、到下個 "---" 為止
-            if (lines.Length > 0 && lines[0].Trim() == "---")
-            {
-                var fm = new StringBuilder();
-                int j = 1;
-                bool closed = false;
-                for (; j < lines.Length; j++)
-                {
-                    if (lines[j].Trim() == "---") { closed = true; j++; break; }
-                    fm.AppendLine(lines[j]);
-                }
-                if (closed)
-                {
-                    m_Frontmatter = fm.ToString().TrimEnd();
-                    idx = j;
-                }
-            }
-
-            var paraBuf = new StringBuilder();
-
-            for (int i = idx; i < lines.Length; i++)
-            {
-                string line = lines[i];
-
-                // code fence：累積到下一個 ``` 為止；中間任何語法都不解析
-                string trimmed = line.TrimStart();
-                if (trimmed.StartsWith("```"))
-                {
-                    FlushParagraph(paraBuf);
-                    string lang = trimmed.Length > 3 ? trimmed.Substring(3).Trim() : "";
-                    var body = new StringBuilder();
-                    i++;
-                    for (; i < lines.Length; i++)
-                    {
-                        if (lines[i].TrimStart().StartsWith("```")) break;
-                        body.Append(lines[i]).Append('\n');
-                    }
-                    m_Blocks.Add(new MdBlock
-                    {
-                        Type = MdBlockType.CodeFence,
-                        CodeLang = lang,
-                        CodeBody = body.ToString().TrimEnd('\n'),
-                    });
-                    continue;
-                }
-
-                // heading
-                if (TryParseHeading(line, out int lv, out string ht))
-                {
-                    FlushParagraph(paraBuf);
-                    m_Blocks.Add(new MdBlock { Type = MdBlockType.Heading, HeadingLevel = lv, Text = ht });
-                    continue;
-                }
-
-                // horizontal rule（---、***、___ 各 ≥3 個）
-                if (Regex.IsMatch(line, @"^\s*(-{3,}|\*{3,}|_{3,})\s*$"))
-                {
-                    FlushParagraph(paraBuf);
-                    m_Blocks.Add(new MdBlock { Type = MdBlockType.HorizontalRule });
-                    continue;
-                }
-
-                // empty line：作為 paragraph 邊界 + 視覺空白
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    FlushParagraph(paraBuf);
-                    m_Blocks.Add(new MdBlock { Type = MdBlockType.Empty });
-                    continue;
-                }
-
-                // table：偵測 `|...|` 開頭結尾的 row + 緊接著的 `|---|---|` 分隔列
-                // 物理意義：標準 GitHub markdown 表格 — 第一列 header、第二列 ---/--- 分隔、之後是資料列
-                // 數值影響：消費連續 |...| 列直到非表格行；不支援對齊符號（:--/--:/:-:）— v1 一律左對齊
-                if (IsTableLine(line) && i + 1 < lines.Length && IsTableSeparator(lines[i + 1]))
-                {
-                    FlushParagraph(paraBuf);
-                    var rows = new List<string[]> { SplitTableRow(line) };
-                    i += 2; // 跳過 header + separator
-                    while (i < lines.Length && IsTableLine(lines[i]))
-                    {
-                        rows.Add(SplitTableRow(lines[i]));
-                        i++;
-                    }
-                    i--; // 抵銷 outer for 的 i++（讓非表格行下一輪重新處理）
-                    m_Blocks.Add(new MdBlock { Type = MdBlockType.Table, TableRows = rows });
-                    continue;
-                }
-
-                // bullet（- / * / + / 1.）
-                var bulletMatch = Regex.Match(line, @"^(\s*)([-*+]|\d+\.)\s+(.*)$");
-                if (bulletMatch.Success)
-                {
-                    FlushParagraph(paraBuf);
-                    string indent = bulletMatch.Groups[1].Value;
-                    string marker = bulletMatch.Groups[2].Value;
-                    string rest = bulletMatch.Groups[3].Value;
-                    // 視覺上 - / * / + 一律換成 •；數字保留原樣
-                    string display = marker.Length == 1 ? "•" : marker;
-                    m_Blocks.Add(new MdBlock { Type = MdBlockType.Bullet, Text = indent + display + " " + rest });
-                    continue;
-                }
-
-                // blockquote
-                if (trimmed.StartsWith("> "))
-                {
-                    FlushParagraph(paraBuf);
-                    m_Blocks.Add(new MdBlock { Type = MdBlockType.Quote, Text = trimmed.Substring(2) });
-                    continue;
-                }
-
-                // 一般段落：累積直到下一個非段落 block 或空行
-                paraBuf.Append(line).Append('\n');
-            }
-            FlushParagraph(paraBuf);
-        }
-
-        void FlushParagraph(StringBuilder buf)
-        {
-            if (buf.Length == 0) return;
-            m_Blocks.Add(new MdBlock
-            {
-                Type = MdBlockType.Paragraph,
-                Text = buf.ToString().TrimEnd('\n', ' ', '\t'),
-            });
-            buf.Clear();
-        }
-
-        // 區塊職責：判斷 line 是否為表格資料列（首尾皆 `|` 且至少含一個內部 `|`）
-        // 物理意義：標準 markdown 表格列必有兩端 `|`；只有一端會誤判 inline 引文
-        static bool IsTableLine(string line)
-        {
-            if (string.IsNullOrEmpty(line)) return false;
-            string t = line.Trim();
-            if (t.Length < 3) return false;
-            if (!t.StartsWith("|") || !t.EndsWith("|")) return false;
-            // 至少要有兩個 `|`（首尾）+ 中間至少 1 個內部 `|`
-            int count = 0;
-            foreach (char c in t) if (c == '|') count++;
-            return count >= 3;
-        }
-
-        // 區塊職責：判斷 line 是否為表格分隔列（|---|---|；可帶 :- / -: / :-: 對齊符號 + 空白）
-        // 物理意義：用來確認上一行 `|...|` 是 table header 而不是普通 inline 引文
-        static bool IsTableSeparator(string line)
-        {
-            if (string.IsNullOrEmpty(line)) return false;
-            string t = line.Trim();
-            if (t.Length < 3 || !t.StartsWith("|") || !t.EndsWith("|")) return false;
-            string inner = t.Substring(1, t.Length - 2);
-            bool hasDash = false;
-            foreach (char c in inner)
-            {
-                if (c == '-') hasDash = true;
-                else if (c != '|' && c != ':' && c != ' ') return false;
-            }
-            return hasDash;
-        }
-
-        // 區塊職責：把 `| a | b | c |` 切成 ["a", "b", "c"] 並 trim
-        static string[] SplitTableRow(string line)
-        {
-            string t = line.Trim();
-            if (t.StartsWith("|")) t = t.Substring(1);
-            if (t.EndsWith("|")) t = t.Substring(0, t.Length - 1);
-            var cells = t.Split('|');
-            for (int k = 0; k < cells.Length; k++) cells[k] = cells[k].Trim();
-            return cells;
-        }
-
-        static bool TryParseHeading(string line, out int level, out string text)
-        {
-            level = 0; text = null;
-            if (string.IsNullOrEmpty(line)) return false;
-            int n = 0;
-            while (n < line.Length && line[n] == '#') n++;
-            if (n == 0 || n > 6) return false;
-            if (n >= line.Length || line[n] != ' ') return false;
-            level = n;
-            text = line.Substring(n + 1).Trim();
-            return true;
         }
 
         // ===========================================================
@@ -409,11 +213,11 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        void DrawBlock(MdBlock b)
+        void DrawBlock(UCL_MdBlock b)
         {
             switch (b.Type)
             {
-                case MdBlockType.Heading:
+                case UCL_MdBlockType.Heading:
                 {
                     // 區塊職責：H1/H2 加多一點上方間距，視覺把章節分開
                     GUILayout.Space(b.HeadingLevel <= 2 ? 8 : 4);
@@ -421,17 +225,17 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(InlineFormat(b.Text), m_HeadingStyles[idx]);
                     break;
                 }
-                case MdBlockType.Paragraph:
+                case UCL_MdBlockType.Paragraph:
                     GUILayout.Label(InlineFormat(b.Text), m_BodyStyle);
                     break;
-                case MdBlockType.Bullet:
+                case UCL_MdBlockType.Bullet:
                     GUILayout.Label("  " + InlineFormat(b.Text), m_BulletStyle);
                     break;
-                case MdBlockType.Quote:
+                case UCL_MdBlockType.Quote:
                     // 視覺：左側藍條 + 斜體
                     GUILayout.Label("<color=#9BD0FF>▎</color> <i>" + InlineFormat(b.Text) + "</i>", m_BodyStyle);
                     break;
-                case MdBlockType.CodeFence:
+                case UCL_MdBlockType.CodeFence:
                     using (new GUILayout.VerticalScope("box"))
                     {
                         if (!string.IsNullOrEmpty(b.CodeLang))
@@ -441,16 +245,19 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Label(b.CodeBody ?? "", m_CodeBlockStyle);
                     }
                     break;
-                case MdBlockType.HorizontalRule:
+                case UCL_MdBlockType.HorizontalRule:
                     GUILayout.Space(2);
                     GUILayout.Box(GUIContent.none, GUILayout.Height(1), GUILayout.ExpandWidth(true));
                     GUILayout.Space(2);
                     break;
-                case MdBlockType.Empty:
+                case UCL_MdBlockType.Empty:
                     GUILayout.Space(4);
                     break;
-                case MdBlockType.Table:
+                case UCL_MdBlockType.Table:
                     DrawTable(b.TableRows);
+                    break;
+                case UCL_MdBlockType.Mermaid:
+                    DrawMermaid(b.Graph, b.CodeBody);
                     break;
             }
         }
@@ -482,6 +289,88 @@ namespace UCL.Core.EditorLib.Page
                         // header 與資料列之間畫細線分隔（取代 |---|---| 在原 markdown 的視覺）
                         GUILayout.Box(GUIContent.none, GUILayout.Height(1), GUILayout.ExpandWidth(true));
                     }
+                }
+            }
+        }
+
+        // ===========================================================
+        // mermaid 渲染
+        // 物理意義：v1 不畫真正的 graph layout；改用「樹狀縮排 + 節點 shape brackets + 邊 label」
+        //          呈現節點間關係。從入度為 0 的節點（roots）DFS，已訪問節點重訪時標 (↩)。
+        // 數值影響：每節點一行；分支會直接列在父節點之下、用 indent 表示層級；節點 shape：
+        //          [rect] / (round) / ◇ diamond ◇；邊 label 包在 ─label→ 中。
+        // ===========================================================
+        void DrawMermaid(UCL_MermaidGraph g, string rawBody)
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                if (g == null || g.Nodes.Count == 0)
+                {
+                    GUILayout.Label("<color=#888888>(mermaid: empty / parse failed)</color>", m_BodyStyle);
+                    if (!string.IsNullOrEmpty(rawBody))
+                    {
+                        GUILayout.Label(rawBody, m_CodeBlockStyle);
+                    }
+                    return;
+                }
+                GUILayout.Label($"<color=#888888>graph {g.Direction}</color>", m_BodyStyle);
+
+                // 入度統計 — 入度為 0 的節點為樹根
+                var inDeg = new Dictionary<string, int>();
+                foreach (var id in g.Nodes.Keys) inDeg[id] = 0;
+                foreach (var e in g.Edges)
+                {
+                    if (e.To != null && inDeg.ContainsKey(e.To)) inDeg[e.To]++;
+                }
+                var visited = new HashSet<string>();
+                foreach (var kv in inDeg)
+                {
+                    if (kv.Value == 0 && !visited.Contains(kv.Key))
+                    {
+                        DrawMermaidNode(g, kv.Key, 0, visited, null);
+                    }
+                }
+                // 環狀殘餘 — 任選未訪節點當起點
+                foreach (var id in g.Nodes.Keys)
+                {
+                    if (!visited.Contains(id))
+                    {
+                        DrawMermaidNode(g, id, 0, visited, null);
+                    }
+                }
+            }
+        }
+
+        void DrawMermaidNode(UCL_MermaidGraph g, string id, int depth, HashSet<string> visited, string edgeLabel)
+        {
+            if (!g.Nodes.TryGetValue(id, out var node)) return;
+            bool alreadySeen = visited.Contains(id);
+            string indent = depth > 0 ? new string(' ', depth * 2) : "";
+            string label = string.IsNullOrEmpty(node.Label) ? id : node.Label;
+            string nodeText;
+            switch (node.Shape)
+            {
+                case "round":   nodeText = $"<color=#9BD0FF>(</color> {label} <color=#9BD0FF>)</color>"; break;
+                case "diamond": nodeText = $"<color=#FFE066>◇</color> <b>{label}</b> <color=#FFE066>◇</color>"; break;
+                default:        nodeText = $"<color=#9BD0FF>[</color> {label} <color=#9BD0FF>]</color>"; break;
+            }
+            string arrow;
+            if (depth == 0) arrow = "";
+            else if (string.IsNullOrEmpty(edgeLabel)) arrow = "<color=#888888>→</color> ";
+            else arrow = $"<color=#888888>─</color><color=#FFE066>{edgeLabel}</color><color=#888888>→</color> ";
+            string suffix = alreadySeen ? " <color=#888888>(↩ ref)</color>" : "";
+            GUILayout.Label(indent + arrow + nodeText + suffix, m_BodyStyle);
+
+            if (alreadySeen) return;
+            visited.Add(id);
+
+            // 走訪所有由本節點出發的邊；同層多分支會直接 stack 顯示
+            for (int i = 0; i < g.Edges.Count; i++)
+            {
+                var e = g.Edges[i];
+                if (e.From == id && e.To != null)
+                {
+                    DrawMermaidNode(g, e.To, depth + 1, visited, e.Label);
                 }
             }
         }

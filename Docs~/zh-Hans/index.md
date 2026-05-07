@@ -98,6 +98,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬写本地化字符串的处理 |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **创建新的 `Cmd_<Name>.cs` 子类 SOP** — 命名 / 文件位置决策树（UCL_Core vs 下游模块） / 标准范本（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync 守则 / Editor 验收 / 8 大常见地雷 / **§9 文件放置自动判断方案**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
 | 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **创建新的 `UCL_CommonEditorPage` 子类 SOP** — 继承关系 / 必/选 override / TopBarButtons 客制 / 入口点挂接（父页 / Welcome 卡片 / 菜单） / UI 组件选用对照（链接 UCL_GUILayout 与 UCL_GUIStyle 文件） / HelpURL `{lang}` 占位 / 8 大常见地雷 / 验收清单 |
+| 🔁 [Edit_Recompile_Loop_Workflow](Workflows/Edit_Recompile_Loop_Workflow.md) ⭐ | **agent 改 .cs 后的强制同步 SOP** — `Cmd_Recompile` + Python `recompile` 子命令 + `.compile_status.json` 三件套；Edit → recompile → 0 errors 才继续，否则读 messages 修错 loop（≤5 轮），故障模式对照表 |
 
 ---
 

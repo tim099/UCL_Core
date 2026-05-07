@@ -98,6 +98,7 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | Handling hard-coded localization strings |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **SOP for creating a new `Cmd_<Name>.cs` subclass** — naming / file-placement decision tree (UCL_Core vs downstream module) / standard template (CommandType / ShortDescription / ArgsSchema / HelpURL) / ExecuteAsync conventions / in-Editor verification / 8 common pitfalls / **§9 auto-classification scheme for doc placement** (`source_root` frontmatter + `Cmd_ValidateDocPlacement`) |
 | 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **SOP for creating a new `UCL_CommonEditorPage` subclass** — inheritance chain / required and optional overrides / TopBarButtons customization / entry-point hookup (parent page / Welcome card / menu) / UI component selection guide (links to UCL_GUILayout and UCL_GUIStyle docs) / HelpURL `{lang}` placeholder / 8 common pitfalls / acceptance checklist |
+| 🔁 [Edit_Recompile_Loop_Workflow](Workflows/Edit_Recompile_Loop_Workflow.md) ⭐ | **Forced sync SOP after an agent edits .cs** — the trio of `Cmd_Recompile` + Python `recompile` subcommand + `.compile_status.json`; Edit → recompile → only continue when 0 errors, otherwise read messages and loop the fixes (≤ 5 rounds), with a failure-mode reference table |
 
 ---
 

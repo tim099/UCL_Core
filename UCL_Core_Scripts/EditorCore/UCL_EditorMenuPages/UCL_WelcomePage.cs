@@ -71,6 +71,27 @@ namespace UCL.Core.EditorLib.Page
         // PopupSearchCache 需要的容器 — 給語言下拉選單用
         readonly UCL_ObjectDictionary m_LangDic = new UCL_ObjectDictionary();
 
+        // 區塊職責：長文字 Label 的 wordWrap 樣式（lazy 建一次後重用）
+        // 物理意義：UCL_GUIStyle.LabelStyle 預設不換行 → 一行很長的描述 / hint 會撐爆視窗寬度，
+        //          配合 IMGUI 的 auto-expand 把整頁拉寬到不舒服。給內文 Label 套上 wordWrap=true
+        //          + ExpandWidth=true（HorizontalScope 內的水平捲動才會收歛）。
+        // 數值影響：純樣式快取，無副作用
+        GUIStyle m_WrapLabelStyle;
+        GUIStyle WrapLabelStyle
+        {
+            get
+            {
+                if (m_WrapLabelStyle == null)
+                {
+                    m_WrapLabelStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
+                    {
+                        wordWrap = true,
+                    };
+                }
+                return m_WrapLabelStyle;
+            }
+        }
+
         // 區塊備註：原本的內嵌文件搜尋已搬出至 UCL_DocSearchPage；
         //          本頁只保留一顆「🔍 文件搜尋」按鈕跳轉過去。
 
@@ -167,7 +188,7 @@ namespace UCL.Core.EditorLib.Page
                 if (allIds == null || allIds.Count == 0)
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Lang.NoneAvailable"),
-                        UCL_GUIStyle.LabelStyle);
+                        WrapLabelStyle);
                     return;
                 }
 
@@ -185,13 +206,22 @@ namespace UCL.Core.EditorLib.Page
                     })
                     .ToList();
 
-                int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, displayOptions, m_LangDic, "WelcomeLangPicker");
-                if (newIdx != curIdx && newIdx >= 0 && newIdx < allIds.Count)
+                // 區塊職責：限制 picker 寬度避免撐爆水平 layout，把「進階編輯…」推到視窗外
+                // 物理意義：PopupSearchCache 預設依文字寬度自動撐開，被選項裡的長字會
+                //          連帶把後面的元素擠出可視範圍
+                // 數值影響：picker 固定 240px 寬，超出顯示 "..."；之後的「進階編輯…」按鈕
+                //          能保證可見
+                using (new GUILayout.HorizontalScope(GUILayout.Width(240)))
                 {
-                    string newLang = allIds[newIdx];
-                    UCL_LocalizeService.SetLanguage(newLang);
-                    Debug.Log($"[UCL_Welcome] Language switched: {curLang} → {newLang}");
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, displayOptions, m_LangDic, "WelcomeLangPicker");
+                    if (newIdx != curIdx && newIdx >= 0 && newIdx < allIds.Count)
+                    {
+                        string newLang = allIds[newIdx];
+                        UCL_LocalizeService.SetLanguage(newLang);
+                        Debug.Log($"[UCL_Welcome] Language switched: {curLang} → {newLang}");
+                    }
                 }
+                GUILayout.FlexibleSpace();
                 if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Lang.OpenEditor"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();
@@ -207,7 +237,7 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 GUILayout.Label(UCL_CodeLocalize.Get("Welcome.IntroTitle"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.IntroBody"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.IntroBody"), WrapLabelStyle);
             }
         }
 
@@ -221,7 +251,7 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Title"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Hint"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.Search.Hint"), WrapLabelStyle);
                 if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Search.OpenPageButton"),
                     UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                 {
@@ -281,7 +311,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
                 GUILayout.Label(title, titleStyle);
-                GUILayout.Label(desc, UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(desc, WrapLabelStyle);
                 using (new GUILayout.HorizontalScope())
                 {
                     if (GUILayout.Button(primaryLabel, UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
@@ -347,7 +377,7 @@ namespace UCL.Core.EditorLib.Page
                 bool prevDisabled = EditorPrefs.GetBool(PrefKey_AutoOpenDisabled, false);
                 bool newDisabled = GUILayout.Toggle(prevDisabled,
                     UCL_CodeLocalize.Get("Welcome.AutoOpenToggle"),
-                    UCL_GUIStyle.LabelStyle);
+                    WrapLabelStyle);
                 if (newDisabled != prevDisabled)
                 {
                     EditorPrefs.SetBool(PrefKey_AutoOpenDisabled, newDisabled);

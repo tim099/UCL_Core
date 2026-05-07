@@ -71,6 +71,35 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     }
 
     /// <summary>
+    /// 一筆 active wait — 對應 _active_waits.json 的一個條目。
+    /// 物理意義：op=wait 改成 fire-and-forget 後，handler 立刻寫一筆 pending 進來、返回；
+    ///           背景 UniTask 監看 _seq.txt，命中 / timeout 後改 status 並寫 _wait_&lt;id&gt;.md。
+    ///           agent 之後用 op=wait_check 查狀態。
+    /// </summary>
+    [Serializable]
+    public class UCL_ChatActiveWait
+    {
+        public string wait_id;        // 例 "20260508-005000-a1b2c3"
+        public string room_id;
+        public int since_seq;          // 等待 seq > since_seq 的新訊息
+        public int timeout_sec;
+        public string started_at;      // ISO 8601 UTC
+        public string expires_at;      // ISO 8601 UTC（started_at + timeout_sec）
+        public string status;          // "pending" | "fulfilled" | "timeout" | "cancelled"
+        public int result_first_seq;   // 0 = N/A；fulfilled 時為命中的第一個新 seq
+        public int result_count;       // 0 = N/A；fulfilled 時為新訊息數
+        public string finished_at;     // ISO 8601 UTC；status 進入終態時填
+        public string owner;           // 可選，發起 wait 的 identity_id
+    }
+
+    /// <summary>active wait 清單（JsonUtility 序列化用包裝）。</summary>
+    [Serializable]
+    public class UCL_ChatActiveWaitList
+    {
+        public List<UCL_ChatActiveWait> waits = new List<UCL_ChatActiveWait>();
+    }
+
+    /// <summary>
     /// 一筆訊息（對應 messages.jsonl 一行）。
     /// kind 開放：chat / join / leave / system / note_ref / tool_call / tool_result。
     /// </summary>

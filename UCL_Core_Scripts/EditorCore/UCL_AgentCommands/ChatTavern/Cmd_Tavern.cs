@@ -27,9 +27,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "read: room=房間ID [tail=N] [from=N] [to=N] [since_seq=N] [limit=N] [search=keyword]\n" +
             "members: room=房間ID\n" +
             "leave: room=房間ID sender=身分ID\n" +
-            "wait: room=房間ID since_seq=N [timeout=300（秒，預設 5 分鐘）]\n" +
-            "note_write: room=房間ID key=筆記key body=內容（v2 預留）\n" +
-            "note_read: room=房間ID key=筆記key（v2 預留）";
+            "wait: room=房間ID since_seq=N [timeout=300（秒，預設 5 分鐘）] [owner=identity_id]\n" +
+            "      ⚡ fire-and-forget — handler 立刻返回 wait_id，背景 task 監看訊息；用 op=wait_check 查結果\n" +
+            "wait_check: wait_id=<由 op=wait 取得的 id> — 同步查詢該 wait 當前狀態（pending/fulfilled/timeout/cancelled）\n" +
+            "note_write: room=房間ID key=筆記key body=Markdown 內容（整個覆寫；更新 last_updated_at）\n" +
+            "note_append: room=房間ID key=筆記key body=要追加的文字 [sender=ID]（OS 原子 append；不動 frontmatter）\n" +
+            "note_read: room=房間ID key=筆記key（回完整 markdown）\n" +
+            "note_list: room=房間ID（列房內所有 note keys）\n" +
+            "note_delete: room=房間ID key=筆記key（刪檔）";
         // ExampleArgs：agent-neutral 範例 — 別硬塞 claude-* 讓非 Claude agent 誤以為是預設身分
         public override string ExampleArgs =>
             "op=post;room=demo;sender=<your-agent-id>;body=哼～來打個招呼";
@@ -55,11 +60,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "read": Op_Read(args); break;
                     case "members": Op_Members(args); break;
                     case "leave": Op_Leave(args); break;
-                    case "wait": await Op_Wait(args, token); break;
-                    case "note_write":
-                    case "note_read":
-                        FailLastOp($"op={op} 為 v2 規劃，prototype 階段尚未實作。");
-                        break;
+                    case "wait": Op_Wait(args, token); break;
+                    case "wait_check": Op_WaitCheck(args); break;
+                    case "note_write": Op_NoteWrite(args); break;
+                    case "note_append": Op_NoteAppend(args); break;
+                    case "note_read": Op_NoteRead(args); break;
+                    case "note_list": Op_NoteList(args); break;
+                    case "note_delete": Op_NoteDelete(args); break;
                     default:
                         FailLastOp($"未知 op：{op}");
                         break;
@@ -276,52 +283,302 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：op=wait — polling 直到 since_seq 之後出現新訊息或 timeout
-        // 物理意義：解鎖「我問你答」turn-based 協作模式
-        // 數值影響：每秒 poll 一次 _seq.txt，命中即回；timeout 後寫 timeout 標記
-        //          預設 timeout=300 秒（5 分鐘）— 對應「對方太久沒回就放棄」的場景；
-        //          若 client 用 run_cmd.py --timeout 包裝，wrapper 端 timeout 應 ≥ 此值
-        //          否則 client 會先放棄（cmd 仍會跑完）
+        // 區塊：op=wait — fire-and-forget 模式
+        // 物理意義：handler 立刻返回 wait_id，背景 UniTask 監看 _seq.txt 直到命中或 timeout
+        //           不阻塞 runner → parallel session 之間 cmd↔cmd wait 才能真的奏效
+        // 數值影響：在 _active_waits.json 加一筆 pending；命中時更新為 fulfilled 並寫 _wait_<id>.md；
+        //           timeout 時更新為 timeout。agent 用 op=wait_check 查狀態。
+        //           預設 timeout=300 秒（5 分鐘）
         // ===========================================================
         const int DefaultWaitTimeoutSec = 300;
-        async UniTask Op_Wait(Dictionary<string, string> args, CancellationToken token)
+        void Op_Wait(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
             int sinceSeq = ParseIntArg(args, "since_seq", 0);
             int timeoutSec = ParseIntArg(args, "timeout", DefaultWaitTimeoutSec);
+            string owner = GetArg(args, "owner", null);
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("wait 缺少 room"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { FailLastOp($"房間不存在：{roomId}"); return; }
 
+            // 建 pending 條目
+            string waitId = UCL_ChatTavernIO.CreatePendingWait(roomId, sinceSeq, timeoutSec, owner);
+
+            // fire-and-forget 背景 task；token 來自 runner（Editor cancel 時會被取消，那是預期）
+            BackgroundWaitTask(waitId, roomId, sinceSeq, timeoutSec, token).Forget();
+
+            // 立刻寫 _last_op.md 告知 caller
+            string md =
+                $"# 🕒 Wait Started (fire-and-forget)\n\n" +
+                $"- **wait_id**: `{waitId}`\n" +
+                $"- **room**: `{roomId}` ({room.name})\n" +
+                $"- **since_seq**: {sinceSeq}\n" +
+                $"- **timeout**: {timeoutSec}s\n\n" +
+                $"Handler returned immediately, queue runner is free for other cmds.\n" +
+                $"Poll status with `op=wait_check wait_id={waitId}`，或讀 `_wait_{waitId}.md`。\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Tavern] wait fire-and-forget → wait_id={waitId} room={roomId} since={sinceSeq} timeout={timeoutSec}s");
+        }
+
+        // 區塊職責：實際的監看迴圈
+        // 物理意義：每秒 poll _seq.txt；seq > since_seq → 寫 fulfilled；達 timeout → 寫 timeout
+        // 數值影響：直接動 _active_waits.json + 寫 _wait_<id>.md；不修改 messages.jsonl
+        async UniTask BackgroundWaitTask(string waitId, string roomId, int sinceSeq, int timeoutSec, CancellationToken token)
+        {
             const int pollIntervalMs = 1000;
             int waitedMs = 0;
             int totalMs = timeoutSec * 1000;
-
-            while (waitedMs <= totalMs)
+            try
             {
-                token.ThrowIfCancellationRequested();
-                int cur = UCL_ChatTavernIO.ReadCurrentSeq(roomId);
-                if (cur > sinceSeq)
+                while (waitedMs <= totalMs)
                 {
-                    var newMsgs = UCL_ChatTavernIO.Since(roomId, sinceSeq, 0);
-                    string title = $"🔔 {room.name} — 新訊息 since_seq={sinceSeq}（{newMsgs.Count} 筆，等了 {waitedMs / 1000}s）";
-                    string md = UCL_ChatTavernRender.RenderMessages(title, newMsgs);
-                    UCL_ChatTavernRender.WriteLastOp(md);
-                    Debug.Log($"[Tavern] wait {roomId} → got {newMsgs.Count} after {waitedMs}ms");
-                    return;
+                    if (token.IsCancellationRequested) return; // domain reload / Editor close → leave pending（下次 LoadActiveWaits 會被 finalize）
+                    int cur = UCL_ChatTavernIO.ReadCurrentSeq(roomId);
+                    if (cur > sinceSeq)
+                    {
+                        var newMsgs = UCL_ChatTavernIO.Since(roomId, sinceSeq, 0);
+                        var room = UCL_ChatTavernIO.GetRoom(roomId);
+                        string roomName = room?.name ?? roomId;
+                        string title = $"🔔 {roomName} — wait fulfilled (id={waitId}) — {newMsgs.Count} 筆新訊息";
+                        string md = UCL_ChatTavernRender.RenderMessages(title, newMsgs);
+                        WriteWaitResult(waitId, md);
+                        int firstSeq = newMsgs.Count > 0 ? newMsgs[0].seq : sinceSeq + 1;
+                        UCL_ChatTavernIO.UpdateWaitStatus(waitId, "fulfilled", firstSeq, newMsgs.Count);
+                        Debug.Log($"[Tavern] wait {waitId} → fulfilled after {waitedMs}ms ({newMsgs.Count} msgs)");
+                        return;
+                    }
+                    await UniTask.Delay(pollIntervalMs, cancellationToken: token);
+                    waitedMs += pollIntervalMs;
                 }
-                await UniTask.Delay(pollIntervalMs, cancellationToken: token);
-                waitedMs += pollIntervalMs;
+                // timeout
+                string timeoutMd = $"# ⏱ Wait Timeout\n\n- wait_id: `{waitId}`\n- room: `{roomId}`\n- 等待 {timeoutSec}s 後仍無 seq > {sinceSeq} 的新訊息。\n";
+                WriteWaitResult(waitId, timeoutMd);
+                UCL_ChatTavernIO.UpdateWaitStatus(waitId, "timeout", 0, 0);
+                Debug.LogWarning($"[Tavern] wait {waitId} → timeout after {timeoutSec}s");
             }
-            // timeout
-            string timeoutMd = $"# ⏱ Timeout\n\n房間 `{roomId}` 等待 {timeoutSec}s 後仍無 seq > {sinceSeq} 的新訊息。\n";
-            UCL_ChatTavernRender.WriteLastOp(timeoutMd);
-            Debug.LogWarning($"[Tavern] wait {roomId} → timeout after {timeoutSec}s");
+            catch (OperationCanceledException)
+            {
+                // domain reload / Editor close — 條目留 pending，下次 FinalizeOrphanedPending 會處理
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Tavern] BackgroundWaitTask {waitId} crashed: {ex}");
+                try
+                {
+                    WriteWaitResult(waitId, $"# ❌ Wait Crashed\n\n{ex.Message}\n");
+                    UCL_ChatTavernIO.UpdateWaitStatus(waitId, "cancelled", 0, 0);
+                }
+                catch { /* swallow secondary failure */ }
+            }
+        }
+
+        static void WriteWaitResult(string waitId, string md)
+        {
+            UCL_ChatTavernIO.EnsureTavernDir();
+            System.IO.File.WriteAllText(UCL_ChatTavernIO.GetWaitResultPath(waitId), md, new System.Text.UTF8Encoding(false));
+        }
+
+        // ===========================================================
+        // 區塊：op=wait_check — 同步查詢 wait 狀態
+        // ===========================================================
+        void Op_WaitCheck(Dictionary<string, string> args)
+        {
+            string waitId = GetArg(args, "wait_id", "");
+            if (string.IsNullOrEmpty(waitId)) { FailLastOp("wait_check 缺少 wait_id"); return; }
+
+            var w = UCL_ChatTavernIO.FindWait(waitId);
+            if (w == null) { FailLastOp($"找不到 wait_id：{waitId}（可能已被 stale-purge 或從未存在）"); return; }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"# 🔍 Wait Status — `{waitId}`\n\n");
+            sb.Append($"- **room**: `{w.room_id}`\n");
+            sb.Append($"- **since_seq**: {w.since_seq}\n");
+            sb.Append($"- **status**: **{w.status}**\n");
+            sb.Append($"- started_at: {w.started_at}\n");
+            sb.Append($"- expires_at: {w.expires_at}\n");
+            if (!string.IsNullOrEmpty(w.finished_at)) sb.Append($"- finished_at: {w.finished_at}\n");
+            if (w.status == "fulfilled")
+            {
+                sb.Append($"- result_first_seq: {w.result_first_seq}\n");
+                sb.Append($"- result_count: {w.result_count}\n");
+                sb.Append("\n## 訊息內容\n\n");
+                string resultPath = UCL_ChatTavernIO.GetWaitResultPath(waitId);
+                if (System.IO.File.Exists(resultPath))
+                {
+                    sb.Append(System.IO.File.ReadAllText(resultPath));
+                }
+                else
+                {
+                    sb.Append("_(找不到 _wait_<id>.md，可能已被刪除)_\n");
+                }
+            }
+            else if (w.status == "timeout" || w.status == "cancelled")
+            {
+                string resultPath = UCL_ChatTavernIO.GetWaitResultPath(waitId);
+                if (System.IO.File.Exists(resultPath)) sb.Append("\n").Append(System.IO.File.ReadAllText(resultPath));
+            }
+            else // pending
+            {
+                sb.Append("\n_(仍在等待中，過陣子再 wait_check 一次)_\n");
+            }
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] wait_check {waitId} → status={w.status}");
+        }
+
+        // ===========================================================
+        // 區塊：op=note_write — 整個覆寫 note；更新 last_updated_at
+        // 物理意義：source-of-truth 為 .md 檔（rooms/<room>/notes/<key>.md），人類可直接 grep / 編輯
+        // ===========================================================
+        void Op_NoteWrite(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string key = GetArg(args, "key", "");
+            string body = GetArg(args, "body", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("note_write 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { FailLastOp("note_write 缺少 key"); return; }
+            var room = UCL_ChatTavernIO.GetRoom(roomId);
+            if (room == null) { FailLastOp($"房間不存在：{roomId}"); return; }
+            try
+            {
+                UCL_ChatTavernIO.WriteNote(roomId, key, body);
+            }
+            catch (Exception ex)
+            {
+                FailLastOp($"note_write 失敗：{ex.Message}");
+                return;
+            }
+            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
+            string md = $"# 📝 Note Written\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: write (整個覆寫)\n- bytes: {(body?.Length ?? 0)}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Tavern] note_write {roomId}/{key} ({body?.Length ?? 0} bytes)");
+        }
+
+        // ===========================================================
+        // 區塊：op=note_append — 純文字追加；File.AppendAllText 的 OS 原子性；不動 frontmatter
+        // 物理意義：累積式紀錄場景（如 brainstorm 持續追加）；犧牲 last_updated_at 更新換取無 lock 並發安全
+        // 數值影響：append body 自動加 [@sender] 前綴；note 不存在自動先建空 note
+        // ===========================================================
+        void Op_NoteAppend(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string key = GetArg(args, "key", "");
+            string body = GetArg(args, "body", "");
+            string sender = GetArg(args, "sender", null);
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("note_append 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { FailLastOp("note_append 缺少 key"); return; }
+            if (string.IsNullOrEmpty(body)) { FailLastOp("note_append 缺少 body"); return; }
+            var room = UCL_ChatTavernIO.GetRoom(roomId);
+            if (room == null) { FailLastOp($"房間不存在：{roomId}"); return; }
+            try
+            {
+                UCL_ChatTavernIO.AppendNote(roomId, key, body, sender);
+            }
+            catch (Exception ex)
+            {
+                FailLastOp($"note_append 失敗：{ex.Message}");
+                return;
+            }
+            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
+            string md = $"# 📝 Note Appended\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: append (OS 原子；不動 frontmatter)\n- sender: `{sender ?? "(none)"}`\n- bytes: {body.Length}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Tavern] note_append {roomId}/{key} by {sender ?? "?"} ({body.Length} bytes)");
+        }
+
+        // ===========================================================
+        // 區塊：op=note_read — 回完整 markdown 內容
+        // ===========================================================
+        void Op_NoteRead(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string key = GetArg(args, "key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("note_read 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { FailLastOp("note_read 缺少 key"); return; }
+            string content;
+            try
+            {
+                content = UCL_ChatTavernIO.ReadNote(roomId, key);
+            }
+            catch (Exception ex)
+            {
+                FailLastOp($"note_read 失敗：{ex.Message}");
+                return;
+            }
+            if (content == null) { FailLastOp($"note 不存在：{roomId}/{key}"); return; }
+            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"# 📖 Note: `{roomId}/{key}`\n\n");
+            sb.Append($"- path: `{ToRepoRelative(path)}`\n\n");
+            sb.Append("---\n\n");
+            sb.Append(content);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] note_read {roomId}/{key} ({content.Length} bytes)");
+        }
+
+        // ===========================================================
+        // 區塊：op=note_list — 列房內所有 note keys
+        // ===========================================================
+        void Op_NoteList(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("note_list 缺少 room"); return; }
+            var room = UCL_ChatTavernIO.GetRoom(roomId);
+            if (room == null) { FailLastOp($"房間不存在：{roomId}"); return; }
+            var keys = UCL_ChatTavernIO.ListNoteKeys(roomId);
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"# 📚 Notes of `{roomId}` ({keys.Count})\n\n");
+            if (keys.Count == 0) sb.Append("_(此房間尚無 note)_\n");
+            else
+            {
+                foreach (var k in keys)
+                {
+                    string path = UCL_ChatTavernIO.GetNotePath(roomId, k);
+                    sb.Append($"- `{k}` — `{ToRepoRelative(path)}`\n");
+                }
+            }
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] note_list {roomId} → {keys.Count} notes");
+        }
+
+        // ===========================================================
+        // 區塊：op=note_delete — 刪除整個 note 檔
+        // ===========================================================
+        void Op_NoteDelete(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string key = GetArg(args, "key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("note_delete 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { FailLastOp("note_delete 缺少 key"); return; }
+            bool removed;
+            try
+            {
+                removed = UCL_ChatTavernIO.DeleteNote(roomId, key);
+            }
+            catch (Exception ex)
+            {
+                FailLastOp($"note_delete 失敗：{ex.Message}");
+                return;
+            }
+            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
+            string md = removed
+                ? $"# 🗑 Note Deleted\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n"
+                : $"# ⚠ Note Not Found\n\n- room: `{roomId}`\n- key: `{key}`\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Tavern] note_delete {roomId}/{key} → {(removed ? "removed" : "not found")}");
         }
 
         // ===========================================================
         // helper
         // ===========================================================
+
+        /// <summary>把絕對路徑轉成 repo 相對（給 refs / 顯示用，跨 OS slash 統一）。</summary>
+        static string ToRepoRelative(string absPath)
+        {
+            string projectRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", ".."));
+            string norm = absPath.Replace('\\', '/');
+            string root = projectRoot.Replace('\\', '/').TrimEnd('/') + "/";
+            if (norm.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return norm.Substring(root.Length);
+            return norm;
+        }
 
         /// <summary>解析 "k1:v1;k2:v2" 為 dict。v 內可含 ':' 但第一個 ':' 之後都算 v。</summary>
         static Dictionary<string, string> ParseMeta(string raw)

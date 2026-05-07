@@ -26,10 +26,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public const string IdentitiesFile = "identities.json";
         public const string RoomsFile = "rooms.json";
         public const string LastOpFile = "_last_op.md";    // 最近一次 Cmd 結果（給 agent 抓）
+        public const string ActiveWaitsFile = "_active_waits.json"; // fire-and-forget wait 全域追蹤
         public const string MessagesFile = "messages.jsonl";
         public const string SeqFile = "_seq.txt";
         public const string MembersFile = "members.json";
         public const string LastViewFile = "_last_view.md";
+
+        // Stale wait 過期門檻：終態（fulfilled / timeout / cancelled）超過此時間 → purge
+        const int StaleWaitMinutes = 30;
 
         // ===========================================================
         // 路徑 helper
@@ -44,12 +48,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string GetIdentitiesPath() => Path.Combine(GetTavernDir(), IdentitiesFile);
         public static string GetRoomsPath() => Path.Combine(GetTavernDir(), RoomsFile);
         public static string GetLastOpPath() => Path.Combine(GetTavernDir(), LastOpFile);
+        public static string GetActiveWaitsPath() => Path.Combine(GetTavernDir(), ActiveWaitsFile);
+        public static string GetWaitResultPath(string waitId) => Path.Combine(GetTavernDir(), $"_wait_{waitId}.md");
 
         public static string GetRoomDir(string roomId) => Path.Combine(GetTavernDir(), "rooms", roomId);
         public static string GetMessagesPath(string roomId) => Path.Combine(GetRoomDir(roomId), MessagesFile);
         public static string GetSeqPath(string roomId) => Path.Combine(GetRoomDir(roomId), SeqFile);
         public static string GetMembersPath(string roomId) => Path.Combine(GetRoomDir(roomId), MembersFile);
         public static string GetLastViewPath(string roomId) => Path.Combine(GetRoomDir(roomId), LastViewFile);
+        public static string GetNotesDir(string roomId) => Path.Combine(GetRoomDir(roomId), "notes");
+        public static string GetNotePath(string roomId, string key) => Path.Combine(GetNotesDir(roomId), $"{key}.md");
+        public static void EnsureNotesDir(string roomId)
+        {
+            string dir = GetNotesDir(roomId);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        }
 
         public static void EnsureTavernDir()
         {
@@ -231,6 +244,245 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var m = LoadMembers(roomId);
             m.member_ids.Remove(identityId);
             SaveMembers(m);
+        }
+
+        // ===========================================================
+        // 區塊職責：Notes — per-room 共享筆記，每個 note 為一個 .md 檔
+        // 物理意義：notes/<key>.md 為 source-of-truth；frontmatter 4 欄（key/room/created_at/last_updated_at）
+        //          write 整個覆寫（last-write-wins）；append 純文字追加（OS 原子性）— 不動 frontmatter
+        // 數值影響：人類可直接 grep / 編輯 .md；agent 透過 ops 操作；走 [chat] 獨立 commit
+        // ===========================================================
+
+        static readonly System.Text.RegularExpressions.Regex s_NoteKeyRegex
+            = new System.Text.RegularExpressions.Regex("^[a-zA-Z0-9_-]+$");
+
+        /// <summary>檢查 key 是否合法。違反 → throw 給 caller 處理。</summary>
+        public static void ValidateNoteKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                throw new ArgumentException("note key 不能為空");
+            if (!s_NoteKeyRegex.IsMatch(key))
+                throw new ArgumentException($"note key '{key}' 不合法 — 僅接受 [a-zA-Z0-9_-]");
+        }
+
+        /// <summary>整個覆寫 note（write 模式）— frontmatter 重新生成、last_updated_at 更新到當下。</summary>
+        public static void WriteNote(string roomId, string key, string body)
+        {
+            ValidateNoteKey(key);
+            EnsureNotesDir(roomId);
+            string path = GetNotePath(roomId, key);
+            string createdAt;
+            if (File.Exists(path))
+            {
+                createdAt = ExtractFrontmatterField(path, "created_at") ?? NowUtcIso();
+            }
+            else
+            {
+                createdAt = NowUtcIso();
+            }
+            string fm =
+                "---\n" +
+                $"key: {key}\n" +
+                $"room: {roomId}\n" +
+                $"created_at: {createdAt}\n" +
+                $"last_updated_at: {NowUtcIso()}\n" +
+                "---\n\n";
+            File.WriteAllText(path, fm + (body ?? ""), new UTF8Encoding(false));
+        }
+
+        /// <summary>純文字 append 模式 — File.AppendAllText 利用 OS 原子性；不更新 frontmatter。
+        /// body 前會自動加 "[@sender] " 行；若 note 不存在 → 自動以空 body 建立後再 append。</summary>
+        public static void AppendNote(string roomId, string key, string body, string sender)
+        {
+            ValidateNoteKey(key);
+            EnsureNotesDir(roomId);
+            string path = GetNotePath(roomId, key);
+            if (!File.Exists(path))
+            {
+                WriteNote(roomId, key, ""); // 先建立空 note 帶 frontmatter
+            }
+            string senderTag = string.IsNullOrEmpty(sender) ? "" : $"[@{sender}] ";
+            string toAppend = "\n" + senderTag + (body ?? "") + "\n";
+            File.AppendAllText(path, toAppend, new UTF8Encoding(false));
+        }
+
+        public static string ReadNote(string roomId, string key)
+        {
+            ValidateNoteKey(key);
+            string path = GetNotePath(roomId, key);
+            if (!File.Exists(path)) return null;
+            return File.ReadAllText(path, Encoding.UTF8);
+        }
+
+        public static List<string> ListNoteKeys(string roomId)
+        {
+            string dir = GetNotesDir(roomId);
+            var result = new List<string>();
+            if (!Directory.Exists(dir)) return result;
+            foreach (var p in Directory.GetFiles(dir, "*.md"))
+            {
+                string name = Path.GetFileNameWithoutExtension(p);
+                if (s_NoteKeyRegex.IsMatch(name)) result.Add(name);
+            }
+            result.Sort(StringComparer.OrdinalIgnoreCase);
+            return result;
+        }
+
+        public static bool DeleteNote(string roomId, string key)
+        {
+            ValidateNoteKey(key);
+            string path = GetNotePath(roomId, key);
+            if (!File.Exists(path)) return false;
+            File.Delete(path);
+            return true;
+        }
+
+        /// <summary>從 .md frontmatter 抓某個 key 的值（簡易解析；YAML 不依賴第三方）。失敗回 null。</summary>
+        static string ExtractFrontmatterField(string path, string field)
+        {
+            try
+            {
+                var lines = File.ReadAllLines(path, Encoding.UTF8);
+                if (lines.Length < 2 || lines[0].Trim() != "---") return null;
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    string line = lines[i];
+                    if (line.Trim() == "---") break;
+                    int idx = line.IndexOf(':');
+                    if (idx <= 0) continue;
+                    string k = line.Substring(0, idx).Trim();
+                    if (k == field) return line.Substring(idx + 1).Trim();
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // ===========================================================
+        // 區塊職責：active waits（_active_waits.json）— fire-and-forget wait 全域追蹤
+        // 物理意義：op=wait 改為非阻塞模式後，每次發起寫一筆 pending 進來；背景 UniTask 監看
+        //           messages.jsonl 並在命中 / timeout 時改 status；agent 用 op=wait_check 查狀態
+        // 數值影響：每次讀檔自動 purge 終態超過 StaleWaitMinutes 的條目（避免檔案無限長大）
+        // ===========================================================
+
+        public static UCL_ChatActiveWaitList LoadActiveWaits()
+        {
+            string path = GetActiveWaitsPath();
+            if (!File.Exists(path)) return new UCL_ChatActiveWaitList();
+            try
+            {
+                string json = File.ReadAllText(path, Encoding.UTF8);
+                var data = JsonUtility.FromJson<UCL_ChatActiveWaitList>(json);
+                if (data == null) data = new UCL_ChatActiveWaitList();
+                // purge stale 終態條目
+                PurgeStaleInPlace(data);
+                return data;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] Failed to load active waits: {e}");
+                return new UCL_ChatActiveWaitList();
+            }
+        }
+
+        public static void SaveActiveWaits(UCL_ChatActiveWaitList list)
+        {
+            EnsureTavernDir();
+            try
+            {
+                string json = JsonUtility.ToJson(list, true);
+                File.WriteAllText(GetActiveWaitsPath(), json, new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] Failed to save active waits: {e}");
+            }
+        }
+
+        /// <summary>建一筆 pending 條目並 append 到清單，回傳 wait_id。</summary>
+        public static string CreatePendingWait(string roomId, int sinceSeq, int timeoutSec, string owner)
+        {
+            string waitId = NewWaitId();
+            DateTime now = DateTime.UtcNow;
+            var w = new UCL_ChatActiveWait
+            {
+                wait_id = waitId,
+                room_id = roomId,
+                since_seq = sinceSeq,
+                timeout_sec = timeoutSec,
+                started_at = now.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                expires_at = now.AddSeconds(timeoutSec).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                status = "pending",
+                result_first_seq = 0,
+                result_count = 0,
+                finished_at = null,
+                owner = owner,
+            };
+            var list = LoadActiveWaits();
+            list.waits.Add(w);
+            SaveActiveWaits(list);
+            return waitId;
+        }
+
+        /// <summary>更新指定 wait_id 的 status / 結果欄位（fulfilled / timeout / cancelled）。</summary>
+        public static void UpdateWaitStatus(string waitId, string status, int resultFirstSeq, int resultCount)
+        {
+            var list = LoadActiveWaits();
+            var w = list.waits.Find(x => x.wait_id == waitId);
+            if (w == null) return;
+            w.status = status;
+            w.result_first_seq = resultFirstSeq;
+            w.result_count = resultCount;
+            w.finished_at = NowUtcIso();
+            SaveActiveWaits(list);
+        }
+
+        public static UCL_ChatActiveWait FindWait(string waitId)
+        {
+            return LoadActiveWaits().waits.Find(x => x.wait_id == waitId);
+        }
+
+        /// <summary>把清單內所有 status==pending 但已超過 expires_at 的條目改成 timeout（被 reload 之類事件孤兒化）。</summary>
+        public static int FinalizeOrphanedPending()
+        {
+            var list = LoadActiveWaits();
+            int n = 0;
+            DateTime now = DateTime.UtcNow;
+            foreach (var w in list.waits)
+            {
+                if (w.status != "pending") continue;
+                if (DateTime.TryParse(w.expires_at, out var exp) && now > exp)
+                {
+                    w.status = "cancelled";
+                    w.finished_at = NowUtcIso();
+                    n++;
+                }
+            }
+            if (n > 0) SaveActiveWaits(list);
+            return n;
+        }
+
+        static string NewWaitId()
+        {
+            // 區塊職責：產生 unique wait_id — yyyyMMdd-HHmmss-NNN-tail6
+            // 物理意義：tail6 為 GUID 前 6 字元，避免同秒衝突
+            string ts = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+            string tail = Guid.NewGuid().ToString("N").Substring(0, 6);
+            return $"{ts}-{tail}";
+        }
+
+        static void PurgeStaleInPlace(UCL_ChatActiveWaitList list)
+        {
+            if (list?.waits == null) return;
+            DateTime threshold = DateTime.UtcNow.AddMinutes(-StaleWaitMinutes);
+            // 只清終態（pending 不論多久都保留 — 由 FinalizeOrphanedPending 另外處理）
+            list.waits.RemoveAll(w =>
+            {
+                if (w.status == "pending") return false;
+                if (string.IsNullOrEmpty(w.finished_at)) return false;
+                if (DateTime.TryParse(w.finished_at, out var fin)) return fin < threshold;
+                return false;
+            });
         }
 
         // ===========================================================

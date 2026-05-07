@@ -34,6 +34,14 @@ namespace UCL.Core.EditorLib.Page
         string m_RefsInput = "";        // "path1|path2"
         int? m_ReplyTo = null;
         Vector2 m_MessagesScroll = Vector2.zero;
+        // 區塊職責：自動捲到底的觸發旗標 + 訊息數快照
+        // 物理意義：使用者習慣聊天室「最新訊息在底部」 — 進房 / 收到新訊息時自動捲到底；
+        //          滾上去看歷史訊息時不要被自動拉回（只在 count 變大時觸發）
+        // 數值影響：m_PendingScrollToBottom = true 會在下一次 BeginScrollView 後把 m_MessagesScroll.y
+        //          設為 float.MaxValue（IMGUI 自動 clamp 到實際底部）
+        bool m_PendingScrollToBottom = false;
+        int m_LastSeenMsgCount = 0;
+        string m_LastSeenRoomId = ""; // 跨房間切換偵測用：room id 變了 → 強制捲底
 
         // ===== 新建表單 =====
         bool m_ShowCreateRoom = false;
@@ -261,6 +269,14 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 GUILayout.Label($"# 🍺 {m_SelectedRoomId} (seq={UCL_ChatTavernIO.ReadCurrentSeq(m_SelectedRoomId)})", UCL_GUIStyle.LabelStyle);
+                // 區塊職責：BeginScrollView 之前若 m_PendingScrollToBottom == true → 強制把 y 設大值
+                // 物理意義：IMGUI 會自動 clamp 到 contentHeight - viewportHeight；下一幀就在底部
+                //          設完清旗標，避免使用者滾上去看歷史時被自動拉回
+                if (m_PendingScrollToBottom)
+                {
+                    m_MessagesScroll.y = float.MaxValue;
+                    m_PendingScrollToBottom = false;
+                }
                 m_MessagesScroll = GUILayout.BeginScrollView(m_MessagesScroll, GUILayout.MinHeight(280), GUILayout.MaxHeight(420));
                 if (m_MessagesCache == null || m_MessagesCache.Count == 0)
                 {
@@ -439,7 +455,25 @@ namespace UCL.Core.EditorLib.Page
         }
         void RefreshRooms() { m_RoomsCache = UCL_ChatTavernIO.LoadRooms(); }
         void RefreshIdentities() { m_IdentitiesCache = UCL_ChatTavernIO.LoadIdentities(); }
-        void RefreshMessages() { m_MessagesCache = UCL_ChatTavernIO.Tail(m_SelectedRoomId, 100); }
+        // 區塊職責：重抓訊息 + 自動觸發 scroll-to-bottom 的單一進入點
+        // 物理意義：兩種情境會把 m_PendingScrollToBottom 設 true：
+        //   1) 切換房間（m_LastSeenRoomId 變了）— 進新房就在最底
+        //   2) 同房內 count 增加 — 新訊息進來自動跟上
+        //   兩者都不會在使用者滾上去看歷史時搶捲（count 持平 / 同房 → 不觸發）
+        // 數值影響：每次 RefreshMessages 同步 m_LastSeenRoomId / m_LastSeenMsgCount
+        void RefreshMessages()
+        {
+            m_MessagesCache = UCL_ChatTavernIO.Tail(m_SelectedRoomId, 100);
+            int now = m_MessagesCache?.Count ?? 0;
+            bool roomChanged = m_LastSeenRoomId != m_SelectedRoomId;
+            bool countGrew = !roomChanged && now > m_LastSeenMsgCount;
+            if (roomChanged || countGrew)
+            {
+                m_PendingScrollToBottom = true;
+            }
+            m_LastSeenRoomId = m_SelectedRoomId;
+            m_LastSeenMsgCount = now;
+        }
         void RefreshMembers() { m_MembersCache = UCL_ChatTavernIO.LoadMembers(m_SelectedRoomId); }
 
         // 區塊職責：頁面首次 ContentOnGUI 時的自動初始化

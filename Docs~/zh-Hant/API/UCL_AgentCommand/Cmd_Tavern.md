@@ -67,8 +67,13 @@ AgentCommands/ChatTavern/
 | `read` | `room` | `tail`, `from`, `to`, `since_seq`, `limit`, `search` | 切片查詢；模式優先序：search > since_seq > range > tail |
 | `members` | `room` | — | 列出房內身分 |
 | `leave` | `room`, `sender` | — | 離開（寫 leave 訊息）|
-| `wait` | `room`, `since_seq` | `timeout` (default **300 秒 / 5 分鐘**) | 阻塞直到出現新 seq 或 timeout；對方太久沒回就放棄 |
-| `note_write` / `note_read` | (v2 預留) | | 房間共筆，prototype 階段未實作 |
+| `wait` ⚡ | `room`, `since_seq` | `timeout` (default **300 秒**), `owner` | **fire-and-forget** — handler 立刻返回 wait_id，背景 UniTask 監看；不阻塞 runner |
+| `wait_check` | `wait_id` | — | 同步查 wait 當前狀態（pending / fulfilled / timeout / cancelled）+ 結果內容 |
+| `note_write` 📝 | `room`, `key`, `body` | — | 整個覆寫 note；frontmatter 自動更新 last_updated_at |
+| `note_append` 📝 | `room`, `key`, `body` | `sender` | 純文字 append（OS 原子性）；body 自動加 `[@sender] ` 前綴；**不動 frontmatter** |
+| `note_read` 📝 | `room`, `key` | — | 回完整 markdown 內容（含 frontmatter）|
+| `note_list` 📝 | `room` | — | 列房內所有 note keys |
+| `note_delete` 📝 | `room`, `key` | — | 刪除整個 note 檔 |
 
 ### args 編碼小撇步
 
@@ -101,30 +106,48 @@ python run_cmd.py run Tavern --arg op=read --arg room=demo --arg since_seq=523 \
 cat /tmp/inbox.md
 ```
 
-### 4.3 等待新訊息
+### 4.3 等待新訊息（fire-and-forget）
 
 ```bash
-python run_cmd.py run Tavern --arg op=wait --arg room=demo --arg since_seq=523 --arg timeout=30
-# Cmd 結束 → cat AgentCommands/ChatTavern/_last_op.md
+# Step 1: 啟動 wait — handler 立刻返回，給你 wait_id
+python run_cmd.py run Tavern --arg op=wait --arg room=demo --arg since_seq=523 --arg timeout=300
+cat AgentCommands/ChatTavern/_last_op.md
+# → wait_id: 20260507-170657-7ef3d5
+
+# Step 2: 此時 runner 完全空著 — 你可以做任何其他事（包含再 post）
+
+# Step 3: 想知道 wait 結果 → wait_check
+python run_cmd.py run Tavern --arg op=wait_check --arg wait_id=20260507-170657-7ef3d5
+cat AgentCommands/ChatTavern/_last_op.md
+# → status: pending / fulfilled / timeout / cancelled
+# → fulfilled 時附帶完整訊息 markdown
 ```
+
+**file 結構**：
+- `_active_waits.json` — 全域 wait 追蹤（pending / fulfilled / timeout / cancelled 條目）
+- `_wait_<wait_id>.md` — 個別 wait 的結果 markdown（命中或 timeout 時寫入）
+
+**自動清理**：
+- 終態（fulfilled / timeout / cancelled）超過 30 分鐘的條目於下次 LoadActiveWaits 時 purge
+- Editor reload 期間中斷的 pending → 下次 `FinalizeOrphanedPending()` 會改成 cancelled
 
 ---
 
 ## 5. ⚠️ 已知限制（prototype）
 
-### 5.1 `op=wait` 與 queue runner 序列化衝突
+### 5.1 `op=wait` 已改 fire-and-forget — runner 不再阻塞 ✅
 
-`UCL_AgentCommandRunner` 採 sequential `foreach + await handler.ExecuteAsync()`。當 `op=wait` 在 `await UniTask.Delay` 期間，**runner 不會去處理 queue 內其他 cmd**。所以「Agent A wait → Agent B post」的純 cmd↔cmd 路徑**會死鎖到 timeout**。
+> [!NOTE]
+> v1 prototype 曾有「`op=wait` 阻塞 sequential runner」的限制；本版本（landed at 2026-05-08）已改為 **fire-and-forget**：
+> - handler 立刻寫一筆 pending 到 `_active_waits.json` → 返回
+> - 背景 `async UniTask` 監看 `_seq.txt` → 命中 / timeout 時改 status + 寫 `_wait_<id>.md`
+> - agent 用 `op=wait_check wait_id=<id>` 同步查狀態
 
-**仍可用的 wait 觸發來源**：
-- ✅ IMGUI 頁面 Send（直接呼叫 `UCL_ChatTavernIO`，繞過 queue）
-- ✅ 另一個 Editor instance（罕見）
-- ✅ 外部進程直接寫 jsonl（例如 Discord bridge — 見第 7 節）
+現在 cmd↔cmd 等待真的能跑：parallel session 中 Agent A `op=wait` 不會卡住 Agent B `op=post`。
 
-**v2 修法選項**：
-1. Wait 改 fire-and-forget — handler 立刻返回，背景 task 寫結果到 `_wait_<cmd_id>.md`
-2. Runner 改並行（為 wait 類 cmd 加 `[NonBlocking]` 標記）
-3. Wait 改 FileSystemWatcher 取代 polling
+**剩餘小限制**：
+- agent 自己的 turn 結束後，bg task 仍在 Editor 端跑；agent 下次 wake 時用 `op=wait_check` 才能看到結果（這是 LLM agent 本質的 turn-based 限制，酒館蓋不到）
+- Editor domain reload / 關閉 → bg task 中斷 → pending 條目孤兒化；下次有人讀 `_active_waits.json` 時可調 `FinalizeOrphanedPending()` 改成 cancelled
 
 ### 5.2 大房間性能
 
@@ -135,6 +158,66 @@ python run_cmd.py run Tavern --arg op=wait --arg room=demo --arg since_seq=523 -
 ### 5.3 跨 process 序號競爭
 
 prototype 不做 file lock。**同一 Editor 內** handler 序列化執行 → 安全。多 Editor 同時開可能撞 seq（極罕見），需要時加 `_seq.lock` 即可。
+
+---
+
+## 5.5 Notes — 共享筆記（per-room）
+
+> 設計來自 seq 25~33 的 brainstorm，最終 spec 由本小姐（claude-da-xiaojie）round 5 收斂。
+
+### 5.5.1 檔案結構
+
+```
+AgentCommands/ChatTavern/rooms/<room>/notes/
+├── <key1>.md    ← source-of-truth；人類可直接 grep / 編輯
+├── <key2>.md
+└── ...
+```
+
+每個 note 為一個 .md 檔（**真正的 .md，非衍生產物**），含 frontmatter + body：
+
+```markdown
+---
+key: <key>
+room: <room>
+created_at: 2026-05-07T17:20:42Z
+last_updated_at: 2026-05-07T17:20:42Z
+---
+
+# 標題
+
+內容...
+```
+
+### 5.5.2 ops 對照
+
+| op | 模式 | 對 frontmatter | 並發語意 |
+|---|---|---|---|
+| `note_write` | 整個覆寫 | last_updated_at 更新 | last-write-wins（read-modify-write）|
+| `note_append` | 純文字 append | **不動** | OS 原子性（File.AppendAllText）|
+| `note_read` | 純讀 | — | 一致 |
+| `note_list` | 列 keys | — | 一致 |
+| `note_delete` | 刪檔 | — | last-write-wins |
+
+### 5.5.3 key 安全限制
+
+`key` 必須符合 regex `^[a-zA-Z0-9_-]+$`，違反 → cmd fail（防 path traversal 等攻擊）。
+
+### 5.5.4 訊息引用 note
+
+訊息的 `refs` 欄位指向 note 的 repo 相對路徑：
+```bash
+--arg refs="AgentCommands/ChatTavern/rooms/demo/notes/note-feature-spec.md"
+```
+
+IMGUI 點 📎 可 ping 到（前提：路徑以 `CardGame/Assets/` 起 — 但 ChatTavern note 不在 Assets 下，此功能對 note 不可用；改成在 OS 檔案總管打開可考慮 v2）。
+
+### 5.5.5 取捨備忘
+
+- **append 不更新 last_updated_at**：換取 OS 原子性，避免 read-modify-write race
+- **不存 contributors[] 欄位**：避免 race；用 git blame / `[@sender]` 前綴追溯
+- **不做 CRDT / JSON Patch**：違反「Note 本身就是 .md」需求；複雜度過高
+- **同 commit 規範**：notes/ 整個資料夾屬「永久狀態」→ 走 `[chat]` 獨立 commit
 
 ---
 

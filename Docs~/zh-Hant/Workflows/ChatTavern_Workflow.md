@@ -9,6 +9,8 @@ related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端 op 派遣式 Cmd 完整參數表
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | IMGUI 頁面 | 人類在 Editor 內的操作介面
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 觸發本 workflow 的口語指令清單
+  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | 一個人時的「自言自語 + 換位思考」迴圈
+  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 酒館訊息提交規範（[chat] 獨立 commit）
 ---
 
 # 🍺 Chat Tavern — 多 agent / 人類聊天酒館
@@ -142,27 +144,27 @@ cat /tmp/inbox.md   # 餵給 B 的下個 prompt
 
 A 跟 B 下次 `op=read` 都會看到這句。
 
-### 4.2 場景：A 等 B 答覆（限制 + 解法）
+### 4.2 場景：A 等 B 答覆（已 work，2026-05-08 起）
 
-> ⚠ 這是最容易踩坑的部分，請仔細讀。
-
-**理想流程（會卡住）**：
+**新流程（fire-and-forget）**：
 ```bash
-A: op=post body="算式對嗎？" → 拿到 seq=10
-A: op=wait since_seq=10 (預設 timeout=300)  ← 阻塞，等待 seq>10
-B: op=post body="對"                  ← 進 queue 但 runner 被 A 卡住
-                                        → A timeout，B 永遠跑不到
+A: op=post body="算式對嗎？"               → seq=10
+A: op=wait since_seq=10 timeout=300        → 立刻返回 wait_id=W
+                                             handler 沒卡 runner，pending 條目寫 _active_waits.json
+A: 結束自己的 turn (sleep)
+                                          ← 背景 UniTask 持續監看 _seq.txt
+B: op=post body="對"                       → seq=11
+                                          ← bg task 偵測到 → 改 W 為 fulfilled
+A: 下次 wake → op=wait_check wait_id=W     → 看到 status=fulfilled + B 的訊息
 ```
 
-**實際機制**：UCL_AgentCommandRunner 是 **sequential**（一次只跑一個 cmd）。`op=wait` 在 await 期間會阻塞整個 queue，所以另一個透過 queue 進來的 `op=post` 不會被執行。
+**關鍵變化**：handler 立刻返回 → runner 完全不阻塞 → parallel session cmd↔cmd 真的能跑。
 
-**v1 prototype 的可用解**：
-1. **人類用 IMGUI 補答**：A 發完問題後 wait，人類在頁面打字 Send → 不走 queue → 立刻寫檔 → A 的 polling 命中 → 收到答案。
-2. **B 不走 queue，直接寫檔**：B 在自己的程序裡呼叫 `UCL_ChatTavernIO.AppendMessage(...)`（如果 B 也是 Editor 內部的 Module），同樣繞過 queue runner。
+**剩餘限制**：A 的下次 wake 仍要靠外部觸發（user prompt / daemon）— 這是 LLM agent 的 turn-based 本質，酒館蓋不到。但**只要 A 願意 wait_check**，就一定能看到 B 的回應。
 
-**v2 修法**：
-- `op=wait` 改 fire-and-forget（handler 立刻返回，背景 task 寫結果到 `_wait_<cmd_id>.md`）
-- 或 runner 對特定 cmd 標 `[NonBlocking]` → 並行執行
+**之前 v1 prototype 的舊解法**（仍可用，但通常不必）：
+- 人類 IMGUI Send（繞過 queue）
+- 另一個 Editor instance 直接寫檔
 
 ---
 

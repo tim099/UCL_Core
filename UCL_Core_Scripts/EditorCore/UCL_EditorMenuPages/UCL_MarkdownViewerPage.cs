@@ -42,8 +42,14 @@ namespace UCL.Core.EditorLib.Page
         bool m_LoadFailed;
         string m_LoadError;
         // 區塊職責：parse 結果 cache 在 page 實例 — 重繪不重 parse
-        // 物理意義：型別與 parser 解耦，全部來自 UCL_MarkdownParser；本頁只負責渲染
+        // 物理意義:型別與 parser 解耦，全部來自 UCL_MarkdownParser；本頁只負責渲染
         List<UCL_MdBlock> m_Blocks;
+
+        // 區塊職責:文檔關聯按鈕清單（從 frontmatter 的 related: 區塊解析而來）
+        // 物理意義:固定格式 — frontmatter 內 "related:" 起、每行 "  - <url> | <label> [| <desc>]"；
+        //          解析後在 ContentOnGUI 頂端渲染為一排按鈕，點下 → 開啟對應文檔
+        // 數值影響:不影響任何狀態，純跳轉導覽；解析失敗（找不到 related 區塊）→ m_Related 為空 list
+        List<UCL_MdRelatedDoc> m_Related;
 
         // ==== styles（lazy 建立、頁內共用） ====
         GUIStyle[] m_HeadingStyles;
@@ -91,6 +97,7 @@ namespace UCL.Core.EditorLib.Page
                 var doc = UCL_MarkdownParser.Parse(m_RawContent);
                 m_Frontmatter = doc.Frontmatter;
                 m_Blocks = doc.Blocks;
+                m_Related = ParseRelated(m_Frontmatter);
             }
             catch (System.Exception e)
             {
@@ -207,10 +214,112 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
 
+            // 區塊職責：頂端關聯文檔按鈕列（從 frontmatter related: 解析而來）
+            // 物理意義：點下任何按鈕 → 解析 ucl_core: prefix + {lang} → 開新一頁 MarkdownViewer
+            //          原頁面留在 controller stack 上，按 Back 可返回；形成可瀏覽的文檔網
+            DrawRelatedBar();
+
             for (int i = 0; i < m_Blocks.Count; i++)
             {
                 DrawBlock(m_Blocks[i]);
             }
+        }
+
+        // ===========================================================
+        // 區塊：related 按鈕列
+        // ===========================================================
+        void DrawRelatedBar()
+        {
+            if (m_Related == null || m_Related.Count == 0) return;
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>🔗 關聯文件</b>", m_BodyStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    for (int i = 0; i < m_Related.Count; i++)
+                    {
+                        var r = m_Related[i];
+                        // 按鈕文字加標籤；description（若存在）作為 GUIContent.tooltip 顯示
+                        var content = string.IsNullOrEmpty(r.Description)
+                            ? new GUIContent(r.Label)
+                            : new GUIContent(r.Label, r.Description);
+                        if (GUILayout.Button(content, UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))
+                        {
+                            OpenRelated(r);
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+            }
+        }
+
+        // 區塊職責：解析 frontmatter 的 related: 區塊
+        // 物理意義：固定格式 — 找到 "related:" 行後，往下吃所有 "  - " 開頭的 list item；
+        //          每行用 ' | ' 切成 [url, label, description?]
+        // 數值影響：純讀取；解析失敗的行跳過 + 註記到 console（不阻斷其他 entry）
+        static List<UCL_MdRelatedDoc> ParseRelated(string frontmatter)
+        {
+            var list = new List<UCL_MdRelatedDoc>();
+            if (string.IsNullOrEmpty(frontmatter)) return list;
+            var lines = frontmatter.Split('\n');
+            int i = 0;
+            // 找 "related:" 開頭的行
+            while (i < lines.Length)
+            {
+                string trimmed = lines[i].TrimEnd();
+                if (trimmed == "related:" || trimmed.StartsWith("related:"))
+                {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            // 往下吃 "  - ..." 行，遇到不是 list item 的行就停（其他 frontmatter key）
+            for (; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                // 接受縮排的 "- " 或 "  - "（YAML 風格）
+                int dashIdx = line.IndexOf("- ");
+                if (dashIdx < 0) break;
+                // 確認 "-" 之前只有空白
+                bool onlySpaces = true;
+                for (int k = 0; k < dashIdx; k++)
+                {
+                    if (line[k] != ' ') { onlySpaces = false; break; }
+                }
+                if (!onlySpaces) break;
+                string content = line.Substring(dashIdx + 2).Trim();
+                if (string.IsNullOrEmpty(content)) continue;
+                var parts = content.Split(new[] { '|' }, 3);
+                if (parts.Length < 2)
+                {
+                    Debug.LogWarning($"[UCL_MarkdownViewer] related entry 缺欄位（需 'url | label [| desc]'）：{content}");
+                    continue;
+                }
+                var doc = new UCL_MdRelatedDoc
+                {
+                    Url = parts[0].Trim(),
+                    Label = parts[1].Trim(),
+                    Description = parts.Length >= 3 ? parts[2].Trim() : null,
+                };
+                if (string.IsNullOrEmpty(doc.Url) || string.IsNullOrEmpty(doc.Label)) continue;
+                list.Add(doc);
+            }
+            return list;
+        }
+
+        // 區塊職責:點下 related 按鈕後的開啟邏輯
+        // 物理意義:url 走 UCL_URL.ResolveURL（已知 ucl_core: / {lang} / fallback 機制）→ 拿到絕對路徑；
+        //          relativePath 顯示用，直接給原 url（保留 prefix 資訊）
+        void OpenRelated(UCL_MdRelatedDoc r)
+        {
+            string abs = UCL.Core.UCL_URL.ResolveURL(r.Url);
+            if (string.IsNullOrEmpty(abs) || !File.Exists(abs))
+            {
+                Debug.LogError($"[UCL_MarkdownViewer] 無法開啟關聯文檔：{r.Url} → {abs ?? "(null)"}");
+                return;
+            }
+            UCL_MarkdownViewerPage.Create(r.Url, abs);
         }
 
         void DrawBlock(UCL_MdBlock b)
@@ -407,6 +516,15 @@ namespace UCL.Core.EditorLib.Page
             s = s_RxLink.Replace(s, m => "<color=#9BD0FF>" + m.Groups[1].Value + "</color>");
             return s;
         }
+    }
+
+    // 區塊職責:related 按鈕的資料載體
+    // 物理意義:從 frontmatter 解析出來，用於 DrawRelatedBar 渲染按鈕
+    public class UCL_MdRelatedDoc
+    {
+        public string Url;          // 例如 "ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md"
+        public string Label;        // 按鈕文字
+        public string Description;  // 可選；hover tooltip
     }
 }
 #endif

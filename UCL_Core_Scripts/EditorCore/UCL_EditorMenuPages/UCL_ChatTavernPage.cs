@@ -4,6 +4,7 @@
 // prototype 取捨：UI 字串先硬編；refs/meta 表單最簡（單行 paths + key=val）。
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.IO;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.UI;
 using UnityEngine;
@@ -87,6 +88,20 @@ namespace UCL.Core.EditorLib.Page
             {
                 UCL_ChatTavernIO.EnsureTavernDir();
                 UnityEditor.EditorUtility.RevealInFinder(UCL_ChatTavernIO.GetTavernDir());
+            }
+
+            // 區塊職責：「中止 Python 握手等待」按鈕
+            // 物理意義：run_cmd.py 的 Tavern op=post --wait-reply 會 client-side polling
+            //          messages.jsonl 等對方回覆；本按鈕 touch 一個 flag 檔，那邊偵測到
+            //          mtime > wait_start 就會提前退出（exit code=2）。
+            // 數值影響：寫一個 0-byte 的 _handshake_cancel.flag，無實際內容；Python 那端
+            //          看到後會自行 unlink。連點兩次也安全（mtime 推進 → 後續 wait 仍能用）。
+            if (GUILayout.Button("🛑 中止握手", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f)), GUILayout.ExpandWidth(false)))
+            {
+                UCL_ChatTavernIO.EnsureTavernDir();
+                string flagPath = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_cancel.flag");
+                File.WriteAllText(flagPath, System.DateTime.UtcNow.ToString("o"));
+                Debug.Log($"[Tavern] Wrote handshake cancel flag → {flagPath}");
             }
         }
 

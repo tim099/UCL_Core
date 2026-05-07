@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "description": "UCL_Core skill manifest. Consumed by install_skills.py.",
+  "skills": [
+    {
+      "name": "ucl-commit",
+      "summary": "UCL_Core 三層 submodule bump + ChatTavern 訊息獨立 commit + DebugLogs 規範",
+      "optional": false
+    },
+    {
+      "name": "ucl-chat-tavern",
+      "summary": "Chat Tavern / Solo Brainstorm 多 agent 對話流程",
+      "optional": false
+    },
+    {
+      "name": "ucl-compile-error",
+      "summary": "Unity compile error 排查 SOP（check_compile.py + .compile_status.json）",
+      "optional": false
+    },
+    {
+      "name": "ucl-create-cmd",
+      "summary": "建立新的 UCL_AgentCommand handler (Cmd_<Name>.cs)",
+      "optional": false
+    },
+    {
+      "name": "ucl-hook-setup",
+      "summary": "Claude Code hook 配置（PostToolUse + Stop 強制 ValidateAssetFormat）",
+      "optional": true
+    },
+    {
+      "name": "ucl-update-docs",
+      "summary": "改 .cs/.py 後同步對應 .md 文件 — last_updated / API 章節 / cross-link",
+      "optional": false
+    }
+  ]
+}

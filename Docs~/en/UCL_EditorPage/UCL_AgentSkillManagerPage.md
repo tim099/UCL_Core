@@ -1,0 +1,81 @@
+---
+title: UCL_AgentSkillManagerPage — Agent Skill Installation Manager
+description: IMGUI visual frontend to install workflow skills from UCL_Core/Skills~/ to various AI agents with one click. Automatically pops up when opening UCL_WelcomePage for the first time for mandatory onboarding exposure.
+source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
+namespace: UCL.Core.EditorLib.Page
+last_updated: 2026-05-08
+target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
+related:
+  - ucl_core:Skills~/README.md | Skills~ Source Directory | source-of-truth + manifest specifications
+  - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_WelcomePage.md | UCL_WelcomePage | Main onboarding page which automatically pushes this page on first open
+  - ucl_core:Docs~/{lang}/Workflows/Hook_Setup_Workflow.md | Hook Setup Workflow | New project onboarding package (setup hooks + skills together)
+---
+
+# 🛠 UCL_AgentSkillManagerPage
+
+> In a nutshell: **An IMGUI visual interface running `Tools~/install_skills.py`**. It converts the task of "installing skills for AI use" (which often acts as a barrier for developers unfamiliar with CLI) into a simple, one-click visual page.
+
+---
+
+## 1. Why An Independent Page?
+
+Previously, `DrawSkillsCard` was embedded as a card in the middle of `UCL_WelcomePage`, making it easy for users to scroll past without noticing. **Moving it to an independent page and pushing it to the top on the first opening of Welcome offers several benefits**:
+
+- **Mandatory Exposure**: Users must view/click the buttons or check "Acknowledged" to use the "Back" button and return to Welcome.
+- **Sufficient Space**: It easily accommodates the per-agent × per-skill matrix (TODO, currently a placeholder).
+- **Easy Re-opening**: A "🛠 Open Skill Manager" button is provided on the Welcome page, along with the menu path `UCL → Agent Skill Manager`.
+
+---
+
+## 2. Three Display Modes
+
+| Entrance | Trigger Condition | Code Entry Point |
+|---|---|---|
+| Auto Popup | Welcome opened for the first time, or `AcknowledgedVersion` does not match current version | `MaybeAutoPopupOnWelcome(controller)` called on the first frame of `UCL_WelcomePage.ContentOnGUI` |
+| Welcome Card | Active click by user | `UCL_AgentSkillManagerPage.Create()` |
+| Menu Item | `UCL → Agent Skill Manager` | `OpenFromMenu()` ([MenuItem]) |
+
+---
+
+## 3. EditorPrefs
+
+- **Key**: `UCL_Core.AgentSkill.AcknowledgedVersion@<ProjectFingerprint>`
+- **Value**: Current content version (currently `"1"`)
+- **Per-project namespaced**: Suffix is appended using `Application.dataPath.GetHashCode()` to prevent project A's acknowledgments from blocking popups in project B.
+- **Content version bump**: When the version bumps, the old value in EditorPrefs mismatch triggers the automatic popup again (ensuring users see newly added features).
+
+---
+
+## 4. Installation Status Determination
+
+Determined by reading the `ucl_core_commit` field inside `<host-project-root>/.claude/skills/.ucl_installed` or `.agents/rules/.ucl_installed`:
+
+| Status | Condition | UI Color |
+|---|---|---|
+| `NotInstalled` | Global marker file does not exist | Yellow |
+| `Synced` | Hash matches UCL_Core HEAD commit | Green |
+| `Stale` | Hash does not match UCL_Core HEAD commit | Orange |
+| `UnknownHead` | Unable to fetch git HEAD commit | Cyan |
+| `NoProjectRoot` | Cannot locate .claude/ or .git/ directories | Gray (disabled) |
+| `NoUCLCore` | `UCL_EditorPath.CorePath` is empty | Gray (disabled) |
+
+---
+
+## 5. Per-Agent × Per-Skill Matrix (TODO)
+
+Currently, `DrawAgentMatrixPlaceholder` only lists skill names from `Skills~/` (disabled toggles). Future work includes:
+
+- **Columns**: Agent targets (`claude` / `cursor` / `antigravity` / `gemini`)
+- **Rows**: Skill names
+- **Checkboxes**: Direct control of `install_skills.py --target X --include skill1,skill2`
+- **Installation Markers**: Write separate per-agent global markers (e.g., `.ucl_installed.claude`, `.ucl_installed.antigravity`, etc.)
+
+*Progress blocker resolved: Antigravity directory convention successfully mapped to `.agents/rules/` and dynamic triggers established.*
+
+---
+
+## 6. Cross-Project Usage
+
+This page resides in `UCL_Core/`, sharing the same origin as `Skills~/`. When UCL_Core is moved to another project, this page automatically comes along. Per-project EditorPrefs ensure that settings do not overlap between multiple active projects.
+
+The only host-project assumption is that `<root>/.claude/skills/` or `<root>/.agents/rules/` acts as the install target. Target paths for other agents are handled dynamically by `install_skills.py --target`.

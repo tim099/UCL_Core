@@ -58,6 +58,13 @@ related:
 - **必做**: 先檢查 `.compile_status.json` 確認編譯期 0 errors（runtime 錯是後話）；看完錯後跟使用者報告 stack trace 第一個非系統 frame
 - **不要做**: 在編譯還有錯時跑 runtime（沒意義）；只看 `Simulation_*.log` 不看 `Errors_latest.log`（前者混雜 Warning 雜訊）
 
+### 安裝 / 升級 UCL Skill
+- **觸發詞**: `安裝 ucl skill` / `更新 ucl skill` / `同步 skill` / `install ucl skills` / `update ucl skills` / `重裝 skill`
+- **對應 Workflow**: [Skills~/README.md](../../Skills~/README.md)
+- **意圖**: 跑 `Tools~/install_skills.py` 把 UCL_Core 內 `Skills~/` 的 skill 拷到 `<project-root>/.claude/skills/`，讓 Claude Code 能 lazy-load
+- **必做**: 預設 copy 模式；UCL_Core submodule bump 後重跑同步；安裝完確認 `.claude/skills/.ucl_installed` 存在
+- **不要做**: 把安裝結果 commit 進主專案（已在 `.gitignore`）；用 `--link` 模式除非使用者明確要求（Windows 需權限）
+
 > _(後續 entry 在此往下加)_
 
 ---

@@ -74,7 +74,32 @@ UCL_Core 是 git submodule，commit 流程為**三層**：
 - **DebugLogs (`Simulation_*.log`)** 保持 untracked + 不 ignore（要在 `git status` 看得到）
 - 使用者下「commit」/「提交」等口語指令 → 走 [`CommandTable.md`](Docs~/zh-Hant/CommandTable.md) 的 commit entry → 照 Commit_Workflow 分批執行
 
-## 6. Runtime Error 檢查
+## 6. Skill 安裝自檢（Claude Code）
+
+UCL_Core 在 `Skills~/` 下提供一組 lazy-load 的 Claude Code Skill（commit / chat-tavern / compile-error / create-cmd / hook-setup）。Claude Code 不掃 submodule，所以每個專案要把 skill 拷到自家 `<project-root>/.claude/skills/`。
+
+**Agent 看到本檔被載入時，做一次性自檢**（**只第一次提，提過就閉嘴**）：
+
+判定流程（檔案路徑都在 `<project-root>/.claude/skills/`）：
+
+1. `.ucl_installed` 存在 → **沉默**（已裝完，正常用）
+2. `.ucl_nudge_seen` 存在 → **沉默**（之前提過，使用者自己決定不裝就尊重）
+3. 兩個都沒 → 告知使用者一次：
+   > 偵測到 UCL_Core 但未安裝 Skill，可跑：
+   > `python <UCL_Core>/Tools~/install_skills.py`
+   > 裝了之後 commit / 進酒館 / 排查編譯錯等動作會走 lazy-load skill，不必每次吃整份 CLAUDE.md。不裝也能正常工作。
+
+   **告知完立刻寫** `.claude/skills/.ucl_nudge_seen`（內容隨意，存在即可），讓下次 session 跳過。
+
+**不做的事**：
+- 不偵測 UCL_Core bump 後是否需重裝（提了反而煩；使用者升 submodule 時自己會記得 / 由 Hook_Setup_Workflow 提醒）
+- 不重複 nudge — `.ucl_nudge_seen` 寫了就一輩子安靜，除非使用者明確刪掉
+
+使用者反悔想裝時：直接跑 `install_skills.py`（裝完後 `.ucl_installed` 出現，本檢查永遠走分支 1）。
+
+詳細流程 → [`Skills~/README.md`](Skills~/README.md)
+
+## 7. Runtime Error 檢查
 
 `recompile 0 errors` ≠ runtime 0 errors。改完 code 跑遊戲驗證後，**必看專案的 runtime error log**：
 

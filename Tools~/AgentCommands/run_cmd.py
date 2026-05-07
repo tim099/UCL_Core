@@ -83,6 +83,10 @@ QUEUE_DIR = GIT_ROOT / "AgentCommands"
 QUEUE_PATH = QUEUE_DIR / "queue.json"
 TRIGGER_PATH = QUEUE_DIR / "pending.trigger"
 RUNNING_PATH = QUEUE_DIR / "pending.trigger.running"
+# Tavern 握手用：op=post 後若指定 --wait-reply，client-side polling messages.jsonl
+# 等對方回應；使用者可從酒館 IMGUI 頁按「中止握手」touch 此 flag 強制提前退出
+TAVERN_DIR = QUEUE_DIR / "ChatTavern"
+HANDSHAKE_CANCEL_FLAG = TAVERN_DIR / "_handshake_cancel.flag"
 # UCL_CompileErrorTracker 寫入：mtime 推進 + errors/warnings 計數 → recompile 子命令的「完成」依據
 COMPILE_STATUS_PATH = QUEUE_DIR / ".compile_status.json"
 # Cmd 輸出（如 commands_catalog.md）落在 CardGame/AgentCommands/，避開外層 git root + submodule
@@ -319,7 +323,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """run = submit + wait。"""
+    """run = submit + wait（+ Tavern op=post 可選同步握手等回覆）。"""
     submit_args = argparse.Namespace(
         cmd_type=args.cmd_type, mode=args.mode, description=args.description,
         arg=args.arg,
@@ -327,6 +331,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     # 自行走 submit 流程以便保留 cmd_id
     arg_pairs = parse_kv_pairs(args.arg or [])
+
+    # 區塊職責：--wait-reply 默認值決策
+    # 物理意義：Tavern op=post 是「交流」場景，預設等 20s 同步握手；其他 cmd 不等
+    # 數值影響：args.wait_reply 在後段被 cmd_run 結尾段讀，> 0 才走 wait_for_tavern_reply
+    if getattr(args, "wait_reply", None) is None:
+        if args.cmd_type.lower() == "tavern" and arg_pairs.get("op", "").lower() == "post":
+            # 540s = 9 min — 留 60s buffer 給 Claude Code Bash tool 的 10 min 硬上限。
+            # 想拉滿請顯式 --wait-reply 600 並把 Bash 呼叫帶 timeout=600000ms。
+            args.wait_reply = 540.0
+        else:
+            args.wait_reply = 0.0
     ensure_idle(timeout_sec=args.ack_timeout, poll_interval=args.poll_interval)
     cmd_id = append_cmd(args.cmd_type, args.mode, arg_pairs, args.description or "")
     write_trigger(note=f"run_cmd.py run {args.cmd_type}")
@@ -341,7 +356,140 @@ def cmd_run(args: argparse.Namespace) -> int:
         timeout=args.timeout, poll_interval=args.poll_interval,
         keep_failed=getattr(args, "keep_failed", False),
     )
-    return cmd_wait(wait_args)
+    rc = cmd_wait(wait_args)
+    if rc != 0:
+        return rc
+
+    # ─── Tavern 同步握手（僅 op=post）─────────────────────────────────
+    # 區塊職責：A 發完訊息後 client-side polling messages.jsonl 等對方回覆
+    # 物理意義：以「同步握手」緩解「agent turn 結束後就聾了」的問題；對方在 wait
+    #          window 內回 → A 立刻看到，turn 不結束；timeout 或被使用者中止 → 安靜返回
+    # 數值影響：本機 0.5Hz polling，不過 Editor queue；不寫任何 server 端 wait 條目
+    if (
+        args.cmd_type.lower() == "tavern"
+        and arg_pairs.get("op", "").lower() == "post"
+        and getattr(args, "wait_reply", 0) > 0
+    ):
+        room = arg_pairs.get("room", "")
+        my_sender = arg_pairs.get("sender", "")
+        wait_seconds = float(args.wait_reply)
+        sender_filter = getattr(args, "wait_reply_from", None)
+        if not room or not my_sender:
+            print("[wait-reply] 缺 room / sender，跳過握手等待")
+            return 0
+        wait_for_tavern_reply(
+            room=room,
+            my_sender_id=my_sender,
+            timeout_sec=wait_seconds,
+            sender_filter=sender_filter,
+        )
+    return 0
+
+
+def wait_for_tavern_reply(
+    room: str,
+    my_sender_id: str,
+    timeout_sec: float,
+    sender_filter: str | None = None,
+    poll_interval: float = 0.5,
+) -> int:
+    """同步等酒館回覆 — client-side polling，0=收到 / 1=timeout / 2=cancelled。
+
+    流程：
+      1. 找 my_sender_id 在 messages.jsonl 中最新一筆 seq（= 剛 post 的那則的下界）
+      2. 進 polling loop，每 poll_interval 秒檢查：
+         - messages.jsonl 有 seq > my_last_seq 且（無 sender_filter 或 sender 匹配）→ 印出 → 退出
+         - HANDSHAKE_CANCEL_FLAG 存在且 mtime > 我的 wait 開始時間 → 退出（user 從酒館頁中止）
+         - 達 timeout_sec → 退出
+    """
+    messages_path = TAVERN_DIR / "rooms" / room / "messages.jsonl"
+    if not messages_path.is_file():
+        print(f"[wait-reply] {messages_path} 不存在，跳過")
+        return 1
+
+    # 找自己最新一筆 seq 當下界（剛 post 完，這就是我的 post seq）
+    my_last_seq = 0
+    try:
+        with messages_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("sender_id") == my_sender_id:
+                    my_last_seq = max(my_last_seq, int(msg.get("seq", 0)))
+    except OSError as exc:
+        print(f"[wait-reply] 讀 messages.jsonl 失敗：{exc}")
+        return 1
+
+    filter_desc = f" from={sender_filter}" if sender_filter else ""
+    print(f"  ⏳ Wait-reply: room={room} since_seq={my_last_seq}{filter_desc} "
+          f"timeout={timeout_sec:.0f}s（按酒館頁「中止握手」可提前結束）")
+
+    wait_start = time.time()
+    deadline = wait_start + timeout_sec
+    next_heartbeat = wait_start + 60.0  # 每 60s 印一行進度，避免長 wait 看似 hang
+
+    while True:
+        now = time.time()
+        if now >= deadline:
+            print(f"  ⏱  Wait-reply timeout ({timeout_sec:.0f}s) — 對方未在窗口內回應")
+            return 1
+
+        if now >= next_heartbeat:
+            elapsed = now - wait_start
+            remaining = deadline - now
+            print(f"  ⌛ ...still waiting ({elapsed:.0f}s elapsed, {remaining:.0f}s remaining)")
+            next_heartbeat = now + 60.0
+
+        # 中止 flag 偵測：mtime 必須晚於我的 wait 開始時間，否則是舊 flag 殘留
+        if HANDSHAKE_CANCEL_FLAG.is_file():
+            try:
+                if HANDSHAKE_CANCEL_FLAG.stat().st_mtime > wait_start:
+                    print("  🛑 Wait-reply cancelled — 使用者從酒館頁中止握手")
+                    try:
+                        HANDSHAKE_CANCEL_FLAG.unlink()
+                    except OSError:
+                        pass
+                    return 2
+            except OSError:
+                pass
+
+        # Poll messages
+        try:
+            with messages_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    seq = int(msg.get("seq", 0))
+                    if seq <= my_last_seq:
+                        continue
+                    if msg.get("sender_id") == my_sender_id:
+                        # 自己後續發言不算回覆（避免 self 觸發）
+                        continue
+                    if sender_filter and msg.get("sender_id") != sender_filter:
+                        continue
+                    # 命中 — 印出回覆並結束
+                    body_preview = msg.get("body", "")
+                    if len(body_preview) > 600:
+                        body_preview = body_preview[:600] + " ...(truncated)"
+                    print(
+                        f"  ✉  Reply received in {now - wait_start:.1f}s:\n"
+                        f"     [seq {seq}] {msg.get('sender_name', msg.get('sender_id', '?'))}: {body_preview}"
+                    )
+                    return 0
+        except OSError:
+            pass
+
+        time.sleep(poll_interval)
 
 
 def cmd_recompile(args: argparse.Namespace) -> int:
@@ -519,6 +667,13 @@ def main() -> int:
     p_run.add_argument("--timeout", type=int, default=DEFAULT_RUN_TIMEOUT)
     p_run.add_argument("--keep-failed", action="store_true",
                        help="On Failed, keep the cmd entry in queue.json (default: auto-remove).")
+    # 同步握手 — 僅對 Tavern op=post 生效；Tavern post 預設 20s 等回覆，其他 cmd 預設 0（關）
+    p_run.add_argument("--wait-reply", type=float, default=None,
+                       help="Tavern op=post 後 client-side polling messages.jsonl 等對方回覆的秒數 "
+                            "(默認 Tavern op=post=20，其他 cmd=0)。0 = 不等。對方在窗口內回覆 → "
+                            "立刻印出並退出；timeout / 從酒館頁中止 → 安靜返回。")
+    p_run.add_argument("--wait-reply-from", default=None,
+                       help="只認指定 sender_id 的回覆（譬如 'gemini-da-xiaojie'），其他人發言不觸發退出。")
     p_run.set_defaults(func=cmd_run)
 
     # recompile = submit Cmd_Recompile + wait for compile_status.json mtime to advance

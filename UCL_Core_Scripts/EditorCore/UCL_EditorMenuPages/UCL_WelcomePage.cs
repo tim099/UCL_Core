@@ -68,6 +68,11 @@ namespace UCL.Core.EditorLib.Page
 
         Vector2 m_Scroll = Vector2.zero;
 
+        // 區塊職責：第一次顯示時自動 push AgentSkillManagerPage 到頂的 once-flag
+        // 物理意義：強制使用者第一次開 Welcome 時看到 Skill 安裝頁
+        // 數值影響：本 page 物件存活期間只觸發一次；EditorPrefs 控制是否真的彈
+        bool m_DidAutoPopupCheck;
+
         // PopupSearchCache 需要的容器 — 給語言下拉選單用
         readonly UCL_ObjectDictionary m_LangDic = new UCL_ObjectDictionary();
 
@@ -126,6 +131,20 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
+            // 區塊職責：首幀檢查是否要自動 push AgentSkillManagerPage
+            // 物理意義：第一次開 Welcome、使用者尚未確認過 Skill 機制 → 強制曝光
+            // 數值影響：push 一頁到 controller stack；本 page 物件存活期間只跑一次
+            // 設計取捨：放在 ContentOnGUI 而不是 Init — Init 時 p_Controller 可能還沒就位；
+            //          首幀繪製時 controller 已穩定，且只 push 一次後設旗標避免重入
+            if (!m_DidAutoPopupCheck)
+            {
+                m_DidAutoPopupCheck = true;
+                if (p_Controller != null)
+                {
+                    UCL_AgentSkillManagerPage.MaybeAutoPopupOnWelcome(p_Controller);
+                }
+            }
+
             m_Scroll = GUILayout.BeginScrollView(m_Scroll);
 
             DrawHeader();
@@ -137,6 +156,8 @@ namespace UCL.Core.EditorLib.Page
             DrawSearchEntry();
             GUILayout.Space(8);
             DrawFeatureGrid();
+            GUILayout.Space(8);
+            DrawSkillEntry();
             GUILayout.Space(8);
             DrawDocsLinks();
             GUILayout.Space(8);
@@ -328,6 +349,36 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
         }
+
+        // ===========================================================
+        // 區塊：Agent Skill Manager 入口（按鈕）
+        // 物理意義：Skill 安裝 / 狀態管理已搬到獨立的 UCL_AgentSkillManagerPage；
+        //          本 Welcome 頁只放一個入口按鈕，第一次開 Welcome 時會自動 push
+        //          管理頁強制曝光（見 ContentOnGUI 開頭的 m_DidAutoPopupCheck 區塊）。
+        // 數值影響：純 push page，無副作用；管理頁本身才會跑 install_skills.py。
+        // ===========================================================
+        void DrawSkillEntry()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.SkillEntry.Title"), titleStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.SkillEntry.Desc"), WrapLabelStyle);
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.SkillEntry.OpenBtn"),
+                        UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_AgentSkillManagerPage.Create();
+                    }
+                }
+            }
+        }
+
+        // 區塊職責：(已搬走) 安裝邏輯改放 UCL_AgentSkillManagerPage
+        // ===========================================================
+
 
         // ===========================================================
         // 區塊：文件總入口

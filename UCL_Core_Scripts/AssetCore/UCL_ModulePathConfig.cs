@@ -24,6 +24,13 @@ namespace UCL.Core
                         {
                             return UCL_AssetType.BuiltinModules;
                         }
+                    case UCL_ModuleEditType.Template:
+                        {
+                            // 區塊職責：Template 模式 → 指向 UCL_Core/Templates~/Assets/.BuiltinModules
+                            // 物理意義：使用者透過 ModuleServiceEditPage 編輯這條路徑下的 Asset 即等於更新 Bootstrap 的預設值範本
+                            // 數值影響：runtime build 中 m_ModuleEditType 不會被設為 Template（Editor-only），所以這個 case 走不到
+                            return UCL_AssetType.TemplateModules;
+                        }
                 }
                 return UCL_AssetType.PersistentDatas;//Runtime
             }

@@ -40,6 +40,23 @@ namespace UCL.Core
             }
             private static ModulesEntry s_Runtime = null;
 
+            // 區塊職責：Template 模式對應的 ModulesEntry（Editor-only 概念）
+            // 物理意義：路徑指向 UCL_Core/Templates~/Assets/.BuiltinModules/ModulesRoot；
+            //          使用者用此模式編輯的內容會成為 UCL_Core 安裝到新專案時的預設範本
+            // 數值影響：lazy 建構，static cache；domain reload 後會重建一次（也會重新解析 Templates~ 路徑）
+            public static ModulesEntry Template
+            {
+                get
+                {
+                    if (s_Template == null)
+                    {
+                        s_Template = new ModulesEntry(UCL_ModuleEditType.Template);
+                    }
+                    return s_Template;
+                }
+            }
+            private static ModulesEntry s_Template = null;
+
             public static ModulesEntry GetModulesEntry(UCL_ModuleEditType iModuleEditType)
             {
                 switch (iModuleEditType)
@@ -51,6 +68,10 @@ namespace UCL.Core
                     case UCL_ModuleEditType.Runtime:
                         {
                             return PersistantPath.Runtime;
+                        }
+                    case UCL_ModuleEditType.Template:
+                        {
+                            return PersistantPath.Template;
                         }
                 }
                 return PersistantPath.Runtime;
@@ -103,6 +124,14 @@ namespace UCL.Core
                         case UCL_ModuleEditType.Runtime:
                             {
                                 RootFolder = Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.PersistentDatas), RelativePath.ModulesRootRelativePath);
+                                break;
+                            }
+                        case UCL_ModuleEditType.Template:
+                            {
+                                // 區塊職責：Template 模式根目錄 — 指向 Templates~ 內鏡像的 BuiltinModules/ModulesRoot
+                                // 物理意義：與 Builtin 同樣的相對結構，只是 base 換成 UCL_Core/Templates~/Assets/.BuiltinModules
+                                // 數值影響：UCL_AssetPath.GetPath(TemplateModules) 在 build 中回 empty，這條路徑也跟著失效
+                                RootFolder = Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.TemplateModules), RelativePath.ModulesRootRelativePath);
                                 break;
                             }
                     }

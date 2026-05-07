@@ -1,0 +1,13 @@
+{
+	"LanguageName":"\u7e41\u9ad4\u4e2d\u6587",
+	"SupportedLanguages":
+	[
+		"ChineseTraditional",
+		"Chinese"
+	],
+	"IsPolished":"True",
+	"HideThisOption":"False",
+	"Order":1,
+	"SteamAPILangCode":"tchinese",
+	"FontAsset":"NotoSansTC-Regular SDF"
+}

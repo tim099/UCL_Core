@@ -1,0 +1,12 @@
+{
+	"LanguageName":"English",
+	"SupportedLanguages":
+	[
+		"English"
+	],
+	"IsPolished":"True",
+	"HideThisOption":"False",
+	"Order":0,
+	"SteamAPILangCode":"english",
+	"FontAsset":"Default"
+}

@@ -29,6 +29,13 @@ namespace UCL.Core
         /// Example D:\SteamLibrary\steamapps\workshop\content\1158310\2973143830
         /// </summary>
         SteamMods,
+        /// <summary>
+        /// 區塊職責：UCL_Core/Templates~/Assets/.BuiltinModules — 給 Bootstrap 機制當「預設值範本」用
+        /// 物理意義：Editor-only；Templates~ 因 ~ 後綴被 Unity 排除 import，使用者直接編輯這裡
+        ///          的內容會成為下一次 UCL_Core 安裝到別的專案時的預設 Asset
+        /// 數值影響：runtime build 中 GetPath 回 string.Empty（Template 模式無法在 build 後使用）
+        /// </summary>
+        TemplateModules,
     }
 
     public enum ELoadingState

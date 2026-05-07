@@ -21,6 +21,7 @@ namespace UCL.Core.LocalizeLib
                 "EditType" => "编辑模式",
                 "UCL_ModuleEditType_Builtin" => "内建模组",
                 "UCL_ModuleEditType_Runtime" => "游戏模组",
+                "UCL_ModuleEditType_Template" => "预设范本",
                 "Save Config" => "保存设定",
                 "Load Config" => "载入设定",
                 "Open Module Folder" => "开启模组资料夹",

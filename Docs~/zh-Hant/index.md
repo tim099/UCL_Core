@@ -89,6 +89,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [UCL_ModuleService_API](UCL_ModuleService/UCL_ModuleService_API.md) | 服務 API |
 | [UCL_Module_API](UCL_ModuleService/UCL_Module_API.md) | 單一模組 API |
 | [UCL_ModulePath_API](UCL_ModuleService/UCL_ModulePath_API.md) | 路徑計算 API |
+| **[UCL_CoreBootstrap](UCL_ModuleService/UCL_CoreBootstrap.md)** ⭐ | **Bootstrap 預設 Asset** — Templates~ 範本 / `[InitializeOnLoadMethod]` 自動補缺 / `EditType=Template` 編輯模式 |
 
 ---
 

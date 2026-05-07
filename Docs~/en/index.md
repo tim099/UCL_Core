@@ -88,6 +88,7 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 | [UCL_ModuleService_API](UCL_ModuleService/UCL_ModuleService_API.md) | Service API |
 | [UCL_Module_API](UCL_ModuleService/UCL_Module_API.md) | Single module API |
 | [UCL_ModulePath_API](UCL_ModuleService/UCL_ModulePath_API.md) | Path calculation API |
+| **[UCL_CoreBootstrap](UCL_ModuleService/UCL_CoreBootstrap.md)** ⭐ | **Bootstrap defaults** — Templates~ source / `[InitializeOnLoadMethod]` auto-fill / `EditType=Template` mode |
 
 ---
 

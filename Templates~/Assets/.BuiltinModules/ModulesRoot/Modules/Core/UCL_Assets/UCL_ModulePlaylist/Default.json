@@ -1,0 +1,11 @@
+{
+	"Playlist":
+	[
+		{
+			"IsEnable":"True",
+			"Module":{
+				"ID":"Core"
+			}
+		}
+	]
+}

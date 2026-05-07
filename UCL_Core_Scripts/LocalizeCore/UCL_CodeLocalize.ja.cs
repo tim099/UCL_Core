@@ -21,6 +21,7 @@ namespace UCL.Core.LocalizeLib
                 "EditType" => "Edit type",
                 "UCL_ModuleEditType_Builtin" => "Builtin",
                 "UCL_ModuleEditType_Runtime" => "Runtime",
+                "UCL_ModuleEditType_Template" => "テンプレート",
                 "Save Config" => "Save Config",
                 "Load Config" => "Load Config",
                 "Open Module Folder" => "Open Module Folder",

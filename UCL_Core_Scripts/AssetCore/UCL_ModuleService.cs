@@ -26,6 +26,11 @@ namespace UCL.Core
         Builtin,
         /// <summary>Runtime module, data located in PersistentDataPath, supports runtime read/write.</summary>
         Runtime,
+        /// <summary>
+        /// Editor-only template editing mode — 直接編輯 UCL_Core/Templates~/Assets/.BuiltinModules 下的 Asset。
+        /// 這些檔案會作為 UCL_Core Bootstrap 安裝到新專案時的預設值；可用此模式在 UI 內維護那些範本。
+        /// </summary>
+        Template,
     }
 
     /// <summary>

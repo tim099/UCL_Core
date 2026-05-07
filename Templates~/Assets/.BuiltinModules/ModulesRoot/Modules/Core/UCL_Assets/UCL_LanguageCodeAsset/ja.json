@@ -1,0 +1,12 @@
+{
+	"LanguageName":"\u65e5\u672c\u8a9e",
+	"SupportedLanguages":
+	[
+		"Japanese"
+	],
+	"IsPolished":"True",
+	"HideThisOption":"False",
+	"Order":3,
+	"SteamAPILangCode":"japanese",
+	"FontAsset":"Default"
+}

@@ -49,7 +49,7 @@ namespace UCL.Core.EditorLib.Page
         UCL_AgentCommandMode m_NewMode = UCL_AgentCommandMode.OneShot;
         string m_NewDescription = "";
         string m_NewArgsRaw = ""; // 形如 key1=value1;key2=value2
-        Vector2 m_Scroll = Vector2.zero;
+        //Vector2 m_Scroll = Vector2.zero;
 
         // PopupSearchCache 需要一個 UCL_ObjectDictionary 作為 cache 容器
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
@@ -70,13 +70,36 @@ namespace UCL.Core.EditorLib.Page
         int m_HistoryAgeDays = 30;                                     // 清理「N 天沒重用」的門檻
         List<UCL_AgentCommandHistoryEntry> m_HistoryCache;             // 最近一次載入的 History 列表
         List<UCL_AgentCommandTemplate> m_TemplateCache;                // 最近一次載入的 Template 列表
-        Vector2 m_TemplateScroll = Vector2.zero;                       // Templates 區塊內捲動位置
-        Vector2 m_HistoryScroll = Vector2.zero;                        // History 區塊內捲動位置
+        //Vector2 m_TemplateScroll = Vector2.zero;                       // Templates 區塊內捲動位置
+        //Vector2 m_HistoryScroll = Vector2.zero;                        // History 區塊內捲動位置
 
         // 區塊職責：本頁所有 UI 字串走 UCL_CodeLocalize.Get(key) — 翻譯定義集中於 UCL_CodeLocalize.<lang>.cs
         // 物理意義：避免在 IMGUI 程式碼中硬編多語字串；新增語系只需動 4 個 lang 檔，不必動 Page
         // 數值影響：每幀多查一次 dict（O(1)），對 IMGUI 重繪成本可忽略
         static string L(string key) => UCL_CodeLocalize.Get(key);
+
+        // 區塊職責：長字串 Label 用的 wordWrap 樣式（lazy 建一次後重用）
+        // 物理意義：UCL_GUIStyle.LabelStyle 預設不換行 → History 條目的 Args 一旦長到一行
+        //          展不下，整個 VerticalScope("box") 寬度會被它撐爆 → 同列 FlexibleSpace
+        //          把右側 Apply / Re-Add / → 模板 / Delete 按鈕推到視窗外。給 Args / Id /
+        //          Description 套上 wordWrap=true 即可正常折行，box 寬度回到視覺可見範圍。
+        // 數值影響：純樣式快取，無副作用；richText 維持開（Id 用 <i>...</i> 顯示）
+        GUIStyle m_WrapLabelStyle;
+        GUIStyle WrapLabelStyle
+        {
+            get
+            {
+                if (m_WrapLabelStyle == null)
+                {
+                    m_WrapLabelStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
+                    {
+                        wordWrap = true,
+                        richText = true,
+                    };
+                }
+                return m_WrapLabelStyle;
+            }
+        }
 
         protected override void TopBarButtons()
         {
@@ -150,7 +173,7 @@ namespace UCL.Core.EditorLib.Page
                     UCL_GUIStyle.LabelStyle);
             }
 
-            m_Scroll = GUILayout.BeginScrollView(m_Scroll, GUILayout.ExpandHeight(false));
+            //m_Scroll = GUILayout.BeginScrollView(m_Scroll, GUILayout.ExpandHeight(false));
 
             // ==== Queue 中的命令清單 ====
             DrawQueueList();
@@ -184,7 +207,7 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(L("AgentCmd.Tip_ExportCatalog"), UCL_GUIStyle.LabelStyle);
             }
 
-            GUILayout.EndScrollView();
+            //GUILayout.EndScrollView();
         }
 
         // ===========================================================
@@ -456,7 +479,7 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
 
-                m_TemplateScroll = GUILayout.BeginScrollView(m_TemplateScroll, GUILayout.MaxHeight(220));
+                //m_TemplateScroll = GUILayout.BeginScrollView(m_TemplateScroll, GUILayout.MaxHeight(220));
                 string deleteName = null;
                 foreach (var t in visible)
                 {
@@ -482,22 +505,23 @@ namespace UCL.Core.EditorLib.Page
                                 deleteName = t.Name;
                             }
                         }
+                        // Desc / Args / Notes 一律 wordWrap — 同 History 面板的修法理由
                         if (!string.IsNullOrEmpty(t.Description))
                         {
-                            GUILayout.Label($"  Desc: {t.Description}", UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label($"  Desc: {t.Description}", WrapLabelStyle);
                         }
                         if (t.Args != null && t.Args.Count > 0)
                         {
-                            GUILayout.Label($"  Args: {string.Join(", ", t.Args.Select(kv => $"{kv.Key}={kv.Value}"))}", UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label($"  Args: {string.Join(", ", t.Args.Select(kv => $"{kv.Key}={kv.Value}"))}", WrapLabelStyle);
                         }
                         if (!string.IsNullOrEmpty(t.Notes))
                         {
-                            GUILayout.Label($"  Notes: {t.Notes}", UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label($"  Notes: {t.Notes}", WrapLabelStyle);
                         }
-                        GUILayout.Label($"  LastUsed: {t.LastUsedAt ?? t.CreatedAt}", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label($"  LastUsed: {t.LastUsedAt ?? t.CreatedAt}", WrapLabelStyle);
                     }
                 }
-                GUILayout.EndScrollView();
+                //GUILayout.EndScrollView();
 
                 if (!string.IsNullOrEmpty(deleteName))
                 {
@@ -639,7 +663,7 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
 
-                m_HistoryScroll = GUILayout.BeginScrollView(m_HistoryScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
+                //m_HistoryScroll = GUILayout.BeginScrollView(m_HistoryScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360))); 多層Scroll影響操作 移除
                 string deleteId = null;
                 foreach (var e in visible)
                 {
@@ -672,19 +696,23 @@ namespace UCL.Core.EditorLib.Page
                                 deleteId = e.Id;
                             }
                         }
-                        GUILayout.Label($"  Id: <i>{e.Id}</i>", UCL_GUIStyle.LabelStyle);
+                        // 區塊職責：Id / Desc / Args 一律用 WrapLabelStyle
+                        // 物理意義：args 字串長度不可控（agent 隨意傳 op=... room=... 等），
+                        //          一行會把 box 撐到把同列右側按鈕推出視窗 → 必 wordWrap
+                        // 數值影響：渲染上純視覺折行；不影響任何資料
+                        GUILayout.Label($"  Id: <i>{e.Id}</i>", WrapLabelStyle);
                         if (!string.IsNullOrEmpty(e.Description))
                         {
-                            GUILayout.Label($"  Desc: {e.Description}", UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label($"  Desc: {e.Description}", WrapLabelStyle);
                         }
                         if (e.Args != null && e.Args.Count > 0)
                         {
-                            GUILayout.Label($"  Args: {string.Join(", ", e.Args.Select(kv => $"{kv.Key}={kv.Value}"))}", UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label($"  Args: {string.Join(", ", e.Args.Select(kv => $"{kv.Key}={kv.Value}"))}", WrapLabelStyle);
                         }
-                        GUILayout.Label($"  Created: {e.CreatedAt}  |  LastUsed: {e.LastUsedAt}", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label($"  Created: {e.CreatedAt}  |  LastUsed: {e.LastUsedAt}", WrapLabelStyle);
                     }
                 }
-                GUILayout.EndScrollView();
+                //GUILayout.EndScrollView(); 多層Scroll影響操作 移除
 
                 if (!string.IsNullOrEmpty(deleteId))
                 {

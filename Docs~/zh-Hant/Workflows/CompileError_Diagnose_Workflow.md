@@ -40,6 +40,11 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 
 > [!WARNING]
 > **重要心智模型**：fallback 路徑（`--fallback-log`）讀的是 Editor.log tail，**內含多次 compile attempt 的累積訊息**。即使 dedupe 過，stale 錯誤可能與最新錯誤混雜。永遠優先信任 `.compile_status.json`（Tracker 寫的，**只記最新一次** compile 結果）。
 
+> [!NOTE]
+> **編譯通過 ≠ 完事**。本檔處理的是**編譯期錯誤**；改完 code 後跑遊戲還可能出 **runtime 錯誤**（NullReferenceException / MissingReferenceException 等）。runtime 錯**不在** `.compile_status.json`，要另外讀專案的 runtime log。
+>
+> EOV 專案：[`docs/Workflows/RuntimeError_Diagnose_Workflow.md`](docs/Workflows/RuntimeError_Diagnose_Workflow.md) → 讀 `CardGame/Assets/DebugLogs/Errors_latest.log`。
+
 ---
 
 ## 1. 兩條資料來源

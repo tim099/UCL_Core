@@ -37,6 +37,12 @@ tags: [workflow, agent, compile, recompile, error-fix]
 [5] goto [2]（最多 N 輪，建議 ≤ 5；超過代表方向錯，叫人類）
 ```
 
+> [!IMPORTANT]
+> **`compile clean ≠ runtime clean`**。改完 code 跑遊戲時可能還會炸（NullReferenceException / MissingReferenceException 等）— 那些錯**不在** `.compile_status.json`，而在專案各自的 runtime error log。
+>
+> EOV 專案：見 [`docs/Workflows/RuntimeError_Diagnose_Workflow.md`](docs/Workflows/RuntimeError_Diagnose_Workflow.md)（讀 `CardGame/Assets/DebugLogs/Errors_latest.log`）。
+> 別專案：依自家 logger 慣例。
+
 ---
 
 ## 1. 前置條件（每個 session 開始檢一次）

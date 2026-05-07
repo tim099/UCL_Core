@@ -225,6 +225,9 @@ public class UCL_<Name>Page : UCL_CommonEditorPage { ... }
 - [ ] 至少一個入口點（父頁按鈕 / WelcomePage 卡片 / 選單）能開到這頁
 - [ ] domain reload 後實際打開無 NullRef、Back / Close 行為正常
 - [ ] 有 IMGUI rich-text 內容時，相關 GUIStyle 開啟 `richText`
+- [ ] **實際打開頁面 + 操作所有按鈕一輪後，runtime error log 沒新增 Error/Exception**（IMGUI 跑在 Editor 期，NullRef / 除零等 runtime 錯不會被編譯抓到）
+  - EOV 專案：開頁前清空 / 起 session 後操作完，看 [`docs/Workflows/RuntimeError_Diagnose_Workflow.md`](docs/Workflows/RuntimeError_Diagnose_Workflow.md) 指的 `CardGame/Assets/DebugLogs/Errors_latest.log`
+  - 別專案：依自家 logger 慣例
 
 ---
 
@@ -245,3 +248,6 @@ public class UCL_<Name>Page : UCL_CommonEditorPage { ... }
 - [HelpURL_Workflow](HelpURL_Workflow.md) — `ucl_core:` / `eov_docs:` prefix 解析機制
 - [Hardcoded_Localize](Hardcoded_Localize.md) — TopBar / 按鈕文字本地化（`UCL_CodeLocalize` / `UCL_LocalizeManager`）
 - [Polymorphism_In_UCL](../Architecture/Polymorphism_In_UCL.md) — `[SerializeReference]` 多型欄位在 GUI 編輯與 JSON 序列化的整體架構
+- [Edit_Recompile_Loop_Workflow](Edit_Recompile_Loop_Workflow.md) — 改 .cs 後驗證流程（編譯期）
+- [CompileError_Diagnose_Workflow](CompileError_Diagnose_Workflow.md) — 編譯期錯誤排查
+- EOV 專案：[`docs/Workflows/RuntimeError_Diagnose_Workflow.md`](docs/Workflows/RuntimeError_Diagnose_Workflow.md) — 執行期錯誤排查（驗收清單最後一項用到）

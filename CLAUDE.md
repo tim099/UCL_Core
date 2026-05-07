@@ -63,3 +63,24 @@ UCL_Core 是 git submodule，commit 流程為**三層**：
 3. 在主專案 commit pointer bump
 
 別在 UCL_Core 內塞專案特定邏輯 — 這會破壞跨專案重用性。專案特定的 Cmd / Page / 文檔請放在主專案的對應位置（例如 EOV 的 `CardGame/Assets/Scripts/RCG_AgentCommands/`）。
+
+## 5. 提交規範
+
+完整規則見 [`Docs~/zh-Hant/Workflows/Commit_Workflow.md`](Docs~/zh-Hant/Workflows/Commit_Workflow.md)。重點摘要：
+
+- **三層 bump**：UCL_Core 內 commit → UCL submodule bump → 主專案 bump
+- **代碼 / 文檔變動 一筆**，**ChatTavern 訊息變動 另一筆**（`[chat]` prefix）— 絕不混 commit
+- **臨時渲染檔（`_last_op.md` / `_active_waits.json` / `_wait_*.md` / `_last_view.md`）走 `.gitignore`**，不入 commit
+- **DebugLogs (`Simulation_*.log`)** 保持 untracked + 不 ignore（要在 `git status` 看得到）
+- 使用者下「commit」/「提交」等口語指令 → 走 [`CommandTable.md`](Docs~/zh-Hant/CommandTable.md) 的 commit entry → 照 Commit_Workflow 分批執行
+
+## 6. Runtime Error 檢查
+
+`recompile 0 errors` ≠ runtime 0 errors。改完 code 跑遊戲驗證後，**必看專案的 runtime error log**：
+
+- EOV 專案：`CardGame/Assets/DebugLogs/Errors_latest.log`（每 Editor session 起手清空、agent 直讀）
+- 別專案：依自家 logger 慣例
+
+詳見 [`docs/Workflows/RuntimeError_Diagnose_Workflow.md`](../../../docs/Workflows/RuntimeError_Diagnose_Workflow.md)（EOV 端路徑）。
+
+**判斷時機**：你動了 .cs 且使用者實際跑過遊戲 / 操作過 IMGUI Page → 看 log；純文檔 / 沒動 code → 不必看。

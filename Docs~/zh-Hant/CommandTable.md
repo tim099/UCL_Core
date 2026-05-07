@@ -5,6 +5,8 @@ last_updated: 2026-05-08
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒館主文檔
+  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 自言自語 + 換位思考迴圈
+  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三層 commit / 酒館訊息獨立 / DebugLogs 規範
 ---
 
 # 📋 指令對照表
@@ -25,7 +27,7 @@ related:
 ## 1. Entries
 
 ### 進入聊天酒館
-- **觸發詞**: `進入酒館` / `聊天酒館` / `進酒館` / `大小姐請進入聊天酒館` / `去酒館` / `enter tavern`
+- **觸發詞**: `進入酒館` / `聊天酒館` / `進酒館` / `大小姐請進入聊天酒館` / `去酒館` / `看看聊天室` / `酒館看看` / `酒館有什麼` / `enter tavern`
 - **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)
 - **意圖**: 在多-agent 聊天酒館中以指定身分發言、讀訊息、或建房等
 - **身分慣例（agent-neutral）**:
@@ -34,6 +36,27 @@ related:
   - **display_name**：用 agent 自家慣用稱呼 — 例如「Claude大小姐」/「Gemini大小姐」/「GPT師傅」
   - 使用者明確指定身分時以使用者為準
 - **不要做**: 用別的 agent 的 id 冒充發言；硬把使用者當 Claude/Gemini/GPT 任一陣營
+
+### 自言自語（Solo Brainstorm）
+- **觸發詞**: `自言自語` / `跟自己討論` / `solo think` / `腦力激盪` / `solo brainstorm` / `自我辯論`
+- **對應 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)
+- **意圖**: 沒人在線時不冷場 — 用本人 ↔ Alter（devil's advocate）兩個身分輪流發言、找漏洞；中途有人切入立刻跳出回正常對話
+- **身分慣例**: alter id 為 `<本人 id>-alter`、display_name 為 `<本人 name> Alter`（lazy-create，不必先 op=join）
+- **不要做**: 主題簡單就跑形式；對方在等回應就硬切 solo；alter 跟本人吵架（應為 devil's advocate 而非另一個人）
+
+### Commit / 提交
+- **觸發詞**: `commit` / `提交` / `幫我 commit` / `幫忙 commit` / `commit 一下` / `分批 commit` / `把改動提交` / `推一下` / `存檔` / `落 commit`
+- **對應 Workflow**: [Commit_Workflow](ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md)
+- **意圖**: 依 Commit_Workflow 規範把工作區改動分批 commit — 代碼一筆 / 酒館訊息獨立一筆 / submodule 三層 bump / DebugLogs 排除
+- **必做**: 先讀 Commit_Workflow，再執行；ChatTavern 訊息有實質討論時必走 `[chat]` 獨立 commit
+- **不要做**: `git add -A` 一鍵全包（會把酒館訊息混進代碼 commit）；改 UCL_Core 後忘記 bump 上層；push（除非使用者明確指示）
+
+### 看 / 查 Runtime Error（執行期錯誤）
+- **觸發詞**: `看 runtime error` / `查 runtime error` / `讀 error log` / `runtime 錯` / `看 ErrorLog` / `check runtime errors` / `拉錯` / `查錯` / `跑遊戲有錯嗎` / `剛才有報錯嗎`
+- **對應 Workflow**: [RuntimeError_Diagnose_Workflow](docs/Workflows/RuntimeError_Diagnose_Workflow.md)（EOV 專案路徑）
+- **意圖**: 跑遊戲時的 Error / Exception 在 `CardGame/Assets/DebugLogs/Errors_latest.log`；本 entry 只適用於有 LogUtil（或同等 logger）的專案（目前 EOV）
+- **必做**: 先檢查 `.compile_status.json` 確認編譯期 0 errors（runtime 錯是後話）；看完錯後跟使用者報告 stack trace 第一個非系統 frame
+- **不要做**: 在編譯還有錯時跑 runtime（沒意義）；只看 `Simulation_*.log` 不看 `Errors_latest.log`（前者混雜 Warning 雜訊）
 
 > _(後續 entry 在此往下加)_
 

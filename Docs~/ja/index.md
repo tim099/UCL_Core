@@ -29,7 +29,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | **`ResolveAssetReferences`** ⭐ | [Cmd_ResolveAssetReferences](API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) | **UCL_Asset チェーンの一括解決** — BFS + リフレクション + maxDepth + 重複排除。AI エージェント用に (AssetType, ID, JSON パス) のリストを出力します。 |
 | **`ExportCommandCatalog`** ⭐ | [Cmd_ExportCommandCatalog](API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md) | **現在登録されている全ハンドラーを Markdown カタログとして出力** — ページのボタンと描画ロジックを共有します。 |
 | **`FindAssetUsages`** ⭐ | [Cmd_FindAssetUsages](API/UCL_AgentCommand/Cmd_FindAssetUsages.md) | **Asset 参照の逆引き** — ターゲット Asset（例：RCG_CustomStatusData/Stun）について全 UCL_Asset サブクラスから参照箇所を抽出（dotted field path 付き）|
-| **`Invoke`** ⭐ | [Cmd_Invoke](API/UCL_AgentCommand/Cmd_Invoke.md) | **汎用リフレクション呼び出し** — 文字列での記述（type / member / args）から Unity の任意の public static method / property / field を動的に発火させ、API ごとに専用 Cmd を書かずに済みます。解析+実行は `UCL.Core.UCL_ReflectionInvoker`（UtilCore、runtime-available、Cmd 以外からも呼び出し可）に切り出され、Type 解決は `AssemblyExtensions` の共有 cache を利用します |
+| **`Invoke`** ⭐ | [Cmd_Invoke](API/UCL_AgentCommand/Cmd_Invoke.md) | **汎用リフレクション呼び出し** — 文字列での記述（type / member / args）から Unity の任意の public static + instance method / property / field を動的に発火させ、API ごとに専用 Cmd を書かずに済みます。instance 呼び出しと変数チェーン（`target=$var` / `storeAs=...`）に対応し、複数の invoke を連結可能。解析+実行は `UCL.Core.UCL_ReflectionInvoker`（UtilCore、runtime-available、Cmd 以外からも呼び出し可）に切り出され、Type 解決は `AssemblyExtensions` の共有 cache を利用します |
 
 ### トリガー方法（4 つ）
 1. エディター UI（`UCL_AgentCommandsPage`）ボタン

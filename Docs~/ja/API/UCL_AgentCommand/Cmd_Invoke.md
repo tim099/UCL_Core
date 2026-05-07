@@ -70,7 +70,9 @@ if (!result.Success) Debug.LogError(result.Error);
 | `paramTypes` | | （空）| オーバーロードの曖昧解消：セミコロン区切りの完全型名リスト（例：`int;string;UnityEditor.ImportAssetOptions`）|
 | `args` | | （空）| セミコロン区切りの文字列引数。`paramTypes` の順序で変換されます |
 | `getter` | | `true` | property / field 用 — `false` で setter になり、`args[0]` が代入する値となります |
-| `nonPublic` | | `false` | `true` で BindingFlags に `NonPublic` を追加し、internal / private static メンバーも検索可能になります（Unity 組み込み API には internal が多数あります）|
+| `nonPublic` | | `false` | `true` で BindingFlags に `NonPublic` を追加し、internal / private メンバーも検索可能になります（Unity 組み込み API には internal が多数あります）|
+| `target` | | （空）| `target=$varname` でこの呼び出しを instance call に切り替え、`UCL_ReflectionInvoker.Variables[varname]` から対象オブジェクトを取得します（事前に `storeAs=` で格納されている必要があります）。設定すると BindingFlags は自動的に Instance に切り替わり、`type` は省略可能です（`target.GetType()` を使用）|
+| `storeAs` | | （空）| 呼び出しが成功した際、戻り値を `Variables[storeAs]` に書き込みます。後続の invoke では `target=$storeAs` や `args=$storeAs;...` で参照できます。domain reload で消去されます |
 
 ### 2.1 引数変換ルール
 
@@ -155,16 +157,35 @@ python run_cmd.py run Invoke \
 
 ### 3.6 internal / private static API（`nonPublic=true`）
 
-Unity 組み込み API の多くは `internal` です（例：`UnityEditorInternal.LogEntries.Clear` や一部の build pipeline ツール）。デフォルトの `nonPublic=false` では見つかりませんが、`nonPublic=true` を指定すれば検索可能です：
+Unity 組み込み API の多くは `internal` です（例：一部の build pipeline ツール）。デフォルトの `nonPublic=false` では見つかりませんが、`nonPublic=true` を指定すれば検索可能です。該当のエラーメッセージにもヒントが含まれており、public メンバーが見つからない場合は `... — try nonPublic=true` と報告されます。
+
+### 3.7 instance method + 変数チェーン（`target=$var` / `storeAs=...`）
+
+複数の invoke を chain として連結できます — UCL_Asset を取得し、その instance method を呼び、さらに次を呼ぶ、という流れです。各ステップで `storeAs=name` により戻り値を `Variables[name]` に格納し、次のステップでは `target=$name` で参照します：
 
 ```bash
+# step 1: RCG_StoryData.Util を取得（UCL_Util<T> から継承された static property）
 python run_cmd.py run Invoke \
-  --arg "type=UnityEditorInternal.LogEntries" \
-  --arg "member=Clear" \
-  --arg "nonPublic=true"
+  --arg "type=RCG.RCG_StoryData" --arg "member=Util" --arg "kind=property" \
+  --arg "storeAs=util"
+
+# step 2: $util.GetData("AbandonedTemple") — instance method
+#   GetData(string id, bool useCache=true) — 第 2 引数の default value は自動補完
+python run_cmd.py run Invoke \
+  --arg "target=\$util" --arg "member=GetData" --arg "args=AbandonedTemple" \
+  --arg "storeAs=story"
+
+# step 3: $story.GetSubStory("Start") — instance method
+python run_cmd.py run Invoke \
+  --arg "target=\$story" --arg "member=GetSubStory" --arg "args=Start" \
+  --arg "storeAs=sub"
 ```
 
-該当のエラーメッセージにもヒントが含まれており、public メンバーが見つからない場合は `... — try nonPublic=true` と報告し、次回フラグの追加を促します。
+**Variables のライフタイム**：Editor 全体 / Cmd をまたぐ / バッチをまたいで有効ですが、**domain reload で消去されます**（`Cmd_Recompile` を含む）。状態汚染を避けるため、意図的に永続化していません。手動でリセットする場合は `Invoke(UCL.Core.UCL_ReflectionInvoker, ClearVariables)` を呼び出してください。
+
+**`args` 内の `$varname` 参照**：`target` だけでなく、`args=...;$varname;...` でも Variables に格納されたオブジェクトを引数として渡せます。string 引数内の `$` をエスケープする必要はありませんが、リテラル値 `$abc` を本当に渡したい場合、現状は変数参照と誤認識されます（v1 の制限）。
+
+**default value の自動補完**：`args` で指定する値の数は method のパラメーター総数より少なくても構いません。末尾側の不足分は `[DefaultValue]` を持つ場合に自動補完されます（`GetData(string, bool=true)` なら string だけで OK）。多すぎる場合は失敗します。
 
 ---
 
@@ -187,7 +208,7 @@ python run_cmd.py run Invoke \
 
 | 項目 | 説明 |
 |---|---|
-| **scope** | `Static` のみサポート（`Public` は常時 ON、`NonPublic` は `nonPublic=true` で追加）。instance メンバーは未対応 |
+| **scope** | static / instance ともにサポート（instance は `target=$varname` 経由）。`Public` は常時 ON、`NonPublic` は `nonPublic=true` で追加。static のルックアップは BaseType 階層も走査するため、generic 基底クラスの static も検出可能 |
 | **side effect** | 呼び出す API に依存します — `RequestScriptCompilation` を呼ぶと domain reload が発生し、in-flight の async cmd はすべて中断されます（このため `Cmd_Recompile` は「リクエスト送出後に即 return」する設計になっています）|
 | **type ambiguity** | オーバーロードがある method は `paramTypes` が必須。指定しないとエラーとなり、候補リストがエラーメッセージに表示されます |
 | **threading** | すべて Unity メインスレッドで実行されます。スレッドをブロックする API は呼び出さないでください |
@@ -216,7 +237,10 @@ python run_cmd.py run Invoke \
 |---|---|---|
 | `type not found: X (use exact Type.FullName, case-sensitive)` | FQN のタイプミス / namespace 不足 / 大文字小文字の誤り | Unity の逆コンパイルから正しい `Type.FullName` を取得（大文字小文字を厳密に区別）— `unityeditor.AssetDatabase` と `UnityEditor.AssetDatabase` は別物です |
 | `static method not found ... — try nonPublic=true` | method が internal / private static | `nonPublic=true` を追加 |
-| nonPublic 有効でも `static method not found` | method が instance メンバー | 本 Cmd v1 は instance 未対応。専用 Cmd を作成してください |
+| nonPublic 有効でも `static method not found` | method が instance メンバー | `target=$varname` で instance を渡す（事前に `storeAs=` で格納しておく）|
+| `target variable '$xxx' not found in Variables` | $xxx を `storeAs` で格納していない / domain reload で消去された | 先に `storeAs=xxx` で格納する invoke を実行する。再コンパイルや play mode の切り替えで Variables は消去されます |
+| `arg count mismatch: method expects N, got M`（M > N）| args が多すぎる | method のパラメーター数までに留める。末尾の optional は default が自動補完されます |
+| `arg[i] '$xxx' not found in Variables` | `args` 内で `$xxx` を使ったが、その変数が存在しない | 該当変数が `storeAs` で格納済みか確認 |
 | `ambiguous method (need paramTypes)` | 同名のオーバーロード | `paramTypes` を追加して 1 つに固定。エラーメッセージには候補がすべてリストされます |
 | `enum parse failed` | enum を名前ではなく数値（例：`0`）で指定した | 名前で指定（例：`Default`）|
 | Cmd が Failed だがエラーが見えない | Unity Console が背面にある | Console ウィンドウを開き `[AgentCmd:Invoke] FAILED: ...` を確認 |

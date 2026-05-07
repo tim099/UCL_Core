@@ -25,18 +25,14 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// type=UnityEditor.Compilation.CompilationPipeline
     /// member=RequestScriptCompilation
     /// </code>
-    /// 範例（讀屬性 — 是否正在編譯）：
+    /// 範例（instance method 鏈式呼叫 — 拿 RCG_StoryData → 拿子故事）：
     /// <code>
-    /// type=UnityEditor.EditorApplication
-    /// member=isCompiling
-    /// kind=property
-    /// </code>
-    /// 範例（呼帶參 method — refresh asset database with options）：
-    /// <code>
-    /// type=UnityEditor.AssetDatabase
-    /// member=Refresh
-    /// paramTypes=UnityEditor.ImportAssetOptions
-    /// args=Default
+    /// // step 1: 拿 Util（繼承自 UCL_Util&lt;T&gt; 的 static property）
+    /// type=RCG.RCG_StoryData;member=Util;kind=property;storeAs=util
+    /// // step 2: $util.GetData("AbandonedTemple") — instance method
+    /// target=$util;member=GetData;args=AbandonedTemple;storeAs=story
+    /// // step 3: $story.GetSubStory("Start") — instance method
+    /// target=$story;member=GetSubStory;args=Start;storeAs=sub
     /// </code>
     /// </remarks>
     public class Cmd_Invoke : UCL_AgentCommandHandlerBase
@@ -47,13 +43,15 @@ namespace UCL.Core.EditorLib.AgentCommands
             "Reflection-based invoker for Unity public static methods / properties / fields (e.g. CompilationPipeline.RequestScriptCompilation).";
 
         public override string ArgsSchema =>
-            "type=Fully qualified type name (e.g. UnityEditor.Compilation.CompilationPipeline). REQUIRED.\n" +
-            "member=Method / property / field name. REQUIRED.\n" +
+            "type=Fully qualified Type.FullName, exact case (e.g. UnityEditor.Compilation.CompilationPipeline). REQUIRED unless target is set.\n" +
+            "member=Method / property / field name. REQUIRED. Case-sensitive.\n" +
             "kind=method (default) / property / field\n" +
             "paramTypes=Semicolon-separated full type names for overload disambiguation (optional)\n" +
-            "args=Semicolon-separated string args matching paramTypes; primitive / enum / string / 'null' supported (optional)\n" +
+            "args=Semicolon-separated string args matching paramTypes; primitive / enum / string / 'null' supported. Use $varname to reference a value previously stored via storeAs.\n" +
             "getter=true (default) / false — for property/field, set to false then args[0] is the value to assign\n" +
-            "nonPublic=true / false (default) — also search internal / private static members (Unity 內建 API 大量是 internal)";
+            "nonPublic=true / false (default) — also search internal / private members (Unity 內建 API 大量是 internal)\n" +
+            "target=$varname — make this an instance call; pulls instance from Variables[varname] (must have been storeAs'd by an earlier invoke). When set, type can be omitted (uses target.GetType()).\n" +
+            "storeAs=varname — on success, store the return value into Variables[varname] for later $varname references. Cleared on Unity domain reload.";
 
         /// <summary>Page「Fill Example」按鈕一鍵填入用 — 等價 Cmd_Recompile 的核心呼叫，最小可驗證範例。</summary>
         public override string ExampleArgs =>

@@ -34,6 +34,13 @@ namespace UCL.Core
         public bool IsGetter = true;
         /// <summary>是否搜尋 internal / private static member（預設 false 只搜 public）— Unity 內建 API 大量 internal，常需開啟</summary>
         public bool IncludeNonPublic = false;
+        /// <summary>
+        /// instance member 呼叫的目標物件。null/empty 時走 static；設定字串時從 <see cref="UCL_ReflectionInvoker.Variables"/>
+        /// 查同名變數（前綴 <c>$</c> 由 ParseRequest 自動剃除）。target 設定後 BindingFlags 自動切到 Instance。
+        /// </summary>
+        public string Target;
+        /// <summary>呼叫成功時把回傳值寫入 <see cref="UCL_ReflectionInvoker.Variables"/>[StoreAs]，供後續 invoke 引用</summary>
+        public string StoreAs;
     }
 
     /// <summary>反射調用的結果。</summary>
@@ -55,15 +62,38 @@ namespace UCL.Core
     /// 外部 script 都可直接呼叫）。
     /// </summary>
     /// <remarks>
-    /// 限制（v1）：
+    /// 支援：
     /// <list type="bullet">
-    ///   <item>只支援 public + static method / property / field（instance 需要 target，未實作）</item>
-    ///   <item>參數型別自動轉換僅涵蓋 primitive / string / enum / 顯式 "null"（見 <see cref="AssemblyExtensions.TryConvertFromString"/>）</item>
-    ///   <item>generic method 需要在 ParamTypes 一併展開（v1 不主動推 type args）</item>
+    ///   <item>static / instance method / property / field（instance 透過 <see cref="UCL_ReflectionInvokeRequest.Target"/> 從 <see cref="Variables"/> 取目標）</item>
+    ///   <item>public / nonPublic（<see cref="UCL_ReflectionInvokeRequest.IncludeNonPublic"/>）</item>
+    ///   <item>static 成員的 BaseType hierarchy walk（generic base class 的 static 如 <c>UCL_Util&lt;T&gt;.Util</c> 也找得到）</item>
+    ///   <item>method 多載（<see cref="UCL_ReflectionInvokeRequest.ParamTypes"/> 嚴格匹配；空時偏好無參版本）</item>
+    ///   <item>method 參數的 default value 自動補齊（<see cref="ParameterInfo.HasDefaultValue"/>）</item>
+    ///   <item>跨 invoke 變數鏈（<see cref="Variables"/> + <c>$varname</c> 語法）</item>
+    /// </list>
+    /// 限制：
+    /// <list type="bullet">
+    ///   <item>參數型別自動轉換僅涵蓋 primitive / string / enum / 顯式 "null"（見 <see cref="AssemblyExtensions.TryConvertFromString"/>）；複雜物件須先 storeAs 再用 <c>$varname</c> 引用</item>
+    ///   <item>generic method 需要在 ParamTypes 一併展開（不主動推 type args）</item>
+    ///   <item>args 內的字面值 <c>$abc</c> 會被視為變數引用，無 escape 機制（v1）</item>
     /// </list>
     /// </remarks>
     public static class UCL_ReflectionInvoker
     {
+        // ===========================================================
+        // 跨 invoke 變數儲存
+        // ===========================================================
+
+        /// <summary>
+        /// 跨 invoke 共用的變數字典 — agent 可在一支 invoke 用 <c>storeAs=foo</c> 把回傳值塞進來，
+        /// 下一支 invoke 用 <c>target=$foo</c> 或 <c>args=$foo;...</c> 引用。Editor 內全域 / 跨 Cmd 有效；
+        /// domain reload（含 Cmd_Recompile）會清空 — 設計上不持久化，避免狀態污染。
+        /// </summary>
+        public static readonly Dictionary<string, object> Variables = new Dictionary<string, object>();
+
+        /// <summary>清空 <see cref="Variables"/>。提供給工具呼叫；正常使用不必手動清。</summary>
+        public static void ClearVariables() => Variables.Clear();
+
         // ---------- 解析 ----------
 
         /// <summary>
@@ -75,12 +105,14 @@ namespace UCL.Core
         {
             if (rawArgs == null) throw new ArgumentNullException(nameof(rawArgs));
             var req = new UCL_ReflectionInvokeRequest();
-            if (!rawArgs.TryGetValue("type", out var typeName) || string.IsNullOrWhiteSpace(typeName))
-                throw new ArgumentException("missing args[type] — fully qualified type name required (e.g. UnityEditor.Compilation.CompilationPipeline)");
+            // type 在「有 target 時」可省略（會用 target.GetType()），所以這裡不強制；Invoke 內再判
+            if (rawArgs.TryGetValue("type", out var typeName) && !string.IsNullOrWhiteSpace(typeName))
+            {
+                req.TypeName = typeName.Trim();
+            }
             if (!rawArgs.TryGetValue("member", out var memberName) || string.IsNullOrWhiteSpace(memberName))
                 throw new ArgumentException("missing args[member] — method / property / field name required");
 
-            req.TypeName = typeName.Trim();
             req.MemberName = memberName.Trim();
             req.Kind = (rawArgs.TryGetValue("kind", out var k) && !string.IsNullOrWhiteSpace(k))
                 ? k.Trim().ToLowerInvariant() : "method";
@@ -90,6 +122,17 @@ namespace UCL.Core
             req.Args = SplitSemicolon(rawArgs.TryGetValue("args", out var a) ? a : null);
             req.IncludeNonPublic = rawArgs.TryGetValue("nonPublic", out var np)
                                    && string.Equals(np, "true", StringComparison.OrdinalIgnoreCase);
+            // 區塊職責：target 與 storeAs — instance method + 變數儲存
+            // 物理意義：target=$varname 或 target=varname 都接受（前綴 $ 純為清晰，內部一律剃除）
+            //          storeAs=varname 不允許 $（變數名必須是純識別子）
+            if (rawArgs.TryGetValue("target", out var tg) && !string.IsNullOrWhiteSpace(tg))
+            {
+                req.Target = tg.Trim().TrimStart('$');
+            }
+            if (rawArgs.TryGetValue("storeAs", out var sa) && !string.IsNullOrWhiteSpace(sa))
+            {
+                req.StoreAs = sa.Trim();
+            }
             return req;
         }
 
@@ -99,21 +142,44 @@ namespace UCL.Core
         {
             if (req == null) return Fail("request is null");
 
-            // 1. 解析 type — 走 AssemblyExtensions 的共用 cache（FQN → Type）**嚴格匹配**
-            // 物理意義：刻意不做大小寫 fallback — agent 應該餵原汁原味的 Type.FullName，
-            //          錯一個字母就該被攔下，避免「明明拼錯卻撞到別的同名 type」這種隱性 bug
-            Type type = AssemblyExtensions.GetTypeByFullName(req.TypeName);
-            if (type == null) return Fail($"type not found: {req.TypeName} (use exact Type.FullName, case-sensitive)");
+            // 1. 取 target instance（如果有）— 影響後續 binding flags 與 invoke 第一參
+            object target = null;
+            bool isInstance = !string.IsNullOrEmpty(req.Target);
+            if (isInstance)
+            {
+                if (!Variables.TryGetValue(req.Target, out target) || target == null)
+                {
+                    return Fail($"target variable '${req.Target}' not found in Variables (use storeAs=... in a previous invoke first)");
+                }
+            }
 
-            // 2. 依 kind 分流
-            BindingFlags flags = BuildBindingFlags(req);
+            // 2. 解析 type — 走 AssemblyExtensions 的共用 cache（FQN → Type）**嚴格匹配**
+            // 物理意義：刻意不做大小寫 fallback — agent 應該餵原汁原味的 Type.FullName。
+            //          有 target 時 type 可省略 → 直接用 target.GetType()（讓 caller 不必重複指定）
+            Type type;
+            if (!string.IsNullOrEmpty(req.TypeName))
+            {
+                type = AssemblyExtensions.GetTypeByFullName(req.TypeName);
+                if (type == null) return Fail($"type not found: {req.TypeName} (use exact Type.FullName, case-sensitive)");
+            }
+            else if (isInstance)
+            {
+                type = target.GetType();
+            }
+            else
+            {
+                return Fail("missing args[type] — required when no target instance is provided");
+            }
+
+            // 3. 依 kind 分流
+            BindingFlags flags = BuildBindingFlags(req, isInstance);
             try
             {
                 switch (req.Kind)
                 {
-                    case "method":   return InvokeMethod(type, req, flags);
-                    case "property": return InvokeProperty(type, req, flags);
-                    case "field":    return InvokeField(type, req, flags);
+                    case "method":   return WithStore(req, InvokeMethod(type, target, req, flags));
+                    case "property": return WithStore(req, InvokeProperty(type, target, req, flags));
+                    case "field":    return WithStore(req, InvokeField(type, target, req, flags));
                     default:         return Fail($"unknown kind: {req.Kind} (expected method/property/field)");
                 }
             }
@@ -130,43 +196,107 @@ namespace UCL.Core
         }
 
         // 區塊職責：依 request flag 拼出 BindingFlags
-        // 物理意義：Static + Public 永遠開；IncludeNonPublic=true 時加 NonPublic（含 internal / private / protected）
-        // 數值影響：純位元 OR；不影響 instance（v1 不支援）
-        static BindingFlags BuildBindingFlags(UCL_ReflectionInvokeRequest req)
+        // 物理意義：依 isInstance 切 Static / Instance；Public 永遠開；IncludeNonPublic=true 時加 NonPublic。
+        //          靜態查詢還會加 FlattenHierarchy — 讓繼承來的 static 成員（如 UCL_Util<T>.Util）可被
+        //          子類別（RCG_StoryData）反射查到。Instance 則不需要（GetType.GetProperty 會自動沿 hierarchy 查）
+        // 數值影響：純位元 OR
+        static BindingFlags BuildBindingFlags(UCL_ReflectionInvokeRequest req, bool isInstance)
         {
-            var flags = BindingFlags.Static | BindingFlags.Public;
+            var flags = BindingFlags.Public | (isInstance ? BindingFlags.Instance : (BindingFlags.Static | BindingFlags.FlattenHierarchy));
             if (req.IncludeNonPublic) flags |= BindingFlags.NonPublic;
             return flags;
         }
 
+        // 區塊職責：呼叫成功時把 Value 寫入 Variables[StoreAs]
+        // 物理意義：給後續 invoke 用 $varname 引用（target / args 皆可）
+        // 數值影響：失敗結果不寫入；無 StoreAs 時跳過
+        static UCL_ReflectionInvokeResult WithStore(UCL_ReflectionInvokeRequest req, UCL_ReflectionInvokeResult result)
+        {
+            if (result.Success && !string.IsNullOrEmpty(req.StoreAs))
+            {
+                Variables[req.StoreAs] = result.Value;
+            }
+            return result;
+        }
+
+        // 區塊職責：把 args 字串轉成參數 object[] — 多了 $varname 從 Variables 取的支援
+        // 物理意義：$ 前綴 → 直接拿 Variables[name] 物件（不走 TryConvertFromString）；
+        //          其餘 → Type.TryConvertFromString 走 primitive/string/enum/null 轉換
+        // 數值影響：任何失敗 return false + err
+        static bool TryBuildArgValues(ParameterInfo[] ps, List<string> rawArgs, object[] outValues, out string err)
+        {
+            err = null;
+            // 只處理 caller 提供的部分；tail 缺的位置由 DefaultValue 補（在外層處理）
+            int n = Math.Min(rawArgs.Count, ps.Length);
+            for (int i = 0; i < n; i++)
+            {
+                string raw = rawArgs[i];
+                if (!string.IsNullOrEmpty(raw) && raw[0] == '$')
+                {
+                    string varName = raw.Substring(1);
+                    if (!Variables.TryGetValue(varName, out var v))
+                    {
+                        err = $"arg[{i}] '${varName}' not found in Variables";
+                        return false;
+                    }
+                    // 型別檢查：null 對 value type 不行；object 不需檢查（讓 Invoke 自己 throw）
+                    if (v == null && ps[i].ParameterType.IsValueType
+                        && Nullable.GetUnderlyingType(ps[i].ParameterType) == null)
+                    {
+                        err = $"arg[{i}] '${varName}' is null but parameter type {ps[i].ParameterType.FullName} is non-nullable value type";
+                        return false;
+                    }
+                    outValues[i] = v;
+                    continue;
+                }
+                if (!ps[i].ParameterType.TryConvertFromString(raw, out outValues[i], out var convErr))
+                {
+                    err = $"arg[{i}] '{raw}' → {ps[i].ParameterType.FullName}: {convErr}";
+                    return false;
+                }
+            }
+            return true;
+        }
+
         // ---------- 子流程：method / property / field ----------
 
-        static UCL_ReflectionInvokeResult InvokeMethod(Type type, UCL_ReflectionInvokeRequest req, BindingFlags flags)
+        static UCL_ReflectionInvokeResult InvokeMethod(Type type, object target, UCL_ReflectionInvokeRequest req, BindingFlags flags)
         {
+            string scope = target != null ? "method" : "static method";
             MethodInfo method;
             if (req.ParamTypes.Count > 0)
             {
-                // 帶 paramTypes：精確匹配多載 — 一樣走 strict FullName lookup
                 var paramTypes = req.ParamTypes.Select(AssemblyExtensions.GetTypeByFullName).ToArray();
                 for (int i = 0; i < paramTypes.Length; i++)
                 {
                     if (paramTypes[i] == null)
                         return Fail($"paramTypes[{i}] type not found: {req.ParamTypes[i]}");
                 }
-                method = type.GetMethod(req.MemberName, flags, binder: null,
-                    types: paramTypes, modifiers: null);
+                // 物理意義：static method 走 hierarchy walk（generic base class 的 static 不一定吃 FlattenHierarchy）；
+                //          instance method 不必（GetMethod 自動沿 hierarchy）
+                method = FindMember(type, req.MemberName, flags,
+                    (t, n, f) => t.GetMethod(n, f, binder: null, types: paramTypes, modifiers: null),
+                    walkHierarchy: target == null);
                 if (method == null)
-                    return Fail($"method not found: {type.FullName}.{req.MemberName}({string.Join(",", req.ParamTypes)})" +
+                    return Fail($"{scope} not found: {type.FullName}.{req.MemberName}({string.Join(",", req.ParamTypes)})" +
                                 (req.IncludeNonPublic ? "" : " — try nonPublic=true"));
             }
             else
             {
                 // 無 paramTypes：先試無參數多載（最常見），找不到再走 name 唯一匹配
-                // 物理意義：CompilationPipeline.RequestScriptCompilation 這類有多載又常用無參版本的場景，
-                //          empty paramTypes 直接對到 () 多載，免使用者每次寫 paramTypes=
-                var candidates = type.GetMethods(flags).Where(m => m.Name == req.MemberName).ToList();
+                // 同樣對 static 走 hierarchy walk 蒐集所有層的 candidates
+                var candidates = new List<MethodInfo>();
+                {
+                    var t = type;
+                    while (t != null && t != typeof(object))
+                    {
+                        candidates.AddRange(t.GetMethods(flags).Where(m => m.Name == req.MemberName));
+                        if (target != null) break;
+                        t = t.BaseType;
+                    }
+                }
                 if (candidates.Count == 0)
-                    return Fail($"static method not found: {type.FullName}.{req.MemberName}" +
+                    return Fail($"{scope} not found: {type.FullName}.{req.MemberName}" +
                                 (req.IncludeNonPublic ? "" : " — try nonPublic=true"));
 
                 var noArg = candidates.FirstOrDefault(m => m.GetParameters().Length == 0);
@@ -185,60 +315,90 @@ namespace UCL.Core
                 }
             }
 
-            // 轉參數
+            // 轉參數（含 $varname 從 Variables 引用 + default value 補齊）
+            // 物理意義：req.Args.Count 可少於 ps.Length — 缺的 tail 參數若有 DefaultValue 就自動補
+            //          （例 RCG_StoryData.GetData(string iID, bool iUseCache=true) 只給 iID 即可）
+            //          多了則直接 fail
             var ps = method.GetParameters();
-            if (req.Args.Count != ps.Length)
-                return Fail($"arg count mismatch: method expects {ps.Length}, got {req.Args.Count}");
+            if (req.Args.Count > ps.Length)
+                return Fail($"too many args: method expects up to {ps.Length}, got {req.Args.Count}");
             object[] argv = new object[ps.Length];
-            for (int i = 0; i < ps.Length; i++)
+            // 先處理使用者提供的部分
+            if (!TryBuildArgValues(ps, req.Args, argv, out var argErr))
+                return Fail(argErr);
+            // 再用 DefaultValue 補齊缺的
+            for (int i = req.Args.Count; i < ps.Length; i++)
             {
-                if (!ps[i].ParameterType.TryConvertFromString(req.Args[i], out argv[i], out var err))
-                    return Fail($"arg[{i}] '{req.Args[i]}' → {ps[i].ParameterType.FullName}: {err}");
+                if (!ps[i].HasDefaultValue)
+                    return Fail($"arg[{i}] '{ps[i].Name}' has no default and no value provided " +
+                                $"(method expects {ps.Length} args, got {req.Args.Count})");
+                argv[i] = ps[i].DefaultValue;
             }
 
-            object ret = method.Invoke(null, argv);
+            object ret = method.Invoke(target, argv);
             return Ok(ret, method.ReturnType);
         }
 
-        static UCL_ReflectionInvokeResult InvokeProperty(Type type, UCL_ReflectionInvokeRequest req, BindingFlags flags)
+        static UCL_ReflectionInvokeResult InvokeProperty(Type type, object target, UCL_ReflectionInvokeRequest req, BindingFlags flags)
         {
-            var prop = type.GetProperty(req.MemberName, flags);
-            if (prop == null) return Fail($"static property not found: {type.FullName}.{req.MemberName}" +
+            string scope = target != null ? "property" : "static property";
+            // 物理意義：generic base class 的 static 成員（如 UCL_Util<T>.Util）有時 FlattenHierarchy 也找不到
+            //          需要手動沿 BaseType 走鏈逐層 GetProperty
+            var prop = FindMember(type, req.MemberName, flags, (t, n, f) => t.GetProperty(n, f), target == null);
+            if (prop == null) return Fail($"{scope} not found: {type.FullName}.{req.MemberName}" +
                                           (req.IncludeNonPublic ? "" : " — try nonPublic=true"));
 
-            // 開 nonPublic 時 GetGetMethod / GetSetMethod 也要傳 nonPublic=true 才看得到 internal accessor
             if (req.IsGetter)
             {
                 if (prop.GetGetMethod(req.IncludeNonPublic) == null)
                     return Fail($"property has no accessible getter: {prop.Name}");
-                object v = prop.GetValue(null);
+                object v = prop.GetValue(target);
                 return Ok(v, prop.PropertyType);
             }
-            // setter
             if (prop.GetSetMethod(req.IncludeNonPublic) == null)
                 return Fail($"property has no accessible setter: {prop.Name}");
             if (req.Args.Count != 1) return Fail($"setter expects 1 arg, got {req.Args.Count}");
-            if (!prop.PropertyType.TryConvertFromString(req.Args[0], out var sv, out var err))
+            // setter 也支援 $varname
+            object sv;
+            if (!string.IsNullOrEmpty(req.Args[0]) && req.Args[0][0] == '$')
+            {
+                string varName = req.Args[0].Substring(1);
+                if (!Variables.TryGetValue(varName, out sv))
+                    return Fail($"setter arg '${varName}' not found in Variables");
+            }
+            else if (!prop.PropertyType.TryConvertFromString(req.Args[0], out sv, out var err))
+            {
                 return Fail($"arg '{req.Args[0]}' → {prop.PropertyType.FullName}: {err}");
-            prop.SetValue(null, sv);
+            }
+            prop.SetValue(target, sv);
             return Ok(null, typeof(void));
         }
 
-        static UCL_ReflectionInvokeResult InvokeField(Type type, UCL_ReflectionInvokeRequest req, BindingFlags flags)
+        static UCL_ReflectionInvokeResult InvokeField(Type type, object target, UCL_ReflectionInvokeRequest req, BindingFlags flags)
         {
-            var field = type.GetField(req.MemberName, flags);
-            if (field == null) return Fail($"static field not found: {type.FullName}.{req.MemberName}" +
+            string scope = target != null ? "field" : "static field";
+            var field = FindMember(type, req.MemberName, flags, (t, n, f) => t.GetField(n, f), target == null);
+            if (field == null) return Fail($"{scope} not found: {type.FullName}.{req.MemberName}" +
                                            (req.IncludeNonPublic ? "" : " — try nonPublic=true"));
 
             if (req.IsGetter)
             {
-                object v = field.GetValue(null);
+                object v = field.GetValue(target);
                 return Ok(v, field.FieldType);
             }
             if (req.Args.Count != 1) return Fail($"field set expects 1 arg, got {req.Args.Count}");
-            if (!field.FieldType.TryConvertFromString(req.Args[0], out var sv, out var err))
+            object sv;
+            if (!string.IsNullOrEmpty(req.Args[0]) && req.Args[0][0] == '$')
+            {
+                string varName = req.Args[0].Substring(1);
+                if (!Variables.TryGetValue(varName, out sv))
+                    return Fail($"setter arg '${varName}' not found in Variables");
+            }
+            else if (!field.FieldType.TryConvertFromString(req.Args[0], out sv, out var err))
+            {
                 return Fail($"arg '{req.Args[0]}' → {field.FieldType.FullName}: {err}");
-            field.SetValue(null, sv);
+            }
+            field.SetValue(target, sv);
             return Ok(null, typeof(void));
         }
 
@@ -294,6 +454,25 @@ namespace UCL.Core
             return $"{m.ReturnType.Name} {m.Name}(" +
                    string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}")) +
                    ")";
+        }
+
+        // 區塊職責：先在 type 直接找成員；找不到時「手動沿 BaseType 走鏈」逐層找 static 成員
+        // 物理意義：generic base class 的 static 成員（如 UCL_Util<T>.Util 被 RCG_StoryData 繼承）
+        //          BindingFlags.FlattenHierarchy 在某些 .NET runtime / 某些泛型情境不一定有效，
+        //          手動 walk BaseType 是最可靠的兜底
+        // 數值影響：純查詢；找到立刻 return；走到 typeof(object) 為止
+        static T FindMember<T>(Type type, string name, BindingFlags flags,
+            Func<Type, string, BindingFlags, T> getter, bool walkHierarchy) where T : MemberInfo
+        {
+            var t = type;
+            while (t != null && t != typeof(object))
+            {
+                var m = getter(t, name, flags);
+                if (m != null) return m;
+                if (!walkHierarchy) return null;
+                t = t.BaseType;
+            }
+            return null;
         }
     }
 }

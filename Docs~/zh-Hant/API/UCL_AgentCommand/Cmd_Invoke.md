@@ -70,7 +70,9 @@ if (!result.Success) Debug.LogError(result.Error);
 | `paramTypes` | | (空) | 多載消歧：分號分隔的完整型別清單（例 `int;string;UnityEditor.ImportAssetOptions`） |
 | `args` | | (空) | 分號分隔的字串參數，按 `paramTypes` 順序轉型 |
 | `getter` | | `true` | 對 property / field — `false` 改成 setter，`args[0]` 為要賦的值 |
-| `nonPublic` | | `false` | `true` 時 BindingFlags 多開 `NonPublic`，可搜 internal / private static 成員（Unity 內建 API 大量是 internal） |
+| `nonPublic` | | `false` | `true` 時 BindingFlags 多開 `NonPublic`，可搜 internal / private 成員（Unity 內建 API 大量是 internal） |
+| `target` | | (空) | `target=$varname` 把這次呼叫變成 instance call，從 `UCL_ReflectionInvoker.Variables[varname]` 取目標物件（必須之前用 `storeAs=` 存過）；設定後 BindingFlags 自動切 Instance；`type` 可省（用 `target.GetType()`）|
+| `storeAs` | | (空) | 呼叫成功時把回傳值寫入 `Variables[storeAs]`，讓後續 invoke 能用 `target=$storeAs` 或 `args=$storeAs;...` 引用。Domain reload 會清空 |
 
 ### 2.1 args 轉型規則
 
@@ -155,16 +157,35 @@ python run_cmd.py run Invoke \
 
 ### 3.6 internal / private static API（`nonPublic=true`）
 
-很多 Unity 內建 API 是 `internal`（例如 `UnityEditorInternal.LogEntries.Clear` / 某些 build pipeline 工具）。預設 `nonPublic=false` 找不到，加上 `nonPublic=true` 即可：
+很多 Unity 內建 API 是 `internal`（例如某些 build pipeline 工具）。預設 `nonPublic=false` 找不到，加上 `nonPublic=true` 即可。對應的錯誤訊息也會帶提示：找不到 public 成員時報 `... — try nonPublic=true`。
+
+### 3.7 instance method + 變數鏈（`target=$var` / `storeAs=...`）
+
+跨多個 invoke 串成 chain — 取得 UCL_Asset、再 call instance method、再 call 下一個。每步 `storeAs=name` 把回傳值塞進 `Variables[name]`，下一步 `target=$name` 引用：
 
 ```bash
+# step 1: 拿 RCG_StoryData.Util（繼承自 UCL_Util<T> 的 static property）
 python run_cmd.py run Invoke \
-  --arg "type=UnityEditorInternal.LogEntries" \
-  --arg "member=Clear" \
-  --arg "nonPublic=true"
+  --arg "type=RCG.RCG_StoryData" --arg "member=Util" --arg "kind=property" \
+  --arg "storeAs=util"
+
+# step 2: $util.GetData("AbandonedTemple") — instance method
+#   GetData(string id, bool useCache=true) — 第二參 default value 自動補
+python run_cmd.py run Invoke \
+  --arg "target=\$util" --arg "member=GetData" --arg "args=AbandonedTemple" \
+  --arg "storeAs=story"
+
+# step 3: $story.GetSubStory("Start") — instance method
+python run_cmd.py run Invoke \
+  --arg "target=\$story" --arg "member=GetSubStory" --arg "args=Start" \
+  --arg "storeAs=sub"
 ```
 
-對應的錯誤訊息也會帶提示：找不到 public 成員時報 `... — try nonPublic=true`，提醒下次補上 flag。
+**Variables 生命週期**：Editor 全域 / 跨 Cmd / 跨批次有效；**domain reload 清空**（含 `Cmd_Recompile`）— 設計上不持久化，避免狀態污染。需要重置可呼叫 `Invoke(UCL.Core.UCL_ReflectionInvoker, ClearVariables)`。
+
+**args 內 `$varname` 引用**：除了 `target` 可吃 `$varname`，`args=...;$varname;...` 也可以，把 Variables 內的物件當引數傳。string args 內的 `$` 不需要 escape，但若你 真的要傳字面值 `$abc`，目前會被誤判為變數查找（v1 限制）。
+
+**default value 補齊**：`args` 提供的數量可少於 method 參數總數，缺的 tail 參數若有 `[DefaultValue]` 會自動補（`GetData(string, bool=true)` 只給 string 即可）。多了直接 fail。
 
 ---
 
@@ -187,7 +208,7 @@ python run_cmd.py run Invoke \
 
 | 項 | 說明 |
 |---|---|
-| **scope** | 只支援 `Static`（`Public` 永遠開；`NonPublic` 由 `nonPublic=true` 加開）；instance 未支援 |
+| **scope** | static + instance 皆支援（instance 透過 `target=$varname`）；`Public` 永遠開、`NonPublic` 由 `nonPublic=true` 加開；static 還會走 BaseType hierarchy walk（generic base class static 也能找到） |
 | **side effect** | 視被呼叫 API 而定 — 呼叫 `RequestScriptCompilation` 會觸發 domain reload，所有 in-flight async cmd 會被殺掉（這也是為什麼 `Cmd_Recompile` 是「丟出請求即返回」的設計） |
 | **type ambiguity** | 多載 method：必填 `paramTypes` 否則錯（candidates 列表會印在錯誤訊息） |
 | **threading** | 全在 Unity main thread；不要呼會 block thread 的 API |
@@ -216,7 +237,10 @@ python run_cmd.py run Invoke \
 |---|---|---|
 | `type not found: X (use exact Type.FullName, case-sensitive)` | FQN 拼錯 / namespace 缺 / 大小寫錯 | 從 Unity 反組譯抓正確 `Type.FullName`（嚴格大小寫）— `unityeditor.AssetDatabase` 跟 `UnityEditor.AssetDatabase` 不一樣 |
 | `static method not found ... — try nonPublic=true` | method 是 internal / private static | 加 `nonPublic=true` |
-| `static method not found` 但 nonPublic 已開 | method 是 instance | 本 Cmd v1 不支援 instance；改寫專用 Cmd |
+| `static method not found` 但 nonPublic 已開 | method 是 instance | 用 `target=$varname` 提供 instance（先用 `storeAs=` 存過）|
+| `target variable '$xxx' not found in Variables` | $xxx 沒被 storeAs 過 / 已被 domain reload 清空 | 先跑一支 invoke 用 `storeAs=xxx` 存值；recompile / play mode 切換會清 Variables |
+| `arg count mismatch: method expects N, got M` (M > N) | 給的 args 太多 | 只給到 method 參數數量為止；optional tail 會自動補 default |
+| `arg[i] '$xxx' not found in Variables` | args 內用了 `$xxx` 但變數不存在 | 確認該變數已 storeAs 過 |
 | `ambiguous method (need paramTypes)` | 同名多載 | 補 `paramTypes` 鎖一個多載；錯誤訊息會列出所有 candidates |
 | `enum parse failed` | 寫了 enum 數值而非名稱（如 `0`） | 寫名稱（如 `Default`） |
 | Cmd 標 Failed 但沒看到錯誤 | Unity Console 在背景 | 開 Console 視窗看 `[AgentCmd:Invoke] FAILED: ...` |

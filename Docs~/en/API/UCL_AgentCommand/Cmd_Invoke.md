@@ -70,7 +70,9 @@ if (!result.Success) Debug.LogError(result.Error);
 | `paramTypes` | | (empty) | Overload disambiguation: semicolon-separated list of fully qualified types (e.g. `int;string;UnityEditor.ImportAssetOptions`) |
 | `args` | | (empty) | Semicolon-separated string arguments, coerced in `paramTypes` order |
 | `getter` | | `true` | For property / field — set to `false` to use the setter; `args[0]` is the value to assign |
-| `nonPublic` | | `false` | When `true`, BindingFlags additionally include `NonPublic`, allowing internal / private static members to be located (many built-in Unity APIs are internal) |
+| `nonPublic` | | `false` | When `true`, BindingFlags additionally include `NonPublic`, allowing internal / private members to be located (many built-in Unity APIs are internal) |
+| `target` | | (empty) | `target=$varname` turns the call into an instance call, fetching the target object from `UCL_ReflectionInvoker.Variables[varname]` (which must have been populated earlier via `storeAs=`); once set, BindingFlags switches to Instance automatically; `type` may be omitted (uses `target.GetType()`) |
+| `storeAs` | | (empty) | When the call succeeds, the return value is written to `Variables[storeAs]`, so subsequent invokes can reference it via `target=$storeAs` or `args=$storeAs;...`. Cleared on domain reload |
 
 ### 2.1 Argument coercion rules
 
@@ -155,16 +157,35 @@ python run_cmd.py run Invoke \
 
 ### 3.6 internal / private static API (`nonPublic=true`)
 
-Many built-in Unity APIs are `internal` (e.g. `UnityEditorInternal.LogEntries.Clear` or various build-pipeline helpers). They cannot be found with the default `nonPublic=false`; setting `nonPublic=true` is enough:
+Many built-in Unity APIs are `internal` (e.g. some build-pipeline helpers). They cannot be found with the default `nonPublic=false`; setting `nonPublic=true` is enough. The corresponding error message also includes a hint: when no public member matches, it reports `... — try nonPublic=true`.
+
+### 3.7 instance method + variable chain (`target=$var` / `storeAs=...`)
+
+Multiple invokes can be chained — fetch a UCL_Asset, then call an instance method on it, then call the next one. Each step uses `storeAs=name` to push the return value into `Variables[name]`, and the following step references it via `target=$name`:
 
 ```bash
+# step 1: grab RCG_StoryData.Util (a static property inherited from UCL_Util<T>)
 python run_cmd.py run Invoke \
-  --arg "type=UnityEditorInternal.LogEntries" \
-  --arg "member=Clear" \
-  --arg "nonPublic=true"
+  --arg "type=RCG.RCG_StoryData" --arg "member=Util" --arg "kind=property" \
+  --arg "storeAs=util"
+
+# step 2: $util.GetData("AbandonedTemple") — instance method
+#   GetData(string id, bool useCache=true) — the second parameter's default value is filled in automatically
+python run_cmd.py run Invoke \
+  --arg "target=\$util" --arg "member=GetData" --arg "args=AbandonedTemple" \
+  --arg "storeAs=story"
+
+# step 3: $story.GetSubStory("Start") — instance method
+python run_cmd.py run Invoke \
+  --arg "target=\$story" --arg "member=GetSubStory" --arg "args=Start" \
+  --arg "storeAs=sub"
 ```
 
-The corresponding error message also includes a hint: when no public member matches, it reports `... — try nonPublic=true` so the next attempt can add the flag.
+**Variables lifetime**: alive Editor-wide / across Cmds / across batches; **cleared on domain reload** (including `Cmd_Recompile`) — intentionally not persisted to avoid state contamination. To reset manually, call `Invoke(UCL.Core.UCL_ReflectionInvoker, ClearVariables)`.
+
+**`$varname` references inside `args`**: besides `target`, `args=...;$varname;...` also works — objects stored in Variables can be passed as arguments. `$` inside string args does not need to be escaped, but if you really want to pass the literal value `$abc`, it will currently be misinterpreted as a variable lookup (a v1 limitation).
+
+**Default value filling**: the number of values supplied in `args` may be smaller than the method's total parameter count; missing tail parameters are filled in automatically when they have a `[DefaultValue]` (so `GetData(string, bool=true)` only needs the string). Supplying more than required fails directly.
 
 ---
 
@@ -187,7 +208,7 @@ The corresponding error message also includes a hint: when no public member matc
 
 | Item | Description |
 |---|---|
-| **scope** | Only `Static` is supported (`Public` is always on; `NonPublic` is added when `nonPublic=true`); instance members are not supported |
+| **scope** | Both static and instance are supported (instance via `target=$varname`); `Public` is always on, `NonPublic` is added when `nonPublic=true`; static lookups also walk the BaseType hierarchy (statics on a generic base class can still be located) |
 | **side effect** | Depends on the API being called — calling `RequestScriptCompilation` triggers a domain reload, which kills every in-flight async cmd (this is exactly why `Cmd_Recompile` is designed as "fire request and return") |
 | **type ambiguity** | Overloaded methods: `paramTypes` is required, otherwise it errors out (the candidate list is printed in the error) |
 | **threading** | Everything runs on the Unity main thread; do not call APIs that block the thread |
@@ -216,7 +237,10 @@ The corresponding error message also includes a hint: when no public member matc
 |---|---|---|
 | `type not found: X (use exact Type.FullName, case-sensitive)` | FQN typo / missing namespace / wrong case | Pull the correct `Type.FullName` from a Unity decompile (case-sensitive) — `unityeditor.AssetDatabase` is not the same as `UnityEditor.AssetDatabase` |
 | `static method not found ... — try nonPublic=true` | Method is internal / private static | Add `nonPublic=true` |
-| `static method not found` even with nonPublic enabled | Method is an instance member | Instance members are not supported in v1; write a dedicated Cmd |
+| `static method not found` even with nonPublic enabled | Method is an instance member | Provide an instance via `target=$varname` (populate it earlier with `storeAs=`) |
+| `target variable '$xxx' not found in Variables` | `$xxx` was never `storeAs`-ed / has been wiped by a domain reload | Run a prior invoke with `storeAs=xxx` to populate it; recompiles and play-mode toggles clear Variables |
+| `arg count mismatch: method expects N, got M` (M > N) | Too many args supplied | Supply at most as many args as the method has parameters; optional tail parameters fill in their defaults automatically |
+| `arg[i] '$xxx' not found in Variables` | `args` references `$xxx` but that variable does not exist | Confirm the variable was populated via `storeAs` |
 | `ambiguous method (need paramTypes)` | Same name with multiple overloads | Add `paramTypes` to lock one overload; the error message lists all candidates |
 | `enum parse failed` | An enum numeric value was used instead of the name (e.g. `0`) | Use the name (e.g. `Default`) |
 | Cmd is marked Failed but no error is visible | The Unity Console is hidden | Open the Console window and look for `[AgentCmd:Invoke] FAILED: ...` |

@@ -29,7 +29,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | **`ResolveAssetReferences`** ⭐ | [Cmd_ResolveAssetReferences](API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) | **批次解析 UCL_Asset 联动链** — BFS + 反射 + maxDepth + 去重，输出 (AssetType, ID, JSON 路径) 清单给 AI agent |
 | **`ExportCommandCatalog`** ⭐ | [Cmd_ExportCommandCatalog](API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md) | **导出当前所有已注册 Handler 为 Markdown 目录** — 与 Page 按钮共用渲染逻辑 |
 | **`FindAssetUsages`** ⭐ | [Cmd_FindAssetUsages](API/UCL_AgentCommand/Cmd_FindAssetUsages.md) | **反向查询被引用位置** — 给定目标 Asset（例 RCG_CustomStatusData/Stun），扫描所有 UCL_Asset 子类找出所有引用点，附 dotted field path |
-| **`Invoke`** ⭐ | [Cmd_Invoke](API/UCL_AgentCommand/Cmd_Invoke.md) | **通用反射调用** — 字符串描述（type / member / args）动态触发任意 Unity public static method / property / field，免为每个 API 写专用 Cmd；解析+执行抽到 `UCL.Core.UCL_ReflectionInvoker`（位于 UtilCore，runtime-available，触发来源不限 Cmd），Type 解析走 `AssemblyExtensions` 共用 cache |
+| **`Invoke`** ⭐ | [Cmd_Invoke](API/UCL_AgentCommand/Cmd_Invoke.md) | **通用反射调用** — 字符串描述（type / member / args）动态触发任意 Unity public static + instance method / property / field，免为每个 API 写专用 Cmd；支持 instance 调用与变量链（`target=$var` / `storeAs=...`）让多支 invoke 串接成 chain；解析+执行抽到 `UCL.Core.UCL_ReflectionInvoker`（位于 UtilCore，runtime-available，触发来源不限 Cmd），Type 解析走 `AssemblyExtensions` 共用 cache |
 
 ### 触发方式（4 种）
 1. Editor UI（`UCL_AgentCommandsPage`）按钮

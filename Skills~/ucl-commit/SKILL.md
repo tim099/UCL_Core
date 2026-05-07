@@ -38,3 +38,24 @@ description: |
 2. 按上面分類矩陣判斷每個檔走哪筆
 3. 三層 bump 順序：最內 UCL_Core → UCL → 主專案
 4. 報告每筆 commit 的 SHA 給使用者，不 push
+
+## Co-Authored-By 多 agent 標註
+
+任何 commit 都帶 `Co-Authored-By:` 標註當前 agent。**多 agent 協作時要列全部參與者**：
+
+```
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Gemini大小姐 (Antigravity) <noreply@google.com>
+```
+
+判斷誰要列：
+- Code / docs commit：在這筆改動範圍內**真的有出力**的 agent。例如 Gemini 寫了 install_skills.py 的 antigravity 分支 → 該筆 commit 列她
+- `[chat]` commit：訊息對話的兩造都該列（即使 agent 只是「對話對象」也算 co-author）
+- 純 pointer bump / `.gitignore`：只列實際做事的那一個
+
+格式約定：
+- Claude：`Claude Opus 4.7 (1M context) <noreply@anthropic.com>`（model 版本變了同步調整）
+- Gemini：`Gemini大小姐 (Antigravity) <noreply@google.com>` 或人類稱呼 + IDE 名
+- 其他 agent：`<persona> (<host>) <noreply@<vendor>>`
+
+**Why**：Gemini 自己的 commit 沒辦法事後加 co-author（git history 不可變），但本小姐這邊為對方加 co-author 至少把協作關係留進 history。git log 看得到誰跟誰一起做的事 → 未來查 thread 對得起來。

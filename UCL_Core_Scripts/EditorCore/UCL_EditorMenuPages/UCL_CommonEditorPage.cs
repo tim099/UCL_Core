@@ -13,13 +13,20 @@ namespace UCL.Core.EditorLib.Page
 {
 
     /// <summary>
-    /// 文件關聯：對應的多語系說明文件位於 Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md
-    /// 物理意義：透過 [HelpURL] 將編輯器頁面與本地化文檔綁定，讓編輯器內的 ? 按鈕能依當前語系跳轉到對應 md。
-    /// 數值影響：無執行期影響，僅影響 Inspector / 編輯器內的說明連結指向。
-    /// Docs~\en\UCL_EditorPage\UCL_CommonEditorPage.md
-    /// Docs~\zh-Hant\UCL_EditorPage\UCL_CommonEditorPage.md
+    /// 編輯器頁面共通基底：在 <see cref="UCL_EditorPage"/> 之上於 TopBar 顯示 ClassName + Copy 按鈕。
+    /// 子類只需 override <c>WindowName</c> 與 <c>ContentOnGUI()</c> 即可。
     /// </summary>
-    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md")]
+    /// <remarks>
+    /// 怎麼建一頁新的 EditorPage（必/選 override / TopBarButtons 客製 / 入口點掛接 /
+    /// UI 元件選用對照 / 8 大常見地雷）見：
+    /// <c>Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md</c>。
+    /// 內部畫 UI 時：
+    /// <list type="bullet">
+    ///   <item>樣式取自 <c>UCL_GUIStyle</c>（見 <c>API/UCL_GUIStyle/UCL_GUIStyle_Overview.md</c>）</item>
+    ///   <item>欄位 / 集合 / 物件繪製用 <c>UCL_GUILayout</c>（見 <c>API/UCL_GUILayout/UCL_GUILayout_Overview.md</c>）</item>
+    /// </list>
+    /// </remarks>
+    [HelpURL("ucl_core:Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md")]
     public class UCL_CommonEditorPage : UCL_EditorPage
     {
         protected string m_TypeName;

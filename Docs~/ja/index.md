@@ -49,6 +49,15 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ---
 
+## UCL_GUILayout / UCL_GUIStyle（IMGUI コンポーネント + スタイル層）
+
+| ドキュメント | 説明 |
+|---|---|
+| 🎨 **[UCL_GUILayout_Overview](API/UCL_GUILayout/UCL_GUILayout_Overview.md)** ⭐ | **8 ファイルの partial class 全体ガイド** — 設計レイヤー、各ファイルの責務、API クイックリファレンス（用途別グループ化）、ファイル間の共通パターン（三段オーバーロード / `[SerializeReference]` ポリモーフィズム自動検出 / リフレクションキャッシュ）、出番は少ないが価値の高い 3 つのヘルパー（`IntFieldAuto` / `PopupSearchCache` / `DrawCopyPaste`） |
+| 🎨 [UCL_GUIStyle_Overview](API/UCL_GUIStyle/UCL_GUIStyle_Overview.md) | **IMGUI スタイルのハブ** — `BoxStyle` / `ButtonStyle` / `LabelStyle` / `TextField/Area`、DPI 用グローバル `Scale`、EditorWindow / Runtime のデュアルキャッシュ、`LabelStyle` の禁則（インタラクティブコントロールには使用不可） |
+
+---
+
 ## Architecture
 
 | ドキュメント | 説明 |
@@ -88,6 +97,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` などのプレフィックスメカニズム |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | ハードコードされたローカライズ文字列の処理 |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **新しい `Cmd_<Name>.cs` サブクラス作成 SOP** — 命名 / ファイル配置デシジョンツリー（UCL_Core vs 下流モジュール） / 標準テンプレート（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync の指針 / Editor 内検証 / 8 つのよくある落とし穴 / **§9 文書配置の自動判定スキーム**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
+| 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **新しい `UCL_CommonEditorPage` サブクラス作成 SOP** — 継承関係 / 必須・任意 override / TopBarButtons カスタマイズ / エントリポイントの接続（親ページ / Welcome カード / メニュー） / UI コンポーネント選択ガイド（UCL_GUILayout と UCL_GUIStyle ドキュメントへリンク） / HelpURL の `{lang}` プレースホルダ / 8 つのよくある落とし穴 / 受け入れチェックリスト |
 
 ---
 

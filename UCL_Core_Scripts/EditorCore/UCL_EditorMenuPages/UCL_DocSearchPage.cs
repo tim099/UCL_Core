@@ -42,6 +42,26 @@ namespace UCL.Core.EditorLib.Page
 
         Vector2 m_Scroll = Vector2.zero;
 
+        // 區塊職責：snippet 顯示專用樣式 — 換行 + rich-text 高亮（&lt;color&gt;&lt;b&gt;）
+        // 物理意義：Engine 端把命中字以 IMGUI rich-text tag 包起來，這裡保證 GUIStyle 能解析並換行
+        // 數值影響：lazy 建立、整個 page 共用一份，避免每筆結果 row new 一個 GUIStyle
+        GUIStyle m_SnippetStyle;
+        GUIStyle SnippetStyle
+        {
+            get
+            {
+                if (m_SnippetStyle == null)
+                {
+                    m_SnippetStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
+                    {
+                        wordWrap = true,
+                        richText = true,
+                    };
+                }
+                return m_SnippetStyle;
+            }
+        }
+
         public static UCL_DocSearchPage Create()
         {
             return UCL_EditorPage.Create<UCL_DocSearchPage>();
@@ -116,8 +136,7 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 m_ShowAdvanced = GUILayout.Toggle(m_ShowAdvanced,
-                    UCL_CodeLocalize.Get("DocSearch.Advanced"),
-                    UCL_GUIStyle.LabelStyle);
+                    UCL_CodeLocalize.Get("DocSearch.Advanced"));
                 if (!m_ShowAdvanced) return;
 
                 using (new GUILayout.HorizontalScope())
@@ -144,8 +163,7 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 m_IncludeArchived = GUILayout.Toggle(m_IncludeArchived,
-                    UCL_CodeLocalize.Get("DocSearch.IncludeArchived"),
-                    UCL_GUIStyle.LabelStyle);
+                    UCL_CodeLocalize.Get("DocSearch.IncludeArchived"));
             }
         }
 
@@ -194,6 +212,14 @@ namespace UCL.Core.EditorLib.Page
                     {
                         EditorUtility.RevealInFinder(abs);
                     }
+                    // 區塊職責：「📄 預覽」— 在 Editor 內以 IMGUI 直接渲染這份 .md（不離開 Unity 視窗）
+                    // 物理意義：與右側「📖 Open」並存：Open 走 OS 預設應用、預覽走內嵌 page；兩條入口皆保留
+                    // 數值影響：點擊後 Push 一頁 UCL_MarkdownViewerPage 到 GUIPageController，使用者按 Back 返回搜尋
+                    if (GUILayout.Button("📄",
+                        UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_MarkdownViewerPage.Create(rel, abs);
+                    }
                     if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Search.OpenButton"),
                         UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                     {
@@ -214,6 +240,17 @@ namespace UCL.Core.EditorLib.Page
                 if (!string.IsNullOrEmpty(hit.Entry.Description))
                 {
                     GUILayout.Label($"  {hit.Entry.Description}", UCL_GUIStyle.LabelStyle);
+                }
+                // P1：最佳命中 section（H1~H6 標題 + 起始行號）— 引導使用者跳到具體段落
+                if (!string.IsNullOrEmpty(hit.SectionTitle))
+                {
+                    string lineSuffix = hit.SectionStartLine > 0 ? $" (L{hit.SectionStartLine})" : "";
+                    GUILayout.Label($"  <color=#9BD0FF>§ {hit.SectionTitle}</color>{lineSuffix}", SnippetStyle);
+                }
+                // P1：snippet preview — 圍繞首個命中的 ±N 字元上下文，命中字以 rich-text 高亮
+                if (!string.IsNullOrEmpty(hit.Snippet))
+                {
+                    GUILayout.Label($"  {hit.Snippet}", SnippetStyle);
                 }
                 if (hit.MatchedFields != null && hit.MatchedFields.Count > 0)
                 {
@@ -240,7 +277,10 @@ namespace UCL.Core.EditorLib.Page
             // 物理意義：UCL_LocalizeManager.s_LangName 是 4 語系切換中央狀態
             //          （"zh-Hant" / "en" / "ja" / "zh-Hans"），與 UCL_Core 多語系 Docs 路徑段 1:1 對應
             string preferredLang = UCL_LocalizeManager.s_LangName;
-            m_Hits = UCL_DocSearchEngine.SearchSimple(query, entries, synonymGroups,
+            // P1：改走 body-aware 變體 — 多讀一次每篇 .md、做 section 級計分、產 snippet
+            // 物理意義：metadata 命中之外多吃 body，並抓最佳 section 的上下文片段給 UI 高亮顯示
+            // 數值影響：每查詢多 ~200 次 ReadAllLines；SSD 上仍在數百 ms 量級，編輯器搜尋可接受
+            m_Hits = UCL_DocSearchEngine.SearchSimpleWithBody(query, entries, gitRoot, synonymGroups,
                 orMode: m_OrMode, limit: m_Limit, preferredLang: preferredLang);
         }
 
@@ -249,7 +289,7 @@ namespace UCL.Core.EditorLib.Page
         //          這條路徑跟 FeatureCard 的「📖 文件」按鈕共用，已驗證可在 Editor / Build 模式都正確開啟。
         //          其他位置（git-root 下的 Docs/ 等）沒註冊專用 prefix，退回 file:/// 絕對路徑。
         // 數值影響：純 OpenURL 呼叫，由 OS / browser / 預設應用接手
-        static void OpenDocByUrl(string relPath, string absPath)
+        internal static void OpenDocByUrl(string relPath, string absPath)
         {
             const string kUclCorePrefix = "CardGame/Assets/UCL/UCL_Core/";
             if (relPath.StartsWith(kUclCorePrefix, System.StringComparison.OrdinalIgnoreCase))

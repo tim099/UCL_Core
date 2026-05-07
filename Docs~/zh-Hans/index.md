@@ -49,6 +49,15 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ---
 
+## UCL_GUILayout / UCL_GUIStyle（IMGUI 组件 + 样式层）
+
+| 文件 | 说明 |
+|---|---|
+| 🎨 **[UCL_GUILayout_Overview](API/UCL_GUILayout/UCL_GUILayout_Overview.md)** ⭐ | **8 档 partial class 的整体导览** — 设计分层、文件职责、API 速查（按用途分组）、跨文件共通模式（三段式重载 / `[SerializeReference]` 多态自动侦测 / 反射缓存）、三个少见但高价值 helper（`IntFieldAuto` / `PopupSearchCache` / `DrawCopyPaste`）|
+| 🎨 [UCL_GUIStyle_Overview](API/UCL_GUIStyle/UCL_GUIStyle_Overview.md) | **IMGUI 样式中央** — `BoxStyle` / `ButtonStyle` / `LabelStyle` / `TextField/Area`、DPI 全域 `Scale`、EditorWindow / Runtime 双 cache、`LabelStyle` 反指守则（不可给互动控件） |
+
+---
+
 ## Architecture
 
 | 文件 | 说明 |
@@ -88,6 +97,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` 等 prefix 机制 |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬写本地化字符串的处理 |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **创建新的 `Cmd_<Name>.cs` 子类 SOP** — 命名 / 文件位置决策树（UCL_Core vs 下游模块） / 标准范本（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync 守则 / Editor 验收 / 8 大常见地雷 / **§9 文件放置自动判断方案**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
+| 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **创建新的 `UCL_CommonEditorPage` 子类 SOP** — 继承关系 / 必/选 override / TopBarButtons 客制 / 入口点挂接（父页 / Welcome 卡片 / 菜单） / UI 组件选用对照（链接 UCL_GUILayout 与 UCL_GUIStyle 文件） / HelpURL `{lang}` 占位 / 8 大常见地雷 / 验收清单 |
 
 ---
 

@@ -1,3 +1,14 @@
+```mermaid
+graph LR
+A[Hard edge] -->B(Round edge)
+    B --> C{Decision}
+    C -->|One| D[Result one]
+    C -->|Two| E[Result two]
+```
+
+
+
+
 # HelpURL 系統與工作流 (HelpURL System & Workflow)
 
 ## 1. 核心概念

@@ -49,6 +49,15 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 
 ---
 
+## UCL_GUILayout / UCL_GUIStyle (IMGUI Components + Style Layer)
+
+| Document | Description |
+|---|---|
+| 🎨 **[UCL_GUILayout_Overview](API/UCL_GUILayout/UCL_GUILayout_Overview.md)** ⭐ | **Overview of the 8-file partial class** — design layering, per-file responsibilities, API quick-reference (grouped by purpose), cross-file shared patterns (three-tier overloads / `[SerializeReference]` polymorphism auto-detection / reflection cache), and three rare but high-value helpers (`IntFieldAuto` / `PopupSearchCache` / `DrawCopyPaste`) |
+| 🎨 [UCL_GUIStyle_Overview](API/UCL_GUIStyle/UCL_GUIStyle_Overview.md) | **IMGUI style hub** — `BoxStyle` / `ButtonStyle` / `LabelStyle` / `TextField/Area`, global `Scale` for DPI, dual EditorWindow / Runtime cache, `LabelStyle` anti-pattern guard (must not be applied to interactive controls) |
+
+---
+
 ## Architecture
 
 | Document | Description |
@@ -88,6 +97,7 @@ Complete comparison and examples can be found in [UCL_AgentCommand_Architecture 
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | Prefix mechanisms such as `ucl_core:` / `eov_docs:` |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | Handling hard-coded localization strings |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **SOP for creating a new `Cmd_<Name>.cs` subclass** — naming / file-placement decision tree (UCL_Core vs downstream module) / standard template (CommandType / ShortDescription / ArgsSchema / HelpURL) / ExecuteAsync conventions / in-Editor verification / 8 common pitfalls / **§9 auto-classification scheme for doc placement** (`source_root` frontmatter + `Cmd_ValidateDocPlacement`) |
+| 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **SOP for creating a new `UCL_CommonEditorPage` subclass** — inheritance chain / required and optional overrides / TopBarButtons customization / entry-point hookup (parent page / Welcome card / menu) / UI component selection guide (links to UCL_GUILayout and UCL_GUIStyle docs) / HelpURL `{lang}` placeholder / 8 common pitfalls / acceptance checklist |
 
 ---
 

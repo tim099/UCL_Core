@@ -7,6 +7,11 @@ using UnityEngine;
 namespace UCL.Core.UI
 {
 
+    /// <summary>
+    /// 自包含畫板 UI 容器（DrawableTexture + 顏色選擇 + Clear）。背景見
+    /// <c>Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md</c>。
+    /// </summary>
+    [HelpURL("ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md")]
     public class UCL_GUILayoutPainter
     {
         /// <summary>

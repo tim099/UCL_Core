@@ -38,6 +38,12 @@ namespace UCL.Core.UI {
         public static Texture2D s_White = null;
 
     }
+    /// <summary>
+    /// UCL_Core 的 IMGUI 工具集（8 檔 partial class）— 自動化欄位 / 集合編輯 / 物件遞迴繪製 /
+    /// 下拉選單 / 互動繪圖。完整 API 與慣用法見 <c>Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md</c>。
+    /// ⚠ 傳 GUIStyle 參數時不要塞 <see cref="UCL_GUIStyle.LabelStyle"/> 給互動控制項。
+    /// </summary>
+    [HelpURL("ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md")]
     static public partial class UCL_GUILayout {
         /// <summary>
         /// set to true if RequireRepaint

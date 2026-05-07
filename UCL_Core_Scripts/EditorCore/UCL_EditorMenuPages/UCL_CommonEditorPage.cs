@@ -31,6 +31,15 @@ namespace UCL.Core.EditorLib.Page
     {
         protected string m_TypeName;
 
+        // 區塊職責：Page 是否要列入 UCL_EditorMenuPage 的「Page 選擇器」下拉
+        // 物理意義：opt-in 設計 — 預設不出現；想被人類從 EditorMenu 直接打開的子 Page 自行 override 為 true
+        // 數值影響：純 metadata；UCL_EditorMenuPage 透過反射收集所有 ShowInPageMenu==true 的子類顯示
+        /// <summary>
+        /// 是否要列入 <see cref="UCL_EditorMenuPage"/> 的 Page 選擇器下拉。預設 false（opt-in）。
+        /// 子類若希望被使用者從主選單直接打開，覆寫成 true。
+        /// </summary>
+        public virtual bool ShowInPageMenu => false;
+
         public override void Init(UCL_GUIPageController iGUIPageController)
         {
             base.Init(iGUIPageController);

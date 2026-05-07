@@ -151,7 +151,9 @@ protected override void TopBarButtons()
 | 數字欄位 / 滑條 / 向量 / 折疊頭 ▼/► | `UCL_GUILayout.IntField` / `Slider` / `Vector3Field` / `Toggle(bool, size)` | [UCL_GUILayout Overview §3.1](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#31-基礎欄位ucl_guilayoutcs) |
 | 列表 / 字典 / HashSet 編輯（含分頁、多型 Add） | `UCL_GUILayout.DrawList` / `DrawDictionary` / `DrawHashSet` | [UCL_GUILayout Overview §3.2](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#32-集合編輯drawlist--drawdictionary--drawhashset) |
 | 任意物件遞迴繪製（反射欄位、`[SerializeReference]` 多型） | `UCL_GUILayout.DrawObjectData` | [UCL_GUILayout Overview §3.3](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#33-物件遞迴繪製ucl_guilayoutdrawobjectcs) |
-| 下拉選單（含搜尋 / 列舉） | `UCL_GUILayout.PopupAuto` / `Popup<T>(enum)` | [UCL_GUILayout Overview §3.4](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#34-下拉選單與分頁ucl_guilayoutpopupcs) |
+| 下拉選單（基本，無搜尋）| `UCL_GUILayout.PopupAuto` | [UCL_GUILayout Overview §3.4](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#34-下拉選單與分頁ucl_guilayoutpopupcs) |
+| **下拉選單（含搜尋 + 內部快取）** ⭐ | `UCL_GUILayout.PopupSearchCache(idx, options, dic, key)` | 同上 |
+| 列舉下拉 | `UCL_GUILayout.Popup<T>(enum, dic)` | 同上 |
 | 互動畫板 | `UCL_GUILayout.DrawableTexture` / `UCL_GUILayoutPainter` | [UCL_GUILayout Overview §3.5](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#35-互動繪圖) |
 | 複雜結構 Copy/Paste | `UCL_GUILayout.DrawCopyPaste(ref obj, ...)` | [UCL_GUILayout Overview §5.3](../API/UCL_GUILayout/UCL_GUILayout_Overview.md#53-drawcopypasteref-obj-dic-fieldtype) |
 
@@ -206,6 +208,7 @@ public class UCL_<Name>Page : UCL_CommonEditorPage { ... }
 | 6 | rich-text label 內混入 `<...>`（如顯示 C# 泛型 `List<T>`） | 字被當 tag 解析，部分內容消失 | 該樣式關掉 `richText`，或對使用者內容做 `<` → `&lt;` 轉義 |
 | 7 | `[HelpURL]` 寫死語系（沒用 `{lang}` 佔位） | 切語系後 Help 按鈕跳錯檔 | 一律用 `ucl_core:Docs~/{lang}/...` |
 | 8 | EditorWindow.OnGUI 沒設 `IsInEditorWindow` | 樣式 cache 跑到 runtime 那份，DPI 異常 | 用 `IsInEditorWindowScope`（using 自動還原）|
+| 9 | 直接用 `UnityEditor.EditorGUILayout.Popup` 畫下拉 | 沒搜尋、選項多時找不到、需 `#if UNITY_EDITOR` 守 | 改用 `UCL_GUILayout.PopupSearchCache(idx, options, dic, key)` — 自帶搜尋 + 內部快取 + 跨 runtime/Editor 編譯。傳一份 `UCL_ObjectDictionary` 當 cache 容器（page 內 `readonly` 即可）|
 
 ---
 

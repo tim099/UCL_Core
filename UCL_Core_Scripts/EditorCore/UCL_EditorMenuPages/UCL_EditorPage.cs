@@ -19,6 +19,25 @@ namespace UCL.Core.EditorLib.Page
             iController.Push(aPage);
             return aPage;
         }
+
+        // 區塊職責：以 Type 動態建立 Page 的非泛型版本
+        // 物理意義：泛型版的 Create<T>() 編譯期需要型別；給 EditorMenu 反射收集 + 下拉開頁時用
+        // 數值影響：失敗（型別非 UCL_EditorPage / 缺無參 ctor）丟例外；成功則 push 到 controller
+        /// <summary>
+        /// Type 動態版本 — 給反射場景（如 <see cref="UCL_EditorMenuPage"/> 的 Page 選擇器）使用。
+        /// </summary>
+        /// <param name="iType">必須為 UCL_EditorPage 或其子類，且具備無參數建構子</param>
+        /// <param name="iController">未指定則用 CurrentRenderIns</param>
+        static public UCL_EditorPage CreateByType(System.Type iType, UCL.Core.UI.UCL_GUIPageController iController = null)
+        {
+            if (iType == null) throw new System.ArgumentNullException(nameof(iType));
+            if (!typeof(UCL_EditorPage).IsAssignableFrom(iType))
+                throw new System.ArgumentException($"{iType.FullName} 並非 UCL_EditorPage 子類");
+            var aPage = (UCL_EditorPage)System.Activator.CreateInstance(iType);
+            if (iController == null) iController = UCL.Core.UI.UCL_GUIPageController.CurrentRenderIns;
+            iController.Push(aPage);
+            return aPage;
+        }
         #endregion
 
         /// <summary>

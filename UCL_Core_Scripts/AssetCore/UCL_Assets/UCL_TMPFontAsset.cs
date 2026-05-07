@@ -122,6 +122,7 @@ namespace UCL.Core
         private static FieldInfo s_InstanceFieldInfo = null;
 
         private static TMP_FontAsset s_DefaultFontAsset = null;
+        private static FieldInfo s_DefaultFontAssetFieldInfo = null;
         public static void SetTMPSettings(TMP_Settings setting)
         {
             if (s_DefaultSetting == null)
@@ -150,7 +151,24 @@ namespace UCL.Core
                 fontAsset = s_DefaultFontAsset;
             }
 
+#if TMP_DEFAULT_FONT_ASSET_SETTABLE
+            // TextMeshPro < 3.0 — defaultFontAsset has a public setter, use it directly.
             TMP_Settings.defaultFontAsset = fontAsset;
+#else
+            // TextMeshPro >= 3.0 — defaultFontAsset is getter-only (CS0200); set the private
+            // backing field via reflection — same pattern as SetTMPSettings above with s_Instance.
+            if (s_DefaultFontAssetFieldInfo == null)
+            {
+                s_DefaultFontAssetFieldInfo = typeof(TMP_Settings).GetField(
+                    "m_defaultFontAsset", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (s_DefaultFontAssetFieldInfo == null)
+                {
+                    Debug.LogError("[UCL_TMPUtil] TMP_Settings.m_defaultFontAsset field not found via reflection; TMP version may have changed.");
+                    return;
+                }
+            }
+            s_DefaultFontAssetFieldInfo.SetValue(TMP_Settings.instance, fontAsset);
+#endif
         }
     }
 }

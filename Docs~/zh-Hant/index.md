@@ -29,6 +29,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | **`ResolveAssetReferences`** ⭐ | [Cmd_ResolveAssetReferences](API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) | **批次解析 UCL_Asset 連動鏈** — BFS + 反射 + maxDepth + 去重，輸出 (AssetType, ID, JSON 路徑) 清單給 AI agent |
 | **`ExportCommandCatalog`** ⭐ | [Cmd_ExportCommandCatalog](API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md) | **匯出當前所有已註冊 Handler 為 Markdown 目錄** — 與 Page 按鈕共用渲染邏輯 |
 | **`FindAssetUsages`** ⭐ | [Cmd_FindAssetUsages](API/UCL_AgentCommand/Cmd_FindAssetUsages.md) | **反向查詢被引用位置** — 給定目標 Asset（例 RCG_CustomStatusData/Stun），掃描所有 UCL_Asset 子類找出所有引用點，附 dotted field path |
+| **`Invoke`** ⭐ | [Cmd_Invoke](API/UCL_AgentCommand/Cmd_Invoke.md) | **通用反射調用** — 字串描述（type / member / args）動態觸發任意 Unity public static method / property / field，免為每個 API 寫專用 Cmd；解析+執行抽到 `UCL.Core.UCL_ReflectionInvoker`（位於 UtilCore，runtime-available，觸發來源不限 Cmd），Type 解析走 `AssemblyExtensions` 共用 cache |
 
 ### 觸發方式（4 種）
 1. Editor UI（`UCL_AgentCommandsPage`）按鈕

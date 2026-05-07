@@ -76,6 +76,62 @@ public static partial class AssemblyExtensions {
         }
         return null;
     }
+    /// <summary>
+    /// 區塊職責：通用「字串 → 目標型別物件」轉換器 — primitive / string / enum / "null" 字面值都吃。
+    /// 物理意義：給 Cmd / config / 反射調用等場景把 string args 轉成可餵給 method 的 object。
+    /// 數值影響：純轉換；任何失敗 → return false + iErr 描述（不丟例外，呼叫端決定要不要 throw）。
+    /// </summary>
+    /// <param name="iType">目標型別（method 參數型別 / property type 等）</param>
+    /// <param name="iRaw">字串原值；"null"（不分大小寫）視為 null 字面值</param>
+    /// <param name="iValue">轉成功後填這裡</param>
+    /// <param name="iErr">失敗時填錯誤敘述</param>
+    public static bool TryConvertFromString(this Type iType, string iRaw, out object iValue, out string iErr)
+    {
+        iValue = null;
+        iErr = null;
+        if (iType == null) { iErr = "target type is null"; return false; }
+
+        // null 字面值 — reference type 與 Nullable<T> 才允許
+        if (string.Equals(iRaw, "null", StringComparison.OrdinalIgnoreCase))
+        {
+            if (iType.IsValueType && Nullable.GetUnderlyingType(iType) == null)
+            {
+                iErr = $"cannot pass null to value type {iType.FullName}";
+                return false;
+            }
+            iValue = null;
+            return true;
+        }
+
+        if (iType == typeof(string)) { iValue = iRaw; return true; }
+
+        if (iType.IsEnum)
+        {
+            try { iValue = Enum.Parse(iType, iRaw, ignoreCase: true); return true; }
+            catch (Exception e) { iErr = $"enum parse failed: {e.Message}"; return false; }
+        }
+
+        if (iType.IsBool())
+        {
+            if (bool.TryParse(iRaw, out var b)) { iValue = b; return true; }
+            iErr = $"bool parse failed: '{iRaw}'";
+            return false;
+        }
+
+        // 其餘 primitive / Decimal / DateTime → Convert.ChangeType
+        // 物理意義：含 Nullable<T> 時須對 underlying type 做 Convert，再裝箱成 Nullable
+        try
+        {
+            Type underlying = Nullable.GetUnderlyingType(iType) ?? iType;
+            iValue = Convert.ChangeType(iRaw, underlying, System.Globalization.CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch (Exception e)
+        {
+            iErr = $"Convert.ChangeType to {iType.FullName} failed: {e.Message}";
+            return false;
+        }
+    }
     private static List<string> s_TypeFullNames = null;
     public static List<string> GetAllTypeFullNames()
     {

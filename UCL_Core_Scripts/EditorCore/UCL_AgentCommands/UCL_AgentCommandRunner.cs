@@ -141,6 +141,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                     if (token.IsCancellationRequested) break;
                     var c = commands[i];
 
+                    // 區塊職責：把這筆指令登記到 History（讓使用者日後可從 UI 重用 agent 送來的指令）
+                    // 物理意義：UI 端的 Add 路徑已會直接 Record(source=Manual)；這裡補的是
+                    //          外部寫入 queue.json（Python wrapper / 手寫 / agent submit）這條路徑。
+                    //          Record 內部會以 Type+Args 簽章 dedup，所以不會灌爆 History。
+                    // 數值影響：寫 History/<Id>.json — 讀 queue 時若是相同簽章，只會 bump UseCount
+                    //          且不會覆寫已存在的 Source 欄位（避免「Manual」紀錄被改成「Agent」）。
+                    UCL_AgentCommandHistory.Record(c.Type, c.Mode, c.Args, c.Description, source: "Agent");
+
                     var handler = UCL_AgentCommandRegistry.Get(c.Type);
                     if (handler == null)
                     {

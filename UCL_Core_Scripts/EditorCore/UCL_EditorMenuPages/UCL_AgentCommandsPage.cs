@@ -57,14 +57,40 @@ namespace UCL.Core.EditorLib.Page
         // ==== 顯示用快取（每幀重讀檔太重，只在按下 Refresh 時更新）====
         UCL_AgentCommandQueueData m_Cached;
 
+        // ==== Templates / History UI 狀態 ====
+        // 區塊職責：紀錄兩個展開區塊的展開/隱藏狀態、搜尋字串、清理參數、以及檔案快取
+        // 物理意義：避免每幀掃 Templates/ 與 History/ 資料夾 — 只有按下對應 Refresh 才重讀
+        // 數值影響：m_HistoryCache / m_TemplateCache 為純顯示用快取，操作型動作（Add/Delete）後立即重整
+        bool m_ShowTemplates = false;                                  // Templates 區塊是否展開
+        bool m_ShowHistory = false;                                    // History 區塊是否展開
+        string m_TemplateSearch = "";                                  // Templates 搜尋關鍵字
+        string m_HistorySearch = "";                                   // History 搜尋關鍵字
+        string m_SaveTemplateName = "";                                // 「Save as Template」用的暫存名稱
+        string m_SaveTemplateNotes = "";                               // Template 補充筆記
+        int m_HistoryAgeDays = 30;                                     // 清理「N 天沒重用」的門檻
+        List<UCL_AgentCommandHistoryEntry> m_HistoryCache;             // 最近一次載入的 History 列表
+        List<UCL_AgentCommandTemplate> m_TemplateCache;                // 最近一次載入的 Template 列表
+        Vector2 m_TemplateScroll = Vector2.zero;                       // Templates 區塊內捲動位置
+        Vector2 m_HistoryScroll = Vector2.zero;                        // History 區塊內捲動位置
+
+        // 區塊職責：本頁所有 UI 字串走 UCL_CodeLocalize.Get(key) — 翻譯定義集中於 UCL_CodeLocalize.<lang>.cs
+        // 物理意義：避免在 IMGUI 程式碼中硬編多語字串；新增語系只需動 4 個 lang 檔，不必動 Page
+        // 數值影響：每幀多查一次 dict（O(1)），對 IMGUI 重繪成本可忽略
+        static string L(string key) => UCL_CodeLocalize.Get(key);
+
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 m_Cached = UCL_AgentCommandQueue.Load();
+                // 區塊職責：Refresh 時一併重整 History / Template 快取
+                // 物理意義：使用者按下 Refresh 通常是因為「外部剛動過檔案」，所以兩種 cache 都重抓
+                // 數值影響：純讀檔，不寫
+                m_HistoryCache = null;
+                m_TemplateCache = null;
             }
-            if (GUILayout.Button("Run Pending Commands", UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(L("AgentCmd.RunPending"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
             {
                 UCL_AgentCommandRunner.Menu_RunPending();
                 DelayedRefresh().Forget();
@@ -73,11 +99,11 @@ namespace UCL.Core.EditorLib.Page
             // 物理意義：失敗的 OneShot 預設會留在 queue（保留 LastRunError 給作者除錯），但若 cmd 本身打錯字
             //          (例 Type 拼錯 → Unknown command type)，留著也只會每次重試都失敗，不如一鍵清掉。
             // 數值影響：寫回 queue.json；不影響任何成功跑過的條目與 Repeatable。
-            if (GUILayout.Button("Clear Failed", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(L("AgentCmd.ClearFailed"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
             {
                 ClearFailedCommands();
             }
-            if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_AgentCommandRunner.Menu_OpenQueueFolder();
             }
@@ -94,7 +120,7 @@ namespace UCL.Core.EditorLib.Page
             // ==== queue.json 路徑提示 ====
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label($"Queue: {UCL_AgentCommandQueue.GetQueuePath()}", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(L("AgentCmd.QueuePath"), UCL_AgentCommandQueue.GetQueuePath()), UCL_GUIStyle.LabelStyle);
             }
 
             // ==== Watcher 狀態列 ====
@@ -120,7 +146,7 @@ namespace UCL.Core.EditorLib.Page
             }
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label($"Total: {total} | OneShot: {oneshot} | Repeatable: {repeatable}",
+                GUILayout.Label(string.Format(L("AgentCmd.Stats"), total, oneshot, repeatable),
                     UCL_GUIStyle.LabelStyle);
             }
 
@@ -136,16 +162,26 @@ namespace UCL.Core.EditorLib.Page
 
             GUILayout.Space(8);
 
+            // ==== Templates / History 兩個可摺疊區塊 ====
+            // 區塊職責：把「指令模板」「歷史指令紀錄」兩種重用機制以摺疊面板呈現
+            // 物理意義：模板 = 預先存好的 Cmd 範本；歷史 = 過去用過的紀錄；兩者都可一鍵載入到 Add Command 表單
+            // 數值影響：Render-only — 載入按鈕會改寫 m_NewMode / m_NewArgsRaw / 表單欄位，但不直接動 queue
+            DrawTemplatesPanel();
+            GUILayout.Space(4);
+            DrawHistoryPanel();
+
+            GUILayout.Space(8);
+
             // ==== 提示 ====
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("Tips", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("- OneShot：成功執行後會直接從 queue 中移除", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("- Repeatable：每次 Run 都會再執行一次，並把 RunCount +1", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("- Run 之前自動 await UCL_ModuleService.WaitUntilInitialized — 確保模組系統已就緒", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("- 失敗的指令會把錯誤訊息寫進 LastRunError 並留在 queue（不會被移除）", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("- Auto-Watcher 啟用時：外部寫入 AgentCommands/pending.trigger 即會自動觸發 Run Pending（無需手動點按鈕）", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("- 想匯出 Cmd 目錄？加一筆 'ExportCommandCatalog' Cmd 即可（不再有獨立按鈕）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tips"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tip_OneShot"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tip_Repeatable"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tip_WaitInit"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tip_FailedKept"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tip_Watcher"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Tip_ExportCatalog"), UCL_GUIStyle.LabelStyle);
             }
 
             GUILayout.EndScrollView();
@@ -160,10 +196,10 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("Commands", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.Commands"), UCL_GUIStyle.LabelStyle);
                 if (m_Cached?.Commands == null || m_Cached.Commands.Count == 0)
                 {
-                    GUILayout.Label("(queue is empty — 從下方挑一個 Command 加入 queue，或直接編輯 queue.json)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(L("AgentCmd.QueueEmpty"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -182,7 +218,7 @@ namespace UCL.Core.EditorLib.Page
                                 UCL_GUIStyle.LabelStyle, GUILayout.Width(220));
                             GUILayout.Label($"({c.Mode}, run×{c.RunCount})", UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
                             GUILayout.FlexibleSpace();
-                            if (GUILayout.Button("Remove", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(L("AgentCmd.Remove"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
                             {
                                 removeIdx = i;
                             }
@@ -227,11 +263,11 @@ namespace UCL.Core.EditorLib.Page
             var handlers = UCL_AgentCommandRegistry.ListHandlers();
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("Add Command", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(L("AgentCmd.AddCommand"), UCL_GUIStyle.LabelStyle);
 
                 if (handlers.Count == 0)
                 {
-                    GUILayout.Label("(尚未註冊任何 Handler — 請寫一個 class 繼承 UCL_AgentCommandHandlerBase)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(L("AgentCmd.NoHandlers"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -247,7 +283,7 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Command:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(L("AgentCmd.Command"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_SelectedCmdIdx = UCL_GUILayout.PopupSearchCache(
                         m_SelectedCmdIdx, displayOptions, m_Dic, "CmdPicker");
                 }
@@ -264,15 +300,15 @@ namespace UCL.Core.EditorLib.Page
                     }
                     if (!string.IsNullOrEmpty(selected.ArgsSchema))
                     {
-                        GUILayout.Label($"  Args Schema: {selected.ArgsSchema}", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label(string.Format(L("AgentCmd.ArgsSchema"), selected.ArgsSchema), UCL_GUIStyle.LabelStyle);
                     }
                     if (!string.IsNullOrEmpty(selected.ExampleArgs))
                     {
-                        GUILayout.Label($"  Example: {selected.ExampleArgs}", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label(string.Format(L("AgentCmd.Example"), selected.ExampleArgs), UCL_GUIStyle.LabelStyle);
                     }
                     if (!string.IsNullOrEmpty(selected.HelpURL))
                     {
-                        if (GUILayout.Button("查看說明", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(L("AgentCmd.ViewHelp"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             Application.OpenURL(UCL_URL.ResolveURL(selected.HelpURL));
                         }
@@ -282,7 +318,7 @@ namespace UCL.Core.EditorLib.Page
                 // Mode / Description / Args 表單欄位
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Mode:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(L("AgentCmd.Mode"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     if (GUILayout.Toggle(m_NewMode == UCL_AgentCommandMode.OneShot, "OneShot", UCL_GUIStyle.ButtonStyle))
                         m_NewMode = UCL_AgentCommandMode.OneShot;
                     if (GUILayout.Toggle(m_NewMode == UCL_AgentCommandMode.Repeatable, "Repeatable", UCL_GUIStyle.ButtonStyle))
@@ -291,22 +327,22 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Description:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(L("AgentCmd.Description"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_NewDescription = GUILayout.TextField(m_NewDescription ?? "", UCL_GUIStyle.TextFieldStyle);
                 }
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Args:", UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(L("AgentCmd.Args"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_NewArgsRaw = GUILayout.TextField(m_NewArgsRaw ?? "", UCL_GUIStyle.TextFieldStyle);
-                    GUILayout.Label("(format: k=v;k=v)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(L("AgentCmd.ArgsFormat"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     // 區塊職責：將選定 handler 的 ExampleArgs 一鍵塞進 Args 欄位
                     // 物理意義：人類使用者測試新 Cmd 時不必查文件就能看到可直接執行的參數樣本
                     // 數值影響：覆寫 m_NewArgsRaw；不修改 queue
                     bool hasExample = !string.IsNullOrEmpty(selected.ExampleArgs);
                     using (new UnityEditor.EditorGUI.DisabledScope(!hasExample))
                     {
-                        if (GUILayout.Button("Fill Example", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(L("AgentCmd.FillExample"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             m_NewArgsRaw = selected.ExampleArgs;
                             GUI.FocusControl(null);
@@ -314,14 +350,479 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
-                if (GUILayout.Button($"Add '{selected.CommandType}' ({m_NewMode})",
-                    UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                using (new GUILayout.HorizontalScope())
                 {
-                    AddCommand(selected.CommandType, m_NewMode, m_NewDescription, ParseArgsRaw(m_NewArgsRaw));
-                    // 清空僅與本次新增有關的欄位（保留 Mode / 選定的 Command 方便連續新增）
-                    m_NewDescription = "";
-                    m_NewArgsRaw = "";
+                    if (GUILayout.Button(string.Format(L("AgentCmd.AddButton"), selected.CommandType, m_NewMode),
+                        UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    {
+                        AddCommand(selected.CommandType, m_NewMode, m_NewDescription, ParseArgsRaw(m_NewArgsRaw), source: "Manual");
+                        // 清空僅與本次新增有關的欄位（保留 Mode / 選定的 Command 方便連續新增）
+                        m_NewDescription = "";
+                        m_NewArgsRaw = "";
+                    }
+
+                    GUILayout.Space(12);
+
+                    // 區塊職責：把當前表單存成模板（Name 欄位空 → 用 Type 當預設名稱）
+                    // 物理意義：使用者可把常用組合一鍵存檔，下次到 Templates 面板挑回來即可重用
+                    // 數值影響：寫入 AgentCommands/Templates/<Name>.json；不影響 queue
+                    GUILayout.Label(L("AgentCmd.SaveTemplateName"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    m_SaveTemplateName = GUILayout.TextField(m_SaveTemplateName ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(160));
+                    if (GUILayout.Button(L("AgentCmd.SaveTemplate"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
+                    {
+                        string name = string.IsNullOrWhiteSpace(m_SaveTemplateName) ? selected.CommandType : m_SaveTemplateName.Trim();
+                        SaveCurrentAsTemplate(name, selected.CommandType);
+                        m_SaveTemplateName = "";
+                    }
                 }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 區塊職責：Template 補充筆記欄位
+                    // 物理意義：給人類讀的「為什麼存這個模板」說明；Save Template 時一併寫入 .json 的 Notes 欄位
+                    // 數值影響：純 UI 寬度調整 — 各語系字長不同，給到 140px 是兼容 zh-Hant / en 的安全值
+                    GUILayout.Label(L("AgentCmd.TemplateNotes"), UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
+                    m_SaveTemplateNotes = GUILayout.TextField(m_SaveTemplateNotes ?? "", UCL_GUIStyle.TextFieldStyle);
+                }
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Templates 面板
+        // 職責：列出 AgentCommands/Templates/*.json，可搜尋、套用到表單、刪除
+        // 物理意義：模板 = 凍結的指令配方；按 Apply 會把 Type / Mode / Args / Description 填回表單，
+        //          但不會自動 Add 進 queue —— 使用者再決定送出時機
+        // 數值影響：Apply 改寫 m_New* 系列欄位；Delete 立刻刪 .json 檔
+        // ===========================================================
+        void DrawTemplatesPanel()
+        {
+            // 區塊職責：折疊狀態下也載入快取一次，讓 header 計數即時正確
+            // 物理意義：之前在折疊狀態下 m_TemplateCache 為 null → 顯示 "0 saved" 是假的
+            // 數值影響：第一次 paint 做一次 LoadAll；之後靠快取（操作後手動 invalidate 才會重抓）
+            if (m_TemplateCache == null) m_TemplateCache = UCL_AgentCommandTemplateStore.LoadAll();
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 區塊職責：摺疊開關 — 用 button 形式而非 CheckBox 呈現「▼ / ▶」感覺
+                    // 物理意義：把面板往下展開或收起；展開時才掃資料夾
+                    if (GUILayout.Button((m_ShowTemplates ? "▼" : "▶") + " " + L("AgentCmd.Templates"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_ShowTemplates = !m_ShowTemplates;
+                        // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
+                    }
+                    GUILayout.Label(string.Format(L("AgentCmd.TemplatesCount"), m_TemplateCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                    if (m_ShowTemplates)
+                    {
+                        if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            m_TemplateCache = null;
+                        }
+                        if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            UCL_AgentCommandTemplateStore.EnsureDir();
+                            UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandTemplateStore.GetTemplatesDir());
+                        }
+                    }
+                }
+
+                if (!m_ShowTemplates) return;
+
+                if (m_TemplateCache == null)
+                {
+                    m_TemplateCache = UCL_AgentCommandTemplateStore.LoadAll();
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(L("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    m_TemplateSearch = GUILayout.TextField(m_TemplateSearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    if (GUILayout.Button(L("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_TemplateSearch = "";
+                        GUI.FocusControl(null);
+                    }
+                }
+
+                var visible = string.IsNullOrWhiteSpace(m_TemplateSearch)
+                    ? m_TemplateCache
+                    : m_TemplateCache.Where(t => MatchesTemplate(t, m_TemplateSearch.Trim().ToLowerInvariant())).ToList();
+
+                if (visible.Count == 0)
+                {
+                    GUILayout.Label(L("AgentCmd.NoTemplates"), UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
+                m_TemplateScroll = GUILayout.BeginScrollView(m_TemplateScroll, GUILayout.MaxHeight(220));
+                string deleteName = null;
+                foreach (var t in visible)
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"<b>{t.Name}</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
+                            GUILayout.Label($"{t.Type} ({t.Mode})", UCL_GUIStyle.LabelStyle, GUILayout.Width(260));
+                            GUILayout.FlexibleSpace();
+                            if (GUILayout.Button(L("AgentCmd.ApplyToForm"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                            {
+                                ApplyTemplateToForm(t);
+                            }
+                            if (GUILayout.Button(L("AgentCmd.AddToQueue"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                            {
+                                AddCommand(t.Type, t.Mode, t.Description, t.Args == null ? null : new Dictionary<string, string>(t.Args), source: $"Template:{t.Name}");
+                                UCL_AgentCommandTemplateStore.TouchLastUsed(t.Name);
+                                m_TemplateCache = null;
+                            }
+                            if (GUILayout.Button(L("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                            {
+                                deleteName = t.Name;
+                            }
+                        }
+                        if (!string.IsNullOrEmpty(t.Description))
+                        {
+                            GUILayout.Label($"  Desc: {t.Description}", UCL_GUIStyle.LabelStyle);
+                        }
+                        if (t.Args != null && t.Args.Count > 0)
+                        {
+                            GUILayout.Label($"  Args: {string.Join(", ", t.Args.Select(kv => $"{kv.Key}={kv.Value}"))}", UCL_GUIStyle.LabelStyle);
+                        }
+                        if (!string.IsNullOrEmpty(t.Notes))
+                        {
+                            GUILayout.Label($"  Notes: {t.Notes}", UCL_GUIStyle.LabelStyle);
+                        }
+                        GUILayout.Label($"  LastUsed: {t.LastUsedAt ?? t.CreatedAt}", UCL_GUIStyle.LabelStyle);
+                    }
+                }
+                GUILayout.EndScrollView();
+
+                if (!string.IsNullOrEmpty(deleteName))
+                {
+                    if (UCL_AgentCommandTemplateStore.Delete(deleteName))
+                    {
+                        Debug.Log($"[UCL_AgentCmd UI] Deleted template '{deleteName}'.");
+                        m_TemplateCache = null;
+                    }
+                }
+            }
+        }
+
+        static bool MatchesTemplate(UCL_AgentCommandTemplate t, string lowerKeyword)
+        {
+            if (Contains(t.Name, lowerKeyword)) return true;
+            if (Contains(t.Type, lowerKeyword)) return true;
+            if (Contains(t.Description, lowerKeyword)) return true;
+            if (Contains(t.Notes, lowerKeyword)) return true;
+            if (t.Args != null)
+            {
+                foreach (var kv in t.Args)
+                {
+                    if (Contains(kv.Key, lowerKeyword)) return true;
+                    if (Contains(kv.Value, lowerKeyword)) return true;
+                }
+            }
+            return false;
+        }
+
+        static bool Contains(string s, string lowerKeyword)
+        {
+            return !string.IsNullOrEmpty(s) && s.ToLowerInvariant().Contains(lowerKeyword);
+        }
+
+        // ===========================================================
+        // 區塊：History 面板
+        // 職責：列出 AgentCommands/History/*.json，可搜尋、Re-Add、刪除單筆 / 過舊 / 重複
+        // 物理意義：每次按 Add Command 就會記一筆（同簽章自動合併並 +UseCount），
+        //          這份歷史純為「使用者下次想找回某個用過的指令」而生
+        // 數值影響：Re-Add 會把該歷史條目的 Type/Mode/Args 直接送進 queue；刪除類動作直接動 .json
+        // ===========================================================
+        void DrawHistoryPanel()
+        {
+            // 區塊職責：折疊狀態下也載入快取一次，讓 header 計數即時正確
+            // 物理意義：之前在折疊狀態下 m_HistoryCache 為 null → 顯示 "0 entries" 是假的
+            //          其實 Agent 透過 Runner 已經寫了一堆，使用者卻看不到正確數字
+            // 數值影響：第一次 paint 做一次 LoadAll；之後靠快取（操作後手動 invalidate 才會重抓）
+            if (m_HistoryCache == null) m_HistoryCache = UCL_AgentCommandHistory.LoadAll();
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button((m_ShowHistory ? "▼" : "▶") + " " + L("AgentCmd.History"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_ShowHistory = !m_ShowHistory;
+                        // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
+                    }
+                    GUILayout.Label(string.Format(L("AgentCmd.HistoryCount"), m_HistoryCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                    if (m_ShowHistory)
+                    {
+                        if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            m_HistoryCache = null;
+                        }
+                        if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            UCL_AgentCommandHistory.EnsureDir();
+                            UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandHistory.GetHistoryDir());
+                        }
+                    }
+                }
+
+                if (!m_ShowHistory) return;
+
+                if (m_HistoryCache == null)
+                {
+                    m_HistoryCache = UCL_AgentCommandHistory.LoadAll();
+                }
+
+                // ---- 搜尋 + 清理工具列 ----
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(L("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    m_HistorySearch = GUILayout.TextField(m_HistorySearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    if (GUILayout.Button(L("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_HistorySearch = "";
+                        GUI.FocusControl(null);
+                    }
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 區塊職責：History 清理工具列 — 標籤寬度需容下不同語系字長
+                    // 物理意義：90 / 150 是兼容 zh-Hant / en / ja 的安全寬度；數字輸入 50px 即可
+                    GUILayout.Label(L("AgentCmd.Cleanup"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
+                    GUILayout.Label(L("AgentCmd.OlderThanDays"), UCL_GUIStyle.LabelStyle, GUILayout.Width(150));
+                    string daysText = GUILayout.TextField(m_HistoryAgeDays.ToString(), UCL_GUIStyle.TextFieldStyle, GUILayout.Width(50));
+                    if (int.TryParse(daysText, out var d) && d >= 0) m_HistoryAgeDays = d;
+
+                    if (GUILayout.Button(L("AgentCmd.DeleteOlder"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    {
+                        int n = UCL_AgentCommandHistory.DeleteOlderThan(m_HistoryAgeDays);
+                        Debug.Log($"[UCL_AgentCmd UI] Deleted {n} history entries older than {m_HistoryAgeDays} days.");
+                        m_HistoryCache = null;
+                    }
+                    if (GUILayout.Button(L("AgentCmd.Dedupe"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    {
+                        int n = UCL_AgentCommandHistory.DeleteDuplicates();
+                        Debug.Log($"[UCL_AgentCmd UI] Deleted {n} duplicate history entries.");
+                        m_HistoryCache = null;
+                    }
+                    if (GUILayout.Button(L("AgentCmd.ClearAll"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                    {
+                        // 區塊職責：清空整個 History 資料夾（不可逆）
+                        // 物理意義：危險動作，所以加 Editor 級確認 dialog；即使外部 Page 被自動 Repaint 也不會誤觸
+                        // 數值影響：實際刪檔；按取消則完全 no-op
+                        if (UnityEditor.EditorUtility.DisplayDialog(
+                                L("AgentCmd.ClearAllConfirmTitle"),
+                                string.Format(L("AgentCmd.ClearAllConfirmBody"), m_HistoryCache?.Count ?? 0),
+                                L("AgentCmd.ConfirmDelete"), L("AgentCmd.ConfirmCancel")))
+                        {
+                            int n = UCL_AgentCommandHistory.Clear();
+                            Debug.Log($"[UCL_AgentCmd UI] Cleared {n} history entries.");
+                            m_HistoryCache = null;
+                        }
+                    }
+                }
+
+                var visible = string.IsNullOrWhiteSpace(m_HistorySearch)
+                    ? m_HistoryCache
+                    : m_HistoryCache.Where(e => MatchesHistory(e, m_HistorySearch.Trim().ToLowerInvariant())).ToList();
+
+                if (visible.Count == 0)
+                {
+                    GUILayout.Label(L("AgentCmd.NoHistory"), UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
+                m_HistoryScroll = GUILayout.BeginScrollView(m_HistoryScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
+                string deleteId = null;
+                foreach (var e in visible)
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"<b>{e.Type}</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(220));
+                            GUILayout.Label($"({e.Mode}, ×{e.UseCount})", UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
+                            GUILayout.Label($"src: {e.Source ?? "?"}", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
+                            GUILayout.FlexibleSpace();
+                            if (GUILayout.Button(L("AgentCmd.ApplyToForm"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                ApplyHistoryToForm(e);
+                            }
+                            if (GUILayout.Button(L("AgentCmd.ReAdd"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                            {
+                                AddCommand(e.Type, e.Mode, e.Description, e.Args == null ? null : new Dictionary<string, string>(e.Args), source: $"History:{e.Id}");
+                                m_HistoryCache = null;
+                            }
+                            // 區塊職責：把這筆歷史轉存為模板（一鍵）
+                            // 物理意義：使用者用過某個 cmd 後想常駐重用 → 不必到 Add Command 區塊重填，直接轉存
+                            // 數值影響：寫一個新的 Templates/<Name>.json；同名衝突會自動加 _2 / _3 後綴
+                            if (GUILayout.Button(L("AgentCmd.ToTemplate"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
+                            {
+                                ConvertHistoryToTemplate(e);
+                            }
+                            if (GUILayout.Button(L("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                            {
+                                deleteId = e.Id;
+                            }
+                        }
+                        GUILayout.Label($"  Id: <i>{e.Id}</i>", UCL_GUIStyle.LabelStyle);
+                        if (!string.IsNullOrEmpty(e.Description))
+                        {
+                            GUILayout.Label($"  Desc: {e.Description}", UCL_GUIStyle.LabelStyle);
+                        }
+                        if (e.Args != null && e.Args.Count > 0)
+                        {
+                            GUILayout.Label($"  Args: {string.Join(", ", e.Args.Select(kv => $"{kv.Key}={kv.Value}"))}", UCL_GUIStyle.LabelStyle);
+                        }
+                        GUILayout.Label($"  Created: {e.CreatedAt}  |  LastUsed: {e.LastUsedAt}", UCL_GUIStyle.LabelStyle);
+                    }
+                }
+                GUILayout.EndScrollView();
+
+                if (!string.IsNullOrEmpty(deleteId))
+                {
+                    if (UCL_AgentCommandHistory.Delete(deleteId))
+                    {
+                        Debug.Log($"[UCL_AgentCmd UI] Deleted history entry '{deleteId}'.");
+                        m_HistoryCache = null;
+                    }
+                }
+            }
+        }
+
+        static bool MatchesHistory(UCL_AgentCommandHistoryEntry e, string lowerKeyword)
+        {
+            if (Contains(e.Type, lowerKeyword)) return true;
+            if (Contains(e.Description, lowerKeyword)) return true;
+            if (Contains(e.Source, lowerKeyword)) return true;
+            if (e.Args != null)
+            {
+                foreach (var kv in e.Args)
+                {
+                    if (Contains(kv.Key, lowerKeyword)) return true;
+                    if (Contains(kv.Value, lowerKeyword)) return true;
+                }
+            }
+            return false;
+        }
+
+        // ===========================================================
+        // 區塊：Apply / Save 行為
+        // 物理意義：把 Template / History 的內容轉寫到表單 m_New* 欄位，並嘗試把 PopupSearchCache 對到正確 handler
+        //          Save：把當前表單寫成模板 .json
+        // 數值影響：Apply 純改 UI 狀態；Save 寫入 Templates/<Name>.json
+        // ===========================================================
+
+        void ApplyTemplateToForm(UCL_AgentCommandTemplate t)
+        {
+            if (t == null) return;
+            SyncSelectedHandlerByType(t.Type);
+            m_NewMode = t.Mode;
+            m_NewDescription = t.Description ?? "";
+            m_NewArgsRaw = ArgsToRaw(t.Args);
+            m_SaveTemplateName = t.Name;
+            m_SaveTemplateNotes = t.Notes ?? "";
+            UCL_AgentCommandTemplateStore.TouchLastUsed(t.Name);
+            m_TemplateCache = null;
+            GUI.FocusControl(null);
+        }
+
+        void ApplyHistoryToForm(UCL_AgentCommandHistoryEntry e)
+        {
+            if (e == null) return;
+            SyncSelectedHandlerByType(e.Type);
+            m_NewMode = e.Mode;
+            m_NewDescription = e.Description ?? "";
+            m_NewArgsRaw = ArgsToRaw(e.Args);
+            GUI.FocusControl(null);
+        }
+
+        void SyncSelectedHandlerByType(string type)
+        {
+            // 區塊職責：依字串 Type 找到對應 handler 在 ListHandlers() 的索引
+            // 物理意義：使用者按 Apply 後 PopupSearchCache 應該自動切到那個指令；找不到則維持原索引（不報錯）
+            // 數值影響：m_SelectedCmdIdx 可能被覆寫；m_Dic 強制清掉相關 cache 讓下拉重新取值
+            if (string.IsNullOrEmpty(type)) return;
+            var handlers = UCL_AgentCommandRegistry.ListHandlers();
+            for (int i = 0; i < handlers.Count; i++)
+            {
+                if (string.Equals(handlers[i].CommandType, type, StringComparison.Ordinal))
+                {
+                    m_SelectedCmdIdx = i;
+                    m_Dic.Clear();
+                    return;
+                }
+            }
+        }
+
+        static string ArgsToRaw(Dictionary<string, string> args)
+        {
+            if (args == null || args.Count == 0) return "";
+            return string.Join(";", args.Select(kv => $"{kv.Key}={kv.Value}"));
+        }
+
+        // 區塊職責：把指定 history 條目一鍵轉存為 Template
+        // 物理意義：以 e.Type 作為 Template Name 起始；若已存在同名模板，自動加 _2 / _3 ... 後綴避免覆寫
+        //          Description / Args / Mode 完整繼承過去；Notes 留空（使用者後續可自行補充）
+        // 數值影響：寫一個新 Templates/<finalName>.json；不影響 history 條目本身
+        void ConvertHistoryToTemplate(UCL_AgentCommandHistoryEntry e)
+        {
+            if (e == null) return;
+            string baseName = string.IsNullOrEmpty(e.Type) ? "Template" : e.Type;
+            string finalName = baseName;
+            int suffix = 2;
+            // 區塊職責：name collision 處理迴圈 — 最多嘗試 99 次以防壞輸入導致無限迴圈
+            // 物理意義：99 個同 Type 模板已是極端病態場景，超過時直接 fail 並印 log
+            // 數值影響：純讀取 Templates/ 資料夾以判斷檔案存在
+            while (UCL_AgentCommandTemplateStore.Load(finalName) != null && suffix < 100)
+            {
+                finalName = $"{baseName}_{suffix}";
+                suffix++;
+            }
+            var t = new UCL_AgentCommandTemplate
+            {
+                Name = finalName,
+                Type = e.Type,
+                Mode = e.Mode,
+                Args = e.Args == null ? new Dictionary<string, string>() : new Dictionary<string, string>(e.Args),
+                Description = e.Description,
+                Notes = null,
+            };
+            if (UCL_AgentCommandTemplateStore.Save(t))
+            {
+                Debug.Log($"[UCL_AgentCmd UI] Converted history → template '{finalName}' (Type={t.Type}, Mode={t.Mode}).");
+                m_TemplateCache = null;
+            }
+        }
+
+        void SaveCurrentAsTemplate(string name, string fallbackType)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                Debug.LogWarning("[UCL_AgentCmd UI] Save Template aborted: name is empty.");
+                return;
+            }
+            var t = new UCL_AgentCommandTemplate
+            {
+                Name = name.Trim(),
+                Type = fallbackType,
+                Mode = m_NewMode,
+                Args = ParseArgsRaw(m_NewArgsRaw),
+                Description = string.IsNullOrEmpty(m_NewDescription) ? null : m_NewDescription,
+                Notes = string.IsNullOrEmpty(m_SaveTemplateNotes) ? null : m_SaveTemplateNotes,
+            };
+            if (UCL_AgentCommandTemplateStore.Save(t))
+            {
+                Debug.Log($"[UCL_AgentCmd UI] Saved template '{t.Name}' (Type={t.Type}, Mode={t.Mode}).");
+                m_SaveTemplateNotes = "";
+                m_TemplateCache = null;
             }
         }
 
@@ -339,7 +840,7 @@ namespace UCL.Core.EditorLib.Page
                 //          原生 GUILayout.Toggle + LabelStyle（Workflow §7 地雷 1：傳 LabelStyle 會讓
                 //          toggle 圖示失效、熱區壞掉，使用者根本點不到 → 永遠停在預設狀態）
                 bool prevEnabled = UCL_AgentCommandWatcher.Enabled;
-                bool newEnabled = UCL_GUILayout.CheckBox(prevEnabled, "Auto-Watcher");
+                bool newEnabled = UCL_GUILayout.CheckBox(prevEnabled, L("AgentCmd.AutoWatcher"));
                 if (newEnabled != prevEnabled)
                 {
                     UCL_AgentCommandWatcher.Enabled = newEnabled;
@@ -356,13 +857,13 @@ namespace UCL.Core.EditorLib.Page
                     UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
 
                 var last = UCL_AgentCommandWatcher.LastTriggerAt;
-                string lastText = last == DateTime.MinValue ? "(never)" : last.ToString("HH:mm:ss");
-                GUILayout.Label($"Last trigger: {lastText}", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
+                string lastText = last == DateTime.MinValue ? L("AgentCmd.Never") : last.ToString("HH:mm:ss");
+                GUILayout.Label(string.Format(L("AgentCmd.LastTrigger"), lastText), UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
 
                 GUILayout.FlexibleSpace();
 
                 // 給人類測試 watcher 的便利按鈕：手動寫一個 pending.trigger
-                if (GUILayout.Button("Simulate Trigger", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(L("AgentCmd.SimulateTrigger"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     UCL_AgentCommandTrigger.CreatePending("editor-simulate");
                 }
@@ -410,7 +911,11 @@ namespace UCL.Core.EditorLib.Page
             Debug.Log($"[UCL_AgentCmd UI] Cleared {removed} failed cmd(s) from queue (kept {m_Cached.Commands.Count}).");
         }
 
-        void AddCommand(string type, UCL_AgentCommandMode mode, string description, Dictionary<string, string> args)
+        // 區塊職責：把表單 / 模板 / 歷史的指令送進 queue，並把這次操作寫進 History
+        // 物理意義：source 標籤紀錄這次「Add 動作的來源」 — Manual / Template:foo / History:id
+        //          History.Record 內部會以 Type+Args 簽章自動合併 → 不會灌爆歷史資料夾
+        // 數值影響：寫 queue.json + 寫 / 更新 History/<id>.json
+        void AddCommand(string type, UCL_AgentCommandMode mode, string description, Dictionary<string, string> args, string source = "Manual")
         {
             if (string.IsNullOrEmpty(type))
             {
@@ -420,19 +925,25 @@ namespace UCL.Core.EditorLib.Page
             if (m_Cached == null) m_Cached = new UCL_AgentCommandQueueData();
             if (m_Cached.Commands == null) m_Cached.Commands = new List<UCL_AgentCommand>();
 
+            var safeArgs = args ?? new Dictionary<string, string>();
             var c = new UCL_AgentCommand
             {
                 Id = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{type.ToLower()}",
                 Type = type,
                 Mode = mode,
                 RunCount = 0,
-                Args = args ?? new Dictionary<string, string>(),
+                Args = safeArgs,
                 CreatedAt = DateTime.UtcNow.ToString("o"),
                 Description = string.IsNullOrEmpty(description) ? null : description,
             };
             m_Cached.Commands.Add(c);
             UCL_AgentCommandQueue.Save(m_Cached);
-            Debug.Log($"[UCL_AgentCmd UI] Added command: {c.Type} (id={c.Id}, mode={c.Mode})");
+
+            // 寫入 / 重用 History（以管理層 API 操作，Page 不直接動檔）
+            UCL_AgentCommandHistory.Record(type, mode, safeArgs, description, source);
+            m_HistoryCache = null;
+
+            Debug.Log($"[UCL_AgentCmd UI] Added command: {c.Type} (id={c.Id}, mode={c.Mode}, source={source})");
         }
 
         static Dictionary<string, string> ParseArgsRaw(string raw)

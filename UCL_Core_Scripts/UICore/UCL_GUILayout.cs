@@ -455,6 +455,23 @@ namespace UCL.Core.UI {
 
             return iVal;
         }
+        /// <summary>
+        /// CheckBox + 右側 label（盒在左、字在右）— 兩者皆吃 UCL_GUIStyle 的 DPI <c>Scale</c>。
+        /// 與 <see cref="Toggle(UCL_ObjectDictionary,string,string,int,int)"/> 同形但用 ✔/空 而非 ▼/►。
+        /// 不需要 <c>UCL_ObjectDictionary</c>，呼叫端自持 bool 欄位即可。
+        /// </summary>
+        /// <param name="iVal">當前勾選狀態</param>
+        /// <param name="iLabel">右側顯示文字（透過 <see cref="LabelAutoSize(string,int)"/> 渲染，自動套 DPI 縮放）</param>
+        /// <param name="iSize">勾選盒邊長（預設 21）</param>
+        /// <param name="iLabelSize">label 字級（預設 16）</param>
+        static public bool CheckBox(bool iVal, string iLabel, int iSize = 21, int iLabelSize = 16)
+        {
+            GUILayout.BeginHorizontal();
+            iVal = CheckBox(iVal, iSize);
+            LabelAutoSize(iLabel, iLabelSize);
+            GUILayout.EndHorizontal();
+            return iVal;
+        }
         static public void DrawCopyPaste(UCL.Core.JsonLib.IJsonSerializable iTarget)
         {
             if (GUILayout.Button("Copy", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))

@@ -87,7 +87,8 @@ tags: [api, ui, imgui, editor]
 | `Toggle(value, size)` | 顯示 `▼` / `►`（折疊圖示語意） |
 | `Toggle(dic, key, ...)` | 同上但用 `UCL_ObjectDictionary` 持有狀態 |
 | `BoolField(value, size)` / `BoolField(dic, key, size, default)` | 顯示 `✔` / 空 |
-| `CheckBox(value, size)` | 標準 checkbox |
+| `CheckBox(value, size)` | 標準 checkbox（無 label） |
+| `CheckBox(value, label, size, labelSize)` | checkbox + 右側 label，盒與字皆吃 DPI `Scale`（取代原生 `GUILayout.Toggle` 在 hi-DPI 下小到看不清的問題） |
 | `Slider(label, value, min, max, dic)` | 滑條 + 數字輸入 + 同步 |
 | `Vector2Field` / `Vector3Field` / `VectorField` | 向量分量編輯（含 IntVec 變體） |
 | `DrawSprite(sprite, ...)` / `DrawTexture(tex, ...)` / `GraphicsDrawTexture(...)` | 繪圖（普通版 / Graphics.DrawTexture 支援自訂 Material） |

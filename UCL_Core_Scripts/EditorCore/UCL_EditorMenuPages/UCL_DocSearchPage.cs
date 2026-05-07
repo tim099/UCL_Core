@@ -40,27 +40,20 @@ namespace UCL.Core.EditorLib.Page
         string m_SynonymsPath = "Docs/_synonyms.txt";   // 預設位置，與 Cmd_SearchDocs 一致
         bool m_ShowAdvanced = false;
 
-        Vector2 m_Scroll = Vector2.zero;
-
-        // 區塊職責：snippet 顯示專用樣式 — 換行 + rich-text 高亮（&lt;color&gt;&lt;b&gt;）
-        // 物理意義：Engine 端把命中字以 IMGUI rich-text tag 包起來，這裡保證 GUIStyle 能解析並換行
-        // 數值影響：lazy 建立、整個 page 共用一份，避免每筆結果 row new 一個 GUIStyle
+        // 區塊職責：頁內共用 GUIStyle 集中地（lazy 建立）— 避免每幀每 row new 一份
+        // 物理意義：照 Workflow §5.1 + §7 地雷 5 的建議；snippet / title 兩種派生自 LabelStyle
+        // 數值影響：每個 style 只建一次，重繪 0 額外配置
         GUIStyle m_SnippetStyle;
-        GUIStyle SnippetStyle
+        GUIStyle m_TitleStyle;
+        GUIStyle SnippetStyle => m_SnippetStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
         {
-            get
-            {
-                if (m_SnippetStyle == null)
-                {
-                    m_SnippetStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
-                    {
-                        wordWrap = true,
-                        richText = true,
-                    };
-                }
-                return m_SnippetStyle;
-            }
-        }
+            wordWrap = true,
+            richText = true,
+        };
+        GUIStyle TitleStyle => m_TitleStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
+        {
+            fontStyle = FontStyle.Bold,
+        };
 
         public static UCL_DocSearchPage Create()
         {
@@ -69,18 +62,16 @@ namespace UCL.Core.EditorLib.Page
 
         // ===========================================================
         // 主流程
+        // 物理意義：依 Workflow §7 地雷 2，base UCL_EditorPage.OnGUI 已用 ScrollViewScope
+        //          包好 ContentOnGUI，這裡**不要**再開一層內嵌 ScrollView（會雙捲軸）
         // ===========================================================
         protected override void ContentOnGUI()
         {
-            m_Scroll = GUILayout.BeginScrollView(m_Scroll);
-
             DrawSearchInput();
             GUILayout.Space(4);
             DrawAdvancedOptions();
             GUILayout.Space(4);
             DrawResults();
-
-            GUILayout.EndScrollView();
         }
 
         // ===========================================================
@@ -135,8 +126,14 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                m_ShowAdvanced = GUILayout.Toggle(m_ShowAdvanced,
-                    UCL_CodeLocalize.Get("DocSearch.Advanced"));
+                // 區塊職責：折疊頭用 UCL_GUILayout.Toggle(bool, size) 顯示 ▼/►
+                // 物理意義：Workflow §5 表 + UCL_GUILayout Overview §3.1 — fold 圖示比 checkbox 更貼近語意
+                using (new GUILayout.HorizontalScope())
+                {
+                    m_ShowAdvanced = UCL_GUILayout.Toggle(m_ShowAdvanced, 16);
+                    GUILayout.Label(UCL_CodeLocalize.Get("DocSearch.Advanced"), UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
                 if (!m_ShowAdvanced) return;
 
                 using (new GUILayout.HorizontalScope())
@@ -147,12 +144,15 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Toggle(m_OrMode, "OR", UCL_GUIStyle.ButtonStyle)) m_OrMode = true;
                 }
 
+                // 區塊職責：Limit 同時提供滑條（粗調）+ IntField（精確輸入）
+                // 物理意義：UCL_GUILayout.IntField 內建鍵盤過濾非數字，比 TextField + int.Parse 安全；
+                //          見 UCL_GUILayout Overview §3.1。Mathf.Clamp 確保滑條範圍有效
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("DocSearch.Limit"),
                         UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
                     m_Limit = (int)GUILayout.HorizontalSlider(m_Limit, 5, 100, GUILayout.Width(200));
-                    GUILayout.Label(m_Limit.ToString(), UCL_GUIStyle.LabelStyle, GUILayout.Width(40));
+                    m_Limit = Mathf.Clamp(UCL_GUILayout.IntField(m_Limit, GUILayout.Width(60)), 5, 100);
                 }
 
                 using (new GUILayout.HorizontalScope())
@@ -162,7 +162,10 @@ namespace UCL.Core.EditorLib.Page
                     m_SynonymsPath = GUILayout.TextField(m_SynonymsPath ?? "", UCL_GUIStyle.TextFieldStyle);
                 }
 
-                m_IncludeArchived = GUILayout.Toggle(m_IncludeArchived,
+                // 區塊職責：includeArchived 用 UCL_GUILayout.CheckBox(value, label) — 盒與字皆吃 DPI Scale
+                // 物理意義：原 GUILayout.Toggle 用內建 toggle sprite（小、不縮放），在高 DPI 視窗會看不清；
+                //          UCL_GUIStyle 中央 Scale 才能讓字級與盒大小同步調整
+                m_IncludeArchived = UCL_GUILayout.CheckBox(m_IncludeArchived,
                     UCL_CodeLocalize.Get("DocSearch.IncludeArchived"));
             }
         }
@@ -228,10 +231,11 @@ namespace UCL.Core.EditorLib.Page
 
 
                     GUILayout.Label($"#{idx + 1}", UCL_GUIStyle.LabelStyle, GUILayout.Width(40));
-                    GUILayout.Label($"<color=#FFD37AFF>★ {hit.Score}</color>",
-                        UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
-                    var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
-                    GUILayout.Label(hit.Entry.Title ?? "(no title)", titleStyle);
+                    // 區塊職責：score 用 UCL_GUILayout.Label(name, Color) 直接吃顏色，不用手寫 rich-text
+                    //          見 UCL_GUILayout Overview §3.1
+                    UCL_GUILayout.Label($"★ {hit.Score}", new Color(1f, 0.83f, 0.48f));
+                    // titleStyle 已從每 row new 改為 page 級 cache（§Workflow 地雷 5）
+                    GUILayout.Label(hit.Entry.Title ?? "(no title)", TitleStyle);
                     GUILayout.FlexibleSpace();
 
 

@@ -87,7 +87,8 @@ tags: [api, ui, imgui, editor]
 | `Toggle(value, size)` | `▼` / `►` を表示（折りたたみアイコンのセマンティクス） |
 | `Toggle(dic, key, ...)` | 上に同じ。状態を `UCL_ObjectDictionary` に保持 |
 | `BoolField(value, size)` / `BoolField(dic, key, size, default)` | `✔` / 空 を表示 |
-| `CheckBox(value, size)` | 標準チェックボックス |
+| `CheckBox(value, size)` | 標準チェックボックス（label なし） |
+| `CheckBox(value, label, size, labelSize)` | チェックボックス + 右側 label。ボックスと文字の両方が DPI `Scale` に追従（hi-DPI で小さすぎて読めないネイティブ `GUILayout.Toggle` の代替） |
 | `Slider(label, value, min, max, dic)` | スライダー + 数値入力 + 同期 |
 | `Vector2Field` / `Vector3Field` / `VectorField` | ベクトル成分編集（IntVec バリアント含む） |
 | `DrawSprite(sprite, ...)` / `DrawTexture(tex, ...)` / `GraphicsDrawTexture(...)` | 描画（通常版 / Graphics.DrawTexture でカスタム Material 対応） |

@@ -87,7 +87,8 @@ It is a `partial class` made up of 8 files (plus a standalone `UCL_GUILayoutPain
 | `Toggle(value, size)` | Renders `▼` / `►` (folding-icon semantics) |
 | `Toggle(dic, key, ...)` | Same as above but persists state in `UCL_ObjectDictionary` |
 | `BoolField(value, size)` / `BoolField(dic, key, size, default)` | Renders `✔` / blank |
-| `CheckBox(value, size)` | Standard checkbox |
+| `CheckBox(value, size)` | Standard checkbox (no label) |
+| `CheckBox(value, label, size, labelSize)` | Checkbox + right-side label; both box and text honor the DPI `Scale` (fixes the native `GUILayout.Toggle` being too small to read on hi-DPI displays) |
 | `Slider(label, value, min, max, dic)` | Slider + numeric input + sync |
 | `Vector2Field` / `Vector3Field` / `VectorField` | Per-component vector editing (with IntVec variants) |
 | `DrawSprite(sprite, ...)` / `DrawTexture(tex, ...)` / `GraphicsDrawTexture(...)` | Drawing (plain / Graphics.DrawTexture with custom Material) |

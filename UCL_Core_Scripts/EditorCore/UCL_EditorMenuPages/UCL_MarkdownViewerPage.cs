@@ -21,6 +21,11 @@ namespace UCL.Core.EditorLib.Page
     /// 與 OS 預設 viewer 並存：TopBar 提供 Reveal / OS Open / Copy raw 三顆按鈕，
     /// 這頁的存在價值是「不離開 Unity 視窗就能看 .md」。
     /// </summary>
+    /// <remarks>
+    /// 怎麼開新 EditorPage 見 <c>Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md</c>；
+    /// markdown 渲染流程細節見 §inline format 的順序註解。
+    /// </remarks>
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_MarkdownViewerPage.md")]
     public class UCL_MarkdownViewerPage : UCL_CommonEditorPage
     {
         public override string WindowName => "UCL_MarkdownViewer";

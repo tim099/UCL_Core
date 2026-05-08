@@ -410,11 +410,11 @@ namespace UCL.Core.EditorLib.Page
                 }
                 return;
             }
+            DrawQuestPanel();
+            GUILayout.Space(4);
             DrawMessagesView();
             GUILayout.Space(4);
             DrawInputBar();
-            GUILayout.Space(8);
-            DrawQuestPanel();
         }
 
         // ===========================================================

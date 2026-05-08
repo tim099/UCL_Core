@@ -48,6 +48,10 @@ namespace UCL.Core.EditorLib.Page
 
         // ===== 新建表單 =====
         bool m_ShowCreateRoom = false;
+        bool m_ShowCharMapping = false;
+        // 暫存「+ 新 alias」表單輸入；空 = 還沒填
+        string m_NewAliasFrom = "";
+        string m_NewAliasTo = "";
         string m_NewRoomId = "";
         string m_NewRoomName = "";
         string m_NewRoomDesc = "";
@@ -316,9 +320,10 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：Lookup 並 cache sender 對應的 Sprite（從 UCL_ChatTavernIdentityAsset.m_AvatarSprite 解析）
-        // 物理意義：訊息列表 row 顯示頭像；同 sender 同一 Sprite 重用，避免每幀載入
-        // 數值影響：null = 沒配置或 Asset 不存在，DrawMessageRow 顯示佔位灰框
+        // 區塊職責：Lookup 並 cache sender 對應的 Sprite（透過 UCL_ChatTavernCharacterMapping 三段查找）
+        // 物理意義：sender_id 可能對不上任何 Asset → mapping 表把它導向「真正有 Asset 的」identity_id；
+        //          再不行就用預設 fallback identity（character_mapping.json 的 default_identity_id）。
+        // 數值影響：cache 命中 = 0 IO；miss → mapping load（自帶 mtime cache）+ 一次 ContainsAsset/GetData
         Sprite GetAvatarSprite(string senderId)
         {
             if (string.IsNullOrEmpty(senderId)) return null;
@@ -326,13 +331,25 @@ namespace UCL.Core.EditorLib.Page
             Sprite sp = null;
             try
             {
-                var asset = new UCL_ChatTavernIdentityAsset();
-                if (asset.ContainsAsset(senderId))
+                string resolvedId = UCL_ChatTavernCharacterMapping.ResolveIdentityId(senderId);
+                if (!string.IsNullOrEmpty(resolvedId))
                 {
-                    var ident = asset.GetData(senderId);
-                    if (ident != null && ident.m_AvatarSprite != null)
+                    var asset = new UCL_ChatTavernIdentityAsset();
+                    if (asset.ContainsAsset(resolvedId))
                     {
-                        sp = ident.m_AvatarSprite.Sprite;   // UCL_SpriteAssetEntry.Sprite getter
+                        var ident = asset.GetData(resolvedId);
+                        // 區塊職責：守衛 m_AvatarSprite 為「未設定」狀態
+                        // 物理意義：UCL_SpriteAssetEntry 預設 m_ID = "Default"，沒指定 sprite 時直接讀 .Sprite
+                        //          會去 UCL_Asset 系統查 ID="Default" 的 sprite asset → 不存在 → 噴 exception。
+                        //          每個沒設 avatar 的 identity 都會噴一次（且 OnGUI 每幀重試）
+                        // 數值影響：跳過已知為「空」的 entry，僅在 ID 真的是使用者填過的值才 fetch
+                        var sprEntry = ident?.m_AvatarSprite;
+                        if (sprEntry != null
+                            && !string.IsNullOrEmpty(sprEntry.ID)
+                            && sprEntry.ID != UCL_SpriteAssetEntry.DefaultID)
+                        {
+                            sp = sprEntry.Sprite;
+                        }
                     }
                 }
             }
@@ -356,6 +373,8 @@ namespace UCL.Core.EditorLib.Page
             DrawRoomPicker();
             GUILayout.Space(4);
             DrawIdentityPicker();
+            GUILayout.Space(4);
+            DrawCharacterMappingFoldout();
             GUILayout.Space(8);
 
             if (string.IsNullOrEmpty(m_SelectedRoomId))
@@ -560,6 +579,106 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
 
+        }
+
+        // ===========================================================
+        // 區塊：角色 Mapping foldout — 編輯 character_mapping.json
+        // 物理意義：sender_id 對不上 Asset 時，UI 走三段查找：
+        //   (1) 直接 match → (2) alias 表 → (3) default_identity_id
+        //   本 foldout 提供圖形編輯介面；底層走 UCL_ChatTavernCharacterMapping
+        // ===========================================================
+        void DrawCharacterMappingFoldout()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    string label = m_ShowCharMapping ? "▼ 角色 Mapping" : "▶ 角色 Mapping";
+                    if (GUILayout.Button(label, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_ShowCharMapping = !m_ShowCharMapping;
+                    }
+                    GUILayout.Label("（sender_id 沒對應角色時的 fallback 鏈）", UCL_GUIStyle.LabelStyle);
+                }
+
+                if (!m_ShowCharMapping) return;
+
+                var data = UCL_ChatTavernCharacterMapping.Load();
+                bool dirty = false;
+
+                // default
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Default", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                    string newDefault = GUILayout.TextField(data.default_identity_id ?? "", GUILayout.MinWidth(220));
+                    if (newDefault != (data.default_identity_id ?? ""))
+                    {
+                        data.default_identity_id = newDefault;
+                        dirty = true;
+                    }
+                    GUILayout.Label("（建議用已建 Identity Asset 的 id）", UCL_GUIStyle.LabelStyle);
+                }
+
+                GUILayout.Space(4);
+                GUILayout.Label("Aliases（sender_id → identity_id）：", UCL_GUIStyle.LabelStyle);
+
+                if (data.aliases != null)
+                {
+                    int removeIndex = -1;
+                    for (int i = 0; i < data.aliases.Count; i++)
+                    {
+                        var entry = data.aliases[i];
+                        if (entry == null) continue;
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            string newFrom = GUILayout.TextField(entry.from ?? "", GUILayout.MinWidth(180));
+                            GUILayout.Label("→", UCL_GUIStyle.LabelStyle, GUILayout.Width(20));
+                            string newTo = GUILayout.TextField(entry.to ?? "", GUILayout.MinWidth(180));
+                            if (newFrom != (entry.from ?? "") || newTo != (entry.to ?? ""))
+                            {
+                                entry.from = newFrom;
+                                entry.to = newTo;
+                                dirty = true;
+                            }
+                            if (GUILayout.Button("✕", UCL_GUIStyle.ButtonStyle, GUILayout.Width(28)))
+                            {
+                                removeIndex = i;
+                            }
+                        }
+                    }
+                    if (removeIndex >= 0)
+                    {
+                        data.aliases.RemoveAt(removeIndex);
+                        dirty = true;
+                    }
+                }
+
+                // 新增 alias 表單
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("+ 新 alias", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                    m_NewAliasFrom = GUILayout.TextField(m_NewAliasFrom ?? "", GUILayout.MinWidth(180));
+                    GUILayout.Label("→", UCL_GUIStyle.LabelStyle, GUILayout.Width(20));
+                    m_NewAliasTo = GUILayout.TextField(m_NewAliasTo ?? "", GUILayout.MinWidth(180));
+                    bool canAdd = !string.IsNullOrWhiteSpace(m_NewAliasFrom) && !string.IsNullOrWhiteSpace(m_NewAliasTo);
+                    using (new EditorGUI.DisabledScope(!canAdd))
+                    {
+                        if (GUILayout.Button("Add", UCL_GUIStyle.GetButtonStyle(canAdd ? Color.green : Color.gray), GUILayout.Width(60)))
+                        {
+                            UCL_ChatTavernCharacterMapping.AddOrUpdateAlias(m_NewAliasFrom.Trim(), m_NewAliasTo.Trim());
+                            m_NewAliasFrom = "";
+                            m_NewAliasTo = "";
+                            m_AvatarCache.Clear();
+                        }
+                    }
+                }
+
+                if (dirty)
+                {
+                    UCL_ChatTavernCharacterMapping.Save(data);
+                    m_AvatarCache.Clear();
+                }
+            }
         }
 
         // ===========================================================
@@ -813,6 +932,9 @@ namespace UCL.Core.EditorLib.Page
         {
             RefreshRooms();
             RefreshIdentities();
+            // 清 avatar cache — 別人改了 character mapping 或 identity asset sprite 後，不必重啟頁就生效
+            m_AvatarCache.Clear();
+            UCL_ChatTavernCharacterMapping.InvalidateCache();
             if (!string.IsNullOrEmpty(m_SelectedRoomId))
             {
                 RefreshMessages();
@@ -914,15 +1036,24 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // 區塊職責：Auto-Poll 主迴圈 — 每 PollIntervalSec 重抓 rooms / messages / members
+        // 物理意義：別 agent 透過 Cmd_Tavern 建房 / 改 identities 時，本 Page 不知情；
+        //          靠 polling 偵測 jsonl mtime 變動。三項都 cheap（< 1ms IO）。
+        // 數值影響：rooms 永遠 poll（讓使用者能看到別人剛建的房）；
+        //          messages / members 只在已選中房間才 poll（沒選中沒意義）。
         void HandleAutoPoll()
         {
             if (!m_AutoPoll) return;
-            if (string.IsNullOrEmpty(m_SelectedRoomId)) return;
             double now = UnityEditor.EditorApplication.timeSinceStartup;
             if (now - m_LastPollTime < PollIntervalSec) return;
             m_LastPollTime = now;
-            RefreshMessages();
-            RefreshMembers();
+
+            RefreshRooms();
+            if (!string.IsNullOrEmpty(m_SelectedRoomId))
+            {
+                RefreshMessages();
+                RefreshMembers();
+            }
         }
 
         static string LabeledTextField(string label, string value, float labelWidth)

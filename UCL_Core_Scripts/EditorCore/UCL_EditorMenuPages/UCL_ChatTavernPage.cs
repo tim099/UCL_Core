@@ -130,6 +130,32 @@ namespace UCL.Core.EditorLib.Page
         double m_LastQuestRefreshTime = 0;
         const double QuestRefreshIntervalSec = 2.0;
 
+        // F3 — Quest 統計 7 計數 cache（跟 ComputeTaskStates 同 throttle）
+        // 物理意義：每幀 foreach states.Values 算 done/claimed/in_progress/... 等於 Cache 之上再每幀重做一次 7 條件分類；
+        //          反正 m_QuestStatesCache 自身有 throttle，計數陣列同步 cache 即可
+        // 數值影響：跟 m_QuestStatesCache 同生命週期；refresh 觸發時一起更新
+        int m_QuestCachedTotal, m_QuestCachedDone, m_QuestCachedClaimed, m_QuestCachedInProg,
+            m_QuestCachedReview, m_QuestCachedReady, m_QuestCachedBlocked, m_QuestCachedStale;
+
+        // F2 — DrawMessagesView 標題列 ReadCurrentSeq 結果 cache
+        // 物理意義：標題每幀讀檔 _seq.txt 顯示最新 seq → File.ReadAllText 60Hz IO 純為了畫個數字
+        //          改成 throttle 0.5s 取一次，跟 PollIntervalSec=2.0 / HandshakeCheckIntervalSec=0.5 同精神
+        // 數值影響：使用者最多落後 0.5s 看到新 seq，沒人在意
+        string m_CachedSeqRoom = null;
+        int m_CachedSeq = 0;
+        double m_LastSeqRefreshTime = 0;
+        const double SeqRefreshIntervalSec = 0.5;
+
+        // F1 — 訊息行用的 GUIStyle static cache（每幀 N 個 new GUIStyle 是 GC 主因）
+        // 物理意義：DrawMessageRow 對每筆訊息每幀 new 3 個 GUIStyle (name/meta/body)，N=200 訊息×60fps=36k 物件/秒
+        //          靜態複用 — textColor 隨 senderColor 變動就 mutate 同一份 instance（IMGUI 同 frame 立即繪製，安全）
+        // 數值影響：GC 壓力預期 -80%，視覺輸出完全一致
+        static GUIStyle s_MetaStyle;
+        static GUIStyle s_NameStyleBold;
+        static GUIStyle s_BodyStyleWrap;
+        static GUIStyle s_BodyStyleNonChat;          // wrap + italic（join/leave/system 用）
+        static System.Text.StringBuilder s_MetaBuilder;  // DrawMessageRow meta 拼接 reuse；Clear() 不釋放 capacity
+
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
@@ -472,6 +498,25 @@ namespace UCL.Core.EditorLib.Page
                     Debug.LogWarning($"[ChatTavernPage] Quest reducer 失敗: {ex.Message}");
                     m_QuestStatesCache = new Dictionary<string, UCL_QuestTaskState>();
                 }
+                // F3 — 計數同步 cache（每幀 foreach 7 條件改成 refresh 觸發一次）
+                m_QuestCachedTotal = m_QuestStatesCache.Count;
+                m_QuestCachedDone = m_QuestCachedClaimed = m_QuestCachedInProg = 0;
+                m_QuestCachedReview = m_QuestCachedReady = m_QuestCachedBlocked = m_QuestCachedStale = 0;
+                foreach (var s in m_QuestStatesCache.Values)
+                {
+                    if (s.is_stale) m_QuestCachedStale++;
+                    switch (s.status)
+                    {
+                        case "done": m_QuestCachedDone++; break;
+                        case "claimed": m_QuestCachedClaimed++; break;
+                        case "in_progress": m_QuestCachedInProg++; break;
+                        case "review": m_QuestCachedReview++; break;
+                        case "pending":
+                            if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache)) m_QuestCachedReady++;
+                            else m_QuestCachedBlocked++;
+                            break;
+                    }
+                }
             }
 
             using (new GUILayout.VerticalScope("box"))
@@ -483,26 +528,8 @@ namespace UCL.Core.EditorLib.Page
                     {
                         m_ShowQuestPanel = !m_ShowQuestPanel;
                     }
-                    int total = m_QuestStatesCache?.Count ?? 0;
-                    int doneN = 0, claimedN = 0, inProgN = 0, reviewN = 0, readyN = 0, blockedN = 0, staleN = 0;
-                    if (m_QuestStatesCache != null)
-                    {
-                        foreach (var s in m_QuestStatesCache.Values)
-                        {
-                            if (s.is_stale) staleN++;
-                            switch (s.status)
-                            {
-                                case "done": doneN++; break;
-                                case "claimed": claimedN++; break;
-                                case "in_progress": inProgN++; break;
-                                case "review": reviewN++; break;
-                                case "pending":
-                                    if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache)) readyN++; else blockedN++;
-                                    break;
-                            }
-                        }
-                    }
-                    GUILayout.Label($"🏛 <b>Quest Tasks</b>  total={total}  ✅{doneN}  🚧{inProgN}  🔍{reviewN}  🔒{claimedN}  🟢{readyN}  ⏳{blockedN}" + (staleN > 0 ? $"  🔴{staleN}" : ""),
+                    // F3 — 直接用 cached 計數，每幀不再 foreach 7 條件分類
+                    GUILayout.Label($"🏛 <b>Quest Tasks</b>  total={m_QuestCachedTotal}  ✅{m_QuestCachedDone}  🚧{m_QuestCachedInProg}  🔍{m_QuestCachedReview}  🔒{m_QuestCachedClaimed}  🟢{m_QuestCachedReady}  ⏳{m_QuestCachedBlocked}" + (m_QuestCachedStale > 0 ? $"  🔴{m_QuestCachedStale}" : ""),
                         UCL_GUIStyle.LabelStyle);
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
@@ -1021,7 +1048,15 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label($"# 🍺 {m_SelectedRoomId} (seq={UCL_ChatTavernIO.ReadCurrentSeq(m_SelectedRoomId)})", UCL_GUIStyle.LabelStyle);
+                // F2 — ReadCurrentSeq 走 cache（throttle 0.5s 或 room 切換時刷新），避免每幀 File IO
+                double nowSeq = EditorApplication.timeSinceStartup;
+                if (m_CachedSeqRoom != m_SelectedRoomId || nowSeq - m_LastSeqRefreshTime > SeqRefreshIntervalSec)
+                {
+                    m_CachedSeq = UCL_ChatTavernIO.ReadCurrentSeq(m_SelectedRoomId);
+                    m_CachedSeqRoom = m_SelectedRoomId;
+                    m_LastSeqRefreshTime = nowSeq;
+                }
+                GUILayout.Label($"# 🍺 {m_SelectedRoomId} (seq={m_CachedSeq})", UCL_GUIStyle.LabelStyle);
                 // 區塊職責：BeginScrollView 之前若 m_PendingScrollToBottom == true → 強制把 y 設大值
                 // 物理意義：IMGUI 會自動 clamp 到 contentHeight - viewportHeight；下一幀就在底部
                 //          設完清旗標，避免使用者滾上去看歷史時被自動拉回
@@ -1081,24 +1116,31 @@ namespace UCL.Core.EditorLib.Page
                         if (t >= 0 && t + 9 <= m.ts.Length) time = m.ts.Substring(t + 1, 8);
                     }
 
+                    // F1 — 改用 static cached GUIStyle，避免每筆每幀 new 3 個 GUIStyle
+                    EnsureMessageStyles();
+
                     // header 行：sender name (粗) + time + seq + reply 按鈕
                     using (new GUILayout.HorizontalScope())
                     {
-                        var nameStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold, normal = { textColor = senderColor } };
-                        GUILayout.Label(m.sender_name ?? m.sender_id ?? "?", nameStyle, GUILayout.ExpandWidth(false));
-                        var metaStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } };
-                        GUILayout.Label($"  {time}  · seq {m.seq}", metaStyle, GUILayout.ExpandWidth(false));
+                        // textColor 隨 senderColor 變動 → mutate 共用 instance（IMGUI 同 frame 立即繪製，安全）
+                        s_NameStyleBold.normal.textColor = senderColor;
+                        GUILayout.Label(m.sender_name ?? m.sender_id ?? "?", s_NameStyleBold, GUILayout.ExpandWidth(false));
+                        GUILayout.Label($"  {time}  · seq {m.seq}", s_MetaStyle, GUILayout.ExpandWidth(false));
                         GUILayout.FlexibleSpace();
                         if (GUILayout.Button("↩", UCL_GUIStyle.ButtonStyle, GUILayout.Width(30)))
                             m_ReplyTo = m.seq;
                     }
 
-                    // body 行
-                    var bodyStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
+                    // body 行：chat = wrap-only；非 chat (join/leave/system) = wrap + italic + senderColor
+                    GUIStyle bodyStyle;
                     if (m.kind != "chat")
                     {
-                        bodyStyle.normal.textColor = senderColor;
-                        bodyStyle.fontStyle = FontStyle.Italic;
+                        s_BodyStyleNonChat.normal.textColor = senderColor;
+                        bodyStyle = s_BodyStyleNonChat;
+                    }
+                    else
+                    {
+                        bodyStyle = s_BodyStyleWrap;
                     }
                     GUILayout.Label(m.body ?? "", bodyStyle);
 
@@ -1123,9 +1165,11 @@ namespace UCL.Core.EditorLib.Page
                         using (new GUILayout.HorizontalScope())
                         {
                             GUILayout.Space(56);   // 對齊新的 48px avatar + 4px padding
-                            var sb = new System.Text.StringBuilder();
-                            foreach (var kv in m.meta) sb.Append("[").Append(kv.Key).Append("=").Append(kv.Value).Append("] ");
-                            GUILayout.Label(sb.ToString(), UCL_GUIStyle.LabelStyle);
+                            // F1 — StringBuilder 共用 instance，Clear() 不釋放 capacity → 後續訊息 reuse buffer
+                            if (s_MetaBuilder == null) s_MetaBuilder = new System.Text.StringBuilder(64);
+                            s_MetaBuilder.Clear();
+                            foreach (var kv in m.meta) s_MetaBuilder.Append("[").Append(kv.Key).Append("=").Append(kv.Value).Append("] ");
+                            GUILayout.Label(s_MetaBuilder.ToString(), UCL_GUIStyle.LabelStyle);
                         }
                     }
                 }
@@ -1443,6 +1487,18 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
             Debug.LogWarning($"[ChatTavern] 無法 ping asset：{repoRelativePath}");
+        }
+
+        // F1 helper — lazy 建 static GUIStyle cache（首次 DrawMessageRow 觸發；之後共用）
+        // 物理意義：UCL_GUIStyle.LabelStyle 也是 lazy-init，所以 EnsureMessageStyles 不能在 ctor / OnEnable 跑（會拿到 null）；放 OnGUI path 第一次跑安全
+        // 數值影響：4 個 GUIStyle + 1 個 StringBuilder 一次性配置，後續零 alloc
+        static void EnsureMessageStyles()
+        {
+            if (s_MetaStyle != null) return;
+            s_MetaStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } };
+            s_NameStyleBold = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
+            s_BodyStyleWrap = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
+            s_BodyStyleNonChat = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true, fontStyle = FontStyle.Italic };
         }
 
         // 區塊職責：在 Editor 內以 UCL_MarkdownViewerPage 開啟 .md 檔

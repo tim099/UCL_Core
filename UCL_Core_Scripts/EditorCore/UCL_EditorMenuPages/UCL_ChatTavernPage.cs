@@ -482,7 +482,7 @@ namespace UCL.Core.EditorLib.Page
                         }
                     }
                     GUILayout.Label($"🏛 <b>Quest Tasks</b>  total={total}  ✅{doneN}  🚧{inProgN}  🔍{reviewN}  🔒{claimedN}  🟢{readyN}  ⏳{blockedN}" + (staleN > 0 ? $"  🔴{staleN}" : ""),
-                        UCL_GUIStyle.RichLabelStyle);
+                        UCL_GUIStyle.LabelStyle);
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
                     {
@@ -615,7 +615,7 @@ namespace UCL.Core.EditorLib.Page
 
                 // timeline
                 GUILayout.Space(2);
-                GUILayout.Label("<b>Lifecycle Timeline:</b>", UCL_GUIStyle.RichLabelStyle);
+                GUILayout.Label("<b>Lifecycle Timeline:</b>", UCL_GUIStyle.LabelStyle);
                 foreach (var ev in st.lifecycle)
                 {
                     string detail = "";
@@ -624,7 +624,7 @@ namespace UCL.Core.EditorLib.Page
                     else if (ev.data != null && ev.data.TryGetValue("reason", out var rs) && !string.IsNullOrEmpty(rs))
                         detail = $" — reason: {rs}";
                     GUILayout.Label($"  • <b>seq={ev.seq}</b> [{ev.ts}] <i>{ev.type}</i> by {ev.actor}{detail}",
-                        UCL_GUIStyle.RichLabelStyle);
+                        UCL_GUIStyle.LabelStyle);
                 }
 
                 // hint

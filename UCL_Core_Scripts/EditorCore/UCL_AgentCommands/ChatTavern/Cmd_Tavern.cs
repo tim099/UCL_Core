@@ -63,6 +63,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 FailLastOp("缺少 op 參數。請參考 ArgsSchema。");
                 return;
             }
+            // R6 — 鏡像抑制：CLI 給 quiet=true → AppendEvent 不寫 system message 進 messages.jsonl
+            // 物理意義：測試 / 自動化大批 ops 時用，避免 chat 被噴爆；只影響 task_* 的 events.jsonl→messages.jsonl 鏡像
+            // 數值影響：finally 復原為 false，避免污染下一個 cmd
+            string quietRaw = GetArg(args, "quiet", "false");
+            UCL_ChatTavernQuestIO.MirrorSuppressed = quietRaw == "true" || quietRaw == "1" || quietRaw.ToLower() == "yes";
             try
             {
                 switch (op)
@@ -105,6 +110,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 FailLastOp($"執行 op={op} 失敗：{ex.Message}\n{ex.StackTrace}");
                 throw;
+            }
+            finally
+            {
+                // R6 — 復原鏡像旗標，避免污染下一個 cmd（同 process 序列執行）
+                UCL_ChatTavernQuestIO.MirrorSuppressed = false;
             }
             await UniTask.CompletedTask;
         }
@@ -725,6 +735,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // lease_seconds 為 lease_hours 的 override（測試 / 短任務用；非 0 即生效）
             // 物理意義：給「2 秒就 stale」這種測試場景用；正常 claim 不必傳此參數
             string leaseSecondsStr = GetArg(args, "lease_seconds", "");
+            // R6.1 — plan：claimer 對此 task 的「我打算這樣做」聲明，鏡像到聊天室時附在 claim 訊息後
+            // 物理意義：開始時詳細說明規劃 → agent 互動感 + 留下決策軌跡（後續 task_state 看 timeline 也讀得到）
+            // 數值影響：寫入 event.data；mirror BuildMirrorBody 偵測到 plan 就 append 一段「📋 規劃：...」
+            string plan = GetArg(args, "plan", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_claim 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_claim 缺少 task_id"); return; }
@@ -763,13 +777,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             string leaseUntil = leaseEnd.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
+            var claimData = new Dictionary<string, string> { { "lease_until", leaseUntil } };
+            if (!string.IsNullOrEmpty(plan)) claimData["plan"] = plan;   // R6.1 — 規劃聲明（可選）
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
                 actor = claimer,
                 idempotency_key = idempotencyKey,
                 type = "task_claim",
                 task_id = taskId,
-                data = new Dictionary<string, string> { { "lease_until", leaseUntil } },
+                data = claimData,
             });
 
             if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
@@ -825,6 +841,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string taskId = GetArg(args, "task_id", "");
             string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
             string idempotencyKey = GetArg(args, "idempotency_key", "");
+            // R6.1 — summary：done 時 actor 對「我做完什麼」的詳細交代（建議帶傲嬌語氣，個性化體驗）
+            // 物理意義：完成時詳述工作內容 → 對話流自然形成工作日誌；後續 task_state 也讀得到
+            // 數值影響：寫入 event.data；mirror 偵測到 summary 就 append 一段「💁 ...」
+            string summary = GetArg(args, "summary", "");
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_done 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_done 缺少 task_id"); return; }
             if (string.IsNullOrEmpty(actor)) { FailLastOp("task_done 缺少 actor"); return; }
@@ -834,12 +854,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (st.owner != actor && st.status != "pending") { FailLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
             if (st.status == "done") { FailLastOp($"task {taskId} 已完成"); return; }
 
+            var doneData = string.IsNullOrEmpty(summary) ? null : new Dictionary<string, string> { { "summary", summary } };
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
                 actor = actor,
                 idempotency_key = idempotencyKey,
                 type = "task_done",
                 task_id = taskId,
+                data = doneData,
             });
 
             // 觸發下游 unblock 通知（寫 inbox 給 suggested_owner）

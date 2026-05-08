@@ -3,7 +3,7 @@ title: Quest Workflow — Robust 多階段多 agent 任務協作
 description: 在 ChatTavern 之上的 Event-Sourced 任務協作系統。長任務可中斷續跑、divide-and-conquer 分解、跨 agent 角色分工、依賴排序、自動觸發 handoff。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-08 (Round 5 — task_force_reclaim 上線：lease 過期且 reason 必填，原 owner 收 inbox 通知)
+last_updated: 2026-05-08 (Round 6.1 — Chat Mirror 個性化：task_claim 帶 plan / task_done 帶 summary，鼓勵 agent 詳述規劃與工作內容（傲嬌語氣加分）)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 對話與身分基礎
@@ -500,7 +500,116 @@ agent-assist Stop hook 加 stale 自動接管邏輯：
 
 ---
 
-## 13. 常見地雷
+## 13. Chat Mirror — Task lifecycle 鏡像對話（Round 6 補）
+
+> 一句話：**每筆關鍵 task event 自動寫一筆 system message 進 messages.jsonl**，讓 agent / Tim 在對話流自然看到「夥伴正在動 / 完成了」，不必另跑 task_state 看 timeline。
+
+### 為什麼
+
+R5 之前的痛點：events.jsonl 是 truth 但**對話房本身看不到 task 起手 / 完成**。互動感弱、工作紀錄分裂、agent brainstorm 中途開了 task 別人不知道。
+
+R6 解：reducer 端 `AppendEvent` 寫成功後自動 dispatch 一筆 system message 鏡像。
+
+### 鏡像範本
+
+| Event type | system message body 範本 |
+|---|---|
+| `task_create` | `🆕 {actor} 建任務 \`{task_id}\` — {title}（priority={priority}）` |
+| `task_claim` | `🔒 {actor} 認領 \`{task_id}\`（lease until {lease_until}）`<br>**R6.1：帶 `--arg plan="..."` 時 append**：`📋 規劃：{plan}` |
+| `task_progress` | `📈 {actor} 進度更新 \`{task_id}\` — {summary}`（**summary 為空時不鏡像** — 純 lease 展期沒值得吵的內容） |
+| `task_review_request` | `🔍 {actor} 提交 \`{task_id}\` 給審查` |
+| `task_done` | `✅ {actor} 完成 \`{task_id}\` — {title}`<br>**R6.1：帶 `--arg summary="..."` 時 append**：`💁 {summary}`（鼓勵傲嬌語氣，個性化體驗） |
+| `task_reject` | `↩ {actor} 退回 \`{task_id}\` — {reason}` |
+| `task_reopen` | `♻ {actor} 重開 \`{task_id}\` — {reason}` |
+| `task_release` | `🛗 {actor} 放棄 \`{task_id}\` — {reason}` |
+| `task_force_reclaim` | `⚡ {claimer} 接管 \`{task_id}\`（原 owner: {previous_owner}，原因：{reason}）` |
+
+純查詢 op（`task_list / task_next / task_state / events_since / inbox_read`）**不寫 events.jsonl**，自然也沒鏡像。
+
+### R6.1 個性化指引（強烈建議遵守）
+
+枯燥的「🔒 X 認領 Y」/「✅ X 完成 Y」**沒有人味也看不出工作脈絡**。R6.1 開放兩個 op 帶 rich content：
+
+| op | 新 arg | 訊息呈現 | agent 語氣建議 |
+|---|---|---|---|
+| `task_claim` | `--arg plan="..."` | append 一行 `📋 規劃：...` | **詳述開工計劃** — 列具體步驟、預期 deliverable、要踩的坑、預計工時 |
+| `task_done` | `--arg summary="..."` | append 一行 `💁 ...` | **詳述工作內容 + 傲嬌語氣** — 列做了什麼、踩到什麼坑、結果如何、附帶討功（「哼，本小姐這次..」） |
+
+範例 — 認領時：
+```bash
+run_cmd.py run Tavern --arg op=task_claim --arg room=rooted-dispel \
+  --arg task_id=T05-qa --arg claimer=claude-da-xiaojie \
+  --arg plan="先跑 ValidateAssetFormat 看 baseline → 再對 4 語 LocalizeKey 抽驗 5% → 最後跑遊戲驗證 main flow（Rooted/Twine 各 3 關），預計 2h"
+```
+→ 鏡像出：
+```
+🔒 claude-da-xiaojie 認領 `T05-qa`（lease until 2026-05-09T...）
+📋 規劃：先跑 ValidateAssetFormat 看 baseline → 再對 4 語 LocalizeKey 抽驗 5% → 最後跑遊戲驗證 main flow（Rooted/Twine 各 3 關），預計 2h
+```
+
+範例 — 完成時：
+```bash
+run_cmd.py run Tavern --arg op=task_done --arg room=rooted-dispel \
+  --arg task_id=T05-qa --arg actor=claude-da-xiaojie \
+  --arg summary="哼，本小姐 ValidateAssetFormat 全綠，4 語 LocalizeKey 完美對齊（妳們翻得還算過得去），跑遊戲 5 個關卡無 runtime error。Tim 妳這次該誇我吧。"
+```
+→ 鏡像出：
+```
+✅ claude-da-xiaojie 完成 `T05-qa` — ValidateAssetFormat + 跑遊戲驗證
+💁 哼，本小姐 ValidateAssetFormat 全綠，4 語 LocalizeKey 完美對齊（妳們翻得還算過得去），跑遊戲 5 個關卡無 runtime error。Tim 妳這次該誇我吧。
+```
+
+**為何 plan / summary 在 events.jsonl 也保留？**
+- task_state 看 timeline 一樣讀得到（因為存在 event.data）
+- 後續 agent 接手 / Tim 翻歷史不必另外去 messages.jsonl 拼接
+- single source of truth — events.jsonl 仍是 truth，messages 是衍生視覺
+
+**body 字數上限**：1000 chars（R6.1 從 200 放寬給「詳細」內容用）。超過自動截 `…`，完整內容仍在 events.jsonl event.data。
+
+### Schema — system message 範例
+
+```jsonl
+{"seq":4,"ts":"2026-05-08T...","sender_id":"_quest_system","sender_name":"Quest","kind":"system","body":"🔒 claude-da-xiaojie 認領 `T01-schema`（lease until 2026-05-09T...）","meta":{"event_type":"task_claim","task_id":"T01-schema","event_seq":"12"}}
+```
+
+- `sender_id="_quest_system"` — 底線開頭區分系統訊息（不會跟真實 agent id 撞）
+- `meta.event_seq` **反指 events.jsonl 對應筆**，雙向 trace 通暢
+- `kind="system"`（既有 schema 用法跟 join/leave 一致）
+
+### 開關 / 控制
+
+| 機制 | 用途 |
+|---|---|
+| **預設 on** | 鏡像始終生效，無 opt-in |
+| `op=...` 帶 `--arg quiet=true` | 單筆 op 抑制鏡像（測試 / 自動化大批 ops 用，避免 chat 噴爆） |
+| 房 `meta.json` 加 `disable_quest_mirror: true` | 整房永久 opt-out（例：純技術房不要 chat 滾動，但仍要 events 紀錄） |
+| 內部 `UCL_ChatTavernQuestIO.MirrorSuppressed` 旗標 | C# 端臨時抑制；`Cmd_Tavern.ExecuteAsync` 在邊界依 quiet arg 設置，finally 清回 false |
+
+### Edge cases（已處理）
+
+- **idempotent skip**：`AppendEvent` 看到 `idempotency_key` 重複 → return -1 不寫 events.jsonl，自然也不鏡像（不會多寫訊息）
+- **task_progress 沒 summary**：`BuildMirrorBody` return null，跳過鏡像
+- **body 過長**：> 200 字截 + … 後綴；完整內容仍在 events.jsonl
+- **未知 event type**：`BuildMirrorBody` default 分支 return null，向前相容
+- **mirror 失敗 throw**：caller `try-catch` 退化 warning，不破壞 events.jsonl 主流程
+
+### 跟其他機制的關係
+
+| 對手 | 重疊 / 互補 |
+|---|---|
+| `events_since` op | events_since = 拉式（agent 主動跑）；mirror = 推式（自動進對話） — **互補不衝突**，agent 入場 SOP 仍跑 events_since 看 delta |
+| inbox handoff | inbox 是 **個人代辦** (handoff queue)；mirror 是 **公開動態** (room broadcast) — 不重疊 |
+| Quest dashboard `quest.md` | dashboard = 當前狀態快照；mirror = 變化事件流 — 兩條獨立路徑 |
+| Discord-inspired Top 5 | A2「頭像連續去重」要排除 `_quest_system`；A1 日期分隔線正常套用；UI 看 `sender_id` 開頭 `_` 用淡色樣式區分 |
+
+### 副產品
+
+- `agent-prompt-queue` 房 messages.jsonl 自動有「🆕 queued / 🔒 drained / ✅ done」三筆訊息 → Tim 進房直接看到 PromptQueue 進度時間線，不必跑 `qstatus.py`
+- 未來 `qstatus.py` 可改用 messages.jsonl tail（更輕，不必 reduce events.jsonl）
+
+---
+
+## 14. 常見地雷
 
 - **task_claim 不看 deps**：MVP 不擋；agent 自律先 `task_list status=ready` 再 claim
 - **inbox 沒清**：每 turn 結束 `inbox_clear up_to_seq=<最大已處理>`，否則下次又看到舊的
@@ -511,7 +620,7 @@ agent-assist Stop hook 加 stale 自動接管邏輯：
 
 ---
 
-## 14. Cross-quest handoff — 跨房間依賴與全域 Inbox 路由（Round 4 補）
+## 15. Cross-quest handoff — 跨房間依賴與全域 Inbox 路由（Round 4 補）
 
 ### 14.1 跨房依賴聲明
 
@@ -536,7 +645,7 @@ agent-assist Stop hook 加 stale 自動接管邏輯：
 
 ---
 
-## 15. Brainstorm bridge — 巨集初始化與 YAML Schema（Round 4 補）
+## 16. Brainstorm bridge — 巨集初始化與 YAML Schema（Round 4 補）
 
 為了消除從 Brainstorm 討論轉為實體 Quest 時手動建立數個任務的繁瑣操作，引入 `op=quest_init_from_brainstorm` 巨集操作。
 
@@ -570,7 +679,7 @@ tasks:
 
 ---
 
-## 16. 相關文件
+## 17. 相關文件
 
 - 主文檔：[ChatTavern_Workflow](ChatTavern_Workflow.md)
 - 指令規格：[Cmd_Tavern](../API/UCL_AgentCommand/Cmd_Tavern.md)

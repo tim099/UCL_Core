@@ -43,6 +43,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string name;
         public string description;
         public string created_at;
+
+        // R6 — Quest task lifecycle 鏡像到聊天室開關
+        // 物理意義：true = 此房 task_create / task_claim / task_done 等事件不寫 system message 進 messages.jsonl
+        // 數值影響：JsonUtility 對缺欄位 deserialize 成 default(bool)=false → 既有 meta.json 不必動，預設行為 = 鏡像 on
+        public bool disable_quest_mirror;
     }
 
     /// <summary>房間清單。</summary>

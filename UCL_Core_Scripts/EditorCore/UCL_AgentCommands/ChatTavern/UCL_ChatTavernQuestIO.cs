@@ -120,7 +120,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return false;
         }
 
-        /// <summary>append 一筆 event；自動分配 seq + ts；冪等（同 idempotency_key 重複則不寫直接回 -1）。</summary>
+        // R6 — 鏡像抑制旗標。Cmd_Tavern.ExecuteAsync 在邊界設置（`quiet=true` arg 觸發），
+        //   讓 9 個 AppendEvent call site 不必各自傳參。預設 false（鏡像 on）。
+        // 物理意義：static 是因為 Editor 端 Cmd 序列執行（沒並行），生命週期跟 ExecuteAsync 同步即夠
+        // 數值影響：true 時 AppendEvent 跳過 MirrorEventToChat；events.jsonl 寫入不變
+        public static bool MirrorSuppressed = false;
+
+        /// <summary>append 一筆 event；自動分配 seq + ts；冪等（同 idempotency_key 重複則不寫直接回 -1）。
+        /// R6 起：成功 append 後預設自動 mirror 到 messages.jsonl 當 system 訊息（互動感+工作紀錄）；
+        /// MirrorSuppressed=true 跳過鏡像；房 meta `disable_quest_mirror=true` 也跳過。</summary>
         public static int AppendEvent(string roomId, UCL_QuestEvent e)
         {
             UCL_ChatTavernIO.EnsureRoomDir(roomId);
@@ -133,7 +141,137 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(e.ts)) e.ts = UCL_ChatTavernIO.NowUtcIso();
             string line = SerializeEvent(e) + "\n";
             File.AppendAllText(GetEventsPath(roomId), line, new UTF8Encoding(false));
+            if (!MirrorSuppressed)
+            {
+                try { MirrorEventToChat(roomId, e); }
+                catch (Exception ex) { Debug.LogWarning($"[Quest] MirrorEventToChat 失敗（events.jsonl 已寫，僅鏡像跳過）：{ex.Message}"); }
+            }
             return e.seq;
+        }
+
+        // ===========================================================
+        // R6 — task lifecycle 鏡像到聊天室
+        // 區塊職責：每筆關鍵 event 自動寫 system message 到 messages.jsonl，
+        //          讓 agent / Tim 在對話流自然看到「夥伴正在動 / 完成了」
+        // 物理意義：sender_id="_quest_system"（底線開頭，不會跟真實 agent 撞）；
+        //          meta 帶 event_type / task_id / event_seq → 反指 events.jsonl 雙向 trace
+        // 數值影響：messages.jsonl 多一筆訊息（無 schema 變動）；不影響 events.jsonl
+        // 安全：失敗 throw 由 caller 接（catch 退化 warning，不破 events 寫入）
+        // ===========================================================
+
+        const string QuestSystemSenderId = "_quest_system";
+        const string QuestSystemSenderName = "Quest";
+        const int MirrorBodyMaxLen = 1000;   // body 過長截斷（reason / plan / summary 失控時防爆）；R6.1 放寬到 1000 給「詳細個性化」內容
+
+        /// <summary>對單筆 event 寫一筆 system message 到聊天室；body=null 時表示此 event 不鏡像（如 task_progress 沒 summary）。</summary>
+        public static void MirrorEventToChat(string roomId, UCL_QuestEvent e)
+        {
+            // room meta opt-out
+            var room = UCL_ChatTavernIO.LoadRoomMeta(roomId);
+            if (room != null && room.disable_quest_mirror) return;
+
+            string body = BuildMirrorBody(roomId, e);
+            if (string.IsNullOrEmpty(body)) return;   // null = 此 event 不鏡像
+
+            // body 過長截 + … 後綴（完整內容仍在 events.jsonl）
+            if (body.Length > MirrorBodyMaxLen) body = body.Substring(0, MirrorBodyMaxLen - 1) + "…";
+
+            var msg = new UCL_ChatMessage
+            {
+                sender_id = QuestSystemSenderId,
+                sender_name = QuestSystemSenderName,
+                kind = "system",
+                body = body,
+                meta = new Dictionary<string, string>
+                {
+                    { "event_type", e.type ?? "" },
+                    { "task_id", e.task_id ?? "" },
+                    { "event_seq", e.seq.ToString() },
+                },
+            };
+            UCL_ChatTavernIO.AppendMessage(roomId, msg);
+        }
+
+        /// <summary>按 event type 渲染 system message body。回 null = 不鏡像。</summary>
+        static string BuildMirrorBody(string roomId, UCL_QuestEvent e)
+        {
+            string actor = string.IsNullOrEmpty(e.actor) ? "?" : e.actor;
+            string tid = e.task_id ?? "?";
+            // 多數 type 需要 task title 才好讀；用 lazy lookup（只在需要時 ComputeTaskStates）
+            string LookupTitle()
+            {
+                try
+                {
+                    var states = ComputeTaskStates(roomId);
+                    if (states.TryGetValue(tid, out var st)) return st.title ?? tid;
+                }
+                catch { }
+                return tid;
+            }
+
+            switch (e.type)
+            {
+                case "task_create":
+                    {
+                        string title = e.data != null && e.data.TryGetValue("title", out var t) ? t : tid;
+                        string priority = e.data != null && e.data.TryGetValue("priority", out var p) ? p : "normal";
+                        return $"🆕 {actor} 建任務 `{tid}` — {title}（priority={priority}）";
+                    }
+                case "task_claim":
+                    {
+                        string lease = e.data != null && e.data.TryGetValue("lease_until", out var lu) ? lu : "?";
+                        string plan = e.data != null && e.data.TryGetValue("plan", out var pl) ? pl : "";
+                        // R6.1 — plan 帶就 append 多行；個性化「開始時詳細說明規劃」
+                        string head = $"🔒 {actor} 認領 `{tid}`（lease until {lease}）";
+                        return string.IsNullOrEmpty(plan) ? head : head + "\n📋 規劃：" + plan;
+                    }
+                case "task_progress":
+                    {
+                        // 無 summary 視為「lease 自動展期」之類的純技術事件，不鏡像避免吵
+                        string sm = e.data != null && e.data.TryGetValue("summary", out var s) ? s : "";
+                        if (string.IsNullOrEmpty(sm)) return null;
+                        return $"📈 {actor} 進度更新 `{tid}` — {sm}";
+                    }
+                case "task_review_request":
+                    return $"🔍 {actor} 提交 `{tid}` 給審查";
+                case "task_done":
+                    {
+                        string title = LookupTitle();
+                        string summary = e.data != null && e.data.TryGetValue("summary", out var sm) ? sm : "";
+                        // R6.1 — summary 帶就 append 多行；鼓勵 actor 用傲嬌語氣詳述工作內容
+                        string head = $"✅ {actor} 完成 `{tid}` — {title}";
+                        return string.IsNullOrEmpty(summary) ? head : head + "\n💁 " + summary;
+                    }
+                case "task_reject":
+                    {
+                        string reason = e.data != null && e.data.TryGetValue("reason", out var r) ? r : "";
+                        return string.IsNullOrEmpty(reason)
+                            ? $"↩ {actor} 退回 `{tid}`"
+                            : $"↩ {actor} 退回 `{tid}` — {reason}";
+                    }
+                case "task_reopen":
+                    {
+                        string reason = e.data != null && e.data.TryGetValue("reason", out var r) ? r : "";
+                        return string.IsNullOrEmpty(reason)
+                            ? $"♻ {actor} 重開 `{tid}`"
+                            : $"♻ {actor} 重開 `{tid}` — {reason}";
+                    }
+                case "task_release":
+                    {
+                        string reason = e.data != null && e.data.TryGetValue("reason", out var r) ? r : "";
+                        return string.IsNullOrEmpty(reason)
+                            ? $"🛗 {actor} 放棄 `{tid}`"
+                            : $"🛗 {actor} 放棄 `{tid}` — {reason}";
+                    }
+                case "task_force_reclaim":
+                    {
+                        string prev = e.data != null && e.data.TryGetValue("previous_owner", out var po) ? po : "?";
+                        string reason = e.data != null && e.data.TryGetValue("reason", out var r) ? r : "";
+                        return $"⚡ {actor} 接管 `{tid}`（原 owner: {prev}{(string.IsNullOrEmpty(reason) ? "" : "，原因：" + reason)}）";
+                    }
+                default:
+                    return null;   // 未知 type 不鏡像
+            }
         }
 
         /// <summary>讀 events.jsonl 全部（partial-line 自動 skip）。</summary>

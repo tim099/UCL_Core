@@ -3,7 +3,7 @@ title: 建立新的 UCL_CommonEditorPage 子類工作流
 description: 步驟化 SOP — 從零開出一頁可被 GUIPageController 推送的 Editor 頁面。涵蓋繼承關係、必/選 override、TopBar 客製、入口點掛接、樣式選用守則（連結 UCL_GUILayout / UCL_GUIStyle 文件）、與常見地雷。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-08
+last_updated: 2026-05-08 (補地雷 #10 — GUILayout.Width/Height 一律包 UCL_GUIStyle.GetScaledSize)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create EditorPage, UCL_CommonEditorPage workflow, 寫新 editor 頁]
 tags: [workflow, editor, ui, imgui]
@@ -242,6 +242,7 @@ public class UCL_<Name>Page : UCL_CommonEditorPage { ... }
 | 7 | `[HelpURL]` 寫死語系（沒用 `{lang}` 佔位） | 切語系後 Help 按鈕跳錯檔 | 一律用 `ucl_core:Docs~/{lang}/...` |
 | 8 | EditorWindow.OnGUI 沒設 `IsInEditorWindow` | 樣式 cache 跑到 runtime 那份，DPI 異常 | 用 `IsInEditorWindowScope`（using 自動還原）|
 | 9 | 直接用 `UnityEditor.EditorGUILayout.Popup` 畫下拉 | 沒搜尋、選項多時找不到、需 `#if UNITY_EDITOR` 守 | 改用 `UCL_GUILayout.PopupSearchCache(idx, options, dic, key)` — 自帶搜尋 + 內部快取 + 跨 runtime/Editor 編譯。傳一份 `UCL_ObjectDictionary` 當 cache 容器（page 內 `readonly` 即可）|
+| 10 | `GUILayout.Width(80)` / `GUILayout.Height(360)` 寫死數字 | 使用者切到 Big / XL Scale 時文字放大但容器不變，被擠出 / 截斷 | **一律包 `UCL_GUIStyle.GetScaledSize(N)`**：`GUILayout.Height(UCL_GUIStyle.GetScaledSize(360))`、`GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))`。同樣適用於 `MinWidth / MaxHeight / GetRect / fontSize`。詳見 [UCL_GUIStyle Overview §2.5](../API/UCL_GUIStyle/UCL_GUIStyle_Overview.md#25-guilayout-尺寸縮放守則重要) |
 
 ---
 

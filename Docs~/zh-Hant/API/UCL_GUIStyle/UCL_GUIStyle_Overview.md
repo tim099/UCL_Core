@@ -3,7 +3,7 @@ title: UCL_GUIStyle 概覽
 description: UCL_Core 的 IMGUI 樣式中央 — 提供 BoxStyle / ButtonStyle / LabelStyle / TextField/Area / Slider 等共用樣式，附 DPI 全域縮放與 EditorWindow / Runtime 雙 cache 機制；包含一個關鍵反指守則（LabelStyle 不可給互動控制項）。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUIStyle.cs
 namespace: UCL.Core.UI
-last_updated: 2026-05-07
+last_updated: 2026-05-08 (補 §2.5 GUILayout 尺寸縮放守則 — Width/Height 一律包 GetScaledSize)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [UCL_GUIStyle, GUIStyle 中央, IMGUI styles]
 tags: [api, ui, imgui, editor, style]
@@ -79,7 +79,34 @@ EditorWindow 的 OnGUI 開頭請設 `IsInEditorWindow = true`，結尾還原；�
 | `StyleData.ApplyScale()` | 手動觸發 cache 樣式重算字級（`SetScale` 內部會呼叫） |
 | `SetSizeOnGUI()` | 繪製 Small / Medium / Big / XL 四顆按鈕，給使用者自選 Scale |
 
-### 2.5 EditorWindow / Runtime 切換
+### 2.5 GUILayout 尺寸縮放守則（重要）
+
+**寫死的 `GUILayout.Width(N)` / `GUILayout.Height(N)` 數字一律包 `UCL_GUIStyle.GetScaledSize(N)`**，否則使用者按 `SetSizeOnGUI()` 切到 Big / XL 時，文字字級放大但容器尺寸沒跟著放，會被擠出/截斷。
+
+```csharp
+// ❌ 寫死 — 不會跟著 Scale 變
+m_Scroll = GUILayout.BeginScrollView(m_Scroll, GUILayout.Height(360));
+if (GUILayout.Button("Save", GUILayout.Width(80))) { ... }
+
+// ✅ 走 GetScaledSize — Small/Medium/Big/XL 切換時會等比放大
+m_Scroll = GUILayout.BeginScrollView(m_Scroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
+if (GUILayout.Button("Save", GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)))) { ... }
+```
+
+適用對象：
+- `GUILayout.Width(...)` / `GUILayout.Height(...)`
+- `GUILayout.MinWidth(...)` / `GUILayout.MaxHeight(...)` 等同類
+- `GUILayoutUtility.GetRect(width, height, ...)` 內的固定數字
+- 自定 GUIStyle 的 `fontSize` 也同理
+
+**例外**（不必包）：
+- `GUILayout.ExpandWidth(true/false)` / `GUILayout.ExpandHeight(...)` — 純 bool 沒尺寸
+- 跟其他 layout 計算出來的相對值（已經是縮放後的）
+- 真正想要「無論 Scale 都這麼大」的 fixed asset 邊框
+
+UCL_GUILayout 內部既有 helpers（`NumField` / `Label` 等）已自帶 GetScaledSize — 透過 wrapper 用就免操心，**只有寫 raw `GUILayout.*` 時要自律**。
+
+### 2.6 EditorWindow / Runtime 切換
 
 | API | 用途 |
 |---|---|

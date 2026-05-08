@@ -421,7 +421,7 @@ namespace UCL.Core.EditorLib.Page
                 EnsureAutoInit();
                 HandleAutoPoll();
 
-                // Perf overlay 區塊：toggle bar 永遠顯示（小體積）；overlay 詳細表只在 ShowOverlay=true 時開
+                // Perf overlay 區塊：toggle bar 永遠顯示（小體積）；overlay 詳細表只在 ShowOverlay=true 時開 //加上BartenderInfoBar
                 using (new GUILayout.HorizontalScope())
                 {
                     bool show = GUILayout.Toggle(UCL_ChatTavernPerfOverlay.ShowOverlay, "⏱ Perf", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
@@ -435,11 +435,14 @@ namespace UCL.Core.EditorLib.Page
                     {
                         UCL_ChatTavernPerfOverlay.DumpToLog();
                     }
+                    
+
+                    using (UCL_ChatTavernPerfOverlay.Sample("DrawBartenderInfoBar")) DrawBartenderInfoBar();
                     GUILayout.FlexibleSpace();
                 }
                 UCL_ChatTavernPerfOverlay.DrawOverlay();
 
-                using (UCL_ChatTavernPerfOverlay.Sample("DrawBartenderInfoBar")) DrawBartenderInfoBar();
+                
                 GUILayout.Space(4);
                 using (UCL_ChatTavernPerfOverlay.Sample("DrawRoomPicker")) DrawRoomPicker();
                 GUILayout.Space(4);
@@ -558,7 +561,7 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 // task table（scroll）
-                m_QuestScroll = GUILayout.BeginScrollView(m_QuestScroll, GUILayout.MinHeight(120), GUILayout.MaxHeight(360));
+                m_QuestScroll = GUILayout.BeginScrollView(m_QuestScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
                 if (m_QuestStatesCache != null && m_QuestStatesCache.Count > 0)
                 {
                     var sorted = new List<UCL_QuestTaskState>(m_QuestStatesCache.Values);

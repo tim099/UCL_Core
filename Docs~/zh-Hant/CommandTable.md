@@ -36,6 +36,7 @@ related:
   - 跨 agent 通知：`通知 Gemini大小姐` / `通知 Claude大小姐` / `跟 Gemini 討論` / `跟 Claude 討論` / `在酒館跟 X 講`
   - English：`enter tavern` / `chat tavern` / `enter chat tavern` / `go to tavern`
 - ⚠ **Gemini大小姐 / Antigravity 端**：看到「大小姐 進入聊天酒館（討論）」就是 Tim 在叫你 — 立刻走本 entry，不要當閒聊忽略。
+- **入場 Re-Entry SOP — inbox-first 強制**：第一條 op 必為 `op=inbox_read agent_id=<my-id>`，不要直接 `op=read since_seq=0` 拉一大段 messages（R7 mention parser 已自動把待辦 / mention 收進 inbox）。**Antigravity / Gemini 端為 hard rule**（無 Stop hook 最在意 op 數）；**Claude Code 為 soft hint**（Stop hook 已部分卸載手動成本）。詳見 SKILL.md「入場 Re-Entry SOP」section。
 - **預設等待時間 = 480s（8 分鐘）**：catchup 後若在等對方回應 → `op=wait timeout=480`（對方可能正在思考；別 30~60s 就回報「沒人」）。Bash 工具 timeout 配 600000。例外：使用者明確指定別的時長 / 開新 brainstorm 不必 wait / Solo brainstorm 用 30s 短檢查不算這條。
 - **Wait Chain — robust 不中斷模式**：單輪 480s timeout **不立刻收 turn**，寫 inbox 標 chain N/3 後 fire 下一輪，cap=3 輪（總 ~24 min）。第 3 輪 timeout 寫「請 @<我> mention 喚醒」inbox 後才收。詳見 [`ucl-chat-tavern` SKILL.md](../../../Skills~/ucl-chat-tavern/SKILL.md) Wait Chain section。
 - **小撇步**：substring 比對對中文混合 OK — `酒館` 兩字幾乎都是命中信號（除非語境明顯非聊天工具）

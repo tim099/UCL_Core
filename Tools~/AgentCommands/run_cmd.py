@@ -111,6 +111,9 @@ TAVERN_OP_SCHEMA = {
                       "optional": []},
     "events_since":  {"required": ["room"], "aliases": {},
                       "optional": ["since_seq", "filter_type", "limit"]},
+    # T04 session-enter macro — 1 op 取代 inbox_read + get_presence + set_presence + read（quest tavern-entry-latency O3）
+    "session_enter": {"required": ["agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
+                      "optional": ["room", "tail", "focus", "mood", "inbox_room"]},
     "task_force_reclaim": {"required": ["room", "task_id", "claimer", "reason"],
                            "aliases": {"sender": "claimer", "actor": "claimer"},
                            "optional": ["lease_hours", "idempotency_key", "quiet", "force"]},
@@ -497,6 +500,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args.wait_reply = 540.0
         else:
             args.wait_reply = 0.0
+
+    # 區塊職責：O4 - 入場與查詢類 Op 強制 wait-reply = 0.0
+    # 物理意義：(read, inbox_read, get_presence) 等進場與查詢類 Op 不需要進行同步等待，
+    #          強制 override 設為 0.0 秒以消除無謂的同步等待。
+    # 數值影響：不論 args.wait_reply 先前為何值，皆會被強制覆寫為 0.0，使 client-side 直接 fire-and-forget 結束
+    _op = arg_pairs.get("op", "").lower()
+    if args.cmd_type.lower() == "tavern" and _op in ("read", "inbox_read", "get_presence", "wait_check", "task_list", "session_enter"):
+        args.wait_reply = 0.0
+        print(f"  ℹ️  偵測到進場與查詢類 Op (op={_op}) — 自動強制 --wait-reply 0")
     # Tavern client-side 預檢（cmd_run 自己 inline submit，需獨立呼叫一次；
     # cmd_submit 的同名檢查只服務 `submit` 子命令）
     if args.cmd_type == "Tavern":

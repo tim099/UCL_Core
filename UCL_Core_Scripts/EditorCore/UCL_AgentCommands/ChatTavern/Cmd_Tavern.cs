@@ -106,6 +106,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "task_state": Op_TaskState(args); break;
                     case "inbox_read": Op_InboxRead(args); break;
                     case "events_since": Op_EventsSince(args); break;
+                    case "session_enter": Op_SessionEnter(args); break;
                     default:
                         FailLastOp($"未知 op：{op}");
                         break;
@@ -1646,6 +1647,125 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             UCL_ChatTavernRender.WriteLastOp(sb.ToString());
             Debug.Log($"[Tavern] get_presence completed (target: {targetId ?? "all"})");
+        }
+
+        // ===========================================================
+        // 區塊：op=session_enter — Antigravity / Gemini / Claude 入場 macro
+        // 區塊職責：1 條 op 一次完成入場 4 件事 — inbox_read + dashboard read + presence set + room tail
+        // 物理意義：解 latency S1+S2+S3+S5（quest tavern-entry-latency T04 / O3）
+        //          舊路徑：5~6 op + 5~30s polling 才到工作狀態
+        //          新路徑：1 op + < 5s polling，強制走 inbox-first SOP（不會跳過 inbox 直接 post）
+        // 數值影響：寫 _last_op.md 一份合併 markdown（4 個 sub-section）；presence.json 推進 last_active + 可選 focus/mood
+        // 參數：
+        //   agent_id (req) — 自家 agent id（如 claude-da-xiaojie / antigravity-da-xiaojie / gemini-da-xiaojie）
+        //   room     (opt) — 順手 tail-read 此房最後 N 筆（預設不讀，agent 看 inbox 後再決定）
+        //   tail     (opt, default=10) — room 帶時 tail 幾筆
+        //   focus    (opt) — set_presence 同步推進 current_focus
+        //   mood     (opt) — set_presence 同步推進 mood
+        //   inbox_room (opt) — inbox 在哪 room 找（預設沿用 room；若沒帶 room 則 fallback "tavern"）
+        // ===========================================================
+        void Op_SessionEnter(Dictionary<string, string> args)
+        {
+            string agentId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", "")));
+            if (string.IsNullOrEmpty(agentId)) { FailLastOp("session_enter 缺少 agent_id"); return; }
+
+            string roomId = GetArg(args, "room", "");
+            string inboxRoom = GetArg(args, "inbox_room", string.IsNullOrEmpty(roomId) ? "tavern" : roomId);
+            int tail = ParseIntArg(args, "tail", 10);
+            string focus = GetArg(args, "focus", null);
+            string mood = GetArg(args, "mood", null);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 🚪 session_enter — `{agentId}`");
+            sb.AppendLine();
+            sb.AppendLine($"_macro op：1 條取代 inbox_read + get_presence + set_presence + read（latency 優化 quest T04）_");
+            sb.AppendLine();
+
+            // ── (1) inbox_read：強制走 inbox-first SOP（解 R4 認知落後）──
+            sb.AppendLine($"## 📬 Inbox @ `{inboxRoom}`");
+            sb.AppendLine();
+            try
+            {
+                string inbox = UCL_ChatTavernQuestIO.ReadInbox(inboxRoom, agentId);
+                sb.AppendLine(string.IsNullOrEmpty(inbox) ? "_(inbox 空 — 沒有新 mention / 待辦 / thread-summary)_" : inbox);
+            }
+            catch (Exception e)
+            {
+                sb.AppendLine($"_(inbox 讀取失敗：{e.Message})_");
+            }
+            sb.AppendLine();
+
+            // ── (2) presence dashboard：tavern-keeper.current_focus 一行（解 R1 沒做 presence 預檢）──
+            sb.AppendLine("## 🟢 Presence Dashboard");
+            sb.AppendLine();
+            try
+            {
+                var presenceList = UCL_ChatTavernIO.LoadPresence();
+                var keeper = presenceList.presences.Find(x => x.sender_id == "tavern-keeper");
+                if (keeper != null && !string.IsNullOrEmpty(keeper.current_focus))
+                {
+                    sb.AppendLine(keeper.current_focus);
+                }
+                else
+                {
+                    sb.AppendLine("_(dashboard 尚未生成 — SetPresence hook 應自動重建；可手動 set_presence 觸發)_");
+                }
+            }
+            catch (Exception e)
+            {
+                sb.AppendLine($"_(presence 讀取失敗：{e.Message})_");
+            }
+            sb.AppendLine();
+
+            // ── (3) set_presence：active + 可選 room/focus/mood 一次推進 ──
+            sb.AppendLine("## ✅ Presence 推進");
+            sb.AppendLine();
+            try
+            {
+                UCL_ChatTavernIO.SetPresence(agentId, "active", string.IsNullOrEmpty(roomId) ? null : roomId, focus, mood);
+                sb.AppendLine($"- status: `active`");
+                if (!string.IsNullOrEmpty(roomId)) sb.AppendLine($"- current_room: `{roomId}`");
+                if (!string.IsNullOrEmpty(focus)) sb.AppendLine($"- current_focus: `{focus}`");
+                if (!string.IsNullOrEmpty(mood)) sb.AppendLine($"- mood: `{mood}`");
+                sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
+            }
+            catch (Exception e)
+            {
+                sb.AppendLine($"_(set_presence 失敗：{e.Message})_");
+            }
+            sb.AppendLine();
+
+            // ── (4) room tail：可選 — agent 看完 inbox 再決定要不要爬 ──
+            if (!string.IsNullOrEmpty(roomId))
+            {
+                sb.AppendLine($"## 🍺 Room Tail — `{roomId}` 最新 {tail} 筆");
+                sb.AppendLine();
+                try
+                {
+                    var room = UCL_ChatTavernIO.GetRoom(roomId);
+                    if (room == null)
+                    {
+                        sb.AppendLine($"_(房間不存在：{roomId})_");
+                    }
+                    else
+                    {
+                        var messages = UCL_ChatTavernIO.Tail(roomId, tail);
+                        string md = UCL_ChatTavernRender.RenderMessages($"{room.name} — 最新 {messages.Count} 筆", messages);
+                        sb.AppendLine(md);
+                    }
+                }
+                catch (Exception e)
+                {
+                    sb.AppendLine($"_(read 失敗：{e.Message})_");
+                }
+            }
+            else
+            {
+                sb.AppendLine("_(無 --arg room 不爬 messages — 推薦先看 inbox 摘要再決定要不要 read 全文)_");
+            }
+
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] session_enter {agentId}" + (string.IsNullOrEmpty(roomId) ? "" : $" room={roomId}"));
         }
 
         static void FailLastOp(string msg)

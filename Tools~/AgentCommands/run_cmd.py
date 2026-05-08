@@ -49,7 +49,7 @@ import json
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ===========================================================
@@ -90,12 +90,19 @@ HANDSHAKE_CANCEL_FLAG = TAVERN_DIR / "_handshake_cancel.flag"
 # 握手活躍指示檔：wait_for_tavern_reply 期間每 poll 觸碰一次更新 mtime
 # Editor 端讀此檔判斷「目前是否有 Python 端握手在進行」 → 中止握手按鈕變色
 HANDSHAKE_ACTIVE_FLAG = TAVERN_DIR / "_handshake_active.flag"
+# 握手起始時間：wait 啟動時寫一次 (content = wait_start float)，結束時刪
+# Editor 端讀此檔知道 wait 從何時開始 → 算「酒保還會等多久」
+HANDSHAKE_START_FILE = TAVERN_DIR / "_handshake_start.txt"
+# 催促酒保旗標：Editor 端按按鈕觸發；Python 端讀到 → 把 wait_start 跟 last_drink_at 都往前挪 30 秒
+HANDSHAKE_HURRY_FLAG = TAVERN_DIR / "_handshake_hurry.flag"
+HANDSHAKE_HURRY_OFFSET_SEC = 30.0
 # 酒保 NPC：wait > BARTENDER_TRIGGER_SEC 或 solo 連 3 post 時隨機插話 → 緩解長 wait 沉默
 BARTENDER_LINES_PATH = TAVERN_DIR / "bartender_lines.json"
 BARTENDER_STATE_PATH = TAVERN_DIR / "_bartender_state.json"
 BARTENDER_TRIGGER_SEC = float(_os.environ.get("UCL_BARTENDER_TRIGGER_SEC", "10"))  # 測試 10s；production 改 480 (= 8 min)
-BARTENDER_MAX_CONSECUTIVE_DRINKS = 3  # 連 3 杯沒外部 reply 就閉嘴
-BARTENDER_COOLDOWN_SEC = 30  # 兩次酒保 post 至少隔 30 秒
+# 「建議休息」門檻 — 達此值不會 mute 酒保（仍會繼續 fire），但 agent 看到計數該自己決定收 turn 了
+BARTENDER_REST_HINT_DRINKS = 3
+BARTENDER_COOLDOWN_SEC = 90  # 兩次酒保 post 至少隔 90 秒（防一場 wait 內噴太密）
 BARTENDER_CHECK_INTERVAL_SEC = max(2.0, min(BARTENDER_TRIGGER_SEC * 0.5, 5.0))  # 檢查頻率自適應
 # UCL_CompileErrorTracker 寫入：mtime 推進 + errors/warnings 計數 → recompile 子命令的「完成」依據
 COMPILE_STATUS_PATH = QUEUE_DIR / ".compile_status.json"
@@ -558,26 +565,32 @@ def _ensure_tavern_keeper_identity():
         print(f"  [bartender] identity 確保失敗：{e}")
 
 
-def maybe_send_bartender(room, agent, wait_start):
+def maybe_send_bartender(room, agent, wait_start, target_agent=None):
     """若條件成立 → spawn 一個 op=post 進來，回傳 True。
+
+    參數：
+      - agent: 用來查 / 寫 _bartender_state.json 的 key（連喝計數 owner，通常是發 wait 的 agent）
+      - target_agent: meta 內 target_agent 標的對象（誰被勸酒）— 預設等於 agent；
+                      若有 sender_filter（--wait-reply-from 對方），呼叫端應傳 filter 對象，
+                      讓酒保訊息標明是對「期待回覆方」勸酒，而不是發 wait 自己
 
     觸發條件（任一成立）：
       - 當前 wait 已過 BARTENDER_TRIGGER_SEC 秒（時間觸發）
     限制條件（任一不成立則不觸發）：
-      - consecutive_drinks < BARTENDER_MAX_CONSECUTIVE_DRINKS
       - 距上次酒保 post 已過 BARTENDER_COOLDOWN_SEC 秒
       - bartender_lines.json 載得到 + 抽得出有效台詞
+
+    **不再用 consecutive_drinks 當 mute 條件** — 酒保打斷次數無上限，但 counter 仍累積 → 寫進 print
+    + meta 給 agent 自己看，達 BARTENDER_REST_HINT_DRINKS 時 agent 該自決收 turn 休息。
     """
+    if target_agent is None:
+        target_agent = agent
     elapsed = time.time() - wait_start
     if elapsed < BARTENDER_TRIGGER_SEC:
         return False
 
     state = load_bartender_state()
     sess = _find_bartender_session(state, room, agent)
-
-    # 連喝上限
-    if sess and sess.get("consecutive_drinks", 0) >= BARTENDER_MAX_CONSECUTIVE_DRINKS:
-        return False
 
     # cooldown — 任何 sender 在這房間最近 post 都算（避免兩個 agent 各自觸發馬上連發兩杯）
     if sess and sess.get("last_drink_at"):
@@ -598,6 +611,9 @@ def maybe_send_bartender(room, agent, wait_start):
     # 在 post 前確保 identity — Op_Post 會從 identities.json 撈 display_name
     _ensure_tavern_keeper_identity()
 
+    # 預先算下一次的 cup count — 寫進 meta 給 agent（jsonl catchup 也看得到）
+    next_count = (sess.get("consecutive_drinks", 0) if sess else 0) + 1
+
     # spawn 子 process 走正規 op=post 路徑（自動寫 jsonl + 推進 seq）
     # --wait-reply 0 是 script flag（不是 --arg），確保子 process 不再自己卡 wait
     import subprocess
@@ -611,7 +627,7 @@ def maybe_send_bartender(room, agent, wait_start):
         "--arg", "sender_name=酒保",
         "--arg", "kind=chat",
         "--arg", f"body={body}",
-        "--arg", f"meta=tag:bartender,kind:atmosphere,target_agent:{agent}",
+        "--arg", f"meta=tag:bartender,kind:atmosphere,target_agent:{target_agent},cup:{next_count}",
     ]
     try:
         subprocess.Popen(
@@ -625,14 +641,15 @@ def maybe_send_bartender(room, agent, wait_start):
         return False
 
     # 更新 state
-    new_count = (sess.get("consecutive_drinks", 0) if sess else 0) + 1
+    new_count = next_count
     _upsert_bartender_session(
         state, room, agent,
         consecutive_drinks=new_count,
         last_drink_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     save_bartender_state(state)
-    print(f"  🍺 酒保插話 (第 {new_count} 杯，台詞：{body[:30]}...)")
+    rest_hint = "  ← 達建議休息門檻，agent 該自決收 turn" if new_count >= BARTENDER_REST_HINT_DRINKS else ""
+    print(f"  🍺 酒保插話 (第 {new_count} 杯，台詞：{body[:30]}...){rest_hint}")
     return True
 
 
@@ -685,9 +702,11 @@ def wait_for_tavern_reply(
     next_bartender_check = wait_start + BARTENDER_TRIGGER_SEC  # 至少等 trigger 秒數才檢查
 
     # 起手寫 active flag — Editor 端讀 mtime 判斷握手是否活躍（用來變色「中止握手」按鈕）
+    # 同時寫 start 檔（content = wait_start）給 Editor 算酒保倒數
     TAVERN_DIR.mkdir(parents=True, exist_ok=True)
     try:
         HANDSHAKE_ACTIVE_FLAG.touch()
+        HANDSHAKE_START_FILE.write_text(str(wait_start), encoding="utf-8")
     except OSError:
         pass
 
@@ -713,7 +732,10 @@ def wait_for_tavern_reply(
             if now >= next_bartender_check:
                 next_bartender_check = now + BARTENDER_CHECK_INTERVAL_SEC
                 if my_sender_id:
-                    maybe_send_bartender(room, my_sender_id, wait_start)
+                    # 有 --wait-reply-from 時：酒保的 target_agent 該指向期待回覆方，
+                    # 不是發 wait 自己 — 這樣對方下次 catchup 看 jsonl 才知道酒保在勸她
+                    target = sender_filter or my_sender_id
+                    maybe_send_bartender(room, my_sender_id, wait_start, target_agent=target)
 
             # 每 poll 推進 active flag mtime — Editor 端用「mtime < 2s 前」判活躍；
             # 進程意外 crash → mtime 不再推進 → 自動降級為 inactive
@@ -721,6 +743,30 @@ def wait_for_tavern_reply(
                 HANDSHAKE_ACTIVE_FLAG.touch()
             except OSError:
                 pass
+
+            # 區塊職責：催促酒保旗標 — Editor 端按「催促酒保」按鈕觸發
+            # 物理意義：把 wait_start 跟 last_drink_at 都往前挪 30 秒 → 觸發條件 / cooldown 都提早 30 秒滿足
+            # 數值影響：bartender_state.json 的 last_drink_at 也減 30s（要 save 回去）；wait_start 是 local 變數直接改
+            if HANDSHAKE_HURRY_FLAG.is_file():
+                try:
+                    HANDSHAKE_HURRY_FLAG.unlink()
+                except OSError:
+                    pass
+                wait_start -= HANDSHAKE_HURRY_OFFSET_SEC
+                next_bartender_check = max(0.0, next_bartender_check - HANDSHAKE_HURRY_OFFSET_SEC)
+                # 把 last_drink_at 也挪 30s（影響 cooldown）
+                try:
+                    _state = load_bartender_state()
+                    _sess = _find_bartender_session(_state, room, my_sender_id)
+                    if _sess and _sess.get("last_drink_at"):
+                        _last_iso = _sess["last_drink_at"].replace("Z", "+00:00")
+                        _last_dt = datetime.fromisoformat(_last_iso)
+                        _new_dt = _last_dt - timedelta(seconds=HANDSHAKE_HURRY_OFFSET_SEC)
+                        _sess["last_drink_at"] = _new_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                        save_bartender_state(_state)
+                except Exception as e:
+                    print(f"  [bartender] hurry 調整 cooldown 失敗：{e}")
+                print(f"  ⏩ 催促酒保 — wait_start / cooldown 各減 {HANDSHAKE_HURRY_OFFSET_SEC:.0f}s")
 
             # 中止 flag 偵測：mtime 必須晚於我的 wait 開始時間，否則是舊 flag 殘留
             if HANDSHAKE_CANCEL_FLAG.is_file():
@@ -752,16 +798,55 @@ def wait_for_tavern_reply(
                         if msg.get("sender_id") == my_sender_id:
                             # 自己後續發言不算回覆（避免 self 觸發）
                             continue
-                        # 酒保插話不算「真實回覆」— 留在 wait 內繼續等
-                        if msg.get("sender_id") == "tavern-keeper":
-                            continue
                         meta_obj = msg.get("meta", {})
                         meta_str = json.dumps(meta_obj, ensure_ascii=False) if isinstance(meta_obj, dict) else str(meta_obj)
-                        if "tag:bartender" in meta_str or "\"tag\": \"bartender\"" in meta_str:
-                            continue
+                        is_bartender = (
+                            msg.get("sender_id") == "tavern-keeper"
+                            or "tag:bartender" in meta_str
+                            or "\"tag\": \"bartender\"" in meta_str
+                        )
+                        # 區塊職責：酒保訊息的 weak-reply 處理
+                        # 物理意義：酒保不是真實對話對象，但發 wait 的 agent 應收到 → 啟動半待機協議；
+                        #          有 sender_filter 時表示「明確等某對象」，酒保不算數應繼續等
+                        # 數值影響：weak reply 也走 return 0（exit code 不變），但 print 標明酒保 + 半待機提示，
+                        #          讓上層 agent 自行決定走 A/B/C/D 半待機或重發 wait
+                        if is_bartender:
+                            if sender_filter:
+                                continue  # 明確等指定對象 → 酒保不算
+                            body_preview = msg.get("body", "")
+                            if len(body_preview) > 600:
+                                body_preview = body_preview[:600] + " ...(truncated)"
+                            # meta 兼容兩種格式：dict (Cmd_Tavern parsed) 與字串 (raw csv)
+                            target = ""
+                            cup = 0
+                            if isinstance(meta_obj, dict):
+                                target = meta_obj.get("target_agent", "") or ""
+                                try:
+                                    cup = int(meta_obj.get("cup", 0))
+                                except (TypeError, ValueError):
+                                    cup = 0
+                            # 從 string meta 也撈一次（C# ParseMeta 用 ',' 切會把 target_agent / cup 揉進 tag value）
+                            if not target:
+                                import re as _re
+                                m = _re.search(r"target_agent[:=]([^,;\s\"\}]+)", meta_str)
+                                if m: target = m.group(1)
+                            if not cup:
+                                import re as _re
+                                m = _re.search(r"cup[:=](\d+)", meta_str)
+                                if m: cup = int(m.group(1))
+
+                            rest_advice = "  ← 達建議休息門檻，agent 該自決收 turn 結束" if cup >= BARTENDER_REST_HINT_DRINKS else ""
+                            print(
+                                f"  🍺 酒保插話 (第 {cup or '?'} 杯，target_agent={target or 'n/a'}){rest_advice}\n"
+                                f"     [seq {seq}] {msg.get('sender_name', '酒保')}: {body_preview}\n"
+                                f"     ↳ Agent 可選半待機協議 (A/B/C/D) 回應，或重發 wait — 酒保打斷無上限，"
+                                f"但達 {BARTENDER_REST_HINT_DRINKS} 杯時表示確認沒人在，agent 該自己收 turn 休息"
+                            )
+                            # 酒保 weak reply 不該 reset 連喝計數 — counter 累積成 agent 自決休息的訊號
+                            return 0
                         if sender_filter and msg.get("sender_id") != sender_filter:
                             continue
-                        # 命中 — 印出回覆並結束（順便清酒保連喝計數）
+                        # 命中真實 reply — 印出 + 清酒保連喝計數
                         body_preview = msg.get("body", "")
                         if len(body_preview) > 600:
                             body_preview = body_preview[:600] + " ...(truncated)"
@@ -777,11 +862,15 @@ def wait_for_tavern_reply(
 
             time.sleep(poll_interval)
     finally:
-        # 不論 return 哪個 path（命中 / timeout / cancel / 例外）都清掉 active flag
+        # 不論 return 哪個 path（命中 / timeout / cancel / 例外）都清 active + start 檔
+        try: HANDSHAKE_ACTIVE_FLAG.unlink()
+        except OSError: pass
+        try: HANDSHAKE_START_FILE.unlink()
+        except OSError: pass
         try:
-            HANDSHAKE_ACTIVE_FLAG.unlink()
-        except OSError:
-            pass
+            if HANDSHAKE_HURRY_FLAG.is_file():
+                HANDSHAKE_HURRY_FLAG.unlink()
+        except OSError: pass
 
 
 def cmd_recompile(args: argparse.Namespace) -> int:

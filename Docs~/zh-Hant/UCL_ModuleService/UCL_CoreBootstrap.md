@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Asset Bootstrap 機制
 description: UCL_Core 安裝到新專案時自動補齊預設 Asset 的機制 — Templates~ 範本、版本 marker、UI 編輯模式三層架構
-last_updated: 2026-05-07
+last_updated: 2026-05-08
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 tags: [bootstrap, infra, module-system]
 aliases: [bootstrap, 預設值, 範本, default assets, templates, UCL_CoreAssetBootstrap]
@@ -96,9 +96,39 @@ public const int TemplatesContentVersion = 2;
 
 | 選單 | 用途 | 是否寫檔 |
 |---|---|---|
-| `Tools/UCL/Bootstrap/Apply Missing Defaults` | 手動觸發補缺 | ✅ |
+| `Tools/UCL/Bootstrap/Apply Missing Defaults` | 手動觸發補缺（Templates~ → 專案）| ✅ |
 | `Tools/UCL/Bootstrap/Diff Against Templates` | Console 印 missing / modified / identical 摘要 | ❌（純讀） |
 | `Tools/UCL/Bootstrap/Force Re-Apply (Overwrite!)` | 用範本【覆寫】所有對應 Asset，帶 confirm dialog | ✅（破壞性） |
+| **`Tools/UCL/Bootstrap/Push Templates → Modules (Force)`** | **Template 上游覆蓋 — 把 Templates~ 變動推進專案 .BuiltinModules（跨專案分發 Template 更新）** | ✅ |
+
+> 補充：開發者要把當前專案內某個 UCL_Asset 客製內容**回流**到 UCL_Core 倉庫 Templates~ 當預設範本 → 用 [Cmd_MigrateAssetToTemplate](../API/UCL_AgentCommand/Cmd_MigrateAssetToTemplate.md)（指定 assetType + id 即可）。回流後此頁的 AutoTemplatePush 機制會自動分發到其他專案。
+
+#### Template 自動覆蓋（Push）詳細
+
+對應 [`Menu_PushTemplates`](../../Editor/UCL_CoreAssetBootstrap.cs) + 自動觸發 `AutoTemplatePushIfNeeded`。
+
+**用途**：UCL_Core 維護者改了 Templates~ 內某檔 → 別的專案 pull UCL_Core 後 Editor 啟動時自動把新版本推進專案 .BuiltinModules。跟既有 `Apply Missing Defaults`（只補缺、不覆寫）互補。
+
+**自動觸發**（與正向 Bootstrap 同點 — `OnEditorLoad → delayCall`）：
+- 沒任何差異 → 0 副作用 silent return（熱路徑）
+- 只有「新檔」（Templates 有 / 專案沒有，無衝突）→ silent 自動複製，Console 印 log，不彈 dialog
+- 有「衝突」（兩邊都有但 byte 不同）→ 過濾掉「上次 user 已 skip 且 Template hash 沒變」→ 剩下才彈 dialog
+
+**Skip marker** (`ProjectSettings/UCL_CoreTemplatePush.skipped.json`)：
+- JSON object：`{ rel_path: sha1_of_template_when_skipped }`
+- 使用者按「保留本地(跳過)」時 record 當下 **Template 端** sha1（不是專案端 — 因為對使用者而言是「拒絕這個版本的 Template」）
+- 下次 reload Template hash 不變 → silent skip，不重複 prompt
+- Template 又被 bump 改動 → hash 變 → 視為新版本重新 prompt
+- 按「覆蓋」會把對應 entry 從 marker 移除（接受新版本）
+- 按 summary 「取消」→ 把所有衝突以「當下 Template hash」record 進 marker（明示這批 Template 版本不要）
+
+**情境表**：
+
+| 情境 | 自動觸發行為 | Menu 入口行為 |
+|---|---|---|
+| Templates~ 有 / 專案沒有（新檔）| **silent 自動複製** | summary 後 silent 複製 |
+| 兩邊都有但 byte 不同（衝突 — 專案本地已修改）| 過濾 skip marker 後彈 per-file dialog | 強迫重問所有衝突（忽略 skip marker） |
+| 專案有 / Templates~ 沒有（專案本地自訂）| **不處理** | **不處理** |
 
 ---
 

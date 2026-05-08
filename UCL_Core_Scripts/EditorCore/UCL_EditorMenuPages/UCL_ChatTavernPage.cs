@@ -63,9 +63,15 @@ namespace UCL.Core.EditorLib.Page
         // ===== 顯示快取 =====
         // 物理意義：每幀重讀 jsonl 太重；只有 Refresh / Send / 進房間時重抓
         UCL_ChatRoomList m_RoomsCache;
-        UCL_ChatIdentityList m_IdentitiesCache;
+        // identities 來源從 identities.json 改為 UCL_ChatTavernIdentityAsset.GetAllIDs()
+        // identities.json 仍保留作為 display_name 對照 — 對齊 Cmd_Tavern.Op_Post 既有行為
+        List<string> m_IdentityIds;                  // UCL_ChatTavernIdentityAsset asset id 清單（dropdown 來源）
+        UCL_ChatIdentityList m_RosterCache;          // identities.json 的 roster — 用來查 display_name / kind（顯示用）
         List<UCL_ChatMessage> m_MessagesCache;
         UCL_ChatRoomMembers m_MembersCache;
+
+        // PopupSearchCache 內部狀態容器（per-page；同一 page 多個 popup 用 key 區分）
+        readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
 
         // ===== 自動 polling =====
         // 物理意義：勾選後每 N 秒重抓 messages — 模擬即時聊天感
@@ -86,9 +92,21 @@ namespace UCL.Core.EditorLib.Page
         //          HandshakeStaleSec=2.0 = 4× Python poll interval (0.5s)，足夠抗 jitter 但不至於
         //          Python crash 後還顯示活躍超久
         bool m_HandshakeActive = false;
+        double m_HandshakeStartUnix = 0;          // _handshake_start.txt 內容（Python time.time() float）
+        double m_BartenderLastDrinkUnix = 0;      // _bartender_state.json sessions 中最近一筆 last_drink_at（unix）
+        int m_BartenderConsecutiveDrinks = 0;
         double m_LastHandshakeCheckTime = 0;
         const double HandshakeCheckIntervalSec = 0.5;
         const double HandshakeStaleSec = 2.0;
+        // 跟 Python 端常數對齊（測試 10s / production 480s；cooldown 90s）— 純顯示用，不影響觸發邏輯
+        const double BartenderTriggerSec = 10.0;
+        const double BartenderCooldownSec = 90.0;
+        const int BartenderRestHintDrinks = 3;
+
+        // Avatar 快取：sender_id → Sprite（lazy 載入 UCL_ChatTavernIdentityAsset.m_AvatarSprite）
+        // 物理意義：訊息列表對每筆 sender_id 顯示頭像；同 sender 多筆訊息共用一張 Sprite，避免每幀重複載入
+        // 數值影響：Sprite null 視為「沒配置 / Asset 不存在」，UI 顯示佔位 box
+        readonly Dictionary<string, Sprite> m_AvatarCache = new Dictionary<string, Sprite>();
 
         protected override void TopBarButtons()
         {
@@ -127,41 +145,213 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：throttle 過的握手活躍狀態檢查
-        // 物理意義：每 HandshakeCheckIntervalSec 秒做一次 File.Exists + GetLastWriteTimeUtc，
-        //          避免 RequiresConstantRepaint 每幀 IO。介於兩次檢查之間沿用上次結果。
-        // 數值影響：寫 m_HandshakeActive；m_LastHandshakeCheckTime 推進到當前 timeSinceStartup
+        // 區塊職責：throttle 過的握手活躍 + bartender 狀態檢查
+        // 物理意義：每 HandshakeCheckIntervalSec 秒做一次 File IO 抓三個檔的狀態 — handshake_active
+        //          (mtime → 活躍)、handshake_start (content → wait_start unix)、bartender_state (last_drink_at)
+        // 數值影響：寫 m_HandshakeActive / m_HandshakeStartUnix / m_BartenderLastDrinkUnix / m_BartenderConsecutiveDrinks
         void UpdateHandshakeActive()
         {
             double now = EditorApplication.timeSinceStartup;
             if (now - m_LastHandshakeCheckTime < HandshakeCheckIntervalSec) return;
             m_LastHandshakeCheckTime = now;
 
-            string path = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_active.flag");
-            if (!File.Exists(path))
+            string tavernDir = UCL_ChatTavernIO.GetTavernDir();
+            string activePath = Path.Combine(tavernDir, "_handshake_active.flag");
+            if (!File.Exists(activePath))
             {
                 m_HandshakeActive = false;
-                return;
+                m_HandshakeStartUnix = 0;
             }
+            else
+            {
+                try
+                {
+                    double age = (System.DateTime.UtcNow - File.GetLastWriteTimeUtc(activePath)).TotalSeconds;
+                    m_HandshakeActive = age < HandshakeStaleSec;
+                }
+                catch (System.IO.IOException) { m_HandshakeActive = false; }
+            }
+
+            // wait_start (Python time.time() float) — content of _handshake_start.txt
+            string startPath = Path.Combine(tavernDir, "_handshake_start.txt");
+            m_HandshakeStartUnix = 0;
+            if (File.Exists(startPath))
+            {
+                try
+                {
+                    string s = File.ReadAllText(startPath).Trim();
+                    if (double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v))
+                        m_HandshakeStartUnix = v;
+                }
+                catch { /* race ok */ }
+            }
+
+            // bartender state — pick MAX last_drink_at across sessions（顯示用，誰都行）
+            string statePath = Path.Combine(tavernDir, "_bartender_state.json");
+            m_BartenderLastDrinkUnix = 0;
+            m_BartenderConsecutiveDrinks = 0;
+            if (File.Exists(statePath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(statePath);
+                    // 簡易解析（避免引入 JsonUtility/Newtonsoft 麻煩 — 只抓兩欄）
+                    var lastDrinks = System.Text.RegularExpressions.Regex.Matches(json, "\"last_drink_at\"\\s*:\\s*\"([^\"]+)\"");
+                    foreach (System.Text.RegularExpressions.Match mt in lastDrinks)
+                    {
+                        if (System.DateTime.TryParse(mt.Groups[1].Value, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt))
+                        {
+                            double unix = (dt - new System.DateTime(1970,1,1, 0,0,0, System.DateTimeKind.Utc)).TotalSeconds;
+                            if (unix > m_BartenderLastDrinkUnix) m_BartenderLastDrinkUnix = unix;
+                        }
+                    }
+                    var drinks = System.Text.RegularExpressions.Regex.Matches(json, "\"consecutive_drinks\"\\s*:\\s*(\\d+)");
+                    foreach (System.Text.RegularExpressions.Match mt in drinks)
+                    {
+                        if (int.TryParse(mt.Groups[1].Value, out var v) && v > m_BartenderConsecutiveDrinks)
+                            m_BartenderConsecutiveDrinks = v;
+                    }
+                }
+                catch { /* race ok */ }
+            }
+        }
+
+        // 區塊職責：頂部酒保資訊條 — 顯示活躍 / 倒數 / 連喝計數 + 「催促酒保 -30s」按鈕
+        // 物理意義：給使用者一目了然「酒保下次插話還要多久」 — 數值用 Python 端 wait_start + bartender_state 算
+        // 數值影響：點催促按鈕 → 寫 _handshake_hurry.flag（Python 端 poll loop 偵測到 → wait_start / cooldown 各 -30s）
+        void DrawBartenderInfoBar()
+        {
+            UpdateHandshakeActive();
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                if (!m_HandshakeActive)
+                {
+                    GUILayout.Label("🍺 酒保：沉睡中（沒進行中的 wait）", UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                    return;
+                }
+
+                double nowUnix = (System.DateTime.UtcNow - new System.DateTime(1970,1,1, 0,0,0, System.DateTimeKind.Utc)).TotalSeconds;
+                double countdown = -1;
+                string statusText;
+                if (m_HandshakeStartUnix > 0)
+                {
+                    double elapsed = nowUnix - m_HandshakeStartUnix;
+                    if (elapsed < BartenderTriggerSec)
+                    {
+                        countdown = BartenderTriggerSec - elapsed;
+                        statusText = $"🍺 酒保：首杯倒數 {countdown:F0}s";
+                    }
+                    else
+                    {
+                        // 已過 trigger 門檻，算 cooldown
+                        double cooldownLeft = m_BartenderLastDrinkUnix > 0
+                            ? BartenderCooldownSec - (nowUnix - m_BartenderLastDrinkUnix)
+                            : 0;
+                        if (cooldownLeft <= 0)
+                        {
+                            statusText = "🍺 酒保：隨時可插話";
+                        }
+                        else
+                        {
+                            countdown = cooldownLeft;
+                            statusText = $"🍺 酒保：下杯倒數 {countdown:F0}s";
+                        }
+                    }
+                }
+                else
+                {
+                    statusText = "🍺 酒保：握手活躍中（無 start 資料）";
+                }
+
+                GUILayout.Label(statusText, UCL_GUIStyle.LabelStyle);
+
+                // 連喝計數
+                if (m_BartenderConsecutiveDrinks > 0)
+                {
+                    string drinkLabel = $"  已喝 {m_BartenderConsecutiveDrinks} 杯";
+                    if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
+                        drinkLabel += " (達休息門檻)";
+                    var style = new GUIStyle(UCL_GUIStyle.LabelStyle);
+                    if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
+                        style.normal.textColor = new Color(1f, 0.5f, 0.3f);
+                    GUILayout.Label(drinkLabel, style);
+                }
+
+                GUILayout.FlexibleSpace();
+
+                // 催促按鈕 — 寫 hurry flag，Python 偵測後 wait_start / cooldown 各 -30s
+                using (new EditorGUI.DisabledScope(countdown <= 0))
+                {
+                    if (GUILayout.Button("⏩ 催促酒保 -30s", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ChatTavernIO.EnsureTavernDir();
+                        string flagPath = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_hurry.flag");
+                        File.WriteAllText(flagPath, System.DateTime.UtcNow.ToString("o"));
+                        Debug.Log($"[Tavern] 催促酒保 → wrote {flagPath}");
+                    }
+                }
+            }
+        }
+
+        // 區塊職責：畫指定 sender 的 avatar（含 cache 載入 + 灰色佔位 fallback）
+        // 物理意義：訊息列表 / input bar 共用此 helper；GUILayoutUtility.GetRect 取 size×size 區塊，
+        //          有 Sprite 用 DrawTextureWithTexCoords（處理 sprite atlas rect / texture uv）
+        // 數值影響：純繪製，不寫檔；占用 layout 一個方塊
+        void DrawAvatar(string senderId, float size)
+        {
+            var avatar = GetAvatarSprite(senderId);
+            var rect = GUILayoutUtility.GetRect(size, size, GUILayout.Width(size), GUILayout.Height(size));
+            if (avatar != null && avatar.texture != null)
+            {
+                var r = avatar.textureRect;
+                var tex = avatar.texture;
+                var uv = new Rect(r.x / tex.width, r.y / tex.height, r.width / tex.width, r.height / tex.height);
+                GUI.DrawTextureWithTexCoords(rect, tex, uv);
+            }
+            else
+            {
+                EditorGUI.DrawRect(rect, new Color(0.3f, 0.3f, 0.3f, 0.4f));
+            }
+        }
+
+        // 區塊職責：Lookup 並 cache sender 對應的 Sprite（從 UCL_ChatTavernIdentityAsset.m_AvatarSprite 解析）
+        // 物理意義：訊息列表 row 顯示頭像；同 sender 同一 Sprite 重用，避免每幀載入
+        // 數值影響：null = 沒配置或 Asset 不存在，DrawMessageRow 顯示佔位灰框
+        Sprite GetAvatarSprite(string senderId)
+        {
+            if (string.IsNullOrEmpty(senderId)) return null;
+            if (m_AvatarCache.TryGetValue(senderId, out var cached)) return cached;
+            Sprite sp = null;
             try
             {
-                double age = (System.DateTime.UtcNow - File.GetLastWriteTimeUtc(path)).TotalSeconds;
-                m_HandshakeActive = age < HandshakeStaleSec;
+                var asset = new UCL_ChatTavernIdentityAsset();
+                if (asset.ContainsAsset(senderId))
+                {
+                    var ident = asset.GetData(senderId);
+                    if (ident != null && ident.m_AvatarSprite != null)
+                    {
+                        sp = ident.m_AvatarSprite.Sprite;   // UCL_SpriteAssetEntry.Sprite getter
+                    }
+                }
             }
-            catch (System.IO.IOException)
+            catch (System.Exception ex)
             {
-                // 讀檔競態（Python 正在寫 / 剛刪）→ 保守視為非活躍，下次再判
-                m_HandshakeActive = false;
+                Debug.LogWarning($"[UCL_ChatTavernPage] GetAvatarSprite({senderId}) 失敗：{ex.Message}");
             }
+            m_AvatarCache[senderId] = sp;   // null 也 cache 避免每次都試載
+            return sp;
         }
 
         protected override void ContentOnGUI()
         {
             if (m_RoomsCache == null) RefreshRooms();
-            if (m_IdentitiesCache == null) RefreshIdentities();
+            if (m_IdentityIds == null) RefreshIdentities();
             EnsureAutoInit();
             HandleAutoPoll();
 
+            DrawBartenderInfoBar();
+            GUILayout.Space(4);
             DrawRoomPicker();
             GUILayout.Space(4);
             DrawIdentityPicker();
@@ -194,23 +384,59 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else
                 {
-                    foreach (var r in m_RoomsCache.rooms)
+                    // 區塊職責：房間下拉選單（用 PopupSearchCache，符合「房間數量多時可搜尋」需求）
+                    // 物理意義：列出 m_RoomsCache.rooms 的 display name；選定 → 更新 m_SelectedRoomId + RefreshMessages/Members
+                    // 數值影響：純 UI 切換；不寫檔
+                    var roomNames = new List<string>(m_RoomsCache.rooms.Count);
+                    int curIdx = 0;
+                    for (int i = 0; i < m_RoomsCache.rooms.Count; i++)
                     {
-                        bool selected = m_SelectedRoomId == r.id;
-                        var style = selected ? UCL_GUIStyle.GetButtonStyle(Color.cyan) : UCL_GUIStyle.ButtonStyle;
-                        if (GUILayout.Button(r.name, style, GUILayout.ExpandWidth(false)))
-                        {
-                            m_SelectedRoomId = r.id;
-                            RefreshMessages();
-                            RefreshMembers();
-                        }
+                        var r = m_RoomsCache.rooms[i];
+                        roomNames.Add($"{r.name}  [{r.id}]");
+                        if (r.id == m_SelectedRoomId) curIdx = i;
+                    }
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, roomNames, m_PickerDic, "RoomPicker", GUILayout.Width(420));
+                    if (newIdx != curIdx && newIdx >= 0 && newIdx < m_RoomsCache.rooms.Count)
+                    {
+                        m_SelectedRoomId = m_RoomsCache.rooms[newIdx].id;
+                        RefreshMessages();
+                        RefreshMembers();
                     }
                 }
-                GUILayout.FlexibleSpace();
                 if (GUILayout.Button(m_ShowCreateRoom ? "− Cancel" : "+ 新房間", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     m_ShowCreateRoom = !m_ShowCreateRoom;
                 }
+
+                // 加入 / 離開房間按鈕
+                if (!string.IsNullOrEmpty(m_SelectedRoomId) && !string.IsNullOrEmpty(m_SelectedIdentityId))
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        bool isMember = m_MembersCache != null && m_MembersCache.member_ids.Contains(m_SelectedIdentityId);
+                        if (!isMember)
+                        {
+                            if (GUILayout.Button($"加入「{m_SelectedRoomId}」", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 1f, 0.4f)), GUILayout.ExpandWidth(false)))
+                            {
+                                DoJoin();
+                            }
+                        }
+                        else
+                        {
+                            if (GUILayout.Button($"離開「{m_SelectedRoomId}」", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f)), GUILayout.ExpandWidth(false)))
+                            {
+                                DoLeave();
+                            }
+                        }
+                        GUILayout.FlexibleSpace();
+                        if (m_MembersCache != null)
+                        {
+                            GUILayout.Label($"在場 {m_MembersCache.member_ids.Count} 人", UCL_GUIStyle.LabelStyle);
+                        }
+                    }
+                }
+                GUILayout.FlexibleSpace();
+
             }
             if (m_ShowCreateRoom)
             {
@@ -246,27 +472,35 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope("box"))
             {
                 GUILayout.Label("身分：", UCL_GUIStyle.LabelStyle, GUILayout.Width(50));
-                if (m_IdentitiesCache.identities.Count == 0)
+                if (m_IdentityIds == null || m_IdentityIds.Count == 0)
                 {
-                    GUILayout.Label("(尚無身分，請建立)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label("(尚無身分 — 跑 Cmd_SeedTavernIdentityAssets 或下面 + 新身分)", UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
-                    foreach (var i in m_IdentitiesCache.identities)
+                    // 區塊職責：身分下拉選單 — 來源是 UCL_ChatTavernIdentityAsset.GetAllIDs()
+                    // 物理意義：display 用 roster (identities.json) 的 display_name 對照；缺 roster 條目就 fallback 顯示 ID
+                    // 數值影響：選定 → m_SelectedIdentityId 更新；不寫任何檔
+                    var labels = new List<string>(m_IdentityIds.Count);
+                    int curIdx = 0;
+                    for (int i = 0; i < m_IdentityIds.Count; i++)
                     {
-                        bool selected = m_SelectedIdentityId == i.id;
-                        var style = selected ? UCL_GUIStyle.GetButtonStyle(Color.yellow) : UCL_GUIStyle.ButtonStyle;
-                        if (GUILayout.Button($"{i.display_name} ({i.kind})", style, GUILayout.ExpandWidth(false)))
-                        {
-                            m_SelectedIdentityId = i.id;
-                        }
+                        string id = m_IdentityIds[i];
+                        var ros = m_RosterCache?.identities?.Find(x => x != null && x.id == id);
+                        string display = ros != null && !string.IsNullOrEmpty(ros.display_name) ? ros.display_name : id;
+                        string kind = ros != null && !string.IsNullOrEmpty(ros.kind) ? ros.kind : "?";
+                        labels.Add($"{display} ({kind})  [{id}]");
+                        if (id == m_SelectedIdentityId) curIdx = i;
                     }
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "IdentityPicker", GUILayout.Width(420));
+                    if (newIdx >= 0 && newIdx < m_IdentityIds.Count) m_SelectedIdentityId = m_IdentityIds[newIdx];
                 }
-                GUILayout.FlexibleSpace();
                 if (GUILayout.Button(m_ShowCreateIdentity ? "− Cancel" : "+ 新身分", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     m_ShowCreateIdentity = !m_ShowCreateIdentity;
                 }
+                GUILayout.FlexibleSpace();
+
             }
             if (m_ShowCreateIdentity)
             {
@@ -289,7 +523,22 @@ namespace UCL.Core.EditorLib.Page
                         }
                         else
                         {
+                            // 雙寫：roster (identities.json) + UCL_ChatTavernIdentityAsset .json shell
+                            // 物理意義：roster 給 Cmd_Tavern.Op_Post 查 display_name；Asset 是 dropdown 來源 + rich data 載體
                             UCL_ChatTavernIO.GetOrCreateIdentity(m_NewIdentityId, m_NewIdentityName, m_NewIdentityKind);
+                            try
+                            {
+                                var asset = new UCL_ChatTavernIdentityAsset(m_NewIdentityId);
+                                if (!asset.ContainsAsset(m_NewIdentityId))
+                                {
+                                    asset.m_Tags = new List<string> { string.IsNullOrEmpty(m_NewIdentityKind) ? "agent" : m_NewIdentityKind };
+                                    asset.Save();
+                                }
+                            }
+                            catch (System.Exception ex)
+                            {
+                                Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernIdentityAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernIdentityAssets 補）：{ex.Message}");
+                            }
                             m_SelectedIdentityId = m_NewIdentityId;
                             m_ShowCreateIdentity = false;
                             RefreshIdentities();
@@ -297,33 +546,7 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
             }
-            // 加入 / 離開房間按鈕
-            if (!string.IsNullOrEmpty(m_SelectedRoomId) && !string.IsNullOrEmpty(m_SelectedIdentityId))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    bool isMember = m_MembersCache != null && m_MembersCache.member_ids.Contains(m_SelectedIdentityId);
-                    if (!isMember)
-                    {
-                        if (GUILayout.Button($"加入「{m_SelectedRoomId}」", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 1f, 0.4f)), GUILayout.ExpandWidth(false)))
-                        {
-                            DoJoin();
-                        }
-                    }
-                    else
-                    {
-                        if (GUILayout.Button($"離開「{m_SelectedRoomId}」", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f)), GUILayout.ExpandWidth(false)))
-                        {
-                            DoLeave();
-                        }
-                    }
-                    GUILayout.FlexibleSpace();
-                    if (m_MembersCache != null)
-                    {
-                        GUILayout.Label($"在場 {m_MembersCache.member_ids.Count} 人", UCL_GUIStyle.LabelStyle);
-                    }
-                }
-            }
+
         }
 
         // ===========================================================
@@ -342,7 +565,7 @@ namespace UCL.Core.EditorLib.Page
                     m_MessagesScroll.y = float.MaxValue;
                     m_PendingScrollToBottom = false;
                 }
-                m_MessagesScroll = GUILayout.BeginScrollView(m_MessagesScroll, GUILayout.MinHeight(280), GUILayout.MaxHeight(420));
+                m_MessagesScroll = GUILayout.BeginScrollView(m_MessagesScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(560)));
                 if (m_MessagesCache == null || m_MessagesCache.Count == 0)
                 {
                     GUILayout.Label("_(尚無訊息)_", UCL_GUIStyle.LabelStyle);
@@ -360,55 +583,85 @@ namespace UCL.Core.EditorLib.Page
 
         void DrawMessageRow(UCL_ChatMessage m)
         {
+            // 區塊職責：Discord 風格訊息排版 — 左側 48×48 大頭像，右側兩行（header + body）
+            // 物理意義：頭像從 UCL_ChatTavernIdentityAsset.m_AvatarSprite 反查；缺則灰色佔位
+            // 數值影響：純顯示；GUI.DrawTextureWithTexCoords 用 Sprite rect/texture
             using (new GUILayout.HorizontalScope())
             {
-                Color c = m.kind switch
+                // ===== 左側 48×48 頭像 =====
+                using (new GUILayout.VerticalScope(GUILayout.Width(52)))
                 {
-                    "join" => new Color(0.5f, 1f, 0.5f),
-                    "leave" => new Color(1f, 0.7f, 0.5f),
-                    "system" => Color.gray,
-                    _ => Color.white,
-                };
-                var style = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true, normal = { textColor = c } };
-                string time = "??:??:??";
-                if (!string.IsNullOrEmpty(m.ts))
-                {
-                    int t = m.ts.IndexOf('T');
-                    if (t >= 0 && t + 9 <= m.ts.Length) time = m.ts.Substring(t + 1, 8);
+                    GUILayout.Space(2);
+                    DrawAvatar(m.sender_id, 48);
                 }
-                string prefix = $"[{m.seq}] {time} {m.sender_name}:";
-                GUILayout.Label(prefix, style, GUILayout.Width(220));
-                GUILayout.Label(m.body ?? "", style);
-                if (GUILayout.Button("↩", UCL_GUIStyle.ButtonStyle, GUILayout.Width(30)))
+
+                // ===== 右側 header + body =====
+                using (new GUILayout.VerticalScope())
                 {
-                    m_ReplyTo = m.seq;
-                }
-            }
-            if (m.refs != null && m.refs.Count > 0)
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Space(220);
-                    foreach (var r in m.refs)
+                    Color senderColor = m.kind switch
                     {
-                        if (GUILayout.Button($"📎 {r.path}", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        "join" => new Color(0.5f, 1f, 0.5f),
+                        "leave" => new Color(1f, 0.7f, 0.5f),
+                        "system" => Color.gray,
+                        _ => new Color(0.85f, 0.95f, 1f),
+                    };
+                    string time = "??:??:??";
+                    if (!string.IsNullOrEmpty(m.ts))
+                    {
+                        int t = m.ts.IndexOf('T');
+                        if (t >= 0 && t + 9 <= m.ts.Length) time = m.ts.Substring(t + 1, 8);
+                    }
+
+                    // header 行：sender name (粗) + time + seq + reply 按鈕
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        var nameStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold, normal = { textColor = senderColor } };
+                        GUILayout.Label(m.sender_name ?? m.sender_id ?? "?", nameStyle, GUILayout.ExpandWidth(false));
+                        var metaStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } };
+                        GUILayout.Label($"  {time}  · seq {m.seq}", metaStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button("↩", UCL_GUIStyle.ButtonStyle, GUILayout.Width(30)))
+                            m_ReplyTo = m.seq;
+                    }
+
+                    // body 行
+                    var bodyStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
+                    if (m.kind != "chat")
+                    {
+                        bodyStyle.normal.textColor = senderColor;
+                        bodyStyle.fontStyle = FontStyle.Italic;
+                    }
+                    GUILayout.Label(m.body ?? "", bodyStyle);
+
+
+                    if (m.refs != null && m.refs.Count > 0)
+                    {
+                        using (new GUILayout.HorizontalScope())
                         {
-                            // 嘗試在 Project 視窗 ping 該 asset（路徑是相對 repo root，要轉成 Assets/...）
-                            TryPingAsset(r.path);
+                            GUILayout.Space(56);   // 對齊新的 48px avatar + 4px padding
+                            foreach (var r in m.refs)
+                            {
+                                if (GUILayout.Button($"📎 {r.path}", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                {
+                                    // 嘗試在 Project 視窗 ping 該 asset（路徑是相對 repo root，要轉成 Assets/...）
+                                    TryPingAsset(r.path);
+                                }
+                            }
+                        }
+                    }
+                    if (m.meta != null && m.meta.Count > 0)
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Space(56);   // 對齊新的 48px avatar + 4px padding
+                            var sb = new System.Text.StringBuilder();
+                            foreach (var kv in m.meta) sb.Append("[").Append(kv.Key).Append("=").Append(kv.Value).Append("] ");
+                            GUILayout.Label(sb.ToString(), UCL_GUIStyle.LabelStyle);
                         }
                     }
                 }
             }
-            if (m.meta != null && m.meta.Count > 0)
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Space(220);
-                    var sb = new System.Text.StringBuilder();
-                    foreach (var kv in m.meta) sb.Append("[").Append(kv.Key).Append("=").Append(kv.Value).Append("] ");
-                    GUILayout.Label(sb.ToString(), UCL_GUIStyle.LabelStyle);
-                }
-            }
+
         }
 
         // ===========================================================
@@ -426,7 +679,28 @@ namespace UCL.Core.EditorLib.Page
                         if (GUILayout.Button("取消", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) m_ReplyTo = null;
                     }
                 }
-                m_Input = GUILayout.TextArea(m_Input ?? "", GUILayout.MinHeight(60));
+
+                // 區塊職責：input bar 左側顯示當前發言者的頭像 + 名字提示「妳以 X 身分發言」
+                // 物理意義：跟訊息列表頭像同模式 — 確認使用者要送出這則時知道 sender persona
+                // 數值影響：純顯示；avatar cache 命中率高（同 sender 多次發言）
+                using (new GUILayout.HorizontalScope())
+                {
+                    using (new GUILayout.VerticalScope(GUILayout.Width(52)))
+                    {
+                        GUILayout.Space(2);
+                        DrawAvatar(m_SelectedIdentityId, 48);
+                    }
+                    using (new GUILayout.VerticalScope())
+                    {
+                        var (idntId, idntName, idntKind) = ResolveSelectedIdentity();
+                        var hintStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.7f, 0.85f, 1f) } };
+                        string asWho = string.IsNullOrEmpty(idntId)
+                            ? "(尚未選擇身分)"
+                            : $"以「{idntName}」({idntKind}) 身分發言";
+                        GUILayout.Label(asWho, hintStyle);
+                        m_Input = GUILayout.TextArea(m_Input ?? "", GUILayout.MinHeight(60));
+                    }
+                }
                 m_MetaInput = LabeledTextField("meta (k=v;k=v)", m_MetaInput, 130);
                 m_RefsInput = LabeledTextField("refs (path|path)", m_RefsInput, 130);
                 using (new GUILayout.HorizontalScope())
@@ -451,17 +725,31 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         // 動作
         // ===========================================================
+        // 區塊職責：解析 selected identity → 取 sender_id + display_name
+        // 物理意義：dropdown 選的是 UCL_ChatTavernIdentityAsset 的 ID；display_name 從 roster (identities.json) 查
+        //          缺 roster 條目（純粹 Asset 沒對應 roster）→ display_name fallback 用 ID 本身
+        // 數值影響：純讀取，回傳 (id, displayName, kind) tuple；id 為空表示沒選
+        (string id, string displayName, string kind) ResolveSelectedIdentity()
+        {
+            string id = m_SelectedIdentityId;
+            if (string.IsNullOrEmpty(id)) return (null, null, null);
+            var ros = m_RosterCache?.identities?.Find(x => x != null && x.id == id);
+            string display = ros != null && !string.IsNullOrEmpty(ros.display_name) ? ros.display_name : id;
+            string kind = ros != null && !string.IsNullOrEmpty(ros.kind) ? ros.kind : "agent";
+            return (id, display, kind);
+        }
+
         void DoSend()
         {
-            var ident = m_IdentitiesCache.identities.Find(x => x.id == m_SelectedIdentityId);
-            if (ident == null) { Debug.LogError("身分不存在"); return; }
+            var (idntId, idntName, _) = ResolveSelectedIdentity();
+            if (string.IsNullOrEmpty(idntId)) { Debug.LogError("身分不存在"); return; }
             var room = UCL_ChatTavernIO.GetRoom(m_SelectedRoomId);
             if (room == null) { Debug.LogError("房間不存在"); return; }
 
             var msg = new UCL_ChatMessage
             {
-                sender_id = ident.id,
-                sender_name = ident.display_name,
+                sender_id = idntId,
+                sender_name = idntName,
                 kind = "chat",
                 body = m_Input,
                 reply_to = m_ReplyTo,
@@ -471,7 +759,7 @@ namespace UCL.Core.EditorLib.Page
             int seq = UCL_ChatTavernIO.AppendMessage(m_SelectedRoomId, msg);
             UCL_ChatTavernRender.WriteLastView(m_SelectedRoomId, room.name,
                 UCL_ChatTavernIO.Tail(m_SelectedRoomId, 100), seq,
-                $"> 你 ({ident.display_name}) 剛 post：seq={seq}");
+                $"> 你 ({idntName}) 剛 post：seq={seq}");
             m_Input = "";
             m_ReplyTo = null;
             RefreshMessages();
@@ -479,13 +767,13 @@ namespace UCL.Core.EditorLib.Page
 
         void DoJoin()
         {
-            var ident = m_IdentitiesCache.identities.Find(x => x.id == m_SelectedIdentityId);
-            if (ident == null) return;
-            UCL_ChatTavernIO.AddMember(m_SelectedRoomId, ident.id);
+            var (idntId, idntName, _) = ResolveSelectedIdentity();
+            if (string.IsNullOrEmpty(idntId)) return;
+            UCL_ChatTavernIO.AddMember(m_SelectedRoomId, idntId);
             UCL_ChatTavernIO.AppendMessage(m_SelectedRoomId, new UCL_ChatMessage
             {
-                sender_id = ident.id, sender_name = ident.display_name, kind = "join",
-                body = $"{ident.display_name} 進入了酒館",
+                sender_id = idntId, sender_name = idntName, kind = "join",
+                body = $"{idntName} 進入了酒館",
             });
             RefreshMessages();
             RefreshMembers();
@@ -493,13 +781,13 @@ namespace UCL.Core.EditorLib.Page
 
         void DoLeave()
         {
-            var ident = m_IdentitiesCache.identities.Find(x => x.id == m_SelectedIdentityId);
-            if (ident == null) return;
-            UCL_ChatTavernIO.RemoveMember(m_SelectedRoomId, ident.id);
+            var (idntId, idntName, _) = ResolveSelectedIdentity();
+            if (string.IsNullOrEmpty(idntId)) return;
+            UCL_ChatTavernIO.RemoveMember(m_SelectedRoomId, idntId);
             UCL_ChatTavernIO.AppendMessage(m_SelectedRoomId, new UCL_ChatMessage
             {
-                sender_id = ident.id, sender_name = ident.display_name, kind = "leave",
-                body = $"{ident.display_name} 離開了酒館",
+                sender_id = idntId, sender_name = idntName, kind = "leave",
+                body = $"{idntName} 離開了酒館",
             });
             RefreshMessages();
             RefreshMembers();
@@ -519,7 +807,25 @@ namespace UCL.Core.EditorLib.Page
             }
         }
         void RefreshRooms() { m_RoomsCache = UCL_ChatTavernIO.LoadRooms(); }
-        void RefreshIdentities() { m_IdentitiesCache = UCL_ChatTavernIO.LoadIdentities(); }
+        // 區塊職責：身分清單來源從 identities.json 改為 UCL_ChatTavernIdentityAsset
+        // 物理意義：以 UCL_Asset 為 single source-of-truth — dropdown 列出所有已建立的角色卡 ID；
+        //          identities.json 仍保留作為 Cmd_Tavern Op_Post 寫訊息時的 display_name lookup
+        // 數值影響：m_IdentityIds 來自 GetAllIDs(false) 遍歷模組路徑；m_RosterCache 仍從 identities.json 讀
+        void RefreshIdentities()
+        {
+            // GetAllIDs 透過 UCL_ModuleService 遍歷當前 edit module 內 UCL_Assets/UCL_ChatTavernIdentityAsset/ 下的 .json 檔
+            try
+            {
+                m_IdentityIds = new UCL_ChatTavernIdentityAsset().GetAllIDs(false) ?? new List<string>();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[UCL_ChatTavernPage] RefreshIdentities GetAllIDs 失敗：{ex.Message}");
+                m_IdentityIds = new List<string>();
+            }
+            m_IdentityIds.Sort(System.StringComparer.OrdinalIgnoreCase);
+            m_RosterCache = UCL_ChatTavernIO.LoadIdentities();
+        }
         // 區塊職責：重抓訊息 + 自動觸發 scroll-to-bottom 的單一進入點
         // 物理意義：兩種情境會把 m_PendingScrollToBottom 設 true：
         //   1) 切換房間（m_LastSeenRoomId 變了）— 進新房就在最底

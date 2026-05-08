@@ -23,6 +23,11 @@
       "optional": false
     },
     {
+      "name": "ucl-create-asset",
+      "summary": "新增持久化資料類型一律繼承 UCL_Asset<T>，禁止裸 ScriptableObject / 自寫存檔",
+      "optional": false
+    },
+    {
       "name": "ucl-hook-setup",
       "summary": "Claude Code hook 配置（PostToolUse + Stop 強制 ValidateAssetFormat）",
       "optional": true
@@ -30,6 +35,11 @@
     {
       "name": "ucl-update-docs",
       "summary": "改 .cs/.py 後同步對應 .md 文件 — last_updated / API 章節 / cross-link",
+      "optional": false
+    },
+    {
+      "name": "ucl-translate-docs",
+      "summary": "跨語系 Markdown 文件翻譯與本地化規範 (Glossary-First + 雙軌 Fallback)",
       "optional": false
     }
   ]

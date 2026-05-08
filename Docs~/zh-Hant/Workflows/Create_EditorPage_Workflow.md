@@ -15,6 +15,8 @@ tags: [workflow, editor, ui, imgui]
 > 本工作流負責「**寫一頁繼承 `UCL_CommonEditorPage` 的 Editor 頁**」這件事；UI 元件實作（欄位 / 列表 / 下拉等）請看 [UCL_GUILayout 整體概覽](../API/UCL_GUILayout/UCL_GUILayout_Overview.md)，樣式取用請看 [UCL_GUIStyle 概覽](../API/UCL_GUIStyle/UCL_GUIStyle_Overview.md)。
 >
 > 設計哲學：**繼承 + override hook**。基底已經處理 TopBar / Back / Close / ScrollView / HelpURL 解析；子類只負責填 `WindowName` 與 `ContentOnGUI()`，要客製就 override hook。
+>
+> **想新增「持久化資料類型」（不是 UI 頁）？** → 看 [Create_UCL_Asset_Workflow](Create_UCL_Asset_Workflow.md) — UCL_Core 體系下一律繼承 `UCL_Asset<T>`，禁止裸 ScriptableObject 或自寫存檔。
 
 ---
 

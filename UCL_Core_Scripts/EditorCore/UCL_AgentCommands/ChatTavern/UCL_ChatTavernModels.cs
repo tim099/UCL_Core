@@ -17,9 +17,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     {
         public string id;            // 穩定鍵；建議 "<model>-<persona>" 例 "claude-da-xiaojie" / "gemini-da-xiaojie" / "gpt-shifu"
         public string display_name;  // 顯示名稱，例 "Claude大小姐" / "Gemini大小姐" / "GPT師傅"
-        public string kind;          // "agent" | "human" | "system"
+        public string kind;          // "agent" | "human" | "system" | "npc"
         public string created_at;    // ISO 8601 UTC
         public string last_seen_at;  // ISO 8601 UTC
+
+        // 註：rich persona 資料（avatar / role_settings / color / catchphrases / tags）走獨立的
+        //     UCL_ChatTavernIdentityAsset (繼承 UCL_Asset<T>) per-file 儲存，不污染本 lightweight roster；
+        //     Python / Cmd_Tavern 仍只看上面三欄。
     }
 
     /// <summary>身分清單（JsonUtility 序列化用包裝）。</summary>

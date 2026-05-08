@@ -1,0 +1,9 @@
+{
+    "DataLoadType": "ModResources",
+    "ModResourcesData": {
+        "ModuleID": "Core",
+        "FolderPath": "Sprites/Avatars",
+        "FileName": "claude-da-xiaojie.png"
+    },
+    "FilterMode": "Bilinear"
+}

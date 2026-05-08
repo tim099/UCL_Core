@@ -4,6 +4,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -34,7 +35,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "note_append: room=房間ID key=筆記key body=要追加的文字 [sender=ID]（OS 原子 append；不動 frontmatter）\n" +
             "note_read: room=房間ID key=筆記key（回完整 markdown）\n" +
             "note_list: room=房間ID（列房內所有 note keys）\n" +
-            "note_delete: room=房間ID key=筆記key（刪檔）";
+            "note_delete: room=房間ID key=筆記key（刪檔）\n" +
+            "─── Quest Workflow (MVP A) — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md ───\n" +
+            "task_create: room=房間ID task_id=任務ID title=標題 [role=architect|programmer|art|translator|qa] [depends_on=t1,t2] [suggested_owner=身分ID] [body=Markdown規格] [idempotency_key=uuid]\n" +
+            "task_claim: room=房間ID task_id=任務ID claimer=身分ID [lease_hours=24] [idempotency_key=uuid]\n" +
+            "task_progress: room=房間ID task_id=任務ID actor=身分ID summary=進度說明 [idempotency_key=uuid]\n" +
+            "task_done: room=房間ID task_id=任務ID actor=身分ID [idempotency_key=uuid]\n" +
+            "task_list: room=房間ID [owner=身分ID] [role=...] [status=pending,claimed,in_progress,done,ready]\n" +
+            "inbox_read: room=房間ID agent_id=身分ID";
         // ExampleArgs：agent-neutral 範例 — 別硬塞 claude-* 讓非 Claude agent 誤以為是預設身分
         public override string ExampleArgs =>
             "op=post;room=demo;sender=<your-agent-id>;body=哼～來打個招呼";
@@ -67,6 +75,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "note_read": Op_NoteRead(args); break;
                     case "note_list": Op_NoteList(args); break;
                     case "note_delete": Op_NoteDelete(args); break;
+                    // Quest Workflow MVP A
+                    case "task_create": Op_TaskCreate(args); break;
+                    case "task_claim": Op_TaskClaim(args); break;
+                    case "task_progress": Op_TaskProgress(args); break;
+                    case "task_done": Op_TaskDone(args); break;
+                    case "task_list": Op_TaskList(args); break;
+                    case "inbox_read": Op_InboxRead(args); break;
                     default:
                         FailLastOp($"未知 op：{op}");
                         break;
@@ -624,6 +639,241 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             if (string.IsNullOrEmpty(s)) return "";
             return s.Length <= max ? s : s.Substring(0, max) + "...";
+        }
+
+        // ===========================================================
+        // ═══════════════ Quest Workflow ops (MVP A) ═══════════════
+        // 設計詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md
+        // 共通：每 op 接受 idempotency_key（同 key 重發不重複寫 event）
+        // ===========================================================
+
+        void Op_TaskCreate(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string title = GetArg(args, "title", "");
+            string role = GetArg(args, "role", "");
+            string dependsOn = GetArg(args, "depends_on", "");  // CSV
+            string suggestedOwner = GetArg(args, "suggested_owner", "");
+            string body = GetArg(args, "body", "");
+            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_create 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_create 缺少 task_id"); return; }
+            if (UCL_ChatTavernIO.GetRoom(roomId) == null) { FailLastOp($"房間不存在：{roomId}"); return; }
+
+            // 寫 spec 檔（內容真相）
+            var deps = string.IsNullOrEmpty(dependsOn) ? new List<string>() : new List<string>(dependsOn.Split(','));
+            for (int i = 0; i < deps.Count; i++) deps[i] = deps[i].Trim();
+            UCL_ChatTavernQuestIO.WriteTaskSpec(roomId, taskId, title, role, deps, body);
+
+            // append event（狀態真相）
+            var data = new Dictionary<string, string>();
+            if (!string.IsNullOrEmpty(title)) data["title"] = title;
+            if (!string.IsNullOrEmpty(role)) data["role"] = role;
+            if (!string.IsNullOrEmpty(suggestedOwner)) data["suggested_owner"] = suggestedOwner;
+            data["depends_on"] = string.Join(",", deps);
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = actor,
+                idempotency_key = idempotencyKey,
+                type = "task_create",
+                task_id = taskId,
+                data = data,
+            });
+
+            string md = seq < 0
+                ? $"# ℹ task_create idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
+                : $"# ✅ task_create\n\n- task_id: `{taskId}`\n- title: {title}\n- role: {role}\n- depends_on: {string.Join(", ", deps)}\n- suggested_owner: {suggestedOwner}\n- event_seq: {seq}\n- spec: tasks/{taskId}.md\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_create {roomId}/{taskId} (seq={seq})");
+        }
+
+        void Op_TaskClaim(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetArg(args, "sender", "")));
+            string leaseHoursStr = GetArg(args, "lease_hours", "24");
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_claim 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_claim 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(claimer)) { FailLastOp("task_claim 缺少 claimer（可用 claimer / actor / sender）"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}（請先 task_create）"); return; }
+            if (st.status == "claimed" || st.status == "in_progress")
+            {
+                if (st.owner != claimer)
+                {
+                    FailLastOp($"task {taskId} 已被 {st.owner} 認領（lease_until={st.lease_until}）。force_reclaim 在 Phase B");
+                    return;
+                }
+            }
+            if (st.status == "done") { FailLastOp($"task {taskId} 已完成，無法 claim"); return; }
+
+            int.TryParse(leaseHoursStr, out var leaseHours);
+            if (leaseHours <= 0) leaseHours = 24;
+            string leaseUntil = DateTime.UtcNow.AddHours(leaseHours).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = claimer,
+                idempotency_key = idempotencyKey,
+                type = "task_claim",
+                task_id = taskId,
+                data = new Dictionary<string, string> { { "lease_until", leaseUntil } },
+            });
+
+            string md = seq < 0
+                ? $"# ℹ task_claim idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
+                : $"# ✅ task_claim\n\n- task_id: `{taskId}`\n- claimer: {claimer}\n- lease_until: {leaseUntil}\n- event_seq: {seq}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_claim {roomId}/{taskId} ← {claimer} (seq={seq})");
+        }
+
+        void Op_TaskProgress(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string summary = GetArg(args, "summary", "");
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_progress 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_progress 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { FailLastOp("task_progress 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(summary)) { FailLastOp("task_progress 缺少 summary"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}"); return; }
+            if (st.owner != actor) { FailLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+
+            string leaseUntil = DateTime.UtcNow.AddHours(24).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = actor,
+                idempotency_key = idempotencyKey,
+                type = "task_progress",
+                task_id = taskId,
+                data = new Dictionary<string, string> { { "summary", summary }, { "lease_until", leaseUntil } },
+            });
+
+            string md = seq < 0
+                ? $"# ℹ task_progress idempotent skip\n\n- task_id: `{taskId}`\n"
+                : $"# ✅ task_progress\n\n- task_id: `{taskId}`\n- summary: {summary}\n- lease_until (展期): {leaseUntil}\n- event_seq: {seq}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_progress {roomId}/{taskId} (seq={seq})");
+        }
+
+        void Op_TaskDone(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_done 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_done 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { FailLastOp("task_done 缺少 actor"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}"); return; }
+            if (st.owner != actor && st.status != "pending") { FailLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+            if (st.status == "done") { FailLastOp($"task {taskId} 已完成"); return; }
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = actor,
+                idempotency_key = idempotencyKey,
+                type = "task_done",
+                task_id = taskId,
+            });
+
+            // 觸發下游 unblock 通知（寫 inbox 給 suggested_owner）
+            int notifications = 0;
+            if (seq > 0)
+            {
+                var afterStates = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+                foreach (var kv in afterStates)
+                {
+                    var down = kv.Value;
+                    if (!down.depends_on.Contains(taskId)) continue;
+                    if (!UCL_ChatTavernQuestIO.IsReady(down, afterStates)) continue;
+                    if (string.IsNullOrEmpty(down.suggested_owner)) continue;
+                    UCL_ChatTavernQuestIO.AppendInbox(roomId, down.suggested_owner, seq,
+                        $"{down.id} ready (deps {taskId} done)",
+                        $"spec: tasks/{down.id}.md\nsuggested_action: task_claim {down.id}");
+                    notifications++;
+                }
+            }
+
+            string md = seq < 0
+                ? $"# ℹ task_done idempotent skip\n\n- task_id: `{taskId}`\n"
+                : $"# ✅ task_done\n\n- task_id: `{taskId}`\n- event_seq: {seq}\n- 下游 unblock 通知數: {notifications}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_done {roomId}/{taskId} (seq={seq}, notify={notifications})");
+        }
+
+        void Op_TaskList(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string ownerFilter = GetArg(args, "owner", "");
+            string roleFilter = GetArg(args, "role", "");
+            string statusFilterCsv = GetArg(args, "status", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_list 缺少 room"); return; }
+
+            var statusFilters = new HashSet<string>();
+            if (!string.IsNullOrEmpty(statusFilterCsv))
+            {
+                foreach (var s in statusFilterCsv.Split(',')) statusFilters.Add(s.Trim());
+            }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            var sb = new StringBuilder();
+            sb.AppendLine("# 📋 Task List");
+            sb.AppendLine();
+            sb.AppendLine($"room: `{roomId}` / total tasks: {states.Count}");
+            sb.AppendLine();
+            sb.AppendLine("| Task | Status | Owner | Role | Deps | Last Progress |");
+            sb.AppendLine("|---|---|---|---|---|---|");
+
+            int matched = 0;
+            foreach (var kv in states)
+            {
+                var st = kv.Value;
+                // 計算 effective status（pending + deps done → ready）
+                string effectiveStatus = st.status;
+                if (st.status == "pending" && UCL_ChatTavernQuestIO.IsReady(st, states)) effectiveStatus = "ready";
+
+                if (statusFilters.Count > 0 && !statusFilters.Contains(effectiveStatus)) continue;
+                if (!string.IsNullOrEmpty(ownerFilter) && st.owner != ownerFilter) continue;
+                if (!string.IsNullOrEmpty(roleFilter) && st.role != roleFilter) continue;
+
+                string deps = st.depends_on != null && st.depends_on.Count > 0 ? string.Join(",", st.depends_on) : "-";
+                string lastProg = string.IsNullOrEmpty(st.last_progress_summary) ? "-" : Truncate(st.last_progress_summary, 40);
+                sb.AppendLine($"| `{st.id}` | {effectiveStatus} | {st.owner ?? "-"} | {st.role ?? "-"} | {deps} | {lastProg} |");
+                matched++;
+            }
+
+            if (matched == 0) sb.AppendLine("| _(無符合 filter 的 task)_ | | | | | |");
+            sb.AppendLine();
+            sb.AppendLine($"_filter: owner={ownerFilter}, role={roleFilter}, status={statusFilterCsv}_");
+
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Quest] task_list {roomId} → matched={matched}/{states.Count}");
+        }
+
+        void Op_InboxRead(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string agentId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", "")));
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("inbox_read 缺少 room"); return; }
+            if (string.IsNullOrEmpty(agentId)) { FailLastOp("inbox_read 缺少 agent_id（可用 agent_id / id / sender）"); return; }
+
+            string inbox = UCL_ChatTavernQuestIO.ReadInbox(roomId, agentId);
+            string md = $"# 📬 Inbox — {agentId}\n\nroom: `{roomId}`\n\n{inbox}";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] inbox_read {roomId}/{agentId}");
         }
 
         static void FailLastOp(string msg)

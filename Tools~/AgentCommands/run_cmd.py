@@ -82,7 +82,23 @@ TAVERN_OP_SCHEMA = {
     "note_read":   {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
     "note_list":   {"required": ["room"],        "aliases": {},                                                   "optional": []},
     "note_delete": {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
+    # Quest Workflow MVP A — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md
+    # 共通：每 op 都會 auto-fill idempotency_key=<uuid4>（除非 user 顯式給）
+    "task_create":   {"required": ["room", "task_id", "title"], "aliases": {"sender": "actor"},
+                      "optional": ["role", "depends_on", "suggested_owner", "body", "actor", "idempotency_key"]},
+    "task_claim":    {"required": ["room", "task_id", "claimer"], "aliases": {"sender": "claimer", "actor": "claimer"},
+                      "optional": ["lease_hours", "idempotency_key"]},
+    "task_progress": {"required": ["room", "task_id", "actor", "summary"], "aliases": {"sender": "actor"},
+                      "optional": ["idempotency_key"]},
+    "task_done":     {"required": ["room", "task_id", "actor"], "aliases": {"sender": "actor"},
+                      "optional": ["idempotency_key"]},
+    "task_list":     {"required": ["room"], "aliases": {}, "optional": ["owner", "role", "status"]},
+    "inbox_read":    {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
+                      "optional": []},
 }
+
+# Quest ops 集合 — auto-fill idempotency_key 用
+QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done"}
 
 
 def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
@@ -113,6 +129,10 @@ def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
         if schema["aliases"]:
             msg += f"\n     ↳ 可接受的 alias：{schema['aliases']}"
         return False, msg
+    # Quest ops auto-fill idempotency_key（user 沒顯式給就自動 uuid4）
+    if op in QUEST_OPS_NEEDING_IDEMPOTENCY and not arg_pairs.get("idempotency_key"):
+        arg_pairs["idempotency_key"] = str(uuid.uuid4())
+        print(f"  ℹ idempotency_key 自動填入：{arg_pairs['idempotency_key']}", file=sys.stderr)
     return True, ""
 
 # ===========================================================

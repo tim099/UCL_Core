@@ -328,19 +328,6 @@ def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log) -> tuple[in
             prior_hashes = {}  # 發生異常時將舊雜湊值重設為空 dict
 
     src_content = skill_file.read_text(encoding="utf-8")  # 讀取來源 SKILL.md 的完整文字內容
-    src_hash = hashlib.sha1(src_content.encode("utf-8")).hexdigest()  # 計算來源內容之 SHA-1 雜湊值以進行防寫校驗
-
-    if dst_file.is_file():  # 如果目標規則 Markdown 檔案已經存在
-        dst_content = dst_file.read_text(encoding="utf-8")  # 讀取現有目標檔案的內容
-        dst_hash = hashlib.sha1(dst_content.encode("utf-8")).hexdigest()  # 計算目標現有內容之 SHA-1 雜湊值
-        # 為了處理 frontmatter 的 trigger 注入，我們這裡需要比對雜湊記錄
-        recorded = prior_hashes.get("SKILL.md")  # 從先前的防寫紀錄中獲取 SKILL.md 當初對應的雜湊
-        if recorded is not None and dst_hash != src_hash:  # 若雜湊不相等且非初始狀態
-            # 這裡我們允許 frontmatter 被轉換，所以只要 recorded 記錄的值與來源一致且目標有變，就提示 local edit
-            if dst_hash != recorded and recorded != src_hash:  # 判定本地是否有非預期的使用者修改
-                log.warn(f"local edit detected, skipping: {dst_file}")  # 輸出警告日誌，避免覆寫開發者的手工修改
-                skipped += 1  # 累計略過計數
-                return 0, skipped  # 提前返回並回報略過
 
     # 根據不同的 Skill 名稱決定最適合的動態觸發屬性值
     skill_name = src_dir.name  # 取得當前 Skill 的目錄名稱 (例如 ucl-chat-tavern)
@@ -369,19 +356,31 @@ def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log) -> tuple[in
     else:  # 如果檔案開頭沒有 YAML 邊界
         transformed_content = f"---\ntrigger: {trigger_val}\n---\n\n{src_content}"  # 自動為其加上 YAML 頭部並注入屬性
 
+    transformed_hash = hashlib.sha1(transformed_content.encode("utf-8")).hexdigest()  # 計算轉換後內容之 SHA-1 雜湊值以進行防寫校驗
+
+    if dst_file.is_file():  # 如果目標規則 Markdown 檔案已經存在
+        dst_content = dst_file.read_text(encoding="utf-8")  # 讀取現有目標檔案的內容
+        dst_hash = hashlib.sha1(dst_content.encode("utf-8")).hexdigest()  # 計算目標現有內容之 SHA-1 雜湊值
+        if dst_hash == transformed_hash:  # 若目標現有雜湊等於轉換後的最新內容雜湊
+            return 0, 0  # 已經是最新，直接返回 (0 拷貝, 0 略過)
+        # 為了處理 frontmatter 的 trigger 注入，我們這裡需要比對雜湊記錄
+        recorded = prior_hashes.get("SKILL.md")  # 從先前的防寫紀錄中獲取 SKILL.md 當初對應的雜湊 (此值已修正為轉換後的 hash)
+        if recorded is not None and dst_hash != recorded:  # 若雜湊記錄存在且目標已被使用者手動修改
+            log.warn(f"local edit detected, skipping: {dst_file}")  # 輸出警告日誌，避免覆寫開發者的手工修改
+            skipped += 1  # 累計略過計數
+            return 0, skipped  # 提前返回並回報略過
+
     log.action("copy", dst_file)  # 輸出即將複製的動作 log
     if not log.dry:  # 如果非乾跑 (dry-run) 模式，則正式執行寫檔
         dst_file.parent.mkdir(parents=True, exist_ok=True)  # 遞迴建立目標所在的 .agents/rules/ 目錄
         dst_file.write_text(transformed_content, encoding="utf-8")  # 寫入包含 always_on 觸發器的 Markdown 檔案
 
-        # 計算寫入後的實際檔案雜湊值以記錄在標記檔中
-        written_hash = hashlib.sha1(transformed_content.encode("utf-8")).hexdigest()  # 計算寫入後內容之雜湊值
         source_marker.write_text(  # 正式寫入伴隨的防寫標記 JSON 檔案
             json.dumps(  # 將元數據序列化為 JSON
                 {
                     "ucl_core_commit": get_ucl_commit(),  # 寫入當前 UCL_Core 倉庫的 commit 雜湊值
                     "source": str(skill_file.relative_to(UCL_CORE_ROOT)),  # 記錄來源 SKILL.md 相對於 UCL_Core 根目錄的路徑
-                    "file_hashes": {"SKILL.md": src_hash},  # 將轉換後的寫入內容雜湊登記在對照表中
+                    "file_hashes": {"SKILL.md": transformed_hash},  # 將轉換後實際寫入內容之雜湊記錄於對照表中，修正了原本比對 untransformed 雜湊的 bug
                 },
                 indent=2,  # 使用兩空格縮排，保持排版精美
                 ensure_ascii=False,  # 允許非 ASCII 字元，防止中文亂碼

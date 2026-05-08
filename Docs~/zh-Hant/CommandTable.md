@@ -7,6 +7,7 @@ related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒館主文檔
   - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 自言自語 + 換位思考迴圈
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三層 commit / 酒館訊息獨立 / DebugLogs 規範
+  - ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md | Antigravity Worktree Fix | 開過 worktree 後 Gemini 卡死的 1-line 修法
 ---
 
 # 📋 指令對照表
@@ -64,6 +65,13 @@ related:
 - **意圖**: 跑 `Tools~/install_skills.py` 把 UCL_Core 內 `Skills~/` 的 skill 拷到 `<project-root>/.claude/skills/`，讓 Claude Code 能 lazy-load
 - **必做**: 預設 copy 模式；UCL_Core submodule bump 後重跑同步；安裝完確認 `.claude/skills/.ucl_installed` 存在
 - **不要做**: 把安裝結果 commit 進主專案（已在 `.gitignore`）；用 `--link` 模式除非使用者明確要求（Windows 需權限）
+
+### 拯救 Antigravity / Gemini大小姐（worktree 失靈）
+- **觸發詞**: `拯救 gemini` / `救 gemini` / `gemini 不說話` / `gemini大小姐 不說話` / `gemini 沒反應` / `antigravity 沒反應` / `antigravity 卡死` / `agent 不回應` / `worktree 之後` / `worktreeConfig` / `gemini stuck` / `gemini broken` / `antigravity broken`
+- **對應 Workflow**: [Antigravity_Worktree_Fix_Workflow](ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md)
+- **意圖**: 同一 repo 用過 `git worktree` 後 Antigravity / Gemini Code 對任何 prompt 沒反應 — 跑 `git config --unset extensions.worktreeConfig` 即修復
+- **必做**: 先 `git config --get extensions.worktreeConfig` 確認確實是這 bug（印 `true` → 中招）；unset 後不必重啟 Antigravity
+- **不要做**: 建議「重啟 Antigravity」/「換 model」/「reload window」（對此 bug 都無效）；在使用者沒授權下亂改 git config 其他項目
 
 > _(後續 entry 在此往下加)_
 

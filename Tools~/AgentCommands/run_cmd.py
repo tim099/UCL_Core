@@ -87,7 +87,7 @@ TAVERN_OP_SCHEMA = {
     "task_create":   {"required": ["room", "task_id", "title"], "aliases": {"sender": "actor"},
                       "optional": ["role", "priority", "depends_on", "suggested_owner", "body", "actor", "idempotency_key"]},
     "task_claim":    {"required": ["room", "task_id", "claimer"], "aliases": {"sender": "claimer", "actor": "claimer"},
-                      "optional": ["lease_hours", "idempotency_key"]},
+                      "optional": ["lease_hours", "lease_seconds", "idempotency_key"]},
     "task_progress": {"required": ["room", "task_id", "actor", "summary"], "aliases": {"sender": "actor"},
                       "optional": ["artifacts", "idempotency_key"]},
     "task_done":     {"required": ["room", "task_id", "actor"], "aliases": {"sender": "actor"},
@@ -106,11 +106,16 @@ TAVERN_OP_SCHEMA = {
     "task_state":    {"required": ["room", "task_id"], "aliases": {}, "optional": []},
     "inbox_read":    {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
                       "optional": []},
+    "events_since":  {"required": ["room"], "aliases": {},
+                      "optional": ["since_seq", "filter_type", "limit"]},
+    "task_force_reclaim": {"required": ["room", "task_id", "claimer", "reason"],
+                           "aliases": {"sender": "claimer", "actor": "claimer"},
+                           "optional": ["lease_hours", "idempotency_key"]},
 }
 
 # Quest ops 集合 — auto-fill idempotency_key 用（純查詢 op 不需要）
 QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done", "task_release",
-                                  "task_review_request", "task_reject", "task_reopen"}
+                                  "task_review_request", "task_reject", "task_reopen", "task_force_reclaim"}
 
 
 def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:

@@ -380,41 +380,62 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
-            // 延後套用上一 frame button click 觸發的 layout-affecting state mutation。
-            // 必須在 Layout event 套用：Repaint event 套用會讓同一 frame 的 Layout 跟 Repaint 看到不一樣的 state。
-            if (Event.current.type == EventType.Layout)
+            using (UCL_ChatTavernPerfOverlay.Sample("ContentOnGUI/total"))
             {
-                if (m_PendingShowCreateRoom.HasValue) { m_ShowCreateRoom = m_PendingShowCreateRoom.Value; m_PendingShowCreateRoom = null; }
-                if (m_PendingShowCreateIdentity.HasValue) { m_ShowCreateIdentity = m_PendingShowCreateIdentity.Value; m_PendingShowCreateIdentity = null; }
-            }
-
-            if (m_RoomsCache == null || m_RoomIds == null) RefreshRooms();
-            if (m_IdentityIds == null) RefreshIdentities();
-            EnsureAutoInit();
-            HandleAutoPoll();
-
-            DrawBartenderInfoBar();
-            GUILayout.Space(4);
-            DrawRoomPicker();
-            GUILayout.Space(4);
-            DrawIdentityPicker();
-            GUILayout.Space(4);
-            DrawCharacterMappingFoldout();
-            GUILayout.Space(8);
-
-            if (string.IsNullOrEmpty(m_SelectedRoomId))
-            {
-                using (new GUILayout.VerticalScope("box"))
+                // 延後套用上一 frame button click 觸發的 layout-affecting state mutation。
+                // 必須在 Layout event 套用：Repaint event 套用會讓同一 frame 的 Layout 跟 Repaint 看到不一樣的 state。
+                if (Event.current.type == EventType.Layout)
                 {
-                    GUILayout.Label("請先選擇或建立一個房間。", UCL_GUIStyle.LabelStyle);
+                    if (m_PendingShowCreateRoom.HasValue) { m_ShowCreateRoom = m_PendingShowCreateRoom.Value; m_PendingShowCreateRoom = null; }
+                    if (m_PendingShowCreateIdentity.HasValue) { m_ShowCreateIdentity = m_PendingShowCreateIdentity.Value; m_PendingShowCreateIdentity = null; }
                 }
-                return;
+
+                if (m_RoomsCache == null || m_RoomIds == null) RefreshRooms();
+                if (m_IdentityIds == null) RefreshIdentities();
+                EnsureAutoInit();
+                HandleAutoPoll();
+
+                // Perf overlay 區塊：toggle bar 永遠顯示（小體積）；overlay 詳細表只在 ShowOverlay=true 時開
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool show = GUILayout.Toggle(UCL_ChatTavernPerfOverlay.ShowOverlay, "⏱ Perf", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    if (show != UCL_ChatTavernPerfOverlay.ShowOverlay)
+                    {
+                        UCL_ChatTavernPerfOverlay.ShowOverlay = show;
+                        // 開 overlay 自動把 sample 也開（沒取樣 overlay 沒東西看）
+                        if (show) UCL_ChatTavernPerfOverlay.Enabled = true;
+                    }
+                    if (UCL_ChatTavernPerfOverlay.ShowOverlay && GUILayout.Button("Dump Log", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ChatTavernPerfOverlay.DumpToLog();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                UCL_ChatTavernPerfOverlay.DrawOverlay();
+
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawBartenderInfoBar")) DrawBartenderInfoBar();
+                GUILayout.Space(4);
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawRoomPicker")) DrawRoomPicker();
+                GUILayout.Space(4);
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawIdentityPicker")) DrawIdentityPicker();
+                GUILayout.Space(4);
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawCharacterMappingFoldout")) DrawCharacterMappingFoldout();
+                GUILayout.Space(8);
+
+                if (string.IsNullOrEmpty(m_SelectedRoomId))
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        GUILayout.Label("請先選擇或建立一個房間。", UCL_GUIStyle.LabelStyle);
+                    }
+                    return;
+                }
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawQuestPanel")) DrawQuestPanel();
+                GUILayout.Space(4);
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView")) DrawMessagesView();
+                GUILayout.Space(4);
+                using (UCL_ChatTavernPerfOverlay.Sample("DrawInputBar")) DrawInputBar();
             }
-            DrawQuestPanel();
-            GUILayout.Space(4);
-            DrawMessagesView();
-            GUILayout.Space(4);
-            DrawInputBar();
         }
 
         // ===========================================================
@@ -501,7 +522,7 @@ namespace UCL.Core.EditorLib.Page
                     string[] statusOpts = { "all", "ready", "claimed", "in_progress", "review", "done", "pending", "stale" };
                     int curIdx = System.Array.IndexOf(statusOpts, m_QuestStatusFilter);
                     if (curIdx < 0) curIdx = 0;
-                    int newIdx = EditorGUILayout.Popup(curIdx, statusOpts, GUILayout.Width(120));
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, statusOpts, m_PickerDic, "QuestStatusFilter", GUILayout.Width(120));
                     if (newIdx != curIdx) m_QuestStatusFilter = statusOpts[newIdx];
                     GUILayout.Space(8);
                     bool by = GUILayout.Toggle(m_QuestFilterByMe, "只看我認領的", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
@@ -603,13 +624,13 @@ namespace UCL.Core.EditorLib.Page
                 if (!string.IsNullOrEmpty(st.last_progress_summary))
                     GUILayout.Label($"Last progress: {st.last_progress_summary}", UCL_GUIStyle.LabelStyle);
 
-                // spec 預覽
+                // spec 預覽 — 走內嵌 UCL_MarkdownViewerPage（不離開 Unity 視窗）
                 string specPath = UCL_ChatTavernQuestIO.GetTaskSpecPath(m_SelectedRoomId, st.id);
                 if (File.Exists(specPath))
                 {
-                    if (GUILayout.Button("📄 開啟 spec 檔", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button("📄 開啟 spec", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
-                        EditorUtility.OpenWithDefaultApp(specPath);
+                        OpenInMarkdownViewer(specPath);
                     }
                 }
 
@@ -687,9 +708,9 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope("box"))
             {
                 GUILayout.Label($"📬 你的 inbox ({m_SelectedIdentityId}) 有 {entries} 筆通知", UCL_GUIStyle.LabelStyle);
-                if (GUILayout.Button("開啟 inbox.md", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button("📬 開啟 inbox", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    EditorUtility.OpenWithDefaultApp(inboxPath);
+                    OpenInMarkdownViewer(inboxPath);
                 }
             }
         }
@@ -760,8 +781,14 @@ namespace UCL.Core.EditorLib.Page
 
                     GUILayout.FlexibleSpace();
 
-                    string memberText = m_MembersCache != null ? $"在場 {m_MembersCache.member_ids.Count} 人" : "(尚未進房)";
-                    GUILayout.Label(memberText, UCL_GUIStyle.LabelStyle);
+                    // 「登錄人數」而非「在場人數」 — agent turn-based 不會主動 leave，
+                    // 顯示的是「曾經 join 過的累計成員」，不代表現在活躍。
+                    // 真實活躍偵測需 last_active_at（Phase B；見 Quest_Workflow.md §12.6）
+                    string memberText = m_MembersCache != null
+                        ? $"登錄 {m_MembersCache.member_ids.Count} 人"
+                        : "(尚未進房)";
+                    var memberContent = new GUIContent(memberText, "曾經 join 過的累計人數，不代表當前活躍\n（agent 是 turn-based，turn 結束 ≠ 離房）");
+                    GUILayout.Label(memberContent, UCL_GUIStyle.LabelStyle);
                 }
                 GUILayout.FlexibleSpace();
 
@@ -1010,9 +1037,13 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else
                 {
-                    foreach (var m in m_MessagesCache)
+                    // Sample name 必須 stable（dict key）；訊息數量在 overlay 看 calls 與 m_MessagesCache.Count 心算即可
+                    using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView/rows"))
                     {
-                        DrawMessageRow(m);
+                        foreach (var m in m_MessagesCache)
+                        {
+                            DrawMessageRow(m);
+                        }
                     }
                 }
                 GUILayout.EndScrollView();
@@ -1412,6 +1443,25 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
             Debug.LogWarning($"[ChatTavern] 無法 ping asset：{repoRelativePath}");
+        }
+
+        // 區塊職責：在 Editor 內以 UCL_MarkdownViewerPage 開啟 .md 檔
+        // 物理意義：取代 EditorUtility.OpenWithDefaultApp — 不離開 Unity 視窗，而且能走多語 fallback /
+        //          related 連結 / 內嵌 mermaid 等 viewer 既有功能
+        // 數值影響：純 push 一頁；relative 路徑只給 viewer 顯示用，內容讀絕對路徑
+        // 邊界：檔案不存在 → 印 warning 不開頁；GitRoot 算不出來退而求其次傳 abs 當 rel
+        static void OpenInMarkdownViewer(string absPath)
+        {
+            if (string.IsNullOrEmpty(absPath) || !File.Exists(absPath))
+            {
+                Debug.LogWarning($"[ChatTavern] 檔案不存在，無法開啟 viewer：{absPath}");
+                return;
+            }
+            string gitRoot = UCL.Core.EditorLib.AgentCommands.UCL_DocCatalogScanner.GetGitRoot();
+            string rel = !string.IsNullOrEmpty(gitRoot)
+                ? Path.GetRelativePath(gitRoot, absPath).Replace('\\', '/')
+                : absPath;
+            UCL_MarkdownViewerPage.Create(rel, absPath);
         }
     }
 }

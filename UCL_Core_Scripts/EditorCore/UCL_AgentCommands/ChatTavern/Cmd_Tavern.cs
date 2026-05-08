@@ -38,7 +38,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "note_delete: room=房間ID key=筆記key（刪檔）\n" +
             "─── Quest Workflow (MVP A) — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md ───\n" +
             "task_create: room=房間ID task_id=任務ID title=標題 [role=...] [priority=high|normal|low] [depends_on=t1,t2] [suggested_owner=身分ID] [body=Markdown規格] [idempotency_key]\n" +
-            "task_claim: room=房間ID task_id=任務ID claimer=身分ID [lease_hours=24] [idempotency_key]\n" +
+            "task_claim: room=房間ID task_id=任務ID claimer=身分ID [lease_hours=24] [lease_seconds=N (測試/短任務 override)] [idempotency_key]\n" +
             "task_progress: room=房間ID task_id=任務ID actor=身分ID summary=進度說明 [artifacts=type:ref;type:ref] [idempotency_key]\n" +
             "task_done: room=房間ID task_id=任務ID actor=身分ID [idempotency_key]\n" +
             "task_release: room=房間ID task_id=任務ID actor=身分ID reason=放棄原因（必填） [idempotency_key]\n" +
@@ -87,6 +87,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "task_progress": Op_TaskProgress(args); break;
                     case "task_done": Op_TaskDone(args); break;
                     case "task_release": Op_TaskRelease(args); break;
+                    case "task_force_reclaim": Op_TaskForceReclaim(args); break;
                     case "task_review_request": Op_TaskReviewRequest(args); break;
                     case "task_reject": Op_TaskReject(args); break;
                     case "task_reopen": Op_TaskReopen(args); break;
@@ -94,6 +95,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "task_next": Op_TaskNext(args); break;
                     case "task_state": Op_TaskState(args); break;
                     case "inbox_read": Op_InboxRead(args); break;
+                    case "events_since": Op_EventsSince(args); break;
                     default:
                         FailLastOp($"未知 op：{op}");
                         break;
@@ -720,6 +722,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string taskId = GetArg(args, "task_id", "");
             string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetArg(args, "sender", "")));
             string leaseHoursStr = GetArg(args, "lease_hours", "24");
+            // lease_seconds 為 lease_hours 的 override（測試 / 短任務用；非 0 即生效）
+            // 物理意義：給「2 秒就 stale」這種測試場景用；正常 claim 不必傳此參數
+            string leaseSecondsStr = GetArg(args, "lease_seconds", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_claim 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_claim 缺少 task_id"); return; }
@@ -727,19 +732,36 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
             if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}（請先 task_create）"); return; }
+            // 區塊職責：claim 衝突 → 寫 inbox 建議 + 回 Conflict（Robust UX，避免 agent 卡死）
+            // 物理意義：兩 agent 同秒搶同 task，第二人 reducer 看到 status=claimed → reject；
+            //          但只回 error agent 會傻住，所以同時寫 claimer 的 inbox 一條建議跑 task_next。
+            // 數值影響：不 append events.jsonl（write-before-validate 鐵律）；只寫衍生 inbox。
             if (st.status == "claimed" || st.status == "in_progress")
             {
                 if (st.owner != claimer)
                 {
-                    FailLastOp($"task {taskId} 已被 {st.owner} 認領（lease_until={st.lease_until}）。force_reclaim 在 Phase B");
+                    string conflictTitle = $"⚠ task_claim 衝突 — `{taskId}` 已被 {st.owner} 認領";
+                    string conflictBody = $"當前 owner: **{st.owner}** (lease_until={st.lease_until})\n建議下一步：跑 `task_next agent_id={claimer}` 自動排出妳該接的下個 task。\n_force_reclaim 仍在 Phase B；不要硬搶。_";
+                    UCL_ChatTavernQuestIO.AppendInbox(roomId, claimer, 0, conflictTitle, conflictBody);
+                    FailLastOp($"task {taskId} 已被 {st.owner} 認領（lease_until={st.lease_until}）。已寫 inbox 建議 → 跑 task_next 換目標。");
                     return;
                 }
             }
             if (st.status == "done") { FailLastOp($"task {taskId} 已完成，無法 claim"); return; }
 
-            int.TryParse(leaseHoursStr, out var leaseHours);
-            if (leaseHours <= 0) leaseHours = 24;
-            string leaseUntil = DateTime.UtcNow.AddHours(leaseHours).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            // lease_seconds 優先（測試 / 短任務 override）；否則用 lease_hours（預設 24h）
+            DateTime leaseEnd;
+            if (int.TryParse(leaseSecondsStr, out var leaseSeconds) && leaseSeconds > 0)
+            {
+                leaseEnd = DateTime.UtcNow.AddSeconds(leaseSeconds);
+            }
+            else
+            {
+                int.TryParse(leaseHoursStr, out var leaseHours);
+                if (leaseHours <= 0) leaseHours = 24;
+                leaseEnd = DateTime.UtcNow.AddHours(leaseHours);
+            }
+            string leaseUntil = leaseEnd.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
@@ -893,6 +915,93 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 : $"# ✅ task_release\n\n- task_id: `{taskId}`\n- released_by: {actor}\n- reason: {reason}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Quest] task_release {roomId}/{taskId} by {actor} reason={reason} (seq={seq})");
+        }
+
+        // ===========================================================
+        // op=task_force_reclaim — 強制接管 stale task（owner 消失 / lease 過期未展期）
+        // 物理意義：lease_until 過期 + 原 owner 沒回來展期 → 視為「人不在了」，新 agent 接手；
+        //          舊 owner 收 inbox 通知（萬一他回來，能看到自己被 reclaim）
+        // 數值影響：寫一筆 task_force_reclaim event（含 previous_owner / 新 lease_until / reason）→
+        //          reducer 把 owner 改成新 claimer、status 維持 claimed、lease 重設 24h
+        // 條件：
+        //   1. 目前 status ∈ {claimed, in_progress, review}（pending/done 不需 reclaim）
+        //   2. is_stale = true (lease_until < now，且非 done)
+        //   3. claimer ≠ 原 owner（自己對自己不算）
+        //   4. reason 必填（audit trail 給原 owner / 後人看）
+        // 風險：條件嚴 — 不會誤搶活著的人；但 lease 純看 24h timeout，沒做「last_active」更精細偵測
+        // ===========================================================
+        void Op_TaskForceReclaim(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetArg(args, "sender", "")));
+            string reason = GetArg(args, "reason", "");
+            string leaseHoursStr = GetArg(args, "lease_hours", "24");
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_force_reclaim 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_force_reclaim 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(claimer)) { FailLastOp("task_force_reclaim 缺少 claimer（可用 claimer / actor / sender）"); return; }
+            if (string.IsNullOrEmpty(reason)) { FailLastOp("task_force_reclaim 缺少 reason（必填，audit trail 給原 owner / 後人看）"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}"); return; }
+
+            // 校驗 1：必須有 owner 才需要 force_reclaim
+            if (st.status != "claimed" && st.status != "in_progress" && st.status != "review")
+            {
+                FailLastOp($"task {taskId} status={st.status}（沒人認領），直接走 task_claim 即可，不需 force_reclaim");
+                return;
+            }
+            // 校驗 2：必須 stale（lease 已過）
+            if (!st.is_stale)
+            {
+                FailLastOp($"task {taskId} 仍在 lease 內（lease_until={st.lease_until}），尚未 stale — 不允許 force_reclaim。等 lease 過期或請 owner 主動 task_release。");
+                return;
+            }
+            // 校驗 3：claimer ≠ 原 owner（自己對自己不算）
+            if (st.owner == claimer)
+            {
+                FailLastOp($"claimer={claimer} 就是原 owner — 直接跑 task_progress 展期即可，不需 force_reclaim");
+                return;
+            }
+
+            int.TryParse(leaseHoursStr, out var leaseHours);
+            if (leaseHours <= 0) leaseHours = 24;
+            string leaseUntil = DateTime.UtcNow.AddHours(leaseHours).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            string previousOwner = st.owner;
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = claimer,
+                idempotency_key = idempotencyKey,
+                type = "task_force_reclaim",
+                task_id = taskId,
+                data = new Dictionary<string, string>
+                {
+                    { "previous_owner", previousOwner ?? "" },
+                    { "lease_until", leaseUntil },
+                    { "reason", reason },
+                },
+            });
+
+            // 通知原 owner 被接管 — 他若回來進房，inbox 會看到
+            int notifications = 0;
+            if (seq > 0 && !string.IsNullOrEmpty(previousOwner))
+            {
+                UCL_ChatTavernQuestIO.AppendInbox(roomId, previousOwner, seq,
+                    $"⚠ task `{taskId}` 已被 {claimer} force_reclaim",
+                    $"妳的 lease 過期且未展期 → {claimer} 接手\nreason: {reason}\n若要繼續做請先跟 {claimer} 協調 (task_state {taskId} 看 timeline)");
+                notifications++;
+            }
+
+            if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
+
+            string md = seq < 0
+                ? $"# ℹ task_force_reclaim idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
+                : $"# ✅ task_force_reclaim\n\n- task_id: `{taskId}`\n- new_owner: {claimer}\n- previous_owner: {previousOwner ?? "-"}\n- reason: {reason}\n- new_lease_until: {leaseUntil}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_force_reclaim {roomId}/{taskId}: {previousOwner} → {claimer} (reason={reason}, seq={seq})");
         }
 
         // ===========================================================
@@ -1179,13 +1288,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string effectiveStatus = st.status;
                 if (st.status == "pending" && UCL_ChatTavernQuestIO.IsReady(st, states)) effectiveStatus = "ready";
 
-                if (statusFilters.Count > 0 && !statusFilters.Contains(effectiveStatus)) continue;
+                // status filter — 「stale」是 orthogonal flag（is_stale），跟 effectiveStatus 並行匹配
+                // 物理意義：stale task 可同時是 claimed / in_progress / review，不會吃掉原 status
+                // 數值影響：filter 寫 status=stale 時，is_stale=true 的 task 都算命中（不論底下 status）
+                if (statusFilters.Count > 0)
+                {
+                    bool match = statusFilters.Contains(effectiveStatus);
+                    if (!match && statusFilters.Contains("stale") && st.is_stale) match = true;
+                    if (!match) continue;
+                }
                 if (!string.IsNullOrEmpty(ownerFilter) && st.owner != ownerFilter) continue;
                 if (!string.IsNullOrEmpty(roleFilter) && st.role != roleFilter) continue;
 
                 string deps = st.depends_on != null && st.depends_on.Count > 0 ? string.Join(",", st.depends_on) : "-";
                 string lastProg = string.IsNullOrEmpty(st.last_progress_summary) ? "-" : Truncate(st.last_progress_summary, 40);
-                sb.AppendLine($"| `{st.id}` | {effectiveStatus} | {st.owner ?? "-"} | {st.role ?? "-"} | {deps} | {lastProg} |");
+                string statusCell = effectiveStatus + (st.is_stale ? " ⚠STALE" : "");
+                sb.AppendLine($"| `{st.id}` | {statusCell} | {st.owner ?? "-"} | {st.role ?? "-"} | {deps} | {lastProg} |");
                 matched++;
             }
 
@@ -1208,6 +1326,103 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = $"# 📬 Inbox — {agentId}\n\nroom: `{roomId}`\n\n{inbox}";
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Quest] inbox_read {roomId}/{agentId}");
+        }
+
+        // ===========================================================
+        // 區塊：op=events_since
+        // 區塊職責：給 agent re-enter 看「上次離開後發生什麼」delta 視角
+        // 物理意義：events.jsonl 是 truth，task_list / task_state 都是 snapshot；
+        //          events_since 印 [since_seq+1, latest] 之間的事件 timeline。
+        // 數值影響：純查詢，不寫 events / inbox / 衍生 cache。
+        // 參數：
+        //   room          (req) — 房間 ID
+        //   since_seq     (opt, default=0) — 從哪個 seq 之後開始列（不含此筆）
+        //   filter_type   (opt) — CSV 過濾 event type，例 "task_claim,task_done"；空=全部
+        //   limit         (opt, default=50) — 最多列幾筆（避免 events 太長爆量）
+        // ===========================================================
+        void Op_EventsSince(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string sinceStr = GetArg(args, "since_seq", "0");
+            string filterCsv = GetArg(args, "filter_type", "");
+            string limitStr = GetArg(args, "limit", "50");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("events_since 缺少 room"); return; }
+
+            // 參數解析：since_seq < 0 → clamp 0；limit <= 0 → 預設 50
+            if (!int.TryParse(sinceStr, out int sinceSeq) || sinceSeq < 0) sinceSeq = 0;
+            if (!int.TryParse(limitStr, out int limit) || limit <= 0) limit = 50;
+
+            // type 過濾 set；空集 → 不過濾
+            var typeFilter = new HashSet<string>();
+            if (!string.IsNullOrEmpty(filterCsv))
+            {
+                foreach (var t in filterCsv.Split(',')) { var s = t.Trim(); if (!string.IsNullOrEmpty(s)) typeFilter.Add(s); }
+            }
+
+            // 讀全 events，篩 seq > sinceSeq；按 seq 升冪（既有實作就是 append 順序，但為求穩仍排序）
+            var all = UCL_ChatTavernQuestIO.LoadAllEvents(roomId);
+            var deltas = new List<UCL_QuestEvent>();
+            foreach (var ev in all)
+            {
+                if (ev.seq <= sinceSeq) continue;
+                if (typeFilter.Count > 0 && !typeFilter.Contains(ev.type)) continue;
+                deltas.Add(ev);
+            }
+            deltas.Sort((a, b) => a.seq.CompareTo(b.seq));
+
+            int totalAfter = deltas.Count;                    // 過濾後總筆數（給「還有 N 筆未顯示」提示用）
+            bool truncated = totalAfter > limit;              // 是否有截斷
+            if (truncated) deltas = deltas.GetRange(0, limit);
+
+            int latestSeq = all.Count > 0 ? all[all.Count - 1].seq : 0;
+
+            // 渲染 markdown timeline — 給 agent 直接 catch up
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 🕒 events_since — `{roomId}`");
+            sb.AppendLine();
+            sb.AppendLine($"- since_seq: **{sinceSeq}** → latest_seq: **{latestSeq}**");
+            sb.AppendLine($"- delta count: **{totalAfter}**" + (truncated ? $" (顯示前 {limit} 筆，請拉大 limit 或縮窄 filter_type)" : ""));
+            if (typeFilter.Count > 0) sb.AppendLine($"- filter_type: {string.Join(",", typeFilter)}");
+            sb.AppendLine();
+
+            if (deltas.Count == 0)
+            {
+                sb.AppendLine("_(無新事件 — 自上次離開後本房安靜如雞)_");
+            }
+            else
+            {
+                sb.AppendLine("| seq | ts | type | actor | task | summary |");
+                sb.AppendLine("|---|---|---|---|---|---|");
+                foreach (var ev in deltas)
+                {
+                    // 從 data 萃取 1~2 個關鍵欄位濃縮顯示（lease_until / summary / reason / status）
+                    string detail = "";
+                    if (ev.data != null && ev.data.Count > 0)
+                    {
+                        var pieces = new List<string>();
+                        // 偏好順序：summary > reason > lease_until > 其它頭兩個
+                        if (ev.data.TryGetValue("summary", out var s)) pieces.Add(Truncate(s, 40));
+                        else if (ev.data.TryGetValue("reason", out var r)) pieces.Add("reason: " + Truncate(r, 40));
+                        else if (ev.data.TryGetValue("lease_until", out var lu)) pieces.Add("lease→" + lu);
+                        else
+                        {
+                            int taken = 0;
+                            foreach (var kv in ev.data)
+                            {
+                                pieces.Add($"{kv.Key}={Truncate(kv.Value, 20)}");
+                                if (++taken >= 2) break;
+                            }
+                        }
+                        detail = string.Join("; ", pieces);
+                    }
+                    sb.AppendLine($"| {ev.seq} | {ev.ts} | `{ev.type}` | {ev.actor} | {ev.task_id ?? "-"} | {detail} |");
+                }
+                sb.AppendLine();
+                sb.AppendLine($"_提示：下次 re-enter 用 `since_seq={latestSeq}` 看新增 delta；單 task 完整 timeline 走 `task_state task_id=...`_");
+            }
+
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Quest] events_since {roomId} since={sinceSeq} → {totalAfter} events" + (truncated ? $" (truncated to {limit})" : ""));
         }
 
         static void FailLastOp(string msg)

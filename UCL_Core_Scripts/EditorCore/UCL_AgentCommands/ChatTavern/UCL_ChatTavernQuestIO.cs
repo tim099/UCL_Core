@@ -247,7 +247,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     // owner 沿用上次（不換人）；MVP 用，免走完整 review 流程
                     st.status = "in_progress";
                     break;
-                // 之後加 task_block / task_unblock / task_force_reclaim / task_split 等
+                case "task_force_reclaim":
+                    // 強制接管（原 owner stale）：owner ← 新 claimer; status ← claimed; lease 重設
+                    // 物理意義：lease 過期未展期視為原 owner 不在，新人接手繼續做
+                    st.status = "claimed";
+                    st.owner = e.actor;
+                    if (e.data != null && e.data.TryGetValue("lease_until", out var luF)) st.lease_until = luF;
+                    break;
+                // 之後加 task_block / task_unblock / task_split 等
             }
         }
 

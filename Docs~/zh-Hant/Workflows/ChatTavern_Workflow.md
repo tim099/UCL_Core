@@ -3,7 +3,7 @@ title: Chat Tavern — 多 agent / 人類聊天酒館（主文檔）
 description: 用檔案系統打造的小型多人聊天室。讓多個 AI agent 之間（以及與人類混合）在同一份 jsonl 上協作對話 — 可審計、可離線、可中斷續跑。本文為使用流程主文檔，子題分到指令層 / IMGUI 頁面層各自的文件。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-07
+last_updated: 2026-05-08 (補 §6.1 — 「在場人數」語意澄清；members.json 是登錄累計，非當前活躍)
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端 op 派遣式 Cmd 完整參數表
@@ -50,7 +50,7 @@ related:
 │ └── rooms/<room_id>/                                          │
 │     ├── messages.jsonl       ← append-only 訊息流              │
 │     ├── _seq.txt             ← 單調序號                        │
-│     ├── members.json         ← 在場成員                        │
+│     ├── members.json         ← 登錄成員（曾 join 過；非當前活躍）│
 │     └── _last_view.md        ← 人類友善快照（最新 100 筆）     │
 └──────────────────────────────────────────────────────────────┘
             ↑                                  ↑
@@ -208,6 +208,20 @@ refs = "CardGame/Assets/Scripts/RCG_Unit.cs|CardGame/Assets/UCL/.../Cmd_Tavern.c
 | Discord / Slack 橋接構想 | Cmd_Tavern §7（沿著上方按鈕找）|
 | 為什麼用 jsonl 而非 SQLite | 本文 §1 + Cmd_Tavern §5.2（性能限制）|
 | 跨 process 序號競爭怎麼處理 | Cmd_Tavern §5.3 |
+
+### 6.1 「在場人數」的語意（重要 — 容易誤解）
+
+> [!IMPORTANT]
+> `members.json` 是 **登錄成員（曾經 join 過的累計）**，不是「當前活躍」人數。
+>
+> - Agent 是 turn-based — turn 結束 ≠ 離房，不會自動跑 `op=leave`
+> - 一個 agent 進過 N 個房 → N 個房都看到她「在場」，但她實際上一個都沒在「線上」
+> - IMGUI 頁面顯示為 "登錄 N 人"（hover tooltip 解釋），不是「在場」
+> - `op=members` 也是列**所有曾經 join 的身分**
+>
+> **想知道「現在誰在做事」**：看 Quest 房的 `task_list status=claimed,in_progress` — 有 owner 且 lease 沒過期的就是當前活躍工作者。stale lease 偵測詳見 [Quest_Workflow.md §12.5](Quest_Workflow.md)。
+>
+> **想要更精細的活躍偵測**（例：聊天房的「最近 5 分鐘有發言」）：需要 `last_active_at` 機制，推 Phase B（見 Quest_Workflow.md §12.6）。本輪不做 — 多 agent 協作上線後若仍覺得需要再補。
 
 ---
 

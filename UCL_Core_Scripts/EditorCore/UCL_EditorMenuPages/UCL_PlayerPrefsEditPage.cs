@@ -29,8 +29,6 @@ namespace UCL.Core.EditorLib.Page
         private string m_SearchFilter = string.Empty;
         /// <summary> 用於存儲 GUI 狀態的字典，例如摺疊狀態 </summary>
         private UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
-        /// <summary> 滾動視圖的位置向量 </summary>
-        private Vector2 m_ScrollPos = Vector2.zero;
 
         /* -------------------------------------------------------------------------
          * 初始化與生命週期管理
@@ -178,14 +176,14 @@ namespace UCL.Core.EditorLib.Page
             }
 
             GUILayout.Space(UCL_GUIStyle.GetScaledSize(10));
-            // 資料顯示區域：滾動列表
-            m_ScrollPos = GUILayout.BeginScrollView(m_ScrollPos);
+            // 資料顯示區域 — 不再開 BeginScrollView（UCL_EditorPage.OnGUI 已包外層 ScrollViewScope；
+            // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException）
             {
                 // 遍歷所有鍵，並根據搜尋關鍵字進行篩選
                 foreach (string keyName in m_Keys)
                 {
                     // 若關鍵字不為空且鍵名不包含關鍵字（忽略大小寫），則跳過
-                    if (!string.IsNullOrEmpty(m_SearchFilter) && 
+                    if (!string.IsNullOrEmpty(m_SearchFilter) &&
                         keyName.IndexOf(m_SearchFilter, StringComparison.OrdinalIgnoreCase) < 0)
                     {
                         continue;
@@ -194,7 +192,6 @@ namespace UCL.Core.EditorLib.Page
                     DrawKeyEntry(keyName);
                 }
             }
-            GUILayout.EndScrollView();
 
             // 底部危險操作區域
             GUILayout.FlexibleSpace();

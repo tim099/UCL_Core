@@ -49,6 +49,11 @@ namespace UCL.Core.EditorLib.Page
         // ===== 新建表單 =====
         bool m_ShowCreateRoom = false;
         bool m_ShowCharMapping = false;
+        // ===== Deferred-apply（避免 button click 在 MouseUp 改 layout-affecting state，造成 Layout vs Repaint 結構不一致）=====
+        // 物理意義：button 在 MouseUp event return true，若直接 mutate 會讓同一 frame 的 Repaint event 看到不同 state；
+        //          延後到下個 frame 的 Layout event 才套用，可保證單一 frame 內 layout 結構恆定。
+        bool? m_PendingShowCreateRoom = null;
+        bool? m_PendingShowCreateIdentity = null;
         // 暫存「+ 新 alias」表單輸入；空 = 還沒填
         string m_NewAliasFrom = "";
         string m_NewAliasTo = "";
@@ -363,6 +368,14 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
+            // 延後套用上一 frame button click 觸發的 layout-affecting state mutation。
+            // 必須在 Layout event 套用：Repaint event 套用會讓同一 frame 的 Layout 跟 Repaint 看到不一樣的 state。
+            if (Event.current.type == EventType.Layout)
+            {
+                if (m_PendingShowCreateRoom.HasValue) { m_ShowCreateRoom = m_PendingShowCreateRoom.Value; m_PendingShowCreateRoom = null; }
+                if (m_PendingShowCreateIdentity.HasValue) { m_ShowCreateIdentity = m_PendingShowCreateIdentity.Value; m_PendingShowCreateIdentity = null; }
+            }
+
             if (m_RoomsCache == null || m_RoomIds == null) RefreshRooms();
             if (m_IdentityIds == null) RefreshIdentities();
             EnsureAutoInit();
@@ -427,35 +440,37 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (GUILayout.Button(m_ShowCreateRoom ? "− Cancel" : "+ 新房間", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    m_ShowCreateRoom = !m_ShowCreateRoom;
+                    m_PendingShowCreateRoom = !m_ShowCreateRoom;
                 }
 
-                // 加入 / 離開房間按鈕
-                if (!string.IsNullOrEmpty(m_SelectedRoomId) && !string.IsNullOrEmpty(m_SelectedIdentityId))
+                // 加入 / 離開房間按鈕 — 必須無條件開啟 inner scope，並維持穩定控制項數。
+                // 條件式 (if !empty(roomId)&&!empty(identityId)) 開 scope 會在 popup 改 m_SelectedRoomId
+                // 後讓 Layout / Repaint 看到不同的 layout 結構，Unity 2021 IMGUI 拋 ExitGUIException: Mismatched LayoutGroup。
+                using (new GUILayout.HorizontalScope())
                 {
-                    using (new GUILayout.HorizontalScope())
+                    bool canAct = !string.IsNullOrEmpty(m_SelectedRoomId) && !string.IsNullOrEmpty(m_SelectedIdentityId);
+                    bool isMember = canAct && m_MembersCache != null && m_MembersCache.member_ids.Contains(m_SelectedIdentityId);
+
+                    string btnText = !canAct ? "(選房間+身分後可加入/離開)"
+                                   : isMember ? $"離開「{m_SelectedRoomId}」"
+                                              : $"加入「{m_SelectedRoomId}」";
+                    var btnStyle = !canAct ? UCL_GUIStyle.ButtonStyle
+                                 : isMember ? UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f))
+                                            : UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 1f, 0.4f));
+
+                    bool oldEnabled = GUI.enabled;
+                    GUI.enabled = canAct;
+                    if (GUILayout.Button(btnText, btnStyle, GUILayout.ExpandWidth(false)))
                     {
-                        bool isMember = m_MembersCache != null && m_MembersCache.member_ids.Contains(m_SelectedIdentityId);
-                        if (!isMember)
-                        {
-                            if (GUILayout.Button($"加入「{m_SelectedRoomId}」", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 1f, 0.4f)), GUILayout.ExpandWidth(false)))
-                            {
-                                DoJoin();
-                            }
-                        }
-                        else
-                        {
-                            if (GUILayout.Button($"離開「{m_SelectedRoomId}」", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f)), GUILayout.ExpandWidth(false)))
-                            {
-                                DoLeave();
-                            }
-                        }
-                        GUILayout.FlexibleSpace();
-                        if (m_MembersCache != null)
-                        {
-                            GUILayout.Label($"在場 {m_MembersCache.member_ids.Count} 人", UCL_GUIStyle.LabelStyle);
-                        }
+                        if (isMember) DoLeave();
+                        else DoJoin();
                     }
+                    GUI.enabled = oldEnabled;
+
+                    GUILayout.FlexibleSpace();
+
+                    string memberText = m_MembersCache != null ? $"在場 {m_MembersCache.member_ids.Count} 人" : "(尚未進房)";
+                    GUILayout.Label(memberText, UCL_GUIStyle.LabelStyle);
                 }
                 GUILayout.FlexibleSpace();
 
@@ -488,7 +503,7 @@ namespace UCL.Core.EditorLib.Page
                             }
                             m_SelectedRoomId = m_NewRoomId;
                             m_NewRoomId = m_NewRoomName = m_NewRoomDesc = "";
-                            m_ShowCreateRoom = false;
+                            m_PendingShowCreateRoom = false; // 延後到下個 Layout event 才把表單收起來，避免本 frame Repaint 看到不同 layout 結構
                             RefreshAll();
                         }
                     }
@@ -529,7 +544,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (GUILayout.Button(m_ShowCreateIdentity ? "− Cancel" : "+ 新身分", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    m_ShowCreateIdentity = !m_ShowCreateIdentity;
+                    m_PendingShowCreateIdentity = !m_ShowCreateIdentity;
                 }
                 GUILayout.FlexibleSpace();
 
@@ -572,7 +587,7 @@ namespace UCL.Core.EditorLib.Page
                                 Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernIdentityAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernIdentityAssets 補）：{ex.Message}");
                             }
                             m_SelectedIdentityId = m_NewIdentityId;
-                            m_ShowCreateIdentity = false;
+                            m_PendingShowCreateIdentity = false; // 延後到下個 Layout event 才收表單，避免本 frame Repaint 看到不同 layout 結構
                             RefreshIdentities();
                         }
                     }

@@ -149,7 +149,6 @@ namespace UCL.Core.EditorLib.Page
         string m_HostProjectRoot = "";
         string m_UCLCorePath = "";
         bool m_StatusDirty = true;
-        Vector2 m_Scroll = Vector2.zero;
 
         // wordWrap 樣式快取（與 WelcomePage 同模式）
         GUIStyle m_WrapLabelStyle;
@@ -349,8 +348,8 @@ namespace UCL.Core.EditorLib.Page
         {
             if (m_StatusDirty) RefreshStatus();
 
-            m_Scroll = GUILayout.BeginScrollView(m_Scroll);
-
+            // 注意：不要在這裡再開 BeginScrollView — UCL_EditorPage.OnGUI 已經包了 ScrollViewScope。
+            // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException（Unity 6 才會被內部靜默 recover）。
             DrawHeader();
             GUILayout.Space(8);
             DrawConcept();
@@ -360,8 +359,6 @@ namespace UCL.Core.EditorLib.Page
             DrawAgentMatrixPlaceholder();
             GUILayout.Space(8);
             DrawFooter();
-
-            GUILayout.EndScrollView();
         }
 
         void DrawHeader()

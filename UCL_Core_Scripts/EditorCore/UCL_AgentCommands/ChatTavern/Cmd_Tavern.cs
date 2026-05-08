@@ -85,10 +85,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         void Op_CreateRoom(Dictionary<string, string> args)
         {
-            string id = GetArg(args, "id", "");
+            // alias 寬進：room=... 也接受（agent 常與 join/post 的 room 參數搞混）
+            string id = GetArg(args, "id", GetArg(args, "room", ""));
             string name = GetArg(args, "name", id);
             string desc = GetArg(args, "description", "");
-            if (string.IsNullOrEmpty(id)) { FailLastOp("createroom 缺少 id"); return; }
+            if (string.IsNullOrEmpty(id)) { FailLastOp("createroom 缺少 id（房間ID；可用 id= 或 room=）"); return; }
             var room = UCL_ChatTavernIO.CreateRoom(id, name, desc);
             string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}\n";
             UCL_ChatTavernRender.WriteLastOp(md);
@@ -122,11 +123,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_Join(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            string identityId = GetArg(args, "id", "");
+            // alias 寬進：sender / sender_id 也接受（與 op=post 的 sender 命名統一）
+            string identityId = GetArg(args, "id", GetArg(args, "sender_id", GetArg(args, "sender", "")));
             string displayName = GetArg(args, "name", identityId);
             string kind = GetArg(args, "kind", "agent");
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("join 缺少 room"); return; }
-            if (string.IsNullOrEmpty(identityId)) { FailLastOp("join 缺少 id"); return; }
+            if (string.IsNullOrEmpty(identityId)) { FailLastOp("join 缺少 id（身分ID；可用 id= / sender= / sender_id=）"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { FailLastOp($"房間不存在：{roomId}（請先 createroom）"); return; }
 
@@ -157,13 +159,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_Post(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            string senderId = GetArg(args, "sender", "");
+            // alias 寬進：sender_id / id 也接受（與 op=join 的 id 命名相容）
+            string senderId = GetArg(args, "sender", GetArg(args, "sender_id", GetArg(args, "id", "")));
             string body = GetArg(args, "body", "");
             string replyToStr = GetArg(args, "reply_to", "");
             string metaStr = GetArg(args, "meta", "");
             string refsStr = GetArg(args, "refs", "");
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("post 缺少 room"); return; }
-            if (string.IsNullOrEmpty(senderId)) { FailLastOp("post 缺少 sender"); return; }
+            if (string.IsNullOrEmpty(senderId)) { FailLastOp("post 缺少 sender（身分ID；可用 sender= / sender_id= / id=）"); return; }
             if (string.IsNullOrEmpty(body)) { FailLastOp("post 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { FailLastOp($"房間不存在：{roomId}"); return; }
@@ -268,8 +271,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_Leave(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            string senderId = GetArg(args, "sender", "");
-            if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { FailLastOp("leave 需要 room + sender"); return; }
+            string senderId = GetArg(args, "sender", GetArg(args, "sender_id", GetArg(args, "id", "")));
+            if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { FailLastOp("leave 需要 room + sender（可用 sender= / sender_id= / id=）"); return; }
             var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == senderId);
             string name = ident?.display_name ?? senderId;
             UCL_ChatTavernIO.RemoveMember(roomId, senderId);

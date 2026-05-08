@@ -52,6 +52,69 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# Windows console 預設常為 cp950 / cp1252，遇中文 error message 變亂碼讓 agent 看不懂。
+# Python 3.7+ 的 reconfigure() 強制 stdout/stderr 走 utf-8。
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+# ===========================================================
+# Tavern client-side schema 驗證 — submit 前先擋常見錯誤
+# 目的：避免「等 1s round-trip 才知道參數錯」 + 修正 agent 常踩的 alias 陷阱
+# 結構：{op: {required: [...], aliases: {alias: canonical}, optional: [...]}}
+# 注意：Editor 端已支援 alias 寬進；本表額外給 client 提示與修正建議
+# ===========================================================
+TAVERN_OP_SCHEMA = {
+    "createroom":  {"required": ["id"],          "aliases": {"room": "id"},                                       "optional": ["name", "description"]},
+    "listrooms":   {"required": [],              "aliases": {},                                                   "optional": []},
+    "join":        {"required": ["room", "id"],  "aliases": {"sender": "id", "sender_id": "id"},                  "optional": ["name", "kind"]},
+    "post":        {"required": ["room", "sender", "body"], "aliases": {"sender_id": "sender", "id": "sender"},   "optional": ["reply_to", "meta", "refs"]},
+    "read":        {"required": ["room"],        "aliases": {},                                                   "optional": ["tail", "from", "to", "since_seq", "limit", "search"]},
+    "members":     {"required": ["room"],        "aliases": {},                                                   "optional": []},
+    "leave":       {"required": ["room", "sender"], "aliases": {"sender_id": "sender", "id": "sender"},           "optional": []},
+    "wait":        {"required": ["room", "since_seq"], "aliases": {},                                             "optional": ["timeout", "owner"]},
+    "wait_check":  {"required": ["wait_id"],     "aliases": {},                                                   "optional": []},
+    "note_write":  {"required": ["room", "key", "body"], "aliases": {},                                           "optional": []},
+    "note_append": {"required": ["room", "key", "body"], "aliases": {},                                           "optional": ["sender"]},
+    "note_read":   {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
+    "note_list":   {"required": ["room"],        "aliases": {},                                                   "optional": []},
+    "note_delete": {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
+}
+
+
+def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
+    """Tavern Cmd 提交前驗證；回 (ok, error_message)。
+    寬進：alias 自動歸一到 canonical 名。"""
+    op = (arg_pairs.get("op") or "").lower().strip()
+    if not op:
+        return False, "Tavern Cmd 缺少 op 參數。可用 op：" + ", ".join(sorted(TAVERN_OP_SCHEMA.keys()))
+    schema = TAVERN_OP_SCHEMA.get(op)
+    if schema is None:
+        return False, f"Tavern op '{op}' 未知；可用：{', '.join(sorted(TAVERN_OP_SCHEMA.keys()))}"
+    # alias 歸一（mutate arg_pairs）
+    aliases_used = []
+    for alias, canon in schema["aliases"].items():
+        if alias in arg_pairs and canon not in arg_pairs:
+            arg_pairs[canon] = arg_pairs.pop(alias)
+            aliases_used.append(f"{alias}→{canon}")
+        elif alias in arg_pairs and canon in arg_pairs:
+            del arg_pairs[alias]
+            aliases_used.append(f"removed dup {alias}")
+    if aliases_used:
+        print(f"  ℹ Tavern alias 歸一：{', '.join(aliases_used)}", file=sys.stderr)
+    # required 檢查
+    missing = [r for r in schema["required"] if not arg_pairs.get(r)]
+    if missing:
+        all_args = list(arg_pairs.keys())
+        msg = f"Tavern op={op} 缺少必要參數：{missing}（你目前傳的：{all_args}）"
+        if schema["aliases"]:
+            msg += f"\n     ↳ 可接受的 alias：{schema['aliases']}"
+        return False, msg
+    return True, ""
+
 # ===========================================================
 # 路徑解析 — 跨專案通用（不假設 UCL_Core 放在哪一層）
 # ===========================================================
@@ -252,6 +315,16 @@ def cmd_submit(args: argparse.Namespace) -> int:
     """submit：ensure_idle → write queue.json → write pending.trigger。"""
     arg_pairs = parse_kv_pairs(args.arg or [])
 
+    # 區塊職責：Tavern Cmd 的 client-side 預檢
+    # 物理意義：Editor round-trip 約 1s 才報錯；client 預檢 < 0.01s 就能擋下 typo / alias 錯
+    # 數值影響：失敗 → 立刻 return 2 不寫 queue，不污染 _last_op.md
+    if args.cmd_type == "Tavern":
+        ok, err = validate_tavern_args(arg_pairs)
+        if not ok:
+            print(f"✗ Tavern client-side 預檢失敗：\n  {err}", file=sys.stderr)
+            sys.stderr.flush()
+            return 2
+
     # 區塊職責：寫入前先確認沒有前一輪殘留的 trigger
     # 物理意義：避免 Python 把新 trigger 蓋到 Editor 還沒處理完的舊批次上，造成混批
     # 數值影響：若 ack_timeout 到還沒 idle → 直接 SystemExit，使用者必須清理才能繼續
@@ -384,6 +457,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args.wait_reply = 540.0
         else:
             args.wait_reply = 0.0
+    # Tavern client-side 預檢（cmd_run 自己 inline submit，需獨立呼叫一次；
+    # cmd_submit 的同名檢查只服務 `submit` 子命令）
+    if args.cmd_type == "Tavern":
+        ok, err = validate_tavern_args(arg_pairs)
+        if not ok:
+            print(f"✗ Tavern client-side 預檢失敗：\n  {err}", file=sys.stderr)
+            sys.stderr.flush()
+            return 2
+
     ensure_idle(timeout_sec=args.ack_timeout, poll_interval=args.poll_interval)
     cmd_id = append_cmd(args.cmd_type, args.mode, arg_pairs, args.description or "")
     write_trigger(note=f"run_cmd.py run {args.cmd_type}")

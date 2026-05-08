@@ -203,13 +203,11 @@ namespace UCL.Core.EditorLib
 
         // 區塊職責：取得輸出 JSON 的絕對路徑
         // 物理意義：放 git-root/AgentCommands/.compile_status.json — 與 queue.json / pending.trigger 同層
-        //          Python 工具用同樣的 git_root 解析方式可直接定位
+        //          repo root 集中由 UCL_RepoPath 解析（git-walk，與 Python run_cmd.py 對齊）
         // 數值影響：純路徑計算
         public static string GetOutputPath()
         {
-            // Application.dataPath = <gitRoot>/CardGame/Assets → 上跳兩層到 git root
-            string gitRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "../..")).Replace('\\', '/');
-            return Path.Combine(gitRoot, "AgentCommands", ".compile_status.json").Replace('\\', '/');
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, ".compile_status.json").Replace('\\', '/');
         }
 
         // 區塊職責：把絕對路徑壓成 git-root 相對路徑（讓 JSON 內檔案 path 跨機器穩定）
@@ -219,7 +217,7 @@ namespace UCL.Core.EditorLib
         {
             if (string.IsNullOrEmpty(raw)) return "";
             string p = raw.Replace('\\', '/');
-            string gitRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "../..")).Replace('\\', '/').TrimEnd('/');
+            string gitRoot = UCL_RepoPath.RepoRoot.TrimEnd('/');
             if (p.StartsWith(gitRoot + "/", StringComparison.OrdinalIgnoreCase))
             {
                 return p.Substring(gitRoot.Length + 1);

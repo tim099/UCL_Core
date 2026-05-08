@@ -573,9 +573,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// <summary>把絕對路徑轉成 repo 相對（給 refs / 顯示用，跨 OS slash 統一）。</summary>
         static string ToRepoRelative(string absPath)
         {
-            string projectRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", ".."));
             string norm = absPath.Replace('\\', '/');
-            string root = projectRoot.Replace('\\', '/').TrimEnd('/') + "/";
+            string root = UCL_RepoPath.RepoRoot.TrimEnd('/') + "/";
             if (norm.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return norm.Substring(root.Length);
             return norm;
         }

@@ -230,27 +230,12 @@ namespace UCL.Core.EditorLib.AgentCommands
                 : a;
         }
 
-        // 區塊職責：取得 git-root（從 Application.dataPath 往上 walk 找含 `.git` 目錄的 ancestor）
-        // 物理意義：原寫法 `dataPath/../..` 假設專案結構為 `<gitRoot>/<UnityProject>/Assets`（如 CardGame layout），
-        //          對 git-root 即 Unity project root 的扁平結構（如 TEVI）會落點偏差 1 層。
-        //          改成主動 walk 比對 `.git` 直接資料夾（不是 file — submodule 的 .git 是檔案 redirect，
-        //          應跳過繼續往上）兩種結構都能正確命中。
-        // 數值影響：純路徑計算 + 至多走幾層 Directory.Exists
+        // 區塊職責：取得 git-root — delegate 到 UCL_RepoPath.RepoRoot
+        // 物理意義：repo root 解析統一走 UCL_RepoPath（git-walk 找 `.git` 目錄，與 Python run_cmd.py 對齊）
+        //          本檔不再持自己的版本，避免多源 layout 假設散落。
         public static string GetGitRoot()
         {
-            string p = Path.GetFullPath(Application.dataPath); // <project>/Assets
-            string cur = Path.GetDirectoryName(p);
-            while (!string.IsNullOrEmpty(cur))
-            {
-                // submodule 的 .git 是檔案（gitdir: redirect），只接受真正的 .git 目錄
-                if (Directory.Exists(Path.Combine(cur, ".git")))
-                    return cur.Replace('\\', '/');
-                string parent = Path.GetDirectoryName(cur);
-                if (string.IsNullOrEmpty(parent) || parent == cur) break;
-                cur = parent;
-            }
-            // fallback：保留舊行為，避免無 .git 的特殊環境完全失效
-            return Path.GetFullPath(Path.Combine(Application.dataPath, "../..")).Replace('\\', '/');
+            return UCL_RepoPath.RepoRoot;
         }
     }
 }

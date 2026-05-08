@@ -169,7 +169,7 @@ namespace UCL.Core.EditorLib.Page
         /// 退一步取最外層 .git 目錄（跳過 submodule 的 .git file）。</summary>
         static string FindHostProjectRoot()
         {
-            string current = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string current = UCL_RepoPath.UnityProjectRoot;
             string outermostWithClaude = null;
             string outermostWithGit = null;
             for (int i = 0; i < 10; i++)
@@ -224,7 +224,7 @@ namespace UCL.Core.EditorLib.Page
                 foreach (var t in AllTargets) m_StatusByTarget[t] = InstallStatus.NoUCLCore;
                 return;
             }
-            string projRootForCore = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string projRootForCore = UCL_RepoPath.UnityProjectRoot;
             m_UCLCorePath = Path.GetFullPath(Path.Combine(projRootForCore, corePathRel));
 
             string hostRoot = FindHostProjectRoot();

@@ -83,10 +83,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             public int ReflectFailed;
         }
 
-        private static string ProjectRoot
-        {
-            get { return Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/'); }
-        }
+        private static string ProjectRoot => UCL_RepoPath.UnityProjectRoot;
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {

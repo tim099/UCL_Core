@@ -21,7 +21,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// <summary>
     /// queue.json 的讀寫管理。
     /// 路徑：&lt;repoRoot&gt;/AgentCommands/queue.json
-    /// （repoRoot = Application.dataPath/../.. — 即 Assets 的上兩層）
+    /// repoRoot 由 <see cref="UCL_RepoPath.RepoRoot"/> 解析（git-walk，與 Python run_cmd.py 對齊）。
     /// </summary>
     public static class UCL_AgentCommandQueue
     {
@@ -36,18 +36,16 @@ namespace UCL.Core.EditorLib.AgentCommands
         public const string TriggerFileName = "pending.trigger";
         public const string RunningTriggerFileName = "pending.trigger.running";
 
-        /// <summary>取得 queue.json 的絕對路徑（不保證檔案存在）。</summary>
+        /// <summary>取得 queue.json 的絕對路徑（不保證檔案存在）。repo root 由 <see cref="UCL_RepoPath"/> 解析。</summary>
         public static string GetQueuePath()
         {
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
-            string dir = Path.Combine(projectRoot, QueueDirRelative);
-            return Path.Combine(dir, QueueFileName);
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueueFileName);
         }
 
         /// <summary>取得 AgentCommands 資料夾的絕對路徑。</summary>
         public static string GetQueueDir()
         {
-            return Path.GetDirectoryName(GetQueuePath());
+            return UCL_RepoPath.AgentCommandsDir;
         }
 
         /// <summary>取得 pending.trigger 的絕對路徑（外部寫入此檔以請求 Editor 執行 queue）。</summary>

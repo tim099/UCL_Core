@@ -172,7 +172,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          輸出 commands_catalog.md 落在 CardGame/AgentCommands/，避開外層 git root + submodule。
         static string GetProjectRoot()
         {
-            return Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
+            return UCL_RepoPath.UnityProjectRoot;
         }
 
         static string EscapeTableCell(string s)

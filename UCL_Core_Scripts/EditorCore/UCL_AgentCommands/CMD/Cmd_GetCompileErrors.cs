@@ -78,10 +78,8 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             if (!string.IsNullOrEmpty(outputPath))
             {
-                string gitRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "../.."))
-                                     .Replace('\\', '/');
                 string absOut = Path.IsPathRooted(outputPath)
-                    ? outputPath : Path.Combine(gitRoot, outputPath);
+                    ? outputPath : Path.Combine(UCL_RepoPath.RepoRoot, outputPath);
                 string outDir = Path.GetDirectoryName(absOut);
                 if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
                 {

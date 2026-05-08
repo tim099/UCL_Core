@@ -21,7 +21,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     public static class UCL_ChatTavernIO
     {
         // 區塊職責：路徑常數 — 與 UCL_AgentCommandQueue 對齊，掛在 AgentCommands/ 下的子資料夾
-        // 物理意義：repoRoot = Application.dataPath/../.. （Assets 上兩層）
+        // 物理意義：repoRoot 由 UCL_RepoPath.RepoRoot 解析（git-walk，與 Python 對齊）
         public const string TavernDirRelative = "AgentCommands/ChatTavern";
         public const string IdentitiesFile = "identities.json";
         public const string RoomsFile = "rooms.json";
@@ -41,8 +41,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         public static string GetTavernDir()
         {
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
-            return Path.Combine(projectRoot, TavernDirRelative);
+            return Path.Combine(UCL_RepoPath.RepoRoot, TavernDirRelative);
         }
 
         public static string GetIdentitiesPath() => Path.Combine(GetTavernDir(), IdentitiesFile);

@@ -87,13 +87,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          Cmd 輸出 / 路徑相對基準都以這裡為準 — 確保產物落在 CardGame/AgentCommands/，
         //          避免污染外層 git root，同時跟 submodule（CardGame/Assets/UCL/）也清楚分離。
         // 數值影響：所有 outputPath 與相對路徑都以 Unity project root 為基準。
-        private static string ProjectRoot
-        {
-            get
-            {
-                return Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
-            }
-        }
+        private static string ProjectRoot => UCL_RepoPath.UnityProjectRoot;
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {

@@ -91,13 +91,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 區塊職責：取得 Unity 專案根目錄（CardGame/）
         // 物理意義：Application.dataPath 為 CardGame/Assets，往上 1 層即 Unity project root。
         // 數值影響：所有 outputPath 與相對路徑都以 Unity project root 為基準。
-        private static string ProjectRoot
-        {
-            get
-            {
-                return Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
-            }
-        }
+        private static string ProjectRoot => UCL_RepoPath.UnityProjectRoot;
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {

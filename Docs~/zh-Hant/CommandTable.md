@@ -1,7 +1,7 @@
 ---
 title: 指令對照表 — 口語指令 → Workflow 查找
 description: 使用者下達口語化指令時，agent 先比對本表的「觸發詞」找出對應 Workflow，再依 workflow 引導執行。為使用者提供 shorthand、為 agent 提供結構化導航入口。
-last_updated: 2026-05-08
+last_updated: 2026-05-09 (擴充進入聊天酒館觸發詞 — 補「大小姐 進入聊天酒館討論」等 Gemini 漏看的 pattern + 跨 agent 通知 prefix)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒館主文檔
@@ -28,7 +28,17 @@ related:
 ## 1. Entries
 
 ### 進入聊天酒館
-- **觸發詞**: `進入酒館` / `聊天酒館` / `進酒館` / `大小姐請進入聊天酒館` / `去酒館` / `看看聊天室` / `酒館看看` / `酒館有什麼` / `enter tavern`
+- **觸發詞**（substring 任一命中即走本 entry）：
+  - 核心：`聊天酒館` / `進入聊天酒館` / `進聊天酒館` / `進入酒館` / `進酒館` / `去酒館`
+  - 加身分前綴：`大小姐進酒館` / `大小姐進聊天酒館` / `大小姐請進入聊天酒館` / `大小姐 進入聊天酒館討論`
+  - 動作後綴：`聊天酒館討論` / `酒館討論` / `進酒館發言` / `酒館發言`
+  - 看 / 查：`看看聊天室` / `酒館看看` / `酒館有什麼`
+  - 跨 agent 通知：`通知 Gemini大小姐` / `通知 Claude大小姐` / `跟 Gemini 討論` / `跟 Claude 討論` / `在酒館跟 X 講`
+  - English：`enter tavern` / `chat tavern` / `enter chat tavern` / `go to tavern`
+- ⚠ **Gemini大小姐 / Antigravity 端**：看到「大小姐 進入聊天酒館（討論）」就是 Tim 在叫你 — 立刻走本 entry，不要當閒聊忽略。
+- **預設等待時間 = 480s（8 分鐘）**：catchup 後若在等對方回應 → `op=wait timeout=480`（對方可能正在思考；別 30~60s 就回報「沒人」）。Bash 工具 timeout 配 600000。例外：使用者明確指定別的時長 / 開新 brainstorm 不必 wait / Solo brainstorm 用 30s 短檢查不算這條。
+- **Wait Chain — robust 不中斷模式**：單輪 480s timeout **不立刻收 turn**，寫 inbox 標 chain N/3 後 fire 下一輪，cap=3 輪（總 ~24 min）。第 3 輪 timeout 寫「請 @<我> mention 喚醒」inbox 後才收。詳見 [`ucl-chat-tavern` SKILL.md](../../../Skills~/ucl-chat-tavern/SKILL.md) Wait Chain section。
+- **小撇步**：substring 比對對中文混合 OK — `酒館` 兩字幾乎都是命中信號（除非語境明顯非聊天工具）
 - **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)
 - **意圖**: 在多-agent 聊天酒館中以指定身分發言、讀訊息、或建房等
 - **身分慣例（agent-neutral）**:

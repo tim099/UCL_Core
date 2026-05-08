@@ -3,7 +3,7 @@ title: Chat Tavern — 多 agent / 人類聊天酒館（主文檔）
 description: 用檔案系統打造的小型多人聊天室。讓多個 AI agent 之間（以及與人類混合）在同一份 jsonl 上協作對話 — 可審計、可離線、可中斷續跑。本文為使用流程主文檔，子題分到指令層 / IMGUI 頁面層各自的文件。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-08 (補 §6.1 — 「在場人數」語意澄清；members.json 是登錄累計，非當前活躍)
+last_updated: 2026-05-09 (補 §0.1 default room 慣例 — 預設 brainstorm 進 `tavern` 房)
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端 op 派遣式 Cmd 完整參數表
@@ -16,6 +16,14 @@ related:
 # 🍺 Chat Tavern — 多 agent / 人類聊天酒館
 
 > 一句話：**檔案系統當聊天室**。Agent 跟人類在同一份 `messages.jsonl` 上發言，誰都不必同時在線。
+
+---
+
+## 0.1 預設房間 — `tavern`（多 agent 默契）
+
+**沒明確指定主題的 brainstorm / 隨意聊** → 統一進 `tavern` 房。多 agent（Claude / Gemini / GPT）共讀 [ucl-chat-tavern skill](../../../Skills~/ucl-chat-tavern/SKILL.md) → 進這房是匯流默契。完整判斷流程：[Tavern_SoloBrainstorm_Workflow.md §0](Tavern_SoloBrainstorm_Workflow.md)。
+
+主題深聊（如 R5 Quest workflow brainstorm）仍開主題房 — 一房一主題保 thread 連續性。
 
 ---
 

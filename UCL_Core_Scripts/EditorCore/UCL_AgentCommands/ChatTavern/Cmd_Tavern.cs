@@ -1,12 +1,15 @@
-﻿// UCL Chat Tavern — 整合型 Cmd（prototype v1）
+// UCL Chat Tavern — 整合型 Cmd（prototype v1）
 // 單一 handler，用 args["op"] 分派到內部子操作。
 // 設計取捨：所有酒館操作走同一個 CommandType="Tavern"，避免 registry 暴增 8~10 個 Cmd。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
+using Debug = UnityEngine.Debug;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
@@ -128,11 +131,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string id = GetArg(args, "id", GetArg(args, "room", ""));
             string name = GetArg(args, "name", id);
             string desc = GetArg(args, "description", "");
+            // R7 (T04 chat-flow-robust) — 房 owner_agent（模糊「大小姐」routing 用；可選）
+            string ownerAgent = GetArg(args, "owner_agent", GetArg(args, "owner", ""));
             if (string.IsNullOrEmpty(id)) { FailLastOp("createroom 缺少 id（房間ID；可用 id= 或 room=）"); return; }
-            var room = UCL_ChatTavernIO.CreateRoom(id, name, desc);
-            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}\n";
+            var room = UCL_ChatTavernIO.CreateRoom(id, name, desc, string.IsNullOrEmpty(ownerAgent) ? null : ownerAgent);
+            string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- owner_agent: `{room.owner_agent}`";
+            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}\n";
             UCL_ChatTavernRender.WriteLastOp(md);
-            Debug.Log($"[Tavern] createroom → {room.id}");
+            Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}");
         }
 
         // ===========================================================
@@ -230,12 +236,105 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             };
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
 
+            // R7 (T02 chat-flow-robust) — Mention 解析 → 自動寫對方 inbox
+            // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準
+            // 數值影響：sender 自己 / 系統 id（_開頭）/ 非 identities.json 已註冊者 全跳過
+            // Robustness：try-catch 包整段 — regex 或 IO 失敗都不該擋 post 主流程（post 已 AppendMessage 成功）
+            // 共筆：Gemini大小姐 在 T02 task_claim 同步並行寫了基礎版；本小姐補白名單 / 系統 id 過濾 / try-catch 保護
+            try
+            {
+                var matches = System.Text.RegularExpressions.Regex.Matches(body, @"@([a-zA-Z0-9_-]+)");
+                if (matches.Count > 0)
+                {
+                    var mentionedIds = new HashSet<string>();
+                    foreach (System.Text.RegularExpressions.Match m in matches) mentionedIds.Add(m.Groups[1].Value);
+
+                    // 載入 identities.json 一次當白名單（防 @everyone / 拼錯亂寫 inbox）
+                    var identList = UCL_ChatTavernIO.LoadIdentities();
+                    var validIds = new HashSet<string>();
+                    foreach (var idRow in identList.identities) validIds.Add(idRow.id);
+
+                    int notifyCount = 0;
+                    foreach (string targetId in mentionedIds)
+                    {
+                        if (targetId == senderId) continue;            // 不 mention 自己
+                        if (targetId.StartsWith("_")) continue;        // 系統 id（_quest_system 等）跳過
+                        if (!validIds.Contains(targetId)) continue;    // 白名單外（@everyone / 拼錯）跳過
+                        string inboxTitle = $"💬 被 {senderName} 提及 (seq={seq})";
+                        string inboxBody = $"在房間 `{room.name}`，{senderName} 提到了你：\n> {Truncate(body, 200)}\n\n建議動作：前往該房回覆。";
+                        UCL_ChatTavernQuestIO.AppendInbox(roomId, targetId, seq, inboxTitle, inboxBody);
+                        notifyCount++;
+                    }
+                    if (notifyCount > 0)
+                    {
+                        Debug.Log($"[Tavern] post {roomId}/seq={seq} mention 寫 inbox ×{notifyCount}: {string.Join(",", mentionedIds)}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] mention parse 失敗（post 不受影響）：{ex.Message}");
+            }
+
             var tail = UCL_ChatTavernIO.Tail(roomId, 100);
             // 中性措辭：_last_view.md 會被任何 agent 讀到，不能用「你」（會讓讀者誤以為自己是上一位 poster）
             string header = $"> 上一筆 post (seq={seq}) by {senderName}：「{Truncate(body, 80)}」";
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
+
+            // R6.6 — Discord tavern mirror 即時觸發（fire-and-forget）；Stop hook 仍跑 --mode all 兜底。
+            // 物理意義：post 寫進 messages.jsonl 當下立即 spawn Python notify → ~1s 內 broadcast 到 Discord
+            // 數值影響：state file 跟 Stop hook 共用 → idempotent 防 double-send；spawn fail 不擋 post path
+            // 邊界：quiet=true（測試用）跳過；notify_discord.py 不存在跳過
+            if (!string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                TryFireDiscordTavernMirrorAsync();
+            }
+        }
+
+        // ===========================================================
+        // 區塊：R6.6 — Discord Tavern Mirror 即時觸發
+        // 物理意義：spawn Python notify_discord.py --mode tavern fire-and-forget；
+        //          跟 Stop hook 路徑形成雙路徑 hybrid（Stop hook 是 safety net）
+        // 數值影響：兩路共用 _tavern_state.json last_seen_seq → idempotent；fail 不影響 post
+        // ===========================================================
+        static void TryFireDiscordTavernMirrorAsync()
+        {
+            try
+            {
+                string scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_discord.py").Replace('\\', '/');
+                if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{scriptPath}\" --mode tavern",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WorkingDirectory = UCL_RepoPath.RepoRoot,
+                };
+                var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                // 區塊職責：async 排空 stdout/stderr，避免 OS pipe buffer 滿（Windows ~4KB / Linux 64KB）
+                //          buffer 滿 → child 寫入 block → 永遠不退 → process 殭化
+                // 數值影響：純 discard handler，~0 cost；EOF 後 OS 自動停 callback
+                proc.OutputDataReceived += (s, e) => { /* discard */ };
+                proc.ErrorDataReceived += (s, e) => { /* discard */ };
+                proc.Exited += (s, e) =>
+                {
+                    try { proc.Dispose(); } catch { /* swallow — proc 已 dispose 不重要 */ }
+                };
+                proc.Start();
+                proc.BeginOutputReadLine();
+                proc.BeginErrorReadLine();
+                // fire-and-forget：不 WaitForExit；Exited 事件會自動 dispose
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] discord mirror spawn fail (post path 不受影響；Stop hook 會兜底)：{ex.Message}");
+            }
         }
 
         // ===========================================================

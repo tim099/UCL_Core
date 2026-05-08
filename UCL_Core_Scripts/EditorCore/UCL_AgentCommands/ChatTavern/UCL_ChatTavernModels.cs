@@ -48,6 +48,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：true = 此房 task_create / task_claim / task_done 等事件不寫 system message 進 messages.jsonl
         // 數值影響：JsonUtility 對缺欄位 deserialize 成 default(bool)=false → 既有 meta.json 不必動，預設行為 = 鏡像 on
         public bool disable_quest_mirror;
+
+        // R7 (T04 chat-flow-robust) — 房 owner agent
+        // 物理意義：模糊「大小姐」routing 給此 agent；null/空 = 任何 agent 可接（broadcast）
+        // 數值影響：純 routing hint；agent 看 SKILL Routing Rules 自律解析
+        // 適用：quest 房（owner = quest-lead）/ brainstorm 主題房（owner = 主導 agent）；tavern 默認房不設
+        public string owner_agent;
     }
 
     /// <summary>房間清單。</summary>

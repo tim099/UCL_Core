@@ -253,7 +253,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         /// <summary>建房間：mkdir + 寫 meta.json。冪等（已存在直接回傳現有 metadata）。</summary>
-        public static UCL_ChatRoom CreateRoom(string id, string name, string description)
+        public static UCL_ChatRoom CreateRoom(string id, string name, string description, string ownerAgent = null)
         {
             if (string.IsNullOrEmpty(id)) throw new ArgumentException("room id is required");
             EnsureMigrated();
@@ -261,13 +261,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 // 冪等：已存在 → 若 meta.json 缺則補寫；否則 no-op 回傳現有
                 var existing = LoadRoomMeta(id);
+                bool dirty = false;
                 if (!File.Exists(GetRoomMetaPath(id)))
                 {
                     existing.name = string.IsNullOrEmpty(name) ? id : name;
                     existing.description = description ?? "";
                     if (string.IsNullOrEmpty(existing.created_at)) existing.created_at = NowUtcIso();
-                    SaveRoomMeta(existing);
+                    dirty = true;
                 }
+                // R7 (T04) — owner_agent 可後補：第一次 createroom 沒給、第二次給就更新
+                if (!string.IsNullOrEmpty(ownerAgent) && existing.owner_agent != ownerAgent)
+                {
+                    existing.owner_agent = ownerAgent;
+                    dirty = true;
+                }
+                if (dirty) SaveRoomMeta(existing);
                 return existing;
             }
             var room = new UCL_ChatRoom
@@ -276,6 +284,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 name = string.IsNullOrEmpty(name) ? id : name,
                 description = description ?? "",
                 created_at = NowUtcIso(),
+                owner_agent = ownerAgent ?? "",
             };
             EnsureRoomDir(id);
             SaveRoomMeta(room);

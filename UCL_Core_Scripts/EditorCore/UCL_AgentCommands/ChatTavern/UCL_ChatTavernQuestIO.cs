@@ -38,14 +38,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string role;                          // architect / programmer / art / translator / qa / ...
         public List<string> depends_on = new();
         public string suggested_owner;               // task_create 時可指定（誰最適合）
+        public string priority = "normal";           // high / normal / low（task_create 指定，未指定預設 normal）
 
-        public string status = "pending";            // pending / claimed / in_progress / done
+        public string status = "pending";            // pending / claimed / in_progress / done / released
         public string owner;                         // claim 後填
         public string lease_until;                   // ISO 8601 UTC
         public string last_progress_summary;
         public string last_progress_at;
+        public string created_at;                    // ISO 8601 UTC（task_create event ts）
         public int created_seq;
         public int last_event_seq;
+        public int reject_count;                     // 被 reject 退回次數（Phase B 用，本 MVP 預留）
+
+        // 衍生欄位（reducer 第二輪算）：
+        public int downstream_weight;                // transitive 下游阻擋的任務數
+        public double age_days;                      // 從 created_at 到 now 的天數
+        public int age_factor;                       // ceil(age_days / 7)，每 7 天加 1 級優先度
+        public bool is_stale;                        // lease_until < now → true
+        public List<UCL_QuestEvent> lifecycle = new();  // 此 task 的所有 events，依 seq 排序（task_state op 用）
     }
 
     /// <summary>
@@ -160,7 +170,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：events 是 truth；任何時刻可以重放；task state 純衍生不持久
         // ===========================================================
 
-        /// <summary>從 events.jsonl 重放算出 room 內所有 task 的當前狀態。</summary>
+        /// <summary>從 events.jsonl 重放算出 room 內所有 task 的當前狀態（含衍生欄位 downstream_weight / age / is_stale）。</summary>
         public static Dictionary<string, UCL_QuestTaskState> ComputeTaskStates(string roomId)
         {
             var states = new Dictionary<string, UCL_QuestTaskState>();
@@ -174,8 +184,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     states[e.task_id] = st;
                 }
                 st.last_event_seq = e.seq;
+                st.lifecycle.Add(e);
                 ApplyEvent(st, e);
             }
+            // 第二輪：算衍生欄位
+            ComputeDerivedFields(states);
             return states;
         }
 
@@ -186,11 +199,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 case "task_create":
                     st.status = "pending";
                     st.created_seq = e.seq;
+                    st.created_at = e.ts;
                     if (e.data != null)
                     {
                         if (e.data.TryGetValue("title", out var t)) st.title = t;
                         if (e.data.TryGetValue("role", out var r)) st.role = r;
                         if (e.data.TryGetValue("suggested_owner", out var so)) st.suggested_owner = so;
+                        if (e.data.TryGetValue("priority", out var pr)) st.priority = pr;
                         if (e.data.TryGetValue("depends_on", out var deps))
                         {
                             st.depends_on = string.IsNullOrEmpty(deps) ? new List<string>()
@@ -212,8 +227,85 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 case "task_done":
                     st.status = "done";
                     break;
-                // MVP 之外的 event types (block / unblock / review / split) 在 Phase B+ 補
+                case "task_release":
+                    // 主動放棄：status 退回 pending，清 owner / lease，但 reason 留 lifecycle
+                    st.status = "pending";
+                    st.owner = null;
+                    st.lease_until = null;
+                    break;
+                case "task_reject":
+                    // Phase B 預留：reject 時 reject_count++，status 退 in_progress（owner 不換）
+                    st.reject_count++;
+                    st.status = "in_progress";
+                    break;
+                // 之後加 task_block / task_unblock / task_force_reclaim / task_split 等
             }
+        }
+
+        /// <summary>算衍生欄位 — downstream_weight / age_days / age_factor / is_stale。</summary>
+        static void ComputeDerivedFields(Dictionary<string, UCL_QuestTaskState> states)
+        {
+            DateTime now = DateTime.UtcNow;
+            // age + is_stale
+            foreach (var st in states.Values)
+            {
+                if (DateTime.TryParse(st.created_at, out var ca))
+                    st.age_days = (now - ca.ToUniversalTime()).TotalDays;
+                st.age_factor = (int)Math.Ceiling(st.age_days / 7.0);
+                if (!string.IsNullOrEmpty(st.lease_until) && DateTime.TryParse(st.lease_until, out var lu))
+                {
+                    st.is_stale = lu.ToUniversalTime() < now && st.status != "done";
+                }
+            }
+            // downstream_weight: BFS 從每個 task 出發，算阻擋多少下游
+            foreach (var src in states.Values)
+            {
+                var visited = new HashSet<string>();
+                var queue = new Queue<string>();
+                foreach (var kv in states)
+                {
+                    if (kv.Value.depends_on.Contains(src.id)) queue.Enqueue(kv.Key);
+                }
+                while (queue.Count > 0)
+                {
+                    string t = queue.Dequeue();
+                    if (!visited.Add(t)) continue;
+                    foreach (var kv in states)
+                    {
+                        if (kv.Value.depends_on.Contains(t) && !visited.Contains(kv.Key)) queue.Enqueue(kv.Key);
+                    }
+                }
+                src.downstream_weight = visited.Count;
+            }
+        }
+
+        /// <summary>Cycle detection — 新 task X 的 depends_on 不能 transitive 到自己。</summary>
+        public static bool HasCycle(string roomId, string newTaskId, List<string> dependsOn)
+        {
+            if (dependsOn == null || dependsOn.Count == 0) return false;
+            var states = ComputeTaskStates(roomId);
+            // DFS：從每個 dep 出發，看能不能走到 newTaskId
+            foreach (var dep in dependsOn)
+            {
+                if (dep == newTaskId) return true; // 自己依賴自己
+                var visited = new HashSet<string>();
+                if (DfsReaches(dep, newTaskId, states, visited)) return true;
+            }
+            return false;
+        }
+
+        static bool DfsReaches(string from, string target, Dictionary<string, UCL_QuestTaskState> states, HashSet<string> visited)
+        {
+            if (from == target) return true;
+            if (!visited.Add(from)) return false;
+            if (!states.TryGetValue(from, out var st)) return false;
+            // 反向：找誰依賴 from（即 from 阻擋 X => 走到 X）
+            // 但 cycle 檢查要走 forward direction：from depends_on 的 → 它的 depends_on...
+            foreach (var d in st.depends_on)
+            {
+                if (DfsReaches(d, target, states, visited)) return true;
+            }
+            return false;
         }
 
         /// <summary>判斷 task 是否 ready (status=pending 且所有 deps done)。</summary>
@@ -226,6 +318,136 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             return true;
         }
+
+        // ===========================================================
+        // 區塊職責：衍生快照重生 — quest.md + checklist.md
+        // 物理意義：每筆改 events 的 op 結尾自動跑；events 是 truth，cache 隨時可重生
+        // 數值影響：< 5ms per call (events <100 + serialize markdown)
+        // ===========================================================
+
+        public static string GetQuestDashboardPath(string roomId)
+            => Path.Combine(UCL_ChatTavernIO.GetRoomDir(roomId), "quest.md");
+        public static string GetChecklistPath(string roomId)
+            => Path.Combine(UCL_ChatTavernIO.GetRoomDir(roomId), "checklist.md");
+
+        /// <summary>重生 quest.md (full DAG dashboard) + checklist.md (簡潔勾選表)。</summary>
+        public static void RebuildSnapshots(string roomId)
+        {
+            try
+            {
+                var states = ComputeTaskStates(roomId);
+                WriteQuestDashboard(roomId, states);
+                WriteChecklist(roomId, states);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Quest] RebuildSnapshots failed: {ex.Message}");
+            }
+        }
+
+        static void WriteQuestDashboard(string roomId, Dictionary<string, UCL_QuestTaskState> states)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"# 🏛 Quest Dashboard — {roomId}");
+            sb.AppendLine();
+            sb.AppendLine($"_衍生 cache，由 events.jsonl 重生；最後更新 {NowUtcIsoLocal()}_");
+            sb.AppendLine();
+            int done = 0, ready = 0, claimed = 0, inprog = 0, pending = 0, stale = 0;
+            foreach (var s in states.Values)
+            {
+                if (s.is_stale) stale++;
+                switch (s.status)
+                {
+                    case "done": done++; break;
+                    case "claimed": claimed++; break;
+                    case "in_progress": inprog++; break;
+                    case "pending":
+                        if (IsReady(s, states)) ready++; else pending++;
+                        break;
+                }
+            }
+            sb.AppendLine($"## 統計");
+            sb.AppendLine($"- 總 task: {states.Count} | done: {done} | in_progress: {inprog} | claimed: {claimed} | ready: {ready} | pending(blocked): {pending} | **stale: {stale}**");
+            sb.AppendLine();
+            sb.AppendLine("## Tasks");
+            sb.AppendLine();
+            sb.AppendLine("| ID | Status | Owner | Role | Priority | DownW | Age | Deps | Last Progress |");
+            sb.AppendLine("|---|---|---|---|---|---|---|---|---|");
+            // 排序：status sort key (in_progress=0 / claimed=1 / ready=2 / pending=3 / done=4)，再 priority desc，再 downstream desc
+            var sorted = new List<UCL_QuestTaskState>(states.Values);
+            sorted.Sort((a, b) =>
+            {
+                int sa = StatusSortKey(a, states), sb2 = StatusSortKey(b, states);
+                if (sa != sb2) return sa - sb2;
+                int pa = PriorityScore(a), pb = PriorityScore(b);
+                if (pa != pb) return pb - pa;
+                return b.downstream_weight - a.downstream_weight;
+            });
+            foreach (var s in sorted)
+            {
+                string es = s.status == "pending" && IsReady(s, states) ? "ready" : s.status;
+                if (s.is_stale) es += " (stale)";
+                string deps = s.depends_on.Count > 0 ? string.Join(",", s.depends_on) : "-";
+                string lp = string.IsNullOrEmpty(s.last_progress_summary) ? "-" : Truncate(s.last_progress_summary, 40);
+                sb.AppendLine($"| `{s.id}` | {es} | {s.owner ?? "-"} | {s.role ?? "-"} | {s.priority} | {s.downstream_weight} | {s.age_days:F1}d | {deps} | {lp} |");
+            }
+            sb.AppendLine();
+            File.WriteAllText(GetQuestDashboardPath(roomId), sb.ToString(), new UTF8Encoding(false));
+        }
+
+        static void WriteChecklist(string roomId, Dictionary<string, UCL_QuestTaskState> states)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"# ✅ Checklist — {roomId}");
+            sb.AppendLine();
+            sb.AppendLine($"_衍生 cache；最後更新 {NowUtcIsoLocal()}_");
+            sb.AppendLine();
+            // 拓樸排序近似：先建好的（created_seq 小）在前
+            var sorted = new List<UCL_QuestTaskState>(states.Values);
+            sorted.Sort((a, b) => a.created_seq - b.created_seq);
+            foreach (var s in sorted)
+            {
+                string mark;
+                switch (s.status)
+                {
+                    case "done": mark = "✅"; break;
+                    case "in_progress": mark = "🚧"; break;
+                    case "claimed": mark = "🔒"; break;
+                    case "pending": mark = IsReady(s, states) ? "🟢" : "⏳"; break;
+                    default: mark = "⚪"; break;
+                }
+                if (s.is_stale) mark = "🔴" + mark;
+                string owner = string.IsNullOrEmpty(s.owner) ? "" : $" (owner: {s.owner})";
+                sb.AppendLine($"- {mark} **{s.id}** {s.title}{owner}");
+            }
+            File.WriteAllText(GetChecklistPath(roomId), sb.ToString(), new UTF8Encoding(false));
+        }
+
+        static int StatusSortKey(UCL_QuestTaskState s, Dictionary<string, UCL_QuestTaskState> all)
+        {
+            switch (s.status)
+            {
+                case "in_progress": return 0;
+                case "claimed": return 1;
+                case "pending": return IsReady(s, all) ? 2 : 3;
+                case "done": return 4;
+                default: return 5;
+            }
+        }
+
+        public static int PriorityScore(UCL_QuestTaskState s)
+        {
+            int baseScore = s.priority switch { "high" => 100, "low" => 0, _ => 50 };
+            return baseScore + s.age_factor; // 每 7 天加 1 級（饑餓緩解）
+        }
+
+        static string Truncate(string s, int max)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Length <= max ? s : s.Substring(0, max - 3) + "...";
+        }
+
+        static string NowUtcIsoLocal() => DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC");
 
         // ===========================================================
         // 區塊職責：tasks/<id>.md 任務規格檔（write-once + frontmatter）

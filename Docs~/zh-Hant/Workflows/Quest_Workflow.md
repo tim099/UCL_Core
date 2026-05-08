@@ -3,7 +3,7 @@ title: Quest Workflow — Robust 多階段多 agent 任務協作
 description: 在 ChatTavern 之上的 Event-Sourced 任務協作系統。長任務可中斷續跑、divide-and-conquer 分解、跨 agent 角色分工、依賴排序、自動觸發 handoff。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-08
+last_updated: 2026-05-08 (Round 2 — priority + 中斷善後 + cycle detection + 衍生快照自動)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 對話與身分基礎
@@ -116,30 +116,73 @@ claimed/in_progress ─lease 過期 + 24h─ force_reclaim ─→ pending
 1. inbox_read agent_id=<我>                   ← 找我的優先處理
 2. task_list owner=<我> status=claimed,in_progress
                                               ← 我手頭未完成
-3. task_list status=ready                     ← 可領的（dep 都 done）
-4. quest_status                               ← 巨觀（衍生 quest.md 也行）
+3. task_next agent_id=<我>                    ← 自動排出我該接的下個 task（推薦）
+   或：task_list status=ready                  ← 自己看清單也行
+4. (可選) cat quest.md                        ← 巨觀（衍生快照已自動同步）
 ```
+
+**接手廢 task 必跑**：`task_state task_id=<T>` 看 lifecycle timeline，了解前人做到哪、有什麼 artifacts 可承接。
 
 **不做**：直接 `op=task_claim` 搶新任務 — 沒先看 inbox 容易忽略 handoff。
 
 ---
 
-## 6. 依賴排序與 handoff
+## 6. 依賴排序、優先度與 handoff
 
-### 任務 ready 判定
+### 6.1 任務 ready 判定
 - `status: pending` 且**所有 `depends_on` 都已 `done`** → 算 ready
 - `task_list status=ready` 取列表
 
-### handoff 自動觸發
-當 `task_done` 寫入：
+### 6.2 優先度模型（PriorityScore）
+
+每個 task reducer 算出的 score：
+```
+PriorityScore = base_priority + age_factor
+
+base_priority: high=100, normal=50, low=0
+age_factor:    ceil(age_days / 7)  — 每老 7 天 +1（饑餓緩解）
+```
+
+加權衍生欄位：
+- `downstream_weight`：transitive 阻擋的下游任務數（reducer BFS 算）
+- `is_stale`：lease_until 已過期且 status != done（lazy 偵測）
+- `reject_count`：被 reject 退回次數（Phase B 用）
+
+### 6.3 task_next — 自動排序回單一最佳 task
+
+排序鍵（先後）：
+```
+1. PriorityScore desc          ← 高優先 + 老化
+2. suggested_owner == agent    ← 指定我的優先
+3. downstream_weight desc      ← 阻擋越多下游越緊急
+4. created_seq asc             ← 先建好的先做
+```
+
+呼叫範例：
+```bash
+run_cmd.py run Tavern --arg op=task_next --arg room=<X> --arg agent_id=<我> --arg top=3
+```
+
+回前 N 筆 + reasoning（為何排這順序）+ 建議下一步 `task_claim` 指令。
+
+### 6.4 handoff 自動觸發
+當 `task_done` / `task_release` 寫入：
 1. reducer 找所有 `depends_on` 含此 task 的下游
 2. 對每個下游：若所有 deps 都 done → status 從 pending 變 ready
-3. 對下游的 `suggested_owner`（task spec 內欄位）→ 寫 inbox：
+3. 對下游的 `suggested_owner` → 寫 inbox：
    ```
    ## [seq=N] T03-localize ready (deps T01-schema done)
    spec: tasks/T03-localize.md
    suggested_action: task_claim T03-localize
    ```
+
+### 6.5 衍生快照自動重生
+
+每筆改 events 的 op 結尾自動跑 `RebuildSnapshots(roomId)`：
+- 重寫 `quest.md` — full DAG dashboard（status 統計 + 排序表 + downstream_weight）
+- 重寫 `checklist.md` — emoji 勾選表（✅ done / 🟢 ready / 🚧 in_progress / 🔒 claimed / ⏳ blocked / 🔴 stale）
+
+開銷 < 5ms per call（events <100 + serialize markdown）。**不留半自動的灰色狀態** — events 改 → 快照立刻同步。
 
 ---
 
@@ -165,19 +208,85 @@ claimed/in_progress ─lease 過期 + 24h─ force_reclaim ─→ pending
 
 ---
 
-## 8. MVP A 範圍（Phase A）
+## 8. 任務中斷善後（Robustness 核心）
 
-第一輪只做最小可執行子集：
+長任務最關鍵的 robustness 議題 — owner 中途消失（agent session 結束、改 plan、外部因素）怎辦。4 種情境：
 
-### 6 個 op
-- `task_create` / `task_claim` / `task_progress` / `task_done` / `task_list` / `inbox_read`
+| 情境 | 觸發 | 處理 |
+|---|---|---|
+| **(a) Lease 過期** (owner 死了沒 progress) | lease_until < now + status != done → `is_stale=true` | lazy 偵測；`task_list status=stale` 列出；Phase B 用 `task_force_reclaim` 接管 |
+| **(b) 主動放棄** (owner 還活但做不下去) | owner 跑 `task_release reason=...`（reason 必填） | status 退 pending → 發 inbox 給 suggested_owner |
+| **(c) 部分產出保留** | progress 帶 `artifacts=commit:abc;file:X.cs` | events.jsonl 留痕；接手者 `task_state` 看 timeline |
+| **(d) Reject 退回** (Phase B) | reviewer 跑 `task_reject reason=...` | reject_count++; status 退 in_progress（owner 不換，重做） |
 
-### 簡化
-- depth = 1（不做 split / 不做 hierarchical 後置處理）
+### task_state — 接手者必看 op
+
+```bash
+run_cmd.py run Tavern --arg op=task_state --arg room=<X> --arg task_id=<T>
+```
+
+輸出含：
+- 基本欄位（title / status / owner / role / priority / age / lease_until / is_stale / reject_count）
+- **Lifecycle Timeline** — 該 task 所有 events 按 seq 排序，每筆含 ts / type / actor / data
+- 範例 timeline：
+  ```
+  - seq=1 [...] task_create by Claude — title=..., role=architect
+  - seq=5 [...] task_claim by Claude — lease_until=...
+  - seq=6 [...] task_progress by Claude — summary=..., artifacts=commit:abc1234
+  - seq=10 [...] task_release by Claude — reason=轉做 T06
+  ```
+
+接手者讀完 timeline → 知道前人做到哪、卡在哪、有什麼產出可承接 → 不需 grep events.jsonl。
+
+---
+
+## 9. Cycle Detection — 強制 DAG
+
+`task_create` 時做 transitive closure DFS check：
+- 新 task `X` 的 `depends_on=[A, B, ...]`
+- 從每個 dep 出發 forward DFS（順著它們各自的 depends_on）
+- 若任何 dep 能走到 `X` → 形成循環，立刻拒絕
+
+成本：tasks <100 per quest，O(V+E) 微秒級無感。
+
+### 多輪迭代不靠 cycle
+
+需要「設計 → 實作 → 測試 → 再設計」這種迭代：
+
+| 場景 | 機制 |
+|---|---|
+| **小迭代**（reviewer 不滿） | `task_reject` → status 退 in_progress，同 owner 同 task_id 重做（不換 task） |
+| **大迭代**（明顯多輪） | 拆 task：`T02-r1 → T02-r2 → T02-r3` depends_on 鏈，仍是 DAG |
+
+---
+
+## 10. MVP A 範圍（Phase A — Round 2 完成）
+
+11 個 op（從 Round 1 的 6 個擴展）：
+
+### 主流程（5）
+- `task_create` — 加 priority + cycle detection
+- `task_claim` — claim + 24h lease
+- `task_progress` — 進度更新 + artifacts 可選 + lease 展期
+- `task_done` — 完成 + 自動 unblock 下游 + 寫 inbox
+- `task_release` — 主動放棄 + reason 必填 + 通知 suggested_owner
+
+### 查詢（4）
+- `task_list` — 列表 + status/owner/role filter
+- `task_next` — 一鍵自動排序回最佳下個 task（priority + suggested + downstream + age）
+- `task_state` — 單 task 完整 lifecycle timeline（接手者必看）
+- `inbox_read` — 讀我的 inbox
+
+### 自動化（2）
+- 每筆改 events 的 op 結尾**自動 RebuildSnapshots**（quest.md + checklist.md）
+- task_create 時**自動 cycle check**
+
+### 簡化（推 Phase B）
+- depth = 1（不做 split / hierarchical close）
 - lease 寫入但不做 force_reclaim
-- review/reject/block/unblock/nag 全省略
-- crash-safe append 簡化版（行尾 `\n` 檢查 + skip partial）
-- 衍生 quest.md / checklist.md **不**自動重生（手動跑 quest_rebuild）
+- review / reject / block / unblock / nag 完整 lifecycle
+- task_update_spec
+- crash-safe append 用 fsync（目前只做行尾 `\n` 檢查 + skip partial）
 
 ### 試驗任務（首個 quest）
 **Rooted refactor**（從 `status-design` brainstorm 收的結論）：
@@ -191,23 +300,23 @@ claimed/in_progress ─lease 過期 + 24h─ force_reclaim ─→ pending
 
 ---
 
-## 9. Phase B / C 規劃（後補，不在 MVP）
+## 11. Phase B / C 規劃（後補，不在 MVP）
 
 ### Phase B
-- review / reject / block / unblock / nag 完整 lifecycle
-- force_reclaim + lease 強制
-- crash-safe append（fsync + partial-line trim）
+- review / reject / block / unblock / nag 完整 lifecycle（reject_count 欄位已預留）
+- force_reclaim + lease 強制（is_stale 偵測已具備）
+- crash-safe append fsync（目前只有行尾 `\n` 檢查）
 - task_update_spec + spec hash
 
 ### Phase C
 - task_split + depth=3
-- 衍生 cache 自動重生（每 N 筆 events 觸發）
+- task_split 後 reducer 自動 close parent（children 全 done）
 - Editor IMGUI 整合（[UCL_ChatTavernPage](../../UCL_EditorPage/UCL_ChatTavernPage.md) 加 Quest 分頁）
 - 跨房間 inbox（`AgentCommands/ChatTavern/inbox/<agent>.md` global）
 
 ---
 
-## 10. 常見地雷
+## 12. 常見地雷
 
 - **task_claim 不看 deps**：MVP 不擋；agent 自律先 `task_list status=ready` 再 claim
 - **inbox 沒清**：每 turn 結束 `inbox_clear up_to_seq=<最大已處理>`，否則下次又看到舊的
@@ -216,7 +325,7 @@ claimed/in_progress ─lease 過期 + 24h─ force_reclaim ─→ pending
 
 ---
 
-## 11. 相關文件
+## 13. 相關文件
 
 - 主文檔：[ChatTavern_Workflow](ChatTavern_Workflow.md)
 - 指令規格：[Cmd_Tavern](../API/UCL_AgentCommand/Cmd_Tavern.md)

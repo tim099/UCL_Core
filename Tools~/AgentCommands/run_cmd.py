@@ -85,20 +85,25 @@ TAVERN_OP_SCHEMA = {
     # Quest Workflow MVP A — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md
     # 共通：每 op 都會 auto-fill idempotency_key=<uuid4>（除非 user 顯式給）
     "task_create":   {"required": ["room", "task_id", "title"], "aliases": {"sender": "actor"},
-                      "optional": ["role", "depends_on", "suggested_owner", "body", "actor", "idempotency_key"]},
+                      "optional": ["role", "priority", "depends_on", "suggested_owner", "body", "actor", "idempotency_key"]},
     "task_claim":    {"required": ["room", "task_id", "claimer"], "aliases": {"sender": "claimer", "actor": "claimer"},
                       "optional": ["lease_hours", "idempotency_key"]},
     "task_progress": {"required": ["room", "task_id", "actor", "summary"], "aliases": {"sender": "actor"},
-                      "optional": ["idempotency_key"]},
+                      "optional": ["artifacts", "idempotency_key"]},
     "task_done":     {"required": ["room", "task_id", "actor"], "aliases": {"sender": "actor"},
                       "optional": ["idempotency_key"]},
+    "task_release":  {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
+                      "optional": ["idempotency_key"]},
     "task_list":     {"required": ["room"], "aliases": {}, "optional": ["owner", "role", "status"]},
+    "task_next":     {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
+                      "optional": ["top"]},
+    "task_state":    {"required": ["room", "task_id"], "aliases": {}, "optional": []},
     "inbox_read":    {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
                       "optional": []},
 }
 
-# Quest ops 集合 — auto-fill idempotency_key 用
-QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done"}
+# Quest ops 集合 — auto-fill idempotency_key 用（純查詢 op 不需要）
+QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done", "task_release"}
 
 
 def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:

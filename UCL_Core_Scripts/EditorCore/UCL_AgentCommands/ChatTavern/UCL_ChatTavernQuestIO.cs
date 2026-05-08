@@ -233,9 +233,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     st.owner = null;
                     st.lease_until = null;
                     break;
+                case "task_review_request":
+                    // owner 提交 review；status: in_progress → review
+                    st.status = "review";
+                    break;
                 case "task_reject":
-                    // Phase B 預留：reject 時 reject_count++，status 退 in_progress（owner 不換）
+                    // reviewer 退回；reject_count++；status: review → in_progress（owner 不換）
                     st.reject_count++;
+                    st.status = "in_progress";
+                    break;
+                case "task_reopen":
+                    // 已 done 的 task 被發現有問題；status: done → in_progress
+                    // owner 沿用上次（不換人）；MVP 用，免走完整 review 流程
                     st.status = "in_progress";
                     break;
                 // 之後加 task_block / task_unblock / task_force_reclaim / task_split 等

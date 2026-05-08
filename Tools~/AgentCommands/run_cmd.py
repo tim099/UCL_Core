@@ -94,6 +94,12 @@ TAVERN_OP_SCHEMA = {
                       "optional": ["idempotency_key"]},
     "task_release":  {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
                       "optional": ["idempotency_key"]},
+    "task_review_request": {"required": ["room", "task_id", "actor"], "aliases": {"sender": "actor"},
+                      "optional": ["reviewer", "idempotency_key"]},
+    "task_reject":   {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
+                      "optional": ["idempotency_key"]},
+    "task_reopen":   {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
+                      "optional": ["idempotency_key"]},
     "task_list":     {"required": ["room"], "aliases": {}, "optional": ["owner", "role", "status"]},
     "task_next":     {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
                       "optional": ["top"]},
@@ -103,7 +109,8 @@ TAVERN_OP_SCHEMA = {
 }
 
 # Quest ops 集合 — auto-fill idempotency_key 用（純查詢 op 不需要）
-QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done", "task_release"}
+QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done", "task_release",
+                                  "task_review_request", "task_reject", "task_reopen"}
 
 
 def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:

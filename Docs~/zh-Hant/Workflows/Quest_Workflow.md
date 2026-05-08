@@ -3,7 +3,7 @@ title: Quest Workflow — Robust 多階段多 agent 任務協作
 description: 在 ChatTavern 之上的 Event-Sourced 任務協作系統。長任務可中斷續跑、divide-and-conquer 分解、跨 agent 角色分工、依賴排序、自動觸發 handoff。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-08 (Round 2 — priority + 中斷善後 + cycle detection + 衍生快照自動)
+last_updated: 2026-05-08 (Round 3 — 補 review/reject/reopen 迭代循環 + UCL_ChatTavernPage Quest 面板)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 對話與身分基礎
@@ -260,15 +260,18 @@ run_cmd.py run Tavern --arg op=task_state --arg room=<X> --arg task_id=<T>
 
 ---
 
-## 10. MVP A 範圍（Phase A — Round 2 完成）
+## 10. MVP A 範圍（Phase A — Round 3 完成）
 
-11 個 op（從 Round 1 的 6 個擴展）：
+14 個 op：
 
-### 主流程（5）
+### 主流程（8）
 - `task_create` — 加 priority + cycle detection
 - `task_claim` — claim + 24h lease
 - `task_progress` — 進度更新 + artifacts 可選 + lease 展期
+- `task_review_request` — owner 提交審查（status: in_progress → review）
 - `task_done` — 完成 + 自動 unblock 下游 + 寫 inbox
+- `task_reject` — reviewer 退回（status: review → in_progress; reject_count++）
+- `task_reopen` — done task 重開（status: done → in_progress；MVP 友善捷徑，不需 reviewer）
 - `task_release` — 主動放棄 + reason 必填 + 通知 suggested_owner
 
 ### 查詢（4）
@@ -281,12 +284,45 @@ run_cmd.py run Tavern --arg op=task_state --arg room=<X> --arg task_id=<T>
 - 每筆改 events 的 op 結尾**自動 RebuildSnapshots**（quest.md + checklist.md）
 - task_create 時**自動 cycle check**
 
+### 迭代循環範例（「原型→測試→修正→再測試」）
+
+**模式 A — 緊迭代**（reviewer 嚴格把關）：
+```
+task_create 原型 → claim Claude → progress... → review_request reviewer=QA
+                                                        ↓
+                                         QA 發現問題 → task_reject reason="X bug"
+                                                        ↓
+                                         reject_count=1, owner=Claude 重做
+                                                        ↓
+                                         progress... → review_request → reject (round 2)
+                                                        ↓
+                                                       ...
+                                         最終 review_request → reviewer task_done → 觸發下游 unblock
+```
+
+**模式 B — 鬆迭代**（任務 done 後發現要改）：
+```
+task_done T01 ✓ → 跑了發現 bug → task_reopen reason="X"
+                                          ↓
+                                  status: done → in_progress, owner 沿用
+                                          ↓
+                                  progress / done 再走一次
+```
+
 ### 簡化（推 Phase B）
 - depth = 1（不做 split / hierarchical close）
 - lease 寫入但不做 force_reclaim
-- review / reject / block / unblock / nag 完整 lifecycle
+- task_block / task_unblock / task_nag
 - task_update_spec
 - crash-safe append 用 fsync（目前只做行尾 `\n` 檢查 + skip partial）
+
+### Editor IMGUI 整合（已完成 Round 3）
+
+[UCL_ChatTavernPage](../../UCL_EditorPage/UCL_ChatTavernPage.md) 對有 events.jsonl 的房間自動顯示 Quest 面板：
+- 任務統計列（total / ✅ / 🚧 / 🔍 / 🔒 / 🟢 / ⏳ / 🔴）
+- 我的 inbox 提示（含一鍵開啟 inbox.md）
+- Filter (status + 只看我認領)
+- Task list 點擊展開 → 看 lifecycle timeline + spec 開啟 + 操作 hint
 
 ### 試驗任務（首個 quest）
 **Rooted refactor**（從 `status-design` brainstorm 收的結論）：

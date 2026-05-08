@@ -118,6 +118,18 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：Sprite null 視為「沒配置 / Asset 不存在」，UI 顯示佔位 box
         readonly Dictionary<string, Sprite> m_AvatarCache = new Dictionary<string, Sprite>();
 
+        // ===== Quest Panel =====
+        // 物理意義：當房間有 events.jsonl → 顯示 task tree 面板（reducer 重放出當前 task states）
+        // 數值影響：cache 每 QuestRefreshIntervalSec 重算一次；點選展開狀態 per-task 持有
+        bool m_ShowQuestPanel = true;
+        Dictionary<string, UCL_QuestTaskState> m_QuestStatesCache;
+        string m_QuestExpandedTaskId = "";          // 點某 task → 展開 timeline；空 = 無展開
+        string m_QuestStatusFilter = "all";          // all / pending / claimed / in_progress / review / done / ready / stale
+        bool m_QuestFilterByMe = false;              // 只顯示 owner = m_SelectedIdentityId
+        Vector2 m_QuestScroll = Vector2.zero;
+        double m_LastQuestRefreshTime = 0;
+        const double QuestRefreshIntervalSec = 2.0;
+
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
@@ -401,6 +413,285 @@ namespace UCL.Core.EditorLib.Page
             DrawMessagesView();
             GUILayout.Space(4);
             DrawInputBar();
+            GUILayout.Space(8);
+            DrawQuestPanel();
+        }
+
+        // ===========================================================
+        // 區塊：Quest Panel — task tree 視覺化
+        // 物理意義：當房間有 events.jsonl → 顯示 reducer 算出的 task 狀態
+        //          沒 events.jsonl → 整個 panel 摺疊（不是 quest 房不展示）
+        // 數值影響：每 QuestRefreshIntervalSec 重算 ComputeTaskStates；點 task 展開 timeline
+        // ===========================================================
+        void DrawQuestPanel()
+        {
+            string roomDir = UCL_ChatTavernIO.GetRoomDir(m_SelectedRoomId);
+            string eventsPath = Path.Combine(roomDir, "events.jsonl");
+            if (!File.Exists(eventsPath))
+            {
+                using (new GUILayout.HorizontalScope("box"))
+                {
+                    GUILayout.Label("🏛 Quest: 此房間尚無 events.jsonl（非 quest 房）。用 task_create 建第一個任務即會啟用。",
+                        UCL_GUIStyle.LabelStyle);
+                }
+                return;
+            }
+
+            // throttle 重算
+            double now = EditorApplication.timeSinceStartup;
+            if (m_QuestStatesCache == null || now - m_LastQuestRefreshTime > QuestRefreshIntervalSec)
+            {
+                try
+                {
+                    m_QuestStatesCache = UCL_ChatTavernQuestIO.ComputeTaskStates(m_SelectedRoomId);
+                    m_LastQuestRefreshTime = now;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[ChatTavernPage] Quest reducer 失敗: {ex.Message}");
+                    m_QuestStatesCache = new Dictionary<string, UCL_QuestTaskState>();
+                }
+            }
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // 標題列 + 折疊按鈕
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(m_ShowQuestPanel ? "▼" : "▶", UCL_GUIStyle.ButtonStyle, GUILayout.Width(28)))
+                    {
+                        m_ShowQuestPanel = !m_ShowQuestPanel;
+                    }
+                    int total = m_QuestStatesCache?.Count ?? 0;
+                    int doneN = 0, claimedN = 0, inProgN = 0, reviewN = 0, readyN = 0, blockedN = 0, staleN = 0;
+                    if (m_QuestStatesCache != null)
+                    {
+                        foreach (var s in m_QuestStatesCache.Values)
+                        {
+                            if (s.is_stale) staleN++;
+                            switch (s.status)
+                            {
+                                case "done": doneN++; break;
+                                case "claimed": claimedN++; break;
+                                case "in_progress": inProgN++; break;
+                                case "review": reviewN++; break;
+                                case "pending":
+                                    if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache)) readyN++; else blockedN++;
+                                    break;
+                            }
+                        }
+                    }
+                    GUILayout.Label($"🏛 <b>Quest Tasks</b>  total={total}  ✅{doneN}  🚧{inProgN}  🔍{reviewN}  🔒{claimedN}  🟢{readyN}  ⏳{blockedN}" + (staleN > 0 ? $"  🔴{staleN}" : ""),
+                        UCL_GUIStyle.RichLabelStyle);
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
+                    {
+                        m_QuestStatesCache = null; // 強制下幀重算
+                    }
+                }
+                if (!m_ShowQuestPanel) return;
+
+                // 我的 inbox 提示
+                DrawMyInboxHint();
+
+                // filter row
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Filter status:", UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
+                    string[] statusOpts = { "all", "ready", "claimed", "in_progress", "review", "done", "pending", "stale" };
+                    int curIdx = System.Array.IndexOf(statusOpts, m_QuestStatusFilter);
+                    if (curIdx < 0) curIdx = 0;
+                    int newIdx = EditorGUILayout.Popup(curIdx, statusOpts, GUILayout.Width(120));
+                    if (newIdx != curIdx) m_QuestStatusFilter = statusOpts[newIdx];
+                    GUILayout.Space(8);
+                    bool by = GUILayout.Toggle(m_QuestFilterByMe, "只看我認領的", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    if (by != m_QuestFilterByMe) m_QuestFilterByMe = by;
+                    GUILayout.FlexibleSpace();
+                }
+
+                // task table（scroll）
+                m_QuestScroll = GUILayout.BeginScrollView(m_QuestScroll, GUILayout.MinHeight(120), GUILayout.MaxHeight(360));
+                if (m_QuestStatesCache != null && m_QuestStatesCache.Count > 0)
+                {
+                    var sorted = new List<UCL_QuestTaskState>(m_QuestStatesCache.Values);
+                    sorted.Sort((a, b) =>
+                    {
+                        int sa = QuestStatusSortKey(a), sb = QuestStatusSortKey(b);
+                        if (sa != sb) return sa - sb;
+                        int pa = UCL_ChatTavernQuestIO.PriorityScore(a);
+                        int pb = UCL_ChatTavernQuestIO.PriorityScore(b);
+                        if (pa != pb) return pb - pa;
+                        return b.downstream_weight - a.downstream_weight;
+                    });
+                    foreach (var st in sorted)
+                    {
+                        if (!QuestPassesFilter(st)) continue;
+                        DrawQuestTaskRow(st);
+                    }
+                }
+                else
+                {
+                    GUILayout.Label("(尚無 task；用 task_create 建第一個)", UCL_GUIStyle.LabelStyle);
+                }
+                GUILayout.EndScrollView();
+            }
+        }
+
+        bool QuestPassesFilter(UCL_QuestTaskState st)
+        {
+            // 我的 filter
+            if (m_QuestFilterByMe && st.owner != m_SelectedIdentityId) return false;
+            // status filter
+            if (m_QuestStatusFilter == "all") return true;
+            if (m_QuestStatusFilter == "stale") return st.is_stale;
+            if (m_QuestStatusFilter == "ready")
+                return st.status == "pending" && UCL_ChatTavernQuestIO.IsReady(st, m_QuestStatesCache);
+            if (m_QuestStatusFilter == "pending")
+                return st.status == "pending" && !UCL_ChatTavernQuestIO.IsReady(st, m_QuestStatesCache);
+            return st.status == m_QuestStatusFilter;
+        }
+
+        int QuestStatusSortKey(UCL_QuestTaskState s)
+        {
+            switch (s.status)
+            {
+                case "review": return 0;
+                case "in_progress": return 1;
+                case "claimed": return 2;
+                case "pending": return UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache) ? 3 : 4;
+                case "done": return 5;
+                default: return 6;
+            }
+        }
+
+        void DrawQuestTaskRow(UCL_QuestTaskState st)
+        {
+            bool expanded = m_QuestExpandedTaskId == st.id;
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    string mark = QuestStatusEmoji(st);
+                    if (st.is_stale) mark = "🔴" + mark;
+                    GUILayout.Label(mark, UCL_GUIStyle.LabelStyle, GUILayout.Width(28));
+                    if (GUILayout.Button(st.id, UCL_GUIStyle.ButtonStyle, GUILayout.Width(150)))
+                    {
+                        m_QuestExpandedTaskId = expanded ? "" : st.id;
+                    }
+                    GUILayout.Label(string.IsNullOrEmpty(st.title) ? "(no title)" : st.title,
+                        UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(120));
+                    GUILayout.FlexibleSpace();
+                    GUILayout.Label($"P:{st.priority}", UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    GUILayout.Label($"D:{st.downstream_weight}", UCL_GUIStyle.LabelStyle, GUILayout.Width(40));
+                    GUILayout.Label(string.IsNullOrEmpty(st.owner) ? "-" : st.owner,
+                        UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
+                    GUILayout.Label(string.IsNullOrEmpty(st.role) ? "-" : st.role,
+                        UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                }
+                if (!expanded) return;
+
+                // 展開：spec 摘要 + lifecycle timeline + 操作 hint
+                GUILayout.Space(2);
+                if (st.depends_on != null && st.depends_on.Count > 0)
+                {
+                    GUILayout.Label($"Depends on: {string.Join(", ", st.depends_on)}", UCL_GUIStyle.LabelStyle);
+                }
+                GUILayout.Label($"Created: {st.created_at}  ({st.age_days:F1}d ago)  reject_count={st.reject_count}",
+                    UCL_GUIStyle.LabelStyle);
+                if (!string.IsNullOrEmpty(st.lease_until))
+                    GUILayout.Label($"Lease until: {st.lease_until}" + (st.is_stale ? "  ⚠ STALE" : ""), UCL_GUIStyle.LabelStyle);
+                if (!string.IsNullOrEmpty(st.last_progress_summary))
+                    GUILayout.Label($"Last progress: {st.last_progress_summary}", UCL_GUIStyle.LabelStyle);
+
+                // spec 預覽
+                string specPath = UCL_ChatTavernQuestIO.GetTaskSpecPath(m_SelectedRoomId, st.id);
+                if (File.Exists(specPath))
+                {
+                    if (GUILayout.Button("📄 開啟 spec 檔", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        EditorUtility.OpenWithDefaultApp(specPath);
+                    }
+                }
+
+                // timeline
+                GUILayout.Space(2);
+                GUILayout.Label("<b>Lifecycle Timeline:</b>", UCL_GUIStyle.RichLabelStyle);
+                foreach (var ev in st.lifecycle)
+                {
+                    string detail = "";
+                    if (ev.data != null && ev.data.TryGetValue("summary", out var sm) && !string.IsNullOrEmpty(sm))
+                        detail = $" — {sm}";
+                    else if (ev.data != null && ev.data.TryGetValue("reason", out var rs) && !string.IsNullOrEmpty(rs))
+                        detail = $" — reason: {rs}";
+                    GUILayout.Label($"  • <b>seq={ev.seq}</b> [{ev.ts}] <i>{ev.type}</i> by {ev.actor}{detail}",
+                        UCL_GUIStyle.RichLabelStyle);
+                }
+
+                // hint
+                GUILayout.Space(2);
+                string hint = QuestActionHint(st);
+                if (!string.IsNullOrEmpty(hint))
+                    GUILayout.Label($"💡 {hint}", UCL_GUIStyle.LabelStyle);
+            }
+        }
+
+        string QuestStatusEmoji(UCL_QuestTaskState s)
+        {
+            switch (s.status)
+            {
+                case "done": return "✅";
+                case "review": return "🔍";
+                case "in_progress": return "🚧";
+                case "claimed": return "🔒";
+                case "pending":
+                    return UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache) ? "🟢" : "⏳";
+                default: return "⚪";
+            }
+        }
+
+        string QuestActionHint(UCL_QuestTaskState s)
+        {
+            switch (s.status)
+            {
+                case "pending":
+                    if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache))
+                        return $"task_claim task_id={s.id} claimer=<你>";
+                    return "等 deps 完成（pending blocked）";
+                case "claimed":
+                case "in_progress":
+                    return $"task_progress / task_review_request / task_done task_id={s.id}";
+                case "review":
+                    return $"reviewer 動作：task_done 通過 / task_reject reason=...";
+                case "done":
+                    return $"task_reopen reason=... 可重開（找到問題時）";
+                default: return "";
+            }
+        }
+
+        void DrawMyInboxHint()
+        {
+            if (string.IsNullOrEmpty(m_SelectedIdentityId)) return;
+            string inboxPath = UCL_ChatTavernQuestIO.GetInboxPath(m_SelectedRoomId, m_SelectedIdentityId);
+            if (!File.Exists(inboxPath)) return;
+            // 簡單算行數（## 開頭 = 一筆 inbox entry）
+            int entries = 0;
+            try
+            {
+                foreach (var line in File.ReadAllLines(inboxPath))
+                {
+                    if (line.StartsWith("## ")) entries++;
+                }
+            }
+            catch { }
+            if (entries == 0) return;
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                GUILayout.Label($"📬 你的 inbox ({m_SelectedIdentityId}) 有 {entries} 筆通知", UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button("開啟 inbox.md", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    EditorUtility.OpenWithDefaultApp(inboxPath);
+                }
+            }
         }
 
         // ===========================================================

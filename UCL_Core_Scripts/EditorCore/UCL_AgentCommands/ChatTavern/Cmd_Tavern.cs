@@ -42,6 +42,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "task_progress: room=房間ID task_id=任務ID actor=身分ID summary=進度說明 [artifacts=type:ref;type:ref] [idempotency_key]\n" +
             "task_done: room=房間ID task_id=任務ID actor=身分ID [idempotency_key]\n" +
             "task_release: room=房間ID task_id=任務ID actor=身分ID reason=放棄原因（必填） [idempotency_key]\n" +
+            "task_review_request: room=房間ID task_id=任務ID actor=身分ID [reviewer=身分ID] [idempotency_key]\n" +
+            "task_reject: room=房間ID task_id=任務ID actor=身分ID reason=退回原因（必填） [idempotency_key]\n" +
+            "task_reopen: room=房間ID task_id=任務ID actor=身分ID reason=重開原因（必填） [idempotency_key]\n" +
             "task_list: room=房間ID [owner=身分ID] [role=...] [status=pending,claimed,in_progress,done,ready,stale]\n" +
             "task_next: room=房間ID agent_id=身分ID [top=1] — 自動排序回該 agent 應該接的下個 task（priority+age+downstream+role-match 加權）\n" +
             "task_state: room=房間ID task_id=任務ID — 印 task lifecycle timeline + is_stale + reject_count（接手者必看）\n" +
@@ -84,6 +87,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "task_progress": Op_TaskProgress(args); break;
                     case "task_done": Op_TaskDone(args); break;
                     case "task_release": Op_TaskRelease(args); break;
+                    case "task_review_request": Op_TaskReviewRequest(args); break;
+                    case "task_reject": Op_TaskReject(args); break;
+                    case "task_reopen": Op_TaskReopen(args); break;
                     case "task_list": Op_TaskList(args); break;
                     case "task_next": Op_TaskNext(args); break;
                     case "task_state": Op_TaskState(args); break;
@@ -887,6 +893,150 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 : $"# ✅ task_release\n\n- task_id: `{taskId}`\n- released_by: {actor}\n- reason: {reason}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Quest] task_release {roomId}/{taskId} by {actor} reason={reason} (seq={seq})");
+        }
+
+        // ===========================================================
+        // op=task_review_request — owner 提交審查；status: in_progress → review
+        // ===========================================================
+        void Op_TaskReviewRequest(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string reviewer = GetArg(args, "reviewer", "");
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_review_request 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_review_request 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { FailLastOp("task_review_request 缺少 actor"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}"); return; }
+            if (st.owner != actor) { FailLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+            if (st.status != "in_progress" && st.status != "claimed") { FailLastOp($"task {taskId} 狀態 {st.status} 不能 request review（須在 claimed/in_progress）"); return; }
+
+            var data = new Dictionary<string, string>();
+            if (!string.IsNullOrEmpty(reviewer)) data["reviewer"] = reviewer;
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = actor,
+                idempotency_key = idempotencyKey,
+                type = "task_review_request",
+                task_id = taskId,
+                data = data,
+            });
+
+            // 通知 reviewer (若指定)
+            int notifications = 0;
+            if (seq > 0 && !string.IsNullOrEmpty(reviewer))
+            {
+                UCL_ChatTavernQuestIO.AppendInbox(roomId, reviewer, seq,
+                    $"{taskId} review request",
+                    $"owner {actor} 提交審查\nsuggested_action: task_state {taskId} 後 task_done 或 task_reject reason=...");
+                notifications++;
+            }
+
+            if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
+
+            string md = seq < 0
+                ? $"# ℹ task_review_request idempotent skip\n\n- task_id: `{taskId}`\n"
+                : $"# ✅ task_review_request\n\n- task_id: `{taskId}`\n- by: {actor}\n- reviewer: {reviewer ?? "(未指定)"}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_review_request {roomId}/{taskId} → reviewer={reviewer} (seq={seq})");
+        }
+
+        // ===========================================================
+        // op=task_reject — reviewer 退回；reject_count++; status: review → in_progress；通知 owner
+        // ===========================================================
+        void Op_TaskReject(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string reason = GetArg(args, "reason", "");
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_reject 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_reject 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { FailLastOp("task_reject 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(reason)) { FailLastOp("task_reject 缺少 reason（必填，給 owner 修正方向）"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}"); return; }
+            if (st.status != "review") { FailLastOp($"task {taskId} 狀態 {st.status} 不能 reject（須在 review）"); return; }
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = actor,
+                idempotency_key = idempotencyKey,
+                type = "task_reject",
+                task_id = taskId,
+                data = new Dictionary<string, string> { { "reason", reason } },
+            });
+
+            // 通知原 owner
+            int notifications = 0;
+            if (seq > 0 && !string.IsNullOrEmpty(st.owner))
+            {
+                UCL_ChatTavernQuestIO.AppendInbox(roomId, st.owner, seq,
+                    $"{taskId} rejected by {actor} (round {st.reject_count + 1})",
+                    $"reason: {reason}\nsuggested_action: 修完用 task_progress / task_review_request 再次提交");
+                notifications++;
+            }
+
+            if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
+
+            string md = seq < 0
+                ? $"# ℹ task_reject idempotent skip\n\n- task_id: `{taskId}`\n"
+                : $"# ✅ task_reject\n\n- task_id: `{taskId}`\n- by: {actor}\n- reason: {reason}\n- reject_count → {st.reject_count + 1}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_reject {roomId}/{taskId} reason={reason} (seq={seq})");
+        }
+
+        // ===========================================================
+        // op=task_reopen — done task 被發現有問題；status: done → in_progress（MVP 友善捷徑）
+        // ===========================================================
+        void Op_TaskReopen(Dictionary<string, string> args)
+        {
+            string roomId = GetArg(args, "room", "");
+            string taskId = GetArg(args, "task_id", "");
+            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string reason = GetArg(args, "reason", "");
+            string idempotencyKey = GetArg(args, "idempotency_key", "");
+            if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_reopen 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_reopen 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { FailLastOp("task_reopen 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(reason)) { FailLastOp("task_reopen 缺少 reason（必填，說明為何重開）"); return; }
+
+            var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+            if (!states.TryGetValue(taskId, out var st)) { FailLastOp($"task 不存在：{taskId}"); return; }
+            if (st.status != "done") { FailLastOp($"task {taskId} 狀態 {st.status} 不是 done，無需 reopen"); return; }
+
+            int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+            {
+                actor = actor,
+                idempotency_key = idempotencyKey,
+                type = "task_reopen",
+                task_id = taskId,
+                data = new Dictionary<string, string> { { "reason", reason } },
+            });
+
+            // 通知 task owner（若不是 actor 自己）
+            int notifications = 0;
+            if (seq > 0 && !string.IsNullOrEmpty(st.owner) && st.owner != actor)
+            {
+                UCL_ChatTavernQuestIO.AppendInbox(roomId, st.owner, seq,
+                    $"{taskId} reopened by {actor}",
+                    $"reason: {reason}\nsuggested_action: task_state {taskId} 看 timeline 後繼續修 → task_progress / task_done");
+                notifications++;
+            }
+
+            if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
+
+            string md = seq < 0
+                ? $"# ℹ task_reopen idempotent skip\n\n- task_id: `{taskId}`\n"
+                : $"# ✅ task_reopen\n\n- task_id: `{taskId}`\n- by: {actor}\n- reason: {reason}\n- owner: {st.owner ?? "-"} (沿用)\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Quest] task_reopen {roomId}/{taskId} reason={reason} (seq={seq})");
         }
 
         // ===========================================================

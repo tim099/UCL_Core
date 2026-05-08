@@ -143,7 +143,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             });
 
             var tail = UCL_ChatTavernIO.Tail(roomId, 100);
-            string header = $"> 你以「{ident.display_name}」（id=`{ident.id}`）進入房間「{room.name}」(seq={seq})";
+            // 注意：_last_view.md 是房間共用快照，可能被任何 agent 讀到；header 用中性措辭避免誤導讀者把上一位當成自己
+            string header = $"> 上一筆事件 (seq={seq})：「{ident.display_name}」（id=`{ident.id}`）加入房間「{room.name}」";
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] join {roomId} ← {ident.display_name} (seq={seq})");
@@ -188,7 +189,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
 
             var tail = UCL_ChatTavernIO.Tail(roomId, 100);
-            string header = $"> 你 ({senderName}) 剛 post：seq={seq} 「{Truncate(body, 80)}」";
+            // 中性措辭：_last_view.md 會被任何 agent 讀到，不能用「你」（會讓讀者誤以為自己是上一位 poster）
+            string header = $"> 上一筆 post (seq={seq}) by {senderName}：「{Truncate(body, 80)}」";
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");

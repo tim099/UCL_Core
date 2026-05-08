@@ -39,7 +39,7 @@ namespace UCL.Core.EditorLib
         //          採用 const 而非檔案，避免在範本資料夾內塞入「不算範本」的 metadata 檔案。
         // 數值影響：marker 比較唯一依據；不影響檔案複製邏輯本身（那是 file-by-file scan）。
         // ===========================================================
-        public const int TemplatesContentVersion = 2;
+        public const int TemplatesContentVersion = 3;
 
         const string MarkerFileRelative = "ProjectSettings/UCL_CoreBootstrap.version";
         // Template 自動覆蓋同步用 — 記錄使用者「跳過某衝突時的 Template 端 hash」，避免下次 reload 又 spam dialog

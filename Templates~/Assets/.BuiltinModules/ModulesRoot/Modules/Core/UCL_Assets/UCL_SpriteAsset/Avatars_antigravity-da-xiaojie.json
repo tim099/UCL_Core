@@ -1,0 +1,9 @@
+{
+    "DataLoadType": "ModResources",
+    "ModResourcesData": {
+        "ModuleID": "Core",
+        "FolderPath": "Sprites/Avatars",
+        "FileName": "antigravity-da-xiaojie.png"
+    },
+    "FilterMode": "Bilinear"
+}

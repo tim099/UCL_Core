@@ -400,7 +400,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         /// <summary>建房間：mkdir + 寫 meta.json。冪等（已存在直接回傳現有 metadata）。</summary>
-        public static UCL_ChatRoom CreateRoom(string id, string name, string description, string ownerAgent = null)
+        public static UCL_ChatRoom CreateRoom(string id, string name, string description, string ownerAgent = null, List<string> mirrorKinds = null)
         {
             if (string.IsNullOrEmpty(id)) throw new ArgumentException("room id is required");
             EnsureMigrated();
@@ -422,6 +422,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     existing.owner_agent = ownerAgent;
                     dirty = true;
                 }
+                // R7 (Quest→Discord 修法 C) — mirror_kinds 可後補：null=不動原值；非 null = 取代
+                if (mirrorKinds != null)
+                {
+                    existing.mirror_kinds = mirrorKinds;
+                    dirty = true;
+                }
                 if (dirty) SaveRoomMeta(existing);
                 return existing;
             }
@@ -432,6 +438,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 description = description ?? "",
                 created_at = NowUtcIso(),
                 owner_agent = ownerAgent ?? "",
+                mirror_kinds = mirrorKinds,   // null = fallback config.kinds 預設行為
             };
             EnsureRoomDir(id);
             SaveRoomMeta(room);

@@ -135,12 +135,29 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string desc = GetArg(args, "description", "");
             // R7 (T04 chat-flow-robust) — 房 owner_agent（模糊「大小姐」routing 用；可選）
             string ownerAgent = GetArg(args, "owner_agent", GetArg(args, "owner", ""));
+            // R7 (Q20260508-180358 — Quest→Discord 修法 C) — per-room mirror_kinds override
+            // CSV 解析：「chat,system」→ ["chat","system"]；空字串 = 不傳（用 default null=fallback config.kinds）
+            string mirrorKindsCsv = GetArg(args, "mirror_kinds", "");
+            List<string> mirrorKindsList = null;
+            if (!string.IsNullOrEmpty(mirrorKindsCsv))
+            {
+                mirrorKindsList = new List<string>();
+                foreach (var k in mirrorKindsCsv.Split(','))
+                {
+                    var trimmed = k.Trim();
+                    if (!string.IsNullOrEmpty(trimmed)) mirrorKindsList.Add(trimmed);
+                }
+            }
             if (string.IsNullOrEmpty(id)) { FailLastOp("createroom 缺少 id（房間ID；可用 id= 或 room=）"); return; }
-            var room = UCL_ChatTavernIO.CreateRoom(id, name, desc, string.IsNullOrEmpty(ownerAgent) ? null : ownerAgent);
+            var room = UCL_ChatTavernIO.CreateRoom(id, name, desc,
+                string.IsNullOrEmpty(ownerAgent) ? null : ownerAgent,
+                mirrorKindsList);
             string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- owner_agent: `{room.owner_agent}`";
-            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}\n";
+            string mirrorLine = (room.mirror_kinds == null || room.mirror_kinds.Count == 0)
+                ? "" : $"\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds)}]";
+            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}{mirrorLine}\n";
             UCL_ChatTavernRender.WriteLastOp(md);
-            Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}");
+            Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}{(room.mirror_kinds != null && room.mirror_kinds.Count > 0 ? $" mirror_kinds=[{string.Join(",", room.mirror_kinds)}]" : "")}");
         }
 
         // ===========================================================

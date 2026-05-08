@@ -68,7 +68,7 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 # 注意：Editor 端已支援 alias 寬進；本表額外給 client 提示與修正建議
 # ===========================================================
 TAVERN_OP_SCHEMA = {
-    "createroom":  {"required": ["id"],          "aliases": {"room": "id", "owner": "owner_agent"},               "optional": ["name", "description", "owner_agent"]},
+    "createroom":  {"required": ["id"],          "aliases": {"room": "id", "owner": "owner_agent"},               "optional": ["name", "description", "owner_agent", "mirror_kinds"]},
     "listrooms":   {"required": [],              "aliases": {},                                                   "optional": []},
     "join":        {"required": ["room", "id"],  "aliases": {"sender": "id", "sender_id": "id"},                  "optional": ["name", "kind"]},
     "post":        {"required": ["room", "sender", "body"], "aliases": {"sender_id": "sender", "id": "sender"},   "optional": ["reply_to", "meta", "refs"]},

@@ -54,6 +54,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 數值影響：純 routing hint；agent 看 SKILL Routing Rules 自律解析
         // 適用：quest 房（owner = quest-lead）/ brainstorm 主題房（owner = 主導 agent）；tavern 默認房不設
         public string owner_agent;
+
+        // R7 (Q20260508-180358 — Quest task → Discord 推送修法 C)
+        // 物理意義：per-room override 哪些 message kind 要鏡像到 Discord（tavern_mirror stream）
+        // 範例 ["chat", "system"] = 對話 + R6 task lifecycle 都推；["chat"] = 只推對話
+        // 數值影響：null/空 list = fallback config.tavern_mirror.kinds（向下相容）
+        // 慣例：
+        //   - quest 房（chat-flow-robust 等）→ ["chat", "system"]（Tim 要看 task 進度）
+        //   - tavern 默認 brainstorm → ["chat"]（不要被 R6 mirror 噴爆）
+        //   - agent-prompt-queue → ["chat"]（queue-idle stream 已涵蓋；避免雙重通知）
+        public List<string> mirror_kinds;
     }
 
     /// <summary>房間清單。</summary>

@@ -42,6 +42,33 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const int StaleWaitMinutes = 30;
 
         // ===========================================================
+        // 區塊：mtime-based in-memory cache（quest tavern-entry-latency T05 / O5）
+        // 物理意義：identities.json / presence.json / room meta.json 在多 op 連續呼叫時被反覆 deserialize
+        //          → 每次 read 入口先 stat mtime，跟 cache 內紀錄相同 → 直接回 cache（O(1)）
+        //          → 不同 / 缺檔 → 重 deserialize 並推進 cache mtime
+        // 數值影響：解 latency S6（跨 op 重複 IO）；agent 端透明，不改 API contract
+        // 寫操作（Save*）後同步推進 cache mtime + 替換 cache value，不必下次重讀
+        // ===========================================================
+        static UCL_ChatIdentityList _identitiesCache;
+        static long _identitiesCacheMtime = -1;
+
+        static UCL_ChatPresenceList _presenceCache;
+        static long _presenceCacheMtime = -1;
+
+        static readonly Dictionary<string, UCL_ChatRoom> _roomMetaCache = new Dictionary<string, UCL_ChatRoom>();
+        static readonly Dictionary<string, long> _roomMetaCacheMtime = new Dictionary<string, long>();
+
+        // Helper：取檔案 mtime（ticks），不存在回 -1
+        static long GetMtimeTicks(string path)
+        {
+            try
+            {
+                return File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks : -1L;
+            }
+            catch { return -1L; }
+        }
+
+        // ===========================================================
         // 路徑 helper
         // ===========================================================
 
@@ -95,12 +122,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static UCL_ChatIdentityList LoadIdentities()
         {
             string path = GetIdentitiesPath();
-            if (!File.Exists(path)) return new UCL_ChatIdentityList();
+            long mtime = GetMtimeTicks(path);
+            // T05 cache hit：mtime 一致且 cache 已建 → 直接回（同筆 instance，caller 不該外部 mutate）
+            if (mtime == _identitiesCacheMtime && _identitiesCache != null) return _identitiesCache;
+            if (!File.Exists(path))
+            {
+                _identitiesCache = new UCL_ChatIdentityList();
+                _identitiesCacheMtime = -1;
+                return _identitiesCache;
+            }
             try
             {
                 string json = File.ReadAllText(path, Encoding.UTF8);
                 var data = JsonUtility.FromJson<UCL_ChatIdentityList>(json);
-                return data ?? new UCL_ChatIdentityList();
+                _identitiesCache = data ?? new UCL_ChatIdentityList();
+                _identitiesCacheMtime = mtime;
+                return _identitiesCache;
             }
             catch (Exception e)
             {
@@ -115,7 +152,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             try
             {
                 string json = JsonUtility.ToJson(list, true);
-                File.WriteAllText(GetIdentitiesPath(), json, new UTF8Encoding(false));
+                string path = GetIdentitiesPath();
+                File.WriteAllText(path, json, new UTF8Encoding(false));
+                // T05 cache：寫後同步推進，下次 Load 直接命中
+                _identitiesCache = list;
+                _identitiesCacheMtime = GetMtimeTicks(path);
             }
             catch (Exception e)
             {
@@ -157,12 +198,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static UCL_ChatPresenceList LoadPresence()
         {
             string path = GetPresencePath();
-            if (!File.Exists(path)) return new UCL_ChatPresenceList();
+            long mtime = GetMtimeTicks(path);
+            // T05 cache hit
+            if (mtime == _presenceCacheMtime && _presenceCache != null) return _presenceCache;
+            if (!File.Exists(path))
+            {
+                _presenceCache = new UCL_ChatPresenceList();
+                _presenceCacheMtime = -1;
+                return _presenceCache;
+            }
             try
             {
                 string json = File.ReadAllText(path, Encoding.UTF8);
                 var data = JsonUtility.FromJson<UCL_ChatPresenceList>(json);
-                return data ?? new UCL_ChatPresenceList();
+                _presenceCache = data ?? new UCL_ChatPresenceList();
+                _presenceCacheMtime = mtime;
+                return _presenceCache;
             }
             catch (Exception e)
             {
@@ -177,7 +228,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             try
             {
                 string json = JsonUtility.ToJson(list, true);
-                File.WriteAllText(GetPresencePath(), json, new UTF8Encoding(false));
+                string path = GetPresencePath();
+                File.WriteAllText(path, json, new UTF8Encoding(false));
+                // T05 cache：寫後同步推進
+                _presenceCache = list;
+                _presenceCacheMtime = GetMtimeTicks(path);
             }
             catch (Exception e)
             {
@@ -341,13 +396,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             if (string.IsNullOrEmpty(id)) return null;
             string metaPath = GetRoomMetaPath(id);
+            long mtime = GetMtimeTicks(metaPath);
+            // T05 cache hit：mtime 跟 cached 一致 → 回 cache
+            if (_roomMetaCacheMtime.TryGetValue(id, out long cachedMtime) && cachedMtime == mtime
+                && _roomMetaCache.TryGetValue(id, out var cachedRoom) && cachedRoom != null)
+            {
+                return cachedRoom;
+            }
+            UCL_ChatRoom result = null;
             if (File.Exists(metaPath))
             {
                 try
                 {
                     string json = File.ReadAllText(metaPath, Encoding.UTF8);
                     var data = JsonUtility.FromJson<UCL_ChatRoom>(json);
-                    if (data != null && !string.IsNullOrEmpty(data.id)) return data;
+                    if (data != null && !string.IsNullOrEmpty(data.id)) result = data;
                 }
                 catch (Exception e)
                 {
@@ -355,13 +418,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
             }
             // stub fallback：orphan dir（meta.json 缺 / 壞）視同正式房間，name=id
-            return new UCL_ChatRoom
+            if (result == null)
             {
-                id = id,
-                name = id,
-                description = "",
-                created_at = "",
-            };
+                result = new UCL_ChatRoom
+                {
+                    id = id,
+                    name = id,
+                    description = "",
+                    created_at = "",
+                };
+            }
+            // T05 cache：寫入 cache（不論是真檔還是 stub，都緩存避免反覆 stat 不存在的檔）
+            _roomMetaCache[id] = result;
+            _roomMetaCacheMtime[id] = mtime;
+            return result;
         }
 
         /// <summary>寫 metadata 進 rooms/&lt;id&gt;/meta.json（自動 mkdir）。</summary>
@@ -372,7 +442,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             try
             {
                 string json = JsonUtility.ToJson(room, true);
-                File.WriteAllText(GetRoomMetaPath(room.id), json, new UTF8Encoding(false));
+                string path = GetRoomMetaPath(room.id);
+                File.WriteAllText(path, json, new UTF8Encoding(false));
+                // T05 cache：寫後同步推進
+                _roomMetaCache[room.id] = room;
+                _roomMetaCacheMtime[room.id] = GetMtimeTicks(path);
             }
             catch (Exception e)
             {

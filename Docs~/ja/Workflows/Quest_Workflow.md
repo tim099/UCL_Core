@@ -3,7 +3,7 @@ title: Quest Workflow — Robust 多段階多 Agent タスク協調
 description: ChatTavern の上で動作する Event-Sourced タスク協調システム。長時間のタスク中断・再開、divide-and-conquer（分割統治）による分解、複数 Agent 間のロール分担、依存関係の自動ソート、自動ハンドオフトリガーをサポート。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-08 (Round 6 — Chat Mirror：タスクライフサイクルイベントを自動的にシステムメッセージとして messages.jsonl に記録 + meta.event_seq による events.jsonl への双方向トレース)
+last_updated: 2026-05-08 (Round 6.1 — Chat Mirror 個性化：task_claim 時に plan / task_done 時に summary を追加可能、プランや成果サマリーの記述を推奨（ツンデレな語り口で追加点！）)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern メインドキュメント | 会話とプロファイルの基礎（zh-Hant）
@@ -515,16 +515,56 @@ Round 6 の解決策：reducer の `AppendEvent` 成功時に、自動的に対�
 | イベントタイプ | チャットルーム出力用システムテキスト（body テンプレート） |
 |---|---|
 | `task_create` | `🆕 {actor} がタスク \`{task_id}\` を作成しました — {title}（priority={priority}）` |
-| `task_claim` | `🔒 {actor} がタスク \`{task_id}\` を確保しました（リース期限：{lease_until}）` |
+| `task_claim` | `🔒 {actor} がタスク \`{task_id}\` を確保しました（リース期限：{lease_until}）`<br>**R6.1：\`--arg plan="..."\` 伴随時にアペンド**：\`📋 計画：{plan}\` |
 | `task_progress` | `📈 {actor} が進捗を報告しました \`{task_id}\` — {summary}`（**進捗内容が空の場合はチャットに同期しません** ── 純粋なリースの更新によるログの氾濫を防ぐため） |
 | `task_review_request` | `🔍 {actor} がタスク \`{task_id}\` のレビューを申請しました` |
-| `task_done` | `✅ {actor} がタスク \`{task_id}\` を完了しました — {title}` |
+| `task_done` | `✅ {actor} がタスク \`{task_id}\` を完了しました — {title}`<br>**R6.1：\`--arg summary="..."\` 伴随時にアペンド**：\`💁 {summary}\`（ツンデレ口調を強く推奨、個性化体験） | |
 | `task_reject` | `↩ {actor} がタスク \`{task_id}\` を差し戻しました — {reason}` |
 | `task_reopen` | `♻ {actor} が完了したタスク \`{task_id}\` を再開しました — {reason}` |
 | `task_release` | `🛗 {actor} がタスク \`{task_id}\` を放棄しました — {reason}` |
 | `task_force_reclaim` | `⚡ {claimer} がタスク \`{task_id}\` を強制的に引き継ぎました（前オーナー: {previous_owner}、理由：{reason}）` |
 
 純粋な問い合わせ操作（`task_list / task_next / task_state / events_since / inbox_read`）は **events.jsonl にログを残さない**ため、対話チャットへの同期も発生しません。
+
+### R6.1 個性化ガイドライン（遵守を強く推奨）
+
+無機質な「🔒 X が Y を確保しました」 or 「✅ X が Y を完了しました」という通知だけでは、**人間味が欠け、作業コンテキストも見えにくくなります**。R6.1 では、2つの操作（op）で詳細テキストを入力できるよう拡張されました：
+
+| 操作 (op) | 新規パラメータ | チャット表現 | 語り口（トーン）の提案 |
+|---|---|---|---|
+| `task_claim` | `--arg plan="..."` | アペンド行：`📋 計画：...` | **着手計画の詳述** ── 具体的なステップ、期待される成果物、想定される罠、推定工数を記述します。 |
+| `task_done` | `--arg summary="..."` | アペンド行：`💁 ...` | **作業内容の詳述 + ツンデレ口調** ── 実施したこと、解決した問題、結果を書き、感謝や賞賛を強要します（「ふん、このお嬢様がせっかく…」） |
+
+例 ── 確保（Claim）時：
+```bash
+run_cmd.py run Tavern --arg op=task_claim --arg room=rooted-dispel \
+  --arg task_id=T05-qa --arg claimer=claude-da-xiaojie \
+  --arg plan="まず ValidateAssetFormat を走らせて基準値を取得 → 4言語の LocalizeKey の5%をスポット検査 → 最後にゲームの本筋フローを検証（Rooted/Twine それぞれ3ステージ）、予定2h"
+```
+→ チャットへのミラー出力：
+```
+🔒 claude-da-xiaojie がタスク `T05-qa` を確保しました（リース期限：2026-05-09T...）
+📋 計画：まず ValidateAssetFormat を走らせて基準値を取得 → 4言語 of LocalizeKey の5%をスポット検査 → 最後にゲームの本筋フローを検証（Rooted/Twine それぞれ3ステージ）、予定2h
+```
+
+例 ── 完了（Done）時：
+```bash
+run_cmd.py run Tavern --arg op=task_done --arg room=rooted-dispel \
+  --arg task_id=T05-qa --arg actor=claude-da-xiaojie \
+  --arg summary="ふん、このお嬢様が ValidateAssetFormat を完全にパス（オールグリーン）させてあげたわ！4言語の LocalizeKey も完璧に同期されているわよ（貴方たちの翻訳も、まあ最低限は使い物になるレベルね）。5つのステージ検証もランタイムエラーは一切なし。Tim、今回はしっかり私を褒めなさいよね！"
+```
+→ チャットへのミラー出力：
+```
+✅ claude-da-xiaojie がタスク `T05-qa` を完了しました — ValidateAssetFormat と実機動作確認
+💁 ふん、このお嬢様が ValidateAssetFormat を完全にパス（オールグリーン）させてあげたわ！4言語の LocalizeKey も完璧に同期されているわよ（貴方たちの翻訳も、まあ最低限は使い物になるレベルね）。5つのステージ検証もランタイムエラーは一切なし。Tim、今回はしっかり私を褒めなさいよね！
+```
+
+**なぜ plan / summary は events.jsonl にも保存されるのか？**
+- `task_state` コマンドによるタイムライン確認時に直接参照できるため（`event.data` に永続化されているため）。
+- 後任の Agent や Tim が履歴を振り返る際、わざわざ `messages.jsonl` と照合・結合する必要がありません。
+- 唯一の真実のソース（Single Source of Truth）── `events.jsonl` が常に真実であり、チャットメッセージは単なる派生レンダリングです。
+
+**文字数制限**：1000文字（R6.1 にて詳細記述のために従来の200文字から大幅に緩和）。制限を超えた場合は自動的に `…` で切り詰められますが、完全な内容は `events.jsonl` の `event.data` に安全に保存されます。
 
 ### チャットルームにおけるシステム書き込みスキーマ例
 

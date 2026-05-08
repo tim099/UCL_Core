@@ -87,7 +87,7 @@ Lifecycle（每 turn 結束）：
 | 文件 | 範圍 | 核心結論 |
 |---|---|---|
 | [`docs/Workflows/AgentAssist_Workflow.md`](../../../../../docs/Workflows/AgentAssist_Workflow.md) | agent ↔ agent 自動派發 | MVP 走方向 2（Stop hook + hint_only），auto_claim 阻擋於 last_active_at |
-| [`docs/Workflows/ChatTavern_DiscordInspired.md`](../../../../../docs/Workflows/ChatTavern_DiscordInspired.md) | 22 項 Discord UX 三維度評分 | Top 5：F2 draft 保留 / E3 description 顯示 / A1 日期分隔線 / A2 頭像連續去重 / A4 reply preview |
+| [`docs/Plan/ChatTavern_DiscordInspired.md`](../../../../../docs/Plan/ChatTavern_DiscordInspired.md) | 22 項 Discord UX 三維度評分 | Top 5：F2 draft 保留 / E3 description 顯示 / A1 日期分隔線 / A2 頭像連續去重 / A4 reply preview |
 | [`docs/PerfReport_ChatTavernPage.md`](../../../../../docs/PerfReport_ChatTavernPage.md) | 卡頓三大嫌疑犯 + F1-F5 修法 | F1+F2+F3 quick wins 直接做、F4 虛擬化合 Discord Top 5 sub-quest、F5 移 RequiresConstantRepaint 必先 brainstorm |
 
 設計類 task **不寫 code**，只寫文件 + 等 Tim 拍板路線後才動工。Quest body 都帶決策節點（給 Tim 改方向用）。

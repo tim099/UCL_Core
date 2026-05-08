@@ -1,4 +1,4 @@
-﻿// UCL Chat Tavern — IMGUI 頁面（prototype v1）
+// UCL Chat Tavern — IMGUI 頁面（prototype v1）
 // 職責：人類可在 Editor 內直接以某個 identity 加入房間 / 看訊息 / 發言。
 // 物理意義：跟 agent 走的 Cmd 接同一份檔案 → 人 vs agent 同一個聊天室。
 // prototype 取捨：UI 字串先硬編；refs/meta 表單最簡（單行 paths + key=val）。
@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.UI;
+using UnityEditor;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.Page
@@ -20,8 +21,9 @@ namespace UCL.Core.EditorLib.Page
     {
         public override string WindowName => "Chat Tavern";
 
-        // opt-in 進 UCL_EditorMenuPage 的 Page 選擇器下拉
-        public override bool ShowInPageMenu => true;
+        // opt-in 進 UCL_EditorMenuPage 的 Page 選擇器下拉 — 
+        // 物理意義：已提升為 EditorMenu 外部主要按鈕，此處關閉以避免下拉選單重複出現
+        public override bool ShowInPageMenu => false;
 
         public static UCL_ChatTavernPage Create() => UCL_EditorPage.Create<UCL_ChatTavernPage>();
 
@@ -76,6 +78,18 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：旗標確保只跑一次；Refresh 不重置（避免人為清掉 m_SelectedRoomId 後又被自動拉回）
         bool m_AutoInitDone = false;
 
+        // 區塊職責：握手活躍狀態快取 — 給「中止握手」按鈕變色用
+        // 物理意義：Python 端 wait_for_tavern_reply 每 poll touch _handshake_active.flag；
+        //          mtime 距今 < HandshakeStaleSec 視為活躍。RequiresConstantRepaint 會每幀進來，
+        //          所以加 throttle 避免每幀做 File IO（cf. 主訊息 polling 的 PollIntervalSec=2.0）
+        // 數值影響：m_HandshakeActive 控制按鈕顏色 + DisabledScope；
+        //          HandshakeStaleSec=2.0 = 4× Python poll interval (0.5s)，足夠抗 jitter 但不至於
+        //          Python crash 後還顯示活躍超久
+        bool m_HandshakeActive = false;
+        double m_LastHandshakeCheckTime = 0;
+        const double HandshakeCheckIntervalSec = 0.5;
+        const double HandshakeStaleSec = 2.0;
+
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
@@ -90,18 +104,54 @@ namespace UCL.Core.EditorLib.Page
                 UnityEditor.EditorUtility.RevealInFinder(UCL_ChatTavernIO.GetTavernDir());
             }
 
-            // 區塊職責：「中止 Python 握手等待」按鈕
+            // 區塊職責：「中止 Python 握手等待」按鈕（活躍時亮橘紅色 + 可按；無握手時灰色 + Disabled）
             // 物理意義：run_cmd.py 的 Tavern op=post --wait-reply 會 client-side polling
-            //          messages.jsonl 等對方回覆；本按鈕 touch 一個 flag 檔，那邊偵測到
+            //          messages.jsonl 等對方回覆；本按鈕 touch _handshake_cancel.flag，那邊偵測到
             //          mtime > wait_start 就會提前退出（exit code=2）。
-            // 數值影響：寫一個 0-byte 的 _handshake_cancel.flag，無實際內容；Python 那端
-            //          看到後會自行 unlink。連點兩次也安全（mtime 推進 → 後續 wait 仍能用）。
-            if (GUILayout.Button("🛑 中止握手", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f)), GUILayout.ExpandWidth(false)))
+            //          活躍偵測：Python 端 wait loop 每 poll touch _handshake_active.flag，
+            //          C# 端讀其 mtime — < 2s 視為活躍。
+            // 數值影響：active = 橘紅 (1, 0.6, 0.4)；inactive = 暗灰 (0.45) + DisabledScope 防誤點。
+            //          連點兩次也安全（cancel flag mtime 會推進 → 後續 wait 仍能用）。
+            UpdateHandshakeActive();
+            Color btnColor = m_HandshakeActive ? new Color(1f, 0.6f, 0.4f) : new Color(0.45f, 0.45f, 0.45f);
+            string btnLabel = m_HandshakeActive ? "🛑 中止握手" : "🛑 中止握手 (無)";
+            using (new EditorGUI.DisabledScope(!m_HandshakeActive))
             {
-                UCL_ChatTavernIO.EnsureTavernDir();
-                string flagPath = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_cancel.flag");
-                File.WriteAllText(flagPath, System.DateTime.UtcNow.ToString("o"));
-                Debug.Log($"[Tavern] Wrote handshake cancel flag → {flagPath}");
+                if (GUILayout.Button(btnLabel, UCL_GUIStyle.GetButtonStyle(btnColor), GUILayout.ExpandWidth(false)))
+                {
+                    UCL_ChatTavernIO.EnsureTavernDir();
+                    string flagPath = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_cancel.flag");
+                    File.WriteAllText(flagPath, System.DateTime.UtcNow.ToString("o"));
+                    Debug.Log($"[Tavern] Wrote handshake cancel flag → {flagPath}");
+                }
+            }
+        }
+
+        // 區塊職責：throttle 過的握手活躍狀態檢查
+        // 物理意義：每 HandshakeCheckIntervalSec 秒做一次 File.Exists + GetLastWriteTimeUtc，
+        //          避免 RequiresConstantRepaint 每幀 IO。介於兩次檢查之間沿用上次結果。
+        // 數值影響：寫 m_HandshakeActive；m_LastHandshakeCheckTime 推進到當前 timeSinceStartup
+        void UpdateHandshakeActive()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (now - m_LastHandshakeCheckTime < HandshakeCheckIntervalSec) return;
+            m_LastHandshakeCheckTime = now;
+
+            string path = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_active.flag");
+            if (!File.Exists(path))
+            {
+                m_HandshakeActive = false;
+                return;
+            }
+            try
+            {
+                double age = (System.DateTime.UtcNow - File.GetLastWriteTimeUtc(path)).TotalSeconds;
+                m_HandshakeActive = age < HandshakeStaleSec;
+            }
+            catch (System.IO.IOException)
+            {
+                // 讀檔競態（Python 正在寫 / 剛刪）→ 保守視為非活躍，下次再判
+                m_HandshakeActive = false;
             }
         }
 

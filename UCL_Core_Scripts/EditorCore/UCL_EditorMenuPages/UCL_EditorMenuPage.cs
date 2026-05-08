@@ -37,6 +37,13 @@ namespace UCL.Core.EditorLib.Page
         internal static Action<UCL_GUIPageController> s_OnFirstDraw;
         bool m_FirstDrawHandled = false;
 
+        // 區塊職責：第一次顯示時自動 push AgentSkillManagerPage 到頂的 once-flag
+        // 物理意義：除了 UCL_WelcomePage 之外，使用者也可能直接從選單 / 其他入口進到 EditorMenu，
+        //          此時若 Skill 機制尚未確認過 → 同樣強制曝光一次。重複曝光由
+        //          UCL_AgentSkillManagerPage.MaybeAutoPopupOnWelcome 內部的 EditorPrefs 版本旗標把關。
+        // 數值影響：本 page 物件存活期間只觸發一次；EditorPrefs 控制是否真的彈出
+        bool m_DidAutoPopupCheck = false;
+
         //UCL.Core.UCL_ObjectDictionary m_Dic = new UCL.Core.UCL_ObjectDictionary();
 
         /// <summary>
@@ -57,6 +64,22 @@ namespace UCL.Core.EditorLib.Page
                     s_OnFirstDraw = null; // 用完即清，避免後續 EditorMenu 開啟也被影響
                     try { hook(UCL_GUIPageController.CurrentRenderIns); }
                     catch (Exception e) { Debug.LogWarning($"[UCL_EditorMenuPage] s_OnFirstDraw threw: {e.Message}"); }
+                }
+            }
+
+            // 區塊職責：首幀檢查是否要自動 push AgentSkillManagerPage
+            // 物理意義：使用者可能不經 Welcome 直接進 EditorMenu（從 UCL/Menu 選單 / 其他入口）；
+            //          此時若 Skill 機制尚未確認過 → 比照 Welcome 自動曝光。
+            //          MaybeAutoPopupOnWelcome 內部會比對 EditorPrefs 版本，已確認過則不會重複彈。
+            // 數值影響：可能 push 一個 UCL_AgentSkillManagerPage 到 CurrentRenderIns；只跑一次。
+            // 設計取捨：放在 ContentOnGUI 而不是 Init — Init 時 CurrentRenderIns 可能還沒就位
+            if (!m_DidAutoPopupCheck)
+            {
+                m_DidAutoPopupCheck = true;
+                var ctrl = UCL_GUIPageController.CurrentRenderIns;
+                if (ctrl != null)
+                {
+                    UCL_AgentSkillManagerPage.MaybeAutoPopupOnWelcome(ctrl);
                 }
             }
 
@@ -104,6 +127,14 @@ namespace UCL.Core.EditorLib.Page
                 if (GUILayout.Button(UCL_CodeLocalize.Get("Agent Commands"), UCL_GUIStyle.ButtonStyle))
                 {
                     UCL_AgentCommandsPage.Create();
+                }
+
+                // 區塊職責：提供按鈕以開啟 Chat Tavern 頁面
+                // 物理意義：快速導向酒館聊天室面板，以便人類開發者與 AI Agent 在同一個聊天室內進行對話與腦力激盪
+                // 數值影響：無
+                if (GUILayout.Button("Chat Tavern", UCL_GUIStyle.ButtonStyle))
+                {
+                    UCL_ChatTavernPage.Create();
                 }
 #endif
                 if (GUILayout.Button("PlayerPrefs", UCL_GUIStyle.ButtonStyle))

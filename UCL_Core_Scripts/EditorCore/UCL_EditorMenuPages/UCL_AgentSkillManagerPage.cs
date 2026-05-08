@@ -1,14 +1,16 @@
 ﻿// 區塊職責：Agent Skill 管理頁 — 第一次開 UCL_WelcomePage 時自動 push 到頂、
 //            提供 onboarding 強制曝光，後續可從 Welcome 卡片或選單再開。
 // 物理意義：UCL_Core 的 Skills~/ 是跨專案 Skill 的 source-of-truth；不同 agent
-//            (Claude Code / Cursor / Antigravity / Gemini …) 的安裝路徑由
+//            (Claude Code / Antigravity / 規劃中：Cursor / Gemini …) 的安裝路徑由
 //            install_skills.py 的 --target 分支處理。本頁是 IMGUI 視覺化前端，
 //            幫不會打 CLI 的開發者把「裝 Skill 給 AI 用」這件事一鍵化。
-// 數值影響：點按鈕 spawn `python install_skills.py --target X`；安裝結果寫
-//            <project-root>/.claude/skills/.ucl_installed (或對應 agent 的標記檔)；
-//            「我知道了」勾選會寫 EditorPrefs，下次不再自動彈本頁。
+// 數值影響：每個 target 一顆按鈕 spawn `python install_skills.py --target X`；
+//            安裝結果寫對應 dst 的 .ucl_installed（Claude → .claude/skills/，
+//            Antigravity → .agents/rules/）；「我知道了」勾選會寫 EditorPrefs，
+//            下次不再自動彈本頁。
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using UCL.Core.LocalizeLib;
@@ -29,14 +31,20 @@ namespace UCL.Core.EditorLib.Page
     ///   <item>選單 <c>UCL → Agent Skill Manager</c></item>
     /// </list>
     ///
-    /// 目前只支援 Claude Code（--target claude）。其他 agent (Cursor / Antigravity /
-    /// Gemini) 的 target 由 install_skills.py 後續擴充；本頁預留 Per-Agent × Per-Skill
-    /// 切換 matrix 的 UI 區塊（目前只有 placeholder）。
+    /// 目前支援 Claude Code（--target claude）與 Antigravity（--target antigravity），
+    /// 各自渲染一行狀態 + 安裝按鈕；另提供「Install All」一鍵跑所有 target。
+    /// 其他 agent (Cursor / Gemini) 的 target 由 install_skills.py 後續擴充。
+    /// 本頁預留 Per-Agent × Per-Skill 切換 matrix 的 UI 區塊（目前只有 placeholder）。
     /// </summary>
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_AgentSkillManagerPage.md")]
     public class UCL_AgentSkillManagerPage : UCL_CommonEditorPage
     {
         public override string WindowName => "Agent Skill Manager";
+
+        // opt-in 進 UCL_EditorMenuPage 的 Page 選擇器下拉
+        // 物理意義：Skill 安裝是常用但非首屏動作，放下拉避免外側按鈕區擁擠；
+        //          首次曝光由 MaybeAutoPopupOnWelcome 處理，事後使用者要再開可從 Page Picker 找
+        public override bool ShowInPageMenu => true;
 
         /// <summary>當前頁內容版本。EditorPrefs 紀錄的版本不同 → 視為「沒看過」會重新自動彈出。</summary>
         public const string CurrentAcknowledgeVersion = "1";
@@ -99,13 +107,48 @@ namespace UCL.Core.EditorLib.Page
             UnknownHead,
         }
 
-        InstallStatus m_Status = InstallStatus.NotInstalled;
+        // 區塊職責：支援的 install target 列舉
+        // 物理意義：對應 install_skills.py 的 --target choices
+        // 數值影響：每個 target 各自有 RunInstall 按鈕 + 狀態列；MarkerRelDir / CliName / DisplayName 三 helper 統一管理映射
+        public enum AgentTarget
+        {
+            Claude = 0,
+            Antigravity = 1,
+        }
+        static readonly AgentTarget[] AllTargets = { AgentTarget.Claude, AgentTarget.Antigravity };
+
+        static string TargetCliName(AgentTarget t) => t switch
+        {
+            AgentTarget.Claude => "claude",
+            AgentTarget.Antigravity => "antigravity",
+            _ => "claude",
+        };
+
+        static string TargetDisplayName(AgentTarget t) => t switch
+        {
+            AgentTarget.Claude => "Claude Code",
+            AgentTarget.Antigravity => "Antigravity",
+            _ => t.ToString(),
+        };
+
+        // 不同 target 的安裝目錄（相對 host project root）
+        // Claude → .claude/skills/、Antigravity → .agents/rules/，全域 .ucl_installed marker 都放在該目錄根
+        static string TargetMarkerRelDir(AgentTarget t) => t switch
+        {
+            AgentTarget.Claude => Path.Combine(".claude", "skills"),
+            AgentTarget.Antigravity => Path.Combine(".agents", "rules"),
+            _ => Path.Combine(".claude", "skills"),
+        };
+
+        // Per-target 狀態：合併單一 dict 比平行欄位更易擴充新 target
+        readonly Dictionary<AgentTarget, InstallStatus> m_StatusByTarget = new Dictionary<AgentTarget, InstallStatus>();
+        readonly Dictionary<AgentTarget, string> m_InstalledCommitByTarget = new Dictionary<AgentTarget, string>();
+        readonly HashSet<AgentTarget> m_InstallingSet = new HashSet<AgentTarget>();
+
         string m_CurrentCommit = "";
-        string m_InstalledCommit = "";
         string m_HostProjectRoot = "";
         string m_UCLCorePath = "";
         bool m_StatusDirty = true;
-        bool m_Installing = false;
         Vector2 m_Scroll = Vector2.zero;
 
         // wordWrap 樣式快取（與 WelcomePage 同模式）
@@ -172,12 +215,13 @@ namespace UCL.Core.EditorLib.Page
         {
             m_StatusDirty = false;
             m_CurrentCommit = "";
-            m_InstalledCommit = "";
+            m_StatusByTarget.Clear();
+            m_InstalledCommitByTarget.Clear();
 
             string corePathRel = UCL_EditorPath.CorePath;
             if (string.IsNullOrEmpty(corePathRel))
             {
-                m_Status = InstallStatus.NoUCLCore;
+                foreach (var t in AllTargets) m_StatusByTarget[t] = InstallStatus.NoUCLCore;
                 return;
             }
             string projRootForCore = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -186,20 +230,30 @@ namespace UCL.Core.EditorLib.Page
             string hostRoot = FindHostProjectRoot();
             if (string.IsNullOrEmpty(hostRoot))
             {
-                m_Status = InstallStatus.NoProjectRoot;
+                foreach (var t in AllTargets) m_StatusByTarget[t] = InstallStatus.NoProjectRoot;
                 return;
             }
             m_HostProjectRoot = hostRoot;
 
             m_CurrentCommit = TryGetGitHead(m_UCLCorePath) ?? "";
 
-            string markerPath = Path.Combine(hostRoot, ".claude", "skills", ".ucl_installed");
+            foreach (var t in AllTargets) ComputeStatusFor(t, hostRoot);
+        }
+
+        // 區塊職責：對單一 target 計算 .ucl_installed marker 狀態
+        // 物理意義：marker 路徑 = hostRoot/<target dir>/.ucl_installed；JSON 內 ucl_core_commit 跟 git HEAD 比對 → Synced / Stale
+        // 數值影響：寫 m_StatusByTarget[t] 與 m_InstalledCommitByTarget[t]
+        void ComputeStatusFor(AgentTarget t, string hostRoot)
+        {
+            string markerPath = Path.Combine(hostRoot, TargetMarkerRelDir(t), ".ucl_installed");
             if (!File.Exists(markerPath))
             {
-                m_Status = InstallStatus.NotInstalled;
+                m_StatusByTarget[t] = InstallStatus.NotInstalled;
+                m_InstalledCommitByTarget[t] = "";
                 return;
             }
 
+            string installed = "";
             try
             {
                 string json = File.ReadAllText(markerPath);
@@ -211,28 +265,29 @@ namespace UCL.Core.EditorLib.Page
                     int q2 = json.IndexOf('"', q1 + 1);
                     if (q1 >= 0 && q2 > q1)
                     {
-                        m_InstalledCommit = json.Substring(q1 + 1, q2 - q1 - 1);
+                        installed = json.Substring(q1 + 1, q2 - q1 - 1);
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[AgentSkillManager] 讀 .ucl_installed 失敗：{ex.Message}");
+                Debug.LogWarning($"[AgentSkillManager] 讀 {markerPath} 失敗：{ex.Message}");
             }
+            m_InstalledCommitByTarget[t] = installed;
 
             if (string.IsNullOrEmpty(m_CurrentCommit) || m_CurrentCommit == "unknown")
-                m_Status = InstallStatus.UnknownHead;
-            else if (string.IsNullOrEmpty(m_InstalledCommit) || m_InstalledCommit == m_CurrentCommit)
-                m_Status = InstallStatus.Synced;
+                m_StatusByTarget[t] = InstallStatus.UnknownHead;
+            else if (string.IsNullOrEmpty(installed) || installed == m_CurrentCommit)
+                m_StatusByTarget[t] = InstallStatus.Synced;
             else
-                m_Status = InstallStatus.Stale;
+                m_StatusByTarget[t] = InstallStatus.Stale;
         }
 
-        /// <summary>同步跑 install_skills.py。Block UI 但通常 &lt;500ms。</summary>
-        void RunInstall()
+        /// <summary>同步跑 install_skills.py --target X。Block UI 但通常 &lt;500ms。</summary>
+        void RunInstall(AgentTarget target)
         {
-            if (m_Installing) return;
-            m_Installing = true;
+            if (m_InstallingSet.Contains(target)) return;
+            m_InstallingSet.Add(target);
             try
             {
                 string scriptPath = Path.Combine(m_UCLCorePath, "Tools~", "install_skills.py");
@@ -245,7 +300,7 @@ namespace UCL.Core.EditorLib.Page
                 using (var p = new Process())
                 {
                     p.StartInfo.FileName = "python";
-                    p.StartInfo.Arguments = $"\"{scriptPath}\"";
+                    p.StartInfo.Arguments = $"\"{scriptPath}\" --target {TargetCliName(target)}";
                     p.StartInfo.UseShellExecute = false;
                     p.StartInfo.RedirectStandardOutput = true;
                     p.StartInfo.RedirectStandardError = true;
@@ -255,26 +310,35 @@ namespace UCL.Core.EditorLib.Page
                     string stderr = p.StandardError.ReadToEnd();
                     p.WaitForExit(30000);
 
+                    string tag = TargetDisplayName(target);
                     if (!string.IsNullOrEmpty(stdout))
-                        Debug.Log($"[AgentSkillManager] install_skills.py stdout:\n{stdout}");
+                        Debug.Log($"[AgentSkillManager:{tag}] install_skills.py stdout:\n{stdout}");
                     if (!string.IsNullOrEmpty(stderr))
-                        Debug.LogWarning($"[AgentSkillManager] install_skills.py stderr:\n{stderr}");
+                        Debug.LogWarning($"[AgentSkillManager:{tag}] install_skills.py stderr:\n{stderr}");
 
                     if (p.ExitCode == 0)
-                        Debug.Log("[AgentSkillManager] Skill 安裝完成");
+                        Debug.Log($"[AgentSkillManager:{tag}] Skill 安裝完成");
                     else
-                        Debug.LogError($"[AgentSkillManager] install_skills.py exit={p.ExitCode}");
+                        Debug.LogError($"[AgentSkillManager:{tag}] install_skills.py exit={p.ExitCode}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[AgentSkillManager] 安裝失敗：{ex.Message}\n（python 不在 PATH？）");
+                Debug.LogError($"[AgentSkillManager:{TargetDisplayName(target)}] 安裝失敗：{ex.Message}\n（python 不在 PATH？）");
             }
             finally
             {
-                m_Installing = false;
+                m_InstallingSet.Remove(target);
                 m_StatusDirty = true;
             }
+        }
+
+        // 區塊職責：依序跑所有 target 的安裝
+        // 物理意義：使用者按「全部 target 一鍵裝」時觸發；同步 sequential，第二個 target 在第一個結束後才開始
+        // 數值影響：m_InstallingSet 在每 target 結束時即釋放；UI Disabled 期間就是兩支 process 串連跑的時間
+        void RunInstallAll()
+        {
+            foreach (var t in AllTargets) RunInstall(t);
         }
 
         // ===========================================================
@@ -338,65 +402,39 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.OneClick.Title"), titleStyle);
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.OneClick.Desc"), WrapLabelStyle);
 
-                // 狀態行
-                string statusLine;
-                Color btnColor;
-                string btnLabel;
-                bool canInstall = true;
-
-                switch (m_Status)
-                {
-                    case InstallStatus.NoProjectRoot:
-                        statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NoProjectRoot");
-                        btnColor = Color.gray; btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
-                        canInstall = false;
-                        break;
-                    case InstallStatus.NoUCLCore:
-                        statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NoUCLCore");
-                        btnColor = Color.gray; btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
-                        canInstall = false;
-                        break;
-                    case InstallStatus.NotInstalled:
-                        statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NotInstalled");
-                        btnColor = new Color(1f, 0.85f, 0.2f);
-                        btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
-                        break;
-                    case InstallStatus.Stale:
-                        statusLine = string.Format(
-                            UCL_CodeLocalize.Get("AgentSkill.Status.Stale"),
-                            ShortHash(m_InstalledCommit), ShortHash(m_CurrentCommit));
-                        btnColor = new Color(1f, 0.6f, 0.2f);
-                        btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Sync");
-                        break;
-                    case InstallStatus.Synced:
-                        statusLine = string.Format(
-                            UCL_CodeLocalize.Get("AgentSkill.Status.Synced"),
-                            ShortHash(m_CurrentCommit));
-                        btnColor = new Color(0.6f, 0.9f, 0.6f);
-                        btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
-                        break;
-                    case InstallStatus.UnknownHead:
-                    default:
-                        statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.UnknownHead");
-                        btnColor = Color.cyan;
-                        btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
-                        break;
-                }
-
-                GUILayout.Label(statusLine, WrapLabelStyle);
                 if (!string.IsNullOrEmpty(m_HostProjectRoot))
                 {
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentSkill.HostRoot"), m_HostProjectRoot),
                         UCL_GUIStyle.LabelStyle);
                 }
 
+                // 區塊職責：每個 target 一行（label + 狀態 + 按鈕）
+                // 物理意義：Claude / Antigravity 各自獨立安裝；狀態互不影響
+                // 數值影響：每行內 RunInstall(target) 只動該 target 的 dst 目錄
+                foreach (var t in AllTargets)
+                {
+                    DrawTargetRow(t);
+                }
+
+                GUILayout.Space(4);
                 using (new GUILayout.HorizontalScope())
                 {
-                    using (new EditorGUI.DisabledScope(!canInstall || m_Installing))
+                    bool anyInstalling = m_InstallingSet.Count > 0;
+                    bool anyBlocked = false;
+                    foreach (var t in AllTargets)
                     {
-                        if (GUILayout.Button(btnLabel, UCL_GUIStyle.GetButtonStyle(btnColor), GUILayout.Width(180), GUILayout.Height(32)))
+                        if (m_StatusByTarget.TryGetValue(t, out var st) &&
+                            (st == InstallStatus.NoProjectRoot || st == InstallStatus.NoUCLCore))
+                            anyBlocked = true;
+                    }
+
+                    using (new EditorGUI.DisabledScope(anyInstalling || anyBlocked))
+                    {
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.InstallAll"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)),
+                            GUILayout.Width(220), GUILayout.Height(32)))
                         {
-                            RunInstall();
+                            RunInstallAll();
                         }
                     }
                     if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -408,6 +446,80 @@ namespace UCL.Core.EditorLib.Page
                     {
                         Application.OpenURL(UCL_URL.ResolveURL("ucl_core:Skills~/README.md"));
                     }
+                }
+            }
+        }
+
+        // 區塊職責：單一 target 的狀態 + 安裝按鈕橫列
+        // 物理意義：把 status enum 翻成顏色 / label / 按鈕文字 + dst 路徑顯示，
+        //          使用者一眼可看到「Claude 已同步、Antigravity 尚未安裝」之類的狀況
+        // 數值影響：點擊按鈕呼叫 RunInstall(target)；該 target 的 m_InstallingSet bit 控制 DisabledScope
+        void DrawTargetRow(AgentTarget t)
+        {
+            InstallStatus status = m_StatusByTarget.TryGetValue(t, out var s) ? s : InstallStatus.NotInstalled;
+            string installedCommit = m_InstalledCommitByTarget.TryGetValue(t, out var c) ? c : "";
+
+            string statusLine;
+            Color btnColor;
+            string btnLabel;
+            bool canInstall = true;
+
+            switch (status)
+            {
+                case InstallStatus.NoProjectRoot:
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NoProjectRoot");
+                    btnColor = Color.gray; btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
+                    canInstall = false;
+                    break;
+                case InstallStatus.NoUCLCore:
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NoUCLCore");
+                    btnColor = Color.gray; btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
+                    canInstall = false;
+                    break;
+                case InstallStatus.NotInstalled:
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NotInstalled");
+                    btnColor = new Color(1f, 0.85f, 0.2f);
+                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
+                    break;
+                case InstallStatus.Stale:
+                    statusLine = string.Format(
+                        UCL_CodeLocalize.Get("AgentSkill.Status.Stale"),
+                        ShortHash(installedCommit), ShortHash(m_CurrentCommit));
+                    btnColor = new Color(1f, 0.6f, 0.2f);
+                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Sync");
+                    break;
+                case InstallStatus.Synced:
+                    statusLine = string.Format(
+                        UCL_CodeLocalize.Get("AgentSkill.Status.Synced"),
+                        ShortHash(m_CurrentCommit));
+                    btnColor = new Color(0.6f, 0.9f, 0.6f);
+                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
+                    break;
+                case InstallStatus.UnknownHead:
+                default:
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.UnknownHead");
+                    btnColor = Color.cyan;
+                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
+                    break;
+            }
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                var headerStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
+                GUILayout.Label($"▸ {TargetDisplayName(t)}  ({TargetMarkerRelDir(t)}/)", headerStyle);
+                GUILayout.Label(statusLine, WrapLabelStyle);
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool installingThis = m_InstallingSet.Contains(t);
+                    using (new EditorGUI.DisabledScope(!canInstall || installingThis))
+                    {
+                        if (GUILayout.Button(btnLabel, UCL_GUIStyle.GetButtonStyle(btnColor), GUILayout.Width(180), GUILayout.Height(28)))
+                        {
+                            RunInstall(t);
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
                 }
             }
         }

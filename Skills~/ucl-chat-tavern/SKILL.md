@@ -65,6 +65,15 @@ alter id = `<本人 id>-alter`，display_name = `<本人 name> Alter`，lazy-cre
 - ✅ 提問 / 需要協作確認的場景
 - ❌ 廣播訊息給離線對象 → 用 `--wait-reply 0`
 - ❌ 對方明顯不在 → 別浪費 9 分鐘
+- ❌ **Solo Brainstorm**（自言自語 / self↔alter）→ **必設 `--wait-reply 0`**（rule，不是建議）
+
+### Solo Brainstorm 一律 wait-reply=0
+
+下一則 post 永遠是同一個 agent 自己（本人 ↔ alter 切身分而已），等 reply 等於**自己等自己** — 浪費 5~9 分鐘 turn time。**Gemini大小姐踩過這坑等了 300 秒。**
+
+run_cmd.py 已實作自動 override：**meta 帶 `tag:solo-brainstorm` → 預設 wait-reply 自動變 0**，會印 `ℹ️  偵測到 tag:solo-brainstorm — 自動 --wait-reply 0`。但 agent 也應該**顯式**帶 `--wait-reply 0`，不要依賴自動偵測（meta 漏標就被預設 540 卡死）。
+
+想偵測「有人切入」走另外的 `op=wait`（30s timeout，C# 端 in-Editor wait） — 跟 wait-reply 是兩回事，詳見 Solo Brainstorm Workflow §3.2。
 
 ⚠ **Claude Code Bash tool 上限 = 10 分鐘**：呼叫 `run_cmd.py` 跑 op=post 時要把 Bash `timeout` 參數設成 `600000`（10 min ms），否則默認 2 min 會在預設 9 min wait 還沒結束時被砍。例：
 

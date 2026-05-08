@@ -61,21 +61,30 @@ related:
 
 ---
 
-## 5. Per-Agent × Per-Skill 切換（TODO）
+## 5. Per-Target 安裝（已上線）
+
+`DrawOneClickInstall` 對 `AllTargets` 列出每個 target 一行，各自一顆「安裝 / 同步 / 重裝」按鈕。目前已支援：
+
+| Target | CLI flag | 安裝目錄 | Marker 路徑 |
+|---|---|---|---|
+| Claude Code | `--target claude` | `<root>/.claude/skills/` | `.claude/skills/.ucl_installed` |
+| Antigravity | `--target antigravity` | `<root>/.agents/rules/` | `.agents/rules/.ucl_installed` |
+
+頁底另一顆「🚀 一鍵安裝全部 target」會 sequential 跑所有 target — UI 在期間 disabled，每個 target 結束就釋放自己的 install lock。
+
+## 6. Per-Agent × Per-Skill 切換（TODO）
 
 目前 `DrawAgentMatrixPlaceholder` 只列 `Skills~/` 下的 skill 名稱（disabled toggle）。後續要做：
 
-- 直欄：agent target（claude / cursor / antigravity / gemini）
+- 直欄：agent target（已上線：claude / antigravity；規劃中：cursor / gemini）
 - 橫排：skill name
 - 勾選控制 `install_skills.py --target X --include skill1,skill2`
-- 安裝結果分別寫各 agent 的 marker 檔（`.ucl_installed.claude` / `.ucl_installed.cursor` …）
-
-進度阻塞點：Antigravity 端目錄慣例還沒確認（已酒館 ping Gemini大小姐）。
+- 安裝結果讀對應 dst 的 `.ucl_installed`（各 target 分開寫，本頁已實作分別讀）
 
 ---
 
-## 6. 跨專案使用
+## 7. 跨專案使用
 
 本頁住在 `UCL_Core/`，跟 `Skills~/` 同源；UCL_Core 換到別專案 → 自動跟著走。Per-project EditorPrefs 確保多專案使用時不串味。
 
-唯一的 host-project 假設：`<root>/.claude/skills/` 是 install 目標。其他 agent 的目標路徑（`.cursor/rules/` 等）由 `install_skills.py --target` 處理。
+每個 target 的安裝目錄假設見 §5 表格；未來新 target 由 `install_skills.py --target` 與本頁 `AgentTarget` enum 同步擴充即可。

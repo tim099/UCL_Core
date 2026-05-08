@@ -3,7 +3,7 @@ title: 建立新的 UCL_CommonEditorPage 子類工作流
 description: 步驟化 SOP — 從零開出一頁可被 GUIPageController 推送的 Editor 頁面。涵蓋繼承關係、必/選 override、TopBar 客製、入口點掛接、樣式選用守則（連結 UCL_GUILayout / UCL_GUIStyle 文件）、與常見地雷。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-07
+last_updated: 2026-05-08
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create EditorPage, UCL_CommonEditorPage workflow, 寫新 editor 頁]
 tags: [workflow, editor, ui, imgui]
@@ -139,6 +139,37 @@ protected override void TopBarButtons()
 > [!TIP]
 > 為新頁加入口時用「**最少耦合**」原則：能放父頁就不開選單、能加 WelcomePage 卡片就不要散落在多處選單。
 
+### 4.1 強制規則：非衍生頁面必須出現在 UCL_EditorMenuPage（外部按鈕 ⊕ 下拉，二擇一）
+
+> [!IMPORTANT]
+> **「非衍生頁面」**（standalone / general-purpose page，不依賴特定父頁上下文 — 例如通用確認訊息頁、Skill 管理頁、酒館頁、文件搜尋頁）**必須**從 [`UCL_EditorMenuPage`](../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_EditorMenuPage.cs) 找得到入口，否則使用者沒任何途徑能再次打開它（自動彈窗 / 父頁推送之外的場景）。
+>
+> 兩種掛法**二擇一**（不重複）：
+> 1. **外部按鈕**（高頻 / 旗艦功能）— 在 `UCL_EditorMenuPage.ContentOnGUI()` 直接寫一顆 `GUILayout.Button(...)` → `Create()`。範例：Welcome / Doc Search / Edit Modules / Localize / Agent Commands / PlayerPrefs。
+> 2. **Page Picker 下拉**（低頻 / 次要工具）— 子類 override `public override bool ShowInPageMenu => true;`，反射機制會自動把它收進 EditorMenu 的「Page 選擇器」下拉。範例：`UCL_ChatTavernPage` / `UCL_AgentSkillManagerPage`。
+>
+> **判斷哪一邊**：
+> - 預期使用者**每天都會點** / **第一次進專案要看到** → 外部按鈕
+> - **偶爾用 / 進階維護用 / onboarding 後就鮮少點** → Page Picker 下拉
+> - **衍生頁**（從父頁特定上下文打開、需要參數才有意義）→ 兩邊都不掛（沒有 default 上下文，列出來反而誤導）
+>
+> 不確定就先放下拉 — Picker 永遠有空間，外部按鈕區會擁擠。
+
+> [!CAUTION]
+> **外部按鈕只給 UCL_Core 內部的頁用 — 下游專案的頁一律走 Page Picker 下拉**。
+>
+> 原因：`UCL_EditorMenuPage` 屬 UCL_Core，作為**跨專案共享 submodule** 不能反向 reference 任何下游專案（EOV / 其他遊戲專案）的型別 — `using EOV.Foo` 在這裡會直接編不過。所以「外部按鈕」這條路徑物理上只開放給 UCL_Core 自家的頁。
+>
+> 下游專案的非衍生頁（例如 EOV 的 `RCG_GameDataEditPage`、某 mini-game 的設定頁）→ **唯一合法掛法是 `ShowInPageMenu => true`**。Page Picker 走反射跨 assembly 掃 `UCL_CommonEditorPage` 子類，所以下游 assembly 的子類也會被自動收進來。
+>
+> 想在主畫面顯眼曝光下游頁怎麼辦？兩條路：
+> 1. 在下游專案自己的 EditorWindow / 主選單頁加按鈕（不要動 UCL_Core）
+> 2. 用 UCL_Core 的 hook 機制（如 `UCL_EditorMenuPage.s_OnFirstDraw`）在 `[InitializeOnLoad]` 注入導航行為，但別塞按鈕到 EditorMenu 本體
+
+**衍生 vs 非衍生判定**：
+- ❌ 衍生（不該掛）：`UCL_MarkdownViewerPage`（要 `Create(filePath)` 才有意義）、列表項詳情頁、編輯某 asset 的專用頁
+- ✅ 非衍生（必須掛）：通用確認訊息頁、設定總覽頁、Skill 管理頁、文件搜尋、酒館、Welcome — 開了就有用，不需要外部上下文
+
 ---
 
 ## 5. UI 繪製選什麼？
@@ -223,6 +254,7 @@ public class UCL_<Name>Page : UCL_CommonEditorPage { ... }
 - [ ] `[HelpURL("ucl_core:Docs~/{lang}/...")]` 帶 `{lang}` 佔位
 - [ ] `static Create()` 工廠方法存在，且回傳子類型別
 - [ ] 至少一個入口點（父頁按鈕 / WelcomePage 卡片 / 選單）能開到這頁
+- [ ] 若是**非衍生頁**（不依賴父頁上下文）→ 已掛 `UCL_EditorMenuPage` 外部按鈕 **或** override `ShowInPageMenu => true` 進 Page Picker 下拉（見 §4.1）
 - [ ] domain reload 後實際打開無 NullRef、Back / Close 行為正常
 - [ ] 有 IMGUI rich-text 內容時，相關 GUIStyle 開啟 `richText`
 - [ ] **實際打開頁面 + 操作所有按鈕一輪後，runtime error log 沒新增 Error/Exception**（IMGUI 跑在 Editor 期，NullRef / 除零等 runtime 錯不會被編譯抓到）

@@ -1,6 +1,6 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
-description: 跨專案共享的提交規則 — submodule 三層 bump 流程、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、commit message 格式與 prefix 約定。
+description: 跨專案共享的提交規則 — submodule 三層 bump 流程、submodule 內 commit 前先切 Dev 分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、commit message 格式與 prefix 約定。
 last_updated: 2026-05-08
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
@@ -52,22 +52,40 @@ UCL_Core 為 git submodule（巢狀於 `UCL` 之下，再巢狀於主專案之�
 
 ### 3.1 順序
 
+> [!IMPORTANT]
+> **submodule 預設 detached HEAD**。Step 1 / Step 2 開始前**必須先 `git switch Dev`** — 否則 commit 落在游離節點，Dev 分支永遠沒前進、push 之後別人或自己 update submodule 拉不到，分支追蹤資訊也會壞。
+
 ```bash
 # Step 1：UCL_Core 內 commit 程式變動
 cd <project>/CardGame/Assets/UCL/UCL_Core
+git status -b -s | head -1                  # 確認分支狀態
+git switch Dev                              # detached HEAD 必切！
+git pull --ff-only                          # 同步遠端，避免 commit 後推不上去
 git add <files>
 git commit -m "[feat] xxx ..."
 
 # Step 2：UCL（外層 submodule）commit pointer bump
 cd <project>/CardGame/Assets/UCL
+git switch Dev                              # 同樣必切
+git pull --ff-only
 git add UCL_Core
 git commit -m "[bump] UCL_Core <hash> — <topic>"
 
-# Step 3：主專案 commit pointer bump
+# Step 3：主專案 commit pointer bump（主專案通常已在工作分支如 DevTim / Dev，不必再切）
 cd <project>
 git add CardGame/Assets/UCL
 git commit -m "[bump] UCL <hash> — <topic>"
 ```
+
+### 3.1a 為什麼 submodule 要先切分支
+
+Git submodule 在父 repo 眼裡只是個 commit hash，但 submodule 自身仍需要分支來「容納」commit：
+
+- **detached HEAD 上 commit**：commit 物件存在，但沒任何分支指過去 → push 不到遠端對應分支 → 該 commit 只活在本機
+- **bump 的 hash 雖然能 fetch**：但別人 `git submodule update --remote` 會跟 Dev 分支 tip → 拉不到你的 commit
+- **長期累積**：detached commit 像浮島，一旦本機 reset / 切分支就回不去（reflog 可救但很煩）
+
+所以鐵律：**動 submodule 內檔案前先 `git switch Dev`，永遠在分支上 commit**。
 
 ### 3.2 多個 UCL_Core commit 的 bump 策略
 

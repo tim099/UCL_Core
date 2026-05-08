@@ -13,3 +13,7 @@ Logs/
 Tools/FFMpeg/
 Assets/UnityEngine.AssetGraph/Cache/
 Assets/Standard Assets/Best HTTP (Pro)/
+
+# Python bytecode cache（Tools~/AgentCommands/*.py 跑時 CPython 自動產生）
+__pycache__/
+*.py[co]

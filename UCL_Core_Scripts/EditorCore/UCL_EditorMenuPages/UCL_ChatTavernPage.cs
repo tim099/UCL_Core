@@ -62,9 +62,10 @@ namespace UCL.Core.EditorLib.Page
 
         // ===== 顯示快取 =====
         // 物理意義：每幀重讀 jsonl 太重；只有 Refresh / Send / 進房間時重抓
-        UCL_ChatRoomList m_RoomsCache;
-        // identities 來源從 identities.json 改為 UCL_ChatTavernIdentityAsset.GetAllIDs()
-        // identities.json 仍保留作為 display_name 對照 — 對齊 Cmd_Tavern.Op_Post 既有行為
+        // rooms / identities dropdown 來源都從 lightweight roster (rooms.json / identities.json) 改成 UCL_Asset.GetAllIDs()；
+        // roster 仍保留給 Cmd_Tavern (Op_Post / Op_CreateRoom) 用 — 對齊既有行為
+        UCL_ChatRoomList m_RoomsCache;               // rooms.json 的 roster — 用來查 name / description（顯示用）
+        List<string> m_RoomIds;                      // UCL_ChatTavernRoomAsset asset id 清單（dropdown 來源）
         List<string> m_IdentityIds;                  // UCL_ChatTavernIdentityAsset asset id 清單（dropdown 來源）
         UCL_ChatIdentityList m_RosterCache;          // identities.json 的 roster — 用來查 display_name / kind（顯示用）
         List<UCL_ChatMessage> m_MessagesCache;
@@ -345,7 +346,7 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
-            if (m_RoomsCache == null) RefreshRooms();
+            if (m_RoomsCache == null || m_RoomIds == null) RefreshRooms();
             if (m_IdentityIds == null) RefreshIdentities();
             EnsureAutoInit();
             HandleAutoPoll();
@@ -378,27 +379,29 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope("box"))
             {
                 GUILayout.Label("房間：", UCL_GUIStyle.LabelStyle, GUILayout.Width(50));
-                if (m_RoomsCache.rooms.Count == 0)
+                if (m_RoomIds == null || m_RoomIds.Count == 0)
                 {
-                    GUILayout.Label("(尚無房間，請建立)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label("(尚無房間 — 跑 Cmd_SeedTavernRoomAssets 或下面 + 新房間)", UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
-                    // 區塊職責：房間下拉選單（用 PopupSearchCache，符合「房間數量多時可搜尋」需求）
-                    // 物理意義：列出 m_RoomsCache.rooms 的 display name；選定 → 更新 m_SelectedRoomId + RefreshMessages/Members
-                    // 數值影響：純 UI 切換；不寫檔
-                    var roomNames = new List<string>(m_RoomsCache.rooms.Count);
+                    // 區塊職責：房間下拉 — 來源 UCL_ChatTavernRoomAsset.GetAllIDs()
+                    // 物理意義：display 用 roster (rooms.json) 的 name 對照；缺 roster 條目就 fallback 顯示 ID
+                    // 數值影響：選定 → m_SelectedRoomId 更新 + RefreshMessages/Members
+                    var labels = new List<string>(m_RoomIds.Count);
                     int curIdx = 0;
-                    for (int i = 0; i < m_RoomsCache.rooms.Count; i++)
+                    for (int i = 0; i < m_RoomIds.Count; i++)
                     {
-                        var r = m_RoomsCache.rooms[i];
-                        roomNames.Add($"{r.name}  [{r.id}]");
-                        if (r.id == m_SelectedRoomId) curIdx = i;
+                        string id = m_RoomIds[i];
+                        var r = m_RoomsCache?.rooms?.Find(x => x != null && x.id == id);
+                        string display = r != null && !string.IsNullOrEmpty(r.name) ? r.name : id;
+                        labels.Add($"{display}  [{id}]");
+                        if (id == m_SelectedRoomId) curIdx = i;
                     }
-                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, roomNames, m_PickerDic, "RoomPicker", GUILayout.Width(420));
-                    if (newIdx != curIdx && newIdx >= 0 && newIdx < m_RoomsCache.rooms.Count)
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "RoomPicker", GUILayout.Width(420));
+                    if (newIdx != curIdx && newIdx >= 0 && newIdx < m_RoomIds.Count)
                     {
-                        m_SelectedRoomId = m_RoomsCache.rooms[newIdx].id;
+                        m_SelectedRoomId = m_RoomIds[newIdx];
                         RefreshMessages();
                         RefreshMembers();
                     }
@@ -453,7 +456,17 @@ namespace UCL.Core.EditorLib.Page
                         }
                         else
                         {
+                            // 雙寫：roster (rooms.json) + UCL_ChatTavernRoomAsset .json shell
                             UCL_ChatTavernIO.CreateRoom(m_NewRoomId, m_NewRoomName, m_NewRoomDesc);
+                            try
+                            {
+                                var asset = new UCL_ChatTavernRoomAsset(m_NewRoomId);
+                                if (!asset.ContainsAsset(m_NewRoomId)) asset.Save();
+                            }
+                            catch (System.Exception ex)
+                            {
+                                Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernRoomAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernRoomAssets 補）：{ex.Message}");
+                            }
                             m_SelectedRoomId = m_NewRoomId;
                             m_NewRoomId = m_NewRoomName = m_NewRoomDesc = "";
                             m_ShowCreateRoom = false;
@@ -806,7 +819,24 @@ namespace UCL.Core.EditorLib.Page
                 RefreshMembers();
             }
         }
-        void RefreshRooms() { m_RoomsCache = UCL_ChatTavernIO.LoadRooms(); }
+        // 區塊職責：房間清單來源從 rooms.json 改為 UCL_ChatTavernRoomAsset
+        // 物理意義：以 UCL_Asset 為 single source-of-truth — dropdown 列出所有已建立的房間 Asset；
+        //          rooms.json 仍保留作為 Cmd_Tavern Op_Post / Op_CreateRoom 寫訊息時的 name lookup
+        // 數值影響：m_RoomIds 來自 GetAllIDs(false) 遍歷模組路徑；m_RoomsCache 仍從 rooms.json 讀
+        void RefreshRooms()
+        {
+            try
+            {
+                m_RoomIds = new UCL_ChatTavernRoomAsset().GetAllIDs(false) ?? new List<string>();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[UCL_ChatTavernPage] RefreshRooms GetAllIDs 失敗：{ex.Message}");
+                m_RoomIds = new List<string>();
+            }
+            m_RoomIds.Sort(System.StringComparer.OrdinalIgnoreCase);
+            m_RoomsCache = UCL_ChatTavernIO.LoadRooms();
+        }
         // 區塊職責：身分清單來源從 identities.json 改為 UCL_ChatTavernIdentityAsset
         // 物理意義：以 UCL_Asset 為 single source-of-truth — dropdown 列出所有已建立的角色卡 ID；
         //          identities.json 仍保留作為 Cmd_Tavern Op_Post 寫訊息時的 display_name lookup
@@ -859,18 +889,26 @@ namespace UCL.Core.EditorLib.Page
             if (m_AutoInitDone) return;
             m_AutoInitDone = true;
 
-            // (1) 沒任何房間 → 建一間 default
-            if (m_RoomsCache == null || m_RoomsCache.rooms.Count == 0)
+            // (1) 沒任何房間 → 建一間 default（雙寫 roster + Asset shell）
+            if (m_RoomIds == null || m_RoomIds.Count == 0)
             {
                 UCL_ChatTavernIO.CreateRoom("default", "Default 酒館", "首次開啟自動建立的預設房間");
+                try
+                {
+                    var asset = new UCL_ChatTavernRoomAsset("default");
+                    if (!asset.ContainsAsset("default")) asset.Save();
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[UCL_ChatTavernPage] EnsureAutoInit 建 default RoomAsset 失敗：{ex.Message}");
+                }
                 RefreshRooms();
             }
 
             // (2) 沒選中 → 選第一間
-            if (string.IsNullOrEmpty(m_SelectedRoomId)
-                && m_RoomsCache != null && m_RoomsCache.rooms.Count > 0)
+            if (string.IsNullOrEmpty(m_SelectedRoomId) && m_RoomIds != null && m_RoomIds.Count > 0)
             {
-                m_SelectedRoomId = m_RoomsCache.rooms[0].id;
+                m_SelectedRoomId = m_RoomIds[0];
                 RefreshMessages();
                 RefreshMembers();
             }

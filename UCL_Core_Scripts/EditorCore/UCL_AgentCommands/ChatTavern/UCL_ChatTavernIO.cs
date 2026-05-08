@@ -22,9 +22,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     {
         // 區塊職責：路徑常數 — 與 UCL_AgentCommandQueue 對齊，掛在 AgentCommands/ 下的子資料夾
         // 物理意義：repoRoot 由 UCL_RepoPath.RepoRoot 解析（git-walk，與 Python 對齊）
+        // 設計變更（v2）：「房間存在 == rooms/<id>/ 目錄存在」為 single source-of-truth；
+        //   per-room metadata 改存 rooms/<id>/meta.json（co-located with messages，無漂移風險）。
+        //   舊版的 global rooms.json roster 由 lazy auto-migration 散到各 meta.json 後 rename 為 .bak。
         public const string TavernDirRelative = "AgentCommands/ChatTavern";
         public const string IdentitiesFile = "identities.json";
-        public const string RoomsFile = "rooms.json";
+        public const string RoomsFile = "rooms.json";              // legacy roster — migration 後 rename .bak
+        public const string RoomsBackupFile = "rooms.json.bak";    // migration 留底（不刪，使用者驗證後可手清）
+        public const string RoomMetaFile = "meta.json";            // 新：per-room metadata
         public const string LastOpFile = "_last_op.md";    // 最近一次 Cmd 結果（給 agent 抓）
         public const string ActiveWaitsFile = "_active_waits.json"; // fire-and-forget wait 全域追蹤
         public const string MessagesFile = "messages.jsonl";
@@ -45,12 +50,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         public static string GetIdentitiesPath() => Path.Combine(GetTavernDir(), IdentitiesFile);
-        public static string GetRoomsPath() => Path.Combine(GetTavernDir(), RoomsFile);
+        public static string GetRoomsPath() => Path.Combine(GetTavernDir(), RoomsFile);                  // legacy
+        public static string GetRoomsBackupPath() => Path.Combine(GetTavernDir(), RoomsBackupFile);
         public static string GetLastOpPath() => Path.Combine(GetTavernDir(), LastOpFile);
         public static string GetActiveWaitsPath() => Path.Combine(GetTavernDir(), ActiveWaitsFile);
         public static string GetWaitResultPath(string waitId) => Path.Combine(GetTavernDir(), $"_wait_{waitId}.md");
 
-        public static string GetRoomDir(string roomId) => Path.Combine(GetTavernDir(), "rooms", roomId);
+        public static string GetRoomsRoot() => Path.Combine(GetTavernDir(), "rooms");
+        public static string GetRoomDir(string roomId) => Path.Combine(GetRoomsRoot(), roomId);
+        public static string GetRoomMetaPath(string roomId) => Path.Combine(GetRoomDir(roomId), RoomMetaFile);
         public static string GetMessagesPath(string roomId) => Path.Combine(GetRoomDir(roomId), MessagesFile);
         public static string GetSeqPath(string roomId) => Path.Combine(GetRoomDir(roomId), SeqFile);
         public static string GetMembersPath(string roomId) => Path.Combine(GetRoomDir(roomId), MembersFile);
@@ -140,46 +148,128 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：房間（rooms.json）
+        // 區塊職責：房間（filesystem-as-truth；per-room meta.json 取代舊 global rooms.json）
+        // 物理意義：「房間存在」== rooms/<id>/ 目錄存在；metadata 跟資料同地（rooms/<id>/meta.json）
+        //          → 無漂移風險，atomic delete（rmdir 一刀清乾淨），無並發鎖爭用，diff 局部化。
+        // 數值影響：legacy global rooms.json 由 lazy auto-migration（首次 IO 呼叫觸發）散到各 meta.json，
+        //          完成後 rename 為 rooms.json.bak（保留供使用者驗證）。orphan dir（無 meta.json）
+        //          自動以 stub metadata（name=id, description=""）視同正式房間。
         // ===========================================================
 
+        static bool s_MigrationChecked = false;
+
+        /// <summary>列出所有房間 id（rooms/ 下的子目錄名）— page dropdown / 列表唯一來源。</summary>
+        public static List<string> EnumerateRoomIds()
+        {
+            EnsureMigrated();
+            string root = GetRoomsRoot();
+            var result = new List<string>();
+            if (!Directory.Exists(root)) return result;
+            try
+            {
+                foreach (var dir in Directory.GetDirectories(root))
+                {
+                    string id = Path.GetFileName(dir);
+                    if (!string.IsNullOrEmpty(id)) result.Add(id);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] EnumerateRoomIds failed: {e}");
+            }
+            result.Sort(StringComparer.OrdinalIgnoreCase);
+            return result;
+        }
+
+        /// <summary>房間是否存在（== rooms/&lt;id&gt;/ 目錄存在）。Cmd_Tavern 的 op 應改用此 check 取代 GetRoom!=null。</summary>
+        public static bool RoomExists(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            EnsureMigrated();
+            return Directory.Exists(GetRoomDir(id));
+        }
+
+        /// <summary>讀指定房間 metadata；缺 meta.json 時回傳 stub（name=id, description=""），不返回 null。</summary>
+        public static UCL_ChatRoom LoadRoomMeta(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            string metaPath = GetRoomMetaPath(id);
+            if (File.Exists(metaPath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(metaPath, Encoding.UTF8);
+                    var data = JsonUtility.FromJson<UCL_ChatRoom>(json);
+                    if (data != null && !string.IsNullOrEmpty(data.id)) return data;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[ChatTavern] LoadRoomMeta({id}) failed, fallback to stub: {e.Message}");
+                }
+            }
+            // stub fallback：orphan dir（meta.json 缺 / 壞）視同正式房間，name=id
+            return new UCL_ChatRoom
+            {
+                id = id,
+                name = id,
+                description = "",
+                created_at = "",
+            };
+        }
+
+        /// <summary>寫 metadata 進 rooms/&lt;id&gt;/meta.json（自動 mkdir）。</summary>
+        public static void SaveRoomMeta(UCL_ChatRoom room)
+        {
+            if (room == null || string.IsNullOrEmpty(room.id)) throw new ArgumentException("room or room.id is required");
+            EnsureRoomDir(room.id);
+            try
+            {
+                string json = JsonUtility.ToJson(room, true);
+                File.WriteAllText(GetRoomMetaPath(room.id), json, new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] SaveRoomMeta({room.id}) failed: {e}");
+            }
+        }
+
+        /// <summary>列出所有房間（id + metadata）— LoadRoomMeta 對每個 EnumerateRoomIds 結果調一次。
+        /// 物理意義：取代舊版 global rooms.json 讀取；Cmd_Tavern.Op_Rooms 等對列表的需求由此供應。</summary>
         public static UCL_ChatRoomList LoadRooms()
         {
-            string path = GetRoomsPath();
-            if (!File.Exists(path)) return new UCL_ChatRoomList();
-            try
+            var list = new UCL_ChatRoomList();
+            foreach (var id in EnumerateRoomIds())
             {
-                string json = File.ReadAllText(path, Encoding.UTF8);
-                var data = JsonUtility.FromJson<UCL_ChatRoomList>(json);
-                return data ?? new UCL_ChatRoomList();
+                list.rooms.Add(LoadRoomMeta(id));
             }
-            catch (Exception e)
-            {
-                Debug.LogError($"[ChatTavern] Failed to load rooms: {e}");
-                return new UCL_ChatRoomList();
-            }
+            return list;
         }
 
+        /// <summary>批次寫入：對 list 內每個 room 寫 meta.json。不再有 global file。</summary>
         public static void SaveRooms(UCL_ChatRoomList list)
         {
-            EnsureTavernDir();
-            try
-            {
-                string json = JsonUtility.ToJson(list, true);
-                File.WriteAllText(GetRoomsPath(), json, new UTF8Encoding(false));
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[ChatTavern] Failed to save rooms: {e}");
-            }
+            if (list?.rooms == null) return;
+            foreach (var r in list.rooms) SaveRoomMeta(r);
         }
 
+        /// <summary>建房間：mkdir + 寫 meta.json。冪等（已存在直接回傳現有 metadata）。</summary>
         public static UCL_ChatRoom CreateRoom(string id, string name, string description)
         {
             if (string.IsNullOrEmpty(id)) throw new ArgumentException("room id is required");
-            var list = LoadRooms();
-            var found = list.rooms.Find(x => x.id == id);
-            if (found != null) return found; // 冪等：已存在直接回傳
+            EnsureMigrated();
+            if (RoomExists(id))
+            {
+                // 冪等：已存在 → 若 meta.json 缺則補寫；否則 no-op 回傳現有
+                var existing = LoadRoomMeta(id);
+                if (!File.Exists(GetRoomMetaPath(id)))
+                {
+                    existing.name = string.IsNullOrEmpty(name) ? id : name;
+                    existing.description = description ?? "";
+                    if (string.IsNullOrEmpty(existing.created_at)) existing.created_at = NowUtcIso();
+                    SaveRoomMeta(existing);
+                }
+                return existing;
+            }
             var room = new UCL_ChatRoom
             {
                 id = id,
@@ -187,15 +277,72 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 description = description ?? "",
                 created_at = NowUtcIso(),
             };
-            list.rooms.Add(room);
-            SaveRooms(list);
             EnsureRoomDir(id);
+            SaveRoomMeta(room);
             return room;
         }
 
+        /// <summary>取得房間 metadata；房間不存在（目錄缺）回 null，存在但 meta.json 缺則回 stub。</summary>
         public static UCL_ChatRoom GetRoom(string id)
         {
-            return LoadRooms().rooms.Find(x => x.id == id);
+            if (!RoomExists(id)) return null;
+            return LoadRoomMeta(id);
+        }
+
+        // -----------------------------------------------------------
+        // 區塊職責：lazy auto-migration（v1 rooms.json → v2 per-room meta.json）
+        // 物理意義：第一次任何房間 IO 呼叫進來時觸發；idempotent（看到 .bak 存在或 rooms.json 不存在就 skip）；
+        //          下游專案下次拉到新 UCL_Core 第一次開 Editor 自動跑完，使用者零介入。
+        // 數值影響：對 rooms.json 內每個 entry，若對應 rooms/<id>/meta.json 不存在則寫入；
+        //          完成後把 rooms.json rename 為 rooms.json.bak（保留供使用者驗證 / 手清）。
+        // -----------------------------------------------------------
+        public static void EnsureMigrated()
+        {
+            if (s_MigrationChecked) return;
+            s_MigrationChecked = true;
+            try
+            {
+                string legacyPath = GetRoomsPath();
+                if (!File.Exists(legacyPath)) return; // 沒 legacy 檔 → 沒得 migrate
+                // 讀 legacy roster
+                UCL_ChatRoomList legacy;
+                try
+                {
+                    string json = File.ReadAllText(legacyPath, Encoding.UTF8);
+                    legacy = JsonUtility.FromJson<UCL_ChatRoomList>(json) ?? new UCL_ChatRoomList();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[ChatTavern] Migration: failed to parse legacy rooms.json — left in place for manual fix: {e.Message}");
+                    return;
+                }
+                int migrated = 0, skipped = 0;
+                foreach (var r in legacy.rooms)
+                {
+                    if (r == null || string.IsNullOrEmpty(r.id)) continue;
+                    string metaPath = GetRoomMetaPath(r.id);
+                    if (File.Exists(metaPath)) { skipped++; continue; }
+                    EnsureRoomDir(r.id);
+                    SaveRoomMeta(r);
+                    migrated++;
+                }
+                // 完成後 rename rooms.json → rooms.json.bak（避免重複 migrate）
+                string bakPath = GetRoomsBackupPath();
+                try
+                {
+                    if (File.Exists(bakPath)) File.Delete(bakPath);
+                    File.Move(legacyPath, bakPath);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[ChatTavern] Migration: rename rooms.json → .bak failed: {e.Message}");
+                }
+                Debug.Log($"[ChatTavern] Migration v1→v2 完成：migrated={migrated} skipped={skipped} (legacy 保留為 rooms.json.bak)");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] EnsureMigrated 例外：{e}");
+            }
         }
 
         // ===========================================================

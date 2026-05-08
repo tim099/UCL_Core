@@ -956,22 +956,21 @@ namespace UCL.Core.EditorLib.Page
                 RefreshMembers();
             }
         }
-        // 區塊職責：房間清單來源從 rooms.json 改為 UCL_ChatTavernRoomAsset
-        // 物理意義：以 UCL_Asset 為 single source-of-truth — dropdown 列出所有已建立的房間 Asset；
-        //          rooms.json 仍保留作為 Cmd_Tavern Op_Post / Op_CreateRoom 寫訊息時的 name lookup
-        // 數值影響：m_RoomIds 來自 GetAllIDs(false) 遍歷模組路徑；m_RoomsCache 仍從 rooms.json 讀
+        // 區塊職責：房間清單來源 — filesystem-as-truth（rooms/<id>/ 子目錄列舉）
+        // 物理意義：以 rooms/ 目錄結構為 single source-of-truth；metadata 跟資料同地（rooms/<id>/meta.json）
+        //          → 無漂移風險。Asset 不再是 dropdown source，純粹是 Inspector view layer（rich data）。
+        // 數值影響：m_RoomIds 來自 IO.EnumerateRoomIds()；m_RoomsCache 從各房間的 meta.json 組合而成
         void RefreshRooms()
         {
             try
             {
-                m_RoomIds = new UCL_ChatTavernRoomAsset().GetAllIDs(false) ?? new List<string>();
+                m_RoomIds = UCL_ChatTavernIO.EnumerateRoomIds();
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[UCL_ChatTavernPage] RefreshRooms GetAllIDs 失敗：{ex.Message}");
+                Debug.LogWarning($"[UCL_ChatTavernPage] RefreshRooms EnumerateRoomIds 失敗：{ex.Message}");
                 m_RoomIds = new List<string>();
             }
-            m_RoomIds.Sort(System.StringComparer.OrdinalIgnoreCase);
             m_RoomsCache = UCL_ChatTavernIO.LoadRooms();
         }
         // 區塊職責：身分清單來源從 identities.json 改為 UCL_ChatTavernIdentityAsset

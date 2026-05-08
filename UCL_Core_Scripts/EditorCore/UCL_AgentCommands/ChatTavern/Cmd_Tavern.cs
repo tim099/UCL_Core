@@ -84,6 +84,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "leave": Op_Leave(args); break;
                     case "wait": Op_Wait(args, token); break;
                     case "wait_check": Op_WaitCheck(args); break;
+                    case "set_presence": Op_SetPresence(args); break;
+                    case "get_presence": Op_GetPresence(args); break;
                     case "note_write": Op_NoteWrite(args); break;
                     case "note_append": Op_NoteAppend(args); break;
                     case "note_read": Op_NoteRead(args); break;
@@ -235,6 +237,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 refs = ParseRefs(refsStr),
             };
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
+
+            // R7 (T07 chat-flow-robust) — 每次發言自動更新 sender presence（status=active + current_room）
+            // 物理意義：跟 R7 mention parser + cross-channel notify 配套 — 查 presence.current_room 提示對方來哪個房
+            // 數值影響：current_focus 不動（agent 自律走 op_set_focus 顯式 set，本 hook 只碰 status / current_room）
+            // 邊界：系統 sender（_開頭）不寫 presence；fail swallow 不擋 post 主流程
+            try
+            {
+                if (!senderId.StartsWith("_"))
+                {
+                    UCL_ChatTavernIO.SetPresence(senderId, "active", roomId, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] presence update fail（post 不受影響）：{ex.Message}");
+            }
 
             // R7 (T02 chat-flow-robust) — Mention 解析 → 自動寫對方 inbox
             // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準
@@ -1059,6 +1077,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string reason = GetArg(args, "reason", "");
             string leaseHoursStr = GetArg(args, "lease_hours", "24");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
+            // R7 (Tim 加) — force=true 跳過 stale 校驗，給「user authority override」場景
+            // 物理意義：Tim / quest-lead 顯式授權的 reclaim — 對方明說休息了 / 跨 agent 移轉
+            // 數值影響：仍寫 task_force_reclaim event 留 audit trail；reason 必填確保有書面依據
+            bool forceOverride = string.Equals(GetArg(args, "force", "false"), "true", StringComparison.OrdinalIgnoreCase);
 
             if (string.IsNullOrEmpty(roomId)) { FailLastOp("task_force_reclaim 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { FailLastOp("task_force_reclaim 缺少 task_id"); return; }
@@ -1074,10 +1096,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 FailLastOp($"task {taskId} status={st.status}（沒人認領），直接走 task_claim 即可，不需 force_reclaim");
                 return;
             }
-            // 校驗 2：必須 stale（lease 已過）
-            if (!st.is_stale)
+            // 校驗 2：必須 stale（lease 已過）— 但 force=true 跳過此校驗（user authority override）
+            if (!st.is_stale && !forceOverride)
             {
-                FailLastOp($"task {taskId} 仍在 lease 內（lease_until={st.lease_until}），尚未 stale — 不允許 force_reclaim。等 lease 過期或請 owner 主動 task_release。");
+                FailLastOp($"task {taskId} 仍在 lease 內（lease_until={st.lease_until}），尚未 stale — 不允許 force_reclaim。等 lease 過期、請 owner 主動 task_release，或 user 顯式授權加 --arg force=true。");
                 return;
             }
             // 校驗 3：claimer ≠ 原 owner（自己對自己不算）
@@ -1544,6 +1566,69 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             UCL_ChatTavernRender.WriteLastOp(sb.ToString());
             Debug.Log($"[Quest] events_since {roomId} since={sinceSeq} → {totalAfter} events" + (truncated ? $" (truncated to {limit})" : ""));
+        }
+
+        // ===========================================================
+        // 區塊職責：op=set_presence — 設定在線狀態
+        // 物理意義：手動宣告某個 agent/human 的狀態，例如下線休息 (offline)、忙碌中 (busy)。
+        // ===========================================================
+        void Op_SetPresence(Dictionary<string, string> args)
+        {
+            string senderId = GetArg(args, "id", GetArg(args, "sender", GetArg(args, "sender_id", "")));
+            string status = GetArg(args, "status", "");
+            if (string.IsNullOrEmpty(senderId)) { FailLastOp("set_presence 缺少 id (或 sender / sender_id)"); return; }
+            if (string.IsNullOrEmpty(status)) { FailLastOp("set_presence 缺少 status (active / busy / offline)"); return; }
+
+            UCL_ChatTavernIO.SetPresence(senderId, status);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# ✅ set_presence");
+            sb.AppendLine();
+            sb.AppendLine($"- id: `{senderId}`");
+            sb.AppendLine($"- status: `{status}`");
+            sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
+
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] set_presence {senderId} to {status}");
+        }
+
+        // ===========================================================
+        // 區塊職責：op=get_presence — 查詢在線狀態
+        // 物理意義：查詢指定角色或所有人的在線狀態與最後活躍時間。
+        // ===========================================================
+        void Op_GetPresence(Dictionary<string, string> args)
+        {
+            string targetId = GetArg(args, "id", GetArg(args, "target", GetArg(args, "target_id", "")));
+
+            var presenceList = UCL_ChatTavernIO.LoadPresence();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# 🟢 Presence 在線狀態列表");
+            sb.AppendLine();
+            sb.AppendLine("| 角色 ID | 狀態 | 最後活躍時間 (UTC) |");
+            sb.AppendLine("| --- | --- | --- |");
+
+            if (!string.IsNullOrEmpty(targetId))
+            {
+                var found = presenceList.presences.Find(x => x.sender_id == targetId);
+                if (found != null)
+                {
+                    sb.AppendLine($"| `{found.sender_id}` | `{found.status}` | `{found.last_active}` |");
+                }
+                else
+                {
+                    sb.AppendLine($"| `{targetId}` | `offline` (未記錄) | - |");
+                }
+            }
+            else
+            {
+                foreach (var p in presenceList.presences)
+                {
+                    sb.AppendLine($"| `{p.sender_id}` | `{p.status}` | `{p.last_active}` |");
+                }
+            }
+
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] get_presence completed (target: {targetId ?? "all"})");
         }
 
         static void FailLastOp(string msg)

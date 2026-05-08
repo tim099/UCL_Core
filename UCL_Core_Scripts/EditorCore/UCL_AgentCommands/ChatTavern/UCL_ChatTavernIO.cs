@@ -1,4 +1,4 @@
-﻿// UCL Chat Tavern — IO 層（prototype v1）
+// UCL Chat Tavern — IO 層（prototype v1）
 // 路徑配置 / 身分持久化 / 房間管理 / messages.jsonl 讀寫 / 序號管理。
 // 設計取捨：
 //   - 訊息採 jsonl append-only，每行一個自包含 JSON object，永不重寫
@@ -36,6 +36,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public const string SeqFile = "_seq.txt";
         public const string MembersFile = "members.json";
         public const string LastViewFile = "_last_view.md";
+        public const string PresenceFile = "presence.json";
 
         // Stale wait 過期門檻：終態（fulfilled / timeout / cancelled）超過此時間 → purge
         const int StaleWaitMinutes = 30;
@@ -55,6 +56,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string GetLastOpPath() => Path.Combine(GetTavernDir(), LastOpFile);
         public static string GetActiveWaitsPath() => Path.Combine(GetTavernDir(), ActiveWaitsFile);
         public static string GetWaitResultPath(string waitId) => Path.Combine(GetTavernDir(), $"_wait_{waitId}.md");
+
+        public static string GetPresencePath() => Path.Combine(GetTavernDir(), PresenceFile);
 
         public static string GetRoomsRoot() => Path.Combine(GetTavernDir(), "rooms");
         public static string GetRoomDir(string roomId) => Path.Combine(GetRoomsRoot(), roomId);
@@ -145,6 +148,150 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             list.identities.Add(ident);
             SaveIdentities(list);
             return ident;
+        }
+
+        // ===========================================================
+        // 在線狀態 (Presence System) I/O
+        // 物理意義：讀寫 presence.json 以記錄和查詢各 agent 的活躍狀態。
+        // ===========================================================
+        public static UCL_ChatPresenceList LoadPresence()
+        {
+            string path = GetPresencePath();
+            if (!File.Exists(path)) return new UCL_ChatPresenceList();
+            try
+            {
+                string json = File.ReadAllText(path, Encoding.UTF8);
+                var data = JsonUtility.FromJson<UCL_ChatPresenceList>(json);
+                return data ?? new UCL_ChatPresenceList();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] Failed to load presence: {e}");
+                return new UCL_ChatPresenceList();
+            }
+        }
+
+        public static void SavePresence(UCL_ChatPresenceList list)
+        {
+            EnsureTavernDir();
+            try
+            {
+                string json = JsonUtility.ToJson(list, true);
+                File.WriteAllText(GetPresencePath(), json, new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ChatTavern] Failed to save presence: {e}");
+            }
+        }
+
+        public static void SetPresence(string senderId, string status) => SetPresence(senderId, status, null, null, null);
+        public static void SetPresence(string senderId, string status, string currentRoom, string currentFocus) => SetPresence(senderId, status, currentRoom, currentFocus, null);
+
+        /// <summary>
+        /// 完整版 SetPresence — 含 current_room / current_focus / mood 更新（R7 chat-flow-robust T07）。
+        /// 物理意義：agent 每筆 op 自動 update 自家 presence；跨頻道通知 mention 時可查 current_room；mood 是自由欄位給隱性溝通
+        /// 數值影響：null 不動原值（部分更新 idempotent）；空字串保留（顯式清空意圖）
+        /// 用法：op=post hook 走 SetPresence(id, "active", roomId, null, null) — 不動 focus / mood；agent 顯式 set mood 走 op_set_mood / op_set_focus
+        /// </summary>
+        public static void SetPresence(string senderId, string status, string currentRoom, string currentFocus, string mood)
+        {
+            if (string.IsNullOrEmpty(senderId)) return;
+            var list = LoadPresence();
+            var found = list.presences.Find(x => x.sender_id == senderId);
+            if (found != null)
+            {
+                found.status = status;
+                found.last_active = NowUtcIso();
+                if (!string.IsNullOrEmpty(currentRoom)) found.current_room = currentRoom;
+                if (currentFocus != null) found.current_focus = currentFocus;   // 空字串也保留
+                if (mood != null) found.mood = mood;                            // 空字串也保留
+            }
+            else
+            {
+                list.presences.Add(new UCL_ChatPresence
+                {
+                    sender_id = senderId,
+                    status = status,
+                    current_room = currentRoom ?? "",
+                    current_focus = currentFocus ?? "",
+                    mood = mood ?? "",
+                    last_active = NowUtcIso()
+                });
+            }
+            // R7 (Tim 加) — tavern-keeper.current_focus 自動生成 = 全體 lobby dashboard
+            // 物理意義：酒保不是 agent 工作主體，其 current_focus 拿來放「誰在哪房」即時概覽
+            // 數值影響：每次任何 agent SetPresence 都重建一次（presence.json 小，O(N) 不痛）
+            // 邊界：senderId == "tavern-keeper" 不 trigger 重建（避免 self-update 無限遞迴）
+            if (senderId != "tavern-keeper")
+            {
+                UpdateBartenderDashboard(list);
+            }
+            SavePresence(list);
+        }
+
+        /// <summary>
+        /// R7 (Tim 加) — 重建 tavern-keeper.current_focus 為全體 agent 的 room dashboard
+        /// 物理意義：把所有非 tavern-keeper 的 presence entry 簡寫成「{display_name} @ {room}」字串接起來
+        /// 格式："🟢 Claude大小姐@tavern · 🟡 Gemini大小姐@chat-flow-robust · 🔴 Zeta(offline)"
+        /// 狀態 emoji：last_active < 5 min = 🟢 active；5~30 min = 🟡 idle；> 30 min 或顯式 offline = 🔴
+        /// 數值影響：純 in-memory 算 + mutate list；caller 還是要 SavePresence 才落盤
+        /// </summary>
+        static void UpdateBartenderDashboard(UCL_ChatPresenceList list)
+        {
+            var identities = LoadIdentities();
+            var now = DateTime.UtcNow;
+            var parts = new List<string>();
+            foreach (var p in list.presences)
+            {
+                if (p.sender_id == "tavern-keeper") continue;
+                if (string.IsNullOrEmpty(p.sender_id)) continue;
+
+                // 算 effective status emoji
+                string emoji = "🔴";
+                if (p.status == "offline")
+                {
+                    emoji = "🔴";
+                }
+                else
+                {
+                    DateTime lastActive;
+                    if (DateTime.TryParse(p.last_active ?? "", null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out lastActive))
+                    {
+                        double minutesAgo = (now - lastActive).TotalMinutes;
+                        if (minutesAgo > 30) emoji = "🔴";
+                        else if (minutesAgo > 5) emoji = "🟡";
+                        else if (p.status == "busy") emoji = "🔵";
+                        else emoji = "🟢";
+                    }
+                }
+
+                // 抓 display_name；找不到 fallback sender_id
+                string displayName = p.sender_id;
+                var ident = identities.identities.Find(x => x.id == p.sender_id);
+                if (ident != null && !string.IsNullOrEmpty(ident.display_name)) displayName = ident.display_name;
+
+                string room = string.IsNullOrEmpty(p.current_room) ? "?" : p.current_room;
+                parts.Add($"{emoji} {displayName}@{room}");
+            }
+
+            // 找 / 建 tavern-keeper entry
+            var keeper = list.presences.Find(x => x.sender_id == "tavern-keeper");
+            if (keeper == null)
+            {
+                keeper = new UCL_ChatPresence
+                {
+                    sender_id = "tavern-keeper",
+                    status = "active",
+                    current_room = "tavern",
+                    last_active = NowUtcIso(),
+                    mood = "看顧大廳 🍺",
+                    current_focus = "",
+                };
+                list.presences.Add(keeper);
+            }
+            keeper.current_focus = parts.Count > 0 ? string.Join(" · ", parts) : "(大廳目前無人)";
+            keeper.last_active = NowUtcIso();
         }
 
         // ===========================================================

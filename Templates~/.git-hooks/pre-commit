@@ -1,0 +1,22 @@
+#!/bin/sh
+# UCL_Core pre-commit hook — W1 enforcement task lease check
+# 物理意義：staged code 變動時偵測該檔案是否落在 active task lease 內 → warning（不擋 commit）
+# 安裝：copy 此檔到 <repo>/.git/hooks/pre-commit + chmod +x
+#       (install_skills.py 後續會自動部署，目前手動)
+# Bypass：export UCL_SKIP_TASK_CHECK=1
+
+# 找 UCL_Core/Tools~/AgentCommands/check_task_lease.py
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/check_task_lease.py"
+
+if [ ! -f "$SCRIPT" ]; then
+    # UCL_Core 在別路徑（扁平 layout / 移動過）→ 自動掃尋
+    SCRIPT=$(find "$REPO_ROOT" -path "*/UCL_Core/Tools~/AgentCommands/check_task_lease.py" 2>/dev/null | head -1)
+fi
+
+if [ -z "$SCRIPT" ] || [ ! -f "$SCRIPT" ]; then
+    # 找不到就放過（UCL_Core 沒裝或路徑不對）
+    exit 0
+fi
+
+exec python "$SCRIPT"

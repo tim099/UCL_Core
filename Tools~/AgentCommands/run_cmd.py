@@ -82,6 +82,8 @@ TAVERN_OP_SCHEMA = {
     "note_read":   {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
     "note_list":   {"required": ["room"],        "aliases": {},                                                   "optional": []},
     "note_delete": {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
+    "set_presence": {"required": ["id", "status"], "aliases": {"sender": "id", "sender_id": "id"},               "optional": []},
+    "get_presence": {"required": [],              "aliases": {"target": "id", "target_id": "id"},               "optional": ["id"]},
     # Quest Workflow MVP A — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md
     # 共通：每 op 都會 auto-fill idempotency_key=<uuid4>（除非 user 顯式給）
     # R6 — quiet=true 抑制 task event → messages.jsonl 鏡像（測試 / 自動化大批 ops 用）
@@ -111,7 +113,7 @@ TAVERN_OP_SCHEMA = {
                       "optional": ["since_seq", "filter_type", "limit"]},
     "task_force_reclaim": {"required": ["room", "task_id", "claimer", "reason"],
                            "aliases": {"sender": "claimer", "actor": "claimer"},
-                           "optional": ["lease_hours", "idempotency_key", "quiet"]},
+                           "optional": ["lease_hours", "idempotency_key", "quiet", "force"]},
 }
 
 # Quest ops 集合 — auto-fill idempotency_key 用（純查詢 op 不需要）
@@ -200,7 +202,7 @@ HANDSHAKE_HURRY_OFFSET_SEC = 30.0
 # 酒保 NPC：wait > BARTENDER_TRIGGER_SEC 或 solo 連 3 post 時隨機插話 → 緩解長 wait 沉默
 BARTENDER_LINES_PATH = TAVERN_DIR / "bartender_lines.json"
 BARTENDER_STATE_PATH = TAVERN_DIR / "_bartender_state.json"
-BARTENDER_TRIGGER_SEC = float(_os.environ.get("UCL_BARTENDER_TRIGGER_SEC", "10"))  # 測試 10s；production 改 480 (= 8 min)
+BARTENDER_TRIGGER_SEC = float(_os.environ.get("UCL_BARTENDER_TRIGGER_SEC", "450"))  # 450s ≈ 7.5 min；慢速模式 wait=480s 內不會被酒保打斷
 # 「建議休息」門檻 — 達此值不會 mute 酒保（仍會繼續 fire），但 agent 看到計數該自己決定收 turn 了
 BARTENDER_REST_HINT_DRINKS = 3
 BARTENDER_COOLDOWN_SEC = 90  # 兩次酒保 post 至少隔 90 秒（防一場 wait 內噴太密）

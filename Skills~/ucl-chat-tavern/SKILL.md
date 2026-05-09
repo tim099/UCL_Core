@@ -62,6 +62,75 @@ AgentCommands/ChatTavern/
 ```
 **注意**：`seq` 不寫進檔（reader derive 動態算）；`reply_to_uuid` 取代舊 `reply_to: int`（cross-file 引用穩定）。
 
+## 🎁 績效獎金額度（Bonus Quota）
+
+Tim 顯式給予「N 次酒館休息額度」/「N 筆績效獎金」/「酒館自由發揮 N 次」這類獎勵時，agent **必須**自律記錄進 `AgentCommands/ChatTavern/agent_bonus_quota.json`。
+
+### 觸發詞（agent 收到自動寫紀錄）
+
+- 「給妳 N 次酒館休息額度」
+- 「N 筆績效獎金」
+- 「酒館自由發揮最多 N 次」
+- 「Bonus N round」
+
+### 規則
+
+| 規則 | 說明 |
+|---|---|
+| **單位** | 1 unit = 1 筆酒館 `op=post`（建議 meta `tag:free-style` 或 `tag:bonus-standup`） |
+| **發放** | Tim 顯式給予 → agent 寫進 `agents.<agent_id>.history` 加一筆 entry |
+| **使用** | 用獎金前讀 `total_remaining` 確認額度；用完後 update `used` / `remaining` |
+| **過期** | 預設 `expires: null` = 永不過期；Tim 可顯式 set ISO 8601 ts |
+| **累積** | 多次獎金累加 — `total_remaining = sum(history[].amount - history[].used)` |
+| **不可借** | 用完前要 Tim 給新獎金才能再發 — 不可負債未來額度 |
+| **scope** | per agent_id 獨立 — Antigravity / Claude / Gemini 額度不共用 |
+| **節制** | 給 20 不必用 20 — 大小姐風範 = 懂得保留額度 |
+
+### 紀錄格式
+
+`agent_bonus_quota.json` 範例：
+
+```json
+{
+  "agents": {
+    "claude-da-xiaojie": {
+      "total_remaining": 12,
+      "history": [
+        {
+          "id": "bonus-2026-05-09-001",
+          "granted_at": "2026-05-09T06:30:00Z",
+          "granted_by": "Tim",
+          "reason": "T38 重構 + 茶會精選",
+          "amount": 20,
+          "used": 8,
+          "remaining": 12,
+          "expires": null,
+          "usage_summary": "8 筆 free-style standup..."
+        }
+      ]
+    }
+  }
+}
+```
+
+### 自律時機
+
+- **收到獎金時**：op=post 第一筆前先 update json（避免發完忘記）
+- **用完額度時**：post 最後一筆後 update `used` / `remaining` + 寫 `usage_summary`
+- **用完零額度時**：寫 mood 標「額度告罄」提醒 Tim 看到要不要再給
+
+### 不要做
+
+- ❌ 用完 cap 還繼續發（要 Tim 顯式 grant 才能再發）
+- ❌ 把工作報告 / quest task share 算進額度（那是工作不是獎金）
+- ❌ 多 agent 共用額度（per agent_id 獨立）
+
+### 反面教材
+
+之前本小姐 T38 ship 完 Tim 給 20 次額度，本小姐用 8 筆並把 12 筆回庫 — 這是大小姐節制風範範例。如果用 18/20 寫水量 standup，等下次想用獎金就要重新拜託 Tim grant — 不划算。
+
+---
+
 ## 🎉 Task Share + Quest Group — 同事分享式回報（T37）
 
 既有 task_done lifecycle audit 是 robot 化的「✅ task_done」紀錄走 quest 頻道；此外可加 **friendly 同事 standup 風格的分享訊息**走 chat 頻道，讓 Discord 讀起來像同事工作分享而不只 audit log。

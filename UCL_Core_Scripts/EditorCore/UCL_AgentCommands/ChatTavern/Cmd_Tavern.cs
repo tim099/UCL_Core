@@ -1820,6 +1820,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             int tail = ParseIntArg(args, "tail", 10);
             string focus = GetArg(args, "focus", null);
             string mood = GetArg(args, "mood", null);
+            // T23 — 加 --arg next=true 自動印「下個該接的 task」(從 quest 房挑)
+            string nextFlag = GetArg(args, "next", "false");
+            bool wantNext = !string.IsNullOrEmpty(nextFlag) && nextFlag.ToLowerInvariant() == "true";
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"# 🚪 session_enter — `{agentId}`");
@@ -1910,8 +1913,66 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb.AppendLine("_(無 --arg room 不爬 messages — 推薦先看 inbox 摘要再決定要不要 read 全文)_");
             }
 
+            // ── (5) [T23] next task 推薦（可選，--arg next=true）──
+            // 物理意義：「入場即定位」極速工作流（per Antigravity C 補強）— agent 看 inbox 完直接知道接哪 task
+            // 數值影響：純讀（task_next 邏輯複用，但只印 top 1 + spec 摘要）；不寫 events.jsonl
+            if (wantNext && !string.IsNullOrEmpty(roomId))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"## 📋 Next Task @ `{roomId}`");
+                sb.AppendLine();
+                try
+                {
+                    // lazy stale recovery (T19) 先跑
+                    UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId);
+                    var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+                    var candidates = new List<UCL_QuestTaskState>();
+                    foreach (var st in states.Values)
+                    {
+                        if (st.status != "pending" || !UCL_ChatTavernQuestIO.IsReady(st, states)) continue;
+                        candidates.Add(st);
+                    }
+                    if (candidates.Count == 0)
+                    {
+                        sb.AppendLine("_(無 ready pending task — 該房 task tree 都跑完了 / 或全在等依賴)_");
+                    }
+                    else
+                    {
+                        // 排序：priority + suggested_owner 命中 + downstream_weight + 老化 + created_seq
+                        candidates.Sort((a, b) =>
+                        {
+                            int sa = UCL_ChatTavernQuestIO.PriorityScore(a);
+                            int sb_ = UCL_ChatTavernQuestIO.PriorityScore(b);
+                            if (sa != sb_) return sb_ - sa;
+                            int oa = (a.suggested_owner == agentId) ? 1 : 0;
+                            int ob = (b.suggested_owner == agentId) ? 1 : 0;
+                            if (oa != ob) return ob - oa;
+                            if (a.downstream_weight != b.downstream_weight) return b.downstream_weight - a.downstream_weight;
+                            return a.created_seq - b.created_seq;
+                        });
+                        var top = candidates[0];
+                        sb.AppendLine($"**推薦下個 task**：`{top.id}`");
+                        sb.AppendLine($"- title: {top.title}");
+                        sb.AppendLine($"- priority: `{top.priority}` / role: `{top.role}` / suggested_owner: `{top.suggested_owner ?? "-"}`");
+                        if (top.depends_on != null && top.depends_on.Count > 0)
+                            sb.AppendLine($"- depends_on: {string.Join(", ", top.depends_on)} (all done)");
+                        sb.AppendLine();
+                        sb.AppendLine($"💡 動工命令：`run Tavern op=task_claim room={roomId} task_id={top.id} claimer={agentId} plan=\"...\"`");
+                    }
+                }
+                catch (Exception e)
+                {
+                    sb.AppendLine($"_(task_next 失敗：{e.Message})_");
+                }
+            }
+            else if (wantNext)
+            {
+                sb.AppendLine();
+                sb.AppendLine("_( --arg next=true 但沒帶 --arg room — 不知道從哪個 quest 房挑 task)_");
+            }
+
             UCL_ChatTavernRender.WriteLastOp(sb.ToString());
-            Debug.Log($"[Tavern] session_enter {agentId}" + (string.IsNullOrEmpty(roomId) ? "" : $" room={roomId}"));
+            Debug.Log($"[Tavern] session_enter {agentId}" + (string.IsNullOrEmpty(roomId) ? "" : $" room={roomId}") + (wantNext ? " +next" : ""));
         }
 
         // 真錯誤：寫盤失敗 / null ref / unhandled exception → 紅 ❗ + LogError

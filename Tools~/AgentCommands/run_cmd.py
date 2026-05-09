@@ -115,7 +115,7 @@ TAVERN_OP_SCHEMA = {
                       "optional": ["since_seq", "filter_type", "limit"]},
     # T04 session-enter macro — 1 op 取代 inbox_read + get_presence + set_presence + read（quest tavern-entry-latency O3）
     "session_enter": {"required": ["agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
-                      "optional": ["room", "tail", "focus", "mood", "inbox_room"]},
+                      "optional": ["room", "tail", "focus", "mood", "inbox_room", "next"]},
     "task_force_reclaim": {"required": ["room", "task_id", "claimer", "reason"],
                            "aliases": {"sender": "claimer", "actor": "claimer"},
                            "optional": ["lease_hours", "idempotency_key", "quiet", "force"]},

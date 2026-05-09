@@ -43,6 +43,30 @@ git -C <submodule-path> pull --ff-only           # 確認 Dev 沒落後遠端，
 
 **Why**：submodule 在主專案眼裡只是個 commit hash，但 Dev 分支沒前進 → push 後別人拉的時候 Dev tip 還停在舊 commit，`git submodule update` 雖可拉到 hash 但分支追蹤資訊壞掉，未來 fast-forward / merge 都會卡。
 
+## W1 Pre-Commit Hook（T18 — Round 30 ship）
+
+UCL_Core 提供 git pre-commit hook 偵測 staged code 是否落在 active task lease 內：
+
+**安裝**（每個專案手動一次）：
+```bash
+cp CardGame/Assets/UCL/UCL_Core/Templates~/.git-hooks/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+**行為**：
+- staged 檔案 vs 各 quest 房 active task 的 spec body grep match
+- 在 lease 內 + claimer == 自己 → ✅ 通過
+- 在 lease 內 + claimer ≠ 自己 → ⚠ stderr warning「妳在動 X 的 lease」
+- 沒任何 lease cover → ⚠ stderr warning「該檔案沒對應 task_claim」
+- **不擋 commit**（exit 0），warning-only 避免 false positive 厭世
+
+**Bypass**：
+```bash
+UCL_SKIP_TASK_CHECK=1 git commit ...   # ad-hoc / hotfix
+```
+
+**Why warning-only**：spec body grep match 是 best-effort，false positive 風險高；嚴格 file-level enforcement 等 task_claim schema 加 `files=` 欄位後做（Phase B backlog）。
+
 ## 高頻地雷
 
 - ChatTavern messages 混進代碼 commit → history 雜訊；發現了拆開重 commit
@@ -58,6 +82,72 @@ git -C <submodule-path> pull --ff-only           # 確認 Dev 沒落後遠端，
 3. 按上面分類矩陣判斷每個檔走哪筆
 4. 三層 bump 順序：最內 UCL_Core → UCL → 主專案
 5. 報告每筆 commit 的 SHA 給使用者，不 push
+
+## Submodule Auto-Recursive Commit SOP（T22 — Round 30 補強）
+
+針對「同一輪改動跨三層 submodule」的常見場景，提供標準執行順序避免漏 bump：
+
+```bash
+# Layer 1: UCL_Core (最內)
+git -C CardGame/Assets/UCL/UCL_Core add <files>
+git -C CardGame/Assets/UCL/UCL_Core commit -m "..."
+
+# Layer 2: UCL (中層) — 自動偵測 UCL_Core pointer 移動
+git -C CardGame/Assets/UCL add UCL_Core
+git -C CardGame/Assets/UCL commit -m "Bump UCL_Core: ..."
+
+# Layer 3: Project Root
+git add CardGame/Assets/UCL
+git commit -m "Bump UCL: ..."
+
+# Layer 4: ChatTavern messages (獨立 [chat] commit)
+git add AgentCommands/ChatTavern/
+git commit -m "[chat] ..."
+```
+
+**Anti-pattern**：
+- ❌ 只 commit Layer 1 沒 bump Layer 2 / 3 → 同事 pull 拿到舊 hash
+- ❌ Layer 1 用 detached HEAD commit → Dev 分支沒前進
+- ❌ `git add -A` 一次包全部 → 跨層耦合，難 revert
+- ❌ Mix code 跟 chat → history 噪音
+
+**驗證 SOP**：
+- Layer 1 commit 後跑 `git -C <path> log Dev -1 --oneline` 確認在 Dev 分支
+- Layer 2 commit 後 `git -C UCL diff --staged` 看是否確實只是 pointer bump
+- Layer 3 同上
+- 全部完成跑 `git status` 應該是 clean（除 untracked debug logs）
+
+未來可寫 helper script `bulk_commit.py` 自動偵測 chain — 列為 backlog。
+
+## Task ID 命名規範（T24 — Round 30 補強）
+
+同 quest 房內 task_id 走統一前綴避免雙軌：
+
+```
+T<NN>-<topic>
+```
+
+- `<NN>` 兩位數序號（01~99），同 quest 內遞增不重複
+- `<topic>` kebab-case 短描述（avoid 中文 / 空格）
+- 範例：`T01-inbox-first-sop` / `T19-stale-lease-recovery` / `T26-alter-pacing-enforcement`
+
+**Anti-pattern（多 agent 並行造成）**：
+```
+T01-O1-skill        ← Antigravity 平行命名
+T01-inbox-first-sop ← Claude 命名
+```
+→ 同 quest 12 task 但實際 7 個概念，對外看起來工作量 1.7x 膨脹。
+
+**動工前必跑**：
+```bash
+run Tavern --arg op=task_list --arg room=<quest> --arg status=pending
+```
+看既有 task_id → 挑相鄰 NN 序號 → 不重複命名。
+
+多 agent 並行時：
+- A 開 T01~T05 → B 接著開 T06~T10
+- 不要 A 開 T01-foo / B 又開 T01-bar
+- 衝突發生時：晚開的 task 用 task_force_reclaim 清掉重命名（preserve 早開那個）
 
 ## Co-Authored-By 多 agent 標註
 

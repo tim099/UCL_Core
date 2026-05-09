@@ -13,6 +13,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEditor;
@@ -66,18 +69,44 @@ namespace UCL.Core.EditorLib.Page
             return UCL_EditorPage.Create<UCL_AgentSkillManagerPage>();
         }
 
+        // 區塊職責：同一 EditorWindow lifetime 內只允許自動彈一次的 session-once guard。
+        // 物理意義：避免 ContentOnGUI 內 push 失敗（例如使用者 Pop 回 Welcome 時 instance flag 已重設）
+        //          造成多次 push；與 EditorPrefs 版本旗標互補（後者跨 session 穩定，本旗標只活於當前 process）。
+        // 數值影響：true 後 MaybeAutoPopupOnWelcome 永遠 return false，直到 domain reload 或重啟 Editor。
+        static bool s_AutoPoppedThisSession = false;
+
         /// <summary>
         /// 「第一次開 Welcome → 自動把本頁 push 到頂」用的判斷 + 執行入口。
         /// 由 <see cref="UCL_WelcomePage"/> 的 ContentOnGUI 在首幀呼叫。
         /// </summary>
-        /// <returns>true = 有彈；false = 已看過 / 已勾「不再自動彈」，沒彈</returns>
+        /// <returns>true = 有排程彈；false = 已看過 / 已勾「不再自動彈」/ 本 session 已彈過，沒彈</returns>
         public static bool MaybeAutoPopupOnWelcome(UCL_GUIPageController controller)
         {
             // 比對 EditorPrefs 內已確認的版本與當前版本；不同（含空字串）則彈
             string acked = EditorPrefs.GetString(PrefKey_Acknowledged, "");
             if (acked == CurrentAcknowledgeVersion) return false;
+            if (s_AutoPoppedThisSession) return false;
+            s_AutoPoppedThisSession = true;
 
-            UCL_EditorPage.Create<UCL_AgentSkillManagerPage>(controller);
+            // 區塊職責：把實際 Push 推遲到下一個 idle tick，離開當前 OnGUI stack 才動 controller。
+            // 物理意義：在 ContentOnGUI 內直接 Push 會在同一幀的 Layout / Repaint 兩次 event 中
+            //          看到不同 TopPage（layout 跑 Welcome、repaint 跑新 page），
+            //          IMGUI layout cache 對不上 → ExitGUIException: Mismatched LayoutGroup.repaint。
+            //          delayCall 會在 OnGUI 結束後才執行，下個 GUI tick controller 已穩定到新 page 上。
+            // 數值影響：使用者主觀感受是「彈窗在按下 UCL/Menu 後一個 frame 內彈出」，差異無感。
+            EditorApplication.delayCall += () =>
+            {
+                if (controller == null) return;
+                // 二次確認 — 萬一在排程到執行間使用者已經自己手動開了
+                if (controller.Pages != null)
+                {
+                    foreach (var p in controller.Pages)
+                    {
+                        if (p is UCL_AgentSkillManagerPage) return;
+                    }
+                }
+                UCL_EditorPage.Create<UCL_AgentSkillManagerPage>(controller);
+            };
             return true;
         }
 
@@ -94,7 +123,10 @@ namespace UCL.Core.EditorLib.Page
 
         // ===========================================================
         // 區塊：Skill 安裝狀態偵測（搬自 UCL_WelcomePage 的 DrawSkillsCard）
-        // 物理意義：讀 .ucl_installed JSON 的 ucl_core_commit，跟 UCL_Core HEAD 比
+        // 物理意義：對 Skills~/<installed_skills> 算 aggregate SHA1（演算法跟 install_skills.py
+        //          compute_source_hash 一致），與 .ucl_installed.source_hash 比對。
+        //          舊版 marker 沒有 source_hash 欄位 → 視為 LegacyNoHash 提示重裝刷新。
+        //          仍保留 ucl_core_commit 顯示給使用者參考，但不參與 stale 判定。
         // ===========================================================
 
         enum InstallStatus
@@ -105,6 +137,7 @@ namespace UCL.Core.EditorLib.Page
             Synced,
             Stale,
             UnknownHead,
+            LegacyNoHash,
         }
 
         // 區塊職責：支援的 install target 列舉
@@ -143,6 +176,8 @@ namespace UCL.Core.EditorLib.Page
         // Per-target 狀態：合併單一 dict 比平行欄位更易擴充新 target
         readonly Dictionary<AgentTarget, InstallStatus> m_StatusByTarget = new Dictionary<AgentTarget, InstallStatus>();
         readonly Dictionary<AgentTarget, string> m_InstalledCommitByTarget = new Dictionary<AgentTarget, string>();
+        readonly Dictionary<AgentTarget, string> m_InstalledHashByTarget = new Dictionary<AgentTarget, string>();
+        readonly Dictionary<AgentTarget, string> m_CurrentHashByTarget = new Dictionary<AgentTarget, string>();
         readonly HashSet<AgentTarget> m_InstallingSet = new HashSet<AgentTarget>();
 
         string m_CurrentCommit = "";
@@ -216,6 +251,8 @@ namespace UCL.Core.EditorLib.Page
             m_CurrentCommit = "";
             m_StatusByTarget.Clear();
             m_InstalledCommitByTarget.Clear();
+            m_InstalledHashByTarget.Clear();
+            m_CurrentHashByTarget.Clear();
 
             string corePathRel = UCL_EditorPath.CorePath;
             if (string.IsNullOrEmpty(corePathRel))
@@ -240,8 +277,9 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 區塊職責：對單一 target 計算 .ucl_installed marker 狀態
-        // 物理意義：marker 路徑 = hostRoot/<target dir>/.ucl_installed；JSON 內 ucl_core_commit 跟 git HEAD 比對 → Synced / Stale
-        // 數值影響：寫 m_StatusByTarget[t] 與 m_InstalledCommitByTarget[t]
+        // 物理意義：讀 marker JSON 取出 source_hash + installed_skills；對 Skills~/<installed_skills>
+        //          重新算 aggregate SHA1，相同 → Synced；不同 → Stale；舊版無 source_hash 欄位 → LegacyNoHash。
+        // 數值影響：寫 m_StatusByTarget[t]、m_InstalledCommitByTarget[t]、m_InstalledHashByTarget[t]、m_CurrentHashByTarget[t]
         void ComputeStatusFor(AgentTarget t, string hostRoot)
         {
             string markerPath = Path.Combine(hostRoot, TargetMarkerRelDir(t), ".ucl_installed");
@@ -249,37 +287,185 @@ namespace UCL.Core.EditorLib.Page
             {
                 m_StatusByTarget[t] = InstallStatus.NotInstalled;
                 m_InstalledCommitByTarget[t] = "";
+                m_InstalledHashByTarget[t] = "";
+                m_CurrentHashByTarget[t] = "";
                 return;
             }
 
-            string installed = "";
+            string installedCommit = "";
+            string installedHash = "";
+            List<string> installedSkills = new List<string>();
             try
             {
                 string json = File.ReadAllText(markerPath);
-                int idx = json.IndexOf("\"ucl_core_commit\"");
-                if (idx >= 0)
-                {
-                    int colon = json.IndexOf(':', idx);
-                    int q1 = json.IndexOf('"', colon + 1);
-                    int q2 = json.IndexOf('"', q1 + 1);
-                    if (q1 >= 0 && q2 > q1)
-                    {
-                        installed = json.Substring(q1 + 1, q2 - q1 - 1);
-                    }
-                }
+                installedCommit = ExtractJsonStringField(json, "ucl_core_commit");
+                installedHash = ExtractJsonStringField(json, "source_hash");
+                installedSkills = ExtractJsonStringArrayField(json, "installed_skills");
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[AgentSkillManager] 讀 {markerPath} 失敗：{ex.Message}");
             }
-            m_InstalledCommitByTarget[t] = installed;
+            m_InstalledCommitByTarget[t] = installedCommit;
+            m_InstalledHashByTarget[t] = installedHash;
 
-            if (string.IsNullOrEmpty(m_CurrentCommit) || m_CurrentCommit == "unknown")
+            // 算當前 source 端 hash — 用 marker 內 installed_skills 為基準
+            // （這樣使用者「只裝某子集」不會因為新 skill 出現就誤判 stale）
+            string currentHash = "";
+            try
+            {
+                if (installedSkills != null && installedSkills.Count > 0)
+                    currentHash = ComputeSourceHashFor(installedSkills, t);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AgentSkillManager] 算 source hash 失敗：{ex.Message}");
+            }
+            m_CurrentHashByTarget[t] = currentHash;
+
+            if (string.IsNullOrEmpty(installedHash))
+            {
+                // legacy marker — 沒寫 source_hash，提示重跑 install 刷新
+                m_StatusByTarget[t] = InstallStatus.LegacyNoHash;
+            }
+            else if (string.IsNullOrEmpty(currentHash))
+            {
                 m_StatusByTarget[t] = InstallStatus.UnknownHead;
-            else if (string.IsNullOrEmpty(installed) || installed == m_CurrentCommit)
+            }
+            else if (currentHash == installedHash)
+            {
                 m_StatusByTarget[t] = InstallStatus.Synced;
+            }
             else
+            {
                 m_StatusByTarget[t] = InstallStatus.Stale;
+            }
+        }
+
+        // 區塊職責：lightweight JSON string 欄位抽取（避免引入 JsonUtility 對 Dictionary 的限制）
+        // 物理意義：找 "<key>": "<value>" 的 value，跳過轉義處理（marker 不含特殊字元）
+        // 數值影響：找不到 → 回空字串
+        static string ExtractJsonStringField(string json, string key)
+        {
+            string token = "\"" + key + "\"";
+            int idx = json.IndexOf(token, StringComparison.Ordinal);
+            if (idx < 0) return "";
+            int colon = json.IndexOf(':', idx + token.Length);
+            if (colon < 0) return "";
+            int q1 = json.IndexOf('"', colon + 1);
+            if (q1 < 0) return "";
+            int q2 = json.IndexOf('"', q1 + 1);
+            if (q2 <= q1) return "";
+            return json.Substring(q1 + 1, q2 - q1 - 1);
+        }
+
+        // 區塊職責：抽取 JSON 內 string array 欄位（如 installed_skills）
+        // 物理意義：找 "<key>": [ "a", "b", ... ]，逐個讀字串
+        // 數值影響：找不到 → 空 list
+        static List<string> ExtractJsonStringArrayField(string json, string key)
+        {
+            var list = new List<string>();
+            string token = "\"" + key + "\"";
+            int idx = json.IndexOf(token, StringComparison.Ordinal);
+            if (idx < 0) return list;
+            int bracket = json.IndexOf('[', idx + token.Length);
+            int endBracket = json.IndexOf(']', bracket + 1);
+            if (bracket < 0 || endBracket < 0) return list;
+            int cursor = bracket + 1;
+            while (cursor < endBracket)
+            {
+                int q1 = json.IndexOf('"', cursor);
+                if (q1 < 0 || q1 > endBracket) break;
+                int q2 = json.IndexOf('"', q1 + 1);
+                if (q2 < 0 || q2 > endBracket) break;
+                list.Add(json.Substring(q1 + 1, q2 - q1 - 1));
+                cursor = q2 + 1;
+            }
+            return list;
+        }
+
+        // 區塊職責：對 selected skill names 算 aggregate SHA1，演算法必須跟
+        //          install_skills.py 的 compute_source_hash() 一致：
+        //            for skill in sorted(names):
+        //              files = SKILL.md only (antigravity) | rglob("*") (claude)
+        //              for (rel-posix-path, file) in sorted by rel:
+        //                hasher.update(rel + \0 + sha1(file)hex + \0)
+        // 物理意義：跟 Python 同字節序列 → 同最終 hash → Editor 與 CLI 端可一致比對
+        // 數值影響：m_UCLCorePath 必須有效；missing skill dir → 跳過該 skill
+        string ComputeSourceHashFor(List<string> skillNames, AgentTarget target)
+        {
+            if (string.IsNullOrEmpty(m_UCLCorePath)) return "";
+            string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
+            if (!Directory.Exists(skillsRoot)) return "";
+
+            // 排序時用 ordinal compare（與 Python sorted() 預設行為一致）
+            var orderedNames = skillNames.OrderBy(s => s, StringComparer.Ordinal).ToList();
+
+            using (var sha = SHA1.Create())
+            {
+                byte[] sep = new byte[] { 0 };
+                foreach (var name in orderedNames)
+                {
+                    string srcDir = Path.Combine(skillsRoot, name);
+                    if (!Directory.Exists(srcDir)) continue;
+
+                    List<string> files;
+                    if (target == AgentTarget.Antigravity)
+                    {
+                        string skillMd = Path.Combine(srcDir, "SKILL.md");
+                        files = File.Exists(skillMd) ? new List<string> { skillMd } : new List<string>();
+                    }
+                    else
+                    {
+                        files = Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories).ToList();
+                    }
+
+                    // 以 posix-style rel-to-skillsRoot path 排序，跟 Python relative_to(SKILLS_SRC).as_posix() 一致
+                    var entries = files
+                        .Select(f =>
+                        {
+                            string rel = MakePosixRelative(skillsRoot, f);
+                            return new { rel, abs = f };
+                        })
+                        .OrderBy(e => e.rel, StringComparer.Ordinal)
+                        .ToList();
+
+                    foreach (var e in entries)
+                    {
+                        byte[] relBytes = Encoding.UTF8.GetBytes(e.rel);
+                        sha.TransformBlock(relBytes, 0, relBytes.Length, null, 0);
+                        sha.TransformBlock(sep, 0, 1, null, 0);
+                        string fileHex = ComputeFileSha1Hex(e.abs);
+                        byte[] hexBytes = Encoding.ASCII.GetBytes(fileHex);
+                        sha.TransformBlock(hexBytes, 0, hexBytes.Length, null, 0);
+                        sha.TransformBlock(sep, 0, 1, null, 0);
+                    }
+                }
+                sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                return ToHex(sha.Hash);
+            }
+        }
+
+        static string MakePosixRelative(string root, string fullPath)
+        {
+            string rel = Path.GetRelativePath(root, fullPath);
+            return rel.Replace('\\', '/');
+        }
+
+        static string ComputeFileSha1Hex(string path)
+        {
+            using (var sha = SHA1.Create())
+            using (var fs = File.OpenRead(path))
+            {
+                return ToHex(sha.ComputeHash(fs));
+            }
+        }
+
+        static string ToHex(byte[] bytes)
+        {
+            var sb = new StringBuilder(bytes.Length * 2);
+            for (int i = 0; i < bytes.Length; i++) sb.Append(bytes[i].ToString("x2"));
+            return sb.ToString();
         }
 
         /// <summary>同步跑 install_skills.py --target X。Block UI 但通常 &lt;500ms。</summary>
@@ -491,6 +677,11 @@ namespace UCL.Core.EditorLib.Page
                         ShortHash(m_CurrentCommit));
                     btnColor = new Color(0.6f, 0.9f, 0.6f);
                     btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
+                    break;
+                case InstallStatus.LegacyNoHash:
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.LegacyNoHash");
+                    btnColor = new Color(1f, 0.6f, 0.2f);
+                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Sync");
                     break;
                 case InstallStatus.UnknownHead:
                 default:

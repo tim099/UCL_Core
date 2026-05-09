@@ -1,4 +1,4 @@
-﻿
+
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/06 2026
@@ -146,9 +146,11 @@ namespace UCL.Core.EditorLib.Page
             // 不要在這裡再開 BeginScrollView — UCL_EditorPage.OnGUI 已包外層 ScrollViewScope；
             // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException（Unity 6 才會被內部靜默 recover）。
             DrawHeader();
-            GUILayout.Space(4);
+            GUILayout.Space(4); // 呼叫 Layout 空白元件，帶入高度參數 4 以拉開標題與語言列的間距
             DrawLanguageBar();
-            GUILayout.Space(8);
+            GUILayout.Space(4); // 呼叫 Layout 空白元件，帶入高度參數 4 以拉開語言列與指令表列的間距
+            DrawCommandTableBar(); // 呼叫繪製指令對照表入口列，將指令預覽按鈕繪製於語言列正下方
+            GUILayout.Space(8); // 呼叫 Layout 空白元件，帶入高度參數 8 以拉開指令表列與簡介區塊的間距
             DrawIntro();
             GUILayout.Space(8);
             DrawSearchEntry();
@@ -243,6 +245,52 @@ namespace UCL.Core.EditorLib.Page
                 {
                     UCL_EditorPage.Create<UCL_LocalizeEditPage>();
                 }
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：繪製指令對照表入口列 — 提供一鍵跳轉/預覽指令表的按鈕。
+        // 物理意義：提供使用者快速在 Editor 內預覽 AI Agent 口語指令對照手冊的快捷管道，不需要自行尋找文件。
+        // 數值影響：點擊時會解析 URL 路徑並建立一個內嵌 MarkdownViewerPage 用於渲染。
+        // ===========================================================
+        void DrawCommandTableBar()
+        {
+            // 建立水平佈局容器，並套用 "box" 樣式以凸顯該功能區域
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                // 區塊職責：繪製「📄 預覽指令表」按鈕，並於點擊時載入對應語言的 CommandTable.md
+                // 物理意義：仿照 UCL_DocSearchPage 的預覽按鈕，在 Editor 內直接開啟 MarkdownViewer 進行預覽
+                // 數值影響：當點擊按鈕 (回傳 true) 時，解析相對路徑並將其絕對化後傳入 UCL_MarkdownViewerPage
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.CommandTable.Btn"),
+                    UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    // 取得當前的語系代碼（例如 "zh-Hant"、"en" 等）用於動態路徑拼接
+                    string curLang = UCL_LocalizeService.CurLang;
+
+                    // 組合出相對於 git root 的 CommandTable.md 路徑，用於 UI 與 Open 轉址比對
+                    string relPath = $"CardGame/Assets/UCL/UCL_Core/Docs~/{curLang}/CommandTable.md";
+
+                    // 藉由 UCL_URL 將多語系 prefix 轉譯成實體的本地絕對路徑，若該語系缺檔則自動 fallback 到 en
+                    string absPath = UCL_URL.ResolveURL("ucl_core:Docs~/{lang}/CommandTable.md");
+
+                    // 呼叫 MarkdownViewer 靜態方法在 Editor 內直接打開該文件頁面，並 push 到 controller stack
+                    UCL_MarkdownViewerPage.Create(relPath, absPath);
+                }
+
+                // 區塊職責：繪製前導標籤
+                // 物理意義：視覺提示該列為指令表功能入口
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.CommandTable.Label"),
+                    UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                // 區塊職責：顯示對應的功能說明文字
+                // 物理意義：向使用者說明指令對照表的作用
+                // 數值影響：佔用扣除標籤與按鈕後的剩餘寬度，並啟用 wordWrap 自動換行以適應寬度
+                GUILayout.Label(UCL_CodeLocalize.Get("Welcome.CommandTable.Desc"), WrapLabelStyle);
+
+                // 在說明文字與按鈕之間插入彈性空白，使得按鈕自動靠右對齊
+                GUILayout.FlexibleSpace();
+
+
             }
         }
 

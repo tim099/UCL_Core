@@ -180,6 +180,35 @@ def discover_skills() -> list[str]:
     return skills
 
 
+# 區塊職責：對「目前選定的一組 skill」算出穩定 aggregate SHA1。
+# 物理意義：取代過往以 git commit 比對 stale 的作法 — commit bump 但 skill 內容沒動時不該被視為 stale。
+# 數值影響：以 (skill name, posix relative path, file SHA1) 三元組依字典序串入單一 hasher，
+#          Editor 端 (UCL_AgentSkillManagerPage) 用同樣演算法重算後比對 .ucl_installed.source_hash。
+#          只算 source 側（Skills~/<name>/），不關心安裝端目錄；antigravity 走 SKILL.md only 的子集。
+def compute_source_hash(skill_names: list[str], target: str) -> str:
+    h = hashlib.sha1()
+    for name in sorted(skill_names):
+        src = SKILLS_SRC / name
+        if not src.is_dir():
+            continue
+        if target == "antigravity":
+            files = [src / "SKILL.md"] if (src / "SKILL.md").is_file() else []
+        else:
+            files = sorted(p for p in src.rglob("*") if p.is_file())
+        # 排序 by posix-style relative path 以確保跨 OS 一致
+        entries: list[tuple[str, Path]] = []
+        for f in files:
+            rel = f.relative_to(SKILLS_SRC).as_posix()
+            entries.append((rel, f))
+        entries.sort(key=lambda e: e[0])
+        for rel, f in entries:
+            h.update(rel.encode("utf-8"))
+            h.update(b"\0")
+            h.update(file_sha1(f).encode("ascii"))
+            h.update(b"\0")
+    return h.hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # File ops
 # ---------------------------------------------------------------------------
@@ -518,12 +547,15 @@ def main(argv: list[str] | None = None) -> int:
                 exit_code = 2
 
     # Global marker
+    # source_hash：對 selected 這組 skill 的 source 內容算 aggregate SHA1，
+    # 用於 Editor 端 (UCL_AgentSkillManagerPage) 判斷是否 stale；取代以往的 commit-only 比對。
     marker = skills_dst_root / ".ucl_installed"
     if not args.dry_run:
         marker.write_text(
             json.dumps(
                 {
                     "ucl_core_commit": get_ucl_commit(),
+                    "source_hash": compute_source_hash(selected, args.target),
                     "installed_skills": selected,
                     "target": args.target,
                     "mode": "link" if (args.link and args.target != "antigravity") else "copy",

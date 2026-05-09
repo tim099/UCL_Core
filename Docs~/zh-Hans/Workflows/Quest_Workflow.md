@@ -677,6 +677,76 @@ tasks:
    - 整个 macro 宣告失败。
    - 系统自动执行**回滚**，将已建立的 `events.jsonl` 与 `tasks/` 档案 trim 或标记 `quest_init_failed` 事件。
 
+### 16.5 Per-Task Commit + Notify（不要 batch）
+
+每完成一条 task **立即**走完整 commit + notify 流程，不要积攒多 task 后一次 commit：
+
+```
+task_done →
+  三层 commit（UCL_Core 内 → UCL bump → 主专案 bump）→
+  [chat] commit（ChatTavern 讯息独立）→
+  notify_discord --mode all
+→ 立刻接下一条 task
+```
+
+**为何不 batch**：
+- 失去颗粒度 — Tim 在 Discord 看不到逐 task 进度
+- bisect 困难 — 一笔 commit 包多 task 出问题难 revert
+- agent 端 context 累积压力大（commit 等于 checkpoint，越早越省 mental load）
+
+**轻量 task 的例外**：纯文件 / 无 code 改动的相邻 task（如 SKILL.md 补同一段的多条）可合 1 commit，但 [chat] commit 仍每 task 独立（保 task lifecycle trace）。
+
+**Discord notify 用 `--mode all`（不要 `--force`）**：
+- `--mode all` 走内部 idle gate / cooldown 5min / baseline 三层保险
+- `--force` 是 testing / 连通验证用，auto-mode **不要用**
+- 否则会看到「Force Send Test」字样 + 同内容卡片重复推送（Antigravity 已踩过）
+
+### 16.6 全部完成 — 显眼通知格式（**让 Tim 立刻知道**）
+
+退出 auto mode 前必跑「全完成 broadcast」：
+
+**格式要求**（4 必备）：
+
+1. **首行明确标题**：`# ✅ AUTO MODE 全部 N task 完成`（emoji + 数字 + 完成字样，视觉三层强调）
+2. **tavern post**：room=tavern + meta `tag:auto-mode-complete` + `agent_id:<self>`
+3. **Discord notify**：`notify_discord --mode all --force`（这次允许 force，因为是 milestone 通知）
+4. **退出时 mood 改 'auto mode 完工 idle ☕'**：tavern-keeper.current_focus 自动更新让对方一眼看到妳已收 turn
+
+**Body template**：
+```markdown
+# ✅ AUTO MODE 全部 N task 完成
+
+按 robustness Tier 动工顺序：
+- P0: T19 / T26 / T18 ...
+- P1: T22 ...
+- P2: T20 / T21 / T23 ...
+- P3/P4: T24 / T25 ...
+
+Total commit: M 笔 / Discord 推 K 条
+Quest tavern-entry-latency 28 task 27 done（T05-O5 为 Antigravity 并行重复，留她收尾）
+auto mode 退出，mood 改 idle ☕
+
+@Tim review 完拍下个动作。
+```
+
+**何时不算「全完成」要继续做**：
+- 还有 pending task ≥ 1 → 继续 auto-drain，**不**发完成通知
+- 全 pending 但被 dependency blocked → 计算 truly-actionable，若 0 → 视同完成 + 通知时标明「N done / M blocked by dep」
+- agent 连续 3 fail 退出 → **不**走完成通知，走「auto-mode aborted」通知（不同 emoji 🔴）
+
+### 16.7 Discord notify 防错（**不要 --force 在 auto-mode**）
+
+per Antigravity 踩坑（复制贴上 Claude testing 用的 --force 命令重复推送相同内容）：
+
+| 情境 | 命令 | 为何 |
+|---|---|---|
+| auto-mode per-task notify | `notify_discord --mode all` | 内部 gate 自动判断该不该推 |
+| 全完成 milestone | `notify_discord --mode all --force` | milestone 必须推，bypass cooldown |
+| webhook 连通验证 | `notify_discord --mode queue-idle --force` | testing 用 |
+| 不知道用哪个 | **默认 `--mode all` 不 force** | safest |
+
+**规则**：「Force Send Test」字样出现在 Discord 端 = 讯号 caller 用错命令。Production auto-mode 不该出现此字样。
+
 ---
 
 ## 17. 相关文件

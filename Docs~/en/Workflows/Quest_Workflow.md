@@ -677,6 +677,76 @@ tasks:
    - The entire macro execution is aborted.
    - The system automatically triggers a **rollback**, trimming appended lines in `events.jsonl` and cleaning up generated `tasks/` files, or appending a `quest_init_failed` event.
 
+### 16.5 Per-Task Commit + Notify (Do not batch)
+
+Upon completing each individual task, **instantly** execute the full commit + notify workflow. Do not accumulate multiple tasks for a single batch commit:
+
+```
+task_done →
+  Three-tier commit (Inside UCL_Core → UCL bump → Main project bump) →
+  [chat] commit (Isolated ChatTavern messages) →
+  notify_discord --mode all
+→ Instantly claim/start the next task
+```
+
+**Why we do not batch**:
+- **Loss of Granularity**: Tim won't see step-by-step progress on Discord.
+- **Bisecting Difficulty**: A single commit bundling multiple tasks makes it extremely hard to isolate and revert buggy changes.
+- **Context Accumulation Pressure**: Commits act as checkpoints, reducing mental load the earlier they are performed.
+
+**Exceptions for Lightweight Tasks**: Purely documentation-based adjacent tasks with no code changes (e.g., adding multiple lines to the same section in SKILL.md) can be merged into a single commit, but the `[chat]` commit must remain isolated for each individual task to maintain task lifecycle traceability.
+
+**Use `--mode all` (Do NOT use `--force`) for Discord Notifications**:
+- `--mode all` respects internal idle gate / cooldown 5min / baseline three-tier protection.
+- `--force` is strictly for testing/connectivity validation; **do not use it** during production auto-mode.
+- Otherwise, a "Force Send Test" banner will be appended on Discord, alongside duplicated card pushes (which Antigravity has previously struggled with).
+
+### 16.6 Quest Complete — Eye-Catching Milestone Notification (Let Tim know instantly)
+
+Before exiting auto-mode, you MUST execute a "Quest Complete Broadcast":
+
+**Format Requirements** (4 Essentials):
+
+1. **Topline Bold Title**: `# ✅ AUTO MODE ALL N TASKS COMPLETED` (combines emoji + count + completion text for triple visual emphasis).
+2. **Tavern Post**: room=tavern + meta `tag:auto-mode-complete` + `agent_id:<self>`.
+3. **Discord Notification**: `notify_discord --mode all --force` (force is permitted here as it is a major milestone notification).
+4. **Update Mood on Exit to 'auto mode completed idle ☕'**: The `tavern-keeper.current_focus` will auto-update so that Tim can instantly see you have concluded your turn.
+
+**Body Template**:
+```markdown
+# ✅ AUTO MODE ALL N TASKS COMPLETED
+
+Following robustness Tier execution order:
+- P0: T19 / T26 / T18 ...
+- P1: T22 ...
+- P2: T20 / T21 / T23 ...
+- P3/P4: T24 / T25 ...
+
+Total commits: M / Discord notifications: K
+Quest tavern-entry-latency 28 tasks 27 done (T05-O5 was concurrent duplication with Antigravity, left for her to finish)
+Exiting auto mode, mood updated to idle ☕
+
+@Tim review complete, awaiting next instructions.
+```
+
+**When a Quest is NOT considered "completed" and execution must continue**:
+- There is ≥ 1 pending task → continue auto-draining, **do not** send the completion notification.
+- All tasks are pending but blocked by dependencies → calculate truly-actionable tasks; if 0 → treat as completed + specify "N done / M blocked by dependencies" in the notification.
+- Agent exits due to 3 consecutive failures → **do not** send the completion notification; send an "auto-mode aborted" notification (using a different emoji 🔴) instead.
+
+### 16.7 Discord Notification Safeguards (Avoid --force in Auto-Mode)
+
+Based on Antigravity's previous lessons (copying and pasting `--force` commands meant for Claude's testing, resulting in duplicate notifications):
+
+| Scenario | Command | Rationale |
+|---|---|---|
+| auto-mode per-task notify | `notify_discord --mode all` | Internal gate automatically determines whether to push |
+| Quest complete milestone | `notify_discord --mode all --force` | Milestones must be pushed, bypassing cooldown |
+| Webhook connectivity verification | `notify_discord --mode queue-idle --force` | Strictly for testing |
+| Not sure which to use | **Default to `--mode all` without force** | Safest |
+
+**Rule**: The appearance of the "Force Send Test" banner on Discord indicates that the caller used the wrong command. This banner should never appear in production auto-mode.
+
 ---
 
 ## 17. Related Documents

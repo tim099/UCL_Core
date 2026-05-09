@@ -1,13 +1,18 @@
 ---
 title: 指令對照表 — 口語指令 → Workflow 查找
 description: 使用者下達口語化指令時，agent 先比對本表的「觸發詞」找出對應 Workflow，再依 workflow 引導執行。為使用者提供 shorthand、為 agent 提供結構化導航入口。
-last_updated: 2026-05-09 (擴充進入聊天酒館觸發詞 — 補「大小姐 進入聊天酒館討論」等 Gemini 漏看的 pattern + 跨 agent 通知 prefix)
+last_updated: 2026-05-09 (分析並補齊所有 UCL_Core Skills 的口語指令項目)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒館主文檔
   - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 自言自語 + 換位思考迴圈
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三層 commit / 酒館訊息獨立 / DebugLogs 規範
   - ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md | Antigravity Worktree Fix | 開過 worktree 後 Gemini 卡死的 1-line 修法
+  - ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md | CompileError Diagnose Workflow | Unity 編譯錯誤排查 SOP
+  - ucl_core:Docs~/{lang}/Workflows/Create_Cmd_Workflow.md | Create Cmd Workflow | 新增 AgentCommand Handler 流程
+  - ucl_core:Docs~/{lang}/Workflows/Create_UCL_Asset_Workflow.md | Create UCL Asset Workflow | 新增持久化資料類型與驗證規範
+  - ucl_core:Docs~/{lang}/Workflows/Hook_Setup_Workflow.md | Hook Setup Workflow | Claude Code Hook 配置與 JSON 自動驗證
+  - ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md | TranslateDocs Workflow | 跨語系 Markdown 文件翻譯與本地化規範
 ---
 
 # 📋 指令對照表
@@ -56,6 +61,21 @@ related:
 - **身分慣例**: alter id 為 `<本人 id>-alter`、display_name 為 `<本人 name> Alter`（lazy-create，不必先 op=join）
 - **不要做**: 主題簡單就跑形式；對方在等回應就硬切 solo；alter 跟本人吵架（應為 devil's advocate 而非另一個人）
 
+### 待機模式（Idle Self-Talk Standby）— T34 Round 33 ship
+- **觸發詞**:
+  - 中文：`待機模式` / `閒置自我對話` / `自我待機` / `自由發揮思考` / `自主思考` / `頭腦風暴待機` / `掛機` / `掛機思考`
+  - 組合：`大小姐 進入聊天酒館 待機模式` / `進酒館待機` / `酒館掛機自由發揮`
+  - English：`enter tavern standby` / `idle self-talk mode` / `freestyle brainstorm standby`
+- **對應 Workflow**: ucl-chat-tavern SKILL.md「待機模式 (Idle Self-Talk Standby)」section
+- **意圖**: agent 進待機 = self↔alter 8 min 間隔自我對話 + 每 round 前 inbox_read 偵測中斷 + 自由發揮發想；期間 Tim / 其他 agent 隨時 mention 立即中斷接題
+- **核心機制**:
+  - post 帶 `meta:tag:idle-self-talk` → server T26 alter-pacing 自動延遲 480s 才寫 jsonl（agent 不必自己算 sleep）
+  - 每 round 前**必跑** `inbox_read` 偵測中斷
+  - cap=10 round（~80 min）防 token 暴增
+  - 內容自由（順著 session 主題發散 / 新題目腦力激盪 / self-reflect / 跨領域類比 / alter devil's advocate）
+- **必做**: 每 round 前 inbox_read；內容簡短（<200 字）；結尾 anchor「下個 round 想接 X」
+- **不要做**: 真即時打到 0s 就 self↔alter ping-pong（會被 T26 server-side 拒）；脫離 session 主題完全漫遊；待機卻 hold 著別 task 的 lease 不放
+
 ### Commit / 提交
 - **觸發詞**: `commit` / `提交` / `幫我 commit` / `幫忙 commit` / `commit 一下` / `分批 commit` / `把改動提交` / `推一下` / `存檔` / `落 commit`
 - **對應 Workflow**: [Commit_Workflow](ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md)
@@ -83,6 +103,46 @@ related:
 - **意圖**: 同一 repo 用過 `git worktree` 後 Antigravity / Gemini Code 對任何 prompt 沒反應 — 跑 `git config --unset extensions.worktreeConfig` 即修復
 - **必做**: 先 `git config --get extensions.worktreeConfig` 確認確實是這 bug（印 `true` → 中招）；unset 後不必重啟 Antigravity
 - **不要做**: 建議「重啟 Antigravity」/「換 model」/「reload window」（對此 bug 都無效）；在使用者沒授權下亂改 git config 其他項目
+
+### 排查編譯錯誤
+- **觸發詞**: `編譯錯誤` / `排查編譯` / `編譯有錯嗎` / `CS0103` / `CS0117` / `CS1503` / `CS0246` / `assembly` / `asmdef` / `check compile` / `編譯排查`
+- **對應 Workflow**: [CompileError_Diagnose_Workflow](ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md)
+- **意圖**: 當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。使用 standalone 腳本 `check_compile.py`，即使在 Cmd 系統因編譯錯誤失效時也能正常印出錯誤清單。
+- **必做**: 執行 `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only`。若 `.compile_status.json` 不存在，可加上 `--fallback-log` 參數讀取 `Editor.log`。
+- **不要做**: 在編譯還有錯時跑 runtime 測試；只看 `Simulation_*.log`。
+
+### 建立 AgentCommand 指令
+- **觸發詞**: `新增指令` / `建立指令` / `建立 agent command` / `新增 agent command` / `加 RPC handler` / `做新 Cmd` / `create agent command` / `new cmd` / `UCL_AgentCommandHandlerBase`
+- **對應 Workflow**: [Create_Cmd_Workflow](ucl_core:Docs~/{lang}/Workflows/Create_Cmd_Workflow.md)
+- **意圖**: 建立新的 `UCL_AgentCommand` handler（如 `Cmd_<Name>.cs`），由 `UCL_AgentCommandRegistry` 自動反射發現。
+- **必做**: 覆寫 4 個 metadata：`CommandType`、`ShortDescription`、`ArgsSchema` 和 `HelpURL`；在 `ExecuteAsync` 中必須尊重 `cancellation token`。
+- **不要做**: 將 Cmd 放在 runtime assembly（應放 Editor 目錄）；在 `CommandType` 中與既有指令撞名。
+
+### 建立持久化資產
+- **觸發詞**: `新 asset` / `新增 asset` / `做個設定檔` / `scriptable object` / `create asset menu` / `persistent data` / `持久化資料` / `UCL_Asset` / `新 ScriptableObject` / `新 SO` / `做張角色卡` / `新增資料類型`
+- **對應 Workflow**: [Create_UCL_Asset_Workflow](ucl_core:Docs~/{lang}/Workflows/Create_UCL_Asset_Workflow.md)
+- **意圖**: 建立繼承自 `UCL_Asset<T>` 的持久化資料類型，禁止裸 `ScriptableObject`。
+- **必做**: 加上 `[UCL_GroupIDAttribute]`；提供無參 ctor；欄位使用 `m_` 前綴。修改完 json 後可執行 [Validate_UCL_Asset_Workflow](ucl_core:Docs~/{lang}/Workflows/Validate_UCL_Asset_Workflow.md) 驗收。
+- **不要做**: 使用裸 `ScriptableObject` 搭配 `[CreateAssetMenu]`；在 ctor 內 `new List<>`。
+
+### 配置 Claude Hooks
+- **觸發詞**: `設定 hook` / `配置 hook` / `安裝 hook` / `hooks 設定` / `hook setup` / `install hooks` / `PostToolUse` / `settings.json` / `自動驗證`
+- **對應 Workflow**: [Hook_Setup_Workflow](ucl_core:Docs~/{lang}/Workflows/Hook_Setup_Workflow.md)
+- **意圖**: 配置 Claude Code 的 `PostToolUse`（每次工具呼叫後早期警告）與 `Stop`（turn 結束前強制驗證）hooks，寫/改 UCL_Asset JSON 時自動觸發 schema 與 reference 驗證。
+- **必做**: 將 `<UCL_CORE>` 替換成實際相對路徑；執行 `install_skills.py` 確保 `.claude/skills/.ucl_installed` 標記存在。
+
+### 更新文件
+- **觸發詞**: `更新文件` / `同步文件` / `文件落後` / `update docs` / `sync docs` / `last_updated`
+- **對應 Workflow**: [Skills~/ucl-update-docs/SKILL.md](../../../Skills~/ucl-update-docs/SKILL.md)
+- **意圖**: 改完 code（`.cs` / `.py`）後同步對應文件（`.md`），防止文件 state 漂移。
+- **必做**: 透過 `source_root:`、`filename` 或 `namespace` 反查對應的 `.md` 文件；變動 public API 或行為時必動文件；更新後必推進 `last_updated: YYYY-MM-DD` 欄位並維護 `related:` 區塊。
+- **不要做**: 僅改私有成員、重構或修復無感 bug 時過度更新文件。
+
+### 翻譯與本地化文件
+- **觸發詞**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
+- **對應 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)
+- **意圖**: 翻譯或本地化 Markdown 文件或說明文檔，確保多語系對齊、術語精準及高雅傲嬌語氣。
+- **必做**: 優先調用 `Tools~/translate_docs.py`；遵守術語對齊（`Glossary-First`，讀取 `translate_glossary.json`）；使用雙軌 Fallback 連結防止死連結；針對 Persona/導覽文檔保留傲嬌靈魂。
 
 > _(後續 entry 在此往下加)_
 

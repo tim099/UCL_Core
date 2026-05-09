@@ -279,7 +279,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 else if (earlyMeta.TryGetValue("tag", out var tagVal) && !string.IsNullOrEmpty(tagVal))
                 {
                     string tagLow = tagVal.ToLowerInvariant();
-                    if (tagLow.Contains("brainstorm") || tagLow.Contains("self-talk"))
+                    // T34 — idle-self-talk 待機模式（per Tim Round 33 拍板 T33 方案 A）
+                    // 物理意義：「進入聊天酒館 待機模式」觸發 → agent 走 8 min self↔alter 自我對話
+                    //          + 每 round 前 inbox_read 偵測中斷 + cap=10 round 防 token 暴增
+                    // 數值影響：480s ≈ wait timeout 慣例 + 大於 brainstorm 30s 短延遲（待機要慢節奏才接得到外部訊息）
+                    const double ALTER_PACING_IDLE_SEC = 480.0;
+                    if (tagLow.Contains("idle-self-talk") || tagLow.Contains("idle-standby") || tagLow.Contains("standby"))
+                    {
+                        effectiveDelaySec = ALTER_PACING_IDLE_SEC;
+                    }
+                    else if (tagLow.Contains("brainstorm") || tagLow.Contains("self-talk"))
                     {
                         effectiveDelaySec = ALTER_PACING_BRAINSTORM_SEC;
                     }

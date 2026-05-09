@@ -236,6 +236,59 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
 
+            // ===========================================================
+            // T26 — Solo Alter 配對發言間隔強制 ≥300s（per Tim P10 補充痛點）
+            // 物理意義：Alter 機制觸發後 agent 容易 self↔alter ping-pong 秒回失去慢速意義；
+            //          純 SKILL.md 自律守不住，code 層拒絕 + 給清楚錯誤讓 agent 走 op=wait 補等。
+            // 數值影響：本 check 在 Op_Post 早期拒絕，messages.jsonl 不寫；agent 看 RejectLastOp 黃 ⚠ 自然遵守。
+            // 例外設計：
+            //   - meta 帶 alter-pacing-bypass=true → skip（給 Tim 手動測試用）
+            //   - 不同房 → 各算各的（Tail 只看當前 room）
+            //   - 中間有第三方訊息（last sender ≠ alter pair）→ 不算 ping-pong 不擋
+            //   - 第一筆無前筆 → skip
+            // ===========================================================
+            const double ALTER_PACING_MIN_GAP_SEC = 300.0;
+            var earlyMeta = ParseMeta(metaStr);
+            bool bypassPacing = earlyMeta != null
+                && earlyMeta.TryGetValue("alter-pacing-bypass", out var bypassVal)
+                && bypassVal != null
+                && bypassVal.ToLowerInvariant() == "true";
+            if (!bypassPacing)
+            {
+                // 計算 alter pair 期望 partner_id
+                string expectedPartner;
+                const string ALTER_SUFFIX = "-alter";
+                if (senderId.EndsWith(ALTER_SUFFIX))
+                {
+                    expectedPartner = senderId.Substring(0, senderId.Length - ALTER_SUFFIX.Length);
+                }
+                else
+                {
+                    expectedPartner = senderId + ALTER_SUFFIX;
+                }
+                // 讀當前 room 最後一筆訊息
+                var lastMsgs = UCL_ChatTavernIO.Tail(roomId, 1);
+                if (lastMsgs != null && lastMsgs.Count > 0)
+                {
+                    var lastMsg = lastMsgs[0];
+                    // 只有 last sender = expected alter partner 才算配對
+                    if (lastMsg != null && lastMsg.sender_id == expectedPartner && !string.IsNullOrEmpty(lastMsg.ts))
+                    {
+                        // 解析 last ts，計算間隔
+                        if (DateTime.TryParse(lastMsg.ts, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var lastTs))
+                        {
+                            var elapsedSec = (DateTime.UtcNow - lastTs).TotalSeconds;
+                            if (elapsedSec < ALTER_PACING_MIN_GAP_SEC)
+                            {
+                                var remain = (int)Math.Ceiling(ALTER_PACING_MIN_GAP_SEC - elapsedSec);
+                                RejectLastOp($"Solo Alter 配對需間隔 ≥{ALTER_PACING_MIN_GAP_SEC:F0}s 維持慢速節奏；上一筆 {expectedPartner} 在 {elapsedSec:F0}s 前發出，請 op=wait 等 {remain}s 後再 post。或顯式帶 --arg meta=alter-pacing-bypass:true 跳過（測試用）。");
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+
             // 從 identities.json 取顯示名稱（找不到 → 用 senderId 當顯示名，但記 warning）
             var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == senderId);
             string senderName = ident?.display_name ?? senderId;

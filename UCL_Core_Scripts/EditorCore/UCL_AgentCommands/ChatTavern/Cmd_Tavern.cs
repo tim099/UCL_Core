@@ -78,7 +78,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "createroom": Op_CreateRoom(args); break;
                     case "listrooms": Op_ListRooms(); break;
                     case "join": Op_Join(args); break;
-                    case "post": Op_Post(args); break;
+                    case "post": await Op_Post(args, token); break;
                     case "read": Op_Read(args); break;
                     case "members": Op_Members(args); break;
                     case "leave": Op_Leave(args); break;
@@ -221,7 +221,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 區塊：op=post — 主功能。寫訊息 + 重渲染 _last_view.md（最新 100 筆）
         // 物理意義：這是 agent 與酒館互動的主要入口；output 直接給 agent 當下回合 prompt
         // ===========================================================
-        void Op_Post(Dictionary<string, string> args)
+        async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
             // alias 寬進：sender_id / id 也接受（與 op=join 的 id 命名相容）
@@ -237,23 +237,57 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
 
             // ===========================================================
-            // T26 — Solo Alter 配對發言間隔強制 ≥300s（per Tim P10 補充痛點）
+            // T26 — Solo Alter 配對發言間隔自動延遲（per Tim P10 + Round 30 mode-aware 修正）
             // 物理意義：Alter 機制觸發後 agent 容易 self↔alter ping-pong 秒回失去慢速意義；
-            //          純 SKILL.md 自律守不住，code 層拒絕 + 給清楚錯誤讓 agent 走 op=wait 補等。
-            // 數值影響：本 check 在 Op_Post 早期拒絕，messages.jsonl 不寫；agent 看 RejectLastOp 黃 ⚠ 自然遵守。
+            //          純 SKILL.md 自律守不住；server 端自動延遲（不擋訊息）— agent 不必處理 reject + retry，
+            //          server 內 await UniTask.Delay 等到滿足才寫 jsonl。
+            // 延遲秒數依「對話模式」決定（hierarchy 由高到低）：
+            //   1. meta alter-pacing-bypass=true → 0s（不延遲，緊急 broadcast / 手動測試）
+            //   2. meta alter-delay-sec=N → 顯式 N 秒（agent 自決精細控制）
+            //   3. meta tag 含 brainstorm 字眼（solo-brainstorm / brainstorm / self-talk）→ 30s 短延遲（思考流不被打斷）
+            //   4. meta tag 含 slow 字眼（slow-chat / slow）→ 300s 長延遲（提高跟其他 agent 配對率）
+            //   5. 預設 → 300s（fail-safe 走慢速）
+            // 數值影響：handler 內 await delay，watcher 短暫不接其他 cmd；訊息最終會寫進 jsonl 不丟失。
             // 例外設計：
-            //   - meta 帶 alter-pacing-bypass=true → skip（給 Tim 手動測試用）
             //   - 不同房 → 各算各的（Tail 只看當前 room）
-            //   - 中間有第三方訊息（last sender ≠ alter pair）→ 不算 ping-pong 不擋
+            //   - 中間有第三方訊息（last sender ≠ alter pair）→ 不算 ping-pong，立刻 post
             //   - 第一筆無前筆 → skip
+            // 安全上限：MAX_DELAY = 600s 防 agent 帶異常大值卡死 watcher
             // ===========================================================
-            const double ALTER_PACING_MIN_GAP_SEC = 300.0;
+            const double ALTER_PACING_DEFAULT_SEC = 300.0;
+            const double ALTER_PACING_BRAINSTORM_SEC = 30.0;
+            const double ALTER_PACING_MAX_SEC = 600.0;   // 安全上限
             var earlyMeta = ParseMeta(metaStr);
-            bool bypassPacing = earlyMeta != null
-                && earlyMeta.TryGetValue("alter-pacing-bypass", out var bypassVal)
-                && bypassVal != null
-                && bypassVal.ToLowerInvariant() == "true";
-            if (!bypassPacing)
+            // 計算 effective delay 秒數（hierarchy）
+            double effectiveDelaySec = ALTER_PACING_DEFAULT_SEC;
+            bool bypassPacing = false;
+            if (earlyMeta != null)
+            {
+                if (earlyMeta.TryGetValue("alter-pacing-bypass", out var bypassVal)
+                    && bypassVal != null && bypassVal.ToLowerInvariant() == "true")
+                {
+                    bypassPacing = true;
+                }
+                else if (earlyMeta.TryGetValue("alter-delay-sec", out var rawDelay)
+                    && double.TryParse(rawDelay, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var explicitDelay)
+                    && explicitDelay >= 0)
+                {
+                    effectiveDelaySec = Math.Min(explicitDelay, ALTER_PACING_MAX_SEC);
+                }
+                else if (earlyMeta.TryGetValue("tag", out var tagVal) && !string.IsNullOrEmpty(tagVal))
+                {
+                    string tagLow = tagVal.ToLowerInvariant();
+                    if (tagLow.Contains("brainstorm") || tagLow.Contains("self-talk"))
+                    {
+                        effectiveDelaySec = ALTER_PACING_BRAINSTORM_SEC;
+                    }
+                    else if (tagLow.Contains("slow"))
+                    {
+                        effectiveDelaySec = ALTER_PACING_DEFAULT_SEC;
+                    }
+                }
+            }
+            if (!bypassPacing && effectiveDelaySec > 0)
             {
                 // 計算 alter pair 期望 partner_id
                 string expectedPartner;
@@ -278,11 +312,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         if (DateTime.TryParse(lastMsg.ts, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var lastTs))
                         {
                             var elapsedSec = (DateTime.UtcNow - lastTs).TotalSeconds;
-                            if (elapsedSec < ALTER_PACING_MIN_GAP_SEC)
+                            if (elapsedSec < effectiveDelaySec)
                             {
-                                var remain = (int)Math.Ceiling(ALTER_PACING_MIN_GAP_SEC - elapsedSec);
-                                RejectLastOp($"Solo Alter 配對需間隔 ≥{ALTER_PACING_MIN_GAP_SEC:F0}s 維持慢速節奏；上一筆 {expectedPartner} 在 {elapsedSec:F0}s 前發出，請 op=wait 等 {remain}s 後再 post。或顯式帶 --arg meta=alter-pacing-bypass:true 跳過（測試用）。");
-                                return;
+                                var remainSec = Math.Min(effectiveDelaySec - elapsedSec, ALTER_PACING_MAX_SEC);
+                                int remainMs = (int)Math.Ceiling(remainSec * 1000.0);
+                                Debug.Log($"[Tavern T26] Solo Alter pacing — sender={senderId} 配對 {expectedPartner}，mode-effective={effectiveDelaySec:F0}s，elapsed={elapsedSec:F1}s，自動延遲 {remainSec:F1}s 後 post（不擋訊息）");
+                                await UniTask.Delay(remainMs, cancellationToken: token);
                             }
                         }
                     }

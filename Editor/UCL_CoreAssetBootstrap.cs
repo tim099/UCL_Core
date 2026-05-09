@@ -438,17 +438,39 @@ namespace UCL.Core.EditorLib
                     else conflictCount++;
                 }
 
-                // 只有新檔（無衝突）→ silent auto，無 dialog
-                if (conflictCount == 0)
+                // T27 — auto path 改成「絕不覆蓋本地」：
+                //   - 新檔：silent copy（如舊行為）
+                //   - 衝突：silent skip，自動寫進 skip marker（不再彈 dialog 打擾）
+                // 物理意義：Tim 拍板（Round 30 補充）— Bootstrap 自動同步應該尊重本地改動，不問就是不蓋
+                //          想覆蓋走 Menu「Push Templates (Force)」手動觸發。
+                // 數值影響：conflict 不寫專案，只寫 marker；下次同 Templates hash 直接 silent return（既有過濾邏輯 line 425）
+                var newOnly = new List<TemplatePushEntry>();
+                var conflicts = new List<TemplatePushEntry>();
+                foreach (var e in actionable)
                 {
-                    int written = ApplyTemplatePush(actionable, allowOverwriteAll: true, skipMarker: null);
-                    Debug.Log($"[UCL_Core Bootstrap] Template 自動覆蓋寫入 {written} 個新檔（Templates~ → 專案 .BuiltinModules）。");
-                    AssetDatabase.Refresh();
-                    return;
+                    if (e.Status == TemplatePushStatus.NewInTemplate) newOnly.Add(e);
+                    else conflicts.Add(e);
                 }
-
-                // 有衝突 → 走 menu 版同樣的 per-file dialog 流程，但跳過已決定 skip 的
-                RunTemplatePushWithDialogs(actionable, isAuto: true);
+                int writtenNew = 0;
+                if (newOnly.Count > 0)
+                {
+                    writtenNew = ApplyTemplatePush(newOnly, allowOverwriteAll: true, skipMarker: null);
+                }
+                if (conflicts.Count > 0)
+                {
+                    // silent skip：寫 marker（用當前 Templates hash），下次同版本不再 prompt
+                    var marker = LoadTemplatePushSkipMarker();
+                    foreach (var e in conflicts)
+                    {
+                        marker[e.RelPath] = ComputeFileSha1(e.TemplatePath);
+                    }
+                    SaveTemplatePushSkipMarker(marker);
+                }
+                if (writtenNew > 0 || conflicts.Count > 0)
+                {
+                    Debug.Log($"[UCL_Core Bootstrap] Template 同步：新檔寫入 {writtenNew} / 衝突 silent skip {conflicts.Count}（保留本地）。手動覆蓋走 Menu 'Tools/UCL/Bootstrap/Push Templates → Modules (Force)'。");
+                    if (writtenNew > 0) AssetDatabase.Refresh();
+                }
             }
             catch (Exception ex)
             {

@@ -19,6 +19,7 @@ description: |
 - **L6 [bash]**: post body 含 `` ` ( ) | `` 要用 here-doc 或 escape 防 shell 吃掉
 - **L7 [health]**: Quota / context window / Tim 累 = 三個獨立的「該停下」訊號
 - **L8 [Treasury]**: Commit 是先結算薪資的 task — pre-credit before commit (per Tim 拍板)
+- **L9 [T49 token_parse]**: 規則永遠匯給 sender 是錯的 — 加「@<acct>」/「支付前綴」反向路徑分流
 
 ## 自動化筆記入口（agent 自律）
 

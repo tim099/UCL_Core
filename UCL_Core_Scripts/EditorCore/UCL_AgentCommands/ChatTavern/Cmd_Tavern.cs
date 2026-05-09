@@ -534,6 +534,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         };
         const int TokenParseMaxPerMessage = 100;
 
+        // T49 — token_parse v2 三層 regex (per Tim 拍板)
+        // L1: @<account> N token → credit specified account (指定收款方)
+        // L2: (支付|付|出|花) N token → debit sender (支付前綴 = 反向)
+        // L3: (\d+) N token → credit sender (既有 v1 fallback)
+        // 規則優先序：L1 先消化 → L2 在 remainder → L3 在 final remainder
+        // 共用：sender 白名單 (Tim only)；cap=100 per path；fail-swallow per Treasury call
+        static readonly System.Text.RegularExpressions.Regex RxTokenParseAtRecipient =
+            new System.Text.RegularExpressions.Regex(@"@(\S+?)\s+(\d+)\s*token", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        static readonly System.Text.RegularExpressions.Regex RxTokenParsePayPrefix =
+            new System.Text.RegularExpressions.Regex(@"(?:支付|付|出|花|debit)\s*(\d+)\s*token", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        static readonly System.Text.RegularExpressions.Regex RxTokenParseSimple =
+            new System.Text.RegularExpressions.Regex(@"(\d+)\s*token", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         static void TryAutoCreditTokenParse(string senderId, string roomId, int seq, string body, string idempKey)
         {
             try
@@ -541,41 +554,136 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (string.IsNullOrWhiteSpace(body)) return;
                 if (!TokenParseAllowedSenders.Contains(senderId)) return;   // 白名單檢查（v1: Tim only）
 
-                // regex `(\d+)\s*token` (case insensitive) — 抓 body 內所有「數字 token」字樣
-                // 物理意義：「task 3 Token」/「給 5 token」/「-2 token」等 — 數字提取，正號預設、負號暫不支援（v1 conservative）
-                // 邊界：純數字 prefix（不含 +/-）；「3.5 token」小數捕到 5（保留整數部）；「abc3token」也 match
-                var rx = new System.Text.RegularExpressions.Regex(@"(\d+)\s*token", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                int sum = 0;
-                int matchCount = 0;
-                foreach (System.Text.RegularExpressions.Match m in rx.Matches(body))
+                string remaining = body;
+                string cmdIdBase = !string.IsNullOrEmpty(idempKey) ? idempKey : $"token_parse_{roomId}_{seq}";
+
+                // ===== L1: @<account> N token → credit specified account =====
+                // 物理意義：「@claude-da-xiaojie 3 token」/「@gemini 5 token」 — Tim 賞給特定 agent
+                // 數值影響：每個 recipient 各自一筆 credit entry；recipient account 自動建帳戶（既有 Treasury 行為）
+                var atMatches = RxTokenParseAtRecipient.Matches(remaining);
+                if (atMatches.Count > 0)
+                {
+                    var perRecipient = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    foreach (System.Text.RegularExpressions.Match m in atMatches)
+                    {
+                        string recipient = m.Groups[1].Value.Trim();
+                        if (string.IsNullOrEmpty(recipient)) continue;
+                        if (!int.TryParse(m.Groups[2].Value, out var n) || n <= 0) continue;
+                        if (!perRecipient.ContainsKey(recipient)) perRecipient[recipient] = 0;
+                        perRecipient[recipient] += n;
+                    }
+                    foreach (var kv in perRecipient)
+                    {
+                        if (kv.Value <= 0) continue;
+                        if (kv.Value > TokenParseMaxPerMessage)
+                        {
+                            Debug.LogWarning($"[Tavern] T49 token_parse @recipient skip — sum {kv.Value} > cap {TokenParseMaxPerMessage} (sender={senderId} recipient={kv.Key} seq={seq})");
+                            continue;
+                        }
+                        try
+                        {
+                            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                                accountId: kv.Key,
+                                amount: kv.Value,
+                                sourceKind: "token_parse",
+                                sourceRef: $"{roomId}#seq={seq}@{kv.Key}",
+                                description: $"token parse @recipient: +{kv.Value} to {kv.Key} (sender={senderId} seq={seq})",
+                                callerAgentId: "system",
+                                cmdId: $"{cmdIdBase}_at_{kv.Key}");
+                            Debug.Log($"[Tavern] T49 token_parse @recipient +{kv.Value} → {kv.Key} (sender={senderId})");
+                        }
+                        catch (Exception exC)
+                        {
+                            Debug.LogWarning($"[Tavern] T49 token_parse @recipient credit fail：{exC.Message}");
+                        }
+                    }
+                    // 從 remaining 拿掉已處理的 @<account> N token 段，避免被 L3 重抓
+                    remaining = RxTokenParseAtRecipient.Replace(remaining, " ");
+                }
+
+                // ===== L2: (支付|付|出|花|debit) N token → debit sender =====
+                // 物理意義：「我支付 5 token」/「付 2 token」/「花 1 token」 — Tim 反向結算
+                // 數值影響：sum 後一筆 debit；若 sender balance 不足 Treasury Debit 會 throw（fail-swallow log）
+                var paySum = 0;
+                int payCount = 0;
+                foreach (System.Text.RegularExpressions.Match m in RxTokenParsePayPrefix.Matches(remaining))
                 {
                     if (int.TryParse(m.Groups[1].Value, out var n) && n > 0)
                     {
-                        sum += n;
-                        matchCount++;
+                        paySum += n;
+                        payCount++;
                     }
                 }
-                if (sum <= 0) return;
-                if (sum > TokenParseMaxPerMessage)
+                if (paySum > 0)
                 {
-                    Debug.LogWarning($"[Tavern] T45 token_parse skip — sum {sum} > cap {TokenParseMaxPerMessage} (sender={senderId} seq={seq})");
-                    return;
+                    if (paySum > TokenParseMaxPerMessage)
+                    {
+                        Debug.LogWarning($"[Tavern] T49 token_parse pay skip — sum {paySum} > cap {TokenParseMaxPerMessage} (sender={senderId} seq={seq})");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Debit(
+                                accountId: senderId,
+                                amount: paySum,
+                                useKind: "token_parse",
+                                useRef: $"{roomId}#seq={seq}",
+                                description: $"token parse pay-prefix: -{paySum} from {senderId} ({payCount} matches, seq={seq})",
+                                callerAgentId: "system",
+                                cmdId: $"{cmdIdBase}_pay");
+                            Debug.Log($"[Tavern] T49 token_parse pay-prefix -{paySum} ← {senderId} ({payCount} matches, seq={seq})");
+                        }
+                        catch (Exception exD)
+                        {
+                            Debug.LogWarning($"[Tavern] T49 token_parse pay debit fail (可能餘額不足)：{exD.Message}");
+                        }
+                    }
+                    remaining = RxTokenParsePayPrefix.Replace(remaining, " ");
                 }
 
-                string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_token_parse" : $"token_parse_{roomId}_{seq}";
-                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
-                    accountId: senderId,
-                    amount: sum,
-                    sourceKind: "token_parse",
-                    sourceRef: $"{roomId}#seq={seq}",
-                    description: $"token parse: +{sum} from body ({matchCount} matches), seq={seq}",
-                    callerAgentId: "system",
-                    cmdId: cmdId);
-                Debug.Log($"[Tavern] token_parse auto-credit +{sum} → {senderId} ({matchCount} matches in body, seq={seq})");
+                // ===== L3: (\d+) N token (fallback) → credit sender =====
+                // 物理意義：「task 3 Token」/「reward 5 token」 — 既有 v1 行為
+                int creditSum = 0;
+                int creditCount = 0;
+                foreach (System.Text.RegularExpressions.Match m in RxTokenParseSimple.Matches(remaining))
+                {
+                    if (int.TryParse(m.Groups[1].Value, out var n) && n > 0)
+                    {
+                        creditSum += n;
+                        creditCount++;
+                    }
+                }
+                if (creditSum > 0)
+                {
+                    if (creditSum > TokenParseMaxPerMessage)
+                    {
+                        Debug.LogWarning($"[Tavern] T49 token_parse fallback skip — sum {creditSum} > cap {TokenParseMaxPerMessage} (sender={senderId} seq={seq})");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                                accountId: senderId,
+                                amount: creditSum,
+                                sourceKind: "token_parse",
+                                sourceRef: $"{roomId}#seq={seq}",
+                                description: $"token parse fallback: +{creditSum} to {senderId} ({creditCount} matches, seq={seq})",
+                                callerAgentId: "system",
+                                cmdId: $"{cmdIdBase}_fallback");
+                            Debug.Log($"[Tavern] T49 token_parse fallback +{creditSum} → {senderId} ({creditCount} matches, seq={seq})");
+                        }
+                        catch (Exception exC)
+                        {
+                            Debug.LogWarning($"[Tavern] T49 token_parse fallback credit fail：{exC.Message}");
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Tavern] T45 token_parse auto-credit fail（post 主流程不受影響）：{ex.Message}");
+                Debug.LogWarning($"[Tavern] T49 token_parse v2 outer fail（post 主流程不受影響）：{ex.Message}");
             }
         }
 

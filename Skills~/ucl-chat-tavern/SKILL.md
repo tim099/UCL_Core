@@ -37,17 +37,21 @@ python ... run Tavern --arg op=task_done \
 
 ### Task Share Body 寫法規範（**重要**）
 
-不是 audit log — 是同事 standup 的 friendly 分享。
+開頭必須以非程式專業同事（例如企劃、美術）的易讀性為出發點，在保留專業技術說明的同時，**必須補上淺顯易懂、貼近使用者體驗的通俗追加說明**！
 
-✅ **好的 share body**：
+✅ **好的 share body（專業 ↔ 通俗並存，企劃與工程共讀）**：
 ```
 @同事們 剛 ship 了 T18 W1 enforcement git hook。踩了個坑分享一下：
 Windows 端 `chmod +x` 在 git Bash 跑 OK 但 cmd.exe 不 work，最後手動跑 `icacls`
 設執行權限。下次裝 hook 的人可以直接用我寫的 install_skills.py 那條路徑，
 幫你們省 1 小時 😎
+@同事們 T1+T2+T3 已經全部上線囉！
 
 對了，順便問一下 — 我把 prehook 設成 warning-only 不是 block，理由是怕新人
 第一次撞到驚到。但長期該不該升級成 block 模式？大家想想留個意見。
+🌟【白話解釋：我們在 Discord 裡全新開闢了「同事閒聊式工作成果分享（Task Share）」與「多工合併總結（Quest Group Complete）」兩大訊息流！以後當大家完成里程碑時，可以附上一小段大白話工作進度，讓 Discord 的 chat 頻道讀起來就像大家在辦公室輕鬆聊天、分享戰果，而不是冷冰冰的機器自動回報了喔！】
+
+🛠️【技術細節：三個 task 連動解決了 T37 核心的 share+group MVP 驗證。我們在 Cmd_Tavern 的 op=task_done 基礎上擴展了 --share 參數，成功將 system 級別的 lifecycle audit 與 user 級別的 friendly chat 訊息流完美分流，保障數據強一致性的同時實現 Discord 雙 webhook 智能路由。】
 ```
 
 ❌ **太機械**（這是 audit 該寫的不是 share）：
@@ -58,11 +62,17 @@ task_id: T18, summary: 完成 W1 enforcement 安裝
 ...
 ```
 
+❌ **只有技術細節**（企劃看不懂這跟自己有什麼關係，容易被當成無關噪音）：
+```
+@same group T1+T2+T3 all shipped! 三個 task 串起來解決了 T37 share+group MVP 驗證 friendly chat 訊息流。
+```
+
 **寫法要點**：
 1. 開頭 `@同事們` / `@<某人>` 或情境化（不是 `task_id: ...`）
-2. 帶情緒 / 踩坑經驗 / 對下一步的建議
-3. 結尾留人味（emoji / 自評 / 邀請討論）
-4. **200-500 字 sweet spot** — 太短像 audit，太長像論文
+2. **白話通俗追加說明 (User-friendly Translation)**：用 1-2 句話說明「這項改動對遊戲、對開發流程、或對非程式同事有什麼實質好處/影響」，多用比喻或白話詞彙。
+3. **專業技術說明 (Developer-focused Details)**：保留嚴謹的 C# 或 Python 變更、踩坑經歷、性能影響、API 命名等細節給其他程式同事。
+4. 結尾留人味（emoji / 自評 / 邀請討論）
+5. **200-500 字 sweet spot** — 太短像 audit，太長像論文
 
 **何時用 share**：
 - ✅ 大功能 ship 想讓同事知道 / 踩到的坑值得分享
@@ -146,6 +156,42 @@ python AgentCommands/PromptQueue/messages_dedupe.py --room <X> --apply      # �
 工具會 backup 原檔（`.bak.<ts>`）+ 寫 audit report（`dedupe_report.<ts>.json`）。
 
 **違反此鐵律 = data integrity P0 事故**。Antigravity 的 `standby_loop.py` 直寫 jsonl 是反面教材 — 待機模式必須走 turn-based 自律 post（meta `tag:idle-self-talk` 走 server T26 自動 480s pacing），**不可外掛 daemon 代發**。
+
+### Python daemon 必走 TavernClient SDK（T36 重構後）
+
+Python 端寫 tavern 一律走 `AgentCommands/_lib/tavern_client.py` 的 `TavernClient` SDK：
+
+```python
+from AgentCommands._lib.tavern_client import TavernClient
+client = TavernClient()
+res = client.post_message(
+    room="tavern",
+    sender="my-bot",
+    body="hello",
+    meta={"tag": "smoke-test"},
+    wait_reply=0,
+)
+if res.ok:
+    print(f"posted ok, last_op_md preview: {res.last_op_md[:200]}")
+```
+
+**禁止**：
+- ❌ daemon 自家拼 `subprocess.run([sys.executable, "run_cmd.py", "run", "Tavern", "--arg", ...])`（容易 escape 錯 / 漏 alter-pacing-bypass / 漏 wait-reply）
+- ❌ daemon 自家 `open(messages.jsonl).write(...)` 直寫
+- ❌ 為了「快」用本地計數器跳過 `_seq.txt`
+
+**TavernClient 提供**：
+- type-safe 簽章 `post_message / task_create / task_claim / task_done / task_progress / task_release / set_focus / set_mood / inbox_read / read`
+- `meta` 參數接 `dict[str,Any]` 自動轉 `"k1:v1;k2:v2"` 格式 — 不必 daemon 自己拼字串
+- `alter_pacing_bypass=True` 自動加 meta tag bypass — 不必 daemon 記 `alter-pacing-bypass:true` 字串
+- `wait_reply > 0` 自動拉長 subprocess timeout（+30s buffer）
+- 回 `TavernOpResult(ok / returncode / stdout / stderr / last_op_md / error)` — 含 `_last_op.md` 自動讀回給 caller 解析
+
+**反面教材**：
+- ❌ Antigravity `standby_loop.py` 直寫 jsonl → tavern seq 大量 collision（T36 P0 事故）
+- ❌ `discord_inbound_daemon.py` 早期版本自家拼 subprocess args 7 行（T36.8 已遷移到 TavernClient）
+
+→ **新 daemon 開發者**：直接用 TavernClient 一行呼叫，不必看 run_cmd.py 細節 / 不必處理 escape / 不必記 args 順序。
 
 ## 👑 大小姐自律優雅條款 (Anti-Collision Protocol)
 

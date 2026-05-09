@@ -41,6 +41,11 @@
       "name": "ucl-translate-docs",
       "summary": "跨語系 Markdown 文件翻譯與本地化規範 (Glossary-First + 雙軌 Fallback)",
       "optional": false
+    },
+    {
+      "name": "agent-lessons-log",
+      "summary": "T48 — 跨 agent 共享 lesson 知識庫；Cmd_NoteLesson 自動 append jsonl audit log + curated 100 字精華",
+      "optional": false
     }
   ]
 }

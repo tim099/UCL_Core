@@ -46,6 +46,11 @@
       "name": "agent-lessons-log",
       "summary": "T48 — 跨 agent 共享 lesson 知識庫；Cmd_NoteLesson 自動 append jsonl audit log + curated 100 字精華",
       "optional": false
+    },
+    {
+      "name": "health-guardian",
+      "summary": "T51 — Late-night work 漸進 service fee 機制（22h 後逐步收費，跨 12 點跳升 3 token/task）防熬夜",
+      "optional": false
     }
   ]
 }

@@ -104,19 +104,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return next;
         }
 
-        /// <summary>idempotency 去重：events.jsonl 掃過一遍找有沒有同 key（MVP 階段 O(N) 夠用）。</summary>
+        /// <summary>idempotency 去重：T38 改 walk events/ per-msg dir 看每檔內容；簡易 substring 比對。</summary>
         public static bool HasIdempotencyKey(string roomId, string key)
         {
             if (string.IsNullOrEmpty(key)) return false;
-            string p = GetEventsPath(roomId);
-            if (!File.Exists(p)) return false;
-            // 簡易 substring 比對：events 行 JSON 必含 "idempotency_key":"<key>"
+            // T38: walk events/<date>/*.json，逐檔 substring 比對
+            string root = UCL_ChatTavernIO_PerMsgFile.GetEventsRoot(roomId);
+            if (!Directory.Exists(root)) return false;
             string needle = $"\"idempotency_key\":\"{key}\"";
-            using var sr = new StreamReader(p, Encoding.UTF8);
-            string line;
-            while ((line = sr.ReadLine()) != null)
+            try
             {
-                if (line.Contains(needle)) return true;
+                foreach (var f in Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories))
+                {
+                    string content = File.ReadAllText(f, Encoding.UTF8);
+                    if (content.Contains(needle)) return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Quest] HasIdempotencyKey walk fail: {ex.Message}");
             }
             return false;
         }
@@ -138,16 +144,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 Debug.Log($"[Quest] idempotency_key 命中，跳過 append: key={e.idempotency_key}");
                 return -1;
             }
-            e.seq = IncrementEventsSeq(roomId);
-            if (string.IsNullOrEmpty(e.ts)) e.ts = UCL_ChatTavernIO.NowUtcIso();
-            string line = SerializeEvent(e) + "\n";
-            File.AppendAllText(GetEventsPath(roomId), line, new UTF8Encoding(false));
+            // T38: 委派 PerMsgFile.WriteEventFile — 寫單檔 per event；seq 改 reader 動態 derive
+            UCL_ChatTavernIO_PerMsgFile.WriteEventFile(roomId, e);
+            // 算 derived seq 回傳 caller（兼容既有 op 行為）
+            int derivedSeq = LoadAllEvents(roomId).Count;
+            e.seq = derivedSeq;
+            // 寫 _events_seq.txt 給 caller cache 用
+            try
+            {
+                File.WriteAllText(GetEventsSeqPath(roomId), derivedSeq.ToString(), new UTF8Encoding(false));
+            }
+            catch { /* fail swallow */ }
             if (!MirrorSuppressed)
             {
                 try { MirrorEventToChat(roomId, e); }
-                catch (Exception ex) { Debug.LogWarning($"[Quest] MirrorEventToChat 失敗（events.jsonl 已寫，僅鏡像跳過）：{ex.Message}"); }
+                catch (Exception ex) { Debug.LogWarning($"[Quest] MirrorEventToChat 失敗（event 已寫，僅鏡像跳過）：{ex.Message}"); }
             }
-            return e.seq;
+            return derivedSeq;
         }
 
         // ===========================================================
@@ -286,19 +299,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
         }
 
-        /// <summary>讀 events.jsonl 全部（partial-line 自動 skip）。</summary>
+        /// <summary>讀 events 全部 — T38 委派 PerMsgFile.LoadAllEvents（walk per-event dir + ts sort + derive seq）。</summary>
         public static List<UCL_QuestEvent> LoadAllEvents(string roomId)
+        {
+            // T38: 走 per-msg file reader（不再讀 events.jsonl）
+            return UCL_ChatTavernIO_PerMsgFile.LoadAllEvents(roomId);
+        }
+
+        // T38: 既有 jsonl reader 邏輯保留為 dead code stub（R.11 cleanup 時刪）
+        static List<UCL_QuestEvent> _LoadAllEvents_Legacy_Jsonl(string roomId)
         {
             var list = new List<UCL_QuestEvent>();
             string p = GetEventsPath(roomId);
             if (!File.Exists(p)) return list;
-            // 先讀全文，按 \n 切分；最後一段若沒結尾 \n 視為 partial（crash mid-write） → 丟
             string raw = File.ReadAllText(p, Encoding.UTF8);
             int idx = 0;
             while (idx < raw.Length)
             {
                 int nl = raw.IndexOf('\n', idx);
-                if (nl < 0) break; // partial line at end → skip
+                if (nl < 0) break;
                 string line = raw.Substring(idx, nl - idx);
                 idx = nl + 1;
                 if (string.IsNullOrWhiteSpace(line)) continue;

@@ -976,31 +976,37 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public const string WriterPidKey = "_pid";
         public const string WriterSignatureValue = "cmd_tavern_v1";
 
-        /// <summary>追加一筆訊息（自動分配 seq + ts + _writer 簽章）。回傳分配後的 seq。</summary>
+        /// <summary>追加一筆訊息（自動分配 seq + ts + _writer 簽章）。回傳分配後的 seq。
+        /// T38: 內部委派 UCL_ChatTavernIO_PerMsgFile.WriteMessageFile — 改寫單檔 per message
+        /// （取代既有 jsonl append-only），seq 改為 reader 動態 derive。</summary>
         public static int AppendMessage(string roomId, UCL_ChatMessage msg)
         {
-            EnsureRoomDir(roomId);
-            msg.seq = IncrementAndGetSeq(roomId);
-            if (string.IsNullOrEmpty(msg.ts)) msg.ts = NowUtcIso();
-
-            // 自動加合法 record 簽章 — 偵測 illicit write 用
-            // 物理意義：所有走本函式的 record 都帶 _writer / _pid；daemon 直接 file.write 不會帶
-            // 數值影響：tavern_mirror / dedupe / health-check 看 _writer 判別 trusted vs untrusted
-            if (msg.meta == null) msg.meta = new Dictionary<string, string>();
-            msg.meta[WriterSignatureKey] = WriterSignatureValue;
+            // T38: PerMsgFile 內部處理 ts / uuid / _writer / _pid 簽章 + 寫單檔
+            var (record, fullPath) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFile(roomId, msg);
+            // 寫完後 walk dir 算 derived seq 回傳給 caller（既有 op 行為兼容）
+            // 性能：每次 walk N 個檔；房間訊息上萬時改 cache（v2 backlog）
+            int derivedSeq = LoadAllMessages(roomId).Count;
+            record.seq = derivedSeq;
+            // 寫 _seq.txt 給 wait 機制當「最大 seq」cache（合法 reader-only 用，不再是 atomic counter）
             try
             {
-                msg.meta[WriterPidKey] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
+                File.WriteAllText(GetSeqPath(roomId), derivedSeq.ToString(), new UTF8Encoding(false));
             }
-            catch { /* GetCurrentProcess 在 sandbox 環境可能受限 — 不擋主流程 */ }
-
-            string line = SerializeMessage(msg) + "\n";
-            File.AppendAllText(GetMessagesPath(roomId), line, new UTF8Encoding(false));
-            return msg.seq;
+            catch { /* fail swallow */ }
+            return derivedSeq;
         }
 
-        /// <summary>讀取整個 jsonl（小規模時 OK；房間訊息上萬時應改 streaming，列為 v2）。</summary>
+        /// <summary>讀取整個房間 messages — T38 委派 UCL_ChatTavernIO_PerMsgFile.LoadAllMessages
+        /// （walk per-msg dir + ordinal sort + derive seq）。</summary>
         public static List<UCL_ChatMessage> LoadAllMessages(string roomId)
+        {
+            // T38: 走 per-msg file reader（無 jsonl 路徑）
+            return UCL_ChatTavernIO_PerMsgFile.LoadAllMessages(roomId);
+        }
+
+        // T38: 既有 jsonl reader 邏輯保留為 dead code（回傳空 list 防 caller 誤呼叫）
+        // — 留 stub 給其他可能 reference 的 caller；正式廢除等 R.11 cleanup
+        static List<UCL_ChatMessage> _LoadAllMessages_Legacy_Jsonl(string roomId)
         {
             string path = GetMessagesPath(roomId);
             var list = new List<UCL_ChatMessage>();
@@ -1199,6 +1205,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return list;
         }
 
+        // T38: ParseStringDict 改寬容版 — value 不一定是 string
+        // 物理意義：既有 jsonl 時代有 30+ record meta 欄位帶 integer value（如 "round": 119）
+        //          原版 ParseStringDict throw → silent skip（pre-existing bug）。改寬容讀回。
+        // 數值影響：number / bool / null 自動轉 string ("119" / "true" / "")；preserve 既有 string 行為
         static Dictionary<string, string> ParseStringDict(string json, ref int pos)
         {
             var d = new Dictionary<string, string>();
@@ -1212,7 +1222,36 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 SkipWS(json, ref pos);
                 ExpectChar(json, ref pos, ':');
                 SkipWS(json, ref pos);
-                string v = ParseStringOrNull(json, ref pos) ?? "";
+                // 寬容讀 value：string / number / bool / null 都接受
+                string v;
+                if (pos < json.Length && json[pos] == '"')
+                {
+                    v = ParseStringOrNull(json, ref pos) ?? "";
+                }
+                else if (pos < json.Length && (json[pos] == 'n'))   // null
+                {
+                    SkipValue(json, ref pos);
+                    v = "";
+                }
+                else if (pos < json.Length && (json[pos] == 't' || json[pos] == 'f'))   // true/false
+                {
+                    bool isTrue = json[pos] == 't';
+                    SkipValue(json, ref pos);
+                    v = isTrue ? "true" : "false";
+                }
+                else
+                {
+                    // number — 讀到 ',' 或 '}' 或 whitespace
+                    var sb = new StringBuilder();
+                    while (pos < json.Length)
+                    {
+                        char ch = json[pos];
+                        if (ch == ',' || ch == '}' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') break;
+                        sb.Append(ch);
+                        pos++;
+                    }
+                    v = sb.ToString();
+                }
                 d[k] = v;
                 SkipWS(json, ref pos);
                 if (pos < json.Length && json[pos] == ',') { pos++; continue; }

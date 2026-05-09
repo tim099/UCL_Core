@@ -217,6 +217,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             });
 
             int seq = 0;
+            int rejected = 0;
             foreach (var f in files)
             {
                 try
@@ -228,11 +229,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         m.seq = ++seq;
                         list.Add(m);
                     }
+                    else
+                    {
+                        rejected++;
+                        Debug.LogError($"[Tavern T38] ParseMessage returned null for {Path.GetFileName(f)}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[Tavern T38] Skipping malformed message file {f}: {ex.Message}");
+                    rejected++;
+                    Debug.LogError($"[Tavern T38] Skipping malformed message file {Path.GetFileName(f)}: {ex.Message}");
                 }
+            }
+            if (rejected > 0)
+            {
+                Debug.LogError($"[Tavern T38] LoadAllMessages({roomId}): {rejected} files rejected out of {files.Length} total");
             }
             return list;
         }

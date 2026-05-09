@@ -470,14 +470,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
+        // 區塊：T46 — Human payer 黑名單（Bug 修：Tim 不該領 work_post 薪資）
+        // 物理意義：Tim 等 human paying party 發訊息進酒館不該被視為「工作的 agent」自動領薪
+        //          原 IsRealAgentSender 把 Tim 當 real agent 通過 → work_post +1 給 Tim → Tim 帳戶莫名累積 token
+        // 數值影響：T46 修 — work_post helper 開頭排除 human payer；token_parse 規則不受影響（Tim 仍可自結算）
+        // 邊界：未來若有其他 human user (如 PM / Designer) 加進此 set 即可
+        // ===========================================================
+        static readonly HashSet<string> HumanPayerSenders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Tim",   // T46 — paying party 不該領「工作薪資」
+        };
+
+        // ===========================================================
         // 區塊：T45 sub-rule A — work_post 自動結算（T43 邏輯獨立成 helper 給統一 hook 區塊呼叫）
         // 物理意義：訊息 routing target group's m_IsWorkChannel=true → credit 1 token 基本薪資
         // 數值影響：fail-swallow；ledger source_kind=work_post；source_ref=<room>#seq=N；cmd_id 帶 _work_post 後綴
+        // T46 修：HumanPayerSenders 黑名單跳過（Tim 不領薪）
         // ===========================================================
         static void TryAutoCreditWorkPost(string senderId, string roomId, int seq, string categoryMeta, string idempKey)
         {
             try
             {
+                // T46 — human paying party 不該領 work_post 薪資（Bug 修）
+                if (HumanPayerSenders.Contains(senderId)) return;
+
                 var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
                 if (targetGroup == null || !targetGroup.m_IsWorkChannel) return;
 

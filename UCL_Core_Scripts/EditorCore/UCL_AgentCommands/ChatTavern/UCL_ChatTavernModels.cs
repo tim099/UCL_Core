@@ -125,20 +125,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     }
 
     /// <summary>
-    /// 一筆訊息（對應 messages.jsonl 一行）。
+    /// 一筆訊息。T38 後對應「per-message file」格式 — 每筆訊息一獨立 .json 檔。
+    /// 檔名約定：rooms/<room>/messages/<YYYY-MM-DD>/<HHMMSS>_<MMM>_<UUID6>.json
     /// kind 開放：chat / join / leave / system / note_ref / tool_call / tool_result。
+    ///
+    /// 新欄位（T38）：
+    ///   - uuid：6-char hex，跟檔名 UUID 對齊；用於去重 + reply_to_uuid 跨檔引用
+    ///   - reply_to_uuid：取代舊 reply_to (int seq)，因 seq 是 derived 不再 stable
+    ///
+    /// 舊欄位 seq 變 derived（reader 動態算）— 寫入時不寫進檔；讀取時根據 walk + ts sort 補上。
+    /// 舊欄位 reply_to (int) 仍保留 backward-compat 但 deprecated。
     /// </summary>
     public class UCL_ChatMessage
     {
-        public int seq;
-        public string ts;             // ISO 8601 UTC
+        public int seq;                          // T38: derived by reader (not persisted in per-msg file)
+        public string ts;                        // ISO 8601 UTC + millisecond ("2026-05-09T08:47:52.312Z")
+        public string uuid;                      // T38 NEW: 6-char hex; 跟檔名 UUID 對齊
         public string sender_id;
-        public string sender_name;    // 寫入時 snapshot；事後若 identity 改名也不影響歷史
-        public string kind;           // "chat" 為預設
+        public string sender_name;
+        public string kind;                      // "chat" 為預設
         public string body;
-        public int? reply_to;         // 可選：回覆某 seq
+        public int? reply_to;                    // T38 deprecated: 改用 reply_to_uuid（保留欄位讓舊 record load 不爆）
+        public string reply_to_uuid;             // T38 NEW: 取代 reply_to int seq 的跨檔引用方式
         public Dictionary<string, string> meta;  // 自由 key-value
-        public List<UCL_ChatRef> refs;            // 檔案引用列表
+        public List<UCL_ChatRef> refs;           // 檔案引用列表
     }
 
     /// <summary>

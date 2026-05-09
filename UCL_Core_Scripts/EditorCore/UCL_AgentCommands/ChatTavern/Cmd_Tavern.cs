@@ -85,6 +85,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "wait": Op_Wait(args, token); break;
                     case "wait_check": Op_WaitCheck(args); break;
                     case "set_presence": Op_SetPresence(args); break;
+                    case "set_focus": Op_SetFocus(args); break;
+                    case "set_mood": Op_SetMood(args); break;
                     case "get_presence": Op_GetPresence(args); break;
                     case "note_write": Op_NoteWrite(args); break;
                     case "note_append": Op_NoteAppend(args); break;
@@ -1708,6 +1710,50 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             UCL_ChatTavernRender.WriteLastOp(sb.ToString());
             Debug.Log($"[Tavern] set_presence {senderId} to {status}");
+        }
+
+        // ===========================================================
+        // T20 — op=set_focus / op=set_mood（per Antigravity P6 / Tim Round 30）
+        // 物理意義：對話中途精細更新 focus / mood，不必 raw write json 也不必重跑 session_enter
+        // 數值影響：呼叫 SetPresence(id, active, null, focus, null) / (id, active, null, null, mood)
+        //          status 自動推進 active（順手刷 last_active）；不動其他欄位
+        // ===========================================================
+        void Op_SetFocus(Dictionary<string, string> args)
+        {
+            string senderId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", GetArg(args, "sender_id", ""))));
+            string focus = GetArg(args, "focus", "");
+            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_focus 缺少 agent_id (或 id / sender / sender_id)"); return; }
+
+            UCL_ChatTavernIO.SetPresence(senderId, "active", null, focus, null);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# 🎯 set_focus");
+            sb.AppendLine();
+            sb.AppendLine($"- agent_id: `{senderId}`");
+            sb.AppendLine($"- focus: `{focus}`");
+            sb.AppendLine($"- status: `active` (auto-advanced)");
+            sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] set_focus {senderId} → {focus}");
+        }
+
+        void Op_SetMood(Dictionary<string, string> args)
+        {
+            string senderId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", GetArg(args, "sender_id", ""))));
+            string mood = GetArg(args, "mood", "");
+            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_mood 缺少 agent_id (或 id / sender / sender_id)"); return; }
+
+            UCL_ChatTavernIO.SetPresence(senderId, "active", null, null, mood);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# 🎭 set_mood");
+            sb.AppendLine();
+            sb.AppendLine($"- agent_id: `{senderId}`");
+            sb.AppendLine($"- mood: `{mood}`");
+            sb.AppendLine($"- status: `active` (auto-advanced)");
+            sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            Debug.Log($"[Tavern] set_mood {senderId} → {mood}");
         }
 
         // ===========================================================

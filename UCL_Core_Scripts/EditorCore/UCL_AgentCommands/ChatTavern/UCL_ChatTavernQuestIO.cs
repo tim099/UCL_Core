@@ -717,7 +717,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (!Directory.Exists(d)) Directory.CreateDirectory(d);
         }
 
-        /// <summary>append 一筆 inbox entry（任務 unblock / handoff 等通知）。</summary>
+        /// <summary>append 一筆 inbox entry（任務 unblock / handoff 等通知）。
+        /// T21 — 寫入後若 entry 數 > InboxCapMax → 自動 trim 舊的搬到 _archive.md，留最新 InboxCapKeep。</summary>
         public static void AppendInbox(string roomId, string agentId, int eventSeq, string title, string body)
         {
             EnsureInboxDir(roomId);
@@ -727,6 +728,73 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             sb.AppendLine($"_at {UCL_ChatTavernIO.NowUtcIso()}_");
             if (!string.IsNullOrEmpty(body)) { sb.AppendLine(); sb.AppendLine(body); }
             File.AppendAllText(GetInboxPath(roomId, agentId), sb.ToString(), new UTF8Encoding(false));
+            // T21 — append 後 lazy trim
+            try { TrimInboxIfOverCap(roomId, agentId); }
+            catch (Exception ex) { Debug.LogWarning($"[Quest T21] inbox trim 失敗（容忍，append 已完成）：{ex.Message}"); }
+        }
+
+        // ===========================================================
+        // T21 — Inbox cap=50 自動 trim + archive（per Antigravity P4 / Tim Round 30）
+        // 物理意義：inbox 累積爆量 → re-enter 看 inbox 時 prompt 被舊待辦塞滿；
+        //          保留最新 InboxCapKeep 條，舊的搬到 inbox/<id>_archive.md 永久保存（append-only）。
+        // 數值影響：寫 archive + 重寫 inbox（保留 truncated marker + 最新 N 條）；不丟資料。
+        // 切點：以 "## " 行為單位 split entry（既有 AppendInbox 寫法都用此 prefix）。
+        // ===========================================================
+        const int InboxCapMax = 50;     // 觸發 trim 門檻
+        const int InboxCapKeep = 50;    // trim 後保留最新 N 條
+
+        static void TrimInboxIfOverCap(string roomId, string agentId)
+        {
+            string inboxPath = GetInboxPath(roomId, agentId);
+            if (!File.Exists(inboxPath)) return;
+            string raw = File.ReadAllText(inboxPath, Encoding.UTF8);
+            if (string.IsNullOrEmpty(raw)) return;
+            // 切 entry：每個以 "## " 開頭（行首）
+            var entries = SplitInboxEntries(raw);
+            if (entries.Count <= InboxCapMax) return;
+
+            int archiveCount = entries.Count - InboxCapKeep;
+            var archive = new StringBuilder();
+            for (int i = 0; i < archiveCount; i++) archive.Append(entries[i]);
+            // append archive (preserve order)
+            string archivePath = inboxPath.Replace(".md", "_archive.md");
+            File.AppendAllText(archivePath, archive.ToString(), new UTF8Encoding(false));
+
+            // rewrite inbox：truncated marker + 最新 InboxCapKeep
+            var newInbox = new StringBuilder();
+            newInbox.AppendLine($"> ⚠ **inbox truncated** — {archiveCount} 條較舊待辦已歸檔到 `{Path.GetFileName(archivePath)}`（{UCL_ChatTavernIO.NowUtcIso()}）");
+            newInbox.AppendLine();
+            for (int i = archiveCount; i < entries.Count; i++) newInbox.Append(entries[i]);
+            File.WriteAllText(inboxPath, newInbox.ToString(), new UTF8Encoding(false));
+            Debug.Log($"[Quest T21] inbox trim {agentId}@{roomId}: archived {archiveCount} entries → {Path.GetFileName(archivePath)}; kept latest {InboxCapKeep}");
+        }
+
+        /// <summary>把 inbox 內容切成 entries — 每個 entry 以 line "## " 為起點，包含到下個 "## " 之前。</summary>
+        static List<string> SplitInboxEntries(string raw)
+        {
+            var entries = new List<string>();
+            using var sr = new StringReader(raw);
+            string line;
+            var current = new StringBuilder();
+            // header（檔案開頭 to 第一個 "## "）視為 entry 0；之後每個 "## " 起新 entry
+            bool seenHeader = false;
+            while ((line = sr.ReadLine()) != null)
+            {
+                if (line.StartsWith("## "))
+                {
+                    if (current.Length > 0)
+                    {
+                        entries.Add(current.ToString());
+                        current.Clear();
+                    }
+                    seenHeader = true;
+                }
+                current.AppendLine(line);
+            }
+            if (current.Length > 0) entries.Add(current.ToString());
+            // 若沒看過 "## " — 整檔當 entry 0（header only），不 trim
+            if (!seenHeader) return new List<string>();
+            return entries;
         }
 
         public static string ReadInbox(string roomId, string agentId)

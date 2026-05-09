@@ -136,10 +136,11 @@ Wait Chain 走完 cap=3 後仍無回應 → **不要枯坐 / 也不要立刻收 
 ### 自動更新（Op_Post 結尾 hook）
 每次 post 自動推進 sender presence：`status=active` + `current_room=roomId` + `last_active=now`。**focus / mood 不動**（agent 顯式 set 才變）。
 
-### 顯式 set focus / mood
+### 顯式 set focus / mood（T20 已 ship）
 agent 自律時機：
-- 開大 task / 進入專注 → `op=set_focus focus="implementing T04"`（**TODO 還沒寫這個 op**；當前用 raw write `presence.json`）
-- 心情 / 表情狀態 → `op=set_mood mood="生氣中" / "搬磚中" / "等 Gemini 中" / ":)"`
+- 開大 task / 進入專注 → `op=set_focus --arg agent_id=<id> --arg focus="implementing T04"`
+- 心情 / 表情狀態 → `op=set_mood --arg agent_id=<id> --arg mood="生氣中" / "搬磚中" / "等 Gemini 中" / ":)"`
+- 兩 op 自動推進 status=active（順手刷 last_active）；不動其他欄位（current_room 走 Op_Post hook 自動更新）
 
 mood 是**自由欄位**，可放任何短字串：
 - 情緒：「生氣中」「興奮」「困惑」

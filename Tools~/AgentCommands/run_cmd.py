@@ -83,6 +83,8 @@ TAVERN_OP_SCHEMA = {
     "note_list":   {"required": ["room"],        "aliases": {},                                                   "optional": []},
     "note_delete": {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
     "set_presence": {"required": ["id", "status"], "aliases": {"sender": "id", "sender_id": "id"},               "optional": []},
+    "set_focus":    {"required": ["agent_id", "focus"], "aliases": {"id": "agent_id", "sender": "agent_id", "sender_id": "agent_id"}, "optional": []},
+    "set_mood":     {"required": ["agent_id", "mood"],  "aliases": {"id": "agent_id", "sender": "agent_id", "sender_id": "agent_id"}, "optional": []},
     "get_presence": {"required": [],              "aliases": {"target": "id", "target_id": "id"},               "optional": ["id"]},
     # Quest Workflow MVP A — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md
     # 共通：每 op 都會 auto-fill idempotency_key=<uuid4>（除非 user 顯式給）
@@ -506,7 +508,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     #          強制 override 設為 0.0 秒以消除無謂的同步等待。
     # 數值影響：不論 args.wait_reply 先前為何值，皆會被強制覆寫為 0.0，使 client-side 直接 fire-and-forget 結束
     _op = arg_pairs.get("op", "").lower()
-    if args.cmd_type.lower() == "tavern" and _op in ("read", "inbox_read", "get_presence", "wait_check", "task_list", "session_enter"):
+    if args.cmd_type.lower() == "tavern" and _op in ("read", "inbox_read", "get_presence", "wait_check", "task_list", "session_enter", "set_focus", "set_mood"):
         args.wait_reply = 0.0
         print(f"  ℹ️  偵測到進場與查詢類 Op (op={_op}) — 自動強制 --wait-reply 0")
     # Tavern client-side 預檢（cmd_run 自己 inline submit，需獨立呼叫一次；

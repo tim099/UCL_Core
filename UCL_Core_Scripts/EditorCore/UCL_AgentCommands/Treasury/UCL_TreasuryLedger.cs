@@ -197,7 +197,50 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             }
 
             Debug.Log($"[Treasury] {typeStr} {amount} → account={accountId} (balance: {balanceBefore} → {balanceAfter})");
+
+            // T41 — 寫完 entry fire-and-forget Discord broadcast
+            // 物理意義：每筆 ledger 變動同步到 Discord 記帳頻道（embed: 變動金額 / 原因 / 總額）
+            // 數值影響：fail swallow 不擋 ledger 主流程；spawn Python notify_treasury.py 跑 Discord POST
+            try
+            {
+                FireDiscordBroadcastAsync(fullPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Treasury] FireDiscordBroadcast 失敗（ledger 已寫，僅 broadcast 跳過）：{ex.Message}");
+            }
+
             return entry;
+        }
+
+        // ==========================================================
+        // 區塊職責：T41 — fire-and-forget Discord broadcast
+        // 物理意義：spawn Python notify_treasury.py --entry-file <path> 非阻塞跑
+        // 數值影響：~1s 內 Discord 端收到 embed；C# 不等 process 完成
+        // 邊界：notify_treasury.py 不存在 → silent skip（同 R6.6 TryFireDiscordTavernMirrorAsync 模式）
+        // ==========================================================
+        static void FireDiscordBroadcastAsync(string entryFilePath)
+        {
+            try
+            {
+                string scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_treasury.py").Replace('\\', '/');
+                if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 silent skip
+
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{scriptPath}\" --entry-file \"{entryFilePath}\" --quiet",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false,
+                };
+                System.Diagnostics.Process.Start(psi);   // fire-and-forget；不 await
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Treasury] FireDiscordBroadcast spawn fail: {ex.Message}");
+            }
         }
 
         // 簡單的 agent_id ↔ env_marker 對應檢查

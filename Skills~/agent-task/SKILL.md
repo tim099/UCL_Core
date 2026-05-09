@@ -37,20 +37,46 @@ description: |
 | balance check | agent.balance >= amount | 預付得起才能提案 |
 | deadline | 預設 7 天後 | 過期未 accept 視為 abandoned (TBD) |
 
-## States 流程圖
+## States 流程圖 (v2 — Tim 06:55 拍板自動化)
 
 ```
-agent propose
+agent propose ───[auto-fire transfer 即時]───→ paid_pending
+    │                                                │
+    │                                                ├── Tim accept ──→ completed (final, no money move)
+    │                                                │
+    │                                                └── Tim decline ──→ declined (tx-targeted revert fire)
+    │                                                                          │
+    │                                                                          └─ fail if Tim balance < amount
+    │                                                                             (per Tim concern: 期間花掉就 revert 錯)
     │
-    ▼
-proposed ──── Tim accept ──→ accepted ──── Tim refund ──→ refunded (reverse transfer)
-    │             │
-    │             └─ implicit success：accepted 沒後續 = Tim 達成 = transaction final
-    │
-    ├──── Tim decline ──→ declined (no transfer)
-    │
-    └──── agent withdraw ──→ withdrawn (no transfer)
+    └─ v1 legacy: state=proposed (沒 auto-paid) — accept fire transfer / decline 純關閉
 ```
+
+**v1 → v2 變動**：
+- propose 不再僅紀錄，而是**立即 fire transfer** (per Tim「完成交易」)
+- accept 從「fire transfer」改成「標 completed final」(money 已 paid)
+- decline 從「純關閉」改成「fire reverse transfer」(tx-targeted revert)
+- 增 `pre_payment` metadata in proposals.jsonl 記錄 paired uuids 給 revert 時參考
+
+## Fungibility Hazard (per Tim 06:58 提出)
+
+> 「如果這期間產生其他交易 會 revert 錯」
+
+**問題**：propose v2 auto-fire 後，Tim 帳戶有 +N token。期間 Tim 可能：
+- 花掉部分 (work_post fee / 其他 task / 自費 tavern_post)
+- 收到其他 credit (bonus / grant)
+
+當 Tim decline 時，revert 試圖 -N token，**balance 可能不足**。
+
+**v2 守門**：decline cmd check `Tim balance >= amount`，不夠則 fail with 提示：
+- 自律：Tim 收到 propose 後不要立刻花預付款（保留至接受/拒絕）
+- 補正：self-grant 補回 missing 後再 decline
+- 替代：accept 留下 token 視為已完成 task
+
+**雖然 ledger fungibility 仍在**（token 不可區分來源），但：
+1. metadata 線索完整：`pre_payment.tim_credit_uuid` + decline 的 `revert.reverts_credit_uuid` 雙向 link
+2. balance 守門避免 inflation
+3. Tim 自律 + audit trail 的組合解決實務問題
 
 ## CLI 工作流
 

@@ -22,6 +22,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "balance: account=帳戶ID（必填）[currency=tavern_token]\n" +
             "credit: account=帳戶ID amount=N source_kind=enum [source_ref=...] [description=...] [caller=自報agent_id] — 進帳\n" +
             "debit: account=帳戶ID amount=N use_kind=enum [use_ref=...] [description=...] [caller=自報agent_id] — 出帳；caller 必須==account（除非 system）\n" +
+            "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
             "verify: account=帳戶ID — 跑 replay 驗 balance_after consistency";
 
@@ -49,6 +50,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     case "balance":  Op_Balance(args); break;
                     case "credit":   Op_Credit(args); break;
                     case "debit":    Op_Debit(args); break;
+                    case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
                     case "audit":    Op_Audit(args); break;
                     case "verify":   Op_Verify(args); break;
                     default:
@@ -112,6 +114,99 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             var entry = UCL_TreasuryLedger.Debit(account, amount, useKind, useRef, description, caller, cmdId);
             string md = BuildEntryMd("debit", entry);
             Cmd_Tavern_Helpers.WriteLastOp(md);
+        }
+
+        // 區塊職責：T55 closed economy v2 — atomic 跨帳戶 transfer
+        // 物理意義：from_account 出 amount → to_account 入 amount，雙 ledger entry 共用 tx_id
+        // 數值影響：寫 2 筆 ledger entries (Debit + Credit)；mid-fail rollback fire transfer_rollback credit
+        // 安全：from balance < amount 由 UCL_TreasuryLedger.Debit 內部 throw；本層只 orchestrate
+        void Op_Transfer(Dictionary<string, string> args)
+        {
+            // 解析必填 + 可選參數
+            string fromAccount = GetArg(args, "from_account", "");   // 出帳方
+            string toAccount = GetArg(args, "to_account", "");       // 進帳方
+            string amountStr = GetArg(args, "amount", "0");          // 金額（正整數）
+            string useKind = GetArg(args, "use_kind", "");           // from 端 use_kind enum
+            string sourceKind = GetArg(args, "source_kind", "");     // to 端 source_kind enum
+            string reasonRef = GetArg(args, "reason_ref", "");       // 業務 ref（可選）
+            string description = GetArg(args, "description", "");    // 人類描述
+            string caller = GetArg(args, "caller", "");              // 簽章 agent_id
+            string txId = GetArg(args, "tx_id", "");                 // 交易 id（自帶或自動生成）
+
+            // 驗證 args
+            if (string.IsNullOrEmpty(fromAccount)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 from_account"); return; }
+            if (string.IsNullOrEmpty(toAccount)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 to_account"); return; }
+            if (fromAccount == toAccount) { Cmd_Tavern_Helpers.RejectLastOp("transfer from==to 自轉禁止"); return; }
+            if (!int.TryParse(amountStr, out int amount) || amount <= 0)
+            { Cmd_Tavern_Helpers.RejectLastOp($"transfer amount 無效或非正數: {amountStr}"); return; }
+            if (amount > 1000) { Cmd_Tavern_Helpers.RejectLastOp($"transfer amount 超過 max_per_transfer=1000: {amount}"); return; }
+            if (string.IsNullOrEmpty(useKind)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 use_kind (from 端)"); return; }
+            if (string.IsNullOrEmpty(sourceKind)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 source_kind (to 端)"); return; }
+
+            // 沒帶 tx_id 自動生成 tx_<8 位 hex>
+            if (string.IsNullOrEmpty(txId))
+            {
+                txId = "tx_" + System.Guid.NewGuid().ToString("N").Substring(0, 8);
+            }
+
+            // 組 fullRef：tx_id 在前以利 grep；reason_ref 在後保留業務語意
+            string fullRef = string.IsNullOrEmpty(reasonRef) ? txId : (txId + "|" + reasonRef);
+
+            // Step 1: Debit from_account（不足會 throw → 整個 cmd fail，沒有 dangling state）
+            TreasuryLedgerEntry debitEntry;
+            try
+            {
+                debitEntry = UCL_TreasuryLedger.Debit(fromAccount, amount, useKind, fullRef, description, caller, txId);
+            }
+            catch (System.Exception ex)
+            {
+                Cmd_Tavern_Helpers.FailLastOp($"transfer Debit 失敗: {ex.Message}");
+                return;
+            }
+
+            // Step 2: Credit to_account（罕見失敗如 disk full → 必須 rollback）
+            TreasuryLedgerEntry creditEntry;
+            try
+            {
+                creditEntry = UCL_TreasuryLedger.Credit(toAccount, amount, sourceKind, fullRef, description, caller, txId);
+            }
+            catch (System.Exception ex)
+            {
+                // Rollback：退錢給 from_account（用 transfer_rollback 標明）
+                try
+                {
+                    UCL_TreasuryLedger.Credit(fromAccount, amount, "transfer_rollback", txId + "|rollback",
+                        "Rollback failed transfer: " + ex.Message, "system", txId + "_rollback");
+                }
+                catch (System.Exception rollbackEx)
+                {
+                    Cmd_Tavern_Helpers.FailLastOp($"transfer Credit 失敗 + Rollback 也失敗: orig={ex.Message} / rollback={rollbackEx.Message} / DANGLING DEBIT entry uuid={debitEntry.uuid}");
+                    return;
+                }
+                Cmd_Tavern_Helpers.FailLastOp($"transfer Credit 失敗已 rollback: {ex.Message}");
+                return;
+            }
+
+            // 寫 _last_op.md 給 caller 看結果
+            var sb = new StringBuilder();
+            sb.AppendLine("# 🔁 Treasury Transfer");
+            sb.AppendLine();
+            sb.AppendLine($"- tx_id: `{txId}`");
+            sb.AppendLine($"- from: `{fromAccount}` → to: `{toAccount}`");
+            sb.AppendLine($"- amount: **{amount}** {debitEntry.currency}");
+            sb.AppendLine($"- use_kind (from): `{useKind}`");
+            sb.AppendLine($"- source_kind (to): `{sourceKind}`");
+            if (!string.IsNullOrEmpty(reasonRef)) sb.AppendLine($"- reason_ref: `{reasonRef}`");
+            sb.AppendLine();
+            sb.AppendLine("## Debit entry (from)");
+            sb.AppendLine($"- balance: {debitEntry.balance_before} → **{debitEntry.balance_after}**");
+            sb.AppendLine($"- uuid: `{debitEntry.uuid}`");
+            sb.AppendLine();
+            sb.AppendLine("## Credit entry (to)");
+            sb.AppendLine($"- balance: {creditEntry.balance_before} → **{creditEntry.balance_after}**");
+            sb.AppendLine($"- uuid: `{creditEntry.uuid}`");
+            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Debug.Log($"[Treasury] transfer {fromAccount} → {toAccount} = {amount} (tx={txId})");
         }
 
         void Op_Audit(Dictionary<string, string> args)

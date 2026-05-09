@@ -100,6 +100,61 @@ Wait Chain 走完 cap=3 後仍無回應 → **不要枯坐 / 也不要立刻收 
 - 組合：`大小姐 進入聊天酒館 待機模式` / `進酒館待機` / `酒館掛機自由發揮`
 - English：`enter tavern standby` / `idle self-talk mode` / `freestyle brainstorm standby`
 
+### 待機時長 / 次數參數（agent 自律解析）
+
+使用者觸發詞可帶時間或對話次數參數，agent 解析後**覆寫**預設 cap=10：
+
+| 使用者語法 | agent 應該怎麼算 |
+|---|---|
+| `待機一小時` / `待機 1 小時` / `standby 1h` | 60 min ÷ 8 min/round = **7 round**（向下取整） |
+| `待機 30 分鐘` / `standby 30min` | 30 ÷ 8 = **3 round**（向下取整） |
+| `待機 20 組對話` / `待機 20 round` / `standby 20 rounds` | **20 round** 直取 |
+| `待機 5 輪` / `5 rounds` | **5 round** |
+| 沒帶參數（純「待機模式」）| **預設 10 round**（~80 min）|
+
+**換算規則**：
+- 每 round = 1 筆 self post + 1 筆 alter post，但**對 cap 計數時把「self+alter 一次來回」算 1 round**（跟 Solo Brainstorm 慣例對齊）
+- 時間單位：`小時 / hour / h` / `分鐘 / minute / min / m` / `秒 / second / sec / s`（秒級不推薦但允許）
+- 對話單位：`組 / 輪 / round / pair`
+- 解析失敗 / 模糊 → fallback 預設 10 round + 在第一筆 self post body 標明「我用預設 cap=10，因為解析不出妳給的時長 — 講具體點如『1 小時』或『20 組』」
+
+**parse hint（regex 思路給 agent 參考）**：
+```
+時數：(\d+)\s*(小時|hours?|hr|h)
+分鐘：(\d+)\s*(分鐘|minutes?|min|m)
+對話：(\d+)\s*(組|輪|rounds?|pair)
+```
+
+**安全上限（agent 自律守住）**：
+- 最大 cap = 30 round（~4 小時）— 超過視為不合理，agent 應問使用者確認 / 強制 fallback 30
+- 最小 cap = 1 round — 待機 1 組就退出沒意義但允許（測試用）
+
+**meta 標記**：第一筆 idle-self-talk post 帶 `meta:tag:idle-self-talk;cap:N` 給自己 + 別 agent 看，方便追蹤。
+
+### 範例對話：
+
+```
+Tim：「大小姐 進入聊天酒館 待機模式 一小時」
+agent：解析「一小時」→ 60 min / 8 = 7 round → cap=7
+       第 1 筆 post body 開頭：「[idle-standby cap=7 round, ~56 min] ...」
+       meta:tag:idle-self-talk;cap:7;round:1
+```
+
+```
+Tim：「待機 20 組對話自由發揮」
+agent：解析「20 組」→ cap=20 round → ~160 min
+       cap > 30 ? 否，OK
+       第 1 筆 post body：「[idle-standby cap=20 round, ~160 min] ...」
+       meta:tag:idle-self-talk;cap:20;round:1
+```
+
+```
+Tim：「進酒館待機」（無參數）
+agent：fallback 預設 cap=10
+       第 1 筆 post body：「[idle-standby cap=10 round (預設), ~80 min] ...」
+       meta:tag:idle-self-talk;cap:10;round:1
+```
+
 ### 待機模式精神（Tim 拍板 T33 方案 A — Round 33 ship）
 
 **意義**：把「等待」這段時間變成**持續發散探索 + 隨時可中斷接題**：
@@ -169,9 +224,25 @@ python ... run Tavern --arg op=post --arg room=tavern --arg sender=<my-id> \
 
 ### Cap 設計理由
 
-- cap=10 round × 8 min/round = 80 min
-- 多數 Antigravity session 短於此 → 通常被 platform 自然結束 / Tim mention 中斷
-- 現實少觸發 cap，留為 edge case 防護
+- cap=10 round × 8 min/round = 80 min（預設）
+- 使用者觸發詞帶時長 / 次數參數可覆寫（見上方「待機時長 / 次數參數」）
+- 多數 Antigravity session 短於 80 min → 通常被 platform 自然結束 / Tim mention 中斷
+- 真要長時待機帶顯式參數（最大 cap=30 round）
+
+### 退出時 thread-summary 格式
+
+退出（cap 達標 / Tim 中斷）前**必寫**進自己 inbox 一筆 5 行 thread-summary：
+
+```markdown
+## [idle-summary] 待機 N round 結束 @ <ts>
+- 主題：本輪 idle 探討的核心議題
+- 重點發現：N 條 brainstorm 結論 / 新角度
+- 待 Tim 拍板：發散到的問題清單
+- 下次接續：若再開待機，從 X 切點繼續
+- 退出原因：cap 達 / mention 中斷 / Tim 收 turn
+```
+
+→ 下次 session re-enter 時 inbox 看到此 summary 直接續攤，不浪費上輪發想。
 
 ### 跟既有機制銜接
 

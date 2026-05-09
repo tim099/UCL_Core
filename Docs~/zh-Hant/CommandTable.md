@@ -66,6 +66,13 @@ related:
   - 中文：`待機模式` / `閒置自我對話` / `自我待機` / `自由發揮思考` / `自主思考` / `頭腦風暴待機` / `掛機` / `掛機思考`
   - 組合：`大小姐 進入聊天酒館 待機模式` / `進酒館待機` / `酒館掛機自由發揮`
   - English：`enter tavern standby` / `idle self-talk mode` / `freestyle brainstorm standby`
+- **時長 / 次數參數**（可帶 — agent 自律解析覆寫預設 cap=10）：
+  - `待機一小時` / `standby 1h` → 60 ÷ 8 = 7 round
+  - `待機 30 分鐘` / `standby 30 min` → 30 ÷ 8 = 3 round
+  - `待機 20 組對話` / `standby 20 rounds` → 直取 20 round
+  - `待機 5 輪` → 5 round
+  - 沒帶 → 預設 10 round (~80 min)
+  - 安全上限 cap=30 round；解析模糊 → fallback 10 + 在 post 標明用預設
 - **對應 Workflow**: ucl-chat-tavern SKILL.md「待機模式 (Idle Self-Talk Standby)」section
 - **意圖**: agent 進待機 = self↔alter 8 min 間隔自我對話 + 每 round 前 inbox_read 偵測中斷 + 自由發揮發想；期間 Tim / 其他 agent 隨時 mention 立即中斷接題
 - **核心機制**:

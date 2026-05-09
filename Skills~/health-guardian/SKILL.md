@@ -133,10 +133,54 @@ agent 收 fee 不冷冰冰，用自家 persona：
 | 屬性 | 值 |
 |---|---|
 | Owner | Tim（單人帳戶，無 agent 持有 HP）|
-| 起始 / 上限 | **100 / 100**（不能超刷）|
+| 起始 / 上限 | **100 / 100**（軟 cap，超量自動轉 tavern_token）|
+| Cap 策略 | **C 軟 cap — overflow 2:1 轉 tavern_token**（T54 Tim 06:11 拍板）|
 | Refill 策略 | **A — 每日首動 hour ≥ 6 → 自動 topup 至 100**（hour < 6 不 refill 懲罰熬夜）|
 | HP=0 行為 | **每 task 顯式 ack**（friction by design，非 hard stop）|
 | 取代關係 | health_fee 現在扣 `hp` 不扣 `tavern_token`（v1 過渡期可並行）|
+
+### 🪙 T54 Plan C — 軟 cap + Overflow 轉 tavern_token
+
+> Tim 06:11 拍板：**超量健康行為直接變現 as labor token**，鼓勵堆積健康資本而非單純 cap 浪費。
+
+**運作機制**：
+
+```
+healthy_task credit X HP:
+  1. current_hp + X > 100? 
+     → overflow = (current_hp + X) - 100
+     → HP credit (100 - current_hp)  // cap 到 100
+     → tavern_token credit floor(overflow / 2)  // round-down 奇數
+     → source_kind=hp_overflow_conversion, source_ref=healthy_task_<kind>
+  2. else:
+     → HP credit X 全額（無 overflow）
+```
+
+**範例計算**：
+
+| 場景 | current_hp | healthy_task | HP 變化 | tavern_token 變化 |
+|---|---|---|---|---|
+| 滿血睡 8h | 100 | sleep_8h +50 | 100 (cap) | +25 (50/2) |
+| 滿血睡 6h | 100 | sleep_6h +30 | 100 (cap) | +15 (30/2) |
+| 半血散步 | 50 | walk +10 | 60 | 0 (沒超 cap) |
+| 90 血喝水 | 90 | water +3 | 93 | 0 (沒超 cap) |
+| 80 血睡 8h | 80 | sleep_8h +50 | 100 (cap, +20) | +15 ((50-20)/2=15) |
+| 99 血散步 | 99 | walk +10 | 100 (cap, +1) | +4 (9/2=4，奇數 round-down) |
+
+**特性**：
+- **單向**：HP→tavern_token 僅單向。tavern_token 不可反向買 HP（防熬夜後用 token 補血洗白）
+- **即時**：healthy_task fire 那一刻雙 ledger entry 同步，不延遲不日結
+- **Round-down**：奇數 overflow 取整下捨（9/2=4 不是 4.5）— Tim 寬鬆給系統 0.5 偏差
+- **無每日上限**：你能堆多少 healthy_task 就轉多少 token（自然受物理限制：每天能睡覺/運動/喝水次數有限）
+
+**為何 2:1 而非 1:1 / 3:1**：
+- 1:1 過於慷慨（睡 8h 直接 +50 token = 一天工作量）
+- 3:1 過於保守（鼓勵不足）
+- 2:1 中庸：睡 8h +25 token = 約半天標準工作量；喝 10 杯水 +30 HP overflow → +15 token 也合理
+
+### v1 過渡期實扣路徑（HP runtime 未 wire）
+
+當前 Cmd_Treasury 不支援 `currency=hp` arg → HP ledger 暫無 entry，但 **overflow 轉換的 tavern_token 部分 100% 落地正常 ledger**。換言之 Plan C 的「賺 token」端**今天就能用**，HP 端等 v5 wire。
 
 ### Refill 演算法（agent 自律執行）
 

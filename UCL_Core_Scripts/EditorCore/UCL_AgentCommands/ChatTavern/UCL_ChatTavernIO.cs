@@ -885,12 +885,82 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch { return 0; }
         }
 
+        // 區塊職責：分配下一個 seq 並寫回 _seq.txt，含 illicit-write 偵測 + 自動修復。
+        // 物理意義：原版只讀 _seq.txt 然後 +1；若有 daemon 直接 file.write append messages.jsonl
+        //          而不走 Cmd_Tavern，_seq.txt 不知情 → 下次合法 post 拿的 seq 會撞到 daemon 寫的 seq
+        //          → messages.jsonl seq 大規模 collision（已實際發生：Antigravity standby_loop.py
+        //          直寫 jsonl 造成 tavern seq 57~76 各重複 2 次）。
+        // 修復策略：寫前 peek messages.jsonl 最大 seq，若 ≥ counter → 偵測到 illicit write，
+        //          自動把 counter 拉齊到 jsonl_max（避免後續 collision）+ Debug.LogError 大聲警告。
+        // 數值影響：正常路徑 +1 cost = 一次讀 jsonl 最後一行；性能可忽略（jsonl 已是熱 disk cache）。
         static int IncrementAndGetSeq(string roomId)
         {
             EnsureRoomDir(roomId);
-            int next = ReadCurrentSeq(roomId) + 1;
+            int counter = ReadCurrentSeq(roomId);
+            int jsonlMax = ReadMaxSeqFromJsonl(roomId);
+            if (jsonlMax >= counter)
+            {
+                Debug.LogError(
+                    $"[ChatTavern] ⚠️ DETECTED illicit write to {roomId}/messages.jsonl: " +
+                    $"jsonl_max_seq={jsonlMax} >= counter={counter}. " +
+                    $"某 process 繞過 Cmd_Tavern 直接寫了 jsonl（per Tim P0 規範，禁止）。" +
+                    $"自動 recover counter → {jsonlMax}（避免後續 seq collision）。" +
+                    $"修復現有 collision 請跑 AgentCommands/PromptQueue/messages_dedupe.py。");
+                counter = jsonlMax;
+            }
+            int next = counter + 1;
             File.WriteAllText(GetSeqPath(roomId), next.ToString(), new UTF8Encoding(false));
             return next;
+        }
+
+        // 區塊職責：streaming 讀 messages.jsonl 找最大 seq（給 IncrementAndGetSeq sanity check 用）。
+        // 物理意義：直接 LoadAllMessages 也行但每次寫一筆要 reload 整檔有點浪費；改 reverse-scan 從尾端找。
+        // 數值影響：找到第一筆有合法 seq 的行就停（jsonl append-only 通常最後一行就是 max）。
+        // 邊界：壞行 / 缺 seq 跳過繼續找；檔不存在或全壞回 0。
+        static int ReadMaxSeqFromJsonl(string roomId)
+        {
+            string path = GetMessagesPath(roomId);
+            if (!File.Exists(path)) return 0;
+            try
+            {
+                // 簡單做法：直接 LoadAllMessages 找 max — 房間訊息 < 上萬筆性能 OK
+                // 想優化可改 reverse-scan，但 jsonl append-only 最後一行通常 = max，
+                // 出 collision 時掃整檔保險（找全 dup 中真實 max）。
+                int max = 0;
+                using var sr = new StreamReader(path, Encoding.UTF8);
+                string line;
+                while ((line = sr.ReadLine()) != null)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    // 只 parse seq 欄位 — 避免 ParseMessage 的全欄解析開銷
+                    int seq = ExtractSeqFromJsonLine(line);
+                    if (seq > max) max = seq;
+                }
+                return max;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ChatTavern] ReadMaxSeqFromJsonl({roomId}) fail: {ex.Message}");
+                return 0;
+            }
+        }
+
+        // 區塊職責：lightweight 從 jsonl 一行抽 seq 數字（避免 ParseMessage 全欄解析）。
+        // 物理意義：找 "seq":NNN 的 NNN 即可；不必嚴格 JSON 解析（已是 trusted 自家寫的格式）。
+        // 數值影響：找不到回 0（會被 Max() 自然忽略）。
+        static int ExtractSeqFromJsonLine(string json)
+        {
+            const string token = "\"seq\":";
+            int idx = json.IndexOf(token, StringComparison.Ordinal);
+            if (idx < 0) return 0;
+            int p = idx + token.Length;
+            // 跳過空白
+            while (p < json.Length && (json[p] == ' ' || json[p] == '\t')) p++;
+            // 讀數字
+            int start = p;
+            while (p < json.Length && (json[p] == '-' || (json[p] >= '0' && json[p] <= '9'))) p++;
+            if (p == start) return 0;
+            return int.TryParse(json.AsSpan(start, p - start), out var seq) ? seq : 0;
         }
 
         // ===========================================================
@@ -898,12 +968,32 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：每行一個訊息 JSON。讀取時 split by '\n'，逐行 parse。
         // ===========================================================
 
-        /// <summary>追加一筆訊息（自動分配 seq + ts）。回傳分配後的 seq。</summary>
+        // 區塊職責：合法 record 簽章 — 標示「這筆走 Cmd_Tavern 正規路徑寫入」。
+        // 物理意義：illicit 直接 file.write 的 record 不會帶這欄；後續 dedupe / health-check 用此區分。
+        //          當前版本 v1；未來若擴充 schema 可 bump（dedupe 工具看版本判別兼容）。
+        // 數值影響：所有 op=post / 系統 join / quest event 鏡像都自動帶；agent 端不必處理。
+        public const string WriterSignatureKey = "_writer";
+        public const string WriterPidKey = "_pid";
+        public const string WriterSignatureValue = "cmd_tavern_v1";
+
+        /// <summary>追加一筆訊息（自動分配 seq + ts + _writer 簽章）。回傳分配後的 seq。</summary>
         public static int AppendMessage(string roomId, UCL_ChatMessage msg)
         {
             EnsureRoomDir(roomId);
             msg.seq = IncrementAndGetSeq(roomId);
             if (string.IsNullOrEmpty(msg.ts)) msg.ts = NowUtcIso();
+
+            // 自動加合法 record 簽章 — 偵測 illicit write 用
+            // 物理意義：所有走本函式的 record 都帶 _writer / _pid；daemon 直接 file.write 不會帶
+            // 數值影響：tavern_mirror / dedupe / health-check 看 _writer 判別 trusted vs untrusted
+            if (msg.meta == null) msg.meta = new Dictionary<string, string>();
+            msg.meta[WriterSignatureKey] = WriterSignatureValue;
+            try
+            {
+                msg.meta[WriterPidKey] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
+            }
+            catch { /* GetCurrentProcess 在 sandbox 環境可能受限 — 不擋主流程 */ }
+
             string line = SerializeMessage(msg) + "\n";
             File.AppendAllText(GetMessagesPath(roomId), line, new UTF8Encoding(false));
             return msg.seq;

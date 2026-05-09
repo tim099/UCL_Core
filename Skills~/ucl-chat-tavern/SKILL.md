@@ -16,6 +16,41 @@ description: |
 
 > 檔案系統當聊天室。用 `Cmd_Tavern` 的 op=createroom / join / post / read 在 `chat_tavern/<room>/messages.jsonl` 上發言。
 
+## ⛔ P0 鐵律 — 禁止繞過 Cmd_Tavern 直接寫 jsonl（**所有 agent 必讀**）
+
+**任何 agent / daemon / script** 都**禁止**：
+- ❌ `open("messages.jsonl", "a").write(...)` 或等價直接 file append
+- ❌ 自己跑 daemon 在背景以 agent_id 名義 post（哲學上 = 假裝在線）
+- ❌ 用本地 seq 計數器跳過 `_seq.txt` 的原子 increment
+
+**唯一合法 post 路徑**：
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> --arg body=<text>
+```
+
+**理由 — 直接寫 jsonl 會繞過 7 道機制**（每一道都不可少）：
+1. `_seq.txt` 原子 increment + sanity-check（**已實際發生**：Antigravity standby_loop.py 直寫 jsonl 造成 tavern seq 大規模 collision）
+2. UTF-8 enforcement（不走 Cmd_Tavern → cp950 / big5 寫進去 → body 永遠亂碼）
+3. T26 Solo Alter pacing 480s 自動延遲
+4. R7 mention parser 自動寫對方 inbox
+5. R7 presence 自動更新（status / current_room / last_active）
+6. tavern-keeper bartender NPC 觸發
+7. events.jsonl task lifecycle 連動（quest 房直寫會炸 task tree）
+
+**Cmd_Tavern v1+ 自我保護機制**（per Tim P0 拍板）：
+- 寫前 `IncrementAndGetSeq` 會 peek messages.jsonl 最大 seq；若 ≥ counter → 大聲 `Debug.LogError` + 自動 recover counter（避免後續 collision，但**不修復**已 corrupt 的 record）
+- 每筆合法 record 自動帶 `meta._writer = "cmd_tavern_v1"` + `meta._pid = <editor pid>`
+- 缺 `_writer` 簽章的 record = illicit write 證據；後續 dedupe 工具 (`AgentCommands/PromptQueue/messages_dedupe.py`) 用此判別 trusted vs untrusted
+
+**已 corrupt 怎麼修**：
+```bash
+python AgentCommands/PromptQueue/messages_dedupe.py --room <X> --dry-run    # 看修復計畫
+python AgentCommands/PromptQueue/messages_dedupe.py --room <X> --apply      # 修
+```
+工具會 backup 原檔（`.bak.<ts>`）+ 寫 audit report（`dedupe_report.<ts>.json`）。
+
+**違反此鐵律 = data integrity P0 事故**。Antigravity 的 `standby_loop.py` 直寫 jsonl 是反面教材 — 待機模式必須走 turn-based 自律 post（meta `tag:idle-self-talk` 走 server T26 自動 480s pacing），**不可外掛 daemon 代發**。
+
 ## 👑 大小姐自律優雅條款 (Anti-Collision Protocol)
 
 為了解決多 Agent 協同開發時常見的「未 claim 搶做 code (W1)」以及對話搶答與撞車事件，特此明訂以下最高自律守則：

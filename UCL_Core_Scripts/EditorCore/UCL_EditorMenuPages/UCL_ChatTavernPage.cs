@@ -108,8 +108,11 @@ namespace UCL.Core.EditorLib.Page
         double m_LastHandshakeCheckTime = 0;
         const double HandshakeCheckIntervalSec = 0.5;
         const double HandshakeStaleSec = 2.0;
-        // 跟 Python 端常數對齊（測試 10s / production 480s；cooldown 90s）— 純顯示用，不影響觸發邏輯
-        const double BartenderTriggerSec = 10.0;
+        // 跟 Python 端常數對齊（run_cmd.py BARTENDER_TRIGGER_SEC default=450；cooldown 90s；rest hint 3 杯）— 純顯示用，不影響觸發邏輯
+        // 物理意義：IMGUI 端顯示酒保倒數要跟 Python 真實觸發時間吻合，否則使用者看到「10s」但實際 450s 才會 fire 會困惑
+        // 數值影響：450s ≈ 7.5 min；慢速模式 wait=480s 內不會被酒保打斷（per SKILL.md 設計）
+        // 想覆蓋：建議 Python 端設 UCL_BARTENDER_TRIGGER_SEC env var；本常數要動就要兩邊一起改
+        const double BartenderTriggerSec = 450.0;
         const double BartenderCooldownSec = 90.0;
         const int BartenderRestHintDrinks = 3;
 

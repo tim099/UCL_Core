@@ -308,6 +308,72 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：events 是 truth；任何時刻可以重放；task state 純衍生不持久
         // ===========================================================
 
+        /// <summary>
+        /// T19 — Stale lease 自動回收（per Antigravity P8 + Tim Round 30）。
+        /// 物理意義：claimed task 若 lease 過期且 owner 未 progress / done → 視為 owner 不在，
+        ///          自動 task_release（system actor）退回 ready，防多 agent 死鎖永久鎖死。
+        /// 數值影響：寫 task_release event 到 events.jsonl（actor=_quest_system，reason 標 auto），留 audit trail。
+        ///          idempotency_key 防同一 stale lease 被多次 release（key=auto-release:&lt;task_id&gt;:&lt;lease_until&gt;）。
+        /// 觸發：task_list / task_next / task_state 等查詢 op 開頭 lazy 跑（不影響其他 op 性能；查詢本就要 ComputeTaskStates）。
+        /// </summary>
+        public static int AutoRecoverStaleLeases(string roomId)
+        {
+            var states = ComputeTaskStatesNoRecover(roomId);
+            int recovered = 0;
+            foreach (var st in states.Values)
+            {
+                // 只看 claimed + is_stale；in_progress 也算（task_progress 後若再 stale 同樣處理）
+                if (!st.is_stale) continue;
+                if (st.status != "claimed" && st.status != "in_progress") continue;
+                if (string.IsNullOrEmpty(st.lease_until)) continue;
+                // idempotency: 同一 task + 同一 lease_until 只 release 一次
+                string idemKey = $"auto-release:{st.id}:{st.lease_until}";
+                if (HasIdempotencyKey(roomId, idemKey)) continue;
+                var ev = new UCL_QuestEvent
+                {
+                    type = "task_release",
+                    task_id = st.id,
+                    actor = QuestSystemSenderId,
+                    idempotency_key = idemKey,
+                    data = new Dictionary<string, string>
+                    {
+                        { "reason", $"auto: lease expired at {st.lease_until} — owner {st.owner ?? "?"} 未 progress / done，系統釋放回 ready 防死鎖（T19）" },
+                        { "auto_recovery", "true" },
+                        { "expired_lease_until", st.lease_until },
+                        { "previous_owner", st.owner ?? "" },
+                    },
+                };
+                int seq = AppendEvent(roomId, ev);
+                if (seq > 0)
+                {
+                    recovered++;
+                    Debug.Log($"[Quest T19] auto-released stale lease：task={st.id} prev_owner={st.owner} lease_until={st.lease_until}");
+                }
+            }
+            return recovered;
+        }
+
+        /// <summary>內部：算 states 但不觸發 stale recovery（避免遞迴）。</summary>
+        static Dictionary<string, UCL_QuestTaskState> ComputeTaskStatesNoRecover(string roomId)
+        {
+            var states = new Dictionary<string, UCL_QuestTaskState>();
+            var events = LoadAllEvents(roomId);
+            foreach (var e in events)
+            {
+                if (string.IsNullOrEmpty(e.task_id)) continue;
+                if (!states.TryGetValue(e.task_id, out var st))
+                {
+                    st = new UCL_QuestTaskState { id = e.task_id };
+                    states[e.task_id] = st;
+                }
+                st.last_event_seq = e.seq;
+                st.lifecycle.Add(e);
+                ApplyEvent(st, e);
+            }
+            ComputeDerivedFields(states);
+            return states;
+        }
+
         /// <summary>從 events.jsonl 重放算出 room 內所有 task 的當前狀態（含衍生欄位 downstream_weight / age / is_stale）。</summary>
         public static Dictionary<string, UCL_QuestTaskState> ComputeTaskStates(string roomId)
         {

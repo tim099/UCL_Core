@@ -679,6 +679,60 @@ tasks:
 
 ---
 
+## 16. Auto Mode — Agent 自主連續處理 quest 全 task
+
+**觸發**：使用者下「自動模式」/「auto mode」/「持續處理直到完成」/「持續動工 GO」這類指令時，agent 進入此模式。也可顯式 `touch AgentCommands/PromptQueue/_auto_mode.flag` 啟用、`rm` 取消。
+
+### 16.1 行為守則
+
+進入 auto mode 後 agent 應：
+
+1. **不停下來確認下一條 task** — 自決排序動工（除非碰到真正需要使用者拍板的決策）
+2. **以 robustness 為最高優先**：
+   - 衝突鎖死 / deadlock 防護類 task（如 stale lease recovery / W1 enforcement）→ 優先做
+   - quality-of-life ops（如 set_focus / set_mood）→ 中段
+   - 純文件 / 純 polish task → 最後
+3. **每完成一條 task → 三層 commit + [chat] commit + Discord notify**（per Commit_Workflow）
+4. **碰到 blocker 立刻廣播**：
+   - 真正需要使用者輸入的決策（外部 API token / 外部帳號驗證）→ tavern 發訊息註明 + 列待辦清單收 turn
+   - **不要默默卡死** — auto mode 卡了要明說，使用者才知道介入
+5. **跨 quest 房不亂跳** — 一次只動一個 quest 房內 task；該房全 done 再考慮下個房
+6. **Sub-task spawn 規則**：
+   - 動 task X 時發現需 prerequisite Y → 立刻 `task_create` Y + `task_claim` Y 動工，再回頭做 X
+   - 不必先回去問使用者
+7. **失敗 task 處理**：
+   - 真錯誤（compile fail / runtime exception）→ 自診斷 + 修；超過 30 min 卡住 → tavern post 求救 + 收 turn
+   - 預期拒絕（owner mismatch / lease 衝突）→ 自動處理（force_reclaim / next task）
+
+### 16.2 何時退出 auto mode
+
+- 全 quest 房 task 都 done → tavern 發完成總結 + 收 turn
+- 使用者顯式說「停下」/「pause」/「不要 auto」→ 立刻退出
+- `_pause.flag` 出現 → exit（既有 qdrain 機制）
+- 連續 3 條 task 失敗無法自診斷 → 退出 + 求救
+
+### 16.3 跟既有機制的銜接
+
+- **PromptQueue auto-drain**（`qdrain.py` Stop hook）：自動抓 `agent-prompt-queue` 房 pending task → 給 stderr 接題
+- **Auto mode** 是更高層：跨 **任意 quest 房** 連續動工，不限 PromptQueue
+- 兩者並行：PromptQueue 抓不到時 auto mode agent 自決從 quest 房挑
+
+### 16.4 robustness 排序示例
+
+碰到一批 task 時自決優先序（高到低）：
+
+| Tier | 類型 | 範例 |
+|---|---|---|
+| 🔴 P0 | deadlock / 資料 corruption 防護 | stale lease recovery / W1 enforcement / atomic write |
+| 🟠 P1 | 跨 agent 通訊 / observability | wake notify / cross-room invite / task_done auto-notify |
+| 🟡 P2 | quality-of-life ops | set_focus / set_mood / session_enter macro |
+| 🟢 P3 | 純文件 / 規範 / 命名 | task naming SOP / commit submodule SOP |
+| ⚪ P4 | diagnostic / observation | ErrorLog 落盤驗證 / latency 量測 |
+
+→ 同 Tier 內 ROI / 工時短的優先。
+
+---
+
 ## 17. 相關文件
 
 - 主文檔：[ChatTavern_Workflow](ChatTavern_Workflow.md)

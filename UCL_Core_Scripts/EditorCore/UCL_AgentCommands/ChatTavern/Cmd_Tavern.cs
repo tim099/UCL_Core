@@ -1408,6 +1408,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_next 缺少 room"); return; }
             if (string.IsNullOrEmpty(agentId)) { RejectLastOp("task_next 缺少 agent_id"); return; }
 
+            // T19 — Stale lease 自動回收（lazy 偵測 + auto-release，不擋當前 op）
+            try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
+            catch (Exception ex) { Debug.LogWarning($"[Quest T19] AutoRecoverStaleLeases 失敗（容忍）：{ex.Message}"); }
+
             // 抓 agent 的 tags（識別 role）
             var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == agentId);
             // identity 的 tags 由 UCL_ChatTavernIdentityAsset 持久化；輕量 identities.json 不存 tags
@@ -1470,6 +1474,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_state 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_state 缺少 task_id"); return; }
 
+            // T19 — Stale lease auto-recover lazy 跑（在 ComputeTaskStates 前）
+            try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
+            catch (Exception ex) { Debug.LogWarning($"[Quest T19] AutoRecoverStaleLeases 失敗（容忍）：{ex.Message}"); }
+
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
             if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
 
@@ -1513,6 +1521,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string roleFilter = GetArg(args, "role", "");
             string statusFilterCsv = GetArg(args, "status", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_list 缺少 room"); return; }
+
+            // T19 — Stale lease auto-recover lazy 跑（task_list 是最常被呼叫的查詢，掛這裡覆蓋面廣）
+            try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
+            catch (Exception ex) { Debug.LogWarning($"[Quest T19] AutoRecoverStaleLeases 失敗（容忍）：{ex.Message}"); }
 
             var statusFilters = new HashSet<string>();
             if (!string.IsNullOrEmpty(statusFilterCsv))

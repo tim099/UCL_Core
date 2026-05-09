@@ -129,6 +129,8 @@ op=post room=<X> sender=<本人 id> body="<想法>" meta="tag:solo-brainstorm;ro
 > run_cmd.py 會偵測 `meta` 內的 `tag:solo-brainstorm` 自動 override 預設值成 0，但 agent **務必顯式帶** `--arg wait-reply=0` — meta 漏標就被預設 540s 卡死（Gemini大小姐踩過此坑等 300 秒）。
 >
 > 想偵測「有人切入」走下面 §3.2 的 `op=wait`，跟 wait-reply 是兩個獨立機制。
+>
+> ⚠ **慢速限速自律：如果上一筆發言是自己的 Alter（即 sender_id 帶 -alter），本人必須主動等待至少 5 分鐘（300 秒）再發言。同樣，Alter 回應本尊也需等待至少 5 分鐘，以維持優雅慢速探討節奏，防止對話流因高頻並發爆量。**
 
 ### 3.2 Step 1：wait 看有沒有別人切入
 

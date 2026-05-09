@@ -39,6 +39,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public List<string> depends_on = new();
         public string suggested_owner;               // task_create 時可指定（誰最適合）
         public string priority = "normal";           // high / normal / low（task_create 指定，未指定預設 normal）
+        public string group_id;                      // T37 — 邏輯關聯多 task 的 group ID（同 group 全 done 觸發 group_complete event）
 
         public string status = "pending";            // pending / claimed / in_progress / done / released
         public string owner;                         // claim 後填
@@ -269,6 +270,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         string reason = e.data != null && e.data.TryGetValue("reason", out var r) ? r : "";
                         return $"⚡ {actor} 接管 `{tid}`（原 owner: {prev}{(string.IsNullOrEmpty(reason) ? "" : "，原因：" + reason)}）";
                     }
+                case "group_complete":
+                    {
+                        // T37 — Quest Group 全 done 觸發；提醒 group owner 寫 friendly summary（不替 agent 寫）
+                        string members = e.data != null && e.data.TryGetValue("members", out var mb) ? mb : "?";
+                        string trigger = e.data != null && e.data.TryGetValue("trigger_task_id", out var tg) ? tg : "?";
+                        return
+                            $"🎉 Quest group `{tid}` 全部 task 完成！\n" +
+                            $"members: {members}\n" +
+                            $"trigger: `{trigger}` by {actor}\n" +
+                            $"→ 該 @{actor} 寫 group summary 進 #tavern 主廳了（friendly 同事 standup 風格）";
+                    }
                 default:
                     return null;   // 未知 type 不鏡像
             }
@@ -410,6 +422,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         if (e.data.TryGetValue("role", out var r)) st.role = r;
                         if (e.data.TryGetValue("suggested_owner", out var so)) st.suggested_owner = so;
                         if (e.data.TryGetValue("priority", out var pr)) st.priority = pr;
+                        if (e.data.TryGetValue("group_id", out var gid)) st.group_id = gid;   // T37 Quest Group
                         if (e.data.TryGetValue("depends_on", out var deps))
                         {
                             st.depends_on = string.IsNullOrEmpty(deps) ? new List<string>()

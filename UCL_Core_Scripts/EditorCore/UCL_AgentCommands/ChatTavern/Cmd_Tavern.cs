@@ -40,10 +40,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "note_list: room=房間ID（列房內所有 note keys）\n" +
             "note_delete: room=房間ID key=筆記key（刪檔）\n" +
             "─── Quest Workflow (MVP A) — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md ───\n" +
-            "task_create: room=房間ID task_id=任務ID title=標題 [role=...] [priority=high|normal|low] [depends_on=t1,t2] [suggested_owner=身分ID] [body=Markdown規格] [idempotency_key]\n" +
+            "task_create: room=房間ID task_id=任務ID title=標題 [role=...] [priority=high|normal|low] [depends_on=t1,t2] [group_id=group名(同group全done自動觸發group_complete)] [suggested_owner=身分ID] [body=Markdown規格] [idempotency_key]\n" +
             "task_claim: room=房間ID task_id=任務ID claimer=身分ID [lease_hours=24] [lease_seconds=N (測試/短任務 override)] [idempotency_key]\n" +
             "task_progress: room=房間ID task_id=任務ID actor=身分ID summary=進度說明 [artifacts=type:ref;type:ref] [idempotency_key]\n" +
-            "task_done: room=房間ID task_id=任務ID actor=身分ID [idempotency_key]\n" +
+            "task_done: room=房間ID task_id=任務ID actor=身分ID [summary=...] [share=true|false] [share_room=房間ID(預設tavern)] [share_body=同事分享風格內容] [idempotency_key]\n" +
             "task_release: room=房間ID task_id=任務ID actor=身分ID reason=放棄原因（必填） [idempotency_key]\n" +
             "task_review_request: room=房間ID task_id=任務ID actor=身分ID [reviewer=身分ID] [idempotency_key]\n" +
             "task_reject: room=房間ID task_id=任務ID actor=身分ID reason=退回原因（必填） [idempotency_key]\n" +
@@ -97,7 +97,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "task_create": Op_TaskCreate(args); break;
                     case "task_claim": Op_TaskClaim(args); break;
                     case "task_progress": Op_TaskProgress(args); break;
-                    case "task_done": Op_TaskDone(args); break;
+                    case "task_done": await Op_TaskDone(args, token); break;
                     case "task_release": Op_TaskRelease(args); break;
                     case "task_force_reclaim": Op_TaskForceReclaim(args); break;
                     case "task_review_request": Op_TaskReviewRequest(args); break;
@@ -917,6 +917,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string body = GetArg(args, "body", "");
             string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
             string idempotencyKey = GetArg(args, "idempotency_key", "");
+            // T37 — Quest Group：邏輯關聯多 task 的 group ID
+            // 物理意義：同 group_id 的所有 task 全 done 時 Op_TaskDone 會自動觸發 group_complete event
+            // 數值影響：寫進 event.data["group_id"]；ApplyEvent reducer 把它放回 UCL_QuestTaskState.group_id
+            // 邊界：空字串 = 該 task 不屬任何 group（不影響既有行為）；MVP 限同房 group（跨房留 backlog）
+            string groupId = GetArg(args, "group_id", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_create 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_create 缺少 task_id"); return; }
             if (UCL_ChatTavernIO.GetRoom(roomId) == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
@@ -941,6 +946,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             data["priority"] = priority;
             if (!string.IsNullOrEmpty(suggestedOwner)) data["suggested_owner"] = suggestedOwner;
             data["depends_on"] = string.Join(",", deps);
+            if (!string.IsNullOrEmpty(groupId)) data["group_id"] = groupId;   // T37 Quest Group
 
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
@@ -1069,7 +1075,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Debug.Log($"[Quest] task_progress {roomId}/{taskId} (seq={seq})");
         }
 
-        void Op_TaskDone(Dictionary<string, string> args)
+        async UniTask Op_TaskDone(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
@@ -1079,6 +1085,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 物理意義：完成時詳述工作內容 → 對話流自然形成工作日誌；後續 task_state 也讀得到
             // 數值影響：寫入 event.data；mirror 偵測到 summary 就 append 一段「💁 ...」
             string summary = GetArg(args, "summary", "");
+            // T37 — Task Share：done 時可選額外發 friendly 同事分享進指定房（預設 tavern 主廳）
+            // 物理意義：既有 lifecycle audit (sender=_quest_system) 走 quest 頻道；share 訊息 (sender=actor)
+            //          走 main tavern_mirror 走 chat 頻道，自然分流。share 跟 audit 並存不取代。
+            // 數值影響：share=true 時內部 spawn op=post 寫 share_room/messages.jsonl；
+            //          meta 帶 tag:task-share / task_id / source_room 給後續搜尋過濾
+            // 邊界：share=false / 缺 share_body → 不發 share；share_room 預設 "tavern" 主廳
+            string shareRaw = GetArg(args, "share", "false").ToLowerInvariant();
+            bool doShare = shareRaw == "true" || shareRaw == "1" || shareRaw == "yes";
+            string shareRoom = GetArg(args, "share_room", "tavern");
+            string shareBody = GetArg(args, "share_body", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_done 缺少 room"); return; }
             if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_done 缺少 task_id"); return; }
             if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_done 缺少 actor"); return; }
@@ -1118,11 +1134,113 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
 
+            // T37 — Quest Group 完成偵測：本 task 屬於某 group 且 group 內所有 task 都 done → 寫 group_complete event
+            // 物理意義：A/B/C 三個 task 同 group_id 都 done 時自動觸發群組總結提醒（不替 agent 寫總結，由 group owner 自律）
+            // 數值影響：寫一筆 type="group_complete" event 進 events.jsonl + mirror 一筆 🎉 message
+            //          + 寫 inbox 給 group owner（預設 = 最後 done 該 task 的 actor）提醒寫 friendly summary
+            // 邊界：本 task 沒 group_id → skip；group 內任一 task 還沒 done → skip；group_complete 已 fire 過 → skip（用 idempotency_key 防重）
+            int groupCompleteSeq = -1;
+            string groupOwnerForInbox = null;
+            string groupCompleteId = null;
+            try
+            {
+                if (seq > 0 && st.group_id != null && !string.IsNullOrEmpty(st.group_id))
+                {
+                    var afterStates = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
+                    var groupMembers = new List<UCL_QuestTaskState>();
+                    bool allDone = true;
+                    foreach (var kv in afterStates)
+                    {
+                        if (kv.Value.group_id == st.group_id)
+                        {
+                            groupMembers.Add(kv.Value);
+                            if (kv.Value.status != "done") { allDone = false; break; }
+                        }
+                    }
+                    if (allDone && groupMembers.Count > 0)
+                    {
+                        groupCompleteId = st.group_id;
+                        groupOwnerForInbox = actor;   // group owner 預設 = 最後 done 該 task 的 actor
+
+                        // 用 idempotency key 防重（同 group_id 只觸發一次 group_complete）
+                        string groupIdempotencyKey = $"group_complete:{st.group_id}";
+                        var membersList = new List<string>();
+                        foreach (var m in groupMembers) membersList.Add(m.id);
+
+                        var groupData = new Dictionary<string, string>
+                        {
+                            { "group_id", st.group_id },
+                            { "members", string.Join(",", membersList) },
+                            { "trigger_task_id", taskId },
+                        };
+                        groupCompleteSeq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
+                        {
+                            actor = actor,
+                            idempotency_key = groupIdempotencyKey,
+                            type = "group_complete",
+                            task_id = st.group_id,    // 用 group_id 當 task_id 字段（reducer 把它當 group 視覺化用）
+                            data = groupData,
+                        });
+                        if (groupCompleteSeq > 0)
+                        {
+                            // 寫 inbox 給 group owner 提醒寫 friendly summary
+                            string inboxTitle = $"🎉 Quest group `{st.group_id}` 全部 task 完成 — 該寫 group summary";
+                            string inboxBody =
+                                $"members: {string.Join(", ", membersList)}\n" +
+                                $"trigger_task: `{taskId}`\n\n" +
+                                $"建議動作：用 op=task_done --share 或 op=post 寫一筆 friendly summary 進 tavern 主廳，\n" +
+                                $"風格參考 SKILL.md「Task Share Body 規範」— 不是 audit log，是同事 standup。\n" +
+                                $"重點摘要 group 整體 outcome / 跨 task 串起來的故事 / 對團隊下一步的建議。";
+                            UCL_ChatTavernQuestIO.AppendInbox(roomId, groupOwnerForInbox, groupCompleteSeq, inboxTitle, inboxBody);
+                            UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
+                            Debug.Log($"[Quest] task_done {roomId}/{taskId} → group_complete `{st.group_id}` (members={string.Join(",", membersList)}, owner={groupOwnerForInbox})");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Quest] task_done {roomId}/{taskId} group_complete check fail（task_done 主流程不受影響）：{ex.Message}");
+            }
+
+            // T37 — Task Share：done 後可選額外發 friendly 同事分享進指定房（預設 tavern 主廳）
+            // 物理意義：本筆 sender=actor / kind=chat / meta tag=task-share，跟 quest_system audit 分流
+            //          → tavern_mirror 自動走 main webhook 進 chat 頻道（非 quest_routing）
+            // 數值影響：失敗 swallow（log warning 不擋 task_done 主流程）；share 訊息獨立 seq 不影響 quest events
+            // 邊界：seq < 0（idempotent skip）→ 仍可發 share（agent 想補 share）；缺 share_body → 跳過
+            int shareSeq = -1;
+            if (doShare && !string.IsNullOrEmpty(shareBody))
+            {
+                try
+                {
+                    var shareArgs = new Dictionary<string, string>
+                    {
+                        { "room", shareRoom },
+                        { "sender", actor },
+                        { "body", shareBody },
+                        { "meta", $"tag:task-share;task_id:{taskId};source_room:{roomId}" },
+                        // alter-pacing-bypass:true — share 不該被 alter pacing 延遲（actor 跟 alter pair 無關）
+                        { "alter-pacing-bypass", "true" },
+                    };
+                    // 直接 await Op_Post — 等 share 寫完才回，保證 task_done 結束時 share 已落盤
+                    await Op_Post(shareArgs, token);
+                    // Op_Post 內部用 IncrementAndGetSeq 寫 share_room 的 _seq.txt；想拿回 seq 需 Tail(1)
+                    var shareTail = UCL_ChatTavernIO.Tail(shareRoom, 1);
+                    if (shareTail != null && shareTail.Count > 0) shareSeq = shareTail[0].seq;
+                    Debug.Log($"[Quest] task_done {roomId}/{taskId} → share posted to {shareRoom}/seq={shareSeq}");
+                }
+                catch (Exception ex)
+                {
+                    // share fail 不擋 task_done；agent 看 LogWarning 自行決定是否補 op=post
+                    Debug.LogWarning($"[Quest] task_done {roomId}/{taskId} share post fail（task_done 主流程不受影響）：{ex.Message}");
+                }
+            }
+
             string md = seq < 0
-                ? $"# ℹ task_done idempotent skip\n\n- task_id: `{taskId}`\n"
-                : $"# ✅ task_done\n\n- task_id: `{taskId}`\n- event_seq: {seq}\n- 下游 unblock 通知數: {notifications}\n";
+                ? $"# ℹ task_done idempotent skip\n\n- task_id: `{taskId}`\n" + (shareSeq >= 0 ? $"- share posted: {shareRoom}/seq={shareSeq}\n" : "")
+                : $"# ✅ task_done\n\n- task_id: `{taskId}`\n- event_seq: {seq}\n- 下游 unblock 通知數: {notifications}\n" + (shareSeq >= 0 ? $"- share posted: {shareRoom}/seq={shareSeq}\n" : "");
             UCL_ChatTavernRender.WriteLastOp(md);
-            Debug.Log($"[Quest] task_done {roomId}/{taskId} (seq={seq}, notify={notifications})");
+            Debug.Log($"[Quest] task_done {roomId}/{taskId} (seq={seq}, notify={notifications}{(shareSeq >= 0 ? $", share=" + shareSeq : "")})");
         }
 
         // ===========================================================

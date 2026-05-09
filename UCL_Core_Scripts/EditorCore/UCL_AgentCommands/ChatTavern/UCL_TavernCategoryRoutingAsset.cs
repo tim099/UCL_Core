@@ -87,7 +87,69 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          如果完全沒 default group → fallback 到既有 tavern_mirror.webhook_urls
         public bool m_IsDefault = false;
 
+        // 區塊職責：此 group 是否視為「工作頻道」— 發訊息到此 group 自動 credit 1 token (Tim 拍板)
+        // 物理意義：Op_Post 結尾 hook 會用本旗標判定要不要發「工作訊息薪資」(per Tim 規則：工作訊息視為上班，固定 1 token)
+        // 數值影響：true → Op_Post auto-credit accountId=sender amount=1 source_kind=work_post；false → 不結算
+        // 邊界：跟 m_IsDefault 是兩個獨立旗標 — 一個 group 可以是 default 但不是 work（譬如 lounge 設 default 不該領薪），
+        //      也可以是 work 但不是 default（譬如未來 review-channel 也算工作）
+        public bool m_IsWorkChannel = false;
+
         public UCL_TavernCategoryRoutingAsset() { ID = DefaultID; }
         public UCL_TavernCategoryRoutingAsset(string iID) { Init(iID); }
+
+        // ===========================================================
+        // 區塊職責：靜態 helper — 對齊 Python 端 _match_msg_to_routing_groups precedence，
+        //          給 C# 端（Cmd_Tavern.Op_Post）判定訊息 routing target group 用
+        // 物理意義：載入所有 enabled UCL_TavernCategoryRoutingAsset → 命中 category 的 group，
+        //          沒命中走 IsDefault group。回傳第一筆 matched group instance（or null 表都沒命中且沒 default）
+        // 數值影響：fail swallow — Asset dir 不存在 / 任何例外 → 回 null（caller 自決 fallback）
+        // ===========================================================
+
+        /// <summary>
+        /// 對訊息 category meta value 解析該 broadcast 的 routing group。
+        /// </summary>
+        /// <param name="category">訊息 meta.category 值（可空字串 = 不帶 category）</param>
+        /// <returns>命中的 group instance；沒命中且沒 default group → null</returns>
+        public static UCL_TavernCategoryRoutingAsset ResolveTargetGroup(string category)
+        {
+            try
+            {
+                // 走 GetAllIDs(true) — 強制重掃 module asset dir，避免 cache 漏看新加入的 group asset
+                var allIDs = new UCL_TavernCategoryRoutingAsset().GetAllIDs(true);
+                if (allIDs == null || allIDs.Count == 0) return null;
+
+                string normalized = (category ?? "").Trim().ToLowerInvariant();
+
+                UCL_TavernCategoryRoutingAsset defaultGroup = null;
+                foreach (var id in allIDs)
+                {
+                    if (string.IsNullOrEmpty(id)) continue;
+                    UCL_TavernCategoryRoutingAsset g = null;
+                    try { g = new UCL_TavernCategoryRoutingAsset().GetData(id, false); /* iUseCache=false → 強制重讀 disk JSON */ } catch { continue; }
+                    if (g == null || !g.m_Enabled) continue;
+
+                    // Layer 1: category 命中 group's m_Categories
+                    if (!string.IsNullOrEmpty(normalized) && g.m_Categories != null)
+                    {
+                        foreach (var c in g.m_Categories)
+                        {
+                            if (!string.IsNullOrEmpty(c) && string.Equals(c.Trim().ToLowerInvariant(), normalized))
+                                return g;
+                        }
+                    }
+
+                    // 順手蒐集 default group 候選（取第一筆 enabled IsDefault）
+                    if (defaultGroup == null && g.m_IsDefault) defaultGroup = g;
+                }
+
+                // Layer 2: 都沒命中 → fallback default group
+                return defaultGroup;
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogWarning($"[UCL_TavernCategoryRoutingAsset.ResolveTargetGroup] fail (category={category})：{ex.Message}");
+                return null;
+            }
+        }
     }
 }

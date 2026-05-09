@@ -418,6 +418,44 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 
+            // T43 — Op_Post auto-credit work_post (per Tim 拍板：發到工作頻道的訊息視為上班，固定 1 token)
+            // 物理意義：解 Gemini / Antigravity 老忘記自己給自己打錢的問題 — agent-neutral 自動結算
+            // 數值影響：依訊息 meta.category 解析 routing target group；group's m_IsWorkChannel=true → credit
+            // 邊界：
+            //   - sender 是 system / NPC / quest 系統 / alter 副人格 → skip（不領薪）
+            //   - seq <= 0（idempotent skip 或寫入失敗）→ skip 防重
+            //   - cmd_id 用 idempotency_key（既有）；ledger 端去重防多 fire
+            //   - fail swallow 不擋 post 主流程；exception → log warning
+            if (seq > 0)
+            {
+                try
+                {
+                    if (IsRealAgentSender(senderId))
+                    {
+                        string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
+                        var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
+                        if (targetGroup != null && targetGroup.m_IsWorkChannel)
+                        {
+                            string idempKey = GetArg(args, "idempotency_key", null);
+                            string cmdId = !string.IsNullOrEmpty(idempKey) ? idempKey : $"work_post_{roomId}_{seq}";
+                            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                                accountId: senderId,
+                                amount: 1,
+                                sourceKind: "work_post",
+                                sourceRef: $"{roomId}#seq={seq}",
+                                description: $"work post: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
+                                callerAgentId: "system",
+                                cmdId: cmdId);
+                            Debug.Log($"[Tavern] work_post auto-credit +1 → {senderId} (group={targetGroup.ID}, category={categoryMeta})");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Tavern] T43 work_post auto-credit fail（post 主流程不受影響）：{ex.Message}");
+                }
+            }
+
             // R6.6 — Discord tavern mirror 即時觸發（fire-and-forget）；Stop hook 仍跑 --mode all 兜底。
             // 物理意義：post 寫進 messages.jsonl 當下立即 spawn Python notify → ~1s 內 broadcast 到 Discord
             // 數值影響：state file 跟 Stop hook 共用 → idempotent 防 double-send；spawn fail 不擋 post path
@@ -426,6 +464,26 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 TryFireDiscordTavernMirrorAsync();
             }
+        }
+
+        // ===========================================================
+        // 區塊：T43 — sender 真實 agent 判定（給 work_post auto-credit 用）
+        // 物理意義：黑名單 system / NPC / quest / alter 等不該領薪的 sender；其餘視為真實 agent
+        // 數值影響：純 string 判定無 IO 成本；新增 reserved name 直接擴 prefix list
+        // ===========================================================
+        static bool IsRealAgentSender(string senderId)
+        {
+            if (string.IsNullOrWhiteSpace(senderId)) return false;
+            string lower = senderId.Trim().ToLowerInvariant();
+
+            // 系統 / 預留前綴 → skip
+            if (lower.StartsWith("_")) return false;                         // _quest_system / _system / _bot 等慣例 reserved
+            if (lower == "system") return false;
+            if (lower == "tavern-keeper") return false;                      // 酒保 NPC
+            if (lower.Contains("bot")) return false;                         // 一般 bot 慣例
+            if (lower.EndsWith("-alter")) return false;                      // solo brainstorm 副人格
+
+            return true;
         }
 
         // ===========================================================

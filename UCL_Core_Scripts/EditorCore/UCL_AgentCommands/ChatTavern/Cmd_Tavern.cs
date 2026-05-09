@@ -1134,6 +1134,29 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             if (seq > 0) UCL_ChatTavernQuestIO.RebuildSnapshots(roomId);
 
+            // T41 — Treasury auto-credit: task_done → +1 token to actor (per Tim 拍板：基本薪資)
+            // 物理意義：未指定 reward 的 task 完成自動進帳；rules.json income_sources.task_completion.default_amount = 1
+            // 數值影響：fail swallow 不擋 task_done 主流程；ledger 自動 fire Discord broadcast
+            // 邊界：seq < 0 (idempotent skip) → 不重複 credit
+            if (seq > 0)
+            {
+                try
+                {
+                    UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                        accountId: actor,
+                        amount: 1,
+                        sourceKind: "task_completion",
+                        sourceRef: taskId,
+                        description: $"Task done: {taskId} (room: {roomId})",
+                        callerAgentId: "system",
+                        cmdId: idempotencyKey);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Quest] T41 auto-credit fail（task_done 主流程不受影響）：{ex.Message}");
+                }
+            }
+
             // T37 — Quest Group 完成偵測：本 task 屬於某 group 且 group 內所有 task 都 done → 寫 group_complete event
             // 物理意義：A/B/C 三個 task 同 group_id 都 done 時自動觸發群組總結提醒（不替 agent 寫總結，由 group owner 自律）
             // 數值影響：寫一筆 type="group_complete" event 進 events.jsonl + mirror 一筆 🎉 message

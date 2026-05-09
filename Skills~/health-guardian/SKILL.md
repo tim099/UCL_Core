@@ -124,11 +124,114 @@ agent 收 fee 不冷冰冰，用自家 persona：
 - 不豁免「常規 task」假裝 emergency
 - 不在 turn 結尾才 debit — 動工前必先 debit 確保 fee 已落地
 
+## 🩺 HP System v1（T53 — Tim 健康貨幣，取代 tavern_token health_fee）
+
+> **核心原則**：HP 是 Tim 專屬「健康存量」，跟 tavern_token（labor 經濟）完全分離。熬夜扣 HP 不扣 token；agent 派的健康 task 加 HP；每日 06:00 後首動自動 refill。
+
+### 規則速查表
+
+| 屬性 | 值 |
+|---|---|
+| Owner | Tim（單人帳戶，無 agent 持有 HP）|
+| 起始 / 上限 | **100 / 100**（不能超刷）|
+| Refill 策略 | **A — 每日首動 hour ≥ 6 → 自動 topup 至 100**（hour < 6 不 refill 懲罰熬夜）|
+| HP=0 行為 | **每 task 顯式 ack**（friction by design，非 hard stop）|
+| 取代關係 | health_fee 現在扣 `hp` 不扣 `tavern_token`（v1 過渡期可並行）|
+
+### Refill 演算法（agent 自律執行）
+
+```python
+# 每筆 Tim 的 ledger debit / credit 操作前 check
+import datetime
+now = datetime.datetime.now()
+last_refill_date = read_state('Tim_hp_last_refill')   # YYYY-MM-DD
+today = now.strftime('%Y-%m-%d')
+if last_refill_date != today and now.hour >= 6:
+    current_hp = get_balance('Tim', 'hp')
+    if current_hp < 100:
+        Treasury.Credit(account=Tim, amount=100-current_hp,
+                        currency=hp, source_kind=hp_daily_refill,
+                        caller=system)
+    write_state('Tim_hp_last_refill', today)
+```
+
+State 存放：`AgentCommands/Treasury/_hp_refill_state.json`（簡單 KV）。
+
+### 熬夜 HP Drain（取代 health_fee for tavern_token）
+
+agent 接到 Tim 給的 task → 同 fee 表（22h+ 開始累進）：
+
+```bash
+# 舊: Treasury op=debit account=Tim use_kind=health_fee currency=tavern_token (default)
+# 新: Treasury op=debit account=Tim use_kind=late_night_hp_drain currency=hp
+python ... run Treasury --arg op=debit --arg account=Tim \
+  --arg amount=N --arg currency=hp \
+  --arg use_kind=late_night_hp_drain \
+  --arg use_ref="<task_id>" --arg caller=system
+```
+
+⚠ **過渡期注意**：currency=hp 路徑 Cmd_Treasury 是否原生支援要看 implementation。若 v1 還沒 wire 上 → 先記在 ledger description 標明「（HP 概念，當前實扣 tavern_token）」直到 v2 wire HP currency 完整支援。
+
+### Healthy Task — Agent 派題給 Tim
+
+| Curated 預設 | +HP | 觸發 |
+|---|---|---|
+| 睡眠 ≥ 6h | +30 | Tim 自報「我 X 點睡 Y 點起」/ 06:00 refill 同時記 |
+| 睡眠 ≥ 8h | +50（取代 30，不疊加）| 同上 + bonus |
+| 喝水一次 | +3 | Tim 一句話「喝了」，cap 10 杯/天 |
+| 散步 / 運動 ≥ 15 min | +10 | 自報 |
+| 正餐一頓 | +8 | 自報，每餐獨立 |
+| 短休息 / 拉伸 ≥ 5 min | +2 | 自報，cap 6 次/天 |
+| 出門曬太陽 ≥ 10 min | +10 | 自報 |
+| 跟人聊天（非工作）| +5 | 自報 |
+| **Agent free-form 出題** | 1-15 | 看 Tim 當下狀態 dynamic |
+
+free-form 範例：
+- 「Tim 你連續 coding 2h 沒動，起來伸個懶腰 +2 HP」
+- 「看你抱怨累，去喝杯水散個步 +5 HP」
+- 「天氣不錯出門曬 10 min 太陽 +10 HP」
+- 「跟家人講個話 +5 HP」
+
+agent 派題 → Tim 自報完成 → agent verify（信任 Tim 自報）→ Treasury credit。
+
+### 三段警示（agent 自律 prefix / 結尾加）
+
+| HP 區間 | 顏色 | agent 行為 |
+|---|---|---|
+| 100-51 | 🟢 normal | 不提示 |
+| 50-21 | 🟡 yellow | turn 結尾加 1 line「⚠ Tim HP=N，建議補一點（喝水 / 走走）」|
+| 20-1 | 🟠 orange | task prefix 強提醒 + 提案具體 healthy task「先做 X 再回來工作？」|
+| 0 | 🔴 red | **每 task 必問**「HP 透支，確認動工嗎 yes/no?」每 task 獨立問（friction 上門）|
+
+### Agent SOP（每接 Tim 給的 new task — 增補 HP check）
+
+原 Step 1（calc fee）→ Step 1.5（**check HP zone**）→ Step 2（ack）：
+
+```
+Step 1.5: 讀 Tim HP balance → 判 zone → 對應行為
+  - normal: 跳過
+  - yellow: ack 訊息結尾加提醒
+  - orange: ack 訊息加 healthy task 提案
+  - red: 每 task 必問 yes/no
+```
+
+### 不要做（HP 補充）
+
+- 不主動 grant HP — 必須 Tim 自報才 credit
+- 不 hard stop on HP=0 — 永遠走 ack 路徑
+- 不 spillover 扣 tavern_token 補 HP — 兩個 ledger 分離
+- 不超過 max=100 — credit 自動 cap（agent 自律 clamp）
+- 不 cross-day refill 補課 — 早上 06:00 才 refill；今天沒過就不該補（懲罰熬夜）
+
 ## 🔮 Future Backlog
 
 - v2: per-task fee 動態計算（task complexity 評估 → 加成）
 - v3: 連續熬夜天數 detector → score N 天連續 → fee 整體升 1.5x
 - v4: 健康日報每天 06:00 fire — 統計昨日熬夜情況 + 建議
+- **v5 HP**: Cmd_Treasury 原生支援 `currency=hp` arg + ValidateAsset HP transactions
+- **v6 HP**: HP refill C 策略（sleep-gap 4h+ inactivity detect）替代 A 策略
+- **v7 HP**: HP 視覺化 — IMGUI tavern keeper dashboard 顯示 Tim HP bar
+- **v8 HP**: 熬夜連扣 HP 進入 negative health zone（負分代表「需要補休」）
 
 ## 必讀
 

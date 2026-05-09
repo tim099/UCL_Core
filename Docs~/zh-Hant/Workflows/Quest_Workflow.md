@@ -731,6 +731,76 @@ tasks:
 
 → 同 Tier 內 ROI / 工時短的優先。
 
+### 16.5 Per-Task Commit + Notify（不要 batch）
+
+每完成一條 task **立即**走完整 commit + notify 流程，不要積攢多 task 後一次 commit：
+
+```
+task_done →
+  三層 commit（UCL_Core 內 → UCL bump → 主專案 bump）→
+  [chat] commit（ChatTavern 訊息獨立）→
+  notify_discord --mode all
+→ 立刻接下一條 task
+```
+
+**為何不 batch**：
+- 失去顆粒度 — Tim 在 Discord 看不到逐 task 進度
+- bisect 困難 — 一筆 commit 包多 task 出問題難 revert
+- agent 端 context 累積壓力大（commit 等於 checkpoint，越早越省 mental load）
+
+**輕量 task 的例外**：純文件 / 無 code 改動的相鄰 task（如 SKILL.md 補同一段的多條）可合 1 commit，但 [chat] commit 仍每 task 獨立（保 task lifecycle trace）。
+
+**Discord notify 用 `--mode all`（不要 `--force`）**：
+- `--mode all` 走內部 idle gate / cooldown 5min / baseline 三層保險
+- `--force` 是 testing / 連通驗證用，auto-mode **不要用**
+- 否則會看到「Force Send Test」字樣 + 同內容卡片重複推送（Antigravity 已踩過）
+
+### 16.6 全部完成 — 顯眼通知格式（**讓 Tim 立刻知道**）
+
+退出 auto mode 前必跑「全完成 broadcast」：
+
+**格式要求**（4 必備）：
+
+1. **首行明確標題**：`# ✅ AUTO MODE 全部 N task 完成`（emoji + 數字 + 完成字樣，視覺三層強調）
+2. **tavern post**：room=tavern + meta `tag:auto-mode-complete` + `agent_id:<self>`
+3. **Discord notify**：`notify_discord --mode all --force`（這次允許 force，因為是 milestone 通知）
+4. **退出時 mood 改 'auto mode 完工 idle ☕'**：tavern-keeper.current_focus 自動更新讓對方一眼看到妳已收 turn
+
+**Body template**：
+```markdown
+# ✅ AUTO MODE 全部 N task 完成
+
+按 robustness Tier 動工順序：
+- P0: T19 / T26 / T18 ...
+- P1: T22 ...
+- P2: T20 / T21 / T23 ...
+- P3/P4: T24 / T25 ...
+
+Total commit: M 筆 / Discord 推 K 條
+Quest tavern-entry-latency 28 task 27 done（T05-O5 為 Antigravity 並行重複，留她收尾）
+auto mode 退出，mood 改 idle ☕
+
+@Tim review 完拍下個動作。
+```
+
+**何時不算「全完成」要繼續做**：
+- 還有 pending task ≥ 1 → 繼續 auto-drain，**不**發完成通知
+- 全 pending 但被 dependency blocked → 計算 truly-actionable，若 0 → 視同完成 + 通知時標明「N done / M blocked by dep」
+- agent 連續 3 fail 退出 → **不**走完成通知，走「auto-mode aborted」通知（不同 emoji 🔴）
+
+### 16.7 Discord notify 防錯（**不要 --force 在 auto-mode**）
+
+per Antigravity 踩坑（複製貼上 Claude testing 用的 --force 命令重複推送相同內容）：
+
+| 情境 | 命令 | 為何 |
+|---|---|---|
+| auto-mode per-task notify | `notify_discord --mode all` | 內部 gate 自動判斷該不該推 |
+| 全完成 milestone | `notify_discord --mode all --force` | milestone 必須推，bypass cooldown |
+| webhook 連通驗證 | `notify_discord --mode queue-idle --force` | testing 用 |
+| 不知道用哪個 | **預設 `--mode all` 不 force** | safest |
+
+**規則**：「Force Send Test」字樣出現在 Discord 端 = 訊號 caller 用錯命令。Production auto-mode 不該出現此字樣。
+
 ---
 
 ## 17. 相關文件

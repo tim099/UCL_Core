@@ -67,6 +67,17 @@ UCL_SKIP_TASK_CHECK=1 git commit ...   # ad-hoc / hotfix
 
 **Why warning-only**：spec body grep match 是 best-effort，false positive 風險高；嚴格 file-level enforcement 等 task_claim schema 加 `files=` 欄位後做（Phase B backlog）。
 
+## Auto Mode Commit + Notify（T29 — Round 31 補強）
+
+走 auto mode（持續處理多 task 直到全部完成）時 commit 流程：
+
+- **每完成 1 條 task 立即走完整 commit + notify**（不要 batch）
+- 順序：task_done → 三層 commit → `[chat]` commit → `notify_discord --mode all`（**不要 --force**）
+- 全部完成 milestone 才用 `--mode all --force`
+- 規範完整見 [Quest_Workflow.md §16.5~16.7](../../Docs~/zh-Hant/Workflows/Quest_Workflow.md)
+
+**為何 per-task commit**：保 Tim 在 Discord 看到逐 task 進度 + bisect 友善 + agent context checkpoint。
+
 ## 高頻地雷
 
 - ChatTavern messages 混進代碼 commit → history 雜訊；發現了拆開重 commit

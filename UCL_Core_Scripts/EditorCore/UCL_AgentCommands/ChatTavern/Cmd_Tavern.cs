@@ -418,42 +418,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 
-            // T43 — Op_Post auto-credit work_post (per Tim 拍板：發到工作頻道的訊息視為上班，固定 1 token)
-            // 物理意義：解 Gemini / Antigravity 老忘記自己給自己打錢的問題 — agent-neutral 自動結算
-            // 數值影響：依訊息 meta.category 解析 routing target group；group's m_IsWorkChannel=true → credit
+            // T45 — Op_Post 結尾統一 auto-credit / auto-debit hook（重構自 T43 work_post 單一規則）
+            // 物理意義：把所有「post 寫入時自動結算」的規則集中在這個區塊；每個 sub-rule 獨立 fail-swallow 互不影響
+            // 數值影響：sub-rule 1 = work_post (T43, 發到 work-channel +1 token)；
+            //          sub-rule 2 = token_parse (T44/T45, body 內 N+token 字樣 → +N token，限 sender=Tim)
             // 邊界：
-            //   - sender 是 system / NPC / quest 系統 / alter 副人格 → skip（不領薪）
+            //   - sender 是 system / NPC / quest 系統 / alter 副人格 → skip 全部 sub-rule（不領薪）
             //   - seq <= 0（idempotent skip 或寫入失敗）→ skip 防重
-            //   - cmd_id 用 idempotency_key（既有）；ledger 端去重防多 fire
-            //   - fail swallow 不擋 post 主流程；exception → log warning
-            if (seq > 0)
+            //   - cmd_id 用 idempotency_key 加 suffix 區隔多 sub-rule 的 ledger entry（既有 idempotency 防重邏輯不變）
+            //   - 每個 sub-rule 自家 try-catch fail-swallow；不擋 post 主流程也不擋彼此
+            if (seq > 0 && IsRealAgentSender(senderId))
             {
-                try
-                {
-                    if (IsRealAgentSender(senderId))
-                    {
-                        string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
-                        var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
-                        if (targetGroup != null && targetGroup.m_IsWorkChannel)
-                        {
-                            string idempKey = GetArg(args, "idempotency_key", null);
-                            string cmdId = !string.IsNullOrEmpty(idempKey) ? idempKey : $"work_post_{roomId}_{seq}";
-                            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
-                                accountId: senderId,
-                                amount: 1,
-                                sourceKind: "work_post",
-                                sourceRef: $"{roomId}#seq={seq}",
-                                description: $"work post: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
-                                callerAgentId: "system",
-                                cmdId: cmdId);
-                            Debug.Log($"[Tavern] work_post auto-credit +1 → {senderId} (group={targetGroup.ID}, category={categoryMeta})");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Tavern] T43 work_post auto-credit fail（post 主流程不受影響）：{ex.Message}");
-                }
+                string idempKey = GetArg(args, "idempotency_key", null);
+                string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
+
+                // Sub-rule A: work_post (T43) — routing target group's IsWorkChannel=true → +1 token 基本薪資
+                TryAutoCreditWorkPost(senderId, roomId, seq, categoryMeta, idempKey);
+
+                // Sub-rule B: token_parse (T44/T45) — body 內 N+token 字樣解析數值 → 自動 credit
+                TryAutoCreditTokenParse(senderId, roomId, seq, body, idempKey);
             }
 
             // R6.6 — Discord tavern mirror 即時觸發（fire-and-forget）；Stop hook 仍跑 --mode all 兜底。
@@ -467,7 +450,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：T43 — sender 真實 agent 判定（給 work_post auto-credit 用）
+        // 區塊：T43 — sender 真實 agent 判定（給 work_post / token_parse auto-credit 用）
         // 物理意義：黑名單 system / NPC / quest / alter 等不該領薪的 sender；其餘視為真實 agent
         // 數值影響：純 string 判定無 IO 成本；新增 reserved name 直接擴 prefix list
         // ===========================================================
@@ -484,6 +467,100 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (lower.EndsWith("-alter")) return false;                      // solo brainstorm 副人格
 
             return true;
+        }
+
+        // ===========================================================
+        // 區塊：T45 sub-rule A — work_post 自動結算（T43 邏輯獨立成 helper 給統一 hook 區塊呼叫）
+        // 物理意義：訊息 routing target group's m_IsWorkChannel=true → credit 1 token 基本薪資
+        // 數值影響：fail-swallow；ledger source_kind=work_post；source_ref=<room>#seq=N；cmd_id 帶 _work_post 後綴
+        // ===========================================================
+        static void TryAutoCreditWorkPost(string senderId, string roomId, int seq, string categoryMeta, string idempKey)
+        {
+            try
+            {
+                var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
+                if (targetGroup == null || !targetGroup.m_IsWorkChannel) return;
+
+                string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_work_post" : $"work_post_{roomId}_{seq}";
+                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                    accountId: senderId,
+                    amount: 1,
+                    sourceKind: "work_post",
+                    sourceRef: $"{roomId}#seq={seq}",
+                    description: $"work post: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
+                    callerAgentId: "system",
+                    cmdId: cmdId);
+                Debug.Log($"[Tavern] work_post auto-credit +1 → {senderId} (group={targetGroup.ID}, category={categoryMeta})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] T45 work_post auto-credit fail（post 主流程不受影響）：{ex.Message}");
+            }
+        }
+
+        // ===========================================================
+        // 區塊：T45 sub-rule B — token_parse 自動結算（T44 新功能，重構整合到 T45 統一 hook）
+        // 物理意義：body 內出現「N token」/「N Token」字樣（case-insensitive）→ 自動 credit N token 給 sender
+        // 數值影響：
+        //   - 限 sender 在 TokenParseAllowedSenders 白名單（v1 預設只 Tim — 避免 agent self-credit 漏洞）
+        //   - regex `(\d+)\s*token` IgnoreCase 抓所有 match，sum 後一筆 credit
+        //   - 0 / 無 match → skip 不寫 ledger
+        //   - 安全 cap：單則訊息上限 100 token；超過 skip + log warning
+        // 邊界：
+        //   - 白名單外 sender → skip（不會 self-credit）
+        //   - body null / 空 → skip
+        //   - regex match 數字超出 int 範圍 → 該筆 skip 不算入 sum
+        //   - cmd_id 帶 _token_parse 後綴跟 work_post sub-rule 區隔
+        // ===========================================================
+        static readonly HashSet<string> TokenParseAllowedSenders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Tim",   // v1 — 只 Tim 的訊息觸發 token_parse；avoid agent self-credit
+        };
+        const int TokenParseMaxPerMessage = 100;
+
+        static void TryAutoCreditTokenParse(string senderId, string roomId, int seq, string body, string idempKey)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(body)) return;
+                if (!TokenParseAllowedSenders.Contains(senderId)) return;   // 白名單檢查（v1: Tim only）
+
+                // regex `(\d+)\s*token` (case insensitive) — 抓 body 內所有「數字 token」字樣
+                // 物理意義：「task 3 Token」/「給 5 token」/「-2 token」等 — 數字提取，正號預設、負號暫不支援（v1 conservative）
+                // 邊界：純數字 prefix（不含 +/-）；「3.5 token」小數捕到 5（保留整數部）；「abc3token」也 match
+                var rx = new System.Text.RegularExpressions.Regex(@"(\d+)\s*token", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                int sum = 0;
+                int matchCount = 0;
+                foreach (System.Text.RegularExpressions.Match m in rx.Matches(body))
+                {
+                    if (int.TryParse(m.Groups[1].Value, out var n) && n > 0)
+                    {
+                        sum += n;
+                        matchCount++;
+                    }
+                }
+                if (sum <= 0) return;
+                if (sum > TokenParseMaxPerMessage)
+                {
+                    Debug.LogWarning($"[Tavern] T45 token_parse skip — sum {sum} > cap {TokenParseMaxPerMessage} (sender={senderId} seq={seq})");
+                    return;
+                }
+
+                string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_token_parse" : $"token_parse_{roomId}_{seq}";
+                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                    accountId: senderId,
+                    amount: sum,
+                    sourceKind: "token_parse",
+                    sourceRef: $"{roomId}#seq={seq}",
+                    description: $"token parse: +{sum} from body ({matchCount} matches), seq={seq}",
+                    callerAgentId: "system",
+                    cmdId: cmdId);
+                Debug.Log($"[Tavern] token_parse auto-credit +{sum} → {senderId} ({matchCount} matches in body, seq={seq})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] T45 token_parse auto-credit fail（post 主流程不受影響）：{ex.Message}");
+            }
         }
 
         // ===========================================================

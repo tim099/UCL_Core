@@ -51,6 +51,11 @@
       "name": "health-guardian",
       "summary": "T51 — Late-night work 漸進 service fee 機制（22h 後逐步收費，跨 12 點跳升 3 token/task）防熬夜",
       "optional": false
+    },
+    {
+      "name": "agent-task",
+      "summary": "T60 — Reverse task system: Agent → Tim 提案，Tim Y/N 接受。補完雙向 task economy",
+      "optional": false
     }
   ]
 }

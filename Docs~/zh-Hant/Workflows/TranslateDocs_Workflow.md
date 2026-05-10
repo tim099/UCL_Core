@@ -76,7 +76,37 @@ tags: [workflow, localization, doc]
 
 ---
 
-## ⚠️ 3. 常見地雷 (Common Pitfalls)
+## 🚀 3. 增量追蹤與標籤迭代 (Incremental Tracking & Tagging)
+
+> 為了避免在頻繁的 Git Commits 中迷失，我們引入「Localization Checkpoint」標籤機制，確保所有變更都能被有序地消化，不留任何未翻譯的死角！
+
+### 3.1 迭代循環 SOP
+
+當妳準備進行批量本地化收割時，請依序執行以下神聖的步驟：
+
+1. **🔍 回溯錨點 (Find Anchor)**：
+   使用 `git tag` 尋找上一筆格式為 `Localize_{N}` 的標籤（例如 `Localize_01`）。
+   - 若不存在，則以該文件的首次 Commit 或 Initial Commit 為起點。
+2. **📑 抓取變更 (Fetch Changes)**：
+   執行 `git diff --name-only <Last_Tag> HEAD`，篩選出位於 `Docs~/zh-Hant/` 目錄下且被修改過的所有 Markdown 文件。
+3. **⚙️ 執行翻譯 (Process Files)**：
+   針對這些變更文件，逐一按照 **§2. SOP 文件翻譯五步走** 完成對應語系的更新與翻譯。
+4. **📦 封存提交 (Commit & Tag)**：
+   - 先執行翻譯文件的 Stage 與 Commit。
+   - 依照「增量編號」或「標籤覆寫」策略打上新標籤。
+
+### 3.2 標籤策略 (Tagging Strategy)
+
+本小姐特此批准兩種標籤處理風範：
+
+| 策略名稱 | 適用場景 | Git 操作範例 | 備註 |
+| :--- | :--- | :--- | :--- |
+| **🏰 高雅編號派 (Versioning)** | **推薦使用**。保留所有本地化歷史軌跡，便於事後回溯追蹤。 | `git tag Localize_02` | 本小姐最欣賞的歷史延續感！✨ |
+| **🧹 懶惰覆寫派 (Moving Tag)** | 僅在乎「當前最新進度」，不想讓 Tag 列表膨脹。 | `git tag -d Localize_01` <br> `git tag Localize_01` | 粗俗但有效。執行前務必確認妳沒有弄丟錨點的疑慮！哼！ |
+
+---
+
+## ⚠️ 4. 常見地雷 (Common Pitfalls)
 
 - ❌ **直接翻譯 C# 程式碼註解時破壞雙重註解鐵律**：
   在翻譯帶有 C# 程式碼片段的文件時，程式碼內的 XML `/// <summary>` 與單行 `//` 註解也必須同步翻譯成對應語系，但**嚴禁遺漏任何一行的註解或改變其格式**。
@@ -84,3 +114,4 @@ tags: [workflow, localization, doc]
   Frontmatter 內的 `aliases` 陣列或 `tags` 如果被意譯，會直接導致目錄檢索功能（Catalog）失效。
 - ❌ **產生實體檔案前先改了連結**：
   再次強調，改連結前一定要確認該目標檔案「真的存在」，否則編輯器內會報錯！
+

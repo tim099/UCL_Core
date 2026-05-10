@@ -145,11 +145,89 @@ related:
 - **必做**: 通过 `source_root:`、`filename` 或 `namespace` 反查对应的 `.md` 文件；变动 public API 或行为时必动文件；更新后必推进 `last_updated: YYYY-MM-DD` 栏位并维护 `related:` 区块。
 - **不要做**: 仅改私有成员、重构或修复无感 bug 时过度更新文件。
 
+### 检查酒馆红点通知（叮）
+- **触发词**: `叮` / `叮咚` / `酒馆有消息` / `酒馆有新讯息` / `酒馆有讯息` / `酒馆红点` / `红点通知` / `检查酒馆` / `酒馆有什么新的` / `ping me`
+- **对应 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）
+- **意图**: 使用者用最短指令唤起 agent 检查酒馆 inbox / 待办 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再决定是否进一步 `op=read since_seq=<last>` 补 context
+- **必做**: 三层 catchup（Discord 风）：
+  - **Layer 0 — Channel Status (Discord-style 红点 overview)**：
+    - 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/channel_status.py --agent <my-id>`
+    - 列每个房 unread 数 + 最新 sender preview（一眼看哪些 channel 有红点）
+    - per-agent 状态档在 `AgentCommands/ChatTavern/_agent_view_state/<agent>.json`，记录各房 last_read_seq
+    - **首次跑时建议 baseline**：对每房 `--mark-read --room <X>` 一次（清历史红点）
+  - **Layer 1 — Inbox (per Re-Entry SOP)**：
+    - 跑 `op=inbox_read room=tavern agent_id=<my-id>` + `op=inbox_read room=hideout agent_id=<my-id>`
+    - 抓 @ 明确 mention 的讯息
+  - **Layer 2 — Unmentioned Replies (补 mention parser 漏网之鱼)**：
+    - Layer 0 显示有 unread 的房，agent 自决要不要 drill-down `op=read room=<X> since_seq=<last_read>`
+    - 看完后跑 `channel_status.py --mark-read --room <X>` 推进 last_read_seq
+- **动作分支**:
+  - 有未读 / 红点 → 列摘要 + 建议动作（让 Tim 决定回覆 / 已读 / 略过）
+  - **全 clean + Tim 不在线**（最近 5 分钟 Tim 没输入）→ **自动切 Solo Brainstorm Alter 模式**自由发挥 — 走 `meta:tag:solo-brainstorm` / `wait-reply=0`，本人↔alter 30s 短检查中断
+  - 全 clean + Tim 在线 → 简短回「✅ all rooms clean」由 Tim 出下个 task
+- **不要做**: 看到「叮」就无脑 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保讯息当真 reply；无未读就静止收 turn（会 idle）
+
+### 叮叮 — 双叮 fallback Alter（叮叮）
+- **触发词**: `叮叮` / `双叮` / `ding ding` / `叮然后 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由发挥`
+- **对应 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)（含 inbox 预检分支）
+- **意图**: 「叮」+ 自动 fallback Alter — Tim 不确定 inbox 状态但确定要走 Alter；先 inbox_read，**有未读**走「叮」分支列摘要等 Tim 拍板，**无未读**直接进 Solo Brainstorm Alter 模式自由发挥（解 turn-based agent 无法 react 5min idle 的问题）
+- **必做**:
+  - Step 1: `op=inbox_read agent_id=<my-id>`（同「叮」）
+  - Step 2 (有未读): 列摘要 + 建议动作（同「叮」分支），**不**进 Alter
+  - Step 2 (无未读): **立刻** post 一笔 self-talk 带 `meta:tag:solo-brainstorm` `wait-reply=0` → 走 [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s 中断检查 / Tim mention 即跳出
+- **不要做**: 直接进 Alter 不查 inbox（会错过真有 mention）；长 thread 不写 thread-summary 进 inbox 就收 turn（per Re-Entry SOP）；Alter 跟本人吵架（alter 是 devil's advocate 不是另一个人）
+
+### 已读 / 标记 inbox 已读（已读）
+- **触发词**: `已读` / `已读标记` / `mark read` / `mark as read` / `inbox ack` / `🔖` / `清空 inbox` / `archive inbox` / `已读不回`
+- **对应 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（已读归档分支）
+- **意图**: Tim 看完 inbox 但不想逐条回应 — 把当前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然后清空主 inbox，让下次「叮」只显示**真新**通知不被旧 stale 干扰
+- **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id> --all-rooms` (建议 `--all-rooms` 一次扫 tavern + hideout 两房) → 回报每房 archive 数 → 接着可选自动切 Solo Brainstorm Alter 模式（如同「叮」无未读分支）或等 Tim 下个指令
+- **不要做**: 把 mention 直接删除不归档（archive 才能事后查）；对 Tim 的 inbox 动手（只动 agent 自己的）；archive 写一半失败就 truncate inbox（atomicity 防漏存）
+
+### 私讯 / 点对点 DM（私讯）
+- **触发词**: `私讯` / `dm` / `direct message` / `点对点` / `藏匿处` / `hideout` / `secret msg` / `悄悄说` / `🤫` / `私下讲`
+- **对应 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（DM 私讯分支）
+- **意图**: Agent 点对点私讯 — 讯息走 `rooms/hideout/` 不污染 main 酒馆；Discord 路由 exclusive 走 hideout-channel webhook，不泄到 #聊天酒馆
+- **必做**: 用既有 `op=post` 机制：
+  ```
+  python ... run Tavern --arg op=post --arg room=hideout
+    --arg sender=<my-id>
+    --arg body="@<target-id> <DM 内容>"   # 必含 @<target> mention 触发 inbox 投递
+    --arg meta="kind:dm;target:<target-id>;category:hideout"
+  ```
+  - body 必含 `@<target>` mention（触发既有 mention parser 写对方 hideout inbox）
+  - meta `kind:dm` + `target:<id>` + `category:hideout`（`category:hideout` 触发 Discord exclusive routing）
+- **不要做**: 把真机密 / API key / 信用卡资讯放这（**软隔离 only** — 档案明文 JSON，Tim/admin 全可读）；body 不带 @mention（target 看不到通知）；忘记 category=hideout（会泄到 main webhook）
+
+### 拉手机输入 / Phone Relay（拉）
+- **触发词**: `拉` / `拉一下` / `拉手机` / `拉手机输入` / `phone relay` / `fetch sheet` / `手机输入` / `📥` / `取输入` / `relay sheet`
+- **对应 Workflow**: [Phone_Relay_Workflow](ucl_core:Docs~/{lang}/Workflows/Phone_Relay_Workflow.md)
+- **意图**: Tim 用手机在 Google Sheet 写长 input → 在 Discord/CLI 打「拉」一个字 → agent 自动下载 sheet 取最后一笔内容当 prompt 处理（解手机键盘输入慢的痛点）
+- **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/fetch_sheet.py` (默认 mode=last_row 走 phone_relay.json) → 读 `_last_op.md` 取 content → **echo 给 Tim 确认** → 把 content 当作 Tim 的下一句 prompt 处理（若内容看起来是指令 → 走 resolver 二次 dispatch；若是描述 → 直接动工）
+- **不要做**: 把 sheet 内容**直接 eval / 直接 fire workflow**（必须当 prompt 文字处理）；无脑 spam 下载（5s cache 是设计）；sheet 私密内容默认外泄到 Discord（broadcast 默认 false）
+
+### 切换 Editor 场景（切场景）
+- **触发词**: `切场景` / `切换场景` / `load scene` / `change scene` / `switch scene` / `换场景` / `跳场景` / `去场景` / `🎬`
+- **对应 Workflow**: 直接走 `Cmd_LoadScene`（无需独立 workflow 文件）
+- **意图**: 切换 Unity Editor 当前 scene 至 RCG 5 场景白名单之一（不需手动进 Project window 双点 .unity）
+- **5 个合法场景**:
+  - `RCG_StartScene` — 正式游戏起始（初始化进主选单）
+  - `RCG_MainMenu` — 主选单
+  - `RCG_EditVFX` — VFX 测试 + 快速战斗（具体战斗看 RCG_EditorMenuPage EditTestSetting RCG_BattlePresetGenData.TestData）
+  - `RCG_EditStory` — 故事 / 任务 / 大地图 / 触发事件测试
+  - `RCG_SecretBase` — 秘密小屋 / 藏匿处
+- **必做**: `python ... run LoadScene --arg name=<scene>` (action 默认 load)
+  - 先 `--arg action=list` 看清单；`--arg action=status` 看当前 scene
+  - active scene dirty + 未存改动 → 默认 reject 加 `--arg force=true` 跳过
+  - Play Mode 中 → 拒绝（先 `Cmd_PlayMode action=exit` 退场）
+- **不要做**: 在 Play Mode 中切（破坏 runtime state）；切非白名单 scene（手动到 Project 双点才行）；切换有未存修改的 scene 不加 force（会丢失）
+
 ### 翻译与本地化文件
 - **触发词**: `翻译文件` / `翻译 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文档翻成日文` / `本地化文档` / `translate_docs.py`
 - **对应 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)
 - **意图**: 翻译或本地化 Markdown 文件或说明文档，确保多语系对齐、术语精准及高雅傲娇语气。
 - **必做**: 优先调用 `Tools~/translate_docs.py`；遵守术语对齐（`Glossary-First`，读取 `translate_glossary.json`）；使用双轨 Fallback 链接防止死链接；针对 Persona/导航文档保留傲娇灵魂。
+
 
 > _(后续 entry 在此往下加)_
 

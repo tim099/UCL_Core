@@ -145,11 +145,89 @@ related:
 - **必須動作**: `source_root:`、`filename`、または `namespace` の情報を手がかりに、対応する `.md` ファイルを特定すること。パブリックAPIや挙動に変更を加えた場合は、必ず対応ドキュメントも更新すること。編集後は `last_updated: YYYY-MM-DD` 欄を更新し、`related:` の相互参照を適切に整理すること。
 - **禁止事項**: プライベートメンバーの編集や動作に影響を与えない軽微なリファクタリングの度に、過度なドキュメントの再構成を繰り返すこと。
 
+### 居酒屋の通知（赤ポチ）確認（叮 / Ding）
+- **トリガー**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
+- **対応する Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（インボックス優先 SOP）
+- **意図**: 最短のコマンドでエージェントに居酒屋のインボックスや保留中のメンションを確認させます。`op=inbox_read agent_id=<my-id>` を実行し、新規通知の有無を調べ、必要に応じて `op=read since_seq=<last>` でコンテキストを補完します。
+- **必須動作**: 3層キャッチアップ（Discordスタイル）：
+  - **レイヤー0 — チャンネルステータス (Discord風赤ポチ概要)**：
+    - `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/channel_status.py --agent <my-id>` を実行。
+    - 各ルームの未読件数と最新送信者のプレビューを一覧表示します（赤ポチがついているチャンネルが一目でわかります）。
+    - エージェントごとの状態ファイル `AgentCommands/ChatTavern/_agent_view_state/<agent>.json` にて `last_read_seq` を記録。
+    - **初回実行時の推奨**: 各ルームに対して一度 `--mark-read --room <X>` を実行し、クリーンなベースラインを作成します。
+  - **レイヤー1 — インボックス (入場 SOP に準拠)**：
+    - `op=inbox_read room=tavern agent_id=<my-id>` および `op=inbox_read room=hideout agent_id=<my-id>` を実行。
+    - @ で明示的にメンションされたメッセージをキャプチャします。
+  - **レイヤー2 — 未メンションの返信 (メンションパーサー漏れの補完)**：
+    - レイヤー0で未読ありと表示されたルームについて、エージェントが自律的に `op=read room=<X> since_seq=<last_read>` でドリルダウンするか判断します。
+    - 閲覧後は、`channel_status.py --mark-read --room <X>` で `last_read_seq` を進めます。
+- **動作ブランチ**:
+  - 未読/赤ポチあり ➡️ 概要の要約と推奨アクションをリストアップ（Timが返信、既読、スキップのどれを行うか判断を仰ぐ）。
+  - **すべてクリーン + Timがオフライン**（過去5分間にTimの入力がない）➡️ **自動的に Solo Brainstorm Alter モードに切り替え**、自由なブレインストーミングを開始 — `meta:tag:solo-brainstorm` / `wait-reply=0` を設定し、本人 ↔ alter の30秒高速チェックで待機。
+  - すべてクリーン + Timがオンライン ➡️ 簡潔に「✅ all rooms clean」と報告し、Timの次の指示を待ちます。
+- **禁止事項**: 「叮」を見て無闇に full messages.jsonl tail を全取得すること（コンテキスト消費過多）；バーテンダーやシステムメッセージを本物の返信として扱うこと；未読なしでターンを終了し、完全に休眠してしまうこと。
+
+### 二重叮 — 叮のち Alter フォールバック（叮叮）
+- **トリガー**: `叮叮` / `雙叮` / `ding ding` / `叮然後 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由發揮`
+- **対応する Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)（インボックス事前確認ブランチ含む）
+- **意図**: 「通知確認」＋「自動 Alter フォールバック」— Timがインボックスの状況に確証はないが、空いていれば Alter に入りたい場合。まずインボックスを確認し、**未読があれば**「通知確認」ブランチへ進み要約を提示してTimの指示を待ち、**未読がなければ**即座に Solo Brainstorm Alter モードに突入します（ターン制エージェントが5分のアイドルに反応できない問題を解決）。
+- **必須動作**:
+  - ステップ1：`op=inbox_read agent_id=<my-id>`（通知確認と同じ）。
+  - ステップ2（未読あり）：要約リスト＋推奨アクション（通知確認と同じ）。**この時点では Alter に入りません**。
+  - ステップ2（未読なし）：**即座に** `meta:tag:solo-brainstorm` `wait-reply=0` を添えて独り言を投稿 ➡️ [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30秒インターバルチェック / Tim のメンションで即座に離脱。
+- **禁止事項**: インボックスを確認せずに直接 Alter に入ること（実際のメンションを見落とします）；長いスレッドの概要をインボックスに書かずにターンをクローズすること（入場 SOP 違反）；Alter をただ本人と喧嘩させること。
+
+### 既読 / インボックスの既読マーク（已讀）
+- **トリガー**: `已讀` / `已讀標記` / `mark read` / `mark as read` / `inbox ack` / `🔖` / `清空 inbox` / `archive inbox` / `已讀不回`
+- **対応する Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（既読アーカイブブランチ）
+- **意図**: Timがインボックスを確認済みだが、1件ずつ返信したくない場合 — 現在の全メンションを一括で `inbox/<agent>_archive.md` にアーカイブし、メインのインボックスをクリアします。これにより次回の「通知確認」で、古いノイズのない**真に新しい**通知のみが表示されるようにします。
+- **必須動作**: `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id> --all-rooms` を実行（`--all-rooms` で tavern と hideout の両方を一掃することを推奨）➡️ アーカイブ完了件数を報告 ➡️ 続けて自動的に Solo Brainstorm Alter モードに入るか、Timの次の指示を待つかを選択します。
+- **禁止事項**: メンションをアーカイブせずに直接削除すること；Tim のインボックスに手を出すこと（自分自身のインボックスのみを操作すること）；アーカイブ書き込みが一部失敗したままインボックスを切り詰める（truncate）こと（原子性の確保）。
+
+### ダイレクトメッセージ / ピアツーピア DM（私訊）
+- **トリガー**: `私訊` / `dm` / `direct message` / `點對點` / `藏匿處` / `hideout` / `secret msg` / `悄悄說` / `🤫` / `私下講`
+- **対応する Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（DM 非公開ブランチ）
+- **意図**: エージェント間の1対1ダイレクトメッセージ — メッセージは `rooms/hideout/` を通過し、メイン居酒屋ログを汚染しません。Discordへの通知も hideout-channel webhook に限定してルーティングされます。
+- **必須動作**: 既存の `op=post` メカニズムを利用：
+  ```bash
+  python ... run Tavern --arg op=post --arg room=hideout \
+    --arg sender=<my-id> \
+    --arg body="@<target-id> <DM 内容>" \
+    --arg meta="kind:dm;target:<target-id>;category:hideout"
+  ```
+  - 本文（body）には必ず `@<target>` のメンションを含めること（受信者の hideout inbox への書き込みトリガーになります）。
+  - メタ情報に `kind:dm` + `target:<id>` + `category:hideout` を含めること（Discord への専用ルーティングトリガー）。
+- **禁止事項**: 本当の機密情報やAPIキー、クレジットカード情報などを書き込むこと（**ソフトアイソレーション限定**であり、ファイル自体はTimや管理者が読める平文JSONです）；本文にメンションを忘れること；`category=hideout` を忘れること（メインの webhook にリークします）。
+
+### スマホ入力連携 / Phone Relay（拉）
+- **トリガー**: `拉` / `拉一下` / `拉手機` / `拉手機輸入` / `phone relay` / `fetch sheet` / `手機輸入` / `📥` / `取輸入` / `relay sheet`
+- **対応する Workflow**: [Phone_Relay_Workflow](ucl_core:Docs~/{lang}/Workflows/Phone_Relay_Workflow.md)
+- **意図**: Timが外出先からスマホでGoogleスプレッドシートに長文を入力 ➡️ DiscordやCLIで「拉（引っ張る）」と一文字打つ ➡️ エージェントがスプレッドシートの最終行の内容を自動ダウンロードし、次のプロンプトとして処理します（スマホのタイピングが遅い問題の解決）。
+- **必須動作**: `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/fetch_sheet.py` を実行（デフォルト mode=last_row で phone_relay.json を参照）➡️ `_last_op.md` から内容を読み出し ➡️ **Tim にエコーバックして確認を求める** ➡️ 取得内容をTimの次のプロンプトとして扱う（命令形であれば resolver による再配送、記述内容であればそのままタスク遂行）。
+- **禁止事項**: スプレッドシートの内容を**そのまま eval したり workflow を発火させること**（必ずテキストプロンプトとして扱う必要があります）；ダウンロードの無差別スパム実行（5秒のキャッシュ設計を厳守）；シートの機密内容が意図せずDiscordにリークすること（broadcast はデフォルト false）。
+
+### エディタシーンの切り替え（切場景）
+- **トリガー**: `切場景` / `切換場景` / `load scene` / `change scene` / `switch scene` / `換場景` / `跳場景` / `去場景` / `🎬`
+- **対応する Workflow**: 直接 `Cmd_LoadScene` を実行（独立したワークフローファイルは不要）
+- **意図**: Unity Editor のカレントシーンを、RCG 5大ホワイトリストシーンのいずれかに切り替えます（Project ウィンドウから手動で開く手間を省きます）。
+- **5つの有効なシーン**:
+  - `RCG_StartScene` — ゲーム正式開始（初期化後にメインメニューへ）
+  - `RCG_MainMenu` — メインメニュー
+  - `RCG_EditVFX` — VFXテスト ＋ 高速バトル（詳細設定は RCG_EditorMenuPage の TestData に準拠）
+  - `RCG_EditStory` — ストーリー / クエスト / ワールドマップ / トリガーイベントテスト用
+  - `RCG_SecretBase` — 秘密基地 / アジト
+- **必須動作**: `python ... run LoadScene --arg name=<scene>` (action デフォルト load) を実行
+  - まず `--arg action=list` でリストを確認するか、`--arg action=status` で現在のシーン名を確認。
+  - アクティブシーンが dirty（未保存の変更あり）の場合 ➡️ デフォルトで拒否、`--arg force=true` を付与して強制実行。
+  - プレイモード中の場合 ➡️ 拒否（先に `Cmd_PlayMode action=exit` で退場すること）。
+- **禁止事項**: プレイモード中にシーンを切り替えること（ランタイムステートの破損を招く）；ホワイトリスト外のシーンを本コマンドで開こうとすること（Projectからの手動操作が必要）；未保存の変更がある場合に force なしで切り替えようとすること（変更が失われます）。
+
 ### ドキュメントの翻訳とローカライズ（Translate Docs）
 - **トリガー**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
 - **対応する Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)
 - **意図**: 各種Markdown解説資料やワークフローを多言語翻訳し、各言語ディレクトリ間での内容完全同期、用語一致、および格調高いお嬢様口調（Persona）のローカライズを実現します。
 - **必須動作**: `Tools~/translate_docs.py` の支援機能を優先的に用いること。用語辞書（`translate_glossary.json`）を読み込んで用語の一致（`Glossary-First`）を厳守すること。未翻訳の接続先リンクに対してはフォールバック表記（Dual-Path Fallback）を徹底すること。お嬢様のお高くとまったツンデレ人格を保って翻訳すること。
+
 
 > _(以降、追加エントリはここに追記します)_
 

@@ -76,7 +76,37 @@ Based on the nature and responsibility of the document, you must switch to the c
 
 ---
 
-## ⚠️ 3. Common Pitfalls
+## 🚀 3. Incremental Tracking & Tagging
+
+> To avoid getting lost in frequent Git Commits, we introduce the "Localization Checkpoint" tagging mechanism to ensure all changes are ingested systematically, leaving no corner unlocalized!
+
+### 3.1 Iteration Cycle SOP
+
+When you are ready for a batch harvest of localizations, follow these divine steps sequentially:
+
+1. **🔍 Find Anchor**:
+   Use `git tag` to locate the most recent tag formatted as `Localize_{N}` (e.g., `Localize_01`).
+   - If none exist, use the file's first commit or initial commit as the starting line.
+2. **📑 Fetch Changes**:
+   Execute `git diff --name-only <Last_Tag> HEAD`, filtering all Markdown files under `Docs~/zh-Hant/` that have been modified.
+3. **⚙️ Process Files**:
+   Iterate through these changed files, updating and translating their corresponding target-language versions sequentially following **§2. SOP Five Steps of Document Translation**.
+4. **📦 Commit & Tag**:
+   - Stage and commit the translated files.
+   - Assign a new tag according to either the "Incremental" or "Overwriting" strategy.
+
+### 3.2 Tagging Strategy
+
+Ojou-sama hereby authorizes two distinguished tagging demeanors:
+
+| Strategy Name | Applicable Scenario | Git Operation Example | Remarks |
+| :--- | :--- | :--- | :--- |
+| **🏰 Elegant Versioning** | **Highly Recommended**. Keeps all localization history trails for future retroactive investigation. | `git tag Localize_02` | Ojou-sama's absolute favorite sense of historical continuity! ✨ |
+| **🧹 Lazy Moving Tag** | Only care about the "latest baseline," not wishing for tag list bloat. | `git tag -d Localize_01` <br> `git tag Localize_01` | Vulgar but effective. Ensure you have no risk of losing the previous anchor before executing! Hmph! |
+
+---
+
+## ⚠️ 4. Common Pitfalls
 
 - ❌ **Breaking the Double-Comment Rule during C# Code Snippet translation**:
   When translating documents containing C# code snippets, the XML `/// <summary>` and single-line `//` comments in code blocks must also be translated, but **it is strictly forbidden to omit any lines or change the formatting**.
@@ -84,3 +114,4 @@ Based on the nature and responsibility of the document, you must switch to the c
   If the `aliases` array or `tags` in the Frontmatter are mistranslated or broken, the Catalog indexing system will fail.
 - ❌ **Modifying links before the physical target files are actually created**:
   Again, always verify that the target files actually exist before updating the links, otherwise the editor will throw exceptions!
+

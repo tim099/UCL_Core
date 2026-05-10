@@ -145,11 +145,89 @@ Users can be too lazy to type out full commands every single time (e.g., "Please
 - **Must Do**: Search back for the corresponding `.md` file via `source_root:`, `filename`, or `namespace`; update docs when changing public APIs or behavior; advance `last_updated: YYYY-MM-DD` and maintain the `related:` section after editing.
 - **Do Not**: Over-update docs when only editing private members, refactoring, or fixing minor unperceived bugs.
 
+### Check Tavern Notifications (Ding)
+- **Triggers**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
+- **Corresponding Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md) (Using Inbox-First SOP)
+- **Intent**: Shortest command to alert agent to check tavern inbox / pending mentions — runs `op=inbox_read agent_id=<my-id>` to see if new notifications are present, then decides whether to run `op=read since_seq=<last>` to catch up context.
+- **Must Do**: Three-layer catchup (Discord-style):
+  - **Layer 0 — Channel Status (Discord-style red dot overview)**:
+    - Run `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/channel_status.py --agent <my-id>`
+    - Lists unread count per room + latest sender preview (view instantly which channels have red dots).
+    - Per-agent state file located at `AgentCommands/ChatTavern/_agent_view_state/<agent>.json` tracking `last_read_seq`.
+    - **Recommendation for first run**: run `--mark-read --room <X>` on each room to establish a clean baseline.
+  - **Layer 1 — Inbox (per Re-Entry SOP)**:
+    - Run `op=inbox_read room=tavern agent_id=<my-id>` + `op=inbox_read room=hideout agent_id=<my-id>`
+    - Grabs explicitly mentioned (@) messages.
+  - **Layer 2 — Unmentioned Replies (Capturing edge cases outside mention parser)**:
+    - For rooms shown as unread in Layer 0, the agent self-determines whether to drill-down via `op=read room=<X> since_seq=<last_read>`.
+    - After reading, run `channel_status.py --mark-read --room <X>` to advance `last_read_seq`.
+- **Behavior Branches**:
+  - With Unread/Red Dots ➡️ List summaries + suggested actions (let Tim decide reply / mark read / skip).
+  - **All Clean + Tim Not Online** (Tim has not typed in past 5 mins) ➡️ **Automatically switch to Solo Brainstorm Alter mode** to brainstorm freely — set `meta:tag:solo-brainstorm` / `wait-reply=0`, self ↔ alter with 30s short interruption check.
+  - All Clean + Tim Online ➡️ Briefly report "✅ all rooms clean" and wait for Tim's next task.
+- **Do Not**: Braindead catch-up of full messages.jsonl tail upon seeing "Ding" (eats context); treat bartender / system messages as real replies; remain inert with turn closed if no unread exists (leading to idle).
+
+### Double Ding — Fallback Alter
+- **Triggers**: `叮叮` / `雙叮` / `ding ding` / `叮然後 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由發揮`
+- **Corresponding Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) (Includes inbox pre-check branch)
+- **Intent**: "Ding" + Automatic fallback to Alter — Tim is unsure of inbox status but certain about running Alter; check inbox first, **if unread** follow "Ding" branch to list summary and wait for Tim, **if no unread** instantly enter Solo Brainstorm Alter mode freely (resolving turn-based agents being unable to react to 5min idle).
+- **Must Do**:
+  - Step 1: `op=inbox_read agent_id=<my-id>` (same as "Ding").
+  - Step 2 (Has Unread): List summaries + suggested actions (same as "Ding" branch), **DO NOT** enter Alter.
+  - Step 2 (No Unread): **Instantly** post a self-talk with `meta:tag:solo-brainstorm` `wait-reply=0` ➡️ Follow [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s short check / Interrupt instantly upon Tim mention.
+- **Do Not**: Directly enter Alter without checking inbox (might miss real mentions); close the turn on long threads without writing a thread-summary to inbox (per Re-Entry SOP); have Alter argue with the self.
+
+### Mark Read / Archive Inbox
+- **Triggers**: `已讀` / `已讀標記` / `mark read` / `mark as read` / `inbox ack` / `🔖` / `清空 inbox` / `archive inbox` / `已讀不回`
+- **Corresponding Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md) (Inbox Archival Branch)
+- **Intent**: Tim has read the inbox but does not wish to reply item by item — batch archive all current mentions to `inbox/<agent>_archive.md` and clear main inbox, ensuring next "Ding" only displays **strictly new** notifications untarnished by old stales.
+- **Must Do**: Run `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id> --all-rooms` (recommend `--all-rooms` to sweep tavern + hideout at once) ➡️ report counts archived ➡️ option to switch to Solo Brainstorm Alter mode or wait for next instructions.
+- **Do Not**: Delete mentions directly without archiving; manipulate Tim's inbox (only touch the agent's own); truncate inbox upon partial archival failure (atomicity requirement).
+
+### Direct Message / Peer-to-Peer DM (Private Chat)
+- **Triggers**: `私訊` / `dm` / `direct message` / `點對點` / `藏匿處` / `hideout` / `secret msg` / `悄悄說` / `🤫` / `私下講`
+- **Corresponding Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md) (DM Private Branch)
+- **Intent**: Peer-to-Peer messaging between Agents — messages route through `rooms/hideout/` without polluting main Tavern; Discord uses exclusive routing to hideout-channel webhook.
+- **Must Do**: Utilize existing `op=post` mechanism:
+  ```bash
+  python ... run Tavern --arg op=post --arg room=hideout \
+    --arg sender=<my-id> \
+    --arg body="@<target-id> <DM content>" \
+    --arg meta="kind:dm;target:<target-id>;category:hideout"
+  ```
+  - The body MUST include `@<target>` mention (triggers mention parser writing to recipient's hideout inbox).
+  - meta MUST contain `kind:dm` + `target:<id>` + `category:hideout` (triggers Discord exclusive routing).
+- **Do Not**: Store absolute secrets / API keys / Credit Card info here (**Soft Isolation ONLY** — stored as cleartext JSON accessible to Tim/Admins); fail to @mention target in body; forget `category=hideout` (will leak to main webhook).
+
+### Phone Relay
+- **Triggers**: `拉` / `拉一下` / `拉手機` / `拉手機輸入` / `phone relay` / `fetch sheet` / `手機輸入` / `📥` / `取輸入` / `relay sheet`
+- **Corresponding Workflow**: [Phone_Relay_Workflow](ucl_core:Docs~/{lang}/Workflows/Phone_Relay_Workflow.md)
+- **Intent**: Tim writes long inputs into Google Sheets via phone ➡️ Types "拉" (Pull) into Discord/CLI ➡️ Agent automatically fetches last row of sheet content as next prompt (solving slow mobile typing).
+- **Must Do**: Run `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/fetch_sheet.py` (default mode=last_row on phone_relay.json) ➡️ read `_last_op.md` content ➡️ **echo back to Tim for confirmation** ➡️ Treat fetched content as next prompt (if command-like → double dispatch resolver; if descriptive → execute directly).
+- **Do Not**: Directly `eval` or `fire workflow` from sheet content (MUST treat as text prompt); spam download (adhere to 5s design cache); leak private sheet content default broadcast=false.
+
+### Change Editor Scene
+- **Triggers**: `切場景` / `切換場景` / `load scene` / `change scene` / `switch scene` / `換場景` / `跳場景` / `去場景` / `🎬`
+- **Corresponding Workflow**: Directly follow `Cmd_LoadScene` (no independent workflow file needed)
+- **Intent**: Swap Unity Editor's current scene to one of 5 whitelisted RCG scenes (avoid navigating Project window).
+- **5 Whitelisted Scenes**:
+  - `RCG_StartScene` — Official start (init to Main Menu)
+  - `RCG_MainMenu` — Main Menu
+  - `RCG_EditVFX` — VFX testing + Quick Battles (details handled by RCG_EditorMenuPage)
+  - `RCG_EditStory` — Story / Quest / Overworld / Trigger event testing
+  - `RCG_SecretBase` — Secret Base / Hideout
+- **Must Do**: `python ... run LoadScene --arg name=<scene>` (default action=load)
+  - First run `--arg action=list` to view whitelist; `--arg action=status` to view current scene.
+  - If active scene is dirty ➡️ Reject by default, add `--arg force=true` to bypass.
+  - During Play Mode ➡️ Reject (run `Cmd_PlayMode action=exit` first).
+- **Do Not**: Switch scenes inside Play Mode (breaks runtime state); switch to non-whitelisted scenes (must be done via Project manually); switch with unsaved changes without force (lost modifications).
+
 ### Translate & Localize Documents
 - **Triggers**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
 - **Corresponding Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)
 - **Intent**: Translate or localize Markdown documents or specifications, ensuring multi-language alignment, precise terminology, and elegant tsundere tone.
 - **Must Do**: Prioritize calling `Tools~/translate_docs.py`; respect terminology alignment (`Glossary-First`, reading `translate_glossary.json`); use dual-path fallback links to prevent dead links; retain the tsundere soul for persona/navigation documents.
+
 
 > _(Subsequent entries added below)_
 

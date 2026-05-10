@@ -1,9 +1,9 @@
 {
   "_schema_version": 1,
   "_synced_from": "../../../Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-05-10T11:08:07Z",
+  "_synced_at": "2026-05-10T11:23:11Z",
   "_synced_by": "sync_command_table.py",
-  "_entry_count": 18,
+  "_entry_count": 19,
   "triggers": [
     {
       "entry_id": "entry_dd5b15",
@@ -400,6 +400,28 @@
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Phone_Relay_Workflow.md",
       "intent": "Tim 用手機在 Google Sheet 寫長 input → 在 Discord/CLI 打「拉」一個字 → agent 自動下載 sheet 取最後一筆內容當 prompt 處理（解手機鍵盤輸入慢的痛點）",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "editor",
+      "display_name": "切換 Editor 場景",
+      "tags": [],
+      "phrases": [
+        "切場景",
+        "切換場景",
+        "load scene",
+        "change scene",
+        "switch scene",
+        "換場景",
+        "跳場景",
+        "去場景",
+        "🎬"
+      ],
+      "workflow_path": "",
+      "intent": "切換 Unity Editor 當前 scene 至 RCG 5 場景白名單之一（不需手動進 Project window 雙點 .unity）",
       "lang": [
         "zh",
         "en"

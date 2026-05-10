@@ -208,6 +208,22 @@ related:
 - **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/fetch_sheet.py` (預設 mode=last_row 走 phone_relay.json) → 讀 `_last_op.md` 取 content → **echo 給 Tim 確認** → 把 content 當作 Tim 的下一句 prompt 處理（若內容看起來是指令 → 走 resolver 二次 dispatch；若是描述 → 直接動工）
 - **不要做**: 把 sheet 內容**直接 eval / 直接 fire workflow**（必須當 prompt 文字處理）；無腦 spam 下載（5s cache 是設計）；sheet 私密內容默認外洩到 Discord（broadcast 預設 false）
 
+### 切換 Editor 場景（切場景）
+- **觸發詞**: `切場景` / `切換場景` / `load scene` / `change scene` / `switch scene` / `換場景` / `跳場景` / `去場景` / `🎬`
+- **對應 Workflow**: 直接走 `Cmd_LoadScene`（無需獨立 workflow 文件）
+- **意圖**: 切換 Unity Editor 當前 scene 至 RCG 5 場景白名單之一（不需手動進 Project window 雙點 .unity）
+- **5 個合法場景**:
+  - `RCG_StartScene` — 正式遊戲起始（初始化進主選單）
+  - `RCG_MainMenu` — 主選單
+  - `RCG_EditVFX` — VFX 測試 + 快速戰鬥（具體戰鬥看 RCG_EditorMenuPage EditTestSetting RCG_BattlePresetGenData.TestData）
+  - `RCG_EditStory` — 故事 / 任務 / 大地圖 / 觸發事件測試
+  - `RCG_SecretBase` — 秘密小屋 / 藏匿處
+- **必做**: `python ... run LoadScene --arg name=<scene>` (action 預設 load)
+  - 先 `--arg action=list` 看清單；`--arg action=status` 看當前 scene
+  - active scene dirty + 未存改動 → 預設 reject 加 `--arg force=true` 跳過
+  - Play Mode 中 → 拒絕（先 `Cmd_PlayMode action=exit` 退場）
+- **不要做**: 在 Play Mode 中切（破壞 runtime state）；切非白名單 scene（手動到 Project 雙點才行）；切換有未存修改的 scene 不加 force（會丟失）
+
 ### 翻譯與本地化文件
 - **觸發詞**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
 - **對應 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)

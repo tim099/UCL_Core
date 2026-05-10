@@ -17,3 +17,7 @@ Assets/Standard Assets/Best HTTP (Pro)/
 # Python bytecode cache（Tools~/AgentCommands/*.py 跑時 CPython 自動產生）
 __pycache__/
 *.py[co]
+
+# CommandResolver runtime caches（fetch_sheet 5s TTL cache / per-agent EMA weights）
+Tools~/AgentCommands/CommandResolver/_resolver_cache/
+Tools~/AgentCommands/CommandResolver/weights.json

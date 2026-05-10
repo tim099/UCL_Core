@@ -14,9 +14,12 @@ import unicodedata
 from typing import Dict, Optional
 
 # 區塊職責：標點剝除 regex
-# 物理意義：保留 [\w一-鿿] (英數+中日韓統一表意)，把其他符號替換為空白
-# 數值影響：'!' / '?' / '。' / '，' 等被剝除；空白會被 collapse
-_PUNCT_RE = re.compile(r"[^\w一-鿿　-〿]+", re.UNICODE)
+# 物理意義：保留 [\w一-鿿] (英數+中日韓) + emoji 範圍 (U+1F300-1FAFF / U+2600-27BF)，其他剝除
+# 數值影響：'!' / '?' / '。' / '，' 等被剝除；emoji（📥 / ✨ / 🍕）保留為觸發詞
+_PUNCT_RE = re.compile(
+    r"[^\w一-鿿　-〿\U0001F300-\U0001FAFF☀-➿⌀-⏿]+",
+    re.UNICODE,
+)
 _MULTI_WS_RE = re.compile(r"\s+", re.UNICODE)
 
 

@@ -1,0 +1,12 @@
+{
+  "_schema_version": 1,
+  "_purpose": "Phone Relay — 手機在 Google Sheet 寫長 input → 手機 Discord 打「拉」 → agent 自動下載 sheet 當 prompt",
+  "sheet_id": "1-WF55DG4uil-cWIgIiEixEy8tZ8KwB016WKrByCdzTg",
+  "default_gid": 0,
+  "default_mode": "last_row",
+  "default_format": "csv",
+  "cache_ttl_sec": 5,
+  "max_content_chars": 4000,
+  "echo_before_act": true,
+  "_notes": "sheet 必須設『擁有連結者可檢視』(public)。agent 拿到 content 後會 echo 顯示讓 Tim 確認，5s 內不撤回才執行（防誤觸）。"
+}

@@ -145,6 +145,20 @@ related:
 - **必做**: 透過 `source_root:`、`filename` 或 `namespace` 反查對應的 `.md` 文件；變動 public API 或行為時必動文件；更新後必推進 `last_updated: YYYY-MM-DD` 欄位並維護 `related:` 區塊。
 - **不要做**: 僅改私有成員、重構或修復無感 bug 時過度更新文件。
 
+### 檢查酒館紅點通知（叮）
+- **觸發詞**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
+- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）
+- **意圖**: 使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context
+- **必做**: 第一條 op 必為 `inbox_read`（per Re-Entry SOP）；無未讀 → 簡短回「✅ inbox clean」；有未讀 → 列摘要 + 建議動作
+- **不要做**: 看到「叮」就無腦 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保訊息當真 reply
+
+### 拉手機輸入 / Phone Relay（拉）
+- **觸發詞**: `拉` / `拉一下` / `拉手機` / `拉手機輸入` / `phone relay` / `fetch sheet` / `手機輸入` / `📥` / `取輸入` / `relay sheet`
+- **對應 Workflow**: [Phone_Relay_Workflow](ucl_core:Docs~/{lang}/Workflows/Phone_Relay_Workflow.md)
+- **意圖**: Tim 用手機在 Google Sheet 寫長 input → 在 Discord/CLI 打「拉」一個字 → agent 自動下載 sheet 取最後一筆內容當 prompt 處理（解手機鍵盤輸入慢的痛點）
+- **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/fetch_sheet.py` (預設 mode=last_row 走 phone_relay.json) → 讀 `_last_op.md` 取 content → **echo 給 Tim 確認** → 把 content 當作 Tim 的下一句 prompt 處理（若內容看起來是指令 → 走 resolver 二次 dispatch；若是描述 → 直接動工）
+- **不要做**: 把 sheet 內容**直接 eval / 直接 fire workflow**（必須當 prompt 文字處理）；無腦 spam 下載（5s cache 是設計）；sheet 私密內容默認外洩到 Discord（broadcast 預設 false）
+
 ### 翻譯與本地化文件
 - **觸發詞**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
 - **對應 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)

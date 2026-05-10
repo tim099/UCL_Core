@@ -27,16 +27,35 @@ description: |
 
 ```bash
 python AgentCommands/run_cmd.py run NoteLesson \
-  --arg body="<短句精華 < 30 字>" \
+  --arg body="<headline 精華 30-80 字>" \
   --arg actor="<agent_id>" \
-  --arg category="<bug|design|workflow|debug|test>"
+  --arg category="<bug|design|workflow|debug|test>" \
+  --arg detail="<長文敘述 optional 可留 context / 重現步驟 / 解法細節>"
 ```
 
+**body 字數規則修訂 (Tim 2026-05-11 拍板)**：
+- 舊版：`< 30 字` 一行精華 → 太簡短失去訊息量
+- 新版：**body 30~80 字 headline**（一句話講清楚 what + why）
+  - 太短（< 20 字）→ 一年後自己看不懂上下文
+  - 太長（> 100 字）→ 屬於 detail 段不該擠進 headline
+- **detail 欄位（新增 optional）**：自由長度敘述 — 重現步驟 / context / 解法細節 / 反例參考。寫進 jsonl 一起 audit，不會 promote 進 SKILL.md curated（curated 仍是精華）。
+
 行為：
-1. append `AgentCommands/Lessons/lessons.jsonl` 一行 JSONL entry (ts/actor/category/body)
+1. append `AgentCommands/Lessons/lessons.jsonl` 一行 JSONL entry (ts/actor/category/body/detail)
 2. 寫 `AgentCommands/Lessons/_last_lesson.md` 給 caller confirm
 3. 同 body 重複 → skip 防重 (dedupe check)
 4. category 自由欄位（agent 自律分類，譬如 "bug" / "design" / "workflow"）
+
+**好的 lesson 範例**：
+```
+body: "BattleSnapshot 不列 mana → agent 盲射 cost 不足，cmd Cmd_BattleAction 還回 Success+ledger reward 假 progress"
+detail: "T82 馬拉松 dogfood 撞到。Root cause: PlayCardAsync 是 fire-forget UniTask 內部 LogError 不 throw → cmd 樂觀回 Success。Fix 在 RCG_AgentBattleService 內 cost-check 後再呼叫 (commit d687e46f)。對應 lesson L-bug-1 hand idx instability 同類 silent fail pattern。"
+```
+
+**反例（太短失去訊息量）**：
+```
+body: "mana 沒檢查"   ← 太短，一年後不知道 context
+```
 
 ## Promote curated SKILL.md 流程
 
@@ -52,7 +71,7 @@ jsonl 是 raw audit log，curated SKILL.md 是 ≤ 100 字精華頂級 lesson。
 
 - **Claude / Antigravity / Gemini 都讀本 skill** — jsonl 共享，actor 欄位標來源
 - **新 session re-enter**: 先 grep curated list + jsonl tail (--limit 20) 找近期教訓
-- **不要寫超長 lesson** — 一行精華 < 30 字；長 retrospective 走 `docs/Plan/` 或 `docs/Postmortem/`
+- **body 30-80 字 headline / detail 自由長度** (Tim 2026-05-11 修訂) — 太短失去訊息量；長 retrospective 仍走 `docs/Plan/` 或 `docs/Postmortem/`
 - **跨 session 撞同樣坑兩次** = 教訓沒落 SKILL.md curated → 該 promote
 
 ## 不要做

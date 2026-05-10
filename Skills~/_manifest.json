@@ -56,6 +56,11 @@
       "name": "agent-task",
       "summary": "T60 — Reverse task system: Agent → Tim 提案，Tim Y/N 接受。補完雙向 task economy",
       "optional": false
+    },
+    {
+      "name": "valor-battle",
+      "summary": "T63 — 戰場觀察 + 介入指令集 (Cmd_BattleSnapshot/Action/Summary) + 60s cooldown + 4-layer broadcast policy → 英勇紋章 Discord channel",
+      "optional": false
     }
   ]
 }

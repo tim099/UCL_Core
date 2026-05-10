@@ -335,6 +335,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             Comma(); sb.Append("\"sender_id\":\"").Append(EscapeStr(m.sender_id)).Append("\"");
             Comma(); sb.Append("\"sender_name\":\"").Append(EscapeStr(m.sender_name)).Append("\"");
+            // Phase 1 (Tim 2026-05-11 拍板) — sender_persona only emit when 非空, 維持 backward compat (legacy 訊息無此欄位)
+            if (!string.IsNullOrEmpty(m.sender_persona))
+            {
+                Comma(); sb.Append("\"sender_persona\":\"").Append(EscapeStr(m.sender_persona)).Append("\"");
+            }
             Comma(); sb.Append("\"kind\":\"").Append(EscapeStr(m.kind ?? "chat")).Append("\"");
             Comma(); sb.Append("\"body\":\"").Append(EscapeStr(m.body ?? "")).Append("\"");
             if (m.reply_to.HasValue)

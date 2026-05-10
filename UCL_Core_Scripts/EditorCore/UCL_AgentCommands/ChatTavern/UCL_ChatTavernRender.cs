@@ -39,7 +39,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 {
                     sb.Append("(").Append(m.kind).Append(") ");
                 }
-                sb.Append(m.sender_name ?? m.sender_id ?? "?").Append(": ");
+                sb.Append(m.DisplayName).Append(": ");
                 sb.Append(m.body ?? "");
                 if (m.reply_to.HasValue) sb.Append(" _(↩ ").Append(m.reply_to.Value).Append(")_");
                 sb.Append(hl ? "**" : "");

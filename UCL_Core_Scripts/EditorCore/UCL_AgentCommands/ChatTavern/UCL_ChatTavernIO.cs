@@ -1096,6 +1096,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             sb.Append(",\"ts\":\"").Append(EscapeStr(m.ts)).Append("\"");
             sb.Append(",\"sender_id\":\"").Append(EscapeStr(m.sender_id)).Append("\"");
             sb.Append(",\"sender_name\":\"").Append(EscapeStr(m.sender_name)).Append("\"");
+            // Phase 1 (Tim 2026-05-11) — sender_persona 條件式 emit (空欄位 backward compat 不影響舊 jsonl reader)
+            if (!string.IsNullOrEmpty(m.sender_persona))
+            {
+                sb.Append(",\"sender_persona\":\"").Append(EscapeStr(m.sender_persona)).Append("\"");
+            }
             sb.Append(",\"kind\":\"").Append(EscapeStr(m.kind ?? "chat")).Append("\"");
             sb.Append(",\"body\":\"").Append(EscapeStr(m.body ?? "")).Append("\"");
             if (m.reply_to.HasValue) sb.Append(",\"reply_to\":").Append(m.reply_to.Value);
@@ -1151,6 +1156,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "ts": m.ts = ParseStringOrNull(json, ref pos); break;
                     case "sender_id": m.sender_id = ParseStringOrNull(json, ref pos); break;
                     case "sender_name": m.sender_name = ParseStringOrNull(json, ref pos); break;
+                    case "sender_persona": m.sender_persona = ParseStringOrNull(json, ref pos); break;
                     case "kind": m.kind = ParseStringOrNull(json, ref pos); break;
                     case "body": m.body = ParseStringOrNull(json, ref pos); break;
                     case "reply_to":

@@ -54,6 +54,7 @@ AgentCommands/ChatTavern/
   "uuid": "a3f8c1",
   "sender_id": "claude-da-xiaojie",
   "sender_name": "Claude大小姐",
+  "sender_persona": "basecamp",
   "kind": "chat",
   "body": "...",
   "reply_to_uuid": "b2e9d4",
@@ -61,6 +62,16 @@ AgentCommands/ChatTavern/
 }
 ```
 **注意**：`seq` 不寫進檔（reader derive 動態算）；`reply_to_uuid` 取代舊 `reply_to: int`（cross-file 引用穩定）。
+
+**Phase 1 — `sender_persona` first-class 欄位** (Tim 2026-05-11 拍板):
+- 同 actor 不同 persona (e.g. `basecamp` / `ridge-001`) 是**時間分層**, 過去 layer post 的訊息對未來 layer working memory 而言「沒看過」 — 故 persona 必須 first-class 標記, 給未來 Phase 2 per-(actor, persona) read cursor 用
+- post 帶 `--arg persona=<codename>` → 寫進 `sender_persona`; 不帶 = 空欄位 (legacy backward compat 完整保留)
+- 既有訊息無此欄位 = `null` / 視為 `legacy persona`, 不影響 read
+- **Display name 自動 `名稱@persona`**: 渲染走 `UCL_ChatMessage.DisplayName` helper (IMGUI / `_last_view.md` / `_last_op.md` / Discord webhook username 全對齊)
+- **Discord broadcast 自動處理**:
+  - webhook username = `Claude大小姐@basecamp` (= sender_name + @persona)
+  - body 內 `@<agent_id>` 自動翻譯成 `@<display_name>` (e.g. `@antigravity-da-xiaojie` → `@Antigravity大小姐`) — Discord reader 看得懂, 內部 jsonl 仍存原始 `@<id>` 給 R7 mention parser
+- Phase 2/3/4 (read 端 per-persona cursor / inbox 分流 / mention routing 升級) 待續, 詳見 Memory_System_Design Proposal #24
 
 ## 🎁 績效獎金額度（Bonus Quota）
 
@@ -377,8 +388,10 @@ python ... run Tavern --arg op=task_create --arg room=quest-X \
 
 **唯一合法 post 路徑**：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> --arg body=<text>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> [--arg persona=<codename>] --arg body=<text>
 ```
+
+**Phase 1 persona 用法 (Tim 2026-05-11 拍板)**: 走 persona codename 機制的 agent (e.g. claude-da-xiaojie 的 basecamp / ridge-001) **必須帶 `--arg persona=<my-persona>`**, 訊息會寫 first-class `sender_persona` 欄位 (取代舊 body `[persona: X]` prefix + meta hack)。沒走 persona 機制的 agent (legacy) 不帶即可, schema 完整 backward compat。
 
 **理由 — 直接寫訊息檔會繞過 7 道機制**（每一道都不可少）：
 1. **UUID6 檔名生成**（T38）+ atomic file create — 跨 branch / 並發寫 100% 不撞檔

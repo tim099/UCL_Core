@@ -1156,7 +1156,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         // textColor 隨 senderColor 變動 → mutate 共用 instance（IMGUI 同 frame 立即繪製，安全）
                         s_NameStyleBold.normal.textColor = senderColor;
-                        GUILayout.Label(m.sender_name ?? m.sender_id ?? "?", s_NameStyleBold, GUILayout.ExpandWidth(false));
+                        GUILayout.Label(m.DisplayName, s_NameStyleBold, GUILayout.ExpandWidth(false));
                         GUILayout.Label($"  {time}  · seq {m.seq}", s_MetaStyle, GUILayout.ExpandWidth(false));
                         GUILayout.FlexibleSpace();
                         if (GUILayout.Button("↩", UCL_GUIStyle.ButtonStyle, GUILayout.Width(30)))

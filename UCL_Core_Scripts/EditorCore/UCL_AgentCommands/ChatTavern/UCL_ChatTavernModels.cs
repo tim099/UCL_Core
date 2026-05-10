@@ -143,12 +143,27 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string uuid;                      // T38 NEW: 6-char hex; 跟檔名 UUID 對齊
         public string sender_id;
         public string sender_name;
+        public string sender_persona;            // Phase 1 (Tim 2026-05-11 拍板) — 同 actor 不同 persona (basecamp / ridge-001 etc.) 的時間分層 first-class 標記；空字串/null = legacy/未走 persona 機制
         public string kind;                      // "chat" 為預設
         public string body;
         public int? reply_to;                    // T38 deprecated: 改用 reply_to_uuid（保留欄位讓舊 record load 不爆）
         public string reply_to_uuid;             // T38 NEW: 取代 reply_to int seq 的跨檔引用方式
         public Dictionary<string, string> meta;  // 自由 key-value
         public List<UCL_ChatRef> refs;           // 檔案引用列表
+
+        /// <summary>
+        /// Phase 1 (Tim 2026-05-11 拍板) — 渲染用 display name。
+        /// 物理意義: 統一 render 點 — 帶 persona = "name@persona" / 不帶 = "name"。
+        /// 使用點: UCL_ChatTavernRender / UCL_ChatTavernPage / 未來 Discord notify 都該走本 helper。
+        /// </summary>
+        public string DisplayName
+        {
+            get
+            {
+                string name = sender_name ?? sender_id ?? "?";
+                return string.IsNullOrEmpty(sender_persona) ? name : $"{name}@{sender_persona}";
+            }
+        }
     }
 
     /// <summary>

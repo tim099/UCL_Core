@@ -27,7 +27,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "createroom: id=房間ID name=顯示名 description=描述\n" +
             "listrooms: (無參數)\n" +
             "join: room=房間ID id=身分ID name=顯示名 kind=agent|human|system\n" +
-            "post: room=房間ID sender=身分ID body=訊息內容 [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2]\n" +
+            "post: room=房間ID sender=身分ID body=訊息內容 [persona=codename(Phase1: persona-aware schema)] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2]\n" +
             "read: room=房間ID [tail=N] [from=N] [to=N] [since_seq=N] [limit=N] [search=keyword]\n" +
             "members: room=房間ID\n" +
             "leave: room=房間ID sender=身分ID\n" +
@@ -232,6 +232,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string replyToStr = GetArg(args, "reply_to", "");
             string metaStr = GetArg(args, "meta", "");
             string refsStr = GetArg(args, "refs", "");
+            // Phase 1 (Tim 2026-05-11 拍板) — sender_persona first-class 欄位
+            // 物理意義：同 actor 不同 persona (basecamp / ridge-001 etc.) 的時間分層標記，給未來 read 端 per-persona cursor 用
+            // 數值影響：null/empty = legacy 行為不變；有值 = 寫進 message json sender_persona 欄位
+            string senderPersona = GetArg(args, "persona", GetArg(args, "sender_persona", ""));
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("post 缺少 room"); return; }
             if (string.IsNullOrEmpty(senderId)) { RejectLastOp("post 缺少 sender（身分ID；可用 sender= / sender_id= / id=）"); return; }
             if (string.IsNullOrEmpty(body)) { RejectLastOp("post 缺少 body"); return; }
@@ -347,6 +351,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 sender_id = senderId,
                 sender_name = senderName,
+                sender_persona = senderPersona,
                 kind = "chat",
                 body = body,
                 reply_to = int.TryParse(replyToStr, out var rt) ? rt : (int?)null,

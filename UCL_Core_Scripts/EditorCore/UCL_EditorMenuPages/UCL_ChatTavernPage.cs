@@ -157,7 +157,15 @@ namespace UCL.Core.EditorLib.Page
         static GUIStyle s_NameStyleBold;
         static GUIStyle s_BodyStyleWrap;
         static GUIStyle s_BodyStyleNonChat;          // wrap + italic（join/leave/system 用）
-        static System.Text.StringBuilder s_MetaBuilder;  // DrawMessageRow meta 拼接 reuse；Clear() 不釋放 capacity
+        static System.Text.StringBuilder s_MetaBuilder;  // DrawMessageRow meta拼接 reuse；Clear() 不釋放 capacity
+
+        // ===== Treasury Balance Cache =====
+        // 物理意義：每幀讀取 Treasury JSON 太重，快取目前選中身分的 Token 餘額。
+        // 數值影響：供 DrawIdentityPicker 顯示用，不影響底層 Ledger。
+        int m_CachedTokenBalance = 0;
+        string m_CachedBalanceIdentityId = null;
+        double m_LastBalanceRefreshTime = 0;
+        const double BalanceRefreshIntervalSec = 2.0;
 
         protected override void TopBarButtons()
         {
@@ -897,6 +905,16 @@ namespace UCL.Core.EditorLib.Page
                 {
                     m_PendingShowCreateIdentity = !m_ShowCreateIdentity;
                 }
+
+                // 區塊職責：顯示當前角色的 Token 餘額
+                // 物理意義：讓使用者在發言/切換身分時能即時知曉國庫水位，無縫對接跨維度經濟
+                // 數值影響：純讀取，資料來自 UpdateTokenBalance() 節流快取
+                UpdateTokenBalance();
+                string tokenDisplay = string.IsNullOrEmpty(m_SelectedIdentityId) ? "---" : m_CachedTokenBalance.ToString();
+                GUILayout.Space(10);
+                GUILayout.Label($"💰 餘額: <color=#ffd700><b>{tokenDisplay}</b></color> Token", 
+                    new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+
                 GUILayout.FlexibleSpace();
 
             }
@@ -1439,6 +1457,35 @@ namespace UCL.Core.EditorLib.Page
             {
                 RefreshMessages();
                 RefreshMembers();
+            }
+        }
+
+        // 區塊職責：節流抓取 Treasury 餘額
+        // 物理意義：每 2 秒或身分切換時，才主動查一次 UCL_TreasuryLedger 防止 IO 暴衝
+        // 數值影響：寫入 m_CachedTokenBalance
+        void UpdateTokenBalance()
+        {
+            double now = UnityEditor.EditorApplication.timeSinceStartup;
+            bool idChanged = m_SelectedIdentityId != m_CachedBalanceIdentityId;
+            if (!idChanged && now - m_LastBalanceRefreshTime < BalanceRefreshIntervalSec) return;
+
+            m_CachedBalanceIdentityId = m_SelectedIdentityId;
+            m_LastBalanceRefreshTime = now;
+
+            if (string.IsNullOrEmpty(m_SelectedIdentityId))
+            {
+                m_CachedTokenBalance = 0;
+                return;
+            }
+
+            try
+            {
+                // 呼叫靜態 API 取回 Token 數量
+                m_CachedTokenBalance = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.GetBalance(m_SelectedIdentityId, "tavern_token");
+            }
+            catch
+            {
+                m_CachedTokenBalance = 0;
             }
         }
 

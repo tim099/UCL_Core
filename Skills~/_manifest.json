@@ -61,6 +61,11 @@
       "name": "valor-battle",
       "summary": "T63 — 戰場觀察 + 介入指令集 (Cmd_BattleSnapshot/Action/Summary) + 60s cooldown + 4-layer broadcast policy → 英勇紋章 Discord channel",
       "optional": false
+    },
+    {
+      "name": "qa-bug-reward",
+      "summary": "T68 — Tim 確認真 bug 時 agent 拍板 grant reward token (severity tier 1/3/5/10)；mint pattern 勞動所得",
+      "optional": false
     }
   ]
 }

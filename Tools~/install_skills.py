@@ -221,7 +221,7 @@ def file_sha1(path: Path) -> str:
     return h.hexdigest()
 
 
-def copy_skill(src_dir: Path, dst_dir: Path, log: _Log) -> tuple[int, int]:
+def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False) -> tuple[int, int]:
     """Copy contents of src_dir to dst_dir. Returns (copied, skipped_due_to_edit)."""
     copied = 0
     skipped = 0
@@ -251,7 +251,7 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log) -> tuple[int, int]:
             if dst_hash == src_hash:
                 continue  # already up to date
             recorded = prior_hashes.get(str(rel).replace(os.sep, "/"))
-            if recorded is not None and dst_hash != recorded:
+            if not force and recorded is not None and dst_hash != recorded:
                 log.warn(
                     f"local edit detected, skipping: {dst_file} "
                     f"(rerun with --force-overwrite to replace, or delete the file)"
@@ -334,7 +334,7 @@ def remove_skill(dst_dir: Path, log: _Log) -> bool:
 # 區塊職責：將 UCL 的 Skill 目錄（含 SKILL.md）轉寫為單一 Markdown 檔案，並自動注入 Antigravity 專屬的 always_on 觸發器。
 # 物理意義：這將 UCL 的動態工作流 Skill 標準，無縫對映到 Gemini/Antigravity 的全域規則載入目錄，確保其能夠自動識別並常駐載入。
 # 數值影響：不涉及效能損耗，生成一個新規則檔案 (如 ucl-chat-tavern.md) 與一個對應的 .ucl_source 追蹤檔，並更新全域 .ucl_installed 檔。
-def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log) -> tuple[int, int]:
+def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log, force: bool = False) -> tuple[int, int]:
     """Copy SKILL.md from src_dir to dst_file with frontmatter transformation."""
     # 參數 src_dir: 來源 Skill 的目錄路徑 (e.g. Skills~/ucl-chat-tavern/)
     # 參數 dst_file: 目標規則檔案路徑 (e.g. .agents/rules/ucl-chat-tavern.md)
@@ -394,7 +394,7 @@ def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log) -> tuple[in
             return 0, 0  # 已經是最新，直接返回 (0 拷貝, 0 略過)
         # 為了處理 frontmatter 的 trigger 注入，我們這裡需要比對雜湊記錄
         recorded = prior_hashes.get("SKILL.md")  # 從先前的防寫紀錄中獲取 SKILL.md 當初對應的雜湊 (此值已修正為轉換後的 hash)
-        if recorded is not None and dst_hash != recorded:  # 若雜湊記錄存在且目標已被使用者手動修改
+        if not force and recorded is not None and dst_hash != recorded:  # 若雜湊記錄存在且目標已被使用者手動修改
             log.warn(f"local edit detected, skipping: {dst_file}")  # 輸出警告日誌，避免覆寫開發者的手工修改
             skipped += 1  # 累計略過計數
             return 0, skipped  # 提前返回並回報略過
@@ -477,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print actions without changing files.")
     parser.add_argument("--quiet", action="store_true", help="Suppress per-file logs.")
     parser.add_argument("--project-root", help="Override host project root detection.")
+    parser.add_argument("--force-overwrite", "--force", action="store_true", help="Force overwrite skills that have local edits.")
     args = parser.parse_args(argv)
 
     log = _Log(quiet=args.quiet, dry=args.dry_run)
@@ -528,7 +529,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.target == "antigravity":
             if args.link:
                 log.warn("--link is not supported for single-file antigravity rules, falling back to copy.")
-            copied, skipped = copy_skill_antigravity(src, skills_dst_root / f"{name}.md", log)
+            copied, skipped = copy_skill_antigravity(src, skills_dst_root / f"{name}.md", log, force=args.force_overwrite)
             total_copied += copied
             total_skipped += skipped
             if skipped:
@@ -540,7 +541,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not ok:
                     exit_code = 2
                 continue
-            copied, skipped = copy_skill(src, dst, log)
+            copied, skipped = copy_skill(src, dst, log, force=args.force_overwrite)
             total_copied += copied
             total_skipped += skipped
             if skipped:

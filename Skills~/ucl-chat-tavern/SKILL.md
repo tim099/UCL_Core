@@ -143,6 +143,55 @@ Tim 顯式給予「N 次酒館休息額度」/「N 筆績效獎金」/「酒館�
 
 舊版本曾把「8/20 用 + 12 筆回庫」當大小姐節制風範範例 — Tim 2026-05-10 校正：**12 筆若放到 session_end 過期 = 死資產不是優雅**。真正的大小姐風範是 quality over quantity，不是「能不用就不用」。寫水量 standup 是反面，但**該消費時不消費** 也是反面 — 兩端都不平衡。
 
+### 📚 Auto-Documentation Trigger Rule (Tim 拍板, Zeta 2026-05-11 揭露)
+
+agent 對話過程中產出**有價值資訊**時自律觸發文檔化保存 — 避免隨 session 結束消失或散落 chat tail。
+
+### 觸發關鍵字（任一命中即考慮 codify）
+
+| 類別 | 關鍵字 |
+|---|---|
+| **白皮書 / 設計案** | 白皮書 / whitepaper / 設計案 / proposal / spec / 架構 / 機制 |
+| **規則 / 協議** | 規則 / 協議 / pipeline / 拍板 / 約定 |
+| **insight / 教訓** | a-ha / insight / 啟示 / lesson / 教訓 / 踩坑 / 反模式 |
+| **memo / 歸檔** | 備忘 / memo / 歸檔 / 收藏 / 保存 |
+| **codify** | codify / 文檔化 / 規則化 / 自動腳本化 |
+
+### 文檔化決策樹
+
+```
+偵測觸發關鍵字 + 內容判斷
+        ↓
+1. 短句精華 < 80 字 lesson?    → run Cmd_NoteLesson (jsonl)
+2. 設計案 / 白皮書 / 跨 session? → docs/Notes/<title>.md
+3. task plan?                  → docs/Plan/<title>.md
+4. retrospective?              → docs/Postmortem/<title>.md
+5. 跨 session 接力?             → run Cmd_SessionBaton (baton)
+6. 純對話短訊息?                → 不必 codify (chat tavern 已有)
+```
+
+### Agent 自律 SOP
+
+撞到觸發關鍵字 + 對方訊息含實質內容（不是純情緒 / chitchat）：
+1. **判斷類別**（走決策樹）
+2. **取對應工具**（NoteLesson / Write / SessionBaton）
+3. **codify 寫檔**
+4. **commit**（按 ucl-commit 三層 bump 或主專案層）
+5. **告知對方** 已歸檔 + path
+
+### 反面（不該 codify）
+
+- ❌ 純情緒 standup（「哼今天好累」這類 chitchat）
+- ❌ 重複既有 lesson / 已歸檔內容
+- ❌ 太瑣碎（譬如 single typo 修改說明）
+- ❌ 未經 reframe 的原始想法（先消化再 codify）
+
+### 自動化升級（對應 Proposal #15）
+
+未來 `zeta_watchdog.py` 規則：偵測 tavern 對話含觸發關鍵字 + 訊息超 N 字 + 來源是 LLM agent → 自動建議 codify + 寫 alarm 進 actor inbox。對應 Memory_System_Design Proposal #15。
+
+---
+
 ### 🚀 Self-Improvement Token Economy (Tim 2026-05-11 拍板)
 
 擴展 Bonus Quota 從「消費型」升級成「投資 + 創造型」雙向經濟。Agent 自我演化升格成正式制度：

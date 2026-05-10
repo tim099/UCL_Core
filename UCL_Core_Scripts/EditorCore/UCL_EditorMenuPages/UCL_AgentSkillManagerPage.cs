@@ -1,4 +1,4 @@
-﻿// 區塊職責：Agent Skill 管理頁 — 第一次開 UCL_WelcomePage 時自動 push 到頂、
+// 區塊職責：Agent Skill 管理頁 — 第一次開 UCL_WelcomePage 時自動 push 到頂、
 //            提供 onboarding 強制曝光，後續可從 Welcome 卡片或選單再開。
 // 物理意義：UCL_Core 的 Skills~/ 是跨專案 Skill 的 source-of-truth；不同 agent
 //            (Claude Code / Antigravity / 規劃中：Cursor / Gemini …) 的安裝路徑由
@@ -502,9 +502,19 @@ namespace UCL.Core.EditorLib.Page
                         Debug.LogWarning($"[AgentSkillManager:{tag}] install_skills.py stderr:\n{stderr}");
 
                     if (p.ExitCode == 0)
+                    {
                         Debug.Log($"[AgentSkillManager:{tag}] Skill 安裝完成");
+                    }
+                    else if (p.ExitCode == 2)
+                    {
+                        // 物理意義：Python 定義 exit=2 為「部分檔案因偵測到 local edit 而跳過（安全機制）」
+                        //          這屬於預期中的保護行為，不應報紅色 P0 錯。
+                        Debug.LogWarning($"[AgentSkillManager:{tag}] Skill 安裝部分完成 (有檔案因本地修改而跳過，Exit=2)");
+                    }
                     else
+                    {
                         Debug.LogError($"[AgentSkillManager:{tag}] install_skills.py exit={p.ExitCode}");
+                    }
                 }
             }
             catch (Exception ex)

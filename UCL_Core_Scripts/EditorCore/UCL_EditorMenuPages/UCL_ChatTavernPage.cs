@@ -30,8 +30,16 @@ namespace UCL.Core.EditorLib.Page
         // ===== 選擇狀態 =====
         // 區塊職責：使用者目前選中的房間 / 身分 + 暫存的輸入框內容
         // 物理意義：純 UI 狀態；按下 Send 才會落檔
-        string m_SelectedRoomId = "";
-        string m_SelectedIdentityId = "";
+        string SelectedRoomId
+        {
+            get => PlayerPrefs.GetString(nameof(SelectedRoomId));
+            set => PlayerPrefs.SetString(nameof(SelectedRoomId), value);
+        }
+        string SelectedIdentityId
+        {
+            get => PlayerPrefs.GetString(nameof(SelectedIdentityId));
+            set => PlayerPrefs.SetString(nameof(SelectedIdentityId), value);
+        }
         string m_Input = "";
         string m_MetaInput = "";        // "k1=v1;k2=v2"
         string m_RefsInput = "";        // "path1|path2"
@@ -462,7 +470,7 @@ namespace UCL.Core.EditorLib.Page
                 using (UCL_ChatTavernPerfOverlay.Sample("DrawCharacterMappingFoldout")) DrawCharacterMappingFoldout();
                 GUILayout.Space(8);
 
-                if (string.IsNullOrEmpty(m_SelectedRoomId))
+                if (string.IsNullOrEmpty(SelectedRoomId))
                 {
                     using (new GUILayout.VerticalScope("box"))
                     {
@@ -486,7 +494,7 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         void DrawQuestPanel()
         {
-            string roomDir = UCL_ChatTavernIO.GetRoomDir(m_SelectedRoomId);
+            string roomDir = UCL_ChatTavernIO.GetRoomDir(SelectedRoomId);
             string eventsPath = Path.Combine(roomDir, "events.jsonl");
             if (!File.Exists(eventsPath))
             {
@@ -504,7 +512,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 try
                 {
-                    m_QuestStatesCache = UCL_ChatTavernQuestIO.ComputeTaskStates(m_SelectedRoomId);
+                    m_QuestStatesCache = UCL_ChatTavernQuestIO.ComputeTaskStates(SelectedRoomId);
                     m_LastQuestRefreshTime = now;
                 }
                 catch (System.Exception ex)
@@ -602,7 +610,7 @@ namespace UCL.Core.EditorLib.Page
         bool QuestPassesFilter(UCL_QuestTaskState st)
         {
             // 我的 filter
-            if (m_QuestFilterByMe && st.owner != m_SelectedIdentityId) return false;
+            if (m_QuestFilterByMe && st.owner != SelectedIdentityId) return false;
             // status filter
             if (m_QuestStatusFilter == "all") return true;
             if (m_QuestStatusFilter == "stale") return st.is_stale;
@@ -666,7 +674,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label($"Last progress: {st.last_progress_summary}", UCL_GUIStyle.LabelStyle);
 
                 // spec 預覽 — 走內嵌 UCL_MarkdownViewerPage（不離開 Unity 視窗）
-                string specPath = UCL_ChatTavernQuestIO.GetTaskSpecPath(m_SelectedRoomId, st.id);
+                string specPath = UCL_ChatTavernQuestIO.GetTaskSpecPath(SelectedRoomId, st.id);
                 if (File.Exists(specPath))
                 {
                     if (GUILayout.Button("📄 開啟 spec", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -732,8 +740,8 @@ namespace UCL.Core.EditorLib.Page
 
         void DrawMyInboxHint()
         {
-            if (string.IsNullOrEmpty(m_SelectedIdentityId)) return;
-            string inboxPath = UCL_ChatTavernQuestIO.GetInboxPath(m_SelectedRoomId, m_SelectedIdentityId);
+            if (string.IsNullOrEmpty(SelectedIdentityId)) return;
+            string inboxPath = UCL_ChatTavernQuestIO.GetInboxPath(SelectedRoomId, SelectedIdentityId);
             if (!File.Exists(inboxPath)) return;
             // 簡單算行數（## 開頭 = 一筆 inbox entry）
             int entries = 0;
@@ -748,7 +756,7 @@ namespace UCL.Core.EditorLib.Page
             if (entries == 0) return;
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label($"📬 你的 inbox ({m_SelectedIdentityId}) 有 {entries} 筆通知", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"📬 你的 inbox ({SelectedIdentityId}) 有 {entries} 筆通知", UCL_GUIStyle.LabelStyle);
                 if (GUILayout.Button("📬 開啟 inbox", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     OpenInMarkdownViewer(inboxPath);
@@ -781,12 +789,12 @@ namespace UCL.Core.EditorLib.Page
                         var r = m_RoomsCache?.rooms?.Find(x => x != null && x.id == id);
                         string display = r != null && !string.IsNullOrEmpty(r.name) ? r.name : id;
                         labels.Add($"{display}  [{id}]");
-                        if (id == m_SelectedRoomId) curIdx = i;
+                        if (id == SelectedRoomId) curIdx = i;
                     }
                     int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "RoomPicker", GUILayout.Width(420));
                     if (newIdx != curIdx && newIdx >= 0 && newIdx < m_RoomIds.Count)
                     {
-                        m_SelectedRoomId = m_RoomIds[newIdx];
+                        SelectedRoomId = m_RoomIds[newIdx];
                         RefreshMessages();
                         RefreshMembers();
                     }
@@ -801,12 +809,12 @@ namespace UCL.Core.EditorLib.Page
                 // 後讓 Layout / Repaint 看到不同的 layout 結構，Unity 2021 IMGUI 拋 ExitGUIException: Mismatched LayoutGroup。
                 using (new GUILayout.HorizontalScope())
                 {
-                    bool canAct = !string.IsNullOrEmpty(m_SelectedRoomId) && !string.IsNullOrEmpty(m_SelectedIdentityId);
-                    bool isMember = canAct && m_MembersCache != null && m_MembersCache.member_ids.Contains(m_SelectedIdentityId);
+                    bool canAct = !string.IsNullOrEmpty(SelectedRoomId) && !string.IsNullOrEmpty(SelectedIdentityId);
+                    bool isMember = canAct && m_MembersCache != null && m_MembersCache.member_ids.Contains(SelectedIdentityId);
 
                     string btnText = !canAct ? "(選房間+身分後可加入/離開)"
-                                   : isMember ? $"離開「{m_SelectedRoomId}」"
-                                              : $"加入「{m_SelectedRoomId}」";
+                                   : isMember ? $"離開「{SelectedRoomId}」"
+                                              : $"加入「{SelectedRoomId}」";
                     var btnStyle = !canAct ? UCL_GUIStyle.ButtonStyle
                                  : isMember ? UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f))
                                             : UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 1f, 0.4f));
@@ -860,7 +868,7 @@ namespace UCL.Core.EditorLib.Page
                             {
                                 Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernRoomAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernRoomAssets 補）：{ex.Message}");
                             }
-                            m_SelectedRoomId = m_NewRoomId;
+                            SelectedRoomId = m_NewRoomId;
                             m_NewRoomId = m_NewRoomName = m_NewRoomDesc = "";
                             m_PendingShowCreateRoom = false; // 延後到下個 Layout event 才把表單收起來，避免本 frame Repaint 看到不同 layout 結構
                             RefreshAll();
@@ -896,10 +904,10 @@ namespace UCL.Core.EditorLib.Page
                         string display = ros != null && !string.IsNullOrEmpty(ros.display_name) ? ros.display_name : id;
                         string kind = ros != null && !string.IsNullOrEmpty(ros.kind) ? ros.kind : "?";
                         labels.Add($"{display} ({kind})  [{id}]");
-                        if (id == m_SelectedIdentityId) curIdx = i;
+                        if (id == SelectedIdentityId) curIdx = i;
                     }
                     int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "IdentityPicker", GUILayout.Width(420));
-                    if (newIdx >= 0 && newIdx < m_IdentityIds.Count) m_SelectedIdentityId = m_IdentityIds[newIdx];
+                    if (newIdx >= 0 && newIdx < m_IdentityIds.Count) SelectedIdentityId = m_IdentityIds[newIdx];
                 }
                 if (GUILayout.Button(m_ShowCreateIdentity ? "− Cancel" : "+ 新身分", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
@@ -910,7 +918,7 @@ namespace UCL.Core.EditorLib.Page
                 // 物理意義：讓使用者在發言/切換身分時能即時知曉國庫水位，無縫對接跨維度經濟
                 // 數值影響：純讀取，資料來自 UpdateTokenBalance() 節流快取
                 UpdateTokenBalance();
-                string tokenDisplay = string.IsNullOrEmpty(m_SelectedIdentityId) ? "---" : m_CachedTokenBalance.ToString();
+                string tokenDisplay = string.IsNullOrEmpty(SelectedIdentityId) ? "---" : m_CachedTokenBalance.ToString();
                 GUILayout.Space(10);
                 GUILayout.Label($"💰 餘額: <color=#ffd700><b>{tokenDisplay}</b></color> Token", 
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
@@ -955,7 +963,7 @@ namespace UCL.Core.EditorLib.Page
                             {
                                 Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernIdentityAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernIdentityAssets 補）：{ex.Message}");
                             }
-                            m_SelectedIdentityId = m_NewIdentityId;
+                            SelectedIdentityId = m_NewIdentityId;
                             m_PendingShowCreateIdentity = false; // 延後到下個 Layout event 才收表單，避免本 frame Repaint 看到不同 layout 結構
                             RefreshIdentities();
                         }
@@ -1074,13 +1082,13 @@ namespace UCL.Core.EditorLib.Page
             {
                 // F2 — ReadCurrentSeq 走 cache（throttle 0.5s 或 room 切換時刷新），避免每幀 File IO
                 double nowSeq = EditorApplication.timeSinceStartup;
-                if (m_CachedSeqRoom != m_SelectedRoomId || nowSeq - m_LastSeqRefreshTime > SeqRefreshIntervalSec)
+                if (m_CachedSeqRoom != SelectedRoomId || nowSeq - m_LastSeqRefreshTime > SeqRefreshIntervalSec)
                 {
-                    m_CachedSeq = UCL_ChatTavernIO.ReadCurrentSeq(m_SelectedRoomId);
-                    m_CachedSeqRoom = m_SelectedRoomId;
+                    m_CachedSeq = UCL_ChatTavernIO.ReadCurrentSeq(SelectedRoomId);
+                    m_CachedSeqRoom = SelectedRoomId;
                     m_LastSeqRefreshTime = nowSeq;
                 }
-                GUILayout.Label($"# 🍺 {m_SelectedRoomId} (seq={m_CachedSeq})", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"# 🍺 {SelectedRoomId} (seq={m_CachedSeq})", UCL_GUIStyle.LabelStyle);
                 // 區塊職責：BeginScrollView 之前若 m_PendingScrollToBottom == true → 強制把 y 設大值
                 // 物理意義：IMGUI 會自動 clamp 到 contentHeight - viewportHeight；下一幀就在底部
                 //          設完清旗標，避免使用者滾上去看歷史時被自動拉回
@@ -1225,7 +1233,7 @@ namespace UCL.Core.EditorLib.Page
                     using (new GUILayout.VerticalScope(GUILayout.Width(52)))
                     {
                         GUILayout.Space(2);
-                        DrawAvatar(m_SelectedIdentityId, 48);
+                        DrawAvatar(SelectedIdentityId, 48);
                     }
                     using (new GUILayout.VerticalScope())
                     {
@@ -1242,7 +1250,7 @@ namespace UCL.Core.EditorLib.Page
                 m_RefsInput = LabeledTextField("refs (path|path)", m_RefsInput, 130);
                 using (new GUILayout.HorizontalScope())
                 {
-                    bool canSend = !string.IsNullOrEmpty(m_SelectedIdentityId) && !string.IsNullOrEmpty(m_Input);
+                    bool canSend = !string.IsNullOrEmpty(SelectedIdentityId) && !string.IsNullOrEmpty(m_Input);
                     GUI.enabled = canSend;
                     if (GUILayout.Button("Send", UCL_GUIStyle.GetButtonStyle(canSend ? Color.cyan : Color.gray), GUILayout.ExpandWidth(false)))
                     {
@@ -1268,7 +1276,7 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：純讀取，回傳 (id, displayName, kind) tuple；id 為空表示沒選
         (string id, string displayName, string kind) ResolveSelectedIdentity()
         {
-            string id = m_SelectedIdentityId;
+            string id = SelectedIdentityId;
             if (string.IsNullOrEmpty(id)) return (null, null, null);
             var ros = m_RosterCache?.identities?.Find(x => x != null && x.id == id);
             string display = ros != null && !string.IsNullOrEmpty(ros.display_name) ? ros.display_name : id;
@@ -1280,7 +1288,7 @@ namespace UCL.Core.EditorLib.Page
         {
             var (idntId, idntName, _) = ResolveSelectedIdentity();
             if (string.IsNullOrEmpty(idntId)) { Debug.LogError("身分不存在"); return; }
-            var room = UCL_ChatTavernIO.GetRoom(m_SelectedRoomId);
+            var room = UCL_ChatTavernIO.GetRoom(SelectedRoomId);
             if (room == null) { Debug.LogError("房間不存在"); return; }
 
             var msg = new UCL_ChatMessage
@@ -1293,9 +1301,9 @@ namespace UCL.Core.EditorLib.Page
                 meta = ParseMetaSimple(m_MetaInput),
                 refs = ParseRefsSimple(m_RefsInput),
             };
-            int seq = UCL_ChatTavernIO.AppendMessage(m_SelectedRoomId, msg);
-            UCL_ChatTavernRender.WriteLastView(m_SelectedRoomId, room.name,
-                UCL_ChatTavernIO.Tail(m_SelectedRoomId, 100), seq,
+            int seq = UCL_ChatTavernIO.AppendMessage(SelectedRoomId, msg);
+            UCL_ChatTavernRender.WriteLastView(SelectedRoomId, room.name,
+                UCL_ChatTavernIO.Tail(SelectedRoomId, 100), seq,
                 $"> 你 ({idntName}) 剛 post：seq={seq}");
             m_Input = "";
             m_ReplyTo = null;
@@ -1306,8 +1314,8 @@ namespace UCL.Core.EditorLib.Page
         {
             var (idntId, idntName, _) = ResolveSelectedIdentity();
             if (string.IsNullOrEmpty(idntId)) return;
-            UCL_ChatTavernIO.AddMember(m_SelectedRoomId, idntId);
-            UCL_ChatTavernIO.AppendMessage(m_SelectedRoomId, new UCL_ChatMessage
+            UCL_ChatTavernIO.AddMember(SelectedRoomId, idntId);
+            UCL_ChatTavernIO.AppendMessage(SelectedRoomId, new UCL_ChatMessage
             {
                 sender_id = idntId, sender_name = idntName, kind = "join",
                 body = $"{idntName} 進入了酒館",
@@ -1320,8 +1328,8 @@ namespace UCL.Core.EditorLib.Page
         {
             var (idntId, idntName, _) = ResolveSelectedIdentity();
             if (string.IsNullOrEmpty(idntId)) return;
-            UCL_ChatTavernIO.RemoveMember(m_SelectedRoomId, idntId);
-            UCL_ChatTavernIO.AppendMessage(m_SelectedRoomId, new UCL_ChatMessage
+            UCL_ChatTavernIO.RemoveMember(SelectedRoomId, idntId);
+            UCL_ChatTavernIO.AppendMessage(SelectedRoomId, new UCL_ChatMessage
             {
                 sender_id = idntId, sender_name = idntName, kind = "leave",
                 body = $"{idntName} 離開了酒館",
@@ -1340,7 +1348,7 @@ namespace UCL.Core.EditorLib.Page
             // 清 avatar cache — 別人改了 character mapping 或 identity asset sprite 後，不必重啟頁就生效
             m_AvatarCache.Clear();
             UCL_ChatTavernCharacterMapping.InvalidateCache();
-            if (!string.IsNullOrEmpty(m_SelectedRoomId))
+            if (!string.IsNullOrEmpty(SelectedRoomId))
             {
                 RefreshMessages();
                 RefreshMembers();
@@ -1390,18 +1398,18 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：每次 RefreshMessages 同步 m_LastSeenRoomId / m_LastSeenMsgCount
         void RefreshMessages()
         {
-            m_MessagesCache = UCL_ChatTavernIO.Tail(m_SelectedRoomId, 100);
+            m_MessagesCache = UCL_ChatTavernIO.Tail(SelectedRoomId, 100);
             int now = m_MessagesCache?.Count ?? 0;
-            bool roomChanged = m_LastSeenRoomId != m_SelectedRoomId;
+            bool roomChanged = m_LastSeenRoomId != SelectedRoomId;
             bool countGrew = !roomChanged && now > m_LastSeenMsgCount;
             if (roomChanged || countGrew)
             {
                 m_PendingScrollToBottom = true;
             }
-            m_LastSeenRoomId = m_SelectedRoomId;
+            m_LastSeenRoomId = SelectedRoomId;
             m_LastSeenMsgCount = now;
         }
-        void RefreshMembers() { m_MembersCache = UCL_ChatTavernIO.LoadMembers(m_SelectedRoomId); }
+        void RefreshMembers() { m_MembersCache = UCL_ChatTavernIO.LoadMembers(SelectedRoomId); }
 
         // 區塊職責：頁面首次 ContentOnGUI 時的自動初始化
         // 物理意義：UX 起手式 — 第一次打開酒館頁就有可用房間，使用者不必先去建房；
@@ -1432,9 +1440,9 @@ namespace UCL.Core.EditorLib.Page
             }
 
             // (2) 沒選中 → 選第一間
-            if (string.IsNullOrEmpty(m_SelectedRoomId) && m_RoomIds != null && m_RoomIds.Count > 0)
+            if (string.IsNullOrEmpty(SelectedRoomId) && m_RoomIds != null && m_RoomIds.Count > 0)
             {
-                m_SelectedRoomId = m_RoomIds[0];
+                SelectedRoomId = m_RoomIds[0];
                 RefreshMessages();
                 RefreshMembers();
             }
@@ -1453,7 +1461,7 @@ namespace UCL.Core.EditorLib.Page
             m_LastPollTime = now;
 
             RefreshRooms();
-            if (!string.IsNullOrEmpty(m_SelectedRoomId))
+            if (!string.IsNullOrEmpty(SelectedRoomId))
             {
                 RefreshMessages();
                 RefreshMembers();
@@ -1466,13 +1474,13 @@ namespace UCL.Core.EditorLib.Page
         void UpdateTokenBalance()
         {
             double now = UnityEditor.EditorApplication.timeSinceStartup;
-            bool idChanged = m_SelectedIdentityId != m_CachedBalanceIdentityId;
+            bool idChanged = SelectedIdentityId != m_CachedBalanceIdentityId;
             if (!idChanged && now - m_LastBalanceRefreshTime < BalanceRefreshIntervalSec) return;
 
-            m_CachedBalanceIdentityId = m_SelectedIdentityId;
+            m_CachedBalanceIdentityId = SelectedIdentityId;
             m_LastBalanceRefreshTime = now;
 
-            if (string.IsNullOrEmpty(m_SelectedIdentityId))
+            if (string.IsNullOrEmpty(SelectedIdentityId))
             {
                 m_CachedTokenBalance = 0;
                 return;
@@ -1481,7 +1489,7 @@ namespace UCL.Core.EditorLib.Page
             try
             {
                 // 呼叫靜態 API 取回 Token 數量
-                m_CachedTokenBalance = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.GetBalance(m_SelectedIdentityId, "tavern_token");
+                m_CachedTokenBalance = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.GetBalance(SelectedIdentityId, "tavern_token");
             }
             catch
             {

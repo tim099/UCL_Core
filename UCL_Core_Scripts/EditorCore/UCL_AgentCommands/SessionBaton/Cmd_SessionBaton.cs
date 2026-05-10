@@ -1,4 +1,4 @@
-// 區塊職責：T83 — agent session 結束前 dump baton 給下次 session 接力
+﻿// 區塊職責：T83 — agent session 結束前 dump baton 給下次 session 接力
 // 物理意義：寫一份 markdown 進 AgentCommands/ChatTavern/baton/<actor>_<ts>.md
 //          + _latest_<actor>.md 覆寫 pointer（下次 session 載 SKILL 後直接 grep 自己 latest）
 // 數值影響：純檔案操作；不動 Treasury / messages.jsonl / lessons.jsonl

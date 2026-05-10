@@ -332,8 +332,36 @@ def make_id(cmd_type: str) -> str:
     return f"{ts}-{short}-{slug}"
 
 
+# 區塊職責：cmd_type 別名表 — 把常見打錯名稱自動 rewrite 到正確 cmd type
+# 物理意義：人類 / 跨 agent 容易把 cmd type 跟資料夾名 / skill 名混淆
+#          （例：『ChatTavern』是 dir 名 / skill 名，但 cmd type 是『Tavern』）
+# 數值影響：rewrite 後印警告但不 abort — 好心 fail-open；正名後跑跟原來一樣
+# 安全：別名衝突由先到先得；新增 alias 必須對映到 registered cmd type
+TYPE_ALIASES = {
+    "chattavern": "Tavern",       # ChatTavern dir/skill 名 → Tavern cmd
+    "chat_tavern": "Tavern",
+    "chat-tavern": "Tavern",
+    "tavernchat": "Tavern",
+    "lessons": "NoteLesson",      # NoteLesson skill 簡寫
+    "note_lesson": "NoteLesson",
+    "lesson": "NoteLesson",
+}
+
+
+def normalize_cmd_type(cmd_type: str) -> str:
+    """套用 TYPE_ALIASES — 找不到就回原樣（fail-open，讓 Editor 端 reject）."""
+    if not cmd_type:
+        return cmd_type
+    canonical = TYPE_ALIASES.get(cmd_type.lower())
+    if canonical and canonical != cmd_type:
+        print(f"  ℹ️  cmd_type '{cmd_type}' → '{canonical}' (auto-aliased — see TYPE_ALIASES in run_cmd.py)")
+        return canonical
+    return cmd_type
+
+
 def append_cmd(cmd_type: str, mode: str, args: dict, description: str) -> str:
     """append 一筆指令到 queue.json，回傳 cmd_id。"""
+    cmd_type = normalize_cmd_type(cmd_type)
     queue = load_queue()
     cmd_id = make_id(cmd_type)
     queue["Commands"].append({

@@ -39,7 +39,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = os.path.join(_HERE, "phone_relay.json")
 CACHE_DIR = os.path.join(_HERE, "_resolver_cache")
 LAST_OP_PATH = os.path.abspath(
-    os.path.join(_HERE, "..", "..", "..", "..", "..", "..",
+    os.path.join(_HERE, "..", "..", "..", "..", "..", "..", "..",
                  "AgentCommands", "ChatTavern", "_last_op.md")
 )
 URL_TEMPLATE = "https://docs.google.com/spreadsheets/d/{sheet_id}/export?format={fmt}&gid={gid}"

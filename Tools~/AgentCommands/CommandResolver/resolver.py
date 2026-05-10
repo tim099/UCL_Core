@@ -247,13 +247,23 @@ class Resolver:
         return float(agent.get(entry_id, {}).get("ema_weight", 1.0))
 
     def _substring_match(self, normalized: str) -> Optional[Dict[str, Any]]:
-        """既有 CommandTable 行為：substring 任一命中即返."""
+        """既有 CommandTable 行為：substring 比對 — **最長匹配優先**.
+
+        區塊職責：避免「叮」吃掉「叮叮」這種子字串先勝事故
+        物理意義：所有 entry 全掃，找命中 phrase 最長的那個
+        數值影響：若兩 entry 同 phrase 長度命中，先寫 (CommandTable 順序) 優先
+        """
+        best_entry: Optional[Dict[str, Any]] = None
+        best_len = 0
         for entry in self.triggers:
             for ph in entry.get("phrases", []):
                 ph_n = normalize(ph, synonyms={})
                 if ph_n and ph_n in normalized:
-                    return entry
-        return None
+                    if len(ph_n) > best_len:
+                        best_len = len(ph_n)
+                        best_entry = entry
+                        break  # 取本 entry 最先命中即可（同 entry 內不必比）
+        return best_entry
 
     def resolve(
         self,

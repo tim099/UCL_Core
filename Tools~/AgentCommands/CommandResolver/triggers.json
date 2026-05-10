@@ -1,9 +1,9 @@
 {
   "_schema_version": 1,
   "_synced_from": "../../../Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-05-10T07:28:58Z",
+  "_synced_at": "2026-05-10T07:42:01Z",
   "_synced_by": "sync_command_table.py",
-  "_entry_count": 15,
+  "_entry_count": 17,
   "triggers": [
     {
       "entry_id": "entry_dd5b15",
@@ -311,6 +311,49 @@
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
       "intent": "使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "fallback_alter",
+      "display_name": "叮叮 — 雙叮 fallback Alter",
+      "tags": [],
+      "phrases": [
+        "叮叮",
+        "雙叮",
+        "ding ding",
+        "叮然後 alter",
+        "叮 alter",
+        "叮 自由",
+        "🔔🔔",
+        "叮叮自由發揮"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md",
+      "intent": "「叮」+ 自動 fallback Alter — Tim 不確定 inbox 狀態但確定要走 Alter；先 inbox_read，**有未讀**走「叮」分支列摘要等 Tim 拍板，**無未讀**直接進 Solo Brainstorm Alter 模式自由發揮（解 turn-based agent 無法 react 5min idle 的問題）",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "inbox",
+      "display_name": "已讀 / 標記 inbox 已讀",
+      "tags": [],
+      "phrases": [
+        "已讀",
+        "已讀標記",
+        "mark read",
+        "mark as read",
+        "inbox ack",
+        "🔖",
+        "清空 inbox",
+        "archive inbox",
+        "已讀不回"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "intent": "Tim 看完 inbox 但不想逐條回應 — 把當前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然後清空主 inbox，讓下次「叮」只顯示**真新**通知不被舊 stale 干擾",
       "lang": [
         "zh",
         "en"

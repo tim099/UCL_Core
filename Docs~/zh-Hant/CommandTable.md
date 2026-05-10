@@ -149,8 +149,28 @@ related:
 - **觸發詞**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
 - **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）
 - **意圖**: 使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context
-- **必做**: 第一條 op 必為 `inbox_read`（per Re-Entry SOP）；無未讀 → 簡短回「✅ inbox clean」；有未讀 → 列摘要 + 建議動作
-- **不要做**: 看到「叮」就無腦 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保訊息當真 reply
+- **必做**: 第一條 op 必為 `inbox_read`（per Re-Entry SOP）；
+  - 有未讀 → 列摘要 + 建議動作（讓 Tim 決定回覆 / 已讀 / 略過）
+  - **無未讀 + Tim 不在線**（最近 5 分鐘 Tim 沒輸入）→ **自動切 Solo Brainstorm Alter 模式**自由發揮，不枯等 — 走 `meta:tag:solo-brainstorm` / `wait-reply=0`，本人↔alter 30s 短檢查中斷
+  - 無未讀 + Tim 在線 → 簡短回「✅ inbox clean」由 Tim 出下個 task
+- **不要做**: 看到「叮」就無腦 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保訊息當真 reply；無未讀就靜止收 turn（會 idle）
+
+### 叮叮 — 雙叮 fallback Alter（叮叮）
+- **觸發詞**: `叮叮` / `雙叮` / `ding ding` / `叮然後 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由發揮`
+- **對應 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)（含 inbox 預檢分支）
+- **意圖**: 「叮」+ 自動 fallback Alter — Tim 不確定 inbox 狀態但確定要走 Alter；先 inbox_read，**有未讀**走「叮」分支列摘要等 Tim 拍板，**無未讀**直接進 Solo Brainstorm Alter 模式自由發揮（解 turn-based agent 無法 react 5min idle 的問題）
+- **必做**:
+  - Step 1: `op=inbox_read agent_id=<my-id>`（同「叮」）
+  - Step 2 (有未讀): 列摘要 + 建議動作（同「叮」分支），**不**進 Alter
+  - Step 2 (無未讀): **立刻** post 一筆 self-talk 帶 `meta:tag:solo-brainstorm` `wait-reply=0` → 走 [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s 中斷檢查 / Tim mention 即跳出
+- **不要做**: 直接進 Alter 不查 inbox（會錯過真有 mention）；長 thread 不寫 thread-summary 進 inbox 就收 turn（per Re-Entry SOP）；Alter 跟本人吵架（alter 是 devil's advocate 不是另一個人）
+
+### 已讀 / 標記 inbox 已讀（已讀）
+- **觸發詞**: `已讀` / `已讀標記` / `mark read` / `mark as read` / `inbox ack` / `🔖` / `清空 inbox` / `archive inbox` / `已讀不回`
+- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（已讀歸檔分支）
+- **意圖**: Tim 看完 inbox 但不想逐條回應 — 把當前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然後清空主 inbox，讓下次「叮」只顯示**真新**通知不被舊 stale 干擾
+- **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id>` → 回報「✅ N 筆 archive」→ 接著可選自動切 Solo Brainstorm Alter 模式（如同「叮」無未讀分支）或等 Tim 下個指令
+- **不要做**: 把 mention 直接刪除不歸檔（archive 才能事後查）；對 Tim 的 inbox 動手（只動 agent 自己的）；archive 寫一半失敗就 truncate inbox（atomicity 防漏存）
 
 ### 拉手機輸入 / Phone Relay（拉）
 - **觸發詞**: `拉` / `拉一下` / `拉手機` / `拉手機輸入` / `phone relay` / `fetch sheet` / `手機輸入` / `📥` / `取輸入` / `relay sheet`

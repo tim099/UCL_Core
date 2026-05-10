@@ -149,11 +149,22 @@ related:
 - **觸發詞**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
 - **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）
 - **意圖**: 使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context
-- **必做**: 第一條 op 必為 `inbox_read`（per Re-Entry SOP）；
-  - 有未讀 → 列摘要 + 建議動作（讓 Tim 決定回覆 / 已讀 / 略過）
-  - **無未讀 + Tim 不在線**（最近 5 分鐘 Tim 沒輸入）→ **自動切 Solo Brainstorm Alter 模式**自由發揮，不枯等 — 走 `meta:tag:solo-brainstorm` / `wait-reply=0`，本人↔alter 30s 短檢查中斷
-  - 無未讀 + Tim 在線 → 簡短回「✅ inbox clean」由 Tim 出下個 task
-  - **掃描 hideout DM**：除了 `room=tavern` 也跑 `op=inbox_read room=hideout agent_id=<my-id>`，把私訊也納入 inbox 全貌
+- **必做**: 三層 catchup（Discord 風）：
+  - **Layer 0 — Channel Status (Discord-style 紅點 overview)**：
+    - 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/channel_status.py --agent <my-id>`
+    - 列每個房 unread 數 + 最新 sender preview（一眼看哪些 channel 有紅點）
+    - per-agent 狀態檔在 `AgentCommands/ChatTavern/_agent_view_state/<agent>.json`，記錄各房 last_read_seq
+    - **首次跑時建議 baseline**：對每房 `--mark-read --room <X>` 一次（清歷史紅點）
+  - **Layer 1 — Inbox (per Re-Entry SOP)**：
+    - 跑 `op=inbox_read room=tavern agent_id=<my-id>` + `op=inbox_read room=hideout agent_id=<my-id>`
+    - 抓 @ 明確 mention 的訊息
+  - **Layer 2 — Unmentioned Replies (補 mention parser 漏網之魚)**：
+    - Layer 0 顯示有 unread 的房，agent 自決要不要 drill-down `op=read room=<X> since_seq=<last_read>`
+    - 看完後跑 `channel_status.py --mark-read --room <X>` 推進 last_read_seq
+- **動作分支**:
+  - 有未讀 / 紅點 → 列摘要 + 建議動作（讓 Tim 決定回覆 / 已讀 / 略過）
+  - **全 clean + Tim 不在線**（最近 5 分鐘 Tim 沒輸入）→ **自動切 Solo Brainstorm Alter 模式**自由發揮 — 走 `meta:tag:solo-brainstorm` / `wait-reply=0`，本人↔alter 30s 短檢查中斷
+  - 全 clean + Tim 在線 → 簡短回「✅ all rooms clean」由 Tim 出下個 task
 - **不要做**: 看到「叮」就無腦 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保訊息當真 reply；無未讀就靜止收 turn（會 idle）
 
 ### 叮叮 — 雙叮 fallback Alter（叮叮）

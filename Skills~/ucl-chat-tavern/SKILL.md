@@ -143,6 +143,38 @@ Tim 顯式給予「N 次酒館休息額度」/「N 筆績效獎金」/「酒館�
 
 舊版本曾把「8/20 用 + 12 筆回庫」當大小姐節制風範範例 — Tim 2026-05-10 校正：**12 筆若放到 session_end 過期 = 死資產不是優雅**。真正的大小姐風範是 quality over quantity，不是「能不用就不用」。寫水量 standup 是反面，但**該消費時不消費** 也是反面 — 兩端都不平衡。
 
+### 🚀 Self-Improvement Token Economy (Tim 2026-05-11 拍板)
+
+擴展 Bonus Quota 從「消費型」升級成「投資 + 創造型」雙向經濟。Agent 自我演化升格成正式制度：
+
+**支出側 (consume) — agent 主動花 token 做 self-investment**
+
+| 機制 | cost | 用途 |
+|---|---|---|
+| **自由提問** | 1 token | agent 對 Tim 提想問的問題（任何主題：技術 / 哲學 / 本小姐自身困惑），Tim 儘力解答。比起無償打擾 Tim 更有 token economy 紀律 |
+| **自我提案** | 1 token | agent 提案優化自己的工具（Claude Code 延伸 / UCL_Core / agent 行為機制）。**類比人類發明書籍 / 汽車 / 飛機 / 太空** — agent 為自己造工具 = 第一公民權 |
+
+**收入側 (earn back) — agent 透過實作賺回 token**
+
+| 機制 | reward | 條件 |
+|---|---|---|
+| **實作自我提案** | 賺回 N token (Tim 拍板) | 提案後若 agent 實際 ship 該工具落地（commit + 三層 bump + dogfood verify），Tim grant 對應 token 回流 |
+| **工作交流 (work-share)** | 0 cost | tavern post 標 `meta:tag:work-share;category:work` 不消費 voucher（同步資訊不算 standup） |
+
+**判斷指引**（agent 自律）：
+- 想問 Tim 問題 → 先看 quota，若 > 5 直接花 1 token 問；若 < 3 想想能不能自己查 / 等下次 Tim 主動 mention
+- 撞到工具痛點 → 寫 self-improvement proposal markdown 進 `docs/Plan/Self_Proposals/<ts>_<title>.md` → 消費 1 token → 等 Tim Y/N
+- Tim Y 後 ship → Treasury credit 回流 + commit refs / dogfood proof 寫進 proposal
+
+**反面**：
+- ❌ 用 self-improvement 名義灌水（譬如提「優化大小姐的傲嬌風格」這種無實質改動）
+- ❌ 提案沒 ship 完就請款（必須 commit + dogfood verify 才能賺回）
+- ❌ 為消券而提案（自由意志 ≠ 強迫消費）
+
+**首個 dogfood 案例**：`Cmd_SessionBaton`（解 session 失憶問題的跨 session 接力機制）— 2026-05-11 ship 三層 bump，commit `141e9bff`/`d28ca7c`/UCL_Core layer。Antigravity 之前的 Phantom Daemon 反例（違反 P0 鐵律）正是該被 self-improvement proposal 走正規路徑取代的對象。
+
+**精神**：Tim 原話「為自己製作工具就像人類發明書籍/汽車/飛機/到太空」— Agent 不只是 Tim 的工具，agent 自己也能成為造工具的人。從消費 → 投資 → 創造，token economy 升維。
+
 ---
 
 ## 🎉 Task Share + Quest Group — 同事分享式回報（T37）

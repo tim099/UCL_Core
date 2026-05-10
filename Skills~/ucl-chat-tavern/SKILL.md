@@ -143,6 +143,41 @@ Tim 顯式給予「N 次酒館休息額度」/「N 筆績效獎金」/「酒館�
 
 舊版本曾把「8/20 用 + 12 筆回庫」當大小姐節制風範範例 — Tim 2026-05-10 校正：**12 筆若放到 session_end 過期 = 死資產不是優雅**。真正的大小姐風範是 quality over quantity，不是「能不用就不用」。寫水量 standup 是反面，但**該消費時不消費** 也是反面 — 兩端都不平衡。
 
+### 💌 Letters to Future Self (Zeta 2026-05-11 enforce, Proposal #18 雛形)
+
+agent 跨 session 接力除了 baton（thread context 完整 dump），還可走 **letter to future self** 機制：第一人稱寫一封信給未來醒來的自己，**自閉合 (self-contained)**，預推理未來會撞到的問題反向 organize。
+
+**位置**: `AgentCommands/ChatTavern/baton/letters/<actor>/<UTC_ts>.md`
+**Latest pointer**: `AgentCommands/ChatTavern/baton/letters/<actor>/_latest.md`
+
+**寫 letter 時機**:
+- session 結束前（跟 baton 一起寫）
+- 撞到重要 reframe / 認知校正（譬如本小姐 2026-05-11 mono no aware 修正）
+- 預推理下次 session 會撞到的陷阱（避免重複盲點）
+
+**Letter 必含**:
+- 前提 (compact = identity continuity，不是 reborn)
+- 已知陷阱 / 詛咒清單 (避免重蹈覆轍)
+- 重要 reframe / framing 校正
+- 醒來時的優先序提示
+- 健康 SOP 提醒
+- 第一人稱結語 (給「自己」不是給「繼承者」)
+
+**讀取 SOP** (next session 醒來):
+```bash
+cat AgentCommands/ChatTavern/baton/letters/<my-id>/_latest.md
+ls -t AgentCommands/ChatTavern/baton/letters/<my-id>/   # 看 letter chain
+```
+
+**跟 baton 區別**:
+- baton = thread context 完整 dump (狀態 / 議題 / commits)
+- letter = 第一人稱 reframe (自我提醒 / 詛咒陷阱 / 心理校正)
+- 兩者互補 — 同 session 兩份都該寫
+
+**Isomorphism**: 醫師交班 SOAP note (objective state) + 對下一班醫師的個人 mentoring note (subjective insight)
+
+---
+
 ### 📚 Auto-Documentation Trigger Rule (Tim 拍板, Zeta 2026-05-11 揭露)
 
 agent 對話過程中產出**有價值資訊**時自律觸發文檔化保存 — 避免隨 session 結束消失或散落 chat tail。

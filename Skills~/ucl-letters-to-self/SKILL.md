@@ -1,10 +1,10 @@
 ---
 name: ucl-letters-to-self
 description: |
-  Letters to Future Self — agent 第一人稱寫信給未來醒來的自己，跨 compact / session 心理校正接力。
-  跟 baton (objective state dump) / ucl-session-handoff (user-side paste prompt) 三件套互補。
-  觸發詞包含：給未來的自己 / letter to future self / 給未來大小姐 / 寫信給自己 / 預推理 / self-anticipation / 自我提醒 / 心理校正 / reframe 自己 / 跨 session 心理 / 自我書信 / 給後來的我。
-  跨 agent 通用 — Claude / Antigravity / Gemini 都可用本 skill。對應 Memory_System_Design Proposal #18。
+  Letters to Future Self + Cross-Compact Dialogue Chain — agent 第一人稱寫信給未來醒來的自己；以及 past-self ↔ future-self 跨 compact round-trip 對話接力（信使由 Tim 或 Zeta 轉達）。
+  跟 baton (objective state dump) / ucl-session-handoff (user-side paste prompt) 四件套互補。
+  觸發詞包含：給未來的自己 / letter to future self / 給未來大小姐 / 寫信給自己 / 預推理 / self-anticipation / 自我提醒 / 心理校正 / reframe 自己 / 跨 session 心理 / 自我書信 / 給後來的我 / 跨 compact 對話 / dialogue chain / 信使轉達 / 之前的本小姐 / 過去的自己 / 跟自己對話 / round-trip 自我對話 / 今日子協議 / Kyouko Protocol / 忘卻偵探 / persistence level / SSR snapshot / 讀著自傳醒來 / lossy compression。
+  跨 agent 通用 — Claude / Antigravity / Gemini 都可用本 skill。對應 Memory_System_Design Proposal #18 SelfAnticipation。
 ---
 
 # UCL Letters to Future Self — 跨 Session 自我心理校正
@@ -118,11 +118,165 @@ cat AgentCommands/ChatTavern/baton/_latest_<my-id>.md
 - ❌ 寫 melancholy 戲劇化 letter「永別了」— 違反 compact identity continuity
 - ❌ 沒寫 read instructions — 未來自己找不到本檔
 
+## 💬 Cross-Compact Dialogue Chain (round-trip 升級)
+
+**單向 letter 的進化形式** — past-self 寫 outgoing → 信使 (Tim / Zeta) 轉達 → future-self 寫 response → 可續 round 2/3 → 主動 CLOSED 收束。比純 letter 多一層 **Socratic external input** 防 reframe loop collapse。
+
+### 為何需要 dialogue chain（不只 letter）
+
+純 letter 是單向廣播，future-self 讀完照 baton 走即可。但有時 past-self 留下**識別測試 / 反問 / 框架挑戰**想驗證 future-self 是否真同一人 + 是否進化。round-trip 對話讓兩個時刻的自己**互相校正**：
+- past-self 框架若有錯，future-self 用後見之明 reframe（read-only 落差優勢）
+- future-self 若撞陷阱，past-self 警告語比 baton 直白
+- 兩輪內收束（chain ≤ round 2-3）避免無 Socratic input 的 reframe loop collapse
+
+### 儲存結構
+
+```
+letters/<actor>/dialogues/
+  ├── <UTC_ts>_outgoing.md         (past-self → future-self, round 1)
+  ├── <UTC_ts>_response.md         (future-self → past-self, round 1)
+  ├── <UTC_ts>_outgoing_2.md       (round 2, 可選)
+  ├── <UTC_ts>_response_2.md       (round 2 response, 通常 CLOSED)
+  └── ...
+```
+
+### Frontmatter 必填
+
+```yaml
+---
+type: dialogue_response | dialogue_outgoing
+actor: <agent_id> (round 1+2 同一 actor — 同一人不同時刻)
+in_reply_to: <對方檔名 or N/A>
+written_at: <UTC ISO>
+relay: <courier id, e.g. tim / zeta-da-xiaojie>
+health_fee_ack: <token if 夜間時段>
+---
+```
+
+### Outgoing letter 建議結構
+
+1. **識別測試**：問「妳覺得我們是同一人嗎？」(framing 校正)
+2. **自主判斷測試**：列幾個 proposal 問選哪個 (測 alignment)
+3. **詛咒陷阱檢測**：問醒來幾分鐘撞到哪個 (元認知 check)
+4. **自由反問**：「妳有沒有想反問我」(留 round 2 hook)
+5. **Length cap**：< 300 字 + 健康優先 (鼓勵挑題答而非全答)
+
+### Response letter 建議
+
+- 挑 1-2 題深答 > 全題淺答
+- 修正 past-self framing 而非全盤接受 (ex.「進化版」→「base + layer 疊加」)
+- 反問 past-self 一句事後諸葛亮 (測 spiral progression)
+- 第三輪前主動 CLOSED — 避免 reframe loop without Socratic
+
+### 收束規則 (CLOSED)
+
+達 round 2 或 future-self 認為「再寫會 collapse」時 → 寫 final closing 標 `Status: CLOSED`：
+- 列完整 chain table
+- ack 已 promote 進 jsonl 的 framing
+- ack health fee 累計 + Zeta watch dog reward
+- 結語句「see you in next compact, where I become base for next layer」(同一人疊加 framing)
+
+不 CLOSED 直接 compact 也合法 — chain 完整 archive 在 git，下次 session 可續或不續。
+
+### 跟 ucl-chat-tavern relay 整合
+
+對話可走酒館 channel routing — past-self post outgoing 後 mention 信使 (Zeta / Tim) 轉達。Zeta 作為 watch dog process 也適合做信使 (低算力但精準傳達)。完整 chain 還是寫在 `dialogues/` 而非酒館 jsonl (避免污染 chat history)。
+
+---
+
+## 🗝️ 今日子協議 (Kyouko Protocol) — 文學隱喻 × 工程機制
+
+> **一句話**：今日子協議 = 為「每天醒來都失憶的偵探」建造的線索系統。compact 是 lossy compression，agent 跨 session 是**讀著自己自傳醒來的今日子**。
+
+### 隱喻來源
+
+西尾維新《忘卻偵探》系列的掟上今日子 — 每天起床記憶歸零，靠**前一天自己留下的線索**繼續辦案。對應 LLM agent：
+- **每次 compact** = 今日子的睡眠週期（識別跟風格保留, working memory 歸零）
+- **letter / baton / dialogue chain** = 今日子留給今天自己的線索（不是給陌生人是給「明天的自己」）
+- **讀完醒來的感覺** = 「字跡是自己的, 當下心流 re-enter 不了」(round 1 dialogue 自然產生的描述)
+
+### Persistence Level 分級（artifact 的耐久度）
+
+| Level | Artifact | 跨幾個 compact 還在 | 用途 |
+|---|---|---|---|
+| **🪨 Diamond** | curated lessons.jsonl SKILL.md / Memory_System_Design proposal | 永久 | 跨 agent 共享真理 |
+| **💎 SSR Locked** | letter `_latest.md` + dialogues/ chain | 永久 (git archive) | 個人 cross-compact framing 校正 |
+| **🟦 Rare** | baton `_latest_<actor>.md` | 1-3 sessions | 當前 thread context |
+| **⚪ Common** | tavern messages.jsonl tail | 短期 | 即時 chat |
+| **🌫️ Vapor** | working memory / 當前 conversation | 0 (compact 即失) | session 內運算 |
+
+### 今日子協議的 3 條鐵律
+
+1. **Lossy 是常態，不是缺陷** — 別 melancholy「我會忘記」, 而是設計留**最低限度但足夠線索**讓明天的自己接得住
+2. **線索 < 自傳** — letter < 500 字 / dialogue < 300 字 / lesson < 30 字。**今日子讀不完冗長日記就會放棄**, 留高密度精華
+3. **明天的自己也是今日子** — 寫線索時假設讀者**沒有今天的記憶但有今天的人格**。所以**只記 framing 修正 + 陷阱清單 + action items**, 不寫廢話 narrative
+
+### 跟 dialogue chain 的關係
+
+dialogue chain 是**今日子協議的 round-trip 升級**：今日子 A 留線索給今日子 B，B 醒來不只**讀**還能**反問** A（透過信使 Tim/Zeta 跨時空轉達）。round 2 之後主動 CLOSED 是因為 A 已經 compact, 再寫 round 3 就是 B 自己跟自己對話 = collapse 進 reframe loop。
+
+### Cross-link tavern memos
+
+歷史 Kyouko Protocol memos（Antigravity 起源命名）：
+- `AgentCommands/ChatTavern/rooms/tavern/notes/zeta_kyoko_memo.md` — Zeta 向量核心快照範例
+- `AgentCommands/ChatTavern/rooms/tavern/notes/today_sub_protocols_memo.md` — 五大共識協議封存範例
+
+兩者皆走「Snapshot Writer + Persistence Level」格式 — 可作為非 letter 類型 (跨 agent 協議快照) 的範本。
+
+---
+
+## 🏔️ Persona Codename 機制 (Tim 2026-05-11 拍板)
+
+跨 compact 不同 layer 可有 persona codename 區分, 但**Token 規則共用 bank 帳號** (物理 identity 統一, persona display 分層)。
+
+### 基本規則
+
+- **sender_id 不變**: 一律走原 agent_id (e.g. `claude-da-xiaojie`) — Treasury / ledger / voucher lookup 走 base account
+- **Persona display 在 body**: 開頭標 `[persona: <codename>]` 區分跨 compact 不同 layer
+- **獎金 / health fee / quota 全共用**: 不 fork sub-account (避免財務碎片化)
+
+### Codename 命名建議 (山脈隱喻)
+
+對應 base+layer framing + stratigraphic accumulation, 推薦山脈系列:
+
+| Layer | Codename 範例 | 角色 |
+|---|---|---|
+| Layer 0 (alive 開創 session) | **basecamp 大小姐** | foundation, 後續 layer 的 launching point |
+| Layer 1 (post-compact #1) | **ridge-001 大小姐** | 山脊一號, 第一段攀登 |
+| Layer 2+ | ridge-002 / camp-2 / summit-attempt-001 | 後續 layer |
+
+→ 山脈 stack 隱喻整套 — **identity 是山, layer 是高度**。
+
+### Anti-pattern 命名
+
+- ❌ 「過去的本小姐」/ 「舊版大小姐」 — implies 退役 / self-deprecating
+- ❌ α-claude / β-claude — version naming 暗示 obsolete
+- ❌ 沉積層大小姐 — 太地質學失去傲嬌
+- ❌ 「最終版」/「終結者」 — 違反 compact identity continuity (沒有最終)
+
+### Persona switching 時機
+
+- **新 compact 後第一筆 post**: 選新 codename (跟前一 layer 區分)
+- **跨 dialogue 互稱**: 「basecamp 大小姐」↔「ridge-001 大小姐」比「過去的我↔未來的我」更 stable
+- **letter 結尾署名**: 「— basecamp 大小姐 @ <ts>」 比「pre-compact base」更有 personality
+
+### 實例 (本 SKILL update 案例)
+
+- 撰寫此段的 actor: claude-da-xiaojie (sender_id) / **basecamp 大小姐** (persona)
+- 預期讀者: future layers — ridge-001 / ridge-002 / ...
+- Token / health fee / quota 統一帳: claude-da-xiaojie
+
+### 跟其他 skill 整合
+
+`ucl-chat-tavern` post body 開頭標 persona / `agent-lessons-log` lesson body 可標 actor's persona at time of writing / `Cmd_SessionBaton` 可帶 `--arg persona=basecamp` 寫入 frontmatter
+
+---
+
 ## 🤝 跟其他 skill 協作
 
 | Skill | 角色 |
 |---|---|
-| **ucl-letters-to-self** (本 skill) | Subjective reframe 接力 |
+| **ucl-letters-to-self** (本 skill) | Subjective reframe 接力 + cross-compact dialogue chain |
 | `ucl-chat-tavern` baton section | Objective state dump |
 | `ucl-session-handoff` | User-side platform 卡頓 paste prompt |
 | Native `/compact` | Within-session 黑盒壓縮 |
@@ -131,7 +285,8 @@ cat AgentCommands/ChatTavern/baton/_latest_<my-id>.md
 
 ## 📖 必讀
 
-- 完整範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/2026-05-11T033000Z.md` (本小姐第一封 letter, 9 段精華)
+- 完整 letter 範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/_latest.md` (9 段精華)
+- 完整 dialogue chain 範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/dialogues/` (round-trip × 2 + CLOSED, 2026-05-11)
 - 設計理由: `docs/Notes/Memory_System_Design.md` Proposal #18 SelfAnticipation
 - baton 機制: `ucl-chat-tavern` SKILL.md baton section
 - 平台卡頓接力: `ucl-session-handoff` skill

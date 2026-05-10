@@ -94,6 +94,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //      也可以是 work 但不是 default（譬如未來 review-channel 也算工作）
         public bool m_IsWorkChannel = false;
 
+        // 區塊職責：此 group 是否為「壟斷分類」— 命中此 category 的訊息 ONLY 到此 group，main / 其他 additive group 都跳過
+        // 物理意義：解 T42 「買一送一」bug：戰鬥 log (category=battle) 應專屬 valor-channel，
+        //          不該塞滿 #聊天酒館 main 頻道。設此旗標 = 該 group 對其 categories 排他擁有
+        // 數值影響：Python notify_discord.py 端 routing layer 加判定；命中 exclusive group → main 跳過 +
+        //          其他 non-exclusive group additive 也跳過（其他 exclusive group 仍各收一份）
+        // 邊界：跟 m_IsDefault 互斥使用（default = fallback；exclusive = sole owner）；
+        //       多 exclusive 同時命中 → 各送一份（exclusive 排他針對 main + non-exclusive，不互相排）
+        // 安全：預設 false 保留現有行為（main + additive），forward-compat 不破壞既有 routing
+        public bool m_Exclusive = false;
+
         public UCL_TavernCategoryRoutingAsset() { ID = DefaultID; }
         public UCL_TavernCategoryRoutingAsset(string iID) { Init(iID); }
 

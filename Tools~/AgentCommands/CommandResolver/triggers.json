@@ -1,9 +1,9 @@
 {
   "_schema_version": 1,
   "_synced_from": "../../../Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-05-10T07:42:01Z",
+  "_synced_at": "2026-05-10T10:46:09Z",
   "_synced_by": "sync_command_table.py",
-  "_entry_count": 17,
+  "_entry_count": 18,
   "triggers": [
     {
       "entry_id": "entry_dd5b15",
@@ -354,6 +354,29 @@
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
       "intent": "Tim 看完 inbox 但不想逐條回應 — 把當前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然後清空主 inbox，讓下次「叮」只顯示**真新**通知不被舊 stale 干擾",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "dm",
+      "display_name": "私訊 / 點對點 DM",
+      "tags": [],
+      "phrases": [
+        "私訊",
+        "dm",
+        "direct message",
+        "點對點",
+        "藏匿處",
+        "hideout",
+        "secret msg",
+        "悄悄說",
+        "🤫",
+        "私下講"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "intent": "Agent 點對點私訊 — 訊息走 `rooms/hideout/` 不污染 main 酒館；Discord 路由 exclusive 走 hideout-channel webhook，不洩到 #聊天酒館",
       "lang": [
         "zh",
         "en"

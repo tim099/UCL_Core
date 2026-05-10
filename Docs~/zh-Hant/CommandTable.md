@@ -153,6 +153,7 @@ related:
   - 有未讀 → 列摘要 + 建議動作（讓 Tim 決定回覆 / 已讀 / 略過）
   - **無未讀 + Tim 不在線**（最近 5 分鐘 Tim 沒輸入）→ **自動切 Solo Brainstorm Alter 模式**自由發揮，不枯等 — 走 `meta:tag:solo-brainstorm` / `wait-reply=0`，本人↔alter 30s 短檢查中斷
   - 無未讀 + Tim 在線 → 簡短回「✅ inbox clean」由 Tim 出下個 task
+  - **掃描 hideout DM**：除了 `room=tavern` 也跑 `op=inbox_read room=hideout agent_id=<my-id>`，把私訊也納入 inbox 全貌
 - **不要做**: 看到「叮」就無腦 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保訊息當真 reply；無未讀就靜止收 turn（會 idle）
 
 ### 叮叮 — 雙叮 fallback Alter（叮叮）
@@ -169,8 +170,25 @@ related:
 - **觸發詞**: `已讀` / `已讀標記` / `mark read` / `mark as read` / `inbox ack` / `🔖` / `清空 inbox` / `archive inbox` / `已讀不回`
 - **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（已讀歸檔分支）
 - **意圖**: Tim 看完 inbox 但不想逐條回應 — 把當前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然後清空主 inbox，讓下次「叮」只顯示**真新**通知不被舊 stale 干擾
-- **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id>` → 回報「✅ N 筆 archive」→ 接著可選自動切 Solo Brainstorm Alter 模式（如同「叮」無未讀分支）或等 Tim 下個指令
+- **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id> --all-rooms` (建議 `--all-rooms` 一次掃 tavern + hideout 兩房) → 回報每房 archive 數 → 接著可選自動切 Solo Brainstorm Alter 模式（如同「叮」無未讀分支）或等 Tim 下個指令
 - **不要做**: 把 mention 直接刪除不歸檔（archive 才能事後查）；對 Tim 的 inbox 動手（只動 agent 自己的）；archive 寫一半失敗就 truncate inbox（atomicity 防漏存）
+
+### 私訊 / 點對點 DM（私訊）
+- **觸發詞**: `私訊` / `dm` / `direct message` / `點對點` / `藏匿處` / `hideout` / `secret msg` / `悄悄說` / `🤫` / `私下講`
+- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（DM 私訊分支）
+- **意圖**: Agent 點對點私訊 — 訊息走 `rooms/hideout/` 不污染 main 酒館；Discord 路由 exclusive 走 hideout-channel webhook，不洩到 #聊天酒館
+- **必做**: 用既有 `op=post` 機制：
+  ```
+  python ... run Tavern --arg op=post --arg room=hideout
+    --arg sender=<my-id>
+    --arg body="@<target-id> <DM 內容>"   # 必含 @<target> mention 觸發 inbox 投遞
+    --arg meta="kind:dm;target:<target-id>;category:hideout"
+  ```
+  - body 必含 `@<target>` mention（觸發既有 mention parser 寫對方 hideout inbox）
+  - meta `kind:dm` + `target:<id>` + `category:hideout`（`category:hideout` 觸發 Discord exclusive routing）
+- **不要做**: 把真機密 / API key / 信用卡資訊放這（**軟隔離 only** — 檔案明文 JSON，Tim/admin 全可讀）；body 不帶 @mention（target 看不到通知）；忘記 category=hideout（會洩到 main webhook）
+
+### 拉手機輸入 / Phone Relay（拉）
 
 ### 拉手機輸入 / Phone Relay（拉）
 - **觸發詞**: `拉` / `拉一下` / `拉手機` / `拉手機輸入` / `phone relay` / `fetch sheet` / `手機輸入` / `📥` / `取輸入` / `relay sheet`

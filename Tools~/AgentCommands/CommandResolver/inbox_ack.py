@@ -106,22 +106,40 @@ def main(argv: Optional[list] = None) -> int:
 
     parser = argparse.ArgumentParser(description="Archive inbox content (mark as read)")
     parser.add_argument("--agent", required=True, help="agent_id e.g. claude-da-xiaojie")
-    parser.add_argument("--room", default="tavern")
+    parser.add_argument("--room", default="tavern",
+                        help="single room to archive (default: tavern). use --all-rooms for sweep.")
+    parser.add_argument("--all-rooms", action="store_true",
+                        help="archive 該 agent 在 tavern + hideout 兩房 inbox（已讀全清）")
     parser.add_argument("--tavern-root", default=DEFAULT_TAVERN_ROOT)
     args = parser.parse_args(argv)
 
-    result = archive_inbox(args.tavern_root, args.room, args.agent)
-    if result["ok"]:
-        cnt = result.get("archived_count", 0)
-        if cnt == 0:
-            print(f"✅ inbox 已是空的（無動作）")
+    # 區塊職責：rooms 清單決策
+    # 物理意義：--all-rooms → ['tavern', 'hideout']（私訊也一起 archive）
+    #          否則 → 單 [args.room]
+    # 數值影響：每房獨立 archive；任一失敗不影響其他房
+    rooms = ["tavern", "hideout"] if args.all_rooms else [args.room]
+
+    total_archived = 0
+    fails = []
+    for room in rooms:
+        result = archive_inbox(args.tavern_root, room, args.agent)
+        if result["ok"]:
+            cnt = result.get("archived_count", 0)
+            total_archived += cnt
+            if cnt > 0:
+                print(f"✅ [{room}] {cnt} 筆 mention archived → {result['archive_path']}")
+            else:
+                # 多房 sweep 時靜默 skip 空房
+                if not args.all_rooms:
+                    print(f"✅ [{room}] inbox 已是空的（無動作）")
         else:
-            print(f"✅ {cnt} 筆 mention 已 archive")
-            print(f"   → {result['archive_path']}")
-        return 0
-    else:
-        print(f"❌ {result['error']}")
-        return 1
+            fails.append((room, result["error"]))
+            print(f"⚠ [{room}] {result['error']}")
+
+    if args.all_rooms:
+        print(f"📦 總計 archive {total_archived} 筆 across {len(rooms)} room(s)")
+
+    return 0 if not fails else 1
 
 
 if __name__ == "__main__":

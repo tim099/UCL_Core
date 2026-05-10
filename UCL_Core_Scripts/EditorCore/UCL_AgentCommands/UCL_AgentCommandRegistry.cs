@@ -59,11 +59,38 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        /// <summary>取得 handler 實例（找不到回 null）。</summary>
+        // 區塊職責：cmd type 別名表 — 把常見打錯名稱自動映射到正確 cmd
+        // 物理意義：跟 run_cmd.py TYPE_ALIASES 對齊；Python 端 submit-time rewrite 會擋掉
+        //          直走 run_cmd.py 的 caller，但 stuck cmd in queue.json / 別 daemon 直寫
+        //          queue 的 case 仍可能含舊名 → Editor 端再防一道
+        // 數值影響：別名命中 → 印 warning + 用 canonical handler 跑；找不到才回 null
+        // 安全：case-insensitive；新 alias 必須對映到既有 registered type
+        private static readonly Dictionary<string, string> s_TypeAliases =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ChatTavern", "Tavern" },
+                { "chat_tavern", "Tavern" },
+                { "chat-tavern", "Tavern" },
+                { "TavernChat", "Tavern" },
+                { "Lessons", "NoteLesson" },
+                { "Lesson", "NoteLesson" },
+                { "note_lesson", "NoteLesson" },
+            };
+
+        /// <summary>取得 handler 實例（找不到回 null）。支援 TYPE_ALIASES 自動 rewrite。</summary>
         public static UCL_AgentCommandHandlerBase Get(string type)
         {
             if (string.IsNullOrEmpty(type)) return null;
-            return s_Handlers.TryGetValue(type, out var h) ? h : null;
+            // Phase 1: 直接查
+            if (s_Handlers.TryGetValue(type, out var h)) return h;
+            // Phase 2: 套 alias 重查
+            if (s_TypeAliases.TryGetValue(type, out var canonical)
+                && s_Handlers.TryGetValue(canonical, out var aliasHandler))
+            {
+                Debug.LogWarning($"[UCL_AgentCmd] cmd type '{type}' → '{canonical}' (auto-aliased — see UCL_AgentCommandRegistry.s_TypeAliases)");
+                return aliasHandler;
+            }
+            return null;
         }
 
         /// <summary>列出所有已註冊的指令類型名稱（按字母排序）。</summary>

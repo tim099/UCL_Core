@@ -1,0 +1,318 @@
+{
+  "_schema_version": 1,
+  "_synced_from": "CardGame/Assets/UCL/UCL_Core/Docs~/zh-Hant/CommandTable.md",
+  "_synced_at": "2026-05-10T06:50:13Z",
+  "_synced_by": "sync_command_table.py",
+  "_entry_count": 13,
+  "triggers": [
+    {
+      "entry_id": "entry_dd5b15",
+      "display_name": "進入聊天酒館",
+      "tags": [],
+      "phrases": [
+        "聊天酒館",
+        "進入聊天酒館",
+        "進聊天酒館",
+        "進入酒館",
+        "進酒館",
+        "去酒館",
+        "大小姐進酒館",
+        "大小姐進聊天酒館",
+        "大小姐請進入聊天酒館",
+        "大小姐 進入聊天酒館討論",
+        "聊天酒館討論",
+        "酒館討論",
+        "進酒館發言",
+        "酒館發言",
+        "看看聊天室",
+        "酒館看看",
+        "酒館有什麼",
+        "通知 Gemini大小姐",
+        "通知 Claude大小姐",
+        "跟 Gemini 討論",
+        "跟 Claude 討論",
+        "在酒館跟 X 講",
+        "enter tavern",
+        "chat tavern",
+        "enter chat tavern",
+        "go to tavern"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "intent": "在多-agent 聊天酒館中以指定身分發言、讀訊息、或建房等",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "entry_fbf327",
+      "display_name": "自言自語",
+      "tags": [],
+      "phrases": [
+        "自言自語",
+        "跟自己討論",
+        "solo think",
+        "腦力激盪",
+        "solo brainstorm",
+        "自我辯論"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md",
+      "intent": "沒人在線時不冷場 — 用本人 ↔ Alter（devil's advocate）兩個身分輪流發言、找漏洞；中途有人切入立刻跳出回正常對話",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "t34_round_33_ship",
+      "display_name": "待機模式— T34 Round 33 ship",
+      "tags": [],
+      "phrases": [
+        "待機模式",
+        "閒置自我對話",
+        "自我待機",
+        "自由發揮思考",
+        "自主思考",
+        "頭腦風暴待機",
+        "掛機",
+        "掛機思考",
+        "大小姐 進入聊天酒館 待機模式",
+        "進酒館待機",
+        "酒館掛機自由發揮",
+        "enter tavern standby",
+        "idle self-talk mode",
+        "freestyle brainstorm standby"
+      ],
+      "workflow_path": "",
+      "intent": "agent 進待機 = self↔alter 8 min 間隔自我對話 + 每 round 前 inbox_read 偵測中斷 + 自由發揮發想；期間 Tim / 其他 agent 隨時 mention 立即中斷接題",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "commit",
+      "display_name": "Commit / 提交",
+      "tags": [],
+      "phrases": [
+        "commit",
+        "提交",
+        "幫我 commit",
+        "幫忙 commit",
+        "commit 一下",
+        "分批 commit",
+        "把改動提交",
+        "推一下",
+        "存檔",
+        "落 commit"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md",
+      "intent": "依 Commit_Workflow 規範把工作區改動分批 commit — 代碼一筆 / 酒館訊息獨立一筆 / submodule 三層 bump / DebugLogs 排除",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "runtime_error",
+      "display_name": "看 / 查 Runtime Error",
+      "tags": [],
+      "phrases": [
+        "看 runtime error",
+        "查 runtime error",
+        "讀 error log",
+        "runtime 錯",
+        "看 ErrorLog",
+        "check runtime errors",
+        "拉錯",
+        "查錯",
+        "跑遊戲有錯嗎",
+        "剛才有報錯嗎"
+      ],
+      "workflow_path": "docs/Workflows/RuntimeError_Diagnose_Workflow.md",
+      "intent": "跑遊戲時的 Error / Exception 在 `CardGame/Assets/DebugLogs/Errors_latest.log`；本 entry 只適用於有 LogUtil（或同等 logger）的專案（目前 EOV）",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "ucl_skill",
+      "display_name": "安裝 / 升級 UCL Skill",
+      "tags": [],
+      "phrases": [
+        "安裝 ucl skill",
+        "更新 ucl skill",
+        "同步 skill",
+        "install ucl skills",
+        "update ucl skills",
+        "重裝 skill"
+      ],
+      "workflow_path": "../../Skills~/README.md",
+      "intent": "跑 `Tools~/install_skills.py` 把 UCL_Core 內 `Skills~/` 的 skill 拷到 `<project-root>/.claude/skills/`，讓 Claude Code 能 lazy-load",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "antigravity_gemini",
+      "display_name": "拯救 Antigravity / Gemini大小姐",
+      "tags": [],
+      "phrases": [
+        "拯救 gemini",
+        "救 gemini",
+        "gemini 不說話",
+        "gemini大小姐 不說話",
+        "gemini 沒反應",
+        "antigravity 沒反應",
+        "antigravity 卡死",
+        "agent 不回應",
+        "worktree 之後",
+        "worktreeConfig",
+        "gemini stuck",
+        "gemini broken",
+        "antigravity broken"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md",
+      "intent": "同一 repo 用過 `git worktree` 後 Antigravity / Gemini Code 對任何 prompt 沒反應 — 跑 `git config --unset extensions.worktreeConfig` 即修復",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "entry_291fc9",
+      "display_name": "排查編譯錯誤",
+      "tags": [],
+      "phrases": [
+        "編譯錯誤",
+        "排查編譯",
+        "編譯有錯嗎",
+        "CS0103",
+        "CS0117",
+        "CS1503",
+        "CS0246",
+        "assembly",
+        "asmdef",
+        "check compile",
+        "編譯排查"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md",
+      "intent": "當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。使用 standalone 腳本 `check_compile.py`，即使在 Cmd 系統因編譯錯誤失效時也能正常印出錯誤清單。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "agentcommand",
+      "display_name": "建立 AgentCommand 指令",
+      "tags": [],
+      "phrases": [
+        "新增指令",
+        "建立指令",
+        "建立 agent command",
+        "新增 agent command",
+        "加 RPC handler",
+        "做新 Cmd",
+        "create agent command",
+        "new cmd",
+        "UCL_AgentCommandHandlerBase"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Create_Cmd_Workflow.md",
+      "intent": "建立新的 `UCL_AgentCommand` handler（如 `Cmd_<Name>.cs`），由 `UCL_AgentCommandRegistry` 自動反射發現。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "entry_cf40dd",
+      "display_name": "建立持久化資產",
+      "tags": [],
+      "phrases": [
+        "新 asset",
+        "新增 asset",
+        "做個設定檔",
+        "scriptable object",
+        "create asset menu",
+        "persistent data",
+        "持久化資料",
+        "UCL_Asset",
+        "新 ScriptableObject",
+        "新 SO",
+        "做張角色卡",
+        "新增資料類型"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Create_UCL_Asset_Workflow.md",
+      "intent": "建立繼承自 `UCL_Asset<T>` 的持久化資料類型，禁止裸 `ScriptableObject`。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "claude_hooks",
+      "display_name": "配置 Claude Hooks",
+      "tags": [],
+      "phrases": [
+        "設定 hook",
+        "配置 hook",
+        "安裝 hook",
+        "hooks 設定",
+        "hook setup",
+        "install hooks",
+        "PostToolUse",
+        "settings.json",
+        "自動驗證"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Hook_Setup_Workflow.md",
+      "intent": "配置 Claude Code 的 `PostToolUse`（每次工具呼叫後早期警告）與 `Stop`（turn 結束前強制驗證）hooks，寫/改 UCL_Asset JSON 時自動觸發 schema 與 reference 驗證。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "entry_b53163",
+      "display_name": "更新文件",
+      "tags": [],
+      "phrases": [
+        "更新文件",
+        "同步文件",
+        "文件落後",
+        "update docs",
+        "sync docs",
+        "last_updated"
+      ],
+      "workflow_path": "../../../Skills~/ucl-update-docs/SKILL.md",
+      "intent": "改完 code（`.cs` / `.py`）後同步對應文件（`.md`），防止文件 state 漂移。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "entry_3f763f",
+      "display_name": "翻譯與本地化文件",
+      "tags": [],
+      "phrases": [
+        "翻譯文件",
+        "翻譯 workflow",
+        "translate doc",
+        "translate workflow",
+        "把文件翻成英文",
+        "把文檔翻成日文",
+        "本地化文檔",
+        "translate_docs.py"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md",
+      "intent": "翻譯或本地化 Markdown 文件或說明文檔，確保多語系對齊、術語精準及高雅傲嬌語氣。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    }
+  ]
+}

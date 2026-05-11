@@ -153,17 +153,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>
         /// Phase 1 (Tim 2026-05-11 拍板) — 渲染用 display name。
+        /// Proposal #29 Phase 1: delegate 到 UCL_AgentIdParser.Display 集中 logic。
         /// 物理意義: 統一 render 點 — 帶 persona = "name@persona" / 不帶 = "name"。
-        /// 使用點: UCL_ChatTavernRender / UCL_ChatTavernPage / 未來 Discord notify 都該走本 helper。
+        /// 使用點: UCL_ChatTavernRender / UCL_ChatTavernPage / Discord notify 都該走本 helper。
         /// </summary>
-        public string DisplayName
-        {
-            get
-            {
-                string name = sender_name ?? sender_id ?? "?";
-                return string.IsNullOrEmpty(sender_persona) ? name : $"{name}@{sender_persona}";
-            }
-        }
+        public string DisplayName =>
+            UCL.Core.EditorLib.AgentCommands.Common.UCL_AgentIdParser.Display(
+                sender_id, sender_persona, sender_name);
     }
 
     /// <summary>

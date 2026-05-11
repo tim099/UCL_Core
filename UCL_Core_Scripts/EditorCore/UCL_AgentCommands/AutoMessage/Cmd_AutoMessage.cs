@@ -1,4 +1,4 @@
-// 區塊職責: Proposal #26 Auto-Message Trigger System (Tim 2026-05-11 / Zeta 補充)
+﻿// 區塊職責: Proposal #26 Auto-Message Trigger System (Tim 2026-05-11 / Zeta 補充)
 // 物理意義: Key-value table; 偵測 key 出現在 input → 自動 inject value;
 //          每 key 在一個 actor session 只能觸發一次 (防循環); 每筆 fire 收 1 token (Tim 免費)
 // 數值影響: AutoMessage/triggers.json 寫入 / AutoMessage/fired/<actor>.json 防重 / Treasury debit

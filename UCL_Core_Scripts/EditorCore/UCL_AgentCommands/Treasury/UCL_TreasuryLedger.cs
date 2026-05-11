@@ -2,6 +2,7 @@
 // 物理意義：append-only ledger 三大 op：Credit / Debit / GetBalance；replay 算餘額
 // 數值影響：所有寫操作走本 module；CMD / IMGUI 都是 thin wrapper（per Plan §3 三層架構）
 // 安全：actor_signature 偵測 env_marker 防盜用；不主動 reject mismatch（log warning + audit）
+// 修法 2026-05-11 (Tim QA TreasuryEnvMarker): caller-side detect thread-through CurrentCallerEnvMarker slot
 
 #if UNITY_EDITOR
 using System;

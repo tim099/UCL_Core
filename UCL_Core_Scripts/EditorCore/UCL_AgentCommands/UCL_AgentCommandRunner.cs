@@ -161,6 +161,16 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
 
                     Debug.Log($"[UCL_AgentCmd] ▶ Run '{c.Type}' (id={c.Id}, mode={c.Mode}, runCount={c.RunCount})");
+                    // 區塊職責: caller env_marker thread-through (Tim 2026-05-11 QA bug fix TreasuryEnvMarker)
+                    // 物理意義: Python caller-side detect 寫進 args._caller_env_marker → runner 設 static slot →
+                    //          下游 (UCL_TreasuryLedger.DetectEnvMarker / Cmd handler) 優先讀 slot 而非 in-process env
+                    // 數值影響: 沒帶 _caller_env_marker (e.g. 手動寫 queue.json) → slot 設 null → DetectEnvMarker 走 fallback
+                    string callerEnvMarker = null;
+                    if (c.Args != null && c.Args.TryGetValue("_caller_env_marker", out var cem) && !string.IsNullOrEmpty(cem))
+                    {
+                        callerEnvMarker = cem;
+                    }
+                    UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = callerEnvMarker;
                     try
                     {
                         await handler.ExecuteAsync(c.Args ?? new Dictionary<string, string>(), token);
@@ -185,6 +195,11 @@ namespace UCL.Core.EditorLib.AgentCommands
                         c.LastRunAt = DateTime.UtcNow.ToString("o");
                         failed++;
                         Debug.LogError($"[UCL_AgentCmd] ✗ '{c.Type}' (id={c.Id}) failed: {e}");
+                    }
+                    finally
+                    {
+                        // 清掉 per-cmd 的 caller env_marker slot, 防 cross-cmd leak
+                        UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = null;
                     }
                 }
 

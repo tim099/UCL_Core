@@ -28,21 +28,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ==========================================================
-        // 區塊職責：偵測 env_marker — Claude Code / Antigravity / unknown
-        // 物理意義：CMD server-side 從環境變數推測寫入者真實環境
-        //          per Plan §2.6 — 不可信但提高難度（agent 要刻意 spoof）
-        // 數值影響：env_marker 寫進 entry，事後 audit 查
+        // 區塊職責: Caller env_marker thread-through slot (Tim 2026-05-11 QA Bug fix TreasuryEnvMarker)
+        // 物理意義: caller-side (Python run_cmd.py) 抓得到 CLAUDECODE / ANTIGRAVITY_SESSION 等 env vars,
+        //          長期 Unity Editor process 抓不到 — UCL_AgentCommandRunner 開 cmd 前從 args["_caller_env_marker"]
+        //          設這個 slot, DetectEnvMarker 優先讀; 沒設 → fallback in-process detect (legacy 行為)
+        // 數值影響: 整體 cmd 執行生命週期讀同一個值; finally clear 避免 cross-cmd leak
+        public static string CurrentCallerEnvMarker { get; set; }
+
+        // ==========================================================
+        // 區塊職責：偵測 env_marker — Claude Code / Antigravity / Gemini / unknown
+        // 物理意義：optional caller-passed slot 優先 (Phase 1 修法); fallback in-process env detect (legacy)
+        // 數值影響：env_marker 寫進 ledger entry，事後 audit 查
         // ==========================================================
         public static string DetectEnvMarker()
         {
-            // 1. Claude Code 的標誌環境變數
+            // Phase 1 (Tim 2026-05-11 QA fix): 優先用 caller-side detect (Python 抓 env vars 傳進 args)
+            if (!string.IsNullOrEmpty(CurrentCallerEnvMarker))
+                return CurrentCallerEnvMarker;
+
+            // Fallback: in-process detect (legacy, 直寫 queue.json 沒走 Python 時的容錯)
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CLAUDECODE")))
                 return "claude-code";
-            // 2. Antigravity（Gemini 系列）
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTIGRAVITY_SESSION"))
              || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTIGRAVITY_USER_ID")))
                 return "antigravity";
-            // 3. Gemini CLI
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GEMINI_API_KEY"))
              || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GEMINI_SESSION")))
                 return "gemini";

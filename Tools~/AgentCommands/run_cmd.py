@@ -384,9 +384,33 @@ def append_cmd(cmd_type: str, mode: str, args: dict, description: str) -> str:
 # 子命令：submit / wait / run / list / catalog
 # ===========================================================
 
+def _detect_caller_env_marker() -> str:
+    """
+    區塊職責: 偵測 caller 端 environment (Claude Code / Antigravity / Gemini / unknown)
+    物理意義: Treasury Bug fix (Tim 2026-05-11 QA confirmed TreasuryEnvMarker) — Python caller
+              繼承 Claude Code / Antigravity 子程序 env vars; Editor in-process DetectEnvMarker
+              在 long-running Editor process 永遠抓不到, 改成 caller-side detect 後傳進 args。
+    數值影響: 找到對應 env var → 回 "claude-code" / "antigravity" / "gemini"; 都無 → "unknown"
+    """
+    import os
+    if os.environ.get("CLAUDECODE"):
+        return "claude-code"
+    if os.environ.get("ANTIGRAVITY_SESSION") or os.environ.get("ANTIGRAVITY_USER_ID"):
+        return "antigravity"
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_SESSION"):
+        return "gemini"
+    return "unknown"
+
+
 def cmd_submit(args: argparse.Namespace) -> int:
     """submit：ensure_idle → write queue.json → write pending.trigger。"""
     arg_pairs = parse_kv_pairs(args.arg or [])
+
+    # 區塊職責: caller-side env_marker auto-injection (Tim 2026-05-11 QA bug fix)
+    # 物理意義: caller (Python) 抓得到 Claude Code/Antigravity env vars, Editor in-process 抓不到
+    # 數值影響: 沒帶 _caller_env_marker arg → auto-inject; 已帶 (e.g. test override) → 不覆寫
+    if "_caller_env_marker" not in arg_pairs:
+        arg_pairs["_caller_env_marker"] = _detect_caller_env_marker()
 
     # 區塊職責：Tavern Cmd 的 client-side 預檢
     # 物理意義：Editor round-trip 約 1s 才報錯；client 預檢 < 0.01s 就能擋下 typo / alias 錯

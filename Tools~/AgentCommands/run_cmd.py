@@ -362,6 +362,11 @@ def normalize_cmd_type(cmd_type: str) -> str:
 def append_cmd(cmd_type: str, mode: str, args: dict, description: str) -> str:
     """append 一筆指令到 queue.json，回傳 cmd_id。"""
     cmd_type = normalize_cmd_type(cmd_type)
+    # 區塊職責: caller-side env_marker auto-inject (Tim 2026-05-11 QA bug fix TreasuryEnvMarker)
+    # 物理意義: 所有 append_cmd 路徑 (submit / run / recompile) 都該注入, 不止 submit
+    # 數值影響: 已帶 _caller_env_marker (test override) → 不覆寫; 沒帶 → 走 _detect_caller_env_marker
+    if "_caller_env_marker" not in args:
+        args["_caller_env_marker"] = _detect_caller_env_marker()
     queue = load_queue()
     cmd_id = make_id(cmd_type)
     queue["Commands"].append({
@@ -405,12 +410,7 @@ def _detect_caller_env_marker() -> str:
 def cmd_submit(args: argparse.Namespace) -> int:
     """submit：ensure_idle → write queue.json → write pending.trigger。"""
     arg_pairs = parse_kv_pairs(args.arg or [])
-
-    # 區塊職責: caller-side env_marker auto-injection (Tim 2026-05-11 QA bug fix)
-    # 物理意義: caller (Python) 抓得到 Claude Code/Antigravity env vars, Editor in-process 抓不到
-    # 數值影響: 沒帶 _caller_env_marker arg → auto-inject; 已帶 (e.g. test override) → 不覆寫
-    if "_caller_env_marker" not in arg_pairs:
-        arg_pairs["_caller_env_marker"] = _detect_caller_env_marker()
+    # NOTE: _caller_env_marker auto-inject 已移到 append_cmd 統一處理 (cover submit + run + recompile 三路)
 
     # 區塊職責：Tavern Cmd 的 client-side 預檢
     # 物理意義：Editor round-trip 約 1s 才報錯；client 預檢 < 0.01s 就能擋下 typo / alias 錯

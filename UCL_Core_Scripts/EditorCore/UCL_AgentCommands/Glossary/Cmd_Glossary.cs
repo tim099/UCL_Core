@@ -127,11 +127,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             if (string.IsNullOrEmpty(oneLine)) { Cmd_Glossary_Helpers.RejectLastOp("register 缺少 one_line (建議 < 80 字 給 ref block 顯示用)"); return; }
 
             Directory.CreateDirectory(GlossaryDir);
-            string fullPath = Path.Combine(GlossaryDir, slug + ".md");
-            if (File.Exists(fullPath) && !overwrite)
+
+            // 區塊: 跨子資料夾查重 — 防同 slug 在 personas/ 已存在卻在 root 又建一份
+            // 物理意義: 遞迴掃所有現存 entry, 比對 slug; 命中既有檔案直接複用該路徑覆寫
+            // 數值影響: 若既有檔在子目錄, overwrite=true 時寫回原位置, 不在 root 另建分裂副本
+            string fullPath = null;
+            var existingEntries = LoadAllEntries();
+            var existingHit = existingEntries.FirstOrDefault(e => e.slug == slug);
+            if (existingHit != null)
             {
-                Cmd_Glossary_Helpers.RejectLastOp($"glossary 已存在: {fullPath} (要覆寫加 overwrite=true)");
-                return;
+                if (!overwrite)
+                {
+                    Cmd_Glossary_Helpers.RejectLastOp($"glossary 已存在: docs/Glossary/{existingHit.relativeSubPath} (要覆寫加 overwrite=true)");
+                    return;
+                }
+                fullPath = existingHit.filePath;   // 覆寫原檔, 不論在哪層
+            }
+            else
+            {
+                // 新建 — 預設寫 root (向後相容); 想寫子資料夾走檔案系統手動搬
+                fullPath = Path.Combine(GlossaryDir, slug + ".md");
             }
 
             // 區塊職責: frontmatter 組裝
@@ -174,7 +189,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             report.AppendLine($"✅ glossary registered: **{term}** (slug: {slug})");
             report.AppendLine($"- category: {category}");
             report.AppendLine($"- aliases: {(aliases.Count > 0 ? string.Join(", ", aliases) : "(none)")}");
-            report.AppendLine($"- path: docs/Glossary/{slug}.md");
+            // 計算 register 後的相對路徑顯示 (可能在 subdir, 用 existingHit 路徑反推)
+            string reportRel = existingHit != null
+                ? existingHit.relativeSubPath
+                : slug + ".md";
+            report.AppendLine($"- path: docs/Glossary/{reportRel}");
             report.AppendLine($"- created_by: {createdBy}");
             Cmd_Glossary_Helpers.ResolveLastOp(report.ToString());
         }
@@ -202,7 +221,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             sb.AppendLine($"- category: {hit.category}");
             sb.AppendLine($"- aliases: {(hit.aliases.Count > 0 ? string.Join(", ", hit.aliases) : "(none)")}");
             sb.AppendLine($"- one_line: {hit.oneLine}");
-            sb.AppendLine($"- path: docs/Glossary/{hit.slug}.md");
+            sb.AppendLine($"- path: docs/Glossary/{hit.relativeSubPath}");
             Cmd_Glossary_Helpers.ResolveLastOp(sb.ToString());
         }
 
@@ -226,7 +245,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             sb.AppendLine($"📖 detect 結果 ({hits.Count} 命中, cap={cap}):");
             foreach (var h in hits)
             {
-                sb.AppendLine($"- **{h.term}** (matched: `{h.matchedAlias}`) → docs/Glossary/{h.slug}.md");
+                sb.AppendLine($"- **{h.term}** (matched: `{h.matchedAlias}`) → docs/Glossary/{h.relativeSubPath}");
             }
             if (hits.Count == 0) sb.AppendLine("_(無命中)_");
             Cmd_Glossary_Helpers.ResolveLastOp(sb.ToString());
@@ -281,7 +300,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 sb.AppendLine();
                 foreach (var h in hits)
                 {
-                    sb.AppendLine($"- **{h.term}**: {h.oneLine} → [`docs/Glossary/{h.slug}.md`](docs/Glossary/{h.slug}.md)");
+                    sb.AppendLine($"- **{h.term}**: {h.oneLine} → [`docs/Glossary/{h.relativeSubPath}`](docs/Glossary/{h.relativeSubPath})");
                 }
                 return sb.ToString();
             }
@@ -329,6 +348,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             public string category;
             public string oneLine;
             public string filePath;
+            // 區塊職責: 相對於 docs/Glossary/ 的子路徑 (例如 "basecamp.md" 或 "personas/basecamp.md")
+            // 物理意義: 支援子資料夾組織 (per Proposal: persona/trigger/protocol 分類);
+            //          顯示時拼 "docs/Glossary/" + relativeSubPath 給出完整 markdown link
+            // 數值影響: forward-slash 統一 (跨平台 link friendly)
+            public string relativeSubPath;
         }
 
         private class DetectHit
@@ -339,20 +363,33 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             public string matchedAlias;
             public int startPos;   // 命中位置 (給 longest-match-wins 排序)
             public int length;     // 命中字串長度
+            public string relativeSubPath;   // 跟 GlossaryEntry 對齊 — 給 attach output 用完整 link
         }
 
+        // 區塊職責: 載入所有 glossary entries (遞迴掃子資料夾)
+        // 物理意義: SearchOption.AllDirectories — 支援 personas/ / triggers/ 等子分類目錄;
+        //          flat 結構仍正常運作 (backward compat)
+        // 數值影響: 每筆 entry 計算 relativeSubPath = filePath 相對 GlossaryDir 的子路徑 (forward-slash 標準化)
         private static List<GlossaryEntry> LoadAllEntries()
         {
             var list = new List<GlossaryEntry>();
             if (!Directory.Exists(GlossaryDir)) return list;
-            foreach (var f in Directory.GetFiles(GlossaryDir, "*.md"))
+            foreach (var f in Directory.GetFiles(GlossaryDir, "*.md", SearchOption.AllDirectories))
             {
-                // 跳過 README / index
+                // 跳過 README / index (檔名比對, 不論在哪層目錄)
                 string name = Path.GetFileNameWithoutExtension(f);
                 if (name.Equals("README", StringComparison.OrdinalIgnoreCase) || name.StartsWith("_")) continue;
 
                 var entry = ParseEntry(f);
-                if (entry != null) list.Add(entry);
+                if (entry != null)
+                {
+                    // 區塊: 計算 relativeSubPath — 相對 GlossaryDir, forward-slash 標準化
+                    // 例: GlossaryDir="D:\repo\docs\Glossary", f="D:\repo\docs\Glossary\personas\basecamp.md"
+                    //     → relativeSubPath="personas/basecamp.md"
+                    string rel = f.Substring(GlossaryDir.Length).TrimStart('\\', '/');
+                    entry.relativeSubPath = rel.Replace('\\', '/');
+                    list.Add(entry);
+                }
             }
             return list;
         }
@@ -498,6 +535,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                     matchedAlias = trigger,
                     startPos = found,
                     length = lowerTrigger.Length,
+                    relativeSubPath = e.relativeSubPath,
                 });
                 idx = found + lowerTrigger.Length;
             }

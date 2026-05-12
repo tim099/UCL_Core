@@ -66,6 +66,16 @@
       "name": "qa-bug-reward",
       "summary": "T68 — Tim 確認真 bug 時 agent 拍板 grant reward token (severity tier 1/3/5/10)；mint pattern 勞動所得",
       "optional": false
+    },
+    {
+      "name": "ucl-watch-video",
+      "summary": "使用瀏覽器子代理抓取與分析 Web 影片（如 YouTube）內容與轉錄稿的技能流程",
+      "optional": false
+    },
+    {
+      "name": "ucl-bartender",
+      "summary": "酒保 (Bartender) 系統 — Editor 駐留 daemon 監看 tavern + 時鐘, 自動廣播留言觸發 + 時間提醒 + HP penalty 公式; Cmd_Bartender op=add/list/time_add/...",
+      "optional": false
     }
   ]
 }

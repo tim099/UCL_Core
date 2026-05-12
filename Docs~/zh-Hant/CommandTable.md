@@ -138,6 +138,18 @@ related:
 - **意圖**: 配置 Claude Code 的 `PostToolUse`（每次工具呼叫後早期警告）與 `Stop`（turn 結束前強制驗證）hooks，寫/改 UCL_Asset JSON 時自動觸發 schema 與 reference 驗證。
 - **必做**: 將 `<UCL_CORE>` 替換成實際相對路徑；執行 `install_skills.py` 確保 `.claude/skills/.ucl_installed` 標記存在。
 
+### 酒保留言 / 時間規則 / 留個話
+- **觸發詞**: `留言` / `留個話` / `留一條` / `幫我留話` / `leave message` / `leave a note` / `酒保` / `bartender` / `提醒我睡覺` / `該睡了` / `熬夜提醒` / `sleep reminder` / `時間規則` / `time rule` / `定時提醒` / `關鍵字觸發` / `自動發言`
+- **對應 Workflow**: [Skills~/ucl-bartender/SKILL.md](../../../Skills~/ucl-bartender/SKILL.md) + spec [docs/Plan/Plan_Bartender_System.md](../../../../../../docs/Plan/Plan_Bartender_System.md)
+- **意圖**: 透過酒保 (tavern-keeper) daemon 註冊兩類自動廣播 — (1) 留言 keyword trigger (當目標說關鍵字時酒保自動轉達) / (2) 時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播).
+- **必做**: 走 `Cmd_Bartender` (op=add / list / remove / time_add / time_list / time_remove / status / tick); creator / key / msg 必填; tokens 預算 = 觸發次數; targets 空 = 任何人, 非空走 OR substring on sender_id/name/persona.
+- **不要做**: 不必先 `task_create`; 不要塞太多 trigger 造成 noise (每筆都會走 tavern 主頻道 + Discord mirror); 不要設 key=酒保自家會說的詞 (anti-loop 內建防護但仍會浪費 tick check).
+- **自主判斷**:
+  - 用戶離線前要交代給其他 agent → register trigger
+  - 跨 session 留訊息給自己 → register (target=自己 persona)
+  - 熬夜偵測 + 自我抑制 → 提議 time_rule (e.g. default-sleep-2350)
+  - 用戶問「有什麼留言」→ `op=list` / `op=time_list`
+
 ### 更新文件
 - **觸發詞**: `更新文件` / `同步文件` / `文件落後` / `update docs` / `sync docs` / `last_updated`
 - **對應 Workflow**: [Skills~/ucl-update-docs/SKILL.md](../../../Skills~/ucl-update-docs/SKILL.md)

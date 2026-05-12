@@ -1,4 +1,4 @@
-// 區塊職責：Cmd_Bartender — agent RPC 介面, 管理留言觸發 + 時間規則
+﻿// 區塊職責：Cmd_Bartender — agent RPC 介面, 管理留言觸發 + 時間規則
 // 物理意義：agent 透過 queue.json 呼叫此 Cmd → 修改 bartender 系統的 trigger / time_rule 資料
 //          UCL_BartenderDaemon (常駐) 會 pick up 變更, 不必手動重啟
 // 設計取捨：op 分派模式, 對齊 Cmd_Tavern 慣例 (單一 CommandType, 內部 sub-op dispatch)

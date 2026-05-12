@@ -253,12 +253,29 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             }
         }
 
-        // 簡單的 agent_id ↔ env_marker 對應檢查
+        // ==========================================================
+        // 區塊職責：agent_id ↔ env_marker 對應檢查 — 判定本筆 ledger entry 該不該被標 signature_mismatch
+        // 物理意義：caller env 是 Python run_cmd.py 開的 Claude / Antigravity / Gemini env；
+        //          claimedAgent 是寫進 ledger 的 sig_agent_id_claimed 欄位（誰自稱發了這筆）
+        // 數值影響：return true → signature_mismatch=false (信任本筆)；return false → 標 mismatch + Discord ⚠
+        // 邊界：
+        //   - envMarker = "unknown" → 偵測不到 env (e.g. Editor 直寫 queue.json) 不算 mismatch
+        //   - agentId 為空 → 沒 claim 不算 mismatch
+        //   - agentId = "system" → **合法 wildcard** (Tim 2026-05-12 QA Bug fix TreasuryWorkPostSysMismatch)
+        //     work_post / token_parse 等 Op_Post hook 走 internal auto-credit, 必須傳 callerAgentId="system"
+        //     以區隔 user-initiated credit. "system" 跟任何 env 都不該被視為 mismatch — 否則所有 auto-credit
+        //     都會被誤標 ⚠, 真正的 false positive 反被淹沒 (250+ 筆歷史 entries 已遭此污染)
+        // ==========================================================
         static bool MatchesEnvMarker(string agentId, string envMarker)
         {
             if (envMarker == "unknown") return true;   // 偵測不到不算 mismatch（避免 false positive）
             if (string.IsNullOrEmpty(agentId)) return true;
             string lowerId = agentId.ToLowerInvariant();
+
+            // T+ QA fix: "system" 是合法 internal caller (Op_Post auto-credit hooks 用)
+            //            不該被誤判 mismatch — 跟任何 env_marker 都視為相容
+            if (lowerId == "system") return true;
+
             switch (envMarker)
             {
                 case "claude-code": return lowerId.Contains("claude");

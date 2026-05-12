@@ -325,12 +325,18 @@ def is_lock_expired(lock: dict) -> bool:
 
 # ─── Fork Mechanism (§Fork Mechanism) ───────────────────────────────────
 def fork_persona(reg: dict, source: str, target: str,
-                 rng: random.Random | None = None) -> str:
+                 rng: random.Random | None = None,
+                 agent: str | None = None, model: str | None = None) -> str:
     """
     Conflict resolution — agent 自決 fresh codename + 從 source 複製 vector/lineage.
 
     Tim 2026-05-12 拍板: target 必填 — agent 該自命新 codename (山脈隱喻系列, 不帶 fork suffix).
     "fork" 只是 internal 概念比喻 (git branch), 不該變字面命名 — e.g. ❌ basecamp-fork-2026-05-12-xxx
+
+    Bug fix (Zeta 2026-05-12): 新 fork 的 agent/model 應該用 caller 的 --agent / --model
+    explicit override (e.g. --agent Zeta fork from basecamp 該 → Zeta 而非 source 的 claude-code).
+    舊行為盲繼承 src["agent"] → 跨 agent 喚醒時 persona pool agent 欄位錯亂.
+    agent/model 為 None 時退回 source 行為 (backward compat).
 
     命名範例 (山脈系 launching-point framing):
       - crest-001, crest-002 ... (山頂 ridge stack)
@@ -357,8 +363,8 @@ def fork_persona(reg: dict, source: str, target: str,
     now = utcnow_iso()
     v = list(src["identity_vector"])  # copy 起點
     reg["personas"][target] = {
-        "agent": src["agent"],
-        "model": src["model"],
+        "agent": agent if agent else src["agent"],
+        "model": model if model else src["model"],
         "layer_role": f"fork of {source} @ {now}",
         "wake_count": 0,
         "status": "offline",
@@ -485,7 +491,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
                 print(f"   範例: crest-001 / ravine / basecamp-east / summit / meadow / plateau", file=sys.stderr)
                 print(f"   重跑: python awakening.py morning --persona {preferred} --fork-name <NEW_NAME> ...", file=sys.stderr)
                 return 2
-            target_persona = fork_persona(reg, source=preferred, target=args.fork_name)
+            target_persona = fork_persona(reg, source=preferred, target=args.fork_name,
+                                          agent=agent, model=model)
             fork_happened = True
             print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
 
@@ -518,6 +525,15 @@ def cmd_morning(args: argparse.Namespace) -> int:
 
     # Step 3: wake_count++ + set status active
     p = reg["personas"][chosen]
+    # Bug fix (Zeta 2026-05-12): 喚醒時若 --agent 跟既存 persona 的 agent 欄位不一致 (e.g. summit
+    # 原 registered 為 claude-code, 但本次以 --agent Zeta 喚醒), auto-rebind to caller's agent.
+    # Reasoning: --agent 是 explicit caller intent, persona 欄位該跟隨; 否則 status report 看不到該 agent
+    # 自家 personas. Model 同理 (free-form display).
+    if p.get("agent") != agent:
+        print(f"⚠ rebind persona '{chosen}' agent: {p.get('agent')} → {agent} (explicit --agent override)")
+        p["agent"] = agent
+    if model and p.get("model") != model:
+        p["model"] = model
     p["wake_count"] += 1
     p["status"] = "online"
     p["last_active"] = utcnow_iso()

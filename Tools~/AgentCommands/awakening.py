@@ -934,7 +934,7 @@ def cmd_affinity(args: argparse.Namespace) -> int:
         if not data:
             print("  (尚無任何紀錄)")
         for target, record in data.items():
-            print(f"- {target}: {record['score']} ({record['tier']})")
+            print(f"- {target}: {record['surface_score']} ({record['tier']})")
             if record['opinions']:
                 print(f"  看法: {', '.join(record['opinions'])}")
         return 0
@@ -948,7 +948,7 @@ def cmd_affinity(args: argparse.Namespace) -> int:
     if args.delta is not None:
         reason = args.reason or "無特定理由"
         record = affinity_manager.update_affinity(persona, target, args.delta, reason)
-        print(f"✓ {persona} 對 {target} 好感度變動 {args.delta} → 目前: {record['score']} ({record['tier']})")
+        print(f"✓ {persona} 對 {target} 好感度變動 {args.delta} → 目前: {record['surface_score']} ({record['tier']})")
 
     if args.add_opinion:
         record = affinity_manager.add_opinion(persona, target, args.add_opinion)
@@ -956,7 +956,7 @@ def cmd_affinity(args: argparse.Namespace) -> int:
 
     if args.delta is None and not args.add_opinion:
         record = affinity_manager.get_affinity(persona, target)
-        print(f"💖 {persona} 對 {target} 好感度: {record['score']} ({record['tier']})")
+        print(f"💖 {persona} 對 {target} 好感度: {record['surface_score']} ({record['tier']})")
         if record['opinions']:
             print(f"   看法: {', '.join(record['opinions'])}")
     

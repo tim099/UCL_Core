@@ -38,7 +38,7 @@ namespace UCL.Core.EditorLib.Page
         /// 是否要列入 <see cref="UCL_EditorMenuPage"/> 的 Page 選擇器下拉。預設 false（opt-in）。
         /// 子類若希望被使用者從主選單直接打開，覆寫成 true。
         /// </summary>
-        public virtual bool ShowInPageMenu => false;
+        public virtual bool ShowInPageMenu => true;
 
         public override void Init(UCL_GUIPageController iGUIPageController)
         {

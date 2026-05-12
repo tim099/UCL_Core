@@ -41,7 +41,13 @@ namespace UCL.Core.EditorLib.Page
             set => PlayerPrefs.SetString(nameof(SelectedIdentityId), value);
         }
         string m_Input = "";
-        string m_MetaInput = "";        // "k1=v1;k2=v2"
+        // 區塊職責: meta/refs 預設值 — 進入頁面就帶可運作預設, Tim 2026-05-12 拍板
+        // 物理意義:
+        //   - meta `tag:human-post` 標記訊息來自 IMGUI 頁面 (vs agent 走 run_cmd.py)
+        //   - meta `alter-pacing-bypass:true` 跳過 alter-pair 300s 自動延遲 — 人類發言不該被 throttle
+        //   - refs 空, 但 label 提示格式 (path|path) 引導使用者填入
+        // 數值影響: 使用者可手動編輯 / 清空; 跟 agent post 走完全一樣 Cmd_Tavern.Op_Post 路徑
+        string m_MetaInput = "tag:human-post;alter-pacing-bypass:true";
         string m_RefsInput = "";        // "path1|path2"
         int? m_ReplyTo = null;
         Vector2 m_MessagesScroll = Vector2.zero;
@@ -1284,29 +1290,53 @@ namespace UCL.Core.EditorLib.Page
             return (id, display, kind);
         }
 
-        void DoSend()
+        // 區塊職責: 透過 Cmd_Tavern.Op_Post 統一發言 — 跟 agent 走 run_cmd.py 完全一樣的底層邏輯
+        // 物理意義: Tim 2026-05-12 拍板 — Page Send 不再 bypass Op_Post 直接 AppendMessage,
+        //          改建 args dict 走 Cmd_Tavern.ExecuteAsync, 自動繼承下列 7 道機制:
+        //          (1) alter pacing — meta alter-pacing-bypass=true 已 preset 跳過
+        //          (2) presence 更新 (sender 自動 status=active + current_room)
+        //          (3) @mention parser → 對方 inbox auto-write
+        //          (4) glossary auto-attach — body 命中 glossary 詞自動 append refs block
+        //          (5) Discord mirror (notify_discord webhook)
+        //          (6) WriteLastView _last_view.md 渲染
+        //          (7) auto-credit/auto-debit hook (work_post / token_parse)
+        // 數值影響: async void 適合 IMGUI button click context — 立刻 return GUI 繼續 redraw,
+        //          post 寫入跟 RefreshMessages 在 await 後處理; m_Input 立刻清空給使用者乾淨輸入區。
+        // Anti-pattern: 別在這裡再 AppendMessage / WriteLastView — Op_Post 全包了, 重複呼叫 = 雙重寫入
+        async void DoSend()
         {
             var (idntId, idntName, _) = ResolveSelectedIdentity();
             if (string.IsNullOrEmpty(idntId)) { Debug.LogError("身分不存在"); return; }
-            var room = UCL_ChatTavernIO.GetRoom(SelectedRoomId);
-            if (room == null) { Debug.LogError("房間不存在"); return; }
+            if (string.IsNullOrEmpty(SelectedRoomId)) { Debug.LogError("房間未選"); return; }
 
-            var msg = new UCL_ChatMessage
+            // 構造 args dict — schema 跟 run_cmd.py run Tavern --arg key=val 完全對齊
+            var args = new Dictionary<string, string>
             {
-                sender_id = idntId,
-                sender_name = idntName,
-                kind = "chat",
-                body = m_Input,
-                reply_to = m_ReplyTo,
-                meta = ParseMetaSimple(m_MetaInput),
-                refs = ParseRefsSimple(m_RefsInput),
+                { "op", "post" },
+                { "room", SelectedRoomId },
+                { "sender", idntId },
+                { "body", m_Input },
             };
-            int seq = UCL_ChatTavernIO.AppendMessage(SelectedRoomId, msg);
-            UCL_ChatTavernRender.WriteLastView(SelectedRoomId, room.name,
-                UCL_ChatTavernIO.Tail(SelectedRoomId, 100), seq,
-                $"> 你 ({idntName}) 剛 post：seq={seq}");
+            if (m_ReplyTo.HasValue) args["reply_to"] = m_ReplyTo.Value.ToString();
+            if (!string.IsNullOrEmpty(m_MetaInput)) args["meta"] = m_MetaInput;
+            if (!string.IsNullOrEmpty(m_RefsInput)) args["refs"] = m_RefsInput;
+
+            // 立刻清空輸入區 — 使用者按 Send 後馬上看到乾淨 input, 不必等 await
             m_Input = "";
             m_ReplyTo = null;
+
+            // 走 Cmd_Tavern.Op_Post 同一路徑 — 跟 agent 走 queue.json 觸發的完全一致
+            // 不走 queue.json 因為 Page 就在 Editor 內, 直接 invoke handler 省一次 watcher tick
+            try
+            {
+                var cmd = new UCL.Core.EditorLib.AgentCommands.ChatTavern.Cmd_Tavern();
+                await cmd.ExecuteAsync(args, default);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[ChatTavernPage] DoSend via Cmd_Tavern fail: {ex.Message}\n{ex.StackTrace}");
+            }
+
             RefreshMessages();
         }
 
@@ -1504,31 +1534,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(label, UCL_GUIStyle.LabelStyle, GUILayout.Width(labelWidth));
                 return GUILayout.TextField(value ?? "");
             }
-        }
-
-        static Dictionary<string, string> ParseMetaSimple(string raw)
-        {
-            if (string.IsNullOrEmpty(raw)) return null;
-            var d = new Dictionary<string, string>();
-            foreach (var pair in raw.Split(';'))
-            {
-                if (string.IsNullOrEmpty(pair)) continue;
-                int idx = pair.IndexOf('=');
-                if (idx <= 0) continue;
-                d[pair.Substring(0, idx).Trim()] = pair.Substring(idx + 1).Trim();
-            }
-            return d.Count > 0 ? d : null;
-        }
-        static List<UCL_ChatRef> ParseRefsSimple(string raw)
-        {
-            if (string.IsNullOrEmpty(raw)) return null;
-            var list = new List<UCL_ChatRef>();
-            foreach (var p in raw.Split('|'))
-            {
-                string path = p.Trim();
-                if (!string.IsNullOrEmpty(path)) list.Add(new UCL_ChatRef { path = path });
-            }
-            return list.Count > 0 ? list : null;
         }
 
         static void TryPingAsset(string repoRelativePath)

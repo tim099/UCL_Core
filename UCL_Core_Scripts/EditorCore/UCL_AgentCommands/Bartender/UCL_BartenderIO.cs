@@ -146,6 +146,71 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
 
         // ===========================================================
+        // 區塊：Shared register helper — Cmd_Bartender + Daemon inline parser 共用
+        // 物理意義：建構 UCL_BartenderTrigger / UCL_BartenderTimeRule + atomic 寫入 triggers.json / time_rules.json
+        // 設計取捨：把 register 邏輯集中, 確保 inline parse 跟 CMD 走完全一樣的程式碼路徑 (per Tim spec)
+        // ===========================================================
+
+        /// <summary>
+        /// 註冊新 trigger — 構建 entry + persist. 回傳 generated id (8-hex).
+        /// 用於 Cmd_Bartender.Op_Add + Daemon inline [進行留言] 解析共用底層.
+        /// </summary>
+        public static string RegisterTrigger(
+            string creatorId, string creatorName,
+            System.Collections.Generic.List<string> targets,
+            string keyword, string message,
+            int tokens, string room)
+        {
+            string id = System.Guid.NewGuid().ToString("N").Substring(0, 8);
+            var trigger = new UCL_BartenderTrigger
+            {
+                id = id,
+                creator_id = creatorId,
+                creator_name = string.IsNullOrEmpty(creatorName) ? creatorId : creatorName,
+                targets = targets ?? new System.Collections.Generic.List<string>(),
+                keyword = keyword,
+                message = message,
+                remaining_triggers = System.Math.Max(1, tokens),
+                initial_tokens = System.Math.Max(1, tokens),
+                created_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                target_room = string.IsNullOrEmpty(room) ? "tavern" : room,
+            };
+            var data = LoadTriggers();
+            data.triggers.Add(trigger);
+            SaveTriggers(data);
+            return id;
+        }
+
+        /// <summary>
+        /// 註冊新 time rule — 構建 entry + persist (同 id 覆寫). 回傳 rule id.
+        /// </summary>
+        public static string RegisterTimeRule(
+            string id, string timeHHmm, string targetId, string reminderMsg,
+            int graceMinutes, bool penaltyEnabled, int penaltyIntervalMinutes,
+            string penaltyTarget, string room)
+        {
+            var rule = new UCL_BartenderTimeRule
+            {
+                id = id,
+                time_hhmm = timeHHmm,
+                target_id = targetId,
+                reminder_msg = reminderMsg,
+                grace_minutes = System.Math.Max(0, graceMinutes),
+                penalty_enabled = penaltyEnabled,
+                penalty_interval_minutes = System.Math.Max(1, penaltyIntervalMinutes),
+                penalty_target = string.IsNullOrEmpty(penaltyTarget) ? targetId : penaltyTarget,
+                target_room = string.IsNullOrEmpty(room) ? "tavern" : room,
+                enabled = true,
+            };
+            var data = LoadTimeRules();
+            // 同 id 覆寫 (idempotent register)
+            data.rules.RemoveAll(r => r != null && r.id == id);
+            data.rules.Add(rule);
+            SaveTimeRules(data);
+            return id;
+        }
+
+        // ===========================================================
         // State helper — per-room last_seq 取/設
         // ===========================================================
 

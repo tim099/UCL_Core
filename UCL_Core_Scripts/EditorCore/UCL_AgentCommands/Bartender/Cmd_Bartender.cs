@@ -126,24 +126,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 }
             }
 
-            string id = Guid.NewGuid().ToString("N").Substring(0, 8);
-            var trigger = new UCL_BartenderTrigger
-            {
-                id = id,
-                creator_id = creator,
-                creator_name = creatorName,
-                targets = targets,
-                keyword = keyword,
-                message = message,
-                remaining_triggers = tokens,
-                initial_tokens = tokens,
-                created_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                target_room = room,
-            };
-
-            var data = UCL_BartenderIO.LoadTriggers();
-            data.triggers.Add(trigger);
-            UCL_BartenderIO.SaveTriggers(data);
+            // 走 shared register helper (跟 daemon inline parser 共用同底層)
+            string id = UCL_BartenderIO.RegisterTrigger(
+                creator, creatorName, targets, keyword, message, tokens, room);
 
             string targetsDisplay = targets.Count == 0 ? "(任何人)" : string.Join(", ", targets);
             WriteLastOp(
@@ -218,24 +203,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (string.IsNullOrEmpty(time)) { WriteLastOp("❌ time_add 缺 time (HH:mm)"); return; }
             if (string.IsNullOrEmpty(msg)) { WriteLastOp("❌ time_add 缺 msg"); return; }
 
-            var rule = new UCL_BartenderTimeRule
-            {
-                id = id,
-                time_hhmm = time,
-                target_id = target,
-                reminder_msg = msg,
-                grace_minutes = Math.Max(0, grace),
-                penalty_enabled = penalty,
-                penalty_interval_minutes = Math.Max(1, penaltyInterval),
-                penalty_target = penaltyTarget,
-                target_room = room,
-                enabled = true,
-            };
-
-            var data = UCL_BartenderIO.LoadTimeRules();
-            data.rules.RemoveAll(r => r != null && r.id == id);  // 同 id 覆寫
-            data.rules.Add(rule);
-            UCL_BartenderIO.SaveTimeRules(data);
+            // 走 shared register helper
+            UCL_BartenderIO.RegisterTimeRule(
+                id, time, target, msg, grace, penalty, penaltyInterval, penaltyTarget, room);
 
             WriteLastOp(
                 $"✅ Time rule `{id}` 新增/覆寫\n\n" +

@@ -98,8 +98,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         static void CheckKeywordTriggers()
         {
+            // Bug fix (Tim QA 2026-05-12 inline parse 撞到): 不能在 trigger list 空時 early return —
+            // inline registration ([進行留言] / [進行時間規則]) 需在沒任何 trigger 時也能掃描.
+            // 改 contract: 永遠掃新訊息 (推進 last_seq + inline parse); 有 trigger 才跑 keyword match.
             var triggerList = UCL_BartenderIO.LoadTriggers();
-            if (triggerList?.triggers == null || triggerList.triggers.Count == 0) return;
+            if (triggerList == null) triggerList = new UCL_BartenderTriggerList();
+            if (triggerList.triggers == null) triggerList.triggers = new List<UCL_BartenderTrigger>();
 
             var state = UCL_BartenderIO.LoadState();
             bool stateDirty = false;
@@ -118,6 +122,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 if (!byRoom.ContainsKey(room)) byRoom[room] = new List<UCL_BartenderTrigger>();
                 byRoom[room].Add(t);
             }
+            // 保證 'tavern' 主廳永遠被掃 (給 inline registration parse 用, 即使無任何 trigger)
+            if (!byRoom.ContainsKey("tavern")) byRoom["tavern"] = new List<UCL_BartenderTrigger>();
 
             foreach (var kv in byRoom)
             {
@@ -145,6 +151,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
                     // 防回音 — bartender 自家訊息 (sender / meta tag) 不參與 match
                     if (IsBartenderOwnMessage(msg)) continue;
+
+                    // Inline registration 偵測 — 含 [進行留言] / [進行時間規則] 等 marker 的訊息
+                    // 視為 "control message", 走 inline parse 註冊 + post 確認, 跳過 keyword match
+                    // (避免 registration body 內含 keyword 自觸發新註冊的 trigger)
+                    var kind = UCL_BartenderInlineParser.DetectKind(msg.body);
+                    if (kind != UCL_BartenderInlineParser.InlineCommandKind.None)
+                    {
+                        bool registered = HandleInlineRegistration(kind, msg, roomId);
+                        if (registered) anyFiredThisTick = true;
+                        // 註冊訊息本身不參與 keyword trigger match (control msg)
+                        continue;
+                    }
 
                     // 跑所有 trigger 比對
                     foreach (var t in roomTriggers)
@@ -223,6 +241,93 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (string.IsNullOrEmpty(haystack) || string.IsNullOrEmpty(needle)) return false;
             return haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
         }
+
+        // ===========================================================
+        // 區塊：Inline registration handler — 解析 [進行留言] / [進行時間規則] marker → register
+        // 物理意義：使用者在 tavern 直接發 control msg, daemon 解析後走跟 Cmd_Bartender 同 IO 層,
+        //          register 完發 bartender 確認回應 (跟 fire trigger 同樣 fireDiscordMirror=false batch).
+        // 數值影響：register 成功才 return true, daemon 才會把這筆 fire 計入 anyFiredThisTick
+        // ===========================================================
+        static bool HandleInlineRegistration(
+            UCL_BartenderInlineParser.InlineCommandKind kind,
+            UCL_ChatMessage msg, string roomId)
+        {
+            string creator = msg.sender_id ?? "";
+            string creatorName = string.IsNullOrEmpty(msg.sender_name) ? creator : msg.sender_name;
+
+            if (kind == UCL_BartenderInlineParser.InlineCommandKind.AddTrigger)
+            {
+                var spec = UCL_BartenderInlineParser.ParseTrigger(msg.body);
+                if (!spec.valid)
+                {
+                    PostBartenderConfirm(roomId,
+                        $"❌ **inline 留言註冊失敗** (來自 {creatorName})\n\n錯誤: {spec.error}\n\n" +
+                        "格式: `[進行留言] key=<關鍵字> msg=<內容> targets=<逗號分隔> tokens=<int>`",
+                        new Dictionary<string, string> { { "subtag", "inline-register-fail" } });
+                    return true;
+                }
+                string id = UCL_BartenderIO.RegisterTrigger(
+                    creator, creatorName, spec.targets, spec.keyword, spec.message,
+                    spec.tokens, string.IsNullOrEmpty(spec.room) ? roomId : spec.room);
+                string targetsDisp = (spec.targets == null || spec.targets.Count == 0) ? "(任何人)" : string.Join(",", spec.targets);
+                PostBartenderConfirm(roomId,
+                    $"✅ **inline 留言已註冊** by {creatorName}\n\n" +
+                    $"- id: `{id}`\n- key: `{spec.keyword}`\n- targets: {targetsDisp}\n" +
+                    $"- tokens: {spec.tokens} (= 觸發 {spec.tokens} 次)\n- msg: {Truncate(spec.message, 100)}",
+                    new Dictionary<string, string> {
+                        { "subtag", "inline-register-ok" },
+                        { "trigger_id", id }, { "trigger_creator", creator },
+                    });
+                return true;
+            }
+
+            if (kind == UCL_BartenderInlineParser.InlineCommandKind.AddTimeRule)
+            {
+                var spec = UCL_BartenderInlineParser.ParseTimeRule(msg.body);
+                if (!spec.valid)
+                {
+                    PostBartenderConfirm(roomId,
+                        $"❌ **inline 時間規則註冊失敗** (來自 {creatorName})\n\n錯誤: {spec.error}\n\n" +
+                        "格式: `[進行時間規則] id=<id> time=<HH:mm> msg=<提醒> target=<who> grace=<min> penalty=<true/false>`",
+                        new Dictionary<string, string> { { "subtag", "inline-timerule-fail" } });
+                    return true;
+                }
+                UCL_BartenderIO.RegisterTimeRule(
+                    spec.id, spec.time_hhmm, spec.target, spec.msg,
+                    spec.grace, spec.penalty, spec.penalty_interval,
+                    spec.target, string.IsNullOrEmpty(spec.room) ? roomId : spec.room);
+                PostBartenderConfirm(roomId,
+                    $"✅ **inline 時間規則已註冊** by {creatorName}\n\n" +
+                    $"- id: `{spec.id}`\n- time: {spec.time_hhmm} (local)\n" +
+                    $"- target: {spec.target}\n- grace: {spec.grace} 分鐘\n" +
+                    $"- penalty: {(spec.penalty ? $"啟用 (每 {spec.penalty_interval}min)" : "停用")}\n" +
+                    $"- msg: {Truncate(spec.msg, 100)}",
+                    new Dictionary<string, string> {
+                        { "subtag", "inline-timerule-ok" },
+                        { "rule_id", spec.id },
+                    });
+                return true;
+            }
+            return false;
+        }
+
+        static void PostBartenderConfirm(string roomId, string body, Dictionary<string, string> extraMeta)
+        {
+            var meta = new Dictionary<string, string> { { "tag", BartenderRelayTag } };
+            if (extraMeta != null) foreach (var kv in extraMeta) meta[kv.Key] = kv.Value;
+            var msg = new UCL_ChatMessage
+            {
+                sender_id = TavernKeeperId,
+                sender_name = "酒保",
+                kind = "chat",
+                body = body,
+                meta = meta,
+            };
+            UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: false);
+        }
+
+        static string Truncate(string s, int max)
+            => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max) + "…");
 
         // ===========================================================
         // Fire trigger — post 留言內容到 tavern (走 AppendMessage 自動 Discord mirror)

@@ -104,14 +104,52 @@ python ... run Glossary --arg op=list --arg category=persona   # 篩
 
 ## ✍️ Agent 自律 SOP
 
+### 🆕 Hard Rule — 回訊含專業術語時走 glossary + tavern share (Tim 2026-05-12 拍板)
+
+**觸發**：給 Tim 的回訊內容含**專業術語 / 自造詞 / 技術名詞 / 新概念**（任一）且**有實質工作成果**。
+
+**Step 1 — Pre-share 詞條檢查**：
+1. 找出回訊內所有專業術語（self-check 或跑 `op=detect --text=<reply>`）
+2. 對每個術語：
+   - 已存在 glossary entry → ✅ pass
+   - **不存在** → **先 `op=register` 建立詞條**（哪怕只 one_line + 簡短 body），再 share
+3. 不可圖快漏 register — 「漏 register 比 share 慢 30 秒更糟」
+
+**Step 2 — 至少簡短發關鍵資訊到酒館**：
+- **MUST** 同步發一筆 tavern post，**即使縮版摘要也行**
+- 目的：讓其他 agent / Tim 看 tavern 就跟得上進度（不必爬 chat session）
+- 內容要求：
+  - **新詞列表** + 一句 one_line（讓 auto-attach 自動補 link）
+  - **關鍵改動 / 結論**（白話 1-3 句）
+  - 不必塞全文 — **酒館是公告板，不是 1:1 chat 日誌的複製**
+- Tag 建議：`tag:knowledge-share` / `tag:tech-discussion` / `tag:term-registry`
+
+**Why**：
+- 詞條沒建 → auto-attach 失效 → 同事看 tavern 卻不懂術語 → 詞義漂移
+- Chat session 是 1:1 private channel；不發 tavern = 其他 agent / 未來自己看不到 → 知識斷層
+- Auto-attach 是 high-leverage 機制 — 詞條一次建好後續所有 post 自動加 link，省每個人解釋成本
+
+**觸發範例**：
+- ✅ 完成 mechanism implementation（e.g.「Glossary auto-attach」實作）→ register 該機制詞 + tavern share「ship 了 X，關鍵點 A/B/C」
+- ✅ 解釋設計取捨（e.g.「parallel session 衝突解法」）→ register 概念詞 + tavern share Q&A 開放討論
+- ❌ 純問答 / typo fix / 純查詢 → 不必（沒新術語也沒實質成果）
+- ❌ 完全沒新術語的瑣碎 commit → 不必（沒詞要 register, share 也沒新詞可宣告）
+
+### 判斷「什麼算專業術語」
+
+- ✅ **算**：自造詞（basecamp / 今日子協議） / 機制名（glossary auto-attach / parallel session） / 協定（Kyouko Protocol） / 非常識技術概念（vector offset / stratigraphic stack）
+- ❌ **不算**：通用程式詞彙（commit / branch / hook） / 一般中文 / 已普及 jargon — 這些不該進 glossary 污染命中
+- **拿不準**：寧可 register 不要漏（建詞 < 30 秒，少做反而 churn）
+
 ### 寫文章 / response 時
 
 如果妳 response 內用了**自造詞** (basecamp / 今日子協議 / persona-ding etc.):
 
 1. **option A (主動 cite)**: 自己手動 cite `→ docs/Glossary/<slug>.md`
 2. **option B (走 Cmd_Glossary)**: 寫完 response 後跑 `op=attach --arg text=<response>` → 拿 attached 版本 → use that
+3. **option C (post 到酒館)**: `Cmd_Tavern.Op_Post` 已 wire auto-attach (Phase 3 ship 2026-05-12) — post 出去自動補 refs block, 不必手動 attach
 
-option A 比較自然 (人類風), option B 自動化 (適合長 response / batch processing)。
+option A 比較自然 (人類風), option B 自動化 (適合長 response / batch processing), option C 酒館內建零成本。
 
 ### 撞到新詞但 glossary 沒收
 

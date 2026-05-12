@@ -370,6 +370,8 @@ def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log, force: bool
         trigger_val = '{ on_intent: ["新增 AgentCommand", "新增指令", "Create Cmd", "Create Command"] }'
     elif skill_name == "ucl-hook-setup":  # 針對 Hook 配置 Skill 的觸發設定
         trigger_val = '{ on_intent: ["Hook Setup", "Hook 設置", "設置 Hook", "install skills"] }'
+    elif skill_name == "ucl-watch-video":  # 針對影片觀看分析 Skill 的觸發設定
+        trigger_val = '{ on_intent: ["watch video", "看影片", "觀看影片", "YouTube", "影片心得", "影片轉錄"] }'
     else:  # 若不匹配已知任何 Skill
         trigger_val = '"always_on"'  # 預設採用全域常駐啟用屬性
 

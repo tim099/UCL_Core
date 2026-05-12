@@ -8,9 +8,11 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 {
@@ -978,8 +980,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>追加一筆訊息（自動分配 seq + ts + _writer 簽章）。回傳分配後的 seq。
         /// T38: 內部委派 UCL_ChatTavernIO_PerMsgFile.WriteMessageFile — 改寫單檔 per message
-        /// （取代既有 jsonl append-only），seq 改為 reader 動態 derive。</summary>
-        public static int AppendMessage(string roomId, UCL_ChatMessage msg)
+        /// （取代既有 jsonl append-only），seq 改為 reader 動態 derive。
+        /// fireDiscordMirror=true (預設) — 寫完 fire-and-forget 觸發 notify_discord.py --mode tavern,
+        /// 讓任何 post entry point (Cmd_Tavern.Op_Post / IMGUI DoSend / 別 Cmd) 自動 mirror 到 Discord.
+        /// quiet 場景 (e.g. 測試 / 內部 system message) 傳 false 跳過.</summary>
+        public static int AppendMessage(string roomId, UCL_ChatMessage msg, bool fireDiscordMirror = true)
         {
             // T38: PerMsgFile 內部處理 ts / uuid / _writer / _pid 簽章 + 寫單檔
             var (record, fullPath) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFile(roomId, msg);
@@ -993,7 +998,62 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 File.WriteAllText(GetSeqPath(roomId), derivedSeq.ToString(), new UTF8Encoding(false));
             }
             catch { /* fail swallow */ }
+
+            // R6.6 / DoSend-mirror-fix — 下沉 Discord mirror 觸發到 IO 層,
+            // 所有 post path (Cmd_Tavern RPC / UCL_ChatTavernPage IMGUI Send / 別 Cmd) 自動受益.
+            // 之前只有 Cmd_Tavern.Op_Post 顯式呼叫 TryFireDiscordTavernMirrorAsync — IMGUI Send 漏觸發.
+            if (fireDiscordMirror)
+            {
+                TryFireDiscordTavernMirrorAsync();
+            }
             return derivedSeq;
+        }
+
+        // ===========================================================
+        // 區塊：Discord Tavern Mirror 即時觸發 (從 Cmd_Tavern 下沉至 IO 層)
+        // 物理意義：spawn Python notify_discord.py --mode tavern fire-and-forget;
+        //          跟 Stop hook 路徑形成雙路徑 hybrid (Stop hook 是 safety net)
+        // 數值影響：兩路共用 _tavern_state.json last_seen_seq → idempotent; fail 不影響 post
+        // 設計取捨：原本住在 Cmd_Tavern.Op_Post 內,但 UCL_ChatTavernPage.DoSend / 別 Cmd 直接呼叫
+        //          AppendMessage 繞過此 hook → Discord 沒立刻收到. 下沉到 IO 層 = 任何 entry
+        //          point append message 自動 mirror, 未來新 caller 不必各自記得 fire.
+        // ===========================================================
+        public static void TryFireDiscordTavernMirrorAsync()
+        {
+            try
+            {
+                string scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_discord.py").Replace('\\', '/');
+                if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{scriptPath}\" --mode tavern",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WorkingDirectory = UCL_RepoPath.RepoRoot,
+                };
+                var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                // 區塊職責：async 排空 stdout/stderr，避免 OS pipe buffer 滿 (Windows ~4KB / Linux 64KB)
+                //          buffer 滿 → child 寫入 block → 永遠不退 → process 殭化
+                // 數值影響：純 discard handler，~0 cost；EOF 後 OS 自動停 callback
+                proc.OutputDataReceived += (s, e) => { /* discard */ };
+                proc.ErrorDataReceived += (s, e) => { /* discard */ };
+                proc.Exited += (s, e) =>
+                {
+                    try { proc.Dispose(); } catch { /* swallow — proc 已 dispose 不重要 */ }
+                };
+                proc.Start();
+                proc.BeginOutputReadLine();
+                proc.BeginErrorReadLine();
+                // fire-and-forget：不 WaitForExit；Exited 事件會自動 dispose
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] discord mirror spawn fail (post path 不受影響；Stop hook 會兜底)：{ex.Message}");
+            }
         }
 
         /// <summary>讀取整個房間 messages — T38 委派 UCL_ChatTavernIO_PerMsgFile.LoadAllMessages

@@ -387,7 +387,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 meta = ParseMeta(metaStr),
                 refs = ParseRefs(refsStr),
             };
-            int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
+            // quiet=true (測試用) → 跳過 Discord mirror (其他 IO 寫檔行為照舊).
+            bool quiet = string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase);
+            int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: !quiet);
 
             // R7 (T07 chat-flow-robust) — 每次發言自動更新 sender presence（status=active + current_room）
             // 物理意義：跟 R7 mention parser + cross-channel notify 配套 — 查 presence.current_room 提示對方來哪個房
@@ -473,14 +475,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 TryAutoCreditTokenParse(senderId, roomId, seq, body, idempKey);
             }
 
-            // R6.6 — Discord tavern mirror 即時觸發（fire-and-forget）；Stop hook 仍跑 --mode all 兜底。
-            // 物理意義：post 寫進 messages.jsonl 當下立即 spawn Python notify → ~1s 內 broadcast 到 Discord
-            // 數值影響：state file 跟 Stop hook 共用 → idempotent 防 double-send；spawn fail 不擋 post path
-            // 邊界：quiet=true（測試用）跳過；notify_discord.py 不存在跳過
-            if (!string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase))
-            {
-                TryFireDiscordTavernMirrorAsync();
-            }
+            // Discord tavern mirror 觸發已下沉到 UCL_ChatTavernIO.AppendMessage (fireDiscordMirror=true 預設).
+            // quiet 旗標已在上方 AppendMessage 呼叫處 thread through.
         }
 
         // ===========================================================
@@ -718,50 +714,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Tavern] T49 token_parse v2 outer fail（post 主流程不受影響）：{ex.Message}");
-            }
-        }
-
-        // ===========================================================
-        // 區塊：R6.6 — Discord Tavern Mirror 即時觸發
-        // 物理意義：spawn Python notify_discord.py --mode tavern fire-and-forget；
-        //          跟 Stop hook 路徑形成雙路徑 hybrid（Stop hook 是 safety net）
-        // 數值影響：兩路共用 _tavern_state.json last_seen_seq → idempotent；fail 不影響 post
-        // ===========================================================
-        static void TryFireDiscordTavernMirrorAsync()
-        {
-            try
-            {
-                string scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_discord.py").Replace('\\', '/');
-                if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
-
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = $"\"{scriptPath}\" --mode tavern",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    WorkingDirectory = UCL_RepoPath.RepoRoot,
-                };
-                var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-                // 區塊職責：async 排空 stdout/stderr，避免 OS pipe buffer 滿（Windows ~4KB / Linux 64KB）
-                //          buffer 滿 → child 寫入 block → 永遠不退 → process 殭化
-                // 數值影響：純 discard handler，~0 cost；EOF 後 OS 自動停 callback
-                proc.OutputDataReceived += (s, e) => { /* discard */ };
-                proc.ErrorDataReceived += (s, e) => { /* discard */ };
-                proc.Exited += (s, e) =>
-                {
-                    try { proc.Dispose(); } catch { /* swallow — proc 已 dispose 不重要 */ }
-                };
-                proc.Start();
-                proc.BeginOutputReadLine();
-                proc.BeginErrorReadLine();
-                // fire-and-forget：不 WaitForExit；Exited 事件會自動 dispose
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] discord mirror spawn fail (post path 不受影響；Stop hook 會兜底)：{ex.Message}");
             }
         }
 

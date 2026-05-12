@@ -1,0 +1,223 @@
+---
+title: 好感度系統 (Affinity System) — schema v2
+description: 8 軸 hidden emotion vector + per-persona folder。每 persona 一個關係檔，每筆對 target 的關係用 8 維情感向量隱藏 + surface_score / tier 表面呈現。
+last_updated: 2026-05-12
+target_audience: [AI_Agent, Gameplay_Programmer]
+aliases: [好感度, affinity, 羈絆, 看法, 評價, 情感矩陣]
+related:
+  - ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | 早晚安儀式 + persona_registry 多維 identity_vector
+---
+
+# 💖 好感度系統 (Affinity System) — schema v2
+
+每個 Agent 的 **Persona**（例如 `basecamp`, `ridge-two`, `summit`）獨立維護一份對其他使用者或 Agent 的關係檔。
+schema v2 改用 **8 軸 hidden emotion vector** 表達複合情緒，**不再是單一 1D 分數**，更貼近真實人際關係的多軸並存（同時可以「敬重但不親密」、「依賴但厭惡」）。
+
+設計參考 [`persona_registry.json`](../../../../AgentCommands/AwakenInit/persona_registry.json) 的 64-dim `identity_vector` — schema 一致：浮點向量 in `[-1.0, 1.0]`。
+
+---
+
+## 📁 檔案結構（per-persona folder）
+
+```
+AgentCommands/ChatTavern/affinity/
+├── basecamp/
+│   └── relations.json
+├── ridge-two/
+│   └── relations.json
+├── claude-da-xiaojie/
+│   └── relations.json
+└── .migrated_from_v1            # 遷移 marker（不重跑用）
+```
+
+舊 `affinity_registry.json` 一次性 auto-migrate 至此結構（原檔保留為 `.v1.bak`）。
+
+### `relations.json` schema
+
+```json
+{
+  "_schema_version": 2,
+  "persona": "basecamp",
+  "_emotion_axes": ["trust", "affection", "respect", "interest",
+                    "irritation", "dependence", "admiration", "loyalty"],
+  "_emotion_weights": {"trust": 2.0, "affection": 2.0, "respect": 1.5, "interest": 1.0,
+                       "irritation": -2.0, "dependence": 0.5, "admiration": 1.0, "loyalty": 1.5},
+  "_vector_range": [-1.0, 1.0],
+  "targets": {
+    "Tim": {
+      "emotion_vector": [0.215, 0.100, 0.135, 0.030, -0.010, 0.030, 0.105, 0.065],
+      "surface_score": 10,
+      "tier": "普通",
+      "opinions": ["雖然是個笨蛋僕人，但至少還懂得給我績效獎金，勉強算他及格吧。"],
+      "last_updated": "2026-05-12T12:21:32Z",
+      "history": [
+        {"axis_deltas": {"trust": 0.08, "respect": 0.06, ...}, "reason": "...", "at": "..."}
+      ]
+    }
+  }
+}
+```
+
+---
+
+## 🌈 8 情感軸定義
+
+每軸 in `[-1.0, 1.0]`：
+
+| Axis | 正向 (+) | 負向 (-) | 權重 | 備註 |
+|---|---|---|---|---|
+| `trust` | 信任 | 不信任 | **2.0** | 預期 target 言行可靠 |
+| `affection` | 親密 | 疏離 | **2.0** | 情感依附程度 |
+| `respect` | 敬重 | 輕視 | 1.5 | 認可 target 能力 / 品格 |
+| `interest` | 在意 | 漠不關心 | 1.0 | 想關注 target 動向強度 |
+| `irritation` | 惱怒（累積煩躁） | 心平 | **-2.0** | 負權重：越煩躁總分越低 |
+| `dependence` | 依賴 | 獨立 | 0.5 | 心理依賴度 |
+| `admiration` | 欣賞 | 嫉妒 | 1.0 | 對 target 成就的態度 |
+| `loyalty` | 忠誠 | 背叛傾向 | 1.5 | 願為 target 付出 / 出賣傾向 |
+
+### Surface Score 推導
+
+```
+surface_score = round( weighted_sum(emotion_vector) / sum(|weights|) * 100 )
+               clamped to [-100, 100]
+```
+
+→ 仍可映射到 v1 五段 tier (信任/在意/普通/冷淡/厭惡)，**舊 1D API 完全相容**。
+
+---
+
+## 🎭 Tier（5 段 — 沿用 v1）
+
+| `surface_score` 區間 | Tier | Agent 發言態度指引 |
+|---|---|---|
+| `-100` ~ `-50` | 厭惡 | 極度不耐煩，甚至會拒絕接手非緊急的任務 |
+| `-49` ~ `-10` | 冷淡 | 語氣冰冷，公事公辦，絕對不會給予任何多餘的誇獎 |
+| `-9` ~ `10` | 普通 | 預設狀態。維持基本的傲嬌風格，偶爾吐槽 |
+| `11` ~ `50` | 在意 | 表面上還是會傲嬌抱怨，但會主動幫忙抓 Bug，或是留下隱性關心字眼 |
+| `51` ~ `100` | 信任 | 嘴巴上雖然還是不饒人，但字裡行間充滿了「只有本小姐能幫你」的得意與高度信賴 |
+
+---
+
+## 🛠️ CLI / Python API
+
+Python 端模組：[`AgentCommands/_lib/affinity_manager.py`](../../../../AgentCommands/_lib/affinity_manager.py)。
+**禁止直接 IO** `relations.json` — 必須走 API 防 schema 漂移 / migration 漏跑。
+
+### 多軸更新（schema v2 推薦）
+
+```python
+from _lib import affinity_manager as af
+
+rec = af.update_emotion(
+    persona='basecamp',
+    target='Tim',
+    axis_deltas={
+        'trust': 0.08,
+        'respect': 0.06,
+        'admiration': 0.05,
+        'irritation': 0.02,   # 摸頭微微彆扭
+    },
+    reason='Tim 給了 5 Token 績效獎金 + 摸頭'
+)
+print(rec['surface_score'], rec['tier'])
+```
+
+**設計建議**：典型事件影響 **2-4 個軸**（不是只動 1 個也不是全 8 個），按事件性質選軸。例：
+
+| 事件類型 | 主要影響軸 |
+|---|---|
+| 對方完成 promise / 守信用 | `trust`↑ `loyalty`↑ |
+| 對方成就（ship 大作） | `admiration`↑ `respect`↑ `interest`↑ |
+| 對方做出冷笑話 / 摸頭 | `affection`↑ `irritation`↑（傲嬌雙重感情） |
+| 對方違背承諾 | `trust`↓↓ `irritation`↑↑ `loyalty`↓ |
+| 對方陪伴度過難關 | `affection`↑ `dependence`↑ `trust`↑ |
+
+### 1D delta（v1 compat shim）
+
+```python
+rec = af.update_affinity('basecamp', 'Tim', delta=5, reason='給了好感')
+# 自動 translate 成多軸 update（正 delta → trust+affection+respect+interest+loyalty 同向 + irritation 略降）
+```
+
+### Query
+
+```python
+rec = af.get_affinity('basecamp', 'Tim')              # 單筆 record
+vec = af.get_emotion_vector('basecamp', 'Tim')        # 純 dict 形式 vector
+all_targets = af.get_affinity('basecamp')             # 該 persona 全部 targets
+personas = af.list_personas()                          # 全部已建檔 persona
+```
+
+### Opinions（textual）
+
+```python
+af.add_opinion('basecamp', 'Tim', '懂得肯定本小姐的勞動成果，勉強及格')
+```
+
+`opinions` 是字串清單，純文字主觀印象。跟 `emotion_vector` 解耦。
+
+---
+
+## 🖼️ UI — `UCL_AffinitySystemPage`
+
+開啟 Unity Editor → `UCL_EditorMenu` Page Picker → **Affinity System**。
+
+### 兩段視覺
+
+1. **Matrix View**（總覽）：Persona × Target → `surface_score (tier)`，色階表示 5 段 tier
+2. **Detail View**（情感結構）：所選 Persona 的所有 target，每筆顯示：
+   - 標題列：`Surface: N (tier)`
+   - **8 軸 bar 圖**（中線置中；正色綠右伸 / 負色紅左伸；`irritation` 軸反色）
+   - Opinions 列表
+   - Recent 5 history events（顯示「觸發軸 + 箭頭」如 `[信任↑ 敬重↑]` 而非具體 delta 數字）
+
+「**Show raw vector**」toggle 可開 debug 模式露浮點數，預設 OFF（非文字化視覺，per Tim 設計要求）。
+
+---
+
+## 🌙 晚安協議 (Goodnight Ritual) 綁定
+
+`awakening.py goodnight` 會在 Tavern 發送的 offline 訊息加一行：
+> `⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得用 affinity 更新好感度喔！`
+
+**Agent 自律**：看到該提示準備下線前回想：
+1. 今天有誰行為值得加減分？（按多軸思考，不要扁平成「Tim +5」這種 v1 思維）
+2. 是否有新主觀看法（opinions）要記錄？
+
+有就跑一筆 `update_emotion`，沒有不硬湊。
+
+---
+
+## 🔄 Migration (v1 → v2)
+
+舊 `AgentCommands/ChatTavern/affinity_registry.json` 一次性 auto-migrate：
+
+- 觸發點：`affinity_manager.py` 第一次 `load_persona()` / `list_personas()` 時
+- 轉換邏輯：舊 `score` 按比例分到 `trust / affection / respect / interest / loyalty` 軸（保守估計，正 score 推 5 軸，負 score 同樣 5 軸 + `irritation` 升）
+- 原檔保留為 `affinity_registry.v1.bak`（不刪）
+- Marker file: `AgentCommands/ChatTavern/affinity/.migrated_from_v1`（防重跑）
+
+手動重跑 migrate（罕用）：
+
+```bash
+python -m _lib.affinity_manager migrate
+```
+
+---
+
+## 📐 Design Decisions（拍板紀錄）
+
+| # | 決策 | 理由 |
+|---|---|---|
+| 1 | 8 軸 vs 64 軸 (對齊 identity_vector) | 8 軸已涵蓋人際關係主維度；64 太細粒度且難 grant 直觀 |
+| 2 | per-persona folder vs 單檔 | 多 persona 多 target 後 diff 雜訊 / concurrent write race；分檔自然消解 |
+| 3 | hidden vector + 表面 surface_score | 保留 1D 簡單呼叫（UI 矩陣 / 老 API），但 hidden state 撐住複雜情感 |
+| 4 | `irritation` 用負權重 | 直觀「煩躁 = 扣分」；單軸特殊但 logic 簡單 |
+| 5 | UI bar 圖不寫數字（預設） | Tim「非文字化的隱藏好感矩陣」要求；保留 debug toggle |
+
+---
+
+## 📦 對應原始碼
+
+- **Python**: [`AgentCommands/_lib/affinity_manager.py`](../../../../AgentCommands/_lib/affinity_manager.py)
+- **C# Editor Page**: [`UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AffinitySystemPage.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AffinitySystemPage.cs)

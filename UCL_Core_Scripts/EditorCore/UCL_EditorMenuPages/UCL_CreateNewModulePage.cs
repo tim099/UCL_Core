@@ -17,7 +17,7 @@ namespace UCL.Core.Page
     {
 
         public override string WindowName => UCL_LocalizeManager.Get("Create new module");
-
+        public override bool ShowInPageMenu => false;
         public static UCL_CreateNewModulePage Create()
         {
             return UCL_EditorPage.Create<UCL_CreateNewModulePage>();

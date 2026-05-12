@@ -244,25 +244,52 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             int cap = int.TryParse(capStr, out var c) ? Math.Max(1, c) : 5;
             if (string.IsNullOrEmpty(text)) { Cmd_Glossary_Helpers.RejectLastOp("attach 缺少 text"); return; }
 
-            var entries = LoadAllEntries();
-            var hits = DetectHits(text, entries, cap);
+            // 共用 static helper — 同邏輯給跨 Cmd 呼叫 (e.g. Cmd_Tavern Op_Post auto-attach)
+            string attached = AppendRefsToText(text, cap, forceReattach: true);
+            Cmd_Glossary_Helpers.ResolveLastOp(attached);
+        }
 
-            var sb = new StringBuilder();
-            sb.Append(text.TrimEnd());
-            if (hits.Count > 0)
+        // ===========================================================
+        // 區塊職責: 公開 static helper — text 內掃 glossary terms + append refs block
+        // 物理意義: 給 Cmd_Tavern Op_Post 等其他 handler 跨呼叫做 write-time auto-attach;
+        //          跟 op=attach 同邏輯, 但 idempotent (text 已含 marker 直接返回)
+        // 數值影響: 命中 0 → 原樣返回; 命中 > 0 → 末尾 append refs block; null/empty → 原樣返回
+        // 安全性: 任何例外 swallow → 回傳原 text (絕不擋上游 caller 流程)
+        // ===========================================================
+        public const string AUTO_ATTACH_MARKER = "📖 **本回提到的新詞** (auto-attached by Cmd_Glossary):";
+
+        public static string AppendRefsToText(string text, int cap = 5, bool forceReattach = false)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            // idempotent guard — 已含 marker 直接 return 避免雙重 attach (Op_Attach 走 forceReattach=true 跳過)
+            if (!forceReattach && text.Contains(AUTO_ATTACH_MARKER)) return text;
+
+            try
             {
+                var entries = LoadAllEntries();
+                if (entries.Count == 0) return text;
+                var hits = DetectHits(text, entries, Math.Max(1, cap));
+                if (hits.Count == 0) return text;
+
+                var sb = new StringBuilder();
+                sb.Append(text.TrimEnd());
                 sb.AppendLine();
                 sb.AppendLine();
                 sb.AppendLine("---");
                 sb.AppendLine();
-                sb.AppendLine("📖 **本回提到的新詞** (auto-attached by Cmd_Glossary):");
+                sb.AppendLine(AUTO_ATTACH_MARKER);
                 sb.AppendLine();
                 foreach (var h in hits)
                 {
                     sb.AppendLine($"- **{h.term}**: {h.oneLine} → [`docs/Glossary/{h.slug}.md`](docs/Glossary/{h.slug}.md)");
                 }
+                return sb.ToString();
             }
-            Cmd_Glossary_Helpers.ResolveLastOp(sb.ToString());
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Glossary] AppendRefsToText 失敗 (返回原 text): {ex.Message}");
+                return text;
+            }
         }
 
         // ===========================================================

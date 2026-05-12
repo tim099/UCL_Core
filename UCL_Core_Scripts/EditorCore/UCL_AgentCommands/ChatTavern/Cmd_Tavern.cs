@@ -347,6 +347,35 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 Debug.LogWarning($"[Tavern] post 的 sender '{senderId}' 不在 identities.json — 建議先 op=join 註冊");
             }
 
+            // ===========================================================
+            // Proposal #25 Phase 3 — Glossary auto-attach (write-time)
+            // 物理意義: body 含 glossary term → 末尾自動 append refs block;
+            //          跟 docs/Glossary/<slug>.md 對齊, 讓收訊端能直接點 link 跳解釋。
+            // 數值影響:
+            //   - 系統 sender (_ 開頭) skip — 避免 quest_system 廣播訊息被加噪
+            //   - meta key `glossary-auto-attach=false` opt-out — agent 可顯式關閉
+            //   - 命中 0 / body 已含 marker → 原樣返回 (idempotent)
+            // 安全性: helper 內已有 try-catch + fail-swallow, 此處再包一層雙重保險
+            // ===========================================================
+            try
+            {
+                bool autoAttachEnabled = !senderId.StartsWith("_");
+                if (autoAttachEnabled && earlyMeta != null
+                    && earlyMeta.TryGetValue("glossary-auto-attach", out var aaVal)
+                    && aaVal != null && aaVal.ToLowerInvariant() == "false")
+                {
+                    autoAttachEnabled = false;
+                }
+                if (autoAttachEnabled)
+                {
+                    body = UCL.Core.EditorLib.AgentCommands.Glossary.Cmd_Glossary.AppendRefsToText(body, cap: 5);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] glossary auto-attach 失敗 (post 不受影響): {ex.Message}");
+            }
+
             var msg = new UCL_ChatMessage
             {
                 sender_id = senderId,

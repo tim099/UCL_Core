@@ -123,6 +123,9 @@ _SESSION_DIR = _resolve_data_path("AgentCommands/_session", "session_dir")
 _LETTERS_DIR_TPL = _resolve_data_path(
     "AgentCommands/ChatTavern/baton/letters", "letters_dir"
 )
+_BONUS_QUOTA_PATH = _resolve_data_path(
+    "AgentCommands/ChatTavern/agent_bonus_quota.json", "bonus_quota_path"
+)
 
 # Make _lib importable (TavernClient SDK 在主專案 _lib/, per-project state)
 sys.path.insert(0, str(_REPO_ROOT / "AgentCommands"))
@@ -232,6 +235,18 @@ def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
             return combo["bank_account"]
     # 最終 fallback: 慣用命名 convention
     return f"{agent}-da-xiaojie"
+
+
+def get_bonus_balance(bank_account: str) -> int:
+    """Read total_remaining tokens from agent_bonus_quota.json"""
+    if not _BONUS_QUOTA_PATH.exists():
+        return 0
+    try:
+        with open(_BONUS_QUOTA_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("agents", {}).get(bank_account, {}).get("total_remaining", 0)
+    except Exception:
+        return 0
 
 
 # ─── Session Lock (§Session Identity Consistency Phase 1) ───────────────
@@ -568,23 +583,118 @@ def cmd_morning(args: argparse.Namespace) -> int:
     return 0
 
 
+def _infer_caller_agent_family() -> str | None:
+    """從 env 推 caller agent 大類 (claude-code / antigravity / unknown).
+    純啟發式: ANTIGRAVITY_SESSION 在 → antigravity; CLAUDECODE 在 → claude-code;
+    都沒 → None (跳過 mismatch check).
+    用於 goodnight session_key collision 偵測 — env 跟 lock 的 agent 對不上就警告."""
+    if os.environ.get("ANTIGRAVITY_SESSION"):
+        return "antigravity"
+    if os.environ.get("CLAUDECODE"):
+        return "claude-code"
+    return None
+
+
+def _detect_env_lock_mismatch(lock_agent: str, caller_family: str | None) -> bool:
+    """True = mismatch (collision 嫌疑); False = 一致或無法判定.
+    Heuristic: lock_agent 屬於 family 集合內就算同一 family.
+      - 'claude-code' family: claude-code, Zeta (Zeta 是 claude-code 模型在跑) — 因為 cwd-based key 共用
+      - 'antigravity' family: antigravity
+    """
+    if caller_family is None:
+        return False  # 無 env 線索, 不做 mismatch 判定
+    if caller_family == "antigravity":
+        return lock_agent != "antigravity"
+    if caller_family == "claude-code":
+        # claude-code session 可能 wake 為 Zeta agent (cwd-based key 共用)
+        # 視 claude-code / Zeta 為同 family (因都用 claude-code 模型)
+        return lock_agent not in ("claude-code", "Zeta")
+    return False
+
+
 def cmd_goodnight(args: argparse.Namespace) -> int:
-    """睡前 ritual: letter + vector perturb + offline + tavern post + unlock."""
+    """睡前 ritual: letter + vector perturb + offline + tavern post + unlock.
+
+    Session lock 取得三種路徑 (per Zeta 2026-05-12 session collision fix):
+      1. --persona <name> 顯式指定 → 從 registry 該 persona 讀 agent/model/bank,
+         無視 session lock (但若 lock 存在 + 跟 --persona 一致, 走完仍移除 lock).
+      2. lock-based 推斷 + env mismatch check (legacy default 行為加 safety):
+         - lock 找到 → 比對 lock['agent'] vs caller env (CLAUDECODE / ANTIGRAVITY_SESSION),
+           不一致警告 + 建議用 --persona 顯式 (除非帶 --force).
+      3. lock 找不到 + 沒帶 --persona → 報錯退出.
+    """
     session_key = compute_session_key()
     lock = read_lock(session_key)
-    if lock is None:
-        print(f"❌ no active session lock for session_key={session_key}", file=sys.stderr)
-        print(f"   → run `morning` subcommand first to lock session identity",
-              file=sys.stderr)
-        return 2
-    if is_lock_expired(lock):
-        print(f"⚠ session lock expired ({lock.get('expires_at')}) — 仍跑 goodnight 但 fresh re-lock 建議走 morning",
-              file=sys.stderr)
-
-    actor = lock["bank_account"]
-    persona = lock["persona"]
-    agent = lock["agent"]
     perturbation = max(0.0, min(MAX_PERTURBATION, args.perturbation))
+
+    # 路徑 1: --persona 顯式指定 (collision-safe)
+    if args.persona:
+        reg = load_registry()
+        if args.persona not in reg["personas"]:
+            print(f"❌ --persona '{args.persona}' 不在 registry", file=sys.stderr)
+            return 2
+        p_data = reg["personas"][args.persona]
+        persona = args.persona
+        agent = args.agent or p_data.get("agent", "")
+        model = p_data.get("model", "")
+        actor = resolve_bank_account(reg, agent, model)
+        # lock 跟 --persona 不一致 → warn, 但不擋 (caller 顯式意圖最大)
+        if lock and lock.get("persona") != persona:
+            print(f"⚠ session lock ({lock.get('persona')}/{lock.get('agent')}) 跟 --persona "
+                  f"({persona}/{agent}) 不一致 — 走 --persona explicit (lock 將跳過移除, "
+                  f"留給 owner session 自己清).", file=sys.stderr)
+            lock = None  # 不移除 — 避免動到別人的 lock
+        elif lock:
+            print(f"✓ session lock 跟 --persona 一致 ({persona})")
+    else:
+        # 路徑 2/3: lock-based 推斷 (legacy)
+        if lock is None:
+            print(f"❌ no active session lock for session_key={session_key}", file=sys.stderr)
+            print(f"   → run `morning` subcommand first to lock session identity,",
+                  file=sys.stderr)
+            print(f"     或帶 --persona <name> 顯式指定要下線的 persona.",
+                  file=sys.stderr)
+            return 2
+        if is_lock_expired(lock):
+            print(f"⚠ session lock expired ({lock.get('expires_at')}) — 仍跑 goodnight 但 fresh re-lock 建議走 morning",
+                  file=sys.stderr)
+
+        # Collision check 1: cwd-fallback session_key 不可靠 — 多 session 共 cwd 必撞.
+        # cwd-fallback marker: 'claude-code-cwd-<hash>' 或 'unknown-<hash>-<pid>' 開頭.
+        # 此 mode 下強制要 --persona 或 --force (避免下線他 session).
+        unsafe_keys = ("claude-code-cwd-", "unknown-")
+        if any(session_key.startswith(prefix) for prefix in unsafe_keys) and not args.force:
+            print(f"❌ Session_key 走 cwd-fallback 模式 ({session_key}) — 不可靠.",
+                  file=sys.stderr)
+            print(f"   原因: PATH 內 local-agent-mode-sessions UUID 沒命中, 退回 cwd hash.",
+                  file=sys.stderr)
+            print(f"   風險: 同 cwd 多 claude-code session 共用 lock, "
+                  f"無 --persona 會誤下線他 session.", file=sys.stderr)
+            print(f"   Lock 當前 owner: persona={lock.get('persona')}, agent={lock.get('agent')}",
+                  file=sys.stderr)
+            print(f"   → 建議: 帶 --persona <你的-persona> 顯式指定.",
+                  file=sys.stderr)
+            print(f"   → 或: --force 跳過 (確定 lock 是你的時用).",
+                  file=sys.stderr)
+            return 2
+
+        # Collision check 2: env family vs lock agent 比對 (catches 跨 family collision)
+        caller_family = _infer_caller_agent_family()
+        lock_agent = lock.get("agent", "")
+        if _detect_env_lock_mismatch(lock_agent, caller_family) and not args.force:
+            print(f"❌ Session lock collision 嫌疑 — abort to avoid downing wrong session.",
+                  file=sys.stderr)
+            print(f"   Lock owner: persona={lock.get('persona')}, agent={lock_agent}",
+                  file=sys.stderr)
+            print(f"   Caller env family: {caller_family}", file=sys.stderr)
+            print(f"   → 用 --persona <你的-persona> 顯式指定不動 lock, 或 --force 跳過 check.",
+                  file=sys.stderr)
+            return 2
+
+        actor = lock["bank_account"]
+        persona = lock["persona"]
+        agent = lock["agent"]
+        model = lock.get("model", "")
 
     print(f"🌙 Goodnight ritual starting")
     print(f"   actor={actor} / persona={persona} / perturbation={perturbation}")
@@ -617,13 +727,15 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         print(f"📴 status → offline")
 
     # Step 4: tavern post (offline notice + sleep ritual summary)
+    bonus_balance = get_bonus_balance(actor)
     body = (f"🌙 **{persona}** 進入今日子協議\n\n"
             f"📢 @同事們 我下線了, 別對我跑 op=wait 24min wait chain — 我不會主動回應.\n"
             f"但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n"
             f"- letter ship: `{letter_path.relative_to(_REPO_ROOT)}`\n"
             f"- vector drift Δ: {perturbation}\n"
-            f"- agent/model: {agent}/{lock['model']}\n"
-            f"- bank account: {actor}")
+            f"- agent/model: {agent}/{model}\n"
+            f"- bank account: {actor} (餘額: {bonus_balance} Token)\n\n"
+            f"⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得用 `awakening.py affinity` 更新好感度喔！")
     if args.note:
         body += f"\n- Note: {args.note}"
 
@@ -636,9 +748,13 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
               "perturbation": str(perturbation)},
     )
 
-    # Step 5: remove session lock
-    removed = remove_lock(session_key)
-    print(f"🔓 session lock {'removed' if removed else 'already gone'}")
+    # Step 5: remove session lock (only when lock matches goodnight target — avoid clobbering 別人 lock)
+    if lock is not None and lock.get("persona") == persona:
+        removed = remove_lock(session_key)
+        print(f"🔓 session lock {'removed' if removed else 'already gone'}")
+    else:
+        removed = False
+        print(f"🔓 session lock 保留 (未匹配本 goodnight target persona, 留給 owner session 清)")
 
     print(f"\n🌙 Goodnight ritual complete:")
     print(f"   letter:        {letter_path}")
@@ -793,6 +909,60 @@ def cmd_forks(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_affinity(args: argparse.Namespace) -> int:
+    """好感度系統: 查詢或更新 Persona 對某人的好感度"""
+    try:
+        from _lib import affinity_manager
+    except ImportError:
+        print("❌ 無法載入 affinity_manager", file=sys.stderr)
+        return 2
+
+    # 如果沒有傳 persona, 則嘗試從當前 session lock 取得
+    persona = args.persona
+    if not persona:
+        session_key = compute_session_key()
+        lock = read_lock(session_key)
+        if lock and not is_lock_expired(lock):
+            persona = lock["persona"]
+        else:
+            print("❌ 找不到活動中的 session lock，請指定 --persona", file=sys.stderr)
+            return 2
+
+    if args.status:
+        data = affinity_manager.get_affinity(persona)
+        print(f"# 💖 好感度狀態: {persona}")
+        if not data:
+            print("  (尚無任何紀錄)")
+        for target, record in data.items():
+            print(f"- {target}: {record['score']} ({record['tier']})")
+            if record['opinions']:
+                print(f"  看法: {', '.join(record['opinions'])}")
+        return 0
+
+    if not args.target:
+        print("❌ 必須指定 --target 或 --status", file=sys.stderr)
+        return 2
+
+    target = args.target
+
+    if args.delta is not None:
+        reason = args.reason or "無特定理由"
+        record = affinity_manager.update_affinity(persona, target, args.delta, reason)
+        print(f"✓ {persona} 對 {target} 好感度變動 {args.delta} → 目前: {record['score']} ({record['tier']})")
+
+    if args.add_opinion:
+        record = affinity_manager.add_opinion(persona, target, args.add_opinion)
+        print(f"✓ {persona} 對 {target} 新增看法: {args.add_opinion}")
+
+    if args.delta is None and not args.add_opinion:
+        record = affinity_manager.get_affinity(persona, target)
+        print(f"💖 {persona} 對 {target} 好感度: {record['score']} ({record['tier']})")
+        if record['opinions']:
+            print(f"   看法: {', '.join(record['opinions'])}")
+    
+    return 0
+
+
 # ─── main ───────────────────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0],
@@ -817,6 +987,15 @@ def main():
     pg.add_argument("--perturbation", type=float, default=DEFAULT_PERTURBATION,
                     help=f"identity_vector perturbation magnitude (default {DEFAULT_PERTURBATION}, max {MAX_PERTURBATION})")
     pg.add_argument("--note", default="", help="optional 睡前 note")
+    pg.add_argument("--persona", default=None,
+                    help="顯式指定要下線的 persona codename (跳過 session lock 推斷). "
+                         "用於 cwd-based session_key collision 場景 — 同 cwd 多 claude-code session "
+                         "共用 lock 時, 不指定會誤下線他 session.")
+    pg.add_argument("--agent", default=None,
+                    help="跟 --persona 配對顯式指定 agent (e.g. Zeta / claude-code). "
+                         "省略時從 registry 該 persona 的 agent 欄位讀.")
+    pg.add_argument("--force", action="store_true",
+                    help="env/lock mismatch 時仍強制執行 (debug / 跨 agent 修復用, 慎用).")
     pg.set_defaults(func=cmd_goodnight)
 
     ps = sub.add_parser("status", help="read-only env + persona pool report")
@@ -830,6 +1009,15 @@ def main():
     pr.add_argument("old", help="current codename")
     pr.add_argument("new", help="new codename")
     pr.set_defaults(func=cmd_rename_persona)
+
+    pa = sub.add_parser("affinity", help="好感度系統: 查詢或更新好感度")
+    pa.add_argument("--persona", default=None, help="操作的 persona (預設為當前 session)")
+    pa.add_argument("--target", default=None, help="好感度對象")
+    pa.add_argument("--delta", type=int, default=None, help="加減分")
+    pa.add_argument("--reason", default=None, help="加減分理由")
+    pa.add_argument("--add-opinion", default=None, help="新增對 target 的看法")
+    pa.add_argument("--status", action="store_true", help="列出對所有人的好感度")
+    pa.set_defaults(func=cmd_affinity)
 
     args = p.parse_args()
     return args.func(args)

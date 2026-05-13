@@ -23,6 +23,7 @@ description: |
 今日子協議 / Kyouko Protocol
 準備休眠 / 下線
 good night / sleep commit
+/ucl-goodnight          ← Claude Code slash command 入口
 ```
 
 無參數 — goodnight 自動用當前 lock 對應的 persona。

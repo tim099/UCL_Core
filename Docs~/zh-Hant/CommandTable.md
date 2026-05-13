@@ -90,6 +90,14 @@ related:
 - **必做**: 先讀 Commit_Workflow，再執行；ChatTavern 訊息有實質討論時必走 `[chat]` 獨立 commit
 - **不要做**: `git add -A` 一鍵全包（會把酒館訊息混進代碼 commit）；改 UCL_Core 後忘記 bump 上層；push（除非使用者明確指示）
 
+### Commit All / 全部 commit （全包模式 — Tim 2026-05-13 拍板）
+- **觸發詞**: `Commit All` / `commit all` / `全部 commit` / `全包 commit` / `通通 commit` / `commit 全部` / `commit 通通`
+- **對應 Workflow**: [Commit_Workflow §9](ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md)
+- **意圖**: 把所有未 commit 的工作區改動全包 (除白名單) 提交；可按主題拆多筆 commit (但禁止亂拆刷 token)
+- **白名單排除**: DebugLogs (`Simulation_*.log` / `Errors_*.log`) / 臨時渲染檔 (`_last_*.md` / `_active_waits.json`) / `AgentCommands/.scratch/*` / `AgentCommands/_battle_observation_cache/*`
+- **必做**: 先報拆分計畫給 Tim「擬拆 N 筆，預期 +N token」→ 等隱式/顯式同意 → 依序 stage + commit；每筆 commit +1 token (work_post 等價)；submodule 改動走三層 bump
+- **不要做**: 為刷 token 故意亂拆 (e.g. 把 5 筆 chat 拆 5 commit)；沒報計畫直接 commit；吞 DebugLogs / scratch 進 commit
+
 ### 看 / 查 Runtime Error（執行期錯誤）
 - **觸發詞**: `看 runtime error` / `查 runtime error` / `讀 error log` / `runtime 錯` / `看 ErrorLog` / `check runtime errors` / `拉錯` / `查錯` / `跑遊戲有錯嗎` / `剛才有報錯嗎`
 - **對應 Workflow**: [RuntimeError_Diagnose_Workflow](docs/Workflows/RuntimeError_Diagnose_Workflow.md)（EOV 專案路徑）

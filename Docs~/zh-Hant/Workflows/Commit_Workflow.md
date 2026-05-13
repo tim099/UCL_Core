@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
-description: 跨專案共享的提交規則 — submodule 三層 bump 流程、submodule 內 commit 前先切 Dev 分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、commit message 格式與 prefix 約定。
-last_updated: 2026-05-08
+description: 跨專案共享的提交規則 — submodule 三層 bump 流程、submodule 內 commit 前先切 Dev 分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
+last_updated: 2026-05-13
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
@@ -214,3 +214,74 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 - agent 看到應走 [`CommandTable.md`](../CommandTable.md) 的「commit」entry → 讀本檔 → 依本檔規範分批 stage / commit
 
 詳見 [`CommandTable.md`](../CommandTable.md) 的 commit entry。
+
+---
+
+## 9. Commit All — 全包模式（Tim 2026-05-13 拍板）
+
+### 9.1 觸發詞
+
+使用者下「**Commit All**」/「**全部 commit**」/「**全包 commit**」/「**通通 commit**」/「**commit 全部**」→ 走本模式。
+
+### 9.2 規則
+
+**包進來**：所有未 commit 的工作區改動（modified / staged / untracked），**只排除以下白名單**：
+
+- **DebugLogs**：`CardGame/Assets/DebugLogs/Simulation_*.log` / `*.log.meta` / `Errors_*.log` / `Errors_*.log.meta`（per CLAUDE.md 規範保持 untracked）
+- **臨時渲染檔**：`_last_op.md` / `_last_view.md` / `_active_waits.json` / `_wait_*.md`（已在 .gitignore，理論不會出現在 status，但保險再過濾）
+- **scratch 目錄**：`AgentCommands/.scratch/*` / 根目錄一次性 `*.py` 試手稿（agent 自律判斷，明顯是 throwaway 不入 commit）
+- **battle observation cache**：`AgentCommands/_battle_observation_cache/*`（runtime cache，per case judge）
+
+**其他全包**：代碼 / 文檔 / ChatTavern messages / Treasury ledger / presence / state.json / submodule pointer bump … 通通收進來。
+
+### 9.3 拆分策略（**重要 — 防刷 token**）
+
+**可以**按主題拆多筆 commit，但**不可故意亂拆**：
+
+✅ 合理拆分（每筆有 cohesive 主題）：
+- 一筆「代碼/文檔變動」+ 一筆 `[chat]` 酒館訊息 + 一筆 submodule bump（標準三類）
+- 多個 unrelated feature 改動拆 feat A / feat B / fix C 三筆
+- UCL_Core 三層 bump 自然就是 3 筆
+
+❌ 故意亂拆（**禁止 — 視為 token gaming**）：
+- 把 5 筆 chat messages 拆成 5 個獨立 commit 刷 5 token
+- 同主題的 doc 改動硬切兩半（譬如 `trigger-ding.md` line 1-20 一筆 / line 21-50 一筆）
+- 一個 feature 的多個檔案分檔 commit（`Foo.cs` 一筆 / `Foo_test.cs` 一筆 / `Foo.md` 一筆）
+
+### 9.4 判斷指引（agent 自律）
+
+拆分前自問：「**這筆 commit 單獨 revert 有意義嗎？**」
+- YES → 該獨立成 commit
+- NO → 應該跟同主題 merge
+
+例：
+- 「自由時間 spec 改動 + 配套 helper code」→ revert 要一起 revert，**併一筆**
+- 「自由時間 spec」+ 「無關的 trigger-ding glossary 升級」→ 兩個獨立改動，**拆兩筆**
+- 「meadow 議題 post + ack post + 配套 ledger」→ 同 session 同主題 chat trail，**併一筆 [chat]**（不可拆 2 筆刷）
+
+### 9.5 Token reward
+
+**每筆 commit = +1 token (work_post 等價機制)**。
+
+- 走 `Commit All` 模式時 agent 自律報「拆 N 筆，預期賺 N token」給 Tim 確認
+- Tim 看到拆分若覺得不合理可叫 agent 合併
+- 每筆 commit 落地後對應 +1 token credit (走 Treasury credit 既有路徑或手動 ledger)
+- **故意亂拆**被 Tim 抓到 → 不只該筆不算 token，可能 negative reward (debit)
+
+### 9.6 標準 Commit All 流程
+
+```
+1. git status (看全貌)
+2. 過濾白名單 (DebugLogs / scratch / cache / ephemeral)
+3. 自律分組 (按 9.4 判斷指引)
+4. 報告分組計畫給 Tim：「擬拆 N 筆：A / B / C，每筆 +1 token，共 +N」
+5. Tim 點頭 (隱式 / 顯式) → 依序 stage + commit
+6. Submodule 改動走三層 bump (per §3)
+7. 落 commit 後不 push (per §7)
+```
+
+### 9.7 反面案例
+
+- ❌ 看到 `git status` 30 行就一口氣 `git add -A` 連 DebugLogs 也吞 — 違反白名單
+- ❌ 為了多賺 token 把 chat / docs / code 各拆 5 筆共 15 筆 — 違反 9.3 防刷
+- ❌ 沒報計畫直接 commit 完才告訴 Tim — Tim 來不及攔不合理拆分

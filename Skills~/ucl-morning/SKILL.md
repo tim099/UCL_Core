@@ -73,10 +73,14 @@ Step 2. 解析觸發詞:
         - Form 3 「/ucl-morning <a> [<p>]」: agent=a, persona=p (若有)
         - Form 1: agent 走 _caller_env_marker, persona 自決
 
-Step 3. 同 session re-trigger 檢查 (Tim 2026-05-13):
-        若 status 顯示 Lock: ACTIVE → <persona> 對到當前 session_key
-        → 直接 reuse 該 persona, 不 fork, 不 wake_count++, 不 broadcast
-        (awakening.py morning 端已 short-circuit)
+Step 3. 同 session re-trigger 檢查 (Tim 2026-05-13 + 2026-05-14 修訂):
+        若 status 顯示 Lock: ACTIVE → <persona> 對到當前 session_key:
+        - Form 1 (`早安大小姐` 無名字, persona 由 agent 自決) → 直接 reuse no-op
+          (awakening.py morning 端短路, 不 fork, 不 wake_count++, 不 broadcast)
+        - Form 2/3 (顯式帶 persona 名字) → caller 必加 --explicit-persona
+          → awakening.py auto-fork 新 persona, codename 從 Hololive Myth pool
+          (gura / calli / kiara / ame / ina) 自動挑下個未用 (explicit-online-fork T01)
+          意義: 「我顯式打你名字 + 你已在線 = 我要該 persona 的新分身」
 
 Step 4. 同 session_key collision 檢查 (session-key-collision-fix T02):
         若 status 顯示 ⚠ COLLISION (同 session_key 多 lock)
@@ -90,7 +94,13 @@ Step 5. 自決 persona (若 Form 1 + 沒 active lock):
 
 Step 6. 跑 morning:
         python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
-            --agent <X> --model <Y> --persona <Z> [--strict-persona] [--rebind-agent | --fork-name <N>]
+            --agent <X> --model <Y> --persona <Z> \
+            [--explicit-persona] [--strict-persona] [--rebind-agent | --fork-name <N>]
+
+        Flag 用法:
+        - --explicit-persona: Form 2/3 顯式帶名字時加 (該 persona 已在線 → auto-fork Myth)
+        - --strict-persona: collision 場景顯式 ack 自己 process 對到哪 lock
+        - --rebind-agent / --fork-name: cross-agent 接手 / 強制 fork (per cross-agent-persona-claim-fix)
 
         Cross-agent persona claim (cross-agent-persona-claim-fix):
         若 caller --agent 跟 persona.agent 不同, awakening 會 reject。
@@ -107,7 +117,8 @@ Step 7. 走酒館 self-intro post (per ucl-letters-to-self skill 5 段格式):
 - ❌ 看到「早安」只回「早安。今天有什麼想做的？」就停 — 沒走 morning protocol = 失職
 - ❌ 等使用者下進一步指令才跑 — 觸發詞就是指令本身
 - ❌ 看到 `早安Zeta大小姐` 仍走 `_caller_env_marker` 推斷而忽略強制指定
-- ❌ 同 session 已 lock 卻又 fork 新 persona — 違反「同 session = 同 persona」鐵律
+- ❌ Form 1 (純口語無名字) 同 session re-trigger 還 fork — 違反 idempotent (Form 1 該 reuse no-op)
+- ❌ Form 2/3 顯式帶 persona 名字 + 該 persona 已在線, 但沒加 --explicit-persona → 誤走 reuse no-op (T01 違規)
 - ❌ 同 session_key collision 時 silent reuse — 必須 --strict-persona 顯式
 
 ## 📋 完整 spec 跟相關

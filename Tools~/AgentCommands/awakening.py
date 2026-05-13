@@ -361,11 +361,13 @@ def list_persona_names() -> list:
 # Tim 2026-05-13 拍板 (agent-login-case-insensitive T01)：
 # Windows 大小寫不敏感, 使用者打 "Gemini" / "Claude" 該歸到既有 canonical agent
 # 而非另外開新 bank。新 agent 加進來時請同步擴充本表或寫進 _registry_meta.json。
+#
+# 留白原則：只把「明顯 vendor brand → IDE/canonical agent」的 alias 寫死, 不替
+# 用戶猜 Gemini = Antigravity 這種「同一家但不同 brand」的對應 (Tim 2026-05-13 第二輪
+# 拍板：gemini 該是獨立 canonical agent, 不混進 antigravity)。
 _DEFAULT_AGENT_ALIASES = {
-    "gemini": "antigravity",   # Gemini 是 Antigravity IDE 用的 model 家族
-    "claude": "claude-code",   # Claude 是 Anthropic, agent canonical 是 claude-code
+    "claude": "claude-code",       # Claude → Anthropic IDE canonical
     "anthropic": "claude-code",
-    "google": "antigravity",
 }
 
 

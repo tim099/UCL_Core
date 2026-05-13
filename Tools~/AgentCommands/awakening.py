@@ -357,6 +357,62 @@ def list_persona_names() -> list:
     ])
 
 
+# 預設 agent alias mapping — registry meta 沒 agent_aliases 時用這個 fallback
+# Tim 2026-05-13 拍板 (agent-login-case-insensitive T01)：
+# Windows 大小寫不敏感, 使用者打 "Gemini" / "Claude" 該歸到既有 canonical agent
+# 而非另外開新 bank。新 agent 加進來時請同步擴充本表或寫進 _registry_meta.json。
+_DEFAULT_AGENT_ALIASES = {
+    "gemini": "antigravity",   # Gemini 是 Antigravity IDE 用的 model 家族
+    "claude": "claude-code",   # Claude 是 Anthropic, agent canonical 是 claude-code
+    "anthropic": "claude-code",
+    "google": "antigravity",
+}
+
+
+def normalize_agent(reg: dict, agent: str) -> str:
+    """
+    把使用者輸入的 agent 字串歸到 canonical agent key。Windows 大小寫不敏感
+    所以 'Gemini' / 'GEMINI' / 'gemini' 都該歸到既有 'antigravity'。
+
+    Resolution order (Tim 2026-05-13 拍板 agent-login-case-insensitive T01)：
+      1. Direct hit on agent_banks → return as-is
+      2. Case-insensitive match against agent_banks keys → return canonical key
+      3. Alias lookup (registry meta `agent_aliases` 或 _DEFAULT_AGENT_ALIASES) 撈
+         小寫 alias → canonical name → recurse step 1
+      4. 不認得 → 原樣 return (caller 自決開新 bank or warn)
+
+    後續 lock / persona file / tavern post 全用 canonical name 避免 split-brain。
+    """
+    if not agent:
+        return agent
+    banks = reg.get("agent_banks", {}) or {}
+    # Step 1: direct
+    if agent in banks:
+        return agent
+    # Step 2: case-insensitive against banks keys
+    lower = agent.lower()
+    for k in banks.keys():
+        if k.lower() == lower:
+            return k
+    # Step 3: alias (registry override > built-in default)
+    aliases = reg.get("agent_aliases", {}) or {}
+    # merge default + registry override (registry wins)
+    merged = {k.lower(): v for k, v in _DEFAULT_AGENT_ALIASES.items()}
+    merged.update({k.lower(): v for k, v in aliases.items()})
+    if lower in merged:
+        canonical = merged[lower]
+        # canonical 也走一輪 banks lookup, 萬一 alias 寫了 typo
+        if canonical in banks:
+            return canonical
+        # canonical case-insensitive match
+        for k in banks.keys():
+            if k.lower() == canonical.lower():
+                return k
+        return canonical
+    # Step 4: unknown — 原樣 return
+    return agent
+
+
 def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
     """
     Look up agent → bank_account.
@@ -367,17 +423,22 @@ def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
       共用 bank. Schema v2: agent_model_combos → agent_banks (key=agent).
 
     `model` 參數保留 backward-compat (v1 caller 仍可傳, 但不參與 lookup).
+
+    Case-insensitive + alias resolution (Tim 2026-05-13 拍板)：先走 normalize_agent()
+    歸 canonical name, 避免 Windows 大小寫造成 'Gemini' vs 'antigravity' split-brain。
     """
+    # Normalize first (handle case-insensitive + alias)
+    canonical = normalize_agent(reg, agent)
     # Schema v2 (preferred): agent_banks dict
     banks = reg.get("agent_banks", {})
-    if agent in banks:
-        return banks[agent]
+    if canonical in banks:
+        return banks[canonical]
     # Schema v1 fallback (legacy support): agent_model_combos list — 只查 agent
     for combo in reg.get("agent_model_combos", []):
-        if combo["agent"] == agent:
+        if combo["agent"] == canonical:
             return combo["bank_account"]
-    # 最終 fallback: 慣用命名 convention
-    return f"{agent}-da-xiaojie"
+    # 最終 fallback: 慣用命名 convention（canonical 仍認不出 → 開新 bank）
+    return f"{canonical}-da-xiaojie"
 
 
 def get_bonus_balance(bank_account: str) -> int:
@@ -744,14 +805,20 @@ def cmd_morning(args: argparse.Namespace) -> int:
         return 2
 
     reg = load_registry()
-    agent = args.agent
+    raw_agent = args.agent
+    # Normalize agent name (case-insensitive + alias) per Tim 2026-05-13 拍板
+    # agent-login-case-insensitive T01: Windows 大小寫不敏感, 'Gemini' → 'antigravity'.
+    agent = normalize_agent(reg, raw_agent)
     model = args.model
     preferred = args.persona
     bank_account = resolve_bank_account(reg, agent, model)
     session_key = compute_session_key()
 
     print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
-    print(f"   Agent={agent} / Model={model} / Bank={bank_account}")
+    if agent != raw_agent:
+        print(f"   Agent={agent} (normalized from '{raw_agent}') / Model={model} / Bank={bank_account}")
+    else:
+        print(f"   Agent={agent} / Model={model} / Bank={bank_account}")
     print(f"   Preferred persona: {preferred}")
 
     # Step 0: Same-persona re-awakening short-circuit (Tim 2026-05-13 v2 — persona-keyed + caller verify)
@@ -941,7 +1008,8 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
             return 2
         p_data = reg["personas"][args.persona]
         persona = args.persona
-        agent = args.agent or p_data.get("agent", "")
+        agent_raw = args.agent or p_data.get("agent", "")
+        agent = normalize_agent(reg, agent_raw)
         model = p_data.get("model", "")
         actor = resolve_bank_account(reg, agent, model)
         lock = read_lock(persona)

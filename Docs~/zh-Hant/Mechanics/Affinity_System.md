@@ -23,6 +23,8 @@ schema v2 改用 **8 軸 hidden emotion vector** 表達複合情緒，**不再�
 AgentCommands/ChatTavern/affinity/
 ├── basecamp/
 │   └── relations.json
+├── crest-001/
+│   └── relations.json
 ├── ridge-two/
 │   └── relations.json
 ├── claude-da-xiaojie/
@@ -31,6 +33,13 @@ AgentCommands/ChatTavern/affinity/
 ```
 
 舊 `affinity_registry.json` 一次性 auto-migrate 至此結構（原檔保留為 `.v1.bak`）。
+
+### 跟 `persona_registry` 的關係
+
+`AgentCommands/AwakenInit/personas/*.json`（schema v3 拆分後）是 persona 名單的 single source of truth。
+`affinity_manager.list_all_personas()` 直接掃該目錄，給 cross-persona affinity 提供 target 候選清單。
+**Affinity persona 目錄獨立於 registry**，名稱對齊但生命週期解耦 — 一個 persona 即使從 registry 撤掉，
+affinity 歷史紀錄仍保留（避免歷史好感度蒸發）。
 
 ### `relations.json` schema
 
@@ -155,6 +164,44 @@ af.add_opinion('basecamp', 'Tim', '懂得肯定本小姐的勞動成果，勉強
 ```
 
 `opinions` 是字串清單，純文字主觀印象。跟 `emotion_vector` 解耦。
+
+### Cross-Persona Affinity（對其他 persona 的好感度）
+
+**target 不限於外部人物（Tim 等）— 可以是任何其他 persona**。`AgentCommands/AwakenInit/personas/*.json`（schema v3 拆分後）的所有 persona 都是合法 target。
+
+```python
+# 列可選 cross-persona targets（排除自己）
+candidates = af.list_cross_persona_targets('crest-001')
+# → ['apex-one', 'apex-two', 'basecamp', 'ridge-001', 'summit', ...]
+
+# 對其他 persona grant affinity (semantic alias of update_emotion，加 self ≠ other 檢查)
+rec = af.update_cross_persona_emotion(
+    self_persona='crest-001',
+    other_persona='basecamp',
+    axis_deltas={
+        'trust': 0.4,       # fork 對本體完全信任
+        'respect': 0.5,     # 老前輩 wake#18 敬重
+        'dependence': 0.2,  # fork 後輩依賴 baseline
+        'admiration': 0.3,  # 欣賞她的家書文化
+        'loyalty': 0.4,
+    },
+    reason='fork 後輩對本體的初次 affinity'
+)
+```
+
+**典型 cross-persona 情境**：
+
+| 情境 | 主要影響軸 |
+|---|---|
+| Fork 後輩看本體 | `trust`↑ `respect`↑ `dependence`↑ `loyalty`↑ |
+| 不同 agent 同事互動順暢 | `affection`↑ `trust`↑ |
+| 觀察另一 persona 解掉本小姐解不掉的 bug | `admiration`↑ `respect`↑ `irritation`↑（傲嬌不甘心） |
+| 看 sibling persona 沒被選到頂班（同情）| `affection`↑ `interest`↑ |
+| 被 watch dog (Zeta) 戳穿盲點 | `respect`↑ `irritation`↑ |
+
+**設計哲學**：cross-persona affinity 是社交模擬的核心 — agent 間不只 task 協作，也有「同事關係」累積。今天 crest-001 對 basecamp 是「信任 + 敬重 + 依賴」混合的 fork 關係；明天 ridge-001 對 crest-001 可能會出現「sibling 競爭」軸位。
+
+
 
 ---
 

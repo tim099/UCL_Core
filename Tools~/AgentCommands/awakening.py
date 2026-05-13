@@ -198,20 +198,161 @@ def similarity_tier(s: float) -> str:
     return "low"
 
 
-# ─── Registry I/O ───────────────────────────────────────────────────────
-def load_registry() -> dict:
+# ─── Registry I/O (schema v3 — per-persona file split) ─────────────────
+# 區塊職責: persona_registry.json 從 single file → per-persona file 拆分
+# 物理意義: 每 persona 一檔 (AwakenInit/personas/<name>.json), metadata 走另檔 (_registry_meta.json)
+# 數值影響: 防 multi-agent concurrent save race; merge conflict 自然分散; 老 callers 介面不變
+#          (load_registry 返回的 dict 結構完全跟舊 v2 一致)
+
+_REGISTRY_DIR = _REGISTRY_PATH.parent
+_REGISTRY_META_PATH = _REGISTRY_DIR / "_registry_meta.json"
+_PERSONAS_DIR = _REGISTRY_DIR / "personas"
+_REGISTRY_MIGRATION_MARKER = _REGISTRY_DIR / ".migrated_from_v2_single_file"
+
+
+def _migrate_registry_to_split_if_needed() -> None:
+    """
+    區塊職責: 一次性 migration — 舊 persona_registry.json (single file) → per-persona files
+    物理意義: marker file 存在 → skip (idempotent); 舊檔仍存在 → 拆分後 backup → 寫 marker
+    數值影響: 不會自動刪舊 .json (rename 成 .v2.bak); 失敗時保留原狀不刻意 cleanup
+    """
+    if _REGISTRY_MIGRATION_MARKER.exists():
+        return
+    # 沒舊檔也標記為 migrated (新 install 場景)
     if not _REGISTRY_PATH.exists():
-        raise SystemExit(f"❌ registry not found: {_REGISTRY_PATH}")
-    with open(_REGISTRY_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        _REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+        _PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
+        _REGISTRY_MIGRATION_MARKER.write_text(
+            f"migrated_at={utcnow_iso()}\nlegacy=none (fresh install)\n",
+            encoding="utf-8",
+        )
+        return
+
+    try:
+        with open(_REGISTRY_PATH, "r", encoding="utf-8") as f:
+            legacy = json.load(f)
+    except Exception as e:
+        # 老檔壞掉仍標 migrated 防卡住; warning 印 stderr
+        print(f"⚠ legacy registry parse failed ({e}), skipping migration", file=sys.stderr)
+        _REGISTRY_MIGRATION_MARKER.write_text(
+            f"migrated_at={utcnow_iso()}\nlegacy=corrupt\n", encoding="utf-8")
+        return
+
+    personas = (legacy or {}).pop("personas", {}) or {}
+    metadata = legacy  # 拆完 personas 後剩下的就是 metadata
+
+    _PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
+    for name, pdata in personas.items():
+        if not isinstance(pdata, dict):
+            continue
+        out = _PERSONAS_DIR / f"{name}.json"
+        tmp = out.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(pdata, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, out)
+
+    # metadata 寫 _registry_meta.json
+    meta_tmp = _REGISTRY_META_PATH.with_suffix(".json.tmp")
+    with open(meta_tmp, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+    os.replace(meta_tmp, _REGISTRY_META_PATH)
+
+    # 舊檔 rename 成備份 (不刪)
+    backup = _REGISTRY_PATH.with_suffix(".json.v2.bak")
+    try:
+        _REGISTRY_PATH.rename(backup)
+    except Exception as e:
+        print(f"⚠ legacy registry rename to .v2.bak failed: {e}", file=sys.stderr)
+
+    _REGISTRY_MIGRATION_MARKER.write_text(
+        f"migrated_at={utcnow_iso()}\n"
+        f"legacy_file={_REGISTRY_PATH.name}\n"
+        f"backup_to={backup.name}\n"
+        f"personas_migrated={len(personas)}\n",
+        encoding="utf-8",
+    )
+    print(f"✓ persona_registry migrated to per-persona split "
+          f"({len(personas)} personas → {_PERSONAS_DIR})", file=sys.stderr)
+
+
+def load_registry() -> dict:
+    """
+    區塊職責: 讀 metadata + scan personas/*.json 組回 v2-compat dict
+    物理意義: 外部 caller 收到的 dict 結構跟 v2 single-file 時代完全一致 (含 _schema_version /
+              _constants / agent_banks / personas), 介面 backward-compat
+    數值影響: 順手 trigger migration; 缺 metadata 或 personas dir 都不 fatal — 回部分資料
+    """
+    _migrate_registry_to_split_if_needed()
+
+    if not _REGISTRY_META_PATH.exists() and not _PERSONAS_DIR.exists():
+        raise SystemExit(f"❌ registry not found: {_REGISTRY_DIR} (no meta + no personas/)")
+
+    # Load metadata (含 _schema_version / _constants / agent_banks ...)
+    if _REGISTRY_META_PATH.exists():
+        with open(_REGISTRY_META_PATH, "r", encoding="utf-8") as f:
+            reg = json.load(f)
+    else:
+        reg = {}
+
+    # Scan per-persona files
+    personas: dict = {}
+    if _PERSONAS_DIR.exists():
+        for f in sorted(_PERSONAS_DIR.glob("*.json")):
+            name = f.stem
+            if name.startswith("_") or name.startswith("."):
+                continue
+            try:
+                with open(f, "r", encoding="utf-8") as pf:
+                    personas[name] = json.load(pf)
+            except Exception as e:
+                print(f"⚠ persona file {f.name} parse failed ({e}), skipping", file=sys.stderr)
+    reg["personas"] = personas
+    return reg
 
 
 def save_registry(reg: dict) -> None:
-    _REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _REGISTRY_PATH.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(reg, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, _REGISTRY_PATH)
+    """
+    區塊職責: 把 in-memory reg dict 拆寫回 per-persona files + metadata file
+    物理意義: 每 persona atomic write (tmp + os.replace); metadata 同樣 atomic
+    數值影響: 不會清掉 personas/ 內既存但 reg["personas"] 沒有的孤兒檔
+              (orphan cleanup 由 caller 顯式呼叫 prune_personas() 處理, 避免誤刪)
+    """
+    _REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    _PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
+
+    personas = reg.get("personas", {}) or {}
+    # metadata = reg 去掉 personas 的拷貝 (不 mutate caller 傳入的 dict)
+    metadata = {k: v for k, v in reg.items() if k != "personas"}
+
+    # Write metadata atomic
+    meta_tmp = _REGISTRY_META_PATH.with_suffix(".json.tmp")
+    with open(meta_tmp, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+    os.replace(meta_tmp, _REGISTRY_META_PATH)
+
+    # Write each persona atomic
+    for name, pdata in personas.items():
+        if not isinstance(pdata, dict):
+            continue
+        out = _PERSONAS_DIR / f"{name}.json"
+        tmp = out.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(pdata, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, out)
+
+
+def list_persona_names() -> list:
+    """
+    區塊職責: 列當前已建檔的 persona 名單 (給 affinity 等其他 system 反查 cross-persona target 用)
+    物理意義: 只看 personas/*.json 檔案存在性, 不 parse 內容
+    數值影響: 純讀; 不 trigger migration (caller 應已 load_registry 過)
+    """
+    if not _PERSONAS_DIR.exists():
+        return []
+    return sorted([
+        f.stem for f in _PERSONAS_DIR.glob("*.json")
+        if not f.stem.startswith("_") and not f.stem.startswith(".")
+    ])
 
 
 def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:

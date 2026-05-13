@@ -295,6 +295,64 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Dialog.ForceRm.Title" => "強制移除 Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "確定強制刪除 lock?\n\n{0}\n\n注意: persona registry status 不會自動改成 offline, 需後續手動修正。建議優先用 Logout（走 goodnight ritual）。",
 
+                // ==== UCL_MarkdownViewerPage ====
+                "MdViewer.Title" => "Markdown 檢視器",
+                "MdViewer.LoadFailedFmt" => "⚠ 載入失敗: {0}",
+                "MdViewer.Frontmatter" => "Frontmatter",
+                "MdViewer.RelatedTitle" => "<b>🔗 關聯文件</b>",
+
+                // ==== UCL_PlayerPrefsEditPage ====
+                "PlayerPrefs.Btn.Refresh" => "重新整理",
+                "PlayerPrefs.Btn.DeleteAll" => "!!! 刪除所有 PLAYERPREFS !!!",
+                "PlayerPrefs.Dialog.DeleteAll.Title" => "危險操作",
+                "PlayerPrefs.Dialog.DeleteAll.Body" => "確定要刪除「全部」PlayerPrefs 嗎?此動作不可復原!",
+                "PlayerPrefs.Dialog.DeleteOne.Title" => "確認刪除",
+                "PlayerPrefs.Dialog.DeleteOne.BodyFmt" => "確定要刪除 key「{0}」嗎?",
+
+                // ==== UCL_TavernRulePage ====
+                "Rule.Title" => "酒館規則",
+                "Rule.Toolbar.CountFmt" => "📜 規則 ({0})",
+                "Rule.Toolbar.Filter" => "篩選:",
+                "Rule.Filter.All" => "全部",
+                "Rule.Filter.Active" => "生效中",
+                "Rule.Filter.Reverted" => "已撤回",
+                "Rule.Btn.Refresh" => "🔄 重新整理",
+                "Rule.Toolbar.Auto" => " 自動",
+                "Rule.Btn.Path" => "📂 路徑",
+                "Rule.List.Title" => "<b>規則清單</b>",
+                "Rule.List.Empty" => "<i>(無命中)</i>",
+                "Rule.Detail.EmptyHint" => "<i>← 從左邊選一條 rule 看內容</i>",
+                "Rule.Detail.Status" => "狀態:",
+                "Rule.Detail.ByFmt" => "創建者: {0}",
+                "Rule.Detail.CreatedFmt" => "建立於: {0}",
+                "Rule.Revert.CanHint" => "<b>↩ 撤回</b>  <i>(退還 100 token 給 creator)</i>",
+                "Rule.Revert.AlreadyHint" => "<i>已撤回, 不可重複撤回</i>",
+                "Rule.Revert.Reason" => "原因:",
+                "Rule.Revert.Btn" => "撤回此規則",
+                "Rule.Revert.NeedReason" => "<color=#ffcc66>⚠ 需填原因</color>",
+
+                // ==== UCL_AffinitySystemPage ====
+                "Affinity.Title" => "好感度系統",
+                "Affinity.Btn.Refresh" => "🔄 重新整理",
+                "Affinity.Btn.ShowRaw" => "顯示原始向量",
+                "Affinity.EmptyFmt" => "無好感度資料 — `{0}` 不存在或空。\n首次使用請跑:\n`python -m _lib.affinity_manager migrate`",
+                "Affinity.Matrix.Title" => "<b>好感度矩陣 (表面總分)</b>",
+                "Affinity.Matrix.Header" => "Persona \\ Target",
+                "Affinity.Details.Title" => "<b>Persona 細節 (情感結構 — 8 軸隱藏向量)</b>",
+                "Affinity.Details.SelectPersona" => "選擇 Persona:",
+                "Affinity.Details.TargetFmt" => "<b>對象:</b> {0}",
+                "Affinity.Details.SurfaceFmt" => "<b>表面:</b> {0} ({1})",
+                "Affinity.Details.OpinionsLabel" => "<i>印象:</i>",
+                "Affinity.Details.RecentFmt" => "<i>最近 {0} 筆事件:</i>",
+                "Affinity.Axis.Trust" => "信任",
+                "Affinity.Axis.Affection" => "親密",
+                "Affinity.Axis.Respect" => "敬重",
+                "Affinity.Axis.Interest" => "在意",
+                "Affinity.Axis.Irritation" => "煩躁",
+                "Affinity.Axis.Dependence" => "依賴",
+                "Affinity.Axis.Admiration" => "欣賞",
+                "Affinity.Axis.Loyalty" => "忠誠",
+
                 _ => null
             };
         }

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
 using System;
@@ -157,13 +158,13 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope())
             {
                 // 重新整理按鈕：手動觸發資料同步
-                if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
+                if (GUILayout.Button(UCL_CodeLocalize.Get("PlayerPrefs.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(80)))
                 {
                     RefreshKeys();
                 }
 
                 // 搜尋標籤
-                GUILayout.Label("Search:", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 // 搜尋輸入框：動態過濾清單內容
                 m_SearchFilter = GUILayout.TextField(m_SearchFilter, UCL_GUIStyle.TextFieldStyle);
 
@@ -195,18 +196,18 @@ namespace UCL.Core.EditorLib.Page
 
             // 底部危險操作區域
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("!!! DELETE ALL PLAYERPREFS !!!", GUILayout.Height(30)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("PlayerPrefs.Btn.DeleteAll"), GUILayout.Height(30)))
             {
                 // 增加二次確認彈窗，防止手滑導致災難
-                UCL.Core.Page.UCL_OptionPage.Create("DANGEROUS OPERATION", 
-                    "Are you sure you want to delete ALL PlayerPrefs? This cannot be undone!", 
-                    new UCL.Core.Page.ButtonData("Confirm", () =>
+                UCL.Core.Page.UCL_OptionPage.Create(UCL_CodeLocalize.Get("PlayerPrefs.Dialog.DeleteAll.Title"),
+                    UCL_CodeLocalize.Get("PlayerPrefs.Dialog.DeleteAll.Body"),
+                    new UCL.Core.Page.ButtonData(UCL_CodeLocalize.Get("Confirm"), () =>
                     {
                         PlayerPrefs.DeleteAll();
                         PlayerPrefs.Save();
                         RefreshKeys();
                     }, UCL_GUIStyle.GetButtonStyle(Color.red, 20)),
-                    new UCL.Core.Page.ButtonData("Cancel", iStyle: UCL_GUIStyle.GetButtonStyle(Color.white, 20))
+                    new UCL.Core.Page.ButtonData(UCL_CodeLocalize.Get("Cancel"), iStyle: UCL_GUIStyle.GetButtonStyle(Color.white, 20))
                 );
             }
         }
@@ -227,17 +228,17 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     // 刪除按鈕：移除特定項目
-                    if (GUILayout.Button("Delete", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Delete"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
-                        UCL.Core.Page.UCL_OptionPage.Create("Confirm Delete", 
-                            $"Are you sure you want to delete key '{iKeyName}'?", 
-                            new UCL.Core.Page.ButtonData("Delete", () =>
+                        UCL.Core.Page.UCL_OptionPage.Create(UCL_CodeLocalize.Get("PlayerPrefs.Dialog.DeleteOne.Title"),
+                            string.Format(UCL_CodeLocalize.Get("PlayerPrefs.Dialog.DeleteOne.BodyFmt"), iKeyName),
+                            new UCL.Core.Page.ButtonData(UCL_CodeLocalize.Get("Delete"), () =>
                             {
                                 PlayerPrefs.DeleteKey(iKeyName);
                                 PlayerPrefs.Save();
                                 RefreshKeys();
                             }, UCL_GUIStyle.GetButtonStyle(Color.red, 20)),
-                            new UCL.Core.Page.ButtonData("Cancel", iStyle: UCL_GUIStyle.GetButtonStyle(Color.white, 20))
+                            new UCL.Core.Page.ButtonData(UCL_CodeLocalize.Get("Cancel"), iStyle: UCL_GUIStyle.GetButtonStyle(Color.white, 20))
                         );
                     }
                     // 嘗試將字串解析為布林值 (支援 "True"/"False" 或 "true"/"false")

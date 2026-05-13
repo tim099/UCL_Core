@@ -262,6 +262,64 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Dialog.ForceRm.Title" => "Force Remove Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "Confirm force-delete lock?\n\n{0}\n\nNote: persona registry status will NOT auto-change to offline; manual fixup required. Prefer Logout (which runs the goodnight ritual).",
 
+                // ==== UCL_MarkdownViewerPage ====
+                "MdViewer.Title" => "Markdown Viewer",
+                "MdViewer.LoadFailedFmt" => "⚠ Load failed: {0}",
+                "MdViewer.Frontmatter" => "Frontmatter",
+                "MdViewer.RelatedTitle" => "<b>🔗 Related Docs</b>",
+
+                // ==== UCL_PlayerPrefsEditPage ====
+                "PlayerPrefs.Btn.Refresh" => "Refresh",
+                "PlayerPrefs.Btn.DeleteAll" => "!!! DELETE ALL PLAYERPREFS !!!",
+                "PlayerPrefs.Dialog.DeleteAll.Title" => "DANGEROUS OPERATION",
+                "PlayerPrefs.Dialog.DeleteAll.Body" => "Are you sure you want to delete ALL PlayerPrefs? This cannot be undone!",
+                "PlayerPrefs.Dialog.DeleteOne.Title" => "Confirm Delete",
+                "PlayerPrefs.Dialog.DeleteOne.BodyFmt" => "Are you sure you want to delete key '{0}'?",
+
+                // ==== UCL_TavernRulePage ====
+                "Rule.Title" => "Tavern Rules",
+                "Rule.Toolbar.CountFmt" => "📜 Rules ({0})",
+                "Rule.Toolbar.Filter" => "filter:",
+                "Rule.Filter.All" => "all",
+                "Rule.Filter.Active" => "active",
+                "Rule.Filter.Reverted" => "reverted",
+                "Rule.Btn.Refresh" => "🔄 Refresh",
+                "Rule.Toolbar.Auto" => " auto",
+                "Rule.Btn.Path" => "📂 Path",
+                "Rule.List.Title" => "<b>Rule List</b>",
+                "Rule.List.Empty" => "<i>(no matches)</i>",
+                "Rule.Detail.EmptyHint" => "<i>← Select a rule from the left to view content</i>",
+                "Rule.Detail.Status" => "status:",
+                "Rule.Detail.ByFmt" => "by: {0}",
+                "Rule.Detail.CreatedFmt" => "created: {0}",
+                "Rule.Revert.CanHint" => "<b>↩ Revert</b>  <i>(refund 100 tokens to creator)</i>",
+                "Rule.Revert.AlreadyHint" => "<i>already reverted, cannot revert again</i>",
+                "Rule.Revert.Reason" => "reason:",
+                "Rule.Revert.Btn" => "Revert this rule",
+                "Rule.Revert.NeedReason" => "<color=#ffcc66>⚠ reason required</color>",
+
+                // ==== UCL_AffinitySystemPage ====
+                "Affinity.Title" => "Affinity System",
+                "Affinity.Btn.Refresh" => "🔄 Refresh",
+                "Affinity.Btn.ShowRaw" => "Show raw vector",
+                "Affinity.EmptyFmt" => "No affinity data — `{0}` does not exist or is empty.\nFor first-time use, run:\n`python -m _lib.affinity_manager migrate`",
+                "Affinity.Matrix.Title" => "<b>Affinity Matrix (surface scores)</b>",
+                "Affinity.Matrix.Header" => "Persona \\ Target",
+                "Affinity.Details.Title" => "<b>Persona Details (emotion structure — 8-axis hidden vector)</b>",
+                "Affinity.Details.SelectPersona" => "Select Persona:",
+                "Affinity.Details.TargetFmt" => "<b>Target:</b> {0}",
+                "Affinity.Details.SurfaceFmt" => "<b>Surface:</b> {0} ({1})",
+                "Affinity.Details.OpinionsLabel" => "<i>Opinions:</i>",
+                "Affinity.Details.RecentFmt" => "<i>Recent {0} events:</i>",
+                "Affinity.Axis.Trust" => "Trust",
+                "Affinity.Axis.Affection" => "Affection",
+                "Affinity.Axis.Respect" => "Respect",
+                "Affinity.Axis.Interest" => "Interest",
+                "Affinity.Axis.Irritation" => "Irritation",
+                "Affinity.Axis.Dependence" => "Dependence",
+                "Affinity.Axis.Admiration" => "Admiration",
+                "Affinity.Axis.Loyalty" => "Loyalty",
+
                 _ => iKey
             };
         }

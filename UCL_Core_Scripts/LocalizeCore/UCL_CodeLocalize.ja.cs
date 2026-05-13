@@ -259,6 +259,64 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Dialog.ForceRm.Title" => "Lock を強制削除",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "lock を強制削除しますか?\n\n{0}\n\n注意: persona registry の status は自動的に offline にならないため、後で手動修正が必要です。Logout（goodnight ritual を経由）を優先してください。",
 
+                // ==== UCL_MarkdownViewerPage ====
+                "MdViewer.Title" => "Markdown ビューア",
+                "MdViewer.LoadFailedFmt" => "⚠ 読み込み失敗: {0}",
+                "MdViewer.Frontmatter" => "Frontmatter",
+                "MdViewer.RelatedTitle" => "<b>🔗 関連ドキュメント</b>",
+
+                // ==== UCL_PlayerPrefsEditPage ====
+                "PlayerPrefs.Btn.Refresh" => "更新",
+                "PlayerPrefs.Btn.DeleteAll" => "!!! 全 PLAYERPREFS を削除 !!!",
+                "PlayerPrefs.Dialog.DeleteAll.Title" => "危険な操作",
+                "PlayerPrefs.Dialog.DeleteAll.Body" => "本当に「全ての」PlayerPrefs を削除しますか?この操作は取り消せません!",
+                "PlayerPrefs.Dialog.DeleteOne.Title" => "削除確認",
+                "PlayerPrefs.Dialog.DeleteOne.BodyFmt" => "key「{0}」を削除しますか?",
+
+                // ==== UCL_TavernRulePage ====
+                "Rule.Title" => "酒場ルール",
+                "Rule.Toolbar.CountFmt" => "📜 ルール ({0})",
+                "Rule.Toolbar.Filter" => "フィルター:",
+                "Rule.Filter.All" => "全部",
+                "Rule.Filter.Active" => "有効",
+                "Rule.Filter.Reverted" => "撤回済",
+                "Rule.Btn.Refresh" => "🔄 更新",
+                "Rule.Toolbar.Auto" => " 自動",
+                "Rule.Btn.Path" => "📂 パス",
+                "Rule.List.Title" => "<b>ルール一覧</b>",
+                "Rule.List.Empty" => "<i>（該当なし）</i>",
+                "Rule.Detail.EmptyHint" => "<i>← 左から rule を選んで内容を表示</i>",
+                "Rule.Detail.Status" => "状態:",
+                "Rule.Detail.ByFmt" => "作成者: {0}",
+                "Rule.Detail.CreatedFmt" => "作成日時: {0}",
+                "Rule.Revert.CanHint" => "<b>↩ 撤回</b>  <i>(creator に 100 token 返却)</i>",
+                "Rule.Revert.AlreadyHint" => "<i>既に撤回済、再撤回不可</i>",
+                "Rule.Revert.Reason" => "理由:",
+                "Rule.Revert.Btn" => "このルールを撤回",
+                "Rule.Revert.NeedReason" => "<color=#ffcc66>⚠ 理由が必要</color>",
+
+                // ==== UCL_AffinitySystemPage ====
+                "Affinity.Title" => "好感度システム",
+                "Affinity.Btn.Refresh" => "🔄 更新",
+                "Affinity.Btn.ShowRaw" => "生ベクトル表示",
+                "Affinity.EmptyFmt" => "好感度データなし — `{0}` が存在しないか空です。\n初回利用は次を実行:\n`python -m _lib.affinity_manager migrate`",
+                "Affinity.Matrix.Title" => "<b>好感度マトリクス（表面スコア）</b>",
+                "Affinity.Matrix.Header" => "Persona \\ Target",
+                "Affinity.Details.Title" => "<b>Persona 詳細（感情構造 — 8 軸隠れベクトル）</b>",
+                "Affinity.Details.SelectPersona" => "Persona を選択:",
+                "Affinity.Details.TargetFmt" => "<b>対象:</b> {0}",
+                "Affinity.Details.SurfaceFmt" => "<b>表面:</b> {0} ({1})",
+                "Affinity.Details.OpinionsLabel" => "<i>所感:</i>",
+                "Affinity.Details.RecentFmt" => "<i>直近 {0} 件のイベント:</i>",
+                "Affinity.Axis.Trust" => "信頼",
+                "Affinity.Axis.Affection" => "親密",
+                "Affinity.Axis.Respect" => "敬意",
+                "Affinity.Axis.Interest" => "関心",
+                "Affinity.Axis.Irritation" => "苛立ち",
+                "Affinity.Axis.Dependence" => "依存",
+                "Affinity.Axis.Admiration" => "称賛",
+                "Affinity.Axis.Loyalty" => "忠誠",
+
                 _ => null
             };
         }

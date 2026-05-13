@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using UCL.Core.JsonLib;
+using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
@@ -18,7 +19,7 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/Mechanics/Affinity_System.md")]
     public class UCL_AffinitySystemPage : UCL_CommonEditorPage
     {
-        public override string WindowName => "Affinity System";
+        public override string WindowName => UCL_CodeLocalize.Get("Affinity.Title");
 
         // 將此頁面註冊進 EditorMenu 的 Page Picker 下拉選單中
         public override bool ShowInPageMenu => true;
@@ -34,11 +35,19 @@ namespace UCL.Core.EditorLib.Page
             "irritation", "dependence", "admiration", "loyalty",
         };
 
-        static readonly string[] EmotionAxisLabels = new[]
+        // 區塊職責: 8 軸顯示標籤 — 改走 localize key, 切語言會跟著動
+        // 物理意義: key 對齊 EmotionAxes 順序; 內部資料 / JSON 仍走英文 axis name 不動
+        static readonly string[] EmotionAxisLocKeys = new[]
         {
-            "信任", "親密", "敬重", "在意",
-            "煩躁", "依賴", "欣賞", "忠誠",
+            "Affinity.Axis.Trust", "Affinity.Axis.Affection", "Affinity.Axis.Respect", "Affinity.Axis.Interest",
+            "Affinity.Axis.Irritation", "Affinity.Axis.Dependence", "Affinity.Axis.Admiration", "Affinity.Axis.Loyalty",
         };
+
+        static string GetEmotionAxisLabel(int i)
+        {
+            if (i < 0 || i >= EmotionAxisLocKeys.Length) return "";
+            return UCL_CodeLocalize.Get(EmotionAxisLocKeys[i]);
+        }
 
         // 區塊職責：emotion vector 記錄結構
         // 物理意義：vector 8 軸 in [-1, 1]，surface_score in [-100, 100] 由 weighted_sum 算出
@@ -84,11 +93,11 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            if (GUILayout.Button("🔄 Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("Affinity.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 LoadData();
             }
-            m_ShowRawVector = GUILayout.Toggle(m_ShowRawVector, "Show raw vector", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+            m_ShowRawVector = GUILayout.Toggle(m_ShowRawVector, UCL_CodeLocalize.Get("Affinity.Btn.ShowRaw"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
         }
 
         // 區塊職責：載入並反序列化 — 掃 affinity/ 下每個 persona 資料夾的 relations.json
@@ -225,7 +234,7 @@ namespace UCL.Core.EditorLib.Page
         {
             if (m_AllPersonas.Count == 0)
             {
-                GUILayout.Label($"無好感度資料 — `{m_AffinityDir}` 不存在或空。\n首次使用請跑：\n`python -m _lib.affinity_manager migrate`", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Affinity.EmptyFmt"), m_AffinityDir), UCL_GUIStyle.LabelStyle);
                 return;
             }
 
@@ -239,7 +248,7 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：純 UI 繪製
         void DrawMatrix()
         {
-            GUILayout.Label("<b>Affinity Matrix (好感度矩陣 — 表面總分)</b>", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(UCL_CodeLocalize.Get("Affinity.Matrix.Title"), UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
                 m_MatrixScroll = GUILayout.BeginScrollView(m_MatrixScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(220)));
@@ -247,7 +256,7 @@ namespace UCL.Core.EditorLib.Page
                 // 表頭
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Persona \\ Target", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("Affinity.Matrix.Header"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
                     foreach (var target in m_AllTargets)
                     {
                         GUILayout.Label(target, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
@@ -286,11 +295,11 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：純 UI 繪製
         void DrawDetails()
         {
-            GUILayout.Label("<b>Persona Details (情感結構 — 8 軸隱藏向量)</b>", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(UCL_CodeLocalize.Get("Affinity.Details.Title"), UCL_GUIStyle.LabelStyle);
 
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label("Select Persona:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                GUILayout.Label(UCL_CodeLocalize.Get("Affinity.Details.SelectPersona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
                 int curIdx = m_AllPersonas.IndexOf(m_SelectedPersona);
                 if (curIdx < 0) curIdx = 0;
                 int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_AllPersonas, m_PickerDic, "PersonaPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(250)));
@@ -311,10 +320,10 @@ namespace UCL.Core.EditorLib.Page
                     // 標題列：target + surface_score + tier
                     using (new GUILayout.HorizontalScope())
                     {
-                        GUILayout.Label($"<b>Target:</b> {target}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Affinity.Details.TargetFmt"), target), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                         var style = new GUIStyle(UCL_GUIStyle.LabelStyle);
                         style.normal.textColor = GetTierColor(rec.SurfaceScore);
-                        GUILayout.Label($"<b>Surface:</b> {rec.SurfaceScore} ({rec.Tier})", style);
+                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Affinity.Details.SurfaceFmt"), rec.SurfaceScore, rec.Tier), style);
                         GUILayout.FlexibleSpace();
                         if (!string.IsNullOrEmpty(rec.LastUpdated))
                         {
@@ -329,7 +338,7 @@ namespace UCL.Core.EditorLib.Page
                     if (rec.Opinions != null && rec.Opinions.Count > 0)
                     {
                         GUILayout.Space(6);
-                        GUILayout.Label("<i>Opinions:</i>", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label(UCL_CodeLocalize.Get("Affinity.Details.OpinionsLabel"), UCL_GUIStyle.LabelStyle);
                         foreach (var op in rec.Opinions)
                         {
                             GUILayout.Label($" • {op}", UCL_GUIStyle.LabelStyle);
@@ -340,7 +349,7 @@ namespace UCL.Core.EditorLib.Page
                     if (rec.RecentHistory != null && rec.RecentHistory.Count > 0)
                     {
                         GUILayout.Space(6);
-                        GUILayout.Label($"<i>Recent {rec.RecentHistory.Count} events:</i>", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Affinity.Details.RecentFmt"), rec.RecentHistory.Count), UCL_GUIStyle.LabelStyle);
                         foreach (var h in rec.RecentHistory)
                         {
                             // 簡短列出觸發軸（不寫具體 delta 數字，避免「文字化」）
@@ -349,7 +358,7 @@ namespace UCL.Core.EditorLib.Page
                             {
                                 if (System.Math.Abs(ad.Value) < 0.001f) continue;
                                 int idx = System.Array.IndexOf(EmotionAxes, ad.Key);
-                                string axisLabel = (idx >= 0 && idx < EmotionAxisLabels.Length) ? EmotionAxisLabels[idx] : ad.Key;
+                                string axisLabel = (idx >= 0) ? GetEmotionAxisLabel(idx) : ad.Key;
                                 string arrow = ad.Value > 0 ? "↑" : "↓";
                                 axesTouched.Add($"{axisLabel}{arrow}");
                             }
@@ -375,7 +384,7 @@ namespace UCL.Core.EditorLib.Page
             for (int i = 0; i < EmotionAxes.Length; i++)
             {
                 string axisName = EmotionAxes[i];
-                string axisLabel = EmotionAxisLabels[i];
+                string axisLabel = GetEmotionAxisLabel(i);
                 float value = (i < rec.Vector.Length) ? rec.Vector[i] : 0f;
                 value = Mathf.Clamp(value, -1f, 1f);
 

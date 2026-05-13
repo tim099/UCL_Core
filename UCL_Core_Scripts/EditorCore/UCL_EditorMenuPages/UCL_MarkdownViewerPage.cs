@@ -30,7 +30,7 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_MarkdownViewerPage.md")]
     public class UCL_MarkdownViewerPage : UCL_CommonEditorPage
     {
-        public override string WindowName => "UCL_MarkdownViewer";
+        public override string WindowName => UCL_CodeLocalize.Get("MdViewer.Title");
 
         // ==== 載入狀態 ====
         // 物理意義：m_RelativePath / m_AbsolutePath 一組 — 前者用於 UCL_URL prefix 解析，後者用於 File IO / Reveal
@@ -188,7 +188,7 @@ namespace UCL.Core.EditorLib.Page
             EnsureStyles();
             if (m_LoadFailed)
             {
-                GUILayout.Label("⚠ Load failed: " + (m_LoadError ?? ""), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("MdViewer.LoadFailedFmt"), m_LoadError ?? ""), UCL_GUIStyle.LabelStyle);
                 return;
             }
             if (m_Blocks == null) return;
@@ -202,7 +202,7 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     m_ShowFrontmatter = UCL_GUILayout.Toggle(m_ShowFrontmatter, 16);
-                    GUILayout.Label("Frontmatter");
+                    GUILayout.Label(UCL_CodeLocalize.Get("MdViewer.Frontmatter"));
                     GUILayout.FlexibleSpace();
                 }
                 if (m_ShowFrontmatter)
@@ -233,7 +233,7 @@ namespace UCL.Core.EditorLib.Page
             if (m_Related == null || m_Related.Count == 0) return;
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🔗 關聯文件</b>", m_BodyStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("MdViewer.RelatedTitle"), m_BodyStyle);
                 using (new GUILayout.HorizontalScope())
                 {
                     for (int i = 0; i < m_Related.Count; i++)

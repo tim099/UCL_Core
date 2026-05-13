@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UCL.Core.EditorLib.AgentCommands.Rules;
+using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEngine;
 
@@ -25,7 +26,7 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_TavernRulePage.md")]
     public class UCL_TavernRulePage : UCL_CommonEditorPage
     {
-        public override string WindowName => "Tavern Rules";
+        public override string WindowName => UCL_CodeLocalize.Get("Rule.Title");
 
         /// <summary>把此頁面註冊進 EditorMenu 的 Page Picker 下拉選單中 (對齊 UCL_AffinitySystemPage 慣例).</summary>
         public override bool ShowInPageMenu => true;
@@ -85,18 +86,20 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label($"📜 Rules ({m_RulesCache.Count})", UCL_GUIStyle.LabelStyle,
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Rule.Toolbar.CountFmt"), m_RulesCache.Count), UCL_GUIStyle.LabelStyle,
                                 GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
 
-                GUILayout.Label("filter:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                GUILayout.Label(UCL_CodeLocalize.Get("Rule.Toolbar.Filter"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
                 // 區塊: filter 用 button-row 取代 dropdown (3 選 1 不必弄 popup) — 選中的按鈕著色區分
+                // filter id 維持 internal 英文 (all/active/reverted), 顯示走 localize
                 foreach (var opt in s_FilterOptions)
                 {
                     bool selected = (m_StatusFilter == opt);
                     var style = selected
                         ? UCL_GUIStyle.GetButtonStyle(Color.cyan)
                         : UCL_GUIStyle.ButtonStyle;
-                    if (GUILayout.Button(opt, style, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                    string label = UCL_CodeLocalize.Get("Rule.Filter." + char.ToUpperInvariant(opt[0]) + opt.Substring(1));
+                    if (GUILayout.Button(label, style, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                     {
                         if (!selected)
                         {
@@ -108,20 +111,20 @@ namespace UCL.Core.EditorLib.Page
 
                 GUILayout.Space(8);
 
-                if (GUILayout.Button("🔄 Refresh", UCL_GUIStyle.ButtonStyle,
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Rule.Btn.Refresh"), UCL_GUIStyle.ButtonStyle,
                                      GUILayout.Width(UCL_GUIStyle.GetScaledSize(100))))
                 {
                     RefreshRules();
                 }
 
-                m_AutoRefresh = GUILayout.Toggle(m_AutoRefresh, " auto", UCL_GUIStyle.ButtonStyle,
+                m_AutoRefresh = GUILayout.Toggle(m_AutoRefresh, UCL_CodeLocalize.Get("Rule.Toolbar.Auto"), UCL_GUIStyle.ButtonStyle,
                                                   GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
 
                 GUILayout.FlexibleSpace();
 
                 // 區塊: 移除 EditorUtility.RevealInFinder (Editor-only) — 改 print 路徑給 Console
                 // 物理意義: 純 runtime 路徑沒辦法開檔總管; 顯示路徑讓使用者複製貼系統檔總管
-                if (GUILayout.Button("📂 Path", UCL_GUIStyle.ButtonStyle,
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Rule.Btn.Path"), UCL_GUIStyle.ButtonStyle,
                                      GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                 {
                     Debug.Log($"[RulePage] Rules dir: {RulesDir}");
@@ -137,11 +140,11 @@ namespace UCL.Core.EditorLib.Page
                                               GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)),
                                               GUILayout.ExpandHeight(true)))
             {
-                GUILayout.Label("<b>規則清單</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Rule.List.Title"), UCL_GUIStyle.LabelStyle);
                 m_ListScroll = GUILayout.BeginScrollView(m_ListScroll);
                 if (m_RulesCache.Count == 0)
                 {
-                    GUILayout.Label("<i>(無命中)</i>", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Rule.List.Empty"), UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
@@ -177,7 +180,7 @@ namespace UCL.Core.EditorLib.Page
                 var selected = m_RulesCache.FirstOrDefault(r => r.ruleId == m_SelectedRuleId);
                 if (selected == null)
                 {
-                    GUILayout.Label("<i>← 從左邊選一條 rule 看內容</i>", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Rule.Detail.EmptyHint"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -187,13 +190,13 @@ namespace UCL.Core.EditorLib.Page
                 {
                     // status: active=綠 / reverted=灰
                     var statusColor = selected.status == "active" ? Color.green : Color.gray;
-                    GUILayout.Label($"status:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("Rule.Detail.Status"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     GUILayout.Label($"<b>{selected.status}</b>",
                                     UCL_GUIStyle.GetLabelStyle(statusColor),
                                     GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    GUILayout.Label($"by: {selected.createdBy}", UCL_GUIStyle.LabelStyle,
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Rule.Detail.ByFmt"), selected.createdBy), UCL_GUIStyle.LabelStyle,
                                     GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-                    GUILayout.Label($"created: {selected.createdAt}", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Rule.Detail.CreatedFmt"), selected.createdAt), UCL_GUIStyle.LabelStyle);
                 }
                 GUILayout.Space(4);
 
@@ -208,13 +211,13 @@ namespace UCL.Core.EditorLib.Page
                 {
                     bool canRevert = selected.status == "active";
                     string hint = canRevert
-                        ? "<b>↩ Revert</b>  <i>(refund 100 token 給 creator)</i>"
-                        : "<i>已 reverted, 不可重複 revert</i>";
+                        ? UCL_CodeLocalize.Get("Rule.Revert.CanHint")
+                        : UCL_CodeLocalize.Get("Rule.Revert.AlreadyHint");
                     GUILayout.Label(hint, UCL_GUIStyle.LabelStyle);
 
                     using (new GUILayout.HorizontalScope())
                     {
-                        GUILayout.Label("reason:", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Label(UCL_CodeLocalize.Get("Rule.Revert.Reason"), UCL_GUIStyle.LabelStyle,
                                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
                         GUI.enabled = canRevert;
                         m_RevertReason = GUILayout.TextField(m_RevertReason ?? "", UCL_GUIStyle.TextFieldStyle,
@@ -227,7 +230,7 @@ namespace UCL.Core.EditorLib.Page
                         bool reasonValid = !string.IsNullOrEmpty(m_RevertReason);
                         GUI.enabled = canRevert && reasonValid;
                         // revert 按鈕用紅字突出 (危險動作)
-                        if (GUILayout.Button("Revert this rule", UCL_GUIStyle.ButtonTextRed,
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Rule.Revert.Btn"), UCL_GUIStyle.ButtonTextRed,
                                               GUILayout.Width(UCL_GUIStyle.GetScaledSize(200))))
                         {
                             DoRevert(selected.ruleId, m_RevertReason);
@@ -235,7 +238,7 @@ namespace UCL.Core.EditorLib.Page
                         GUI.enabled = true;
                         if (!reasonValid && canRevert)
                         {
-                            GUILayout.Label("<color=#ffcc66>⚠ 需填 reason</color>", UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label(UCL_CodeLocalize.Get("Rule.Revert.NeedReason"), UCL_GUIStyle.LabelStyle);
                         }
                     }
                 }

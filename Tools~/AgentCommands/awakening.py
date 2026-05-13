@@ -486,40 +486,68 @@ def get_treasury_balance(account_id: str, currency: str = "tavern_token") -> int
 
 
 # ─── Session Lock (§Session Identity Consistency Phase 1) ───────────────
-def compute_session_key(persona: str | None = None) -> str:
+def compute_session_key(agent: str | None = None, persona: str | None = None) -> str:
     """
-    Q9b basecamp lean + apex-two ack: env-based 為主, process tree fallback.
+    T05 (2026-05-14, Zeta + 大小姐 拍板): session_key = claim_identity = "<agent>-<persona>".
 
-    Priority:
-      1. ANTIGRAVITY_SESSION env (Antigravity 原生有 session marker)
-      2. CLAUDECODE env + Claude Code PATH session UUID (穩定跨 bash invoke)
+    哲學切割:
+      - claim_identity (本函式 session_key): 「我宣稱我是誰」, clean for display/audit
+      - process_identity (compute_claim_origin): 「哪個 env 在做這個 claim」, env-hashed
+    分兩個欄位避免 dual-role: 舊 session_key 同時負擔兩件事導致 Zeta 觀察「失去意義」.
+
+    Args:
+      agent: e.g. "claude-code" / "antigravity" / "Zeta" / "gemini" (Mixed case 保留)
+      persona: e.g. "basecamp" / "summit". None / "" → "?" sentinel.
+    """
+    a = agent or "?"
+    p = persona or "?"
+    return f"{a}-{p}"
+
+
+def lock_claim_origin(lock: dict) -> str:
+    """
+    Get lock's claim_origin (T05) or compute from legacy session_key (pre-T05 compat).
+
+    Pre-T05 locks 沒 claim_origin 欄, 但 session_key 是 env_hash + "-<persona>" 格式;
+    回傳 session_key 去掉末尾 "-<persona>" 段, 等價 claim_origin.
+    Post-T05 locks 有 claim_origin 欄, 直接回傳.
+    """
+    if "claim_origin" in lock:
+        return lock["claim_origin"]
+    # legacy: session_key = "<env_hash>-<persona>" → strip persona suffix
+    sk = lock.get("session_key", "")
+    persona = lock.get("persona", "")
+    if persona and sk.endswith(f"-{persona}"):
+        return sk[: -(len(persona) + 1)]
+    return sk   # 無法分離, 整段當 origin (最 conservative)
+
+
+def compute_claim_origin() -> str:
+    """
+    T05 (2026-05-14): proof-of-same-environment hash. 用來識別「同一個 caller 環境」.
+
+    從 T01-T02 env-based session_key 邏輯 inherit:
+      1. ANTIGRAVITY_SESSION env (Antigravity 原生 session marker)
+      2. CLAUDECODE env + Claude Code PATH session UUID (跨 bash invoke 穩)
       3. CLAUDECODE env + cwd hash (PATH 沒命中 fallback)
       4. fallback: cwd_hash + parent_PID
 
-    persona arg (Tim 2026-05-13 拍板, session-key-persona-suffix T01 二輪)：
-      所有 tier 都在末尾加 -<persona> suffix (caller 帶 persona 時)。理由：
-      - Tim 觀察: 同 conversation 多 sub-session 共享 Tier 2 (claude-code-<conv>-<sess>)
-        → 不同 persona 上線會撞同 key
-      - Tier 1 Antigravity 跨 persona 同 ag_hash 也會撞 (e.g. apex-one + ridge-two 同 ag_session)
-      - 鐵律「同 session = 同 persona」下「同 process 持兩 persona lock」不合法,
-        加 persona suffix 不會破壞合法場景
-      - 失去「Tier 2 命中時跨 persona collision detection」— Tim 場景下不存在這 collision
-      persona=None (e.g. status caller 無 persona context) → 走 base key 不加 suffix.
+    為何不用 PID:
+      CLI 工具每次 invoke 是新 process (新 PID) — 同 chat 重跑 morning 會 PID mismatch
+      → lock_is_mine 永遠 false → 同 chat re-morning 變成 fork conflict (壞 UX).
+      env_hash 跨 invoke 穩定 → 同 chat 多次跑 morning 都歸同 claim_origin → reuse OK.
+
+    用途: write_lock 寫進 body; lock_is_mine = (lock.claim_origin == compute_claim_origin()).
     """
     cwd_hash = hashlib.md5(os.getcwd().encode("utf-8")).hexdigest()[:8]
-    persona_suffix = f"-{persona}" if persona else ""
 
     if os.environ.get("ANTIGRAVITY_SESSION"):
         ag = os.environ["ANTIGRAVITY_SESSION"]
         ag_hash = hashlib.md5(ag.encode("utf-8")).hexdigest()[:8]
-        return f"antigravity-{ag_hash}{persona_suffix}"
+        return f"antigravity-{ag_hash}"
 
     if os.environ.get("CLAUDECODE"):
-        # Claude Code PATH 含 local-agent-mode-sessions/[<plugin-name>/]<conv_uuid>/<session_uuid>/bin
-        # 這個 session_uuid 在一個 conversation 內穩定, 跨 bash invoke 不變.
-        # Tim 2026-05-13 fix: 新版 Claude Code 在 conv_uuid 前加了 plugin-name 段 (e.g. skills-plugin/),
-        # 原 regex 卡在 plugin-name 不是 UUID → fallback cwd-based → 跨 conversation 撞鎖.
-        # 修正: 允許 optional 一段 non-UUID prefix segment, 並限 UUID 長度 ≥ 8 char (避免 short token misfire).
+        # Claude Code PATH 含 local-agent-mode-sessions/[<plugin>/]<conv_uuid>/<sess_uuid>/bin
         import re
         path = os.environ.get("PATH", "")
         m = re.search(
@@ -529,11 +557,10 @@ def compute_session_key(persona: str | None = None) -> str:
         if m:
             conv_uuid = m.group(1)[:8]
             sess_uuid = m.group(2)[:8]
-            return f"claude-code-{conv_uuid}-{sess_uuid}{persona_suffix}"
-        # PATH 沒命中 (e.g. PATH 被清過 / 自訂 env) → fallback cwd-based + persona suffix
-        return f"claude-code-cwd-{cwd_hash}{persona_suffix}"
+            return f"claude-code-{conv_uuid}-{sess_uuid}"
+        return f"claude-code-cwd-{cwd_hash}"
 
-    return f"unknown-{cwd_hash}-{os.getppid()}{persona_suffix}"
+    return f"unknown-{cwd_hash}-{os.getppid()}"
 
 
 # 區塊職責: Lock IO — Tim 2026-05-13 重構從 session_key-keyed 改 persona-keyed.
@@ -563,9 +590,10 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
         "bank_account": bank_account,
         "locked_at": now,
         "expires_at": expires,
-        # session_key + pid for diagnostics (not used for routing — persona name is canonical key).
-        # session-key-persona-suffix T02: 沒帶 session_key 時 compute 帶 persona suffix (Tier 3/4)
-        "session_key": session_key or compute_session_key(persona),
+        # T05 (2026-05-14): session_key = claim_identity (display); claim_origin = env_hash
+        # (lock_is_mine 用此判定); pid 純診斷 (CLI 每次 invoke 都是新 PID, 不可靠當 ownership).
+        "session_key": session_key or compute_session_key(agent, persona),
+        "claim_origin": compute_claim_origin(),
         "pid": os.getpid(),
     }
     p = lock_path(persona)
@@ -681,9 +709,11 @@ def fork_persona(reg: dict, source: str, target: str,
     return target
 
 
-# ─── Q3 80/20 random selection ──────────────────────────────────────────
-# Persona-level session history cap — 防 last_session_keys 無限長
-SESSION_KEYS_HISTORY_CAP = 10
+# ─── T05 simplified persona selection (2026-05-14, Zeta + 大小姐 拍板) ────
+# Q3 80/20 random override 機制保留但 trigger condition 改 B (wake_count==0).
+# 廢棄 last_session_keys history — session 概念在 T05 後不再以 "chat" 為單位
+# (claim_identity = "<agent>-<persona>" 直接是 session_key, 一旦持有就是同 session).
+# Random override 池過濾「當下 online」personas — 由 active lock files 判斷 (避免 collision-by-random).
 
 
 def select_persona(preferred: str, reg: dict, agent: str,
@@ -691,60 +721,52 @@ def select_persona(preferred: str, reg: dict, agent: str,
                    force_random: bool = False,
                    session_key: str | None = None) -> tuple[str, str]:
     """
-    Q3 spec (Tim 2026-05-12 拍板 + 2026-05-13 校正):
+    T05 spec (2026-05-14):
       - 不存在 → 100% create new (caller 處理 register)
-      - 存在 + 同 session_key 之前醒過 → 100% honor preferred (skip random)
-      - 存在 + session_key 首次 → 80% use preferred / 20% random override 到 same-agent 其他 persona
+      - 存在 + wake_count > 0 → 100% honor preferred (skip random)
+      - 存在 + wake_count == 0 (首次喚醒) → 80% use preferred / 20% random override
+        到 same-agent 且當下 offline 的 other persona
 
-    Tim 2026-05-13 校正: random override 只在 session 初始化 apply, 同 session re-morning
-    不該被搶 — 解 conversation continuity 場景被亂選機制干涉的 attribution bug.
+    Trigger 由 Q3 「per-session-key first-time」改 「per-persona first-wake (wake_count==0)」.
+    理由: T05 session_key 直接 = (agent,persona) 之後, 「first time per session」概念失效
+    (持有 persona 即是該 session), 改 wake_count==0 保留「真新 persona 才 fire」的原意.
+    Production 下幾乎不 fire (多數 morning 喚已 wake_count>0 的既有 persona) — 機制保留休眠.
 
-    回 (chosen_persona, decision_path) 其中 decision_path ∈
-      {"new", "preferred", "preferred-resumed", "override"}
+    Random override 池過濾「當下 online」personas — 走 read_lock(name) is None 判斷,
+    避免抽中已上線者導致 lock conflict-by-random (Zeta 2026-05-14 提案).
+
+    force_random=True (--force-random flag, QA / debug) → bypass wake_count gate.
+
+    回 (chosen_persona, decision_path) 其中 decision_path ∈ {"new", "preferred", "override"}
     """
     rng = rng or random
     if preferred not in reg["personas"]:
         return preferred, "new"
 
-    # ── same-session re-morning detection ──
-    # 物理意義: 該 session_key 之前 morning 過此 persona → 已是 conversation 連續, 不該被亂選機制換
-    # 數值影響: schema 加 last_session_keys list (optional, 預設 []); session_key None 退回原 Q3
-    if session_key:
-        p = reg["personas"].get(preferred, {})
-        if session_key in p.get("last_session_keys", []):
-            return preferred, "preferred-resumed"
+    p = reg["personas"][preferred]
+    wake_count = p.get("wake_count", 0)
 
-    # first morning in this session — apply 80/20 override per Q3 spec
+    # T05.4 trigger B: 只在 wake_count == 0 才考慮 random override
+    should_check_random = force_random or wake_count == 0
+    if not should_check_random:
+        return preferred, "preferred"
+
     if force_random or rng.random() < OVERRIDE_PROBABILITY:
-        # 找 same-agent 其他 persona
-        candidates = [
-            name for name, p in reg["personas"].items()
-            if p["agent"] == agent and name != preferred
-        ]
+        # 找 same-agent + 當下 offline (無 active lock) 的其他 persona
+        candidates = []
+        for name, q in reg["personas"].items():
+            if q.get("agent") != agent or name == preferred:
+                continue
+            other_lock = read_lock(name)
+            if other_lock is not None and not is_lock_expired(other_lock):
+                # 已上線 — skip (避免 random-induced collision)
+                continue
+            candidates.append(name)
         if candidates:
             chosen = rng.choice(candidates)
             return chosen, "override"
-        # 沒其他 candidates → 退回 preferred
+        # 沒 offline candidates → 退回 preferred
     return preferred, "preferred"
-
-
-def push_session_key_history(persona_dict: dict, session_key: str,
-                             cap: int = SESSION_KEYS_HISTORY_CAP) -> None:
-    """
-    區塊職責: append session_key 進 persona's last_session_keys (給下次 re-morning detect 用)
-    物理意義: 不重複 append; FIFO cap=10 防無限長; in-place mutate persona_dict
-    數值影響: cap exceeded → 砍最舊 (popleft); 不存在欄位則創建 []
-    """
-    if not session_key:
-        return
-    history = persona_dict.setdefault("last_session_keys", [])
-    if session_key in history:
-        # 已存在 — 移到最後 (recency bump)
-        history.remove(session_key)
-    history.append(session_key)
-    # cap FIFO
-    while len(history) > cap:
-        history.pop(0)
 
 
 # ─── Tavern post (走 TavernClient SDK) ──────────────────────────────────
@@ -826,8 +848,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
     model = args.model
     preferred = args.persona
     bank_account = resolve_bank_account(reg, agent, model)
-    # session-key-persona-suffix T02: 傳 preferred persona 進去, Tier 3/4 fallback 才會加 suffix 分辨
-    session_key = compute_session_key(preferred)
+    # T05: session_key = "<agent>-<persona>" (claim identity). process identity 走 PID.
+    session_key = compute_session_key(agent, preferred)
 
     print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
     if agent != raw_agent:
@@ -842,47 +864,21 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # CRITICAL: 必須檢查 lock 的 session_key 跟當前 caller 一致, 否則 = 別 conversation
     # 拿同 persona = 該走 Step 1 fork conflict, 不可 reuse 別人的 lock (Zeta QA-6 抓到).
     #
-    # session-key-collision-fix T02 (Tim 2026-05-13 拍板)：cwd-hash session_key 多
-    # Claude IDE 同 cwd 會撞。當同 session_key 已有 ≥ 2 個 lock (collision 場景),
-    # reuse 不安全 — 該 lock 可能是另一 Claude invoke 寫的。要求 --strict-persona
-    # 顯式確認 caller 知道自己是哪個 persona。
-    #
-    # multi-persona-per-base-session T03 (2026-05-14, Plan A C2): 拿掉 base_session_key
-    # backward-compat fallback。理由: T02 後新寫的 lock 都有 persona suffix,
-    # 舊 pre-T02 lock 應已被 goodnight 清光。保留 base fallback 會讓「同 base
-    # session_key + 不同 persona」誤判為「同 session」, 擋住多 chat 各自 persona
-    # 的合法場景 (Tim 2026-05-14 觀察到的 bug)。
-    # 比對改為「strict full-key match」: lock.session_key == 當前 caller 算出的 full_key。
+    # T05 (2026-05-14, Zeta + 大小姐 拍板): claim/process identity split.
+    #   session_key (lock body) = "<agent>-<persona>" claim identity (clean display)
+    #   claim_origin (lock body) = env_hash proof-of-same-environment (lock_is_mine 用)
+    #   pid (lock body) = 純診斷 (CLI 每次 invoke 都新 PID, 不可靠當 ownership)
+    # 結果: 同 chat 多次 morning → 同 claim_origin → reuse; 跨 IDE / 跨 user 同 persona
+    # → 不同 claim_origin → fork conflict. Multi-chat 同 IDE 不同 persona → T03 session_key 邏輯.
+    my_claim_origin = compute_claim_origin()
     existing_lock = read_lock(preferred)
+    # lock_is_mine 三重條件:
+    #   (1) lock 存在 (2) 未過期 (3) claim_origin 對得上
+    #   (4) lock.agent == caller agent (防 Zeta dispatch subprocess 之後 claude-code 反過來搶 Zeta persona)
     lock_is_mine = (existing_lock is not None
                     and not is_lock_expired(existing_lock)
-                    and existing_lock.get("session_key") == session_key)
-    # Count same-session-key locks 偵測 collision: post-T03 只認 full_key exact match,
-    # 同 base 但不同 persona 不再算 collision (是合法 multi-persona-per-base 場景).
-    same_key_lock_count = 0
-    if _SESSION_DIR.exists():
-        for lp in _SESSION_DIR.glob("_persona_*.json"):
-            try:
-                with open(lp, "r", encoding="utf-8") as f:
-                    d = json.load(f)
-                if is_lock_expired(d):
-                    continue
-                # full_key 用該 lock 的 persona 重算; 只比 full_key (strict)
-                full_key = compute_session_key(d.get("persona"))
-                if d.get("session_key") == full_key:
-                    # 同 persona 重複 lock = 真 collision (multi-Claude 同 cwd 同 persona)
-                    if d.get("persona") == preferred:
-                        same_key_lock_count += 1
-            except Exception:
-                continue
-    collision_detected = same_key_lock_count >= 2
-    if collision_detected and not getattr(args, "strict_persona", False):
-        print(f"⚠ session_key collision 偵測到 ({same_key_lock_count} locks 共享 session_key)")
-        print(f"   cwd-hash session_key 在多 Claude IDE 同 cwd 下會撞")
-        print(f"   不能 silent reuse — 可能誤拿另一 Claude invoke 的 lock")
-        print(f"   ❌ 請帶 --strict-persona 顯式確認 caller 知道自己是 '{preferred}'", file=sys.stderr)
-        print(f"   或先跑 `awakening.py status` 看 pid + locked_at 確認自己 process 對到的 lock", file=sys.stderr)
-        return 2
+                    and lock_claim_origin(existing_lock) == my_claim_origin
+                    and existing_lock.get("agent") == agent)
     if lock_is_mine and preferred in reg["personas"]:
         print(f"♻ same-persona + same-caller re-awakening detected (lock owned by me)")
         print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
@@ -900,14 +896,16 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # 純 registry status=online 沒 lock → stale state (上次 goodnight 沒清), 視作可 reuse, 不 fork.
     target_persona = preferred
     fork_happened = False
+    # T05: lock_owned_by_other = claim_origin 不同 (env_hash 不匹配 = 別環境)
     lock_owned_by_other = (existing_lock is not None
                             and not is_lock_expired(existing_lock)
-                            and existing_lock.get("session_key") != session_key)
+                            and lock_claim_origin(existing_lock) != my_claim_origin)
     if preferred in reg["personas"]:
         p = reg["personas"][preferred]
         if lock_owned_by_other:
+            other_origin = existing_lock.get("claim_origin", "?")
             other_sk = existing_lock.get("session_key", "?")
-            print(f"⚠ CONFLICT: '{preferred}' 已被別 conversation 上線 (lock owned by session_key={other_sk[:24]}...) — 需 fork")
+            print(f"⚠ CONFLICT: '{preferred}' 已被別 environment 上線 (claim_origin={other_origin}, session_key={other_sk}) — 需 fork")
             if not args.fork_name:
                 print(f"❌ --fork-name 必填 (Tim 2026-05-12 拍板規則更新)", file=sys.stderr)
                 print(f"   agent 該自決 fresh codename (山脈隱喻系列, 不帶 fork suffix)", file=sys.stderr)
@@ -938,8 +936,6 @@ def cmd_morning(args: argparse.Namespace) -> int:
         chosen, decision = select_persona(target_persona, reg, agent,
                                            force_random=args.force_random,
                                            session_key=session_key)
-        if decision == "preferred-resumed":
-            print(f"♻ same-session re-morning detected — honor '{chosen}' (skip 80/20, this session_key has woken this persona before)")
     if decision == "new":
         # 不存在 → register new persona (creating fresh)
         print(f"✨ creating new persona '{chosen}' (per Q2 implicit register)")
@@ -997,8 +993,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
     p["wake_count"] += 1
     p["status"] = "online"
     p["last_active"] = utcnow_iso()
-    # Tim 2026-05-13 校正: append session_key 進 persona history, 給下次 re-morning detect 用
-    push_session_key_history(p, session_key)
+    # T05 (2026-05-14): last_session_keys history 機制廢除 — session 概念簡化為
+    # (agent,persona) 本身; re-morning idempotent 改靠 PID match 接.
     save_registry(reg)
 
     # Step 4: write persona lock (Tim 2026-05-13 v2 — keyed by persona, session_key audit-only)
@@ -1073,10 +1069,8 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         unsafe_keys / env mismatch check 全廢 (per Tim: collision 不可能因為 file key
         是 persona 不是 session)
     """
-    # session-key-persona-suffix T02: 傳 persona 進去 (--persona 給的或路徑 2 反查後填回)
-    # 路徑 2 反查時 caller 不知 persona, 先用 None 算 base key 反查 lock; 反查到後若 Tier 3/4
-    # 環境會 fail → fallback 提示 caller 補 --persona (acceptable edge case, 罕見)
-    session_key = compute_session_key(args.persona)
+    # T05 (2026-05-14): session_key = "<agent>-<persona>" (claim identity);
+    # 路徑 2 反查改靠 PID match — caller 不指定 --persona 時找「本 process 持有的 lock」.
     perturbation = max(0.0, min(MAX_PERTURBATION, args.perturbation))
     reg = load_registry()
 
@@ -1101,16 +1095,28 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         else:
             print(f"✓ persona lock 找到 ({persona})")
     else:
-        # 路徑 2: 沒 --persona → 反查 (legacy compat)
-        lock = find_lock_by_session_key(session_key)
-        if lock is None:
-            print(f"❌ no lock found for session_key={session_key}", file=sys.stderr)
-            print(f"   → 帶 --persona <name> 顯式指定要下線的 persona.",
-                  file=sys.stderr)
+        # 路徑 2: 沒 --persona → 反查本 env 持有的 lock (T05: claim_origin match)
+        my_origin = compute_claim_origin()
+        my_locks = []
+        if _SESSION_DIR.exists():
+            for lp in _SESSION_DIR.glob("_persona_*.json"):
+                try:
+                    with open(lp, "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                    if lock_claim_origin(d) == my_origin and not is_lock_expired(d):
+                        my_locks.append(d)
+                except Exception:
+                    continue
+        if not my_locks:
+            print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 lock", file=sys.stderr)
+            print(f"   → 帶 --persona <name> 顯式指定要下線的 persona.", file=sys.stderr)
             return 2
-        if is_lock_expired(lock):
-            print(f"⚠ persona lock expired ({lock.get('expires_at')}) — 仍跑 goodnight",
+        if len(my_locks) > 1:
+            print(f"⚠ 本 environment 持有多個 lock ({len(my_locks)}) — 取最新一個; 建議帶 --persona 顯式指定:",
                   file=sys.stderr)
+            for d in my_locks:
+                print(f"     - {d['persona']} (locked_at={d.get('locked_at', '?')})", file=sys.stderr)
+        lock = max(my_locks, key=lambda d: d.get("locked_at", ""))
         actor = lock["bank_account"]
         persona = lock["persona"]
         agent = lock["agent"]
@@ -1189,9 +1195,11 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     """Read-only env + persona pool report (對應 Cmd_AwakenInit internal helper)."""
     reg = load_registry()
-    base_session_key = compute_session_key()   # 無 persona, 顯示 base key
-    # Tim 2026-05-13 v2: persona-keyed lock — scan all _persona_*.json + 找對應 caller 這個
-    # session_key 的 lock (legacy display, 兼 audit). 多 persona 同時 active → 列全表.
+    # T05 (2026-05-14, Zeta + 大小姐):
+    #   session_key = "<agent>-<persona>" (claim identity, display)
+    #   claim_origin = env_hash (process identity, lock_is_mine 用)
+    #   pid = 純診斷
+    my_origin = compute_claim_origin()
     active_locks = []
     if _SESSION_DIR.exists():
         for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
@@ -1202,32 +1210,11 @@ def cmd_status(args: argparse.Namespace) -> int:
                     active_locks.append(d)
             except Exception:
                 continue
-    # multi-persona-per-base-session T03 (2026-05-14, Plan A C1):
-    # 一個 base session_key (同 Claude IDE 同 cwd) 底下可掛多個 persona lock — 每個 persona
-    # 有自己 unique full_key (含 -<persona> suffix). 同 base 不同 persona 是合法 multi-chat 場景.
-    # 真 collision 只剩「同 full_key 重複 lock」(多 Claude IDE 同 cwd 同 persona).
-    def lock_full_key(lock_dict):
-        return compute_session_key(lock_dict.get("persona"))
-    def lock_shares_my_base(lock_dict):
-        """Lock 跟 caller 共用同 base session_key — 不論 persona 是否相同."""
-        sk = lock_dict.get("session_key", "")
-        # 新 lock (post-T02 suffix): full_key 開頭 = base
-        if sk.startswith(base_session_key):
-            return True
-        # 舊 lock (pre-T02 無 suffix): session_key 就是 base
-        return sk == base_session_key
-    sibling_locks = [d for d in active_locks if lock_shares_my_base(d)]
-    # 同 persona 重複 lock = 真正 collision (genuine cross-IDE same-persona conflict)
-    same_full_key_groups = {}
-    for d in sibling_locks:
-        fk = lock_full_key(d)
-        same_full_key_groups.setdefault(fk, []).append(d)
-    collision_groups = {fk: locks for fk, locks in same_full_key_groups.items() if len(locks) >= 2}
 
     print(f"# 🌅 Awakening Status Report\n")
     print(f"## 偵測到的環境")
-    print(f"- Base session key: `{base_session_key}`")
-    print(f"  - (multi-persona-per-base T03): 同 base 下不同 persona 各自獨立 lock — `<base>-<persona>` 為 full_key)")
+    print(f"- Claim origin (env_hash): `{my_origin}`")
+    print(f"  - (T05): session_key = `<agent>-<persona>` (claim display); claim_origin = env_hash (lock_is_mine 判定)")
     print(f"- Repo root: `{_REPO_ROOT}`")
     # Path config status (Tim 2026-05-12 cross-project sharing)
     if _PATH_CONFIG_PATH.exists():
@@ -1237,26 +1224,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  - letters: `{_LETTERS_DIR_TPL}`")
     else:
         print(f"- Path config: (none — 走 per-project default)")
-    if not sibling_locks:
-        print(f"- Locks under this base session: (none — 未喚醒)")
-        print(f"  - 想喚醒 → `morning --agent <X> --persona <Y>` (任何 persona 都可, 不會撞)")
+    if not active_locks:
+        print(f"- Active locks: (none — 系統內無 persona 上線)")
+        print(f"  - 想喚醒 → `morning --agent <X> --persona <Y>`")
     else:
-        print(f"- Locks under this base session ({len(sibling_locks)} active):")
-        for sl in sorted(sibling_locks, key=lambda d: d.get("locked_at", "")):
-            fk = lock_full_key(sl)
-            collision_marker = " ⚠ COLLISION (同 persona 重複)" if fk in collision_groups else ""
-            print(f"  - **{sl['persona']}** ({sl['agent']}/{sl['model']}) pid={sl.get('pid', '?')} locked_at={sl['locked_at']}{collision_marker}")
-            print(f"    full_key: `{fk}`")
-        if collision_groups:
-            print(f"  ⚠ {sum(len(v) for v in collision_groups.values())} 個 lock 共享 full_key (genuine collision — 多 Claude IDE 同 persona)")
-            print(f"    Morning ritual 不該 silent reuse — 跑 `morning ... --strict-persona` 顯式確認")
-        else:
-            print(f"  ✓ 無 full_key collision — 想喚另一 persona 直接跑 `morning --persona <NEW>` 不會撞既有 lock")
-    if active_locks and len(active_locks) > len(sibling_locks):
-        other_locks = [d for d in active_locks if not lock_shares_my_base(d)]
-        print(f"- Other base sessions' locks ({len(other_locks)}, 跟妳無關):")
-        for d in other_locks:
-            print(f"  - {d['persona']} ({d['agent']}/{d['model']}, bank={d['bank_account']})")
+        my_lock_count = sum(1 for d in active_locks if lock_claim_origin(d) == my_origin)
+        print(f"- Active locks ({len(active_locks)} total, {my_lock_count} owned by me):")
+        for sl in sorted(active_locks, key=lambda d: d.get("locked_at", "")):
+            mine_marker = " ← me (same claim_origin)" if lock_claim_origin(sl) == my_origin else ""
+            print(f"  - **{sl['persona']}** ({sl['agent']}/{sl['model']}) locked_at={sl['locked_at']}{mine_marker}")
+            print(f"    session_key: `{sl.get('session_key', '?')}` / claim_origin: `{sl.get('claim_origin', '(legacy)')}` / pid: {sl.get('pid', '?')}")
+        if my_lock_count == 0:
+            print(f"  ℹ 本 environment 沒持有任何 lock — `morning` 任何 persona 都會走 fresh wake (or fork conflict if 已被別 env 持有).")
     print()
 
     print(f"## Agent → Bank Account (Token bank 共用 per Agent)")
@@ -1387,12 +1366,11 @@ def cmd_affinity(args: argparse.Namespace) -> int:
         print("❌ 無法載入 affinity_manager", file=sys.stderr)
         return 2
 
-    # 如果沒有傳 persona, 嘗試從當前 session 反查 persona lock
-    # session-key-persona-suffix T02: Tier 3/4 環境下 lock.session_key 帶 persona suffix,
-    # 直接用 find_lock_by_session_key(base_key) 會 miss; 改 per-lock 算 compute_session_key(lock.persona) 比對
+    # 如果沒有傳 persona, 嘗試從當前 env claim_origin 反查 lock (T05: claim_origin match)
     persona = args.persona
     if not persona:
         found = None
+        my_origin = compute_claim_origin()
         if _SESSION_DIR.exists():
             for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
                 try:
@@ -1402,16 +1380,13 @@ def cmd_affinity(args: argparse.Namespace) -> int:
                     continue
                 if is_lock_expired(d):
                     continue
-                # backward-compat: 比 full key 或 base key (舊 lock 無 suffix)
-                full_key = compute_session_key(d.get("persona"))
-                base_key = compute_session_key(None)
-                if d.get("session_key") in (full_key, base_key):
+                if lock_claim_origin(d) == my_origin:
                     found = d
                     break
         if found:
             persona = found["persona"]
         else:
-            print("❌ 找不到活動中的 session lock，請指定 --persona", file=sys.stderr)
+            print("❌ 本 environment 沒持有 active session lock，請指定 --persona", file=sys.stderr)
             return 2
 
     if args.status:

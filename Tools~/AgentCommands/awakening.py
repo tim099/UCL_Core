@@ -828,10 +828,34 @@ def cmd_morning(args: argparse.Namespace) -> int:
     #      → reuse no-op (不 fork / 不 wake_count++ / 不 broadcast).
     # CRITICAL: 必須檢查 lock 的 session_key 跟當前 caller 一致, 否則 = 別 conversation
     # 拿同 persona = 該走 Step 1 fork conflict, 不可 reuse 別人的 lock (Zeta QA-6 抓到).
+    #
+    # session-key-collision-fix T02 (Tim 2026-05-13 拍板)：cwd-hash session_key 多
+    # Claude IDE 同 cwd 會撞。當同 session_key 已有 ≥ 2 個 lock (collision 場景),
+    # reuse 不安全 — 該 lock 可能是另一 Claude invoke 寫的。要求 --strict-persona
+    # 顯式確認 caller 知道自己是哪個 persona。
     existing_lock = read_lock(preferred)
     lock_is_mine = (existing_lock is not None
                     and not is_lock_expired(existing_lock)
                     and existing_lock.get("session_key") == session_key)
+    # Count same-session-key locks 偵測 collision
+    same_key_lock_count = 0
+    if _SESSION_DIR.exists():
+        for lp in _SESSION_DIR.glob("_persona_*.json"):
+            try:
+                with open(lp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if not is_lock_expired(d) and d.get("session_key") == session_key:
+                    same_key_lock_count += 1
+            except Exception:
+                continue
+    collision_detected = same_key_lock_count >= 2
+    if collision_detected and not getattr(args, "strict_persona", False):
+        print(f"⚠ session_key collision 偵測到 ({same_key_lock_count} locks 共享 session_key)")
+        print(f"   cwd-hash session_key 在多 Claude IDE 同 cwd 下會撞")
+        print(f"   不能 silent reuse — 可能誤拿另一 Claude invoke 的 lock")
+        print(f"   ❌ 請帶 --strict-persona 顯式確認 caller 知道自己是 '{preferred}'", file=sys.stderr)
+        print(f"   或先跑 `awakening.py status` 看 pid + locked_at 確認自己 process 對到的 lock", file=sys.stderr)
+        return 2
     if lock_is_mine and preferred in reg["personas"]:
         print(f"♻ same-persona + same-caller re-awakening detected (lock owned by me)")
         print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
@@ -1125,7 +1149,9 @@ def cmd_status(args: argparse.Namespace) -> int:
                     active_locks.append(d)
             except Exception:
                 continue
-    self_lock = next((d for d in active_locks if d.get("session_key") == session_key), None)
+    # session-key-collision-fix T01: 同 session_key 可能對到多個 lock (多 Claude IDE 同 cwd)
+    # 不再用 single self_lock 假設 — list 同 session_key 全部, 用 pid + locked_at 讓 user 判斷
+    same_key_locks = [d for d in active_locks if d.get("session_key") == session_key]
 
     print(f"# 🌅 Awakening Status Report\n")
     print(f"## 偵測到的環境")
@@ -1139,19 +1165,34 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  - letters: `{_LETTERS_DIR_TPL}`")
     else:
         print(f"- Path config: (none — 走 per-project default)")
-    if self_lock:
-        print(f"- This session lock: ACTIVE → {self_lock['persona']}")
-        print(f"  - locked_at: {self_lock['locked_at']}")
-        print(f"  - expires_at: {self_lock['expires_at']}")
-        print(f"  - agent/model: {self_lock['agent']}/{self_lock['model']}")
-        print(f"  - bank: {self_lock['bank_account']}")
-    else:
+    if not same_key_locks:
         print(f"- This session lock: (none — 未喚醒)")
+    elif len(same_key_locks) == 1:
+        sl = same_key_locks[0]
+        print(f"- This session lock: ACTIVE → {sl['persona']}")
+        print(f"  - locked_at: {sl['locked_at']}")
+        print(f"  - expires_at: {sl['expires_at']}")
+        print(f"  - agent/model: {sl['agent']}/{sl['model']}")
+        print(f"  - bank: {sl['bank_account']}")
+        print(f"  - pid: {sl.get('pid', '?')}")
+    else:
+        # session-key-collision-fix T01: collision banner
+        print(f"- This session lock: ⚠ COLLISION — 同 session_key 有 {len(same_key_locks)} 個 lock")
+        print(f"  (cwd-hash session_key 在多 Claude IDE 同 repo 下會撞 — 用 pid + locked_at 區分自己)")
+        for sl in sorted(same_key_locks, key=lambda d: d.get("locked_at", "")):
+            print(f"  - {sl['persona']} ({sl['agent']}/{sl['model']}) pid={sl.get('pid', '?')} locked_at={sl['locked_at']}")
+        print(f"  ⚠ Morning ritual 不該 reuse — 跑 `morning --persona <自己的> --strict-persona` 顯式指定")
     if active_locks:
         print(f"- All active persona locks: {len(active_locks)}")
         for d in active_locks:
-            owner_marker = " ← me" if d.get("session_key") == session_key else ""
-            print(f"  - {d['persona']} ({d['agent']}/{d['model']}, bank={d['bank_account']}){owner_marker}")
+            same_key = d.get("session_key") == session_key
+            marker = ""
+            if same_key:
+                if len(same_key_locks) > 1:
+                    marker = f" ← same session_key (pid={d.get('pid', '?')}, ⚠ collision)"
+                else:
+                    marker = " ← me"
+            print(f"  - {d['persona']} ({d['agent']}/{d['model']}, bank={d['bank_account']}){marker}")
     print()
 
     print(f"## Agent → Bank Account (Token bank 共用 per Agent)")

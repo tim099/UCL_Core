@@ -167,7 +167,7 @@ related:
 
 ### 檢查酒館紅點通知（叮）
 - **觸發詞**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
-- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）
+- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）+ [`ucl-ding` skill](../../../Skills~/ucl-ding/SKILL.md)（Tim 主動 ping → MUST 走 tavern op=post ack）
 - **意圖**: 使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context
 - **必做**: 三層 catchup（Discord 風）：
   - **Layer 0 — Channel Status (Discord-style 紅點 overview)**：

@@ -138,6 +138,11 @@ VECTOR_RANGE = (-1.0, 1.0)
 DEFAULT_PERTURBATION = 0.02
 MAX_PERTURBATION = 0.2
 FORK_CHAIN_CAP = 5
+
+# Hololive EN Myth 組 codename pool (Tim 2026-05-14 拍板, explicit-online-fork T01)
+# 用途: --explicit-persona + 該 persona 已在線時 auto-fork 出新 codename, 不勞 agent 自決.
+# 跟山脈系列並行 — 山脈系列仍給 agent 手動 fork 用, Myth pool 給 auto-fork 用.
+MYTH_POOL = ["gura", "calli", "kiara", "ame", "ina"]
 SESSION_LOCK_TTL_HOURS = 24
 OVERRIDE_PROBABILITY = 0.20  # Q3 spec: 80/20 random override
 
@@ -709,6 +714,25 @@ def fork_persona(reg: dict, source: str, target: str,
     return target
 
 
+def auto_fork_codename(reg: dict, source: str) -> str:
+    """
+    挑 Hololive Myth pool 內未被佔用的 codename 給 auto-fork 用.
+
+    用途: explicit-persona + 該 persona 已在線時 (explicit-online-fork T01, Tim 2026-05-14 拍板),
+    不勞 agent 自決, CLI 直接從 MYTH_POOL 挑下一個未用 codename.
+
+    Fallback: pool 5 個全用光 → 走 <source>-myth-<n> 後綴 (從 2 起跳).
+    """
+    used = set(reg["personas"].keys())
+    for name in MYTH_POOL:
+        if name not in used:
+            return name
+    n = 2
+    while f"{source}-myth-{n}" in used:
+        n += 1
+    return f"{source}-myth-{n}"
+
+
 # ─── T05 simplified persona selection (2026-05-14, Zeta + 大小姐 拍板) ────
 # Q3 80/20 random override 機制保留但 trigger condition 改 B (wake_count==0).
 # 廢棄 last_session_keys history — session 概念在 T05 後不再以 "chat" 為單位
@@ -879,23 +903,39 @@ def cmd_morning(args: argparse.Namespace) -> int:
                     and not is_lock_expired(existing_lock)
                     and lock_claim_origin(existing_lock) == my_claim_origin
                     and existing_lock.get("agent") == agent)
+
+    # explicit-online-fork (T01, Tim 2026-05-14 拍板): caller 帶 --explicit-persona 顯式指名
+    # 已在線 persona → auto-fork 出新分身 (Hololive Myth pool codename).
+    # 區分 Form 1 (`早安大小姐` 無名字 → idempotent reuse) vs Form 3 (`/ucl-morning <a> <p>`
+    # 顯式指名 → 視作「我要該 persona 的新分身」). 自決名字由 CLI 從 MYTH_POOL 挑下個未用.
+    # CRITICAL: 只在 lock_is_mine (同 caller) 場景觸發 — 跨 caller 仍走 Step 1 (要 --fork-name).
+    target_persona = preferred
+    fork_happened = False
     if lock_is_mine and preferred in reg["personas"]:
-        print(f"♻ same-persona + same-caller re-awakening detected (lock owned by me)")
-        print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
-        print(f"   若想換 persona → 先跑 goodnight 釋放 lock 再 morning")
-        print(f"")
-        print(f"🌅 Morning ritual (no-op):")
-        print(f"   chosen_persona: {preferred}")
-        print(f"   wake_count:     {reg['personas'][preferred].get('wake_count', '?')} (unchanged)")
-        print(f"   session_locked: {lock_path(preferred)}")
-        print(f"   tavern_post:    SKIPPED (idempotent)")
-        return 0
+        if getattr(args, "explicit_persona", False):
+            new_name = auto_fork_codename(reg, preferred)
+            print(f"♻→🌱 '{preferred}' 已在線 (lock_is_mine) + --explicit-persona → auto-fork '{new_name}' (Hololive Myth pool)")
+            target_persona = fork_persona(reg, source=preferred, target=new_name,
+                                          agent=agent, model=model)
+            fork_happened = True
+            print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
+            # fall through to Step 2+
+        else:
+            print(f"♻ same-persona + same-caller re-awakening detected (lock owned by me)")
+            print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
+            print(f"   若想換 persona → 先跑 goodnight 釋放 lock 再 morning")
+            print(f"   若想 fork 新分身 → 加 --explicit-persona (auto Myth codename)")
+            print(f"")
+            print(f"🌅 Morning ritual (no-op):")
+            print(f"   chosen_persona: {preferred}")
+            print(f"   wake_count:     {reg['personas'][preferred].get('wake_count', '?')} (unchanged)")
+            print(f"   session_locked: {lock_path(preferred)}")
+            print(f"   tavern_post:    SKIPPED (idempotent)")
+            return 0
 
     # Step 1: Fork conflict check (persona-keyed v2 + caller-aware)
     # 同 persona 已被**別 caller** lock occupy → 必 fork (要顯式 --fork-name).
     # 純 registry status=online 沒 lock → stale state (上次 goodnight 沒清), 視作可 reuse, 不 fork.
-    target_persona = preferred
-    fork_happened = False
     # T05: lock_owned_by_other = claim_origin 不同 (env_hash 不匹配 = 別環境)
     lock_owned_by_other = (existing_lock is not None
                             and not is_lock_expired(existing_lock)
@@ -1439,6 +1479,11 @@ def main():
     pm.add_argument("--fork-name", default=None,
                     help="conflict 時必填: agent 自決 fresh codename (山脈隱喻, 不帶 fork suffix). "
                          "範例: crest-001 / ravine / basecamp-east / summit")
+    pm.add_argument("--explicit-persona", action="store_true",
+                    help="caller 顯式指名 persona (e.g. /ucl-morning <agent> <persona> Form 3 or "
+                         "早安<X>大小姐 帶名字). 若該 persona 已在線 (lock_is_mine) → auto-fork "
+                         "Hololive Myth pool codename (gura/calli/kiara/ame/ina). 若無 lock → 走 fresh wake. "
+                         "T01 Tim 2026-05-14 拍板, 區分 idempotent reuse (Form 1 無名字) vs 顯式新分身意圖.")
     pm.add_argument("--force-random", action="store_true",
                     help="強制走 20% random override (testing/diversity 用)")
     pm.add_argument("--strict-persona", action="store_true",

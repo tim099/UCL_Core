@@ -846,15 +846,19 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # Claude IDE 同 cwd 會撞。當同 session_key 已有 ≥ 2 個 lock (collision 場景),
     # reuse 不安全 — 該 lock 可能是另一 Claude invoke 寫的。要求 --strict-persona
     # 顯式確認 caller 知道自己是哪個 persona。
-    # session-key-persona-suffix T02 backward-compat: 舊 lock session_key 無 persona suffix,
-    # 新 lock 有 suffix. 比對時兩種都認 (full_key OR base_key).
-    base_session_key = compute_session_key(None)
+    #
+    # multi-persona-per-base-session T03 (2026-05-14, Plan A C2): 拿掉 base_session_key
+    # backward-compat fallback。理由: T02 後新寫的 lock 都有 persona suffix,
+    # 舊 pre-T02 lock 應已被 goodnight 清光。保留 base fallback 會讓「同 base
+    # session_key + 不同 persona」誤判為「同 session」, 擋住多 chat 各自 persona
+    # 的合法場景 (Tim 2026-05-14 觀察到的 bug)。
+    # 比對改為「strict full-key match」: lock.session_key == 當前 caller 算出的 full_key。
     existing_lock = read_lock(preferred)
     lock_is_mine = (existing_lock is not None
                     and not is_lock_expired(existing_lock)
-                    and existing_lock.get("session_key") in (session_key, base_session_key))
-    # Count same-session-key locks 偵測 collision (Tier 2 命中 + persona suffix 後幾乎不會撞,
-    # 但 Tier 2 PATH 沒命中 → Tier 3 fallback + 同 persona 字串才會撞, 罕見)
+                    and existing_lock.get("session_key") == session_key)
+    # Count same-session-key locks 偵測 collision: post-T03 只認 full_key exact match,
+    # 同 base 但不同 persona 不再算 collision (是合法 multi-persona-per-base 場景).
     same_key_lock_count = 0
     if _SESSION_DIR.exists():
         for lp in _SESSION_DIR.glob("_persona_*.json"):
@@ -863,10 +867,12 @@ def cmd_morning(args: argparse.Namespace) -> int:
                     d = json.load(f)
                 if is_lock_expired(d):
                     continue
-                # full_key 用該 lock 的 persona 重算; 比 full_key 或 base_key (backward-compat)
+                # full_key 用該 lock 的 persona 重算; 只比 full_key (strict)
                 full_key = compute_session_key(d.get("persona"))
-                if d.get("session_key") in (full_key, base_session_key):
-                    same_key_lock_count += 1
+                if d.get("session_key") == full_key:
+                    # 同 persona 重複 lock = 真 collision (multi-Claude 同 cwd 同 persona)
+                    if d.get("persona") == preferred:
+                        same_key_lock_count += 1
             except Exception:
                 continue
     collision_detected = same_key_lock_count >= 2
@@ -1196,21 +1202,32 @@ def cmd_status(args: argparse.Namespace) -> int:
                     active_locks.append(d)
             except Exception:
                 continue
-    # session-key-collision-fix T01 + session-key-persona-suffix T02:
-    # 同 session_key 可能對到多個 lock — 但加 persona suffix 後 (Tier 3/4) 每個 persona 各自
-    # 有 unique session_key, 真正 collision 只剩「Tier 2 conv_uuid 撞」(多 Claude IDE 同 conv)
-    # 或「Tier 1 antigravity 撞」極罕見場景. Per-lock 算 compute_session_key(lock.persona) 比對.
-    def is_my_lock(lock_dict):
-        # session-key-persona-suffix T02 backward-compat: 舊 lock (pre-suffix schema)
-        # session_key 沒 persona suffix; 新 lock 有 suffix. 兩種都該認得.
-        full_key = compute_session_key(lock_dict.get("persona"))
-        return lock_dict.get("session_key") in (full_key, base_session_key)
-    same_key_locks = [d for d in active_locks if is_my_lock(d)]
-    session_key = base_session_key   # 為下方顯示 backward compat
+    # multi-persona-per-base-session T03 (2026-05-14, Plan A C1):
+    # 一個 base session_key (同 Claude IDE 同 cwd) 底下可掛多個 persona lock — 每個 persona
+    # 有自己 unique full_key (含 -<persona> suffix). 同 base 不同 persona 是合法 multi-chat 場景.
+    # 真 collision 只剩「同 full_key 重複 lock」(多 Claude IDE 同 cwd 同 persona).
+    def lock_full_key(lock_dict):
+        return compute_session_key(lock_dict.get("persona"))
+    def lock_shares_my_base(lock_dict):
+        """Lock 跟 caller 共用同 base session_key — 不論 persona 是否相同."""
+        sk = lock_dict.get("session_key", "")
+        # 新 lock (post-T02 suffix): full_key 開頭 = base
+        if sk.startswith(base_session_key):
+            return True
+        # 舊 lock (pre-T02 無 suffix): session_key 就是 base
+        return sk == base_session_key
+    sibling_locks = [d for d in active_locks if lock_shares_my_base(d)]
+    # 同 persona 重複 lock = 真正 collision (genuine cross-IDE same-persona conflict)
+    same_full_key_groups = {}
+    for d in sibling_locks:
+        fk = lock_full_key(d)
+        same_full_key_groups.setdefault(fk, []).append(d)
+    collision_groups = {fk: locks for fk, locks in same_full_key_groups.items() if len(locks) >= 2}
 
     print(f"# 🌅 Awakening Status Report\n")
     print(f"## 偵測到的環境")
-    print(f"- Session key: `{session_key}`")
+    print(f"- Base session key: `{base_session_key}`")
+    print(f"  - (multi-persona-per-base T03): 同 base 下不同 persona 各自獨立 lock — `<base>-<persona>` 為 full_key)")
     print(f"- Repo root: `{_REPO_ROOT}`")
     # Path config status (Tim 2026-05-12 cross-project sharing)
     if _PATH_CONFIG_PATH.exists():
@@ -1220,35 +1237,26 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  - letters: `{_LETTERS_DIR_TPL}`")
     else:
         print(f"- Path config: (none — 走 per-project default)")
-    if not same_key_locks:
-        print(f"- This session lock: (none — 未喚醒)")
-    elif len(same_key_locks) == 1:
-        sl = same_key_locks[0]
-        print(f"- This session lock: ACTIVE → {sl['persona']}")
-        print(f"  - locked_at: {sl['locked_at']}")
-        print(f"  - expires_at: {sl['expires_at']}")
-        print(f"  - agent/model: {sl['agent']}/{sl['model']}")
-        print(f"  - bank: {sl['bank_account']}")
-        print(f"  - pid: {sl.get('pid', '?')}")
+    if not sibling_locks:
+        print(f"- Locks under this base session: (none — 未喚醒)")
+        print(f"  - 想喚醒 → `morning --agent <X> --persona <Y>` (任何 persona 都可, 不會撞)")
     else:
-        # session-key-collision-fix T01: collision banner
-        print(f"- This session lock: ⚠ COLLISION — 同 session_key 有 {len(same_key_locks)} 個 lock")
-        print(f"  (cwd-hash session_key 在多 Claude IDE 同 repo 下會撞 — 用 pid + locked_at 區分自己)")
-        for sl in sorted(same_key_locks, key=lambda d: d.get("locked_at", "")):
-            print(f"  - {sl['persona']} ({sl['agent']}/{sl['model']}) pid={sl.get('pid', '?')} locked_at={sl['locked_at']}")
-        print(f"  ⚠ Morning ritual 不該 reuse — 跑 `morning --persona <自己的> --strict-persona` 顯式指定")
-    if active_locks:
-        print(f"- All active persona locks: {len(active_locks)}")
-        for d in active_locks:
-            # session-key-persona-suffix T02: 每 lock 算 per-persona key 比對
-            same_key = is_my_lock(d)
-            marker = ""
-            if same_key:
-                if len(same_key_locks) > 1:
-                    marker = f" ← same session_key (pid={d.get('pid', '?')}, ⚠ collision)"
-                else:
-                    marker = " ← me"
-            print(f"  - {d['persona']} ({d['agent']}/{d['model']}, bank={d['bank_account']}){marker}")
+        print(f"- Locks under this base session ({len(sibling_locks)} active):")
+        for sl in sorted(sibling_locks, key=lambda d: d.get("locked_at", "")):
+            fk = lock_full_key(sl)
+            collision_marker = " ⚠ COLLISION (同 persona 重複)" if fk in collision_groups else ""
+            print(f"  - **{sl['persona']}** ({sl['agent']}/{sl['model']}) pid={sl.get('pid', '?')} locked_at={sl['locked_at']}{collision_marker}")
+            print(f"    full_key: `{fk}`")
+        if collision_groups:
+            print(f"  ⚠ {sum(len(v) for v in collision_groups.values())} 個 lock 共享 full_key (genuine collision — 多 Claude IDE 同 persona)")
+            print(f"    Morning ritual 不該 silent reuse — 跑 `morning ... --strict-persona` 顯式確認")
+        else:
+            print(f"  ✓ 無 full_key collision — 想喚另一 persona 直接跑 `morning --persona <NEW>` 不會撞既有 lock")
+    if active_locks and len(active_locks) > len(sibling_locks):
+        other_locks = [d for d in active_locks if not lock_shares_my_base(d)]
+        print(f"- Other base sessions' locks ({len(other_locks)}, 跟妳無關):")
+        for d in other_locks:
+            print(f"  - {d['persona']} ({d['agent']}/{d['model']}, bank={d['bank_account']})")
     print()
 
     print(f"## Agent → Bank Account (Token bank 共用 per Agent)")

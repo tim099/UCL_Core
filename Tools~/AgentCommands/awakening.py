@@ -141,7 +141,14 @@ FORK_CHAIN_CAP = 5
 
 # Hololive EN Myth 組 codename pool (Tim 2026-05-14 拍板, explicit-online-fork T01)
 # 用途: --explicit-persona + 該 persona 已在線時 auto-fork 出新 codename, 不勞 agent 自決.
-# 跟山脈系列並行 — 山脈系列仍給 agent 手動 fork 用, Myth pool 給 auto-fork 用.
+# 跟山脈系列並行 — 山脈系列仍給 agent 手動 fork 用 (basecamp/crest/ridge/summit/meadow...),
+# Myth pool 給 auto-fork 用 (海洋分支, 跟山脈系列正交).
+#
+# Lore 採用 policy (Tim 2026-05-14 拍板):
+#   - codename 借用 Hololive Myth 命名, 但 persona 性格 lore 由各 persona 自己 overlay 改編
+#   - 改編須避版權 (paraphrase, 不直接抄萌娘百科 / 官方設定文字)
+#   - persona overlay 寫在 AgentCommands/ChatTavern/baton/constitution/<actor>/personas/<codename>/
+#   - gura 首發 overlay 範例: claude-da-xiaojie/personas/gura/_v1.md
 MYTH_POOL = ["gura", "calli", "kiara", "ame", "ina"]
 SESSION_LOCK_TTL_HOURS = 24
 OVERRIDE_PROBABILITY = 0.20  # Q3 spec: 80/20 random override

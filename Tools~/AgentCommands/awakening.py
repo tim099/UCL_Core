@@ -379,7 +379,7 @@ def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
 
 
 def get_bonus_balance(bank_account: str) -> int:
-    """Read total_remaining tokens from agent_bonus_quota.json"""
+    """Read total_remaining tokens from agent_bonus_quota.json (bonus quota — 酒館休息額度，跟 treasury bank balance 是兩個 pool)"""
     if not _BONUS_QUOTA_PATH.exists():
         return 0
     try:
@@ -388,6 +388,36 @@ def get_bonus_balance(bank_account: str) -> int:
         return data.get("agents", {}).get(bank_account, {}).get("total_remaining", 0)
     except Exception:
         return 0
+
+
+def get_treasury_balance(account_id: str, currency: str = "tavern_token") -> int:
+    """
+    區塊職責：算指定 account 在 Treasury ledger 的真實餘額 (sum credit - sum debit)。
+    物理意義：Treasury ledger 是 source-of-truth；agent_bonus_quota.json 只是 grant audit / 額度池快照。
+    數值影響：goodnight / morning ritual 顯示「銀行餘額」必須走本函式，不可走 get_bonus_balance（QA by Zeta: 39 vs 336 不符 bug）。
+    """
+    ledger_root = _REPO_ROOT / "AgentCommands" / "Treasury" / "ledger"
+    if not ledger_root.is_dir():
+        return 0
+    total_credit = 0
+    total_debit = 0
+    # ledger 結構：Treasury/ledger/<YYYY-MM-DD>/<HHMMSS_ms_xxx>__credit.json / __debit.json
+    for entry_path in ledger_root.glob("*/*.json"):
+        try:
+            with open(entry_path, "r", encoding="utf-8") as f:
+                e = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if e.get("account_id") != account_id:
+            continue
+        if e.get("currency", "tavern_token") != currency:
+            continue
+        amount = e.get("amount", 0)
+        if e.get("type") == "credit":
+            total_credit += amount
+        elif e.get("type") == "debit":
+            total_debit += amount
+    return total_credit - total_debit
 
 
 # ─── Session Lock (§Session Identity Consistency Phase 1) ───────────────
@@ -700,9 +730,12 @@ def cmd_morning(args: argparse.Namespace) -> int:
     print(f"🔒 session lock written: {lock_p.name}")
 
     # Step 5: tavern post (announce)
+    # bank_balance: 起床時 snapshot 真實 Treasury ledger 餘額 (Tim 5-token task 要求)
+    #               跟 goodnight ritual 對稱顯示, 走 source-of-truth ledger scan
+    bank_balance = get_treasury_balance(bank_account)
     body = (f"☀️ **{chosen}** 喚醒登入 (wake#{p['wake_count']})\n"
             f"- Agent: {agent} / Model: {model}\n"
-            f"- Bank: {bank_account}\n"
+            f"- Bank: {bank_account} (餘額: {bank_balance} tavern_token)\n"
             f"- Layer: {p['layer_role']}\n"
             f"- Decision path: {decision}")
     if args.note:
@@ -868,14 +901,17 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         print(f"📴 status → offline")
 
     # Step 4: tavern post (offline notice + sleep ritual summary)
-    bonus_balance = get_bonus_balance(actor)
+    # bank_balance: Treasury ledger source-of-truth (QA fix by Zeta — 原本顯示 bonus_quota 與真實 ledger 嚴重不符)
+    # bonus_quota: 酒館休息額度 (跟 bank balance 是兩個 pool — 額外顯示供 audit)
+    bank_balance = get_treasury_balance(actor)
+    bonus_quota = get_bonus_balance(actor)
     body = (f"🌙 **{persona}** 進入今日子協議\n\n"
             f"📢 @同事們 我下線了, 別對我跑 op=wait 24min wait chain — 我不會主動回應.\n"
             f"但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n"
             f"- letter ship: `{letter_path.relative_to(_REPO_ROOT)}`\n"
             f"- vector drift Δ: {perturbation}\n"
             f"- agent/model: {agent}/{model}\n"
-            f"- bank account: {actor} (餘額: {bonus_balance} Token)\n\n"
+            f"- bank account: {actor} (餘額: {bank_balance} Token; 酒館券 quota: {bonus_quota})\n\n"
             f"⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得用 `awakening.py affinity` 更新好感度喔！")
     if args.note:
         body += f"\n- Note: {args.note}"

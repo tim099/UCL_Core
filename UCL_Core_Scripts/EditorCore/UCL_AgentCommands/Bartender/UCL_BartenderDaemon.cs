@@ -281,6 +281,55 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return true;
             }
 
+            if (kind == UCL_BartenderInlineParser.InlineCommandKind.Help)
+            {
+                // 區塊職責：使用者於 tavern 發 [help] → 酒保直接 post 服務清單
+                // 物理意義：純 hardcoded markdown, 不 spawn / 不 IO / 不 parse args, latency 近 0
+                // 數值影響：每 [help] inline 就多一條酒保訊息, 預期低頻不會洗版
+                // 維護備註：新增 inline marker 或 Cmd_Bartender op 時務必同步更新 BuildHelpBody()
+                PostBartenderConfirm(roomId,
+                    BuildHelpBody(creatorName),
+                    new Dictionary<string, string> { { "subtag", "help-listing" } });
+                return true;
+            }
+
+            if (kind == UCL_BartenderInlineParser.InlineCommandKind.BalanceQuery)
+            {
+                // 區塊職責：使用者於 tavern 發 [查詢餘額] → spawn python balance_query.py → 酒保 post 結果
+                // 物理意義：account 未指定 → 預設查 sender 自己 (msg.sender_id)
+                //          spawn 走 main thread 的同步呼叫 (5s timeout fail-safe), tick 期間 IO 接受
+                // 數值影響：純 read-only 查詢, 不 mutate state; 失敗 fall back 錯誤訊息
+                var spec = UCL_BartenderInlineParser.ParseBalanceQuery(msg.body);
+                string targetAccount = string.IsNullOrEmpty(spec.account) ? creator : spec.account;
+                if (string.IsNullOrEmpty(targetAccount))
+                {
+                    PostBartenderConfirm(roomId,
+                        $"❌ **餘額查詢失敗** (來自 {creatorName})\n\n錯誤: 未指定 account 且 sender_id 為空。\n" +
+                        "格式: `[查詢餘額] account=<id> limit=<N>` (account 可省略 → 自動查自己)",
+                        new Dictionary<string, string> { { "subtag", "balance-query-fail" } });
+                    return true;
+                }
+                string queryResult = RunBalanceQuery(targetAccount, spec.limit, out string err);
+                if (queryResult == null)
+                {
+                    PostBartenderConfirm(roomId,
+                        $"❌ **餘額查詢失敗** (來自 {creatorName}, account=`{targetAccount}`)\n\n錯誤: {err}",
+                        new Dictionary<string, string> {
+                            { "subtag", "balance-query-fail" },
+                            { "queried_account", targetAccount },
+                        });
+                    return true;
+                }
+                PostBartenderConfirm(roomId,
+                    $"💰 **餘額查詢結果** (來自 {creatorName})\n\n{queryResult}",
+                    new Dictionary<string, string> {
+                        { "subtag", "balance-query-ok" },
+                        { "queried_account", targetAccount },
+                        { "queried_limit", spec.limit.ToString() },
+                    });
+                return true;
+            }
+
             if (kind == UCL_BartenderInlineParser.InlineCommandKind.AddTimeRule)
             {
                 var spec = UCL_BartenderInlineParser.ParseTimeRule(msg.body);
@@ -328,6 +377,135 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static string Truncate(string s, int max)
             => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max) + "…");
+
+        // ===========================================================
+        // 區塊職責：spawn python AgentCommands/Tools/balance_query.py 取得 markdown 報表
+        // 物理意義：read-only 查詢 — daemon 內同步呼叫 (5s timeout), 失敗回 null + err 字串
+        // 設計取捨：
+        //   - 用 System.Diagnostics.Process 直接 spawn, 不走 queue.json (節省一次 RPC 來回)
+        //   - WorkingDirectory = repo root (Application.dataPath / .. / .. = 主專案根, 不是 UCL_Core)
+        //     這樣 balance_query.py 內 _REPO_ROOT 自動算對 (它走 Tools/balance_query.py.parent.parent)
+        //   - timeout 5s — 339 筆 ledger 全 scan 實測 < 200ms, 留 25x headroom
+        //   - python 解析器: 優先 'python', PATH 沒命中由 OS 報錯 (主流系統 Python 都裝)
+        // 數值影響：stdout 直接當 markdown 貼回 tavern; stderr / exit code 非 0 視為錯誤
+        // ===========================================================
+        /// <summary>Public wrapper — 給 Cmd_Bartender op=balance 共用同 spawn 邏輯, 避免 duplicate code.</summary>
+        public static string RunBalanceQueryPublic(string account, int limit, out string err)
+            => RunBalanceQuery(account, limit, out err);
+
+        // ===========================================================
+        // 區塊職責：產生 [help] inline marker 回應內容
+        // 物理意義：hand-maintained cheatsheet — 列當前 inline marker + Cmd_Bartender ops + 對話自動觸發機制
+        // 維護備註：
+        //   - 加新 inline marker / 新 Cmd_Bartender op → 同步更新本函式
+        //   - inline marker 數累積 ≥ 5 時改 registry pattern, 屆時本函式改成迭代 registry 動態列舉
+        //   - 不放完整 ArgsSchema (太長) — cite skill doc / cheatsheet 路徑供深入查
+        // ===========================================================
+        static string BuildHelpBody(string creatorName)
+        {
+            return
+$@"📜 **酒保服務清單** (來自 {creatorName} 的 [help] 查詢)
+
+## 🗣️ 直接對話 (inline marker — 任何人在酒館發訊息含以下 marker 即觸發)
+
+| Marker (同義詞) | 功能 | 範例 |
+|---|---|---|
+| `[進行留言]` / `[留言]` / `[leave message]` / `[bartender add]` | 註冊關鍵字觸發留言 | `[進行留言] key=晚安 msg=記得寫 baton targets=Tim tokens=2` |
+| `[進行時間規則]` / `[時間規則]` / `[time rule]` | 註冊每日 HH:mm 提醒 | `[進行時間規則] id=sleep time=23:50 target=Tim msg=該睡了 grace=10 penalty=true` |
+| `[查詢餘額]` / `[餘額]` / `[balance]` | 查 Treasury 帳戶餘額 + 近 N 筆進出帳 | `[查詢餘額] account=claude-da-xiaojie limit=10`（account 省略 = 查自己） |
+| `[help]` / `[幫助]` / `[酒館指令]` | 列本清單 | 就是這個 |
+
+## 🛠️ CMD 路徑 (`Cmd_Bartender` 走 queue.json — agent / Tim 跑 run_cmd.py 觸發)
+
+| op | 功能 |
+|---|---|
+| `add` | 新增關鍵字觸發 (對齊 [進行留言]) |
+| `list` | 列當前所有 keyword triggers |
+| `remove` | 移除指定 trigger (`id=<trigger_id>`) |
+| `time_add` | 新增時間規則 (對齊 [進行時間規則]) |
+| `time_list` | 列所有時間規則 |
+| `time_remove` | 移除時間規則 (`id=<rule_id>`) |
+| `balance` | 查 Treasury 餘額 (對齊 [查詢餘額]，可選 `post=true` 同步 broadcast) |
+| `status` | 列 daemon state / 統計 |
+| `tick` | 強制立刻 tick 一輪 (debug / dogfood) |
+
+呼叫範例:
+```
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance --arg account=Tim --arg limit=5
+```
+
+## 🎯 自動行為 (daemon 後台 5s tick — 無需主動觸發)
+
+- **Keyword trigger fire**: 已註冊的 trigger 在 target 發言含 keyword 時自動 fire (剩餘 tokens > 0)
+- **Time rule reminder**: 到 HH:mm 自動廣播 reminder; 超 grace 後每 N 分鐘累積 HP penalty 廣播
+- **防回音**: 酒保自家訊息 (sender=`tavern-keeper` 或 meta.tag=`bartender-relay`) 不參與 trigger match
+
+## 📚 深入
+
+- 酒保系統完整 spec: `<UCL_Core>/Skills~/ucl-bartender/SKILL.md`
+- 酒館訊息 IO (Cmd_Tavern op=post/read/wait/...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`
+- 跨系統 cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`
+- 跨 agent 自助 navigation: `<UCL_Core>/Skills~/ucl-help/SKILL.md`
+
+> Tip: 不確定怎麼用某 op? 跑 `run_cmd.py info Bartender` 看完整 ArgsSchema.";
+        }
+
+        static string RunBalanceQuery(string account, int limit, out string err)
+        {
+            err = null;
+            try
+            {
+                string repoRoot = System.IO.Path.GetFullPath(
+                    System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", ".."));
+                string scriptPath = System.IO.Path.Combine(repoRoot, "AgentCommands", "Tools", "balance_query.py");
+                if (!System.IO.File.Exists(scriptPath))
+                {
+                    err = $"balance_query.py 不存在於 {scriptPath} (本專案未啟用餘額查詢)";
+                    return null;
+                }
+
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{scriptPath}\" --account \"{account}\" --limit {limit} --format markdown",
+                    WorkingDirectory = repoRoot,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                    StandardErrorEncoding = System.Text.Encoding.UTF8,
+                };
+                using (var proc = System.Diagnostics.Process.Start(psi))
+                {
+                    if (proc == null) { err = "Process.Start return null"; return null; }
+                    if (!proc.WaitForExit(5000))
+                    {
+                        try { proc.Kill(); } catch { }
+                        err = "timeout (>5s)";
+                        return null;
+                    }
+                    string stdout = proc.StandardOutput.ReadToEnd();
+                    string stderr = proc.StandardError.ReadToEnd();
+                    if (proc.ExitCode != 0)
+                    {
+                        err = $"exit={proc.ExitCode}; stderr={Truncate(stderr ?? "", 300)}";
+                        return null;
+                    }
+                    if (string.IsNullOrWhiteSpace(stdout))
+                    {
+                        err = "empty stdout";
+                        return null;
+                    }
+                    return stdout.TrimEnd();
+                }
+            }
+            catch (Exception e)
+            {
+                err = $"spawn exception: {e.Message}";
+                return null;
+            }
+        }
 
         // ===========================================================
         // Fire trigger — post 留言內容到 tavern (走 AppendMessage 自動 Discord mirror)

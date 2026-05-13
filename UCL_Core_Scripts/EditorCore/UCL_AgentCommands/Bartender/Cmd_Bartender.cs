@@ -65,7 +65,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
 [status]      列 daemon 統計 + state file 概況
 
-[tick]        強制立刻 tick (測試 / dogfood 用)";
+[tick]        強制立刻 tick (測試 / dogfood 用)
+
+[balance]     查詢 Treasury 帳戶餘額 + 最近 N 筆進出帳 (走 AgentCommands/Tools/balance_query.py)
+  account=<id>          要查的 account (e.g. claude-da-xiaojie / Tim)
+  limit=<int>           近期進出帳筆數, 預設 10 (cap 100)
+  post=<true/false>     是否同時 post 到 tavern (預設 false, 只寫 _last_op.md)
+  room=<room_id>        post=true 時的目標 room, 預設 tavern";
 
         public override string ExampleArgs =>
             "op=add;creator=Zeta-da-xiaojie;targets=Zeta;key=叮;msg=請進入自由意志模式;tokens=2";
@@ -86,8 +92,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     case "time_remove": Op_TimeRemove(args); break;
                     case "status":      Op_Status(args); break;
                     case "tick":        Op_Tick(args); break;
+                    case "balance":     Op_Balance(args); break;
                     default:
-                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick");
+                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / balance");
                         break;
                 }
             }
@@ -283,6 +290,55 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             UCL_BartenderDaemon.ForceTick();
             WriteLastOp("✅ Bartender daemon forced tick (檢查 trigger + time rule 一輪).");
+        }
+
+        // ===========================================================
+        // op=balance — 查 Treasury 帳戶餘額 + 最近 N 筆進出帳
+        // 物理意義：CMD path 對稱於 inline [查詢餘額] — 都走 daemon 的 RunBalanceQuery → balance_query.py
+        // 設計取捨：預設只寫 _last_op.md (供 caller 看), post=true 才同步 post 到 tavern (酒保身分)
+        // ===========================================================
+        void Op_Balance(Dictionary<string, string> args)
+        {
+            string account = GetArg(args, "account", "");
+            int limit = ParseInt(GetArg(args, "limit", "10"), 10);
+            bool post = GetArg(args, "post", "false").ToLowerInvariant() == "true";
+            string room = GetArg(args, "room", "tavern");
+
+            if (string.IsNullOrEmpty(account))
+            {
+                WriteLastOp("❌ balance 缺 account (要查的 Treasury 帳戶 id)");
+                return;
+            }
+            if (limit < 0) limit = 0;
+            if (limit > 100) limit = 100;
+
+            string result = UCL_BartenderDaemon.RunBalanceQueryPublic(account, limit, out string err);
+            if (result == null)
+            {
+                WriteLastOp($"❌ balance 查詢失敗 (account=`{account}`): {err}");
+                return;
+            }
+            WriteLastOp(result);
+
+            // 同步 post 到 tavern (酒保身分) — opt-in, 對齊 inline [查詢餘額] 行為
+            if (post)
+            {
+                var msg = new UCL_ChatMessage
+                {
+                    sender_id = UCL_BartenderDaemon.TavernKeeperId,
+                    sender_name = "酒保",
+                    kind = "chat",
+                    body = $"💰 **餘額查詢結果** (CMD op=balance, account=`{account}`)\n\n{result}",
+                    meta = new Dictionary<string, string>
+                    {
+                        { "tag", UCL_BartenderDaemon.BartenderRelayTag },
+                        { "subtag", "balance-query-cmd" },
+                        { "queried_account", account },
+                        { "queried_limit", limit.ToString() },
+                    },
+                };
+                UCL_ChatTavernIO.AppendMessage(room, msg, fireDiscordMirror: true);
+            }
         }
 
         // ===========================================================

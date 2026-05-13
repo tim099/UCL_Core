@@ -32,20 +32,92 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             "[進行時間規則]", "[時間規則]", "[time rule]", "[bartender time]",
         };
+        // 區塊職責：餘額查詢 marker — 任一命中即視為「請酒保查帳」
+        // 物理意義：daemon 偵測後 spawn AgentCommands/Tools/balance_query.py 並把 stdout post 回 tavern
+        // 數值影響：純 read-only 查詢，無 ledger 變動
+        static readonly string[] BalanceQueryMarkers =
+        {
+            "[查詢餘額]", "[餘額]", "[查詢帳戶]", "[balance]", "[bartender balance]",
+        };
+        // 區塊職責：help marker — 任一命中即視為「請酒保列服務清單」
+        // 物理意義：daemon 偵測後直接 post 一份 hardcoded markdown cheatsheet, 不 spawn 任何外部進程
+        // 數值影響：純對 tavern 多一條酒保訊息, 無 state mutation
+        static readonly string[] HelpMarkers =
+        {
+            "[help]", "[幫助]", "[酒保幫助]", "[酒館指令]", "[酒保服務]", "[?]", "[？]",
+        };
 
-        public enum InlineCommandKind { None, AddTrigger, AddTimeRule }
+        public enum InlineCommandKind { None, AddTrigger, AddTimeRule, BalanceQuery, Help }
 
-        /// <summary>偵測 body 內是否含 bartender 控制 marker, 回 kind 列舉 (None = 無).</summary>
+        // 區塊職責：剝 markdown code span (單 backtick) 與 fenced code block (triple backtick)
+        // 物理意義：QA bug fix (Zeta 報, 2026-05-13) — 使用者在 tavern 發說明文 / 教學 / share 時,
+        //          常在 backtick 內 quote marker (e.g. ``[查詢餘額]``) 作為「範例」, 不該觸發 daemon.
+        //          沒此 strip → 任何 task share / help 引用 marker 都假觸發新一輪 inline.
+        // 設計取捨：只剝 backtick code (純文字 marker), 不剝 link / heading / quote — 那些不會誤觸發
+        //          替換成 same-length 空白以維持 IndexOf 位置語意 (給未來「marker 出現在哪一行」分析用)
+        // 數值影響：純字串轉換, 無 IO; O(n) regex pass
+        static string StripCodeForMarkerScan(string body)
+        {
+            if (string.IsNullOrEmpty(body)) return body;
+            // 先剝 triple-backtick fenced block (greedy 跨行)
+            body = Regex.Replace(body, @"```[\s\S]*?```", m => new string(' ', m.Length));
+            // 再剝 single-backtick inline code (不允許跨行)
+            body = Regex.Replace(body, @"`[^`\r\n]*`", m => new string(' ', m.Length));
+            return body;
+        }
+
+        /// <summary>偵測 body 內是否含 bartender 控制 marker, 回 kind 列舉 (None = 無).
+        /// QA fix: 先剝 markdown code spans, 防止 quoted-example 假觸發.</summary>
         public static InlineCommandKind DetectKind(string body)
         {
             if (string.IsNullOrEmpty(body)) return InlineCommandKind.None;
+            // QA bug fix (Zeta 2026-05-13): 剝 code spans 後再 scan, 避免說明文 quote marker 假觸發
+            string scanBody = StripCodeForMarkerScan(body);
             foreach (var m in TriggerMarkers)
-                if (body.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (scanBody.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
                     return InlineCommandKind.AddTrigger;
             foreach (var m in TimeRuleMarkers)
-                if (body.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (scanBody.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
                     return InlineCommandKind.AddTimeRule;
+            foreach (var m in BalanceQueryMarkers)
+                if (scanBody.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return InlineCommandKind.BalanceQuery;
+            foreach (var m in HelpMarkers)
+                if (scanBody.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return InlineCommandKind.Help;
             return InlineCommandKind.None;
+        }
+
+        /// <summary>BalanceQuery 解析結果 — daemon spawn python 用.</summary>
+        public class BalanceQuerySpec
+        {
+            // account 空 → daemon 端 fallback 用 msg.sender_id (查自己)
+            public string account;
+            public int limit = 10;
+            public bool valid = true;     // marker 命中即視為合法，account 可空 (daemon 補)
+            public string error;
+        }
+
+        /// <summary>從 body 解析 BalanceQuery spec. body 該含 [查詢餘額] 或同義 marker.</summary>
+        public static BalanceQuerySpec ParseBalanceQuery(string body)
+        {
+            var spec = new BalanceQuerySpec();
+            if (string.IsNullOrEmpty(body)) { spec.valid = false; spec.error = "empty body"; return spec; }
+
+            // 用既有 StripMarker / ExtractValue helper — 對齊 trigger / time rule 解析慣例
+            string content = StripMarker(body, BalanceQueryMarkers);
+
+            string accountRaw = ExtractValue(content, new[] { "account", "帳戶", "帳號", "acct" });
+            if (!string.IsNullOrWhiteSpace(accountRaw)) spec.account = accountRaw.Trim();
+
+            string limitRaw = ExtractValue(content, new[] { "limit", "筆數", "近期" });
+            if (!string.IsNullOrWhiteSpace(limitRaw) && int.TryParse(limitRaw.Trim(), out int lim))
+            {
+                if (lim < 0) lim = 0;
+                if (lim > 100) lim = 100;
+                spec.limit = lim;
+            }
+            return spec;
         }
 
         // ===========================================================
@@ -233,6 +305,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             "grace", "寬限",
             "penalty", "扣血",
             "penalty_interval", "扣血間隔",
+            "account", "帳戶", "帳號", "acct",
+            "limit", "筆數", "近期",
         };
 
         static string ExtractValue(string content, string[] keyAliases, bool greedy = false)

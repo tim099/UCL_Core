@@ -188,6 +188,38 @@ else:
     _walked = _find_git_root_by_walk(Path(__file__))
     GIT_ROOT = _walked if _walked else Path(__file__).resolve().parents[2]
 QUEUE_DIR = GIT_ROOT / "AgentCommands"
+
+# agent-command-pipeline-parallelize T05: per-agent queue 子目錄
+# 物理意義: --agent-id <X> 帶進來 → queue/trigger 寫進 queues/queue-<X>.json 跟 queues/pending-<X>.trigger
+# null → legacy default 路徑 (queue.json + pending.trigger) 不變 (backward compat)
+_AGENT_ID: str | None = None   # set by main() argparse
+
+def set_agent_id(agent_id: str | None) -> None:
+    global _AGENT_ID
+    _AGENT_ID = agent_id if agent_id else None
+
+def queue_path() -> Path:
+    if _AGENT_ID:
+        return QUEUE_DIR / "queues" / f"queue-{_AGENT_ID}.json"
+    return QUEUE_DIR / "queue.json"
+
+def trigger_path() -> Path:
+    if _AGENT_ID:
+        return QUEUE_DIR / "queues" / f"pending-{_AGENT_ID}.trigger"
+    return QUEUE_DIR / "pending.trigger"
+
+def running_path() -> Path:
+    if _AGENT_ID:
+        return QUEUE_DIR / "queues" / f"pending-{_AGENT_ID}.trigger.running"
+    return QUEUE_DIR / "pending.trigger.running"
+
+def queue_dir_for_writing() -> Path:
+    """寫入 queue/trigger 前 mkdir 用的對應 dir (default = QUEUE_DIR, agent-mode = queues/)."""
+    if _AGENT_ID:
+        return QUEUE_DIR / "queues"
+    return QUEUE_DIR
+
+# Legacy module-level constants — kept for any external import; dynamic versions above are canonical.
 QUEUE_PATH = QUEUE_DIR / "queue.json"
 TRIGGER_PATH = QUEUE_DIR / "pending.trigger"
 RUNNING_PATH = QUEUE_DIR / "pending.trigger.running"
@@ -229,10 +261,10 @@ DEFAULT_RUN_TIMEOUT = 120    # wait 階段整體超時
 # ===========================================================
 
 def trigger_state() -> str:
-    """回傳 'running' / 'pending' / 'idle'。"""
-    if RUNNING_PATH.exists():
+    """回傳 'running' / 'pending' / 'idle' (dynamic per --agent-id)."""
+    if running_path().exists():
         return "running"
-    if TRIGGER_PATH.exists():
+    if trigger_path().exists():
         return "pending"
     return "idle"
 
@@ -266,19 +298,19 @@ def ensure_idle(timeout_sec: float = DEFAULT_ACK_TIMEOUT,
         f"[run_cmd] Previous batch still '{state}' after {timeout_sec:.0f}s.\n"
         f"  - Check Unity Editor is open with UCL_AgentCommandWatcher enabled.\n"
         f"  - If Editor crashed or watcher is off, manually delete:\n"
-        f"      {TRIGGER_PATH}\n"
-        f"      {RUNNING_PATH}"
+        f"      {trigger_path()}\n"
+        f"      {running_path()}"
     )
 
 
 def write_trigger(note: str) -> None:
-    """寫一個 pending.trigger（內含 timestamp + note 給 debug 用）。"""
-    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    """寫一個 pending.trigger（內含 timestamp + note 給 debug 用; dynamic per --agent-id）。"""
+    queue_dir_for_writing().mkdir(parents=True, exist_ok=True)
     body = {
         "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "submittedBy": note,
     }
-    with open(TRIGGER_PATH, "w", encoding="utf-8") as f:
+    with open(trigger_path(), "w", encoding="utf-8") as f:
         json.dump(body, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
@@ -288,11 +320,12 @@ def write_trigger(note: str) -> None:
 # ===========================================================
 
 def load_queue() -> dict:
-    """讀取 queue.json；不存在或損毀就回空骨架。"""
-    if not QUEUE_PATH.exists():
+    """讀取 queue.json (dynamic per --agent-id)；不存在或損毀就回空骨架。"""
+    qp = queue_path()
+    if not qp.exists():
         return {"Commands": []}
     try:
-        with open(QUEUE_PATH, "r", encoding="utf-8") as f:
+        with open(qp, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict) or "Commands" not in data:
             return {"Commands": []}
@@ -303,8 +336,8 @@ def load_queue() -> dict:
 
 
 def save_queue(data: dict) -> None:
-    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
-    with open(QUEUE_PATH, "w", encoding="utf-8") as f:
+    queue_dir_for_writing().mkdir(parents=True, exist_ok=True)
+    with open(queue_path(), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
@@ -432,7 +465,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
 
     print(f"Submitted: {cmd_id}")
     print(f"  Type={args.cmd_type}, Mode={args.mode}, Args={arg_pairs}")
-    print(f"  Trigger written → {TRIGGER_PATH.name}")
+    print(f"  Trigger written → {trigger_path().name}")
     return 0
 
 
@@ -577,7 +610,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     write_trigger(note=f"run_cmd.py run {args.cmd_type}")
     print(f"Submitted: {cmd_id}")
     print(f"  Type={args.cmd_type}, Mode={args.mode}, Args={arg_pairs}")
-    print(f"  Trigger written → {TRIGGER_PATH.name}")
+    print(f"  Trigger written → {trigger_path().name}")
     print(f"  → Auto-Watcher should pick it up within ~1s. "
           f"If not: check Unity Editor is open and Watcher is enabled.")
 
@@ -1134,7 +1167,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     queue = load_queue()
     cmds = queue.get("Commands", [])
     print(f"Trigger state: {trigger_state()}")
-    print(f"Queue path:    {QUEUE_PATH}")
+    print(f"Queue path:    {queue_path()}")
     print()
     if not cmds:
         print("(queue is empty)")
@@ -1206,6 +1239,13 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    # agent-command-pipeline-parallelize T05: --agent-id 切 per-agent queue/trigger
+    # 物理意義: 有帶 → 寫 AgentCommands/queues/queue-<X>.json + pending-<X>.trigger
+    #          沒帶 → legacy AgentCommands/queue.json + pending.trigger (backward compat)
+    # 用途: 多 agent 並行 (Claude/Antigravity/Gemini/Zeta) 各自獨立 queue, 互不阻塞
+    parser.add_argument("--agent-id", default=None,
+                        help="Per-agent queue isolation. 帶值 → 走 queues/queue-<X>.json + pending-<X>.trigger; "
+                             "沒帶 → 走 legacy queue.json (default fallback, 跟舊 caller 完全相容)")
     sub = parser.add_subparsers(dest="action", required=True)
 
     # submit
@@ -1267,6 +1307,8 @@ def main() -> int:
     p_cat.set_defaults(func=cmd_catalog)
 
     args = parser.parse_args()
+    # 設 global _AGENT_ID 讓 queue_path/trigger_path 等函式拿 dynamic value
+    set_agent_id(getattr(args, "agent_id", None))
     return args.func(args)
 
 

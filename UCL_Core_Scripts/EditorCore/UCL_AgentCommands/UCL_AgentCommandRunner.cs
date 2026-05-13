@@ -33,11 +33,23 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// </summary>
     public static class UCL_AgentCommandRunner
     {
-        /// <summary>是否正在執行（防止重複觸發）。</summary>
-        static bool s_Running = false;
+        // 區塊職責：per-agent running flag (agent-command-pipeline-parallelize T04)
+        // 物理意義：multi-queue 後每 agent 有自己的 running state, default queue (agentId=null) key=""
+        //          各自互不阻塞 — Zeta 卡死不影響 Claude / Gemini
+        // 數值影響：Watcher 看單一 agentId 的 IsRunning 決定是否重入該 agent's Runner
+        static readonly System.Collections.Generic.HashSet<string> s_RunningAgents = new System.Collections.Generic.HashSet<string>();
+        static readonly object s_RunningLock = new object();
 
-        /// <summary>對外查詢：runner 是否正忙著跑 batch。Watcher 用此避免重入。</summary>
-        public static bool IsRunning => s_Running;
+        static string NormAgent(string agentId) => agentId ?? "";
+
+        /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
+        public static bool IsRunning => IsRunningForAgent(null);
+
+        /// <summary>對外查詢：runner 是否正忙著跑某 agent 的 queue (agentId=null → default).</summary>
+        public static bool IsRunningForAgent(string agentId)
+        {
+            lock (s_RunningLock) return s_RunningAgents.Contains(NormAgent(agentId));
+        }
 
         // ===========================================================
         // Menu Items（Tools/UCL/Agent Commands/）
@@ -46,7 +58,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         [MenuItem("Tools/UCL/Agent Commands/Run Pending Commands", priority = 100)]
         public static void Menu_RunPending()
         {
-            if (s_Running)
+            if (IsRunningForAgent(null))
             {
                 Debug.LogWarning("[UCL_AgentCmd] Already running — ignored.");
                 return;
@@ -97,26 +109,37 @@ namespace UCL.Core.EditorLib.AgentCommands
         // Async runner
         // ===========================================================
 
-        /// <summary>對外 API — 非阻塞執行 pending commands。</summary>
-        public static async UniTask RunAsync(CancellationToken token)
+        /// <summary>對外 API — 非阻塞執行 default queue pending commands (legacy)。</summary>
+        public static UniTask RunAsync(CancellationToken token)
         {
-            if (s_Running)
+            return RunAsync(null, token);
+        }
+
+        /// <summary>對外 API — 非阻塞執行 per-agent queue pending commands (agent-command-pipeline-parallelize T04).</summary>
+        public static async UniTask RunAsync(string agentId, CancellationToken token)
+        {
+            string norm = NormAgent(agentId);
+            lock (s_RunningLock)
             {
-                Debug.LogWarning("[UCL_AgentCmd] Already running — ignored.");
-                return;
+                if (s_RunningAgents.Contains(norm))
+                {
+                    Debug.LogWarning($"[UCL_AgentCmd] Already running for agentId='{norm}' — ignored.");
+                    return;
+                }
+                s_RunningAgents.Add(norm);
             }
-            s_Running = true;
+            string labelTag = string.IsNullOrEmpty(agentId) ? "default" : agentId;
             try
             {
-                var data = UCL_AgentCommandQueue.Load();
+                var data = UCL_AgentCommandQueue.Load(agentId);
                 int total = data.Commands?.Count ?? 0;
                 if (total == 0)
                 {
-                    Debug.Log($"[UCL_AgentCmd] queue.json is empty (path: {UCL_AgentCommandQueue.GetQueuePath()})");
+                    Debug.Log($"[UCL_AgentCmd:{labelTag}] queue is empty (path: {UCL_AgentCommandQueue.GetQueuePath(agentId)})");
                     return;
                 }
 
-                Debug.Log($"[UCL_AgentCmd] Loaded {total} command(s). Waiting for UCL_ModuleService...");
+                Debug.Log($"[UCL_AgentCmd:{labelTag}] Loaded {total} command(s). Waiting for UCL_ModuleService...");
 
                 // ★ 必做：先等模組系統就緒（WaitUntilInitialized 會自動觸發 Ins → Init → InitAsync）
                 try
@@ -204,17 +227,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                 }
 
                 data.Commands = commands;
-                UCL_AgentCommandQueue.Save(data);
-                Debug.Log($"[UCL_AgentCmd] Done. {succeeded} succeeded / {failed} failed / {removed} OneShot removed after success.");
+                UCL_AgentCommandQueue.Save(data, agentId);
+                Debug.Log($"[UCL_AgentCmd:{labelTag}] Done. {succeeded} succeeded / {failed} failed / {removed} OneShot removed after success.");
             }
             finally
             {
-                // 區塊職責：無論成功 / 失敗 / 例外都要清掉 trigger 檔
+                // 區塊職責：無論成功 / 失敗 / 例外都要清掉 trigger 檔 (per-agent)
                 // 物理意義：pending.trigger.running 是 Python 端「Editor 是否還在執行」的判定依據；
                 //          殘留會導致下一次 Python ensure_idle() 永遠等不到 idle，整個流程鎖死。
-                // 數值影響：刪除 .running（與保險用的 .trigger）→ 狀態回到 idle，外部可繼續 submit。
-                UCL_AgentCommandTrigger.Clear();
-                s_Running = false;
+                // 數值影響：刪除 .running（與保險用的 .trigger）→ 該 agent 狀態回 idle，別 agent 不受影響.
+                UCL_AgentCommandTrigger.Clear(agentId);
+                lock (s_RunningLock) s_RunningAgents.Remove(norm);
             }
         }
     }

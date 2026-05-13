@@ -98,8 +98,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
 
         // 區塊職責：每幀檢查 trigger 檔，節流到 1Hz
-        // 物理意義：把昂貴的 IO（File.Exists）控制在每秒一次，不讓 Editor update 主迴圈被拖慢
-        // 數值影響：偵測延遲 < CheckIntervalSec；對 Python 端「submit → 執行」整體耗時影響可忽略
+        // 物理意義：掃 default trigger + per-agent triggers (agent-command-pipeline-parallelize T03)
+        //          各 agent 獨立 dispatch 可並行 (Runner 端 per-agent IsRunning flag 防同 agent 重入)
+        // 數值影響：偵測延遲 < CheckIntervalSec；多 trigger 同時被偵測會並行送 Runner.RunAsync(agentId)
         static void OnEditorUpdate()
         {
             if (!Enabled) return;
@@ -110,29 +111,37 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             try
             {
-                // 已在執行 → 等下輪（s_Running 是 Runner 的內部旗標，這裡靠 Trigger.RunningExists 間接判定）
-                if (UCL_AgentCommandTrigger.RunningExists()) return;
-
-                // 沒 pending → 沒事
-                if (!UCL_AgentCommandTrigger.PendingExists()) return;
-
-                // 嘗試接手
-                if (!UCL_AgentCommandTrigger.MarkRunning())
+                // (1) 掃 default trigger (legacy queue.json)
+                TryDispatchAgent(null);
+                // (2) 掃 per-agent triggers — scan queues/queue-*.json 列表的 agentIds
+                foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())
                 {
-                    // MarkRunning 失敗（被搶走 / IO 異常）→ 不觸發，下輪再試
-                    return;
+                    TryDispatchAgent(agentId);
                 }
-
-                s_LastTriggerAt = DateTime.Now;
-                Debug.Log($"[UCL_AgentCmdWatcher] Trigger detected at {s_LastTriggerAt:O} → invoking Runner.");
-
-                // 觸發 Runner（async；finally 會 Trigger.Clear()）
-                UCL_AgentCommandRunner.Menu_RunPending();
             }
             catch (Exception e)
             {
                 Debug.LogError($"[UCL_AgentCmdWatcher] OnEditorUpdate error: {e}");
             }
+        }
+
+        // 區塊職責：dispatch 單一 agent's pending → Runner
+        // 物理意義：per-agent 獨立檢查 + dispatch, Zeta 卡死不影響 Claude 等
+        // 數值影響：MarkRunning 成功 → Runner.RunAsync(agentId) async 跑; finally Trigger.Clear(agentId).
+        static void TryDispatchAgent(string agentId)
+        {
+            // 該 agent 已在 running → 跳過
+            if (UCL_AgentCommandTrigger.RunningExists(agentId)) return;
+            // 沒 pending → 沒事
+            if (!UCL_AgentCommandTrigger.PendingExists(agentId)) return;
+            // 嘗試接手 (atomic File.Move pending → running)
+            if (!UCL_AgentCommandTrigger.MarkRunning(agentId)) return;
+
+            s_LastTriggerAt = DateTime.Now;
+            string tag = string.IsNullOrEmpty(agentId) ? "default" : agentId;
+            Debug.Log($"[UCL_AgentCmdWatcher] Trigger detected for '{tag}' at {s_LastTriggerAt:O} → invoking Runner.");
+            // 觸發 Runner（async；finally 會 Trigger.Clear(agentId)）
+            UCL_AgentCommandRunner.RunAsync(agentId, default).Forget();
         }
     }
 }

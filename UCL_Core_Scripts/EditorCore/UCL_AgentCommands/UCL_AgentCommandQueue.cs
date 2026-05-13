@@ -27,6 +27,10 @@ namespace UCL.Core.EditorLib.AgentCommands
     {
         public const string QueueDirRelative = "AgentCommands";
         public const string QueueFileName = "queue.json";
+        // 區塊職責：multi-queue 子資料夾名稱 (agent-command-pipeline-parallelize T02)
+        // 物理意義：per-agent queue 路徑樣板：<AgentCommandsDir>/queues/queue-<agentId>.json
+        //          legacy default queue 仍在 <AgentCommandsDir>/queue.json 不動 (backward compat).
+        public const string QueuesSubdir = "queues";
 
         // 區塊職責：lock-file 機制使用的兩個 trigger 檔名
         // 物理意義：
@@ -36,41 +40,69 @@ namespace UCL.Core.EditorLib.AgentCommands
         public const string TriggerFileName = "pending.trigger";
         public const string RunningTriggerFileName = "pending.trigger.running";
 
-        /// <summary>取得 queue.json 的絕對路徑（不保證檔案存在）。repo root 由 <see cref="UCL_RepoPath"/> 解析。</summary>
-        public static string GetQueuePath()
+        /// <summary>
+        /// 取得 queue 檔絕對路徑。
+        /// agentId=null → legacy default <c>AgentCommands/queue.json</c>。
+        /// agentId 非 null → per-agent <c>AgentCommands/queues/queue-&lt;agentId&gt;.json</c>。
+        /// </summary>
+        public static string GetQueuePath(string agentId = null)
         {
-            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueueFileName);
+            if (string.IsNullOrEmpty(agentId))
+                return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueueFileName);
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, $"queue-{agentId}.json");
         }
 
-        /// <summary>取得 AgentCommands 資料夾的絕對路徑。</summary>
-        public static string GetQueueDir()
+        /// <summary>取得 AgentCommands 資料夾的絕對路徑 (或 per-agent queues/ 子資料夾)。</summary>
+        public static string GetQueueDir(string agentId = null)
         {
-            return UCL_RepoPath.AgentCommandsDir;
+            if (string.IsNullOrEmpty(agentId))
+                return UCL_RepoPath.AgentCommandsDir;
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir);
         }
 
-        /// <summary>取得 pending.trigger 的絕對路徑（外部寫入此檔以請求 Editor 執行 queue）。</summary>
-        public static string GetTriggerPath()
+        /// <summary>取得 pending trigger 路徑。agentId null → legacy default; 非 null → queues/pending-&lt;agent&gt;.trigger.</summary>
+        public static string GetTriggerPath(string agentId = null)
         {
-            return Path.Combine(GetQueueDir(), TriggerFileName);
+            if (string.IsNullOrEmpty(agentId))
+                return Path.Combine(UCL_RepoPath.AgentCommandsDir, TriggerFileName);
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, $"pending-{agentId}.trigger");
         }
 
-        /// <summary>取得 pending.trigger.running 的絕對路徑（Editor 接手後 trigger 會被改名為此）。</summary>
-        public static string GetRunningTriggerPath()
+        /// <summary>取得 running trigger 路徑。對應 GetTriggerPath()。</summary>
+        public static string GetRunningTriggerPath(string agentId = null)
         {
-            return Path.Combine(GetQueueDir(), RunningTriggerFileName);
+            if (string.IsNullOrEmpty(agentId))
+                return Path.Combine(UCL_RepoPath.AgentCommandsDir, RunningTriggerFileName);
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, $"pending-{agentId}.trigger.running");
         }
 
-        /// <summary>確保 AgentCommands 資料夾存在。</summary>
-        public static void EnsureDir()
+        /// <summary>確保資料夾存在 (default AgentCommands/ 或 per-agent queues/).</summary>
+        public static void EnsureDir(string agentId = null)
         {
-            string dir = GetQueueDir();
+            string dir = GetQueueDir(agentId);
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
         }
 
-        /// <summary>讀取 queue.json — 不存在或解析失敗時回傳空 queue。</summary>
-        public static UCL_AgentCommandQueueData Load()
+        /// <summary>列舉現存 per-agent queue 的 agentId 清單 (scan queues/queue-*.json)。Watcher 用。</summary>
+        public static System.Collections.Generic.List<string> ListAgentIds()
         {
-            string path = GetQueuePath();
+            var list = new System.Collections.Generic.List<string>();
+            string queuesDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir);
+            if (!Directory.Exists(queuesDir)) return list;
+            foreach (var f in Directory.GetFiles(queuesDir, "queue-*.json"))
+            {
+                string name = Path.GetFileNameWithoutExtension(f);
+                // queue-<agentId> → agentId
+                if (name.StartsWith("queue-"))
+                    list.Add(name.Substring("queue-".Length));
+            }
+            return list;
+        }
+
+        /// <summary>讀取 queue.json — 不存在或解析失敗時回傳空 queue。</summary>
+        public static UCL_AgentCommandQueueData Load(string agentId = null)
+        {
+            string path = GetQueuePath(agentId);
             if (!File.Exists(path))
             {
                 return new UCL_AgentCommandQueueData();
@@ -89,10 +121,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         /// <summary>寫入 queue.json（會覆寫整個檔案）。</summary>
-        public static void Save(UCL_AgentCommandQueueData data)
+        public static void Save(UCL_AgentCommandQueueData data, string agentId = null)
         {
-            EnsureDir();
-            string path = GetQueuePath();
+            EnsureDir(agentId);
+            string path = GetQueuePath(agentId);
             try
             {
                 string json = SerializeJson(data);

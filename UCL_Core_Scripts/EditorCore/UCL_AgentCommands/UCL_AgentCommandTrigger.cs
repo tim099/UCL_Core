@@ -34,25 +34,25 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 狀態查詢
         // ===========================================================
 
-        /// <summary>檢查 pending.trigger 是否存在。</summary>
-        public static bool PendingExists()
+        /// <summary>檢查 pending.trigger 是否存在 (agentId=null → default trigger)。</summary>
+        public static bool PendingExists(string agentId = null)
         {
-            try { return File.Exists(UCL_AgentCommandQueue.GetTriggerPath()); }
+            try { return File.Exists(UCL_AgentCommandQueue.GetTriggerPath(agentId)); }
             catch { return false; }
         }
 
-        /// <summary>檢查 pending.trigger.running 是否存在。</summary>
-        public static bool RunningExists()
+        /// <summary>檢查 pending.trigger.running 是否存在 (agentId=null → default).</summary>
+        public static bool RunningExists(string agentId = null)
         {
-            try { return File.Exists(UCL_AgentCommandQueue.GetRunningTriggerPath()); }
+            try { return File.Exists(UCL_AgentCommandQueue.GetRunningTriggerPath(agentId)); }
             catch { return false; }
         }
 
         /// <summary>取得當前狀態（Running 優先於 Pending — 後者只是輸入檔，前者代表已被接手）。</summary>
-        public static TriggerState GetState()
+        public static TriggerState GetState(string agentId = null)
         {
-            if (RunningExists()) return TriggerState.Running;
-            if (PendingExists()) return TriggerState.Pending;
+            if (RunningExists(agentId)) return TriggerState.Running;
+            if (PendingExists(agentId)) return TriggerState.Pending;
             return TriggerState.Idle;
         }
 
@@ -64,10 +64,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// Editor Watcher 偵測到 pending.trigger 後呼叫：將其改名為 .running 表示「已接手」。
         /// </summary>
         /// <returns>true = 成功接手；false = trigger 不在或被搶先（例如另一個 Editor 同時跑）。</returns>
-        public static bool MarkRunning()
+        public static bool MarkRunning(string agentId = null)
         {
-            string pendingPath = UCL_AgentCommandQueue.GetTriggerPath();
-            string runningPath = UCL_AgentCommandQueue.GetRunningTriggerPath();
+            string pendingPath = UCL_AgentCommandQueue.GetTriggerPath(agentId);
+            string runningPath = UCL_AgentCommandQueue.GetRunningTriggerPath(agentId);
             try
             {
                 if (!File.Exists(pendingPath)) return false;
@@ -91,20 +91,20 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// Runner finally 階段呼叫：刪除 pending.trigger.running，回到 idle。
         /// 同時也刪除可能殘留的 pending.trigger（保險，正常流程不會殘留）。
         /// </summary>
-        public static void Clear()
+        public static void Clear(string agentId = null)
         {
-            TryDelete(UCL_AgentCommandQueue.GetRunningTriggerPath());
-            TryDelete(UCL_AgentCommandQueue.GetTriggerPath());
+            TryDelete(UCL_AgentCommandQueue.GetRunningTriggerPath(agentId));
+            TryDelete(UCL_AgentCommandQueue.GetTriggerPath(agentId));
         }
 
         /// <summary>
         /// 由外部（測試 / 手動）建立 pending.trigger。
         /// 正常情況下由 Python wrapper 寫入；此 API 只是給 Editor 端「按按鈕模擬」或 unit test 用。
         /// </summary>
-        public static void CreatePending(string note = null)
+        public static void CreatePending(string note = null, string agentId = null)
         {
-            UCL_AgentCommandQueue.EnsureDir();
-            string path = UCL_AgentCommandQueue.GetTriggerPath();
+            UCL_AgentCommandQueue.EnsureDir(agentId);
+            string path = UCL_AgentCommandQueue.GetTriggerPath(agentId);
             // 把內嵌字面值先抽到變數，避免 C# 9（Unity 6 預設）對 $"...{x ?? "literal"}..." 這種 nested string literal 的限制
             string source = string.IsNullOrEmpty(note) ? "editor-manual" : note;
             string ts = DateTime.UtcNow.ToString("o");

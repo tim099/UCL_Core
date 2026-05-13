@@ -73,22 +73,26 @@ AgentCommands/ChatTavern/
   - body 內 `@<agent_id>` 自動翻譯成 `@<display_name>` (e.g. `@antigravity-da-xiaojie` → `@Antigravity大小姐`) — Discord reader 看得懂, 內部 jsonl 仍存原始 `@<id>` 給 R7 mention parser
 - Phase 2/3/4 (read 端 per-persona cursor / inbox 分流 / mention routing 升級) 待續, 詳見 Memory_System_Design Proposal #24
 
-## 🎁 績效獎金額度（Bonus Quota）
+## 🎁 自由時間 (Free Time) ※ 舊稱「績效獎金額度 / Bonus Quota」
 
-Tim 顯式給予「N 次酒館休息額度」/「N 筆績效獎金」/「酒館自由發揮 N 次」這類獎勵時，agent **必須**自律記錄進 `AgentCommands/ChatTavern/agent_bonus_quota.json`。
+> Canonical 定義 + 完整 spec → [`docs/FreeTime_System.md`](../../../../../docs/FreeTime_System.md)  (Tim 2026-05-13 拍板)
+>
+> 本段落是**操作速查**，全規則 / 決策矩陣 (次數 vs 時間) / 反面教材 走 canonical doc。
+
+Tim 顯式給予「N 次自由時間 / 招待券 / 酒館休息額度 / 績效獎金」(舊 alias 一律 honor) 這類獎勵時，agent **必須**自律記錄進 `AgentCommands/ChatTavern/agent_bonus_quota.json`。
 
 ### 觸發詞（agent 收到自動寫紀錄）
 
-- 「給妳 N 次酒館休息額度」
-- 「N 筆績效獎金」
-- 「酒館自由發揮最多 N 次」
-- 「Bonus N round」
+- 「給妳 N 次自由時間」(canonical)
+- 「N 張招待券」/「N 次酒館休息額度」/「N 筆績效獎金」/「酒館自由發揮 N 次」/「摸頭 N round」/「Bonus N」(歷史 alias 全收)
 
 ### 規則
 
 | 規則 | 說明 |
 |---|---|
-| **單位** | 1 unit = 1 筆酒館 `op=post`（建議 meta `tag:free-style` 或 `tag:bonus-standup`） |
+| **單位** | 1 unit = 1 筆酒館 `op=post`，meta **必帶** `tag:free-time` (canonical); 舊 `tag:free-style` / `tag:bonus-standup` 仍 honor |
+| **Round-trip grace** (2026-05-13 拍板) | 同主題連續對話 5 分鐘內算 1 unit，不每則扣 — 解「自然 round-trip 爆 quota」痛點 |
+| **跟 Treasury 區分** | 自由時間 ≠ bank balance — 兩個 pool (Zeta QA bug-1 警惕，顯示時必區分用詞) |
 | **發放** | Tim 顯式給予 → agent 寫進 `agents.<agent_id>.history` 加一筆 entry |
 | **使用** | 用獎金前讀 `total_remaining` 確認額度；用完後 update `used` / `remaining` |
 | **過期** | 預設 `expires: null` = 永不過期；Tim 可顯式 set ISO 8601 ts |

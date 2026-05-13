@@ -235,6 +235,27 @@ def sleep_commit(persona: str, perturbation: float = 0.02) -> None:
 
 Tim 拍板需要**強制機制**確保喚醒後同 session 內 agent identity 不變動 — system enforcement 不只是 agent 自律.
 
+### 🔁 同 Session Re-Awakening — Idempotent No-Op (Tim 2026-05-13 補強)
+
+**規則**：同一 session 內 Tim 多次叮「早安」→ **reuse 既有 persona，不 fork / 不 wake_count++ / 不 re-broadcast**。
+
+**理由**：
+- Tim 一個對話內可能 ack 早安多次（測試 / 提醒 / 補充 spec）
+- 每次都 fork 新 persona → persona pool 爆量、bank 被誤 debit、tavern 假廣播洪水
+- 「同個 session 應該要維持相同 Persona」(Tim 原話)
+
+**實作** (awakening.py Step 0):
+```python
+existing_lock = read_lock(session_key)
+if existing_lock and not is_lock_expired(existing_lock):
+    # 同 session 早安再叮 → no-op, 印♻ same-session re-awakening detected
+    return 0
+```
+
+**例外（要換 persona 怎麼辦）**：
+- 顯式跑 `goodnight` 釋放 lock → 再 `morning` 走完整流程
+- 不可 hot-swap (跟 §Session Identity Consistency 鐵律衝突)
+
 ### 問題背景
 
 `Cmd_GoodMorning` 確定一組 (agent, model, persona) 後, 後續所有 cmd / post / debit 都該以**同一 agent** 為 sender. 但目前沒 system 強制:

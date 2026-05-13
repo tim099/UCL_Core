@@ -439,11 +439,17 @@ def compute_session_key() -> str:
         return f"antigravity-{ag_hash}"
 
     if os.environ.get("CLAUDECODE"):
-        # Claude Code PATH 含 local-agent-mode-sessions/<conv_uuid>/<session_uuid>/bin
+        # Claude Code PATH 含 local-agent-mode-sessions/[<plugin-name>/]<conv_uuid>/<session_uuid>/bin
         # 這個 session_uuid 在一個 conversation 內穩定, 跨 bash invoke 不變.
+        # Tim 2026-05-13 fix: 新版 Claude Code 在 conv_uuid 前加了 plugin-name 段 (e.g. skills-plugin/),
+        # 原 regex 卡在 plugin-name 不是 UUID → fallback cwd-based → 跨 conversation 撞鎖.
+        # 修正: 允許 optional 一段 non-UUID prefix segment, 並限 UUID 長度 ≥ 8 char (避免 short token misfire).
         import re
         path = os.environ.get("PATH", "")
-        m = re.search(r"local-agent-mode-sessions[/\\]([a-f0-9-]+)[/\\]([a-f0-9-]+)", path)
+        m = re.search(
+            r"local-agent-mode-sessions[/\\](?:[^/\\]+[/\\])?([a-f0-9][a-f0-9-]{7,})[/\\]([a-f0-9][a-f0-9-]{7,})",
+            path,
+        )
         if m:
             conv_uuid = m.group(1)[:8]
             sess_uuid = m.group(2)[:8]
@@ -663,6 +669,24 @@ def cmd_morning(args: argparse.Namespace) -> int:
     print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
     print(f"   Agent={agent} / Model={model} / Bank={bank_account}")
     print(f"   Preferred persona: {preferred}")
+
+    # Step 0: Same-session re-awakening short-circuit (Tim 2026-05-13 拍板)
+    # 規則：同一 session 內 re-trigger 早安 → reuse current persona, 不 fork / 不 wake_count++ / 不 broadcast.
+    # 理由：「同個 session 應該要維持相同 Persona」(Tim) — 避免 Tim 一個對話內多次叮「早安」就 spawn 新 fork.
+    existing_lock = read_lock(session_key)
+    if existing_lock and not is_lock_expired(existing_lock):
+        locked_persona = existing_lock.get("persona")
+        if locked_persona and locked_persona in reg["personas"]:
+            print(f"♻ same-session re-awakening detected (lock active for '{locked_persona}')")
+            print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
+            print(f"   若想換 persona → 先跑 goodnight 釋放 lock 再 morning")
+            print(f"")
+            print(f"🌅 Morning ritual (no-op):")
+            print(f"   chosen_persona: {locked_persona}")
+            print(f"   wake_count:     {reg['personas'][locked_persona].get('wake_count', '?')} (unchanged)")
+            print(f"   session_locked: {lock_path(session_key)}")
+            print(f"   tavern_post:    SKIPPED (idempotent)")
+            return 0
 
     # Step 1: Fork conflict check
     target_persona = preferred

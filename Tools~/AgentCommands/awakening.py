@@ -607,22 +607,39 @@ def fork_persona(reg: dict, source: str, target: str,
 
 
 # ─── Q3 80/20 random selection ──────────────────────────────────────────
+# Persona-level session history cap — 防 last_session_keys 無限長
+SESSION_KEYS_HISTORY_CAP = 10
+
+
 def select_persona(preferred: str, reg: dict, agent: str,
                    rng: random.Random | None = None,
-                   force_random: bool = False) -> tuple[str, str]:
+                   force_random: bool = False,
+                   session_key: str | None = None) -> tuple[str, str]:
     """
-    Q3 spec (Tim 2026-05-12 拍板):
+    Q3 spec (Tim 2026-05-12 拍板 + 2026-05-13 校正):
       - 不存在 → 100% create new (caller 處理 register)
-      - 存在 → 80% use preferred / 20% random override 到 same-agent 其他 persona
+      - 存在 + 同 session_key 之前醒過 → 100% honor preferred (skip random)
+      - 存在 + session_key 首次 → 80% use preferred / 20% random override 到 same-agent 其他 persona
+
+    Tim 2026-05-13 校正: random override 只在 session 初始化 apply, 同 session re-morning
+    不該被搶 — 解 conversation continuity 場景被亂選機制干涉的 attribution bug.
 
     回 (chosen_persona, decision_path) 其中 decision_path ∈
-      {"new", "preferred", "override"}
+      {"new", "preferred", "preferred-resumed", "override"}
     """
     rng = rng or random
     if preferred not in reg["personas"]:
         return preferred, "new"
 
-    # already exists — apply 20% override
+    # ── same-session re-morning detection ──
+    # 物理意義: 該 session_key 之前 morning 過此 persona → 已是 conversation 連續, 不該被亂選機制換
+    # 數值影響: schema 加 last_session_keys list (optional, 預設 []); session_key None 退回原 Q3
+    if session_key:
+        p = reg["personas"].get(preferred, {})
+        if session_key in p.get("last_session_keys", []):
+            return preferred, "preferred-resumed"
+
+    # first morning in this session — apply 80/20 override per Q3 spec
     if force_random or rng.random() < OVERRIDE_PROBABILITY:
         # 找 same-agent 其他 persona
         candidates = [
@@ -634,6 +651,25 @@ def select_persona(preferred: str, reg: dict, agent: str,
             return chosen, "override"
         # 沒其他 candidates → 退回 preferred
     return preferred, "preferred"
+
+
+def push_session_key_history(persona_dict: dict, session_key: str,
+                             cap: int = SESSION_KEYS_HISTORY_CAP) -> None:
+    """
+    區塊職責: append session_key 進 persona's last_session_keys (給下次 re-morning detect 用)
+    物理意義: 不重複 append; FIFO cap=10 防無限長; in-place mutate persona_dict
+    數值影響: cap exceeded → 砍最舊 (popleft); 不存在欄位則創建 []
+    """
+    if not session_key:
+        return
+    history = persona_dict.setdefault("last_session_keys", [])
+    if session_key in history:
+        # 已存在 — 移到最後 (recency bump)
+        history.remove(session_key)
+    history.append(session_key)
+    # cap FIFO
+    while len(history) > cap:
+        history.pop(0)
 
 
 # ─── Tavern post (走 TavernClient SDK) ──────────────────────────────────
@@ -756,10 +792,12 @@ def cmd_morning(args: argparse.Namespace) -> int:
             # Stale state — registry 說 online 但沒 lock = 上次 goodnight 沒走完 / spoof 殘留.
             print(f"♻ '{preferred}' registry=online 但無 lock (stale) — reclaim, 不 fork")
 
-    # Step 2: 80/20 random selection (skip 若剛 fork — fork 是 explicit conflict resolution)
-    # --strict-persona: 顯式給 --persona 時跳過 20% override (conversation continuity 場景)
-    #   ref Zeta 2026-05-13 task: human-layer conversation continuity 期望 persona 連續性,
-    #   不該被 80/20 random override 搶走 (per Q3 spec 預設 80/20 仍保留, strict 是 opt-in)
+    # Step 2: persona selection
+    # 邏輯優先序:
+    #   (a) fork_happened → explicit conflict resolution, honor target_persona
+    #   (b) --strict-persona flag → manual opt-in, skip random (留向後相容路徑)
+    #   (c) 預設 → select_persona 自動判 same-session re-morning (skip random) vs first time (apply 80/20)
+    # Tim 2026-05-13 校正: random override 只在 session 初始化 apply (per session_key history)
     if fork_happened:
         chosen, decision = target_persona, "fork"
         print(f"✓ using forked '{chosen}' (skip 80/20 — fork is explicit identity intent)")
@@ -768,7 +806,10 @@ def cmd_morning(args: argparse.Namespace) -> int:
         print(f"🔒 strict mode — honor explicit --persona '{chosen}' (skipped 80/20 random override)")
     else:
         chosen, decision = select_persona(target_persona, reg, agent,
-                                           force_random=args.force_random)
+                                           force_random=args.force_random,
+                                           session_key=session_key)
+        if decision == "preferred-resumed":
+            print(f"♻ same-session re-morning detected — honor '{chosen}' (skip 80/20, this session_key has woken this persona before)")
     if decision == "new":
         # 不存在 → register new persona (creating fresh)
         print(f"✨ creating new persona '{chosen}' (per Q2 implicit register)")
@@ -803,6 +844,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
     p["wake_count"] += 1
     p["status"] = "online"
     p["last_active"] = utcnow_iso()
+    # Tim 2026-05-13 校正: append session_key 進 persona history, 給下次 re-morning detect 用
+    push_session_key_history(p, session_key)
     save_registry(reg)
 
     # Step 4: write persona lock (Tim 2026-05-13 v2 — keyed by persona, session_key audit-only)

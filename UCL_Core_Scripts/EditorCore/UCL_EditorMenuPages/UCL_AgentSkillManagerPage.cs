@@ -383,7 +383,14 @@ namespace UCL.Core.EditorLib.Page
             }
             return list;
         }
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Doc"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                Application.OpenURL(UCL_URL.ResolveURL("ucl_core:Skills~/README.md"));
+            }
+        }
         // 區塊職責：對 selected skill names 算 aggregate SHA1，演算法必須跟
         //          install_skills.py 的 compute_source_hash() 一致：
         //            for skill in sorted(names):
@@ -633,11 +640,6 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_StatusDirty = true;
-                    }
-                    GUILayout.FlexibleSpace();
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Doc"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        Application.OpenURL(UCL_URL.ResolveURL("ucl_core:Skills~/README.md"));
                     }
                 }
             }

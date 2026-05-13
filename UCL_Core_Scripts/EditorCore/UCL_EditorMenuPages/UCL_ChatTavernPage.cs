@@ -6,6 +6,7 @@
 using System.Collections.Generic;
 using System.IO;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
+using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
@@ -19,7 +20,7 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md")]
     public class UCL_ChatTavernPage : UCL_CommonEditorPage
     {
-        public override string WindowName => "Chat Tavern";
+        public override string WindowName => UCL_CodeLocalize.Get("Tavern.Title");
 
         // opt-in 進 UCL_EditorMenuPage 的 Page 選擇器下拉 — 
         // 物理意義：已提升為 EditorMenu 外部主要按鈕，此處關閉以避免下拉選單重複出現
@@ -184,12 +185,12 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 RefreshAll();
             }
-            m_AutoPoll = GUILayout.Toggle(m_AutoPoll, "Auto-Poll", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-            if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            m_AutoPoll = GUILayout.Toggle(m_AutoPoll, UCL_CodeLocalize.Get("Tavern.Btn.AutoPoll"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+            if (GUILayout.Button(UCL_CodeLocalize.Get("Open Folder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_ChatTavernIO.EnsureTavernDir();
                 UnityEditor.EditorUtility.RevealInFinder(UCL_ChatTavernIO.GetTavernDir());
@@ -205,7 +206,7 @@ namespace UCL.Core.EditorLib.Page
             //          連點兩次也安全（cancel flag mtime 會推進 → 後續 wait 仍能用）。
             UpdateHandshakeActive();
             Color btnColor = m_HandshakeActive ? new Color(1f, 0.6f, 0.4f) : new Color(0.45f, 0.45f, 0.45f);
-            string btnLabel = m_HandshakeActive ? "🛑 中止握手" : "🛑 中止握手 (無)";
+            string btnLabel = m_HandshakeActive ? UCL_CodeLocalize.Get("Tavern.Btn.CancelHandshake") : UCL_CodeLocalize.Get("Tavern.Btn.CancelHandshakeNone");
             using (new EditorGUI.DisabledScope(!m_HandshakeActive))
             {
                 if (GUILayout.Button(btnLabel, UCL_GUIStyle.GetButtonStyle(btnColor), GUILayout.ExpandWidth(false)))
@@ -299,7 +300,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 if (!m_HandshakeActive)
                 {
-                    GUILayout.Label("🍺 酒保：沉睡中（沒進行中的 wait）", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Bartender.Asleep"), UCL_GUIStyle.LabelStyle);
                     GUILayout.FlexibleSpace();
                     return;
                 }
@@ -313,7 +314,7 @@ namespace UCL.Core.EditorLib.Page
                     if (elapsed < BartenderTriggerSec)
                     {
                         countdown = BartenderTriggerSec - elapsed;
-                        statusText = $"🍺 酒保：首杯倒數 {countdown:F0}s";
+                        statusText = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.FirstDrinkFmt"), countdown);
                     }
                     else
                     {
@@ -323,18 +324,18 @@ namespace UCL.Core.EditorLib.Page
                             : 0;
                         if (cooldownLeft <= 0)
                         {
-                            statusText = "🍺 酒保：隨時可插話";
+                            statusText = UCL_CodeLocalize.Get("Tavern.Bartender.Ready");
                         }
                         else
                         {
                             countdown = cooldownLeft;
-                            statusText = $"🍺 酒保：下杯倒數 {countdown:F0}s";
+                            statusText = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.NextDrinkFmt"), countdown);
                         }
                     }
                 }
                 else
                 {
-                    statusText = "🍺 酒保：握手活躍中（無 start 資料）";
+                    statusText = UCL_CodeLocalize.Get("Tavern.Bartender.ActiveNoStart");
                 }
 
                 GUILayout.Label(statusText, UCL_GUIStyle.LabelStyle);
@@ -342,9 +343,9 @@ namespace UCL.Core.EditorLib.Page
                 // 連喝計數
                 if (m_BartenderConsecutiveDrinks > 0)
                 {
-                    string drinkLabel = $"  已喝 {m_BartenderConsecutiveDrinks} 杯";
+                    string drinkLabel = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.DrunkFmt"), m_BartenderConsecutiveDrinks);
                     if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
-                        drinkLabel += " (達休息門檻)";
+                        drinkLabel += UCL_CodeLocalize.Get("Tavern.Bartender.RestHintSuffix");
                     var style = new GUIStyle(UCL_GUIStyle.LabelStyle);
                     if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
                         style.normal.textColor = new Color(1f, 0.5f, 0.3f);
@@ -356,7 +357,7 @@ namespace UCL.Core.EditorLib.Page
                 // 催促按鈕 — 寫 hurry flag，Python 偵測後 wait_start / cooldown 各 -30s
                 using (new EditorGUI.DisabledScope(countdown <= 0))
                 {
-                    if (GUILayout.Button("⏩ 催促酒保 -30s", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Btn.HurryBartender"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
                     {
                         UCL_ChatTavernIO.EnsureTavernDir();
                         string flagPath = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_hurry.flag");
@@ -480,7 +481,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.VerticalScope("box"))
                     {
-                        GUILayout.Label("請先選擇或建立一個房間。", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label(UCL_CodeLocalize.Get("Tavern.SelectRoomFirst"), UCL_GUIStyle.LabelStyle);
                     }
                     return;
                 }
@@ -506,7 +507,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope("box"))
                 {
-                    GUILayout.Label("🏛 Quest: 此房間尚無 events.jsonl（非 quest 房）。用 task_create 建第一個任務即會啟用。",
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.NoEvents"),
                         UCL_GUIStyle.LabelStyle);
                 }
                 return;
@@ -573,14 +574,14 @@ namespace UCL.Core.EditorLib.Page
                 // filter row
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Filter status:", UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.FilterStatus"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
                     string[] statusOpts = { "all", "ready", "claimed", "in_progress", "review", "done", "pending", "stale" };
                     int curIdx = System.Array.IndexOf(statusOpts, m_QuestStatusFilter);
                     if (curIdx < 0) curIdx = 0;
                     int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, statusOpts, m_PickerDic, "QuestStatusFilter", GUILayout.Width(120));
                     if (newIdx != curIdx) m_QuestStatusFilter = statusOpts[newIdx];
                     GUILayout.Space(8);
-                    bool by = GUILayout.Toggle(m_QuestFilterByMe, "只看我認領的", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    bool by = GUILayout.Toggle(m_QuestFilterByMe, UCL_CodeLocalize.Get("Tavern.Quest.OnlyMine"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
                     if (by != m_QuestFilterByMe) m_QuestFilterByMe = by;
                     GUILayout.FlexibleSpace();
                 }
@@ -607,7 +608,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else
                 {
-                    GUILayout.Label("(尚無 task；用 task_create 建第一個)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.NoTasks"), UCL_GUIStyle.LabelStyle);
                 }
                 GUILayout.EndScrollView();
             }
@@ -654,7 +655,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         m_QuestExpandedTaskId = expanded ? "" : st.id;
                     }
-                    GUILayout.Label(string.IsNullOrEmpty(st.title) ? "(no title)" : st.title,
+                    GUILayout.Label(string.IsNullOrEmpty(st.title) ? UCL_CodeLocalize.Get("Tavern.Quest.NoTitle") : st.title,
                         UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(120));
                     GUILayout.FlexibleSpace();
                     GUILayout.Label($"P:{st.priority}", UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
@@ -670,20 +671,20 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Space(2);
                 if (st.depends_on != null && st.depends_on.Count > 0)
                 {
-                    GUILayout.Label($"Depends on: {string.Join(", ", st.depends_on)}", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.DependsOnFmt"), string.Join(", ", st.depends_on)), UCL_GUIStyle.LabelStyle);
                 }
-                GUILayout.Label($"Created: {st.created_at}  ({st.age_days:F1}d ago)  reject_count={st.reject_count}",
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.CreatedFmt"), st.created_at, st.age_days, st.reject_count),
                     UCL_GUIStyle.LabelStyle);
                 if (!string.IsNullOrEmpty(st.lease_until))
-                    GUILayout.Label($"Lease until: {st.lease_until}" + (st.is_stale ? "  ⚠ STALE" : ""), UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.LeaseUntilFmt"), st.lease_until) + (st.is_stale ? UCL_CodeLocalize.Get("Tavern.Quest.StaleSuffix") : ""), UCL_GUIStyle.LabelStyle);
                 if (!string.IsNullOrEmpty(st.last_progress_summary))
-                    GUILayout.Label($"Last progress: {st.last_progress_summary}", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.LastProgressFmt"), st.last_progress_summary), UCL_GUIStyle.LabelStyle);
 
                 // spec 預覽 — 走內嵌 UCL_MarkdownViewerPage（不離開 Unity 視窗）
                 string specPath = UCL_ChatTavernQuestIO.GetTaskSpecPath(SelectedRoomId, st.id);
                 if (File.Exists(specPath))
                 {
-                    if (GUILayout.Button("📄 開啟 spec", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Quest.OpenSpec"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         OpenInMarkdownViewer(specPath);
                     }
@@ -691,7 +692,7 @@ namespace UCL.Core.EditorLib.Page
 
                 // timeline
                 GUILayout.Space(2);
-                GUILayout.Label("<b>Lifecycle Timeline:</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.LifecycleTitle"), UCL_GUIStyle.LabelStyle);
                 foreach (var ev in st.lifecycle)
                 {
                     string detail = "";
@@ -732,14 +733,14 @@ namespace UCL.Core.EditorLib.Page
                 case "pending":
                     if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache))
                         return $"task_claim task_id={s.id} claimer=<你>";
-                    return "等 deps 完成（pending blocked）";
+                    return UCL_CodeLocalize.Get("Tavern.Quest.Hint.Blocked");
                 case "claimed":
                 case "in_progress":
                     return $"task_progress / task_review_request / task_done task_id={s.id}";
                 case "review":
-                    return $"reviewer 動作：task_done 通過 / task_reject reason=...";
+                    return UCL_CodeLocalize.Get("Tavern.Quest.Hint.Review");
                 case "done":
-                    return $"task_reopen reason=... 可重開（找到問題時）";
+                    return UCL_CodeLocalize.Get("Tavern.Quest.Hint.Done");
                 default: return "";
             }
         }
@@ -762,8 +763,8 @@ namespace UCL.Core.EditorLib.Page
             if (entries == 0) return;
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label($"📬 你的 inbox ({SelectedIdentityId}) 有 {entries} 筆通知", UCL_GUIStyle.LabelStyle);
-                if (GUILayout.Button("📬 開啟 inbox", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Inbox.HintFmt"), SelectedIdentityId, entries), UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Inbox.OpenBtn"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     OpenInMarkdownViewer(inboxPath);
                 }
@@ -777,10 +778,10 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label("房間：", UCL_GUIStyle.LabelStyle, GUILayout.Width(50));
+                GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Field.Room"), UCL_GUIStyle.LabelStyle, GUILayout.Width(50));
                 if (m_RoomIds == null || m_RoomIds.Count == 0)
                 {
-                    GUILayout.Label("(尚無房間 — 跑 Cmd_SeedTavernRoomAssets 或下面 + 新房間)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Room.Empty"), UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
@@ -805,7 +806,7 @@ namespace UCL.Core.EditorLib.Page
                         RefreshMembers();
                     }
                 }
-                if (GUILayout.Button(m_ShowCreateRoom ? "− Cancel" : "+ 新房間", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(m_ShowCreateRoom ? UCL_CodeLocalize.Get("Tavern.Btn.CancelCreate") : UCL_CodeLocalize.Get("Tavern.Btn.NewRoom"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     m_PendingShowCreateRoom = !m_ShowCreateRoom;
                 }
@@ -818,9 +819,9 @@ namespace UCL.Core.EditorLib.Page
                     bool canAct = !string.IsNullOrEmpty(SelectedRoomId) && !string.IsNullOrEmpty(SelectedIdentityId);
                     bool isMember = canAct && m_MembersCache != null && m_MembersCache.member_ids.Contains(SelectedIdentityId);
 
-                    string btnText = !canAct ? "(選房間+身分後可加入/離開)"
-                                   : isMember ? $"離開「{SelectedRoomId}」"
-                                              : $"加入「{SelectedRoomId}」";
+                    string btnText = !canAct ? UCL_CodeLocalize.Get("Tavern.Room.NeedSelect")
+                                   : isMember ? string.Format(UCL_CodeLocalize.Get("Tavern.Btn.LeaveRoomFmt"), SelectedRoomId)
+                                              : string.Format(UCL_CodeLocalize.Get("Tavern.Btn.JoinRoomFmt"), SelectedRoomId);
                     var btnStyle = !canAct ? UCL_GUIStyle.ButtonStyle
                                  : isMember ? UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.4f))
                                             : UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 1f, 0.4f));
@@ -840,9 +841,9 @@ namespace UCL.Core.EditorLib.Page
                     // 顯示的是「曾經 join 過的累計成員」，不代表現在活躍。
                     // 真實活躍偵測需 last_active_at（Phase B；見 Quest_Workflow.md §12.6）
                     string memberText = m_MembersCache != null
-                        ? $"登錄 {m_MembersCache.member_ids.Count} 人"
-                        : "(尚未進房)";
-                    var memberContent = new GUIContent(memberText, "曾經 join 過的累計人數，不代表當前活躍\n（agent 是 turn-based，turn 結束 ≠ 離房）");
+                        ? string.Format(UCL_CodeLocalize.Get("Tavern.Room.MemberCountFmt"), m_MembersCache.member_ids.Count)
+                        : UCL_CodeLocalize.Get("Tavern.Room.NotJoined");
+                    var memberContent = new GUIContent(memberText, UCL_CodeLocalize.Get("Tavern.Room.MemberTooltip"));
                     GUILayout.Label(memberContent, UCL_GUIStyle.LabelStyle);
                 }
                 GUILayout.FlexibleSpace();
@@ -855,11 +856,11 @@ namespace UCL.Core.EditorLib.Page
                     m_NewRoomId = LabeledTextField("id", m_NewRoomId, 60);
                     m_NewRoomName = LabeledTextField("name", m_NewRoomName, 60);
                     m_NewRoomDesc = LabeledTextField("desc", m_NewRoomDesc, 60);
-                    if (GUILayout.Button("Create", UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Btn.Create"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
                     {
                         if (string.IsNullOrEmpty(m_NewRoomId))
                         {
-                            Debug.LogError("Room id 不能為空");
+                            Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.RoomIdEmpty"));
                         }
                         else
                         {
@@ -891,10 +892,10 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label("身分：", UCL_GUIStyle.LabelStyle, GUILayout.Width(50));
+                GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Field.Identity"), UCL_GUIStyle.LabelStyle, GUILayout.Width(50));
                 if (m_IdentityIds == null || m_IdentityIds.Count == 0)
                 {
-                    GUILayout.Label("(尚無身分 — 跑 Cmd_SeedTavernIdentityAssets 或下面 + 新身分)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Identity.Empty"), UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
@@ -915,7 +916,7 @@ namespace UCL.Core.EditorLib.Page
                     int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "IdentityPicker", GUILayout.Width(420));
                     if (newIdx >= 0 && newIdx < m_IdentityIds.Count) SelectedIdentityId = m_IdentityIds[newIdx];
                 }
-                if (GUILayout.Button(m_ShowCreateIdentity ? "− Cancel" : "+ 新身分", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(m_ShowCreateIdentity ? UCL_CodeLocalize.Get("Tavern.Btn.CancelCreate") : UCL_CodeLocalize.Get("Tavern.Btn.NewIdentity"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     m_PendingShowCreateIdentity = !m_ShowCreateIdentity;
                 }
@@ -926,7 +927,7 @@ namespace UCL.Core.EditorLib.Page
                 UpdateTokenBalance();
                 string tokenDisplay = string.IsNullOrEmpty(SelectedIdentityId) ? "---" : m_CachedTokenBalance.ToString();
                 GUILayout.Space(10);
-                GUILayout.Label($"💰 餘額: <color=#ffd700><b>{tokenDisplay}</b></color> Token", 
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Balance.Fmt"), tokenDisplay),
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
 
                 GUILayout.FlexibleSpace();
@@ -938,18 +939,18 @@ namespace UCL.Core.EditorLib.Page
                 {
                     // 區塊職責：身分命名約定 hint — 提醒使用者本系統是 agent-neutral
                     // 物理意義：避免有人以為這只給 Claude 用 → 列出三家 agent 的範例 id
-                    GUILayout.Label("命名約定：id 用 <model>-<persona>，例：claude-da-xiaojie / gemini-da-xiaojie / gpt-shifu",
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Identity.NamingHint1"),
                         UCL_GUIStyle.LabelStyle);
-                    GUILayout.Label("display_name 用 agent 自家稱呼，例：Claude大小姐 / Gemini大小姐 / GPT師傅",
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Identity.NamingHint2"),
                         UCL_GUIStyle.LabelStyle);
                     m_NewIdentityId = LabeledTextField("id", m_NewIdentityId, 60);
                     m_NewIdentityName = LabeledTextField("name", m_NewIdentityName, 60);
                     m_NewIdentityKind = LabeledTextField("kind", m_NewIdentityKind, 60);
-                    if (GUILayout.Button("Create", UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Btn.Create"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
                     {
                         if (string.IsNullOrEmpty(m_NewIdentityId))
                         {
-                            Debug.LogError("Identity id 不能為空");
+                            Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.IdentityIdEmpty"));
                         }
                         else
                         {
@@ -991,12 +992,12 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    string label = m_ShowCharMapping ? "▼ 角色 Mapping" : "▶ 角色 Mapping";
+                    string label = m_ShowCharMapping ? UCL_CodeLocalize.Get("Tavern.CharMapping.TitleOpen") : UCL_CodeLocalize.Get("Tavern.CharMapping.TitleClosed");
                     if (GUILayout.Button(label, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_ShowCharMapping = !m_ShowCharMapping;
                     }
-                    GUILayout.Label("（sender_id 沒對應角色時的 fallback 鏈）", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.CharMapping.Subtitle"), UCL_GUIStyle.LabelStyle);
                 }
 
                 if (!m_ShowCharMapping) return;
@@ -1007,18 +1008,18 @@ namespace UCL.Core.EditorLib.Page
                 // default
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Default", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.CharMapping.Default"), UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
                     string newDefault = GUILayout.TextField(data.default_identity_id ?? "", GUILayout.MinWidth(220));
                     if (newDefault != (data.default_identity_id ?? ""))
                     {
                         data.default_identity_id = newDefault;
                         dirty = true;
                     }
-                    GUILayout.Label("（建議用已建 Identity Asset 的 id）", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.CharMapping.DefaultHint"), UCL_GUIStyle.LabelStyle);
                 }
 
                 GUILayout.Space(4);
-                GUILayout.Label("Aliases（sender_id → identity_id）：", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("Tavern.CharMapping.AliasesLabel"), UCL_GUIStyle.LabelStyle);
 
                 if (data.aliases != null)
                 {
@@ -1054,14 +1055,14 @@ namespace UCL.Core.EditorLib.Page
                 // 新增 alias 表單
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("+ 新 alias", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.CharMapping.NewAlias"), UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
                     m_NewAliasFrom = GUILayout.TextField(m_NewAliasFrom ?? "", GUILayout.MinWidth(180));
                     GUILayout.Label("→", UCL_GUIStyle.LabelStyle, GUILayout.Width(20));
                     m_NewAliasTo = GUILayout.TextField(m_NewAliasTo ?? "", GUILayout.MinWidth(180));
                     bool canAdd = !string.IsNullOrWhiteSpace(m_NewAliasFrom) && !string.IsNullOrWhiteSpace(m_NewAliasTo);
                     using (new EditorGUI.DisabledScope(!canAdd))
                     {
-                        if (GUILayout.Button("Add", UCL_GUIStyle.GetButtonStyle(canAdd ? Color.green : Color.gray), GUILayout.Width(60)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Add"), UCL_GUIStyle.GetButtonStyle(canAdd ? Color.green : Color.gray), GUILayout.Width(60)))
                         {
                             UCL_ChatTavernCharacterMapping.AddOrUpdateAlias(m_NewAliasFrom.Trim(), m_NewAliasTo.Trim());
                             m_NewAliasFrom = "";
@@ -1094,7 +1095,7 @@ namespace UCL.Core.EditorLib.Page
                     m_CachedSeqRoom = SelectedRoomId;
                     m_LastSeqRefreshTime = nowSeq;
                 }
-                GUILayout.Label($"# 🍺 {SelectedRoomId} (seq={m_CachedSeq})", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Messages.HeaderFmt"), SelectedRoomId, m_CachedSeq), UCL_GUIStyle.LabelStyle);
                 // 區塊職責：BeginScrollView 之前若 m_PendingScrollToBottom == true → 強制把 y 設大值
                 // 物理意義：IMGUI 會自動 clamp 到 contentHeight - viewportHeight；下一幀就在底部
                 //          設完清旗標，避免使用者滾上去看歷史時被自動拉回
@@ -1106,7 +1107,7 @@ namespace UCL.Core.EditorLib.Page
                 m_MessagesScroll = GUILayout.BeginScrollView(m_MessagesScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(560)));
                 if (m_MessagesCache == null || m_MessagesCache.Count == 0)
                 {
-                    GUILayout.Label("_(尚無訊息)_", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Messages.Empty"), UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
@@ -1226,8 +1227,8 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.HorizontalScope())
                     {
-                        GUILayout.Label($"↩ 回覆 seq={m_ReplyTo.Value}", UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
-                        if (GUILayout.Button("取消", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) m_ReplyTo = null;
+                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Reply.IndicatorFmt"), m_ReplyTo.Value), UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Cancel"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) m_ReplyTo = null;
                     }
                 }
 
@@ -1246,25 +1247,25 @@ namespace UCL.Core.EditorLib.Page
                         var (idntId, idntName, idntKind) = ResolveSelectedIdentity();
                         var hintStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.7f, 0.85f, 1f) } };
                         string asWho = string.IsNullOrEmpty(idntId)
-                            ? "(尚未選擇身分)"
-                            : $"以「{idntName}」({idntKind}) 身分發言";
+                            ? UCL_CodeLocalize.Get("Tavern.Input.NoIdentity")
+                            : string.Format(UCL_CodeLocalize.Get("Tavern.Input.SpeakingAsFmt"), idntName, idntKind);
                         GUILayout.Label(asWho, hintStyle);
                         m_Input = GUILayout.TextArea(m_Input ?? "", GUILayout.MinHeight(60));
                     }
                 }
-                m_MetaInput = LabeledTextField("meta (k=v;k=v)", m_MetaInput, 130);
-                m_RefsInput = LabeledTextField("refs (path|path)", m_RefsInput, 130);
+                m_MetaInput = LabeledTextField(UCL_CodeLocalize.Get("Tavern.Field.Meta"), m_MetaInput, 130);
+                m_RefsInput = LabeledTextField(UCL_CodeLocalize.Get("Tavern.Field.Refs"), m_RefsInput, 130);
                 using (new GUILayout.HorizontalScope())
                 {
                     bool canSend = !string.IsNullOrEmpty(SelectedIdentityId) && !string.IsNullOrEmpty(m_Input);
                     GUI.enabled = canSend;
-                    if (GUILayout.Button("Send", UCL_GUIStyle.GetButtonStyle(canSend ? Color.cyan : Color.gray), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Btn.Send"), UCL_GUIStyle.GetButtonStyle(canSend ? Color.cyan : Color.gray), GUILayout.ExpandWidth(false)))
                     {
                         DoSend();
                     }
                     GUI.enabled = true;
                     GUILayout.FlexibleSpace();
-                    if (GUILayout.Button("Clear", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_Input = m_MetaInput = m_RefsInput = "";
                         m_ReplyTo = null;
@@ -1306,8 +1307,8 @@ namespace UCL.Core.EditorLib.Page
         async void DoSend()
         {
             var (idntId, idntName, _) = ResolveSelectedIdentity();
-            if (string.IsNullOrEmpty(idntId)) { Debug.LogError("身分不存在"); return; }
-            if (string.IsNullOrEmpty(SelectedRoomId)) { Debug.LogError("房間未選"); return; }
+            if (string.IsNullOrEmpty(idntId)) { Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.NoIdentity")); return; }
+            if (string.IsNullOrEmpty(SelectedRoomId)) { Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.NoRoom")); return; }
 
             // 構造 args dict — schema 跟 run_cmd.py run Tavern --arg key=val 完全對齊
             var args = new Dictionary<string, string>
@@ -1348,7 +1349,7 @@ namespace UCL.Core.EditorLib.Page
             UCL_ChatTavernIO.AppendMessage(SelectedRoomId, new UCL_ChatMessage
             {
                 sender_id = idntId, sender_name = idntName, kind = "join",
-                body = $"{idntName} 進入了酒館",
+                body = string.Format(UCL_CodeLocalize.Get("Tavern.Join.MsgFmt"), idntName),
             });
             RefreshMessages();
             RefreshMembers();
@@ -1362,7 +1363,7 @@ namespace UCL.Core.EditorLib.Page
             UCL_ChatTavernIO.AppendMessage(SelectedRoomId, new UCL_ChatMessage
             {
                 sender_id = idntId, sender_name = idntName, kind = "leave",
-                body = $"{idntName} 離開了酒館",
+                body = string.Format(UCL_CodeLocalize.Get("Tavern.Leave.MsgFmt"), idntName),
             });
             RefreshMessages();
             RefreshMembers();

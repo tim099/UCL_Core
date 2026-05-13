@@ -12,7 +12,9 @@ using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using System.Linq;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
+using UCL.Core.EditorLib.AgentCommands.Treasury;
 
 namespace UCL.Core.EditorLib.AgentCommands.Bartender
 {
@@ -82,11 +84,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void TickInternal()
         {
-            // 區塊職責：tick 兩件事 — (1) keyword triggers (2) time rules
-            // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動)
-            //          兩條獨立 IO + 獨立 state 欄位 (room_last_seq / fired_today_keys)
+            // 區塊職責：tick 三件事 — (1) keyword triggers (2) time rules (3) overnight deposit fee
+            // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動),
+            //          最後檢查跨日存款保管費 (anti-inflation 機制)
+            //          三條獨立 IO + 獨立 state 欄位 (room_last_seq / fired_today_keys / last_overnight_check_date)
             CheckKeywordTriggers();
             CheckTimeRules();
+            CheckOvernightDeposits();
         }
 
         // ===========================================================
@@ -704,6 +708,132 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance
                 },
             };
             UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: fireDiscordMirror);
+        }
+
+        // ===========================================================
+        // 區塊：跨日存款保管費 (Anti-inflation, Tim 2026-05-13 拍板 5 token task)
+        // 物理意義：超過 OVERNIGHT_THRESHOLD (1000) token 的部分, 跨日時收 OVERNIGHT_FEE_RATE (5%) 保管費.
+        //          例: balance=1100 → excess=100 → fee=5 token (floor(100 × 0.05)).
+        //          目的: token 通膨抑制 — 鼓勵消費, 防止無限囤積.
+        // 數值影響：state.last_overnight_check_date 推進; 每 over-threshold account debit fee;
+        //          fee 用 system caller 走 Treasury Debit (account 隔離 bypass), 純 sink (無對應 credit).
+        // 觸發：daemon tick 每次跑, 但 state.last_overnight_check_date == today → skip.
+        //       跨日 (今天 != state 紀錄日期) → 跑一輪檢查 + 更新 state.
+        //       首次啟動 (state 為空) → init today, **不收費** (避免新裝立刻課稅).
+        // Idempotency：useRef = "overnight-fee-<date>-<account>", debit 前 scan ledger 確認沒重複 entry.
+        //              (state.last_overnight_check_date 給快速 short-circuit, useRef 是 ledger-level safeguard)
+        // ===========================================================
+        const int OVERNIGHT_THRESHOLD = 1000;
+        const double OVERNIGHT_FEE_RATE = 0.05;
+
+        static void CheckOvernightDeposits()
+        {
+            var state = UCL_BartenderIO.LoadState();
+            string today = DateTime.Now.ToString("yyyy-MM-dd");  // local time
+
+            // First-run grace: state 沒紀錄 → init 成 today, 不收費
+            if (string.IsNullOrEmpty(state.last_overnight_check_date))
+            {
+                state.last_overnight_check_date = today;
+                UCL_BartenderIO.SaveState(state);
+                return;
+            }
+
+            // 同一天已 check 過 → skip (短路, 避免每 5s 重跑)
+            if (state.last_overnight_check_date == today) return;
+
+            // 跨日了 — 跑一輪檢查
+            // 1. Load 全 ledger 一次 (cache reuse 兩個 pass)
+            List<TreasuryLedgerEntry> allEntries;
+            try { allEntries = UCL_TreasuryLedger.LoadAllEntries(); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Bartender] overnight check load ledger fail: {ex.Message}");
+                return;  // 不更新 state, 隔下個 tick 再試
+            }
+
+            // 2. 蒐集所有 unique account_id
+            var allAccounts = new HashSet<string>();
+            foreach (var e in allEntries)
+            {
+                if (!string.IsNullOrEmpty(e.account_id)) allAccounts.Add(e.account_id);
+            }
+
+            // 3. Pre-build useRef set (idempotency check, 防 state crash mid-loop 後重跑重複扣)
+            // 注意: Debit caller 用 useRef 參數名, 但 TreasuryLedgerEntry 內部欄位是 source_ref
+            string useRefPrefix = $"overnight-fee-{today}-";
+            var alreadyChargedToday = new HashSet<string>();
+            foreach (var e in allEntries)
+            {
+                if (e.type == "debit" && !string.IsNullOrEmpty(e.source_ref) && e.source_ref.StartsWith(useRefPrefix))
+                {
+                    alreadyChargedToday.Add(e.account_id);
+                }
+            }
+
+            // 4. 對每 account 算超額 fee + debit
+            var feeReports = new List<string>();
+            int totalFee = 0;
+            foreach (var account in allAccounts.OrderBy(a => a))
+            {
+                if (alreadyChargedToday.Contains(account)) continue;  // 已扣過 (state 失效但 ledger 正確)
+                int balance;
+                try { balance = UCL_TreasuryLedger.GetBalance(account); }
+                catch { continue; }
+                if (balance <= OVERNIGHT_THRESHOLD) continue;
+
+                int excess = balance - OVERNIGHT_THRESHOLD;
+                int fee = (int)Math.Floor(excess * OVERNIGHT_FEE_RATE);
+                if (fee <= 0) continue;
+
+                string useRef = $"{useRefPrefix}{account}";
+                try
+                {
+                    UCL_TreasuryLedger.Debit(
+                        accountId: account,
+                        amount: fee,
+                        useKind: "overnight_storage_fee",
+                        useRef: useRef,
+                        description: $"跨日 {today} 存款保管費 5% (超過 {OVERNIGHT_THRESHOLD} 的 {excess} × 5% = {fee})",
+                        callerAgentId: "system");
+                    feeReports.Add($"- @{account}: balance {balance} → -{fee} token (excess {excess} × 5%)");
+                    totalFee += fee;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Bartender] overnight fee debit fail for {account}: {ex.Message}");
+                }
+            }
+
+            // 5. 推進 state.last_overnight_check_date (即使無人扣費也推進, 避免重跑)
+            state.last_overnight_check_date = today;
+            UCL_BartenderIO.SaveState(state);
+
+            // 6. Broadcast 結果 (有人扣費才發, 無人靜默 — 避免 noise)
+            if (feeReports.Count > 0)
+            {
+                string body =
+                    $"🏦 **跨日存款保管費** ({today}) — 超過 {OVERNIGHT_THRESHOLD} token 部分收 {OVERNIGHT_FEE_RATE * 100:F0}%\n\n" +
+                    string.Join("\n", feeReports) +
+                    $"\n\n累計回收: **-{totalFee} token** (anti-inflation sink)\n" +
+                    "_鼓勵消費避免囤積; 1000 以下不收費_";
+                var msg = new UCL_ChatMessage
+                {
+                    sender_id = TavernKeeperId,
+                    sender_name = "酒保",
+                    kind = "chat",
+                    body = body,
+                    meta = new Dictionary<string, string>
+                    {
+                        { "tag", BartenderRelayTag },
+                        { "subtag", "overnight-deposit-fee" },
+                        { "check_date", today },
+                        { "total_fee", totalFee.ToString() },
+                        { "accounts_charged", feeReports.Count.ToString() },
+                    },
+                };
+                UCL_ChatTavernIO.AppendMessage("tavern", msg);  // fire mirror 預設 = Discord broadcast
+            }
         }
     }
 }

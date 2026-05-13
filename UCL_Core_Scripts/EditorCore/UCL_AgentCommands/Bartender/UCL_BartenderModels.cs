@@ -103,6 +103,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// <summary>當日已觸發的時間規則 key — 格式 "YYYY-MM-DD::rule_id" (reminder) or "YYYY-MM-DD::rule_id::penalty::N" (第 N 次 penalty 廣播).</summary>
         public List<string> fired_today_keys = new List<string>();
 
+        /// <summary>上次跑 overnight deposit 保管費檢查的日期 (local YYYY-MM-DD). 跨日時 daemon 觸發新一輪檢查.
+        /// 空字串 = daemon 首次啟動, 不收費直接 init 成 today (避免新裝立刻課稅).</summary>
+        public string last_overnight_check_date;
+
         /// <summary>state 上次更新時間 (UTC ISO) — debug 用.</summary>
         public string last_updated;
     }

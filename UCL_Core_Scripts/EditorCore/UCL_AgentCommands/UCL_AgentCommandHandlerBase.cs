@@ -8,7 +8,8 @@
 // 繁體中文: Docs~/zh-Hant/UCL_EditorPage/UCL_AgentCommandsPage.md
 // Abstract base class for Agent Command handlers.
 // 子類自動被 UCL_AgentCommandRegistry 反射掃描並註冊。
-#if UNITY_EDITOR
+// 2026-05-13 (Zeta): 去掉 #if UNITY_EDITOR guard — 本檔零 Editor API, 純 abstract + helper.
+//                    保留 EditorCore/ 路徑慣例不動 (asmdef 單一, guard 是唯一隔離手段, 但本檔不需隔離).
 using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
@@ -67,4 +68,3 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
     }
 }
-#endif

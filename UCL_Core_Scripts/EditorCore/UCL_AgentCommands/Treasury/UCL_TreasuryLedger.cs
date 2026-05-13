@@ -4,7 +4,8 @@
 // 安全：actor_signature 偵測 env_marker 防盜用；不主動 reject mismatch（log warning + audit）
 // 修法 2026-05-11 (Tim QA TreasuryEnvMarker): caller-side detect thread-through CurrentCallerEnvMarker slot
 
-#if UNITY_EDITOR
+// 2026-05-13 (Zeta): 去掉 #if UNITY_EDITOR guard — 純 file IO + crypto + replay 邏輯, 無 Editor 依賴.
+// deps (RepoPath / TreasuryPaths) 已同步 strip guard.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -490,4 +491,3 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
     }
 }
-#endif

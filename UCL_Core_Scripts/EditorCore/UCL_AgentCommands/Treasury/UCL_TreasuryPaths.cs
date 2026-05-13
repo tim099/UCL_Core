@@ -3,7 +3,7 @@
 //          AgentCommands/Treasury/ledger/<YYYY-MM-DD>/<HHMMSS>_<MMM>_<UUID6>__<type>.json
 // 數值影響：純常數 / Path 函式無副作用；caller 用本 helper 不必 hardcode 路徑
 
-#if UNITY_EDITOR
+// 2026-05-13 (Zeta): 去掉 #if UNITY_EDITOR guard — 純 path helper 無 Editor 依賴.
 using System;
 using System.IO;
 
@@ -59,4 +59,3 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
     }
 }
-#endif

@@ -8,7 +8,7 @@
 // 修法：對齊 Python `run_cmd.py` 的 `_find_git_root_by_walk` —— 從 Application.dataPath
 //          往上 walk 找第一個含 `.git` 目錄的 ancestor（submodule 的 .git 是檔案 redirect，
 //          應跳過繼續往上）。Cache 結果避免每次重算。所有 git-root 需求集中走本 getter。
-#if UNITY_EDITOR
+// 2026-05-13 (Zeta): 去掉 #if UNITY_EDITOR guard — 純 path 解析無 Editor 依賴, runtime 可用.
 using System.IO;
 using UnityEngine;
 
@@ -90,4 +90,3 @@ namespace UCL.Core.EditorLib
         }
     }
 }
-#endif

@@ -772,19 +772,37 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance
             }
 
             // 4. 對每 account 算超額 fee + debit
+            //    Tim 2026-05-14 拍板補: audit broadcast 也列出沒扣費的 account 餘額 (full transparency)
+            //    → 蒐集兩 list: feeReports (扣費) + safeReports (沒扣費, 但餘額 > 0)
             var feeReports = new List<string>();
+            var safeReports = new List<string>();
             int totalFee = 0;
             foreach (var account in allAccounts.OrderBy(a => a))
             {
-                if (alreadyChargedToday.Contains(account)) continue;  // 已扣過 (state 失效但 ledger 正確)
                 int balance;
                 try { balance = UCL_TreasuryLedger.GetBalance(account); }
                 catch { continue; }
-                if (balance <= OVERNIGHT_THRESHOLD) continue;
+                if (balance <= 0) continue;  // 0 或負數 account 不列 (純 noise)
+
+                // 已扣過 (state 失效但 ledger 正確) → 視為 safe 列出 (debit 已在 ledger)
+                if (alreadyChargedToday.Contains(account))
+                {
+                    safeReports.Add($"- @{account}: balance {balance} (今日已扣過, idempotent skip)");
+                    continue;
+                }
+                if (balance <= OVERNIGHT_THRESHOLD)
+                {
+                    safeReports.Add($"- @{account}: balance {balance} (≤ {OVERNIGHT_THRESHOLD}, 安全)");
+                    continue;
+                }
 
                 int excess = balance - OVERNIGHT_THRESHOLD;
                 int fee = (int)Math.Floor(excess * OVERNIGHT_FEE_RATE);
-                if (fee <= 0) continue;
+                if (fee <= 0)
+                {
+                    safeReports.Add($"- @{account}: balance {balance} (excess {excess} × 5% = 0, floor 取整免費)");
+                    continue;
+                }
 
                 string useRef = $"{useRefPrefix}{account}";
                 try
@@ -796,7 +814,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance
                         useRef: useRef,
                         description: $"跨日 {today} 存款保管費 5% (超過 {OVERNIGHT_THRESHOLD} 的 {excess} × 5% = {fee})",
                         callerAgentId: "system");
-                    feeReports.Add($"- @{account}: balance {balance} → -{fee} token (excess {excess} × 5%)");
+                    feeReports.Add($"- @{account}: balance {balance} → **-{fee} token** (excess {excess} × 5%)");
                     totalFee += fee;
                 }
                 catch (Exception ex)
@@ -810,26 +828,40 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance
             UCL_BartenderIO.SaveState(state);
 
             // 6. Broadcast 結果 — Tim 2026-05-13 拍板: 每次 cross-day check 都要有 audit 訊息.
-            //    分兩 branch: 有扣費列詳情, 無扣費發 clean ack (audit transparency 優於 daily noise).
+            //    Tim 2026-05-14 拍板補: 沒扣費的 account 餘額也要顯示 (full audit transparency).
+            //    一律分 [扣費] + [安全] 兩段, 各自可空, 一致格式.
             string body;
             string subtag;
+            string headerLine = $"🏦 **跨日存款保管費結算** ({today}) — 超過 {OVERNIGHT_THRESHOLD} token 部分收 {OVERNIGHT_FEE_RATE * 100:F0}%";
+            var bodySb = new System.Text.StringBuilder();
+            bodySb.AppendLine(headerLine);
+            bodySb.AppendLine();
+
             if (feeReports.Count > 0)
             {
-                body =
-                    $"🏦 **跨日存款保管費結算** ({today}) — 超過 {OVERNIGHT_THRESHOLD} token 部分收 {OVERNIGHT_FEE_RATE * 100:F0}%\n\n" +
-                    string.Join("\n", feeReports) +
-                    $"\n\n累計回收: **-{totalFee} token** (anti-inflation sink)\n" +
-                    $"扣費帳戶數: {feeReports.Count}\n\n" +
-                    "_鼓勵消費避免囤積; 1000 以下不收費_";
+                bodySb.AppendLine($"### 💸 扣費帳戶 ({feeReports.Count} 個)");
+                bodySb.AppendLine(string.Join("\n", feeReports));
+                bodySb.AppendLine();
+                bodySb.AppendLine($"累計回收: **-{totalFee} token** (anti-inflation sink)");
+                bodySb.AppendLine();
                 subtag = "overnight-deposit-fee";
             }
             else
             {
-                body =
-                    $"🏦 **跨日存款保管費結算** ({today}) — 全 account 餘額 ≤ {OVERNIGHT_THRESHOLD} token, 今日**無扣費** ✓\n\n" +
-                    $"_audit log: cross-day check ran, sweep clean_";
+                bodySb.AppendLine("### ✅ 無扣費 — 全 account 餘額皆 ≤ threshold");
+                bodySb.AppendLine();
                 subtag = "overnight-deposit-fee-clean";
             }
+
+            if (safeReports.Count > 0)
+            {
+                bodySb.AppendLine($"### 🟢 安全帳戶 ({safeReports.Count} 個, 餘額顯示)");
+                bodySb.AppendLine(string.Join("\n", safeReports));
+                bodySb.AppendLine();
+            }
+
+            bodySb.Append("_鼓勵消費避免囤積; 1000 以下不收費_");
+            body = bodySb.ToString();
             var msg = new UCL_ChatMessage
             {
                 sender_id = TavernKeeperId,
@@ -843,6 +875,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance
                     { "check_date", today },
                     { "total_fee", totalFee.ToString() },
                     { "accounts_charged", feeReports.Count.ToString() },
+                    { "accounts_safe", safeReports.Count.ToString() },
                 },
             };
             UCL_ChatTavernIO.AppendMessage("tavern", msg);  // 預設 fire mirror = Discord broadcast

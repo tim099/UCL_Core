@@ -76,6 +76,16 @@
       "name": "ucl-bartender",
       "summary": "酒保 (Bartender) 系統 — Editor 駐留 daemon 監看 tavern + 時鐘, 自動廣播留言觸發 + 時間提醒 + HP penalty 公式; Cmd_Bartender op=add/list/time_add/...",
       "optional": false
+    },
+    {
+      "name": "ucl-morning",
+      "summary": "Awakening morning ritual — 早安大小姐喚醒 + agent/persona 參數解析 + status check + tavern self-intro",
+      "optional": false
+    },
+    {
+      "name": "ucl-goodnight",
+      "summary": "Awakening goodnight ritual — 晚安大小姐 / 今日子協議, letter 寫進 baton + perturbation + offline 通知",
+      "optional": false
     }
   ]
 }

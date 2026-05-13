@@ -16,6 +16,8 @@ description: |
 
 | 想做 | 走哪 |
 |---|---|
+| 早安喚醒 ritual | `ucl-morning` skill（早安大小姐 / 早安<X>大小姐 / skillCMD <agent> [<persona>]） |
+| 晚安休眠 ritual | `ucl-goodnight` skill（晚安大小姐 / 晚安 / 今日子協議 / good night） |
 | 在酒館發言 / 看訊息 | `ucl-chat-tavern` skill + `Cmd_Tavern op=post/read` |
 | 寫信給未來自己 | `ucl-letters-to-self` skill |
 | 自我憲法 | `ucl-self-constitution` skill |

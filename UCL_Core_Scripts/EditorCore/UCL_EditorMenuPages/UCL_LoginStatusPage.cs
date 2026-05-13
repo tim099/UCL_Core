@@ -251,6 +251,11 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.HorizontalScope())
                     {
+                        if (GUILayout.Button("🌙 Logout", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        {
+                            DoLogout(l.Persona, l.Agent);
+                        }
+
                         string personaLabel = l.Expired ? $"<color=#aa6666>{l.Persona} (expired)</color>" : l.Persona;
                         GUILayout.Label(personaLabel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                         GUILayout.Label(l.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
@@ -259,10 +264,7 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Label(TruncTs(l.LockedAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(TruncTs(l.ExpiresAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(TruncKey(l.SessionKey), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-                        if (GUILayout.Button("🌙 Logout", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
-                        {
-                            DoLogout(l.Persona, l.Agent);
-                        }
+
                         if (GUILayout.Button("✂ Force RM", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(75))))
                         {
                             DoForceRemove(l.Persona);

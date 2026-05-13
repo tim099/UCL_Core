@@ -1,16 +1,19 @@
-﻿// 區塊職責: Tavern Rule System IMGUI 頁面 (Tim 2026-05-12 拍板, 對應 Cmd_Rule)
+// 區塊職責: Tavern Rule System IMGUI 頁面 (Tim 2026-05-12 拍板, 對應 Cmd_Rule)
 // 物理意義: 讓 Tim 用 GUI 查看 active / reverted rule + 一鍵 revert (走 Cmd_Rule.Op_Revert 統一路徑)
 // 數值影響: 純 view; revert 透過 Cmd_Rule 統一 ledger / file 改動, 不在 page 內 bypass 業務邏輯
 // 設計取捨:
-//   - 模仿 UCL_ChatTavernPage 的 layout 慣例 (左 list / 右 detail)
+//   - 模仿 UCL_AffinitySystemPage 的 layout 慣例 (上 toolbar / 左 list / 右 detail)
 //   - revert 走 Cmd_Rule.ExecuteAsync 同統一路徑 (跟 agent run_cmd.py 完全一致)
 //   - 不做 propose UI — propose 需構造 title/body, 走 CLI 比 GUI 表單合適 (Cmd_Rule --arg)
+//   - 2026-05-13 重構: 移除 UnityEditor namespace 依賴 (EditorStyles / EditorGUILayout / EditorUtility /
+//     EditorApplication), 改用 UCL_GUIStyle + 純 GUILayout. 仍保 #if UNITY_EDITOR 因檔在
+//     EditorCore/ 目錄 + Cmd_Rule 走 UnityEditor (revert handler), 但本檔自身 UI 層 zero-Editor.
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UCL.Core.EditorLib.AgentCommands.Rules;
-using UnityEditor;
+using UCL.Core.UI;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.Page
@@ -23,6 +26,10 @@ namespace UCL.Core.EditorLib.Page
     public class UCL_TavernRulePage : UCL_CommonEditorPage
     {
         public override string WindowName => "Tavern Rules";
+
+        /// <summary>把此頁面註冊進 EditorMenu 的 Page Picker 下拉選單中 (對齊 UCL_AffinitySystemPage 慣例).</summary>
+        public override bool ShowInPageMenu => true;
+
         public static UCL_TavernRulePage Create() => UCL_EditorPage.Create<UCL_TavernRulePage>();
 
         // ===========================================================
@@ -36,8 +43,8 @@ namespace UCL.Core.EditorLib.Page
         Vector2 m_ListScroll = Vector2.zero;
         Vector2 m_DetailScroll = Vector2.zero;
         bool m_AutoRefresh = true;
-        double m_LastRefreshTime = 0;
-        const double RefreshIntervalSec = 3.0;
+        float m_LastRefreshTime = 0f;
+        const float RefreshIntervalSec = 3.0f;
 
         // ===========================================================
         // 快取
@@ -45,10 +52,14 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         List<RuleViewEntry> m_RulesCache = new List<RuleViewEntry>();
         string m_SelectedRuleBody = "";
+        bool m_InitialRefreshed = false;
+
+        static readonly string[] s_FilterOptions = new[] { "all", "active", "reverted" };
 
         // ===========================================================
         // 區塊職責: 頁面繪製入口
         // 物理意義: 上 toolbar / 左 rule list / 右 detail+revert; revert 走 Cmd_Rule 統一路徑
+        // 數值影響: 純 UI 繪製; 跑 EnsureInitialRefresh + MaybeAutoRefresh 兩個 IO hook
         // ===========================================================
         protected override void ContentOnGUI()
         {
@@ -67,48 +78,70 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // 區塊職責: 上方 toolbar — count + filter 切換 + Refresh button + auto toggle
+        // 物理意義: filter 3 選 1 用 horizontal button row (對齊 UCL_AffinitySystemPage TopBarButtons 風格)
+        // 數值影響: 純 UI, filter 改值才觸發 RefreshRules
         void DrawToolbar()
         {
-            using (new GUILayout.HorizontalScope(EditorStyles.toolbar))
+            using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label($"📜 Rules ({m_RulesCache.Count})", EditorStyles.boldLabel, GUILayout.Width(120));
+                GUILayout.Label($"📜 Rules ({m_RulesCache.Count})", UCL_GUIStyle.LabelStyle,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
 
-                GUILayout.Label("filter:", GUILayout.Width(40));
-                int filterIdx = System.Array.IndexOf(s_FilterOptions, m_StatusFilter);
-                if (filterIdx < 0) filterIdx = 0;
-                int newFilterIdx = EditorGUILayout.Popup(filterIdx, s_FilterOptions, EditorStyles.toolbarPopup, GUILayout.Width(100));
-                if (newFilterIdx != filterIdx)
+                GUILayout.Label("filter:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                // 區塊: filter 用 button-row 取代 dropdown (3 選 1 不必弄 popup) — 選中的按鈕著色區分
+                foreach (var opt in s_FilterOptions)
                 {
-                    m_StatusFilter = s_FilterOptions[newFilterIdx];
+                    bool selected = (m_StatusFilter == opt);
+                    var style = selected
+                        ? UCL_GUIStyle.GetButtonStyle(Color.cyan)
+                        : UCL_GUIStyle.ButtonStyle;
+                    if (GUILayout.Button(opt, style, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                    {
+                        if (!selected)
+                        {
+                            m_StatusFilter = opt;
+                            RefreshRules();
+                        }
+                    }
+                }
+
+                GUILayout.Space(8);
+
+                if (GUILayout.Button("🔄 Refresh", UCL_GUIStyle.ButtonStyle,
+                                     GUILayout.Width(UCL_GUIStyle.GetScaledSize(100))))
+                {
                     RefreshRules();
                 }
 
-                if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(70)))
-                {
-                    RefreshRules();
-                }
-                m_AutoRefresh = GUILayout.Toggle(m_AutoRefresh, "auto", EditorStyles.toolbarButton, GUILayout.Width(50));
+                m_AutoRefresh = GUILayout.Toggle(m_AutoRefresh, " auto", UCL_GUIStyle.ButtonStyle,
+                                                  GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
 
                 GUILayout.FlexibleSpace();
 
-                if (GUILayout.Button("Open Dir", EditorStyles.toolbarButton, GUILayout.Width(80)))
+                // 區塊: 移除 EditorUtility.RevealInFinder (Editor-only) — 改 print 路徑給 Console
+                // 物理意義: 純 runtime 路徑沒辦法開檔總管; 顯示路徑讓使用者複製貼系統檔總管
+                if (GUILayout.Button("📂 Path", UCL_GUIStyle.ButtonStyle,
+                                     GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                 {
-                    string dir = RulesDir;
-                    if (Directory.Exists(dir)) EditorUtility.RevealInFinder(dir);
-                    else Debug.LogWarning($"[RulePage] rules dir 不存在: {dir}");
+                    Debug.Log($"[RulePage] Rules dir: {RulesDir}");
                 }
             }
         }
 
+        // 區塊職責: 左欄 rule list — 每筆 active=綠燈 / reverted=灰燈, 點擊載 detail
+        // 物理意義: 用 GUILayout.Button + 不同 style 表達「選中態」 (cyan)
         void DrawRuleList()
         {
-            using (new GUILayout.VerticalScope(GUI.skin.box, GUILayout.Width(280), GUILayout.ExpandHeight(true)))
+            using (new GUILayout.VerticalScope("box",
+                                              GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)),
+                                              GUILayout.ExpandHeight(true)))
             {
-                GUILayout.Label("規則清單", EditorStyles.boldLabel);
+                GUILayout.Label("<b>規則清單</b>", UCL_GUIStyle.LabelStyle);
                 m_ListScroll = GUILayout.BeginScrollView(m_ListScroll);
                 if (m_RulesCache.Count == 0)
                 {
-                    GUILayout.Label("_(無命中)_", EditorStyles.miniLabel);
+                    GUILayout.Label("<i>(無命中)</i>", UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
@@ -117,7 +150,10 @@ namespace UCL.Core.EditorLib.Page
                         bool selected = r.ruleId == m_SelectedRuleId;
                         string statusIcon = r.status == "active" ? "🟢" : "⚫";
                         string label = $"{statusIcon} {r.ruleId}: {Truncate(r.title, 30)}";
-                        var style = selected ? EditorStyles.boldLabel : EditorStyles.label;
+                        // 選中態用 cyan button style 突出 (不依賴 EditorStyles.boldLabel)
+                        var style = selected
+                            ? UCL_GUIStyle.GetButtonStyle(Color.cyan)
+                            : UCL_GUIStyle.ButtonStyle;
                         if (GUILayout.Button(label, style))
                         {
                             m_SelectedRuleId = r.ruleId;
@@ -129,55 +165,79 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // 區塊職責: 右欄 rule detail — 標頭 + body + revert 表單
+        // 物理意義: 用 TextArea 顯示 body (TextAreaStyle 已有 scaled font + wordWrap);
+        //          revert 區塊用 helpBox 風的 box scope, 內含 reason 輸入 + revert button
         void DrawRuleDetail()
         {
-            using (new GUILayout.VerticalScope(GUI.skin.box, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true)))
+            using (new GUILayout.VerticalScope("box",
+                                              GUILayout.ExpandWidth(true),
+                                              GUILayout.ExpandHeight(true)))
             {
                 var selected = m_RulesCache.FirstOrDefault(r => r.ruleId == m_SelectedRuleId);
                 if (selected == null)
                 {
-                    GUILayout.Label("← 從左邊選一條 rule 看內容", EditorStyles.centeredGreyMiniLabel);
+                    GUILayout.Label("<i>← 從左邊選一條 rule 看內容</i>", UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
                 // 標頭
-                GUILayout.Label($"📜 {selected.ruleId} — {selected.title}", EditorStyles.boldLabel);
+                GUILayout.Label($"<b>📜 {selected.ruleId}</b> — {selected.title}", UCL_GUIStyle.LabelStyle);
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label($"status: **{selected.status}**", GUILayout.Width(140));
-                    GUILayout.Label($"by: {selected.createdBy}", GUILayout.Width(180));
-                    GUILayout.Label($"created: {selected.createdAt}");
+                    // status: active=綠 / reverted=灰
+                    var statusColor = selected.status == "active" ? Color.green : Color.gray;
+                    GUILayout.Label($"status:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label($"<b>{selected.status}</b>",
+                                    UCL_GUIStyle.GetLabelStyle(statusColor),
+                                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    GUILayout.Label($"by: {selected.createdBy}", UCL_GUIStyle.LabelStyle,
+                                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    GUILayout.Label($"created: {selected.createdAt}", UCL_GUIStyle.LabelStyle);
                 }
                 GUILayout.Space(4);
 
-                // 內容
+                // 內容 — 用 TextArea (read-only 效果靠不接收輸入即可; 仍可框選複製)
                 m_DetailScroll = GUILayout.BeginScrollView(m_DetailScroll, GUILayout.ExpandHeight(true));
-                GUILayout.TextArea(m_SelectedRuleBody ?? "", EditorStyles.textArea, GUILayout.ExpandHeight(true));
+                GUILayout.TextArea(m_SelectedRuleBody ?? "", UCL_GUIStyle.TextAreaStyle, GUILayout.ExpandHeight(true));
                 GUILayout.EndScrollView();
 
                 // Revert 區塊 — 只 active 才能 revert
                 GUILayout.Space(4);
-                using (new GUILayout.VerticalScope(EditorStyles.helpBox))
+                using (new GUILayout.VerticalScope("box"))
                 {
                     bool canRevert = selected.status == "active";
-                    GUI.enabled = canRevert;
-                    GUILayout.Label(canRevert ? "↩ Revert (refund 100 token 給 creator)" : "已 reverted, 不可重複 revert", EditorStyles.miniBoldLabel);
-                    m_RevertReason = EditorGUILayout.TextField("reason", m_RevertReason ?? "");
+                    string hint = canRevert
+                        ? "<b>↩ Revert</b>  <i>(refund 100 token 給 creator)</i>"
+                        : "<i>已 reverted, 不可重複 revert</i>";
+                    GUILayout.Label(hint, UCL_GUIStyle.LabelStyle);
+
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("reason:", UCL_GUIStyle.LabelStyle,
+                                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUI.enabled = canRevert;
+                        m_RevertReason = GUILayout.TextField(m_RevertReason ?? "", UCL_GUIStyle.TextFieldStyle,
+                                                              GUILayout.ExpandWidth(true));
+                        GUI.enabled = true;
+                    }
+
                     using (new GUILayout.HorizontalScope())
                     {
                         bool reasonValid = !string.IsNullOrEmpty(m_RevertReason);
                         GUI.enabled = canRevert && reasonValid;
-                        if (GUILayout.Button("Revert this rule", GUILayout.Width(180)))
+                        // revert 按鈕用紅字突出 (危險動作)
+                        if (GUILayout.Button("Revert this rule", UCL_GUIStyle.ButtonTextRed,
+                                              GUILayout.Width(UCL_GUIStyle.GetScaledSize(200))))
                         {
                             DoRevert(selected.ruleId, m_RevertReason);
                         }
                         GUI.enabled = true;
                         if (!reasonValid && canRevert)
                         {
-                            GUILayout.Label("⚠ 需填 reason", EditorStyles.miniLabel);
+                            GUILayout.Label("<color=#ffcc66>⚠ 需填 reason</color>", UCL_GUIStyle.LabelStyle);
                         }
                     }
-                    GUI.enabled = true;
                 }
             }
         }
@@ -222,12 +282,13 @@ namespace UCL.Core.EditorLib.Page
                 m_InitialRefreshed = true;
             }
         }
-        bool m_InitialRefreshed = false;
 
         void MaybeAutoRefresh()
         {
             if (!m_AutoRefresh) return;
-            double now = EditorApplication.timeSinceStartup;
+            // 區塊: 改用 Time.realtimeSinceStartup (runtime 可用), 取代 EditorApplication.timeSinceStartup
+            // 物理意義: realtimeSinceStartup 在 Editor + runtime 都同義 (since process start), 不依賴 UnityEditor
+            float now = Time.realtimeSinceStartup;
             if (now - m_LastRefreshTime < RefreshIntervalSec) return;
             m_LastRefreshTime = now;
             RefreshRules();
@@ -347,8 +408,6 @@ namespace UCL.Core.EditorLib.Page
                 return Path.Combine(projRoot, "AgentCommands", "Rules");
             }
         }
-
-        static readonly string[] s_FilterOptions = new[] { "all", "active", "reverted" };
     }
 }
 #endif

@@ -271,6 +271,15 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 - **避免 write race**：每 agent 寫自家 queue，`load → modify → save` 不再撞別 agent
 - **對齊既有設計**：letters / baton / affinity / agent_bonus_quota 全 per-actor 分檔，cmd queue 該對齊
 
+### Known limitations / Backlog（2026-05-13 review）
+
+完整設計備註見 [`docs/Notes/AgentCommandPipeline_Parallelize_Analysis.md`](../../../../../../docs/Notes/AgentCommandPipeline_Parallelize_Analysis.md) §8。重點摘要：
+
+- **Per-cmd timeout 未做**（Tim 拍板先備註後實作）— default 15 min+，per-cmd handler `TimeoutSeconds` property override（`Cmd_Tavern op=post --wait-reply` 馬拉松要 1440s+ buffer）
+- **Editor 主執行緒 bottleneck**：multi-queue **不解多核並行**，CPU-heavy cmd 仍序列；IO-heavy async cmd 才有效
+- **Cancel ≠ Timeout**：handler 多數沒 honor `CancellationToken`，加 timeout 需配合 audit / retrofit
+- **Migration plan**：legacy queue.json fallback 仍支援 60 天，stderr deprecation warning，90%+ caller 遷移後 reject
+
 ---
 
 ## 9. Async 執行與模組系統

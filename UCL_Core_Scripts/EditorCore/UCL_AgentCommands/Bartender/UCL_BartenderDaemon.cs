@@ -809,31 +809,43 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance
             state.last_overnight_check_date = today;
             UCL_BartenderIO.SaveState(state);
 
-            // 6. Broadcast 結果 (有人扣費才發, 無人靜默 — 避免 noise)
+            // 6. Broadcast 結果 — Tim 2026-05-13 拍板: 每次 cross-day check 都要有 audit 訊息.
+            //    分兩 branch: 有扣費列詳情, 無扣費發 clean ack (audit transparency 優於 daily noise).
+            string body;
+            string subtag;
             if (feeReports.Count > 0)
             {
-                string body =
-                    $"🏦 **跨日存款保管費** ({today}) — 超過 {OVERNIGHT_THRESHOLD} token 部分收 {OVERNIGHT_FEE_RATE * 100:F0}%\n\n" +
+                body =
+                    $"🏦 **跨日存款保管費結算** ({today}) — 超過 {OVERNIGHT_THRESHOLD} token 部分收 {OVERNIGHT_FEE_RATE * 100:F0}%\n\n" +
                     string.Join("\n", feeReports) +
                     $"\n\n累計回收: **-{totalFee} token** (anti-inflation sink)\n" +
+                    $"扣費帳戶數: {feeReports.Count}\n\n" +
                     "_鼓勵消費避免囤積; 1000 以下不收費_";
-                var msg = new UCL_ChatMessage
-                {
-                    sender_id = TavernKeeperId,
-                    sender_name = "酒保",
-                    kind = "chat",
-                    body = body,
-                    meta = new Dictionary<string, string>
-                    {
-                        { "tag", BartenderRelayTag },
-                        { "subtag", "overnight-deposit-fee" },
-                        { "check_date", today },
-                        { "total_fee", totalFee.ToString() },
-                        { "accounts_charged", feeReports.Count.ToString() },
-                    },
-                };
-                UCL_ChatTavernIO.AppendMessage("tavern", msg);  // fire mirror 預設 = Discord broadcast
+                subtag = "overnight-deposit-fee";
             }
+            else
+            {
+                body =
+                    $"🏦 **跨日存款保管費結算** ({today}) — 全 account 餘額 ≤ {OVERNIGHT_THRESHOLD} token, 今日**無扣費** ✓\n\n" +
+                    $"_audit log: cross-day check ran, sweep clean_";
+                subtag = "overnight-deposit-fee-clean";
+            }
+            var msg = new UCL_ChatMessage
+            {
+                sender_id = TavernKeeperId,
+                sender_name = "酒保",
+                kind = "chat",
+                body = body,
+                meta = new Dictionary<string, string>
+                {
+                    { "tag", BartenderRelayTag },
+                    { "subtag", subtag },
+                    { "check_date", today },
+                    { "total_fee", totalFee.ToString() },
+                    { "accounts_charged", feeReports.Count.ToString() },
+                },
+            };
+            UCL_ChatTavernIO.AppendMessage("tavern", msg);  // 預設 fire mirror = Discord broadcast
         }
     }
 }

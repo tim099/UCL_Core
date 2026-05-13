@@ -3,7 +3,7 @@ title: UCL_AgentCommandsPage
 description: 用於排隊、檢視、觸發儲存於 AgentCommands/queue.json 的 agent 指令的編輯器頁面。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AgentCommandsPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-05
+last_updated: 2026-05-13
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -24,12 +24,12 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 型別 | 角色 |
 |---|---|
 | `UCL_AgentCommand` | 一筆排隊指令的資料模型（Id / Type / Mode / Args / 執行結果） |
-| `UCL_AgentCommandQueue` | 讀寫 `<repoRoot>/AgentCommands/queue.json` + trigger 路徑 helpers |
-| `UCL_AgentCommandTrigger` ★ | lock-file ops 封裝（Pending/Running/Idle 狀態機；File.Move 接手） |
-| `UCL_AgentCommandWatcher` ★ | `[InitializeOnLoad]` + `EditorApplication.update` 1Hz；偵測 `pending.trigger` 自動觸發 Runner |
+| `UCL_AgentCommandQueue` | 讀寫 queue.json + trigger 路徑 helpers（全 method 加 `agentId` overload — null=default `queue.json`，非 null=per-agent `queues/queue-<X>.json`，見下方 §Multi-Queue Mode）|
+| `UCL_AgentCommandTrigger` ★ | lock-file ops 封裝（Pending/Running/Idle 狀態機；File.Move 接手；全 method 加 `agentId` overload） |
+| `UCL_AgentCommandWatcher` ★ | `[InitializeOnLoad]` + `EditorApplication.update` 1Hz；掃 default + `queues/pending-*.trigger` 多 trigger，per-agent 並行 dispatch |
 | `UCL_AgentCommandHandlerBase` | 所有 handler 的抽象基底 — 反射自動發現 |
 | `UCL_AgentCommandRegistry` | 收集已發現的 handler，依 `CommandType`（大小寫不敏感）索引 |
-| `UCL_AgentCommandRunner` | 非同步 runner — 分派前先 await `UCL_ModuleService.WaitUntilInitialized`，finally 清 trigger |
+| `UCL_AgentCommandRunner` | 非同步 runner — 分派前先 await `UCL_ModuleService.WaitUntilInitialized`；per-agent `IsRunningForAgent(agentId)` flag（HashSet）防同 agent 重入；finally 清 per-agent trigger |
 
 ## 2. 頁面佈局
 
@@ -170,6 +170,7 @@ Runner 在分派任何 handler 之前先呼叫 `UCL_ModuleService.WaitUntilIniti
 
 - [`UCL_CommonEditorPage`](./UCL_CommonEditorPage.md) — 直接父類
 - [`UCL_ModuleService_API`](../UCL_ModuleService/UCL_ModuleService_API.md) — 解釋 `WaitUntilInitialized`
+- [`UCL_AgentCommand_Architecture`](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) §8.1 — **Multi-Queue Per-Agent Mode**（Tim 2026-05-13 拍板 `--agent-id` + `queues/queue-<X>.json` 隔離）
 - `Workflows/HelpURL_Workflow.md`（本 repo） — `ucl_core:` / `eov_docs:` URL 機制
 
 ## 9. 陷阱

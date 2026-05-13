@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-05-05
+last_updated: 2026-05-13
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -73,7 +73,7 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
 | 類別 | 路徑 | 角色 |
 |---|---|---|
 | `UCL_AgentCommand` | `UCL_AgentCommand.cs` | 單一指令的資料模型（`Id` / `Type` / `Mode` / `Args` / `LastRunResult` / 等）— 對應 queue.json 一筆 |
-| `UCL_AgentCommandQueue` | `UCL_AgentCommandQueue.cs` | queue.json 的讀寫 helper（`Load()` / `Save()` / `GetQueuePath()`）|
+| `UCL_AgentCommandQueue` | `UCL_AgentCommandQueue.cs` | queue.json 的讀寫 helper（`Load(agentId)` / `Save(data, agentId)` / `GetQueuePath(agentId)` — agentId=null → default; 非 null → per-agent，見 §8.1）|
 | `UCL_AgentCommandRunner` | `UCL_AgentCommandRunner.cs` | 主執行器；含 `[MenuItem] Tools/UCL/Agent Commands/Run Pending` 入口 |
 | `UCL_AgentCommandRegistry` | `UCL_AgentCommandRegistry.cs` | 反射發現所有 `UCL_AgentCommandHandlerBase` 子類；`Get(type)` / `ListHandlers()` |
 | `UCL_AgentCommandHandlerBase` | `UCL_AgentCommandHandlerBase.cs` | **新增指令的擴充點** — 抽象基底，子類覆寫 `CommandType` + `ExecuteAsync()` |
@@ -220,6 +220,56 @@ python Tools~/AgentCommands/run_cmd.py catalog
 ```
 
 完整欄位語意見 [UCL_AgentCommand API](UCL_AgentCommand.md)。
+
+---
+
+## 8.1 Multi-Queue Per-Agent Mode（Tim 2026-05-13 拍板）
+
+為解決「單 cmd 卡死阻塞整 pipeline + 多 agent 並行 submit 撞 race」問題（quest `agent-command-pipeline-parallelize` 方案 A），系統支援 **per-agent queue 隔離**。
+
+### 路徑對照
+
+| Mode | Queue 檔 | Trigger | Running |
+|---|---|---|---|
+| **Default (legacy)** | `AgentCommands/queue.json` | `AgentCommands/pending.trigger` | `AgentCommands/pending.trigger.running` |
+| **Per-Agent** `<X>` | `AgentCommands/queues/queue-<X>.json` | `AgentCommands/queues/pending-<X>.trigger` | `AgentCommands/queues/pending-<X>.trigger.running` |
+
+### Python CLI
+
+```bash
+# Legacy default queue (backward compat, 既有 caller 完全不變)
+python run_cmd.py run <Type> --arg key=val
+
+# Per-agent queue (gemini / claude / antigravity / Zeta)
+python run_cmd.py --agent-id gemini run <Type> --arg key=val
+```
+
+### C# API overload
+
+`UCL_AgentCommandQueue` / `UCL_AgentCommandTrigger` / `UCL_AgentCommandRunner` 全 path / state methods 加 `string agentId = null` overload：
+
+- `GetQueuePath(agentId)` / `GetTriggerPath(agentId)` / `GetRunningTriggerPath(agentId)`
+- `Load(agentId)` / `Save(data, agentId)` / `EnsureDir(agentId)`
+- `Trigger.PendingExists(agentId)` / `RunningExists(agentId)` / `MarkRunning(agentId)` / `Clear(agentId)`
+- `Runner.RunAsync(agentId, token)`
+- `Runner.IsRunningForAgent(agentId)` — per-agent flag，多 agent 各自獨立
+
+null → legacy default 路徑（行為跟改動前完全相同）。
+
+### Watcher 多 trigger scan
+
+`UCL_AgentCommandWatcher.OnEditorUpdate`（1Hz throttled）改成兩段掃：
+
+1. `TryDispatchAgent(null)` — 看 default `pending.trigger`
+2. `foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())` — scan `queues/queue-*.json` 列出所有 per-agent → 各自 `TryDispatchAgent(agentId)`
+
+多 trigger 同時存在會並行 dispatch（per-agent Runner 互不阻塞，Runner 端用 `HashSet<string> s_RunningAgents + lock` 防同 agent 重入）。
+
+### 為何要分？
+
+- **隔離卡死**：Zeta 卡 30 秒，Claude / Gemini / Antigravity 同時 submit 不受影響
+- **避免 write race**：每 agent 寫自家 queue，`load → modify → save` 不再撞別 agent
+- **對齊既有設計**：letters / baton / affinity / agent_bonus_quota 全 per-actor 分檔，cmd queue 該對齊
 
 ---
 

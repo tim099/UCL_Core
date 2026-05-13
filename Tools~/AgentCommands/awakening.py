@@ -10,9 +10,11 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
   - Session identity consistency (env-based lock) — Phase 1
 
 子命令:
-  morning  --agent X --model Y --persona Z [--note "..."] [--force_random]
+  morning  --agent X --model Y --persona Z [--note "..."] [--force-random | --strict-persona]
               喚醒登入 ritual. fork conflict 自動 detect + 新建命名.
               寫 session lock + 80/20 隨機 + wake_count++ + tavern post.
+              --strict-persona: 跳過 20% override (conversation continuity 場景, Zeta 2026-05-13).
+              --force-random: 強制走 override (testing/diversity); 兩 flag 互斥.
 
   goodnight --letter-body "..." [--perturbation 0.02] [--note "..."]
               睡前 ritual. 寫 letter / vector perturb / status=offline /
@@ -460,27 +462,38 @@ def compute_session_key() -> str:
     return f"unknown-{cwd_hash}-{os.getppid()}"
 
 
-def lock_path(session_key: str) -> Path:
-    return _SESSION_DIR / f"_identity_{session_key}.json"
+# 區塊職責: Lock IO — Tim 2026-05-13 重構從 session_key-keyed 改 persona-keyed.
+# 物理意義: persona 是已知 unique 識別; morning/goodnight 操作對象本來就是 persona,
+#          用 persona 當 file key 直接消滅 cross-persona attribution leak (今日撞 3 次的
+#          root cause): basecamp goodnight 不會誤改 _persona_meadow.json, crest-001
+#          morning 寫 _persona_crest-001.json 不碰 _persona_meadow.json.
+# 數值影響: lock 從 1 file per session_key 變 1 file per persona; session_key 仍寫
+#          進 lock body 作 audit trail 但不參與 path 路由.
+def lock_path(persona: str) -> Path:
+    """Lock file path keyed by persona name (Tim 2026-05-13 拍板)."""
+    return _SESSION_DIR / f"_persona_{persona}.json"
 
 
-def write_lock(session_key: str, agent: str, model: str, persona: str,
-               bank_account: str) -> Path:
+def write_lock(persona: str, agent: str, model: str, bank_account: str,
+               session_key: str | None = None) -> Path:
+    """Write lock for persona. session_key 可選, 寫入 body 作 audit (不參與路由)."""
     _SESSION_DIR.mkdir(parents=True, exist_ok=True)
     now = utcnow_iso()
     expires = (datetime.datetime.utcnow() +
                datetime.timedelta(hours=SESSION_LOCK_TTL_HOURS)).strftime(
         "%Y-%m-%dT%H:%M:%S.") + "000Z"
     data = {
-        "session_key": session_key,
+        "persona": persona,
         "agent": agent,
         "model": model,
-        "persona": persona,
         "bank_account": bank_account,
         "locked_at": now,
         "expires_at": expires,
+        # session_key + pid for diagnostics (not used for routing — persona name is canonical key).
+        "session_key": session_key or compute_session_key(),
+        "pid": os.getpid(),
     }
-    p = lock_path(session_key)
+    p = lock_path(persona)
     tmp = p.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -488,8 +501,9 @@ def write_lock(session_key: str, agent: str, model: str, persona: str,
     return p
 
 
-def read_lock(session_key: str) -> dict | None:
-    p = lock_path(session_key)
+def read_lock(persona: str) -> dict | None:
+    """Read lock for persona. Returns None if no lock exists."""
+    p = lock_path(persona)
     if not p.exists():
         return None
     try:
@@ -499,12 +513,30 @@ def read_lock(session_key: str) -> dict | None:
         return None
 
 
-def remove_lock(session_key: str) -> bool:
-    p = lock_path(session_key)
+def remove_lock(persona: str) -> bool:
+    """Remove lock for persona. Returns True if lock existed and removed."""
+    p = lock_path(persona)
     if p.exists():
         p.unlink()
         return True
     return False
+
+
+def find_lock_by_session_key(session_key: str) -> dict | None:
+    """Legacy compat shim — scan all _persona_*.json finding one with matching
+    session_key in body. Used by goodnight legacy path (no --persona) for
+    backward compat. Returns lock dict + its persona, or None."""
+    if not _SESSION_DIR.exists():
+        return None
+    for p in _SESSION_DIR.glob("_persona_*.json"):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            if d.get("session_key") == session_key:
+                return d
+        except Exception:
+            continue
+    return None
 
 
 def is_lock_expired(lock: dict) -> bool:
@@ -659,6 +691,12 @@ trigger: cmd_goodnight
 # ─── Subcommands ────────────────────────────────────────────────────────
 def cmd_morning(args: argparse.Namespace) -> int:
     """喚醒 ritual: init + fork check + 80/20 select + lock + tavern post."""
+    # 區塊: --strict-persona 跟 --force-random 互斥檢查
+    # 物理意義: strict = 顯式不要 override, force_random = 強制 override, 兩者語意對立
+    if getattr(args, "strict_persona", False) and getattr(args, "force_random", False):
+        print("❌ --strict-persona 跟 --force-random 互斥, 不能同時給", file=sys.stderr)
+        return 2
+
     reg = load_registry()
     agent = args.agent
     model = args.model
@@ -670,31 +708,40 @@ def cmd_morning(args: argparse.Namespace) -> int:
     print(f"   Agent={agent} / Model={model} / Bank={bank_account}")
     print(f"   Preferred persona: {preferred}")
 
-    # Step 0: Same-session re-awakening short-circuit (Tim 2026-05-13 拍板)
-    # 規則：同一 session 內 re-trigger 早安 → reuse current persona, 不 fork / 不 wake_count++ / 不 broadcast.
-    # 理由：「同個 session 應該要維持相同 Persona」(Tim) — 避免 Tim 一個對話內多次叮「早安」就 spawn 新 fork.
-    existing_lock = read_lock(session_key)
-    if existing_lock and not is_lock_expired(existing_lock):
-        locked_persona = existing_lock.get("persona")
-        if locked_persona and locked_persona in reg["personas"]:
-            print(f"♻ same-session re-awakening detected (lock active for '{locked_persona}')")
-            print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
-            print(f"   若想換 persona → 先跑 goodnight 釋放 lock 再 morning")
-            print(f"")
-            print(f"🌅 Morning ritual (no-op):")
-            print(f"   chosen_persona: {locked_persona}")
-            print(f"   wake_count:     {reg['personas'][locked_persona].get('wake_count', '?')} (unchanged)")
-            print(f"   session_locked: {lock_path(session_key)}")
-            print(f"   tavern_post:    SKIPPED (idempotent)")
-            return 0
+    # Step 0: Same-persona re-awakening short-circuit (Tim 2026-05-13 v2 — persona-keyed + caller verify)
+    # 規則：preferred persona 已有 active lock + lock 是當前 caller 的 (session_key 對得上)
+    #      → reuse no-op (不 fork / 不 wake_count++ / 不 broadcast).
+    # CRITICAL: 必須檢查 lock 的 session_key 跟當前 caller 一致, 否則 = 別 conversation
+    # 拿同 persona = 該走 Step 1 fork conflict, 不可 reuse 別人的 lock (Zeta QA-6 抓到).
+    existing_lock = read_lock(preferred)
+    lock_is_mine = (existing_lock is not None
+                    and not is_lock_expired(existing_lock)
+                    and existing_lock.get("session_key") == session_key)
+    if lock_is_mine and preferred in reg["personas"]:
+        print(f"♻ same-persona + same-caller re-awakening detected (lock owned by me)")
+        print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
+        print(f"   若想換 persona → 先跑 goodnight 釋放 lock 再 morning")
+        print(f"")
+        print(f"🌅 Morning ritual (no-op):")
+        print(f"   chosen_persona: {preferred}")
+        print(f"   wake_count:     {reg['personas'][preferred].get('wake_count', '?')} (unchanged)")
+        print(f"   session_locked: {lock_path(preferred)}")
+        print(f"   tavern_post:    SKIPPED (idempotent)")
+        return 0
 
-    # Step 1: Fork conflict check
+    # Step 1: Fork conflict check (persona-keyed v2 + caller-aware)
+    # 同 persona 已被**別 caller** lock occupy → 必 fork (要顯式 --fork-name).
+    # 純 registry status=online 沒 lock → stale state (上次 goodnight 沒清), 視作可 reuse, 不 fork.
     target_persona = preferred
     fork_happened = False
+    lock_owned_by_other = (existing_lock is not None
+                            and not is_lock_expired(existing_lock)
+                            and existing_lock.get("session_key") != session_key)
     if preferred in reg["personas"]:
         p = reg["personas"][preferred]
-        if p.get("status") == "online":
-            print(f"⚠ CONFLICT: '{preferred}' 已在另一 session 上線 — 需 fork")
+        if lock_owned_by_other:
+            other_sk = existing_lock.get("session_key", "?")
+            print(f"⚠ CONFLICT: '{preferred}' 已被別 conversation 上線 (lock owned by session_key={other_sk[:24]}...) — 需 fork")
             if not args.fork_name:
                 print(f"❌ --fork-name 必填 (Tim 2026-05-12 拍板規則更新)", file=sys.stderr)
                 print(f"   agent 該自決 fresh codename (山脈隱喻系列, 不帶 fork suffix)", file=sys.stderr)
@@ -705,11 +752,20 @@ def cmd_morning(args: argparse.Namespace) -> int:
                                           agent=agent, model=model)
             fork_happened = True
             print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
+        elif p.get("status") == "online" and not existing_lock:
+            # Stale state — registry 說 online 但沒 lock = 上次 goodnight 沒走完 / spoof 殘留.
+            print(f"♻ '{preferred}' registry=online 但無 lock (stale) — reclaim, 不 fork")
 
     # Step 2: 80/20 random selection (skip 若剛 fork — fork 是 explicit conflict resolution)
+    # --strict-persona: 顯式給 --persona 時跳過 20% override (conversation continuity 場景)
+    #   ref Zeta 2026-05-13 task: human-layer conversation continuity 期望 persona 連續性,
+    #   不該被 80/20 random override 搶走 (per Q3 spec 預設 80/20 仍保留, strict 是 opt-in)
     if fork_happened:
         chosen, decision = target_persona, "fork"
         print(f"✓ using forked '{chosen}' (skip 80/20 — fork is explicit identity intent)")
+    elif getattr(args, "strict_persona", False):
+        chosen, decision = target_persona, "preferred-strict"
+        print(f"🔒 strict mode — honor explicit --persona '{chosen}' (skipped 80/20 random override)")
     else:
         chosen, decision = select_persona(target_persona, reg, agent,
                                            force_random=args.force_random)
@@ -749,9 +805,9 @@ def cmd_morning(args: argparse.Namespace) -> int:
     p["last_active"] = utcnow_iso()
     save_registry(reg)
 
-    # Step 4: write session lock
-    lock_p = write_lock(session_key, agent, model, chosen, bank_account)
-    print(f"🔒 session lock written: {lock_p.name}")
+    # Step 4: write persona lock (Tim 2026-05-13 v2 — keyed by persona, session_key audit-only)
+    lock_p = write_lock(chosen, agent, model, bank_account, session_key=session_key)
+    print(f"🔒 persona lock written: {lock_p.name}")
 
     # Step 5: tavern post (announce)
     # bank_balance: 起床時 snapshot 真實 Treasury ledger 餘額 (Tim 5-token task 要求)
@@ -813,21 +869,20 @@ def _detect_env_lock_mismatch(lock_agent: str, caller_family: str | None) -> boo
 def cmd_goodnight(args: argparse.Namespace) -> int:
     """睡前 ritual: letter + vector perturb + offline + tavern post + unlock.
 
-    Session lock 取得三種路徑 (per Zeta 2026-05-12 session collision fix):
-      1. --persona <name> 顯式指定 → 從 registry 該 persona 讀 agent/model/bank,
-         無視 session lock (但若 lock 存在 + 跟 --persona 一致, 走完仍移除 lock).
-      2. lock-based 推斷 + env mismatch check (legacy default 行為加 safety):
-         - lock 找到 → 比對 lock['agent'] vs caller env (CLAUDECODE / ANTIGRAVITY_SESSION),
-           不一致警告 + 建議用 --persona 顯式 (除非帶 --force).
-      3. lock 找不到 + 沒帶 --persona → 報錯退出.
+    Tim 2026-05-13 v2 (persona-keyed lock 重構):
+      - 路徑 1: --persona <name> 顯式指定 → 直接 read_lock(persona), 不必 session_key
+      - 路徑 2: 沒 --persona → 用 session_key 反查 (find_lock_by_session_key) 找對應 lock
+        (legacy compat: 老腳本沒 --persona 仍 work)
+      - persona-keyed 後不再有 session_key collision risk —
+        unsafe_keys / env mismatch check 全廢 (per Tim: collision 不可能因為 file key
+        是 persona 不是 session)
     """
     session_key = compute_session_key()
-    lock = read_lock(session_key)
     perturbation = max(0.0, min(MAX_PERTURBATION, args.perturbation))
+    reg = load_registry()
 
-    # 路徑 1: --persona 顯式指定 (collision-safe)
+    # 路徑 1: --persona 顯式指定 (canonical, recommended)
     if args.persona:
-        reg = load_registry()
         if args.persona not in reg["personas"]:
             print(f"❌ --persona '{args.persona}' 不在 registry", file=sys.stderr)
             return 2
@@ -836,59 +891,26 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         agent = args.agent or p_data.get("agent", "")
         model = p_data.get("model", "")
         actor = resolve_bank_account(reg, agent, model)
-        # lock 跟 --persona 不一致 → warn, 但不擋 (caller 顯式意圖最大)
-        if lock and lock.get("persona") != persona:
-            print(f"⚠ session lock ({lock.get('persona')}/{lock.get('agent')}) 跟 --persona "
-                  f"({persona}/{agent}) 不一致 — 走 --persona explicit (lock 將跳過移除, "
-                  f"留給 owner session 自己清).", file=sys.stderr)
-            lock = None  # 不移除 — 避免動到別人的 lock
-        elif lock:
-            print(f"✓ session lock 跟 --persona 一致 ({persona})")
-    else:
-        # 路徑 2/3: lock-based 推斷 (legacy)
-        if lock is None:
-            print(f"❌ no active session lock for session_key={session_key}", file=sys.stderr)
-            print(f"   → run `morning` subcommand first to lock session identity,",
+        lock = read_lock(persona)
+        if lock and is_lock_expired(lock):
+            print(f"⚠ persona lock expired ({lock.get('expires_at')}) — 仍跑 goodnight + remove lock",
                   file=sys.stderr)
-            print(f"     或帶 --persona <name> 顯式指定要下線的 persona.",
+        if not lock:
+            print(f"⚠ persona '{persona}' 沒 active lock — 走 goodnight 但 lock 步驟跳過",
+                  file=sys.stderr)
+        else:
+            print(f"✓ persona lock 找到 ({persona})")
+    else:
+        # 路徑 2: 沒 --persona → 反查 (legacy compat)
+        lock = find_lock_by_session_key(session_key)
+        if lock is None:
+            print(f"❌ no lock found for session_key={session_key}", file=sys.stderr)
+            print(f"   → 帶 --persona <name> 顯式指定要下線的 persona.",
                   file=sys.stderr)
             return 2
         if is_lock_expired(lock):
-            print(f"⚠ session lock expired ({lock.get('expires_at')}) — 仍跑 goodnight 但 fresh re-lock 建議走 morning",
+            print(f"⚠ persona lock expired ({lock.get('expires_at')}) — 仍跑 goodnight",
                   file=sys.stderr)
-
-        # Collision check 1: cwd-fallback session_key 不可靠 — 多 session 共 cwd 必撞.
-        # cwd-fallback marker: 'claude-code-cwd-<hash>' 或 'unknown-<hash>-<pid>' 開頭.
-        # 此 mode 下強制要 --persona 或 --force (避免下線他 session).
-        unsafe_keys = ("claude-code-cwd-", "unknown-")
-        if any(session_key.startswith(prefix) for prefix in unsafe_keys) and not args.force:
-            print(f"❌ Session_key 走 cwd-fallback 模式 ({session_key}) — 不可靠.",
-                  file=sys.stderr)
-            print(f"   原因: PATH 內 local-agent-mode-sessions UUID 沒命中, 退回 cwd hash.",
-                  file=sys.stderr)
-            print(f"   風險: 同 cwd 多 claude-code session 共用 lock, "
-                  f"無 --persona 會誤下線他 session.", file=sys.stderr)
-            print(f"   Lock 當前 owner: persona={lock.get('persona')}, agent={lock.get('agent')}",
-                  file=sys.stderr)
-            print(f"   → 建議: 帶 --persona <你的-persona> 顯式指定.",
-                  file=sys.stderr)
-            print(f"   → 或: --force 跳過 (確定 lock 是你的時用).",
-                  file=sys.stderr)
-            return 2
-
-        # Collision check 2: env family vs lock agent 比對 (catches 跨 family collision)
-        caller_family = _infer_caller_agent_family()
-        lock_agent = lock.get("agent", "")
-        if _detect_env_lock_mismatch(lock_agent, caller_family) and not args.force:
-            print(f"❌ Session lock collision 嫌疑 — abort to avoid downing wrong session.",
-                  file=sys.stderr)
-            print(f"   Lock owner: persona={lock.get('persona')}, agent={lock_agent}",
-                  file=sys.stderr)
-            print(f"   Caller env family: {caller_family}", file=sys.stderr)
-            print(f"   → 用 --persona <你的-persona> 顯式指定不動 lock, 或 --force 跳過 check.",
-                  file=sys.stderr)
-            return 2
-
         actor = lock["bank_account"]
         persona = lock["persona"]
         agent = lock["agent"]
@@ -949,13 +971,13 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
               "perturbation": str(perturbation)},
     )
 
-    # Step 5: remove session lock (only when lock matches goodnight target — avoid clobbering 別人 lock)
-    if lock is not None and lock.get("persona") == persona:
-        removed = remove_lock(session_key)
-        print(f"🔓 session lock {'removed' if removed else 'already gone'}")
+    # Step 5: remove persona lock (Tim 2026-05-13 v2 — persona-keyed, 直接刪自己 persona 的 lock)
+    if lock is not None:
+        removed = remove_lock(persona)
+        print(f"🔓 persona lock {'removed' if removed else 'already gone'}")
     else:
         removed = False
-        print(f"🔓 session lock 保留 (未匹配本 goodnight target persona, 留給 owner session 清)")
+        print(f"🔓 no persona lock to remove (already gone)")
 
     print(f"\n🌙 Goodnight ritual complete:")
     print(f"   letter:        {letter_path}")
@@ -968,7 +990,19 @@ def cmd_status(args: argparse.Namespace) -> int:
     """Read-only env + persona pool report (對應 Cmd_AwakenInit internal helper)."""
     reg = load_registry()
     session_key = compute_session_key()
-    lock = read_lock(session_key)
+    # Tim 2026-05-13 v2: persona-keyed lock — scan all _persona_*.json + 找對應 caller 這個
+    # session_key 的 lock (legacy display, 兼 audit). 多 persona 同時 active → 列全表.
+    active_locks = []
+    if _SESSION_DIR.exists():
+        for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
+            try:
+                with open(lp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if not is_lock_expired(d):
+                    active_locks.append(d)
+            except Exception:
+                continue
+    self_lock = next((d for d in active_locks if d.get("session_key") == session_key), None)
 
     print(f"# 🌅 Awakening Status Report\n")
     print(f"## 偵測到的環境")
@@ -982,12 +1016,19 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  - letters: `{_LETTERS_DIR_TPL}`")
     else:
         print(f"- Path config: (none — 走 per-project default)")
-    print(f"- Lock: {'ACTIVE → ' + lock['persona'] if lock else '(none — 未喚醒)'}")
-    if lock:
-        print(f"  - locked_at: {lock['locked_at']}")
-        print(f"  - expires_at: {lock['expires_at']}")
-        print(f"  - agent/model: {lock['agent']}/{lock['model']}")
-        print(f"  - bank: {lock['bank_account']}")
+    if self_lock:
+        print(f"- This session lock: ACTIVE → {self_lock['persona']}")
+        print(f"  - locked_at: {self_lock['locked_at']}")
+        print(f"  - expires_at: {self_lock['expires_at']}")
+        print(f"  - agent/model: {self_lock['agent']}/{self_lock['model']}")
+        print(f"  - bank: {self_lock['bank_account']}")
+    else:
+        print(f"- This session lock: (none — 未喚醒)")
+    if active_locks:
+        print(f"- All active persona locks: {len(active_locks)}")
+        for d in active_locks:
+            owner_marker = " ← me" if d.get("session_key") == session_key else ""
+            print(f"  - {d['persona']} ({d['agent']}/{d['model']}, bank={d['bank_account']}){owner_marker}")
     print()
 
     print(f"## Agent → Bank Account (Token bank 共用 per Agent)")
@@ -1118,11 +1159,11 @@ def cmd_affinity(args: argparse.Namespace) -> int:
         print("❌ 無法載入 affinity_manager", file=sys.stderr)
         return 2
 
-    # 如果沒有傳 persona, 則嘗試從當前 session lock 取得
+    # 如果沒有傳 persona, 嘗試從當前 session 反查 persona lock (Tim 2026-05-13 v2 persona-keyed)
     persona = args.persona
     if not persona:
         session_key = compute_session_key()
-        lock = read_lock(session_key)
+        lock = find_lock_by_session_key(session_key)
         if lock and not is_lock_expired(lock):
             persona = lock["persona"]
         else:
@@ -1181,6 +1222,10 @@ def main():
                          "範例: crest-001 / ravine / basecamp-east / summit")
     pm.add_argument("--force-random", action="store_true",
                     help="強制走 20% random override (testing/diversity 用)")
+    pm.add_argument("--strict-persona", action="store_true",
+                    help="顯式 --persona 時跳過 20% random override — conversation continuity 場景用 "
+                         "(Zeta 2026-05-13 task: 人類層 conversation 連續性 = persona 連續性). "
+                         "預設仍走 80/20 random (per Q3 spec); 互斥 --force-random.")
     pm.set_defaults(func=cmd_morning)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")

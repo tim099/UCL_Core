@@ -41,7 +41,7 @@ namespace UCL.Core.EditorLib.Page
     public class UCL_WelcomePage : UCL_CommonEditorPage
     {
         public override string WindowName => "UCL_Core Welcome";
-
+        public override bool ShowInPageMenu => false;
         /// <summary>當前 Welcome 內容版本 — 若 EditorPrefs 內紀錄的版本不同，會自動彈出一次。</summary>
         public const string CurrentVersion = "1";
 

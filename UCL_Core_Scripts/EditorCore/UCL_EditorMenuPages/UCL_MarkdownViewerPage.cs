@@ -31,7 +31,7 @@ namespace UCL.Core.EditorLib.Page
     public class UCL_MarkdownViewerPage : UCL_CommonEditorPage
     {
         public override string WindowName => UCL_CodeLocalize.Get("MdViewer.Title");
-
+        public override bool ShowInPageMenu => false;
         // ==== 載入狀態 ====
         // 物理意義：m_RelativePath / m_AbsolutePath 一組 — 前者用於 UCL_URL prefix 解析，後者用於 File IO / Reveal
         string m_RelativePath;

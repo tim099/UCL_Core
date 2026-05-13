@@ -1,11 +1,12 @@
-﻿#if UNITY_EDITOR
+﻿
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using UCL.Core.JsonLib;
+using UCL.Core.LocalizeLib;
+using UCL.Core.Page;
 using UCL.Core.UI;
-using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -22,7 +23,7 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md")]
     public class UCL_LoginStatusPage : UCL_CommonEditorPage
     {
-        public override string WindowName => "Login Status";
+        public override string WindowName => UCL_CodeLocalize.Get("LoginStatus.Title");
         public override bool ShowInPageMenu => true;
         public static UCL_LoginStatusPage Create() => UCL_EditorPage.Create<UCL_LoginStatusPage>();
 
@@ -100,7 +101,7 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            if (GUILayout.Button("🔄 Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 LoadData();
             }
@@ -213,50 +214,50 @@ namespace UCL.Core.EditorLib.Page
             if (collisions.Count == 0) return;
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<color=#ff9966><b>⚠ Session-key COLLISION 偵測</b></color>", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("cwd-hash session_key 在多 Claude IDE 同 cwd 下會撞。下列 session_key 對到 ≥ 2 lock：", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Collision.Title"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Collision.Desc"), UCL_GUIStyle.LabelStyle);
                 foreach (var c in collisions)
                 {
                     GUILayout.Label($"  • {c}", UCL_GUIStyle.LabelStyle);
                 }
-                GUILayout.Label("→ 用 pid 跟 locked_at 區分自己 process。Morning ritual 該帶 --strict-persona。", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Collision.Hint"), UCL_GUIStyle.LabelStyle);
             }
         }
 
         // 區塊職責：active locks 表 + per-row Logout 按鈕
         void DrawActiveLocks()
         {
-            GUILayout.Label($"<b>Active Persona Locks ({m_Locks.Count})</b>", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Locks.HeaderFmt"), m_Locks.Count), UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
                 if (m_Locks.Count == 0)
                 {
-                    GUILayout.Label("(無 active lock — 所有 persona offline)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Locks.Empty"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
                 m_LocksScroll = GUILayout.BeginScrollView(m_LocksScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(220)));
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Persona", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                    GUILayout.Label("Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
-                    GUILayout.Label("Bank", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                    GUILayout.Label("pid", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    GUILayout.Label("locked_at (UTC)", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label("expires_at (UTC)", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label("session_key", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Bank"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Pid"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LockedAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.ExpiresAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.SessionKey"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                     GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
                 }
                 foreach (var l in m_Locks)
                 {
                     using (new GUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button("🌙 Logout", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Logout"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                         {
                             DoLogout(l.Persona, l.Agent);
                         }
 
-                        string personaLabel = l.Expired ? $"<color=#aa6666>{l.Persona} (expired)</color>" : l.Persona;
+                        string personaLabel = l.Expired ? string.Format(UCL_CodeLocalize.Get("LoginStatus.ExpiredFmt"), l.Persona) : l.Persona;
                         GUILayout.Label(personaLabel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                         GUILayout.Label(l.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                         GUILayout.Label(l.BankAccount, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
@@ -265,7 +266,7 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Label(TruncTs(l.ExpiresAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(TruncKey(l.SessionKey), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
 
-                        if (GUILayout.Button("✂ Force RM", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(75))))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.ForceRm"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(75))))
                         {
                             DoForceRemove(l.Persona);
                         }
@@ -279,32 +280,32 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：Tim 輸入 agent + persona, 觸發 awakening.py morning
         void DrawManualLogin()
         {
-            GUILayout.Label("<b>Manual Morning (Login)</b>", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.ManualLogin.Title"), UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Agent:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     m_LoginAgent = GUILayout.TextField(m_LoginAgent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
-                    GUILayout.Label("Persona:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     m_LoginPersona = GUILayout.TextField(m_LoginPersona, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
-                    GUILayout.Label("Model:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Model"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     m_LoginModel = GUILayout.TextField(m_LoginModel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                 }
                 using (new GUILayout.HorizontalScope())
                 {
                     m_LoginStrictPersona = GUILayout.Toggle(m_LoginStrictPersona, "--strict-persona", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
                     m_LoginRebindAgent = GUILayout.Toggle(m_LoginRebindAgent, "--rebind-agent", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                    GUILayout.Label("Fork name:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.ForkName"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     m_LoginForkName = GUILayout.TextField(m_LoginForkName, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                 }
                 using (new GUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("🌅 Morning (Login)", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Morning"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         DoMorning();
                     }
-                    GUILayout.Label("(empty agent → reject; empty persona → reject)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Login.RejectHint"), UCL_GUIStyle.LabelStyle);
                 }
             }
         }
@@ -313,28 +314,32 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：列所有 personas (含 offline), 給 Tim 看 wake_count + status + 是否有 lock
         void DrawPersonaPool()
         {
-            GUILayout.Label($"<b>Persona Pool ({m_Pool.Count})</b>", UCL_GUIStyle.LabelStyle);
+            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.HeaderFmt"), m_Pool.Count), UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
                 if (m_Pool.Count == 0)
                 {
-                    GUILayout.Label($"(無 registry — `{m_PersonasDir}` 不存在或空)", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.EmptyFmt"), m_PersonasDir), UCL_GUIStyle.LabelStyle);
                     return;
                 }
                 m_PoolScroll = GUILayout.BeginScrollView(m_PoolScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(240)));
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Persona", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label("Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    GUILayout.Label("Status", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                    GUILayout.Label("Wake#", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    GUILayout.Label("Layer Role", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
-                    GUILayout.Label("Last Active (UTC)", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Status"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Wake"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LayerRole"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LastActive"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                 }
                 foreach (var p in m_Pool)
                 {
                     using (new GUILayout.HorizontalScope())
                     {
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle))
+                        {
+                            GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Agent} {p.Name}";
+                        }
                         string status = p.HasLock ? $"<color=#66ff99>{p.Status} 🔒</color>" : p.Status;
                         GUILayout.Label(p.Name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(p.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
@@ -406,23 +411,43 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning($"[LoginStatus] lock 不存在: {lockPath}");
                 return;
             }
-            if (!EditorUtility.DisplayDialog(
-                "Force Remove Lock",
-                $"確定強制刪除 lock?\n\n{lockPath}\n\n注意: persona registry status 不會自動改成 offline, 需後續手動修正。建議優先用 Logout (走 goodnight ritual)。",
-                "確定 ✂", "取消"))
-            {
-                return;
-            }
-            try
-            {
-                File.Delete(lockPath);
-                Debug.Log($"[LoginStatus] lock removed: {lockPath}");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LoginStatus] force remove failed: {e.Message}");
-            }
-            LoadData();
+            var page = UCL.Core.Page.UCL_OptionPage.Create(UCL_CodeLocalize.Get("LoginStatus.Dialog.ForceRm.Title"),
+                    string.Format(UCL_CodeLocalize.Get("LoginStatus.Dialog.ForceRm.BodyFmt"), lockPath),
+                    new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.ConfirmRemove"), () =>
+                    {
+                        try
+                        {
+                            File.Delete(lockPath);
+                            Debug.Log($"[LoginStatus] lock removed: {lockPath}");
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogError($"[LoginStatus] force remove failed: {e.Message}");
+                        }
+                        LoadData();
+                    }, UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red)),
+                    new ButtonData(UCL_CodeLocalize.Get("Cancel"), () =>
+                    {
+
+                    }));
+
+            //if (!EditorUtility.DisplayDialog(
+            //    "Force Remove Lock",
+            //    $"確定強制刪除 lock?\n\n{lockPath}\n\n注意: persona registry status 不會自動改成 offline, 需後續手動修正。建議優先用 Logout (走 goodnight ritual)。",
+            //    "確定 ✂", "取消"))
+            //{
+            //    return;
+            //}
+            //try
+            //{
+            //    File.Delete(lockPath);
+            //    Debug.Log($"[LoginStatus] lock removed: {lockPath}");
+            //}
+            //catch (Exception e)
+            //{
+            //    Debug.LogError($"[LoginStatus] force remove failed: {e.Message}");
+            //}
+            //LoadData();
         }
 
         void RunAwakening(List<string> args, string opLabel)
@@ -497,4 +522,3 @@ namespace UCL.Core.EditorLib.Page
         }
     }
 }
-#endif

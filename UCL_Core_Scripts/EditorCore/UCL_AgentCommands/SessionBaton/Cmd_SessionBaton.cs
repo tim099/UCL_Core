@@ -35,20 +35,26 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
     ///   --arg body="# 主軸\n...\n# 未完議題\n...\n# 鉤子\n..."
     /// </code>
     ///
-    /// <para>磁碟結構：</para>
+    /// <para>磁碟結構 (kyouko-persona-binding T03, 2026-05-13 拍板 Agent@Persona keyed)：</para>
     /// <code>
     /// AgentCommands/ChatTavern/baton/
-    ///   ├── claude-da-xiaojie_20260511T001234Z.md   (timestamped audit; 不覆寫)
-    ///   ├── _latest_claude-da-xiaojie.md            (覆寫 pointer; 下次 session 直接看)
-    ///   ├── antigravity-da-xiaojie_<ts>.md
-    ///   ├── _latest_antigravity-da-xiaojie.md
-    ///   └── _last_op.md                              (給當次 caller confirm)
+    ///   ├── claude-da-xiaojie/
+    ///   │   ├── basecamp/
+    ///   │   │   ├── 20260511T001234Z.md   (timestamped audit; 不覆寫)
+    ///   │   │   └── _latest.md            (覆寫 pointer; 下次 session 直接看)
+    ///   │   ├── crest-001/
+    ///   │   │   └── _latest.md
+    ///   │   └── _unassigned/             (沒傳 persona arg 的 legacy 落點)
+    ///   ├── antigravity-da-xiaojie/
+    ///   │   └── apex-one/
+    ///   │       └── _latest.md
+    ///   └── _last_op.md                  (給當次 caller confirm, 共用一份)
     /// </code>
     ///
     /// <para>下次 session 重建 SOP：</para>
     /// <code>
     /// 1. 開機載 SKILL.md → 看到本 cmd reference
-    /// 2. cat AgentCommands/ChatTavern/baton/_latest_&lt;my_id&gt;.md
+    /// 2. cat AgentCommands/ChatTavern/baton/&lt;my_id&gt;/&lt;my_persona&gt;/_latest.md
     /// 3. 重建 thread context 後正式進工作
     /// </code>
     /// </summary>
@@ -61,12 +67,13 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
 
         public override string ArgsSchema =>
             "actor=Agent id 來源 (required) | " +
+            "persona=Persona codename (optional, default '_unassigned' — kyouko-persona-binding T03) | " +
             "title=Baton 主題短句 (optional, default 'Session Baton') | " +
             "body=Markdown 內容 - 主軸/未完議題/鉤子/重要學習 (required) | " +
             "summary=1-2 句 header summary (optional, 自動從 body 第一段截取)";
 
         public override string ExampleArgs =>
-            "actor=claude-da-xiaojie;title=T82 三輪 ship 收尾;body=## 主軸\\n...";
+            "actor=claude-da-xiaojie;persona=basecamp;title=T82 三輪 ship 收尾;body=## 主軸\\n...";
 
         public override string HelpURL =>
             "ucl_core:Skills~/ucl-chat-tavern/SKILL.md";
@@ -76,6 +83,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             await UniTask.Yield();
 
             string actor = GetArg(args, "actor", "").Trim();
+            string persona = GetArg(args, "persona", "_unassigned").Trim();
             string title = GetArg(args, "title", "Session Baton").Trim();
             string body = GetArg(args, "body", "");
             string summary = GetArg(args, "summary", "").Trim();
@@ -89,14 +97,21 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
                 throw new Exception("[SessionBaton] body 必填（傳 --arg body=\"<markdown 內容>\"）");
             }
 
-            // 安全：actor 不能含路徑分隔（防 path traversal）
+            // 安全：actor / persona 不能含路徑分隔（防 path traversal）
             if (actor.Contains("/") || actor.Contains("\\") || actor.Contains(".."))
             {
                 throw new Exception($"[SessionBaton] actor 含非法字元: {actor}");
             }
+            if (string.IsNullOrWhiteSpace(persona) || persona.Contains("/") || persona.Contains("\\") || persona.Contains(".."))
+            {
+                throw new Exception($"[SessionBaton] persona 含非法字元或空字串: {persona}");
+            }
 
-            // Path: <repoRoot>/AgentCommands/ChatTavern/baton/
-            string batonDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "baton");
+            // Path: <repoRoot>/AgentCommands/ChatTavern/baton/<actor>/<persona>/
+            // 區塊職責：T03 kyouko-persona-binding refactor — baton 從 actor-keyed 改 Agent@Persona-keyed
+            // 物理意義：basecamp 跟 crest-001 的 baton 不再共用 _latest pointer，各自 persona-bounded
+            // 數值影響：legacy caller 沒傳 persona → 落 _unassigned/（backward compat，goodnight 後可手動歸位）
+            string batonDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "baton", actor, persona);
             try
             {
                 Directory.CreateDirectory(batonDir);
@@ -110,9 +125,10 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             string ts = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
             string isoTs = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
-            string timestampedPath = Path.Combine(batonDir, $"{actor}_{ts}.md");
-            string latestPath = Path.Combine(batonDir, $"_latest_{actor}.md");
-            string confirmPath = Path.Combine(batonDir, "_last_op.md");
+            string timestampedPath = Path.Combine(batonDir, $"{ts}.md");
+            string latestPath = Path.Combine(batonDir, "_latest.md");
+            // confirm md 留在 baton 根（caller 一律 cat 同一處）
+            string confirmPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "baton", "_last_op.md");
 
             // 自動 summary（如果 caller 沒給）：從 body 第一段非空行截取
             if (string.IsNullOrEmpty(summary))
@@ -124,6 +140,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             var sb = new StringBuilder();
             sb.AppendLine("---");
             sb.AppendLine($"actor: {actor}");
+            sb.AppendLine($"persona: {persona}");
             sb.AppendLine($"title: {title}");
             sb.AppendLine($"ts_utc: {isoTs}");
             sb.AppendLine($"summary: {EscapeYaml(summary)}");
@@ -140,7 +157,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             sb.AppendLine();
             sb.AppendLine("---");
             sb.AppendLine();
-            sb.AppendLine($"_baton 接力下次 session 重建 thread context 用 — 載入 SKILL 後 cat `_latest_{actor}.md` 即可看本筆_");
+            sb.AppendLine($"_baton 接力下次 session 重建 thread context 用 — 載入 SKILL 後 cat `baton/{actor}/{persona}/_latest.md` 即可看本筆_");
 
             string content = sb.ToString();
 
@@ -168,6 +185,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             string confirmMd =
                 $"# 🪃 Baton 接力 dump 完成\n\n" +
                 $"- **actor**: `{actor}`\n" +
+                $"- **persona**: `{persona}`\n" +
                 $"- **title**: {title}\n" +
                 $"- **ts**: `{isoTs}`\n" +
                 $"- **summary**: {summary}\n\n" +
@@ -176,7 +194,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
                 $"- `{Rel(latestPath)}` (覆寫 pointer)\n\n" +
                 $"---\n\n" +
                 $"下次 session 載入 SKILL 後快速重建：\n" +
-                $"```\ncat AgentCommands/ChatTavern/baton/_latest_{actor}.md\n```\n";
+                $"```\ncat AgentCommands/ChatTavern/baton/{actor}/{persona}/_latest.md\n```\n";
             try
             {
                 File.WriteAllText(confirmPath, confirmMd, new UTF8Encoding(false));
@@ -186,7 +204,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
                 Debug.LogWarning($"[SessionBaton] confirm md 寫入失敗（baton 已寫不受影響）：{ex.Message}");
             }
 
-            Debug.Log($"[SessionBaton] +1 baton by {actor} ({title}) → {Rel(timestampedPath)}");
+            Debug.Log($"[SessionBaton] +1 baton by {actor}@{persona} ({title}) → {Rel(timestampedPath)}");
         }
 
         // ===========================================================

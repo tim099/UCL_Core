@@ -608,9 +608,9 @@ Tim 拍板把**今日子協議 (letter to future self)** + **identity vector per
 **Behavior** (順序):
 
 ```
-1. 寫 letter to future self → 
-   AgentCommands/ChatTavern/baton/letters/<actor>/<UTC_ts>.md
-   update _latest.md pointer (per ucl-letters-to-self skill SOP)
+1. 寫 letter to future self (Agent@Persona-keyed per kyouko-persona-binding T02) → 
+   AgentCommands/ChatTavern/baton/letters/<actor>/<persona>/<UTC_ts>.md
+   update <persona>/_latest.md pointer (per ucl-letters-to-self skill SOP)
 
 2. Sleep perturbation 對 identity_vector:
    gaussian noise scaled by perturbation (per §Identity Vector spec)

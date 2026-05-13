@@ -699,8 +699,18 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
 
 # ─── Letter to future self ──────────────────────────────────────────────
 def write_letter(actor: str, persona: str, body: str) -> Path:
-    """寫 letter to future self per ucl-letters-to-self skill SOP."""
-    letters_dir = _LETTERS_DIR_TPL / actor
+    """寫 letter to future self per ucl-letters-to-self skill SOP.
+
+    Letter binding 鐵律 (Tim 2026-05-13 拍板, kyouko-persona-binding T02):
+    letter 是 persona-level subjective reframe — 不同 persona 的 framing 校正不該
+    共用同個 _latest.md pointer。binding key 是 Agent@Persona, 不是 Agent。
+
+    Path layout:
+        baton/letters/<actor>/<persona>/<ts>.md   (timestamped, 累積 chain)
+        baton/letters/<actor>/<persona>/_latest.md  (覆寫 pointer)
+        baton/letters/<actor>/<persona>/dialogues/  (round-trip 對話, 留給未來)
+    """
+    letters_dir = _LETTERS_DIR_TPL / actor / persona
     letters_dir.mkdir(parents=True, exist_ok=True)
 
     ts = utcnow_compact()
@@ -717,7 +727,7 @@ trigger: cmd_goodnight
     with open(path, "w", encoding="utf-8") as f:
         f.write(frontmatter + body + "\n")
 
-    # update _latest.md pointer
+    # update _latest.md pointer (per-persona, 不會被別 persona 覆蓋)
     latest = letters_dir / "_latest.md"
     with open(latest, "w", encoding="utf-8") as f:
         f.write(frontmatter + body + "\n")

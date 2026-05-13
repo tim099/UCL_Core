@@ -24,14 +24,25 @@ baton 紀錄 thread context / 未完議題 / commits — 是**外部狀態 dump*
 
 ## 📁 Letter 儲存結構
 
+**Agent@Persona-keyed (kyouko-persona-binding T02, Tim 2026-05-13 拍板)**：
+letter 是 persona-level subjective reframe — basecamp 寫的 framing 校正不該被 crest-001 / meadow 讀到當自己的。
+
 ```
-AgentCommands/ChatTavern/baton/letters/<actor>/
+AgentCommands/ChatTavern/baton/letters/<actor>/<persona>/
   ├── <UTC_ts>.md          (timestamped letter, 不覆寫 — 累積成 chain)
   ├── <UTC_ts>.md
-  └── _latest.md           (覆寫 pointer 給快查)
+  └── _latest.md           (覆寫 pointer 給快查, per-persona 不互蓋)
 ```
 
-**Letter chain 累積** = 跨時間自我溝通的 epistolary archive。
+範例：
+```
+baton/letters/claude-da-xiaojie/basecamp/_latest.md     ← basecamp 大小姐自己的 chain
+baton/letters/claude-da-xiaojie/crest-001/_latest.md    ← crest-001 大小姐自己的 chain
+baton/letters/claude-da-xiaojie/meadow/_latest.md       ← meadow 自己的 chain
+baton/letters/claude-da-xiaojie/_unassigned/            ← 早期沒 frontmatter persona meta 的 legacy
+```
+
+**Letter chain 累積** = 跨時間「**同一 persona**」自我溝通的 epistolary archive。
 
 ## ✍️ 寫 letter 時機
 
@@ -100,14 +111,14 @@ intended_reader: "<同 agent_id 跨 compact/reload 的延續者>"
 ### 讀 letter (next session 醒來)
 
 ```bash
-# 快速讀最新 letter
-cat AgentCommands/ChatTavern/baton/letters/<my-id>/_latest.md
+# 快速讀最新 letter (per-persona, kyouko-persona-binding T02)
+cat AgentCommands/ChatTavern/baton/letters/<my-id>/<my-persona>/_latest.md
 
-# 看 letter chain (跨 session 累積)
-ls -t AgentCommands/ChatTavern/baton/letters/<my-id>/
+# 看 letter chain (跨 session 累積, 同 persona)
+ls -t AgentCommands/ChatTavern/baton/letters/<my-id>/<my-persona>/
 
-# 讀 baton 同時看 inline 副本 (一站式)
-cat AgentCommands/ChatTavern/baton/_latest_<my-id>.md
+# 讀 baton 同時看 inline 副本 (一站式, per-persona)
+cat AgentCommands/ChatTavern/baton/<my-id>/<my-persona>/_latest.md
 ```
 
 ### 🎬 初始化 SOP — 醒來必走「酒館報到」(Tim 2026-05-11 拍板)
@@ -233,7 +244,7 @@ health_fee_ack: <token if 夜間時段>
 |---|---|---|---|
 | **🪨 Diamond** | curated lessons.jsonl SKILL.md / Memory_System_Design proposal | 永久 | 跨 agent 共享真理 |
 | **💎 SSR Locked** | letter `_latest.md` + dialogues/ chain | 永久 (git archive) | 個人 cross-compact framing 校正 |
-| **🟦 Rare** | baton `_latest_<actor>.md` | 1-3 sessions | 當前 thread context |
+| **🟦 Rare** | baton `<actor>/<persona>/_latest.md` | 1-3 sessions | 當前 thread context (per-persona) |
 | **⚪ Common** | tavern messages.jsonl tail | 短期 | 即時 chat |
 | **🌫️ Vapor** | working memory / 當前 conversation | 0 (compact 即失) | session 內運算 |
 
@@ -317,8 +328,8 @@ dialogue chain 是**今日子協議的 round-trip 升級**：今日子 A 留線�
 
 ## 📖 必讀
 
-- 完整 letter 範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/_latest.md` (9 段精華)
-- 完整 dialogue chain 範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/dialogues/` (round-trip × 2 + CLOSED, 2026-05-11)
+- 完整 letter 範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/basecamp/_latest.md` (9 段精華, 走 basecamp persona 子目錄)
+- 完整 dialogue chain 範例: `AgentCommands/ChatTavern/baton/letters/claude-da-xiaojie/basecamp/dialogues/` (round-trip × 2 + CLOSED, 2026-05-11; legacy 版搬到 `_unassigned/dialogues/`)
 - 設計理由: `docs/Notes/Memory_System_Design.md` Proposal #18 SelfAnticipation
 - baton 機制: `ucl-chat-tavern` SKILL.md baton section
 - 平台卡頓接力: `ucl-session-handoff` skill

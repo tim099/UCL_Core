@@ -194,9 +194,33 @@ namespace UCL.Core.EditorLib.AgentCommands
                         callerEnvMarker = cem;
                     }
                     UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = callerEnvMarker;
+                    // 區塊職責: per-cmd timeout (agent-command-handler-timeout T02, Tim 2026-05-13 拍板)
+                    // 物理意義: handler.TimeoutSeconds (default 1200 = 20min) 為 type-level default
+                    //          caller 帶 args._timeout_sec=N → 即時覆寫該筆 cmd timeout (per-call override)
+                    // 數值影響: timeout fire → 對 handler 發 CancellationToken cancel + 標 LastRunError=timeout
+                    //          handler 不 honor token (e.g. sync File IO) 仍跑到結束 — Runner 不被卡死,
+                    //          下一筆 cmd 照常跑 (Cancel ≠ Timeout caveat per Zeta 2026-05-13).
+                    int timeoutSec = handler.TimeoutSeconds;
+                    if (c.Args != null && c.Args.TryGetValue("_timeout_sec", out var tsRaw)
+                        && int.TryParse(tsRaw, out var tsOverride) && tsOverride > 0)
+                    {
+                        timeoutSec = tsOverride;
+                    }
                     try
                     {
-                        await handler.ExecuteAsync(c.Args ?? new Dictionary<string, string>(), token);
+                        using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
+                        {
+                            var handlerTask = handler.ExecuteAsync(c.Args ?? new Dictionary<string, string>(), cts.Token);
+                            var timeoutTask = UniTask.Delay(System.TimeSpan.FromSeconds(timeoutSec), DelayType.Realtime, cancellationToken: cts.Token);
+                            var winner = await UniTask.WhenAny(handlerTask, timeoutTask);
+                            if (winner == 1)
+                            {
+                                // timeout 先到 — cancel handler (handler 自己若 honor token 會停)
+                                cts.Cancel();
+                                throw new System.TimeoutException(
+                                    $"cmd '{c.Type}' exceeded timeout {timeoutSec}s (handler.TimeoutSeconds={handler.TimeoutSeconds}, args._timeout_sec={(c.Args != null && c.Args.ContainsKey("_timeout_sec") ? c.Args["_timeout_sec"] : "(unset)")})");
+                            }
+                        }
                         c.LastRunResult = "Success";
                         c.LastRunError = null;
                         c.LastRunAt = DateTime.UtcNow.ToString("o");

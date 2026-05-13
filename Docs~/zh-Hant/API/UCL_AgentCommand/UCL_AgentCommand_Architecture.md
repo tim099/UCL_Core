@@ -275,9 +275,9 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 
 完整設計備註見 [`docs/Notes/AgentCommandPipeline_Parallelize_Analysis.md`](../../../../../../docs/Notes/AgentCommandPipeline_Parallelize_Analysis.md) §8。重點摘要：
 
-- **Per-cmd timeout 未做**（Tim 拍板先備註後實作）— default 15 min+，per-cmd handler `TimeoutSeconds` property override（`Cmd_Tavern op=post --wait-reply` 馬拉松要 1440s+ buffer）
+- ✅ **Per-cmd timeout** — Shipped 2026-05-13。`UCL_AgentCommandHandlerBase.TimeoutSeconds` virtual property default 1200s (20 min)；子類 override + caller args `_timeout_sec=N` per-call 覆寫。Runner `UniTask.WhenAny + Delay + Cancel` wrap。
 - **Editor 主執行緒 bottleneck**：multi-queue **不解多核並行**，CPU-heavy cmd 仍序列；IO-heavy async cmd 才有效
-- **Cancel ≠ Timeout**：handler 多數沒 honor `CancellationToken`，加 timeout 需配合 audit / retrofit
+- **Cancel ≠ Timeout**：handler 多數沒 honor `CancellationToken`，timeout fire 後 cmd 仍跑到自己結束（Runner 不被卡死，但真實取消失敗）— audit / retrofit 待做
 - **Migration plan**：legacy queue.json fallback 仍支援 60 天，stderr deprecation warning，90%+ caller 遷移後 reject
 
 ---

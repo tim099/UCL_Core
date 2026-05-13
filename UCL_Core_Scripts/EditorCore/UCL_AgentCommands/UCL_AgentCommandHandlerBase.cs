@@ -43,6 +43,24 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>HelpURL — Page 上「查看說明」按鈕跳轉的目標。可使用 ucl_core: / eov_docs: prefix。</summary>
         public virtual string HelpURL => "";
 
+        /// <summary>
+        /// Per-cmd timeout 上限 (seconds)。default 1200 (20 min)，Tim 2026-05-13 拍板。
+        ///
+        /// <para>子類 override 場景：</para>
+        /// <list type="bullet">
+        /// <item>Cmd_Tavern op=post --wait-reply 馬拉松對話：override → 1800 (30 min) 含 buffer</item>
+        /// <item>長 build / 大 batch import：override → 3600 (1 hr)</item>
+        /// <item>快速查詢類 cmd：可下調 → 60 (1 min) 早期失敗</item>
+        /// </list>
+        ///
+        /// <para>單次 call override：caller 帶 args <c>_timeout_sec=N</c> 即時覆寫該筆 cmd timeout。</para>
+        ///
+        /// <para>Timeout fire 時：Runner 對 handler 發 CancellationToken cancel + 標
+        /// <c>LastRunError=timeout</c>。注意：handler 若沒 honor token (e.g. sync File IO)，仍會在 background
+        /// 跑到自己結束 — Runner 不被卡死, 但 cmd 真實 cancel 失敗 (Cancel ≠ Timeout caveat, Zeta 2026-05-13 戳)。</para>
+        /// </summary>
+        public virtual int TimeoutSeconds => 1200;
+
         /// <summary>實際執行邏輯（async）。</summary>
         public abstract UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token);
 

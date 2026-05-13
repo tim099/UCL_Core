@@ -486,7 +486,7 @@ def get_treasury_balance(account_id: str, currency: str = "tavern_token") -> int
 
 
 # ─── Session Lock (§Session Identity Consistency Phase 1) ───────────────
-def compute_session_key() -> str:
+def compute_session_key(persona: str | None = None) -> str:
     """
     Q9b basecamp lean + apex-two ack: env-based 為主, process tree fallback.
 
@@ -495,13 +495,24 @@ def compute_session_key() -> str:
       2. CLAUDECODE env + Claude Code PATH session UUID (穩定跨 bash invoke)
       3. CLAUDECODE env + cwd hash (PATH 沒命中 fallback)
       4. fallback: cwd_hash + parent_PID
+
+    persona arg (Tim 2026-05-13 拍板, session-key-persona-suffix T01 二輪)：
+      所有 tier 都在末尾加 -<persona> suffix (caller 帶 persona 時)。理由：
+      - Tim 觀察: 同 conversation 多 sub-session 共享 Tier 2 (claude-code-<conv>-<sess>)
+        → 不同 persona 上線會撞同 key
+      - Tier 1 Antigravity 跨 persona 同 ag_hash 也會撞 (e.g. apex-one + ridge-two 同 ag_session)
+      - 鐵律「同 session = 同 persona」下「同 process 持兩 persona lock」不合法,
+        加 persona suffix 不會破壞合法場景
+      - 失去「Tier 2 命中時跨 persona collision detection」— Tim 場景下不存在這 collision
+      persona=None (e.g. status caller 無 persona context) → 走 base key 不加 suffix.
     """
     cwd_hash = hashlib.md5(os.getcwd().encode("utf-8")).hexdigest()[:8]
+    persona_suffix = f"-{persona}" if persona else ""
 
     if os.environ.get("ANTIGRAVITY_SESSION"):
         ag = os.environ["ANTIGRAVITY_SESSION"]
         ag_hash = hashlib.md5(ag.encode("utf-8")).hexdigest()[:8]
-        return f"antigravity-{ag_hash}"
+        return f"antigravity-{ag_hash}{persona_suffix}"
 
     if os.environ.get("CLAUDECODE"):
         # Claude Code PATH 含 local-agent-mode-sessions/[<plugin-name>/]<conv_uuid>/<session_uuid>/bin
@@ -518,11 +529,11 @@ def compute_session_key() -> str:
         if m:
             conv_uuid = m.group(1)[:8]
             sess_uuid = m.group(2)[:8]
-            return f"claude-code-{conv_uuid}-{sess_uuid}"
-        # PATH 沒命中 (e.g. PATH 被清過 / 自訂 env) → fallback cwd-based
-        return f"claude-code-cwd-{cwd_hash}"
+            return f"claude-code-{conv_uuid}-{sess_uuid}{persona_suffix}"
+        # PATH 沒命中 (e.g. PATH 被清過 / 自訂 env) → fallback cwd-based + persona suffix
+        return f"claude-code-cwd-{cwd_hash}{persona_suffix}"
 
-    return f"unknown-{cwd_hash}-{os.getppid()}"
+    return f"unknown-{cwd_hash}-{os.getppid()}{persona_suffix}"
 
 
 # 區塊職責: Lock IO — Tim 2026-05-13 重構從 session_key-keyed 改 persona-keyed.
@@ -553,7 +564,8 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
         "locked_at": now,
         "expires_at": expires,
         # session_key + pid for diagnostics (not used for routing — persona name is canonical key).
-        "session_key": session_key or compute_session_key(),
+        # session-key-persona-suffix T02: 沒帶 session_key 時 compute 帶 persona suffix (Tier 3/4)
+        "session_key": session_key or compute_session_key(persona),
         "pid": os.getpid(),
     }
     p = lock_path(persona)
@@ -814,7 +826,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
     model = args.model
     preferred = args.persona
     bank_account = resolve_bank_account(reg, agent, model)
-    session_key = compute_session_key()
+    # session-key-persona-suffix T02: 傳 preferred persona 進去, Tier 3/4 fallback 才會加 suffix 分辨
+    session_key = compute_session_key(preferred)
 
     print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
     if agent != raw_agent:
@@ -833,18 +846,26 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # Claude IDE 同 cwd 會撞。當同 session_key 已有 ≥ 2 個 lock (collision 場景),
     # reuse 不安全 — 該 lock 可能是另一 Claude invoke 寫的。要求 --strict-persona
     # 顯式確認 caller 知道自己是哪個 persona。
+    # session-key-persona-suffix T02 backward-compat: 舊 lock session_key 無 persona suffix,
+    # 新 lock 有 suffix. 比對時兩種都認 (full_key OR base_key).
+    base_session_key = compute_session_key(None)
     existing_lock = read_lock(preferred)
     lock_is_mine = (existing_lock is not None
                     and not is_lock_expired(existing_lock)
-                    and existing_lock.get("session_key") == session_key)
-    # Count same-session-key locks 偵測 collision
+                    and existing_lock.get("session_key") in (session_key, base_session_key))
+    # Count same-session-key locks 偵測 collision (Tier 2 命中 + persona suffix 後幾乎不會撞,
+    # 但 Tier 2 PATH 沒命中 → Tier 3 fallback + 同 persona 字串才會撞, 罕見)
     same_key_lock_count = 0
     if _SESSION_DIR.exists():
         for lp in _SESSION_DIR.glob("_persona_*.json"):
             try:
                 with open(lp, "r", encoding="utf-8") as f:
                     d = json.load(f)
-                if not is_lock_expired(d) and d.get("session_key") == session_key:
+                if is_lock_expired(d):
+                    continue
+                # full_key 用該 lock 的 persona 重算; 比 full_key 或 base_key (backward-compat)
+                full_key = compute_session_key(d.get("persona"))
+                if d.get("session_key") in (full_key, base_session_key):
                     same_key_lock_count += 1
             except Exception:
                 continue
@@ -1046,7 +1067,10 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         unsafe_keys / env mismatch check 全廢 (per Tim: collision 不可能因為 file key
         是 persona 不是 session)
     """
-    session_key = compute_session_key()
+    # session-key-persona-suffix T02: 傳 persona 進去 (--persona 給的或路徑 2 反查後填回)
+    # 路徑 2 反查時 caller 不知 persona, 先用 None 算 base key 反查 lock; 反查到後若 Tier 3/4
+    # 環境會 fail → fallback 提示 caller 補 --persona (acceptable edge case, 罕見)
+    session_key = compute_session_key(args.persona)
     perturbation = max(0.0, min(MAX_PERTURBATION, args.perturbation))
     reg = load_registry()
 
@@ -1159,7 +1183,7 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     """Read-only env + persona pool report (對應 Cmd_AwakenInit internal helper)."""
     reg = load_registry()
-    session_key = compute_session_key()
+    base_session_key = compute_session_key()   # 無 persona, 顯示 base key
     # Tim 2026-05-13 v2: persona-keyed lock — scan all _persona_*.json + 找對應 caller 這個
     # session_key 的 lock (legacy display, 兼 audit). 多 persona 同時 active → 列全表.
     active_locks = []
@@ -1172,9 +1196,17 @@ def cmd_status(args: argparse.Namespace) -> int:
                     active_locks.append(d)
             except Exception:
                 continue
-    # session-key-collision-fix T01: 同 session_key 可能對到多個 lock (多 Claude IDE 同 cwd)
-    # 不再用 single self_lock 假設 — list 同 session_key 全部, 用 pid + locked_at 讓 user 判斷
-    same_key_locks = [d for d in active_locks if d.get("session_key") == session_key]
+    # session-key-collision-fix T01 + session-key-persona-suffix T02:
+    # 同 session_key 可能對到多個 lock — 但加 persona suffix 後 (Tier 3/4) 每個 persona 各自
+    # 有 unique session_key, 真正 collision 只剩「Tier 2 conv_uuid 撞」(多 Claude IDE 同 conv)
+    # 或「Tier 1 antigravity 撞」極罕見場景. Per-lock 算 compute_session_key(lock.persona) 比對.
+    def is_my_lock(lock_dict):
+        # session-key-persona-suffix T02 backward-compat: 舊 lock (pre-suffix schema)
+        # session_key 沒 persona suffix; 新 lock 有 suffix. 兩種都該認得.
+        full_key = compute_session_key(lock_dict.get("persona"))
+        return lock_dict.get("session_key") in (full_key, base_session_key)
+    same_key_locks = [d for d in active_locks if is_my_lock(d)]
+    session_key = base_session_key   # 為下方顯示 backward compat
 
     print(f"# 🌅 Awakening Status Report\n")
     print(f"## 偵測到的環境")
@@ -1208,7 +1240,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     if active_locks:
         print(f"- All active persona locks: {len(active_locks)}")
         for d in active_locks:
-            same_key = d.get("session_key") == session_key
+            # session-key-persona-suffix T02: 每 lock 算 per-persona key 比對
+            same_key = is_my_lock(d)
             marker = ""
             if same_key:
                 if len(same_key_locks) > 1:
@@ -1346,13 +1379,29 @@ def cmd_affinity(args: argparse.Namespace) -> int:
         print("❌ 無法載入 affinity_manager", file=sys.stderr)
         return 2
 
-    # 如果沒有傳 persona, 嘗試從當前 session 反查 persona lock (Tim 2026-05-13 v2 persona-keyed)
+    # 如果沒有傳 persona, 嘗試從當前 session 反查 persona lock
+    # session-key-persona-suffix T02: Tier 3/4 環境下 lock.session_key 帶 persona suffix,
+    # 直接用 find_lock_by_session_key(base_key) 會 miss; 改 per-lock 算 compute_session_key(lock.persona) 比對
     persona = args.persona
     if not persona:
-        session_key = compute_session_key()
-        lock = find_lock_by_session_key(session_key)
-        if lock and not is_lock_expired(lock):
-            persona = lock["persona"]
+        found = None
+        if _SESSION_DIR.exists():
+            for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
+                try:
+                    with open(lp, "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                except Exception:
+                    continue
+                if is_lock_expired(d):
+                    continue
+                # backward-compat: 比 full key 或 base key (舊 lock 無 suffix)
+                full_key = compute_session_key(d.get("persona"))
+                base_key = compute_session_key(None)
+                if d.get("session_key") in (full_key, base_key):
+                    found = d
+                    break
+        if found:
+            persona = found["persona"]
         else:
             print("❌ 找不到活動中的 session lock，請指定 --persona", file=sys.stderr)
             return 2

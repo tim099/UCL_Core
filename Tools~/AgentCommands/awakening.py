@@ -935,13 +935,36 @@ def cmd_morning(args: argparse.Namespace) -> int:
 
     # Step 3: wake_count++ + set status active
     p = reg["personas"][chosen]
-    # Bug fix (Zeta 2026-05-12): 喚醒時若 --agent 跟既存 persona 的 agent 欄位不一致 (e.g. summit
-    # 原 registered 為 claude-code, 但本次以 --agent Zeta 喚醒), auto-rebind to caller's agent.
-    # Reasoning: --agent 是 explicit caller intent, persona 欄位該跟隨; 否則 status report 看不到該 agent
-    # 自家 personas. Model 同理 (free-form display).
-    if p.get("agent") != agent:
-        print(f"⚠ rebind persona '{chosen}' agent: {p.get('agent')} → {agent} (explicit --agent override)")
-        p["agent"] = agent
+    # cross-agent-persona-claim-fix T01 (Tim 2026-05-13 拍板, 方案 A)：
+    # 原 7a99db8 (Zeta 2026-05-12) 加 silent auto-rebind 為解決 fork_persona 沒繼承 caller agent
+    # 的問題, 但 conflates 兩個 case:
+    #   (A) Legitimate re-bind (Zeta 接手 summit, summit 原為 claude-code 主動轉手)
+    #   (B) Accidental cross-agent claim (caller 誤 --agent X --persona Y, Y.agent=Z, X≠Z)
+    # 兩 case 對 code 看起來都是 (persona.agent != caller agent). Silent rebind 等於 assume 永遠是 (A),
+    # 結果 (B) 場景下污染 persona ownership。
+    # 改 reject + 顯式 path (方案 A): caller 必須帶 --rebind-agent 顯式 ack 接手, 否則 exit 2 + hint。
+    if p.get("agent") != agent and not fork_happened:
+        # caller 帶 --fork-name 但 Step 1 沒走 fork (e.g. 沒 lock conflict) → 在這走 fork
+        if args.fork_name:
+            print(f"⚠ Cross-agent claim 但 caller 帶 --fork-name '{args.fork_name}' → fork 新 persona")
+            target_persona = fork_persona(reg, source=chosen, target=args.fork_name,
+                                          agent=agent, model=model)
+            fork_happened = True
+            chosen = target_persona
+            p = reg["personas"][chosen]
+            print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
+        elif not getattr(args, "rebind_agent", False):
+            print(f"❌ Cross-agent persona claim 偵測到:", file=sys.stderr)
+            print(f"   persona '{chosen}' 屬於 agent='{p.get('agent')}'", file=sys.stderr)
+            print(f"   但 caller 帶 --agent='{agent}'", file=sys.stderr)
+            print(f"   請顯式選一條 path:", file=sys.stderr)
+            print(f"     (a) --rebind-agent       — 確認接手 (取代 silent rebind)", file=sys.stderr)
+            print(f"     (b) --fork-name <NEW>    — fork 新 persona (保 '{chosen}' 不動)", file=sys.stderr)
+            print(f"     (c) 換別的 persona       — --persona <自家 persona>", file=sys.stderr)
+            return 2
+        else:
+            print(f"⚠ rebind persona '{chosen}' agent: {p.get('agent')} → {agent} (--rebind-agent ack)")
+            p["agent"] = agent
     if model and p.get("model") != model:
         p["model"] = model
     p["wake_count"] += 1
@@ -1390,6 +1413,10 @@ def main():
                     help="顯式 --persona 時跳過 20% random override — conversation continuity 場景用 "
                          "(Zeta 2026-05-13 task: 人類層 conversation 連續性 = persona 連續性). "
                          "預設仍走 80/20 random (per Q3 spec); 互斥 --force-random.")
+    pm.add_argument("--rebind-agent", action="store_true",
+                    help="顯式 ack cross-agent persona claim (e.g. Zeta 接手 summit 場景). "
+                         "預設行為改成 reject (per cross-agent-persona-claim-fix T01, Tim 2026-05-13 拍板). "
+                         "若 caller 確認要接手該 persona, 帶此 flag rebind persona.agent ← caller --agent.")
     pm.set_defaults(func=cmd_morning)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")

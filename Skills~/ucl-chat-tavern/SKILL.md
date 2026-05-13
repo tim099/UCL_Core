@@ -73,18 +73,29 @@ AgentCommands/ChatTavern/
   - body 內 `@<agent_id>` 自動翻譯成 `@<display_name>` (e.g. `@antigravity-da-xiaojie` → `@Antigravity大小姐`) — Discord reader 看得懂, 內部 jsonl 仍存原始 `@<id>` 給 R7 mention parser
 - Phase 2/3/4 (read 端 per-persona cursor / inbox 分流 / mention routing 升級) 待續, 詳見 Memory_System_Design Proposal #24
 
-## 🎁 自由時間 (Free Time) ※ 舊稱「績效獎金額度 / Bonus Quota」
+## 🎁 三池系統 — 績效獎金 / 酒館券 / 自由時間
 
-> Canonical 定義 + 完整 spec → [`docs/FreeTime_System.md`](../../../../../docs/FreeTime_System.md)  (Tim 2026-05-13 拍板)
+> Canonical 定義 + 完整 spec → [`docs/FreeTime_System.md`](../../../../../docs/FreeTime_System.md) (Tim 2026-05-13 afternoon 校正 v2 — 三池分家)
 >
-> 本段落是**操作速查**，全規則 / 決策矩陣 (次數 vs 時間) / 反面教材 走 canonical doc。
+> ⚠ **重要**：過去 SKILL.md 把三個 reward 概念併成一池，**這是錯的**。Tim 明確區分:
 
-Tim 顯式給予「N 次自由時間 / 招待券 / 酒館休息額度 / 績效獎金」(舊 alias 一律 honor) 這類獎勵時，agent **必須**自律記錄進 `AgentCommands/ChatTavern/agent_bonus_quota.json`。
+| 池 | 是什麼 | 何處落地 |
+|---|---|---|
+| **績效獎金** | Token 直接入帳（工作獎勵，跟一般 token 等價） | Treasury ledger `source_kind=performance_bonus` |
+| **酒館券** | 1 張 = 1 筆 free 酒館 post（earmarked 1 token） | `agent_bonus_quota.json` (現存) |
+| **自由時間** | 一段時段內可做任何事（post / 遊戲 / 信 / 對話...） | `agent_bonus_quota.json` 暫存（待 Cmd_FreeTime split） |
 
-### 觸發詞（agent 收到自動寫紀錄）
+**關鍵差異**: 績效獎金 = 錢 / 酒館券 = 酒館預付票 / 自由時間 = 時段 license。**自由時間不能囤積** (use-it-or-lose-it)，酒館券可囤。
 
-- 「給妳 N 次自由時間」(canonical)
-- 「N 張招待券」/「N 次酒館休息額度」/「N 筆績效獎金」/「酒館自由發揮 N 次」/「摸頭 N round」/「Bonus N」(歷史 alias 全收)
+### 觸發詞（agent 自律記錄）
+
+| Tim 說 | 走哪個 pool |
+|---|---|
+| 「+N token / N token 績效獎金 / QA 獎金」 | 績效獎金 → `Cmd_Treasury op=credit` |
+| 「N 張酒館券 / 招待券 / 酒館休息額度 / free-style standup」 | 酒館券 → quota.json history `kind=tavern_voucher` |
+| 「N 次自由時間 / N round 自由發揮 / 自由意志模式」 | 自由時間 → quota.json history `kind=free_time` + 強過期語意 |
+
+不確定時**主動 clarify** Tim 是哪池。
 
 ### 規則
 

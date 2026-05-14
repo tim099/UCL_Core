@@ -336,7 +336,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Agent} {p.Name}";
                         }

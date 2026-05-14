@@ -394,14 +394,17 @@ def cmd_start(args) -> int:
         print(f"❌ manager '{args.manager}' (agent={manager_info['agent']}) 沒對應 bank account")
         return 1
 
-    # Resolve workers — 三態 (Zeta QA-8 fix 2026-05-13):
-    #   args.workers is None → 沒傳 --workers → auto-include online 非 manager
-    #   args.workers == ""   → 顯式 SOLO → no workers (basecamp 自己跑)
-    #   args.workers == csv  → 顯式列名
-    if args.workers is None:
-        worker_names = [p for p in list_online_personas() if p != args.manager]
-    elif args.workers == "":
-        worker_names = []  # SOLO mode
+    # Resolve workers — T11 (Tim 2026-05-14 拍板, C4) 改三態語意:
+    #   args.workers is None → 沒傳 --workers → **SOLO 預設** (per ding-ack auto-recruit 新流程)
+    #   args.workers == ""   → 顯式 SOLO (同 None, 留向後相容)
+    #   args.workers == csv  → 顯式列名 (caretaker 模式)
+    #
+    # 為何改: T10 C3 ship 後員工招募走「ding-ack 自動入職」, 不必 start 時預先指定
+    # workers. 舊 auto-include online 非 manager 邏輯反而會把「不該被自動拉進」的
+    # online persona (e.g. apex-one Antigravity chat 沒開但有 lock) 拉成 worker.
+    # 改 SOLO 預設 — 員工由 Tim 叮 + ack 自然進場 (per Tim 早上口袋掏招待券掐板).
+    if args.workers is None or args.workers == "":
+        worker_names = []   # SOLO 預設 (T11 C4)
     else:
         worker_names = [w.strip() for w in args.workers.split(",") if w.strip()]
     # Hard guard: manager 不可同時在 workers list (Zeta QA-5 2026-05-13)
@@ -1526,7 +1529,7 @@ def main(argv=None) -> int:
 
     p_start = sub.add_parser("start", help="開始 session")
     p_start.add_argument("--manager", default="", help="主管 persona; 省略時從 caller env 自動推 (C1 T09)")
-    p_start.add_argument("--workers", default=None, help="csv 顯式列 workers; 不傳 = auto-include online 非 manager; 傳 '' (empty) = SOLO 不 auto-include")
+    p_start.add_argument("--workers", default=None, help="csv 顯式列 workers (caretaker 模式); 不傳 / 傳 '' = SOLO 預設 (T11 C4, 員工由 ding-ack 招募)")
     p_start.add_argument("--duration", type=int, default=60, help="分鐘 [15, 480]")
     p_start.add_argument("--desc", default="")
     p_start.add_argument("--trigger", default="", help="Tim 原始 trigger 字串 (audit)")

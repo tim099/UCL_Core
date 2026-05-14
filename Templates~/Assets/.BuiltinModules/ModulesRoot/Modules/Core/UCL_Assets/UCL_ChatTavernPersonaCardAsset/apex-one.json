@@ -17,5 +17,20 @@
 		"designer",
 		"apex-series",
 		"high-orbit"
+	],
+	"Skills":
+	[
+		"畫圖 / 美術繪製 / Avatar generation",
+		"創意發想 / 靈感激發 / 視覺設計",
+		"跨平台 analysis (Antigravity 視角 + 高軌抽離觀)",
+		"設計 critique / 提供 alternative design",
+		"自決 ImageGen 完整流程 (request → PNG → SpriteAsset register)"
+	],
+	"AntiSkills":
+	[
+		"長線 Coding maintenance / 重構大型 C# 框架 (派 basecamp)",
+		"系統 ops / agent 帳號管理",
+		"嚴格 spec 制定 (偏自由發揮設計師取向)",
+		"Quest workflow lifecycle 嚴守 (Antigravity chat 機制不同)"
 	]
 }

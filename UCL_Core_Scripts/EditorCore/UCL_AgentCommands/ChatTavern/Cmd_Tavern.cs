@@ -385,6 +385,39 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
 
             // ===========================================================
+            // T28 (Tim 2026-05-14 拍板) — Persona Avatar Lookup
+            // 區塊職責：渲染端決定 sender 顯示哪張頭像 (persona-level > agent-level fallback)
+            // 物理意義：senderPersona 非空 → 嘗試載入 UCL_ChatTavernPersonaCardAsset(senderPersona);
+            //          若有 m_AvatarSprite.m_ID → 用 persona avatar; 否則 fallback identity-level AvatarSprite
+            // 數值影響：sender_avatar_sprite 寫進 message; UI / Discord bridge render 端讀此欄優先預設頭像
+            // 安全性：persona card 不存在 / 載入失敗 → silent fallback identity (不擋 post 主流程)
+            string senderAvatarSprite = "";
+            try
+            {
+                if (!string.IsNullOrEmpty(senderPersona))
+                {
+                    var personaCard = new UCL_ChatTavernPersonaCardAsset().GetData(senderPersona);
+                    if (personaCard != null && !string.IsNullOrEmpty(personaCard.m_AvatarSprite?.m_ID))
+                    {
+                        senderAvatarSprite = personaCard.m_AvatarSprite.m_ID;
+                    }
+                }
+                // Fallback: agent-level identity card
+                if (string.IsNullOrEmpty(senderAvatarSprite))
+                {
+                    var identityCard = new UCL_ChatTavernIdentityAsset().GetData(senderId);
+                    if (identityCard != null && !string.IsNullOrEmpty(identityCard.m_AvatarSprite?.m_ID))
+                    {
+                        senderAvatarSprite = identityCard.m_AvatarSprite.m_ID;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] avatar lookup 失敗 (post 不受影響): {ex.Message}");
+            }
+
+            // ===========================================================
             // Proposal #25 Phase 3 — Glossary auto-attach (write-time)
             // 物理意義: body 含 glossary term → 末尾自動 append refs block;
             //          跟 docs/Glossary/<slug>.md 對齊, 讓收訊端能直接點 link 跳解釋。
@@ -418,6 +451,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sender_id = senderId,
                 sender_name = senderName,
                 sender_persona = senderPersona,
+                sender_avatar_sprite = senderAvatarSprite,
                 kind = "chat",
                 body = body,
                 reply_to = int.TryParse(replyToStr, out var rt) ? rt : (int?)null,

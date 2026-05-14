@@ -59,6 +59,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 數值影響：純字串集合
         public List<string> m_Tags = new List<string>();
 
+        // 區塊職責：擅長工作清單 — manager dispatch 時的 type-match 依據 (T28 Tim 2026-05-14 拍板)
+        // 物理意義：persona 的 specialty domain, 例 basecamp ["指揮", "Coding", "規劃"] / apex-one ["畫圖", "創意發想", "靈感"]
+        // 數值影響：dispatch reflex 從「派給誰?」進化到「按擅長派給誰?」, 直接補 manager D2 delegation 弱點
+        public List<string> m_Skills = new List<string>();
+
+        // 區塊職責：不擅長工作清單 — 避免 dispatch mismatch (避免派錯人)
+        // 物理意義：persona 自知 weakness, 例 basecamp ["畫圖", "細節打磨"] / apex-one ["長線 Coding maintenance", "系統 ops"]
+        // 數值影響：dispatch 時 manager 不該派擅長 X 給 anti-skill 是 X 的 persona, 避免 mismatch 失敗
+        public List<string> m_AntiSkills = new List<string>();
+
         public UCL_ChatTavernPersonaCardAsset() { ID = DefaultID; }
         public UCL_ChatTavernPersonaCardAsset(string iID) { Init(iID); }
     }

@@ -144,6 +144,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string sender_id;
         public string sender_name;
         public string sender_persona;            // Phase 1 (Tim 2026-05-11 拍板) — 同 actor 不同 persona (basecamp / ridge-001 etc.) 的時間分層 first-class 標記；空字串/null = legacy/未走 persona 機制
+        public string sender_avatar_sprite;      // T28 (Tim 2026-05-14 拍板) — 渲染端用 sprite_id (e.g. "Avatars_basecamp"); Cmd_Tavern Op_Post lookup PersonaCard.AvatarSprite 命中 → 用 persona avatar; 否則 fallback IdentityAsset.AvatarSprite; 兩個都沒 → 空字串 (UI 端 render 預設頭像).
         public string kind;                      // "chat" 為預設
         public string body;
         public int? reply_to;                    // T38 deprecated: 改用 reply_to_uuid（保留欄位讓舊 record load 不爆）

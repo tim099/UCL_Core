@@ -623,6 +623,33 @@ def cmd_run(args: argparse.Namespace) -> int:
     if rc != 0:
         return rc
 
+    # ─── T28 work-mode banner plumb to caller stdout (crest-001 QA 2026-05-14) ─────
+    # 區塊職責: Cmd success 後抓 _last_op.md 內的 work-mode banner section 印到 caller stdout
+    # 物理意義: Op_Post 寫 banner 到 _last_op.md, 但 caller 沒人讀那檔. wait-reply 是讀
+    #          messages.jsonl 等對方 reply (T38 後 jsonl 不存在直接 short-circuit).
+    #          兩條路都沒接到 banner → caller 看不到 work-session hint.
+    # 數值影響: 純 stdout print, 不擋 wait-reply 主流程
+    if args.cmd_type.lower() == "tavern" and arg_pairs.get("op", "").lower() == "post":
+        try:
+            # 讀 room-level _last_view.md (不是全局 _last_op.md, 後者會被其他 cmd 覆蓋)
+            _room = arg_pairs.get("room", "")
+            last_op_path = TAVERN_DIR / "rooms" / _room / "_last_view.md" if _room else None
+            if last_op_path and last_op_path.exists():
+                last_op_content = last_op_path.read_text(encoding="utf-8")
+                # 抓 work-session banner (以 "⏰ **work-session active**" 開頭, 到下個 markdown header 或 EOF)
+                import re as _re
+                banner_match = _re.search(
+                    r"⏰ \*\*work-session active\*\*[^\n]*\n[🎯💸⛔📋🚫💭💬][^\n]*",
+                    last_op_content,
+                )
+                if banner_match:
+                    print("\n──── 上班 hint ────")
+                    print(banner_match.group(0))
+                    print("───────────────────")
+        except Exception as _banner_e:
+            # fail-swallow, 不擋主流程
+            pass
+
     # ─── Tavern 同步握手（僅 op=post）─────────────────────────────────
     # 區塊職責：A 發完訊息後 client-side polling messages.jsonl 等對方回覆
     # 物理意義：以「同步握手」緩解「agent turn 結束後就聾了」的問題；對方在 wait

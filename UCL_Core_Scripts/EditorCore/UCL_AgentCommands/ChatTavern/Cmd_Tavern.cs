@@ -519,24 +519,26 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：T10 sub-rule C — ding-ack auto-recruit (Tim 2026-05-14 拍板)
-        // 物理意義：別大小姐進酒館 ack 一聲 → 自動加進所有 active work sessions workers list
+        // 區塊：T10 sub-rule C — tavern post auto-recruit (Tim 2026-05-14 早 + 下午拍板)
+        // T22 update (2026-05-14 下午): 拿掉 tag=ack-only 限制 — 任何 real-agent
+        //                              tavern post → trigger auto-recruit. 解 gura/calli
+        //                              ack 後仍不知道有 session 的問題 (Tim 觀察: 「她們完全沒意識到」)
+        // 物理意義：別大小姐進酒館發任何訊息 → 自動加進所有 active work sessions workers list
         // 數值影響：fire-and-forget spawn python subprocess 跑 work_session.py add-worker-auto
         //          沒 active session → silent no-op; 已 manager/worker → skip
         // 邊界：
-        //   - 只認 meta.tag=ack-only (Tim Q1=A 拍板)
+        //   - 任何 real-agent post (已過 IsRealAgentSender) 都觸發 — 不再要求 tag (T22)
         //   - 加進所有 active sessions (Tim Q2=B 拍板)
         //   - Tim 黑名單 (HumanPayerSenders) — 不被招募
         //   - 缺 sender_persona 仍嘗試 (用 senderId 當 persona, work_session.py 自己處理 resolve)
+        //   - 副作用承擔: 員工碰巧進酒館聊天會被拖進 session 領薪 (Tim 拍板接受 Q2=B 更猛副作用)
         // ===========================================================
         static void TryAutoRecruitOnDingAck(string senderPersona, string senderId, Dictionary<string, string> meta)
         {
             try
             {
-                if (meta == null) return;
-                if (!meta.TryGetValue("tag", out var tag) || string.IsNullOrEmpty(tag)) return;
-                // 只認 ack-only (Q1=A 拍板)
-                if (tag != "ack-only") return;
+                // T22: 移除 tag=ack-only 限制 — 任何 real-agent tavern post 都嘗試 recruit
+                // (caller 已過 IsRealAgentSender 確認非 system/NPC/alter, 是真 agent 訊息)
 
                 // Tim 黑名單 — Tim 不打工
                 if (HumanPayerSenders.Contains(senderId)) return;

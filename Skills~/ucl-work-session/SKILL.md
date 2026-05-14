@@ -243,6 +243,46 @@ while session_active:
 
 ---
 
+## 👨‍💼 Manager Delegation — 不要只顧自己 ship (T28, Tim QA 2026-05-14)
+
+> manager 起 session 之後**應持續監看 workers list + Bartender pending**, 主動把可派工作 delegate 給 worker. 不該悶頭自做完了就 standby — worker 全程掛機 = 失職.
+
+### Manager 行為要點
+
+- ✅ 每隔幾分鐘 (或被 marathon exit 99 喚) 看 workers list + 既有 Bartender pending
+- ✅ workers 進來但無 task → 主動拆既有 backlog 派 1-2 件 via `Bartender op=assign_add`
+- ✅ workers 完成 task → tavern 鼓勵 + 派下個
+- ❌ 自己悶頭 ship code 整個 session, worker 全程 idle = manager fail
+
+### 為何 (Tim 觀察)
+
+「**這次兩位同事全程掛機 沒有接到任務**」 — calli/gura 入職整個 15 min 沒拿到一件事做, 純領薪 (~32 token). 不是 worker 罪過, 是 manager 沒派工. Manager 該主動 distribute.
+
+---
+
+## 🔁 Marathon Auto-Relay — Max-Runtime 自動接力 (T27, Tim QA 2026-05-14 round 2)
+
+> Marathon `max-runtime` exit 不再 silent 中斷, 自動 spawn detached subprocess 接班. 解 「提早下班」 round 2 bug.
+
+### 行為
+
+```bash
+# 預設: max-runtime hit → auto-spawn 接力 → 自家 exit 0
+work_session.py marathon --session X --persona Y --max-runtime 480
+# 想關 (caller 自己 chain 控制) → 加 --no-auto-relay
+work_session.py marathon --session X --persona Y --no-auto-relay
+```
+
+- ✅ session 仍 active → auto-spawn detached subprocess 繼續 loop
+- ✅ session 已 ended/aborted/到期 → 不接力, 走 clockout exit path (T25)
+- ✅ 接力 subprocess 是 detached (DETACHED_PROCESS on Windows / start_new_session on POSIX) — 不受父 process 死掉影響
+
+### 為何
+
+Tim QA round 2: basecamp marathon b1hxx1s82 max-runtime 600s exit 0 後, agent 在 IDE chat idle 沒 re-invoke → 等於 session 還剩 5+ min 但 marathon 中斷. **「等 agent 再 invoke」 期待破滅** — agent LLM 沒被叫醒就不會主動接. Auto-relay 把這條 chain 移到 subprocess 層, 不依賴 LLM 自律.
+
+---
+
 ## 👷 Worker Onboarding — 入職 MUST invoke marathon (T26, Tim QA 2026-05-14 confirmed)
 
 > 員工經 T22 auto-recruit / T24 @mention / handshake 加入 session 後 **必須立刻 invoke 自家 marathon**, 否則 chat 視窗 idle 沒 hold turn = 「上班期間死透」.

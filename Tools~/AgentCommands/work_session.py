@@ -1392,8 +1392,56 @@ def cmd_marathon(args) -> int:
         now_ts = time.time()
         elapsed = now_ts - started_at
         if elapsed >= max_runtime:
-            print(f"\n⏱  marathon hit max-runtime {max_runtime}s — graceful exit, agent 應再 invoke 接力")
-            return 0
+            # T27 (Tim 2026-05-14, QA round 2 抓到 bug): max-runtime exit 不再「等 agent 再 invoke」,
+            # 改 auto-spawn detached subprocess 接力, 自家 process 退出.
+            # 為何: agent 在 IDE chat 不會主動「啊我該 re-invoke」, 結果 marathon 中斷 = 「提早下班」.
+            # 解: auto-relay — 自己生小孩接班.
+            # 邊界: 若 session 已 ended/expired → 不接力, fire clockout 後 exit.
+            #       --no-auto-relay flag → 舊行為 (caller 顯式希望自管 chain)
+            if getattr(args, "no_auto_relay", False):
+                print(f"\n⏱  marathon hit max-runtime {max_runtime}s — graceful exit (--no-auto-relay), agent 應再 invoke 接力")
+                return 0
+            # 先檢查 session 是否仍 active (避免空轉接力)
+            state_check = load_state()
+            session_check = find_active_session(state_check, session_id)
+            if not session_check or session_check.get("ended") or session_check.get("aborted"):
+                # session 已掛, 不接力. 走正常 exit path (下面 Check 1 會處理 clockout)
+                print(f"\n⏱  max-runtime hit but session 已掛, 不接力 (走 Check 1 clockout path)")
+                # don't return — fall through to checks
+            else:
+                try:
+                    end_ts_dt_check = parse_iso(session_check["end_ts"])
+                    now_dt_check = datetime.datetime.utcnow()
+                    if now_dt_check >= end_ts_dt_check:
+                        print(f"\n⏱  max-runtime hit, session 已自然到期, 不接力 (走 Check 1 clockout path)")
+                        # fall through
+                    else:
+                        # Auto-spawn detached relay subprocess
+                        try:
+                            relay_args = [sys.executable, str(Path(__file__).resolve()), "marathon",
+                                          "--session", session_id, "--persona", persona,
+                                          "--interval", str(interval), "--max-runtime", str(max_runtime)]
+                            kwargs = {"cwd": str(_REPO_ROOT)}
+                            if os.name == "nt":
+                                # Windows: CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS detach
+                                kwargs["creationflags"] = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                                kwargs["stdout"] = subprocess.DEVNULL
+                                kwargs["stderr"] = subprocess.DEVNULL
+                                kwargs["stdin"] = subprocess.DEVNULL
+                            else:
+                                kwargs["start_new_session"] = True
+                                kwargs["stdout"] = subprocess.DEVNULL
+                                kwargs["stderr"] = subprocess.DEVNULL
+                                kwargs["stdin"] = subprocess.DEVNULL
+                            subprocess.Popen(relay_args, **kwargs)
+                            print(f"\n🔁 marathon hit max-runtime — auto-spawned relay subprocess (T27), 自家 exit")
+                            return 0
+                        except Exception as e:
+                            print(f"⚠ T27 auto-relay spawn fail (fall back to manual): {e}")
+                            return 0
+                except Exception as e:
+                    print(f"⚠ T27 session end_ts parse fail (fall through): {e}")
+                    # fall through to Check 1
 
         # === Check 1: session state ===
         state = load_state()
@@ -1808,6 +1856,9 @@ def main(argv=None) -> int:
                             help="cycle 間隔秒數 (default 240 = 4 min)")
     p_marathon.add_argument("--max-runtime", type=int, default=480,
                             help="單次 invoke 最長執行秒數 (default 480 = 8 min, 避免 Bash timeout)")
+    p_marathon.add_argument("--no-auto-relay", action="store_true",
+                            help="T27: 關閉 max-runtime exit 自動 spawn 接力 subprocess (預設開). "
+                                 "關閉 = 走舊行為, caller 自己 re-invoke 接力. ")
 
     p_quick = sub.add_parser("quick-task", help="一步創 task + 標 done (solo manager 或 worker self-track 用)")
     p_quick.add_argument("--session", required=True)

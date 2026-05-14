@@ -396,19 +396,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 if (!string.IsNullOrEmpty(senderPersona))
                 {
-                    var personaCard = new UCL_ChatTavernPersonaCardAsset().GetData(senderPersona);
-                    if (personaCard != null && !string.IsNullOrEmpty(personaCard.m_AvatarSprite?.m_ID))
+                    var personaCardAsset = new UCL_ChatTavernPersonaCardAsset();
+                    if (personaCardAsset.ContainsAsset(senderPersona))
                     {
-                        senderAvatarSprite = personaCard.m_AvatarSprite.m_ID;
+                        var personaCard = personaCardAsset.GetData(senderPersona);
+                        string spriteId = personaCard?.m_AvatarSprite?.m_ID;
+                        if (!string.IsNullOrEmpty(spriteId) && spriteId != "Default")
+                        {
+                            senderAvatarSprite = spriteId;
+                        }
                     }
                 }
                 // Fallback: agent-level identity card
                 if (string.IsNullOrEmpty(senderAvatarSprite))
                 {
                     var identityCard = new UCL_ChatTavernIdentityAsset().GetData(senderId);
-                    if (identityCard != null && !string.IsNullOrEmpty(identityCard.m_AvatarSprite?.m_ID))
+                    string identSpriteId = identityCard?.m_AvatarSprite?.m_ID;
+                    if (!string.IsNullOrEmpty(identSpriteId) && identSpriteId != "Default")
                     {
-                        senderAvatarSprite = identityCard.m_AvatarSprite.m_ID;
+                        senderAvatarSprite = identSpriteId;
                     }
                 }
             }

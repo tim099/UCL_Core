@@ -1161,6 +1161,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 sb.Append(",\"sender_persona\":\"").Append(EscapeStr(m.sender_persona)).Append("\"");
             }
+            // T28 (Tim 2026-05-14) — sender_avatar_sprite 條件式 emit (空欄位 skip 對齊 sender_persona 慣例)
+            if (!string.IsNullOrEmpty(m.sender_avatar_sprite))
+            {
+                sb.Append(",\"sender_avatar_sprite\":\"").Append(EscapeStr(m.sender_avatar_sprite)).Append("\"");
+            }
             sb.Append(",\"kind\":\"").Append(EscapeStr(m.kind ?? "chat")).Append("\"");
             sb.Append(",\"body\":\"").Append(EscapeStr(m.body ?? "")).Append("\"");
             if (m.reply_to.HasValue) sb.Append(",\"reply_to\":").Append(m.reply_to.Value);
@@ -1217,6 +1222,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "sender_id": m.sender_id = ParseStringOrNull(json, ref pos); break;
                     case "sender_name": m.sender_name = ParseStringOrNull(json, ref pos); break;
                     case "sender_persona": m.sender_persona = ParseStringOrNull(json, ref pos); break;
+                    case "sender_avatar_sprite": m.sender_avatar_sprite = ParseStringOrNull(json, ref pos); break;
                     case "kind": m.kind = ParseStringOrNull(json, ref pos); break;
                     case "body": m.body = ParseStringOrNull(json, ref pos); break;
                     case "reply_to":

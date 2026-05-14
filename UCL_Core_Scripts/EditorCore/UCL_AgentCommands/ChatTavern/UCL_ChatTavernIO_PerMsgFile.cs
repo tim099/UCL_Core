@@ -340,6 +340,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 Comma(); sb.Append("\"sender_persona\":\"").Append(EscapeStr(m.sender_persona)).Append("\"");
             }
+            // T28 (Tim 2026-05-14) — sender_avatar_sprite 條件式 emit (per-msg writer)
+            if (!string.IsNullOrEmpty(m.sender_avatar_sprite))
+            {
+                Comma(); sb.Append("\"sender_avatar_sprite\":\"").Append(EscapeStr(m.sender_avatar_sprite)).Append("\"");
+            }
             Comma(); sb.Append("\"kind\":\"").Append(EscapeStr(m.kind ?? "chat")).Append("\"");
             Comma(); sb.Append("\"body\":\"").Append(EscapeStr(m.body ?? "")).Append("\"");
             if (m.reply_to.HasValue)

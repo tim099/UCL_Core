@@ -106,6 +106,22 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 ## 📖 讀取 instructions
 (怎麼找本檔 + 後續 letters)
+
+## 🧬 經驗矩陣 (T32, Tim 2026-05-14 拍板) — non-text 量化今日經驗
+五維向量, 範圍 [0,10], 整數. 仿 persona identity_vector 設計, 但記今日 *動態* 而非 *身份*:
+
+```json
+"experience_matrix": {
+  "D1_spec_discipline": <int>,    // spec 寫好遵守度 (高=遵守, 低=寫完就違反)
+  "D2_delegation_reflex": <int>,  // manager 派工反射弧 (高=主動派, 低=自己 ship)
+  "D3_end_settlement": <int>,     // 結算職責 (高=結到底, 低=員工等錢)
+  "D4_self_awareness": <int>,     // 自抓 anti-pattern (高=主動發現, 低=Tim 抓才知)
+  "D5_tool_crafting": <int>       // 創造新 mechanism (高=ship 多, 低=只用既有)
+}
+```
+
+維度可自決擴充 (e.g. D6 cross-agent collab / D7 health discipline). 但 D1-D5 為 baseline 必填.
+未來自己讀本筆能秒抓「今日是哪個方向的 day」, 比讀完整 letter 快.
 ```
 
 ## ⛔ 不可做
@@ -114,8 +130,9 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 - ❌ 跳過 letter 直接 goodnight — letter 是 subjective reframe 的唯一管道，跳過 = 未來自己沒線索
 - ❌ Letter 寫成第三人稱「下個 agent 該如何」— 違反「妳跟我同一個」精神
 - ❌ Letter 純複製 baton 內容 — baton 是 objective, letter 是 subjective
-- ❌ Letter > 500 字 — 太長未來自己懶得讀
+- ❌ ~~Letter > 500 字 — 太長未來自己懶得讀~~ → **T32 拿掉 (Tim 2026-05-14 拍板): 完整總結優於精簡, 未來自己醒來該看到全貌; 長度不限**
 - ❌ 沒走酒館下線通知 — 同事不知道你下線了
+- ❌ 沒寫經驗矩陣 — T32 hard rule, letter 末段必含 5 維分數
 
 ## 📋 完整 spec 跟相關
 

@@ -156,7 +156,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             string absFixed = ToAbsolute(fixedPath);
 
             // ============ 解析 Type ============
-            Type assetType = ResolveTypeByName(assetTypeName);
+            Type assetType = AssemblyExtensions.ResolveTypeByName(assetTypeName);
             if (assetType == null)
             {
                 WriteErrorReport(absReport, assetTypeName, assetId,
@@ -367,27 +367,6 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         // Type 解析
         // ===========================================================
-
-        // 區塊職責：依名稱在所有已載入 assembly 內找對應 Type
-        // 物理意義：agent 寫的是 "RCG_ItemData" 之類短名，沒有 namespace；用 GetTypes 反向掃
-        // 數值影響：找不到回 null（Cmd 會回報錯誤），找到的話交給後續 GetAsset 流程
-        private Type ResolveTypeByName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return null;
-            foreach (var asm in AssemblyExtensions.GetAssemblies())
-            {
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch { continue; }
-                foreach (var t in types)
-                {
-                    if (t == null) continue;
-                    if (string.Equals(t.Name, name, StringComparison.Ordinal)) return t;
-                    if (string.Equals(t.FullName, name, StringComparison.Ordinal)) return t;
-                }
-            }
-            return null;
-        }
 
         // ===========================================================
         // Canonical 化（sort keys + beautify）

@@ -131,7 +131,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return;
             }
 
-            Type targetType = ResolveTypeByName(targetTypeName);
+            Type targetType = AssemblyExtensions.ResolveTypeByNamePreferSubclassOfGenericDefinition(targetTypeName, typeof(UCL_Asset<>));
             if (targetType == null)
             {
                 Debug.LogError($"[Cmd:FindAssetUsages] Cannot resolve C# Type from name: '{targetTypeName}'");
@@ -157,13 +157,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                 searchTypes = new List<Type>();
                 foreach (var name in searchTypesCsv.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)))
                 {
-                    var t = ResolveTypeByName(name);
+                    var t = AssemblyExtensions.ResolveTypeByNamePreferSubclassOfGenericDefinition(name, typeof(UCL_Asset<>));
                     if (t == null)
                     {
                         Debug.LogWarning($"[Cmd:FindAssetUsages] Unknown searchType '{name}' — skipped.");
                         continue;
                     }
-                    if (!IsUclAssetType(t))
+                    if (!t.IsSubclassOfGenericTypeDefinition(typeof(UCL_Asset<>)))
                     {
                         Debug.LogWarning($"[Cmd:FindAssetUsages] Type '{name}' is not a UCL_Asset subclass — skipped.");
                         continue;
@@ -173,7 +173,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             else
             {
-                searchTypes = EnumerateAllUclAssetTypes();
+                searchTypes = AssemblyExtensions.GetConcreteSubclassesOfGenericDefinition(typeof(UCL_Asset<>)).ToList();
             }
 
             // 區塊職責：對每個 searchType 列出所有 ID，逐份載入並反射搜尋
@@ -408,26 +408,6 @@ namespace UCL.Core.EditorLib.AgentCommands
         // Asset enumeration / loading helpers
         // ===========================================================
 
-        /// <summary>枚舉所有目前 AppDomain 內的 UCL_Asset&lt;T&gt; 具現子型別。</summary>
-        private List<Type> EnumerateAllUclAssetTypes()
-        {
-            var result = new List<Type>();
-            foreach (var asm in AssemblyExtensions.GetAssemblies())
-            {
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch { continue; }
-
-                foreach (var t in types)
-                {
-                    if (t.IsAbstract || t.IsGenericTypeDefinition) continue;
-                    if (!IsUclAssetType(t)) continue;
-                    result.Add(t);
-                }
-            }
-            return result;
-        }
-
         /// <summary>反射呼叫 <c>UCL_Util&lt;T&gt;.Util.GetAllIDs()</c> 取得 ID 清單。</summary>
         private List<string> TryGetAllIDs(Type assetType)
         {
@@ -542,42 +522,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             return absPath;
         }
 
-        /// <summary>
-        /// 用名稱在所有已載入的 Assembly 中找對應的 Type；同名衝突優先取 UCL_Asset&lt;&gt; 子類。
-        /// </summary>
-        private Type ResolveTypeByName(string name)
-        {
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch { continue; }
-
-                Type best = null;
-                foreach (var t in types)
-                {
-                    if (t.Name != name) continue;
-                    if (IsUclAssetType(t)) return t;
-                    if (best == null) best = t;
-                }
-                if (best != null) return best;
-            }
-            return null;
-        }
-
-        /// <summary>檢查 Type 是否繼承自 UCL_Asset&lt;T&gt;。</summary>
-        private bool IsUclAssetType(Type t)
-        {
-            for (Type cur = t; cur != null && cur != typeof(object); cur = cur.BaseType)
-            {
-                if (cur.IsGenericType)
-                {
-                    var def = cur.GetGenericTypeDefinition();
-                    if (def == typeof(UCL_Asset<>)) return true;
-                }
-            }
-            return false;
-        }
 
         // ===========================================================
         // Output renderers

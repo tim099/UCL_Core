@@ -76,6 +76,147 @@ public static partial class AssemblyExtensions {
         }
         return null;
     }
+
+    // 區塊職責：「短名（Type.Name）→ 全部同名 Type」的反向 lookup cache
+    // 物理意義：agent / Cmd 收到的 type 引用通常只有短名（無 namespace），需在所有 assembly 內找對應 Type；
+    //          短名可能多型別共用（不同 namespace 同名），故存 List 不存單一 Type。
+    // 數值影響：lazy build；第一次呼叫掃 GetAllTypes() 建表，之後 O(1) lookup。
+    private static Dictionary<string, List<Type>> s_TypesByShortName = null;
+    private static Dictionary<string, List<Type>> TypesByShortName
+    {
+        get
+        {
+            if (s_TypesByShortName == null)
+            {
+                var types = GetAllTypes();
+                s_TypesByShortName = new Dictionary<string, List<Type>>(StringComparer.Ordinal);
+                foreach (var t in types)
+                {
+                    if (t == null) continue;
+                    var name = t.Name;
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (!s_TypesByShortName.TryGetValue(name, out var list))
+                    {
+                        list = new List<Type>();
+                        s_TypesByShortName[name] = list;
+                    }
+                    list.Add(t);
+                }
+            }
+            return s_TypesByShortName;
+        }
+    }
+
+    /// <summary>
+    /// 區塊職責：依名稱（短名 Type.Name 或 FullName）找全部對應的 Type。
+    /// 物理意義：先試 FullName 精準命中（TypeDic），找不到再退到短名 lookup（TypesByShortName）。
+    /// 數值影響：cache O(1) hit；空字串 / null → 空 list。
+    /// </summary>
+    /// <param name="iName">短名或 FullName</param>
+    /// <returns>命中 Type 的 list（可能多筆；找不到回空 list，不回 null）</returns>
+    public static IReadOnlyList<Type> ResolveTypesByName(string iName)
+    {
+        if (string.IsNullOrEmpty(iName)) return Array.Empty<Type>();
+
+        // FullName 精準命中（最常見：agent 給完整 namespace 名）
+        if (TypeDic.TryGetValue(iName, out var fullHit) && fullHit != null)
+        {
+            return new[] { fullHit };
+        }
+        // 短名 fallback
+        if (TypesByShortName.TryGetValue(iName, out var list))
+        {
+            return list;
+        }
+        return Array.Empty<Type>();
+    }
+
+    /// <summary>
+    /// 區塊職責：依名稱找對應 Type — 命中多筆時取第一筆。
+    /// 物理意義：給「八成不重名」的 caller 用；要做 disambiguation（e.g. 偏好某 base class）的 caller 該用 ResolveTypesByName 或 ResolveTypeByNamePreferSubclassOfGenericDefinition。
+    /// 數值影響：找不到回 null。
+    /// </summary>
+    public static Type ResolveTypeByName(string iName)
+    {
+        var hits = ResolveTypesByName(iName);
+        return hits.Count > 0 ? hits[0] : null;
+    }
+
+    /// <summary>
+    /// 區塊職責：依名稱找 Type — 命中多筆時優先取「繼承自指定開放泛型 base」的版本。
+    /// 物理意義：典型用途 — agent 收到短名 "RCG_ItemData"，跨 assembly 可能撞名；
+    ///          若有一個是 UCL_Asset&lt;&gt; 子類、另一個不是 → 優先回 UCL_Asset&lt;&gt; 子類（更貼近 caller 意圖）。
+    /// 數值影響：iOpenGenericBase==null 或非 generic def → 等價 ResolveTypeByName；找不到回 null。
+    /// </summary>
+    /// <param name="iName">短名或 FullName</param>
+    /// <param name="iOpenGenericBase">優先偏好的開放泛型 base（typeof(Foo&lt;&gt;)）</param>
+    public static Type ResolveTypeByNamePreferSubclassOfGenericDefinition(string iName, Type iOpenGenericBase)
+    {
+        var hits = ResolveTypesByName(iName);
+        if (hits.Count == 0) return null;
+        if (iOpenGenericBase != null && iOpenGenericBase.IsGenericTypeDefinition)
+        {
+            for (int i = 0; i < hits.Count; i++)
+            {
+                if (hits[i].IsSubclassOfGenericTypeDefinition(iOpenGenericBase)) return hits[i];
+            }
+        }
+        return hits[0];
+    }
+
+    /// <summary>
+    /// 區塊職責：判斷 iType 是否繼承自一個開放泛型型別定義（e.g. UCL_Asset&lt;&gt;）。
+    /// 物理意義：標準 IsSubclassOf 不認開放泛型；本方法沿 BaseType chain 比對 GetGenericTypeDefinition。
+    /// 數值影響：iType==null 或 iOpenGenericDef==null 或 iOpenGenericDef 不是開放泛型 → 回 false。
+    /// </summary>
+    /// <param name="iType">待測型別</param>
+    /// <param name="iOpenGenericDef">開放泛型定義（typeof(Foo&lt;&gt;)）</param>
+    public static bool IsSubclassOfGenericTypeDefinition(this Type iType, Type iOpenGenericDef)
+    {
+        if (iType == null || iOpenGenericDef == null) return false;
+        if (!iOpenGenericDef.IsGenericTypeDefinition) return false;
+        for (Type cur = iType; cur != null && cur != typeof(object); cur = cur.BaseType)
+        {
+            if (cur.IsGenericType && cur.GetGenericTypeDefinition() == iOpenGenericDef) return true;
+        }
+        return false;
+    }
+
+    // 區塊職責：「開放泛型 base → 全部具現子型別」cache（abstract / 開放泛型本身排除）
+    // 物理意義：UCL_Asset<> 之類的 base，常需列舉所有「可實例化、可載入」的具體子型別。
+    // 數值影響：lazy build per iOpenGenericDef；第一次呼叫掃 GetAllTypes() 建子型別清單，之後 O(1) hit。
+    private static Dictionary<Type, List<Type>> s_ConcreteSubclassesOfGenericDef = null;
+
+    /// <summary>
+    /// 區塊職責：列舉繼承自指定開放泛型 base 的「具現可實例化子型別」(abstract / generic-def 排除)。
+    /// 物理意義：常用於 UCL_Asset&lt;&gt; 等 base 的全域 type 掃描；cache 後跨 Cmd 共用。
+    /// 數值影響：iOpenGenericDef==null 或非 generic def → 回空 list。回傳是內部 cache 的 reference, 不可修改。
+    /// </summary>
+    public static IReadOnlyList<Type> GetConcreteSubclassesOfGenericDefinition(Type iOpenGenericDef)
+    {
+        if (iOpenGenericDef == null || !iOpenGenericDef.IsGenericTypeDefinition)
+        {
+            return Array.Empty<Type>();
+        }
+        if (s_ConcreteSubclassesOfGenericDef == null)
+        {
+            s_ConcreteSubclassesOfGenericDef = new Dictionary<Type, List<Type>>();
+        }
+        if (!s_ConcreteSubclassesOfGenericDef.TryGetValue(iOpenGenericDef, out var cached))
+        {
+            cached = new List<Type>();
+            var types = GetAllTypes();
+            foreach (var t in types)
+            {
+                if (t == null) continue;
+                if (t.IsAbstract || t.IsGenericTypeDefinition) continue;
+                if (!t.IsSubclassOfGenericTypeDefinition(iOpenGenericDef)) continue;
+                cached.Add(t);
+            }
+            s_ConcreteSubclassesOfGenericDef[iOpenGenericDef] = cached;
+        }
+        return cached;
+    }
     /// <summary>
     /// 區塊職責：通用「字串 → 目標型別物件」轉換器 — primitive / string / enum / "null" 字面值都吃。
     /// 物理意義：給 Cmd / config / 反射調用等場景把 string args 轉成可餵給 method 的 object。

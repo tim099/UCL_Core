@@ -107,7 +107,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return;
             }
 
-            Type assetType = ResolveTypeByName(assetTypeName);
+            Type assetType = AssemblyExtensions.ResolveTypeByNamePreferSubclassOfGenericDefinition(assetTypeName, typeof(UCL_Asset<>));
             if (assetType == null)
             {
                 Debug.LogError($"[Cmd:ResolveAssetReferences] Cannot resolve C# Type from name: '{assetTypeName}'");
@@ -365,47 +365,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        /// <summary>
-        /// 嘗試用名稱在所有已載入的 Assembly 中找對應的 Type。
-        /// 同名字會多回的話，優先取繼承自 UCL_Asset&lt;&gt; 的版本（資料 Asset）。
-        /// </summary>
-        private Type ResolveTypeByName(string name)
-        {
-            // First try exact full-name match across all loaded assemblies
-            foreach (var asm in AssemblyExtensions.GetAssemblies())
-            {
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch { continue; }
-
-                Type best = null;
-                foreach (var t in types)
-                {
-                    if (t.Name != name) continue;
-                    if (IsUclAssetType(t))
-                    {
-                        return t;
-                    }
-                    if (best == null) best = t;
-                }
-                if (best != null) return best;
-            }
-            return null;
-        }
-
-        /// <summary>檢查 Type 是否繼承自 UCL_Asset&lt;T&gt;。</summary>
-        private bool IsUclAssetType(Type t)
-        {
-            for (Type cur = t; cur != null && cur != typeof(object); cur = cur.BaseType)
-            {
-                if (cur.IsGenericType)
-                {
-                    var def = cur.GetGenericTypeDefinition();
-                    if (def == typeof(UCL_Asset<>)) return true;
-                }
-            }
-            return false;
-        }
 
         // ===== Output renderers =====
 

@@ -124,13 +124,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                     searchTypes = new List<Type>();
                     foreach (var name in searchTypesCsv.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)))
                     {
-                        var t = ResolveTypeByName(name);
-                        if (t != null && IsUclAssetType(t)) searchTypes.Add(t);
+                        var t = AssemblyExtensions.ResolveTypeByNamePreferSubclassOfGenericDefinition(name, typeof(UCL_Asset<>));
+                        if (t != null && t.IsSubclassOfGenericTypeDefinition(typeof(UCL_Asset<>))) searchTypes.Add(t);
                     }
                 }
                 else
                 {
-                    searchTypes = EnumerateAllUclAssetTypes();
+                    searchTypes = AssemblyExtensions.GetConcreteSubclassesOfGenericDefinition(typeof(UCL_Asset<>)).ToList();
                 }
             }
             catch (Exception ex)
@@ -455,62 +455,6 @@ namespace UCL.Core.EditorLib.AgentCommands
         // Type enumeration
         // ===========================================================
 
-        private List<Type> EnumerateAllUclAssetTypes()
-        {
-            var result = new List<Type>();
-            foreach (var asm in AssemblyExtensions.GetAssemblies())
-            {
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch (ReflectionTypeLoadException rtle)
-                {
-                    types = rtle.Types?.Where(x => x != null).ToArray() ?? Array.Empty<Type>();
-                }
-                catch { continue; }
-
-                foreach (var t in types)
-                {
-                    if (t == null) continue;
-                    if (t.IsAbstract || t.IsGenericTypeDefinition) continue;
-                    if (!IsUclAssetType(t)) continue;
-                    result.Add(t);
-                }
-            }
-            return result;
-        }
-
-        private Type ResolveTypeByName(string name)
-        {
-            foreach (var asm in AssemblyExtensions.GetAssemblies())
-            {
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch { continue; }
-
-                Type best = null;
-                foreach (var t in types)
-                {
-                    if (t == null || t.Name != name) continue;
-                    if (IsUclAssetType(t)) return t;
-                    if (best == null) best = t;
-                }
-                if (best != null) return best;
-            }
-            return null;
-        }
-
-        private bool IsUclAssetType(Type t)
-        {
-            for (Type cur = t; cur != null && cur != typeof(object); cur = cur.BaseType)
-            {
-                if (cur.IsGenericType)
-                {
-                    var def = cur.GetGenericTypeDefinition();
-                    if (def == typeof(UCL_Asset<>)) return true;
-                }
-            }
-            return false;
-        }
 
         // ===========================================================
         // Output

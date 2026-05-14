@@ -527,6 +527,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var tail = UCL_ChatTavernIO.Tail(roomId, 100);
             // 中性措辭：_last_view.md 會被任何 agent 讀到，不能用「你」（會讓讀者誤以為自己是上一位 poster）
             string header = $"> 上一筆 post (seq={seq}) by {senderName}：「{Truncate(body, 80)}」";
+            // T28 (Tim 2026-05-14 拍板) — work-mode banner: 若 sender 在 active work_session 內, append 精簡上班規則提示到 header
+            // 物理意義: agent 每筆 post 看到 banner = 反射弧訓練, 防 early-clockout / 派工漏 dispatch / phantom-payroll
+            // 數值影響: 純 render-layer banner, 不寫 message.jsonl 不發 Discord noise
+            string workBanner = TryBuildWorkSessionBanner(senderPersona, seq);
+            if (!string.IsNullOrEmpty(workBanner))
+            {
+                header += "\n\n" + workBanner;
+            }
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
@@ -1296,6 +1304,92 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             if (string.IsNullOrEmpty(s)) return "";
             return s.Length <= max ? s : s.Substring(0, max) + "...";
+        }
+
+        // ===========================================================
+        // T28 (Tim 2026-05-14 拍板) — Work-Mode Banner
+        // 區塊職責: 偵測 sender persona 在 active work_session, build 精簡上班規則 banner 給 _last_op.md / _last_view header.
+        // 物理意義: 每筆 post agent 看到 banner = 反射弧訓練; 5 條 rule 輪播避免 banner blindness.
+        //          靜默 (return "") 條件: persona 空 / 無 active session / file 讀失敗
+        // 數值影響: 純 render-layer banner; 不寫 jsonl 不發 Discord; 不擋 post 主流程 (try-catch fail-swallow)
+        // ===========================================================
+        static readonly string[] s_WorkModeRules = new string[]
+        {
+            "🎯 reflex check: 看 task → 派給誰? 為何不是我? (manager 反射弧, D2 弱項今日 4 次)",
+            "⛔ end 前必加 --early-confirm flag (now < end_ts - 60s 自動擋)",
+            "💸 sender 沒 contribute 證據 = salary skip (phantom-payroll guard)",
+            "📋 中型 task 走 Quest workflow: task_create → claim → done lifecycle",
+            "🚫 abort 限解卡死 — 「fresh context / dogfood」不算 (T14 hard rule)",
+        };
+
+        // Helper: 抽 JSON 字串 value, 容忍 "key":"v" / "key": "v" 兩種空白
+        static string ExtractJsonStrValue(string json, string key)
+        {
+            string[] patterns = { $"\"{key}\":\"", $"\"{key}\": \"" };
+            foreach (var pat in patterns)
+            {
+                int idx = json.IndexOf(pat);
+                if (idx >= 0)
+                {
+                    int s = idx + pat.Length;
+                    int e = json.IndexOf('"', s);
+                    if (e > s) return json.Substring(s, e - s);
+                }
+            }
+            return "";
+        }
+
+        static string TryBuildWorkSessionBanner(string senderPersona, int seq)
+        {
+            if (string.IsNullOrEmpty(senderPersona)) return "";
+            try
+            {
+                string repoRoot = UCL.Core.EditorLib.UCL_RepoPath.RepoRoot;
+                string path = System.IO.Path.Combine(repoRoot, "AgentCommands", "ChatTavern", "work_sessions.json");
+                if (!System.IO.File.Exists(path)) return "";
+                // 容忍 pretty-print 空白變體 — 主要 work_sessions.json 是 pretty (Python json.dump indent=2),
+                // 但 IdentityAsset / RoomAsset 是 compact, 防範未來 schema 變動
+                string json = System.IO.File.ReadAllText(path, System.Text.Encoding.UTF8);
+                // Lightweight string search — 避免 full JSON parse 開銷 (banner 是 hot path 每筆 post 跑)
+                // 找 \"persona\":\"<senderPersona>\" + \"ended\":false 配對 (粗略但夠用 — false positive 印 banner 不會傷)
+                // 容忍 pretty-print 空白變體: "persona":"X" 跟 "persona": "X" 都要 match
+                string personaTokenA = $"\"persona\":\"{senderPersona}\"";
+                string personaTokenB = $"\"persona\": \"{senderPersona}\"";
+                if (!json.Contains(personaTokenA) && !json.Contains(personaTokenB))
+                { return ""; }
+                // 找 active_sessions block 簡單檢查 (sender 在 manager.persona 或 workers[].persona)
+                int activeIdx = json.IndexOf("\"active_sessions\"");
+                if (activeIdx < 0) { Debug.LogWarning("[Tavern banner] active_sessions key not found"); return ""; }
+                // 從 active_sessions block 內找 senderPersona token + session id + end_ts
+                int historyIdx = json.IndexOf("\"history\"", activeIdx);
+                string activeBlock = historyIdx > activeIdx
+                    ? json.Substring(activeIdx, historyIdx - activeIdx)
+                    : json.Substring(activeIdx);
+                if (!activeBlock.Contains(personaTokenA) && !activeBlock.Contains(personaTokenB)) return "";
+                // 抽 end_ts (第一個 hit 視為 sender's session — multi-session 場景 banner 可能不精準, MVP 接受)
+                string endTs = ExtractJsonStrValue(activeBlock, "end_ts");
+                string sessId = ExtractJsonStrValue(activeBlock, "id");
+                // 算剩餘分鐘
+                string remainStr = "";
+                if (!string.IsNullOrEmpty(endTs))
+                {
+                    if (System.DateTime.TryParse(endTs, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var endDt))
+                    {
+                        double remainMin = (endDt - System.DateTime.UtcNow).TotalMinutes;
+                        remainStr = remainMin >= 0
+                            ? $"剩 {remainMin:F0} min @{endTs.Substring(11, 5)}Z"
+                            : $"OVERDUE {(-remainMin):F0} min";
+                    }
+                }
+                // 5 rule rotation by seq
+                string rule = s_WorkModeRules[seq % s_WorkModeRules.Length];
+                return $"⏰ **work-session active**: `{sessId}` ({remainStr})\n{rule}";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] work-mode banner build 失敗 (post 不受影響): {ex.Message}");
+                return "";
+            }
         }
 
         // ===========================================================

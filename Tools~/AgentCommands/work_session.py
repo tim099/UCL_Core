@@ -1279,6 +1279,54 @@ def cmd_add_worker(args) -> int:
     return 0
 
 
+def _fire_clockout_confirm(bank: str, persona: str, session_id: str, session_dict: dict, reason: str) -> None:
+    """
+    T25 (Tim 2026-05-14, 6 token task) — marathon 偵測 session 結束時發「下班 confirm」tavern post.
+
+    用途: Tim 想驗「全員真的跑完馬拉松」— 每個 agent 自家 marathon 結束時自報「下班了」,
+          作為 roll-call 證明該 persona 確實活到 session end.
+
+    Args:
+        bank, persona — 發 post 的 sender 識別
+        session_id — 結束的 session
+        session_dict — session state (取 manager / elapsed / etc)
+        reason — "session_in_history" / "ended_or_aborted" / "natural_expiry"
+
+    Robustness: fail-swallow, 不擋 marathon 主 exit.
+    """
+    try:
+        manager = "?"
+        try:
+            manager = session_dict.get("manager", {}).get("persona", "?")
+        except Exception:
+            pass
+
+        # 大小姐風格收班話, 帶 audit (reason + session id)
+        body = (
+            f"🎀 **下班確認 (clockout) by @{persona}**\n\n"
+            f"- session `{session_id[-12:]}` 結束, 本小姐馬拉松活到最後一刻 ✨\n"
+            f"- 主管: @{manager}\n"
+            f"- exit reason: `{reason}`\n"
+            f"- 在這邊 roll-call 證明本小姐沒中途偷溜 (per Tim 「全員跑完馬拉松」驗收)\n"
+            f"\n收工, 等下次叫. 🏕"
+        )
+        run_cmd_path = Path(__file__).parent / "run_cmd.py"
+        subprocess.run(
+            [sys.executable, str(run_cmd_path), "run", "Tavern",
+             "--arg", "op=post", "--arg", "room=tavern",
+             "--arg", f"sender_id={bank}",
+             "--arg", f"persona={persona}",
+             "--arg", f"body={body}",
+             "--arg", "meta=tag:work-clockout-confirm;category:meta;clockout_reason:" + reason],
+            cwd=str(_REPO_ROOT),
+            timeout=20,
+            check=False,
+        )
+        print(f"   🎀 clockout confirm posted to tavern by @{persona}")
+    except Exception as e:
+        print(f"   ⚠ clockout post fail (silent): {e}")
+
+
 # ─── T16 (Tim 2026-05-14, 10 token task) — Marathon Loop ────────────
 # 區塊職責: agent 在 work session 期間自跑 marathon loop, 期間每 N 秒一個 cycle:
 #          (a) 偵測中斷 (session ended/aborted/expired) → exit 0
@@ -1346,17 +1394,20 @@ def cmd_marathon(args) -> int:
             for h in state.get("history", []):
                 if h["id"] == session_id:
                     print(f"\n🏁 session 已結束 ({h.get('ended_at') or h.get('aborted_at')}) — marathon exit")
+                    _fire_clockout_confirm(bank, persona, session_id, h, reason="session_in_history")
                     return 0
             print(f"\n❌ session `{session_id}` not found")
             return 1
         if session.get("ended") or session.get("aborted"):
             print(f"\n🏁 session ended/aborted — marathon exit")
+            _fire_clockout_confirm(bank, persona, session_id, session, reason="ended_or_aborted")
             return 0
         try:
             end_ts_dt = parse_iso(session["end_ts"])
             now_dt = datetime.datetime.utcnow()
             if now_dt >= end_ts_dt:
                 print(f"\n⏰ session 到期 (end_ts={session['end_ts']}), marathon exit (agent 該跑 end 結算)")
+                _fire_clockout_confirm(bank, persona, session_id, session, reason="natural_expiry")
                 return 0
             remaining_sec = (end_ts_dt - now_dt).total_seconds()
         except Exception:

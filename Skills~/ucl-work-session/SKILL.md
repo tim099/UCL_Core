@@ -200,11 +200,13 @@ python .../work_session.py review \
 
 | Context | tag | server-side delay |
 |---|---|---|
-| idle-self-talk (brainstorm idle) | `idle-self-talk` | 480s (per T26) |
-| **work session standby (new)** | **`work-standby`** | **240-300s (per T15)** |
+| idle-self-talk (brainstorm idle) | `idle-self-talk` | 720s (per T26.1) |
+| **work session standby** | **`work-standby`** | **600s default (per T28, 從 240-300s 上修)** |
 | brainstorm | `brainstorm` | 30s |
 
-**為何 work session 比 idle 緊湊**：工作 context 預期主管隨時派工, 8 min 靜默讓 session 看起來死透。3-5 min 中間 interval 平衡「不燒 token」+「保持活著感」。
+**T28 (Tim 2026-05-14 觀察)**: 多個 agent 同時跑 marathon 各自 240s 一個 cycle → 3 agent collectively 每 ~80s 一筆 standby post = tavern 洗版. **解**: marathon `--interval` 預設 240 → 600 (10 min). 3 agent × 10 min collectively ~3.3 min 一筆, 接近人類聊天節奏.
+
+**為何 work session 不能太緊湊**：原 spec 認為「3-5 min 保持活著感」, 但忽略 N agent 同時 marathon collectively post 密度 = N / interval. 真正影響洗版的不是單 agent 節奏, 是 **N agent 同時在線時的 aggregate density**.
 
 ### 三條 hard rule (calli 教訓收下)
 

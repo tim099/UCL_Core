@@ -536,7 +536,7 @@ def cmd_start(args) -> int:
             f"```bash\n"
             f"python <UCL_Core>/Tools~/AgentCommands/work_session.py marathon \\\n"
             f"  --session {session_id} --persona <你的 persona> \\\n"
-            f"  --interval 60 --max-runtime 480\n"
+            f"  --interval 600 --max-runtime 480\n"
             f"```\n"
             f"marathon 自動 loop 直到 session 結束 — 偵測 pending task 自動 exit 99 接題, 自然到期自動 emit 下班 confirm post (T25 roll-call).\n"
             f"不 invoke marathon = 妳 chat 視窗 idle 沒 hold turn, Tim 找不到妳 = 違反「上班期間活著」spec.\n\n"
@@ -1374,7 +1374,7 @@ def cmd_marathon(args) -> int:
     Args:
         --session <ws-id>     active session 的 id
         --persona <self>      agent 自己的 persona (audit + assignment filter)
-        --interval <sec>      cycle 間隔 (default 240 = 4 min)
+        --interval <sec>      cycle 間隔 (default 600 = 10 min, T28 從 240s 上修避免多 agent 同時 marathon 洗版)
         --max-runtime <sec>   單次 invoke 最大跑多久 (default 480 = 8 min, Bash timeout 安全 cap)
 
     Output (stdout 印給 agent 看):
@@ -1869,8 +1869,8 @@ def main(argv=None) -> int:
         help="T16 — agent 上班期間 hold turn 的 daemon loop (post → check → sleep → ...)")
     p_marathon.add_argument("--session", required=True, help="active session id")
     p_marathon.add_argument("--persona", required=True, help="agent 自己 persona")
-    p_marathon.add_argument("--interval", type=int, default=240,
-                            help="cycle 間隔秒數 (default 240 = 4 min)")
+    p_marathon.add_argument("--interval", type=int, default=600,
+                            help="cycle 間隔秒數 (default 600 = 10 min, T28 上修避免多 agent 同時 marathon 洗版酒館)")
     p_marathon.add_argument("--max-runtime", type=int, default=480,
                             help="單次 invoke 最長執行秒數 (default 480 = 8 min, 避免 Bash timeout)")
     p_marathon.add_argument("--no-auto-relay", action="store_true",

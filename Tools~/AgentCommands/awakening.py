@@ -707,6 +707,7 @@ def fork_persona(reg: dict, source: str, target: str,
         "layer_role": f"fork of {source} @ {now}",
         "wake_count": 0,
         "status": "offline",
+        "availability": "offline",  # T06.1 — Plan_Standby_Dispatch_Bartender
         "last_active": None,
         "identity_vector": v,
         "vector_history": [
@@ -991,7 +992,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
         reg["personas"][chosen] = {
             "agent": agent, "model": model,
             "layer_role": f"newly created via morning ritual @ {now}",
-            "wake_count": 0, "status": "offline", "last_active": None,
+            "wake_count": 0, "status": "offline", "availability": "offline", "last_active": None,
             "identity_vector": v,
             "vector_history": [{"at": now, "hash": hash_vector(v),
                                 "delta_mag": 0.0, "trigger": "new_via_morning"}],
@@ -1039,6 +1040,10 @@ def cmd_morning(args: argparse.Namespace) -> int:
         p["model"] = model
     p["wake_count"] += 1
     p["status"] = "online"
+    # T06.1 (Plan_Standby_Dispatch_Bartender, 2026-05-14): availability 欄
+    # 物理意義: 剛上線即可接 task — agent 進入待機 (idle) 狀態
+    # enum: idle / busy / offline. busy 由 agent 自律切 (cmd_set_availability)
+    p["availability"] = "idle"
     p["last_active"] = utcnow_iso()
     # T05 (2026-05-14): last_session_keys history 機制廢除 — session 概念簡化為
     # (agent,persona) 本身; re-morning idempotent 改靠 PID match 接.
@@ -1192,8 +1197,9 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
             "delta_mag": perturbation,
             "trigger": "goodnight",
         })
-        # Step 3: set status offline
+        # Step 3: set status offline + availability offline (T06.1)
         p["status"] = "offline"
+        p["availability"] = "offline"
         p["last_active"] = utcnow_iso()
         save_registry(reg)
         print(f"🧬 vector perturbed (Δ={perturbation}, new_hash={hash_vector(new_v)})")
@@ -1405,6 +1411,27 @@ def cmd_forks(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_set_availability(args: argparse.Namespace) -> int:
+    """
+    T06.1 (Plan_Standby_Dispatch_Bartender, 2026-05-14) — agent 自律切 availability.
+
+    用途: agent 開始接 task → set busy; task done 回 standby → set idle.
+    enum: idle (待機可接 task) / busy (動工中) / offline (下線, 一般走 goodnight 自動設).
+
+    Bartender daemon (T06.2 後) 派 task 前看此欄判斷是否該 agent 為 idle.
+    """
+    reg = load_registry()
+    if args.persona not in reg["personas"]:
+        print(f"❌ persona '{args.persona}' not in registry", file=sys.stderr)
+        return 2
+    p = reg["personas"][args.persona]
+    old_state = p.get("availability", "offline")
+    p["availability"] = args.state
+    save_registry(reg)
+    print(f"✓ persona '{args.persona}' availability: {old_state} → {args.state}")
+    return 0
+
+
 def cmd_affinity(args: argparse.Namespace) -> int:
     """好感度系統: 查詢或更新 Persona 對某人的好感度"""
     try:
@@ -1530,6 +1557,12 @@ def main():
     pr.add_argument("old", help="current codename")
     pr.add_argument("new", help="new codename")
     pr.set_defaults(func=cmd_rename_persona)
+
+    pav = sub.add_parser("set-availability", help="T06.1 — agent 自律切 idle/busy 狀態 (Plan_Standby_Dispatch)")
+    pav.add_argument("--persona", required=True, help="persona codename")
+    pav.add_argument("--state", required=True, choices=["idle", "busy", "offline"],
+                     help="idle = 待機可接 task; busy = 動工中; offline = 下線 (一般走 goodnight 設, 不必手動)")
+    pav.set_defaults(func=cmd_set_availability)
 
     pa = sub.add_parser("affinity", help="好感度系統: 查詢或更新好感度")
     pa.add_argument("--persona", default=None, help="操作的 persona (預設為當前 session)")

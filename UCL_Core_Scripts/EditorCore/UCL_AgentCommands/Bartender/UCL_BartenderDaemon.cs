@@ -10,9 +10,11 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 using System.Linq;
+using UCL.Core.JsonLib;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.EditorLib.AgentCommands.Treasury;
 
@@ -37,6 +39,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static double s_LastCheckTime = 0;
         static bool s_Initialized = false;
+        // T-Bartender-P3 (Plan_Bartender_Optimization_Backlog, 2026-05-14):
+        // Editor recompile/domain-reload 後 daemon 第一次 tick 補 fire 過期 work session end
+        // (per Plan_Work_Session_Mechanism §11 recompile edge case)
+        static bool s_WorkSessionCatchUpDone = false;
 
         // ===========================================================
         // Static ctor — Editor 啟動 / domain reload 時自動執行
@@ -88,9 +94,118 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動),
             //          最後檢查跨日存款保管費 (anti-inflation 機制)
             //          三條獨立 IO + 獨立 state 欄位 (room_last_seq / fired_today_keys / last_overnight_check_date)
+            //
+            // T-Bartender-P3 (2026-05-14): 加 work session 過期 catch-up sweep
+            // 物理意義: Editor recompile / domain-reload 後 daemon 從零起跑, 不知道之前
+            //          active 的 work session 是否已過 end_ts. 第一次 tick 時 sweep
+            //          一次, 對 now > end_ts 的 active session spawn end subprocess 結算.
+            // 數值影響: 純 read work_sessions.json + spawn python subprocess, 一次性 (s_WorkSessionCatchUpDone flag)
+            if (!s_WorkSessionCatchUpDone)
+            {
+                s_WorkSessionCatchUpDone = true;
+                try { CheckOverdueWorkSessions(); }
+                catch (Exception e) { Debug.LogWarning($"[Bartender P3] catchup sweep fail: {e.Message}"); }
+            }
             CheckKeywordTriggers();
             CheckTimeRules();
             CheckOvernightDeposits();
+        }
+
+        // ===========================================================
+        // 區塊：T-Bartender-P3 work session 過期 catch-up sweep
+        // 物理意義: 補 Editor recompile 後沒人發現的「session 早該 end 但卡 active 沒結算」
+        //          scan AgentCommands/ChatTavern/work_sessions.json active_sessions
+        //          → 對 now > end_ts 且 !ended && !aborted → spawn python end subprocess
+        // 數值影響: 結算 fire 走 work_session.py end, 走完整既有路徑 (薪資 + 酒館券 + announce)
+        // 邊界: aborted/ended 跳過; 沒 end_ts 跳過; manager 找不到走「basecamp」fallback
+        // ===========================================================
+        static void CheckOverdueWorkSessions()
+        {
+            string wsPath = Path.Combine(UCL_RepoPath.RepoRoot,
+                "AgentCommands", "ChatTavern", "work_sessions.json");
+            if (!File.Exists(wsPath)) return;
+
+            string content;
+            try { content = File.ReadAllText(wsPath); }
+            catch (Exception e) { Debug.LogWarning($"[Bartender P3] read work_sessions fail: {e.Message}"); return; }
+            if (string.IsNullOrEmpty(content)) return;
+
+            JsonData jd;
+            try { jd = JsonData.ParseJson(content); }
+            catch (Exception e) { Debug.LogWarning($"[Bartender P3] parse work_sessions fail: {e.Message}"); return; }
+            if (jd == null || !jd.IsObject) return;
+
+            var active = jd["active_sessions"];
+            if (active == null || !active.IsArray) return;
+
+            DateTime now = DateTime.UtcNow;
+            var overdue = new List<(string sid, string manager)>();
+
+            for (int i = 0; i < active.Count; i++)
+            {
+                var entry = active[i];
+                if (entry == null || !entry.IsObject) continue;
+                string sid = entry.GetString("id", "");
+                if (string.IsNullOrEmpty(sid)) continue;
+                // Skip 已 ended / aborted
+                bool ended = entry.GetBool("ended", false);
+                bool aborted = entry.GetBool("aborted", false);
+                if (ended || aborted) continue;
+
+                string endTsStr = entry.GetString("end_ts", "");
+                if (string.IsNullOrEmpty(endTsStr)) continue;
+
+                DateTime endTs;
+                if (!DateTime.TryParse(endTsStr, null,
+                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                        out endTs))
+                    continue;
+
+                if (now <= endTs) continue;   // 還沒過期
+
+                // 找 manager.persona
+                string manager = "basecamp";   // fallback
+                var mgrEntry = entry["manager"];
+                if (mgrEntry != null && mgrEntry.IsObject)
+                {
+                    string mgrName = mgrEntry.GetString("persona", "");
+                    if (!string.IsNullOrEmpty(mgrName)) manager = mgrName;
+                }
+                overdue.Add((sid, manager));
+            }
+
+            if (overdue.Count == 0) return;
+
+            Debug.Log($"[Bartender P3] catch-up: 偵測到 {overdue.Count} 個過期 work session, 補 fire end...");
+            foreach (var (sid, manager) in overdue)
+            {
+                try
+                {
+                    string scriptPath = Path.Combine(UCL_RepoPath.RepoRoot,
+                        "CardGame", "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py");
+                    if (!File.Exists(scriptPath))
+                    {
+                        Debug.LogWarning($"[Bartender P3] work_session.py 找不到, skip {sid}");
+                        continue;
+                    }
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = $"\"{scriptPath}\" end --session \"{sid}\" --who \"{manager}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        WorkingDirectory = UCL_RepoPath.RepoRoot,
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                    Debug.Log($"[Bartender P3] spawned end subprocess: session={sid}, manager={manager}");
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[Bartender P3] spawn fail for {sid}: {e.Message}");
+                }
+            }
         }
 
         // ===========================================================

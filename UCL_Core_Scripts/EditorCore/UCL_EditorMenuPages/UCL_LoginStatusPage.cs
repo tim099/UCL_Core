@@ -59,8 +59,8 @@ namespace UCL.Core.EditorLib.Page
         List<LockEntry> m_Locks = new List<LockEntry>();
         List<PersonaEntry> m_Pool = new List<PersonaEntry>();
         Dictionary<string, int> m_SameKeyCount = new Dictionary<string, int>();   // session_key → count (collision 偵測)
-        Vector2 m_LocksScroll = Vector2.zero;
-        Vector2 m_PoolScroll = Vector2.zero;
+        //Vector2 m_LocksScroll = Vector2.zero;
+        //Vector2 m_PoolScroll = Vector2.zero;
 
         // 區塊職責：手動 login 表單 state
         // 物理意義：Tim 輸入 agent + persona 字串, 按 Morning 後 spawn process
@@ -235,7 +235,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Locks.Empty"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
-                m_LocksScroll = GUILayout.BeginScrollView(m_LocksScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(220)));
+                //m_LocksScroll = GUILayout.BeginScrollView(m_LocksScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(220)));
 
                 using (new GUILayout.HorizontalScope())
                 {
@@ -272,7 +272,7 @@ namespace UCL.Core.EditorLib.Page
                         }
                     }
                 }
-                GUILayout.EndScrollView();
+                //GUILayout.EndScrollView();
             }
         }
 
@@ -322,7 +322,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.EmptyFmt"), m_PersonasDir), UCL_GUIStyle.LabelStyle);
                     return;
                 }
-                m_PoolScroll = GUILayout.BeginScrollView(m_PoolScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(240)));
+                //m_PoolScroll = GUILayout.BeginScrollView(m_PoolScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(240)));
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
@@ -349,7 +349,7 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Label(TruncTs(p.LastActive), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     }
                 }
-                GUILayout.EndScrollView();
+                //GUILayout.EndScrollView();
             }
         }
 

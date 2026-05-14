@@ -1,0 +1,9 @@
+{
+    "DataLoadType": "ModResources",
+    "ModResourcesData": {
+        "ModuleID": "Core",
+        "FolderPath": "Sprites/Avatars",
+        "FileName": "meadow.png"
+    },
+    "FilterMode": "Bilinear"
+}

@@ -356,6 +356,23 @@ def fire_salary_credit(bank: str, persona: str, amount: int, session_id: str, ch
     }
     path = date_dir / fname
     path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # T29 fix (Tim QA 2026-05-14): fire-and-forget Discord broadcast via notify_treasury.py
+    # 物理意義: 對齊 C# UCL_TreasuryLedger.Credit FireDiscordBroadcastAsync — work_session.py
+    #          直接寫 ledger 檔不會走 C# path, 需手動補 spawn broadcast subprocess.
+    # 數值影響: 純 fire-and-forget Popen, 不擋 salary 主流程; notify_treasury.py 不存在 silent skip.
+    try:
+        notify_path = _REPO_ROOT / "AgentCommands" / "PromptQueue" / "notify_treasury.py"
+        if notify_path.exists():
+            subprocess.Popen(
+                [sys.executable, str(notify_path), "--entry-file", str(path), "--quiet"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=str(_REPO_ROOT),
+            )
+    except Exception:
+        pass   # silent skip
+
     return str(path.relative_to(_REPO_ROOT))
 
 

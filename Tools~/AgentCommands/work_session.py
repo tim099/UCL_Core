@@ -139,12 +139,19 @@ def resolve_persona(name: str) -> dict | None:
 def infer_caller_persona() -> str | None:
     """
     T09 (Tim 2026-05-14 拍板, C1) — 從當前 caller 環境推 active persona.
+    T13 (2026-05-14, 主管裁決) — tie-breaker 從 locked_at 改 persona.last_active.
 
     用途: cmd_start 不傳 --manager 時自動填補 caller 自己當主管, 減手填參數.
 
-    機制: import awakening.compute_claim_origin → scan _session locks, 找
-    claim_origin match 的 lock → return persona. 多 match 取最 recent.
-    匹不到 → None (caller 自己處理 fallback).
+    機制:
+      1. import awakening.compute_claim_origin → 算當前 env hash
+      2. scan _session locks, 找 claim_origin match 的 lock list
+      3. 多 match → 取 persona.last_active 最 recent 的 (T13 修正)
+         (舊規則 locked_at 抓不到「stale fork persona 早上 lock 之後沒動」, 會誤推 stale persona 當主管)
+      4. 匹不到 → None (caller 自己處理 fallback)
+
+    為何改: live test 抓到 — calli stale fork lock_at 比 basecamp 晚, 但 calli
+    幾天沒 last_active, basecamp 才是「當前真在用」. last_active 更貼近語意.
     """
     try:
         sys.path.insert(0, str(Path(__file__).parent))
@@ -164,11 +171,25 @@ def infer_caller_persona() -> str | None:
         if is_lock_expired(d):
             continue
         if lock_claim_origin(d) == my_origin:
+            # T13: 配 persona last_active 從 registry 撈出來當 sort key
+            persona_name = d.get("persona", "")
+            last_active = ""
+            if persona_name:
+                p_info = resolve_persona(persona_name)
+                # resolve_persona 沒抓 last_active, 直接讀 file
+                p_file = _PERSONAS_DIR / f"{persona_name}.json"
+                if p_file.exists():
+                    try:
+                        p_data = json.loads(p_file.read_text(encoding="utf-8"))
+                        last_active = p_data.get("last_active") or ""
+                    except Exception:
+                        pass
+            d["_last_active"] = last_active
             candidates.append(d)
     if not candidates:
         return None
-    # 多 match → 取最 recent locked_at
-    candidates.sort(key=lambda d: d.get("locked_at", ""), reverse=True)
+    # T13: 多 match → 取最 recent last_active (fallback locked_at if last_active 空)
+    candidates.sort(key=lambda d: (d.get("_last_active") or "", d.get("locked_at", "")), reverse=True)
     return candidates[0].get("persona")
 
 
@@ -427,7 +448,8 @@ def cmd_start(args) -> int:
         workers.append(info)
 
     if not workers:
-        print(f"⚠ 沒有有效 workers (預設 = 全部 online 非 manager). 繼續但 session 只有 manager.")
+        # T12 (Tim 2026-05-14): warning text 對齊 T11 SOLO 預設 — 員工由 ding-ack 招募
+        print(f"ℹ SOLO 模式啟動 (T11 預設). 員工可在 tavern 發 ack-only 自動入職 (per T10 C3).")
 
     duration = max(15, min(args.duration, 480))
     if duration != args.duration:

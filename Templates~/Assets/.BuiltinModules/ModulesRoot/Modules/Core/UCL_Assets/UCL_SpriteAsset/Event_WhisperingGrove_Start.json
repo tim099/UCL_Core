@@ -1,0 +1,10 @@
+{
+	"DataLoadType":"ModResources",
+	"ModResourcesData":{
+		"ModuleID":"Core",
+		"FolderPath":"Sprites/Events",
+		"FileName":"WhisperingGrove_Start.png"
+	},
+	"FilterMode":"Bilinear",
+	"AlphaIsTransparency":"False"
+}

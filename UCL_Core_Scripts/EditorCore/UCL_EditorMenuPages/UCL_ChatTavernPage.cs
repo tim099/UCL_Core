@@ -372,9 +372,19 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：訊息列表 / input bar 共用此 helper；GUILayoutUtility.GetRect 取 size×size 區塊，
         //          有 Sprite 用 DrawTextureWithTexCoords（處理 sprite atlas rect / texture uv）
         // 數值影響：純繪製，不寫檔；占用 layout 一個方塊
-        void DrawAvatar(string senderId, float size)
+        // T28 (Tim 2026-05-14 拍板): 加 avatarSpriteId 參數 — message.sender_avatar_sprite 帶 sprite_id 時優先直 load,
+        //                            否則 fallback 走 sender_id-based identity lookup (legacy compat).
+        void DrawAvatar(string senderId, float size, string avatarSpriteId = null)
         {
-            var avatar = GetAvatarSprite(senderId);
+            Sprite avatar = null;
+            if (!string.IsNullOrEmpty(avatarSpriteId))
+            {
+                avatar = GetAvatarSpriteById(avatarSpriteId);
+            }
+            if (avatar == null)
+            {
+                avatar = GetAvatarSprite(senderId);  // legacy fallback
+            }
             var rect = GUILayoutUtility.GetRect(size, size, GUILayout.Width(size), GUILayout.Height(size));
             if (avatar != null && avatar.texture != null)
             {
@@ -427,6 +437,33 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning($"[UCL_ChatTavernPage] GetAvatarSprite({senderId}) 失敗：{ex.Message}");
             }
             m_AvatarCache[senderId] = sp;   // null 也 cache 避免每次都試載
+            return sp;
+        }
+
+        // 區塊職責：直接用 UCL_SpriteAsset ID lookup Sprite (T28, persona-level avatar 直 hit)
+        // 物理意義：message.sender_avatar_sprite 已是 sprite_id (e.g. "Avatars_basecamp"), Cmd_Tavern Op_Post 已 resolve;
+        //          render 端不必再走 identity → sprite reverse lookup, 直接 by id load
+        // 數值影響：跟 m_AvatarCache 共用 cache (key 是 "spriteid:" + id 避免跟 sender_id-key 撞)
+        Sprite GetAvatarSpriteById(string spriteId)
+        {
+            if (string.IsNullOrEmpty(spriteId)) return null;
+            string cacheKey = "spriteid:" + spriteId;
+            if (m_AvatarCache.TryGetValue(cacheKey, out var cached)) return cached;
+            Sprite sp = null;
+            try
+            {
+                var spriteAsset = new UCL_SpriteAsset();
+                if (spriteAsset.ContainsAsset(spriteId))
+                {
+                    var data = spriteAsset.GetData(spriteId);
+                    sp = data?.Sprite;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[UCL_ChatTavernPage] GetAvatarSpriteById({spriteId}) 失敗：{ex.Message}");
+            }
+            m_AvatarCache[cacheKey] = sp;
             return sp;
         }
 
@@ -1135,7 +1172,8 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.VerticalScope(GUILayout.Width(52)))
                 {
                     GUILayout.Space(2);
-                    DrawAvatar(m.sender_id, 48);
+                    // T28: persona avatar 優先 (msg.sender_avatar_sprite), fallback sender_id-based legacy
+                    DrawAvatar(m.sender_id, 48, m.sender_avatar_sprite);
                 }
 
                 // ===== 右側 header + body =====

@@ -262,7 +262,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // ===========================================================
             const double ALTER_PACING_DEFAULT_SEC = 300.0;
             const double ALTER_PACING_BRAINSTORM_SEC = 30.0;
-            const double ALTER_PACING_MAX_SEC = 600.0;   // 安全上限
+            const double ALTER_PACING_MAX_SEC = 900.0;   // 安全上限 (T26.1: 從 600s 上修至 900s 配合 idle 拉長至 720s)
             var earlyMeta = ParseMeta(metaStr);
 
             // T06.3 (Plan_Standby_Dispatch_Bartender, 2026-05-14) — task-assign / task-ack meta schema validation
@@ -321,8 +321,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     // T34 — idle-self-talk 待機模式（per Tim Round 33 拍板 T33 方案 A）
                     // 物理意義：「進入聊天酒館 待機模式」觸發 → agent 走 8 min self↔alter 自我對話
                     //          + 每 round 前 inbox_read 偵測中斷 + cap=10 round 防 token 暴增
-                    // 數值影響：480s ≈ wait timeout 慣例 + 大於 brainstorm 30s 短延遲（待機要慢節奏才接得到外部訊息）
-                    const double ALTER_PACING_IDLE_SEC = 480.0;
+                    // 數值影響：720s = 12 min (T26.1 從 480s 上修, per Tim 2026-05-14「Idle訊息等待間隔可以更長 避免洗版」)
+                    //          每 round ~12 min → 10 round cap ≈ 120 min, 比原 80 min 更不洗版
+                    //          ⚠ 超過 Bash tool 10 min wait 上限 → idle post 該 `--wait-reply 0` fire-and-forget, 不阻塞 agent turn
+                    const double ALTER_PACING_IDLE_SEC = 720.0;
                     if (tagLow.Contains("idle-self-talk") || tagLow.Contains("idle-standby") || tagLow.Contains("standby"))
                     {
                         effectiveDelaySec = ALTER_PACING_IDLE_SEC;

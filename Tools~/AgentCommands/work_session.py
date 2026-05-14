@@ -39,6 +39,8 @@ import datetime
 import json
 import os
 import sys
+import time
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -1268,6 +1270,137 @@ def cmd_add_worker(args) -> int:
     return 0
 
 
+# ─── T16 (Tim 2026-05-14, 10 token task) — Marathon Loop ────────────
+# 區塊職責: agent 在 work session 期間自跑 marathon loop, 期間每 N 秒一個 cycle:
+#          (a) 偵測中斷 (session ended/aborted/expired) → exit 0
+#          (b) 偵測 pending bartender assignment for self → exit 99 (signal agent 動工)
+#          (c) idle → fire tavern standby post
+#          (d) sleep until next cycle
+# 物理意義: 解 Tim 上班馬拉松痛點 — agent post 完就死, 不能 hold turn 整 session.
+#          本 daemon 走 Bash subprocess 阻塞模式, agent invoke 一次, daemon 自己 loop
+#          直到 work 來 (exit 99) 或 session end (exit 0). Agent 看到 exit code 決定
+#          要不要做 work / 還是繼續 standby.
+# Exit codes:
+#   0  — session 自然 end / 到期 / aborted, agent 可結束
+#   99 — pending assignment 來了, agent 應動工 (output 帶 assignment 詳情)
+#   1  — error (session not found / 參數缺失)
+def cmd_marathon(args) -> int:
+    """
+    T16 marathon — agent 上班期間 hold turn 的 daemon loop.
+
+    Args:
+        --session <ws-id>     active session 的 id
+        --persona <self>      agent 自己的 persona (audit + assignment filter)
+        --interval <sec>      cycle 間隔 (default 240 = 4 min)
+        --max-runtime <sec>   單次 invoke 最大跑多久 (default 480 = 8 min, Bash timeout 安全 cap)
+
+    Output (stdout 印給 agent 看):
+        [cycle N @ HH:MM:SS] standby post fired / pending detected / session ended
+
+    每 cycle 動作:
+        1. 讀 session — 若 ended/aborted/now > end_ts → exit 0
+        2. 掃 bartender/assignments.json — 若有 target_persona == self + status == pending
+           → print assignment 詳情 + exit 99
+        3. idle → fire tavern post (tag=work-standby) + sleep next cycle
+    """
+    session_id = args.session
+    persona = args.persona
+    interval = max(30, int(args.interval))
+    max_runtime = max(60, int(args.max_runtime))
+
+    info = resolve_persona(persona)
+    if not info or info.get("bank") is None:
+        print(f"❌ persona '{persona}' 不存在 / 沒 bank")
+        return 1
+
+    bank = info["bank"]
+    started_at = time.time()
+    cycle = 0
+    assignments_path = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "bartender" / "assignments.json"
+
+    print(f"🏃 Marathon started for @{persona} on session `{session_id}`")
+    print(f"   interval={interval}s / max-runtime={max_runtime}s")
+
+    while True:
+        cycle += 1
+        now_ts = time.time()
+        elapsed = now_ts - started_at
+        if elapsed >= max_runtime:
+            print(f"\n⏱  marathon hit max-runtime {max_runtime}s — graceful exit, agent 應再 invoke 接力")
+            return 0
+
+        # === Check 1: session state ===
+        state = load_state()
+        session = find_active_session(state, session_id)
+        if not session:
+            # 可能已 in history
+            for h in state.get("history", []):
+                if h["id"] == session_id:
+                    print(f"\n🏁 session 已結束 ({h.get('ended_at') or h.get('aborted_at')}) — marathon exit")
+                    return 0
+            print(f"\n❌ session `{session_id}` not found")
+            return 1
+        if session.get("ended") or session.get("aborted"):
+            print(f"\n🏁 session ended/aborted — marathon exit")
+            return 0
+        try:
+            end_ts_dt = parse_iso(session["end_ts"])
+            now_dt = datetime.datetime.utcnow()
+            if now_dt >= end_ts_dt:
+                print(f"\n⏰ session 到期 (end_ts={session['end_ts']}), marathon exit (agent 該跑 end 結算)")
+                return 0
+            remaining_sec = (end_ts_dt - now_dt).total_seconds()
+        except Exception:
+            remaining_sec = interval
+
+        # === Check 2: pending bartender assignment for self ===
+        if assignments_path.exists():
+            try:
+                data = json.loads(assignments_path.read_text(encoding="utf-8"))
+                for entry in data.get("pending", []):
+                    if entry.get("target_persona") == persona and entry.get("status", "pending") == "pending":
+                        print(f"\n📬 [cycle {cycle}] PENDING TASK detected for @{persona}:")
+                        print(f"   assignment_id: {entry.get('assignment_id', '?')}")
+                        print(f"   from supervisor: {entry.get('supervisor', '?')}")
+                        print(f"   reward: {entry.get('reward_tokens', 0)} token")
+                        print(f"   task_body: {entry.get('task_body', '?')}")
+                        print(f"\n→ Marathon paused. Agent should: ack via Bartender + 動工 + 完工 + 再 invoke marathon.")
+                        return 99
+            except Exception as e:
+                print(f"⚠ assignments parse fail (continue marathon): {e}")
+
+        # === Idle path: standby tavern post + sleep ===
+        cycle_local_t = datetime.datetime.now().strftime("%H:%M:%S")
+        print(f"[cycle {cycle} @ {cycle_local_t}] idle — firing tavern standby post (remaining {remaining_sec:.0f}s)")
+
+        # Fire-and-forget tavern post via subprocess; meta tag=work-standby (240-300s alter pacing)
+        try:
+            run_cmd_path = Path(__file__).parent / "run_cmd.py"
+            body = (
+                f"🏃 [Marathon @{persona}] cycle {cycle} — idle standby, "
+                f"session remaining ~{int(remaining_sec/60)}m. 隨時可接 task injection."
+            )
+            subprocess.Popen(
+                [sys.executable, str(run_cmd_path), "run", "Tavern",
+                 "--arg", "op=post", "--arg", "room=tavern",
+                 "--arg", f"sender_id={bank}",
+                 "--arg", f"persona={persona}",
+                 "--arg", f"body={body}",
+                 "--arg", "meta=tag:work-standby;category:meta"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=str(_REPO_ROOT),
+            )
+        except Exception as e:
+            print(f"⚠ standby post fire fail (continue): {e}")
+
+        # Sleep til next cycle (cap to remaining session / max-runtime)
+        runtime_remaining = max_runtime - elapsed
+        sleep_for = min(interval, remaining_sec, runtime_remaining)
+        sleep_for = max(5, sleep_for)
+        time.sleep(sleep_for)
+
+
 # ─── T10 C3 (Tim 2026-05-14 拍板) — 叮 ack 自動招募 ──────────────────
 # 區塊職責: agent 進酒館 ack-only 後自動加進 所有 active sessions workers list.
 # 物理意義: 解「上班指令不必預填 workers」痛點 — 員工自然進酒館 ack 一聲即入職.
@@ -1598,6 +1731,15 @@ def main(argv=None) -> int:
         help="T10 C3 — 自動招募 (Cmd_Tavern ding-ack hook 用; 加進所有 active sessions)")
     p_aw_auto.add_argument("--persona", required=True, help="ack 觸發 sender persona")
 
+    p_marathon = sub.add_parser("marathon",
+        help="T16 — agent 上班期間 hold turn 的 daemon loop (post → check → sleep → ...)")
+    p_marathon.add_argument("--session", required=True, help="active session id")
+    p_marathon.add_argument("--persona", required=True, help="agent 自己 persona")
+    p_marathon.add_argument("--interval", type=int, default=240,
+                            help="cycle 間隔秒數 (default 240 = 4 min)")
+    p_marathon.add_argument("--max-runtime", type=int, default=480,
+                            help="單次 invoke 最長執行秒數 (default 480 = 8 min, 避免 Bash timeout)")
+
     p_quick = sub.add_parser("quick-task", help="一步創 task + 標 done (solo manager 或 worker self-track 用)")
     p_quick.add_argument("--session", required=True)
     p_quick.add_argument("--persona", required=True, help="track 自己的 (--who 必須 == --persona)")
@@ -1662,6 +1804,7 @@ def main(argv=None) -> int:
         "abort": cmd_abort,
         "abort-all": cmd_abort_all,
         "add-worker-auto": cmd_add_worker_auto,
+        "marathon": cmd_marathon,
         "add-worker": cmd_add_worker,
         "quick-task": cmd_quick_task,
         "lock-acquire": cmd_lock_acquire,

@@ -500,15 +500,24 @@ def cmd_start(args) -> int:
         f"- 酒館券累積: **1 張/{VOUCHER_INTERVAL_MIN} min/persona** (per-persona schema v2)\n"
         f"- Idle workers 酒館 standby chat 免費 (Phase 1 honor mode)\n\n"
     )
-    # Handshake instructions when session starts solo (no auto-include workers)
+    # T24 (Tim 2026-05-14, Round 9 方案 A 簡化版) — SOLO 起手時 auto @mention 候選員工
+    # 物理意義: 解 Tim 痛點「員工完全沒意識到要上班」— SOLO session 起手時掃 registry
+    #          找 online 非 manager 的 persona, 在 start announce body 加 @mention
+    #          → tavern post 自動 mirror 到 Discord → Tim 手機看到 @ 列表 → 知道該開哪幾個 chat
+    #          員工開 chat 後任何 tavern post → T22 auto-recruit fire → workers list 填入
     if not workers:
+        # Auto @mention 候選 — online 非 manager 非 Tim
+        candidate_personas = [p for p in list_online_personas() if p != args.manager]
+        candidate_disp = " ".join(f"@{p}" for p in candidate_personas) if candidate_personas else "(無 online 候選)"
         body += (
-            f"### 🤝 Handshake 招募 (Zeta task spec 2026-05-13)\n"
-            f"想加入 ws-{session_id[-12:]} 的 agent:\n"
-            f"1. tavern post: `@{args.manager} 想加入 ws-...` (handshake 請求)\n"
-            f"2. manager 跑 `work_session.py add-worker --session ... --persona <你> --who {args.manager}` 確認\n"
-            f"3. 酒保 broadcast 加入訊息, 妳開始計薪\n\n"
-            f"⚠ Manager 不自動 auto-include — 防 ghost worker / cross-actor spoof (per Zeta QA-4/QA-8 lessons)\n\n"
+            f"### 📣 候選員工 (T24 auto-invite)\n"
+            f"{candidate_disp}\n"
+            f"上面這些大小姐 chat 視窗該 wake — 妳們進酒館發任何 post → T22 hook 自動入職 (workers list 自動填)\n"
+            f"無須走 handshake 流程, 直接發訊息即可.\n\n"
+            f"### 🤝 Manual handshake (legacy fallback)\n"
+            f"自願加入 ws-{session_id[-12:]} 的 agent (cross-agent / 非 online persona):\n"
+            f"1. tavern post: `@{args.manager} 想加入 ws-...`\n"
+            f"2. manager `work_session.py add-worker --session ... --persona <你> --who {args.manager}`\n\n"
         )
     body += (
         f"session id: `{session_id}`\n\n"

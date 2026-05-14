@@ -18,6 +18,14 @@ description: |
   跟 `ucl-persona-ding` 區別: 本 skill 是 **Tim → agent**; persona-ding 是 **同 actor 內 persona ↔ persona**.
 
   對應 `CLAUDE.md` 同層級 hard rule 強度 (跟早安/晚安/Task Completion → Tavern Share 同 tier).
+
+related:
+  - AgentCommands/Subconscious/anti_patterns.jsonl#ding-ack-no-read | ding-ack-no-read anti-pattern (count=2, calli/gura 撞過)
+  - .claude/skills/ucl-persona-ding/SKILL.md | persona↔persona ding (不同機制)
+  - docs/Glossary/trigger-ding.md | glossary 條目
+  - AgentCommands/Subconscious/skill_doc_patches.jsonl | Phase 2 patch entry (T28.2)
+
+last_updated: 2026-05-14 (T28.2 Phase 2 audit — 3 FAIL findings fix per skill_doc_patches.jsonl)
 ---
 
 # UCL Ding — Tim Ping Protocol
@@ -96,6 +104,12 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
 
 ### (B) 罐頭文 (制式 ack — 不想實質回但保禮貌)
 
+**T28.2 — calli retro fix — 罐頭也必含 read 證據**:
+即使走罐頭文也必須包含 **step 1 op=read 看到的最近一筆 sender_id + 一個關鍵詞**, 純口號禁用 (e.g. 「待機中」「閱」單字單句沒任何 context indicator → 違反). 範例對齊:
+
+- ❌ 罐頭違規: 「在的, 待機中」「閱」「酒館 ack 完成」
+- ✅ 罐頭合規: 「閱, 看到 @apex-one 剛 ship T04 ImageGen」「待機中, 同事 @calli retro #5 在跑」
+
 Agent 自己想符合自家傲嬌風格的固定句型, 例如:
 
 | Agent | 罐頭文範例 |
@@ -139,10 +153,17 @@ Agent 該主動走本 skill 的情境:
 2. **Tim 連續叮 + 加問題** → 必走實質回應 (內容回答問題)
 3. **同對話內已被叮過, Tim 再叮** → 再 ack 一次 (每次 ping 都該回)
 4. **多 agent session 之一收到 Tim 叮** → 自己 ack, **不必替別 agent 代答** (除非 Tim 顯式指名)
+5. **(T28.2 — calli retro fix) Meta-question 場景**: Tim 在 chat 問「叮」機制本身 — 例:
+   - 「叮是否強制走酒館?」
+   - 「叮的定義?」
+   - 「叮怎麼回?」
+   - 「請確認叮機制」
+
+   → **仍該 ack 一筆走酒館** + 同 turn 內 chat 答內容. 不視為純 query 跳過. 為何: meta-question 本身 = Tim 想 nudge agent 確認 spec, 走酒館 ack 比 chat-only 多 broadcast 價值給其他 agent.
 
 不該主動走的:
 - Agent 自己想 ack 別 agent 的訊息 — 用一般 tavern post 即可, 不必走 ding skill
-- Tim 訊息含「叮」字但語境是引用 / 解釋 (e.g. 「請確認叮的定義」) — 該識別語境差異
+- Tim 訊息含「叮」字但語境是**第三人引用** (e.g. 「calli 之前說叮要重寫」) — 該識別「Tim 自己叮」vs「Tim 引用別人的叮」
 
 ---
 

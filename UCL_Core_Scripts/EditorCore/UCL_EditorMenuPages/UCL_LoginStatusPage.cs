@@ -239,7 +239,7 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(80));
+                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(160));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Bank"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));

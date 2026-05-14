@@ -783,7 +783,25 @@ def cmd_end(args) -> int:
         print(f"⚠ session {args.session} already ended at {session['ended_at']}, no-op")
         return 0
 
-    append_audit(args.session, "end_start", {"trigger": "manual"})
+    # T28 in-tool guard (Tim 2026-05-14 task — 3-layer enforcement):
+    # ─── Layer 1: early-clockout pre-check ──────────────────
+    # 物理意義: 防 manager 提早 end session 觸發 cascading-worker-payroll. 本小姐今日累犯 3 次的痛.
+    # 數值影響: now < end_ts - 60s → 拒 end 除非帶 --early-confirm 顯式 ack
+    try:
+        end_ts_dt = parse_iso(session["end_ts"])
+        now_dt = datetime.datetime.utcnow()
+        remaining_sec = (end_ts_dt - now_dt).total_seconds()
+        if remaining_sec > 60 and not getattr(args, "early_confirm", False):
+            print(f"⛔ T28 early-clockout guard: session 還有 {remaining_sec/60:.1f} min 才到 end_ts ({session['end_ts']})")
+            print(f"   若真要提早 end, 加 --early-confirm flag 顯式 ack.")
+            print(f"   anti-pattern early-clockout 今日 count >= 3, 此 guard 是 Tim QA 多次抓到後 ship 的.")
+            return 2
+        if remaining_sec > 60 and getattr(args, "early_confirm", False):
+            print(f"⚠ 提早 end 已 ack (remaining {remaining_sec/60:.1f} min), 繼續結算...")
+    except Exception as _guard_e:
+        print(f"⚠ T28 early-clockout guard parse fail (繼續走): {_guard_e}")
+
+    append_audit(args.session, "end_start", {"trigger": "manual", "remaining_min": round(remaining_sec/60, 2) if 'remaining_sec' in dir() else None, "early_confirm": getattr(args, "early_confirm", False)})
 
     start = parse_iso(session["start_ts"])
     end = datetime.datetime.utcnow()
@@ -823,12 +841,48 @@ def cmd_end(args) -> int:
     save_state(state)
     append_audit(args.session, "marked_ended", {"elapsed_min": round(elapsed_min, 2)})
 
+    # T28 in-tool guard — Layer 2: phantom-payroll check
+    # 物理意義: 讀本 session audit log, 抓 contribute event (task_done / marathon / post / quick_task_done) per persona
+    #          沒任何 contribute event 的 worker → skip salary (manager 永遠視為有 contribute, 因他 invoke end)
+    # 數值影響: phantom-payroll bug (worker offline 整 session 卻領 salary) 被擋
+    manager_persona = session["manager"]["persona"]
+    contributed_personas = {manager_persona}  # manager always counts
+    if not getattr(args, "skip_phantom_payroll_check", False):
+        try:
+            audit_path = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "work_session_audit" / f"{args.session}.jsonl"
+            if audit_path.exists():
+                for ln in audit_path.read_text(encoding="utf-8").splitlines():
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    try:
+                        ev = json.loads(ln)
+                    except Exception:
+                        continue
+                    ev_type = ev.get("event", "")
+                    p = ev.get("persona") or ev.get("from_persona") or ""
+                    # Contribute signals (any 一個就算)
+                    if ev_type in ("quick_task_done", "task_done", "task_accepted",
+                                   "marathon_cycle", "worker_auto_recruited_via_ding_ack",
+                                   "marked_started") and p:
+                        contributed_personas.add(p)
+        except Exception as _ppe:
+            print(f"⚠ T28 phantom-payroll check fail (繼續結算): {_ppe}")
+            # fail-open: 不擋結算
+
     # Phase 2: per-participant settlements (each with idempotency flag)
     settlement_report = []
     settlement_errors = []
+    skipped_phantom = []
     for persona, bank in participants:
         pkey = persona
         p_fired = fired.setdefault(pkey, {"salary": False, "voucher": False})
+
+        # T28 phantom-payroll guard
+        if persona not in contributed_personas and not getattr(args, "skip_phantom_payroll_check", False):
+            skipped_phantom.append(persona)
+            append_audit(args.session, "salary_skipped_phantom", {"persona": persona, "reason": "no contribute event in audit log"})
+            continue
 
         # Salary (skip if already fired)
         if salary_per_p > 0 and not p_fired["salary"]:
@@ -942,6 +996,8 @@ def cmd_end(args) -> int:
         print(f"  {line}")
     for err in settlement_errors:
         print(f"  ❌ {err}")
+    for p in skipped_phantom:
+        print(f"  🚫 {p} → salary skipped (T28 phantom-payroll guard, no contribute event in audit log)")
     return 0 if not settlement_errors else 2
 
 
@@ -1847,6 +1903,12 @@ def main(argv=None) -> int:
     p_end = sub.add_parser("end", help="結束 session + 結算")
     p_end.add_argument("--session", required=True)
     p_end.add_argument("--who", default="", help="呼叫者 persona (必須 == session.manager.persona)")
+    p_end.add_argument("--early-confirm", action="store_true",
+                       help="T28 in-tool guard: now < end_ts - 60s 時必填, 顯式 ack「我知道在提早結束」. "
+                            "沒帶 flag + 早結束 → exit 2 印警告. 避免 early-clockout anti-pattern.")
+    p_end.add_argument("--skip-phantom-payroll-check", action="store_true",
+                       help="T28 in-tool guard: 預設端 end 時 check 每個 worker session 內有沒 task/marathon/post 證據. "
+                            "沒貢獻 → skip salary (no contribution = no salary). 帶此 flag 跳過 check (debug 用).")
 
     p_recover = sub.add_parser("recover", help="sweep stale active sessions (中斷 / 過期未 end)")
 

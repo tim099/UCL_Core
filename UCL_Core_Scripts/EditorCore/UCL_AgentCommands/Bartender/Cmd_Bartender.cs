@@ -393,6 +393,54 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 $"- task_body: {Truncate(taskBody, 200)}\n\n" +
                 "target_persona 下次跑 awakening.py morning ritual 時會自動看到此筆 (T06.4 morning print pending)."
             );
+
+            // T31 (Tim 2026-05-14 拍板): auto-fire tavern @mention post → 自動 Discord mirror
+            // 物理意義: 解 「assign_add 寫 pending 但 Tim 不知道該開哪個 chat 喚 agent」 痛點
+            //          - 派 task 後立刻 tavern post @<target> 「妳有新 task」 (含 assignment_id + body 摘要)
+            //          - tavern 自動 mirror Discord → Tim 手機看到 → 知道該開 X chat 視窗
+            //          - target persona chat 醒來進酒館看到 mention 也直接看到 task pointer
+            try
+            {
+                string mentionBody =
+                    $"📬 **@{targetPersona} 妳有新 task** (Bartender pending, id `{id}`)\n\n" +
+                    $"- 派工人: @{supervisor}\n" +
+                    $"- 獎勵: {reward} tavern_token\n" +
+                    $"- 摘要: {Truncate(taskBody, 150)}\n\n" +
+                    $"接題: `Bartender op=assign_ack assignment_id={id} action=accept`. " +
+                    $"看完整 task body: `Bartender op=assign_list target_persona={targetPersona}`.";
+
+                var tavernArgs = new Dictionary<string, string>
+                {
+                    {"op", "post"},
+                    {"room", "tavern"},
+                    {"sender", "tavern-keeper"},
+                    {"persona", "tavern-keeper"},
+                    {"body", mentionBody},
+                    {"meta", $"tag:task-dispatch-notify;category:meta;assignment_id:{id};target_persona:{targetPersona}"},
+                };
+                // 直接走 UCL_ChatTavernIO API (避免 spawn subprocess 重複序列化)
+                // Phase 1 簡單版: 走 tavern 一般 post pathway, 不必專門 IO call
+                // 為何借 tavern-keeper sender_id: 跟 work_session start announce 一致, 系統 NPC 廣播
+                UCL_ChatTavernIO.AppendMessage("tavern", new UCL_ChatMessage
+                {
+                    sender_id = "tavern-keeper",
+                    sender_name = "酒保",
+                    sender_persona = "tavern-keeper",
+                    body = mentionBody,
+                    kind = "chat",
+                    meta = new Dictionary<string, string>
+                    {
+                        {"tag", "task-dispatch-notify"},
+                        {"category", "meta"},
+                        {"assignment_id", id},
+                        {"target_persona", targetPersona},
+                    },
+                });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Bartender] T31 tavern @mention fire fail (silent): {e.Message}");
+            }
         }
 
         // op=assign_list — 列當前 pending assignments

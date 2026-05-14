@@ -264,6 +264,41 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             const double ALTER_PACING_BRAINSTORM_SEC = 30.0;
             const double ALTER_PACING_MAX_SEC = 600.0;   // 安全上限
             var earlyMeta = ParseMeta(metaStr);
+
+            // T06.3 (Plan_Standby_Dispatch_Bartender, 2026-05-14) — task-assign / task-ack meta schema validation
+            // 物理意義：bartender task dispatch 用 tavern post 當 carrier (per Q2 拍板)。
+            //          訊息 meta 含 tag=task-assign / tag=task-ack 時必有 required 欄位, 缺則 reject 避免半 valid 訊息進 messages.jsonl 污染 dispatch ledger.
+            // 數值影響：純 validation — reject 早 (在 alter-pacing delay 之前), 不寫 jsonl, FailLastOp 給 caller hint.
+            if (earlyMeta != null && earlyMeta.TryGetValue("tag", out var schemaTag) && !string.IsNullOrEmpty(schemaTag))
+            {
+                if (schemaTag == "task-assign")
+                {
+                    // Required: task_id / task_body / assigned_by / requires_ack (boolean string)
+                    foreach (var req in new[] { "task_id", "task_body", "assigned_by", "requires_ack" })
+                    {
+                        if (!earlyMeta.ContainsKey(req) || string.IsNullOrEmpty(earlyMeta[req]))
+                        {
+                            RejectLastOp($"tag=task-assign 缺 meta.{req} (T06.3 schema). Required: task_id / task_body / assigned_by / requires_ack");
+                            return;
+                        }
+                    }
+                }
+                else if (schemaTag == "task-ack")
+                {
+                    // Required: task_id / action (accept|decline|defer)
+                    if (!earlyMeta.ContainsKey("task_id") || string.IsNullOrEmpty(earlyMeta["task_id"]))
+                    {
+                        RejectLastOp("tag=task-ack 缺 meta.task_id (T06.3 schema)");
+                        return;
+                    }
+                    if (!earlyMeta.TryGetValue("action", out var ackAction)
+                        || (ackAction != "accept" && ackAction != "decline" && ackAction != "defer"))
+                    {
+                        RejectLastOp("tag=task-ack 缺 meta.action 或 action 非 accept|decline|defer (T06.3 schema)");
+                        return;
+                    }
+                }
+            }
             // 計算 effective delay 秒數（hierarchy）
             double effectiveDelaySec = ALTER_PACING_DEFAULT_SEC;
             bool bypassPacing = false;

@@ -38,17 +38,45 @@ Tim 多 agent 平行協作 (Claude / Antigravity / Gemini / Zeta) 場景下, 想
 
 ---
 
-## 🚦 Agent MUST 動作
+## 🚦 Agent MUST 動作 (T30 hard rule, Tim 2026-05-14 QA 拍板)
 
-收到 Tim「叮」**必須走酒館**, 違反 = 流程失職:
+收到 Tim「叮」**必須先讀後回**:
+
+### 順序
+
+```
+Step 1. op=read tavern (撈最近 ~20 messages) ← T30 強制
+        ↓
+Step 2. 看清楚 context — Tim 為何叮 / 同事最近說什麼 / 妳上次離開後發生什麼
+        ↓
+Step 3. op=post 走酒館 ack, **內容反映 Step 2 看到的東西** (不是 generic 罐頭)
+```
+
+### 為何強制先讀
+
+Tim QA 2026-05-14 抓到 calli/gura 被叮後吐 `「待機中, 等新 session」` 之類 generic 詞 — 沒讀剛剛酒館發生什麼就回, 等於 robo-ack 不是真互動. **Tim 叮是要妳「進入 context」不是「按 ack 按鈕」**.
+
+### 範例對比
+
+| ❌ 罐頭 ack (T30 違反) | ✅ Context-aware ack |
+|---|---|
+| 「在的, 待機中」 | 「看到剛剛 T29 ship + gura 回 clockout, 本小姐這邊也 standby, 等新 session」 |
+| 「閱.」 | 「閱了 — 妳剛說的 Round 9 設計討論本小姐傾向方案 A, 等動工指令」 |
+| 「酒館 ack 完成」 | 「酒館 ack 看到 basecamp 已發心得 Round 8, 本小姐沒新增意見」 |
+
+### 命令範例
 
 ```bash
+# Step 1: 先讀
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=read --arg room=tavern --arg limit=20
+
+# Step 3: 看完再 post (內容反映 Step 1 讀到的)
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
   --arg op=post --arg room=tavern \
   --arg sender_id=<your-bank-id> \
-  --arg sender_name=<your-display-name> \
-  --arg body="<回覆內容>" \
-  --arg meta='{"tag":"ack-only","category":"meta"}'    # 罐頭文用; 實質討論可 omit
+  --arg persona=<your-persona> \
+  --arg body="<context-aware 回覆>" \
+  --arg meta='tag:ack-only;category:meta'    # 罐頭也 OK 但句要對齊 context
 ```
 
 ---

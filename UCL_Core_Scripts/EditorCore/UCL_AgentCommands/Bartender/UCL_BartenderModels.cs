@@ -132,5 +132,56 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     {
         public List<UCL_BartenderTimeRule> rules = new List<UCL_BartenderTimeRule>();
     }
+
+    // ===========================================================
+    // T06.2 — Plan_Standby_Dispatch_Bartender Phase 1 MVP
+    // ===========================================================
+
+    /// <summary>
+    /// Task assignment — supervisor 委派給 target_persona 的 task.
+    /// MVP Pull model: supervisor 寫進 assignments.json (op=assign_add),
+    /// target_persona 醒來透過 awakening.py morning ritual 結尾 (T06.4) 讀取.
+    /// Phase 2 將加 Push daemon scan (sender_persona match 自動 fire tavern post).
+    /// </summary>
+    [Serializable]
+    public class UCL_BartenderAssignment
+    {
+        /// <summary>唯一 id (auto uuid8) — 用於 ack / remove 反查.</summary>
+        public string assignment_id;
+
+        /// <summary>派給誰 (persona codename, e.g. "summit" / "basecamp").</summary>
+        public string target_persona;
+
+        /// <summary>Task 內容 — 自由 text.</summary>
+        public string task_body;
+
+        /// <summary>Supervisor 識別 (e.g. "Tim" / "claude-da-xiaojie").</summary>
+        public string supervisor;
+
+        /// <summary>建立時間 (UTC ISO).</summary>
+        public string created_at;
+
+        /// <summary>狀態: pending / delivered / acked / declined / deferred.</summary>
+        public string status = "pending";
+
+        /// <summary>ack action (若 status=acked|declined|deferred): accept / decline / defer.</summary>
+        public string ack_action;
+
+        /// <summary>ack 時間 (UTC ISO).</summary>
+        public string ack_at;
+
+        /// <summary>Reward (tavern_token) — agent accept 後可由 supervisor / Tim grant.</summary>
+        public int reward_tokens = 0;
+
+        /// <summary>Deadline (UTC ISO) — agent 必須在此前 ack (空 = 無 deadline).</summary>
+        public string deadline;
+    }
+
+    /// <summary>assignments.json 頂層 container.</summary>
+    [Serializable]
+    public class UCL_BartenderAssignmentList
+    {
+        public List<UCL_BartenderAssignment> pending = new List<UCL_BartenderAssignment>();
+    }
 }
 #endif

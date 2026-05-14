@@ -84,17 +84,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             {
                 switch (op)
                 {
-                    case "add":         Op_Add(args); break;
-                    case "list":        Op_List(args); break;
-                    case "remove":      Op_Remove(args); break;
-                    case "time_add":    Op_TimeAdd(args); break;
-                    case "time_list":   Op_TimeList(args); break;
-                    case "time_remove": Op_TimeRemove(args); break;
-                    case "status":      Op_Status(args); break;
-                    case "tick":        Op_Tick(args); break;
-                    case "balance":     Op_Balance(args); break;
+                    case "add":           Op_Add(args); break;
+                    case "list":          Op_List(args); break;
+                    case "remove":        Op_Remove(args); break;
+                    case "time_add":      Op_TimeAdd(args); break;
+                    case "time_list":     Op_TimeList(args); break;
+                    case "time_remove":   Op_TimeRemove(args); break;
+                    case "status":        Op_Status(args); break;
+                    case "tick":          Op_Tick(args); break;
+                    case "balance":       Op_Balance(args); break;
+                    // T06.2 — Plan_Standby_Dispatch_Bartender task dispatch (Pull MVP)
+                    case "assign_add":    Op_AssignAdd(args); break;
+                    case "assign_list":   Op_AssignList(args); break;
+                    case "assign_remove": Op_AssignRemove(args); break;
+                    case "assign_ack":    Op_AssignAck(args); break;
                     default:
-                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / balance");
+                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / balance / assign_add / assign_list / assign_remove / assign_ack");
                         break;
                 }
             }
@@ -354,6 +359,102 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             if (string.IsNullOrEmpty(s)) return "";
             return s.Length <= max ? s : s.Substring(0, max) + "…";
+        }
+
+        // ===========================================================
+        // T06.2 — Plan_Standby_Dispatch_Bartender Pull-MVP task dispatch
+        // 物理意義: supervisor 透過 assign_add 寫 pending 進 assignments.json, agent 醒來
+        //          (awakening.py morning T06.4) 自然 catch up. Push daemon scan 留 Phase 2.
+        // ===========================================================
+
+        // op=assign_add — 派 task 給 target_persona (Pull MVP)
+        void Op_AssignAdd(Dictionary<string, string> args)
+        {
+            string targetPersona = GetArg(args, "target_persona", "").Trim();
+            string taskBody = GetArg(args, "task_body", "").Trim();
+            string supervisor = GetArg(args, "supervisor", "").Trim();
+            int reward = 0;
+            if (args.TryGetValue("reward_tokens", out var rewardStr) && !string.IsNullOrEmpty(rewardStr))
+                int.TryParse(rewardStr, out reward);
+            string deadline = GetArg(args, "deadline", "").Trim();
+
+            if (string.IsNullOrEmpty(targetPersona)) { WriteLastOp("❌ assign_add 缺 target_persona"); return; }
+            if (string.IsNullOrEmpty(taskBody)) { WriteLastOp("❌ assign_add 缺 task_body"); return; }
+            if (string.IsNullOrEmpty(supervisor)) { WriteLastOp("❌ assign_add 缺 supervisor"); return; }
+
+            string id = UCL_BartenderIO.RegisterAssignment(targetPersona, taskBody, supervisor, reward, deadline);
+            WriteLastOp(
+                "# ✅ Bartender 派 task 已 register (Pull MVP)\n\n" +
+                $"- assignment_id: `{id}`\n" +
+                $"- target_persona: **{targetPersona}**\n" +
+                $"- supervisor: `{supervisor}`\n" +
+                $"- reward: {reward} tavern_token\n" +
+                $"- deadline: {(string.IsNullOrEmpty(deadline) ? "(無)" : deadline)}\n" +
+                $"- task_body: {Truncate(taskBody, 200)}\n\n" +
+                "target_persona 下次跑 awakening.py morning ritual 時會自動看到此筆 (T06.4 morning print pending)."
+            );
+        }
+
+        // op=assign_list — 列當前 pending assignments
+        void Op_AssignList(Dictionary<string, string> args)
+        {
+            string targetFilter = GetArg(args, "target_persona", "").Trim();
+            var data = UCL_BartenderIO.LoadAssignments();
+            var sb = new StringBuilder();
+            sb.AppendLine($"# 📋 Bartender Assignments ({data.pending.Count} pending)");
+            sb.AppendLine();
+            if (!string.IsNullOrEmpty(targetFilter))
+                sb.AppendLine($"_filter: target_persona = `{targetFilter}`_").AppendLine();
+            int shown = 0;
+            foreach (var e in data.pending)
+            {
+                if (!string.IsNullOrEmpty(targetFilter) && e.target_persona != targetFilter) continue;
+                shown++;
+                sb.AppendLine($"## `{e.assignment_id}` → **{e.target_persona}** ({e.status})");
+                sb.AppendLine($"- supervisor: `{e.supervisor}` / reward: {e.reward_tokens} token");
+                sb.AppendLine($"- created_at: {e.created_at}");
+                if (!string.IsNullOrEmpty(e.deadline)) sb.AppendLine($"- deadline: {e.deadline}");
+                if (!string.IsNullOrEmpty(e.ack_action)) sb.AppendLine($"- ack: {e.ack_action} @ {e.ack_at}");
+                sb.AppendLine($"- task_body: {Truncate(e.task_body, 200)}");
+                sb.AppendLine();
+            }
+            if (shown == 0) sb.AppendLine("_(無 match)_");
+            WriteLastOp(sb.ToString());
+        }
+
+        // op=assign_remove — 移除 pending (supervisor cancel)
+        void Op_AssignRemove(Dictionary<string, string> args)
+        {
+            string id = GetArg(args, "assignment_id", "").Trim();
+            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ assign_remove 缺 assignment_id"); return; }
+            var data = UCL_BartenderIO.LoadAssignments();
+            int removed = data.pending.RemoveAll(e => e.assignment_id == id);
+            if (removed == 0) { WriteLastOp($"❌ 找不到 assignment_id=`{id}`"); return; }
+            UCL_BartenderIO.SaveAssignments(data);
+            WriteLastOp($"# ✂ Bartender assignment removed\n\n- assignment_id: `{id}`\n- removed: {removed} entry");
+        }
+
+        // op=assign_ack — agent accept/decline/defer assignment
+        void Op_AssignAck(Dictionary<string, string> args)
+        {
+            string id = GetArg(args, "assignment_id", "").Trim();
+            string action = GetArg(args, "action", "").Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ assign_ack 缺 assignment_id"); return; }
+            if (action != "accept" && action != "decline" && action != "defer")
+            { WriteLastOp("❌ assign_ack action 必為 accept|decline|defer"); return; }
+            var data = UCL_BartenderIO.LoadAssignments();
+            var entry = data.pending.Find(e => e.assignment_id == id);
+            if (entry == null) { WriteLastOp($"❌ 找不到 assignment_id=`{id}`"); return; }
+            entry.ack_action = action;
+            entry.ack_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            // status transition: accept → acked, decline → declined, defer → deferred (留在 pending list 給後續查)
+            entry.status = action == "accept" ? "acked" : (action == "decline" ? "declined" : "deferred");
+            UCL_BartenderIO.SaveAssignments(data);
+            WriteLastOp(
+                $"# ✓ Assignment {action} acked\n\n" +
+                $"- assignment_id: `{id}`\n- status → `{entry.status}`\n- ack_at: {entry.ack_at}\n" +
+                $"- task: {Truncate(entry.task_body, 150)}"
+            );
         }
 
         void WriteLastOp(string content)

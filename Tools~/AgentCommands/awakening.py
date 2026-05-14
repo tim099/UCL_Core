@@ -1110,7 +1110,7 @@ def _print_pending_for_persona(persona: str) -> None:
     if pending_for_me:
         print(f"\n📬 Pending bartender assignments for '{persona}' ({len(pending_for_me)}):")
         for e in pending_for_me:
-            print(f"   - [{e.get('task_id', '?')}] {e.get('task_body', '?')[:80]}")
+            print(f"   - [{e.get('assignment_id', '?')}] {e.get('task_body', '?')[:80]}")
             print(f"     by {e.get('supervisor', '?')} @ {e.get('created_at', '?')}")
     # inbox @mentions — 任何含 bank_account 命名的檔
     if inbox_dir.exists():

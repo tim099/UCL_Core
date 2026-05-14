@@ -21,6 +21,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public const string TriggersFile = "triggers.json";
         public const string TimeRulesFile = "time_rules.json";
         public const string StateFile = "state.json";
+        public const string AssignmentsFile = "assignments.json";  // T06.2 — task dispatch pending queue
 
         // ===========================================================
         // 路徑 helper
@@ -32,6 +33,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static string GetTriggersPath() => Path.Combine(GetBartenderDir(), TriggersFile);
         public static string GetTimeRulesPath() => Path.Combine(GetBartenderDir(), TimeRulesFile);
         public static string GetStatePath() => Path.Combine(GetBartenderDir(), StateFile);
+        public static string GetAssignmentsPath() => Path.Combine(GetBartenderDir(), AssignmentsFile);
 
         public static void EnsureBartenderDir()
         {
@@ -143,6 +145,70 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             File.WriteAllText(tmp, json, new UTF8Encoding(false));
             if (File.Exists(path)) File.Delete(path);
             File.Move(tmp, path);
+        }
+
+        // ===========================================================
+        // T06.2 — Assignments IO (Pull model task dispatch pending queue)
+        // ===========================================================
+
+        // 區塊職責: load assignments.json — pattern 跟 LoadTriggers 對齊
+        // 物理意義: agent 醒來 (awakening.py morning T06.4) 透過此檔 catch-up pending tasks
+        // 數值影響: 純 read; 不存在/解析失敗 → 回空 list (fail-safe, 不擋 morning)
+        public static UCL_BartenderAssignmentList LoadAssignments()
+        {
+            string path = GetAssignmentsPath();
+            if (!File.Exists(path)) return new UCL_BartenderAssignmentList();
+            try
+            {
+                string json = File.ReadAllText(path);
+                var data = JsonUtility.FromJson<UCL_BartenderAssignmentList>(json)
+                           ?? new UCL_BartenderAssignmentList();
+                if (data.pending == null) data.pending = new System.Collections.Generic.List<UCL_BartenderAssignment>();
+                return data;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Bartender] LoadAssignments fail, 回空: {e.Message}");
+                return new UCL_BartenderAssignmentList();
+            }
+        }
+
+        // 區塊職責: 原子寫入 assignments.json
+        public static void SaveAssignments(UCL_BartenderAssignmentList data)
+        {
+            EnsureBartenderDir();
+            string path = GetAssignmentsPath();
+            string tmp = path + ".tmp";
+            string json = JsonUtility.ToJson(data, prettyPrint: true);
+            File.WriteAllText(tmp, json, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
+        }
+
+        /// <summary>
+        /// T06.2 — 新增 assignment 進 pending queue. 回傳 assignment_id.
+        /// 用於 Cmd_Bartender.Op_AssignAdd.
+        /// </summary>
+        public static string RegisterAssignment(
+            string targetPersona, string taskBody, string supervisor,
+            int rewardTokens, string deadline)
+        {
+            string id = System.Guid.NewGuid().ToString("N").Substring(0, 8);
+            var entry = new UCL_BartenderAssignment
+            {
+                assignment_id = id,
+                target_persona = targetPersona,
+                task_body = taskBody,
+                supervisor = supervisor,
+                reward_tokens = System.Math.Max(0, rewardTokens),
+                deadline = deadline ?? "",
+                created_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                status = "pending",
+            };
+            var data = LoadAssignments();
+            data.pending.Add(entry);
+            SaveAssignments(data);
+            return id;
         }
 
         // ===========================================================

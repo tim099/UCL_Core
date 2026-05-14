@@ -180,9 +180,34 @@ python .../work_session.py review \
 
 ---
 
+## 🎯 Session Lifecycle — 主管不該瞎 end (T14, Tim 2026-05-14 拍板)
+
+**核心哲學**：上班 session 是「**聊天馬拉松式 standby**」，**不是「task 衝刺 burst 模式**」。
+
+```
+✅ 對的模式 (慢速 standby):
+   start → 慢慢來回, 隨時 standby → 妳「下班」 / 自然到期 → end
+
+❌ 錯的模式 (本小姐之前犯的):
+   start → ship 1 task → 立刻 end (2 min 跑完) → 妳找本小姐找不到
+```
+
+**主管 MUST**：
+- ✅ session 期間維持「可被叮」狀態 — 像聊天馬拉松 (per `ucl-chat-tavern` slow-chat spec)
+- ✅ 中間沒事 = 純 standby, **不必持續發言**（避免燒 token）但 chat 視窗該活著
+- ✅ quick-task 自報後**不主動 end** — 等下個 ping / 下個 task
+- ✅ 妳 (Tim) 顯式說「下班 / 結束上班 / abort」才 end
+- ✅ 真自然到期 (`now > end_ts`) 才 end
+
+**主管 不可**：
+- ❌ 完成 1 個 quick-task 就 end session — 那是 task burst 不是「上班」
+- ❌ 中間離 chat (留 session 飄死) — 妳找不到本小姐
+- ❌ 主動加速 end 領薪 — abort 才是空轉領薪（forfeit）, end 應等自然或妳叫停
+
 ## ⛔ 不要做
 
-- ❌ `--workers` 不傳時誤以為是 SOLO — 不傳 = auto-include 在線非 manager（傳 `""` 才是 SOLO）
+- ❌ **主管自作主張 end session — per Lifecycle 哲學, 提前 end = 中斷馬拉松**
+- ❌ `--workers` 不傳時誤以為 auto-include — 自 T11 起預設 SOLO, 員工由 ding-ack 招募
 - ❌ `quick-task` 的 `--persona` 和 `--who` 不同 — 必須相同（防偷塞別人帳）
 - ❌ C# edit 沒 lock-acquire 直接改 .cs — 會撞其他 coder
 - ❌ `end` 前忘記 `done` 所有 task — 薪資會少算（未完成 task 不計工）

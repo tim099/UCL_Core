@@ -372,7 +372,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         private Type ResolveTypeByName(string name)
         {
             // First try exact full-name match across all loaded assemblies
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyExtensions.GetAssemblies())
             {
                 Type[] types;
                 try { types = asm.GetTypes(); }

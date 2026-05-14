@@ -374,7 +374,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         private Type ResolveTypeByName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyExtensions.GetAssemblies())
             {
                 Type[] types;
                 try { types = asm.GetTypes(); }

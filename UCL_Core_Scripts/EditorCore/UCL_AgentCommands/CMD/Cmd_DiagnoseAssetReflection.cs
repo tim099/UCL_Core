@@ -458,7 +458,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         private List<Type> EnumerateAllUclAssetTypes()
         {
             var result = new List<Type>();
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyExtensions.GetAssemblies())
             {
                 Type[] types;
                 try { types = asm.GetTypes(); }
@@ -481,7 +481,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         private Type ResolveTypeByName(string name)
         {
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyExtensions.GetAssemblies())
             {
                 Type[] types;
                 try { types = asm.GetTypes(); }

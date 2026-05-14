@@ -239,6 +239,7 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
+                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(80));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Bank"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
@@ -325,9 +326,10 @@ namespace UCL.Core.EditorLib.Page
                 //m_PoolScroll = GUILayout.BeginScrollView(m_PoolScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(240)));
                 using (new GUILayout.HorizontalScope())
                 {
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Status"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Status"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Wake"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LayerRole"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LastActive"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
@@ -341,9 +343,10 @@ namespace UCL.Core.EditorLib.Page
                             GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Agent} {p.Name}";
                         }
                         string status = p.HasLock ? $"<color=#66ff99>{p.Status} 🔒</color>" : p.Status;
+                        GUILayout.Label(status, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
                         GUILayout.Label(p.Name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(p.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                        GUILayout.Label(status, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                        
                         GUILayout.Label(p.WakeCount.ToString(), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                         GUILayout.Label(TruncStr(p.LayerRole, 28), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
                         GUILayout.Label(TruncTs(p.LastActive), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));

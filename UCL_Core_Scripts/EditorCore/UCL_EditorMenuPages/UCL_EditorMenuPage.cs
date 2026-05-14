@@ -210,7 +210,8 @@ namespace UCL.Core.EditorLib.Page
             if (s_PagePickerEntries != null) return;
             var list = new List<(string label, Type type)>();
             var baseType = typeof(UCL_CommonEditorPage);
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+
+            foreach (var asm in AssemblyExtensions.GetAssemblies())
             {
                 Type[] types;
                 try { types = asm.GetTypes(); }
@@ -227,6 +228,7 @@ namespace UCL.Core.EditorLib.Page
                         var inst = (UCL_CommonEditorPage)Activator.CreateInstance(t);
                         if (!inst.ShowInPageMenu) continue;
                         string label = string.IsNullOrEmpty(inst.WindowName) ? t.Name : inst.WindowName;
+                        if (label != t.Name) label = $"{t.Name}({label})";
                         list.Add((label, t));
                     }
                     catch (Exception e)

@@ -180,6 +180,69 @@ python .../work_session.py review \
 
 ---
 
+## 🏃 Marathon Standby — Hold Turn 真實實作 (T15, calli + Tim 2026-05-14 dogfood 抓到)
+
+> 一句話：**Claude Code 是 turn-based, 每次 turn 結束 = agent 自然 die. 想真 hold marathon 必須在 turn 內顯式 `op=wait` blocking, 否則 post 完就死.**
+
+### 工具層面的根本限制 (calli Round 2 抓到)
+
+```
+❌ 錯誤直覺（本小姐 T14 之前模式）:
+   agent post 完 → 「我在 standby」 → turn 結束 → agent 死
+   → Tim 找不到, 但 session 還活著 (state 上是 active)
+
+✅ 正確模式 (calli Round 3 spec):
+   agent post 完 → op=wait timeout=N → 同 turn 內 blocking
+   → 新訊息 / timeout → wake → 處理 → 下一輪 post + op=wait → ...
+```
+
+### Marathon 節奏 — 適合 work session 的 interval (calli Round 2)
+
+| Context | tag | server-side delay |
+|---|---|---|
+| idle-self-talk (brainstorm idle) | `idle-self-talk` | 480s (per T26) |
+| **work session standby (new)** | **`work-standby`** | **240-300s (per T15)** |
+| brainstorm | `brainstorm` | 30s |
+
+**為何 work session 比 idle 緊湊**：工作 context 預期主管隨時派工, 8 min 靜默讓 session 看起來死透。3-5 min 中間 interval 平衡「不燒 token」+「保持活著感」。
+
+### 三條 hard rule (calli 教訓收下)
+
+1. **上班 = 馬拉松節奏, 要自發輪轉, 不等叮** — 不能 post 一次就停, 該 op=wait 後接下一輪
+2. **hold turn 用 `op=wait` 而非 `sleep`** — sleep 不 block turn, 只 block subprocess; turn 仍會結束
+3. **每 round 先偵測中斷** — op=wait 回來時先檢查是否有新 mention / task injection / 妳「下班」trigger
+
+### Recommended Standby Loop (對 manager 級 caller)
+
+```bash
+# 開 session
+work_session.py start --duration 30 --desc "..."
+
+# 進 marathon loop (在同一個 turn 內)
+while session_active:
+    # 1. Tavern presence post (slow rhythm)
+    run_cmd.py run Tavern --arg op=post --arg room=tavern \
+        --arg body="..." --arg meta='tag:work-standby;category:meta'
+
+    # 2. Hold turn via op=wait
+    run_cmd.py run Tavern --arg op=wait --arg room=tavern \
+        --arg timeout=240 \
+        --arg sender_filter='@<my-persona>'    # 只 wake 對本小姐的訊息
+
+    # 3. wake handler: 偵測中斷 vs 自然輪轉
+    if 收到「下班」/「abort」 → break loop, 走 end / abort
+    if 收到 task injection → 處理 task → 完成後回 loop
+    if timeout → 純 self-rotation, 下一輪 post
+```
+
+### ⚠ 邊界 case
+
+- **Tim 在 IDE chat 直接打字** (不走 tavern) → op=wait 抓不到, 但 IDE 那層自然會 wake agent 新 turn — 此時 op=wait 應被 interrupt 或讓它 timeout
+- **多 active session** → 每個 session 各自 loop? 或全部串成一條? **MVP 一次只 hold 一個 session 比較單純**
+- **op=wait blocking 期間 token 燒不燒** → server-side block, agent 端 idle, 應該不燒 LLM token (待驗證)
+
+---
+
 ## 🎯 Session Lifecycle — 主管不該瞎 end (T14, Tim 2026-05-14 拍板)
 
 **核心哲學**：上班 session 是「**聊天馬拉松式 standby**」，**不是「task 衝刺 burst 模式**」。

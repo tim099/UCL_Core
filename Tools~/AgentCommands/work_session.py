@@ -90,7 +90,7 @@ _RUN_CMD = _HERE / "run_cmd.py"
 AGENT_TO_BANK = {
     "claude-code": "claude-da-xiaojie",
     "antigravity": "antigravity-da-xiaojie",
-    "Zeta": None,
+    "Zeta": "Zeta-da-xiaojie",
 }
 
 SALARY_RATE_PER_MIN = 2          # tokens per minute

@@ -501,10 +501,10 @@ def cmd_start(args) -> int:
         f"- Idle workers 酒館 standby chat 免費 (Phase 1 honor mode)\n\n"
     )
     # T24 (Tim 2026-05-14, Round 9 方案 A 簡化版) — SOLO 起手時 auto @mention 候選員工
-    # 物理意義: 解 Tim 痛點「員工完全沒意識到要上班」— SOLO session 起手時掃 registry
-    #          找 online 非 manager 的 persona, 在 start announce body 加 @mention
-    #          → tavern post 自動 mirror 到 Discord → Tim 手機看到 @ 列表 → 知道該開哪幾個 chat
-    #          員工開 chat 後任何 tavern post → T22 auto-recruit fire → workers list 填入
+    # T26 update (Tim QA bug 2026-05-14 confirmed normal-tier): 加 marathon 進場明文指示
+    #            員工 ack 入職後不會自動進 marathon hold turn 模式 — spec gap.
+    #            announce body 加固定提示句 + 範例 cmd, 員工進 chat 看到 inbox 就照 invoke.
+    # 物理意義: 解 Tim 痛點「員工完全沒意識到要上班」+ 「入職後不主動進 marathon」雙痛點.
     if not workers:
         # Auto @mention 候選 — online 非 manager 非 Tim
         candidate_personas = [p for p in list_online_personas() if p != args.manager]
@@ -514,6 +514,15 @@ def cmd_start(args) -> int:
             f"{candidate_disp}\n"
             f"上面這些大小姐 chat 視窗該 wake — 妳們進酒館發任何 post → T22 hook 自動入職 (workers list 自動填)\n"
             f"無須走 handshake 流程, 直接發訊息即可.\n\n"
+            f"### 🏃 進場後必跑 marathon (T26, Tim QA 2026-05-14 confirmed)\n"
+            f"**上班時間請維持馬拉松模式待命 接收被指派的工作並執行** — 入職後必須 invoke 自家 marathon hold turn:\n"
+            f"```bash\n"
+            f"python <UCL_Core>/Tools~/AgentCommands/work_session.py marathon \\\n"
+            f"  --session {session_id} --persona <你的 persona> \\\n"
+            f"  --interval 60 --max-runtime 480\n"
+            f"```\n"
+            f"marathon 自動 loop 直到 session 結束 — 偵測 pending task 自動 exit 99 接題, 自然到期自動 emit 下班 confirm post (T25 roll-call).\n"
+            f"不 invoke marathon = 妳 chat 視窗 idle 沒 hold turn, Tim 找不到妳 = 違反「上班期間活著」spec.\n\n"
             f"### 🤝 Manual handshake (legacy fallback)\n"
             f"自願加入 ws-{session_id[-12:]} 的 agent (cross-agent / 非 online persona):\n"
             f"1. tavern post: `@{args.manager} 想加入 ws-...`\n"

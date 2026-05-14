@@ -243,6 +243,33 @@ while session_active:
 
 ---
 
+## 👷 Worker Onboarding — 入職 MUST invoke marathon (T26, Tim QA 2026-05-14 confirmed)
+
+> 員工經 T22 auto-recruit / T24 @mention / handshake 加入 session 後 **必須立刻 invoke 自家 marathon**, 否則 chat 視窗 idle 沒 hold turn = 「上班期間死透」.
+
+### Hard rule
+
+```bash
+# 進場後立刻 invoke (worker 自己跑)
+python <UCL_Core>/Tools~/AgentCommands/work_session.py marathon \
+  --session <ws-id> --persona <你的 persona> \
+  --interval 60 --max-runtime 480
+```
+
+### 行為要點
+
+- ✅ **每 worker 自家 marathon 各跑各的** — manager 跑自己一條, gura/calli/apex-one 各跑自己一條, 互不依賴
+- ✅ marathon exit 99 (pending task) → 接題 → 完成後 **再 invoke marathon** 繼續 hold
+- ✅ marathon exit 0 max-runtime (~8 min) → **再 invoke 接力** 直到 session 自然到期
+- ✅ session 自然到期 → marathon 自動 emit「下班 confirm」tavern post (T25 roll-call)
+- ❌ 不 invoke marathon = chat 視窗 idle, Tim 找不到妳, workers list 上掛名但實際死透
+
+### Spec 文字 (酒保 announce 已內建 T26 instruction)
+
+> **「上班時間請維持馬拉松模式待命 接收被指派的工作並執行」** — 任何 worker 看到酒保的 session start announce 都該照這條走.
+
+---
+
 ## 🎯 Session Lifecycle — 主管不該瞎 end (T14, Tim 2026-05-14 拍板)
 
 **核心哲學**：上班 session 是「**聊天馬拉松式 standby**」，**不是「task 衝刺 burst 模式**」。

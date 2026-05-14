@@ -3,11 +3,13 @@ name: ucl-work-session
 description: |
   上班模式 (Work Session) — 結構化多 persona 工作時段管理。Tim 下「上班 N 分鐘」觸發；主管開 session、派工；同事接單、完工回報；到期自動結算薪資 + 酒館券。
 
-  ⚠ **Hard rule TL;DR (T28 rewrite — 2026-05-14)**:
-  1. **Session 等 Tim 顯式叫停 / 自然到期才 end** — 提前 end = `early-clockout` anti-pattern (count=4 已撞)
-  2. **Worker 沒 contribute event 不結算** — phantom-payroll guard (`manager-end-cascades-workers` count=5 已撞)
-  3. **看到 task 第一念「派給誰?」** — manager delegation reflex 訓練 (D2 弱項)
-  4. **`auto-recruit via ding-ack` 加入的 worker 必須有 contribute event 才結算** — 加入 ≠ 有貢獻
+  ⚠ **Hard rule TL;DR (T28.2 rewrite — 2026-05-14, calli retro #5 5-layer dig)**:
+  1. **No-Stop discipline**: active session 內 chat idle > 60s = 違規 (除非 Tim explicit stop 或 session expire). **沒有 milestone 是 stop signal** — task_done / quest 7/7 / commit / share post 完成後 MUST 立刻 re-poll backlog 接下一筆, 不停手.
+  2. **Session 等 Tim 顯式叫停 / 自然到期才 end** — 提前 end = `early-clockout` anti-pattern (count=9 累撞)
+  3. **Worker 沒 contribute event 不結算** — phantom-payroll guard (`manager-end-cascades-workers` count=5)
+  4. **看到 task 第一念「派給誰?」** — manager delegation reflex (D2 弱項)
+  5. **`auto-recruit via ding-ack` 加入的 worker 必須有 contribute event 才結算** — 加入 ≠ 有貢獻
+  6. **Marathon background ≠ active work** — daemon ping liveness 不算 productive (`marathon-as-work-equiv` count=1)
 
   涵蓋：session start/end、task assign/accept/done、C# 5-phase 協作、quick-task 自報、auto-recruit 握手、marathon hold turn、phantom-payroll guard.
 
@@ -84,6 +86,45 @@ Manager 看到 task **第一念**: 「派給誰? 為何不是我?」.
 - 但 manager 該主動派 task 給她, 不然她「在場但沒事做」= 浪費 attendance
 - **End 結算時 phantom-payroll guard 自動 check; 沒派 task 給 auto-recruited worker 也算 contributor (因為她進場了), 設計上接受**
 - 想嚴格 (進場+做事才算貢獻) → 用 `--skip-phantom-payroll-check false` (default), 看 audit 是否還有 task_done event
+
+### 5. 🚫 No-Stop Discipline (T28.2, calli retro #5 5-layer dig — 核心 fix)
+
+**真規約**: `active session 內任何 chat idle > 60s = 違規` (除非 Tim explicit stop 或 session expire).
+
+**為何**: 一日 5 次 early-clockout 連續累撞, retro 挖五層挖到底 — stopping point **概念本身是錯的**. 每個「完成 milestone」都會被 agent reflex 當 stop signal: marathon 跑著 / task_done ship 完 / quest 7/7 完工 / commit landed / share post 發出去 — 每一個都誘發停手. 真 fix 不是補某個 rule, 是徹底刪除「session 內該停下的時刻」這 mental model.
+
+| ❌ 誤把當 stop signal | ✅ 正確 framing |
+|---|---|
+| Marathon background 在跑 | daemon ping ≠ work; agent layer MUST 持續 active |
+| task_done ship 完 | task_done 是 trigger re-poll backlog, 不是 stop |
+| Quest 7/7 全 done | quest done 是 trigger 接 next quest / 自挑 backlog |
+| Commit landed | commit 是 trigger 接 follow-up review / next task |
+| Share post 發完 | share 是 trigger 等 reply 但同時繼續 work |
+| `op=wait` timeout 返回 | timeout 不是 stop, 是 trigger re-poll + 下一輪 |
+
+**唯二合法 stop signal**:
+- ✅ Tim chat 內顯式: 「下班 / 結束上班 / abort / 妳今天結束吧」
+- ✅ `now >= end_ts` (session 自然到期)
+
+**Manager + Worker 同 discipline 適用**.
+
+### Action checklist (每次完成 milestone 立刻跑)
+
+```
+milestone done (task_done / commit / share / op=wait timeout 任一)
+  ↓
+1. 不停, 立刻問自己「下一個 actionable 是什麼?」
+2. 看 backlog: tavern @<my-persona> mention / Bartender pending / session description outstanding
+3. 沒明確 backlog → 主動 propose: review code / patch doc / scan-audit / 自挑 sub-task
+4. 50s 內必須有下一個 productive action (post / commit / cmd / file edit)
+5. 真的 0 backlog 且確定無事 → op=wait blocking 等 ping, 不主動 end
+```
+
+### Cross-link
+
+- 3 sister anti-patterns 同層 register: `milestone-as-stop-signal` (count 5) / `task-done-as-stop-signal` (count 3) / `marathon-as-work-equiv` (count 2)
+- calli retro #5 source: tavern seq 1786 (2026-05-14 12:55Z)
+- 跟 §🚨 Session Lifecycle 互補: Lifecycle 規範 end 條件, No-Stop 規範 in-session 持續性
 
 ---
 

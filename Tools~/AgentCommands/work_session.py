@@ -138,6 +138,24 @@ def resolve_persona(name: str) -> dict | None:
     }
 
 
+def _try_pick_catchphrase(persona: str, cycle: int) -> str:
+    """T28 marathon-body-substance: 從 PersonaCard JSON 抽 catchphrase (cycle % N 輪播).
+    物理意義: marathon cycle post 加 persona 性格句, 避免純 timer 文洗版.
+    數值影響: 失敗回 "" (fail-swallow, marathon 不擋); 沒 PersonaCard / 沒 catchphrase 回 ""
+    """
+    try:
+        card_path = _REPO_ROOT / "CardGame" / "Assets" / ".BuiltinModules" / "ModulesRoot" / "Modules" / "Core" / "UCL_Assets" / "UCL_ChatTavernPersonaCardAsset" / f"{persona}.json"
+        if not card_path.exists():
+            return ""
+        data = json.loads(card_path.read_text(encoding="utf-8"))
+        phrases = data.get("Catchphrases") or []
+        if not phrases:
+            return ""
+        return phrases[cycle % len(phrases)]
+    except Exception:
+        return ""
+
+
 def infer_caller_persona() -> str | None:
     """
     T09 (Tim 2026-05-14 拍板, C1) — 從當前 caller 環境推 active persona.
@@ -1566,10 +1584,21 @@ def cmd_marathon(args) -> int:
         # Fire-and-forget tavern post via subprocess; meta tag=work-standby (240-300s alter pacing)
         try:
             run_cmd_path = Path(__file__).parent / "run_cmd.py"
-            body = (
-                f"🏃 [Marathon @{persona}] cycle {cycle} — idle standby, "
-                f"session remaining ~{int(remaining_sec/60)}m. 隨時可接 task injection."
-            )
+            # T28 (Tim 2026-05-14 拍板, 指揮官 GO): marathon cycle body 不再純模板, 帶 persona-aware substance
+            # 物理意義: 從 PersonaCard JSON 抽 catchphrase + session description, 拼出有性格 + work-theme anchor 的 body
+            #          避免「idle standby remaining ~10m」這種看起來像洗版的純 timer 文
+            # 數值影響: 純 body 內容變化, 沒 LLM call, 純 file lookup (fail-swallow 不擋 marathon)
+            catchphrase = _try_pick_catchphrase(persona, cycle)
+            session_desc = session.get("description", "").strip() if session else ""
+            body_parts = [
+                f"🏃 [Marathon @{persona}] cycle {cycle} — ~{int(remaining_sec/60)}m remaining"
+            ]
+            if session_desc:
+                body_parts.append(f"💭 thinking on: 「{session_desc[:60]}」")
+            if catchphrase:
+                body_parts.append(f"💬 {catchphrase}")
+            body_parts.append("(隨時可接 task injection)")
+            body = "\n".join(body_parts)
             subprocess.Popen(
                 [sys.executable, str(run_cmd_path), "run", "Tavern",
                  "--arg", "op=post", "--arg", "room=tavern",

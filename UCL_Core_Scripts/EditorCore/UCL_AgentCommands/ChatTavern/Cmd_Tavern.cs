@@ -508,10 +508,85 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
                 // Sub-rule B: token_parse (T44/T45) — body 內 N+token 字樣解析數值 → 自動 credit
                 TryAutoCreditTokenParse(senderId, roomId, seq, body, idempKey);
+
+                // Sub-rule C: T10 (Tim 2026-05-14) — ding-ack auto-recruit
+                // tag=ack-only → spawn work_session.py add-worker-auto 把 sender 加進 active sessions
+                TryAutoRecruitOnDingAck(senderPersona, senderId, earlyMeta);
             }
 
             // Discord tavern mirror 觸發已下沉到 UCL_ChatTavernIO.AppendMessage (fireDiscordMirror=true 預設).
             // quiet 旗標已在上方 AppendMessage 呼叫處 thread through.
+        }
+
+        // ===========================================================
+        // 區塊：T10 sub-rule C — ding-ack auto-recruit (Tim 2026-05-14 拍板)
+        // 物理意義：別大小姐進酒館 ack 一聲 → 自動加進所有 active work sessions workers list
+        // 數值影響：fire-and-forget spawn python subprocess 跑 work_session.py add-worker-auto
+        //          沒 active session → silent no-op; 已 manager/worker → skip
+        // 邊界：
+        //   - 只認 meta.tag=ack-only (Tim Q1=A 拍板)
+        //   - 加進所有 active sessions (Tim Q2=B 拍板)
+        //   - Tim 黑名單 (HumanPayerSenders) — 不被招募
+        //   - 缺 sender_persona 仍嘗試 (用 senderId 當 persona, work_session.py 自己處理 resolve)
+        // ===========================================================
+        static void TryAutoRecruitOnDingAck(string senderPersona, string senderId, Dictionary<string, string> meta)
+        {
+            try
+            {
+                if (meta == null) return;
+                if (!meta.TryGetValue("tag", out var tag) || string.IsNullOrEmpty(tag)) return;
+                // 只認 ack-only (Q1=A 拍板)
+                if (tag != "ack-only") return;
+
+                // Tim 黑名單 — Tim 不打工
+                if (HumanPayerSenders.Contains(senderId)) return;
+
+                // sender_persona 缺時用 senderId 當 fallback (work_session.py resolve_persona 自己判)
+                string personaArg = !string.IsNullOrWhiteSpace(senderPersona) ? senderPersona : senderId;
+
+                // Locate work_session.py — 走 RepoRoot 拼路徑
+                string scriptPath = Path.Combine(UCL_RepoPath.RepoRoot,
+                    "CardGame", "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py");
+                if (!File.Exists(scriptPath))
+                {
+                    // UCL_Core 可能在別路徑 (扁平 layout / TEVI 等) — 嘗試其他可能 path
+                    scriptPath = FindWorkSessionScript();
+                    if (string.IsNullOrEmpty(scriptPath)) return;
+                }
+
+                // Fire-and-forget: spawn python subprocess, 不等結果不擋 post 主流程
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{scriptPath}\" add-worker-auto --persona \"{personaArg}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WorkingDirectory = UCL_RepoPath.RepoRoot,
+                };
+                var proc = System.Diagnostics.Process.Start(psi);
+                // 不 wait — fire-and-forget. Process 自己跑完釋放.
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] T10 auto-recruit fail-swallow: {ex.Message}");
+            }
+        }
+
+        static string FindWorkSessionScript()
+        {
+            // 嘗試從常見 UCL_Core 位置反推
+            string[] candidates = new[]
+            {
+                Path.Combine(UCL_RepoPath.RepoRoot, "CardGame", "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py"),
+                Path.Combine(UCL_RepoPath.RepoRoot, "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py"),
+            };
+            foreach (var c in candidates)
+            {
+                if (File.Exists(c)) return c;
+            }
+            return null;
         }
 
         // ===========================================================

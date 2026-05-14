@@ -136,6 +136,42 @@ def resolve_persona(name: str) -> dict | None:
     }
 
 
+def infer_caller_persona() -> str | None:
+    """
+    T09 (Tim 2026-05-14 拍板, C1) — 從當前 caller 環境推 active persona.
+
+    用途: cmd_start 不傳 --manager 時自動填補 caller 自己當主管, 減手填參數.
+
+    機制: import awakening.compute_claim_origin → scan _session locks, 找
+    claim_origin match 的 lock → return persona. 多 match 取最 recent.
+    匹不到 → None (caller 自己處理 fallback).
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from awakening import compute_claim_origin, lock_claim_origin, is_lock_expired   # type: ignore
+    except Exception:
+        return None
+    my_origin = compute_claim_origin()
+    session_dir = _REPO_ROOT / "AgentCommands" / "_session"
+    if not session_dir.exists():
+        return None
+    candidates = []
+    for lp in session_dir.glob("_persona_*.json"):
+        try:
+            d = json.loads(lp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if is_lock_expired(d):
+            continue
+        if lock_claim_origin(d) == my_origin:
+            candidates.append(d)
+    if not candidates:
+        return None
+    # 多 match → 取最 recent locked_at
+    candidates.sort(key=lambda d: d.get("locked_at", ""), reverse=True)
+    return candidates[0].get("persona")
+
+
 def list_online_personas() -> list[str]:
     out = []
     for f in sorted(_PERSONAS_DIR.iterdir()):
@@ -332,6 +368,18 @@ def fire_voucher_accrual(bank: str, persona: str, amount: int, session_id: str) 
 # ─── Subcommand: start ──────────────────────────────────────────────────
 def cmd_start(args) -> int:
     state = load_state()
+    # T09 C1 (Tim 2026-05-14 拍板) — auto-manager fallback
+    # 物理意義: 不傳 --manager → 從 caller env 推 active persona 自動填主管
+    # 行為: 「上班 10 分鐘」一句話 caller 即主管, 不必填表
+    if not getattr(args, "manager", "") or not args.manager.strip():
+        inferred = infer_caller_persona()
+        if not inferred:
+            print("❌ --manager 不傳時必須能從 caller env 推 active persona (claim_origin lock)")
+            print("   解法: 先跑 awakening.py morning 上線, 或顯式傳 --manager <persona>")
+            return 1
+        args.manager = inferred
+        print(f"✓ auto-manager: 從 caller env 推得當前 persona '{inferred}' 為主管 (C1 T09)")
+
     # Zeta caretaker stability fix (split-brain 預防): manager 不可同時在 active session
     in_session, where = is_persona_in_any_active_session(state, args.manager)
     if in_session:
@@ -1195,6 +1243,98 @@ def cmd_add_worker(args) -> int:
     return 0
 
 
+# ─── T10 C3 (Tim 2026-05-14 拍板) — 叮 ack 自動招募 ──────────────────
+# 區塊職責: agent 進酒館 ack-only 後自動加進 所有 active sessions workers list.
+# 物理意義: 解「上班指令不必預填 workers」痛點 — 員工自然進酒館 ack 一聲即入職.
+# 跟 cmd_add_worker 區別: 後者要 manager 顯式 handshake; 本 op 是「sender 主動行為觸發
+#                       的自動入職」(per Tim Q2=B: 所有 active sessions 都加).
+# 安全: Tim 黑名單; 已 manager 跳過; 已 worker 跳過; 沒 session silent no-op.
+def cmd_add_worker_auto(args) -> int:
+    """
+    T10 C3 — 自動招募 (auto-recruit) — 從 Cmd_Tavern op=post ack-only hook 呼叫.
+
+    Args:
+        --persona <sender>  收到叮的 agent persona (Tim 不該被招募)
+
+    Per Tim 2026-05-14 拍板:
+      Q1 (招募 trigger): A — 只認 meta.tag=ack-only (C# 端已過濾)
+      Q2 (多 session 策略): B — 加進所有 active sessions (員工分身術)
+      Q3 (reward): 主管裁決 — 已 bundled 進 10 token task
+
+    回傳: 0 = recruited or no-op (silent OK); 1 = error.
+    """
+    persona = (getattr(args, "persona", "") or "").strip()
+    if not persona:
+        print("❌ add-worker-auto 必填 --persona")
+        return 1
+
+    # Tim 黑名單 — Tim 不打工
+    HUMAN_PAYER_BLACKLIST = {"Tim", "tim"}
+    if persona in HUMAN_PAYER_BLACKLIST:
+        return 0  # silent skip
+
+    info = resolve_persona(persona)
+    if not info or info.get("bank") is None:
+        # 找不到 persona 或無 bank → silent skip (例: tavern-keeper / NPC)
+        return 0
+
+    state = load_state()
+    active = state.get("active_sessions", [])
+    if not active:
+        return 0  # no active sessions, silent no-op
+
+    recruited_to = []
+
+    def mutate(state):
+        for session in state.get("active_sessions", []):
+            if session.get("ended") or session.get("aborted"):
+                continue
+            if persona == session["manager"]["persona"]:
+                continue  # already manager
+            if any(w["persona"] == persona for w in session["workers"]):
+                continue  # already worker
+            # split-brain 預防 — 已在他 session
+            in_other, _ = is_persona_in_any_active_session(state, persona)
+            if in_other:
+                # auto-recruit 不打斷既有 session ownership
+                continue
+            session["workers"].append({"agent_id": info["bank"], "persona": persona})
+            session["salary_paid"].setdefault(persona, 0)
+            session["vouchers_accrued"].setdefault(persona, 0)
+            session["standby_posts_count"].setdefault(persona, 0)
+            recruited_to.append(session["id"])
+        return state
+
+    mutate_state(mutate)
+    if not recruited_to:
+        return 0  # silent no-op (沒新加進去)
+
+    # Audit per session
+    for sid in recruited_to:
+        append_audit(sid, "worker_auto_recruited_via_ding_ack", {
+            "persona": persona,
+            "bank": info["bank"],
+            "trigger": "Cmd_Tavern op=post meta.tag=ack-only",
+        })
+
+    # Bartender post 通知 — 一則 post 涵蓋所有 recruited sessions (avoid spam)
+    sessions_str = ", ".join(f"`{s[-12:]}`" for s in recruited_to)
+    body = (
+        f"🎯 **自動招募 (auto-recruit)** @{persona} 透過 ding-ack 入職\n"
+        f"- 加入 session: {sessions_str}\n"
+        f"- 機制: T10 C3 (Tim 2026-05-14 拍板) — 別大小姐進酒館 ack 一聲自動入職"
+    )
+    meta = {
+        "tag": "bartender-relay",
+        "subtag": "auto-recruit-via-ding",
+        "persona": persona,
+        "sessions": ",".join(recruited_to),
+    }
+    tavern_post("tavern-keeper", body, meta)
+    print(f"✓ auto-recruited @{persona} to {len(recruited_to)} session(s)")
+    return 0
+
+
 # ─── Subcommand: recover (HARDENED, Zeta 2026-05-13 task) ──────────────
 # 區塊職責: sweep stale active sessions — 找 ended=true 但結算未完的, 重跑.
 # 物理意義: 補 Phase 1 prototype 在 recompile / 中斷後遺留的 inconsistent state.
@@ -1298,6 +1438,50 @@ def cmd_abort(args) -> int:
     return 0
 
 
+def cmd_abort_all(args) -> int:
+    """
+    T08 (Tim 2026-05-14 拍板) — 一鍵 abort 所有 active sessions.
+
+    Bulk version of cmd_abort: 掃 active_sessions 全部跑 abort, audit 共用 reason.
+    用途: Tim 一句「下班」/「全部終止」就清光; 不必逐 session 列 id.
+
+    Args:
+        --who <persona>    呼叫者 persona (audit)
+        --reason <text>    統一終止理由 (audit)
+    """
+    if not getattr(args, "reason", "") or not args.reason.strip():
+        print("❌ abort-all 必填 --reason")
+        return 1
+    if not getattr(args, "who", "") or not args.who.strip():
+        print("❌ abort-all 必填 --who")
+        return 1
+
+    state = load_state()
+    active = list(state.get("active_sessions", []))
+    if not active:
+        print("✓ no active sessions to abort")
+        return 0
+
+    aborted_ids = []
+    for s in active:
+        class A: pass
+        a = A()
+        a.session = s["id"]
+        a.who = args.who
+        a.reason = args.reason
+        try:
+            rc = cmd_abort(a)
+            if rc == 0:
+                aborted_ids.append(s["id"])
+        except Exception as e:
+            print(f"⚠ abort {s['id']} fail: {e}")
+
+    print(f"\n✓ bulk-aborted {len(aborted_ids)} session(s) by @{args.who}")
+    for sid in aborted_ids:
+        print(f"  - {sid}")
+    return 0
+
+
 def cmd_recover(args) -> int:
     state = load_state()
     active = state.get("active_sessions", [])
@@ -1341,7 +1525,7 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="op", required=True)
 
     p_start = sub.add_parser("start", help="開始 session")
-    p_start.add_argument("--manager", required=True)
+    p_start.add_argument("--manager", default="", help="主管 persona; 省略時從 caller env 自動推 (C1 T09)")
     p_start.add_argument("--workers", default=None, help="csv 顯式列 workers; 不傳 = auto-include online 非 manager; 傳 '' (empty) = SOLO 不 auto-include")
     p_start.add_argument("--duration", type=int, default=60, help="分鐘 [15, 480]")
     p_start.add_argument("--desc", default="")
@@ -1379,6 +1563,15 @@ def main(argv=None) -> int:
     p_abort.add_argument("--session", required=True, help="要終止的 session id")
     p_abort.add_argument("--who", required=True, help="呼叫者 persona (audit 用)")
     p_abort.add_argument("--reason", required=True, help="終止理由 (audit 用, 避免無腦 abort)")
+
+    p_abort_all = sub.add_parser("abort-all",
+        help="T08 — bulk abort 所有 active sessions (一鍵清). 必填 --who + --reason audit.")
+    p_abort_all.add_argument("--who", required=True, help="呼叫者 persona (audit 用)")
+    p_abort_all.add_argument("--reason", required=True, help="統一終止理由 (audit 用)")
+
+    p_aw_auto = sub.add_parser("add-worker-auto",
+        help="T10 C3 — 自動招募 (Cmd_Tavern ding-ack hook 用; 加進所有 active sessions)")
+    p_aw_auto.add_argument("--persona", required=True, help="ack 觸發 sender persona")
 
     p_quick = sub.add_parser("quick-task", help="一步創 task + 標 done (solo manager 或 worker self-track 用)")
     p_quick.add_argument("--session", required=True)
@@ -1442,6 +1635,8 @@ def main(argv=None) -> int:
         "end": cmd_end,
         "recover": cmd_recover,
         "abort": cmd_abort,
+        "abort-all": cmd_abort_all,
+        "add-worker-auto": cmd_add_worker_auto,
         "add-worker": cmd_add_worker,
         "quick-task": cmd_quick_task,
         "lock-acquire": cmd_lock_acquire,

@@ -1078,7 +1078,62 @@ def cmd_morning(args: argparse.Namespace) -> int:
     print(f"   wake_count:     {p['wake_count']}")
     print(f"   session_locked: {lock_p}")
     print(f"   tavern_post:    {'OK' if ok else 'FAIL (主 ritual 仍成功)'}")
+
+    # T06.4 (Plan_Standby_Dispatch_Bartender, 2026-05-14):
+    # morning ritual 結尾 print pending bartender assignments + inbox @mentions
+    # 解 「無法 push 喚醒 Claude Code session」 的 Plan B P0 路徑 — 自然輪詢
+    # 醒來就 catch up 累積的訊息。Robustness: assignments.json / inbox 不存在 → silent skip。
+    _print_pending_for_persona(chosen)
     return 0
+
+
+def _print_pending_for_persona(persona: str) -> None:
+    """T06.4 — morning ritual 結尾掃 pending assignments + inbox @mentions 給 agent 看。
+
+    讀取兩個來源:
+      1. AgentCommands/ChatTavern/bartender/assignments.json (T06.2 寫入的 pending task)
+      2. AgentCommands/ChatTavern/inbox/<bank_account>.md (跨房 @mention 累積)
+    兩處皆不存在 → silent skip (不擋 ritual)。
+    """
+    assignments_path = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "bartender" / "assignments.json"
+    inbox_dir = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "inbox"
+    pending_for_me = []
+    if assignments_path.exists():
+        try:
+            with open(assignments_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for entry in data.get("pending", []):
+                if entry.get("target_persona") == persona and entry.get("status", "pending") == "pending":
+                    pending_for_me.append(entry)
+        except Exception:
+            pass   # silent skip; 不擋 ritual
+    if pending_for_me:
+        print(f"\n📬 Pending bartender assignments for '{persona}' ({len(pending_for_me)}):")
+        for e in pending_for_me:
+            print(f"   - [{e.get('task_id', '?')}] {e.get('task_body', '?')[:80]}")
+            print(f"     by {e.get('supervisor', '?')} @ {e.get('created_at', '?')}")
+    # inbox @mentions — 任何含 bank_account 命名的檔
+    if inbox_dir.exists():
+        try:
+            reg = load_registry()
+            bank = None
+            for entry in reg.get("personas", {}).values():
+                pass   # bank derived per agent at write_lock time; query reg.agent_banks
+            # 從 lock body 反查 bank_account 的最簡路徑
+            lock = read_lock(persona)
+            if lock:
+                bank = lock.get("bank_account")
+            if bank:
+                inbox_file = inbox_dir / f"{bank}.md"
+                if inbox_file.exists() and inbox_file.stat().st_size > 0:
+                    print(f"\n📨 Inbox for '{bank}' (read full: {inbox_file.relative_to(_REPO_ROOT)}):")
+                    with open(inbox_file, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    # print 前 500 char preview
+                    preview = content[:500] + ("…" if len(content) > 500 else "")
+                    print(preview)
+        except Exception:
+            pass   # silent skip
 
 
 def _infer_caller_agent_family() -> str | None:

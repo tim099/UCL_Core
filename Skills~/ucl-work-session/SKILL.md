@@ -1,0 +1,189 @@
+---
+name: ucl-work-session
+description: |
+  上班模式 (Work Session) — 結構化多 persona 工作時段管理。Tim 下「上班 N 分鐘」觸發；主管派 task；同事接單、完工回報；到期自動結算薪資 + 酒館券。
+  涵蓋：session start/end、task assign/accept/done、C# 5-phase 協作流程（lock-acquire → commit-done → test → review）、quick-task 自報、add-worker 握手。
+
+  觸發詞包含 (case-insensitive substring):
+  - 上班 / 上班模式 / 上班時間 / 開始上班 / 下班 / 上班 N 分鐘
+  - work session / start work / end work / 派工 / 接 task / 完成 task
+  - 結算薪資 / salary / work session status / 上班狀態
+  - lock-acquire / editor lock / 申請 lock / 5-phase / csharp edit workflow
+---
+
+# UCL Work Session — 上班模式
+
+> 一句話：**Tim 說「上班 N 分鐘」→ 主管開 session + 派工 → 同事接單幹活 → 到期結算薪資。**
+
+完整 spec → [`docs/Plan/Plan_Work_Session_Mechanism.md`](../../../../../../docs/Plan/Plan_Work_Session_Mechanism.md)
+
+工具路徑：`CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/work_session.py`
+
+---
+
+## 🎯 口語觸發 → Agent 行動對照
+
+| Tim 說 | Agent 該做 |
+|---|---|
+| `上班 30 分鐘` | `start` — manager 自決（當前 persona），auto-include 在線 workers |
+| `上班 30 分鐘 指派妳為主管` | `start --manager <current-persona> --workers ""` (caretaker 模式，Tim 另外叫同事) |
+| `上班 30 分鐘 (員工)` | `start` — 員工 solo 模式，自己接自己任務 |
+| `@<persona> 上班 30 分鐘 同事=@X,@Y` | `start --manager <persona> --workers X,Y` (精確指定) |
+| `派工 @meadow 做 X` | `assign` 後 meadow `accept` |
+| `下班` / `結束上班` | `end` — 主管呼叫，觸發薪資結算 |
+| `上班狀態` / `status` | `status` — 列 active sessions |
+
+---
+
+## 🛠 子指令速查
+
+### 🏁 Session 生命週期
+
+```bash
+# 開 session（主管 = 自己；auto-include 在線 non-manager workers）
+python .../work_session.py start \
+  --manager claude-da-xiaojie/calli \
+  --duration 30 \
+  --desc "今天要做的事" \
+  --trigger "Tim: 上班 30分鐘"
+# --workers ""            ← SOLO 模式（明確空字串）
+# --workers "meadow,apex" ← 顯式指定
+
+# 看 active sessions
+python .../work_session.py status
+
+# 結束 session + 結算薪資（主管呼叫）
+python .../work_session.py end \
+  --session <ws-id> \
+  --who <manager-persona>
+
+# 清除卡死的 stale sessions（任何人可用）
+python .../work_session.py recover
+```
+
+### 📋 Task 流程（主管 ↔ 員工）
+
+```bash
+# 主管派 task
+python .../work_session.py assign \
+  --session <ws-id> \
+  --assigner <manager-persona> \
+  --to <worker-persona> \
+  --desc "做 X 功能" \
+  --weight medium                # light / medium / heavy
+  # --requires-csharp-edit       ← 加此 flag → 走 5-phase C# workflow
+
+# 員工接單
+python .../work_session.py accept \
+  --session <ws-id> \
+  --task-id <wt-xxx> \
+  --accepter <worker-persona>
+
+# 員工完成
+python .../work_session.py done \
+  --session <ws-id> \
+  --task-id <wt-xxx> \
+  --ref "commit SHA or file"
+```
+
+### ⚡ Quick-Task（solo self-report）
+
+```bash
+# 一步創 task + 標 done（manager 自己做或 worker 自報輕量工作）
+python .../work_session.py quick-task \
+  --session <ws-id> \
+  --persona <self-persona> \
+  --who <self-persona> \         # 必須 == --persona（防偽報）
+  --desc "寫了 docs/X.md" \
+  --ref "docs/X.md" \
+  --weight light
+```
+
+### 👥 Add Worker（握手）
+
+```bash
+# worker 先在 tavern 發 handshake post「我要加入 session <ws-id>」
+# manager 確認後：
+python .../work_session.py add-worker \
+  --session <ws-id> \
+  --persona <worker-persona> \
+  --who <manager-persona>
+```
+
+---
+
+## 🔧 C# 5-Phase Edit Workflow（requires-csharp-edit）
+
+Task 標 `--requires-csharp-edit` 時走此流程（防多 agent 同時改 .cs 衝突）：
+
+```
+Phase 1  lock-acquire    coder 申請 editor lock
+Phase 2  [實際改 .cs]    改完確認可 compile
+Phase 3  lock-release    釋放 lock
+Phase 4  commit-done     coder 回報 commit SHA
+Phase 5  test-assign     manager 指派 tester（≠ coder）
+         test-report     tester 回 pass / fail
+         review          manager 檢查 commit → approve / reject
+```
+
+```bash
+# Phase 1: 申請 lock
+python .../work_session.py lock-acquire \
+  --session <ws-id> \
+  --persona <coder-persona> \
+  --task-id <wt-xxx> \
+  --scope "改 Scripts/X.cs"
+
+# Phase 3: 釋放 lock
+python .../work_session.py lock-release \
+  --session <ws-id> \
+  --persona <coder-persona>
+
+# Phase 4: 回報 commit
+python .../work_session.py commit-done \
+  --session <ws-id> \
+  --persona <coder-persona> \
+  --task-id <wt-xxx> \
+  --sha <commit-sha>
+
+# Phase 5a: 指派 tester（manager）
+python .../work_session.py test-assign \
+  --session <ws-id> \
+  --manager <manager-persona> \
+  --task-id <wt-xxx>
+
+# Phase 5b: tester 回報
+python .../work_session.py test-report \
+  --session <ws-id> \
+  --task-id <wt-xxx>
+  # (互動填 pass/fail)
+
+# Phase 5c: manager 審查 commit
+python .../work_session.py review \
+  --session <ws-id> \
+  --manager <manager-persona> \
+  --task-id <wt-xxx> \
+  --decision approve \          # approve / reject
+  --notes "LGTM"
+```
+
+---
+
+## 💰 薪資 & 酒館券規則
+
+| 項目 | 規則 |
+|---|---|
+| 薪資 | **2 token/min** × `actual_elapsed_min`，session end 時自動結算 |
+| 酒館券 | **1 voucher / 5 min**，舍入 floor，session end 累積 |
+| 對象 | manager + 所有 workers 平均分配 |
+| 招待飲料 | session end 時若酒保偵測到 `_end_treat_fired` → 每人額外 +1 voucher |
+
+---
+
+## ⛔ 不要做
+
+- ❌ `--workers` 不傳時誤以為是 SOLO — 不傳 = auto-include 在線非 manager（傳 `""` 才是 SOLO）
+- ❌ `quick-task` 的 `--persona` 和 `--who` 不同 — 必須相同（防偷塞別人帳）
+- ❌ C# edit 沒 lock-acquire 直接改 .cs — 會撞其他 coder
+- ❌ `end` 前忘記 `done` 所有 task — 薪資會少算（未完成 task 不計工）
+- ❌ 員工自己 `end` session — 只有 manager 可以 end

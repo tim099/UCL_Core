@@ -244,6 +244,13 @@ related:
   - Play Mode 中 → 拒絕（先 `Cmd_PlayMode action=exit` 退場）
 - **不要做**: 在 Play Mode 中切（破壞 runtime state）；切非白名單 scene（手動到 Project 雙點才行）；切換有未存修改的 scene 不加 force（會丟失）
 
+### 上班模式 / Work Session
+- **觸發詞**: `上班` / `上班模式` / `上班時間` / `開始上班` / `下班` / `上班 N 分鐘` / `work session` / `派工` / `接 task` / `結算薪資` / `lock-acquire` / `editor lock` / `5-phase` / `上班狀態` / `start work` / `end work`
+- **對應 Workflow**: [`ucl-work-session` SKILL.md](../../../Skills~/ucl-work-session/SKILL.md)
+- **意圖**: 開啟結構化上班 session（manager + workers）；主管派 task、員工接單回報；session 結束後自動結算薪資 + 酒館券；含 C# 5-phase edit workflow（lock-acquire → commit-done → test-assign → review）。
+- **必做**: Tim 說「上班 N 分鐘」→ agent 走 `work_session.py start`；多 agent 協作場景 worker 需先在 tavern 發 handshake post 再由 manager `add-worker`；C# edit 必先 `lock-acquire` 防衝突
+- **不要做**: 把 `--workers` 不傳誤以為是 SOLO（不傳 = auto-include；傳 `""` 才是 SOLO）；員工自己 `end` session；`quick-task` 的 `--persona` 和 `--who` 不同
+
 ### 翻譯與本地化文件
 - **觸發詞**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
 - **對應 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)

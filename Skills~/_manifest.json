@@ -91,6 +91,11 @@
       "name": "ucl-ding",
       "summary": "Tim 叮協議 — Tim 主動 ping → agent MUST 到酒館 tavern 房 op=post 簡短 ack (1-3 句, 實質 or 罐頭文 + meta tag=ack-only); 跟 ucl-persona-ding (persona↔persona) 不同機制",
       "optional": false
+    },
+    {
+      "name": "ucl-work-session",
+      "summary": "上班模式 — Tim 說「上班 N 分鐘」→ 主管開 session + 派工 → 同事接單完工 → 結算薪資 voucher；含 C# 5-phase edit workflow (lock-acquire/commit-done/test-assign/review)",
+      "optional": false
     }
   ]
 }

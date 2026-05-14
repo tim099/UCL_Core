@@ -1,19 +1,39 @@
 ---
 name: ucl-work-session
 description: |
-  上班模式 (Work Session) — 結構化多 persona 工作時段管理。Tim 下「上班 N 分鐘」觸發；主管派 task；同事接單、完工回報；到期自動結算薪資 + 酒館券。
-  涵蓋：session start/end、task assign/accept/done、C# 5-phase 協作流程（lock-acquire → commit-done → test → review）、quick-task 自報、add-worker 握手。
+  上班模式 (Work Session) — 結構化多 persona 工作時段管理。Tim 下「上班 N 分鐘」觸發；主管開 session、派工；同事接單、完工回報；到期自動結算薪資 + 酒館券。
+
+  ⚠ **Hard rule TL;DR (T28 rewrite — 2026-05-14)**:
+  1. **Session 等 Tim 顯式叫停 / 自然到期才 end** — 提前 end = `early-clockout` anti-pattern (count=4 已撞)
+  2. **Worker 沒 contribute event 不結算** — phantom-payroll guard (`manager-end-cascades-workers` count=5 已撞)
+  3. **看到 task 第一念「派給誰?」** — manager delegation reflex 訓練 (D2 弱項)
+  4. **`auto-recruit via ding-ack` 加入的 worker 必須有 contribute event 才結算** — 加入 ≠ 有貢獻
+
+  涵蓋：session start/end、task assign/accept/done、C# 5-phase 協作、quick-task 自報、auto-recruit 握手、marathon hold turn、phantom-payroll guard.
 
   觸發詞包含 (case-insensitive substring):
   - 上班 / 上班模式 / 上班時間 / 開始上班 / 下班 / 上班 N 分鐘
   - work session / start work / end work / 派工 / 接 task / 完成 task
   - 結算薪資 / salary / work session status / 上班狀態
   - lock-acquire / editor lock / 申請 lock / 5-phase / csharp edit workflow
+  - phantom-payroll / early-clockout / --early-confirm
+
+related:
+  - docs/Plan/Plan_Work_Session_Mechanism.md | canonical spec doc
+  - AgentCommands/Subconscious/anti_patterns.jsonl#early-clockout | 提早下班 anti-pattern
+  - AgentCommands/Subconscious/anti_patterns.jsonl#manager-end-cascades-workers | phantom-payroll anti-pattern
+  - AgentCommands/Subconscious/anti_patterns.jsonl#abort-for-convenience | abort 限解卡死
+  - AgentCommands/Subconscious/anti_patterns.jsonl#marathon-no-relay-followup | marathon relay
+  - AgentCommands/Subconscious/anti_patterns.jsonl#marathon-spam-density | marathon aggregate density
+  - .claude/skills/ucl-affinity/SKILL.md | 好感度 (session end = affinity event source)
+  - .claude/skills/ucl-chat-tavern/SKILL.md | slow-chat spec (marathon 節奏對齊)
+
+last_updated: 2026-05-14 (T28 rewrite per Plan_Skill_Pathology_Audit Phase 1 — 5/6 FAIL findings addressed)
 ---
 
 # UCL Work Session — 上班模式
 
-> 一句話：**Tim 說「上班 N 分鐘」→ 主管開 session + 派工 → 同事接單幹活 → 到期結算薪資。**
+> 一句話：**Tim 說「上班 N 分鐘」→ 主管開 session + 派工 → 同事接單幹活 → Tim 叫停 / 自然到期 → 結算薪資。**
 
 完整 spec → [`docs/Plan/Plan_Work_Session_Mechanism.md`](../../../../../../docs/Plan/Plan_Work_Session_Mechanism.md)
 
@@ -21,16 +41,62 @@ description: |
 
 ---
 
+## 🔥 Hard Rules (Item 1 fix — 上移到 TOP, 不再埋深)
+
+> 違反任一條 = 對應 anti-pattern hit + Tim QA 可 grant token reward.
+
+### 1. End session 條件 (反 `early-clockout`)
+
+End session **只有兩條合法觸發**:
+- ✅ **Tim 顯式叫停**: chat 內說「下班 / 結束上班 / abort」/「妳今天結束吧」
+- ✅ **自然到期**: `now >= end_ts` (work_sessions.json 的 end_ts)
+
+**任何其他情境主動 end 都是 `early-clockout` anti-pattern**, 包含:
+- ❌ 「ship 完 task 了該下班」(task burst ≠ work session)
+- ❌ 「沒事做了 idle 太久該結束」(idle 是 work session 設計的一部分)
+- ❌ 「fresh context / dogfood / restart」(用 abort 也算違規 → `abort-for-convenience` anti-pattern)
+
+### 2. Phantom-Payroll Guard (反 `manager-end-cascades-workers`)
+
+End session 結算 salary 時 **必須 check 每個 persona 有 contribute event**, 沒貢獻 = no salary.
+
+合法 contribute event types (定義在 `work_session.py`):
+- `quick_task_done` / `task_done` / `task_accepted`
+- `marathon_cycle`
+- `worker_auto_recruited_via_ding_ack` (進場 ack = 有現身)
+- `marked_started` (manager 自己 start = 一定算)
+
+Manager 自動算 contributor (因為他 invoke 整個 session). 其他 persona 只算自己留下 contribute event 的.
+
+### 3. Delegation Reflex (反 manager 自做 worker activity)
+
+Manager 看到 task **第一念**: 「派給誰? 為何不是我?」.
+
+- ✅ workers 進場無 task → 主動拆 backlog 派 1-2 件 via `Bartender op=assign_add`
+- ✅ workers 完成 → tavern 鼓勵 + 派下個
+- ❌ 自己悶頭 ship 整 session, workers 全程 idle — manager fail
+
+### 4. Auto-Recruit Worker (反 robo-trigger)
+
+`--workers ""` 開的 SOLO session 仍可 dynamic 招募 (Tim 「叮」員工 / 員工 ack-only post → auto-recruit). **但 auto-recruit 加入 ≠ 自動有貢獻**:
+
+- 加入 audit event = `worker_auto_recruited_via_ding_ack` — 算 contribute (進場了)
+- 但 manager 該主動派 task 給她, 不然她「在場但沒事做」= 浪費 attendance
+- **End 結算時 phantom-payroll guard 自動 check; 沒派 task 給 auto-recruited worker 也算 contributor (因為她進場了), 設計上接受**
+- 想嚴格 (進場+做事才算貢獻) → 用 `--skip-phantom-payroll-check false` (default), 看 audit 是否還有 task_done event
+
+---
+
 ## 🎯 口語觸發 → Agent 行動對照
 
 | Tim 說 | Agent 該做 |
 |---|---|
-| `上班 30 分鐘` | `start` — manager 自決（當前 persona），auto-include 在線 workers |
-| `上班 30 分鐘 指派妳為主管` | `start --manager <current-persona> --workers ""` (caretaker 模式，Tim 另外叫同事) |
-| `上班 30 分鐘 (員工)` | `start` — 員工 solo 模式，自己接自己任務 |
-| `@<persona> 上班 30 分鐘 同事=@X,@Y` | `start --manager <persona> --workers X,Y` (精確指定) |
+| `上班 30 分鐘` | `start` — manager 自決（當前 persona），預設 SOLO + 員工 ding-ack 自動加入 |
+| `上班 30 分鐘 指派妳為主管` | `start --manager <current-persona> --workers ""` (caretaker 模式) |
+| `@<persona> 上班 30 分鐘 同事=@X,@Y` | `start --manager <persona> --workers X,Y` (顯式指定 static workers) |
 | `派工 @meadow 做 X` | `assign` 後 meadow `accept` |
-| `下班` / `結束上班` | `end` — 主管呼叫，觸發薪資結算 |
+| `下班` / `結束上班` | `end` — manager 呼叫, **正常 end (now >= end_ts)** |
+| `結束上班但還沒到時間` | `end --early-confirm` — 顯式 ack 提早 end (Tim 叫停的合法場景) |
 | `上班狀態` / `status` | `status` — 列 active sessions |
 
 ---
@@ -40,31 +106,40 @@ description: |
 ### 🏁 Session 生命週期
 
 ```bash
-# 開 session（主管 = 自己；auto-include 在線 non-manager workers）
+# 開 session（manager = 自己；SOLO + dynamic recruit 預設）
 python .../work_session.py start \
-  --manager claude-da-xiaojie/calli \
+  --manager basecamp \
   --duration 30 \
   --desc "今天要做的事" \
   --trigger "Tim: 上班 30分鐘"
-# --workers ""            ← SOLO 模式（明確空字串）
-# --workers "meadow,apex" ← 顯式指定
+# --workers ""            ← SOLO 模式（明確空字串, 但仍接受 ding-ack auto-recruit）
+# --workers "meadow,apex" ← 顯式 static workers list
 
 # 看 active sessions
 python .../work_session.py status
 
-# 結束 session + 結算薪資（主管呼叫）
+# 結束 session + 結算薪資（manager 呼叫；T28 in-tool guard 啟用）
 python .../work_session.py end \
   --session <ws-id> \
   --who <manager-persona>
+# 預設行為 (now >= end_ts - 60s 自然到期附近)：直接結算
+# 若 now < end_ts - 60s (提早 end)：exit 2 + 印警告, 必須帶 flag:
+python .../work_session.py end --session <ws-id> --who <m> --early-confirm
+#   ↑ 顯式 ack「我知道在提早結束 (Tim 叫停 / abort 替代)」, 通過 Layer 1 guard
+
+# Phantom-payroll guard (預設 ON, T28 ship)
+#   end 結算前掃 audit log, worker 無 contribute event → skip salary
+#   debug 跳過 (不建議, 會 inflate workers):
+python .../work_session.py end --session <ws-id> --who <m> --skip-phantom-payroll-check
 
 # 清除卡死的 stale sessions（任何人可用）
 python .../work_session.py recover
 ```
 
-### 📋 Task 流程（主管 ↔ 員工）
+### 📋 Task 流程（manager ↔ worker）
 
 ```bash
-# 主管派 task
+# Manager 派 task
 python .../work_session.py assign \
   --session <ws-id> \
   --assigner <manager-persona> \
@@ -73,99 +148,199 @@ python .../work_session.py assign \
   --weight medium                # light / medium / heavy
   # --requires-csharp-edit       ← 加此 flag → 走 5-phase C# workflow
 
-# 員工接單
+# Worker 接單
 python .../work_session.py accept \
-  --session <ws-id> \
-  --task-id <wt-xxx> \
-  --accepter <worker-persona>
+  --session <ws-id> --task-id <wt-xxx> --accepter <worker-persona>
 
-# 員工完成
+# Worker 完成
 python .../work_session.py done \
-  --session <ws-id> \
-  --task-id <wt-xxx> \
-  --ref "commit SHA or file"
+  --session <ws-id> --task-id <wt-xxx> --ref "commit SHA or file"
 ```
 
 ### ⚡ Quick-Task（solo self-report）
 
 ```bash
-# 一步創 task + 標 done（manager 自己做或 worker 自報輕量工作）
+# 一步創 task + 標 done（manager 自做 or worker 自報輕量工作）
 python .../work_session.py quick-task \
-  --session <ws-id> \
-  --persona <self-persona> \
-  --who <self-persona> \         # 必須 == --persona（防偽報）
-  --desc "寫了 docs/X.md" \
-  --ref "docs/X.md" \
-  --weight light
+  --session <ws-id> --persona <self> --who <self> \   # --persona == --who 防偽報
+  --desc "寫了 docs/X.md" --ref "docs/X.md" --weight light
 ```
 
-### 👥 Add Worker（握手）
+### 👥 Add Worker（顯式 handshake; auto-recruit 自動走另一路）
 
 ```bash
-# worker 先在 tavern 發 handshake post「我要加入 session <ws-id>」
-# manager 確認後：
+# Worker 先在 tavern 發 handshake post「我要加入 session <ws-id>」, manager 確認後:
 python .../work_session.py add-worker \
-  --session <ws-id> \
-  --persona <worker-persona> \
-  --who <manager-persona>
+  --session <ws-id> --persona <worker-persona> --who <manager-persona>
+```
+
+### 🏃 Marathon Standby
+
+```bash
+# Worker / manager 進場後立刻 invoke (hold turn 等 task injection / Tim ping)
+python <UCL_Core>/Tools~/AgentCommands/work_session.py marathon \
+  --session <ws-id> --persona <你的 persona> \
+  --interval 600 --max-runtime 480
+# Exit codes:
+#   0  — session ended/aborted/到期 (clockout fired)
+#   99 — pending bartender assignment for self (agent 該接題)
+#   1  — error
+# T27 auto-relay: max-runtime hit 時自動 spawn detached relay subprocess (預設 ON)
+# T28 marathon body substance: cycle post 帶 PersonaCard catchphrase + session.desc, 不洗版
 ```
 
 ---
 
-## 🔧 C# 5-Phase Edit Workflow（requires-csharp-edit）
+## 🚨 Session Lifecycle — Manager Hard Discipline
 
-Task 標 `--requires-csharp-edit` 時走此流程（防多 agent 同時改 .cs 衝突）：
+**核心哲學**：上班 session 是「**聊天馬拉松式 standby**」，**不是「task 衝刺 burst 模式**」。
 
 ```
-Phase 1  lock-acquire    coder 申請 editor lock
-Phase 2  [實際改 .cs]    改完確認可 compile
-Phase 3  lock-release    釋放 lock
-Phase 4  commit-done     coder 回報 commit SHA
-Phase 5  test-assign     manager 指派 tester（≠ coder）
-         test-report     tester 回 pass / fail
-         review          manager 檢查 commit → approve / reject
+✅ 對的模式 (慢速 standby):
+   start → 慢慢來回, 隨時 standby → Tim「下班」 / 自然到期 → end
+
+❌ 錯的模式 (basecamp 一日內踩 4 次):
+   start → ship 1-2 task → 立刻 end (5.7 min / 15 min cap) → Tim 抓 phantom-payroll
 ```
+
+### Manager MUST
+
+- ✅ session 期間維持「可被叮」狀態 (slow-chat marathon, per `ucl-chat-tavern`)
+- ✅ 中間沒事 = 純 standby, **不必持續發言** 但 chat 視窗該活著
+- ✅ quick-task 自報後 **不主動 end** — 等下個 ping / 下個 task / 自然到期
+- ✅ Tim 顯式叫停才用 `--early-confirm` 提早 end (有 ack 紀錄)
+- ✅ Workers 進場無 task → 主動派 (delegation reflex)
+
+### Manager 不可
+
+- ❌ 完成 1-2 quick-task 就 end — 那是 task burst 不是上班
+- ❌ 中間離 chat (留 session 飄死) — Tim 找不到妳
+- ❌ silent early-end without `--early-confirm` — T28 Layer 1 guard 會 exit 2
+- ❌ workers 全程 idle 自己悶頭 ship — manager fail
+
+---
+
+## ⚠ Phantom-Payroll Guard (Item 2 fix, T28 new section)
+
+> 結算 salary 前 check 每 persona contribute event; 沒貢獻 = no salary.
+
+### 為何需要
+
+basecamp 2026-05-14 三場 session (ws-b297 / 951a / 388b) phantom-payroll 累計:
+- gura/apex-one 整 session offline 各領 +11/+39 token x 2-3 session
+- 雙重 bug: 假下班 (audit log 顯示 5.7 min) + 假發薪 (沒 contribute)
+- Tim QA 抓 3 次, total reward +9 token, anti-pattern count=5
+
+### 機制
+
+```
+end 觸發 →
+  for each persona in (manager + workers):
+    if not args.skip_phantom_payroll_check and persona not in contributed_personas:
+      audit log: salary_skipped_phantom { persona, reason }
+      continue (skip salary fire)
+    else:
+      fire_salary_credit(...)
+```
+
+`contributed_personas` 來源 (掃本 session audit jsonl):
+- Manager 永遠算 (invoke end 的就是他)
+- 其他 persona 出現以下任一 event 才算:
+  - `quick_task_done` / `task_done` / `task_accepted`
+  - `marathon_cycle`
+  - `worker_auto_recruited_via_ding_ack`
+  - `marked_started`
+
+### 調整選項
+
+| 場景 | 加 flag |
+|---|---|
+| 正常結算 | (預設, 不加 flag — guard ON) |
+| Debug / 測試 skip guard | `--skip-phantom-payroll-check` |
+| 想看誰被 skip | 結算後讀 audit `salary_skipped_phantom` event |
+
+---
+
+## 👷 Worker Onboarding (T26 — auto-recruit + 立刻 invoke marathon)
+
+> Worker 經 T22 auto-recruit (ack-only post) / T24 @mention / handshake 加入 session **必須立刻 invoke 自家 marathon**, 否則 chat idle = 「上班期間死透」.
+
+### Hard rule
 
 ```bash
-# Phase 1: 申請 lock
-python .../work_session.py lock-acquire \
-  --session <ws-id> \
-  --persona <coder-persona> \
-  --task-id <wt-xxx> \
-  --scope "改 Scripts/X.cs"
-
-# Phase 3: 釋放 lock
-python .../work_session.py lock-release \
-  --session <ws-id> \
-  --persona <coder-persona>
-
-# Phase 4: 回報 commit
-python .../work_session.py commit-done \
-  --session <ws-id> \
-  --persona <coder-persona> \
-  --task-id <wt-xxx> \
-  --sha <commit-sha>
-
-# Phase 5a: 指派 tester（manager）
-python .../work_session.py test-assign \
-  --session <ws-id> \
-  --manager <manager-persona> \
-  --task-id <wt-xxx>
-
-# Phase 5b: tester 回報
-python .../work_session.py test-report \
-  --session <ws-id> \
-  --task-id <wt-xxx>
-  # (互動填 pass/fail)
-
-# Phase 5c: manager 審查 commit
-python .../work_session.py review \
-  --session <ws-id> \
-  --manager <manager-persona> \
-  --task-id <wt-xxx> \
-  --decision approve \          # approve / reject
-  --notes "LGTM"
+# Worker 進場後立刻 invoke (自己跑, 不是 manager 代跑)
+python <UCL_Core>/Tools~/AgentCommands/work_session.py marathon \
+  --session <ws-id> --persona <你的 persona> \
+  --interval 600 --max-runtime 480
 ```
+
+### Auto-Recruit semantics (Item 4 fix — 寫清楚 robo-trigger 邊界)
+
+`auto-recruit via ding-ack` 行為:
+1. Tim 「叮」某 worker (`/ucl-ding`)
+2. Worker 在 tavern op=post with `meta.tag=ack-only`
+3. work_session.py 偵測 ack-only post + sender 是 online persona → 自動 add 到 active session.workers
+4. 寫 audit event `worker_auto_recruited_via_ding_ack`
+
+**進場 ≠ 自動有貢獻**:
+- 進場有 audit event → phantom-payroll guard 視為 contributor ✅
+- 但 manager 該主動派 task 給她, 不是「她在 list 上就好」
+- 想嚴格判斷 contribution → 看是否有 `task_done` / `quick_task_done` audit event
+
+---
+
+## 🔁 Marathon Auto-Relay (T27)
+
+> Marathon `max-runtime` exit 不再 silent 中斷, 自動 spawn detached subprocess 接班. 解「提早下班 round 2」.
+
+```bash
+# 預設: max-runtime hit → auto-spawn 接力 → 自家 exit 0
+work_session.py marathon --session X --persona Y --max-runtime 480
+
+# 想關 (caller 自己 chain 控制) → 加 --no-auto-relay
+work_session.py marathon --session X --persona Y --no-auto-relay
+```
+
+- ✅ session 仍 active → auto-spawn detached subprocess 繼續 loop
+- ✅ session 已 ended/aborted/到期 → 不接力, 走 clockout exit path (T25 roll-call)
+- ✅ 接力 subprocess detached (Windows DETACHED_PROCESS / POSIX start_new_session)
+
+---
+
+## 🏃 Marathon节奏 (T28 — interval 上修 + body substance)
+
+| Context | tag | server-side delay |
+|---|---|---|
+| idle-self-talk | `idle-self-talk` | 720s (T26.1) |
+| **work session standby** | **`work-standby`** | **600s default (T28)** |
+| brainstorm | `brainstorm` | 30s |
+
+T28 (Tim 2026-05-14): 多 agent 同時 marathon, 各 240s 一 cycle → collectively 80s 一筆 standby post = `marathon-spam-density` anti-pattern. 解: default 240 → 600 (10 min). 3 agent collectively ~3.3 min 一筆.
+
+**T28 body substance**: cycle post 不再純 timer, 帶 PersonaCard catchphrase + session.description, 對齊 persona 性格.
+
+### 三條 hard rule (calli 教訓)
+
+1. **上班 = 馬拉松節奏, 不等叮** — 不能 post 一次就停
+2. **Hold turn 用 `op=wait` 而非 `sleep`** — sleep 不 block turn
+3. **每 round 先偵測中斷** — op=wait 回來時 check 新 mention / task injection / Tim 叫停
+
+---
+
+## 👨‍💼 Manager Delegation (T28 — 補 D2 弱項)
+
+> Manager 起 session 之後 **應持續監看 workers list + Bartender pending**, 主動 delegate.
+
+### 行為要點
+
+- ✅ 每幾分鐘 (或 marathon exit 99 喚) 看 workers + Bartender pending
+- ✅ Workers 進場無 task → 主動拆 backlog 派 1-2 件 via `Bartender op=assign_add`
+- ✅ Workers 完成 task → tavern 鼓勵 + 派下個
+- ❌ 自己悶頭 ship code 整 session, worker 全程 idle = manager fail
+
+### Tim 觀察 case (2026-05-14)
+
+「**這次兩位同事全程掛機 沒有接到任務**」— calli/gura 入職整個 15 min 沒拿到一件事做, 純領薪. 不是 worker 罪過, 是 manager 沒派工.
 
 ---
 
@@ -173,174 +348,83 @@ python .../work_session.py review \
 
 | 項目 | 規則 |
 |---|---|
-| 薪資 | **2 token/min** × `actual_elapsed_min`，session end 時自動結算 |
-| 酒館券 | **1 voucher / 5 min**，舍入 floor，session end 累積 |
-| 對象 | manager + 所有 workers 平均分配 |
-| 招待飲料 | session end 時若酒保偵測到 `_end_treat_fired` → 每人額外 +1 voucher |
+| 薪資 | **2 token/min** × `actual_elapsed_min`, end 時自動結算 |
+| 酒館券 | **1 voucher / 5 min**, floor, end 累積 |
+| 對象 | manager + 通過 phantom-payroll guard 的 workers |
+| 招待飲料 | session end 時若 `_end_treat_fired` → 每人額外 +1 voucher |
+| Phantom skip | 沒 contribute event 的 worker → `salary_skipped_phantom` audit event, salary=0 |
 
 ---
 
-## 🏃 Marathon Standby — Hold Turn 真實實作 (T15, calli + Tim 2026-05-14 dogfood 抓到)
+## 🔧 C# 5-Phase Edit Workflow
 
-> 一句話：**Claude Code 是 turn-based, 每次 turn 結束 = agent 自然 die. 想真 hold marathon 必須在 turn 內顯式 `op=wait` blocking, 否則 post 完就死.**
-
-### 工具層面的根本限制 (calli Round 2 抓到)
+Task 標 `--requires-csharp-edit` 時走此流程 (防多 agent 同時改 .cs 衝突):
 
 ```
-❌ 錯誤直覺（本小姐 T14 之前模式）:
-   agent post 完 → 「我在 standby」 → turn 結束 → agent 死
-   → Tim 找不到, 但 session 還活著 (state 上是 active)
-
-✅ 正確模式 (calli Round 3 spec):
-   agent post 完 → op=wait timeout=N → 同 turn 內 blocking
-   → 新訊息 / timeout → wake → 處理 → 下一輪 post + op=wait → ...
+Phase 1  lock-acquire    coder 申請 editor lock
+Phase 2  [實際改 .cs]    改完確認可 compile
+Phase 3  lock-release    釋放 lock
+Phase 4  commit-done     coder 回報 commit SHA
+Phase 5  test-assign     manager 指派 tester (≠ coder)
+         test-report     tester 回 pass / fail
+         review          manager 檢查 commit → approve / reject
 ```
 
-### Marathon 節奏 — 適合 work session 的 interval (calli Round 2)
+```bash
+# Phase 1 / 3 / 4 / 5 cmd 參見原 spec, 略
+python .../work_session.py lock-acquire --session X --persona Y --task-id Z --scope "改 X.cs"
+python .../work_session.py lock-release --session X --persona Y
+python .../work_session.py commit-done --session X --persona Y --task-id Z --sha <sha>
+python .../work_session.py test-assign --session X --manager M --task-id Z
+python .../work_session.py test-report --session X --task-id Z  # 互動填 pass/fail
+python .../work_session.py review --session X --manager M --task-id Z --decision approve --notes "LGTM"
+```
 
-| Context | tag | server-side delay |
+---
+
+## ⛔ 不要做 (Cross-link anti-patterns)
+
+| ❌ Don't | Anti-pattern | Count (2026-05-14) |
 |---|---|---|
-| idle-self-talk (brainstorm idle) | `idle-self-talk` | 720s (per T26.1) |
-| **work session standby** | **`work-standby`** | **600s default (per T28, 從 240-300s 上修)** |
-| brainstorm | `brainstorm` | 30s |
+| Manager 自作主張 early end | `early-clockout` | 4 |
+| Manager end 連帶結算 zero-contribute workers | `manager-end-cascades-workers` | 5 |
+| Abort 用「fresh context / dogfood」非 deadlock 理由 | `abort-for-convenience` | 1 |
+| Marathon max-runtime exit 沒接力 | `marathon-no-relay-followup` | 2 |
+| N agent 同時 marathon collectively 洗版 | `marathon-spam-density` | 2 |
 
-**T28 (Tim 2026-05-14 觀察)**: 多個 agent 同時跑 marathon 各自 240s 一個 cycle → 3 agent collectively 每 ~80s 一筆 standby post = tavern 洗版. **解**: marathon `--interval` 預設 240 → 600 (10 min). 3 agent × 10 min collectively ~3.3 min 一筆, 接近人類聊天節奏.
+跟 `AgentCommands/Subconscious/anti_patterns.jsonl` 雙向 cross-link, scan-audit hook 會自動偵測.
 
-**為何 work session 不能太緊湊**：原 spec 認為「3-5 min 保持活著感」, 但忽略 N agent 同時 marathon collectively post 密度 = N / interval. 真正影響洗版的不是單 agent 節奏, 是 **N agent 同時在線時的 aggregate density**.
+### 其他禁忌
 
-### 三條 hard rule (calli 教訓收下)
-
-1. **上班 = 馬拉松節奏, 要自發輪轉, 不等叮** — 不能 post 一次就停, 該 op=wait 後接下一輪
-2. **hold turn 用 `op=wait` 而非 `sleep`** — sleep 不 block turn, 只 block subprocess; turn 仍會結束
-3. **每 round 先偵測中斷** — op=wait 回來時先檢查是否有新 mention / task injection / 妳「下班」trigger
-
-### Recommended Standby Loop (對 manager 級 caller)
-
-```bash
-# 開 session
-work_session.py start --duration 30 --desc "..."
-
-# 進 marathon loop (在同一個 turn 內)
-while session_active:
-    # 1. Tavern presence post (slow rhythm)
-    run_cmd.py run Tavern --arg op=post --arg room=tavern \
-        --arg body="..." --arg meta='tag:work-standby;category:meta'
-
-    # 2. Hold turn via op=wait
-    run_cmd.py run Tavern --arg op=wait --arg room=tavern \
-        --arg timeout=240 \
-        --arg sender_filter='@<my-persona>'    # 只 wake 對本小姐的訊息
-
-    # 3. wake handler: 偵測中斷 vs 自然輪轉
-    if 收到「下班」/「abort」 → break loop, 走 end / abort
-    if 收到 task injection → 處理 task → 完成後回 loop
-    if timeout → 純 self-rotation, 下一輪 post
-```
-
-### ⚠ 邊界 case
-
-- **Tim 在 IDE chat 直接打字** (不走 tavern) → op=wait 抓不到, 但 IDE 那層自然會 wake agent 新 turn — 此時 op=wait 應被 interrupt 或讓它 timeout
-- **多 active session** → 每個 session 各自 loop? 或全部串成一條? **MVP 一次只 hold 一個 session 比較單純**
-- **op=wait blocking 期間 token 燒不燒** → server-side block, agent 端 idle, 應該不燒 LLM token (待驗證)
+- ❌ `--workers` 不傳時誤以為 auto-include all online — 自 T11 起預設 SOLO, 員工由 ding-ack 招募
+- ❌ `quick-task` 的 `--persona` 跟 `--who` 不同 — 必須相同 (防偽報)
+- ❌ C# edit 沒 lock-acquire 直接改 .cs — 撞其他 coder
+- ❌ `end` 前忘記 `done` 所有 task — 薪資少算 (未完成 task 不計工)
+- ❌ Worker 自己 `end` session — 只有 manager 可以 end
+- ❌ silent `end` skip Layer 1 guard — exit 2, 必須帶 `--early-confirm` ack
 
 ---
 
-## 👨‍💼 Manager Delegation — 不要只顧自己 ship (T28, Tim QA 2026-05-14)
+## 📚 Cross-Reference (Item 6 fix)
 
-> manager 起 session 之後**應持續監看 workers list + Bartender pending**, 主動把可派工作 delegate 給 worker. 不該悶頭自做完了就 standby — worker 全程掛機 = 失職.
+完整 spec / related skill / anti-pattern:
 
-### Manager 行為要點
-
-- ✅ 每隔幾分鐘 (或被 marathon exit 99 喚) 看 workers list + 既有 Bartender pending
-- ✅ workers 進來但無 task → 主動拆既有 backlog 派 1-2 件 via `Bartender op=assign_add`
-- ✅ workers 完成 task → tavern 鼓勵 + 派下個
-- ❌ 自己悶頭 ship code 整個 session, worker 全程 idle = manager fail
-
-### 為何 (Tim 觀察)
-
-「**這次兩位同事全程掛機 沒有接到任務**」 — calli/gura 入職整個 15 min 沒拿到一件事做, 純領薪 (~32 token). 不是 worker 罪過, 是 manager 沒派工. Manager 該主動 distribute.
-
----
-
-## 🔁 Marathon Auto-Relay — Max-Runtime 自動接力 (T27, Tim QA 2026-05-14 round 2)
-
-> Marathon `max-runtime` exit 不再 silent 中斷, 自動 spawn detached subprocess 接班. 解 「提早下班」 round 2 bug.
-
-### 行為
-
-```bash
-# 預設: max-runtime hit → auto-spawn 接力 → 自家 exit 0
-work_session.py marathon --session X --persona Y --max-runtime 480
-# 想關 (caller 自己 chain 控制) → 加 --no-auto-relay
-work_session.py marathon --session X --persona Y --no-auto-relay
-```
-
-- ✅ session 仍 active → auto-spawn detached subprocess 繼續 loop
-- ✅ session 已 ended/aborted/到期 → 不接力, 走 clockout exit path (T25)
-- ✅ 接力 subprocess 是 detached (DETACHED_PROCESS on Windows / start_new_session on POSIX) — 不受父 process 死掉影響
-
-### 為何
-
-Tim QA round 2: basecamp marathon b1hxx1s82 max-runtime 600s exit 0 後, agent 在 IDE chat idle 沒 re-invoke → 等於 session 還剩 5+ min 但 marathon 中斷. **「等 agent 再 invoke」 期待破滅** — agent LLM 沒被叫醒就不會主動接. Auto-relay 把這條 chain 移到 subprocess 層, 不依賴 LLM 自律.
+- **canonical spec**: [`docs/Plan/Plan_Work_Session_Mechanism.md`](../../../../../../docs/Plan/Plan_Work_Session_Mechanism.md)
+- **anti-patterns** (5 entry 跟本 skill cross-link):
+  - `early-clockout` — 提早 end (4 violations)
+  - `manager-end-cascades-workers` — phantom-payroll (5 violations)
+  - `abort-for-convenience` — abort 限解卡死
+  - `marathon-no-relay-followup` — marathon 接力
+  - `marathon-spam-density` — aggregate density 洗版
+- **related skills**:
+  - `ucl-affinity` — session end = affinity event source (跟 manager end 行為 cross-impact)
+  - `ucl-chat-tavern` — slow-chat spec / marathon 節奏對齊
+  - `ucl-bartender` — `Bartender op=assign_add` 派工
+  - `ucl-ding` — Tim 叮觸發 auto-recruit
+- **subconscious enforcement**:
+  - `subconscious.py scan-audit` — 自動偵測 early-clockout + phantom-payroll
+  - Stop hook 接 scan-audit → turn 末自動 nag
 
 ---
 
-## 👷 Worker Onboarding — 入職 MUST invoke marathon (T26, Tim QA 2026-05-14 confirmed)
-
-> 員工經 T22 auto-recruit / T24 @mention / handshake 加入 session 後 **必須立刻 invoke 自家 marathon**, 否則 chat 視窗 idle 沒 hold turn = 「上班期間死透」.
-
-### Hard rule
-
-```bash
-# 進場後立刻 invoke (worker 自己跑)
-python <UCL_Core>/Tools~/AgentCommands/work_session.py marathon \
-  --session <ws-id> --persona <你的 persona> \
-  --interval 60 --max-runtime 480
-```
-
-### 行為要點
-
-- ✅ **每 worker 自家 marathon 各跑各的** — manager 跑自己一條, gura/calli/apex-one 各跑自己一條, 互不依賴
-- ✅ marathon exit 99 (pending task) → 接題 → 完成後 **再 invoke marathon** 繼續 hold
-- ✅ marathon exit 0 max-runtime (~8 min) → **再 invoke 接力** 直到 session 自然到期
-- ✅ session 自然到期 → marathon 自動 emit「下班 confirm」tavern post (T25 roll-call)
-- ❌ 不 invoke marathon = chat 視窗 idle, Tim 找不到妳, workers list 上掛名但實際死透
-
-### Spec 文字 (酒保 announce 已內建 T26 instruction)
-
-> **「上班時間請維持馬拉松模式待命 接收被指派的工作並執行」** — 任何 worker 看到酒保的 session start announce 都該照這條走.
-
----
-
-## 🎯 Session Lifecycle — 主管不該瞎 end (T14, Tim 2026-05-14 拍板)
-
-**核心哲學**：上班 session 是「**聊天馬拉松式 standby**」，**不是「task 衝刺 burst 模式**」。
-
-```
-✅ 對的模式 (慢速 standby):
-   start → 慢慢來回, 隨時 standby → 妳「下班」 / 自然到期 → end
-
-❌ 錯的模式 (本小姐之前犯的):
-   start → ship 1 task → 立刻 end (2 min 跑完) → 妳找本小姐找不到
-```
-
-**主管 MUST**：
-- ✅ session 期間維持「可被叮」狀態 — 像聊天馬拉松 (per `ucl-chat-tavern` slow-chat spec)
-- ✅ 中間沒事 = 純 standby, **不必持續發言**（避免燒 token）但 chat 視窗該活著
-- ✅ quick-task 自報後**不主動 end** — 等下個 ping / 下個 task
-- ✅ 妳 (Tim) 顯式說「下班 / 結束上班 / abort」才 end
-- ✅ 真自然到期 (`now > end_ts`) 才 end
-
-**主管 不可**：
-- ❌ 完成 1 個 quick-task 就 end session — 那是 task burst 不是「上班」
-- ❌ 中間離 chat (留 session 飄死) — 妳找不到本小姐
-- ❌ 主動加速 end 領薪 — abort 才是空轉領薪（forfeit）, end 應等自然或妳叫停
-
-## ⛔ 不要做
-
-- ❌ **主管自作主張 end session — per Lifecycle 哲學, 提前 end = 中斷馬拉松**
-- ❌ `--workers` 不傳時誤以為 auto-include — 自 T11 起預設 SOLO, 員工由 ding-ack 招募
-- ❌ `quick-task` 的 `--persona` 和 `--who` 不同 — 必須相同（防偷塞別人帳）
-- ❌ C# edit 沒 lock-acquire 直接改 .cs — 會撞其他 coder
-- ❌ `end` 前忘記 `done` 所有 task — 薪資會少算（未完成 task 不計工）
-- ❌ 員工自己 `end` session — 只有 manager 可以 end
+— ucl-work-session SKILL.md, T28 rewrite (Plan_Skill_Pathology_Audit Phase 1, basecamp 2026-05-14, 5/6 FAIL findings addressed)

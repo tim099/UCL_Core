@@ -1198,6 +1198,106 @@ def cmd_add_worker(args) -> int:
 # ─── Subcommand: recover (HARDENED, Zeta 2026-05-13 task) ──────────────
 # 區塊職責: sweep stale active sessions — 找 ended=true 但結算未完的, 重跑.
 # 物理意義: 補 Phase 1 prototype 在 recompile / 中斷後遺留的 inconsistent state.
+def cmd_abort(args) -> int:
+    """
+    T07 (Tim 2026-05-14 拍板, 5 token task) — 強制終止當前 session, 解卡死.
+
+    用途:
+    - basecamp 卡在別 persona 的 session 想 escape (per Tim 早上 calli session 撞 split-brain)
+    - manager 不在但 worker 想終止
+    - session state 卡死無法走正常 end (e.g. manager persona 失蹤)
+
+    跟 cmd_end / cmd_recover 區別:
+    - cmd_end: 正常結束, 結算薪資 + 酒館券 (manager 限定)
+    - cmd_recover: 自動 sweep 過期 / partial-fail session (任何人, 但只動 stale)
+    - cmd_abort: 強制終止 active session (任何人可呼叫), 不結算薪資/券 (forfeit), 標 audit reason
+
+    Args:
+        --session <ws-id>  要終止的 session
+        --who <persona>    呼叫者 persona (audit 用, 必填)
+        --reason <text>    終止理由 (audit 用, 必填; 避免無腦 abort)
+
+    Behavior:
+        1. find_active_session → 若已 ended / in history → idempotent no-op
+        2. mark aborted=true + aborted_by + aborted_at + abort_reason
+        3. SKIP 薪資/券結算 (forfeit by design — abort 是 escape 不是正常下班)
+        4. 移到 history
+        5. tavern announce (concise + reason 透明)
+    """
+    if not getattr(args, "reason", "") or not args.reason.strip():
+        print("❌ abort 必填 --reason (audit 用, 避免無腦 abort)")
+        return 1
+    if not getattr(args, "who", "") or not args.who.strip():
+        print("❌ abort 必填 --who (呼叫者 persona, audit 用)")
+        return 1
+
+    state = load_state()
+    session = find_active_session(state, args.session)
+    if not session:
+        # idempotent — 已在 history
+        for h in state.get("history", []):
+            if h["id"] == args.session:
+                print(f"⚠ session {args.session} already in history (status: {h.get('ended_at') and 'ended' or h.get('aborted_at') and 'aborted'}), no-op")
+                return 0
+        print(f"❌ session {args.session} not found")
+        return 1
+    if session.get("ended") or session.get("aborted"):
+        print(f"⚠ session {args.session} 已 ended/aborted, no-op")
+        return 0
+
+    now = datetime.datetime.utcnow()
+    start = parse_iso(session["start_ts"])
+    elapsed_min = max(0.0, (now - start).total_seconds() / 60.0)
+
+    append_audit(args.session, "abort_start", {
+        "who": args.who,
+        "reason": args.reason,
+        "elapsed_min": round(elapsed_min, 2),
+    })
+
+    # Mark aborted (parallel to ended schema; salary/voucher SKIPPED by design)
+    session["aborted"] = True
+    session["aborted_at"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    session["aborted_by"] = args.who
+    session["abort_reason"] = args.reason
+    session["actual_elapsed_min"] = round(elapsed_min, 2)
+    save_state(state)
+
+    # Move to history
+    state["active_sessions"] = [s for s in state["active_sessions"] if s["id"] != args.session]
+    state["history"].append(session)
+    save_state(state)
+    append_audit(args.session, "aborted_moved_to_history", {})
+
+    # Tavern announce — concise + transparent
+    start_local = (start + datetime.timedelta(hours=8)).strftime("%H:%M:%S")
+    end_local = (now + datetime.timedelta(hours=8)).strftime("%H:%M:%S")
+    workers_str = ", ".join("@" + w["persona"] for w in session.get("workers", [])) or "(無)"
+    body = (
+        f"⏸ **上班 session 強制終止 (abort)**\n\n"
+        f"- session id: `{session['id']}`\n"
+        f"- 期間: {start_local} → {end_local} ({elapsed_min:.1f} min, 未完整)\n"
+        f"- 主管: @{session['manager']['persona']} / 同事: {workers_str}\n"
+        f"- **abort 觸發者**: @{args.who}\n"
+        f"- **理由**: {args.reason}\n"
+        f"- ⚠ 薪資 / 酒館券 **forfeit (放棄)** — abort 不結算, 跟 cmd_end 區隔\n"
+        f"- 如要保留薪資請走正常 cmd_end (manager 限定)"
+    )
+    meta = {
+        "tag": "bartender-relay",
+        "subtag": "work-session-abort",
+        "work_session_id": session["id"],
+        "aborted_by": args.who,
+        "reason": args.reason[:100],
+    }
+    tavern_post("tavern-keeper", body, meta)
+
+    print(f"✓ session {args.session} aborted by @{args.who}")
+    print(f"  reason: {args.reason}")
+    print(f"  elapsed: {elapsed_min:.1f} min (薪資/券 forfeit)")
+    return 0
+
+
 def cmd_recover(args) -> int:
     state = load_state()
     active = state.get("active_sessions", [])
@@ -1274,6 +1374,12 @@ def main(argv=None) -> int:
 
     p_recover = sub.add_parser("recover", help="sweep stale active sessions (中斷 / 過期未 end)")
 
+    p_abort = sub.add_parser("abort",
+        help="T07 — 強制終止 session (任何人可呼叫, 薪資 forfeit, 解卡死用). 必填 --who + --reason audit.")
+    p_abort.add_argument("--session", required=True, help="要終止的 session id")
+    p_abort.add_argument("--who", required=True, help="呼叫者 persona (audit 用)")
+    p_abort.add_argument("--reason", required=True, help="終止理由 (audit 用, 避免無腦 abort)")
+
     p_quick = sub.add_parser("quick-task", help="一步創 task + 標 done (solo manager 或 worker self-track 用)")
     p_quick.add_argument("--session", required=True)
     p_quick.add_argument("--persona", required=True, help="track 自己的 (--who 必須 == --persona)")
@@ -1335,6 +1441,7 @@ def main(argv=None) -> int:
         "done": cmd_done,
         "end": cmd_end,
         "recover": cmd_recover,
+        "abort": cmd_abort,
         "add-worker": cmd_add_worker,
         "quick-task": cmd_quick_task,
         "lock-acquire": cmd_lock_acquire,

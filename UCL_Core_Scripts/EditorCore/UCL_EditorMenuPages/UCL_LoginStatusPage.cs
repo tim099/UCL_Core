@@ -342,7 +342,8 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Token"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
                     GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
                 }
-                foreach (var l in m_Locks)
+                // snapshot 迭代：DoLogout 內部呼叫 LoadData() 會清空 m_Locks，直接 foreach 原 list 會 throw Collection modified
+                foreach (var l in m_Locks.ToArray())
                 {
                     using (new GUILayout.HorizontalScope())
                     {
@@ -576,6 +577,12 @@ namespace UCL.Core.EditorLib.Page
             }
             try
             {
+                // 區塊：async stdout + stderr 同時讀取，避免 .NET Process redirect deadlock
+                // 物理意義：同步 ReadToEnd() 只讀一個 stream 時，若 child 寫另一個 stream 填滿 buffer
+                //          → child 卡在 write / caller 卡在 ReadToEnd → 永久 deadlock。
+                //          BeginOutputReadLine + BeginErrorReadLine 讓兩個 stream 非阻塞並行消費。
+                var stdoutSb = new System.Text.StringBuilder();
+                var stderrSb = new System.Text.StringBuilder();
                 using (var p = new Process())
                 {
                     p.StartInfo.FileName = "python";
@@ -587,10 +594,14 @@ namespace UCL.Core.EditorLib.Page
                     p.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
                     p.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
                     p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+                    p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
+                    p.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
                     p.Start();
-                    string stdout = p.StandardOutput.ReadToEnd();
-                    string stderr = p.StandardError.ReadToEnd();
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
                     p.WaitForExit(30000);
+                    string stdout = stdoutSb.ToString();
+                    string stderr  = stderrSb.ToString();
                     if (!string.IsNullOrEmpty(stdout))
                         Debug.Log($"[LoginStatus:{opLabel}] stdout:\n{stdout}");
                     if (!string.IsNullOrEmpty(stderr))

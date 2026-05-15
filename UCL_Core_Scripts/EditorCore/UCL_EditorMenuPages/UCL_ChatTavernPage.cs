@@ -835,7 +835,7 @@ namespace UCL.Core.EditorLib.Page
                         labels.Add($"{display}  [{id}]");
                         if (id == SelectedRoomId) curIdx = i;
                     }
-                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "RoomPicker", GUILayout.Width(420));
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "RoomPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(420)));
                     if (newIdx != curIdx && newIdx >= 0 && newIdx < m_RoomIds.Count)
                     {
                         SelectedRoomId = m_RoomIds[newIdx];
@@ -950,7 +950,7 @@ namespace UCL.Core.EditorLib.Page
                         labels.Add($"{display} ({kind})  [{id}]");
                         if (id == SelectedIdentityId) curIdx = i;
                     }
-                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "IdentityPicker", GUILayout.Width(420));
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, labels, m_PickerDic, "IdentityPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(420)));
                     if (newIdx >= 0 && newIdx < m_IdentityIds.Count) SelectedIdentityId = m_IdentityIds[newIdx];
                 }
                 if (GUILayout.Button(m_ShowCreateIdentity ? UCL_CodeLocalize.Get("Tavern.Btn.CancelCreate") : UCL_CodeLocalize.Get("Tavern.Btn.NewIdentity"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))

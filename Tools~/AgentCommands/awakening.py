@@ -129,6 +129,18 @@ _BONUS_QUOTA_PATH = _resolve_data_path(
     "AgentCommands/ChatTavern/agent_bonus_quota.json", "bonus_quota_path"
 )
 
+# T07 (2026-05-15 apex-two) — Session Token 機制
+# 物理意義: morning 發 token 進 lock + tokens.json 反查表; Cmd_Tavern enforce ON 時必驗 token,
+#          擋住「誤 typo persona / sender 標籤」造成的選錯帳號 (Tim QA 2026-05-15)
+# 數值影響: tokens.json schema = { tokens: { <token>: { persona, agent, ..., status } } }
+#          enforce.json schema = { enforce: bool } — 後台開關 (預設 false, Tim 從 UCL_LoginStatusPage 切)
+_TOKENS_PATH = _SESSION_DIR / "_tokens.json"
+_ENFORCE_PATH = _SESSION_DIR / "_token_enforce.json"
+# Memo: per-persona 私人 scratchpad — 跨 session persist, 不公開, 不進 tavern
+_MEMOS_DIR_TPL = _resolve_data_path(
+    "AgentCommands/ChatTavern/baton/memos", "memos_dir"
+)
+
 # Make _lib importable (TavernClient SDK 在主專案 _lib/, per-project state)
 sys.path.insert(0, str(_REPO_ROOT / "AgentCommands"))
 
@@ -588,8 +600,11 @@ def lock_path(persona: str) -> Path:
 
 
 def write_lock(persona: str, agent: str, model: str, bank_account: str,
-               session_key: str | None = None) -> Path:
-    """Write lock for persona. session_key 可選, 寫入 body 作 audit (不參與路由)."""
+               session_key: str | None = None,
+               session_token: str | None = None) -> Path:
+    """Write lock for persona. session_key 可選, 寫入 body 作 audit (不參與路由).
+    T07 (2026-05-15 apex-two): session_token 帶入 lock body 當權威來源, agent 失憶可直接讀回.
+    """
     _SESSION_DIR.mkdir(parents=True, exist_ok=True)
     now = utcnow_iso()
     expires = (datetime.datetime.utcnow() +
@@ -607,6 +622,8 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
         "session_key": session_key or compute_session_key(agent, persona),
         "claim_origin": compute_claim_origin(),
         "pid": os.getpid(),
+        # T07: token 寫進 lock 當權威來源, agent chat 失憶時讀 lock 即可撈回
+        "session_token": session_token or "",
     }
     p = lock_path(persona)
     tmp = p.with_suffix(".json.tmp")
@@ -660,6 +677,160 @@ def is_lock_expired(lock: dict) -> bool:
         return datetime.datetime.utcnow() > exp
     except Exception:
         return True
+
+
+# ─── Session Token (T07, 2026-05-15 apex-two) ────────────────────────────
+# 物理意義: morning 發 32-hex token 寫進 lock + _tokens.json 反查表;
+#          Cmd_Tavern enforce ON 時必驗 (token, sender, persona) 三項對齊, 擋誤 typo.
+#          enforce 開關放 _token_enforce.json, Tim 從 UCL_LoginStatusPage 切.
+# 數值影響: tokens.json schema = {"tokens": {<token>: {persona, agent, bank_account,
+#          issued_at, claim_origin, session_key, status (active|expired)}}}
+#          goodnight 標 expired (不刪, 保留 audit trail).
+
+def gen_session_token() -> str:
+    """32-hex random token. UUID4 hex = 128 bit entropy, agent / Tim 直接讀."""
+    return uuid.uuid4().hex
+
+
+def load_tokens() -> dict:
+    if not _TOKENS_PATH.exists():
+        return {"tokens": {}}
+    try:
+        with open(_TOKENS_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        if "tokens" not in d:
+            d["tokens"] = {}
+        return d
+    except Exception:
+        return {"tokens": {}}
+
+
+def save_tokens(d: dict) -> None:
+    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _TOKENS_PATH.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, _TOKENS_PATH)
+
+
+def issue_token(persona: str, agent: str, bank_account: str,
+                session_key: str, claim_origin: str) -> str:
+    """Generate token + persist to tokens.json. 同 persona 舊 active token 自動標 expired."""
+    tok = gen_session_token()
+    d = load_tokens()
+    for _old, rec in d["tokens"].items():
+        if rec.get("persona") == persona and rec.get("status") == "active":
+            rec["status"] = "expired"
+            rec["expired_at"] = utcnow_iso()
+            rec["expired_reason"] = "reissued"
+    d["tokens"][tok] = {
+        "persona": persona,
+        "agent": agent,
+        "bank_account": bank_account,
+        "issued_at": utcnow_iso(),
+        "claim_origin": claim_origin,
+        "session_key": session_key,
+        "status": "active",
+    }
+    save_tokens(d)
+    return tok
+
+
+def expire_token(token: str | None = None, persona: str | None = None,
+                 reason: str = "goodnight") -> int:
+    """Mark active token(s) expired by `token` 或 `persona`. Returns count."""
+    d = load_tokens()
+    n = 0
+    for tok, rec in d["tokens"].items():
+        if rec.get("status") != "active":
+            continue
+        match = (token is not None and tok == token) or \
+                (persona is not None and rec.get("persona") == persona)
+        if match:
+            rec["status"] = "expired"
+            rec["expired_at"] = utcnow_iso()
+            rec["expired_reason"] = reason
+            n += 1
+    if n > 0:
+        save_tokens(d)
+    return n
+
+
+def lookup_token(token: str) -> dict | None:
+    """token → record (含 status). None if not found."""
+    return load_tokens()["tokens"].get(token)
+
+
+def is_token_enforce_enabled() -> bool:
+    """讀 _token_enforce.json toggle. Default False — Tim 顯式開才 enforce."""
+    if not _ENFORCE_PATH.exists():
+        return False
+    try:
+        with open(_ENFORCE_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return bool(d.get("enforce", False))
+    except Exception:
+        return False
+
+
+def set_token_enforce(enabled: bool) -> None:
+    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _ENFORCE_PATH.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"enforce": bool(enabled), "updated_at": utcnow_iso()},
+                  f, indent=2, ensure_ascii=False)
+    os.replace(tmp, _ENFORCE_PATH)
+
+
+# ─── Memo: per-persona 私人 scratchpad (T07) ─────────────────────────────
+# 物理意義: 跨 session persist 的個人筆記, 跟 letter (1份/wake) / baton (handoff) 解耦.
+#          不公開不進 tavern. 路徑 baton/memos/<agent>/<persona>/<key>.md.
+
+def memo_dir(agent: str, persona: str) -> Path:
+    return _MEMOS_DIR_TPL / agent / persona
+
+
+def memo_path(agent: str, persona: str, key: str) -> Path:
+    safe_key = key.replace("/", "_").replace("\\", "_").replace("..", "_")
+    return memo_dir(agent, persona) / f"{safe_key}.md"
+
+
+def memo_write(agent: str, persona: str, key: str, body: str) -> Path:
+    p = memo_path(agent, persona, key)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def memo_append(agent: str, persona: str, key: str, body: str) -> Path:
+    p = memo_path(agent, persona, key)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    entry = f"\n\n--- {utcnow_iso()} ---\n{body}\n"
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(entry)
+    return p
+
+
+def memo_read(agent: str, persona: str, key: str) -> str | None:
+    p = memo_path(agent, persona, key)
+    if not p.exists():
+        return None
+    return p.read_text(encoding="utf-8")
+
+
+def memo_list(agent: str, persona: str) -> list[str]:
+    d = memo_dir(agent, persona)
+    if not d.exists():
+        return []
+    return sorted(f.stem for f in d.glob("*.md"))
+
+
+def memo_delete(agent: str, persona: str, key: str) -> bool:
+    p = memo_path(agent, persona, key)
+    if not p.exists():
+        return False
+    p.unlink()
+    return True
 
 
 # ─── Fork Mechanism (§Fork Mechanism) ───────────────────────────────────
@@ -939,6 +1110,11 @@ def cmd_morning(args: argparse.Namespace) -> int:
             print(f"   wake_count:     {reg['personas'][preferred].get('wake_count', '?')} (unchanged)")
             print(f"   session_locked: {lock_path(preferred)}")
             print(f"   tavern_post:    SKIPPED (idempotent)")
+            # T07: reuse 場景仍印當前 token (agent 可能 chat 失憶, 需要重撈)
+            reuse_token = (existing_lock or {}).get("session_token", "")
+            if reuse_token:
+                print(f"   🎫 session_token: {reuse_token} (reused — 寫進 lock 跟 _tokens.json)")
+                print(f"      失憶時跑: awakening.py whoami --token {reuse_token}")
             return 0
 
     # Step 1: Fork conflict check (persona-keyed v2 + caller-aware)
@@ -1050,8 +1226,44 @@ def cmd_morning(args: argparse.Namespace) -> int:
     save_registry(reg)
 
     # Step 4: write persona lock (Tim 2026-05-13 v2 — keyed by persona, session_key audit-only)
-    lock_p = write_lock(chosen, agent, model, bank_account, session_key=session_key)
+    # T07 (2026-05-15 apex-two): issue session_token + write to lock + tokens.json reverse-lookup
+    my_origin_for_token = compute_claim_origin()
+    new_token = issue_token(chosen, agent, bank_account, session_key, my_origin_for_token)
+    lock_p = write_lock(chosen, agent, model, bank_account,
+                        session_key=session_key, session_token=new_token)
     print(f"🔒 persona lock written: {lock_p.name}")
+
+    # T07: 自動 memo write _session_token.md — agent 失憶時讀 memo 撈回 token
+    # 不依賴 chat memory, 不依賴 lock 路徑記憶, agent 只要記得「memo 區有東西」即可
+    enforce_state = "ON" if is_token_enforce_enabled() else "OFF (預設)"
+    memo_body = (
+        f"---\n"
+        f"persona: {chosen}\n"
+        f"agent: {agent}\n"
+        f"session_token: {new_token}\n"
+        f"issued_at: {utcnow_iso()}\n"
+        f"claim_origin: {my_origin_for_token}\n"
+        f"enforce: {enforce_state}\n"
+        f"---\n\n"
+        f"# Session Token (auto-written by awakening.py morning)\n\n"
+        f"## 失憶時怎麼撈回 token\n\n"
+        f"```bash\n"
+        f"awakening.py whoami --token {new_token}\n"
+        f"# 或無 arg 走 env 自動推:\n"
+        f"awakening.py whoami\n"
+        f"```\n\n"
+        f"## 三層 recovery\n"
+        f"- 輕 (chat scroll-back 找得到 token) → `whoami --token <X>`\n"
+        f"- 中 (chat compact 後 token 沒了) → 讀本 memo 檔\n"
+        f"- 重 (memo / lock 都不見) → `awakening.py reissue-token --persona {chosen}`\n\n"
+        f"## Lock file\n"
+        f"`{lock_p.relative_to(_REPO_ROOT)}` 內 session_token 欄是權威來源.\n"
+    )
+    try:
+        memo_p = memo_write(agent, chosen, "_session_token", memo_body)
+        print(f"📝 memo written: {memo_p.relative_to(_REPO_ROOT)}")
+    except Exception as e:
+        print(f"⚠ memo write failed (non-fatal): {e}", file=sys.stderr)
 
     # Step 5: tavern post (announce)
     # bank_balance: 起床時 snapshot 真實 Treasury ledger 餘額 (Tim 5-token task 要求)
@@ -1078,6 +1290,10 @@ def cmd_morning(args: argparse.Namespace) -> int:
     print(f"   wake_count:     {p['wake_count']}")
     print(f"   session_locked: {lock_p}")
     print(f"   tavern_post:    {'OK' if ok else 'FAIL (主 ritual 仍成功)'}")
+    # T07: 顯眼 print token + recovery hint
+    print(f"   🎫 session_token: {new_token}")
+    print(f"      enforce mode: {enforce_state} (Tim 從 UCL_LoginStatusPage 切)")
+    print(f"      失憶救援: awakening.py whoami --token {new_token}")
 
     # T06.4 (Plan_Standby_Dispatch_Bartender, 2026-05-14):
     # morning ritual 結尾 print pending bartender assignments + inbox @mentions
@@ -1292,6 +1508,11 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     else:
         removed = False
         print(f"🔓 no persona lock to remove (already gone)")
+
+    # T07 (2026-05-15 apex-two): expire token — 不刪, 標 status=expired 留 audit
+    n_expired = expire_token(persona=persona, reason="goodnight")
+    if n_expired > 0:
+        print(f"🎫 session_token expired ({n_expired} 筆)")
 
     print(f"\n🌙 Goodnight ritual complete:")
     print(f"   letter:        {letter_path}")
@@ -1553,6 +1774,153 @@ def cmd_affinity(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── T07 Session Token / Memo / Whoami / Enforce subcommands ───────────────
+def cmd_whoami(args: argparse.Namespace) -> int:
+    """反查身分 — 路徑 A: --token <X>; 路徑 B: 無 arg 走 claim_origin 推當前 process 對到的 lock."""
+    # 路徑 A: token 已知
+    if args.token:
+        rec = lookup_token(args.token)
+        if rec is None:
+            print(f"❌ token '{args.token}' 不存在 _tokens.json", file=sys.stderr)
+            print(f"   可能性: (1) typo (2) 從未發過 (3) tokens.json 損毀", file=sys.stderr)
+            return 2
+        status = rec.get("status", "?")
+        print(f"🎫 Token: {args.token}")
+        print(f"   Agent:        {rec.get('agent', '?')}")
+        print(f"   Persona:      {rec.get('persona', '?')}")
+        print(f"   Bank account: {rec.get('bank_account', '?')}")
+        print(f"   Claim origin: {rec.get('claim_origin', '?')}")
+        print(f"   Session key:  {rec.get('session_key', '?')}")
+        print(f"   Issued at:    {rec.get('issued_at', '?')}")
+        print(f"   Status:       {status}")
+        if status == "expired":
+            print(f"   Expired at:   {rec.get('expired_at', '?')}")
+            print(f"   Reason:       {rec.get('expired_reason', '?')}")
+        return 0 if status == "active" else 1
+
+    # 路徑 B: 無 arg → 從 env 推當前 process 對到的 lock
+    my_origin = compute_claim_origin()
+    my_locks = []
+    if _SESSION_DIR.exists():
+        for lp in _SESSION_DIR.glob("_persona_*.json"):
+            try:
+                with open(lp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if lock_claim_origin(d) == my_origin and not is_lock_expired(d):
+                    my_locks.append(d)
+            except Exception:
+                continue
+    if not my_locks:
+        print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 active lock",
+              file=sys.stderr)
+        print(f"   → 跑 awakening.py morning 先 wake, 或加 --token <X> 反查",
+              file=sys.stderr)
+        return 2
+    print(f"🔍 當前 environment 對到 {len(my_locks)} 個 lock:")
+    for d in my_locks:
+        print(f"   • persona={d.get('persona')} agent={d.get('agent')} "
+              f"bank={d.get('bank_account')} pid={d.get('pid')}")
+        print(f"     locked_at={d.get('locked_at')} session_token={d.get('session_token', '') or '(no token — 老 lock)'}")
+    return 0
+
+
+def cmd_memo(args: argparse.Namespace) -> int:
+    """Per-persona 私人 scratchpad. Action: write | append | read | list | delete."""
+    action = args.action
+    persona = args.persona
+    # agent 從 lock 推, 沒 lock → 必須顯式 --agent
+    agent = args.agent
+    if not agent:
+        lock = read_lock(persona)
+        if lock and lock.get("agent"):
+            agent = lock["agent"]
+        else:
+            print(f"❌ persona '{persona}' 無 active lock — 加 --agent 顯式指定", file=sys.stderr)
+            return 2
+
+    if action == "list":
+        keys = memo_list(agent, persona)
+        if not keys:
+            print(f"(empty) memos for {agent}/{persona}")
+            return 0
+        print(f"📝 memos for {agent}/{persona} ({len(keys)} 筆):")
+        for k in keys:
+            print(f"   • {k}")
+        return 0
+
+    if action == "read":
+        if not args.key:
+            print("❌ --key 必填", file=sys.stderr)
+            return 2
+        content = memo_read(agent, persona, args.key)
+        if content is None:
+            print(f"❌ memo '{args.key}' 不存在 ({agent}/{persona})", file=sys.stderr)
+            return 2
+        print(content)
+        return 0
+
+    if action == "delete":
+        if not args.key:
+            print("❌ --key 必填", file=sys.stderr)
+            return 2
+        ok = memo_delete(agent, persona, args.key)
+        print(f"{'✓ deleted' if ok else '⚠ already gone'}: {args.key}")
+        return 0 if ok else 1
+
+    if action in ("write", "append"):
+        if not args.key:
+            print("❌ --key 必填", file=sys.stderr)
+            return 2
+        if not args.body:
+            print("❌ --body 必填", file=sys.stderr)
+            return 2
+        fn = memo_write if action == "write" else memo_append
+        p = fn(agent, persona, args.key, args.body)
+        print(f"✓ memo {action}: {p.relative_to(_REPO_ROOT)}")
+        return 0
+
+    print(f"❌ unknown action: {action}", file=sys.stderr)
+    return 2
+
+
+def cmd_reissue_token(args: argparse.Namespace) -> int:
+    """Lock 還在但 token 丟了 (lock 沒 token 欄, 或 _tokens.json 損毀) → 重發 token."""
+    persona = args.persona
+    lock = read_lock(persona)
+    if not lock:
+        print(f"❌ persona '{persona}' 無 active lock — 先跑 morning", file=sys.stderr)
+        return 2
+    agent = lock.get("agent", "")
+    bank = lock.get("bank_account", "")
+    session_key = lock.get("session_key", "")
+    claim_origin = lock_claim_origin(lock)
+    new_token = issue_token(persona, agent, bank, session_key, claim_origin)
+    # rewrite lock 把新 token 帶進去
+    write_lock(persona, agent, lock.get("model", ""), bank,
+               session_key=session_key, session_token=new_token)
+    print(f"✓ reissued session_token for {persona}: {new_token}")
+    print(f"   舊 active token 已標 expired (audit 仍可查)")
+    return 0
+
+
+def cmd_token_enforce(args: argparse.Namespace) -> int:
+    """Toggle / query enforce mode. 一般場景由 UCL_LoginStatusPage 切, 本 CLI 給 debug 用."""
+    if args.show:
+        state = is_token_enforce_enabled()
+        print(f"enforce: {'ON' if state else 'OFF'}")
+        return 0
+    if args.on:
+        set_token_enforce(True)
+        print("✓ enforce ON — Cmd_Tavern 必驗 (token, sender, persona) 對齊")
+        return 0
+    if args.off:
+        set_token_enforce(False)
+        print("✓ enforce OFF (預設) — Cmd_Tavern 不驗 token")
+        return 0
+    print("❌ 必須帶 --show / --on / --off 其一", file=sys.stderr)
+    return 2
+
+
 # ─── main ───────────────────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0],
@@ -1627,6 +1995,32 @@ def main():
     pa.add_argument("--add-opinion", default=None, help="新增對 target 的看法")
     pa.add_argument("--status", action="store_true", help="列出對所有人的好感度")
     pa.set_defaults(func=cmd_affinity)
+
+    # T07 (2026-05-15 apex-two) — Session Token / Memo / Whoami / Enforce
+    pw = sub.add_parser("whoami", help="反查 token → identity (失憶救援)")
+    pw.add_argument("--token", default=None,
+                    help="32-hex token. 省略則走 env claim_origin 推當前 process 對到的 lock.")
+    pw.set_defaults(func=cmd_whoami)
+
+    pmemo = sub.add_parser("memo", help="per-persona 私人 scratchpad (write/append/read/list/delete)")
+    pmemo.add_argument("action", choices=["write", "append", "read", "list", "delete"])
+    pmemo.add_argument("--persona", required=True)
+    pmemo.add_argument("--agent", default=None,
+                       help="預設從 active lock 推; lock 不存在時必填.")
+    pmemo.add_argument("--key", default=None, help="memo key (檔名, 不含 .md). write/append/read/delete 必填.")
+    pmemo.add_argument("--body", default=None, help="memo 內容. write/append 必填.")
+    pmemo.set_defaults(func=cmd_memo)
+
+    prt = sub.add_parser("reissue-token", help="lock 在但 token 丟 → 重發 token 不必 re-wake")
+    prt.add_argument("--persona", required=True)
+    prt.set_defaults(func=cmd_reissue_token)
+
+    pte = sub.add_parser("token-enforce", help="切 / 查 Cmd_Tavern token enforce 模式 (一般走 UCL_LoginStatusPage)")
+    pte_g = pte.add_mutually_exclusive_group(required=True)
+    pte_g.add_argument("--show", action="store_true", help="只查當前 state")
+    pte_g.add_argument("--on", action="store_true", help="enable enforce")
+    pte_g.add_argument("--off", action="store_true", help="disable enforce (預設)")
+    pte.set_defaults(func=cmd_token_enforce)
 
     args = p.parse_args()
     return args.func(args)

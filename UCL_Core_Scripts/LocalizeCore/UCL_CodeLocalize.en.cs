@@ -261,6 +261,11 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(no registry — `{0}` does not exist or is empty)",
                 "LoginStatus.Dialog.ForceRm.Title" => "Force Remove Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "Confirm force-delete lock?\n\n{0}\n\nNote: persona registry status will NOT auto-change to offline; manual fixup required. Prefer Logout (which runs the goodnight ritual).",
+                "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce (Backend Switch)</b>",
+                "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON (token required)",
+                "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF (default, no check)",
+                "LoginStatus.TokenEnforce.SummaryFmt" => "Active tokens: {0} | Expired: {1}",
+                "LoginStatus.TokenEnforce.Hint" => "When ON, Cmd_Tavern op=post requires --arg session_token=<X>; token must match sender/persona. Default OFF preserves legacy behavior.",
 
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona Letter Inspector",

@@ -294,6 +294,12 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(無 registry — `{0}` 不存在或空)",
                 "LoginStatus.Dialog.ForceRm.Title" => "強制移除 Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "確定強制刪除 lock?\n\n{0}\n\n注意: persona registry status 不會自動改成 offline, 需後續手動修正。建議優先用 Logout（走 goodnight ritual）。",
+                // T07 (2026-05-15 apex-two) — Token Enforce 後台開關
+                "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（後台開關）</b>",
+                "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（必驗 token）",
+                "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF（預設，不驗）",
+                "LoginStatus.TokenEnforce.SummaryFmt" => "Active tokens: {0} ｜ Expired: {1}",
+                "LoginStatus.TokenEnforce.Hint" => "ON 時 Cmd_Tavern op=post 必帶 --arg session_token=<X>，token <-> sender/persona 對齊才寫入。預設 OFF（不破壞既有 caller）。",
 
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona 信件檢視器",

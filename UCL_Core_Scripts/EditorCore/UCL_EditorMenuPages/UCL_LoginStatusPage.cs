@@ -59,6 +59,12 @@ namespace UCL.Core.EditorLib.Page
         List<LockEntry> m_Locks = new List<LockEntry>();
         List<PersonaEntry> m_Pool = new List<PersonaEntry>();
         Dictionary<string, int> m_SameKeyCount = new Dictionary<string, int>();   // session_key → count (collision 偵測)
+
+        // T07 (2026-05-15 apex-two) — Token enforce state cache
+        // 物理意義：讀 _session/_token_enforce.json + _session/_tokens.json 當前狀態, 給 UI toggle 顯示
+        bool m_TokenEnforce = false;
+        int m_ActiveTokenCount = 0;
+        int m_ExpiredTokenCount = 0;
         //Vector2 m_LocksScroll = Vector2.zero;
         //Vector2 m_PoolScroll = Vector2.zero;
 
@@ -115,6 +121,42 @@ namespace UCL.Core.EditorLib.Page
             m_Locks.Clear();
             m_Pool.Clear();
             m_SameKeyCount.Clear();
+
+            // T07: enforce state + tokens summary
+            m_TokenEnforce = false;
+            m_ActiveTokenCount = 0;
+            m_ExpiredTokenCount = 0;
+            try
+            {
+                string enforcePath = Path.Combine(m_SessionDir, "_token_enforce.json");
+                if (File.Exists(enforcePath))
+                {
+                    var jd = JsonData.ParseJson(File.ReadAllText(enforcePath));
+                    if (jd != null && jd.IsObject && jd.Dic != null)
+                        m_TokenEnforce = jd.GetBool("enforce", false);
+                }
+                string tokensPath = Path.Combine(m_SessionDir, "_tokens.json");
+                if (File.Exists(tokensPath))
+                {
+                    var jd = JsonData.ParseJson(File.ReadAllText(tokensPath));
+                    if (jd != null && jd.IsObject && jd.Dic != null
+                        && jd.Dic.TryGetValue("tokens", out var tokensNode)
+                        && tokensNode != null && tokensNode.IsObject && tokensNode.Dic != null)
+                    {
+                        foreach (var kv in tokensNode.Dic)
+                        {
+                            if (kv.Value == null || !kv.Value.IsObject) continue;
+                            string status = kv.Value.GetString("status", "");
+                            if (status == "active") m_ActiveTokenCount++;
+                            else if (status == "expired") m_ExpiredTokenCount++;
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[LoginStatus] T07 token state load failed: {e.Message}");
+            }
 
             // 區塊：scan locks
             if (Directory.Exists(m_SessionDir))
@@ -195,11 +237,58 @@ namespace UCL.Core.EditorLib.Page
         protected override void ContentOnGUI()
         {
             DrawCollisionBanner();
+            DrawTokenEnforcePanel();
+            GUILayout.Space(8);
             DrawActiveLocks();
             GUILayout.Space(12);
             DrawManualLogin();
             GUILayout.Space(12);
             DrawPersonaPool();
+        }
+
+        // 區塊職責：Token Enforce 後台開關 (T07, 2026-05-15 apex-two)
+        // 物理意義：寫 _session/_token_enforce.json {"enforce": bool}.
+        //          Cmd_Tavern.Op_Post 讀此檔判斷是否驗 token. 預設 OFF.
+        // 數值影響：toggle 後立即 flush 到 disk, 下一次 op=post 即生效 (不必 reload).
+        void DrawTokenEnforcePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Title"), UCL_GUIStyle.LabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool newVal = GUILayout.Toggle(m_TokenEnforce,
+                        m_TokenEnforce ? UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.On")
+                                        : UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Off"),
+                        UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                    if (newVal != m_TokenEnforce)
+                    {
+                        m_TokenEnforce = newVal;
+                        WriteTokenEnforce(newVal);
+                    }
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.SummaryFmt"),
+                                                  m_ActiveTokenCount, m_ExpiredTokenCount),
+                                    UCL_GUIStyle.LabelStyle);
+                }
+                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Hint"), UCL_GUIStyle.LabelStyle);
+            }
+        }
+
+        void WriteTokenEnforce(bool enabled)
+        {
+            try
+            {
+                Directory.CreateDirectory(m_SessionDir);
+                string p = Path.Combine(m_SessionDir, "_token_enforce.json");
+                string ts = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z";
+                string json = $"{{\n  \"enforce\": {(enabled ? "true" : "false")},\n  \"updated_at\": \"{ts}\"\n}}\n";
+                File.WriteAllText(p, json);
+                Debug.Log($"[LoginStatus:T07] token enforce → {(enabled ? "ON" : "OFF")} ({p})");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LoginStatus:T07] write enforce failed: {e.Message}");
+            }
         }
 
         // 區塊職責：collision banner — 同 session_key 多 lock 警告

@@ -258,6 +258,11 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(无 registry — `{0}` 不存在或空)",
                 "LoginStatus.Dialog.ForceRm.Title" => "强制移除 Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "确定强制删除 lock?\n\n{0}\n\n注意: persona registry status 不会自动改成 offline, 需后续手动修正。建议优先用 Logout (走 goodnight ritual)。",
+                "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（后台开关）</b>",
+                "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（必验 token）",
+                "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF（预设，不验）",
+                "LoginStatus.TokenEnforce.SummaryFmt" => "Active tokens: {0} | Expired: {1}",
+                "LoginStatus.TokenEnforce.Hint" => "ON 时 Cmd_Tavern op=post 必带 --arg session_token=<X>，token <-> sender/persona 对齐才写入。预设 OFF。",
 
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona 信件检视器",

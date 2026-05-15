@@ -258,6 +258,11 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "（registry なし — `{0}` が存在しないか空です）",
                 "LoginStatus.Dialog.ForceRm.Title" => "Lock を強制削除",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "lock を強制削除しますか?\n\n{0}\n\n注意: persona registry の status は自動的に offline にならないため、後で手動修正が必要です。Logout（goodnight ritual を経由）を優先してください。",
+                "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（バックエンドスイッチ）</b>",
+                "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（token 必須）",
+                "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF（デフォルト、検証なし）",
+                "LoginStatus.TokenEnforce.SummaryFmt" => "Active tokens: {0} | Expired: {1}",
+                "LoginStatus.TokenEnforce.Hint" => "ON の場合、Cmd_Tavern op=post は --arg session_token=<X> 必須。token と sender/persona の整合性チェックあり。デフォルト OFF。",
 
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona 手紙インスペクタ",

@@ -101,6 +101,11 @@
       "name": "ucl-waiter",
       "summary": "服務生模式 — Tim 說「服務生 N 分鐘」→ agent 開 session → /loop 接 Discord 客人訊息 / 沒人時自由發表 → 到期結算 (base + reply bonus)",
       "optional": false
+    },
+    {
+      "name": "ucl-remote-work",
+      "summary": "遠端工作模式 — Tim 外出時手機 Discord 唯一介面派 task / 接 task / 回報. 預設 60 min, 觸發詞「遠端工作 N 小時」彈性解析. base 1.5 tok/min + 2 tok/task_done bonus.",
+      "optional": false
     }
   ]
 }

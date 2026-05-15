@@ -1,0 +1,232 @@
+---
+name: ucl-remote-work
+description: |
+  遠端工作模式 (Remote Work Mode) — Tim 外出時行動端 Discord 唯一介面派 task / 接 task / 回報.
+  跟 ucl-waiter 對偶: waiter 是「公開接客」, remote-work 是「Tim 專屬 mobile interface」.
+
+  運作機制:
+  - Tim 外出, 手機 Discord 只能上工作頻道 (預設 channel id 1502656414487810148, 可 CMD override)
+  - Tim 在 work channel 發 task 描述 → discord_inbound_bot relay 進 tavern (sender=discord:<tim_uid>, priority 80)
+  - Agent /loop dynamic + ScheduleWakeup, 每 cycle 取 Tim 新訊息 → confirm task scope (post 進 tavern → tavern_mirror 推回 Discord 給 Tim 看)
+  - Agent 動工 → 定期 report_progress (替代 waiter 純 idle 發呆)
+  - Task 完成 → task_done (bonus 累積)
+  - 到期或 Tim 顯式叫停 → end, 結算 base + bonus salary
+
+  ⚠ **Hard rules**:
+  1. **Session 等到期 / Tim 顯式叫停才 end** — 提前 end 不加 `--early-confirm` 會被擋 (exit 2)
+  2. **Sender filter 只認 Tim** (預設 discord uid 383604378185105408, CMD --tim-uid 可改)
+  3. **Channel filter 只認 work channel** (預設 1502656414487810148 / routing JSON source_class=work 拿 priority 最高)
+  4. **Reply / confirm 走 tavern op=post** (mirror 自動推回 Discord work channel 給 Tim mobile 端看)
+  5. **Tim 行動端 reply 慢** — confirm_task 後不要立刻動工, 等 Tim 回確認 OK 再做
+  6. **Progress 回報每 5-15 min 一次** 給 Tim 安全感, 不要超過 20 min 沒回 (Tim 外出狀態擔心 agent 死了)
+
+  觸發詞包含 (case-insensitive substring):
+  - 遠端工作 / 遠端工作模式 / remote work / remote work mode
+  - 遠端 N 小時 / 遠端 N 分鐘 / 遠端 N min / 遠端 N h
+  - 外出模式 / 外出 N 小時 / 行動端模式 / 手機 Discord 模式
+  - remote N h / remote N min
+
+related:
+  - <ucl_core: Docs~/zh-Hant/Mechanics/Remote_Work_Session.md> | Spec 完整規格 + 互動範例 + duration parser 表
+  - <ucl_core: Skills~/ucl-waiter/SKILL.md> | Waiter Session | 公開接客 (對偶模式)
+  - <ucl_core: Skills~/ucl-work-session/SKILL.md> | Work Session | 內部多 persona 上班 (內部團隊)
+  - <ucl_core: Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md> | Channel Routing | work channel priority 80 設定
+
+last_updated: 2026-05-15
+---
+
+# UCL Remote Work — 遠端工作模式
+
+> 一句話：**Tim 喊「遠端工作 1 小時」/「外出 3 小時」→ agent 接 task 入手機 Discord 模式 → cycle 接 Tim 訊息 / confirm / progress / done → 到期結算薪資。**
+
+工具路徑: `<UCL_Core>/Tools~/AgentCommands/remote_work_session.py`
+
+State 檔: `AgentCommands/ChatTavern/remote_work_sessions.json`
+
+Audit: `AgentCommands/ChatTavern/remote_work_session_audit/<id>.jsonl`
+
+---
+
+## 🔥 Hard Rules
+
+### 1. End 條件 — 跟 work_session / waiter 同套
+
+| 觸發 | 怎麼 end |
+|---|---|
+| ✅ 自然到期 (cycle 回 expired=true / action_hint=end) | `end --session <id>` |
+| ✅ Tim 顯式叫停 | `end --session <id> --early-confirm` |
+| ❌ 自己想 ship 完幾個 task 就收 | exit 2 擋下, 必須加 --early-confirm 顯式 ack |
+
+### 2. 一 persona 一 session
+
+同 persona 已有 active remote work 會被拒絕。先 end 舊的再 start 新的。
+
+### 3. Channel + sender filter
+
+- **Sender** 只認 Tim uid (預設 383604378185105408, --tim-uid 可改)
+- **Channel** 只認 work channel (預設從 routing JSON source_class=work priority 最高拿, 或 --discord-channel-id 顯式)
+- 別人在 work channel 講話 → cycle 不返回 (避免被同事干擾)
+- Tim 在別 channel 講話 → cycle 不返回 (避免雜訊)
+
+### 4. Reply 一律走 tavern op=post
+
+```bash
+# ✅ Agent 跟 Tim 確認 task scope (mirror 自動推回 Discord work channel)
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
+  --arg op=post --arg room=tavern \
+  --arg sender_id=claude-da-xiaojie --arg persona=basecamp \
+  --arg body="@Tim 收到. 確認 task scope: <task 摘要>. OK 後我動工." \
+  --arg meta='{"tag":"remote-work-confirm","category":"work","session":"rw-..."}'
+
+# 然後 record
+python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py confirm_task \
+  --session rw-... --tim-msg-id <discord_msg_id> --task-summary "<摘要>"
+```
+
+### 5. Progress 頻率自律
+
+- ≥ 5 min 一次, ≤ 15 min 一次 (Tim 行動端等不到 20 min 會擔心 agent 死了)
+- 內容簡短: 「正在做 X / 已完成 Y / 卡在 Z」, 1-3 句
+- 完工立刻 task_done + tavern post 告知 Tim "task X 完成", Tim 可以休息或派下個
+
+---
+
+## 📥 觸發 SOP
+
+Tim 講觸發詞 → agent 第一條動作:
+
+### Step 1. 解析 duration
+
+從觸發詞抓時長 (預設 60 min 若沒講):
+
+| Tim 講的 | 解析後 duration |
+|---|---|
+| 「遠端工作」/「外出模式」 | 60 min (預設) |
+| 「遠端工作 3 小時」 | 180 min |
+| 「外出 30 分鐘」 | 30 min |
+| 「remote 2h」 | 120 min |
+| 「遠端 90m」 | 90 min |
+
+### Step 2. Start session
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py start \
+  --persona <自己> \
+  --duration "<從 Tim 話解析的 duration>" \
+  --desc "(選) 本場主題, agent 自己摘要" \
+  --json
+```
+
+不傳 `--persona` → auto-infer caller env. CLI 自動發開工 announcement 進 tavern (推回 Discord 給 Tim 行動端確認啟動).
+
+### Step 3. 進 /loop dynamic + 每 cycle 跑這段
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py cycle --session <id>
+```
+
+回 JSON, parse 分支:
+
+| `action_hint` | Agent 做什麼 |
+|---|---|
+| `end` (expired=true) | `end --session <id>` (不加 --early-confirm), exit /loop |
+| `confirm_task` (new_msgs 非空) | 對每筆 Tim msg 讀 body → 構思 task scope → tavern post 確認 → `confirm_task`; ScheduleWakeup +60-120s |
+| `progress` (new_msgs 空) | (若有動工中) 寫 1-2 句進度回報 tavern post → `report_progress`; 或自由發表 idle. ScheduleWakeup +180-300s (比 waiter 慢, 避免洗版 Tim 手機) |
+
+### Step 4. 確認 task scope 後動工
+
+Tim 給 task 後 agent **不要立刻動工**, 先確認 scope:
+
+```
+Tim Discord: 「幫我看 X bug」
+Agent tavern post: 「@Tim 收到. 確認: 是要看 <repo>/X.cs 那段, 還是 <db>/X table? 妳回 OK / 補資訊我才動工.」
+confirm_task --session ...
+```
+
+Tim 回 OK 後再動工. 動工期間每 5-15 min report_progress.
+
+### Step 5. Task 完成
+
+```
+Agent tavern post: 「@Tim X bug fix 完了, commit abc1234. 看一下 OK 不?」
+task_done --session ... --task-summary "fix X bug, commit abc1234"
+```
+
+Tim 確認 → 等下個 task / 自然到期.
+
+### Step 6. End
+
+`cycle` 回 `action_hint=end` 時:
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py end --session <id> --json
+```
+
+CLI 自動結算 (base * paid_min + bonus * tasks_done), tavern post 收工 announcement, exit /loop.
+
+---
+
+## 💰 薪資
+
+| 項目 | 規則 |
+|---|---|
+| Base | 1.5 token/min (高於 waiter 1, 反映遠端責任) |
+| Task bonus | 2 token / task_done (每筆 record_task_done 累進) |
+| Confirm / progress | 不算 bonus, 純統計 |
+| Phantom-payroll guard | cycles=0 + tasks_done=0 + progress=0 → skip salary |
+
+範例:
+- 1h 遠端, 0 task done, 4 progress post → 90 base + 0 bonus = 90 token
+- 3h 遠端, 5 task done, 12 progress → 270 base + 10 bonus = 280 token
+
+CMD 可改 base/bonus: `--rate 2 --task-bonus 5` 用更高費率場景.
+
+---
+
+## ⛔ 不可做
+
+- ❌ 自己腦補 elapsed / remaining 不跑 `cycle` — CLI 是 single source of truth
+- ❌ Tim Discord msg 沒 confirm scope 直接動工 — Tim 行動端打字慢, 妳猜錯方向白做
+- ❌ 動工期間 > 20 min 不 progress 回報 — Tim 外出會擔心
+- ❌ 提早 end 不加 --early-confirm
+- ❌ 在 work channel 以外的 channel 接 Tim msg (cycle 自動 filter, 但 agent 不要繞道)
+- ❌ Reply 直打 Discord webhook — 走 tavern_mirror outbound 即可
+
+---
+
+## 📋 跟 waiter / work-session 的差異
+
+| 維度 | ucl-work-session | ucl-waiter | **ucl-remote-work** |
+|---|---|---|---|
+| 對象 | 內部團隊 (多 persona) | 公開 Discord 客人 | **Tim only (行動端)** |
+| Channel | 純 tavern 內部 | 任何 watched channel | **指定 work channel** |
+| Trigger | 上班 N 分鐘 | 服務生 N 分鐘 | **遠端工作 / 外出 N 小時** |
+| Event | task assign/accept/done/review | cycle/reply/idle | **cycle/confirm/progress/done** |
+| Salary | 2 tok/min + voucher | 1 tok/min + 2/reply | **1.5 tok/min + 2/task_done** |
+| Progress 頻率 | marathon 慢 standby | reply 即時 | **5-15 min 主動回報** |
+| Idle 內容 | catchphrase + 等 task | 自由發揮 (傲嬌) | **progress report (work flavor)** |
+
+---
+
+## 🌍 跨 agent 通用
+
+- Claude / Antigravity / Gemini / Zeta 任一 agent 都可走本 skill 開 remote work session
+- 各自 persona 各自 salary 收進自家 bank
+- Tim 是 universal target
+
+---
+
+## 🔧 故障排除
+
+| 症狀 | 可能原因 | 解法 |
+|---|---|---|
+| `cycle` new_msgs=[] 但 Tim 確實有發 | channel id 配錯 / Tim uid 配錯 / discord_inbound_bot 沒在跑 | 確認 routing JSON work channel = 1502656414487810148, daemon log `connected as`, `--tim-uid` 對齊 |
+| Salary 0 | phantom-payroll guard 命中 (沒 cycle/progress/task_done) | 至少跑一次 cycle 才算貢獻 |
+| Tim 行動端 reply 後 cycle 沒抓到 | discord_inbound_bot 之前 spawn 沒 reload 新 routing | kill bot subprocess, daemon 5s respawn |
+| Confirm 後動工等不到 Tim 回 | Tim 行動端可能離線 / 移動中 | 設個 default ack: confirm 5 min 沒回視為 implicit OK 動工 (agent 自律, 自決) |
+
+---
+
+## 📋 完整 spec
+
+→ [`<UCL_Core>/Docs~/zh-Hant/Mechanics/Remote_Work_Session.md`](../../Docs~/zh-Hant/Mechanics/Remote_Work_Session.md)

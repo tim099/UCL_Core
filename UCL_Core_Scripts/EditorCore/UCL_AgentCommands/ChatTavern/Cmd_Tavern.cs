@@ -245,12 +245,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // ===========================================================
             // T07 (2026-05-15 apex-two) — Session Token Enforcement
             // 物理意義：morning 發 32-hex token 寫進 lock + _tokens.json 反查表；
-            //          enforce ON 時必驗 (token, sender_id, sender_persona) 三項對齊，
-            //          擋住「typo persona / 沿用舊 persona context」誤標帳號 (Tim QA 2026-05-15).
-            // 數值影響：enforce OFF (預設) → silent skip; ON + token 缺/不對 → RejectLastOp + 印 hint.
+            //          enforce ON 時必驗 token 合法性 (存在 + active)，阻擋偽造/遺失 token.
+            // 數值影響：enforce OFF (預設) → silent skip.
+            //          enforce ON + token 缺 / 不存在 / 已過期 → RejectLastOp 硬擋.
+            //          enforce ON + token 存在 active 但 sender/persona 不符 (Tim 2026-05-15 修訂) →
+            //            放行, 但 body 尾端附上真實身分警告, 讓 Tim 肉眼辨識誤標帳號.
             //           caller 可帶 --arg session_token=<X> 或 --arg token=<X> (兩 alias).
-            //           token 過期 (status=expired) 也視為 invalid.
             // 邊界：系統 sender (_quest_system / _bartender 等 _ 開頭) skip 驗證, 不必發 token.
+            string tokenIdentityWarning = null;   // 非 null = identity mismatch, 附進 body 但不擋
             if (!senderId.StartsWith("_") && TokenEnforce_IsEnabled())
             {
                 string sessionToken = GetArg(args, "session_token", GetArg(args, "token", ""));
@@ -260,11 +262,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                                  "跑 awakening.py whoami 撈當前 token；或從 UCL_LoginStatusPage 關閉 enforce。");
                     return;
                 }
-                string tokenErr = TokenEnforce_Verify(sessionToken, senderId, senderPersona);
-                if (!string.IsNullOrEmpty(tokenErr))
+                // Phase 1: 合法性驗證 (硬擋) — token 是否存在且 active
+                string hardErr = TokenEnforce_CheckValid(sessionToken, out string realBank, out string realPersona);
+                if (!string.IsNullOrEmpty(hardErr))
                 {
-                    RejectLastOp("[T07] token 校驗失敗: " + tokenErr);
+                    RejectLastOp("[T07] token 校驗失敗: " + hardErr);
                     return;
+                }
+                // Phase 2: identity 對齊檢查 (軟警告) — token 存在 active, 但 sender/persona 不符
+                bool bankMismatch = !string.IsNullOrEmpty(senderId) && realBank != senderId;
+                bool personaMismatch = !string.IsNullOrEmpty(senderPersona) && realPersona != senderPersona;
+                if (bankMismatch || personaMismatch)
+                {
+                    tokenIdentityWarning = $"⚠ [T07 identity mismatch] 真實身分 — bank: {realBank} / persona: {realPersona}";
                 }
             }
 
@@ -477,6 +487,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 Debug.LogWarning($"[Tavern] glossary auto-attach 失敗 (post 不受影響): {ex.Message}");
             }
+
+            // T07 identity mismatch 警告附進 body (在 glossary auto-attach 之後, 確保警告在最尾端)
+            if (!string.IsNullOrEmpty(tokenIdentityWarning))
+                body = body + "\n\n---\n" + tokenIdentityWarning;
 
             var msg = new UCL_ChatMessage
             {
@@ -1373,6 +1387,41 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch
             {
                 return false;   // 讀檔失敗 → 預設 OFF 安全側
+            }
+        }
+
+        // T07 修訂 (Tim 2026-05-15) — 兩段式驗證:
+        // CheckValid: 只驗 token 合法性 (存在 + active), 回傳真實 bank/persona 供 caller 比對.
+        //   回 null = token 合法, out 參數填好; 回 error msg = hard error (caller 應 RejectLastOp).
+        // Verify:     完整驗 token + identity 對齊 (legacy 用途, Op_Post 已改用 CheckValid).
+        static string TokenEnforce_CheckValid(string token, out string realBank, out string realPersona)
+        {
+            realBank = "";
+            realPersona = "";
+            try
+            {
+                string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "_session", "_tokens.json");
+                if (!File.Exists(path))
+                    return "_tokens.json 不存在 (跑 awakening.py morning 發 token)";
+                string json = File.ReadAllText(path);
+                var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
+                if (jd == null || !jd.IsObject || jd.Dic == null)
+                    return "_tokens.json 格式錯";
+                var tokensNode = jd.Dic.TryGetValue("tokens", out var tn) ? tn : null;
+                if (tokensNode == null || !tokensNode.IsObject || tokensNode.Dic == null)
+                    return "_tokens.json 缺 tokens 欄";
+                if (!tokensNode.Dic.TryGetValue(token, out var rec) || rec == null || !rec.IsObject)
+                    return "token 不存在 (可能 typo / 已失效 / 從未發過)";
+                string status = rec.GetString("status", "");
+                if (status != "active")
+                    return $"token status={status} (非 active)";
+                realBank = rec.GetString("bank_account", "");
+                realPersona = rec.GetString("persona", "");
+                return null;   // OK
+            }
+            catch (Exception e)
+            {
+                return "verify exception: " + e.Message;
             }
         }
 

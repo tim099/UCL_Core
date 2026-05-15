@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.Page
         public static UCL_LoginStatusPage Create() => UCL_EditorPage.Create<UCL_LoginStatusPage>();
 
         // 區塊職責：Lock entry 結構 — 對齊 awakening.py write_lock() schema
-        // 物理意義：session lock 一檔, 含 persona/agent/model/bank/lock 時間戳/session_key/pid
+        // 物理意義：session lock 一檔, 含 persona/agent/model/bank/lock 時間戳/session_key/pid/session_token
         public class LockEntry
         {
             public string Persona = "";
@@ -40,6 +40,8 @@ namespace UCL.Core.EditorLib.Page
             public string SessionKey = "";
             public int Pid = 0;
             public bool Expired = false;
+            // T07 (2026-05-15 apex-two) — 32-hex UUID4 token 發於 morning ritual; 空 = T07 前建的 lock
+            public string SessionToken = "";
         }
 
         // 區塊職責：Persona pool entry — 對齊 AwakenInit/personas/<name>.json
@@ -178,6 +180,7 @@ namespace UCL.Core.EditorLib.Page
                             ExpiresAt = jd.GetString("expires_at", ""),
                             SessionKey = jd.GetString("session_key", ""),
                             Pid = jd.GetInt("pid", 0),
+                            SessionToken = jd.GetString("session_token", ""),
                         };
                         // expires 判斷 — 用字串比對 ISO ts (lexicographic order)
                         entry.Expired = !string.IsNullOrEmpty(entry.ExpiresAt)
@@ -336,6 +339,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LockedAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.ExpiresAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.SessionKey"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Token"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
                     GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
                 }
                 foreach (var l in m_Locks)
@@ -355,6 +359,26 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Label(TruncTs(l.LockedAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(TruncTs(l.ExpiresAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         GUILayout.Label(TruncKey(l.SessionKey), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+
+                        // T07: session token 顯示 — 前 12 碼 + "…" 方便 Tim 肉眼確認; Copy 鈕拷全碼
+                        using (new GUILayout.HorizontalScope(GUILayout.Width(UCL_GUIStyle.GetScaledSize(220))))
+                        {
+                            if (string.IsNullOrEmpty(l.SessionToken))
+                            {
+                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Token.None"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                            }
+                            else
+                            {
+                                string displayToken = l.SessionToken.Length > 12
+                                    ? l.SessionToken.Substring(0, 12) + "…"
+                                    : l.SessionToken;
+                                GUILayout.Label(displayToken, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                                if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                                {
+                                    GUIUtility.systemCopyBuffer = l.SessionToken;
+                                }
+                            }
+                        }
 
                         if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.ForceRm"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(75))))
                         {

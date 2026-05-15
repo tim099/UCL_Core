@@ -280,6 +280,8 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Col.LockedAt" => "鎖定時間（UTC）",
                 "LoginStatus.Col.ExpiresAt" => "到期時間（UTC）",
                 "LoginStatus.Col.SessionKey" => "session_key",
+                "LoginStatus.Col.Token" => "Session Token",
+                "LoginStatus.Token.None" => "<color=#888888>(無 token)</color>",
                 "LoginStatus.Col.Status" => "狀態",
                 "LoginStatus.Col.Wake" => "Wake#",
                 "LoginStatus.Col.LayerRole" => "Layer 角色",

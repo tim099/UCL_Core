@@ -244,6 +244,8 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Col.LockedAt" => "ロック時刻（UTC）",
                 "LoginStatus.Col.ExpiresAt" => "有効期限（UTC）",
                 "LoginStatus.Col.SessionKey" => "session_key",
+                "LoginStatus.Col.Token" => "Session Token",
+                "LoginStatus.Token.None" => "<color=#888888>(トークンなし)</color>",
                 "LoginStatus.Col.Status" => "状態",
                 "LoginStatus.Col.Wake" => "Wake#",
                 "LoginStatus.Col.LayerRole" => "Layer ロール",

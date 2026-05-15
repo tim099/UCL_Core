@@ -96,6 +96,11 @@
       "name": "ucl-work-session",
       "summary": "上班模式 — Tim 說「上班 N 分鐘」→ 主管開 session + 派工 → 同事接單完工 → 結算薪資 voucher；含 C# 5-phase edit workflow (lock-acquire/commit-done/test-assign/review)",
       "optional": false
+    },
+    {
+      "name": "ucl-waiter",
+      "summary": "服務生模式 — Tim 說「服務生 N 分鐘」→ agent 開 session → /loop 接 Discord 客人訊息 / 沒人時自由發表 → 到期結算 (base + reply bonus)",
+      "optional": false
     }
   ]
 }

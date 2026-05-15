@@ -1264,10 +1264,55 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return norm;
         }
 
-        /// <summary>解析 "k1:v1;k2:v2" 為 dict。v 內可含 ':' 但第一個 ':' 之後都算 v。</summary>
+        /// <summary>解析 meta — 雙模式自動偵測:
+        /// (1) JSON 物件: raw 以 '{' 開頭 → 走 JsonData.ParseJson, top-level k/v 提取為 Dict.
+        ///     Value 為 string/int/bool 全 ToString() 後存; 巢狀 object/array 走 Json 序列化保留結構.
+        ///     (Discord inbound bot / work_session.tavern_post / waiter_session 等 Python 走 JSON 路徑.)
+        /// (2) 舊格式 "k1:v1;k2:v2": raw 非 JSON → 走 ';' 分段 + 第一個 ':' 切 k/v.
+        ///     v 內可含 ':' 但第一個 ':' 之後都算 v.
+        /// </summary>
         static Dictionary<string, string> ParseMeta(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return null;
+            string trimmed = raw.Trim();
+
+            // 區塊職責：JSON 自動偵測 — '{' 開頭視為 JSON 物件
+            // 物理意義：Cmd_Tavern bug fix 2026-05-15 (Tim QA) — Python 端用 json.dumps 送 meta 一直被
+            //          錯解成單 KV pair (key="{\"first_key\"", value="rest"), 修為偵測 JSON fallback parse.
+            // 數值影響：成功 parse → 走 JSON 路徑 (top-level k/v 提取); 失敗 → fallback k:v;k:v parse
+            if (trimmed.Length > 0 && trimmed[0] == '{')
+            {
+                try
+                {
+                    var jd = UCL.Core.JsonLib.JsonData.ParseJson(trimmed);
+                    if (jd != null && jd.IsObject && jd.Dic != null)
+                    {
+                        var dj = new Dictionary<string, string>();
+                        foreach (var kv in jd.Dic)
+                        {
+                            if (string.IsNullOrEmpty(kv.Key)) continue;
+                            var v = kv.Value;
+                            // string/int/bool 直接 ToString; 巢狀 object/array 走 ToJson 保留結構
+                            string vstr;
+                            if (v == null) vstr = "";
+                            else if (v.IsString) vstr = v.GetString();
+                            else if (v.IsInt) vstr = v.GetInt().ToString();
+                            else if (v.IsLong) vstr = v.GetLong().ToString();
+                            else if (v.IsDouble) vstr = v.GetDouble().ToString();
+                            else if (v.IsBoolean) vstr = v.GetBool() ? "true" : "false";
+                            else vstr = v.ToJson();   // 巢狀 → 保留 JSON 字串
+                            dj[kv.Key] = vstr;
+                        }
+                        if (dj.Count > 0) return dj;
+                    }
+                }
+                catch
+                {
+                    // JSON parse fail → fall through to legacy parse
+                }
+            }
+
+            // 區塊職責：legacy k:v;k:v 格式解析 (舊呼叫者: C# 端內部 / 舊 CLI 工具)
             var d = new Dictionary<string, string>();
             foreach (var pair in raw.Split(';'))
             {

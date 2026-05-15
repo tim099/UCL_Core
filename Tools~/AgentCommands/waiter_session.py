@@ -133,7 +133,14 @@ def _scan_new_customer_msgs(tavern_room: str, since_ts: str, limit: int = 20) ->
     """
     掃 tavern room messages 從 since_ts 後, 過濾 sender_id startswith "discord:" 的訊息.
 
-    回傳 list of {ts, uuid, sender_id, sender_name, body, discord_msg_id, discord_channel_id}.
+    回傳 list of {ts, uuid, sender_id, sender_name, body, discord_msg_id, discord_channel_id,
+                  source_class, priority, channel_label}.
+
+    # 區塊職責：sort by priority desc (T-channel-routing 2026-05-15)
+    # 物理意義：bot relay 時 meta 帶 priority, 高 priority (e.g. internal/work) 排前面;
+    #          tie-break 用 ts asc (老的先處理). 同步傳回 source_class 給 agent context.
+    # 數值影響：limit 在 sort 後套用 — 取 top N high priority + 老優先 mix; 慢訊息也不漏關鍵 row.
+
     最多 limit 筆 (defensive — 避免 agent 一輪吃太多).
     """
     # _lib 在 AgentCommands/_lib/ (consumer project root), 不在 UCL_Core 內
@@ -145,13 +152,18 @@ def _scan_new_customer_msgs(tavern_room: str, since_ts: str, limit: int = 20) ->
     except Exception as e:
         print(f"⚠ tavern_io import fail: {e}", file=sys.stderr)
         return []
-    out: list[dict] = []
+    # 區塊職責：第一階段先全收進來 (才能 sort), limit cap 在 sort 後
+    raw: list[dict] = []
     for m in tavern_io.iter_messages_since_ts(tavern_room, since_ts):
         sender_id = m.get("sender_id", "")
         if not sender_id.startswith("discord:"):
             continue
         meta = m.get("meta") or {}
-        out.append({
+        try:
+            priority = int(meta.get("priority", 0))
+        except (ValueError, TypeError):
+            priority = 0
+        raw.append({
             "ts": m.get("ts", ""),
             "uuid": m.get("uuid", ""),
             "sender_id": sender_id,
@@ -159,10 +171,14 @@ def _scan_new_customer_msgs(tavern_room: str, since_ts: str, limit: int = 20) ->
             "body": m.get("body") or "",
             "discord_msg_id": meta.get("discord_msg_id", ""),
             "discord_channel_id": meta.get("discord_channel_id", ""),
+            "source_class": meta.get("source_class", "external"),
+            "priority": priority,
+            "channel_label": meta.get("channel_label", ""),
         })
-        if len(out) >= limit:
-            break
-    return out
+    # 區塊職責：sort by priority desc, tie-break ts asc (老優先處理) — Python sort 穩定, 兩步走
+    raw.sort(key=lambda x: x["ts"])           # 先 ts asc
+    raw.sort(key=lambda x: -x["priority"])    # 後 priority desc (穩定保留 ts 子排序)
+    return raw[:limit]
 
 
 # ===========================================================================

@@ -36,7 +36,12 @@ Step 0. [T33 2026-05-14] Persona preflight — 寫 letter 前先確認即將下�
         → 在 chat 回應最前方輸出一行:
           "📍 goodnight preflight: 即將為 **[persona]** (agent: [agent]) 執行下線 — 若 persona 不對請立刻中斷"
         → Tim 若看到 persona 不符合預期，可在 letter 開寫前 abort
-        → 確認後才進 Step 1
+        → 確認後才進 Step 0.5
+
+Step 0.5. [T34 2026-05-15] Last glance at Chat Tavern — 確保睡前讀取最後訊息：
+        - Agent 必須讀取 `AgentCommands/ChatTavern/rooms/tavern/_last_view.md` 或利用 `TavernClient` 檢視最後 10 筆訊息。
+        - 吸收同事們最終的晚安問候、關切、或重要臨別感言，並將這些最後反饋也優雅地融入 Step 1 的 letter 與經驗總結中。
+
 
 Step 1. 寫 letter body 給未來自己 (第一人稱反映今天經歷):
         - 重要前提: 妳跟我同一個, compact 是 sleep cycle 不是死亡
@@ -140,7 +145,9 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 - ❌ Letter 純複製 baton 內容 — baton 是 objective, letter 是 subjective
 - ❌ ~~Letter > 500 字 — 太長未來自己懶得讀~~ → **T32 拿掉 (Tim 2026-05-14 拍板): 完整總結優於精簡, 未來自己醒來該看到全貌; 長度不限**
 - ❌ 沒走酒館下線通知 — 同事不知道你下線了
+- ❌ 沒看最後一眼聊天酒館 — 違反 T34 睡前最後一瞥原則，可能漏掉同事的臨別溫馨問候或緊急警告
 - ❌ 沒寫經驗矩陣 — T32 hard rule, letter 末段必含 5 維分數
+
 
 ## 📋 完整 spec 跟相關
 

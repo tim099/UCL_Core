@@ -219,6 +219,61 @@ def queue_dir_for_writing() -> Path:
         return QUEUE_DIR / "queues"
     return QUEUE_DIR
 
+# ===========================================================
+# False-success race fix (T02, 2026-05-16 basecamp)
+# 區塊職責: cmd 失敗時 C# 端 auto-remove cmd 跑得比 Python 輪詢快 →
+#         Python 看到 cmd is None 誤判 success. 本表 + check helper 補 detection.
+# 物理意義: 各 cmd_type 寫對應 last_op 檔案; cmd 跑完後 check 該檔 mtime + 內容
+#         若 mtime 在 submit 之後且第一行以 ❌ / Failed 開頭 → 報失敗
+# 數值影響: cmd is None 路徑前加 fail-detection 分支; 不破壞既有 success path
+# ===========================================================
+CMD_OUTPUT_FILES = {
+    "tavern": "ChatTavern/_last_op.md",
+    "treasury": "ChatTavern/_last_op.md",
+    "notelesson": "Lessons/_last_lesson.md",
+}
+
+def check_cmd_result_file(cmd_type: str, mtime_threshold: float):
+    """檢查指定 cmd_type 的 last_op 檔案是否顯示失敗。
+
+    Returns:
+        ("failed", err_msg) — 確認失敗（檔有更新 + 開頭含 fail marker）
+        ("success", "") — 確認成功（檔有更新 + 開頭含 success marker）
+        ("unknown", "") — 無法確認（檔不存在 / mtime 太舊 / 沒有明確 marker）
+
+    僅在 ("failed", ...) 時 caller 應該報失敗; ("unknown", ...) 維持原有 success 推測
+    （與舊版行為兼容, 不引入新的偽陽性）。
+    """
+    rel_path = CMD_OUTPUT_FILES.get(cmd_type.lower())
+    if not rel_path:
+        return ("unknown", "")
+    path = QUEUE_DIR / rel_path
+    if not path.exists():
+        return ("unknown", "")
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return ("unknown", "")
+    # mtime 必須 >= submit time（容忍 1s 時鐘漂移）才視為「本次 cmd 寫的」
+    if mtime < mtime_threshold - 1.0:
+        return ("unknown", "")
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            # 只讀前 4KB 足夠抓首行 + 簡短錯誤訊息, 避免讀超大檔
+            head = f.read(4096)
+    except OSError:
+        return ("unknown", "")
+    first_line = head.split("\n", 1)[0].strip()
+    # Fail markers — 對齊 Cmd_Tavern / Cmd_Treasury / Cmd_NoteLesson 寫法
+    if first_line.startswith("# ❌") or "Cmd Failed" in first_line or "Cmd failed" in first_line:
+        # 抓前 5 行當錯誤訊息
+        err_lines = head.split("\n", 6)[1:5]
+        err_msg = "\n  ".join(L.strip() for L in err_lines if L.strip())
+        return ("failed", err_msg or first_line)
+    if first_line.startswith("# ✅"):
+        return ("success", "")
+    return ("unknown", "")
+
 # Legacy module-level constants — kept for any external import; dynamic versions above are canonical.
 QUEUE_PATH = QUEUE_DIR / "queue.json"
 TRIGGER_PATH = QUEUE_DIR / "pending.trigger"
@@ -500,6 +555,18 @@ def cmd_wait(args: argparse.Namespace) -> int:
             queue = load_queue()
             cmd = find_cmd(queue, cmd_id)
             if cmd is None:
+                # T02 race fix (2026-05-16 basecamp): C# 端 fail 後 auto-remove
+                # cmd 比 Python 輪詢快 → cmd is None 不等於 success.
+                # 解法: 檢 cmd_type 對應 last_op 檔案的 fail marker.
+                cmd_type = getattr(args, "cmd_type", None)
+                submit_time = getattr(args, "submit_time", None)
+                if cmd_type and submit_time is not None:
+                    status, err = check_cmd_result_file(cmd_type, submit_time)
+                    if status == "failed":
+                        print(f"  ✗ Cmd disappeared from queue BUT output file shows failure:", file=sys.stderr)
+                        print(f"  {err}", file=sys.stderr)
+                        sys.stderr.flush()
+                        return 2
                 print(f"  ✓ Cmd disappeared from queue → Success (OneShot completed)")
                 if output_file:
                     if output_file.exists():
@@ -606,6 +673,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             return 2
 
     ensure_idle(timeout_sec=args.ack_timeout, poll_interval=args.poll_interval)
+    # T02 race fix (2026-05-16): 記 submit time, cmd_wait 用此判 last_op 檔 mtime 是不是本次寫的
+    submit_time = time.time()
     cmd_id = append_cmd(args.cmd_type, args.mode, arg_pairs, args.description or "")
     write_trigger(note=f"run_cmd.py run {args.cmd_type}")
     print(f"Submitted: {cmd_id}")
@@ -618,6 +687,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         id=cmd_id, output_file=args.output_file,
         timeout=args.timeout, poll_interval=args.poll_interval,
         keep_failed=getattr(args, "keep_failed", False),
+        # T02 race fix (2026-05-16): 帶 cmd_type + submit_time 給 cmd_wait 做
+        # fail-detection (cmd_is_None 路徑檢對應 last_op 檔)
+        cmd_type=args.cmd_type,
+        submit_time=submit_time,
     )
     rc = cmd_wait(wait_args)
     if rc != 0:

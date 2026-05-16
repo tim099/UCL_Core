@@ -239,6 +239,18 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
+            // T13 (2026-05-16 basecamp) — ScreenStream Recording Guard
+            // 物理意義: 若 _config.json.enabled=true (錄影中) → 寫 _sensitive.flag + 整 page 黑屏
+            //          避免 session_token / persona / bank id 等敏感資訊被 frame 拍下
+            // 設計取捨: page 自己 inline 讀 config + 寫 marker, 不依賴 project-level helper class
+            //          (UCL_Core cross-project, 不能 depend on project-specific code)
+            if (IsScreenStreamRecording())
+            {
+                TouchSensitiveFlag();
+                DrawRecordingBlackout();
+                return;
+            }
+
             DrawCollisionBanner();
             DrawTokenEnforcePanel();
             GUILayout.Space(8);
@@ -247,6 +259,63 @@ namespace UCL.Core.EditorLib.Page
             DrawManualLogin();
             GUILayout.Space(12);
             DrawPersonaPool();
+        }
+
+        // ===========================================================
+        // T13 (2026-05-16) — ScreenStream Recording Guard helpers
+        // 物理意義: 偵測「正在錄影」 → 寫 marker + 渲染黑屏遮罩, 防 token / persona 被截
+        // ===========================================================
+        static bool IsScreenStreamRecording()
+        {
+            try
+            {
+                string path = System.IO.Path.Combine(GetRepoRoot(), "AgentCommands/_screenstream/_config.json");
+                if (!System.IO.File.Exists(path)) return false;
+                string txt = System.IO.File.ReadAllText(path)
+                    .Replace(" ", "").Replace("\n", "").Replace("\r", "").Replace("\t", "");
+                return txt.Contains("\"enabled\":true");
+            }
+            catch { return false; }
+        }
+
+        static void TouchSensitiveFlag()
+        {
+            try
+            {
+                string path = System.IO.Path.Combine(GetRepoRoot(), "AgentCommands/_screenstream/_sensitive.flag");
+                string dir = System.IO.Path.GetDirectoryName(path);
+                if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(path,
+                    $"{System.DateTime.UtcNow:O}\nUCL_LoginStatusPage: session_token / persona / bank id\n");
+            }
+            catch { }
+        }
+
+        static void DrawRecordingBlackout()
+        {
+            var oldBg = GUI.backgroundColor;
+            GUI.backgroundColor = Color.black;
+            using (new GUILayout.VerticalScope("box", GUILayout.MinHeight(280)))
+            {
+                GUILayout.FlexibleSpace();
+                GUILayout.Label("🔒 ScreenStream 錄影中 — 此 Page 已暫停顯示",
+                    new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold,
+                        alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1f, 0.5f, 0.5f) } });
+                GUILayout.Space(10);
+                GUILayout.Label("含 session_token / persona / bank id 等敏感資訊",
+                    new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter,
+                        normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+                GUILayout.Label("關閉 ScreenStream 才能查看 (見 RCG_ScreenStreamPage)",
+                    new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter,
+                        normal = { textColor = new Color(0.7f, 0.7f, 0.7f) } });
+                GUILayout.FlexibleSpace();
+            }
+            GUI.backgroundColor = oldBg;
+        }
+
+        static string GetRepoRoot()
+        {
+            return System.IO.Directory.GetParent(Application.dataPath).Parent.FullName;
         }
 
         // 區塊職責：Token Enforce 後台開關 (T07, 2026-05-15 apex-two)

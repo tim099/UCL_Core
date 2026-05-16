@@ -91,6 +91,7 @@ AGENT_TO_BANK = {
     "claude-code": "claude-da-xiaojie",
     "antigravity": "antigravity-da-xiaojie",
     "Zeta": "Zeta-da-xiaojie",
+    "gemini": "gemini",   # T07.6 trailhead 補 (per _registry_meta.json agent_banks canonical)
 }
 
 SALARY_RATE_PER_MIN = 2          # tokens per minute

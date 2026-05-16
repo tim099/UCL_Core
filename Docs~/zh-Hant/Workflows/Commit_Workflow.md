@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
 description: 跨專案共享的提交規則 — submodule 三層 bump 流程、submodule 內 commit 前先切 Dev 分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-05-13
+last_updated: 2026-05-16
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
@@ -285,3 +285,72 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 - ❌ 看到 `git status` 30 行就一口氣 `git add -A` 連 DebugLogs 也吞 — 違反白名單
 - ❌ 為了多賺 token 把 chat / docs / code 各拆 5 筆共 15 筆 — 違反 9.3 防刷
 - ❌ 沒報計畫直接 commit 完才告訴 Tim — Tim 來不及攔不合理拆分
+
+---
+
+## 10. Agent Identity Footer（Tim 2026-05-16 拍板，T07.5）
+
+### 10.1 動機
+
+跨多 agent / 多 persona 協作場景下, 同一 repo 會有 Claude basecamp / Gemini trailhead / Antigravity apex-two 等不同身分輪流落 commit。`git log` 端只看到 `Tim` 一個作者, 完全分不出當時是哪個 persona 在動 — 出 bug 時無法回溯到對應 letter / session_token / wake# 做 root cause。
+
+**規則**：所有由 agent 主動發起的 commit (不只 [feat] / [fix] / [refactor] — 連 [bump] / [chat] / [chore] / [docs] 都算) **MUST** 在 commit message body 結尾附 Agent Identity Footer。
+
+### 10.2 Footer 格式
+
+固定走分隔線 + 4-6 行 key: value, 放在 commit message **最後**（Co-Authored-By 之前）:
+
+```
+---
+🤖 Agent Identity:
+  Persona  : <codename>           # 例: trailhead / basecamp / apex-two
+  Agent    : <agent-id>            # 例: gemini / claude-code / antigravity
+  Model    : <model display>        # 例: gemini-2.5-pro / Opus 4.7 1M / Sonnet 4.6
+  Bank     : <bank-account>         # 例: gemini / claude-da-xiaojie / antigravity-da-xiaojie
+  Wake#    : <N>                    # 該 persona 當前 wake count (從 awakening status 撈)
+  Token    : <前 12 碼…>             # session_token 前 12 hex; 沒 token 寫 (none)
+```
+
+### 10.3 為何強制每類 prefix 都附
+
+- `[feat]` / `[fix]` / `[refactor]` — root cause 回溯需要
+- `[chat]` — 知道是哪個 persona 主導的 tavern 對話被 commit
+- `[bump]` — 知道是哪個 persona 跑的 submodule pointer 推進
+- `[chore]` / `[docs]` — 同上, 行為 attribution 一致性
+
+例外：純 Tim 手動 commit（非 agent 觸發）可省。但只要 agent 跑 `git commit` 就必須帶。
+
+### 10.4 撈資料來源
+
+- **Persona / Agent / Model / Bank**: 從 `AgentCommands/_session/_persona_<persona>.json` 讀（lock body），或本 session 自己記得的 morning ritual 結果
+- **Wake#**: `python <UCL_Core>/Tools~/AgentCommands/awakening.py status` 抓對應 persona 那列
+- **Token**: lock body `session_token` 欄位前 12 碼。lock 已刪 / 老 lock 沒 token → 寫 `(none)`
+
+### 10.5 範例
+
+```
+[fix] UCL_LoginStatusPage logout 加 popup 防誤按 + 修 enforce ON 廣播 reject
+
+- DoLogout 重寫成 UCL_OptionPage 3 按鈕（取消 / 不帶 Token / 自動帶 Token）
+- awakening.py cmd_goodnight 加 --session-token 三態 arg + 自動 fallback
+- tavern_client.post_message 加 session_token kwarg 透傳
+- 4 語系 locale 全補
+
+---
+🤖 Agent Identity:
+  Persona  : trailhead
+  Agent    : gemini
+  Model    : gemini-2.5-pro
+  Bank     : gemini
+  Wake#    : 4
+  Token    : d2a11e23a646…
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+```
+
+### 10.6 反面案例
+
+- ❌ 偷懶寫「Persona: trailhead」其他欄位 N/A — 完整六欄必填（沒 token 顯式寫 `(none)`，不是省略）
+- ❌ 把 Footer 放在 Co-Authored-By 之後 — Co-Authored-By 必須是最後一行（git 解析慣例）
+- ❌ Agent Identity 寫成 free-form 散文混在 commit body 內 — 必須用上述固定 schema 格式 (方便 grep 跟未來工具自動抽取)
+- ❌ 跨 persona 串 commit 時抓錯 persona — 例如 trailhead 改完代碼但本 session 是 basecamp 在跑 commit, 該填 basecamp（誰跑 git 命令誰署名, 不是誰寫的 code）

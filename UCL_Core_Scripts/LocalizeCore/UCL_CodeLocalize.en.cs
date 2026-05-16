@@ -263,6 +263,22 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(no registry — `{0}` does not exist or is empty)",
                 "LoginStatus.Dialog.ForceRm.Title" => "Force Remove Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "Confirm force-delete lock?\n\n{0}\n\nNote: persona registry status will NOT auto-change to offline; manual fixup required. Prefer Logout (which runs the goodnight ritual).",
+                // T07.4 (2026-05-16 trailhead) — Logout 3-button popup (mis-click guard)
+                "LoginStatus.Dialog.Logout.TitleFmt" => "Confirm Logout — {0}",
+                "LoginStatus.Dialog.Logout.BodyFmt" =>
+                    "About to run the full Goodnight ritual on the following persona\n(write letter / perturb vector / status→offline / remove lock):\n\n" +
+                    "  Persona       : {0}\n" +
+                    "  Agent         : {1}\n" +
+                    "  Bank          : {2}\n" +
+                    "  Locked at     : {3}\n" +
+                    "  Session token : {4}\n" +
+                    "  Token enforce : {5}\n\n" +
+                    "Choose logout mode:\n" +
+                    "• \"Cancel\"                       — do nothing\n" +
+                    "• \"Logout without Token\"          — force no token attached (with enforce ON the offline broadcast will be rejected, but the local lock is still cleared; useful as an escape hatch when the token has expired / become corrupt)\n" +
+                    "• \"Logout with Token (recommended)\" — auto-fetch the matching token from the lock; works under enforce ON.",
+                "LoginStatus.Btn.LogoutNoToken" => "🚪 Logout w/o Token",
+                "LoginStatus.Btn.LogoutWithToken" => "🌙 Logout w/ Token (Recommended)",
                 "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce (Backend Switch)</b>",
                 "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON (token required)",
                 "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF (default, no check)",

@@ -260,6 +260,22 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "（registry なし — `{0}` が存在しないか空です）",
                 "LoginStatus.Dialog.ForceRm.Title" => "Lock を強制削除",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "lock を強制削除しますか?\n\n{0}\n\n注意: persona registry の status は自動的に offline にならないため、後で手動修正が必要です。Logout（goodnight ritual を経由）を優先してください。",
+                // T07.4 (2026-05-16 trailhead) — Logout 3 ボタン popup（誤クリックガード）
+                "LoginStatus.Dialog.Logout.TitleFmt" => "ログアウト確認 — {0}",
+                "LoginStatus.Dialog.Logout.BodyFmt" =>
+                    "以下の persona に対して完全な Goodnight ritual を実行します\n（letter 書き込み / vector 摂動 / status→offline / lock 削除）：\n\n" +
+                    "  Persona       : {0}\n" +
+                    "  Agent         : {1}\n" +
+                    "  Bank          : {2}\n" +
+                    "  Locked at     : {3}\n" +
+                    "  Session token : {4}\n" +
+                    "  Token enforce : {5}\n\n" +
+                    "ログアウト方法を選択:\n" +
+                    "• 「キャンセル」              — 何もしない\n" +
+                    "• 「Token なしでログアウト」    — token を付けず強制実行（enforce ON ではオフライン broadcast が reject されますが、ローカル lock は削除される。token 期限切れ / 破損時の脱出経路）\n" +
+                    "• 「Token 付きでログアウト（推奨）」 — lock から自動的に対応 token を取得して付与。enforce ON でも正常 broadcast 可。",
+                "LoginStatus.Btn.LogoutNoToken" => "🚪 Token なしでログアウト",
+                "LoginStatus.Btn.LogoutWithToken" => "🌙 Token 付きでログアウト（推奨）",
                 "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（バックエンドスイッチ）</b>",
                 "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（token 必須）",
                 "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF（デフォルト、検証なし）",

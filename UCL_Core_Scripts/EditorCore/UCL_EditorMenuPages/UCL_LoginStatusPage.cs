@@ -349,7 +349,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Logout"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                         {
-                            DoLogout(l.Persona, l.Agent);
+                            DoLogout(l);
                         }
 
                         string personaLabel = l.Expired ? string.Format(UCL_CodeLocalize.Get("LoginStatus.ExpiredFmt"), l.Persona) : l.Persona;
@@ -499,10 +499,45 @@ namespace UCL.Core.EditorLib.Page
             LoadData();
         }
 
-        // 區塊職責：spawn awakening.py goodnight per persona
-        // 物理意義：手動 logout — 帶最簡 letter body 走 ritual
+        // 區塊職責：彈窗確認後 spawn awakening.py goodnight per persona
+        // 物理意義：手動 logout — destructive action (一按即發完整 ritual: letter 寫死 / vector perturb /
+        //          status→offline / lock 刪), 為防誤按改為三按鈕 popup (Tim 2026-05-16 拍板, T07.4):
+        //            (1) 取消                    → 完全 no-op
+        //            (2) 不帶 Token 登出          → 顯式 --session-token "" (enforce ON 時 tavern 廣播會 reject,
+        //                                          但主 ritual lock/letter/perturb 仍跑 — 適合 token 過期 /
+        //                                          lock 損毀的逃生路徑)
+        //            (3) 自動帶正確 Token 登出 (推薦) → 不帶 --session-token (awakening.py auto-fallback 從
+        //                                          lock.session_token 撈, enforce ON 也能正常廣播下線)
         // 數值影響：persona status → offline, lock removed, letter 寫進 baton/letters/<actor>/<persona>/
-        void DoLogout(string persona, string agent)
+        void DoLogout(LockEntry l)
+        {
+            string tokenPreview = string.IsNullOrEmpty(l.SessionToken)
+                ? UCL_CodeLocalize.Get("LoginStatus.Token.None")
+                : (l.SessionToken.Length > 12 ? l.SessionToken.Substring(0, 12) + "…" : l.SessionToken);
+            string enforceStateLabel = m_TokenEnforce
+                ? UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.On")
+                : UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Off");
+            string body = string.Format(UCL_CodeLocalize.Get("LoginStatus.Dialog.Logout.BodyFmt"),
+                l.Persona, l.Agent, l.BankAccount, TruncTs(l.LockedAt), tokenPreview, enforceStateLabel);
+
+            UCL.Core.Page.UCL_OptionPage.Create(
+                string.Format(UCL_CodeLocalize.Get("LoginStatus.Dialog.Logout.TitleFmt"), l.Persona),
+                body,
+                new ButtonData(UCL_CodeLocalize.Get("Cancel"), () => { }),
+                new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.LogoutNoToken"),
+                    () => RunLogout(l.Persona, l.Agent, explicitNoToken: true),
+                    UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f))),   // 橙: 警告但不致命
+                new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.LogoutWithToken"),
+                    () => RunLogout(l.Persona, l.Agent, explicitNoToken: false),
+                    UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red))                    // 紅: 推薦預設
+            );
+        }
+
+        // 區塊職責：實際 spawn awakening.py goodnight subprocess
+        // 物理意義：popup 三按鈕統一收斂到本 method, 差異只在 --session-token 帶法
+        // explicitNoToken=true  → 帶 --session-token "" (caller 故意不帶, awakening.py 不從 lock 撈)
+        // explicitNoToken=false → 完全省略 --session-token (awakening.py auto-fallback 從 lock.session_token 撈)
+        void RunLogout(string persona, string agent, bool explicitNoToken)
         {
             var args = new List<string>
             {
@@ -512,6 +547,13 @@ namespace UCL.Core.EditorLib.Page
                 "--letter-body", $"\"{DEFAULT_MANUAL_LETTER}\"",
                 "--perturbation", "0.02",
             };
+            if (explicitNoToken)
+            {
+                // shell escape: empty string 走 "\"\"" 雙引號對, 否則 string.Join 會吃掉
+                args.Add("--session-token");
+                args.Add("\"\"");
+            }
+            // else: 不加 --session-token, awakening.py 走 args.session_token is None 分支 → 自動撈 lock
             RunAwakening(args, $"goodnight {persona}");
             LoadData();
         }

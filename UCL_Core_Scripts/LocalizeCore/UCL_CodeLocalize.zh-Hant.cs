@@ -296,6 +296,22 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(無 registry — `{0}` 不存在或空)",
                 "LoginStatus.Dialog.ForceRm.Title" => "強制移除 Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "確定強制刪除 lock?\n\n{0}\n\n注意: persona registry status 不會自動改成 offline, 需後續手動修正。建議優先用 Logout（走 goodnight ritual）。",
+                // T07.4 (2026-05-16 trailhead) — Logout 三按鈕 popup（防誤按）
+                "LoginStatus.Dialog.Logout.TitleFmt" => "確認登出 — {0}",
+                "LoginStatus.Dialog.Logout.BodyFmt" =>
+                    "即將對下列 persona 執行完整 Goodnight ritual\n（寫 letter / vector 擾動 / status→offline / 刪 lock）：\n\n" +
+                    "  Persona       : {0}\n" +
+                    "  Agent         : {1}\n" +
+                    "  Bank          : {2}\n" +
+                    "  Locked at     : {3}\n" +
+                    "  Session token : {4}\n" +
+                    "  Token enforce : {5}\n\n" +
+                    "請選擇登出方式：\n" +
+                    "• 「取消」              — 不執行任何動作\n" +
+                    "• 「不帶 Token 登出」    — 強制不附 token（enforce ON 時下線廣播會被 reject，但本地 lock 仍會清；適合 token 過期/損毀的逃生路徑）\n" +
+                    "• 「自動帶正確 Token 登出（推薦）」 — 從 lock 自動撈出對應 token 附上，enforce ON 也能正常廣播。",
+                "LoginStatus.Btn.LogoutNoToken" => "🚪 不帶 Token 登出",
+                "LoginStatus.Btn.LogoutWithToken" => "🌙 自動帶 Token 登出（推薦）",
                 // T07 (2026-05-15 apex-two) — Token Enforce 後台開關
                 "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（後台開關）</b>",
                 "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（必驗 token）",

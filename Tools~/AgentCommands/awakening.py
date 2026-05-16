@@ -974,8 +974,12 @@ def select_persona(preferred: str, reg: dict, agent: str,
 
 # ─── Tavern post (走 TavernClient SDK) ──────────────────────────────────
 def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = None,
-                room: str = "tavern") -> bool:
-    """Spawn run_cmd.py Tavern op=post. fail-swallow 不擋 ritual."""
+                room: str = "tavern", session_token: str | None = None) -> bool:
+    """Spawn run_cmd.py Tavern op=post. fail-swallow 不擋 ritual.
+
+    session_token (T07): enforce ON 時必帶，否則 Cmd_Tavern reject。caller (e.g. cmd_goodnight)
+    從 lock.session_token 撈來透傳即可；None / "" → 不附（enforce OFF 路徑）.
+    """
     try:
         from _lib.tavern_client import TavernClient   # type: ignore
         client = TavernClient()
@@ -986,6 +990,7 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
             persona=persona,
             meta=meta or {},
             wait_reply=0,
+            session_token=session_token,
         )
         if not res.ok:
             print(f"⚠ tavern post 失敗 (主 ritual 不受影響): {res.error or res.stderr[:200]}",
@@ -1492,6 +1497,16 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     if args.note:
         body += f"\n- Note: {args.note}"
 
+    # T07 (2026-05-16 trailhead): resolve session_token for tavern_post
+    # 物理意義：enforce ON 時 Cmd_Tavern.Op_Post 必驗 token。caller (e.g. UCL_LoginStatusPage)
+    #   可三態指定:
+    #     args.session_token=None  → 省略, 自動 fallback 從 lock.session_token 撈 (預設行為, 透明)
+    #     args.session_token="<X>" → 顯式帶, 走透傳 (caller 已撈好 token)
+    #     args.session_token=""    → 顯式空, 不帶 token (caller 故意走 enforce reject path 除錯)
+    if args.session_token is None:
+        broadcast_token = (lock or {}).get("session_token", "") or None
+    else:
+        broadcast_token = args.session_token or None
     ok = tavern_post(
         sender_id=actor,
         persona=persona,
@@ -1499,6 +1514,7 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         meta={"tag": "goodnight-protocol", "category": "meta",
               "status-change": "offline", "letter": letter_path.name,
               "perturbation": str(perturbation)},
+        session_token=broadcast_token,
     )
 
     # Step 5: remove persona lock (Tim 2026-05-13 v2 — persona-keyed, 直接刪自己 persona 的 lock)
@@ -1967,6 +1983,10 @@ def main():
                          "省略時從 registry 該 persona 的 agent 欄位讀.")
     pg.add_argument("--force", action="store_true",
                     help="env/lock mismatch 時仍強制執行 (debug / 跨 agent 修復用, 慎用).")
+    pg.add_argument("--session-token", default=None,
+                    help="(T07) 顯式帶 session_token 給 tavern_post — enforce ON 時必須帶, "
+                         "否則 Cmd_Tavern.Op_Post reject 下線廣播. "
+                         "省略時自動從 lock.session_token 撈; 空字串 '' = 顯式不帶 (除錯 / 強制走 enforce reject path).")
     pg.set_defaults(func=cmd_goodnight)
 
     ps = sub.add_parser("status", help="read-only env + persona pool report")

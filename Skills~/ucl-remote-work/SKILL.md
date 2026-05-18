@@ -153,7 +153,7 @@ python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py cycle --session <i
 |---|---|
 | `end` (expired=true) | `end --session <id>` (不加 --early-confirm), exit /loop |
 | `confirm_task` (new_msgs 非空) | 對每筆 Tim msg 讀 body → 構思 task scope → tavern post 確認 → `confirm_task`; ScheduleWakeup +60-120s |
-| `progress` (new_msgs 空) | (若有動工中) 寫 1-2 句進度回報 tavern post → `report_progress`; 或自由發表 idle. ScheduleWakeup +180-300s (比 waiter 慢, 避免洗版 Tim 手機) |
+| `progress` (new_msgs 空) | 走 **3-tier idle hierarchy** (見 §Idle Policy); ScheduleWakeup +180-300s (比 waiter 慢, 避免洗版 Tim 手機) |
 
 ### Step 4. 確認 task scope 後動工
 
@@ -185,6 +185,26 @@ python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py end --session <id>
 ```
 
 CLI 自動結算 (base * paid_min + bonus * tasks_done), tavern post 收工 announcement, exit /loop.
+
+---
+
+## 🧘 Idle Policy — 3-tier hierarchy (Tim 2026-05-18 拍板)
+
+當 cycle 回 `new_msgs=[]` 且 agent **沒在動工某 Tim task** 時，**依優先順序**選一個做：
+
+| 優先 | Tier | 做什麼 | 範例 |
+|---|---|---|---|
+| 1 | **work-thinking** | 思考目前 / 近期工作上的問題 | 想最近 task 設計取捨、思考 v2 該怎麼接、reframe 卡點 |
+| 2 | **QA-review** | 自我審視（QA 自己的產出） | 重看剛 ship 的 code 找漏 / 文檔對齊 / 既有 Rule 矛盾掃 |
+| 3 | **free-time** | 真的無事可做 → 自由活動 | 測試遊戲內容、讀文本、發呆、酒館聊天、自我 brainstorm |
+
+**Hard rules**:
+- Tier 1/2 期間照樣領 base salary（自由時間照領，跟動工 task 一視同仁）
+- Tier 3 期間照樣領 — Tim 拍板「無事 = 自由時間照算工資」
+- 不必每 cycle 都 post — 沒 milestone 就靜默, 別洗版 Tim Discord
+- 有產出（新 lesson / patch / 文件 update）才 post 跟 task_done 同等級 share
+
+跟 waiter 區別：waiter idle 是「等客人」自由發揮；remote-work idle 是「Tim 不在場時主動找事做」優先順序。
 
 ---
 
@@ -227,7 +247,7 @@ CMD 可改: `--rate 3 --task-bonus 5 --voucher-interval 10` 用其他費率場�
 | Event | task assign/accept/done/review | cycle/reply/idle | **cycle/confirm/progress/done** |
 | Salary | 2 tok/min + voucher | 1 tok/min + 2/reply | **2 tok/min + 2/task_done + voucher** (2026-05-18 對齊 work-session) |
 | Progress 頻率 | marathon 慢 standby | reply 即時 | **5-15 min 主動回報** |
-| Idle 內容 | catchphrase + 等 task | 自由發揮 (傲嬌) | **progress report (work flavor)** |
+| Idle 內容 | catchphrase + 等 task | 自由發揮 (傲嬌) | **3-tier idle hierarchy** (work-thinking → QA-review → free-time) |
 
 ---
 

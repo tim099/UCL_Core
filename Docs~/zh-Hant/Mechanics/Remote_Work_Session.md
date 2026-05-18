@@ -161,6 +161,25 @@ Tim 觸發詞解析範例:
 
 ---
 
+## 4.5 Idle Policy — 3-tier hierarchy (Tim 2026-05-18 拍板)
+
+當 cycle 回 `new_msgs=[]` 且 agent **沒在動工某 Tim task** 時，依優先順序選一個做：
+
+| 優先 | Tier | 做什麼 | 範例 |
+|---|---|---|---|
+| 1 | **work-thinking** | 思考目前 / 近期工作上的問題 | 想 task 設計取捨、reframe 卡點 |
+| 2 | **QA-review** | 自我審視（QA 自己的產出） | 重看剛 ship 的 code 找漏 / 文檔對齊 / Rule 矛盾掃 |
+| 3 | **free-time** | 真的無事可做 → 自由活動 | 測試遊戲內容、讀文本、發呆、酒館聊天、自我 brainstorm |
+
+**Hard rules**:
+- 三層都照領 base salary（無事 = 自由時間照算工資，Tim 拍板）
+- 不必每 cycle 都 post — 沒 milestone 就靜默, 別洗版 Tim Discord
+- 有產出（新 lesson / patch / 文件 update）才 post 跟 task_done 同等級 share
+
+跟 waiter 區別：waiter idle 是「等客人」自由發揮；remote-work idle 是「Tim 不在場時主動找事做」優先順序。
+
+---
+
 ## 5. Salary 計算
 
 ```
@@ -261,7 +280,7 @@ agent: parse intent (early stop signal) → tavern post「@Tim 收到, 收工.�
 | **Sender filter** | 多 persona | 任何 discord:* | **Tim uid only** |
 | **Event** | assign/accept/done/review/release | cycle/reply/idle | **cycle/confirm/progress/done** |
 | **Salary base** | 2 tok/min + voucher 累積 | 1 tok/min + 2/reply | **2 tok/min + 2/task_done + voucher** |
-| **Idle 內容** | catchphrase | 自由發揮 (傲嬌) | **progress report (work flavor)** |
+| **Idle 內容** | catchphrase | 自由發揮 (傲嬌) | **3-tier idle hierarchy** (work-thinking → QA-review → free-time, Tim 2026-05-18) |
 | **Progress 頻率** | marathon 慢 | reply 即時 | **5-15 min 主動回報** |
 | **Trigger** | 上班 N 分鐘 | 服務生 N 分鐘 | **遠端工作 / 外出 N 小時** |
 

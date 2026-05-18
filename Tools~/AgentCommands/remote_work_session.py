@@ -328,6 +328,18 @@ def _scan_tim_messages(tavern_room: str, since_ts: str, channel_id: str, tim_uid
             msg_cid = str(meta.get("discord_channel_id", ""))
             if msg_cid != channel_id:
                 continue
+        # T07.1 inbound bot 已 relay 圖片 — attachments 在 meta.attachments (JSON string) + refs 在 message top-level.
+        # cycle caller 要能看到圖片 metadata + 本地檔路徑, 否則 agent 拿不到 attachment context (2026-05-18 gura task fix).
+        attachments_raw = meta.get("attachments")
+        attachments_parsed: list = []
+        if attachments_raw:
+            if isinstance(attachments_raw, str):
+                try:
+                    attachments_parsed = json.loads(attachments_raw)
+                except (ValueError, TypeError):
+                    attachments_parsed = []
+            elif isinstance(attachments_raw, list):
+                attachments_parsed = attachments_raw
         out.append({
             "ts": m.get("ts", ""),
             "uuid": m.get("uuid", ""),
@@ -338,6 +350,10 @@ def _scan_tim_messages(tavern_room: str, since_ts: str, channel_id: str, tim_uid
             "discord_channel_id": meta.get("discord_channel_id", ""),
             "source_class": meta.get("source_class", "work"),
             "priority": int(meta.get("priority", 0) or 0),
+            # 圖片 / 附件 metadata — 物理意義: 給 agent 知道有 attachment 跟本地路徑;
+            # 數值影響: attachments=[] 空時不影響既有 caller, attachments 非空時 agent 該讀 local 路徑跟 (Read tool) 看圖
+            "attachments": attachments_parsed,
+            "refs": m.get("refs") or [],
         })
         if len(out) >= limit:
             break

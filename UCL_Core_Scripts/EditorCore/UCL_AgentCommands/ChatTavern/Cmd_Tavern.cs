@@ -444,13 +444,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     }
                 }
                 // Fallback: agent-level identity card
-                if (string.IsNullOrEmpty(senderAvatarSprite))
+                // 區塊職責: senderId 對應 IdentityAsset 沒 register 時 skip lookup 避免 file-not-found exception
+                // 物理意義: 跟 line 436-438 PersonaCardAsset 同 pattern (ContainsAsset → GetData)
+                // 數值影響: 修 2026-05-18 gura — Discord senderId 如 "discord:383604378185105408" 含 `:`
+                //          無法當 Windows file name + 從未 register 過 → AssetConfig.GetJsonData throw
+                if (string.IsNullOrEmpty(senderAvatarSprite) && !string.IsNullOrEmpty(senderId))
                 {
-                    var identityCard = new UCL_ChatTavernIdentityAsset().GetData(senderId);
-                    string identSpriteId = identityCard?.m_AvatarSprite?.m_ID;
-                    if (!string.IsNullOrEmpty(identSpriteId) && identSpriteId != "Default")
+                    var identityAsset = new UCL_ChatTavernIdentityAsset();
+                    if (identityAsset.ContainsAsset(senderId))
                     {
-                        senderAvatarSprite = identSpriteId;
+                        var identityCard = identityAsset.GetData(senderId);
+                        string identSpriteId = identityCard?.m_AvatarSprite?.m_ID;
+                        if (!string.IsNullOrEmpty(identSpriteId) && identSpriteId != "Default")
+                        {
+                            senderAvatarSprite = identSpriteId;
+                        }
                     }
                 }
             }

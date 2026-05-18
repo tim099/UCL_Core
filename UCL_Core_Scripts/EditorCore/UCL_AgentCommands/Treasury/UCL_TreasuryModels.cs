@@ -1,8 +1,12 @@
 // 區塊職責：T40 Treasury Ledger schema models
 // 物理意義：每筆 ledger entry 對應一個獨立 .json 檔；schema 含 actor_signature 防盜用
 // 數值影響：純資料容器；序列化 / 反序列化由 UCL_TreasuryLedger 自己處理（同 ChatTavern 慣例）
+//
+// 2026-05-18 (gura): 去掉 #if UNITY_EDITOR guard — 純 data class, 無 Editor 依賴.
+// 對齊 UCL_TreasuryLedger.cs 2026-05-13 (Zeta) 已 strip 同 guard 的決策.
+// 之前 guard 殘留導致 Player Build 撞 CS0246 (consumer 找不到 TreasuryLedgerEntry / TreasuryEntryType,
+// 因為 Models 被 #if 排除但 Ledger 不被排除).
 
-#if UNITY_EDITOR
 using System.Collections.Generic;
 
 namespace UCL.Core.EditorLib.AgentCommands.Treasury
@@ -45,4 +49,3 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public bool signature_mismatch;                 // sig_agent_id_claimed 跟 sig_env_marker 不一致 → true
     }
 }
-#endif

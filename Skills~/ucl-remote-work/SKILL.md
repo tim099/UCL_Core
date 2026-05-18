@@ -188,6 +188,54 @@ CLI 自動結算 (base * paid_min + bonus * tasks_done), tavern post 收工 anno
 
 ---
 
+## 🟦 Stay-Alive Rule — Session 狀態必保 `...` / 🔵 (Tim 2026-05-18 拍板)
+
+**Remote-work session 期間 agent MUST 把 Claude Code Recents session 狀態保在 `...`（待機 active）或 🔵（standby alive），不可掉到 ⚪（stopped/idle）**。
+
+### Recents 狀態對照
+
+| Dot | 意義 | Remote-Work 容許 |
+|---|---|---|
+| 🟡 黃實心 | active / processing 中 | ✅ 工作中正常狀態 |
+| `...` 三點 | 待機 active / queued | ✅ 等下次喚醒 — **目標狀態**之一 |
+| 🔵 藍實心 | standby alive | ✅ 健康 idle — **目標狀態**之一 |
+| ⚪ 空圓 | stopped / session ended | ❌ **禁止** — remote-work 期間掉到這 = 違規 |
+
+### 怎麼做到不掉 ⚪
+
+**核心**：turn 結束前用 `ScheduleWakeup` 工具排下次喚醒 → session 保 `...`/🔵 不下線。
+
+```
+Step 1. 每 turn 處理完手上的 work
+Step 2. **MUST** ScheduleWakeup(delaySeconds=300~900, reason=..., prompt=cycle)
+        ↓ 排下次自動喚醒
+Step 3. 下次喚醒 → 跑 cycle → 新工作 / progress / repeat
+```
+
+### 前置條件
+
+ScheduleWakeup 通常綁 `/loop dynamic` 模式（per tool spec）。建議：
+
+- **Tim 喊「遠端工作」時直接走** `/loop dynamic <cycle-cmd>` — agent 在 /loop context 自動可用 ScheduleWakeup
+- **或 agent 試直接 call ScheduleWakeup** — 不在 /loop 可能 error（待驗證）
+- 不行的話 → tavern post 提醒 Tim「請改用 /loop dynamic 包本 session」
+
+### 違規場景（已踩過）
+
+| ❌ 違規 | 結果 |
+|---|---|
+| Confirm scope 後 post 完直接 end turn | 掉到 ⚪, Tim mobile 看到「停滯」 |
+| 「5 min implicit OK」說完不 ScheduleWakeup | 同上 — 等不到 turn 自動喚醒就停 |
+| 跑完一個 Tier 2 task 沒排下次 | 同上 |
+
+### 例外
+
+- session `end` 後可掉 ⚪ (本來就該下線)
+- Tim 顯式叫停 → end 後當然 ⚪
+- chat 端 (非行動端) Tim 在線即時對話 → 不算 remote-work standby, ⚪ 可接受
+
+---
+
 ## 🔒 No-Blocking-Wait Rule (Tim 2026-05-18 拍板)
 
 **遠端工作 session 期間 agent MUST NOT 進入任何需 Tim 即時回應才能解的 blocking wait state** — Tim 行動端 (手機 Discord) 沒辦法直接回 Claude Code chat / 給 permission / 點 AskUserQuestion 按鈕，agent 卡住 = session 死。

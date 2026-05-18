@@ -161,6 +161,25 @@ Tim 觸發詞解析範例:
 
 ---
 
+## 4.3 Stay-Alive Rule — Recents 狀態必保 `...` / 🔵 (Tim 2026-05-18 拍板)
+
+**Remote-work session 期間 agent MUST 把 Claude Code Recents 狀態保在 `...` (待機 active) 或 🔵 (standby alive)，不可掉到 ⚪ (stopped)**。
+
+| Dot | 意義 | Remote-Work |
+|---|---|---|
+| 🟡 黃實心 | processing | ✅ 工作中 |
+| `...` | 待機 active / queued | ✅ 目標 |
+| 🔵 藍實心 | standby alive | ✅ 目標 |
+| ⚪ 空圓 | stopped | ❌ 禁止 |
+
+**做法**: 每 turn 結束前 `ScheduleWakeup(delaySeconds=300-900, reason=..., prompt=cycle)` → 保 session 不下線。前置: 走 `/loop dynamic` 模式 (ScheduleWakeup 綁此 mode)。
+
+**違規場景**: confirm scope 後 post 完 end turn / 跑完一個 Tier 2 task 沒排下次 → 掉 ⚪.
+
+**例外**: session 自然 end / Tim 顯式叫停 / chat 端 (非行動端) Tim 即時對話.
+
+---
+
 ## 4.4 No-Blocking-Wait Rule (Tim 2026-05-18 拍板)
 
 **遠端 session 期間 agent MUST NOT 進入任何需 Tim 即時回應才能解的 blocking wait state** — Tim 行動端 (手機 Discord) 沒辦法直接回 Claude Code chat / 給 permission / 點 AskUserQuestion 按鈕。

@@ -4,7 +4,10 @@
 // 設計理由 (Tim 2026-05-15 拍板):
 //   notify_config.json 已肥到 137 行, 抽出 routing schema 獨立檔; 加 source_class freeform tag + priority desc
 //   讓 waiter cycle 能 sort 出內部/工作優先. UI 走 UCL_LoginStatusPage 同款 table + per-row action 模式.
+// 2026-05-18 (gura T19 BuildPlayerCheck fix): 整檔包 #if UNITY_EDITOR — page 用 UnityEditor.EditorUtility,
+//   Player Build 沒 UnityEditor namespace → CS0234. 本 page 是 IMGUI editor-only, 沒 Player Build 用途.
 
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -440,3 +443,4 @@ namespace UCL.Core.EditorLib.Page
         }
     }
 }
+#endif // UNITY_EDITOR

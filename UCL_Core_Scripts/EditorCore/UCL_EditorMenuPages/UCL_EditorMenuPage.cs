@@ -1,3 +1,6 @@
+// 2026-05-18 (gura T19 BuildPlayerCheck fix): 整檔包 #if UNITY_EDITOR — 用 UCL_AgentSkillManagerPage
+// (該 type 自己包 #if UNITY_EDITOR), Player Build 找不到 → CS0103. 本 page IMGUI editor-only, 沒 Player 用途.
+#if UNITY_EDITOR
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -243,3 +246,4 @@ namespace UCL.Core.EditorLib.Page
         }
     }
 }
+#endif // UNITY_EDITOR

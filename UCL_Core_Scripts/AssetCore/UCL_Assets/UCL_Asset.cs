@@ -229,7 +229,10 @@ namespace UCL.Core
             catch (Exception e)
             {
                 Debug.LogException(e);
+#if UNITY_EDITOR
+                //TODO : create a error page to show the error and let user fix the json file??
                 throw e;
+#endif
             }
             finally
             {

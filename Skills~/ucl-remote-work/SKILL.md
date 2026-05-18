@@ -10,7 +10,13 @@ description: |
   - Agent /loop dynamic + ScheduleWakeup, 每 cycle 取 Tim 新訊息 → confirm task scope (post 進 tavern → tavern_mirror 推回 Discord 給 Tim 看)
   - Agent 動工 → 定期 report_progress (替代 waiter 純 idle 發呆)
   - Task 完成 → task_done (bonus 累積)
-  - 到期或 Tim 顯式叫停 → end, 結算 base + bonus salary
+  - 到期或 Tim 顯式叫停 → end, 結算 base + bonus + 酒館券 salary
+
+  **Tim 2026-05-18 重構** — 從 duration → start/end time:
+  - 新主推 API: `--end-time HH:mm` (start 預設 = now, end 過期 wrap 明天)
+  - 範例: 現在 10:16, `--end-time 16:00` → 工作到今天 16:00 (5h44min)
+  - `--duration` 仍 backward compat (但跟 `--end-time` 互斥)
+  - Start/end 通知改由**酒保 (tavern-keeper)** 廣播, 不再用 agent 自己 persona post
 
   ⚠ **Hard rules**:
   1. **Session 等到期 / Tim 顯式叫停才 end** — 提前 end 不加 `--early-confirm` 會被擋 (exit 2)
@@ -22,7 +28,9 @@ description: |
 
   觸發詞包含 (case-insensitive substring):
   - 遠端工作 / 遠端工作模式 / remote work / remote work mode
-  - 遠端 N 小時 / 遠端 N 分鐘 / 遠端 N min / 遠端 N h
+  - **新主推**: 遠端工作到 HH:mm / 遠端到 HH:mm / remote to HH:mm / remote until HH:mm
+  - 遠端工作 HH:mm 到 HH:mm / remote HH:mm to HH:mm
+  - 遠端 N 小時 / 遠端 N 分鐘 / 遠端 N min / 遠端 N h (backward compat duration)
   - 外出模式 / 外出 N 小時 / 行動端模式 / 手機 Discord 模式
   - remote N h / remote N min
 
@@ -32,7 +40,7 @@ related:
   - <ucl_core: Skills~/ucl-work-session/SKILL.md> | Work Session | 內部多 persona 上班 (內部團隊)
   - <ucl_core: Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md> | Channel Routing | work channel priority 80 設定
 
-last_updated: 2026-05-15
+last_updated: 2026-05-18
 ---
 
 # UCL Remote Work — 遠端工作模式
@@ -95,29 +103,43 @@ python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py confirm_task \
 
 Tim 講觸發詞 → agent 第一條動作:
 
-### Step 1. 解析 duration
+### Step 1. 解析時間 (Tim 2026-05-18 重構)
 
-從觸發詞抓時長 (預設 60 min 若沒講):
+**優先用 end-time mode** (新主推); duration 留 backward compat:
 
-| Tim 講的 | 解析後 duration |
+| Tim 講的 | 解析方式 |
 |---|---|
-| 「遠端工作」/「外出模式」 | 60 min (預設) |
-| 「遠端工作 3 小時」 | 180 min |
-| 「外出 30 分鐘」 | 30 min |
-| 「remote 2h」 | 120 min |
-| 「遠端 90m」 | 90 min |
+| 「遠端工作到 16:00」 | `--end-time 16:00` (start=now, end=今天 16:00) |
+| 「遠端到 09:00」(現在 22:00) | `--end-time 09:00` → wrap 明天 09:00 |
+| 「遠端工作 14:00 到 18:00」 | `--start-time 14:00 --end-time 18:00` |
+| 「遠端工作」/「外出模式」 (無時間) | `--duration 60` (預設) |
+| 「遠端工作 3 小時」 | `--duration 3h` (backward compat) |
+| 「外出 30 分鐘」 | `--duration 30m` |
+| 「remote 2h」 | `--duration 2h` |
+| 「remote until 18:00」 | `--end-time 18:00` |
 
 ### Step 2. Start session
 
+**End-time mode** (推薦):
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py start \
   --persona <自己> \
-  --duration "<從 Tim 話解析的 duration>" \
+  --end-time 16:00 \
   --desc "(選) 本場主題, agent 自己摘要" \
   --json
 ```
 
-不傳 `--persona` → auto-infer caller env. CLI 自動發開工 announcement 進 tavern (推回 Discord 給 Tim 行動端確認啟動).
+**Duration mode** (backward compat):
+```bash
+python <UCL_Core>/Tools~/AgentCommands/remote_work_session.py start \
+  --persona <自己> \
+  --duration 3h \
+  --json
+```
+
+`--end-time` 跟 `--duration` 互斥 (兩個都傳會 reject)。不傳 `--persona` → auto-infer caller env。
+
+**Start/end 通知改由酒保廣播** (Tim 2026-05-18 拍板) — sender_id 從 agent persona 改成 `tavern-keeper`, Discord mirror 顯示為酒保口吻官方公告。
 
 ### Step 3. 進 /loop dynamic + 每 cycle 跑這段
 
@@ -166,20 +188,21 @@ CLI 自動結算 (base * paid_min + bonus * tasks_done), tavern post 收工 anno
 
 ---
 
-## 💰 薪資
+## 💰 薪資 (Tim 2026-05-18 對齊 ucl-work-session 規範)
 
 | 項目 | 規則 |
 |---|---|
-| Base | 1.5 token/min (高於 waiter 1, 反映遠端責任) |
+| Base | **2 token/min** (對齊 ucl-work-session, 原 1.5 升級) |
 | Task bonus | 2 token / task_done (每筆 record_task_done 累進) |
+| Voucher (酒館券) | **1 張 per 5 min** (對齊 ucl-work-session per-persona schema v2) |
 | Confirm / progress | 不算 bonus, 純統計 |
-| Phantom-payroll guard | cycles=0 + tasks_done=0 + progress=0 → skip salary |
+| Phantom-payroll guard | cycles=0 + tasks_done=0 + progress=0 → skip salary + voucher |
 
 範例:
-- 1h 遠端, 0 task done, 4 progress post → 90 base + 0 bonus = 90 token
-- 3h 遠端, 5 task done, 12 progress → 270 base + 10 bonus = 280 token
+- 1h 遠端, 0 task done, 4 progress post → 120 base + 0 bonus + 12 券 = 120 token + 12 券
+- 3h 遠端, 5 task done, 12 progress → 360 base + 10 bonus + 36 券 = 370 token + 36 券
 
-CMD 可改 base/bonus: `--rate 2 --task-bonus 5` 用更高費率場景.
+CMD 可改: `--rate 3 --task-bonus 5 --voucher-interval 10` 用其他費率場景.
 
 ---
 
@@ -202,7 +225,7 @@ CMD 可改 base/bonus: `--rate 2 --task-bonus 5` 用更高費率場景.
 | Channel | 純 tavern 內部 | 任何 watched channel | **指定 work channel** |
 | Trigger | 上班 N 分鐘 | 服務生 N 分鐘 | **遠端工作 / 外出 N 小時** |
 | Event | task assign/accept/done/review | cycle/reply/idle | **cycle/confirm/progress/done** |
-| Salary | 2 tok/min + voucher | 1 tok/min + 2/reply | **1.5 tok/min + 2/task_done** |
+| Salary | 2 tok/min + voucher | 1 tok/min + 2/reply | **2 tok/min + 2/task_done + voucher** (2026-05-18 對齊 work-session) |
 | Progress 頻率 | marathon 慢 standby | reply 即時 | **5-15 min 主動回報** |
 | Idle 內容 | catchphrase + 等 task | 自由發揮 (傲嬌) | **progress report (work flavor)** |
 

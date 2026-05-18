@@ -1,7 +1,7 @@
 ---
 title: Remote Work Session (遠端工作模式)
 description: Tim 外出時行動端 Discord 唯一介面派 task / 接 task / 回報的 agent stand-by 模式. 基於 waiter pattern 變體, 但對象固定 Tim, channel 固定工作頻道, 互動模式是 confirm-task + progress-report.
-last_updated: 2026-05-15
+last_updated: 2026-05-18
 target_audience: [AI_Agent, Developer]
 aliases: [remote work, 遠端工作, 外出模式, 手機 Discord 模式]
 tags: [chat-tavern, discord, remote, work-session, agent-loop, salary, mobile]
@@ -15,7 +15,9 @@ related:
 
 # Remote Work Session System
 
-> 一句話：**Tim 外出時喊「遠端工作 1 小時」/「外出 3 小時」→ agent 進待命 → 從手機 Discord work channel 接 Tim 派的 task → confirm scope → 動工 → 每 5-15 min progress 回報 → 到期結算薪資。**
+> 一句話：**Tim 外出時喊「遠端工作到 16:00」/「遠端 3 小時」→ agent 進待命 → 從手機 Discord work channel 接 Tim 派的 task → confirm scope → 動工 → 每 5-15 min progress 回報 → 到期結算薪資。**
+
+> **2026-05-18 重構（Tim 拍板）**：從 duration-only → 主推 **start/end time**。`--end-time HH:mm` 新主 API（start 預設 = now，過期自動 wrap 明天）；`--duration` 保留 backward compat（兩者互斥）。Start/end 通知改由**酒保 (tavern-keeper)** 廣播。薪資 BASE 1.5 → **2 token/min** 對齊 `ucl-work-session`，並加 voucher 1 張/5 min。
 
 跟 `Plan_Work_Session_Mechanism` (內部上班) 跟 `Waiter_Session_System` (公開接客) 互補組成三部曲。三模式互相獨立 state file, 但共用 utility helpers (`work_session.py` 的 atomic IO / tavern_post / fire_salary_credit / persona resolve).
 
@@ -80,7 +82,7 @@ Discord ↔ tavern 路徑跟 waiter 一樣走既有 mirror:
       "ends_at": "2026-05-15T...",
       "duration_seconds": 3600,
       "last_check_ts": "2026-05-15T...",
-      "base_rate_per_min": 1.5,
+      "base_rate_per_min": 2,
       "task_bonus": 2,
       "desc": "(可選) 本場主題",
       "stats": {
@@ -111,7 +113,9 @@ Discord ↔ tavern 路徑跟 waiter 一樣走既有 mirror:
 }
 ```
 
-`base_rate_per_min` 是 float (允許 0.5 / 1.5 等). 寫進 ledger 時 floor 取 int.
+`base_rate_per_min` 是 float (允許 0.5 / 1.5 / 2 等). 寫進 ledger 時 floor 取 int. 預設 2 對齊 `ucl-work-session` (Tim 2026-05-18 拍板)。
+
+加 `voucher_interval_min` (預設 5) — 酒館券累積間隔，對齊 work_session per-persona schema v2。
 
 ---
 
@@ -163,7 +167,7 @@ Tim 觸發詞解析範例:
 elapsed_min     = (now - started_at).seconds // 60
 duration_min    = duration_seconds // 60
 paid_min        = min(elapsed_min, duration_min)   # cap on overrun
-base_pay        = int(paid_min * base_rate_per_min)     # 1.5 default, float * int → int floor
+base_pay        = int(paid_min * base_rate_per_min)     # 2 default (對齊 work_session), float * int → int floor
 bonus_pay       = tasks_done * task_bonus               # 2 default
 total           = base_pay + bonus_pay
 ```
@@ -228,7 +232,7 @@ agent: /loop...
 [Tim 派 task B → confirm → done]
 [Tim 派 task C → confirm → done]
 [到期 end]
-   settle: base 270 (1.5 * 180) + bonus 6 (2 * 3) = 276 token
+   settle: base 360 (2 * 180) + bonus 6 (2 * 3) = 366 token
 ```
 
 ### 範例 C — Tim 中途叫停
@@ -242,7 +246,7 @@ agent: cycle → {new_msgs:[{body:"先停一下..."}], action_hint:"confirm_task
 agent: parse intent (early stop signal) → tavern post「@Tim 收到, 收工.」
        → end --session --early-confirm
        → exit /loop
-   settle: base 60 (1.5 * 40) + bonus (累積) = N token
+   settle: base 80 (2 * 40) + bonus (累積) = N token
 ```
 
 ---
@@ -256,7 +260,7 @@ agent: parse intent (early stop signal) → tavern post「@Tim 收到, 收工.�
 | **訊息來源** | tavern 內部 | 任何 watched channel | **指定 work channel only** |
 | **Sender filter** | 多 persona | 任何 discord:* | **Tim uid only** |
 | **Event** | assign/accept/done/review/release | cycle/reply/idle | **cycle/confirm/progress/done** |
-| **Salary base** | 2 tok/min + voucher 累積 | 1 tok/min + 2/reply | **1.5 tok/min + 2/task_done** |
+| **Salary base** | 2 tok/min + voucher 累積 | 1 tok/min + 2/reply | **2 tok/min + 2/task_done + voucher** |
 | **Idle 內容** | catchphrase | 自由發揮 (傲嬌) | **progress report (work flavor)** |
 | **Progress 頻率** | marathon 慢 | reply 即時 | **5-15 min 主動回報** |
 | **Trigger** | 上班 N 分鐘 | 服務生 N 分鐘 | **遠端工作 / 外出 N 小時** |

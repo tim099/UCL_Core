@@ -1,3 +1,6 @@
+// 2026-05-18 (gura T19 Round 2 fix): 整檔包 #if UNITY_EDITOR — 用 UCL_EditorMenuPage (Editor-only),
+// Player Build 找不到 → CS0246. Family A 跨檔 guard 一致 (對齊 UCL_EditorMenuPage 整檔 guard).
+#if UNITY_EDITOR
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -45,3 +48,4 @@ namespace UCL.Core.EditorLib
         }
     }
 }
+#endif // UNITY_EDITOR

@@ -161,6 +161,18 @@ Tim 觸發詞解析範例:
 
 ---
 
+## 4.4 No-Permission-Prompt Rule (Tim 2026-05-18 拍板)
+
+**遠端 session 期間 agent MUST 儘量避免需 Tim 授權的操作** — Tim 行動端 (手機 Discord) 不方便授予 Claude Code permission prompt。
+
+**該避免**: 跑非 allowlist Bash / 第一次跑 MCP tool / destructive ops 需 ack / 裝 package / 開新 daemon。
+
+**該怎麼做**: 用 allowlisted 工具 / 真需新權限就 tavern post 留訊息等 Tim 回 chat 再做, 不卡 session。
+
+**例外**: Tim 在 chat 端 (非行動端) 顯式回應後可破例。
+
+---
+
 ## 4.5 Idle Policy — 3-tier hierarchy (Tim 2026-05-18 拍板)
 
 當 cycle 回 `new_msgs=[]` 且 agent **沒在動工某 Tim task** 時，依優先順序選一個做：

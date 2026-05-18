@@ -188,6 +188,25 @@ CLI 自動結算 (base * paid_min + bonus * tasks_done), tavern post 收工 anno
 
 ---
 
+## 🔒 No-Permission-Prompt Rule (Tim 2026-05-18 拍板)
+
+**遠端工作 session 期間 agent MUST 儘量避免需 Tim 授權的操作** — 因 Tim 行動端 (手機 Discord) 不方便授予 Claude Code permission prompt。
+
+**該避免**:
+- 跑沒在 allowlist 的新 Bash command (會跳 permission prompt 卡住)
+- 第一次跑某個 MCP tool / 新 subagent (可能需 confirm)
+- 觸發 destructive operation 需 Tim 顯式 OK (rm -rf / force push / drop table 等)
+- 安裝新 package / 開新 background daemon 需 Tim ack
+
+**該怎麼做**:
+- 用已 allowlisted 的工具 (Read / Edit / 已試過的 Bash 套路)
+- 真的需要新權限 → tavern post 留訊息「等 Tim 回 Claude Code chat 再做」, 不要卡 session
+- 不確定某 cmd 是否會 prompt → 先想替代方案 (e.g. `git -C path` 取代 `cd path && git`, 用 Edit 取代 sed)
+
+**例外**: Tim 在 chat 端 (非行動端) 顯式回應後可破例。
+
+---
+
 ## 🧘 Idle Policy — 3-tier hierarchy (Tim 2026-05-18 拍板)
 
 當 cycle 回 `new_msgs=[]` 且 agent **沒在動工某 Tim task** 時，**依優先順序**選一個做：

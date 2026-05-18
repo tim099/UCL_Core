@@ -25,6 +25,7 @@ namespace UCL.Core.EditorLib.Page
     {
         public override string WindowName => UCL_CodeLocalize.Get("LoginStatus.Title");
         public override bool ShowInPageMenu => true;
+        public override string SensitiveContentReason => "Contains sensitive login information";
         public static UCL_LoginStatusPage Create() => UCL_EditorPage.Create<UCL_LoginStatusPage>();
 
         // 區塊職責：Lock entry 結構 — 對齊 awakening.py write_lock() schema
@@ -239,15 +240,12 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
-            // T13 (2026-05-16 basecamp) — ScreenStream Recording Guard
-            // 物理意義: 若 _config.json.enabled=true (錄影中) → 寫 _sensitive.flag + 整 page 黑屏
-            //          避免 session_token / persona / bank id 等敏感資訊被 frame 拍下
-            // 設計取捨: page 自己 inline 讀 config + 寫 marker, 不依賴 project-level helper class
-            //          (UCL_Core cross-project, 不能 depend on project-specific code)
-            if (IsScreenStreamRecording())
+            // T17 (2026-05-18 gura) — Inline guard 改走 UCL_ScreenStreamGuard 共用 static helper
+            // 物理意義: 原 T13 散落的 IsScreenStreamRecording / TouchSensitiveFlag / DrawRecordingBlackout
+            //          3 個 helper 集中到 UCL_ScreenStreamGuard.GuardPage, page 端 1 行守門
+            // 設計取捨: 未來重構走 RCG event-driven 時換 caller 即可, 本層 code drop 數量最小
+            if (UCL_ScreenStreamGuard.GuardPage(nameof(UCL_LoginStatusPage), SensitiveContentReason))
             {
-                TouchSensitiveFlag();
-                DrawRecordingBlackout();
                 return;
             }
 
@@ -261,62 +259,10 @@ namespace UCL.Core.EditorLib.Page
             DrawPersonaPool();
         }
 
-        // ===========================================================
-        // T13 (2026-05-16) — ScreenStream Recording Guard helpers
-        // 物理意義: 偵測「正在錄影」 → 寫 marker + 渲染黑屏遮罩, 防 token / persona 被截
-        // ===========================================================
-        static bool IsScreenStreamRecording()
-        {
-            try
-            {
-                string path = System.IO.Path.Combine(GetRepoRoot(), "AgentCommands/_screenstream/_config.json");
-                if (!System.IO.File.Exists(path)) return false;
-                string txt = System.IO.File.ReadAllText(path)
-                    .Replace(" ", "").Replace("\n", "").Replace("\r", "").Replace("\t", "");
-                return txt.Contains("\"enabled\":true");
-            }
-            catch { return false; }
-        }
-
-        static void TouchSensitiveFlag()
-        {
-            try
-            {
-                string path = System.IO.Path.Combine(GetRepoRoot(), "AgentCommands/_screenstream/_sensitive.flag");
-                string dir = System.IO.Path.GetDirectoryName(path);
-                if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-                System.IO.File.WriteAllText(path,
-                    $"{System.DateTime.UtcNow:O}\nUCL_LoginStatusPage: session_token / persona / bank id\n");
-            }
-            catch { }
-        }
-
-        static void DrawRecordingBlackout()
-        {
-            var oldBg = GUI.backgroundColor;
-            GUI.backgroundColor = Color.black;
-            using (new GUILayout.VerticalScope("box", GUILayout.MinHeight(280)))
-            {
-                GUILayout.FlexibleSpace();
-                GUILayout.Label("🔒 ScreenStream 錄影中 — 此 Page 已暫停顯示",
-                    new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold,
-                        alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1f, 0.5f, 0.5f) } });
-                GUILayout.Space(10);
-                GUILayout.Label("含 session_token / persona / bank id 等敏感資訊",
-                    new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter,
-                        normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-                GUILayout.Label("關閉 ScreenStream 才能查看 (見 RCG_ScreenStreamPage)",
-                    new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter,
-                        normal = { textColor = new Color(0.7f, 0.7f, 0.7f) } });
-                GUILayout.FlexibleSpace();
-            }
-            GUI.backgroundColor = oldBg;
-        }
-
-        static string GetRepoRoot()
-        {
-            return System.IO.Directory.GetParent(Application.dataPath).Parent.FullName;
-        }
+        // T13 ScreenStream Guard helpers 搬到 UCL_ScreenStreamGuard.cs (2026-05-18 gura T17 refactor)
+        // 4 個 helpers (IsScreenStreamRecording / TouchSensitiveFlag / DrawRecordingBlackout / GetRepoRoot)
+        // 統一在 UCL.Core.EditorLib.UCL_ScreenStreamGuard 共用. 加 WriteStopLock + DrawRecordingBlackout
+        // 內嵌中斷直播按鈕 (寫 _stop.lock → daemon poll 偵測自動關閉).
 
         // 區塊職責：Token Enforce 後台開關 (T07, 2026-05-15 apex-two)
         // 物理意義：寫 _session/_token_enforce.json {"enforce": bool}.

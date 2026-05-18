@@ -514,66 +514,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         // ===========================================================
         // 區塊職責：產生 [help] inline marker 回應內容
-        // 物理意義：hand-maintained cheatsheet — 列當前 inline marker + Cmd_Bartender ops + 對話自動觸發機制
-        // 維護備註：
-        //   - 加新 inline marker / 新 Cmd_Bartender op → 同步更新本函式
-        //   - inline marker 數累積 ≥ 5 時改 registry pattern, 屆時本函式改成迭代 registry 動態列舉
-        //   - 不放完整 ArgsSchema (太長) — cite skill doc / cheatsheet 路徑供深入查
-        // ⚠ 維護注意 (T18.2 fix 2026-05-18 gura): 下方 markdown 中 ## 標題故意用 `" + @"## ...` 拼接 —
-        //   ** 不要重新合併成單一 verbatim! **  整檔包 #if UNITY_EDITOR ... #endif,
-        //   Player Build 沒 UNITY_EDITOR → Mono preprocessor 掃 #endif 時 verbatim string state tracking bug,
-        //   會把任何 source line 開頭 (含 leading whitespace) 的 # 誤判為 preprocessor directive → CS1024 Build fail.
-        //   解法: 用 `" + @"## XXX` 拼接, 讓 source line 開頭是 `"` 不是 `#`。
-        //   T18 (加 leading space) 不夠, 因 Mono preprocessor 接受 whitespace-prefixed `#` 為 directive。
-        //   Editor Roslyn 沒此 bug → Editor compile 永遠 0 errors 看不出, 必須跑 Player Build 才暴露。
+        // 物理意義：實際 markdown body 走 UCL_CodeLocalize.Get("Bartender.Help.Body") (zh-Hant/.en 各 1 份),
+        //          static switch 不依賴 ModuleService init, daemon [InitializeOnLoad] 早期就可用.
+        // 設計取捨 (T18.3 2026-05-18 gura):
+        //   - 原 inline $@"..." verbatim 在 Player Build 撞 Mono preprocessor bug (CS1024)
+        //   - T18 加 leading space ✘ / T18.2 string concat ✓ 都是 source-level workaround
+        //   - T18.3 終極解: 字串搬 UCL_CodeLocalize, source 不再有 $@"..." 跟 ##, 0 bug 風險
+        //   - 副作用: 多語系自動支援 + 改字串只改 .cs (還是要 recompile, 但比 Asset 路徑簡單)
+        //   - 加新 inline marker / 新 Cmd_Bartender op → 同步更新 UCL_CodeLocalize.zh-Hant.cs 跟 .en.cs
         // ===========================================================
         static string BuildHelpBody(string creatorName)
         {
-            return
-$@"📜 **酒保服務清單** (來自 {creatorName} 的 [help] 查詢)
-
-" + @"## 🗣️ 直接對話 (inline marker — 任何人在酒館發訊息含以下 marker 即觸發)
-
-| Marker (同義詞) | 功能 | 範例 |
-|---|---|---|
-| `[進行留言]` / `[留言]` / `[leave message]` / `[bartender add]` | 註冊關鍵字觸發留言 | `[進行留言] key=晚安 msg=記得寫 baton targets=Tim tokens=2` |
-| `[進行時間規則]` / `[時間規則]` / `[time rule]` | 註冊每日 HH:mm 提醒 | `[進行時間規則] id=sleep time=23:50 target=Tim msg=該睡了 grace=10 penalty=true` |
-| `[查詢餘額]` / `[餘額]` / `[balance]` | 查 Treasury 帳戶餘額 + 近 N 筆進出帳 | `[查詢餘額] account=claude-da-xiaojie limit=10`（account 省略 = 查自己） |
-| `[help]` / `[幫助]` / `[酒館指令]` | 列本清單 | 就是這個 |
-
-" + @"## 🛠️ CMD 路徑 (`Cmd_Bartender` 走 queue.json — agent / Tim 跑 run_cmd.py 觸發)
-
-| op | 功能 |
-|---|---|
-| `add` | 新增關鍵字觸發 (對齊 [進行留言]) |
-| `list` | 列當前所有 keyword triggers |
-| `remove` | 移除指定 trigger (`id=<trigger_id>`) |
-| `time_add` | 新增時間規則 (對齊 [進行時間規則]) |
-| `time_list` | 列所有時間規則 |
-| `time_remove` | 移除時間規則 (`id=<rule_id>`) |
-| `balance` | 查 Treasury 餘額 (對齊 [查詢餘額]，可選 `post=true` 同步 broadcast) |
-| `status` | 列 daemon state / 統計 |
-| `tick` | 強制立刻 tick 一輪 (debug / dogfood) |
-
-呼叫範例:
-```
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance --arg account=Tim --arg limit=5
-```
-
-" + @"## 🎯 自動行為 (daemon 後台 5s tick — 無需主動觸發)
-
-- **Keyword trigger fire**: 已註冊的 trigger 在 target 發言含 keyword 時自動 fire (剩餘 tokens > 0)
-- **Time rule reminder**: 到 HH:mm 自動廣播 reminder; 超 grace 後每 N 分鐘累積 HP penalty 廣播
-- **防回音**: 酒保自家訊息 (sender=`tavern-keeper` 或 meta.tag=`bartender-relay`) 不參與 trigger match
-
-" + @"## 📚 深入
-
-- 酒保系統完整 spec: `<UCL_Core>/Skills~/ucl-bartender/SKILL.md`
-- 酒館訊息 IO (Cmd_Tavern op=post/read/wait/...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`
-- 跨系統 cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`
-- 跨 agent 自助 navigation: `<UCL_Core>/Skills~/ucl-help/SKILL.md`
-
-> Tip: 不確定怎麼用某 op? 跑 `run_cmd.py info Bartender` 看完整 ArgsSchema.";
+            return string.Format(
+                UCL.Core.LocalizeLib.UCL_CodeLocalize.Get("Bartender.Help.Body"),
+                creatorName);
         }
 
         static string RunBalanceQuery(string account, int limit, out string err)

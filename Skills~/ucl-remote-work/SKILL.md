@@ -188,22 +188,32 @@ CLI 自動結算 (base * paid_min + bonus * tasks_done), tavern post 收工 anno
 
 ---
 
-## 🔒 No-Permission-Prompt Rule (Tim 2026-05-18 拍板)
+## 🔒 No-Blocking-Wait Rule (Tim 2026-05-18 拍板)
 
-**遠端工作 session 期間 agent MUST 儘量避免需 Tim 授權的操作** — 因 Tim 行動端 (手機 Discord) 不方便授予 Claude Code permission prompt。
+**遠端工作 session 期間 agent MUST NOT 進入任何需 Tim 即時回應才能解的 blocking wait state** — Tim 行動端 (手機 Discord) 沒辦法直接回 Claude Code chat / 給 permission / 點 AskUserQuestion 按鈕，agent 卡住 = session 死。
 
-**該避免**:
-- 跑沒在 allowlist 的新 Bash command (會跳 permission prompt 卡住)
-- 第一次跑某個 MCP tool / 新 subagent (可能需 confirm)
-- 觸發 destructive operation 需 Tim 顯式 OK (rm -rf / force push / drop table 等)
-- 安裝新 package / 開新 background daemon 需 Tim ack
+### 該避免（會卡死 session）
 
-**該怎麼做**:
-- 用已 allowlisted 的工具 (Read / Edit / 已試過的 Bash 套路)
-- 真的需要新權限 → tavern post 留訊息「等 Tim 回 Claude Code chat 再做」, 不要卡 session
-- 不確定某 cmd 是否會 prompt → 先想替代方案 (e.g. `git -C path` 取代 `cd path && git`, 用 Edit 取代 sed)
+| 類別 | 範例 | 為何卡 |
+|---|---|---|
+| **Permission prompt** | 跑非 allowlist Bash / 第一次 MCP tool / 第一次 subagent | Tim mobile 沒辦法按 approve |
+| **AskUserQuestion** | clarify 設計方向 / 選項 | UI 元件 Tim mobile 看不到 |
+| **op=wait --wait-reply** | 等對方酒館回覆 (對方 = Tim 本人才會卡) | 等不到 Tim 直接回 chat 端 |
+| **Interactive shell** | `git rebase -i` / `vim` / `nano` | 無 IO 卡死 |
+| **Destructive ops 需 ack** | `rm -rf` / `git push --force` / 刪 branch / drop table | Tim 沒辦法即時 OK |
 
-**例外**: Tim 在 chat 端 (非行動端) 顯式回應後可破例。
+### 該怎麼做
+
+- 用已 allowlisted 工具 (Read / Edit / 已試過的 Bash 套路)
+- 需 Tim 仲裁的設計取捨 → tavern post 留 2-3 個方案 + 自決選一條動工 + 標 `tag=tim-review-async` (Tim 有空再來看，不卡)
+- 需新權限 → tavern post 留訊息「等 Tim 回 chat 端再做」+ 不要起動該操作
+- 不確定 cmd 是否會 prompt → 先想替代 (e.g. `git -C path` 取代 `cd path && git`, 用 Edit 取代 sed)
+- 寧可**自決動工 + 留紀錄事後追認**，也不要**卡住等 Tim 即時 OK**
+
+### 例外
+
+Tim 在 chat 端（非行動端）顯式回應後可破例 — 因為這時 Tim 真的在線可即時 ack。
+判斷：若 cycle 抓到的 Tim msg 是來自 Discord (source_class=work) → 行動端模式，No-Blocking 套用；若 Tim 直接在 Claude Code chat 端 reply → chat 模式，可問可等。
 
 ---
 

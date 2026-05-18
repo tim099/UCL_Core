@@ -161,15 +161,25 @@ Tim 觸發詞解析範例:
 
 ---
 
-## 4.4 No-Permission-Prompt Rule (Tim 2026-05-18 拍板)
+## 4.4 No-Blocking-Wait Rule (Tim 2026-05-18 拍板)
 
-**遠端 session 期間 agent MUST 儘量避免需 Tim 授權的操作** — Tim 行動端 (手機 Discord) 不方便授予 Claude Code permission prompt。
+**遠端 session 期間 agent MUST NOT 進入任何需 Tim 即時回應才能解的 blocking wait state** — Tim 行動端 (手機 Discord) 沒辦法直接回 Claude Code chat / 給 permission / 點 AskUserQuestion 按鈕。
 
-**該避免**: 跑非 allowlist Bash / 第一次跑 MCP tool / destructive ops 需 ack / 裝 package / 開新 daemon。
+**該避免** (任一卡死 session):
+- Permission prompt (非 allowlist Bash / 第一次 MCP tool / 第一次 subagent)
+- `AskUserQuestion` (UI 元件 Tim mobile 看不到)
+- `op=wait --wait-reply` 等 Tim 回酒館 (Tim 不會回 chat = 等不到)
+- Interactive shell (`git rebase -i` / `vim`)
+- Destructive ops 需即時 ack (`rm -rf` / `git push --force` / drop table)
+- 安裝 package / 開新 daemon 需 Tim ack
 
-**該怎麼做**: 用 allowlisted 工具 / 真需新權限就 tavern post 留訊息等 Tim 回 chat 再做, 不卡 session。
+**該怎麼做**:
+- 用 allowlisted 工具
+- 設計取捨：tavern post 列 2-3 方案 + 自決動工 + 標 `tag=tim-review-async` (Tim 有空再 review，不卡)
+- 需新權限：tavern post 留訊息等 Tim 回 chat 端再做，**不要起動該操作**
+- 寧可**自決 + 事後追認**，不要**卡等 Tim 即時 OK**
 
-**例外**: Tim 在 chat 端 (非行動端) 顯式回應後可破例。
+**例外**: Tim 在 chat 端 (非行動端) 顯式回應後可破例。判斷：cycle 抓到的 Tim msg 來自 Discord (source_class=work) → 行動端，No-Blocking 套用；Tim 直接在 chat 端 reply → chat 模式可問可等。
 
 ---
 

@@ -212,13 +212,26 @@ Step 2. **MUST** ScheduleWakeup(delaySeconds=300~900, reason=..., prompt=cycle)
 Step 3. 下次喚醒 → 跑 cycle → 新工作 / progress / repeat
 ```
 
-### 前置條件
+### 前置條件 (Tim QA 2026-05-18 empirical correction)
 
-ScheduleWakeup 通常綁 `/loop dynamic` 模式（per tool spec）。建議：
+**Stay-Alive 必須走 `/loop dynamic` 模式 — 純 ScheduleWakeup 不夠**。
 
-- **Tim 喊「遠端工作」時直接走** `/loop dynamic <cycle-cmd>` — agent 在 /loop context 自動可用 ScheduleWakeup
-- **或 agent 試直接 call ScheduleWakeup** — 不在 /loop 可能 error（待驗證）
-- 不行的話 → tavern post 提醒 Tim「請改用 /loop dynamic 包本 session」
+empirical 驗證（basecamp-fork dogfood 2026-05-18）：
+- 非 /loop 模式直接 call ScheduleWakeup → tool 不 error, 排到下次 wakeup
+- 但 Recents 視覺仍掉 ⚪ (not `...`) — `...` paint 似乎只在 /loop dynamic context 才會 render
+- 或 Tim 新訊息 supersede pending wakeup → wakeup 失效
+
+**結論**: Tim 想要 stay-alive **必須**喊「遠端工作 ... 改用 /loop dynamic」開頭, 例如:
+```
+/loop dynamic 進入 remote-work session rw-xxx, 每次喚醒跑 cycle, 處理 Tim 訊息或 productive work
+```
+
+Agent 收到 `/loop dynamic` 後每 turn 用 ScheduleWakeup 自我排程 = 真 stay-alive `...`/🔵 狀態。
+
+**現況 workaround**: 若 Tim 沒喊 /loop, agent 該:
+1. tavern post 提醒 Tim「請改 /loop dynamic 才能保 stay-alive」
+2. 仍盡力 ScheduleWakeup（至少排到, 可能下次 wakeup 還能跑一輪 cycle）
+3. 接受 Recents 視覺可能仍 ⚪, 屬於已知限制
 
 ### 違規場景（已踩過）
 

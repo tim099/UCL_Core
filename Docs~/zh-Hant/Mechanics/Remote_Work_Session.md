@@ -172,7 +172,9 @@ Tim 觸發詞解析範例:
 | 🔵 藍實心 | standby alive | ✅ 目標 |
 | ⚪ 空圓 | stopped | ❌ 禁止 |
 
-**做法**: 每 turn 結束前 `ScheduleWakeup(delaySeconds=300-900, reason=..., prompt=cycle)` → 保 session 不下線。前置: 走 `/loop dynamic` 模式 (ScheduleWakeup 綁此 mode)。
+**做法**: 每 turn 結束前 `ScheduleWakeup(delaySeconds=300-900, reason=..., prompt=cycle)` → 保 session 不下線。
+
+**前置 (Tim QA empirical correction 2026-05-18)**: Stay-Alive **必須**走 `/loop dynamic` 模式。純 ScheduleWakeup 非 /loop 下排到了但 Recents 仍 ⚪ — `...` paint 似乎綁 /loop context。Tim 想 stay-alive 必喊 `/loop dynamic <prompt>` 開頭。Workaround: 沒喊 /loop 就 tavern post 提醒 + 仍排 wakeup (盡力)，接受視覺仍 ⚪ 為已知限制。
 
 **違規場景**: confirm scope 後 post 完 end turn / 跑完一個 Tier 2 task 沒排下次 → 掉 ⚪.
 

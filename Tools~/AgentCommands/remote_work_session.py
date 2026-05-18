@@ -144,6 +144,23 @@ def _local_now() -> datetime.datetime:
         return datetime.datetime.now()
 
 
+def utc_to_local(utc_dt: datetime.datetime) -> datetime.datetime:
+    """UTC naive → DEFAULT_LOCAL_TZ naive datetime.
+
+    對偶 to_utc_iso. 用於 end announcement 顯示 (從 storage UTC ISO 回到使用者可讀 local HH:mm).
+    Windows tzdata 缺失走 system local TZ fallback (跟 to_utc_iso 同款 fallback 策略).
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        aware_utc = utc_dt.replace(tzinfo=datetime.timezone.utc)
+        local_aware = aware_utc.astimezone(ZoneInfo(DEFAULT_LOCAL_TZ))
+        return local_aware.replace(tzinfo=None)
+    except Exception:
+        # Fallback: aware UTC → system local
+        aware_utc = utc_dt.replace(tzinfo=datetime.timezone.utc)
+        return aware_utc.astimezone().replace(tzinfo=None)
+
+
 def to_utc_iso(local_dt: datetime.datetime) -> str:
     """把 naive local datetime 轉成 UTC ISO (Z 結尾, ms precision).
 
@@ -664,8 +681,11 @@ def cmd_end(args) -> int:
     })
 
     # 區塊職責：收工 announcement 由酒保廣播 (對稱 start 機制, Tim 2026-05-18 拍板)
-    started_hhmm = parse_iso(session["started_at"]).strftime("%H:%M")
-    ended_hhmm = now_dt.strftime("%H:%M")
+    # 物理意義：storage 是 UTC ISO, 顯示要轉 local TZ (對齊 start announcement 用 local 顯示)
+    # 數值影響：原本直接 strftime UTC 會顯示 e.g. 08:00 而非 16:00 (Asia/Taipei), 跟 start 不一致 = bug
+    #          dogfood-found 2026-05-18, basecamp-fork patch
+    started_hhmm = utc_to_local(parse_iso(session["started_at"])).strftime("%H:%M")
+    ended_hhmm = utc_to_local(now_dt).strftime("%H:%M")
     end_body = (
         f"📢 [遠端工作收工] **{session['persona']}** 大小姐 {started_hhmm} → {ended_hhmm} ({elapsed_min}min) 結束."
         f" {'自然到期' if expired else '提前收工'}.\n"

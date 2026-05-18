@@ -117,6 +117,14 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ---
 
+## Python Tools (CLI / 自動化)
+
+| 文件 | 一句話描述 |
+|---|---|
+| 🐍 [Tools/Python_Tools_Index](Tools/Python_Tools_Index.md) ⭐ | **UCL_Core/Tools~ 全 Python 工具索引** — awakening (morning/goodnight) / session 系列 (work / waiter / remote_work) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。含 project-specific Tools 對照 + Localize 工具缺位提醒 |
+
+---
+
 ## 跨 repo 資源
 
 - 專案層工作流（含完整 Agent Command 工作流、踩雷紀錄）：[`docs/Workflows/AgentCommands_Workflow.md`](../../../../../../docs/Workflows/AgentCommands_Workflow.md)

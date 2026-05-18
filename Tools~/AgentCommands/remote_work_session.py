@@ -132,12 +132,15 @@ def _local_now() -> datetime.datetime:
 
     為何用 naive: 跟 parse_clock_time 回傳的 naive datetime 直接比, 避免 tzinfo 不對等
     報 TypeError. 換算 UTC 在 to_utc_iso() 統一處理.
+
+    Windows 端 tzdata 缺失 fallback: ZoneInfo('Asia/Taipei') 會 throw, 改用系統 local time
+    (假設系統 TZ 跟 DEFAULT_LOCAL_TZ 一致 — 大部分情境成立).
     """
     try:
         from zoneinfo import ZoneInfo  # Python 3.9+
         return datetime.datetime.now(ZoneInfo(DEFAULT_LOCAL_TZ)).replace(tzinfo=None)
     except Exception:
-        # Fallback: 系統 local time (假設跟 DEFAULT_LOCAL_TZ 一致)
+        # Fallback: 系統 local time (Windows 沒裝 tzdata 走此路)
         return datetime.datetime.now()
 
 
@@ -145,6 +148,11 @@ def to_utc_iso(local_dt: datetime.datetime) -> str:
     """把 naive local datetime 轉成 UTC ISO (Z 結尾, ms precision).
 
     本檔其他地方都用 UTC ISO 為 storage canonical, 此函式是 local↔UTC 邊界.
+
+    兩階段 fallback (Windows tzdata 缺失場景, blood-debugged 2026-05-18):
+      1. ZoneInfo(DEFAULT_LOCAL_TZ) — Linux/macOS / Windows 有裝 tzdata pkg
+      2. naive.astimezone() — Python 3.6+ 把 naive 當系統 local TZ → aware, 再轉 UTC
+      原本第 2 fallback 寫 `utc = local_dt` 等同假設 local == UTC, 是 bug (Windows 命中)
     """
     try:
         from zoneinfo import ZoneInfo
@@ -152,8 +160,9 @@ def to_utc_iso(local_dt: datetime.datetime) -> str:
         aware = local_dt.replace(tzinfo=tz_local)
         utc = aware.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     except Exception:
-        # Fallback: 假設 local == UTC (避免 crash, 但結果可能偏差)
-        utc = local_dt
+        # Fallback: 用系統 local TZ (naive → aware → UTC, 跨 OS 通用)
+        aware = local_dt.astimezone()
+        utc = aware.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
 
 

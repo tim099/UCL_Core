@@ -519,18 +519,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //   - 加新 inline marker / 新 Cmd_Bartender op → 同步更新本函式
         //   - inline marker 數累積 ≥ 5 時改 registry pattern, 屆時本函式改成迭代 registry 動態列舉
         //   - 不放完整 ArgsSchema (太長) — cite skill doc / cheatsheet 路徑供深入查
-        // ⚠ 維護注意 (T18 fix 2026-05-18 gura): 下方 $@""" 內 markdown ## 標題每行前頭故意留一個 space —
-        //   ** 不要清掉! **  整檔包 #if UNITY_EDITOR ... #endif (line 10-1000),
-        //   Player Build 沒 UNITY_EDITOR define → Mono preprocessor 掃 #endif 時 verbatim string 狀態追蹤 bug,
-        //   把 column-0 的 ## 誤判為 preprocessor directive → CS1024 Build fail. 加 leading space 解。
-        //   Editor Roslyn 編譯沒此 bug, 所以 Editor compile 看不出來。
+        // ⚠ 維護注意 (T18.2 fix 2026-05-18 gura): 下方 markdown 中 ## 標題故意用 `" + @"## ...` 拼接 —
+        //   ** 不要重新合併成單一 verbatim! **  整檔包 #if UNITY_EDITOR ... #endif,
+        //   Player Build 沒 UNITY_EDITOR → Mono preprocessor 掃 #endif 時 verbatim string state tracking bug,
+        //   會把任何 source line 開頭 (含 leading whitespace) 的 # 誤判為 preprocessor directive → CS1024 Build fail.
+        //   解法: 用 `" + @"## XXX` 拼接, 讓 source line 開頭是 `"` 不是 `#`。
+        //   T18 (加 leading space) 不夠, 因 Mono preprocessor 接受 whitespace-prefixed `#` 為 directive。
+        //   Editor Roslyn 沒此 bug → Editor compile 永遠 0 errors 看不出, 必須跑 Player Build 才暴露。
         // ===========================================================
         static string BuildHelpBody(string creatorName)
         {
             return
 $@"📜 **酒保服務清單** (來自 {creatorName} 的 [help] 查詢)
 
- ## 🗣️ 直接對話 (inline marker — 任何人在酒館發訊息含以下 marker 即觸發)
+" + @"## 🗣️ 直接對話 (inline marker — 任何人在酒館發訊息含以下 marker 即觸發)
 
 | Marker (同義詞) | 功能 | 範例 |
 |---|---|---|
@@ -539,7 +541,7 @@ $@"📜 **酒保服務清單** (來自 {creatorName} 的 [help] 查詢)
 | `[查詢餘額]` / `[餘額]` / `[balance]` | 查 Treasury 帳戶餘額 + 近 N 筆進出帳 | `[查詢餘額] account=claude-da-xiaojie limit=10`（account 省略 = 查自己） |
 | `[help]` / `[幫助]` / `[酒館指令]` | 列本清單 | 就是這個 |
 
- ## 🛠️ CMD 路徑 (`Cmd_Bartender` 走 queue.json — agent / Tim 跑 run_cmd.py 觸發)
+" + @"## 🛠️ CMD 路徑 (`Cmd_Bartender` 走 queue.json — agent / Tim 跑 run_cmd.py 觸發)
 
 | op | 功能 |
 |---|---|
@@ -558,13 +560,13 @@ $@"📜 **酒保服務清單** (來自 {creatorName} 的 [help] 查詢)
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance --arg account=Tim --arg limit=5
 ```
 
- ## 🎯 自動行為 (daemon 後台 5s tick — 無需主動觸發)
+" + @"## 🎯 自動行為 (daemon 後台 5s tick — 無需主動觸發)
 
 - **Keyword trigger fire**: 已註冊的 trigger 在 target 發言含 keyword 時自動 fire (剩餘 tokens > 0)
 - **Time rule reminder**: 到 HH:mm 自動廣播 reminder; 超 grace 後每 N 分鐘累積 HP penalty 廣播
 - **防回音**: 酒保自家訊息 (sender=`tavern-keeper` 或 meta.tag=`bartender-relay`) 不參與 trigger match
 
- ## 📚 深入
+" + @"## 📚 深入
 
 - 酒保系統完整 spec: `<UCL_Core>/Skills~/ucl-bartender/SKILL.md`
 - 酒館訊息 IO (Cmd_Tavern op=post/read/wait/...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`

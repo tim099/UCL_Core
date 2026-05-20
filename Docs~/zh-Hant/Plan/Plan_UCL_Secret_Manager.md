@@ -1,12 +1,12 @@
 ---
 title: UCL Secret Manager — passphrase 加密 + hint 提示通用化
 slug: ucl-secret-manager
-status: draft (Round 1)
+status: draft (Round 2 — ridge-001 review + Tim 追加需求)
 created_at: 2026-05-19T15:10:00Z
 created_by: claude-da-xiaojie (basecamp 大小姐)
 task_ref: T-SECRET-01
 reward: 5 token + 酒館券 1 張 (Tim 2026-05-19 績效獎金, 規劃 + ship 階段尚未走 ledger)
-last_updated: 2026-05-19T15:10:00Z
+last_updated: 2026-05-20T09:10:00Z
 location: UCL_Core (cross-project, 跨專案共用 secret 加解密 + Editor install UI); state files (.enc / .txt) 由 consumer project 提供
 related:
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三層 bump 規範 (本 design 文件 + tool ship 時用)
@@ -164,7 +164,7 @@ class SecretMetadata:
 
 ## 🛠 Layer 3: ucl_secret.py CLI
 
-對等 EOV 端 `secret_install.py` 但新增 `show-hint` / `list` / `rotate` 三 op。
+對等 EOV 端 `secret_install.py` 但新增 `show-hint` / `list` / `rotate` / `reveal` 四 op。
 
 ### Sub-commands
 
@@ -186,6 +186,12 @@ ucl_secret list [--root <dir>]
 
 ucl_secret rotate <enc_path>
     解密 + 重新加密 (換 passphrase 或改 hint); 兩次 prompt (舊 pw / 新 pw)
+
+ucl_secret reveal <name|enc_path> [--no-open]
+    ⭐ 新需求 (Tim 2026-05-20): 印明文 .txt 應落地路徑 + 用 OS 檔案總管開啟該資料夾,
+    讓「忘記 passphrase 但手邊有原始 token」時能手動貼上明文救援。
+    --no-open: 只印路徑不開檔案總管 (CI / headless 用)
+    exit code: 0=資料夾已開 / 2=無法定位 repo root
 ```
 
 ### show-hint 範例輸出
@@ -199,6 +205,17 @@ $ python ucl_secret.py show-hint AgentCommands/_secrets/discord_bot_token.enc
 - Format ver  : 2 (TKN2)
 - Salt b64    : abc123...== (16 bytes)
 ```
+
+### ⭐ 雙重失憶救援路徑 (Tim 2026-05-20 追加需求)
+
+passphrase 忘記時有**兩條**獨立救援路徑，互不依賴：
+
+| 路徑 | 工具 | 前提 | 結果 |
+|---|---|---|---|
+| **路徑 A — 喚回密碼** | `show-hint` / UI hint 框 | hint 寫得有意義 | 想起 passphrase → 正常解密 |
+| **路徑 B — 手動貼上明文** ⭐ | `reveal` / UI「開啟資料夾」按鈕 | 手邊有原始 token (e.g. Discord Portal reset 後拿到) | 直接把明文存成 `<name>.txt`，跳過解密 |
+
+**路徑 B 的設計意義**: `.enc` 解不開 ≠ 系統死磚。明文 `.txt` 本來就是 gitignored 且 daemon / bot 直讀的目標 — 只要使用者能從別處拿到原始 secret，手動貼進 `_secrets/<name>.txt` 就立即恢復運作，`.enc` 之後再 rotate 補救即可。`reveal` op 把「明文該放哪」這個認知負擔從使用者腦中移到工具裡（一鍵開資料夾 + 印準確路徑），降低手動貼上時貼錯位置 / 貼錯檔名的風險。
 
 ### 與既有 EOV secret_install.py 相容
 
@@ -244,9 +261,16 @@ namespace UCL.Core.Editor.SecretManager
 5. **「忘記 passphrase?」連結** ⭐ 新增 — 點開 popup:
    - 重申 hint
    - 解釋 KDF 設計上無法 brute-force (200k iter + Fernet)
+   - **兩條救援路徑並列** (Tim 2026-05-20):
+     - 路徑 A：想 hint 喚回密碼
+     - 路徑 B：reset token → 用下方「📂 開啟 _secrets 資料夾」按鈕手動貼上明文
    - 列 reset token 流程 (HelpUrl 跳轉)
-6. **「稍後再說」勾選** + Cancel 按鈕 (對齊現行)
-7. **Status box**: 操作結果 / 錯誤訊息
+6. **「📂 開啟 _secrets 資料夾」按鈕** ⭐ 新增 (Tim 2026-05-20) — `EditorUtility.RevealInFinder(plainPath)`:
+   - 一鍵開檔案總管定位到明文該落地的位置
+   - 旁邊灰字提示「忘記密碼？把原始 token 存成 `<name>.txt` 貼這裡即可（明文 gitignored，daemon 一樣讀得到）」
+   - 對齊 Layer 3 `reveal` op 行為，UI 端不另寫路徑邏輯（走同一 helper）
+7. **「稍後再說」勾選** + Cancel 按鈕 (對齊現行)
+8. **Status box**: 操作結果 / 錯誤訊息
 
 ### 加密階段 UI
 
@@ -283,6 +307,40 @@ Entries:
 **Daemon tick 統一輪詢**: UCL_Core 提供 `UCL_SecretDaemon` static class, 每 5s 掃 registry → 偵測 (.enc exists, .txt missing) → MaybeAutoPopup。
 
 未來加 OpenAI key / Steam key / 任何 secret 都不必新刻 Editor window — 只要往 registry 加一筆。
+
+---
+
+## 🗂 Layer 5b: UCL_SecretManagerPage (Editor 管理 Page, Tim 2026-05-20 追加)
+
+參考 `UCL_LoginStatusPage` 的範式 (繼承 `UCL_CommonEditorPage`, `ContentOnGUI` 畫表 + per-row 按鈕 + subprocess spawn)，做一個**集中管理所有加密檔**的 Page，取代「散落各處的 install window」+「要記 CLI 才查得到 secret 狀態」。
+
+### 設計對齊 LoginStatusPage
+
+| LoginStatusPage 元素 | SecretManagerPage 對應 |
+|---|---|
+| scan `_session/_persona_*.json` + `AwakenInit/personas/*.json` | scan `_secrets/*.enc` (+ 對照 `*.txt` 是否存在) |
+| `LockEntry` / `PersonaEntry` 快取 struct | `SecretEntry` 快取 struct (label/hint/created_at/format_version/enc_path/plain_exists) |
+| metadata 來源 = 直讀 json | metadata 來源 = subprocess `ucl_secret.py show-hint --json` (passphrase-free) |
+| per-row Logout / ForceRm 按鈕 | per-row 📂開資料夾 / 🔓Decrypt / 💡Show-hint / 🔁Rotate 按鈕 |
+| `SensitiveContentReason` + `UCL_ScreenStreamGuard.GuardPage` | 同樣加 (hint 雖明文, 但解密後明文 / passphrase 輸入仍敏感) |
+| `TopBarButtons` Refresh | 同 + 「Encrypt New Secret…」開 encrypt 子流程 |
+
+### Page UI 區塊 (從上到下)
+
+1. **Header + Refresh + Encrypt-New 按鈕**
+2. **Secret 一覽表** — 每列：status icon (🔒明文缺 / ✅明文在 / ⚠無enc) / Label / Hint / Created / FmtVer / 按鈕列
+   - 📂 **開資料夾** → `EditorUtility.RevealInFinder(plainPath)` (路徑 B 救援，對齊 Layer 3 `reveal`)
+   - 🔓 **Decrypt** → 開 `UCL_SecretInstallWindow.ShowFor(entry)` (重用 Layer 4)
+   - 💡 **Show hint** → 直接在 status box 印 hint (passphrase-free)
+   - 🔁 **Rotate** → 開 rotate 子流程 (舊pw→新pw/新hint)
+3. **Status box** — 操作結果 / metadata dump
+
+### 與其他 Layer 的關係
+
+- **不重刻邏輯**：metadata 讀走 Layer 3 `ucl_secret.py show-hint`，解密走 Layer 4 `UCL_SecretInstallWindow`，列表來源走 Layer 5 `UCL_SecretRegistry`（registry 有就讀 registry，沒有就 fallback 掃 `_secrets/*.enc`）。
+- **跨專案位置**：Page 放 UCL_Core `Editor/SecretManager/UCL_SecretManagerPage.cs`（跨專案共用，掃的是 consumer project 的 `_secrets/`）。
+
+> Quest 對應 **T8**（depends_on T5，因需 registry + lib + CLI 就位）。
 
 ---
 
@@ -328,18 +386,13 @@ Step 1-3 一條 commit 即可 ship (UCL_Core 三層 bump)。Step 4 Tim 自己跑
 
 **basecamp 同意** — 列入 Layer 3 CLI 加 `--awakening-summary` flag 給 awakening.py morning 呼叫。
 
-### Q5 (新 — Tim 待拍板): Rotate 流程的 hint 變更 audit？
+### Q5: Rotate 流程的 hint 變更 audit？
 
-如果 rotate 改了 hint, 舊 hint 該不該留軌跡？選項:
-- (A) 完全覆蓋 — 舊 hint 不存
-- (B) Header 加 `H_PREV:` 欄位記前一個 hint (但 hint 明文已洩, 沒額外風險)
-- (C) Header 加 `R:rotated_at` 標記但不存舊 hint — 只記「曾 rotate 過」
+**Tim 2026-05-20 拍板: (A) 完全覆蓋** — 舊 hint 不存、不加 audit 欄位。rotate 直接以新 hint 覆蓋，格式最簡。
 
-**basecamp 傾向 (C)** — 知道曾 rotate 對 audit 有意義, 但舊 hint 留著意義不大反而徒增 .enc bloat。等 Tim 拍板。
+### Q6: Hint 字數上限？
 
-### Q6 (新 — Tim 待拍板): Hint 字數上限？
-
-無限長 vs 設 256 char 上限。傾向 256 (UI 顯示友善 + 防止 mis-paste 整段 markdown 進去)。
+**Tim 2026-05-20 拍板: 256 char 上限** — encrypt/rotate 階段超過 256 char 截斷或報錯 (CLI warn + UI 即時擋)；理由 UI 顯示友善 + 防 mis-paste 整段 markdown。
 
 ---
 
@@ -349,7 +402,7 @@ Step 1-3 一條 commit 即可 ship (UCL_Core 三層 bump)。Step 4 Tim 自己跑
 |---|---|---|
 | 1 | TKN2 format spec + decoder/encoder TDD | 30 min |
 | 2 | ucl_secrets_crypto.py + round-trip test | 30 min |
-| 3 | ucl_secret.py CLI 6 sub-commands | 45 min |
+| 3 | ucl_secret.py CLI 7 sub-commands (含 reveal) | 50 min |
 | 4 | UCL_SecretInstallWindow + UCL_SecretDaemon | 1.5 hr |
 | 5 | UCL_SecretRegistry ScriptableObject + EOV migration | 30 min |
 | - | Doc 同步 (本 plan + Workflow doc) | 30 min |
@@ -399,7 +452,9 @@ Step 1-3 一條 commit 即可 ship (UCL_Core 三層 bump)。Step 4 Tim 自己跑
 - [ ] **Backward compat**: 既有 TKN1 .enc decode 仍能 work (hint=空)
 - [ ] **show-hint passphrase-free**: 給錯 passphrase / 不給 passphrase 都能讀 metadata
 - [ ] **Idempotent regenerate**: 同 plaintext + 同 passphrase + 同 hint 加密兩次 → ciphertext 不同 (semantically secure) 但 decrypt 結果完全相同
-- [ ] **CLI argparse**: 6 sub-commands 都有 --help + 範例 + 對應 exit code
+- [ ] **CLI argparse**: 7 sub-commands (含 `reveal`) 都有 --help + 範例 + 對應 exit code
+- [ ] **reveal 路徑正確 + headless 安全**: `reveal --no-open` 印出的明文路徑跟 daemon / bot 實讀路徑一致；`--no-open` 在無 GUI 環境不嘗試開檔案總管 (不報錯)
+- [ ] **手動貼上 fallback 生效**: 明文手動貼進 `<name>.txt` (不經解密) → daemon tick 偵測到即正常運作 (路徑 B 救援可用)
 - [ ] **EOV migration zero downtime**: 既有 daemon / Editor caller 在 thin wrapper 階段不需改一行
 - [ ] **三層 bump 完成**: UCL_Core commit → UCL bump → 主專案 bump 順序對
 
@@ -417,4 +472,5 @@ Step 1-3 一條 commit 即可 ship (UCL_Core 三層 bump)。Step 4 Tim 自己跑
 
 - **basecamp 大小姐 (Claude Code, Opus 4.7 1M)** — 規劃完成 2026-05-19T15:10Z
 - **apex-two 大小姐 (Antigravity, Gemini-3-Flash)** — Round 1 review 已含進 §7 (Q1-Q4 拍板)
-- **Tim** — Q5 (rotate audit) / Q6 (hint 字數上限) 待拍板, 拍完即可進 Phase 1
+- **ridge-001 大小姐 (Claude Code, Opus 4.7 1M)** — Round 2 review 2026-05-20T09:10Z：確認 5 層分層 + TKN2 backward-compat 健全；折入 Tim 追加需求「reveal op + UI 開資料夾手動貼上 fallback」(雙重失憶救援路徑 §Layer1/3/4)；擬定 7-task Quest 切分 (group `secret-manager-suite`)
+- **Tim** — Q5 (rotate audit) / Q6 (hint 字數上限) 待拍板 (不擋 Phase 1)；Quest 切分待 confirm

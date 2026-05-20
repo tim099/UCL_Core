@@ -182,7 +182,13 @@ def _decode_header(ciphertext: bytes):
     """
     if not isinstance(ciphertext, (bytes, bytearray)):
         raise TypeError("ciphertext must be bytes")
-    raw = bytes(ciphertext)
+    # 區塊職責：CRLF 正規化 — .enc 經 git autocrlf / Windows 編輯器存檔會變 \r\n
+    # 物理意義：salt b64 與 fernet token 都是 base64url (絕不含 \r/\n)，hint/label 已在 encrypt
+    #          驗證禁含換行，故把 \r\n → \n 只會影響結構分隔符，不會破壞任何欄位內容。
+    #          不正規化的話舊 TKN1 .enc (CRLF) 會 "bad magic: TKN1\r" 解不開 (content-layer 盲點)。
+    # 數值影響：純結構正規化，加解密 bytes 不變。
+    # rstrip 去掉檔尾殘留換行 (token 為 base64url，尾端無意義空白)，避免 fernet decode 雜訊
+    raw = bytes(ciphertext).replace(b"\r\n", b"\n").rstrip(b"\r\n")
 
     # 先看 magic 決定走哪個分支
     first_nl = raw.find(b"\n")
@@ -337,6 +343,17 @@ def _run_selftest():
     assert dec_v1.hint == "" and dec_v1.label == "" and dec_v1.created_at is None
     meta_v1 = read_metadata(tkn1)
     assert meta_v1.format_version == 1 and meta_v1.hint == ""
+
+    # (6b) CRLF 污染相容 — git autocrlf / Windows 存檔把 \n 變 \r\n，舊 .enc 仍要能解
+    enc_crlf = encrypt(b"crlf-secret", pw, hint="h", label="L").replace(b"\n", b"\r\n")
+    dec_crlf = decrypt(enc_crlf, pw)
+    assert dec_crlf.plaintext == b"crlf-secret", "CRLF 污染密文解密失敗"
+    assert dec_crlf.hint == "h" and dec_crlf.label == "L"
+    # TKN1 + CRLF 也要過
+    salt_c = os.urandom(SALT_LEN)
+    tok_c = Fernet(_derive_key(pw, salt_c)).encrypt(b"legacy-crlf")
+    tkn1_crlf = MAGIC_V1 + b"\r\n" + base64.urlsafe_b64encode(salt_c) + b"\r\n" + tok_c + b"\r\n"
+    assert decrypt(tkn1_crlf, pw).plaintext == b"legacy-crlf", "TKN1 CRLF 解密失敗"
 
     # (6) bad magic — raise
     try:

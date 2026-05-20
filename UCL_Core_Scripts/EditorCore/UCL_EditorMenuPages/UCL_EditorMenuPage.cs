@@ -140,9 +140,9 @@ namespace UCL.Core.EditorLib.Page
                     UCL_ChatTavernPage.Create();
                 }
 #endif
-                if (GUILayout.Button("PlayerPrefs", UCL_GUIStyle.ButtonStyle))
+                if (GUILayout.Button("UCL_LoginStatusPage", UCL_GUIStyle.ButtonStyle))
                 {
-                    UCL_EditorPage.Create<UCL_PlayerPrefsEditPage>();
+                    UCL_EditorPage.Create<UCL_LoginStatusPage>();
                 }
 
                 // 區塊職責：「Page 選擇器」— 列出所有 ShowInPageMenu==true 的 UCL_CommonEditorPage 子類

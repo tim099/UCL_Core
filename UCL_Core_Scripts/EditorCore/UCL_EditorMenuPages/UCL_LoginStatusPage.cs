@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -114,9 +114,12 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：載入並反序列化 lock + pool
-        // 物理意義：scan _session/_persona_*.json + AwakenInit/personas/*.json
-        // 數值影響：更新 m_Locks / m_Pool / m_SameKeyCount
+
+        /// <summary>
+        /// 區塊職責：載入並反序列化 lock + pool
+        /// 物理意義：scan _session/_persona_*.json + AwakenInit/personas/*.json
+        /// 數值影響：更新 m_Locks / m_Pool / m_SameKeyCount
+        /// </summary>
         void LoadData()
         {
             m_Locks.Clear();
@@ -470,48 +473,99 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：persona registry 池
-        // 物理意義：列所有 personas (含 offline), 給 Tim 看 wake_count + status + 是否有 lock
+        // 區塊職責：繪製 Persona 池的數值資訊
+        // 物理意義：將硬碟中採樣出來的所有 Persona 的註冊狀態、角色設定及最後活動時間進行可視化排列顯示。
+        // 數值影響：無修改，僅作排版視覺化呈現，方便開發者比對物理狀態。
         void DrawPersonaPool()
         {
+            // 呼叫 GUILayout.Label 繪製 Persona 池的標題，包含目前池中總個數。
             GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.HeaderFmt"), m_Pool.Count), UCL_GUIStyle.LabelStyle);
+            
+            // 使用 VerticalScope 包裹整個 Persona 池的區域，並套用 "box" 樣式以利視覺區隔。
             using (new GUILayout.VerticalScope("box"))
             {
+                // 判斷如果 Persona 池的資料筆數為零，則顯示空池提示並直接返回。
                 if (m_Pool.Count == 0)
                 {
+                    // 呼叫 GUILayout.Label 顯示空池提示資訊，並帶入 Personas 目錄路徑。
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.EmptyFmt"), m_PersonasDir), UCL_GUIStyle.LabelStyle);
+                    // 提早結束函數呼叫。
                     return;
                 }
-                //m_PoolScroll = GUILayout.BeginScrollView(m_PoolScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(240)));
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Status"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Wake"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LayerRole"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LastActive"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                }
+                
+                // m_Pool 已經在載入時依 WakeCount 降序排列。
+                // 迭代遍歷 m_Pool 串列中的每一個 PersonaEntry 項目，動態繪製每一列的資料。
                 foreach (var p in m_Pool)
                 {
+                    // 為每一筆 PersonaEntry 項目建立一個水平排版區間，讓所有屬性欄位在一列內橫向排列。
                     using (new GUILayout.HorizontalScope())
                     {
+                        // 繪製最左側的「複製」按鈕，寬度設為自動展開（依據文字寬度縮放）。
                         if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
+                            // 當按鈕被點擊時，將對應的 /ucl-morning 指令字串複製到系統剪貼簿中。
                             GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Agent} {p.Name}";
                         }
-                        string status = p.HasLock ? $"<color=#66ff99>{p.Status} 🔒</color>" : p.Status;
-                        GUILayout.Label(status, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                        GUILayout.Label(p.Name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                        GUILayout.Label(p.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
                         
-                        GUILayout.Label(p.WakeCount.ToString(), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                        GUILayout.Label(TruncStr(p.LayerRole, 28), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
-                        GUILayout.Label(TruncTs(p.LastActive), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                        // 計算狀態文字：若該 Persona 當前被 Locked (HasLock 為真)，則加上綠色字體與鎖頭符號。
+                        string status = p.HasLock ? $"<color=#66ff99>{p.Status} 🔒</color>" : p.Status;
+                        
+                        // 建立狀態 (Status) 欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            // 繪製「狀態」欄位的小標題，設定寬度比例為縮放後的 90 像素。
+                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Status"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                            // 繪製「狀態」的實際字串值，設定寬度比例為縮放後的 90 像素。
+                            GUILayout.Label(status, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                        }
+                        
+                        // 建立 Persona 名字欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            // 繪製「Persona」欄位的小標題，設定寬度比例為縮放後的 180 像素。
+                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                            // 繪製該 Persona 的名字，設定寬度比例為縮放後的 180 像素。
+                            GUILayout.Label(p.Name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                        }
+                        
+                        // 建立 Agent (代理) 欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            // 繪製「Agent」欄位的小標題，設定寬度比例為縮放後的 120 像素。
+                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                            // 繪製該 Persona 對應的 Agent 名稱，設定寬度比例為縮放後的 120 像素。
+                            GUILayout.Label(p.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                        }
+                        
+                        // 建立 Wake (醒來次數) 欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            // 繪製「Wake」欄位的小標題，設定寬度比例為縮放後的 60 像素。
+                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Wake"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                            // 繪製該 Persona 的醒來次數，設定寬度比例為縮放後的 60 像素。
+                            GUILayout.Label(p.WakeCount.ToString(), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                        }
+                        
+                        // 建立 LayerRole (角色擔當) 欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            // 繪製「LayerRole」欄位的小標題，設定寬度比例為縮放後的 240 像素。
+                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LayerRole"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
+                            // 繪製截短至 28 字元的角色擔當說明文字，設定寬度比例為縮放後的 240 像素。
+                            GUILayout.Label(TruncStr(p.LayerRole, 28), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
+                        }
+                        
+                        // 建立 LastActive (最後活躍) 欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            // 繪製「LastActive」欄位的小標題，設定寬度比例為縮放後的 180 像素。
+                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LastActive"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                            // 繪製截短後的最後活躍 UTC 時間戳，設定寬度比例為縮放後的 180 像素。
+                            GUILayout.Label(TruncTs(p.LastActive), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                        }
+                        GUILayout.FlexibleSpace();
                     }
                 }
-                //GUILayout.EndScrollView();
             }
         }
 

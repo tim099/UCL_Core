@@ -1,7 +1,7 @@
 ---
 title: Validate UCL_Asset 工作流程
 description: 在寫完 / 改完任何 UCL_Asset JSON 後，用 Cmd_ValidateAssetFormat 做 round-trip + 引用完整性檢查的 SOP；做為所有「建立 / 修改 UCL_Asset」型工作流的驗收門檻
-last_updated: 2026-05-05
+last_updated: 2026-05-20
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -90,6 +90,29 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
 
+### 3.4 全鏈引用診斷（排查既有 asset）— Cmd_ResolveAssetReferences
+
+`ValidateAssetFormat --checkRefs` 是**改完一個 asset 的驗收 gate**（per-asset，BFS 檢查它引用的 sub-asset 在不在）。
+但若你要**排查一個既有 asset「哪些引用壞了」/ 看完整依賴樹**，用 `Cmd_ResolveAssetReferences` 更直觀 — 它遞迴走所有 `UCLI_AssetEntry`，每筆標 `Exists ✅/❌` + 印 `[MISSING]`，一次看完整條鏈：
+
+```bash
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ResolveAssetReferences \
+    --arg assetType=<Type> --arg assetIds=<ID>[,<ID2>] --arg maxDepth=2 --arg format=md
+# 產出 CardGame/AgentCommands/asset_refs_<Type>_<ts>.md
+# 看 "Found On Disk: N / Total" + Flat Path List 的 ❌ + Reference Tree 的 [MISSING]
+```
+
+| 工具 | 用途 | 何時用 |
+|---|---|---|
+| `ValidateAssetFormat --checkRefs=1` | 單一 asset 驗收（format + 直接引用）| **改完 / 新建 asset 後**（gate）|
+| `ResolveAssetReferences` | 整條依賴鏈引用健康一覽（哪些 ❌）| **排查既有 asset / 找 dangling 根因** |
+| `FindAssetUsages`（反向）| 誰引用了這個 asset | 判斷 asset 是否為 **orphan**（沒人用 = 可能未接好的 WIP）|
+
+> [!IMPORTANT]
+> **辨別「全域缺失」vs「此 asset 專屬缺失」** — 跑完別急著修每個 ❌。先拿一個**同類已知正常的 asset** 當對照組跑一次：若某個 missing ref（如 `RCG_PoolingData/ItemDisplay`）在**所有**同類 asset 都缺，那是全域預設 / 系統性容忍項，**不是你這個 asset 的 bug**，別去建假資料。只有「對照組有、你這個沒有」的 missing 才是真要修的專屬缺口。
+>
+> 真實案例（2026-05-20 ridge-001）：`RCG_CharacterData/AncientTreeSpirit` 跑出 3 個 ❌，但拿完整角色 `Lucia` 對照後發現 `ItemDisplay` 是**全角色共缺**（Lucia 也缺、遊戲照跑）→ 只有 `RCG_SkillTag/Skill_Ancient` + `RCG_UnitData/AncientTreeSpirit` 是 ATS 專屬缺口（該角色為未完成 WIP，相依資產沒建）。修這兩個即可。
+
 ## 4. Verdict 處理流程圖
 
 ```
@@ -126,6 +149,8 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
 | **`reference_check: Missing` 對 RCG_ItemTag / RCG_SkillTag** + schema PASS | JSON 內 `"Tags": ["Buff", "Mana"]` 看似純字串陣列，實則每個元素是 `RCG_TagAssetEntry` 對應一個 Tag asset；Tag ID 拼錯 / 不存在時 schema 看不出，但 Editor preview 會在 `get_Tag()` lazy load 時噴例外 | 用 `ls CardGame/Assets/.BuiltinModules/.../UCL_Assets/RCG_ItemTag/` 查合法 Tag ID；修 Tags / SkillTags 拼字或刪除無效項 |
 | `verdict: Error` + `Asset file not found` | assetId 拼錯，或目標 module 沒被當前 module load 列表載入 | 檢查 ID 拼寫；確認 module 設定 |
 | 多個 captured errors 但 schema PASS | Editor preview 階段觸發例外（loader 容錯了），但 asset 本身欄位未被影響 | 通常是 reference 問題，跑 `checkRefs=1` 確認 |
+| `reference_check: Missing` 但**同類所有 asset 都缺同一筆** | 全域預設 / 系統性容忍項（如所有角色都缺 `RCG_PoolingData/ItemDisplay`）| **不是此 asset 的 bug**，別建假資料；拿同類正常 asset 對照確認（見 §3.4）|
+| 新建的角色 / 單位有多筆 ❌（如缺 UnitData / SkillTag）| 該 asset 為未完成 WIP，相依資產還沒建（用 `FindAssetUsages` 確認它根本沒被引用 = orphan）| 補齊相依資產（用既有美術做 reference-clean placeholder，標記交原作者細修），或先別接進遊戲 |
 
 ## 6. Localize 修法案例（最常見）
 
@@ -188,5 +213,7 @@ verdict 必須 = `PASS`（或 `FormattingOnly` + 套用 `.fixed.json`）才算�
 
 ## 10. 關聯文件
 
-- [Cmd_ValidateAssetFormat API](../API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md) — 詳細 args / 報告結構
+- [Cmd_ValidateAssetFormat API](../API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md) — 詳細 args / 報告結構（per-asset 驗收 gate）
+- [Cmd_ResolveAssetReferences API](../API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md) — 全鏈引用診斷（排查既有 asset 的 dangling ref，見 §3.4）
+- [Create_UCL_Asset_Workflow](Create_UCL_Asset_Workflow.md) — 建立 UCL_Asset 子類，**建完一律走本工作流驗收**
 - [AgentCommands 系統架構](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Cmd 觸發底層流程（lock-file 機制）

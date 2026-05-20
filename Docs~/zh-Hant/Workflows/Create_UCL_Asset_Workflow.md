@@ -176,6 +176,24 @@ UCL_CommonEditPage.Create(myAsset);
 
 ---
 
+## 7.5 驗收（建完 / 改完一律必跑）
+
+> [!IMPORTANT]
+> **建立新 asset 子類、或寫 / 改任何 instance JSON 後，必走 [Validate_UCL_Asset_Workflow](Validate_UCL_Asset_Workflow.md) 驗收。** 這是本工作流的**收尾門檻**，不是可選的 see-also。Schema 反序列化、引用完整性的問題若不在此攔下，會 silent 漏到 runtime（enum 拼錯→欄位變預設 / Tag·SkillTag·SpriteAssetEntry ID 不存在→Editor preview 才爆）。
+
+```bash
+# 每個新建 / 修改的 instance asset 都跑（路徑相對 git root）
+python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+    --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=1 \
+    --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
+# verdict 必須 = PASS（或 FormattingOnly + 套用 .fixed.json）；reference_check 不可 Missing
+```
+
+排查既有 asset「哪些引用壞了 / 完整依賴樹」→ 用 `Cmd_ResolveAssetReferences`（見 Validate workflow §3.4）。
+辨別「全域缺失 vs 此 asset 專屬缺失」→ 拿同類正常 asset 對照，別替全域容忍項建假資料。
+
+---
+
 ## 8. 範例參考
 
 | Asset | 看點 |

@@ -234,8 +234,31 @@ namespace UCL.Core.EditorLib.Page
                         Debug.LogWarning($"[LoginStatus] parse persona {pf} failed: {e.Message}");
                     }
                 }
-                // sort by wake_count desc
-                m_Pool.Sort((a, b) => b.WakeCount.CompareTo(a.WakeCount));
+                // 區塊職責：對 Persona 池進行多級排序
+                // 物理意義：第一優先級為 Status 為 "online" (不分大小寫) 的 Persona 排在最前面，第二優先級為 WakeCount 的降序排列，第三優先級為 Persona 名字的升序排列以保持確定性。
+                // 數值影響：不修改資料庫，僅變更 UI 中資料的渲染順序，優先呈現目前活動在線的 Persona 以利觀察。
+                m_Pool.Sort((a, b) =>
+                {
+                    // 偵測 a 的狀態是否等於 "online" (忽略大小寫差異)
+                    bool aOnline = string.Equals(a.Status, "online", StringComparison.OrdinalIgnoreCase);
+                    // 偵測 b 的狀態是否等於 "online" (忽略大小寫差異)
+                    bool bOnline = string.Equals(b.Status, "online", StringComparison.OrdinalIgnoreCase);
+                    
+                    // 如果兩者的在線狀態不一致
+                    if (aOnline != bOnline)
+                    {
+                        // 讓 online 狀態在前 (true 大於 false，藉由 bOnline 對 aOnline 進行比較來實現 true 優先排序)
+                        return bOnline.CompareTo(aOnline);
+                    }
+                    
+                    // 當在線狀態相同時，依據 WakeCount 醒來次數進行降序排序 (b 對 a)
+                    int wakeCompare = b.WakeCount.CompareTo(a.WakeCount);
+                    // 如果醒來次數不相等，直接返回次數比較結果
+                    if (wakeCompare != 0) return wakeCompare;
+                    
+                    // 若前兩者均相等，則依據名字字串的 ASCII 順序進行升序排序，以提供唯一的穩定性排序結果
+                    return string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+                });
             }
         }
 

@@ -283,7 +283,24 @@ namespace UCL.Core.Editor.SecretManager
 
 ---
 
-## 📂 Layer 5: UCL_SecretRegistry (ScriptableObject)
+## ⚠ Layer 5 De-scope 決定 (ridge-001 2026-05-20, 實作期企劃判斷)
+
+**原 plan 的 `UCL_SecretRegistry` (UCL_Asset) 在實作期判定為冗餘，de-scope。**
+
+理由 (single source of truth)：
+- TKN2 `.enc` 的 `L:label` 欄位**已經是**每個 secret 的人類可讀來源，`show-hint --json` 可 passphrase-free 讀出。
+- registry 再存一份 label/path = 兩處資料源，會 drift（registry 寫 A、.enc 寫 B 時誰對？）。
+- Page (T8) 跟 daemon (T5) 改成**直接掃 `_secrets/*.enc`**（對齊 `UCL_LoginStatusPage` 掃 `_session/*.json` 的範式），label 從 .enc metadata 讀，零 registry 依賴。
+- HelpUrl 是 registry 唯一獨有的欄位 → 未來真有需求時，加 TKN2 `U:` metadata 前綴即可（forward-compat 已留），仍不需要獨立 registry。
+
+**影響**：
+- **T5** 重定義為 thin `UCL_SecretDaemon`（generic 檔案掃描 auto-popup tick），不含 UCL_Asset registry。
+- **T8** `UCL_SecretManagerPage` 改掃檔案，不依賴 registry（quest 上 T8 depends_on T5 仍成立，因 Page 重用 daemon 的掃描 helper）。
+- 下方原 Layer 5 registry spec 保留作歷史記錄，標 superseded。
+
+---
+
+## 📂 Layer 5 (SUPERSEDED — 見上方 de-scope 決定): UCL_SecretRegistry (ScriptableObject)
 
 ```csharp
 [CreateAssetMenu(menuName = "UCL/Secret Manager/Registry")]

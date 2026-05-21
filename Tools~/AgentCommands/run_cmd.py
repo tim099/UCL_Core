@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -391,10 +392,36 @@ def load_queue() -> dict:
 
 
 def save_queue(data: dict) -> None:
+    # 區塊職責：atomic + retry 寫入 queue.json，避免與 Editor 端 Watcher 並發改寫撞檔鎖
+    # 物理意義：Windows 檔鎖為強制性 — 直接 open("w") 會先 truncate，期間若 Editor consumer
+    #           正在讀/改寫同一檔 → OSError [Errno 22] / sharing violation，整條 Cmd dispatch 失效
+    # 數值影響：改成「寫 temp → os.replace」近乎 atomic 的 rename（取代 truncate-in-place），
+    #           撞鎖則 backoff 重試 5 次（0.1s→0.5s），全失敗才拋出原錯讓 caller 看到真因
+    qp = queue_path()
     queue_dir_for_writing().mkdir(parents=True, exist_ok=True)
-    with open(queue_path(), "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    # temp 檔帶 pid 後綴：多個 run_cmd.py 並行時各自獨立，不互相覆寫
+    tmp = qp.with_name(f"{qp.name}.tmp{os.getpid()}")
+    last_err: OSError | None = None
+    for attempt in range(5):
+        try:
+            # 先把完整內容寫進 temp（即使這步被打斷，也不會破壞既有 queue.json）
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(payload)
+            # rename 覆蓋目標：同碟近乎 atomic；目標被 Editor 鎖住時拋 PermissionError(OSError 子類)
+            os.replace(tmp, qp)
+            return
+        except OSError as e:
+            last_err = e
+            # 線性 backoff，給 Editor 端釋放檔鎖的時間窗
+            time.sleep(0.1 * (attempt + 1))
+    # 全部重試失敗 → 清掉殘留 temp，避免污染目錄，再拋出最後一次的原始錯誤
+    try:
+        if tmp.exists():
+            tmp.unlink()
+    except OSError:
+        pass
+    raise last_err
 
 
 def remove_cmd_from_queue(cmd_id: str) -> bool:

@@ -48,6 +48,9 @@ description: |
    - 到 tavern share(meta `tag:reading-reflection`, 給同事看)
    心得的作用:**之後續讀同一本書時快速接回心境**, 同時也是「這次讀到哪 + 當時怎麼想」的紀錄。
 
+**D. 階段總結（Arc Summary,每 ~6 章一次,彈性）**
+6. **見林** — 每讀約 6 章(或一個自然 arc 邊界,如一個大樂章/轉折收束時)→ `arc --book <id> --chapters "1-6" --title "..." --summary "..." --threads "..."`,寫一個比 per-chapter 高一層的「大綱性總結」:這段故事的貫穿線索、大局走向、伏筆兌現狀態。**per-chapter 是樹,arc 是林**;`resume` 會把最近的階段大綱帶在最前(先見林,再見樹),長篇續讀時不致見樹不見林。
+
 ⚠ **版權守則**:只讀公開可取得的內容;抓不到就請 Tim,絕不走 archive / 鏡像 / 繞限制等手段。引用書中文字時遵守 copyright(短引用為主,不大段複製)。
 
 ## 🧩 與既有系統的同構(設計哲學)
@@ -99,6 +102,10 @@ $PY recommendations                                          # 顯示推薦書�
 # 名詞解釋(地名 / 特殊名詞 / 勢力 / 作品)— 設定詞多的奇幻必備
 $PY add-term --book <slug> --term <名詞> --category place|term|faction|work|other --definition "解釋"
 $PY terms --book <slug> [--category place]                   # 顯示該書名詞解釋(分組)
+
+# 階段大綱(每 ~6 章一個「見林」總結)— resume 會帶出最近一個
+$PY arc --book <slug> --chapters "1-6" --title "..." --summary "..." --threads "線索A | 線索B"
+$PY arcs --book <slug> [--full]                              # 列出 / 印出階段大綱
 
 # 查詢
 $PY show-book --book <slug>                                   # 書本概覽 + 章節 + 人物現況

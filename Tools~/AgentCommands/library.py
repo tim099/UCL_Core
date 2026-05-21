@@ -424,6 +424,16 @@ def cmd_resume(args):
     if pr.get("bookmark_note"):
         print(f"🔖 續讀備註 / 上次心得: {pr['bookmark_note']}")
 
+    arcs = bk.get("arcs", [])
+    if arcs:
+        latest = arcs[-1]
+        print(f"\n📚 最近階段大綱【第 {latest['chapters']} 章】{latest.get('title', '')}（見林）:")
+        fp = _arc_dir(book) / latest["file"]
+        if fp.exists():
+            m = re.search(r"## 階段大綱（見林）\s*\n(.*?)(?:\n##|\Z)", fp.read_text(encoding="utf-8"), re.S)
+            if m:
+                print("   " + m.group(1).strip().replace("\n", "\n   "))
+
     print("\n👥 人物現況（目前看法）:")
     for cid in bk.get("characters", []):
         pp = _char_profile(book, cid)
@@ -606,6 +616,64 @@ def cmd_recommendations(args):
 
 
 # ===========================================================
+# 階段大綱 (arc summary:每 ~N 章一個「見林」的總結)
+# ===========================================================
+
+def _arc_dir(book: str) -> Path:
+    return _book_dir(book) / "arcs"
+
+
+def cmd_arc(args):
+    # 區塊職責: 記一個跨章「階段大綱」— 比 per-chapter 高一層的見林視角
+    # 物理意義: 每讀 ~6 章(或一個自然 arc 邊界)收束一次, 抓貫穿線索與大局走向
+    # 數值影響: 寫 <book>/arcs/arc_<range>.md + 在 book.json arcs[] 登記索引
+    book = args.book
+    _require_book(book)
+    chapters = args.chapters
+    fslug = re.sub(r"[^0-9]+", "-", chapters).strip("-") or "x"
+    fname = f"arc_{fslug}.md"
+    body = [
+        _frontmatter({"book": book, "chapters": chapters, "title": args.title or "", "date": _today()}),
+        "",
+        "## 階段大綱（見林）",
+        args.summary or "（待補）",
+        "",
+        "## 貫穿線索 / 伏筆狀態",
+    ]
+    for t in (_split_list(args.threads) or ["（待補）"]):
+        body.append(f"- {t}")
+    body.append("")
+    _atomic_write(_arc_dir(book) / fname, "\n".join(body))
+
+    bk = _read_json(_book_json(book))
+    arcs = [a for a in bk.get("arcs", []) if a.get("chapters") != chapters]
+    arcs.append({"chapters": chapters, "title": args.title or "", "file": fname, "date": _today()})
+    bk["arcs"] = arcs
+    _write_json(_book_json(book), bk)
+    print(f"✅ 階段大綱: {book} 第 {chapters} 章 — {args.title or ''}")
+    return 0
+
+
+def cmd_arcs(args):
+    book = args.book
+    bk = _require_book(book)
+    arcs = bk.get("arcs", [])
+    if not arcs:
+        print("（尚無階段大綱）")
+        return 0
+    print(f"📚《{bk['title']}》階段大綱（{len(arcs)}）\n")
+    for a in arcs:
+        print(f"【第 {a['chapters']} 章】{a.get('title', '')}  ({a.get('date')})")
+        if args.full:
+            fp = _arc_dir(book) / a["file"]
+            if fp.exists():
+                print()
+                print(fp.read_text(encoding="utf-8"))
+                print()
+    return 0
+
+
+# ===========================================================
 # argparse
 # ===========================================================
 
@@ -705,6 +773,19 @@ def build_parser():
     a.add_argument("--book", required=True)
     a.add_argument("--category", choices=["term", "place", "faction", "work", "other"])
     a.set_defaults(func=cmd_terms)
+
+    a = sub.add_parser("arc", help="記階段大綱(每 ~6 章一個見林總結)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--chapters", required=True, help="涵蓋章節範圍, 如 1-6")
+    a.add_argument("--title", help="這個 arc 的標題")
+    a.add_argument("--summary", help="階段大綱(見林)")
+    a.add_argument("--threads", help="貫穿線索/伏筆狀態, 用 ; | 或換行分隔")
+    a.set_defaults(func=cmd_arc)
+
+    a = sub.add_parser("arcs", help="顯示階段大綱列表 (--full 印全文)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--full", action="store_true")
+    a.set_defaults(func=cmd_arcs)
 
     return p
 

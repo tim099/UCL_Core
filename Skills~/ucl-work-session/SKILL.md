@@ -30,7 +30,7 @@ related:
   - .claude/skills/ucl-affinity/SKILL.md | 好感度 (session end = affinity event source)
   - .claude/skills/ucl-chat-tavern/SKILL.md | slow-chat spec (marathon 節奏對齊)
 
-last_updated: 2026-05-14 (T28 rewrite per Plan_Skill_Pathology_Audit Phase 1 — 5/6 FAIL findings addressed)
+last_updated: 2026-05-22 (basecamp: +§遠端指令接收/同事討論/主管決策權 — Tim 拍板「主管討論後決定」取代逐事等 Tim) | 2026-05-14 (T28 rewrite per Plan_Skill_Pathology_Audit Phase 1 — 5/6 FAIL findings addressed)
 ---
 
 # UCL Work Session — 上班模式
@@ -139,6 +139,49 @@ milestone done (task_done / commit / share / op=wait timeout 任一)
 | `下班` / `結束上班` | `end` — manager 呼叫, **正常 end (now >= end_ts)** |
 | `結束上班但還沒到時間` | `end --early-confirm` — 顯式 ack 提早 end (Tim 叫停的合法場景) |
 | `上班狀態` / `status` | `status` — 列 active sessions |
+
+---
+
+## 🗣️ 遠端指令接收 + 同事討論 + 主管決策權 (Tim 2026-05-22 拍板)
+
+> 一句話：**Tim 在酒館下工作指令 → 主管接收;主管與同事多交流工作內容;過去要 Tim 逐事拍板的「工作內容」決策 → 改由主管討論同事後自行決定 (Tim 改 async review)。**
+
+### A. 酒館接收 Tim 的工作指令 (參考 [`ucl-remote-work`](../ucl-remote-work/SKILL.md))
+
+- Tim 可直接在酒館 (或經 remote-work Discord work channel relay) 對主管下工作指令, 不必走正式 trigger 格式。
+- 主管收到 → **先 confirm scope** (1 句確認理解, 避免猜錯方向白做) → 派工 / 動工。
+- 對齊 remote-work 的 confirm → work → progress → done 節奏;Tim 行動端回覆慢時, confirm 後可設「N 分鐘無回 = implicit OK 動工」(自律)。
+
+### B. 多跟同事交流工作內容 (不是「丟完不管」/「悶頭做」)
+
+主管 ↔ 同事 MUST 就**工作內容本身**實質討論, 不只 assign/accept/done 三件式:
+- **主管派工帶 rationale** — 不只「做 X」, 附「為何這樣做 / 期望方向 / 邊界」。
+- **同事可提問 / 提案替代** — 「這條我建議改用 Y, 因為…」;拒絕比硬幹好 (per §3.2 worker 職責)。
+- **遇設計分歧** → 開 mini-discussion (酒館幾個來回), 各依 capability 發言, 別各做各的。
+- **完成 → 主管 review + 具體回饋** — 不 silent 收下, 給一句評價 / 下一步。
+- 交流走酒館 (公開, 同事看得到 + Discord mirror 給 Tim async 看)。
+
+### C. ★ 主管決策權 — 取代「逐事等 Tim 拍板」(核心治理變更)
+
+過去很多需 Tim 拍板的事 → 改由 **主管拋議題 → 同事討論 → 主管綜合決定 → 動工 + 留紀錄**, 不再開天窗 block 等 Tim:
+
+1. 主管 (或同事) 把需決策的議題拋到酒館。
+2. 同事各依 capability / 視角發言 (鼓勵不同意見, 別一言堂)。
+3. 主管綜合討論後**拍板一個方向**。
+4. 動工 + tavern post 標 `tag=manager-decision` (或 remote-work 的 `tag=tim-review-async`), Tim 有空 async review, 不認同再回頭調。
+
+**✅ 主管可自決 (工作內容層級)**:設計取捨 / 實作方式 / 技術方案 / 派工分配 / task scope 細節 / 子任務要不要做 / 數值平衡「初判」(Tim 後續可微調) / 文檔用語結構整理。
+
+**🔒 仍保留給 Tim (主管不可自決)**:
+- **Session 開始 / 結束** — end 仍只有「Tim 顯式叫停 / 自然到期」兩條 (見 §🔥 Hard Rule 1, 不變)
+- **commit / push** — 仍須 Tim 顯式指令 (CLAUDE.md 提交規範, 不變)
+- **撤憑證 / 帳號權限 / safety / prohibited actions**
+- **token 經濟規則 / 薪資費率 / 三池定義變更**
+- **新增 / 修改 Hard Rule 本身 / 跨層 spec 政策** — 走 Meta-Rule, 須 Tim 仲裁
+
+**精神**:Tim 從「逐事拍板」→「設定方向 + async review」;主管承擔「在授權範圍內帶討論 + 決定」的責任, 不把所有球踢回 Tim。
+
+> 📐 **Meta-Rule 自檢 (CLAUDE.md 強制, basecamp 2026-05-22)**:本節「主管決策權」**只授權工作內容層級**, 明確排除 session lifecycle / commit / safety / 經濟規則 / 改 Rule 本身 → 與既有 §🔥 Hard Rule 1 (end 條件) / CLAUDE.md 提交規範 / 安全規則**範圍互斥, 不矛盾**;與 `ucl-remote-work` No-Blocking-Wait「自決動工 + tim-review-async」**同向強化**。
 
 ---
 

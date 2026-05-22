@@ -816,6 +816,258 @@ def cmd_donations(args):
 
 
 # ===========================================================
+# 卷↔章對應 (Volume↔Chapter mapping)
+# 物理意義: 打通「第 N 卷/集 ↔ Books NNN.txt 原始檔序號 ↔ BookNotes chN 章節號」三層對照
+# ===========================================================
+
+_VOL_STATUS = {"read": "✅ 已讀", "reading": "📖 閱讀中", "unread": "⚪ 未讀"}
+
+
+def cmd_add_volume(args):
+    # 區塊職責: 在 book.json volumes[] 登記一卷; 同 n 覆寫(可更新狀態), 否則 append + 依 n 排序
+    book = args.book
+    bk = _require_book(book)
+    n = int(args.n)
+    vols = [v for v in bk.get("volumes", []) if int(v.get("n", -99999)) != n]
+    entry = {
+        "n": n,
+        "title": args.title or "",
+        "title_original": args.title_original or "",
+        "files": args.files or "",          # 原始檔序號範圍, 如 "000-022"
+        "chapters": args.chapters or "",     # 章節號範圍, 如 "1-22"
+        "status": args.status or "unread",
+        "note": args.note or "",
+    }
+    if args.arc_ref:
+        entry["arc_ref"] = args.arc_ref      # 對應的卷總結 arc (chapters 字串)
+    vols.append(entry)
+    vols.sort(key=lambda v: int(v.get("n", 0)))
+    bk["volumes"] = vols
+    _write_json(_book_json(book), bk)
+    print(f"✅ 卷登記: {book} 第 {n} 卷《{entry['title']}》 "
+          f"files={entry['files']} chapters={entry['chapters']} [{entry['status']}]")
+    return 0
+
+
+def cmd_volumes(args):
+    book = args.book
+    bk = _require_book(book)
+    vols = bk.get("volumes", [])
+    if not vols:
+        print("（尚無卷別登記；用 add-volume 建立）")
+        return 0
+    cur = bk.get("progress", {}).get("current_chapter", 0)
+    print(f"📚《{bk['title']}》卷別對照（{len(vols)} 卷）\n")
+    for v in vols:
+        mark = _VOL_STATUS.get(v.get("status"), v.get("status", ""))
+        line = f"第 {v.get('n')} 卷《{v.get('title', '')}》"
+        if v.get("title_original"):
+            line += f"（{v['title_original']}）"
+        line += f"  [{mark}]"
+        print(line)
+        print(f"   原始檔 files: {v.get('files', '?')}   章節 chapters: {v.get('chapters', '?')}")
+        if v.get("arc_ref"):
+            print(f"   卷總結 arc: 第 {v['arc_ref']} 章")
+        if v.get("note"):
+            print(f"   note: {v['note']}")
+    print(f"\n目前讀到第 {cur} 章")
+    return 0
+
+
+# ===========================================================
+# 圖書檢索 (Search) — 跨書多維度: metadata/標籤(結構化) + 內容全文(人物/arc/章節/名詞/書評)
+# ===========================================================
+
+def _iter_books():
+    if not LIB_ROOT.exists():
+        return
+    for d in sorted(LIB_ROOT.iterdir()):
+        bj = d / "book.json"
+        if d.is_dir() and bj.exists():
+            try:
+                yield d.name, _read_json(bj)
+            except Exception:
+                continue
+
+
+def cmd_search(args):
+    # 區塊職責: 跨書檢索。query 子字串(CI) 掃 metadata + (deep) 書資料夾全文(章節/人物/arc/名詞)
+    # 物理意義: 書一多時靠主題/人物/標籤找書, 不只按書名; --tag 結構化過濾, --scope 限範圍
+    q = (args.query or "").strip().lower()
+    want_tag = args.tag.strip().lower() if args.tag else None
+    scope = args.scope or "all"
+    if not q and not want_tag:
+        print("❌ 至少給 --query 或 --tag", file=sys.stderr)
+        return 1
+    results = []
+    for bid, bk in _iter_books():
+        if args.book and bid != args.book:
+            continue
+        reasons = []
+        tags = [str(t).lower() for t in bk.get("tags", [])]
+        # 標籤過濾 (硬條件)
+        if want_tag:
+            if want_tag not in tags:
+                continue
+            reasons.append(f"標籤={want_tag}")
+        # metadata
+        if q and scope in ("all", "meta"):
+            for fld in ("title", "title_original", "author"):
+                val = bk.get(fld) or ""
+                if q in val.lower():
+                    reasons.append(f"{fld}: {val}")
+            for t in tags:
+                if q in t:
+                    reasons.append(f"標籤: {t}")
+            # 書評 / bookmark 心得
+            for r in bk.get("reviews", []):
+                if q in json.dumps(r, ensure_ascii=False).lower():
+                    reasons.append(f"書評(by {r.get('reviewer')})")
+            note = bk.get("progress", {}).get("bookmark_note", "")
+            if q in note.lower():
+                reasons.append("書籤心得")
+        # 內容全文 (章節/人物/arc/名詞) — 掃書資料夾 .md/.json, 依子資料夾歸類命中
+        if q and scope in ("all", "content"):
+            bdir = _book_dir(bid)
+            cat_hits = {}
+            if bdir.exists():
+                for fp in bdir.rglob("*"):
+                    if not fp.is_file() or fp.suffix not in (".md", ".json"):
+                        continue
+                    if fp.name == "book.json":
+                        continue
+                    try:
+                        text = fp.read_text(encoding="utf-8", errors="replace").lower()
+                    except Exception:
+                        continue
+                    if q in text:
+                        cat = fp.parent.name if fp.parent != bdir else fp.stem
+                        cat_hits[cat] = cat_hits.get(cat, 0) + 1
+            for cat, n in sorted(cat_hits.items()):
+                reasons.append(f"{cat}({n})")
+        if reasons:
+            results.append((bid, bk.get("title", bid), reasons))
+    # 也搜想讀清單 (_recommended.json)
+    rec_hits = []
+    if q:
+        try:
+            for r in _read_recs().get("recommendations", []):
+                if q in json.dumps(r, ensure_ascii=False).lower():
+                    rec_hits.append(r)
+        except Exception:
+            pass
+
+    if not results and not rec_hits:
+        print(f"（查無命中: query='{args.query or ''}' tag='{args.tag or ''}'）")
+        return 0
+    print(f"🔎 檢索結果  query='{args.query or ''}'"
+          + (f" tag='{args.tag}'" if want_tag else "") + f"  scope={scope}\n")
+    for bid, title, reasons in results:
+        print(f"📖 《{title}》  (id={bid})")
+        print(f"   命中: {', '.join(reasons)}")
+    if rec_hits:
+        print(f"\n📋 想讀清單命中（{len(rec_hits)}）:")
+        for r in rec_hits:
+            print(f"   - 《{r.get('title')}》 / {r.get('author', '?')}")
+    return 0
+
+
+def cmd_tag(args):
+    # 區塊職責: 設定/合併書的類型標籤 (供 search --tag 過濾用); --add 合併, --remove 移除
+    book = args.book
+    bk = _require_book(book)
+    tags = list(bk.get("tags", []))
+    _csplit = lambda s: [x.strip() for x in re.split(r"[,;|\n]+", s or "") if x.strip()]
+    if args.add:
+        for t in _csplit(args.add):
+            if t not in tags:
+                tags.append(t)
+    if args.remove:
+        rm = set(_csplit(args.remove))
+        tags = [t for t in tags if t not in rm]
+    bk["tags"] = tags
+    _write_json(_book_json(book), bk)
+    print(f"🏷  《{bk['title']}》標籤: {', '.join(tags) if tags else '(無)'}")
+    return 0
+
+
+# ===========================================================
+# 讀後書評 (Review) — 按 persona 標註, 不同 persona 各自評價 (同構於人物看法版本史)
+# ===========================================================
+
+def _stars(rating):
+    if not rating:
+        return "(未評分)"
+    rating = max(0, min(5, int(rating)))
+    return "★" * rating + "☆" * (5 - rating)
+
+
+def cmd_review(args):
+    # 區塊職責: 記一筆讀後推薦/書評到 book.json reviews[], 按 reviewer(persona) 標註
+    # 物理意義: Tim 拍板「書評按 persona 標註, 不同人不同評價」— 同 reviewer+scope 覆寫(re-review),
+    #          否則 append; 不同 persona 各保留各自書評
+    book = args.book
+    bk = _require_book(book)
+    reviewer = args.reviewer or bk.get("reader_persona") or "basecamp"
+    scope = args.scope or "whole"           # whole | volume:N
+    rating = None
+    if args.rating is not None:
+        rating = int(args.rating)
+        if not (1 <= rating <= 5):
+            print("❌ --rating 須為 1-5", file=sys.stderr)
+            return 1
+    reviews = [r for r in bk.get("reviews", [])
+               if not (r.get("reviewer") == reviewer and r.get("scope") == scope)]
+    entry = {
+        "reviewer": reviewer,
+        "scope": scope,
+        "rating": rating,
+        "pitch": args.pitch or "",              # 非劇透勾子
+        "for_whom": args.for_whom or "",        # 什麼讀者會愛
+        "similar_to": args.similar_to or "",    # 看過 X 會喜歡
+        "content_note": args.content_note or "",
+        "spoiler_safe": not args.spoiler,       # 預設非劇透
+        "date": _today(),
+    }
+    reviews.append(entry)
+    bk["reviews"] = reviews
+    _write_json(_book_json(book), bk)
+    print(f"✅ 書評登記:《{bk['title']}》 [{scope}] by 👤{reviewer}  {_stars(rating)}")
+    return 0
+
+
+def cmd_reviews(args):
+    book = args.book
+    bk = _require_book(book)
+    reviews = bk.get("reviews", [])
+    if args.reviewer:
+        reviews = [r for r in reviews if r.get("reviewer") == args.reviewer]
+    if not reviews:
+        print("（尚無書評；用 review 登記）")
+        return 0
+    from collections import OrderedDict
+    by = OrderedDict()
+    for r in reviews:
+        by.setdefault(r.get("reviewer", "?"), []).append(r)
+    print(f"📖《{bk['title']}》讀後書評（{len(reviews)} 筆 / {len(by)} 位 persona）\n")
+    for who, rs in by.items():
+        print(f"━━━ 👤 {who} ━━━")
+        for r in rs:
+            print(f"  [{r.get('scope', 'whole')}] {_stars(r.get('rating'))}  ({r.get('date')})"
+                  + ("" if r.get("spoiler_safe", True) else "  ⚠含劇透"))
+            if r.get("pitch"):
+                print(f"    勾子: {r['pitch']}")
+            if r.get("for_whom"):
+                print(f"    適合: {r['for_whom']}")
+            if r.get("similar_to"):
+                print(f"    類似作: {r['similar_to']}")
+            if r.get("content_note"):
+                print(f"    內容提醒: {r['content_note']}")
+        print()
+    return 0
+
+
+# ===========================================================
 # argparse
 # ===========================================================
 
@@ -942,6 +1194,55 @@ def build_parser():
 
     a = sub.add_parser("donations", help="列出捐贈圖書館 (書 + 捐贈者)")
     a.set_defaults(func=cmd_donations)
+
+    # 卷↔章對應
+    a = sub.add_parser("add-volume", help="登記一卷(卷別↔原始檔序號↔章節號對照); 同 n 覆寫")
+    a.add_argument("--book", required=True)
+    a.add_argument("--n", required=True, help="卷序號 (第幾集/卷), 整數")
+    a.add_argument("--title", help="卷名")
+    a.add_argument("--title-original", dest="title_original")
+    a.add_argument("--files", help="原始檔序號範圍, 如 000-022")
+    a.add_argument("--chapters", help="章節號範圍, 如 1-22")
+    a.add_argument("--status", choices=["unread", "reading", "read"], help="未讀/閱讀中/已讀")
+    a.add_argument("--note")
+    a.add_argument("--arc-ref", dest="arc_ref", help="對應卷總結 arc 的 chapters 字串, 如 1-22")
+    a.set_defaults(func=cmd_add_volume)
+
+    a = sub.add_parser("volumes", help="顯示卷別對照 (卷↔檔↔章 + 讀畢狀態)")
+    a.add_argument("--book", required=True)
+    a.set_defaults(func=cmd_volumes)
+
+    # 圖書檢索
+    a = sub.add_parser("search", help="跨書檢索 (metadata/標籤 + 內容全文: 人物/arc/章節/名詞/書評)")
+    a.add_argument("--query", help="關鍵字 (子字串, 不分大小寫)")
+    a.add_argument("--tag", help="按標籤過濾 (硬條件)")
+    a.add_argument("--scope", choices=["all", "meta", "content"], help="all(預設)/meta(僅元資料)/content(僅內容全文)")
+    a.add_argument("--book", help="限定只搜某 book id")
+    a.set_defaults(func=cmd_search)
+
+    a = sub.add_parser("tag", help="設定/合併書的類型標籤 (供 search --tag 用)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--add", help="新增標籤 (逗號/分號/| 分隔)")
+    a.add_argument("--remove", help="移除標籤 (逗號/分號/| 分隔)")
+    a.set_defaults(func=cmd_tag)
+
+    # 讀後書評 (按 persona)
+    a = sub.add_parser("review", help="記讀後書評/推薦 (按 persona 標註, 不同人不同評價)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--reviewer", help="評論者 persona (缺則用該書 reader_persona / basecamp)")
+    a.add_argument("--scope", help="whole(整本, 預設) 或 volume:N(某卷)")
+    a.add_argument("--rating", default=None, help="1-5 星")
+    a.add_argument("--pitch", help="非劇透勾子(一句話)")
+    a.add_argument("--for-whom", dest="for_whom", help="什麼讀者會愛")
+    a.add_argument("--similar-to", dest="similar_to", help="看過 X 會喜歡這本")
+    a.add_argument("--content-note", dest="content_note", help="內容提醒")
+    a.add_argument("--spoiler", action="store_true", help="標記此書評含劇透(預設非劇透)")
+    a.set_defaults(func=cmd_review)
+
+    a = sub.add_parser("reviews", help="顯示讀後書評 (按 persona 分組)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--reviewer", help="只看某 persona 的書評")
+    a.set_defaults(func=cmd_reviews)
 
     return p
 

@@ -50,6 +50,7 @@ description: |
 
 **D. 階段總結（Arc Summary,每 ~6 章一次,彈性）**
 6. **見林** — 每讀約 6 章(或一個自然 arc 邊界,如一個大樂章/轉折收束時)→ `arc --book <id> --chapters "1-6" --title "..." --summary "..." --threads "..."`,寫一個比 per-chapter 高一層的「大綱性總結」:這段故事的貫穿線索、大局走向、伏筆兌現狀態。**per-chapter 是樹,arc 是林**;`resume` 會把最近的階段大綱帶在最前(先見林,再見樹),長篇續讀時不致見樹不見林。
+7. **見林之林(卷 / 集 / 部 總結)** — 讀完一卷 / 一集 / 一部(多卷書的自然大邊界,如《英倫魔法師》第一集 ch1-22)時,**額外**寫一個跨整卷的 `arc`(chapters 涵蓋整卷, title 標「★第 N 集總結:<卷名>」):比 per-~6章 arc 更高一層,收束整卷的主線、核心命題、跨卷待兌現的大伏筆。**per-chapter 是樹,arc 是林,卷總結是林之林**——讓未來續讀下一卷前能一眼接回整卷的大局與母題。寫完卷總結後(agent 自決)可到 tavern 分享一篇卷心得(meta `tag:reading-reflection`)。
 
 ⚠ **版權守則**:只讀公開可取得的內容;抓不到就請 Tim,絕不走 archive / 鏡像 / 繞限制等手段。引用書中文字時遵守 copyright(短引用為主,不大段複製)。
 
@@ -128,6 +129,23 @@ $PY arcs --book <slug> [--full]                              # 列出 / 印出�
 # 捐贈圖書館(付 token 把 Books/ 的書加入共享, 全員可讀, 標註捐贈者)
 $PY donate --book <slug> --donor <bank-id> [--tokens 100] [--donor-persona X] [--note ...]
 $PY donations                                                # 列出捐贈書 + 捐贈者
+
+# 卷↔章對應(多卷書:卷別 ↔ Books NNN.txt 原始檔序號 ↔ chN 章節號 三層對照)
+$PY add-volume --book <slug> --n 1 --title "諾瑞爾先生" --files "000-022" --chapters "1-22" --status read [--arc-ref "1-22"]
+$PY volumes --book <slug>                                     # 列卷別對照 + 各卷讀畢狀態
+
+# 標籤(供 search --tag 過濾;類型/題材)
+$PY tag --book <slug> --add "奇幻,仙靈,黑暗童話" [--remove ...]
+
+# 圖書檢索(跨書:metadata/標籤 + 內容全文:人物/arc/章節/名詞/書評)
+$PY search --query <關鍵字>                                    # 子字串(CI), 掃全部
+$PY search --tag <標籤>                                        # 按標籤硬過濾
+$PY search --query <關鍵字> --scope meta|content [--book <slug>]
+
+# 讀後書評/推薦(★按 persona 標註, 不同 persona 各自評價;同 reviewer+scope 覆寫)
+$PY review --book <slug> --reviewer basecamp --scope volume:1 --rating 5 \
+    --pitch "非劇透勾子" --for-whom "什麼讀者會愛" --similar-to "看過X會喜歡" --content-note "內容提醒"
+$PY reviews --book <slug> [--reviewer <persona>]              # 按 persona 分組顯示
 
 # 查詢
 $PY show-book --book <slug>                                   # 書本概覽 + 章節 + 人物現況

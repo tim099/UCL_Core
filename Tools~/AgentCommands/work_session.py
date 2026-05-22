@@ -432,12 +432,20 @@ def cmd_start(args) -> int:
     # 行為: 「上班 10 分鐘」一句話 caller 即主管, 不必填表
     if not getattr(args, "manager", "") or not args.manager.strip():
         inferred = infer_caller_persona()
+        src = "caller env (C1 T09)"
+        # daemon-triggered start 沒有 caller env lock → 用 registry 首位 online persona 當主管
+        # (酒保自動開上班用; per Tim 2026-05-22「在場即上班」+ 自動招募會把其他人拉進來)
+        if not inferred and getattr(args, "auto_manager_online", False):
+            online = list_online_personas()
+            if online:
+                inferred = online[0]
+                src = "online registry (daemon auto)"
         if not inferred:
             print("❌ --manager 不傳時必須能從 caller env 推 active persona (claim_origin lock)")
-            print("   解法: 先跑 awakening.py morning 上線, 或顯式傳 --manager <persona>")
+            print("   解法: 先跑 awakening.py morning 上線, 或顯式傳 --manager <persona>, 或加 --auto-manager-online")
             return 1
         args.manager = inferred
-        print(f"✓ auto-manager: 從 caller env 推得當前 persona '{inferred}' 為主管 (C1 T09)")
+        print(f"✓ auto-manager: 當前主管 = '{inferred}' (來源: {src})")
 
     # Zeta caretaker stability fix (split-brain 預防): manager 不可同時在 active session
     in_session, where = is_persona_in_any_active_session(state, args.manager)
@@ -1908,6 +1916,7 @@ def main(argv=None) -> int:
     p_start.add_argument("--duration", type=int, default=60, help="分鐘 [15, 480]")
     p_start.add_argument("--desc", default="")
     p_start.add_argument("--trigger", default="", help="Tim 原始 trigger 字串 (audit)")
+    p_start.add_argument("--auto-manager-online", action="store_true", help="無 --manager 且 caller env 推不出時, 取 registry 首位 online persona 當主管 (酒保 daemon 自動開上班用)")
 
     p_status = sub.add_parser("status", help="列 active sessions")
     p_status.add_argument("--session", default="", help="filter by id")

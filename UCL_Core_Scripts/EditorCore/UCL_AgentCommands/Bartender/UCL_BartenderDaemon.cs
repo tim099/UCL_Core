@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 using System.Linq;
@@ -39,10 +40,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static double s_LastCheckTime = 0;
         static bool s_Initialized = false;
-        // T-Bartender-P3 (Plan_Bartender_Optimization_Backlog, 2026-05-14):
-        // Editor recompile/domain-reload 後 daemon 第一次 tick 補 fire 過期 work session end
-        // (per Plan_Work_Session_Mechanism §11 recompile edge case)
-        static bool s_WorkSessionCatchUpDone = false;
+        // T-WorkSession-Auto (2026-05-22, basecamp 完善上班機制):
+        // - s_WorkSessionStartCursor: tavern 訊息掃描游標 (0-based index). -1 = 未初始化;
+        //   (re)load 時設為當前 message count → 跳過歷史不重播舊「上班」trigger (防 recompile 後重開 session)
+        // - s_WorkSessionEndSpawned: 已 spawn end 結算的 session id (防 per-tick 重複 spawn end)
+        static int s_WorkSessionStartCursor = -1;
+        static readonly HashSet<string> s_WorkSessionEndSpawned = new HashSet<string>();
 
         // ===========================================================
         // Static ctor — Editor 啟動 / domain reload 時自動執行
@@ -100,15 +103,117 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             //          active 的 work session 是否已過 end_ts. 第一次 tick 時 sweep
             //          一次, 對 now > end_ts 的 active session spawn end subprocess 結算.
             // 數值影響: 純 read work_sessions.json + spawn python subprocess, 一次性 (s_WorkSessionCatchUpDone flag)
-            if (!s_WorkSessionCatchUpDone)
-            {
-                s_WorkSessionCatchUpDone = true;
-                try { CheckOverdueWorkSessions(); }
-                catch (Exception e) { Debug.LogWarning($"[Bartender P3] catchup sweep fail: {e.Message}"); }
-            }
+            // T-WorkSession-Auto (2026-05-22, basecamp): 每 tick (1) 偵測 Tim/Zeta 酒館「上班...到 HH:mm」
+            // → 自動 spawn work_session.py start (酒保宣布開始); (2) 掃過期 session → 自動結算+宣布結束.
+            // 改 per-tick (原本只 recompile 後第一次 sweep) → end_ts 一到即時結算, 不必等下次重編譯.
+            try { CheckWorkSessionStart(); }
+            catch (Exception e) { Debug.LogWarning($"[Bartender WS-start] fail: {e.Message}"); }
+            try { CheckOverdueWorkSessions(); }
+            catch (Exception e) { Debug.LogWarning($"[Bartender P3] overdue sweep fail: {e.Message}"); }
             CheckKeywordTriggers();
             CheckTimeRules();
             CheckOvernightDeposits();
+        }
+
+        // ===========================================================
+        // 區塊：T-WorkSession-Auto — 偵測 Tim/Zeta 酒館「上班...到 HH:mm」→ 自動開 session
+        // 物理意義: 每 tick 掃 tavern 新訊息 (cursor 追蹤, (re)load 跳過歷史不重播);
+        //          caretaker (Tim/Zeta) + body 含「上班」+「到 HH:mm」→ 算 duration → spawn
+        //          work_session.py start (以 tavern-keeper 身分宣布開始, 走既有結算/招募路徑).
+        // 數值影響: 純 read tavern messages + 視情況 spawn python; 解析失敗 / 非 caretaker → no-op.
+        // 邊界: 只認 sender == Tim / Zeta; 算出 duration > 480 min → skip; @manager 可選 (無則 py auto-online).
+        // ===========================================================
+        static readonly Regex s_WorkClockRegex = new Regex(@"到\s*(\d{1,2})\s*[:：]\s*(\d{2})", RegexOptions.Compiled);
+        static readonly Regex s_WorkAtRegex = new Regex(@"@(\S+)", RegexOptions.Compiled);
+
+        static void CheckWorkSessionStart()
+        {
+            var msgs = UCL_ChatTavernIO.LoadAllMessages("tavern");
+            if (msgs == null) return;
+            int count = msgs.Count;
+            // (re)load 時不重播歷史 — 第一次只記 cursor (防 recompile 後重開舊 session)
+            if (s_WorkSessionStartCursor < 0 || s_WorkSessionStartCursor > count)
+            {
+                s_WorkSessionStartCursor = count;
+                return;
+            }
+
+            for (int i = s_WorkSessionStartCursor; i < count; i++)
+            {
+                var msg = msgs[i];
+                if (msg == null) continue;
+                string sid = msg.sender_id ?? "";
+                // 只認 caretaker (Tim / Zeta) — 防 agent 自 grant 上班
+                if (!(string.Equals(sid, "Tim", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(sid, "Zeta", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                string body = msg.body ?? "";
+                if (body.IndexOf("上班", StringComparison.Ordinal) < 0) continue;
+                var m = s_WorkClockRegex.Match(body);
+                if (!m.Success) continue;
+                if (!int.TryParse(m.Groups[1].Value, out int hh)) continue;
+                if (!int.TryParse(m.Groups[2].Value, out int mm)) continue;
+                if (hh > 23 || mm > 59) continue;
+
+                // duration = now(local) → 今天 HH:mm (過了則明天), 分鐘
+                DateTime now = DateTime.Now;
+                DateTime target = new DateTime(now.Year, now.Month, now.Day, hh, mm, 0);
+                if (target <= now) target = target.AddDays(1);
+                int durationMin = (int)Math.Round((target - now).TotalMinutes);
+                if (durationMin > 480)
+                {
+                    Debug.Log($"[Bartender WS-start] '到 {hh:00}:{mm:00}' 算出 {durationMin}min > 480 cap, skip");
+                    continue;
+                }
+                if (durationMin < 15) durationMin = 15;
+
+                // 可選 @manager (body 內第一個 @token; full-path '@A@B' 取最後一段; 去尾標點)
+                string managerArg = "";
+                var am = s_WorkAtRegex.Match(body);
+                if (am.Success)
+                {
+                    string tok = am.Groups[1].Value;
+                    int at = tok.LastIndexOf('@');
+                    managerArg = (at >= 0 ? tok.Substring(at + 1) : tok).TrimEnd('，', ',', '。', '、', ' ');
+                }
+
+                SpawnWorkSessionStart(durationMin, managerArg, body);
+            }
+            s_WorkSessionStartCursor = count;
+        }
+
+        static void SpawnWorkSessionStart(int durationMin, string managerPersona, string triggerBody)
+        {
+            try
+            {
+                string scriptPath = Path.Combine(UCL_RepoPath.RepoRoot,
+                    "CardGame", "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py");
+                if (!File.Exists(scriptPath))
+                {
+                    Debug.LogWarning("[Bartender WS-start] work_session.py 找不到, skip");
+                    return;
+                }
+                // trigger body 去換行 + 截斷 + 雙引號換單引號 (CLI arg 安全)
+                string trig = (triggerBody ?? "").Replace("\r", " ").Replace("\n", " ").Replace("\"", "'");
+                if (trig.Length > 120) trig = trig.Substring(0, 120);
+                string mgrArg = string.IsNullOrEmpty(managerPersona) ? "" : $" --manager \"{managerPersona}\"";
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{scriptPath}\" start --duration {durationMin}{mgrArg} --auto-manager-online --trigger \"{trig}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WorkingDirectory = UCL_RepoPath.RepoRoot,
+                };
+                System.Diagnostics.Process.Start(psi);
+                Debug.Log($"[Bartender WS-start] spawned start: duration={durationMin}min, manager={(string.IsNullOrEmpty(managerPersona) ? "(auto-online)" : managerPersona)}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Bartender WS-start] spawn fail: {e.Message}");
+            }
         }
 
         // ===========================================================
@@ -151,6 +256,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 bool ended = entry.GetBool("ended", false);
                 bool aborted = entry.GetBool("aborted", false);
                 if (ended || aborted) continue;
+                // per-tick 防重複: 本 daemon 生命期內已 spawn 過 end 的 session 跳過
+                // (work_session.py end 寫 ended=true 前可能跨多 tick, guard 防多次 spawn)
+                if (s_WorkSessionEndSpawned.Contains(sid)) continue;
 
                 string endTsStr = entry.GetString("end_ts", "");
                 if (string.IsNullOrEmpty(endTsStr)) continue;
@@ -199,6 +307,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         WorkingDirectory = UCL_RepoPath.RepoRoot,
                     };
                     System.Diagnostics.Process.Start(psi);
+                    s_WorkSessionEndSpawned.Add(sid);
                     Debug.Log($"[Bartender P3] spawned end subprocess: session={sid}, manager={manager}");
                 }
                 catch (Exception e)

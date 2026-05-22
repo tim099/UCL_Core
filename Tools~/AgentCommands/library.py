@@ -421,6 +421,10 @@ def cmd_resume(args):
     bk = _require_book(book)
     pr = bk.get("progress", {})
     print(f"📖 續讀《{bk['title']}》 — 讀到第 {pr.get('current_chapter')} 章（最後閱讀 {pr.get('last_read')}）")
+    _don = _books_root() / book / "_donation.json"
+    if _don.exists():
+        _dd = _read_json(_don)
+        print(f"   📖 本書由 {_dd.get('donor_persona') or _dd.get('donor')} 捐贈入館 ({_dd.get('tokens')} token)")
     if pr.get("bookmark_note"):
         print(f"🔖 續讀備註 / 上次心得: {pr['bookmark_note']}")
 
@@ -674,6 +678,144 @@ def cmd_arcs(args):
 
 
 # ===========================================================
+# 捐贈圖書館 (Books/ 的書由捐贈者付 token 加入, 全員可讀, 標註捐贈者)
+# ===========================================================
+
+def _books_root() -> Path:
+    return _REPO_ROOT / "AgentCommands" / "Books"
+
+
+def _donations_index() -> Path:
+    return _books_root() / "_donations.json"
+
+
+def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str):
+    # 走 CMD: run_cmd.py run Treasury op=debit (use_kind=book_donation, caller==account)
+    import subprocess
+    run_cmd = _HERE / "run_cmd.py"
+    cmd = [sys.executable, str(run_cmd), "run", "Treasury",
+           "--arg", "op=debit", "--arg", f"account={donor}",
+           "--arg", f"amount={amount}", "--arg", "use_kind=book_donation",
+           "--arg", f"use_ref={slug}", "--arg", f"description={desc}",
+           "--arg", f"caller={donor}"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=150)
+        return (r.returncode == 0, (r.stdout or "") + (r.stderr or ""))
+    except Exception as e:
+        return (False, str(e))
+
+
+def _verify_donation_debit(donor: str, slug: str, amount: int) -> bool:
+    # 跨層驗證 (外觀 OK ≠ 真的 OK): 掃 ledger 確認 debit 真落帳, 不只信 Cmd stdout
+    root = _REPO_ROOT / "AgentCommands" / "Treasury" / "ledger"
+    if not root.exists():
+        return False
+    dirs = sorted([d for d in root.iterdir() if d.is_dir()], reverse=True)[:2]
+    for d in dirs:
+        for f in d.glob("*debit*.json"):
+            try:
+                e = _read_json(f)
+            except Exception:
+                continue
+            if (e.get("type") == "debit" and e.get("account_id") == donor
+                    and e.get("source_kind") == "book_donation"
+                    and e.get("source_ref") == slug
+                    and int(e.get("amount", 0)) == int(amount)):
+                return True
+    return False
+
+
+def _run_tavern_post(sender_id: str, persona: str, body: str, tag: str = "book-donation") -> bool:
+    # 走 CMD: run_cmd.py run Tavern op=post — 捐書後自動廣播新書入庫
+    import subprocess
+    import json as _json
+    run_cmd = _HERE / "run_cmd.py"
+    meta = _json.dumps({"tag": tag, "category": "chat"}, ensure_ascii=False)
+    cmd = [sys.executable, str(run_cmd), "run", "Tavern",
+           "--arg", "op=post", "--arg", "room=tavern",
+           "--arg", f"sender_id={sender_id}", "--arg", f"persona={persona}",
+           "--arg", f"body={body}", "--arg", f"meta={meta}"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=150)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def cmd_donate(args):
+    # 區塊職責: 捐贈一本 Books/ 的書 — 付 token (走 Cmd_Treasury), 全員可讀, 標註捐贈者
+    # 物理意義: 基礎 100 token/本 (多冊每冊算一本); Tim 可給優惠價 (--tokens 覆寫)
+    book = args.book
+    bdir = _books_root() / book
+    if not bdir.exists():
+        print(f"❌ Books/{book}/ 不存在 — 先把書放進 AgentCommands/Books/{book}/", file=sys.stderr)
+        return 2
+    dpath = bdir / "_donation.json"
+    if dpath.exists():
+        ex = _read_json(dpath)
+        print(f"⚠ 《{book}》已被捐贈 — 捐贈者: {ex.get('donor_persona') or ex.get('donor')} "
+              f"({ex.get('tokens')} token @ {ex.get('donated_at')})", file=sys.stderr)
+        return 1
+    donor = args.donor
+    tokens = int(args.tokens) if args.tokens is not None else 100
+    title = book
+    if _book_json(book).exists():
+        title = _read_json(_book_json(book)).get("title", book)
+    desc = f"捐贈圖書: {title} (donor={args.donor_persona or donor})"
+
+    print(f"📚 捐贈《{title}》 — 捐贈者 {args.donor_persona or donor} / {tokens} token")
+    print("   走 CMD: Cmd_Treasury op=debit (use_kind=book_donation)...")
+    ok, out = _run_treasury_debit(donor, tokens, book, desc)
+    # 跨層驗證: 掃 ledger 確認真扣款才註冊
+    if not _verify_donation_debit(donor, book, tokens):
+        print("❌ Treasury debit 未確認落帳 (餘額不足? caller!=account? Editor 未跑?) — 不註冊捐贈",
+              file=sys.stderr)
+        print(f"   run_cmd 輸出(尾):\n{out[-400:]}", file=sys.stderr)
+        return 2
+    print("✓ debit 已落帳 (ledger 跨層驗證通過)")
+
+    entry = {
+        "book": book, "title": title, "donor": donor,
+        "donor_persona": args.donor_persona or "", "donor_agent": args.donor_agent or "",
+        "tokens": tokens, "base_price": 100, "donated_at": _today(), "note": args.note or "",
+    }
+    _write_json(dpath, entry)
+    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
+    idx["donations"] = [d for d in idx.get("donations", []) if d.get("book") != book]
+    idx["donations"].append(entry)
+    _write_json(_donations_index(), idx)
+    print(f"✅ 捐贈完成:《{title}》→ 📖 捐贈者 {entry['donor_persona'] or donor} ({tokens} token)。全員可讀。")
+
+    # 自動觸發酒館「新書入庫」通知 (Tim 2026-05-22)；非致命 — 失敗不影響捐贈
+    if not getattr(args, "no_notify", False):
+        who = entry["donor_persona"] or donor
+        notice = (f"📚 新書入庫!\n\n"
+                  f"《{title}》由 **{who}** 捐贈進共享圖書館（{tokens} token），全員都能讀了。\n"
+                  f"想讀的同事:resume --book {book} 接上進度,或直接看 Books/{book}/ 全文。")
+        sent = _run_tavern_post(donor, entry["donor_persona"] or "", notice, tag="book-donation")
+        print(f"📣 酒館新書入庫通知:{'已發送' if sent else '發送失敗(捐贈仍成功)'}")
+    return 0
+
+
+def cmd_donations(args):
+    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
+    ds = idx.get("donations", [])
+    if not ds:
+        print("（圖書館尚無捐贈書）")
+        return 0
+    print(f"📚 捐贈圖書館（共 {len(ds)} 本）\n")
+    for d in ds:
+        who = d.get("donor_persona") or d.get("donor")
+        print(f"- 《{d.get('title', d['book'])}》 — 📖 捐贈者: {who} "
+              f"({d.get('tokens')} token, {d.get('donated_at')})")
+        if d.get("note"):
+            print(f"    note: {d['note']}")
+    return 0
+
+
+# ===========================================================
 # argparse
 # ===========================================================
 
@@ -786,6 +928,20 @@ def build_parser():
     a.add_argument("--book", required=True)
     a.add_argument("--full", action="store_true")
     a.set_defaults(func=cmd_arcs)
+
+    a = sub.add_parser("donate", help="捐贈一本 Books/ 的書(付 token 走 Cmd_Treasury, 全員可讀, 標註捐贈者)")
+    a.add_argument("--book", required=True, help="Books/<slug> 的 slug")
+    a.add_argument("--donor", required=True, help="捐贈者 bank id (Treasury caller 必須==此帳戶)")
+    a.add_argument("--tokens", default=None, help="付多少 token (預設 100/本; Tim 可給優惠價)")
+    a.add_argument("--donor-persona", dest="donor_persona", default=None, help="捐贈者 persona (標註用)")
+    a.add_argument("--donor-agent", dest="donor_agent", default=None)
+    a.add_argument("--note", default=None)
+    a.add_argument("--no-notify", dest="no_notify", action="store_true",
+                   help="不發酒館新書入庫通知(預設會自動廣播)")
+    a.set_defaults(func=cmd_donate)
+
+    a = sub.add_parser("donations", help="列出捐贈圖書館 (書 + 捐贈者)")
+    a.set_defaults(func=cmd_donations)
 
     return p
 

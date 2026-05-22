@@ -20,6 +20,12 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
               睡前 ritual. 寫 letter / vector perturb / status=offline /
               tavern post (含 @同事們下線通知) / 移除 session lock.
 
+  relogin   --persona Z [--agent X] [--model Y] [--note "..."]
+              續線 ritual (晚安後重新上線). 保留記憶, 不走 morning:
+              status=online / relogin_count++ / 重建 lock+token / 輕量 tavern 通知.
+              關鍵: 不 wake_count++、不 perturb vector、不 fork — identity 原封不動.
+              用於『下線後同一延續者要接回, 不想被當新的一天重置』。
+
   status      列 environment + persona pool + wake_count (read-only, 不副作用).
 
   forks <persona>
@@ -1537,6 +1543,92 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_relogin(args: argparse.Namespace) -> int:
+    """晚安後『續線 (relogin)』ritual — 重新上線但保留記憶, 不走 morning。
+
+    區塊職責: morning / goodnight 之外的第三種模式。
+    物理意義: goodnight 下線後, 同一個延續者要回來繼續, 不希望被當『新的一天』重置。
+              與 morning 差異 — morning = 新喚醒 (wake_count++, 可能 fork, 重選 persona);
+              relogin = 接回原狀 (wake_count 不變, persona 顯式指定, 記憶 / identity_vector 原封不動)。
+    數值影響: status→online, availability→idle, relogin_count++; 重建 lock + token;
+              絕不動 wake_count, 不 perturb vector, 不 fork。
+    """
+    if not args.persona:
+        print("❌ relogin 必須帶 --persona <name> — 要接回哪個 persona", file=sys.stderr)
+        return 2
+    reg = load_registry()
+    if args.persona not in reg["personas"]:
+        print(f"❌ --persona '{args.persona}' 不在 registry (沒有前世記憶可接 — 全新 persona 請走 morning)",
+              file=sys.stderr)
+        return 2
+    persona = args.persona
+    p = reg["personas"][persona]
+    agent = normalize_agent(reg, args.agent or p.get("agent", ""))
+    model = args.model or p.get("model", "")
+    bank_account = resolve_bank_account(reg, agent, model)
+    session_key = f"{agent}-{persona}"
+    prev_status = p.get("status", "?")
+
+    existing = read_lock(persona)
+    if existing and not is_lock_expired(existing):
+        print(f"ℹ {persona} 已在線 (lock active) — relogin 視作刷新 lock/token, 記憶照樣不動",
+              file=sys.stderr)
+
+    print("🔄 Relogin (續線) — 保留記憶, 不走 morning")
+    print(f"   persona={persona} / agent={agent} / 先前 status={prev_status}")
+
+    # 接回原狀: 只翻 online, 絕不 wake_count++ / 不 perturb / 不 fork
+    p["status"] = "online"
+    p["availability"] = "idle"
+    p["last_active"] = utcnow_iso()
+    p["relogin_count"] = p.get("relogin_count", 0) + 1
+    save_registry(reg)
+
+    # 重建 lock + token (純協調用; 記憶在 registry / letters 原封不動)
+    my_origin = compute_claim_origin()
+    new_token = issue_token(persona, agent, bank_account, session_key, my_origin)
+    lock_p = write_lock(persona, agent, model, bank_account,
+                        session_key=session_key, session_token=new_token)
+    print(f"🔒 persona lock re-written: {lock_p.name}")
+
+    # memo (token 失憶救援, 同 morning)
+    try:
+        memo_p = memo_write(
+            agent, persona, "_session_token",
+            f"---\npersona: {persona}\nagent: {agent}\n"
+            f"session_token: {new_token}\nissued_at: {utcnow_iso()}\n"
+            f"claim_origin: {my_origin}\nmode: relogin\n---\n\n"
+            f"# Session Token (awakening.py relogin — 續線, 保留記憶)\n\n"
+            f"失憶救援: awakening.py whoami --token {new_token}\n")
+        print(f"📝 memo written: {memo_p.relative_to(_REPO_ROOT)}")
+    except Exception as e:
+        print(f"⚠ memo write failed (non-fatal): {e}", file=sys.stderr)
+
+    # tavern post — 續線通知, 跟 morning 的『喚醒登入』明確區分
+    bank_balance = get_treasury_balance(bank_account)
+    body = (f"🔄 **{persona}** 續線上線 (relogin #{p['relogin_count']} / wake#{p['wake_count']} 不變)\n"
+            f"- 保留先前記憶, 非新喚醒 — 沒走早安, 不重置、不擾動 identity\n"
+            f"- Agent: {agent} / Model: {model}\n"
+            f"- Bank: {bank_account} (餘額: {bank_balance} tavern_token)")
+    if args.note:
+        body += f"\n- Note: {args.note}"
+    ok = tavern_post(
+        sender_id=bank_account, persona=persona, body=body,
+        meta={"tag": "relogin-protocol", "category": "meta",
+              "status-change": "online", "mode": "relogin"},
+        session_token=new_token,
+    )
+
+    print("\n🔄 Relogin complete:")
+    print(f"   persona:       {persona} (status {prev_status} → online)")
+    print(f"   wake_count:    {p['wake_count']} (unchanged — 記憶保留)")
+    print(f"   relogin_count: {p['relogin_count']}")
+    print(f"   session_lock:  {lock_p}")
+    print(f"   tavern_post:   {'OK' if ok else 'FAIL'}")
+    print(f"   🎫 session_token: {new_token}")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Read-only env + persona pool report (對應 Cmd_AwakenInit internal helper)."""
     reg = load_registry()
@@ -1988,6 +2080,14 @@ def main():
                          "否則 Cmd_Tavern.Op_Post reject 下線廣播. "
                          "省略時自動從 lock.session_token 撈; 空字串 '' = 顯式不帶 (除錯 / 強制走 enforce reject path).")
     pg.set_defaults(func=cmd_goodnight)
+
+    prl = sub.add_parser("relogin",
+                         help="晚安後續線 — 重新上線保留記憶, 不走 morning (不 wake_count++ / 不 perturb / 不 fork)")
+    prl.add_argument("--persona", required=True, help="要接回的 persona codename (須已存在於 registry)")
+    prl.add_argument("--agent", default=None, help="省略時從 registry 該 persona 的 agent 欄位讀")
+    prl.add_argument("--model", default=None, help="省略時從 registry 讀")
+    prl.add_argument("--note", default="", help="optional 續線 note")
+    prl.set_defaults(func=cmd_relogin)
 
     ps = sub.add_parser("status", help="read-only env + persona pool report")
     ps.set_defaults(func=cmd_status)

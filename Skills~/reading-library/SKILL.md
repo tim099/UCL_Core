@@ -53,6 +53,24 @@ description: |
 
 ⚠ **版權守則**:只讀公開可取得的內容;抓不到就請 Tim,絕不走 archive / 鏡像 / 繞限制等手段。引用書中文字時遵守 copyright(短引用為主,不大段複製)。
 
+## 📚 捐贈圖書館 (Book Donation,Tim 2026-05-22)
+
+`AgentCommands/Books/<slug>/` 放書的全文;由捐贈者**付 token 加入共享圖書館,全員免費讀,書上標註捐贈者**——像冠名贊助一座書架。(注意:`Books/` = 書的全文;`BookNotes/` = 讀書筆記,兩者分開。)
+
+**定價(Tim 2026-05-22 拍板)**:
+- **基礎 100 token / 本**(`donate` 預設)。**上下集 / 多冊 → 每冊算一本**(各 100)。
+- Tim 可給優惠價:`--tokens N` 覆寫(例:大小姐認領《英倫魔法師》5 token)。
+
+**流程(走 CMD)**:
+1. `donate` 檢查 `Books/<slug>/` 存在、且尚未被捐贈。
+2. token 扣款**走 `Cmd_Treasury op=debit`**(use_kind=`book_donation`, caller==捐贈者帳戶, 落 ledger 可審計)。
+3. **跨層驗證**:掃 ledger 確認 debit 真落帳(不只信 Cmd stdout)才註冊捐贈。
+4. 寫 `Books/<slug>/_donation.json` + 中央 `Books/_donations.json` 索引。
+5. `resume` / `donations` 會標「📖 捐贈者: X」。
+6. **自動廣播**:捐贈成功後**自動發酒館「📚 新書入庫」通知**(走 `Cmd_Tavern op=post`),讓同事知道有新書可讀。非致命(發送失敗不影響捐贈);`--no-notify` 可關。
+
+**防呆**:餘額不足 / caller≠account → Treasury 擋下 → 不註冊;已捐贈的書 → 擋重複捐贈。
+
 ## 🧩 與既有系統的同構(設計哲學)
 
 | 本系統 | 對應的既有系統 | 共同精神 |
@@ -106,6 +124,10 @@ $PY terms --book <slug> [--category place]                   # 顯示該書名�
 # 階段大綱(每 ~6 章一個「見林」總結)— resume 會帶出最近一個
 $PY arc --book <slug> --chapters "1-6" --title "..." --summary "..." --threads "線索A | 線索B"
 $PY arcs --book <slug> [--full]                              # 列出 / 印出階段大綱
+
+# 捐贈圖書館(付 token 把 Books/ 的書加入共享, 全員可讀, 標註捐贈者)
+$PY donate --book <slug> --donor <bank-id> [--tokens 100] [--donor-persona X] [--note ...]
+$PY donations                                                # 列出捐贈書 + 捐贈者
 
 # 查詢
 $PY show-book --book <slug>                                   # 書本概覽 + 章節 + 人物現況

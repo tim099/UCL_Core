@@ -59,11 +59,27 @@ namespace UCL.Core
                 public string ZipFileName => $"{ID}.zip";
                 public string ZipFilePath => Path.Combine(PersistantPath.ModulesZipFolder, ZipFileName);
 
+                // 區塊職責：安裝完整性哨兵 (install-complete sentinel)。
+                // 物理意義：安裝(解壓/複製)「全部成功」後才寫入此標記檔，內容為已安裝版本字串。
+                //          安裝判定改看此標記是否存在，而非「目錄是否存在」——避免「解壓中途失敗留下半成品目錄」被誤判成已安裝。
+                // 數值影響：標記不存在 → 視為未安裝完成 → CheckAndInstall 會整包刪除重裝 (不保留半成品舊版)。
+                /// <summary>安裝完整性標記檔名 (寫在 InstallFolder 根目錄，'.' 開頭避免被資產列舉掃到)。</summary>
+                public const string InstallCompleteMarkerName = ".install_complete";
+                /// <summary>安裝完整性標記檔完整路徑 (位於 InstallFolder 內)。</summary>
+                public string InstallCompleteMarkerPath => Path.Combine(InstallFolder, InstallCompleteMarkerName);
+
                 /// <summary>
                 /// return true if installed
+                /// 注意：僅檢查目錄存在，不保證內容完整。安裝完整性請改用 <see cref="InstallComplete"/>。
                 /// </summary>
                 /// <returns></returns>
                 public bool Installed => Directory.Exists(InstallFolder);
+
+                /// <summary>
+                /// return true if 安裝「完整成功」(目錄存在且完整性標記檔存在)。
+                /// 只有解壓/複製全部成功後才會寫入標記檔，故此值為 true ⟺ 上一次安裝完整無中斷。
+                /// </summary>
+                public bool InstallComplete => Directory.Exists(InstallFolder) && File.Exists(InstallCompleteMarkerPath);
 
                 /// <summary>
                 /// e.g. UCL_Assets/UCL_SpriteAsset
@@ -127,7 +143,13 @@ namespace UCL.Core
                             Directory.Delete(aTargetPath, true);//Delete all old files before install
                         }
 
-                        async UniTask InstallModule()
+                        // 區塊職責：實際把 zip 解壓到 aTargetPath。
+                        // 物理意義：Windows 直接從 StreamingAssets 實體 zip 解壓；其他平台 (Android/iOS 等 StreamingAssets 在壓縮包內)
+                        //          先用 UnityWebRequest 讀成 byte[] 再記憶體解壓。
+                        // 數值影響：回傳 true=解壓全程無例外；false=失敗 (caller 不可寫安裝完整性標記、且須刪除半成品)。
+                        //          *關鍵修正*：原版例外只 Debug.LogException 然後當沒事，導致「解壓失敗卻被視為成功」→ 半成品固化。
+                        //          現在改為「回傳成功與否 + 例外向 caller 表達」，讓 caller 決定刪半成品 + 不寫標記 → 下次重裝。
+                        async UniTask<bool> InstallModule()
                         {
                             try
                             {
@@ -145,36 +167,56 @@ namespace UCL.Core
                                             byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
                                             if (aBytes == null)
                                             {
-                                                Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}, aBytes == null");
-                                                return;
+                                                Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}, aBytes == null (StreamingAssets 讀取失敗或截斷)");
+                                                return false;
                                             }
                                             UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
                                             break;
                                         }
                                 }
-                                //byte[] aBytes = await UCL_StreamingAssets.FullPath.LoadBytes(ZipFilePath);
-                                //if (aBytes == null)
-                                //{
-                                //    Debug.LogError($"ModuleConfig.Install ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath}");
-                                //    return;
-                                //}
-
-                                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory aBytes.Length:{aBytes.Length}", $"aTargetPath:{aTargetPath}");
-
-                                //var aStream = await UCL_StreamingAssets.FullPath.LoadNativeData(ZipFilePath);
-
-
-                                //UCL.Core.FileLib.ZipLib.UnzipFromBytes(aBytes, aTargetPath);
-
-                                //string zipFile = System.IO.Path.Combine(Application.temporaryCachePath, $"{ID}.zip");
-                                //File.WriteAllBytes(zipFile, aBytes);
-                                //System.IO.Compression.ZipFile.ExtractToDirectory(zipFile, aTargetPath);
-                                //File.Delete(zipFile);//remove cache file
+                                return true;
                             }
                             catch (System.Exception ex)
                             {
-                                //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"ModuleConfig UCL_ZipFile.ExtractToDirectory ", $"Exception:{ex}");
+                                // 失敗要「看得見」：印出完整 context (ID/目標路徑/zip 路徑/例外) 方便診斷初次安裝失敗的真因。
+                                Debug.LogError($"ModuleConfig.InstallModule FAILED ID:{ID},aTargetPath:{aTargetPath},ZipFilePath:{ZipFilePath},Exception:{ex}");
                                 Debug.LogException(ex);
+                                return false;
+                            }
+                        }
+
+                        // 區塊職責：安裝全部成功後寫入完整性標記檔。
+                        // 物理意義：標記內容 = 此次安裝的版本字串 + UTC 時間戳 (給人除錯看)。
+                        // 數值影響：只有此檔存在才視為「安裝完整」(見 InstallComplete)；故務必只在解壓/複製全成功後呼叫。
+                        void WriteInstallCompleteMarker()
+                        {
+                            try
+                            {
+                                string aVersion = "1.0.0";
+                                try { aVersion = GetConfig()?.m_Version ?? aVersion; } catch { /* 取版本失敗不致命，標記仍寫 */ }
+                                Directory.CreateDirectory(aTargetPath);
+                                File.WriteAllText(InstallCompleteMarkerPath, $"{aVersion}\n{DateTime.UtcNow:o}");
+                            }
+                            catch (System.Exception ex)
+                            {
+                                Debug.LogError($"ModuleConfig.WriteInstallCompleteMarker FAILED ID:{ID},path:{InstallCompleteMarkerPath},Exception:{ex}");
+                            }
+                        }
+
+                        // 區塊職責：安裝失敗時清掉半成品目錄。
+                        // 物理意義：依 Tim 需求「不保存舊版本/半成品」——失敗即整包刪除，確保不會有壞檔被後續流程讀到。
+                        void DeletePartialInstall()
+                        {
+                            try
+                            {
+                                if (Directory.Exists(aTargetPath))
+                                {
+                                    Directory.Delete(aTargetPath, true);
+                                }
+                            }
+                            catch (System.Exception ex)
+                            {
+                                Debug.LogError($"ModuleConfig.DeletePartialInstall FAILED ID:{ID},aTargetPath:{aTargetPath},Exception:{ex}");
                             }
                         }
 
@@ -192,6 +234,12 @@ namespace UCL.Core
                                         if (Directory.Exists(RootFolder))
                                         {
                                             UCL.Core.FileLib.Lib.CopyDirectory(RootFolder, aTargetPath);
+                                            // 複製成功 → 寫完整性標記 (Editor Default 模式視同安裝成功)
+                                            WriteInstallCompleteMarker();
+                                        }
+                                        else
+                                        {
+                                            Debug.LogError($"ModuleConfig.Install Editor.Default ID:{ID}, RootFolder not exist:{RootFolder}");
                                         }
                                         break;
                                     }
@@ -203,7 +251,8 @@ namespace UCL.Core
                                             File.Delete(aZipFilePath);
                                         }
                                         ZipModule();
-                                        await InstallModule();
+                                        bool aOk = await InstallModule();
+                                        if (aOk) WriteInstallCompleteMarker(); else DeletePartialInstall();
                                         File.Delete(aZipFilePath);
                                         break;
                                     }
@@ -233,7 +282,17 @@ namespace UCL.Core
 
 
 
-                        await InstallModule();
+                        // Runtime (built 版本) 安裝：解壓成功才寫完整性標記；失敗則刪半成品 (不留壞檔)，下次啟動 CheckAndInstall 會重裝。
+                        bool aInstallOk = await InstallModule();
+                        if (aInstallOk)
+                        {
+                            WriteInstallCompleteMarker();
+                        }
+                        else
+                        {
+                            Debug.LogError($"ModuleConfig.Install ID:{ID} 安裝失敗，刪除半成品並等待下次重裝。aTargetPath:{aTargetPath}");
+                            DeletePartialInstall();
+                        }
 
 
                         //await UCL.Core.Page.UCL_OptionPage.ShowAlertAsync($"aZip.ExtractToDirectory Done!!", "");

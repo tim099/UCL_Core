@@ -390,7 +390,10 @@ namespace UCL.Core
             }
             //Debug.LogError($"UCL_Module.CheckAndInstall, iID:{ID},iModuleEditType:{ModuleEditType}");
             bool aNeedInstall = true;
-            if(m_Config.Installed && RuntimeModuleEntry.Installed)//Installed, check version
+            // *關鍵修正*：安裝判定改用 InstallComplete (完整性標記檔存在) 而非 Installed (僅目錄存在)。
+            // 原版只要 InstallFolder 目錄存在就跳過重裝 → 「初次安裝解壓中途失敗留下半成品目錄」會被永久當成已安裝 (100% 壞掉)。
+            // 改用 InstallComplete 後：半成品 (無標記) → aNeedInstall 維持 true → 整包刪除重裝。
+            if(m_Config.Installed && RuntimeModuleEntry.InstallComplete)//Install complete, check version
             {
                 Config aBuiltinConfig = await BuiltinModuleEntry.GetBuiltinConfig();
                 if (aBuiltinConfig.CheckVersion(m_Config))//Same Version!!

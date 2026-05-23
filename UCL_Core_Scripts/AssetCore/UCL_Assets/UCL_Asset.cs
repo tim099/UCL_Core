@@ -230,8 +230,10 @@ namespace UCL.Core
             {
                 Debug.LogException(e);
 #if UNITY_EDITOR
+                string errorLog = $"CreateData Type:{nameof(T)}, ID:{iID}, Exception:{e}";
+                Debug.LogError(errorLog);
                 //TODO : create a error page to show the error and let user fix the json file??
-                throw e;
+                //throw e;
 #endif
             }
             finally

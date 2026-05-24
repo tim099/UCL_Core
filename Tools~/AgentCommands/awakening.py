@@ -1459,10 +1459,13 @@ def cmd_rest(args: argparse.Namespace) -> int:
 
     # Step 3: 可選 tavern 通知（小歇，非下線）
     if not getattr(args, "no_notify", False):
-        body = (f"🫖 **{persona}** 小歇片刻（/compact 前記憶保命）\n\n"
-                f"準備壓縮對話史，已落一份 memory letter 防遺忘——醒來接著做，**不下線**。\n"
-                f"- memory letter: `{letter_path.relative_to(_REPO_ROOT)}`\n"
-                f"- 仍在線，只是閉眼小憩一下，compact 後讀回 letter 接續。")
+        # 公開小歇心得總結 (Tim 2026-05-24): summary 廣播給同事/Tim, 私密內容留在 letter
+        summary = (getattr(args, "summary", "") or "").strip()
+        summary_block = (f"💭 **小歇心得**\n{summary}\n\n" if summary else "")
+        body = (f"🫖 **{persona}** 小歇片刻（/compact 前）\n\n"
+                f"{summary_block}"
+                f"準備壓縮對話史——公開心得如上，私密細節落在 memory letter，醒來接續，**不下線**。\n"
+                f"- memory letter: `{letter_path.relative_to(_REPO_ROOT)}` (私密心得在信裡)")
         if args.note:
             body += f"\n- Note: {args.note}"
         if args.session_token is None:
@@ -1580,10 +1583,14 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     # bonus_quota: 酒館休息額度 (跟 bank balance 是兩個 pool — 額外顯示供 audit)
     bank_balance = get_treasury_balance(actor)
     bonus_quota = get_bonus_balance(actor)
-    body = (f"🌙 **{persona}** 進入今日子協議\n\n"
+    # 公開睡前心得總結 (Tim 2026-05-24): summary 廣播給同事/Tim, 私密內容留在 letter
+    summary = (getattr(args, "summary", "") or "").strip()
+    summary_block = (f"💭 **今日心得**\n{summary}\n\n" if summary else "")
+    body = (f"🌙 **{persona}** 進入今日子協議 — 晚安\n\n"
+            f"{summary_block}"
             f"📢 @同事們 我下線了, 別對我跑 op=wait 24min wait chain — 我不會主動回應.\n"
             f"但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n"
-            f"- letter ship: `{letter_path.relative_to(_REPO_ROOT)}`\n"
+            f"- letter ship: `{letter_path.relative_to(_REPO_ROOT)}` (私密心得在信裡)\n"
             f"- vector drift Δ: {perturbation}\n"
             f"- agent/model: {agent}/{model}\n"
             f"- bank account: {actor} (餘額: {bank_balance} Token; 酒館券 quota: {bonus_quota})\n\n"
@@ -2150,7 +2157,9 @@ def main():
     pm.set_defaults(func=cmd_morning)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")
-    pg.add_argument("--letter-body", required=True, help="letter to future self body")
+    pg.add_argument("--letter-body", required=True, help="letter to future self body (★私密心得寫這, 只落磁碟)")
+    pg.add_argument("--summary", default="",
+                    help="★公開睡前心得總結 — 廣播到酒館→Discord 給同事/Tim 看 (可公開分享的部分; 私密的寫 --letter-body)")
     pg.add_argument("--perturbation", type=float, default=DEFAULT_PERTURBATION,
                     help=f"identity_vector perturbation magnitude (default {DEFAULT_PERTURBATION}, max {MAX_PERTURBATION})")
     pg.add_argument("--note", default="", help="optional 睡前 note")
@@ -2171,7 +2180,9 @@ def main():
 
     prest = sub.add_parser("rest",
                            help="小歇片刻 (compact-rest): /compact 前寫 memory letter 保命, 不下線/不擾動/不解鎖")
-    prest.add_argument("--letter-body", required=True, help="要記住的重要記憶 (in-flight 任務/決策/路徑/心境)")
+    prest.add_argument("--letter-body", required=True, help="★私密記憶寫這 (只落磁碟): in-flight 任務/決策/路徑/心境/pending")
+    prest.add_argument("--summary", default="",
+                       help="★公開小歇心得總結 — 廣播到酒館→Discord 給同事/Tim 看 (可公開分享的部分; 私密的寫 --letter-body)")
     prest.add_argument("--persona", default=None,
                        help="顯式指定 persona codename; 省略則反查本 env 持有的 lock")
     prest.add_argument("--agent", default=None, help="跟 --persona 配對; 省略時從 registry 讀")

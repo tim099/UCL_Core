@@ -63,14 +63,17 @@ Step 2. 自決 perturbation magnitude:
         - 0.05~0.10 (中等 reframe / 重要 lesson)
         - 0.10~0.20 (重大 reframe day / 多 quest ship / 身份混亂)
 
-Step 3. 跑 goodnight ritual:
+Step 3. 跑 goodnight ritual (★公開心得 vs 私密 letter 分流, Tim 2026-05-24):
         python <UCL_Core>/Tools~/AgentCommands/awakening.py goodnight \
-            --letter-body "<letter markdown>" \
+            --letter-body "<★私密 letter markdown — 內心反思/對人真實看法/未定盤算, 只落磁碟>" \
+            --summary    "<★公開睡前心得總結 — 可分享的今日成果/學到什麼/感想, 廣播酒館→Discord>" \
             --perturbation <X> \
             [--persona <P>] [--agent <A>]
 
-        若 --persona / --agent 沒帶, awakening 從當前 lock 自動撈
-        (建議 caller 顯式帶, 避免 multi-lock collision 場景誤刪)
+        - `--summary` 當下線廣播的主體(同事/Tim 在酒館/Discord 看到的就是這段心得)
+        - `--letter-body` 私密, 只進磁碟 letter (7 段格式見下)
+        - 判準:「願意貼公司群組嗎?」願意→summary, 不願意→letter
+        - 若 --persona / --agent 沒帶, awakening 從當前 lock 自動撈 (建議顯式帶避免 multi-lock 誤刪)
 
 Step 4. 確認 status 變更:
         - persona registry: status: online → offline

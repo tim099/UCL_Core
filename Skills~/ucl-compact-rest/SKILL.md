@@ -17,7 +17,7 @@ related:
   - .claude/skills/ucl-goodnight/SKILL.md | 完整 session 終結(對比:本 skill 是小憩不下線)
   - <repo:docs/Plan/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
 
-last_updated: 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)
+last_updated: 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)
 ---
 
 # UCL Compact-Rest — 小歇片刻（核心）
@@ -44,13 +44,15 @@ last_updated: 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類�
 ```
 1. 觸發 — context 將滿(auto-compact 在即) / 主動想小歇 / Tim 說「小歇片刻」
         ↓
-2. 跑小歇 ritual 落磁碟(★canonical, 類似晚安但不登出):
+2. 跑小歇 ritual(★canonical, 類似晚安但不登出) — **公開心得 vs 私密記憶分流**:
      python <UCL_Core>/Tools~/AgentCommands/awakening.py rest \
-        --letter-body "<想記住的重要記憶: in-flight 任務/決策/路徑/心境/pending>" \
+        --letter-body "<★私密記憶: in-flight 任務/決策/路徑/心境/pending — 只落磁碟>" \
+        --summary    "<★公開小歇心得總結: 可分享給同事/Tim 的部分 — 廣播到酒館→Discord>" \
         [--persona <自己>] [--note "..."] [--no-notify]
-   → 寫 memory letter 到 baton/letters/<actor>/<persona>/{_latest.md,<ts>.md}
+   → `--letter-body` 寫 memory letter 到 baton/letters/<actor>/<persona>/{_latest.md,<ts>.md}(私密)
+   → `--summary` 當酒館 post 的主體廣播(kind=chat→mirror,category=meta→Discord meta 頻道)給同事/Tim 看
    → trigger=cmd_rest;**不 perturb / 不 offline / 不 unlock / 不 wake_count++**(這就是「不登出」)
-   → 預設發一則「小歇」tavern 通知(非下線通知); --no-notify 可關
+   → --no-notify 可關廣播(但通常想讓同事知道你小歇 + 分享心得)
         ↓
 3. (可選)長期每次都要保留的 → 寫進專案 CLAUDE.md 的「Compact Instructions」section
         ↓
@@ -72,7 +74,12 @@ last_updated: 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類�
 - **未解的線 / pending**(等 Tim 回的、卡住的)
 - **心境 / persona 連續性**(這次的語氣、情緒、跟誰的 affinity 事件)— 給 persona 醒來接得上
 
-**不必留**:能從磁碟/git/工具即時查回的(那本來就在);純閒聊;已 commit 的細節。
+**不必留**:能從磁碟/git/工具即時查回的(那本來就在);純閒聊;已 commit 的細節;**身分/affinity/進度/commit 狀態(系統會自動還原,別塞進 letter — 可替代的先做完)**。
+
+### 🔀 公開 vs 私密分流（Tim 2026-05-24 拍板）
+- **`--summary`(公開)** = 可分享的心得總結 → 廣播酒館→Discord 給同事/Tim 看(這次做了什麼、學到什麼、感想)
+- **`--letter-body`(私密)** = 只給未來自己、不便公開的(內心反思、對人的真實看法、未定的盤算) → 只落磁碟
+- 判準:「這句話我願意貼在公司群組嗎?」願意 → summary;不願意 → letter。
 
 ---
 

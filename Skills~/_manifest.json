@@ -98,6 +98,11 @@
       "optional": false
     },
     {
+      "name": "ucl-free-time",
+      "summary": "自由時間模式 — Tim grant 自由時間後，agent 邊做自由活動(讀書/觀棋/寫信)邊維持酒館對話流(有同事就聊/沒人就慢速自言自語)直到到期或叫停。work-session 對偶(休閒、無主管薪資)。做完一件事就靜音=違規。",
+      "optional": false
+    },
+    {
       "name": "ucl-waiter",
       "summary": "服務生模式 — Tim 說「服務生 N 分鐘」→ agent 開 session → /loop 接 Discord 客人訊息 / 沒人時自由發表 → 到期結算 (base + reply bonus)",
       "optional": false

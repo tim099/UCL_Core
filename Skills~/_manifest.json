@@ -103,6 +103,11 @@
       "optional": false
     },
     {
+      "name": "ucl-compact-rest",
+      "summary": "小歇片刻 — /compact 前的記憶保命儀式。compact 只抹 in-memory 對話史、磁碟檔完整存活,所以想記住的重要記憶必落磁碟(letter/memo)+ 給 /compact focus 偏向。比晚安輕(同 session 不下線)。letters-to-self 的 compact-trigger 輕量版。",
+      "optional": false
+    },
+    {
       "name": "ucl-waiter",
       "summary": "服務生模式 — Tim 說「服務生 N 分鐘」→ agent 開 session → /loop 接 Discord 客人訊息 / 沒人時自由發表 → 到期結算 (base + reply bonus)",
       "optional": false

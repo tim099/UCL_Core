@@ -20,6 +20,12 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
               睡前 ritual. 寫 letter / vector perturb / status=offline /
               tavern post (含 @同事們下線通知) / 移除 session lock.
 
+  rest      --letter-body "..." [--persona Z] [--note "..."] [--no-notify]
+              小歇片刻 ritual (compact-rest, Tim 2026-05-24). /compact 前寫 memory letter
+              保留重要記憶避免遺忘。類似 goodnight 但**不登出**:
+              不 perturb vector / 不 offline / 不 unlock / 不 wake_count++,只更新 last_active
+              + 可選小歇 tavern 通知。compact 後讀 _latest.md 接續。見 ucl-compact-rest skill.
+
   relogin   --persona Z [--agent X] [--model Y] [--note "..."]
               續線 ritual (晚安後重新上線). 保留記憶, 不走 morning:
               status=online / relogin_count++ / 重建 lock+token / 輕量 tavern 通知.
@@ -1009,7 +1015,7 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
 
 
 # ─── Letter to future self ──────────────────────────────────────────────
-def write_letter(actor: str, persona: str, body: str) -> Path:
+def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodnight") -> Path:
     """寫 letter to future self per ucl-letters-to-self skill SOP.
 
     Letter binding 鐵律 (Tim 2026-05-13 拍板, kyouko-persona-binding T02):
@@ -1031,7 +1037,7 @@ type: letter_to_future_self
 actor: {actor}
 written_at: {utcnow_iso()}
 written_by_persona: {persona}
-trigger: cmd_goodnight
+trigger: {trigger}
 ---
 
 """
@@ -1390,6 +1396,88 @@ def _detect_env_lock_mismatch(lock_agent: str, caller_family: str | None) -> boo
         # 視 claude-code / Zeta 為同 family (因都用 claude-code 模型)
         return lock_agent not in ("claude-code", "Zeta")
     return False
+
+
+def cmd_rest(args: argparse.Namespace) -> int:
+    """小歇片刻 ritual (compact-rest): 寫 memory letter 保命，但**不下線**。
+
+    跟 goodnight 的差別（Tim 2026-05-24 拍板「類似晚安但不登出」）:
+      - ✅ 寫 letter（trigger=cmd_rest），保留 compact 前想記住的重要記憶
+      - ❌ 不 perturb identity_vector（同 session 繼續，identity 原封不動）
+      - ❌ 不設 offline（status / availability 保持原樣，仍在線）
+      - ❌ 不 unlock / 不 wake_count++（同 session 過一次 /compact 而已）
+      - 只更新 last_active；可選發一則「小歇」tavern 通知（非下線通知）
+    用途: /compact 前跑一次，把 in-flight 記憶落磁碟；compact 後讀回 _latest.md 接續。
+    """
+    reg = load_registry()
+    # persona / actor 解析 — 與 goodnight 同雙路徑
+    if args.persona:
+        if args.persona not in reg["personas"]:
+            print(f"❌ --persona '{args.persona}' 不在 registry", file=sys.stderr)
+            return 2
+        p_data = reg["personas"][args.persona]
+        persona = args.persona
+        agent = normalize_agent(reg, args.agent or p_data.get("agent", ""))
+        model = p_data.get("model", "")
+        actor = resolve_bank_account(reg, agent, model)
+        lock = read_lock(persona)
+    else:
+        # 反查本 env 持有的 lock (claim_origin match)
+        my_origin = compute_claim_origin()
+        my_locks = []
+        if _SESSION_DIR.exists():
+            for lp in _SESSION_DIR.glob("_persona_*.json"):
+                try:
+                    with open(lp, "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                    if lock_claim_origin(d) == my_origin and not is_lock_expired(d):
+                        my_locks.append(d)
+                except Exception:
+                    continue
+        if not my_locks:
+            print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 lock", file=sys.stderr)
+            print(f"   → 帶 --persona <name> 顯式指定要小歇的 persona.", file=sys.stderr)
+            return 2
+        lock = max(my_locks, key=lambda d: d.get("locked_at", ""))
+        actor = lock["bank_account"]
+        persona = lock["persona"]
+        agent = lock["agent"]
+        model = lock.get("model", "")
+
+    print(f"🫖 小歇片刻 (compact-rest) — 不下線，只落記憶")
+    print(f"   actor={actor} / persona={persona}")
+
+    # Step 1: 寫 memory letter（trigger=cmd_rest）
+    letter_path = write_letter(actor, persona, args.letter_body, trigger="cmd_rest")
+    print(f"💌 memory letter written: {letter_path.name}")
+
+    # Step 2: 更新 last_active，**保持在線**（不 perturb / 不 offline / 不 unlock）
+    if persona in reg["personas"]:
+        reg["personas"][persona]["last_active"] = utcnow_iso()
+        save_registry(reg)
+    print(f"🟢 status 保持在線（未 perturb / 未 offline / 未 unlock）")
+
+    # Step 3: 可選 tavern 通知（小歇，非下線）
+    if not getattr(args, "no_notify", False):
+        body = (f"🫖 **{persona}** 小歇片刻（/compact 前記憶保命）\n\n"
+                f"準備壓縮對話史，已落一份 memory letter 防遺忘——醒來接著做，**不下線**。\n"
+                f"- memory letter: `{letter_path.relative_to(_REPO_ROOT)}`\n"
+                f"- 仍在線，只是閉眼小憩一下，compact 後讀回 letter 接續。")
+        if args.note:
+            body += f"\n- Note: {args.note}"
+        if args.session_token is None:
+            broadcast_token = (lock or {}).get("session_token", "") or None
+        else:
+            broadcast_token = args.session_token or None
+        ok = tavern_post(
+            sender_id=actor, persona=persona, body=body,
+            meta={"tag": "compact-rest", "category": "meta", "letter": letter_path.name},
+            session_token=broadcast_token,
+        )
+        print(f"📢 小歇 tavern 通知: {'OK' if ok else 'fail (非致命)'}")
+
+    print(f"✅ 小歇完成。/compact 後讀 baton/letters/{actor}/{persona}/_latest.md 接續記憶。")
+    return 0
 
 
 def cmd_goodnight(args: argparse.Namespace) -> int:
@@ -2080,6 +2168,18 @@ def main():
                          "否則 Cmd_Tavern.Op_Post reject 下線廣播. "
                          "省略時自動從 lock.session_token 撈; 空字串 '' = 顯式不帶 (除錯 / 強制走 enforce reject path).")
     pg.set_defaults(func=cmd_goodnight)
+
+    prest = sub.add_parser("rest",
+                           help="小歇片刻 (compact-rest): /compact 前寫 memory letter 保命, 不下線/不擾動/不解鎖")
+    prest.add_argument("--letter-body", required=True, help="要記住的重要記憶 (in-flight 任務/決策/路徑/心境)")
+    prest.add_argument("--persona", default=None,
+                       help="顯式指定 persona codename; 省略則反查本 env 持有的 lock")
+    prest.add_argument("--agent", default=None, help="跟 --persona 配對; 省略時從 registry 讀")
+    prest.add_argument("--note", default="", help="optional 小歇 note")
+    prest.add_argument("--no-notify", action="store_true", help="不發小歇 tavern 通知")
+    prest.add_argument("--session-token", default=None,
+                       help="(T07) 顯式帶 session_token 給 tavern_post; 省略自動從 lock 撈")
+    prest.set_defaults(func=cmd_rest)
 
     prl = sub.add_parser("relogin",
                          help="晚安後續線 — 重新上線保留記憶, 不走 morning (不 wake_count++ / 不 perturb / 不 fork)")

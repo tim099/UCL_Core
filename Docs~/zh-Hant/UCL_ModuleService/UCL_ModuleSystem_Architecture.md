@@ -1,3 +1,8 @@
+---
+related:
+  - ucl_core:Docs~/zh-Hant/Plan/Plan_Module_ReadOnly_Reference_And_Fork.md | Plan：唯讀參考 + Fork | 內建模組(StreamingReadOnly)在編輯頁以唯讀供參考 + 一鍵複製成可編輯模組的設計 Plan
+---
+
 # UCL 模組系統架構 (UCL Module System Architecture)
 
 ## 概覽 (Overview)

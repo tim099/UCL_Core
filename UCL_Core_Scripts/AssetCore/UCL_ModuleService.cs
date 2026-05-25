@@ -241,15 +241,17 @@ namespace UCL.Core
 
         /// <summary>
         /// Gets the corresponding Resources path based on the module ID.
-        /// Uses current ModuleEditType to determine data source.
+        /// Uses per-module resolved edit type (ResolveEditType) to determine data source.
         /// </summary>
         /// <param name="iID">Module ID to query</param>
         /// <returns>ModResourcesPath of the module, i.e., [ModulesRoot]/{iID}/Resources</returns>
         public static string GetModResourcesPath(string iID)
         {
-            // Determine path source by ModuleEditType (Builtin=StreamingAssets / Runtime=PersistentDataPath)
-            // Then get the corresponding module entry by GetModuleEntry(iID), and finally read ModResourcesPath
-            return UCL_ModulePath.PersistantPath.GetModulesEntry(ModuleEditType).GetModuleEntry(iID).ModResourcesPath;
+            // *關鍵修正*：必須用 per-module ResolveEditType(iID) 而非全域 ModuleEditType。
+            // 物理意義：免安裝(StreamingReadOnly)模組的 ModResources 圖檔在 StreamingAssets，但全域 ModuleEditType 在 build = Runtime
+            //          → 用全域會去 PersistentDataPath 找圖 → 直讀模組(如 Core)的新增道具/裝備圖讀不到(資料讀取混用)。
+            // 數值影響：改用 Ins.ResolveEditType(iID) 後，Core(StreamingReadOnly) → StreamingAssets 正確路徑；非 override 模組仍走全域。
+            return UCL_ModulePath.PersistantPath.GetModulesEntry(Ins.ResolveEditType(iID)).GetModuleEntry(iID).ModResourcesPath;
         }
         /// <summary>
         /// ID of the module currently being edited.

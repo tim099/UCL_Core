@@ -31,6 +31,13 @@ namespace UCL.Core
         /// 這些檔案會作為 UCL_Core Bootstrap 安裝到新專案時的預設值；可用此模式在 UI 內維護那些範本。
         /// </summary>
         Template,
+        /// <summary>
+        /// PC 免安裝直讀模式 — 模組原始檔直接放在 StreamingAssets (streamingAssetsPath/.ModuleService/Modules/{id})，
+        /// runtime 用同步 File IO 直讀、不解壓、不複製到 PersistentDataPath，故該模組唯讀。
+        /// 僅在 Standalone(PC) build 由 m_PCDirectStreaming opt-in 模組才會被指定此型別；全域 ModuleEditType 不會是此值。
+        /// 其他平台不適用 (StreamingAssets 同步 File IO 讀不到)。
+        /// </summary>
+        StreamingReadOnly,
     }
 
     /// <summary>
@@ -526,6 +533,7 @@ namespace UCL.Core
                 }
                 set
                 {
+                    ModuleEntry.ThrowIfBuildReadOnly("set_GroupID");//build 唯讀守衛 (StreamingReadOnly 模組不可寫，放 try 外確保 fail-loud throw 不被吞)
                     try
                     {
                         m_GroupID = value;
@@ -575,6 +583,7 @@ namespace UCL.Core
             }
             public void SaveAsset(JsonData iJson)
             {
+                ModuleEntry.ThrowIfBuildReadOnly(nameof(SaveAsset));//build 唯讀守衛 (StreamingReadOnly 模組不可寫)
                 var path = AssetPath;
                 string folderPath = System.IO.Path.GetDirectoryName(path);
                 //Debug.LogError($"path:{path},folderPath:{folderPath}");
@@ -583,6 +592,7 @@ namespace UCL.Core
             }
             public void DeleteAsset()
             {
+                ModuleEntry.ThrowIfBuildReadOnly(nameof(DeleteAsset));//build 唯讀守衛 (StreamingReadOnly 模組不可寫)
                 string aPath = AssetPath;
                 if (File.Exists(aPath))
                 {
@@ -650,7 +660,46 @@ namespace UCL.Core
             /// </summary>
             protected Dictionary<string, (System.DateTime timeStamp, List<string> list)> m_IDsCache = new();
         protected Dictionary<string, AssetsCache> m_AssetsCacheDic = new ();
+        /// <summary>
+        /// Per-module ModuleEditType 覆寫表 (PC 免安裝直讀用)。
+        /// 物理意義：載入鏈預設用全域 ModuleEditType 解析路徑；此表存在某模組 ID 時改用表內型別 (StreamingReadOnly)。
+        /// 數值影響：僅 build 啟動且 PC + opt-in 模組會被填入；空表 (其他平台 / 沒 opt-in) → 載入鏈行為與今天逐位元一致。
+        /// </summary>
+        protected Dictionary<string, UCL_ModuleEditType> m_EditTypeOverride = new();
         #endregion
+
+        /// <summary>
+        /// 解析某模組 ID 實際該用的 ModuleEditType：有 per-module 覆寫 (m_EditTypeOverride) 則用之，否則回全域 ModuleEditType。
+        /// </summary>
+        /// <param name="iModuleID">模組 ID</param>
+        /// <returns>該模組載入時使用的 ModuleEditType</returns>
+        protected UCL_ModuleEditType ResolveEditType(string iModuleID)
+        {
+            if (iModuleID != null && m_EditTypeOverride.TryGetValue(iModuleID, out var aOverride))
+            {
+                return aOverride;
+            }
+            return ModuleEditType;
+        }
+
+        /// <summary>
+        /// 當前 runtime 平台是否支援「PC 免安裝直讀 StreamingAssets」。
+        /// 物理意義：僅 Standalone(Windows/OSX/Linux) Player 的 streamingAssetsPath 是真實磁碟資料夾、可同步 File IO 直讀；
+        ///          Android/iOS/WebGL 等 StreamingAssets 壓在安裝包內，同步 File IO 讀不到 → 不支援、必須走原安裝流程。
+        /// 數值影響：false 時 InitAsync 一律忽略 m_PCDirectStreaming 旗標 (其他平台 100% 原邏輯)。
+        /// </summary>
+        /// <returns>true = PC(Standalone) build，可走免安裝直讀</returns>
+        protected static bool IsPCDirectStreamingPlatform()
+        {
+            switch (Application.platform)
+            {
+                case RuntimePlatform.WindowsPlayer:
+                case RuntimePlatform.OSXPlayer:
+                case RuntimePlatform.LinuxPlayer:
+                    return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Wait for UCL_ModuleService initialization to complete
@@ -747,15 +796,39 @@ namespace UCL.Core
             }
             else
             {
+                // 區塊職責：build (非 Editor) 啟動時對每個 export 模組分流 — 「PC 免安裝直讀」 vs 「原本 zip+install」。
+                // 物理意義：僅在 PC(Standalone) 平台 + 該模組 opt-in (m_PCDirectStreaming) 時，登記 per-module override 為 StreamingReadOnly
+                //          並「跳過」CheckAndInstall(不解壓、不複製到 PersistentDataPath)，原始檔已由 build 前置複製進 StreamingAssets；
+                //          其餘所有情況 (非 PC 平台 / 沒 opt-in) 一律走原本 LoadModule(Runtime)+CheckAndInstall，行為與今天逐位元一致。
+                // 數值影響：m_EditTypeOverride 在此填入，必須早於下方 playList.LoadPlaylist，載入鏈才會用對的 per-module 型別解析路徑。
+                bool aPCDirectSupported = IsPCDirectStreamingPlatform();
                 //List<UniTask> aTasks = new List<UniTask>();
                 foreach (var aModuleID in exportModules.Keys)//Check if all builtin modules installed
                 {
                     var exportConfig = exportModules[aModuleID];
                     if (exportConfig.m_ExportModule)
                     {
-                        //Debug.LogWarning($"ModuleID:{aModuleID}, CheckAndInstall");
-                        var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
-                        await aModule.CheckAndInstall();
+                        // 免安裝旗標在「模組自身 Config」。免安裝模組的原始 Config.json 已由 build 前置複製進 StreamingAssets，
+                        // 故從 StreamingReadOnly 路徑讀其 Config (檔不存在 → GetConfig 回預設 false → 視為非免安裝)。
+                        bool aIsDirect = false;
+                        if (aPCDirectSupported)
+                        {
+                            var aSroConfig = UCL_ModulePath.PersistantPath.StreamingReadOnly.GetModuleEntry(aModuleID).GetConfig();
+                            aIsDirect = (aSroConfig != null && aSroConfig.m_PCDirectStreaming);
+                        }
+                        // 只有「PC 平台 + 該模組開啟 m_PCDirectStreaming」才走免安裝；其餘走原安裝流程 (鐵則：其他平台 100% 原邏輯)
+                        if (aIsDirect)
+                        {
+                            // 登記 per-module 型別覆寫；跳過 CheckAndInstall (原始檔直接在 StreamingAssets 直讀)
+                            m_EditTypeOverride[aModuleID] = UCL_ModuleEditType.StreamingReadOnly;
+                            Debug.Log($"{GetType().Name}.InitAsync ModuleID:{aModuleID} 走 PC 免安裝直讀 (StreamingReadOnly)，跳過 CheckAndInstall");
+                        }
+                        else
+                        {
+                            //Debug.LogWarning($"ModuleID:{aModuleID}, CheckAndInstall");
+                            var aModule = LoadModule(aModuleID, UCL_ModuleEditType.Runtime);
+                            await aModule.CheckAndInstall();
+                        }
                     }
                     //aTasks.Add(aModule.CheckAndInstall());
                 }
@@ -1222,11 +1295,11 @@ namespace UCL.Core
         {
             if (!iUseCache)
             {
-                return LoadModule(iID, ModuleEditType);
+                return LoadModule(iID, ResolveEditType(iID));
             }
             if (!m_ModuleCache.ContainsKey(iID))
             {
-                m_ModuleCache[iID] = LoadModule(iID, ModuleEditType);
+                m_ModuleCache[iID] = LoadModule(iID, ResolveEditType(iID));
             }
             return m_ModuleCache[iID];
             //m_ModuleCache
@@ -1254,7 +1327,7 @@ namespace UCL.Core
             {
                 return iLoadedModules[iModuleID];
             }
-            var aModule = LoadModule(iModuleID, ModuleEditType);
+            var aModule = LoadModule(iModuleID, ResolveEditType(iModuleID));
             m_LoadedModules.Add(aModule);
             return aModule;
         }
@@ -1274,7 +1347,7 @@ namespace UCL.Core
                 }
                 //Debug.LogError($"LoadModuleAndDependencies:{iModuleID},iLoadedModules:{iLoadedModules.Keys.ConcatToString()}");
 
-                var aModule = LoadModule(iModuleID, ModuleEditType);
+                var aModule = LoadModule(iModuleID, ResolveEditType(iModuleID));
                 iLoadedModules[iModuleID] = aModule;
                 //m_LoadedModules.Add(aModule);
 

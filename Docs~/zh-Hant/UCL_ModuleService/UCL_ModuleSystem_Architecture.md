@@ -63,6 +63,18 @@ graph TD
 - **Runtime 模組**：位於 `Application.persistentDataPath`。
 - **壓縮 (Zipping)**：為了發佈，模組可以被壓縮成 `.zip` 存放於 `StreamingAssets`。在首次執行或更新時，系統會將其解壓至 `Runtime` 路徑。
 
+### PC 免安裝直讀模式 (StreamingReadOnly, opt-in)
+預設的「zip → 解壓到 PersistentDataPath」流程存在的根本原因是：**非 PC 平台 (Android/iOS/WebGL) 的 `StreamingAssets` 壓在安裝包內，無法用同步 `System.IO` 直讀或列舉目錄**，因此必須先安裝出一份在可寫磁碟 (PersistentDataPath) 的副本。
+
+但在 **Standalone(PC)** 平台，`Application.streamingAssetsPath` 是真實磁碟資料夾，且 runtime 資產讀取層全是同步 `System.IO`（無 `UnityWebRequest`），故可直讀、免安裝。
+
+- **開關**：`UCL_Module.Config.m_PCDirectStreaming`（per-module，存在模組自身 `Config.json`，可在 `UCL_ModuleEditPage` 的 CurEditModule config 內直接編輯，**預設 `false`**）。預設值確保舊 Config 與其他平台行為完全不變。
+- **生效條件**：**僅當「PC(Standalone) 平台」且「該模組開啟 `m_PCDirectStreaming`」兩者同時成立**。其他平台一律忽略此旗標，照走原本 zip+install。
+- **新型別**：`UCL_ModuleEditType.StreamingReadOnly`，其路徑 root 指向 `streamingAssetsPath/.ModuleService`（模組原始檔放 `Modules/{id}`）。此型別**只透過 per-module 覆寫 (`m_EditTypeOverride`) 注入**，全域 `ModuleEditType` 不會是此值。
+- **打包**：`OnPreprocessBuild(isStandalone)` 對開旗標的模組改「複製原始檔」而非 zip（並排除其 zip 出貨）；`OnPostprocessBuild` 清理源專案 StreamingAssets 的暫存副本。
+- **唯讀保證**：StreamingReadOnly 模組在 build 環境唯讀。所有寫入點 (`SaveConfig`/`SaveAsset`/`DeleteAsset`/`GroupID`/`AssetMeta`) 經 `ModuleEntry.ThrowIfBuildReadOnly` **fail-loud 攔截**（明確 Error log + 拋例外），避免誤寫 StreamingAssets（PC build 常落在 Program Files/Steam 唯讀區）造成靜默資料遺失。
+- **效益**：啟動免解壓、不佔雙份磁碟；且因直讀 shipped 檔案，遊戲/Steam patch 一更新即生效，無「PersistentData 舊副本陳舊」問題（此效益僅對開旗標的模組成立）。
+
 ## 資產分組與元數據 (Asset Grouping & Meta)
 每個模組可以為每種資產類型擁有一個 `.CommonDataMeta` 檔案。這儲存了：
 - **分組 (Grouping)**：將資產組織到邏輯資料夾（Groups）。

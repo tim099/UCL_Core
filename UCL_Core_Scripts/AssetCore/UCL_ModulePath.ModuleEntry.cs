@@ -102,6 +102,29 @@ namespace UCL.Core
                     RootFolder = p_ModulePathConfig.GetModulePath(ID);
                 }
 
+                // 區塊職責：build 唯讀守衛 (PC 免安裝直讀模組)。
+                // 物理意義：StreamingReadOnly 模組的 RootFolder 落在 StreamingAssets (shipped build 常在 Program Files/Steam 唯讀區)。
+                //          任何寫入都該被「明確攔住 + fail-loud」，而非依賴底層 File IO 拋出晦澀例外或靜默丟資料。
+                // 數值影響：Editor 內不擋 (isEditor → false)，方便維護範本；非 StreamingReadOnly 模組不受影響。
+                /// <summary>此 ModuleEntry 是否為 build 環境下的唯讀模組 (StreamingReadOnly 且非 Editor)。</summary>
+                public bool IsBuildReadOnly => p_ModulePathConfig != null
+                    && p_ModulePathConfig.ModuleEditType == UCL_ModuleEditType.StreamingReadOnly
+                    && !Application.isEditor;
+                /// <summary>
+                /// 若此模組在 build 為唯讀 (StreamingReadOnly) 則 fail-loud：印 Error + 拋 InvalidOperationException。
+                /// 內建模組在 build 設計上不可被寫入；此守衛把誤寫變成立即可見的失敗而非靜默/晦澀錯誤。
+                /// </summary>
+                /// <param name="iOp">嘗試的寫入操作名稱 (給診斷看)</param>
+                public void ThrowIfBuildReadOnly(string iOp)
+                {
+                    if (IsBuildReadOnly)
+                    {
+                        string aMsg = $"{GetType().Name}.{iOp} 拒絕寫入：模組 ID:{ID} 為 StreamingReadOnly (PC 免安裝直讀)，build 環境下唯讀，不可修改 StreamingAssets 內建模組。RootFolder:{RootFolder}";
+                        Debug.LogError(aMsg);
+                        throw new System.InvalidOperationException(aMsg);
+                    }
+                }
+
 
                 public string ZipModule(string iTargetPath = "", bool iExportConfig = true)
                 {
@@ -368,6 +391,7 @@ namespace UCL.Core
 
                 public void SaveConfig(UCL_Module.Config iConfig)
                 {
+                    ThrowIfBuildReadOnly(nameof(SaveConfig));//build 唯讀守衛
                     string aFolderPath = RootFolder;
                     //string aModuleRelativePath = UCL_ModulePath.RelativePath.GetBuiltinModulePath(iID);
                     if (!Directory.Exists(aFolderPath))

@@ -21,16 +21,35 @@ namespace UCL.Core
         public void OnPreprocessBuild(BuildReport report)
         {
             var summary = report.summary;
-            Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPreprocessBuild report:{report.AllFieldToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
-            UCL_ModulePath.OnPreprocessBuild();
+            // 區塊職責：判定本次 build target 是否為 Standalone(PC)，決定 m_PCDirectStreaming 是否生效。
+            // 物理意義：只有 PC build 的 StreamingAssets 是真實磁碟資料夾、可同步直讀；其他平台一律走原 zip+install。
+            // 數值影響：把 BuildTarget→bool 的判定留在 Editor 組件 (UCL_ModulePath.cs 是 runtime 組件不能引 UnityEditor)。
+            bool aIsStandalone = IsStandaloneBuildTarget(summary.platform);
+            Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPreprocessBuild report:{report.AllFieldToString()},platform:{summary.platform},outputPath:{summary.outputPath},IsStandalone:{aIsStandalone}");
+            UCL_ModulePath.OnPreprocessBuild(aIsStandalone);
             //System.IO.Compression.ZipFile.CreateFromDirectory("zipdir", "todir");
 
+        }
+
+        // 判定 BuildTarget 是否屬於 Standalone(PC) 家族 (Windows/OSX/Linux)。
+        static bool IsStandaloneBuildTarget(BuildTarget iTarget)
+        {
+            switch (iTarget)
+            {
+                case BuildTarget.StandaloneWindows:
+                case BuildTarget.StandaloneWindows64:
+                case BuildTarget.StandaloneOSX:
+                case BuildTarget.StandaloneLinux64:
+                    return true;
+            }
+            return false;
         }
         public void OnPostprocessBuild(BuildReport report)
         {
             var summary = report.summary;
             Debug.LogWarning($"UCL_ModuleBuildPostprocessor OnPostprocessBuild report:{report.AllFieldToString()},platform:{summary.platform},outputPath:{summary.outputPath}");
             UCL_ModulePath.RemoveAllZipAllModules();
+            UCL_ModulePath.RemoveDirectStreamingRawModules();//清理 PC 免安裝模組複製進 StreamingAssets 的原始檔副本
         }
 
         //[PostProcessBuild(1)]

@@ -187,6 +187,14 @@ namespace UCL.Core
             /// </summary>
             public List<UCL_ModuleEntry> m_DependenciesModules = new ();
 
+            /// <summary>
+            /// PC(Standalone) 免安裝直讀模式開關 (opt-in, 預設 false = 維持原本 zip+install)。
+            /// true 時：僅在 Standalone build 把此模組原始檔直接複製進 StreamingAssets，runtime 直讀、不解壓、不複製到 PersistentDataPath，且該模組變為唯讀。
+            /// 其他平台 (Android/iOS/WebGL...) 一律忽略此旗標、走原本安裝流程 (StreamingAssets 在那些平台壓在安裝包內，同步 File IO 讀不到)。
+            /// 此欄位放在模組自身 Config (隨模組 Config.json 走、在 ModuleEditPage 的 CurEditModule config 內可直接編輯)；預設 false 確保舊 Config 反序列化後行為不變。
+            /// </summary>
+            public bool m_PCDirectStreaming = false;
+
 
 
 
@@ -740,6 +748,7 @@ namespace UCL.Core
             {
                 void SaveAssetMetaJson(string iJson)
                 {
+                    ModuleEntry.ThrowIfBuildReadOnly(nameof(SaveAssetMetaJson));//build 唯讀守衛 (StreamingReadOnly 模組不可寫)
                     //if (!Directory.Exists(SaveFolderPath))
                     string path = GetAssetMetaPath(iTypeName);
                     var folderPath = Path.GetDirectoryName(path);

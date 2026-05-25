@@ -57,6 +57,23 @@ namespace UCL.Core
             }
             private static ModulesEntry s_Template = null;
 
+            // 區塊職責：StreamingReadOnly 模式對應的 ModulesEntry (PC 免安裝直讀)
+            // 物理意義：root 指向 streamingAssetsPath/.ModuleService (直接對齊既有 StreamingAssets 佈局，Config.json/ZipModules 同級)；
+            //          模組原始檔在 .ModuleService/Modules/{id}，runtime 同步 File IO 直讀
+            // 數值影響：lazy 建構 static cache；僅 Standalone build 的 opt-in 模組會被指定此型別
+            public static ModulesEntry StreamingReadOnly
+            {
+                get
+                {
+                    if (s_StreamingReadOnly == null)
+                    {
+                        s_StreamingReadOnly = new ModulesEntry(UCL_ModuleEditType.StreamingReadOnly);
+                    }
+                    return s_StreamingReadOnly;
+                }
+            }
+            private static ModulesEntry s_StreamingReadOnly = null;
+
             public static ModulesEntry GetModulesEntry(UCL_ModuleEditType iModuleEditType)
             {
                 switch (iModuleEditType)
@@ -72,6 +89,10 @@ namespace UCL.Core
                     case UCL_ModuleEditType.Template:
                         {
                             return PersistantPath.Template;
+                        }
+                    case UCL_ModuleEditType.StreamingReadOnly:
+                        {
+                            return PersistantPath.StreamingReadOnly;
                         }
                 }
                 return PersistantPath.Runtime;
@@ -132,6 +153,16 @@ namespace UCL.Core
                                 // 物理意義：與 Builtin 同樣的相對結構，只是 base 換成 UCL_Core/Templates~/Assets/.BuiltinModules
                                 // 數值影響：UCL_AssetPath.GetPath(TemplateModules) 在 build 中回 empty，這條路徑也跟著失效
                                 RootFolder = Path.Combine(UCL_AssetPath.GetPath(UCL_AssetType.TemplateModules), RelativePath.ModulesRootRelativePath);
+                                break;
+                            }
+                        case UCL_ModuleEditType.StreamingReadOnly:
+                            {
+                                // 區塊職責：StreamingReadOnly 模式根目錄 — 指向 streamingAssetsPath/.ModuleService
+                                // 物理意義：刻意「不」加 ModulesRoot 段，直接對齊既有 StreamingAssets 佈局
+                                //          (ConfigInstallPath = streamingAssetsPath/.ModuleService/Config.json、ZipModules 也在此根)；
+                                //          故下方 ModulesPath = .ModuleService/Modules、ConfigPath = .ModuleService/Config.json，模組原始檔放 Modules/{id}
+                                // 數值影響：PC build 直讀；其他平台同步 File IO 讀不到 (僅 Standalone opt-in 模組會走到此型別)
+                                RootFolder = Path.Combine(Application.streamingAssetsPath, RelativePath.ModuleServicePath);
                                 break;
                             }
                     }
@@ -227,8 +258,11 @@ namespace UCL.Core
                 /// <summary>
                 /// zip all Builtin modules to Streamimg assets folder
                 /// </summary>
-                public void ZipAllModules(UCL_ModuleService.Config config = null)
+                /// <param name="config">export 設定；null 時 zip 資料夾下全部模組</param>
+                /// <param name="iSkipIDs">需排除不 zip 的模組 ID (PC 免安裝模組改走原始檔複製，不應重複 zip 出貨)；null/空 = 不排除</param>
+                public void ZipAllModules(UCL_ModuleService.Config config = null, ICollection<string> iSkipIDs = null)
                 {
+                    bool ShouldSkip(string iID) => iSkipIDs != null && iSkipIDs.Contains(iID);
                     IList<string> aIDs = null;
                     if(config != null)//TODO 檢查模組是否需要輸出
                     {
@@ -236,7 +270,7 @@ namespace UCL.Core
                         foreach (var moduleId in config.m_ExportModules.Keys)
                         {
                             var exportConfig = config.m_ExportModules[moduleId];
-                            if (exportConfig.m_ExportModule)
+                            if (exportConfig.m_ExportModule && !ShouldSkip(moduleId))
                             {
                                 aIDs.Add(moduleId);
                             }
@@ -244,7 +278,20 @@ namespace UCL.Core
                     }
                     else
                     {
-                        aIDs = GetAllModulesID();
+                        var aAllIDs = GetAllModulesID();
+                        if (iSkipIDs != null && !aAllIDs.IsNullOrEmpty())
+                        {
+                            var aFiltered = new List<string>();
+                            foreach (var aID in aAllIDs)
+                            {
+                                if (!ShouldSkip(aID)) aFiltered.Add(aID);
+                            }
+                            aIDs = aFiltered;
+                        }
+                        else
+                        {
+                            aIDs = aAllIDs;
+                        }
                     }
                     Debug.LogWarning($"ZipAllModules aIDs:{aIDs.ConcatString()}");
                     if (aIDs.IsNullOrEmpty())//No modules exist

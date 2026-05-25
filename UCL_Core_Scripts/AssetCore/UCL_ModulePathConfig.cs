@@ -31,6 +31,13 @@ namespace UCL.Core
                             // 數值影響：runtime build 中 m_ModuleEditType 不會被設為 Template（Editor-only），所以這個 case 走不到
                             return UCL_AssetType.TemplateModules;
                         }
+                    case UCL_ModuleEditType.StreamingReadOnly:
+                        {
+                            // 區塊職責：StreamingReadOnly 模式 → 資料源為 StreamingAssets
+                            // 物理意義：PC 免安裝直讀，資料直接在 streamingAssetsPath 下
+                            // 數值影響：全域 m_ModuleEditType 不會被設為此值 (per-module override 才用)，這 case 主要為 switch exhaustiveness 防漏接
+                            return UCL_AssetType.StreamingAssets;
+                        }
                 }
                 return UCL_AssetType.PersistentDatas;//Runtime
             }

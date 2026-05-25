@@ -685,6 +685,97 @@ namespace UCL.Core
         }
 
         /// <summary>
+        /// 此模組是否為唯讀（內建免安裝直讀模組）。
+        /// 物理意義：模組解析型別為 StreamingReadOnly 時為唯讀 — 僅 build + opt-in 免安裝模組會成立 (Editor 內 override 為空 → 永遠可編輯，保留 dev 維護源檔流程)。
+        /// 數值影響：唯讀模組在編輯頁禁用 Save/Install/Zip/Delete、改提供 Fork；write guard (ThrowIfBuildReadOnly) 為第二層兜底。
+        /// </summary>
+        /// <param name="iModuleID">模組 ID</param>
+        /// <returns>true = 唯讀（StreamingReadOnly）</returns>
+        public bool IsModuleReadOnly(string iModuleID)
+        {
+            return ResolveEditType(iModuleID) == UCL_ModuleEditType.StreamingReadOnly;
+        }
+
+        /// <summary>
+        /// 取得清單頁該顯示的所有可選模組 ID：合併「Runtime(persistentDataPath) 掃描」與「StreamingReadOnly 免安裝模組(m_EditTypeOverride)」並去重。
+        /// 物理意義：免安裝模組(如 Core)的原始檔在 StreamingAssets、不在 persistentDataPath，原本 GetAllModuleIDs 掃不到 → 清單漏掉它。
+        ///          這裡把免安裝模組也納入(供模組製作者唯讀參考)；同 ID 雙來源(Runtime 舊副本 + StreamingReadOnly)只呈現一筆，
+        ///          read-only 與否一律由 ResolveEditType 決定(override 優先)，故去重後仍正確判讀唯讀。
+        /// 數值影響：override 為空(其他平台 / Editor) → 等同原 GetAllModuleIDs，逐位元相容。
+        /// </summary>
+        public IList<string> GetAllListableModuleIDs(bool iUseCache = true)
+        {
+            var aResult = new List<string>();
+            var aSeen = new HashSet<string>();
+            void AddID(string iID)
+            {
+                if (!string.IsNullOrEmpty(iID) && aSeen.Add(iID)) aResult.Add(iID);
+            }
+            // 先納入免安裝(StreamingReadOnly)模組 — 確保它們即使不在 persistentDataPath 也會出現在清單
+            foreach (var aID in m_EditTypeOverride.Keys) AddID(aID);
+            // 再納入 Runtime(persistentDataPath) 掃描結果
+            var aRuntimeIDs = GetAllModuleIDs(iUseCache);
+            if (aRuntimeIDs != null)
+            {
+                foreach (var aID in aRuntimeIDs) AddID(aID);
+            }
+            return aResult;
+        }
+
+        /// <summary>
+        /// 一鍵 Fork：把唯讀(StreamingReadOnly)模組整包複製成 persistentDataPath 裡一份新的可編輯 Runtime 模組。
+        /// 物理意義：來源 = 唯讀模組 RootFolder(直讀路徑，只讀)；目的 = Runtime.GetModuleEntry(newID).RootFolder(persistentDataPath，可寫)。
+        ///          複製後改寫新模組 Config 的 ID + 強制 m_PCDirectStreaming=false(衍生模組是可寫 Runtime，不繼承免安裝唯讀旗標)。
+        /// 數值影響：產生一份可編輯模組；不自動掛進 PlayList(只建檔)。
+        /// </summary>
+        /// <param name="iSrcID">來源模組 ID(唯讀)</param>
+        /// <param name="iNewID">新模組 ID</param>
+        /// <returns>fork 出的可編輯模組；失敗回 null</returns>
+        virtual public UCL_Module ForkModule(string iSrcID, string iNewID)
+        {
+            if (string.IsNullOrEmpty(iNewID))
+            {
+                Debug.LogError($"{GetType().Name}.ForkModule iNewID 為空");
+                return null;
+            }
+            var aRuntimeEntry = UCL_ModulePath.PersistantPath.Runtime.GetModuleEntry(iNewID);
+            string aDst = aRuntimeEntry.RootFolder;
+            if (Directory.Exists(aDst))//新 ID 與既有 Runtime 模組衝突
+            {
+                Debug.LogError($"{GetType().Name}.ForkModule 新模組 ID '{iNewID}' 已存在於 persistentDataPath，請改名。aDst:{aDst}");
+                return null;
+            }
+            // 來源用 ResolveEditType 解析(唯讀模組 → StreamingReadOnly RootFolder)
+            var aSrcEntry = UCL_ModulePath.PersistantPath.GetModulesEntry(ResolveEditType(iSrcID)).GetModuleEntry(iSrcID);
+            string aSrc = aSrcEntry.RootFolder;
+            if (!Directory.Exists(aSrc))
+            {
+                Debug.LogError($"{GetType().Name}.ForkModule 來源模組 '{iSrcID}' RootFolder 不存在:{aSrc}");
+                return null;
+            }
+            try
+            {
+                UCL.Core.FileLib.Lib.CopyDirectory(aSrc, aDst);//整包複製進 persistentDataPath
+                // 載入 fork 出的模組(Runtime 可寫)，改寫 Config
+                var aModule = LoadModule(iNewID, UCL_ModuleEditType.Runtime);
+                aModule.ID = iNewID;
+                aModule.m_Config.m_ID = iNewID;
+                aModule.m_Config.m_PCDirectStreaming = false;//衍生模組是可寫 Runtime，清掉免安裝旗標
+                aModule.Save();//寫回 persistentDataPath(Runtime → write guard 不擋)
+                m_ModuleIDs = null;//強制刷新清單快取
+                m_ModuleNames = null;
+                Debug.Log($"{GetType().Name}.ForkModule OK: '{iSrcID}' → '{iNewID}' @ {aDst}");
+                return aModule;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"{GetType().Name}.ForkModule FAILED src:{iSrcID},new:{iNewID},Exception:{ex}");
+                Debug.LogException(ex);
+                return null;
+            }
+        }
+
+        /// <summary>
         /// 當前 runtime 平台是否支援「PC 免安裝直讀 StreamingAssets」。
         /// 物理意義：僅 Standalone(Windows/OSX/Linux) Player 的 streamingAssetsPath 是真實磁碟資料夾、可同步 File IO 直讀；
         ///          Android/iOS/WebGL 等 StreamingAssets 壓在安裝包內，同步 File IO 讀不到 → 不支援、必須走原安裝流程。
@@ -1489,10 +1580,21 @@ namespace UCL.Core
 
             using (var aScope = new GUILayout.HorizontalScope())
             {
+                // 區塊職責：模組選單 — 來源改用 GetAllListableModuleIDs(含免安裝 StreamingReadOnly 模組、去重)
+                // 物理意義：免安裝模組(如 Core)也會列出供唯讀參考；用 index-based popup 才能在顯示名後綴 [唯讀] 標記又保留正確 ID 選取
+                // 數值影響：override 為空(其他平台/Editor) → 等同原本只列 Runtime 模組
                 List<string> aModules = new List<string>();
                 aModules.Add(string.Empty);//Null
-                //aModules.Append(m_Config.m_BuiltinModules);
-                aModules.Append(GetAllModuleIDs());
+                foreach (var aMID in GetAllListableModuleIDs()) aModules.Add(aMID);
+
+                // 顯示名清單(唯讀模組後綴標記)，與 aModules 同 index
+                List<string> aDisplayNames = new List<string>();
+                foreach (var aMID in aModules)
+                {
+                    if (string.IsNullOrEmpty(aMID)) { aDisplayNames.Add(string.Empty); continue; }
+                    aDisplayNames.Add(IsModuleReadOnly(aMID) ? $"{aMID}  [{UCL_CodeLocalize.Get("ReadOnly")}]" : aMID);
+                }
+
                 bool aCanEdit = !string.IsNullOrEmpty(CurrentEditModuleID);
                 if (GUILayout.Button(UCL_CodeLocalize.Get("Edit"), UCL_GUIStyle.GetButtonStyle(aCanEdit? Color.white : Color.red), GUILayout.Width(150)))
                 {
@@ -1505,7 +1607,11 @@ namespace UCL.Core
                 }
 
                 GUILayout.Label(UCL_CodeLocalize.Get("Module ID"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                var aID = UCL_GUILayout.PopupAuto(CurrentEditModuleID, aModules, iDataDic, "SelectModules");
+                int aCurIndex = aModules.IndexOf(CurrentEditModuleID);
+                if (aCurIndex < 0) aCurIndex = 0;
+                int aNewIndex = UCL_GUILayout.PopupAuto(aCurIndex, aDisplayNames, iDataDic, "SelectModules");
+                if (aNewIndex < 0 || aNewIndex >= aModules.Count) aNewIndex = 0;
+                var aID = aModules[aNewIndex];
                 if(aID != CurrentEditModuleID)
                 {
                     CurrentEditModuleID = aID;

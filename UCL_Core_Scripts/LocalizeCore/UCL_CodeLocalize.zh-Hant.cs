@@ -11,13 +11,17 @@ namespace UCL.Core.LocalizeLib
             return iKey switch
             {
                 "UCL" => "Unity CommonLib",
+                "ReadOnly" => "唯讀",
+                "Module_ReadOnly_Banner" => "唯讀（內建參考）— 如需修改請按『複製成可編輯模組』",
+                "Fork_To_Editable" => "複製成可編輯模組（Fork）",
+                "Fork_NewID_Prompt" => "新模組 ID",
                 "Edit Modules" => "編輯模組",
                 "Agent Commands" => "Agent 指令集",
                 "Playlist" => "播放集",
                 "UCL_ModulePlayListPage" => "編輯播放集",
                 "Create new module" => "創建新模組",
                 "Module ID" => "模組ID",
-                "EditModulewarning" => "對內建模組(Core)的編輯，會在更新後失效\n請建立新的模組，來新增或覆蓋原有內容\n不同模組中，若有相同ID的內容\n將會由後載入的模組的內容覆蓋",
+                "EditModulewarning" => "內建模組（如 Core）在免安裝模式下為唯讀，僅供參考瀏覽、無法直接編輯。\n如需修改：開啟該模組後按「複製成可編輯模組（Fork）」，會複製出一份可編輯模組。\n不同模組中若有相同 ID 的內容，將由後載入的模組覆蓋。",
                 "EditType" => "編輯模式",
                 "UCL_ModuleEditType_Builtin" => "內建模組",
                 "UCL_ModuleEditType_Runtime" => "遊戲模組",

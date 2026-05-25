@@ -11,13 +11,17 @@ namespace UCL.Core.LocalizeLib
             return iKey switch
             {
                 "UCL" => "Unity CommonLib",
+                "ReadOnly" => "Read-Only",
+                "Module_ReadOnly_Banner" => "Read-Only (built-in reference) — to modify, click 'Fork to Editable Module'",
+                "Fork_To_Editable" => "Fork to Editable Module",
+                "Fork_NewID_Prompt" => "New Module ID",
                 "Edit Modules" => "Edit Modules",
                 "Agent Commands" => "Agent Commands",
                 "Playlist" => "Playlist",
                 "UCL_ModulePlayListPage" => "Edit playlist",
                 "Create new module" => "Create new module",
                 "Module ID" => "Module ID",
-                "EditModulewarning" => "Edits to the built-in module (Core) \nwill become invalid after updates. \nPlease create a new module to add or overwrite existing content. \nIf there are contents with the same ID in different modules\nthe content of the later-loaded module will overwrite the previous one.",
+                "EditModulewarning" => "The built-in module (e.g. Core) is read-only in direct-streaming (no-install) mode \nand can only be viewed for reference, not edited directly. \nTo modify it, open the module and click 'Fork to Editable Module' to create an editable copy. \nIf different modules contain content with the same ID, the later-loaded module overwrites the earlier one.",
                 "EditType" => "Edit type",
                 "UCL_ModuleEditType_Builtin" => "Builtin",
                 "UCL_ModuleEditType_Runtime" => "Runtime",

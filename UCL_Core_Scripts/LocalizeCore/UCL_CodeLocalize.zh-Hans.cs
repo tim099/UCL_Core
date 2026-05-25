@@ -11,13 +11,17 @@ namespace UCL.Core.LocalizeLib
             return iKey switch
             {
                 "UCL" => "Unity CommonLib",
+                "ReadOnly" => "只读",
+                "Module_ReadOnly_Banner" => "只读（内建参考）— 如需修改请按『复制成可编辑模组』",
+                "Fork_To_Editable" => "复制成可编辑模组（Fork）",
+                "Fork_NewID_Prompt" => "新模组 ID",
                 "Edit Modules" => "编辑模组",
                 "Agent Commands" => "Agent 指令集",
                 "Playlist" => "播放集",
                 "UCL_ModulePlayListPage" => "编辑播放集",
                 "Create new module" => "创建新模组",
                 "Module ID" => "模组ID",
-                "EditModulewarning" => "对内建模组(Core)的编辑，会在更新后失效\n请建立新的模组，来新增或复盖原有内容\n不同模組中，若有相同ID的内容\n将会由后载入的模组的内容复盖",
+                "EditModulewarning" => "内建模组（如 Core）在免安装模式下为只读，仅供参考浏览、无法直接编辑。\n如需修改：开启该模组后按『复制成可编辑模组（Fork）』，会复制出一份可编辑模组。\n不同模组中若有相同 ID 的内容，将由后载入的模组覆盖。",
                 "EditType" => "编辑模式",
                 "UCL_ModuleEditType_Builtin" => "内建模组",
                 "UCL_ModuleEditType_Runtime" => "游戏模组",

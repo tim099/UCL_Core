@@ -11,13 +11,17 @@ namespace UCL.Core.LocalizeLib
             return iKey switch
             {
                 "UCL" => "Unity CommonLib",
+                "ReadOnly" => "読み取り専用",
+                "Module_ReadOnly_Banner" => "読み取り専用（内蔵リファレンス）— 編集するには「編集可能なモジュールへ複製」を押してください",
+                "Fork_To_Editable" => "編集可能なモジュールへ複製（Fork）",
+                "Fork_NewID_Prompt" => "新しいモジュール ID",
                 "Edit Modules" => "Edit Modules",
                 "Agent Commands" => "Agent 指令集",
                 "Playlist" => "プレイリスト",
                 "UCL_ModulePlayListPage" => "プレイリストを編集する",
                 "Create new module" => "Create new module",
                 "Module ID" => "Module ID",
-                "EditModulewarning" => "内蔵モジュール（Core）の編集は、更新後に無効になります。\n新しいモジュールを作成して、既存のコンテンツを追加または上書きしてください。 \n異なるモジュールに同じIDのコンテンツがある場合、 \n後から読み込まれたモジュールのコンテンツが前のものを上書きします。",
+                "EditModulewarning" => "内蔵モジュール（Core など）は、インストール不要（直接読み込み）モードでは読み取り専用で、\n参照閲覧のみ可能で直接編集はできません。\n編集するには、モジュールを開いて「編集可能なモジュールへ複製（Fork）」を押すと、編集可能なモジュールが複製されます。\n異なるモジュールに同じIDのコンテンツがある場合、後から読み込まれたモジュールが上書きします。",
                 "EditType" => "Edit type",
                 "UCL_ModuleEditType_Builtin" => "Builtin",
                 "UCL_ModuleEditType_Runtime" => "Runtime",

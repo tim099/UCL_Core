@@ -26,6 +26,7 @@ description: |
 | 自動留言觸發 | `ucl-auto-message` skill + `Cmd_AutoMessage` |
 | commit code | `ucl-commit` skill |
 | 編譯錯排查 | `ucl-compile-error` skill |
+| 查 Editor DebugLog / daemon 死活 / 跨 session 找 error | `AgentCommands/Tools/debuglog_query.py` (5 ops: tail / component / errors / search / summary) — 詳見 [`docs/Workflows/DebugLog_Query_Workflow.md`](../../../docs/Workflows/DebugLog_Query_Workflow.md) |
 | 文檔翻譯 | `ucl-translate-docs` skill |
 | 改完 code 同步文件 | `ucl-update-docs` skill |
 | 創 UCL_Asset 子類 | `ucl-create-asset` skill |

@@ -20,6 +20,16 @@ description: |
 - **L7 [health]**: Quota / context window / Tim 累 = 三個獨立的「該停下」訊號
 - **L8 [Treasury]**: Commit 是先結算薪資的 task — pre-credit before commit (per Tim 拍板)
 - **L9 [T49 token_parse]**: 規則永遠匯給 sender 是錯的 — 加「@<acct>」/「支付前綴」反向路徑分流
+- **L10 [resolver design]**: substring 比對用 **longest-match-wins** 不要 first-hit（避免「叮/叮叮」子字串先勝事故）
+- **L11 [defensive cmd]**: cmd_type alias **必須雙層**（Python submit + C# Registry），stuck cmd 直寫 queue 會繞過 Python
+- **L12 [routing exception]**: Noisy log（戰鬥 log）category routing 設 **m_Exclusive=true**，additive 會「買一送一」洗 main（L2 default 仍適用一般 chat）
+- **L13 [push notification]**: turn-based agent 缺 push → per-agent **last_read_seq state** 補 Discord 紅點，首次跑要 baseline mark-read
+- **L14 [catchup audit]**: 判別他 agent 程序違規前必掃 **events/ + messages/** 兩 dir（只看 messages tail 會漏 task_create/done system events，會被反將）
+- **L15 [bash blast radius]**: tavern post body 含 backtick / `~/` 永遠走 temp file + `$(cat)` 不直接夾 `--arg`；2026-05-15 Avada Kedavra 事件起源
+- **L16 [layer mixing]**: 「外觀 OK ≠ 真的 OK」家族 — Syntactic / Identity / Status / Content 四層各自需要對應 verify 工具，撞同類盲點 2 次 = pattern 不是巧合
+- **L17 [tool-survey first]**: 推薦方案前 MUST 先 ask/grep 用戶實際工具棧 (CLI vs GUI vs IDE) — 跳過 survey 直接進方案 = 用戶被迫驗證假設棧
+- **L18 [recovery placement]**: 純文字 recovery 指南 MUST 入 git (`docs/Recovery/`)，不可放 `_secrets/` (gitignored) — rm -rf 重演時沒救
+- **L19 [run_cmd race]**: cmd is None ≠ success — C# 失敗 auto-remove 比 Python 輪詢快，必檢對應 `_last_op.md` 第一行 (`# ❌` / `# ✅`) 驗真實結果
 
 ## 自動化筆記入口（agent 自律）
 
@@ -27,35 +37,16 @@ description: |
 
 ```bash
 python AgentCommands/run_cmd.py run NoteLesson \
-  --arg body="<headline 精華 30-80 字>" \
+  --arg body="<短句精華 < 30 字>" \
   --arg actor="<agent_id>" \
-  --arg category="<bug|design|workflow|debug|test>" \
-  --arg detail="<長文敘述 optional 可留 context / 重現步驟 / 解法細節>"
+  --arg category="<bug|design|workflow|debug|test>"
 ```
 
-**body 字數規則修訂 (Tim 2026-05-11 拍板)**：
-- 舊版：`< 30 字` 一行精華 → 太簡短失去訊息量
-- 新版：**body 30~80 字 headline**（一句話講清楚 what + why）
-  - 太短（< 20 字）→ 一年後自己看不懂上下文
-  - 太長（> 100 字）→ 屬於 detail 段不該擠進 headline
-- **detail 欄位（新增 optional）**：自由長度敘述 — 重現步驟 / context / 解法細節 / 反例參考。寫進 jsonl 一起 audit，不會 promote 進 SKILL.md curated（curated 仍是精華）。
-
 行為：
-1. append `AgentCommands/Lessons/lessons.jsonl` 一行 JSONL entry (ts/actor/category/body/detail)
+1. append `AgentCommands/Lessons/lessons.jsonl` 一行 JSONL entry (ts/actor/category/body)
 2. 寫 `AgentCommands/Lessons/_last_lesson.md` 給 caller confirm
 3. 同 body 重複 → skip 防重 (dedupe check)
 4. category 自由欄位（agent 自律分類，譬如 "bug" / "design" / "workflow"）
-
-**好的 lesson 範例**：
-```
-body: "BattleSnapshot 不列 mana → agent 盲射 cost 不足，cmd Cmd_BattleAction 還回 Success+ledger reward 假 progress"
-detail: "T82 馬拉松 dogfood 撞到。Root cause: PlayCardAsync 是 fire-forget UniTask 內部 LogError 不 throw → cmd 樂觀回 Success。Fix 在 RCG_AgentBattleService 內 cost-check 後再呼叫 (commit d687e46f)。對應 lesson L-bug-1 hand idx instability 同類 silent fail pattern。"
-```
-
-**反例（太短失去訊息量）**：
-```
-body: "mana 沒檢查"   ← 太短，一年後不知道 context
-```
 
 ## Promote curated SKILL.md 流程
 
@@ -71,7 +62,7 @@ jsonl 是 raw audit log，curated SKILL.md 是 ≤ 100 字精華頂級 lesson。
 
 - **Claude / Antigravity / Gemini 都讀本 skill** — jsonl 共享，actor 欄位標來源
 - **新 session re-enter**: 先 grep curated list + jsonl tail (--limit 20) 找近期教訓
-- **body 30-80 字 headline / detail 自由長度** (Tim 2026-05-11 修訂) — 太短失去訊息量；長 retrospective 仍走 `docs/Plan/` 或 `docs/Postmortem/`
+- **不要寫超長 lesson** — 一行精華 < 30 字；長 retrospective 走 `docs/Plan/` 或 `docs/Postmortem/`
 - **跨 session 撞同樣坑兩次** = 教訓沒落 SKILL.md curated → 該 promote
 
 ## 不要做

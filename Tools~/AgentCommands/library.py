@@ -559,7 +559,11 @@ def cmd_resume(args):
     _don = _books_root() / book / "_donation.json"
     if _don.exists():
         _dd = _read_json(_don)
-        print(f"   📖 本書由 {_dd.get('donor_persona') or _dd.get('donor')} 捐贈入館 ({_dd.get('tokens')} token)")
+        _who = _dd.get('donor_persona') or _dd.get('donor')
+        if _dd.get("source") == "authored":
+            print(f"   ✍ 本書由 {_who} 原創著作 ({_dd.get('chapters', '?')} 章, 免費入庫)")
+        else:
+            print(f"   📖 本書由 {_who} 捐贈入館 ({_dd.get('tokens')} token)")
     if pr.get("bookmark_note"):
         print(f"🔖 續讀備註 / 上次心得: {pr['bookmark_note']}")
 

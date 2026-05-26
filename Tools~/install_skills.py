@@ -163,6 +163,28 @@ def load_manifest() -> dict:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
+# 區塊職責：讀 UCL_SkillConfigAsset 預設（Templates~）判定哪些 skill 預設不裝（Enabled=false）
+# 物理意義：Plan_SkillManager_PerSkill_Toggle — 「透過 UCL_SkillConfigAsset 預設不裝」。
+#          asset JSON 在 UCL_Core/Templates~/.../UCL_Assets/UCL_SkillConfigAsset/<skill>.json,
+#          UCL_Asset 序列化 strip m_ 前綴 → 欄位 "Enabled"(相容 "m_Enabled")。
+# 數值影響：回傳 Enabled=false 的 skill 名 set；檔案/欄位缺失 → 視為未停用(空集)。
+def load_skill_config_disabled() -> set[str]:
+    cfg_dir = (UCL_CORE_ROOT / "Templates~" / "Assets" / ".BuiltinModules" / "ModulesRoot"
+               / "Modules" / "Core" / "UCL_Assets" / "UCL_SkillConfigAsset")
+    disabled: set[str] = set()
+    if not cfg_dir.is_dir():
+        return disabled
+    for f in cfg_dir.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        enabled = data.get("Enabled", data.get("m_Enabled", True))
+        if enabled is False:
+            disabled.add(f.stem)
+    return disabled
+
+
 def discover_skills() -> list[str]:
     """List skill directories from Skills~/ (filesystem truth)."""
     if not SKILLS_SRC.is_dir():
@@ -545,11 +567,13 @@ def main(argv: list[str] | None = None) -> int:
             optional_names = {s["name"] for s in load_manifest().get("skills", []) if s.get("optional")}
         except Exception:
             optional_names = set()
-        if optional_names:
-            skipped_optional = [s for s in selected if s in optional_names]
-            selected = [s for s in selected if s not in optional_names]
-            if skipped_optional:
-                log.info(f"Optional (default-OFF) skipped: {skipped_optional}  (use --include <name> or --include-optional to install)")
+        # 預設不裝集 = manifest optional ∪ UCL_SkillConfigAsset Enabled=false (asset 為主, optional 為 fallback)
+        off_names = optional_names | load_skill_config_disabled()
+        if off_names:
+            skipped_off = [s for s in selected if s in off_names]
+            selected = [s for s in selected if s not in off_names]
+            if skipped_off:
+                log.info(f"Default-OFF skipped: {skipped_off}  (use --include <name> or --include-optional to install)")
 
     log.info(f"Skills found:    {discovered}")
     log.info(f"Skills selected: {selected}")

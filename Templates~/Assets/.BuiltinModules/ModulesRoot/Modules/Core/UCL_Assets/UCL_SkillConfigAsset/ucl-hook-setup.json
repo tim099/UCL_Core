@@ -1,0 +1,4 @@
+{
+	"Enabled":false,
+	"Note":"已有 Hook_Setup_Workflow.md 覆蓋; 一次性 onboarding, 預設不裝 (default-OFF, 透過 UCL_SkillConfigAsset; 需要時 install_skills --include ucl-hook-setup)"
+}

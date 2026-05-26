@@ -543,6 +543,86 @@ namespace UCL.Core.EditorLib.Page
             foreach (var t in AllTargets) RunInstall(t);
         }
 
+        // 區塊職責：逐 skill 安裝/解除安裝 — spawn install_skills.py --include <skill> [--uninstall] [--force-overwrite]
+        // 物理意義：對接 install_skills.py 的 per-skill 化(merge marker / partial uninstall / drift 警告)。
+        //          uninstall 預設不帶 force → 若該 skill 被本地改過, Python 端會警告跳過(破壞看得見);
+        //          force=true 才強制(覆蓋本地改動 / 強制移除)。
+        // 數值影響：Claude target only(MVP)；跑完 m_StatusDirty=true 刷新狀態列
+        void RunInstallSkill(string skill, bool uninstall, bool force = false)
+        {
+            if (string.IsNullOrEmpty(skill)) return;
+            try
+            {
+                string scriptPath = Path.Combine(m_UCLCorePath, "Tools~", "install_skills.py");
+                if (!File.Exists(scriptPath))
+                {
+                    Debug.LogError($"[AgentSkillManager] install_skills.py 不存在：{scriptPath}");
+                    return;
+                }
+                string args = $"\"{scriptPath}\" --target claude --include {skill}";
+                if (uninstall) args += " --uninstall";
+                if (force) args += " --force-overwrite";
+                using (var p = new Process())
+                {
+                    p.StartInfo.FileName = "python";
+                    p.StartInfo.Arguments = args;
+                    p.StartInfo.UseShellExecute = false;
+                    p.StartInfo.RedirectStandardOutput = true;
+                    p.StartInfo.RedirectStandardError = true;
+                    p.StartInfo.CreateNoWindow = true;
+                    p.Start();
+                    string stdout = p.StandardOutput.ReadToEnd();
+                    string stderr = p.StandardError.ReadToEnd();
+                    p.WaitForExit(30000);
+                    string verb = uninstall ? "解除安裝" : "安裝";
+                    if (!string.IsNullOrEmpty(stdout)) Debug.Log($"[AgentSkillManager:{skill}] {verb} stdout:\n{stdout}");
+                    if (!string.IsNullOrEmpty(stderr)) Debug.LogWarning($"[AgentSkillManager:{skill}] {verb} stderr:\n{stderr}");
+                    if (p.ExitCode == 0) Debug.Log($"[AgentSkillManager:{skill}] {verb}完成");
+                    else Debug.LogWarning($"[AgentSkillManager:{skill}] {verb} exit={p.ExitCode}（uninstall 被本地改動擋下時為正常保護；需強制請用 force）");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AgentSkillManager:{skill}] 操作失敗：{ex.Message}（python 不在 PATH？）");
+            }
+            finally
+            {
+                m_StatusDirty = true;
+            }
+        }
+
+        // 區塊職責：對單一 skill 目錄算 content hash（同 ComputeSourceHashFor 演算法, 但任意 dir + 排除 .ucl_source）
+        // 物理意義：per-skill drift 偵測 = hash(Skills~/<skill> 源) vs hash(.claude/skills/<skill> 已裝)；
+        //          排除 .ucl_source（已裝端才有, 源端沒有）才能公平比對。
+        // 數值影響：回 hex string；dir 不存在回 ""
+        static string HashSkillDirContent(string dir)
+        {
+            if (!Directory.Exists(dir)) return "";
+            var entries = new List<(string rel, string abs)>();
+            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+            {
+                string rel = f.Substring(dir.Length).TrimStart('\\', '/').Replace('\\', '/');
+                if (rel == ".ucl_source") continue;   // 已裝端標記檔, 源端沒有 → 排除
+                entries.Add((rel, f));
+            }
+            entries.Sort((a, b) => string.CompareOrdinal(a.rel, b.rel));
+            using (var sha = SHA1.Create())
+            {
+                byte[] sep = new byte[] { 0 };
+                foreach (var e in entries)
+                {
+                    byte[] relBytes = Encoding.UTF8.GetBytes(e.rel);
+                    sha.TransformBlock(relBytes, 0, relBytes.Length, null, 0);
+                    sha.TransformBlock(sep, 0, 1, null, 0);
+                    byte[] hexBytes = Encoding.ASCII.GetBytes(ComputeFileSha1Hex(e.abs));
+                    sha.TransformBlock(hexBytes, 0, hexBytes.Length, null, 0);
+                    sha.TransformBlock(sep, 0, 1, null, 0);
+                }
+                sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                return ToHex(sha.Hash);
+            }
+        }
+
         // ===========================================================
         // 區塊：UI
         // ===========================================================
@@ -737,22 +817,48 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Matrix.Title"), titleStyle);
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Matrix.Body"), WrapLabelStyle);
 
-                // 顯示目前 source 端有哪些 skill 可裝 — 從 Skills~/ 直接列目錄
-                using (new EditorGUI.DisabledScope(true))
+                string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
+                if (!Directory.Exists(skillsRoot))
                 {
-                    string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
-                    if (Directory.Exists(skillsRoot))
-                    {
-                        foreach (var dir in Directory.GetDirectories(skillsRoot))
-                        {
-                            string name = Path.GetFileName(dir);
-                            if (name.StartsWith("_") || name.EndsWith("~")) continue;
-                            GUILayout.Toggle(true, $"  {name}", UCL_GUIStyle.LabelStyle);
-                        }
-                    }
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Matrix.NoSource"), WrapLabelStyle);
+                    return;
+                }
+                // 逐 skill 列（Claude target MVP）：狀態 + 裝/移除按鈕。
+                // 狀態 per-skill：未裝 / 已同步 / ⚠已改動(drift = 源 hash != 已裝 hash)。
+                string installRoot = Path.Combine(m_HostProjectRoot, TargetMarkerRelDir(AgentTarget.Claude));
+                foreach (var dir in Directory.GetDirectories(skillsRoot).OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal))
+                {
+                    string name = Path.GetFileName(dir);
+                    if (name.StartsWith("_") || name.EndsWith("~")) continue;
+                    string instDir = Path.Combine(installRoot, name);
+                    bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
+                    string statusTxt; Color statusCol;
+                    if (!installed) { statusTxt = "未裝"; statusCol = new Color(0.6f, 0.6f, 0.6f); }
                     else
                     {
-                        GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Matrix.NoSource"), WrapLabelStyle);
+                        bool drift = HashSkillDirContent(dir) != HashSkillDirContent(instDir);
+                        if (drift) { statusTxt = "⚠改動"; statusCol = new Color(1f, 0.7f, 0.3f); }
+                        else { statusTxt = "✓同步"; statusCol = new Color(0.4f, 0.85f, 0.5f); }
+                    }
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        var st = new GUIStyle(UCL_GUIStyle.LabelStyle); st.normal.textColor = statusCol;
+                        GUILayout.Label(statusTxt, st, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                        GUILayout.Label(name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                        if (!installed)
+                        {
+                            if (GUILayout.Button("裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                                RunInstallSkill(name, uninstall: false);
+                        }
+                        else
+                        {
+                            if (GUILayout.Button("移除", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                                RunInstallSkill(name, uninstall: true);
+                            // drift 時提供強制重裝（覆蓋本地改動）
+                            if (statusTxt == "⚠改動" && GUILayout.Button("重裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                                RunInstallSkill(name, uninstall: false, force: true);
+                        }
+                        GUILayout.FlexibleSpace();
                     }
                 }
             }

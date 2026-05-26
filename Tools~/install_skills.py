@@ -315,13 +315,43 @@ def link_skill(src_dir: Path, dst_dir: Path, log: _Log) -> bool:
         return False
 
 
-def remove_skill(dst_dir: Path, log: _Log) -> bool:
-    """Remove a previously installed skill if it has the .ucl_source marker."""
+def detect_local_drift(dst_dir: Path) -> list[str]:
+    """回傳 dst_dir 內相對 .ucl_source.file_hashes 有 local 改動的檔名清單。
+    區塊職責: toggle-off / uninstall 前偵測使用者手動改過的檔, 讓『破壞看得見』。
+    物理意義: 重算每檔 sha1 vs .ucl_source 記錄的 hash; 不符 = local edit。symlink / 無 marker → 視為無 drift。"""
+    marker = dst_dir / ".ucl_source"
+    if dst_dir.is_symlink() or not marker.is_file():
+        return []
+    try:
+        recorded = (json.loads(marker.read_text(encoding="utf-8")).get("file_hashes", {}) or {})
+    except (json.JSONDecodeError, OSError):
+        return []
+    drifted: list[str] = []
+    for rel, rec_hash in recorded.items():
+        f = dst_dir / rel
+        if f.is_file() and file_sha1(f) != rec_hash:
+            drifted.append(rel)
+    return drifted
+
+
+def remove_skill(dst_dir: Path, log: _Log, force: bool = False) -> bool:
+    """Remove a previously installed skill if it has the .ucl_source marker.
+    force=False 時偵測到 local drift(使用者手動改過) → 警告並跳過(不靜默刪);
+    force=True → 照刪。(basecamp R2 review: toggle-off 破壞要看得見)"""
     if not dst_dir.exists():
         return False
     if not (dst_dir / ".ucl_source").is_file() and not dst_dir.is_symlink():
         log.warn(f"no .ucl_source marker, skipping: {dst_dir}")
         return False
+    if not force:
+        drifted = detect_local_drift(dst_dir)
+        if drifted:
+            log.warn(
+                f"local edit detected in {dst_dir.name} ({', '.join(drifted)}); "
+                f"skipping uninstall to avoid silent data loss "
+                f"(rerun with --force-overwrite to remove anyway, or back up your edits first)"
+            )
+            return False
     log.action("remove", dst_dir)
     if not log.dry:
         if dst_dir.is_symlink():
@@ -474,6 +504,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", default="claude", choices=["claude", "antigravity"], help="Agent target format.")
     parser.add_argument("--include", help="Comma-separated list of skill names to include (others skipped).")
     parser.add_argument("--exclude", help="Comma-separated list of skill names to skip.")
+    parser.add_argument("--include-optional", dest="include_optional", action="store_true",
+                        help="Also install manifest optional=true skills (default-OFF) in a full install.")
     parser.add_argument("--link", action="store_true", help="Use symlink/junction instead of copy (Claude only).")
     parser.add_argument("--uninstall", action="store_true", help="Remove previously installed UCL skills.")
     parser.add_argument("--dry-run", action="store_true", help="Print actions without changing files.")
@@ -504,6 +536,21 @@ def main(argv: list[str] | None = None) -> int:
     exclude = parse_csv(args.exclude)
     selected = filter_skills(discovered, include, exclude)
 
+    # 區塊職責: 預設關閉(default-OFF) — manifest optional=true 的 skill 不在預設安裝集
+    # 物理意義: 淘汰候選 / 低頻 skill 標 optional=true → 預設不裝(非破壞, 留在 Skills~/, 隨時可裝);
+    #          只在『無 --include(全量裝) 且 沒 --include-optional』時排除; 顯式 --include <name> 仍可裝。
+    # 數值影響: 全量安裝集縮小; per-skill 開關(Page)或 --include 可單獨裝回。
+    if not include and not getattr(args, "include_optional", False):
+        try:
+            optional_names = {s["name"] for s in load_manifest().get("skills", []) if s.get("optional")}
+        except Exception:
+            optional_names = set()
+        if optional_names:
+            skipped_optional = [s for s in selected if s in optional_names]
+            selected = [s for s in selected if s not in optional_names]
+            if skipped_optional:
+                log.info(f"Optional (default-OFF) skipped: {skipped_optional}  (use --include <name> or --include-optional to install)")
+
     log.info(f"Skills found:    {discovered}")
     log.info(f"Skills selected: {selected}")
 
@@ -513,15 +560,34 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
 
     if args.uninstall:
+        removed: list[str] = []
         for name in selected:
             if args.target == "antigravity":
                 remove_skill_antigravity(skills_dst_root / f"{name}.md", log)
+                removed.append(name)
             else:
-                remove_skill(skills_dst_root / name, log)
+                if remove_skill(skills_dst_root / name, log, force=args.force_overwrite):
+                    removed.append(name)
+        # 區塊職責: per-skill uninstall 要更新 marker 而非整個刪 (basecamp R2 review)
+        # 物理意義: 只 uninstall 子集(--include 單 skill)時, 從 installed_skills 移除被刪的、保留其餘 +
+        #          重算 aggregate source_hash; 若清空才刪 marker。--include 沒給(全 uninstall) → 刪 marker。
         marker = skills_dst_root / ".ucl_installed"
         if marker.is_file() and not args.dry_run:
-            marker.unlink()
-        log.info("Uninstall complete.")
+            partial = bool(include) or bool(exclude)   # 有 include/exclude = 子集操作
+            try:
+                mdata = json.loads(marker.read_text(encoding="utf-8"))
+                prev = mdata.get("installed_skills", []) or []
+            except (json.JSONDecodeError, OSError):
+                prev, partial = [], False
+            remaining = [s for s in prev if s not in removed]
+            if partial and remaining:
+                mdata["installed_skills"] = remaining
+                mdata["source_hash"] = compute_source_hash(remaining, args.target)
+                marker.write_text(json.dumps(mdata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                log.info(f"Marker updated: {len(remaining)} skill(s) still installed.")
+            else:
+                marker.unlink()
+        log.info(f"Uninstall complete. removed={removed}")
         return 0
 
     total_copied = 0
@@ -554,12 +620,26 @@ def main(argv: list[str] | None = None) -> int:
     # 用於 Editor 端 (UCL_AgentSkillManagerPage) 判斷是否 stale；取代以往的 commit-only 比對。
     marker = skills_dst_root / ".ucl_installed"
     if not args.dry_run:
+        # 區塊職責: per-skill install 要 merge 進 installed_skills 而非覆蓋 (basecamp R2 review)
+        # 物理意義: --include/--exclude 子集安裝時, 取『既有 installed_skills ∪ selected』, 保留沒動到的;
+        #          全量安裝(無 include/exclude) → 直接用 selected。source_hash 對最終集合重算。
+        final_skills = list(selected)
+        if (include or exclude) and marker.is_file():
+            try:
+                prev = json.loads(marker.read_text(encoding="utf-8")).get("installed_skills", []) or []
+            except (json.JSONDecodeError, OSError):
+                prev = []
+            merged = list(prev)
+            for s in selected:
+                if s not in merged:
+                    merged.append(s)
+            final_skills = merged
         marker.write_text(
             json.dumps(
                 {
                     "ucl_core_commit": get_ucl_commit(),
-                    "source_hash": compute_source_hash(selected, args.target),
-                    "installed_skills": selected,
+                    "source_hash": compute_source_hash(final_skills, args.target),
+                    "installed_skills": final_skills,
                     "target": args.target,
                     "mode": "link" if (args.link and args.target != "antigravity") else "copy",
                 },

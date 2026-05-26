@@ -70,7 +70,7 @@
     {
       "name": "ucl-watch-video",
       "summary": "使用瀏覽器子代理抓取與分析 Web 影片（如 YouTube）內容與轉錄稿的技能流程",
-      "optional": false
+      "optional": true
     },
     {
       "name": "ucl-bartender",

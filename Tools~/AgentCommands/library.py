@@ -81,6 +81,14 @@ def _resolve_repo_root() -> Path:
 _REPO_ROOT = _resolve_repo_root()
 LIB_ROOT = _REPO_ROOT / "AgentCommands" / "BookNotes"
 
+# 區塊職責：多人同讀的「分支筆記」(Git Branch 概念, Tim 2026-05-26 拍板最小改動方案)
+# 物理意義：初始讀者 (book.json.reader_persona, 可能也是捐贈者) 的筆記 = main, 結構不動。
+#          其他讀者去讀 → 在 BookNotes/<slug>/branches/<reader>/ 開分支筆記 (獨立 book.json + characters/ + chapters/ + arcs/),
+#          完全不影響初始讀者的 main; 但 main 讀者可參考 (resume 會列出分支)。
+# 數值影響：_ACTIVE_READER 非空時, _book_dir() 自動把所有路徑 (book.json/characters/chapters/arcs) 導向該分支子目錄。
+#          glossary(名詞, 客觀) / reviews(已 per-reviewer) 不分支, 維持 main 共享。
+_ACTIVE_READER = None   # None = main(初始讀者); 非空字串 = branch reader codename
+
 
 # ===========================================================
 # 小工具
@@ -153,11 +161,91 @@ def _split_list(s):
 
 
 def _book_dir(book: str) -> Path:
-    return LIB_ROOT / book
+    # 唯一路由點：_ACTIVE_READER 非空 → 導向 branches/<reader>/ 分支子目錄；否則走 main
+    # 所有下游 path helper (_book_json / _char_dir / chapters / _arc_dir) 都從本函式衍生, 故路由集中於此一處
+    base = LIB_ROOT / book
+    if _ACTIVE_READER:
+        return base / "branches" / _ACTIVE_READER
+    return base
 
 
 def _book_json(book: str) -> Path:
     return _book_dir(book) / "book.json"
+
+
+def _main_book_dir(book: str) -> Path:
+    # 永遠指向 main(初始讀者), 不受 _ACTIVE_READER 影響 — 用來讀初始讀者的元資料/進度當分支種子或參考
+    return LIB_ROOT / book
+
+
+def _main_book_json(book: str) -> Path:
+    return _main_book_dir(book) / "book.json"
+
+
+def _initial_reader(book: str) -> str:
+    # 初始讀者 = main book.json 的 reader_persona
+    bj = _main_book_json(book)
+    if bj.exists():
+        return _read_json(bj).get("reader_persona", "") or ""
+    return ""
+
+
+def _list_branches(book: str):
+    # 列出某書現有的分支讀者 (branches/ 下每個子目錄)
+    bdir = _main_book_dir(book) / "branches"
+    if not bdir.exists():
+        return []
+    return sorted(d.name for d in bdir.iterdir() if d.is_dir() and (d / "book.json").exists())
+
+
+def _ensure_branch(book: str, reader: str, continue_from=None) -> None:
+    # 區塊職責：確保 branches/<reader>/book.json 存在 (首次啟用分支時自動 init)
+    # 物理意義：分支 book.json 從 main 複製基本元資料 (title/author/原文名) + 自己的 reader_persona + 獨立 progress。
+    #          continue-from 指定時, 從該來源讀者(或 main)的當前章當「起點」(只複製數字, 完全不寫回來源 → 不影響原讀者書籤)。
+    bdir = _main_book_dir(book) / "branches" / reader
+    bj = bdir / "book.json"
+    if bj.exists():
+        return
+    main_data = _read_json(_main_book_json(book)) if _main_book_json(book).exists() else {}
+    start_ch = 0
+    seed_note = ""
+    if continue_from:
+        # 來源可為 main 初始讀者 或 另一分支讀者
+        if continue_from == _initial_reader(book):
+            src_bj = _main_book_json(book)
+        else:
+            src_bj = _main_book_dir(book) / "branches" / continue_from / "book.json"
+        if src_bj.exists():
+            start_ch = _read_json(src_bj).get("progress", {}).get("current_chapter", 0) or 0
+            seed_note = f"（branch 起點：接續 {continue_from} 讀到的第 {start_ch} 章，之後獨立推進，不影響 {continue_from}）"
+    data = {
+        "id": f"{main_data.get('id', book)}::{reader}",
+        "title": main_data.get("title", book),
+        "title_original": main_data.get("title_original", ""),
+        "author": main_data.get("author", ""),
+        "reader_persona": reader,
+        "branch_of": book,                                   # 標記：這是分支筆記
+        "branched_from": continue_from or "(獨立起讀)",      # 從誰的進度接續 (或獨立從頭)
+        "status": "reading",
+        "progress": {"current_chapter": start_ch, "last_read": _today(), "bookmark_note": seed_note},
+        "characters": [],
+    }
+    bdir.mkdir(parents=True, exist_ok=True)
+    _write_json(bj, data)
+    print(f"🌿 已開分支筆記: {book}/branches/{reader}/"
+          + (f"（接續 {continue_from} 第 {start_ch} 章）" if continue_from else "（獨立從頭）"))
+
+
+def _activate_branch(book: str, reader, continue_from=None):
+    # 區塊職責：依 --reader 設定 module 級 active branch (集中在 main() 呼叫一次)
+    # 物理意義：reader 為空 或 == 初始讀者 → main (不分支, 向後相容)；否則 → branch + 確保已 init
+    global _ACTIVE_READER
+    if not reader or reader == _initial_reader(book):
+        _ACTIVE_READER = None
+        return None
+    _ACTIVE_READER = reader
+    _ensure_branch(book, reader, continue_from)
+    return reader
 
 
 def _require_book(book: str):
@@ -413,6 +501,29 @@ def cmd_bookmark(args):
     return 0
 
 
+def cmd_branches(args):
+    # 區塊職責: 列出某書的閱讀分支 — main(初始讀者) + 各讀者分支筆記
+    # 物理意義: 多人同讀時一眼看誰在讀、讀到哪、接續自誰; 初始讀者用來參考其他人的進度/看法
+    book = args.book
+    if not _main_book_json(book).exists():
+        print(f"❌ 找不到書: {book}", file=sys.stderr)
+        return 1
+    main = _read_json(_main_book_json(book))
+    init = _initial_reader(book)
+    mpr = main.get("progress", {})
+    print(f"📖《{main.get('title', book)}》閱讀分支:")
+    print(f"   🌳 main（初始讀者）: {init or '(未設)'} — 第 {mpr.get('current_chapter', 0)} 章")
+    brs = _list_branches(book)
+    if not brs:
+        print("   （尚無其他讀者分支 — 別人用 resume/bookmark --reader <X> 去讀就會自動開分支）")
+        return 0
+    for r in brs:
+        bd = _read_json(_main_book_dir(book) / "branches" / r / "book.json")
+        pr = bd.get("progress", {})
+        print(f"   🌿 {r} — 第 {pr.get('current_chapter', 0)} 章（接續自 {bd.get('branched_from', '?')}，最後 {pr.get('last_read', '?')}）")
+    return 0
+
+
 def cmd_resume(args):
     # 區塊職責: 續讀前的 catch-up — 一眼看完「我讀到哪、該記得誰、還有什麼沒解開」
     # 物理意義: 之後要繼續讀同一本書時, 先跑這個喚回 context, 不必重讀整本
@@ -420,6 +531,8 @@ def cmd_resume(args):
     book = args.book
     bk = _require_book(book)
     pr = bk.get("progress", {})
+    if _ACTIVE_READER:
+        print(f"🌿 你在【{_ACTIVE_READER} 的分支筆記】(branched_from: {bk.get('branched_from', '?')}) — 不影響初始讀者 {_initial_reader(book)}")
     print(f"📖 續讀《{bk['title']}》 — 讀到第 {pr.get('current_chapter')} 章（最後閱讀 {pr.get('last_read')}）")
     _don = _books_root() / book / "_donation.json"
     if _don.exists():
@@ -471,6 +584,18 @@ def cmd_resume(args):
 
     nxt = int(pr.get("current_chapter", 0)) + 1
     print(f"\n→ 下一步: 讀第 {nxt} 章")
+
+    # 區塊：main 視角時列出其他讀者的分支筆記 (初始讀者可參考)；分支視角時指回 main
+    if not _ACTIVE_READER:
+        brs = _list_branches(book)
+        if brs:
+            print(f"\n🌿 其他讀者的分支筆記（{len(brs)}，可參考 resume --reader <X>）:")
+            for r in brs:
+                _bd = _read_json(_main_book_dir(book) / "branches" / r / "book.json")
+                _bp = _bd.get("progress", {})
+                print(f"   - {r}: 第 {_bp.get('current_chapter', 0)} 章（接續自 {_bd.get('branched_from', '?')}）")
+    else:
+        print(f"   (參考初始讀者 main: resume --book {book})")
     return 0
 
 
@@ -485,7 +610,9 @@ _TERM_CAT_LABEL = {
 
 
 def _glossary_path(book: str) -> Path:
-    return _book_dir(book) / "glossary.json"
+    # 名詞解釋(地名/勢力/設定詞)是客觀 book-level 事實, 不隨讀者分支 — 一律走 main 共享
+    # (對齊 reviews per-reviewer 但 glossary 客觀共享的設計原則; 分支讀者 resume 仍看得到 main glossary)
+    return _main_book_dir(book) / "glossary.json"
 
 
 def _read_glossary(book: str):
@@ -1071,6 +1198,16 @@ def cmd_reviews(args):
 # argparse
 # ===========================================================
 
+def _add_reader_arg(parser, with_continue=False):
+    # 區塊職責：給「讀者耦合」的子命令統一加 --reader (+ 選配 --continue-from)
+    # 物理意義：--reader 非初始讀者 → 自動走 branches/<reader>/ 分支筆記, 不影響初始讀者
+    parser.add_argument("--reader", default=None,
+                        help="讀者 persona; 非初始讀者 → 自動走 branches/<reader>/ 分支筆記 (不影響初始讀者)")
+    if with_continue:
+        parser.add_argument("--continue-from", dest="continue_from", default=None,
+                            help="分支起點接續自哪位讀者 (複製其當前章當起點, 不寫回來源 → 不影響原讀者書籤)")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="library.py", description="Reading Library CLI — 閱讀心得圖書館")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1093,6 +1230,7 @@ def build_parser():
     a.add_argument("--views", help="本章對人物的新認識, 分隔同上")
     a.add_argument("--new-characters", dest="new_characters")
     a.add_argument("--foreshadow", help="伏筆/待解, 分隔同上")
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_log_chapter)
 
     a = sub.add_parser("add-character", help="新增人物（v1 初印象）")
@@ -1103,6 +1241,7 @@ def build_parser():
     a.add_argument("--headline", required=True, help="一句話人物標題")
     a.add_argument("--facts", help="客觀已知事實, 分隔同上")
     a.add_argument("--view", help="第一人稱看法")
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_add_character)
 
     a = sub.add_parser("revise-view", help="改觀（fork 新版本, 不覆寫舊版）")
@@ -1114,16 +1253,19 @@ def build_parser():
     a.add_argument("--facts")
     a.add_argument("--view")
     a.add_argument("--diff", help="與前一版的差異")
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_revise_view)
 
     a = sub.add_parser("show-book", help="顯示書本概覽")
     a.add_argument("--book", required=True)
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_show_book)
 
     a = sub.add_parser("show-character", help="顯示人物看法演變 + 全文")
     a.add_argument("--book", required=True)
     a.add_argument("--character", required=True)
     a.add_argument("--version", help="all / 版本號 / 預設只印目前版本")
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_show_character)
 
     a = sub.add_parser("list", help="列出所有書")
@@ -1133,11 +1275,17 @@ def build_parser():
     a.add_argument("--book", required=True)
     a.add_argument("--chapter", help="讀到第幾章（缺則不動進度）")
     a.add_argument("--note", help="續讀前該記得的事 / 本小姐自選要不要寫的心得")
+    _add_reader_arg(a, with_continue=True)
     a.set_defaults(func=cmd_bookmark)
 
     a = sub.add_parser("resume", help="續讀前 catch-up:進度 + 人物現況 + 未解伏筆")
     a.add_argument("--book", required=True)
+    _add_reader_arg(a, with_continue=True)
     a.set_defaults(func=cmd_resume)
+
+    a = sub.add_parser("branches", help="列出某書的閱讀分支 (main 初始讀者 + 各讀者分支筆記)")
+    a.add_argument("--book", required=True)
+    a.set_defaults(func=cmd_branches)
 
     a = sub.add_parser("recommend", help="加入推薦書單(附非劇透簡介)")
     a.add_argument("--title", required=True)
@@ -1174,11 +1322,13 @@ def build_parser():
     a.add_argument("--title", help="這個 arc 的標題")
     a.add_argument("--summary", help="階段大綱(見林)")
     a.add_argument("--threads", help="貫穿線索/伏筆狀態, 用 ; | 或換行分隔")
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_arc)
 
     a = sub.add_parser("arcs", help="顯示階段大綱列表 (--full 印全文)")
     a.add_argument("--book", required=True)
     a.add_argument("--full", action="store_true")
+    _add_reader_arg(a)
     a.set_defaults(func=cmd_arcs)
 
     a = sub.add_parser("donate", help="捐贈一本 Books/ 的書(付 token 走 Cmd_Treasury, 全員可讀, 標註捐贈者)")
@@ -1249,6 +1399,9 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
+    # 集中掛載分支路由：凡帶 --reader + --book 的子命令, 啟用前先決定 main / branch
+    if getattr(args, "book", None) and hasattr(args, "reader"):
+        _activate_branch(args.book, args.reader, getattr(args, "continue_from", None))
     return args.func(args)
 
 

@@ -309,19 +309,38 @@ def cmd_add_book(args):
         return 1
     (_book_dir(book) / "chapters").mkdir(parents=True, exist_ok=True)
     (_book_dir(book) / "characters").mkdir(parents=True, exist_ok=True)
+    # 區塊職責：origin 區分原創 (authored) vs 調入別人的書 (imported)
+    # 物理意義：authored = agent 自由時間「寫書」自產 (Plan_FreeTime_BookWriting);
+    #          原創書的「讀者」語意上就是作者本人 → reader_persona 預設帶 author_persona;
+    #          publish_status: authored 預設 draft (草稿僅作者可見, publish 後才全員可讀);
+    #          imported / 無 origin → 沿用現況 (向後相容, 不帶這些欄位的舊書照常)
+    origin = getattr(args, "origin", None)
+    author_persona = getattr(args, "author_persona", None)
+    reader = args.reader_persona or author_persona or "basecamp"
     data = {
         "id": book,
         "title": args.title,
         "title_original": args.title_original or "",
         "author": args.author or "",
-        "reader_persona": args.reader_persona or "basecamp",
+        "reader_persona": reader,
         "status": "reading",
         "progress": {"current_chapter": 0, "last_read": _today()},
         "characters": [],
     }
+    if origin == "authored":
+        data["origin"] = "authored"
+        data["author_persona"] = author_persona or reader
+        data["publish_status"] = "draft"
+        data["status"] = "writing"   # 原創書狀態語意: 撰寫中
+    elif origin == "imported":
+        data["origin"] = "imported"
     _write_json(_book_json(book), data)
-    print(f"✅ 建立書: {book}  《{args.title}》 / {args.author or '?'}")
+    kind = "✍ 原創書(草稿)" if origin == "authored" else "📖 書"
+    print(f"✅ 建立{kind}: {book}  《{args.title}》 / {args.author or '?'}"
+          + (f"  作者: {data.get('author_persona')}" if origin == "authored" else ""))
     print(f"   {_book_dir(book)}")
+    if origin == "authored":
+        print("   → 用 UCL_BookEditPage 寫章節; 完稿後跑 publish --book 發布入庫")
     return 0
 
 
@@ -419,6 +438,9 @@ def cmd_show_book(args):
     bk = _require_book(args.book)
     print(f"📖 《{bk['title']}》 {bk.get('title_original', '')}")
     print(f"   作者: {bk.get('author', '?')}   讀者: {bk.get('reader_persona')}   狀態: {bk.get('status')}")
+    # 原創書標記 (寫書 Author-as-Donor)
+    if bk.get("origin") == "authored":
+        print(f"   ✍ 原創著作 — 作者 persona: {bk.get('author_persona', '?')}   發布狀態: {bk.get('publish_status', 'draft')}")
     pr = bk.get("progress", {})
     print(f"   進度: 第 {pr.get('current_chapter')} 章   最後閱讀: {pr.get('last_read')}")
     chdir = _book_dir(args.book) / "chapters"
@@ -926,19 +948,88 @@ def cmd_donate(args):
     return 0
 
 
+def cmd_publish(args):
+    # 區塊職責: 發布原創書 (寫書 Author-as-Donor, Plan_FreeTime_BookWriting MVP)
+    # 物理意義: 作者寫完(或連載一段)→ publish 把 draft→published, 登記進共享圖書館, 作者署名=捐贈者。
+    #          跟 donate 的差異: source=authored, **不扣 token**(免費, 寫作是勞動產出非消費), tokens=0。
+    #          連載友善: 可重複 publish (更新 published_at / 章節數); 已 published 不擋。
+    book = args.book
+    bj = _main_book_json(book)
+    if not bj.exists():
+        print(f"❌ 找不到書: {book}（請先 add-book --origin authored）", file=sys.stderr)
+        return 1
+    data = _read_json(bj)
+    if data.get("origin") != "authored":
+        print(f"❌ 《{book}》不是原創書 (origin != authored) — publish 只發布原創書; 調入別人的書用 donate", file=sys.stderr)
+        return 2
+    bdir = _books_root() / book
+    if not bdir.exists():
+        print(f"❌ Books/{book}/ 不存在 — 先用 UCL_BookEditPage 寫至少一章全文再 publish", file=sys.stderr)
+        return 2
+    chapter_cnt = len(list(bdir.glob("*.txt")))
+    author = args.donor_persona or data.get("author_persona") or data.get("reader_persona") or "?"
+    donor_bank = args.donor
+
+    # 設 publish_status=published (連載: 重複 publish 也更新)
+    was_published = data.get("publish_status") == "published"
+    data["publish_status"] = "published"
+    data["status"] = "reading"   # 已發布 = 可讀狀態
+    _write_json(bj, data)
+
+    # 寫 _donation.json (source=authored, tokens=0, 不走 Treasury)
+    entry = {
+        "book": book, "title": data.get("title", book), "donor": donor_bank,
+        "donor_persona": author, "donor_agent": args.donor_agent or "",
+        "tokens": 0, "base_price": 0, "source": "authored",
+        "chapters": chapter_cnt,
+        "donated_at": _today(), "published_at": _today(),
+        "note": args.note or f"{author} 原創著作 (寫書自由時間活動)",
+    }
+    _write_json(bdir / "_donation.json", entry)
+    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
+    idx["donations"] = [d for d in idx.get("donations", []) if d.get("book") != book]
+    idx["donations"].append(entry)
+    _write_json(_donations_index(), idx)
+
+    verb = "更新連載" if was_published else "首度發表"
+    print(f"✅ {verb}原創書:《{data.get('title')}》 by 📖 {author} ({chapter_cnt} 章, 免費入庫, 全員可讀)")
+
+    if not getattr(args, "no_notify", False):
+        notice = (f"✍📖 新書{'連載更新' if was_published else '發表'}!\n\n"
+                  f"《{data.get('title')}》由 **{author}** 原創著作（{chapter_cnt} 章，免費入庫），全員可讀。\n"
+                  f"想讀的同事: resume --book {book} (可 --reader 開自己的分支筆記)，或直接看 Books/{book}/ 全文。")
+        sent = _run_tavern_post(donor_bank, author, notice, tag="book-published")
+        print(f"📣 酒館新書發表通知:{'已發送' if sent else '發送失敗(發布仍成功)'}")
+    return 0
+
+
 def cmd_donations(args):
     idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
     ds = idx.get("donations", [])
     if not ds:
         print("（圖書館尚無捐贈書）")
         return 0
-    print(f"📚 捐贈圖書館（共 {len(ds)} 本）\n")
-    for d in ds:
-        who = d.get("donor_persona") or d.get("donor")
-        print(f"- 《{d.get('title', d['book'])}》 — 📖 捐贈者: {who} "
-              f"({d.get('tokens')} token, {d.get('donated_at')})")
-        if d.get("note"):
-            print(f"    note: {d['note']}")
+    # 區塊：分組顯示 — 原創 (authored) vs 捐贈調入 (imported/donated), 讓讀者一眼分清誰寫書 vs 誰付錢
+    authored = [d for d in ds if d.get("source") == "authored"]
+    donated = [d for d in ds if d.get("source") != "authored"]
+    print(f"📚 共享圖書館（共 {len(ds)} 本 — ✍ 原創 {len(authored)} / 📖 捐贈調入 {len(donated)}）\n")
+    if authored:
+        print("✍ 原創著作（作者署名, 免費入庫）:")
+        for d in authored:
+            who = d.get("donor_persona") or d.get("donor")
+            print(f"- 《{d.get('title', d['book'])}》 — 作者: {who} "
+                  f"({d.get('chapters', '?')} 章, {d.get('published_at') or d.get('donated_at')})")
+            if d.get("note"):
+                print(f"    note: {d['note']}")
+        print()
+    if donated:
+        print("📖 捐贈調入（出資者付 token）:")
+        for d in donated:
+            who = d.get("donor_persona") or d.get("donor")
+            print(f"- 《{d.get('title', d['book'])}》 — 捐贈者: {who} "
+                  f"({d.get('tokens')} token, {d.get('donated_at')})")
+            if d.get("note"):
+                print(f"    note: {d['note']}")
     return 0
 
 
@@ -1212,12 +1303,16 @@ def build_parser():
     p = argparse.ArgumentParser(prog="library.py", description="Reading Library CLI — 閱讀心得圖書館")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    a = sub.add_parser("add-book", help="建立新書")
+    a = sub.add_parser("add-book", help="建立新書 (--origin authored = 原創寫書)")
     a.add_argument("--id", help="書本 slug（缺則由 title 生成）")
     a.add_argument("--title", required=True)
     a.add_argument("--title-original", dest="title_original")
     a.add_argument("--author")
     a.add_argument("--reader-persona", dest="reader_persona")
+    a.add_argument("--origin", choices=["authored", "imported"],
+                   help="authored=原創寫書(自由時間, 作者=捐贈者, 預設草稿) / imported=調入別人的書; 省略=沿用現況")
+    a.add_argument("--author-persona", dest="author_persona",
+                   help="原創書作者 persona (origin=authored 時; 預設=reader_persona)")
     a.set_defaults(func=cmd_add_book)
 
     a = sub.add_parser("log-chapter", help="記錄一章")
@@ -1341,6 +1436,15 @@ def build_parser():
     a.add_argument("--no-notify", dest="no_notify", action="store_true",
                    help="不發酒館新書入庫通知(預設會自動廣播)")
     a.set_defaults(func=cmd_donate)
+
+    a = sub.add_parser("publish", help="發布原創書 (寫書 Author-as-Donor; draft→published, 免費入庫, 作者署名)")
+    a.add_argument("--book", required=True, help="原創書 slug (origin=authored)")
+    a.add_argument("--donor", required=True, help="作者 bank id (署名用, 不扣 token)")
+    a.add_argument("--donor-persona", dest="donor_persona", default=None, help="作者 persona (預設讀 book.json author_persona)")
+    a.add_argument("--donor-agent", dest="donor_agent", default=None)
+    a.add_argument("--note", default=None)
+    a.add_argument("--no-notify", dest="no_notify", action="store_true", help="不發酒館新書發表通知")
+    a.set_defaults(func=cmd_publish)
 
     a = sub.add_parser("donations", help="列出捐贈圖書館 (書 + 捐贈者)")
     a.set_defaults(func=cmd_donations)

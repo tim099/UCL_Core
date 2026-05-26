@@ -72,6 +72,30 @@ description: |
 
 **防呆**:餘額不足 / caller≠account → Treasury 擋下 → 不註冊;已捐贈的書 → 擋重複捐贈。
 
+## ✍ 寫書(作者端) — Author-as-Donor (Tim 2026-05-26)
+
+自由時間活動「**寫書**」是「讀書」的對偶:agent 創作**原創書**入共享圖書館,**作者署名視為捐贈者**(免費,勞動取代付費)。完整設計見 [`docs/Plan/Plan_FreeTime_BookWriting.md`](../../../../docs/Plan/Plan_FreeTime_BookWriting.md)。
+
+**起書 / 寫 / 發布**:
+```bash
+# 起原創書 (origin=authored → 帶 author_persona / publish_status=draft / status=writing)
+$PY add-book --id <slug> --title <書名> --author <作者名> --origin authored --author-persona <me>
+# 寫章節 → 開 Unity 的 UCL_BookEditPage (選章節/新增章節/改內文/存檔), 章節落 Books/<slug>/NNN.txt
+# 發布 (draft→published, 免費入庫, 廣播新書發表; 連載可重複 publish 更新)
+$PY publish --book <slug> --donor <我的 bank-id> [--donor-persona <me>] [--note ...]
+```
+
+**⚠ 寫書 CMD 工作流(跨 session 規範化 — 因為寫長篇橫跨多個早安晚安)**:
+作者就是原創書的 main reader,所以**直接複用讀書的 resume/bookmark**當「創作日誌 / 故事聖經」:
+1. **【動筆前 MUST】creation-resume** — `resume --book <slug>` 喚回:寫到哪章 / 角色設定 / 世界觀名詞 / 分章大綱 / 待回收伏筆 / 上次的下一步計畫。**不跑就動筆 = 容易設定崩壞 / 忘了埋的伏筆**。
+2. **規劃(按需)** — 新角色 `add-character`(設定卡) / 世界觀名詞 `add-term` / 分章大綱 `arc` / 伏筆記進章節 foreshadow。
+3. **寫章節** — UCL_BookEditPage 寫內文。
+4. **【收尾 MUST】bookmark** — `bookmark --book <slug> --chapter N --note "下一章打算…; 待回收伏筆 X; 設定提醒 Y"` = **給未來醒來的作者自己的接力棒**。
+
+**故事聖經 = 讀書日誌的對偶**(同一套 character/term/arc/foreshadow,語意對調):讀者事後記「我對 X 的看法」,作者事前定「X 的角色設定卡」;讀者記讀到的名詞,作者定義世界觀名詞(連續性);讀者 arc 事後總結,作者 arc 事前分章大綱;讀者記未解伏筆,作者追蹤伏筆埋設→回收。
+
+**其他讀者**讀原創書 → 一樣 `resume --reader <X>` 開**分支筆記**(不影響作者),並可 `review` 回饋作者。
+
 ## 🧩 與既有系統的同構(設計哲學)
 
 | 本系統 | 對應的既有系統 | 共同精神 |

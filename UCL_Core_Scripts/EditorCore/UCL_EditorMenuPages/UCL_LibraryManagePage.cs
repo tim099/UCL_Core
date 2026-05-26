@@ -87,6 +87,23 @@ namespace UCL.Core.EditorLib.Page
             public string Synopsis = "";
         }
 
+        // 區塊職責：全文書庫 entry — 對齊 Books/<slug>/（NNN.txt 章節檔 + _donation.json）
+        // 物理意義：跟 BookNotes（筆記）區分 — 這是「實際全文」。捐贈資訊讀各書 _donation.json
+        public class BookFullEntry
+        {
+            public string Slug = "";
+            public string Title = "";
+            public int ChapterCount = 0;     // *.txt 檔數
+            public bool IsDonated = false;
+            public string Donor = "";
+            public string DonorPersona = "";
+            public int Tokens = 0;
+            public int BasePrice = 0;
+            public string DonatedAt = "";
+            public string Note = "";
+            public bool HasNotes = false;    // 是否有對應 BookNotes/<slug>/
+        }
+
         // 區塊職責：快取資料
         // 物理意義：books 列 BookNotes 全部書，donations 列捐贈索引，recommends 列推薦書單
         List<BookEntry> m_Books = new List<BookEntry>();
@@ -120,6 +137,13 @@ namespace UCL.Core.EditorLib.Page
         string m_SelectedBookId = "";
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
         List<string> m_BookDisplayOptions = new List<string>();
+
+        // 區塊職責：全文書庫（Books/）下拉選單 state
+        // 物理意義：m_FullBooks = Books/*/ 掃到的全文書；m_SelectedFullBook = 當前選中 slug；
+        //          m_FullBookDisplayOptions = 下拉顯示「title (slug)」
+        List<BookFullEntry> m_FullBooks = new List<BookFullEntry>();
+        string m_SelectedFullBook = "";
+        List<string> m_FullBookDisplayOptions = new List<string>();
 
         // 區塊職責：scroll 位置 + 推薦展開開關
         //Vector2 m_DetailScroll = Vector2.zero;
@@ -380,6 +404,59 @@ namespace UCL.Core.EditorLib.Page
             {
                 Debug.LogWarning($"[LibraryManage] recommendations load failed: {e.Message}");
             }
+
+            // 區塊：掃全文書庫 Books/*/（跟 BookNotes 區分 — 這是實際全文）
+            // 物理意義：每個子目錄一本全文書，內含 NNN.txt 章節 + _donation.json（捐贈資訊）
+            m_FullBooks.Clear();
+            if (Directory.Exists(m_BooksDir))
+            {
+                foreach (var dir in Directory.GetDirectories(m_BooksDir))
+                {
+                    string slug = Path.GetFileName(dir);
+                    var fe = new BookFullEntry
+                    {
+                        Slug = slug,
+                        ChapterCount = Directory.GetFiles(dir, "*.txt").Length,
+                        HasNotes = Directory.Exists(Path.Combine(m_BookNotesDir, slug)),
+                    };
+                    // 讀 per-book _donation.json 取標題 + 捐贈資訊
+                    try
+                    {
+                        string dpath = Path.Combine(dir, "_donation.json");
+                        if (File.Exists(dpath))
+                        {
+                            var dj = JsonData.ParseJson(File.ReadAllText(dpath));
+                            if (dj != null && dj.IsObject && dj.Dic != null)
+                            {
+                                fe.Title = dj.GetString("title", "");
+                                fe.Donor = dj.GetString("donor", "");
+                                fe.DonorPersona = dj.GetString("donor_persona", "");
+                                fe.Tokens = dj.GetInt("tokens", 0);
+                                fe.BasePrice = dj.GetInt("base_price", 0);
+                                fe.DonatedAt = dj.GetString("donated_at", "");
+                                fe.Note = dj.GetString("note", "");
+                                fe.IsDonated = !string.IsNullOrEmpty(fe.Donor);
+                            }
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[LibraryManage] Books/{slug}/_donation.json load failed: {e.Message}");
+                    }
+                    if (string.IsNullOrEmpty(fe.Title)) fe.Title = slug;
+                    m_FullBooks.Add(fe);
+                }
+                m_FullBooks.Sort((a, b) => string.Compare(a.Slug, b.Slug, StringComparison.Ordinal));
+
+                m_FullBookDisplayOptions.Clear();
+                foreach (var fb in m_FullBooks)
+                    m_FullBookDisplayOptions.Add($"{fb.Title} ({fb.Slug})");
+                if ((string.IsNullOrEmpty(m_SelectedFullBook) || m_FullBooks.FindIndex(x => x.Slug == m_SelectedFullBook) < 0)
+                    && m_FullBooks.Count > 0)
+                {
+                    m_SelectedFullBook = m_FullBooks[0].Slug;
+                }
+            }
         }
 
         // 區塊職責：安全計算某 key 對應陣列的元素數量
@@ -397,6 +474,8 @@ namespace UCL.Core.EditorLib.Page
         protected override void ContentOnGUI()
         {
             DrawBookNotesSection();
+            GUILayout.Space(12);
+            DrawBooksFullSection();
             GUILayout.Space(12);
             DrawDonations();
             GUILayout.Space(12);
@@ -556,6 +635,84 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Label(string.Format(UCL_CodeLocalize.Get(labelKey), lines.Count), UCL_GUIStyle.LabelStyle);
             foreach (var line in lines)
                 GUILayout.Label($" • {line}", UCL_GUIStyle.LabelStyle);
+        }
+
+        // 區塊職責：全文書庫（Books/）區塊 — 下拉選一本全文書 + 顯示捐贈者/資訊 + 跳轉編輯 Page 按鈕
+        // 物理意義：跟 BookNotes（筆記）區分，本區塊操作的是 AgentCommands/Books/ 的實際全文。
+        //          「✏ 編輯書籍」按鈕 new 一個 UCL_BookEditPage 設好 slug 後 Push（跳轉到章節編輯 prototype）。
+        void DrawBooksFullSection()
+        {
+            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.HeaderFmt"), m_FullBooks.Count), UCL_GUIStyle.LabelStyle);
+
+            if (m_FullBooks.Count == 0)
+            {
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.EmptyFmt"), m_BooksDir), UCL_GUIStyle.LabelStyle);
+                }
+                return;
+            }
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // 下拉選單列 + 編輯按鈕
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Books.SelectLabel"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    int curIdx = m_FullBooks.FindIndex(x => x.Slug == m_SelectedFullBook);
+                    if (curIdx < 0) curIdx = 0;
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_FullBookDisplayOptions, m_Dic.GetSubDic("FullBookPicker"), "FullBookPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(320)));
+                    if (newIdx >= 0 && newIdx < m_FullBooks.Count) m_SelectedFullBook = m_FullBooks[newIdx].Slug;
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.EditBook"), UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))
+                        OpenBookEditPage(m_SelectedFullBook);
+                }
+
+                var fb = m_FullBooks.Find(x => x.Slug == m_SelectedFullBook);
+                if (fb == null) return;
+
+                // 操作按鈕
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.FullTextFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        OpenInExplorer(Path.Combine(m_BooksDir, fb.Slug));
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.EditBook"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        OpenBookEditPage(fb.Slug);
+                    GUILayout.FlexibleSpace();
+                }
+
+                // 書籍資訊
+                GUILayout.Label($"<b><size=14>{fb.Title}</size></b>  <size=10>({fb.Slug})</size>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.ChapterFmt"), fb.ChapterCount), UCL_GUIStyle.LabelStyle);
+                // 捐贈者資訊
+                if (fb.IsDonated)
+                {
+                    string personaSuffix = string.IsNullOrEmpty(fb.DonorPersona) ? "" : $" / {fb.DonorPersona}";
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Detail.DonatedFmt"), $"{fb.Donor}{personaSuffix}", fb.Tokens, fb.DonatedAt), UCL_GUIStyle.LabelStyle);
+                    if (!string.IsNullOrEmpty(fb.Note))
+                        GUILayout.Label($"<size=10><color=#dddddd>{fb.Note}</color></size>", UCL_GUIStyle.LabelStyle);
+                }
+                else
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Books.NotDonated"), UCL_GUIStyle.LabelStyle);
+                }
+                // 對應筆記提示
+                GUILayout.Label(fb.HasNotes
+                    ? UCL_CodeLocalize.Get("LibraryManage.Books.HasNotes")
+                    : UCL_CodeLocalize.Get("LibraryManage.Books.NoNotes"), UCL_GUIStyle.LabelStyle);
+
+
+            }
+        }
+
+        // 區塊職責：跳轉到書籍編輯 Page（prototype）
+        // 物理意義：new UCL_BookEditPage → SetBook(slug, BooksDir) → Push（Push 內部呼叫 Init load 章節）
+        void OpenBookEditPage(string slug)
+        {
+            if (string.IsNullOrEmpty(slug)) return;
+            var page = new UCL_BookEditPage();
+            page.SetBook(slug, m_BooksDir);
+            UCL_GUIPageController.CurrentRenderIns.Push(page);
         }
 
         // 區塊職責：捐贈者清單 — 讀 _donations.json 顯示誰認領了哪本書、花多少 token

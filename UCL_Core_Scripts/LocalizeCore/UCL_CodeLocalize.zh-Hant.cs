@@ -405,6 +405,19 @@ namespace UCL.Core.LocalizeLib
                 "BookEdit.Btn.Save" => "💾 存檔",
                 "BookEdit.Btn.Revert" => "↩ 還原",
 
+                // ==== UCL_AssetReferencePage ====
+                "AssetRef.Btn.Entry" => "🔗 引用查詢",
+                "AssetRef.TitleFmt" => "引用查詢: {0}/{1}",
+                "AssetRef.Btn.Back" => "← 返回",
+                "AssetRef.Btn.Rescan" => "🔄 重新掃描",
+                "AssetRef.Btn.Open" => "📂 開啟",
+                "AssetRef.NoTarget" => "（未指定查詢目標）",
+                "AssetRef.NotScanned" => "尚未掃描…",
+                "AssetRef.TargetFmt" => "目標: {0} / {1}",
+                "AssetRef.ReverseHeaderFmt" => "被引用（誰引用我）: {0} 筆",
+                "AssetRef.ForwardHeaderFmt" => "引用到（我引用誰）: {0} 筆",
+                "AssetRef.Empty" => "（無）",
+
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona 信件檢視器",
                 "PersonaInspector.Btn.Refresh" => "🔄 重新整理",

@@ -368,6 +368,19 @@ namespace UCL.Core.LocalizeLib
                 "BookEdit.Btn.Save" => "💾 保存",
                 "BookEdit.Btn.Revert" => "↩ 元に戻す",
 
+                // ==== UCL_AssetReferencePage ====
+                "AssetRef.Btn.Entry" => "🔗 参照検索",
+                "AssetRef.TitleFmt" => "参照検索: {0}/{1}",
+                "AssetRef.Btn.Back" => "← 戻る",
+                "AssetRef.Btn.Rescan" => "🔄 再スキャン",
+                "AssetRef.Btn.Open" => "📂 開く",
+                "AssetRef.NoTarget" => "（対象が指定されていません）",
+                "AssetRef.NotScanned" => "まだスキャンしていません…",
+                "AssetRef.TargetFmt" => "対象: {0} / {1}",
+                "AssetRef.ReverseHeaderFmt" => "被参照（誰が私を参照）: {0} 件",
+                "AssetRef.ForwardHeaderFmt" => "参照先（私が参照）: {0} 件",
+                "AssetRef.Empty" => "（なし）",
+
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona 手紙インスペクタ",
                 "PersonaInspector.Btn.Refresh" => "🔄 更新",

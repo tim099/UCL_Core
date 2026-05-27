@@ -368,6 +368,19 @@ namespace UCL.Core.LocalizeLib
                 "BookEdit.Btn.Save" => "💾 存档",
                 "BookEdit.Btn.Revert" => "↩ 还原",
 
+                // ==== UCL_AssetReferencePage ====
+                "AssetRef.Btn.Entry" => "🔗 引用查询",
+                "AssetRef.TitleFmt" => "引用查询: {0}/{1}",
+                "AssetRef.Btn.Back" => "← 返回",
+                "AssetRef.Btn.Rescan" => "🔄 重新扫描",
+                "AssetRef.Btn.Open" => "📂 打开",
+                "AssetRef.NoTarget" => "（未指定查询目标）",
+                "AssetRef.NotScanned" => "尚未扫描…",
+                "AssetRef.TargetFmt" => "目标: {0} / {1}",
+                "AssetRef.ReverseHeaderFmt" => "被引用（谁引用我）: {0} 笔",
+                "AssetRef.ForwardHeaderFmt" => "引用到（我引用谁）: {0} 笔",
+                "AssetRef.Empty" => "（无）",
+
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona 信件检视器",
                 "PersonaInspector.Btn.Refresh" => "🔄 重新整理",

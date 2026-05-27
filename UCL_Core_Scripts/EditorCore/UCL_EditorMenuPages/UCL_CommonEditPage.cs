@@ -206,6 +206,17 @@ namespace UCL.Core.Page
                             {
                                 UCL_SelectAssetPage.Create(m_Type);
                             }
+                            // 區塊職責：引用查詢入口（Tim 2026-05-27 派 task）
+                            // 物理意義：開啟 UCL_AssetReferencePage 查此 asset 的雙向引用關係
+                            //          （誰引用我 / 我引用誰，含欄位路徑）。功能走 Runtime-safe 的
+                            //          UCL_AssetReferenceUtil，build 出來的遊戲內亦可用。
+                            if (GUILayout.Button(UCL.Core.LocalizeLib.UCL_CodeLocalize.Get("AssetRef.Btn.Entry"),
+                                UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                var aRefPage = new UCL.Core.EditorLib.Page.UCL_AssetReferencePage();
+                                aRefPage.SetTarget(m_Type, asset.ID, m_Data);
+                                UCL.Core.UI.UCL_GUIPageController.CurrentRenderIns.Push(aRefPage);
+                            }
                         }
 
 #if UNITY_STANDALONE_WIN

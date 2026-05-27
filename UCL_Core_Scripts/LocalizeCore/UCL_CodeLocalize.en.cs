@@ -371,6 +371,19 @@ namespace UCL.Core.LocalizeLib
                 "BookEdit.Btn.Save" => "💾 Save",
                 "BookEdit.Btn.Revert" => "↩ Revert",
 
+                // ==== UCL_AssetReferencePage ====
+                "AssetRef.Btn.Entry" => "🔗 References",
+                "AssetRef.TitleFmt" => "References: {0}/{1}",
+                "AssetRef.Btn.Back" => "← Back",
+                "AssetRef.Btn.Rescan" => "🔄 Rescan",
+                "AssetRef.Btn.Open" => "📂 Open",
+                "AssetRef.NoTarget" => "(No target specified)",
+                "AssetRef.NotScanned" => "Not scanned yet…",
+                "AssetRef.TargetFmt" => "Target: {0} / {1}",
+                "AssetRef.ReverseHeaderFmt" => "Referenced By (who references me): {0}",
+                "AssetRef.ForwardHeaderFmt" => "References To (what I reference): {0}",
+                "AssetRef.Empty" => "(none)",
+
                 // ==== UCL_PersonaInspectorPage ====
                 "PersonaInspector.Title" => "Persona Letter Inspector",
                 "PersonaInspector.Btn.Refresh" => "🔄 Refresh",

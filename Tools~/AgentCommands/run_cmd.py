@@ -127,6 +127,89 @@ QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "
                                   "task_review_request", "task_reject", "task_reopen", "task_force_reclaim"}
 
 
+# 區塊職責: op=post 沒帶 persona 時，根據登入 session lock 反推填入 persona。
+# 物理意義: 發言身分 (persona) 是酒館顯示/帳務分流的關鍵欄位；agent 常漏帶 → Discord/酒館
+#           顯示缺 persona。早安 ritual 寫 lock 時已記錄 (session_token / claim_origin / agent
+#           → persona) 的對應，這裡走三段 fallback 反查未過期 lock，自動補上。
+# 數值影響: 只在 persona 缺席時填入，不覆寫顯式值；反查失敗 graceful degrade（不擋發言）。
+# fallback 鏈 (precise → loose，命中即止):
+#   (1) session_token 精準匹配 — 最權威 (跨 env / 跨 ppid 都穩)
+#   (2) claim_origin (env_hash) 匹配 — 同 env 多 persona 取 locked_at 最新
+#   (3) agent marker 匹配 — claim_origin 不穩的 agent (e.g. Gemini env 落 unknown-<cwd>-<ppid>
+#       fallback，ppid 每次 invoke 變 → (2) 對不上) 的救援；偵測 caller agent
+#       (claude-code/gemini/antigravity)，online lock 中該 agent 恰好 1 個才填，多個 ambiguous 不猜。
+def _autofill_persona_from_lock(arg_pairs: dict) -> None:
+    # 已顯式帶 persona → 尊重不覆寫
+    if (arg_pairs.get("persona") or "").strip():
+        return
+    try:
+        # 重用 awakening 的 env-hash / lock helper，避免反查邏輯雙份漂移
+        import importlib
+        awk = importlib.import_module("awakening")
+        # session dir 優先用 run_cmd 的 QUEUE_DIR（走 CLAUDE_PROJECT_DIR + git-walk，
+        # 比 awakening._SESSION_DIR 的 cwd 敏感解析穩）；缺則 fallback awk 解析。
+        session_dir = QUEUE_DIR / "_session"
+        if not session_dir.exists():
+            session_dir = awk._SESSION_DIR
+        if not session_dir.exists():
+            return
+        # 一次載入所有未過期 lock（後續三段 fallback 共用）
+        live_locks = []
+        for lp in session_dir.glob("_persona_*.json"):
+            try:
+                with open(lp, "r", encoding="utf-8") as f:
+                    lock = json.load(f)
+            except Exception:
+                continue
+            if not awk.is_lock_expired(lock):
+                live_locks.append(lock)
+        if not live_locks:
+            return
+
+        chosen = None
+        why = ""
+
+        # (1) session_token 精準匹配
+        want_token = (arg_pairs.get("session_token") or "").strip()
+        if want_token:
+            for lock in live_locks:
+                if lock.get("session_token") == want_token:
+                    chosen, why = lock, "session_token"
+                    break
+
+        # (2) claim_origin (env_hash) 匹配 — 多筆取最新
+        if chosen is None:
+            my_origin = awk.compute_claim_origin()
+            origin_hits = [lk for lk in live_locks if awk.lock_claim_origin(lk) == my_origin]
+            if origin_hits:
+                chosen = max(origin_hits, key=lambda d: d.get("locked_at", ""))
+                why = "claim_origin"
+
+        # (3) agent marker 匹配 — claim_origin 不穩 agent 的救援；恰好 1 個才填
+        if chosen is None:
+            marker = (_detect_caller_env_marker() or "").lower()
+            if marker and marker != "unknown":
+                agent_hits = [lk for lk in live_locks
+                              if (lk.get("agent") or "").lower() == marker
+                              or (lk.get("agent") or "").lower().startswith(marker + "-")]
+                if len(agent_hits) == 1:
+                    chosen = agent_hits[0]
+                    why = "agent-marker"
+                elif len(agent_hits) > 1:
+                    print(f"  ⚠ persona 自動反查：agent '{marker}' 有 {len(agent_hits)} 個 online "
+                          f"persona，無法判定該填哪個（請顯式帶 --arg persona=...）", file=sys.stderr)
+
+        if chosen is None:
+            return
+        persona = (chosen.get("persona") or "").strip()
+        if persona:
+            arg_pairs["persona"] = persona
+            print(f"  ℹ persona 自動填入（反查 session lock，by {why}）：{persona}", file=sys.stderr)
+    except Exception as e:
+        # 反查任何環節出錯都不阻擋發言（degrade gracefully）
+        print(f"  ⚠ persona 自動反查略過（{type(e).__name__}: {e}）", file=sys.stderr)
+
+
 def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
     """Tavern Cmd 提交前驗證；回 (ok, error_message)。
     寬進：alias 自動歸一到 canonical 名。"""
@@ -159,6 +242,9 @@ def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
     if op in QUEST_OPS_NEEDING_IDEMPOTENCY and not arg_pairs.get("idempotency_key"):
         arg_pairs["idempotency_key"] = str(uuid.uuid4())
         print(f"  ℹ idempotency_key 自動填入：{arg_pairs['idempotency_key']}", file=sys.stderr)
+    # post 沒帶 persona → 反查登入 lock 自動補（防漏帶 persona，Tim 2026-05-27）
+    if op == "post":
+        _autofill_persona_from_lock(arg_pairs)
     return True, ""
 
 # ===========================================================

@@ -93,11 +93,7 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            // 返回上一頁
-            if (GUILayout.Button(UCL_CodeLocalize.Get("AssetRef.Btn.Back"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                if (p_Controller != null) p_Controller.Pop();
-            }
+
             // 重新掃描
             if (GUILayout.Button(UCL_CodeLocalize.Get("AssetRef.Btn.Rescan"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {

@@ -374,13 +374,18 @@ namespace UCL.Core
             catch { return null; }
         }
 
-        // path 組裝：rootName + 各 segment（field 已含 "." 前綴；index 是 "[i]"）
+        // path 組裝：只組各 segment（field 段含 "." 前綴、index 段為 "[i]"）。
+        // 不顯示 root 佔位符 iRoot（"$"）—— 並去掉開頭多餘的 "."，
+        // 讓頂層欄位顯示成 "m_Foo" 而非 "$.m_Foo"（Tim 2026-05-27 要求）。
+        // 註：iRoot 保留參數僅為語意完整，顯示上不輸出。
         private static string JoinPath(string iRoot, List<string> iStack)
         {
-            if (iStack == null || iStack.Count == 0) return iRoot;
-            var aSb = new StringBuilder(iRoot);
+            if (iStack == null || iStack.Count == 0) return string.Empty;
+            var aSb = new StringBuilder();
             foreach (var aSeg in iStack) aSb.Append(aSeg);
-            return aSb.ToString();
+            string aPath = aSb.ToString();
+            if (aPath.Length > 0 && aPath[0] == '.') aPath = aPath.Substring(1);
+            return aPath;
         }
 
         // 去重 + 穩定排序（同一引用點不重複；依 型別→ID→欄位路徑）

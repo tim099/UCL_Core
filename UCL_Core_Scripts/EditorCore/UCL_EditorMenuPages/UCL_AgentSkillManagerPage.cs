@@ -624,6 +624,135 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // 區塊：UCL_SkillConfigAsset 同步（per-skill 開關狀態持久層）
+        // 物理意義：Tim 拍板 — Page 對單一 skill 按裝/移除時, 要同步資料到對應的 UCL_SkillConfigAsset。
+        //          真實 source of truth 是 runtime <UnityAssets>/.BuiltinModules/.../Core/UCL_Assets/
+        //          UCL_SkillConfigAsset/<skill>.json(install_skills.py 也讀這裡), 不是 Templates~
+        //          (Templates~ 只是初始模板, 安裝後複製進 .BuiltinModules, 使用者編輯都同步 .BuiltinModules)。
+        // 設計取捨：直寫該 JSON(而非走 UCL_Asset.Save()) — Save() 落點依 CurEditModule, 若使用者正在
+        //          編輯別的 module 會存錯地方; skill config 概念上恆屬 Core, 故直接定位 Core 路徑最穩。
+        // ===========================================================
+        static readonly string[] SkillConfigRel =
+            { "ModulesRoot", "Modules", "Core", "UCL_Assets", "UCL_SkillConfigAsset" };
+
+        /// <summary>從 m_UCLCorePath 往上走找 .BuiltinModules，回 Core 的 UCL_SkillConfigAsset 目錄；
+        /// BuiltinModules 不存在(全新專案) → 回 Templates~ 模板預設目錄(僅供讀預設, 寫入時會 mkdir runtime)。</summary>
+        string ResolveSkillConfigDir()
+        {
+            if (string.IsNullOrEmpty(m_UCLCorePath)) return "";
+            string cur = m_UCLCorePath;
+            for (int i = 0; i < 10; i++)
+            {
+                string builtin = Path.Combine(cur, ".BuiltinModules");
+                if (Directory.Exists(builtin))
+                    return Path.Combine(new[] { builtin }.Concat(SkillConfigRel).ToArray());
+                string parent = Path.GetDirectoryName(cur);
+                if (string.IsNullOrEmpty(parent) || parent == cur) break;
+                cur = parent;
+            }
+            // fallback：Templates~ 模板預設（全新專案還沒 materialize BuiltinModules）
+            return Path.Combine(new[] { m_UCLCorePath, "Templates~", "Assets", ".BuiltinModules" }
+                .Concat(SkillConfigRel).ToArray());
+        }
+
+        /// <summary>讀 UCL_SkillConfigAsset 目錄，回傳 Enabled=false 的 skill 名集合。</summary>
+        HashSet<string> LoadDisabledSkills()
+        {
+            var disabled = new HashSet<string>();
+            string dir = ResolveSkillConfigDir();
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return disabled;
+            foreach (var f in Directory.GetFiles(dir, "*.json"))
+            {
+                try
+                {
+                    string json = File.ReadAllText(f);
+                    // 欄位 "Enabled"(UCL_Asset strip m_); 預設 true → 只有顯式 false 才算停用
+                    if (ExtractJsonBoolField(json, "Enabled", true) == false)
+                        disabled.Add(Path.GetFileNameWithoutExtension(f));
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[AgentSkillManager] 讀 skill config {f} 失敗：{ex.Message}");
+                }
+            }
+            return disabled;
+        }
+
+        /// <summary>同步單一 skill 的 UCL_SkillConfigAsset 到 runtime .BuiltinModules。
+        /// <para>enabled=false → 一律寫 {Enabled:false, Note}(停用是相對預設的偏離, 必落檔)。</para>
+        /// <para>enabled=true → 僅在已有 config 檔時翻成 Enabled=true(消除既有停用記錄);
+        ///   無檔則 no-op — 預設即啟用, 不需為每個裝的 skill 製造冗餘檔(asset 缺檔=啟用, 本來就同步)。</para>
+        /// 保留既有 Note；寫入失敗只記 warning 不中斷安裝流程。</summary>
+        void SyncSkillConfig(string skill, bool enabled)
+        {
+            try
+            {
+                string dir = ResolveSkillConfigDir();
+                if (string.IsNullOrEmpty(dir)) return;
+                // 若 fallback 落在 Templates~（理論上不該寫 Templates~）→ 跳過, 維持 Templates~ 純模板
+                if (dir.Replace('\\', '/').Contains("/Templates~/"))
+                {
+                    Debug.LogWarning("[AgentSkillManager] 找不到 runtime .BuiltinModules，跳過 skill config 同步（請先安裝 Core module）");
+                    return;
+                }
+                string path = Path.Combine(dir, skill + ".json");
+                bool exists = File.Exists(path);
+                // enable 且無既有記錄 → 預設即啟用, 不製造冗餘檔
+                if (enabled && !exists) return;
+
+                Directory.CreateDirectory(dir);
+                string note = exists ? ExtractJsonStringField(File.ReadAllText(path), "Note") : "";
+                var sb = new StringBuilder();
+                sb.Append("{\n");
+                sb.Append($"\t\"Enabled\":{(enabled ? "true" : "false")},\n");
+                sb.Append($"\t\"Note\":{EscapeJsonString(note)}\n");
+                sb.Append("}\n");
+                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+                Debug.Log($"[AgentSkillManager:{skill}] UCL_SkillConfigAsset 同步 Enabled={enabled} → {path}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AgentSkillManager:{skill}] skill config 同步失敗：{ex.Message}");
+            }
+        }
+
+        // 區塊職責：lightweight JSON bool 欄位抽取（"<key>": true/false）
+        // 數值影響：找不到 / 非 bool → 回 iDefault
+        static bool ExtractJsonBoolField(string json, string key, bool iDefault)
+        {
+            string token = "\"" + key + "\"";
+            int idx = json.IndexOf(token, StringComparison.Ordinal);
+            if (idx < 0) return iDefault;
+            int colon = json.IndexOf(':', idx + token.Length);
+            if (colon < 0) return iDefault;
+            string tail = json.Substring(colon + 1).TrimStart();
+            if (tail.StartsWith("true", StringComparison.OrdinalIgnoreCase)) return true;
+            if (tail.StartsWith("false", StringComparison.OrdinalIgnoreCase)) return false;
+            return iDefault;
+        }
+
+        // 區塊職責：最小 JSON 字串轉義（含外層雙引號）
+        static string EscapeJsonString(string s)
+        {
+            if (s == null) s = "";
+            var sb = new StringBuilder("\"");
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '\"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default: sb.Append(c); break;
+                }
+            }
+            sb.Append('\"');
+            return sb.ToString();
+        }
+
+        // ===========================================================
         // 區塊：UI
         // ===========================================================
 
@@ -824,16 +953,26 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
                 // 逐 skill 列（Claude target MVP）：狀態 + 裝/移除按鈕。
-                // 狀態 per-skill：未裝 / 已同步 / ⚠已改動(drift = 源 hash != 已裝 hash)。
+                // 狀態 per-skill：未裝 / 已同步 / ⚠已改動(drift) / 🚫停用(UCL_SkillConfigAsset Enabled=false)。
+                // 停用語意：disabled 但實體還在 → 「🚫停用·待移除」(下次同步會解除安裝);
+                //          disabled 且已移除 → 「🚫停用」。按鈕同步 UCL_SkillConfigAsset(裝→Enabled=true / 移除→false)。
                 string installRoot = Path.Combine(m_HostProjectRoot, TargetMarkerRelDir(AgentTarget.Claude));
+                var disabledSet = LoadDisabledSkills();
                 foreach (var dir in Directory.GetDirectories(skillsRoot).OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal))
                 {
                     string name = Path.GetFileName(dir);
                     if (name.StartsWith("_") || name.EndsWith("~")) continue;
                     string instDir = Path.Combine(installRoot, name);
                     bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
+                    bool disabled = disabledSet.Contains(name);
                     string statusTxt; Color statusCol;
-                    if (!installed) { statusTxt = "未裝"; statusCol = new Color(0.6f, 0.6f, 0.6f); }
+                    if (disabled)
+                    {
+                        // 停用優先顯示（不論是否實體還在）
+                        if (installed) { statusTxt = "🚫停用·待移除"; statusCol = new Color(1f, 0.5f, 0.4f); }
+                        else { statusTxt = "🚫停用"; statusCol = new Color(0.7f, 0.55f, 0.55f); }
+                    }
+                    else if (!installed) { statusTxt = "未裝"; statusCol = new Color(0.6f, 0.6f, 0.6f); }
                     else
                     {
                         bool drift = HashSkillDirContent(dir) != HashSkillDirContent(instDir);
@@ -843,17 +982,50 @@ namespace UCL.Core.EditorLib.Page
                     using (new GUILayout.HorizontalScope())
                     {
                         var st = new GUIStyle(UCL_GUIStyle.LabelStyle); st.normal.textColor = statusCol;
-                        GUILayout.Label(statusTxt, st, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                        GUILayout.Label(statusTxt, st, GUILayout.Width(UCL_GUIStyle.GetScaledSize(110)));
                         GUILayout.Label(name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                        if (!installed)
+                        // 區塊職責：「📄 預覽」— 參考 UCL_DocSearchPage 的文件預覽按鈕, 在 Editor 內嵌渲染源 SKILL.md。
+                        // 物理意義：預覽永遠看 Skills~/<name>/SKILL.md(source of truth, 必存在), 不論裝/未裝;
+                        //          走 UCL_MarkdownViewerPage(Push 一頁, 按 Back 返回), 不離開 Unity 視窗。
+                        // 數值影響：純讀檔渲染, 不改任何安裝狀態。
+                        if (GUILayout.Button("📄 預覽", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                         {
-                            if (GUILayout.Button("裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            string skillMdAbs = Path.Combine(dir, "SKILL.md").Replace('\\', '/');
+                            string skillMdRel = Path.GetRelativePath(m_UCLCorePath, skillMdAbs).Replace('\\', '/');
+                            if (File.Exists(skillMdAbs))
+                                UCL_MarkdownViewerPage.Create(skillMdRel, skillMdAbs);
+                            else
+                                Debug.LogWarning($"[AgentSkillManager:{name}] 找不到 SKILL.md：{skillMdAbs}");
+                        }
+                        if (disabled)
+                        {
+                            // 啟用：同步 Enabled=true → 安裝
+                            if (GUILayout.Button("啟用", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            {
+                                SyncSkillConfig(name, enabled: true);
                                 RunInstallSkill(name, uninstall: false);
+                            }
+                            // disabled 但實體還在 → 提供立即解除安裝（不改 config，維持停用）
+                            if (installed && GUILayout.Button("移除", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                                RunInstallSkill(name, uninstall: true);
+                        }
+                        else if (!installed)
+                        {
+                            // 裝：同步 Enabled=true(消除可能殘留的 disabled 記錄) → 安裝
+                            if (GUILayout.Button("裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            {
+                                SyncSkillConfig(name, enabled: true);
+                                RunInstallSkill(name, uninstall: false);
+                            }
                         }
                         else
                         {
+                            // 移除：同步 Enabled=false(停用) → 解除安裝
                             if (GUILayout.Button("移除", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            {
+                                SyncSkillConfig(name, enabled: false);
                                 RunInstallSkill(name, uninstall: true);
+                            }
                             // drift 時提供強制重裝（覆蓋本地改動）
                             if (statusTxt == "⚠改動" && GUILayout.Button("重裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
                                 RunInstallSkill(name, uninstall: false, force: true);

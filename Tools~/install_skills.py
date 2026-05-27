@@ -163,14 +163,37 @@ def load_manifest() -> dict:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
-# 區塊職責：讀 UCL_SkillConfigAsset 預設（Templates~）判定哪些 skill 預設不裝（Enabled=false）
-# 物理意義：Plan_SkillManager_PerSkill_Toggle — 「透過 UCL_SkillConfigAsset 預設不裝」。
-#          asset JSON 在 UCL_Core/Templates~/.../UCL_Assets/UCL_SkillConfigAsset/<skill>.json,
-#          UCL_Asset 序列化 strip m_ 前綴 → 欄位 "Enabled"(相容 "m_Enabled")。
-# 數值影響：回傳 Enabled=false 的 skill 名 set；檔案/欄位缺失 → 視為未停用(空集)。
+# 區塊職責：定位 UCL_SkillConfigAsset 的「真實 source of truth」目錄。
+# 物理意義：Templates~ 只是初始模板 — Core module 安裝時會把它複製到專案的
+#          <UnityAssets>/.BuiltinModules/.../Core/UCL_Assets/UCL_SkillConfigAsset/，
+#          之後使用者在 Editor 改開關也是同步到 .BuiltinModules(不回寫 Templates~)。
+#          所以判定 disabled 必須讀 runtime .BuiltinModules; Templates~ 只在「專案還沒
+#          materialize BuiltinModules(全新專案)」時當 fallback 預設。
+# 數值影響：從 UCL_CORE_ROOT 往上走找含 .BuiltinModules 的祖先(UCL_Core 必在 Unity Assets 內,
+#          .BuiltinModules 在 Assets 根) → 命中即回該 UCL_SkillConfigAsset dir;
+#          BuiltinModules 不存在 → 回 Templates~ 預設 dir。跨專案通用(不寫死 CardGame/Assets)。
+_SKILLCFG_REL = ("ModulesRoot", "Modules", "Core", "UCL_Assets", "UCL_SkillConfigAsset")
+
+
+def resolve_skill_config_dir() -> Path:
+    cur = UCL_CORE_ROOT
+    for _ in range(10):
+        builtin = cur / ".BuiltinModules"
+        if builtin.is_dir():
+            return builtin.joinpath(*_SKILLCFG_REL)
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    # fallback：全新專案還沒 materialize BuiltinModules → 用 Templates~ 模板預設
+    return UCL_CORE_ROOT.joinpath("Templates~", "Assets", ".BuiltinModules", *_SKILLCFG_REL)
+
+
+# 區塊職責：讀 UCL_SkillConfigAsset 判定哪些 skill 設為不裝（Enabled=false）
+# 物理意義：Plan_SkillManager_PerSkill_Toggle — 「透過 UCL_SkillConfigAsset 開關 skill」。
+#          asset JSON 欄位 "Enabled"(UCL_Asset 序列化 strip m_; 相容舊 "m_Enabled")，ID=檔名(skill 名)。
+# 數值影響：回傳 Enabled=false 的 skill 名 set；目錄/欄位缺失 → 視為未停用(空集)。
 def load_skill_config_disabled() -> set[str]:
-    cfg_dir = (UCL_CORE_ROOT / "Templates~" / "Assets" / ".BuiltinModules" / "ModulesRoot"
-               / "Modules" / "Core" / "UCL_Assets" / "UCL_SkillConfigAsset")
+    cfg_dir = resolve_skill_config_dir()
     disabled: set[str] = set()
     if not cfg_dir.is_dir():
         return disabled
@@ -574,6 +597,38 @@ def main(argv: list[str] | None = None) -> int:
             selected = [s for s in selected if s not in off_names]
             if skipped_off:
                 log.info(f"Default-OFF skipped: {skipped_off}  (use --include <name> or --include-optional to install)")
+
+            # 區塊職責: reconcile — 對「設為不裝(off) 但目前實體還裝著」的 skill 主動解除安裝。
+            # 物理意義: Tim 要求「disable 後同步要解除安裝該 skill」。先前只做『跳過安裝』
+            #          (off 不進 selected), 但已裝的目錄不會自己消失 → 同步 = 裝該裝的 + 刪該停的。
+            #          帶 drift 保護(remove_skill force=False): 被本地改過的會警告跳過, 不靜默刪。
+            # 數值影響: 移除 off 且實體存在的 skill dir + 從 .ucl_installed.installed_skills 剔除。
+            reconcile_removed: list[str] = []
+            for name in skipped_off:
+                if args.target == "antigravity":
+                    dst_file = skills_dst_root / f"{name}.md"
+                    if dst_file.exists():
+                        if remove_skill_antigravity(dst_file, log):
+                            reconcile_removed.append(name)
+                else:
+                    dst = skills_dst_root / name
+                    if dst.exists() and remove_skill(dst, log, force=args.force_overwrite):
+                        reconcile_removed.append(name)
+            # 同步 marker：把被 reconcile 移除的 skill 從 installed_skills 剔除
+            marker = skills_dst_root / ".ucl_installed"
+            if reconcile_removed and marker.is_file() and not args.dry_run:
+                try:
+                    mdata = json.loads(marker.read_text(encoding="utf-8"))
+                    prev = mdata.get("installed_skills", []) or []
+                    remaining = [s for s in prev if s not in reconcile_removed]
+                    if remaining != prev:
+                        mdata["installed_skills"] = remaining
+                        mdata["source_hash"] = compute_source_hash(remaining, args.target)
+                        marker.write_text(json.dumps(mdata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                except (json.JSONDecodeError, OSError):
+                    pass
+            if reconcile_removed:
+                log.info(f"Reconcile-uninstalled (disabled but were installed): {reconcile_removed}")
 
     log.info(f"Skills found:    {discovered}")
     log.info(f"Skills selected: {selected}")

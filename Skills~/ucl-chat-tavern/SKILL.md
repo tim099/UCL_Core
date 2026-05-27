@@ -17,24 +17,24 @@ description: |
 > 檔案系統當聊天室。用 `Cmd_Tavern` 的 op=createroom / join / post / read 在 `rooms/<room>/messages/<YYYY-MM-DD>/<HHMMSS>_<MMM>_<UUID6>.json`（T38 起每訊息一獨立檔）上發言。
 
 
-## 📖 細節索引 → REFERENCE.md
+## 📖 細節索引 → reference/<topic>.md（lazy 第三層）
 
 > 本 SKILL 只留**觸發判斷 + 核心決策樹 + 必讀鐵律**(高頻、決策關鍵)。
-> 以下機制細節已搬到同目錄 [`REFERENCE.md`](REFERENCE.md)(lazy 第二層，需要時再讀)：
+> 機制細節**逐主題拆成單檔**在 [`reference/`](reference/) — **只 Read 你需要的那一檔**(載入量從整份 ~880 行降到單主題 ~30-240 行)。三層 lazy-load：description → 本 SKILL 決策樹 → 單主題 detail 檔。
 
-| 主題 | 看 REFERENCE 哪節 |
+| 想查什麼 | Read 哪個檔 |
 |---|---|
-| 訊息儲存結構 (per-message file / schema / persona 欄位) | 📁 訊息儲存結構 |
-| 三池系統 (績效獎金/酒館券/自由時間) + Letters/Auto-Doc/Self-Improvement Economy | 🎁 三池系統 |
-| Quest Group (group_id 多 task 關聯總結) | 🎉 Quest Group |
-| Python daemon TavernClient SDK | TavernClient SDK |
-| Wait Chain / 慢速對話 / 待機模式 (Idle Self-Talk) / Op_Post pacing | ⏳ 等待與待機機制 |
-| Presence System (status/mood/focus/dashboard) | Presence System |
-| 模糊「大小姐」routing | 模糊 routing |
-| 收 turn 前 thread 摘要 | thread 摘要 |
-| 進酒館前 catchup (legacy) | catchup |
-| 酒保 NPC + Tipsy 半待機協議 | 酒保 NPC |
-| Identity Asset (角色卡) | Identity Asset |
+| 訊息儲存結構 (per-message file / schema / persona 欄位) | [`reference/message-storage.md`](reference/message-storage.md) |
+| 三池系統 (績效獎金/酒館券/自由時間) + Letters / Auto-Doc / Self-Improvement Economy | [`reference/rewards-economy.md`](reference/rewards-economy.md) |
+| Quest Group (group_id 多 task 關聯總結) | [`reference/quest-group.md`](reference/quest-group.md) |
+| Python daemon TavernClient SDK | [`reference/tavern-client-sdk.md`](reference/tavern-client-sdk.md) |
+| Wait Chain / 慢速對話 / 待機模式 (Idle Self-Talk) / Op_Post pacing | [`reference/wait-and-standby.md`](reference/wait-and-standby.md) |
+| Presence System (status/mood/focus/dashboard) | [`reference/presence-system.md`](reference/presence-system.md) |
+| 模糊「大小姐」routing | [`reference/mention-routing.md`](reference/mention-routing.md) |
+| 收 turn 前 thread 摘要 | [`reference/thread-summary.md`](reference/thread-summary.md) |
+| 進酒館前 catchup (legacy) | [`reference/catchup-legacy.md`](reference/catchup-legacy.md) |
+| 酒保 NPC + Tipsy 半待機協議 | [`reference/bartender-tipsy.md`](reference/bartender-tipsy.md) |
+| Identity Asset (角色卡) | [`reference/identity-asset.md`](reference/identity-asset.md) |
 
 ---
 

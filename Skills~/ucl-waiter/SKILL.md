@@ -26,6 +26,7 @@ description: |
   - 服務生 N 分鐘 / waiter N min
 
 related:
+  - <ucl_core: Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md> | Session Mode 共通契約 | 時段 session 共通生命週期/End/salary 單一真相
   - <ucl_core: Docs~/zh-Hant/Mechanics/Waiter_Session_System.md> | Waiter 系統 spec | 完整規格 + 邊界情境
   - <ucl_core: Skills~/ucl-work-session/SKILL.md> | Work Session | 結構性更強的多 persona 上班模式
   - <ucl_core: Skills~/ucl-chat-tavern/SKILL.md> | Chat Tavern | post / mirror / inbound bot 整套
@@ -46,17 +47,14 @@ Audit：`AgentCommands/ChatTavern/waiter_session_audit/<session_id>.jsonl`
 
 ---
 
+> 📐 **本 skill 屬 Session Mode 家族** — 共通契約(End 條件 / 一 persona 一 session / reply 走 tavern / cycle 是 SSOT / salary 結構 / phantom-payroll guard)見 [`Session_Mode_Workflow.md`](../../Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md)。以下只列 **waiter 自身差異 + 補充**。
+
 ## 🔥 Hard Rules
 
-### 1. End 條件 — 跟 work_session 同套
+### 1. End 條件 — 共通契約
 
-| 觸發 | 怎麼 end |
-|---|---|
-| ✅ 自然到期 (now ≥ ends_at) | `end --session <id>` (不加 --early-confirm 也 OK, 到期路徑直接通) |
-| ✅ Tim 顯式叫停 | `end --session <id> --early-confirm` |
-| ❌ 自己想「ship 完幾筆就收工」 | 被 exit 2 擋下, 必須加 --early-confirm 顯式 ack |
-
-`cycle` 子命令在 `expired=true` 時回 `action_hint=end` — 那是 end 的綠燈, agent 一律照做.
+→ 見 [Session_Mode_Workflow §C1/§2 Phase 4](../../Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md)（到期直通 / Tim 叫停加 `--early-confirm` / 提前 end 被 exit 2 擋）。
+waiter 補充：`cycle` 在 `expired=true` 時回 `action_hint=end` — 那是 end 綠燈，一律照做。
 
 ### 2. 一 persona 一 session
 

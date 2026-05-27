@@ -35,6 +35,7 @@ description: |
   - remote N h / remote N min
 
 related:
+  - <ucl_core: Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md> | Session Mode 共通契約 | 時段 session 共通生命週期/End/salary/Stay-Alive/No-Blocking 單一真相
   - <ucl_core: Docs~/zh-Hant/Mechanics/Remote_Work_Session.md> | Spec 完整規格 + 互動範例 + duration parser 表
   - <ucl_core: Skills~/ucl-waiter/SKILL.md> | Waiter Session | 公開接客 (對偶模式)
   - <ucl_core: Skills~/ucl-work-session/SKILL.md> | Work Session | 內部多 persona 上班 (內部團隊)
@@ -55,19 +56,13 @@ Audit: `AgentCommands/ChatTavern/remote_work_session_audit/<id>.jsonl`
 
 ---
 
+> 📐 **本 skill 屬 Session Mode 家族** — 共通契約(End 條件 / 一 persona 一 session / reply 走 tavern / cycle 是 SSOT / salary 結構 / phantom-payroll / **Stay-Alive / No-Blocking-Wait**)見 [`Session_Mode_Workflow.md`](../../Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md)。remote-work 是 Stay-Alive/No-Blocking 這兩條的**起源模式**(行動端最吃緊)，下方仍保留完整細節；其餘共通項只列差異。
+
 ## 🔥 Hard Rules
 
-### 1. End 條件 — 跟 work_session / waiter 同套
+### 1. End 條件 + 一 persona 一 session — 共通契約
 
-| 觸發 | 怎麼 end |
-|---|---|
-| ✅ 自然到期 (cycle 回 expired=true / action_hint=end) | `end --session <id>` |
-| ✅ Tim 顯式叫停 | `end --session <id> --early-confirm` |
-| ❌ 自己想 ship 完幾個 task 就收 | exit 2 擋下, 必須加 --early-confirm 顯式 ack |
-
-### 2. 一 persona 一 session
-
-同 persona 已有 active remote work 會被拒絕。先 end 舊的再 start 新的。
+→ 見 [Session_Mode_Workflow §C1/§C2/§2 Phase 4](../../Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md)（到期直通 / Tim 叫停加 `--early-confirm` / 提前 exit 2；同 persona 已 active 會被拒，先 end 再 start）。
 
 ### 3. Channel + sender filter
 

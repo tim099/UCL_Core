@@ -14,6 +14,7 @@ description: |
 
 related:
   - .claude/skills/ucl-work-session/REFERENCE.md | 機制細節 (CLI / 薪資 / phantom-payroll / 5-phase / marathon / anti-pattern)
+  - ../../Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md | Session Mode 共通契約 (work/waiter/remote 三模式同構生命週期 SSOT)
   - docs/Plan/Plan_Work_Session_Mechanism.md | canonical spec doc
   - .claude/skills/ucl-chat-tavern/SKILL.md | solo think / 同事討論 / slow-chat
   - .claude/skills/ucl-remote-work/SKILL.md | Tim 外出 async Discord 派工

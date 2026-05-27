@@ -1,0 +1,4 @@
+{
+	"Enabled":false,
+	"Note":"薄包裝, 已有 Create_UCL_Asset_Workflow 覆蓋; 需要時 --include 裝回 (default-OFF via UCL_SkillConfigAsset, Group A; 非破壞可逆)"
+}

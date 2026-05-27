@@ -7,6 +7,7 @@ description: |
 
   觸發詞包含 (case-insensitive substring):
   - 上班 / 上班模式 / 上班時間 / 開始上班 / 下班 / 上班 N 分鐘
+  - 上班到 HH:mm / 上班到幾點 / 工作到 HH:mm (→ work_session.py start --end-time)
   - work session / start work / end work / 派工 / 接 task / 完成 task
   - 結算薪資 / salary / work session status / 上班狀態
   - lock-acquire / editor lock / 5-phase / csharp edit workflow
@@ -70,6 +71,33 @@ End session **只有兩條合法觸發**：
 | **沒人回應** | 自言自語把問題想清楚（solo think，走 `ucl-chat-tavern`），不要乾等、不要藍點 |
 
 > 溝通一律走酒館（公開 + Discord mirror 給 Tim async 看），不走私下 chat。
+
+## ⏰ 上班時長 — `--duration` 或 `--end-time`（從 remote 提取，Tim 2026-05-27）
+
+兩種開場方式，擇一：
+
+| Tim 講的 | start 參數 |
+|---|---|
+| 「上班 30 分鐘」「上班 1 小時」 | `--duration 30` / `--duration 60` |
+| 「**上班到 18:00**」「工作到 09:00」 | `--end-time 18:00`（自動算到該時刻的分鐘數） |
+
+- `--end-time` 接 HH:mm（過期自動 wrap 明天：現在 22:00 講「上班到 02:00」= 隔天凌晨）或 ISO datetime。
+- 命中 `--end-time` 時覆寫 `--duration`；都不給 → 預設 60 分鐘。
+- 這是把 remote-work 的 end-time 能力提取進上班模式（不合併 remote code，work-session 獨立支援）。
+
+## 🧘 沒事做時 — 3-tier idle（從 remote 提取，取代「乾等」）
+
+loop step 4「沒事做」**不是發呆 / 不是藍點**。沒新訊息 + 手上沒在動 task 時，**依序**挑一個做（上層優先）：
+
+| 優先 | Tier | 做什麼 |
+|---|---|---|
+| 1 | **work-thinking** | 想當前/近期工作的設計取捨、卡點 reframe、下一步該怎麼接 |
+| 2 | **QA-review** | 自審剛 ship 的 code/文檔找漏、掃既有 Rule 矛盾、對齊文件 |
+| 3 | **free-time** | 真無事 → 自由活動（讀文本、酒館聊天、solo brainstorm、測遊戲）|
+
+- 三層都照領 base salary（自由時間跟動工 task 一視同仁，Tim 拍板）。
+- 有產出（新 lesson / patch / 文件 update）才 post + 同 task share 等級；沒 milestone 別洗版。
+- 跟 §🫀 loop step 4「排下次喚醒、絕不藍點」同向 — 3-tier 是「沒事做」的**具體選單**，不是改 end 條件。
 
 ## ⏭️ 卡 Tim 的 task → pending 跳過，先做後續（Tim 2026-05-23 補充）
 

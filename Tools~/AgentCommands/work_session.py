@@ -38,6 +38,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 import time
 import subprocess
@@ -425,6 +426,54 @@ def fire_voucher_accrual(bank: str, persona: str, amount: int, session_id: str) 
 
 
 # ─── Subcommand: start ──────────────────────────────────────────────────
+# 區塊職責：clock-time 解析 helper（從 remote-work 提取的「目前上班模式沒有的功能」— Tim 2026-05-27 拍板）
+# 物理意義：讓上班模式也支援「上班到 HH:mm」(end-time) 而非只有 --duration N 分鐘。
+#          不合併 remote 的 code，只把 remote 有、work-session 缺的時間解析能力搬進來(獨立 copy，remote 不動)。
+# 數值影響：parse_clock_time 回 naive local datetime；cmd_start 用它把 end-time 換算成 duration_min。
+DEFAULT_LOCAL_TZ_WS = "Asia/Taipei"   # HH:mm 解析時區（對齊 bartender / remote-work）
+
+
+def _local_now_ws() -> datetime.datetime:
+    """取 DEFAULT_LOCAL_TZ_WS 當前 naive local datetime（跟 parse_clock_time 回傳值對齊比較）。
+    Windows tzdata 缺失 → fallback 系統 local time。"""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo(DEFAULT_LOCAL_TZ_WS)).replace(tzinfo=None)
+    except Exception:
+        return datetime.datetime.now()
+
+
+def parse_clock_time_ws(text: str, base_local: datetime.datetime | None = None,
+                        wrap_past_to_tomorrow: bool = True) -> datetime.datetime | None:
+    """解析 HH:mm / HH:mm:ss / ISO datetime → naive local datetime；失敗回 None。
+    wrap_past_to_tomorrow: HH:mm 早於 base → 加 1 天（現在 22:00 講 02:00 = 隔天）。"""
+    if not text:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    base = base_local or _local_now_ws()
+    # ISO (含日期)
+    try:
+        normalized = s.replace("Z", "").replace("T", " ")
+        dt = datetime.datetime.strptime(normalized[:19], "%Y-%m-%d %H:%M:%S") if len(normalized) >= 19 \
+            else datetime.datetime.strptime(normalized[:16], "%Y-%m-%d %H:%M")
+        return dt
+    except Exception:
+        pass
+    # HH:mm[:ss]（純時鐘 — 套今天日期）
+    m = re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$", s)
+    if m:
+        hh, mm = int(m.group(1)), int(m.group(2))
+        ss = int(m.group(3)) if m.group(3) else 0
+        if 0 <= hh <= 23 and 0 <= mm <= 59 and 0 <= ss <= 59:
+            target = base.replace(hour=hh, minute=mm, second=ss, microsecond=0)
+            if wrap_past_to_tomorrow and target <= base:
+                target += datetime.timedelta(days=1)
+            return target
+    return None
+
+
 def cmd_start(args) -> int:
     state = load_state()
     # T09 C1 (Tim 2026-05-14 拍板) — auto-manager fallback
@@ -497,8 +546,27 @@ def cmd_start(args) -> int:
         # T12 (Tim 2026-05-14): warning text 對齊 T11 SOLO 預設 — 員工由 ding-ack 招募
         print(f"ℹ SOLO 模式啟動 (T11 預設). 員工可在 tavern 發 ack-only 自動入職 (per T10 C3).")
 
-    duration = max(15, min(args.duration, 480))
-    if duration != args.duration:
+    # 區塊職責：--end-time 支援（從 remote-work 提取的功能）。優先序：--end-time > --duration。
+    # 物理意義：「上班到 18:00」→ 解析 HH:mm(local) → 換算成從現在到該時刻的分鐘數當 duration。
+    #          過期的 HH:mm 自動 wrap 明天（現在 22:00 講 02:00 = 隔天凌晨下班）。
+    # 數值影響：命中 end-time 時覆寫 args.duration 來源；仍走下方 cap[15,480] 夾擠。
+    effective_duration = args.duration
+    end_time_arg = getattr(args, "end_time", "") or ""
+    if end_time_arg:
+        now_local = _local_now_ws()
+        end_local = parse_clock_time_ws(end_time_arg, base_local=now_local, wrap_past_to_tomorrow=True)
+        if end_local is None:
+            print(f"❌ --end-time 解析失敗: '{end_time_arg}' — 支援 HH:mm / HH:mm:ss / ISO datetime")
+            return 1
+        mins = int((end_local - now_local).total_seconds() // 60)
+        if mins < 1:
+            print(f"❌ --end-time '{end_time_arg}' 換算後 ≤ 0 分鐘（已過期且未 wrap？）")
+            return 1
+        effective_duration = mins
+        print(f"⏰ end-time 模式: 現在 → {end_local.strftime('%H:%M')} = {mins} 分鐘")
+
+    duration = max(15, min(effective_duration, 480))
+    if duration != effective_duration:
         print(f"⚠ duration 調整為 {duration} (cap [15, 480])")
 
     start = datetime.datetime.utcnow()
@@ -1914,6 +1982,8 @@ def main(argv=None) -> int:
     p_start.add_argument("--manager", default="", help="主管 persona; 省略時從 caller env 自動推 (C1 T09)")
     p_start.add_argument("--workers", default=None, help="csv 顯式列 workers (caretaker 模式); 不傳 / 傳 '' = SOLO 預設 (T11 C4, 員工由 ding-ack 招募)")
     p_start.add_argument("--duration", type=int, default=60, help="分鐘 [15, 480]")
+    p_start.add_argument("--end-time", dest="end_time", default="",
+                         help="下班時刻 HH:mm / ISO（從 remote-work 提取）；命中時覆寫 --duration。過期 HH:mm 自動 wrap 明天。例：上班到 18:00")
     p_start.add_argument("--desc", default="")
     p_start.add_argument("--trigger", default="", help="Tim 原始 trigger 字串 (audit)")
     p_start.add_argument("--auto-manager-online", action="store_true", help="無 --manager 且 caller env 推不出時, 取 registry 首位 online persona 當主管 (酒保 daemon 自動開上班用)")

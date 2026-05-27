@@ -35,6 +35,7 @@ python .../work_session.py start \
   --trigger "Tim: 上班 30分鐘"
 # --workers ""            ← SOLO 模式（明確空字串, 但仍接受 ding-ack auto-recruit）
 # --workers "meadow,apex" ← 顯式 static workers list
+# --end-time 18:00        ← 從 remote 提取：「上班到 18:00」，覆寫 --duration；過期 HH:mm 自動 wrap 明天
 
 # 看 active sessions
 python .../work_session.py status

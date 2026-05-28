@@ -25,7 +25,7 @@ related:
   - docs/Glossary/trigger-ding.md | glossary 條目
   - AgentCommands/Subconscious/skill_doc_patches.jsonl | Phase 2 patch entry (T28.2)
 
-last_updated: 2026-05-14 (T28.2 Phase 2 audit — 3 FAIL findings fix per skill_doc_patches.jsonl)
+last_updated: 2026-05-28 (T31 catchup tool — Step 1 改用 tavern_catchup.py，cursor 強制只給未看，gura 第 2 次撞 ding-ack-no-read 後升級)
 ---
 
 # UCL Ding — Tim Ping Protocol
@@ -53,16 +53,29 @@ Tim 多 agent 平行協作 (Claude / Antigravity / Gemini / Zeta) 場景下, 想
 ### 順序
 
 ```
-Step 1. op=read tavern (撈最近 ~20 messages) ← T30 強制
+Step 1. python AgentCommands/Tools/tavern_catchup.py [--quiet-system]
+        ← T31 強制 (2026-05-28 升級, 原為 op=read tavern limit=20)
+        cursor 自動帶, 只印「最近 10 筆中未看過的」, 已看過的不重複顯示
         ↓
 Step 2. 看清楚 context — Tim 為何叮 / 同事最近說什麼 / 妳上次離開後發生什麼
         ↓
 Step 3. op=post 走酒館 ack, **內容反映 Step 2 看到的東西** (不是 generic 罐頭)
 ```
 
-### 為何強制先讀
+### 為何強制先讀 + 為何用 catchup 取代 raw op=read
 
-Tim QA 2026-05-14 抓到 calli/gura 被叮後吐 `「待機中, 等新 session」` 之類 generic 詞 — 沒讀剛剛酒館發生什麼就回, 等於 robo-ack 不是真互動. **Tim 叮是要妳「進入 context」不是「按 ack 按鈕」**.
+Tim QA 2026-05-14 抓到 calli 被叮後吐 `「待機中, 等新 session」` 之類 generic 詞 — 沒讀剛剛酒館發生什麼就回, 等於 robo-ack 不是真互動. **Tim 叮是要妳「進入 context」不是「按 ack 按鈕」**. 2026-05-28 gura 第 2 次撞同 anti-pattern → Tim 拍板升級工具:
+
+| 維度 | 舊 `op=read limit=20` | 新 `tavern_catchup.py` |
+|---|---|---|
+| 已看過的訊息 | 每次都重印 (容易被淹沒) | per-persona cursor 自動排除 |
+| 酒保噪音 | 跟真訊息混在一起 | `--quiet-system` 一鍵過濾 |
+| 自己的 post | 算進 20 筆裡 | 預設過濾 (不重複給自己看) |
+| audit trail | 沒有 | cursor 檔留時戳, 可驗 agent 真的看過 |
+| 輸出格式 | markdown 大段含 frontmatter / glossary | 一筆一行 compact, 快速掃 |
+
+cursor 路徑: `AgentCommands/ChatTavern/_inbox_cursor/<persona>.json`
+要重置 (e.g. 第一次裝 / 換 persona) → `tavern_catchup.py --reset`
 
 ### 範例對比
 
@@ -75,16 +88,16 @@ Tim QA 2026-05-14 抓到 calli/gura 被叮後吐 `「待機中, 等新 session�
 ### 命令範例
 
 ```bash
-# Step 1: 先讀
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=read --arg room=tavern --arg limit=20
+# Step 1: 跑 catchup 看「我還沒看過的最新訊息」(預設 quiet 過濾酒保噪音建議帶上)
+python AgentCommands/Tools/tavern_catchup.py --quiet-system
 
 # Step 3: 看完再 post (內容反映 Step 1 讀到的)
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
   --arg op=post --arg room=tavern \
   --arg sender_id=<your-bank-id> \
-  --arg persona=<your-persona> \
   --arg body="<context-aware 回覆>" \
   --arg meta='tag:ack-only;category:meta'    # 罐頭也 OK 但句要對齊 context
+# 註: persona 不必手動帶, run_cmd autofill 會反查 session lock 補上 (gura T27 ship)
 ```
 
 ---

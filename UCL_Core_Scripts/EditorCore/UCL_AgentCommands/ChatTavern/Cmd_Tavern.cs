@@ -1385,7 +1385,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
-                string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "_session", "_token_enforce.json");
+                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_token_enforce.json");
                 if (!File.Exists(path)) return false;
                 string json = File.ReadAllText(path);
                 var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
@@ -1408,7 +1408,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             realPersona = "";
             try
             {
-                string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "_session", "_tokens.json");
+                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
                 if (!File.Exists(path))
                     return "_tokens.json 不存在 (跑 awakening.py morning 發 token)";
                 string json = File.ReadAllText(path);
@@ -1438,7 +1438,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
-                string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "_session", "_tokens.json");
+                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
                 if (!File.Exists(path))
                     return "_tokens.json 不存在 (跑 awakening.py morning 發 token)";
                 string json = File.ReadAllText(path);
@@ -1538,8 +1538,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(senderPersona)) return "";
             try
             {
-                string repoRoot = UCL.Core.EditorLib.UCL_RepoPath.RepoRoot;
-                string path = System.IO.Path.Combine(repoRoot, "AgentCommands", "ChatTavern", "work_sessions.json");
+                // 走可 override 資料根;預設 = RepoRoot/AgentCommands/ChatTavern/work_sessions.json
+                string path = System.IO.Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "work_sessions.json");
                 if (!System.IO.File.Exists(path)) return "";
                 // 容忍 pretty-print 空白變體 — 主要 work_sessions.json 是 pretty (Python json.dump indent=2),
                 // 但 IdentityAsset / RoomAsset 是 compact, 防範未來 schema 變動

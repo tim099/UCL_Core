@@ -81,8 +81,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             }
 
             // 區塊職責: 路徑解析
-            // 物理意義: 走 UCL_RepoPath.AgentCommandsDir 撈 _session 跟 AwakenInit/personas
-            string agentCmdDir = UCL_RepoPath.AgentCommandsDir;
+            // 物理意義: 走可 override 資料根撈 _session 跟 AwakenInit/personas (預設 = RepoRoot/AgentCommands)
+            string agentCmdDir = UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot;
             string sessionDir = Path.Combine(agentCmdDir, "_session");
             string personasDir = Path.Combine(agentCmdDir, "AwakenInit", "personas");
             string outDir = Path.Combine(agentCmdDir, "AwakenInit");

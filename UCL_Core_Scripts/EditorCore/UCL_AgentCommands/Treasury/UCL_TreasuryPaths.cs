@@ -20,9 +20,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public const string AccountsDirName = "accounts";
         public const string RulesFile = "rules.json";
 
-        /// <summary>Treasury 根目錄 — repo-relative.</summary>
+        /// <summary>Treasury 根目錄 — 走可 override 的資料根 (UCL_AgentCommandsPath.DataRoot)。
+        /// 2026-05-28 修正:原本用 UnityProjectRoot/.. 與其他子系統不一致 (nested layout 脆弱),
+        /// 統一改走 ResolveData;預設模式 = RepoRoot/AgentCommands/Treasury,與舊 nested layout 結果相同。</summary>
         public static string GetTreasuryDir()
-            => Path.Combine(UCL_RepoPath.UnityProjectRoot, "..", TreasuryDirRelative).Replace('\\', '/');
+            => UCL_AgentCommandsPath.ResolveData(TreasuryDirRelative);
 
         /// <summary>ledger/ 根目錄</summary>
         public static string GetLedgerRoot()

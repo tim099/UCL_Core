@@ -272,10 +272,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             try
             {
-                // 對齊 Cmd_Bartender / 別人寫 _last_op.md 的路徑
+                // 走可 override 資料根;預設 = RepoRoot/AgentCommands/ChatTavern (與舊行為相同)
                 string tavernDir = Path.Combine(
-                    Directory.GetParent(Application.dataPath).Parent.FullName,
-                    "AgentCommands", "ChatTavern");
+                    UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot,
+                    "ChatTavern");
                 Directory.CreateDirectory(tavernDir);
                 string path = Path.Combine(tavernDir, "_last_op.md");
                 File.WriteAllText(path, markdown);

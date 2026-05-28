@@ -99,9 +99,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
         {
             get
             {
-                // Application.dataPath = "<git-root>/CardGame/Assets"; 反推兩層到 git-root
-                string projRoot = Directory.GetParent(Application.dataPath)?.Parent?.FullName ?? "";
-                return Path.Combine(projRoot, "AgentCommands", "Rules");
+                // 走可 override 資料根;預設 = RepoRoot/AgentCommands/Rules (與舊行為相同)
+                return Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "Rules");
             }
         }
 

@@ -76,7 +76,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         public static string GetTavernDir()
         {
-            return Path.Combine(UCL_RepoPath.RepoRoot, TavernDirRelative);
+            // 走可 override 的資料根 (UCL_AgentCommandsPath.DataRoot);預設模式 = RepoRoot/AgentCommands/ChatTavern (與舊行為逐字相同)
+            return UCL_AgentCommandsPath.ResolveData(TavernDirRelative);
         }
 
         public static string GetIdentitiesPath() => Path.Combine(GetTavernDir(), IdentitiesFile);

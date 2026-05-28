@@ -7,7 +7,11 @@
 //   - 關閉 → 停止酒館各自動廣播 + 背景程序 (Bartender daemon / Discord inbound daemon)
 //   - 打開 → SetEnabled 內由 OFF→ON 自動 fire 重啟，讓 daemon 重新初始化
 #if UNITY_EDITOR
+using System.Collections.Generic;
+using System.IO;
+using UCL.Core.EditorLib;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
+using UCL.Core.JsonLib;
 using UCL.Core.Page;
 using UCL.Core.UI;
 using UnityEngine;
@@ -26,6 +30,25 @@ namespace UCL.Core.EditorLib.Page
 
         public static UCL_ControlPanelPage Create() => UCL_EditorPage.Create<UCL_ControlPanelPage>();
 
+        // ===== AgentCommands 路徑 section 的 draft 狀態 =====
+        // 物理意義：UI 上編輯的值 (尚未 Apply)。Apply 按下才寫 PlayerPrefs + pointer 檔。
+        // 數值影響：m_PathDraftLoaded 控制只 lazy-load 一次,避免每幀重讀 PlayerPrefs 覆蓋使用者編輯
+        bool m_PathDraftLoaded = false;
+        AgentCommandsPathMode m_PathDraftMode = AgentCommandsPathMode.RepoRootDefault;
+        string m_PathDraftAbsolute = "";
+        string m_PathDraftRelative = "../../AgentCommands";
+        // Mode dropdown 選項 (順序對齊 enum 0/1/2) — List<string> 對齊 UCL_GUILayout.PopupSearchCache 用法
+        static readonly List<string> s_PathModeLabels = new List<string>
+        {
+            "預設 (RepoRoot/AgentCommands)",
+            "全域絕對路徑 (Global)",
+            "專案相對 (ProjectRelative)",
+        };
+        // PopupSearchCache 內部狀態容器 — 對齊 UCL_EditorMenuPage 的 m_PagePickerDic 模式
+        readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
+        // Apply 後的回饋訊息 (取代 EditorUtility.DisplayDialog,持久顯示直到下次 Apply)
+        string m_LastApplyMessage = "";
+
         protected override void ContentOnGUI()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -35,6 +58,8 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
 
             DrawChatTavernSystemSection();
+            GUILayout.Space(8);
+            DrawAgentCommandsPathSection();
         }
 
         // ===========================================================
@@ -83,17 +108,245 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Space(8);
 
                     // 手動重啟 — 只有系統啟用時才有意義 (停止狀態重啟無作用)
-                    using (new UnityEditor.EditorGUI.DisabledScope(!enabled))
+                    // 採 GUI.enabled 手動 save/restore (對齊 UCL_EditorMenuPage),避免依賴 UnityEditor.EditorGUI.DisabledScope
+                    bool oldEnabled = GUI.enabled;
+                    GUI.enabled = enabled;
+                    if (GUILayout.Button("重啟系統", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
-                        if (GUILayout.Button("重啟系統", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        {
-                            UCL_ChatTavernSystemControl.Restart();
-                            Debug.Log("[ControlPanel] 手動重啟聊天酒館系統");
-                        }
+                        UCL_ChatTavernSystemControl.Restart();
+                        Debug.Log("[ControlPanel] 手動重啟聊天酒館系統");
                     }
+                    GUI.enabled = oldEnabled;
                     GUILayout.FlexibleSpace();
                 }
             }
+        }
+
+        // ===========================================================
+        // 區塊：AgentCommands 資料路徑配置 (T-PATH-01 Phase 2)
+        // 物理意義：Enum 三模式 + 路徑輸入 + 即時預覽 + 套用按鈕。
+        //          套用 → UCL_AgentCommandsPath.ApplySettings (寫 PlayerPrefs + pointer 檔 + ResetCache)。
+        // 安全護欄 (basecamp 2026-05-28 拍板, Tim 給的自由意志決策):
+        //   - 聊天酒館系統 ON → 擋下 Apply + 提示先關 (避免 daemon 寫到舊路徑半途)
+        //   - active work-session 存在 → 擋下 Apply + 提示先結束 (執行狀態會撕裂)
+        //   採 block + 提示而非 auto-toggle — 顯式優於隱式,不靜默 mutate 使用者開關狀態。
+        // 數值影響：PlayerPrefs 寫入後快取 reset;daemon 需重啟 Editor 才乾淨重讀 (UI 明示)。
+        // ===========================================================
+        void DrawAgentCommandsPathSection()
+        {
+            EnsurePathDraftLoaded();
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // ---- 標題 + 當前已套用模式提示 ----
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("<b>AgentCommands 資料路徑</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(200));
+                    var committedMode = (AgentCommandsPathMode)PlayerPrefs.GetInt(UCL_AgentCommandsPath.PrefKeyMode, 0);
+                    GUILayout.Label($"已套用: {s_PathModeLabels[(int)committedMode]}", UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                GUILayout.Space(2);
+                GUILayout.Label(
+                    "持久狀態資料 (酒館 / 銀行 / persona / 書籍 / Lessons / baton / Rules) 的存放根目錄。\n" +
+                    "RPC queue 與腳本 (Tools / PromptQueue) 永遠錨在專案的 RepoRoot/AgentCommands,不受此設定影響。\n" +
+                    "設定走 PlayerPrefs (per-machine),Apply 時把絕對路徑寫到 git-root 的 .agentcommands_root.local 讓 Python 端同步。",
+                    UCL_GUIStyle.LabelStyle);
+                GUILayout.Space(4);
+
+                // ---- 模式 dropdown ----
+                // 採 UCL_GUILayout.PopupSearchCache (runtime-safe, 自帶搜尋 + per-popup 快取), 對齊 UCL_EditorMenuPage 的 page picker 用法
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("模式", UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    int newIdx = UCL_GUILayout.PopupSearchCache(
+                        (int)m_PathDraftMode, s_PathModeLabels, m_PickerDic, "PathModePicker",
+                        GUILayout.Width(360));
+                    if (newIdx != (int)m_PathDraftMode && newIdx >= 0 && newIdx < s_PathModeLabels.Count)
+                        m_PathDraftMode = (AgentCommandsPathMode)newIdx;
+                    GUILayout.FlexibleSpace();
+                }
+
+                // ---- 模式專屬輸入 ----
+                if (m_PathDraftMode == AgentCommandsPathMode.GlobalAbsolute)
+                {
+                    // 絕對路徑用手動輸入 — 不用 EditorUtility.OpenFolderPanel (Editor-only API);
+                    // 即時預覽會驗證 rooted 性,使用者可從檔案總管複製貼上路徑
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("絕對路徑", UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
+                        m_PathDraftAbsolute = GUILayout.TextField(m_PathDraftAbsolute ?? "", GUILayout.MinWidth(380));
+                    }
+                    GUILayout.Label("  範例: D:/Unity/EmblemOfValor/AgentCommands (可放專案外,從檔案總管複製貼上)", UCL_GUIStyle.LabelStyle);
+                }
+                else if (m_PathDraftMode == AgentCommandsPathMode.ProjectRelative)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("相對 dataPath", UCL_GUIStyle.LabelStyle, GUILayout.Width(110));
+                        m_PathDraftRelative = GUILayout.TextField(m_PathDraftRelative ?? "", GUILayout.MinWidth(380));
+                    }
+                    GUILayout.Label("  Application.dataPath = .../<UnityProject>/Assets — 用 ../ 往上層", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label("  範例: ../AgentCommands (CardGame/AgentCommands) / ../../AgentCommands (EmblemOfValor/AgentCommands, = 預設位置)", UCL_GUIStyle.LabelStyle);
+                }
+                else
+                {
+                    GUILayout.Label("  預設模式:走 RepoRoot/AgentCommands (現行行為,跨 layout 安全,無 override)", UCL_GUIStyle.LabelStyle);
+                }
+
+                GUILayout.Space(4);
+
+                // ---- 即時預覽 ----
+                string previewPath = ComputeDraftPreview();
+                bool exists = !string.IsNullOrEmpty(previewPath) && Directory.Exists(previewPath);
+                bool hasData = exists && DirHasContent(previewPath);
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    GUILayout.Label($"<b>解析後絕對路徑</b>: {(string.IsNullOrEmpty(previewPath) ? "(待填入)" : previewPath)}", UCL_GUIStyle.LabelStyle);
+                    string statusIcon = !exists ? "⚠ 不存在 (Apply 後會自動建立)"
+                                        : !hasData ? "📂 存在但空目錄 (新位置 — 若有舊資料請手動搬移)"
+                                                   : "✅ 存在且已有資料";
+                    GUILayout.Label(statusIcon, UCL_GUIStyle.LabelStyle);
+                }
+
+                GUILayout.Space(4);
+
+                // ---- 安全護欄檢查 ----
+                bool tavernOn = UCL_ChatTavernSystemControl.IsEnabled;
+                bool hasActiveWS = HasActiveWorkSession();
+                bool validInput = m_PathDraftMode switch
+                {
+                    AgentCommandsPathMode.GlobalAbsolute => !string.IsNullOrEmpty((m_PathDraftAbsolute ?? "").Trim()) && Path.IsPathRooted(m_PathDraftAbsolute.Trim()),
+                    AgentCommandsPathMode.ProjectRelative => !string.IsNullOrEmpty((m_PathDraftRelative ?? "").Trim()),
+                    _ => true,
+                };
+                string blockReason = null;
+                if (!validInput) blockReason = m_PathDraftMode == AgentCommandsPathMode.GlobalAbsolute
+                    ? "請填入有效的絕對路徑 (rooted)" : "請填入相對路徑";
+                else if (tavernOn) blockReason = "聊天酒館系統目前是啟用中 — 請先到上面把系統關閉再改路徑 (避免 daemon 寫到舊路徑半途)";
+                else if (hasActiveWS) blockReason = "偵測到 active work-session — 請先結束 work-session 再改路徑 (執行狀態會撕裂)";
+
+                // ---- 套用按鈕 + 重新載入 ----
+                // 用 GUI.enabled 手動 save/restore 取代 UnityEditor.EditorGUI.DisabledScope (對齊 UCL_EditorMenuPage)
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool oldEnabled = GUI.enabled;
+                    GUI.enabled = blockReason == null;
+                    if (GUILayout.Button("套用設定", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_AgentCommandsPath.ApplySettings(m_PathDraftMode, m_PathDraftAbsolute, m_PathDraftRelative);
+                        Debug.Log($"[ControlPanel] AgentCommands 路徑已套用 → {UCL_AgentCommandsPath.DataRoot}");
+                        // 取代 EditorUtility.DisplayDialog (Editor-only): 把回饋持久顯示在頁面下方
+                        bool overridden = UCL_AgentCommandsPath.DataRoot != UCL_AgentCommandsPath.DefaultDataRoot;
+                        m_LastApplyMessage =
+                            $"✅ 已套用 — 新資料根: {UCL_AgentCommandsPath.DataRoot}\n" +
+                            "PlayerPrefs + pointer 檔 (.agentcommands_root.local) 已同步。\n" +
+                            "⚠ 建議重啟 Editor 讓所有常駐 daemon (Bartender / Discord inbound) 乾淨重讀新路徑。" +
+                            (overridden ? "\n📂 舊路徑既有資料不會自動搬移,如需保留請手動複製 (Migrate 工具列在後續 Phase)。" : "");
+                    }
+                    GUI.enabled = oldEnabled;
+
+                    if (GUILayout.Button("從 PlayerPrefs 重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_PathDraftLoaded = false;
+                        EnsurePathDraftLoaded();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                if (blockReason != null)
+                {
+                    var warnStyle = new GUIStyle(UCL_GUIStyle.LabelStyle);
+                    warnStyle.normal.textColor = new Color(1f, 0.6f, 0.3f);
+                    GUILayout.Label($"⚠ {blockReason}", warnStyle);
+                }
+
+                // Apply 後的回饋訊息 — 持久顯示直到下次 Apply (取代 EditorUtility.DisplayDialog)
+                if (!string.IsNullOrEmpty(m_LastApplyMessage))
+                {
+                    GUILayout.Space(4);
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        GUILayout.Label(m_LastApplyMessage, UCL_GUIStyle.LabelStyle);
+                    }
+                }
+            }
+        }
+
+        // 從 PlayerPrefs 載 draft (lazy, 只第一次 / 顯式重載)
+        void EnsurePathDraftLoaded()
+        {
+            if (m_PathDraftLoaded) return;
+            m_PathDraftMode = (AgentCommandsPathMode)PlayerPrefs.GetInt(UCL_AgentCommandsPath.PrefKeyMode, 0);
+            m_PathDraftAbsolute = PlayerPrefs.GetString(UCL_AgentCommandsPath.PrefKeyAbsolute, "");
+            string rel = PlayerPrefs.GetString(UCL_AgentCommandsPath.PrefKeyRelative, "");
+            if (!string.IsNullOrEmpty(rel)) m_PathDraftRelative = rel;
+            m_PathDraftLoaded = true;
+        }
+
+        // 即時預覽 draft 解析後的絕對路徑 (不寫 PlayerPrefs)
+        string ComputeDraftPreview()
+        {
+            try
+            {
+                switch (m_PathDraftMode)
+                {
+                    case AgentCommandsPathMode.GlobalAbsolute:
+                    {
+                        string abs = (m_PathDraftAbsolute ?? "").Trim();
+                        if (string.IsNullOrEmpty(abs) || !Path.IsPathRooted(abs)) return "";
+                        return Path.GetFullPath(abs).Replace('\\', '/');
+                    }
+                    case AgentCommandsPathMode.ProjectRelative:
+                    {
+                        string rel = (m_PathDraftRelative ?? "").Trim();
+                        if (string.IsNullOrEmpty(rel)) return "";
+                        return Path.GetFullPath(Path.Combine(Application.dataPath, rel)).Replace('\\', '/');
+                    }
+                    default:
+                        return UCL_AgentCommandsPath.DefaultDataRoot;
+                }
+            }
+            catch { return ""; }
+        }
+
+        // 目錄是否有內容 (用來判斷「空目錄 vs 已有資料」)
+        static bool DirHasContent(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) return false;
+                foreach (var _ in Directory.EnumerateFileSystemEntries(dir)) return true;
+                return false;
+            }
+            catch { return false; }
+        }
+
+        // 是否有 active work-session (未 ended / 未 aborted)
+        // 物理意義: 當前資料根下的 ChatTavern/work_sessions.json 解析 active_sessions 陣列
+        static bool HasActiveWorkSession()
+        {
+            try
+            {
+                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "work_sessions.json");
+                if (!File.Exists(path)) return false;
+                string content = File.ReadAllText(path);
+                if (string.IsNullOrEmpty(content)) return false;
+                var jd = JsonData.ParseJson(content);
+                if (jd == null || !jd.IsObject) return false;
+                var active = jd["active_sessions"];
+                if (active == null || !active.IsArray) return false;
+                for (int i = 0; i < active.Count; i++)
+                {
+                    var entry = active[i];
+                    if (entry == null || !entry.IsObject) continue;
+                    if (entry.GetBool("ended", false)) continue;
+                    if (entry.GetBool("aborted", false)) continue;
+                    return true;  // 找到一個 active 就夠擋
+                }
+                return false;
+            }
+            catch { return false; }
         }
     }
 }

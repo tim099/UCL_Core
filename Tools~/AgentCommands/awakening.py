@@ -102,32 +102,67 @@ def _resolve_repo_root() -> Path:
 
 _REPO_ROOT = _resolve_repo_root()
 
-# ─── Path Config Override (Tim 2026-05-12 拍板, cross-project sharing) ─────
-# 區塊職責: 讀 <REPO_ROOT>/AgentCommands/_config/tavern_paths.json 覆寫預設 data dirs.
-# 物理意義: 預設每專案各自 AgentCommands/* state, 但 config 可指向外部共享路徑
-#          (e.g. ~/.shared-tavern), 讓多專案 agent 在同 tavern 共寫.
-# 數值影響: empty/missing config field → fallback 走預設; 帶值 → 展開 ~/ 跟 env var,
-#          relative path → 相對 REPO_ROOT, absolute path → 直用.
+# ─── T-PATH-01 (2026-05-28): AgentCommands 資料根 pointer 檔 ─────
+# 區塊職責: 讀 <git-root>/.agentcommands_root.local pointer 檔得資料根 (C# 控制台 Apply 寫入)。
+# 物理意義: 兩語言共讀同一 pointer 檔, per-machine (gitignored), 沒 → 預設 git_root/AgentCommands。
+def _resolve_agentcommands_data_root(git_root: Path) -> Path:
+    pointer = git_root / ".agentcommands_root.local"
+    try:
+        if pointer.exists():
+            content = pointer.read_text(encoding="utf-8").strip()
+            if content:
+                p = Path(content)
+                if p.is_absolute():
+                    return p.resolve()
+    except Exception:
+        pass
+    return (git_root / "AgentCommands").resolve()
+
+_DATA_ROOT = _resolve_agentcommands_data_root(_REPO_ROOT)
+
+# ─── Path Config Override (legacy, Tim 2026-05-12 → 2026-05-28 deprecation) ─
+# 區塊職責: tavern_paths.json 細粒度 override (registry/session/letters/etc.) — 已被 pointer 檔取代。
+# 物理意義: 若殘留檔 → 仍 honor (transition window), 但印一次 deprecation warning,
+#          Phase 後續移除。新方案走 pointer 檔 (整個資料根一次 override) + CLI 參數做 ad-hoc。
 _PATH_CONFIG_PATH = _REPO_ROOT / "AgentCommands" / "_config" / "tavern_paths.json"
+_tavern_paths_deprecation_warned = False
+
+
+def _warn_tavern_paths_deprecated_once() -> None:
+    global _tavern_paths_deprecation_warned
+    if _tavern_paths_deprecation_warned:
+        return
+    _tavern_paths_deprecation_warned = True
+    print(
+        f"⚠ DEPRECATION: {_PATH_CONFIG_PATH.name} 細粒度 path override 已 deprecated (T-PATH-01)。\n"
+        f"   新方案: 控制台改 AgentCommands 資料根 → 寫 <git-root>/.agentcommands_root.local pointer 檔。\n"
+        f"   過渡窗口: 仍 honor 既有 tavern_paths.json,但會在後續 Phase 移除。",
+        file=sys.stderr,
+    )
 
 
 def _resolve_data_path(default_subpath: str, config_key: str) -> Path:
-    """覆寫機制: config 帶值 → 用 override, missing/empty → fallback default."""
+    """覆寫機制 (T-PATH-01 後): legacy tavern_paths.json 仍 honor (deprecated),
+    否則用 pointer-aware 資料根映射 (default_subpath 形如 'AgentCommands/X' → _DATA_ROOT/X)。"""
     if _PATH_CONFIG_PATH.exists():
         try:
             with open(_PATH_CONFIG_PATH, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
             override = (cfg.get(config_key) or "").strip()
             if override:
+                _warn_tavern_paths_deprecated_once()
                 expanded = os.path.expandvars(os.path.expanduser(override))
                 p = Path(expanded)
                 if not p.is_absolute():
                     p = _REPO_ROOT / p
                 return p.resolve()
         except Exception as e:
-            print(f"⚠ path config 讀取失敗 ({_PATH_CONFIG_PATH.name}): {e} — fallback default",
+            print(f"⚠ path config 讀取失敗 ({_PATH_CONFIG_PATH.name}): {e} — fallback pointer/default",
                   file=sys.stderr)
-    return (_REPO_ROOT / default_subpath).resolve()
+    # 把 default_subpath 「AgentCommands/<sub>」前綴換成 _DATA_ROOT (pointer-aware)
+    if default_subpath.startswith("AgentCommands/"):
+        return (_DATA_ROOT / default_subpath[len("AgentCommands/"):]).resolve()
+    return (_DATA_ROOT / default_subpath).resolve()
 
 
 _REGISTRY_PATH = _resolve_data_path(
@@ -497,7 +532,7 @@ def get_treasury_balance(account_id: str, currency: str = "tavern_token") -> int
     物理意義：Treasury ledger 是 source-of-truth；agent_bonus_quota.json 只是 grant audit / 額度池快照。
     數值影響：goodnight / morning ritual 顯示「銀行餘額」必須走本函式，不可走 get_bonus_balance（QA by Zeta: 39 vs 336 不符 bug）。
     """
-    ledger_root = _REPO_ROOT / "AgentCommands" / "Treasury" / "ledger"
+    ledger_root = _DATA_ROOT / "Treasury" / "ledger"  # T-PATH-01: 走可 override 資料根
     if not ledger_root.is_dir():
         return 0
     total_credit = 0
@@ -1328,8 +1363,9 @@ def _print_pending_for_persona(persona: str) -> None:
       2. AgentCommands/ChatTavern/inbox/<bank_account>.md (跨房 @mention 累積)
     兩處皆不存在 → silent skip (不擋 ritual)。
     """
-    assignments_path = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "bartender" / "assignments.json"
-    inbox_dir = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "inbox"
+    # T-PATH-01: 走可 override 資料根
+    assignments_path = _DATA_ROOT / "ChatTavern" / "bartender" / "assignments.json"
+    inbox_dir = _DATA_ROOT / "ChatTavern" / "inbox"
     pending_for_me = []
     if assignments_path.exists():
         try:

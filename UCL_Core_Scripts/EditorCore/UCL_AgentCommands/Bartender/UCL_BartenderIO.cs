@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
 
         public static string GetBartenderDir()
-            => Path.Combine(UCL_RepoPath.RepoRoot, BartenderDirRelative);
+            => UCL_AgentCommandsPath.ResolveData(BartenderDirRelative);  // 走可 override 資料根;預設與舊行為逐字相同
 
         public static string GetTriggersPath() => Path.Combine(GetBartenderDir(), TriggersFile);
         public static string GetTimeRulesPath() => Path.Combine(GetBartenderDir(), TimeRulesFile);

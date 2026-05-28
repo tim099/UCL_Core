@@ -66,8 +66,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
                 return;
             }
 
-            // Path: <repoRoot>/AgentCommands/Lessons/
-            string lessonsDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, "Lessons");
+            // Path: <DataRoot>/Lessons/ (走可 override 資料根;預設 = RepoRoot/AgentCommands/Lessons)
+            string lessonsDir = Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "Lessons");
             try
             {
                 Directory.CreateDirectory(lessonsDir);

@@ -274,7 +274,30 @@ if _env_root and Path(_env_root).is_dir():
 else:
     _walked = _find_git_root_by_walk(Path(__file__))
     GIT_ROOT = _walked if _walked else Path(__file__).resolve().parents[2]
+
+# QUEUE_DIR = canonical RPC 錨點 (queue.json / pending.trigger), 永遠在 RepoRoot/AgentCommands —
+# 跟 C# UCL_RepoPath.AgentCommandsDir 對齊, 不跟資料搬。
 QUEUE_DIR = GIT_ROOT / "AgentCommands"
+
+# T-PATH-01 (2026-05-28): AgentCommands 資料根 pointer 檔解析
+# 物理意義: C# 控制台 Apply 把絕對資料根寫到 <git-root>/.agentcommands_root.local;
+#          本 helper 讀檔得實際資料根, 沒有 → 預設 GIT_ROOT/AgentCommands (與舊行為相同)。
+# 數值影響: 跨語言 (C#/Python) 共讀同一檔, per-machine (gitignored)。
+def _resolve_agentcommands_data_root(git_root: Path) -> Path:
+    pointer = git_root / ".agentcommands_root.local"
+    try:
+        if pointer.exists():
+            content = pointer.read_text(encoding="utf-8").strip()
+            if content:
+                p = Path(content)
+                if p.is_absolute():
+                    return p.resolve()
+    except Exception:
+        pass
+    return (git_root / "AgentCommands").resolve()
+
+# DATA_ROOT = 可 override 的資料根 (給 ChatTavern / _last_op.md / etc.); 預設 = QUEUE_DIR。
+DATA_ROOT = _resolve_agentcommands_data_root(GIT_ROOT)
 
 # agent-command-pipeline-parallelize T05: per-agent queue 子目錄
 # 物理意義: --agent-id <X> 帶進來 → queue/trigger 寫進 queues/queue-<X>.json 跟 queues/pending-<X>.trigger
@@ -367,7 +390,7 @@ TRIGGER_PATH = QUEUE_DIR / "pending.trigger"
 RUNNING_PATH = QUEUE_DIR / "pending.trigger.running"
 # Tavern 握手用：op=post 後若指定 --wait-reply，client-side polling messages.jsonl
 # 等對方回應；使用者可從酒館 IMGUI 頁按「中止握手」touch 此 flag 強制提前退出
-TAVERN_DIR = QUEUE_DIR / "ChatTavern"
+TAVERN_DIR = DATA_ROOT / "ChatTavern"  # T-PATH-01: 走可 override 資料根;預設 = QUEUE_DIR/ChatTavern (與舊行為相同)
 HANDSHAKE_CANCEL_FLAG = TAVERN_DIR / "_handshake_cancel.flag"
 # 握手活躍指示檔：wait_for_tavern_reply 期間每 poll 觸碰一次更新 mtime
 # Editor 端讀此檔判斷「目前是否有 Python 端握手在進行」 → 中止握手按鈕變色

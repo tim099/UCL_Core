@@ -79,7 +79,24 @@ def _resolve_repo_root() -> Path:
 
 
 _REPO_ROOT = _resolve_repo_root()
-LIB_ROOT = _REPO_ROOT / "AgentCommands" / "BookNotes"
+
+# T-PATH-01 (2026-05-28): AgentCommands 資料根 pointer 檔解析
+# 物理意義: C# 控制台 Apply 寫 <git-root>/.agentcommands_root.local; 兩語言共讀同一檔。
+def _resolve_agentcommands_data_root(git_root: Path) -> Path:
+    pointer = git_root / ".agentcommands_root.local"
+    try:
+        if pointer.exists():
+            content = pointer.read_text(encoding="utf-8").strip()
+            if content:
+                p = Path(content)
+                if p.is_absolute():
+                    return p.resolve()
+    except Exception:
+        pass
+    return (git_root / "AgentCommands").resolve()
+
+_DATA_ROOT = _resolve_agentcommands_data_root(_REPO_ROOT)
+LIB_ROOT = _DATA_ROOT / "BookNotes"  # 走可 override 資料根; 預設 = _REPO_ROOT/AgentCommands/BookNotes
 
 # 區塊職責：多人同讀的「分支筆記」(Git Branch 概念, Tim 2026-05-26 拍板最小改動方案)
 # 物理意義：初始讀者 (book.json.reader_persona, 可能也是捐贈者) 的筆記 = main, 結構不動。

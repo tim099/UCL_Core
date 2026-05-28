@@ -244,8 +244,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         static void CheckOverdueWorkSessions()
         {
-            string wsPath = Path.Combine(UCL_RepoPath.RepoRoot,
-                "AgentCommands", "ChatTavern", "work_sessions.json");
+            // 走可 override 資料根;預設 = RepoRoot/AgentCommands/ChatTavern/work_sessions.json
+            string wsPath = Path.Combine(
+                UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot,
+                "ChatTavern", "work_sessions.json");
             if (!File.Exists(wsPath)) return;
 
             string content;

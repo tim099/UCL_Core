@@ -111,7 +111,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             // 區塊職責：T03 kyouko-persona-binding refactor — baton 從 actor-keyed 改 Agent@Persona-keyed
             // 物理意義：basecamp 跟 crest-001 的 baton 不再共用 _latest pointer，各自 persona-bounded
             // 數值影響：legacy caller 沒傳 persona → 落 _unassigned/（backward compat，goodnight 後可手動歸位）
-            string batonDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "baton", actor, persona);
+            string batonDir = Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", actor, persona);
             try
             {
                 Directory.CreateDirectory(batonDir);
@@ -128,7 +128,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
             string timestampedPath = Path.Combine(batonDir, $"{ts}.md");
             string latestPath = Path.Combine(batonDir, "_latest.md");
             // confirm md 留在 baton 根（caller 一律 cat 同一處）
-            string confirmPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "baton", "_last_op.md");
+            string confirmPath = Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "_last_op.md");
 
             // 自動 summary（如果 caller 沒給）：從 body 第一段非空行截取
             if (string.IsNullOrEmpty(summary))

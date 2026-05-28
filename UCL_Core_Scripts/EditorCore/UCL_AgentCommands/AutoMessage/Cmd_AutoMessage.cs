@@ -95,8 +95,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
         {
             get
             {
-                string projRoot = Directory.GetParent(Application.dataPath)?.Parent?.FullName ?? "";
-                return Path.Combine(projRoot, "AgentCommands", "AutoMessage");
+                // 走可 override 的資料根;預設 = RepoRoot/AgentCommands/AutoMessage (與舊行為相同)
+                return Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "AutoMessage");
             }
         }
 

@@ -511,7 +511,7 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.BookNotes.SelectLabel"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
                 int curIdx = m_Books.FindIndex(x => x.Id == m_SelectedBookId);
                 if (curIdx < 0) curIdx = 0;
-                int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_BookDisplayOptions, m_Dic.GetSubDic("BookPicker"), "BookNotesPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(320)));
+                int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_BookDisplayOptions, m_Dic.GetSubDic("BookPicker"), "BookNotesPicker");
                 if (newIdx >= 0 && newIdx < m_Books.Count) m_SelectedBookId = m_Books[newIdx].Id;
                 GUILayout.FlexibleSpace();
             }
@@ -661,7 +661,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Books.SelectLabel"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
                     int curIdx = m_FullBooks.FindIndex(x => x.Slug == m_SelectedFullBook);
                     if (curIdx < 0) curIdx = 0;
-                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_FullBookDisplayOptions, m_Dic.GetSubDic("FullBookPicker"), "FullBookPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(320)));
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_FullBookDisplayOptions, m_Dic.GetSubDic("FullBookPicker"), "FullBookPicker");
                     if (newIdx >= 0 && newIdx < m_FullBooks.Count) m_SelectedFullBook = m_FullBooks[newIdx].Slug;
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.EditBook"), UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))

@@ -61,6 +61,17 @@ namespace UCL.Core.EditorLib.Page
         int m_LastSeenMsgCount = 0;
         string m_LastSeenRoomId = ""; // 跨房間切換偵測用：room id 變了 → 強制捲底
 
+        // 區塊職責：訊息分頁載入上限 — 預設只顯示最新 50 筆，捲到最舊端可「載入更早 50 筆」逐步展開
+        // 物理意義：m_MessageLimit 是當前要 Tail 的筆數；從 MessageLimitStep(50) 起，每按一次「載入更早」+50。
+        //          切換房間時重置回 50（新房從最新 50 筆看起，不繼承上一房展開的深度）。
+        // 數值影響：RefreshMessages 用此值呼叫 Tail；m_MessagesCache.Count >= m_MessageLimit 視為「可能還有更早訊息」→ 顯示載入按鈕。
+        const int MessageLimitStep = 50;
+        int m_MessageLimit = MessageLimitStep;
+        // 載入更早觸發的 count 成長不該搶捲到底（要保留使用者看歷史的視角）— 設 true 抑制下一次 RefreshMessages 的自動捲底
+        bool m_SuppressScrollToBottomOnce = false;
+        // button click 在 MouseUp 直接 mutate 載入上限 + 重抓會改 layout 結構 → 延後到下個 Layout event 套用（對齊既有 deferred-apply 模式）
+        bool m_PendingLoadOlder = false;
+
         // ===== 新建表單 =====
         bool m_ShowCreateRoom = false;
         bool m_ShowCharMapping = false;
@@ -477,6 +488,14 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (m_PendingShowCreateRoom.HasValue) { m_ShowCreateRoom = m_PendingShowCreateRoom.Value; m_PendingShowCreateRoom = null; }
                     if (m_PendingShowCreateIdentity.HasValue) { m_ShowCreateIdentity = m_PendingShowCreateIdentity.Value; m_PendingShowCreateIdentity = null; }
+                    // 載入更早 50 筆：在 Layout event 提高上限 + 抑制捲底 + 重抓，確保本幀 Layout/Repaint 看到一致的訊息結構
+                    if (m_PendingLoadOlder)
+                    {
+                        m_PendingLoadOlder = false;
+                        m_MessageLimit += MessageLimitStep;
+                        m_SuppressScrollToBottomOnce = true;
+                        RefreshMessages();
+                    }
                 }
 
                 if (m_RoomsCache == null || m_RoomIds == null) RefreshRooms();
@@ -1148,6 +1167,24 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else
                 {
+                    // 區塊職責：訊息列表最上方的「載入更早 50 筆」按鈕
+                    // 物理意義：只顯示最新 m_MessageLimit 筆；當回傳筆數 >= 上限 → 代表上面可能還有更早訊息，給按鈕展開。
+                    //          按下只設旗標，真正的 +50 + 重抓延後到 Layout event（見 ContentOnGUI deferred-apply），避免本幀 layout 不一致。
+                    // 數值影響：m_MessagesCache.Count < m_MessageLimit 時全部已載入 → 隱藏按鈕。
+                    if (m_MessagesCache.Count >= m_MessageLimit)
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.FlexibleSpace();
+                            if (GUILayout.Button($"↑ 載入更早 {MessageLimitStep} 筆", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                m_PendingLoadOlder = true;
+                            }
+                            GUILayout.FlexibleSpace();
+                        }
+                        GUILayout.Space(2);
+                    }
+
                     // Sample name 必須 stable（dict key）；訊息數量在 overlay 看 calls 與 m_MessagesCache.Count 心算即可
                     using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView/rows"))
                     {
@@ -1467,11 +1504,19 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：每次 RefreshMessages 同步 m_LastSeenRoomId / m_LastSeenMsgCount
         void RefreshMessages()
         {
-            m_MessagesCache = UCL_ChatTavernIO.Tail(SelectedRoomId, 100);
-            int now = m_MessagesCache?.Count ?? 0;
+            // 切房先重置載入上限回 50 — 新房從最新 50 筆看起，不繼承上一房「載入更早」展開到的深度
             bool roomChanged = m_LastSeenRoomId != SelectedRoomId;
+            if (roomChanged) m_MessageLimit = MessageLimitStep;
+
+            m_MessagesCache = UCL_ChatTavernIO.Tail(SelectedRoomId, m_MessageLimit);
+            int now = m_MessagesCache?.Count ?? 0;
             bool countGrew = !roomChanged && now > m_LastSeenMsgCount;
-            if (roomChanged || countGrew)
+            if (m_SuppressScrollToBottomOnce)
+            {
+                // 「載入更早 50 筆」造成的 count 成長：保留歷史視角，不搶捲到底
+                m_SuppressScrollToBottomOnce = false;
+            }
+            else if (roomChanged || countGrew)
             {
                 m_PendingScrollToBottom = true;
             }

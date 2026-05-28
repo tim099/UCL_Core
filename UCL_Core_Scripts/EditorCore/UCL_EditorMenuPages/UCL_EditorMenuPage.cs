@@ -139,6 +139,14 @@ namespace UCL.Core.EditorLib.Page
                 {
                     UCL_ChatTavernPage.Create();
                 }
+
+                // 區塊職責：提供按鈕以開啟控制台頁面
+                // 物理意義：集中控制專案內各項重要設定 (目前第一塊：聊天酒館系統總開關)
+                // 數值影響：push 一個 UCL_ControlPanelPage 到當前 controller
+                if (GUILayout.Button("控制台", UCL_GUIStyle.ButtonStyle))
+                {
+                    UCL_ControlPanelPage.Create();
+                }
 #endif
                 if (GUILayout.Button("UCL_LoginStatusPage", UCL_GUIStyle.ButtonStyle))
                 {

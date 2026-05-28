@@ -56,6 +56,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             try
             {
                 EditorApplication.update += Tick;
+                // 訂閱聊天酒館系統重啟事件 — 控制台由 OFF→ON 時重置游標 + 強制立即 tick
+                UCL_ChatTavernSystemControl.OnSystemRestart += OnSystemRestart;
                 s_Initialized = true;
                 // 不在 ctor 內動 IO (avoid first-load 卡 Editor 啟動)
                 // tick 第一次跑時才 lazy load triggers / rules
@@ -73,12 +75,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
 
         // ===========================================================
+        // 區塊：系統重啟 handler — 聊天酒館系統由 OFF→ON 時 (或控制台手動重啟) fire
+        // 物理意義：重置掃描游標讓下個 tick 重新 init，且強制立即 tick (不等 5s 間隔)。
+        //          s_WorkSessionStartCursor = -1 → CheckWorkSessionStart 重新對齊當前訊息數，跳過歷史不重播舊「上班」trigger。
+        // 數值影響：純記憶體 state 重置，不動檔案；下個 EditorApplication.update 進 TickInternal。
+        // ===========================================================
+        static void OnSystemRestart()
+        {
+            s_LastCheckTime = 0;                 // 下次 update 立即進 TickInternal (繞過 CHECK_INTERVAL 間隔)
+            s_WorkSessionStartCursor = -1;       // 重新 init cursor → 跳過歷史，不重播舊「上班」trigger
+            s_WorkSessionEndSpawned.Clear();     // 清 end 已 spawn 記錄，重啟後重新判定過期 session
+            Debug.Log("[Bartender] 系統重啟 — 游標重置，下個 tick 立即運行");
+        }
+
+        // ===========================================================
         // Tick — 主迴圈, 每 CHECK_INTERVAL 秒進一次
         // ===========================================================
         static void Tick()
         {
             try
             {
+                // 聊天酒館系統總開關 OFF → 不做任何自動掃描 / 廣播 (per UCL_ControlPanelPage 控制台)
+                if (!UCL_ChatTavernSystemControl.IsEnabled) return;
                 double now = EditorApplication.timeSinceStartup;
                 if (now - s_LastCheckTime < CHECK_INTERVAL_SECONDS) return;
                 s_LastCheckTime = now;

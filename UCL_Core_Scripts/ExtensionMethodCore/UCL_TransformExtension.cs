@@ -357,4 +357,39 @@ public static partial class TransformExtensionMethods {
         var worldToLocalMatrix = Matrix4x4.TRS(transform.position, transform.rotation, Vector3.one).inverse;
         return worldToLocalMatrix.MultiplyPoint3x4(position);
     }
+
+    #region Hierarchy
+    /// <summary>
+    /// 取得 Transform 的階層路徑字串，e.g. "Root/Child/Grandchild"。
+    /// 物理意義：把 Transform 的祖先鏈轉成可讀路徑，給 logging / hierarchy export / debug 用。
+    /// 數值影響：純讀取，無副作用。
+    /// </summary>
+    /// <param name="iTarget">目標 Transform；null → 回空字串</param>
+    /// <param name="iSeparator">分隔字元，預設 "/"</param>
+    /// <returns>完整 hierarchy path；e.g. "RCG_EditVFX/Main Camera"</returns>
+    public static string GetHierarchyPath(this Transform iTarget, string iSeparator = "/")
+    {
+        // 區塊職責：從 iTarget 沿 parent 鏈往上走到 root，反序組成路徑
+        // 物理意義：使用 Stack 反序累積，避免遞迴與字串大量串接
+        // 數值影響：無
+        if (iTarget == null) return string.Empty;
+        var aStack = new System.Collections.Generic.Stack<string>();
+        Transform aCur = iTarget;
+        while (aCur != null)
+        {
+            aStack.Push(aCur.name);
+            aCur = aCur.parent;
+        }
+        return string.Join(iSeparator, aStack);
+    }
+
+    /// <summary>
+    /// 取得 GameObject 的階層路徑字串（Transform 版本的便利包裝）。
+    /// </summary>
+    public static string GetHierarchyPath(this GameObject iTarget, string iSeparator = "/")
+    {
+        if (iTarget == null) return string.Empty;
+        return iTarget.transform.GetHierarchyPath(iSeparator);
+    }
+    #endregion
 }

@@ -1,11 +1,26 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace UCL.Core {
     public class UCL_Singleton<T> : MonoBehaviour where T : MonoBehaviour {
-        static T m_Instance = null;
-        static protected bool m_Destroyed = false;
+        // 區塊職責：定義單例的靜態存取欄位與銷毀旗標
+        // 物理意義：`m_Instance` 保存唯一的單例實體，`m_Destroyed` 標記該實體是否已在當前生命週期中遭銷毀，防範在 OnDestroy 後重建物件所致之資源洩漏。
+        // 數值影響：預設分別為 null 與 false。
+        private static T m_Instance = null;
+        protected static bool m_Destroyed = false;
+
+        // 區塊職責：在進入 PlayMode 時自動重置單例的靜態欄位
+        // 物理意義：當編輯器停用了 Domain Reload 以加速 PlayMode 切換時，靜態變數 m_Destroyed 會殘留在上一輪運算狀態 (true)，
+        //          導致新一輪 PlayMode 無法重新生成單例。此處透過 SubsystemRegistration 勾點確保每次進入 PlayMode 時重置其狀態。
+        // 數值影響：重置 m_Instance 為 null，重置 m_Destroyed 為 false。
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlayMode()
+        {
+            m_Instance = null;
+            m_Destroyed = false;
+        }
+
         /// <summary>
         /// return instance, and auto create one if instance not exsit!!
         /// </summary>

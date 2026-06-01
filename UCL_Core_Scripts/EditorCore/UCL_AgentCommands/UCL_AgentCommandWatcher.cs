@@ -1,4 +1,4 @@
-﻿
+
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/05 2026
@@ -72,6 +72,25 @@ namespace UCL.Core.EditorLib.AgentCommands
             // 數值影響：Register chain 啟動延後 ~16ms；對既有「Register 完成前不訂閱 update」
             //          的保證無影響（Register() 函式體不動）。
             EditorApplication.delayCall += () => Register().Forget();
+
+            // 區塊職責：監聽編輯器 PlayMode 狀態變更事件
+            // 物理意義：在進入 PlayMode 或退出 PlayMode 時，觸發對應的清理或自我修復動作。
+            //          特別是當進入 PlayMode 時，由於 UniTask 會自動中斷/清除 EditMode 下的 async 鏈，我們必須重置 Runner 的記憶體狀態，以便重新驅動 Runner。
+            // 數值影響：訂閱 playModeStateChanged 事件。
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        // 區塊職責：PlayMode 狀態變更時的回呼邏輯
+        // 物理意義：在進入 PlayMode (EnteredPlayMode) 時，主動清除 Runner 的記憶體狀態 (ResetRunningAgents)，為 Watcher 對孤兒鎖 (.running) 的自我修復鋪路。
+        // 數值影響：無直接數值影響，僅驅動 ResetRunningAgents 的調用。
+        private static void OnPlayModeStateChanged(PlayModeStateChange iState)
+        {
+            // 判斷狀態：若編輯器剛成功進入 PlayMode
+            if (iState == PlayModeStateChange.EnteredPlayMode)
+            {
+                // 執行重置：清空 Runner 的執行中列表，允許重新偵測孤兒鎖並自我恢復
+                UCL_AgentCommandRunner.ResetRunningAgents();
+            }
         }
 
         /// <summary>確保 update 訂閱已註冊（idempotent）。</summary>
@@ -125,22 +144,52 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        // 區塊職責：dispatch 單一 agent's pending → Runner
-        // 物理意義：per-agent 獨立檢查 + dispatch, Zeta 卡死不影響 Claude 等
-        // 數值影響：MarkRunning 成功 → Runner.RunAsync(agentId) async 跑; finally Trigger.Clear(agentId).
+        // 區塊職責：分配特定 Agent 的待執行指令至 Runner，並負責偵測與修復因狀態變更（如 PlayMode 轉換）導致的「孤兒鎖」死鎖狀態。
+        // 物理意義：若偵測到硬碟上存在 `.running` 鎖檔案，但記憶體中的 Runner 實際上並未執行（此狀態通常發生在 Unity 進入 PlayMode 時 UniTask 被強制清空），
+        //          本機制會主動進行自我修復，重新調用 Runner 恢復未完的指令佇列，保障 RCG_StartNewGame 等跨 PlayMode 指令的端到端穩定執行。
+        // 數值影響：若命中孤兒鎖，將重新啟動對應 Agent 的 Runner 異步工作，無其他副作用。
         static void TryDispatchAgent(string agentId)
         {
-            // 該 agent 已在 running → 跳過
-            if (UCL_AgentCommandTrigger.RunningExists(agentId)) return;
-            // 沒 pending → 沒事
+            // 讀取硬碟狀態：確認當前 Agent 是否在硬碟上存在正在執行的 Running 鎖檔案
+            bool runningFileExists = UCL_AgentCommandTrigger.RunningExists(agentId);
+            // 讀取記憶體狀態：確認當前 Agent 的 Runner 實例是否正於記憶體中運行
+            bool isRunningInMemory = UCL_AgentCommandRunner.IsRunningForAgent(agentId);
+
+            // 判斷邏輯：若硬碟上存在執行鎖
+            if (runningFileExists)
+            {
+                // 記憶體中亦在運行：屬於正常忙碌狀態，直接跳過不予干涉
+                if (isRunningInMemory)
+                {
+                    return;
+                }
+                else
+                {
+                    // 記憶體中未運行：判定為孤兒鎖異常狀態（由 PlayMode 切換或編譯重載導致 Task 消失）
+                    // 記錄時間：更新最近一次觸發的時間標記
+                    s_LastTriggerAt = DateTime.Now;
+                    // 解析標籤：設定用於輸出日誌的 Agent 識別字串
+                    string tag = string.IsNullOrEmpty(agentId) ? "default" : agentId;
+                    // 警告日誌：於控制台輸出孤兒鎖警告，表明正在啟動自我恢復流程
+                    Debug.LogWarning($"[UCL_AgentCmdWatcher] Orphan running lock detected for '{tag}' (file exists, memory runner idle). Resuming runner!");
+                    // 啟動恢復：直接拉起對應 Agent 的 Runner 異步流程來消耗 queue.json 中未完成的指令
+                    UCL_AgentCommandRunner.RunAsync(agentId, default).Forget();
+                    return;
+                }
+            }
+
+            // 讀取待處理狀態：若硬碟上不存在 Pending 觸發檔案，代表該 Agent 當前無指令，直接返回
             if (!UCL_AgentCommandTrigger.PendingExists(agentId)) return;
-            // 嘗試接手 (atomic File.Move pending → running)
+            // 搶佔原子鎖：試圖將 pending 重新命名為 running（進行原子操作以搶佔執行權）
             if (!UCL_AgentCommandTrigger.MarkRunning(agentId)) return;
 
+            // 記錄時間：更新最近一次成功偵測的觸發時間
             s_LastTriggerAt = DateTime.Now;
-            string tag = string.IsNullOrEmpty(agentId) ? "default" : agentId;
-            Debug.Log($"[UCL_AgentCmdWatcher] Trigger detected for '{tag}' at {s_LastTriggerAt:O} → invoking Runner.");
-            // 觸發 Runner（async；finally 會 Trigger.Clear(agentId)）
+            // 解析標籤：設定日誌用標籤
+            string tag2 = string.IsNullOrEmpty(agentId) ? "default" : agentId;
+            // 偵測日誌：記錄新觸發事件，並附帶精準時間戳記
+            Debug.Log($"[UCL_AgentCmdWatcher] Trigger detected for '{tag2}' at {s_LastTriggerAt:O} → invoking Runner.");
+            // 啟動 Runner：執行對應 Agent 的指令佇列，並在 `finally` 區塊中自動清除硬碟上的執行鎖
             UCL_AgentCommandRunner.RunAsync(agentId, default).Forget();
         }
     }

@@ -40,6 +40,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         static readonly System.Collections.Generic.HashSet<string> s_RunningAgents = new System.Collections.Generic.HashSet<string>();
         static readonly object s_RunningLock = new object();
 
+        // 區塊職責：觸發編輯器編譯與領域重載以重設記憶體狀態
+        // 物理意義：藉由修改程式碼的微小變更，強迫 Unity Editor 偵測檔案異動並重新編譯，進而清空殘留於靜態變數中的死鎖狀態 (如 s_RunningAgents)。[Antigravity domain reload trigger 2026-05-30]
+        // 數值影響：不影響任何核心計算與業務邏輯，僅用於維護管線健康。
         static string NormAgent(string agentId) => agentId ?? "";
 
         /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
@@ -49,6 +52,21 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static bool IsRunningForAgent(string agentId)
         {
             lock (s_RunningLock) return s_RunningAgents.Contains(NormAgent(agentId));
+        }
+
+        // 區塊職責：提供清空運行中 Agent 列表的對外介面
+        // 物理意義：在編輯器狀態轉換（例如進入 PlayMode）時，主動釋放記憶體中的鎖定狀態，以便配合 Watcher 的自我修復機制，避免因 UniTask 執行緒被 Unity 中斷而造成的死鎖。
+        // 數值影響：重置並清空 s_RunningAgents 雜湊集合的內容，無其他副作用。
+        public static void ResetRunningAgents()
+        {
+            // 鎖定狀態：防止多線程同時寫入導致競態條件
+            lock (s_RunningLock)
+            {
+                // 清空集合：移除所有記錄的運行中 agentId
+                s_RunningAgents.Clear();
+            }
+            // 輸出日誌：在控制台記錄重置行為以利除錯
+            Debug.Log("[UCL_AgentCmd] Reset running agents list due to PlayMode state change.");
         }
 
         // ===========================================================
@@ -129,6 +147,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 s_RunningAgents.Add(norm);
             }
             string labelTag = string.IsNullOrEmpty(agentId) ? "default" : agentId;
+            bool isPlayModeInterrupted = false;
             try
             {
                 var data = UCL_AgentCommandQueue.Load(agentId);
@@ -184,6 +203,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
 
                     Debug.Log($"[UCL_AgentCmd] ▶ Run '{c.Type}' (id={c.Id}, mode={c.Mode}, runCount={c.RunCount})");
+                    // 區塊職責：重置執行結果並立即存檔
+                    // 物理意義：防範在跨 PlayMode 恢復時，殘留的舊 "Failed" 狀態未被清空，導致 Python 端 wrapper 輪詢時誤判失敗。
+                    //          重置後立即同步存檔至 queue.json，確保 Python 端輪詢看到的狀態與執行一致。
+                    // 數值影響：重置 c.LastRunResult = null, c.LastRunError = null，並 Save 磁碟。
+                    c.LastRunResult = null;
+                    c.LastRunError = null;
+                    UCL_AgentCommandQueue.Save(data, agentId);
+
                     // 區塊職責: caller env_marker thread-through (Tim 2026-05-11 QA bug fix TreasuryEnvMarker)
                     // 物理意義: Python caller-side detect 寫進 args._caller_env_marker → runner 設 static slot →
                     //          下游 (UCL_TreasuryLedger.DetectEnvMarker / Cmd handler) 優先讀 slot 而非 in-process env
@@ -220,6 +247,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                                 throw new System.TimeoutException(
                                     $"cmd '{c.Type}' exceeded timeout {timeoutSec}s (handler.TimeoutSeconds={handler.TimeoutSeconds}, args._timeout_sec={(c.Args != null && c.Args.ContainsKey("_timeout_sec") ? c.Args["_timeout_sec"] : "(unset)")})");
                             }
+                            else
+                            {
+                                // 區塊職責：等待執行完畢並解包 Exception
+                                // 物理意義：UniTask.WhenAny 只等待 Task 完成（無論成功或異常），不拋出其內部的 exception。
+                                //          若 handlerTask 發生例外 (例如跨 PlayMode 被 cancellation 中斷)，在此 await 能將異常拋出，
+                                //          使 Runner 的 catch 區塊能補捉並寫入 queue.json "Failed" 狀態以利後續 Watcher 自癒重啟。
+                                // 數值影響：若任務失敗則拋出異常；若成功則無影響。
+                                await handlerTask;
+                            }
                         }
                         c.LastRunResult = "Success";
                         c.LastRunError = null;
@@ -237,11 +273,28 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
                     catch (Exception e)
                     {
-                        c.LastRunResult = "Failed";
-                        c.LastRunError = e.Message;
-                        c.LastRunAt = DateTime.UtcNow.ToString("o");
-                        failed++;
-                        Debug.LogError($"[UCL_AgentCmd] ✗ '{c.Type}' (id={c.Id}) failed: {e}");
+                        if (EditorApplication.isPlayingOrWillChangePlaymode && c.Mode == UCL_AgentCommandMode.OneShot)
+                        {
+                            // 區塊職責：進入 PlayMode 轉移期間的特殊處理
+                            // 物理意義：因為進入 PlayMode 會強制中斷並銷毀 EditMode 的 UniTask 執行緒，
+                            //          這會引發預期的 NullReferenceException 或 OperationCanceledException。
+                            //          我們不應將其視為「真正失敗」，而應保留其在 queue 中的 Pending 狀態，
+                            //          以便在進入 PlayMode 後由 Watcher 的自癒機制接手恢復執行。
+                            // 數值影響：不將 LastRunResult 設為 "Failed"（保持 null），LastRunError 設為轉移標記，
+                            //          不增加 failed 計數。
+                            isPlayModeInterrupted = true;
+                            c.LastRunResult = null;
+                            c.LastRunError = "Interrupted by PlayMode transition, waiting for self-healing resumption...";
+                            Debug.Log($"[UCL_AgentCmd] ℹ '{c.Type}' (id={c.Id}) interrupted by PlayMode transition. Keeping in queue for resumption.");
+                        }
+                        else
+                        {
+                            c.LastRunResult = "Failed";
+                            c.LastRunError = e.Message;
+                            c.LastRunAt = DateTime.UtcNow.ToString("o");
+                            failed++;
+                            Debug.LogError($"[UCL_AgentCmd] ✗ '{c.Type}' (id={c.Id}) failed: {e}");
+                        }
                     }
                     finally
                     {
@@ -256,11 +309,18 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             finally
             {
-                // 區塊職責：無論成功 / 失敗 / 例外都要清掉 trigger 檔 (per-agent)
-                // 物理意義：pending.trigger.running 是 Python 端「Editor 是否還在執行」的判定依據；
-                //          殘留會導致下一次 Python ensure_idle() 永遠等不到 idle，整個流程鎖死。
-                // 數值影響：刪除 .running（與保險用的 .trigger）→ 該 agent 狀態回 idle，別 agent 不受影響.
-                UCL_AgentCommandTrigger.Clear(agentId);
+                // 區塊職責：無論成功 / 失敗 / 例外都要清掉 trigger 檔 (per-agent)，但 PlayMode 轉移中斷除外
+                // 物理意義：pending.trigger.running 是 Python 端「Editor 是否還在執行」的判定依據。
+                //          但在 PlayMode 轉移中斷時，我們必須保留這個執行鎖，以便 PlayMode 啟動後 Watcher 能偵測到「孤兒鎖」並重啟 Runner 自癒。
+                // 數值影響：若 isPlayModeInterrupted 為 true 則跳過 Clear(agentId) 保留鎖檔案，否則刪除檔案解鎖。
+                if (isPlayModeInterrupted)
+                {
+                    Debug.Log($"[UCL_AgentCmd:{labelTag}] PlayMode transition detected. Preserving running trigger file on disk for self-healing resumption.");
+                }
+                else
+                {
+                    UCL_AgentCommandTrigger.Clear(agentId);
+                }
                 lock (s_RunningLock) s_RunningAgents.Remove(norm);
             }
         }

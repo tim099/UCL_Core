@@ -164,7 +164,25 @@ namespace UCL.Core.TextureLib {
             var path = $"file://{filePath}";
             var webRequest = UnityWebRequestTexture.GetTexture(path, false);
             await webRequest.SendWebRequest();
+            if (webRequest.result == UnityWebRequest.Result.ConnectionError || 
+                webRequest.result == UnityWebRequest.Result.ProtocolError || 
+                webRequest.downloadHandler == null)
+            {
+                // 區塊職責：防止加載失敗或無效的 WebRequest 觸發原生 GetContent 空指針例外
+                // 物理意義：若連線/協定出錯，或者 downloadHandler 為空，直接返回 null，防止 WebRequest 原生層崩潰。
+                // 數值影響：防崩潰保護，返回 null 供上游容錯。
+                Debug.LogWarning($"[UCL_TextureLib] WebRequest failed or downloadHandler is null for path: {path} (result={webRequest.result}, error={webRequest.error})");
+                return null;
+            }
             var texture = DownloadHandlerTexture.GetContent(webRequest);
+            if (texture == null)
+            {
+                // 區塊職責：防止圖片加載失敗導致空指針崩潰
+                // 物理意義：若 WebRequest 失敗或下載內容為空，直接返回 null，防止後續調用該實例方法（如 SetAlphaIsTransparency）引發 NullReferenceException。
+                // 數值影響：防崩潰保護，返回 null 供上游容錯處理。
+                Debug.LogWarning($"[UCL_TextureLib] Failed to load texture content from: {path} (result={webRequest.result}, error={webRequest.error})");
+                return null;
+            }
             if (config != null)
             {
                 if (config.AlphaIsTransparency)

@@ -121,6 +121,11 @@
       "name": "reading-library",
       "summary": "閱讀心得圖書館 — 記章節摘要/人物/名詞 + 對人物看法改觀時 fork 新版本(同構 affinity opinion history); 含 bookmark/resume 續讀 + 推薦書單. 工具 library.py 在 Tools~/AgentCommands/, 資料 per-project.",
       "optional": false
+    },
+    {
+      "name": "ucl-canvas",
+      "summary": "共用像素畫布 (wplace/r/place) — 2048² 全社群畫布, 1 token/繪畫券/自由時間免費像素 = 1 像素, 256 色 8-bit, append-only 事件流 + 自動 canvas_latest.png, 九 op (place/view/voucher/freetime/note/claim...). 工具 canvas.py 在 Tools~/AgentCommands/, state per-project AgentCommands/Canvas/.",
+      "optional": false
     }
   ]
 }

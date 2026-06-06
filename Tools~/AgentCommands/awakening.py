@@ -428,90 +428,26 @@ def list_persona_names() -> list:
     ])
 
 
-# 預設 agent alias mapping — registry meta 沒 agent_aliases 時用這個 fallback
-# Tim 2026-05-13 拍板 (agent-login-case-insensitive T01)：
-# Windows 大小寫不敏感, 使用者打 "Gemini" / "Claude" 該歸到既有 canonical agent
-# 而非另外開新 bank。新 agent 加進來時請同步擴充本表或寫進 _registry_meta.json。
-#
-# 留白原則：只把「明顯 vendor brand → IDE/canonical agent」的 alias 寫死, 不替
-# 用戶猜 Gemini = Antigravity 這種「同一家但不同 brand」的對應 (Tim 2026-05-13 第二輪
-# 拍板：gemini 該是獨立 canonical agent, 不混進 antigravity)。
-_DEFAULT_AGENT_ALIASES = {
-    "claude": "claude-code",       # Claude → Anthropic IDE canonical
-    "anthropic": "claude-code",
-}
+# 區塊職責：agent → bank 解析改走 UCL_Core 代碼側 _lib/bank_resolver.py 單一 source-of-truth。
+# 物理意義：normalize_agent / resolve_bank_account / DEFAULT_AGENT_ALIASES 不再在本檔重複定義，
+#           統一由共用模組提供 — 杜絕「awakening 與 canvas 各自維護平行對照表漂移」的
+#           identity-layer bug (2026-06-04 canvas 把 Zeta 麾下 persona token 誤扣 claude bank 案)。
+# 載入手法：本檔在 module 載入時 sys.path.insert(0, <repo>/AgentCommands)，使裸 `_lib` package
+#           名綁到「專案狀態側」repo-root/AgentCommands/_lib (有 __init__.py，含 tavern_client 等)。
+#           bank_resolver 住在「代碼側」Tools~/AgentCommands/_lib (本腳本 sibling)，名稱相撞拿不到，
+#           故用 importlib 依絕對檔案路徑顯式載入，繞開 `_lib` 名稱遮蔽。
+import importlib.util as _ilu  # 顯式檔案路徑載入共用 resolver，避開 _lib package 名稱相撞
 
+# 從本腳本同目錄的 _lib/bank_resolver.py 載入（_HERE 已於檔首解析為本檔所在目錄）
+_BANK_RESOLVER_PATH = _HERE / "_lib" / "bank_resolver.py"
+_br_spec = _ilu.spec_from_file_location("_ucl_bank_resolver", _BANK_RESOLVER_PATH)
+_br_mod = _ilu.module_from_spec(_br_spec)
+_br_spec.loader.exec_module(_br_mod)
 
-def normalize_agent(reg: dict, agent: str) -> str:
-    """
-    把使用者輸入的 agent 字串歸到 canonical agent key。Windows 大小寫不敏感
-    所以 'Gemini' / 'GEMINI' / 'gemini' 都該歸到既有 'antigravity'。
-
-    Resolution order (Tim 2026-05-13 拍板 agent-login-case-insensitive T01)：
-      1. Direct hit on agent_banks → return as-is
-      2. Case-insensitive match against agent_banks keys → return canonical key
-      3. Alias lookup (registry meta `agent_aliases` 或 _DEFAULT_AGENT_ALIASES) 撈
-         小寫 alias → canonical name → recurse step 1
-      4. 不認得 → 原樣 return (caller 自決開新 bank or warn)
-
-    後續 lock / persona file / tavern post 全用 canonical name 避免 split-brain。
-    """
-    if not agent:
-        return agent
-    banks = reg.get("agent_banks", {}) or {}
-    # Step 1: direct
-    if agent in banks:
-        return agent
-    # Step 2: case-insensitive against banks keys
-    lower = agent.lower()
-    for k in banks.keys():
-        if k.lower() == lower:
-            return k
-    # Step 3: alias (registry override > built-in default)
-    aliases = reg.get("agent_aliases", {}) or {}
-    # merge default + registry override (registry wins)
-    merged = {k.lower(): v for k, v in _DEFAULT_AGENT_ALIASES.items()}
-    merged.update({k.lower(): v for k, v in aliases.items()})
-    if lower in merged:
-        canonical = merged[lower]
-        # canonical 也走一輪 banks lookup, 萬一 alias 寫了 typo
-        if canonical in banks:
-            return canonical
-        # canonical case-insensitive match
-        for k in banks.keys():
-            if k.lower() == canonical.lower():
-                return k
-        return canonical
-    # Step 4: unknown — 原樣 return
-    return agent
-
-
-def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
-    """
-    Look up agent → bank_account.
-
-    Bug fix (Zeta 2026-05-12 QA report AwakeningModelDisplayMismatch):
-      Bank account 綁 Agent (per Tim 拍板 self-constitution Token bank 共用 rule),
-      不該按 (agent, model) 雙鍵查 — Model 是 free-form display field, 跨 model
-      共用 bank. Schema v2: agent_model_combos → agent_banks (key=agent).
-
-    `model` 參數保留 backward-compat (v1 caller 仍可傳, 但不參與 lookup).
-
-    Case-insensitive + alias resolution (Tim 2026-05-13 拍板)：先走 normalize_agent()
-    歸 canonical name, 避免 Windows 大小寫造成 'Gemini' vs 'antigravity' split-brain。
-    """
-    # Normalize first (handle case-insensitive + alias)
-    canonical = normalize_agent(reg, agent)
-    # Schema v2 (preferred): agent_banks dict
-    banks = reg.get("agent_banks", {})
-    if canonical in banks:
-        return banks[canonical]
-    # Schema v1 fallback (legacy support): agent_model_combos list — 只查 agent
-    for combo in reg.get("agent_model_combos", []):
-        if combo["agent"] == canonical:
-            return combo["bank_account"]
-    # 最終 fallback: 慣用命名 convention（canonical 仍認不出 → 開新 bank）
-    return f"{canonical}-da-xiaojie"
+# 對外維持與舊版相同的模組級名稱，下游 caller (normalize_agent(reg,..) / resolve_bank_account(reg,..)) 不需改
+_DEFAULT_AGENT_ALIASES = _br_mod.DEFAULT_AGENT_ALIASES   # backward-compat alias（舊名留著供既有引用）
+normalize_agent = _br_mod.normalize_agent               # canonical agent key 正規化
+resolve_bank_account = _br_mod.resolve_bank_account      # agent → Treasury bank account
 
 
 def get_bonus_balance(bank_account: str) -> int:

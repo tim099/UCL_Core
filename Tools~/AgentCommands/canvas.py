@@ -76,15 +76,27 @@ FREE_TIME_SESSIONS = "AgentCommands/ChatTavern/free_time_sessions.json"
 # 免費像素冷卻（spec §3.5：每 10 分鐘解鎖 1 個）
 FREE_PIXEL_COOLDOWN_SEC = 10 * 60
 
-# Agent → Bank 對照（spec：claude-code → claude-da-xiaojie；偵測規則寫死 mapping）
-# 物理意義：token 從 placer 的 agent bank 扣（per-agent 共用餘額）。
-AGENT_TO_BANK = {
-    "claude-code": "claude-da-xiaojie",
-    "claude": "claude-da-xiaojie",
-    "antigravity": "antigravity-da-xiaojie",
-    "gemini": "gemini",
-    "zeta": "Zeta-da-xiaojie",
-}
+# 區塊職責：agent → bank 解析改走 UCL_Core 代碼側 _lib/bank_resolver.py 單一 source-of-truth。
+# 物理意義：先前本檔自維護一張 case-sensitive 硬寫 AGENT_TO_BANK，與 awakening.py 的 registry-based
+#           resolver 漂移 — 'Zeta' (大寫) 在硬表只有小寫 key 'zeta'，miss 後 fallback 退到
+#           claude-da-xiaojie，導致 Zeta 麾下 persona (summit) 放點誤扣 claude-code 家帳 (2026-06-04 bug)。
+#           現統一走共用 resolver：source of truth = AwakenInit/_registry_meta.json 的 agent_banks，
+#           case-insensitive，bank 由 agent 決定、無 persona override。
+# 載入手法：canvas.py 無 sys.path 操作，裸 `_lib` 即本腳本 sibling 的 Tools~/AgentCommands/_lib，
+#           但為與 awakening 一致且不受 cwd 影響，同樣用 importlib 依絕對檔案路徑顯式載入。
+import importlib.util as _ilu  # 顯式檔案路徑載入共用 resolver
+
+_HERE = Path(__file__).resolve().parent                  # 本腳本所在目錄 (Tools~/AgentCommands)
+_BANK_RESOLVER_PATH = _HERE / "_lib" / "bank_resolver.py"  # 共用 resolver 絕對路徑
+_br_spec = _ilu.spec_from_file_location("_ucl_bank_resolver", _BANK_RESOLVER_PATH)
+_br_mod = _ilu.module_from_spec(_br_spec)
+_br_spec.loader.exec_module(_br_mod)
+resolve_bank_account = _br_mod.resolve_bank_account       # agent → Treasury bank account
+load_registry_meta = _br_mod.load_registry_meta           # 輕量讀 _registry_meta.json
+
+# 預設 persona registry meta 路徑（agent_banks source of truth）；測試用 --registry-meta 覆蓋。
+# 物理意義：registry 住在 AgentCommands/AwakenInit/_registry_meta.json，與 treasury 同 AgentCommands 根。
+DEFAULT_REGISTRY_META = "AgentCommands/AwakenInit/_registry_meta.json"
 
 
 # ───────────────────────────── 時間工具 ─────────────────────────────
@@ -186,11 +198,15 @@ def parse_color(color) -> int:
 class Paths:
     """區塊職責：集中所有 canvas / treasury 子路徑，吃 --root / --treasury-root"""
 
-    def __init__(self, root: str, treasury_root: str, freetime_sessions: str | None = None):
+    def __init__(self, root: str, treasury_root: str, freetime_sessions: str | None = None,
+                 registry_meta: str | None = None):
         self.root = Path(root)                      # canvas 根目錄
         self.treasury_root = Path(treasury_root)    # treasury 根目錄
         # 自由時間 session 來源（可配置，測試指向 temp；預設真實 ChatTavern 檔）
         self.freetime_sessions = Path(freetime_sessions or FREE_TIME_SESSIONS)
+        # persona registry meta（agent_banks source of truth）；可配置供測試指向 temp。
+        # 預設走 DEFAULT_REGISTRY_META（與 treasury 同處 AgentCommands 根下的 AwakenInit/）。
+        self._registry_meta = Path(registry_meta or DEFAULT_REGISTRY_META)
 
     @property
     def meta(self) -> Path:
@@ -231,6 +247,11 @@ class Paths:
     @property
     def ledger(self) -> Path:
         return self.treasury_root / "ledger"
+
+    @property
+    def registry_meta(self) -> Path:
+        # persona registry metadata 檔（含 agent_banks）— 共用 resolver 的 source of truth
+        return self._registry_meta
 
 
 # ───────────────────────── 並發鎖（防 TOCTOU double-spend）─────────────────────────
@@ -665,7 +686,10 @@ def cmd_place(args):
     ensure_meta(P)
     persona = args.persona
     agent = args.agent
-    bank = AGENT_TO_BANK.get(agent, AGENT_TO_BANK.get("claude-code"))
+    # agent → bank：走共用 resolver（與 awakening.py 同一 source of truth）。
+    # registry meta 缺檔 → load_registry_meta 回空 dict → resolver 退命名慣例 fallback，不 fatal。
+    reg = load_registry_meta(P.registry_meta)
+    bank = resolve_bank_account(reg, agent)
     now = utcnow()
 
     # 步驟 1：收集 + 驗證像素（越界 / 非法色 整批拒絕）
@@ -1196,6 +1220,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"treasury 根（預設 {DEFAULT_TREASURY_ROOT}）")
     parser.add_argument("--freetime-sessions", default=None,
                         help=f"自由時間 session 來源檔（測試隔離用；預設 {FREE_TIME_SESSIONS}）")
+    parser.add_argument("--registry-meta", default=None,
+                        help=f"persona registry meta 檔（agent_banks source of truth；測試隔離用；預設 {DEFAULT_REGISTRY_META}）")
 
     sub = parser.add_subparsers(dest="op", required=True)
 
@@ -1274,7 +1300,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     # 把解析好的 Paths 掛上 args 供各 handler 用
     args._paths = Paths(args.root, args.treasury_root,
-                        getattr(args, "freetime_sessions", None))
+                        getattr(args, "freetime_sessions", None),
+                        getattr(args, "registry_meta", None))
     args.func(args)
 
 

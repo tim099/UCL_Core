@@ -221,8 +221,23 @@ namespace UCL.Core
             // 數值影響：避免因尚未翻譯的語系版本造成 404；不影響非 Editor 流程。
             if (!url.Contains("://"))
             {
-                // [計算邏輯] 透過 GetFullPath 將相對路徑轉換為絕對路徑。
-                url = System.IO.Path.GetFullPath(url);
+                // 區塊職責：".claude/" 開頭的相對路徑特例解析（Claude Code skill / 設定目錄）。
+                // 物理意義：".claude/" 是 Claude Code 的通用約定，固定位於 git repo 根；而 process CWD（Unity Editor 下為 Unity 專案目錄）
+                //          對「Unity 專案是 repo 子目錄」的結構（如 EOV 的 CardGame/）而言並非 repo 根，直接 GetFullPath 會把路徑接到專案目錄 → 檔案不存在。
+                // 數值影響：往 CWD 的祖先目錄尋找含 ".claude" 資料夾者當 repo 根再接；找不到則回退原 CWD 行為（不影響其他無 prefix 路徑）。
+                string aNormalized = url.Replace('\\', '/');
+                if (aNormalized.StartsWith(".claude/"))
+                {
+                    string aRepoRoot = FindAncestorContaining(System.IO.Directory.GetCurrentDirectory(), ".claude");
+                    url = string.IsNullOrEmpty(aRepoRoot)
+                        ? System.IO.Path.GetFullPath(url)
+                        : System.IO.Path.GetFullPath(System.IO.Path.Combine(aRepoRoot, aNormalized));
+                }
+                else
+                {
+                    // [計算邏輯] 透過 GetFullPath 將相對路徑轉換為絕對路徑。
+                    url = System.IO.Path.GetFullPath(url);
+                }
 
 #if UNITY_EDITOR
                 if (!System.IO.File.Exists(url) && url.Contains(aLang))
@@ -234,6 +249,34 @@ namespace UCL.Core
             }
 
             return url;
+        }
+
+        /// <summary>
+        /// [職責] 從指定起始目錄逐層往上尋找「含有名為 iChildName 子項」的祖先目錄。
+        /// [物理意義] 用於定位 git repo 根 — 例如以 ".claude" 為標記，找到第一個含 ".claude" 資料夾的祖先即視為 repo 根。
+        /// [數值影響] 純路徑查找，不觸碰任何遊戲狀態；找不到時回傳 null，由呼叫端決定回退行為。
+        /// </summary>
+        /// <param name="iStartDir">起始搜尋目錄（通常為 process CWD）。</param>
+        /// <param name="iChildName">作為標記的子項名稱（資料夾或檔案皆可），例如 ".claude" 或 ".git"。</param>
+        /// <returns>命中時為該祖先目錄的絕對路徑；一路到磁碟根仍找不到時為 null。</returns>
+        private static string FindAncestorContaining(string iStartDir, string iChildName)
+        {
+            // [輸入防護] 起始目錄為空直接放棄查找。
+            if (string.IsNullOrEmpty(iStartDir)) return null;
+
+            // 區塊職責：自起始目錄起逐層往上比對標記子項是否存在。
+            // 物理意義：DirectoryInfo.Parent 為 null 代表已抵達磁碟根，迴圈自然終止。
+            // 數值影響：僅做 Directory.Exists 檢查，命中即回傳該層絕對路徑。
+            var aDir = new System.IO.DirectoryInfo(iStartDir);
+            while (aDir != null)
+            {
+                if (System.IO.Directory.Exists(System.IO.Path.Combine(aDir.FullName, iChildName)))
+                {
+                    return aDir.FullName;
+                }
+                aDir = aDir.Parent;
+            }
+            return null;
         }
 
         /// <summary>

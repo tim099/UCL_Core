@@ -296,9 +296,17 @@ namespace UCL.Core.EditorLib.Page
                     Debug.LogWarning($"[UCL_MarkdownViewer] related entry 缺欄位（需 'url | label [| desc]'）：{content}");
                     continue;
                 }
+                // [角括號剝除] markdown autolink 風格 "<url>" 在 frontmatter related: 內常見 (e.g. "<repo:docs/...>")；
+                //              剝掉外圍 < > 才能讓後續 prefix 解析拿到乾淨 "repo:..."，否則 prefix 會被切成 "<repo" 而查無 resolver。
+                string aUrl = parts[0].Trim();
+                if (aUrl.Length >= 2 && aUrl[0] == '<' && aUrl[aUrl.Length - 1] == '>')
+                {
+                    aUrl = aUrl.Substring(1, aUrl.Length - 2).Trim();
+                }
+
                 var doc = new UCL_MdRelatedDoc
                 {
-                    Url = parts[0].Trim(),
+                    Url = aUrl,
                     Label = parts[1].Trim(),
                     Description = parts.Length >= 3 ? parts[2].Trim() : null,
                 };

@@ -47,6 +47,32 @@ namespace UCL.Core
                 },
 #endif
             });
+
+#if UNITY_EDITOR
+            // 區塊職責：註冊 "repo:" prefix — 解析「相對於 git repo 根」的本地文件路徑 (e.g. repo:docs/... / repo:.claude/skills/...)。
+            // 物理意義：不同於 ucl_core: (錨在 UCL_Core 根)，repo: 錨在「包含本 Unity 專案的 git repo 根」，
+            //          base 走 UCL_URL.FindRepoRoot() (與 ".claude/" 相對路徑特例共用同一錨點，避免雙套 root-finding 漂移)。
+            //          Editor-only — repo 內原始文件 (docs / .claude skills) 不會打包進 player build，故 Build 端不註冊。
+            // 數值影響：決定 frontmatter related: 內 "repo:..." 連結在 Editor MarkdownViewer 內的開啟目標。
+            // [idempotent] RuntimeInitializeOnLoadMethod 與 InitializeOnLoadMethod 會雙觸發 Register；已註冊則跳過避免 override warning。
+            if (!UCL_URL.HasResolver("repo"))
+            {
+                UCL_URL.RegisterResolver(new UCL_UrlPrefixResolver(
+                    prefix: "repo",
+                    // [Resolve] repo 根 + 相對路徑 → 絕對路徑；找不到 repo 根時回傳 null (由 UCL_URL 維持原 URL)。
+                    resolver: (aRel) =>
+                    {
+                        string aRoot = UCL_URL.FindRepoRoot();
+                        return string.IsNullOrEmpty(aRoot) ? null : Path.GetFullPath(Path.Combine(aRoot, aRel));
+                    },
+                    // [Exists] 驅動 lang→en fallback；repo 根缺失或檔案不存在皆回 false。
+                    existsChecker: (aRel) =>
+                    {
+                        string aRoot = UCL_URL.FindRepoRoot();
+                        return !string.IsNullOrEmpty(aRoot) && File.Exists(Path.GetFullPath(Path.Combine(aRoot, aRel)));
+                    }));
+            }
+#endif
         }
     }
 }

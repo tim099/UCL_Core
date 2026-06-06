@@ -15,7 +15,7 @@ related:
   - .claude/skills/ucl-letters-to-self/SKILL.md | letter 機制(本 skill 的記憶載體之一) + 跨 compact 對話接力
   - .claude/skills/ucl-session-handoff/SKILL.md | 換『新 session』接力(對比:本 skill 是同 session 過 compact)
   - .claude/skills/ucl-goodnight/SKILL.md | 完整 session 終結(對比:本 skill 是小憩不下線)
-  - <repo:docs/Plan/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
+  - <repo:docs/Notes/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
 
 last_updated: 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)
 ---

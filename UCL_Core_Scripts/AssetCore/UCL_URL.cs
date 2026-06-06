@@ -228,7 +228,7 @@ namespace UCL.Core
                 string aNormalized = url.Replace('\\', '/');
                 if (aNormalized.StartsWith(".claude/"))
                 {
-                    string aRepoRoot = FindAncestorContaining(System.IO.Directory.GetCurrentDirectory(), ".claude");
+                    string aRepoRoot = FindRepoRoot();
                     url = string.IsNullOrEmpty(aRepoRoot)
                         ? System.IO.Path.GetFullPath(url)
                         : System.IO.Path.GetFullPath(System.IO.Path.Combine(aRepoRoot, aNormalized));
@@ -252,31 +252,38 @@ namespace UCL.Core
         }
 
         /// <summary>
-        /// [職責] 從指定起始目錄逐層往上尋找「含有名為 iChildName 子項」的祖先目錄。
-        /// [物理意義] 用於定位 git repo 根 — 例如以 ".claude" 為標記，找到第一個含 ".claude" 資料夾的祖先即視為 repo 根。
-        /// [數值影響] 純路徑查找，不觸碰任何遊戲狀態；找不到時回傳 null，由呼叫端決定回退行為。
+        /// [職責] 定位當前 git repo 根目錄 — 供 "repo:" prefix resolver 與 ".claude/" 相對路徑特例共用的單一錨點來源。
+        /// [物理意義] 從 process CWD 逐層往上找：優先回傳第一個含 ".claude" 資料夾的祖先 (agent-facing root, 與 install_skills.py 同慣例);
+        ///           退而求其次回傳第一個含 ".git" (資料夾或 submodule/worktree 的 .git 檔) 的祖先。
+        /// [數值影響] 純路徑查找, 不觸碰遊戲狀態; 兩種標記都找不到時回傳 null, 由呼叫端 (resolver / 特例) 決定回退行為。
+        /// [為何共用] 讓 "repo:docs/..." 與 ".claude/skills/..." 解析到完全相同的 repo 根, 避免兩套 root-finding 邏輯漂移。
         /// </summary>
-        /// <param name="iStartDir">起始搜尋目錄（通常為 process CWD）。</param>
-        /// <param name="iChildName">作為標記的子項名稱（資料夾或檔案皆可），例如 ".claude" 或 ".git"。</param>
-        /// <returns>命中時為該祖先目錄的絕對路徑；一路到磁碟根仍找不到時為 null。</returns>
-        private static string FindAncestorContaining(string iStartDir, string iChildName)
+        /// <returns>repo 根的絕對路徑; 找不到任何標記時為 null。</returns>
+        public static string FindRepoRoot()
         {
-            // [輸入防護] 起始目錄為空直接放棄查找。
-            if (string.IsNullOrEmpty(iStartDir)) return null;
-
-            // 區塊職責：自起始目錄起逐層往上比對標記子項是否存在。
-            // 物理意義：DirectoryInfo.Parent 為 null 代表已抵達磁碟根，迴圈自然終止。
-            // 數值影響：僅做 Directory.Exists 檢查，命中即回傳該層絕對路徑。
-            var aDir = new System.IO.DirectoryInfo(iStartDir);
+            // 區塊職責：自 CWD 逐層往上, 優先 .claude (agent root), 次選 .git (repo root)。
+            // 物理意義：.claude 為 Claude Code 約定的 agent-facing 根; .git 為 git 物理根 (submodule/worktree 下為檔案而非資料夾)。
+            // 數值影響：先記下首個 .git 當 fallback, 但持續往上找 .claude — 命中 .claude 立即勝出 (與 install_skills.py 偏好一致)。
+            var aDir = new System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory());
+            string aGitFallback = null;
             while (aDir != null)
             {
-                if (System.IO.Directory.Exists(System.IO.Path.Combine(aDir.FullName, iChildName)))
+                if (System.IO.Directory.Exists(System.IO.Path.Combine(aDir.FullName, ".claude")))
                 {
                     return aDir.FullName;
                 }
+                if (aGitFallback == null)
+                {
+                    // [.git 偵測] 資料夾 (一般 repo 根) 或檔案 (submodule / worktree 的 gitdir 指標) 皆算命中。
+                    string aGitPath = System.IO.Path.Combine(aDir.FullName, ".git");
+                    if (System.IO.Directory.Exists(aGitPath) || System.IO.File.Exists(aGitPath))
+                    {
+                        aGitFallback = aDir.FullName;
+                    }
+                }
                 aDir = aDir.Parent;
             }
-            return null;
+            return aGitFallback;
         }
 
         /// <summary>

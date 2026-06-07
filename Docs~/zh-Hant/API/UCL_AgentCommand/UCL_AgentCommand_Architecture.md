@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-05-13
+last_updated: 2026-06-07
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -244,6 +244,28 @@ python run_cmd.py run <Type> --arg key=val
 python run_cmd.py --agent-id gemini run <Type> --arg key=val
 ```
 
+### 同 Persona 並行子通道 `--lane` / `--parallel`（T06, 2026-06-07 summit）
+
+**問題**：同一 `--agent-id`（或 default）的 queue 是**串行**的 —— per-agent IsRunning 擋同 agent 重入（防同一 queue.json 的 write race）。所以「同 persona 的下一筆 cmd 會等前一筆跑完」。
+
+**解**：`--lane <name>` 在 base agent-id 上疊一條**獨立子通道**，effective queue id = `<agent-id|main>~<lane>`，走獨立 queue + running-lock → 與 base queue **並行不阻塞**。
+
+```bash
+# 前一筆長 cmd 在跑 (e.g. 啟動遊戲 / 進 PlayMode), base queue 被佔住
+python run_cmd.py --agent-id zeta-summit run RCG_StartNewGame --arg from=reset
+
+# 同 persona 同時插一筆快 cmd (讀畫面), 走 lane 不必等上面那筆結束
+python run_cmd.py --agent-id zeta-summit --lane read run BattleSnapshot --arg observer=zeta
+#   → effective id = 'zeta-summit~read' → queues/queue-zeta-summit~read.json (獨立並行)
+
+# --parallel 是 --lane parallel 的捷徑
+python run_cmd.py --agent-id zeta-summit --parallel run BattleSnapshot --arg observer=zeta
+```
+
+- **business identity 不變**：lane 只影響「走哪條 queue」（routing key），cmd 的 `caller` / `sender` / treasury / tavern 身分仍由 `--arg` 決定，跟 lane 無關。
+- **並行的真相**：兩條 queue 各自 `Runner.RunAsync`，在 Editor 主執行緒上以 async UniTask 協同調度 —— 長 cmd 在 `await`（等 PlayMode / boot）時讓出，lane 的快 cmd 趁隙跑完。**對 await-heavy cmd 有效；CPU-heavy 仍序列**（同 §8.1 主執行緒 bottleneck）。
+- ⚠ **跨 PlayMode 注意**：base cmd 若觸發 **domain reload**（Disable Domain Reload 沒開）會清掉**全部** in-memory runner state，lane cmd 也會被波及。需先關 Domain Reload（見 §8.2）才能穩定並行。
+
 ### C# API overload
 
 `UCL_AgentCommandQueue` / `UCL_AgentCommandTrigger` / `UCL_AgentCommandRunner` 全 path / state methods 加 `string agentId = null` overload：
@@ -279,6 +301,45 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 - **Editor 主執行緒 bottleneck**：multi-queue **不解多核並行**，CPU-heavy cmd 仍序列；IO-heavy async cmd 才有效
 - **Cancel ≠ Timeout**：handler 多數沒 honor `CancellationToken`，timeout fire 後 cmd 仍跑到自己結束（Runner 不被卡死，但真實取消失敗）— audit / retrofit 待做
 - **Migration plan**：legacy queue.json fallback 仍支援 60 天，stderr deprecation warning，90%+ caller 遷移後 reject
+
+---
+
+## 8.2 卡住排查 / 繞行 Recovery（2026-06-07 summit 補，血換）
+
+**症狀**：送了 cmd 但 `_last_op.md` 一直不更新、`run_cmd.py` timeout、queue 裡某筆 `LastRunError` 顯示 `Interrupted by PlayMode transition, waiting for self-healing resumption...`。
+
+**根因**：cmd 在「進 PlayMode 那刻」被 **domain reload** 打斷 → in-memory runner 的 UniTask state 被清掉 → 該筆卡在 `.running` orphan lock，**堵住同一條 queue 後續所有 cmd**。
+
+> ⚠ **Domain Reload 是元兇**：跨 PlayMode 的 cmd（`PlayMode action=enter` / `RCG_StartNewGame from=reset` 等）**要求 Editor 設定 Disable Domain Reload**（Project Settings → Editor → Enter Play Mode Settings，options bit0）。Domain reload 開著時，進 play 會殺掉 runner async → 必卡。EOV committed 預設就是 `options=3`（DisableDomainReload + DisableSceneReload）。
+
+### 繞行：換一條 queue（最快，不必重啟 Editor）
+
+**default queue 卡住 ≠ 全系統卡** —— per-agent queue 各自獨立 running lock（§8.1）。直接換 `--agent-id` 走另一條 queue 即可繞過：
+
+```bash
+# default (queue.json) 卡住時 → 改走獨立 per-agent queue
+python run_cmd.py --agent-id <你的id> run <Type> --arg key=val
+
+# 連該 agent queue 也卡了 → 換一個全新沒用過的 id（全新 queue 必乾淨）
+python run_cmd.py --agent-id <你的id>-2 run <Type> --arg key=val
+```
+
+> 注意：**不進 PlayMode 的 cmd**（BattleSnapshot / BattleAction / Tavern 等，純讀寫不觸發 domain reload）走 per-agent queue 可正常完成；**會進 PlayMode 的 cmd** 換 queue 也救不了根因，要先把 Disable Domain Reload 設定打開。
+
+### 清 stuck lock（手動排乾淨）
+
+```bash
+# 1. 刪 orphan running lock (default 或 per-agent)
+rm AgentCommands/pending.trigger.running
+rm AgentCommands/queues/pending-<X>.trigger.running
+# 2. 移除卡死的 queue 條目（編 queue.json / queues/queue-<X>.json，刪該筆 Command）
+```
+
+Watcher 端有 **orphan-lock 自癒**：偵測「`.running` 檔存在但 in-memory runner idle」→ 自動 `Resuming runner!`（log 可見）。進 PlayMode 後 `OnPlayModeStateChanged` 會 `ResetRunningAgents()` 清記憶體 flag 鋪路。但若 in-memory runner 已被 domain reload 搞到半死，自癒不一定救得回 → 此時靠「換 queue 繞行」或 Editor reset（exit play / recompile / 重啟）。
+
+### Editor reset（最後手段）
+
+換 queue 也救不回（in-memory runner 全壞）→ 退 PlayMode / 觸發一次 Recompile / 重啟 Editor，watcher + runner 重新 init 即恢復。
 
 ---
 

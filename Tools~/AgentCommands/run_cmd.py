@@ -1482,6 +1482,15 @@ def main() -> int:
     parser.add_argument("--agent-id", default=None,
                         help="Per-agent queue isolation. 帶值 → 走 queues/queue-<X>.json + pending-<X>.trigger; "
                              "沒帶 → 走 legacy queue.json (default fallback, 跟舊 caller 完全相容)")
+    # agent-command-pipeline-parallelize T06: 同 persona 內並行子通道
+    # 物理意義: 同一 --agent-id (或 default) 的 queue 是串行的 (per-agent IsRunning 防 write race);
+    #          --lane 在其上疊一條獨立子通道 → effective id = '<base|main>~<lane>' → 與 base queue 並行不阻塞。
+    # 用途: 前一筆長 cmd (e.g. 啟動遊戲) 還在跑, 帶 --lane 送讀畫面等快 cmd 不必等它結束。
+    parser.add_argument("--lane", default=None,
+                        help="同 persona 並行子通道。effective queue id = '<agent-id|main>~<lane>' → 獨立 queue/running-lock, "
+                             "與 base / default queue 並行不阻塞。前一筆長 cmd 沒跑完時插一筆快 cmd 用。")
+    parser.add_argument("--parallel", action="store_true",
+                        help="= --lane parallel 的捷徑 (固定 'parallel' 子通道)。")
     sub = parser.add_subparsers(dest="action", required=True)
 
     # submit
@@ -1543,8 +1552,14 @@ def main() -> int:
     p_cat.set_defaults(func=cmd_catalog)
 
     args = parser.parse_args()
+    # agent-command-pipeline-parallelize T06: --lane / --parallel 在 base agent-id 上疊並行子通道
+    # 物理意義: lane 設定 → effective id = '<base|main>~<lane>' → 獨立 queue/running-lock, 與 base/default 並行不阻塞
+    # 數值影響: 無 lane → 行為跟改動前完全相同 (effective = base agent_id)
+    _base_agent = getattr(args, "agent_id", None)
+    _lane = getattr(args, "lane", None) or ("parallel" if getattr(args, "parallel", False) else None)
+    _effective_agent = f"{_base_agent or 'main'}~{_lane}" if _lane else _base_agent
     # 設 global _AGENT_ID 讓 queue_path/trigger_path 等函式拿 dynamic value
-    set_agent_id(getattr(args, "agent_id", None))
+    set_agent_id(_effective_agent)
     return args.func(args)
 
 

@@ -53,6 +53,12 @@ related:
 python <path-to>/UCL_Core/Tools~/AgentCommands/run_cmd.py run <Type> --arg key=value
 ```
 
+**卡住時繞行（重要）**：default queue 被某筆 cmd 卡住（`_last_op.md` 不更新 / timeout）時，**改帶 `--agent-id <X>` 走獨立 per-agent queue 即可繞過**（各 queue 獨立 running lock，互不阻塞）：
+```bash
+python <path-to>/run_cmd.py --agent-id <X> run <Type> --arg key=value
+```
+跨 PlayMode 的 cmd 卡死多半是 **Domain Reload 沒關**（要進 Project Settings → Editor → Enter Play Mode Settings 關掉 Reload Domain）。完整卡住排查 / 繞行 / 清 lock SOP 見架構文件 §8.2。
+
 ---
 
 ## 4. 修改 UCL_Core 的注意事項

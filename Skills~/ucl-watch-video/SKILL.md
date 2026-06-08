@@ -90,3 +90,4 @@ class UCL_VideoScraper:
 
 - [Docs/AI_READABILITY_GUIDELINES.md](../../../../../Docs/AI_READABILITY_GUIDELINES.md) — 註解與物理意義撰寫鐵律
 - [ucl-chat-tavern](../ucl-chat-tavern/SKILL.md) — 如何將心得完美分享至 Tavern 酒館
+- **🎵 Audio Viz Reading Guide (EOV-only, screenstream daemon 依賴)**：在 EOV 專案內看 YouTube 時若同時開著 ScreenStream daemon + audio viz，截圖角落會疊上 stereo spectrogram，可作為**轉錄稿 cross-validate 信號**（辨識 BGM/silence 區段、補轉錄稿沒抓的非語音如嘆息/笑聲/聲效）。判讀指南：`docs/Workflows/Audio_Viz_Reading_Guide.md`（主專案 path）。跨專案使用本 skill 時忽略此條即可。

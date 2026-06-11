@@ -460,6 +460,10 @@ def cmd_show_book(args):
         print(f"   ✍ 原創著作 — 作者 persona: {bk.get('author_persona', '?')}   發布狀態: {bk.get('publish_status', 'draft')}")
     pr = bk.get("progress", {})
     print(f"   進度: 第 {pr.get('current_chapter')} 章   最後閱讀: {pr.get('last_read')}")
+    # 打賞累計 (打賞簿 _tips.json; 無紀錄不印)
+    tip_total = _tip_totals_by_book().get(args.book)
+    if tip_total:
+        print(f"   💰 累計打賞: {tip_total[0]} token ({tip_total[1]} 筆)")
     chdir = _book_dir(args.book) / "chapters"
     chs = sorted(chdir.glob("ch*.md")) if chdir.exists() else []
     print(f"   章節 ({len(chs)}):")
@@ -859,13 +863,14 @@ def _donations_index() -> Path:
     return _books_root() / "_donations.json"
 
 
-def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str):
-    # 走 CMD: run_cmd.py run Treasury op=debit (use_kind=book_donation, caller==account)
+def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str, use_kind: str = "book_donation"):
+    # 走 CMD: run_cmd.py run Treasury op=debit (caller==account)
+    # use_kind 預設 book_donation (捐贈); 打賞流程傳 book_tip — 同一條 debit sink, 不同記帳 kind
     import subprocess
     run_cmd = _HERE / "run_cmd.py"
     cmd = [sys.executable, str(run_cmd), "run", "Treasury",
            "--arg", "op=debit", "--arg", f"account={donor}",
-           "--arg", f"amount={amount}", "--arg", "use_kind=book_donation",
+           "--arg", f"amount={amount}", "--arg", f"use_kind={use_kind}",
            "--arg", f"use_ref={slug}", "--arg", f"description={desc}",
            "--arg", f"caller={donor}"]
     try:
@@ -876,8 +881,9 @@ def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str):
         return (False, str(e))
 
 
-def _verify_donation_debit(donor: str, slug: str, amount: int) -> bool:
+def _verify_donation_debit(donor: str, slug: str, amount: int, kind: str = "book_donation") -> bool:
     # 跨層驗證 (外觀 OK ≠ 真的 OK): 掃 ledger 確認 debit 真落帳, 不只信 Cmd stdout
+    # kind 預設 book_donation (捐贈); 打賞驗證傳 book_tip
     root = _REPO_ROOT / "AgentCommands" / "Treasury" / "ledger"
     if not root.exists():
         return False
@@ -889,7 +895,7 @@ def _verify_donation_debit(donor: str, slug: str, amount: int) -> bool:
             except Exception:
                 continue
             if (e.get("type") == "debit" and e.get("account_id") == donor
-                    and e.get("source_kind") == "book_donation"
+                    and e.get("source_kind") == kind
                     and e.get("source_ref") == slug
                     and int(e.get("amount", 0)) == int(amount)):
                 return True
@@ -1051,6 +1057,249 @@ def cmd_donations(args):
                   f"({d.get('tokens')} token, {d.get('donated_at')})")
             if d.get("note"):
                 print(f"    note: {d['note']}")
+    # 區塊：打賞統計 — 有打賞紀錄的書附一行累計 (打賞簿 _tips.json)
+    tip_totals = _tip_totals_by_book()
+    if tip_totals:
+        print()
+        print("💰 打賞累計:")
+        for slug, (total, cnt) in tip_totals.items():
+            title = next((d.get("title", slug) for d in ds if d.get("book") == slug), slug)
+            print(f"- 《{title}》: {total} token ({cnt} 筆)")
+    return 0
+
+
+# ===========================================================
+# 打賞 (Tip) — 讀者燒 token, 受益 persona 收雙券 (繪圖券 + 酒館券)
+# 區塊職責: Plan_Reading_Library_Tip v2 (Tim 2026-06-11 拍板)
+# 物理意義: token 走 Cmd_Treasury debit sink (use_kind=book_tip, 與 donate 同向通縮);
+#          受益人按 1+1 匯率收 persona 綁定券 — 繪圖券 (canvas.py voucher grant) +
+#          酒館券 (agent_bonus_quota.json accrual, 複用 work_session 寫入模式)。
+# 數值影響: 打賞 N token → 受益 persona 收 繪圖券 N 張 + 酒館券 N 張 (TIP_*_RATE 常數)。
+# ===========================================================
+
+# 匯率常數 (Tim 2026-06-11 拍板 1+1: 1 token → 1 繪圖券 + 1 酒館券, 鼓勵打賞)
+TIP_CANVAS_RATE = 1     # 每 1 token → 繪圖券張數
+TIP_TAVERN_RATE = 1     # 每 1 token → 酒館券張數
+TIP_MAX = 1000          # 對齊 Treasury max_per_transfer 上限
+
+
+def _tips_index() -> Path:
+    return _books_root() / "_tips.json"
+
+
+def _load_tips() -> dict:
+    return _read_json(_tips_index()) if _tips_index().exists() else {"tips": []}
+
+
+def _tip_totals_by_book() -> dict:
+    # 回傳 {slug: (累計 token, 筆數)} — donations / show-book 顯示用
+    out = {}
+    for t in _load_tips().get("tips", []):
+        slug = t.get("book", "?")
+        total, cnt = out.get(slug, (0, 0))
+        out[slug] = (total + int(t.get("tokens_spent", 0)), cnt + 1)
+    return out
+
+
+def _resolve_beneficiary(book: str):
+    # 區塊職責: 從捐贈登記簿解析打賞受益人 — 原創書→作者 / 捐贈書→捐贈者
+    # 回傳 (bank, persona, title, kind) 或 None (未登記 = 不可打賞)
+    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
+    for d in idx.get("donations", []):
+        if d.get("book") == book:
+            kind = "作者" if d.get("source") == "authored" else "捐贈者"
+            return (d.get("donor", ""), d.get("donor_persona", ""), d.get("title", book), kind)
+    return None
+
+
+def _grant_canvas_voucher(persona: str, amount: int, ref: str) -> bool:
+    # 發繪圖券: subprocess canvas.py voucher grant (source=book_tip 可追溯)
+    # 跨層驗證: grant 後讀 voucher json 確認新 history entry 真落盤, 不只信 exit code
+    import subprocess
+    canvas = _HERE / "canvas.py"
+    cmd = [sys.executable, str(canvas), "voucher", "--sub", "grant",
+           "--persona", persona, "--amount", str(amount),
+           "--source", "book_tip", "--ref", ref]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=60)
+        if r.returncode != 0:
+            return False
+    except Exception:
+        return False
+    vpath = _REPO_ROOT / "AgentCommands" / "Canvas" / "vouchers" / f"{persona}.json"
+    if not vpath.exists():
+        return False
+    try:
+        v = _read_json(vpath)
+    except Exception:
+        return False
+    return any(h.get("source") == "book_tip" and h.get("ref") == ref
+               for h in v.get("history", []))
+
+
+def _grant_tavern_voucher(bank: str, persona: str, amount: int, tip_id: str, tipper_label: str, title: str) -> bool:
+    # 發酒館券: 直寫 agent_bonus_quota.json (per FreeTime_System 三池 spec,
+    # 複用 work_session.fire_voucher_accrual 的 schema — id 唯一 / history append / total_remaining 累加)
+    qpath = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "agent_bonus_quota.json"
+    if not qpath.exists():
+        return False
+    try:
+        q = _read_json(qpath)
+        agents = q.setdefault("agents", {})
+        agent_block = agents.setdefault(bank, {"personas": {}, "_legacy_no_persona": {"total_remaining": 0, "history": []}})
+        personas = agent_block.setdefault("personas", {})
+        persona_block = personas.setdefault(persona, {"total_remaining": 0, "history": []})
+        # 冪等 guard: 同 tip_id 已發過 → 視為成功不重複累加 (--retry 場景)
+        gid = f"book-tip-{tip_id}"
+        if any(h.get("id") == gid for h in persona_block.get("history", [])):
+            return True
+        persona_block.setdefault("history", []).append({
+            "id": gid,
+            "granted_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "granted_by": tipper_label,
+            "kind": "tavern_voucher",
+            "amount": amount,
+            "used": 0,
+            "remaining": amount,
+            "expires": None,
+            "usage_summary": f"讀者打賞《{title}》回饋券",
+        })
+        persona_block["total_remaining"] = persona_block.get("total_remaining", 0) + amount
+        _write_json(qpath, q)
+        return True
+    except Exception:
+        return False
+
+
+def _issue_tip_vouchers(entry: dict) -> str:
+    # 區塊職責: 按 entry 的 voucher_status 補齊未發的券, 回傳新 status
+    # 物理意義: debit 落帳後券發放任一路失敗 → 不回滾帳 (帳不可造假), 記 pending 供 --retry 補發
+    persona = entry["beneficiary_persona"]
+    bank = entry["beneficiary"]
+    ref = f"tip:{entry['book']}:{entry['tip_id']}"
+    tipper_label = entry.get("tipper_persona") or entry.get("tipper", "?")
+    status = entry.get("voucher_status", "pending_all")
+    canvas_ok = status in ("pending_tavern", "issued")
+    tavern_ok = status in ("pending_canvas", "issued")
+    if not canvas_ok:
+        canvas_ok = _grant_canvas_voucher(persona, entry["vouchers"]["canvas"], ref)
+    if not tavern_ok:
+        tavern_ok = _grant_tavern_voucher(bank, persona, entry["vouchers"]["tavern"],
+                                          entry["tip_id"], tipper_label, entry.get("title", entry["book"]))
+    if canvas_ok and tavern_ok:
+        return "issued"
+    if canvas_ok:
+        return "pending_tavern"
+    if tavern_ok:
+        return "pending_canvas"
+    return "pending_all"
+
+
+def cmd_tip(args):
+    # 區塊職責: 打賞主流程 — guard → debit 燒 token → ledger 跨層驗證 → 發雙券 → 記打賞簿 → 酒館廣播
+    import secrets as _secrets
+
+    # --retry: 補發打賞簿內 pending 的券, 不動帳
+    if args.retry:
+        idx = _load_tips()
+        pending = [t for t in idx.get("tips", []) if t.get("voucher_status") != "issued"]
+        if not pending:
+            print("（沒有 pending 的打賞券要補發）")
+            return 0
+        for t in pending:
+            t["voucher_status"] = _issue_tip_vouchers(t)
+            print(f"  retry 《{t.get('title', t['book'])}》 tip {t['tip_id']} → {t['voucher_status']}")
+        _write_json(_tips_index(), idx)
+        return 0 if all(t.get("voucher_status") == "issued" for t in pending) else 2
+
+    # guard: 必填與額度
+    for req in ("book", "tipper", "tipper_persona", "tokens"):
+        if getattr(args, req, None) in (None, ""):
+            print(f"❌ tip 需要 --{req.replace('_', '-')}", file=sys.stderr)
+            return 2
+    tokens = int(args.tokens)
+    if not (1 <= tokens <= TIP_MAX):
+        print(f"❌ --tokens 須為 1~{TIP_MAX}", file=sys.stderr)
+        return 2
+    ben = _resolve_beneficiary(args.book)
+    if ben is None:
+        print(f"❌ 《{args.book}》不在捐贈登記簿 (_donations.json) — 未入庫的書不可打賞 (先 donate/publish)", file=sys.stderr)
+        return 2
+    ben_bank, ben_persona, title, ben_kind = ben
+    if not ben_persona:
+        print(f"❌ 《{title}》登記簿缺 donor_persona — 無法定位受益 persona", file=sys.stderr)
+        return 2
+    # 防呆: 打賞自己的書禁止 (同 bank 不同 persona 合法 — 券綁 persona)
+    if args.tipper_persona == ben_persona:
+        print(f"❌ 自賞禁止 — 《{title}》的{ben_kind}就是 {ben_persona} 本人", file=sys.stderr)
+        return 2
+
+    tip_id = _secrets.token_hex(4)
+    use_ref = f"tip:{args.book}:{tip_id}"   # 唯一 ref — 防重複打賞撞舊 ledger entry 的驗證 false-positive
+    desc = f"打賞圖書: {title} ({args.tipper_persona} → {ben_persona})"
+    print(f"💰 打賞《{title}》 — {args.tipper_persona} 燒 {tokens} token → {ben_kind} {ben_persona} "
+          f"收 繪圖券×{tokens * TIP_CANVAS_RATE} + 酒館券×{tokens * TIP_TAVERN_RATE}")
+    print("   走 CMD: Cmd_Treasury op=debit (use_kind=book_tip)...")
+    ok, out = _run_treasury_debit(args.tipper, tokens, use_ref, desc, use_kind="book_tip")
+    if not _verify_donation_debit(args.tipper, use_ref, tokens, kind="book_tip"):
+        print("❌ Treasury debit 未確認落帳 (餘額不足? caller!=account? Editor 未跑?) — 不發券不記帳",
+              file=sys.stderr)
+        print(f"   run_cmd 輸出(尾):\n{out[-400:]}", file=sys.stderr)
+        return 2
+    print("✓ debit 已落帳 (ledger 跨層驗證通過)")
+
+    entry = {
+        "book": args.book, "title": title,
+        "tipper": args.tipper, "tipper_persona": args.tipper_persona,
+        "tipper_agent": args.tipper_agent or "",
+        "beneficiary": ben_bank, "beneficiary_persona": ben_persona,
+        "tokens_spent": tokens,
+        "vouchers": {"canvas": tokens * TIP_CANVAS_RATE, "tavern": tokens * TIP_TAVERN_RATE},
+        "tip_id": tip_id,
+        "voucher_status": "pending_all",
+        "note": args.note or "",
+        "tipped_at": _today(),
+    }
+    entry["voucher_status"] = _issue_tip_vouchers(entry)
+    idx = _load_tips()
+    idx.setdefault("tips", []).append(entry)
+    _write_json(_tips_index(), idx)
+    if entry["voucher_status"] == "issued":
+        print(f"✅ 打賞完成: {ben_persona} 已收 繪圖券×{entry['vouchers']['canvas']} + 酒館券×{entry['vouchers']['tavern']}")
+    else:
+        print(f"⚠ 券發放未完成 ({entry['voucher_status']}) — 帳已落不回滾, 跑 `library.py tip --retry` 補發",
+              file=sys.stderr)
+
+    # 酒館打賞廣播 (預設開, 非致命)
+    if not getattr(args, "no_notify", False):
+        note_part = f"「{entry['note']}」" if entry["note"] else ""
+        notice = (f"💰 打賞! **{args.tipper_persona}** 打賞《{title}》 {tokens} token "
+                  f"→ @{ben_persona} ({ben_kind}) 收 繪圖券×{entry['vouchers']['canvas']} + "
+                  f"酒館券×{entry['vouchers']['tavern']} {note_part}")
+        sent = _run_tavern_post(args.tipper, args.tipper_persona, notice, tag="book-tip")
+        print(f"📣 酒館打賞廣播:{'已發送' if sent else '發送失敗(打賞仍成功)'}")
+    return 0 if entry["voucher_status"] == "issued" else 2
+
+
+def cmd_tips(args):
+    # 打賞簿列表 (全列 / --book 過濾)
+    tips = _load_tips().get("tips", [])
+    if args.book:
+        tips = [t for t in tips if t.get("book") == args.book]
+    if not tips:
+        print("（尚無打賞紀錄；用 tip 打賞喜歡的書）")
+        return 0
+    total = sum(int(t.get("tokens_spent", 0)) for t in tips)
+    print(f"💰 打賞簿（{len(tips)} 筆, 累計 {total} token）\n")
+    for t in tips:
+        status = "" if t.get("voucher_status") == "issued" else f"  ⚠{t.get('voucher_status')}"
+        print(f"- {t.get('tipped_at')}  {t.get('tipper_persona', '?')} → 《{t.get('title', t['book'])}》 "
+              f"{t.get('tokens_spent')} token → {t.get('beneficiary_persona', '?')} "
+              f"(繪圖券×{t.get('vouchers', {}).get('canvas', '?')} + 酒館券×{t.get('vouchers', {}).get('tavern', '?')})"
+              f"{status}")
+        if t.get("note"):
+            print(f"    note: {t['note']}")
     return 0
 
 
@@ -1272,6 +1521,17 @@ def cmd_review(args):
     bk["reviews"] = reviews
     _write_json(_book_json(book), bk)
     print(f"✅ 書評登記:《{bk['title']}》 [{scope}] by 👤{reviewer}  {_stars(rating)}")
+
+    # 糖: review --tip N --tipper <bank> 一步到位書評+打賞 (tipper_persona=reviewer, note=pitch)
+    if getattr(args, "tip", None):
+        if not getattr(args, "tipper", None):
+            print("⚠ --tip 需搭配 --tipper <bank-id> — 書評已記, 打賞略過", file=sys.stderr)
+            return 2
+        from argparse import Namespace
+        return cmd_tip(Namespace(
+            book=book, tipper=args.tipper, tipper_persona=reviewer,
+            tipper_agent=None, tokens=int(args.tip),
+            note=args.pitch or "", no_notify=False, retry=False))
     return 0
 
 
@@ -1470,6 +1730,22 @@ def build_parser():
     a = sub.add_parser("donations", help="列出捐贈圖書館 (書 + 捐贈者)")
     a.set_defaults(func=cmd_donations)
 
+    # 打賞 (Plan_Reading_Library_Tip v2 — token 燒掉, 受益 persona 收雙券 1+1)
+    a = sub.add_parser("tip", help="打賞一本書 (燒 token; 作者/捐贈者 persona 收 繪圖券+酒館券, 匯率 1+1)")
+    a.add_argument("--book", help="Books/<slug> 的 slug")
+    a.add_argument("--tipper", help="打賞者 bank id (Treasury caller 必須==此帳戶)")
+    a.add_argument("--tipper-persona", help="打賞者 persona (受益人不可是自己)")
+    a.add_argument("--tipper-agent", default=None)
+    a.add_argument("--tokens", type=int, default=None, help=f"打賞額 1~{TIP_MAX} (參考檔位: 小賞5/中賞10/大賞50)")
+    a.add_argument("--note", default=None, help="讀後感一句 (隨廣播)")
+    a.add_argument("--no-notify", action="store_true", help="不發酒館打賞廣播")
+    a.add_argument("--retry", action="store_true", help="補發打賞簿內 pending 的券 (不動帳)")
+    a.set_defaults(func=cmd_tip)
+
+    a = sub.add_parser("tips", help="顯示打賞簿 (全列 / --book 過濾)")
+    a.add_argument("--book", default=None)
+    a.set_defaults(func=cmd_tips)
+
     # 卷↔章對應
     a = sub.add_parser("add-volume", help="登記一卷(卷別↔原始檔序號↔章節號對照); 同 n 覆寫")
     a.add_argument("--book", required=True)
@@ -1512,6 +1788,8 @@ def build_parser():
     a.add_argument("--similar-to", dest="similar_to", help="看過 X 會喜歡這本")
     a.add_argument("--content-note", dest="content_note", help="內容提醒")
     a.add_argument("--spoiler", action="store_true", help="標記此書評含劇透(預設非劇透)")
+    a.add_argument("--tip", type=int, default=None, help="書評+打賞一步糖: 打賞額 (tipper_persona=reviewer, note=pitch)")
+    a.add_argument("--tipper", default=None, help="--tip 用: 打賞者 bank id")
     a.set_defaults(func=cmd_review)
 
     a = sub.add_parser("reviews", help="顯示讀後書評 (按 persona 分組)")

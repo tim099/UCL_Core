@@ -990,7 +990,10 @@ def cmd_voucher(args):
         v["history"].append({
             "ts": iso_ms(now), "uuid": secrets.token_hex(3),
             "type": "grant", "amount": args.amount,
-            "source": "manual_grant", "ref": "",
+            # source/ref 可由 caller 覆寫 (e.g. library.py 打賞發券 source=book_tip ref=book:<slug>),
+            # 預設維持 manual_grant 向後相容
+            "source": getattr(args, "source", None) or "manual_grant",
+            "ref": getattr(args, "ref", None) or "",
         })
         write_json(voucher_path(P, persona), v)
         print(f"# 🎟 granted {args.amount} 繪畫券 → {persona}")
@@ -1261,6 +1264,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sub", required=True, choices=["balance", "grant", "history"])
     p.add_argument("--persona", required=True)
     p.add_argument("--amount", type=int, default=None, help="grant 用")
+    p.add_argument("--source", default=None, help="grant 來源標記 (預設 manual_grant; 打賞發券=book_tip)")
+    p.add_argument("--ref", default=None, help="grant 業務 ref (e.g. book:<slug>)")
     p.set_defaults(func=cmd_voucher)
 
     # freetime

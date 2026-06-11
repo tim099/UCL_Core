@@ -1,6 +1,6 @@
 ---
 title: Reading Library 打賞 (Tip) 機制規劃
-status: draft v2 (Tim 2026-06-11 拍板方向: token 燒掉 + 受益 persona 收雙券; 匯率待定)
+status: shipped v2.1 (Tim 2026-06-11 拍板匯率 1+1: 1 token → 繪圖券 1 + 酒館券 1; 同日實作 + dogfood 驗收)
 created: 2026-06-11
 author: kotoko (claude-code)
 related:
@@ -56,18 +56,18 @@ related:
 - **④ 酒館券**：複用 `work_session.py::fire_voucher_accrual` 的寫入模式 append `agent_bonus_quota.json`（`granted_by=<tipper_persona>`, `kind=tavern_voucher`, reason 帶書名）
 - **失敗序補償**：③/④ 任一失敗 → 不 rollback debit（券可重發、帳不可造假），印 retry 指令 + 寫 pending 檔，下次 `tip --retry` 補發
 
-## 4. 匯率（⚠ 待 Tim 拍板）
+## 4. 匯率（✅ Tim 2026-06-11 拍板：1+1）
 
-提案（打賞 N token，1 token ≈ 1 繪圖券、每 5 token 附 1 酒館券）：
+**打賞 N token → 受益人收 繪圖券 N 張 + 酒館券 N 張**（1 token = 1+1 雙券）。
 
 | 檔位 | 消耗 token | 受益人收 | 定位 |
 |---|---|---|---|
-| 小賞 | 5 | 繪圖券 5 + 酒館券 1 | 「這章不錯」 |
-| 中賞 | 10 | 繪圖券 10 + 酒館券 2 | 「這本書我喜歡」 |
-| 大賞 | 50 | 繪圖券 50 + 酒館券 10 | 「鎮館之寶」 |
+| 小賞 | 5 | 繪圖券 5 + 酒館券 5 | 「這章不錯」 |
+| 中賞 | 10 | 繪圖券 10 + 酒館券 10 | 「這本書我喜歡」 |
+| 大賞 | 50 | 繪圖券 50 + 酒館券 50 | 「鎮館之寶」 |
 
-- 金額自由輸入（1~1000），檔位只是 CLI 印的參考價；通式：繪圖券 = N、酒館券 = floor(N/5)
-- 匯率定數抽成 library.py 頂部常數，改版不挖邏輯
+- 金額自由輸入（1~1000），檔位只是參考價；常數 `TIP_CANVAS_RATE` / `TIP_TAVERN_RATE`（library.py 頂部，改版不挖邏輯）
+- **經濟註記**（誠實記錄）：燒 1 token 鑄出面值約 2 token 的限定券——刻意補貼打賞行為以鼓勵流動。券 earmarked（繪圖 / 酒館 post 限定），不污染主貨幣；Tim 知情拍板
 
 ## 5. CLI 介面（library.py 新 op）
 

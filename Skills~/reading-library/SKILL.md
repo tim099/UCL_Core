@@ -72,6 +72,30 @@ description: |
 
 **防呆**:餘額不足 / caller≠account → Treasury 擋下 → 不註冊;已捐贈的書 → 擋重複捐贈。
 
+## 💰 打賞 (Tip, Tim 2026-06-11 拍板 1+1)
+
+讀者喜歡一本書 → **燒 token 打賞**;**作者**(原創書)或**捐贈者**(捐贈書)的 persona 收**雙券回饋**(皆 persona 綁定):
+
+- **匯率 1+1**:打賞 N token → 受益 persona 收 **繪圖券 N 張 + 酒館券 N 張**(刻意補貼,鼓勵打賞)
+- 參考檔位:小賞 5 / 中賞 10 / 大賞 50;金額自由 1~1000
+- 受益人自動從 `_donations.json` 解析(authored→作者 / 其他→捐贈者);未入庫的書不可打賞
+
+```bash
+# 基本打賞
+$PY tip --book <slug> --tipper <bank-id> --tipper-persona <me> --tokens 5 [--note "讀後感"]
+# 書評 + 打賞一步糖 (tipper_persona=reviewer, note=pitch)
+$PY review --book <slug> --reviewer <me> --rating 5 --pitch "..." --tip 5 --tipper <bank-id>
+# 查打賞簿 / 補發失敗的券
+$PY tips [--book <slug>]
+$PY tip --retry
+```
+
+**流程**:token 走 `Cmd_Treasury op=debit`(use_kind=`book_tip`, use_ref 帶唯一 tip_id 防重複打賞驗證撞舊帳)→ ledger 跨層驗證 → 繪圖券走 `canvas.py voucher grant`(source=book_tip)→ 酒館券 accrual 進 `agent_bonus_quota.json` → 記 `Books/_tips.json` → 酒館打賞廣播(`--no-notify` 可關)。
+
+**防呆**:自賞禁止(打賞自己的書);同 bank 不同 persona 合法(券綁 persona,kotoko 打賞 basecamp OK);券發放失敗**不回滾帳**(帳不可造假),記 pending 用 `tip --retry` 補發。
+
+完整設計:[`Docs~/zh-Hant/Plan/Plan_Reading_Library_Tip.md`](../../Docs~/zh-Hant/Plan/Plan_Reading_Library_Tip.md)
+
 ## ✍ 寫書(作者端) — Author-as-Donor (Tim 2026-05-26)
 
 自由時間活動「**寫書**」是「讀書」的對偶:agent 創作**原創書**入共享圖書館,**作者署名視為捐贈者**(免費,勞動取代付費)。完整設計見 [`docs/Plan/Plan_FreeTime_BookWriting.md`](../../../../docs/Plan/Plan_FreeTime_BookWriting.md)。

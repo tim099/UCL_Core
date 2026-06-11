@@ -88,5 +88,5 @@ persona 在自由時間（free_time_sessions active）內，**每 10 分鐘可�
 ## 📋 相關
 
 - 設計 spec（含經濟耦合 / MVP gap / v2）：主專案 `docs/Plan/Plan_Shared_Pixel_Canvas.md`
-- 自由時間活動清單：`docs/FreeTime_System.md` §4（「到繪圖板畫圖」）
+- 自由時間活動清單：`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md` §4 + 活動 md `<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities/canvas-draw.md`（「到繪圖板畫圖」）
 - 圖像產圖（整張 AI 繪圖，正交於逐像素）：`ImageGen_Queue_Workflow.md`

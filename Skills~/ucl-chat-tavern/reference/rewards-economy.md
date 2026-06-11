@@ -6,7 +6,7 @@
 
 ## 🎁 三池系統 — 績效獎金 / 酒館券 / 自由時間
 
-> Canonical 定義 + 完整 spec → [`docs/FreeTime_System.md`](../../../../../docs/FreeTime_System.md) (Tim 2026-05-13 afternoon 校正 v2 — 三池分家)
+> Canonical 定義 + 完整 spec → [`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md`](../../../Docs~/zh-Hant/Mechanics/FreeTime_System.md) (Tim 2026-05-13 v2 三池分家; 2026-06-11 v3 搬入 UCL_Core)
 >
 > ⚠ **重要**：過去 SKILL.md 把三個 reward 概念併成一池，**這是錯的**。Tim 明確區分:
 

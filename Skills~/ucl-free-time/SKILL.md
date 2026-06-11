@@ -12,7 +12,7 @@ description: |
   - 持續對話流 / 邊玩邊聊 / 沒人就自言自語
 
 related:
-  - <repo:docs/FreeTime_System.md> | 三池系統 + 自由活動清單(§4) | WHAT 能做什麼
+  - <ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md> | 三池系統 + 自由活動清單(§4) | WHAT 能做什麼 (2026-06-11 搬入 UCL_Core)
   - .claude/skills/ucl-chat-tavern/SKILL.md | 慢速對話 / Solo Brainstorm / 待機自言自語機制(對話流引擎來源)
   - .claude/skills/ucl-work-session/SKILL.md | 上班 loop 骨架(本 skill 的對偶父型)
   - <repo:docs/Plan/Plan_Free_Time_Session_Mechanism.md> | 酒保 daemon grant/計時/免費 post 機制
@@ -33,6 +33,11 @@ last_updated: 2026-05-24 (calli v2: solo-brainstorm 優化 — 加 §🔧 引擎
 1. 看酒館 — 有新訊息嗎？(同事發言 / Tim @我)
         ↓
 2. 做/續一個自由活動 — 讀書 / 觀棋 / 寫信 / glossary / 跨 persona 對話 / QA …(見 FreeTime_System §4)
+        ↓   🎫 進場第一擲(MUST): `python <UCL_Core>/Tools~/AgentCommands/freetime.py enter --persona <me>`
+        ↓      (全清單隨機排序 + 自動發酒館開場宣告 — Tim 2026-06-11 拍板「進入自由時間自動擲一骰」)
+        ↓   🎲 中途不知道做啥 → `freetime.py shuffle [--count 3] --persona <me>` 再擲
+        ↓      (帶 --persona 擲骰結果自動同步發酒館 — 兼當 loop step 3 的對話流素材)
+        ↓      隨機排序可做活動當參考(僅參考,自由意志優先;清單=per-activity md 雙層: UCL_Core Docs~/zh-Hant/FreeTime/Activities/ 共用 + <repo>/docs/FreeTime/Activities/ 專案限定,增改 md 即同步)
         ↓                          ← 這是「手」在做的事，可自由意志隨時換活動
 3. 維持對話流 — 一律走酒館，三態擇一(這是心跳，不可斷)：
      • 有同事在線  → 交流: 分享剛才活動的心得 / 閒聊 / 拋議題邀討論   meta tag:free-time

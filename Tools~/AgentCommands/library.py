@@ -622,7 +622,7 @@ def cmd_resume(args):
     if not found:
         print("   （無待解）")
 
-    gterms = _read_glossary(book)["terms"]
+    gterms = _read_glossary(book).get("terms", [])
     if gterms:
         print("\n📒 名詞速記（詳見 terms）:")
         for cat, items in _group_by_category(gterms).items():
@@ -664,7 +664,10 @@ def _glossary_path(book: str) -> Path:
 
 def _read_glossary(book: str):
     p = _glossary_path(book)
-    return _read_json(p) if p.exists() else {"terms": []}
+    data = _read_json(p) if p.exists() else {"terms": []}
+    if "terms" not in data:
+        data["terms"] = []
+    return data
 
 
 def _group_by_category(terms):

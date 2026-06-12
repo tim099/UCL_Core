@@ -47,6 +47,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 import uuid
@@ -636,6 +638,20 @@ def cmd_submit(args: argparse.Namespace) -> int:
     arg_pairs = parse_kv_pairs(args.arg or [])
     # NOTE: _caller_env_marker auto-inject 已移到 append_cmd 統一處理 (cover submit + run + recompile 三路)
 
+    # --arg-file 展開（讀檔失敗 → 直接擋，不寫 queue）
+    ok, err = expand_arg_files(arg_pairs, getattr(args, "arg_file", []))
+    if not ok:
+        print(f"✗ --arg-file 展開失敗：\n  {err}", file=sys.stderr)
+        sys.stderr.flush()
+        return 2
+
+    # T-Backtick-Guard：偵測反引號被 bash 吃掉 → block（見 check_backtick_loss 區塊註解）
+    ok, err = check_backtick_loss(arg_pairs, allow=getattr(args, "allow_backtick_loss", False))
+    if not ok:
+        print(f"✗ Backtick-loss guard 攔截：\n  {err}", file=sys.stderr)
+        sys.stderr.flush()
+        return 2
+
     # 區塊職責：Tavern Cmd 的 client-side 預檢
     # 物理意義：Editor round-trip 約 1s 才報錯；client 預檢 < 0.01s 就能擋下 typo / alias 錯
     # 數值影響：失敗 → 立刻 return 2 不寫 queue，不污染 _last_op.md
@@ -754,6 +770,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     # 自行走 submit 流程以便保留 cmd_id
     arg_pairs = parse_kv_pairs(args.arg or [])
+
+    # --arg-file 展開（讀檔失敗 → 直接擋，不寫 queue）
+    ok, err = expand_arg_files(arg_pairs, getattr(args, "arg_file", []))
+    if not ok:
+        print(f"✗ --arg-file 展開失敗：\n  {err}", file=sys.stderr)
+        sys.stderr.flush()
+        return 2
+
+    # T-Backtick-Guard：偵測反引號被 bash 吃掉 → block（見 check_backtick_loss 區塊註解）
+    ok, err = check_backtick_loss(arg_pairs, allow=getattr(args, "allow_backtick_loss", False))
+    if not ok:
+        print(f"✗ Backtick-loss guard 攔截：\n  {err}", file=sys.stderr)
+        sys.stderr.flush()
+        return 2
 
     # 區塊職責：ergonomic shim — 把 --arg wait-reply=N 視同 --wait-reply N
     # 物理意義：使用者 / agent 直覺會把 wait-reply 當 cmd arg 寫成 --arg wait-reply=N
@@ -1454,6 +1484,100 @@ def parse_kv_pairs(items: list[str]) -> dict:
 
 
 # ===========================================================
+# Backtick-loss guard（T-Backtick-Guard, Tim 2026-06-12 拍板）
+# ===========================================================
+# 區塊職責：偵測「bash 雙引號內未跳脫反引號被 command substitution 吃掉」的事故並在寫入 queue 前攔截。
+# 物理意義：等 --arg body=... 的值到達本 script 時，反引號早已被 bash 執行掉（內容層看不到）；
+#          唯一可靠的證據在「父進程鏈的原始命令列」— bash -c "<raw>" 的 raw 字串保留著使用者
+#          原始輸入（含被吃前的反引號）。比對「raw 含未跳脫反引號」且「收到的 arg 值全無反引號」
+#          → 判定字已被吃 → block (exit 2)，提示改用 --arg-file 或跳脫。
+# 數值影響：僅在 arg 含文字類 key（body/letter/note/...）時才啟動（多一次父進程查詢 ~0.5-2s）；
+#          偵測本身任何異常都吞掉（guard 失效 = 行為同舊版，絕不阻斷主流程）。
+#          lessons.jsonl 同款教訓 3 條（05-14 x2 / 05-16）擋不住的肌肉記憶，由本機械防護收口。
+
+# 文字類 arg key — 只有這些 key 在場才值得付出父進程查詢成本
+_TEXTUAL_ARG_KEYS = {"body", "letter", "letter_body", "note", "message", "content", "text", "opinion"}
+
+
+def _ancestor_raw_cmdlines(max_depth: int = 5) -> list[str]:
+    """往上走父進程鏈，收集各層原始命令列字串（Windows 走 CIM、POSIX 走 /proc）。"""
+    chains: list[str] = []
+    if os.name == "nt":
+        # Windows: 一發 PowerShell 腳本沿 ParentProcessId 走 max_depth 層，省去多次 subprocess 開銷
+        ps_script = (
+            f"$id={os.getppid()}; "
+            f"for($i=0; $i -lt {max_depth} -and $id; $i++){{ "
+            f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId=$id\" -ErrorAction SilentlyContinue; "
+            f"if(-not $p){{break}}; Write-Output $p.CommandLine; $id=$p.ParentProcessId }}"
+        )
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script],
+                             capture_output=True, text=True, timeout=15)
+        chains = [ln for ln in (out.stdout or "").splitlines() if ln.strip()]
+    else:
+        # POSIX: /proc/<pid>/cmdline（NUL 分隔）+ /proc/<pid>/stat 第 4 欄是 ppid
+        pid = os.getppid()
+        for _ in range(max_depth):
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    chains.append(f.read().replace(b"\x00", b" ").decode("utf-8", "replace"))
+                with open(f"/proc/{pid}/stat", "r") as f:
+                    pid = int(f.read().split()[3])
+                if pid <= 1:
+                    break
+            except OSError:
+                break
+    return chains
+
+
+def check_backtick_loss(arg_pairs: dict, allow: bool = False) -> tuple[bool, str]:
+    """回 (ok, err)。ok=False 表示偵測到反引號被 bash 吃掉，呼叫端應 exit 2。"""
+    # 顯式覆蓋 → 不查
+    if allow:
+        return True, ""
+    # 沒有文字類 arg → 不值得付父進程查詢成本
+    if not (_TEXTUAL_ARG_KEYS & set(arg_pairs)):
+        return True, ""
+    # 任一值仍含反引號 → 反引號活著（caller 用了單引號 / 跳脫 / --arg-file），安全
+    if any("`" in (v or "") for v in arg_pairs.values()):
+        return True, ""
+    try:
+        raw = next((c for c in _ancestor_raw_cmdlines() if "run_cmd.py" in c), None)
+    except Exception:
+        return True, ""   # guard 自身故障 → 放行（行為同舊版）
+    if not raw:
+        return True, ""
+    # 已跳脫的 \` 不會被 bash 吃 → 從 raw 剔除後再看殘餘的裸反引號
+    unescaped = re.sub(r"\\`", "", raw)
+    if "`" not in unescaped:
+        return True, ""
+    return False, (
+        "偵測到原始命令列含未跳脫反引號 ` , 但送達的 arg 值裡一個都不剩 — \n"
+        "  反引號內容已被 bash 當 command substitution 執行掉（典型症狀：路徑/代碼整段消失）。\n"
+        "  修復方式（擇一）：\n"
+        "    1. 【推薦】把長文寫進檔案，改用 --arg-file body=<path>（完全繞開 shell 引用）\n"
+        "    2. 把反引號跳脫成 \\` ，或整段 body 用單引號包\n"
+        "    3. 內容本來就不需要反引號 → 拿掉 markdown 反引號裸寫\n"
+        "  確定要照原樣送出（明知字已被吃）→ 加 --allow-backtick-loss 覆蓋。"
+    )
+
+
+def expand_arg_files(arg_pairs: dict, arg_file_items: list[str]) -> tuple[bool, str]:
+    """--arg-file key=path → 讀檔內容塞進 arg_pairs[key]（UTF-8）。回 (ok, err)。"""
+    for item in (arg_file_items or []):
+        if "=" not in item:
+            return False, f"--arg-file 格式錯誤（缺 =）: {item}"
+        k, path = item.split("=", 1)
+        p = Path(path.strip())
+        if not p.is_file():
+            return False, f"--arg-file {k.strip()}: 檔案不存在 → {p}"
+        try:
+            arg_pairs[k.strip()] = p.read_text(encoding="utf-8")
+        except Exception as e:
+            return False, f"--arg-file {k.strip()}: 讀檔失敗 → {e}"
+    return True, ""
+
+
+# ===========================================================
 # CLI
 # ===========================================================
 
@@ -1461,6 +1585,11 @@ def add_common_submit_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mode", default="OneShot", choices=["OneShot", "Repeatable"])
     p.add_argument("--arg", action="append", default=[],
                    help="Arg as key=value (repeatable)")
+    p.add_argument("--arg-file", action="append", default=[],
+                   help="Arg as key=<filepath> — 值從檔案讀 (UTF-8, repeatable)。"
+                        "body 含反引號/代碼/路徑時的推薦通道，完全繞開 shell 引用地獄。")
+    p.add_argument("--allow-backtick-loss", action="store_true",
+                   help="跳過 backtick-loss guard（明知原始命令列的反引號已被 bash 吃掉仍照送）。")
     p.add_argument("--description", default=None)
     p.add_argument("--ack-timeout", type=float, default=DEFAULT_ACK_TIMEOUT,
                    help=f"Seconds to wait for previous batch to finish before submitting "

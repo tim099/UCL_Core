@@ -266,6 +266,20 @@ def file_sha1(path: Path) -> str:
     return h.hexdigest()
 
 
+# 區塊職責: marker JSON 的 atomic 寫入 — 先寫 temp 檔再 os.replace 原子換入。
+# 物理意義: marker (.ucl_source / .ucl_installed) 若在 write_text 中途被殺 / 磁碟滿會留半截 JSON
+#          → 下輪 JSONDecodeError → prior_hashes={} → 所有 recorded 變 None
+#          → local-edit 保護「靜默全關」(basecamp R2 review 點名, 跟毒化同級的靜默失效)。
+# 數值影響: os.replace 在同一 filesystem 上為原子操作; temp 檔留同目錄確保同 fs。
+def write_json_atomic(path: Path, data: dict, trailing_newline: bool = False) -> None:
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    if trailing_newline:
+        text += "\n"
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False) -> tuple[int, int]:
     """Copy contents of src_dir to dst_dir. Returns (copied, skipped_due_to_edit)."""
     copied = 0
@@ -282,26 +296,36 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False) -> 
 
     new_hashes: dict[str, str] = {}
 
+    # 區塊職責: 逐檔三分支顯式記錄 (basecamp R2 review 定案, 防 marker 毒化的核心語意)。
+    # 物理意義: marker file_hashes 必須恆等於「最後一次成功寫入 dst 的內容 hash」:
+    #          copied      → 記 src_hash (剛寫入的就是 source 內容)
+    #          up-to-date  → 記 src_hash (dst == source, 順帶治癒舊毒 marker)
+    #          skipped     → 保留舊 recorded (dst 沒動, 記錄就不能動 — 舊版在此無條件記 src_hash,
+    #                        導致「跳過一次 = marker 與磁碟永久脫鉤 = 之後每輪都誤判 local edit」自我毒化)
+    # 數值影響: 任一分支都會在 new_hashes 留下記錄 — 檔案不會從 marker 消失
+    #          (消失 → recorded=None → 下輪 silent overwrite, local-edit 保護靜默失效)。
     for src_file in src_dir.rglob("*"):
         if not src_file.is_file():
             continue
         rel = src_file.relative_to(src_dir)
+        rel_key = str(rel).replace(os.sep, "/")
         dst_file = dst_dir / rel
 
         src_hash = file_sha1(src_file)
-        new_hashes[str(rel).replace(os.sep, "/")] = src_hash
 
         if dst_file.is_file():
             dst_hash = file_sha1(dst_file)
             if dst_hash == src_hash:
+                new_hashes[rel_key] = src_hash  # up-to-date → 記 src_hash (= dst 實際內容)
                 continue  # already up to date
-            recorded = prior_hashes.get(str(rel).replace(os.sep, "/"))
+            recorded = prior_hashes.get(rel_key)
             if not force and recorded is not None and dst_hash != recorded:
                 log.warn(
                     f"local edit detected, skipping: {dst_file} "
                     f"(rerun with --force-overwrite to replace, or delete the file)"
                 )
                 skipped += 1
+                new_hashes[rel_key] = recorded  # skipped → 保留舊 recorded, 不可記 src_hash
                 continue
 
         log.action("copy", dst_file)
@@ -309,20 +333,17 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False) -> 
             dst_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_file, dst_file)
         copied += 1
+        new_hashes[rel_key] = src_hash  # copied → 記 src_hash (剛寫入的內容)
 
     if not log.dry:
         source_marker.parent.mkdir(parents=True, exist_ok=True)
-        source_marker.write_text(
-            json.dumps(
-                {
-                    "ucl_core_commit": get_ucl_commit(),
-                    "source": str(src_dir.relative_to(UCL_CORE_ROOT)),
-                    "file_hashes": new_hashes,
-                },
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        write_json_atomic(
+            source_marker,
+            {
+                "ucl_core_commit": get_ucl_commit(),
+                "source": str(src_dir.relative_to(UCL_CORE_ROOT)),
+                "file_hashes": new_hashes,
+            },
         )
 
     return copied, skipped
@@ -468,6 +489,17 @@ def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log, force: bool
         dst_content = dst_file.read_text(encoding="utf-8")  # 讀取現有目標檔案的內容
         dst_hash = hashlib.sha1(dst_content.encode("utf-8")).hexdigest()  # 計算目標現有內容之 SHA-1 雜湊值
         if dst_hash == transformed_hash:  # 若目標現有雜湊等於轉換後的最新內容雜湊
+            # 區塊職責: up-to-date 自癒 — 內容已同步但 marker 記錄不符(歷史 untransformed-hash bug 殘留)
+            #          → 趁內容可信時把 recorded 治癒成實際 hash, 避免下次 source 演進後誤判 local edit。
+            if not log.dry and prior_hashes.get("SKILL.md") != transformed_hash:
+                write_json_atomic(
+                    source_marker,
+                    {
+                        "ucl_core_commit": get_ucl_commit(),
+                        "source": str(skill_file.relative_to(UCL_CORE_ROOT)),
+                        "file_hashes": {"SKILL.md": transformed_hash},
+                    },
+                )
             return 0, 0  # 已經是最新，直接返回 (0 拷貝, 0 略過)
         # 為了處理 frontmatter 的 trigger 注入，我們這裡需要比對雜湊記錄
         recorded = prior_hashes.get("SKILL.md")  # 從先前的防寫紀錄中獲取 SKILL.md 當初對應的雜湊 (此值已修正為轉換後的 hash)
@@ -481,17 +513,13 @@ def copy_skill_antigravity(src_dir: Path, dst_file: Path, log: _Log, force: bool
         dst_file.parent.mkdir(parents=True, exist_ok=True)  # 遞迴建立目標所在的 .agents/rules/ 目錄
         dst_file.write_text(transformed_content, encoding="utf-8")  # 寫入包含 always_on 觸發器的 Markdown 檔案
 
-        source_marker.write_text(  # 正式寫入伴隨的防寫標記 JSON 檔案
-            json.dumps(  # 將元數據序列化為 JSON
-                {
-                    "ucl_core_commit": get_ucl_commit(),  # 寫入當前 UCL_Core 倉庫的 commit 雜湊值
-                    "source": str(skill_file.relative_to(UCL_CORE_ROOT)),  # 記錄來源 SKILL.md 相對於 UCL_Core 根目錄的路徑
-                    "file_hashes": {"SKILL.md": transformed_hash},  # 將轉換後實際寫入內容之雜湊記錄於對照表中，修正了原本比對 untransformed 雜湊的 bug
-                },
-                indent=2,  # 使用兩空格縮排，保持排版精美
-                ensure_ascii=False,  # 允許非 ASCII 字元，防止中文亂碼
-            ),
-            encoding="utf-8",  # 指定以 UTF-8 編碼儲存
+        write_json_atomic(  # 正式寫入伴隨的防寫標記 JSON 檔案 (atomic — 防半截 JSON 讓保護靜默全關)
+            source_marker,
+            {
+                "ucl_core_commit": get_ucl_commit(),  # 寫入當前 UCL_Core 倉庫的 commit 雜湊值
+                "source": str(skill_file.relative_to(UCL_CORE_ROOT)),  # 記錄來源 SKILL.md 相對於 UCL_Core 根目錄的路徑
+                "file_hashes": {"SKILL.md": transformed_hash},  # 將轉換後實際寫入內容之雜湊記錄於對照表中，修正了原本比對 untransformed 雜湊的 bug
+            },
         )
     copied += 1  # 累計拷貝成功計數
     return copied, skipped  # 傳回計數結果
@@ -624,7 +652,7 @@ def main(argv: list[str] | None = None) -> int:
                     if remaining != prev:
                         mdata["installed_skills"] = remaining
                         mdata["source_hash"] = compute_source_hash(remaining, args.target)
-                        marker.write_text(json.dumps(mdata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                        write_json_atomic(marker, mdata, trailing_newline=True)
                 except (json.JSONDecodeError, OSError):
                     pass
             if reconcile_removed:
@@ -662,7 +690,7 @@ def main(argv: list[str] | None = None) -> int:
             if partial and remaining:
                 mdata["installed_skills"] = remaining
                 mdata["source_hash"] = compute_source_hash(remaining, args.target)
-                marker.write_text(json.dumps(mdata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                write_json_atomic(marker, mdata, trailing_newline=True)
                 log.info(f"Marker updated: {len(remaining)} skill(s) still installed.")
             else:
                 marker.unlink()
@@ -713,19 +741,15 @@ def main(argv: list[str] | None = None) -> int:
                 if s not in merged:
                     merged.append(s)
             final_skills = merged
-        marker.write_text(
-            json.dumps(
-                {
-                    "ucl_core_commit": get_ucl_commit(),
-                    "source_hash": compute_source_hash(final_skills, args.target),
-                    "installed_skills": final_skills,
-                    "target": args.target,
-                    "mode": "link" if (args.link and args.target != "antigravity") else "copy",
-                },
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        write_json_atomic(
+            marker,
+            {
+                "ucl_core_commit": get_ucl_commit(),
+                "source_hash": compute_source_hash(final_skills, args.target),
+                "installed_skills": final_skills,
+                "target": args.target,
+                "mode": "link" if (args.link and args.target != "antigravity") else "copy",
+            },
         )
 
     log.info(

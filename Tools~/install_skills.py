@@ -335,6 +335,31 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False) -> 
         copied += 1
         new_hashes[rel_key] = src_hash  # copied → 記 src_hash (剛寫入的內容)
 
+    # 區塊職責: orphan 清理 (Fix4) — source 端已刪除/改名、但安裝端還殘留的舊檔。
+    # 物理意義: copy 只增不刪 → source 刪檔後安裝端殘留 → Editor 端 per-skill drift 比對永遠亮
+    #          「⚠改動」, 連 force 重裝都修不掉 (只蓋不刪)。安全邊界 = prior marker 記錄:
+    #          只刪「自己裝過的」(marker file_hashes 有記錄), 使用者自建檔不在記錄內絕不誤刪。
+    # 數值影響: orphan 被使用者改過 (hash ≠ recorded) 且非 force → 不刪 + warning + 保留記錄
+    #          (破壞看得見, 同 copy / uninstall 路徑的 local-edit 保護語意, 留給 --force-overwrite);
+    #          刪除成功 → 從 new_hashes 移除記錄, marker 自然收斂。
+    for rel_key, rec_hash in prior_hashes.items():
+        if rel_key in new_hashes:
+            continue  # source 還在, 非 orphan
+        orphan = dst_dir / rel_key
+        if not orphan.is_file():
+            continue  # 安裝端也已不存在, 記錄自然消失
+        if not force and file_sha1(orphan) != rec_hash:
+            log.warn(
+                f"orphan with local edit, keeping: {orphan} "
+                f"(source removed this file; rerun with --force-overwrite to delete)"
+            )
+            skipped += 1
+            new_hashes[rel_key] = rec_hash  # 保留記錄 — 下輪仍視為 orphan 可見可刪
+            continue
+        log.action("remove orphan", orphan)
+        if not log.dry:
+            orphan.unlink()
+
     if not log.dry:
         source_marker.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(

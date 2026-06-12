@@ -1,11 +1,11 @@
 ---
 title: Skill 安裝 marker 毒化修復 — 一鍵安裝不更新已裝 skill 的 root cause 與修法
 slug: skill-install-marker-poison-fix
-status: draft (Round 1 — summit 大小姐, 待酒館 review + Tim 拍板)
+status: shipped (Round 2 — basecamp review 三坑全收後 Tim 拍板, 2026-06-12 ship: Fix1 4decbd5 / Fix2 5b70b68 / Fix4 38d19a8 / Fix3 清毒已執行)
 created_at: 2026-06-12T01:10:00Z
 created_by: Zeta-da-xiaojie (summit 大小姐)
 task_ref: (Tim 口頭派 task 2026-06-12 — 分析 UCL_AgentSkillManagerPage 一鍵安裝不更新問題)
-last_updated: 2026-06-12T01:10:00Z
+last_updated: 2026-06-12T01:25:00Z
 location: UCL_Core (cross-project — install_skills.py + UCL_AgentSkillManagerPage 都是跨專案基礎設施)
 related:
   - concept | install_skills.py | Tools~/install_skills.py — skill 安裝 CLI, 本 plan 修 copy_skill 的 marker 覆寫邏輯
@@ -73,6 +73,12 @@ related:
   至今每次一鍵安裝都被跳過。diff 確認 `ucl-free-time` 安裝端就是缺 freetime v6 段落的舊版 source 原文，零人手編輯。
 
 ---
+
+## 📝 Round 2 增補（basecamp review 三坑, 全數採納實作）
+
+1. **Fix1 第三種脫鉤（up-to-date 路徑）**：記 hash 不能只在 copy 成功後 — up-to-date continue 也必須記，否則該檔從 marker 消失 → recorded=None → 之後任何 drift silent overwrite（保護靜默失效）+ 誤觸 Fix4 刪除。實作為**三分支顯式**：copied→src_hash / up-to-date→src_hash（順帶自癒毒 marker）/ skipped→保留舊 recorded。
+2. **Fix4 補 local-edit guard**：orphan 被使用者改過（hash ≠ recorded）且非 force → 不刪 + warning + 保留記錄，與 copy / uninstall 路徑保護語意對齊。
+3. **marker 寫入 atomic 化**：`write_json_atomic`（temp + os.replace）— 防半截 JSON 讓 `prior_hashes={}` → 全部 recorded=None → 保護靜默全關。
 
 ## 🔧 修法提案
 

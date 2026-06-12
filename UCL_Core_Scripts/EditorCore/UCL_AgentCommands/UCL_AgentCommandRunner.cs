@@ -45,6 +45,14 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 數值影響：不影響任何核心計算與業務邏輯，僅用於維護管線健康。
         static string NormAgent(string agentId) => agentId ?? "";
 
+        // 區塊職責：per-cmd 執行中的 cmd_id static slot（T-LastOp-CmdId 2026-06-12）
+        // 物理意義：handler 收到的只有 Args dict，不知道自己是 queue 裡哪筆 cmd；Runner 在 ExecuteAsync
+        //          前把 c.Id 放進本 slot → 下游 UCL_ChatTavernRender.WriteLastOp 寫 _last_op.md 時
+        //          stamp `<!-- cmd_id: X -->`，Python 端 check_cmd_result_file 比對 cmd_id 相符才認帳
+        //          （解多 Claude session 並發對同一 Editor 發 cmd 時 fail marker 互相污染誤報）。
+        // 數值影響：沒設（IMGUI 手動跑 handler 等非 queue 路徑）→ null → WriteLastOp 不 stamp，行為不變。
+        public static string CurrentCmdId = null;
+
         /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
         public static bool IsRunning => IsRunningForAgent(null);
 
@@ -221,6 +229,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                         callerEnvMarker = cem;
                     }
                     UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = callerEnvMarker;
+                    // T-LastOp-CmdId (2026-06-12)：把當前 cmd 的 queue Id 放進 static slot，
+                    // 供下游 WriteLastOp stamp 進 _last_op.md（per-cmd finally 清掉防 cross-cmd leak）
+                    CurrentCmdId = c.Id;
                     // 區塊職責: per-cmd timeout (agent-command-handler-timeout T02, Tim 2026-05-13 拍板)
                     // 物理意義: handler.TimeoutSeconds (default 1200 = 20min) 為 type-level default
                     //          caller 帶 args._timeout_sec=N → 即時覆寫該筆 cmd timeout (per-call override)
@@ -300,6 +311,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                     {
                         // 清掉 per-cmd 的 caller env_marker slot, 防 cross-cmd leak
                         UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = null;
+                        // T-LastOp-CmdId：同步清 cmd_id slot — 防下一筆 cmd（或非 queue 路徑的 WriteLastOp）誤 stamp 上一筆的 id
+                        CurrentCmdId = null;
                     }
                 }
 

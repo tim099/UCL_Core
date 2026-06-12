@@ -345,16 +345,23 @@ CMD_OUTPUT_FILES = {
     "notelesson": "Lessons/_last_lesson.md",
 }
 
-def check_cmd_result_file(cmd_type: str, mtime_threshold: float):
+def check_cmd_result_file(cmd_type: str, mtime_threshold: float, cmd_id: str | None = None):
     """檢查指定 cmd_type 的 last_op 檔案是否顯示失敗。
 
     Returns:
         ("failed", err_msg) — 確認失敗（檔有更新 + 開頭含 fail marker）
         ("success", "") — 確認成功（檔有更新 + 開頭含 success marker）
-        ("unknown", "") — 無法確認（檔不存在 / mtime 太舊 / 沒有明確 marker）
+        ("unknown", "") — 無法確認（檔不存在 / mtime 太舊 / 沒有明確 marker / cmd_id 不符）
 
     僅在 ("failed", ...) 時 caller 應該報失敗; ("unknown", ...) 維持原有 success 推測
     （與舊版行為兼容, 不引入新的偽陽性）。
+
+    cmd_id (T-LastOp-CmdId, 2026-06-12): C# 端 Runner 執行 queue cmd 時會在 last_op 檔
+    第二行 stamp `<!-- cmd_id: X -->`。多 session 並發對同一 Editor 發 cmd 時，mtime 在
+    submit 之後不代表是本 process 的 cmd 寫的 — 另一 chat 的 cmd 在同窗口失敗會污染判定
+    （實證: 2026-06-12 21:27 kiara post 成功被 gura chat 的 T07 fail marker 誤報 exit 2）。
+    傳入 cmd_id 且檔內 stamp 存在但不符 → 回 ("unknown", "")（別人的結果，不認帳）。
+    檔內無 stamp（舊版 Editor 還沒 stamp）→ 走 legacy mtime-only 判定，向後相容。
     """
     rel_path = CMD_OUTPUT_FILES.get(cmd_type.lower())
     if not rel_path:
@@ -375,12 +382,19 @@ def check_cmd_result_file(cmd_type: str, mtime_threshold: float):
             head = f.read(4096)
     except OSError:
         return ("unknown", "")
+    # T-LastOp-CmdId (2026-06-12): 比對檔內 cmd_id stamp — stamp 存在但不是本次 cmd 寫的
+    # → 一律 unknown（fail / success 都不認帳），擋多 session 並發污染誤報
+    if cmd_id:
+        stamp_match = re.search(r"<!--\s*cmd_id:\s*(\S+)\s*-->", head)
+        if stamp_match and stamp_match.group(1) != cmd_id:
+            return ("unknown", "")
     first_line = head.split("\n", 1)[0].strip()
     # Fail markers — 對齊 Cmd_Tavern / Cmd_Treasury / Cmd_NoteLesson 寫法
     if first_line.startswith("# ❌") or "Cmd Failed" in first_line or "Cmd failed" in first_line:
-        # 抓前 5 行當錯誤訊息
+        # 抓前 5 行當錯誤訊息（濾掉 cmd_id stamp 行 — 那是機器比對用，不是錯誤內容）
         err_lines = head.split("\n", 6)[1:5]
-        err_msg = "\n  ".join(L.strip() for L in err_lines if L.strip())
+        err_msg = "\n  ".join(L.strip() for L in err_lines
+                              if L.strip() and not re.match(r"<!--\s*cmd_id:", L.strip()))
         return ("failed", err_msg or first_line)
     if first_line.startswith("# ✅"):
         return ("success", "")
@@ -713,7 +727,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 cmd_type = getattr(args, "cmd_type", None)
                 submit_time = getattr(args, "submit_time", None)
                 if cmd_type and submit_time is not None:
-                    status, err = check_cmd_result_file(cmd_type, submit_time)
+                    # T-LastOp-CmdId: 帶本筆 cmd_id 進去比對檔內 stamp — 別的 session
+                    # 同窗口寫的 fail marker（stamp 是別人的 id）會被判 unknown 不誤報
+                    status, err = check_cmd_result_file(cmd_type, submit_time, cmd_id=cmd_id)
                     if status == "failed":
                         print(f"  ✗ Cmd disappeared from queue BUT output file shows failure:", file=sys.stderr)
                         print(f"  {err}", file=sys.stderr)

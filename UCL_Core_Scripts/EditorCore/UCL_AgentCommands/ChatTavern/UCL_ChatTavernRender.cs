@@ -87,6 +87,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static void WriteLastOp(string md)
         {
             UCL_ChatTavernIO.EnsureTavernDir();
+            // 區塊職責：cmd_id stamp 注入（T-LastOp-CmdId 2026-06-12）
+            // 物理意義：_last_op.md 是多 session 共用檔 — 多個 Claude chat 並發對同一 Editor 發 cmd 時，
+            //          A 的 cmd_wait 可能讀到 B 在同窗口寫的 fail marker（mtime 在 A submit 之後）而誤報失敗
+            //          （實證：2026-06-12 21:27 kiara post 成功被 gura chat 的 T07 fail marker 污染誤報 exit 2）。
+            //          stamp 當前執行 cmd 的 queue Id 進檔，Python 端 check_cmd_result_file 比對相符才認帳。
+            // 數值影響：stamp 插在第一行之後 — 第一行是 Python 端 fail/success marker 判定行不可動，
+            //          且 Python 只讀前 4KB，stamp 必須靠檔頭。Runner 沒設 CurrentCmdId（IMGUI 手動操作
+            //          等非 queue 路徑）→ 不 stamp，輸出與舊版完全一致。
+            string cmdId = UCL_AgentCommandRunner.CurrentCmdId;
+            if (!string.IsNullOrEmpty(cmdId))
+            {
+                string stamp = "<!-- cmd_id: " + cmdId + " -->";
+                int nl = md.IndexOf('\n');
+                md = nl >= 0
+                    ? md.Substring(0, nl + 1) + stamp + "\n" + md.Substring(nl + 1)
+                    : md + "\n" + stamp + "\n";
+            }
             File.WriteAllText(UCL_ChatTavernIO.GetLastOpPath(), md, new System.Text.UTF8Encoding(false));
         }
     }

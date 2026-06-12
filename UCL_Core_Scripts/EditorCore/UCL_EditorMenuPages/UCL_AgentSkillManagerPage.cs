@@ -1006,15 +1006,15 @@ namespace UCL.Core.EditorLib.Page
                     if (disabled)
                     {
                         // 停用優先顯示（不論是否實體還在）
-                        if (installed) { statusTxt = "🚫停用·待移除"; statusCol = new Color(1f, 0.5f, 0.4f); }
-                        else { statusTxt = "🚫停用"; statusCol = new Color(0.7f, 0.55f, 0.55f); }
+                        if (installed) { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.DisabledPendingRemove"); statusCol = new Color(1f, 0.5f, 0.4f); }
+                        else { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Disabled"); statusCol = new Color(0.7f, 0.55f, 0.55f); }
                     }
-                    else if (!installed) { statusTxt = "未裝"; statusCol = new Color(0.6f, 0.6f, 0.6f); }
+                    else if (!installed) { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.NotInstalled"); statusCol = new Color(0.6f, 0.6f, 0.6f); }
                     else
                     {
                         bool drift = HashSkillDirContent(dir) != HashSkillDirContent(instDir);
-                        if (drift) { statusTxt = "⚠改動"; statusCol = new Color(1f, 0.7f, 0.3f); }
-                        else { statusTxt = "✓同步"; statusCol = new Color(0.4f, 0.85f, 0.5f); }
+                        if (drift) { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Drift"); statusCol = new Color(1f, 0.7f, 0.3f); }
+                        else { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Synced"); statusCol = new Color(0.4f, 0.85f, 0.5f); }
                     }
                     using (new GUILayout.HorizontalScope())
                     {
@@ -1025,7 +1025,7 @@ namespace UCL.Core.EditorLib.Page
                         // 物理意義：預覽永遠看 Skills~/<name>/SKILL.md(source of truth, 必存在), 不論裝/未裝;
                         //          走 UCL_MarkdownViewerPage(Push 一頁, 按 Back 返回), 不離開 Unity 視窗。
                         // 數值影響：純讀檔渲染, 不改任何安裝狀態。
-                        if (GUILayout.Button("📄 預覽", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Preview"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                         {
                             string skillMdAbs = Path.Combine(dir, "SKILL.md").Replace('\\', '/');
                             string skillMdRel = Path.GetRelativePath(m_UCLCorePath, skillMdAbs).Replace('\\', '/');
@@ -1037,19 +1037,19 @@ namespace UCL.Core.EditorLib.Page
                         if (disabled)
                         {
                             // 啟用：同步 Enabled=true → 安裝
-                            if (GUILayout.Button("啟用", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Matrix.Btn.Enable"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
                             {
                                 SyncSkillConfig(name, enabled: true);
                                 RunInstallSkill(name, uninstall: false);
                             }
                             // disabled 但實體還在 → 提供立即解除安裝（不改 config，維持停用）
-                            if (installed && GUILayout.Button("移除", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (installed && GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
                                 RunInstallSkill(name, uninstall: true);
                         }
                         else if (!installed)
                         {
                             // 裝：同步 Enabled=true(消除可能殘留的 disabled 記錄) → 安裝
-                            if (GUILayout.Button("裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Install"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
                             {
                                 SyncSkillConfig(name, enabled: true);
                                 RunInstallSkill(name, uninstall: false);
@@ -1058,13 +1058,13 @@ namespace UCL.Core.EditorLib.Page
                         else
                         {
                             // 移除：同步 Enabled=false(停用) → 解除安裝
-                            if (GUILayout.Button("移除", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
                             {
                                 SyncSkillConfig(name, enabled: false);
                                 RunInstallSkill(name, uninstall: true);
                             }
                             // drift 時提供強制重裝（覆蓋本地改動）
-                            if (statusTxt == "⚠改動" && GUILayout.Button("重裝", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (statusTxt == UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Drift") && GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
                                 RunInstallSkill(name, uninstall: false, force: true);
                         }
                         GUILayout.FlexibleSpace();

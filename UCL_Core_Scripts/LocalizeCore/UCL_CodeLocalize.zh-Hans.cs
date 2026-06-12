@@ -134,6 +134,11 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Desc" => "编辑各语系翻译字串、CurLangKey、PlayerPrefs key。日常切换语言用上方语言栏即可，不必进这页。",
                 "Welcome.Localize.Btn" => "打开 Localize 编辑器",
                 "Welcome.Lang.Label" => "🌐 语言：",
+
+                "Welcome.CommandTable.Label" => "📋 指令对照：",
+                "Welcome.CommandTable.Desc" => "整理了 AI Agent 所有的口语指令、触发词与对应的 Workflow 参考手册。",
+                "Welcome.CommandTable.Btn" => "📄 预览指令表",
+
                 "Welcome.Lang.NoneAvailable" => "(尚未发现 UCL_LanguageCodeAsset — 请先建立语言 Asset)",
                 "Welcome.Lang.OpenEditor" => "高级编辑…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor 跨进程)",
@@ -143,12 +148,56 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — 一致风格的 IMGUI 页面堆栈，支持搜索下拉、HelpURL 跳转、TopBar 客制。",
                 "Welcome.Editor.Btn" => "PlayerPrefs 编辑范例",
                 "Welcome.DocBtn" => "📖 文档",
+
                 "Welcome.DocsTitle" => "📚 文档总入口",
                 "Welcome.Docs.Index" => "UCL_Core 文档 index",
                 "Welcome.Docs.Architecture" => "Agent Command 整体架构",
                 "Welcome.Docs.CreateCmd" => "新增 Cmd SOP",
                 "Welcome.Docs.Validate" => "验证 UCL_Asset 格式",
                 "Welcome.Docs.CompileError" => "🔧 Compile Error 排查工作流",
+                // Welcome 页的 Skill 入口卡片（小，导向独立的 AgentSkillManager 页）
+                "Welcome.SkillEntry.Title" => "🧩  Agent Skill 管理",
+                "Welcome.SkillEntry.Desc" => "把 UCL_Core 的 commit / 进酒馆 / 排查编译错等工作流抽成 AI agent Skill — 不同 agent (Claude Code / Cursor / Antigravity / Gemini) 各自的安装路径由管理页统一处理。第一次开 Welcome 会自动弹出。",
+                "Welcome.SkillEntry.OpenBtn" => "🛠 打开 Skill 管理页",
+
+                // 独立的 UCL_AgentSkillManagerPage
+                "AgentSkill.Title" => "🛠 Agent Skill Manager",
+                "AgentSkill.Subtitle" => "把 UCL_Core 的工作流安装给各家 AI agent 用",
+                "AgentSkill.ConceptTitle" => "为什么有这页？",
+                "AgentSkill.ConceptBody" => "UCL_Core/Skills~/ 内每个 skill 是一份「lazy-load 工作流」— agent 看到触发词才载入完整 SOP，平时不吃 context。每个 agent 家有自家路径惯例：Claude Code → .claude/skills/、Antigravity → .agents/rules/（规划中：Cursor → .cursor/rules/、Gemini）。本页负责对所有支援的 target 统一安装。",
+                "AgentSkill.OneClick.Title" => "一键安装（支援 Claude Code / Antigravity）",
+                "AgentSkill.OneClick.Desc" => "跑 Tools~/install_skills.py --target <X> 把所有 skill 拷到对应 dst（Claude → .claude/skills/、Antigravity → .agents/rules/）。幂等可重複跑；侦测本地修改不会复写。",
+                "AgentSkill.Status.NotInstalled" => "⚠ 尚未安装 — 点下方按钮一键装起来",
+                "AgentSkill.Status.Synced" => "✓ 已安装且同步（UCL_Core commit: {0}）",
+                "AgentSkill.Status.Stale" => "⚠ Skill 来源档案已变动 — 已安装 commit {0}，当前 {1}，建议重装",
+                "AgentSkill.Status.LegacyNoHash" => "⚠ 旧版 marker 无 source_hash 栏位 — 重装一次即可刷新比对基准",
+                "AgentSkill.Status.UnknownHead" => "已安装但无法判定 UCL_Core HEAD（git 不在 PATH？）",
+                "AgentSkill.Status.NoProjectRoot" => "找不到 host project root（没有 .claude/ 或 .git/）— 请手动执行 Tools~/install_skills.py --project-root <path>",
+                "AgentSkill.Status.NoUCLCore" => "找不到 UCL_Core 路径（UCL_EditorPath.CorePath 为空）",
+                "AgentSkill.HostRoot" => "Project root: {0}",
+                "AgentSkill.Btn.Install" => "🚀 安装",
+                "AgentSkill.Btn.InstallAll" => "🚀 一键安装全部 target",
+                "AgentSkill.Btn.ForceSyncAll" => "⚡ 强制同步全部 (复盖本地改动)",
+                "AgentSkill.SkippedWarn" => "⚠ 上次安装有 {0} 档因本地改动被跳过，内容未更新 — 用「重装」或「强制同步」复盖 (详见 Console)",
+                "AgentSkill.Btn.Sync" => "🔄 同步到当前版本",
+                "AgentSkill.Btn.Reinstall" => "🔁 重新安装",
+                "AgentSkill.Btn.Refresh" => "重新整理",
+                "AgentSkill.Btn.Doc" => "📖 Skills~/README",
+                "AgentSkill.Btn.ResetAck" => "重设首次弹出",
+                "AgentSkill.Matrix.Title" => "🎛 Per-Agent × Per-Skill 切换 (TODO)",
+                "AgentSkill.Matrix.Body" => "之后会在这里分 agent / 分 skill 各自开关（例如不装 ucl-hook-setup 因为已配过）。目前先固定全装。下方列出 source 端可用 skill：",
+                "AgentSkill.Matrix.NoSource" => "(找不到 UCL_Core/Skills~/ 来源目录)",
+                "AgentSkill.Matrix.Status.DisabledPendingRemove" => "🚫停用·待移除",
+                "AgentSkill.Matrix.Status.Disabled" => "🚫停用",
+                "AgentSkill.Matrix.Status.NotInstalled" => "未装",
+                "AgentSkill.Matrix.Status.Drift" => "⚠改动",
+                "AgentSkill.Matrix.Status.Synced" => "✓同步",
+                "AgentSkill.Matrix.Btn.Enable" => "启用",
+                "AgentSkill.AckToggle" => " 我已知道 Skill 机制(下次开 Welcome 不再自动弹本页)",
+                "AgentSkill.AckVersionLabel" => "AcknowledgedVersion: {0}",
+                "AgentSkill.NotSet" => "(未设)",
+
+
                 "Welcome.AutoOpenToggle" => " 不再自动弹出此页 (仍可从菜单 UCL → Welcome 手动开启)",
                 "Welcome.ResetButton" => "重置首次弹出 (下次重启 Editor 会再显示一次)",
                 "Welcome.ResetLog" => "[UCL_Welcome] 已重置首次弹出状态。下次 domain reload 会再次显示。",
@@ -280,6 +329,7 @@ namespace UCL.Core.LocalizeLib
                     "• 「自动带正确 Token 登出 (推荐)」 — 从 lock 自动捞出对应 token 附上, enforce ON 也能正常广播。",
                 "LoginStatus.Btn.LogoutNoToken" => "🚪 不带 Token 登出",
                 "LoginStatus.Btn.LogoutWithToken" => "🌙 自动带 Token 登出 (推荐)",
+                // T07 (2026-05-15 apex-two) — Token Enforce 後台開關
                 "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（后台开关）</b>",
                 "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（必验 token）",
                 "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF（预设，不验）",
@@ -547,6 +597,11 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Err.NoRoom" => "房间未选",
                 "Tavern.Err.RoomIdEmpty" => "Room id 不能为空",
                 "Tavern.Err.IdentityIdEmpty" => "Identity id 不能为空",
+
+                // Bartender [help] inline marker 回应 body — 移自 UCL_BartenderDaemon.BuildHelpBody (T18.3 2026-05-18 gura)
+                // 物理意义: 走 UCL_CodeLocalize 避开 Mono preprocessor 对 verbatim string ## 字元的 bug; placeholder {0} = creatorName
+                // 设计取捨: UCL_CodeLocalize 没 #if UNITY_EDITOR 包裹 → preprocessor 不进 skip-scan, ## 安全; static switch → daemon [InitializeOnLoad] 早期就可用
+                "Bartender.Help.Body" => "📜 **酒保服务清单** (来自 {0} 的 [help] 查询)\n\n## 🗣️ 直接对话 (inline marker — 任何人在酒馆发讯息含以下 marker 即触发)\n\n| Marker (同义词) | 功能 | 范例 |\n|---|---|---|\n| `[进行留言]` / `[留言]` / `[leave message]` / `[bartender add]` | 註册关键字触发留言 | `[进行留言] key=晚安 msg=记得写 baton targets=Tim tokens=2` |\n| `[进行时间规则]` / `[时间规则]` / `[time rule]` | 註册每日 HH:mm 提醒 | `[进行时间规则] id=sleep time=23:50 target=Tim msg=该睡了 grace=10 penalty=true` |\n| `[查询余额]` / `[余额]` / `[balance]` | 查 Treasury 帐户余额 + 近 N 笔进出帐 | `[查询余额] account=claude-da-xiaojie limit=10`（account 省略 = 查自己） |\n| `[help]` / `[帮助]` / `[酒馆指令]` | 列本清单 | 就是这个 |\n\n## 🛠️ CMD 路径 (`Cmd_Bartender` 走 queue.json — agent / Tim 跑 run_cmd.py 触发)\n\n| op | 功能 |\n|---|---|\n| `add` | 新增关键字触发 (对齐 [进行留言]) |\n| `list` | 列当前所有 keyword triggers |\n| `remove` | 移除指定 trigger (`id=<trigger_id>`) |\n| `time_add` | 新增时间规则 (对齐 [进行时间规则]) |\n| `time_list` | 列所有时间规则 |\n| `time_remove` | 移除时间规则 (`id=<rule_id>`) |\n| `balance` | 查 Treasury 余额 (对齐 [查询余额]，可选 `post=true` 同步 broadcast) |\n| `status` | 列 daemon state / 统计 |\n| `tick` | 强制立刻 tick 一轮 (debug / dogfood) |\n\n呼叫范例:\n```\npython <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance --arg account=Tim --arg limit=5\n```\n\n## 🎯 自动行为 (daemon 后台 5s tick — 无需主动触发)\n\n- **Keyword trigger fire**: 已註册的 trigger 在 target 发言含 keyword 时自动 fire (剩余 tokens > 0)\n- **Time rule reminder**: 到 HH:mm 自动广播 reminder; 超 grace 后每 N 分钟累积 HP penalty 广播\n- **防回音**: 酒保自家讯息 (sender=`tavern-keeper` 或 meta.tag=`bartender-relay`) 不参与 trigger match\n\n## 📚 深入\n\n- 酒保系统完整 spec: `<UCL_Core>/Skills~/ucl-bartender/SKILL.md`\n- 酒馆讯息 IO (Cmd_Tavern op=post/read/wait/...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`\n- 跨系统 cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`\n- 跨 agent 自助 navigation: `<UCL_Core>/Skills~/ucl-help/SKILL.md`\n\n> Tip: 不确定怎么用某 op? 跑 `run_cmd.py info Bartender` 看完整 ArgsSchema.",
 
                 _ => null
             };

@@ -134,9 +134,11 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Desc" => "編輯各語系翻譯字串、CurLangKey、PlayerPrefs key。日常切換語言用上方語言列即可，不必進這頁。",
                 "Welcome.Localize.Btn" => "打開 Localize 編輯器",
                 "Welcome.Lang.Label" => "🌐 語言：",
+
                 "Welcome.CommandTable.Label" => "📋 指令對照：",
                 "Welcome.CommandTable.Desc" => "整理了 AI Agent 所有的口語指令、觸發詞與對應的 Workflow 參考手冊。",
                 "Welcome.CommandTable.Btn" => "📄 預覽指令表",
+
                 "Welcome.Lang.NoneAvailable" => "(尚未發現 UCL_LanguageCodeAsset — 請先建立語言 Asset)",
                 "Welcome.Lang.OpenEditor" => "進階編輯…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands(agent ↔ Editor 跨 process)",
@@ -146,6 +148,7 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — 一致風格的 IMGUI 頁面堆疊，支援搜尋下拉、HelpURL 跳轉、TopBar 客製。",
                 "Welcome.Editor.Btn" => "PlayerPrefs 編輯範例",
                 "Welcome.DocBtn" => "📖 文件",
+
                 "Welcome.DocsTitle" => "📚 文件總入口",
                 "Welcome.Docs.Index" => "UCL_Core 文件 index",
                 "Welcome.Docs.Architecture" => "Agent Command 整體架構",
@@ -184,9 +187,17 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.Matrix.Title" => "🎛 Per-Agent × Per-Skill 切換 (TODO)",
                 "AgentSkill.Matrix.Body" => "之後會在這裡分 agent / 分 skill 各自開關（例如不裝 ucl-hook-setup 因為已配過）。目前先固定全裝。下方列出 source 端可用 skill：",
                 "AgentSkill.Matrix.NoSource" => "(找不到 UCL_Core/Skills~/ 來源目錄)",
+                "AgentSkill.Matrix.Status.DisabledPendingRemove" => "🚫停用·待移除",
+                "AgentSkill.Matrix.Status.Disabled" => "🚫停用",
+                "AgentSkill.Matrix.Status.NotInstalled" => "未裝",
+                "AgentSkill.Matrix.Status.Drift" => "⚠改動",
+                "AgentSkill.Matrix.Status.Synced" => "✓同步",
+                "AgentSkill.Matrix.Btn.Enable" => "啟用",
                 "AgentSkill.AckToggle" => " 我已知道 Skill 機制(下次開 Welcome 不再自動彈本頁)",
                 "AgentSkill.AckVersionLabel" => "AcknowledgedVersion: {0}",
                 "AgentSkill.NotSet" => "(未設)",
+
+
                 "Welcome.AutoOpenToggle" => " 不再自動彈出此頁(仍可從選單 UCL → Welcome 手動開啟)",
                 "Welcome.ResetButton" => "重設首次彈出(下次重啟 Editor 會再顯示一次)",
                 "Welcome.ResetLog" => "[UCL_Welcome] 已重設首次彈出狀態。下次 domain reload 會再次顯示。",

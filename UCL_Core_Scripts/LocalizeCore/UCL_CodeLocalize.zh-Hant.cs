@@ -174,6 +174,8 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.HostRoot" => "Project root: {0}",
                 "AgentSkill.Btn.Install" => "🚀 安裝",
                 "AgentSkill.Btn.InstallAll" => "🚀 一鍵安裝全部 target",
+                "AgentSkill.Btn.ForceSyncAll" => "⚡ 強制同步全部 (覆蓋本地改動)",
+                "AgentSkill.SkippedWarn" => "⚠ 上次安裝有 {0} 檔因本地改動被跳過，內容未更新 — 用「重裝」或「強制同步」覆蓋 (詳見 Console)",
                 "AgentSkill.Btn.Sync" => "🔄 同步到當前版本",
                 "AgentSkill.Btn.Reinstall" => "🔁 重新安裝",
                 "AgentSkill.Btn.Refresh" => "重新整理",

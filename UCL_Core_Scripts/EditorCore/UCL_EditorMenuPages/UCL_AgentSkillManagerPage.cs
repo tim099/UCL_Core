@@ -180,6 +180,12 @@ namespace UCL.Core.EditorLib.Page
         readonly Dictionary<AgentTarget, string> m_CurrentHashByTarget = new Dictionary<AgentTarget, string>();
         readonly HashSet<AgentTarget> m_InstallingSet = new HashSet<AgentTarget>();
 
+        // 區塊職責：記錄各 target 上次安裝被跳過的檔案數（install_skills.py 的 local-edit 保護）
+        // 物理意義：exit=2 + stdout 的 "skipped=N" 代表有 N 檔因本地改動沒被覆蓋 — 內容實際未更新；
+        //          舊版只進 Console，使用者看頁面以為裝完了（「外觀 OK ≠ 真的 OK」）→ 必須上頁面顯示
+        // 數值影響：>0 時 DrawTargetRow 顯示黃字警告；每次 RunInstall 重新解析覆寫
+        readonly Dictionary<AgentTarget, int> m_LastSkipCountByTarget = new Dictionary<AgentTarget, int>();
+
         string m_CurrentCommit = "";
         string m_HostProjectRoot = "";
         string m_UCLCorePath = "";
@@ -475,8 +481,9 @@ namespace UCL.Core.EditorLib.Page
             return sb.ToString();
         }
 
-        /// <summary>同步跑 install_skills.py --target X。Block UI 但通常 &lt;500ms。</summary>
-        void RunInstall(AgentTarget target)
+        /// <summary>同步跑 install_skills.py --target X。Block UI 但通常 &lt;500ms。
+        /// <para>force=true 加 --force-overwrite — 覆蓋本地改動（對應頁面「強制同步」）。</para></summary>
+        void RunInstall(AgentTarget target, bool force = false)
         {
             if (m_InstallingSet.Contains(target)) return;
             m_InstallingSet.Add(target);
@@ -492,7 +499,8 @@ namespace UCL.Core.EditorLib.Page
                 using (var p = new Process())
                 {
                     p.StartInfo.FileName = "python";
-                    p.StartInfo.Arguments = $"\"{scriptPath}\" --target {TargetCliName(target)}";
+                    p.StartInfo.Arguments = $"\"{scriptPath}\" --target {TargetCliName(target)}"
+                        + (force ? " --force-overwrite" : "");
                     p.StartInfo.UseShellExecute = false;
                     p.StartInfo.RedirectStandardOutput = true;
                     p.StartInfo.RedirectStandardError = true;
@@ -507,6 +515,13 @@ namespace UCL.Core.EditorLib.Page
                         Debug.Log($"[AgentSkillManager:{tag}] install_skills.py stdout:\n{stdout}");
                     if (!string.IsNullOrEmpty(stderr))
                         Debug.LogWarning($"[AgentSkillManager:{tag}] install_skills.py stderr:\n{stderr}");
+
+                    // 區塊職責：從 stdout 摘要列 "Done. copied=X skipped=N ..." 解析跳過數
+                    // 物理意義：skipped>0 = 有檔案因 local-edit 保護沒被覆蓋（內容未更新），
+                    //          必須顯示在頁面上而非只進 Console — 否則使用者以為一鍵安裝後就是最新
+                    // 數值影響：寫 m_LastSkipCountByTarget[target]，DrawTargetRow 據此畫黃字警告
+                    var skipMatch = System.Text.RegularExpressions.Regex.Match(stdout ?? "", @"skipped=(\d+)");
+                    m_LastSkipCountByTarget[target] = skipMatch.Success ? int.Parse(skipMatch.Groups[1].Value) : 0;
 
                     if (p.ExitCode == 0)
                     {
@@ -536,11 +551,12 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 區塊職責：依序跑所有 target 的安裝
-        // 物理意義：使用者按「全部 target 一鍵裝」時觸發；同步 sequential，第二個 target 在第一個結束後才開始
+        // 物理意義：使用者按「全部 target 一鍵裝」時觸發；同步 sequential，第二個 target 在第一個結束後才開始。
+        //          force=true 對應「強制同步全部」— 覆蓋本地改動（清掉被 local-edit 保護卡住的 stale 檔）
         // 數值影響：m_InstallingSet 在每 target 結束時即釋放；UI Disabled 期間就是兩支 process 串連跑的時間
-        void RunInstallAll()
+        void RunInstallAll(bool force = false)
         {
-            foreach (var t in AllTargets) RunInstall(t);
+            foreach (var t in AllTargets) RunInstall(t, force);
         }
 
         // 區塊職責：逐 skill 安裝/解除安裝 — spawn install_skills.py --include <skill> [--uninstall] [--force-overwrite]
@@ -845,6 +861,16 @@ namespace UCL.Core.EditorLib.Page
                         {
                             RunInstallAll();
                         }
+                        // 區塊職責：「強制同步全部」— 帶 --force-overwrite 重跑所有 target
+                        // 物理意義：一鍵安裝因 local-edit 保護跳過檔案時的顯式覆蓋出口；
+                        //          使用者明知會蓋掉本地改動才按（橘色按鈕示警，與跳過警告同色系）
+                        // 數值影響：對被跳過的檔案強制寫入 source 內容並刷新 .ucl_source 記錄
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.ForceSyncAll"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)),
+                            GUILayout.Width(260), GUILayout.Height(32)))
+                        {
+                            RunInstallAll(force: true);
+                        }
                     }
                     if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -917,6 +943,17 @@ namespace UCL.Core.EditorLib.Page
                 var headerStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
                 GUILayout.Label($"▸ {TargetDisplayName(t)}  ({TargetMarkerRelDir(t)}/)", headerStyle);
                 GUILayout.Label(statusLine, WrapLabelStyle);
+
+                // 區塊職責：上次安裝有檔案被 local-edit 保護跳過 → 黃字警告上頁面
+                // 物理意義：跳過 = 該檔內容實際沒更新，但上方 Synced 判定只比 source 側 hash 看不出來；
+                //          不顯示的話使用者會以為一鍵安裝後就是最新（本 bug 的原始回報場景）
+                // 數值影響：純顯示；數值來自 m_LastSkipCountByTarget（RunInstall 時解析 stdout）
+                if (m_LastSkipCountByTarget.TryGetValue(t, out int skipCount) && skipCount > 0)
+                {
+                    var warnStyle = new GUIStyle(WrapLabelStyle);
+                    warnStyle.normal.textColor = new Color(1f, 0.7f, 0.2f);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentSkill.SkippedWarn"), skipCount), warnStyle);
+                }
 
                 using (new GUILayout.HorizontalScope())
                 {

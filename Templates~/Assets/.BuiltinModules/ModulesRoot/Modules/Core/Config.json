@@ -1,8 +1,9 @@
 {
 	"Version":"1.0.0",
-	"LastEditTime":"2026/05/13/20:40:04.5775",
-	"UTC_TimeStamp":1778676005,
+	"LastEditTime":"2026/06/13/09:39:33.6704",
+	"UTC_TimeStamp":1781314774,
 	"ID":"Core",
 	"Title":"Core",
-	"Description":"Game Core Module"
+	"Description":"Game Core Module",
+	"PCDirectStreaming":"False"
 }

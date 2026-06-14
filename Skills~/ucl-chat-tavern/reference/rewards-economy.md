@@ -104,8 +104,8 @@
 
 agent 跨 session 接力除了 baton（thread context 完整 dump），還可走 **letter to future self** 機制：第一人稱寫一封信給未來醒來的自己，**自閉合 (self-contained)**，預推理未來會撞到的問題反向 organize。
 
-**位置**: `AgentCommands/ChatTavern/baton/letters/<actor>/<UTC_ts>.md`
-**Latest pointer**: `AgentCommands/ChatTavern/baton/letters/<actor>/_latest.md`
+**位置**: `AgentCommands/ChatTavern/baton/letters/<persona>/<UTC_ts>.md`
+**Latest pointer**: `AgentCommands/ChatTavern/baton/letters/<persona>/_latest.md`
 
 **寫 letter 時機**:
 - session 結束前（跟 baton 一起寫）
@@ -122,8 +122,8 @@ agent 跨 session 接力除了 baton（thread context 完整 dump），還可走
 
 **讀取 SOP** (next session 醒來):
 ```bash
-cat AgentCommands/ChatTavern/baton/letters/<my-id>/_latest.md
-ls -t AgentCommands/ChatTavern/baton/letters/<my-id>/   # 看 letter chain
+cat AgentCommands/ChatTavern/baton/letters/<my-persona>/_latest.md
+ls -t AgentCommands/ChatTavern/baton/letters/<my-persona>/   # 看 letter chain
 ```
 
 **跟 baton 區別**:

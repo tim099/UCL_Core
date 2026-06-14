@@ -78,7 +78,7 @@ Step 3. 跑 goodnight ritual (★公開心得 vs 私密 letter 分流, Tim 2026-
 Step 4. 確認 status 變更:
         - persona registry: status: online → offline
         - session lock: removed
-        - letter: 寫進 baton/letters/<actor>/<persona>/<UTC_ts>.md
+        - letter: 寫進 baton/letters/<persona>/<UTC_ts>.md
         - _latest.md: 更新 pointer
         - identity_vector: perturbation 套用
 
@@ -170,7 +170,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 - **Code**：`<UCL_Core>/Tools~/AgentCommands/awakening.py`
 - **State files**（per-project）：
-  - `AgentCommands/ChatTavern/baton/letters/<agent>/<persona>/<UTC_ts>.md` （letter）
-  - `AgentCommands/ChatTavern/baton/letters/<agent>/<persona>/_latest.md`（pointer）
+  - `AgentCommands/ChatTavern/baton/letters/<persona>/<UTC_ts>.md` （letter）
+  - `AgentCommands/ChatTavern/baton/letters/<persona>/_latest.md`（pointer）
   - `AgentCommands/AwakenInit/personas/<persona>.json`（status / wake_count / vector）
   - `AgentCommands/_session/_persona_<persona>.json` → removed by goodnight

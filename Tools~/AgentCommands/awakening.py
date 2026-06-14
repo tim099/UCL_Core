@@ -989,16 +989,19 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
 def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodnight") -> Path:
     """寫 letter to future self per ucl-letters-to-self skill SOP.
 
-    Letter binding 鐵律 (Tim 2026-05-13 拍板, kyouko-persona-binding T02):
+    Letter binding 鐵律 (Tim 2026-06-15 拍板, 取代 2026-05-13 kyouko-persona-binding T02):
     letter 是 persona-level subjective reframe — 不同 persona 的 framing 校正不該
-    共用同個 _latest.md pointer。binding key 是 Agent@Persona, 不是 Agent。
+    共用同個 _latest.md pointer。binding key 是 **Persona**。
+    (原 T02 用 Agent@Persona 雙層, 但 persona 名稱全域唯一, agent 分組層只造成
+     actor 命名漂移 — bank-id vs agent-marker vs 重複 suffix 等 bug; 故砍掉 agent 層,
+     只留 persona。actor 身分仍記在 frontmatter 作 provenance。)
 
     Path layout:
-        baton/letters/<actor>/<persona>/<ts>.md   (timestamped, 累積 chain)
-        baton/letters/<actor>/<persona>/_latest.md  (覆寫 pointer)
-        baton/letters/<actor>/<persona>/dialogues/  (round-trip 對話, 留給未來)
+        baton/letters/<persona>/<ts>.md   (timestamped, 累積 chain)
+        baton/letters/<persona>/_latest.md  (覆寫 pointer)
+        baton/letters/<persona>/dialogues/  (round-trip 對話, 留給未來)
     """
-    letters_dir = _LETTERS_DIR_TPL / actor / persona
+    letters_dir = _LETTERS_DIR_TPL / persona
     letters_dir.mkdir(parents=True, exist_ok=True)
 
     ts = utcnow_compact()
@@ -1451,7 +1454,7 @@ def cmd_rest(args: argparse.Namespace) -> int:
         )
         print(f"📢 小歇 tavern 通知: {'OK' if ok else 'fail (非致命)'}")
 
-    print(f"✅ 小歇完成。/compact 後讀 baton/letters/{actor}/{persona}/_latest.md 接續記憶。")
+    print(f"✅ 小歇完成。/compact 後讀 baton/letters/{persona}/_latest.md 接續記憶。")
     return 0
 
 

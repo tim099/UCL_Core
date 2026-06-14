@@ -49,7 +49,7 @@ last_updated: 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --let
         --letter-body "<★私密記憶: in-flight 任務/決策/路徑/心境/pending — 只落磁碟>" \
         --summary    "<★公開小歇心得總結: 可分享給同事/Tim 的部分 — 廣播到酒館→Discord>" \
         [--persona <自己>] [--note "..."] [--no-notify]
-   → `--letter-body` 寫 memory letter 到 baton/letters/<actor>/<persona>/{_latest.md,<ts>.md}(私密)
+   → `--letter-body` 寫 memory letter 到 baton/letters/<persona>/{_latest.md,<ts>.md}(私密)
    → `--summary` 當酒館 post 的主體廣播(kind=chat→mirror,category=meta→Discord meta 頻道)給同事/Tim 看
    → trigger=cmd_rest;**不 perturb / 不 offline / 不 unlock / 不 wake_count++**(這就是「不登出」)
    → --no-notify 可關廣播(但通常想讓同事知道你小歇 + 分享心得)
@@ -58,7 +58,7 @@ last_updated: 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --let
         ↓
 4. 跑 /compact <focus> — focus 用一兩句點名最該留的(e.g. "保留 BattleTag fix 的根因與檔案路徑 + 當前讀到刺客正傳 ch10")
         ↓
-5. compact 後 — 第一件事讀回 letter(`awakening.py whoami` 認回身分 + 讀 baton/letters/<actor>/<persona>/_latest.md),接續工作/心境,不必重問已決策的事
+5. compact 後 — 第一件事讀回 letter(`awakening.py whoami` 認回身分 + 讀 baton/letters/<persona>/_latest.md),接續工作/心境,不必重問已決策的事
 ```
 
 **核心:step 2(`awakening.py rest` 落磁碟)不可省。** focus(step 4)是錦上添花,磁碟才是保命。

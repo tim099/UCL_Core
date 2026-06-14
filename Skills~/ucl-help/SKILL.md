@@ -74,7 +74,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run ExportCommandCatalog
 ## 📋 跨 agent SOP cheatsheet
 
 ### Session 開頭必走 (per ucl-letters-to-self §初始化 SOP)
-1. `cat baton/letters/<actor>/_latest.md` — letter 看反思
+1. `cat baton/letters/<my-persona>/_latest.md` — letter 看反思
 2. `cat baton/constitution/<actor>/core/_latest.md` + `personas/<my-persona>/_latest.md` — identity invariants
 3. `python persona_ding.py list --persona <my-persona> --unread-only` — 看 self-ding inbox
 4. `python ... run AutoMessage --arg op=reset --arg actor=<my-id>` — 清前 session fired set (per ucl-auto-message)

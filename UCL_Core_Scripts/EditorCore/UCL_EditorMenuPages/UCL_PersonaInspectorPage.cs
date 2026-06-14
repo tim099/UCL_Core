@@ -1,4 +1,4 @@
-﻿// 2026-05-18 (gura T19 BuildPlayerCheck fix): 整檔包 #if UNITY_EDITOR — 用 UCL_MarkdownViewerPage
+// 2026-05-18 (gura T19 BuildPlayerCheck fix): 整檔包 #if UNITY_EDITOR — 用 UCL_MarkdownViewerPage
 // (該 type 自己包 #if UNITY_EDITOR), Player Build 找不到 → CS0103. 本 page IMGUI editor-only.
 #if UNITY_EDITOR
 using System;
@@ -16,17 +16,16 @@ using Debug = UnityEngine.Debug;
 namespace UCL.Core.EditorLib.Page
 {
     // 區塊職責：Persona Inspector / Letters Debug Page — 列 persona registry, 顯示 metadata,
-    //          scan baton/letters/<actor>/<persona>/ 找該 persona 散落到哪些 actor folder 下、
-    //          標出 canonical vs misrouted, 點 letter 顯示 body。
-    // 物理意義：letter loss 多源於重構 actor naming 後沒 migration (e.g. claude-da-xiaojie ↔ 直接 actor=agent 改名),
-    //          純看 _latest.md 看不出散落位置。本 page 把 persona ↔ actor 多對多關係視覺化以利 debug.
-    // 數值影響：純 read-only — 不寫 file, 不改 registry。只開 explorer / 顯示 body / copy path。
+    //          讀 baton/letters/<persona>/ 列該 persona 的 letter chain, 點 letter 顯示 body。
+    // 物理意義：letter 是 persona-level 自我書信; 路徑單層 <persona>/, 每 persona 一條 chain +
+    //          _latest.md pointer。本 page 把 persona metadata ↔ 其 letter chain 視覺化以利 debug。
+    // 數值影響：純 read-only — 不寫 file, 不改 registry。只開 explorer / 顯示 body。
     //
-    // 設計理由 (Tim 2026-05-14 拍板):
-    //   crest-001 wake#15 醒來印「無 letter」, 實際 letters 還在 claude-da-xiaojie/crest-001/, 同時 Zeta-da-xiaojie/crest-001/
-    //   也有 misrouted 一份。awakening.py 只看 canonical actor folder, 拿不到散落到別 actor 的 letter, 也沒可視化工具
-    //   讓 Tim 一眼看出哪些 letter 沒被 migration 到正確位置。本 page 補上「跨 actor folder 找同 persona 信」+ 標誌
-    //   migration 殘留。
+    // 設計沿革 (Tim 2026-05-14 → 2026-06-15):
+    //   舊版為解「crest-001 letter 散落多 actor folder (claude-da-xiaojie / Zeta-da-xiaojie),
+    //   awakening.py 只看 canonical actor 拿不到散落信」而生, 帶 canonical/misrouted/orphan 三套機制。
+    //   2026-06-15 Tim 拍板 letter 結構壓平為單層 letters/<persona>/ (砍 agent 層, persona 名全域唯一),
+    //   散落 / misroute / orphan 問題從根消除 — 本版全數移除那套機制, 回歸單純 persona↔chain 檢視。
     [HelpURL("ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md")]
     public class UCL_PersonaInspectorPage : UCL_CommonEditorPage
     {
@@ -54,46 +53,28 @@ namespace UCL.Core.EditorLib.Page
             public string LastVectorHash = "";
             public double LastDeltaMag = 0;
             public string LastVectorTrigger = "";
-            public string CanonicalActor = "";   // 由 agent → agent_banks 查
         }
 
         // 區塊職責：單封 letter 紀錄
-        // 物理意義：letter 檔在 baton/letters/<folderActor>/<persona>/<ts>.md, frontmatter 含 actor/written_by_persona/written_at/trigger
+        // 物理意義：letter 檔在 baton/letters/<persona>/<ts>.md, frontmatter 含 actor/written_by_persona/written_at/trigger
+        // 數值影響：FrontmatterActor 僅作 provenance 顯示 (哪個 agent/bank 寫的), 不再參與 misroute 判定
         public class LetterEntry
         {
-            public string FilePath = "";        // 絕對路徑
-            public string FileName = "";        // 顯示用
-            public string FolderActor = "";     // 所在 folder 的 actor 名
-            public string Persona = "";         // 所在 folder 的 persona 名
-            public string FrontmatterActor = "";  // letter 自報的 actor
+            public string FilePath = "";           // 絕對路徑
+            public string FileName = "";           // 顯示用
+            public string FrontmatterActor = "";   // letter 自報的 actor (provenance)
             public string FrontmatterPersona = ""; // letter 自報的 written_by_persona
             public string WrittenAt = "";
             public string Trigger = "";
             public long FileSize = 0;
-            public bool IsCanonical = true;     // FolderActor == persona.CanonicalActor
-            public bool IsMisrouted = false;    // 檔名 prefix "misrouted_" 或 FolderActor != FrontmatterActor
-        }
-
-        // 區塊職責：orphan folder — letters/<X>/ 但 X 不在 agent_banks values
-        // 物理意義：抓 migration bug 殘留 (e.g. "antigravity-da-xiaojie-da-xiaojie" 雙後綴)
-        public class OrphanFolder
-        {
-            public string ActorFolder = "";
-            public List<string> PersonaSubfolders = new List<string>();
-            public int TotalLetters = 0;
         }
 
         // ---- 快取 ----
         List<PersonaInfo> m_Personas = new List<PersonaInfo>();
-        Dictionary<string, string> m_AgentBanks = new Dictionary<string, string>();   // agent → bank
-        HashSet<string> m_CanonicalActors = new HashSet<string>();                    // bank 名集合
         List<LetterEntry> m_SelectedLetters = new List<LetterEntry>();
-        List<OrphanFolder> m_Orphans = new List<OrphanFolder>();
 
         PersonaInfo m_Selected = null;
         Vector2 m_LettersScroll = Vector2.zero;
-        Vector2 m_OrphanScroll = Vector2.zero;
-        bool m_ShowOrphans = true;
         // PopupSearchCache 用 — labels 跟 personas 同步, picker dic 存 search state
         List<string> m_PersonaLabels = new List<string>();
         readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
@@ -101,7 +82,6 @@ namespace UCL.Core.EditorLib.Page
         // ---- 路徑 ----
         string m_AgentCommandsDir = "";
         string m_PersonasDir = "";
-        string m_RegistryMetaPath = "";
         string m_LettersDir = "";
 
         public override void Init(UCL_GUIPageController p_Controller)
@@ -110,7 +90,6 @@ namespace UCL.Core.EditorLib.Page
             // 區塊：路徑解析 — 用 UCL_RepoPath.AgentCommandsDir 撈 cross-project 共用 awakening state
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
             m_PersonasDir = Path.Combine(m_AgentCommandsDir, "AwakenInit", "personas");
-            m_RegistryMetaPath = Path.Combine(m_AgentCommandsDir, "AwakenInit", "_registry_meta.json");
             m_LettersDir = Path.Combine(m_AgentCommandsDir, "ChatTavern", "baton", "letters");
             LoadData();
         }
@@ -128,39 +107,11 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：載入 agent_banks + persona registry
-        // 數值影響：刷新 m_AgentBanks / m_CanonicalActors / m_Personas / m_Orphans
+        // 區塊職責：載入 persona registry
+        // 數值影響：刷新 m_Personas / m_PersonaLabels；不再讀 agent_banks (canonical actor 概念已隨單層化移除)
         void LoadData()
         {
-            m_AgentBanks.Clear();
-            m_CanonicalActors.Clear();
             m_Personas.Clear();
-            m_Orphans.Clear();
-            // 區塊：讀 registry meta 拿 agent → bank 映射
-            if (File.Exists(m_RegistryMetaPath))
-            {
-                try
-                {
-                    var jd = JsonData.ParseJson(File.ReadAllText(m_RegistryMetaPath));
-                    if (jd.IsObject && jd.Contains("agent_banks"))
-                    {
-                        var banks = jd["agent_banks"];
-                        if (banks.IsObject && banks.Dic != null)
-                        {
-                            foreach (var key in banks.Dic.Keys)
-                            {
-                                string bank = banks[key].GetString();
-                                m_AgentBanks[key] = bank;
-                                m_CanonicalActors.Add(bank);
-                            }
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[PersonaInspector] parse registry_meta failed: {e.Message}");
-                }
-            }
 
             // 區塊：scan personas — 反序列化全部 metadata
             if (Directory.Exists(m_PersonasDir))
@@ -223,7 +174,6 @@ namespace UCL.Core.EditorLib.Page
                                 }
                             }
                         }
-                        info.CanonicalActor = ResolveCanonicalActor(info.Agent);
                         m_Personas.Add(info);
                     }
                     catch (Exception e)
@@ -242,35 +192,6 @@ namespace UCL.Core.EditorLib.Page
                 m_PersonaLabels.Add($"{p.Name} [{p.Agent}] w#{p.WakeCount}{icon}");
             }
 
-            // 區塊：scan letters root, 找 orphan actor folder (不在 agent_banks values)
-            // 物理意義：migration bug 殘留 (e.g. 雙後綴 / 舊命名遺孤)
-            if (Directory.Exists(m_LettersDir))
-            {
-                foreach (var actorDir in Directory.GetDirectories(m_LettersDir))
-                {
-                    string actor = Path.GetFileName(actorDir);
-                    if (m_CanonicalActors.Contains(actor)) continue;
-                    // 跳過特殊系統資料夾 (cross-agent / _unassigned 等以 _ 開頭)
-                    if (actor.StartsWith("_") || actor == "cross-agent") continue;
-                    var orphan = new OrphanFolder { ActorFolder = actor };
-                    foreach (var personaDir in Directory.GetDirectories(actorDir))
-                    {
-                        string pname = Path.GetFileName(personaDir);
-                        if (pname.StartsWith("_")) continue;
-                        orphan.PersonaSubfolders.Add(pname);
-                        try
-                        {
-                            orphan.TotalLetters += Directory.GetFiles(personaDir, "*.md").Length;
-                        }
-                        catch { }
-                    }
-                    if (orphan.PersonaSubfolders.Count > 0)
-                    {
-                        m_Orphans.Add(orphan);
-                    }
-                }
-            }
-
             // 自動 reselect 之前選的 persona (LoadData 後)
             if (m_Selected != null)
             {
@@ -280,62 +201,34 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：agent → canonical bank actor
-        // 物理意義：對齊 awakening.py resolve_bank_account fallback — 認不出走 "{agent}-da-xiaojie"
-        string ResolveCanonicalActor(string agent)
-        {
-            if (string.IsNullOrEmpty(agent)) return "";
-            if (m_AgentBanks.TryGetValue(agent, out var bank)) return bank;
-            // case-insensitive 二次嘗試
-            foreach (var kv in m_AgentBanks)
-            {
-                if (string.Equals(kv.Key, agent, StringComparison.OrdinalIgnoreCase)) return kv.Value;
-            }
-            return $"{agent.ToLowerInvariant()}-da-xiaojie";
-        }
-
-        // 區塊職責：對 m_Selected scan baton/letters/*/<persona>/ 找所有散落 letter
+        // 區塊職責：對 m_Selected 讀 baton/letters/<persona>/ 列出該 persona 全部 letter
+        // 物理意義：單層結構 — 一個 persona 的信全在自己同名資料夾下, 不再跨 actor 散落
         void RescanLettersForSelected()
         {
             m_SelectedLetters.Clear();
             if (m_Selected == null) return;
-            if (!Directory.Exists(m_LettersDir)) return;
-            string targetPersona = m_Selected.Name;
+            string personaDir = Path.Combine(m_LettersDir, m_Selected.Name);
+            if (!Directory.Exists(personaDir)) return;
 
-            foreach (var actorDir in Directory.GetDirectories(m_LettersDir))
+            foreach (var file in Directory.GetFiles(personaDir, "*.md"))
             {
-                string actor = Path.GetFileName(actorDir);
-                string personaPath = Path.Combine(actorDir, targetPersona);
-                if (!Directory.Exists(personaPath)) continue;
-
-                foreach (var file in Directory.GetFiles(personaPath, "*.md"))
+                var entry = new LetterEntry
                 {
-                    var entry = new LetterEntry
-                    {
-                        FilePath = file,
-                        FileName = Path.GetFileName(file),
-                        FolderActor = actor,
-                        Persona = targetPersona,
-                    };
-                    try
-                    {
-                        var info = new FileInfo(file);
-                        entry.FileSize = info.Length;
-                    }
-                    catch { }
-                    ParseLetterFrontmatter(file, entry);
-                    entry.IsCanonical = (actor == m_Selected.CanonicalActor);
-                    entry.IsMisrouted = !entry.IsCanonical
-                                        || entry.FileName.StartsWith("misrouted_")
-                                        || (!string.IsNullOrEmpty(entry.FrontmatterActor) && entry.FrontmatterActor != actor);
-                    m_SelectedLetters.Add(entry);
+                    FilePath = file,
+                    FileName = Path.GetFileName(file),
+                };
+                try
+                {
+                    var info = new FileInfo(file);
+                    entry.FileSize = info.Length;
                 }
+                catch { }
+                ParseLetterFrontmatter(file, entry);
+                m_SelectedLetters.Add(entry);
             }
-            // 排序：canonical 先 → _latest.md 永遠置頂 (per Tim 2026-05-14 拍板) → 內部按 WrittenAt desc
+            // 排序：_latest.md 永遠置頂 (per Tim 2026-05-14 拍板) → 其餘按 WrittenAt desc
             m_SelectedLetters.Sort((a, b) =>
             {
-                int byCanon = b.IsCanonical.CompareTo(a.IsCanonical);
-                if (byCanon != 0) return byCanon;
                 bool aLatest = a.FileName == "_latest.md";
                 bool bLatest = b.FileName == "_latest.md";
                 if (aLatest != bLatest) return aLatest ? -1 : 1;
@@ -380,7 +273,7 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ==================== GUI ====================
-        // 區塊職責：全寬縱向佈局 — Persona 池 header → 全寬 picker → metadata → letters (大空間) → body → orphan
+        // 區塊職責：全寬縱向佈局 — Persona 池 header → 全寬 picker → metadata → letters chain
         // 物理意義：原左右分欄 letters 空間被擠, Tim 2026-05-14 拍板改縱向, 信件能跑滿頁寬
         protected override void ContentOnGUI()
         {
@@ -396,8 +289,6 @@ namespace UCL.Core.EditorLib.Page
             {
                 GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Hint.SelectPersona"), UCL_GUIStyle.LabelStyle);
             }
-            GUILayout.Space(8);
-            DrawOrphanSection();
         }
 
         // 區塊職責：Persona 池 header + 全寬 PopupSearchCache 一行
@@ -447,7 +338,6 @@ namespace UCL.Core.EditorLib.Page
                 }
                 LabelRow(UCL_CodeLocalize.Get("PersonaInspector.Field.Model"), p.Model);
                 LabelRow(UCL_CodeLocalize.Get("PersonaInspector.Field.LayerRole"), p.LayerRole);
-                LabelRow(UCL_CodeLocalize.Get("PersonaInspector.Field.CanonicalActor"), p.CanonicalActor);
                 LabelRow(UCL_CodeLocalize.Get("PersonaInspector.Field.CreatedAt"), p.CreatedAt);
                 LabelRow(UCL_CodeLocalize.Get("PersonaInspector.Field.LastActive"), p.LastActive);
                 if (!string.IsNullOrEmpty(p.ForkedFrom))
@@ -468,22 +358,18 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：letters list — 列散落到各 actor folder 下的本 persona letters
+        // 區塊職責：letters list — 列該 persona 同名資料夾下全部 letter (單層結構)
         void DrawLettersList()
         {
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Label(string.Format(UCL_CodeLocalize.Get("PersonaInspector.Letters.HeaderFmt"), m_SelectedLetters.Count), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                int misroutedCount = m_SelectedLetters.Count(l => l.IsMisrouted);
-                if (misroutedCount > 0)
-                {
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("PersonaInspector.Letters.MisroutedFmt"), misroutedCount), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                }
                 GUILayout.FlexibleSpace();
                 if (m_Selected != null && GUILayout.Button(UCL_CodeLocalize.Get("PersonaInspector.Btn.OpenCanonicalFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    string canonicalDir = Path.Combine(m_LettersDir, m_Selected.CanonicalActor, m_Selected.Name);
-                    OpenInExplorer(canonicalDir);
+                    // 單層化後 = 直接開 letters/<persona>/ (原「canonical folder」概念退化為單一 persona 夾)
+                    string personaDir = Path.Combine(m_LettersDir, m_Selected.Name);
+                    OpenInExplorer(personaDir);
                 }
             }
             using (new GUILayout.VerticalScope("box"))
@@ -496,13 +382,11 @@ namespace UCL.Core.EditorLib.Page
                 m_LettersScroll = GUILayout.BeginScrollView(m_LettersScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.Marker"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.FolderActor"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.File"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(260)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.WrittenAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.Trigger"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.FmActor"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.File"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.WrittenAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.Trigger"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Col.FmActor"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                 }
                 foreach (var l in m_SelectedLetters)
                 {
@@ -519,57 +403,13 @@ namespace UCL.Core.EditorLib.Page
                             }
                             UCL_MarkdownViewerPage.Create(rel, abs);
                         }
-                        string marker = l.IsCanonical
-                            ? "<color=#66ff99>✓</color>"
-                            : (l.IsMisrouted ? "<color=#ff9966>⚠</color>" : "<color=#ffaa66>?</color>");
-                        GUILayout.Label(marker, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                        string folderLabel = l.IsCanonical ? l.FolderActor : $"<color=#ff9966>{l.FolderActor}</color>";
-                        GUILayout.Label(folderLabel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                        GUILayout.Label(TruncStr(l.FileName, 32), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(260)));
-                        GUILayout.Label(TruncTs(l.WrittenAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                        GUILayout.Label(l.Trigger, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                        string fmActor = l.FrontmatterActor;
-                        if (!string.IsNullOrEmpty(fmActor) && fmActor != l.FolderActor)
-                        {
-                            fmActor = $"<color=#ff9966>{fmActor}</color>";
-                        }
-                        GUILayout.Label(fmActor, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    }
-                }
-                GUILayout.EndScrollView();
-            }
-        }
-
-        // 區塊職責：orphan folder section — letters/<X>/ X 不在 agent_banks values 的全部列出
-        // 物理意義：抓 migration 殘留, e.g. 雙後綴 "antigravity-da-xiaojie-da-xiaojie"
-        void DrawOrphanSection()
-        {
-            using (new GUILayout.HorizontalScope())
-            {
-                m_ShowOrphans = GUILayout.Toggle(m_ShowOrphans, "", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(28)));
-                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("PersonaInspector.Orphan.HeaderFmt"), m_Orphans.Count), UCL_GUIStyle.LabelStyle);
-            }
-            if (!m_ShowOrphans) return;
-            using (new GUILayout.VerticalScope("box"))
-            {
-                GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Orphan.Desc"), UCL_GUIStyle.LabelStyle);
-                if (m_Orphans.Count == 0)
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("PersonaInspector.Orphan.Empty"), UCL_GUIStyle.LabelStyle);
-                    return;
-                }
-                m_OrphanScroll = GUILayout.BeginScrollView(m_OrphanScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(180)));
-                foreach (var o in m_Orphans)
-                {
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("PersonaInspector.Btn.Open"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
-                        {
-                            OpenInExplorer(Path.Combine(m_LettersDir, o.ActorFolder));
-                        }
-                        GUILayout.Label($"<color=#ff9966>{o.ActorFolder}</color>", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)));
-                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("PersonaInspector.Orphan.PersonaCountFmt"), o.PersonaSubfolders.Count, o.TotalLetters), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
-                        GUILayout.Label(string.Join(", ", o.PersonaSubfolders), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(true));
+                        // _latest.md 高亮置頂; 其餘普通顯示
+                        bool isLatest = l.FileName == "_latest.md";
+                        string fileLabel = isLatest ? $"<color=#66ff99>{l.FileName}</color>" : TruncStr(l.FileName, 36);
+                        GUILayout.Label(fileLabel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                        GUILayout.Label(TruncTs(l.WrittenAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                        GUILayout.Label(l.Trigger, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                        GUILayout.Label(l.FrontmatterActor, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                     }
                 }
                 GUILayout.EndScrollView();

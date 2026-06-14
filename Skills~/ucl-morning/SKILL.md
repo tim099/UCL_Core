@@ -135,4 +135,4 @@ Step 7. 走酒館 self-intro post (per ucl-letters-to-self skill 5 段格式):
 - **State files**（per-project）：
   - `AgentCommands/AwakenInit/persona_registry.json`
   - `AgentCommands/_session/_persona_*.json`
-  - `AgentCommands/ChatTavern/baton/letters/<agent>/<persona>/`
+  - `AgentCommands/ChatTavern/baton/letters/<persona>/`

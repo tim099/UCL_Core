@@ -1522,9 +1522,20 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     print(f"🌙 Goodnight ritual starting")
     print(f"   actor={actor} / persona={persona} / perturbation={perturbation}")
 
-    # Step 1: write letter
-    letter_path = write_letter(actor, persona, args.letter_body)
-    print(f"💌 letter written: {letter_path.name}")
+    # Step 1: write letter (可跳過)
+    # 設計理由 (Tim 2026-06-14 拍板): 手動登出 (UCL_LoginStatusPage) 走 --no-letter 不寫信。
+    #   原因 — 手動登出多為 cleanup / 登出失敗重試場景, 信在 ritual 最前面就寫了, 失敗時已累積一堆
+    #   無意義的 placeholder 信。letter 是「agent 自決 goodnight 留給未來自己的心得」, 手動 cleanup
+    #   不該偽造這種信。real goodnight (agent 自己跑) 仍須帶 --letter-body, 不受影響。
+    if getattr(args, "no_letter", False):
+        letter_path = None
+        print(f"✉ --no-letter: 跳過寫信 (手動登出 / cleanup 不留心得信)")
+    else:
+        if not (args.letter_body or "").strip():
+            print(f"❌ 須帶 --letter-body <心得> (或顯式 --no-letter 跳過寫信)", file=sys.stderr)
+            return 2
+        letter_path = write_letter(actor, persona, args.letter_body)
+        print(f"💌 letter written: {letter_path.name}")
 
     # Step 2: identity vector perturbation
     reg = load_registry()
@@ -1558,11 +1569,14 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     # 公開睡前心得總結 (Tim 2026-05-24): summary 廣播給同事/Tim, 私密內容留在 letter
     summary = (getattr(args, "summary", "") or "").strip()
     summary_block = (f"💭 **今日心得**\n{summary}\n\n" if summary else "")
+    # letter 行：no-letter 時略過 (手動登出未留信)
+    letter_line = (f"- letter ship: `{letter_path.relative_to(_REPO_ROOT)}` (私密心得在信裡)\n"
+                   if letter_path is not None else "- letter: (略 — 手動登出未留信)\n")
     body = (f"🌙 **{persona}** 進入今日子協議 — 晚安\n\n"
             f"{summary_block}"
             f"📢 @同事們 我下線了, 別對我跑 op=wait 24min wait chain — 我不會主動回應.\n"
             f"但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n"
-            f"- letter ship: `{letter_path.relative_to(_REPO_ROOT)}` (私密心得在信裡)\n"
+            f"{letter_line}"
             f"- vector drift Δ: {perturbation}\n"
             f"- agent/model: {agent}/{model}\n"
             f"- bank account: {actor} (餘額: {bank_balance} Token; 酒館券 quota: {bonus_quota})\n\n"
@@ -1576,21 +1590,20 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     #     args.session_token=None  → 省略, 自動 fallback 從 lock.session_token 撈 (預設行為, 透明)
     #     args.session_token="<X>" → 顯式帶, 走透傳 (caller 已撈好 token)
     #     args.session_token=""    → 顯式空, 不帶 token (caller 故意走 enforce reject path 除錯)
+    # broadcast_token 先從 in-memory lock dict 撈好 — 下面 remove_lock 只刪磁碟檔, 不動此變數,
+    # 故即使先解鎖, enforce ON 的下線廣播仍帶得到尚未過期的 token.
     if args.session_token is None:
         broadcast_token = (lock or {}).get("session_token", "") or None
     else:
         broadcast_token = args.session_token or None
-    ok = tavern_post(
-        sender_id=actor,
-        persona=persona,
-        body=body,
-        meta={"tag": "goodnight-protocol", "category": "meta",
-              "status-change": "offline", "letter": letter_path.name,
-              "perturbation": str(perturbation)},
-        session_token=broadcast_token,
-    )
 
-    # Step 5: remove persona lock (Tim 2026-05-13 v2 — persona-keyed, 直接刪自己 persona 的 lock)
+    # Step 5 (前移至廣播之前): remove persona lock (Tim 2026-05-13 v2 — persona-keyed, 直接刪自己 persona 的 lock)
+    # 設計理由 (summit 2026-06-14 QA fix — Editor↔subprocess 重入死鎖):
+    #   UCL_LoginStatusPage 登出走主線程同步 WaitForExit 卡 python; 而 tavern_post 內部 run_cmd 又要
+    #   Editor 主線程處理 trigger 才返回 → 兩邊互等死鎖, 撐到 30s WaitForExit timeout 才解開。
+    #   原順序 (tavern_post → remove_lock) 在死鎖場景下 remove_lock 被卡在廣播之後 → lock 不刪 → 「卡在登入」。
+    #   對稱於 morning (write_lock 先於 tavern_post 故登入看起來正常): 把權威狀態變更 (解鎖) 移到廣播前,
+    #   即使廣播死鎖/失敗, lock 早已刪除, Page re-read 即為登出狀態。broadcast_token 已先撈, 不受影響。
     if lock is not None:
         removed = remove_lock(persona)
         print(f"🔓 persona lock {'removed' if removed else 'already gone'}")
@@ -1598,13 +1611,27 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
         removed = False
         print(f"🔓 no persona lock to remove (already gone)")
 
-    # T07 (2026-05-15 apex-two): expire token — 不刪, 標 status=expired 留 audit
+    # Step 4 (後移至解鎖之後): tavern post (offline notice). 廣播是 best-effort —
+    # 死鎖/失敗都不影響上面已落地的解鎖。
+    ok = tavern_post(
+        sender_id=actor,
+        persona=persona,
+        body=body,
+        meta={"tag": "goodnight-protocol", "category": "meta",
+              "status-change": "offline",
+              "letter": (letter_path.name if letter_path is not None else ""),
+              "perturbation": str(perturbation)},
+        session_token=broadcast_token,
+    )
+
+    # T07 (2026-05-15 apex-two): expire token — 不刪, 標 status=expired 留 audit。
+    # 必須擺在 tavern_post「之後」: enforce ON 時上面那筆下線廣播要用尚未過期的 token, 先 expire 會被 Cmd_Tavern reject。
     n_expired = expire_token(persona=persona, reason="goodnight")
     if n_expired > 0:
         print(f"🎫 session_token expired ({n_expired} 筆)")
 
     print(f"\n🌙 Goodnight ritual complete:")
-    print(f"   letter:        {letter_path}")
+    print(f"   letter:        {letter_path if letter_path is not None else '(none — --no-letter)'}")
     print(f"   tavern_post:   {'OK' if ok else 'FAIL (主 ritual 仍成功)'}")
     print(f"   lock_removed:  {removed}")
     return 0
@@ -2129,7 +2156,10 @@ def main():
     pm.set_defaults(func=cmd_morning)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")
-    pg.add_argument("--letter-body", required=True, help="letter to future self body (★私密心得寫這, 只落磁碟)")
+    # letter-body 改 optional (Tim 2026-06-14): 配 --no-letter 用 — 未帶 --no-letter 時仍 runtime 強制要 body。
+    pg.add_argument("--letter-body", default="", help="letter to future self body (★私密心得寫這, 只落磁碟). 未帶 --no-letter 時必填.")
+    pg.add_argument("--no-letter", action="store_true",
+                    help="跳過寫信 (手動登出 / cleanup 場景 — UCL_LoginStatusPage 登出走此 flag, 不偽造心得信).")
     pg.add_argument("--summary", default="",
                     help="★公開睡前心得總結 — 廣播到酒館→Discord 給同事/Tim 看 (可公開分享的部分; 私密的寫 --letter-body)")
     pg.add_argument("--perturbation", type=float, default=DEFAULT_PERTURBATION,

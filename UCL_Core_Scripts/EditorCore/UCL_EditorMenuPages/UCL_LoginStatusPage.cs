@@ -20,6 +20,10 @@ namespace UCL.Core.EditorLib.Page
     // 設計理由 (Tim 2026-05-13 拍板):
     //   原生 awakening.py 只有 CLI 介面, agent / Tim 想看誰登入 / 哪個 lock 卡死 / 手動清，沒有可視化介面。
     //   本 page 補可視化 + 手動操作 fallback, 避免 bug 卡 lock 必須 ssh 進 _session 手動 rm。
+    // RequiresConstantRepaint (B 修 summit 2026-06-14): RunAwakening 改背景非阻塞後,
+    // 完成回呼走 EditorApplication.delayCall 重整資料; 常駐 repaint 讓「處理中」提示 + 完成後的
+    // 列表更新即時反映, 不必等使用者滑鼠移動觸發 repaint。
+    [UCL.Core.ATTR.RequiresConstantRepaint]
     [HelpURL("ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md")]
     public class UCL_LoginStatusPage : UCL_CommonEditorPage
     {
@@ -78,9 +82,8 @@ namespace UCL.Core.EditorLib.Page
         bool m_LoginRebindAgent = false;
         string m_LoginForkName = "";
 
-        // 區塊職責：goodnight letter body default — Tim 手動清 lock 時帶這個簡短 letter
-        // 物理意義：避免 letter 為空導致 awakening 報錯; 內容標記「Editor 手動清」audit trail
-        const string DEFAULT_MANUAL_LETTER = "Manual logout via UCL_LoginStatusPage (Editor IMGUI). 本筆非 agent 自決 goodnight, 不含 reframe content.";
+        // 註：手動登出走 awakening.py goodnight --no-letter (Tim 2026-06-14 拍板不寫信) —
+        //     原 DEFAULT_MANUAL_LETTER placeholder 已移除, 不再偽造心得信。
 
         string m_AgentCommandsDir = "";
         string m_SessionDir = "";
@@ -271,6 +274,16 @@ namespace UCL.Core.EditorLib.Page
             if (UCL_ScreenStreamGuard.GuardPage(nameof(UCL_LoginStatusPage), SensitiveContentReason))
             {
                 return;
+            }
+
+            // 區塊職責：背景 awakening.py 執行中提示 (B 修 summit 2026-06-14)
+            // 物理意義：登入/登出改非阻塞後, Editor 不再凍結; 此提示告知使用者操作進行中, 完成後列表自動重整。
+            if (m_AwakeningRunning)
+            {
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    GUILayout.Label("⏳ awakening.py 執行中… (完成後自動重整, 期間請勿重複點擊)", UCL_GUIStyle.LabelStyle);
+                }
             }
 
             DrawCollisionBanner();
@@ -617,20 +630,20 @@ namespace UCL.Core.EditorLib.Page
                 args.Add("--fork-name");
                 args.Add(m_LoginForkName.Trim());
             }
+            // RunAwakening 現為背景非阻塞 — 完成後自動回主線程 LoadData()，不再同步 reload
             RunAwakening(args, "morning");
-            LoadData();
         }
 
         // 區塊職責：彈窗確認後 spawn awakening.py goodnight per persona
-        // 物理意義：手動 logout — destructive action (一按即發完整 ritual: letter 寫死 / vector perturb /
-        //          status→offline / lock 刪), 為防誤按改為三按鈕 popup (Tim 2026-05-16 拍板, T07.4):
+        // 物理意義：手動 logout — destructive action (一按即走 goodnight: vector perturb / status→offline /
+        //          lock 刪; --no-letter 不寫信), 為防誤按改為三按鈕 popup (Tim 2026-05-16 拍板, T07.4):
         //            (1) 取消                    → 完全 no-op
         //            (2) 不帶 Token 登出          → 顯式 --session-token "" (enforce ON 時 tavern 廣播會 reject,
-        //                                          但主 ritual lock/letter/perturb 仍跑 — 適合 token 過期 /
+        //                                          但主 ritual lock/perturb 仍跑 — 適合 token 過期 /
         //                                          lock 損毀的逃生路徑)
         //            (3) 自動帶正確 Token 登出 (推薦) → 不帶 --session-token (awakening.py auto-fallback 從
         //                                          lock.session_token 撈, enforce ON 也能正常廣播下線)
-        // 數值影響：persona status → offline, lock removed, letter 寫進 baton/letters/<actor>/<persona>/
+        // 數值影響：persona status → offline, lock removed; 手動登出走 --no-letter 不寫心得信 (Tim 2026-06-14)
         void DoLogout(LockEntry l)
         {
             string tokenPreview = string.IsNullOrEmpty(l.SessionToken)
@@ -661,12 +674,14 @@ namespace UCL.Core.EditorLib.Page
         // explicitNoToken=false → 完全省略 --session-token (awakening.py auto-fallback 從 lock.session_token 撈)
         void RunLogout(string persona, string agent, bool explicitNoToken)
         {
+            // --no-letter (Tim 2026-06-14): 手動登出不寫信 — 登出常失敗但信在 ritual 最前面就寫了,
+            //   累積一堆無意義 placeholder 信。手動登出是 cleanup, 不偽造心得信。
             var args = new List<string>
             {
                 $"\"{AwakeningPyPath()}\"", "goodnight",
                 "--persona", persona,
                 "--agent", agent,
-                "--letter-body", $"\"{DEFAULT_MANUAL_LETTER}\"",
+                "--no-letter",
                 "--perturbation", "0.02",
             };
             if (explicitNoToken)
@@ -676,8 +691,8 @@ namespace UCL.Core.EditorLib.Page
                 args.Add("\"\"");
             }
             // else: 不加 --session-token, awakening.py 走 args.session_token is None 分支 → 自動撈 lock
+            // RunAwakening 現為背景非阻塞 — 完成後自動回主線程 LoadData()，不再同步 reload
             RunAwakening(args, $"goodnight {persona}");
-            LoadData();
         }
 
         // 區塊職責：force remove lock file 直接刪 _persona_<X>.json
@@ -731,6 +746,19 @@ namespace UCL.Core.EditorLib.Page
             //LoadData();
         }
 
+        // 區塊職責：標記 awakening.py 子行程是否正在背景執行 (B 修, summit 2026-06-14)
+        // 物理意義：避免重複點擊同時 spawn 多個 ritual; ContentOnGUI 顯示「處理中」提示。
+        //          主線程設 true (spawn 前) / delayCall 主線程回呼設 false (完成後) — 都在主線程, 無 race。
+        bool m_AwakeningRunning = false;
+
+        // 區塊職責：在「背景執行緒」spawn awakening.py，主線程保持空閒
+        // 物理意義 (B 修, summit 2026-06-14 — Editor↔subprocess 重入死鎖根治):
+        //   舊版主線程同步 p.WaitForExit 卡死 → 而 awakening.py 內 tavern_post 走 run_cmd.py 又要
+        //   Editor 主線程去處理 queue trigger 才返回 → 兩邊互等死鎖, 撐到 30s timeout 才解開。
+        //   (登入 morning 因 write_lock 先於 broadcast 而倖存; 登出 goodnight 的 remove_lock 在 broadcast
+        //    之後被卡掉 → lock 不刪 → 「發了訊息卻卡在登入」。awakening.py 端已併行把 remove_lock 前移。)
+        //   本層改丟 Task.Run 跑阻塞段, 主線程保持可服務 tavern trigger → 廣播正常完成、不再 30s 凍結。
+        // 數值影響：完成後用 EditorApplication.delayCall 回主線程跑 LoadData() 重整 UI (背景緒不可碰 Unity GUI)。
         void RunAwakening(List<string> args, string opLabel)
         {
             string scriptPath = AwakeningPyPath();
@@ -739,51 +767,72 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogError($"[LoginStatus] awakening.py 不存在: {scriptPath}");
                 return;
             }
-            try
+            if (m_AwakeningRunning)
             {
-                // 區塊：async stdout + stderr 同時讀取，避免 .NET Process redirect deadlock
-                // 物理意義：同步 ReadToEnd() 只讀一個 stream 時，若 child 寫另一個 stream 填滿 buffer
-                //          → child 卡在 write / caller 卡在 ReadToEnd → 永久 deadlock。
-                //          BeginOutputReadLine + BeginErrorReadLine 讓兩個 stream 非阻塞並行消費。
-                var stdoutSb = new System.Text.StringBuilder();
-                var stderrSb = new System.Text.StringBuilder();
-                using (var p = new Process())
+                Debug.LogWarning($"[LoginStatus] 已有 awakening 操作進行中 — 忽略 op={opLabel}, 等前一筆完成再操作");
+                return;
+            }
+            // 主線程設旗標 — spawn 前; 完成後在 delayCall (同主線程) 解除, 無跨緒 race
+            m_AwakeningRunning = true;
+            // args 在主線程先 join 成字串, 避免背景緒讀共享 list
+            string argLine = string.Join(" ", args);
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
                 {
-                    p.StartInfo.FileName = "python";
-                    p.StartInfo.Arguments = string.Join(" ", args);
-                    p.StartInfo.UseShellExecute = false;
-                    p.StartInfo.RedirectStandardOutput = true;
-                    p.StartInfo.RedirectStandardError = true;
-                    p.StartInfo.CreateNoWindow = true;
-                    p.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
-                    p.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
-                    p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-                    p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
-                    p.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
-                    p.Start();
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
-                    p.WaitForExit(30000);
-                    string stdout = stdoutSb.ToString();
-                    string stderr  = stderrSb.ToString();
-                    if (!string.IsNullOrEmpty(stdout))
-                        Debug.Log($"[LoginStatus:{opLabel}] stdout:\n{stdout}");
-                    if (!string.IsNullOrEmpty(stderr))
-                        Debug.LogWarning($"[LoginStatus:{opLabel}] stderr:\n{stderr}");
-                    if (p.ExitCode != 0)
+                    // 區塊：async stdout + stderr 同時讀取，避免 .NET Process redirect deadlock
+                    // 物理意義：同步 ReadToEnd() 只讀一個 stream 時，若 child 寫另一個 stream 填滿 buffer
+                    //          → child 卡在 write / caller 卡在 ReadToEnd → 永久 deadlock。
+                    //          BeginOutputReadLine + BeginErrorReadLine 讓兩個 stream 非阻塞並行消費。
+                    var stdoutSb = new System.Text.StringBuilder();
+                    var stderrSb = new System.Text.StringBuilder();
+                    using (var p = new Process())
                     {
-                        Debug.LogError($"[LoginStatus:{opLabel}] awakening.py exit={p.ExitCode}");
-                    }
-                    else
-                    {
-                        Debug.Log($"[LoginStatus:{opLabel}] ✓ ritual 完成");
+                        p.StartInfo.FileName = "python";
+                        p.StartInfo.Arguments = argLine;
+                        p.StartInfo.UseShellExecute = false;
+                        p.StartInfo.RedirectStandardOutput = true;
+                        p.StartInfo.RedirectStandardError = true;
+                        p.StartInfo.CreateNoWindow = true;
+                        p.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+                        p.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
+                        p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+                        p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
+                        p.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
+                        p.Start();
+                        p.BeginOutputReadLine();
+                        p.BeginErrorReadLine();
+                        // 主線程已不阻塞 → tavern handshake 能被 Editor 正常處理, 通常數秒內結束。
+                        // 90s 純安全上限 (> run_cmd.py 預設 poll 窗口), 命中 = handshake 真的卡死。
+                        bool exited = p.WaitForExit(90000);
+                        string stdout = stdoutSb.ToString();
+                        string stderr  = stderrSb.ToString();
+                        if (!string.IsNullOrEmpty(stdout))
+                            Debug.Log($"[LoginStatus:{opLabel}] stdout:\n{stdout}");
+                        if (!string.IsNullOrEmpty(stderr))
+                            Debug.LogWarning($"[LoginStatus:{opLabel}] stderr:\n{stderr}");
+                        if (!exited)
+                            Debug.LogError($"[LoginStatus:{opLabel}] awakening.py 90s 未結束 (timeout) — 疑 tavern handshake 卡住");
+                        else if (p.ExitCode != 0)
+                            Debug.LogError($"[LoginStatus:{opLabel}] awakening.py exit={p.ExitCode}");
+                        else
+                            Debug.Log($"[LoginStatus:{opLabel}] ✓ ritual 完成");
                     }
                 }
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LoginStatus:{opLabel}] spawn failed: {e.Message}");
-            }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[LoginStatus:{opLabel}] spawn failed: {e.Message}");
+                }
+                finally
+                {
+                    // 回主線程: 背景緒不可碰 Unity GUI, 且 LoadData 須在 awakening.py 完成 (lock 已刪) 後才讀
+                    UnityEditor.EditorApplication.delayCall += () =>
+                    {
+                        m_AwakeningRunning = false;
+                        LoadData();
+                    };
+                }
+            });
         }
 
         string AwakeningPyPath()

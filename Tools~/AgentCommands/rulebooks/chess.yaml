@@ -1,0 +1,76 @@
+# ════════════════════════════════════════════════════════════
+# RuleBook — 西洋棋 (Chess)  ：「下棋」活動的第一本規則書實例
+# 設計藍本: ../../../Docs~/zh-Hant/Mechanics/Chess_RuleBook.md (v0.4)
+#
+# 理念: 一本 RuleBook = 一個棋類變體的宣告式定義。
+#   引擎讀 paradigm + 內建走子原語(slide/leap/step / place/flip/surround/n-in-a-row)跑棋,
+#   擴新棋類 = 寫新 rulebook (不重寫引擎)。
+#
+# 註(v0.4): chess.py 已資料驅動讀本檔的 reward/symbols/board (有 pyyaml 讀、無則內建 fallback);
+#   走子規則仍寫死在 engine 段 (求正確性)。move-gen 完全資料驅動列為 backlog。
+# ════════════════════════════════════════════════════════════
+
+ruleid: chess
+name: "西洋棋 / Chess"
+paradigm: movement              # movement | placement   ← 引擎家族分流
+
+board:
+  width: 8
+  height: 8
+  cell_pattern: checkerboard    # a1 = 暗格
+  coords: {files: "a-h", ranks: "1-8", origin: bottom-left}
+
+players: 2
+seats: [white, black]           # 座位色; 先手 = seats[0] (white)
+turn_order: alternate
+state_format: FEN               # 唯一真相; 棋盤圖 = FEN 的純函數
+empty_cell: "."                 # 渲染空格填充 (單一字元)
+render: letter                  # 字母版(等寬安全, 不歪); glyph 表僅供 legend
+
+reward:                         # 繪圖券, 綁 persona, 跟 ucl-canvas 共用餘額 ledger
+  currency: drawing_voucher
+  bind: persona
+  win: 10
+  lose: 5
+  draw: 5                       # 雙方各 +5; solo 和 = 自己 10; solo 贏 = 自己滿 15
+  anti_farm: none               # 不寫死門檻; 4 步自殺刷券在 move history 攤開可見, 靠自律+audit
+
+# 每棋子一筆: canonical 字母(白,黑) + 風味 glyph(白,黑)
+symbols:
+  - {id: K, name: King,   letter: [K, k], glyph: ["♔", "♚"]}
+  - {id: Q, name: Queen,  letter: [Q, q], glyph: ["♕", "♛"]}
+  - {id: R, name: Rook,   letter: [R, r], glyph: ["♖", "♜"]}
+  - {id: B, name: Bishop, letter: [B, b], glyph: ["♗", "♝"]}
+  - {id: N, name: Knight, letter: [N, n], glyph: ["♘", "♞"]}
+  - {id: P, name: Pawn,   letter: [P, p], glyph: ["♙", "♟"]}
+
+# 走子 DSL (movement paradigm)。原語:
+#   slide: 滑行(rider), 沿 dirs 滑到被擋。 dirs: ortho|diag|all8|<vectors>; range: N|inf
+#   leap:  跳子(hopper), 無視擋路跳 offsets。
+#   step:  走步(1格類), 不可跨子。 dirs 相對色: forward / forward_diag / all8 …
+#   旗標 capture: both | false(只走) | only(只吃) ; condition: on_start_rank | on_last_rank …
+pieces:
+  K: {moves: [{type: step,  dirs: all8,  range: 1}], special: [castling]}
+  Q: {moves: [{type: slide, dirs: all8,  range: inf}]}
+  R: {moves: [{type: slide, dirs: ortho, range: inf}], special: [castling_partner]}
+  B: {moves: [{type: slide, dirs: diag,  range: inf}]}
+  N: {moves: [{type: leap,  offsets: knight}]}        # (±1,±2)/(±2,±1)
+  P:
+    moves:
+      - {type: step, dirs: forward,      range: 1, capture: false}
+      - {type: step, dirs: forward,      range: 2, capture: false, condition: on_start_rank}
+      - {type: step, dirs: forward_diag, range: 1, capture: only}
+    special: [en_passant, promotion]
+
+setup: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"   # 初始 FEN
+
+move_notation: UCI              # e2e4 / e7e8q(升變) / e1g1(易位)
+
+special_rules: [check, checkmate, stalemate, castling, en_passant, promotion]
+win_conditions:  [{type: checkmate, result: side_to_move_loses}]
+draw_conditions: [stalemate, insufficient_material, fifty_move, threefold_repetition, mutual_agreement]
+
+# enforcement: 自律遵守, 非引擎硬 reject。move 預設信任套用; 非法步只警示(lint)不擋手。
+# verification: 每步廣播帶三元組 (prior_FEN → UCI_move → result_FEN), 人人可拿 prior 推一次複驗。
+enforcement: autonomous
+verify: {triple: [prior_fen, uci_move, result_fen], history_dependent: [threefold_repetition]}

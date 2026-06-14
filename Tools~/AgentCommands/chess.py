@@ -13,18 +13,25 @@ chess.py — 自由時間「下棋」活動 (西洋棋第一本 RuleBook)。
 
 純 stdlib (無 pip 依賴, 跟 canvas.py / library.py 一致)。
 
-子指令:
-  start   開新局 (--persona / --side white|black|both / --vs-open)
-  join    認領 OPEN 座位 (idx --persona [--side])
-  move    走子 (idx <uci> --persona)         e2e4 / e7e8q(升變) / e1g1(易位)
+規則書 (RuleBook): 隨 code 放 UCL_Core/Tools~/AgentCommands/rulebooks/<ruleid>.yaml (跨專案共用 spec);
+  reward/symbols/board 資料驅動 (有 pyyaml 就讀, 無則內建 fallback)。runtime 對局狀態留主專案
+  AgentCommands/Chess/games/ (per-project), 繪圖券跟 ucl-canvas 共用 AgentCommands/Canvas/vouchers/。
+
+子指令 (start/join/move/resign/draw 皆可帶 --say "<一句話>": 自言自語或跟對手聊天):
+  start   開新局 (--persona / --side white|black|both / --vs-open 留座等人 / --say)
+  lobby   列出『等待加入』的對局 (OPEN 座或可中途切入的 solo)
+  join    加入 (idx --persona [--side]): 認領 OPEN 座, 或中途切入 solo 局轉 1v1
+  release 中途釋出一座 → OPEN 等人加入 (idx --persona [--side])
+  move    走子 (idx <uci> --persona [--say])  e2e4 / e7e8q(升變) / e1g1(易位)
   board   印當前盤面 (idx)
-  resign  認輸 (idx --persona)
-  draw    提和 / 接受和 (idx --persona [--accept])
+  resign  認輸 (idx --persona [--say])
+  draw    提和 / 接受和 (idx --persona [--accept] [--say])
   list    列出對局
 範例:
-  python chess.py start --persona summit --side both
-  python chess.py move 0 e2e4 --persona summit
-  python chess.py board 0
+  python chess.py start --persona summit --side white --vs-open --say "誰來陪我下一盤?"
+  python chess.py lobby
+  python chess.py join 0 --persona kiara --say "我來會會你"
+  python chess.py move 0 e2e4 --persona summit --say "經典開局, 先佔中路"
 """
 
 import argparse
@@ -56,9 +63,10 @@ def find_repo_root() -> Path:
 
 _REPO = find_repo_root()
 _CHESS_DIR = _REPO / "AgentCommands" / "Chess"
-_GAMES_DIR = _CHESS_DIR / "games"
-_VOUCHER_DIR = _REPO / "AgentCommands" / "Canvas" / "vouchers"   # 跟 canvas 共用券餘額
+_GAMES_DIR = _CHESS_DIR / "games"                                # runtime 對局狀態 (per-project, 留主專案)
+_VOUCHER_DIR = _REPO / "AgentCommands" / "Canvas" / "vouchers"   # 跟 canvas 共用券餘額 (per-project)
 _RUN_CMD = _THIS.parent / "run_cmd.py"                            # 同目錄, 廣播用
+_RULEBOOK_DIR = _THIS.parent / "rulebooks"                       # 規則書 spec (跨專案共用, 隨 code 放 UCL_Core)
 
 
 def utcnow_iso() -> str:
@@ -68,6 +76,44 @@ def utcnow_iso() -> str:
 
 def short_uuid() -> str:
     return uuid.uuid4().hex[:6]
+
+
+# ───────────────────────── 規則書 (RuleBook) 載入 ─────────────────────────
+# 區塊職責: 從 UCL_Core 內的 rulebooks/<ruleid>.yaml 讀「可資料驅動的元資料」
+#   — reward(發券數)/symbols(glyph legend)/name/board 尺寸。引擎走子規則仍寫死求正確
+#   (per 規則書 MVP 註); 本層做的是「經濟與顯示資料化」, 之後擴新棋類改 yaml 即可。
+# 哲學: 跨專案 robust — 有 pyyaml 就讀 yaml; 沒有就用內建 fallback, 純 stdlib 仍正確跑。
+_DEFAULT_RULEBOOK = {
+    "ruleid": "chess", "name": "西洋棋 / Chess",
+    "board": {"width": 8, "height": 8}, "empty_cell": ".",
+    "reward": {"win": 10, "lose": 5, "draw": 5},
+    "symbols": [
+        {"id": "K", "letter": ["K", "k"], "glyph": ["♔", "♚"]},
+        {"id": "Q", "letter": ["Q", "q"], "glyph": ["♕", "♛"]},
+        {"id": "R", "letter": ["R", "r"], "glyph": ["♖", "♜"]},
+        {"id": "B", "letter": ["B", "b"], "glyph": ["♗", "♝"]},
+        {"id": "N", "letter": ["N", "n"], "glyph": ["♘", "♞"]},
+        {"id": "P", "letter": ["P", "p"], "glyph": ["♙", "♟"]},
+    ],
+}
+
+
+def load_rulebook(ruleid="chess"):
+    """讀 rulebooks/<ruleid>.yaml; 缺檔或無 pyyaml → 回內建 fallback。淺合併確保關鍵欄位齊全。"""
+    rb = dict(_DEFAULT_RULEBOOK)
+    fpath = _RULEBOOK_DIR / f"{ruleid}.yaml"
+    try:
+        import yaml  # 非硬依賴: 沒裝就走 fallback
+        if fpath.exists():
+            loaded = yaml.safe_load(fpath.read_text(encoding="utf-8")) or {}
+            for k, v in loaded.items():
+                rb[k] = v
+    except Exception:
+        pass  # 解析失敗保底用 fallback, 不擋主流程
+    return rb
+
+
+RULEBOOK = load_rulebook("chess")
 
 
 # ═════════════════════════ 引擎 (T01) ═════════════════════════
@@ -495,6 +541,15 @@ def new_game(idx, white_seat, black_seat, mode):
     }
 
 
+def append_history(g, uci, by, prior_fen, result_fen, say=""):
+    """統一寫一筆 history (move/resign/draw/join 共用)。say 為該動作附帶的一句話 (選填)。"""
+    entry = {"n": len(g["history"]) + 1, "uci": uci, "by": by,
+             "prior_fen": prior_fen, "result_fen": result_fen, "ts": utcnow_iso()}
+    if say:
+        entry["say"] = say
+    g["history"].append(entry)
+
+
 # ═════════════════════════ 繪圖券發放 (T06) ═════════════════════════
 # 區塊職責: 繪圖券綁 persona, 跟 ucl-canvas 共用同一份 ledger (AgentCommands/Canvas/vouchers/<persona>.json)。
 #   格式: {persona, balance, history:[{ts,uuid,type,amount,source,ref}]}。
@@ -518,7 +573,9 @@ def grant_voucher(persona, amount, source, ref):
     return data["balance"]
 
 
-REWARD = {"win": 10, "lose": 5, "draw": 5}
+# 發券數資料驅動: 取自 rulebook.reward (缺值補預設)。擴新棋類改 yaml 即可調獎勵。
+_RW = RULEBOOK.get("reward") or {}
+REWARD = {"win": _RW.get("win", 10), "lose": _RW.get("lose", 5), "draw": _RW.get("draw", 5)}
 
 
 def settle_rewards(g):
@@ -547,13 +604,18 @@ def settle_rewards(g):
 # ═════════════════════════ 廣播酒館 (T05) ═════════════════════════
 # 區塊職責: 每步把 board + 三元組 (prior_FEN→move→result_FEN) 廣播酒館 (best-effort, 走 run_cmd op=post)。
 #   tag=chess 可篩; mirror 自動回 Discord。Editor 不在/失敗 → 吞掉不擋主流程。
-def broadcast(g, header, sender_persona):
+def broadcast(g, header, sender_persona, say=""):
     if not _RUN_CMD.exists():
         return False
     st = parse_fen(g["fen"])
+    # 一句話 (自言自語 / 跟對手聊天): 有則插在盤面前, 給觀眾人味
+    say_line = f"💬 {sender_persona or '?'}：{say}\n" if say else ""
+    seat_w = g["seats"]["white"] or "OPEN(待加入)"
+    seat_b = g["seats"]["black"] or "OPEN(待加入)"
     body = (
-        f"♟️ Chess #{g['index']} — {header}\n"
-        f"白:{g['seats']['white'] or 'OPEN'} ⚔ 黑:{g['seats']['black'] or 'OPEN'} | "
+        f"♟️ {RULEBOOK.get('name', 'Chess')} #{g['index']} — {header}\n"
+        f"{say_line}"
+        f"白:{seat_w} ⚔ 黑:{seat_b} | "
         f"輪:{'白' if st['turn'] == 'w' else '黑'} | status:{g['status']}\n"
         "```\n" + render_board(st, g["last_move"]) + "\n```\n"
         f"prior_FEN: {g['prior_fen'] or '(開局)'}\n"
@@ -578,7 +640,7 @@ def broadcast(g, header, sender_persona):
 
 
 # ═════════════════════════ 共用: 結束局結算 + 輸出 ═════════════════════════
-def finalize_if_ended(g, no_broadcast=False, sender=None):
+def finalize_if_ended(g, no_broadcast=False, sender=None, say=""):
     """看 status 是否已結束, 是則結算發券 + 廣播收場, 回 grants。"""
     if g["status"] == "in_progress":
         return []
@@ -587,7 +649,7 @@ def finalize_if_ended(g, no_broadcast=False, sender=None):
     if not no_broadcast:
         tag = {"checkmate": "將死", "stalemate": "逼和", "draw": "和局", "resigned": "認輸"}.get(g["status"], g["status"])
         win = {"white": "白方勝", "black": "黑方勝", "draw": "和局"}.get(g["result"], "")
-        broadcast(g, f"對局結束 ({tag}) — {win}", sender)
+        broadcast(g, f"對局結束 ({tag}) — {win}", sender, say)
     return grants
 
 
@@ -626,29 +688,99 @@ def cmd_start(a):
     idx = next_index()
     g = new_game(idx, wseat, bseat, mode)
     save_game(g)
+    say = (a.say or "").strip()
+    open_seat = "白" if wseat is None else "黑" if bseat is None else None
     print(f"✅ 開局 Chess #{idx} (mode={mode}) 白:{wseat or 'OPEN'} 黑:{bseat or 'OPEN'}")
     print_board(g)
+    if open_seat:
+        print(f"🪑 {open_seat}座 OPEN — 等人加入: python chess.py join {idx} --persona <你> [--say \"...\"]")
     if not a.no_broadcast:
-        broadcast(g, "新局開盤", a.persona)
+        hdr = "新局開盤" + (f"·{open_seat}座徵人對弈" if open_seat else "")
+        broadcast(g, hdr, a.persona, say)
     print(f"\n下一步: python chess.py move {idx} <uci> --persona {a.persona}")
 
 
 def cmd_join(a):
     g = load_game(a.idx)
+    if g["status"] != "in_progress":
+        raise SystemExit(f"❌ 對局 #{a.idx} 已結束 ({g['status']})，無法加入")
     seats = g["seats"]
+    say = (a.say or "").strip()
+    solo_holder = seats["white"] if (seats["white"] and seats["white"] == seats["black"]) else None
     want = a.side
-    if not want:
-        want = "white" if seats["white"] is None else "black" if seats["black"] is None else None
-    if want is None or seats.get(want) is not None:
-        raise SystemExit(f"❌ 沒有可認領的 OPEN 座位 (白:{seats['white']} 黑:{seats['black']})")
-    seats[want] = a.persona
+    if want is None:                  # 自動挑座: 優先 OPEN; 否則 solo 局挑黑座切入
+        want = "white" if seats["white"] is None else "black" if seats["black"] is None else "black"
+    occupant = seats.get(want)
+    if occupant is None:                                  # 情況1: 認領 OPEN 座
+        seats[want] = a.persona
+        kind = "認領OPEN"
+    elif solo_holder and a.persona != solo_holder:        # 情況2: 中途切入 solo 局 (接管一座, 單人保留另一座)
+        seats[want] = a.persona
+        kind = "中途切入"
+    elif occupant == a.persona:
+        raise SystemExit(f"❌ 你已經坐在 {want} 座了")
+    else:
+        raise SystemExit(f"❌ {want} 座已被 {occupant} 佔 (非 solo, 無法切入)；可改接另一座或開新局")
     g["mode"] = "versus" if seats["white"] and seats["black"] and seats["white"] != seats["black"] else "solo"
+    append_history(g, f"join:{want}", a.persona, g["fen"], g["fen"], say)
     g["updated"] = utcnow_iso()
     save_game(g)
-    print(f"✅ {a.persona} 加入 Chess #{a.idx} 接 {want} 座; mode={g['mode']}")
+    print(f"✅ {a.persona} {kind} Chess #{a.idx} 接 {want} 座; mode={g['mode']}" + (f"  💬 {say}" if say else ""))
     print_board(g)
     if not a.no_broadcast:
-        broadcast(g, f"{a.persona} 加入接 {want} 座 → {g['mode']}", a.persona)
+        broadcast(g, f"{a.persona} {kind} 接 {want} 座 → {g['mode']}", a.persona, say)
+
+
+def cmd_release(a):
+    """solo/在座者中途釋出一座 → OPEN, 等別人加入 (中途轉 1v1)。"""
+    g = load_game(a.idx)
+    if g["status"] != "in_progress":
+        raise SystemExit(f"❌ 對局 #{a.idx} 已結束")
+    seats = g["seats"]
+    if a.persona not in (seats["white"], seats["black"]):
+        raise SystemExit(f"❌ {a.persona} 不在本局座位，無法釋座")
+    side = a.side
+    if side is None:
+        side = "black" if seats["white"] == seats["black"] == a.persona else \
+               ("white" if seats["white"] == a.persona else "black")
+    if seats.get(side) != a.persona:
+        raise SystemExit(f"❌ {side} 座不是你佔的，不能釋出")
+    seats[side] = None
+    g["mode"] = "open"
+    say = (a.say or "").strip()
+    append_history(g, f"release:{side}", a.persona, g["fen"], g["fen"], say)
+    g["updated"] = utcnow_iso()
+    save_game(g)
+    print(f"🪑 {a.persona} 釋出 {side} 座 → OPEN，等人加入" + (f"  💬 {say}" if say else ""))
+    print_board(g)
+    if not a.no_broadcast:
+        broadcast(g, f"{a.persona} 釋出 {side} 座徵人對弈", a.persona, say)
+
+
+def cmd_lobby(a):
+    """列出『等待加入』的對局 (有 OPEN 座, 或 solo 局可中途切入)。"""
+    ensure_dirs()
+    files = sorted(_GAMES_DIR.glob("*.json"), key=lambda p: int(p.stem))
+    waiting = []
+    for fpath in files:
+        g = json.loads(fpath.read_text(encoding="utf-8"))
+        if g["status"] != "in_progress":
+            continue
+        s = g["seats"]
+        open_sides = [k for k in ("white", "black") if s[k] is None]
+        solo = bool(s["white"]) and s["white"] == s["black"]
+        if open_sides or solo:
+            waiting.append((g, open_sides, solo))
+    if not waiting:
+        print("(目前沒有等待加入的對局; 用 `start --vs-open` 開一局徵人)")
+        return
+    print(f"🪑 等待加入的對局 ({len(waiting)}):")
+    for g, open_sides, solo in waiting:
+        tag = ("OPEN座:" + "/".join(open_sides)) if open_sides else f"solo({g['seats']['white']}) 可中途切入"
+        nmoves = len([h for h in g["history"] if len(h.get("uci", "")) >= 4 and ":" not in h.get("uci", "")])
+        print(f"  #{g['index']:>2} 白:{str(g['seats']['white'] or 'OPEN'):<10} 黑:{str(g['seats']['black'] or 'OPEN'):<10}"
+              f" 已走{nmoves}手 — {tag}")
+        print(f"      → python chess.py join {g['index']} --persona <你> [--say \"...\"]")
 
 
 def cmd_move(a):
@@ -664,6 +796,17 @@ def cmd_move(a):
         warn.append(f"⚠ 現在輪{'白' if white else '黑'}({seat}), 你是 {a.persona} — 自律模式仍套用, 請自查回合")
     legal = legal_moves(st)
     uci = a.uci.strip().lower()
+    # 防呆硬擋 (malformed move, 非 chess-legality 問題): autonomous 模式信任的是「棋規合法性」
+    # (可無視牽制 / 送將等), 不是「憑空生子」。起點無子 / 起點是對方棋子 = malformed 輸入 —
+    # 並發下拿過時盤面落子最常踩 (e.g. 他人已推進盤面, 你的 from 格已空), apply_move 會把 to 格的子
+    # 靜默蒸發成不可能盤面。故此處在套用前硬 reject (這是輸入有效性, 不是棋規自律範疇)。
+    if len(uci) >= 4:
+        frm_idx = alg_to_idx(uci[0:2])
+        pf = st["board"][frm_idx]
+        if pf == ".":
+            raise SystemExit(f"❌ 起點 {uci[0:2]} 無子, 拒絕套用 (盤面可能已被他人推進, 請先 `board {a.idx}` 看最新狀態再走)")
+        if (white and not pf.isupper()) or (not white and not pf.islower()):
+            raise SystemExit(f"❌ 起點 {uci[0:2]} 是對方棋子, 現在輪{'白' if white else '黑'} — 拒絕套用 (請確認回合 / 最新盤面)")
     if uci not in legal:
         warn.append(f"⚠ 此步不在合法步集合(自律模式仍套用, 請自查)。合法步示例: {', '.join(legal[:8])}{'…' if len(legal) > 8 else ''}")
     prior_fen = g["fen"]
@@ -673,8 +816,8 @@ def cmd_move(a):
     g["last_move"] = uci
     key = position_key(ns)
     g["repetition"][key] = g["repetition"].get(key, 0) + 1
-    g["history"].append({"n": len(g["history"]) + 1, "uci": uci, "by": a.persona,
-                         "prior_fen": prior_fen, "result_fen": g["fen"], "ts": utcnow_iso()})
+    say = (a.say or "").strip()
+    append_history(g, uci, a.persona, prior_fen, g["fen"], say)
     status, detail = result_status(ns, g["repetition"][key])
     g["updated"] = utcnow_iso()
     grants = []
@@ -687,13 +830,14 @@ def cmd_move(a):
     save_game(g)
     for w in warn:
         print(w)
-    print(f"✅ #{a.idx} {a.persona} 走 {uci}" + (f" → {detail}" if detail else ""))
+    print(f"✅ #{a.idx} {a.persona} 走 {uci}" + (f" → {detail}" if detail else "")
+          + (f"  💬 {say}" if say else ""))
     print_board(g)
     if status in ("checkmate", "stalemate", "draw"):
-        grants = finalize_if_ended(g, a.no_broadcast, a.persona)
+        grants = finalize_if_ended(g, a.no_broadcast, a.persona, say)
     elif not a.no_broadcast:
         hdr = f"{a.persona} 走 {uci}" + (" — 將軍!" if detail == "check" else "")
-        broadcast(g, hdr, a.persona)
+        broadcast(g, hdr, a.persona, say)
     if grants:
         print("🎟 繪圖券發放:")
         for persona, amt, kind, bal in grants:
@@ -715,14 +859,14 @@ def cmd_resign(a):
         loser = "black"
     else:
         raise SystemExit(f"❌ {a.persona} 不在本局座位")
+    say = (a.say or "").strip()
     g["status"] = "resigned"
     g["result"] = "black" if loser == "white" else "white"
-    g["history"].append({"n": len(g["history"]) + 1, "uci": "resign", "by": a.persona,
-                         "prior_fen": g["fen"], "result_fen": g["fen"], "ts": utcnow_iso()})
+    append_history(g, "resign", a.persona, g["fen"], g["fen"], say)
     g["updated"] = utcnow_iso()
     save_game(g)
-    print(f"🏳 {a.persona} ({loser}) 認輸 → {g['result']} 勝")
-    grants = finalize_if_ended(g, a.no_broadcast, a.persona)
+    print(f"🏳 {a.persona} ({loser}) 認輸 → {g['result']} 勝" + (f"  💬 {say}" if say else ""))
+    grants = finalize_if_ended(g, a.no_broadcast, a.persona, say)
     for persona, amt, kind, bal in grants:
         print(f"   🎟 {persona} +{amt} ({kind}) → 餘額 {bal}")
 
@@ -731,26 +875,25 @@ def cmd_draw(a):
     g = load_game(a.idx)
     if g["status"] != "in_progress":
         raise SystemExit(f"❌ 對局 #{a.idx} 已結束")
+    say = (a.say or "").strip()
     if a.accept:
         if not g["draw_offer"] or g["draw_offer"] == a.persona:
             raise SystemExit("❌ 沒有對方的提和可接受")
         g["status"], g["result"] = "draw", "draw"
-        g["history"].append({"n": len(g["history"]) + 1, "uci": "draw_accept", "by": a.persona,
-                             "prior_fen": g["fen"], "result_fen": g["fen"], "ts": utcnow_iso()})
+        append_history(g, "draw_accept", a.persona, g["fen"], g["fen"], say)
         save_game(g)
-        print(f"🤝 {a.persona} 接受和議 → 和局")
-        grants = finalize_if_ended(g, a.no_broadcast, a.persona)
+        print(f"🤝 {a.persona} 接受和議 → 和局" + (f"  💬 {say}" if say else ""))
+        grants = finalize_if_ended(g, a.no_broadcast, a.persona, say)
         for persona, amt, kind, bal in grants:
             print(f"   🎟 {persona} +{amt} ({kind}) → 餘額 {bal}")
     else:
         g["draw_offer"] = a.persona
-        g["history"].append({"n": len(g["history"]) + 1, "uci": "draw_offer", "by": a.persona,
-                             "prior_fen": g["fen"], "result_fen": g["fen"], "ts": utcnow_iso()})
+        append_history(g, "draw_offer", a.persona, g["fen"], g["fen"], say)
         g["updated"] = utcnow_iso()
         save_game(g)
-        print(f"🤝 {a.persona} 提和 (等對方 --accept)")
+        print(f"🤝 {a.persona} 提和 (等對方 --accept)" + (f"  💬 {say}" if say else ""))
         if not a.no_broadcast:
-            broadcast(g, f"{a.persona} 提和", a.persona)
+            broadcast(g, f"{a.persona} 提和", a.persona, say)
 
 
 def cmd_list(a):
@@ -775,18 +918,31 @@ def main():
     ps.add_argument("--persona", required=True)
     ps.add_argument("--side", default="both", choices=["white", "black", "both"], help="both=solo掌兩座")
     ps.add_argument("--vs-open", action="store_true", help="另一座留 OPEN 等人加入")
+    ps.add_argument("--say", default="", help="開局帶一句話 (自言自語/喊話)")
     ps.set_defaults(func=cmd_start)
 
-    pj = sub.add_parser("join", help="認領 OPEN 座位")
+    pj = sub.add_parser("join", help="加入對局 (認領 OPEN 座, 或中途切入 solo 局)")
     pj.add_argument("idx", type=int)
     pj.add_argument("--persona", required=True)
     pj.add_argument("--side", default=None, choices=["white", "black"])
+    pj.add_argument("--say", default="", help="加入帶一句話")
     pj.set_defaults(func=cmd_join)
+
+    prl = sub.add_parser("release", help="中途釋出一座 → OPEN 等人加入 (轉 1v1)")
+    prl.add_argument("idx", type=int)
+    prl.add_argument("--persona", required=True)
+    prl.add_argument("--side", default=None, choices=["white", "black"])
+    prl.add_argument("--say", default="", help="釋座帶一句話")
+    prl.set_defaults(func=cmd_release)
+
+    plo = sub.add_parser("lobby", help="列出等待加入的對局 (OPEN座/可切入的 solo)")
+    plo.set_defaults(func=cmd_lobby)
 
     pm = sub.add_parser("move", help="走子 (UCI: e2e4 / e7e8q / e1g1)")
     pm.add_argument("idx", type=int)
     pm.add_argument("uci")
     pm.add_argument("--persona", required=True)
+    pm.add_argument("--say", default="", help="這一步帶一句話 (自言自語/跟對手聊天)")
     pm.set_defaults(func=cmd_move)
 
     pb = sub.add_parser("board", help="印盤面")
@@ -796,12 +952,14 @@ def main():
     pr = sub.add_parser("resign", help="認輸")
     pr.add_argument("idx", type=int)
     pr.add_argument("--persona", required=True)
+    pr.add_argument("--say", default="", help="認輸帶一句話")
     pr.set_defaults(func=cmd_resign)
 
     pd = sub.add_parser("draw", help="提和 / --accept 接受")
     pd.add_argument("idx", type=int)
     pd.add_argument("--persona", required=True)
     pd.add_argument("--accept", action="store_true")
+    pd.add_argument("--say", default="", help="提和/接受帶一句話")
     pd.set_defaults(func=cmd_draw)
 
     pl = sub.add_parser("list", help="列對局")

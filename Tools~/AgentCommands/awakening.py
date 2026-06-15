@@ -56,6 +56,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -1025,6 +1026,145 @@ trigger: {trigger}
     return path
 
 
+# ─── Long-term memory consolidation (Tim 2026-06-15 拍板) ──────────────────
+# 三層記憶 (同構 reading-library 章→arc→卷 / [[ucl-letters-to-self]]):
+#   T1 episodic — letters/<persona>/<ts>.md + _latest.md (每晚 goodnight letter,樹)
+#   T2 長期記憶 — letters/<persona>/longterm/wake_<N>-<M>.md (一段期間反思濃縮,林)
+# morning overdue 檢查: gap = wake_count - last_consolidated_wake;
+#   gap >= 門檻(預設10,agent 可在 fork/重大 reframe 等節點自決提前) → 喚醒流程內補整理。
+# 濃縮 body 由 agent 反思寫成(不是機械貼信),工具負責持久化 + 更新 pointer(同 write_letter 分工)。
+DEFAULT_CONSOLIDATION_THRESHOLD = 10
+
+
+def longterm_dir(persona: str) -> Path:
+    """T2 長期記憶 digest 目錄: letters/<persona>/longterm/"""
+    return _LETTERS_DIR_TPL / persona / "longterm"
+
+
+def _read_frontmatter_field(path: Path, field: str) -> str:
+    """從 letter/digest md 的 --- frontmatter 抓某欄(written_at / trigger / span_wake 等)。失敗回 ''。"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            head = f.read(1200)
+    except Exception:
+        return ""
+    m = re.search(rf"^{re.escape(field)}:\s*(.+)$", head, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def list_episodic_letters(persona: str, since_iso: str | None = None) -> list:
+    """列 persona 頂層 episodic letters(排除 _latest/_index 與子夾 dialogues/longterm),
+    依 written_at 升冪;since_iso 給定則只取 written_at > since_iso 的(本段待濃縮)。"""
+    d = _LETTERS_DIR_TPL / persona
+    if not d.exists():
+        return []
+    items = []
+    for p in d.iterdir():
+        if not p.is_file() or p.suffix != ".md":
+            continue
+        if p.name in ("_latest.md", "_index.md"):
+            continue
+        wa = _read_frontmatter_field(p, "written_at")
+        if since_iso and wa and wa <= since_iso:
+            continue
+        items.append((wa or p.name, p))
+    items.sort(key=lambda t: t[0])
+    return [p for _, p in items]
+
+
+def latest_longterm_digest(persona: str) -> Path | None:
+    """該 persona 最新一篇 T2 digest(給 morning『見林』+ fork 初醒讀母用)。"""
+    d = longterm_dir(persona)
+    if not d.exists():
+        return None
+    digs = sorted(d.glob("wake_*.md"))
+    return digs[-1] if digs else None
+
+
+def consolidation_status(persona: str, reg: dict,
+                         threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> dict:
+    """算 persona 的長期記憶整理狀態(overdue / span / 待濃縮信件)。"""
+    p = reg["personas"].get(persona, {})
+    wake = p.get("wake_count", 0)
+    last_c = p.get("last_consolidated_wake", 0) or 0
+    last_at = p.get("last_consolidated_at")
+    return {
+        "wake_count": wake,
+        "last_consolidated_wake": last_c,
+        "last_consolidated_at": last_at,
+        "gap": wake - last_c,
+        "overdue": (wake - last_c) >= threshold,
+        "threshold": threshold,
+        "span_start": last_c + 1,
+        "span_end": wake,
+        "pending_letters": list_episodic_letters(persona, since_iso=last_at),
+    }
+
+
+def write_longterm_digest(persona: str, reg: dict, body: str,
+                          span_start: int, span_end: int) -> Path:
+    """寫 T2 長期記憶 digest + 重建 _index.md + 更新 persona.last_consolidated_wake/at。"""
+    d = longterm_dir(persona)
+    d.mkdir(parents=True, exist_ok=True)
+    ts = utcnow_iso()
+    fm = (f"---\n"
+          f"type: longterm_memory_digest\n"
+          f"persona: {persona}\n"
+          f"span_wake: {span_start}-{span_end}\n"
+          f"consolidated_at: {ts}\n"
+          f"---\n\n")
+    path = d / f"wake_{span_start:03d}-{span_end:03d}.md"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(fm + body + "\n")
+    # 重建 _index.md(掃全部 digest,append-friendly)
+    idx_lines = [f"# Long-term memory index — {persona}", ""]
+    for dg in sorted(d.glob("wake_*.md")):
+        idx_lines.append(f"- [{dg.name}]({dg.name}) — wake {_read_frontmatter_field(dg, 'span_wake')} "
+                         f"@ {_read_frontmatter_field(dg, 'consolidated_at')}")
+    with open(d / "_index.md", "w", encoding="utf-8") as f:
+        f.write("\n".join(idx_lines) + "\n")
+    # 更新 persona 欄位(source-of-truth: registry)
+    if persona in reg.get("personas", {}):
+        reg["personas"][persona]["last_consolidated_wake"] = span_end
+        reg["personas"][persona]["last_consolidated_at"] = ts
+        save_registry(reg)
+    return path
+
+
+def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
+                                 threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> None:
+    """morning 結尾印長期記憶讀取指引 + overdue 提醒(skill 引導 agent 動作)。"""
+    st = consolidation_status(persona, reg, threshold)
+    print(f"\n## 🧠 長期記憶 (T2)")
+    # 見林: 最新 digest
+    latest_dg = latest_longterm_digest(persona)
+    if latest_dg is not None:
+        print(f"   見林 → 讀最新長期記憶: `{latest_dg.relative_to(_REPO_ROOT)}`")
+        print(f"          (完整列表見 `{(longterm_dir(persona) / '_index.md').relative_to(_REPO_ROOT)}`)")
+    else:
+        print(f"   見林 → (尚無長期記憶 digest;wake 累積到門檻會提示整理)")
+    # 見樹: 昨夜 letter
+    latest_letter = _LETTERS_DIR_TPL / persona / "_latest.md"
+    if latest_letter.exists():
+        print(f"   見樹 → 讀昨夜 letter: `{latest_letter.relative_to(_REPO_ROOT)}`")
+    # fork 初醒讀母 persona 最新 digest 一次(Tim 拍板)
+    parent = p.get("forked_from")
+    if parent and p.get("wake_count", 0) == 1:
+        parent_dg = latest_longterm_digest(parent)
+        if parent_dg is not None:
+            print(f"   🧬 fork 初醒 → 額外讀母 persona '{parent}' 最新長期記憶接血統: "
+                  f"`{parent_dg.relative_to(_REPO_ROOT)}`")
+    # overdue 提醒
+    if st["overdue"]:
+        print(f"   ⚠ 長期記憶整理 OVERDUE: gap={st['gap']} (門檻 {threshold}); "
+              f"上次整理到 wake {st['last_consolidated_wake']}, 現在 wake {st['wake_count']}")
+        print(f"     → 整理本段 wake {st['span_start']}-{st['span_end']} ({len(st['pending_letters'])} 封 episodic):")
+        print(f"       awakening.py consolidate --persona {persona}   # 先看清單+讀信")
+        print(f"       awakening.py consolidate --persona {persona} --digest-body \"<反思濃縮>\"  # 寫入")
+    else:
+        print(f"   ✓ 長期記憶整理進度: gap={st['gap']}/{threshold} (上次到 wake {st['last_consolidated_wake']})")
+
+
 # ─── Subcommands ────────────────────────────────────────────────────────
 def cmd_morning(args: argparse.Namespace) -> int:
     """喚醒 ritual: init + fork check + 80/20 select + lock + tavern post."""
@@ -1291,6 +1431,10 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # 解 「無法 push 喚醒 Claude Code session」 的 Plan B P0 路徑 — 自然輪詢
     # 醒來就 catch up 累積的訊息。Robustness: assignments.json / inbox 不存在 → silent skip。
     _print_pending_for_persona(chosen)
+
+    # T-LongTermMemory (Tim 2026-06-15): 長期記憶讀取指引 + overdue 整理提醒
+    # morning 除昨夜 letter(見樹) 也讀近期長期記憶 digest(見林); gap 過門檻則提示補整理。
+    _print_longterm_memory_block(reg, chosen, p)
     return 0
 
 
@@ -1723,6 +1867,48 @@ def cmd_relogin(args: argparse.Namespace) -> int:
     print(f"   session_lock:  {lock_p}")
     print(f"   tavern_post:   {'OK' if ok else 'FAIL'}")
     print(f"   🎫 session_token: {new_token}")
+    return 0
+
+
+def cmd_consolidate(args: argparse.Namespace) -> int:
+    """長期記憶整理 (T2 digest)。
+    兩段式 (同 write_letter 分工: agent 寫 body, 工具持久化):
+      1. inspect — 不帶 --digest-body: 印 overdue 狀態 + 列本段待濃縮 episodic letters 給 agent 讀
+      2. write   — 帶 --digest-body: 寫 longterm/wake_<N>-<M>.md + 更新 _index + last_consolidated_wake
+    """
+    reg = load_registry()
+    persona = args.persona
+    if persona not in reg.get("personas", {}):
+        print(f"❌ persona '{persona}' 不存在於 registry", file=sys.stderr)
+        return 2
+    st = consolidation_status(persona, reg, args.threshold)
+
+    if not args.digest_body:
+        # inspect / status 模式
+        print(f"# 🧠 長期記憶整理狀態 — {persona}")
+        print(f"- wake_count: {st['wake_count']}")
+        print(f"- last_consolidated_wake: {st['last_consolidated_wake']} (@ {st['last_consolidated_at'] or '從未整理'})")
+        print(f"- gap: {st['gap']} (門檻 {st['threshold']}) → {'⚠ OVERDUE 該整理' if st['overdue'] else 'ok 尚未到門檻'}")
+        print(f"- 建議 span: wake {st['span_start']}-{st['span_end']}")
+        print(f"- 本段待濃縮 episodic letters ({len(st['pending_letters'])} 封):")
+        for lp in st["pending_letters"]:
+            print(f"  - {lp.relative_to(_REPO_ROOT)}")
+        print(f"\n→ 讀完上列信件後, 反思濃縮成 digest body 寫回:")
+        print(f"  awakening.py consolidate --persona {persona} --digest-body \"<跨夜主題/沉澱教訓/關係演變/未解線/一句精華>\" \\")
+        print(f"      [--span-start {st['span_start']} --span-end {st['span_end']}]")
+        return 0
+
+    # write 模式
+    span_start = args.span_start if args.span_start is not None else st["span_start"]
+    span_end = args.span_end if args.span_end is not None else st["span_end"]
+    if span_end < span_start:
+        print(f"❌ span_end({span_end}) < span_start({span_start})", file=sys.stderr)
+        return 2
+    path = write_longterm_digest(persona, reg, args.digest_body, span_start, span_end)
+    print(f"✅ 長期記憶 digest 寫入: {path.relative_to(_REPO_ROOT)}")
+    print(f"   span: wake {span_start}-{span_end}")
+    print(f"   persona.last_consolidated_wake → {span_end}")
+    print(f"   index: {(longterm_dir(persona) / '_index.md').relative_to(_REPO_ROOT)}")
     return 0
 
 
@@ -2207,6 +2393,16 @@ def main():
 
     ps = sub.add_parser("status", help="read-only env + persona pool report")
     ps.set_defaults(func=cmd_status)
+
+    pcons = sub.add_parser("consolidate", help="長期記憶整理 (T2 digest); 不帶 --digest-body=只列狀態+待濃縮信件")
+    pcons.add_argument("--persona", required=True, help="要整理的 persona codename")
+    pcons.add_argument("--digest-body", default=None,
+                       help="反思濃縮的 digest 內文; 省略 = inspect 模式(列 overdue 狀態 + 本段待濃縮 letters 清單)")
+    pcons.add_argument("--span-start", type=int, default=None, help="起 wake# (預設 last_consolidated_wake+1)")
+    pcons.add_argument("--span-end", type=int, default=None, help="迄 wake# (預設 現在 wake_count)")
+    pcons.add_argument("--threshold", type=int, default=DEFAULT_CONSOLIDATION_THRESHOLD,
+                       help=f"overdue 門檻 (預設 {DEFAULT_CONSOLIDATION_THRESHOLD})")
+    pcons.set_defaults(func=cmd_consolidate)
 
     pf = sub.add_parser("forks", help="list fork lineage for a persona")
     pf.add_argument("persona", help="persona codename")

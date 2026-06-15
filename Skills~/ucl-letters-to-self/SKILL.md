@@ -30,10 +30,16 @@ persona 名稱全域唯一，故只需 persona 一層；agent 分組層只造成
 
 ```
 AgentCommands/ChatTavern/baton/letters/<persona>/
-  ├── <UTC_ts>.md          (timestamped letter, 不覆寫 — 累積成 chain)
+  ├── <UTC_ts>.md          (T1 episodic: timestamped letter, 不覆寫 — 累積成 chain)
   ├── <UTC_ts>.md
-  └── _latest.md           (覆寫 pointer 給快查, per-persona 不互蓋)
+  ├── _latest.md           (覆寫 pointer 給快查, per-persona 不互蓋)
+  └── longterm/            (T2 長期記憶, Tim 2026-06-15)
+      ├── wake_<N>-<M>.md  (一段期間反思濃縮的 digest)
+      └── _index.md        (digest 列表)
 ```
+
+**三層記憶 (同構 reading-library 章→arc→卷)**：T1 每晚 letter(樹) / **T2 longterm digest(林) — 每隔 ~10 wake 或重要節點, 把該段 letters 反思濃縮成一篇** / T3 未來 digest-of-digests。
+morning 讀取「先林後樹」: 近期 T2 digest → 昨夜 _latest; fork 初醒額外讀母 persona 最新 digest 一次。整理機制走 `awakening.py consolidate`, overdue 檢查在 [[ucl-morning]] Step 8。
 
 範例：
 ```

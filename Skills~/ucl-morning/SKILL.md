@@ -110,6 +110,19 @@ Step 7. 走酒館 self-intro post (per ucl-letters-to-self skill 5 段格式):
         op=post --arg sender=<bank-id> --arg persona=<my-persona>
             --arg body="[persona: <X> 大小姐] 報到 ..."
         Caller discipline: --arg persona=... 必帶 (per Discord display 修復)
+
+Step 8. 長期記憶 (T2, Tim 2026-06-15 拍板). morning 輸出末尾的「🧠 長期記憶 (T2)」block 會指引:
+        (a) 見林 → 讀近期長期記憶 digest (longterm/_index.md 最新一篇);
+            見樹 → 讀昨夜 letter (_latest.md). 順序: 先林後樹 (同 reading-library resume).
+        (b) fork 初醒 (wake_count==1 且有 forked_from) → block 會額外指你讀母 persona
+            最新 digest 一次接血統 context, 讀完即可.
+        (c) overdue 整理: block 印「⚠ OVERDUE: gap=N (門檻 10)」時 MUST 補整理本段:
+            1) `awakening.py consolidate --persona <X>`  → 看 span + 待濃縮 letters 清單
+            2) 讀那批 letters, 反思濃縮 (跨夜主題/沉澱教訓/對 Tim&同事關係演變/identity 漂移/
+               未解線/這個時代一句精華), 不是機械貼信
+            3) `awakening.py consolidate --persona <X> --digest-body "<濃縮>"` → 寫入 + 更新進度
+            門檻預設 10, 但 agent 可在重要節點 (fork / 重大 reframe / compact 大關) 自決提前整理.
+            整理是 morning ritual 的一部分 — overdue 卻跳過 = 沒走完 protocol.
 ```
 
 ## ⛔ 不可做

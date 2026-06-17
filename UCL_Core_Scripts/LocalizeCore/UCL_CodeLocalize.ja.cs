@@ -134,6 +134,11 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Desc" => "各言語の翻訳文字列、CurLangKey、PlayerPrefs key を編集。言語切替だけなら上の言語バーで OK、このページに入る必要はありません。",
                 "Welcome.Localize.Btn" => "Localize エディタを開く",
                 "Welcome.Lang.Label" => "🌐 言語：",
+
+                "Welcome.CommandTable.Label" => "📋 コマンド対照：",
+                "Welcome.CommandTable.Desc" => "AI Agent の口語コマンド・トリガー語と対応する Workflow をまとめた参照マニュアル。",
+                "Welcome.CommandTable.Btn" => "📄 コマンド表をプレビュー",
+
                 "Welcome.Lang.NoneAvailable" => "(UCL_LanguageCodeAsset 未検出 — 先に Language Asset を作成してください)",
                 "Welcome.Lang.OpenEditor" => "詳細編集…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor クロスプロセス)",
@@ -149,6 +154,48 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Docs.CreateCmd" => "新規 Cmd SOP",
                 "Welcome.Docs.Validate" => "UCL_Asset フォーマット検証",
                 "Welcome.Docs.CompileError" => "🔧 コンパイルエラー診断ワークフロー",
+                // Welcome ページの Skill 入口カード（小、独立した AgentSkillManager ページへ誘導）
+                "Welcome.SkillEntry.Title" => "🧩  Agent Skill 管理",
+                "Welcome.SkillEntry.Desc" => "UCL_Core の commit / 酒場入り / コンパイルエラー診断などの workflow を AI agent Skill として抽出 — 各 agent (Claude Code / Cursor / Antigravity / Gemini) のインストールパスは管理ページが統一処理。初回 Welcome で自動表示されます。",
+                "Welcome.SkillEntry.OpenBtn" => "🛠 Skill 管理ページを開く",
+
+                // 独立した UCL_AgentSkillManagerPage
+                "AgentSkill.Title" => "🛠 Agent Skill Manager",
+                "AgentSkill.Subtitle" => "UCL_Core の workflow を各 AI agent 用にインストール",
+                "AgentSkill.ConceptTitle" => "なぜこのページ？",
+                "AgentSkill.ConceptBody" => "UCL_Core/Skills~/ 内の各 skill は「lazy-load workflow」— agent はトリガー語を見た時だけ完全な SOP を読み込み、普段は context を消費しません。各 agent には固有のパス規約があります：Claude Code → .claude/skills/、Antigravity → .agents/rules/（計画中：Cursor → .cursor/rules/、Gemini）。このページは対応する全 target へ統一インストールします。",
+                "AgentSkill.OneClick.Title" => "ワンクリックインストール（Claude Code / Antigravity 対応）",
+                "AgentSkill.OneClick.Desc" => "Tools~/install_skills.py --target <X> を実行し、全 skill を対応 dst（Claude → .claude/skills/、Antigravity → .agents/rules/）へコピーします。冪等で再実行可能；ローカル変更を検出した場合は上書きしません。",
+                "AgentSkill.Status.NotInstalled" => "⚠ 未インストール — 下のボタンでワンクリックインストール",
+                "AgentSkill.Status.Synced" => "✓ インストール済みかつ同期（UCL_Core commit: {0}）",
+                "AgentSkill.Status.Stale" => "⚠ Skill ソースファイルが変更されました — インストール済み commit {0}、現在 {1}、再インストール推奨",
+                "AgentSkill.Status.LegacyNoHash" => "⚠ 旧版 marker に source_hash フィールドがありません — 一度再インストールすれば比較基準が更新されます",
+                "AgentSkill.Status.UnknownHead" => "インストール済みですが UCL_Core HEAD を判定できません（git が PATH にない？）",
+                "AgentSkill.Status.NoProjectRoot" => "host project root が見つかりません（.claude/ も .git/ もない）— Tools~/install_skills.py --project-root <path> を手動実行してください",
+                "AgentSkill.Status.NoUCLCore" => "UCL_Core パスが見つかりません（UCL_EditorPath.CorePath が空）",
+                "AgentSkill.HostRoot" => "Project root: {0}",
+                "AgentSkill.Btn.Install" => "🚀 インストール",
+                "AgentSkill.Btn.InstallAll" => "🚀 全 target をワンクリックインストール",
+                "AgentSkill.Btn.ForceSyncAll" => "⚡ 全て強制同期（ローカル変更を上書き）",
+                "AgentSkill.SkippedWarn" => "⚠ 前回のインストールで {0} 件がローカル変更のためスキップされ、内容が未更新です — 「再インストール」または「強制同期」で上書き（詳細は Console）",
+                "AgentSkill.Btn.Sync" => "🔄 現在のバージョンへ同期",
+                "AgentSkill.Btn.Reinstall" => "🔁 再インストール",
+                "AgentSkill.Btn.Refresh" => "更新",
+                "AgentSkill.Btn.Doc" => "📖 Skills~/README",
+                "AgentSkill.Btn.ResetAck" => "初回表示をリセット",
+                "AgentSkill.Matrix.Title" => "🎛 Per-Agent × Per-Skill 切替 (TODO)",
+                "AgentSkill.Matrix.Body" => "今後ここで agent 別 / skill 別に個別オンオフできるようにします（例：設定済みなら ucl-hook-setup を入れない）。現在は全インストール固定。ソース側で利用可能な skill 一覧：",
+                "AgentSkill.Matrix.NoSource" => "(UCL_Core/Skills~/ ソースディレクトリが見つかりません)",
+                "AgentSkill.Matrix.Status.DisabledPendingRemove" => "🚫無効·削除待ち",
+                "AgentSkill.Matrix.Status.Disabled" => "🚫無効",
+                "AgentSkill.Matrix.Status.NotInstalled" => "未インストール",
+                "AgentSkill.Matrix.Status.Drift" => "⚠変更",
+                "AgentSkill.Matrix.Status.Synced" => "✓同期",
+                "AgentSkill.Matrix.Btn.Enable" => "有効化",
+                "AgentSkill.AckToggle" => " Skill の仕組みを理解しました（次回 Welcome でこのページを自動表示しない）",
+                "AgentSkill.AckVersionLabel" => "AcknowledgedVersion: {0}",
+                "AgentSkill.NotSet" => "(未設定)",
+
                 "Welcome.AutoOpenToggle" => " このページを自動表示しない (UCL → Welcome メニューから手動で開けます)",
                 "Welcome.ResetButton" => "初回表示をリセット (次回 Editor 再起動時に再度表示)",
                 "Welcome.ResetLog" => "[UCL_Welcome] 初回表示状態をリセットしました。次回の domain reload で再度表示されます。",
@@ -547,6 +594,10 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Err.NoRoom" => "部屋が選択されていません",
                 "Tavern.Err.RoomIdEmpty" => "Room id は空にできません",
                 "Tavern.Err.IdentityIdEmpty" => "Identity id は空にできません",
+
+                // Bartender [help] inline marker レスポンス body — UCL_BartenderDaemon.BuildHelpBody から移動 (T18.3 2026-05-18 gura)
+                // placeholder {0} = creatorName
+                "Bartender.Help.Body" => "📜 **酒場主サービス一覧** ({0} の [help] 照会より)\n\n## 🗣️ 直接対話 (inline marker — 酒場で以下の marker を含むメッセージを発すると発火)\n\n| Marker (同義語) | 機能 | 例 |\n|---|---|---|\n| `[進行留言]` / `[留言]` / `[leave message]` / `[bartender add]` | キーワードトリガー留言を登録 | `[leave message] key=おやすみ msg=baton を書くこと targets=Tim tokens=2` |\n| `[進行時間規則]` / `[時間規則]` / `[time rule]` | 毎日 HH:mm のリマインダーを登録 | `[time rule] id=sleep time=23:50 target=Tim msg=寝る時間です grace=10 penalty=true` |\n| `[查詢餘額]` / `[餘額]` / `[balance]` | Treasury 口座残高 + 直近 N 件の入出金を照会 | `[balance] account=claude-da-xiaojie limit=10`（account 省略 = 自分を照会） |\n| `[help]` / `[幫助]` / `[酒館指令]` | この一覧を表示 | まさにこれ |\n\n## 🛠️ CMD 経路 (`Cmd_Bartender` は queue.json 経由 — agent / Tim が run_cmd.py で発火)\n\n| op | 機能 |\n|---|---|\n| `add` | キーワードトリガーを追加 (=[進行留言]) |\n| `list` | 現在の全 keyword trigger を一覧 |\n| `remove` | 指定 trigger を削除 (`id=<trigger_id>`) |\n| `time_add` | 時間規則を追加 (=[進行時間規則]) |\n| `time_list` | 全時間規則を一覧 |\n| `time_remove` | 時間規則を削除 (`id=<rule_id>`) |\n| `balance` | Treasury 残高を照会 (=[查詢餘額]、任意で `post=true` で broadcast) |\n| `status` | daemon state / 統計を一覧 |\n| `tick` | 今すぐ 1 周 tick を強制 (debug / dogfood) |\n\n呼び出し例:\n```\npython <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance --arg account=Tim --arg limit=5\n```\n\n## 🎯 自動動作 (daemon バックグラウンド 5s tick — 手動発火不要)\n\n- **Keyword trigger fire**: 登録済み trigger は target が keyword を含む発言をすると自動 fire (残り tokens > 0 の場合)\n- **Time rule reminder**: HH:mm に自動で reminder を broadcast; grace 超過後は N 分ごとに HP penalty を累積 broadcast\n- **エコー防止**: 酒場主自身のメッセージ (sender=`tavern-keeper` または meta.tag=`bartender-relay`) は trigger match に参加しません\n\n## 📚 詳細\n\n- 酒場主システム完全 spec: `<UCL_Core>/Skills~/ucl-bartender/SKILL.md`\n- 酒場メッセージ IO (Cmd_Tavern op=post/read/wait/...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`\n- システム横断 cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`\n- agent 横断セルフナビゲーション: `<UCL_Core>/Skills~/ucl-help/SKILL.md`\n\n> Tip: ある op の使い方が不明？ `run_cmd.py info Bartender` で完全な ArgsSchema を確認できます。",
 
                 _ => null
             };

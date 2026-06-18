@@ -283,11 +283,70 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return list;
         }
 
+        // ===========================================================
+        // 區塊職責：只讀「尾端 n 筆」訊息 — 大房間 IMGUI page 卡頓主修
+        // 物理意義：
+        //   舊版 Tail = LoadAllMessages（read+parse 全部檔）再 GetRange 取尾，O(N) IO+parse。
+        //   ChatTavernPage AutoPoll 每 2s 呼叫一次 → 房間幾千則時每 2 秒幾千次 File.ReadAllText
+        //   + ParseMessage 在主執行緒 → 嚴重卡頓。
+        //   本版只「列舉路徑」(Directory.GetFiles 不讀內容，比 read+parse 便宜 ~100×) + 排序，
+        //   然後只 read+parse 尾端 n 筆。讀檔次數從 N 降到 min(N, n)。
+        // 數值影響：
+        //   - seq 用「檔案序位 (i+1, 1-based)」= 該訊息在完整時間序中的位置；
+        //     無壞檔時與 LoadAllMessages 的 derive seq 完全一致（壞檔極罕見，且本就是錯誤路徑）。
+        //   - 回傳筆數 == min(N, n)，保留 page「Count >= limit → 顯示載入更早」按鈕邏輯。
+        // 排序優化：原 LoadAllMessages 的 comparison delegate 每次比較都 new 2 個 substring
+        //   (O(N log N) alloc)；本版預算 root-relative key 一次 → Array.Sort(keys, files) 鍵排序。
+        // ===========================================================
         public static List<UCL_ChatMessage> Tail(string roomId, int n)
         {
-            var all = LoadAllMessages(roomId);
-            if (all.Count <= n) return all;
-            return all.GetRange(all.Count - n, n);
+            var list = new List<UCL_ChatMessage>();
+            if (n <= 0) return list;
+            string root = GetMessagesRoot(roomId);
+            if (!Directory.Exists(root)) return list;
+
+            // 只列舉路徑，不讀內容
+            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+            if (files.Length == 0) return list;
+
+            // 預算 sort key（root-relative path，含 date dir 前綴 → 跨日排序正確）一次
+            var keys = new string[files.Length];
+            for (int i = 0; i < files.Length; i++)
+                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
+            Array.Sort(keys, files, StringComparer.Ordinal);
+
+            int total = files.Length;
+            int start = total > n ? total - n : 0;   // 只讀尾端 n 筆（不足 n 則全讀）
+
+            int rejected = 0;
+            for (int i = start; i < total; i++)
+            {
+                try
+                {
+                    string json = File.ReadAllText(files[i], Encoding.UTF8);
+                    var m = UCL_ChatTavernIO.ParseMessage(json);
+                    if (m != null)
+                    {
+                        m.seq = i + 1;   // 絕對序位（1-based），與 LoadAllMessages enumerate 順序一致
+                        list.Add(m);
+                    }
+                    else
+                    {
+                        rejected++;
+                        Debug.LogError($"[Tavern T38] Tail ParseMessage returned null for {Path.GetFileName(files[i])}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    rejected++;
+                    Debug.LogError($"[Tavern T38] Tail skipping malformed message file {Path.GetFileName(files[i])}: {ex.Message}");
+                }
+            }
+            if (rejected > 0)
+            {
+                Debug.LogError($"[Tavern T38] Tail({roomId}, {n}): {rejected} files rejected in tail slice");
+            }
+            return list;
         }
 
         // ===========================================================

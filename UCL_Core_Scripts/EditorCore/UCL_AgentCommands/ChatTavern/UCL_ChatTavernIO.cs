@@ -1097,11 +1097,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return list;
         }
 
+        // T38 + 大房間卡頓修：委派 PerMsgFile.Tail（只列舉路徑 + 讀尾端 n 筆，不再 read+parse 全部）。
+        // 物理意義：ChatTavernPage AutoPoll 每 2s 呼叫 Tail；舊版 LoadAllMessages 全讀在大房間 = O(N) IO 卡頓。
         public static List<UCL_ChatMessage> Tail(string roomId, int n)
         {
-            var all = LoadAllMessages(roomId);
-            if (all.Count <= n) return all;
-            return all.GetRange(all.Count - n, n);
+            return UCL_ChatTavernIO_PerMsgFile.Tail(roomId, n);
         }
 
         public static List<UCL_ChatMessage> Range(string roomId, int from, int to)

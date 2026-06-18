@@ -134,9 +134,11 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Desc" => "Edit translation strings, CurLangKey, PlayerPrefs key for each language. To just switch language, use the bar above — no need to enter this page.",
                 "Welcome.Localize.Btn" => "Open Localize Editor",
                 "Welcome.Lang.Label" => "🌐 Language:",
+
                 "Welcome.CommandTable.Label" => "📋 Commands:",
                 "Welcome.CommandTable.Desc" => "SOP reference guide matching natural language triggers to their corresponding workflows.",
                 "Welcome.CommandTable.Btn" => "📄 Preview Command Table",
+
                 "Welcome.Lang.NoneAvailable" => "(No UCL_LanguageCodeAsset found — please create language Asset first)",
                 "Welcome.Lang.OpenEditor" => "Advanced…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor cross-process)",
@@ -146,6 +148,7 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — consistent IMGUI page stack with searchable dropdowns, HelpURL routing, TopBar customization.",
                 "Welcome.Editor.Btn" => "PlayerPrefs Editor (sample)",
                 "Welcome.DocBtn" => "📖 Docs",
+
                 "Welcome.DocsTitle" => "📚 Documentation index",
                 "Welcome.Docs.Index" => "UCL_Core docs index",
                 "Welcome.Docs.Architecture" => "Agent Command Architecture",
@@ -193,6 +196,7 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.AckToggle" => " I understand the Skill mechanism (don't auto-open this page on next Welcome)",
                 "AgentSkill.AckVersionLabel" => "AcknowledgedVersion: {0}",
                 "AgentSkill.NotSet" => "(unset)",
+
 
                 "Welcome.AutoOpenToggle" => " Don't auto-open this page again (still available via UCL → Welcome menu)",
                 "Welcome.ResetButton" => "Reset first-open (will pop once on next domain reload)",
@@ -325,6 +329,7 @@ namespace UCL.Core.LocalizeLib
                     "• \"Logout with Token (recommended)\" — auto-fetch the matching token from the lock; works under enforce ON.",
                 "LoginStatus.Btn.LogoutNoToken" => "🚪 Logout w/o Token",
                 "LoginStatus.Btn.LogoutWithToken" => "🌙 Logout w/ Token (Recommended)",
+                // T07 (2026-05-15 apex-two) — Token Enforce backend switch
                 "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce (Backend Switch)</b>",
                 "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON (token required)",
                 "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF (default, no check)",
@@ -594,7 +599,8 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Err.IdentityIdEmpty" => "Identity id cannot be empty",
 
                 // Bartender [help] inline marker response body — moved from UCL_BartenderDaemon.BuildHelpBody (T18.3 2026-05-18 gura)
-                // placeholder {0} = creatorName
+                // Physical reason: routed via UCL_CodeLocalize to dodge Mono preprocessor bug with ## chars in verbatim strings; placeholder {0} = creatorName
+                // Design tradeoff: UCL_CodeLocalize has no #if UNITY_EDITOR wrapper → preprocessor skip-scan doesn't trigger, ## is safe; static switch → daemon [InitializeOnLoad] usable in early init
                 "Bartender.Help.Body" => "📜 **Bartender Service Menu** (requested by {0} via [help])\n\n## 🗣️ Inline Markers (post in tavern with any of these to trigger)\n\n| Marker (synonyms) | Function | Example |\n|---|---|---|\n| `[進行留言]` / `[留言]` / `[leave message]` / `[bartender add]` | Register keyword trigger | `[leave message] key=goodnight msg=remember letter targets=Tim tokens=2` |\n| `[進行時間規則]` / `[時間規則]` / `[time rule]` | Register daily HH:mm reminder | `[time rule] id=sleep time=23:50 target=Tim msg=time to sleep grace=10 penalty=true` |\n| `[查詢餘額]` / `[餘額]` / `[balance]` | Query Treasury balance + recent audit | `[balance] account=claude-da-xiaojie limit=10` (omit account = self) |\n| `[help]` / `[幫助]` / `[酒館指令]` | Show this menu | This very message |\n\n## 🛠️ CMD Path (`Cmd_Bartender` via queue.json — agent / Tim run run_cmd.py)\n\n| op | Function |\n|---|---|\n| `add` | Add keyword trigger (= [leave message]) |\n| `list` | List all keyword triggers |\n| `remove` | Remove trigger by `id=<trigger_id>` |\n| `time_add` | Add time rule (= [time rule]) |\n| `time_list` | List all time rules |\n| `time_remove` | Remove time rule by `id=<rule_id>` |\n| `balance` | Query Treasury balance (= [balance], optional `post=true` to broadcast) |\n| `status` | Show daemon state / stats |\n| `tick` | Force one tick now (debug / dogfood) |\n\nCall example:\n```\npython <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender --arg op=balance --arg account=Tim --arg limit=5\n```\n\n## 🎯 Automatic Behavior (daemon 5s tick — no manual trigger needed)\n\n- **Keyword trigger fire**: Registered triggers auto-fire when target speaks containing keyword (if remaining tokens > 0)\n- **Time rule reminder**: At HH:mm auto-broadcast reminder; past grace period accumulates HP penalty\n- **Echo prevention**: Bartender's own messages (sender=`tavern-keeper` or meta.tag=`bartender-relay`) don't participate in trigger match\n\n## 📚 Deep Dive\n\n- Bartender system full spec: `<UCL_Core>/Skills~/ucl-bartender/SKILL.md`\n- Tavern message IO (Cmd_Tavern op=post/read/wait/...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`\n- Cross-system cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`\n- Cross-agent self-navigation: `<UCL_Core>/Skills~/ucl-help/SKILL.md`\n\n> Tip: Not sure how to use an op? Run `run_cmd.py info Bartender` for full ArgsSchema.",
 
                 _ => iKey

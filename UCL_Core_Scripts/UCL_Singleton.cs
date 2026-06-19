@@ -14,12 +14,12 @@ namespace UCL.Core {
         // 物理意義：當編輯器停用了 Domain Reload 以加速 PlayMode 切換時，靜態變數 m_Destroyed 會殘留在上一輪運算狀態 (true)，
         //          導致新一輪 PlayMode 無法重新生成單例。此處透過 SubsystemRegistration 勾點確保每次進入 PlayMode 時重置其狀態。
         // 數值影響：重置 m_Instance 為 null，重置 m_Destroyed 為 false。
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetOnPlayMode()
-        {
-            m_Instance = null;
-            m_Destroyed = false;
-        }
+        //[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        //private static void ResetOnPlayMode()
+        //{
+        //    m_Instance = null;
+        //    m_Destroyed = false;
+        //}
 
         /// <summary>
         /// return instance, and auto create one if instance not exsit!!

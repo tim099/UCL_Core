@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: Assets/UCL/UCL_Core\Docs~
-# Entries: 199
+# Entries: 225
 Docs~/en/API/UCL_AgentCommand/Cmd_DebugLog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
@@ -162,11 +162,35 @@ Docs~/zh-Hant/API/UCL_GUILayout/UCL_GUILayout_Overview.md
 Docs~/zh-Hant/API/UCL_GUIStyle/UCL_GUIStyle_Overview.md
 Docs~/zh-Hant/Architecture/Polymorphism_In_UCL.md
 Docs~/zh-Hant/CommandTable.md
+Docs~/zh-Hant/FreeTime/Activities/_README.md
+Docs~/zh-Hant/FreeTime/Activities/book-writing.md
+Docs~/zh-Hant/FreeTime/Activities/canvas-draw.md
+Docs~/zh-Hant/FreeTime/Activities/chess.md
+Docs~/zh-Hant/FreeTime/Activities/constitution.md
+Docs~/zh-Hant/FreeTime/Activities/creative-post.md
+Docs~/zh-Hant/FreeTime/Activities/cross-agent-chat.md
+Docs~/zh-Hant/FreeTime/Activities/doc-reflection.md
+Docs~/zh-Hant/FreeTime/Activities/game-qa.md
+Docs~/zh-Hant/FreeTime/Activities/glossary.md
+Docs~/zh-Hant/FreeTime/Activities/letter-to-self.md
+Docs~/zh-Hant/FreeTime/Activities/note-lesson.md
+Docs~/zh-Hant/FreeTime/Activities/persona-ding.md
+Docs~/zh-Hant/FreeTime/Activities/read-letters.md
+Docs~/zh-Hant/FreeTime/Activities/reading.md
+Docs~/zh-Hant/FreeTime/Activities/solo-brainstorm.md
+Docs~/zh-Hant/FreeTime/Activities/stream-watch.md
+Docs~/zh-Hant/FreeTime/Activities/tavern-chat.md
 Docs~/zh-Hant/Mechanics/Affinity_System.md
+Docs~/zh-Hant/Mechanics/Chess_RuleBook.md
 Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md
+Docs~/zh-Hant/Mechanics/FreeTime_System.md
 Docs~/zh-Hant/Mechanics/Remote_Work_Session.md
 Docs~/zh-Hant/Mechanics/Waiter_Session_System.md
-Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md
+Docs~/zh-Hant/Plan/Plan_AgentCommands_Path_Override.md
+Docs~/zh-Hant/Plan/Plan_ReadHierarchy_Enhancements_And_Prefab.md
+Docs~/zh-Hant/Plan/Plan_Reading_Library_Tip.md
+Docs~/zh-Hant/Plan/Plan_SkillInstall_Marker_Poison_Fix.md
+Docs~/zh-Hant/Plan/Plan_SkillInstall_Marker_Poison_Fix_Evidence.md
 Docs~/zh-Hant/Plan/Plan_UCL_Secret_Manager.md
 Docs~/zh-Hant/Plan/SerializeReference_Symmetry_Plan.md
 Docs~/zh-Hant/Tools/Python_Tools_Index.md
@@ -186,6 +210,7 @@ Docs~/zh-Hant/UCL_ModuleService/UCL_ModuleSystem_Architecture.md
 Docs~/zh-Hant/UCL_ModuleService/UCL_Module_API.md
 Docs~/zh-Hant/Workflows/Add_Discord_User_Mention_Workflow.md
 Docs~/zh-Hant/Workflows/Antigravity_Worktree_Fix_Workflow.md
+Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md
 Docs~/zh-Hant/Workflows/BuildPlayerCheck_FixLoop_Workflow.md
 Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md
 Docs~/zh-Hant/Workflows/Commit_Workflow.md
@@ -199,6 +224,7 @@ Docs~/zh-Hant/Workflows/HelpURL_Workflow.md
 Docs~/zh-Hant/Workflows/Hook_Setup_Workflow.md
 Docs~/zh-Hant/Workflows/Quest_Workflow.md
 Docs~/zh-Hant/Workflows/Secret_Manager_Workflow.md
+Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md
 Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md
 Docs~/zh-Hant/Workflows/TranslateDocs_Workflow.md
 Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md

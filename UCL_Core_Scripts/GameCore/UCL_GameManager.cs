@@ -16,7 +16,7 @@ namespace UCL.Core.Game
         //public static UCL_GameManager Instance { get; protected set; }
         public static bool IsExitGame { get
             {
-                if (m_Destroyed) return true;
+                if (s_Destroyed) return true;
                 if (GetInstance() == null) return false;
                 return GetInstance().m_IsExitGame;
             } 

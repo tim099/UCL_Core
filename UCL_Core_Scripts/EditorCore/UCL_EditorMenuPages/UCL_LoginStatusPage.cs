@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -825,12 +824,14 @@ namespace UCL.Core.EditorLib.Page
                 }
                 finally
                 {
+#if UNITY_EDITOR
                     // 回主線程: 背景緒不可碰 Unity GUI, 且 LoadData 須在 awakening.py 完成 (lock 已刪) 後才讀
                     UnityEditor.EditorApplication.delayCall += () =>
                     {
                         m_AwakeningRunning = false;
                         LoadData();
                     };
+#endif
                 }
             });
         }

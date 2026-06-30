@@ -194,10 +194,45 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：讀整個房間的 messages — walk dir + ts sort + derive seq
+        // 區塊職責：LoadAllMessages parse cache（path-keyed, immutable-file 前提）
+        // 物理意義：per-message 檔一旦寫出永不改寫（WriteMessageFile 只 create-or-throw, 從不 overwrite）
+        //          → 舊檔 parse 結果可永久 cache, 按 full path 當 key 絕不失效.
+        //          每次 LoadAllMessages 仍重跑 Directory.GetFiles 列「路徑」（便宜, 不讀內容）,
+        //          只對沒見過的新檔 read+parse; 消失的檔（刪除 / 歸檔）從 cache 剔除.
+        //          → freshness 不犧牲: 跨 process（Python）新寫的檔照樣被列舉命中.
+        // 數值影響：LoadAllMessages 由 O(全部檔 read+parse) 降到 O(新增檔). 無變動時 0 次讀檔.
+        //          直接救 BartenderDaemon 每 5s 全讀 8000+ 檔卡頓 + DeriveSeq 每寫一筆全讀.
+        // 設計取捨：
+        //   - 只快取 parse 結果（immutable）, 不快取「檔案清單」（每 call 重列 → 跨 process fresh）.
+        //   - 壞檔記 badPaths, 不重複 read+parse（也不重複洗 error log）.
+        //   - 回傳 List 每次 new, 但 message 物件共享 ref; seq 每 call 依當前檔序重算（deterministic）.
+        //     caller 約定 read-only（既有 caller 皆是）— 勿原地改 message 物件, 否則污染 cache.
+        //   - 全 caller 皆 Editor main thread（daemon update / page poll / cmd）; lock 純防禦.
+        // ===========================================================
+        sealed class RoomMsgCache
+        {
+            public readonly Dictionary<string, UCL_ChatMessage> byPath = new Dictionary<string, UCL_ChatMessage>();
+            public readonly HashSet<string> badPaths = new HashSet<string>();
+        }
+        static readonly Dictionary<string, RoomMsgCache> s_RoomCache = new Dictionary<string, RoomMsgCache>();
+        static readonly object s_CacheLock = new object();
+
+        /// <summary>清空指定房間（roomId 為 null/空 → 全部）的 message parse cache.
+        /// 手動修檔 / 測試 / 確知檔被原地改寫後才需要; 正常 append 不必呼叫（自動列舉新檔）.</summary>
+        public static void InvalidateMessageCache(string roomId = null)
+        {
+            lock (s_CacheLock)
+            {
+                if (string.IsNullOrEmpty(roomId)) s_RoomCache.Clear();
+                else s_RoomCache.Remove(roomId);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：讀整個房間的 messages — walk dir + ts sort + derive seq（path-keyed cache）
         // 物理意義：取代既有 LoadAllMessages
-        // 數值影響：seq 動態算（enumerate 1..N）；merge 後新訊息插中間 seq 會 shift
-        // 邊界：messages/ 不存在 → 回空 list；壞 .json silent skip
+        // 數值影響：seq 動態算（enumerate 1..N, 只算成功 parse 的）；merge 後新訊息插中間 seq 會 shift
+        // 邊界：messages/ 不存在 → 回空 list；壞 .json skip（記 badPaths 不重讀）
         // ===========================================================
         public static List<UCL_ChatMessage> LoadAllMessages(string roomId)
         {
@@ -205,45 +240,73 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var list = new List<UCL_ChatMessage>();
             if (!Directory.Exists(root)) return list;
 
-            // walk 全部 .json 檔（含 date sub-dirs）
+            // 列「路徑」（便宜, 不讀內容）; 每 call 重列 → 跨 process 新檔照樣看到
             string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
-            // ordinal sort = ts sort（per filename convention）
-            // 先比相對 root 的 path（含 date dir 前綴）才能跨日 sort 正確
-            Array.Sort(files, (a, b) =>
-            {
-                string ra = a.Substring(root.Length).Replace('\\', '/');
-                string rb = b.Substring(root.Length).Replace('\\', '/');
-                return string.CompareOrdinal(ra, rb);
-            });
+            if (files.Length == 0) return list;
 
-            int seq = 0;
-            int rejected = 0;
-            foreach (var f in files)
+            // ordinal sort = ts sort; 先比 root-relative path（含 date dir 前綴）才能跨日正確.
+            // 預算 sort key 一次（避免原版 comparison delegate 每比較 new 2 個 substring 的 O(N log N) alloc）.
+            var keys = new string[files.Length];
+            for (int i = 0; i < files.Length; i++)
+                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
+            Array.Sort(keys, files, StringComparer.Ordinal);
+
+            lock (s_CacheLock)
             {
-                try
+                if (!s_RoomCache.TryGetValue(roomId, out var cache))
                 {
-                    string json = File.ReadAllText(f, Encoding.UTF8);
-                    var m = UCL_ChatTavernIO.ParseMessage(json);
-                    if (m != null)
-                    {
-                        m.seq = ++seq;
-                        list.Add(m);
-                    }
-                    else
-                    {
-                        rejected++;
-                        Debug.LogError($"[Tavern T38] ParseMessage returned null for {Path.GetFileName(f)}");
-                    }
+                    cache = new RoomMsgCache();
+                    s_RoomCache[roomId] = cache;
                 }
-                catch (Exception ex)
+
+                // 剔除已消失的檔（刪除 / 歸檔）— 僅 cache 總數超過當前檔數時才掃, 純記憶體衛生.
+                // (輸出正確性不依賴此步: 下方只從當前 files 建 list, stale entry 永不被回傳.)
+                if (cache.byPath.Count + cache.badPaths.Count > files.Length)
                 {
-                    rejected++;
-                    Debug.LogError($"[Tavern T38] Skipping malformed message file {Path.GetFileName(f)}: {ex.Message}");
+                    var present = new HashSet<string>(files);
+                    foreach (var p in cache.byPath.Keys.Where(p => !present.Contains(p)).ToList())
+                        cache.byPath.Remove(p);
+                    cache.badPaths.RemoveWhere(p => !present.Contains(p));
                 }
-            }
-            if (rejected > 0)
-            {
-                Debug.LogError($"[Tavern T38] LoadAllMessages({roomId}): {rejected} files rejected out of {files.Length} total");
+
+                int seq = 0;
+                int rejected = 0;
+                foreach (var f in files)
+                {
+                    if (cache.badPaths.Contains(f)) continue;   // 已知壞檔, 不重讀不重 log
+                    if (!cache.byPath.TryGetValue(f, out var m))
+                    {
+                        // cache miss → 沒見過的新檔, read+parse 一次後存入
+                        UCL_ChatMessage parsed;
+                        try
+                        {
+                            string json = File.ReadAllText(f, Encoding.UTF8);
+                            parsed = UCL_ChatTavernIO.ParseMessage(json);
+                        }
+                        catch (Exception ex)
+                        {
+                            cache.badPaths.Add(f);
+                            rejected++;
+                            Debug.LogError($"[Tavern T38] Skipping malformed message file {Path.GetFileName(f)}: {ex.Message}");
+                            continue;
+                        }
+                        if (parsed == null)
+                        {
+                            cache.badPaths.Add(f);
+                            rejected++;
+                            Debug.LogError($"[Tavern T38] ParseMessage returned null for {Path.GetFileName(f)}");
+                            continue;
+                        }
+                        cache.byPath[f] = parsed;
+                        m = parsed;
+                    }
+                    m.seq = ++seq;   // seq 每 call 依當前檔序重算（只算成功 parse 的, 與舊行為一致）
+                    list.Add(m);
+                }
+                if (rejected > 0)
+                {
+                    Debug.LogError($"[Tavern T38] LoadAllMessages({roomId}): {rejected} new files rejected this call; files={files.Length}, cached={cache.byPath.Count}, bad={cache.badPaths.Count}");
+                }
             }
             return list;
         }
@@ -345,6 +408,94 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (rejected > 0)
             {
                 Debug.LogError($"[Tavern T38] Tail({roomId}, {n}): {rejected} files rejected in tail slice");
+            }
+            return list;
+        }
+
+        // ===========================================================
+        // 區塊職責：只「數」房間訊息檔數 — 純列路徑, 完全不 read+parse
+        // 物理意義：給只需 count 不需內容的 caller（e.g. daemon 游標初始化）用,
+        //          避免為了拿一個數字 cold-parse 整房 8000+ 檔.
+        // 數值影響：O(列舉) — 不讀任何檔內容, 不碰 cache.
+        // 邊界：messages/ 不存在 → 0. 數的是「檔數」(含潛在壞檔), 與 LoadAllMessages
+        //       回傳的「成功 parse 數」在無壞檔時相等(壞檔極罕見).
+        // ===========================================================
+        public static int CountMessageFiles(string roomId)
+        {
+            string root = GetMessagesRoot(roomId);
+            if (!Directory.Exists(root)) return 0;
+            return Directory.GetFiles(root, "*.json", SearchOption.AllDirectories).Length;
+        }
+
+        // ===========================================================
+        // 區塊職責：只讀「檔序位 > afterSeq 的訊息」— 增量游標讀取（cache-aware）
+        // 物理意義：daemon CheckKeywordTriggers / CheckWorkSessionStart 只關心游標後的新訊息,
+        //          舊訊息讀了也丟. 本 helper 只 read+parse 尾段 files[afterSeq..], 永不 cold-parse 歷史.
+        //          → 即使 domain reload 後 cache 冷, 第一 tick 也只 parse「自游標起的新檔」(通常 0~少數).
+        // 數值影響：seq = 檔序位 (i+1, 1-based), 與 Tail 一致; 共用 LoadAllMessages 同一 path-keyed cache.
+        //   - 與舊 LoadAllMessages 的「成功-parse 序位」在無壞檔時完全一致(壞檔極罕見且本就是錯誤路徑).
+        //   - caller 約定 read-only(勿原地改 message 物件, 否則污染 cache).
+        // 邊界：afterSeq < 0 視為 0(全讀); afterSeq >= 檔數 → 回空(無新訊息).
+        // ===========================================================
+        public static List<UCL_ChatMessage> LoadMessagesAfterSeq(string roomId, int afterSeq)
+        {
+            var list = new List<UCL_ChatMessage>();
+            string root = GetMessagesRoot(roomId);
+            if (!Directory.Exists(root)) return list;
+
+            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+            if (files.Length == 0) return list;
+
+            int start = afterSeq < 0 ? 0 : afterSeq;
+            if (start >= files.Length) return list;   // 無新訊息 — 連 sort 都省
+
+            // 排序(只算 key 一次), 取 files[start..] 才 read+parse
+            var keys = new string[files.Length];
+            for (int i = 0; i < files.Length; i++)
+                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
+            Array.Sort(keys, files, StringComparer.Ordinal);
+
+            lock (s_CacheLock)
+            {
+                if (!s_RoomCache.TryGetValue(roomId, out var cache))
+                {
+                    cache = new RoomMsgCache();
+                    s_RoomCache[roomId] = cache;
+                }
+                int rejected = 0;
+                for (int i = start; i < files.Length; i++)
+                {
+                    string f = files[i];
+                    if (cache.badPaths.Contains(f)) continue;
+                    if (!cache.byPath.TryGetValue(f, out var m))
+                    {
+                        UCL_ChatMessage parsed;
+                        try
+                        {
+                            parsed = UCL_ChatTavernIO.ParseMessage(File.ReadAllText(f, Encoding.UTF8));
+                        }
+                        catch (Exception ex)
+                        {
+                            cache.badPaths.Add(f);
+                            rejected++;
+                            Debug.LogError($"[Tavern T38] LoadMessagesAfterSeq skip malformed {Path.GetFileName(f)}: {ex.Message}");
+                            continue;
+                        }
+                        if (parsed == null)
+                        {
+                            cache.badPaths.Add(f);
+                            rejected++;
+                            Debug.LogError($"[Tavern T38] LoadMessagesAfterSeq ParseMessage null for {Path.GetFileName(f)}");
+                            continue;
+                        }
+                        cache.byPath[f] = parsed;
+                        m = parsed;
+                    }
+                    m.seq = i + 1;   // 檔序位(1-based), 與 Tail / LoadAllMessages(無壞檔時)一致
+                    list.Add(m);
+                }
+                if (rejected > 0)
+                    Debug.LogError($"[Tavern T38] LoadMessagesAfterSeq({roomId}, {afterSeq}): {rejected} files rejected in tail slice");
             }
             return list;
         }

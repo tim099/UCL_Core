@@ -146,19 +146,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void CheckWorkSessionStart()
         {
-            var msgs = UCL_ChatTavernIO.LoadAllMessages("tavern");
-            if (msgs == null) return;
-            int count = msgs.Count;
+            // 只「數」檔數做游標 — 不 cold-parse 整房 (perf cache follow-up #1, 2026-06-30)
+            int count = UCL_ChatTavernIO.CountMessages("tavern");
             // (re)load 時不重播歷史 — 第一次只記 cursor (防 recompile 後重開舊 session)
             if (s_WorkSessionStartCursor < 0 || s_WorkSessionStartCursor > count)
             {
                 s_WorkSessionStartCursor = count;
                 return;
             }
+            if (s_WorkSessionStartCursor == count) return;   // 無新訊息, 早退
 
-            for (int i = s_WorkSessionStartCursor; i < count; i++)
+            // 只讀游標後的新訊息 (cache-aware, 永不 cold-parse 歷史)
+            foreach (var msg in UCL_ChatTavernIO.LoadMessagesAfterSeq("tavern", s_WorkSessionStartCursor))
             {
-                var msg = msgs[i];
                 if (msg == null) continue;
                 string sid = msg.sender_id ?? "";
                 // 只認 caretaker (Tim / Zeta) — 防 agent 自 grant 上班
@@ -383,19 +383,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 if (room == null) continue;
 
                 int lastSeq = UCL_BartenderIO.GetLastSeq(state, roomId);
-                var allMsgs = UCL_ChatTavernIO.LoadAllMessages(roomId);
-                if (allMsgs == null || allMsgs.Count == 0) continue;
+                // 只讀游標後的新訊息 (perf cache follow-up #1) — 不再全讀整房再跳過舊的.
+                // msg.seq = 檔序位 (1-based), helper 已保證只回 > lastSeq 者.
+                var newMsgs = UCL_ChatTavernIO.LoadMessagesAfterSeq(roomId, lastSeq);
+                if (newMsgs == null || newMsgs.Count == 0) continue;
 
                 int maxSeq = lastSeq;
-                for (int seq = 0; seq < allMsgs.Count; seq++)
+                foreach (var msg in newMsgs)
                 {
-                    var msg = allMsgs[seq];
-                    // seq 是 0-based index, 對齊 UCL_ChatTavernIO derive 順序
-                    int effectiveSeq = seq + 1;  // 1-based for display
-                    if (effectiveSeq <= lastSeq) continue;
-                    if (effectiveSeq > maxSeq) maxSeq = effectiveSeq;
-
                     if (msg == null) continue;
+                    int effectiveSeq = msg.seq;
+                    if (effectiveSeq > maxSeq) maxSeq = effectiveSeq;
 
                     // 防回音 — bartender 自家訊息 (sender / meta tag) 不參與 match
                     if (IsBartenderOwnMessage(msg)) continue;

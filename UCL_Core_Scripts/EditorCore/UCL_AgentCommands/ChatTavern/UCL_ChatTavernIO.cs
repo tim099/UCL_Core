@@ -1104,6 +1104,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return UCL_ChatTavernIO_PerMsgFile.Tail(roomId, n);
         }
 
+        /// <summary>只「數」房間訊息檔數 — 純列路徑不 read+parse（委派 PerMsgFile.CountMessageFiles）。
+        /// 給只需 count 的 caller（daemon 游標初始化）避免 cold-parse 整房。</summary>
+        public static int CountMessages(string roomId)
+        {
+            return UCL_ChatTavernIO_PerMsgFile.CountMessageFiles(roomId);
+        }
+
+        /// <summary>只讀「檔序位 &gt; afterSeq 的新訊息」— 增量游標讀取（委派 PerMsgFile.LoadMessagesAfterSeq）。
+        /// 永不 cold-parse 歷史；共用 LoadAllMessages 同一 cache。seq = 檔序位（與 Tail 一致）。</summary>
+        public static List<UCL_ChatMessage> LoadMessagesAfterSeq(string roomId, int afterSeq)
+        {
+            return UCL_ChatTavernIO_PerMsgFile.LoadMessagesAfterSeq(roomId, afterSeq);
+        }
+
         public static List<UCL_ChatMessage> Range(string roomId, int from, int to)
         {
             var all = LoadAllMessages(roomId);

@@ -328,7 +328,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             // 物理意義：時間戳精確到毫秒 + GetHashCode 後綴，避免同一秒內連續 Record 撞名。
             // 數值影響：純字串組合。
             string ts = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff");
-            string suffix = Math.Abs((Guid.NewGuid().GetHashCode())).ToString("x").Substring(0, Math.Min(6, 8));
+            // 修復（2026-07-03）：原 Substring(0, Math.Min(6, 8)) 恆取 6 字，但 ToString("x") 無前導零、
+            //   長度 1~8 不定，當 hash 值 < 0x100000（hex 少於 6 位）時越界拋 ArgumentOutOfRangeException，
+            //   約 5% 指令因 Record 先於 handler 執行而整筆靜默失敗。改成取實際長度與 6 的較小值。
+            string hex = Math.Abs(Guid.NewGuid().GetHashCode()).ToString("x");
+            string suffix = hex.Substring(0, Math.Min(6, hex.Length));
             return $"{ts}-{(string.IsNullOrEmpty(type) ? "cmd" : type.ToLowerInvariant())}-{suffix}";
         }
 

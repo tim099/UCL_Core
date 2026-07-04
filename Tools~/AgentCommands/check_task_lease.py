@@ -55,14 +55,19 @@ GIT_AGENT_MAP = {
 # ===========================================================
 
 def get_repo_root() -> Optional[pathlib.Path]:
-    """git rev-parse --show-toplevel"""
+    """回 host repo root（含 .git 那層）。
+
+    T-PATH-RESOLVE T05：原本用 `git rev-parse --show-toplevel`，該指令**吃 caller cwd**
+    （沒帶 cwd 參數），在 submodule 目錄內跑會回 submodule 根 → 錯根（cwd 路徑詐欺家族）。
+    改委派 canonical _lib.ucl_paths.repo_root()：錨 __file__ 起 .git-資料夾 walk（跳 gitlink），
+    與 cwd 解耦、與 C# UCL_RepoPath 對齊。lazy import + 例外回 None，維持 hook 的優雅降級。
+    """
     try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True
-        )
-        return pathlib.Path(out.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        # 本檔在 UCL_Core/Tools~/AgentCommands/，_lib 為 sibling namespace package。
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _lib.ucl_paths import repo_root
+        return repo_root()
+    except Exception:
         return None
 
 

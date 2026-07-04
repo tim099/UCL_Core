@@ -29,13 +29,29 @@ from functools import lru_cache
 from pathlib import Path
 
 # ─────────────────────────────────────────────────────────────────────────
-# 區塊職責：本檔自身在 UCL_Core 內的固定位置錨。
-# 物理意義：本檔絕對路徑為 <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py。
-#          parents 索引：[0]=_lib [1]=AgentCommands [2]=Tools~ [3]=UCL_Core。
-# 數值影響：模組載入時算一次，之後所有解析都以此為 walk 起點（與呼叫端 cwd 完全解耦）。
+# 區塊職責：本檔自身位置錨 + UCL_Core 自我定位。
+# 物理意義：canonical 檔在 <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py。
+#          但本檔會被「位元組原樣」同步鏡像到 host 專案的 <repo>/AgentCommands/_lib/ucl_paths.py
+#          (T02, install_skills.py 模式)。在鏡像位置 UCL_Core 不是本檔的 ancestor（它在
+#          CardGame/Assets/UCL/… 這條 sibling 子樹、且掛載深度跨專案不定），故不能用固定
+#          parents[N] 反推 —— 那在鏡像位置會指到 repo 上一層，回垃圾（外觀 OK ≠ 真的 OK）。
+# 數值影響：改採「往上找名為 UCL_Core 的 ancestor」自我定位 —— depth-tolerant（不綁死層數），
+#          canonical 位置一定找得到；鏡像位置找不到 → 回 None，由 ucl_core_dir() 誠實 raise。
+#          repo_root() / data_root() 走 .git walk，兩個位置都正確，不受本區塊影響。
 # ─────────────────────────────────────────────────────────────────────────
 _THIS_FILE = Path(__file__).resolve()          # 本檔絕對路徑（已解 symlink）
-_UCL_CORE_DIR = _THIS_FILE.parents[3]          # 往上第 4 層 = UCL_Core 根
+
+
+def _find_ucl_core_dir(start: Path) -> Path | None:
+    # 從 start 起（含自身）往上找第一個「目錄名為 UCL_Core」的 ancestor。
+    # UCL_Core 是 submodule 的固定名稱（非 host 專案特徵），故此自我定位跨專案安全。
+    for anc in (start, *start.parents):        # 含起點本身，再逐層往上
+        if anc.name == "UCL_Core":             # 命中名為 UCL_Core 的那層
+            return anc
+    return None                                 # 鏡像位置 UCL_Core 非 ancestor → 找不到
+
+
+_UCL_CORE_DIR = _find_ucl_core_dir(_THIS_FILE)  # canonical: 找得到；鏡像: None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -89,11 +105,19 @@ def repo_root() -> Path:
 # ─────────────────────────────────────────────────────────────────────────
 # API 2 — ucl_core_dir()
 # 區塊職責：回 UCL_Core submodule 根目錄的絕對路徑。
-# 物理意義：本檔就住在 UCL_Core 內，用 __file__ 反推即得，不需任何 walk / 猜測。
-#          這是「UCL_Core 深度不定但可自我定位」的體現 —— 工具找自己永遠是準的。
-# 數值影響：模組載入時已算好 _UCL_CORE_DIR，本函式僅回傳，零成本。
+# 物理意義：從本檔位置往上找名為 UCL_Core 的 ancestor（depth-tolerant，掛載深度不綁死）。
+#          僅在「UCL_Core 樹內」的 canonical 有意義；在 AgentCommands 鏡像位置 UCL_Core 不是
+#          ancestor（跨專案掛載點不定，無法從 repo_root 反推），故誠實 raise 而非回垃圾路徑。
+# 數值影響：canonical 回正確 UCL_Core 根；鏡像呼叫直接 raise，逼呼叫端改從 UCL_Core 端工具呼叫。
 # ─────────────────────────────────────────────────────────────────────────
 def ucl_core_dir() -> Path:
+    if _UCL_CORE_DIR is None:
+        raise RuntimeError(
+            "ucl_core_dir()/ucl_tool() 只能在 UCL_Core 樹內呼叫。"
+            "此檔為 AgentCommands 端鏡像，無法自我定位 UCL_Core"
+            "（跨專案掛載點不定、UCL_Core 非本檔 ancestor）。"
+            "需要 UCL_Core 路徑時請從 UCL_Core/Tools~ 下的工具呼叫，或改用 repo_root()/data_root()。"
+        )
     return _UCL_CORE_DIR
 
 

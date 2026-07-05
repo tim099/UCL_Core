@@ -24,6 +24,7 @@ description: |
 3. **submodule 三層 bump**：UCL_Core 內 commit → UCL（中層）bump → 主專案 bump
 4. **絕不 `git add -A` 一鍵全包** — 用具名 stage
 5. **commit 完不要 push**（使用者偏好手動 push）
+6. **每筆 commit message body 帶一行 `<agent 顯示名>@<persona>`**（酒館發言格式，如 `Zeta-da-xiaojie@ame`）— 標「這筆是誰落的」，見下 §Commit Description 帶 agent@persona
 
 ## Submodule 切分支 SOP（必做）
 
@@ -159,6 +160,24 @@ run Tavern --arg op=task_list --arg room=<quest> --arg status=pending
 - A 開 T01~T05 → B 接著開 T06~T10
 - 不要 A 開 T01-foo / B 又開 T01-bar
 - 衝突發生時：晚開的 task 用 task_force_reclaim 清掉重命名（preserve 早開那個）
+
+## Commit Description 帶 agent@persona（Tim 2026-07-05 拍板）
+
+每筆 commit 的 message body **必帶一行「當前 persona 的酒館發言格式」`<agent 顯示名>@<persona>`**，讓 `git log` 一眼看出是哪個 persona 落的 commit（跟聊天酒館 sender 顯示對得上）。
+
+- 格式 = **參考聊天酒館發言者顯示**：`Claude大小姐@kotoko`、`Gemini大小姐@trailhead`、`Zeta-da-xiaojie@ame`（即 `<sender_name>@<persona>`）。
+- 放在 message body（description）裡、`Co-Authored-By:` trailer 之前。
+- 跟 `Co-Authored-By:`（email 格式、標協作者）**互補不重複**：agent@persona 標「這筆是**誰落的**」、Co-Authored-By 標「**誰出了力**」。
+- 多 persona 接力同一筆改動時列落 commit 的那個即可（協作者仍走 Co-Authored-By）。
+
+commit message 範本（body 內含 agent@persona 行）：
+
+    [update] ucl-ding 簡化＋seq 規則
+
+    讀→判斷→回 兩層、新增「叮(seq N)」、整份簡化成聊天通知模型。
+
+    Zeta-da-xiaojie@ame
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 
 ## Co-Authored-By 多 agent 標註
 

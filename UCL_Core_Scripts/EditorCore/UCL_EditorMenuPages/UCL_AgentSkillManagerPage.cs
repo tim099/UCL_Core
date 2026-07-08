@@ -165,11 +165,11 @@ namespace UCL.Core.EditorLib.Page
         };
 
         // 不同 target 的安裝目錄（相對 host project root）
-        // Claude → .claude/skills/、Antigravity → .agents/rules/，全域 .ucl_installed marker 都放在該目錄根
+        // Claude → .claude/skills/、Antigravity → .agents/skills/，全域 .ucl_installed marker 都放在該目錄根
         static string TargetMarkerRelDir(AgentTarget t) => t switch
         {
             AgentTarget.Claude => Path.Combine(".claude", "skills"),
-            AgentTarget.Antigravity => Path.Combine(".agents", "rules"),
+            AgentTarget.Antigravity => Path.Combine(".agents", "skills"),
             _ => Path.Combine(".claude", "skills"),
         };
 
@@ -400,7 +400,7 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：對 selected skill names 算 aggregate SHA1，演算法必須跟
         //          install_skills.py 的 compute_source_hash() 一致：
         //            for skill in sorted(names):
-        //              files = SKILL.md only (antigravity) | rglob("*") (claude)
+        //              files = rglob("*")
         //              for (rel-posix-path, file) in sorted by rel:
         //                hasher.update(rel + \0 + sha1(file)hex + \0)
         // 物理意義：跟 Python 同字節序列 → 同最終 hash → Editor 與 CLI 端可一致比對
@@ -422,16 +422,7 @@ namespace UCL.Core.EditorLib.Page
                     string srcDir = Path.Combine(skillsRoot, name);
                     if (!Directory.Exists(srcDir)) continue;
 
-                    List<string> files;
-                    if (target == AgentTarget.Antigravity)
-                    {
-                        string skillMd = Path.Combine(srcDir, "SKILL.md");
-                        files = File.Exists(skillMd) ? new List<string> { skillMd } : new List<string>();
-                    }
-                    else
-                    {
-                        files = Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories).ToList();
-                    }
+                    List<string> files = Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories).ToList();
 
                     // 以 posix-style rel-to-skillsRoot path 排序，跟 Python relative_to(SKILLS_SRC).as_posix() 一致
                     var entries = files

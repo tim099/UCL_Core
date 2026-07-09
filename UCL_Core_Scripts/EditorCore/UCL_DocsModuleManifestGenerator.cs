@@ -129,8 +129,13 @@ namespace UCL.Core.EditorTools
             // 寫入當前模組名稱與前綴 prefix 資訊，以便調試與審計。
             aSB.AppendLine($"# Module: {aDisplayName} (prefix={iModule.Prefix})");
 
-            // 寫入掃描 Docs 的實體本地根路徑，提供開發者明確的檔案來源線索。
-            aSB.AppendLine($"# Source: {aScanRoot}");
+            // 寫入 docs 來源 token（install-path 無關）。
+            // 物理意義：改用 iModule.SourceToken（{Prefix}:{DocsSubfolder}）而非實體 aScanRoot。
+            //          aScanRoot 會隨 UCL_Core 在各專案的掛載位置漂移（Assets/Plugins/... vs Assets/UCL/...），
+            //          而 manifest 檔被 commit 進共享 submodule → 實體路徑會讓同一檔案在不同專案間反覆 diff / 衝突。
+            //          SourceToken 只用模組 Prefix 錨點，跨專案完全一致。
+            // 數值影響：純 audit 註解（reader 跳過所有 '#' 行），不影響 runtime；僅消除跨專案 git churn。
+            aSB.AppendLine($"# Source: {iModule.SourceToken}");
 
             // 寫入掃描到的 .md 文件相對路徑總條目數，便於快速對比驗證。
             aSB.AppendLine($"# Entries: {aRelativePaths.Count}");

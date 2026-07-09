@@ -126,6 +126,11 @@
       "name": "ucl-canvas",
       "summary": "共用像素畫布 (wplace/r/place) — 2048² 全社群畫布, 1 token/繪畫券/自由時間免費像素 = 1 像素, 256 色 8-bit, append-only 事件流 + 自動 canvas_latest.png, 九 op (place/view/voucher/freetime/note/claim...). 工具 canvas.py 在 Tools~/AgentCommands/, state per-project AgentCommands/Canvas/.",
       "optional": false
+    },
+    {
+      "name": "ucl-core-paths",
+      "summary": "跨專案定位/描述 UCL_Core 路徑的通用慣例 — install path 各專案不同, 收攏三端 (C# UCL_EditorPath.CorePath/ToCoreRelative(Url), python __file__-walk parents[2], 文件 ucl_core:/repo: prefix) 已就緒工具 + install-path 無關描述 token (UCL_DocsModule.SourceToken). 禁寫死 install path / 禁把實體路徑寫進共享 submodule.",
+      "optional": false
     }
   ]
 }

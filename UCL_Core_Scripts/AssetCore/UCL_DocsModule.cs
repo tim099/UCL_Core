@@ -65,6 +65,18 @@ namespace UCL.Core
         /// [職責] 顯示用名稱（log 與選單訊息）。可省略，預設為 Prefix。
         /// </summary>
         public string DisplayName;
+
+        /// <summary>
+        /// [職責] 本模組 docs 根的「install-path 無關」來源 token，格式 <c>{Prefix}:{DocsSubfolder}</c>。
+        /// [物理意義] 取代「實體掃描路徑」作為 manifest header 的來源標註。不同專案把模組掛在不同位置時，
+        ///           實體路徑（Assets/Plugins/UCL_Core/Docs~ vs Assets/UCL/UCL_Core/Docs~）會漂移；
+        ///           本 token 只用模組自身的 Prefix 錨點 + 相對子資料夾，故跨專案完全一致 → 寫進共享 submodule 不再造成 git diff 噪音。
+        /// [範例] UCL_Core → "ucl_core:Docs~"；外部 docs submodule（DocsSubfolder 為空）→ "ucl_core:"（base 自身即 docs 根）。
+        /// [設計對齊] 與 UCL_URL 的 "ucl_core:" / "repo:" prefix resolver 慣例同語言，一眼可知錨點。
+        /// </summary>
+        public string SourceToken => string.IsNullOrEmpty(DocsSubfolder)
+            ? $"{Prefix}:"
+            : $"{Prefix}:{DocsSubfolder.Replace('\\', '/')}";
     }
 
     /// <summary>

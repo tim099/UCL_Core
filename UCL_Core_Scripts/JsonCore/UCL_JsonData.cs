@@ -676,7 +676,10 @@ namespace UCL.Core.JsonLib {
         /// <returns></returns>
         public string ToJson() {
             StringBuilder builder = new StringBuilder();
-            SerializeValue(ToObject(this), builder);
+            // 直接從 JsonData 樹序列化, 不再 ToObject 深拷成一整棵 Dictionary/List<object> 平行樹
+            // (省一棵樹的 GC garbage + 一趟遍歷)。葉節點複用既有 SerializeValue, 容器沿用
+            // m_Dic/m_List 列舉序(與 ToObject 同源)→ 輸出 byte-identical。
+            SerializeJsonData(this, builder);
             return builder.ToString();
         }
         void SerializeValue(object value, StringBuilder builder) {
@@ -730,6 +733,55 @@ namespace UCL.Core.JsonLib {
             }
         }
 
+        // 區塊職責：直接從 JsonData 樹序列化（A1 優化，取代 SerializeValue(ToObject(this))）
+        // 物理意義：容器（List/Dictionary）直接遞迴 m_List/m_Dic，葉節點（scalar / None）
+        //          delegate 給既有 SerializeValue，完全不建中間 Dictionary/List<object> 樹。
+        // 數值影響：輸出 byte-identical —— 容器列舉序沿用 m_Dic/m_List（與 ToObject 同一來源），
+        //          葉節點格式化沿用同一支 SerializeValue；差別僅少配置一整棵物件樹 + 少一趟遍歷。
+        //          注意：Dictionary 刻意走 m_Dic（非 m_ObjectList）以維持與舊路徑相同的列舉序；
+        //          若要改用 m_ObjectList 的 insertion-order，那是「行為改變」須另立 task 單獨驗證。
+        void SerializeJsonData(JsonData iData, StringBuilder builder) {
+            switch (iData.m_Type) {
+                case JsonType.None:
+                    builder.Append("null");
+                    break;
+                case JsonType.List: {
+                    builder.Append('[');
+                    bool first = true;
+                    if (iData.m_List != null) {
+                        foreach (JsonData item in iData.m_List) {
+                            if (!first) builder.Append(',');
+                            if (item == null) builder.Append("null");
+                            else SerializeJsonData(item, builder);
+                            first = false;
+                        }
+                    }
+                    builder.Append(']');
+                    break;
+                }
+                case JsonType.Dictionary: {
+                    builder.Append('{');
+                    bool first = true;
+                    if (iData.m_Dic != null) {
+                        foreach (KeyValuePair<string, JsonData> kv in iData.m_Dic) {
+                            if (!first) builder.Append(',');
+                            SerializeString(kv.Key, builder);
+                            builder.Append(':');
+                            if (kv.Value == null) builder.Append("null");
+                            else SerializeJsonData(kv.Value, builder);
+                            first = false;
+                        }
+                    }
+                    builder.Append('}');
+                    break;
+                }
+                default:
+                    // scalar：m_Obj 已是 boxed primitive，直接複用既有葉節點序列化
+                    SerializeValue(iData.m_Obj, builder);
+                    break;
+            }
+        }
+
         void SerializeString(string str, StringBuilder builder) {
             builder.Append('\"');
 
@@ -777,7 +829,8 @@ namespace UCL.Core.JsonLib {
         /// <returns></returns>
         public string ToJsonBeautify() {
             StringBuilder builder = new StringBuilder();
-            SerializeValueBeautify(ToObject(this), builder, 0);
+            // 同 ToJson: 直接序列化 JsonData 樹, 不經 ToObject 深拷。
+            SerializeJsonDataBeautify(this, builder, 0);
             return builder.ToString();
         }
         void SerializeValueBeautify(object value, StringBuilder builder, int layer) {
@@ -846,6 +899,69 @@ namespace UCL.Core.JsonLib {
                 builder.Append(Convert.ToDouble(value).ToString("R", CultureInfo.InvariantCulture));
             } else {
                 SerializeString(value.ToString(), builder);
+            }
+        }
+
+        // Beautify 版直接序列化（A1）：結構鏡射 SerializeValueBeautify 的縮排/換行格式，
+        // 容器直走 m_List/m_Dic、葉節點 delegate SerializeValueBeautify，輸出 byte-identical。
+        void SerializeJsonDataBeautify(JsonData iData, StringBuilder builder, int layer) {
+            switch (iData.m_Type) {
+                case JsonType.None:
+                    builder.Append("null");
+                    break;
+                case JsonType.List: {
+                    string layer_str = new string('\t', layer);
+                    builder.Append(System.Environment.NewLine);
+                    builder.Append(layer_str);
+                    builder.Append('[');
+                    builder.Append(System.Environment.NewLine);
+                    bool first = true;
+                    if (iData.m_List != null) {
+                        foreach (JsonData item in iData.m_List) {
+                            if (!first) {
+                                builder.Append(',');
+                                builder.Append(System.Environment.NewLine);
+                            }
+                            builder.Append(layer_str);
+                            builder.Append('\t');
+                            if (item == null) builder.Append("null");
+                            else SerializeJsonDataBeautify(item, builder, layer + 1);
+                            first = false;
+                        }
+                    }
+                    builder.Append(System.Environment.NewLine);
+                    builder.Append(layer_str);
+                    builder.Append(']');
+                    break;
+                }
+                case JsonType.Dictionary: {
+                    string layer_str = new string('\t', layer);
+                    builder.Append('{');
+                    builder.Append(System.Environment.NewLine);
+                    bool first = true;
+                    if (iData.m_Dic != null) {
+                        foreach (KeyValuePair<string, JsonData> kv in iData.m_Dic) {
+                            if (!first) {
+                                builder.Append(',');
+                                builder.Append(System.Environment.NewLine);
+                            }
+                            builder.Append(layer_str);
+                            builder.Append('\t');
+                            SerializeString(kv.Key, builder);
+                            builder.Append(':');
+                            if (kv.Value == null) builder.Append("null");
+                            else SerializeJsonDataBeautify(kv.Value, builder, layer + 1);
+                            first = false;
+                        }
+                    }
+                    builder.Append(System.Environment.NewLine);
+                    builder.Append(layer_str);
+                    builder.Append('}');
+                    break;
+                }
+                default:
+                    SerializeValueBeautify(iData.m_Obj, builder, layer);
+                    break;
             }
         }
         #endregion

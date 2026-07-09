@@ -1138,10 +1138,14 @@ namespace UCL.Core.JsonLib {
         #endregion
 
         #region ICollection Properties & Methods
+        // 區塊職責：ICollection.* 對 None 型別的空集合語義（T02b, 配合 T02 GetCollection None→null）
+        // 物理意義：GetCollection() 對 None 回 null（不再 mutate）。這三個下游讀者若直接 .X 會 NRE。
+        //          None = 無容器 = 空集合語義：IsSynchronized=false / SyncRoot=this / CopyTo no-op。
+        // 數值影響：消掉 None→null 帶出的 NRE 面；讀取 None 的 ICollection.* 不再 throw、也不 mutate。
         int ICollection.Count { get { return Count; } }
-        bool ICollection.IsSynchronized { get { return GetCollection().IsSynchronized; } }
-        object ICollection.SyncRoot { get { return GetCollection().SyncRoot; } }
-        void ICollection.CopyTo(Array iArray, int iIndex) { GetCollection().CopyTo(iArray, iIndex); }
+        bool ICollection.IsSynchronized { get { var aCollection = GetCollection(); return aCollection != null && aCollection.IsSynchronized; } }
+        object ICollection.SyncRoot { get { var aCollection = GetCollection(); return aCollection != null ? aCollection.SyncRoot : this; } }
+        void ICollection.CopyTo(Array iArray, int iIndex) { var aCollection = GetCollection(); if (aCollection != null) aCollection.CopyTo(iArray, iIndex); }
         #endregion
 
         #region IDictionary Properties & Methods

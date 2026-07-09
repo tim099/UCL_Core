@@ -447,12 +447,15 @@ namespace UCL.Core.JsonLib {
             if (aVal.m_Type == JsonType.Int) return (float)(int)aVal;
             if (aVal.m_Type == JsonType.UInt) return (float)(uint)aVal;
             if (aVal.m_Type == JsonType.Long) return (float)(long)aVal;
+            if (aVal.m_Type == JsonType.ULong) return (float)(ulong)aVal;
             return iDefaultVal;
         }
         public double GetDouble(double iDefaultVal = 0) {
             if(m_Type == JsonType.Double) return (double)m_Obj;
             if (m_Type == JsonType.Int) return (double)(int)m_Obj;
+            if (m_Type == JsonType.UInt) return (double)(uint)m_Obj;
             if (m_Type == JsonType.Long) return (double)(long)m_Obj;
+            if (m_Type == JsonType.ULong) return (double)(ulong)m_Obj;
             return iDefaultVal;
         }
         public double GetDouble(string iKey, double iDefaultVal = 0)
@@ -462,7 +465,9 @@ namespace UCL.Core.JsonLib {
 
             if (aVal.m_Type == JsonType.Double) return (double)aVal;
             if (aVal.m_Type == JsonType.Int) return (double)(int)aVal;
+            if (aVal.m_Type == JsonType.UInt) return (double)(uint)aVal;
             if (aVal.m_Type == JsonType.Long) return (double)(long)aVal;
+            if (aVal.m_Type == JsonType.ULong) return (double)(ulong)aVal;
             return iDefaultVal;
         }
         public T GetEnum<T>(string iKey, T iDefaultVal = default) where T : Enum
@@ -728,8 +733,8 @@ namespace UCL.Core.JsonLib {
         void SerializeString(string str, StringBuilder builder) {
             builder.Append('\"');
 
-            char[] charArray = str.ToCharArray();
-            foreach(var c in charArray) {
+            // 直接迭代 string（本身即 IEnumerable<char>），省掉 ToCharArray() 每次多配一份等長 char[]。
+            foreach(var c in str) {
                 switch(c) {
                     case '"':
                         builder.Append("\\\"");
@@ -827,7 +832,7 @@ namespace UCL.Core.JsonLib {
             } else if(value is char) {
                 SerializeString(new string((char)value, 1), builder);
             } else if(value is float) {
-                builder.Append(((float)value).ToString("R"));
+                builder.Append(((float)value).ToString("R", CultureInfo.InvariantCulture));
             } else if(value is int
                 || value is uint
                 || value is long
@@ -838,7 +843,7 @@ namespace UCL.Core.JsonLib {
                 || value is ulong) {
                 builder.Append(value);
             } else if(value is double || value is decimal) {
-                builder.Append(Convert.ToDouble(value).ToString("R"));
+                builder.Append(Convert.ToDouble(value).ToString("R", CultureInfo.InvariantCulture));
             } else {
                 SerializeString(value.ToString(), builder);
             }
@@ -974,8 +979,13 @@ namespace UCL.Core.JsonLib {
         private ICollection GetCollection() {
             if(m_Type == JsonType.List) return (ICollection)m_List;
             if(m_Type == JsonType.Dictionary) return (ICollection)m_Dic;
-            if (m_Type == JsonType.None) return GetIDic();
-            return null;//Not avaliable
+            // 區塊職責：None 型別回 null，不再走 GetIDic()
+            // 物理意義：GetIDic() 對 None 會把 m_Type 改成 Dictionary + 配置容器（有副作用）。
+            //          過去唯讀存取（Count / ICollection.*）碰到 None 會偷偷把它 mutate 成空 Dictionary，
+            //          造成「觀察改變被觀察者」的 Heisenbug（debug 加一行讀 Count 就讓 None 變 Object）。
+            // 數值影響：改回 null（None = 無容器）。Count getter 已對 null 回 0；需要初始化請顯式賦型
+            //          （indexer set / Add / ToArray），不允許靠讀取隱式生 Dictionary。
+            return null;//Not avaliable (含 None)
         }
 
         private IDictionary GetIDic() {

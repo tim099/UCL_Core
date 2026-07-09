@@ -442,13 +442,8 @@ namespace UCL.Core.JsonLib {
         {
             var aVal = Get(iKey);
             if (aVal == this) return iDefaultVal;
-
-            if (aVal.m_Type == JsonType.Double) return (float)(double)aVal;
-            if (aVal.m_Type == JsonType.Int) return (float)(int)aVal;
-            if (aVal.m_Type == JsonType.UInt) return (float)(uint)aVal;
-            if (aVal.m_Type == JsonType.Long) return (float)(long)aVal;
-            if (aVal.m_Type == JsonType.ULong) return (float)(ulong)aVal;
-            return iDefaultVal;
+            // delegate 到 parameterless GetFloat（型別覆蓋一致），避免用到 [Obsolete] 的隱式轉換
+            return aVal.GetFloat(iDefaultVal);
         }
         public double GetDouble(double iDefaultVal = 0) {
             if(m_Type == JsonType.Double) return (double)m_Obj;
@@ -462,13 +457,8 @@ namespace UCL.Core.JsonLib {
         {
             var aVal = Get(iKey);
             if (aVal == this) return iDefaultVal;
-
-            if (aVal.m_Type == JsonType.Double) return (double)aVal;
-            if (aVal.m_Type == JsonType.Int) return (double)(int)aVal;
-            if (aVal.m_Type == JsonType.UInt) return (double)(uint)aVal;
-            if (aVal.m_Type == JsonType.Long) return (double)(long)aVal;
-            if (aVal.m_Type == JsonType.ULong) return (double)(ulong)aVal;
-            return iDefaultVal;
+            // delegate 到 parameterless GetDouble（型別覆蓋一致），避免用到 [Obsolete] 的隱式轉換
+            return aVal.GetDouble(iDefaultVal);
         }
         public T GetEnum<T>(string iKey, T iDefaultVal = default) where T : Enum
         {
@@ -536,11 +526,8 @@ namespace UCL.Core.JsonLib {
         {
             var aVal = Get(iKey);
             if (aVal == this) return iDefaultVal;
-            if (aVal.m_Type == JsonType.Boolean)
-            {
-                return (bool)aVal;
-            }
-            return iDefaultVal;
+            // delegate 到 parameterless GetBool，避免用到 [Obsolete] 的隱式轉換
+            return aVal.GetBool(iDefaultVal);
         }
         public bool GetBool(bool iDefaultVal = false)
         {
@@ -611,31 +598,42 @@ namespace UCL.Core.JsonLib {
         public static implicit operator JsonData(JsonSerializable data){ return data.SerializeToJson(); }
         public static implicit operator JsonData(UnityJsonSerializable data) { return data.SerializeToJson(); }
         //explicit
+        // 區塊職責：JsonData → primitive 的隱式轉換（型別不符即 throw）
+        // 物理意義：implicit 轉換丟例外是 C# 設計禁忌（「int x = jsonData;」靜靜編過、runtime 才炸）。
+        //          標 [Obsolete] 為漸進遷移跑道：舊 code 帶 warning 續編、新 code 改走安全具名 getter，
+        //          下個 major 再翻成 explicit。warning-only（不帶第二參數 true），不 breaking。
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetBool()/GetBool(key)；下個 major 將改為 explicit。")]
         public static implicit operator bool(JsonData data) {
             if(data.m_Type != JsonType.Boolean) throw new InvalidCastException($"JsonData doesn't hold a bool,Type:{data.m_Type}");
             return (bool)data.m_Obj;
         }
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetDouble()/GetDouble(key)；下個 major 將改為 explicit。")]
         public static implicit operator double(JsonData data) {
             if(data.m_Type != JsonType.Double) throw new InvalidCastException($"JsonData doesn't hold a double,Type:{data.m_Type}");
             return (double)data.m_Obj;
         }
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetFloat()/GetFloat(key)；下個 major 將改為 explicit。")]
         public static implicit operator float(JsonData data) {
             if(data.m_Type != JsonType.Double) throw new InvalidCastException($"JsonData doesn't hold a float,Type:{data.m_Type}");
             return (float) (double)data.m_Obj;
         }
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetInt()/GetInt(key)；下個 major 將改為 explicit。")]
         public static implicit operator int(JsonData data) {
             if(data.m_Type != JsonType.Int) throw new InvalidCastException($"JsonData doesn't hold an int,Type:{data.m_Type}");
             return (int)data.m_Obj;
         }
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetUInt()；下個 major 將改為 explicit。")]
         public static implicit operator uint(JsonData data)
         {
             if (data.m_Type != JsonType.UInt) throw new InvalidCastException($"JsonData doesn't hold an uint,Type:{data.m_Type}");
             return (uint)data.m_Obj;
         }
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetLong()；下個 major 將改為 explicit。")]
         public static implicit operator long(JsonData data) {
             if(data.m_Type != JsonType.Long) throw new InvalidCastException($"JsonData doesn't hold an long,Type:{data.m_Type}");
             return (long)data.m_Obj;
         }
+        [Obsolete("隱式轉換型別不符會 throw（anti-pattern）。改用安全 getter GetULong()；下個 major 將改為 explicit。")]
         public static implicit operator ulong(JsonData data)
         {
             if (data.m_Type != JsonType.ULong) throw new InvalidCastException($"JsonData doesn't hold an ulong,Type:{data.m_Type}");

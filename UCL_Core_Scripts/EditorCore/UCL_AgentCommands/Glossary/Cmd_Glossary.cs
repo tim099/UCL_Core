@@ -98,10 +98,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
         {
             get
             {
-                // UCL_AgentCommandsHelper 已有 project root, 但這裡用 Application.dataPath 反推
-                // Application.dataPath = "<git-root>/CardGame/Assets"; 反推三層
-                string projRoot = Directory.GetParent(Application.dataPath)?.Parent?.FullName ?? "";
-                return Path.Combine(projRoot, "docs", "Glossary");
+                // 區塊職責: 解析 glossary 根目錄 <git-root>/docs/Glossary
+                // 物理意義: 走 UCL_RepoPath.RepoRoot(git-walk 找 .git, 與 Python run_cmd.py 的
+                //          GIT_ROOT 對齊), 不再用 Application.dataPath 反推兩層。
+                // 數值影響: 舊寫法 Directory.GetParent(dataPath).Parent 假設 EOV nested layout
+                //          (<git-root>/CardGame/Assets); 在扁平 layout(Bar/TEVI, <git-root>/Assets)
+                //          會多跳一層、落到 git-root 的 parent, 讀到錯的 glossary → auto-attach 命中 0。
+                return Path.Combine(UCL.Core.EditorLib.UCL_RepoPath.RepoRoot, "docs", "Glossary");
             }
         }
 

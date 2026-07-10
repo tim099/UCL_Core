@@ -413,6 +413,10 @@ def cmd_add_character(args):
     ver["date"] = _today()
     prof = {
         "id": cid, "name": args.name, "book": book,
+        # name_original: 原文/口說讀音 (e.g. 日文片假名 シャーリー)。跟 name(中文譯名) 解耦。
+        #   用途: 陪看 STT (whisper initial_prompt) 需餵「轉錄語言的字形」而非中文譯名 —
+        #   餵中文名給日語 ASR 沒用甚至更糟 (whisper 往 prompt 字形偏置)。空=未登錄。
+        "name_original": (args.name_original or "").strip() if hasattr(args, "name_original") else "",
         "first_appeared_chapter": int(args.chapter),
         "current_version": 1,
         "versions": [ver],
@@ -422,6 +426,54 @@ def cmd_add_character(args):
         bk["characters"].append(cid)
         _write_json(_book_json(book), bk)
     print(f"✅ 新增人物: {cid}（{args.name}）v1 @ ch{args.chapter} — {args.headline}")
+    return 0
+
+
+def cmd_set_name_original(args):
+    # 區塊職責: backfill / 更新既有人物的 name_original (原文/口說讀音) 欄, 不動 versions。
+    # 物理意義: 老角色當初 add-character 時沒登日文讀音, 補上供陪看 STT initial_prompt 用。
+    book, cid = args.book, args.character
+    prof_path = _char_profile(book, cid)
+    if not prof_path.exists():
+        print(f"❌ 找不到人物: {cid}（請先 add-character）", file=sys.stderr)
+        return 1
+    prof = _read_json(prof_path)
+    old = prof.get("name_original", "")
+    prof["name_original"] = (args.name_original or "").strip()
+    _write_json(prof_path, prof)
+    print(f"✅ {cid}（{prof.get('name')}）name_original: '{old}' → '{prof['name_original']}'")
+    return 0
+
+
+def cmd_stt_prompt(args):
+    # 區塊職責: 把該書所有人物的 name_original (原文讀音) 組成 whisper initial_prompt 字串, 印到 stdout。
+    # 物理意義: 陪看 STT 前, skill 抽這串當 whisper 詞彙偏置 — 壓人名咬字 (シャーリー→サレイ 之類)。
+    # 誠實守則: 只收「有登 name_original」的人物 (餵中文譯名給日語 ASR 沒用甚至更糟, 故未登錄者跳過);
+    #          自然語言短語 (whisper 當前文語境), 人名優先, ≤max-chars (whisper initial_prompt ~224 token 上限)。
+    book = args.book
+    bk = _require_book(book)
+    names = []
+    for cid in bk.get("characters", []):
+        p = _char_profile(book, cid)
+        if not p.exists():
+            continue
+        no = (_read_json(p).get("name_original") or "").strip()
+        if no:
+            names.append(no)
+    if not names:
+        # 沒任何人物登錄原文讀音 → 印空 + 警告到 stderr (禁靜默: 讓 caller 知道是「沒資料」不是「沒角色」)
+        print("", end="")
+        print(f"⚠ book '{book}' 無任何人物登錄 name_original — STT prompt 空 "
+              f"(先用 set-name-original / add-character --name-original 補日文讀音)", file=sys.stderr)
+        return 0
+    # 自然語言短語 (非逗號清單): whisper 把 initial_prompt 當前文語境
+    prompt = "登場人物：" + "、".join(names) + "。"
+    max_chars = int(getattr(args, "max_chars", 200) or 200)
+    if len(prompt) > max_chars:
+        # 截斷砍名詞尾巴保住前面的名字 (人名咬字才是真痛點)
+        prompt = prompt[:max_chars]
+        print(f"⚠ prompt 超 {max_chars} 字已截斷 (共 {len(names)} 人)", file=sys.stderr)
+    print(prompt)
     return 0
 
 
@@ -1616,12 +1668,29 @@ def build_parser():
     a.add_argument("--book", required=True)
     a.add_argument("--id", required=True)
     a.add_argument("--name", required=True)
+    a.add_argument("--name-original", dest="name_original",
+                   help="原文/口說讀音 (e.g. 日文片假名 シャーリー), 供陪看 STT initial_prompt 用; 空則未登錄")
     a.add_argument("--chapter", required=True)
     a.add_argument("--headline", required=True, help="一句話人物標題")
     a.add_argument("--facts", help="客觀已知事實, 分隔同上")
     a.add_argument("--view", help="第一人稱看法")
     _add_reader_arg(a)
     a.set_defaults(func=cmd_add_character)
+
+    a = sub.add_parser("set-name-original", help="補/改既有人物的原文讀音欄 (backfill, 供 STT prompt)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--character", required=True)
+    a.add_argument("--name-original", dest="name_original", required=True,
+                   help="原文/口說讀音 (e.g. 日文片假名 シャーリー)")
+    _add_reader_arg(a)
+    a.set_defaults(func=cmd_set_name_original)
+
+    a = sub.add_parser("stt-prompt", help="組該書人物原文讀音成 whisper initial_prompt (陪看 STT 用)")
+    a.add_argument("--book", required=True)
+    a.add_argument("--max-chars", dest="max_chars", type=int, default=200,
+                   help="prompt 字數上限 (whisper initial_prompt ~224 token, 預設 200)")
+    _add_reader_arg(a)
+    a.set_defaults(func=cmd_stt_prompt)
 
     a = sub.add_parser("revise-view", help="改觀（fork 新版本, 不覆寫舊版）")
     a.add_argument("--book", required=True)

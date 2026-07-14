@@ -322,19 +322,58 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：任一源檔在已裝端缺失 / 內文不同 → 回 false（視為 drift/stale）。以文字（讀為 UTF-8）
         //          比對避開 BOM/編碼差異；.md 在本 repo 為 -text（無 CRLF 轉換）故換行穩定。忽略已裝端多出的
         //          .ucl_source 標記（源端沒有，不納入比對）。
+        // 區塊職責：直接比對源資料夾與目標資料夾下所有檔案的內文，判斷是否完全相同以確認是否需要同步。
+        // 物理意義：透過比對源 Skills~ 目錄與安裝後 .agents/skills 目錄下的檔案內容，判定 Skill 是否有被修改（drift/stale）。
+        //          在 Windows 與 Unix 混用的環境下，新行字元可能會有 \r\n 與 \n 的差異，此處將進行正規化處理，防止因為格式而誤判為 stale。
+        // 數值影響：若有任何檔案缺失或內文不符，回傳 false（判定為 drift 狀態，顯示需要 Sync）；若全部一致則回傳 true。
         bool SkillContentMatches(string srcDir, string instDir, AgentTarget target)
         {
+            // 遍歷來源 Skill 目錄下的所有檔案，包括所有子資料夾的檔案
             foreach (var srcFile in Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories))
             {
+                // 計算當前來源檔案相對於來源目錄的相對路徑，以對應到目標目錄中的檔案
                 string rel = Path.GetRelativePath(srcDir, srcFile);
+                // 組合出目標安裝目錄中的對應檔案絕對路徑
                 string instFile = Path.Combine(instDir, rel);
+                // 如果目標檔案在安裝目錄中根本不存在，代表該 Skill 狀態不完整，回傳 false 表示內容不匹配
                 if (!File.Exists(instFile)) return false;
+                
+                // 讀取來源檔案的完整文字內容。若目標為 Antigravity 且檔案為 SKILL.md，則模擬 frontmatter 注入處理以產生預期內容；否則讀取原始內容。
                 string expected = (target == AgentTarget.Antigravity && Path.GetFileName(srcFile) == "SKILL.md")
                     ? TransformAntigravityFrontmatter(File.ReadAllText(srcFile), Path.GetFileName(srcDir))
                     : File.ReadAllText(srcFile);
-                if (File.ReadAllText(instFile) != expected) return false;
+                
+                // 讀取目標安裝目錄中對應檔案的實際完整文字內容
+                string actual = File.ReadAllText(instFile);
+
+                // 比對預期內文與實際內文（\r\n 視同 \n），若不相符則判定內容已改變，回傳 false
+                if (!ContentEqualsNewlineInsensitive(expected, actual)) return false;
             }
+            // 若所有檔案皆存在且內容比對完全一致，則回傳 true，表示檔案完全同步
             return true;
+        }
+
+        // 區塊職責：換行不敏感的內文等價比對 — \r\n 視同 \n，取代舊的 Replace("\r\n","\n") 正規化副本。
+        // 物理意義：先走 ordinal == fast path（無 drift 且換行同款的常見情況命中向量化比對，零配置）；
+        //          不相等才 fallback 雙指針逐字元掃描，遇 \r\n 摺疊成 \n 再比。孤立 \r（無後隨 \n）維持
+        //          嚴格比對，語意與舊 Replace 版完全一致。
+        // 數值影響：省去最多 2 份全檔字串副本與重複掃描；首個實質差異即返回 false。判定結果與舊版相同。
+        static bool ContentEqualsNewlineInsensitive(string a, string b)
+        {
+            // fast path：完全相同（含換行）直接命中，走 .NET 向量化 ordinal 比對
+            if (a == b) return true;
+            int i = 0, j = 0;
+            while (i < a.Length && j < b.Length)
+            {
+                char ca = a[i], cb = b[j];
+                // \r 後隨 \n 時摺疊成 \n（跳過 \r），等價於舊版的 \r\n → \n 正規化
+                if (ca == '\r' && i + 1 < a.Length && a[i + 1] == '\n') { i++; ca = '\n'; }
+                if (cb == '\r' && j + 1 < b.Length && b[j + 1] == '\n') { j++; cb = '\n'; }
+                if (ca != cb) return false;
+                i++; j++;
+            }
+            // 兩邊必須同時耗盡才算相等，避免一邊是另一邊的前綴時誤判
+            return i == a.Length && j == b.Length;
         }
 
         // 區塊職責：鏡像 install_skills.py 的 antigravity SKILL.md frontmatter 轉換（比對用）。

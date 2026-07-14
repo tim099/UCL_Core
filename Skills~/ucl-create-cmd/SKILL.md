@@ -29,8 +29,8 @@ description: |
 
 ## 位置決策（重要）
 
-- **跨專案通用** → UCL_Core 內 `Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/`
-- **專案特定** → 下游模組（EOV 是 `CardGame/Assets/Scripts/RCG_AgentCommands/`）
+- **跨專案通用** → UCL_Core 內 `<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/`
+- **專案特定** → 下游模組的 AgentCommands 目錄（例：EOV `CardGame/Assets/Scripts/RCG_AgentCommands/`）
 
 別在 UCL_Core 塞專案邏輯 — 破壞跨專案重用性。
 
@@ -40,23 +40,7 @@ description: |
 - 漏寫 `ArgsSchema` → 上游 caller 不知道參數要傳什麼
 - `ExecuteAsync` 未尊重 cancellation token → 長跑 Cmd 卡死 Editor
 - 把 Cmd 放在 runtime assembly → Editor-only API 引用失敗
-- **`RejectLastOp` / `ResolveLastOp` 不在 base class** — 假設繼承會撞 CS0103 (basecamp 2026-05-11 撞過, ref `Errors_07_53_23.log` 15 條 CS0103 + Cmd_Glossary 早期版本):
-  - **正解**: 各 Cmd 自定義 internal static helper (對齊 Cmd_Tavern / Cmd_Treasury / Cmd_Glossary pattern):
-
-    ```csharp
-    internal static class Cmd_<Name>_Helpers
-    {
-        public static void ResolveLastOp(string md) => UCL_ChatTavernRender.WriteLastOp(md);
-        public static void RejectLastOp(string msg) {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ <Name> Cmd Rejected\n\n{msg}\n");
-            Debug.LogWarning($"[<Name>] {msg}");
-            throw new InvalidOperationException(msg);
-        }
-    }
-    ```
-
-  - 呼叫: `Cmd_<Name>_Helpers.RejectLastOp(...)` (帶 prefix, 避免假設繼承)
-  - 也要 `using UCL.Core.EditorLib.AgentCommands.ChatTavern;` 引 `UCL_ChatTavernRender`
+- RejectLastOp/ResolveLastOp 不在 base class → 各 Cmd 自定義 internal static helper, 詳見 Create_Cmd_Workflow.md
 
 ## 驗收
 

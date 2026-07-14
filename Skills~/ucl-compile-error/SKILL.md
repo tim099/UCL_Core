@@ -29,7 +29,7 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 
 ## 順序
 
 1. 跑上面的 `--errors-only`
-2. 0 errors → 收工（runtime 錯是另一回事，看 `CardGame/Assets/DebugLogs/Errors_latest.log`）
+2. 0 errors → 收工（runtime 錯是另一回事，看專案的 `DebugLogs/Errors_latest.log`）
 3. 有錯 → 對照 workflow 文件的「8 大常見錯誤類型」找模式
 4. 改完 → `--watch` 等下一輪驗收
 
@@ -43,4 +43,4 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 
 
 ## 後續
 
-`recompile 0 errors` ≠ runtime 0 errors。改完 code 跑遊戲後仍要看 `Errors_latest.log` — 這歸 RuntimeError_Diagnose_Workflow（EOV 端）。
+`recompile 0 errors` ≠ runtime 0 errors。改完 code 跑遊戲後仍要看專案的 `DebugLogs/Errors_latest.log` — 這歸 RuntimeError_Diagnose_Workflow（下游專案端）。

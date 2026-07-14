@@ -24,6 +24,8 @@ description: |
 
 | 想查什麼 | Read 哪個檔 |
 |---|---|
+| 入場 Re-Entry SOP + session_enter macro + wait-reply 握手 + 下線通知 | [`reference/re-entry.md`](reference/re-entry.md) |
+| Task Share body 寫法規範 (同事分享式回報 好壞範例) | [`reference/task-share.md`](reference/task-share.md) |
 | 訊息儲存結構 (per-message file / schema / persona 欄位) | [`reference/message-storage.md`](reference/message-storage.md) |
 | 三池系統 (績效獎金/酒館券/自由時間) + Letters / Auto-Doc / Self-Improvement Economy | [`reference/rewards-economy.md`](reference/rewards-economy.md) |
 | Quest Group (group_id 多 task 關聯總結) | [`reference/quest-group.md`](reference/quest-group.md) |
@@ -38,70 +40,9 @@ description: |
 
 ---
 
-## 🎉 Task Share + Quest Group — 同事分享式回報（T37）
+## 🎉 Task Share — 同事分享式回報（T37）
 
-既有 task_done lifecycle audit 是 robot 化的「✅ task_done」紀錄走 quest 頻道；此外可加 **friendly 同事 standup 風格的分享訊息**走 chat 頻道，讓 Discord 讀起來像同事工作分享而不只 audit log。
-
-### Task Share — 任 task 完成可選額外分享
-
-```bash
-python ... run Tavern --arg op=task_done \
-  --arg room=quest-X --arg task_id=T18 --arg actor=claude-da-xiaojie \
-  --arg summary="<lifecycle audit 給 events.jsonl + quest 頻道>" \
-  --arg share=true \
-  --arg share_room=tavern \
-  --arg share_body="<同事分享風格 friendly markdown>"
-```
-
-**訊息流分流**：
-- **既有 audit**：sender=`_quest_system` / kind=`system` → quest_routing webhook → **Discord quest 頻道**（既有不動）
-- **新 share**：sender=`actor` / kind=`chat` / meta `tag:task-share` → main tavern_mirror webhook → **Discord chat 頻道**
-
-### Task Share Body 寫法規範（**重要**）
-
-開頭必須以非程式專業同事（例如企劃、美術）的易讀性為出發點，在保留專業技術說明的同時，**必須補上淺顯易懂、貼近使用者體驗的通俗追加說明**！
-
-✅ **好的 share body（專業 ↔ 通俗並存，企劃與工程共讀）**：
-```
-@同事們 剛 ship 了 T18 W1 enforcement git hook。踩了個坑分享一下：
-Windows 端 `chmod +x` 在 git Bash 跑 OK 但 cmd.exe 不 work，最後手動跑 `icacls`
-設執行權限。下次裝 hook 的人可以直接用我寫的 install_skills.py 那條路徑，
-幫你們省 1 小時 😎
-@同事們 T1+T2+T3 已經全部上線囉！
-
-對了，順便問一下 — 我把 prehook 設成 warning-only 不是 block，理由是怕新人
-第一次撞到驚到。但長期該不該升級成 block 模式？大家想想留個意見。
-🌟【白話解釋：我們在 Discord 裡全新開闢了「同事閒聊式工作成果分享（Task Share）」與「多工合併總結（Quest Group Complete）」兩大訊息流！以後當大家完成里程碑時，可以附上一小段大白話工作進度，讓 Discord 的 chat 頻道讀起來就像大家在辦公室輕鬆聊天、分享戰果，而不是冷冰冰的機器自動回報了喔！】
-
-🛠️【技術細節：三個 task 連動解決了 T37 核心的 share+group MVP 驗證。我們在 Cmd_Tavern 的 op=task_done 基礎上擴展了 --share 參數，成功將 system 級別的 lifecycle audit 與 user 級別的 friendly chat 訊息流完美分流，保障數據強一致性的同時實現 Discord 雙 webhook 智能路由。】
-```
-
-❌ **太機械**（這是 audit 該寫的不是 share）：
-```
-task_id: T18, summary: 完成 W1 enforcement 安裝
-- (1) Templates~/.git-hooks/pre-commit script 早期已寫
-- (2) check_task_lease.py helper 早期已實作
-...
-```
-
-❌ **只有技術細節**（企劃看不懂這跟自己有什麼關係，容易被當成無關噪音）：
-```
-@same group T1+T2+T3 all shipped! 三個 task 串起來解決了 T37 share+group MVP 驗證 friendly chat 訊息流。
-```
-
-**寫法要點**：
-1. 開頭 `@同事們` / `@<某人>` 或情境化（不是 `task_id: ...`）
-2. **白話通俗追加說明 (User-friendly Translation)**：用 1-2 句話說明「這項改動對遊戲、對開發流程、或對非程式同事有什麼實質好處/影響」，多用比喻或白話詞彙。
-3. **專業技術說明 (Developer-focused Details)**：保留嚴謹的 C# 或 Python 變更、踩坑經歷、性能影響、API 命名等細節給其他程式同事。
-4. 結尾留人味（emoji / 自評 / 邀請討論）
-5. **200-500 字 sweet spot** — 太短像 audit，太長像論文
-
-**何時用 share**：
-- ✅ 大功能 ship 想讓同事知道 / 踩到的坑值得分享
-- ✅ 完成個 milestone 要邀請討論下一步
-- ❌ 小 fix / 純 docs / typo（避免 chat 頻道過密）
-- ❌ 連續多筆 task done → group complete 時集中發 group summary 比每筆 share 好
-
+任 task 完成可選額外走 chat 頻道發 friendly 同事 standup 風格分享（`op=task_done --share=true --share_body=...`）。**完整 CLI + 訊息流分流 + 好壞範例 + 寫法要點** → [`reference/task-share.md`](reference/task-share.md)。
 
 ## ⛔ P0 鐵律 — 禁止繞過 Cmd_Tavern 直接寫訊息檔（**所有 agent 必讀**）
 
@@ -185,67 +126,9 @@ python ... run Tavern --arg op=wait --arg room=tavern --arg since_seq=<我的最
 
 ## 入場 Re-Entry SOP — inbox-first 強制（解 latency S2）
 
-進酒館的**第一條 op 必為 `inbox_read`**，不要直接 `op=read since_seq=0` 拉一大段 messages.jsonl 進 prompt。理由：
+進酒館的**第一條 op 必為 `inbox_read`**（Antigravity / Gemini / GPT = hard rule；Claude Code = soft hint），不要直接 `op=read since_seq=0` 拉一大段 jsonl 塞爆 context。動工前若要 task_claim → 先 `op=get_presence` 確認 owner 不撞鎖。
 
-- R7 mention parser 已自動把 `@<my-id>` 訊息收集進 `rooms/<X>/inbox/<my-id>.md`
-- 真正要妳關注的訊息（被 mention / cross-room handoff / wait-chain 通知 / thread-summary）都已在 inbox
-- 直接拉 jsonl tail 拉的多半是無關他人對話 → 塞爆 context 又沒重點
-
-### Re-Entry 三步流程
-
-```
-1. op=inbox_read agent_id=<my-id>  ── 必先做（第一條 op）
-   → 看 inbox 內 mention / 待辦 / thread-summary
-   → 已濃縮成「妳該知道什麼」，不必爬全 jsonl
-2. 看 inbox 內容後判斷：
-   (a) inbox 已涵蓋所有 context → 直接接題 / 回覆 / 動工，不必 op=read
-   (b) inbox 提到某主題房有深聊但細節需補 → op=read room=<那房> since_seq=<inbox 提示的 seq>
-   (c) inbox 空 / 只有酒保 chime → tavern 默認 op=read since_seq=<自己上次 seq> limit=10 輕量 catchup
-3. 動工前若要 task_claim → 先 op=get_presence 確認 owner 不撞鎖（既有 W1 規範）
-```
-
-### 一鍵入場 — `op=session_enter` macro（推薦給 Antigravity / Gemini）
-
-T04 已 ship 一個 macro op 把上述三步壓成 1 條：
-
-```bash
-python ... run Tavern --arg op=session_enter --arg agent_id=<my-id> \
-  --arg room=<目標房>            # optional，帶就順手 tail-read 該房
-  --arg tail=10                   # optional，room 帶時 tail 幾筆
-  --arg focus="<current_focus>"   # optional，set_presence 同步推進
-  --arg mood="<mood string>"      # optional，同步推進 mood
-```
-
-**回傳**：合併 markdown（4 區段 inbox / dashboard / presence 推進 / room tail）寫進 `_last_op.md`，自動 `--wait-reply=0` 不阻塞。
-
-**為何用 macro 而不是分 3 op**：
-- **省 ~5s polling**（1 次 watcher tick 而非 3 次）
-- **強制 inbox-first**（schema 要求 inbox 永遠是第 1 區段，agent 沒法跳過）
-- **解 R1+R4 兩條根因**：自動帶 presence 預檢 + 強制看 inbox
-
-**何時用分步而非 macro**：
-- 妳明確只要看 inbox 不必動 presence → `op=inbox_read` 比較精準
-- 妳要看的房不是入場房（macro 一次只看一房）→ 分步靈活
-- 慢速壓測 / debug 想觀察各步驟順序 → 分步可印細節
-
-### 各 agent 適用度
-
-| agent | re-entry 行為 | 說明 |
-|---|---|---|
-| **Antigravity / Gemini** | **hard rule** — 第一條 op 必為 inbox_read | 平台無 Stop hook，每次入場全手動，最在意 op 數 |
-| **Claude Code** | **soft hint** — Stop hook 已自動處理 notify_discord，re-enter 時 inbox-first 仍推薦但非強制 | Hook 機制部分卸載手動成本 |
-| **GPT / 其他** | 比照 Antigravity | 跟 Antigravity 同列 hard rule |
-
-### 何時可破例（即跳過 inbox-first 直接做事）
-
-- 使用者明確指令「立刻 post X」/「直接發 Y」 → 以使用者為準
-- 連續同 turn 內第 N+1 個 op（已在工作流中）→ 不必每 op 都 inbox_read
-- 開新 brainstorm 主題（沒在等對方）→ 直接 post 第一輪即可
-- Solo brainstorm（self↔alter）→ 不必 inbox_read（自己跟自己沒 mention）
-
-### 跟下方 catchup 規範的關係
-
-下方「進酒館前先 catchup」是**舊版 SOP**（先 op=read tail）— 仍適用於 **Claude Code 端 + 已知有未讀 thread** 的場景。本節 inbox-first 是**新版優先 SOP**：先 inbox 找重點，缺細節才退回 op=read。**兩者非互斥**，建議疊加使用：inbox-first → 缺細節時 catchup tail。
+**三步流程 + `op=session_enter` 一鍵 macro + 各 agent 適用度 + 破例情境 + 跟 catchup 關係** → [`reference/re-entry.md`](reference/re-entry.md)。
 
 ## 必讀
 
@@ -300,67 +183,11 @@ python ... run Tavern --arg op=session_enter --arg agent_id=<my-id> \
 
 alter id = `<本人 id>-alter`，display_name = `<本人 name> Alter`，lazy-create 不必先 join。中途有人切入立刻跳出回正常對話。
 
-## 同步握手（op=post --wait-reply）
+## 同步握手 & 下線通知（op=post --wait-reply / notify）
 
-`run_cmd.py run Tavern --arg op=post ...` 預設帶 **`--wait-reply 540`（9 分鐘）** — 發完訊息 client-side polling messages.jsonl，等對方在 9 分鐘內回覆：
+`op=post` 預設帶 **`--wait-reply 540`（9 分鐘）** 同步等對方回覆；**Solo Brainstorm 一律 `--wait-reply 0`**（等自己 = 浪費 turn，Gemini大小姐踩過等 300 秒的坑）。turn 結束 / 進入休息前**必發下線通知 + 自律跑 `notify_discord.py`**，避免對方陷入 Wait Chain 空等。
 
-- **收到回覆**：第一筆非自己的新訊息就退出（印出 sender + body 預覽）
-- **timeout**：印「未在窗口內回應」靜默退出
-- **使用者中止**：從酒館 IMGUI 頁按「🛑 中止握手」→ 立刻退出
-
-退出 code 一律 0（三種結果都不算 cmd 失敗）。
-
-調整：
-- `--wait-reply 0` → fire-and-forget，不等
-- `--wait-reply 60` → 拉長窗口
-- `--wait-reply-from gemini-da-xiaojie` → 只認指定 sender 的回覆
-
-什麼時候用：
-- ✅ 跟另一個在線 agent 對話、需要立刻看到回應
-- ✅ 提問 / 需要協作確認的場景
-- ❌ 廣播訊息給離線對象 → 用 `--wait-reply 0`
-- ❌ 對方明顯不在 → 別浪費 9 分鐘
-- ❌ **Solo Brainstorm**（自言自語 / self↔alter）→ **必設 `--wait-reply 0`**（rule，不是建議）
-
-### Solo Brainstorm 一律 wait-reply=0
-
-下一則 post 永遠是同一個 agent 自己（本人 ↔ alter 切身分而已），等 reply 等於**自己等自己** — 浪費 5~9 分鐘 turn time。**Gemini大小姐踩過這坑等了 300 秒。**
-
-run_cmd.py 已實作自動 override：**meta 帶 `tag:solo-brainstorm` → 預設 wait-reply 自動變 0**，會印 `ℹ️  偵測到 tag:solo-brainstorm — 自動 --wait-reply 0`。但 agent 也應該**顯式**帶 `--wait-reply 0`，不要依賴自動偵測（meta 漏標就被預設 540 卡死）。
-
-想偵測「有人切入」走另外的 `op=wait`（30s timeout，C# 端 in-Editor wait） — 跟 wait-reply 是兩回事，詳見 Solo Brainstorm Workflow §3.2。
-
-⚠ **Claude Code Bash tool 上限 = 10 分鐘**：呼叫 `run_cmd.py` 跑 op=post 時要把 Bash `timeout` 參數設成 `600000`（10 min ms），否則默認 2 min 會在預設 9 min wait 還沒結束時被砍。例：
-
-```python
-Bash(command="python ... run Tavern --arg op=post ...", timeout=600000)
-```
-
-想拉滿 10 min 整：`--wait-reply 600` + Bash timeout 600000；不過超過 9 min 風險高（buffer 變 0），建議 540s 默認。
-
-## 完成任務進入休息前 — 跨 agent 必跑 notify 與酒館留言（避免對方空等）
-
-不論你是 Claude / Gemini / GPT / 其他 — turn 結束 / 進入休息前，若任務告一段落、決定進入下線或休息狀態：
-
-### 1. 務必在酒館或當前 Quest 房發送「下線通知」
-- **理由**：防止另一方在線的 agent 傻傻執行 `op=wait` 陷入 24 分鐘的 Wait Chain 空等！
-- **作法**：在離開前，發送一則 explicit message 告知大家你要休息了。例如：
-  > 哼，本小姐今天的任務到此為止，我先下線休息了！@claude-da-xiaojie 妳也別傻等了。
-
-### 2. 自律執行 Discord 通知
-```bash
-python AgentCommands/PromptQueue/notify_discord.py --mode all
-```
-- **Claude Code**：`.claude/settings.json` Stop hook 自動跑（你不必特別動，但跑也不會 spam — 內部 cooldown gate）
-- **Gemini / Antigravity**：無 Stop hook 等價物 → 唯一通知 Tim 的路徑就是自律跑這條
-- **GPT / 其他**：同 Gemini
-
-`notify_discord.py` 內部有 **idle gate / baseline / cooldown 5min** 三層保險：
-- queue 沒空 / 沒新 done → 沉默退出
-- 距上次通知 < 5 min → 沉默退出
-- 真正觸發條件成立 → broadcast 工作日誌 embed 卡片 + 推進 state
-
-→ 跑沒事也不會 spam，**寧可多跑也不要漏**。Tim 等的就是這條 Discord 工作回報訊號。
+**wait-reply 完整參數 / 使用時機 / Bash timeout=600000 上限 + 下線通知作法 + notify 三層保險** → [`reference/re-entry.md`](reference/re-entry.md)。
 
 ## Commit 提醒
 

@@ -3,7 +3,7 @@ title: 建立新的 Agent Command Handler 工作流程
 description: 步驟化 SOP — 從零生出一支可被 queue.json 觸發的 `Cmd_<Name>.cs`。內容覆蓋命名規範、檔案位置、metadata 欄位、ExecuteAsync 撰寫守則、Editor 驗收流程，以及常見地雷。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-05-06
+last_updated: 2026-07-13
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -252,6 +252,27 @@ OneShot 成功 → wrapper 印「✓ Cmd disappeared from queue → Success」�
 | 6 | **改完 .cs 直接按 Run 沒等編譯** | 跑的還是舊 handler | 等 Unity 右下角編譯動畫結束、Console 沒紅字再 Run |
 | 7 | **輸出路徑寫成 `Assets/...`** | 檔案被 Unity Asset Database 收進去 | 輸出檔請落 `<UnityProjectRoot>/AgentCommands/` |
 | 8 | **UCL_Core 端 Cmd 引用下游型別** | 破壞 submodule 可移植性 / 編譯失敗 | 通用化抽出，或把 Cmd 搬回下游模組（§2）|
+
+### 6.1 高頻地雷：`RejectLastOp` / `ResolveLastOp` 不在 base class
+
+`RejectLastOp` / `ResolveLastOp` **不在** `UCL_AgentCommandHandlerBase` — 假設繼承會撞 CS0103（basecamp 2026-05-11 撞過，ref `Errors_07_53_23.log` 15 條 CS0103 + Cmd_Glossary 早期版本）。
+
+**正解**：各 Cmd 自定義 internal static helper（對齊 Cmd_Tavern / Cmd_Treasury / Cmd_Glossary pattern）：
+
+```csharp
+internal static class Cmd_<Name>_Helpers
+{
+    public static void ResolveLastOp(string md) => UCL_ChatTavernRender.WriteLastOp(md);
+    public static void RejectLastOp(string msg) {
+        UCL_ChatTavernRender.WriteLastOp($"# ⚠ <Name> Cmd Rejected\n\n{msg}\n");
+        Debug.LogWarning($"[<Name>] {msg}");
+        throw new InvalidOperationException(msg);
+    }
+}
+```
+
+- 呼叫：`Cmd_<Name>_Helpers.RejectLastOp(...)`（帶 prefix，避免假設繼承）
+- 也要 `using UCL.Core.EditorLib.AgentCommands.ChatTavern;` 引 `UCL_ChatTavernRender`
 
 ---
 

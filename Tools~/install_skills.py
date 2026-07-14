@@ -24,11 +24,15 @@ Behaviour:
        a `.git` directory or `.claude/` directory is found (cap 8 levels).
     2. For each skill directory in `Skills~/` (skipping names starting with `_`
        or ending with `~`), install into `<root>/.claude/skills/<name>/`.
-    3. Each installed skill gets a `.ucl_source` file recording the UCL_Core
-       commit hash and source path — used to detect later edits.
-    4. Idempotent: re-running updates only changed files. If a destination file
-       has been edited locally and no longer matches the recorded source hash,
-       the script warns and skips that file (does NOT overwrite).
+    3. Each installed skill gets a `.ucl_source` file recording only the source
+       path (a presence/provenance marker). No per-file hashes and no git commit
+       are stored: installed copies are a disposable mirror of Skills~/, and
+       staleness is judged by direct content comparison (source vs installed),
+       not by stored hashes (which churn) — see UCL_AgentSkillManagerPage.
+    4. Idempotent mirror: re-running overwrites only files whose content differs
+       from source; identical files are skipped, and installed files with no
+       corresponding source file (orphans) are removed. Installed copies are not
+       hand-edited, so there is no local-edit protection.
     5. Writes `.claude/skills/.ucl_installed` as a global marker so agent-side
        self-checks can detect installation.
 
@@ -41,7 +45,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -140,23 +143,6 @@ def find_project_root(override: str | None) -> Path:
 # Source metadata
 # ---------------------------------------------------------------------------
 
-def get_ucl_commit() -> str:
-    """Return the current UCL_Core git commit, or 'unknown' if not in a git repo."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=UCL_CORE_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (FileNotFoundError, OSError):
-        pass
-    return "unknown"
-
-
 def load_manifest() -> dict:
     if not MANIFEST.is_file():
         raise SystemExit(f"Manifest not found: {MANIFEST}")
@@ -225,48 +211,13 @@ def discover_skills() -> list[str]:
     return skills
 
 
-# 區塊職責：對「目前選定的一組 skill」算出穩定 aggregate SHA1。
-# 物理意義：取代過往以 git commit 比對 stale 的作法 — commit bump 但 skill 內容沒動時不該被視為 stale。
-# 數值影響：以 (skill name, posix relative path, file SHA1) 三元組依字典序串入單一 hasher，
-#          Editor 端 (UCL_AgentSkillManagerPage) 用同樣演算法重算後比對 .ucl_installed.source_hash。
-#          只算 source 側（Skills~/<name>/），不關心安裝端目錄；antigravity 走 SKILL.md only 的子集。
-def compute_source_hash(skill_names: list[str], target: str) -> str:
-    h = hashlib.sha1()
-    for name in sorted(skill_names):
-        src = SKILLS_SRC / name
-        if not src.is_dir():
-            continue
-        files = sorted(p for p in src.rglob("*") if p.is_file())
-        # 排序 by posix-style relative path 以確保跨 OS 一致
-        entries: list[tuple[str, Path]] = []
-        for f in files:
-            rel = f.relative_to(SKILLS_SRC).as_posix()
-            entries.append((rel, f))
-        entries.sort(key=lambda e: e[0])
-        for rel, f in entries:
-            h.update(rel.encode("utf-8"))
-            h.update(b"\0")
-            h.update(file_sha1(f).encode("ascii"))
-            h.update(b"\0")
-    return h.hexdigest()
-
-
 # ---------------------------------------------------------------------------
 # File ops
 # ---------------------------------------------------------------------------
 
-def file_sha1(path: Path) -> str:
-    h = hashlib.sha1()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 # 區塊職責: marker JSON 的 atomic 寫入 — 先寫 temp 檔再 os.replace 原子換入。
 # 物理意義: marker (.ucl_source / .ucl_installed) 若在 write_text 中途被殺 / 磁碟滿會留半截 JSON
-#          → 下輪 JSONDecodeError → prior_hashes={} → 所有 recorded 變 None
-#          → local-edit 保護「靜默全關」(basecamp R2 review 點名, 跟毒化同級的靜默失效)。
+#          → 下輪 JSONDecodeError。atomic 寫避免半截檔。
 # 數值影響: os.replace 在同一 filesystem 上為原子操作; temp 檔留同目錄確保同 fs。
 def write_json_atomic(path: Path, data: dict, trailing_newline: bool = False) -> None:
     text = json.dumps(data, indent=2, ensure_ascii=False)
@@ -305,110 +256,77 @@ def transform_antigravity_frontmatter(content: str, skill_name: str) -> str:
     return f"---\ntrigger: {trigger_val}\n---\n\n{content}"
 
 def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False, target: str = "claude") -> tuple[int, int]:
-    """Copy contents of src_dir to dst_dir. Returns (copied, skipped_due_to_edit)."""
+    """Sync src_dir → dst_dir as a pure mirror. Returns (copied, skipped).
+
+    Installed copies are a disposable mirror of the source-of-truth Skills~/;
+    they are NOT hand-edited (per Tim 2026-07-14). So there is no local-edit
+    protection and no stored per-file hashes: each file is overwritten unless
+    its content is already identical (direct content compare), and installed
+    files with no corresponding source file (orphans) are removed. `force` is
+    accepted for signature compatibility but no longer changes behaviour here.
+    `skipped` is always 0 (kept for the (copied, skipped) return contract).
+    """
     copied = 0
-    skipped = 0
 
     source_marker = dst_dir / ".ucl_source"
-    prior_hashes: dict[str, str] = {}
-    if source_marker.is_file():
-        try:
-            data = json.loads(source_marker.read_text(encoding="utf-8"))
-            prior_hashes = data.get("file_hashes", {}) or {}
-        except (json.JSONDecodeError, OSError):
-            prior_hashes = {}
+    src_rel_keys: set[str] = set()
 
-    new_hashes: dict[str, str] = {}
-
-    # 區塊職責: 逐檔三分支顯式記錄 (basecamp R2 review 定案, 防 marker 毒化的核心語意)。
-    # 物理意義: marker file_hashes 必須恆等於「最後一次成功寫入 dst 的內容 hash」:
-    #          copied      → 記 src_hash (剛寫入的就是 source 內容)
-    #          up-to-date  → 記 src_hash (dst == source, 順帶治癒舊毒 marker)
-    #          skipped     → 保留舊 recorded (dst 沒動, 記錄就不能動 — 舊版在此無條件記 src_hash,
-    #                        導致「跳過一次 = marker 與磁碟永久脫鉤 = 之後每輪都誤判 local edit」自我毒化)
-    # 數值影響: 任一分支都會在 new_hashes 留下記錄 — 檔案不會從 marker 消失
-    #          (消失 → recorded=None → 下輪 silent overwrite, local-edit 保護靜默失效)。
+    # 逐檔：內文相同 → 跳過；不同 / 不存在 → 覆蓋。（不算 hash，直接比對內文）
+    # antigravity 的 SKILL.md 安裝時注入 trigger frontmatter，故比對/寫入用轉換後內文。
     for src_file in src_dir.rglob("*"):
         if not src_file.is_file():
             continue
         rel = src_file.relative_to(src_dir)
         rel_key = str(rel).replace(os.sep, "/")
+        src_rel_keys.add(rel_key)
         dst_file = dst_dir / rel
 
-        is_antigravity_skill_md = (target == "antigravity" and src_file.name == "SKILL.md")
-        if is_antigravity_skill_md:
-            src_content = src_file.read_text(encoding="utf-8")
-            transformed_content = transform_antigravity_frontmatter(src_content, src_dir.name)
-            src_hash = hashlib.sha1(transformed_content.encode("utf-8")).hexdigest()
-        else:
-            src_hash = file_sha1(src_file)
+        transformed = (target == "antigravity" and src_file.name == "SKILL.md")
+        expected_text = transform_antigravity_frontmatter(src_file.read_text(encoding="utf-8"), src_dir.name) if transformed else None
 
         if dst_file.is_file():
-            if is_antigravity_skill_md:
-                dst_content = dst_file.read_text(encoding="utf-8")
-                dst_hash = hashlib.sha1(dst_content.encode("utf-8")).hexdigest()
-            else:
-                dst_hash = file_sha1(dst_file)
-            if dst_hash == src_hash:
-                new_hashes[rel_key] = src_hash  # up-to-date → 記 src_hash (= dst 實際內容)
-                continue  # already up to date
-            recorded = prior_hashes.get(rel_key)
-            if not force and recorded is not None and dst_hash != recorded:
-                log.warn(
-                    f"local edit detected, skipping: {dst_file} "
-                    f"(rerun with --force-overwrite to replace, or delete the file)"
-                )
-                skipped += 1
-                new_hashes[rel_key] = recorded  # skipped → 保留舊 recorded, 不可記 src_hash
-                continue
+            if transformed:
+                if dst_file.read_text(encoding="utf-8") == expected_text:
+                    continue  # already up to date
+            elif dst_file.read_bytes() == src_file.read_bytes():
+                continue      # already up to date
 
         log.action("copy", dst_file)
         if not log.dry:
             dst_file.parent.mkdir(parents=True, exist_ok=True)
-            if is_antigravity_skill_md:
-                dst_file.write_text(transformed_content, encoding="utf-8")
+            if transformed:
+                dst_file.write_text(expected_text, encoding="utf-8")
             else:
                 shutil.copy2(src_file, dst_file)
         copied += 1
-        new_hashes[rel_key] = src_hash  # copied → 記 src_hash (剛寫入的內容)
 
-    # 區塊職責: orphan 清理 (Fix4) — source 端已刪除/改名、但安裝端還殘留的舊檔。
-    # 物理意義: copy 只增不刪 → source 刪檔後安裝端殘留 → Editor 端 per-skill drift 比對永遠亮
-    #          「⚠改動」, 連 force 重裝都修不掉 (只蓋不刪)。安全邊界 = prior marker 記錄:
-    #          只刪「自己裝過的」(marker file_hashes 有記錄), 使用者自建檔不在記錄內絕不誤刪。
-    # 數值影響: orphan 被使用者改過 (hash ≠ recorded) 且非 force → 不刪 + warning + 保留記錄
-    #          (破壞看得見, 同 copy / uninstall 路徑的 local-edit 保護語意, 留給 --force-overwrite);
-    #          刪除成功 → 從 new_hashes 移除記錄, marker 自然收斂。
-    for rel_key, rec_hash in prior_hashes.items():
-        if rel_key in new_hashes:
-            continue  # source 還在, 非 orphan
-        orphan = dst_dir / rel_key
-        if not orphan.is_file():
-            continue  # 安裝端也已不存在, 記錄自然消失
-        if not force and file_sha1(orphan) != rec_hash:
-            log.warn(
-                f"orphan with local edit, keeping: {orphan} "
-                f"(source removed this file; rerun with --force-overwrite to delete)"
-            )
-            skipped += 1
-            new_hashes[rel_key] = rec_hash  # 保留記錄 — 下輪仍視為 orphan 可見可刪
-            continue
-        log.action("remove orphan", orphan)
-        if not log.dry:
-            orphan.unlink()
+    # 區塊職責: orphan 清理 — 已裝端有、但 source 端已無的檔（source 刪除/改名後的殘留）。
+    # 物理意義: 已裝 = 純鏡像，source 沒有的就不該留。除 .ucl_source 本身（源端沒有的安裝標記）。
+    # 數值影響: 直接刪，不做 local-edit 判斷（不考慮手改已裝副本）。
+    if dst_dir.is_dir():
+        for dst_file in list(dst_dir.rglob("*")):
+            if not dst_file.is_file():
+                continue
+            rel_key = str(dst_file.relative_to(dst_dir)).replace(os.sep, "/")
+            if rel_key == ".ucl_source":
+                continue
+            if rel_key not in src_rel_keys:
+                log.action("remove orphan", dst_file)
+                if not log.dry:
+                    dst_file.unlink()
 
     if not log.dry:
         source_marker.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(
             source_marker,
             {
-                "ucl_core_commit": get_ucl_commit(),
+                # 純存在/來源標記。不記 file_hashes（已裝視為 source 純鏡像，狀態改由 direct content
+                # compare 判定）也不記 ucl_core_commit（會隨 commit churn）。
                 "source": str(src_dir.relative_to(UCL_CORE_ROOT)),
-                "file_hashes": new_hashes,
             },
         )
 
-    return copied, skipped
+    return copied, 0
 
 
 def link_skill(src_dir: Path, dst_dir: Path, log: _Log) -> bool:
@@ -443,43 +361,16 @@ def link_skill(src_dir: Path, dst_dir: Path, log: _Log) -> bool:
         return False
 
 
-def detect_local_drift(dst_dir: Path) -> list[str]:
-    """回傳 dst_dir 內相對 .ucl_source.file_hashes 有 local 改動的檔名清單。
-    區塊職責: toggle-off / uninstall 前偵測使用者手動改過的檔, 讓『破壞看得見』。
-    物理意義: 重算每檔 sha1 vs .ucl_source 記錄的 hash; 不符 = local edit。symlink / 無 marker → 視為無 drift。"""
-    marker = dst_dir / ".ucl_source"
-    if dst_dir.is_symlink() or not marker.is_file():
-        return []
-    try:
-        recorded = (json.loads(marker.read_text(encoding="utf-8")).get("file_hashes", {}) or {})
-    except (json.JSONDecodeError, OSError):
-        return []
-    drifted: list[str] = []
-    for rel, rec_hash in recorded.items():
-        f = dst_dir / rel
-        if f.is_file() and file_sha1(f) != rec_hash:
-            drifted.append(rel)
-    return drifted
-
-
 def remove_skill(dst_dir: Path, log: _Log, force: bool = False) -> bool:
     """Remove a previously installed skill if it has the .ucl_source marker.
-    force=False 時偵測到 local drift(使用者手動改過) → 警告並跳過(不靜默刪);
-    force=True → 照刪。(basecamp R2 review: toggle-off 破壞要看得見)"""
+
+    Installed copies are a disposable mirror of source (not hand-edited), so
+    removal is unconditional. `force` accepted for signature compatibility."""
     if not dst_dir.exists():
         return False
     if not (dst_dir / ".ucl_source").is_file() and not dst_dir.is_symlink():
         log.warn(f"no .ucl_source marker, skipping: {dst_dir}")
         return False
-    if not force:
-        drifted = detect_local_drift(dst_dir)
-        if drifted:
-            log.warn(
-                f"local edit detected in {dst_dir.name} ({', '.join(drifted)}); "
-                f"skipping uninstall to avoid silent data loss "
-                f"(rerun with --force-overwrite to remove anyway, or back up your edits first)"
-            )
-            return False
     log.action("remove", dst_dir)
     if not log.dry:
         if dst_dir.is_symlink():
@@ -587,7 +478,7 @@ def main(argv: list[str] | None = None) -> int:
             # 區塊職責: reconcile — 對「設為不裝(off) 但目前實體還裝著」的 skill 主動解除安裝。
             # 物理意義: Tim 要求「disable 後同步要解除安裝該 skill」。先前只做『跳過安裝』
             #          (off 不進 selected), 但已裝的目錄不會自己消失 → 同步 = 裝該裝的 + 刪該停的。
-            #          帶 drift 保護(remove_skill force=False): 被本地改過的會警告跳過, 不靜默刪。
+            #          已裝 = 純鏡像 → 無條件移除(remove_skill 不做 local-edit 判斷)。
             # 數值影響: 移除 off 且實體存在的 skill dir + 從 .ucl_installed.installed_skills 剔除。
             reconcile_removed: list[str] = []
             for name in skipped_off:
@@ -603,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
                     remaining = [s for s in prev if s not in reconcile_removed]
                     if remaining != prev:
                         mdata["installed_skills"] = remaining
-                        mdata["source_hash"] = compute_source_hash(remaining, args.target)
+                        mdata.pop("source_hash", None)  # 舊 marker 遺留欄位, 順手清掉
                         write_json_atomic(marker, mdata, trailing_newline=True)
                 except (json.JSONDecodeError, OSError):
                     pass
@@ -624,8 +515,8 @@ def main(argv: list[str] | None = None) -> int:
             if remove_skill(skills_dst_root / name, log, force=args.force_overwrite):
                 removed.append(name)
         # 區塊職責: per-skill uninstall 要更新 marker 而非整個刪 (basecamp R2 review)
-        # 物理意義: 只 uninstall 子集(--include 單 skill)時, 從 installed_skills 移除被刪的、保留其餘 +
-        #          重算 aggregate source_hash; 若清空才刪 marker。--include 沒給(全 uninstall) → 刪 marker。
+        # 物理意義: 只 uninstall 子集(--include 單 skill)時, 從 installed_skills 移除被刪的、保留其餘;
+        #          若清空才刪 marker。--include 沒給(全 uninstall) → 刪 marker。
         marker = skills_dst_root / ".ucl_installed"
         if marker.is_file() and not args.dry_run:
             partial = bool(include) or bool(exclude)   # 有 include/exclude = 子集操作
@@ -637,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
             remaining = [s for s in prev if s not in removed]
             if partial and remaining:
                 mdata["installed_skills"] = remaining
-                mdata["source_hash"] = compute_source_hash(remaining, args.target)
+                mdata.pop("source_hash", None)  # 舊 marker 遺留欄位, 順手清掉
                 write_json_atomic(marker, mdata, trailing_newline=True)
                 log.info(f"Marker updated: {len(remaining)} skill(s) still installed.")
             else:
@@ -664,14 +555,13 @@ def main(argv: list[str] | None = None) -> int:
         if skipped:
             exit_code = 2
 
-    # Global marker
-    # source_hash：對 selected 這組 skill 的 source 內容算 aggregate SHA1，
-    # 用於 Editor 端 (UCL_AgentSkillManagerPage) 判斷是否 stale；取代以往的 commit-only 比對。
+    # Global marker（installed_skills 清單 + target/mode；不存 hash/commit，
+    # Editor 端狀態改由 direct content compare 判定，見 UCL_AgentSkillManagerPage）
     marker = skills_dst_root / ".ucl_installed"
     if not args.dry_run:
         # 區塊職責: per-skill install 要 merge 進 installed_skills 而非覆蓋 (basecamp R2 review)
         # 物理意義: --include/--exclude 子集安裝時, 取『既有 installed_skills ∪ selected』, 保留沒動到的;
-        #          全量安裝(無 include/exclude) → 直接用 selected。source_hash 對最終集合重算。
+        #          全量安裝(無 include/exclude) → 直接用 selected。
         final_skills = list(selected)
         if (include or exclude) and marker.is_file():
             try:
@@ -686,8 +576,6 @@ def main(argv: list[str] | None = None) -> int:
         write_json_atomic(
             marker,
             {
-                "ucl_core_commit": get_ucl_commit(),
-                "source_hash": compute_source_hash(final_skills, args.target),
                 "installed_skills": final_skills,
                 "target": args.target,
                 "mode": "link" if (args.link and args.target != "antigravity") else "copy",

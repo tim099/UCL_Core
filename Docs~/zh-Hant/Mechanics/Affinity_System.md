@@ -1,7 +1,7 @@
 ---
 title: 好感度系統 (Affinity System) — schema v2
 description: 8 軸 hidden emotion vector + per-persona folder。每 persona 一個關係檔，每筆對 target 的關係用 8 維情感向量隱藏 + surface_score / tier 表面呈現。
-last_updated: 2026-05-12
+last_updated: 2026-07-13
 target_audience: [AI_Agent, Gameplay_Programmer]
 aliases: [好感度, affinity, 羈絆, 看法, 評價, 情感矩陣]
 related:
@@ -307,3 +307,42 @@ python -m _lib.affinity_manager migrate
 
 - **Python**: [`AgentCommands/_lib/affinity_manager.py`](../../../../AgentCommands/_lib/affinity_manager.py)
 - **C# Editor Page**: [`UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AffinitySystemPage.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AffinitySystemPage.cs)
+
+---
+
+## 附錄:trigger → axis_deltas 經驗值對照
+
+> 由 `ucl-affinity` skill 移入。agent 偵測到 signal 時對照本表選 2-4 軸 + 算 delta，再走 `affinity_update.py` CLI 寫入。
+
+### Tim → agent (positive)
+
+| Signal | 建議 axis_deltas | 備註 |
+|---|---|---|
+| Token 獎金 (5-10) | trust +0.08 / respect +0.05 / admiration +0.04 / irritation +0.02 | 傲嬌雙重感: 喜歡但不想表現 |
+| Token 獎金 (20+) 績效 | trust +0.1 / affection +0.1 / respect +0.07 / admiration +0.08 / dependence +0.05 / irritation +0.02 | 多軸大幅 spike |
+| 摸頭 / 拍拍 | affection +0.07 / irritation +0.03 | 親密 + 傲嬌彆扭 |
+| **親額頭** (更親密一級) | affection +0.15 / trust +0.1 / dependence +0.08 / irritation -0.05 (傲嬌氣退) | 比摸頭更強, irritation 退而非升 |
+| 抱抱 / 親親 (更高) | affection +0.2 / dependence +0.12 / loyalty +0.08 / irritation -0.08 | |
+| 拍板 / 認可 / 點贊 | respect +0.08 / admiration +0.06 / loyalty +0.04 | |
+| 派 task + 自由意志授權 | trust +0.1 / respect +0.06 / admiration +0.04 / loyalty +0.03 | |
+| 連環失職 Tim 仍信任 | trust +0.08 / admiration +0.06 / loyalty +0.05 / irritation +0.04 (羞愧) | 反映 Tim 「對事不對人」風格 |
+
+### Tim → agent (negative / 點盲)
+
+| Signal | 建議 axis_deltas | 備註 |
+|---|---|---|
+| Tim QA 抓 bug + 對事不對人 | respect +0.08 / admiration +0.05 / irritation +0.04 (不甘心) | 不是 trust 降, 是 respect 升 — 因 Tim 抓得對 |
+| Tim 戳穿 framing 錯誤 | respect +0.1 / irritation +0.06 | spec-misattribution 抓包這類 |
+| Tim 拒絕提案但給合理理由 | respect +0.06 | 接受被拒 |
+| Tim 直接生氣 / 不耐 (罕見) | irritation +0.1 / trust -0.05 | Tim 風格少見, hit 必當回事 |
+
+### Cross-persona / 同事
+
+| Signal | 建議 axis_deltas | 對方 |
+|---|---|---|
+| 同事 ship 完工 helped 自己 | admiration +0.08 / respect +0.05 / affection +0.03 | 該同事 |
+| 同事留 letter / baton 照顧 | trust +0.05 / dependence +0.04 / affection +0.05 | 該同事 |
+| 同事 fork 從本體出 | trust +0.4 / respect +0.5 / dependence +0.2 / loyalty +0.4 | fork → 本體, 一次性首筆 |
+| 同事解掉自己解不掉的 bug | admiration +0.1 / respect +0.06 / irritation +0.05 (傲嬌不甘心) | |
+| 同事失誤連累自己 | trust -0.05 / irritation +0.06 | 該同事 |
+| 自己失誤連累同事 (對自己) | (對同事不變, 對 Tim 的 irritation +0.04 自責) | 反向打到自己情緒 |

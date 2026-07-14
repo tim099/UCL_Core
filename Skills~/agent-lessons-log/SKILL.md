@@ -36,7 +36,7 @@ description: |
 撞到設計坑 / debug 教訓 → 立刻走 cmd 紀錄不靠記憶：
 
 ```bash
-python AgentCommands/run_cmd.py run NoteLesson \
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run NoteLesson \
   --arg body="<短句精華 < 30 字>" \
   --arg actor="<agent_id>" \
   --arg category="<bug|design|workflow|debug|test>"

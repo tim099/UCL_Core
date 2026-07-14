@@ -14,7 +14,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
@@ -122,11 +121,12 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
-        // 區塊：Skill 安裝狀態偵測（搬自 UCL_WelcomePage 的 DrawSkillsCard）
-        // 物理意義：對 Skills~/<installed_skills> 算 aggregate SHA1（演算法跟 install_skills.py
-        //          compute_source_hash 一致），與 .ucl_installed.source_hash 比對。
-        //          舊版 marker 沒有 source_hash 欄位 → 視為 LegacyNoHash 提示重裝刷新。
-        //          仍保留 ucl_core_commit 顯示給使用者參考，但不參與 stale 判定。
+        // 區塊：Skill 安裝狀態偵測（direct content compare, Tim 2026-07-14）
+        // 物理意義：逐檔直接比對「Skills~/<skill> 源檔案內文」vs「已裝目錄內文」是否相同，
+        //          不算 hash、不讀 marker 的 ucl_core_commit / source_hash（那會隨 commit churn
+        //          且看不出已裝端實際內容）。antigravity 端 SKILL.md 因 install 會注入 trigger
+        //          frontmatter，比對前對源套同樣轉換。結果在 RefreshStatus 一次算完並快取，
+        //          只有安裝 / skill 操作(m_StatusDirty=true)才重算 — 不每幀重掃磁碟。
         // ===========================================================
 
         enum InstallStatus
@@ -136,8 +136,6 @@ namespace UCL.Core.EditorLib.Page
             NotInstalled,
             Synced,
             Stale,
-            UnknownHead,
-            LegacyNoHash,
         }
 
         // 區塊職責：支援的 install target 列舉
@@ -175,10 +173,13 @@ namespace UCL.Core.EditorLib.Page
 
         // Per-target 狀態：合併單一 dict 比平行欄位更易擴充新 target
         readonly Dictionary<AgentTarget, InstallStatus> m_StatusByTarget = new Dictionary<AgentTarget, InstallStatus>();
-        readonly Dictionary<AgentTarget, string> m_InstalledCommitByTarget = new Dictionary<AgentTarget, string>();
-        readonly Dictionary<AgentTarget, string> m_InstalledHashByTarget = new Dictionary<AgentTarget, string>();
-        readonly Dictionary<AgentTarget, string> m_CurrentHashByTarget = new Dictionary<AgentTarget, string>();
         readonly HashSet<AgentTarget> m_InstallingSet = new HashSet<AgentTarget>();
+
+        // 區塊職責：per-skill 狀態快取（給 Matrix 用；Claude target）。
+        // 物理意義：RefreshStatus 一次算完 installed / disabled / drift 三態並快取，Matrix 繪製只讀不算，
+        //          避免舊版每幀對每個 skill 掃磁碟比對(perf) + 對齊 Tim「開頁一次判斷+快取」要求。
+        struct SkillRowState { public bool installed; public bool disabled; public bool drift; }
+        readonly Dictionary<string, SkillRowState> m_SkillRowCache = new Dictionary<string, SkillRowState>();
 
         // 區塊職責：記錄各 target 上次安裝被跳過的檔案數（install_skills.py 的 local-edit 保護）
         // 物理意義：exit=2 + stdout 的 "skipped=N" 代表有 N 檔因本地改動沒被覆蓋 — 內容實際未更新；
@@ -186,7 +187,6 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：>0 時 DrawTargetRow 顯示黃字警告；每次 RunInstall 重新解析覆寫
         readonly Dictionary<AgentTarget, int> m_LastSkipCountByTarget = new Dictionary<AgentTarget, int>();
 
-        string m_CurrentCommit = "";
         string m_HostProjectRoot = "";
         string m_UCLCorePath = "";
         bool m_StatusDirty = true;
@@ -223,42 +223,11 @@ namespace UCL.Core.EditorLib.Page
             return outermostWithClaude ?? outermostWithGit;
         }
 
-        static string TryGetGitHead(string repoPath)
-        {
-            try
-            {
-                using (var p = new Process())
-                {
-                    p.StartInfo.FileName = "git";
-                    p.StartInfo.Arguments = $"-C \"{repoPath}\" rev-parse HEAD";
-                    p.StartInfo.UseShellExecute = false;
-                    p.StartInfo.RedirectStandardOutput = true;
-                    p.StartInfo.RedirectStandardError = true;
-                    p.StartInfo.CreateNoWindow = true;
-                    p.Start();
-                    string stdout = p.StandardOutput.ReadToEnd().Trim();
-                    p.WaitForExit(3000);
-                    if (p.ExitCode == 0 && !string.IsNullOrEmpty(stdout)) return stdout;
-                }
-            }
-            catch { }
-            return null;
-        }
-
-        static string ShortHash(string full)
-        {
-            if (string.IsNullOrEmpty(full)) return "(unknown)";
-            return full.Length >= 7 ? full.Substring(0, 7) : full;
-        }
-
         void RefreshStatus()
         {
             m_StatusDirty = false;
-            m_CurrentCommit = "";
             m_StatusByTarget.Clear();
-            m_InstalledCommitByTarget.Clear();
-            m_InstalledHashByTarget.Clear();
-            m_CurrentHashByTarget.Clear();
+            m_SkillRowCache.Clear();
 
             string corePathRel = UCL_EditorPath.CorePath;
             if (string.IsNullOrEmpty(corePathRel))
@@ -277,78 +246,52 @@ namespace UCL.Core.EditorLib.Page
             }
             m_HostProjectRoot = hostRoot;
 
-            m_CurrentCommit = TryGetGitHead(m_UCLCorePath) ?? "";
-
             foreach (var t in AllTargets) ComputeStatusFor(t, hostRoot);
+            BuildSkillRowCache(hostRoot);
         }
 
-        // 區塊職責：對單一 target 計算 .ucl_installed marker 狀態
-        // 物理意義：讀 marker JSON 取出 source_hash + installed_skills；對 Skills~/<installed_skills>
-        //          重新算 aggregate SHA1，相同 → Synced；不同 → Stale；舊版無 source_hash 欄位 → LegacyNoHash。
-        // 數值影響：寫 m_StatusByTarget[t]、m_InstalledCommitByTarget[t]、m_InstalledHashByTarget[t]、m_CurrentHashByTarget[t]
+        // 區塊職責：對單一 target 計算安裝狀態（direct content compare, 不讀 marker hash/commit）。
+        // 物理意義：.ucl_installed 存在且有裝過 skill(目錄含 .ucl_source) = 已安裝；再逐一比對每個
+        //          已裝 skill「Skills~ 源內文 vs 已裝目錄內文」是否相同 — 任一不同(或源已刪) → Stale；
+        //          全同 → Synced。完全不看 marker 的 source_hash / ucl_core_commit。
+        // 數值影響：寫 m_StatusByTarget[t]
         void ComputeStatusFor(AgentTarget t, string hostRoot)
         {
-            string markerPath = Path.Combine(hostRoot, TargetMarkerRelDir(t), ".ucl_installed");
-            if (!File.Exists(markerPath))
+            string installRoot = Path.Combine(hostRoot, TargetMarkerRelDir(t));
+            string markerPath = Path.Combine(installRoot, ".ucl_installed");
+            if (!File.Exists(markerPath) || !Directory.Exists(installRoot))
             {
                 m_StatusByTarget[t] = InstallStatus.NotInstalled;
-                m_InstalledCommitByTarget[t] = "";
-                m_InstalledHashByTarget[t] = "";
-                m_CurrentHashByTarget[t] = "";
                 return;
             }
 
-            string installedCommit = "";
-            string installedHash = "";
-            List<string> installedSkills = new List<string>();
+            string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
+            bool anyInstalled = false;
+            bool anyStale = false;
             try
             {
-                string json = File.ReadAllText(markerPath);
-                installedCommit = ExtractJsonStringField(json, "ucl_core_commit");
-                installedHash = ExtractJsonStringField(json, "source_hash");
-                installedSkills = ExtractJsonStringArrayField(json, "installed_skills");
+                foreach (var instDir in Directory.GetDirectories(installRoot))
+                {
+                    // 只看「本工具裝的」skill 目錄（含 .ucl_source 標記）
+                    if (!File.Exists(Path.Combine(instDir, ".ucl_source"))) continue;
+                    anyInstalled = true;
+                    string name = Path.GetFileName(instDir);
+                    string srcDir = Path.Combine(skillsRoot, name);
+                    // 源已刪除但已裝殘留，或內文不同 → stale（需重裝 / 清理）
+                    if (!Directory.Exists(srcDir) || !SkillContentMatches(srcDir, instDir, t))
+                        anyStale = true;
+                }
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[AgentSkillManager] 讀 {markerPath} 失敗：{ex.Message}");
+                Debug.LogWarning($"[AgentSkillManager] 比對 {installRoot} 內文失敗：{ex.Message}");
             }
-            m_InstalledCommitByTarget[t] = installedCommit;
-            m_InstalledHashByTarget[t] = installedHash;
 
-            // 算當前 source 端 hash — 用 marker 內 installed_skills 為基準
-            // （這樣使用者「只裝某子集」不會因為新 skill 出現就誤判 stale）
-            string currentHash = "";
-            try
-            {
-                if (installedSkills != null && installedSkills.Count > 0)
-                    currentHash = ComputeSourceHashFor(installedSkills, t);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[AgentSkillManager] 算 source hash 失敗：{ex.Message}");
-            }
-            m_CurrentHashByTarget[t] = currentHash;
-
-            if (string.IsNullOrEmpty(installedHash))
-            {
-                // legacy marker — 沒寫 source_hash，提示重跑 install 刷新
-                m_StatusByTarget[t] = InstallStatus.LegacyNoHash;
-            }
-            else if (string.IsNullOrEmpty(currentHash))
-            {
-                m_StatusByTarget[t] = InstallStatus.UnknownHead;
-            }
-            else if (currentHash == installedHash)
-            {
-                m_StatusByTarget[t] = InstallStatus.Synced;
-            }
-            else
-            {
-                m_StatusByTarget[t] = InstallStatus.Stale;
-            }
+            if (!anyInstalled) m_StatusByTarget[t] = InstallStatus.NotInstalled;
+            else m_StatusByTarget[t] = anyStale ? InstallStatus.Stale : InstallStatus.Synced;
         }
 
-        // 區塊職責：lightweight JSON string 欄位抽取（避免引入 JsonUtility 對 Dictionary 的限制）
+        // 區塊職責：lightweight JSON string 欄位抽取（SyncSkillConfig 讀既有 Note 用）
         // 物理意義：找 "<key>": "<value>" 的 value，跳過轉義處理（marker 不含特殊字元）
         // 數值影響：找不到 → 回空字串
         static string ExtractJsonStringField(string json, string key)
@@ -364,31 +307,6 @@ namespace UCL.Core.EditorLib.Page
             if (q2 <= q1) return "";
             return json.Substring(q1 + 1, q2 - q1 - 1);
         }
-
-        // 區塊職責：抽取 JSON 內 string array 欄位（如 installed_skills）
-        // 物理意義：找 "<key>": [ "a", "b", ... ]，逐個讀字串
-        // 數值影響：找不到 → 空 list
-        static List<string> ExtractJsonStringArrayField(string json, string key)
-        {
-            var list = new List<string>();
-            string token = "\"" + key + "\"";
-            int idx = json.IndexOf(token, StringComparison.Ordinal);
-            if (idx < 0) return list;
-            int bracket = json.IndexOf('[', idx + token.Length);
-            int endBracket = json.IndexOf(']', bracket + 1);
-            if (bracket < 0 || endBracket < 0) return list;
-            int cursor = bracket + 1;
-            while (cursor < endBracket)
-            {
-                int q1 = json.IndexOf('"', cursor);
-                if (q1 < 0 || q1 > endBracket) break;
-                int q2 = json.IndexOf('"', q1 + 1);
-                if (q2 < 0 || q2 > endBracket) break;
-                list.Add(json.Substring(q1 + 1, q2 - q1 - 1));
-                cursor = q2 + 1;
-            }
-            return list;
-        }
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
@@ -397,79 +315,94 @@ namespace UCL.Core.EditorLib.Page
                 Application.OpenURL(UCL_URL.ResolveURL("ucl_core:Skills~/README.md"));
             }
         }
-        // 區塊職責：對 selected skill names 算 aggregate SHA1，演算法必須跟
-        //          install_skills.py 的 compute_source_hash() 一致：
-        //            for skill in sorted(names):
-        //              files = rglob("*")
-        //              for (rel-posix-path, file) in sorted by rel:
-        //                hasher.update(rel + \0 + sha1(file)hex + \0)
-        // 物理意義：跟 Python 同字節序列 → 同最終 hash → Editor 與 CLI 端可一致比對
-        // 數值影響：m_UCLCorePath 必須有效；missing skill dir → 跳過該 skill
-        string ComputeSourceHashFor(List<string> skillNames, AgentTarget target)
+        // 區塊職責：direct content compare — 源 skill 目錄 vs 已裝目錄，逐檔比對「內文是否相同」。
+        // 物理意義：不算 hash（Tim 2026-07-14 拍板「甚至不用 hash，直接比對內文」）。claude 是原樣複製
+        //          → 內文應完全相同；antigravity 的 SKILL.md 安裝時會注入 trigger frontmatter，故比對前
+        //          對源 SKILL.md 套同樣轉換（鏡像 install_skills.py）。
+        // 數值影響：任一源檔在已裝端缺失 / 內文不同 → 回 false（視為 drift/stale）。以文字（讀為 UTF-8）
+        //          比對避開 BOM/編碼差異；.md 在本 repo 為 -text（無 CRLF 轉換）故換行穩定。忽略已裝端多出的
+        //          .ucl_source 標記（源端沒有，不納入比對）。
+        bool SkillContentMatches(string srcDir, string instDir, AgentTarget target)
         {
-            if (string.IsNullOrEmpty(m_UCLCorePath)) return "";
-            string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
-            if (!Directory.Exists(skillsRoot)) return "";
-
-            // 排序時用 ordinal compare（與 Python sorted() 預設行為一致）
-            var orderedNames = skillNames.OrderBy(s => s, StringComparer.Ordinal).ToList();
-
-            using (var sha = SHA1.Create())
+            foreach (var srcFile in Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories))
             {
-                byte[] sep = new byte[] { 0 };
-                foreach (var name in orderedNames)
+                string rel = Path.GetRelativePath(srcDir, srcFile);
+                string instFile = Path.Combine(instDir, rel);
+                if (!File.Exists(instFile)) return false;
+                string expected = (target == AgentTarget.Antigravity && Path.GetFileName(srcFile) == "SKILL.md")
+                    ? TransformAntigravityFrontmatter(File.ReadAllText(srcFile), Path.GetFileName(srcDir))
+                    : File.ReadAllText(srcFile);
+                if (File.ReadAllText(instFile) != expected) return false;
+            }
+            return true;
+        }
+
+        // 區塊職責：鏡像 install_skills.py 的 antigravity SKILL.md frontmatter 轉換（比對用）。
+        // 物理意義：install 端會在 SKILL.md frontmatter 注入一行 trigger:；比對已裝內文時源端必須套同一
+        //          轉換才不會誤判 drift。**此對照表與轉換規則須與 install_skills.py 的
+        //          get_antigravity_trigger_frontmatter() / transform_antigravity_frontmatter() 保持同步。**
+        static string AntigravityTrigger(string skill)
+        {
+            switch (skill)
+            {
+                case "ucl-chat-tavern":
+                    return "{ on_intent: [\"進入酒館\", \"聊天酒館\", \"進酒館\", \"去酒館\", \"enter tavern\", \"自言自語\", \"跟自己討論\", \"solo think\", \"腦力激盪\", \"solo brainstorm\", \"自我辯論\"] }";
+                case "ucl-commit":
+                    return "{ on_intent: [\"commit\", \"提交\", \"git commit\"] }";
+                case "ucl-compile-error":
+                    return "{ on_files: [\"*.cs\"], on_intent: [\"編譯錯\", \"compile error\", \"CS0103\", \"CS0117\", \"CS1503\", \"CS0246\", \"asmdef\", \"assembly\"] }";
+                case "ucl-create-cmd":
+                    return "{ on_intent: [\"新增 AgentCommand\", \"新增指令\", \"Create Cmd\", \"Create Command\"] }";
+                case "ucl-hook-setup":
+                    return "{ on_intent: [\"Hook Setup\", \"Hook 設置\", \"設置 Hook\", \"install skills\"] }";
+                case "ucl-watch-video":
+                    return "{ on_intent: [\"watch video\", \"看影片\", \"觀看影片\", \"YouTube\", \"影片心得\", \"影片轉錄\"] }";
+                default:
+                    return "\"always_on\"";
+            }
+        }
+
+        static string TransformAntigravityFrontmatter(string content, string skill)
+        {
+            string trig = AntigravityTrigger(skill);
+            if (content.StartsWith("---"))
+            {
+                // Python: content.split("---", 2) → 最多 3 段
+                string[] parts = content.Split(new[] { "---" }, 3, StringSplitOptions.None);
+                if (parts.Length >= 3)
                 {
-                    string srcDir = Path.Combine(skillsRoot, name);
-                    if (!Directory.Exists(srcDir)) continue;
-
-                    List<string> files = Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories).ToList();
-
-                    // 以 posix-style rel-to-skillsRoot path 排序，跟 Python relative_to(SKILLS_SRC).as_posix() 一致
-                    var entries = files
-                        .Select(f =>
-                        {
-                            string rel = MakePosixRelative(skillsRoot, f);
-                            return new { rel, abs = f };
-                        })
-                        .OrderBy(e => e.rel, StringComparer.Ordinal)
-                        .ToList();
-
-                    foreach (var e in entries)
+                    string frontmatter = parts[1];
+                    if (!frontmatter.Contains("trigger:"))
                     {
-                        byte[] relBytes = Encoding.UTF8.GetBytes(e.rel);
-                        sha.TransformBlock(relBytes, 0, relBytes.Length, null, 0);
-                        sha.TransformBlock(sep, 0, 1, null, 0);
-                        string fileHex = ComputeFileSha1Hex(e.abs);
-                        byte[] hexBytes = Encoding.ASCII.GetBytes(fileHex);
-                        sha.TransformBlock(hexBytes, 0, hexBytes.Length, null, 0);
-                        sha.TransformBlock(sep, 0, 1, null, 0);
+                        frontmatter = $"trigger: {trig}\n{frontmatter}";
+                        return $"---\n{frontmatter}---{parts[2]}";
                     }
+                    // 已有 trigger → fall through 到底部 wrap（與 Python 行為一致）
                 }
-                sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-                return ToHex(sha.Hash);
             }
+            return $"---\ntrigger: {trig}\n---\n\n{content}";
         }
 
-        static string MakePosixRelative(string root, string fullPath)
+        // 區塊職責：一次算完 Matrix 用的 per-skill 三態（installed/disabled/drift）並快取。
+        // 物理意義：由 RefreshStatus 呼叫；Matrix 繪製只讀 m_SkillRowCache，不每幀掃磁碟（對齊 Tim
+        //          「開頁一次判斷+快取，只有安裝/skill 操作才刷新」）。drift 用 SkillContentMatches（Claude target）。
+        void BuildSkillRowCache(string hostRoot)
         {
-            string rel = Path.GetRelativePath(root, fullPath);
-            return rel.Replace('\\', '/');
-        }
-
-        static string ComputeFileSha1Hex(string path)
-        {
-            using (var sha = SHA1.Create())
-            using (var fs = File.OpenRead(path))
+            m_SkillRowCache.Clear();
+            string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
+            if (!Directory.Exists(skillsRoot)) return;
+            string installRoot = Path.Combine(hostRoot, TargetMarkerRelDir(AgentTarget.Claude));
+            var disabledSet = LoadDisabledSkills();
+            foreach (var dir in Directory.GetDirectories(skillsRoot))
             {
-                return ToHex(sha.ComputeHash(fs));
+                string name = Path.GetFileName(dir);
+                if (name.StartsWith("_") || name.EndsWith("~")) continue;
+                string instDir = Path.Combine(installRoot, name);
+                bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
+                bool disabled = disabledSet.Contains(name);
+                bool drift = installed && !disabled && !SkillContentMatches(dir, instDir, AgentTarget.Claude);
+                m_SkillRowCache[name] = new SkillRowState { installed = installed, disabled = disabled, drift = drift };
             }
-        }
-
-        static string ToHex(byte[] bytes)
-        {
-            var sb = new StringBuilder(bytes.Length * 2);
-            for (int i = 0; i < bytes.Length; i++) sb.Append(bytes[i].ToString("x2"));
-            return sb.ToString();
         }
 
         /// <summary>同步跑 install_skills.py --target X。Block UI 但通常 &lt;500ms。
@@ -595,38 +528,6 @@ namespace UCL.Core.EditorLib.Page
             finally
             {
                 m_StatusDirty = true;
-            }
-        }
-
-        // 區塊職責：對單一 skill 目錄算 content hash（同 ComputeSourceHashFor 演算法, 但任意 dir + 排除 .ucl_source）
-        // 物理意義：per-skill drift 偵測 = hash(Skills~/<skill> 源) vs hash(.claude/skills/<skill> 已裝)；
-        //          排除 .ucl_source（已裝端才有, 源端沒有）才能公平比對。
-        // 數值影響：回 hex string；dir 不存在回 ""
-        static string HashSkillDirContent(string dir)
-        {
-            if (!Directory.Exists(dir)) return "";
-            var entries = new List<(string rel, string abs)>();
-            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
-            {
-                string rel = f.Substring(dir.Length).TrimStart('\\', '/').Replace('\\', '/');
-                if (rel == ".ucl_source") continue;   // 已裝端標記檔, 源端沒有 → 排除
-                entries.Add((rel, f));
-            }
-            entries.Sort((a, b) => string.CompareOrdinal(a.rel, b.rel));
-            using (var sha = SHA1.Create())
-            {
-                byte[] sep = new byte[] { 0 };
-                foreach (var e in entries)
-                {
-                    byte[] relBytes = Encoding.UTF8.GetBytes(e.rel);
-                    sha.TransformBlock(relBytes, 0, relBytes.Length, null, 0);
-                    sha.TransformBlock(sep, 0, 1, null, 0);
-                    byte[] hexBytes = Encoding.ASCII.GetBytes(ComputeFileSha1Hex(e.abs));
-                    sha.TransformBlock(hexBytes, 0, hexBytes.Length, null, 0);
-                    sha.TransformBlock(sep, 0, 1, null, 0);
-                }
-                sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-                return ToHex(sha.Hash);
             }
         }
 
@@ -878,7 +779,6 @@ namespace UCL.Core.EditorLib.Page
         void DrawTargetRow(AgentTarget t)
         {
             InstallStatus status = m_StatusByTarget.TryGetValue(t, out var s) ? s : InstallStatus.NotInstalled;
-            string installedCommit = m_InstalledCommitByTarget.TryGetValue(t, out var c) ? c : "";
 
             string statusLine;
             Color btnColor;
@@ -903,29 +803,19 @@ namespace UCL.Core.EditorLib.Page
                     btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
                     break;
                 case InstallStatus.Stale:
-                    statusLine = string.Format(
-                        UCL_CodeLocalize.Get("AgentSkill.Status.Stale"),
-                        ShortHash(installedCommit), ShortHash(m_CurrentCommit));
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.Stale");
                     btnColor = new Color(1f, 0.6f, 0.2f);
                     btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Sync");
                     break;
                 case InstallStatus.Synced:
-                    statusLine = string.Format(
-                        UCL_CodeLocalize.Get("AgentSkill.Status.Synced"),
-                        ShortHash(m_CurrentCommit));
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.Synced");
                     btnColor = new Color(0.6f, 0.9f, 0.6f);
                     btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
                     break;
-                case InstallStatus.LegacyNoHash:
-                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.LegacyNoHash");
-                    btnColor = new Color(1f, 0.6f, 0.2f);
-                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Sync");
-                    break;
-                case InstallStatus.UnknownHead:
                 default:
-                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.UnknownHead");
-                    btnColor = Color.cyan;
-                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall");
+                    statusLine = UCL_CodeLocalize.Get("AgentSkill.Status.NotInstalled");
+                    btnColor = new Color(1f, 0.85f, 0.2f);
+                    btnLabel = UCL_CodeLocalize.Get("AgentSkill.Btn.Install");
                     break;
             }
 
@@ -936,8 +826,8 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(statusLine, WrapLabelStyle);
 
                 // 區塊職責：上次安裝有檔案被 local-edit 保護跳過 → 黃字警告上頁面
-                // 物理意義：跳過 = 該檔內容實際沒更新，但上方 Synced 判定只比 source 側 hash 看不出來；
-                //          不顯示的話使用者會以為一鍵安裝後就是最新（本 bug 的原始回報場景）
+                // 物理意義：跳過 = 該檔內容沒更新（維持本地改動）。現在上方狀態已改成 direct content compare，
+                //          會把這種情況正確標成 Stale；本行是「這次安裝當下」的即時提示（skipped=N），互補。
                 // 數值影響：純顯示；數值來自 m_LastSkipCountByTarget（RunInstall 時解析 stdout）
                 if (m_LastSkipCountByTarget.TryGetValue(t, out int skipCount) && skipCount > 0)
                 {
@@ -951,7 +841,7 @@ namespace UCL.Core.EditorLib.Page
                     bool installingThis = m_InstallingSet.Contains(t);
                     using (new EditorGUI.DisabledScope(!canInstall || installingThis))
                     {
-                        if (GUILayout.Button(btnLabel, UCL_GUIStyle.GetButtonStyle(btnColor), GUILayout.Width(180), GUILayout.Height(28)))
+                        if (GUILayout.Button(btnLabel, UCL_GUIStyle.GetButtonStyle(btnColor), GUILayout.ExpandWidth(false)))
                         {
                             RunInstall(t);
                         }
@@ -984,15 +874,14 @@ namespace UCL.Core.EditorLib.Page
                 // 狀態 per-skill：未裝 / 已同步 / ⚠已改動(drift) / 🚫停用(UCL_SkillConfigAsset Enabled=false)。
                 // 停用語意：disabled 但實體還在 → 「🚫停用·待移除」(下次同步會解除安裝);
                 //          disabled 且已移除 → 「🚫停用」。按鈕同步 UCL_SkillConfigAsset(裝→Enabled=true / 移除→false)。
-                string installRoot = Path.Combine(m_HostProjectRoot, TargetMarkerRelDir(AgentTarget.Claude));
-                var disabledSet = LoadDisabledSkills();
                 foreach (var dir in Directory.GetDirectories(skillsRoot).OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal))
                 {
                     string name = Path.GetFileName(dir);
                     if (name.StartsWith("_") || name.EndsWith("~")) continue;
-                    string instDir = Path.Combine(installRoot, name);
-                    bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
-                    bool disabled = disabledSet.Contains(name);
+                    // 讀 RefreshStatus 建好的 per-skill 快取（不每幀掃磁碟；安裝/skill 操作後 m_StatusDirty 才刷新）
+                    if (!m_SkillRowCache.TryGetValue(name, out var row)) continue;
+                    bool installed = row.installed;
+                    bool disabled = row.disabled;
                     string statusTxt; Color statusCol;
                     if (disabled)
                     {
@@ -1001,12 +890,8 @@ namespace UCL.Core.EditorLib.Page
                         else { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Disabled"); statusCol = new Color(0.7f, 0.55f, 0.55f); }
                     }
                     else if (!installed) { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.NotInstalled"); statusCol = new Color(0.6f, 0.6f, 0.6f); }
-                    else
-                    {
-                        bool drift = HashSkillDirContent(dir) != HashSkillDirContent(instDir);
-                        if (drift) { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Drift"); statusCol = new Color(1f, 0.7f, 0.3f); }
-                        else { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Synced"); statusCol = new Color(0.4f, 0.85f, 0.5f); }
-                    }
+                    else if (row.drift) { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Drift"); statusCol = new Color(1f, 0.7f, 0.3f); }
+                    else { statusTxt = UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Synced"); statusCol = new Color(0.4f, 0.85f, 0.5f); }
                     using (new GUILayout.HorizontalScope())
                     {
                         var st = new GUIStyle(UCL_GUIStyle.LabelStyle); st.normal.textColor = statusCol;
@@ -1016,7 +901,8 @@ namespace UCL.Core.EditorLib.Page
                         // 物理意義：預覽永遠看 Skills~/<name>/SKILL.md(source of truth, 必存在), 不論裝/未裝;
                         //          走 UCL_MarkdownViewerPage(Push 一頁, 按 Back 返回), 不離開 Unity 視窗。
                         // 數值影響：純讀檔渲染, 不改任何安裝狀態。
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("Preview"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        float btnWidth = UCL_GUIStyle.GetScaledSize(100);
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("Preview"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                         {
                             string skillMdAbs = Path.Combine(dir, "SKILL.md").Replace('\\', '/');
                             string skillMdRel = Path.GetRelativePath(m_UCLCorePath, skillMdAbs).Replace('\\', '/');
@@ -1028,19 +914,19 @@ namespace UCL.Core.EditorLib.Page
                         if (disabled)
                         {
                             // 啟用：同步 Enabled=true → 安裝
-                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Matrix.Btn.Enable"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Matrix.Btn.Enable"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                             {
                                 SyncSkillConfig(name, enabled: true);
                                 RunInstallSkill(name, uninstall: false);
                             }
                             // disabled 但實體還在 → 提供立即解除安裝（不改 config，維持停用）
-                            if (installed && GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (installed && GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                                 RunInstallSkill(name, uninstall: true);
                         }
                         else if (!installed)
                         {
                             // 裝：同步 Enabled=true(消除可能殘留的 disabled 記錄) → 安裝
-                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Install"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Install"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                             {
                                 SyncSkillConfig(name, enabled: true);
                                 RunInstallSkill(name, uninstall: false);
@@ -1049,13 +935,13 @@ namespace UCL.Core.EditorLib.Page
                         else
                         {
                             // 移除：同步 Enabled=false(停用) → 解除安裝
-                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                             {
                                 SyncSkillConfig(name, enabled: false);
                                 RunInstallSkill(name, uninstall: true);
                             }
                             // drift 時提供強制重裝（覆蓋本地改動）
-                            if (statusTxt == UCL_CodeLocalize.Get("AgentSkill.Matrix.Status.Drift") && GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                            if (row.drift && GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                                 RunInstallSkill(name, uninstall: false, force: true);
                         }
                         GUILayout.FlexibleSpace();

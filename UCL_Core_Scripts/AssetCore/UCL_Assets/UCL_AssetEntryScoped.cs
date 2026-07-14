@@ -60,10 +60,15 @@ namespace UCL.Core
         /// <summary>scope 清單所在的成員名 (欄位或屬性), e.g. "Interactions"</summary>
         protected abstract string ScopeMemberName { get; }
 
+        /// <summary>
+        /// 清單元素身上「ID 所在」的成員名. 預設 "ID" (元素自帶 ID / 本身是 UCLI_ID);
+        /// 元素的 ID 藏在巢狀成員時覆寫, e.g. SkeletonGraphicSetting → "skeleton" (值為 UCLI_ID, 取其 ID).
+        /// 成員值支援 string 或 UCLI_ID.
+        /// </summary>
+        protected virtual string ElementIDMemberName => "ID";
+
         // (ownerType, memberName) → MemberInfo(欄位或屬性); null 表示找不到 (也快取避免重複找)
         static readonly Dictionary<(System.Type, string), MemberInfo> s_MemberCache = new();
-        // elementType → 元素的 "ID" MemberInfo (UCLI_ID cast 失敗時的反射 fallback)
-        static readonly Dictionary<System.Type, MemberInfo> s_IDMemberCache = new();
 
         protected override List<string> GetScopedIDs(UCLI_CommonEditable iCurAsset)
         {
@@ -77,19 +82,13 @@ namespace UCL.Core
             object value = GetMemberValue(member, iCurAsset);
             if (value is not IEnumerable seq) return null;
 
+            string idMemberName = ElementIDMemberName;
             List<string> ids = new List<string>();
             foreach (object element in seq)
             {
                 if (element == null) continue;
-                if (element is UCLI_ID id)
-                {
-                    ids.Add(id.ID);
-                }
-                else
-                {
-                    string reflectedID = ReflectElementID(element);
-                    if (reflectedID != null) ids.Add(reflectedID);
-                }
+                string elementID = ExtractElementID(element, idMemberName);
+                if (elementID != null) ids.Add(elementID);
             }
             return ids;
         }
@@ -116,16 +115,18 @@ namespace UCL.Core
             };
         }
 
-        static string ReflectElementID(object iElement)
+        static string ExtractElementID(object iElement, string iIDMemberName)
         {
-            System.Type type = iElement.GetType();
-            if (!s_IDMemberCache.TryGetValue(type, out MemberInfo idMember))
-            {
-                idMember = ResolveMember(type, "ID");
-                s_IDMemberCache[type] = idMember;
-            }
+            if (iIDMemberName == "ID" && iElement is UCLI_ID id) return id.ID; // 預設情境 fast path
+
+            MemberInfo idMember = ResolveMember(iElement.GetType(), iIDMemberName);
             if (idMember == null) return null;
-            return GetMemberValue(idMember, iElement) as string;
+            return GetMemberValue(idMember, iElement) switch
+            {
+                string str => str,
+                UCLI_ID nested => nested.ID,
+                _ => null,
+            };
         }
     }
 }

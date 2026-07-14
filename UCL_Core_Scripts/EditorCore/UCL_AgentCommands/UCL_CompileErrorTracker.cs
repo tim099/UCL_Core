@@ -211,7 +211,10 @@ namespace UCL.Core.EditorLib
         }
 
         // 區塊職責：把絕對路徑壓成 git-root 相對路徑（讓 JSON 內檔案 path 跨機器穩定）
-        // 物理意義：Unity CompilerMessage.file 可能是絕對路徑或 Assets/ 相對；統一成 git-root 相對
+        // 物理意義：Unity CompilerMessage.file 可能是絕對路徑或 Assets/ 相對（= Unity 專案根相對）；
+        //          統一成 git-root 相對。專案根對 git-root 的位置各專案不同
+        //          （LY: 專案根 = git 根；CardGame: 專案在 <git-root>/CardGame/），
+        //          用 Application.dataPath 動態求前綴，不寫死專案名。
         // 數值影響：純字串轉換
         static string NormalizePath(string raw)
         {
@@ -222,10 +225,15 @@ namespace UCL.Core.EditorLib
             {
                 return p.Substring(gitRoot.Length + 1);
             }
-            // Assets/ 開頭的轉成 CardGame/Assets/...（git-root 相對）
+            // Assets/ 開頭 = Unity 專案根相對；補上「專案根對 git-root 的相對前綴」
             if (p.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
             {
-                return "CardGame/" + p;
+                string projectRoot = Path.GetDirectoryName(Application.dataPath).Replace('\\', '/').TrimEnd('/');
+                if (projectRoot.StartsWith(gitRoot + "/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return projectRoot.Substring(gitRoot.Length + 1) + "/" + p;
+                }
+                return p; // 專案根 = git 根（或在 git 外）→ 原樣即為 git-root 相對
             }
             return p;
         }

@@ -193,7 +193,8 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.Matrix.Status.Drift" => "⚠changed",
                 "AgentSkill.Matrix.Status.Synced" => "✓synced",
                 "AgentSkill.Matrix.Btn.Enable" => "Enable",
-                "AgentSkill.AckToggle" => " I understand the Skill mechanism (don't auto-open this page on next Welcome)",
+                "AgentSkill.AckToggle" => " Never auto-open this page (even when skills update; still available from the menu)",
+                "AgentSkill.LastChangesLabel" => "Last auto-popup reason — skill changes: {0}",
                 "AgentSkill.AckVersionLabel" => "AcknowledgedVersion: {0}",
                 "AgentSkill.NotSet" => "(unset)",
 

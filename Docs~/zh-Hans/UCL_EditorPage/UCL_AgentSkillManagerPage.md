@@ -3,7 +3,7 @@ title: UCL_AgentSkillManagerPage — Agent Skill 安装管理页
 description: IMGUI 可视化前端，把 UCL_Core/Skills~/ 内的工作流 skill 一键安装给各家 AI agent。第一次打开 UCL_WelcomePage 时自动弹出，强制 onboarding 曝光。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-08
+last_updated: 2026-07-14
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Skills~/README.md | Skills~ 来源目录 | source-of-truth + manifest 规范
@@ -31,7 +31,7 @@ related:
 
 | 入口 | 触发时机 | 程序入口 |
 |---|---|---|
-| 自动弹出 | 第一次打开 Welcome、`AcknowledgedVersion` 不符当前版本 | `MaybeAutoPopupOnWelcome(controller)` 由 `UCL_WelcomePage.ContentOnGUI` 首帧调用 |
+| 自动弹出 | 初次（无 hash 快照）无条件弹；之后只有 `Skills~` 源 hash 快照有 diff（skill 新增/变更/移除）才弹，弹窗当下即覆写快照。勾过「永不自动弹」则一律不弹 | `MaybeAutoPopupOnWelcome(controller)` 由 `UCL_WelcomePage.ContentOnGUI` 首帧调用 |
 | Welcome 卡片 | 用户主动点击 | `UCL_AgentSkillManagerPage.Create()` |
 | 菜单栏 | `UCL → Agent Skill Manager` | `OpenFromMenu()`（[MenuItem]） |
 
@@ -39,10 +39,15 @@ related:
 
 ## 3. EditorPrefs
 
-- **Key**: `UCL_Core.AgentSkill.AcknowledgedVersion@<ProjectFingerprint>`
-- **值**: 当前页面内容版本（目前为 `"1"`）
-- **Per-project namespaced**: 使用 `Application.dataPath.GetHashCode()` 作为后缀，避免 A 项目勾选过导致 B 项目不弹出。
-- **内容版本 bump**: 内容版本更新 → EditorPrefs 内旧值不符 → 重新自动弹出一次（让用户看到新增功能）
+三个 key 都以 `@<ProjectFingerprint>`（`Application.dataPath.GetHashCode()`）加缀 — per-project namespaced，避免 A 项目勾过 B 项目不弹。指纹必须是稳定值，任何随开发活动变动的值（如 git commit）都不配当快照基准。
+
+| Key | 值 | 用途 |
+|---|---|---|
+| `UCL_Core.AgentSkill.AcknowledgedVersion@<fp>` | `"1"` | 「永不自动弹」opt-out 旗标（footer toggle 写入；skill 更新也不弹） |
+| `UCL_Core.AgentSkill.SkillHashes@<fp>` | `"skill-a=1a2b3c...;skill-b=..."` | 全部 skill 的 source hash 快照（单一 key、名称排序；弹窗判定基准，弹窗当下即覆写） |
+| `UCL_Core.AgentSkill.LastChanges@<fp>` | `"2026-07-14 17:20 \| ~ucl-commit, +ucl-xxx"` | 上次自动弹窗的变动清单（`+`新增 `~`变更 `-`移除；footer 显示，秒关弹窗事后可查） |
+
+Hash 规格：per-skill 对目录下所有文件（`.` 开头隐藏文件除外）按相对路径 Ordinal 排序，逐文件喂「相对路径 + `\0` + 内文」进 MD5 取前 12 hex；内文走 `ReadAllText`（吃 BOM）+ `\r\n` 与孤立 `\r` 均折成 `\n`（防 autocrlf 假变动）。EditorPrefs 为 per-machine — 新 clone / 换机器会首弹一次（新环境重新曝光，属预期行为非 bug）。
 
 ---
 

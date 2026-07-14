@@ -193,7 +193,8 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.Matrix.Status.Drift" => "⚠変更",
                 "AgentSkill.Matrix.Status.Synced" => "✓同期",
                 "AgentSkill.Matrix.Btn.Enable" => "有効化",
-                "AgentSkill.AckToggle" => " Skill の仕組みを理解しました（次回 Welcome でこのページを自動表示しない）",
+                "AgentSkill.AckToggle" => " このページを自動表示しない（skill が更新されても表示しない。メニューから手動で開けます）",
+                "AgentSkill.LastChangesLabel" => "前回の自動表示の理由 — skill 変更: {0}",
                 "AgentSkill.AckVersionLabel" => "AcknowledgedVersion: {0}",
                 "AgentSkill.NotSet" => "(未設定)",
 

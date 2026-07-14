@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using UCL.Core.LocalizeLib;
 using UCL.Core.UI;
@@ -48,17 +49,20 @@ namespace UCL.Core.EditorLib.Page
         //          首次曝光由 MaybeAutoPopupOnWelcome 處理，事後使用者要再開可從 Page Picker 找
         public override bool ShowInPageMenu => true;
 
-        /// <summary>當前頁內容版本。EditorPrefs 紀錄的版本不同 → 視為「沒看過」會重新自動彈出。</summary>
+        /// <summary>「永不自動彈」opt-out 旗標的版本值。勾選 footer toggle 寫入本值 → 之後即使
+        /// skill 有更新也不自動彈（Tim 2026-07-14 拍板：彈窗判定改走 hash 快照，本旗標降級為逃生門）。</summary>
         public const string CurrentAcknowledgeVersion = "1";
 
-        // EditorPrefs 跨專案共享 → 用 ProjectFingerprint 加綴，避免 A 專案勾過 B 專案不彈
+        // EditorPrefs 跨專案共享 → 用 ProjectFingerprint 加綴，避免 A 專案勾過 B 專案不彈。
+        // 指紋必須用穩定值（dataPath hash）— 任何隨開發活動自然變動的值（如 git commit）都不配
+        // 當快照 key，否則永遠判定有變動（summit install marker churn 血證）。
         static string s_PrefKey_Acknowledged;
         static string s_ProjectFingerprint;
 
         static string ProjectFingerprint =>
             s_ProjectFingerprint ??= Application.dataPath.GetHashCode().ToString("X");
 
-        /// <summary>EditorPrefs key — 使用者已確認看過本頁的版本。空 = 第一次。</summary>
+        /// <summary>EditorPrefs key — 使用者勾過「永不自動彈」的 opt-out 旗標。空 = 未勾。</summary>
         public static string PrefKey_Acknowledged =>
             s_PrefKey_Acknowledged ??= $"UCL_Core.AgentSkill.AcknowledgedVersion@{ProjectFingerprint}";
 
@@ -74,17 +78,150 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：true 後 MaybeAutoPopupOnWelcome 永遠 return false，直到 domain reload 或重啟 Editor。
         static bool s_AutoPoppedThisSession = false;
 
+        // ===========================================================
+        // 區塊：Skill source hash 快照（自動彈窗判定用，Tim 2026-07-14 拍板）
+        // 物理意義：彈窗條件從「使用者沒勾確認」改為「Skills~ 源內容自上次彈窗後有變動」。
+        //          對每個 skill 目錄算 content hash 存成單一 EditorPrefs 快照；開選單首幀
+        //          重算比對，有 diff（新增/變更/移除）才彈，彈窗當下即覆寫快照（送達即簽收，
+        //          同組變動不因 domain reload 反覆彈 — 舊 static bool guard 活不過編譯的
+        //          失憶問題被快照連根拔掉）。初次（無快照）維持無條件彈的首曝語意。
+        //          只偵測 source 演進；安裝副本被改的 local drift 仍由 Matrix ⚠ 負責。
+        // ===========================================================
+
+        /// <summary>EditorPrefs key — 所有 skill 的 hash 快照，單一 key 存 "name=hash;..."（依名稱排序）。</summary>
+        public static string PrefKey_SkillHashes =>
+            $"UCL_Core.AgentSkill.SkillHashes@{ProjectFingerprint}";
+
+        /// <summary>EditorPrefs key — 上次自動彈窗的變動清單（秒關彈窗的人可事後在頁內查看）。</summary>
+        public static string PrefKey_LastSkillChanges =>
+            $"UCL_Core.AgentSkill.LastChanges@{ProjectFingerprint}";
+
+        // 區塊職責：static 解析 Skills~ 源根目錄（MaybeAutoPopupOnWelcome 無 instance 可用）。
+        // 物理意義：與 RefreshStatus 同一條解析鏈（UnityProjectRoot + CorePath）；解析失敗回 null。
+        static string TryResolveSkillsRoot()
+        {
+            string corePathRel = UCL_EditorPath.CorePath;
+            if (string.IsNullOrEmpty(corePathRel)) return null;
+            string root = Path.Combine(Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel)), "Skills~");
+            return Directory.Exists(root) ? root : null;
+        }
+
+        // 區塊職責：列舉合法 skill 目錄（與 BuildSkillRowCache 同規則，抽 helper 防兩處漂移）。
+        static IEnumerable<string> EnumerateSkillDirs(string skillsRoot)
+        {
+            foreach (var dir in Directory.GetDirectories(skillsRoot))
+            {
+                string name = Path.GetFileName(dir);
+                if (name.StartsWith("_") || name.EndsWith("~") || name.StartsWith(".")) continue;
+                yield return dir;
+            }
+        }
+
+        // 區塊職責：算單一 skill 目錄的 content hash。
+        // 物理意義：檔案列舉後以 Ordinal 顯式排序 — Directory.GetFiles 順序跨檔案系統不保證，
+        //          不排序 = 同內容不同機器不同 hash、快照永遠 miss（summit 血證）。逐檔餵
+        //          「相對路徑 + '\0' + 正規化內文」：路徑入 hash 讓改名/搬移測得到（apex-one）；
+        //          內文走 ReadAllText（吃掉 BOM）+ \r\n 與孤立 \r 都摺成 \n，防 autocrlf /
+        //          平台切換造成 hash 假變動。隱藏檔（. 開頭）不入 hash。
+        // 數值影響：回傳 MD5 hex 前 12 chars（非密碼學用途，12 chars 對 31 個 skill 碰撞機率可忽略）。
+        static string ComputeSkillHash(string skillDir)
+        {
+            using var md5 = MD5.Create();
+            var files = Directory.GetFiles(skillDir, "*", SearchOption.AllDirectories)
+                .Select(f => Path.GetRelativePath(skillDir, f).Replace('\\', '/'))
+                .Where(rel => !Path.GetFileName(rel).StartsWith("."))
+                .OrderBy(rel => rel, StringComparer.Ordinal)
+                .ToList();
+            var sb = new StringBuilder();
+            foreach (var rel in files)
+            {
+                string content = File.ReadAllText(Path.Combine(skillDir, rel))
+                    .Replace("\r\n", "\n").Replace('\r', '\n');
+                sb.Append(rel).Append('\0').Append(content).Append('\0');
+            }
+            byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+            var hex = new StringBuilder(12);
+            for (int i = 0; i < 6; i++) hex.Append(hash[i].ToString("x2"));
+            return hex.ToString();
+        }
+
+        // 區塊職責：算全部 skill 的快照字串 "name=hash;..."（依名稱 Ordinal 排序，格式穩定可直接字串比對）。
+        // 數值影響：Skills~ 解析失敗回 null（呼叫端決定 fallback）。
+        static string ComputeSkillHashSnapshot()
+        {
+            string skillsRoot = TryResolveSkillsRoot();
+            if (skillsRoot == null) return null;
+            return string.Join(";",
+                EnumerateSkillDirs(skillsRoot)
+                    .Select(dir => $"{Path.GetFileName(dir)}={ComputeSkillHash(dir)}")
+                    .OrderBy(s => s, StringComparer.Ordinal));
+        }
+
+        // 區塊職責：解析快照字串成 name→hash map（容錯：空字串 → 空 map）。
+        static Dictionary<string, string> ParseSnapshot(string snapshot)
+        {
+            var map = new Dictionary<string, string>();
+            if (string.IsNullOrEmpty(snapshot)) return map;
+            foreach (var entry in snapshot.Split(';'))
+            {
+                int eq = entry.IndexOf('=');
+                if (eq > 0) map[entry.Substring(0, eq)] = entry.Substring(eq + 1);
+            }
+            return map;
+        }
+
+        // 區塊職責：diff 兩份快照 → 人類可讀變動清單（+新增 / ~變更 / -移除 三類都列，summit 提醒）。
+        static List<string> DiffSnapshots(string cachedSnapshot, string currentSnapshot)
+        {
+            var cached = ParseSnapshot(cachedSnapshot);
+            var current = ParseSnapshot(currentSnapshot);
+            var changes = new List<string>();
+            foreach (var kv in current)
+            {
+                if (!cached.TryGetValue(kv.Key, out var oldHash)) changes.Add($"+{kv.Key}");
+                else if (oldHash != kv.Value) changes.Add($"~{kv.Key}");
+            }
+            foreach (var name in cached.Keys)
+            {
+                if (!current.ContainsKey(name)) changes.Add($"-{name}");
+            }
+            changes.Sort(StringComparer.Ordinal);
+            return changes;
+        }
+
         /// <summary>
-        /// 「第一次開 Welcome → 自動把本頁 push 到頂」用的判斷 + 執行入口。
+        /// 「開 Welcome / EditorMenu → 自動把本頁 push 到頂」用的判斷 + 執行入口。
         /// 由 <see cref="UCL_WelcomePage"/> 的 ContentOnGUI 在首幀呼叫。
+        /// 判定：勾過「永不自動彈」→ 不彈；初次（無 hash 快照）→ 無條件彈；
+        /// 之後只有 Skills~ 源 hash 快照有 diff 才彈，彈窗當下即覆寫快照。
         /// </summary>
-        /// <returns>true = 有排程彈；false = 已看過 / 已勾「不再自動彈」/ 本 session 已彈過，沒彈</returns>
+        /// <returns>true = 有排程彈；false = 已 opt-out / 無變動 / 本 session 已彈過，沒彈</returns>
         public static bool MaybeAutoPopupOnWelcome(UCL_GUIPageController controller)
         {
-            // 比對 EditorPrefs 內已確認的版本與當前版本；不同（含空字串）則彈
+            // opt-out 逃生門：勾過「永不自動彈」→ 即使 skill 有更新也不彈（頁內 Matrix 仍看得到狀態）
             string acked = EditorPrefs.GetString(PrefKey_Acknowledged, "");
             if (acked == CurrentAcknowledgeVersion) return false;
             if (s_AutoPoppedThisSession) return false;
+
+            string cached = EditorPrefs.GetString(PrefKey_SkillHashes, "");
+            string current = ComputeSkillHashSnapshot();
+            bool firstTime = string.IsNullOrEmpty(cached);
+            if (firstTime)
+            {
+                // 初次：無條件彈（首曝語意）。Skills~ 解析失敗時快照不寫，下次成功解析再簽收。
+                if (current != null) EditorPrefs.SetString(PrefKey_SkillHashes, current);
+            }
+            else
+            {
+                // 解析失敗算不出快照 → 無從判定變動，不彈（避免 NoUCLCore 場景每次騷擾）
+                if (current == null) return false;
+                var changes = DiffSnapshots(cached, current);
+                if (changes.Count == 0) return false;
+                // 彈窗即簽收：覆寫快照 + 留存變動清單供秒關的人事後在頁內查看（summit 緩衝方案）
+                EditorPrefs.SetString(PrefKey_SkillHashes, current);
+                EditorPrefs.SetString(PrefKey_LastSkillChanges,
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm} | {string.Join(", ", changes)}");
+            }
             s_AutoPoppedThisSession = true;
 
             // 區塊職責：把實際 Push 推遲到下一個 idle tick，離開當前 OnGUI stack 才動 controller。
@@ -993,6 +1130,12 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                // 上次自動彈窗的變動清單 — 彈窗即簽收的緩衝：秒關彈窗的人事後在這裡看得到是哪些 skill 變了
+                string lastChanges = EditorPrefs.GetString(PrefKey_LastSkillChanges, "");
+                if (!string.IsNullOrEmpty(lastChanges))
+                {
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentSkill.LastChangesLabel"), lastChanges), WrapLabelStyle);
+                }
                 bool acked = EditorPrefs.GetString(PrefKey_Acknowledged, "") == CurrentAcknowledgeVersion;
                 bool newAcked = GUILayout.Toggle(acked,
                     UCL_CodeLocalize.Get("AgentSkill.AckToggle"), WrapLabelStyle);

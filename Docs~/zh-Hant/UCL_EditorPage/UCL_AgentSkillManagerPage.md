@@ -3,7 +3,7 @@ title: UCL_AgentSkillManagerPage — Agent Skill 安裝管理頁
 description: IMGUI 視覺化前端，把 UCL_Core/Skills~/ 內的工作流 skill 一鍵安裝給各家 AI agent。第一次開 UCL_WelcomePage 時自動彈出，強制 onboarding 曝光。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-08
+last_updated: 2026-07-14
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Skills~/README.md | Skills~ 來源目錄 | source-of-truth + manifest 規範
@@ -31,7 +31,7 @@ related:
 
 | 入口 | 觸發時機 | 程式入口 |
 |---|---|---|
-| 自動彈出 | 第一次開 Welcome、`AcknowledgedVersion` 不符當前版本 | `MaybeAutoPopupOnWelcome(controller)` 由 `UCL_WelcomePage.ContentOnGUI` 首幀呼叫 |
+| 自動彈出 | 初次（無 hash 快照）無條件彈；之後只有 `Skills~` 源 hash 快照有 diff（skill 新增/變更/移除）才彈，彈窗當下即覆寫快照。勾過「永不自動彈」則一律不彈 | `MaybeAutoPopupOnWelcome(controller)` 由 `UCL_WelcomePage.ContentOnGUI` 首幀呼叫 |
 | Welcome 卡片 | 使用者主動點 | `UCL_AgentSkillManagerPage.Create()` |
 | 選單 | `UCL → Agent Skill Manager` | `OpenFromMenu()`（[MenuItem]） |
 
@@ -39,10 +39,15 @@ related:
 
 ## 3. EditorPrefs
 
-- Key: `UCL_Core.AgentSkill.AcknowledgedVersion@<ProjectFingerprint>`
-- 值：當前頁內容版本（目前 `"1"`）
-- Per-project namespaced（用 `Application.dataPath.GetHashCode()` 加綴），避免 A 專案勾過 B 專案不彈
-- 內容版本 bump → EditorPrefs 內舊值不符 → 重新自動彈一次（讓使用者看新增功能）
+三個 key 都以 `@<ProjectFingerprint>`（`Application.dataPath.GetHashCode()`）加綴 — per-project namespaced，避免 A 專案勾過 B 專案不彈。指紋必須是穩定值，任何隨開發活動變動的值（如 git commit）都不配當快照基準。
+
+| Key | 值 | 用途 |
+|---|---|---|
+| `UCL_Core.AgentSkill.AcknowledgedVersion@<fp>` | `"1"` | 「永不自動彈」opt-out 旗標（footer toggle 寫入；skill 更新也不彈） |
+| `UCL_Core.AgentSkill.SkillHashes@<fp>` | `"skill-a=1a2b3c...;skill-b=..."` | 全部 skill 的 source hash 快照（單一 key、名稱排序；彈窗判定基準，彈窗當下即覆寫） |
+| `UCL_Core.AgentSkill.LastChanges@<fp>` | `"2026-07-14 17:20 \| ~ucl-commit, +ucl-xxx"` | 上次自動彈窗的變動清單（`+`新增 `~`變更 `-`移除；footer 顯示，秒關彈窗事後可查） |
+
+Hash 規格：per-skill 對目錄下所有檔案（`.` 開頭隱藏檔除外）依相對路徑 Ordinal 排序，逐檔餵「相對路徑 + `\0` + 內文」進 MD5 取前 12 hex；內文走 `ReadAllText`（吃 BOM）+ `\r\n` 與孤立 `\r` 均摺成 `\n`（防 autocrlf 假變動）。EditorPrefs 為 per-machine — 新 clone / 換機器會首彈一次（新環境重新曝光，屬預期行為非 bug）。
 
 ---
 

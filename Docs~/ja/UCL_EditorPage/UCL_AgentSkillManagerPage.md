@@ -3,7 +3,7 @@ title: UCL_AgentSkillManagerPage — Agent Skill インストール管理画面
 description: UCL_Core/Skills~/ 内のワークフロースキルをワンクリックで各 AI エージェントにインストールするための IMGUI ビジュアルフロントエンド。初回起動時に UCL_WelcomePage の最前面に自動ポップアップし、オンボーディングの露出を強制します。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-08
+last_updated: 2026-07-14
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Skills~/README.md | Skills~ ソースディレクトリ | source-of-truth + manifest 仕様
@@ -31,7 +31,7 @@ related:
 
 | 入り口 | トリガータイミング | コードエントリーポイント |
 |---|---|---|
-| 自動ポップアップ | Welcome 画面の初回起動時、または `AcknowledgedVersion` が現在のバージョンと一致しない場合 | `MaybeAutoPopupOnWelcome(controller)` が `UCL_WelcomePage.ContentOnGUI` の最初のフレームから呼び出されます |
+| 自動ポップアップ | 初回（hash スナップショットなし）は無条件で表示。以降は `Skills~` ソースの hash スナップショットに diff（skill の追加/変更/削除）がある場合のみ表示し、表示時にスナップショットを上書き。「自動表示しない」にチェックがあれば常に非表示 | `MaybeAutoPopupOnWelcome(controller)` が `UCL_WelcomePage.ContentOnGUI` の最初のフレームから呼び出されます |
 | Welcome カード | ユーザーによる能動的なクリック | `UCL_AgentSkillManagerPage.Create()` |
 | メニュー項目 | `UCL → Agent Skill Manager` | `OpenFromMenu()` ([MenuItem]) |
 
@@ -39,10 +39,15 @@ related:
 
 ## 3. EditorPrefs
 
-- **キー**: `UCL_Core.AgentSkill.AcknowledgedVersion@<ProjectFingerprint>`
-- **値**: 現在のコンテンツバージョン（現在は `"1"`）
-- **プロジェクトごとのネームスペース**: `Application.dataPath.GetHashCode()` をサフィックスとして追加することで、プロジェクト A での確認済み設定がプロジェクト B のポップアップを阻害するのを防ぎます。
-- **コンテンツバージョンの更新**: バージョンが更新されると、EditorPrefs 内の古い値との不一致により自動ポップアップが再度トリガーされ、ユーザーに新機能の存在を確実に知らせます。
+3 つのキーはすべて `@<ProjectFingerprint>`（`Application.dataPath.GetHashCode()`）のサフィックス付き — プロジェクトごとにネームスペース化され、プロジェクト A の状態がプロジェクト B に影響しません。指紋には安定した値が必須で、開発活動で自然に変動する値（git commit 等）はスナップショットキーとして不適格です。
+
+| キー | 値 | 用途 |
+|---|---|---|
+| `UCL_Core.AgentSkill.AcknowledgedVersion@<fp>` | `"1"` | 「自動表示しない」オプトアウトフラグ（フッターのトグルで書き込み。skill が更新されても表示しない） |
+| `UCL_Core.AgentSkill.SkillHashes@<fp>` | `"skill-a=1a2b3c...;skill-b=..."` | 全 skill のソース hash スナップショット（単一キー・名前順。表示判定の基準で、表示時に上書き） |
+| `UCL_Core.AgentSkill.LastChanges@<fp>` | `"2026-07-14 17:20 \| ~ucl-commit, +ucl-xxx"` | 前回の自動表示の変更リスト（`+`追加 `~`変更 `-`削除。フッターに表示され、すぐ閉じた人も後から確認可能） |
+
+Hash 仕様：skill ごとに全ファイル（`.` 始まりの隠しファイルを除く）を相対パスの Ordinal 順にソートし、各ファイルの「相対パス + `\0` + 内容」を MD5 に投入、先頭 12 hex を採用。内容は `ReadAllText`（BOM を吸収）で読み、`\r\n` と単独 `\r` を `\n` に正規化（autocrlf による偽 diff を防止）。EditorPrefs はマシン単位のため、新規 clone / 別マシンでは一度表示されます（新環境での再露出は想定内の動作で、バグではありません）。
 
 ---
 

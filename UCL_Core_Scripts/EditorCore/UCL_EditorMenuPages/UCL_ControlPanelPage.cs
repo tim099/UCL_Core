@@ -59,7 +59,27 @@ namespace UCL.Core.EditorLib.Page
 
             DrawChatTavernSystemSection();
             GUILayout.Space(8);
+            DrawTavernAdminSection();
+            GUILayout.Space(8);
             DrawAgentCommandsPathSection();
+        }
+
+        // ===========================================================
+        // 區塊：酒館後台管理入口（Tim 2026-07-15 拍板）
+        // 物理意義：push UCL_ChatTavernAdminPage — Discord mirror 同步狀態 / persona 頭像 override /
+        //          底層 config・state 檔案的管理頁。
+        // ===========================================================
+        void DrawTavernAdminSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>🍺 酒館後台</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("Discord mirror 同步進度（per-room 已同步 seq）、persona 頭像 override URL、底層 config / state 檔案管理。", UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button("開啟酒館後台管理頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                {
+                    UCL_ChatTavernAdminPage.Create();
+                }
+            }
         }
 
         // ===========================================================

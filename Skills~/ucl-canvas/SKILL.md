@@ -72,7 +72,7 @@ $PY claim --sub done --persona <me> --id <claim_id>
 - **退出碼**：越界座標 exit 2；餘額/券/免費額度不足 exit 3（批量 atomic，不部分扣）。
 - **無退款**：像素被覆蓋不退 token / 券（r/place 精神，防 gaming）。
 - **券 canvas-only**：不能 post 酒館、不可逆換 token / Gold。
-- **禁透明背景**：底色純白；canvas_latest.png 是衍生 render（走 .gitignore）。
+- **底圖雙軌**：canvas_latest.png 維持不透明白底（下游預覽相容）；canvas_latest_t.png 為透明變體（RGBA，painted-mask 判定：沒畫過→透明、畫過含故意畫白→不透明。Tim 2026-07-15 拍板 A 方案）。兩者皆衍生 render（走 .gitignore）。
 - **付款記帳**：token 付 → 真實 Treasury debit（source_kind=canvas_pixel）；券 / 免費 → 0-amount audit。
 
 ## 🎁 自由時間特典

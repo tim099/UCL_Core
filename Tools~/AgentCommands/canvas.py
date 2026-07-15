@@ -16,9 +16,12 @@ canvas.py — Shared Pixel Canvas MVP CLI（共用像素畫布）
 
 物理意義：
   - 內部畫布表示 = 2048×2048 的 1-byte index-map buffer（每格 0-255 = RGB332 調色盤 index）。
-  - 空白底色 = index 255（RGB332 解碼 = 純白 #FFFFFF，禁透明背景）。
+  - 空白底色 = index 255（RGB332 解碼 = 純白 #FFFFFF；canvas_latest.png 維持白底）。
   - 每次 place 寫一筆 immutable 事件檔（events/<date>/<HHMMSS>_<uuid6>.json），
     渲染是 read-only replay；同座標 last-write-wins（r/place 覆蓋語意）。
+  - painted-mask：replay 時同步記錄「曾被畫過」的格子（不論顏色）。
+    canvas_latest_t.png = RGBA 透明變體：沒畫過 → alpha 0；畫過（含故意畫白）→ 不透明。
+    (Tim 2026-07-15 拍板 A 方案；index 255 身兼空白底色與可畫純白，故透明判定靠 mask 而非色值)
   - token 付款寫真實 Treasury debit；券 / 免費像素寫 0-amount audit entry。
 
 三付款方式 + pay=auto 優先序：免費 → 券 → token。
@@ -26,7 +29,8 @@ canvas.py — Shared Pixel Canvas MVP CLI（共用像素畫布）
 ops（argparse subcommands）:
   place / view / pixel / stats / snapshot / voucher / freetime / note / claim
 
-⚠ 鐵律：禁透明背景；canvas_latest.png 是衍生 render；非 ASCII 字串正常 UTF-8。
+⚠ 鐵律：canvas_latest.png 維持不透明白底（下游預覽相容）；canvas_latest_t.png 為唯一透明輸出；
+  兩者皆衍生 render；非 ASCII 字串正常 UTF-8。
 
 測試：--root / --treasury-root 可指向 temp 目錄，不污染真實 state。
 """
@@ -241,6 +245,10 @@ class Paths:
         return self.root / "canvas_latest.png"
 
     @property
+    def latest_t_png(self) -> Path:
+        return self.root / "canvas_latest_t.png"
+
+    @property
     def last_view_png(self) -> Path:
         return self.root / "_last_view.png"
 
@@ -386,13 +394,17 @@ def iter_events(P: Paths):
         yield ev
 
 
-def build_buffer(P: Paths) -> bytearray:
+def build_buffer(P: Paths, with_mask: bool = False):
     """
-    區塊職責：從事件流 replay 出完整 index-map buffer
+    區塊職責：從事件流 replay 出完整 index-map buffer（可選同步產出 painted-mask）
     物理意義：底色填 BLANK_INDEX，逐事件逐像素塗（同座標 last-write-wins）。
-    數值影響：回 2048*2048 bytearray，每格 1 byte palette index。
+              mask 記「曾被畫過」的格子（不論顏色）— index 255 身兼空白底色與可畫純白，
+              透明渲染的判定必須靠 mask 而非色值，否則故意畫的白會消失。
+    數值影響：with_mask=False 回 buf（2048*2048 bytearray, 1 byte palette index）；
+              with_mask=True 回 (buf, mask)（mask 同尺寸 bytearray, 0=沒畫過 1=畫過）。
     """
     buf = bytearray([BLANK_INDEX]) * (CANVAS_W * CANVAS_H)  # 初始全空白底色
+    mask = bytearray(CANVAS_W * CANVAS_H) if with_mask else None  # 初始全 0 = 沒畫過
     for ev in iter_events(P):
         for px in ev.get("pixels", []):
             x = px.get("x")
@@ -404,8 +416,11 @@ def build_buffer(P: Paths) -> bytearray:
                 idx = parse_color(px.get("color"))
             except ValueError:
                 continue
-            buf[y * CANVAS_W + x] = idx   # last-write-wins：直接覆蓋
-    return buf
+            pos = y * CANVAS_W + x
+            buf[pos] = idx   # last-write-wins：直接覆蓋
+            if mask is not None:
+                mask[pos] = 1
+    return (buf, mask) if with_mask else buf
 
 
 def buffer_to_image(buf: bytearray):
@@ -422,11 +437,29 @@ def buffer_to_image(buf: bytearray):
     return img
 
 
-def render_latest(P: Paths, buf: bytearray):
-    """區塊職責：buffer → 覆蓋 canvas_latest.png（每次 place 後呼叫）"""
+def buffer_to_image_rgba(buf: bytearray, mask: bytearray):
+    """
+    區塊職責：index-map buffer + painted-mask → PIL RGBA Image（透明變體）
+    物理意義：沒畫過(mask=0) → alpha 0；畫過(mask=1) → 不透明 palette 色（含故意畫白）。
+    """
+    if not _HAS_PIL:
+        raise RuntimeError("需要 Pillow 才能 render PNG：pip install Pillow")
+    palette = [index_to_rgb(i) for i in range(256)]
+    img = Image.new("RGBA", (CANVAS_W, CANVAS_H))
+    img.putdata([(*palette[b], 255) if m else (0, 0, 0, 0) for b, m in zip(buf, mask)])
+    return img
+
+
+def render_latest(P: Paths, buf: bytearray, mask: bytearray = None):
+    """
+    區塊職責：buffer → 覆蓋 canvas_latest.png（每次 place 後呼叫）
+    物理意義：mask 有給時同步輸出 canvas_latest_t.png 透明變體（A 方案, Tim 2026-07-15）。
+    """
     img = buffer_to_image(buf)
     P.latest_png.parent.mkdir(parents=True, exist_ok=True)
     img.save(str(P.latest_png))
+    if mask is not None:
+        buffer_to_image_rgba(buf, mask).save(str(P.latest_t_png))
 
 
 # ───────────────────────── Treasury 整合 ─────────────────────────
@@ -813,11 +846,11 @@ def cmd_place(args):
     ev_path = P.events / date_dir / f"{hhmmss}_{ev_msec}_{event_uuid}.json"
     write_json(ev_path, event)
 
-    # 步驟 7：增量更新 buffer + 重渲 canvas_latest.png
+    # 步驟 7：增量更新 buffer + 重渲 canvas_latest.png (+ canvas_latest_t.png 透明變體)
     #   為簡潔 + 正確性，MVP 直接全 replay build buffer 再 encode；
     #   buffer 是 cached 概念，這裡每次 place 後重建一次確保 last-write-wins 正確。
-    buf = build_buffer(P)
-    render_latest(P, buf)
+    buf, mask = build_buffer(P, with_mask=True)
+    render_latest(P, buf, mask)
 
     # 步驟 8：回報結果
     print(f"# 🎨 placed {n} pixel(s)")
@@ -828,6 +861,7 @@ def cmd_place(args):
     print(f"  token bal   : {ledger_balance(P, bank)}")
     print(f"  ledger_refs : {ledger_refs}")
     print(f"  canvas_latest: {P.latest_png}")
+    print(f"  canvas_latest_t: {P.latest_t_png} (透明變體)")
 
 
 # ───────────────────────────── view ─────────────────────────────
@@ -945,7 +979,7 @@ def cmd_stats(args):
 def cmd_snapshot(args):
     P = args._paths
     meta = ensure_meta(P)
-    buf = build_buffer(P)
+    buf, mask = build_buffer(P, with_mask=True)
     img = buffer_to_image(buf)
     now = utcnow()
     ts_tag = now.strftime("%Y%m%dT%H%M%SZ")
@@ -961,8 +995,8 @@ def cmd_snapshot(args):
     meta["last_event_uuid"] = last_uuid
     write_json(P.meta, meta)
 
-    # 同步重渲 latest
-    render_latest(P, buf)
+    # 同步重渲 latest（含透明變體）
+    render_latest(P, buf, mask)
     print(f"# 📸 snapshot")
     print(f"  path          : {snap_path}")
     print(f"  last_event_uuid: {last_uuid}")

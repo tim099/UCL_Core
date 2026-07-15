@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 225
+# Entries: 239
 Docs~/en/API/UCL_AgentCommand/Cmd_DebugLog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
@@ -183,6 +183,7 @@ Docs~/zh-Hant/FreeTime/Activities/tavern-chat.md
 Docs~/zh-Hant/Mechanics/Affinity_System.md
 Docs~/zh-Hant/Mechanics/Chess_RuleBook.md
 Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md
+Docs~/zh-Hant/Mechanics/Discord_Tavern_Mirror.md
 Docs~/zh-Hant/Mechanics/FreeTime_System.md
 Docs~/zh-Hant/Mechanics/Remote_Work_Session.md
 Docs~/zh-Hant/Mechanics/Waiter_Session_System.md
@@ -209,7 +210,11 @@ Docs~/zh-Hant/UCL_ModuleService/UCL_ModuleService_API.md
 Docs~/zh-Hant/UCL_ModuleService/UCL_ModuleSystem_Architecture.md
 Docs~/zh-Hant/UCL_ModuleService/UCL_Module_API.md
 Docs~/zh-Hant/Workflows/Add_Discord_User_Mention_Workflow.md
+Docs~/zh-Hant/Workflows/AgentTask_Workflow.md
 Docs~/zh-Hant/Workflows/Antigravity_Worktree_Fix_Workflow.md
+Docs~/zh-Hant/Workflows/AutoMessage_Workflow.md
+Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md
+Docs~/zh-Hant/Workflows/Bartender_Workflow.md
 Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md
 Docs~/zh-Hant/Workflows/BuildPlayerCheck_FixLoop_Workflow.md
 Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md
@@ -218,14 +223,23 @@ Docs~/zh-Hant/Workflows/CompileError_Diagnose_Workflow.md
 Docs~/zh-Hant/Workflows/Create_Cmd_Workflow.md
 Docs~/zh-Hant/Workflows/Create_EditorPage_Workflow.md
 Docs~/zh-Hant/Workflows/Create_UCL_Asset_Workflow.md
+Docs~/zh-Hant/Workflows/Ding_Protocol_Workflow.md
 Docs~/zh-Hant/Workflows/Edit_Recompile_Loop_Workflow.md
+Docs~/zh-Hant/Workflows/Glossary_Workflow.md
 Docs~/zh-Hant/Workflows/Hardcoded_Localize.md
 Docs~/zh-Hant/Workflows/HelpURL_Workflow.md
 Docs~/zh-Hant/Workflows/Hook_Setup_Workflow.md
+Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md
 Docs~/zh-Hant/Workflows/Quest_Workflow.md
+Docs~/zh-Hant/Workflows/Reading_Library_Workflow.md
+Docs~/zh-Hant/Workflows/Remote_Work_Workflow.md
 Docs~/zh-Hant/Workflows/Secret_Manager_Workflow.md
+Docs~/zh-Hant/Workflows/Self_Constitution_Workflow.md
 Docs~/zh-Hant/Workflows/Session_Mode_Workflow.md
 Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md
 Docs~/zh-Hant/Workflows/TranslateDocs_Workflow.md
+Docs~/zh-Hant/Workflows/UpdateDocs_Workflow.md
 Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md
+Docs~/zh-Hant/Workflows/Watch_Video_Workflow.md
+Docs~/zh-Hant/Workflows/WorkflowPatch_Workflow.md
 Docs~/zh-Hant/index.md

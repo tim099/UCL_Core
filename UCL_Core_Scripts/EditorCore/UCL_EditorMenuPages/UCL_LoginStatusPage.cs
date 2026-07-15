@@ -403,6 +403,18 @@ namespace UCL.Core.EditorLib.Page
                             DoLogout(l);
                         }
 
+                        // 手動續期 (Tim 2026-07-15 拍板方案 C-3) — Tim 確認 session 還活著但 lock 已/將過期時
+                        // 一鍵把 expires_at 推到 now+TTL，不必進 CLI。續期後 LoadData 重整讓「已過期」標記即時消失。
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Renew"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        {
+                            bool renewed = UCL.Core.EditorLib.AgentCommands.ChatTavern.Cmd_Tavern.RenewPersonaLock(l.Persona);
+                            Debug.Log(renewed
+                                ? $"[LoginStatus] persona lock renewed: {l.Persona}"
+                                : $"[LoginStatus] persona lock renew no-op（lock 不存在或缺 expires_at）: {l.Persona}");
+                            LoadData();
+                            GUIUtility.ExitGUI();
+                        }
+
                         string personaLabel = l.Expired ? string.Format(UCL_CodeLocalize.Get("LoginStatus.ExpiredFmt"), l.Persona) : l.Persona;
                         using(new GUILayout.VerticalScope())
                         {

@@ -210,7 +210,7 @@ FORK_CHAIN_CAP = 5
 #   - persona overlay 寫在 AgentCommands/ChatTavern/baton/constitution/<actor>/personas/<codename>/
 #   - gura 首發 overlay 範例: claude-da-xiaojie/personas/gura/_v1.md
 MYTH_POOL = ["gura", "calli", "kiara", "ame", "ina"]
-SESSION_LOCK_TTL_HOURS = 24
+SESSION_LOCK_TTL_HOURS = 24   # ⚠ 與 Cmd_Tavern.cs PERSONA_LOCK_TTL_HOURS 保持同步 (post 滑動續期用同一 TTL)
 OVERRIDE_PROBABILITY = 0.20  # Q3 spec: 80/20 random override
 
 

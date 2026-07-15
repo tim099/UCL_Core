@@ -282,6 +282,7 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Title" => "Login Status",
                 "LoginStatus.Btn.Refresh" => "🔄 Refresh",
                 "LoginStatus.Btn.Logout" => "🌙 Logout",
+                "LoginStatus.Btn.Renew" => "⟳ Renew",
                 "LoginStatus.Btn.ForceRm" => "✂ Force RM",
                 "LoginStatus.Btn.Morning" => "🌅 Morning (Login)",
                 "LoginStatus.Btn.ConfirmRemove" => "Confirm ✂",

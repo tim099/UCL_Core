@@ -532,6 +532,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 Debug.LogWarning($"[Tavern] presence update fail（post 不受影響）：{ex.Message}");
             }
 
+            // 滑動續期 (Tim 2026-07-15 拍板方案 C-2) — 發言 = 最可靠的活著證明，順手把 persona lock
+            // 的 expires_at 往後推。活著的 session 永不過期；死 session 沒人發言 → TTL 到自然釋放（GC 語意保留）。
+            // 邊界：系統 sender（_開頭）/ 未帶 persona → skip；fail swallow 不擋 post 主流程。
+            try
+            {
+                if (!senderId.StartsWith("_") && !string.IsNullOrEmpty(senderPersona))
+                {
+                    RenewPersonaLock(senderPersona);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] persona lock renew fail（post 不受影響）：{ex.Message}");
+            }
+
             // R7 (T02 chat-flow-robust) — Mention 解析 → 自動寫對方 inbox
             // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準
             // 數值影響：sender 自己 / 系統 id（_開頭）/ 非 identities.json 已註冊者 全跳過
@@ -1372,6 +1387,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (!string.IsNullOrEmpty(k)) d[k] = v;
             }
             return d.Count > 0 ? d : null;
+        }
+
+        // ===========================================================
+        // 區塊：Persona Lock 滑動續期（Tim 2026-07-15 拍板方案 C-2）
+        // 物理意義：lock 的 expires_at 是死 session 的 GC 訊號（awakening.py SESSION_LOCK_TTL_HOURS）。
+        //          發言是最可靠的活著證明 → post 成功後把 expires_at 推到 now+TTL，活 session 永不過期。
+        //          只動 expires_at 一個欄位 — 用 regex 原地替換值、不整檔重序列化，避免跟 Python 端
+        //          json.dump(indent=2) 的格式互相翻寫；tmp + File.Replace/Move 原子落檔（鏡像 awakening.py write_lock）。
+        // 數值影響：lock 檔不存在 / 格式不符 → silent no-op。TTL 須與 awakening.py SESSION_LOCK_TTL_HOURS 同步。
+        // ===========================================================
+        const int PERSONA_LOCK_TTL_HOURS = 24;   // ⚠ 與 awakening.py SESSION_LOCK_TTL_HOURS 保持同步
+
+        internal static bool RenewPersonaLock(string persona)
+        {
+            string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", $"_persona_{persona}.json");
+            if (!File.Exists(path)) return false;
+            string json = File.ReadAllText(path);
+            // 時戳格式鏡像 awakening.py write_lock: "%Y-%m-%dT%H:%M:%S." + "000Z"
+            string newExpires = DateTime.UtcNow.AddHours(PERSONA_LOCK_TTL_HOURS).ToString("yyyy-MM-ddTHH:mm:ss.") + "000Z";
+            string updated = System.Text.RegularExpressions.Regex.Replace(json,
+                "(\"expires_at\"\\s*:\\s*\")[^\"]*(\")",
+                "${1}" + newExpires + "${2}");
+            if (updated == json) return false;   // 沒有 expires_at 欄位 → no-op
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, updated);
+            File.Delete(path);
+            File.Move(tmp, path);
+            return true;
         }
 
         // ===========================================================

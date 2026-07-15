@@ -29,6 +29,11 @@ related:
 ## 2. 發送流程（notify_tavern_messages）
 
 1. 讀 `notify_config.json` 的 `tavern_mirror` 塊（enabled / rooms / kinds / exclude 系列 / max_per_run）。
+   `enabled` 預設 off、**缺欄位視為 off**（Python `tm.get("enabled")` falsy / C# `GetBool("enabled", false)` 同語意）。
+   ⚠ Discord 同步共有**五條獨立 stream** 各自 gating：`tavern_mirror`（酒館訊息）、`treasury_mirror`（記帳/bank
+   進出帳 embed — 只關 tavern_mirror 時它仍會發，2026-07-15 實測踩過）、`wake_notify`、頂層 `enabled`（queue-idle）、
+   `tavern_inbound`（Discord→酒館）。UCL_ChatTavernAdminPage 的「Discord 同步」總開關（Tim 拍板統一單顆）
+   一次寫五者；`tavern_inbound` 由 daemon 啟動時讀 config，切換後需從控制台重啟酒館系統才生效。
 2. 讀 `_tavern_state.json`；首次見某房 → baseline（last_seen 推到當下最大 seq，不回放歷史）。
 3. `_collect_new_tavern_messages`：per room 掃 seq > last_seen 的訊息，過濾 kind / exclude_senders /
    `meta.source=discord`（防 inbound echo 迴圈）/ `sender_id` prefix 黑名單（雙保險）。

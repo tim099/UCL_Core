@@ -230,7 +230,30 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(enabled ? "<color=#66ff66>● mirror 啟用中</color>" : "<color=#ff8866>○ mirror 停用</color>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                    // Discord 同步總開關（Tim 2026-07-15 拍板：統一一個 toggle）— 一次寫五條 notify stream
+                    // 的 enabled：tavern_mirror / treasury_mirror（記帳頻道，之前漏網的 bank 訊息就是它）/
+                    // wake_notify / 頂層 enabled（queue-idle）/ tavern_inbound（Discord→酒館 inbound）。
+                    // 顯示狀態以 tavern_mirror.enabled 為代表（master 寫入後五者同步）。
+                    // 語意：預設 off、缺欄位視為 off（各 stream Python 端 get("enabled") falsy 同語意）。
+                    // 邊界：tavern_inbound 由 daemon 啟動時讀 config — 切換後需從控制台重啟酒館系統才生效。
+                    bool newEnabled = GUILayout.Toggle(enabled,
+                        enabled ? " <color=#66ff66>● Discord 同步啟用中（按一下全部關閉）</color>" : " <color=#ff8866>○ Discord 同步已關閉（按一下全部啟用）</color>",
+                        new GUIStyle(UCL_GUIStyle.ButtonStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    if (newEnabled != enabled)
+                    {
+                        WriteConfigRoot(cfg =>
+                        {
+                            // 頂層 enabled = queue-idle stream
+                            cfg["enabled"] = newEnabled;
+                            foreach (var block in new[] { "tavern_mirror", "treasury_mirror", "wake_notify", "tavern_inbound" })
+                            {
+                                if (!cfg.Contains(block)) cfg[block] = JsonData.ParseJson("{}");
+                                cfg[block]["enabled"] = newEnabled;
+                            }
+                        });
+                        Debug.Log($"[TavernAdmin] Discord 同步總開關 → {newEnabled}（tavern/treasury/wake/queue-idle/inbound 五 stream 同步寫入；inbound 需重啟酒館系統生效）");
+                    }
+                    GUILayout.Space(8);
                     GUILayout.Label($"連續失敗計數：{failures}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (failures > 0 && GUILayout.Button("歸零", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
                     {
@@ -409,14 +432,31 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         void WriteConfigOverride(Action<JsonData> mutateOverrides)
         {
+            WriteTavernMirrorField(tm =>
+            {
+                if (!tm.Contains("persona_avatar_overrides")) tm["persona_avatar_overrides"] = JsonData.ParseJson("{}");
+                mutateOverrides(tm["persona_avatar_overrides"]);
+            });
+        }
+
+        // 區塊職責：tavern_mirror 塊的泛用受控寫入 — avatar override 等子欄位共用
+        void WriteTavernMirrorField(Action<JsonData> mutateTavernMirror)
+        {
+            WriteConfigRoot(cfg =>
+            {
+                if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
+                mutateTavernMirror(cfg["tavern_mirror"]);
+            });
+        }
+
+        // 區塊職責：notify_config.json 整份的泛用受控寫入 — 總開關（跨多 stream 塊）/ 子塊寫入共用底座
+        void WriteConfigRoot(Action<JsonData> mutateConfig)
+        {
             try
             {
                 if (!File.Exists(NotifyConfigPath)) { Debug.LogWarning("[TavernAdmin] notify_config.json 不存在"); return; }
                 var cfg = JsonData.ParseJson(File.ReadAllText(NotifyConfigPath));
-                if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
-                var tm = cfg["tavern_mirror"];
-                if (!tm.Contains("persona_avatar_overrides")) tm["persona_avatar_overrides"] = JsonData.ParseJson("{}");
-                mutateOverrides(tm["persona_avatar_overrides"]);
+                mutateConfig(cfg);
                 AtomicWrite(NotifyConfigPath, cfg.ToJsonBeautify());
                 LoadData();
             }

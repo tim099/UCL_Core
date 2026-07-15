@@ -57,6 +57,30 @@ namespace UCL.Core.EditorLib.Page
         // ==== 顯示用快取（每幀重讀檔太重，只在按下 Refresh 時更新）====
         UCL_AgentCommandQueueData m_Cached;
 
+        // ==== Queue 選擇器狀態（Tim 2026-07-15 拍板 — 可切換觀察/操作不同 persona 的 queue）====
+        // 區塊職責：讓本頁不再寫死 legacy 共用 queue — PopupSearchCache 下拉切換 default / per-agent queue。
+        // 物理意義：底層 UCL_AgentCommandQueue / Runner / Trigger 的 API 全部已參數化 agentId
+        //          （null=共用 queue.json，非 null=queues/queue-<id>.json），本頁只是把參數穿線到 UI。
+        // 數值影響：切換後所有讀寫（Load/Save/Add/Remove/ClearFailed/RunPending/OpenFolder/Trigger 狀態）
+        //          都作用在選中的 queue；選擇記進 EditorPrefs 跨 session 保留。
+        int m_SelectedQueueIdx = 0;
+        List<string> m_QueueAgentIds;   // 與 m_QueueOptions 同步的值清單；[0]=null（共用 default）
+        List<string> m_QueueOptions;    // PopupSearchCache 顯示字串（含 pending 數徽章）
+        const string PrefKey_SelectedQueue = "UCL.AgentCmd.SelectedQueue";
+
+        /// <summary>當前選中 queue 的 agentId；null = legacy 共用 queue.json。</summary>
+        string SelectedAgentId =>
+            (m_QueueAgentIds != null && m_SelectedQueueIdx >= 0 && m_SelectedQueueIdx < m_QueueAgentIds.Count)
+                ? m_QueueAgentIds[m_SelectedQueueIdx] : null;
+
+        // ==== 分頁狀態（Tim 2026-07-15 拍板 — History/Templates >10 筆渲染性能炸裂 → 每頁 10 筆）====
+        const int PageSize = 10;
+        int m_TemplatePage = 0;
+        int m_HistoryPage = 0;
+
+        // ==== 指令說明折疊（Tim 2026-07-15 拍板 — ArgsSchema 長的 Cmd（如 Tavern 30+ 行）擠壓下方操作區）====
+        bool m_ShowCmdInfo = false;
+
         // ==== Templates / History UI 狀態 ====
         // 區塊職責：紀錄兩個展開區塊的展開/隱藏狀態、搜尋字串、清理參數、以及檔案快取
         // 物理意義：避免每幀掃 Templates/ 與 History/ 資料夾 — 只有按下對應 Refresh 才重讀
@@ -106,16 +130,20 @@ namespace UCL.Core.EditorLib.Page
             base.TopBarButtons();
             if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
-                m_Cached = UCL_AgentCommandQueue.Load();
-                // 區塊職責：Refresh 時一併重整 History / Template 快取
-                // 物理意義：使用者按下 Refresh 通常是因為「外部剛動過檔案」，所以兩種 cache 都重抓
+                m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
+                // 區塊職責：Refresh 時一併重整 History / Template 快取 + queue 選項清單
+                // 物理意義：使用者按下 Refresh 通常是因為「外部剛動過檔案」，所以全部 cache 都重抓；
+                //          新 persona 第一次 submit 會長出新 queue 檔 → 選擇器也要看得到
                 // 數值影響：純讀檔，不寫
                 m_HistoryCache = null;
                 m_TemplateCache = null;
+                RefreshQueueOptions();
             }
             if (GUILayout.Button(L("AgentCmd.RunPending"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
             {
-                UCL_AgentCommandRunner.Menu_RunPending();
+                // 選中 per-agent queue 時直接跑該 queue 的 Runner（Menu_RunPending 只跑 default）
+                if (string.IsNullOrEmpty(SelectedAgentId)) UCL_AgentCommandRunner.Menu_RunPending();
+                else UCL_AgentCommandRunner.RunAsync(SelectedAgentId, default).Forget();
                 DelayedRefresh().Forget();
             }
             // 區塊職責：清除 queue 內所有 LastRunResult == "Failed" 的條目，避免下次 Run 重跑壞掉的舊指令。
@@ -128,22 +156,80 @@ namespace UCL.Core.EditorLib.Page
             }
             if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
-                UCL_AgentCommandRunner.Menu_OpenQueueFolder();
+                // per-agent queue 選中時開 queues/ 子資料夾（default 走原本的 Menu 入口）
+                if (string.IsNullOrEmpty(SelectedAgentId)) UCL_AgentCommandRunner.Menu_OpenQueueFolder();
+                else
+                {
+                    UCL_AgentCommandQueue.EnsureDir(SelectedAgentId);
+                    UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandQueue.GetQueuePath(SelectedAgentId));
+                }
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Queue 選擇器（PopupSearchCache）
+        // 職責：掃描現存 queue（default + queues/queue-*.json）建選項清單，切換即重載該 queue。
+        // 物理意義：agentId 是 caller（run_cmd.py --agent-id / --lane）自由填的字串，選擇器照 raw id
+        //          顯示（含 ~lane 複合 id）不美化 — 美化會把 id typo 這種 bug 藏起來。
+        // 數值影響：切換寫 EditorPrefs（跨 session 記住上次選擇）；選項字串帶 pending 數徽章。
+        // ===========================================================
+        void RefreshQueueOptions()
+        {
+            m_QueueAgentIds = new List<string> { null };
+            m_QueueOptions = new List<string>();
+            int defaultCount = UCL_AgentCommandQueue.Load()?.Commands?.Count ?? 0;
+            m_QueueOptions.Add(string.Format(L("AgentCmd.QueueDefault"), defaultCount));
+            foreach (var id in UCL_AgentCommandQueue.ListAgentIds())
+            {
+                m_QueueAgentIds.Add(id);
+                int n = UCL_AgentCommandQueue.Load(id)?.Commands?.Count ?? 0;
+                m_QueueOptions.Add($"{id} ({n})");
+            }
+            if (m_SelectedQueueIdx >= m_QueueAgentIds.Count) m_SelectedQueueIdx = 0;
+            m_Dic.Clear();   // PopupSearchCache 選項變了 → 清 cache 讓下拉重取
+        }
+
+        void DrawQueueSelector()
+        {
+            // 首次繪製：從 EditorPrefs 還原上次選中的 queue（找不到該 id 則回 default）
+            if (m_QueueAgentIds == null)
+            {
+                RefreshQueueOptions();
+                string saved = UnityEditor.EditorPrefs.GetString(PrefKey_SelectedQueue, "");
+                if (!string.IsNullOrEmpty(saved))
+                {
+                    int idx = m_QueueAgentIds.IndexOf(saved);
+                    if (idx > 0) m_SelectedQueueIdx = idx;
+                }
+            }
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                GUILayout.Label(L("AgentCmd.QueueSelector"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                int newIdx = UCL_GUILayout.PopupSearchCache(m_SelectedQueueIdx, m_QueueOptions, m_Dic, "QueuePicker");
+                if (newIdx != m_SelectedQueueIdx)
+                {
+                    m_SelectedQueueIdx = newIdx;
+                    UnityEditor.EditorPrefs.SetString(PrefKey_SelectedQueue, SelectedAgentId ?? "");
+                    m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
+                }
             }
         }
 
         protected override void ContentOnGUI()
         {
+            // ==== Queue 選擇器（要先於載入 — SelectedAgentId 決定載哪條 queue）====
+            DrawQueueSelector();
+
             // 載入 / 刷新
             if (m_Cached == null)
             {
-                m_Cached = UCL_AgentCommandQueue.Load();
+                m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
             }
 
             // ==== queue.json 路徑提示 ====
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(string.Format(L("AgentCmd.QueuePath"), UCL_AgentCommandQueue.GetQueuePath()), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(L("AgentCmd.QueuePath"), UCL_AgentCommandQueue.GetQueuePath(SelectedAgentId)), UCL_GUIStyle.LabelStyle);
             }
 
             // ==== Watcher 狀態列 ====
@@ -270,7 +356,7 @@ namespace UCL.Core.EditorLib.Page
                 if (removeIdx >= 0)
                 {
                     m_Cached.Commands.RemoveAt(removeIdx);
-                    UCL_AgentCommandQueue.Save(m_Cached);
+                    UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
                 }
             }
         }
@@ -313,27 +399,40 @@ namespace UCL.Core.EditorLib.Page
 
                 var selected = handlers[m_SelectedCmdIdx];
 
-                // 顯示選定 handler 的 metadata
+                // 顯示選定 handler 的 metadata — 可折疊（Tim 2026-07-15 拍板）
+                // 物理意義：ArgsSchema 長的 Cmd（如 Tavern 30+ 行）展開會把下方表單擠出視野；
+                //          預設收合，只留一行 Type + 短描述，要查 schema 再展開。
                 using (new GUILayout.VerticalScope("box"))
                 {
-                    GUILayout.Label($"<b>{selected.CommandType}</b>", UCL_GUIStyle.LabelStyle);
-                    if (!string.IsNullOrEmpty(selected.ShortDescription))
+                    using (new GUILayout.HorizontalScope())
                     {
-                        GUILayout.Label($"  {selected.ShortDescription}", UCL_GUIStyle.LabelStyle);
-                    }
-                    if (!string.IsNullOrEmpty(selected.ArgsSchema))
-                    {
-                        GUILayout.Label(string.Format(L("AgentCmd.ArgsSchema"), selected.ArgsSchema), UCL_GUIStyle.LabelStyle);
-                    }
-                    if (!string.IsNullOrEmpty(selected.ExampleArgs))
-                    {
-                        GUILayout.Label(string.Format(L("AgentCmd.Example"), selected.ExampleArgs), UCL_GUIStyle.LabelStyle);
-                    }
-                    if (!string.IsNullOrEmpty(selected.HelpURL))
-                    {
-                        if (GUILayout.Button(L("AgentCmd.ViewHelp"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button((m_ShowCmdInfo ? "▼" : "▶") + " " + L("AgentCmd.CmdInfoToggle"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
-                            Application.OpenURL(UCL_URL.ResolveURL(selected.HelpURL));
+                            m_ShowCmdInfo = !m_ShowCmdInfo;
+                        }
+                        GUILayout.Label($"<b>{selected.CommandType}</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        if (!string.IsNullOrEmpty(selected.ShortDescription))
+                        {
+                            GUILayout.Label($" — {selected.ShortDescription}", WrapLabelStyle);
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+                    if (m_ShowCmdInfo)
+                    {
+                        if (!string.IsNullOrEmpty(selected.ArgsSchema))
+                        {
+                            GUILayout.Label(string.Format(L("AgentCmd.ArgsSchema"), selected.ArgsSchema), UCL_GUIStyle.LabelStyle);
+                        }
+                        if (!string.IsNullOrEmpty(selected.ExampleArgs))
+                        {
+                            GUILayout.Label(string.Format(L("AgentCmd.Example"), selected.ExampleArgs), UCL_GUIStyle.LabelStyle);
+                        }
+                        if (!string.IsNullOrEmpty(selected.HelpURL))
+                        {
+                            if (GUILayout.Button(L("AgentCmd.ViewHelp"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                Application.OpenURL(UCL_URL.ResolveURL(selected.HelpURL));
+                            }
                         }
                     }
                 }
@@ -461,10 +560,12 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(L("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
-                    m_TemplateSearch = GUILayout.TextField(m_TemplateSearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    string newSearch = GUILayout.TextField(m_TemplateSearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    if (newSearch != m_TemplateSearch) { m_TemplateSearch = newSearch; m_TemplatePage = 0; }   // 搜尋條件變 → 回第一頁
                     if (GUILayout.Button(L("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_TemplateSearch = "";
+                        m_TemplatePage = 0;
                         GUI.FocusControl(null);
                     }
                 }
@@ -479,9 +580,13 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
 
-                //m_TemplateScroll = GUILayout.BeginScrollView(m_TemplateScroll, GUILayout.MaxHeight(220));
+                // 分頁（Tim 2026-07-15 拍板）：>10 筆時 IMGUI 每幀渲染全部 box + ConstantRepaint = 性能炸裂
+                // → 只渲染當前頁 10 筆，總量再大也是常數渲染成本
+                var pageItems = Paginate(visible, ref m_TemplatePage, out int tplPages);
+                DrawPagerRow(ref m_TemplatePage, tplPages, visible.Count);
+
                 string deleteName = null;
-                foreach (var t in visible)
+                foreach (var t in pageItems)
                 {
                     using (new GUILayout.VerticalScope("box"))
                     {
@@ -531,6 +636,38 @@ namespace UCL.Core.EditorLib.Page
                         m_TemplateCache = null;
                     }
                 }
+            }
+        }
+
+        // ===========================================================
+        // 區塊：分頁 helpers（Templates / History 共用）
+        // 物理意義：IMGUI + RequiresConstantRepaint 下每幀渲染上百個 box 是本頁 >10 筆卡死的根因；
+        //          分頁把渲染量鎖在每頁 PageSize 筆，資料總量不再影響幀率。
+        // 數值影響：page 以 ref 傳入並自動 clamp（刪到最後一頁空掉時退回前一頁）。
+        // ===========================================================
+        static List<T> Paginate<T>(List<T> src, ref int page, out int totalPages)
+        {
+            totalPages = Math.Max(1, (src.Count + PageSize - 1) / PageSize);
+            if (page >= totalPages) page = totalPages - 1;
+            if (page < 0) page = 0;
+            return src.Skip(page * PageSize).Take(PageSize).ToList();
+        }
+
+        static void DrawPagerRow(ref int page, int totalPages, int totalCount)
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                using (new UnityEditor.EditorGUI.DisabledScope(page <= 0))
+                {
+                    if (GUILayout.Button("◀", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(36)))) page--;
+                }
+                GUILayout.Label(string.Format(L("AgentCmd.PageInfo"), page + 1, totalPages, totalCount),
+                    UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                using (new UnityEditor.EditorGUI.DisabledScope(page >= totalPages - 1))
+                {
+                    if (GUILayout.Button("▶", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(36)))) page++;
+                }
+                GUILayout.FlexibleSpace();
             }
         }
 
@@ -607,10 +744,12 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(L("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
-                    m_HistorySearch = GUILayout.TextField(m_HistorySearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    string newSearch = GUILayout.TextField(m_HistorySearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    if (newSearch != m_HistorySearch) { m_HistorySearch = newSearch; m_HistoryPage = 0; }   // 搜尋條件變 → 回第一頁
                     if (GUILayout.Button(L("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_HistorySearch = "";
+                        m_HistoryPage = 0;
                         GUI.FocusControl(null);
                     }
                 }
@@ -663,9 +802,12 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
 
-                //m_HistoryScroll = GUILayout.BeginScrollView(m_HistoryScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360))); 多層Scroll影響操作 移除
+                // 分頁（Tim 2026-07-15 拍板）— 同 Templates 面板的理由；多層 Scroll 已移除，分頁是唯一的量控手段
+                var pageItems = Paginate(visible, ref m_HistoryPage, out int hisPages);
+                DrawPagerRow(ref m_HistoryPage, hisPages, visible.Count);
+
                 string deleteId = null;
-                foreach (var e in visible)
+                foreach (var e in pageItems)
                 {
                     using (new GUILayout.VerticalScope("box"))
                     {
@@ -874,7 +1016,7 @@ namespace UCL.Core.EditorLib.Page
                     UCL_AgentCommandWatcher.Enabled = newEnabled;
                 }
 
-                var state = UCL_AgentCommandTrigger.GetState();
+                var state = UCL_AgentCommandTrigger.GetState(SelectedAgentId);
                 Color stateColor = state switch
                 {
                     UCL_AgentCommandTrigger.TriggerState.Running => Color.cyan,
@@ -893,7 +1035,7 @@ namespace UCL.Core.EditorLib.Page
                 // 給人類測試 watcher 的便利按鈕：手動寫一個 pending.trigger
                 if (GUILayout.Button(L("AgentCmd.SimulateTrigger"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
-                    UCL_AgentCommandTrigger.CreatePending("editor-simulate");
+                    UCL_AgentCommandTrigger.CreatePending("editor-simulate", SelectedAgentId);
                 }
             }
         }
@@ -935,8 +1077,8 @@ namespace UCL.Core.EditorLib.Page
             int before = m_Cached.Commands.Count;
             m_Cached.Commands.RemoveAll(c => c != null && c.LastRunResult == "Failed");
             int removed = before - m_Cached.Commands.Count;
-            UCL_AgentCommandQueue.Save(m_Cached);
-            Debug.Log($"[UCL_AgentCmd UI] Cleared {removed} failed cmd(s) from queue (kept {m_Cached.Commands.Count}).");
+            UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
+            Debug.Log($"[UCL_AgentCmd UI] Cleared {removed} failed cmd(s) from queue '{SelectedAgentId ?? "default"}' (kept {m_Cached.Commands.Count}).");
         }
 
         // 區塊職責：把表單 / 模板 / 歷史的指令送進 queue，並把這次操作寫進 History
@@ -965,13 +1107,13 @@ namespace UCL.Core.EditorLib.Page
                 Description = string.IsNullOrEmpty(description) ? null : description,
             };
             m_Cached.Commands.Add(c);
-            UCL_AgentCommandQueue.Save(m_Cached);
+            UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
 
             // 寫入 / 重用 History（以管理層 API 操作，Page 不直接動檔）
             UCL_AgentCommandHistory.Record(type, mode, safeArgs, description, source);
             m_HistoryCache = null;
 
-            Debug.Log($"[UCL_AgentCmd UI] Added command: {c.Type} (id={c.Id}, mode={c.Mode}, source={source})");
+            Debug.Log($"[UCL_AgentCmd UI] Added command: {c.Type} (id={c.Id}, mode={c.Mode}, source={source}, queue={SelectedAgentId ?? "default"})");
         }
 
         static Dictionary<string, string> ParseArgsRaw(string raw)
@@ -995,7 +1137,7 @@ namespace UCL.Core.EditorLib.Page
         {
             // runner 是 async，等個 1.5 秒讓它有時間寫回 queue.json
             await UniTask.Delay(TimeSpan.FromSeconds(1.5));
-            m_Cached = UCL_AgentCommandQueue.Load();
+            m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
         }
     }
 }

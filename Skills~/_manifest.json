@@ -108,6 +108,11 @@
       "optional": false
     },
     {
+      "name": "reading-manga",
+      "summary": "閱讀漫畫心得 — Tim 逐張貼漫畫頁+標章節, agent 邊看邊賞析並落帳; 複用 library.py 同一套 chapter/character(含外觀)/term/arc + 改觀 fork. 與 reading-library 同構, 媒材改視覺.",
+      "optional": false
+    },
+    {
       "name": "ucl-canvas",
       "summary": "共用像素畫布 (wplace/r/place) — 2048² 全社群畫布, 1 token/繪畫券/自由時間免費像素 = 1 像素, 256 色 8-bit, append-only 事件流 + 自動 canvas_latest.png, 九 op (place/view/voucher/freetime/note/claim...). 工具 canvas.py 在 Tools~/AgentCommands/, state per-project AgentCommands/Canvas/.",
       "optional": false

@@ -46,6 +46,29 @@ namespace UCL.Core.EditorLib.Page
         List<string> m_LogTail = new List<string>();
         bool m_Loaded = false;
 
+        // ==== Webhook 設定 — 下拉選取模式（Tim 2026-07-16 拍板，交互仿 Persona 頭像 panel）====
+        // 區塊職責：六個 webhook 消費端（全走統一 schema：webhook_urls / webhook_file / webhook_env_var，
+        //          優先序 ENV > FILE > CONFIG）的觀看與操作 — 下拉選 stream → 純文字顯示該 stream 的
+        //          同步狀態（未同步筆數 / cursor / 失敗計數）+ URL 遮罩列表 + 驗證/刪除/新增。
+        // 物理意義：webhook URL 是 secret（拿到即可對頻道發言）且 Tim 常截圖本頁 — 列表永遠遮罩
+        //          （只露 webhook id，token 全隱），驗證用 GET 取回 Discord 端頻道名顯示健康度。
+        // 數值影響：增刪走 WriteConfigRoot 原子落檔（照現行慣例寫 config，Q1 Tim 拍板行為不變）；
+        //          新增一律先驗證通過才入庫（擋貼錯 URL）。
+        static readonly string[] s_WebhookStreamKeys =
+            { "tavern_mirror", "treasury_mirror", "wake_notify", "queue-idle", "tavern_inbound", "quest_routing" };
+        static readonly string[] s_WebhookStreamLabels =
+        {
+            "tavern_mirror（酒館訊息 → Discord）",
+            "treasury_mirror（記帳 embed → Discord）",
+            "wake_notify（喚醒通知 → Discord）",
+            "queue-idle（頂層 — queue 完工通知）",
+            "tavern_inbound（Discord → 酒館 inbound）",
+            "quest_routing（task lifecycle 分流）",
+        };
+        int m_SelectedStreamIdx = 0;
+        string m_NewWebhookUrl = "";
+        readonly Dictionary<string, string> m_WebhookProbe = new Dictionary<string, string>();   // url → 驗證結果快取
+
         // ==== Persona 頭像 Override — 下拉選取模式（Tim 2026-07-15 修訂）====
         // 區塊職責：PopupSearchCache 選 persona → URL 欄自動帶入該 persona 當前 override（無設定 = 空）
         //          → 修改後按套用寫回設定檔。persona 清單 = persona pool（AwakenInit/personas/*.json）
@@ -202,7 +225,330 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawAvatarOverridePanel();
             GUILayout.Space(8);
+            DrawWebhookPanel();
+            GUILayout.Space(8);
             DrawFilesPanel();
+        }
+
+        // ===========================================================
+        // 區塊：Webhook 設定 panel（下拉選 stream → 狀態純文字 + URL 遮罩列表 + 驗證/刪/增）
+        // ===========================================================
+
+        /// <summary>取指定 stream 的 config 塊；"queue-idle"=root、"quest_routing"=tavern_mirror 子塊。回 null = 不存在。</summary>
+        static JsonData GetStreamBlock(JsonData iCfg, string iKey)
+        {
+            if (iCfg == null) return null;
+            if (iKey == "queue-idle") return iCfg;
+            if (iKey == "quest_routing")
+            {
+                var tm = iCfg.Contains("tavern_mirror") ? iCfg["tavern_mirror"] : null;
+                return (tm != null && tm.Contains("quest_routing")) ? tm["quest_routing"] : null;
+            }
+            return iCfg.Contains(iKey) ? iCfg[iKey] : null;
+        }
+
+        /// <summary>遮罩 webhook URL — 只露 webhook id，token 全隱（secret 防截圖外洩）。</summary>
+        static string MaskWebhook(string iUrl)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(iUrl ?? "", @"webhooks/(\d+)/");
+            return m.Success ? $"…/webhooks/{m.Groups[1].Value}/***" : "(格式異常的 URL)***";
+        }
+
+        /// <summary>同步 GET 探測 webhook（3s timeout）— Discord 回 webhook 的 name/channel。</summary>
+        static string ProbeWebhook(string iUrl)
+        {
+            try
+            {
+                var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(iUrl);
+                req.Method = "GET";
+                req.Timeout = 3000;
+                req.UserAgent = "UCL-TavernAdmin";
+                using var resp = (System.Net.HttpWebResponse)req.GetResponse();
+                using var sr = new StreamReader(resp.GetResponseStream());
+                string body = sr.ReadToEnd();
+                var m = System.Text.RegularExpressions.Regex.Match(body, "\"name\"\\s*:\\s*\"([^\"]*)\"");
+                return m.Success ? $"<color=#66ff66>✓ #{m.Groups[1].Value}</color>" : "<color=#66ff66>✓ OK</color>";
+            }
+            catch (System.Net.WebException we)
+            {
+                var r = we.Response as System.Net.HttpWebResponse;
+                return r != null ? $"<color=#ff6666>✗ HTTP {(int)r.StatusCode}（已失效）</color>" : $"<color=#ff6666>✗ {we.Status}</color>";
+            }
+            catch (Exception e)
+            {
+                return $"<color=#ff6666>✗ {e.Message}</color>";
+            }
+        }
+
+        /// <summary>純文字同步狀態 — per-stream 撈便宜可得的 state 資訊（未同步筆數 / cursor / 失敗計數）。</summary>
+        List<string> BuildStreamInfoLines(string iKey, JsonData iBlock)
+        {
+            var lines = new List<string>();
+            bool enabled = false;
+            try { enabled = iBlock != null && iBlock.GetBool("enabled", false); } catch { }
+            lines.Add(enabled ? "enabled: <color=#66ff66>true</color>" : "enabled: <color=#ff8866>false（缺欄位視為 false）</color>");
+            try
+            {
+                switch (iKey)
+                {
+                    case "tavern_mirror":
+                        // per-room 同步進度 + 套用 seq 為互動列 — 在 DrawTavernRoomRows 繪製（Tim 2026-07-16 整合進下拉）
+                        if (m_State != null) lines.Add($"連續失敗計數: {m_State.GetInt("consecutive_failures", 0)}");
+                        break;
+                    case "treasury_mirror":
+                        string cursor = "";
+                        if (m_State != null && m_State.Contains("treasury")) cursor = m_State["treasury"].GetString("last_seen", "");
+                        lines.Add(string.IsNullOrEmpty(cursor) ? "cursor: (未建立 baseline)" : $"cursor: {cursor}");
+                        // 未同步 entry 粗估 — 只掃 cursor 當日之後的資料夾（便宜路徑）
+                        string ledgerRoot = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Treasury", "ledger");
+                        if (!string.IsNullOrEmpty(cursor) && Directory.Exists(ledgerRoot))
+                        {
+                            string cursorDate = cursor.Split('/')[0];
+                            int pendingN = 0;
+                            foreach (var ddir in Directory.GetDirectories(ledgerRoot).OrderBy(d => d, StringComparer.Ordinal))
+                            {
+                                string dname = Path.GetFileName(ddir);
+                                if (string.Compare(dname, cursorDate, StringComparison.Ordinal) < 0) continue;
+                                foreach (var f in Directory.GetFiles(ddir, "*.json"))
+                                {
+                                    if (string.Compare($"{dname}/{Path.GetFileName(f)}", cursor, StringComparison.Ordinal) > 0) pendingN++;
+                                }
+                            }
+                            lines.Add(pendingN == 0 ? "未同步 entry: 0（已追平）" : $"<color=#ffcc44>未同步 entry: {pendingN}</color>（含預設不播的 __audit）");
+                        }
+                        break;
+                    case "wake_notify":
+                        string wakeStatePath = Path.Combine(PromptQueueDir, "_wake_state.json");
+                        if (File.Exists(wakeStatePath))
+                        {
+                            var ws = JsonData.ParseJson(File.ReadAllText(wakeStatePath));
+                            int fails = ws.GetInt("consecutive_failures", 0);
+                            lines.Add($"連續失敗計數: {fails}" + (fails >= 5 ? "<color=#ff6666>（已 auto-disabled — webhook 曾 404，重發後請歸零）</color>" : ""));
+                        }
+                        break;
+                    case "queue-idle":
+                        string notifyStatePath = Path.Combine(PromptQueueDir, "_notify_state.json");
+                        if (File.Exists(notifyStatePath))
+                        {
+                            var ns = JsonData.ParseJson(File.ReadAllText(notifyStatePath));
+                            lines.Add($"last_done_seq: {ns.GetInt("last_done_seq", -1)} / 連續失敗: {ns.GetInt("consecutive_failures", 0)}");
+                        }
+                        break;
+                    case "tavern_inbound":
+                        if (iBlock != null)
+                        {
+                            lines.Add($"bot_status: {iBlock.GetString("bot_status", "(未知)")}");
+                            lines.Add("⚠ inbound 由 daemon 啟動時讀 config — 改動後需從控制台重啟酒館系統生效");
+                        }
+                        break;
+                }
+            }
+            catch (Exception e)
+            {
+                lines.Add($"(state 讀取失敗: {e.Message})");
+            }
+            return lines;
+        }
+
+        // 區塊職責：tavern_mirror 的 per-room 同步進度 + 套用 seq 互動列（原 Mirror panel 功能，
+        //          Tim 2026-07-16 拍板整合進 Webhook 下拉的 tavern_mirror 分支）。
+        // 數值影響：套用 seq 直改 _tavern_state.json — 設小 = 重放區間訊息、設大 = 跳過區間，警語常駐。
+        void DrawTavernRoomRows()
+        {
+            if (m_WatchedRooms.Count == 0)
+            {
+                GUILayout.Label("  (config 無 watched rooms)", UCL_GUIStyle.LabelStyle);
+                return;
+            }
+            foreach (var room in m_WatchedRooms)
+            {
+                int lastSeen = GetLastSeen(room);
+                int maxSeq = m_RoomMaxSeq.GetValueOrDefault(room, 0);
+                int pending = Math.Max(0, maxSeq - lastSeen);
+                using (new GUILayout.HorizontalScope("box"))
+                {
+                    GUILayout.Label($"<b>{room}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    GUILayout.Label($"已同步到 seq {lastSeen} / 房間最新 {maxSeq}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(pending == 0 ? "<color=#66ff66>✓ 已追平</color>" : $"<color=#ffcc44>待同步 {pending} 筆</color>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    GUILayout.FlexibleSpace();
+                    m_SeqDraft[room] = GUILayout.TextField(m_SeqDraft.GetValueOrDefault(room, lastSeen.ToString()), UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    if (GUILayout.Button("套用 seq", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        if (int.TryParse(m_SeqDraft.GetValueOrDefault(room, ""), out int newSeq) && newSeq >= 0)
+                        {
+                            string r = room;
+                            WriteStateField(s =>
+                            {
+                                if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
+                                if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
+                                s["rooms"][r]["last_seen_seq"] = newSeq;
+                            });
+                            Debug.Log($"[TavernAdmin] {r}.last_seen_seq → {newSeq}（設小=重放區間 / 設大=跳過區間）");
+                        }
+                        else Debug.LogWarning("[TavernAdmin] seq 需為非負整數");
+                    }
+                    // 一鍵追平 — 把 last_seen 推到房間最新（跳過所有未同步，重開同步前清積壓用）
+                    using (new EditorGUI.DisabledScope(pending == 0))
+                    {
+                        if (GUILayout.Button("追平", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
+                        {
+                            string r = room; int target = maxSeq;
+                            WriteStateField(s =>
+                            {
+                                if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
+                                if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
+                                s["rooms"][r]["last_seen_seq"] = target;
+                            });
+                            Debug.Log($"[TavernAdmin] {r}.last_seen_seq 追平 → {target}（未同步區間全部跳過不發）");
+                        }
+                    }
+                }
+            }
+            GUILayout.Label("  ⚠ 套用 seq 屬管理員操作：往回調 = 該區間訊息會重發到 Discord；往前調/追平 = 跳過不發。", WrapLabelStyle);
+        }
+
+        /// <summary>對指定 stream 的 webhook_urls 做受控寫入（增/刪）。</summary>
+        void WriteStreamWebhooks(string iKey, Action<JsonData> mutateBlock)
+        {
+            WriteConfigRoot(cfg =>
+            {
+                JsonData block;
+                if (iKey == "queue-idle") block = cfg;
+                else if (iKey == "quest_routing")
+                {
+                    if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
+                    var tm = cfg["tavern_mirror"];
+                    if (!tm.Contains("quest_routing")) tm["quest_routing"] = JsonData.ParseJson("{}");
+                    block = tm["quest_routing"];
+                }
+                else
+                {
+                    if (!cfg.Contains(iKey)) cfg[iKey] = JsonData.ParseJson("{}");
+                    block = cfg[iKey];
+                }
+                if (!block.Contains("webhook_urls")) block["webhook_urls"] = JsonData.ParseJson("[]");
+                mutateBlock(block);
+            });
+        }
+
+        void DrawWebhookPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>🔗 Webhook 設定</b>（來源優先序 ENV > secret file > config；本頁操作 config 列表）", WrapLabelStyle);
+
+                // Stream 下拉（仿 Persona panel 交互）
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Stream", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    m_SelectedStreamIdx = UCL_GUILayout.PopupSearchCache(m_SelectedStreamIdx, s_WebhookStreamLabels.ToList(), m_Dic, "WebhookStreamPicker");
+                }
+                string key = s_WebhookStreamKeys[Math.Clamp(m_SelectedStreamIdx, 0, s_WebhookStreamKeys.Length - 1)];
+                var block = GetStreamBlock(m_Config, key);
+
+                // 純文字同步狀態（未同步資訊）
+                foreach (var line in BuildStreamInfoLines(key, block))
+                {
+                    GUILayout.Label($"  {line}", WrapLabelStyle);
+                }
+
+                // tavern_mirror 專屬：per-room 同步進度 + 套用 seq（Tim 2026-07-16 整合進下拉）
+                if (key == "tavern_mirror")
+                {
+                    DrawTavernRoomRows();
+                }
+
+                // 來源鏈狀態
+                string envVar = ""; string secretFile = "";
+                try { envVar = block?.GetString("webhook_env_var", "") ?? ""; secretFile = block?.GetString("webhook_file", "") ?? ""; } catch { }
+                bool envSet = !string.IsNullOrEmpty(envVar) && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(envVar));
+                bool fileExists = !string.IsNullOrEmpty(secretFile) && File.Exists(Path.Combine(PromptQueueDir, secretFile));
+                GUILayout.Label($"  來源鏈：ENV {(envSet ? "<color=#66ff66>已設</color>" : "未設")}（{(string.IsNullOrEmpty(envVar) ? "-" : envVar)}） | secret file {(fileExists ? "<color=#66ff66>存在</color>" : "不存在")}（{(string.IsNullOrEmpty(secretFile) ? "-" : secretFile)}）", WrapLabelStyle);
+
+                // URL 遮罩列表 + 驗證 / 刪除
+                var urls = new List<string>();
+                try
+                {
+                    if (block != null && block.Contains("webhook_urls") && block["webhook_urls"].IsArray)
+                    {
+                        for (int i = 0; i < block["webhook_urls"].Count; i++) urls.Add(block["webhook_urls"][i].GetString());
+                    }
+                }
+                catch { }
+                if (urls.Count == 0) GUILayout.Label("  (config 無 webhook URL)", UCL_GUIStyle.LabelStyle);
+
+                string deleteUrl = null;
+                foreach (var url in urls)
+                {
+                    using (new GUILayout.HorizontalScope("box"))
+                    {
+                        GUILayout.Label(MaskWebhook(url), WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)));
+                        GUILayout.Label(m_WebhookProbe.GetValueOrDefault(url, "(未驗證)"), WrapLabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button("🩺 驗證", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            m_WebhookProbe[url] = ProbeWebhook(url);
+                        }
+                        if (GUILayout.Button("刪除", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                        {
+                            deleteUrl = url;
+                        }
+                    }
+                }
+                if (deleteUrl != null)
+                {
+                    string k = key; string du = deleteUrl;
+                    // JsonData.Remove 只支援 Dictionary — list 刪除走重建（保留其餘順序）
+                    WriteStreamWebhooks(k, b =>
+                    {
+                        var arr = b["webhook_urls"];
+                        var kept = JsonData.ParseJson("[]");
+                        for (int i = 0; i < arr.Count; i++)
+                        {
+                            if (arr[i].GetString() != du) kept.Add(new JsonData(arr[i].GetString()));
+                        }
+                        b["webhook_urls"] = kept;
+                    });
+                    Debug.Log($"[TavernAdmin] {key}.webhook_urls 移除一條（{MaskWebhook(deleteUrl)}）");
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("🩺 全部驗證", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    {
+                        foreach (var url in urls) m_WebhookProbe[url] = ProbeWebhook(url);
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                // 新增列 — 一律先驗證通過才入庫（擋貼錯 URL）
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("新增 URL", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    m_NewWebhookUrl = GUILayout.TextField(m_NewWebhookUrl ?? "", UCL_GUIStyle.TextFieldStyle);
+                    using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(m_NewWebhookUrl)))
+                    {
+                        if (GUILayout.Button("驗證並新增", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                        {
+                            string url = m_NewWebhookUrl.Trim();
+                            string probe = ProbeWebhook(url);
+                            m_WebhookProbe[url] = probe;
+                            if (probe.Contains("✓"))
+                            {
+                                if (urls.Contains(url)) Debug.LogWarning("[TavernAdmin] 該 URL 已在列表中");
+                                else
+                                {
+                                    WriteStreamWebhooks(key, b => b["webhook_urls"].Add(new JsonData(url)));
+                                    Debug.Log($"[TavernAdmin] {key}.webhook_urls 新增（{MaskWebhook(url)}，驗證 {probe}）");
+                                }
+                                m_NewWebhookUrl = "";
+                            }
+                            else Debug.LogWarning($"[TavernAdmin] 驗證失敗不入庫：{probe}");
+                        }
+                    }
+                }
+                GUILayout.Label("提示：列表永遠遮罩（只露 webhook id）— 截圖安全；驗證會顯示 Discord 端頻道名。category_routing 走 UCL_TavernCategoryRoutingAsset（asset 自有編輯面），不在本 panel。", WrapLabelStyle);
+            }
         }
 
         // ===========================================================
@@ -268,40 +614,9 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
-                if (m_WatchedRooms.Count == 0)
-                {
-                    GUILayout.Label("(config 無 watched rooms)", UCL_GUIStyle.LabelStyle);
-                }
-                foreach (var room in m_WatchedRooms)
-                {
-                    int lastSeen = GetLastSeen(room);
-                    int maxSeq = m_RoomMaxSeq.GetValueOrDefault(room, 0);
-                    int pending = Math.Max(0, maxSeq - lastSeen);
-                    using (new GUILayout.HorizontalScope("box"))
-                    {
-                        GUILayout.Label($"<b>{room}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        GUILayout.Label($"已同步到 seq {lastSeen} / 房間最新 {maxSeq}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                        GUILayout.Label(pending == 0 ? "<color=#66ff66>✓ 已追平</color>" : $"<color=#ffcc44>待同步 {pending} 筆</color>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                        GUILayout.FlexibleSpace();
-                        m_SeqDraft[room] = GUILayout.TextField(m_SeqDraft.GetValueOrDefault(room, lastSeen.ToString()), UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                        if (GUILayout.Button("套用 seq", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        {
-                            if (int.TryParse(m_SeqDraft.GetValueOrDefault(room, ""), out int newSeq) && newSeq >= 0)
-                            {
-                                string r = room;
-                                WriteStateField(s =>
-                                {
-                                    if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
-                                    if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
-                                    s["rooms"][r]["last_seen_seq"] = newSeq;
-                                });
-                                Debug.Log($"[TavernAdmin] {r}.last_seen_seq → {newSeq}（設小=重放區間 / 設大=跳過區間）");
-                            }
-                            else Debug.LogWarning("[TavernAdmin] seq 需為非負整數");
-                        }
-                    }
-                }
-                GUILayout.Label("⚠ 套用 seq 屬管理員操作：往回調 = 該區間訊息會重發到 Discord；往前調 = 跳過不發。", WrapLabelStyle);
+                // per-room 同步進度 + 套用 seq → 移至「🔗 Webhook 設定」panel 下拉的 tavern_mirror 分支
+                // （Tim 2026-07-16 整合拍板 — 本 panel 收斂成全域資訊：總開關 / 失敗計數 / 觸發 / log）
+                GUILayout.Label("per-room 同步進度與套用 seq → 下方「🔗 Webhook 設定」選 tavern_mirror。", WrapLabelStyle);
 
                 if (m_LogTail.Count > 0)
                 {

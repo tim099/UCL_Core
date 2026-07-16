@@ -32,7 +32,10 @@ Behaviour:
     4. Idempotent mirror: re-running overwrites only files whose content differs
        from source; identical files are skipped, and installed files with no
        corresponding source file (orphans) are removed. Installed copies are not
-       hand-edited, so there is no local-edit protection.
+       hand-edited, so there is no local-edit protection. On full installs
+       (no --include/--exclude), installed skill *directories* whose source was
+       removed from Skills~ (retired skills, marked by .ucl_source) are also
+       uninstalled — otherwise the Editor page would judge them Stale forever.
     5. Writes `.claude/skills/.ucl_installed` as a global marker so agent-side
        self-checks can detect installation.
 
@@ -554,6 +557,27 @@ def main(argv: list[str] | None = None) -> int:
         total_skipped += skipped
         if skipped:
             exit_code = 2
+
+    # 區塊職責: orphan skill 目錄清理 — 已裝端有 .ucl_source、但 Skills~ 源已整個刪除的 skill。
+    # 物理意義: 源 skill 被刪/改名後(例: ucl-waiter 於 SLIM 整併移除), 已裝殘留沒有 source 可同步,
+    #          Editor 端 direct content compare 永遠判 Stale → 「同步到當前版本」按了也不會轉綠。
+    #          已裝 = 純鏡像 → source 不存在的整個 skill 目錄一併移除, 同步後狀態才會收斂到 Synced。
+    # 數值影響: 只在全量安裝(無 --include/--exclude)時執行, 子集操作不動未選中的目錄;
+    #          比對基準用 discovered(Skills~ 現存全集)而非 selected — default-OFF 的 skill 源還在,
+    #          不算 orphan(它們由上方 reconcile 分支處理)。
+    if not include and not exclude:
+        orphan_removed: list[str] = []
+        discovered_set = set(discovered)
+        if skills_dst_root.is_dir():
+            for child in sorted(skills_dst_root.iterdir()):
+                if not child.is_dir() or child.name in discovered_set:
+                    continue
+                if not (child / ".ucl_source").is_file():
+                    continue  # 非本工具裝的目錄(使用者自己放的 skill)不動
+                if remove_skill(child, log, force=args.force_overwrite):
+                    orphan_removed.append(child.name)
+        if orphan_removed:
+            log.info(f"Orphan-uninstalled (source removed from Skills~): {orphan_removed}")
 
     # Global marker（installed_skills 清單 + target/mode；不存 hash/commit，
     # Editor 端狀態改由 direct content compare 判定，見 UCL_AgentSkillManagerPage）

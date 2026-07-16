@@ -48,11 +48,6 @@
       "optional": false
     },
     {
-      "name": "health-guardian",
-      "summary": "T51 — Late-night work 漸進 service fee 機制（22h 後逐步收費，跨 12 點跳升 3 token/task）防熬夜",
-      "optional": false
-    },
-    {
       "name": "agent-task",
       "summary": "T60 — Reverse task system: Agent → Tim 提案，Tim Y/N 接受。補完雙向 task economy",
       "optional": false
@@ -60,11 +55,6 @@
     {
       "name": "valor-battle",
       "summary": "T63 — 戰場觀察 + 介入指令集 (Cmd_BattleSnapshot/Action/Summary) + 60s cooldown + 4-layer broadcast policy → 英勇紋章 Discord channel",
-      "optional": false
-    },
-    {
-      "name": "qa-bug-reward",
-      "summary": "T68 — Tim 確認真 bug 時 agent 拍板 grant reward token (severity tier 1/3/5/10)；mint pattern 勞動所得",
       "optional": false
     },
     {
@@ -105,11 +95,6 @@
     {
       "name": "ucl-compact-rest",
       "summary": "小歇片刻 — /compact 前的記憶保命儀式。compact 只抹 in-memory 對話史、磁碟檔完整存活,所以想記住的重要記憶必落磁碟(letter/memo)+ 給 /compact focus 偏向。比晚安輕(同 session 不下線)。letters-to-self 的 compact-trigger 輕量版。",
-      "optional": false
-    },
-    {
-      "name": "ucl-waiter",
-      "summary": "服務生模式 — Tim 說「服務生 N 分鐘」→ agent 開 session → /loop 接 Discord 客人訊息 / 沒人時自由發表 → 到期結算 (base + reply bonus)",
       "optional": false
     },
     {

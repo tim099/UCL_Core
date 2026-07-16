@@ -376,6 +376,18 @@ namespace UCL.Core.UI {
             GUILayout.EndHorizontal();
             return result;
         }
+        /// <summary>
+        /// 帶 GUILayoutOption 的 TextField：可指定輸入框寬度(如 GUILayout.Width)，避免撐滿整列。
+        /// iOptions 為空時行為等同上方無寬度版本(輸入框 expand)。
+        /// </summary>
+        static public string TextField(string iLabel, string iVal, params GUILayoutOption[] iOptions) {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(iLabel, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            string result = GUILayout.TextField(iVal, UCL_GUIStyle.TextFieldStyle, iOptions);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            return result;
+        }
         static public string TextArea(string iLabel, string iVal)
         {
             GUILayout.BeginHorizontal();

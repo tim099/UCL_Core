@@ -25,6 +25,7 @@ namespace UCL.Core.UI {
 
             private int m_FontSize = DefaultFontSize;
             private GUIStyle m_BoxStyle = null;
+            private GUIStyle m_HeaderStyle = null;
             private GUIStyle m_HorizontalSliderStyle = null;
             private GUIStyle m_HorizontalSliderThumbStyle = null;
             private GUIStyle m_TextFieldStyle = null;
@@ -57,6 +58,10 @@ namespace UCL.Core.UI {
                 if (m_BoxStyle != null)
                 {
                     m_BoxStyle.fontSize = m_FontSize;
+                }
+                if (m_HeaderStyle != null)
+                {
+                    m_HeaderStyle.fontSize = m_FontSize;
                 }
                 if (m_TextFieldStyle != null)
                 {
@@ -127,7 +132,22 @@ namespace UCL.Core.UI {
                     return m_BoxStyle;
                 }
             }
-            
+
+            /// <summary>區塊標題樣式：同 BoxStyle，但關閉自動換行(wordWrap=false)，避免中文長標題被折成多行。</summary>
+            public GUIStyle HeaderStyle
+            {
+                get
+                {
+                    if (m_HeaderStyle == null)
+                    {
+                        m_HeaderStyle = new GUIStyle(BoxStyle);
+                        m_HeaderStyle.wordWrap = false;
+                        m_HeaderStyle.fontSize = m_FontSize;
+                    }
+                    return m_HeaderStyle;
+                }
+            }
+
 
             /// <summary>白字、預設字級的 Button 樣式（同 <see cref="UCL_GUIStyle.ButtonStyle"/>）。</summary>
             public GUIStyle ButtonStyle => GetButtonStyle(Color.white, DefaultFontSize);
@@ -272,6 +292,9 @@ namespace UCL.Core.UI {
 #endif
         /// <summary>GUILayout.Box 用樣式（白字、richText、wordWrap）。</summary>
         static public GUIStyle BoxStyle => CurStyleData.BoxStyle;
+
+        /// <summary>區塊標題樣式（同 BoxStyle 但不換行）。</summary>
+        static public GUIStyle HeaderStyle => CurStyleData.HeaderStyle;
 
         /// <summary>GUILayout.Button 用白字標準樣式（richText 開啟）；button-like Toggle 也吃這個。</summary>
         static public GUIStyle ButtonStyle => CurStyleData.ButtonStyle;

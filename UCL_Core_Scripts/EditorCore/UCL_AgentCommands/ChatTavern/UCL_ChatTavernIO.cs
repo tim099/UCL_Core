@@ -1023,33 +1023,35 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
-                string scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_discord.py").Replace('\\', '/');
+                // T-MOVE (Tim 2026-07-15 拍板): notify_discord.py 已搬 UCL_Core Tools~ — 優先走新位置，
+                // 舊專案位置留 shim 當 fallback（過渡一版；資料 config/state 仍在專案 PromptQueue/）
+                string corePathRel = UCL_EditorPath.CorePath;
+                string scriptPath = string.IsNullOrEmpty(corePathRel) ? null
+                    : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel,
+                        "Tools~", "AgentCommands", "PromptQueue", "notify_discord.py")).Replace('\\', '/');
+                if (scriptPath == null || !File.Exists(scriptPath))
+                {
+                    scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_discord.py").Replace('\\', '/');
+                }
                 if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
 
+                // P0 fix (summit QA 2026-07-16 — 52 隻殭屍程序驗屍結論)：原本 Redirect + async drain 的寫法
+                // 在 Editor domain reload 時 managed drain callback 被殺、OS pipe handle 卻還活著 →
+                // child 寫滿 4KB pipe buffer 永久 block → 殭化。這兩天高頻重編譯 = 高頻堆屍。
+                // 改完全不 redirect（對齊 UCL_TreasuryLedger 的 field-proven 無 redirect spawn）：
+                // 無 console 的 GUI 父程序下 python sys.stdout 為 None、print 是 no-op（腳本已有 try 防護），
+                // 真正的診斷輸出全走腳本自己的 _drain.log — pipe 從系統中消失，殭屍斷根。
                 var psi = new ProcessStartInfo
                 {
                     FileName = "python",
                     Arguments = $"\"{scriptPath}\" --mode tavern",
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false,
                     WorkingDirectory = UCL_RepoPath.RepoRoot,
                 };
-                var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-                // 區塊職責：async 排空 stdout/stderr，避免 OS pipe buffer 滿 (Windows ~4KB / Linux 64KB)
-                //          buffer 滿 → child 寫入 block → 永遠不退 → process 殭化
-                // 數值影響：純 discard handler，~0 cost；EOF 後 OS 自動停 callback
-                proc.OutputDataReceived += (s, e) => { /* discard */ };
-                proc.ErrorDataReceived += (s, e) => { /* discard */ };
-                proc.Exited += (s, e) =>
-                {
-                    try { proc.Dispose(); } catch { /* swallow — proc 已 dispose 不重要 */ }
-                };
-                proc.Start();
-                proc.BeginOutputReadLine();
-                proc.BeginErrorReadLine();
-                // fire-and-forget：不 WaitForExit；Exited 事件會自動 dispose
+                Process.Start(psi);   // fire-and-forget：無 pipe 無 callback，domain reload 免疫
             }
             catch (Exception ex)
             {

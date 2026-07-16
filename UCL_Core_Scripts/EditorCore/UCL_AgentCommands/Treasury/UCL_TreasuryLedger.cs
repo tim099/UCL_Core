@@ -226,21 +226,42 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         // ==========================================================
         // 區塊職責：T41 — fire-and-forget Discord broadcast
-        // 物理意義：spawn Python notify_treasury.py --entry-file <path> 非阻塞跑
-        // 數值影響：~1s 內 Discord 端收到 embed；C# 不等 process 完成
-        // 邊界：notify_treasury.py 不存在 → silent skip（同 R6.6 TryFireDiscordTavernMirrorAsync 模式）
+        // 物理意義：T-TREASURY (Tim 2026-07-15 拍板方案 C) — push 收編 pull adapter：改 spawn 統一
+        //          mirror run（notify_discord --mode tavern），entry 由 pull adapter 依 cursor 撿走
+        //          （冪等重試；push 版 webhook fail = 該筆通知永久丟失的弱點就此移除）。
+        // 數值影響：~1-2s 內 Discord 端收到 embed；C# 不等 process 完成
+        // 邊界：腳本不存在 → 退舊專案位置 shim（shim 也轉統一 run）→ 再不存在 silent skip
         // ==========================================================
         static void FireDiscordBroadcastAsync(string entryFilePath)
         {
             try
             {
-                string scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_treasury.py").Replace('\\', '/');
-                if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 silent skip
+                // 物理意義：獲取 UCL_Core 的專案相對路徑，以此組合出正確的 Tools~ python 腳本執行路徑
+                string corePathRel = UCL_EditorPath.CorePath;
+                string scriptPath = string.IsNullOrEmpty(corePathRel) ? null
+                    : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel,
+                        "Tools~", "AgentCommands", "PromptQueue", "notify_discord.py")).Replace('\\', '/');
+                if (scriptPath == null || !File.Exists(scriptPath))
+                {
+                    scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_treasury.py").Replace('\\', '/');
+                    if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 silent skip
+                    var psiShim = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = $"\"{scriptPath}\" --entry-file \"{entryFilePath}\" --quiet",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = false,
+                        RedirectStandardError = false,
+                    };
+                    System.Diagnostics.Process.Start(psiShim);
+                    return;
+                }
 
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "python",
-                    Arguments = $"\"{scriptPath}\" --entry-file \"{entryFilePath}\" --quiet",
+                    Arguments = $"\"{scriptPath}\" --mode tavern",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = false,

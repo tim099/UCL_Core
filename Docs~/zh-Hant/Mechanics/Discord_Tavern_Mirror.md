@@ -66,7 +66,7 @@ related:
 
 key = 訊息的 `sender_persona`（不是 sender_id）；適合把特定 persona 頭像釘到 repo 外的圖床，不必 push 圖進 GitHub。
 
-## 4. 已知問題 — 同一筆訊息偶發重複發送（root cause 分析，2026-07-15）
+## 4. 重複發送 root cause 與修法（2026-07-15 分析 → 2026-07-16 已修）
 
 **症狀**：同一 seq 偶發送達 Discord 兩次。
 
@@ -85,13 +85,28 @@ save last_seen=102
                              save last_seen=102
 ```
 
-觸發條件 = 多筆訊息在一個 mirror run 的耗時窗（HEAD 預檢 + N 次 webhook POST，秒級）內連續產生 — 正是多 agent 同時發言 / bartender 廣播撞 agent post 的日常場景，故「有機率」而非必現。
+**已 ship 的修法（T-TOCTOU）**：整段 stream dispatch 包 `_MirrorRunLock`（`O_CREAT|O_EXCL` 檔案鎖 +
+stale 偵測 120s + 後到者帶 timeout 30s **等待**而非退出 — 退出會延遲它觸發的那筆訊息）；三份 state
+（notify / tavern / wake）全改 tmp + `os.replace` 原子落檔（裸 write_text 被並發讀到半截 JSON 會
+state 重置 → 全房 re-baseline 漏訊息）。實測：五路併發串行化 rc 全 0、雙 trigger 同窗 race 各 stream
+恰發一次。
 
-**修法方向（待拍板）**：mirror run 全程包一把 lock file 互斥（`O_CREAT|O_EXCL` + stale 偵測），後到者**帶 timeout 等待**而非直接退出（退出會延遲它觸發的那筆訊息，等到下次觸發才補發）；順手把 `_save_tavern_state` 改 tmp + `os.replace` 原子落檔（現為直接 write_text，被並發讀到半截 JSON 會 state 重置 → 全房 re-baseline，中間訊息漏發）。
+## 4b. Treasury pull adapter（T-TREASURY，2026-07-16 收編）
 
-## 5. State / Config 檔案位置
+notify_treasury 原為 push 孤兒（fire-once、webhook fail = 通知永久丟失）。已收編為 mirror run 內的
+pull adapter（`notify_treasury_entries`）：Treasury ledger 本身是 append-only 事件流
+（`Treasury/ledger/<date>/<ts>_<uuid>__<type>.json`），adapter 依 state 的
+`treasury.last_seen`（relkey cursor）掃新 entry → 複用 `notify_treasury.broadcast_entry` 建 embed
+發 `treasury_mirror` webhook。首見 baseline 不回放歷史；`__audit` 檔預設不廣播
+（`treasury_mirror.include_audit` 可開）；send fail 保留 cursor 重試。舊 push caller（C#
+`UCL_TreasuryLedger` / Python `fire_broadcast`）經 shim 或直改轉為「觸發統一 run」— 冪等，多觸發不重發。
 
-| 檔 | 用途 |
-|---|---|
-| `AgentCommands/PromptQueue/notify_config.json` | 使用者設定（deep-merge 蓋 DEFAULT_CONFIG） |
-| `AgentCommands/PromptQueue/_tavern_state.json` | per-room `last_seen_seq` + `consecutive_failures` |
+## 5. 程式 / State / Config 檔案位置（T-MOVE 2026-07-15：code 住 UCL_Core、data 留專案）
+
+| 檔 | 位置 | 用途 |
+|---|---|---|
+| `notify_discord.py` / `notify_treasury.py` | **UCL_Core** `Tools~/AgentCommands/PromptQueue/` | 程式本體（跨專案共用；repo root 走 walk-up 探測） |
+| 同名檔（舊位置） | 專案 `AgentCommands/PromptQueue/` | forwarding shim（過渡一版；notify_treasury shim 同時把 push caller 轉為統一 run 觸發） |
+| `notify_config.json` | 專案 `AgentCommands/PromptQueue/` | 使用者設定（deep-merge 蓋 DEFAULT_CONFIG） |
+| `_tavern_state.json` | 專案 `AgentCommands/PromptQueue/` | per-room `last_seen_seq` + `treasury.last_seen` cursor + `consecutive_failures` |
+| webhook secret / `_drain.log` / `_notify_discord.lock` | 專案 `AgentCommands/PromptQueue/` | per-project 資料（搬移後由 `STATE_DIR = _tp.PROMPT_QUEUE_DIR` 錨定） |

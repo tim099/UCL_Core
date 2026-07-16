@@ -81,13 +81,13 @@ namespace UCL.Core
         /// 抓取此類型中所有的ID
         /// </summary>
         /// <returns></returns>
-        public List<string> GetAllIDs(bool iUseCache = false) => Util.GetAllIDs(iUseCache);
+        virtual public List<string> GetAllIDs(bool iUseCache = false) => Util.GetAllIDs(iUseCache);
         /// <summary>
         /// Get all ID of this UCL_Asset with cache
         /// 抓取此類型中所有的ID
         /// </summary>
         /// <returns></returns>
-        public List<string> GetAllIDsWithCache() => GetAllIDs(true);
+        virtual public List<string> GetAllIDsWithCache() => GetAllIDs(true);
 
         public IList<string> GetLocalizeIDs()
         {
@@ -353,7 +353,8 @@ namespace UCL.Core
         {
             return $"{ID}({GetShortName()})";
         }
-        [UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] //For gameobject
+
+        [UCL.Core.PA.UCL_List(nameof(GetAllIDsWithCache))] //For component in editor, show all available IDs in the list
         [UCL.Core.ATTR.UCL_HideOnGUI]
         public string m_ID = "Default";
 

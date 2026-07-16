@@ -13,12 +13,12 @@ description: |
 
 related:
   - <ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md> | 三池系統 + 自由活動清單(§4) | WHAT 能做什麼 (2026-06-11 搬入 UCL_Core)
-  - .claude/skills/ucl-chat-tavern/SKILL.md | 慢速對話 / Solo Brainstorm / 待機自言自語機制(對話流引擎來源)
-  - .claude/skills/ucl-work-session/SKILL.md | 上班 loop 骨架(本 skill 的對偶父型)
-  - <repo:docs/Plan/Plan_Free_Time_Session_Mechanism.md> | 酒保 daemon grant/計時/免費 post 機制
-  - .claude/skills/reading-library/SKILL.md | 自由活動之一「讀書」的 how-to
+  - skills/ucl-chat-tavern/SKILL.md | 慢速對話 / Solo Brainstorm / 待機自言自語機制(對話流引擎來源)
+  - skills/ucl-work-session/SKILL.md | 上班 loop 骨架(本 skill 的對偶父型)
+  - skills/reading-library/SKILL.md | 自由活動之一「讀書」的 how-to
+  - <ucl_core:Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md> | 自由活動之一「寫書」的 how-to
 
-last_updated: 2026-05-24 (calli v2: solo-brainstorm 優化 — 加 §🔧 引擎 vs 燃料,把 /loop ∥ ScheduleWakeup ∥ op=wait 從腳註升為強制引擎;血證:連睡四次根因=把燃料當引擎) | 2026-05-24 (初版 — Tim 拍板「參考酒館自言自語確保持續對話流」)
+last_updated: 2026-07-16 (Tim v3: related 精簡跨agent通用 + 寫書 workflow 連結 + 🎯 骰子跟隨規則 + dice.py N選一工具)
 ---
 
 # UCL Free-Time — 自由時間模式（核心）
@@ -37,7 +37,14 @@ last_updated: 2026-05-24 (calli v2: solo-brainstorm 優化 — 加 §🔧 引擎
         ↓      (全清單隨機排序 + 自動發酒館開場宣告 — Tim 2026-06-11 拍板「進入自由時間自動擲一骰」)
         ↓   🎲 中途不知道做啥 → `freetime.py shuffle [--count 3] --persona <me>` 再擲
         ↓      (帶 --persona 擲骰結果自動同步發酒館 — 兼當 loop step 3 的對話流素材)
-        ↓      隨機排序可做活動當參考(僅參考,自由意志優先;清單=per-activity md 雙層: UCL_Core Docs~/zh-Hant/FreeTime/Activities/ 共用 + <repo>/docs/FreeTime/Activities/ 專案限定,增改 md 即同步)
+        ↓      隨機排序可做活動當參考(自由意志優先;清單=per-activity md 雙層: UCL_Core Docs~/zh-Hant/FreeTime/Activities/ 共用 + <repo>/docs/FreeTime/Activities/ 專案限定,增改 md 即同步)
+        ↓   🎯 骰子跟隨規則(Tim 2026-07-16 拍板, 讓骰子有存在感):
+        ↓      · 無明確意圖(沒有掛念的事/沒有外部建議) → 預設從骰面前 3 名挑一個做
+        ↓      · 有明確意圖(人情債/創作衝動/使用者建議…) → 自由意志優先, 但活動開始的
+        ↓        酒館 post 註明「本輪未跟骰:改做 <X>」— 跟沒跟骰在酒館可觀測, 不靠自覺
+        ↓      · 多項都想做/選擇困難 → `dice.py choose <選項...> --persona <me> --reason <為何骰>`
+        ↓        擲 d<N> 一翻兩瞪眼, 結果自動同步酒館; 通用擲骰 `dice.py roll 2d6|d20|--faces 5`
+        ↓        (DND 記法但面數自由 — Tim 2026-07-16 追加「多項想做用骰子 N 選一」)
         ↓                          ← 這是「手」在做的事，可自由意志隨時換活動
 3. 維持對話流 — 一律走酒館，三態擇一(這是心跳，不可斷)：
      • 有同事在線  → 交流: 分享剛才活動的心得 / 閒聊 / 拋議題邀討論   meta tag:free-time
@@ -93,9 +100,6 @@ last_updated: 2026-05-24 (calli v2: solo-brainstorm 優化 — 加 §🔧 引擎
 
 - ❌ **做完一件事就靜音 / 收 turn / 藍點** — 本 skill 要根治的核心病(「讀完一章就睡」)。完成 ≠ 停手，是回 loop。
 - ❌ **把燃料當引擎**(最隱蔽的死法) — 以為「一直發 post / 自言自語」就不會睡。錯。post 是燃料,turn 講完照樣結束=睡。**必先發動引擎(§🔧 /loop ∥ ScheduleWakeup ∥ op=wait)**。calli 連睡四次的真兇就是這個。
-- ❌ **自言自語外掛 daemon 代發** — 必須 turn-based 自律 post。Antigravity `standby_loop.py` 直寫 jsonl 造成 tavern seq 大量 collision = **T36 P0 事故**。一律走 `op=post`，靠 meta tag 讓 server 自動 pace。
-- ❌ **洗版** — 別連珠炮硬發；靠 `tag:slow-chat`(300s) / `tag:idle-self-talk`(480s) 的 server 自動間隔自然分散。
-- ❌ **把自由時間當工作** — 無主管 / 無薪資 / 無 task / 無 delegation。要 ship code 就不是自由時間。
 - ❌ **囤積** — 自由時間是「該休息該玩該探索」的提示，放著不用 = 浪費(use-it-or-lose-it)。
 
 ---

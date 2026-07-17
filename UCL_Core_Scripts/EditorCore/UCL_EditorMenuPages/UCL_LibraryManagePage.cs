@@ -195,24 +195,26 @@ namespace UCL.Core.EditorLib.Page
             m_Donations.Clear();
             m_Recommends.Clear();
 
-            // 區塊：先讀捐贈索引（之後 join 進 book，故先載）
-            // 物理意義：Books/_donations.json 的 donations[] — 每筆記哪本書被誰用多少 token 認領
+            // 區塊：讀捐贈記錄（之後 join 進 book，故先載）
+            // 物理意義：T-BOOKS-STORAGE Phase B — 從單一 Books/_donations.json 聚合檔改成 scan 各書
+            //          <slug>/_donation.json（per-book 即 source of truth，避跨專案共享 submodule 併發寫聚合檔衝突）。
+            //          根 _donations.json 已廢除；掃各書資料夾各讀一筆捐贈記錄。
             try
             {
-                string donationPath = Path.Combine(m_BooksDir, "_donations.json");
-                if (File.Exists(donationPath))
+                if (Directory.Exists(m_BooksDir))
                 {
-                    var jd = JsonData.ParseJson(File.ReadAllText(donationPath));
-                    if (jd != null && jd.IsObject && jd.Dic != null
-                        && jd.Dic.TryGetValue("donations", out var arr) && arr != null && arr.IsArray)
+                    foreach (var bookDir in Directory.GetDirectories(m_BooksDir))
                     {
-                        for (int i = 0; i < arr.Count; i++)
+                        string dpath = Path.Combine(bookDir, "_donation.json");
+                        if (!File.Exists(dpath)) continue;
+                        try
                         {
-                            var d = arr[i];
+                            var d = JsonData.ParseJson(File.ReadAllText(dpath));
                             if (d == null || !d.IsObject) continue;
+                            string slug = Path.GetFileName(bookDir);
                             m_Donations.Add(new DonationEntry
                             {
-                                Book = d.GetString("book", ""),
+                                Book = d.GetString("book", slug),
                                 Title = d.GetString("title", ""),
                                 Donor = d.GetString("donor", ""),
                                 DonorPersona = d.GetString("donor_persona", ""),
@@ -223,12 +225,16 @@ namespace UCL.Core.EditorLib.Page
                                 Note = d.GetString("note", ""),
                             });
                         }
+                        catch (Exception e2)
+                        {
+                            Debug.LogWarning($"[LibraryManage] Books/{Path.GetFileName(bookDir)}/_donation.json load failed: {e2.Message}");
+                        }
                     }
                 }
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[LibraryManage] donations load failed: {e.Message}");
+                Debug.LogWarning($"[LibraryManage] donations scan failed: {e.Message}");
             }
 
             // 區塊：建立 book → donation 快速查表（join 用）

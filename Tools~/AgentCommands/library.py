@@ -914,8 +914,37 @@ def _books_root() -> Path:
     return _REPO_ROOT / "AgentCommands" / "Books"
 
 
+# ===========================================================
+# T-BOOKS-STORAGE Phase B (2026-07-17, Tim 拍板) — donations 從根聚合檔改 derive-from-per-book
+# 區塊職責：捐贈登記從讀單一 Books/_donations.json 改成 glob 各書 <slug>/_donation.json 聚合。
+# 物理意義：每本書已各有 _donation.json（一本一筆、天然低衝突）= source of truth；根聚合檔是可 derive
+#          的冗餘、且每次 donate/publish read-modify-write 整檔 → 跨專案共享 submodule 併發衝突。
+#          廢除根 _donations.json，donate/publish 只寫 per-book 檔、不再編聚合檔。
+# 數值影響：讀取 glob + 聚合（不推導 seq 游標，同 Phase A tips）；per-book 檔含 book 欄位，缺則用資料夾名。
+# ===========================================================
+
 def _donations_index() -> Path:
+    # DEPRECATED (Phase B): 舊根聚合檔; 已無 reader，僅保留常數供 git rm 前參照。
     return _books_root() / "_donations.json"
+
+
+def _load_donations() -> dict:
+    """glob 各書 <slug>/_donation.json 聚合成 {"donations": [...]}（取代舊根聚合檔讀取）。
+    保持舊回傳形狀，callers 不動；排序用 book slug 穩定顯示；bad file silent skip。"""
+    root = _books_root()
+    if not root.is_dir():
+        return {"donations": []}
+    out = []
+    for dpath in sorted(root.glob("*/_donation.json")):
+        try:
+            entry = _read_json(dpath)
+        except Exception:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        entry.setdefault("book", dpath.parent.name)   # book 欄位缺則用資料夾名兜底
+        out.append(entry)
+    return {"donations": out}
 
 
 def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str, use_kind: str = "book_donation"):
@@ -1012,11 +1041,7 @@ def cmd_donate(args):
         "donor_persona": args.donor_persona or "", "donor_agent": args.donor_agent or "",
         "tokens": tokens, "base_price": 100, "donated_at": _today(), "note": args.note or "",
     }
-    _write_json(dpath, entry)
-    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
-    idx["donations"] = [d for d in idx.get("donations", []) if d.get("book") != book]
-    idx["donations"].append(entry)
-    _write_json(_donations_index(), idx)
+    _write_json(dpath, entry)   # T-BOOKS-STORAGE Phase B: per-book 檔即 source of truth（不再編根聚合檔, donations 改 glob derive）
     print(f"✅ 捐贈完成:《{title}》→ 📖 捐贈者 {entry['donor_persona'] or donor} ({tokens} token)。全員可讀。")
 
     # 自動觸發酒館「新書入庫」通知 (Tim 2026-05-22)；非致命 — 失敗不影響捐贈
@@ -1067,11 +1092,7 @@ def cmd_publish(args):
         "donated_at": _today(), "published_at": _today(),
         "note": args.note or f"{author} 原創著作 (寫書自由時間活動)",
     }
-    _write_json(bdir / "_donation.json", entry)
-    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
-    idx["donations"] = [d for d in idx.get("donations", []) if d.get("book") != book]
-    idx["donations"].append(entry)
-    _write_json(_donations_index(), idx)
+    _write_json(bdir / "_donation.json", entry)   # T-BOOKS-STORAGE Phase B: per-book 即 source of truth（不再編根聚合檔）
 
     verb = "更新連載" if was_published else "首度發表"
     print(f"✅ {verb}原創書:《{data.get('title')}》 by 📖 {author} ({chapter_cnt} 章, 免費入庫, 全員可讀)")
@@ -1086,7 +1107,7 @@ def cmd_publish(args):
 
 
 def cmd_donations(args):
-    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
+    idx = _load_donations()   # T-BOOKS-STORAGE Phase B: glob 各書 _donation.json derive（取代根聚合檔）
     ds = idx.get("donations", [])
     if not ds:
         print("（圖書館尚無捐贈書）")
@@ -1213,7 +1234,7 @@ def _tip_totals_by_book() -> dict:
 def _resolve_beneficiary(book: str):
     # 區塊職責: 從捐贈登記簿解析打賞受益人 — 原創書→作者 / 捐贈書→捐贈者
     # 回傳 (bank, persona, title, kind) 或 None (未登記 = 不可打賞)
-    idx = _read_json(_donations_index()) if _donations_index().exists() else {"donations": []}
+    idx = _load_donations()   # T-BOOKS-STORAGE Phase B: glob 各書 _donation.json derive（取代根聚合檔）
     for d in idx.get("donations", []):
         if d.get("book") == book:
             kind = "作者" if d.get("source") == "authored" else "捐贈者"

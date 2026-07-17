@@ -77,6 +77,25 @@ def main():
     lib._books_root = lambda: tmp2
     _check(lib._load_tips() == {"tips": []}, "無 tips/ 目錄回空 list")
 
+    print("[6] donations derive-from-per-book（Phase B）")
+    tmp3 = pathlib.Path(tempfile.mkdtemp(prefix="don_test_"))
+    lib._books_root = lambda: tmp3
+    import json as _json
+    for slug, don in [("book-a", {"book": "book-a", "title": "A", "donor_persona": "kotoko", "source": "authored", "tokens": 0}),
+                      ("book-b", {"book": "book-b", "title": "B", "donor_persona": "summit", "source": "donated", "tokens": 50}),
+                      ("book-c", {"title": "C (無 book 欄位)", "donor_persona": "ame", "source": "authored"})]:
+        bd = tmp3 / slug
+        bd.mkdir(parents=True, exist_ok=True)
+        (bd / "_donation.json").write_text(_json.dumps(don, ensure_ascii=False), encoding="utf-8")
+    ds = lib._load_donations().get("donations", [])
+    _check(len(ds) == 3, f"glob 3 本 per-book _donation.json（實得 {len(ds)}）")
+    _check({d.get("book") for d in ds} == {"book-a", "book-b", "book-c"},
+           "缺 book 欄位的用資料夾名兜底（book-c）")
+    ben = lib._resolve_beneficiary("book-b")
+    _check(ben is not None and ben[1] == "summit", f"_resolve_beneficiary derive 正確（book-b → summit，實得 {ben}）")
+    lib._books_root = lambda: pathlib.Path(tempfile.mkdtemp(prefix="don_empty_"))
+    _check(lib._load_donations() == {"donations": []}, "無任何 per-book 檔回空 list")
+
     print()
     if _failures:
         print(f"❌ {len(_failures)} 個斷言失敗：")

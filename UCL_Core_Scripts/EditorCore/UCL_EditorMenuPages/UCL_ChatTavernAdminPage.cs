@@ -525,10 +525,11 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("新增 URL", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    bool addURL = GUILayout.Button("驗證並新增", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false));
                     m_NewWebhookUrl = GUILayout.TextField(m_NewWebhookUrl ?? "", UCL_GUIStyle.TextFieldStyle);
-                    using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(m_NewWebhookUrl)))
+                    //using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(m_NewWebhookUrl)))
                     {
-                        if (GUILayout.Button("驗證並新增", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                        if (addURL)
                         {
                             string url = m_NewWebhookUrl.Trim();
                             string probe = ProbeWebhook(url);

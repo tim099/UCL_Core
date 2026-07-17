@@ -1138,12 +1138,66 @@ TIP_TAVERN_RATE = 1     # 每 1 token → 酒館券張數
 TIP_MAX = 1000          # 對齊 Treasury max_per_transfer 上限
 
 
+# ===========================================================
+# T-BOOKS-STORAGE Phase A (2026-07-17, Tim 拍板) — tips 從單一聚合檔改 per-entry folder
+# 區塊職責：打賞簿儲存從 Books/_tips.json（單一聚合、每次 read-modify-write 整檔）改成
+#          Books/tips/ 資料夾、每筆一檔（append-only）。
+# 物理意義：Books 是跨專案共享 submodule，聚合檔併發寫 → git 衝突 + last-writer-wins 資料遺失。
+#          per-entry 檔誰都只新增自己那筆、不編共享檔 → 零衝突。同 tavern per-message 重構家族。
+# 數值影響：讀取 glob + 聚合（排序用檔名≈時間序）；⚠ 刻意「不」推導 position seq 當游標
+#          （記取 Discord mirror 的 silent-drop 教訓；打賞只做顯示/加總、不需 cursor）。
+# 檔名（Tim 拍板法）：tips/<UTC stamp>_<tipper_persona>_<tip_id>.json — 時間可排序 + persona 可讀 + tip_id 防撞。
+# ===========================================================
+
+def _tips_dir() -> Path:
+    return _books_root() / "tips"
+
+
 def _tips_index() -> Path:
+    # DEPRECATED (Phase A): 舊單一聚合檔; 僅保留給 migrate-tips 讀舊資料用。
     return _books_root() / "_tips.json"
 
 
+def _safe_slug(s: str) -> str:
+    """檔名安全化：非 [A-Za-z0-9._-] 換 _（persona 通常已是 kebab slug，防禦性處理）；截 40。"""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", (s or "unknown"))[:40] or "unknown"
+
+
+def _utc_stamp() -> str:
+    """UTC 可排序、檔名安全的時間戳（含微秒防同秒撞）。"""
+    return datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _write_tip(entry: dict, stamp: str = None) -> None:
+    """把單筆 tip 寫成獨立檔 tips/<stamp>_<tipper_persona>_<tip_id>.json。
+    stamp: None → 用當下 UTC 精確時戳（新打賞）；給值 → 用該值（migration 傳原 tipped_at 讓檔名誠實反映原始日期）。
+    冪等：同 tip_id 已有檔（--retry 補券更新 voucher_status）→ 覆寫同一檔、不新增。"""
+    d = _tips_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    tid = entry.get("tip_id", "") or ""
+    existing = list(d.glob(f"*_{tid}.json")) if tid else []
+    if existing:
+        path = existing[0]
+    else:
+        stamp = _safe_slug(stamp) if stamp else _utc_stamp()
+        fname = f"{stamp}_{_safe_slug(entry.get('tipper_persona'))}_{tid or _safe_slug(entry.get('book'))}.json"
+        path = d / fname
+    _write_json(path, entry)
+
+
 def _load_tips() -> dict:
-    return _read_json(_tips_index()) if _tips_index().exists() else {"tips": []}
+    """glob tips/*.json 聚合成 {"tips": [...]}（保持舊回傳形狀，callers 不動）。
+    排序用檔名（≈時間序）；bad file silent skip（對齊 tavern read_messages 韌性）。"""
+    d = _tips_dir()
+    if not d.is_dir():
+        return {"tips": []}
+    tips = []
+    for f in sorted(d.glob("*.json")):
+        try:
+            tips.append(_read_json(f))
+        except Exception:
+            continue
+    return {"tips": tips}
 
 
 def _tip_totals_by_book() -> dict:
@@ -1265,7 +1319,7 @@ def cmd_tip(args):
         for t in pending:
             t["voucher_status"] = _issue_tip_vouchers(t)
             print(f"  retry 《{t.get('title', t['book'])}》 tip {t['tip_id']} → {t['voucher_status']}")
-        _write_json(_tips_index(), idx)
+            _write_tip(t)   # T-BOOKS-STORAGE: 更新該筆獨立檔（同 tip_id 覆寫），不重寫整簿
         return 0 if all(t.get("voucher_status") == "issued" for t in pending) else 2
 
     # guard: 必填與額度
@@ -1317,9 +1371,7 @@ def cmd_tip(args):
         "tipped_at": _today(),
     }
     entry["voucher_status"] = _issue_tip_vouchers(entry)
-    idx = _load_tips()
-    idx.setdefault("tips", []).append(entry)
-    _write_json(_tips_index(), idx)
+    _write_tip(entry)   # T-BOOKS-STORAGE Phase A: 寫獨立檔 tips/<stamp>_<persona>_<tip_id>.json（不再編聚合檔）
     if entry["voucher_status"] == "issued":
         print(f"✅ 打賞完成: {ben_persona} 已收 繪圖券×{entry['vouchers']['canvas']} + 酒館券×{entry['vouchers']['tavern']}")
     else:
@@ -1355,6 +1407,40 @@ def cmd_tips(args):
               f"{status}")
         if t.get("note"):
             print(f"    note: {t['note']}")
+    return 0
+
+
+def cmd_migrate_tips(args):
+    # 區塊職責: 一次性 migration — 舊單一 _tips.json 拆成 tips/ per-entry 檔（T-BOOKS-STORAGE Phase A）
+    # 物理意義: 舊聚合檔 read-modify-write 整檔 → 跨專案 submodule 併發衝突; 拆 per-entry append-only 根治
+    # 數值影響: 讀舊檔每筆 → _write_tip 落獨立檔; 驗 parity 後「提示」可刪舊檔（保守, 不自動刪）
+    old = _tips_index()
+    if not old.exists():
+        print("（沒有舊 _tips.json 要遷移）")
+        return 0
+    try:
+        data = _read_json(old)
+    except Exception as e:
+        print(f"❌ 讀舊 _tips.json 失敗: {e}", file=sys.stderr)
+        return 2
+    tips = data.get("tips", []) if isinstance(data, dict) else []
+    if not tips:
+        print("（舊 _tips.json 無 tips 紀錄；可直接刪）")
+        return 0
+    n = 0
+    for t in tips:
+        if not t.get("tip_id"):
+            print(f"  ⚠ 跳過無 tip_id 的舊筆: {t.get('book')}", file=sys.stderr)
+            continue
+        # migration 用原 tipped_at (YYYY-MM-DD → YYYYMMDD) 當檔名時戳，誠實反映原始打賞日期
+        _write_tip(t, stamp=(t.get("tipped_at") or "").replace("-", "") or None)
+        n += 1
+    reloaded = _load_tips().get("tips", [])
+    print(f"✅ 遷移 {n} 筆 → {_tips_dir()}（重新 glob 讀回 {len(reloaded)} 筆）")
+    if len(reloaded) >= n:
+        print(f"   parity OK。確認無誤後可刪舊檔（git rm {old}）。")
+    else:
+        print(f"   ⚠ parity 不符 (寫 {n} / 讀回 {len(reloaded)}) — 別刪舊檔, 先查", file=sys.stderr)
     return 0
 
 
@@ -1817,6 +1903,9 @@ def build_parser():
     a = sub.add_parser("tips", help="顯示打賞簿 (全列 / --book 過濾)")
     a.add_argument("--book", default=None)
     a.set_defaults(func=cmd_tips)
+
+    a = sub.add_parser("migrate-tips", help="[一次性] 舊 _tips.json → tips/ per-entry 檔遷移 (T-BOOKS-STORAGE Phase A)")
+    a.set_defaults(func=cmd_migrate_tips)
 
     # 卷↔章對應
     a = sub.add_parser("add-volume", help="登記一卷(卷別↔原始檔序號↔章節號對照); 同 n 覆寫")

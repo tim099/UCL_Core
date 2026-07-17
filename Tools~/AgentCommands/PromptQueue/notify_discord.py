@@ -1047,6 +1047,89 @@ def _read_room_meta(room_id):
     return _tio.read_room_meta(room_id)
 
 
+# ===========================================================
+# T-STABLE-CURSOR (2026-07-17, Phase 1 止血) — uuid seen-set + ts 邊界去重取代 position-seq 浮水印
+# 區塊職責：mirror 的「這筆是否已 broadcast 過」判定，從「位置推導 seq <= last_seen_seq」改成「uuid 在 seen-set」。
+# 物理意義：seq 是 tavern_io.read_messages 依「檔名字典序位置」動態推導的（非儲存的穩定 ID）。觀影 burst
+#          時多 agent 並發寫檔、晚落地卻排進浮水印以下位置的檔案，其 derived seq <= last_seen 會被永久
+#          當「已看過」跳過 → Discord 整筆消失、state 到頂、failures=0，完全隱形（三度騙過我們的那個外觀）。
+#          改用訊息本身穩定的 uuid 當去重 key、ts 當粗游標，免疫檔名排序亂序。
+# 數值影響：fail 方向 = 重送（Discord 看得到、頂多吵）而非漏送（隱形資料遺失）= 對的 fail-safe 方向。
+#          seen-set 以「ts_high - SKEW_WINDOW」為界剪枝防無界成長；下界以下且未見過的訊息視為古老歷史靜默跳過（bound replay）。
+# 邊界：SKEW_WINDOW 必須 >> 最大跨 agent 時鐘偏差 + burst 最晚落地窗；600s 對「同機多 process/秒級亂序」綽綽有餘。
+#      Phase 2 待辦：C# ParseMessage 補讀 uuid / AdminPage 游標語意遷移 / tavern_query / stream-watch tail 同源收斂。
+# ===========================================================
+_STABLE_CURSOR_SKEW_WINDOW_SEC = 600.0   # 10 分鐘容忍窗（時鐘偏差 + 晚落地）
+
+
+def _iso_minus_seconds(iso_str, secs):
+    """把 ISO8601 字串往前推 secs 秒回傳同格式字串（"...Z"）；輸入空/不可解析回 ""。
+    用來算 seen-set 的 ts 下界；回空字串代表「無下界」（baseline 前或無 ts_high）。"""
+    dt = _parse_iso_utc(iso_str)
+    if dt is None:
+        return ""
+    return (dt - datetime.timedelta(seconds=secs)).isoformat() + "Z"
+
+
+def _msg_dedup_status(uuid, ts, seen_uuids, ts_low_bound):
+    """回 'seen' | 'too_old' | 'fresh' — 純函式（不 IO、不 parse），給 _collect 與單元測試共用。
+
+    seen    = uuid 已在 seen_uuids（已 broadcast 過）→ 跳過（正常去重）
+    too_old = uuid 沒見過但 ts <= ts_low_bound（早於去重窗）→ 視為古老歷史跳過（防 replay 整段歷史）
+    fresh   = 該 broadcast（新訊息，或落在窗內、亂序晚到、未送過的）
+
+    ts / ts_low_bound 皆為可字典序比較的 ISO UTC 字串（"2026-07-17T02:48:41.042Z"）。
+    ts_low_bound == "" 代表無下界（僅靠 seen-set 去重）。
+    """
+    if uuid and uuid in seen_uuids:
+        return "seen"
+    if ts_low_bound and ts and ts <= ts_low_bound:
+        return "too_old"
+    return "fresh"
+
+
+def _seed_room_baseline(msgs, sent_up_to_seq=None):
+    """為某房建立 baseline / migration 用的 room_state。
+    回 dict: {last_seen_seq, ts_high, seen_uuids}。msgs = _read_room_messages(room) 結果。
+
+    sent_up_to_seq:
+      None（首次見某房 baseline）→ 視「當前全部歷史」為已送、不回放；pending = 無。
+      int（舊 schema 遷移）→ 只把 derived seq <= 此值（舊 position 浮水印已送過的）視為已送；
+                            seq > 此值的「pending 未送」訊息保留成 fresh，遷移後會補送（lossless，不吞 pending）。
+    """
+    max_seq = max((m.get("seq", 0) for m in msgs), default=0)
+    cutoff = max_seq if sent_up_to_seq is None else sent_up_to_seq
+    # 只把「視為已送」(seq <= cutoff) 的訊息拿來定 ts_high / seen；pending 不算
+    sent = [m for m in msgs if m.get("seq", 0) <= cutoff]
+    ts_high = max((m.get("ts", "") for m in sent), default="")
+    ts_low_bound = _iso_minus_seconds(ts_high, _STABLE_CURSOR_SKEW_WINDOW_SEC)
+    seen = {}
+    for m in sent:
+        ts = m.get("ts") or ""
+        uuid = m.get("uuid") or ""
+        # 只記近窗內（下界之後）的既有訊息 → 更舊的靠 ts 下界擋、不必記進 set
+        if uuid and (not ts_low_bound or ts > ts_low_bound):
+            seen[uuid] = ts
+    return {"last_seen_seq": cutoff, "ts_high": ts_high, "seen_uuids": seen}
+
+
+def _record_sent_message(room_state, msg):
+    """把成功 broadcast 的 msg 記進 room_state（seen_uuids + 推進 ts_high + 剪枝 + last_seen_seq 顯示用）。"""
+    uuid = msg.get("uuid") or ""
+    ts = msg.get("ts") or ""
+    seen = room_state.setdefault("seen_uuids", {})
+    if uuid:
+        seen[uuid] = ts
+    if ts > (room_state.get("ts_high") or ""):
+        room_state["ts_high"] = ts
+    # last_seen_seq 保留：AdminPage「已同步到 seq / 待同步筆數」UI 仍讀它顯示（best-effort = 當筆 derived 位置）
+    room_state["last_seen_seq"] = msg.get("seq", room_state.get("last_seen_seq", 0))
+    # 剪枝：丟掉 ts 早於下界的 seen entry，防 seen_uuids 無界成長
+    ts_low_bound = _iso_minus_seconds(room_state.get("ts_high", ""), _STABLE_CURSOR_SKEW_WINDOW_SEC)
+    if ts_low_bound:
+        room_state["seen_uuids"] = {u: t for u, t in seen.items() if (t or "") > ts_low_bound}
+
+
 def _collect_new_tavern_messages(tm_config, state):
     """
     對每個 watched room 掃 messages.jsonl，找 seq > last_seen 的訊息；過濾後最多 max_per_run 筆。
@@ -1085,10 +1168,15 @@ def _collect_new_tavern_messages(tm_config, state):
         else:
             effective_kinds = fallback_kinds
 
+        # T-STABLE-CURSOR: 每房算一次 ts 下界（ts_high - skew window）；seen-set 快照
+        ts_low_bound = _iso_minus_seconds(room_state.get("ts_high", ""), _STABLE_CURSOR_SKEW_WINDOW_SEC)
+        seen_uuids = room_state.get("seen_uuids") or {}
         msgs = _read_room_messages(room)
         for m in msgs:
-            seq = m.get("seq", 0)
-            if seq <= last_seen:
+            # T-STABLE-CURSOR: 去重從「位置推導 seq <= last_seen」改成「uuid seen-set + ts 下界」
+            # （seq 是檔名排序位置、非穩定 ID；burst 亂序晚落地會被 seq 浮水印永久跳過 = silent drop）
+            _dedup = _msg_dedup_status(m.get("uuid") or "", m.get("ts") or "", seen_uuids, ts_low_bound)
+            if _dedup != "fresh":
                 continue
             kind = m.get("kind")
             if effective_kinds and kind not in effective_kinds:
@@ -1263,19 +1351,27 @@ def notify_tavern_messages(config=None):
     if state.get("consecutive_failures", 0) >= fail_threshold:
         return 0, f"tavern auto-disabled (consecutive_failures={state['consecutive_failures']} >= {fail_threshold})"
 
-    # Baseline 機制（per-room）— 首次見某房 → 把 last_seen 推到當下最大 seq，整個 batch 跳過該房
-    # 物理意義：首次 enable 不該回放歷史；只發 baseline 之後產生的訊息
-    # 數值影響：state.rooms[room] 缺紀錄 → 視為初始化；補完才會 _collect 撈到新訊息
+    # Baseline / migration 機制（per-room）— 首次見某房、或舊 schema（只有 last_seen_seq、缺 ts_high）
+    # 物理意義：首次 enable 不該回放歷史；只發 baseline 之後產生的訊息。
+    #          T-STABLE-CURSOR migration：舊 state 只有 position-based last_seen_seq，若不 seed ts_high/seen_uuids
+    #          就會被新去重邏輯視為「無下界 → 整段歷史 fresh」而災難級全量重送。故「缺 ts_high」也走 baseline seed。
+    # 數值影響：seed 出 {last_seen_seq, ts_high, seen_uuids(近窗)} → 歷史靠 ts 下界擋、近窗 uuid 記著防 restart 重送。
     state.setdefault("rooms", {})
     rooms_initialized = []
     for room in tm.get("rooms", []):
-        if room not in state["rooms"]:
-            max_seq = max((m.get("seq", 0) for m in _read_room_messages(room)), default=0)
-            state["rooms"][room] = {"last_seen_seq": max_seq}
+        rs = state["rooms"].get(room)
+        if rs is None:
+            # 首次見某房：不回放歷史（sent_up_to_seq=None → 視全部歷史為已送）
+            state["rooms"][room] = _seed_room_baseline(_read_room_messages(room))
+            rooms_initialized.append(room)
+        elif "ts_high" not in rs:
+            # 舊 schema 遷移：保留 pending（只把舊 last_seen_seq 以下視為已送，之後的補送、不吞未送訊息）
+            state["rooms"][room] = _seed_room_baseline(_read_room_messages(room),
+                                                       sent_up_to_seq=rs.get("last_seen_seq", 0))
             rooms_initialized.append(room)
     if rooms_initialized:
         _save_tavern_state(state)
-        _log(f"[tavern] baseline 建立：{rooms_initialized}（既有歷史訊息不會回放）")
+        _log(f"[tavern] baseline/migration 建立：{rooms_initialized}（既有歷史訊息不會回放；改用 uuid seen-set + ts 游標）")
 
     # 真正撈新訊息（前面 baseline 寫完才撈，避免初始化的房又被撈到）
     new_msgs = _collect_new_tavern_messages(tm, state)
@@ -1367,8 +1463,9 @@ def notify_tavern_messages(config=None):
 
         if msg_any_ok:
             sent_count += 1
-            # 推進該房 last_seen（任一 target 成功就視為「該訊息已 broadcast」，避免重發）
-            state["rooms"].setdefault(room, {})["last_seen_seq"] = msg.get("seq", 0)
+            # T-STABLE-CURSOR: 記 uuid + 推進 ts_high（取代單純推進 position last_seen_seq）；
+            # 任一 target 成功就視為「該訊息已 broadcast」，靠 uuid 去重避免重發、免疫檔名排序亂序
+            _record_sent_message(state["rooms"].setdefault(room, {}), msg)
             state["consecutive_failures"] = 0
         else:
             fail_in_batch += 1

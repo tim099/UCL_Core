@@ -1515,6 +1515,35 @@ def notify_tavern_messages(config=None):
 #          tm.include_audit=true 可開）。embed 建構複用 notify_treasury.broadcast_entry（同 dir sibling）。
 # ===========================================================
 
+# ===========================================================
+# T6.6 (basecamp 2026-07-19) — treasury cursor 拆獨立 state 檔
+# 區塊職責：treasury cursor 從 _tavern_state.json 搬到 _treasury_state.json（單寫者切檔粒度）。
+# 物理意義：_tavern_state.json 是 tavern mirror 的 canonical 檔（mirror_owner 硬互鎖語意涵蓋它）；
+#          treasury 通知 cutover 後仍留 python，若繼續共檔 = owner=native 期間 python 寫 tavern
+#          canonical 檔 → 互鎖破功。拆檔後 owner flag 語意乾淨收窄成「tavern message mirror 的 owner」。
+# 數值影響：首跑自動遷移 — 新檔不存在時從 _tavern_state.json 的 treasury.last_seen 種子（不回放歷史）；
+#          舊檔內殘留的 treasury key 不主動刪（C# Save read-modify-write 原樣保留，無害死資料）。
+# ===========================================================
+_TREASURY_STATE_PATH = STATE_DIR / "_treasury_state.json"
+
+def _load_treasury_state():
+    """讀 _treasury_state.json；缺檔 → 從 _tavern_state.json 舊 cursor 一次性遷移種子。"""
+    try:
+        if _TREASURY_STATE_PATH.exists():
+            return json.loads(_TREASURY_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        _log(f"[treasury] state load fail ({e}) — 走遷移/空白 baseline")
+    # 遷移：舊 cursor 還住在 _tavern_state.json["treasury"] 的話搬過來當種子
+    legacy = (_load_tavern_state().get("treasury") or {}).get("last_seen", "")
+    return {"last_seen": legacy}
+
+def _save_treasury_state(state):
+    """atomic write（tmp+replace）— 與 _save_tavern_state 同慣例。"""
+    tmp = _TREASURY_STATE_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(_TREASURY_STATE_PATH)
+
+
 def notify_treasury_entries(config=None):
     """Treasury ledger pull adapter 主入口。回 (sent_count, reason)。"""
     if config is None:
@@ -1526,8 +1555,9 @@ def notify_treasury_entries(config=None):
     if not ledger_root.is_dir():
         return 0, "no ledger dir"
 
-    state = _load_tavern_state()
-    cursor = (state.get("treasury") or {}).get("last_seen", "")
+    # T6.6: cursor 改住 _treasury_state.json（獨立小檔，不再碰 tavern canonical 檔）
+    state = _load_treasury_state()
+    cursor = state.get("last_seen", "")
 
     # 掃描新 entry — relkey = "<date>/<fname>" ordinal 排序；cursor 日期前的整資料夾 cheap prune
     news = []
@@ -1544,8 +1574,8 @@ def notify_treasury_entries(config=None):
     if not cursor:
         # baseline — 首次啟用不回放歷史
         if news:
-            state.setdefault("treasury", {})["last_seen"] = news[-1][0]
-            _save_tavern_state(state)
+            state["last_seen"] = news[-1][0]
+            _save_treasury_state(state)
         return 0, f"treasury baseline established ({len(news)} historical entries skipped)"
     if not news:
         return 0, "no new treasury entries"
@@ -1564,22 +1594,22 @@ def notify_treasury_entries(config=None):
     sent = 0
     for relkey, f in news:
         if f.name.endswith("__audit.json") and not include_audit:
-            state.setdefault("treasury", {})["last_seen"] = relkey   # 靜默推進
+            state["last_seen"] = relkey   # 靜默推進
             continue
         try:
             entry = json.loads(f.read_text(encoding="utf-8"))
         except Exception as e:
             _log(f"[treasury] entry parse fail @ {relkey}: {e} — 跳過並推進 cursor")
-            state.setdefault("treasury", {})["last_seen"] = relkey
+            state["last_seen"] = relkey
             continue
         ok, msg = _nt.broadcast_entry(entry)
         if ok:
             sent += 1
-            state.setdefault("treasury", {})["last_seen"] = relkey
+            state["last_seen"] = relkey
         else:
             _log(f"[treasury] send fail @ {relkey}: {msg} — cursor 保留下次重試")
             break
-    _save_tavern_state(state)
+    _save_treasury_state(state)
     if deferred:
         _log(f"[treasury] max_per_run cap: {deferred} entries 留待下一輪")
     if sent:

@@ -360,6 +360,15 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("  (config 無 watched rooms)", UCL_GUIStyle.LabelStyle);
                 return;
             }
+            // 區塊職責：T6.5 — native owner 下鎖住 position-seq 控件（native 用 ts_high + per-webhook 游標，
+            //          不理 last_seen_seq；讓管理員照舊按「套用 seq/追平」= 編到 native 不讀的欄位 → 純誤導）
+            // 數值影響：唯讀顯示照舊（python 舊 cursor 仍在檔內），互動列 disable + 常駐語意提示。
+            //          控件的 ts_high/per-webhook 語意完整遷移跟 07-17 root-cause doc Phase 2 一起做，不卡 cutover。
+            bool nativeOwner = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.IsNativeOwner;
+            if (nativeOwner)
+            {
+                GUILayout.Label("  🔒 mirror_owner=native：同步游標由 C# daemon 以 ts_high + per-webhook 管理（_tavern_state.json rooms.<room>.webhooks），下列 seq 控件已停用（native 不讀 last_seen_seq）。", WrapLabelStyle);
+            }
             foreach (var room in m_WatchedRooms)
             {
                 int lastSeen = GetLastSeen(room);
@@ -371,6 +380,9 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label($"已同步到 seq {lastSeen} / 房間最新 {maxSeq}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label(pending == 0 ? "<color=#66ff66>✓ 已追平</color>" : $"<color=#ffcc44>待同步 {pending} 筆</color>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
                     GUILayout.FlexibleSpace();
+                    // T6.5：native owner 下整段 seq 互動列 disable（native 不讀 last_seen_seq）
+                    using (new EditorGUI.DisabledScope(nativeOwner))
+                    {
                     m_SeqDraft[room] = GUILayout.TextField(m_SeqDraft.GetValueOrDefault(room, lastSeen.ToString()), UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
                     if (GUILayout.Button("套用 seq", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -402,6 +414,7 @@ namespace UCL.Core.EditorLib.Page
                             Debug.Log($"[TavernAdmin] {r}.last_seen_seq 追平 → {target}（未同步區間全部跳過不發）");
                         }
                     }
+                    }   // T6.5 DisabledScope(nativeOwner) 收尾
                 }
             }
             GUILayout.Label("  ⚠ 套用 seq 屬管理員操作：往回調 = 該區間訊息會重發到 Discord；往前調/追平 = 跳過不發。", WrapLabelStyle);
@@ -607,11 +620,21 @@ namespace UCL.Core.EditorLib.Page
                         WriteStateField(s => s["consecutive_failures"] = 0);
                     }
                     GUILayout.FlexibleSpace();
-                    // 手動觸發一次 mirror run — 走 IO 層現成的 fire-and-forget spawn
+                    // 手動觸發一次 mirror run — T6.5：owner 分流。native → daemon.ForceTick（立即掃描送出）；
+                    // python → IO 層 fire-and-forget spawn（T6.6 後 spawn 在 native owner 下也會跑 python，
+                    // 但那條只剩 treasury 有意義 — tavern 的「立即同步」在 native 下走 ForceTick 才是真觸發）。
                     if (GUILayout.Button("▶ 立即觸發同步", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                     {
-                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync();
-                        Debug.Log("[TavernAdmin] 手動觸發 notify_discord.py --mode tavern（數秒後按 Refresh 看結果）");
+                        if (UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.IsNativeOwner)
+                        {
+                            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.ForceTick();
+                            Debug.Log("[TavernAdmin] 手動觸發 native daemon ForceTick（掃描 + 送出立即跑一輪）");
+                        }
+                        else
+                        {
+                            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync();
+                            Debug.Log("[TavernAdmin] 手動觸發 notify_discord.py --mode tavern（數秒後按 Refresh 看結果）");
+                        }
                     }
                 }
 

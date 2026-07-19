@@ -40,6 +40,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             new Dictionary<string, Dictionary<string, UCL_MirrorWebhookCursor>>();
         // 各房 ts_high 種子（初次從 python _tavern_state.json 讀入，給新 webhook cursor 當起始高水位，避免重播歷史）
         static readonly Dictionary<string, string> s_RoomBaselineTsHigh = new Dictionary<string, string>();
+        // 各房 python room 級 seen_uuids 種子（follow-up#3：flip 時邊界訊息 ts==ts_high 落窗內、
+        // 新 cursor seen 空 → 重送一次。繼承 python 的 seen 就把這個 cutover 邊界 dup 消掉）
+        static readonly Dictionary<string, Dictionary<string, string>> s_RoomBaselineSeen =
+            new Dictionary<string, Dictionary<string, string>>();
         static bool s_Loaded = false;
 
         /// <summary>lazy load — 從 python _tavern_state.json 讀各房 ts_high 當種子（只讀不寫，避免並發寫者 race）。</summary>
@@ -64,6 +68,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         // python 端 per-room ts_high 種子（給「無自己 cursor 的新 webhook」當起始高水位，避免重播歷史）
                         string tsHigh = roomNode.GetString("ts_high", "");
                         if (!string.IsNullOrEmpty(tsHigh)) s_RoomBaselineTsHigh[room] = tsHigh;
+
+                        // follow-up#3：一併繼承 python room 級 seen_uuids（uuid→ts dict，與 cursor 同構）
+                        if (roomNode.Contains("seen_uuids"))
+                        {
+                            var seenNode = roomNode["seen_uuids"];
+                            if (seenNode != null && seenNode.IsObject && seenNode.Dic != null)
+                            {
+                                var seen = new Dictionary<string, string>();
+                                foreach (var sv in seenNode.Dic)
+                                    if (sv.Value != null) seen[sv.Key] = sv.Value.GetStringWithDefaultValue("");
+                                if (seen.Count > 0) s_RoomBaselineSeen[room] = seen;
+                            }
+                        }
 
                         // 讀回 native 自己寫的 per-webhook 游標（seen-set / ts_high / backoff）→ 活過 domain reload（kiara 要求）
                         // Tim 拍板 class + JsonLib：LoadDataFromJson<T> 把純欄位 JsonData 還原成 cursor class（SaveMode.Normal 對齊 Save）
@@ -112,6 +129,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (s_RoomBaselineTsHigh.TryGetValue(room, out var seed))
                 {
                     cursor.ts_high = seed;
+                    // follow-up#3：連 python room 級 seen_uuids 一起繼承 — 邊界訊息（ts==ts_high）
+                    // 在窗內查 seen 會命中 → flip 不再重送一次（07-19 cutover 實錄的一次性 dup 根治）
+                    if (s_RoomBaselineSeen.TryGetValue(room, out var seedSeen))
+                        foreach (var sv in seedSeen) cursor.seen_uuids[sv.Key] = sv.Value;
                 }
                 else
                 {

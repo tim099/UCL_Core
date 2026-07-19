@@ -169,6 +169,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             public string uuid;
             public string ts;
             public bool recordOnSuccess;   // true=正式送(成功推 cursor)；false=smoke(只 log)
+
+            // 區塊職責：follow-up#1 長文 chunk 化 — 同一則訊息的多 chunk 順序送出（python parity：寧可多條不截斷）
+            // 物理意義：Discord 訊息順序 = POST 完成順序 → chunk n+1 MUST 等 chunk n 2xx 才發（同 entry 續用）。
+            //          cursor 只在「全部 chunk 都 2xx」後推進 — 中途 fail 不推 → 下輪整組重送
+            //          （取捨與 python 相反：python any_chunk_ok 推 cursor = 後續 chunk 丟了不補；
+            //          native 寧可重複前段 chunk 也不隱形漏尾段，對齊「fail 方向 = 可見非隱形」原則）。
+            public string url;                       // webhook 原始 URL（發續 chunk 用）
+            public string username;                  // identity 沿用（多 chunk 同身分）
+            public string avatarUrl;
+            public List<string> pendingContents;     // 尚未發出的續 chunk（null/空 = 單條或已到最後一條）
+            public int partIndex = 1;                // 當前第幾條（log 用，1-based）
+            public int partTotal = 1;
         }
 
         static readonly List<MirrorInFlight> s_InFlight = new List<MirrorInFlight>();
@@ -189,6 +201,27 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 var res = UCL_DiscordWebhookClient.InterpretResult(f.req);
                 if (res.ok)
                 {
+                    // follow-up#1：還有續 chunk → 不推 cursor，原 entry 換上下一條 request 續等
+                    //（順序保證：前一 chunk 2xx 才發下一條；Discord 顯示序 = 完成序）
+                    if (f.pendingContents != null && f.pendingContents.Count > 0)
+                    {
+                        string nextContent = f.pendingContents[0];
+                        f.pendingContents.RemoveAt(0);
+                        var nextReq = UCL_DiscordWebhookClient.StartPost(f.url, nextContent, f.username, f.avatarUrl, null);
+                        f.req.Dispose();
+                        if (nextReq != null)
+                        {
+                            f.req = nextReq;
+                            f.partIndex++;
+                            Debug.Log($"[DiscordMirror] … chunk {f.partIndex}/{f.partTotal} {f.room}/{f.uuid} → webhook {f.webhookId}（前段 msg={res.messageId ?? "?"}）");
+                            continue;   // entry 續留 in-flight，等下一 chunk 完成
+                        }
+                        // StartPost 失敗（極端）→ 當 fail 處理：不推 cursor，下輪整組重送
+                        Debug.LogWarning($"[DiscordMirror] chunk {f.partIndex + 1}/{f.partTotal} 發出失敗 {f.room}/{f.uuid}（cursor 不推進，下輪重送整組）");
+                        s_InFlight.RemoveAt(i);
+                        continue;
+                    }
+
                     if (f.recordOnSuccess)
                     {
                         UCL_DiscordMirrorState.RecordSent(f.room, f.webhookId, f.uuid, f.ts);
@@ -196,7 +229,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         anyStateChange = true;
                     }
                     // T8：msg=<id> 為 ?wait=true 的「真建立」憑據 — 驗收 harness 以此行 + state seen_uuids 做能證偽 diff
-                    Debug.Log($"[DiscordMirror] ✓ sent {f.room}/{f.uuid} → webhook {f.webhookId} (HTTP {res.statusCode}, msg={res.messageId ?? "?"})");
+                    string parts = f.partTotal > 1 ? $", parts={f.partTotal}" : "";
+                    Debug.Log($"[DiscordMirror] ✓ sent {f.room}/{f.uuid} → webhook {f.webhookId} (HTTP {res.statusCode}, msg={res.messageId ?? "?"}{parts})");
                 }
                 else if (res.isRateLimited)
                 {
@@ -552,11 +586,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return targets;
         }
 
-        // 區塊職責：Discord 顯示 content 組裝 — title header（room/sender/seq/routing tag）+ body 截斷
-        // 物理意義：多房 mirror 進同頻道時沒 header 分不清來源；body 超 Discord 硬限 2000 會 400 →
-        //          永不 2xx → cursor 不推進 → 無限重試。截斷到 body_max 是 MVP 防護（python 走 chunk，
-        //          native chunk 化列 T8 parity 前 follow-up）。
-        static string BuildContent(MirrorConfigBlock cfg, string room, UCL_ChatMessage msg, string username, string routingTag, string body)
+        // 區塊職責：follow-up#1 — body 切 chunk（python _split_body_for_discord parity）
+        // 物理意義：Tim 2026-05-13 拍板「寧可發多條也不要截斷」。優先在 \n 邊界切（讀感完整），
+        //          單行超長才硬切。body_max 預設 1500（Discord 2000 硬限留 buffer 給 title/part marker）。
+        static List<string> SplitBody(string body, int max)
+        {
+            var chunks = new List<string>();
+            if (string.IsNullOrEmpty(body) || body.Length <= max) { chunks.Add(body ?? ""); return chunks; }
+            int pos = 0;
+            while (pos < body.Length)
+            {
+                int len = Math.Min(max, body.Length - pos);
+                if (pos + len < body.Length)
+                {
+                    // 在切點往回找最近的換行 — 找到就切在換行後（換行歸前段）；整段無換行 → 硬切
+                    int nl = body.LastIndexOf('\n', pos + len - 1, len);
+                    if (nl > pos) len = nl - pos + 1;
+                }
+                chunks.Add(body.Substring(pos, len));
+                pos += len;
+            }
+            return chunks;
+        }
+
+        // 區塊職責：Discord 顯示 content 組裝 — title header（room/sender/seq/routing tag）+ 多 chunk
+        // 物理意義：多房 mirror 進同頻道時沒 header 分不清來源；超長 body 切 chunk 順序送
+        //          （對齊 python：首條帶 title + part 1/N 標記，續條帶「seq X 續 part i/N」標記）。
+        // 數值影響：回傳 list（≥1 條）；caller 首條 StartPost、餘下掛 pendingContents 逐條續發。
+        static List<string> BuildContents(MirrorConfigBlock cfg, string room, UCL_ChatMessage msg, string username, string routingTag, string body)
         {
             string header = (cfg.title_template ?? "")
                 .Replace("{room}", room)
@@ -564,9 +621,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 .Replace("{seq}", msg.seq.ToString());
             if (!string.IsNullOrEmpty(routingTag)) header += $" → #{routingTag}";
 
-            if (body.Length > cfg.body_max)
-                body = body.Substring(0, cfg.body_max) + "\n…（超長截斷，全文見酒館）";
-            return string.IsNullOrEmpty(header) ? body : header + "\n" + body;
+            var chunks = SplitBody(body, cfg.body_max);
+            var contents = new List<string>();
+            int total = chunks.Count;
+            for (int i = 0; i < total; i++)
+            {
+                if (total == 1)
+                    contents.Add(string.IsNullOrEmpty(header) ? chunks[i] : header + "\n" + chunks[i]);
+                else if (i == 0)
+                    contents.Add($"{header} _(part 1/{total})_\n{chunks[i]}");
+                else
+                    contents.Add($"_(seq {msg.seq} 續 part {i + 1}/{total})_\n{chunks[i]}");
+            }
+            return contents;
         }
 
         // 區塊職責：掃 config rooms，對每則訊息按 T6 路由送出 + 全 webhook cursor 鎖步推進
@@ -647,12 +714,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         string username = UCL_DiscordIdentityResolver.ResolveUsername(msg.sender_id, msg.sender_name, msg.DisplayName);
                         string avatarUrl = UCL_DiscordIdentityResolver.ResolveAvatarUrl(msg.sender_persona, msg.sender_avatar_sprite, msg.sender_id);
                         string body = UCL_DiscordIdentityResolver.RewriteMentions(msg.body ?? "");
-                        string content = BuildContent(cfg, room, msg, username, kv.Value, body);
-                        var req = UCL_DiscordWebhookClient.StartPost(url, content, username, avatarUrl, null);
+                        // follow-up#1：超長 body 切 chunk — 首條即發，餘下掛 pendingContents 由 DrainInFlight 順序續發
+                        var contents = BuildContents(cfg, room, msg, username, kv.Value, body);
+                        var req = UCL_DiscordWebhookClient.StartPost(url, contents[0], username, avatarUrl, null);
                         if (req != null)
                             s_InFlight.Add(new MirrorInFlight
                             {
                                 req = req, room = room, webhookId = wid, uuid = msg.uuid, ts = msg.ts, recordOnSuccess = true,
+                                url = url, username = username, avatarUrl = avatarUrl,
+                                pendingContents = contents.Count > 1 ? contents.GetRange(1, contents.Count - 1) : null,
+                                partIndex = 1, partTotal = contents.Count,
                             });
                     }
                     if (inflightFull) break;

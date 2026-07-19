@@ -162,17 +162,53 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return url + (url.Contains("?") ? "&wait=true" : "?wait=true");
         }
 
-        // 區塊職責：從 JSON 文字抽頂層字串欄位（輕量、免 JsonLib 依賴）
-        // 邊界：找第一個 "key":"value" — Discord message 物件 id 慣例序列化在最前；此值僅作
-        //       診斷憑據（ok 判定不依賴它），極端欄位序異動最多憑據錯位、不影響 cursor 正確性。
+        // 區塊職責：從 JSON 文字抽「頂層物件」的字串欄位（輕量、免 JsonLib 依賴）
+        // 物理意義：follow-up#2 — 天真版找第一個 "id":" 會在 message 帶 @mention 時錯抓
+        //          mentions[].id（user id，07-19 cutover 實錄）。本版追蹤 brace depth，
+        //          只認 depth==1（頂層物件直屬）的 key，巢狀物件/陣列內的同名 key 一律略過。
+        // 邊界：值僅作診斷憑據（ok 判定不依賴）；string 內的 { } 經 in-string 狀態機正確忽略。
         static string ExtractJsonStringField(string json, string key)
         {
-            string token = "\"" + key + "\":\"";
-            int i = json.IndexOf(token, StringComparison.Ordinal);
-            if (i < 0) return null;
-            int start = i + token.Length;
-            int end = json.IndexOf('"', start);
-            return end > start ? json.Substring(start, end - start) : null;
+            string token = "\"" + key + "\"";
+            int depth = 0;
+            bool inStr = false, esc = false;
+            for (int i = 0; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (inStr)
+                {
+                    if (esc) esc = false;
+                    else if (c == '\\') esc = true;
+                    else if (c == '"') inStr = false;
+                    continue;
+                }
+                if (c == '"')
+                {
+                    // 頂層 key 命中檢查：depth==1 且從此處起完整 match "key" 且後接 :"value"
+                    if (depth == 1 && i + token.Length < json.Length
+                        && string.CompareOrdinal(json.Substring(i, token.Length), token) == 0)
+                    {
+                        int p = i + token.Length;
+                        while (p < json.Length && (json[p] == ' ' || json[p] == '\t')) p++;
+                        if (p < json.Length && json[p] == ':')
+                        {
+                            p++;
+                            while (p < json.Length && (json[p] == ' ' || json[p] == '\t')) p++;
+                            if (p < json.Length && json[p] == '"')
+                            {
+                                int start = p + 1;
+                                int end = json.IndexOf('"', start);   // snowflake id 無 escape，直找收尾引號
+                                return end > start ? json.Substring(start, end - start) : null;
+                            }
+                        }
+                    }
+                    inStr = true;   // 非命中 → 當一般字串進入，狀態機照常跳過
+                    continue;
+                }
+                if (c == '{' || c == '[') depth++;
+                else if (c == '}' || c == ']') depth--;
+            }
+            return null;
         }
 
         public static UnityWebRequest StartPost(string url, string content, string username, string avatarUrl, string embedsJson)

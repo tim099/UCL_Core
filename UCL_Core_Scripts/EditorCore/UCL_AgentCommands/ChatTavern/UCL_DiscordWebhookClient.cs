@@ -27,6 +27,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     {
         public string webhookId;          // URL 倒數第二段（穩定 id，不含 token）；null = malformed URL
         public bool ok;                   // HTTP 2xx
+        public string messageId;          // T8：?wait=true 回應內的 Discord message id（真建立憑據）；null = 未取得
         public long statusCode;           // HTTP status code（0 = 網路層未拿到 response）
         public bool isRateLimited;        // HTTP 429
         public double retryAfterSeconds;  // 429 時建議退避秒數（來自 Retry-After header）；非 429 為 0
@@ -151,9 +152,33 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// 發出一次 POST（不 await）→ 回已 SendWebRequest 的 UnityWebRequest 供 daemon 輪詢 isDone。
         /// malformed URL 回 null。呼叫端負責在 isDone 後呼叫 InterpretResult 並 Dispose（或用 using）。
         /// </summary>
+        // 區塊職責：T8 — webhook URL 加掛 ?wait=true（Discord 回 200 + message JSON 而非 204）
+        // 物理意義：204 = 「接受」；wait=true 的 200 + message id = 「真的建立」。能證偽驗收的送達憑據，
+        //          代價是 Discord 端同步等建立完成（單筆延遲略增，daemon poll 模型不在乎）。
+        static string AppendWaitTrue(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return url;
+            if (url.Contains("wait=true")) return url;
+            return url + (url.Contains("?") ? "&wait=true" : "?wait=true");
+        }
+
+        // 區塊職責：從 JSON 文字抽頂層字串欄位（輕量、免 JsonLib 依賴）
+        // 邊界：找第一個 "key":"value" — Discord message 物件 id 慣例序列化在最前；此值僅作
+        //       診斷憑據（ok 判定不依賴它），極端欄位序異動最多憑據錯位、不影響 cursor 正確性。
+        static string ExtractJsonStringField(string json, string key)
+        {
+            string token = "\"" + key + "\":\"";
+            int i = json.IndexOf(token, StringComparison.Ordinal);
+            if (i < 0) return null;
+            int start = i + token.Length;
+            int end = json.IndexOf('"', start);
+            return end > start ? json.Substring(start, end - start) : null;
+        }
+
         public static UnityWebRequest StartPost(string url, string content, string username, string avatarUrl, string embedsJson)
         {
             if (string.IsNullOrEmpty(url) || ExtractWebhookId(url) == null) return null;
+            url = AppendWaitTrue(url);   // T8：送達憑據（message id）
             string json = BuildPayloadJson(content, username, avatarUrl, embedsJson);
             byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
             var req = new UnityWebRequest(url, "POST");
@@ -182,6 +207,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (req.responseCode >= 200 && req.responseCode < 300)
             {
                 result.ok = true;
+                // T8：?wait=true 時 Discord 回 200 + message JSON — 抽 "id" 當「真建立」ground truth
+                //（204 只代表接受非渲染確認；message id 是能證偽驗收的送達憑據）
+                try
+                {
+                    string body = req.downloadHandler != null ? req.downloadHandler.text : null;
+                    if (!string.IsNullOrEmpty(body)) result.messageId = ExtractJsonStringField(body, "id");
+                }
+                catch { /* 憑據抽取失敗不影響 ok 判定 */ }
                 return result;
             }
             if (req.responseCode == 429)

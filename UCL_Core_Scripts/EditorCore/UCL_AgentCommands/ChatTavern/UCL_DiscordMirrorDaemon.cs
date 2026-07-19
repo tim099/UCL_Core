@@ -195,7 +195,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         UCL_DiscordMirrorState.ClearBackoff(f.room, f.webhookId);
                         anyStateChange = true;
                     }
-                    Debug.Log($"[DiscordMirror] ✓ sent {f.room}/{f.uuid} → webhook {f.webhookId} (HTTP {res.statusCode})");
+                    // T8：msg=<id> 為 ?wait=true 的「真建立」憑據 — 驗收 harness 以此行 + state seen_uuids 做能證偽 diff
+                    Debug.Log($"[DiscordMirror] ✓ sent {f.room}/{f.uuid} → webhook {f.webhookId} (HTTP {res.statusCode}, msg={res.messageId ?? "?"})");
                 }
                 else if (res.isRateLimited)
                 {

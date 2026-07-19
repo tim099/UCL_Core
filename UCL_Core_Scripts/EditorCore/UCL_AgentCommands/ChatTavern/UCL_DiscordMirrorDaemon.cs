@@ -255,12 +255,141 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // 區塊職責：mirror 目標 config（tavern_mirror 區塊子集）— Tim 拍板 class + JsonLib 讀取
-        // 物理意義：只取 daemon 掃描要用的 rooms / webhook_urls / kinds；其餘 tavern_mirror 欄位 LoadDataFromJson 自動略過
+        // 物理意義：只取 daemon 掃描要用的欄位；其餘 tavern_mirror 欄位 LoadDataFromJson 自動略過。
+        //          T6 擴充：category_routing / quest_routing / exclude_senders / title_template / body_max
+        //          （python parity — 對齊 notify_discord.py notify_tavern_messages 的路由與顯示語意）
+        class MirrorCategoryRoutingBlock
+        {
+            public bool enabled = false;                          // 總開關（config category_routing.enabled）
+        }
+        class MirrorQuestRoutingBlock
+        {
+            public bool enabled = false;                          // quest 分流開關
+            public string sender_match_prefix = "_quest_system";  // sender 前綴命中 → 走 quest webhooks（python Layer 1）
+            public List<string> webhook_urls = new List<string>();// quest 頻道 webhook（config 直列；env/file 解析走 ResolveScopeUrls）
+            public string webhook_env_var = "";
+            public string webhook_file = "";
+        }
         class MirrorConfigBlock
         {
             public List<string> rooms = new List<string>();
             public List<string> webhook_urls = new List<string>();
             public List<string> kinds = new List<string>();
+            public List<string> exclude_senders = new List<string>();          // 這些 sender 不 mirror（python parity）
+            public string title_template = "**`{room}` · {sender_name}** · seq {seq}";  // Discord 顯示 header（python 同款）
+            public int body_max = 1500;                                        // body 截斷上限（Discord 硬限 2000；python 走 chunk，native MVP 截斷）
+            public MirrorCategoryRoutingBlock category_routing = new MirrorCategoryRoutingBlock();
+            public MirrorQuestRoutingBlock quest_routing = new MirrorQuestRoutingBlock();
+        }
+
+        // ===========================================================
+        // 區塊職責：T6 category routing — routing group 解析快取（5s，與 config 快取同節奏）
+        // 物理意義：UCL_TavernCategoryRoutingAsset 的 GetAllIDs(true)+GetData(false) 每次都掃 disk；
+        //          per-message per-tick 呼叫會變 IO 熱點 → daemon 端把「group + 解析後 URLs」快取成
+        //          輕量 target list，每 5s 重建一次（新增/改 group asset 最慢 5s 生效）。
+        // 數值影響：matching 在記憶體做（HashSet category 查找 O(1)）；URL 解析含 ENV > FILE > config
+        //          優先序 + placeholder 過濾（REPLACE_ME/PLACEHOLDER 不嘗試送，對齊 python T46）。
+        // ===========================================================
+        class MirrorRoutingTarget
+        {
+            public string id;                                     // group ID（Discord header 的 routing tag 用）
+            public bool exclusive;                                // m_Exclusive：命中即壟斷（main + 其他 additive 全跳過）
+            public bool isDefault;                                // m_IsDefault：沒命中任何 category 時的 fallback
+            public HashSet<string> categories;                    // lowercase category 集
+            public List<string> urls;                             // 解析+過濾後的真 webhook URLs
+        }
+        static List<MirrorRoutingTarget> s_CachedRouting = null;
+        static double s_RoutingCacheTime = -999;
+
+        // placeholder URL 判定（Templates~ 樣板預設值）— 對齊 python _is_placeholder_url
+        static bool IsPlaceholderUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return true;
+            string upper = url.ToUpperInvariant();
+            return upper.Contains("REPLACE_ME") || upper.Contains("PLACEHOLDER");
+        }
+
+        // 區塊職責：scope 級 webhook URL 解析 — ENV > FILE > config list（對齊 python _resolve_webhook_urls）
+        // 物理意義：file 路徑相對 AgentCommands/PromptQueue（python webhook_dir=STATE_DIR 同基準），一行一 URL。
+        // 數值影響：全部經 placeholder 過濾；解析失敗 fail swallow 回空（caller 視同無 URL）。
+        static List<string> ResolveScopeUrls(string envVar, string file, List<string> configUrls)
+        {
+            var outUrls = new List<string>();
+            try
+            {
+                if (!string.IsNullOrEmpty(envVar))
+                {
+                    string ev = Environment.GetEnvironmentVariable(envVar);
+                    if (!string.IsNullOrEmpty(ev))
+                    {
+                        foreach (var u in ev.Split(new[] { '\n', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                            if (!IsPlaceholderUrl(u.Trim())) outUrls.Add(u.Trim());
+                        if (outUrls.Count > 0) return outUrls;
+                    }
+                }
+                if (!string.IsNullOrEmpty(file))
+                {
+                    string path = System.IO.Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue", file);
+                    if (System.IO.File.Exists(path))
+                    {
+                        foreach (var line in System.IO.File.ReadAllLines(path))
+                        {
+                            string u = line.Trim();
+                            if (!string.IsNullOrEmpty(u) && !IsPlaceholderUrl(u)) outUrls.Add(u);
+                        }
+                        if (outUrls.Count > 0) return outUrls;
+                    }
+                }
+                if (configUrls != null)
+                {
+                    foreach (var u in configUrls)
+                        if (!string.IsNullOrEmpty(u) && !IsPlaceholderUrl(u)) outUrls.Add(u.Trim());
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[DiscordMirror] webhook URL resolve fail: {e.Message}"); }
+            return outUrls;
+        }
+
+        // 區塊職責：載入（快取）全部 enabled routing groups → MirrorRoutingTarget list
+        static List<MirrorRoutingTarget> ReadRoutingTargets()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (s_CachedRouting != null && now - s_RoutingCacheTime < CONFIG_CACHE_TTL_SEC) return s_CachedRouting;
+
+            var targets = new List<MirrorRoutingTarget>();
+            try
+            {
+                var allIDs = new UCL_TavernCategoryRoutingAsset().GetAllIDs(true);
+                if (allIDs != null)
+                {
+                    foreach (var id in allIDs)
+                    {
+                        if (string.IsNullOrEmpty(id)) continue;
+                        UCL_TavernCategoryRoutingAsset g = null;
+                        try { g = new UCL_TavernCategoryRoutingAsset().GetData(id, false); } catch { continue; }
+                        if (g == null || !g.m_Enabled) continue;
+
+                        var cats = new HashSet<string>();
+                        if (g.m_Categories != null)
+                            foreach (var c in g.m_Categories)
+                                if (!string.IsNullOrEmpty(c)) cats.Add(c.Trim().ToLowerInvariant());
+
+                        targets.Add(new MirrorRoutingTarget
+                        {
+                            id = g.ID,
+                            exclusive = g.m_Exclusive,
+                            isDefault = g.m_IsDefault,
+                            categories = cats,
+                            urls = ResolveScopeUrls(g.m_WebhookEnvVar, g.m_WebhookFile, g.m_WebhookUrls),
+                        });
+                    }
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[DiscordMirror] routing groups load fail: {e.Message}"); }
+
+            s_CachedRouting = targets;
+            s_RoutingCacheTime = now;
+            return targets;
         }
 
         const int SCAN_TAIL_N = 30;                 // 每 room 每 tick 的起始掃描窗（cursor-driven 回頁的第一頁大小）
@@ -296,6 +425,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (cfg.rooms == null) cfg.rooms = new List<string>();
             if (cfg.webhook_urls == null) cfg.webhook_urls = new List<string>();
             if (cfg.kinds == null || cfg.kinds.Count == 0) cfg.kinds = new List<string> { "chat" };
+            if (cfg.exclude_senders == null) cfg.exclude_senders = new List<string>();
+            if (cfg.category_routing == null) cfg.category_routing = new MirrorCategoryRoutingBlock();
+            if (cfg.quest_routing == null) cfg.quest_routing = new MirrorQuestRoutingBlock();
+            if (string.IsNullOrEmpty(cfg.title_template)) cfg.title_template = "**`{room}` · {sender_name}** · seq {seq}";
+            if (cfg.body_max <= 0) cfg.body_max = 1500;
             s_CachedConfig = cfg;
             s_ConfigCacheTime = now;
             return cfg;
@@ -359,50 +493,160 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
         }
 
-        // 區塊職責：掃 config rooms × webhooks，對每則「該送且未在途」的訊息 StartPost（掛 in-flight，成功推 cursor）
-        // 物理意義：cursor-driven 收集掃描窗（Bug B fix）→ kind 過濾 + echo 排除 → per-webhook ShouldSend（有界窗去重）→ StartPost
-        // 數值影響：並發受 MAX_INFLIGHT 限（滿了本輪 return，下 tick 續）；掃描窗升冪 = 最舊優先送，
-        //          確保 ts_high 由舊往新推進、不跳過積壓訊息。cursor 只在 DrainInFlight 拿到 2xx 後推進（單寫者）。
+        // 區塊職責：T6 — 單一訊息的路由目標判定（對齊 python notify_tavern_messages 的三層 precedence）
+        // 物理意義：Layer1 quest sender 前綴 → 只走 quest webhooks；Layer2 category 命中 enabled groups
+        //          （exclusive 命中 = 壟斷：main + 其他 additive 全跳過；否則 main + 命中群 additive）；
+        //          沒命中 → default group additive；routing disabled → 純 main。
+        // 數值影響：回傳 (url → routing tag) 映射；tag 進 Discord header 顯示（→ #main / → #<group>）。
+        static Dictionary<string, string> ResolveMessageTargets(
+            MirrorConfigBlock cfg, List<MirrorRoutingTarget> routing, List<string> mainUrls, UCL_ChatMessage msg)
+        {
+            var targets = new Dictionary<string, string>();   // url → tag（dict 天然去重同 URL）
+
+            // Layer 1: quest sender 分流（python quest_routing）— 命中即壟斷，不進 main / category。
+            // python parity：quest_routing_active = enabled 且解析得到 URL；解析不到 → 不啟用分流，
+            // quest 訊息落回 Layer 2（跟 python 一致，不無聲丟棄）。
+            if (cfg.quest_routing.enabled && !string.IsNullOrEmpty(cfg.quest_routing.sender_match_prefix)
+                && !string.IsNullOrEmpty(msg.sender_id) && msg.sender_id.StartsWith(cfg.quest_routing.sender_match_prefix))
+            {
+                var questUrls = ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls);
+                if (questUrls.Count > 0)
+                {
+                    foreach (var u in questUrls) targets[u] = "quest";
+                    return targets;
+                }
+            }
+
+            // Layer 2: category routing
+            string category = "";
+            if (msg.meta != null && msg.meta.TryGetValue("category", out var c) && c != null)
+                category = c.Trim().ToLowerInvariant();
+
+            var matched = new List<MirrorRoutingTarget>();
+            bool hasExclusive = false;
+            if (routing.Count > 0)
+            {
+                if (!string.IsNullOrEmpty(category))
+                    foreach (var t in routing)
+                        if (t.categories.Contains(category)) matched.Add(t);
+                if (matched.Count == 0)
+                {
+                    // 沒命中 → 第一筆 default group（python parity：多 default 取第一筆）
+                    foreach (var t in routing)
+                        if (t.isDefault) { matched.Add(t); break; }
+                }
+                foreach (var t in matched)
+                    if (t.exclusive) { hasExclusive = true; break; }
+            }
+
+            // main webhook — 只在沒命中 exclusive 時加入（T42「買一送一」修正的 native 對齊）
+            if (!hasExclusive)
+                foreach (var u in mainUrls) targets[u] = "main";
+
+            foreach (var t in matched)
+            {
+                if (hasExclusive && !t.exclusive) continue;   // exclusive 模式下其他 additive 也跳過
+                foreach (var u in t.urls) targets[u] = t.id;
+            }
+            return targets;
+        }
+
+        // 區塊職責：Discord 顯示 content 組裝 — title header（room/sender/seq/routing tag）+ body 截斷
+        // 物理意義：多房 mirror 進同頻道時沒 header 分不清來源；body 超 Discord 硬限 2000 會 400 →
+        //          永不 2xx → cursor 不推進 → 無限重試。截斷到 body_max 是 MVP 防護（python 走 chunk，
+        //          native chunk 化列 T8 parity 前 follow-up）。
+        static string BuildContent(MirrorConfigBlock cfg, string room, UCL_ChatMessage msg, string username, string routingTag, string body)
+        {
+            string header = (cfg.title_template ?? "")
+                .Replace("{room}", room)
+                .Replace("{sender_name}", username ?? "")
+                .Replace("{seq}", msg.seq.ToString());
+            if (!string.IsNullOrEmpty(routingTag)) header += $" → #{routingTag}";
+
+            if (body.Length > cfg.body_max)
+                body = body.Substring(0, cfg.body_max) + "\n…（超長截斷，全文見酒館）";
+            return string.IsNullOrEmpty(header) ? body : header + "\n" + body;
+        }
+
+        // 區塊職責：掃 config rooms，對每則訊息按 T6 路由送出 + 全 webhook cursor 鎖步推進
+        // 物理意義：cursor-driven 收集掃描窗（Bug B）→ kind/echo/exclude_senders 過濾 → ResolveMessageTargets
+        //          決定 (url→tag) → 目標 webhook 走 ShouldSend/StartPost；**非目標 webhook 直接記 processed**。
+        // 數值影響：鎖步推進讓冷門頻道（很少收到自己 category 的 webhook）的 ts_high 不落後 → CollectScanMessages
+        //          的 min(ts_high) 下界貼近尾端，掃描窗常態一頁；否則冷門 cursor 會拖著全房每 tick 深回頁。
+        //          cursor 語意由「sent 高水位」擴為「processed 高水位」——目標送出仍等 2xx 才記（單寫者不變）。
         static void Scan()
         {
             var cfg = ReadConfig();
-            if (cfg.rooms.Count == 0 || cfg.webhook_urls.Count == 0) return;
+            if (cfg.rooms.Count == 0) return;
 
-            // webhook id 集先算一次（給 cursor 下界查詢；內層 per-msg 迴圈仍走 url 原樣）
-            var webhookIds = new List<string>();
-            foreach (var url in cfg.webhook_urls)
+            var routing = cfg.category_routing.enabled ? ReadRoutingTargets() : new List<MirrorRoutingTarget>();
+            var mainUrls = new List<string>();
+            foreach (var u in cfg.webhook_urls)
+                if (!string.IsNullOrEmpty(u) && !IsPlaceholderUrl(u)) mainUrls.Add(u);
+            if (mainUrls.Count == 0 && routing.Count == 0) return;   // 完全無處可送
+
+            // 房間可能觸及的全 webhook 聯集（cursor 下界 + 鎖步推進的範圍）：main + 全 routing groups + quest
+            var allWids = new List<string>();
+            var allWidSet = new HashSet<string>();
+            void AddWid(string url)
             {
-                string wid = UCL_DiscordWebhookClient.ExtractWebhookId(url);
-                if (wid != null) webhookIds.Add(wid);
+                string w = UCL_DiscordWebhookClient.ExtractWebhookId(url);
+                if (w != null && allWidSet.Add(w)) allWids.Add(w);
             }
+            foreach (var u in mainUrls) AddWid(u);
+            foreach (var t in routing) foreach (var u in t.urls) AddWid(u);
+            if (cfg.quest_routing.enabled)
+                foreach (var u in ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls)) AddWid(u);
+
+            bool anyStateChange = false;
+            bool inflightFull = false;
 
             foreach (var room in cfg.rooms)
             {
+                if (inflightFull) break;
                 if (string.IsNullOrEmpty(room)) continue;
                 List<UCL_ChatMessage> msgs;
-                try { msgs = CollectScanMessages(room, webhookIds); }
+                try { msgs = CollectScanMessages(room, allWids); }
                 catch { continue; }
                 if (msgs == null) continue;
 
                 foreach (var msg in msgs)
                 {
+                    if (inflightFull) break;
                     if (msg == null || string.IsNullOrEmpty(msg.uuid)) continue;
-                    string kind = string.IsNullOrEmpty(msg.kind) ? "chat" : msg.kind;
-                    if (!cfg.kinds.Contains(kind)) continue;
-                    if (IsEcho(msg)) continue;
 
-                    foreach (var url in cfg.webhook_urls)
+                    // eligible 判定：kind 過濾 + echo 排除 + exclude_senders（python parity）
+                    string kind = string.IsNullOrEmpty(msg.kind) ? "chat" : msg.kind;
+                    bool eligible = cfg.kinds.Contains(kind) && !IsEcho(msg)
+                        && !(msg.sender_id != null && cfg.exclude_senders.Contains(msg.sender_id));
+
+                    var targets = eligible
+                        ? ResolveMessageTargets(cfg, routing, mainUrls, msg)
+                        : new Dictionary<string, string>();
+
+                    // 目標 webhook id 集（給下方鎖步推進判「誰不是目標」）
+                    var targetWids = new HashSet<string>();
+                    foreach (var kv in targets)
                     {
+                        string wid = UCL_DiscordWebhookClient.ExtractWebhookId(kv.Key);
+                        if (wid != null) targetWids.Add(wid);
+                    }
+
+                    // 目標路徑：ShouldSend → StartPost 掛 in-flight（2xx 後 DrainInFlight 才記 cursor，單寫者）
+                    foreach (var kv in targets)
+                    {
+                        string url = kv.Key;
                         string wid = UCL_DiscordWebhookClient.ExtractWebhookId(url);
                         if (wid == null) continue;
                         if (!UCL_DiscordMirrorState.ShouldSend(room, wid, msg.uuid, msg.ts)) continue;
                         if (IsInFlight(room, wid, msg.uuid)) continue;
-                        if (s_InFlight.Count >= MAX_INFLIGHT) return;   // 並發上限 → 下輪 tick 續送
+                        if (s_InFlight.Count >= MAX_INFLIGHT) { inflightFull = true; break; }   // 下輪 tick 續送
 
                         // T5：解析 persona 頭像 + 清洗 username + @-mention rewrite（對齊 python 顯示）
                         string username = UCL_DiscordIdentityResolver.ResolveUsername(msg.sender_id, msg.sender_name, msg.DisplayName);
                         string avatarUrl = UCL_DiscordIdentityResolver.ResolveAvatarUrl(msg.sender_persona, msg.sender_avatar_sprite, msg.sender_id);
-                        string content = UCL_DiscordIdentityResolver.RewriteMentions(msg.body ?? "");
+                        string body = UCL_DiscordIdentityResolver.RewriteMentions(msg.body ?? "");
+                        string content = BuildContent(cfg, room, msg, username, kv.Value, body);
                         var req = UCL_DiscordWebhookClient.StartPost(url, content, username, avatarUrl, null);
                         if (req != null)
                             s_InFlight.Add(new MirrorInFlight
@@ -410,8 +654,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                                 req = req, room = room, webhookId = wid, uuid = msg.uuid, ts = msg.ts, recordOnSuccess = true,
                             });
                     }
+                    if (inflightFull) break;
+
+                    // 鎖步推進：這則訊息「不歸」的 webhook 直接記 processed（不送、不等 2xx）
+                    // 沒有它，冷門 group webhook 的 ts_high 永遠停在上次收到自己 category 的時刻 →
+                    // min(ts_high) 拖著整房每 tick 深回頁。ineligible 訊息 = 對全部 webhook 都記 processed。
+                    foreach (var wid in allWids)
+                    {
+                        if (targetWids.Contains(wid)) continue;
+                        if (!UCL_DiscordMirrorState.ShouldSend(room, wid, msg.uuid, msg.ts)) continue;
+                        UCL_DiscordMirrorState.RecordSent(room, wid, msg.uuid, msg.ts);
+                        anyStateChange = true;
+                    }
                 }
             }
+
+            if (anyStateChange) UCL_DiscordMirrorState.Save();
         }
     }
 }

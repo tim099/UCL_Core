@@ -1317,6 +1317,15 @@ def notify_tavern_messages(config=None):
     if not tm.get("enabled"):
         return 0, "tavern_mirror disabled"
 
+    # 區塊職責：mirror_owner 硬互鎖 — python 端自查（T7 cutover 前置，basecamp 2026-07-19 補）
+    # 物理意義：T4-a 的 owner 閘只擋「C# AppendMessage spawn」路徑；Stop-hook / cron / 手動 CLI 直跑
+    #          本腳本會繞過該閘 → owner=native 期間仍送 = 雙送（2026-07-19 sentinel 實測坐實：
+    #          native 送 7 筆後 Stop-hook python 又送一輪帶 routing-tag 的副本）。
+    # 數值影響：owner=native → tavern mirror 跳過（treasury / queue-idle / wake 等其他 stream 不受影響，
+    #          owner flag 語意收窄為「tavern message mirror 的 owner」，對齊凍結契約）。
+    if str(config.get("mirror_owner", "python")).strip().lower() == "native":
+        return 0, "mirror_owner=native (tavern mirror 由 C# daemon 接管，python 端跳過)"
+
     if not tm.get("rooms"):
         return 0, "no rooms watched (跑 --add-tavern-room ROOM 加)"
 

@@ -115,6 +115,62 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 數值影響：fail swallow — Asset dir 不存在 / 任何例外 → 回 null（caller 自決 fallback）
         // ===========================================================
 
+        // 區塊職責：多命中版 helper — 給 Discord Mirror native daemon（T6）用，對齊 Python
+        //          _match_msg_to_routing_groups 的完整語意（multi-group additive；exclusive 判定交 caller）
+        // 物理意義：單命中版 ResolveTargetGroup 只回第一筆（Cmd_Tavern 房間層路由夠用），但 mirror
+        //          broadcast 語意是「category 命中的每個 enabled group 各收一份」→ 需要完整命中清單。
+        // 數值影響：Layer1 category 命中 0..N 筆全回；Layer2 沒命中 → 回 [第一筆 enabled IsDefault]；
+        //          Layer3 都沒 → 回空 list（caller fallback 走 tavern_mirror.webhook_urls）。
+        // 邊界：fail swallow — Asset dir 不存在 / 例外 → 回空 list；每次呼叫重掃 disk（caller 自行快取）。
+        /// <summary>多命中版：訊息 category 該 broadcast 的所有 routing groups（Python parity，mirror 用）。</summary>
+        public static List<UCL_TavernCategoryRoutingAsset> ResolveTargetGroups(string category)
+        {
+            var result = new List<UCL_TavernCategoryRoutingAsset>();
+            try
+            {
+                // GetAllIDs(true) 強制重掃 module asset dir — 新增 group asset 免 domain reload 即生效
+                var allIDs = new UCL_TavernCategoryRoutingAsset().GetAllIDs(true);
+                if (allIDs == null || allIDs.Count == 0) return result;
+
+                string normalized = (category ?? "").Trim().ToLowerInvariant();
+                UCL_TavernCategoryRoutingAsset defaultGroup = null;
+
+                foreach (var id in allIDs)
+                {
+                    if (string.IsNullOrEmpty(id)) continue;
+                    UCL_TavernCategoryRoutingAsset g = null;
+                    try { g = new UCL_TavernCategoryRoutingAsset().GetData(id, false); } catch { continue; }
+                    if (g == null || !g.m_Enabled) continue;
+
+                    // Layer 1: category 命中 group's m_Categories → 收進 matched（不 early-return，multi-group additive）
+                    bool matched = false;
+                    if (!string.IsNullOrEmpty(normalized) && g.m_Categories != null)
+                    {
+                        foreach (var c in g.m_Categories)
+                        {
+                            if (!string.IsNullOrEmpty(c) && string.Equals(c.Trim().ToLowerInvariant(), normalized))
+                            {
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (matched) result.Add(g);
+
+                    // 順手蒐集 default group 候選（第一筆 enabled IsDefault）
+                    if (defaultGroup == null && g.m_IsDefault) defaultGroup = g;
+                }
+
+                // Layer 2: 都沒命中 → fallback 到 default group（單筆）
+                if (result.Count == 0 && defaultGroup != null) result.Add(defaultGroup);
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogWarning($"[UCL_TavernCategoryRoutingAsset.ResolveTargetGroups] fail (category={category})：{ex.Message}");
+            }
+            return result;
+        }
+
         /// <summary>
         /// 對訊息 category meta value 解析該 broadcast 的 routing group。
         /// </summary>

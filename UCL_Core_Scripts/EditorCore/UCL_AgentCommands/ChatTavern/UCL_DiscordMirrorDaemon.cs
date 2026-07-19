@@ -278,6 +278,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             DrainInFlight();
 
+            // Phase C：treasury（bank）通知 native 模組 — 在途 drain 永遠跑；掃描僅 native owner 時啟用
+            //（python notify_treasury_entries 在 owner=native 下自查閘跳過 → 單寫者互鎖延伸到 treasury）
+            UCL_DiscordTreasuryMirror.Tick(Enabled && IsNativeOwner);
+
             // mirror_owner 硬互鎖：只有 native owner 才掃描送出真房訊息（basecamp 拍板）
             if (!IsNativeOwner) return;
 

@@ -773,7 +773,13 @@ namespace UCL.Core.JsonLib {
                         }
                         else if (aField.FieldType == typeof(bool))
                         {
-                            aField.SetValue(iObj, aJsonData.GetString() == "True");
+                            // 區塊職責：bool 載入雙接 — UCL_Json 舊慣例 "True"/"False" 字串（T43）+ 標準 JSON 原生 bool
+                            // 物理意義：外部來源（python json.dump 等）寫的是原生 true/false，舊實作 GetString()=="True"
+                            //          對原生 bool 恆 false → 2026-07-19 實錄：notify_config 全部 bool flag 被讀成
+                            //          false（treasury/category_routing enabled 靜默失效）。additive 修法：
+                            //          原生 bool 走 GetBool；字串走 case-insensitive "true" 比對（涵蓋舊 "True"）。
+                            aField.SetValue(iObj, aJsonData.GetBool(false)
+                                || string.Equals(aJsonData.GetString(), "true", StringComparison.OrdinalIgnoreCase));
                         }
                         else if (aField.FieldType.IsAssignableFrom(typeof(JsonData)))
                         {

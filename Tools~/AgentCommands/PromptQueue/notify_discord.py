@@ -1551,6 +1551,11 @@ def notify_treasury_entries(config=None):
     tm = config.get("treasury_mirror", {}) or {}
     if not tm.get("enabled"):
         return 0, "treasury_mirror disabled"
+
+    # Phase C (basecamp 2026-07-19)：treasury 通知已由 C# UCL_DiscordTreasuryMirror 接管 —
+    # owner=native 時 python 端跳過（含 Stop-hook / cron / 手動 CLI 路徑），單寫者互鎖延伸到 treasury。
+    if str(config.get("mirror_owner", "python")).strip().lower() == "native":
+        return 0, "mirror_owner=native (treasury 由 C# UCL_DiscordTreasuryMirror 接管，python 端跳過)"
     ledger_root = _tp.AGENT_COMMANDS_DIR / "Treasury" / "ledger"
     if not ledger_root.is_dir():
         return 0, "no ledger dir"

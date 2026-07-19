@@ -1037,16 +1037,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
-                // 區塊職責：T4 mirror_owner 原子切換閘（basecamp 拍板 · 疑慮5）→ T6.6 修訂
-                // 物理意義：owner=native 時 tavern mirror 由 C# daemon 接管，但 treasury 通知（T6.6 拆檔後
-                //          仍留 python、收編在同一 mirror run）還得靠這條 spawn 活著 → 閘從「不 spawn」改成
-                //          「照 spawn，tavern 部分由 python 端 notify_tavern_messages 開頭的 mirror_owner
-                //          自查閘跳過」。python 自查閘同時堵住 Stop-hook / cron / 手動 CLI 繞過 C# 閘的
-                //          雙送漏洞（2026-07-19 sentinel 實測坐實）。owner flag 語意收窄=「tavern message
-                //          mirror 的 owner」，treasury / queue-idle / wake 等 stream 不受 owner 影響。
-                // 數值影響：native owner 下 python 仍被 spawn（T0.5 single-flight 上限 1 保護），run 內
-                //          tavern 秒跳過、treasury 正常跑（寫自己的 _treasury_state.json，不碰 tavern
-                //          canonical 檔 → 互鎖不破功）。雙送防線 = python 自查閘（單真相源同一 config flag）。
+                // 區塊職責：T4 mirror_owner 原子切換閘（basecamp 拍板 · 疑慮5）→ Phase C 定版
+                // 物理意義：owner=native 時 tavern mirror 由 C# daemon、treasury 由 C# UCL_DiscordTreasuryMirror
+                //          雙雙接管 — 本 spawn 路徑（mode=tavern 只跑 tavern+treasury 兩 stream）已無事可做，
+                //          回到「native owner 不 spawn」= per-post python 程序徹底歸零（3578 殭屍 family 的
+                //          結構性根絕）。wake / queue-idle 等其餘 stream 由 Stop-hook 的 python run 覆蓋，
+                //          且 python 端 tavern/treasury 各有 mirror_owner 自查閘（Stop-hook 路徑防雙送）。
+                // 數值影響：native owner 下直接 return；revert（owner 翻回 python）即恢復本 spawn 路徑。
+                if (UCL_DiscordMirrorDaemon.IsNativeOwner) return;
 
                 // T-MOVE (Tim 2026-07-15 拍板): notify_discord.py 已搬 UCL_Core Tools~ — 優先走新位置，
                 // 舊專案位置留 shim 當 fallback（過渡一版；資料 config/state 仍在專案 PromptQueue/）

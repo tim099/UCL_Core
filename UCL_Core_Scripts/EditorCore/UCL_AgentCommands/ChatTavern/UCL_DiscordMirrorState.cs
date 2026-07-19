@@ -109,7 +109,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (!byWebhook.TryGetValue(webhookId, out var cursor))
             {
                 cursor = new UCL_MirrorWebhookCursor();
-                if (s_RoomBaselineTsHigh.TryGetValue(room, out var seed)) cursor.ts_high = seed;
+                if (s_RoomBaselineTsHigh.TryGetValue(room, out var seed))
+                {
+                    cursor.ts_high = seed;
+                }
+                else
+                {
+                    // Bug A fix（凍結契約 seq 12684：種子缺席 = 從 ts_high=now 起步，絕不 backfill 整房歷史）
+                    // 原實作留空 ts_high → ShouldSend 視全部為新 = 整房 replay（被 SCAN_TAIL_N 兜住才沒炸）
+                    cursor.ts_high = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+                }
                 byWebhook[webhookId] = cursor;
             }
             return cursor;
@@ -139,6 +148,27 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (tsMsg.Value <= tsHigh.Value)                              // 落窗內 → 查 seen
                 return !cursor.seen_uuids.ContainsKey(uuid);
             return true;                                                  // 晚於 ts_high → 新訊息送
+        }
+
+        // 區塊職責：查該房「全 webhook 中最小的 ts_high」— Bug B cursor-driven Scan 的回頁下界
+        // 物理意義：Scan 只要往回讀到「跨過 min(ts_high) - W」就保證涵蓋所有 webhook 的未送訊息；
+        //          比固定 Tail(N) 窗正確（積壓 > N 筆時固定窗會讓舊訊息永遠掉出掃描範圍 = silent drop）。
+        // 數值影響：回傳 ISO ts 字串（ordinal 比較 = 時間序）；任一 cursor ts_high 為空（parse 壞檔等異常）
+        //          → 回空字串，caller 退回固定窗 fallback（有界安全側，不做無界全房掃）。
+        /// <summary>該房全 webhook 最小 ts_high（cursor-driven Scan 下界）。任一 cursor 無 ts_high → 回空字串。</summary>
+        public static string GetMinTsHigh(string room, List<string> webhookIds)
+        {
+            EnsureLoaded();
+            string min = null;
+            foreach (var wid in webhookIds)
+            {
+                if (string.IsNullOrEmpty(wid)) continue;
+                // GetOrCreateCursor：新 webhook 在此即按契約種子化（baseline 或 now），與 ShouldSend 一致
+                var cursor = GetOrCreateCursor(room, wid);
+                if (string.IsNullOrEmpty(cursor.ts_high)) return "";
+                if (min == null || string.CompareOrdinal(cursor.ts_high, min) < 0) min = cursor.ts_high;
+            }
+            return min ?? "";
         }
 
         /// <summary>送達 2xx 後記帳：加入 seen_uuids、推進 ts_high、prune 窗外舊 uuid（維持有界）。</summary>
@@ -267,7 +297,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===== helpers =====
 
         // 區塊職責：容忍多種 ISO8601 變體（帶/不帶 Z、帶/不帶毫秒）→ DateTime(UTC)；失敗回 null
-        static DateTime? ParseIsoUtc(string s)
+        // （Bug B 後開放 public — daemon cursor-driven Scan 算回頁下界時需與去重判定用同一套 ts 解析）
+        public static DateTime? ParseIsoUtc(string s)
         {
             if (string.IsNullOrEmpty(s)) return null;
             if (DateTime.TryParse(s, CultureInfo.InvariantCulture,

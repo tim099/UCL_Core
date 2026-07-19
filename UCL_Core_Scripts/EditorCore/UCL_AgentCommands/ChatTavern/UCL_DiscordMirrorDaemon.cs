@@ -263,7 +263,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             public List<string> kinds = new List<string>();
         }
 
-        const int SCAN_TAIL_N = 30;                 // 每 room 每 tick 掃最近 N 筆（ShouldSend 的 ts 窗會濾掉已送）
+        const int SCAN_TAIL_N = 30;                 // 每 room 每 tick 的起始掃描窗（cursor-driven 回頁的第一頁大小）
+        const int SCAN_PAGE_MAX = 4096;             // 回頁深度硬上限（防 cursor 極舊時無界掃描；超限印警告不沉默截斷）
         const double CONFIG_CACHE_TTL_SEC = 5.0;
         static MirrorConfigBlock s_CachedConfig = null;
         static double s_ConfigCacheTime = -999;
@@ -319,20 +320,67 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return false;
         }
 
+        // 區塊職責：Bug B fix — cursor-driven 掃描窗收集（取代固定 Tail(SCAN_TAIL_N)）
+        // 物理意義：固定尾窗在「積壓 > N」（burst / 429 backoff 期間訊息照進 / daemon 離線恢復）時，
+        //          第 N+1 筆以前的未送訊息永遠掉出掃描範圍 = silent drop（07-17 partial-drop 結構同族：
+        //          進度真相在 cursor，掃描卻信固定窗）。本 fix 讓窗深度由 cursor 決定——從尾端起頁，
+        //          倍增回頁到「最舊一筆的 ts 跨過該房全 webhook 最小 ts_high - W」為止，保證所有
+        //          ShouldSend 可能判 true 的訊息都進得了掃描窗。
+        // 數值影響：正常時（cursor 貼近尾端）就是一頁 Tail(SCAN_TAIL_N)，成本與舊版相同；積壓時自動
+        //          加深，硬上限 SCAN_PAGE_MAX（超限印警告，本輪照送最舊優先，餘下下輪隨 cursor 推進續掃）。
+        // 邊界：lower bound 拿不到（任一 cursor ts_high 空 = parse 異常）→ 退回固定窗（有界安全側）。
+        static List<UCL_ChatMessage> CollectScanMessages(string room, List<string> webhookIds)
+        {
+            // 該房全 webhook 最小 ts_high - W = 回頁下界（跨過它 = 沒有更舊的可送訊息）
+            string minTsHigh = UCL_DiscordMirrorState.GetMinTsHigh(room, webhookIds);
+            DateTime? lowMark = null;
+            var parsed = UCL_DiscordMirrorState.ParseIsoUtc(minTsHigh);
+            if (parsed != null) lowMark = parsed.Value.AddSeconds(-UCL_DiscordMirrorState.DEDUP_WINDOW_SEC);
+
+            int n = SCAN_TAIL_N;
+            while (true)
+            {
+                var msgs = UCL_ChatTavernIO.Tail(room, n);   // 升冪（最舊→最新），Scan 依序送 = 最舊優先
+                if (msgs == null || msgs.Count == 0) return msgs;
+                if (msgs.Count < n) return msgs;             // 整房都拿到了，沒有更舊的
+                if (lowMark == null) return msgs;            // 無下界資訊 → 維持固定窗（安全側，不做無界掃）
+
+                // 最舊一筆已早於下界 → 窗已涵蓋所有可能未送的訊息
+                var oldestTs = UCL_DiscordMirrorState.ParseIsoUtc(msgs[0].ts);
+                if (oldestTs != null && oldestTs.Value < lowMark.Value) return msgs;
+
+                if (n >= SCAN_PAGE_MAX)
+                {
+                    // 不沉默截斷：明示積壓超上限。本輪仍最舊優先送（cursor 隨 2xx 推進，下輪窗自動右移續掃）
+                    Debug.LogWarning($"[DiscordMirror] Scan({room}) backlog exceeds SCAN_PAGE_MAX={SCAN_PAGE_MAX}，本輪處理最舊 {n} 筆，餘下下輪續掃");
+                    return msgs;
+                }
+                n = Math.Min(n * 2, SCAN_PAGE_MAX);          // 倍增回頁，直到跨過下界或觸頂
+            }
+        }
+
         // 區塊職責：掃 config rooms × webhooks，對每則「該送且未在途」的訊息 StartPost（掛 in-flight，成功推 cursor）
-        // 物理意義：Tail 取近訊 → kind 過濾 + echo 排除 → per-webhook ShouldSend（有界窗去重）→ StartPost
-        // 數值影響：並發受 MAX_INFLIGHT 限（滿了本輪 return，下 tick 續）；content/username 走 MVP（body + DisplayName），
-        //          rich identity/avatar 留 T5。cursor 只在 DrainInFlight 拿到 2xx 後推進（單寫者）。
+        // 物理意義：cursor-driven 收集掃描窗（Bug B fix）→ kind 過濾 + echo 排除 → per-webhook ShouldSend（有界窗去重）→ StartPost
+        // 數值影響：並發受 MAX_INFLIGHT 限（滿了本輪 return，下 tick 續）；掃描窗升冪 = 最舊優先送，
+        //          確保 ts_high 由舊往新推進、不跳過積壓訊息。cursor 只在 DrainInFlight 拿到 2xx 後推進（單寫者）。
         static void Scan()
         {
             var cfg = ReadConfig();
             if (cfg.rooms.Count == 0 || cfg.webhook_urls.Count == 0) return;
 
+            // webhook id 集先算一次（給 cursor 下界查詢；內層 per-msg 迴圈仍走 url 原樣）
+            var webhookIds = new List<string>();
+            foreach (var url in cfg.webhook_urls)
+            {
+                string wid = UCL_DiscordWebhookClient.ExtractWebhookId(url);
+                if (wid != null) webhookIds.Add(wid);
+            }
+
             foreach (var room in cfg.rooms)
             {
                 if (string.IsNullOrEmpty(room)) continue;
                 List<UCL_ChatMessage> msgs;
-                try { msgs = UCL_ChatTavernIO.Tail(room, SCAN_TAIL_N); }
+                try { msgs = CollectScanMessages(room, webhookIds); }
                 catch { continue; }
                 if (msgs == null) continue;
 

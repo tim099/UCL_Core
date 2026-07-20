@@ -16,7 +16,7 @@ namespace UCL.Core.EditorLib.Page
     // 區塊職責：圖書館管理 UI — 列出共享圖書館的所有書籍 + 捐贈者 + 推薦書單，並提供新增/捐贈/書籤等操作
     // 物理意義：閱讀資料落各專案 repo root（per-project）：
     //          - AgentCommands/BookNotes/<slug>/book.json   每本書 metadata + 進度 + 人物/卷/標籤/書評
-    //          - AgentCommands/BookNotes/_recommended.json   推薦書單
+    //          - AgentCommands/BookNotes/_recommended/<slug>.json  推薦書單（T-split：一 rec 一檔；舊單檔 _recommended.json 自動 migrate 成本資料夾）
     //          - AgentCommands/Books/_donations.json         捐贈索引（誰付 token 認領了哪本書）
     //          工具 library.py 在 UCL_Core（跨專案共用），Page 直讀 JSON 顯示，變更操作走 process spawn 跑 library.py
     // 數值影響：UI 顯示純 read。Add/Donate/Bookmark 按鈕觸發外部 python process，改 book.json / _donations.json
@@ -77,7 +77,7 @@ namespace UCL.Core.EditorLib.Page
             public string Note = "";
         }
 
-        // 區塊職責：推薦書單 entry — 對齊 BookNotes/_recommended.json 的 recommendations[] schema
+        // 區塊職責：推薦書單 entry — 對齊 BookNotes/_recommended/<slug>.json 一 rec 一檔 schema（T-split 2026-07-20）
         public class RecommendEntry
         {
             public string Title = "";
@@ -85,6 +85,7 @@ namespace UCL.Core.EditorLib.Page
             public string Status = "";
             public string BookId = "";       // 若已建檔則指向 book slug，否則空
             public string Synopsis = "";
+            public string AddedDate = "";    // 排序用（對齊 library.py 的 added_date 再 title 序）
         }
 
         // 區塊職責：全文書庫 entry — 對齊 Books/<slug>/（NNN.txt 章節檔 + _donation.json）
@@ -186,7 +187,7 @@ namespace UCL.Core.EditorLib.Page
 
         /// <summary>
         /// 區塊職責：載入並反序列化 books + donations + recommendations
-        /// 物理意義：scan BookNotes/*/book.json + 讀 Books/_donations.json + BookNotes/_recommended.json
+        /// 物理意義：scan BookNotes/*/book.json + 讀 Books/_donations.json + BookNotes/_recommended/*.json（退回舊單檔）
         /// 數值影響：更新 m_Books / m_Donations / m_Recommends，並把捐贈狀態 join 進對應 book
         /// </summary>
         void LoadData()
@@ -379,32 +380,57 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
 
-            // 區塊：讀推薦書單
-            // 物理意義：BookNotes/_recommended.json 的 recommendations[] — 想讀但未必建檔的書
+            // 區塊：讀推薦書單（T-split 2026-07-20：優先 _recommended/ 資料夾一 rec 一檔；退回舊單檔）
+            // 物理意義：想讀但未必建檔的書。library.py 是 write-owner（Page 的寫走 spawn library.py），Page 這裡只直讀顯示。
             try
             {
-                string recPath = Path.Combine(m_BookNotesDir, "_recommended.json");
-                if (File.Exists(recPath))
+                // local：把一個 rec JsonData 物件收進 m_Recommends（資料夾/舊陣列共用）
+                void AddRec(JsonData r)
                 {
-                    var jd = JsonData.ParseJson(File.ReadAllText(recPath));
-                    if (jd != null && jd.IsObject && jd.Dic != null
-                        && jd.Dic.TryGetValue("recommendations", out var arr) && arr != null && arr.IsArray)
+                    if (r == null || !r.IsObject) return;
+                    string title = r.GetString("title", "");
+                    if (string.IsNullOrEmpty(title)) return;
+                    m_Recommends.Add(new RecommendEntry
                     {
-                        for (int i = 0; i < arr.Count; i++)
+                        Title = title,
+                        Author = r.GetString("author", ""),
+                        Status = r.GetString("status", ""),
+                        BookId = r.GetString("book_id", ""),
+                        Synopsis = r.GetString("synopsis", ""),
+                        AddedDate = r.GetString("added_date", ""),
+                    });
+                }
+
+                string recDir = Path.Combine(m_BookNotesDir, "_recommended");
+                if (Directory.Exists(recDir))
+                {
+                    // 新格式：資料夾內一 rec 一檔
+                    foreach (var fp in Directory.GetFiles(recDir, "*.json"))
+                    {
+                        try { AddRec(JsonData.ParseJson(File.ReadAllText(fp))); }
+                        catch (Exception e) { Debug.LogWarning($"[LibraryManage] rec file load fail {Path.GetFileName(fp)}: {e.Message}"); }
+                    }
+                }
+                else
+                {
+                    // legacy fallback：舊單檔 _recommended.json 的 recommendations[]（migration 前）
+                    string recPath = Path.Combine(m_BookNotesDir, "_recommended.json");
+                    if (File.Exists(recPath))
+                    {
+                        var jd = JsonData.ParseJson(File.ReadAllText(recPath));
+                        if (jd != null && jd.IsObject && jd.Dic != null
+                            && jd.Dic.TryGetValue("recommendations", out var arr) && arr != null && arr.IsArray)
                         {
-                            var r = arr[i];
-                            if (r == null || !r.IsObject) continue;
-                            m_Recommends.Add(new RecommendEntry
-                            {
-                                Title = r.GetString("title", ""),
-                                Author = r.GetString("author", ""),
-                                Status = r.GetString("status", ""),
-                                BookId = r.GetString("book_id", ""),
-                                Synopsis = r.GetString("synopsis", ""),
-                            });
+                            for (int i = 0; i < arr.Count; i++) AddRec(arr[i]);
                         }
                     }
                 }
+                // 穩定排序對齊 library.py（added_date 再 title）
+                m_Recommends.Sort((a, b) =>
+                {
+                    int c = string.CompareOrdinal(a.AddedDate, b.AddedDate);
+                    return c != 0 ? c : string.CompareOrdinal(a.Title, b.Title);
+                });
             }
             catch (Exception e)
             {

@@ -778,14 +778,75 @@ def cmd_terms(args):
     return 0
 
 
-def _rec_path() -> Path:
+# 區塊職責: 推薦書單儲存 — 一 rec 一檔於 _recommended/ 資料夾 (T-split 2026-07-20)
+# 物理意義: 舊版單檔 _recommended.json 的 recommendations[] 併發寫會 last-write-wins 掉筆;
+#          拆成 _recommended/<slug>.json 一 rec 一檔 → 各 rec 獨立寫、無 whole-list race (同 mirror per-webhook 拆檔動機)
+# 數值影響: slug = book_id(有則用) 否則 sanitize(title); dedupe 仍 by title 保原語意; 舊單檔自動 migrate + 封存
+def _rec_dir() -> Path:
+    return LIB_ROOT / "_recommended"
+
+
+def _rec_legacy_path() -> Path:
     return LIB_ROOT / "_recommended.json"
 
 
+def _sanitize_slug(s: str) -> str:
+    # 檔名安全 slug: 去路徑非法字元 + 空白轉 -; 保留中文 (BookNotes 既有中文檔名先例)
+    s = (s or "").strip()
+    s = re.sub(r'[/\\:*?"<>|\x00-\x1f]', "-", s)
+    s = re.sub(r"\s+", "-", s)
+    s = s.strip("-. ")
+    return s[:80]
+
+
+def _rec_slug(entry: dict) -> str:
+    bid = (entry.get("book_id") or "").strip()
+    return _sanitize_slug(bid) if bid else (_sanitize_slug(entry.get("title") or "") or "untitled")
+
+
+def _migrate_recs_if_needed():
+    # 舊單檔 _recommended.json → 拆成 _recommended/<slug>.json 資料夾 (一次性; 兩端讀新資料夾)
+    legacy = _rec_legacy_path()
+    recdir = _rec_dir()
+    if not legacy.exists() or recdir.exists():
+        return
+    try:
+        data = _read_json(legacy)
+        recdir.mkdir(parents=True, exist_ok=True)
+        for r in data.get("recommendations", []):
+            if not isinstance(r, dict) or not r.get("title"):
+                continue
+            slug = _rec_slug(r)
+            fp = recdir / f"{slug}.json"
+            n = 2
+            while fp.exists() and _read_json(fp).get("title") != r.get("title"):
+                fp = recdir / f"{slug}-{n}.json"
+                n += 1
+            _write_json(fp, r)
+        # 舊檔封存不刪 (留 audit; 讀取端優先資料夾)
+        legacy.rename(legacy.with_name("_recommended.json.migrated"))
+    except Exception as e:
+        print(f"⚠ _recommended migration fail: {e}", file=sys.stderr)
+
+
 def _read_recs():
-    p = _rec_path()
-    if p.exists():
-        return _read_json(p)
+    _migrate_recs_if_needed()
+    recdir = _rec_dir()
+    if recdir.is_dir():
+        recs = []
+        for fp in sorted(recdir.glob("*.json")):
+            try:
+                r = _read_json(fp)
+                if isinstance(r, dict) and r.get("title"):
+                    recs.append(r)
+            except Exception:
+                pass
+        recs.sort(key=lambda r: (r.get("added_date", ""), r.get("title", "")))
+        return {"recommendations": recs}
+    # 極端 fallback: 資料夾不存在但舊單檔還在 (migration 失敗時)
+    legacy = _rec_legacy_path()
+    if legacy.exists():
+        return _read_json(legacy)
     return {"recommendations": []}
 
 
@@ -793,14 +854,12 @@ _STATUS_LABEL = {"want-to-read": "想讀", "reading": "閱讀中", "read": "已�
 
 
 def cmd_recommend(args):
-    # 區塊職責: 把一本書加進「推薦書單」(_recommended.json)
+    # 區塊職責: 把一本書加進「推薦書單」(_recommended/<slug>.json 一 rec 一檔)
     # 物理意義: 之後自由時間讀書時, 從書單挑想讀的; 簡介以非嚴重劇透為主
-    # 數值影響: append 一筆 entry; 同名不重複加
-    LIB_ROOT.mkdir(parents=True, exist_ok=True)
-    data = _read_recs()
-    recs = data["recommendations"]
-    for r in recs:
-        if r["title"] == args.title:
+    # 數值影響: 寫單一 rec 檔 (非 append 整檔 → 無 whole-list 併發 race); 同名(title)不重複加
+    _rec_dir().mkdir(parents=True, exist_ok=True)
+    for r in _read_recs()["recommendations"]:   # _read_recs 已含 migration; dedupe by title 保原語意
+        if r.get("title") == args.title:
             print(f"⚠ 書單已有:《{args.title}》(不重複加)", file=sys.stderr)
             return 1
     entry = {
@@ -814,8 +873,13 @@ def cmd_recommend(args):
         "note": args.note or "",
         "added_date": _today(),
     }
-    recs.append(entry)
-    _write_json(_rec_path(), data)
+    slug = _rec_slug(entry)
+    fp = _rec_dir() / f"{slug}.json"
+    n = 2
+    while fp.exists():                            # 不同 title 撞同 slug → 加序號 (title dedupe 已在上面擋同名)
+        fp = _rec_dir() / f"{slug}-{n}.json"
+        n += 1
+    _write_json(fp, entry)
     label = _STATUS_LABEL.get(entry["status"], entry["status"])
     print(f"✅ 加入推薦書單:《{args.title}》 / {args.author or '?'}  [{label}]")
     return 0

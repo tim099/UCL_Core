@@ -286,7 +286,7 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Title" => "登入狀態",
                 "LoginStatus.Btn.Refresh" => "🔄 重新整理",
                 "LoginStatus.Btn.Logout" => "🌙 登出",
-                "LoginStatus.Btn.Renew" => "⟳ 續期",
+                "LoginStatus.Btn.Renew" => "🔄 續期",
                 "LoginStatus.Btn.ForceRm" => "✂ 強制移除",
                 "LoginStatus.Btn.Morning" => "🌅 Morning（登入）",
                 "LoginStatus.Btn.ConfirmRemove" => "確定 ✂",

@@ -51,35 +51,34 @@ namespace UCL.Core.EditorLib.Page
         string m_MetaInput = "tag:human-post;alter-pacing-bypass:true";
         string m_RefsInput = "";        // "path1|path2"
         int? m_ReplyTo = null;
-        Vector2 m_MessagesScroll = Vector2.zero;
-        // 區塊職責：自動捲到底的觸發旗標 + 訊息數快照
-        // 物理意義：使用者習慣聊天室「最新訊息在底部」 — 進房 / 收到新訊息時自動捲到底；
-        //          滾上去看歷史訊息時不要被自動拉回（只在 count 變大時觸發）
-        // 數值影響：m_PendingScrollToBottom = true 會在下一次 BeginScrollView 後把 m_MessagesScroll.y
-        //          設為 float.MaxValue（IMGUI 自動 clamp 到實際底部）
-        bool m_PendingScrollToBottom = false;
-        int m_LastSeenMsgCount = 0;
+        // 註：原「自動捲到底」旗標(m_PendingScrollToBottom) + 訊息數快照(m_LastSeenMsgCount) 已隨
+        //     內層 scroll 移除 + 分頁改制一併移除（分頁後最新頁預設即最新 PageSize 筆，不需捲底/count 偵測）。
         string m_LastSeenRoomId = ""; // 跨房間切換偵測用：room id 變了 → 強制捲底
 
-        // 區塊職責：訊息分頁載入上限 — 預設只顯示最新 50 筆，捲到最舊端可「載入更早 50 筆」逐步展開
-        // 物理意義：m_MessageLimit 是當前要 Tail 的筆數；從 MessageLimitStep(50) 起，每按一次「載入更早」+50。
-        //          切換房間時重置回 50（新房從最新 50 筆看起，不繼承上一房展開的深度）。
-        // 數值影響：RefreshMessages 用此值呼叫 Tail；m_MessagesCache.Count >= m_MessageLimit 視為「可能還有更早訊息」→ 顯示載入按鈕。
-        const int MessageLimitStep = 50;
-        int m_MessageLimit = MessageLimitStep;
-        // 載入更早觸發的 count 成長不該搶捲到底（要保留使用者看歷史的視角）— 設 true 抑制下一次 RefreshMessages 的自動捲底
-        bool m_SuppressScrollToBottomOnce = false;
-        // button click 在 MouseUp 直接 mutate 載入上限 + 重抓會改 layout 結構 → 延後到下個 Layout event 套用（對齊既有 deferred-apply 模式）
-        bool m_PendingLoadOlder = false;
+        // 區塊職責：訊息分頁 — 每頁固定 MessagePageSize 筆，避免一次繪製上百列造成 RequiresConstantRepaint 每幀 O(N) 卡頓（Tim 2026-07-20 拍板）
+        // 物理意義：m_MessagePage=0 為「最新頁」，數字越大越舊；RefreshMessages 用 CountMessages 算總數 + clamp 頁碼，
+        //          再 Tail((page+1)*PageSize) 取涵蓋當前頁的最少訊息、切出本頁那 PageSize 筆。
+        // 數值影響：每幀只繪 ≤ PageSize 列（10），render 成本從「全 cache」降到固定 10 列。
+        const int MessagePageSize = 10;
+        int m_MessagePage = 0;              // 0 = 最新頁
+        int m_TotalMessageCount = 0;        // 房間訊息總數快取（由 Tail 最新一筆的 seq 推得，零額外列舉）— 供分頁計算
+        // button click 在 MouseUp 直接 mutate 頁碼 + 重抓會改 layout 結構 → 延後到下個 Layout event 套用（對齊既有 deferred-apply 模式）
+        int? m_PendingSetPage = null;
+        string m_JumpPageInput = "";        // 「跳轉到指定頁」輸入框暫存（UI 為 1-based 頁碼）
 
         // ===== 新建表單 =====
         bool m_ShowCreateRoom = false;
         bool m_ShowCharMapping = false;
+        // 區塊職責：上方控制區塊（房間/身分/角色 Mapping/發言區）折疊旗標（Tim 2026-07-20 拍板）
+        // 物理意義：折疊後把垂直空間全讓給下方訊息列表 — 訊息已改不自帶 scroll，靠外層頁面 scroll
+        // 數值影響：true = 展開繪製四個子區塊；false = 只留 toggle 列，其餘收起
+        bool m_ShowTopPanel = true;
         // ===== Deferred-apply（避免 button click 在 MouseUp 改 layout-affecting state，造成 Layout vs Repaint 結構不一致）=====
         // 物理意義：button 在 MouseUp event return true，若直接 mutate 會讓同一 frame 的 Repaint event 看到不同 state；
         //          延後到下個 frame 的 Layout event 才套用，可保證單一 frame 內 layout 結構恆定。
         bool? m_PendingShowCreateRoom = null;
         bool? m_PendingShowCreateIdentity = null;
+        bool? m_PendingShowTopPanel = null;   // 上方控制區塊折疊 deferred-apply（避免 button click 在 MouseUp 改 layout 結構 → Mismatched LayoutGroup）
         // 暫存「+ 新 alias」表單輸入；空 = 還沒填
         string m_NewAliasFrom = "";
         string m_NewAliasTo = "";
@@ -488,12 +487,12 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (m_PendingShowCreateRoom.HasValue) { m_ShowCreateRoom = m_PendingShowCreateRoom.Value; m_PendingShowCreateRoom = null; }
                     if (m_PendingShowCreateIdentity.HasValue) { m_ShowCreateIdentity = m_PendingShowCreateIdentity.Value; m_PendingShowCreateIdentity = null; }
-                    // 載入更早 50 筆：在 Layout event 提高上限 + 抑制捲底 + 重抓，確保本幀 Layout/Repaint 看到一致的訊息結構
-                    if (m_PendingLoadOlder)
+                    if (m_PendingShowTopPanel.HasValue) { m_ShowTopPanel = m_PendingShowTopPanel.Value; m_PendingShowTopPanel = null; }
+                    // 翻頁：在 Layout event 套用頁碼 + 重抓，確保本幀 Layout/Repaint 看到一致的訊息結構
+                    if (m_PendingSetPage.HasValue)
                     {
-                        m_PendingLoadOlder = false;
-                        m_MessageLimit += MessageLimitStep;
-                        m_SuppressScrollToBottomOnce = true;
+                        m_MessagePage = m_PendingSetPage.Value;
+                        m_PendingSetPage = null;
                         RefreshMessages();
                     }
                 }
@@ -526,11 +525,28 @@ namespace UCL.Core.EditorLib.Page
 
                 
                 GUILayout.Space(4);
-                using (UCL_ChatTavernPerfOverlay.Sample("DrawRoomPicker")) DrawRoomPicker();
-                GUILayout.Space(4);
-                using (UCL_ChatTavernPerfOverlay.Sample("DrawIdentityPicker")) DrawIdentityPicker();
-                GUILayout.Space(4);
-                using (UCL_ChatTavernPerfOverlay.Sample("DrawCharacterMappingFoldout")) DrawCharacterMappingFoldout();
+                // ===== 上方控制區塊（可 Toggle 折疊）— Tim 2026-07-20 拍板 =====
+                // 區塊職責：房間/身分/角色 Mapping/發言區 收進一個可折疊的上方區塊；發言區移到角色 Mapping 下。
+                // 物理意義：折疊後把垂直空間讓給下方訊息列表（訊息已改不自帶 scroll，靠外層頁面 scroll，避免雙 scroll）。
+                // 數值影響：toggle 用 deferred-apply（m_PendingShowTopPanel）避免 button click 中途改 layout 結構 → Mismatched LayoutGroup。
+                using (new GUILayout.HorizontalScope("box"))
+                {
+                    bool newShowTop = UCL_GUILayout.Toggle(m_ShowTopPanel);
+                    if (newShowTop != m_ShowTopPanel) m_PendingShowTopPanel = newShowTop;
+                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.TopPanel.Title"), UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                if (m_ShowTopPanel)
+                {
+                    using (UCL_ChatTavernPerfOverlay.Sample("DrawRoomPicker")) DrawRoomPicker();
+                    GUILayout.Space(4);
+                    using (UCL_ChatTavernPerfOverlay.Sample("DrawIdentityPicker")) DrawIdentityPicker();
+                    GUILayout.Space(4);
+                    using (UCL_ChatTavernPerfOverlay.Sample("DrawCharacterMappingFoldout")) DrawCharacterMappingFoldout();
+                    GUILayout.Space(4);
+                    // 發言區域移到角色 Mapping 下（Tim 2026-07-20 拍板）
+                    using (UCL_ChatTavernPerfOverlay.Sample("DrawInputBar")) DrawInputBar();
+                }
                 GUILayout.Space(8);
 
                 if (string.IsNullOrEmpty(SelectedRoomId))
@@ -543,9 +559,8 @@ namespace UCL.Core.EditorLib.Page
                 }
                 using (UCL_ChatTavernPerfOverlay.Sample("DrawQuestPanel")) DrawQuestPanel();
                 GUILayout.Space(4);
+                // 下方訊息區 — 不再自帶 scroll scope（外層頁面已有 scroll，雙 scroll 難操作）
                 using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView")) DrawMessagesView();
-                GUILayout.Space(4);
-                using (UCL_ChatTavernPerfOverlay.Sample("DrawInputBar")) DrawInputBar();
             }
         }
 
@@ -1152,40 +1167,19 @@ namespace UCL.Core.EditorLib.Page
                     m_LastSeqRefreshTime = nowSeq;
                 }
                 GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Messages.HeaderFmt"), SelectedRoomId, m_CachedSeq), UCL_GUIStyle.LabelStyle);
-                // 區塊職責：BeginScrollView 之前若 m_PendingScrollToBottom == true → 強制把 y 設大值
-                // 物理意義：IMGUI 會自動 clamp 到 contentHeight - viewportHeight；下一幀就在底部
-                //          設完清旗標，避免使用者滾上去看歷史時被自動拉回
-                if (m_PendingScrollToBottom)
-                {
-                    m_MessagesScroll.y = float.MaxValue;
-                    m_PendingScrollToBottom = false;
-                }
-                m_MessagesScroll = GUILayout.BeginScrollView(m_MessagesScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(560)));
+                // T-Layout (Tim 2026-07-20)：訊息區不再自帶 scroll scope — 外層頁面 (UCL_CommonEditorPage) 已有 scroll，
+                // 雙 scroll 難操作。訊息直接 inline 繪製，溢出由外層 scroll 承載。分頁後每頁 ≤ PageSize 列，高度可控。
+
+                // 分頁控制列（Tim 2026-07-20）— 每頁 MessagePageSize 筆，翻頁看更舊
+                DrawMessagePagerBar();
+
                 if (m_MessagesCache == null || m_MessagesCache.Count == 0)
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Messages.Empty"), UCL_GUIStyle.LabelStyle);
                 }
                 else
                 {
-                    // 區塊職責：訊息列表最上方的「載入更早 50 筆」按鈕
-                    // 物理意義：只顯示最新 m_MessageLimit 筆；當回傳筆數 >= 上限 → 代表上面可能還有更早訊息，給按鈕展開。
-                    //          按下只設旗標，真正的 +50 + 重抓延後到 Layout event（見 ContentOnGUI deferred-apply），避免本幀 layout 不一致。
-                    // 數值影響：m_MessagesCache.Count < m_MessageLimit 時全部已載入 → 隱藏按鈕。
-                    if (m_MessagesCache.Count >= m_MessageLimit)
-                    {
-                        using (new GUILayout.HorizontalScope())
-                        {
-                            GUILayout.FlexibleSpace();
-                            if (GUILayout.Button($"↑ 載入更早 {MessageLimitStep} 筆", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            {
-                                m_PendingLoadOlder = true;
-                            }
-                            GUILayout.FlexibleSpace();
-                        }
-                        GUILayout.Space(2);
-                    }
-
-                    // Sample name 必須 stable（dict key）；訊息數量在 overlay 看 calls 與 m_MessagesCache.Count 心算即可
+                    // Sample name 必須 stable（dict key）；每頁最多 MessagePageSize 列 → 每幀 render 成本固定
                     using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView/rows"))
                     {
                         foreach (var m in m_MessagesCache)
@@ -1194,8 +1188,54 @@ namespace UCL.Core.EditorLib.Page
                         }
                     }
                 }
-                GUILayout.EndScrollView();
             }
+        }
+
+        // 區塊職責：訊息分頁控制列 — 最新 / 較新 / 頁碼指示 / 較舊（Tim 2026-07-20 拍板）
+        // 物理意義：m_MessagePage=0 為最新頁；按鈕只設 m_PendingSetPage（deferred），真正翻頁 + 重抓延後到 Layout event，
+        //          避免 button click 在 MouseUp 改 layout 結構造成本幀 Layout/Repaint 不一致。
+        // 數值影響：maxPage 由 m_TotalMessageCount（RefreshMessages 以 CountMessages 純列舉取得）算；越界按鈕以 DisabledScope 擋。
+        void DrawMessagePagerBar()
+        {
+            int total = m_TotalMessageCount;
+            int maxPage = total <= 0 ? 0 : (total - 1) / MessagePageSize;
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                // 往「較新」方向（含跳到最新頁）— 已在最新頁則 disable
+                using (new EditorGUI.DisabledScope(m_MessagePage <= 0))
+                {
+                    if (GUILayout.Button("⏮", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
+                        m_PendingSetPage = 0;
+                    if (GUILayout.Button("◀", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
+                        m_PendingSetPage = m_MessagePage - 1;
+                }
+                // 頁碼指示：第 X/Y 頁 · 共 N 筆
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Messages.PagerFmt"), m_MessagePage + 1, maxPage + 1, total), UCL_GUIStyle.LabelStyle);
+                // 往「較舊」方向 — 已在最舊頁則 disable
+                using (new EditorGUI.DisabledScope(m_MessagePage >= maxPage))
+                {
+                    if (GUILayout.Button("▶", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
+                        m_PendingSetPage = m_MessagePage + 1;
+                }
+
+                GUILayout.FlexibleSpace();
+
+                // 輸入頁碼 → 跳轉（UI 為 1-based）。翻頁走 deferred m_PendingSetPage，同其他按鈕。
+                GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Messages.JumpTo"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_JumpPageInput = GUILayout.TextField(m_JumpPageInput ?? "", GUILayout.Width(48));
+                if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Messages.JumpBtn"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    // 解析 1-based 輸入 → 0-based 頁碼，clamp 到 [0, maxPage]
+                    if (int.TryParse((m_JumpPageInput ?? "").Trim(), out int p1) && p1 >= 1)
+                    {
+                        int target = p1 - 1;
+                        if (target > maxPage) target = maxPage;
+                        if (target < 0) target = 0;
+                        m_PendingSetPage = target;
+                    }
+                }
+            }
+            GUILayout.Space(2);
         }
 
         void DrawMessageRow(UCL_ChatMessage m)
@@ -1496,32 +1536,44 @@ namespace UCL.Core.EditorLib.Page
             m_IdentityIds.Sort(System.StringComparer.OrdinalIgnoreCase);
             m_RosterCache = UCL_ChatTavernIO.LoadIdentities();
         }
-        // 區塊職責：重抓訊息 + 自動觸發 scroll-to-bottom 的單一進入點
-        // 物理意義：兩種情境會把 m_PendingScrollToBottom 設 true：
-        //   1) 切換房間（m_LastSeenRoomId 變了）— 進新房就在最底
-        //   2) 同房內 count 增加 — 新訊息進來自動跟上
-        //   兩者都不會在使用者滾上去看歷史時搶捲（count 持平 / 同房 → 不觸發）
-        // 數值影響：每次 RefreshMessages 同步 m_LastSeenRoomId / m_LastSeenMsgCount
+        // 區塊職責：重抓當前頁訊息（分頁模型）— 單一進入點
+        // 物理意義：
+        //   1) 切房 → 頁碼重置回 0（最新頁），不繼承上一房翻到的深度
+        //   2) 用 CountMessages（純列舉零 parse）取總數 → 算 maxPage + clamp 當前頁（防新訊息進來後頁碼越界）
+        //   3) Tail((page+1)*PageSize) 取「涵蓋當前頁的最少訊息」（oldest-first），切出本頁那 PageSize 筆
+        // 數值影響：m_MessagesCache 只存本頁 ≤ PageSize 筆 → DrawMessagesView 每幀最多繪 PageSize 列。
+        //          頁 p 對應全序 [T-(p+1)*PageSize, T-p*PageSize)，正好是 Tail((p+1)*PageSize) 的最前 sliceCount 筆。
         void RefreshMessages()
         {
-            // 切房先重置載入上限回 50 — 新房從最新 50 筆看起，不繼承上一房「載入更早」展開到的深度
             bool roomChanged = m_LastSeenRoomId != SelectedRoomId;
-            if (roomChanged) m_MessageLimit = MessageLimitStep;
+            if (roomChanged) m_MessagePage = 0;   // 切房回最新頁
 
-            m_MessagesCache = UCL_ChatTavernIO.Tail(SelectedRoomId, m_MessageLimit);
-            int now = m_MessagesCache?.Count ?? 0;
-            bool countGrew = !roomChanged && now > m_LastSeenMsgCount;
-            if (m_SuppressScrollToBottomOnce)
+            // #3 優化 (Tim 2026-07-20)：單次 Tail 同時取「本頁訊息 + 總數」— Tail 給每筆的 seq = 該訊息在全序的
+            //   絕對位置(1-based)，且 Tail 一定含最新那筆 → 最新一筆的 seq == 房間總數。故不必再單獨呼叫
+            //   CountMessages 掃一次目錄（每次 poll 從 2 次全房列舉降到 1 次），也不動共用 IO 層/不影響 Discord daemon。
+            int fetch = (m_MessagePage + 1) * MessagePageSize;
+            var tail = UCL_ChatTavernIO.Tail(SelectedRoomId, fetch);   // oldest-first, len = min(fetch, total)
+            int total = (tail != null && tail.Count > 0) ? tail[tail.Count - 1].seq : 0;
+
+            // clamp 頁碼（防新訊息湧入 / 刪檔後越界）；只有真的越界才重 Tail 一次（罕見）
+            int maxPage = total <= 0 ? 0 : (total - 1) / MessagePageSize;
+            if (m_MessagePage < 0) m_MessagePage = 0;
+            if (m_MessagePage > maxPage)
             {
-                // 「載入更早 50 筆」造成的 count 成長：保留歷史視角，不搶捲到底
-                m_SuppressScrollToBottomOnce = false;
+                m_MessagePage = maxPage;
+                fetch = (m_MessagePage + 1) * MessagePageSize;
+                tail = UCL_ChatTavernIO.Tail(SelectedRoomId, fetch);
             }
-            else if (roomChanged || countGrew)
-            {
-                m_PendingScrollToBottom = true;
-            }
+            m_TotalMessageCount = total;
+
+            // 本頁 = tail 的最前 sliceCount 筆（頁 p 對應全序 [T-(p+1)*PageSize, T-p*PageSize)）
+            int sliceCount = System.Math.Min(MessagePageSize, System.Math.Max(0, total - m_MessagePage * MessagePageSize));
+            if (tail != null && tail.Count > sliceCount)
+                m_MessagesCache = tail.GetRange(0, sliceCount);
+            else
+                m_MessagesCache = tail ?? new List<UCL_ChatMessage>();
+
             m_LastSeenRoomId = SelectedRoomId;
-            m_LastSeenMsgCount = now;
         }
         void RefreshMembers() { m_MembersCache = UCL_ChatTavernIO.LoadMembers(SelectedRoomId); }
 

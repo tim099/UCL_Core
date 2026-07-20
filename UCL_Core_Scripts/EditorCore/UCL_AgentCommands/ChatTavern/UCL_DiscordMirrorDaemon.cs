@@ -715,7 +715,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         if (s_InFlight.Count >= MAX_INFLIGHT) { inflightFull = true; break; }   // 下輪 tick 續送
 
                         // T5：解析 persona 頭像 + 清洗 username + @-mention rewrite（對齊 python 顯示）
-                        string username = UCL_DiscordIdentityResolver.ResolveUsername(msg.sender_id, msg.sender_name, msg.DisplayName);
+                        // 帶 sender_persona → username 尾綴 "@<persona>"（python parity，Tim 2026-07-20 抓漏修正）
+                        string username = UCL_DiscordIdentityResolver.ResolveUsername(msg.sender_id, msg.sender_name, msg.DisplayName, msg.sender_persona);
                         string avatarUrl = UCL_DiscordIdentityResolver.ResolveAvatarUrl(msg.sender_persona, msg.sender_avatar_sprite, msg.sender_id);
                         string body = UCL_DiscordIdentityResolver.RewriteMentions(msg.body ?? "");
                         // follow-up#1：超長 body 切 chunk — 首條即發，餘下掛 pendingContents 由 DrainInFlight 順序續發

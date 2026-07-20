@@ -143,7 +143,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         /// <summary>解析 username：identity 覆寫 > identities display_name > sender_name > id，再清洗成 Discord 合法 username。</summary>
-        public static string ResolveUsername(string senderId, string senderName, string fallbackDisplay)
+        public static string ResolveUsername(string senderId, string senderName, string fallbackDisplay, string senderPersona = null)
         {
             EnsureLoaded();
             string username = null;
@@ -151,6 +151,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(senderId) && s_DisplayName.TryGetValue(senderId, out var dn)) username = dn;
             if (string.IsNullOrEmpty(username)) username = !string.IsNullOrEmpty(fallbackDisplay) ? fallbackDisplay : senderName;
             if (string.IsNullOrEmpty(username)) username = senderId;
+
+            // 區塊職責：@persona 後綴（python _build_tavern_payload parity — Tim 2026-07-20 抓漏）
+            // 物理意義：python 解析完身分後永遠補 "<name>@<persona>"；native 原版漏了這步 →
+            //          identities.json 有登記的 sender 走 display_name 路徑丟失後綴（Claude大小姐 沒 @basecamp），
+            //          沒登記的 sender fallback 到 msg.DisplayName（本身含 @persona）反而有 → 看似間歇實為查表分歧。
+            //          之前沒被抓到是因為 cutover 前 python Stop-hook 雙送的那份有後綴，遮住了 native 份的缺失。
+            // 邊界：fallback 路徑 username 可能已含同名後綴 → EndsWith 防重複 append；截 80 交給 CleanUsername。
+            if (!string.IsNullOrEmpty(senderPersona) && !string.IsNullOrEmpty(username))
+            {
+                string suffix = "@" + senderPersona;
+                if (!username.EndsWith(suffix, StringComparison.Ordinal)) username += suffix;
+            }
             return CleanUsername(username);
         }
 

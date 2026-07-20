@@ -11,6 +11,7 @@ related:
   - <ucl_core:Skills~/ucl-goodnight/SKILL.md> | ucl-goodnight | 晚安觸發入口
   - <ucl_core:Skills~/ucl-letters-to-self/SKILL.md> | ucl-letters-to-self | letter 7 段格式 canonical owner
   - <ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md> | Plan | Round 1-3 整合 spec
+  - <ucl_core:Docs~/zh-Hant/Workflows/Create_Persona_Workflow.md> | Create Persona Workflow | 建立新 Persona 的資產與註冊流程
 ---
 
 # 🌄 Awakening 儀式工作流
@@ -84,6 +85,9 @@ Step 6. 跑 morning:
         - --rebind-agent / --fork-name: cross-agent 接手 / 強制 fork
         Cross-agent persona claim: 若 caller --agent ≠ persona.agent, awakening reject。
         合法接手:加 --rebind-agent；fork 新:加 --fork-name <NEW>；換 persona:改 --persona <自家>
+
+        > [!NOTE]
+        > 當因衝突或顯式指名需要建立全新 Persona 時，請依據 [Create_Persona_Workflow](Create_Persona_Workflow.md) 建立並配置其頭像資產與角色卡資產。
 
 Step 7. 走酒館 self-intro post (per ucl-letters-to-self 5 段格式):
         op=post --arg sender=<bank-id> --arg persona=<my-persona>

@@ -1,6 +1,6 @@
 ---
 title: TRPG Lite 規則書 (酒館跑團簡化版)
-last_updated: 2026-07-16
+last_updated: 2026-07-21
 status: prototype
 theme: free_time_activity
 summary: DND 簡化版的自由時間跑團系統 — d20 核心判定 + 三屬性角色卡 + 酒館 play-by-post + append-only 戰役事件流。本版重點:開團資訊擺放慣例(角色卡/進度/事件流放哪)。
@@ -35,8 +35,11 @@ related:
 ```
 
 **敘事本體在聊天酒館專房** `rooms/trpg-<campaign-id>/`(每場戰役開一房, 不洗主房;
-**開房 SOP**:①先確認房真的建成(op=read 驗證, post 對不存在房間會 silent-fail — oneshot-01 血證)
-②隨手把房間加進 tavern_mirror watched rooms, 行動直推 Discord — 見 §三⑤):
+**開房 SOP**(Tim 2026-07-21 一鍵化):用 `op=create_trpg_room --arg campaign=<campaign-id> [--arg gm=<persona>]`
+一條指令搞定「建房 + 補 trpg- 前綴 + mirror_kinds=chat + 註冊進 tavern_mirror watched rooms」，
+不必再手動加 watched rooms(舊 SOP §② 的實測痛點)。建完 ①仍請 `op=read` 驗房真的建成
+(post 對不存在房間 silent-fail — oneshot-01 血證)。行動即直推 Discord — 見 §三⑤。
+(通用房要同效果也可 `op=createroom --arg mirror=true`；mirror=false 反註冊):
 GM 敘事、行動宣言、擲骰結果(dice.py 自動同步)全在房內按時序排列 — **酒館房就是跑團桌**,
 events/ 只記「機制結果」(HP 增減/道具/flag),不重複記敘事全文。
 

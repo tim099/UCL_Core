@@ -748,6 +748,146 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             if (anyStateChange) UCL_DiscordMirrorState.Save();
         }
+
+        // ===========================================================
+        // 區塊：AdminPage 手動游標操作接點（T6.5 — 套用 seq / 追平 / 進度顯示的 native 端）
+        // 物理意義：AdminPage 舊控件直改 python last_seen_seq（native 不讀 → 純誤導）。本區把「seq N 邊界」
+        //          翻成 native 游標語意（ts_high + 窗內 seen），並提供 native 版「已同步/待同步」反推供顯示。
+        // 數值影響：admin 動作屬手動低頻，直接 read messages（Tail）+ 全房 webhook 重設；不進 daemon hot path。
+        //          seq = UCL_ChatTavernIO.Tail 的絕對檔序位（1-based），與 AdminPage 讀 _seq.txt 的 maxSeq 同義。
+        // ===========================================================
+
+        // 區塊職責：解析某房「會觸及的全部 webhook id」（main + 全 routing group + quest）— admin 重設/顯示的作用域
+        // 物理意義：與 Scan 的 allWids 聯集同語意，但 admin 低頻故獨立重算（不動已驗證的 Scan hot path）。
+        //          URL 解析走與 Scan 相同的 ENV>FILE>config 優先序 + placeholder 過濾，確保重設到的 webhook
+        //          集合跟 daemon 實際會送的集合一致（否則會漏設某 webhook → 該 webhook 仍按舊游標重送）。
+        // 數值影響：回傳去重後的 webhook id 清單；room 參數目前僅語意標記（URL 為 config 全域、非 per-room）。
+        /// <summary>某房會觸及的全部 webhook id（main + routing groups + quest）— admin 重設/進度顯示的作用域。</summary>
+        public static List<string> GetRoomWebhookIds(string room)
+        {
+            var wids = new List<string>();
+            var set = new HashSet<string>();
+            void Add(string url)
+            {
+                string w = UCL_DiscordWebhookClient.ExtractWebhookId(url);
+                if (w != null && set.Add(w)) wids.Add(w);
+            }
+            try
+            {
+                var cfg = ReadConfig();
+                foreach (var u in cfg.webhook_urls)
+                    if (!string.IsNullOrEmpty(u) && !IsPlaceholderUrl(u)) Add(u);
+                var routing = cfg.category_routing.enabled ? ReadRoutingTargets() : new List<MirrorRoutingTarget>();
+                foreach (var t in routing) foreach (var u in t.urls) Add(u);
+                if (cfg.quest_routing.enabled)
+                    foreach (var u in ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls))
+                        Add(u);
+            }
+            catch (Exception e) { Debug.LogWarning($"[DiscordMirror] GetRoomWebhookIds fail: {e.Message}"); }
+            return wids;
+        }
+
+        // 區塊職責：把「seq N 為已處理邊界」翻成 native 游標並重設該房全 webhook（AdminPage「套用 seq / 追平」）
+        // 物理意義：native 無 seq → 用 seq N 對應訊息的 ts 當 ts_high、把 [ts_high-W, ts_high] 窗內且 seq≤N 的
+        //          uuid 灌進 seen_uuids。結果 ShouldSend 對 seq≤N 一律 false（跳過不送）、對 seq>N 一律 true
+        //          （ts 更新 → 送 / 窗內未 seen → 送）= 等價舊 last_seen_seq 的「設 N 小=重放、N≥max=追平」。
+        // 數值影響：iTargetSeq≤0 → 清空游標（全房重放）；否則讀尾窗 (maxSeq-N + WINDOW_MARGIN) 筆足以涵蓋
+        //          seq N 及其前 W 秒窗（tavern 訊息密度下 400 筆遠超 120s；窗未滿頂多邊界多重送一次，
+        //          對齊「fail 方向=可見重送非隱形漏」設計哲學，絕不靜默漏送）。回人類可讀狀態字串給 AdminPage log。
+        // 邊界：往回調（N < 當前已同步）= 該區間訊息會重發到 Discord（外部可見）— Tim 2026-07-21 拍板保留此能力。
+        const int ADMIN_WINDOW_MARGIN = 400;
+        /// <summary>把某房游標重設到「seq iTargetSeq 為已處理邊界」（seq≤N 跳過、seq&gt;N 重送）。回狀態字串。</summary>
+        public static string AdminSetRoomCursorToSeq(string room, int iTargetSeq, int iMaxSeq)
+        {
+            if (string.IsNullOrEmpty(room)) return "room 為空";
+            var wids = GetRoomWebhookIds(room);
+            if (wids.Count == 0) return $"{room}：config 無 configured webhook（無事可做）";
+
+            // seq ≤ 0 = 全部重放：ts_high 設「遠古 sentinel」而非空字串（Tim 2026-07-21 實測踩到的坑）。
+            // 為何不用空字串：daemon.CollectScanMessages 遇 ts_high 空 → GetMinTsHigh 回 ""→ lowMark=null →
+            // 退回固定 SCAN_TAIL_N(30) 尾窗 → 房內 >30 筆時最舊區間掉出掃描窗永遠不重放（trpg-yachiyo 34 筆
+            // 實測只重放 seq 5-34、seq 1-4 漏）。改設遠古 ts → 全房訊息都「晚於 ts_high」必送、且 lowMark
+            // 有值讓 CollectScanMessages 倍增回頁到全房（受 daemon SCAN_PAGE_MAX=4096 上限，超過的最舊區間
+            // 屬 daemon 既有有界掃描限制，不在本 admin 操作內補）。
+            const string REPLAY_ALL_TS = "1970-01-01T00:00:00.000Z";
+            if (iTargetSeq <= 0)
+            {
+                UCL_DiscordMirrorState.AdminSetRoomCursors(room, wids, REPLAY_ALL_TS, null);
+                return $"{room}：游標設到最舊（seq 0 = 全房重放，ts_high={REPLAY_ALL_TS}；下輪 daemon 依序重送全部 eligible 訊息到 Discord，深度上限 {SCAN_PAGE_MAX} 筆）";
+            }
+
+            // 讀足夠尾窗：涵蓋 seq iTargetSeq 本身 + 其前 W 秒窗（供 seen 建構）
+            int readN = Math.Max(1, iMaxSeq - iTargetSeq) + ADMIN_WINDOW_MARGIN;
+            List<UCL_ChatMessage> msgs;
+            try { msgs = UCL_ChatTavernIO.Tail(room, readN); }
+            catch (Exception e) { return $"{room}：讀訊息失敗 {e.Message}"; }
+            if (msgs == null || msgs.Count == 0) return $"{room}：無訊息可讀";
+
+            // 找 target 訊息（seq == iTargetSeq，或 ≤ iTargetSeq 的最大 seq；iTargetSeq≥max → 最後一筆）
+            UCL_ChatMessage target = null;
+            foreach (var m in msgs) { if (m.seq <= iTargetSeq) target = m; else break; }
+            if (target == null) return $"{room}：讀不到 seq ≤ {iTargetSeq} 的訊息（尾窗未涵蓋，可能 seq 過小）";
+            string targetTs = target.ts;
+
+            // 窗內 seen：seq ≤ iTargetSeq 且 ts 落在 [targetTs - W, targetTs] 內的 uuid→ts
+            var seen = new Dictionary<string, string>();
+            DateTime? tHigh = UCL_DiscordMirrorState.ParseIsoUtc(targetTs);
+            foreach (var m in msgs)
+            {
+                if (m.seq > iTargetSeq) continue;
+                if (string.IsNullOrEmpty(m.uuid) || string.IsNullOrEmpty(m.ts)) continue;
+                var t = UCL_DiscordMirrorState.ParseIsoUtc(m.ts);
+                if (tHigh != null && t != null && t.Value < tHigh.Value.AddSeconds(-UCL_DiscordMirrorState.DEDUP_WINDOW_SEC)) continue;
+                seen[m.uuid] = m.ts;
+            }
+
+            UCL_DiscordMirrorState.AdminSetRoomCursors(room, wids, targetTs, seen);
+            return $"{room}：游標設到 seq {iTargetSeq}（ts_high={targetTs}，seen {seen.Count} 筆 × {wids.Count} webhook；seq>{iTargetSeq} 下輪重送、≤ 跳過）";
+        }
+
+        // 區塊職責：native 版「已同步到 seq / 待同步筆數」反推（AdminPage 顯示 — 取代 python last_seen_seq）
+        // 物理意義：native 游標是 per-webhook ts_high；顯示取「該房全 webhook 最小 ts_high」（最落後者 = 保守
+        //          catch-up 真相），從尾端數「ts > 該 ts_high」的筆數 = 待同步；已同步 = maxSeq - 待同步。
+        // 數值影響：從尾端漸進讀（64 起倍增），一遇到「ts ≤ min_ts_high」即停 → 已追平房只讀 ~64 檔（不整房掃）；
+        //          積壓深時讀到 ADMIN_PROGRESS_CAP 上限止（oCapped=true，顯示標「≥」不假裝精確）。
+        //          min_ts_high 空（全新無高水位）→ 全房待送（replay-all 狀態）。
+        const int ADMIN_PROGRESS_CAP = 4096;
+        /// <summary>native 進度反推：算某房「已同步到 seq / 待同步筆數」（min ts_high vs 尾端訊息 ts）。</summary>
+        public static void GetRoomNativeProgress(string room, int iMaxSeq, out int oSyncedSeq, out int oPending, out bool oCapped)
+        {
+            oSyncedSeq = iMaxSeq; oPending = 0; oCapped = false;
+            var wids = GetRoomWebhookIds(room);
+            if (wids.Count == 0) return;   // 無 webhook = 無待送（視為已追平）
+
+            // iSkipEmpty=true：跳過 ts_high 空的 webhook（backoff 卡住/舊 replay-all 殘留），
+            // 否則單一空 cursor 會把整房顯示歸零（Tim 2026-07-21 實測：trpg-yachiyo 已同步卻顯示 0）
+            string minTs = UCL_DiscordMirrorState.GetMinTsHigh(room, wids, iSkipEmpty: true);
+            DateTime? minT = UCL_DiscordMirrorState.ParseIsoUtc(minTs);
+            if (minT == null) { oPending = iMaxSeq; oSyncedSeq = 0; return; }   // 全 webhook 皆無高水位 = 全房待送
+
+            // 從尾端漸進讀，數「ts > min_ts_high」的筆數；遇到 ≤ 邊界即停（已追平房極便宜）
+            int n = 64;
+            while (true)
+            {
+                List<UCL_ChatMessage> msgs;
+                try { msgs = UCL_ChatTavernIO.Tail(room, n); }
+                catch { break; }
+                if (msgs == null || msgs.Count == 0) { oPending = 0; break; }
+
+                int cnt = 0; bool foundBoundary = false;
+                for (int i = msgs.Count - 1; i >= 0; i--)
+                {
+                    var t = UCL_DiscordMirrorState.ParseIsoUtc(msgs[i].ts);
+                    if (t != null && t.Value > minT.Value) cnt++;
+                    else { foundBoundary = true; break; }
+                }
+                // 找到邊界（有一筆 ts≤min）或整房讀完（msgs 不足 n）→ cnt 即精確待送數
+                if (foundBoundary || msgs.Count < n) { oPending = cnt; break; }
+                if (n >= ADMIN_PROGRESS_CAP) { oPending = cnt; oCapped = true; break; }   // 積壓超上限，標「≥」
+                n = Math.Min(n * 2, ADMIN_PROGRESS_CAP);
+            }
+            oSyncedSeq = Math.Max(0, iMaxSeq - oPending);
+        }
     }
 }
 #endif

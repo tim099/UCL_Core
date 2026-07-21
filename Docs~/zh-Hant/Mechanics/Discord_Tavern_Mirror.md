@@ -1,7 +1,7 @@
 ---
 title: Discord Tavern Mirror
 description: 酒館訊息 → Discord 的 outbound 鏡像機制 — 雙觸發路徑、per-room last_seen_seq 冪等、路由分流（quest/category）、webhook 身分與頭像解析鏈（含 persona_avatar_overrides 顯式覆寫）
-last_updated: 2026-07-15
+last_updated: 2026-07-21
 target_audience: [AI_Agent, Developer]
 aliases: [tavern mirror, discord mirror, 酒館鏡像, discord 頭像]
 tags: [discord, chat-tavern, mirror, webhook, avatar]
@@ -110,3 +110,49 @@ pull adapter（`notify_treasury_entries`）：Treasury ledger 本身是 append-o
 | `notify_config.json` | 專案 `AgentCommands/PromptQueue/` | 使用者設定（deep-merge 蓋 DEFAULT_CONFIG） |
 | `_tavern_state.json` | 專案 `AgentCommands/PromptQueue/` | per-room `last_seen_seq` + `treasury.last_seen` cursor + `consecutive_failures` |
 | webhook secret / `_drain.log` / `_notify_discord.lock` | 專案 `AgentCommands/PromptQueue/` | per-project 資料（搬移後由 `STATE_DIR = _tp.PROMPT_QUEUE_DIR` 錨定） |
+
+## 6. C# native 模型與 AdminPage 管理操作（T6.5，2026-07-21）
+
+> [!NOTE]
+> §1~§5 描述的是 **python owner** 模型（`_tavern_state.json` 的 per-room `last_seen_seq`）。cutover 後
+> `notify_config.json` 的 `mirror_owner: "native"` 讓 C# daemon（`UCL_DiscordMirrorDaemon`）接管掃描送出，
+> 游標模型換成 **per-(room, webhook) 的 `ts_high` 高水位 + 有界窗 `seen_uuids`**（存 `_tavern_state.json`
+> 的 `rooms.<room>.webhooks.<webhookId>`）。native 完全**不讀** `last_seen_seq`。
+
+### 6.1 native 游標去重規則（`UCL_DiscordMirrorState.ShouldSend`）
+
+per-webhook 三行規則（去重窗 `W = DEDUP_WINDOW_SEC = 120s`）：
+
+- `msg.ts` 早於 `ts_high - W` → 不送（老訊息，視為已處理）
+- 落窗 `[ts_high - W, ts_high]` 內 → 查 `seen_uuids`，沒有才送
+- 晚於 `ts_high` → 送（新訊息）
+
+送達 2xx 後 `RecordSent` 加入 seen、推進 ts_high、prune 窗外 uuid（seen-set 恆有界）。
+
+### 6.2 AdminPage「套用 seq / 追平 / 立即觸發同步」的 owner 分流
+
+`UCL_ChatTavernAdminPage` 的三個控件依 `mirror_owner` 分流（Tim 2026-07-21 拍板「串接 C# 端」）：
+
+| 控件 | python owner | native owner |
+|---|---|---|
+| 立即觸發同步 | `UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync()`（spawn python） | `UCL_DiscordMirrorDaemon.ForceTick()`（daemon 立即跑一輪掃描送出） |
+| 套用 seq N | 直改 `rooms.<room>.last_seen_seq = N` | `UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq(room, N, maxSeq)` |
+| 追平 | `last_seen_seq = maxSeq` | `AdminSetRoomCursorToSeq(room, maxSeq, maxSeq)` |
+| 已同步/待同步顯示 | `maxSeq - last_seen_seq` | `GetRoomNativeProgress`（min ts_high 反推） |
+
+**native「seq N 邊界」→ 游標映射**（`AdminSetRoomCursorToSeq`）：native 無 seq，故把 seq N 對應訊息的
+`ts` 當新 `ts_high`、把 `[ts_high - W, ts_high]` 窗內且 `seq ≤ N` 的 uuid 灌進 `seen_uuids`，並重設該房
+**所有 configured webhook**（main + routing groups + quest）的游標、清 `backoff_until`。結果等價舊
+`last_seen_seq` 的「seq ≤ N 跳過、seq > N 重送」：
+
+- **N 小於當前已同步** = 往回調 → seq > N 區間**重發到 Discord**（外部可見；Tim 拍板保留此能力）
+- **N ≥ maxSeq（追平）** = 全部跳過不送
+- **N ≤ 0** = ts_high 設遠古 sentinel（`1970-01-01T…`）+ seen 清空 → 全房重放（深度上限 `SCAN_PAGE_MAX=4096`）。
+  ⚠ 不可設空字串 ts_high：daemon `CollectScanMessages` 遇空 ts_high 算不出回頁下界 → 退回固定
+  `SCAN_TAIL_N=30` 尾窗 → 房內 >30 筆時最舊區間漏放（2026-07-21 trpg-yachiyo 34 筆實測 seq 1-4 漏）
+- seq 為近似位置（游標實為 ts 高水位）；往回調精度以訊息 `ts` 為準，窗未涵蓋的邊界訊息頂多多重送一次
+  （對齊「fail 方向 = 可見重送非隱形漏」設計原則）
+
+**已同步/待同步反推**（`GetRoomNativeProgress`）：取該房全 webhook **最小** `ts_high`（最落後者 = 保守
+catch-up 真相），從尾端漸進讀（64 起倍增）數「`ts >` 該 ts_high」的筆數 = 待同步，已同步 = `maxSeq - 待同步`；
+已追平房只讀 ~64 檔，積壓深時讀到 `ADMIN_PROGRESS_CAP = 4096` 止（顯示標「≥」不假裝精確）。

@@ -41,7 +41,19 @@ namespace UCL.Core.EditorLib.Page
         JsonData m_State;                        // _tavern_state.json 整份
         List<string> m_WatchedRooms = new List<string>();
         Dictionary<string, int> m_RoomMaxSeq = new Dictionary<string, int>();      // 房間當前 max seq（_seq.txt）
-        Dictionary<string, string> m_SeqDraft = new Dictionary<string, string>();  // last_seen_seq 編輯 draft
+        Dictionary<string, string> m_SeqDraft = new Dictionary<string, string>();  // 套用 seq 編輯 draft
+
+        // ==== T6.5：native owner 下的同步進度快取（LoadData 時算好，DrawTavernRoomRows 讀快取，不每幀讀檔）====
+        // 物理意義：native 游標是 per-webhook ts_high（無 seq）→ 由 UCL_DiscordMirrorDaemon.GetRoomNativeProgress
+        //          反推「已同步到 seq / 待同步筆數」；python owner 下這些不填，顯示照舊走 last_seen_seq。
+        bool m_NativeOwnerCached = false;                                            // 本次 LoadData 當下的 owner 快照（避免每幀重判）
+        Dictionary<string, int> m_RoomNativeSynced = new Dictionary<string, int>();  // native：已同步到 seq
+        Dictionary<string, int> m_RoomNativePending = new Dictionary<string, int>(); // native：待同步筆數
+        Dictionary<string, bool> m_RoomNativeCapped = new Dictionary<string, bool>();// native：待同步是否超反推上限（顯示標「≥」）
+
+        // ==== 註冊新房下拉（Tim 2026-07-21）— 列出「所有房間 dir ∖ 已 watched」供選取加入同步 ====
+        List<string> m_UnregisteredRooms = new List<string>();  // 未註冊房 id 清單（下拉值）
+        int m_SelectedNewRoomIdx = 0;                            // 下拉選中索引
         List<KeyValuePair<string, string>> m_AvatarOverrides = new List<KeyValuePair<string, string>>();
         List<string> m_LogTail = new List<string>();
         bool m_Loaded = false;
@@ -113,7 +125,10 @@ namespace UCL.Core.EditorLib.Page
                 ? m_PersonaNames[m_SelectedPersonaIdx] : null;
             m_Config = null; m_State = null;
             m_WatchedRooms.Clear(); m_RoomMaxSeq.Clear(); m_SeqDraft.Clear();
+            m_RoomNativeSynced.Clear(); m_RoomNativePending.Clear(); m_RoomNativeCapped.Clear();
             m_AvatarOverrides.Clear(); m_LogTail.Clear();
+            // T6.5：本次載入的 mirror owner 快照 — native 下同步進度改由 daemon 反推（見下方 rooms 迴圈）
+            m_NativeOwnerCached = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.IsNativeOwner;
             try
             {
                 if (File.Exists(NotifyConfigPath)) m_Config = JsonData.ParseJson(File.ReadAllText(NotifyConfigPath));
@@ -135,7 +150,20 @@ namespace UCL.Core.EditorLib.Page
                             int maxSeq = 0;
                             if (File.Exists(seqPath)) int.TryParse(File.ReadAllText(seqPath).Trim(), out maxSeq);
                             m_RoomMaxSeq[room] = maxSeq;
-                            m_SeqDraft[room] = GetLastSeen(room).ToString();
+                            // T6.5：native owner → 同步進度/draft 走 daemon 反推的 native 游標；python → 舊 last_seen_seq
+                            if (m_NativeOwnerCached)
+                            {
+                                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.GetRoomNativeProgress(
+                                    room, maxSeq, out int synced, out int pending, out bool capped);
+                                m_RoomNativeSynced[room] = synced;
+                                m_RoomNativePending[room] = pending;
+                                m_RoomNativeCapped[room] = capped;
+                                m_SeqDraft[room] = synced.ToString();
+                            }
+                            else
+                            {
+                                m_SeqDraft[room] = GetLastSeen(room).ToString();
+                            }
                         }
                     }
                     // persona 頭像 override（_ 開頭 key 是註解欄，不進列表）
@@ -184,6 +212,31 @@ namespace UCL.Core.EditorLib.Page
                     m_LogTail = File.ReadLines(DrainLogPath)
                         .Where(l => l.Contains("[tavern]"))
                         .Reverse().Take(5).Reverse().ToList();
+                }
+
+                // 註冊新房下拉的候選 = 所有房間 dir ∖ 已 watched（Tim 2026-07-21）
+                // 物理意義：列舉 rooms 根目錄子資料夾（只取名、不讀內容）；扣掉已在 watched list 的 → 剩可註冊者
+                m_UnregisteredRooms.Clear();
+                m_SelectedNewRoomIdx = 0;
+                try
+                {
+                    string roomsRoot = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO.GetRoomsRoot();
+                    if (Directory.Exists(roomsRoot))
+                    {
+                        var watched = new HashSet<string>(m_WatchedRooms, StringComparer.Ordinal);
+                        foreach (var dir in Directory.GetDirectories(roomsRoot))
+                        {
+                            string rid = Path.GetFileName(dir);
+                            // _ 開頭 = 系統/暫存資料夾，不列；已 watched 不列
+                            if (string.IsNullOrEmpty(rid) || rid.StartsWith("_") || watched.Contains(rid)) continue;
+                            m_UnregisteredRooms.Add(rid);
+                        }
+                        m_UnregisteredRooms.Sort(StringComparer.Ordinal);
+                    }
+                }
+                catch (Exception exRooms)
+                {
+                    Debug.LogWarning($"[TavernAdmin] 列舉房間目錄失敗: {exRooms.Message}");
                 }
             }
             catch (Exception e)
@@ -360,64 +413,175 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("  (config 無 watched rooms)", UCL_GUIStyle.LabelStyle);
                 return;
             }
-            // 區塊職責：T6.5 — native owner 下鎖住 position-seq 控件（native 用 ts_high + per-webhook 游標，
-            //          不理 last_seen_seq；讓管理員照舊按「套用 seq/追平」= 編到 native 不讀的欄位 → 純誤導）
-            // 數值影響：唯讀顯示照舊（python 舊 cursor 仍在檔內），互動列 disable + 常駐語意提示。
-            //          控件的 ts_high/per-webhook 語意完整遷移跟 07-17 root-cause doc Phase 2 一起做，不卡 cutover。
-            bool nativeOwner = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.IsNativeOwner;
-            if (nativeOwner)
-            {
-                GUILayout.Label("  🔒 mirror_owner=native：同步游標由 C# daemon 以 ts_high + per-webhook 管理（_tavern_state.json rooms.<room>.webhooks），下列 seq 控件已停用（native 不讀 last_seen_seq）。", WrapLabelStyle);
-            }
+            // 區塊職責：T6.5 — 套用 seq / 追平 依 mirror owner 分流到正確後端（Tim 2026-07-21 拍板「串接 C#」）
+            // 物理意義：native owner 下游標是 per-webhook ts_high（無 seq）→ 控件改呼叫 daemon.AdminSetRoomCursorToSeq
+            //          把「seq N 邊界」翻成 ts_high+seen 重設全房 webhook；顯示的「已同步/待同步」也改由 daemon
+            //          反推 native 游標（見 LoadData 的 GetRoomNativeProgress）。python owner 下維持舊 last_seen_seq。
+            // 數值影響：兩模式控件皆可用（不再 disable）；native 動作寫 _tavern_state.json rooms.<room>.webhooks、
+            //          python 動作寫 rooms.<room>.last_seen_seq。往回調在兩模式都會讓區間訊息重發到 Discord。
+            // 用 LoadData 當下的 owner 快照（m_NativeOwnerCached）— 與同批算好的 native 進度快取保持同源，不每幀重判。
+            bool nativeOwner = m_NativeOwnerCached;
+            GUILayout.Label(nativeOwner
+                ? "  🟢 mirror_owner=native：同步游標由 C# daemon 以 ts_high + per-webhook 管理（_tavern_state.json rooms.<room>.webhooks）。下列「套用 seq / 追平」已串接 daemon（把 seq 邊界翻成 ts_high 重設全房 webhook）。"
+                : "  ⚙ mirror_owner=python：同步游標為 per-room last_seen_seq（notify_discord.py 讀）。下列「套用 seq / 追平」直改該欄位。", WrapLabelStyle);
+
+            // 延後動作（IMGUI 陷阱修正）：套用 seq / 追平會呼 LoadData() 重建 m_WatchedRooms，
+            // 若在下方 foreach 內同步執行 = 列舉中改集合 → InvalidOperationException（Tim 2026-07-21 實測踩到）。
+            // 仿 DrawWebhookPanel 的 deleteUrl 模式：迴圈只「記下要對哪房套哪個 seq」，跑完迴圈才執行。
+            string applyRoom = null;
+            int applyTargetSeq = 0;
+
             foreach (var room in m_WatchedRooms)
             {
-                int lastSeen = GetLastSeen(room);
                 int maxSeq = m_RoomMaxSeq.GetValueOrDefault(room, 0);
-                int pending = Math.Max(0, maxSeq - lastSeen);
+                // 已同步/待同步：native 走 daemon 反推快取；python 走 last_seen_seq
+                int lastSeen = nativeOwner ? m_RoomNativeSynced.GetValueOrDefault(room, 0) : GetLastSeen(room);
+                int pending = nativeOwner ? m_RoomNativePending.GetValueOrDefault(room, 0) : Math.Max(0, maxSeq - lastSeen);
+                bool capped = nativeOwner && m_RoomNativeCapped.GetValueOrDefault(room, false);
                 using (new GUILayout.HorizontalScope("box"))
                 {
                     GUILayout.Label($"<b>{room}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                     GUILayout.Label($"已同步到 seq {lastSeen} / 房間最新 {maxSeq}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    GUILayout.Label(pending == 0 ? "<color=#66ff66>✓ 已追平</color>" : $"<color=#ffcc44>待同步 {pending} 筆</color>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    // capped = 待同步反推觸上限 → 標「≥」不假裝精確（cross-layer 誠實）
+                    string pendingLabel = pending == 0
+                        ? "<color=#66ff66>✓ 已追平</color>"
+                        : (capped ? $"<color=#ffcc44>待同步 ≥{pending} 筆</color>" : $"<color=#ffcc44>待同步 {pending} 筆</color>");
+                    GUILayout.Label(pendingLabel, WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
                     GUILayout.FlexibleSpace();
-                    // T6.5：native owner 下整段 seq 互動列 disable（native 不讀 last_seen_seq）
-                    using (new EditorGUI.DisabledScope(nativeOwner))
-                    {
+
                     m_SeqDraft[room] = GUILayout.TextField(m_SeqDraft.GetValueOrDefault(room, lastSeen.ToString()), UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
                     if (GUILayout.Button("套用 seq", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
+                        // 只記下請求，離開迴圈才執行（避免列舉中 LoadData 改 m_WatchedRooms）
                         if (int.TryParse(m_SeqDraft.GetValueOrDefault(room, ""), out int newSeq) && newSeq >= 0)
                         {
-                            string r = room;
-                            WriteStateField(s =>
-                            {
-                                if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
-                                if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
-                                s["rooms"][r]["last_seen_seq"] = newSeq;
-                            });
-                            Debug.Log($"[TavernAdmin] {r}.last_seen_seq → {newSeq}（設小=重放區間 / 設大=跳過區間）");
+                            applyRoom = room; applyTargetSeq = newSeq;
                         }
                         else Debug.LogWarning("[TavernAdmin] seq 需為非負整數");
                     }
-                    // 一鍵追平 — 把 last_seen 推到房間最新（跳過所有未同步，重開同步前清積壓用）
+                    // 一鍵追平 — 推到房間最新（跳過所有未同步）；已追平時 disable
                     using (new EditorGUI.DisabledScope(pending == 0))
                     {
                         if (GUILayout.Button("追平", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
                         {
-                            string r = room; int target = maxSeq;
-                            WriteStateField(s =>
-                            {
-                                if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
-                                if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
-                                s["rooms"][r]["last_seen_seq"] = target;
-                            });
-                            Debug.Log($"[TavernAdmin] {r}.last_seen_seq 追平 → {target}（未同步區間全部跳過不發）");
+                            applyRoom = room; applyTargetSeq = maxSeq;
                         }
                     }
-                    }   // T6.5 DisabledScope(nativeOwner) 收尾
+                    // 取消註冊 — 從 tavern_mirror watched rooms 移除（Tim 2026-07-21）；走 UCL_OptionPage 二次確認防誤按。
+                    // Create 只推彈窗、不動 m_WatchedRooms（不會在 foreach 中改集合）；真正 unregister 在彈窗 callback（下一幀、迴圈外）跑。
+                    if (GUILayout.Button("取消註冊", UCL_GUIStyle.GetButtonStyle(new Color(0.9f, 0.45f, 0.45f)), GUILayout.ExpandWidth(false)))
+                    {
+                        string r = room;
+                        UCL.Core.Page.UCL_OptionPage.Create(
+                            $"取消註冊房間「{r}」？",
+                            "取消後此房訊息不再鏡像到 Discord（已送出的不受影響）。日後重新註冊會從當下起算、不回放歷史。",
+                            new UCL.Core.Page.ButtonData("取消註冊", () => SetRoomWatched(r, false), UCL_GUIStyle.GetButtonStyle(Color.red)),
+                            new UCL.Core.Page.ButtonData("取消"));
+                    }
                 }
             }
-            GUILayout.Label("  ⚠ 套用 seq 屬管理員操作：往回調 = 該區間訊息會重發到 Discord；往前調/追平 = 跳過不發。", WrapLabelStyle);
+            GUILayout.Label("  ⚠ 套用 seq 屬管理員操作：往回調 = 該區間訊息會重發到 Discord；往前調 / 追平 = 跳過不發。native 模式下 seq 為近似位置（游標實為 ts 高水位，往回調精度以訊息 ts 為準）。", WrapLabelStyle);
+
+            // ── 註冊新房同步（Tim 2026-07-21）— 下拉選「未 watched 的房」加入 tavern_mirror.rooms ──
+            // 物理意義：省掉手改 config；候選 = 所有房間 dir ∖ 已 watched（LoadData 算好，見 m_UnregisteredRooms）。
+            // 延後執行：按鈕只記 registerRoom，離開本方法前才 SetRoomWatched（→LoadData 重建集合，避開列舉衝突）。
+            string registerRoom = null;
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                GUILayout.Label("➕ 註冊新房同步", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                if (m_UnregisteredRooms.Count == 0)
+                {
+                    GUILayout.Label("(其餘房間都已註冊 / 無可註冊房)", UCL_GUIStyle.LabelStyle);
+                }
+                else
+                {
+                    m_SelectedNewRoomIdx = UCL_GUILayout.PopupSearchCache(
+                        Math.Clamp(m_SelectedNewRoomIdx, 0, m_UnregisteredRooms.Count - 1),
+                        m_UnregisteredRooms, m_Dic, "MirrorNewRoomPicker");
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("註冊同步", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                    {
+                        int idx = Math.Clamp(m_SelectedNewRoomIdx, 0, m_UnregisteredRooms.Count - 1);
+                        registerRoom = m_UnregisteredRooms[idx];
+                    }
+                }
+            }
+
+            // 迴圈外執行延後動作（此時已離開 m_WatchedRooms 列舉，LoadData 重建集合安全）— 一幀至多一個按鈕觸發
+            if (applyRoom != null)
+            {
+                ApplyRoomSeq(applyRoom, applyTargetSeq, m_RoomMaxSeq.GetValueOrDefault(applyRoom, 0), nativeOwner);
+            }
+            else if (registerRoom != null)
+            {
+                SetRoomWatched(registerRoom, true);
+                Debug.Log($"[TavernAdmin] 註冊新房進 mirror：{registerRoom}");
+            }
+        }
+
+        // 區塊職責：註冊 / 反註冊房間進 tavern_mirror.rooms（#2 取消註冊 / #3 註冊新房共用）
+        // 物理意義：走 WriteConfigRoot（read→mutate→原子寫→LoadData）改 notify_config.json 的 watched rooms list。
+        //          register=true 且不存在 → 加入；register=false 且存在 → 重建移除（JsonData 陣列無 RemoveAt）。
+        // 數值影響：新註冊房 daemon cursor 種子 ts_high=now（不回放歷史）；WriteConfigRoot 內部會 LoadData 刷新 UI。
+        void SetRoomWatched(string roomId, bool watched)
+        {
+            if (string.IsNullOrEmpty(roomId)) return;
+            WriteConfigRoot(cfg =>
+            {
+                if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
+                var tm = cfg["tavern_mirror"];
+                if (!tm.Contains("rooms") || tm["rooms"] == null || !tm["rooms"].IsArray)
+                    tm["rooms"] = JsonData.ParseJson("[]");
+                var rooms = tm["rooms"];
+
+                bool present = false;
+                for (int i = 0; i < rooms.Count; i++)
+                {
+                    if (rooms[i].GetString() == roomId) { present = true; break; }
+                }
+                if (watched && !present)
+                {
+                    rooms.Add(new JsonData(roomId));
+                }
+                else if (!watched && present)
+                {
+                    // JsonData 陣列無 RemoveAt → 重建保序（保留其餘房）
+                    var kept = JsonData.ParseJson("[]");
+                    for (int i = 0; i < rooms.Count; i++)
+                    {
+                        string r = rooms[i].GetString();
+                        if (r != roomId) kept.Add(new JsonData(r));
+                    }
+                    tm["rooms"] = kept;
+                }
+            });
+            Debug.Log($"[TavernAdmin] tavern_mirror.rooms {(watched ? "註冊" : "取消註冊")} → {roomId}");
+        }
+
+        // 區塊職責：套用 seq / 追平的實際寫入 — 依 owner 分流（native → daemon 游標重設；python → last_seen_seq）
+        // 物理意義：native 呼叫 UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq（seq→ts_high+seen 重設全房 webhook），
+        //          回狀態字串 log；python 維持舊 WriteStateField 直改 rooms.<room>.last_seen_seq。
+        // 數值影響：native 路徑 daemon 端已 Save 落 disk，故此處補呼 LoadData 讓 UI 進度快取對齊；python 路徑
+        //          WriteStateField 內部本就會 LoadData，不重複呼叫。
+        void ApplyRoomSeq(string room, int targetSeq, int maxSeq, bool nativeOwner)
+        {
+            if (nativeOwner)
+            {
+                string result = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq(room, targetSeq, maxSeq);
+                Debug.Log($"[TavernAdmin] native 套用 seq：{result}");
+                LoadData();   // daemon 端已 Save，重載讓進度快取對齊磁碟真相
+            }
+            else
+            {
+                string r = room; int t = targetSeq;
+                WriteStateField(s =>
+                {
+                    if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
+                    if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
+                    s["rooms"][r]["last_seen_seq"] = t;
+                });
+                Debug.Log($"[TavernAdmin] python {r}.last_seen_seq → {t}（設小=重放區間 / 設大或追平=跳過區間）");
+            }
         }
 
         /// <summary>對指定 stream 的 webhook_urls 做受控寫入（增/刪）。</summary>

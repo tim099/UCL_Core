@@ -23,8 +23,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public override string CommandType => "Tavern";
         public override string ShortDescription => "Chat Tavern — 多 agent 聊天室（op 派遣式）";
         public override string ArgsSchema =>
-            "op=createroom|listrooms|join|post|read|members|leave|wait|note_write|note_read\n" +
-            "createroom: id=房間ID name=顯示名 description=描述\n" +
+            "op=createroom|create_trpg_room|listrooms|join|post|read|members|leave|wait|note_write|note_read\n" +
+            "createroom: id=房間ID name=顯示名 description=描述 [owner_agent=] [mirror_kinds=chat,system] [mirror=true|false(註冊/反註冊進 Discord mirror watched rooms)]\n" +
+            "create_trpg_room: campaign=戰役ID(自動補 trpg- 前綴) [name=] [description=] [gm/owner_agent=] [mirror_kinds=chat] — 建房+一律註冊進 mirror（TRPG 開房一鍵）\n" +
             "listrooms: (無參數)\n" +
             "join: room=房間ID id=身分ID name=顯示名 kind=agent|human|system\n" +
             "post: room=房間ID sender=身分ID body=訊息內容 [persona=codename(Phase1: persona-aware schema)] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2]\n" +
@@ -76,6 +77,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 switch (op)
                 {
                     case "createroom": Op_CreateRoom(args); break;
+                    case "create_trpg_room": Op_CreateTrpgRoom(args); break;
                     case "listrooms": Op_ListRooms(); break;
                     case "join": Op_Join(args); break;
                     case "post": await Op_Post(args, token); break;
@@ -155,12 +157,134 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var room = UCL_ChatTavernIO.CreateRoom(id, name, desc,
                 string.IsNullOrEmpty(ownerAgent) ? null : ownerAgent,
                 mirrorKindsList);
+
+            // Discord mirror 註冊 tri-state（Tim 2026-07-21 拍板：把「加進 watched rooms」的手動步驟包進 CMD）
+            // 物理意義：建房後直接寫 notify_config.json 的 tavern_mirror.rooms，省掉 TRPG 開房 SOP §② 的手動註冊。
+            //   mirror 缺席 = 不碰 config（向下相容，既有 caller 行為不變）；
+            //   mirror=true = 確保 room 在 watched list（dedup）；mirror=false = 從 list 移除（反註冊）。
+            // 數值影響：新房被納入時 daemon cursor 種子 = ts_high=now → 不回放歷史（不會噴爆 Discord backlog）。
+            string mirrorArg = GetArg(args, "mirror", "");
+            string mirrorRegLine = "";
+            if (!string.IsNullOrEmpty(mirrorArg))
+            {
+                bool doRegister = mirrorArg.Equals("true", StringComparison.OrdinalIgnoreCase) || mirrorArg == "1";
+                string reg = RegisterRoomToMirror(room.id, doRegister);
+                mirrorRegLine = $"\n- mirror: {(doRegister ? "註冊" : "反註冊")} → {reg}";
+                Debug.Log($"[Tavern] createroom mirror {(doRegister ? "register" : "unregister")} {room.id}: {reg}");
+            }
+
             string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- owner_agent: `{room.owner_agent}`";
             string mirrorLine = (room.mirror_kinds == null || room.mirror_kinds.Count == 0)
                 ? "" : $"\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds)}]";
-            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}{mirrorLine}\n";
+            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}{mirrorLine}{mirrorRegLine}\n";
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}{(room.mirror_kinds != null && room.mirror_kinds.Count > 0 ? $" mirror_kinds=[{string.Join(",", room.mirror_kinds)}]" : "")}");
+        }
+
+        // ===========================================================
+        // 區塊：op=create_trpg_room — TRPG 開房一鍵包裝（Tim 2026-07-21 拍板）
+        // 物理意義：把 TRPG_Lite_RuleBook「開房 SOP」的必要步驟全包進一個 CMD — 建房 + 補 trpg- 前綴 +
+        //          mirror_kinds 預設 chat + 一律註冊進 tavern_mirror watched rooms。外部只填 campaign-id。
+        // 數值影響：等價 createroom id=trpg-<campaign> mirror=true mirror_kinds=chat，但語意直白、防漏註冊
+        //          （SOP §② 手動加 watched rooms 是實測痛點）。底座共用 CreateRoom + RegisterRoomToMirror。
+        // ===========================================================
+        void Op_CreateTrpgRoom(Dictionary<string, string> args)
+        {
+            // campaign id — 接受 campaign / id / room；未帶 trpg- 前綴自動補（TRPG 房命名慣例）
+            string raw = GetArg(args, "campaign", GetArg(args, "id", GetArg(args, "room", "")));
+            if (string.IsNullOrEmpty(raw)) { RejectLastOp("create_trpg_room 缺少 campaign（戰役 ID；可用 campaign= / id= / room=）"); return; }
+            string id = raw.StartsWith("trpg-") ? raw : "trpg-" + raw;
+            string name = GetArg(args, "name", id);
+            string desc = GetArg(args, "description", "");
+            // GM / owner — 模糊「大小姐」routing 用；接受 gm / owner_agent / owner
+            string owner = GetArg(args, "owner_agent", GetArg(args, "owner", GetArg(args, "gm", "")));
+            // TRPG 預設 mirror_kinds = chat（行動宣言直推 Discord chat 頻道；不含 system 避免 quest lifecycle 噴版）
+            string mirrorKindsCsv = GetArg(args, "mirror_kinds", "chat");
+            var mirrorKinds = new List<string>();
+            foreach (var k in mirrorKindsCsv.Split(','))
+            {
+                var trimmed = k.Trim();
+                if (!string.IsNullOrEmpty(trimmed)) mirrorKinds.Add(trimmed);
+            }
+
+            var room = UCL_ChatTavernIO.CreateRoom(id, name, desc,
+                string.IsNullOrEmpty(owner) ? null : owner,
+                mirrorKinds.Count > 0 ? mirrorKinds : null);
+            // TRPG 房一律註冊進 mirror（開房即行動直推，SOP §② 自動化核心）
+            string reg = RegisterRoomToMirror(room.id, true);
+
+            string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- gm/owner: `{room.owner_agent}`";
+            string md = $"# ✅ TRPG Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds ?? new List<string>())}]\n- mirror: 註冊 → {reg}\n\n下一步：`op=read room={room.id}` 驗證房建成後即可開場。";
+            UCL_ChatTavernRender.WriteLastOp(md);
+            Debug.Log($"[Tavern] create_trpg_room → {room.id}（mirror_kinds=[{string.Join(",", room.mirror_kinds ?? new List<string>())}]，{reg}）");
+        }
+
+        // ===========================================================
+        // 區塊：Discord mirror watched-rooms 註冊 helper（createroom mirror= / create_trpg_room 共用）
+        // 物理意義：讀 → mutate tavern_mirror.rooms（string 陣列）→ 原子寫回 notify_config.json。
+        //          register=true 確保 room 在 list（已存在 = no-op）；false = 從 list 移除（JsonData 陣列
+        //          無 RemoveAt → 重建保序）。config 缺檔 / 解析失敗 = warn 不 throw（不擋建房本身）。
+        // 數值影響：與 UCL_ChatTavernAdminPage / notify_discord.py 同一份 config；寫回即時 flush，
+        //          daemon 5s config 快取到期後（或 AdminPage Refresh）即見新 watched rooms。
+        // ===========================================================
+        static string RegisterRoomToMirror(string roomId, bool register)
+        {
+            if (string.IsNullOrEmpty(roomId)) return "roomId 為空（略過）";
+            try
+            {
+                string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue", "notify_config.json");
+                if (!File.Exists(path)) return "notify_config.json 不存在（略過 mirror 註冊，房已建成）";
+                var cfg = UCL.Core.JsonLib.JsonData.ParseJson(File.ReadAllText(path));
+                if (cfg == null || !cfg.IsObject) return "notify_config.json 解析失敗（略過）";
+
+                if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = UCL.Core.JsonLib.JsonData.ParseJson("{}");
+                var tm = cfg["tavern_mirror"];
+                if (!tm.Contains("rooms") || tm["rooms"] == null || !tm["rooms"].IsArray)
+                    tm["rooms"] = UCL.Core.JsonLib.JsonData.ParseJson("[]");
+                var rooms = tm["rooms"];
+
+                bool present = false;
+                for (int i = 0; i < rooms.Count; i++)
+                {
+                    if (rooms[i].GetString() == roomId) { present = true; break; }
+                }
+
+                if (register)
+                {
+                    if (present) return "已在 watched rooms（不重複加）";
+                    rooms.Add(new UCL.Core.JsonLib.JsonData(roomId));
+                    AtomicWriteText(path, cfg.ToJsonBeautify());
+                    return "已加入 tavern_mirror.rooms";
+                }
+                else
+                {
+                    if (!present) return "不在 watched rooms（無需移除）";
+                    // JsonData 陣列無 RemoveAt → 重建保序（保留其餘 room）
+                    var kept = UCL.Core.JsonLib.JsonData.ParseJson("[]");
+                    for (int i = 0; i < rooms.Count; i++)
+                    {
+                        string r = rooms[i].GetString();
+                        if (r != roomId) kept.Add(new UCL.Core.JsonLib.JsonData(r));
+                    }
+                    tm["rooms"] = kept;
+                    AtomicWriteText(path, cfg.ToJsonBeautify());
+                    return "已從 tavern_mirror.rooms 移除";
+                }
+            }
+            catch (Exception e)
+            {
+                return $"mirror 註冊失敗（房已建成）：{e.Message}";
+            }
+        }
+
+        // 區塊職責：原子寫檔（tmp + delete + move）— 對齊 AdminPage.AtomicWrite / MirrorState.AtomicWrite，
+        //          防 notify_config.json 被 daemon / AdminPage 讀到半截 JSON。
+        static void AtomicWriteText(string path, string content)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, content, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
         }
 
         // ===========================================================

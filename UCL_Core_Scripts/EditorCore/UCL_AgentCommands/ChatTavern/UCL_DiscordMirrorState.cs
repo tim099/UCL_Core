@@ -176,8 +176,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          比固定 Tail(N) 窗正確（積壓 > N 筆時固定窗會讓舊訊息永遠掉出掃描範圍 = silent drop）。
         // 數值影響：回傳 ISO ts 字串（ordinal 比較 = 時間序）；任一 cursor ts_high 為空（parse 壞檔等異常）
         //          → 回空字串，caller 退回固定窗 fallback（有界安全側，不做無界全房掃）。
-        /// <summary>該房全 webhook 最小 ts_high（cursor-driven Scan 下界）。任一 cursor 無 ts_high → 回空字串。</summary>
-        public static string GetMinTsHigh(string room, List<string> webhookIds)
+        /// <summary>
+        /// 該房全 webhook 最小 ts_high。
+        /// iSkipEmpty=false（daemon Scan 下界用）：任一 cursor 無 ts_high → 回空字串（caller 退固定窗，安全側）。
+        /// iSkipEmpty=true（AdminPage 進度顯示用）：跳過 ts_high 空的 webhook（空=未建立位置/backoff 卡住的殘留，
+        ///   不應把整房顯示歸零）；全部皆空才回空字串。
+        /// </summary>
+        public static string GetMinTsHigh(string room, List<string> webhookIds, bool iSkipEmpty = false)
         {
             EnsureLoaded();
             string min = null;
@@ -186,7 +191,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (string.IsNullOrEmpty(wid)) continue;
                 // GetOrCreateCursor：新 webhook 在此即按契約種子化（baseline 或 now），與 ShouldSend 一致
                 var cursor = GetOrCreateCursor(room, wid);
-                if (string.IsNullOrEmpty(cursor.ts_high)) return "";
+                if (string.IsNullOrEmpty(cursor.ts_high))
+                {
+                    if (iSkipEmpty) continue;   // 顯示用：空 ts_high 不當 min 約束（跳過）
+                    return "";                  // 掃描用：任一空 → 安全側回空（固定窗 fallback）
+                }
                 if (min == null || string.CompareOrdinal(cursor.ts_high, min) < 0) min = cursor.ts_high;
             }
             return min ?? "";
@@ -258,6 +267,39 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             EnsureLoaded();
             GetOrCreateCursor(room, webhookId).backoff_until = "";
+        }
+
+        // ===========================================================
+        // 區塊：admin 手動游標重設（T6.5 — AdminPage「套用 seq / 追平」native 端接點）
+        // 物理意義：舊 python 模型的「套用 seq N」= 設 last_seen_seq=N，native 無 seq → 改為「把該房
+        //          指定 webhook 們的游標整組重設到某高水位」。呼叫方（UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq）
+        //          已把「seq N」翻成「該 seq 對應訊息的 ts（當 ts_high）+ 窗內 seq≤N 的 uuid（當 seen）」。
+        // 數值影響：重設後 ShouldSend 對 ts≤ts_high-W 一律 skip、對窗內已在 seen 的 skip、對窗內未 seen 或
+        //          晚於 ts_high 的送 → 等價「seq≤N 跳過、seq>N 重送」。iTsHigh 空 = 清空高水位（全房重放）。
+        //          一律清 backoff_until（管理員手動重設意圖 = 立即從新游標起算，不受殘留退避卡住）。
+        //          寫入即 Save() 落 disk（單寫者 mirror_owner 硬互鎖保證原子覆寫安全，見 Save 區塊註解）。
+        // ===========================================================
+        /// <summary>
+        /// 把某房「指定 webhook 們」的去重游標整組重設為 (iTsHigh, iSeenUuids)、並清 backoff。
+        /// 給 AdminPage 的「套用 seq / 追平」用（seq→ts 映射由 UCL_DiscordMirrorDaemon 端完成）。
+        /// iTsHigh 為空字串 = 清空高水位（全房重放）；iSeenUuids 為 null 視同空 dict。
+        /// </summary>
+        public static void AdminSetRoomCursors(string room, IEnumerable<string> webhookIds, string iTsHigh, Dictionary<string, string> iSeenUuids)
+        {
+            if (string.IsNullOrEmpty(room) || webhookIds == null) return;
+            EnsureLoaded();
+            foreach (var wid in webhookIds)
+            {
+                if (string.IsNullOrEmpty(wid)) continue;
+                var cursor = GetOrCreateCursor(room, wid);
+                cursor.ts_high = iTsHigh ?? "";
+                // 深拷貝 seen（各 webhook 各持一份，避免共用同一 dict 被後續 prune 互相污染）
+                cursor.seen_uuids = iSeenUuids != null
+                    ? new Dictionary<string, string>(iSeenUuids)
+                    : new Dictionary<string, string>();
+                cursor.backoff_until = "";
+            }
+            Save();
         }
 
         // ===== Save 落 disk（討論1 拍板：共用 canonical _tavern_state.json + mirror_owner 硬互鎖）=====

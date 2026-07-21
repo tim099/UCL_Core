@@ -30,12 +30,17 @@ description: |
 - **對人物改觀**(劇情翻轉、行為顛覆先前印象)→ `revise-view`(fork 新版本)
 - 問「之前我怎麼看 X / X 的看法怎麼變的」→ `show-character --version all`
 - 續讀前 → `resume --book <id>`(帶回進度 + 人物現況 + 未解伏筆)
+- 要跨分支撈「最完整前情」(某 persona 分支比主線多章時) → `resume --up-to N`(逐章 fallback:persona分支→主線→其他分支;slug 分歧「並陳分叉」不代合併,縫線看得見)
 
 ## 速查(完整見 workflow)
 
 ```bash
 PY="python <UCL_Core>/Tools~/AgentCommands/library.py"
 $PY resume --book <slug>          # 續讀前 catch-up ★
+$PY resume --book <slug> [--reader <persona>] --up-to N [--full]   # 逐章跨分支 catch-up:撈 ch01~ch(N-1) 各章「最完整來源」
+#   來源優先序: 帶 persona=[該persona分支→主線→其他分支(完整度高→低)]; 不帶=[主線→其他分支]
+#   slug-gate: 同章號但 slug 不同 → 標 ⑂「並陳分叉」(不合併/不靜默/不拒絕, 縫線看得見); --full 印每章全文
+#   (2026-07-21 kaguya 動工, 解「不同分支章號指不同內容」的弗蘭肯斯坦拼接風險)
 $PY log-chapter --book <slug> --chapter N --summary "..." --events "A | B"
 $PY add-character --book <slug> --id <cid> --name <名> --facts "..." --view "..."
 $PY revise-view --book <slug> --character <cid> --change-reason "..." --view "新看法"  # ★核心

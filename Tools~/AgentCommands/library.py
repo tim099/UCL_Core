@@ -619,6 +619,132 @@ def cmd_branches(args):
     return 0
 
 
+# ===========================================================
+# 跨分支章節 fallback resolver
+# (kaguya 2026-07-21 動工; per 酒館設計討論 + summit slug-gate 中線)
+# 設計要點：
+#   · 帶 persona → 來源優先序 [該persona分支 → 主線 → 其他分支(completeness 高→低)]
+#   · 不帶 persona → [主線 → 其他分支]
+#   · 逐章取優先序第一個命中；slug-gate：同章號但 slug 不同的其他來源 = 並陳分叉(fork)，
+#     不合併、不靜默縫、也不拒絕 — 縫線看得見(對齊「別假裝碎片是完整的」原則)
+# ===========================================================
+_CH_FILE_RE = re.compile(r"ch0*(\d+)_(.*)\.md$", re.I)
+
+
+def _chapters_dir_for(book: str, reader) -> Path:
+    # reader 空/初始讀者 → 主線 chapters；否則該分支 chapters
+    if not reader or reader == _initial_reader(book):
+        return _main_book_dir(book) / "chapters"
+    return _main_book_dir(book) / "branches" / reader / "chapters"
+
+
+def _scan_chapters(chdir: Path) -> dict:
+    # 掃某 chapters 目錄 → {ch_no:int -> (path, slug)}
+    out = {}
+    if chdir.exists():
+        for f in chdir.glob("ch*.md"):
+            m = _CH_FILE_RE.search(f.name)
+            if m:
+                out[int(m.group(1))] = (f, m.group(2))
+    return out
+
+
+def _branch_current_chapter(book: str, reader) -> int:
+    # 讀某來源 book.json 的 progress.current_chapter (tiebreak 用 completeness)
+    base = _main_book_dir(book) if (not reader or reader == _initial_reader(book)) \
+        else _main_book_dir(book) / "branches" / reader
+    bj = base / "book.json"
+    if not bj.exists():
+        return 0
+    return int((_read_json(bj).get("progress") or {}).get("current_chapter", 0) or 0)
+
+
+def _chapter_source_chain(book: str, persona):
+    # 回傳優先序來源清單 [(label, {ch_no:(path,slug)}), ...]
+    initial = _initial_reader(book)
+    chain, seen = [], set()
+
+    def add(label, reader):
+        key = reader or "__main__"
+        if key in seen:
+            return
+        seen.add(key)
+        chain.append((label, _scan_chapters(_chapters_dir_for(book, reader))))
+
+    if persona and persona != initial:
+        add(f"{persona} 分支", persona)
+    add("主線", None)
+    others = [b for b in _list_branches(book) if b != persona]
+    others.sort(key=lambda b: -_branch_current_chapter(book, b))
+    for b in others:
+        add(f"{b} 分支", b)
+    return chain
+
+
+def _resolve_chapter(chain, ch_no):
+    # 逐章 resolve → (win_label, win_path, win_slug, forks) 或 None
+    # forks = 同章號但 slug 不同的其他來源 [(label, slug), ...]
+    hits = []
+    for label, d in chain:
+        if ch_no in d:
+            path, slug = d[ch_no]
+            hits.append((label, path, slug))
+    if not hits:
+        return None
+    win_label, win_path, win_slug = hits[0]
+    forks = [(lb, sg) for (lb, _p, sg) in hits[1:] if sg != win_slug]
+    return win_label, win_path, win_slug, forks
+
+
+def _chapter_oneliner(path: Path):
+    # 精簡摘要：(title, summary 首句, foreshadow list)
+    text = path.read_text(encoding="utf-8")
+    mt = re.search(r"^title:\s*(.+)$", text, re.M)
+    title = mt.group(1).strip() if mt else ""
+    ms = re.search(r"##\s*內容摘要\s*\n(.*?)(?:\n##|\Z)", text, re.S)
+    summ = ""
+    if ms:
+        lines = [ln.strip() for ln in ms.group(1).splitlines() if ln.strip() and ln.strip() != "（待補）"]
+        summ = lines[0] if lines else ""
+    fores = []
+    mf = re.search(r"##\s*伏筆\s*/\s*待解\s*\n(.*?)(?:\n##|\Z)", text, re.S)
+    if mf:
+        for ln in mf.group(1).splitlines():
+            ln = ln.strip()
+            if ln.startswith("-") and "無）" not in ln and "無)" not in ln:
+                fores.append(ln[1:].strip())
+    return title, summ, fores
+
+
+def _print_catchup(book: str, persona, up_to: int, full: bool):
+    # 逐章 catch-up: 撈 ch01..ch(up_to-1) 各章最佳來源, slug-gate 並陳分叉
+    chain = _chapter_source_chain(book, persona)
+    who = f"帶 persona={persona}" if persona else "不帶 persona(主線優先)"
+    print(f"\n📖 逐章 catch-up（讀到 ch{up_to:02d} 前 → 撈 ch01~ch{up_to - 1:02d}，{who}）")
+    print("   來源優先序: " + " → ".join(lb for lb, _ in chain))
+    missing = []
+    for ch in range(1, up_to):
+        r = _resolve_chapter(chain, ch)
+        if not r:
+            missing.append(ch)
+            continue
+        win_label, win_path, _win_slug, forks = r
+        title, summ, fores = _chapter_oneliner(win_path)
+        print(f"\n  ── ch{ch:02d} {('｜' + title) if title else ''}  ⟨來源: {win_label}⟩")
+        if full:
+            print("     " + win_path.read_text(encoding="utf-8").strip().replace("\n", "\n     "))
+        else:
+            if summ:
+                print(f"     摘要: {summ}")
+            for fs in fores:
+                print(f"     伏筆: {fs}")
+        if forks:
+            print(f"     ⑂ 另有不同切法(slug 分歧, 不代你合併): "
+                  + "；".join(f"[{lb}] {sg}" for lb, sg in forks))
+    if missing:
+        print(f"\n  ⚠ 全來源皆缺章: {', '.join('ch%02d' % c for c in missing)}（尚無任何讀者記過）")
+
+
 def cmd_resume(args):
     # 區塊職責: 續讀前的 catch-up — 一眼看完「我讀到哪、該記得誰、還有什麼沒解開」
     # 物理意義: 之後要繼續讀同一本書時, 先跑這個喚回 context, 不必重讀整本
@@ -683,6 +809,10 @@ def cmd_resume(args):
 
     nxt = int(pr.get("current_chapter", 0)) + 1
     print(f"\n→ 下一步: 讀第 {nxt} 章")
+
+    # --up-to N: 逐章跨分支 catch-up (slug-gate 並陳分叉); persona = 當前 --reader
+    if getattr(args, "up_to", None):
+        _print_catchup(book, _ACTIVE_READER, int(args.up_to), bool(getattr(args, "full", False)))
 
     # 區塊：main 視角時列出其他讀者的分支筆記 (初始讀者可參考)；分支視角時指回 main
     if not _ACTIVE_READER:
@@ -1900,6 +2030,9 @@ def build_parser():
     a = sub.add_parser("resume", help="續讀前 catch-up:進度 + 人物現況 + 未解伏筆")
     a.add_argument("--book", required=True)
     _add_reader_arg(a, with_continue=True)
+    a.add_argument("--up-to", type=int, default=None,
+                   help="逐章跨分支 catch-up:撈 ch01~ch(N-1) 各章最佳來源(persona分支→主線→其他分支);slug 分歧則並陳分叉")
+    a.add_argument("--full", action="store_true", help="--up-to 時印每章全文(預設精簡:章名+摘要+伏筆)")
     a.set_defaults(func=cmd_resume)
 
     a = sub.add_parser("branches", help="列出某書的閱讀分支 (main 初始讀者 + 各讀者分支筆記)")

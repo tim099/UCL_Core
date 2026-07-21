@@ -93,6 +93,7 @@ AGENT_TO_BANK = {
     "antigravity": "antigravity-da-xiaojie",
     "Zeta": "Zeta-da-xiaojie",
     "gemini": "gemini",   # T07.6 trailhead 補 (per _registry_meta.json agent_banks canonical)
+    "Luna": "Luna",       # 2026-07-20 補 (kaguya 月之公主 agent; sync 自 _registry_meta.json agent_banks canonical)
 }
 
 SALARY_RATE_PER_MIN = 2          # tokens per minute

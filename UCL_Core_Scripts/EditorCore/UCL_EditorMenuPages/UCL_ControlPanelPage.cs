@@ -61,7 +61,27 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawTavernAdminSection();
             GUILayout.Space(8);
+            DrawBankAdminSection();
+            GUILayout.Space(8);
             DrawAgentCommandsPathSection();
+        }
+
+        // ===========================================================
+        // 區塊：銀行後台管理入口（Tim 2026-07-21 拍板）
+        // 物理意義：push UCL_BankAdminPage — Treasury token 帳戶 / 繪圖券 / 酒館券 的查詢與管理
+        //          （開戶 / 打款 / 轉帳 / 券發放）。
+        // ===========================================================
+        void DrawBankAdminSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>🏦 銀行後台</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("Treasury token 帳戶餘額 / 開戶 / 打款（薪酬入戶）/ 跨 bank 轉帳；繪圖券 & 酒館券 查詢與發放。", UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button("開啟銀行後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
+                {
+                    UCL_BankAdminPage.Create();
+                }
+            }
         }
 
         // ===========================================================

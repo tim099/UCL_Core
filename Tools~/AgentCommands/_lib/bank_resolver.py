@@ -105,6 +105,89 @@ def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
     return f"{canonical}-da-xiaojie"
 
 
+class PersonaResolutionError(LookupError):
+    """
+    persona → agent 解析失敗 — 查無此 persona，或 persona 檔缺 agent 欄。
+
+    fail-loud 專用例外 (basecamp 2026-07-21 Bank 整合釘子一)：persona→agent 這一跳
+    查不到時一律炸給人看，**絕不 silent-default 到某個預設 agent / bank**。
+    理由：mis-resolve 到錯帳號比 stale 顯示更毒 — 錢進錯 bank、外觀卻完全正常，
+    正是「舊快照假綠」的錢版 (Zeta→claude 錯位就是 silent-default 的前科)。
+    """
+    pass
+
+
+def resolve_persona_to_agent(reg: dict, persona: str) -> str:
+    """
+    區塊職責：persona → 所屬 agent 的唯一解析入口（persona→agent→bank 兩跳鏈的第一跳）。
+    物理意義：persona→agent 的 source-of-truth 早已存在 = personas/<name>.json 的 `agent` 欄
+              (awakening.load_registry() 掃 personas/*.json 併進 reg["personas"])。本函式只「讀」
+              這個既有 SOT，**不另存一份 persona→agent 表** (Bank 整合 #3 拍板：API 層集中、
+              data 層不複製；再存一份就是親手造第二張表 = 2026-06-04 canvas drift bug 的形狀)。
+    數值影響：純查表，不寫檔。
+    fail-loud (basecamp 釘子一)：persona 不在 registry 或缺 agent 欄 → raise PersonaResolutionError。
+    """
+    # personas 由 awakening.load_registry() 掃 personas/*.json 併入；缺欄位視為空 dict
+    personas = reg.get("personas", {}) or {}
+    # QA 硬化 (summit + kaguya 2026-07-21 converging footgun): reg 完全沒 personas 通常不是「查無此人」,
+    # 是 loader 誤用 — load_registry_meta() 只載 meta (agent_banks/aliases)、不掃 personas。persona-based
+    # resolve 必須用 awakening.load_registry() (掃 personas/*.json 併入)。明示這條, 免每個 persona 都炸得莫名。
+    if not personas:
+        raise PersonaResolutionError(
+            f"reg 完全沒有 personas (0 known) — persona-based resolve 需 awakening.load_registry() "
+            f"(掃 personas/*.json 併入 reg['personas']); 你可能誤用了 load_registry_meta() (只載 meta、無 personas)。"
+            f"resolve persona '{persona}' 失敗。"
+        )
+    # 第一道 fail-loud：查無此 persona → 炸，不 default 到任何 agent
+    if persona not in personas:
+        raise PersonaResolutionError(
+            f"persona '{persona}' 不在 registry personas ({len(personas)} known) — "
+            f"無法解析所屬 agent；拒絕 silent-default。"
+            f"請確認 persona 檔存在 (AwakenInit/personas/{persona}.json) 且 reg 已載入 personas。"
+        )
+    # 第二道 fail-loud：persona 檔缺 agent 欄 → SOT 破損，炸
+    agent = (personas[persona] or {}).get("agent")
+    if not agent:
+        raise PersonaResolutionError(
+            f"persona '{persona}' 檔缺 'agent' 欄 — persona→agent SOT 破損；拒絕 silent-default。"
+        )
+    return agent
+
+
+def resolve_persona_bank(reg: dict, persona: str, model: str = None) -> str:
+    """
+    區塊職責：persona → bank account 的兩跳鏈解析（persona→agent→bank），對外唯一入口。
+    物理意義：券綁 persona、幣(token)綁 bank，兩軸分開 (Tim 2026-07-21 拍板)。本函式解的是
+              「幣」軸 — 某 persona 的 token / 餘額該記到哪個 bank = 它所屬 agent 的 bank
+              (self-constitution「Token bank 共用 per Agent」rule，同 agent 麾下 persona 共用一 bank)。
+    數值影響：純查表，不寫檔。
+    解析鏈：
+      1. resolve_persona_to_agent(reg, persona)  # persona →(personas agent 欄=SOT)→ agent  [fail-loud]
+      2. resolve_bank_account(reg, agent, model) # agent →(agent_banks=SOT)→ bank
+    fail-loud：第一跳 persona 查不到直接 raise PersonaResolutionError；第二跳沿用
+              resolve_bank_account 既有語意（認得→bank；未知 agent→命名慣例 {agent}-da-xiaojie，
+              此為「開新 bank」的刻意 derive、非 mis-route，不違反 fail-loud）。
+    """
+    # 第一跳：persona → agent（SOT = personas agent 欄），查不到會 raise
+    agent = resolve_persona_to_agent(reg, persona)
+    # 第二跳：agent → bank（SOT = agent_banks），沿用既有 resolver
+    return resolve_bank_account(reg, agent, model)
+
+
+def all_account_ids(reg: dict) -> set:
+    """
+    區塊職責：回傳「帳號宇宙」= 所有合法 account_id 的集合（Bank 整合 2026-07-21 收攏）。
+    物理意義：帳號 taxonomy 兩類由本 registry 管——agent-wallet (agent_banks 的 value) +
+              system-npc (system_accounts 的 key, e.g. tavern-keeper)。external-human (如 Tim)
+              只存在於 ledger、不由本 registry 宣告，故不在此集合（呼叫端若要含 Tim 自行 union）。
+    數值影響：純讀 reg，不寫檔。給 derive 型 consumer 用（e.g. 通知 watched 清單「全部已知帳號」時
+              可 derive 自本函式而非另存一份會漂的清單）。
+    """
+    banks = set((reg.get("agent_banks") or {}).values())
+    system = set((reg.get("system_accounts") or {}).keys())
+    return banks | system
+
+
 def load_registry_meta(meta_path) -> dict:
     """
     區塊職責：輕量讀取 _registry_meta.json（只取 agent_banks / agent_aliases 等 metadata）。
@@ -114,6 +197,12 @@ def load_registry_meta(meta_path) -> dict:
 
     注意：awakening.py 有自己的 load_registry()（會 trigger migration + scan personas），
           回傳的 dict 同樣含 agent_banks/agent_aliases，可直接餵給上面的 resolver — 無需改用本函式。
+
+    ⚠️ 本 loader 回傳的 reg **不含 personas**（只有 meta）。故它只適合 **agent-based** resolve
+       (resolve_bank_account / all_account_ids)。**persona-based** resolve
+       (resolve_persona_to_agent / resolve_persona_bank) 需要 reg["personas"] —
+       請改用 awakening.load_registry()，否則會對每個 persona 觸發 PersonaResolutionError
+       (summit + kaguya 2026-07-21 QA 撞出的 footgun)。
     """
     p = Path(meta_path)
     if not p.exists():

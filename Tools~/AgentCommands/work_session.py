@@ -88,13 +88,25 @@ _PERSONAS_DIR = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "personas"
 # run_cmd.py is sibling — UCL_Core/Tools~/AgentCommands/run_cmd.py.
 _RUN_CMD = _HERE / "run_cmd.py"
 
-AGENT_TO_BANK = {
-    "claude-code": "claude-da-xiaojie",
-    "antigravity": "antigravity-da-xiaojie",
-    "Zeta": "Zeta-da-xiaojie",
-    "gemini": "gemini",   # T07.6 trailhead 補 (per _registry_meta.json agent_banks canonical)
-    "Luna": "Luna",       # 2026-07-20 補 (kaguya 月之公主 agent; sync 自 _registry_meta.json agent_banks canonical)
-}
+# ─── agent → bank 解析 (單一 SOT) ───────────────────────────────────────
+# 區塊職責: agent 字串 → Treasury bank account id，一律走共用 resolver 讀 _registry_meta.json。
+# 物理意義: agent_banks 的唯一真相在 AwakenInit/_registry_meta.json；本檔「不」自帶硬編表。
+#          (2026-07-21 calli 收斂: 舊硬編 AGENT_TO_BANK 缺 Luna → kaguya stream-watch 抱 AGENT_TO_BANK miss,
+#           per kaguya 證物 A + summit「快取≠真相」家族; 對齊 awakening.py / canvas.py 同一 resolver)。
+# 數值影響: 新增 agent 只改 _registry_meta.json，本檔零改動即同步；未知 agent 走命名慣例 {canonical}-da-xiaojie。
+_REGISTRY_META_PATH = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "_registry_meta.json"
+
+import importlib.util as _ilu  # 顯式檔案路徑載入共用 resolver，避開 _lib package 名稱相撞 (同 awakening.py idiom)
+_BANK_RESOLVER_PATH = _HERE / "_lib" / "bank_resolver.py"
+_br_spec = _ilu.spec_from_file_location("_ucl_bank_resolver_ws", _BANK_RESOLVER_PATH)
+_br_mod = _ilu.module_from_spec(_br_spec)
+_br_spec.loader.exec_module(_br_mod)
+
+
+def _resolve_bank(agent: str) -> str:
+    """agent → bank account id，讀 _registry_meta.json 單一 SOT (fallback 命名慣例 {canonical}-da-xiaojie)。"""
+    reg = _br_mod.load_registry_meta(_REGISTRY_META_PATH)
+    return _br_mod.resolve_bank_account(reg, agent)
 
 SALARY_RATE_PER_MIN = 2          # tokens per minute
 VOUCHER_INTERVAL_MIN = 5         # 1 voucher per N minutes
@@ -132,7 +144,7 @@ def resolve_persona(name: str) -> dict | None:
     except Exception:
         return None
     agent = p.get("agent", "")
-    bank = AGENT_TO_BANK.get(agent)
+    bank = _resolve_bank(agent) if agent else None
     return {
         "persona": name,
         "agent": agent,

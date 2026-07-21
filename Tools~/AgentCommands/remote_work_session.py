@@ -56,7 +56,6 @@ from work_session import (  # noqa: E402
     fire_salary_credit,
     resolve_persona,
     infer_caller_persona,
-    AGENT_TO_BANK,
     _REPO_ROOT,
 )
 

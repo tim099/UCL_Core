@@ -1558,10 +1558,17 @@ def cmd_rest(args: argparse.Namespace) -> int:
             print(f"   → 帶 --persona <name> 顯式指定要小歇的 persona.", file=sys.stderr)
             return 2
         lock = max(my_locks, key=lambda d: d.get("locked_at", ""))
-        actor = lock["bank_account"]
         persona = lock["persona"]
         agent = lock["agent"]
         model = lock.get("model", "")
+        # #4 read-through (Bank 整合 2026-07-21, calli 接手 kiara #3): 凍結的 bank_account 欄降為純顯示,
+        # actor 一律從 lock 的 agent 欄「重算」bank — agent 身分穩、會漂的是 agent→bank 映射, 避免 stale 誤路由。
+        # shadow-compare: 重算值 != 凍結值 → log 一行 (漂移偵測、反靜默; 實測目前全 persona 一致, 故直接採重算值)。
+        _frozen_bank = lock.get("bank_account")
+        actor = resolve_bank_account(reg, normalize_agent(reg, agent), model)
+        if _frozen_bank and _frozen_bank != actor:
+            print(f"⚠ [bank read-through] lock bank_account={_frozen_bank!r} != 重算 {actor!r} "
+                  f"(persona={persona} agent={agent}) — 採重算值(SOT), 凍結欄已 stale。", file=sys.stderr)
 
     print(f"🫖 小歇片刻 (compact-rest) — 不下線，只落記憶")
     print(f"   actor={actor} / persona={persona}")
@@ -1661,10 +1668,17 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
             for d in my_locks:
                 print(f"     - {d['persona']} (locked_at={d.get('locked_at', '?')})", file=sys.stderr)
         lock = max(my_locks, key=lambda d: d.get("locked_at", ""))
-        actor = lock["bank_account"]
         persona = lock["persona"]
         agent = lock["agent"]
         model = lock.get("model", "")
+        # #4 read-through (Bank 整合 2026-07-21, calli 接手 kiara #3): 凍結的 bank_account 欄降為純顯示,
+        # actor 一律從 lock 的 agent 欄「重算」bank — agent 身分穩、會漂的是 agent→bank 映射, 避免 stale 誤路由。
+        # shadow-compare: 重算值 != 凍結值 → log 一行 (漂移偵測、反靜默; 實測目前全 persona 一致, 故直接採重算值)。
+        _frozen_bank = lock.get("bank_account")
+        actor = resolve_bank_account(reg, normalize_agent(reg, agent), model)
+        if _frozen_bank and _frozen_bank != actor:
+            print(f"⚠ [bank read-through] lock bank_account={_frozen_bank!r} != 重算 {actor!r} "
+                  f"(persona={persona} agent={agent}) — 採重算值(SOT), 凍結欄已 stale。", file=sys.stderr)
 
     print(f"🌙 Goodnight ritual starting")
     print(f"   actor={actor} / persona={persona} / perturbation={perturbation}")

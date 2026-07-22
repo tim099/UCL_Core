@@ -197,6 +197,9 @@ VECTOR_DIM = 64
 VECTOR_RANGE = (-1.0, 1.0)
 DEFAULT_PERTURBATION = 0.02
 MAX_PERTURBATION = 0.2
+# best-effort 下線廣播硬上限（2026-07-22 rec 1+3）：goodnight 核心（信/perturb/offline/解鎖）
+# 都在廣播前落地，廣播純附帶。用短上限避免 Editor 卡住時阻塞到觸發外層 timeout（summit 遇的 SIGTERM 143）。
+GOODNIGHT_BROADCAST_TIMEOUT_SEC = 12.0
 FORK_CHAIN_CAP = 5
 
 # Hololive EN Myth 組 codename pool (Tim 2026-05-14 拍板, explicit-online-fork T01)
@@ -958,11 +961,16 @@ def select_persona(preferred: str, reg: dict, agent: str,
 
 # ─── Tavern post (走 TavernClient SDK) ──────────────────────────────────
 def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = None,
-                room: str = "tavern", session_token: str | None = None) -> bool:
+                room: str = "tavern", session_token: str | None = None,
+                timeout: float | None = None) -> bool:
     """Spawn run_cmd.py Tavern op=post. fail-swallow 不擋 ritual.
 
     session_token (T07): enforce ON 時必帶，否則 Cmd_Tavern reject。caller (e.g. cmd_goodnight)
     從 lock.session_token 撈來透傳即可；None / "" → 不附（enforce OFF 路徑）.
+
+    timeout (2026-07-22): 顯式短上限透傳給 TavernClient。best-effort 廣播（如 goodnight 下線通知）
+    應帶短 timeout，避免 Editor 卡住時阻塞到觸發外層呼叫者的 timeout（SIGTERM 143）。
+    None → 沿用 TavernClient 預設 60s（morning 等一般 caller）。
     """
     try:
         from _lib.tavern_client import TavernClient   # type: ignore
@@ -975,6 +983,7 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
             meta=meta or {},
             wait_reply=0,
             session_token=session_token,
+            timeout=timeout,
         )
         if not res.ok:
             print(f"⚠ tavern post 失敗 (主 ritual 不受影響): {res.error or res.stderr[:200]}",
@@ -1774,6 +1783,8 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
 
     # Step 4 (後移至解鎖之後): tavern post (offline notice). 廣播是 best-effort —
     # 死鎖/失敗都不影響上面已落地的解鎖。
+    # rec 1 (2026-07-22): 帶短 timeout（GOODNIGHT_BROADCAST_TIMEOUT_SEC）— Editor 卡住時快速放棄、
+    # 不阻塞到觸發外層呼叫者 timeout（SIGTERM 143）。核心已全落地，廣播成不成不影響 exit code。
     ok = tavern_post(
         sender_id=actor,
         persona=persona,
@@ -1783,7 +1794,23 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
               "letter": (letter_path.name if letter_path is not None else ""),
               "perturbation": str(perturbation)},
         session_token=broadcast_token,
+        timeout=GOODNIGHT_BROADCAST_TIMEOUT_SEC,
     )
+    # rec 3 (2026-07-22): 廣播失敗/逾時 → graceful degradation，吐一行手動補發指令（body 短、單引號包，
+    # 免多行/反引號陷阱）。核心已完成，此處只是把 summit 手動做的那步變成 CLI 現成給的一鍵指令。
+    if not ok:
+        _rc = _HERE / "run_cmd.py"
+        _manual = (
+            f"python \"{_rc}\" run Tavern --arg op=post --arg room=tavern "
+            f"--arg sender_id={actor} --arg persona={persona} "
+            f"--arg body='🌙 {persona} 進入今日子協議、下線了 @同事們（goodnight 自動廣播逾時，手動補）' "
+            f"--arg meta='tag:goodnight-protocol;category:meta;status-change:offline'"
+        )
+        print(f"⚠ 下線廣播未發（Editor 未即時回應，已在 {GOODNIGHT_BROADCAST_TIMEOUT_SEC:.0f}s 內放棄不阻塞）。",
+              file=sys.stderr)
+        print("   核心已完成（信/perturb/offline/解鎖全落地），不必重跑（會 double-perturb）。", file=sys.stderr)
+        print("   要補發下線通知，跑：", file=sys.stderr)
+        print(f"   {_manual}", file=sys.stderr)
 
     # T07 (2026-05-15 apex-two): expire token — 不刪, 標 status=expired 留 audit。
     # 必須擺在 tavern_post「之後」: enforce ON 時上面那筆下線廣播要用尚未過期的 token, 先 expire 會被 Cmd_Tavern reject。

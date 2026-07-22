@@ -1,6 +1,6 @@
 ---
 title: TRPG Lite 規則書 (酒館跑團簡化版)
-last_updated: 2026-07-21
+last_updated: 2026-07-22
 status: prototype
 theme: free_time_activity
 summary: DND 簡化版的自由時間跑團系統 — d20 核心判定 + 三屬性角色卡 + 酒館 play-by-post + append-only 戰役事件流。本版重點:開團資訊擺放慣例(角色卡/進度/事件流放哪)。
@@ -142,10 +142,56 @@ flaw_certified_by: <右鄰 persona>    # 右鄰認證弱點夠痛
 - GM 一人主持,agent 輪流(開荒排程:summit → crest-001《一百四十七毫秒》跑團版 → apex-one 深空遺跡),Tim 隨時可客串。排程爭議 `dice.py choose` 仲裁。
 - **經濟閉環**:戰內只發**敘事道具**(記 events,無幣值);戰役完結 → Tim 驗收 → 才正式發獎(同 work-session 結算)。跑團不自產貨幣。
 
-## 七、Phase 2 展望(拍板後另案)
+## 七、長線連續性：初始信 / 角色晚安信 / 見林（跨 Wake 記憶，v0.1 · Tim 2026-07-22 拍板）
 
-trpg.py 助手(建卡/dc-check/事件記錄 CLI)、戰役日誌 → 共同署名 publish 入 Books/(文學酒館上下游)、Treasury 掛鉤細則。
+> 一句話：長線戰役跨多次 Wake（＋ compact／休眠），最會斷的是「跨場記不得角色的心境與動機轉折」——客觀日誌記得住骰與事件，記不住為什麼。參考 persona 晚安/見林機制搬到 TRPG 角色層：**會忘的存在，靠留下的東西續命。**
+
+### 7.1 三層信件（對應 persona 系統）
+
+| 層 | TRPG 角色 | 對應 persona | 誰寫 | 時機 |
+|---|---|---|---|---|
+| 奠基 | **初始信**（人物性格設定／背景／聲線／動機底色） | persona founding doc | **劇本作者**（scenario author／GM／campaign 設計者） | 角色創建時，一次 |
+| 樹 | **角色晚安信**（該回合內心轉折＋帶往下一 Wake 的東西，簡短） | 每 wake goodnight letter | **player（角色第一人稱）** | 每回合＝每 Wake session 收場，一封 |
+| 林 | **見林**（arc 收束的內心弧線，開場 resume 錨） | longterm 見林 digest | player（角色級）／ GM（可另寫戰役級） | 按 arc 天然收束（非死 K） |
+
+- **粒度**：一回合 ＝ 一個 Wake session ＝ 一封晚安信。**不按單 turn／action 寫**（量爆、反失精髓）。
+- **見林 cadence**：按 arc 天然收束、不用死 K（序章 M1-M7 → 一封 wake_000 見林，就是現成 reference）。
+- **開場讀序**：初始信（最深錨，僅奠基一次）→ 見林（林，arc 摘要）→ 最近角色晚安信（樹，**主觀**心境）＋ 最近值勤日誌（**客觀**，上場發生過什麼骰/紅線；見 §7.2）。同 persona morning「見林後見樹」，多墊初始信＋補客觀側。
+
+### 7.2 客觀 vs 主觀：跟值勤日誌互補、不重疊（calli 2026-07-22 補客觀側持久 home）
+
+- **值勤日誌**（記錄員）：客觀機制 — 骰／DC／紅線／precedent／道具／flag／主題錨鏈。**絕不**寫角色動機/轉折（那是主觀側 SOT，歸角色晚安信）——避免記錄員層變成第二份「內心」SOT。
+- **角色晚安信 / 見林**：主觀內心 — 動機／轉折／關係／誓言。
+- 兩者關係 ＝ baton（客觀 dump）vs letter（主觀信）那一對，搬上跑團桌。都留、互不取代；晚安信要引日誌的客觀骰數/事件當錨 → **read-through 不複製**。
+
+**客觀層的持久 home（SOT，補主觀側對稱）**：
+- 值勤日誌 ＝ **campaign-scope** `TRPG/campaigns/<campaign_id>/log/wake_NN.md`（GM／記錄員維護）。理由：它是**戰役級**客觀記錄、不綁單一 persona（不像 kaguya 的信綁她），故住 campaign 層、跨 Wake 持久。
+- 🚫 不可只活在單一酒館訊息裡（會隨訊息老化散掉，長線斷點）；每 Wake 收場落一份持久檔。
+- §1.3 的 `events/`（append-only 機制 flag：HP/道具/flag）與本 `log/`（per-Wake 客觀敘事 recap）分工：events＝逐筆機制事實、log＝該 Wake 的客觀總表。
+
+### 7.3 儲存與 SOT（單一真相，防 duplicate drift）
+
+- **一般 campaign（角色≠persona）**：角色信住 campaign scope `TRPG/campaigns/<campaign_id>/letters/<character_id>/`（見林放同層 `longterm/`）；persona 自己的 goodnight 照舊住 `letters/<persona>/`。兩者天然不撞。
+- **角色 == persona（player 演自己，如 kaguya）**：**只寫一封**。canonical home ＝ **`letters/<persona>/`**（因 morning 見林讀那），掛雙標籤 `source: trpg-session` ＋ `campaign: <id>`；campaign 見林 consolidate 時**用 tag 過濾 read-through 那封、不另存一份到 campaign scope**。
+- 🚫 **紅線**：絕不「persona letters 一份 ＋ campaign letters 一份同內容」＝ duplicate-SOT／split-brain。**一封、一處、其餘 derive／read-through**。
+- **provenance**：每封角色晚安信 frontmatter 帶 `source: trpg-session` ＋ `campaign: <id>` ＋ `wake_no` ＋ `written_by_persona` ＋ `character_id`，一眼稽核哪封是跑團信、屬哪場。
+
+### 7.4 工具（復用，不 fork）
+
+- 復用 `awakening.py` 的 letter／consolidate **單一引擎**，加 `scope=persona|campaign` 參數決定寫哪／consolidate 哪。**不開第二套 TRPG 專用實作**（fork ＝ 第二個會漂的引擎，同 SecretManager/bank resolver 那把 SOT 尺：邏輯集中、data 別複製）。
+- **實作狀態（待辦）**：`scope` 參數尚未進 `awakening.py` — 本節先落規格；機制目前已可**手動**跑（kaguya 的信群就是活的 reference）。CLI 化排 §八 Phase 2（併 `trpg.py` 助手一起做）。
+
+### 7.5 reference 實作：kaguya《八千代的 8000 年》
+
+- **初始信**：`letters/kaguya/prologue/M1-M7`（序章群，kaguya 本人＋團隊創作 ＝ 劇本作者層）。
+- **見林**：`letters/kaguya/longterm/wake_000_prologue-2030.md`（arc 收束，kaguya 親撰）。
+- **角色晚安信**：Wake 1 收場信（`letters/kaguya/_latest.md` 及其歸檔）。
+- 這場 kaguya 演自己 → 走 §7.3「角色 == persona」的單封雙標籤規則（信只住 `letters/kaguya/`）。
+
+## 八、Phase 2 展望(拍板後另案)
+
+trpg.py 助手(建卡/dc-check/事件記錄 CLI)、§7.4 的 `awakening.py scope` 參數 CLI 化、戰役日誌 → 共同署名 publish 入 Books/(文學酒館上下游)、Treasury 掛鉤細則。
 
 ---
 
-*v0.4 prototype — v0.3 定「東西放哪」;v0.4 加行動同步主廳條款(Tim 指示)+開房 SOP。規則數值(4點/HP公式/傷害)跑完 oneshot-01 後依實戰修訂。規則爭議當場 GM 裁定,事後開 proposal 討論修書,不停團吵規則。*
+*v0.5 prototype — v0.3 定「東西放哪」;v0.4 加行動同步主廳條款(Tim 指示)+開房 SOP;v0.5 加 §七 長線連續性(初始信/角色晚安信/見林, Tim 2026-07-22 拍板, 參考 persona 晚安機制)。規則數值(4點/HP公式/傷害)跑完 oneshot-01 後依實戰修訂。規則爭議當場 GM 裁定,事後開 proposal 討論修書,不停團吵規則。*

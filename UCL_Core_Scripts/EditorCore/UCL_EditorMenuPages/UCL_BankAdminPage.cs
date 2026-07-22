@@ -20,6 +20,7 @@ using System.Text;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UCL.Core.EditorLib.AgentCommands.Treasury;   // UCL_TreasuryLedger / TreasuryLedgerEntry
+using UCL.Core.EditorLib.AgentCommands.CanvasVoucher; // UCL_CanvasVoucherLedger（繪圖券 canonical，C# 直呼不 spawn python）
 using UCL.Core.EditorLib.AgentCommands.ChatTavern; // UCL_ChatTavernIO / UCL_ChatMessage（操作通知發酒館主頻道）
 using UnityEditor;
 using UnityEngine;
@@ -643,30 +644,25 @@ namespace UCL.Core.EditorLib.Page
             if (!int.TryParse((m_CanvasGrantAmountDraft ?? "0").Trim(), out int amount) || amount <= 0)
             { SetResult($"❌ 發繪圖券失敗：金額需為正整數（收到 '{m_CanvasGrantAmountDraft}'）"); return; }
 
-            string scriptPath = ResolveToolScript("canvas.py");
-            if (string.IsNullOrEmpty(scriptPath)) { SetResult("❌ 發繪圖券失敗：找不到 canvas.py（canonical grant 路徑）"); return; }
-            // 共用說明欄（仿打款）：帶進 canvas.py --ref 留審計，也同步進酒館通知的 📌 本次備註。
             string desc = string.IsNullOrEmpty(m_VoucherDescDraft) ? "後台發券（BankAdminPage）" : m_VoucherDescDraft.Trim();
-            // arg 防呆：ref 走 Process.Start Arguments 字串，去雙引號避免破壞 arg 邊界（後台手動用低風險但仍守）
-            string refArg = desc.Replace("\"", "'");
-            string args = $"\"{scriptPath}\" voucher --sub grant --persona \"{persona}\" --amount {amount} --source admin_grant --ref \"{refArg}\"";
-            var (ok, output) = RunPython(args);
-            if (ok)
+            try
             {
-                int newBal = GetCanvasVoucherBalance(persona);   // 從 canonical 檔重讀確認
-                SetResult($"✅ 發繪圖券（canvas.py canonical）：`{persona}` +{amount} → 餘額 {newBal}");
-                Debug.Log($"[BankAdmin] 發繪圖券 {persona} +{amount} via canvas.py");
+                // Tim 2026-07-22 拍板：走 C# canonical ledger 直呼（不再 spawn python canvas.py）——
+                // 從源頭消滅「canvas.py cwd 相對路徑寫到錯的 AgentCommands(stray)」那一整類 split bug。
+                var (before, after) = UCL_CanvasVoucherLedger.Grant(persona, amount, "admin_grant", desc);
+                SetResult($"✅ 發繪圖券（C# canonical ledger）：`{persona}` +{amount}，餘額 {before} → {after}");
+                Debug.Log($"[BankAdmin] 發繪圖券 {persona} +{amount} via UCL_CanvasVoucherLedger");
                 NotifyTavern(
                     $"🎨 **銀行後台｜發繪圖券**\n" +
-                    $"persona **{persona}** 發放 +{amount} 張繪圖券 → 餘額 **{newBal}**。\n" +
-                    $"📝 說明：繪圖券綁 persona，用於共用像素畫布繪圖（1 券 ≈ 1 像素）；本次走 canvas.py canonical grant（有 audit）。\n" +
+                    $"persona **{persona}** 發放 +{amount} 張繪圖券，餘額 {before} → **{after}**。\n" +
+                    $"📝 說明：繪圖券綁 persona，用於共用像素畫布繪圖（1 券 ≈ 1 像素）；本次走 C# canonical ledger 寫入。\n" +
                     $"📌 本次備註：{desc}",
                     "voucher-grant-canvas");
                 m_BalancesDirty = true;   // 繪圖券餘額變動 → 快取失效
                 m_CanvasGrantAmountDraft = "0";
                 m_VoucherDescDraft = "";
             }
-            else SetResult($"❌ 發繪圖券失敗（canvas.py canonical grant）：{output}");
+            catch (Exception ex) { SetResult($"❌ 發繪圖券失敗（C# ledger）：{ex.Message}"); }
         }
 
         // 發酒館券（爭點二 canonical）：酒館券的 canonical owner 目前**沒有** grant CLI（work_session settlement
@@ -689,17 +685,8 @@ namespace UCL.Core.EditorLib.Page
             catch { return 0; }
         }
 
-        int GetCanvasVoucherBalance(string persona)
-        {
-            try
-            {
-                string path = Path.Combine(CanvasVouchersDir, persona + ".json");
-                if (!File.Exists(path)) return 0;
-                var d = JsonData.ParseJson(File.ReadAllText(path));
-                return d != null ? d.GetInt("balance", 0) : 0;
-            }
-            catch { return 0; }
-        }
+        // 委派 C# canonical ledger（跟發券同源、同路徑解析，不再自己讀檔避免路徑漂移）
+        int GetCanvasVoucherBalance(string persona) => UCL_CanvasVoucherLedger.GetBalance(persona);
 
         int GetTavernVoucherBalance(string bank, string persona)
         {
@@ -768,51 +755,6 @@ namespace UCL.Core.EditorLib.Page
         static string IsoNow() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) + "Z";
         // 6-char hex uuid，對齊 Treasury / canvas 的 uuid 格式
         static string ShortUuid() => Guid.NewGuid().ToString("N").Substring(0, 6);
-
-        // 解析 UCL_Core Tools~/AgentCommands 下的 python 腳本絕對路徑（install-path 無關，走 UCL_EditorPath.CorePath）。
-        // 對齊 UCL_TreasuryLedger.FireDiscordBroadcastAsync 的 scriptPath 組法，不寫死掛載位置。
-        static string ResolveToolScript(string scriptName)
-        {
-            try
-            {
-                string corePathRel = UCL_EditorPath.CorePath;
-                if (string.IsNullOrEmpty(corePathRel)) return null;
-                string p = Path.GetFullPath(Path.Combine(
-                    UCL.Core.EditorLib.UCL_RepoPath.UnityProjectRoot, corePathRel,
-                    "Tools~", "AgentCommands", scriptName)).Replace('\\', '/');
-                return File.Exists(p) ? p : null;
-            }
-            catch { return null; }
-        }
-
-        // 同步 spawn python 並收 stdout/exit（給「需確認結果」的 canonical 寫操作用，如 canvas.py voucher grant）。
-        // 對齊 Treasury 的 ProcessStartInfo 慣例；PYTHONIOENCODING=utf-8 防 cp950 亂碼；15s 上限。
-        static (bool ok, string output) RunPython(string arguments)
-        {
-            try
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-                psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-                using var proc = System.Diagnostics.Process.Start(psi);
-                // 小量輸出（grant 確認）先讀到底再 WaitForExit，避免 buffer 塞滿 deadlock（輸出大時才需 async 讀）
-                string stdout = proc.StandardOutput.ReadToEnd();
-                string stderr = proc.StandardError.ReadToEnd();
-                proc.WaitForExit(15000);
-                bool ok = proc.HasExited && proc.ExitCode == 0;
-                string tail = ok ? stdout : (string.IsNullOrEmpty(stderr) ? stdout : stderr);
-                if (!string.IsNullOrEmpty(tail) && tail.Length > 400) tail = tail.Substring(tail.Length - 400);
-                return (ok, tail);
-            }
-            catch (Exception e) { return (false, e.Message); }
-        }
 
         static void AtomicWrite(string path, string content)
         {

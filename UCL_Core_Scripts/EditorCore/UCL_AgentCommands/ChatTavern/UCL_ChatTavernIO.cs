@@ -1052,11 +1052,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string scriptPath = string.IsNullOrEmpty(corePathRel) ? null
                     : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel,
                         "Tools~", "AgentCommands", "PromptQueue", "notify_discord.py")).Replace('\\', '/');
-                if (scriptPath == null || !File.Exists(scriptPath))
-                {
-                    scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_discord.py").Replace('\\', '/');
-                }
-                if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
+                // 2026-07-21 shim 移除: 主專案 PromptQueue/notify_discord.py fallback 已刪 (該 shim 本就轉發到
+                // 上面的 UCL_Core notify_discord.py)。UCL_Core 缺 → silent skip。
+                if (scriptPath == null || !File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
 
                 // 區塊職責：T0.5 single-flight 前置檢查 — 上一隻 mirror python 仍存活且未逾齡就跳過本次 spawn
                 // 物理意義：把並發 mirror python 上限釘死在 1，根絕 2026-07-19 那種 3578 隻累積 OOM 事故

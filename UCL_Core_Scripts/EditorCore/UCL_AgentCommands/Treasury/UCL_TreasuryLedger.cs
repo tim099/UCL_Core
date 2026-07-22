@@ -241,22 +241,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 string scriptPath = string.IsNullOrEmpty(corePathRel) ? null
                     : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel,
                         "Tools~", "AgentCommands", "PromptQueue", "notify_discord.py")).Replace('\\', '/');
-                if (scriptPath == null || !File.Exists(scriptPath))
-                {
-                    scriptPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue/notify_treasury.py").Replace('\\', '/');
-                    if (!File.Exists(scriptPath)) return;   // notify 系統未安裝 silent skip
-                    var psiShim = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "python",
-                        Arguments = $"\"{scriptPath}\" --entry-file \"{entryFilePath}\" --quiet",
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = false,
-                        RedirectStandardError = false,
-                    };
-                    System.Diagnostics.Process.Start(psiShim);
-                    return;
-                }
+                // 2026-07-21 shim 移除: 主專案 PromptQueue/notify_treasury.py fallback 已刪 (該 shim 本就轉發到
+                // 上面的 UCL_Core notify_discord.py, UCL_Core 缺席時 shim 也失效)。UCL_Core 缺 → silent skip。
+                if (scriptPath == null || !File.Exists(scriptPath)) return;   // notify 系統未安裝 silent skip
 
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {

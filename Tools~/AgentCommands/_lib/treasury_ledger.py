@@ -154,11 +154,13 @@ def backfill_balance_fields(entry_path: str | Path) -> bool:
 # 廣播觸發 (backfill → spawn notify_treasury.py)
 # ===========================================================
 def fire_broadcast(entry_path: str | Path, *, quiet: bool = True) -> None:
-    """先補 null balance, 再 fire-and-forget spawn notify_treasury.py 廣播該 entry。
+    """先補 null balance, 再 fire-and-forget 觸發一次 Discord mirror run (廣播新 entry)。
 
-    物理意義: notify_treasury.py 是 Discord POST entry script, 依設計留主專案 PromptQueue/ canonical
-              (C# UCL_TreasuryLedger + tavern_paths 都 hardcode 該路徑, 不搬)。本 lib 負責「算對 + 接線」。
-    安全: notify_treasury.py 不存在 / python 缺 → silent skip, 絕不擋 caller 主流程。
+    物理意義: 直接呼叫 UCL_Core 自己的 notify_discord.py --mode tavern (sibling, 同 submodule 內),
+              不再繞主專案 PromptQueue/notify_treasury.py shim (2026-07-21 shim 移除, 去掉
+              「UCL_Core shared lib 反向依賴 consumer 專案」的耦合)。--mode tavern 觸發統一 mirror run,
+              新 entry 由 treasury pull adapter 依 cursor 冪等撿走 (同 entry 不重複發送)。
+    安全: notify_discord.py 不存在 / python 缺 → silent skip, 絕不擋 caller 主流程。
     """
     entry_path = Path(entry_path)
     if not entry_path.exists():
@@ -171,22 +173,22 @@ def fire_broadcast(entry_path: str | Path, *, quiet: bool = True) -> None:
         if not quiet:
             print(f"[treasury_ledger] backfill fail (continuing): {ex}", file=sys.stderr)
 
-    # (2) 找 notify_treasury.py (主專案 PromptQueue, 從 entry 反推 repo root)
+    # (2) UCL_Core 自己的 notify_discord.py (sibling: _lib → AgentCommands → PromptQueue)
+    script_path = Path(__file__).resolve().parent.parent / "PromptQueue" / "notify_discord.py"
+    if not script_path.exists():
+        if not quiet:
+            print(f"[treasury_ledger] notify_discord.py not found: {script_path}", file=sys.stderr)
+        return
+
+    # cwd 仍用 entry 反推的 consumer repo root (mirror run 要在 consumer 的 ChatTavern/ledger 資料脈絡下跑)
     try:
         repo_root = _repo_root_of(entry_path)
     except IndexError:
         if not quiet:
             print(f"[treasury_ledger] cannot derive repo root from {entry_path}", file=sys.stderr)
         return
-    script_path = repo_root / "AgentCommands" / "PromptQueue" / "notify_treasury.py"
-    if not script_path.exists():
-        if not quiet:
-            print(f"[treasury_ledger] notify_treasury.py not found: {script_path}", file=sys.stderr)
-        return
 
-    cmd = [sys.executable, str(script_path), "--entry-file", str(entry_path)]
-    if quiet:
-        cmd.append("--quiet")
+    cmd = [sys.executable, str(script_path), "--mode", "tavern"]
     try:
         subprocess.Popen(
             cmd,

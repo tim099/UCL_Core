@@ -1,22 +1,16 @@
-﻿// 區塊職責：掃描 secrets 資料夾的共用 helper — Page (T8) 跟 Daemon (T5) 共用單一掃描來源
-// 物理意義：走 ucl_secret.py list --root <dir> --json subprocess 取每個 .enc 的 metadata
-//          (label/hint/created/format_version/plain_exists)，passphrase-free。
-//          de-scope UCL_Asset registry 後，.enc 的 TKN2 L:label 就是 single source of truth。
-// 數值影響：純讀 (subprocess + JSON parse)，不改任何檔案。
-
+// 區塊職責：掃描 secrets 資料夾的共用 helper — Page (T8) 跟 Daemon (T5) 共用單一掃描來源
+// 物理意義：Tim 2026-07-22「全切 C#」後改純 C# — 直接列舉 _secrets 下 *.enc，走 UCL_SecretCrypto.ReadMetadata
+//          讀 metadata（label/hint/created/format_version，passphrase-free），不再 shell-out python /
+//          不需 cryptography 套件。舊 python-Fernet .enc（TKN1/TKN2）本 lib 讀不了 → 標記為舊格式待重建。
+// 數值影響：純讀（File.ReadAllBytes + header 解析），不改任何檔案。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using UCL.Core.JsonLib;
-using UnityEditor;
-using UnityEngine;
-using Debug = UnityEngine.Debug;
 
 namespace UCL.Core.EditorLib.SecretManager
 {
-    // 區塊職責：單一 secret 的掃描結果 (對齊 ucl_secret.py show-hint --json 欄位)
+    // 區塊職責：單一 secret 的掃描結果
     public class UCL_SecretInfo
     {
         public string EncPath = "";        // repo-relative
@@ -24,66 +18,71 @@ namespace UCL.Core.EditorLib.SecretManager
         public string Label = "";
         public string Hint = "";
         public string CreatedAt = "";
-        public int FormatVersion = 0;
+        public int FormatVersion = 0;      // 3 = UCLS1(C# native)；0 = 舊格式/解析失敗（見 Error）
         public bool PlainExists = false;
-        public string Error = "";          // 非空 = 該 .enc 解析失敗
+        public string Error = "";          // 非空 = 該 .enc 非 UCLS1（舊 python 格式）或解析失敗
     }
 
     /// <summary>
     /// 掃 secrets 資料夾的共用 helper。Page / Daemon 都走這裡，確保「掃描來源唯一」。
-    /// 走 ucl_secret.py list --json，label/hint 直接讀 .enc metadata (passphrase-free)。
+    /// C# native（UCL_SecretCrypto.ReadMetadata）讀 .enc metadata，passphrase-free、零外部相依。
     /// </summary>
     public static class UCL_SecretScanner
     {
-        // 區塊職責：consumer project 預設 secrets dir (repo-relative)
+        // 區塊職責：consumer project 預設 secrets dir（AgentCommands-relative；走 DataRoot 解析）
         public const string DefaultSecretsDir = "AgentCommands/_secrets";
 
-        /// <summary>掃 rootDir (repo-relative) 下所有 .enc，回 metadata list。失敗回空 list + log。</summary>
+        /// <summary>掃 rootDir（AgentCommands-relative）下所有 .enc，回 metadata list。失敗回空 list。</summary>
         public static List<UCL_SecretInfo> Scan(string rootDirRelative = DefaultSecretsDir)
         {
             var result = new List<UCL_SecretInfo>();
-            string repoRoot = UCL_RepoPath.RepoRoot;
-            if (string.IsNullOrEmpty(repoRoot)) return result;
 
-            string absRoot = Path.Combine(repoRoot, rootDirRelative);
+            // 走 canonical DataRoot 解析：_secrets 是持久狀態資料，AgentCommands 前綴映射到可 override 的
+            // DataRoot（submodule / 資料搬遷 aware）；預設模式 = RepoRoot/AgentCommands/_secrets。
+            string absRoot = UCL_AgentCommandsPath.ResolveData(rootDirRelative);
             if (!Directory.Exists(absRoot)) return result;
 
-            string cli = UclSecretPyPath();
-            string python = ResolvePython();
-            if (string.IsNullOrEmpty(cli) || !File.Exists(cli) || string.IsNullOrEmpty(python))
-            {
-                Debug.LogWarning("[SecretScanner] 找不到 ucl_secret.py 或 python，無法掃描");
-                return result;
-            }
+            string repoRoot = UCL_RepoPath.RepoRoot;
 
-            string stdout = RunCli(python, $"\"{cli}\" list --root \"{absRoot}\" --json", repoRoot);
-            if (string.IsNullOrEmpty(stdout)) return result;
+            string[] encFiles;
+            try { encFiles = Directory.GetFiles(absRoot, "*.enc", SearchOption.AllDirectories); }
+            catch { return result; }
+            Array.Sort(encFiles, StringComparer.Ordinal);
 
-            try
+            foreach (var encAbs in encFiles)
             {
-                var jd = JsonData.ParseJson(stdout.Trim());
-                if (jd == null || !jd.IsArray) return result;
-                for (int i = 0; i < jd.Count; i++)
+                var info = new UCL_SecretInfo
                 {
-                    var item = jd[i];
-                    if (item == null || !item.IsObject) continue;
-                    var info = new UCL_SecretInfo
-                    {
-                        EncPath = ToRepoRelative(item.GetString("enc_path", ""), repoRoot),
-                        Label = item.GetString("label", ""),
-                        Hint = item.GetString("hint", ""),
-                        CreatedAt = item.GetString("created_at", ""),
-                        FormatVersion = item.GetInt("format_version", 0),
-                        PlainExists = item.GetBool("plain_exists", false),
-                        Error = item.GetString("error", ""),
-                    };
-                    info.PlainPath = DerivePlainPath(info.EncPath);
-                    result.Add(info);
+                    EncPath = ToRepoRelative(encAbs, repoRoot),
+                };
+                info.PlainPath = DerivePlainPath(info.EncPath);
+                // 明文 .txt 是否已在本機（判 🔒 待安裝 / ✅ 已在）
+                string plainAbs = encAbs.EndsWith(".enc", StringComparison.OrdinalIgnoreCase)
+                    ? encAbs.Substring(0, encAbs.Length - 4) + ".txt"
+                    : encAbs + ".txt";
+                info.PlainExists = File.Exists(plainAbs);
+
+                try
+                {
+                    byte[] bytes = File.ReadAllBytes(encAbs);
+                    var meta = UCL_SecretCrypto.ReadMetadata(bytes);   // 非 UCLS1 → FormatException
+                    info.Label = meta.Label;
+                    info.Hint = meta.Hint;
+                    info.CreatedAt = meta.CreatedAt;
+                    info.FormatVersion = meta.FormatVersion;
                 }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[SecretScanner] JSON parse failed: {e.Message}");
+                catch (Exception e)
+                {
+                    // 非 UCLS1（多半是舊 python-Fernet TKN1/TKN2）或壞檔 → 標記，引導用「明文加密」重建
+                    byte[] head = null;
+                    try { head = File.ReadAllBytes(encAbs); } catch { }
+                    bool isUcls = head != null && UCL_SecretCrypto.IsUclsFormat(head);
+                    info.FormatVersion = 0;
+                    info.Error = isUcls
+                        ? $"UCLS1 解析失敗: {e.Message}"
+                        : "舊 python 格式（TKN1/TKN2）或未知 — 用下方『明文加密』對 .txt 重建即可";
+                }
+                result.Add(info);
             }
             return result;
         }
@@ -96,6 +95,7 @@ namespace UCL.Core.EditorLib.SecretManager
         {
             if (string.IsNullOrEmpty(abs)) return abs;
             string a = abs.Replace('\\', '/');
+            if (string.IsNullOrEmpty(repoRoot)) return a;
             string r = repoRoot.Replace('\\', '/').TrimEnd('/') + "/";
             return a.StartsWith(r, StringComparison.OrdinalIgnoreCase) ? a.Substring(r.Length) : a;
         }
@@ -104,72 +104,6 @@ namespace UCL.Core.EditorLib.SecretManager
         {
             if (string.IsNullOrEmpty(encRel)) return encRel;
             return encRel.EndsWith(".enc") ? encRel.Substring(0, encRel.Length - 4) + ".txt" : encRel + ".txt";
-        }
-
-        internal static string UclSecretPyPath()
-        {
-            string corePathRel = UCL_EditorPath.CorePath;
-            if (string.IsNullOrEmpty(corePathRel)) return null;
-            string corePath = Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel));
-            return Path.Combine(corePath, "Tools~", "AgentCommands", "ucl_secret.py");
-        }
-
-        internal static string ResolvePython()
-        {
-            string envPy = Environment.GetEnvironmentVariable("PYTHON");
-            if (!string.IsNullOrEmpty(envPy) && File.Exists(envPy)) return envPy;
-#if UNITY_EDITOR_WIN
-            string[] candidates = { "python.exe", "py.exe", "python3.exe" };
-#else
-            string[] candidates = { "python3", "python" };
-#endif
-            string path = Environment.GetEnvironmentVariable("PATH") ?? "";
-            foreach (var c in candidates)
-            {
-                foreach (var p in path.Split(Path.PathSeparator))
-                {
-                    try
-                    {
-                        string full = Path.Combine(p.Trim(), c);
-                        if (File.Exists(full)) return full;
-                    }
-                    catch { }
-                }
-            }
-            return "python";
-        }
-
-        // 區塊職責：跑 CLI 抓 stdout (10s timeout, async 讀避免 redirect deadlock)
-        internal static string RunCli(string python, string arguments, string workingDir)
-        {
-            try
-            {
-                var sb = new System.Text.StringBuilder();
-                var psi = new ProcessStartInfo
-                {
-                    FileName = python,
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = workingDir,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8,
-                    StandardErrorEncoding = System.Text.Encoding.UTF8,
-                };
-                psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-                using (var proc = Process.Start(psi))
-                {
-                    string stdout = proc.StandardOutput.ReadToEnd();
-                    proc.WaitForExit(10000);
-                    return stdout;
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[SecretScanner] CLI 執行失敗: {e.Message}");
-                return null;
-            }
         }
     }
 }

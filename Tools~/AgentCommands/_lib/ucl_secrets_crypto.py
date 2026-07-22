@@ -37,9 +37,14 @@ import datetime
 import os
 from dataclasses import dataclass
 
-from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+# 區塊職責：cryptography 相依改為 lazy import（2026-07-22 basecamp 修）
+# 物理意義：read_metadata / _decode_header（passphrase-free「失憶救援路徑 A」）純解析 header bytes、
+#          完全不碰 Fernet/KDF；但舊版把 cryptography.fernet 放模組頂層 eager import → 只要 consumer
+#          環境的 cryptography 套件壞掉（實測 _rust binding ImportError），連 read_metadata / list /
+#          show-hint 都一起 import-fail，SecretManagerPage 掃不到任何 .enc（外觀像路徑失效、實為 crypto env）。
+# 數值影響：把 Fernet / InvalidToken / PBKDF2HMAC / hashes 下沉到真正用到的 encrypt / decrypt / _derive_key
+#          / __main__ 自測；metadata-only 路徑不再被 crypto 相依綁死 → 環境壞也讀得到 hint/label/list。
+#          encrypt / decrypt 若 crypto 壞則在呼叫當下 ImportError（誠實炸在真正需要它的地方，非 metadata 讀取）。
 
 # 區塊職責：格式 magic + KDF 參數 + metadata 約束
 # 物理意義：MAGIC_V2 = TKN2 (本 lib 一律輸出)，MAGIC_V1 = TKN1 (只讀不寫，相容舊檔)；
@@ -90,6 +95,9 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
 
     Fernet 規格: key 必須是 urlsafe_b64encode(32 bytes raw) = 44 chars。
     """
+    # lazy import：只有真的要推 key（encrypt/decrypt）才碰 cryptography（見頂層 import 區塊註解）
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -156,6 +164,8 @@ def encrypt(
     label = _validate_single_line(label or "", "label")
     created_str = _fmt_created_at(created_at)
 
+    # lazy import：加密才需 Fernet（見頂層 import 區塊註解）
+    from cryptography.fernet import Fernet
     salt = os.urandom(SALT_LEN)
     key = _derive_key(passphrase, salt)
     token = Fernet(key).encrypt(bytes(plaintext))
@@ -257,6 +267,8 @@ def decrypt(ciphertext: bytes, passphrase: str) -> DecryptedSecret:
     if not passphrase:
         raise ValueError("passphrase cannot be empty")
 
+    # lazy import：解密才需 Fernet（見頂層 import 區塊註解）
+    from cryptography.fernet import Fernet, InvalidToken
     version, salt, hint, label, created_at, token = _decode_header(ciphertext)
     key = _derive_key(passphrase, salt)
     try:
@@ -277,6 +289,9 @@ def decrypt(ciphertext: bytes, passphrase: str) -> DecryptedSecret:
 # Self-test — 跑 `python ucl_secrets_crypto.py` 自我驗證 round-trip + 向後相容
 # ===========================================================================
 def _run_selftest():
+    # lazy import：自測區直接組 TKN1 密文會用到 Fernet（見頂層 import 區塊註解）；
+    # 自測本就在驗 crypto，故此處需要 cryptography 環境正常（跟 metadata-only 路徑解耦）
+    from cryptography.fernet import Fernet
     pw = "test-passphrase-12345"
 
     # (1) round-trip — 空 hint / 有 hint / 長 hint(256) / binary / 空 plaintext

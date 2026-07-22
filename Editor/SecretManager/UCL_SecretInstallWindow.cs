@@ -110,10 +110,8 @@ namespace UCL.Core.EditorLib.SecretManager
 
         static bool ShouldShow(UCL_SecretEntry entry)
         {
-            string root = UCL_RepoPath.RepoRoot;
-            if (string.IsNullOrEmpty(root)) return false;
-            bool plainExists = File.Exists(Path.Combine(root, entry.PlainPath));
-            bool encExists = File.Exists(Path.Combine(root, entry.EncPath));
+            bool plainExists = File.Exists(Abs(entry.PlainPath));
+            bool encExists = File.Exists(Abs(entry.EncPath));
             return encExists && !plainExists;
         }
 
@@ -138,8 +136,8 @@ namespace UCL.Core.EditorLib.SecretManager
                 return;
             }
             string root = UCL_RepoPath.RepoRoot;
-            string plainPath = Path.Combine(root ?? "", m_Entry.PlainPath);
-            string encPath = Path.Combine(root ?? "", m_Entry.EncPath);
+            string plainPath = Abs(m_Entry.PlainPath);
+            string encPath = Abs(m_Entry.EncPath);
             bool plainExists = File.Exists(plainPath);
             bool encExists = File.Exists(encPath);
 
@@ -156,9 +154,7 @@ namespace UCL.Core.EditorLib.SecretManager
             else if (!encExists)
             {
                 EditorGUILayout.HelpBox(
-                    "找不到 .enc 加密檔. 請先在本機建明文後跑:\n" +
-                    $"  python <UCL_Core>/Tools~/AgentCommands/ucl_secret.py encrypt {m_Entry.PlainPath} --hint \"...\"\n" +
-                    "然後 commit 產出的 .enc.", MessageType.Warning);
+                    "找不到 .enc 加密檔。請先在本機建明文，再用 Secret Manager 頁的『🔐 明文加密』功能加密產出 .enc（C# native，不需 python），然後 commit 該 .enc。", MessageType.Warning);
             }
             else
             {
@@ -281,7 +277,7 @@ namespace UCL.Core.EditorLib.SecretManager
             string body =
                 $"提示: {hintLine}\n\n" +
                 "路徑 A — 想起密碼:\n" +
-                "  加密用 PBKDF2 200k 輪 + Fernet, 設計上無法 brute-force, 只能靠提示喚回。\n\n" +
+                "  加密用 PBKDF2 200k 輪 + AES-256-CBC + HMAC, 設計上無法 brute-force, 只能靠提示喚回。\n\n" +
                 "路徑 B — 手動貼上明文 (推薦, 若手邊有原始 token):\n" +
                 $"  1. 從來源 reset / 取得 token (見下方 Help URL)\n" +
                 $"  2. 按「📂 開啟資料夾」\n" +
@@ -300,7 +296,7 @@ namespace UCL.Core.EditorLib.SecretManager
         }
 
         // ===========================================================
-        // 讀 hint metadata — passphrase-free (走 ucl_secret.py show-hint --json)
+        // 讀 hint metadata — passphrase-free（C# native UCL_SecretCrypto.ReadMetadata，2026-07-22 全切 C#）
         // ===========================================================
         void LoadMetadata()
         {
@@ -309,117 +305,63 @@ namespace UCL.Core.EditorLib.SecretManager
             m_FormatVersion = 0;
             m_MetaLoaded = false;
 
-            string root = UCL_RepoPath.RepoRoot;
-            string encPath = Path.Combine(root ?? "", m_Entry.EncPath);
+            string encPath = Abs(m_Entry.EncPath);
             if (!File.Exists(encPath)) { m_MetaLoaded = true; return; }
 
-            string cli = UclSecretPyPath();
-            string python = ResolvePython();
-            if (string.IsNullOrEmpty(cli) || !File.Exists(cli) || string.IsNullOrEmpty(python))
-            {
-                m_MetaLoaded = true;
-                return;
-            }
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = python,
-                    Arguments = $"\"{cli}\" show-hint \"{encPath}\" --json",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = root,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8,
-                    StandardErrorEncoding = System.Text.Encoding.UTF8,
-                };
-                psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-                using (var proc = Process.Start(psi))
-                {
-                    string stdout = proc.StandardOutput.ReadToEnd();
-                    proc.WaitForExit(10000);
-                    if (proc.ExitCode == 0 && !string.IsNullOrEmpty(stdout))
-                    {
-                        var jd = JsonData.ParseJson(stdout.Trim());
-                        if (jd != null && jd.IsObject)
-                        {
-                            m_Hint = jd.GetString("hint", "");
-                            m_MetaLabel = jd.GetString("label", "");
-                            m_FormatVersion = jd.GetInt("format_version", 0);
-                        }
-                    }
-                }
+                var meta = UCL_SecretCrypto.ReadMetadata(File.ReadAllBytes(encPath));
+                m_Hint = meta.Hint;
+                m_MetaLabel = meta.Label;
+                m_FormatVersion = meta.FormatVersion;
             }
-            catch (Exception e)
+            catch (Exception)
             {
-                Debug.LogWarning($"[SecretInstall] show-hint 讀取失敗: {e.Message}");
+                // 非 UCLS1（舊 python TKN1/TKN2）或壞檔 → metadata 讀不到，維持空 + version 0（UI 會標舊格式）
+                m_FormatVersion = 0;
             }
             m_MetaLoaded = true;
         }
 
         // ===========================================================
-        // Decrypt action — 走 ucl_secret.py decrypt --stdin-passphrase
+        // Decrypt action — C# native（UCL_SecretCrypto.Decrypt，無 python / 無 cryptography 套件）
         // ===========================================================
         void DoDecrypt(string root, string plainPath, string encPath)
         {
-            string cli = UclSecretPyPath();
-            if (string.IsNullOrEmpty(cli) || !File.Exists(cli))
-            {
-                SetStatus($"找不到 CLI: {cli}", MessageType.Error);
-                return;
-            }
-            string python = ResolvePython();
-            if (string.IsNullOrEmpty(python))
-            {
-                SetStatus("找不到 python 可執行檔 (PATH 內沒 python.exe / py.exe / python3)", MessageType.Error);
-                return;
-            }
-
             m_Working = true;
             Repaint();
             try
             {
-                var psi = new ProcessStartInfo
+                byte[] enc = File.ReadAllBytes(encPath);
+                byte[] plain;
+                try
                 {
-                    FileName = python,
-                    Arguments = $"\"{cli}\" decrypt \"{encPath}\" --stdin-passphrase",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = root,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8,
-                    StandardErrorEncoding = System.Text.Encoding.UTF8,
-                };
-                psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-
-                using (var proc = Process.Start(psi))
-                {
-                    proc.StandardInput.WriteLine(m_Passphrase);
-                    proc.StandardInput.Close();
-                    string stdout = proc.StandardOutput.ReadToEnd();
-                    string stderr = proc.StandardError.ReadToEnd();
-                    proc.WaitForExit(30000);
-                    int code = proc.ExitCode;
-                    if (code == 0 && File.Exists(plainPath))
-                    {
-                        SetStatus($"✓ 解密成功, 已寫入 {plainPath}\n  size={new FileInfo(plainPath).Length} bytes", MessageType.Info);
-                        m_Passphrase = "";
-                        EditorPrefs.DeleteKey(DismissKey(m_Entry.EncPath));
-                        m_DontAskAgain = false;
-                        m_Entry.OnInstalled?.Invoke();
-                        EditorApplication.delayCall += () => { if (this != null) Close(); };
-                    }
-                    else
-                    {
-                        string msg = code == 5
-                            ? "✗ Passphrase 錯誤 (或密文損壞). 再試一次, 或用「忘記 passphrase?」走手動貼上。"
-                            : $"✗ 解密失敗 (exit={code}).\nstdout: {stdout.Trim()}\nstderr: {stderr.Trim()}";
-                        SetStatus(msg, MessageType.Error);
-                    }
+                    plain = UCL_SecretCrypto.Decrypt(enc, m_Passphrase);
                 }
+                catch (System.Security.Cryptography.CryptographicException)
+                {
+                    // HMAC 驗失敗 = passphrase 錯或密文竄改
+                    SetStatus("✗ Passphrase 錯誤（或密文損壞）。再試一次，或用「忘記 passphrase?」走手動貼上。", MessageType.Error);
+                    return;
+                }
+                catch (FormatException fe)
+                {
+                    // 非 UCLS1（舊 python 格式）→ C# 解不了，引導重建
+                    SetStatus($"✗ 此 .enc 非 C# native（UCLS1）格式：{fe.Message}\n舊 python 加密檔請用 SecretManagerPage 的『明文加密』對 .txt 重建。", MessageType.Error);
+                    return;
+                }
+
+                // 確保目錄存在再寫明文
+                string dir = Path.GetDirectoryName(plainPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllBytes(plainPath, plain);
+
+                SetStatus($"✓ 解密成功，已寫入 {plainPath}\n  size={plain.Length} bytes", MessageType.Info);
+                m_Passphrase = "";
+                EditorPrefs.DeleteKey(DismissKey(m_Entry.EncPath));
+                m_DontAskAgain = false;
+                m_Entry.OnInstalled?.Invoke();
+                EditorApplication.delayCall += () => { if (this != null) Close(); };
             }
             catch (Exception e)
             {
@@ -432,6 +374,9 @@ namespace UCL.Core.EditorLib.SecretManager
             }
         }
 
+        // 區塊職責：repo-relative 路徑 → 絕對路徑（走 canonical DataRoot 解析，submodule/搬遷 aware）
+        static string Abs(string repoRel) => UCL_AgentCommandsPath.ResolveData(repoRel);
+
         void SetStatus(string msg, MessageType t)
         {
             m_StatusMsg = msg;
@@ -442,39 +387,6 @@ namespace UCL.Core.EditorLib.SecretManager
         // Helpers — 路徑解析
         // ===========================================================
 
-        // 區塊職責：定位 UCL_Core/Tools~/AgentCommands/ucl_secret.py (對齊 LoginStatusPage 解析法)
-        static string UclSecretPyPath()
-        {
-            string corePathRel = UCL_EditorPath.CorePath;
-            if (string.IsNullOrEmpty(corePathRel)) return null;
-            string corePath = Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel));
-            return Path.Combine(corePath, "Tools~", "AgentCommands", "ucl_secret.py");
-        }
-
-        static string ResolvePython()
-        {
-            string envPy = Environment.GetEnvironmentVariable("PYTHON");
-            if (!string.IsNullOrEmpty(envPy) && File.Exists(envPy)) return envPy;
-#if UNITY_EDITOR_WIN
-            string[] candidates = { "python.exe", "py.exe", "python3.exe" };
-#else
-            string[] candidates = { "python3", "python" };
-#endif
-            string path = Environment.GetEnvironmentVariable("PATH") ?? "";
-            foreach (var c in candidates)
-            {
-                foreach (var p in path.Split(Path.PathSeparator))
-                {
-                    try
-                    {
-                        string full = Path.Combine(p.Trim(), c);
-                        if (File.Exists(full)) return full;
-                    }
-                    catch { }
-                }
-            }
-            return "python";  // fallback: 讓 OS 自己找 (PATH 解析失敗時)
-        }
     }
 }
 #endif

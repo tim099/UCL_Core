@@ -35,6 +35,16 @@ namespace UCL.Core.EditorLib.SecretManager
         MessageType m_StatusType = MessageType.None;
         bool m_Loaded = false;
 
+        // ==== 明文加密面板狀態（Tim 2026-07-22 — C# native 加密，SecretManager 新增「從明文加密」）====
+        // 物理意義：列 _secrets 下的 .txt 明文供選、填 passphrase/hint/label → UCL_SecretCrypto.Encrypt 產出同名 .enc。
+        List<string> m_PlainTxtAbs = new List<string>();   // _secrets 下 .txt 絕對路徑清單（加密來源）
+        List<string> m_PlainTxtDisp = new List<string>();  // 對應顯示名（檔名）
+        int m_EncSourceIdx = 0;
+        string m_EncPass = "";
+        string m_EncPassConfirm = "";
+        string m_EncHint = "";
+        string m_EncLabel = "";
+        UCL_ObjectDictionary m_Dic = new();
         GUIStyle m_WrapLabel;
         GUIStyle WrapLabel => m_WrapLabel ??= new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
 
@@ -51,12 +61,56 @@ namespace UCL.Core.EditorLib.SecretManager
             {
                 Reload();
             }
+            // 開 _secrets 資料夾（Tim 2026-07-22）— 走 canonical DataRoot 解析，缺目錄先建
+            if (GUILayout.Button("📂 開啟 _secrets", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                OpenSecretsFolder();
+            }
         }
 
         void Reload()
         {
             m_Secrets = UCL_SecretScanner.Scan(m_SecretsDir);
+            RefreshPlainTxtList();
             m_Loaded = true;
+        }
+
+        // 列舉 _secrets 下的 .txt 明文檔（加密來源下拉）— DataRoot 解析
+        void RefreshPlainTxtList()
+        {
+            m_PlainTxtAbs.Clear();
+            m_PlainTxtDisp.Clear();
+            m_EncSourceIdx = 0;
+            try
+            {
+                string root = UCL_AgentCommandsPath.ResolveData(m_SecretsDir);
+                if (!Directory.Exists(root)) return;
+                foreach (var f in Directory.GetFiles(root, "*.txt", SearchOption.AllDirectories))
+                {
+                    m_PlainTxtAbs.Add(f);
+                    m_PlainTxtDisp.Add(Path.GetFileName(f));
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[SecretManager] 列舉 .txt 失敗: {e.Message}");
+            }
+        }
+
+        // 開 _secrets 資料夾（DataRoot 解析，submodule/搬遷 aware）；缺目錄先建再開
+        void OpenSecretsFolder()
+        {
+            try
+            {
+                string dir = UCL_AgentCommandsPath.ResolveData(m_SecretsDir);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                EditorUtility.RevealInFinder(dir);
+                SetStatus($"已開資料夾: {dir}", MessageType.Info);
+            }
+            catch (System.Exception e)
+            {
+                SetStatus($"開資料夾失敗: {e.Message}", MessageType.Error);
+            }
         }
 
         protected override void ContentOnGUI()
@@ -70,6 +124,8 @@ namespace UCL.Core.EditorLib.SecretManager
             DrawHeader();
             GUILayout.Space(8);
             DrawTable();
+            GUILayout.Space(8);
+            DrawEncryptPanel();
             GUILayout.Space(8);
             if (!string.IsNullOrEmpty(m_StatusMsg))
             {
@@ -87,8 +143,89 @@ namespace UCL.Core.EditorLib.SecretManager
                     fontStyle = FontStyle.Bold,
                 };
                 GUILayout.Label("🔐 Secret Manager — 加密檔管理", title);
-                GUILayout.Label($"掃描資料夾: {m_SecretsDir}  (passphrase-free 讀 .enc metadata)", WrapLabel);
+                // 顯示解析後的絕對掃描路徑（走 DataRoot，submodule / override aware）— 比只印相對字串更好 debug
+                GUILayout.Label($"掃描資料夾: {UCL_AgentCommandsPath.ResolveData(m_SecretsDir)}  (passphrase-free 讀 .enc metadata)", WrapLabel);
                 GUILayout.Label("🔒=明文缺(待安裝) / ✅=明文已在 / ⚠=解析失敗。忘記密碼？用「📂開資料夾」手動貼明文。", WrapLabel);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：明文加密面板（Tim 2026-07-22 — SecretManager 新增「從明文加密」，C# native）
+        // 物理意義：選 _secrets 下的 .txt 明文 → 填 passphrase(+確認)/hint/label → UCL_SecretCrypto.Encrypt
+        //          產出同名 .enc（AES-256-CBC+HMAC+PBKDF2，零 python/插件）。舊 python .enc 也靠這重建。
+        // 數值影響：passphrase 設計上無法反推（PBKDF2 200k）；hint 只是提示、不參與 KDF；產出即 commit-able。
+        // ===========================================================
+        void DrawEncryptPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("🔐 明文加密（產出 .enc）— C# native，不需 python / 插件",
+                                new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold });
+
+                if (m_PlainTxtAbs.Count == 0)
+                {
+                    GUILayout.Label("(_secrets 下沒有 .txt 明文可加密。先用上方「📂 開啟 _secrets」放入明文檔，再按 Refresh。)", WrapLabel);
+                    return;
+                }
+
+                int idx = Mathf.Clamp(m_EncSourceIdx, 0, m_PlainTxtDisp.Count - 1);
+
+                using(new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("來源明文 (.txt)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    m_EncSourceIdx = UCL_GUILayout.PopupAuto(m_EncSourceIdx, m_PlainTxtDisp, m_Dic, nameof(m_EncSourceIdx));
+                }
+
+                m_EncPass = EditorGUILayout.PasswordField("Passphrase", m_EncPass);
+                m_EncPassConfirm = EditorGUILayout.PasswordField("再次確認", m_EncPassConfirm);
+                m_EncHint = EditorGUILayout.TextField("提示 (hint, 選填)", m_EncHint);
+                m_EncLabel = EditorGUILayout.TextField("標籤 (label, 選填)", m_EncLabel);
+
+                bool passOk = !string.IsNullOrEmpty(m_EncPass);
+                bool matchOk = m_EncPass == m_EncPassConfirm;
+                if (passOk && !matchOk)
+                    GUILayout.Label("<color=#ff8866>⚠ 兩次 passphrase 不一致</color>", WrapLabel);
+
+                using (new EditorGUI.DisabledScope(!(passOk && matchOk)))
+                {
+                    if (GUILayout.Button("🔐 加密產出 .enc", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                    {
+                        DoEncrypt(Mathf.Clamp(m_EncSourceIdx, 0, m_PlainTxtAbs.Count - 1));
+                    }
+                }
+                GUILayout.Label("提示：passphrase 請自己記牢——設計上無法反推（PBKDF2 200k + AES-256）；hint 只是喚回提示、不是密碼。產出的 .enc 可 commit（明文 .txt 保持 gitignored）。", WrapLabel);
+            }
+        }
+
+        // 加密選定的 .txt → 同名 .enc（C# native）
+        void DoEncrypt(int sourceIdx)
+        {
+            try
+            {
+                if (sourceIdx < 0 || sourceIdx >= m_PlainTxtAbs.Count) { SetStatus("來源無效", MessageType.Error); return; }
+                string txtAbs = m_PlainTxtAbs[sourceIdx];
+                if (!File.Exists(txtAbs)) { SetStatus($"明文檔不存在: {txtAbs}", MessageType.Error); return; }
+
+                byte[] plain = File.ReadAllBytes(txtAbs);
+                byte[] enc = UCL_SecretCrypto.Encrypt(plain, m_EncPass, m_EncHint ?? "", m_EncLabel ?? "");
+
+                string encAbs = txtAbs.EndsWith(".txt", System.StringComparison.OrdinalIgnoreCase)
+                    ? txtAbs.Substring(0, txtAbs.Length - 4) + ".enc"
+                    : txtAbs + ".enc";
+                File.WriteAllBytes(encAbs, enc);
+
+                SetStatus($"✓ 已加密產出: {Path.GetFileName(encAbs)}（{enc.Length} bytes, UCLS1）。可 commit 此 .enc。", MessageType.Info);
+                // 清 passphrase（不殘留）+ 重掃反映新 .enc metadata
+                m_EncPass = ""; m_EncPassConfirm = "";
+                Reload();
+            }
+            catch (System.ArgumentException ae)
+            {
+                SetStatus($"✗ 加密參數錯誤: {ae.Message}", MessageType.Error);
+            }
+            catch (System.Exception e)
+            {
+                SetStatus($"✗ 加密失敗: {e.Message}", MessageType.Error);
             }
         }
 
@@ -179,8 +316,9 @@ namespace UCL.Core.EditorLib.SecretManager
         {
             try
             {
-                string repoRoot = UCL_RepoPath.RepoRoot;
-                string plainAbs = Path.Combine(repoRoot, s.PlainPath);
+                // 走 canonical DataRoot 解析（2026-07-22 basecamp）：與 Scanner 同源，AgentCommands 前綴
+                // 映射到可 override 的資料根（submodule / 資料搬遷 aware）；預設模式 = RepoRoot/AgentCommands/...
+                string plainAbs = UCL_AgentCommandsPath.ResolveData(s.PlainPath);
                 string folder = Path.GetDirectoryName(plainAbs);
                 if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
                 EditorUtility.RevealInFinder(plainAbs);
@@ -216,10 +354,13 @@ namespace UCL.Core.EditorLib.SecretManager
 
         void ShowRotateCmd(UCL_SecretInfo s)
         {
-            // rotate 需互動兩次 passphrase, 不適合 IMGUI — 印 CLI 指令 + 複製到剪貼簿
-            string cmd = $"python <UCL_Core>/Tools~/AgentCommands/ucl_secret.py rotate {s.EncPath} --hint \"新提示\"";
-            EditorGUIUtility.systemCopyBuffer = cmd;
-            SetStatus($"rotate 需在終端機互動輸入舊/新 passphrase。指令已複製到剪貼簿:\n  {cmd}", MessageType.Info);
+            // 全切 C# 後 rotate = 換 passphrase 重加密：① 用「🔓 解密」把明文落地 .txt →
+            // ② 下方「🔐 明文加密」對該 .txt 填新 passphrase 重產 .enc（覆蓋舊的）。無需 python / CLI。
+            SetStatus(
+                $"換 passphrase（rotate）步驟：\n"
+                + $"  1. 先按「🔓 解密」把 {Path.GetFileName(s.PlainPath)} 明文還原到本機\n"
+                + $"  2. 到下方「🔐 明文加密」選該 .txt、填新 passphrase → 加密產出 .enc（覆蓋舊檔）\n"
+                + "全程 C# native，不需 python / 插件。", MessageType.Info);
         }
 
         void SetStatus(string msg, MessageType t)

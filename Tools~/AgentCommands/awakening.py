@@ -81,7 +81,10 @@ _HERE = Path(__file__).resolve().parent
 def _find_git_root_by_walk(start: Path) -> Path | None:
     p = start.resolve()
     while p != p.parent:
-        if (p / ".git").exists():   # is_dir for repo, is_file for submodule .git
+        # 只認「.git 資料夾」為真 repo 根，跳過 submodule 的 .git gitlink 檔。
+        # (對齊 _lib/ucl_paths.py 慣例) — 否則從 submodule 內 cwd 跑會誤把
+        # UCL_Core submodule 當 host root, state 寫進影子 <submodule>/AgentCommands。
+        if (p / ".git").is_dir():
             return p
         p = p.parent
     return None
@@ -91,7 +94,7 @@ def _resolve_repo_root() -> Path:
     env_root = os.environ.get("CLAUDE_PROJECT_DIR")
     if env_root and Path(env_root).is_dir():
         return Path(env_root).resolve()
-    # walk from cwd first (主專案 .git 比 submodule .git 容易先命中)
+    # walk from cwd first; is_dir 過濾確保跳過 submodule gitlink，命中真主專案 .git 資料夾
     walked = _find_git_root_by_walk(Path.cwd())
     if walked:
         return walked

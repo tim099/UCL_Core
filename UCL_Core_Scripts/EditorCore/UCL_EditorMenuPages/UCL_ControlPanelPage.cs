@@ -63,7 +63,27 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawBankAdminSection();
             GUILayout.Space(8);
+            DrawKnowledgeBaseAdminSection();
+            GUILayout.Space(8);
             DrawAgentCommandsPathSection();
+        }
+
+        // ===========================================================
+        // 區塊：知識庫後台管理入口（Tim 2026-07-23 拍板）
+        // 物理意義：push UCL_KnowledgeBaseAdminPage — Agent 長期記憶 / 文檔語意向量檢索的
+        //          依賴安裝、bge-m3 權重預熱、索引重建、檢索測試管理頁。
+        // ===========================================================
+        void DrawKnowledgeBaseAdminSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>🧠 知識庫後台</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("Agent 長期記憶 / 文檔語意向量檢索：依賴安裝、bge-m3 權重預熱、Docs / Lessons 索引重建、檢索測試。", UCL_GUIStyle.LabelStyle);
+                if (GUILayout.Button("開啟知識庫後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
+                {
+                    UCL_KnowledgeBaseAdminPage.Create();
+                }
+            }
         }
 
         // ===========================================================

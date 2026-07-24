@@ -105,38 +105,87 @@ def index_path(target: str) -> Path:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Target — 「要索引 / 檢索哪一個語料庫」的具名集合。單一真相源在此。
-#   ⚠ 目前**只有** docs / lessons 兩個合法值；填其他值 → "unknown target" 錯誤。
-#   要新增 target（例如 letters / booknotes）= 開發者在下方 resolve_target_sources()
-#   加一個分支 + 在 TARGET_DEFS 補說明，非使用者可自由填的自由欄位。
+# Target — 「要索引 / 檢索哪一個語料庫」的具名集合。
+#   config-driven：定義在同目錄 kb_targets.json（加 target = 改該檔、零 code；
+#   Python 與 C# AdminPage 同讀，消除雙邊漂移）。glob 前綴：
+#     無      → repo 根（<repo>/…）
+#     core:   → UCL_Core 根（submodule 掛載點無關）
+#     data:   → AgentCommands 資料根（honors .agentcommands_root.local）
+#   支援多 target 搜尋（--target docs,coredocs 或 --target all）。
 # ─────────────────────────────────────────────────────────────────────────
-TARGET_DEFS = {
-    "docs": "專案文檔 — 掃 <repo>/Docs/**/*.md（UCL / 專案說明文件）",
-    "lessons": "Agent 經驗庫 — 掃 AgentCommands/Lessons/*.jsonl + *.md（跨 agent 累積教訓）",
+def core_root() -> Path:
+    # knowledge_base.py 在 <core>/Tools~/AgentCommands/ → parents[2] = <core> 根
+    return _THIS.parents[2]
+
+
+# 內建預設 — kb_targets.json 缺失/損毀時的 fallback（確保永不 crash）
+_DEFAULT_TARGETS = {
+    "docs": {"desc": "專案文檔 — <repo>/Docs/**/*.md", "kind": "markdown",
+             "globs": ["Docs/**/*.md"]},
+    "coredocs": {"desc": "UCL_Core 共享文檔 — <core>/Docs~/**/*.md", "kind": "markdown",
+                 "globs": ["core:Docs~/**/*.md"]},
+    "lessons": {"desc": "Agent 經驗庫 — AgentCommands/Lessons", "kind": "lessons",
+                "globs": ["data:Lessons/**/*.jsonl", "data:Lessons/**/*.md"]},
 }
 
 
+def load_targets() -> dict:
+    """讀 kb_targets.json 的 targets 區塊；缺失/壞檔 → 回內建預設（不 crash）。"""
+    cfg_path = _THIS.parent / "kb_targets.json"
+    try:
+        if cfg_path.exists():
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            tgts = data.get("targets") if isinstance(data, dict) else None
+            if isinstance(tgts, dict) and tgts:
+                return tgts
+    except Exception:
+        pass
+    return _DEFAULT_TARGETS
+
+
+def target_defs() -> dict:
+    """{name: desc} — 給 status / 錯誤訊息顯示用。"""
+    return {k: v.get("desc", "") for k, v in load_targets().items()}
+
+
 def valid_targets():
-    return list(TARGET_DEFS.keys())
+    return list(load_targets().keys())
+
+
+def _glob_base(prefix_glob: str):
+    """依前綴決定 base 根：core: → UCL_Core 根；data: → 資料根；其餘 → repo 根。"""
+    if prefix_glob.startswith("core:"):
+        return core_root(), prefix_glob[len("core:"):]
+    if prefix_glob.startswith("data:"):
+        return data_root(), prefix_glob[len("data:"):]
+    return repo_root(), prefix_glob
 
 
 def resolve_target_sources(target: str):
-    root = repo_root()
-    dr = data_root()
-    if target == "docs":
-        base = root / "Docs"
-        files = sorted(str(p) for p in base.rglob("*.md")) if base.is_dir() else []
-        return {"kind": "markdown", "base": str(base), "files": files}
-    if target == "lessons":
-        # agent-lessons-log: jsonl 每行一筆 lesson
-        candidates = [dr / "Lessons", dr / "lessons"]
-        files = []
-        for c in candidates:
-            if c.is_dir():
-                files += [str(p) for p in c.rglob("*.jsonl")]
-                files += [str(p) for p in c.rglob("*.md")]
-        return {"kind": "lessons", "base": str(candidates[0]), "files": sorted(files)}
-    return {"kind": "unknown", "base": "", "files": []}
+    cfg = load_targets().get(target)
+    if not cfg:
+        return {"kind": "unknown", "base": "", "files": []}
+    files = []
+    bases = []
+    for g in cfg.get("globs", []):
+        base, pat = _glob_base(g)
+        bases.append(str(base))
+        try:
+            files += [str(p) for p in base.glob(pat) if p.is_file()]
+        except Exception:
+            pass
+    return {"kind": cfg.get("kind", "markdown"),
+            "base": bases[0] if bases else "",
+            "files": sorted(set(files))}
+
+
+def parse_targets(arg: str):
+    """'all' → 全部合法 target；'a,b' → [a,b]；單一 → [a]（不驗合法性，交 caller）。"""
+    if not arg:
+        return []
+    if arg.strip().lower() == "all":
+        return valid_targets()
+    return [t.strip() for t in arg.split(",") if t.strip()]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -232,7 +281,7 @@ def op_status(args):
         "backend_version": ver,
         "vectors_dir": str(vdir),
         "vectors_dir_exists": vdir.is_dir(),
-        "available_targets": TARGET_DEFS,
+        "available_targets": target_defs(),
         "indexes": indexes,
         "ready": have_backend,
     }
@@ -277,10 +326,25 @@ def op_prefetch(args):
 
 
 def op_reindex(args):
-    target = args.target
+    """支援單一 / 逗號多選 / all — 逐 target 建索引，多筆時回 multi 聚合。"""
+    targets = parse_targets(args.target)
+    known = set(valid_targets())
+    unknown = [t for t in targets if t not in known]
+    if unknown:
+        opts = "\n".join(f"  - {k}: {v}" for k, v in target_defs().items())
+        return {"ok": False, "error": f"未知 target {unknown}。合法值（可逗號多選或 all）：\n{opts}"}
+    if not targets:
+        return {"ok": False, "error": "未指定 target"}
+    results = [_reindex_one(t, args) for t in targets]
+    if len(results) == 1:
+        return results[0]
+    return {"ok": all(r.get("ok") for r in results), "multi": True, "results": results}
+
+
+def _reindex_one(target: str, args):
     src = resolve_target_sources(target)
     if src["kind"] == "unknown":
-        opts = "\n".join(f"  - {k}: {v}" for k, v in TARGET_DEFS.items())
+        opts = "\n".join(f"  - {k}: {v}" for k, v in target_defs().items())
         return {"ok": False, "error": f"未知 target='{target}'。目前僅支援以下合法值：\n{opts}"}
 
     # 掃描 + 切塊 (這段不依賴模型，永遠可跑 — 建立 manifest)
@@ -344,50 +408,80 @@ def _cosine(a, b):
 
 
 def op_search(args):
-    target = args.target
-    # target 合法性 → 未知直接列合法值 (不要落到「尚無索引」誤導)
-    if target not in TARGET_DEFS:
-        opts = "\n".join(f"  - {k}: {v}" for k, v in TARGET_DEFS.items())
-        return {"ok": False, "error": f"未知 target='{target}'。目前僅支援以下合法值：\n{opts}"}
+    # 多 target：'all' / 'docs,coredocs' / 單一。同一模型同向量空間 → 分數可比、可合併。
+    targets = parse_targets(args.target)
+    known = set(valid_targets())
+    if not targets:
+        return {"ok": False, "error": "未指定 target"}
+    unknown = [t for t in targets if t not in known]
+    if unknown:
+        opts = "\n".join(f"  - {k}: {v}" for k, v in target_defs().items())
+        return {"ok": False, "error": f"未知 target {unknown}。合法值（可逗號多選或 all）：\n{opts}"}
     # 後端未裝 → 先給安裝提示 (不必等讀 index 才失敗)
     have_backend, _ = _deps_status()
     if not have_backend:
         return {"ok": False, "status": "not_installed", "error": install_hint()}
-    ip = index_path(target)
-    if not ip.is_file():
-        return {"ok": False, "error": f"target='{target}' 尚無索引。先跑 op=reindex --target {target}。"}
-    try:
-        meta = json.loads(ip.read_text(encoding="utf-8"))
-    except Exception as e:
-        return {"ok": False, "error": f"索引讀取失敗: {e}"}
-    if not meta.get("has_vectors"):
-        return {"ok": False, "status": "pending_deps",
-                "error": f"target='{target}' 索引無向量 (manifest-only)。裝好後端依賴後重跑 reindex。"}
+
+    # 收集選定 targets 的所有含向量 chunks（各 chunk 記住來源 target）
+    entries = []          # list of (target, chunk)
+    missing, pending = [], []
+    for t in targets:
+        ip = index_path(t)
+        if not ip.is_file():
+            missing.append(t)
+            continue
+        try:
+            meta = json.loads(ip.read_text(encoding="utf-8"))
+        except Exception as e:
+            return {"ok": False, "error": f"索引 '{t}' 讀取失敗: {e}"}
+        if not meta.get("has_vectors"):
+            pending.append(t)
+            continue
+        for c in meta.get("chunks", []):
+            if c.get("vec"):
+                entries.append((t, c))
+    if not entries:
+        detail = []
+        if missing:
+            detail.append(f"未建索引 {missing}（先 reindex）")
+        if pending:
+            detail.append(f"無向量(manifest-only) {pending}")
+        return {"ok": False, "error": "；".join(detail) or "選定 target 無可用向量"}
 
     t0 = time.time()
     qvec, err = embed_texts([args.query])
     if qvec is None:
         return {"ok": False, "error": err}
-    q = qvec[0]
-    scored = []
-    for c in meta.get("chunks", []):
-        v = c.get("vec")
-        if not v:
-            continue
-        scored.append((_cosine(q, v), c))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[: max(1, args.topk)]
+
+    # numpy 向量化餘弦 — 取代純 Python 迴圈（16k chunks: ~1.5s → ~0.4s）
+    import numpy as np
+    matrix = np.asarray([c["vec"] for (_t, c) in entries], dtype=np.float32)
+    q = np.asarray(qvec[0], dtype=np.float32)
+    denom = np.linalg.norm(matrix, axis=1) * (np.linalg.norm(q) + 1e-9) + 1e-9
+    sims = (matrix @ q) / denom
+    k = max(1, args.topk)
+    order = np.argsort(-sims)[:k]
+
+    hits = []
+    for i in order:
+        idx = int(i)
+        t, c = entries[idx]
+        hits.append({"score": round(float(sims[idx]), 4), "target": t,
+                     "id": c["id"], "file": c["file"], "preview": c["text"][:200]})
     return {
         "ok": True,
-        "target": target,
+        "targets": targets,
         "query": args.query,
+        "searched_chunks": len(entries),
         "latency_ms": round((time.time() - t0) * 1000, 1),
-        "hits": [
-            {"score": round(s, 4), "id": c["id"], "file": c["file"],
-             "preview": c["text"][:200]}
-            for s, c in top
-        ],
+        "hits": hits,
+        "note": (f"略過未建索引 {missing}" if missing else None),
     }
+
+
+def op_targets(args):
+    """列出所有可用 target（config-driven）— 供 C# AdminPage 動態建下拉，不寫死。"""
+    return {"ok": True, "targets": list(target_defs().items())}
 
 
 def op_embed(args):
@@ -409,6 +503,9 @@ def op_embed(args):
 # 輸出 — json (機器/C# parse) 或 text (人類可讀 markdown)
 # ─────────────────────────────────────────────────────────────────────────
 def render_text(op: str, r: dict) -> str:
+    # 多 target reindex → 逐筆展開（先於 ok 檢查，失敗細節不被吞）
+    if r.get("multi"):
+        return "\n".join(render_text(op, rr) for rr in r.get("results", []))
     if not r.get("ok", False):
         return f"❌ {op} 失敗: {r.get('error') or r.get('note') or r}"
     if op == "status":
@@ -434,10 +531,16 @@ def render_text(op: str, r: dict) -> str:
         return (f"✅ reindex `{r['target']}`: {r['files']} 檔 → {r['chunks']} chunks / "
                 f"status={r['status']}" + (f"\n   {r['note']}" if r.get('note') else ""))
     if op == "search":
-        out = [f"🔍 `{r['query']}` @ {r['target']} ({r['latency_ms']}ms)"]
+        tgts = ",".join(r.get("targets", []))
+        out = [f"🔍 `{r['query']}` @ [{tgts}] ({r['latency_ms']}ms, {r.get('searched_chunks', '?')} chunks)"]
+        if r.get("note"):
+            out.append(f"  ⚠ {r['note']}")
         for h in r["hits"]:
-            out.append(f"  [{h['score']}] {h['id']}\n     {h['preview']}")
+            out.append(f"  [{h['score']}] ({h.get('target', '?')}) {h['id']}\n     {h['preview']}")
         return "\n".join(out)
+    if op == "targets":
+        # 一行一個 "name\tdesc" — C# 讀行、split '\t' 取 [0] 建下拉
+        return "\n".join(f"{k}\t{v}" for k, v in r["targets"])
     if op == "embed":
         return f"✅ embed dim={r['dim']} latency={r['latency_ms']}ms head={r['head']}"
     if op == "install":
@@ -465,10 +568,11 @@ def main():
     p = sub.add_parser("status"); p.add_argument("--format", default="text"); _add_model(p)
     p = sub.add_parser("install"); p.add_argument("--full", action="store_true"); p.add_argument("--format", default="text"); _add_model(p)
     p = sub.add_parser("prefetch"); p.add_argument("--format", default="text"); _add_model(p)
-    _tgt_help = "語料庫 (僅 " + " / ".join(valid_targets()) + "；填其他值會報未知 target)"
-    p = sub.add_parser("reindex"); p.add_argument("--target", required=True, choices=valid_targets(), help=_tgt_help); p.add_argument("--format", default="text"); _add_model(p)
+    _tgt_help = "語料庫 (可逗號多選或 all；合法: " + " / ".join(valid_targets()) + ")"
+    p = sub.add_parser("reindex"); p.add_argument("--target", required=True, help=_tgt_help); p.add_argument("--format", default="text"); _add_model(p)
     p = sub.add_parser("search"); p.add_argument("--query", required=True); p.add_argument("--target", default="docs", help=_tgt_help); p.add_argument("--topk", type=int, default=5); p.add_argument("--format", default="text"); _add_model(p)
     p = sub.add_parser("embed"); p.add_argument("--text", required=True); p.add_argument("--format", default="text"); _add_model(p)
+    p = sub.add_parser("targets"); p.add_argument("--format", default="text"); _add_model(p)
 
     args = ap.parse_args()
     args._now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -481,6 +585,7 @@ def main():
     handlers = {
         "status": op_status, "install": op_install, "prefetch": op_prefetch,
         "reindex": op_reindex, "search": op_search, "embed": op_embed,
+        "targets": op_targets,
     }
     r = handlers[args.op](args)
     fmt = getattr(args, "format", "text")

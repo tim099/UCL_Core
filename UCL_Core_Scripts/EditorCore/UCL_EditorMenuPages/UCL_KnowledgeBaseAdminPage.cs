@@ -5,9 +5,11 @@
 // 設計取捨：嵌入後端走 FlagEmbedding 的真 bge-m3，但頁面與後端解耦、命名走「知識庫」— 換模型不必改頁。
 //          UI 字串仿 UCL_ChatTavernAdminPage 慣例用 zh-Hant 硬編 (內部管理頁，不走 CodeLocalize)。
 #if UNITY_EDITOR
+using System.IO;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.EditorLib.AgentCommands.KnowledgeBase;
+using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
@@ -18,12 +20,9 @@ namespace UCL.Core.EditorLib.Page
     /// 知識庫後台管理頁 — 環境/模型狀態、依賴安裝、索引重建、檢索測試。
     /// 全部操作委派給 knowledge_base.py (經 UCL_KnowledgeBaseRunner)，與 agent 走 Cmd_KnowledgeBase 同一支腳本。
     /// </summary>
-    /// <summary>
-    /// 知識庫語料庫 target — 對應 knowledge_base.py 的 TARGET_DEFS。
-    /// ⚠ 新增 target 時兩邊都要同步：本 enum + python 的 TARGET_DEFS / resolve_target_sources()。
-    /// enum 名 PascalCase，傳給 CLI 時轉小寫 (Docs → "docs")。
-    /// </summary>
-    public enum KnowledgeBaseTarget { Docs, Lessons }
+    // 知識庫 target 清單改為「執行期向 knowledge_base.py 的 `targets` op 動態抓」
+    // (config-driven；加 target = 改 kb_targets.json，本頁零改動、下拉自動更新)。
+    // 不再寫死 enum，也不再需要 C#/Python 雙邊手動同步。
 
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_KnowledgeBaseAdminPage.md")]
     public class UCL_KnowledgeBaseAdminPage : UCL_CommonEditorPage
@@ -39,12 +38,15 @@ namespace UCL.Core.EditorLib.Page
         bool m_Busy = false;
         string m_BusyLabel = "";
         string m_SearchQuery = "如何為 UCL_Asset 設定 SaveFolderPath？";
-        KnowledgeBaseTarget m_SearchTarget = KnowledgeBaseTarget.Docs;
-        readonly UCL_ObjectDictionary m_TargetDic = new UCL_ObjectDictionary();  // enum popup 快取
-        /// <summary>target enum → CLI 小寫字串 (Docs → "docs")。</summary>
-        string TargetStr => m_SearchTarget.ToString().ToLowerInvariant();
+        // config-driven target 清單（開頁向 python `targets` op 抓 + 附 "all"）。
+        string[] m_Targets = new[] { "docs" };
+        int m_TargetIdx = 0;
+        /// <summary>目前選定 target 字串（CLI 用；含 "all" 跨庫多選）。</summary>
+        string TargetStr => (m_Targets != null && m_TargetIdx >= 0 && m_TargetIdx < m_Targets.Length)
+                            ? m_Targets[m_TargetIdx] : "docs";
 
         GUIStyle m_WrapStyle;
+        private UCL_ObjectDictionary m_Dic = new();
         GUIStyle WrapStyle
         {
             get
@@ -55,10 +57,66 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        public override void OnResume()
+        bool m_Loaded = false;   // 首幀 lazy-load 守門
+
+        // ⚠ 初始化不能放 OnResume：OnResume 只在「從子頁 pop 返回」時觸發（見 UCL_GUIPageController.Pop），
+        //    第一次開頁走 Push→Init、不呼叫 OnResume。故改比照 UCL_ChatTavernAdminPage 的 m_Loaded 慣例，
+        //    在 ContentOnGUI 首幀 lazy-load（此時頁面已在 stack、EditorWindow context 有效，async RunOp 安全）。
+        void RefreshAll()
         {
-            base.OnResume();
-            RunOp("狀態", "status --format text", 60000);   // 開頁自動抓一次狀態
+            LoadTargets();                                  // 直接讀 kb_targets.json 建下拉（同步、即時）
+            RunOp("狀態", "status --format text", 60000);   // 抓一次狀態
+        }
+
+        // 直接讀 kb_targets.json（與 python 同一份 config）建 target 下拉 —
+        // 同步、開頁即時，免 subprocess/async。config-driven：加 target = 改 config，本頁零改動。
+        void LoadTargets()
+        {
+            //Debug.LogError("LoadTargets");
+            System.Collections.Generic.List<string> list = new();
+            try
+            {
+                string dir = Path.GetDirectoryName(UCL_KnowledgeBaseRunner.ScriptPath) ?? "";
+                string cfgPath = Path.Combine(dir, "kb_targets.json");
+                if (File.Exists(cfgPath))
+                {
+                    var root = JsonData.ParseJson(File.ReadAllText(cfgPath));
+                    if (root != null && root.IsObject && root.Contains("targets"))
+                    {
+                        var targets = root["targets"];
+                        if (targets != null && targets.IsObject)
+                        {
+                            foreach (var key in targets.Keys)
+                            {
+                                if (!string.IsNullOrEmpty(key) && !key.StartsWith("_"))
+                                    list.Add(key);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[KnowledgeBaseAdminPage] 讀 kb_targets.json 失敗，改用 fallback: {e.Message}");
+                Debug.LogException(e);
+            }
+            //Debug.LogError($"LoadTargets:{list.ConcatToString()}");
+            if (list.Count == 0) list.Add("docs");   // fallback：config 缺失/壞檔時至少有 docs
+            list.Add("all");                          // 跨庫一次搜 / 全量重建
+            m_Targets = list.ToArray();
+            
+            m_TargetIdx = Mathf.Clamp(m_TargetIdx, 0, m_Targets.Length - 1);
+        }
+
+        // 共用 target 下拉（config-driven，含 all）
+        void DrawTargetPopup()
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("Target", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                int idx = Mathf.Clamp(m_TargetIdx, 0, Mathf.Max(0, m_Targets.Length - 1));
+                m_TargetIdx = UCL_GUILayout.PopupSearchCache(idx, m_Targets, m_Dic, nameof(m_TargetIdx));
+            }
         }
 
         protected override void TopBarButtons()
@@ -67,12 +125,13 @@ namespace UCL.Core.EditorLib.Page
             using (new EditorGUI.DisabledScope(m_Busy))
             {
                 if (GUILayout.Button("🔄 重新整理狀態", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    RunOp("狀態", "status --format text", 60000);
+                    RefreshAll();   // 同時重讀 kb_targets.json（config 改了下拉也刷新）
             }
         }
 
         protected override void ContentOnGUI()
         {
+            if (!m_Loaded) { m_Loaded = true; RefreshAll(); }   // 首幀 lazy-load（取代失效的 OnResume 初始化）
             GUILayout.Label("🧠 Agent 知識庫 / 長期記憶向量檢索", WrapStyle);
             EditorGUILayout.HelpBox(
                 "管理 Agent 知識庫：文檔 / 經驗庫的向量索引與語意檢索。" +
@@ -128,14 +187,15 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 GUILayout.Label("<b>3. 知識庫索引重建</b>（掃描文件 → 切塊 → 建向量）", WrapStyle);
-                EditorGUILayout.HelpBox("target 只有兩個：docs＝專案 Docs/**/*.md；lessons＝AgentCommands/Lessons 經驗庫。填其他值會報未知 target（新增需改 knowledge_base.py）。", MessageType.None);
+                EditorGUILayout.HelpBox("target 清單來自 kb_targets.json（config-driven，加 target 免改 code）。選單一或 all（全部重建）。有 GPU 時全量約數分鐘。", MessageType.None);
+                DrawTargetPopup();
                 using (new EditorGUI.DisabledScope(m_Busy))
                 using (new GUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("📚 重建 Docs 索引", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
-                        RunOp("重建 Docs 索引", "reindex --target docs", 300000);
-                    if (GUILayout.Button("🧠 重建 Lessons 索引", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
-                        RunOp("重建 Lessons 索引", "reindex --target lessons", 300000);
+                    if (GUILayout.Button($"🔨 重建「{TargetStr}」索引", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                        RunOp($"重建 {TargetStr} 索引", $"reindex --target {TargetStr}", 1800000);
+                    if (GUILayout.Button("🧱 重建全部 (all)", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                        RunOp("重建全部索引", "reindex --target all", 1800000);
                 }
             }
         }
@@ -146,17 +206,8 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 GUILayout.Label("<b>4. 檢索測試</b>（Editor 內驗證；高頻檢索 agent 直接呼 python）", WrapStyle);
-                GUILayout.Label("Target：<b>Docs</b>＝專案文檔 / <b>Lessons</b>＝經驗庫（下拉選單，無法填錯）。", WrapStyle);
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label("Target", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    m_SearchTarget = UCL_GUILayout.Popup(m_SearchTarget, m_TargetDic, null, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    using (new EditorGUI.DisabledScope(m_Busy))
-                    {
-                        if (GUILayout.Button($"重建 {TargetStr} 索引", UCL_GUIStyle.ButtonStyle))
-                            RunOp($"重建 {TargetStr} 索引", $"reindex --target {TargetStr}", 300000);
-                    }
-                }
+                GUILayout.Label("Target 下拉來自 kb_targets.json；選 <b>all</b> 可跨全部語料庫一次搜（分數同空間可比）。", WrapStyle);
+                DrawTargetPopup();
                 m_SearchQuery = GUILayout.TextField(m_SearchQuery, UCL_GUIStyle.TextFieldStyle);
                 using (new EditorGUI.DisabledScope(m_Busy || string.IsNullOrWhiteSpace(m_SearchQuery)))
                 {
@@ -175,8 +226,15 @@ namespace UCL.Core.EditorLib.Page
             if (string.IsNullOrEmpty(m_LastOutput)) return;
             using (new GUILayout.VerticalScope("box"))
             {
+                GUILayout.BeginHorizontal();
                 GUILayout.Label("<b>📋 最近操作結果</b>", WrapStyle);
-                EditorGUILayout.TextArea(m_LastOutput, GUILayout.MinHeight(80));
+                if (GUILayout.Button("Copy", UCL_GUIStyle.ButtonStyle))
+                {
+                    EditorGUIUtility.systemCopyBuffer = m_LastOutput;
+                }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                GUILayout.Box(m_LastOutput, UCL_GUIStyle.BoxStyle);
             }
         }
 

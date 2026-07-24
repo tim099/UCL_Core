@@ -21,6 +21,7 @@ using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UCL.Core.EditorLib.AgentCommands.Treasury;   // UCL_TreasuryLedger / TreasuryLedgerEntry
 using UCL.Core.EditorLib.AgentCommands.CanvasVoucher; // UCL_CanvasVoucherLedger（繪圖券 canonical，C# 直呼不 spawn python）
+using UCL.Core.EditorLib.AgentCommands.Voucher;       // UCL_TavernVoucherLedger（酒館券 canonical）+ 券共用底層
 using UCL.Core.EditorLib.AgentCommands.ChatTavern; // UCL_ChatTavernIO / UCL_ChatMessage（操作通知發酒館主頻道）
 using UnityEditor;
 using UnityEngine;
@@ -84,7 +85,7 @@ namespace UCL.Core.EditorLib.Page
         string m_TransferAmountDraft = "0";
         string m_TransferDescDraft = "";
         string m_CanvasGrantAmountDraft = "0";
-        // 註：酒館券發放暫停（待補 canonical grant CLI），故無 tavern grant amount draft；補 CLI 時再加回。
+        string m_TavernGrantAmountDraft = "0";   // 酒館券發放金額（Tim 2026-07-24：接上 UCL_TavernVoucherLedger canonical grant）
         string m_VoucherDescDraft = "";   // 繪圖券／酒館券發放共用的說明欄（Tim 2026-07-21：發券同步說明到酒館通知，仿打款）
 
         // 操作結果訊息（持久顯示直到下次操作，取代 Editor-only DisplayDialog）
@@ -495,15 +496,17 @@ namespace UCL.Core.EditorLib.Page
                             DoGrantCanvasVoucher();
                 }
 
-                // ---- 酒館券（餘額用快取值）----
+                // ---- 酒館券（餘額用快取值；發放走 UCL_TavernVoucherLedger canonical grant）----
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label($"🍺 酒館券 餘額: <b>{(m_CacheTavernBal < 0 ? "-" : m_CacheTavernBal.ToString())}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-                    if (GUILayout.Button("發酒館券 🚧", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.7f, 0.7f)), GUILayout.ExpandWidth(false)))
-                        DoGrantTavernVoucher();   // 點了會說明「待補 canonical grant CLI，不直寫繞審計」
-                    GUILayout.Label("<color=#ffcc44>發放待補 canonical CLI</color>", WrapLabelStyle);
+                    GUILayout.Label("發放", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                    m_TavernGrantAmountDraft = GUILayout.TextField(m_TavernGrantAmountDraft ?? "0", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    using (new EditorGUI.DisabledScope(!hasPersona || m_CacheTavernBal < 0))
+                        if (GUILayout.Button("發酒館券", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.6f)), GUILayout.ExpandWidth(false)))
+                            DoGrantTavernVoucher();
                 }
-                GUILayout.Label("  查詢直讀；發放走 canonical owner——繪圖券 canvas.py grant（已接）、酒館券缺 grant CLI（爭點二 follow-up 待補，不 C# 直寫繞審計）。", WrapLabelStyle);
+                GUILayout.Label("  查詢直讀；發放走各券 canonical C# ledger（繪圖券 UCL_CanvasVoucherLedger／酒館券 UCL_TavernVoucherLedger），正規路徑、含 history 審計。", WrapLabelStyle);
             }
         }
 
@@ -653,7 +656,7 @@ namespace UCL.Core.EditorLib.Page
                 SetResult($"✅ 發繪圖券（C# canonical ledger）：`{persona}` +{amount}，餘額 {before} → {after}");
                 Debug.Log($"[BankAdmin] 發繪圖券 {persona} +{amount} via UCL_CanvasVoucherLedger");
                 NotifyTavern(
-                    $"🎨 **銀行後台｜發繪圖券**\n" +
+                    $"🎨 **銀行後台｜發繪圖券** @{persona}\n" +
                     $"persona **{persona}** 發放 +{amount} 張繪圖券，餘額 {before} → **{after}**。\n" +
                     $"📝 說明：繪圖券綁 persona，用於共用像素畫布繪圖（1 券 ≈ 1 像素）；本次走 C# canonical ledger 寫入。\n" +
                     $"📌 本次備註：{desc}",
@@ -665,15 +668,37 @@ namespace UCL.Core.EditorLib.Page
             catch (Exception ex) { SetResult($"❌ 發繪圖券失敗（C# ledger）：{ex.Message}"); }
         }
 
-        // 發酒館券（爭點二 canonical）：酒館券的 canonical owner 目前**沒有** grant CLI（work_session settlement
-        // 自動 accrual，無單獨 grant 入口）。全室拍板「缺 CLI 是要補的洞、非直寫的通行證」— 所以這裡**不** C# 直寫
-        // agent_bonus_quota.json（那正是要消滅的『繞 canonical owner 無審計寫入』）。發放暫停，等補上 grant CLI 再接。
-        // 查詢（直讀 total_remaining）不受影響、照常可用。
+        // 發酒館券（Tim 2026-07-24 canonical，比照繪圖券走 C# ledger）：UCL_TavernVoucherLedger 是正規 owner，
+        // 以 DataRoot 錨定寫 agent_bonus_quota.json（與 work_session accrual 同源、含 history 審計）——這是有審計、
+        // 正規路徑的 canonical 寫入者，非「繞 owner 直寫」。原本『缺 grant CLI 故暫停』的禁令，已被繪圖券
+        // 改走 C# canonical ledger 的先例推翻（C# static owner 本身就是 canonical，非直寫繞審計）。
         void DoGrantTavernVoucher()
         {
-            SetResult("🚧 發酒館券暫停：酒館券 canonical owner 尚無 grant CLI（爭點二 follow-up 要補一支）。" +
-                      "全室拍板『財務寫入零豁免、缺 CLI 非直寫藉口』，故本頁不 C# 直寫繞審計。查詢餘額仍可用。");
-            Debug.LogWarning("[BankAdmin] 發酒館券 blocked：待補 canonical grant CLI（不直寫繞 owner）");
+            string persona = SelectedPersona;
+            if (string.IsNullOrEmpty(persona)) { SetResult("❌ 發酒館券失敗：未選 persona"); return; }
+            string bank = ResolvePersonaToBank(persona);
+            if (string.IsNullOrEmpty(bank))
+            { SetResult($"❌ 發酒館券失敗：persona `{persona}` 無法解析 bank（persona 檔缺 agent 欄，或 agent 未開戶；fail-loud 不 mint）"); return; }
+            if (!int.TryParse((m_TavernGrantAmountDraft ?? "0").Trim(), out int amount) || amount <= 0)
+            { SetResult($"❌ 發酒館券失敗：金額需為正整數（收到 '{m_TavernGrantAmountDraft}'）"); return; }
+
+            string desc = string.IsNullOrEmpty(m_VoucherDescDraft) ? "後台發券（BankAdminPage）" : m_VoucherDescDraft.Trim();
+            try
+            {
+                var (before, after) = UCL_TavernVoucherLedger.Grant(bank, persona, amount, "admin_grant", desc);
+                SetResult($"✅ 發酒館券（C# canonical ledger）：`{bank}`.personas.`{persona}` +{amount}，餘額 {before} → {after}");
+                Debug.Log($"[BankAdmin] 發酒館券 {bank}.{persona} +{amount} via UCL_TavernVoucherLedger");
+                NotifyTavern(
+                    $"🍺 **銀行後台｜發酒館券** @{persona}\n" +
+                    $"persona **{persona}**（bank {bank}）發放 +{amount} 張酒館券／自由時間券，餘額 {before} → **{after}**。\n" +
+                    $"📝 說明：酒館券綁 persona（分桶在 bank 下的 personas），用於自由時間 / 招待等；本次走 C# canonical ledger 寫入。\n" +
+                    $"📌 本次備註：{desc}",
+                    "voucher-grant-tavern");
+                m_BalancesDirty = true;   // 酒館券餘額變動 → 快取失效
+                m_TavernGrantAmountDraft = "0";
+                m_VoucherDescDraft = "";
+            }
+            catch (Exception ex) { SetResult($"❌ 發酒館券失敗（C# ledger）：{ex.Message}"); }
         }
 
         // ===========================================================
@@ -688,23 +713,8 @@ namespace UCL.Core.EditorLib.Page
         // 委派 C# canonical ledger（跟發券同源、同路徑解析，不再自己讀檔避免路徑漂移）
         int GetCanvasVoucherBalance(string persona) => UCL_CanvasVoucherLedger.GetBalance(persona);
 
-        int GetTavernVoucherBalance(string bank, string persona)
-        {
-            try
-            {
-                if (!File.Exists(TavernQuotaPath)) return 0;
-                var d = JsonData.ParseJson(File.ReadAllText(TavernQuotaPath));
-                if (d == null || !d.Contains("agents")) return 0;
-                var agents = d["agents"];
-                if (!agents.Contains(bank)) return 0;
-                var bankNode = agents[bank];
-                if (!bankNode.Contains("personas")) return 0;
-                var personas = bankNode["personas"];
-                if (!personas.Contains(persona)) return 0;
-                return personas[persona].GetInt("total_remaining", 0);
-            }
-            catch { return 0; }
-        }
+        // 委派酒館券 canonical ledger（跟發券同源、同路徑解析，不再自己讀檔避免 schema/路徑漂移）
+        int GetTavernVoucherBalance(string bank, string persona) => UCL_TavernVoucherLedger.GetBalance(bank, persona);
 
         // ===========================================================
         // 區塊：受控寫入 helpers

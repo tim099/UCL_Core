@@ -11,6 +11,7 @@
 using System;
 using System.IO;
 using UCL.Core.JsonLib;
+using UCL.Core.EditorLib.AgentCommands.Voucher;   // 共用底層 UCL_VoucherLedgerCommon（時戳/uuid/原子讀改寫）
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
@@ -57,41 +58,29 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
         }
 
         // 共用寫入路徑：讀(或 init 新檔) → balance += delta → append history entry → 原子寫回。
+        // 機制（讀改寫 + 原子寫 + 時戳/uuid）走 UCL_VoucherLedgerCommon 共用；本函式只填繪圖券 schema。
         static (int before, int after) Apply(string persona, string type, int amount, int delta, string source, string refText)
         {
             string p = PathFor(persona);
-            JsonData d = File.Exists(p) ? JsonData.ParseJson(File.ReadAllText(p)) : JsonData.ParseJson("{}");
-            if (!d.Contains("persona")) d["persona"] = persona;
-            int before = d.Contains("balance") ? d.GetInt("balance", 0) : 0;
-            int after = before + delta;
-            d["balance"] = after;
-            if (!d.Contains("history") || !d["history"].IsArray) d["history"] = JsonData.ParseJson("[]");
-            var e = JsonData.ParseJson("{}");
-            e["ts"] = IsoNow();
-            e["uuid"] = ShortUuid();
-            e["type"] = type;
-            e["amount"] = amount;
-            e["source"] = string.IsNullOrEmpty(source) ? "" : source;
-            e["ref"] = string.IsNullOrEmpty(refText) ? "" : refText;
-            d["history"].Add(e);
-            AtomicWrite(p, d.ToJsonBeautify());
+            int before = 0, after = 0;
+            UCL_VoucherLedgerCommon.MutateFile(p, () => JsonData.ParseJson("{}"), d =>
+            {
+                if (!d.Contains("persona")) d["persona"] = persona;
+                before = d.Contains("balance") ? d.GetInt("balance", 0) : 0;
+                after = before + delta;
+                d["balance"] = after;
+                if (!d.Contains("history") || !d["history"].IsArray) d["history"] = JsonData.ParseJson("[]");
+                var e = JsonData.ParseJson("{}");
+                e["ts"] = UCL_VoucherLedgerCommon.IsoNow();
+                e["uuid"] = UCL_VoucherLedgerCommon.ShortUuid();
+                e["type"] = type;
+                e["amount"] = amount;
+                e["source"] = string.IsNullOrEmpty(source) ? "" : source;
+                e["ref"] = string.IsNullOrEmpty(refText) ? "" : refText;
+                d["history"].Add(e);
+            });
             Debug.Log($"[CanvasVoucher] {type} {amount} → {persona} (balance: {before} → {after})");
             return (before, after);
-        }
-
-        // ISO 8601 UTC + ms，對齊 canvas.py / Treasury 的 ts 格式
-        static string IsoNow() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) + "Z";
-        // 6-char hex uuid，對齊既有券 history 的 uuid 格式
-        static string ShortUuid() => Guid.NewGuid().ToString("N").Substring(0, 6);
-
-        static void AtomicWrite(string path, string content)
-        {
-            string dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            string tmp = path + ".tmp";
-            File.WriteAllText(tmp, content);
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
         }
     }
 }

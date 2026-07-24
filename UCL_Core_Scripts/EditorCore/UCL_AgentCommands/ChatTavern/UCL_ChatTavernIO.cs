@@ -167,6 +167,54 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
         }
 
+        // ===========================================================
+        // 區塊職責：persona pool id 集合（AwakenInit/personas/*.json 檔名 = persona id）
+        // 物理意義：mention→inbox 白名單 union 的 persona 來源。Tim 2026-07-24 persona-first 拍板 —
+        //          persona 是通知主 key，與 identities.json（agent 層）union 後，@persona 精準命中
+        //          inbox/persona.md、@agent 命中 inbox/agent.md（共用信箱），由 AppendInbox(targetId) 天然分流。
+        // 數值影響：只回檔名集合（不 parse 內容），供白名單 Contains 判定；dir mtime cache 避免每筆 post 重列目錄。
+        // SOT 對齊：沿用 Cmd_LoginStatus / UCL_BankAdminPage 既有「讀 AwakenInit/personas」慣例，不新增漂移路徑。
+        // ===========================================================
+        static HashSet<string> _personaIdsCache;
+        static long _personaIdsCacheMtime = -1;
+
+        /// <summary>
+        /// 回傳 persona pool 的 id 集合（AwakenInit/personas/ 下每個 *.json 檔名去副檔名）。
+        /// 跳過 _ / . 前綴檔（_registry_meta.json 等非 persona 檔）。目錄不存在或讀取失敗回空集合（白名單降級為只用 identities）。
+        /// </summary>
+        public static HashSet<string> LoadPersonaIds()
+        {
+            // 路徑：走可 override 資料根，對齊 Cmd_LoginStatus 的 personasDir 解析（DataRoot = <repo>/AgentCommands）
+            string personasDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas");
+            // dir mtime cache：目錄內新增/刪除 persona 檔會改 dir mtime → 命中即回 cache（避免每筆 post 重列目錄 IO）
+            long mtime;
+            try { mtime = Directory.Exists(personasDir) ? Directory.GetLastWriteTimeUtc(personasDir).Ticks : -1L; }
+            catch { mtime = -1L; }
+            if (mtime == _personaIdsCacheMtime && _personaIdsCache != null) return _personaIdsCache;
+
+            var set = new HashSet<string>();
+            try
+            {
+                if (Directory.Exists(personasDir))
+                {
+                    foreach (var pf in Directory.GetFiles(personasDir, "*.json"))
+                    {
+                        string name = Path.GetFileNameWithoutExtension(pf);
+                        // 跳過 _registry_meta.json / 隱藏檔 — 非 persona 身分，不進白名單
+                        if (string.IsNullOrEmpty(name) || name.StartsWith("_") || name.StartsWith(".")) continue;
+                        set.Add(name);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ChatTavern] LoadPersonaIds 讀 persona pool 失敗（白名單降級只用 identities）：{e.Message}");
+            }
+            _personaIdsCache = set;
+            _personaIdsCacheMtime = mtime;
+            return set;
+        }
+
         /// <summary>取得（或建立）身分。若 id 不存在，依 displayName + kind 建一筆並寫回。</summary>
         public static UCL_ChatIdentity GetOrCreateIdentity(string id, string displayName, string kind)
         {

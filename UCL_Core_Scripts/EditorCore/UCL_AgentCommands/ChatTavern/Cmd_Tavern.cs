@@ -684,10 +684,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     var mentionedIds = new HashSet<string>();
                     foreach (System.Text.RegularExpressions.Match m in matches) mentionedIds.Add(m.Groups[1].Value);
 
-                    // 載入 identities.json 一次當白名單（防 @everyone / 拼錯亂寫 inbox）
+                    // 載入白名單（防 @everyone / 拼錯亂寫 inbox）— Tim 2026-07-24 persona-first 拍板：
+                    // 白名單來源 = identities.json（agent 層）∪ AwakenInit/personas（persona 層）。
+                    // 物理意義：persona 是通知主 key，@persona 精準命中 inbox/persona.md；@agent 命中 inbox/agent.md（共用信箱）。
+                    //          兩者都由下方 AppendInbox(targetId) 依 id 各自寫檔，天然分流、零 fan-out（basecamp 2026-07-24 拍磚）。
+                    // 併不是拆：純移除白名單會被 @everyone / 書名 slug（@summit-masthead-bet）灌垃圾 inbox 檔。
                     var identList = UCL_ChatTavernIO.LoadIdentities();
                     var validIds = new HashSet<string>();
                     foreach (var idRow in identList.identities) validIds.Add(idRow.id);
+                    foreach (var personaId in UCL_ChatTavernIO.LoadPersonaIds()) validIds.Add(personaId);
 
                     int notifyCount = 0;
                     foreach (string targetId in mentionedIds)

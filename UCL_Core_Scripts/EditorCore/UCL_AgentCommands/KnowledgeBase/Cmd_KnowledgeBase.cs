@@ -93,7 +93,11 @@ target 參數（要索引 / 檢索哪個語料庫）— 目前僅這兩個合法
             switch (op)
             {
                 case "status":
-                    return "status --format text";
+                    // probe=true → 現場跑真煙霧探針 (載權重 + forward) 而非讀指紋快取。
+                    // 物理意義：import 過只證明檔案能讀，權重壞 / CUDA 不合要到 forward 才炸 (反向假 OK)；
+                    // 數值影響：--probe 會載 ~1.2GB 權重 (十秒級)，故預設 off，需要硬證據時才開。
+                    return "status --format text"
+                           + (GetArg(args, "probe", "false").ToLowerInvariant() == "true" ? " --probe" : "");
                 case "install":
                     return "install" + (GetArg(args, "full", "false").ToLowerInvariant() == "true" ? " --full" : "");
                 case "prefetch":

@@ -60,18 +60,17 @@ ScreenStream daemon 每秒寫一張 frame 進 600 槽 ring buffer（只留 10 �
 
 ### Step 1. 開 session
 ```bash
-# (看日番且要精讀對白 → 先從閱讀庫抽該書日文角色名當 whisper 詞彙偏置, 壓人名咬字)
-STT_PROMPT=$(python <UCL_Core>/Tools~/AgentCommands/library.py stt-prompt --book <片slug> 2>/dev/null)
 python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start \
   --persona ame \             # 必填 (Tim 2026-07-02 取消 auto-infer); 帶你 session lock 的 persona
   --end-time 12:30 \          # 或 --duration 30 (互斥)
   --max-tiles 12 \            # 每輪縮圖牆格數上限 (預設 12)
-  --stt --stt-lang ja \       # 🎙 語音轉錄 opt-in — 同時啟動 daemon STT worker (收播自動還原); 詳見 STT.md
-  --stt-prompt "$STT_PROMPT" \ # 🆕 T-STT-Prompt: 登場人物日文名偏置 (壓シャーリー→サレイ 之類咬字); 空也 OK
+  --stt \                     # 🎙 讀取端 opt-in: 本場 montage 讀 daemon 產的 STT cache; 不帶 lang/model/prompt
   --desc "陪看 XXX 直播" --json
 # 回 session_id + 初始 cursor + ends_at。會走 tavern-keeper 發開播 announcement。
 ```
-- **🆕 T-STT-Prompt (summit 2026-07-10)**：`--stt-prompt` 把該書登場人物名餵 whisper `initial_prompt` 做詞彙偏置。**MUST 日文字形（片假名）**——`library.py stt-prompt` 抽的是人物的 `name_original` 欄（片假名），不是中文譯名（餵中文名給日語 ASR 沒用甚至更糟）。抽出來是空的 → 該書人物還沒登 `name_original`，先用 `library.py set-name-original --book <片> --character <cid> --name-original シャーリー` 補（或 add-character 帶 `--name-original`）。prompt 綁 daemon worker 生命週期，start 時寫入 config、worker 起手吃；中途改需 toggle 重起（daemon 會 log 警告不靜默）。
+- **🆕 STT 設定由 Tim 預先配置, skill 不改動 (Tim 2026-07-26 拍板)**：STT 的 `stt_enabled/model/lang/prompt` **一律由 Tim 在影音管理頁 (UCL_MediaAdminPage) 針對該片預先設好**；`start --stt` **只是讀取端 opt-in**（讓 cycle 的 montage_cmd 附 `--stt` 去讀 daemon 產的 cache），**不再傳、也不寫 `--stt-lang/--stt-model/--stt-prompt`**，完全不覆寫 Tim 的設定。
+  - daemon 每 loop 重讀 config，且 **T-STT-AutoRestart (2026-07-20)** 偵測 model/lang/prompt 變更會自動重起 worker 套新值 → **Tim 改設定 (存檔寫入 `_config.json`) 即時生效, 不需停/啟錄影**。
+  - 看日番要人名偏置 (prompt) / 指定 lang → 請 Tim 在影音管理頁設定, 不由 skill 決定。(舊 `--stt-lang/--stt-prompt` 由 skill 全量套用的 T-STT-AutoStart/FullApply 流程已移除。)
 - **🆕 T-StreamWatch-OutIsolation (summit 2026-07-10)**：`cycle` 回的 `montage_cmd` **已自動帶 persona-scoped `--out _montage_<persona>.jpg`**（server 端注入，不必你手動）。多 viewer（primary＋companion／多 primary）各寫各的 `_montage_<persona>.jpg` + `.subtitles.md`，不再互相覆蓋污染。**Read 圖/ sidecar 時認你自己 persona 的檔名**（不是預設 `_montage.jpg`）。
 
 ### Step 2. 進 /loop dynamic，每 cycle 做：

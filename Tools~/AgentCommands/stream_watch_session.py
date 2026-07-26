@@ -412,19 +412,17 @@ def cmd_start(args) -> int:
         },
     }
 
-    # 區塊職責：T-STT-AutoStart — 開播同步啟動 daemon STT cache worker (Tim 2026-07-09 拍板)
-    # 物理意義：start --stt 除了讓 cycle 的 montage_cmd 附 --stt (讀 cache), 也直接把 daemon
-    #          config 的 stt_enabled 切 true 起 whisper worker — 不必再手動改 _config.json。
-    # 數值影響：記下 daemon 舊值 (stt_daemon_prev), 收播 end 時還原 — 本場開的本場關,
-    #          不干擾 Tim 手動常開的情境 (舊值本來就 true → end 後維持 true)。
+    # 區塊職責：STT 設定完全尊重 Tim 預先配置 — skill 不寫 daemon config (Tim 2026-07-26 拍板)。
+    # 物理意義：Tim 在影音管理頁預先設好本片的 stt_enabled/model/lang/prompt; daemon 每 loop 重讀 config,
+    #          且 T-STT-AutoRestart(2026-07-20) 偵測 model/lang/prompt 變更會自動重起 worker 套新設定
+    #          → skill 不需、也不該碰 _screenstream/_config.json。start --stt 只是「本場 montage 讀 daemon
+    #          產的 STT cache」的讀取端 opt-in (見下方 montage_cmd 附 --stt), 完全不覆寫 Tim 的設定。
+    # 歷史：舊 T-STT-AutoStart(2026-07-09)/FullApply(2026-07-20) 會在此寫 config 全量套用「本場」設定,
+    #      但那前提是 skill 決定 STT 參數; Tim 新工作流改為「自己預先設好每片」→ 移除寫入, 避免覆蓋。
+    #      (跨片 prompt 殘留污染改由 Tim 換片時自己重設 + daemon auto-restart 承接。)
+    session["stt_daemon_prev"] = None  # 已不寫 daemon config; 保留欄位供 end 判定 (恆 None = 不還原)
     if session["stt_enabled"]:
-        prev = _sync_daemon_stt(True, model=session["stt_model"], lang=session["stt_lang"],
-                                prompt=session["stt_prompt"])
-        session["stt_daemon_prev"] = prev
-        if prev is None:
-            print("⚠ daemon STT config 同步失敗 (不擋開播) — 檢查 _screenstream/_config.json 後手動切 stt_enabled")
-        elif not prev:
-            print("🎙 daemon STT cache worker 已同步啟動 (收播時自動還原)")
+        print("🎙 本場讀 STT cache (montage --stt) — daemon STT 設定沿用 Tim 影音管理頁預設, skill 不改動")
 
     state.setdefault("active_sessions", []).append(session)
     save_state(state)
@@ -539,9 +537,10 @@ def cmd_cycle(args) -> int:
     # T-STT-Live (2026-07-09 summit, 討論收斂): 一律附 --stt-live —— daemon cache 有就讀 cache (Tim 本機
     #   Editor 全覆蓋), 沒有 (容器場 daemon 起不來) 就 montage 端同步現抓寫 cache 再讀。分層 fallback 自動選路。
     if session.get("stt_enabled"):
-        montage_cmd += f" --stt --stt-live --stt-model {session.get('stt_model', 'small')}"
-        if session.get("stt_lang"):
-            montage_cmd += f" --stt-lang {session['stt_lang']}"
+        # 只附 --stt (讀 daemon STT cache) + --stt-live (cache 缺時 montage 端 fallback 現抓)。
+        # 不附 --stt-model/--stt-lang — STT 參數一律由 Tim 預設在 daemon config, skill 不指定不覆寫
+        # (Tim 2026-07-26 拍板)。cache-read 主路徑不需 model/lang; live-fallback 走 montage 端預設即可。
+        montage_cmd += " --stt --stt-live"
 
     # Companion 多印 peer obs hint (軟提示, 不擋) + primary cursor 比對
     mode = session.get("mode", "primary")
@@ -715,18 +714,9 @@ def cmd_end(args) -> int:
             "reason": "no_contribution_event" if not contributed else "zero_total",
         })
 
-    # 區塊職責：T-STT-AutoStart 對偶 — 收播還原 daemon STT worker 開關
-    # 物理意義：本場 start 時把 daemon stt_enabled 從 false 切 true (stt_daemon_prev=False)
-    #          → end 時切回 false 釋放 whisper 常駐 (GPU ~460MB)。
-    # 數值影響：只有「本場開的」才關 (prev=False)；若還有其他 active session 也開著 --stt
-    #          (multi-viewer 同場) 則不關, 讓最後一個收播的還原。fail-soft 不擋結算。
-    if session.get("stt_enabled") and session.get("stt_daemon_prev") is False:
-        others_using = any(
-            s.get("stt_enabled") for s in state.get("active_sessions", [])
-            if s.get("id") != session["id"])
-        if not others_using:
-            if _sync_daemon_stt(False) is not None:
-                print("🎙 daemon STT cache worker 已還原關閉 (本場開的本場關)")
+    # STT daemon 開關收播不還原 (Tim 2026-07-26 拍板「skill 不改 STT 設定」)：
+    #   start 已不再寫 daemon config (stt_daemon_prev 恆 None), 故 end 也不碰 —— daemon STT 的開/關
+    #   由 Tim 在影音管理頁自行掌控, skill 全程只讀不寫。
 
     # 移到 history
     state.get("active_sessions", []).remove(session)

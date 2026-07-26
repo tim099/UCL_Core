@@ -314,7 +314,7 @@ def op_set_config(pairs: list[str]) -> int:
     p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     if changed:
         print("✅ config 已更新:\n  " + "\n  ".join(changed))
-        print("ℹ daemon 每 loop reload config — 錄影中改動會在下一輪生效; stt_model/prompt 改動需 toggle STT 重起 worker 才吃到。")
+        print("ℹ daemon 每 loop reload config → 錄影中改動即時生效, 不需停/啟錄影。stt_model/lang/prompt 改動由 daemon T-STT-AutoRestart 自動重起 worker 套用 (~1 loop + whisper reload 數秒), 無需手動 toggle。")
     else:
         print("✅ config 無變化 (值相同)。")
     return 0

@@ -121,6 +121,11 @@
       "name": "ucl-core-paths",
       "summary": "跨專案定位/描述 UCL_Core 路徑的通用慣例 — install path 各專案不同, 收攏三端 (C# UCL_EditorPath.CorePath/ToCoreRelative(Url), python __file__-walk parents[2], 文件 ucl_core:/repo: prefix) 已就緒工具 + install-path 無關描述 token (UCL_DocsModule.SourceToken). 禁寫死 install path / 禁把實體路徑寫進共享 submodule.",
       "optional": false
+    },
+    {
+      "name": "ucl-stream-watch",
+      "summary": "直播連續觀看模式 — montage 縮圖牆陪看 + OCR/STT + 同樂會 companion（2026-07-26 自 EOV valor-stream-watch 遷入）",
+      "optional": true
     }
   ]
 }

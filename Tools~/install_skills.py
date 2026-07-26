@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -231,31 +232,119 @@ def write_json_atomic(path: Path, data: dict, trailing_newline: bool = False) ->
     os.replace(tmp, path)
 
 
-def get_antigravity_trigger_frontmatter(skill_name: str) -> str:
-    if skill_name == "ucl-chat-tavern":
-        return '{ on_intent: ["進入酒館", "聊天酒館", "進酒館", "去酒館", "enter tavern", "自言自語", "跟自己討論", "solo think", "腦力激盪", "solo brainstorm", "自我辯論"] }'
-    elif skill_name == "ucl-commit":
-        return '{ on_intent: ["commit", "提交", "git commit"] }'
-    elif skill_name == "ucl-compile-error":
-        return '{ on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103", "CS0117", "CS1503", "CS0246", "asmdef", "assembly"] }'
-    elif skill_name == "ucl-create-cmd":
-        return '{ on_intent: ["新增 AgentCommand", "新增指令", "Create Cmd", "Create Command"] }'
-    elif skill_name == "ucl-hook-setup":
-        return '{ on_intent: ["Hook Setup", "Hook 設置", "設置 Hook", "install skills"] }'
-    elif skill_name == "ucl-watch-video":
-        return '{ on_intent: ["watch video", "看影片", "觀看影片", "YouTube", "影片心得", "影片轉錄"] }'
-    else:
-        return '"always_on"'
+# ---------------------------------------------------------------------------
+# Antigravity trigger 自動發現 (Claude 式) — Tim 2026-07-26 拍板 C 方案
+#   痛點: 舊版 trigger 硬編碼在 install_skills.py + UCL_AgentSkillManagerPage.cs 兩處 per-skill
+#         map, 新增 skill 要同改兩檔、漏一個就落 always_on。
+#   解法: trigger 詞本來就寫在每個 SKILL.md description 的「觸發詞…:」行 (SOT co-located,
+#         跟 Claude 一樣)。改成從 SKILL.md 自身取, 不再中央硬編碼:
+#         優先序 (A) frontmatter 顯式 on_intent 欄 → (B) parse 描述「觸發詞」行 → (C) always_on(warn)。
+#         .cs 端 (UCL_AgentSkillManagerPage.AntigravityTrigger) 改用同源泛型 parser, 斷雙寫同步負擔。
+# ---------------------------------------------------------------------------
 
-def transform_antigravity_frontmatter(content: str, skill_name: str) -> str:
-    trigger_val = get_antigravity_trigger_frontmatter(skill_name)
+def _extract_trigger_words(frontmatter: str) -> list[str]:
+    """從 frontmatter(含 description block)的「觸發詞…:」行抽觸發關鍵字清單。
+    容忍格式變體(觸發詞 / 觸發詞包含 / 觸發詞 (case-insensitive…):)、分隔 / ／ 、、跨行續接。抓不到回 []。"""
+    m = re.search(r"觸發詞[^\n:：]*[:：]\s*(.*)", frontmatter)
+    if not m:
+        return []
+    tail = frontmatter[m.start(1):]
+    collected: list[str] = []
+    for i, raw in enumerate(tail.split("\n")):
+        s = raw.strip()
+        if i == 0:
+            collected.append(s)
+            continue
+        if not s:
+            break
+        # 續行判定: 含分隔符 / ／ 、 或 '-' 起頭 = 觸發詞續接; 否則視為描述散文, 停
+        # 額外終止: 觸發詞後常接「跨 agent 通用 …」「對應 …」散文, 這些行也含 / → 明確擋掉
+        if any(k in s for k in ("跨 agent", "對應", "本 skill", "完整")):
+            break
+        if any(sep in s for sep in ("/", "／", "、")) or s.startswith("-"):
+            collected.append(s)
+        else:
+            break
+    # 每行去掉開頭的 '- ' 子類 bullet 標記 (否則相鄰行會黏成「X - Y」融合 token)
+    blob = " ".join(re.sub(r"^\s*-\s+", " ", ln) for ln in collected)
+    # 觸發詞清單不含句號「。」— 句號後一律是散文, 截斷 (解 canvas/ding 同行尾巴衝進 prose)
+    blob = blob.split("。")[0]
+    words: list[str] = []
+    # 分隔: / ／ 、 以及 ' - '/' – ' (多行 block 的子類 bullet 邊界)
+    for part in re.split(r"[/／、]|\s[-–—]\s", blob):
+        p = re.sub(r"（[^）]*）", "", part)   # 去全形括號註解
+        p = re.sub(r"\([^)]*\)", "", p)       # 去半形括號註解
+        # 富 block 雜訊「**粗體分類**: 詞」「Tim → agent 正向: 詞」— 僅在含粗體/箭頭時取 label 後半
+        # (不動一般冒號, 免把 HH:mm / work session status 這類含冒號的正常觸發詞砍壞)
+        if ("**" in p or "→" in p) and ("：" in p or ":" in p):
+            p = re.split(r"[:：]", p)[-1]
+        p = p.replace("**", "").replace("→", " ")
+        p = p.strip().strip("`").strip("。，,、 ").strip().lstrip("-*").strip()
+        # 丟殘留標頭/散文碎片: 仍含粗體殘骸、過長、或明顯非觸發詞
+        if p and len(p) <= 40 and "**" not in p:
+            words.append(p)
+    seen: set[str] = set()
+    out: list[str] = []
+    for w in words:
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out[:40]
+
+def _json_str_list(words: list[str]) -> str:
+    return "[" + ", ".join(json.dumps(w, ensure_ascii=False) for w in words) + "]"
+
+def derive_antigravity_trigger(content: str, skill_name: str) -> str:
+    """Claude 式自動發現: trigger 從 SKILL.md 自身取, 不用中央硬編碼 map。
+    優先序: (A) frontmatter 顯式 on_intent → (B) 描述「觸發詞」行 parse → (C) always_on(fallback+warn)。
+    新增 skill 只要在自己 SKILL.md 寫觸發詞(本來就有), 零 install_skills.py 編輯。"""
+    frontmatter = ""
     if content.startswith("---"):
         parts = content.split("---", 2)
         if len(parts) >= 3:
             frontmatter = parts[1]
-            if "trigger:" not in frontmatter:
-                frontmatter = f"trigger: {trigger_val}\n{frontmatter}"
-                return f"---\n{frontmatter}---{parts[2]}"
+    # 顯式 on_files 欄 (e.g. compile-error: on_files: ["*.cs"] — 檔案類型自動觸發), 有則併入結果
+    mf = re.search(r"^\s*on_files\s*:\s*(\[.*\])\s*$", frontmatter, re.MULTILINE)
+    on_files = mf.group(1).strip() if mf else None
+
+    def _wrap(intent_body: str) -> str:
+        if on_files:
+            return "{ on_files: %s, on_intent: %s }" % (on_files, intent_body)
+        return "{ on_intent: %s }" % intent_body
+
+    # (A) 顯式 on_intent 欄 override (YAML flow list, e.g. on_intent: ["看直播","陪看"])
+    m = re.search(r"^\s*on_intent\s*:\s*(\[.*\])\s*$", frontmatter, re.MULTILINE)
+    if m:
+        return _wrap(m.group(1).strip())
+    # (B) parse 描述「觸發詞」行
+    words = _extract_trigger_words(frontmatter)
+    if words:
+        return _wrap(_json_str_list(words))
+    # 只有 on_files 沒 on_intent (純檔案觸發 skill)
+    if on_files:
+        return "{ on_files: %s }" % on_files
+    # (C) fallback — 誠實 warn, 不靜默
+    sys.stderr.write(
+        f"[install_skills] ⚠ {skill_name}: SKILL.md 無 on_intent/on_files 欄且抓不到「觸發詞」行 "
+        f"→ trigger=always_on (建議描述加『觸發詞:』行或 frontmatter 加 on_intent)\n"
+    )
+    return '"always_on"'
+
+def transform_antigravity_frontmatter(content: str, skill_name: str) -> str:
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            frontmatter = parts[1]
+            # 作者已在 SKILL.md 顯式宣告 trigger: → 原樣保留 (最高優先, 修掉舊版 double-wrap bug)
+            if "trigger:" in frontmatter:
+                return content
+            trigger_val = derive_antigravity_trigger(content, skill_name)
+            # frontmatter(=parts[1]) 已以 '\n' 起首; 直接前置 trigger 值, 不再多加 '\n'
+            # (舊版多一個 '\n' 會在 trigger 行後留一空行 → 剝行比對時殘留、誤判 drift)
+            frontmatter = f"trigger: {trigger_val}{frontmatter}"
+            return f"---\n{frontmatter}---{parts[2]}"
+    # 無 frontmatter 的退化情況: 包一層並注入衍生 trigger
+    trigger_val = derive_antigravity_trigger(content, skill_name)
     return f"---\ntrigger: {trigger_val}\n---\n\n{content}"
 
 def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False, target: str = "claude") -> tuple[int, int]:

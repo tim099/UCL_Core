@@ -475,13 +475,13 @@ namespace UCL.Core.EditorLib.Page
                 // 如果目標檔案在安裝目錄中根本不存在，代表該 Skill 狀態不完整，回傳 false 表示內容不匹配
                 if (!File.Exists(instFile)) return false;
                 
-                // 讀取來源檔案的完整文字內容。若目標為 Antigravity 且檔案為 SKILL.md，則模擬 frontmatter 注入處理以產生預期內容；否則讀取原始內容。
-                string expected = (target == AgentTarget.Antigravity && Path.GetFileName(srcFile) == "SKILL.md")
-                    ? TransformAntigravityFrontmatter(File.ReadAllText(srcFile), Path.GetFileName(srcDir))
-                    : File.ReadAllText(srcFile);
-                
-                // 讀取目標安裝目錄中對應檔案的實際完整文字內容
-                string actual = File.ReadAllText(instFile);
+                // Antigravity 的 SKILL.md：兩邊都剝掉 trigger: 行再比，只比作者內容。
+                //   - install 衍生注入的 trigger: 只在已裝端 → 剝已裝端。
+                //   - 作者顯式宣告的 trigger: 源端與已裝端都有(原樣複製) → 兩邊都剝才不誤判 drift。
+                // trigger 值由 install 端自動衍生/作者宣告，Editor 端一律不重現、不依賴其值。
+                bool stripTrigger = (target == AgentTarget.Antigravity && Path.GetFileName(srcFile) == "SKILL.md");
+                string expected = stripTrigger ? StripInjectedTriggerLine(File.ReadAllText(srcFile)) : File.ReadAllText(srcFile);
+                string actual = stripTrigger ? StripInjectedTriggerLine(File.ReadAllText(instFile)) : File.ReadAllText(instFile);
 
                 // 比對預期內文與實際內文（\r\n 視同 \n），若不相符則判定內容已改變，回傳 false
                 if (!ContentEqualsNewlineInsensitive(expected, actual)) return false;
@@ -513,50 +513,28 @@ namespace UCL.Core.EditorLib.Page
             return i == a.Length && j == b.Length;
         }
 
-        // 區塊職責：鏡像 install_skills.py 的 antigravity SKILL.md frontmatter 轉換（比對用）。
-        // 物理意義：install 端會在 SKILL.md frontmatter 注入一行 trigger:；比對已裝內文時源端必須套同一
-        //          轉換才不會誤判 drift。**此對照表與轉換規則須與 install_skills.py 的
-        //          get_antigravity_trigger_frontmatter() / transform_antigravity_frontmatter() 保持同步。**
-        static string AntigravityTrigger(string skill)
+        // 區塊職責：剝除 install_skills.py 注入的 trigger: frontmatter 行（Antigravity drift 比對用）。
+        // 物理意義：Tim 2026-07-26 拍板 C 方案後，trigger 值由 install 端從 SKILL.md 描述「觸發詞」行
+        //          / 顯式 on_intent 欄「自動衍生」（Claude 式自動發現），不再有 per-skill 硬編碼 map。
+        //          → Editor 端不必、也不該重現該衍生值（否則又要跟 install_skills.py 手動同步，正是痛點）。
+        //          改成比對時把「install 注入的 trigger: 行」從已裝內文剝掉，只比作者原始內容 →
+        //          drift 判定不依賴 trigger 值，install 端怎麼改觸發詞衍生規則，這裡都不用動。
+        // 數值影響：只影響 Antigravity target 的 SKILL.md 比對；剝掉 frontmatter 內以 trigger: 起首的行。
+        static string StripInjectedTriggerLine(string content)
         {
-            switch (skill)
+            if (!content.StartsWith("---")) return content;
+            string[] parts = content.Split(new[] { "---" }, 3, StringSplitOptions.None);
+            if (parts.Length < 3) return content;
+            var kept = new System.Collections.Generic.List<string>();
+            bool swallowBlank = false;   // 舊版注入在 trigger: 行後多留一空行 → 一併吞掉, 讓既有已裝檔不重裝也對得上
+            foreach (var ln in parts[1].Split('\n'))
             {
-                case "ucl-chat-tavern":
-                    return "{ on_intent: [\"進入酒館\", \"聊天酒館\", \"進酒館\", \"去酒館\", \"enter tavern\", \"自言自語\", \"跟自己討論\", \"solo think\", \"腦力激盪\", \"solo brainstorm\", \"自我辯論\"] }";
-                case "ucl-commit":
-                    return "{ on_intent: [\"commit\", \"提交\", \"git commit\"] }";
-                case "ucl-compile-error":
-                    return "{ on_files: [\"*.cs\"], on_intent: [\"編譯錯\", \"compile error\", \"CS0103\", \"CS0117\", \"CS1503\", \"CS0246\", \"asmdef\", \"assembly\"] }";
-                case "ucl-create-cmd":
-                    return "{ on_intent: [\"新增 AgentCommand\", \"新增指令\", \"Create Cmd\", \"Create Command\"] }";
-                case "ucl-hook-setup":
-                    return "{ on_intent: [\"Hook Setup\", \"Hook 設置\", \"設置 Hook\", \"install skills\"] }";
-                case "ucl-watch-video":
-                    return "{ on_intent: [\"watch video\", \"看影片\", \"觀看影片\", \"YouTube\", \"影片心得\", \"影片轉錄\"] }";
-                default:
-                    return "\"always_on\"";
+                if (ln.TrimStart().StartsWith("trigger:")) { swallowBlank = true; continue; } // 剝掉 install 注入的 trigger: 行
+                if (swallowBlank && ln.Trim().Length == 0) { swallowBlank = false; continue; } // 吞掉緊接的殘留空行(舊注入 artifact)
+                swallowBlank = false;
+                kept.Add(ln);
             }
-        }
-
-        static string TransformAntigravityFrontmatter(string content, string skill)
-        {
-            string trig = AntigravityTrigger(skill);
-            if (content.StartsWith("---"))
-            {
-                // Python: content.split("---", 2) → 最多 3 段
-                string[] parts = content.Split(new[] { "---" }, 3, StringSplitOptions.None);
-                if (parts.Length >= 3)
-                {
-                    string frontmatter = parts[1];
-                    if (!frontmatter.Contains("trigger:"))
-                    {
-                        frontmatter = $"trigger: {trig}\n{frontmatter}";
-                        return $"---\n{frontmatter}---{parts[2]}";
-                    }
-                    // 已有 trigger → fall through 到底部 wrap（與 Python 行為一致）
-                }
-            }
-            return $"---\ntrigger: {trig}\n---\n\n{content}";
+            return "---" + string.Join("\n", kept) + "---" + parts[2];
         }
 
         // 區塊職責：一次算完 Matrix 用的 per-skill 三態（installed/disabled/drift）並快取。

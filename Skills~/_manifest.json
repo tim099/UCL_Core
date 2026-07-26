@@ -124,8 +124,7 @@
     },
     {
       "name": "ucl-stream-watch",
-      "summary": "直播連續觀看模式 — montage 縮圖牆陪看 + OCR/STT + 同樂會 companion（2026-07-26 自 EOV valor-stream-watch 遷入）",
-      "optional": true
+      "summary": "直播連續觀看模式 — montage 縮圖牆陪看 + OCR/STT + 同樂會 companion（2026-07-26 自 EOV valor-stream-watch 遷入）"
     }
   ]
 }

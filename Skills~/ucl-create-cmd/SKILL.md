@@ -4,6 +4,7 @@ description: |
   建立新的 UCL_AgentCommand handler — 寫一支 `Cmd_<Name>.cs` 子類給 queue.json 觸發。
   使用者要求新增 agent command、加 RPC handler、做新 Cmd、或詢問 UCL_AgentCommandHandlerBase 怎麼繼承時用本 skill。
   涵蓋命名規範、檔案位置決策（UCL_Core 內 vs 下游模組）、metadata 必填欄位、ExecuteAsync 撰寫守則、Editor 驗收步驟。
+trigger: { on_intent: ["新增 AgentCommand", "新增指令", "Create Cmd", "Create Command"] }
 ---
 
 # UCL Create Cmd — 新增 AgentCommand Handler

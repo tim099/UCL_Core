@@ -3,6 +3,7 @@ name: ucl-compile-error
 description: |
   Unity compile error 排查。當改完 .cs 後懷疑編譯有錯、agent 改了腳本要驗收、或使用者問「編譯有錯嗎」「CS0103 / CS0117 / CS1503 / CS0246」「assembly / asmdef」相關問題時用本 skill。
   核心工具是 standalone Python 腳本 check_compile.py，完全不依賴 Cmd 系統，能在 Cmd 因 compile error 失效時也印錯誤清單。
+trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103", "CS0117", "CS1503", "CS0246", "asmdef", "assembly"] }
 ---
 
 # UCL Compile Error 排查

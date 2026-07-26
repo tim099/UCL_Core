@@ -3,6 +3,7 @@ name: ucl-hook-setup
 description: |
   在使用 UCL_Core 的上層專案配置 Claude Code hooks — PostToolUse 早期警告 + Stop 強制驗收 ValidateAssetFormat。
   使用者首次接 UCL_Core、新專案 onboarding、要求設定 hook、settings.json 規劃、或詢問如何讓 AI 改 UCL_Asset JSON 後自動驗證時用本 skill。
+trigger: { on_intent: ["Hook Setup", "Hook 設置", "設置 Hook", "install skills"] }
 ---
 
 # UCL Hook Setup — Claude Code Hook 配置

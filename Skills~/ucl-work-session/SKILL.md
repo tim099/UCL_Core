@@ -21,7 +21,7 @@ related:
   - .claude/skills/ucl-remote-work/SKILL.md | Tim 外出 async Discord 派工
   - .claude/skills/ucl-affinity/SKILL.md | session end = affinity event source
 
-last_updated: 2026-05-23 (basecamp: 雙檔重構瘦身 + §⏭️ 卡 Tim 的 task → pending 跳過先做後續 + 問 Tim 走酒館 內化進 loop; Tim 拍板「太臃腫難遵守」) | 2026-05-22 (+主管決策權) | 2026-05-14 (T28 rewrite)
+last_updated: "2026-05-23 (basecamp: 雙檔重構瘦身 + §⏭️ 卡 Tim 的 task → pending 跳過先做後續 + 問 Tim 走酒館 內化進 loop; Tim 拍板「太臃腫難遵守」) | 2026-05-22 (+主管決策權) | 2026-05-14 (T28 rewrite)"
 ---
 
 # UCL Work Session — 上班模式（核心）

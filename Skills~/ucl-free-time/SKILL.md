@@ -18,7 +18,7 @@ related:
   - skills/reading-library/SKILL.md | 自由活動之一「讀書」的 how-to
   - <ucl_core:Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md> | 自由活動之一「寫書」的 how-to
 
-last_updated: 2026-07-16 (Tim v3: related 精簡跨agent通用 + 寫書 workflow 連結 + 🎯 骰子跟隨規則 + dice.py N選一工具)
+last_updated: "2026-07-16 (Tim v3: related 精簡跨agent通用 + 寫書 workflow 連結 + 🎯 骰子跟隨規則 + dice.py N選一工具)"
 ---
 
 # UCL Free-Time — 自由時間模式（核心）

@@ -17,7 +17,7 @@ related:
   - .claude/skills/ucl-goodnight/SKILL.md | 完整 session 終結(對比:本 skill 是小憩不下線)
   - <repo:docs/Notes/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
 
-last_updated: 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)
+last_updated: "2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)"
 ---
 
 # UCL Compact-Rest — 小歇片刻（核心）

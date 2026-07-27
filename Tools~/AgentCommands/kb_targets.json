@@ -15,6 +15,17 @@
       "desc": "Agent 經驗庫 — AgentCommands/Lessons/*.jsonl + *.md（跨 agent 累積教訓）",
       "kind": "lessons",
       "globs": ["data:Lessons/**/*.jsonl", "data:Lessons/**/*.md", "data:lessons/**/*.jsonl", "data:lessons/**/*.md"]
+    },
+    "fragments": {
+      "desc": "見根 · 關鍵記憶片段 — letters/<persona>/fragments/*.md（每檔一主題，天然 embedding chunk；醒來想不起某事時語意檢索）",
+      "kind": "markdown",
+      "globs": [
+        "data:ChatTavern/baton/letters/*/fragments/lesson_*.md",
+        "data:ChatTavern/baton/letters/*/fragments/unsolved_*.md",
+        "data:ChatTavern/baton/letters/*/fragments/relation_*.md",
+        "data:ChatTavern/baton/letters/*/fragments/identity_*.md",
+        "data:ChatTavern/baton/letters/*/fragments/philosophy_*.md"
+      ]
     }
   }
 }

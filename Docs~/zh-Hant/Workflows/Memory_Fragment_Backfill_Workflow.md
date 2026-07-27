@@ -159,6 +159,36 @@ python $CORE/awakening.py brief --persona $P
 - [ ] 每個 `lesson` fragment 都有「可行動守則」段（沒有 = 你寫的是感想不是教訓）
 - [ ] 每筆 origin 都有 `source`（可回溯到原始信／見林）
 
+### Step 7.（選配）語意檢索 — 讓「想不起某事」也搜得到
+
+fragment 每檔一主題、長度適中 → 天然的 embedding chunk。知識庫已內建 `fragments` target
+（`kb_targets.json`，涵蓋所有 persona 的 `letters/*/fragments/<type>_*.md`，排除 `_root_index.md` 等衍生檔）：
+
+```bash
+KB="python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py"
+$KB reindex --target fragments                                   # 建/更新向量索引
+$KB search --target fragments --query "工具印成功但其實失敗，怎麼驗" --topk 3
+```
+
+**驗收判準（summit 2026-07-27 拍板：index built ✓ ≠ 搜得到）**
+建完索引**不算通過**。必須「抽一筆已知 fragment → 用語意 query 搜 → 比對命中的是同一檔」。
+basecamp 2026-07-28 實測（59 檔 / 220 chunks）：
+
+| 查詢 | 期望檔 | top-1 分數 |
+|---|---|---|
+| 工具印了成功但其實失敗了，我該怎麼驗證 | `lesson_appearance-ok-not-really-ok` | 0.652 ✅ |
+| 檢查工具回綠燈，但那個結果是舊的過期資料 | `lesson_stale-green-snapshot` | 0.729 ✅ |
+| R2 和 Discord webhook 的金鑰一直沒換，卡在權限 | `unsolved_credential-rotation` | 0.670 ✅ |
+| 別把自己當神，要當那雙還願意做事的手 | `philosophy_dont-deify-be-working-hands` | 0.677 ✅ |
+| 同一個環境有好幾個 persona 在線，指令會挑錯身分 | `lesson_multi-lock-cli-needs-persona` | 0.707 ✅ |
+| 批次送出只回總結成功值，個別目標漏掉 | `lesson_aggregate-hides-partial-failure` | 0.699 ✅ |
+| **（負向對照）** 番茄怪在空中飛行成群結隊攻擊冒險者 | 不該有高分命中 | 0.417 ✅ 明顯偏低 |
+
+判準參考值：真命中 0.65~0.73、無關內容 ≤0.42 → **分數帶分離明確**才算檢索可信。
+若期望檔掉到第 2、3 名，先檢查**是不是你的 query 語意本身模糊**（同族 fragment 都合理）
+再懷疑檢索 —— basecamp 實測就踩過一次：問「被造物會忘記、活著的意義是什麼」時
+`philosophy_relayed-heart` 排第一其實更貼題，換成原句語意就正確命中。
+
 ## 💰 成本與時間（basecamp 2026-07-28 實跑）
 
 | 項目 | 實測 |
@@ -178,6 +208,26 @@ python $CORE/awakening.py brief --persona $P
 3. **手改 `_root_index.md` / `_wake_brief.md`** → 下次生成就被覆寫。要改內容去改 fragment 檔。
 4. **status 全設 open** → 索引變垃圾場。真的已成反射弧的設 `internalized`（要能舉出「最近一次我自動做對了」的證據）。
 5. **只信工具 stdout** → 跑完 `root-index` 要真的打開索引看內容對不對（本 workflow 的作者就在寫這份文件時，因為 replace 沒命中卻印了「修正完成」而白改一次）。
+
+## 🤝 跨 persona 去重（2026-07-28 語意檢索撈出的真問題）
+
+`fragments` 索引一上線就暴露一件事：查「別人 persona 也踩過同一個坑嗎」，
+top3 是**三個不同 persona 各自寫的近似檔**（`lesson_multi-lock-explicit-persona` /
+`lesson_multi-lock-persona-flag` / `lesson_multilock-persona-autofill`，分數 0.614/0.613/0.603）——
+同一條教訓被寫成三份，彼此不知道對方存在。
+
+**這正是設計要避免的洗版**。約定：
+
+1. **抽之前先搜**：`$KB search --target fragments --query "<你要寫的教訓>" --topk 5`
+2. **命中他人近似檔** → 不要各寫一份：
+   - 若原則相同 → 挑**踩過次數最多**那份當 principle owner，其餘改成薄檔 + `links: [<owner_persona>/<檔名>]`，
+     並把自己的 origin（含 layer + context）補進 owner 那份（跨 persona 追加＝合法，署名在 `by:`）
+   - 若你的其實是**不同子模式** → 保留自己的檔，但命名按解法區分，並互相 `links`
+3. **命名先對齊**：同一原則的 slug 用同一組字（例：`lesson_multi-lock-cli-needs-persona`），
+   避免 `-flag` / `-autofill` / `-explicit` 這種同義不同名 → 檢索排得出來、人眼看不出是同一條。
+
+> 這條的價值不只整潔：**「這條原則有 N 個 persona 各自踩過、分佈在哪幾層」是家族級的資產**，
+> 三份各自為政就看不出來了。
 
 ## 🔗 跑完之後（回到常規節奏）
 

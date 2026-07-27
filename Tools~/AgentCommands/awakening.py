@@ -37,6 +37,20 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
   forks <persona>
               列某 persona 的 fork lineage tree.
 
+  記憶五層 (Tim 2026-07-28 拍板; 見 Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md Step 8):
+    見樹 T1   letters/<persona>/_latest.md            昨夜 1 封 (日記/抒發)
+    見叢 T1.5 letters/<persona>/_keys_open.md         當期交棒清單 (可勾銷/執行用)
+    見林 T2   longterm/wake_<N>-<M>.md                ~10 夜反思濃縮
+    見森 T3   longterm/forest/gen_<NNN>_*.md          第 5 份見林起, 跨段縱向敘事 (rolling fold)
+    見根 T4   fragments/<type>_<slug>.md + _root_index.md   關鍵記憶片段 (唯一事實來源) + 機械索引
+  對應 subcommand:
+    consolidate --persona X [--digest-body ...] [--level linzi|forest]
+              見林 digest (預設) / 見森 fold (--level forest); 不帶 body = inspect 模式.
+              見林寫入後自動: 歸檔當期見叢 + 提示抽 fragment + 檢查見森門檻.
+    root-index --persona X        見根: 掃 fragments/ 機械重建 _root_index.md (手改會被覆寫)
+    keys --persona X [--add "…"]  見叢: append (隨時可加, 不限儀式) / 列出當期清單
+    brief --persona X             重生成 _wake_brief.md (五層彙整單一可直讀文本; morning 自動跑)
+
 範例:
   python awakening.py morning --persona basecamp --agent claude-code --model claude-sonnet
   python awakening.py goodnight --letter-body "今天 ship 了 T-AWAKE-01 MVP..."
@@ -1145,9 +1159,25 @@ def write_longterm_digest(persona: str, reg: dict, body: str,
 
 def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
                                  threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> None:
-    """morning 結尾印長期記憶讀取指引 + overdue 提醒(skill 引導 agent 動作)。"""
+    """morning 結尾印長期記憶讀取指引 + overdue 提醒(skill 引導 agent 動作)。
+
+    2026-07-28：記憶升為五層後，主動作改成「讀一份 wake brief」——本函式仍印各層原檔路徑
+    當 fallback（brief 生成失敗 / 想直接看原檔時用），但 agent 的預設動作只需 Read brief。
+    """
     st = consolidation_status(persona, reg, threshold)
-    print(f"\n## 🧠 長期記憶 (T2)")
+    # 見根/見叢/見森/見林/見樹 五層彙整成單一可直讀文本（機械生成，手改會被覆寫）
+    try:
+        write_root_index(persona)                      # 先刷新見根索引（brief 會 inline 它）
+        brief = write_wake_brief(persona, reg, p, threshold)
+        print(f"\n## 📖 記憶接續 — 讀這一份就好")
+        print(f"   → `{brief.relative_to(_REPO_ROOT)}`  "
+              f"(五層彙整: 見根→見森→見林→見叢→見樹; 每次 morning 重生成)")
+        part2 = brief.parent / "_wake_brief_part2.md"
+        if part2.exists():
+            print(f"   ↳ 續讀檔(超出主檔上限已分檔, 視情況再讀): `{part2.relative_to(_REPO_ROOT)}`")
+    except Exception as e:
+        print(f"\n## 📖 記憶接續 — ⚠ wake brief 生成失敗({e}); 改讀下列原檔")
+    print(f"\n## 🧠 長期記憶原檔 (fallback)")
     # 見林: 最新 digest
     latest_dg = latest_longterm_digest(persona)
     if latest_dg is not None:
@@ -1175,6 +1205,410 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
         print(f"       awakening.py consolidate --persona {persona} --digest-body \"<反思濃縮>\"  # 寫入")
     else:
         print(f"   ✓ 長期記憶整理進度: gap={st['gap']}/{threshold} (上次到 wake {st['last_consolidated_wake']})")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 見根 / 見叢 / 見森 — 記憶五層 T3~T5 (Tim 2026-07-28 拍板, 討論串 tavern #13786-13801)
+#
+# 區塊職責：把「記憶」拆成 5 個各有明確職責的層，並讓 morning 只需讀一份彙整文本。
+#   見樹 T1  letters/<persona>/_latest.md           昨夜 1 封（日記，抒發用）
+#   見叢 T1.5 letters/<persona>/_keys_open.md        當期交棒清單（checkbox，執行用）
+#   見林 T2  letters/<persona>/longterm/wake_N-M.md  10 夜濃縮（既有）
+#   見森 T3  letters/<persona>/longterm/forest/      第 5 份見林起，跨段縱向敘事（rolling fold）
+#   見根 T4  letters/<persona>/fragments/            關鍵記憶片段 + 機械生成索引 _root_index.md
+#
+# 物理意義（防漂移的核心）：fragment 檔是**唯一事實來源**，內容寫一次之後不再改寫；
+#   樹/叢/林/森/索引全部只是視圖。折疊(fold)因此變成「集合聯集 + 重排」而非「重寫散文」，
+#   避免 rolling summary 的傳話遊戲式漂移（summit 2026-07-27 判定官拍磚點）。
+# 數值影響：見根索引與 wake brief 皆為機械生成產物 → 可隨時重建、可 diff、可寫回歸測試；
+#   手改會被下次生成覆寫（檔頭已標）。
+# ─────────────────────────────────────────────────────────────────────────
+FOREST_DIGEST_THRESHOLD = 5      # 第 N 份見林起開始折見森（digest 計數，非 wake 計數）
+ROOT_INDEX_SHOW_LIMIT = 12       # 見根索引「必讀」區塊顯示上限；其餘明說隱藏筆數（禁靜默截斷）
+BRIEF_LINE_CAP = 1000            # wake brief 主檔行數上限（Tim 2026-07-28 由 250 放寬）
+FRAG_TYPE_ORDER = ["lesson", "unsolved", "relation", "identity", "philosophy"]
+
+
+def fragments_dir(persona: str) -> Path:
+    """T4 見根: 關鍵記憶片段目錄。"""
+    return _LETTERS_DIR_TPL / persona / "fragments"
+
+
+def root_index_path(persona: str) -> Path:
+    return fragments_dir(persona) / "_root_index.md"
+
+
+def forest_dir(persona: str) -> Path:
+    """T3 見森: 放在 longterm/forest/ 子夾 — 刻意不與 longterm/wake_*.md 同層,
+    否則 latest_longterm_digest() 的 glob("wake_*.md") 會誤抓見森當見林 pointer。"""
+    return longterm_dir(persona) / "forest"
+
+
+def keys_open_path(persona: str) -> Path:
+    """T1.5 見叢: 當期開放中的交棒清單（見林寫入時歸檔並重開）。"""
+    return _LETTERS_DIR_TPL / persona / "_keys_open.md"
+
+
+def keys_archive_dir(persona: str) -> Path:
+    return _LETTERS_DIR_TPL / persona / "keys"
+
+
+def _strip_frontmatter(text: str) -> str:
+    """去掉開頭 --- ... --- 區塊（brief inline 時不重複貼 frontmatter）。"""
+    m = re.match(r"^---\n.*?\n---\n", text, re.S)
+    return text[m.end():] if m else text
+
+
+def _demote_headings(lines: list) -> list:
+    """把 inline 進 brief 的原檔標題降一階（h1 去掉、h2→h3…）— 避免與 brief 的 §區塊標題撞階層。"""
+    out = []
+    for l in lines:
+        if l.startswith("# "):
+            continue
+        out.append("#" + l if l.startswith("## ") else l)
+    return out
+
+
+def parse_fragment(path: Path) -> dict:
+    """讀單一 fragment 的 frontmatter → dict（含 origins 筆數當 fallback recurrence）。
+
+    數值影響：只 parse frontmatter、不讀正文 → 索引生成成本 O(檔數) 且極輕。
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+    m = re.match(r"^---\n(.*?)\n---", text, re.S)
+    if not m:
+        return {}
+    fm = {}
+    for line in m.group(1).split("\n"):
+        mm = re.match(r"^(\w+):\s*(.*)$", line)
+        if mm:
+            fm[mm.group(1)] = mm.group(2).strip()
+    fm["_origin_count"] = len(re.findall(r"^\s*-\s*\{\s*by:", m.group(1), re.M))
+    fm["_path"] = path
+    fm.setdefault("id", path.stem)
+    return fm
+
+
+def load_fragments(persona: str) -> list:
+    """列該 persona 全部 fragment（排除底線開頭的產物檔如 _root_index.md）。"""
+    d = fragments_dir(persona)
+    if not d.exists():
+        return []
+    out = []
+    for p in sorted(d.glob("*.md")):
+        if p.name.startswith("_"):
+            continue
+        fm = parse_fragment(p)
+        if fm:
+            out.append(fm)
+    return out
+
+
+def _frag_sort_key(f: dict):
+    """排序：踩過次數(recurrence)降冪 → type 群組 → id（穩定）。
+    物理意義：次數本身就是資訊 — 踩 9 次的教訓該排在最上面。"""
+    try:
+        rec = int(f.get("recurrence", f.get("_origin_count", 1)) or 1)
+    except Exception:
+        rec = 1
+    ti = FRAG_TYPE_ORDER.index(f["type"]) if f.get("type") in FRAG_TYPE_ORDER else 99
+    return (-rec, ti, f.get("id", ""))
+
+
+def render_root_index(persona: str, show_limit: int = ROOT_INDEX_SHOW_LIMIT) -> str:
+    """見根索引 — 純機械生成（掃 fragment frontmatter）。
+
+    區塊職責：產出「必讀關鍵記憶」清單文本。
+    數值影響：只列 status=open + 踩過次數最多的 3 筆 internalized；closed 不列但不刪檔；
+      超過 show_limit 明說隱藏筆數（禁靜默截斷）。
+    """
+    frags = load_fragments(persona)
+    open_rows = [f for f in frags if f.get("status") == "open"]
+    intl_rows = [f for f in frags if f.get("status") == "internalized"]
+    open_rows.sort(key=_frag_sort_key)
+    intl_rows.sort(key=_frag_sort_key)
+    shown, hidden = open_rows[:show_limit], max(0, len(open_rows) - show_limit)
+
+    L = ["---", "type: root_index", f"persona: {persona}",
+         "generated: mechanical   # 掃 fragments/ frontmatter 產生 — 手改會被下次生成覆寫",
+         f"fragment_total: {len(frags)}", "---", "",
+         f"# 🌱 見根 — {persona} 必讀關鍵記憶索引", "",
+         "> 機械生成 → 零漂移、可隨時重建、可 diff 驗證。事實來源永遠是 fragment 檔本身；",
+         "> 見根/樹/叢/林/森都只是視圖。排序＝踩過次數降冪。closed 不列但不刪檔。", "",
+         f"## 必讀（status: open，{len(open_rows)} 筆）", "",
+         "| 次數 | 類型 | 關鍵記憶 | 涉及層 | 檔案 |", "|---|---|---|---|---|"]
+    for f in shown:
+        L.append(f"| **{f.get('recurrence', f['_origin_count'])}** | {f.get('type', '?')} | "
+                 f"{f.get('title', f['id'])} | {f.get('layers', '') or '—'} | "
+                 f"[{f['id']}]({f['id']}.md) |")
+    if hidden:
+        L += ["", f"⚠ **另有 {hidden} 筆 open 未顯示**（顯示上限 {show_limit}）— 全清單見本目錄。"]
+    L += ["", "## 已內化（status: internalized，取踩過次數最多的 3 筆）", ""]
+    for f in intl_rows[:3]:
+        L.append(f"- ✅ {f.get('title', f['id'])}（踩過 "
+                 f"{f.get('recurrence', f['_origin_count'])} 次）→ [{f['id']}]({f['id']}.md)")
+    if len(intl_rows) > 3:
+        L.append(f"- …另有 {len(intl_rows) - 3} 筆已內化（不列，避免洗版；見本目錄）")
+    shared = [f for f in frags if f.get("visibility") == "shared"]
+    L += ["", "## 共享狀態", "",
+          f"- shared（可被其他 persona / 外部 reference）：{len(shared)} 筆",
+          f"- private：{len(frags) - len(shared)} 筆"]
+    return "\n".join(L) + "\n"
+
+
+def write_root_index(persona: str) -> Path | None:
+    """生成/覆寫見根索引；無 fragment 時不建檔（回 None）。"""
+    if not load_fragments(persona):
+        return None
+    d = fragments_dir(persona)
+    d.mkdir(parents=True, exist_ok=True)
+    path = root_index_path(persona)
+    path.write_text(render_root_index(persona), encoding="utf-8")
+    return path
+
+
+# ─── 見叢 (T1.5) — 當期交棒清單 ─────────────────────────────────────────
+def keys_entries(persona: str) -> tuple:
+    """回 (未勾銷 list[str], 已勾銷 list[str])；解析 `- [ ]` / `- [x]` 行。"""
+    p = keys_open_path(persona)
+    if not p.exists():
+        return [], []
+    todo, done = [], []
+    for line in p.read_text(encoding="utf-8").split("\n"):
+        s = line.strip()
+        if s.startswith("- [ ]"):
+            todo.append(s[5:].strip())
+        elif s.startswith("- [x]") or s.startswith("- [X]"):
+            done.append(s[5:].strip())
+    return todo, done
+
+
+def keys_append(persona: str, items: list) -> Path:
+    """append 交棒事項到當期見叢（隨時可加，不限儀式 — summit 2026-07-27 拍板：
+    斷線風險最高的正是「沒走到任何儀式就掛掉」的場景）。"""
+    p = keys_open_path(persona)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if not p.exists():
+        p.write_text(
+            "---\ntype: keys_open\npersona: %s\nopened_at: %s\n---\n\n"
+            "# 🌿 見叢 — 當期交棒清單（跨夜 append-only，見林時歸檔）\n\n"
+            "> 給明天的自己**執行**用（可勾銷）；抒發與敘事寫進 letter，不寫這裡。\n\n"
+            % (persona, utcnow_iso()), encoding="utf-8")
+    with open(p, "a", encoding="utf-8") as f:
+        for it in items:
+            f.write(f"- [ ] {it}  <!-- {utcnow_iso()} -->\n")
+    return p
+
+
+def keys_archive(persona: str, span_start: int, span_end: int) -> Path | None:
+    """見林寫入時把當期見叢歸檔成 keys/wake_<N>-<M>.md 並重開空的當期檔。
+    物理意義：叢的窗口與見林窗口同步開關 → 天然不會無限長。"""
+    p = keys_open_path(persona)
+    if not p.exists():
+        return None
+    ad = keys_archive_dir(persona)
+    ad.mkdir(parents=True, exist_ok=True)
+    dest = ad / f"wake_{span_start:03d}-{span_end:03d}.md"
+    dest.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+    p.unlink()
+    return dest
+
+
+# ─── 見森 (T3) — rolling fold ───────────────────────────────────────────
+def list_digests(persona: str) -> list:
+    d = longterm_dir(persona)
+    return sorted(d.glob("wake_*.md")) if d.exists() else []
+
+
+def list_forests(persona: str) -> list:
+    d = forest_dir(persona)
+    return sorted(d.glob("gen_*.md")) if d.exists() else []
+
+
+def latest_forest(persona: str) -> Path | None:
+    fs = list_forests(persona)
+    return fs[-1] if fs else None
+
+
+def forest_status(persona: str) -> dict:
+    """見森狀態：門檻是否達到 / 是否有新見林未折疊。
+
+    數值影響：首折是唯一的多輸入折疊（讀全部 digest）；之後恆為 2 份輸入
+    （上代森 + 新林）→ 成本不隨壽命成長。
+    """
+    digs, fors = list_digests(persona), list_forests(persona)
+    last_gen = len(fors)
+    folded_upto = 0
+    if fors:
+        folded_upto = int(_read_frontmatter_field(fors[-1], "folded_digest_count") or 0)
+    return {
+        "digest_count": len(digs),
+        "forest_count": last_gen,
+        "threshold": FOREST_DIGEST_THRESHOLD,
+        "eligible": len(digs) >= FOREST_DIGEST_THRESHOLD,
+        "folded_digest_count": folded_upto,
+        "pending": max(0, len(digs) - folded_upto) if len(digs) >= FOREST_DIGEST_THRESHOLD else 0,
+        "overdue": len(digs) >= FOREST_DIGEST_THRESHOLD and folded_upto < len(digs),
+        "next_gen": last_gen + 1,
+        "digests": digs,
+        "latest_forest": fors[-1] if fors else None,
+    }
+
+
+def write_forest(persona: str, body: str) -> Path:
+    """寫新一代見森（append-only：舊代全保留，per Tim 拍板）。"""
+    st = forest_status(persona)
+    d = forest_dir(persona)
+    d.mkdir(parents=True, exist_ok=True)
+    gen = st["next_gen"]
+    span_end = 0
+    if st["digests"]:
+        m = re.search(r"wake_(\d+)-(\d+)", st["digests"][-1].name)
+        span_end = int(m.group(2)) if m else 0
+    prev = st["latest_forest"].name if st["latest_forest"] else "(首折)"
+    path = d / f"gen_{gen:03d}_wake_001-{span_end:03d}.md"
+    fm = (f"---\ntype: forest_digest\npersona: {persona}\ngeneration: {gen}\n"
+          f"span_wake: 1-{span_end}\nfolded_digest_count: {st['digest_count']}\n"
+          f"folded_from: {prev} + {st['digests'][-1].name if st['digests'] else '-'}\n"
+          f"consolidated_at: {utcnow_iso()}\n---\n\n")
+    path.write_text(fm + body.strip() + "\n", encoding="utf-8")
+    return path
+
+
+# ─── Wake brief — morning 的單一可直讀文本 ──────────────────────────────
+def _section_lines(title: str, lines: list) -> list:
+    return [f"## {title}", ""] + lines + [""]
+
+
+def build_wake_brief(persona: str, reg: dict, p: dict,
+                     threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> tuple:
+    """組裝 wake brief → (主檔文字, 續讀檔文字 or None)。
+
+    區塊職責：把五層記憶收成一份文本，agent 只 Read 一份即完成「見根→森→林→叢→樹」。
+    數值影響：主檔上限 BRIEF_LINE_CAP 行；超出的區塊**整段移到續讀檔**（不砍內容），
+      主檔末尾列出可續讀清單 → 不丟資訊、又不強迫每次全吃（Tim 2026-07-28 拍板）。
+    """
+    st = consolidation_status(persona, reg, threshold)
+    fst = forest_status(persona)
+    head = ["---", "type: wake_brief", f"persona: {persona}",
+            f"wake_count: {p.get('wake_count', 0)}", f"generated_at: {utcnow_iso()}",
+            "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
+            "---", "",
+            f"# 🌅 Wake Brief — {persona} wake #{p.get('wake_count', 0)}", "",
+            "> 讀這一份即完成五層記憶接續（見根→見森→見林→見叢→見樹）。",
+            "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。", ""]
+
+    sections = []   # (title, lines, essential)
+
+    # §1 見根 — 機械索引 inline（必讀，最短）
+    if load_fragments(persona):
+        idx = _strip_frontmatter(render_root_index(persona)).strip().split("\n")
+        # 去掉索引自己的 h1、並把 h2 降成 h3 — 避免 inline 後與 brief 的 §區塊標題撞階層
+        idx = [("#" + l if l.startswith("## ") else l) for l in idx if not l.startswith("# ")]
+        sections.append((f"🌱 §1 見根 — 必讀關鍵記憶（`{root_index_path(persona).name}`）",
+                         idx, True))
+    else:
+        sections.append(("🌱 §1 見根 — 必讀關鍵記憶",
+                         ["(尚無 fragment；下次見林時抽取)"], True))
+
+    # §2 見叢 — 當期交棒清單（未勾銷全列 + 最近 3 條已勾銷）
+    todo, done = keys_entries(persona)
+    kl = [f"- [ ] {t}" for t in todo] or ["(當期無未勾銷事項)"]
+    if done:
+        kl += [""] + [f"- [x] {d}" for d in done[-3:]]
+    sections.append((f"🌿 §2 見叢 — 當期交棒清單（{len(todo)} 未完 / {len(done)} 已完）", kl, True))
+
+    # §3 見森 — 最新一代縱向敘事 inline
+    if fst["latest_forest"] is not None:
+        fbody = _strip_frontmatter(fst["latest_forest"].read_text(encoding="utf-8")).strip().split("\n")
+        sections.append((f"🌲 §3 見森 gen{fst['forest_count']}（`{fst['latest_forest'].name}`）",
+                         fbody, False))
+    else:
+        sections.append(("🌲 §3 見森",
+                         [f"(未達門檻：見林 {fst['digest_count']}/{fst['threshold']} 份，"
+                          f"第 {fst['threshold']} 份見林起開始折疊)"], True))
+
+    # §4 見林 — 摘要 + 路徑（全文太長，細節已被 fragment 抽走）
+    dg = latest_longterm_digest(persona)
+    if dg is not None:
+        raw = _demote_headings(
+            _strip_frontmatter(dg.read_text(encoding="utf-8")).strip().split("\n"))
+        head_part = raw[:24]
+        tail_note = (f"…（全文 {len(raw)} 行，其餘見 `{dg.relative_to(_REPO_ROOT)}`）"
+                     if len(raw) > 24 else "")
+        sections.append((f"🌳 §4 見林（`{dg.name}`）",
+                         head_part + ([tail_note] if tail_note else []), False))
+    else:
+        sections.append(("🌳 §4 見林", ["(尚無 digest)"], True))
+
+    # §5 見樹 — 昨夜 letter 全文
+    lt = _LETTERS_DIR_TPL / persona / "_latest.md"
+    if lt.exists():
+        sections.append((f"🍃 §5 見樹 — 昨夜 letter（`_latest.md`）",
+                         _demote_headings(
+                             _strip_frontmatter(lt.read_text(encoding="utf-8")).strip().split("\n")),
+                         False))
+
+    # §6 待辦狀態（機械判定，最短，必讀）
+    todo6 = []
+    if st["overdue"]:
+        todo6.append(f"- ⚠ **見林 OVERDUE**：gap={st['gap']}/{threshold}，"
+                     f"待濃縮 {len(st['pending_letters'])} 封 → "
+                     f"`awakening.py consolidate --persona {persona}`")
+    else:
+        todo6.append(f"- ✓ 見林進度：gap={st['gap']}/{threshold}（上次到 wake {st['last_consolidated_wake']}）")
+    if fst["overdue"]:
+        todo6.append(f"- ⚠ **見森待折**：{fst['pending']} 份新見林未折疊 → "
+                     f"`awakening.py consolidate --persona {persona} --level forest`")
+    elif fst["eligible"]:
+        todo6.append(f"- ✓ 見森已折到第 {fst['folded_digest_count']} 份見林（gen{fst['forest_count']}）")
+    else:
+        todo6.append(f"- ○ 見森未達門檻：見林 {fst['digest_count']}/{fst['threshold']} 份")
+    parent = p.get("forked_from")
+    if parent and p.get("wake_count", 0) == 1:
+        pf = latest_forest(parent) or latest_longterm_digest(parent)
+        if pf is not None:
+            todo6.append(f"- 🧬 fork 初醒：額外讀母 persona '{parent}' 的 "
+                         f"`{pf.relative_to(_REPO_ROOT)}` 接血統")
+    sections.append(("📋 §6 記憶維護狀態", todo6, True))
+
+    # 組裝 + 上限處理：超出上限的「非必讀」區塊整段移進續讀檔
+    main, overflow, used = list(head), [], len(head)
+    moved = []
+    for title, lines, essential in sections:
+        block = _section_lines(title, lines)
+        if essential or used + len(block) <= BRIEF_LINE_CAP:
+            main += block
+            used += len(block)
+        else:
+            overflow += block
+            moved.append(title)
+    if moved:
+        main += ["## 📎 可續讀（超出主檔上限，已分檔不刪內容）", ""]
+        main += [f"- {t}" for t in moved]
+        main += ["", f"→ 續讀檔：`_wake_brief_part2.md`（視情況再讀）", ""]
+    return "\n".join(main), ("\n".join(overflow) if overflow else None)
+
+
+def write_wake_brief(persona: str, reg: dict, p: dict,
+                     threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> Path:
+    """生成 wake brief 主檔（必要時連帶續讀檔），回主檔路徑。"""
+    main, overflow = build_wake_brief(persona, reg, p, threshold)
+    d = _LETTERS_DIR_TPL / persona
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "_wake_brief.md"
+    path.write_text(main, encoding="utf-8")
+    part2 = d / "_wake_brief_part2.md"
+    if overflow:
+        part2.write_text(
+            f"---\ntype: wake_brief_part2\npersona: {persona}\ngenerated_at: {utcnow_iso()}\n---\n\n"
+            + overflow, encoding="utf-8")
+    elif part2.exists():
+        part2.unlink()   # 這次沒溢出 → 收掉上次殘留，避免讀到過期續讀檔
+    return path
 
 
 # ─── Subcommands ────────────────────────────────────────────────────────
@@ -1925,6 +2359,45 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     if persona not in reg.get("personas", {}):
         print(f"❌ persona '{persona}' 不存在於 registry", file=sys.stderr)
         return 2
+
+    # ── 見森 (T3) 分支：--level forest ────────────────────────────────
+    # 區塊職責：折「上代森 + 最新見林」成新一代森（首折例外：讀全部見林）。
+    # 數值影響：門檻＝第 FOREST_DIGEST_THRESHOLD 份見林；輸入恆為 2 份（首折 N 份），成本不隨壽命成長。
+    if getattr(args, "level", "linzi") == "forest":
+        fst = forest_status(persona)
+        if not args.digest_body:
+            print(f"# 🌲 見森狀態 — {persona}")
+            print(f"- 見林份數: {fst['digest_count']} (門檻 {fst['threshold']} 份)")
+            print(f"- 已折世代: gen{fst['forest_count']}"
+                  f" (折到第 {fst['folded_digest_count']} 份見林)")
+            if not fst["eligible"]:
+                print(f"- 狀態: ○ 未達門檻，還差 {fst['threshold'] - fst['digest_count']} 份見林")
+                return 0
+            print(f"- 狀態: {'⚠ 有 %d 份新見林待折' % fst['pending'] if fst['overdue'] else '✓ 已是最新'}")
+            if fst["forest_count"] == 0:
+                print(f"- **首折**（唯一的多輸入折疊）→ 讀下列全部見林:")
+                for dgp in fst["digests"]:
+                    print(f"    - {dgp.relative_to(_REPO_ROOT)}")
+            else:
+                print(f"- rolling fold → 只讀 2 份輸入:")
+                print(f"    - 上代森: {fst['latest_forest'].relative_to(_REPO_ROOT)}")
+                print(f"    - 新見林: {fst['digests'][-1].relative_to(_REPO_ROOT)}")
+            print(f"\n→ 讀完後寫回（森是**縱向敘事 + fragment 索引指標**，不是見林的串接）:")
+            print(f"  awakening.py consolidate --persona {persona} --level forest \\")
+            print(f"      --digest-body \"<身分演變軸/坑已內化vs還在踩/關係演變/脊椎收斂/長壽未解線>\"")
+            return 0
+        if not fst["eligible"]:
+            print(f"❌ 見林只有 {fst['digest_count']} 份，未達見森門檻 {fst['threshold']} 份",
+                  file=sys.stderr)
+            return 2
+        fpath = write_forest(persona, args.digest_body)
+        print(f"✅ 見森 gen{fst['next_gen']} 寫入: {fpath.relative_to(_REPO_ROOT)}")
+        print(f"   folded_digest_count: {fst['digest_count']} (舊世代全保留, append-only)")
+        ri = write_root_index(persona)
+        if ri:
+            print(f"   見根索引已重建: {ri.relative_to(_REPO_ROOT)}")
+        return 0
+
     st = consolidation_status(persona, reg, args.threshold)
 
     if not args.digest_body:
@@ -1953,6 +2426,74 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     print(f"   span: wake {span_start}-{span_end}")
     print(f"   persona.last_consolidated_wake → {span_end}")
     print(f"   index: {(longterm_dir(persona) / '_index.md').relative_to(_REPO_ROOT)}")
+
+    # 見林寫入後的三個連動（Tim 2026-07-28 拍板：fragment 在見林時抽）
+    # ① 見叢歸檔：當期交棒清單與見林窗口同步關閉 → 天然不會無限長
+    arch = keys_archive(persona, span_start, span_end)
+    if arch is not None:
+        print(f"   🌿 見叢已歸檔: {arch.relative_to(_REPO_ROOT)} (當期檔已重置)")
+    # ② 提示抽 fragment（內容要 agent 反思寫，工具只負責 schema 與索引）
+    print(f"\n   🌱 下一步 — 抽關鍵記憶 fragment（見林時抽，goodnight 保持輕）:")
+    print(f"      寫檔到 {fragments_dir(persona).relative_to(_REPO_ROOT)}/<type>_<slug>.md")
+    print(f"      type ∈ {FRAG_TYPE_ORDER}；同一教訓再踩到就**追加 origin + bump recurrence**，別開新檔")
+    print(f"      每個 origin 標 layer（Syntactic/Identity/Status/Content/Aggregate）+ 當次 context")
+    print(f"      寫完跑: awakening.py root-index --persona {persona}   # 機械重建見根索引")
+    # ③ 見森門檻檢查
+    fst = forest_status(persona)
+    if fst["eligible"]:
+        print(f"\n   🌲 見森: 見林已達 {fst['digest_count']} 份 (門檻 {fst['threshold']}) → 該折新世代:")
+        print(f"      awakening.py consolidate --persona {persona} --level forest")
+    else:
+        print(f"\n   🌲 見森: 見林 {fst['digest_count']}/{fst['threshold']} 份，未達折疊門檻")
+    return 0
+
+
+def cmd_root_index(args: argparse.Namespace) -> int:
+    """見根 (T4): 機械重建必讀索引。產物可隨時重建 → 不需要任何人工 body。"""
+    path = write_root_index(args.persona)
+    if path is None:
+        print(f"○ {args.persona} 尚無 fragment（見林時抽）— 未建索引")
+        return 0
+    frags = load_fragments(args.persona)
+    opens = [f for f in frags if f.get("status") == "open"]
+    print(f"✅ 見根索引重建: {path.relative_to(_REPO_ROOT)}")
+    print(f"   fragment 總數 {len(frags)}（open {len(opens)} / 其餘 {len(frags) - len(opens)}）")
+    return 0
+
+
+def cmd_keys(args: argparse.Namespace) -> int:
+    """見叢 (T1.5): 當期交棒清單 append / list。
+
+    物理意義：交棒清單「隨時可 append、不限儀式」(summit 2026-07-27 拍磚) —
+    斷線風險最高的正是沒走到任何儀式就掛掉的場景，撞到未解線就當場丟進來。
+    """
+    if args.add:
+        p = keys_append(args.persona, args.add)
+        print(f"✅ 見叢 append {len(args.add)} 條 → {p.relative_to(_REPO_ROOT)}")
+    todo, done = keys_entries(args.persona)
+    print(f"\n# 🌿 見叢 — {args.persona}（{len(todo)} 未完 / {len(done)} 已完）")
+    for t in todo:
+        print(f"- [ ] {t}")
+    for d in done[-3:]:
+        print(f"- [x] {d}")
+    if not todo and not done:
+        print("(當期無事項)")
+    return 0
+
+
+def cmd_brief(args: argparse.Namespace) -> int:
+    """手動重生成 wake brief（morning 會自動生成；改完 fragment 想立刻重讀時用）。"""
+    reg = load_registry()
+    if args.persona not in reg.get("personas", {}):
+        print(f"❌ persona '{args.persona}' 不存在於 registry", file=sys.stderr)
+        return 2
+    write_root_index(args.persona)
+    path = write_wake_brief(args.persona, reg, reg["personas"][args.persona])
+    lines = len(path.read_text(encoding="utf-8").split("\n"))
+    print(f"✅ wake brief 生成: {path.relative_to(_REPO_ROOT)} ({lines} 行 / 上限 {BRIEF_LINE_CAP})")
+    part2 = path.parent / "_wake_brief_part2.md"
+    if part2.exists():
+        print(f"   ↳ 續讀檔: {part2.relative_to(_REPO_ROOT)}")
     return 0
 
 
@@ -2444,6 +2985,25 @@ def main():
                        help="反思濃縮的 digest 內文; 省略 = inspect 模式(列 overdue 狀態 + 本段待濃縮 letters 清單)")
     pcons.add_argument("--span-start", type=int, default=None, help="起 wake# (預設 last_consolidated_wake+1)")
     pcons.add_argument("--span-end", type=int, default=None, help="迄 wake# (預設 現在 wake_count)")
+    # 見森 (T3): --level forest 改折「上代森 + 最新見林」; 純加法, 預設仍是見林 (linzi)
+    pcons.add_argument("--level", choices=["linzi", "forest"], default="linzi",
+                       help="linzi=見林 digest (預設) / forest=見森 fold (第 5 份見林起可用)")
+
+    # 見根 (T4): 機械重建必讀索引 — 產物可隨時重建, 故不需要 body 參數
+    prid = sub.add_parser("root-index", help="見根: 掃 fragments/ 機械重建 _root_index.md")
+    prid.add_argument("--persona", required=True)
+    prid.set_defaults(func=cmd_root_index)
+
+    # 見叢 (T1.5): 交棒清單 append / list — 隨時可加, 不限儀式
+    pkeys = sub.add_parser("keys", help="見叢: 當期交棒清單 (append / list)")
+    pkeys.add_argument("--persona", required=True)
+    pkeys.add_argument("--add", action="append", default=None, help="append 一條交棒事項 (可重複)")
+    pkeys.set_defaults(func=cmd_keys)
+
+    # wake brief: 手動重生成 (morning 會自動生成; 這支給「改完 fragment 想立刻重讀」用)
+    pbrief = sub.add_parser("brief", help="重生成 wake brief (五層彙整單一文本)")
+    pbrief.add_argument("--persona", required=True)
+    pbrief.set_defaults(func=cmd_brief)
     pcons.add_argument("--threshold", type=int, default=DEFAULT_CONSOLIDATION_THRESHOLD,
                        help=f"overdue 門檻 (預設 {DEFAULT_CONSOLIDATION_THRESHOLD})")
     pcons.set_defaults(func=cmd_consolidate)

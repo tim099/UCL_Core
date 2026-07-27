@@ -1035,18 +1035,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// quiet 場景 (e.g. 測試 / 內部 system message) 傳 false 跳過.</summary>
         public static int AppendMessage(string roomId, UCL_ChatMessage msg, bool fireDiscordMirror = true)
         {
-            // T38: PerMsgFile 內部處理 ts / uuid / _writer / _pid 簽章 + 寫單檔
-            var (record, fullPath) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFile(roomId, msg);
-            // 寫完後 walk dir 算 derived seq 回傳給 caller（既有 op 行為兼容）
-            // 性能：每次 walk N 個檔；房間訊息上萬時改 cache（v2 backlog）
-            int derivedSeq = LoadAllMessages(roomId).Count;
-            record.seq = derivedSeq;
-            // 寫 _seq.txt 給 wait 機制當「最大 seq」cache（合法 reader-only 用，不再是 atomic counter）
-            try
-            {
-                File.WriteAllText(GetSeqPath(roomId), derivedSeq.ToString(), new UTF8Encoding(false));
-            }
-            catch { /* fail swallow */ }
+            // 寫入臨界區 (2026-07-27, Tim 拍板抽離成 Service + lock)：
+            // 「寫檔 (WriteMessageFile) + derive seq (CountMessageFiles) + 寫 _seq.txt」這段本來散在這裡，
+            // 現在抽到 UCL_ChatTavernWriteService.WriteMessageWithSeq，用 per-room lock 包起來 —
+            // 防禦性設計：目前單執行緒同步呼叫鏈本來就沒有真正的 race，但上鎖後就算未來寫入路徑
+            // 真的變成多執行緒 / 被重入，也不會壞掉。
+            //
+            // 效能修復 (2026-07-26, 沿革)：seq 來源從 LoadAllMessages(roomId).Count（全房間 read+parse，
+            // 冷 cache 時在 13000+ 檔房間可以卡到幾分鐘 —— 這正是 Bartender daemon "Hold on..." 卡頓的根因
+            // 之一）改成 CountMessageFiles（純列路徑數量，不讀檔內容）。語意上「無壞檔 / 半寫檔時」才完全
+            // 等價 (basecamp 拍磚 2026-07-27 seq 13741 point③)：LoadAllMessages().Count 數「成功 parse 的
+            // 訊息數」，CountMessageFiles 數「.json 檔數」——但這反而順手修掉一個 C#↔python 定義漂移，
+            // python 端 (tavern_query.py 等) 本來就是按「檔案列舉」編號 seq，跟 CountMessageFiles 對齊。
+            //
+            // 順序 vs 唯一性 (Tim 2026-07-27 拍板)：seq 只要求「不重複」，不要求嚴格對應「送出順序」——
+            // Cmd_Tavern.Op_Post 的 T26 pacing delay 本來就會讓送出順序跟實際寫入順序不同，這點可接受；
+            // per-room lock 保證的是「同一房間內不會有兩筆訊息因為交錯執行而算出同一個 seq」。
+            int derivedSeq = UCL_ChatTavernWriteService.WriteMessageWithSeq(roomId, msg);
 
             // R6.6 / DoSend-mirror-fix — 下沉 Discord mirror 觸發到 IO 層,
             // 所有 post path (Cmd_Tavern RPC / UCL_ChatTavernPage IMGUI Send / 別 Cmd) 自動受益.

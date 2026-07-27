@@ -64,13 +64,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：訊息檔名生成 — <HHMMSS>_<MMM>_<UUID6>.json
-        // 物理意義：字典序 sort = 時間 sort；prefix HHMMSS_MMM 確保跨檔可比
-        // 數值影響：呼叫方需先 mkdir 對應 yyyy-MM-dd 目錄；本函式只回 filename
+        // 區塊職責：訊息檔名生成 — <SEQ:D8>.json (2026-07-27 改版, 取代舊版 <HHMMSS>_<MMM>_<UUID6>.json)
+        // 物理意義：seq 現在由 UCL_ChatTavernWriteService 在 per-room lock 內先算好才傳進來
+        //          (寫入時已知、保證同房間內不重複)，字典序 sort (zero-pad) = seq 數字序，
+        //          比舊版「靠時間前綴排序」更直接——seq 本身就是排序依據，不必再繞時間。
+        //          時間資訊仍完整保留在訊息內容的 ts 欄位 (SerializeMessageNoSeq 一律寫 ts)，
+        //          檔名不需要重複帶時間。
+        // 數值影響：只在「今天」這個資料夾內生效的日期 (2026-07-27 遷移) 之後，全房間統一走本格式；
+        //          舊日期資料夾維持舊格式不動——兩者互不干擾, 因為跨日排序看的是日期資料夾名稱
+        //          (yyyy-MM-dd) 而不是檔名, 檔名格式只在「同一天資料夾內」才需要互相可比。
+        // 設計取捨 (Tim 2026-07-27 拍板)：拿掉 uuid6 — seq 已保證不重複, 不再需要隨機尾碼防撞檔。
+        //          防撞檔機制從「換個隨機尾碼重試」改成「偵測到撞檔 = 快取跟磁碟真實狀態不同步的訊號,
+        //          回頭問磁碟真相重新算 seq」(見 WriteMessageFileWithSeq 呼叫端 UCL_ChatTavernWriteService
+        //          的 self-heal 邏輯), 比亂數重試更精確——直接找出「正確」的號碼而不是隨便挑一個沒撞到的。
         // ===========================================================
-        public static string BuildMessageFileName(DateTime utcTime, string uuid6)
+        public static string BuildMessageFileNameFromSeq(int seq)
         {
-            return $"{utcTime:HHmmss_fff}_{uuid6}.json";
+            return $"{seq:D8}.json";
         }
 
         public static string BuildEventFileName(DateTime utcTime, string uuid6, string eventType)
@@ -80,15 +90,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：寫一筆訊息為獨立 .json 檔（取代既有 AppendMessage）
-        // 物理意義：no atomic counter、no jsonl append；單檔 atomic create-or-overwrite
-        // 數值影響：自動填 ts (含 ms) + uuid + _writer / _pid 簽章 + ensure date dir
-        //          回傳 (record, fullPath) 供 caller 後續 derive seq 或 mirror 用
-        // 邊界：msg.ts 已填的話沿用（給 migrate 工具用）；否則 DateTime.UtcNow
-        //       msg.uuid 已填的話沿用；否則 GenerateUUID6
-        //       同 ms + 同 uuid（migrate 罕見）→ 檔名撞 → File.Exists 防呆 + retry uuid
+        // 區塊職責：寫一筆訊息為獨立 .json 檔，檔名直接用呼叫端已算好的 seq (取代舊版 WriteMessageFile)。
+        // 物理意義：no atomic counter (仍然)、no jsonl append；單檔 atomic create-or-overwrite。
+        // 數值影響：自動填 ts (含 ms) + uuid (仍寫進訊息內容, 給 reply_to_uuid 等功能用；只是不再
+        //          出現在檔名裡) + _writer / _pid 簽章 + ensure date dir。
+        // 回傳：(record, fullPath, wrote) — wrote=false 代表該 seq 對應的檔名已存在 (理論上不該發生,
+        //       代表呼叫端快取跟磁碟真實檔案數不同步)。本函式不自己重試亂猜新號碼——正確作法是讓
+        //       呼叫端 (UCL_ChatTavernWriteService) 重新問磁碟真相 (CountMessageFiles) 拿到正確 seq
+        //       再呼叫一次本函式, 而不是在這裡隨便換個檔名蒙混過去。
+        // 邊界：msg.ts 已填的話沿用（給 migrate 工具用）；否則 DateTime.UtcNow。
+        //       msg.uuid 已填的話沿用；否則 GenerateUUID6（僅供內容識別 / reply 用，跟檔名無關）。
         // ===========================================================
-        public static (UCL_ChatMessage record, string fullPath) WriteMessageFile(string roomId, UCL_ChatMessage msg)
+        public static (UCL_ChatMessage record, string fullPath, bool wrote) WriteMessageFileWithSeq(string roomId, UCL_ChatMessage msg, int seq)
         {
             UCL_ChatTavernIO.EnsureRoomDir(roomId);
 
@@ -106,7 +119,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 msg.ts = utcTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             }
 
-            // uuid：preserve given or generate
+            // uuid：preserve given or generate — 仍寫進內容 (reply_to_uuid 等功能用)，只是不再進檔名
             if (string.IsNullOrEmpty(msg.uuid))
             {
                 msg.uuid = GenerateUUID6();
@@ -121,30 +134,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             catch { /* sandbox 環境受限 */ }
 
-            // 檔名 + 路徑（含 ensure date dir）
+            // 檔名 + 路徑（含 ensure date dir）— 檔名純用 seq，不再需要時間/uuid 尾碼
             string dateDir = GetMessagesDateDir(roomId, utcTime);
             Directory.CreateDirectory(dateDir);
-            string filename = BuildMessageFileName(utcTime, msg.uuid);
+            string filename = BuildMessageFileNameFromSeq(seq);
             string fullPath = Path.Combine(dateDir, filename);
 
-            // 防撞檔（同 ms 同 uuid 極罕見；migrate 多筆同 ts 才可能）
-            int retry = 0;
-            while (File.Exists(fullPath) && retry < 10)
-            {
-                msg.uuid = GenerateUUID6();
-                filename = BuildMessageFileName(utcTime, msg.uuid);
-                fullPath = Path.Combine(dateDir, filename);
-                retry++;
-            }
             if (File.Exists(fullPath))
             {
-                throw new IOException($"[Tavern T38] 寫 message file 失敗 — 10 次 retry 仍撞檔：{fullPath}");
+                // 不在這裡亂猜新號碼——回報 wrote=false，讓呼叫端回頭問磁碟真相重新算 seq 後再試一次。
+                return (msg, fullPath, false);
             }
 
-            // serialize（不寫 seq；seq 是 reader derive）
+            // serialize（不寫 seq 進 JSON 內容；seq 只活在檔名裡，reader 仍可從檔名或 position 兩種方式得到）
             string json = SerializeMessageNoSeq(msg);
             File.WriteAllText(fullPath, json, new UTF8Encoding(false));
-            return (msg, fullPath);
+            return (msg, fullPath, true);
         }
 
         // ===========================================================

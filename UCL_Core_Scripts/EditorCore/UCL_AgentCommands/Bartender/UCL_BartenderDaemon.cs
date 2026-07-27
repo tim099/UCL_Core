@@ -48,6 +48,49 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         static readonly HashSet<string> s_WorkSessionEndSpawned = new HashSet<string>();
 
         // ===========================================================
+        // 區塊：Tick 進度可視化 + 可取消 (2026-07-26, Tim 反映 Editor 卡住 "Hold on..." 好幾分鐘看不出卡在哪)
+        // 物理意義：EditorApplication.update 若在單一 callback 內跑太久, Unity 只會顯示籠統的
+        //          "Waiting for user code in UCL_Core.dll to finish executing" — 無法得知卡在 daemon
+        //          內哪個階段。這裡在真正可能耗時的階段 (item 數量夠多 / 呼叫外部 subprocess 同步等待)
+        //          插入 EditorUtility.DisplayProgressBar，讓卡住時至少看得到目前是哪個階段 + 進度；
+        //          可取消的階段 (subprocess 等待 / 大量訊息掃描) 額外支援使用者按 Cancel 中途放棄。
+        // 設計取捨：
+        //   - 只在「item 數量超過門檻」或「同步等待外部程序」時才顯示，避免每 5s 空轉 tick 也跳窗口洗畫面。
+        //   - TickInternal 外層包 try/finally 保證離開時一定 ClearProgressBar (即使中途 exception 也不留殘影)。
+        //   - DisplayCancelableProgressBar 每次呼叫都會逼 Editor 重繪一次 — 只在迴圈內「每 N 筆 / 每 100ms」
+        //     呼叫一次，兼顧「使用者按 Cancel 後盡快反應」跟「不要因為過度呼叫本身拖慢迴圈」。
+        // ===========================================================
+        static bool s_ProgressBarShown = false;
+
+        static void ShowProgress(string title, string info, float progress)
+        {
+            try
+            {
+                EditorUtility.DisplayProgressBar(title, info, progress);
+                s_ProgressBarShown = true;
+            }
+            catch { /* IMGUI 例外不擋主流程 (e.g. 非 main thread 誤呼叫防禦) */ }
+        }
+
+        /// <summary>顯示可取消進度條；回傳 true = 使用者按了 Cancel。</summary>
+        static bool ShowCancelableProgress(string title, string info, float progress)
+        {
+            try
+            {
+                s_ProgressBarShown = true;
+                return EditorUtility.DisplayCancelableProgressBar(title, info, progress);
+            }
+            catch { return false; }
+        }
+
+        static void ClearProgress()
+        {
+            if (!s_ProgressBarShown) return;
+            try { EditorUtility.ClearProgressBar(); } catch { }
+            s_ProgressBarShown = false;
+        }
+
+        // ===========================================================
         // Static ctor — Editor 啟動 / domain reload 時自動執行
         // 物理意義：[InitializeOnLoad] 保證 Editor 內 assembly load 時跑一次 ctor
         // ===========================================================
@@ -124,13 +167,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // T-WorkSession-Auto (2026-05-22, basecamp): 每 tick (1) 偵測 Tim/Zeta 酒館「上班...到 HH:mm」
             // → 自動 spawn work_session.py start (酒保宣布開始); (2) 掃過期 session → 自動結算+宣布結束.
             // 改 per-tick (原本只 recompile 後第一次 sweep) → end_ts 一到即時結算, 不必等下次重編譯.
-            try { CheckWorkSessionStart(); }
-            catch (Exception e) { Debug.LogWarning($"[Bartender WS-start] fail: {e.Message}"); }
-            try { CheckOverdueWorkSessions(); }
-            catch (Exception e) { Debug.LogWarning($"[Bartender P3] overdue sweep fail: {e.Message}"); }
-            CheckKeywordTriggers();
-            CheckTimeRules();
-            CheckOvernightDeposits();
+            // 全 tick 包 try/finally — 任何階段丟例外或使用者按 Cancel 提早 return，
+            // 進度條都保證被清掉，不留殘影卡住 Editor UI。
+            try
+            {
+                try { CheckWorkSessionStart(); }
+                catch (Exception e) { Debug.LogWarning($"[Bartender WS-start] fail: {e.Message}"); }
+                try { CheckOverdueWorkSessions(); }
+                catch (Exception e) { Debug.LogWarning($"[Bartender P3] overdue sweep fail: {e.Message}"); }
+                CheckKeywordTriggers();
+                CheckTimeRules();
+                CheckOvernightDeposits();
+            }
+            finally
+            {
+                ClearProgress();
+            }
         }
 
         // ===========================================================
@@ -373,8 +425,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // 保證 'tavern' 主廳永遠被掃 (給 inline registration parse 用, 即使無任何 trigger)
             if (!byRoom.ContainsKey("tavern")) byRoom["tavern"] = new List<UCL_BartenderTrigger>();
 
+            // 進度可視化門檻 (2026-07-26) — 只有「新訊息數夠多」才顯示進度條, 避免每 5s 空轉 tick
+            // 也跳窗口洗畫面. 門檻抓 20: 正常單筆 post 觸發的 tick 遠低於此, 只有 domain-reload /
+            // Editor 閒置很久後第一次 tick 面對大量新訊息時才會觸發.
+            const int progressThreshold = 20;
+            bool userCancelledScan = false;
+
             foreach (var kv in byRoom)
             {
+                if (userCancelledScan) break;
+
                 string roomId = kv.Key;
                 var roomTriggers = kv.Value;
 
@@ -388,9 +448,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 var newMsgs = UCL_ChatTavernIO.LoadMessagesAfterSeq(roomId, lastSeq);
                 if (newMsgs == null || newMsgs.Count == 0) continue;
 
+                bool showProgress = newMsgs.Count >= progressThreshold;
+                int total = newMsgs.Count;
+
                 int maxSeq = lastSeq;
-                foreach (var msg in newMsgs)
+                for (int i = 0; i < newMsgs.Count; i++)
                 {
+                    var msg = newMsgs[i];
                     if (msg == null) continue;
                     int effectiveSeq = msg.seq;
                     if (effectiveSeq > maxSeq) maxSeq = effectiveSeq;
@@ -407,21 +471,37 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         bool registered = HandleInlineRegistration(kind, msg, roomId);
                         if (registered) anyFiredThisTick = true;
                         // 註冊訊息本身不參與 keyword trigger match (control msg)
-                        continue;
+                    }
+                    else
+                    {
+                        // 跑所有 trigger 比對
+                        foreach (var t in roomTriggers)
+                        {
+                            if (t.remaining_triggers <= 0) continue;
+                            if (!IsTargetMatch(msg, t.targets)) continue;
+                            if (!IsKeywordMatch(msg.body, t.keyword)) continue;
+
+                            // 命中 — fire bartender 訊息 (跳過內部 mirror, tick 末批次處理)
+                            FireTrigger(t, msg, roomId, fireDiscordMirror: false);
+                            t.remaining_triggers -= 1;
+                            triggersDirty = true;
+                            anyFiredThisTick = true;
+                        }
                     }
 
-                    // 跑所有 trigger 比對
-                    foreach (var t in roomTriggers)
+                    // 本筆已完整處理（maxSeq 已含這筆）— 這裡才安全 break, 不會漏處理半筆訊息.
+                    if (showProgress)
                     {
-                        if (t.remaining_triggers <= 0) continue;
-                        if (!IsTargetMatch(msg, t.targets)) continue;
-                        if (!IsKeywordMatch(msg.body, t.keyword)) continue;
-
-                        // 命中 — fire bartender 訊息 (跳過內部 mirror, tick 末批次處理)
-                        FireTrigger(t, msg, roomId, fireDiscordMirror: false);
-                        t.remaining_triggers -= 1;
-                        triggersDirty = true;
-                        anyFiredThisTick = true;
+                        if (ShowCancelableProgress(
+                                "酒保 — 掃描酒館訊息",
+                                $"房間 '{roomId}': 第 {i + 1}/{total} 筆 (累積 lastSeq→{maxSeq})…",
+                                (float)(i + 1) / total))
+                        {
+                            userCancelledScan = true;
+                            Debug.Log($"[Bartender] 使用者取消訊息掃描 — 房間 '{roomId}' 只處理到第 {i + 1}/{total} 筆, " +
+                                      $"游標仍推進到 seq={maxSeq}（未處理的訊息下個 tick 會繼續, 不會被跳過）。");
+                            break;
+                        }
                     }
                 }
 
@@ -430,6 +510,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     UCL_BartenderIO.SetLastSeq(state, roomId, maxSeq);
                     stateDirty = true;
                 }
+
+                if (userCancelledScan) break;
             }
 
             // 移除 remaining=0 的 trigger
@@ -686,7 +768,36 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 using (var proc = System.Diagnostics.Process.Start(psi))
                 {
                     if (proc == null) { err = "Process.Start return null"; return null; }
-                    if (!proc.WaitForExit(5000))
+
+                    // 進度可視化 + 可取消 (2026-07-26)：原本 proc.WaitForExit(5000) 是單一阻塞呼叫，
+                    // 卡住時 Editor 的 "Hold on..." 對話框只會顯示 daemon.Tick 這一整包，看不出是在等
+                    // python 子行程。改成每 POLL_STEP_MS 檢查一次是否結束，順便更新進度條 + 讓使用者可
+                    // 按 Cancel 提早放棄 (kill 子行程) — 邊界不變：總等待上限仍是 5000ms。
+                    const int totalTimeoutMs = 5000;
+                    const int pollStepMs = 100;
+                    int waited = 0;
+                    bool exited = false;
+                    bool userCancelled = false;
+                    while (waited < totalTimeoutMs)
+                    {
+                        if (proc.WaitForExit(pollStepMs)) { exited = true; break; }
+                        waited += pollStepMs;
+                        if (ShowCancelableProgress(
+                                "酒保 — 餘額查詢中",
+                                $"等待 python 子行程回應 ({waited}ms / {totalTimeoutMs}ms, account={account})…",
+                                (float)waited / totalTimeoutMs))
+                        {
+                            userCancelled = true;
+                            break;
+                        }
+                    }
+                    if (userCancelled)
+                    {
+                        try { proc.Kill(); } catch { }
+                        err = "使用者取消 (Cancel)";
+                        return null;
+                    }
+                    if (!exited)
                     {
                         try { proc.Kill(); } catch { }
                         err = "timeout (>5s)";
@@ -751,6 +862,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          - 已到時間且 fired_today_keys 無對應 reminder key → fire reminder
         //          - 啟用 penalty 且過了 grace_minutes → 每 penalty_interval_minutes 廣播一次累積扣血
         //          - 跨日自動清舊 fired_today_keys (只保留今日 YYYY-MM-DD)
+        //
+        // T-Bartender-CatchupCollapse (2026-07-26, Tim 觀察「Editor 長時間沒跑，回來後全部一次補報」懷疑觸發):
+        //   Daemon 每 CHECK_INTERVAL(5s) tick 一次，但若 Editor 被關閉/卡住/domain-reload 一段時間，
+        //   下次 tick 時 now 可能已經跨過好幾個 rule 的 time_hhmm（例如 15 個「整點快照」rule 從 09:00~23:00
+        //   逐時各一條 — Editor 關 6 小時重開，一次補發 6 筆提醒）。每筆 fire 都要 AppendMessage 一次落盤，
+        //   在大房間 (1万+ 訊息檔) 上就是這次卡頓 (Hold on 4:53) 的放大器之一。
+        //   修法：同一 tick 內若「到期但今天還沒發過 reminder」的 rule 數 > 1，視為 catch-up 補報情境 —
+        //   只發「時間最新」的那一條（最貼近現在、資訊最有時效性），其餘視同已發（補標 fired_today_keys，
+        //   不落盤、不佔位）並記一筆 Debug.Log 說明被併掉幾條。正常單條到期（count==1）行為完全不變。
         // ===========================================================
         static void CheckTimeRules()
         {
@@ -773,6 +893,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 if (state.fired_today_keys.Count != before) stateDirty = true;
             }
 
+            // ---- Pass 1: 蒐集本 tick「到期且今天還沒發 reminder」的 rule (不在此 pass 真的 fire) ----
+            var dueReminders = new List<(UCL_BartenderTimeRule rule, DateTime reminderTime, string roomId, string reminderKey)>();
             foreach (var rule in ruleList.rules)
             {
                 if (rule == null || !rule.enabled) continue;
@@ -784,34 +906,89 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 string roomId = string.IsNullOrEmpty(rule.target_room) ? "tavern" : rule.target_room;
                 if (UCL_ChatTavernIO.GetRoom(roomId) == null) continue;
 
-                // (1) Reminder fire
                 string reminderKey = $"{today}::{rule.id}::reminder";
                 if (!state.fired_today_keys.Contains(reminderKey))
                 {
-                    FireTimeReminder(rule, roomId, fireDiscordMirror: false);
-                    state.fired_today_keys.Add(reminderKey);
+                    dueReminders.Add((rule, reminderTime, roomId, reminderKey));
+                }
+            }
+
+            // ---- Pass 2: 依 catch-up 併發規則實際 fire reminder ----
+            // Bug fix (basecamp 拍磚 2026-07-27 seq 13741)：原本用「dueReminders.Count > 1」判定 catch-up，
+            // 會誤殺「本來就同一分鐘設了兩條 rule」的合法情境（例如 23:00 整點快照 + 23:00 睡眠提醒）—
+            // 這種情況 count 也 > 1，但兩條 reminderTime 完全相同，不是補報。改判定基準為「時間跨度」：
+            // 最舊與最新到期時間差 > CATCHUP_SPAN_THRESHOLD_MINUTES 才視為補報 (Editor 閒置回來一次跨過
+            // 好幾個時點)；同分鐘或跨度很小的並發到期，一律照常各自都發，不合併也不靜默丟。
+            const double CATCHUP_SPAN_THRESHOLD_MINUTES = 5.0;
+            dueReminders.Sort((a, b) => a.reminderTime.CompareTo(b.reminderTime));
+            double spanMinutes = dueReminders.Count >= 2
+                ? (dueReminders[dueReminders.Count - 1].reminderTime - dueReminders[0].reminderTime).TotalMinutes
+                : 0.0;
+
+            if (dueReminders.Count > 1 && spanMinutes > CATCHUP_SPAN_THRESHOLD_MINUTES)
+            {
+                // Catch-up 補報情境（時間跨度夠大，判定為 Editor 閒置回來的一次補齊）：
+                // 只發時間最新的一條，其餘補標已發 — 這裡「補標已發」是指補進 state.fired_today_keys
+                // 並隨 stateDirty 正常存檔 (UCL_BartenderIO.SaveState)，不是完全不落地；跳過的只是
+                // 「不再發 tavern 訊息 / 不再呼叫 FireTimeReminder → AppendMessage」這件事本身。
+                // 這點很重要：狀態有落盤，所以就算 Editor 這次也提早關掉，下次重開不會對同一批 reminder 重判到期。
+                var latest = dueReminders[dueReminders.Count - 1];
+                var skipped = dueReminders.GetRange(0, dueReminders.Count - 1);
+
+                FireTimeReminder(latest.rule, latest.roomId, fireDiscordMirror: false);
+                state.fired_today_keys.Add(latest.reminderKey);
+                stateDirty = true;
+                anyFiredThisTick = true;
+
+                foreach (var s in skipped)
+                {
+                    state.fired_today_keys.Add(s.reminderKey);
+                }
+                stateDirty = true;
+                Debug.Log($"[Bartender] catch-up 補報偵測：{dueReminders.Count} 條 time rule 同時到期, " +
+                          $"時間跨度 {spanMinutes:F1} 分鐘 > 門檻 {CATCHUP_SPAN_THRESHOLD_MINUTES} " +
+                          $"(疑似 Editor 閒置一段時間才回來 tick) — 只發最新一條 '{latest.rule.id}' " +
+                          $"({latest.rule.time_hhmm})，其餘 {skipped.Count} 條 " +
+                          $"[{string.Join(", ", skipped.ConvertAll(s => $"{s.rule.id}({s.rule.time_hhmm})"))}] " +
+                          $"補標已發並存檔，但不發 tavern 訊息。");
+            }
+            else if (dueReminders.Count >= 1)
+            {
+                // 正常路徑 — 單條到期，或多條到期但時間跨度在門檻內 (視為合法並發，各自都發, 不合併)。
+                // 行為與修改前 (dueReminders.Count==1 分支) 完全一致；並發但非 catch-up 時新增全發, 不誤殺。
+                foreach (var only in dueReminders)
+                {
+                    FireTimeReminder(only.rule, only.roomId, fireDiscordMirror: false);
+                    state.fired_today_keys.Add(only.reminderKey);
+                }
+                stateDirty = true;
+                anyFiredThisTick = true;
+            }
+
+            // ---- Pass 3: Penalty 累積（獨立於 reminder catch-up 併發，逐 rule 照舊判斷）----
+            foreach (var rule in ruleList.rules)
+            {
+                if (rule == null || !rule.enabled || !rule.penalty_enabled) continue;
+                if (!TryParseHHmm(rule.time_hhmm, out int reminderHour, out int reminderMin)) continue;
+                DateTime reminderTime = new DateTime(now.Year, now.Month, now.Day, reminderHour, reminderMin, 0);
+                if (now < reminderTime) continue;
+
+                string roomId = string.IsNullOrEmpty(rule.target_room) ? "tavern" : rule.target_room;
+                if (UCL_ChatTavernIO.GetRoom(roomId) == null) continue;
+
+                double overtimeMin = (now - reminderTime).TotalMinutes - rule.grace_minutes;
+                if (overtimeMin <= 0) continue;
+
+                // 第 N 次 penalty fire (1-based, every penalty_interval_minutes)
+                int interval = Math.Max(1, rule.penalty_interval_minutes);
+                int penaltyTick = (int)Math.Floor(overtimeMin / interval) + 1;
+                string penaltyKey = $"{today}::{rule.id}::penalty::{penaltyTick}";
+                if (!state.fired_today_keys.Contains(penaltyKey))
+                {
+                    FirePenaltyWarning(rule, roomId, penaltyTick, overtimeMin, fireDiscordMirror: false);
+                    state.fired_today_keys.Add(penaltyKey);
                     stateDirty = true;
                     anyFiredThisTick = true;
-                }
-
-                // (2) Penalty 累積 — grace 過後每 penalty_interval_minutes fire 一次
-                if (rule.penalty_enabled)
-                {
-                    double overtimeMin = (now - reminderTime).TotalMinutes - rule.grace_minutes;
-                    if (overtimeMin > 0)
-                    {
-                        // 第 N 次 penalty fire (1-based, every penalty_interval_minutes)
-                        int interval = Math.Max(1, rule.penalty_interval_minutes);
-                        int penaltyTick = (int)Math.Floor(overtimeMin / interval) + 1;
-                        string penaltyKey = $"{today}::{rule.id}::penalty::{penaltyTick}";
-                        if (!state.fired_today_keys.Contains(penaltyKey))
-                        {
-                            FirePenaltyWarning(rule, roomId, penaltyTick, overtimeMin, fireDiscordMirror: false);
-                            state.fired_today_keys.Add(penaltyKey);
-                            stateDirty = true;
-                            anyFiredThisTick = true;
-                        }
-                    }
                 }
             }
 

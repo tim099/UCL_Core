@@ -433,6 +433,36 @@ def write_stt_chunk(cache_dir, start_epoch: float, end_epoch: float,
     return str(fname)
 
 
+def write_stt_status_error(cache_dir, error: str | None) -> None:
+    """把 worker 錯誤寫進 _status.json 的 error/error_at 欄 (error=None 清除)。
+
+    區塊職責: 補「錯誤被記在 thread 私有欄位、外界無人能讀」的可觀測性缺口 —
+             2026-07-27 STT 靜默殭屍事故: 擷取失敗重試迴圈空轉 2h, _error 有值但 UI/log 全無感。
+    物理意義: merge 寫 — 保留既有 watermark 欄位只動 error 欄; atomic replace 防半寫。
+    數值影響: 只在錯誤狀態「轉換」時呼叫 (首次失敗 / 恢復), 不在重試迴圈內每秒寫盤。
+    """
+    try:
+        sp = _stt_status_path(Path(cache_dir))
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            status = json.loads(sp.read_text(encoding="utf-8"))
+            if not isinstance(status, dict):
+                status = {}
+        except (OSError, json.JSONDecodeError, ValueError):
+            status = {}
+        if error:
+            status["error"] = error
+            status["error_at"] = time.time()
+        else:
+            status.pop("error", None)
+            status.pop("error_at", None)
+        tmp = sp.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(status, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(sp)
+    except OSError:
+        pass  # 可觀測性輔助欄 — 寫盤失敗不影響轉錄主流程 (主要錯誤已經由 warn_cb 出聲)
+
+
 class SttCacheWorker:
     """daemon-side 常駐 STT cache worker (對偶 subtitle_ocr.OcrWorkerPool)。
 
@@ -444,7 +474,7 @@ class SttCacheWorker:
     def __init__(self, cache_dir: Path = STT_CACHE_DIR, model_size: str = DEFAULT_MODEL,
                  language: str | None = None, chunk_sec: float = DEFAULT_CHUNK_SEC,
                  retention_sec: float = DEFAULT_CACHE_RETENTION_SEC,
-                 progress_cb=None, prompt: str | None = None):
+                 progress_cb=None, prompt: str | None = None, warn_cb=None):
         self.cache_dir = Path(cache_dir)
         self.model_size = model_size
         self.language = language
@@ -456,10 +486,13 @@ class SttCacheWorker:
         # progress_cb(chunk_num:int, n_segs:int, end_epoch:float) — 每寫完一個 chunk 回呼一次。
         # 物理意義: 讓 caller (CLI / daemon) 能定期輸出「還活著」的進度, 修「背景看似卡住」的 UX。
         self.progress_cb = progress_cb
-        self.chunk_count = 0        # 已寫 chunk 累計 (給進度顯示)
+        # warn_cb(msg:str) — 失敗禁靜默出口 (2026-07-27 靜默殭屍事故): 擷取失敗時讓 caller 記 log。
+        self.warn_cb = warn_cb
+        self.chunk_count = 0        # 已寫 chunk 累計 (給進度顯示 + daemon watchdog 停滯偵測)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._error: str | None = None
+        self._fail_streak = 0       # 連續擷取失敗次數 (成功即歸零; 控制 warn 頻率防洗版)
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -476,6 +509,15 @@ class SttCacheWorker:
 
     def error(self) -> str | None:
         return self._error
+
+    def _warn(self, msg: str) -> None:
+        """出聲管道 — warn_cb 沒給就靜默 (CLI 場景); 回呼失敗不影響主流程。"""
+        if self.warn_cb is None:
+            return
+        try:
+            self.warn_cb(msg)
+        except Exception:
+            pass
 
     def _write_chunk(self, start_epoch: float, end_epoch: float, segments: list[dict]) -> None:
         """把一個 chunk atomic 寫成 cache json + 更新 status (委派 module-level write_stt_chunk 共用)。"""
@@ -494,9 +536,26 @@ class SttCacheWorker:
                 continue
 
     def _loop(self) -> None:
+        # 區塊職責: Windows COM per-thread 初始化 — WASAPI (soundcard) 的先決條件, 且必須「條件式」做。
+        # 物理意義: soundcard 只在「首次 import 它的那條 thread」CoInitialize (import 副作用):
+        #          ① 它已被別的 thread import 過 → 本 thread 沒 COM → loopback 全滅
+        #            Error 0x800401f0 (CO_E_NOTINITIALIZED) → 需自行補 CoInitializeEx (血證一號)。
+        #          ② 它尚未 import → 必須「讓它自己 init」— 它的 check_error 把 S_FALSE (本 thread
+        #            已初始化) 當錯誤拋, 先搶 init 會害它 import 炸 Error 0x100000001 (血證二號,
+        #            2026-07-27 同日雙殺 — 兩隻都是錯誤可視化通道上線後現形的)。
+        # 數值影響: COINIT_MULTITHREADED (0x0, 對齊 soundcard 自身用法); ctypes 端不檢查回傳
+        #          (S_OK/S_FALSE 皆可用)。
+        if sys.platform == "win32" and "soundcard" in sys.modules:
+            try:
+                import ctypes
+                ctypes.windll.ole32.CoInitializeEx(None, 0x0)
+            except Exception as e:
+                self._warn(f"CoInitializeEx fail (STT 擷取可能失效): {e}")
         # 預載模型 (第一次 ~數秒), 失敗就記錄退出 (fail-soft, daemon 主流程不受影響)
         if get_model(self.model_size) is None:
             self._error = init_error() or "STT worker: 模型載入失敗"
+            self._warn(f"STT worker 啟動失敗: {self._error}")
+            write_stt_status_error(self.cache_dir, self._error)
             return
         cleanup_counter = 0
         while not self._stop.is_set():
@@ -506,9 +565,24 @@ class SttCacheWorker:
                 break
             if audio.size < WHISPER_SAMPLE_RATE // 2:
                 self._error = init_error() or "STT worker: 擷取無音訊"
+                # 區塊職責: 擷取失敗禁靜默 — 首次寫 _status.json error 欄 + 分級出聲。
+                # 物理意義: 2026-07-27 事故 — process 級音訊堆疊壞死後此分支每秒空轉 2h,
+                #          thread 活著故 daemon dead 偵測不觸發, log 零筆, 外界只見「最新 STT 凍結」。
+                #          錯誤必須離開 thread 私有欄位 (log + status 檔) 才算存在。
+                # 數值影響: 第 1/5 次 + 之後每 60 次 (≈每分鐘) warn 一次防洗版; status 檔只寫轉換沿。
+                self._fail_streak += 1
+                if self._fail_streak == 1:
+                    write_stt_status_error(self.cache_dir, self._error)
+                if self._fail_streak in (1, 5) or self._fail_streak % 60 == 0:
+                    self._warn(f"STT 擷取失敗 (連續 {self._fail_streak} 次): {self._error}")
                 # 短暫等待避免 busy loop (擷取失敗時)
                 self._stop.wait(1.0)
                 continue
+            if self._fail_streak:
+                self._warn(f"STT 擷取恢復 (先前連續失敗 {self._fail_streak} 次)")
+                self._fail_streak = 0
+                self._error = None
+                write_stt_status_error(self.cache_dir, None)
             segs = transcribe(audio, language=self.language, model_size=self.model_size,
                               initial_prompt=self.prompt)
             t1 = time.time()

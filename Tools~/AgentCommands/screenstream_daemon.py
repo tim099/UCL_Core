@@ -565,6 +565,16 @@ def post_bartender_announce(event: str, cfg: dict, monitors_cache: list) -> None
 def main_loop() -> int:
     ensure_dirs()
     write_pid()
+    # Process 註冊中心 (Tim 2026-07-27 統一管理處): 自我註冊進共用 registry —
+    # C# spawn 端 (UCL_ScreenStreamDaemon) 通常已代為註冊 → skip_if_exists 不重寫 (保留 C# 出處);
+    # CLI 手動啟動時才由此補記錄, 讓 UCL_ProcessAdminPage 也看得到。
+    # allow_multiple=True: 同類多開防治歸 C# pre-spawn guard + 本 daemon 的 PID 檔機制, 這裡只管能見度。
+    try:
+        from process_registry import register_self
+        register_self("screenstream_daemon", description="ScreenStream 錄影/STT/OCR daemon (self-registered)",
+                      registered_by="screenstream_daemon.py", allow_multiple=True, skip_if_exists=True)
+    except Exception as e:
+        log(f"process_registry self-register skip: {e}", "WARN")
     # T14 — 啟動時列舉 monitor + 匯出檔給 Editor page 用
     monitors_cache = enumerate_monitors()
     write_monitors_file(monitors_cache)
@@ -598,6 +608,13 @@ def main_loop() -> int:
     #   config 任一項被改 → 自動 stop + 重起套用, 取代舊版「只 log WARN 等人工 toggle」的靜默失效設計
     #   (血證: 換片後 stt_lang/stt_prompt 殘留上一場, whisper 幻聽出舊片人名)
     last_stt_cfg = ("", "", "")
+    # T-STT-Watchdog (2026-07-27 靜默殭屍事故) — worker 產出停滯偵測 state
+    # 物理意義: 擷取失敗重試迴圈 (audio_transcribe._loop 空音訊分支) thread 不死,
+    #          下方「dead 偵測」(要求 thread 已死) 永遠不觸發 → STT 靜默停擺 2h 無任何警訊。
+    #          改追 chunk_count 水位: 停滯超過門檻 = 殭屍, 不管 thread 死活。
+    stt_last_chunk_count = -1     # 上次看到的 chunk 水位 (-1 = 尚無 worker)
+    stt_last_progress_ts = 0.0    # 水位最後推進時刻
+    stt_zombie_restarts = 0       # 連續殭屍重起次數 (有產出即歸零; ≥3 升級 ERROR)
     try:
         from screenstream_audio_viz import (
             AudioCapture,
@@ -854,10 +871,15 @@ def main_loop() -> int:
                                 chunk_sec=float(cfg.get("stt_chunk_sec", 15)),
                                 progress_cb=_stt_progress,
                                 prompt=_stt_prompt,
+                                # T-STT-Watchdog: worker 內部失敗 (擷取炸/恢復) 直通 daemon log, 禁靜默
+                                warn_cb=lambda m: log(m, "WARN"),
                             )
                             stt_worker.start()
                             # T-STT-AutoRestart: 記下這顆 worker 實際吃到的設定快照, 供上方變更偵測比對
                             last_stt_cfg = curr_stt_cfg
+                            # T-STT-Watchdog: 重置停滯計時 (新 worker 從 0 起算)
+                            stt_last_chunk_count = stt_worker.chunk_count
+                            stt_last_progress_ts = time.time()
                             _pnote = f", prompt='{_stt_prompt[:40]}…'" if _stt_prompt else ""
                             log(f"stt cache worker started (model={stt_worker.model_size}, "
                                 f"lang='{cfg.get('stt_lang') or ''}', chunk={stt_worker.chunk_sec}s{_pnote})")
@@ -879,6 +901,36 @@ def main_loop() -> int:
                 log(f"stt worker dead (will fail-soft): {stt_worker.error()}", "WARN")
                 stt_worker = None
                 last_stt_enabled = False
+            # T-STT-Watchdog (2026-07-27) — 殭屍偵測: thread 活著但 chunk 產出停滯。
+            # 物理意義: 上方 dead 偵測只抓「thread 已死」; 擷取失敗重試迴圈 thread 永遠活著 →
+            #          音訊堆疊 process 級壞死時 STT 靜默停擺 (血證: 2026-07-27 停擺 2h 零警訊)。
+            #          停滯門檻 = max(60s, 4×chunk_sec): 正常節奏每 chunk_sec 必有一筆, 4 倍容忍轉錄慢。
+            # 數值影響: 殭屍 → 重起 worker (model 有 module 級快取, 重起成本低; capture_live 每 chunk
+            #          重挑 default speaker, 裝置暫時性失效可自癒)。連續 3 次重起仍無產出 → 升級 ERROR
+            #          (疑似 process 級壞死, 只有重啟 daemon 救得回); 之後每 10 次才再叫, 防洗版。
+            if stt_worker is not None and stt_worker._thread is not None and stt_worker._thread.is_alive():
+                _now_ts = time.time()
+                if stt_worker.chunk_count != stt_last_chunk_count:
+                    stt_last_chunk_count = stt_worker.chunk_count
+                    stt_last_progress_ts = _now_ts
+                    stt_zombie_restarts = 0
+                elif _now_ts - stt_last_progress_ts > max(60.0, stt_worker.chunk_sec * 4):
+                    stt_zombie_restarts += 1
+                    _stall = _now_ts - stt_last_progress_ts
+                    _werr = stt_worker.error() or "(worker 未記錯誤)"
+                    if stt_zombie_restarts <= 3 or stt_zombie_restarts % 10 == 0:
+                        _esc = (" — 連續多次重起無效, 疑似 process 級音訊堆疊壞死, 需重啟 daemon 才能恢復"
+                                if stt_zombie_restarts >= 3 else "")
+                        log(f"stt watchdog: worker 活著但 {_stall:.0f}s 無 chunk 產出 "
+                            f"(第 {stt_zombie_restarts} 次殭屍重起); 最後錯誤: {_werr}{_esc}",
+                            "ERROR" if stt_zombie_restarts >= 3 else "WARN")
+                    try:
+                        stt_worker.stop()
+                    except Exception as e:
+                        log(f"stt watchdog stop fail: {e}", "WARN")
+                    stt_worker = None
+                    last_stt_enabled = False   # 走上方 enabled-transition 啟動分支重起
+                    stt_last_progress_ts = _now_ts
             # (舊版 T-STT-Prompt「改了沒重起只 log WARN」偵測已由上方 T-STT-AutoRestart 自動重起機制取代)
 
             # T-AudioLog (Tim 2026-06-08, summit ship) — 每 N frame 觸發 dump audio log

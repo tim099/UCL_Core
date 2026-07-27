@@ -4,7 +4,7 @@ description: ScreenStream daemon 控制頁 (UCL_Core 版) — 錄影 toggle (二
 tags: [editor-page, screenstream, stream-watch, stt]
 aliases: [螢幕直播, 錄影頁, ScreenStream, 直播控制]
 target_audience: [AI_Agent, Tools_User]
-last_updated: 2026-07-26
+last_updated: 2026-07-27
 ---
 
 # 🎥 螢幕直播錄影頁 (UCL_ScreenStreamPage)
@@ -29,3 +29,10 @@ last_updated: 2026-07-26
 - **T13** 獨立頁防誤觸＋錄影紅燈警示＋敏感頁自動黑屏 flag；**T14** 多螢幕列舉＋預覽；**T19** unity_game 來源
 - **T-STT-PageToggle**：`stt_setting`＝意圖（持久化）、`stt_enabled`＝實效（錄影中 && 開關），停錄影自動停 STT
 - **T-STT-StaleFix**：mtime 感知 reload＋可編輯欄位 3-way merge（外部工具改動即時反映、不蓋 Tim 編輯中欄位）；開始錄影自動清空 `stt_prompt` 防跨場幻聽
+
+## STT / OCR 顯示面板（2026-07-27）
+
+- **最新 STT / OCR**：取 cache 內 **epoch 最大**的非空 entry — 不按檔名序（OCR 是 ring buffer 就地覆寫，檔名最大 ≠ 資料最新，舊版因此落後最多一圈）
+- **歷史分頁**（每頁 10、newest-first）：mtime watermark **增量掃描**（每 2s tick 只 stat 目錄＋parse 有變動的檔）；**第 1 頁自動追新**，停在舊頁時凍結顯示（防閱讀中內容被推走）並提示有新資料；🔄＝重置 watermark 全量重掃
+- **staleness 警示**：錄影中且功能開著、最新資料超過門檻（STT 60s / OCR 30s）沒更新 → 標 ⚠
+- **STT worker 錯誤顯示**：daemon worker 擷取失敗時寫 `stt/_status.json` 的 `error` 欄，本頁以紅字顯示（配套 daemon 端 T-STT-Watchdog 殭屍偵測自動重起 — 2026-07-27 STT 靜默停擺事故的修復組）

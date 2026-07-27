@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using UCL.Core.ATTR;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UnityEngine;
@@ -22,6 +23,7 @@ namespace UCL.Core.EditorLib.Page
     /// STT/OCR 的依賴安裝與細部設定請走「影音管理」頁 (UCL_MediaAdminPage, 本頁有跳轉鈕)。
     /// </summary>
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ScreenStreamPage.md")]
+    [RequiresConstantRepaint]
     public class UCL_ScreenStreamPage : UCL_CommonEditorPage
     {
         public override string WindowName => "螢幕直播錄影";
@@ -85,13 +87,30 @@ namespace UCL.Core.EditorLib.Page
         string m_StartedAt = "";
         bool m_DaemonAlive = false;
         string m_LatestFrame = "";
-        // ── STT / OCR 顯示 (Tim 2026-07-27)：當前最新 + 可展開分頁歷史 (仿聊天酒館, 展開才載, 每頁 10) ──
+        // ── STT / OCR 顯示 (Tim 2026-07-27)：當前最新 + 可展開分頁歷史 (每頁 10) ──
+        // 增量快取 (2026-07-27 修): 檔路徑 → 該檔 entries; watermark = 已 parse 的最大 mtime ticks。
+        // 修兩隻 bug: ① 「最新 OCR」舊版按檔名倒掃 — OCR 是 ring buffer 就地覆寫 (frame_NNNN.json),
+        //   檔名最大 ≠ 資料最新, 顯示會落後最多一整圈 (~max_frames 秒); mtime/epoch 才是新舊 ground truth。
+        //   ② 歷史展開後凍結不追新 — 改為每次 reload tick 增量掃, 有變動即標 dirty 讓第 1 頁自動更新。
+        // 成本: 每 2s stat 全目錄 (~2400 檔, 毫秒級); parse 只發生在 mtime 超過 watermark 的檔
+        //   (穩態每 tick 0~2 檔; 首次 tick 全量 parse 一次)。
         string m_LatestSttText = "", m_LatestSttTime = "";
         string m_LatestOcrText = "", m_LatestOcrTime = "";
+        double m_LatestSttEpoch = 0, m_LatestOcrEpoch = 0;
         bool m_ShowSttHistory = false, m_ShowOcrHistory = false;
         int m_SttHistPage = 0, m_OcrHistPage = 0;
-        List<(double epoch, string text)> m_SttHistory;   // null = 未載入 (展開才載 + 快取, 不每幀重讀)
+        readonly Dictionary<string, List<(double epoch, string text)>> m_SttFileEntries = new();
+        readonly Dictionary<string, List<(double epoch, string text)>> m_OcrFileEntries = new();
+        long m_SttWatermark = 0, m_OcrWatermark = 0;
+        bool m_SttHistDirty = false, m_OcrHistDirty = false;   // 快取有變動、顯示列表待重建
+        List<(double epoch, string text)> m_SttHistory;   // 顯示用排序列表 (null = 尚未建)
         List<(double epoch, string text)> m_OcrHistory;
+        // daemon STT worker 寫進 stt/_status.json 的 error 欄 — 「禁靜默失敗」的 UI 端出口
+        // (2026-07-27 靜默殭屍事故: worker 內部有記錯誤但無人能讀 → 加此顯示通道)
+        string m_SttStatusError = "";
+        long m_SttStatusMtime = 0;
+        // config 內 daemon 實效開關 (影音管理頁設定) — 給 staleness 警示判斷「該不該有新資料」
+        bool m_SttEnabledCfg = false, m_OcrEnabledCfg = false;
         GUIStyle m_SubWrapStyle;
         GUIStyle SubWrapStyle
         {
@@ -283,6 +302,9 @@ namespace UCL.Core.EditorLib.Page
                         m_FrameCount = data.GetInt("frame_count", 0);
                         m_StartedAt = data.GetString("started_at", "");
                         m_SttPrompt = data.GetString("stt_prompt", "");
+                        // daemon 實效開關 (staleness 警示用): 沒開的功能本來就不會有新資料, 不該警告
+                        m_SttEnabledCfg = data.GetBool("stt_enabled", false);
+                        m_OcrEnabledCfg = data.GetBool("ocr_enabled", false);
                         // 可編輯欄位: 3-way merge — Tim 沒動過的欄位吃磁碟新值, 編輯中的保留
                         m_Fps = MergeField(m_Fps, ref m_BaseFps, data.GetInt("fps", 1));
                         m_MaxFrames = MergeField(m_MaxFrames, ref m_BaseMaxFrames, data.GetInt("max_frames", 600));
@@ -400,7 +422,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 ReloadFromDisk();
                 ReloadMonitors();
-                ReloadLatestSttOcr();   // 便宜讀最新 STT/OCR (歷史另走展開 lazy load)
+                ReloadLatestSttOcr();   // 增量掃 STT/OCR cache (mtime watermark; 最新+歷史共用快取)
                 m_LastReloadTime = now;
             }
             // T14 — Preview reload (獨立節奏, 比 config reload 頻繁)
@@ -712,81 +734,138 @@ namespace UCL.Core.EditorLib.Page
         double m_PendingArmEnableTime = -1.0;
 
         // ===========================================================
-        // 區塊：STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史 (仿聊天酒館, 展開才載, 每頁 10)
+        // 區塊：STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史 (每頁 10)
         // 物理意義：讀 _screenstream/stt/stt_<epoch>.json (whisper) + ocr/frame_NNNN.json (字幕 OCR) cache。
-        //          「最新」每次 reload 便宜掃最新檔；「歷史」展開才全載 + 快取 (OCR 可達數百檔, 不每幀重讀)。
+        //          mtime watermark 增量掃 (2026-07-27 修): 「最新」與「歷史」共用同一份檔案快取,
+        //          每 2s tick 只 stat 目錄 + parse 有變動的檔 — 同時修正 ring buffer 檔名序陷阱
+        //          (最新 OCR 落後) 與歷史凍結不追新兩隻 bug。
         // ===========================================================
+        // 區塊職責: 增量掃描字幕 cache 目錄 — 只 parse mtime 超過 watermark 的檔, 已刪檔同步移除。
+        // 物理意義: OCR ring buffer 就地覆寫 (frame_NNNN.json), 檔名序 ≠ 時間序; mtime 才是新舊依據。
+        //          STT 是 append-only (stt_<epoch>.json) + retention 刪舊檔, 同一套機制天然涵蓋。
+        // 數值影響: 回傳是否有變動 (供 latest 重算 + 歷史 dirty 標記);
+        //          全目錄 mtime 整批倒退 (目錄被清空重建) → 重置 watermark 全量重掃, 不會卡死在舊水位。
+        static bool ScanSubtitleDir(string dir, string pattern,
+            Dictionary<string, List<(double epoch, string text)>> fileEntries, ref long watermark,
+            Func<string, List<(double epoch, string text)>> parser)
+        {
+            bool changed = false;
+            try
+            {
+                if (!Directory.Exists(dir))
+                {
+                    if (fileEntries.Count > 0) { fileEntries.Clear(); changed = true; }
+                    watermark = 0;
+                    return changed;
+                }
+                for (int pass = 0; pass < 2; pass++)   // 第 2 輪只在 watermark 重置時跑
+                {
+                    var files = Directory.GetFiles(dir, pattern);
+                    var seen = new HashSet<string>(files);
+                    List<string> removed = null;
+                    foreach (var k in fileEntries.Keys)
+                        if (!seen.Contains(k)) (removed ??= new List<string>()).Add(k);
+                    if (removed != null)
+                    {
+                        foreach (var k in removed) fileEntries.Remove(k);
+                        changed = true;
+                    }
+                    long curMax = 0, newMark = watermark;
+                    foreach (var f in files)
+                    {
+                        long t = File.GetLastWriteTimeUtc(f).Ticks;
+                        if (t > curMax) curMax = t;
+                        if (t <= watermark) continue;
+                        fileEntries[f] = parser(f);
+                        changed = true;
+                        if (t > newMark) newMark = t;
+                    }
+                    if (curMax < watermark)   // mtime 倒退 = 目錄整批重建 → 重掃
+                    {
+                        watermark = 0;
+                        fileEntries.Clear();
+                        changed = true;
+                        continue;
+                    }
+                    watermark = newMark;
+                    break;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[UCL_ScreenStreamPage] scan subtitle dir fail ({dir}): {e.Message}");
+            }
+            return changed;
+        }
+
+        // 每 2s tick 進入點: 增量掃兩個目錄, 有變動才重算「最新」+ 標歷史 dirty
         void ReloadLatestSttOcr()
         {
-            m_LatestSttText = ""; m_LatestSttTime = "";
-            m_LatestOcrText = ""; m_LatestOcrTime = "";
-            try
+            string root = GetRepoRoot();
+            if (ScanSubtitleDir(Path.Combine(root, STT_DIR_RELATIVE), "stt_*.json",
+                    m_SttFileEntries, ref m_SttWatermark, ParseSttFile))
             {
-                string dir = Path.Combine(GetRepoRoot(), STT_DIR_RELATIVE);
-                if (Directory.Exists(dir))
-                {
-                    var files = Directory.GetFiles(dir, "stt_*.json");
-                    Array.Sort(files, StringComparer.Ordinal);
-                    for (int i = files.Length - 1; i >= 0 && m_LatestSttText.Length == 0; i--)
-                    {
-                        var segs = ParseSttFile(files[i]);
-                        if (segs.Count > 0)
-                        {
-                            var last = segs[segs.Count - 1];
-                            m_LatestSttText = last.text; m_LatestSttTime = EpochToHms(last.epoch);
-                        }
-                    }
-                }
+                m_SttHistDirty = true;
+                RecomputeLatest(m_SttFileEntries, ref m_LatestSttEpoch, ref m_LatestSttText, ref m_LatestSttTime);
             }
-            catch { }
-            try
+            if (ScanSubtitleDir(Path.Combine(root, OCR_DIR_RELATIVE), "frame_*.json",
+                    m_OcrFileEntries, ref m_OcrWatermark, ParseOcrFileEntries))
             {
-                string dir = Path.Combine(GetRepoRoot(), OCR_DIR_RELATIVE);
-                if (Directory.Exists(dir))
-                {
-                    var files = Directory.GetFiles(dir, "frame_*.json");
-                    Array.Sort(files, StringComparer.Ordinal);
-                    for (int i = files.Length - 1; i >= 0 && m_LatestOcrText.Length == 0; i--)
-                    {
-                        var e = ParseOcrFile(files[i]);
-                        if (e.text.Length > 0) { m_LatestOcrText = e.text; m_LatestOcrTime = EpochToHms(e.epoch); }
-                    }
-                }
+                m_OcrHistDirty = true;
+                RecomputeLatest(m_OcrFileEntries, ref m_LatestOcrEpoch, ref m_LatestOcrText, ref m_LatestOcrTime);
             }
-            catch { }
+            ReloadSttStatusError();
         }
 
-        // 全載歷史 (展開時呼叫; 快取, newest-first)
-        void LoadSttHistory()
+        // 「最新」= 快取內 epoch 最大的非空 entry — 不再依賴檔名序 (ring buffer 陷阱), 刪檔也正確回退
+        static void RecomputeLatest(Dictionary<string, List<(double epoch, string text)>> fileEntries,
+            ref double latestEpoch, ref string latestText, ref string latestTime)
         {
-            var list = new List<(double epoch, string text)>();
-            try
-            {
-                string dir = Path.Combine(GetRepoRoot(), STT_DIR_RELATIVE);
-                if (Directory.Exists(dir))
-                    foreach (var f in Directory.GetFiles(dir, "stt_*.json")) list.AddRange(ParseSttFile(f));
-            }
-            catch { }
-            list.Sort((a, b) => b.epoch.CompareTo(a.epoch));
-            m_SttHistory = list; m_SttHistPage = 0;
+            double bestEp = 0; string bestText = "";
+            foreach (var kv in fileEntries)
+                foreach (var e in kv.Value)
+                    if (e.text.Length > 0 && e.epoch >= bestEp) { bestEp = e.epoch; bestText = e.text; }
+            latestEpoch = bestEp;
+            latestText = bestText;
+            latestTime = bestText.Length > 0 ? EpochToHms(bestEp) : "";
         }
 
-        void LoadOcrHistory()
+        // 讀 stt/_status.json 的 error 欄 (daemon worker 失敗時寫入) — mtime 沒變就跳過 parse
+        void ReloadSttStatusError()
         {
-            var list = new List<(double epoch, string text)>();
             try
             {
-                string dir = Path.Combine(GetRepoRoot(), OCR_DIR_RELATIVE);
-                if (Directory.Exists(dir))
-                    foreach (var f in Directory.GetFiles(dir, "frame_*.json"))
-                    {
-                        var e = ParseOcrFile(f);
-                        if (e.text.Length > 0) list.Add(e);
-                    }
+                string p = Path.Combine(GetRepoRoot(), STT_DIR_RELATIVE, "_status.json");
+                if (!File.Exists(p)) { m_SttStatusError = ""; m_SttStatusMtime = 0; return; }
+                long t = new FileInfo(p).LastWriteTimeUtc.Ticks;
+                if (t == m_SttStatusMtime) return;
+                m_SttStatusMtime = t;
+                var d = JsonData.ParseJson(File.ReadAllText(p));
+                m_SttStatusError = d != null ? (d.GetString("error", "") ?? "") : "";
             }
-            catch { }
+            catch { m_SttStatusError = ""; }
+        }
+
+        // 顯示列表重建 (從檔案快取 flatten + newest-first 排序; 只在 dirty 且停在第 1 頁時做)。
+        // 註: 短時間多筆同句 OCR 是「同一句字幕停留 N 秒、1fps 逐幀各記一筆」的正常現象;
+        //     不做摺疊 — 重複台詞可能是真的重複說 (Tim 2026-07-27 拍板), 逐幀真相原樣呈現。
+        static List<(double epoch, string text)> BuildHistory(
+            Dictionary<string, List<(double epoch, string text)>> fileEntries)
+        {
+            var list = new List<(double epoch, string text)>();
+            foreach (var kv in fileEntries) list.AddRange(kv.Value);
             list.Sort((a, b) => b.epoch.CompareTo(a.epoch));
-            m_OcrHistory = list; m_OcrHistPage = 0;
+            return list;
+        }
+
+        // 🔄 手動重新整理 = 不信任快取的逃生門: 重置 watermark 全量重掃 + 立即重建列表回第 1 頁
+        void ForceRescan(bool stt)
+        {
+            if (stt) { m_SttWatermark = 0; m_SttFileEntries.Clear(); }
+            else { m_OcrWatermark = 0; m_OcrFileEntries.Clear(); }
+            ReloadLatestSttOcr();
+            if (stt) { m_SttHistory = BuildHistory(m_SttFileEntries); m_SttHistDirty = false; m_SttHistPage = 0; }
+            else { m_OcrHistory = BuildHistory(m_OcrFileEntries); m_OcrHistDirty = false; m_OcrHistPage = 0; }
         }
 
         static List<(double epoch, string text)> ParseSttFile(string path)
@@ -811,6 +890,15 @@ namespace UCL.Core.EditorLib.Page
             return result;
         }
 
+        // ScanSubtitleDir 用的 OCR parser: 單檔 0/1 筆 entry (空字幕不入快取)
+        static List<(double epoch, string text)> ParseOcrFileEntries(string path)
+        {
+            var e = ParseOcrFile(path);
+            var list = new List<(double epoch, string text)>(1);
+            if (e.text.Length > 0) list.Add(e);
+            return list;
+        }
+
         static (double epoch, string text) ParseOcrFile(string path)
         {
             try
@@ -831,6 +919,31 @@ namespace UCL.Core.EditorLib.Page
             catch { return "--:--:--"; }
         }
 
+        // 區塊職責: staleness 警示後綴 — 錄影中且功能開著、最新資料卻超過門檻沒更新 → 標警告。
+        // 物理意義: 修「停了沒人知道」(2026-07-27 STT 靜默停擺 2h): 資料流凍結必須在 UI 上看得見。
+        // 數值影響: STT 門檻 60s ≈ 4×chunk(15s); OCR 30s (1fps 下有字幕時每秒都該有新 entry, 給緩衝)。
+        //          非錄影中 / 功能沒開 = 本來就不會有新資料, 不警告。
+        string StaleSuffix(double latestEpoch, double thresholdSec, bool featureActive)
+        {
+            if (!m_Enabled || !featureActive || latestEpoch <= 0) return "";
+            double age = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0 - latestEpoch;
+            if (age < thresholdSec) return "";
+            string ageStr = age >= 90 ? $"{age / 60.0:F0} 分鐘" : $"{age:F0} 秒";
+            return $"  ⚠ 已 {ageStr}沒新資料";
+        }
+
+        GUIStyle m_ErrWrapStyle;
+        GUIStyle ErrWrapStyle
+        {
+            get
+            {
+                if (m_ErrWrapStyle == null)
+                    m_ErrWrapStyle = new GUIStyle(GUI.skin.label)
+                    { wordWrap = true, fontSize = 11, normal = { textColor = new Color(1f, 0.45f, 0.35f) } };
+                return m_ErrWrapStyle;
+            }
+        }
+
         // UI：最新 STT/OCR + 兩個可展開分頁歷史
         void DrawSttOcrPanel()
         {
@@ -839,26 +952,55 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("🎙 STT / 📖 OCR（語音轉錄 / 字幕辨識）",
                     new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
                 GUILayout.Label("🎙 最新 STT：" + (m_LatestSttText.Length == 0
-                    ? "(無 — daemon STT 未啟用或無音訊)" : $"[{m_LatestSttTime}] {m_LatestSttText}"), SubWrapStyle);
+                    ? "(無 — daemon STT 未啟用或無音訊)" : $"[{m_LatestSttTime}] {m_LatestSttText}")
+                    + StaleSuffix(m_LatestSttEpoch, 60, m_SttEnabledCfg), SubWrapStyle);
                 GUILayout.Label("📖 最新 OCR：" + (m_LatestOcrText.Length == 0
-                    ? "(無 — daemon OCR 未啟用或無字幕)" : $"[{m_LatestOcrTime}] {m_LatestOcrText}"), SubWrapStyle);
+                    ? "(無 — daemon OCR 未啟用或無字幕)" : $"[{m_LatestOcrTime}] {m_LatestOcrText}")
+                    + StaleSuffix(m_LatestOcrEpoch, 30, m_OcrEnabledCfg), SubWrapStyle);
+                // daemon STT worker 的失敗原因 (stt/_status.json error 欄) — 禁靜默失敗的 UI 出口
+                if (m_SttStatusError.Length > 0)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        // 複製鈕 (Tim 2026-07-27): 一鍵把完整錯誤進剪貼簿, 方便直接貼給 agent 查案
+                        if (GUILayout.Button("📋 複製", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            UnityEditor.EditorGUIUtility.systemCopyBuffer = $"STT worker 錯誤: {m_SttStatusError}";
+                            Debug.Log("[UCL_ScreenStreamPage] STT 錯誤訊息已複製到剪貼簿");
+                        }
+                        GUILayout.Label($"⛔ STT worker 錯誤: {m_SttStatusError}", ErrWrapStyle);
+                    }
+                }
 
                 GUILayout.Space(4);
+                // 展開即顯示 (快取常駐, 由 2s tick 增量維護); 第 1 頁 dirty 時自動重建 = 自動追新
                 bool newStt = GUILayout.Toggle(m_ShowSttHistory,
                     m_ShowSttHistory ? "▼ 隱藏歷史 STT" : "▶ 展開歷史 STT", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                if (newStt != m_ShowSttHistory) { m_ShowSttHistory = newStt; if (newStt) LoadSttHistory(); }
-                if (m_ShowSttHistory) DrawSubtitleHistory(m_SttHistory, ref m_SttHistPage, "STT", LoadSttHistory);
+                if (newStt != m_ShowSttHistory) { m_ShowSttHistory = newStt; if (newStt) m_SttHistDirty = true; }
+                if (m_ShowSttHistory)
+                {
+                    if ((m_SttHistDirty && m_SttHistPage == 0) || m_SttHistory == null)
+                    { m_SttHistory = BuildHistory(m_SttFileEntries); m_SttHistDirty = false; }
+                    DrawSubtitleHistory(m_SttHistory, ref m_SttHistPage, "STT", m_SttHistDirty, () => ForceRescan(stt: true));
+                }
 
                 GUILayout.Space(2);
                 bool newOcr = GUILayout.Toggle(m_ShowOcrHistory,
                     m_ShowOcrHistory ? "▼ 隱藏歷史 OCR" : "▶ 展開歷史 OCR", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                if (newOcr != m_ShowOcrHistory) { m_ShowOcrHistory = newOcr; if (newOcr) LoadOcrHistory(); }
-                if (m_ShowOcrHistory) DrawSubtitleHistory(m_OcrHistory, ref m_OcrHistPage, "OCR", LoadOcrHistory);
+                if (newOcr != m_ShowOcrHistory) { m_ShowOcrHistory = newOcr; if (newOcr) m_OcrHistDirty = true; }
+                if (m_ShowOcrHistory)
+                {
+                    if ((m_OcrHistDirty && m_OcrHistPage == 0) || m_OcrHistory == null)
+                    { m_OcrHistory = BuildHistory(m_OcrFileEntries); m_OcrHistDirty = false; }
+                    DrawSubtitleHistory(m_OcrHistory, ref m_OcrHistPage, "OCR", m_OcrHistDirty, () => ForceRescan(stt: false));
+                }
             }
         }
 
-        // 分頁歷史列表 — newest-first, page 0 = 最新頁 (仿聊天酒館分頁)
-        void DrawSubtitleHistory(List<(double epoch, string text)> list, ref int page, string label, Action reload)
+        // 分頁歷史列表 — newest-first, page 0 = 最新頁 (仿聊天酒館分頁)。
+        // 第 1 頁自動追新; 停在舊頁時凍結顯示 (避免閱讀中內容被新資料推走), 另給提示。
+        void DrawSubtitleHistory(List<(double epoch, string text)> list, ref int page, string label,
+            bool hasNewData, Action forceReload)
         {
             using (new GUILayout.VerticalScope("box"))
             {
@@ -880,8 +1022,11 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Button("較舊 ▶", GUILayout.ExpandWidth(false))) page++;
                     GUI.enabled = oldE;
                     GUILayout.FlexibleSpace();
-                    if (GUILayout.Button("🔄 重新整理", GUILayout.ExpandWidth(false))) reload();
+                    if (GUILayout.Button("🔄 重新整理", GUILayout.ExpandWidth(false))) forceReload();
                 }
+                if (hasNewData && page > 0)
+                    GUILayout.Label("ⓘ 有新資料 — 回到第 1 頁自動更新, 或按 🔄",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
                 int start = page * SttOcrPageSize;
                 int end = Math.Min(start + SttOcrPageSize, total);
                 for (int i = start; i < end; i++)

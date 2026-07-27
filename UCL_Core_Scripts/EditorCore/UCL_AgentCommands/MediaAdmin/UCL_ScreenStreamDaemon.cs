@@ -14,6 +14,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using UCL.Core.EditorLib;   // UCL_ProcessRegistryService (Process 註冊中心)
 using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -158,6 +159,13 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                 return false;
             }
 
+            // Singleton guard (Tim 2026-07-27): spawn 前先 kill 之前註冊的所有同 tag process —
+            // 防 domain reload kill 失敗殘留 / 任何原因造成的雙 daemon 併寫 frames ring buffer。
+            // 身分驗證在 Service 內: PID 已易主 (PidReused) 只清記錄不誤殺現任持有者。
+            int prevKilled = UCL_ProcessRegistryService.KillAllByTag("screenstream_daemon");
+            if (prevKilled > 0)
+                Debug.LogWarning($"[UCL_ScreenStream] singleton guard: 收掉 {prevKilled} 顆殘留 daemon (防併寫)");
+
             try
             {
                 var psi = new ProcessStartInfo
@@ -187,6 +195,10 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
                 s_DaemonProcess = proc;
+                // Process 註冊中心 (2026-07-27): 記 PID+name+start_time 身分, 供 UCL_ProcessAdminPage
+                // 檢視/防誤殺處置 — recompile 掉 Process 物件後仍可經檔案記錄接管
+                UCL_ProcessRegistryService.Register(proc, "screenstream_daemon",
+                    "ScreenStream 錄影/STT/OCR daemon (screenstream_daemon.py)", nameof(UCL_ScreenStreamDaemon));
                 Debug.Log($"[UCL_ScreenStream] daemon spawned, PID={proc.Id}");
                 return true;
             }
@@ -247,8 +259,10 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         static void KillDaemon()
         {
             if (s_DaemonProcess == null) return;
+            int pid = -1;
             try
             {
+                try { pid = s_DaemonProcess.Id; } catch { }
                 if (!s_DaemonProcess.HasExited)
                 {
                     s_DaemonProcess.Kill();
@@ -263,6 +277,8 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             {
                 try { s_DaemonProcess.Dispose(); } catch { }
                 s_DaemonProcess = null;
+                // Process 註冊中心: 正常收掉 → 移除記錄檔 (kill 失敗的殘留交給管理頁 Dead 清理)
+                if (pid > 0) UCL_ProcessRegistryService.Unregister(pid, "screenstream_daemon");
             }
         }
     }

@@ -48,7 +48,7 @@ ScreenStream daemon 每秒寫一張 frame 進 600 槽 ring buffer（只留 10 �
 - 確認 persona 已上線（morning lock）；**`start` 的 `--persona` 為必填**（Tim 2026-07-02 拍板取消 auto-infer — 多 lock 環境同 env_hash 多 persona 無從分辨會挑錯人，未傳會抱錯）。顯式帶你這 session lock 的 persona（e.g. `--persona ame`）
 - **【觀影心得·先讀】認得出在看哪部片 / 影集 → 先查閱讀心得庫有沒有「前幾集」的筆記**（跟讀書一樣 resume-first）：
   ```bash
-  PY="python <UCL_Core>/Tools~/AgentCommands/library.py"   # EOV: CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/library.py
+  PY="python <UCL_Core>/Tools~/AgentCommands/library.py"   # <UCL_Core> = 本專案的 UCL_Core 掛載點 (各專案不同, 見 ucl-core-paths skill)
   $PY list | grep -i <片名關鍵字>                 # 或 $PY search --query <片名>
   # 有 → resume 喚回人物/名詞/未解伏筆/上次看到哪，續看才接得上：
   $PY resume --book <slug>
@@ -185,7 +185,9 @@ screenstream_montage.py (--after-mtime/--max-tiles/next-cursor)  ← frame→mon
 ```
 
 - **code 跨專案共用（UCL_Core）、runtime 狀態 per-project（主專案 AgentCommands/_screenstream）** — 工具走 repo-walk（跳 submodule gitlink）＋ honors `.agentcommands_root.local` 解析資料根，對齊 knowledge_base.py 慣例。
-- C#：`UCL_ScreenStreamDaemon`（spawn/看護 python daemon，偵測到 legacy RCG_ScreenStreamDaemon 會讓位待命）＋ `UCL_ScreenStreamPage`（錄影控制，含跳轉「影音管理」鈕）。EOV 舊版 RCG_* 確認新版可用後由 Tim 移除。
+- C#：`UCL_ScreenStreamDaemon`（spawn/看護 python daemon）＋ `UCL_ScreenStreamPage`（錄影控制，含跳轉「影音管理」鈕）。
+  - ⚠ **過渡期讓位**：daemon 啟動時會反射探測「專案端 legacy daemon 型別」，偵測到就整輪讓位不 spawn（防兩支同寫 frames ring buffer 互蓋 index）。所以**專案若還留著舊版 daemon，實際跑的仍是舊版** — 換版後要驗執行期真正跑的是哪支（看 daemon process 的腳本路徑），不能只看 code 有沒有換。
+  - `monitor=unity_game`（Unity Game view 渲染輸出）需要專案端提供 frame 供應者，UCL_Core 不含此實作。
 - STT/OCR 依賴安裝與設定調整 → **UCL_MediaAdminPage（影音管理頁）**，media_admin 後端同住 UCL_Core Tools~。
 
 ## 🍿 Lite Multi-Viewer Mode (同樂會, Lite v0.5)

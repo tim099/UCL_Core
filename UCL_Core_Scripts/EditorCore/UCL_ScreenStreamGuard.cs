@@ -98,7 +98,7 @@ namespace UCL.Core.EditorLib
                         alignment = TextAnchor.MiddleCenter,
                         normal = { textColor = new Color(0.8f, 0.8f, 0.8f) }
                     });
-                GUILayout.Label("關閉 ScreenStream 才能查看 (見 RCG_ScreenStreamPage)",
+                GUILayout.Label("關閉 ScreenStream 才能查看 (見 UCL_ScreenStreamPage)",
                     new GUIStyle(GUI.skin.label)
                     {
                         alignment = TextAnchor.MiddleCenter,
@@ -107,7 +107,7 @@ namespace UCL.Core.EditorLib
                 GUILayout.Space(14);
 
                 // 中斷直播按鈕 (T17 新增) — 寫 _stop.lock, daemon 偵測 → 自動關閉 + 刪 lock
-                // 物理意義: 給 user 一個「我要看這 page 內容」緊急閘門, 不必去 RCG_ScreenStreamPage 切 toggle
+                // 物理意義: 給 user 一個「我要看這 page 內容」緊急閘門, 不必去 UCL_ScreenStreamPage 切 toggle
                 // 數值影響: 按一次寫一個檔, daemon poll interval (~1s) 內生效
                 GUI.backgroundColor = new Color(0.7f, 0.3f, 0.3f);
                 using (new GUILayout.HorizontalScope())
@@ -176,7 +176,10 @@ namespace UCL.Core.EditorLib
 
         static string GetRepoRoot()
         {
-            return Directory.GetParent(Application.dataPath).Parent.FullName;
+            // .git walk, 跨專案安全。舊版用 dataPath 上兩層 (假設 EoV 巢狀), 本專案 project 根 = repo 根
+            // 會多爬一層飛出 repo → IsRecording 讀錯 config 路徑 → 敏感頁錄影時該黑屏卻黑錯依據
+            // (與 UCL_ScreenStreamPage 幻影路徑 split-brain, 2026-07-27 Tim QA fix)。
+            return UCL_RepoPath.RepoRoot;
         }
     }
 }

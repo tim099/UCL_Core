@@ -269,7 +269,7 @@ namespace UCL.Core.EditorLib.Page
             // T17 (2026-05-18 gura) — Inline guard 改走 UCL_ScreenStreamGuard 共用 static helper
             // 物理意義: 原 T13 散落的 IsScreenStreamRecording / TouchSensitiveFlag / DrawRecordingBlackout
             //          3 個 helper 集中到 UCL_ScreenStreamGuard.GuardPage, page 端 1 行守門
-            // 設計取捨: 未來重構走 RCG event-driven 時換 caller 即可, 本層 code drop 數量最小
+            // 設計取捨: 未來重構走 event-driven 時換 caller 即可, 本層 code drop 數量最小
             if (UCL_ScreenStreamGuard.GuardPage(nameof(UCL_LoginStatusPage), SensitiveContentReason))
             {
                 return;

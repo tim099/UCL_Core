@@ -265,9 +265,12 @@ namespace UCL.Core.EditorLib.Page
                     m_LatestFrame = File.ReadAllText(latestPath).Trim();
                 }
 
-                // Daemon alive check
+                // Daemon alive check — 不只看 PID 檔存在, 還驗檔內 PID 真的是活的 process。
+                // 物理意義: 只看 File.Exists 有兩種誤判 — ① 硬殺殘留 stale PID 檔 → 誤判 ALIVE；
+                //          ② overlap daemon 誤刪活 daemon 的 PID 檔 (已於 daemon 端 cleanup_pid 修) → 誤判 DEAD。
+                //          讀 PID → Process.GetProcessById 驗存活, 兩個方向都準 (2026-07-27 Tim QA)。
                 string pidPath = Path.Combine(repoRoot, PID_FILE_RELATIVE);
-                m_DaemonAlive = File.Exists(pidPath);
+                m_DaemonAlive = IsPidAlive(pidPath);
             }
             catch (Exception e)
             {
@@ -424,7 +427,7 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(10);
 
             // Daemon health
-            GUILayout.Label($"Daemon process: {(m_DaemonAlive ? "🟢 ALIVE (PID file 存在)" : "🔴 DEAD (PID file 缺, 等 Editor respawn)")}");
+            GUILayout.Label($"Daemon process: {(m_DaemonAlive ? "🟢 ALIVE (daemon 運行中)" : "🔴 DEAD (無存活 daemon, 等 Editor respawn)")}");
             GUILayout.Space(5);
 
             // T14 — Preview (錄影中才顯示)
@@ -666,10 +669,31 @@ namespace UCL.Core.EditorLib.Page
         bool m_PendingArmEnable = false;
         double m_PendingArmEnableTime = -1.0;
 
+        // 讀 PID 檔 → 驗該 PID 是否為存活 process。檔缺 / 內容非數字 / process 不存在 → false。
+        static bool IsPidAlive(string pidPath)
+        {
+            try
+            {
+                if (!File.Exists(pidPath)) return false;
+                string s = File.ReadAllText(pidPath).Trim();
+                if (!int.TryParse(s, out int pid) || pid <= 0) return false;
+                try
+                {
+                    using var p = System.Diagnostics.Process.GetProcessById(pid);
+                    return !p.HasExited;
+                }
+                catch { return false; }   // ArgumentException = 無此 process
+            }
+            catch { return false; }
+        }
+
         static string GetRepoRoot()
         {
-            // repo 根 — Application.dataPath 上兩層 (與 RCG 版一致; UCL_RepoPath.RepoRoot 同值, 此處保持零依賴)
-            return Directory.GetParent(Application.dataPath).Parent.FullName;
+            // repo 根 — 走 UCL_RepoPath.RepoRoot (.git walk, 跨專案安全)。
+            // 舊版用 Application.dataPath「上兩層」，假設 EoV 式巢狀 (repo/CardGame/Assets)；但本專案
+            // project 根 = repo 根，上兩層會多爬一層飛出 repo → PID/config/latest 全讀錯路徑，頁面永遠顯示
+            // DEAD、toggle 寫到幻影路徑 daemon 收不到 (2026-07-27 Tim QA)。
+            return UCL_RepoPath.RepoRoot;
         }
     }
 }

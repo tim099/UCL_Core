@@ -215,9 +215,14 @@ def write_pid() -> None:
 
 
 def cleanup_pid() -> None:
-    """退出前刪 PID 檔."""
+    """退出前刪 PID 檔 — 但只刪「屬於自己」的那份。
+    物理意義: recompile 硬殺舊 daemon 不跑 cleanup，會殘留 stale PID；新 daemon 接手後 write_pid 覆寫成
+             自己的 PID。若此時另一隻正在 graceful 退出的舊 daemon 無條件 unlink，會誤刪掉「新 daemon 剛寫的」
+             PID 檔 → 新 daemon 活著但 PID 檔消失 → 頁面誤判 DEAD (2026-07-27 Tim QA)。
+    修法: 只有檔案內容 == 自己的 PID 才刪，絕不刪別隻 daemon 的 PID 檔。"""
     try:
-        PID_PATH.unlink()
+        if PID_PATH.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            PID_PATH.unlink()
     except OSError:
         pass
 
@@ -227,8 +232,63 @@ def cleanup_pid() -> None:
 # 物理意義: 用 screeninfo 列舉所有實體 monitor 跟 bbox, 寫 _monitors.json 給 Editor page 讀
 # 數值影響: daemon 啟動時跑一次; 跑時 monitor 變動 (USB 拔/插) 不自動更新, 需重啟 daemon
 # ===========================================================
+def _enumerate_monitors_win():
+    """用 Windows EnumDisplayMonitors 列舉實體 monitor — 零依賴 fallback (screeninfo 缺時)。
+    座標為 virtual desktop 空間, 與 PIL.ImageGrab(all_screens=True) 的 bbox 一致。
+    (2026-07-27 Tim QA: screeninfo 未裝 → 只剩 primary; 改用內建 Win32 API 免安裝即偵測多螢幕。)"""
+    import ctypes
+
+    class RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class MONITORINFOEXW(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", RECT),
+                    ("rcWork", RECT), ("dwFlags", ctypes.c_ulong),
+                    ("szDevice", ctypes.c_wchar * 32)]
+
+    MONITORINFOF_PRIMARY = 0x1
+    user32 = ctypes.windll.user32
+    # 顯式 argtypes — 64-bit handle 不設會被 ctypes 當 c_int 截斷 → 崩
+    MonitorEnumProc = ctypes.WINFUNCTYPE(
+        ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.POINTER(RECT), ctypes.c_void_p)
+    user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFOEXW)]
+    user32.GetMonitorInfoW.restype = ctypes.c_int
+    user32.EnumDisplayMonitors.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, MonitorEnumProc, ctypes.c_void_p]
+    user32.EnumDisplayMonitors.restype = ctypes.c_int
+
+    found = []
+
+    def _cb(hMonitor, hdc, lprc, lparam):
+        mi = MONITORINFOEXW()
+        mi.cbSize = ctypes.sizeof(MONITORINFOEXW)
+        if user32.GetMonitorInfoW(hMonitor, ctypes.byref(mi)):
+            r = mi.rcMonitor
+            found.append({
+                "x": int(r.left), "y": int(r.top),
+                "w": int(r.right - r.left), "h": int(r.bottom - r.top),
+                "primary": bool(mi.dwFlags & MONITORINFOF_PRIMARY),
+                "name": str(mi.szDevice) or "DISPLAY",
+            })
+        return 1
+
+    proc = MonitorEnumProc(_cb)
+    if not user32.EnumDisplayMonitors(None, None, proc, 0):
+        raise OSError("EnumDisplayMonitors 回傳 0 (列舉失敗)")
+    # 穩定排序: primary 先, 再依座標 → index 可預期
+    found.sort(key=lambda m: (not m["primary"], m["x"], m["y"]))
+    for i, m in enumerate(found):
+        m["index"] = i
+        if not m["name"]:
+            m["name"] = f"DISPLAY{i + 1}"
+    return found
+
+
 def enumerate_monitors():
-    """回 list of dict: {index, x, y, w, h, primary, name}. screeninfo 不可用回 []."""
+    """回 list of dict: {index, x, y, w, h, primary, name}. 皆不可用回 []."""
+    # 優先 screeninfo (若已安裝, 跨平台且有 friendly name)
     try:
         from screeninfo import get_monitors
         out = []
@@ -242,9 +302,15 @@ def enumerate_monitors():
                 "primary": bool(m.is_primary),
                 "name": str(m.name or f"DISPLAY{i+1}"),
             })
-        return out
+        if out:
+            return out
     except Exception as e:
-        log(f"enumerate_monitors fail (screeninfo): {e}", "WARN")
+        log(f"enumerate_monitors: screeninfo 不可用, 改用 Windows API ({e})", "INFO")
+    # fallback: Windows 內建 EnumDisplayMonitors (免安裝)
+    try:
+        return _enumerate_monitors_win()
+    except Exception as e:
+        log(f"enumerate_monitors fail (win api): {e}", "WARN")
         return []
 
 

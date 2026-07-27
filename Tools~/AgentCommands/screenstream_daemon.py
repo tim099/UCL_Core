@@ -506,6 +506,39 @@ def sleep_until_enabled(poll_sec: float = 5.0) -> dict:
         time.sleep(poll_sec)
 
 
+# 區塊職責: 直播現場資訊落檔 (Tim 2026-07-27) — _live_info.json 存活期 = 直播期間。
+# 物理意義: 「檔案存在」= 直播中 (開播寫入、停播刪除), 內容 = 本場片名/描述 + 開播參數 —
+#          給 ucl-free-time 等下游判斷「現在有直播嗎? 在播什麼?」的 canonical 來源,
+#          不必自己 parse config (config.stream_title 是持久欄位, 停播後仍殘留, 語意不同)。
+# 數值影響: atomic 換檔寫; 寫/刪失敗只 WARN 不影響 capture 主流程。
+LIVE_INFO_PATH = STREAM_DIR / "_live_info.json"
+
+
+def write_live_info(cfg: dict) -> None:
+    try:
+        info = {
+            "stream_title": str(cfg.get("stream_title") or "").strip(),
+            "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "resolution": cfg.get("resolution", ""),
+            "fps": cfg.get("fps", 0),
+            "monitor": str(cfg.get("monitor", "")),
+        }
+        tmp = LIVE_INFO_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(info, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        tmp.replace(LIVE_INFO_PATH)
+        log(f"live info written ({info['stream_title'] or '(無片名)'})")
+    except OSError as e:
+        log(f"live info write fail: {e}", "WARN")
+
+
+def clear_live_info() -> None:
+    try:
+        LIVE_INFO_PATH.unlink(missing_ok=True)
+        log("live info cleared (直播結束)")
+    except OSError as e:
+        log(f"live info clear fail: {e}", "WARN")
+
+
 def post_bartender_announce(event: str, cfg: dict, monitors_cache: list) -> None:
     """T15 — 透過酒保 NPC 廣播 ScreenStream start/end 事件給同事們.
 
@@ -527,8 +560,12 @@ def post_bartender_announce(event: str, cfg: dict, monitors_cache: list) -> None
             res_label = cfg.get("resolution", "?")
             mon_label = cfg.get("monitor", "?")
             fps = cfg.get("fps", "?")
+            # 片名/描述 (Tim 2026-07-27): Page 端輸入的 stream_title, 有填才附加一行節目資訊
+            stream_title = str(cfg.get("stream_title") or "").strip()
+            title_line = f"📺 本場節目: {stream_title}\n" if stream_title else ""
             body = (
                 f"🍺📹 *咳咳, 諸位.* ScreenStream 直播開始啦!\n"
+                f"{title_line}"
                 f"Tim 開了錄影機, 每秒一張快照 ({res_label} @ {fps} fps, monitor={mon_label}).\n"
                 f"想看 Tim 在玩什麼就 Read AgentCommands/_screenstream/_latest.jpg 吧.\n"
                 f"——酒保提醒: 不 @ everyone 不擾人, 大家自由觀察."
@@ -585,6 +622,12 @@ def main_loop() -> int:
     cfg = load_config()
     # T15 — 記初始 enabled 狀態, 偵測 transition
     last_enabled = bool(cfg.get("enabled", False))
+    # 直播現場資訊對齊 (Tim 2026-07-27): daemon 重啟不觸發 transition —
+    # 啟動時直播已在進行 → 補寫 _live_info.json; 未直播 → 清掉 crash 殘留 (檔案存在 = 直播中的不變式)
+    if last_enabled:
+        write_live_info(cfg)
+    else:
+        clear_live_info()
     consecutive_errors = 0
 
     # T-AudioViz (summit 2026-06-08) — AudioCapture lifecycle 跟 enabled 同步
@@ -733,8 +776,10 @@ def main_loop() -> int:
             if curr_enabled != last_enabled:
                 if curr_enabled:
                     post_bartender_announce("start", cfg, monitors_cache)
+                    write_live_info(cfg)      # 落檔暫存本場直播資訊 (存活期 = 直播期間)
                 else:
                     post_bartender_announce("stop", cfg, monitors_cache)
+                    clear_live_info()         # 直播結束即清 — 檔案存在與否 = 是否直播中
                 last_enabled = curr_enabled
 
             # T-AudioViz — AudioCapture lifecycle 跟 audio_viz_enabled 同步

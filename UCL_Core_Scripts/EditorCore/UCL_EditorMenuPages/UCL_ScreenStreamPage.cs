@@ -62,6 +62,9 @@ namespace UCL.Core.EditorLib.Page
         // T-STT-StaleFix (Tim 2026-07-20): stt_prompt = whisper 人名詞彙偏置 (陪看 skill 寫入) —
         //   Page 不編輯它, 只顯示殘留 + 提供清除; 開始錄影時自動清空, 防上一場人名偏置跨場造成幻聽.
         string m_SttPrompt = "";
+        // 片名/描述 (Tim 2026-07-27): 可空; 有填則 daemon 開播的酒館廣播附加「📺 本場節目: <此文字>」。
+        //   持久化在 config.stream_title, 不自動清空 (欄位在頁面上看得見, 換片自行改/清)。
+        string m_StreamTitle = "";
 
         // 區塊職責: 3-way merge baseline — 每個可編輯欄位記「上次從磁碟看到的值」
         // 物理意義: config 檔會被外部工具 (stream_watch_session.py / agent) 併發改寫;
@@ -76,6 +79,7 @@ namespace UCL.Core.EditorLib.Page
         bool m_BaseSttSetting = false;
         string m_BaseSttModel = "small";
         string m_BaseSttLang = "";
+        string m_BaseStreamTitle = "";
         // config 檔 mtime 快照 — 沒變就跳過 parse (省 IO), 變了才走 merge reload
         long m_ConfigMtime = 0;
         static readonly string[] s_SttModelOptions = { "tiny", "base", "small", "medium", "large-v3" };
@@ -316,6 +320,7 @@ namespace UCL.Core.EditorLib.Page
                             data.GetBool("stt_setting", data.GetBool("stt_enabled", false)));
                         m_SttModel = MergeField(m_SttModel, ref m_BaseSttModel, data.GetString("stt_model", "small"));
                         m_SttLang = MergeField(m_SttLang, ref m_BaseSttLang, data.GetString("stt_lang", ""));
+                        m_StreamTitle = MergeField(m_StreamTitle, ref m_BaseStreamTitle, data.GetString("stream_title", ""));
                     }
                     m_ConfigMtime = mtime;
                 }
@@ -377,6 +382,7 @@ namespace UCL.Core.EditorLib.Page
                 existing["stt_enabled"] = new JsonData(m_Enabled && m_SttSetting);
                 existing["stt_model"] = new JsonData(m_SttModel);
                 existing["stt_lang"] = new JsonData(m_SttLang);
+                existing["stream_title"] = new JsonData(m_StreamTitle ?? "");
                 // T-STT-StaleFix: 開始錄影時清空人名詞彙偏置 (防上一場殘留跨場幻聽); 其餘 save 保留既有值
                 if (clearSttPrompt)
                 {
@@ -400,6 +406,7 @@ namespace UCL.Core.EditorLib.Page
                 m_BaseSttSetting = m_SttSetting;
                 m_BaseSttModel = m_SttModel;
                 m_BaseSttLang = m_SttLang;
+                m_BaseStreamTitle = m_StreamTitle;
                 m_ConfigMtime = new FileInfo(path).LastWriteTime.Ticks;
             }
             catch (Exception e)
@@ -525,6 +532,15 @@ namespace UCL.Core.EditorLib.Page
             // STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史
             DrawSttOcrPanel();
             GUILayout.Space(8);
+
+            // 片名/描述輸入 (Tim 2026-07-27) — 可空; 有填則開播的酒館廣播附加「📺 本場節目: <此文字>」
+            // 放在開始錄影鈕正上方: 開播前看得見、來得及填; 按「開始/停止錄影」或「儲存設定」時隨 config 保存
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("📺 片名/描述:", GUILayout.Width(100));
+            m_StreamTitle = GUILayout.TextField(m_StreamTitle ?? "", GUILayout.MinWidth(300));
+            GUILayout.Label("(可空; 有填則開播酒館廣播附加此段)", new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+            GUILayout.EndHorizontal();
+            GUILayout.Space(4);
 
             // ===========================================================
             // Toggle — 二段確認防誤觸

@@ -3,7 +3,7 @@ title: UCL_AgentSkillManagerPage — Agent Skill 安裝管理頁
 description: IMGUI 視覺化前端，把 UCL_Core/Skills~/ 內的工作流 skill 一鍵安裝給各家 AI agent。第一次開 UCL_WelcomePage 時自動彈出，強制 onboarding 曝光。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-07-14
+last_updated: 2026-07-27
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Skills~/README.md | Skills~ 來源目錄 | source-of-truth + manifest 規範
@@ -77,14 +77,22 @@ Hash 規格：per-skill 對目錄下所有檔案（`.` 開頭隱藏檔除外）�
 
 頁底另一顆「🚀 一鍵安裝全部 target」會 sequential 跑所有 target — UI 在期間 disabled，每個 target 結束就釋放自己的 install lock。
 
-## 6. Per-Agent × Per-Skill 切換（TODO）
+## 6. Per-Agent × Per-Skill 切換（2026-07-27 上線）
 
-目前 `DrawAgentMatrixPlaceholder` 只列 `Skills~/` 下的 skill 名稱（disabled toggle）。後續要做：
+Matrix 區塊頂部有 **Agent 下拉選單**（`AgentTarget` enum + `UCL_GUILayout.Popup`）：
 
-- 直欄：agent target（已上線：claude / antigravity；規劃中：cursor / gemini）
-- 橫排：skill name
-- 勾選控制 `install_skills.py --target X --include skill1,skill2`
-- 安裝結果讀對應 dst 的 `.ucl_installed`（各 target 分開寫，本頁已實作分別讀）
+- 切換檢視/操作的 agent（claude / antigravity；新 agent 加進 enum + 三個 mapping helper 即擴充）
+- **installed / drift 是 per-agent 事實**（各 agent 安裝目錄不同）— `RefreshStatus` 一次對所有 target 建好快取，下拉切換零磁碟 IO
+- **disabled（`UCL_SkillConfigAsset` Enabled=false）跨 agent 共用** — 任一 agent 停用，所有 agent 的下次同步都會 reconcile 移除（Tim 拍板「Disable 狀態可以共用」）
+- 逐 skill 裝/移除按 `install_skills.py --target <選中> --include <skill>` 只動選中 agent
+
+### 同步疑難排查（2026-07-27 Antigravity 同步疑雲的教訓）
+
+target 狀態列在 Stale 時會**點名未同步的 skill 清單**（`⚠ 未同步 skill (N): ...`）。「按了同步仍顯示 Stale」常見成因：
+
+1. **源檔在同步後又被編輯**（moving target — agent 正在改 Skills~ 時最常見；看名單對時間即可確認）
+2. 檔案被 local-edit 保護跳過（黃字 skipped 警告；用「強制同步」覆蓋）
+3. 停用中的 skill 殘留實體（同步時 reconcile 自動移除，正常會收斂）
 
 ---
 

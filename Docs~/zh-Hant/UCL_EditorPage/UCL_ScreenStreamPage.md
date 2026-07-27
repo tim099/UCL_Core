@@ -30,6 +30,10 @@ last_updated: 2026-07-27
 - **T-STT-PageToggle**：`stt_setting`＝意圖（持久化）、`stt_enabled`＝實效（錄影中 && 開關），停錄影自動停 STT
 - **T-STT-StaleFix**：mtime 感知 reload＋可編輯欄位 3-way merge（外部工具改動即時反映、不蓋 Tim 編輯中欄位）；開始錄影自動清空 `stt_prompt` 防跨場幻聽
 
+## 片名/描述欄位（2026-07-27）
+
+「開始錄影」鈕上方的 📺 輸入欄（可空），持久化在 `config.stream_title`；**有填則 daemon 開播的酒保酒館廣播附加「📺 本場節目: <此文字>」**。不自動清空 — 欄位在頁面上看得見，換片自行改/清。
+
 ## STT / OCR 顯示面板（2026-07-27）
 
 - **最新 STT / OCR**：取 cache 內 **epoch 最大**的非空 entry — 不按檔名序（OCR 是 ring buffer 就地覆寫，檔名最大 ≠ 資料最新，舊版因此落後最多一圈）

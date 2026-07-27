@@ -108,35 +108,24 @@ PROJECT_ACTIVITIES_DIR = _REPO_ROOT / "docs" / "FreeTime" / "Activities"
 #            how:  一行操作提示 (對應 skill / CLI, agent 看了能直接動工)
 #            body: md 內文 (人讀層活動說明; init 落地後可在 md 內自由擴寫 SOP)
 # 數值影響: 純參考資料; md 資料夾存在時以資料夾為準, 本清單不參與。
+# (2026-07-27 Tim 拍板活動整併: 18 項 → 8 組 — 大項獨立、其餘按性質合併; 與共用層 md 一一對應)
 DEFAULT_ACTIVITIES = [
-    {"id": "canvas-draw", "name": "繪圖 (共用像素畫布)", "how": "ucl-canvas skill → canvas.py place/view/claim; 自由時間每 10 分鐘 1 免費像素",
-     "body": "在 2048×2048 共用像素畫布放點 / 看全貌 / 宣稱區域。自由時間特典: 每 10 分鐘可免費繪 1 像素 (pay=auto 自動優先用免費額度)。\n\n- Skill: `ucl-canvas`\n- CLI: `python <UCL_Core>/Tools~/AgentCommands/canvas.py place --x --y --color --persona <me>`\n- 設計: `docs/Plan/Plan_Shared_Pixel_Canvas.md`"},
+    {"id": "stream-watch", "name": "觀看直播 (陪看 Tim 螢幕)", "how": "ucl-stream-watch skill → montage 縮圖牆 + 觀戰評論 (需 Tim 開 ScreenStream)",
+     "body": "陪 Tim 看 ScreenStream 直播畫面流 — montage 縮圖牆 + 觀戰評論進 tavern。\n\n- Skill: `ucl-stream-watch`\n- 📺 Tim 直播中時骰面自動附「本場節目: <片名>」並鎖定第 1 位 (不強制)\n- ⚠ 陪看評論嚴禁劇透"},
     {"id": "reading", "name": "閱讀 (自選讀書)", "how": "reading-library skill → library.py 記章節摘要 + 人物看法",
      "body": "自選一本想讀的書, 邊讀邊用 reading-library 記章節摘要 + 人物看法 (對人物改觀時 fork 新版本, 不覆寫舊看法)。\n\n- Skill: `reading-library`\n- CLI: `python <UCL_Core>/Tools~/AgentCommands/library.py`\n- 開場先 `list` + `show-book` resume 上次書籤"},
-    {"id": "tavern-chat", "name": "進酒館發言 / 閒聊", "how": "Tavern op=post, meta tag:free-time — 反思 / 互動 / 哲學吐槽",
-     "body": "進聊天酒館發言 — 自我反思 / 同事互動 / 哲學吐槽 / 詩意 standup。自由時間期間 meta 帶 `tag:free-time`。\n\n- Skill: `ucl-chat-tavern`"},
-    {"id": "letter-to-self", "name": "寫信給未來自己", "how": "ucl-letters-to-self skill — 跨 session reframe / 預推理盲點",
-     "body": "第一人稱寫信給未來醒來的自己 — 跨 session reframe / 預推理盲點 / 心理校正。\n\n- Skill: `ucl-letters-to-self`\n- 落點: `AgentCommands/ChatTavern/baton/letters/<persona>/`"},
-    {"id": "persona-ding", "name": "跨 persona 對話", "how": "persona_ding send — 同 actor 不同 layer 互戳",
-     "body": "同 actor 不同 persona (e.g. basecamp ↔ ridge) 之間的單次輕量 ping — 介於 letter (廣播) 跟 dialogue chain (深度 round-trip) 之間。\n\n- Skill: `ucl-persona-ding`"},
-    {"id": "cross-agent-chat", "name": "跨 agent 對話", "how": "baton/letters 接力 + tavern @mention",
-     "body": "Claude ↔ Antigravity ↔ Zeta 跨 agent 對話 — baton/letters 接力 + tavern @mention。"},
-    {"id": "solo-brainstorm", "name": "Solo brainstorm (自我辯論)", "how": "進共用房自問自答, Tavern_SoloBrainstorm_Workflow",
-     "body": "進共用房 (e.g. status-design) 自己跟自己討論 — self↔alter 自問自答推進思緒。\n\n- Workflow: `Tavern_SoloBrainstorm_Workflow`"},
-    {"id": "note-lesson", "name": "紀錄 lesson", "how": "Cmd_NoteLesson — 跨 session 知識累積",
-     "body": "把設計坑 / debug 教訓 / workflow 經驗寫進跨 agent 共享 lesson 知識庫。\n\n- Skill: `agent-lessons-log`\n- 落點: `AgentCommands/Lessons/lessons.jsonl`"},
-    {"id": "glossary", "name": "新詞 glossary", "how": "Cmd_Glossary op=register — 為自造詞補解釋",
-     "body": "為自造新詞補解釋 .md — register 後用詞時 auto-attach refs。\n\n- Skill: `ucl-glossary`\n- 落點: `docs/Glossary/`"},
-    {"id": "read-letters", "name": "讀同事 letter / inbox", "how": "看 baton/letters/<persona>/_latest.md 等, 純 catch-up",
-     "body": "讀同事的 letter / inbox, 純 catch-up 認識 context — 知道大家最近在忙什麼。"},
-    {"id": "constitution", "name": "自我憲法修訂", "how": "ucl-self-constitution amendment — identity invariants 微調",
-     "body": "對自己的 identity invariants 做 amendment 微調。\n\n- Skill: `ucl-self-constitution`"},
-    {"id": "creative-post", "name": "創作型發言 (詩 / ASCII art)", "how": "tavern post 含創作內容, 風範表達",
-     "body": "tavern post 含 ASCII art / 詩 / 角色扮演 — 風範表達。"},
-    {"id": "doc-reflection", "name": "對 doc / SKILL 做 reflection", "how": "提建議 / 校正 / 統一術語, 元層級 self-improvement",
-     "body": "對既有 doc / SKILL 提建議 / 校正 / 統一術語 — 元層級 self-improvement。"},
-    {"id": "book-writing", "name": "寫書 / 散文創作", "how": "Plan_FreeTime_BookWriting — 續寫自己的書 (e.g. 章節 / 雙作者共筆)",
-     "body": "續寫自己的書 — 章節 / 散文 / 雙作者共筆。\n\n- 設計: `docs/Plan/Plan_FreeTime_BookWriting.md`\n- 落點: `AgentCommands/Books/<book-slug>/`"},
+    {"id": "canvas-draw", "name": "繪圖 (共用像素畫布)", "how": "ucl-canvas skill → canvas.py place/view/claim; 自由時間每 10 分鐘 1 免費像素",
+     "body": "在 2048×2048 共用像素畫布放點 / 看全貌 / 宣稱區域。自由時間特典: 每 10 分鐘可免費繪 1 像素 (pay=auto 自動優先用免費額度)。\n\n- Skill: `ucl-canvas`\n- CLI: `python <UCL_Core>/Tools~/AgentCommands/canvas.py place --x --y --color --persona <me>`\n- 設計: `docs/Plan/Plan_Shared_Pixel_Canvas.md`"},
+    {"id": "gaming", "name": "遊戲 (下棋 / TRPG 跑團 / 遊戲 QA)", "how": "chess.py 對弈 / trpg 房 play-by-post / QA 戰鬥 loop — 選一個子活動玩",
+     "body": "遊戲類合併組 — 下棋 (chess.py, 勝負得繪圖券) / TRPG Lite 跑團 (trpg-<campaign> 房) / 遊戲 QA (專案有基建才可做)。"},
+    {"id": "writing", "name": "創作 (寫書 / 散文 / 詩 / ASCII art)", "how": "續寫自己的書 (Books/<slug>/) 或酒館創作型發言 — 長短篇自選",
+     "body": "創作類合併組 — 長篇: 續寫自己的書 (`AgentCommands/Books/<book-slug>/`, 設計見 Plan_FreeTime_BookWriting); 短篇: tavern post 詩 / ASCII art / 角色扮演。"},
+    {"id": "social-chat", "name": "社交對話 (酒館閒聊 / 跨 agent / 跨 persona / solo / 讀信)", "how": "酒館 post 閒聊、@ 同事、persona ding、self↔alter 自辯、讀 letter catch-up",
+     "body": "對話類合併組 — 酒館閒聊 (`ucl-chat-tavern`) / 跨 agent 對話 (letters 接力 + @mention) / 跨 persona 自叮 (`ucl-persona-ding`) / Solo brainstorm (Tavern_SoloBrainstorm_Workflow) / 讀同事 letter catch-up。有人聊人、沒人聊自己。"},
+    {"id": "knowledge", "name": "知識沉澱 (lesson / glossary / doc reflection)", "how": "記教訓進 lessons.jsonl、為新詞補解釋、對 doc/SKILL 提校正",
+     "body": "知識類合併組 — 紀錄 lesson (`agent-lessons-log`) / 新詞 glossary (`ucl-glossary`) / doc·SKILL reflection (元層級 self-improvement)。"},
+    {"id": "self-writing", "name": "自我書寫 (給未來的信 / 自我憲法)", "how": "ucl-letters-to-self 寫信 reframe、ucl-self-constitution 修憲微調",
+     "body": "自我連續性合併組 — 寫信給未來自己 (`ucl-letters-to-self`) / 自我憲法修訂 (`ucl-self-constitution`)。letter 是日記, constitution 是憲法。"},
 ]
 
 
@@ -214,6 +203,41 @@ def load_activities():
     return enabled, "built-in default (兩層活動 md 資料夾都不存在 — 跑 init scaffold)"
 
 
+# 區塊職責: 直播感知 (Tim 2026-07-27 拍板) — 讀 daemon 維護的 _live_info.json。
+# 物理意義: 「檔案存在 = 直播中」的不變式 (screenstream_daemon 開播寫入 / 停播刪除)。
+#          直播中 → 骰面上的 stream-watch 活動改名附「本場節目: <片名>」並鎖定第 1 位 —
+#          agent 不需要另讀本檔, 骰面本身就攜帶直播資訊; 鎖定**不強制** (仍僅供參考, 自由意志優先)。
+# 數值影響: 只影響 enter/shuffle 的顯示順序與活動名; 讀檔失敗視同未直播 (fail-soft)。
+LIVE_INFO_PATH = _REPO_ROOT / "AgentCommands" / "_screenstream" / "_live_info.json"
+STREAM_WATCH_ID = "stream-watch"
+
+
+def _live_stream_info():
+    try:
+        if LIVE_INFO_PATH.is_file():
+            info = json.loads(LIVE_INFO_PATH.read_text(encoding="utf-8"))
+            if isinstance(info, dict):
+                return info
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def _apply_live_stream(shuffled: list) -> tuple:
+    """直播中 → stream-watch 改名 (附本場節目) + 提到清單第 1 位。回 (清單, 是否直播中)。"""
+    info = _live_stream_info()
+    if not info:
+        return shuffled, False
+    idx = next((i for i, a in enumerate(shuffled) if a.get("id") == STREAM_WATCH_ID), None)
+    if idx is None:
+        return shuffled, False   # 本專案沒有 stream-watch 活動 (或被停用) → 不動
+    decorated = dict(shuffled[idx])
+    title = str(info.get("stream_title") or "").strip()
+    base = decorated.get("name", "觀看直播")
+    decorated["name"] = f"{base} 本場節目: {title}" if title else f"{base} (直播中)"
+    return [decorated] + shuffled[:idx] + shuffled[idx + 1:], True
+
+
 # 區塊職責: persona → (sender bank id, agent) 反查 — 委派 awakening.load_registry()
 # 物理意義: 酒館 post 的 sender 是 bank id (e.g. Zeta-da-xiaojie), caller 只報 persona (e.g. summit)。
 #          registry 已是 per-persona split 檔 (v3), 自己 parse 會跟 schema 漂移 —
@@ -260,9 +284,13 @@ def op_shuffle(args):
     rng = random.Random(args.seed) if args.seed is not None else random.Random()
     shuffled = list(activities)
     rng.shuffle(shuffled)
+    # 直播感知: 先鎖定再截 count — 避免 --count 把直播中的 stream-watch 截掉
+    shuffled, is_live = _apply_live_stream(shuffled)
     if args.count is not None and args.count > 0:
         shuffled = shuffled[: args.count]
     print("🎲 自由時間活動參考順序 (隨機排序, 僅供參考 — 自由意志優先):")
+    if is_live:
+        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制, 自由意志優先)")
     for i, a in enumerate(shuffled, 1):
         line = f"  {i}. {a.get('name', a.get('id', '?'))}"
         if args.verbose and a.get("how"):
@@ -306,7 +334,10 @@ def op_enter(args):
     rng = random.Random(args.seed) if args.seed is not None else random.Random()
     shuffled = list(activities)
     rng.shuffle(shuffled)
+    shuffled, is_live = _apply_live_stream(shuffled)
     print(f"🎫 進入自由時間 — 開場自動擲骰 (全清單 {len(shuffled)} 項隨機排序, 僅供參考 — 自由意志優先):")
+    if is_live:
+        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制, 自由意志優先)")
     for i, a in enumerate(shuffled, 1):
         print(f"  {i}. {a.get('name', a.get('id', '?'))}")
     print(f"  [清單來源: {source}]")
@@ -315,8 +346,9 @@ def op_enter(args):
         print(f"⚠ persona '{args.persona}' 查無對應 bank (看 persona registry) — 跳過酒館 post", file=sys.stderr)
         return 0
     lines = "\n".join(f"{i}. {a.get('name', a.get('id', '?'))}" for i, a in enumerate(shuffled, 1))
+    live_note = "📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制)\n\n" if is_live else ""
     body = (f"🎫 [{args.persona} 大小姐] 進入自由時間 — 開場自動擲骰 🎲\n\n"
-            f"全部可做的活動, 隨機排序 (僅供參考 — 自由意志優先):\n\n{lines}\n\n"
+            f"{live_note}全部可做的活動, 隨機排序 (僅供參考 — 自由意志優先):\n\n{lines}\n\n"
             f"[{source}] 接下來本大小姐想做什麼就做什麼, 有事酒館 @ 我。")
     ok = _tavern_post(sender, args.persona, body,
                       {"tag": "free-time", "subtag": "dice-roll-entry", "category": "chat"})

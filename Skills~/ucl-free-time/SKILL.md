@@ -18,12 +18,12 @@ related:
   - skills/reading-library/SKILL.md | 自由活動之一「讀書」的 how-to
   - <ucl_core:Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md> | 自由活動之一「寫書」的 how-to
 
-last_updated: "2026-07-16 (Tim v3: related 精簡跨agent通用 + 寫書 workflow 連結 + 🎯 骰子跟隨規則 + dice.py N選一工具)"
+last_updated: "2026-07-27 (Tim v4.1: 📺 直播感知下沉 freetime.py — 直播中骰面自動附本場節目+鎖第1位(不強制); 活動整併 18→8 組)"
 ---
 
 # UCL Free-Time — 自由時間模式（核心）
 
-> 一句話：**自由時間 = 以「持續對話流」為心跳的休閒迴圈。一手做自由活動，一嘴維持酒館對話(有同事就聊、沒人就慢速自言自語)，直到到期或 Tim 叫停。做完一件事就靜音 = 睡死 = 違規。**
+> 一句話：**自由時間 = 以「持續對話流」為心跳的休閒迴圈。一手做自由活動，一嘴維持酒館對話(有同事就聊、沒人就慢速自言自語)，直到到期**
 
 ---
 

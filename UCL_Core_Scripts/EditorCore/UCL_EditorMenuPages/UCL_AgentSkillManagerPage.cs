@@ -312,11 +312,24 @@ namespace UCL.Core.EditorLib.Page
         readonly Dictionary<AgentTarget, InstallStatus> m_StatusByTarget = new Dictionary<AgentTarget, InstallStatus>();
         readonly HashSet<AgentTarget> m_InstallingSet = new HashSet<AgentTarget>();
 
-        // 區塊職責：per-skill 狀態快取（給 Matrix 用；Claude target）。
-        // 物理意義：RefreshStatus 一次算完 installed / disabled / drift 三態並快取，Matrix 繪製只讀不算，
-        //          避免舊版每幀對每個 skill 掃磁碟比對(perf) + 對齊 Tim「開頁一次判斷+快取」要求。
+        // 區塊職責：per-skill 狀態快取（給 Matrix 用；Per-Agent × Per-Skill, Tim 2026-07-27）。
+        // 物理意義：RefreshStatus 一次算完「每個 target」的 installed / drift + 共用 disabled 三態並快取，
+        //          Matrix 繪製只讀不算，避免每幀掃磁碟(perf) + 對齊 Tim「開頁一次判斷+快取」要求。
+        //          installed / drift 是 per-target 事實（各 agent 安裝目錄不同）; disabled 來自
+        //          UCL_SkillConfigAsset — target 無關、跨 agent 共用（Tim 拍板「Disable 狀態可以共用」）。
         struct SkillRowState { public bool installed; public bool disabled; public bool drift; }
-        readonly Dictionary<string, SkillRowState> m_SkillRowCache = new Dictionary<string, SkillRowState>();
+        readonly Dictionary<AgentTarget, Dictionary<string, SkillRowState>> m_SkillRowCacheByTarget
+            = new Dictionary<AgentTarget, Dictionary<string, SkillRowState>>();
+
+        // 區塊職責：per-target 的 stale skill 名單（狀態列可視化 — 修「按了同步還是 Stale 但不知道誰害的」）
+        // 物理意義：Stale 是聚合結果, 不列出兇手時使用者只能瞎猜（2026-07-27 Antigravity 同步疑雲的教訓:
+        //          真相是源檔在同步後又被編輯, 但頁面只說 Stale 不說哪個 skill → 無從對帳）。
+        readonly Dictionary<AgentTarget, List<string>> m_StaleSkillsByTarget
+            = new Dictionary<AgentTarget, List<string>>();
+
+        // Matrix 的 agent 下拉選單 state（UCL_GUILayout.Popup 需要 ObjectDictionary 存展開狀態）
+        int m_MatrixTargetIdx = 0;
+        readonly UCL_ObjectDictionary m_PopupDataDic = new UCL_ObjectDictionary();
 
         // 區塊職責：記錄各 target 上次安裝被跳過的檔案數（install_skills.py 的 local-edit 保護）
         // 物理意義：exit=2 + stdout 的 "skipped=N" 代表有 N 檔因本地改動沒被覆蓋 — 內容實際未更新；
@@ -364,7 +377,8 @@ namespace UCL.Core.EditorLib.Page
         {
             m_StatusDirty = false;
             m_StatusByTarget.Clear();
-            m_SkillRowCache.Clear();
+            m_SkillRowCacheByTarget.Clear();
+            m_StaleSkillsByTarget.Clear();
 
             string corePathRel = UCL_EditorPath.CorePath;
             if (string.IsNullOrEmpty(corePathRel))
@@ -404,7 +418,8 @@ namespace UCL.Core.EditorLib.Page
 
             string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
             bool anyInstalled = false;
-            bool anyStale = false;
+            // stale 逐 skill 記名 — 頁面要點得出「是誰還沒同步」, 不再只給聚合布林 (2026-07-27)
+            var staleNames = new List<string>();
             try
             {
                 foreach (var instDir in Directory.GetDirectories(installRoot))
@@ -414,9 +429,11 @@ namespace UCL.Core.EditorLib.Page
                     anyInstalled = true;
                     string name = Path.GetFileName(instDir);
                     string srcDir = Path.Combine(skillsRoot, name);
-                    // 源已刪除但已裝殘留，或內文不同 → stale（需重裝 / 清理）
-                    if (!Directory.Exists(srcDir) || !SkillContentMatches(srcDir, instDir, t))
-                        anyStale = true;
+                    // 源已刪除但已裝殘留，或內文不同 → stale（需重裝 / 清理）; 帶明細點名兇手
+                    if (!Directory.Exists(srcDir))
+                        staleNames.Add($"{name} — 源 Skills~ 已刪除, 已裝端殘留");
+                    else if (!SkillContentMatches(srcDir, instDir, t, out string detail))
+                        staleNames.Add($"{name} — {detail}");
                 }
             }
             catch (Exception ex)
@@ -424,8 +441,9 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning($"[AgentSkillManager] 比對 {installRoot} 內文失敗：{ex.Message}");
             }
 
+            m_StaleSkillsByTarget[t] = staleNames;
             if (!anyInstalled) m_StatusByTarget[t] = InstallStatus.NotInstalled;
-            else m_StatusByTarget[t] = anyStale ? InstallStatus.Stale : InstallStatus.Synced;
+            else m_StatusByTarget[t] = staleNames.Count > 0 ? InstallStatus.Stale : InstallStatus.Synced;
         }
 
         // 區塊職責：lightweight JSON string 欄位抽取（SyncSkillConfig 讀既有 Note 用）
@@ -464,7 +482,13 @@ namespace UCL.Core.EditorLib.Page
         //          在 Windows 與 Unix 混用的環境下，新行字元可能會有 \r\n 與 \n 的差異，此處將進行正規化處理，防止因為格式而誤判為 stale。
         // 數值影響：若有任何檔案缺失或內文不符，回傳 false（判定為 drift 狀態，顯示需要 Sync）；若全部一致則回傳 true。
         bool SkillContentMatches(string srcDir, string instDir, AgentTarget target)
+            => SkillContentMatches(srcDir, instDir, target, out _);
+
+        // detail: 第一個不匹配的「檔案 + 原因」(缺檔 / 第 N 行起不同) — 給狀態列點名兇手用 (Tim 2026-07-27:
+        //   「訊息可能可以更詳細來判斷原因」)。全匹配時 detail 為 null。
+        bool SkillContentMatches(string srcDir, string instDir, AgentTarget target, out string detail)
         {
+            detail = null;
             // 遍歷來源 Skill 目錄下的所有檔案，包括所有子資料夾的檔案
             foreach (var srcFile in Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories))
             {
@@ -473,8 +497,8 @@ namespace UCL.Core.EditorLib.Page
                 // 組合出目標安裝目錄中的對應檔案絕對路徑
                 string instFile = Path.Combine(instDir, rel);
                 // 如果目標檔案在安裝目錄中根本不存在，代表該 Skill 狀態不完整，回傳 false 表示內容不匹配
-                if (!File.Exists(instFile)) return false;
-                
+                if (!File.Exists(instFile)) { detail = $"{rel}: 已裝端缺檔"; return false; }
+
                 // Antigravity 的 SKILL.md：兩邊都剝掉 trigger: 行再比，只比作者內容。
                 //   - install 衍生注入的 trigger: 只在已裝端 → 剝已裝端。
                 //   - 作者顯式宣告的 trigger: 源端與已裝端都有(原樣複製) → 兩邊都剝才不誤判 drift。
@@ -484,10 +508,34 @@ namespace UCL.Core.EditorLib.Page
                 string actual = stripTrigger ? StripInjectedTriggerLine(File.ReadAllText(instFile)) : File.ReadAllText(instFile);
 
                 // 比對預期內文與實際內文（\r\n 視同 \n），若不相符則判定內容已改變，回傳 false
-                if (!ContentEqualsNewlineInsensitive(expected, actual)) return false;
+                if (!ContentEqualsNewlineInsensitive(expected, actual))
+                {
+                    // 只在確定不匹配時才花力氣算首個差異行 (常態 path 零成本)
+                    int line = FirstDiffLine(expected, actual);
+                    string src = File.GetLastWriteTime(srcFile).ToString("MM-dd HH:mm");
+                    string inst = File.GetLastWriteTime(instFile).ToString("MM-dd HH:mm");
+                    detail = $"{rel}: 第 {line} 行起不同{(stripTrigger ? " (已剝 trigger 後)" : "")} | 源 mtime {src} / 已裝 {inst}";
+                    return false;
+                }
             }
             // 若所有檔案皆存在且內容比對完全一致，則回傳 true，表示檔案完全同步
             return true;
+        }
+
+        // 區塊職責：首個差異的行號 (1-based, \r\n 視同 \n) — 只在已知不相等時呼叫，給 stale 明細定位用。
+        static int FirstDiffLine(string a, string b)
+        {
+            int i = 0, j = 0, line = 1;
+            while (i < a.Length && j < b.Length)
+            {
+                char ca = a[i], cb = b[j];
+                if (ca == '\r' && i + 1 < a.Length && a[i + 1] == '\n') { i++; ca = '\n'; }
+                if (cb == '\r' && j + 1 < b.Length && b[j + 1] == '\n') { j++; cb = '\n'; }
+                if (ca != cb) return line;
+                if (ca == '\n') line++;
+                i++; j++;
+            }
+            return line;   // 一邊是另一邊前綴 → 差異在較短端結束處
         }
 
         // 區塊職責：換行不敏感的內文等價比對 — \r\n 視同 \n，取代舊的 Replace("\r\n","\n") 正規化副本。
@@ -527,35 +575,47 @@ namespace UCL.Core.EditorLib.Page
             if (parts.Length < 3) return content;
             var kept = new System.Collections.Generic.List<string>();
             bool swallowBlank = false;   // 舊版注入在 trigger: 行後多留一空行 → 一併吞掉, 讓既有已裝檔不重裝也對得上
-            foreach (var ln in parts[1].Split('\n'))
+            string[] lines = parts[1].Split('\n');
+            for (int i = 0; i < lines.Length; i++)
             {
+                string ln = lines[i];
                 if (ln.TrimStart().StartsWith("trigger:")) { swallowBlank = true; continue; } // 剝掉 install 注入的 trigger: 行
-                if (swallowBlank && ln.Trim().Length == 0) { swallowBlank = false; continue; } // 吞掉緊接的殘留空行(舊注入 artifact)
+                // ⚠ 最後一個元素是「frontmatter 結尾換行」的 split artifact（空字串 / CRLF 檔的 "\r"）—
+                //   絕不可吞：trigger 注入在 frontmatter 最後一行時（ucl-update-docs 案例, 2026-07-27），
+                //   吞掉它 = 重組後結尾少一個換行 → "…\r---" vs 源端 "…\n---" 黏行 → 永遠比對不過 →
+                //   「按同步永遠仍 Stale」的真兇。swallowBlank 只吞「中段」的殘留空行。
+                if (swallowBlank && ln.Trim().Length == 0 && i < lines.Length - 1) { swallowBlank = false; continue; }
                 swallowBlank = false;
                 kept.Add(ln);
             }
             return "---" + string.Join("\n", kept) + "---" + parts[2];
         }
 
-        // 區塊職責：一次算完 Matrix 用的 per-skill 三態（installed/disabled/drift）並快取。
-        // 物理意義：由 RefreshStatus 呼叫；Matrix 繪製只讀 m_SkillRowCache，不每幀掃磁碟（對齊 Tim
-        //          「開頁一次判斷+快取，只有安裝/skill 操作才刷新」）。drift 用 SkillContentMatches（Claude target）。
+        // 區塊職責：一次算完 Matrix 用的 per-skill 三態（installed/disabled/drift）並快取 — 每個 target 各一份。
+        // 物理意義：由 RefreshStatus 呼叫；Matrix 繪製只讀 m_SkillRowCacheByTarget，不每幀掃磁碟（對齊 Tim
+        //          「開頁一次判斷+快取，只有安裝/skill 操作才刷新」）。installed/drift per-target（各 agent
+        //          安裝目錄不同）; disabled 讀共用 UCL_SkillConfigAsset 一次、所有 target 同值。
         void BuildSkillRowCache(string hostRoot)
         {
-            m_SkillRowCache.Clear();
+            m_SkillRowCacheByTarget.Clear();
             string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
             if (!Directory.Exists(skillsRoot)) return;
-            string installRoot = Path.Combine(hostRoot, TargetMarkerRelDir(AgentTarget.Claude));
             var disabledSet = LoadDisabledSkills();
-            foreach (var dir in Directory.GetDirectories(skillsRoot))
+            foreach (var t in AllTargets)
             {
-                string name = Path.GetFileName(dir);
-                if (name.StartsWith("_") || name.EndsWith("~")) continue;
-                string instDir = Path.Combine(installRoot, name);
-                bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
-                bool disabled = disabledSet.Contains(name);
-                bool drift = installed && !disabled && !SkillContentMatches(dir, instDir, AgentTarget.Claude);
-                m_SkillRowCache[name] = new SkillRowState { installed = installed, disabled = disabled, drift = drift };
+                var cache = new Dictionary<string, SkillRowState>();
+                string installRoot = Path.Combine(hostRoot, TargetMarkerRelDir(t));
+                foreach (var dir in Directory.GetDirectories(skillsRoot))
+                {
+                    string name = Path.GetFileName(dir);
+                    if (name.StartsWith("_") || name.EndsWith("~")) continue;
+                    string instDir = Path.Combine(installRoot, name);
+                    bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
+                    bool disabled = disabledSet.Contains(name);
+                    bool drift = installed && !disabled && !SkillContentMatches(dir, instDir, t);
+                    cache[name] = new SkillRowState { installed = installed, disabled = disabled, drift = drift };
+                }
+                m_SkillRowCacheByTarget[t] = cache;
             }
         }
 
@@ -637,12 +697,12 @@ namespace UCL.Core.EditorLib.Page
             foreach (var t in AllTargets) RunInstall(t, force);
         }
 
-        // 區塊職責：逐 skill 安裝/解除安裝 — spawn install_skills.py --include <skill> [--uninstall] [--force-overwrite]
+        // 區塊職責：逐 skill 安裝/解除安裝 — spawn install_skills.py --target <t> --include <skill> [--uninstall] [--force-overwrite]
         // 物理意義：對接 install_skills.py 的 per-skill 化(merge marker / partial uninstall / drift 警告)。
         //          uninstall 預設不帶 force → 若該 skill 被本地改過, Python 端會警告跳過(破壞看得見);
         //          force=true 才強制(覆蓋本地改動 / 強制移除)。
-        // 數值影響：Claude target only(MVP)；跑完 m_StatusDirty=true 刷新狀態列
-        void RunInstallSkill(string skill, bool uninstall, bool force = false)
+        // 數值影響：target 由 Matrix 下拉選單決定(Per-Agent × Per-Skill, Tim 2026-07-27)；跑完 m_StatusDirty=true 刷新
+        void RunInstallSkill(AgentTarget target, string skill, bool uninstall, bool force = false)
         {
             if (string.IsNullOrEmpty(skill)) return;
             try
@@ -653,7 +713,7 @@ namespace UCL.Core.EditorLib.Page
                     Debug.LogError($"[AgentSkillManager] install_skills.py 不存在：{scriptPath}");
                     return;
                 }
-                string args = $"\"{scriptPath}\" --target claude --include {skill}";
+                string args = $"\"{scriptPath}\" --target {TargetCliName(target)} --include {skill}";
                 if (uninstall) args += " --uninstall";
                 if (force) args += " --force-overwrite";
                 using (var p = new Process())
@@ -669,10 +729,11 @@ namespace UCL.Core.EditorLib.Page
                     string stderr = p.StandardError.ReadToEnd();
                     p.WaitForExit(30000);
                     string verb = uninstall ? "解除安裝" : "安裝";
-                    if (!string.IsNullOrEmpty(stdout)) Debug.Log($"[AgentSkillManager:{skill}] {verb} stdout:\n{stdout}");
-                    if (!string.IsNullOrEmpty(stderr)) Debug.LogWarning($"[AgentSkillManager:{skill}] {verb} stderr:\n{stderr}");
-                    if (p.ExitCode == 0) Debug.Log($"[AgentSkillManager:{skill}] {verb}完成");
-                    else Debug.LogWarning($"[AgentSkillManager:{skill}] {verb} exit={p.ExitCode}（uninstall 被本地改動擋下時為正常保護；需強制請用 force）");
+                    string tag = $"{TargetDisplayName(target)}:{skill}";
+                    if (!string.IsNullOrEmpty(stdout)) Debug.Log($"[AgentSkillManager:{tag}] {verb} stdout:\n{stdout}");
+                    if (!string.IsNullOrEmpty(stderr)) Debug.LogWarning($"[AgentSkillManager:{tag}] {verb} stderr:\n{stderr}");
+                    if (p.ExitCode == 0) Debug.Log($"[AgentSkillManager:{tag}] {verb}完成");
+                    else Debug.LogWarning($"[AgentSkillManager:{tag}] {verb} exit={p.ExitCode}（uninstall 被本地改動擋下時為正常保護；需強制請用 force）");
                 }
             }
             catch (Exception ex)
@@ -990,6 +1051,31 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentSkill.SkippedWarn"), skipCount), warnStyle);
                 }
 
+                // 區塊職責：Stale 時逐筆點名「誰沒同步 + 哪個檔第幾行起不同 + 兩端 mtime」— 修「按了同步
+                //          仍顯示 Stale 但無從對帳」；📋 複製鈕一鍵把明細進剪貼簿，直接貼給 agent 查案。
+                // 物理意義：聚合狀態不列兇手時使用者只能瞎猜（2026-07-27 Antigravity 同步疑雲兩案:
+                //          case1 = 源檔在同步後又被編輯(moving target); case2 = trigger 剝除的結尾換行
+                //          bug(ucl-update-docs) — 有「行號+mtime」明細，兩種一眼就能分辨）。
+                if (status == InstallStatus.Stale &&
+                    m_StaleSkillsByTarget.TryGetValue(t, out var staleList) && staleList.Count > 0)
+                {
+                    var staleStyle = new GUIStyle(WrapLabelStyle);
+                    staleStyle.normal.textColor = new Color(1f, 0.6f, 0.2f);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("📋 複製", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            UnityEditor.EditorGUIUtility.systemCopyBuffer =
+                                $"[{TargetDisplayName(t)}] 未同步 skill ({staleList.Count}):\n" + string.Join("\n", staleList);
+                            Debug.Log($"[AgentSkillManager:{TargetDisplayName(t)}] 未同步明細已複製到剪貼簿");
+                        }
+                        GUILayout.Label($"⚠ 未同步 skill ({staleList.Count}):", staleStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                    }
+                    foreach (var staleEntry in staleList)
+                        GUILayout.Label($"    • {staleEntry}", staleStyle);
+                }
+
                 using (new GUILayout.HorizontalScope())
                 {
                     bool installingThis = m_InstallingSet.Contains(t);
@@ -1005,11 +1091,11 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：未來的 Per-Agent × Per-Skill 切換 matrix placeholder
-        // 物理意義：使用者能勾選哪些 agent (Claude / Cursor / Antigravity / Gemini) 要裝、
-        //          以及每個 agent 內哪些 skill 要裝（如不要 ucl-hook-setup 因為已配過）
-        // 數值影響：(尚未實作) 改變 install_skills.py 呼叫的 --target / --include 參數
-        // 設計取捨：先 placeholder，先驗一鍵安裝的價值再做客製化
+        // 區塊職責：Per-Agent × Per-Skill 切換 matrix（Tim 2026-07-27 拍板實作, 取代舊 placeholder）
+        // 物理意義：Enum + UCL_GUILayout.Popup 下拉選 agent → 列該 agent 的逐 skill 狀態與裝/移除操作。
+        //          installed / drift 是 per-agent 事實（安裝目錄不同）；disabled (UCL_SkillConfigAsset)
+        //          跨 agent 共用 — 在任一 agent 停用, 所有 agent 的下次同步都會 reconcile 移除。
+        // 數值影響：改變 install_skills.py 呼叫的 --target / --include 參數
         void DrawAgentMatrixPlaceholder()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -1024,7 +1110,26 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Matrix.NoSource"), WrapLabelStyle);
                     return;
                 }
-                // 逐 skill 列（Claude target MVP）：狀態 + 裝/移除按鈕。
+
+                // 區塊職責：Agent 下拉選單 — 切換 Matrix 檢視/操作的 target
+                // 物理意義：選單值僅切換「看哪個 agent 的 per-skill 狀態」, 不觸發任何安裝動作;
+                //          快取已在 RefreshStatus 對所有 target 建好, 切換零磁碟 IO。
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Agent:", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    string[] targetNames = AllTargets.Select(TargetDisplayName).ToArray();
+                    if (m_MatrixTargetIdx < 0 || m_MatrixTargetIdx >= AllTargets.Length) m_MatrixTargetIdx = 0;
+                    m_MatrixTargetIdx = UCL_GUILayout.Popup(m_MatrixTargetIdx, targetNames,
+                        m_PopupDataDic, "MatrixTarget", GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(160)));
+                    GUILayout.Label($"({TargetMarkerRelDir(AllTargets[m_MatrixTargetIdx])}/)",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                GUILayout.Space(4);
+                AgentTarget matrixTarget = AllTargets[m_MatrixTargetIdx];
+                if (!m_SkillRowCacheByTarget.TryGetValue(matrixTarget, out var rowCache)) return;
+
+                // 逐 skill 列（選中 target）：狀態 + 裝/移除按鈕。
                 // 狀態 per-skill：未裝 / 已同步 / ⚠已改動(drift) / 🚫停用(UCL_SkillConfigAsset Enabled=false)。
                 // 停用語意：disabled 但實體還在 → 「🚫停用·待移除」(下次同步會解除安裝);
                 //          disabled 且已移除 → 「🚫停用」。按鈕同步 UCL_SkillConfigAsset(裝→Enabled=true / 移除→false)。
@@ -1033,7 +1138,7 @@ namespace UCL.Core.EditorLib.Page
                     string name = Path.GetFileName(dir);
                     if (name.StartsWith("_") || name.EndsWith("~")) continue;
                     // 讀 RefreshStatus 建好的 per-skill 快取（不每幀掃磁碟；安裝/skill 操作後 m_StatusDirty 才刷新）
-                    if (!m_SkillRowCache.TryGetValue(name, out var row)) continue;
+                    if (!rowCache.TryGetValue(name, out var row)) continue;
                     bool installed = row.installed;
                     bool disabled = row.disabled;
                     string statusTxt; Color statusCol;
@@ -1067,36 +1172,37 @@ namespace UCL.Core.EditorLib.Page
                         }
                         if (disabled)
                         {
-                            // 啟用：同步 Enabled=true → 安裝
+                            // 啟用：同步 Enabled=true(跨 agent 共用) → 安裝到選中 target
                             if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Matrix.Btn.Enable"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                             {
                                 SyncSkillConfig(name, enabled: true);
-                                RunInstallSkill(name, uninstall: false);
+                                RunInstallSkill(matrixTarget, name, uninstall: false);
                             }
                             // disabled 但實體還在 → 提供立即解除安裝（不改 config，維持停用）
                             if (installed && GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
-                                RunInstallSkill(name, uninstall: true);
+                                RunInstallSkill(matrixTarget, name, uninstall: true);
                         }
                         else if (!installed)
                         {
-                            // 裝：同步 Enabled=true(消除可能殘留的 disabled 記錄) → 安裝
+                            // 裝：同步 Enabled=true(消除可能殘留的 disabled 記錄) → 安裝到選中 target
                             if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Install"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                             {
                                 SyncSkillConfig(name, enabled: true);
-                                RunInstallSkill(name, uninstall: false);
+                                RunInstallSkill(matrixTarget, name, uninstall: false);
                             }
                         }
                         else
                         {
-                            // 移除：同步 Enabled=false(停用) → 解除安裝
+                            // 移除：同步 Enabled=false(停用, 跨 agent 共用 — 其他 agent 下次同步 reconcile 移除)
+                            //       → 立即解除安裝選中 target 的實體
                             if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                             {
                                 SyncSkillConfig(name, enabled: false);
-                                RunInstallSkill(name, uninstall: true);
+                                RunInstallSkill(matrixTarget, name, uninstall: true);
                             }
                             // drift 時提供強制重裝（覆蓋本地改動）
                             if (row.drift && GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
-                                RunInstallSkill(name, uninstall: false, force: true);
+                                RunInstallSkill(matrixTarget, name, uninstall: false, force: true);
                         }
                         GUILayout.FlexibleSpace();
                     }

@@ -9,6 +9,7 @@
 // 2026-07-26 kaguya (Luna) — 自 RCG_ScreenStreamPage (T13 basecamp 2026-05-16) 遷移
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
@@ -33,6 +34,10 @@ namespace UCL.Core.EditorLib.Page
         const string LATEST_JPG_RELATIVE = "AgentCommands/_screenstream/_latest.jpg";
         const string PID_FILE_RELATIVE = "AgentCommands/_screenstream/_daemon.pid";
         const string MONITORS_RELATIVE = "AgentCommands/_screenstream/_monitors.json";
+        // STT / OCR cache 目錄 (Tim 2026-07-27) — daemon 寫 stt/stt_<epoch>.json、ocr/frame_NNNN.json
+        const string STT_DIR_RELATIVE = "AgentCommands/_screenstream/stt";
+        const string OCR_DIR_RELATIVE = "AgentCommands/_screenstream/ocr";
+        const int SttOcrPageSize = 10;
 
         // 區塊職責: config 快取 + 顯示用 state
         // 物理意義: page enter / 每 N 秒 reload 一次, 避免每 OnGUI 都 file IO
@@ -80,6 +85,23 @@ namespace UCL.Core.EditorLib.Page
         string m_StartedAt = "";
         bool m_DaemonAlive = false;
         string m_LatestFrame = "";
+        // ── STT / OCR 顯示 (Tim 2026-07-27)：當前最新 + 可展開分頁歷史 (仿聊天酒館, 展開才載, 每頁 10) ──
+        string m_LatestSttText = "", m_LatestSttTime = "";
+        string m_LatestOcrText = "", m_LatestOcrTime = "";
+        bool m_ShowSttHistory = false, m_ShowOcrHistory = false;
+        int m_SttHistPage = 0, m_OcrHistPage = 0;
+        List<(double epoch, string text)> m_SttHistory;   // null = 未載入 (展開才載 + 快取, 不每幀重讀)
+        List<(double epoch, string text)> m_OcrHistory;
+        GUIStyle m_SubWrapStyle;
+        GUIStyle SubWrapStyle
+        {
+            get
+            {
+                if (m_SubWrapStyle == null)
+                    m_SubWrapStyle = new GUIStyle(GUI.skin.label) { wordWrap = true, fontSize = 11 };
+                return m_SubWrapStyle;
+            }
+        }
 
         bool m_ConfigLoaded = false;
         double m_LastReloadTime = -1.0;
@@ -131,7 +153,26 @@ namespace UCL.Core.EditorLib.Page
             ReloadPreview();
             m_FirstGuiDone = true;
         }
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            // 開啟 _screenstream 資料夾 (Tim 2026-07-27) — 直接看 frames / stt / ocr cache / config
+            if (GUILayout.Button("📂 開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
+            {
+                string dir = Path.Combine(GetRepoRoot(), "AgentCommands", "_screenstream");
+                try
+                {
+                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                    UnityEditor.EditorUtility.RevealInFinder(dir);
+                }
+                catch (Exception e) { Debug.LogWarning($"[ScreenStreamPage] 開啟資料夾失敗: {e.Message}"); }
+            }
+            // 入口按鈕 — 跳轉「影音管理」頁 (Tim 2026-07-26 要求): STT/OCR 依賴安裝、細部設定、試錄都在那頁
+            if (GUILayout.Button("🎬 影音管理 (STT/OCR 安裝與設定)", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
+            {
+                UCL_MediaAdminPage.Create();
+            }
+        }
         // T14 — Multi-monitor enumeration: 讀 daemon 寫的 _monitors.json
         void ReloadMonitors()
         {
@@ -359,6 +400,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 ReloadFromDisk();
                 ReloadMonitors();
+                ReloadLatestSttOcr();   // 便宜讀最新 STT/OCR (歷史另走展開 lazy load)
                 m_LastReloadTime = now;
             }
             // T14 — Preview reload (獨立節奏, 比 config reload 頻繁)
@@ -375,11 +417,7 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.BeginHorizontal();
             GUILayout.Label("🎥 ScreenStream Control", new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold });
             GUILayout.FlexibleSpace();
-            // 入口按鈕 — 跳轉「影音管理」頁 (Tim 2026-07-26 要求): STT/OCR 依賴安裝、細部設定、試錄都在那頁
-            if (GUILayout.Button("🎬 影音管理 (STT/OCR 安裝與設定)", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
-            {
-                UCL_MediaAdminPage.Create();
-            }
+
             GUILayout.EndHorizontal();
             GUILayout.Label("獨立 Page 防誤觸. 錄影中時敏感 Page (含 token / 帳號) 會自動黑屏.");
             GUILayout.Space(8);
@@ -460,6 +498,10 @@ namespace UCL.Core.EditorLib.Page
                         new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Italic });
                 }
             }
+            GUILayout.Space(8);
+
+            // STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史
+            DrawSttOcrPanel();
             GUILayout.Space(8);
 
             // ===========================================================
@@ -668,6 +710,184 @@ namespace UCL.Core.EditorLib.Page
         // 二段確認狀態
         bool m_PendingArmEnable = false;
         double m_PendingArmEnableTime = -1.0;
+
+        // ===========================================================
+        // 區塊：STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史 (仿聊天酒館, 展開才載, 每頁 10)
+        // 物理意義：讀 _screenstream/stt/stt_<epoch>.json (whisper) + ocr/frame_NNNN.json (字幕 OCR) cache。
+        //          「最新」每次 reload 便宜掃最新檔；「歷史」展開才全載 + 快取 (OCR 可達數百檔, 不每幀重讀)。
+        // ===========================================================
+        void ReloadLatestSttOcr()
+        {
+            m_LatestSttText = ""; m_LatestSttTime = "";
+            m_LatestOcrText = ""; m_LatestOcrTime = "";
+            try
+            {
+                string dir = Path.Combine(GetRepoRoot(), STT_DIR_RELATIVE);
+                if (Directory.Exists(dir))
+                {
+                    var files = Directory.GetFiles(dir, "stt_*.json");
+                    Array.Sort(files, StringComparer.Ordinal);
+                    for (int i = files.Length - 1; i >= 0 && m_LatestSttText.Length == 0; i--)
+                    {
+                        var segs = ParseSttFile(files[i]);
+                        if (segs.Count > 0)
+                        {
+                            var last = segs[segs.Count - 1];
+                            m_LatestSttText = last.text; m_LatestSttTime = EpochToHms(last.epoch);
+                        }
+                    }
+                }
+            }
+            catch { }
+            try
+            {
+                string dir = Path.Combine(GetRepoRoot(), OCR_DIR_RELATIVE);
+                if (Directory.Exists(dir))
+                {
+                    var files = Directory.GetFiles(dir, "frame_*.json");
+                    Array.Sort(files, StringComparer.Ordinal);
+                    for (int i = files.Length - 1; i >= 0 && m_LatestOcrText.Length == 0; i--)
+                    {
+                        var e = ParseOcrFile(files[i]);
+                        if (e.text.Length > 0) { m_LatestOcrText = e.text; m_LatestOcrTime = EpochToHms(e.epoch); }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 全載歷史 (展開時呼叫; 快取, newest-first)
+        void LoadSttHistory()
+        {
+            var list = new List<(double epoch, string text)>();
+            try
+            {
+                string dir = Path.Combine(GetRepoRoot(), STT_DIR_RELATIVE);
+                if (Directory.Exists(dir))
+                    foreach (var f in Directory.GetFiles(dir, "stt_*.json")) list.AddRange(ParseSttFile(f));
+            }
+            catch { }
+            list.Sort((a, b) => b.epoch.CompareTo(a.epoch));
+            m_SttHistory = list; m_SttHistPage = 0;
+        }
+
+        void LoadOcrHistory()
+        {
+            var list = new List<(double epoch, string text)>();
+            try
+            {
+                string dir = Path.Combine(GetRepoRoot(), OCR_DIR_RELATIVE);
+                if (Directory.Exists(dir))
+                    foreach (var f in Directory.GetFiles(dir, "frame_*.json"))
+                    {
+                        var e = ParseOcrFile(f);
+                        if (e.text.Length > 0) list.Add(e);
+                    }
+            }
+            catch { }
+            list.Sort((a, b) => b.epoch.CompareTo(a.epoch));
+            m_OcrHistory = list; m_OcrHistPage = 0;
+        }
+
+        static List<(double epoch, string text)> ParseSttFile(string path)
+        {
+            var result = new List<(double epoch, string text)>();
+            try
+            {
+                var d = JsonData.ParseJson(File.ReadAllText(path));
+                if (d != null && d.Contains("segments") && d["segments"].IsArray)
+                {
+                    var segs = d["segments"];
+                    for (int i = 0; i < segs.Count; i++)
+                    {
+                        string t = (segs[i].GetString("text", "") ?? "").Trim();
+                        if (t.Length == 0) continue;
+                        double ep = segs[i].GetDouble("end_epoch", segs[i].GetDouble("start_epoch", 0));
+                        result.Add((ep, t));
+                    }
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        static (double epoch, string text) ParseOcrFile(string path)
+        {
+            try
+            {
+                var d = JsonData.ParseJson(File.ReadAllText(path));
+                if (d == null) return (0, "");
+                string t = (d.GetString("text", "") ?? "").Trim();
+                double ep = d.GetDouble("ocr_at", d.GetDouble("mtime", 0));
+                return (ep, t);
+            }
+            catch { return (0, ""); }
+        }
+
+        static string EpochToHms(double epoch)
+        {
+            if (epoch <= 0) return "--:--:--";
+            try { return DateTimeOffset.FromUnixTimeMilliseconds((long)(epoch * 1000.0)).LocalDateTime.ToString("HH:mm:ss"); }
+            catch { return "--:--:--"; }
+        }
+
+        // UI：最新 STT/OCR + 兩個可展開分頁歷史
+        void DrawSttOcrPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("🎙 STT / 📖 OCR（語音轉錄 / 字幕辨識）",
+                    new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
+                GUILayout.Label("🎙 最新 STT：" + (m_LatestSttText.Length == 0
+                    ? "(無 — daemon STT 未啟用或無音訊)" : $"[{m_LatestSttTime}] {m_LatestSttText}"), SubWrapStyle);
+                GUILayout.Label("📖 最新 OCR：" + (m_LatestOcrText.Length == 0
+                    ? "(無 — daemon OCR 未啟用或無字幕)" : $"[{m_LatestOcrTime}] {m_LatestOcrText}"), SubWrapStyle);
+
+                GUILayout.Space(4);
+                bool newStt = GUILayout.Toggle(m_ShowSttHistory,
+                    m_ShowSttHistory ? "▼ 隱藏歷史 STT" : "▶ 展開歷史 STT", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                if (newStt != m_ShowSttHistory) { m_ShowSttHistory = newStt; if (newStt) LoadSttHistory(); }
+                if (m_ShowSttHistory) DrawSubtitleHistory(m_SttHistory, ref m_SttHistPage, "STT", LoadSttHistory);
+
+                GUILayout.Space(2);
+                bool newOcr = GUILayout.Toggle(m_ShowOcrHistory,
+                    m_ShowOcrHistory ? "▼ 隱藏歷史 OCR" : "▶ 展開歷史 OCR", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                if (newOcr != m_ShowOcrHistory) { m_ShowOcrHistory = newOcr; if (newOcr) LoadOcrHistory(); }
+                if (m_ShowOcrHistory) DrawSubtitleHistory(m_OcrHistory, ref m_OcrHistPage, "OCR", LoadOcrHistory);
+            }
+        }
+
+        // 分頁歷史列表 — newest-first, page 0 = 最新頁 (仿聊天酒館分頁)
+        void DrawSubtitleHistory(List<(double epoch, string text)> list, ref int page, string label, Action reload)
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                if (list == null) { GUILayout.Label("(載入中…)"); return; }
+                int total = list.Count;
+                if (total == 0) { GUILayout.Label($"（{label} 歷史為空 — daemon 未啟用或還沒產出）"); return; }
+                int maxPage = (total - 1) / SttOcrPageSize;
+                if (page < 0) page = 0;
+                if (page > maxPage) page = maxPage;
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool oldE = GUI.enabled;
+                    GUI.enabled = page > 0;
+                    if (GUILayout.Button("◀ 較新", GUILayout.ExpandWidth(false))) page--;
+                    GUI.enabled = oldE;
+                    GUILayout.Label($"第 {page + 1}/{maxPage + 1} 頁（共 {total} 筆 · 每頁 {SttOcrPageSize}）", GUILayout.ExpandWidth(false));
+                    GUI.enabled = page < maxPage;
+                    if (GUILayout.Button("較舊 ▶", GUILayout.ExpandWidth(false))) page++;
+                    GUI.enabled = oldE;
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("🔄 重新整理", GUILayout.ExpandWidth(false))) reload();
+                }
+                int start = page * SttOcrPageSize;
+                int end = Math.Min(start + SttOcrPageSize, total);
+                for (int i = start; i < end; i++)
+                    GUILayout.Label($"[{EpochToHms(list[i].epoch)}] {list[i].text}", SubWrapStyle);
+            }
+        }
 
         // 讀 PID 檔 → 驗該 PID 是否為存活 process。檔缺 / 內容非數字 / process 不存在 → false。
         static bool IsPidAlive(string pidPath)

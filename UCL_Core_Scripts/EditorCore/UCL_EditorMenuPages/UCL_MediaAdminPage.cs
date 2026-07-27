@@ -8,6 +8,7 @@
 //          錄影開關歸錄影頁，影音辨識欄位歸本頁。UI 字串仿慣例 zh-Hant 硬編 (內部管理頁，不走 CodeLocalize)。
 #if UNITY_EDITOR
 using System.Globalization;
+using System.IO;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.EditorLib.AgentCommands.MediaAdmin;
@@ -228,12 +229,91 @@ namespace UCL.Core.EditorLib.Page
                 m_OcrHPct = EditorGUILayout.Slider("字幕帶高度 (0~1)", m_OcrHPct, 0.02f, 0.5f);
                 m_OcrMinConf = EditorGUILayout.Slider("最低信度過濾", m_OcrMinConf, 0f, 1f);
 
+                // 視覺化字幕帶位置 (Tim 2026-07-27) — 灰框=螢幕(16:9)、橘框=OCR 讀取的字幕帶
+                DrawOcrBandPreview();
+
                 using (new EditorGUI.DisabledScope(m_Busy || !m_ConfigLoaded))
                 {
                     if (GUILayout.Button("💾 套用 OCR 設定", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
                         ApplyConfig(sttOnly: false);
                 }
             }
+        }
+
+        // 當前畫面預覽底圖 (Tim 2026-07-27) — 墊在字幕帶預覽底下方便對齊字幕
+        Texture2D m_FramePreview;
+        long m_FramePreviewMtime = 0;
+        double m_LastFramePreviewLoad = -1;
+
+        // 讀 _screenstream/_latest.jpg → Texture (節流 ~1s, mtime 沒變不重載); 仿 UCL_ScreenStreamPage.ReloadPreview
+        void ReloadFramePreview()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (now - m_LastFramePreviewLoad < 1.0) return;
+            m_LastFramePreviewLoad = now;
+            try
+            {
+                string path = Path.Combine(UCL_RepoPath.RepoRoot, "AgentCommands", "_screenstream", "_latest.jpg");
+                if (!File.Exists(path)) return;
+                long mtime = new FileInfo(path).LastWriteTime.Ticks;
+                if (mtime == m_FramePreviewMtime && m_FramePreview != null) return;
+                byte[] bytes = File.ReadAllBytes(path);
+                if (m_FramePreview == null)
+                {
+                    m_FramePreview = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                    m_FramePreview.hideFlags = HideFlags.HideAndDontSave;
+                }
+                m_FramePreview.LoadImage(bytes);
+                m_FramePreviewMtime = mtime;
+            }
+            catch { /* fail-soft: 沒圖就回退灰底 */ }
+        }
+
+        // 字幕帶視覺化 (Tim 2026-07-27) — 有當前畫面則墊底圖對齊字幕、無則灰框；橘半透明=OCR 讀取的字幕帶。
+        // 物理意義：y_pct/h_pct 是抽象比例，疊在真畫面上讓人直接把橘框對準字幕；沒圖時退回純比例示意。
+        void DrawOcrBandPreview()
+        {
+            ReloadFramePreview();
+            bool hasImg = m_FramePreview != null && m_FramePreview.width > 4;
+            GUILayout.Label(hasImg
+                ? "字幕範圍預覽（底圖＝當前畫面，橘框＝OCR 字幕帶 — 把橘框對準字幕）:"
+                : "字幕範圍預覽（灰框＝螢幕，橘色＝OCR 字幕帶）:", WrapStyle);
+            float aspect = hasImg ? (float)m_FramePreview.width / Mathf.Max(1, m_FramePreview.height) : (16f / 9f);
+            float vizW = hasImg ? 360f : 240f;
+            float vizH = vizW / Mathf.Max(0.1f, aspect);
+            Rect box = GUILayoutUtility.GetRect(vizW, vizH, GUILayout.ExpandWidth(false));
+            // 底圖 (當前畫面, 滿框對齊) 或灰底
+            if (hasImg) GUI.DrawTexture(box, m_FramePreview, ScaleMode.StretchToFill);
+            else EditorGUI.DrawRect(box, new Color(0.13f, 0.13f, 0.16f));
+            DrawRectBorder(box, new Color(0.65f, 0.65f, 0.72f), 1.5f);
+            // 字幕帶 (依 y_pct 起始、h_pct 高度、滿寬；clamp 不超出螢幕底)
+            float y0 = Mathf.Clamp01(m_OcrYPct);
+            float h = Mathf.Clamp(m_OcrHPct, 0f, 1f);
+            float bandY = box.y + y0 * box.height;
+            float bandH = h * box.height;
+            if (bandY + bandH > box.yMax) bandH = Mathf.Max(0f, box.yMax - bandY);
+            bool offScreen = y0 >= 0.999f || bandH <= 0.5f;
+            if (!offScreen)
+            {
+                var bandRect = new Rect(box.x, bandY, box.width, bandH);
+                EditorGUI.DrawRect(bandRect, new Color(1f, 0.6f, 0.1f, 0.55f));
+                DrawRectBorder(bandRect, new Color(1f, 0.7f, 0.2f), 1f);
+            }
+            int pctTop = Mathf.RoundToInt(y0 * 100f);
+            int pctBot = Mathf.RoundToInt(Mathf.Min(1f, y0 + h) * 100f);
+            if (offScreen)
+                GUILayout.Label($"⚠ 起始 y={m_OcrYPct:0.##} 太高，字幕帶超出畫面 → OCR 只掃到空白。字幕通常在畫面 85%~98%，把「起始 y」往下調。", WrapStyle);
+            else
+                GUILayout.Label($"字幕帶：畫面高度 {pctTop}% ~ {pctBot}%（滿寬）。字幕若沒被橘框罩到，調「起始 y」對準它。", WrapStyle);
+        }
+
+        // 畫矩形邊框（四條 t 粗細的線）
+        static void DrawRectBorder(Rect r, Color c, float t)
+        {
+            EditorGUI.DrawRect(new Rect(r.x, r.y, r.width, t), c);
+            EditorGUI.DrawRect(new Rect(r.x, r.yMax - t, r.width, t), c);
+            EditorGUI.DrawRect(new Rect(r.x, r.y, t, r.height), c);
+            EditorGUI.DrawRect(new Rect(r.xMax - t, r.y, t, r.height), c);
         }
 
         // 區塊 5：STT 試錄 — 委派專案端 audio_transcribe.py live N（擷取為 wall-clock 阻塞）

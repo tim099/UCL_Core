@@ -1182,9 +1182,11 @@ namespace UCL.Core.EditorLib.Page
                     // Sample name 必須 stable（dict key）；每頁最多 MessagePageSize 列 → 每幀 render 成本固定
                     using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView/rows"))
                     {
-                        foreach (var m in m_MessagesCache)
+                        // 反向渲染：m_MessagesCache 是 oldest-first (paging 的 GetRange 依賴此序不動)，
+                        // 但顯示要「最新在最上面」(Tim 2026-07-27) → 倒著繪，最新 seq 在頂端。
+                        for (int i = m_MessagesCache.Count - 1; i >= 0; i--)
                         {
-                            DrawMessageRow(m);
+                            DrawMessageRow(m_MessagesCache[i]);
                         }
                     }
                 }

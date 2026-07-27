@@ -190,7 +190,14 @@ def _parse_ocr_result(result, min_confidence: float) -> str:
             if not item or len(item) < 3:
                 continue
             box, text, conf = item[0], item[1], item[2]
-            if conf is None or conf < min_confidence:
+            # ⚠ 部分 rapidocr_onnxruntime 版本回傳 conf 為「字串」(e.g. "0.998")；直接 conf < min_confidence
+            #   會 str < float → TypeError → 被下方 except 吞掉 → 整幀回 "" (OCR 長期 0 命中真兇, 2026-07-27 Tim QA)。
+            #   一律先 float() 強制轉數值再比。
+            try:
+                conf_f = float(conf)
+            except (TypeError, ValueError):
+                conf_f = 0.0
+            if conf_f < min_confidence:
                 continue
             if not text or not text.strip():
                 continue

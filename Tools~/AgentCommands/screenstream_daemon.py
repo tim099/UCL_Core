@@ -590,6 +590,7 @@ def main_loop() -> int:
     # 數值影響: pool 失敗 = None → submit skip (fail-soft, daemon 主流程不受影響)
     ocr_pool = None
     last_ocr_enabled = False
+    last_ocr_band = None   # T-OCR-AutoRestart: (y_pct, h_pct, min_conf, workers) 快照, 變更→自動重起 pool
     # T-STT-Cache — STT worker lifecycle 跟 stt_enabled 同步 (對偶 ocr_pool)
     stt_worker = None
     last_stt_enabled = False
@@ -752,6 +753,25 @@ def main_loop() -> int:
             # 物理意義: toggle on → 起 worker pool (per-thread RapidOCR engine); off → stop 釋放 threads
             # 數值影響: y/h/conf/workers 改動需 toggle off→on 重起 pool 才生效 (跟 audio viz 同慣例)
             curr_ocr_enabled = bool(cfg.get("ocr_enabled", False))
+            # T-OCR-AutoRestart (Tim 2026-07-27) — 對偶 T-STT-AutoRestart：pool 運行中偵測 band/conf/workers
+            #   任一改變 → 自動 stop 讓下方 enabled-transition 以新設定重起。消滅「改字幕帶位置按套用卻沒 toggle
+            #   = 靜默沿用舊 band」bug (OcrWorkerPool 的 y/h/conf/workers 綁建構子, 中途不可熱改)。
+            curr_ocr_band = (
+                round(float(cfg.get("ocr_y_pct", 0.78)), 4),
+                round(float(cfg.get("ocr_h_pct", 0.12)), 4),
+                round(float(cfg.get("ocr_min_conf", 0.5)), 4),
+                int(cfg.get("ocr_workers", 2)),
+            )
+            if ocr_pool is not None and last_ocr_band is not None and curr_ocr_band != last_ocr_band:
+                log(f"ocr 設定改變 → 自動重起 pool 套用 (band y={curr_ocr_band[0]} h={curr_ocr_band[1]} "
+                    f"min_conf={curr_ocr_band[2]} workers={curr_ocr_band[3]})")
+                try:
+                    ocr_pool.stop()
+                except Exception as e:
+                    log(f"ocr pool stop fail (auto-restart): {e}", "WARN")
+                ocr_pool = None
+                last_ocr_enabled = False   # 强制走下方 enabled-transition 的啟動分支重起
+            last_ocr_band = curr_ocr_band
             if curr_ocr_enabled != last_ocr_enabled:
                 if curr_ocr_enabled:
                     try:

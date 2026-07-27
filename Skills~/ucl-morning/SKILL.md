@@ -36,7 +36,11 @@ description: |
 6. awakening.py morning --agent <X> --model <Y> --persona <Z>
    [--explicit-persona | --strict-persona | --rebind-agent | --fork-name <N>]
 7. 走酒館 self-intro post (--arg persona 必帶)
-8. 長期記憶 (T2): 先林(digest)後樹(昨夜 letter); OVERDUE gap≥門檻 → MUST 補 consolidate
+8. 記憶接續 (五層): morning 自動生成 `letters/<persona>/_wake_brief.md` → **Read 那一份就好**
+   (§1 見根必讀索引 / §2 見叢交棒清單 / §3 見森 / §4 見林摘要 / §5 見樹昨夜信 / §6 維護狀態;
+    超 1000 行的部分分檔 `_wake_brief_part2.md` 可視情況續讀)
+   brief §6 印 OVERDUE → MUST 補: 見林 `consolidate` → **抽 fragment** → `root-index`;
+   見森待折 → `consolidate --level forest`; 見叢隨時可 `keys --add`(不限儀式)
 ```
 
 ## ⛔ 不可做
@@ -47,3 +51,5 @@ description: |
 - ❌ Form 1 同 session re-trigger 還 fork(該 reuse no-op)；Form 2/3 顯式名字已在線卻沒加 --explicit-persona(T01 違規)。
 - ❌ 同 session_key collision 時 silent reuse — 必須 --strict-persona。
 - ❌ Step 8 OVERDUE 卻跳過 consolidate — 沒走完 protocol。
+- ❌ 見林寫完卻沒抽 fragment / 沒跑 root-index — 關鍵記憶沒進見根 = 下次醒來讀不到。
+- ❌ 手改 `_wake_brief.md` 或 `_root_index.md` — 機械生成產物，下次覆寫；要改去改 fragment 檔。

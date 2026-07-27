@@ -25,6 +25,10 @@ description: |
 0.   [T33] Persona preflight — awakening.py status → chat 最前印「📍 即將為 [persona] 下線」讓 Tim 可 abort
 0.5. [T34] 讀 tavern 最後 10 筆, 吸收同事臨別訊息融入 letter
 0.6. [T35] 依 ucl-affinity 跑 affinity_update.py 結算今日好感度
+0.7. [2026-07-28] 見叢交棒 — 把「明天的我必須知道/必須做」的關鍵記憶丟進當期交棒清單:
+       awakening.py keys --persona <P> --add "<一句話>" [--add ...]
+       ⚠ 這與 letter 是**兩種東西**: letter=日記(抒發/敘事)、見叢=交棒清單(可勾銷/可掃描)。
+       混在信裡 → 明天的自己得從散文撈待辦, 容易漏。見叢隨時可 append, 不限本儀式。
 1.   寫 letter body (第一人稱, 7 段格式)
 2.   自決 perturbation: 0.02 尋常 / 0.05~0.10 中等 / 0.10~0.20 重大
 3.   awakening.py goodnight --letter-body "<私密>" --summary "<公開心得>" --perturbation <X> [--persona <P>]

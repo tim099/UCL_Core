@@ -29,16 +29,40 @@ letter 是 persona-level subjective reframe — basecamp 寫的 framing 校正�
 
 ```
 AgentCommands/ChatTavern/baton/letters/<persona>/
-  ├── <UTC_ts>.md          (T1 episodic: timestamped letter, 不覆寫 — 累積成 chain)
+  ├── <UTC_ts>.md          (T1 見樹 episodic: timestamped letter, 不覆寫 — 累積成 chain)
   ├── <UTC_ts>.md
   ├── _latest.md           (覆寫 pointer 給快查, per-persona 不互蓋)
-  └── longterm/            (T2 長期記憶, Tim 2026-06-15)
+  ├── _keys_open.md        (T1.5 見叢: 當期交棒清單, checkbox, 隨時 append)
+  ├── keys/wake_<N>-<M>.md (見叢歸檔 — 見林寫入時與窗口同步關閉)
+  ├── _wake_brief.md       (機械生成: 五層彙整單一可直讀文本, morning 每次重生成)
+  ├── _wake_brief_part2.md (主檔超 1000 行時的續讀檔; 沒溢出時自動移除)
+  ├── fragments/           (T4 見根, Tim 2026-07-28)
+  │   ├── <type>_<slug>.md (關鍵記憶片段 — **唯一事實來源, 寫一次不改寫**)
+  │   └── _root_index.md   (機械生成必讀索引: open + 踩過次數降冪)
+  └── longterm/            (T2 見林, Tim 2026-06-15)
       ├── wake_<N>-<M>.md  (一段期間反思濃縮的 digest)
-      └── _index.md        (digest 列表)
+      ├── _index.md        (digest 列表)
+      └── forest/          (T3 見森, Tim 2026-07-28)
+          └── gen_<NNN>_wake_001-<M>.md  (跨段縱向敘事; append-only, 舊世代全留)
 ```
 
-**三層記憶 (同構 reading-library 章→arc→卷)**：T1 每晚 letter(樹) / **T2 longterm digest(林) — 每隔 ~10 wake 或重要節點, 把該段 letters 反思濃縮成一篇** / T3 未來 digest-of-digests。
-morning 讀取「先林後樹」: 近期 T2 digest → 昨夜 _latest; fork 初醒額外讀母 persona 最新 digest 一次。整理機制走 `awakening.py consolidate`, overdue 檢查在 [[ucl-morning]] Step 8。
+**五層記憶（2026-07-28 擴充；原三層 2026-06-15）**
+| 層 | 名稱 | 涵蓋 | 產生 |
+|---|---|---|---|
+| T1 | 見樹 | 昨夜 1 封（日記／抒發） | goodnight |
+| T1.5 | 見叢 | 當期數夜的交棒清單（可勾銷／執行用） | 隨時 `keys --add`，見林時歸檔 |
+| T2 | 見林 | ~10 夜反思濃縮 | `consolidate` |
+| T3 | 見森 | 第 5 份見林起，跨段縱向敘事（rolling fold：上代森＋新林 2 份輸入） | `consolidate --level forest` |
+| T4 | 見根 | 關鍵記憶片段 + 機械索引（**貫穿全層的必讀**） | 見林時抽 → `root-index` |
+
+**防漂移核心**：fragment 檔是**唯一事實來源**，內容寫一次之後不改寫；見樹/叢/林/森/索引全部只是視圖。
+所以折疊（fold）是「集合聯集 + 重排」而非「重寫散文」——消除 rolling summary 的傳話遊戲式漂移。
+見根索引與 wake brief 皆為**機械生成**（可重建、可 diff、手改會被覆寫）。
+
+**morning 讀取**：只 Read 一份 `_wake_brief.md`（§1 見根 → §2 見叢 → §3 見森 → §4 見林摘要 → §5 見樹 → §6 維護狀態）；
+fork 初醒額外讀母 persona 最新見森（無森則見林）。整理機制走 `awakening.py consolidate / root-index / keys / brief`，
+overdue 檢查在 [[ucl-morning]] Step 8。醒超過 30 次卻沒抽過 fragment → 跑一次
+[`Memory_Fragment_Backfill_Workflow.md`](Memory_Fragment_Backfill_Workflow.md) 回溯補抽。
 
 範例：
 ```

@@ -94,17 +94,40 @@ Step 7. 走酒館 self-intro post (per ucl-letters-to-self 5 段格式):
             --arg body="[persona: <X> 大小姐] 報到 ..."
         Caller discipline: --arg persona 必帶 (Discord display 修復)
 
-Step 8. 長期記憶 (T2, Tim 2026-06-15). morning 輸出末尾「🧠 長期記憶 (T2)」block 指引:
-        (a) 見林 → 讀近期 digest (longterm/_index.md 最新一篇);
-            見樹 → 讀昨夜 letter (_latest.md). 順序:先林後樹。
-        (b) fork 初醒 (wake_count==1 且有 forked_from) → 額外讀母 persona 最新 digest 接血統。
-        (c) overdue 整理: block 印「⚠ OVERDUE: gap=N (門檻 10)」時 MUST 補整理:
+Step 8. 記憶接續 (五層, Tim 2026-07-28 擴充; 原 T2 兩層 2026-06-15).
+        morning 末尾自動「刷新見根索引 → 生成 wake brief」, 輸出印一行:
+            📖 記憶接續 — 讀這一份就好 → letters/<persona>/_wake_brief.md
+        (a) **主動作只有一個: Read 那份 brief**。它是機械生成的五層彙整:
+            §1 見根 (fragments/_root_index.md, 必讀關鍵記憶, inline)
+            §2 見叢 (_keys_open.md 當期交棒清單未勾銷項, inline)
+            §3 見森 (longterm/forest/ 最新一代縱向敘事, inline)
+            §4 見林 (最新 digest 摘要 + 路徑; 全文太長, 細節已被 fragment 抽走)
+            §5 見樹 (昨夜 letter 全文, inline)
+            §6 記憶維護狀態 (見林 gap / 見森待折 / fork 初醒提示)
+            主檔上限 1000 行; 超出區塊整段移到 _wake_brief_part2.md (不砍內容),
+            主檔末尾列「可續讀」清單 → 視情況再讀。手改 brief 無效 (下次覆寫)。
+        (b) fork 初醒 (wake_count==1 且有 forked_from) → brief §6 會提示額外讀母 persona
+            的最新見森 (無森則見林) 接血統。
+        (c) 見林 overdue: brief §6 印「⚠ 見林 OVERDUE gap=N/門檻」時 MUST 補整理:
             1) awakening.py consolidate --persona <X>  → 看 span + 待濃縮 letters
             2) 讀那批 letters, 反思濃縮 (跨夜主題/沉澱教訓/關係演變/identity 漂移/
                未解線/這個時代一句精華), 不機械貼信
             3) awakening.py consolidate --persona <X> --digest-body "<濃縮>" → 寫入 + 更新進度
+            4) **寫完 digest 後抽 fragment** (Tim 拍板「fragment 在見林時抽」, goodnight 保持輕):
+               寫 fragments/<type>_<slug>.md → awakening.py root-index --persona <X> 重建索引。
+               同一教訓再踩到 = 追加 origin + bump recurrence, 不開新檔;
+               每個 origin 標 layer (Syntactic/Identity/Status/Content/Aggregate) + 當次 context。
+               consolidate 寫入後會自動歸檔當期見叢並提示上列動作。
             門檻預設 10; 重要節點 (fork / 重大 reframe / compact 大關) 可自決提前。
             整理是 morning ritual 一部分 — overdue 卻跳過 = 沒走完 protocol。
+        (d) 見森 (T3): 第 5 份見林起可折。brief §6 印「⚠ 見森待折」時:
+            awakening.py consolidate --persona <X> --level forest   (不帶 body = 看狀態與輸入清單)
+            首折讀全部見林 (唯一多輸入); 之後 rolling fold 只讀「上代森 + 新見林」2 份,
+            成本不隨壽命成長。舊世代全保留 (append-only)。
+        (e) 見叢 (T1.5): 隨時可 append, 不限儀式 (撞到未解線就當場丟, 別等 goodnight):
+            awakening.py keys --persona <X> --add "<一句話>"
+        (f) 醒超過 30 次卻從未抽過 fragment → 跑一次回溯補抽:
+            ucl_core:Docs~/zh-Hant/Workflows/Memory_Fragment_Backfill_Workflow.md
 ```
 
 ## Morning ⛔ 不可做

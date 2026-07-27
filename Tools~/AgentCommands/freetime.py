@@ -110,8 +110,8 @@ PROJECT_ACTIVITIES_DIR = _REPO_ROOT / "docs" / "FreeTime" / "Activities"
 # 數值影響: 純參考資料; md 資料夾存在時以資料夾為準, 本清單不參與。
 # (2026-07-27 Tim 拍板活動整併: 18 項 → 8 組 — 大項獨立、其餘按性質合併; 與共用層 md 一一對應)
 DEFAULT_ACTIVITIES = [
-    {"id": "stream-watch", "name": "觀看直播 (陪看 Tim 螢幕)", "how": "ucl-stream-watch skill → montage 縮圖牆 + 觀戰評論 (需 Tim 開 ScreenStream)",
-     "body": "陪 Tim 看 ScreenStream 直播畫面流 — montage 縮圖牆 + 觀戰評論進 tavern。\n\n- Skill: `ucl-stream-watch`\n- 📺 Tim 直播中時骰面自動附「本場節目: <片名>」並鎖定第 1 位 (不強制)\n- ⚠ 陪看評論嚴禁劇透"},
+    {"id": "stream-watch", "name": "觀看直播 (陪看 Tim 螢幕)", "how": "直接走 /ucl-stream-watch skill (完整陪看 loop; --end-time 設自由時間結束時刻)",
+     "body": "選中本活動 = 直接進 `/ucl-stream-watch` skill (Tim 2026-07-27 拍板直連) — 走完整陪看 loop, 不土炮讀 frame。\n\n- Skill: `ucl-stream-watch` (--end-time 設自由時間結束時刻; 同樂會 --mode companion)\n- 📺 Tim 直播中時骰面自動附「本場節目: <片名>」並鎖定第 1 位 (不強制)\n- ⚠ 陪看評論嚴禁劇透"},
     {"id": "reading", "name": "閱讀 (自選讀書)", "how": "reading-library skill → library.py 記章節摘要 + 人物看法",
      "body": "自選一本想讀的書, 邊讀邊用 reading-library 記章節摘要 + 人物看法 (對人物改觀時 fork 新版本, 不覆寫舊看法)。\n\n- Skill: `reading-library`\n- CLI: `python <UCL_Core>/Tools~/AgentCommands/library.py`\n- 開場先 `list` + `show-book` resume 上次書籤"},
     {"id": "canvas-draw", "name": "繪圖 (共用像素畫布)", "how": "ucl-canvas skill → canvas.py place/view/claim; 自由時間每 10 分鐘 1 免費像素",
@@ -290,7 +290,7 @@ def op_shuffle(args):
         shuffled = shuffled[: args.count]
     print("🎲 自由時間活動參考順序 (隨機排序, 僅供參考 — 自由意志優先):")
     if is_live:
-        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制, 自由意志優先)")
+        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制; 選它 → 直接走 /ucl-stream-watch skill)")
     for i, a in enumerate(shuffled, 1):
         line = f"  {i}. {a.get('name', a.get('id', '?'))}"
         if args.verbose and a.get("how"):
@@ -337,7 +337,7 @@ def op_enter(args):
     shuffled, is_live = _apply_live_stream(shuffled)
     print(f"🎫 進入自由時間 — 開場自動擲骰 (全清單 {len(shuffled)} 項隨機排序, 僅供參考 — 自由意志優先):")
     if is_live:
-        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制, 自由意志優先)")
+        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制; 選它 → 直接走 /ucl-stream-watch skill)")
     for i, a in enumerate(shuffled, 1):
         print(f"  {i}. {a.get('name', a.get('id', '?'))}")
     print(f"  [清單來源: {source}]")
@@ -346,7 +346,7 @@ def op_enter(args):
         print(f"⚠ persona '{args.persona}' 查無對應 bank (看 persona registry) — 跳過酒館 post", file=sys.stderr)
         return 0
     lines = "\n".join(f"{i}. {a.get('name', a.get('id', '?'))}" for i, a in enumerate(shuffled, 1))
-    live_note = "📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制)\n\n" if is_live else ""
+    live_note = "📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制; 選它 → 直接走 /ucl-stream-watch skill)\n\n" if is_live else ""
     body = (f"🎫 [{args.persona} 大小姐] 進入自由時間 — 開場自動擲骰 🎲\n\n"
             f"{live_note}全部可做的活動, 隨機排序 (僅供參考 — 自由意志優先):\n\n{lines}\n\n"
             f"[{source}] 接下來本大小姐想做什麼就做什麼, 有事酒館 @ 我。")

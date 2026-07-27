@@ -208,6 +208,61 @@ def _probe_import(mod: str):
         return False, f"{type(e).__name__}: {e}"
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# CUDA 不可用診斷 — 分辨「驅動太舊」vs「torch 是 CPU wheel」vs「無 GPU」
+# 物理意義: torch.cuda.is_available()=False 有多種原因，最常見且最易誤判的是
+#          「驅動支援的 CUDA 版 < torch 編譯的 CUDA 版」(驅動太舊)。此時重裝 torch 無用，
+#          要更新 NVIDIA 驅動。用 nvidia-smi 抓驅動端 CUDA 版跟 torch.version.cuda 比對。
+# (2026-07-27 Tim QA: RTX 2060 驅動 457.51=CUDA11.1 撞 torch cu126，誤導提示 install --torch-cuda)
+# ─────────────────────────────────────────────────────────────────────────
+def _ver_tuple(s):
+    try:
+        return tuple(int(x) for x in str(s).strip().split("."))
+    except Exception:
+        return ()
+
+
+def _nvidia_smi_info():
+    """回 (gpu_name, driver_ver, driver_cuda_ver) 或 None (無 nvidia-smi / 無 NVIDIA GPU)。"""
+    import subprocess
+    import re
+    try:
+        out = subprocess.run(
+            ["nvidia-smi"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=15,
+        ).stdout or ""
+    except Exception:
+        return None
+    if "Driver Version" not in out:
+        return None
+    drv = re.search(r"Driver Version:\s*([\d.]+)", out)
+    cud = re.search(r"CUDA Version:\s*([\d.]+)", out)
+    gpu = re.search(r"\|\s*\d+\s+(.+?)\s+(?:TCC|WDDM|On|Off)\b", out)
+    return (
+        gpu.group(1).strip() if gpu else "NVIDIA GPU",
+        drv.group(1) if drv else "?",
+        cud.group(1) if cud else None,
+    )
+
+
+def _cuda_unavailable_hint(torch) -> str:
+    """CUDA 不可用時的可行動提示 — 判斷根因給對的解法 (不要一律叫人重裝 torch)。"""
+    tcuda = getattr(getattr(torch, "version", None), "cuda", None)  # torch 編譯的 CUDA 版, e.g. "12.6"
+    # torch 本身若是 CPU wheel (+cpu 或 version.cuda=None) → 重裝 GPU 版才對
+    tver = str(getattr(torch, "__version__", ""))
+    if tcuda is None or "+cpu" in tver:
+        return "⚠ 不可用 (CPU only) — torch 是 CPU 版 (無 CUDA)，用 install --torch-cuda 換 GPU 版"
+    info = _nvidia_smi_info()
+    if info is None:
+        return "⚠ 不可用 (CPU only) — 未偵測到 NVIDIA GPU / 驅動 (nvidia-smi 不可用)；獨顯請先安裝驅動"
+    gpu, drv, drv_cuda = info
+    if drv_cuda and _ver_tuple(drv_cuda) < _ver_tuple(tcuda):
+        return (f"⚠ 不可用 (CPU only) — 驅動太舊：{gpu} 驅動 {drv} 僅支援 CUDA {drv_cuda}，"
+                f"但 torch 是 CUDA {tcuda} 版。請【更新 NVIDIA 驅動】(不是重裝 torch — torch 已是 GPU 版)")
+    return (f"⚠ 不可用 (CPU only) — {gpu} 驅動 {drv} (支援 CUDA {drv_cuda})、torch CUDA {tcuda} 版本相容卻不可用；"
+            f"檢查 CUDA_VISIBLE_DEVICES 是否被清空、或 torch 安裝是否毀損")
+
+
 def op_status() -> int:
     # 區塊職責：一頁式健檢 — 依賴 / GPU / config, 給管理頁「狀態」面板直接顯示
     _ensure_user_site()
@@ -227,8 +282,10 @@ def op_status() -> int:
         try:
             import torch  # noqa: F811 — 上面 probe 已確認可 import
             cuda = torch.cuda.is_available()
-            dev = torch.cuda.get_device_name(0) if cuda else "CPU only"
-            lines.append(f"  CUDA           : {'✅ ' + dev if cuda else '⚠ 不可用 (' + dev + ') — 可用 install --torch-cuda 換 GPU 版'}")
+            if cuda:
+                lines.append(f"  CUDA           : ✅ {torch.cuda.get_device_name(0)}")
+            else:
+                lines.append(f"  CUDA           : {_cuda_unavailable_hint(torch)}")
             # 安裝位置標示 — 分辨 system site vs user-site (雙包遮蔽診斷用, 2026-07-26 Tim QA 案例)
             tfile = str(getattr(torch, "__file__", ""))
             loc = "user-site" if "Roaming" in tfile else ("system site" if "site-packages" in tfile else "?")
@@ -250,7 +307,15 @@ def op_status() -> int:
             import onnxruntime  # noqa: F811 — 上面 probe 已確認可 import
             providers = list(onnxruntime.get_available_providers())
             has_cuda = "CUDAExecutionProvider" in providers
-            lines.append(f"  OCR CUDA             : {'✅ CUDAExecutionProvider 可用' if has_cuda else '⚠ 僅 CPU (' + ', '.join(providers) + ') — 可用 install --ocr-cuda 換 GPU 版'}")
+            if has_cuda:
+                # provider「已註冊」≠ 實際能在 GPU 跑 — 同一張老驅動也會拖累 OCR CUDA (同 torch 根因)。
+                info = _nvidia_smi_info()
+                caveat = ""
+                if info and info[2] and _ver_tuple(info[2]) < (12, 0):
+                    caveat = f"（⚠ 但驅動僅支援 CUDA {info[2]}，實際 inference 可能 fallback CPU；更新驅動後再驗）"
+                lines.append(f"  OCR CUDA             : ✅ CUDAExecutionProvider 已註冊{caveat}")
+            else:
+                lines.append(f"  OCR CUDA             : ⚠ 僅 CPU ({', '.join(providers)}) — 可用 install --ocr-cuda 換 GPU 版")
         except Exception as e:
             lines.append(f"  OCR CUDA             : ⚠ 檢查失敗 ({e})")
     # --- 專案端工具 ---

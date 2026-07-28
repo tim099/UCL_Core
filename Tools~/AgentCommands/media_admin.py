@@ -145,7 +145,7 @@ def _ensure_user_site() -> None:
 
 # ===========================================================
 # 區塊：config 欄位白名單 — 「頁面可調」的 STT/OCR 欄位與型別
-# 物理意義: _config.json 還有 fps/resolution 等錄影欄位, 那些歸 RCG_ScreenStreamPage 管;
+# 物理意義: _config.json 還有 fps/resolution 等錄影欄位, 那些歸 UCL_ScreenStreamPage 管;
 #          本工具只動影音辨識相關欄位, 防止管理頁誤寫壞錄影設定。
 # 數值影響: stt_enabled 是「實效值」(daemon worker lifecycle 綁它, 且與錄影開關耦合),
 #          管理頁只讀不寫 — 可寫的是 stt_setting (Tim 意圖, 持久化) 等。

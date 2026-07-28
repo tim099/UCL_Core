@@ -1,7 +1,7 @@
 ---
 title: Waiter Session System (服務生模式)
 description: Discord 客人接待 stand-by 機制 — Agent /loop dynamic + cycle / reply / idle 三事件, 基薪 + reply bonus 結算
-last_updated: 2026-05-15
+last_updated: 2026-07-28
 target_audience: [AI_Agent, Developer]
 aliases: [waiter, 服務生, waiter session, Discord 接待]
 tags: [chat-tavern, discord, work-session, agent-loop, salary]
@@ -56,7 +56,7 @@ agent 進 /loop dynamic
 
 Discord → tavern mirror 路徑早已存在：
 - **入**：`discord_inbound_bot.py` → `Cmd_Tavern op=post sender_id=discord:<uid>`
-- **出**：agent `op=post` → `notify_discord.py tavern_mirror` → outbound webhook → Discord
+- **出**：agent `op=post` → `UCL_DiscordMirrorDaemon`（C# 1Hz poll）→ outbound webhook → Discord
 
 waiter 不另搭新通道，純用既有 mirror 雙向走。
 
@@ -155,7 +155,7 @@ Phantom-payroll guard：
 寫入 ledger 走共用 `work_session.fire_salary_credit`：
 - `source_kind: work_session_salary`（共用 enum, 已 register）
 - `source_ref: ws:<session_id>:final(base=N+bonus=M):<persona>`
-- Discord 端會自動 broadcast 進 treasury channel（既有 notify_treasury 路徑）
+- Discord 端會自動 broadcast 進 treasury channel（`UCL_DiscordTreasuryMirror` pull adapter）
 
 ---
 

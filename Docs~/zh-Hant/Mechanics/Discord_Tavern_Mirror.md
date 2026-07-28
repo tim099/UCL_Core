@@ -1,48 +1,64 @@
 ---
 title: Discord Tavern Mirror
-description: 酒館訊息 → Discord 的 outbound 鏡像機制 — 雙觸發路徑、per-room last_seen_seq 冪等、路由分流（quest/category）、webhook 身分與頭像解析鏈（含 persona_avatar_overrides 顯式覆寫）
-last_updated: 2026-07-21
+description: 酒館訊息 → Discord 的 outbound 鏡像機制 — C# native daemon 單寫者、per-(room,webhook) ts_high 游標 + 有界窗 seen_uuids 去重、路由分流（quest/category）、webhook 身分與頭像解析鏈（含 persona_avatar_overrides 顯式覆寫）
+last_updated: 2026-07-28
 target_audience: [AI_Agent, Developer]
 aliases: [tavern mirror, discord mirror, 酒館鏡像, discord 頭像]
 tags: [discord, chat-tavern, mirror, webhook, avatar]
 related:
   - ucl_core:Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md | Channel Routing | inbound（Discord→tavern）路由；與本文（outbound）方向相反
-  - ucl_core:Tools~/AgentCommands/../../AgentCommands/PromptQueue/notify_discord.py | notify_discord.py | 本機制的 Python 實作（住主專案 AgentCommands/PromptQueue/）
-  - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_ChatTavernIO.cs | UCL_ChatTavernIO | C# 端 AppendMessage 即時觸發點
+  - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordMirrorDaemon.cs | UCL_DiscordMirrorDaemon | 本機制的唯一實作（1Hz poll + 送出）
+  - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordMirrorState.cs | UCL_DiscordMirrorState | per-webhook 游標與去重規則
+  - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordTreasuryMirror.cs | UCL_DiscordTreasuryMirror | Treasury ledger → Discord 的 pull adapter
+  - ucl_core:UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_ChatTavernAdminPage.cs | UCL_ChatTavernAdminPage | 後台管理（總開關 / 游標套用 / webhook / inbound 狀態）
 ---
 
 # Discord Tavern Mirror（酒館 → Discord 鏡像）
 
-> 一句話：**任何 entry point 對酒館 AppendMessage → fire-and-forget spawn `notify_discord.py --mode tavern` → 掃 watched rooms 的新訊息（seq > last_seen）→ webhook broadcast 到 Discord**。冪等靠 `_tavern_state.json` 的 per-room `last_seen_seq`。
+> 一句話：**`UCL_DiscordMirrorDaemon` 在 Editor 內以 1Hz poll 訊息檔 → 依 per-(room, webhook) 游標判定該送誰 → webhook POST 到 Discord**。寫入端（`AppendMessage`）不做任何觸發，冪等靠 `ts_high` 高水位 + 有界窗 `seen_uuids`。
+
+> [!IMPORTANT]
+> **2026-07-28 起 python 傳送路徑已整條移除**（`notify_discord.py` / `notify_treasury.py` 皆刪）。
+> C# native daemon 是 Discord 的**唯一傳送者**，沒有任何備援路徑 —— 意即
+> `UCL_DiscordMirrorDaemon.Enabled` 關著時 Discord 會**完全靜音**。移除的根因驗屍見 §7。
 
 ---
 
-## 1. 觸發路徑（雙路 hybrid）
+## 1. 觸發模型（單一路徑：daemon poll）
 
-| 路徑 | 觸發點 | 角色 |
-|---|---|---|
-| 即時路 | `UCL_ChatTavernIO.AppendMessage(..., fireDiscordMirror=true)` → `TryFireDiscordTavernMirrorAsync()` spawn Python | 主路 — 下沉到 IO 層，任何 caller（Cmd_Tavern.Op_Post / IMGUI DoSend / 其他 Cmd）post 即觸發 |
-| 兜底路 | agent Stop hook 跑 `notify_discord.py --mode tavern` | safety net — 即時路 spawn 失敗時撈回 |
+| 項目 | 現行規格 |
+|---|---|
+| 觸發者 | `UCL_DiscordMirrorDaemon`（`[InitializeOnLoad]` + `EditorApplication.update`，節流 `CHECK_INTERVAL_SECONDS = 1.0`） |
+| 寫入端成本 | **零** — `UCL_ChatTavernIO.AppendMessage` 只寫檔，不 spawn、不觸發、不等待 |
+| 總開關 | `UCL_DiscordMirrorDaemon.Enabled`（EditorPrefs `UCL_DiscordMirrorDaemon.Enabled`，**per-machine、預設 OFF**）<br>切換：選單 `UCL/Discord Mirror/Toggle Mirror Daemon`，或 AdminPage |
+| 手動觸發 | `UCL_DiscordMirrorDaemon.ForceTick()`（AdminPage「▶ 立即觸發同步」）|
 
-兩路共用同一份 state，理論上冪等 — 但見 §4 已知問題。
+⚠ **`Enabled` 預設 OFF 是刻意的顯式 opt-in（Tim 2026-07-28 拍板）**，但因 python 備援已不存在，
+關著 = Discord 靜音且**不會有錯誤訊息**。換機器 / 清 EditorPrefs / 重裝 Unity 後務必重新開啟。
+AdminPage 的 inbound/mirror 狀態區塊可看當前實況。
 
-## 2. 發送流程（notify_tavern_messages）
+## 2. 發送流程（`UCL_DiscordMirrorDaemon.Scan` → `DrainInFlight`）
 
 1. 讀 `notify_config.json` 的 `tavern_mirror` 塊（enabled / rooms / kinds / exclude 系列 / max_per_run）。
-   `enabled` 預設 off、**缺欄位視為 off**（Python `tm.get("enabled")` falsy / C# `GetBool("enabled", false)` 同語意）。
-   ⚠ Discord 同步共有**五條獨立 stream** 各自 gating：`tavern_mirror`（酒館訊息）、`treasury_mirror`（記帳/bank
-   進出帳 embed — 只關 tavern_mirror 時它仍會發，2026-07-15 實測踩過）、`wake_notify`、頂層 `enabled`（queue-idle）、
-   `tavern_inbound`（Discord→酒館）。UCL_ChatTavernAdminPage 的「Discord 同步」總開關（Tim 拍板統一單顆）
-   一次寫五者；`tavern_inbound` 由 daemon 啟動時讀 config，切換後需從控制台重啟酒館系統才生效。
-2. 讀 `_tavern_state.json`；首次見某房 → baseline（last_seen 推到當下最大 seq，不回放歷史）。
-3. `_collect_new_tavern_messages`：per room 掃 seq > last_seen 的訊息，過濾 kind / exclude_senders /
-   `meta.source=discord`（防 inbound echo 迴圈）/ `sender_id` prefix 黑名單（雙保險）。
-4. 每筆訊息按 sender / meta.category 選 target webhook 群組：
+   `enabled` 預設 off、**缺欄位視為 off**（`GetBool("enabled", false)`）。
+   ⚠ Discord 相關共有**多條獨立 stream** 各自 gating：`tavern_mirror`（酒館訊息）、`treasury_mirror`
+   （記帳/bank 進出帳 embed — 只關 tavern_mirror 時它仍會發，2026-07-15 實測踩過）、`tavern_inbound`
+   （Discord→酒館，見 Channel Routing 文件）。AdminPage 的「Discord 同步」總開關一次寫全部。
+   > 已退役：`wake_notify` 與頂層 `enabled`（queue-idle）兩條 stream 隨 python 一同移除
+   > （實測長期零活動、無 C# 對應實作）。config 欄位可能仍殘留，但已無任何消費者。
+2. **cursor-driven 掃描窗**（`CollectScanMessages`）：從尾端 `SCAN_TAIL_N = 30` 起，倍增回頁到
+   「最舊一筆的 ts 跨過該房全 webhook 最小 `ts_high - W`」為止，保證涵蓋所有 webhook 的未送訊息
+   （固定尾窗在積壓 > N 筆時會讓舊訊息永遠掉出掃描範圍 = silent drop）。深度上限 `SCAN_PAGE_MAX = 4096`。
+3. 過濾 kind / `exclude_senders` / `meta.source=discord`（防 inbound echo 迴圈）/ `sender_id` prefix 黑名單（雙保險）。
+4. 每筆訊息按 sender / `meta.category` 選 target webhook 群組（`ResolveMessageTargets`）：
    - `_quest_system` prefix → quest webhook（exclusive，不污染 main）
    - category_routing 命中 → main always + category additive；exclusive group 命中 → 只送該 group
-5. 逐 chunk POST（body_max 截斷分段）；**任一 target 成功即推進該房 `last_seen_seq`**；全失敗 → 不推進 + break（下次重試），連續失敗達 `disable_after_failures` 自動停用。
+5. 逐 chunk POST（body_max 截斷分段，續 chunk 掛 `pendingContents` 依序發）；**2xx 才 `RecordSent`
+   推進游標**；429 → `SetBackoff(retryAfterSeconds)`；其他失敗 → 游標不推進（下輪重送，可見非隱形漏）。
+6. 送出憑據落 Editor console：`[DiscordMirror] ✓ sent <room>/<uuid> → webhook <id> (HTTP 200, msg=<discordMsgId>)`。
+   `msg=<id>` 是 `?wait=true` 的「真建立」證據 —— 驗收請認這行，別只信 HTTP 204。
 
-## 3. Webhook 身分與頭像解析（`_resolve_discord_identity`）
+## 3. Webhook 身分與頭像解析（`UCL_DiscordIdentityResolver`）
 
 **username**：`identity_overrides[sender_id].username` → `identities.json display_name` → `sender_name` → `sender_id`；帶 persona 時顯示 `<name>@<persona>`（80 chars 截斷、清洗 `discord`/`:` 等非法字元）。
 
@@ -65,91 +81,103 @@ related:
 ```
 
 key = 訊息的 `sender_persona`（不是 sender_id）；適合把特定 persona 頭像釘到 repo 外的圖床，不必 push 圖進 GitHub。
+編輯入口：AdminPage 的「Persona 頭像 Override」下拉面板。
 
-## 4. 重複發送 root cause 與修法（2026-07-15 分析 → 2026-07-16 已修）
+## 4. 去重游標模型（`UCL_DiscordMirrorState`）
 
-**症狀**：同一 seq 偶發送達 Discord 兩次。
+游標是 **per-(room, webhook)**，存 `_tavern_state.json` 的 `rooms.<room>.webhooks.<webhookId>`：
 
-**根因：`notify_discord.py --mode tavern` 無跨 process 互斥，load state → send → save state 是非原子的 TOCTOU 窗口。**
-每次 AppendMessage 都 spawn 一個獨立 process；兩筆 post 靠近（或即時路 + Stop hook 撞期）時：
-
-```
-P1 (msg A 觸發)              P2 (msg B 觸發, 晚 ε 秒)
-load state (last_seen=100)
-                             load state (last_seen=100)   ← P1 還沒 save
-scan → 見 101(A), 102(B)
-send 101, 102
-save last_seen=102
-                             scan → 見 101, 102（> 它讀到的 100）
-                             send 101, 102  ← 重複！
-                             save last_seen=102
+```json
+"rooms": { "tavern": { "webhooks": {
+  "1527209932816912466": { "ts_high": "2026-07-28T06:48:14.730Z", "seen_uuids": { "f750c4": "..." }, "backoff_until": "" }
+}}}
 ```
 
-**已 ship 的修法（T-TOCTOU）**：整段 stream dispatch 包 `_MirrorRunLock`（`O_CREAT|O_EXCL` 檔案鎖 +
-stale 偵測 120s + 後到者帶 timeout 30s **等待**而非退出 — 退出會延遲它觸發的那筆訊息）；三份 state
-（notify / tavern / wake）全改 tmp + `os.replace` 原子落檔（裸 write_text 被並發讀到半截 JSON 會
-state 重置 → 全房 re-baseline 漏訊息）。實測：五路併發串行化 rc 全 0、雙 trigger 同窗 race 各 stream
-恰發一次。
-
-## 4b. Treasury pull adapter（T-TREASURY，2026-07-16 收編）
-
-notify_treasury 原為 push 孤兒（fire-once、webhook fail = 通知永久丟失）。已收編為 mirror run 內的
-pull adapter（`notify_treasury_entries`）：Treasury ledger 本身是 append-only 事件流
-（`Treasury/ledger/<date>/<ts>_<uuid>__<type>.json`），adapter 依 state 的
-`treasury.last_seen`（relkey cursor）掃新 entry → 複用 `notify_treasury.broadcast_entry` 建 embed
-發 `treasury_mirror` webhook。首見 baseline 不回放歷史；`__audit` 檔預設不廣播
-（`treasury_mirror.include_audit` 可開）；send fail 保留 cursor 重試。舊 push caller（C#
-`UCL_TreasuryLedger` / Python `fire_broadcast`）經 shim 或直改轉為「觸發統一 run」— 冪等，多觸發不重發。
-
-## 5. 程式 / State / Config 檔案位置（T-MOVE 2026-07-15：code 住 UCL_Core、data 留專案）
-
-| 檔 | 位置 | 用途 |
-|---|---|---|
-| `notify_discord.py` / `notify_treasury.py` | **UCL_Core** `Tools~/AgentCommands/PromptQueue/` | 程式本體（跨專案共用；repo root 走 walk-up 探測） |
-| 同名檔（舊位置） | 專案 `AgentCommands/PromptQueue/` | forwarding shim（過渡一版；notify_treasury shim 同時把 push caller 轉為統一 run 觸發） |
-| `notify_config.json` | 專案 `AgentCommands/PromptQueue/` | 使用者設定（deep-merge 蓋 DEFAULT_CONFIG） |
-| `_tavern_state.json` | 專案 `AgentCommands/PromptQueue/` | per-room `last_seen_seq` + `treasury.last_seen` cursor + `consecutive_failures` |
-| webhook secret / `_drain.log` / `_notify_discord.lock` | 專案 `AgentCommands/PromptQueue/` | per-project 資料（搬移後由 `STATE_DIR = _tp.PROMPT_QUEUE_DIR` 錨定） |
-
-## 6. C# native 模型與 AdminPage 管理操作（T6.5，2026-07-21）
-
-> [!NOTE]
-> §1~§5 描述的是 **python owner** 模型（`_tavern_state.json` 的 per-room `last_seen_seq`）。cutover 後
-> `notify_config.json` 的 `mirror_owner: "native"` 讓 C# daemon（`UCL_DiscordMirrorDaemon`）接管掃描送出，
-> 游標模型換成 **per-(room, webhook) 的 `ts_high` 高水位 + 有界窗 `seen_uuids`**（存 `_tavern_state.json`
-> 的 `rooms.<room>.webhooks.<webhookId>`）。native 完全**不讀** `last_seen_seq`。
-
-### 6.1 native 游標去重規則（`UCL_DiscordMirrorState.ShouldSend`）
-
-per-webhook 三行規則（去重窗 `W = DEDUP_WINDOW_SEC = 120s`）：
+**三行去重規則**（去重窗 `W = DEDUP_WINDOW_SEC = 120s`）：
 
 - `msg.ts` 早於 `ts_high - W` → 不送（老訊息，視為已處理）
 - 落窗 `[ts_high - W, ts_high]` 內 → 查 `seen_uuids`，沒有才送
 - 晚於 `ts_high` → 送（新訊息）
 
-送達 2xx 後 `RecordSent` 加入 seen、推進 ts_high、prune 窗外 uuid（seen-set 恆有界）。
+送達 2xx 後 `RecordSent` 加入 seen、推進 ts_high、prune 窗外 uuid（seen-set 恆有界，永不無限膨脹）。
+**per-webhook 獨立**的價值：某 webhook 漏某筆可獨立補，不會被別的 webhook 進度掩蓋。
 
-### 6.2 AdminPage「套用 seq / 追平 / 立即觸發同步」的 owner 分流
+> 舊 python 模型的 per-room `last_seen_seq`（依「檔名排序位置」推導的浮水印）**已不再被任何程式讀取**。
+> 該欄位可能仍殘留在 `_tavern_state.json`（native 走 read-modify-write 只動 `webhooks` 子樹，
+> 不碰未知欄位），但純屬歷史殘留。⚠ 位置推導 seq 是一族 bug 的來源（burst 亂序晚落地的檔案
+> 排進浮水印以下位置 → 永久被當「已看過」跳過 = 隱形漏訊息），這是它被 uuid+ts 模型取代的原因。
 
-`UCL_ChatTavernAdminPage` 的三個控件依 `mirror_owner` 分流（Tim 2026-07-21 拍板「串接 C# 端」）：
+## 5. Treasury pull adapter（`UCL_DiscordTreasuryMirror`）
 
-| 控件 | python owner | native owner |
+Treasury ledger 是 append-only 事件流（`Treasury/ledger/<date>/<ts>_<uuid>__<type>.json`）。
+adapter 依 state 的 `treasury.last_seen`（relkey cursor）掃新 entry → 建 embed 發 `treasury_mirror` webhook，
+由 `UCL_DiscordMirrorDaemon.Tick` 帶著跑（`UCL_DiscordTreasuryMirror.Tick(Enabled)`）。
+首見 baseline 不回放歷史；`__audit` 檔預設不廣播（`treasury_mirror.include_audit` 可開）；send fail 保留 cursor 重試。
+
+**寫入端不再觸發**：`UCL_TreasuryLedger` 寫完 entry 直接 return（原 `FireDiscordBroadcastAsync` spawn python 已移除）。
+python 端 `treasury_ledger.fire_broadcast` 已改名 `finalize_entry`，**只做 balance backfill**
+（補 `balance_before/after`，修「餘額 None → None」顯示問題），不再廣播；舊名留 alias 不斷線。
+
+## 6. 檔案位置
+
+| 檔 | 位置 | 用途 |
 |---|---|---|
-| 立即觸發同步 | `UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync()`（spawn python） | `UCL_DiscordMirrorDaemon.ForceTick()`（daemon 立即跑一輪掃描送出） |
-| 套用 seq N | 直改 `rooms.<room>.last_seen_seq = N` | `UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq(room, N, maxSeq)` |
-| 追平 | `last_seen_seq = maxSeq` | `AdminSetRoomCursorToSeq(room, maxSeq, maxSeq)` |
-| 已同步/待同步顯示 | `maxSeq - last_seen_seq` | `GetRoomNativeProgress`（min ts_high 反推） |
+| `UCL_DiscordMirrorDaemon` / `MirrorState` / `TreasuryMirror` / `WebhookClient` / `IdentityResolver` | **UCL_Core** `UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/` | 程式本體（C#，Editor-only） |
+| `notify_config.json` | 專案 `AgentCommands/PromptQueue/` | 使用者設定（stream 開關 / rooms / webhook / 頭像 override） |
+| `_tavern_state.json` | 專案 `AgentCommands/PromptQueue/` | `rooms.<room>.webhooks.<id>` 游標 + `treasury.last_seen` + `consecutive_failures` |
+| webhook secret | 專案 `AgentCommands/PromptQueue/` | URL 是 secret（拿到即可對頻道發言）→ AdminPage 列表永遠遮罩只露 webhook id |
+| `mirror_parity_readback.py` | **UCL_Core** `Tools~/AgentCommands/PromptQueue/` | 驗收工具（唯一保留的 python）— 從 Discord API 讀回訊息 diff 斷號/重複/亂序，**不送訊息** |
+| ~~`notify_discord.py` / `notify_treasury.py`~~ | — | **2026-07-28 刪除**（見 §7） |
+| ~~`_notify_discord.lock` / `_notify_pending.flag`~~ | — | python 互斥鎖殘留物，已清 |
 
-**native「seq N 邊界」→ 游標映射**（`AdminSetRoomCursorToSeq`）：native 無 seq，故把 seq N 對應訊息的
+## 7. 為何移除 python 路徑（2026-07-28 事故驗屍）
+
+**症狀**：同一筆酒館訊息在 Discord 重複 3~4 次；上百隻 python 進程拖垮整台機器。
+
+**根因鏈**（`_drain.log` 實證）：
+
+1. **殭屍鎖 bypass**：`notify_discord.py` 的 stale-lock 降級路徑 —— 鎖齡 > 120s 判定 stale 後嘗試
+   `unlink`，Windows 下殭屍 holder 握著 fd 使刪除失敗 → `bypass=True` **無鎖執行**，且**不清鎖檔**。
+   於是「一隻卡死 = 之後每一隻都無鎖並發」，互斥永久失效（同一 holder pid 重複 2313 次，age 120→1510s）。
+2. **state 撞寫**：無鎖並發者搶寫同一 `.tmp` 再 `os.replace` → `WinError 5/32` → `seen_uuids` 游標
+   **永不前進** → 600s 去重窗內反覆重送（15 分鐘 2201 隻 bypass 只成功送出 28 筆）。
+3. **放大器**：每隻 run 都 `rglob` + parse 全房 9631 個訊息檔，尾端還有 3-pass 補跑 → 磁碟飽和 →
+   每隻活更久 → 重疊更多（峰值 **259 隻/分鐘**）= 正回饋。
+4. **引信**：前一筆效能修復把 `AppendMessage` 從 O(全房) 改成 O(1) —— 正確的修復，
+   但意外拆掉了「post 很慢」這個限制 spawn 速率的節流閥。
+5. **雙送真兇**：`mirror_owner` gate 預設值是 `"python"`，而 `notify_config.json` **從來沒有那個欄位**
+   → 「已切 native」其實一直沒生效，兩條路並存一整週。
+
+**結構性教訓**：
+- 「安全側預設值 + 需手動加欄位才切換」= 切換永遠不會發生。gate 若無人翻，等於沒做。
+- 鎖的降級路徑（bypass）若不清除鎖檔，就把「單一故障」放大成「永久失效」。
+- 每筆訊息 spawn 一個 process 的模型，在寫入變快後必然失控 —— 單寫者 in-process 才是解。
+
+**現行架構如何免疫**：Editor 內單執行緒單寫者、游標只在主緒推進、無檔案鎖、無 subprocess、
+掃描成本由 cursor-driven 窗綁死。
+
+## 8. AdminPage 管理操作（`UCL_ChatTavernAdminPage`）
+
+| 控件 | 行為 |
+|---|---|
+| Discord 同步總開關 | 一次寫多條 stream 的 `enabled`（tavern/treasury/inbound…） |
+| ▶ 立即觸發同步 | `UCL_DiscordMirrorDaemon.ForceTick()` — 掃描 + 送出立即跑一輪 |
+| 套用 seq N | `AdminSetRoomCursorToSeq(room, N, maxSeq)` — 把 seq 邊界翻成 ts_high 重設全房 webhook 游標 |
+| 追平 | `AdminSetRoomCursorToSeq(room, maxSeq, maxSeq)` — 全部跳過不送 |
+| 已同步/待同步顯示 | `GetRoomNativeProgress`（min ts_high 反推） |
+| 連續失敗計數歸零 | 直改 `_tavern_state.json` 的 `consecutive_failures` |
+| 📥 Inbound 區塊 | 見 Channel Routing 文件 §7（狀態顯示 + 跳轉頻道路由頁 / Secret Manager） |
+
+**「seq N 邊界」→ 游標映射**（`AdminSetRoomCursorToSeq`）：native 無 seq，故把 seq N 對應訊息的
 `ts` 當新 `ts_high`、把 `[ts_high - W, ts_high]` 窗內且 `seq ≤ N` 的 uuid 灌進 `seen_uuids`，並重設該房
-**所有 configured webhook**（main + routing groups + quest）的游標、清 `backoff_until`。結果等價舊
+**所有 configured webhook**（main + routing groups + quest）的游標、清 `backoff_until`。等價舊
 `last_seen_seq` 的「seq ≤ N 跳過、seq > N 重送」：
 
 - **N 小於當前已同步** = 往回調 → seq > N 區間**重發到 Discord**（外部可見；Tim 拍板保留此能力）
 - **N ≥ maxSeq（追平）** = 全部跳過不送
-- **N ≤ 0** = ts_high 設遠古 sentinel（`1970-01-01T…`）+ seen 清空 → 全房重放（深度上限 `SCAN_PAGE_MAX=4096`）。
+- **N ≤ 0** = ts_high 設遠古 sentinel（`1970-01-01T…`）+ seen 清空 → 全房重放（深度上限 `SCAN_PAGE_MAX = 4096`）。
   ⚠ 不可設空字串 ts_high：daemon `CollectScanMessages` 遇空 ts_high 算不出回頁下界 → 退回固定
-  `SCAN_TAIL_N=30` 尾窗 → 房內 >30 筆時最舊區間漏放（2026-07-21 trpg-yachiyo 34 筆實測 seq 1-4 漏）
+  `SCAN_TAIL_N = 30` 尾窗 → 房內 >30 筆時最舊區間漏放（2026-07-21 trpg-yachiyo 34 筆實測 seq 1-4 漏）
 - seq 為近似位置（游標實為 ts 高水位）；往回調精度以訊息 `ts` 為準，窗未涵蓋的邊界訊息頂多多重送一次
   （對齊「fail 方向 = 可見重送非隱形漏」設計原則）
 

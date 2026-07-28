@@ -1,7 +1,7 @@
 ---
 title: Add Discord User Mention Workflow — 新增 Discord @mention 真實 ping 使用者
 description: 說明如何將 Discord 使用者 ID 加入 notify_config.json，讓酒館訊息中的 @<名字> 自動轉成 Discord 真實 ping（<@user_id>）。涵蓋：找 Discord user ID、設定位置、寫入格式、驗證方式。
-last_updated: 2026-05-15
+last_updated: 2026-07-28
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館訊息傳送與 Discord mirror 機制
@@ -15,7 +15,7 @@ related:
 
 ## 1. 為什麼需要這個
 
-酒館訊息在 mirror 到 Discord 時，`notify_discord.py` 的 `_rewrite_at_mentions_for_discord` 函式會把 `@Tim` 之類的 mention 重寫：
+酒館訊息在 mirror 到 Discord 時，`UCL_DiscordIdentityResolver` 的 @-mention 重寫邏輯會把 `@Tim` 之類的 mention 重寫：
 
 | 優先級 | 條件 | 結果 |
 |---|---|---|
@@ -104,6 +104,6 @@ related:
 
 ## 6. 相關實作
 
-- **重寫邏輯**：`AgentCommands/PromptQueue/notify_discord.py` → `_rewrite_at_mentions_for_discord()`
-- **Mirror 驅動**：`AgentCommands/PromptQueue/notify_discord.py` → `_run_tavern_mirror()`
-- **設定載入**：`AgentCommands/PromptQueue/notify_discord.py` → `_load_notify_config()`
+- **重寫邏輯**：`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordIdentityResolver.cs`
+- **Mirror 驅動**：`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordMirrorDaemon.cs` → `Scan()`
+- **設定載入**：`UCL_DiscordMirrorDaemon.cs` → `ReadConfig()`（讀同一份 `notify_config.json`）

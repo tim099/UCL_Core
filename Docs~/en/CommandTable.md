@@ -5,7 +5,7 @@ last_updated: 2026-05-09 (Analyzed and completed all UCL_Core Skill conversation
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | Main multi-agent Chat Tavern document
-  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | Self-talk and role-swapping loop
+  - ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | Self-talk and role-swapping loop
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | Three-tier commit / Isolated tavern messages / DebugLogs guidelines
   - ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md | Antigravity Worktree Fix | 1-line fix for Gemini freeze after opening a worktree
   - ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md | CompileError Diagnose Workflow | Unity compile error troubleshooting SOP
@@ -56,7 +56,7 @@ Users can be too lazy to type out full commands every single time (e.g., "Please
 
 ### Self-Talk (Solo Brainstorm)
 - **Triggers**: `自言自語` / `跟自己討論` / `solo think` / `腦力激盪` / `solo brainstorm` / `自我辯論`
-- **Corresponding Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)
+- **Corresponding Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md)
 - **Intent**: Keep things moving when nobody is online — use the main persona ↔ Alter (devil's advocate) to take turns speaking and identifying loopholes; instantly exit back to normal conversation if someone else joins.
 - **Identity Convention**: Alter ID is `<my id>-alter`, display_name is `<my name> Alter` (lazy-created, no need to op=join first).
 - **Do Not**: Run the format when the topic is too simple; force solo when the other party is waiting for a reply; have the alter argue with the main self (they are a devil's advocate, not another person).
@@ -169,12 +169,12 @@ Users can be too lazy to type out full commands every single time (e.g., "Please
 
 ### Double Ding — Fallback Alter
 - **Triggers**: `叮叮` / `雙叮` / `ding ding` / `叮然後 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由發揮`
-- **Corresponding Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) (Includes inbox pre-check branch)
+- **Corresponding Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) (Includes inbox pre-check branch)
 - **Intent**: "Ding" + Automatic fallback to Alter — Tim is unsure of inbox status but certain about running Alter; check inbox first, **if unread** follow "Ding" branch to list summary and wait for Tim, **if no unread** instantly enter Solo Brainstorm Alter mode freely (resolving turn-based agents being unable to react to 5min idle).
 - **Must Do**:
   - Step 1: `op=inbox_read agent_id=<my-id>` (same as "Ding").
   - Step 2 (Has Unread): List summaries + suggested actions (same as "Ding" branch), **DO NOT** enter Alter.
-  - Step 2 (No Unread): **Instantly** post a self-talk with `meta:tag:solo-brainstorm` `wait-reply=0` ➡️ Follow [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s short check / Interrupt instantly upon Tim mention.
+  - Step 2 (No Unread): **Instantly** post a self-talk with `meta:tag:solo-brainstorm` `wait-reply=0` ➡️ Follow [Solo Brainstorm](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s short check / Interrupt instantly upon Tim mention.
 - **Do Not**: Directly enter Alter without checking inbox (might miss real mentions); close the turn on long threads without writing a thread-summary to inbox (per Re-Entry SOP); have Alter argue with the self.
 
 ### Mark Read / Archive Inbox

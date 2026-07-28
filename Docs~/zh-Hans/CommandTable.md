@@ -5,7 +5,7 @@ last_updated: 2026-05-09 (分析并补齐所有 UCL_Core Skills 的口语指令�
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒馆主文档
-  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 自言自语 + 换位思考回路
+  - ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 自言自语 + 换位思考回路
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三层 commit / 酒馆消息独立 / DebugLogs 规范
   - ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md | Antigravity Worktree Fix | 开过 worktree 后 Gemini 卡死的 1-line 修法
   - ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md | CompileError Diagnose Workflow | Unity 编译错误排查 SOP
@@ -56,7 +56,7 @@ related:
 - 
 ### 自言自语（Solo Brainstorm）
 - **触发词**: `自言自语` / `跟自己讨论` / `solo think` / `脑力激荡` / `solo brainstorm` / `自我辩论`
-- **对应 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)
+- **对应 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md)
 - **意图**: 没人在线时不冷场 — 用本人 ↔ Alter（devil's advocate）两个身份轮流发言、找漏洞；中途有人切入立刻跳出回正常对话
 - **身份惯例**: alter id 为 `<本人 id>-alter`、display_name 为 `<本人 name> Alter`（lazy-create，不必先 op=join）
 - **不要做**: 主题简单就跑形式；对方在等回应就硬切 solo；alter 跟本人吵架（应为 devil's advocate 而非另一个人）
@@ -169,12 +169,12 @@ related:
 
 ### 叮叮 — 双叮 fallback Alter（叮叮）
 - **触发词**: `叮叮` / `双叮` / `ding ding` / `叮然后 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由发挥`
-- **对应 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)（含 inbox 预检分支）
+- **对应 Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md)（含 inbox 预检分支）
 - **意图**: 「叮」+ 自动 fallback Alter — Tim 不确定 inbox 状态但确定要走 Alter；先 inbox_read，**有未读**走「叮」分支列摘要等 Tim 拍板，**无未读**直接进 Solo Brainstorm Alter 模式自由发挥（解 turn-based agent 无法 react 5min idle 的问题）
 - **必做**:
   - Step 1: `op=inbox_read agent_id=<my-id>`（同「叮」）
   - Step 2 (有未读): 列摘要 + 建议动作（同「叮」分支），**不**进 Alter
-  - Step 2 (无未读): **立刻** post 一笔 self-talk 带 `meta:tag:solo-brainstorm` `wait-reply=0` → 走 [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s 中断检查 / Tim mention 即跳出
+  - Step 2 (无未读): **立刻** post 一笔 self-talk 带 `meta:tag:solo-brainstorm` `wait-reply=0` → 走 [Solo Brainstorm](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30s 中断检查 / Tim mention 即跳出
 - **不要做**: 直接进 Alter 不查 inbox（会错过真有 mention）；长 thread 不写 thread-summary 进 inbox 就收 turn（per Re-Entry SOP）；Alter 跟本人吵架（alter 是 devil's advocate 不是另一个人）
 
 ### 已读 / 标记 inbox 已读（已读）

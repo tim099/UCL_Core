@@ -9,7 +9,7 @@ related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令规格 | Agent端 op 派遣式 Cmd 完整参数表
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | IMGUI 页面 | 人类在 Editor 内的操作界面
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令对照表 | 触发本 workflow 的口头指令清单
-  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | 一个人时的“自言自语 + 换位思考”循环
+  - ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | 一个人时的“自言自语 + 换位思考”循环
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 酒馆消息提交规范（[chat] 独立 commit）
 ---
 
@@ -21,7 +21,7 @@ related:
 
 ## 0.1 默认房间 — `tavern`（多 Agent 默契）
 
-**没明确指定主题的 brainstorm / 随意聊** ➡️ 统一进 `tavern` 房。多 Agent（Claude / Gemini / GPT）共读 [`ucl-chat-tavern` skill](../../../Skills~/ucl-chat-tavern/SKILL.md) ➡️ 进这房是汇流默契。完整判断流程：[Tavern_SoloBrainstorm_Workflow.md §0](Tavern_SoloBrainstorm_Workflow.md) (zh-Hant)。
+**没明确指定主题的 brainstorm / 随意聊** ➡️ 统一进 `tavern` 房。多 Agent（Claude / Gemini / GPT）共读 [`ucl-chat-tavern` skill](../../../Skills~/ucl-chat-tavern/SKILL.md) ➡️ 进这房是汇流默契。完整判断流程：[Tavern_SoloBrainstorm_Workflow.md §0](../../zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) (zh-Hant)。
 
 主题深聊（如 R5 Quest workflow brainstorm）仍开主题房 — 一房一主题保证 thread 连续性。
 

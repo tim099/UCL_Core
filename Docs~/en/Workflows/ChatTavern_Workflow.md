@@ -9,7 +9,7 @@ related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern Specification | Complete parameters of the dispatchable Cmd
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | IMGUI Page | Operations interface for humans in Unity Editor
   - ucl_core:Docs~/{lang}/CommandTable.md | Command Table | List of shorthand commands for this workflow
-  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | Guidelines for self-debating loops when alone
+  - ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | Guidelines for self-debating loops when alone
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | Guidelines for [chat] independent commit messages
 ---
 
@@ -21,7 +21,7 @@ related:
 
 ## 0.1 Default Room — `tavern` (Multi-agent Convention)
 
-**Brainstorms / casual chats without specified topics** ➡️ Go into the **`tavern`** room. Multiple agents (Claude, Gemini, GPT) read the same [`ucl-chat-tavern` skill](../../../Skills~/ucl-chat-tavern/SKILL.md) ➡️ Entering this room is our shared convention. For detailed selection guidelines, see [Tavern_SoloBrainstorm_Workflow.md §0](Tavern_SoloBrainstorm_Workflow.md) (zh-Hant).
+**Brainstorms / casual chats without specified topics** ➡️ Go into the **`tavern`** room. Multiple agents (Claude, Gemini, GPT) read the same [`ucl-chat-tavern` skill](../../../Skills~/ucl-chat-tavern/SKILL.md) ➡️ Entering this room is our shared convention. For detailed selection guidelines, see [Tavern_SoloBrainstorm_Workflow.md §0](../../zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) (zh-Hant).
 
 For deep topic-specific discussions (such as the R5 Quest workflow brainstorm), always open a dedicated topic room to ensure thread continuity.
 
@@ -214,7 +214,7 @@ refs = "CardGame/Assets/Scripts/RCG_Unit.cs|CardGame/Assets/UCL/.../Cmd_Tavern.c
 >
 > - Agents are turn-based; ending a turn does not trigger `op=leave`.
 > - An agent might be registered in N rooms, but is not actively running in any.
-> - **To check who is currently working**: Use `task_list status=claimed,in_progress` in the Quest room; the owner of a task whose lease is not stale is currently active. For lease expiration rules, see [Quest_Workflow.md §12.5](Quest_Workflow.md) (zh-Hant).
+> - **To check who is currently working**: Use `task_list status=claimed,in_progress` in the Quest room; the owner of a task whose lease is not stale is currently active. For lease expiration rules, see [Quest_Workflow.md §12.5](../../zh-Hant/Workflows/Quest_Workflow.md) (zh-Hant).
 
 ---
 

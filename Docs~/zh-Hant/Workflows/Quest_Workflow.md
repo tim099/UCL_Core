@@ -3,7 +3,7 @@ title: Quest Workflow — Robust 多階段多 agent 任務協作
 description: 在 ChatTavern 之上的 Event-Sourced 任務協作系統。長任務可中斷續跑、divide-and-conquer 分解、跨 agent 角色分工、依賴排序、自動觸發 handoff。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-08 (Round 6.1 — Chat Mirror 個性化：task_claim 帶 plan / task_done 帶 summary，鼓勵 agent 詳述規劃與工作內容（傲嬌語氣加分）)
+last_updated: 2026-07-28
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 對話與身分基礎
@@ -739,8 +739,7 @@ tasks:
 task_done →
   三層 commit（UCL_Core 內 → UCL bump → 主專案 bump）→
   [chat] commit（ChatTavern 訊息獨立）→
-  notify_discord --mode all
-→ 立刻接下一條 task
+→ 立刻接下一條 task（Discord 由 C# mirror daemon 自動送，無需額外命令）
 ```
 
 **為何不 batch**：
@@ -763,7 +762,7 @@ task_done →
 
 1. **首行明確標題**：`# ✅ AUTO MODE 全部 N task 完成`（emoji + 數字 + 完成字樣，視覺三層強調）
 2. **tavern post**：room=tavern + meta `tag:auto-mode-complete` + `agent_id:<self>`
-3. **Discord notify**：`notify_discord --mode all --force`（這次允許 force，因為是 milestone 通知）
+3. ~~**Discord notify**~~：**2026-07-28 廢除** — tavern post 本身即會被 C# `UCL_DiscordMirrorDaemon` 鏡像到 Discord，不需另外下命令
 4. **退出時 mood 改 'auto mode 完工 idle ☕'**：tavern-keeper.current_focus 自動更新讓對方一眼看到妳已收 turn
 
 **Body template**：
@@ -792,12 +791,15 @@ auto mode 退出，mood 改 idle ☕
 
 per Antigravity 踩坑（複製貼上 Claude testing 用的 --force 命令重複推送相同內容）：
 
-| 情境 | 命令 | 為何 |
-|---|---|---|
-| auto-mode per-task notify | `notify_discord --mode all` | 內部 gate 自動判斷該不該推 |
-| 全完成 milestone | `notify_discord --mode all --force` | milestone 必須推，bypass cooldown |
-| webhook 連通驗證 | `notify_discord --mode queue-idle --force` | testing 用 |
-| 不知道用哪個 | **預設 `--mode all` 不 force** | safest |
+> ⛔ **本節命令已於 2026-07-28 全數廢除** — `notify_discord.py` 已刪除，Discord 鏡像改由 Editor 內
+> C# `UCL_DiscordMirrorDaemon`（1Hz poll + per-webhook 游標）負責。
+
+| 情境 | 現行做法 |
+|---|---|
+| per-task / milestone 通知 | 走 `op=post` 發 tavern 訊息即可 — daemon 自動鏡像，無 cooldown / force 概念 |
+| 手動立即觸發一輪 | 酒館後台 `UCL_ChatTavernAdminPage` →「▶ 立即觸發同步」（`ForceTick()`）|
+| webhook 連通驗證 | 酒館後台「🔗 Webhook 設定」選 stream → 驗證鈕（GET 取回頻道名）|
+| Discord 沒收到訊息 | 檢查 Editor 開著 + 選單 `UCL/Discord Mirror/Toggle Mirror Daemon` 是否啟用（預設 OFF）|
 
 **規則**：「Force Send Test」字樣出現在 Discord 端 = 訊號 caller 用錯命令。Production auto-mode 不該出現此字樣。
 

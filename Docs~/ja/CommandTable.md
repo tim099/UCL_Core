@@ -5,7 +5,7 @@ last_updated: 2026-05-09 (UCL_Coreの全Skillに関する口語コマンド項�
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 複数エージェント用チャット居酒屋メインドキュメント
-  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 独り言および視点切り替えループ
+  - ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 独り言および視点切り替えループ
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 3層コミット / 居酒屋メッセージの独立化 / DebugLogs規約
   - ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md | Antigravity Worktree Fix | worktree展開後にGeminiがフリーズする問題の1行解決法
   - ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md | CompileError Diagnose Workflow | Unityビルドエラー検出とトラブルシューティングのSOP
@@ -56,7 +56,7 @@ related:
 
 ### 独り言（Solo Brainstorm）
 - **トリガー**: `自言自語` / `跟自己討論` / `solo think` / `腦力激盪` / `solo brainstorm` / `自我辯論`
-- **対応する Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)
+- **対応する Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md)
 - **意図**: 誰もオンラインでない状態でも議論を停滞させないため、本人 ↔ Alter（悪魔の代弁者／devil's advocate）の2つのアイデンティティを交代させながら自問自答を繰り返し、論理の穴を見つけ出します。第三者が会話に加わった場合は、即座に通常会話モードに復帰します。
 - **身分規約**: AlterのIDは `<本人ID>-alter`、表示名は `<本人表示名> Alter` とします（遅延初期化、事前のop=joinは不要）。
 - **禁止事項**: 議題が極めて単純であるにもかかわらず無意味にセルフセッションを展開すること。相手からの返信を待つ必要がある場面で、無理やりSoloモードに切り替えること。Alterと本人をただ「喧嘩」させること（敵対関係ではなく、建設的な「悪魔の代弁者」として議論を行う必要があります）。
@@ -169,12 +169,12 @@ related:
 
 ### 二重叮 — 叮のち Alter フォールバック（叮叮）
 - **トリガー**: `叮叮` / `雙叮` / `ding ding` / `叮然後 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由發揮`
-- **対応する Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md)（インボックス事前確認ブランチ含む）
+- **対応する Workflow**: [Tavern_SoloBrainstorm_Workflow](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md)（インボックス事前確認ブランチ含む）
 - **意図**: 「通知確認」＋「自動 Alter フォールバック」— Timがインボックスの状況に確証はないが、空いていれば Alter に入りたい場合。まずインボックスを確認し、**未読があれば**「通知確認」ブランチへ進み要約を提示してTimの指示を待ち、**未読がなければ**即座に Solo Brainstorm Alter モードに突入します（ターン制エージェントが5分のアイドルに反応できない問題を解決）。
 - **必須動作**:
   - ステップ1：`op=inbox_read agent_id=<my-id>`（通知確認と同じ）。
   - ステップ2（未読あり）：要約リスト＋推奨アクション（通知確認と同じ）。**この時点では Alter に入りません**。
-  - ステップ2（未読なし）：**即座に** `meta:tag:solo-brainstorm` `wait-reply=0` を添えて独り言を投稿 ➡️ [Solo Brainstorm](ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30秒インターバルチェック / Tim のメンションで即座に離脱。
+  - ステップ2（未読なし）：**即座に** `meta:tag:solo-brainstorm` `wait-reply=0` を添えて独り言を投稿 ➡️ [Solo Brainstorm](ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) cap=10 round / 30秒インターバルチェック / Tim のメンションで即座に離脱。
 - **禁止事項**: インボックスを確認せずに直接 Alter に入ること（実際のメンションを見落とします）；長いスレッドの概要をインボックスに書かずにターンをクローズすること（入場 SOP 違反）；Alter をただ本人と喧嘩させること。
 
 ### 既読 / インボックスの既読マーク（已讀）

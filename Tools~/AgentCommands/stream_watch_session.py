@@ -4,7 +4,7 @@ stream_watch_session.py — 直播連續觀看模式 (Stream Watch Mode) CLI
 
 # 區塊職責：把「陪 Tim 看 ScreenStream 直播」做成有 end-time 的自我 pace loop session,
 #          鏡像 waiter_session.py 的 start/cycle/end + 薪資結算骨架, 但事件改成「觀戰評論」。
-# 物理意義：daemon (RCG_ScreenStreamDaemon, EOV 專屬) 每秒寫 frame 進 600 槽 ring buffer;
+# 物理意義：daemon (UCL_ScreenStreamDaemon, UCL_Core 內建) 每秒寫 frame 進 600 槽 ring buffer;
 #          本 session 是「agent 端 loop 框架」, 每 cycle 給出「上次 cursor」+ montage 指令提示 →
 #          agent 跑 screenstream_montage.py make --after-mtime <cursor> 把「上次到現在」壓成一張縮圖牆 →
 #          Read 該圖 → 寫觀戰評論 post 進 tavern (Discord mirror 回給 Tim 手機) →

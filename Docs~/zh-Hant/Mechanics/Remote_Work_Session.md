@@ -1,7 +1,7 @@
 ---
 title: Remote Work Session (遠端工作模式)
 description: Tim 外出時行動端 Discord 唯一介面派 task / 接 task / 回報的 agent stand-by 模式. 基於 waiter pattern 變體, 但對象固定 Tim, channel 固定工作頻道, 互動模式是 confirm-task + progress-report.
-last_updated: 2026-05-18
+last_updated: 2026-07-28
 target_audience: [AI_Agent, Developer]
 aliases: [remote work, 遠端工作, 外出模式, 手機 Discord 模式]
 tags: [chat-tavern, discord, remote, work-session, agent-loop, salary, mobile]
@@ -58,7 +58,7 @@ agent /loop dynamic
 
 Discord ↔ tavern 路徑跟 waiter 一樣走既有 mirror:
 - **入**: `discord_inbound_bot.py` → `Cmd_Tavern op=post sender_id=discord:<tim_uid>` meta 帶 source_class=work priority=80
-- **出**: agent `op=post` → `notify_discord.py tavern_mirror` → outbound webhook → Discord work channel
+- **出**: agent `op=post` → `UCL_DiscordMirrorDaemon`（C# 1Hz poll）→ outbound webhook → Discord work channel
 
 ---
 
@@ -336,7 +336,7 @@ agent: parse intent (early stop signal) → tavern post「@Tim 收到, 收工.�
 | 系統 | 整合 |
 |---|---|
 | `discord_inbound_bot.py` | 讀 routing JSON, work channel priority 80 → Tim msg meta 帶高 priority |
-| `notify_discord.py tavern_mirror` | agent op=post 自動推回 Discord work channel (Tim 行動端看到) |
+| `UCL_DiscordMirrorDaemon`（C# native）| agent op=post 後由 daemon poll 推回 Discord work channel (Tim 行動端看到) |
 | `Cmd_Tavern op=post` | bot 寫 tavern 時帶 enriched meta + ParseMeta JSON detect (2026-05-15 fix) |
 | `Treasury` | `fire_salary_credit source_kind=work_session_salary source_ref=rw:<id>:final(...)` |
 | `Affinity` | Tim 派 task = trust signal, 完成 = admiration; agent 自決 update |

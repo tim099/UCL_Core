@@ -12,7 +12,8 @@
 啟動:
   python AgentCommands/Tools/screenstream_daemon.py
 
-或由 Unity Editor 的 RCG_ScreenStreamDaemon.cs 自動 spawn (per InitializeOnLoadMethod).
+或由 Unity Editor 的 UCL_ScreenStreamDaemon.cs 自動 spawn (per InitializeOnLoadMethod;
+2026-07-28 起存活綁 config.enabled — 停止錄影即收掉, 不再常駐 idle).
 
 Config: AgentCommands/_screenstream/_config.json (預設 enabled=false, 須手動開啟)
 
@@ -97,7 +98,8 @@ MONITORS_PATH = STREAM_DIR / "_monitors.json"
 # T17 (2026-05-18 gura) — 緊急中斷直播 lock 檔; Editor 端按「中斷直播」按鈕寫入,
 # daemon 每 loop tick reload config 後 check 此檔存在 → set enabled=false + 刪 lock + 廣播酒保 stop
 STOP_LOCK_PATH = STREAM_DIR / "_stop.lock"
-# T19 (2026-06-07 summit) — Unity Game view 來源檔; monitor="unity_game" 時 Unity 端 RCG_GameViewCapturer
+# T19 (2026-06-07 summit) — Unity Game view 來源檔; monitor="unity_game" 時由「下游專案自備的
+# GameView capturer」(UCL_Core 未內建; 本 repo 目前無實作 → 此模式僅輸出 placeholder)
 # 於 Play mode 每 frame 末擷取 Game view 真實 render 寫此檔, daemon 改讀它當截圖來源 (取代 OS ImageGrab)。
 GAMEVIEW_SRC_PATH = STREAM_DIR / "_gameview_src.jpg"
 # Unity src 超過此秒數沒更新 (Play mode 關 / capturer idle) → 視為 stale, 改輸出 placeholder 提示而非凍結舊 frame。

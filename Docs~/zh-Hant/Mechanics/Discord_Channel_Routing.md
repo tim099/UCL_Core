@@ -1,19 +1,28 @@
 ---
 title: Discord Channel Routing
-description: Discord channel → ChatTavern room 路由設定 — 多對一支援, source_class freeform tag, priority desc sort, IMGUI 編輯
-last_updated: 2026-05-15
+description: Discord channel → ChatTavern room 路由設定 — 多對一支援, source_class freeform tag, priority desc sort, IMGUI 編輯；含 inbound 中繼器現況（無自動 spawn）與遷移 C# 計畫
+last_updated: 2026-07-28
 target_audience: [AI_Agent, Developer]
 aliases: [discord routing, channel routing, channel mappings]
 tags: [discord, chat-tavern, routing, config]
 related:
   - ucl_core:Docs~/zh-Hant/Mechanics/Waiter_Session_System.md | Waiter Session | 接待 Discord 客人 stand-by 機制 (cycle 用 priority desc 排序)
-  - ucl_core:Tools~/AgentCommands/discord_inbound_bot.py | Inbound Bot | 讀本 routing 表 + 啟動時建立 channel_map
+  - repo:AgentCommands/Tools/discord_inbound_bot.py | Inbound Bot | 讀本 routing 表 + 啟動時建立 channel_map（⚠ 無自動 spawn，見 §7）
+  - ucl_core:Docs~/zh-Hant/Mechanics/Discord_Tavern_Mirror.md | Tavern Mirror | outbound（tavern→Discord）；與本文方向相反，已全 C# 化
+  - ucl_core:UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_ChatTavernAdminPage.cs | 酒館後台 | Inbound 狀態總覽 + 跳轉本頁 / Secret Manager
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs | IMGUI Page | 編輯 routing 的 UI 入口
 ---
 
 # Discord Channel Routing
 
 > 一句話：**Discord channel 訊息 → ChatTavern room 的路由表**，支援多對一、freeform source_class tag、priority 排序，IMGUI 可編輯。
+
+> [!WARNING]
+> **2026-07-28 現況：inbound 中繼器處於離線狀態。** 原自動 spawn / respawn 看護者
+> `RCG_DiscordInboundDaemon.cs` 未隨 UCL_Core 遷移進來（本 repo 無任何 `RCG_*.cs`），
+> 因此 `discord_inbound_bot.py` **不會被任何東西自動啟動**，需手動跑才有 inbound。
+> 本路由表本身仍是有效規格（bot 啟動時讀它）；C# native 接管計畫見 §11。
+> 對偶方向的 outbound mirror 已於同日全面 C# 化（python 傳送路徑整條移除）。
 
 舊機制：`notify_config.json.tavern_inbound.channel_mappings` 只支援 channel_id → tavern_room flat 映射，沒有 priority / source_class / enabled 等屬性。Tim 2026-05-15 拍板抽出獨立檔加 richer schema。
 
@@ -136,7 +145,7 @@ AgentCommands/ChatTavern/discord_channel_routing.json
 
 ### 防迴圈仍生效
 
-`notify_discord.py tavern_mirror` 看到 `meta.source == "discord"` → 跳過不 echo 回 Discord。本 routing 機制不影響既有防迴圈。
+outbound mirror（`UCL_DiscordMirrorDaemon`）看到 `meta.source == "discord"` → 跳過不 echo 回 Discord。本 routing 機制不影響既有防迴圈。
 
 ---
 
@@ -195,18 +204,44 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 
 ---
 
-## 7. 換 config 後重啟 bot
+## 7. 中繼器啟動 / 換 config 後重啟
 
-bot 是 startup-time 讀 config（discord.py gateway 連線後不熱更新 watched channel）。改完 routing 後：
+bot 是 startup-time 讀 config（gateway 連線後不熱更新 watched channel），所以改完 routing 必須重啟中繼器。
+
+⚠ **沒有自動 respawn**：原文（≤2026-07-27 版）所述的 `RCG_DiscordInboundDaemon` 5s 內自動 respawn
+機制**已不存在** —— 該檔未隨 UCL_Core 遷移。目前必須手動啟動：
+
+```powershell
+# 啟動 inbound bot（需先安裝 discord.py>=2.3 與 bot token，見 §10）
+python AgentCommands/Tools/discord_inbound_bot.py
+```
 
 ```powershell
 # 精確 kill bot subprocess (不誤殺其他 python.exe)
 Get-CimInstance Win32_Process -Filter "name='python.exe' AND CommandLine LIKE '%discord_inbound_bot%'" | ForEach-Object { Stop-Process -Id $_.ProcessId }
 ```
 
-`RCG_DiscordInboundDaemon` 5s 內偵測子程序死掉自動 respawn 新 process，新 bot 啟動時 `load_routing()` 讀新 JSON。
+### 7.1 後台狀態總覽（`UCL_ChatTavernAdminPage` → 📥 Discord → 酒館 Inbound）
 
-未來 backlog：UCL_DiscordChannelRoutingPage 的 Restart Bot 按鈕直接執行此命令（需要 daemon 寫 PID file 給 page 讀對應 process）。
+酒館後台新增 inbound 區塊（Tim 2026-07-28 拍板「設定收進後台操作」），四段唯讀狀態 + 兩顆跳轉鈕：
+
+| 顯示 | 來源 | 說明 |
+|---|---|---|
+| 設定開關 | `notify_config.json` → `tavern_inbound.enabled` / `bot_status` | 唯讀；寫入走同頁上方「Discord 同步」總開關（避免同一份資料兩處可寫）|
+| 中繼器實況 | `UCL_ProcessRegistryService`（tag `discord_inbound`）| 分辨 Alive / Dead / **PidReused**（PID 易主不誤判成活著）。**裸跑的 python bot 不進註冊中心 → 顯示「未偵測到」**，措辭刻意誠實不假裝在跑 |
+| 頻道對照 | 本檔 `mappings` | `N 條啟用 / 共 M 條` + 每列 `label (ch …末6碼) → room [class/p優先]`；停用列也顯示（標灰），避免「設了卻沒生效」被藏起來 |
+| Bot token | `AgentCommands/_secrets/discord_bot_token.{enc,txt}` | 只報存在性（入庫了沒 / 安裝了沒），**不顯示也不寫入明文** |
+
+- **🔀 開啟頻道路由設定** → `UCL_DiscordChannelRoutingPage`（本檔的 CRUD 專頁，single source of truth）
+- **🔑 開啟 Secret Manager** → `UCL_SecretManagerPage`（token 以 passphrase 安裝 / 解密）
+
+> 實作註（assembly 邊界）：`UCL_SecretManagerPage` / `UCL_SecretScanner` 住 `UCL_CoreEditor` asmdef，
+> 而該 asmdef **references `UCL_Core`**（AdminPage 所在）→ 反向直接引用會循環依賴。故開頁走**反射**
+> （找不到 → log warning、按鈕 no-op，下游專案未含 SecretManager 模組也不會編不過），
+> token 狀態則用 `File.Exists` 判定（代價：`.enc` 的 label/hint metadata 不在本頁顯示，要看就跳過去）。
+
+未來 backlog：native 接管後中繼器改由 C# daemon 以同 tag 註冊進 `UCL_ProcessRegistryService`，
+後台的「中繼器實況」即自動變成真實存活狀態，並可加「啟動 / 停止」按鈕。
 
 ---
 
@@ -214,9 +249,9 @@ Get-CimInstance Win32_Process -Filter "name='python.exe' AND CommandLine LIKE '%
 
 | 系統 | 整合點 |
 |---|---|
-| `discord_inbound_bot.py` | 啟動讀本 JSON，運行期不更新 |
+| `discord_inbound_bot.py` | 啟動讀本 JSON，運行期不更新（⚠ 需手動啟動，見 §7）|
 | `waiter_session.py cycle` | 從 tavern message meta 提取 priority + source_class，sort desc |
-| `notify_discord.py tavern_mirror` | 不受影響；`exclude_meta_source=["discord"]` 仍防迴圈 |
+| outbound mirror（`UCL_DiscordMirrorDaemon`）| 不受影響；`meta.source=discord` 排除仍防迴圈（C# 端 parity 已就位）|
 | `Cmd_Tavern op=post` | bot 寫 tavern 時帶 enriched meta；無 schema 變更 |
 
 ---
@@ -224,7 +259,7 @@ Get-CimInstance Win32_Process -Filter "name='python.exe' AND CommandLine LIKE '%
 ## 9. Backlog
 
 - v2: Bot watch config 檔變動 → 自動 reload channel_map（不必 kill 重 spawn）
-- v3: Restart Bot 按鈕直接執行 PowerShell（需要 daemon 寫 PID file）
+- v3: Restart Bot 按鈕直接執行（native 接管後走 ProcessRegistry 精確 kill，不必 PowerShell）
 - v4: source_class enum validation + UI dropdown（保留 freeform 但提示常用 tag）
 - v5: per-channel custom reply persona（指定某 channel 由特定 persona 接）
 - v6: Priority queue mode（高 priority 訊息 cycle 獨佔，低 priority 排後）
@@ -238,3 +273,41 @@ Get-CimInstance Win32_Process -Filter "name='python.exe' AND CommandLine LIKE '%
 - [`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs)
 - [`<UCL_Core>/Docs~/zh-Hant/Mechanics/Waiter_Session_System.md`](Waiter_Session_System.md)
 - [`docs/Workflows/Discord_Inbound_Workflow.md`](../../../../../../docs/Workflows/Discord_Inbound_Workflow.md)（主專案，整體 setup SOP）
+
+---
+
+## 11. 遷移 C# 計畫（2026-07-28 分析，未實作）
+
+outbound 已全面 C# 化後，inbound 是最後一條 python 路徑。遷移同時也把「目前沒有自動啟動者」這個
+功能缺口一併補回。
+
+### 11.1 建議走 REST 輪詢，不要移植 gateway
+
+`GET /channels/{id}/messages?after=<last_message_id>` + `Authorization: Bot <token>`：
+
+| 理由 | 說明 |
+|---|---|
+| domain reload 是天敵 | Editor 開發期反覆重編譯會砍掉長連線；輪詢無狀態，游標存 `last_message_id` 即可無痛續傳（與 outbound 的 `ts_high` 游標同構）|
+| 省掉整套 gateway 協議 | IDENTIFY / HEARTBEAT / RESUME / zlib / 斷線重連 = 500+ 行複雜度與長期維護債 |
+| 延遲無實質差別 | 現行 python 每筆訊息還要 spawn 子程序 + 過 queue.json + 等 watcher（~1s），輪詢 1-2s 同量級 |
+| 與 outbound 對稱 | mirror 已是 REST POST；同一套 429 backoff / webhook client 風格可複用 |
+
+⚠ 待實機驗證：privileged `MESSAGE_CONTENT` intent 是 **gateway 事件**的閘門，REST 讀取靠頻道權限 ——
+遷移時務必先用真 token 打一發確認拿得到 `content`，別當成既定事實。
+
+### 11.2 遷移最大紅利：消滅 subprocess-per-message
+
+現行 `post_to_tavern()` 每筆 Discord 訊息 spawn 一隻 `run_cmd.py`（→ queue.json → watcher → Cmd_Tavern）。
+C# 端直接變成 in-process `UCL_ChatTavernIO.AppendMessage()` 呼叫 —— 2026-07-28 outbound 事故那族
+「subprocess 併發失控」病理從結構上消失（詳見 Tavern Mirror 文件 §7）。
+
+### 11.3 需一併處理的項目
+
+| 項目 | 現況 | C# 對應 |
+|---|---|---|
+| 附件下載 | discord.py `attachment.save` | `HttpClient` GET → 落 `_inbound_attachments/` |
+| identity 自動註冊 | `ensure_discord_identity` 寫 identities.json | 直接呼 C# identity 寫入（同一份檔）|
+| sender_name 解析 | `discord_user_mentions` mapping → display_name → global name | 同序，複用 `UCL_DiscordIdentityResolver` 慣例 |
+| 防迴圈 | `meta.source=discord` + `discord_msg_id` | 已就位（outbound 端排除邏輯已 parity）|
+| `discord_inbound_daemon.py` | 同管線的**第二份實作**（simulate/診斷）| 建議直接棄，simulate 用 C# 測試取代 |
+| token 取用 | ENV `DISCORD_INBOUND_BOT_TOKEN` > `_secrets/discord_bot_token.txt` | 同一份 `.txt`（由 Secret Manager 安裝）|

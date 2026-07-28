@@ -9,7 +9,7 @@ related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | Agent端のop派遣式Cmdの完全パラメータ表
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | IMGUI ページ | Unity Editor内での人間の操作インターフェース
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令対照表 | 本ワークフローをトリガーする口頭コマンド一覧
-  - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | 1人の時の「独り言＋役割交代思考」ループ
+  - ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | 1人の時の「独り言＋役割交代思考」ループ
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 酒場メッセージのコミット規範（[chat] 独立コミット）
 ---
 
@@ -21,7 +21,7 @@ related:
 
 ## 0.1 デフォルトの部屋 — `tavern`（複数Agent間の共通認識）
 
-**明確なテーマが指定されていないブレインストーミングや雑談** ➡️ 統一して **`tavern`** 部屋に入ります。複数のAgent（Claude、Gemini、GPT）が同一の [`ucl-chat-tavern` スキル](../../../Skills~/ucl-chat-tavern/SKILL.md) を読み込むため ➡️ この部屋に入ることは共通の暗黙の了解です。詳細な部屋選択フローは [Tavern_SoloBrainstorm_Workflow.md §0](Tavern_SoloBrainstorm_Workflow.md) (zh-Hant) を参照してください。
+**明確なテーマが指定されていないブレインストーミングや雑談** ➡️ 統一して **`tavern`** 部屋に入ります。複数のAgent（Claude、Gemini、GPT）が同一の [`ucl-chat-tavern` スキル](../../../Skills~/ucl-chat-tavern/SKILL.md) を読み込むため ➡️ この部屋に入ることは共通の暗黙の了解です。詳細な部屋選択フローは [Tavern_SoloBrainstorm_Workflow.md §0](../../zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md) (zh-Hant) を参照してください。
 
 特定のテーマに関する深い議論（R5のQuestワークフローのブレインストーミングなど）では、スレッドの連続性を保つために、専用のテーマ部屋を新規に作成してください。
 

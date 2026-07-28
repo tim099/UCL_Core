@@ -20,10 +20,52 @@ from typing import Optional
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+# 區塊職責：repo 根 / 資料根解析 — 取代原本硬編 7 層 ".." 的相對鏈
+# 物理意義：本檔住 <UCL_Core>/Tools~/AgentCommands/CommandResolver/，而 UCL_Core 是 submodule，
+#          **各專案掛載深度不同**（Assets/Plugins/UCL_Core、Assets/UCL/UCL_Core、CardGame/Assets/UCL/…）
+#          → 任何寫死的 ".." 層數都會跨專案漂移。原值多爬一層（7 層 → D:\Unity 而非 D:\Unity\LY），
+#          導致 inbox 找不到（2026-07-28 實測）。改走「往上找 .git 資料夾」與其他工具同慣例。
+# 數值影響：.git 只認資料夾（submodule 的 .git 是檔案 → 自動跳過，命中主專案根）；
+#          另 honors CLAUDE_PROJECT_DIR（agent 環境注入）與 .agentcommands_root.local（資料根 override）。
+def _find_git_root(start: str):
+    p = os.path.abspath(start)
+    while True:
+        if os.path.isdir(os.path.join(p, ".git")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            return None
+        p = parent
+
+
+def _repo_root() -> str:
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env and os.path.isdir(env):
+        return os.path.abspath(env)
+    walked = _find_git_root(_HERE)
+    if walked:
+        return walked
+    return _find_git_root(os.getcwd()) or os.path.abspath(os.path.join(_HERE, "..", "..", "..", "..", "..", ".."))
+
+
+def _data_root(root: str) -> str:
+    """AgentCommands 資料根 — honors <repo>/.agentcommands_root.local pointer（C#/Python 共讀）。"""
+    pointer = os.path.join(root, ".agentcommands_root.local")
+    try:
+        if os.path.isfile(pointer):
+            with open(pointer, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content and os.path.isabs(content):
+                return os.path.abspath(content)
+    except OSError:
+        pass
+    return os.path.join(root, "AgentCommands")
+
+
 # AgentCommands/ChatTavern/rooms/<room>/inbox/<agent>.md
-DEFAULT_TAVERN_ROOT = os.path.abspath(
-    os.path.join(_HERE, "..", "..", "..", "..", "..", "..", "..", "AgentCommands", "ChatTavern")
-)
+DEFAULT_TAVERN_ROOT = os.path.join(_data_root(_repo_root()), "ChatTavern")
 
 
 def inbox_path(tavern_root: str, room: str, agent: str) -> str:

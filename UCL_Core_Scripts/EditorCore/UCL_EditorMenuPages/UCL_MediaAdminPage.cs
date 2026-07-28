@@ -48,10 +48,11 @@ namespace UCL.Core.EditorLib.Page
         string m_SttPrompt = "";        // whisper initial_prompt 詞彙偏置 (人名用原文字形，如片假名)
 
         // ==== OCR 可調欄位 (字幕讀取 — 本頁的第二塊拼圖) ====
+        // 字幕帶座標 — 底部原點語意 (Tim 2026-07-28 拍板: 0=畫面下方, 高度往上長)
         bool m_OcrEnabled = true;       // 字幕 OCR 開關
         int m_OcrWorkers = 1;           // OCR worker 數
-        float m_OcrYPct = 0.78f;        // 字幕帶起始 y 比例 (0~1)
-        float m_OcrHPct = 0.12f;        // 字幕帶高度比例 (0~1)
+        float m_OcrYBottomPct = 0f;     // 帶底邊離畫面下緣距離比例 (0=貼底)
+        float m_OcrHPct = 0.12f;        // 字幕帶高度比例 (從底邊往上長)
         float m_OcrMinConf = 0.5f;      // OCR 最低信度過濾 (0~1)
 
         // ==== 試錄參數 ====
@@ -225,9 +226,11 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.FlexibleSpace();
                 }
                 // 字幕帶裁切三參數 — slider 直觀調 (字幕位置隨播放器版面跑，見 stream-watch 字幕帶自校準教訓)
-                m_OcrYPct = EditorGUILayout.Slider("字幕帶起始 y (0~1)", m_OcrYPct, 0f, 1f);
-                m_OcrHPct = EditorGUILayout.Slider("字幕帶高度 (0~1)", m_OcrHPct, 0.02f, 0.5f);
+                // 底部原點語意 (Tim 2026-07-28): 起始 y = 帶底邊離畫面下緣距離 (0=貼底), 高度往上長
+                m_OcrYBottomPct = EditorGUILayout.Slider("字幕帶起始 y (0=畫面下方)", m_OcrYBottomPct, 0f, 1f);
+                m_OcrHPct = EditorGUILayout.Slider("字幕帶高度 (從 y 往上長)", m_OcrHPct, 0.02f, 0.5f);
                 m_OcrMinConf = EditorGUILayout.Slider("最低信度過濾", m_OcrMinConf, 0f, 1f);
+                GUILayout.Label("ⓘ 額外字幕判定區域 (字幕偶爾跑上方的影片) 請至「螢幕直播錄影」頁設定。", WrapStyle);
 
                 // 視覺化字幕帶位置 (Tim 2026-07-27) — 灰框=螢幕(16:9)、橘框=OCR 讀取的字幕帶
                 DrawOcrBandPreview();
@@ -286,25 +289,24 @@ namespace UCL.Core.EditorLib.Page
             if (hasImg) GUI.DrawTexture(box, m_FramePreview, ScaleMode.StretchToFill);
             else EditorGUI.DrawRect(box, new Color(0.13f, 0.13f, 0.16f));
             DrawRectBorder(box, new Color(0.65f, 0.65f, 0.72f), 1.5f);
-            // 字幕帶 (依 y_pct 起始、h_pct 高度、滿寬；clamp 不超出螢幕底)
-            float y0 = Mathf.Clamp01(m_OcrYPct);
+            // 字幕帶 — 底部原點轉 GUI top-down 座標: 帶頂 = box.yMax - (y_bottom + h) * H, 帶底 = box.yMax - y_bottom * H
+            float yB = Mathf.Clamp01(m_OcrYBottomPct);
             float h = Mathf.Clamp(m_OcrHPct, 0f, 1f);
-            float bandY = box.y + y0 * box.height;
-            float bandH = h * box.height;
-            if (bandY + bandH > box.yMax) bandH = Mathf.Max(0f, box.yMax - bandY);
-            bool offScreen = y0 >= 0.999f || bandH <= 0.5f;
+            float bandTop = box.yMax - Mathf.Min(1f, yB + h) * box.height;
+            float bandBottom = box.yMax - yB * box.height;
+            bool offScreen = yB >= 0.999f || bandBottom - bandTop <= 0.5f;
             if (!offScreen)
             {
-                var bandRect = new Rect(box.x, bandY, box.width, bandH);
+                var bandRect = new Rect(box.x, bandTop, box.width, bandBottom - bandTop);
                 EditorGUI.DrawRect(bandRect, new Color(1f, 0.6f, 0.1f, 0.55f));
                 DrawRectBorder(bandRect, new Color(1f, 0.7f, 0.2f), 1f);
             }
-            int pctTop = Mathf.RoundToInt(y0 * 100f);
-            int pctBot = Mathf.RoundToInt(Mathf.Min(1f, y0 + h) * 100f);
+            int pctLo = Mathf.RoundToInt(yB * 100f);
+            int pctHi = Mathf.RoundToInt(Mathf.Min(1f, yB + h) * 100f);
             if (offScreen)
-                GUILayout.Label($"⚠ 起始 y={m_OcrYPct:0.##} 太高，字幕帶超出畫面 → OCR 只掃到空白。字幕通常在畫面 85%~98%，把「起始 y」往下調。", WrapStyle);
+                GUILayout.Label($"⚠ 起始 y={m_OcrYBottomPct:0.##} 太高，字幕帶超出畫面頂 → OCR 只掃到空白。0=畫面下方，字幕通常貼底，把「起始 y」調回 0 附近。", WrapStyle);
             else
-                GUILayout.Label($"字幕帶：畫面高度 {pctTop}% ~ {pctBot}%（滿寬）。字幕若沒被橘框罩到，調「起始 y」對準它。", WrapStyle);
+                GUILayout.Label($"字幕帶：距畫面下緣 {pctLo}% ~ {pctHi}%（滿寬）。字幕若沒被橘框罩到，調「起始 y」對準它。", WrapStyle);
         }
 
         // 畫矩形邊框（四條 t 粗細的線）
@@ -379,7 +381,8 @@ namespace UCL.Core.EditorLib.Page
             {
                 sb.Append($" ocr_enabled={(m_OcrEnabled ? "true" : "false")}");
                 sb.Append($" ocr_workers={m_OcrWorkers}");
-                sb.Append($" ocr_y_pct={m_OcrYPct.ToString("0.###", CultureInfo.InvariantCulture)}");
+                // 底部原點語意 (2026-07-28) — 舊頂部原點 key ocr_y_pct 已退役, set-config 會拒收
+                sb.Append($" ocr_y_bottom_pct={m_OcrYBottomPct.ToString("0.###", CultureInfo.InvariantCulture)}");
                 sb.Append($" ocr_h_pct={m_OcrHPct.ToString("0.###", CultureInfo.InvariantCulture)}");
                 sb.Append($" ocr_min_conf={m_OcrMinConf.ToString("0.###", CultureInfo.InvariantCulture)}");
             }
@@ -408,7 +411,8 @@ namespace UCL.Core.EditorLib.Page
                 m_SttPrompt = f.GetString("stt_prompt", m_SttPrompt);
                 m_OcrEnabled = f.GetBool("ocr_enabled", m_OcrEnabled);
                 m_OcrWorkers = f.GetInt("ocr_workers", m_OcrWorkers);
-                m_OcrYPct = f.GetFloat("ocr_y_pct", m_OcrYPct);
+                // 底部原點 key — 舊 config 只有 ocr_y_pct 時 get-config 端已代為換算成 ocr_y_bottom_pct
+                m_OcrYBottomPct = f.GetFloat("ocr_y_bottom_pct", m_OcrYBottomPct);
                 m_OcrHPct = f.GetFloat("ocr_h_pct", m_OcrHPct);
                 m_OcrMinConf = f.GetFloat("ocr_min_conf", m_OcrMinConf);
                 m_ConfigLoaded = true;   // 回填成功才解鎖「套用」

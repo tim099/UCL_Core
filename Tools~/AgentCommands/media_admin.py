@@ -159,12 +159,18 @@ EDITABLE_KEYS = {
     "stt_prompt":    (str,   "whisper initial_prompt 詞彙偏置 (人名用原文字形)"),
     "ocr_enabled":   (bool,  "字幕 OCR 開關"),
     "ocr_workers":   (int,   "OCR worker 數"),
-    "ocr_y_pct":     (float, "字幕帶起始 y 比例 (0~1)"),
-    "ocr_h_pct":     (float, "字幕帶高度比例 (0~1)"),
+    # 字幕帶座標 — 底部原點語意 (Tim 2026-07-28 拍板: 0=畫面下方, 高度往上長)
+    "ocr_y_bottom_pct": (float, "字幕帶底邊離畫面下緣距離比例 (0=貼底)"),
+    "ocr_h_pct":     (float, "字幕帶高度比例 (從底邊往上長, 0~1)"),
+    "ocr_extra_regions": (list, '額外字幕判定區域 JSON list, 例: [{"y_bottom_pct":0.85,"h_pct":0.1}] (可空 [])'),
     "ocr_min_conf":  (float, "OCR 最低信度過濾 (0~1)"),
 }
 # 唯讀展示欄位 (status/get-config 顯示, set-config 拒改)
 READONLY_KEYS = ["enabled", "stt_enabled"]
+# 已退役欄位 → 給明確遷移提示 (2026-07-28 字幕帶語意改底部原點, 舊頂部原點 key 拒寫防 split-brain)
+RETIRED_KEYS = {
+    "ocr_y_pct": "字幕帶已改底部原點語意 — 改用 ocr_y_bottom_pct (0=畫面下方; 換算: y_bottom = 1 - y_pct - h_pct)",
+}
 
 
 def _load_config() -> dict:
@@ -192,6 +198,15 @@ def _coerce(key: str, raw: str):
         return int(raw)
     if typ is float:
         return float(raw)
+    if typ is list:
+        # list 型別欄位 (ocr_extra_regions) 收 JSON 字串; 交 subtitle_ocr 同一套驗證正規化
+        try:
+            v = json.loads(raw)
+        except (ValueError, TypeError) as e:
+            raise SystemExit(f"❌ {key} 需要 JSON list (例: [{{\"y_bottom_pct\":0.85,\"h_pct\":0.1}}]), 解析失敗: {e}")
+        if not isinstance(v, list):
+            raise SystemExit(f"❌ {key} 需要 JSON list, 收到: {type(v).__name__}")
+        return v
     return raw  # str 原樣
 
 
@@ -344,11 +359,20 @@ def op_status() -> int:
 def op_get_config() -> int:
     # 區塊職責：給 C# 頁面填表用的純 JSON — 白名單欄位 + 唯讀欄位 + 檔案存在性
     cfg = _load_config()
+    fields = {k: cfg.get(k) for k in EDITABLE_KEYS if k in cfg}
+    # 舊 config 遷移展示 (2026-07-28 底部原點語意): 只有頂部原點 ocr_y_pct 的 config →
+    # 換算出 ocr_y_bottom_pct 給頁面回填, 頁面下次「套用」就寫新 key 完成遷移
+    if "ocr_y_bottom_pct" not in fields and "ocr_y_pct" in cfg:
+        try:
+            h = float(cfg.get("ocr_h_pct", 0.12))
+            fields["ocr_y_bottom_pct"] = round(max(0.0, min(1.0, 1.0 - float(cfg["ocr_y_pct"]) - h)), 4)
+        except (TypeError, ValueError):
+            pass
     out = {
         "config_path": str(config_path()),
         "exists": bool(cfg),
         "readonly": {k: cfg.get(k) for k in READONLY_KEYS if k in cfg},
-        "fields": {k: cfg.get(k) for k in EDITABLE_KEYS if k in cfg},
+        "fields": fields,
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
@@ -368,6 +392,9 @@ def op_set_config(pairs: list[str]) -> int:
             return 1
         k, v = pair.split("=", 1)
         k = k.strip()
+        if k in RETIRED_KEYS:
+            print(f"❌ 欄位 `{k}` 已退役: {RETIRED_KEYS[k]}")
+            return 1
         if k not in EDITABLE_KEYS:
             print(f"❌ 欄位 `{k}` 不在白名單 (可調: {', '.join(EDITABLE_KEYS)})")
             return 1

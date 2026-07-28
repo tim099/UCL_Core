@@ -767,8 +767,27 @@ def op_make(args):
     stt_warn = None          # T-STT: 語音轉錄 fail-soft 警告
     if args.ocr:
         try:
-            from subtitle_ocr import (is_available as _ocr_avail, ocr_subtitle_band,
-                                      get_init_error, read_cached_text)
+            from subtitle_ocr import (is_available as _ocr_avail, ocr_subtitle_regions,
+                                      get_init_error, read_cached_text, regions_from_config)
+            # 區塊職責: 解析本輪生效的字幕判定區域 (底部原點, 主帶+額外區域)
+            # 物理意義: 預設跟 daemon _config.json 對齊 (cache 帶位一致才命中);
+            #          CLI 顯式給 --ocr-y-bottom-pct/--ocr-h-pct/--ocr-extra-regions 才逐項覆蓋。
+            # 數值影響: regions_from_config 內建舊 ocr_y_pct (頂部原點) config 的換算遷移。
+            try:
+                with STREAM_CONFIG_PATH.open("r", encoding="utf-8") as _fh:
+                    _ocr_cfg = dict(json.load(_fh))
+            except Exception:
+                _ocr_cfg = {}
+            if args.ocr_y_bottom_pct is not None:
+                _ocr_cfg["ocr_y_bottom_pct"] = args.ocr_y_bottom_pct
+            if args.ocr_h_pct is not None:
+                _ocr_cfg["ocr_h_pct"] = args.ocr_h_pct
+            if args.ocr_extra_regions is not None:
+                try:
+                    _ocr_cfg["ocr_extra_regions"] = json.loads(args.ocr_extra_regions)
+                except (ValueError, TypeError):
+                    print("⚠ --ocr-extra-regions JSON 解析失敗, 忽略 (沿用 config)", file=sys.stderr)
+            ocr_regions = regions_from_config(_ocr_cfg)
             # T-OCR-Pipeline (Tim 2026-06-10 拍板「錄製時就自動產生, 多執行緒並行」) — cache-first:
             # 物理意義: daemon 端 worker pool 已在錄製當下預產 ocr/frame_NNNN.json, 這裡命中直接用;
             #          miss (daemon ocr_enabled 關 / cache stale) 才 fallback inline OCR。
@@ -798,7 +817,7 @@ def op_make(args):
                 """
                 nonlocal ocr_cache_hits
                 cached = read_cached_text(ocr_cache_dir, path, mtime,
-                                          y_pct=args.ocr_y_pct, h_pct=args.ocr_h_pct,
+                                          regions=ocr_regions,
                                           treat_skipped_as_miss=is_main)
                 if cached is not None:
                     ocr_cache_hits += 1
@@ -807,8 +826,8 @@ def op_make(args):
                     return None            # 中間幀 cache-only: 未供給 → 不現跑, caller 記 ocr_uncached
                 if not _engine_ok():
                     return ""
-                return ocr_subtitle_band(path, y_pct=args.ocr_y_pct, h_pct=args.ocr_h_pct,
-                                         min_confidence=args.ocr_min_conf)
+                return ocr_subtitle_regions(path, regions=ocr_regions,
+                                            min_confidence=args.ocr_min_conf)
 
             if not ocr_cache_dir.exists() and not _engine_ok():
                 ocr_warn = f"⚠ OCR 不可用 (無 daemon cache + engine fail-soft): {get_init_error()}"
@@ -849,7 +868,7 @@ def op_make(args):
                 if getattr(args, "ocr_dense", True) and max_inline and len(ocr_frames) > max_inline:
                     # 先探 cache (read_cached_text 純檔案查找, 無推理開銷): 命中幀免費, 不列入 inline 成本
                     probe_hit = [read_cached_text(ocr_cache_dir, t[1], t[2],
-                                                  y_pct=args.ocr_y_pct, h_pct=args.ocr_h_pct) is not None
+                                                  regions=ocr_regions) is not None
                                  for t in ocr_frames]
                     # 只計「真的會 inline」的幀 = cache-miss 的主 tile (中間幀 miss 走 cache-only 不現跑, 不算成本)
                     inline_count = sum(1 for k, h in enumerate(probe_hit)
@@ -957,7 +976,7 @@ def op_make(args):
                     "",
                     f"_OCR engine_: RapidOCR (rapidocr-onnxruntime, Paddle ch_PP-OCRv4 ONNX)",
                     f"_Mode_: {mode_label}",
-                    f"_Region_: y={args.ocr_y_pct} h={args.ocr_h_pct} (字幕帶比例, 0~1)",
+                    f"_Regions_: {ocr_regions} (各項 [底邊離下緣, 高度] 比例 0~1, 底部原點)",
                     f"_Min confidence_: {args.ocr_min_conf}",
                     f"_Frames OCR'd_: {len(ocr_frames)} (hits: {ocr_hits}, 空字幕中間幀已隱藏: {ocr_hidden}, 重複字幕已摺疊: {ocr_deduped}, daemon cache 命中: {ocr_cache_hits}) / _Tiles_: {len(meta)}",
                     # cache-only 誠實標註: 未供給 > 0 = 這輪中間幀字幕不完整 (daemon OCR off / cache 落後), 不是沒字幕
@@ -1215,10 +1234,15 @@ def main():
     pm.add_argument("--ocr-max-inline", dest="ocr_max_inline", type=int, default=120,
                     help="(--ocr dense 時) 落後自動降密: cache-miss 中間幀數超過 N 時按 stride 均勻取樣 "
                          "(主 tile 與 cache 命中幀永遠保留; 0=關閉降密; 預設 120 ≈ 單輪 inline 上限 ~18-36s)")
-    pm.add_argument("--ocr-y-pct", type=float, default=0.78,
-                    help="(--ocr 開啟時) 字幕帶上邊位置比例 0~1 (預設 0.78, 2026-06-10 Tim 1080p 實測校準)")
-    pm.add_argument("--ocr-h-pct", type=float, default=0.12,
-                    help="(--ocr 開啟時) 字幕帶高度比例 (預設 0.12)")
+    # 字幕帶座標 — 底部原點語意 (Tim 2026-07-28 拍板: 0=畫面下方, 高度往上長)。
+    # 預設 None = 跟 daemon _config.json 對齊 (帶位不一致 cache 全 miss, 對齊才吃得到 daemon 預產 cache);
+    # 顯式給值才覆蓋 (自帶校準帶 debug 用)。
+    pm.add_argument("--ocr-y-bottom-pct", dest="ocr_y_bottom_pct", type=float, default=None,
+                    help="(--ocr 開啟時) 字幕帶底邊離畫面下緣距離比例 0~1 (0=貼底; 預設讀 daemon config)")
+    pm.add_argument("--ocr-h-pct", type=float, default=None,
+                    help="(--ocr 開啟時) 字幕帶高度比例, 從底邊往上長 (預設讀 daemon config)")
+    pm.add_argument("--ocr-extra-regions", dest="ocr_extra_regions", type=str, default=None,
+                    help='(--ocr 開啟時) 額外字幕判定區域 JSON, 例: [[0.85,0.1]] (預設讀 daemon config)')
     pm.add_argument("--ocr-min-conf", type=float, default=0.5,
                     help="(--ocr 開啟時) OCR 信度過濾門檻 (預設 0.5)")
     # T-Subtitle-Dedupe (Tim 2026-07-24 拍板) — 補間幀字幕跟前一筆「完全相同」→ 摺疊不重複輸出。

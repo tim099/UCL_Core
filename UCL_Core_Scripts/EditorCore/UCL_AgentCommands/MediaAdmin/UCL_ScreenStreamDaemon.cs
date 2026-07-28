@@ -1,11 +1,12 @@
 ﻿// 區塊職責：ScreenStream daemon 子程序生命週期管理 (UCL_Core 版) — [InitializeOnLoad] static class。
 //            自 EOV 專案的 RCG_ScreenStreamDaemon 遷移 (Tim 2026-07-26 拍板「相關功能遷移到 UCL_Core」)。
-// 物理意義：Editor 啟動 / domain reload 時自動 spawn python screenstream_daemon.py 為 child process,
-//          每 CHECK_INTERVAL 秒 tick 確認子程序仍活著, 沒活就 respawn;
+// 物理意義：daemon 存活與 _config.json 的 enabled toggle 同步 (Tim 2026-07-28 拍板「停止錄影 daemon 同步停止」):
+//          enabled=true → 每 CHECK_INTERVAL 秒 tick 確認子程序活著, 沒活就 spawn;
+//          enabled=false → 有活的就 kill (不再常駐 idle);
 //          EditorApplication.quitting 時 graceful kill, 避免 zombie process。
 // 設計取捨：
 //   - script 遷入 <UCL_Core>/Tools~/AgentCommands/ (跨專案共用)，路徑走 UCL_EditorPath.CorePath 動態解析
-//   - daemon 啟動後一直 alive, 自己讀 config toggle on/off — Editor 端不必管 toggle 邏輯
+//   - daemon 存活綁 config.enabled (2026-07-28 前是常駐 idle 設計) — 停止錄影即收掉, 不留 idle process
 //   - 防快速 crash loop: 連續 spawn fail >= MAX_FAST_FAILS → 進 backoff
 //   - ⚠ 過渡期守門：偵測到 legacy RCG_ScreenStreamDaemon (EOV 專案端) 仍在 → 本 daemon 讓位不 spawn,
 //     避免新舊兩支 python daemon 併寫同一個 frames ring buffer (互蓋 index)。Tim 移除 RCG 版後自動接管。
@@ -22,8 +23,8 @@ using Debug = UnityEngine.Debug;
 namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 {
     /// <summary>
-    /// ScreenStream daemon 子程序常駐管理 (UCL_Core 版) — Editor 開機自動 spawn python daemon,
-    /// daemon 自己讀 _config.json enabled toggle 控制 capture; Editor 只管 process 存活。
+    /// ScreenStream daemon 子程序生命週期管理 (UCL_Core 版) — daemon 存活與 _config.json 的
+    /// enabled toggle 同步: 開始錄影 spawn、停止錄影 kill (Tim 2026-07-28, 不再常駐 idle)。
     /// 偵測到 legacy RCG_ScreenStreamDaemon 存在時自動讓位 (防雙 daemon 併寫)。
     /// </summary>
     public static class UCL_ScreenStreamDaemon
@@ -107,6 +108,26 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 
         static void TickInternal(double now)
         {
+            // (0) 錄影開關同步 (Tim 2026-07-28): enabled=false → daemon 不該活著 — 有活的收掉, 不 spawn。
+            //     舊行為是 daemon 常駐 idle 等 toggle; 改為存活直接綁 config.enabled, 停止錄影即同步停止。
+            if (!ReadConfigEnabled())
+            {
+                if (IsProcessAlive(s_DaemonProcess))
+                {
+                    Debug.Log("[UCL_ScreenStream] 錄影已停止 → 同步收掉 daemon");
+                    KillDaemon();
+                }
+                else if (IsPidFileProcessAlive())
+                {
+                    // 孤兒場景: domain reload 後 s_DaemonProcess 參考遺失, 但 _daemon.pid 指的 process 還活著
+                    // → 走註冊中心按 tag 收掉 (Service 內建身分驗證, PID 易主不誤殺現任持有者)
+                    int killed = UCL_ProcessRegistryService.KillAllByTag("screenstream_daemon");
+                    if (killed > 0)
+                        Debug.Log($"[UCL_ScreenStream] 錄影已停止 → 收掉 {killed} 顆孤兒 daemon (registry sweep)");
+                }
+                return;
+            }
+
             // (1) 子程序仍活 → 啥都不做
             if (IsProcessAlive(s_DaemonProcess)) return;
 
@@ -212,6 +233,82 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         // ===========================================================
         // Helpers
         // ===========================================================
+
+        /// <summary>
+        /// Page 端 toggle 錄影後呼叫 — 跳過 CHECK_INTERVAL 節流立即同步一次 daemon 存活,
+        /// 讓「開始/停止錄影」按下去即刻 spawn/kill, 不必等最多 5 秒的下一 tick。
+        /// </summary>
+        public static void RequestSyncNow()
+        {
+            try
+            {
+                if (s_LegacyDetected) return;   // 讓位中不管理
+                s_LastCheckTime = EditorApplication.timeSinceStartup;
+                TickInternal(EditorApplication.timeSinceStartup);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[UCL_ScreenStream] sync-now fail: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 螢幕清單一次性刷新 (Tim 2026-07-28) — spawn `python screenstream_daemon.py --enum-monitors`,
+        /// 枚舉螢幕寫 _monitors.json 即退 (不進 main loop、不寫 PID、不註冊 registry)。
+        /// 呼叫時機: 開啟 UCL_ScreenStreamPage 時 (daemon 未運行 → 清單可能缺/舊) + 頁面「🔄」鈕 (熱插拔外接螢幕)。
+        /// fire-and-forget: 短命 process (~1s), 頁面的 2s reload tick 會自動撿到新 _monitors.json。
+        /// </summary>
+        public static void EnumerateMonitorsOneShot()
+        {
+            try
+            {
+                string scriptPath = ScriptPath;
+                if (!File.Exists(scriptPath)) return;
+                string pythonExe = ResolvePython();
+                if (string.IsNullOrEmpty(pythonExe)) return;
+                var psi = new ProcessStartInfo
+                {
+                    FileName = pythonExe,
+                    Arguments = $"\"{scriptPath}\" --enum-monitors",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = UCL_RepoPath.RepoRoot,
+                };
+                using var proc = Process.Start(psi);   // 不追蹤、不等待 — 寫完 _monitors.json 自然退出
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[UCL_ScreenStream] enum-monitors one-shot fail: {e.Message}");
+            }
+        }
+
+        // 讀 _config.json 的 enabled — daemon 存活的 SOT (檔缺 / 壞檔視為 false: 沒 config 就不該有 daemon)
+        static bool ReadConfigEnabled()
+        {
+            try
+            {
+                string path = Path.Combine(UCL_RepoPath.RepoRoot, "AgentCommands", "_screenstream", "_config.json");
+                if (!File.Exists(path)) return false;
+                var data = UCL.Core.JsonLib.JsonData.ParseJson(File.ReadAllText(path));
+                return data != null && data.GetBool("enabled", false);
+            }
+            catch { return false; }
+        }
+
+        // _daemon.pid 指的 process 是否存活 — 偵測 domain reload 後遺失參考的孤兒 daemon
+        static bool IsPidFileProcessAlive()
+        {
+            try
+            {
+                string pidPath = Path.Combine(UCL_RepoPath.RepoRoot, "AgentCommands", "_screenstream", "_daemon.pid");
+                if (!File.Exists(pidPath)) return false;
+                if (!int.TryParse(File.ReadAllText(pidPath).Trim(), out int pid) || pid <= 0) return false;
+                using var p = Process.GetProcessById(pid);
+                return !p.HasExited;
+            }
+            catch { return false; }   // 無此 process / 讀檔失敗 = 沒有孤兒
+        }
+
         static bool IsProcessAlive(Process p)
         {
             if (p == null) return false;

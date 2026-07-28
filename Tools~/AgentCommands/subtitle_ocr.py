@@ -10,18 +10,23 @@ subtitle_ocr.py — RapidOCR 字幕帶 OCR helper (Paddle ONNX 模型, 純 CPU)
 # 設計選擇 (2026-06-09): Tim 系統 pip 環境多個 metadata 壞掉, paddleocr install 鏈崩潰 (要 paddlepaddle+50+ deps),
 #                       改用 rapidocr-onnxruntime: 模型同源 (Paddle 權重 ONNX export), 中文品質一樣, 依賴極簡。
 
+座標語意 (Tim 2026-07-28 拍板「0=畫面下方, 高度往上長」— 取代舊頂部原點 y_pct):
+  region = (y_bottom_pct, h_pct) — y_bottom_pct 是「帶底邊離畫面下緣的距離比例」(0=貼底),
+  h_pct 是帶高度、從 y_bottom 往「上」延伸。例: (0, 0.1) = 覆蓋畫面最下方 10%。
+  多區域: regions = [(0, 0.12), (0.85, 0.1)] — 主帶在下方 + 額外帶在上方 (有些影片字幕偶爾跑上面)。
+
 CLI 用法 (standalone debug):
-  python subtitle_ocr.py <frame_path> [--y-pct 0.85] [--h-pct 0.13]
+  python subtitle_ocr.py <frame_path> [--y-bottom-pct 0] [--h-pct 0.12]
   → stdout 印 OCR 結果一行
 
 import 用法 (給 montage 等 caller):
-  from subtitle_ocr import ocr_subtitle_band, is_available
+  from subtitle_ocr import ocr_subtitle_regions, is_available
   if is_available():
-      text = ocr_subtitle_band(Path("frame.jpg"), y_pct=0.78, h_pct=0.12)
+      text = ocr_subtitle_regions(Path("frame.jpg"), regions=[(0.0, 0.12)])
       # text: "字幕內容" 或 "" (空字串 = 該幀無字幕 / OCR 沒讀到)
 
 daemon-side 並行 cache 用法 (T-OCR-Pipeline, Tim 2026-06-10 拍板「錄製時就自動產生, 多執行緒並行」):
-  pool = OcrWorkerPool(cache_dir, y_pct=0.78, h_pct=0.12, workers=2)
+  pool = OcrWorkerPool(cache_dir, regions=[(0.0, 0.12)], workers=2)
   pool.start()
   pool.submit(frame_path)        # 每寫一張 frame 丟進 queue, worker 背景 OCR → cache json
   pool.stop()
@@ -46,11 +51,60 @@ import time
 from pathlib import Path
 from typing import Optional
 
-# 預設字幕帶位置 (2026-06-10 Tim ground-truth 校準: 1080p 字幕實測 y≈860~950px → 0.78~0.90)
-# 物理意義: 舊預設 0.85/0.13 起裁點過低, 會切掉字幕上半 + 混進底部 audio viz strip → 0 hits
-DEFAULT_Y_PCT = 0.78
+# 預設字幕帶位置 — 底部原點語意 (Tim 2026-07-28 拍板: 0=畫面下方, 高度往上長)
+# 物理意義: y_bottom=0 + h=0.12 = 覆蓋畫面最下方 12%; 舊頂部原點預設 0.78/0.12 (=下方 0.10~0.22)
+#          的換算遷移由 caller (daemon/montage 讀 config 時) 處理, 本 module 只認底部原點。
+DEFAULT_Y_BOTTOM_PCT = 0.0
 DEFAULT_H_PCT = 0.12
 DEFAULT_MIN_CONF = 0.5
+
+
+def normalize_regions(regions) -> list:
+    """任意 caller 輸入 → 正規化 [(y_bottom, h), ...] (clamp 0~1, 去無效項; 空輸入回預設單帶).
+
+    # 區塊職責: regions 是跨層 (config json / CLI / pool / cache) 傳遞的核心型別, 收口統一驗證
+    # 物理意義: 接受 (y,h) tuple / [y,h] list / {"y_bottom_pct":y,"h_pct":h} dict 三種形態
+    # 數值影響: h<=0 的項剔除; 全剔光回 [(DEFAULT_Y_BOTTOM_PCT, DEFAULT_H_PCT)] — OCR 永遠有帶可裁
+    """
+    out = []
+    for r in (regions or []):
+        try:
+            if isinstance(r, dict):
+                y, h = float(r.get("y_bottom_pct", 0)), float(r.get("h_pct", 0))
+            else:
+                y, h = float(r[0]), float(r[1])
+        except (TypeError, ValueError, IndexError, KeyError):
+            continue
+        y = min(max(y, 0.0), 1.0)
+        h = min(max(h, 0.0), 1.0)
+        if h <= 0.0 or y >= 1.0:
+            continue
+        out.append((round(y, 4), round(h, 4)))
+    return out if out else [(DEFAULT_Y_BOTTOM_PCT, DEFAULT_H_PCT)]
+
+
+def regions_from_config(cfg: dict) -> list:
+    """從 daemon _config.json dict 解析完整 regions 清單 (主帶 + 額外區域) — daemon/montage 共用單一實作.
+
+    # 區塊職責: config keys → [(y_bottom, h), ...]; 新舊 key 遷移收口在此一處
+    # 物理意義: 主帶 = ocr_y_bottom_pct/ocr_h_pct (底部原點); 額外區域 = ocr_extra_regions
+    #          (list of {"y_bottom_pct","h_pct"} 或 [y,h]); 舊 config 只有頂部原點 ocr_y_pct 時
+    #          自動換算 y_bottom = 1 - y_pct - h_pct (舊語意帶頂在 y_pct、往下長 h_pct)。
+    # 數值影響: 回傳保證非空 (normalize_regions 兜底預設單帶)。
+    """
+    h = float(cfg.get("ocr_h_pct", DEFAULT_H_PCT))
+    if "ocr_y_bottom_pct" in cfg:
+        y_bottom = float(cfg.get("ocr_y_bottom_pct", DEFAULT_Y_BOTTOM_PCT))
+    elif "ocr_y_pct" in cfg:
+        # 舊頂部原點 key 遷移: 帶底邊 = 1 - (帶頂 + 高度)
+        y_bottom = 1.0 - float(cfg.get("ocr_y_pct", 0.78)) - h
+    else:
+        y_bottom = DEFAULT_Y_BOTTOM_PCT
+    regions = [(y_bottom, h)]
+    extra = cfg.get("ocr_extra_regions")
+    if isinstance(extra, list):
+        regions += extra
+    return normalize_regions(regions)
 
 # T-OCR-CPU-Fix (2026-06-10 事故, summit 止血 + 定罪, basecamp 根治)
 # 區塊職責: 限制每套 RapidOCR engine 的 onnxruntime 執行緒池規模
@@ -134,30 +188,39 @@ def get_init_error() -> Optional[str]:
 # ===========================================================
 
 
-def ocr_subtitle_band(
+def ocr_subtitle_regions(
     frame_path: Path,
-    y_pct: float = DEFAULT_Y_PCT,
-    h_pct: float = DEFAULT_H_PCT,
+    regions=None,
     min_confidence: float = DEFAULT_MIN_CONF,
 ) -> str:
-    """從一張 frame 裁字幕帶 + 跑 OCR → 回字串.
+    """從一張 frame 裁一到多個字幕帶 + 跑 OCR → 回合併字串.
 
-    # 區塊職責：給 caller 一個「丟 frame 路徑回字幕文字」的 one-call API
-    # 物理意義：y_pct/h_pct 是字幕帶位置比例 (0~1, 解析度無關); 預設 0.85,0.13 = 底部 13% (Vivy 字幕常用位置).
+    # 區塊職責：給 caller 一個「丟 frame 路徑回字幕文字」的 one-call API (多區域版)
+    # 物理意義：regions = [(y_bottom_pct, h_pct), ...] 底部原點比例 (0~1, 解析度無關);
     #          字幕辨識率隨字體大小急降, 故必走原始 frame, 別用縮圖牆 tile.
-    # 數值影響：min_confidence 過濾低信度文字塊 (預設 0.5); 同一幀多行字幕用換行 (\n) 串接;
-    #          OCR 失敗 / 該幀無字幕 → 回 ""  (空字串, 對齊 caller 期望單一字串型別).
+    # 數值影響：min_confidence 過濾低信度文字塊 (預設 0.5); 各區域非空結果按 regions 順序用換行串接;
+    #          OCR 失敗 / 該幀無字幕 → 回 "" (空字串, 對齊 caller 期望單一字串型別).
     """
     if not is_available():
         return ""
-    return _ocr_band_with_engine(_ocr_engine, frame_path, y_pct, h_pct, min_confidence)
+    return _ocr_regions_with_engine(_ocr_engine, frame_path, normalize_regions(regions), min_confidence)
 
 
-def _crop_band_to_array(frame_path: Path, y_pct: float, h_pct: float):
+def ocr_subtitle_band(
+    frame_path: Path,
+    y_bottom_pct: float = DEFAULT_Y_BOTTOM_PCT,
+    h_pct: float = DEFAULT_H_PCT,
+    min_confidence: float = DEFAULT_MIN_CONF,
+) -> str:
+    """單帶便捷版 (底部原點) — 委派 ocr_subtitle_regions."""
+    return ocr_subtitle_regions(frame_path, [(y_bottom_pct, h_pct)], min_confidence)
+
+
+def _crop_band_to_array(frame_path_or_img, y_bottom_pct: float, h_pct: float):
     """裁字幕帶 → numpy array; 任何失敗回 None.
 
-    # 區塊職責: ocr_subtitle_band / OcrWorkerPool 共用的 crop 前處理
-    # 物理意義: y_pct/h_pct 比例制 (解析度無關); clamp 防越界
+    # 區塊職責: OCR 各入口共用的 crop 前處理 (收 Path 或已開啟的 PIL Image — 多區域同幀免重複 decode)
+    # 物理意義: 底部原點比例制 — 帶的像素範圍 = [H*(1-y_bottom-h), H*(1-y_bottom)]; clamp 防越界
     """
     try:
         from PIL import Image
@@ -165,14 +228,17 @@ def _crop_band_to_array(frame_path: Path, y_pct: float, h_pct: float):
     except Exception:
         return None
     try:
-        with Image.open(frame_path) as img:
+        def _crop(img):
             w, h = img.size
-            y0 = int(h * y_pct)
-            y1 = min(int(h * (y_pct + h_pct)), h)
+            y0 = max(int(h * (1.0 - y_bottom_pct - h_pct)), 0)
+            y1 = min(int(h * (1.0 - y_bottom_pct)), h)
             if y1 <= y0:
                 return None
-            crop = img.crop((0, y0, w, y1))
-            return np.array(crop.convert("RGB"))
+            return np.array(img.crop((0, y0, w, y1)).convert("RGB"))
+        if isinstance(frame_path_or_img, (str, Path)):
+            with Image.open(frame_path_or_img) as img:
+                return _crop(img)
+        return _crop(frame_path_or_img)
     except Exception:
         return None
 
@@ -209,18 +275,36 @@ def _parse_ocr_result(result, min_confidence: float) -> str:
         return ""
 
 
-def _ocr_band_with_engine(engine, frame_path: Path, y_pct: float, h_pct: float,
-                          min_confidence: float) -> str:
-    """指定 engine 跑「crop 字幕帶 → OCR → 字串」(pool worker 跟全域單例共用此核心)."""
-    arr = _crop_band_to_array(frame_path, y_pct, h_pct)
-    if arr is None:
-        return ""
+def _ocr_regions_with_engine(engine, frame_path: Path, regions: list,
+                             min_confidence: float) -> str:
+    """指定 engine 跑「逐區域 crop → OCR → 非空結果合併」(pool worker 跟全域單例共用此核心).
+
+    # 物理意義: 同幀開一次圖, 逐區域裁切各跑一次 OCR — 額外區域通常為空 (字幕偶爾才跑上面),
+    #          RapidOCR 對小圖 ~100-300ms/次, 區域數 1-3 個在 1-2 fps pipeline 下無吞吐壓力。
+    # 數值影響: 各區域非空結果按 regions 順序以換行串接 (主帶在前); 全空 → ""。
+    """
     try:
-        # RapidOCR API: 回 (results, elapse) — results = [ [box, text, confidence], ... ] 或 None
-        result, _elapse = engine(arr)
+        from PIL import Image
     except Exception:
         return ""
-    return _parse_ocr_result(result, min_confidence)
+    texts = []
+    try:
+        with Image.open(frame_path) as img:
+            for (y_bottom, h) in regions:
+                arr = _crop_band_to_array(img, y_bottom, h)
+                if arr is None:
+                    continue
+                try:
+                    # RapidOCR API: 回 (results, elapse) — results = [ [box, text, confidence], ... ] 或 None
+                    result, _elapse = engine(arr)
+                except Exception:
+                    continue
+                text = _parse_ocr_result(result, min_confidence)
+                if text:
+                    texts.append(text)
+    except Exception:
+        return ""
+    return "\n".join(texts)
 
 
 # ===========================================================
@@ -270,14 +354,28 @@ def read_ocr_status(cache_dir: Path) -> Optional[dict]:
 BAND_TOLERANCE = 0.02       # cache band 參數容差 — caller 帶位偏離 cache 產出帶位過多即不對版
 
 
+def _regions_match(cached_regions, want_regions) -> bool:
+    """cache 產出帶位 vs caller 要的帶位 — 逐區域比對 (數量不同即不對版; 各分量容差 BAND_TOLERANCE)."""
+    try:
+        a = normalize_regions(cached_regions)
+        b = normalize_regions(want_regions)
+        if len(a) != len(b):
+            return False
+        return all(abs(ra[0] - rb[0]) <= BAND_TOLERANCE and abs(ra[1] - rb[1]) <= BAND_TOLERANCE
+                   for ra, rb in zip(a, b))
+    except Exception:
+        return False
+
+
 def read_cached_text(cache_dir: Path, frame_path: Path, mtime: float,
-                     y_pct: Optional[float] = None,
-                     h_pct: Optional[float] = None,
+                     regions=None,
                      treat_skipped_as_miss: bool = False) -> Optional[str]:
     """讀 daemon 預產 OCR cache. 命中回 text (可為空字串=無字幕), miss/stale 回 None.
 
     # 物理意義: None vs "" 語意嚴格區分 — None=caller 該 fallback 自己 OCR; ""=確定無字幕;
-    #          caller 傳 y_pct/h_pct 時驗 cache 產出帶位一致 (caller 自帶校準帶 ≠ daemon 帶 → 不可用);
+    #          caller 傳 regions 時驗 cache 產出帶位一致 (caller 自帶校準帶 ≠ daemon 帶 → 不可用);
+    #          舊版 cache (只有頂部原點 y_pct/h_pct 欄, 無 regions 欄) 一律視為不對版 → miss
+    #          (語意切換後舊 cache 帶位不可信, fail-soft 重跑);
     #          skipped stub (adaptive density 跳過的幀) 預設當「確定無字幕」回 "" (中間幀夠用),
     #          treat_skipped_as_miss=True 時回 None (主 tile 要準確 → caller 自己補 OCR)
     """
@@ -289,10 +387,12 @@ def read_cached_text(cache_dir: Path, frame_path: Path, mtime: float,
             return None    # ring buffer 已覆寫此槽位, cache 是舊畫面的 → stale
         if data.get("skipped"):
             return None if treat_skipped_as_miss else ""
-        if y_pct is not None and abs(float(data.get("y_pct", -1)) - y_pct) > BAND_TOLERANCE:
-            return None    # caller 要的字幕帶位置跟 cache 產出時不同 → 不對版
-        if h_pct is not None and abs(float(data.get("h_pct", -1)) - h_pct) > BAND_TOLERANCE:
-            return None
+        if regions is not None:
+            # 缺 regions 欄 = 舊版 (頂部原點語意) cache — 明確判 miss, 不可讓 normalize 兜底預設帶誤判對版
+            if not isinstance(data.get("regions"), list):
+                return None
+            if not _regions_match(data.get("regions"), regions):
+                return None    # caller 要的字幕帶位置跟 cache 產出時不同 → 不對版
         return str(data.get("text", ""))
     except (OSError, json.JSONDecodeError, ValueError, TypeError):
         return None
@@ -307,15 +407,14 @@ class OcrWorkerPool:
     """
 
     def __init__(self, cache_dir: Path,
-                 y_pct: float = DEFAULT_Y_PCT,
-                 h_pct: float = DEFAULT_H_PCT,
+                 regions=None,
                  min_confidence: float = DEFAULT_MIN_CONF,
                  workers: int = 2,
                  max_backlog: int = 64,
                  adaptive: bool = True):
         self.cache_dir = Path(cache_dir)
-        self.y_pct = y_pct
-        self.h_pct = h_pct
+        # regions = [(y_bottom_pct, h_pct), ...] 底部原點 (見模組頂座標語意); 建構時即正規化定形
+        self.regions = normalize_regions(regions)
         self.min_confidence = min_confidence
         self.workers = max(1, int(workers))
         self._queue: "queue.Queue" = queue.Queue(maxsize=max_backlog)
@@ -436,13 +535,12 @@ class OcrWorkerPool:
             return    # frame 已消失 (daemon 重啟清場等), 放棄
         if abs(current_mtime - mtime) > MTIME_TOLERANCE_SEC:
             return    # 排隊期間被 ring buffer 覆寫成新畫面 → 這筆 task 過期, 放棄
-        text = _ocr_band_with_engine(engine, frame_path, self.y_pct, self.h_pct,
-                                     self.min_confidence)
+        text = _ocr_regions_with_engine(engine, frame_path, self.regions,
+                                        self.min_confidence)
         payload = {
             "mtime": mtime,
             "text": text,
-            "y_pct": self.y_pct,
-            "h_pct": self.h_pct,
+            "regions": [list(r) for r in self.regions],   # 底部原點 [(y_bottom, h), ...] — 讀取端驗帶位對版
             "ocr_at": time.time(),
         }
         cpath = cache_path_for(self.cache_dir, frame_path)
@@ -528,10 +626,12 @@ class OcrWorkerPool:
 def main():
     ap = argparse.ArgumentParser(description="PaddleOCR 字幕帶 OCR helper.")
     ap.add_argument("frame", help="原始 frame 路徑 (1080p 等高解析度)")
-    ap.add_argument("--y-pct", type=float, default=DEFAULT_Y_PCT,
-                    help=f"字幕帶上邊位置 (比例 0~1, 預設 {DEFAULT_Y_PCT}, 2026-06-10 Tim 實測校準)")
+    ap.add_argument("--y-bottom-pct", type=float, default=DEFAULT_Y_BOTTOM_PCT,
+                    help=f"字幕帶底邊離畫面下緣距離 (比例 0~1, 0=貼底, 預設 {DEFAULT_Y_BOTTOM_PCT})")
     ap.add_argument("--h-pct", type=float, default=DEFAULT_H_PCT,
-                    help=f"字幕帶高度比例 (預設 {DEFAULT_H_PCT})")
+                    help=f"字幕帶高度比例, 從底邊往上長 (預設 {DEFAULT_H_PCT})")
+    ap.add_argument("--extra-regions", type=str, default="",
+                    help='額外字幕判定區域 JSON, 例: [[0.85,0.1]] (各項 [y_bottom_pct, h_pct])')
     ap.add_argument("--min-confidence", type=float, default=0.5,
                     help="過濾低信度 (預設 0.5)")
     args = ap.parse_args()
@@ -546,10 +646,16 @@ def main():
         print(f"ERROR: RapidOCR 不可用 — {err}", file=sys.stderr)
         return 2
 
-    text = ocr_subtitle_band(frame_path,
-                             y_pct=args.y_pct,
-                             h_pct=args.h_pct,
-                             min_confidence=args.min_confidence)
+    regions = [(args.y_bottom_pct, args.h_pct)]
+    if args.extra_regions:
+        try:
+            regions += [tuple(r) for r in json.loads(args.extra_regions)]
+        except (ValueError, TypeError) as e:
+            print(f"ERROR: --extra-regions JSON 解析失敗: {e}", file=sys.stderr)
+            return 1
+    text = ocr_subtitle_regions(frame_path,
+                                regions=regions,
+                                min_confidence=args.min_confidence)
     if text:
         print(text)
     else:

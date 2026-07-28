@@ -130,8 +130,12 @@ DEFAULT_CONFIG = {
     # 數值影響: 預設 off — Tim 從 _config.json 開; workers=2 (fps=2 × ~300ms/幀 = 0.6 負載, 留 headroom)
     "ocr_enabled": False,
     "ocr_workers": 2,
-    "ocr_y_pct": 0.78,      # 字幕帶上邊 (2026-06-10 Tim 1080p 實測 860~950px → 0.78~0.90)
-    "ocr_h_pct": 0.12,      # 字幕帶高度
+    # 字幕帶座標 — 底部原點語意 (Tim 2026-07-28 拍板): y_bottom=0 表示帶底貼畫面下緣, 高度往上長。
+    # 舊頂部原點 key ocr_y_pct 的 config 由 subtitle_ocr.regions_from_config 讀取時自動換算遷移。
+    "ocr_y_bottom_pct": 0.0,   # 帶底邊離畫面下緣距離 (0=貼底)
+    "ocr_h_pct": 0.12,         # 字幕帶高度 (從底邊往上長)
+    # 額外字幕判定區域 (可空) — 有些影片字幕偶爾跑到上方; 各項 {"y_bottom_pct": f, "h_pct": f}
+    "ocr_extra_regions": [],
     "ocr_min_conf": 0.5,    # 低信度過濾
     # T-OCR-AdaptiveDensity (Tim 2026-06-10) — lag 過大時自動跳幀追進度 (詳見 subtitle_ocr.py 常數)
     "ocr_adaptive": True,
@@ -817,16 +821,22 @@ def main_loop() -> int:
             curr_ocr_enabled = bool(cfg.get("ocr_enabled", False))
             # T-OCR-AutoRestart (Tim 2026-07-27) — 對偶 T-STT-AutoRestart：pool 運行中偵測 band/conf/workers
             #   任一改變 → 自動 stop 讓下方 enabled-transition 以新設定重起。消滅「改字幕帶位置按套用卻沒 toggle
-            #   = 靜默沿用舊 band」bug (OcrWorkerPool 的 y/h/conf/workers 綁建構子, 中途不可熱改)。
+            #   = 靜默沿用舊 band」bug (OcrWorkerPool 的 regions/conf/workers 綁建構子, 中途不可熱改)。
+            # regions 快照 (2026-07-28 底部原點 + 額外區域): regions_from_config 已正規化 round(4),
+            #   tuple 化後可直接比相等 — 主帶或任一額外區域增刪改都會觸發重起。
+            try:
+                from subtitle_ocr import regions_from_config as _regions_from_config
+                curr_ocr_regions = tuple(_regions_from_config(cfg))
+            except Exception:
+                curr_ocr_regions = ((0.0, 0.12),)
             curr_ocr_band = (
-                round(float(cfg.get("ocr_y_pct", 0.78)), 4),
-                round(float(cfg.get("ocr_h_pct", 0.12)), 4),
+                curr_ocr_regions,
                 round(float(cfg.get("ocr_min_conf", 0.5)), 4),
                 int(cfg.get("ocr_workers", 2)),
             )
             if ocr_pool is not None and last_ocr_band is not None and curr_ocr_band != last_ocr_band:
-                log(f"ocr 設定改變 → 自動重起 pool 套用 (band y={curr_ocr_band[0]} h={curr_ocr_band[1]} "
-                    f"min_conf={curr_ocr_band[2]} workers={curr_ocr_band[3]})")
+                log(f"ocr 設定改變 → 自動重起 pool 套用 (regions={curr_ocr_band[0]} "
+                    f"min_conf={curr_ocr_band[1]} workers={curr_ocr_band[2]})")
                 try:
                     ocr_pool.stop()
                 except Exception as e:
@@ -842,17 +852,17 @@ def main_loop() -> int:
                             log(f"ocr pool start skip (engine 不可用): {get_init_error()}", "WARN")
                             ocr_pool = None
                         else:
+                            from subtitle_ocr import regions_from_config
                             ocr_pool = OcrWorkerPool(
                                 OCR_CACHE_DIR,
-                                y_pct=float(cfg.get("ocr_y_pct", 0.78)),
-                                h_pct=float(cfg.get("ocr_h_pct", 0.12)),
+                                regions=regions_from_config(cfg),
                                 min_confidence=float(cfg.get("ocr_min_conf", 0.5)),
                                 workers=int(cfg.get("ocr_workers", 2)),
                                 adaptive=bool(cfg.get("ocr_adaptive", True)),
                             )
                             ocr_pool.start()
                             log(f"ocr worker pool started (workers={ocr_pool.workers}, "
-                                f"band y={ocr_pool.y_pct} h={ocr_pool.h_pct})")
+                                f"regions={ocr_pool.regions})")
                     except Exception as e:
                         log(f"ocr pool start fail: {e}", "WARN")
                         ocr_pool = None
@@ -1018,5 +1028,23 @@ def main_loop() -> int:
         cleanup_pid()
 
 
+def enum_monitors_oneshot() -> int:
+    """--enum-monitors 一次性模式: 枚舉螢幕寫 _monitors.json 即退, 不進 main loop、不寫 PID。
+
+    # 區塊職責: 給 Editor 端「daemon 未運行時」預熱/刷新螢幕清單快取 (Tim 2026-07-28)
+    # 物理意義: daemon 存活已綁 config.enabled (停止錄影即收掉), _monitors.json 只在 daemon 啟動時寫
+    #          → 全新環境 / 熱插拔外接螢幕在未錄影期間拿不到清單。本模式讓 Editor 啟動時
+    #          與頁面「🔄 刷新」鈕都能秒級補寫快取。
+    # 數值影響: 只寫 _monitors.json 一檔; 與運行中 daemon 併寫同檔的機率極低且內容同源, 無害。
+    """
+    ensure_dirs()
+    monitors = enumerate_monitors()
+    write_monitors_file(monitors)
+    print(f"enum-monitors: {len(monitors)} monitor(s) → {MONITORS_PATH}")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--enum-monitors" in sys.argv:
+        sys.exit(enum_monitors_oneshot())
     sys.exit(main_loop())

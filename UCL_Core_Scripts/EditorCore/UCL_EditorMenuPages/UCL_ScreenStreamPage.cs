@@ -10,6 +10,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using UCL.Core.ATTR;
 using UCL.Core.JsonLib;
@@ -66,6 +67,20 @@ namespace UCL.Core.EditorLib.Page
         //   持久化在 config.stream_title, 不自動清空 (欄位在頁面上看得見, 換片自行改/清)。
         string m_StreamTitle = "";
 
+        // 區塊職責: OCR 字幕讀取設定 (Tim 2026-07-28: 自 UCL_MediaAdminPage 整合進本頁)
+        // 物理意義: 字幕帶座標為「底部原點」語意 — y_bottom=0 表示帶底貼畫面下緣, 高度從底邊往上長
+        //          (例: y=0, h=0.1 → 覆蓋畫面最下方 10%)。額外判定區域給「字幕偶爾跑到上方」的影片用 (可空)。
+        // 數值影響: 寫 config.ocr_y_bottom_pct / ocr_h_pct / ocr_extra_regions;
+        //          daemon 每 loop reload, band 改動觸發 T-OCR-AutoRestart 自動重起 pool 套用。
+        bool m_OcrEnabled = false;
+        int m_OcrWorkers = 2;
+        float m_OcrYBottomPct = 0f;      // 帶底邊離畫面下緣距離 (0=貼底, Tim 拍板初始值 0)
+        float m_OcrHPct = 0.12f;         // 帶高度, 從底邊往上長
+        float m_OcrMinConf = 0.5f;
+        // 額外字幕判定區域 — x=y_bottom_pct, y=h_pct (Vector2 只是輕量載體, 不涉幾何運算)
+        readonly List<Vector2> m_OcrExtraRegions = new List<Vector2>();
+        bool m_ShowOcrExtraRegions = false;   // 可折疊 List 開合狀態
+
         // 區塊職責: 3-way merge baseline — 每個可編輯欄位記「上次從磁碟看到的值」
         // 物理意義: config 檔會被外部工具 (stream_watch_session.py / agent) 併發改寫;
         //          reload 時只有「UI 值 == baseline (Tim 沒動過)」的欄位才吃磁碟新值,
@@ -80,6 +95,13 @@ namespace UCL.Core.EditorLib.Page
         string m_BaseSttModel = "small";
         string m_BaseSttLang = "";
         string m_BaseStreamTitle = "";
+        bool m_BaseOcrEnabled = false;
+        int m_BaseOcrWorkers = 2;
+        float m_BaseOcrYBottomPct = 0f;
+        float m_BaseOcrHPct = 0.12f;
+        float m_BaseOcrMinConf = 0.5f;
+        // 額外區域的 baseline 用序列化字串比對 (list 整體當單一欄位做 3-way merge)
+        string m_BaseOcrExtraRegions = "";
         // config 檔 mtime 快照 — 沒變就跳過 parse (省 IO), 變了才走 merge reload
         long m_ConfigMtime = 0;
         static readonly string[] s_SttModelOptions = { "tiny", "base", "small", "medium", "large-v3" };
@@ -130,6 +152,9 @@ namespace UCL.Core.EditorLib.Page
         double m_LastReloadTime = -1.0;
         const double RELOAD_INTERVAL_SEC = 2.0;
 
+        // 區塊折疊開合狀態 (Tim 2026-07-28: 錄影設定/STT/OCR 區塊可折疊) — 頁面生命週期內記住, 預設收合
+        private UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
+
         // Resolution dropdown options
         static readonly string[] s_ResolutionOptions = { "native", "2k", "1440p", "1080p", "720p", "480p" };
 
@@ -174,11 +199,49 @@ namespace UCL.Core.EditorLib.Page
             ReloadFromDisk();
             ReloadMonitors();
             ReloadPreview();
+            // 螢幕清單預熱 (Tim 2026-07-28): daemon 存活已綁錄影開關, 未錄影時 _monitors.json 可能缺/舊
+            // → 開啟本頁時 one-shot 枚舉補寫快取 (fire-and-forget ~1s, 2s reload tick 自動撿到);
+            //   daemon 運行中則它啟動時已寫過, 不必重複 spawn。熱插拔螢幕另有「🔄」鈕手動刷新。
+            if (!m_DaemonAlive)
+                AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.EnumerateMonitorsOneShot();
             m_FirstGuiDone = true;
         }
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
+            // 區塊職責: 開始/停止錄影鈕 (Tim 2026-07-28: 自內文移到 Top Bar + 移除 5 秒二段確認, 點擊直接生效)
+            // 物理意義: 開始錄影 = 同步保存當前所有 UI 設定 + 清空上一場 stt_prompt 人名偏置 (防跨場幻聽,
+            //          T-STT-StaleFix 慣例不變); daemon 每 loop reload config 反應 enabled toggle。
+            // 數值影響: TopBarButtons 可能先於 ContentOnGUI 執行 → 先走 EnsureInitialReload 保 config 已載;
+            //          config 未載入 (檔不存在) 時不畫錄影鈕, 走內文的「初始化」流程。
+            EnsureInitialReload();
+            if (m_ConfigLoaded)
+            {
+                var aOldBg = GUI.backgroundColor;
+                if (m_Enabled)
+                {
+                    GUI.backgroundColor = new Color(0.8f, 0.3f, 0.3f);
+                    if (GUILayout.Button("⏹ 停止錄影", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
+                    {
+                        m_Enabled = false;
+                        SaveToDisk();
+                        // 停止錄影 → daemon 同步收掉 (Tim 2026-07-28), 不等 manager 下一 tick (最多 5s)
+                        AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
+                    }
+                }
+                else
+                {
+                    GUI.backgroundColor = new Color(0.3f, 0.6f, 0.3f);
+                    if (GUILayout.Button("▶ 開始錄影", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
+                    {
+                        m_Enabled = true;
+                        SaveToDisk(clearSttPrompt: true);
+                        // 開始錄影 → daemon 立即 spawn (存活綁 config.enabled, 不再常駐 idle)
+                        AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
+                    }
+                }
+                GUI.backgroundColor = aOldBg;
+            }
             // 開啟 _screenstream 資料夾 (Tim 2026-07-27) — 直接看 frames / stt / ocr cache / config
             if (GUILayout.Button("📂 開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
             {
@@ -280,6 +343,44 @@ namespace UCL.Core.EditorLib.Page
             baseline = disk;
             return result;
         }
+        static float MergeField(float ui, ref float baseline, float disk)
+        {
+            // float 比對用小容差 — slider 量化 / json round-trip 的尾數差不該被誤判成「Tim 編輯中」
+            float result = (Mathf.Abs(ui - baseline) < 0.0001f) ? disk : ui;
+            baseline = disk;
+            return result;
+        }
+
+        // ── OCR 額外區域 serialize/parse (config json ↔ List<Vector2>) ──
+
+        // 序列化成穩定字串 (InvariantCulture) — 3-way merge 的 baseline 比對鍵
+        static string SerializeRegions(List<Vector2> iRegions)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var r in iRegions)
+            {
+                sb.Append(r.x.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
+                sb.Append(r.y.ToString("0.####", CultureInfo.InvariantCulture)).Append(';');
+            }
+            return sb.ToString();
+        }
+
+        // 讀 config.ocr_extra_regions — 接受 {"y_bottom_pct","h_pct"} 物件或 [y,h] 陣列兩種形態 (對齊 python normalize_regions)
+        static List<Vector2> ParseRegions(JsonData iData)
+        {
+            var list = new List<Vector2>();
+            if (iData == null || !iData.IsArray) return list;
+            for (int i = 0; i < iData.Count; i++)
+            {
+                JsonData e = iData[i];
+                if (e == null) continue;
+                if (e.IsObject)
+                    list.Add(new Vector2(e.GetFloat("y_bottom_pct", 0f), e.GetFloat("h_pct", 0f)));
+                else if (e.IsArray && e.Count >= 2)
+                    list.Add(new Vector2(e[0].GetFloat(0f), e[1].GetFloat(0f)));
+            }
+            return list;
+        }
 
         void ReloadFromDisk()
         {
@@ -321,6 +422,28 @@ namespace UCL.Core.EditorLib.Page
                         m_SttModel = MergeField(m_SttModel, ref m_BaseSttModel, data.GetString("stt_model", "small"));
                         m_SttLang = MergeField(m_SttLang, ref m_BaseSttLang, data.GetString("stt_lang", ""));
                         m_StreamTitle = MergeField(m_StreamTitle, ref m_BaseStreamTitle, data.GetString("stream_title", ""));
+                        // OCR 欄位 (Tim 2026-07-28 整合自影音管理頁) — 底部原點語意, 同套 3-way merge
+                        m_OcrEnabled = MergeField(m_OcrEnabled, ref m_BaseOcrEnabled, data.GetBool("ocr_enabled", false));
+                        m_OcrWorkers = MergeField(m_OcrWorkers, ref m_BaseOcrWorkers, data.GetInt("ocr_workers", 2));
+                        float diskOcrH = data.GetFloat("ocr_h_pct", 0.12f);
+                        // 舊 config 遷移: 只有頂部原點 ocr_y_pct → 換算 y_bottom = 1 - y_top - h (帶底離下緣)
+                        float diskOcrYBottom = data.Contains("ocr_y_bottom_pct")
+                            ? data.GetFloat("ocr_y_bottom_pct", 0f)
+                            : (data.Contains("ocr_y_pct")
+                                ? Mathf.Clamp01(1f - data.GetFloat("ocr_y_pct", 0.78f) - diskOcrH)
+                                : 0f);
+                        m_OcrYBottomPct = MergeField(m_OcrYBottomPct, ref m_BaseOcrYBottomPct, diskOcrYBottom);
+                        m_OcrHPct = MergeField(m_OcrHPct, ref m_BaseOcrHPct, diskOcrH);
+                        m_OcrMinConf = MergeField(m_OcrMinConf, ref m_BaseOcrMinConf, data.GetFloat("ocr_min_conf", 0.5f));
+                        // 額外區域: list 整體視為單一欄位 — UI 沒動過 (序列化 == baseline) 才吃磁碟值
+                        var diskRegions = ParseRegions(data.Contains("ocr_extra_regions") ? data["ocr_extra_regions"] : null);
+                        string diskRegionsSer = SerializeRegions(diskRegions);
+                        if (SerializeRegions(m_OcrExtraRegions) == m_BaseOcrExtraRegions)
+                        {
+                            m_OcrExtraRegions.Clear();
+                            m_OcrExtraRegions.AddRange(diskRegions);
+                        }
+                        m_BaseOcrExtraRegions = diskRegionsSer;
                     }
                     m_ConfigMtime = mtime;
                 }
@@ -383,6 +506,21 @@ namespace UCL.Core.EditorLib.Page
                 existing["stt_model"] = new JsonData(m_SttModel);
                 existing["stt_lang"] = new JsonData(m_SttLang);
                 existing["stream_title"] = new JsonData(m_StreamTitle ?? "");
+                // OCR 欄位 (底部原點語意) — daemon 每 loop reload, band 改動走 T-OCR-AutoRestart 自動重起 pool
+                existing["ocr_enabled"] = new JsonData(m_OcrEnabled);
+                existing["ocr_workers"] = new JsonData(m_OcrWorkers);
+                existing["ocr_y_bottom_pct"] = new JsonData(m_OcrYBottomPct);
+                existing["ocr_h_pct"] = new JsonData(m_OcrHPct);
+                existing["ocr_min_conf"] = new JsonData(m_OcrMinConf);
+                var regionsArr = new JsonData().ToArray();
+                foreach (var r in m_OcrExtraRegions)
+                {
+                    var o = new JsonData();
+                    o["y_bottom_pct"] = new JsonData(r.x);
+                    o["h_pct"] = new JsonData(r.y);
+                    regionsArr.Add(o);
+                }
+                existing["ocr_extra_regions"] = regionsArr;
                 // T-STT-StaleFix: 開始錄影時清空人名詞彙偏置 (防上一場殘留跨場幻聽); 其餘 save 保留既有值
                 if (clearSttPrompt)
                 {
@@ -407,6 +545,12 @@ namespace UCL.Core.EditorLib.Page
                 m_BaseSttModel = m_SttModel;
                 m_BaseSttLang = m_SttLang;
                 m_BaseStreamTitle = m_StreamTitle;
+                m_BaseOcrEnabled = m_OcrEnabled;
+                m_BaseOcrWorkers = m_OcrWorkers;
+                m_BaseOcrYBottomPct = m_OcrYBottomPct;
+                m_BaseOcrHPct = m_OcrHPct;
+                m_BaseOcrMinConf = m_OcrMinConf;
+                m_BaseOcrExtraRegions = SerializeRegions(m_OcrExtraRegions);
                 m_ConfigMtime = new FileInfo(path).LastWriteTime.Ticks;
             }
             catch (Exception e)
@@ -448,8 +592,20 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.FlexibleSpace();
 
             GUILayout.EndHorizontal();
-            GUILayout.Label("獨立 Page 防誤觸. 錄影中時敏感 Page (含 token / 帳號) 會自動黑屏.");
+            GUILayout.Label("獨立 Page 防誤觸. 錄影中時敏感 Page (含 token / 帳號) 會自動黑屏. 開始/停止錄影鈕在最上方 Top Bar.");
             GUILayout.Space(8);
+
+            // 片名/描述輸入 (Tim 2026-07-27; 2026-07-28 移到頁面最上方) — 可空; 有填則開播酒館廣播附加「📺 本場節目: <此文字>」
+            // 開播前第一眼看得見、來得及填; 按 Top Bar「開始/停止錄影」或「儲存設定」時隨 config 保存
+            if (m_ConfigLoaded)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("📺 片名/描述:", GUILayout.Width(100));
+                m_StreamTitle = GUILayout.TextField(m_StreamTitle ?? "", GUILayout.MinWidth(300));
+                GUILayout.Label("(可空; 有填則開播酒館廣播附加此段)", new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                GUILayout.EndHorizontal();
+                GUILayout.Space(4);
+            }
 
             if (!m_ConfigLoaded)
             {
@@ -485,7 +641,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 GUI.backgroundColor = new Color(0.2f, 0.5f, 0.2f);
                 GUILayout.BeginVertical(GUI.skin.box);
-                GUILayout.Label("⚫ 停止 (daemon idle 等 toggle on)", new GUIStyle(GUI.skin.label)
+                GUILayout.Label("⚫ 停止 (daemon 已同步停止, 按 Top Bar「▶ 開始錄影」啟動)", new GUIStyle(GUI.skin.label)
                     { fontSize = 18, alignment = TextAnchor.MiddleCenter });
                 GUILayout.EndVertical();
             }
@@ -493,8 +649,11 @@ namespace UCL.Core.EditorLib.Page
 
             GUILayout.Space(10);
 
-            // Daemon health
-            GUILayout.Label($"Daemon process: {(m_DaemonAlive ? "🟢 ALIVE (daemon 運行中)" : "🔴 DEAD (無存活 daemon, 等 Editor respawn)")}");
+            // Daemon health — daemon 存活綁錄影開關 (Tim 2026-07-28): 停止錄影時 daemon 同步停止是正常態
+            string aDaemonState = m_DaemonAlive ? "🟢 ALIVE (daemon 運行中)"
+                : m_Enabled ? "🔴 DEAD (錄影中但無存活 daemon — 等 Editor respawn, ~5s)"
+                            : "⚫ 停止 (未錄影時 daemon 同步停止, 開始錄影自動啟動)";
+            GUILayout.Label($"Daemon process: {aDaemonState}");
             GUILayout.Space(5);
 
             // T14 — Preview (錄影中才顯示)
@@ -533,61 +692,6 @@ namespace UCL.Core.EditorLib.Page
             DrawSttOcrPanel();
             GUILayout.Space(8);
 
-            // 片名/描述輸入 (Tim 2026-07-27) — 可空; 有填則開播的酒館廣播附加「📺 本場節目: <此文字>」
-            // 放在開始錄影鈕正上方: 開播前看得見、來得及填; 按「開始/停止錄影」或「儲存設定」時隨 config 保存
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("📺 片名/描述:", GUILayout.Width(100));
-            m_StreamTitle = GUILayout.TextField(m_StreamTitle ?? "", GUILayout.MinWidth(300));
-            GUILayout.Label("(可空; 有填則開播酒館廣播附加此段)", new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
-            GUILayout.EndHorizontal();
-            GUILayout.Space(4);
-
-            // ===========================================================
-            // Toggle — 二段確認防誤觸
-            // 物理意義: 第一次點 = arm; 第二次點 (5s 內) = 真 toggle
-            // ===========================================================
-            GUILayout.BeginHorizontal();
-            if (m_Enabled)
-            {
-                GUI.backgroundColor = new Color(0.8f, 0.3f, 0.3f);
-                if (GUILayout.Button("⏹ 停止錄影", GUILayout.Height(40)))
-                {
-                    m_Enabled = false;
-                    SaveToDisk();
-                }
-            }
-            else
-            {
-                GUI.backgroundColor = new Color(0.3f, 0.6f, 0.3f);
-                if (GUILayout.Button("▶ 開始錄影 (將每秒截圖)", GUILayout.Height(40)))
-                {
-                    m_PendingArmEnable = !m_PendingArmEnable;
-                    m_PendingArmEnableTime = UnityEditor.EditorApplication.timeSinceStartup;
-                }
-                if (m_PendingArmEnable)
-                {
-                    double remaining = 5.0 - (UnityEditor.EditorApplication.timeSinceStartup - m_PendingArmEnableTime);
-                    if (remaining > 0)
-                    {
-                        GUI.backgroundColor = new Color(0.9f, 0.5f, 0.1f);
-                        if (GUILayout.Button($"⚠ 再點一次確認 ({remaining:F0}s 內)", GUILayout.Height(40)))
-                        {
-                            m_Enabled = true;
-                            // T-STT-StaleFix (Tim 2026-07-20 拍板): 開始錄影 = 同步保存當前所有 UI 設定
-                            // (不必先按「儲存設定」) + 清空上一場的 stt_prompt 人名偏置防跨場幻聽
-                            SaveToDisk(clearSttPrompt: true);
-                            m_PendingArmEnable = false;
-                        }
-                    }
-                    else
-                    {
-                        m_PendingArmEnable = false;
-                    }
-                }
-            }
-            GUI.backgroundColor = oldColor;
-            GUILayout.EndHorizontal();
-
             GUILayout.Space(15);
 
             // ===========================================================
@@ -595,9 +699,16 @@ namespace UCL.Core.EditorLib.Page
             // ===========================================================
             var widthStyle = GUILayout.Width(UCL_GUIStyle.GetScaledSize(80));
 
-            GUILayout.Label("⚙ 設定 (按「儲存設定」或「開始/停止錄影」時自動保存; daemon 1-2s 內生效)",
+            // 折疊 (Tim 2026-07-28): 錄影參數不常動, 預設收合省版面; 開合狀態存 m_Dic (頁面生命週期內記住)
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            bool aShowRecSettings = UCL_GUILayout.Toggle(m_Dic, "RecSettingsFold", 21, iDefaultValue: false);
+            GUILayout.Label("⚙ 錄影設定 (fps / ring buffer / 解析度 / 畫質 / monitor — 隨「儲存設定 / 開始·停止錄影」保存)",
                 new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
-
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            if (aShowRecSettings)
+            {
             GUILayout.BeginHorizontal();
             GUILayout.Label("fps:", UCL_GUIStyle.LabelStyle, widthStyle);
             m_Fps = UCL_GUILayout.IntField(m_Fps, widthStyle);
@@ -628,6 +739,9 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.BeginVertical("box");
             GUILayout.BeginHorizontal();
             GUILayout.Label("monitor:", GUILayout.Width(120));
+            // 🔄 手動刷新螢幕清單 (Tim 2026-07-28) — 熱插拔外接螢幕後按此重枚舉; one-shot ~1s 後 tick 自動更新
+            if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(30)))
+                AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.EnumerateMonitorsOneShot();
             if (GUILayout.Toggle(m_Monitor == "primary", "primary", GUILayout.Width(80))) m_Monitor = "primary";
             if (GUILayout.Toggle(m_Monitor == "all", "all (拼接)", GUILayout.Width(90))) m_Monitor = "all";
             // T19 — Unity Game view 渲染輸出來源 (非 OS 螢幕擷取): Unity 端 GameViewCapturer 於 Play mode 供應 frame
@@ -661,6 +775,8 @@ namespace UCL.Core.EditorLib.Page
                     new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
             }
             GUILayout.EndVertical();
+            }   // end aShowRecSettings
+            GUILayout.EndVertical();   // end 錄影設定 fold box
 
             // ===========================================================
             // T-STT-PageToggle (Tim 2026-07-09) — 語音轉錄 (STT) 設定
@@ -671,6 +787,8 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 GUILayout.BeginHorizontal();
+                // 折疊 (Tim 2026-07-28): 開關常駐 header 一眼可見/可切, 細項 (model/lang/偏置) 收進摺頁
+                bool aShowStt = UCL_GUILayout.Toggle(m_Dic, "SttSettingsFold", 21, iDefaultValue: false);
                 m_SttSetting = GUILayout.Toggle(m_SttSetting, " 🎙 錄影時同步啟動語音轉錄 (STT)");
                 GUILayout.FlexibleSpace();
                 // 即時狀態燈: 錄影中且開了 → 實際會跑
@@ -685,7 +803,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 GUILayout.EndHorizontal();
 
-                if (m_SttSetting)
+                if (aShowStt)
                 {
                     GUILayout.BeginHorizontal();
                     GUILayout.Label("model:", GUILayout.Width(60));
@@ -730,6 +848,12 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
 
+            // ===========================================================
+            // OCR 字幕讀取設定 (Tim 2026-07-28 — 自 UCL_MediaAdminPage 整合進本頁)
+            // ===========================================================
+            GUILayout.Space(10);
+            DrawOcrSettingsPanel();
+
             GUILayout.Space(10);
             if (GUILayout.Button("💾 儲存設定", GUILayout.Height(30)))
             {
@@ -744,10 +868,6 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Label("latest: AgentCommands/_screenstream/_latest.jpg");
             GUILayout.Label("tools: <UCL_Core>/Tools~/AgentCommands/screenstream_daemon.py / screenstream_montage.py / stream_watch_session.py");
         }
-
-        // 二段確認狀態
-        bool m_PendingArmEnable = false;
-        double m_PendingArmEnableTime = -1.0;
 
         // ===========================================================
         // 區塊：STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史 (每頁 10)
@@ -1048,6 +1168,138 @@ namespace UCL.Core.EditorLib.Page
                 for (int i = start; i < end; i++)
                     GUILayout.Label($"[{EpochToHms(list[i].epoch)}] {list[i].text}", SubWrapStyle);
             }
+        }
+
+        // ===========================================================
+        // 區塊：OCR 字幕讀取設定 (Tim 2026-07-28 — 自 UCL_MediaAdminPage 整合)
+        // 物理意義: 字幕帶座標為底部原點 — 「起始 y」= 帶底邊離畫面下緣的距離比例 (0=貼底, 初始值 0),
+        //          「高度」從底邊往上長 (例: y=0, h=0.1 → 覆蓋畫面最下方 10%)。
+        //          額外判定區域 (可空) 給「字幕偶爾跑到上方」的影片 — daemon 對每幀逐區域 OCR 合併結果。
+        // 數值影響: 隨「儲存設定 / 開始·停止錄影」寫 config; daemon 每 loop reload,
+        //          band 改動觸發 T-OCR-AutoRestart 自動重起 worker pool 套用, 不必手動 toggle。
+        // ===========================================================
+        void DrawOcrSettingsPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.BeginHorizontal();
+                // 折疊 (Tim 2026-07-28): 開關常駐 header, 帶位/區域/預覽細項收進摺頁
+                bool aShowOcr = UCL_GUILayout.Toggle(m_Dic, "OcrSettingsFold", 21, iDefaultValue: false);
+                m_OcrEnabled = GUILayout.Toggle(m_OcrEnabled, " 📖 字幕 OCR (RapidOCR — daemon 錄影中逐幀辨識)");
+                GUILayout.FlexibleSpace();
+                if (m_OcrEnabled && m_Enabled)
+                    GUILayout.Label("🟢 錄影中運作", new GUIStyle(GUI.skin.label) { fontSize = 11 });
+                else if (m_OcrEnabled)
+                    GUILayout.Label("⚪ 待開始錄影時運作", new GUIStyle(GUI.skin.label) { fontSize = 11 });
+                // 依賴安裝 (rapidocr-onnxruntime) / 細部健檢歸影音管理頁
+                if (GUILayout.Button("🎬 影音管理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    UCL_MediaAdminPage.Create();
+                }
+                GUILayout.EndHorizontal();
+
+                if (!aShowOcr) return;   // 摺頁收合 — 細項全部隱藏 (開關仍在 header 可切)
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("worker 數:", GUILayout.Width(120));
+                m_OcrWorkers = Mathf.Clamp(UCL_GUILayout.IntField(m_OcrWorkers, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))), 1, 8);
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                // 主字幕帶 — 底部原點雙 slider (0=畫面下方; 高度往上長)
+                m_OcrYBottomPct = UnityEditor.EditorGUILayout.Slider("字幕帶起始 y (0=畫面下方)", m_OcrYBottomPct, 0f, 1f);
+                m_OcrHPct = UnityEditor.EditorGUILayout.Slider("字幕帶高度 (從 y 往上長)", m_OcrHPct, 0.02f, 0.5f);
+                m_OcrMinConf = UnityEditor.EditorGUILayout.Slider("最低信度過濾", m_OcrMinConf, 0f, 1f);
+
+                // 額外字幕判定區域 — 可折疊 List (可空; 有些影片字幕偶爾跑到上方)
+                string foldLabel = (m_ShowOcrExtraRegions ? "▼" : "▶") + $" 額外字幕判定區域 ({m_OcrExtraRegions.Count})";
+                if (GUILayout.Button(foldLabel, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    m_ShowOcrExtraRegions = !m_ShowOcrExtraRegions;
+                if (m_ShowOcrExtraRegions)
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        GUILayout.Label("  ⓘ 主字幕帶外的加掃區域 — 例如字幕偶爾跳到畫面上方的影片, 加一條上方帶。座標同為底部原點。",
+                            new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic, wordWrap = true });
+                        int removeIdx = -1;
+                        for (int i = 0; i < m_OcrExtraRegions.Count; i++)
+                        {
+                            var r = m_OcrExtraRegions[i];
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label($"#{i + 1}", GUILayout.Width(30));
+                            GUILayout.BeginVertical();
+                            r.x = UnityEditor.EditorGUILayout.Slider("起始 y (0=畫面下方)", r.x, 0f, 1f);
+                            r.y = UnityEditor.EditorGUILayout.Slider("高度 (往上長)", r.y, 0.02f, 0.5f);
+                            GUILayout.EndVertical();
+                            if (GUILayout.Button("✕", UCL_GUIStyle.ButtonStyle, GUILayout.Width(28), GUILayout.Height(36)))
+                                removeIdx = i;
+                            GUILayout.EndHorizontal();
+                            m_OcrExtraRegions[i] = r;
+                        }
+                        if (removeIdx >= 0) m_OcrExtraRegions.RemoveAt(removeIdx);
+                        if (GUILayout.Button("➕ 新增區域", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            // 預設值取「畫面上方帶」— 本 List 的典型用途 (底邊離下緣 85%, 高 10% → 覆蓋 85%~95%)
+                            m_OcrExtraRegions.Add(new Vector2(0.85f, 0.1f));
+                            m_ShowOcrExtraRegions = true;
+                        }
+                    }
+                }
+
+                DrawOcrBandPreview();
+                GUILayout.Label("  ⓘ 設定隨「儲存設定 / 開始·停止錄影」寫入 config; daemon 偵測 band 改動自動重起 OCR pool 套用。",
+                    new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+            }
+        }
+
+        // 區塊職責: 字幕帶視覺化 — 底圖=當前畫面 (錄影中有 _latest.jpg) 或灰框 (16:9);
+        //          橘半透明=主字幕帶, 青半透明=額外判定區域。
+        // 物理意義: 底部原點比例 → GUI rect (top-down): bandTop = box.yMax - (y_bottom + h) * H。
+        void DrawOcrBandPreview()
+        {
+            bool hasImg = m_PreviewTexture != null && m_PreviewTexture.width > 4;
+            GUILayout.Label(hasImg
+                ? "字幕範圍預覽（底圖＝當前畫面; 橘＝主字幕帶, 青＝額外區域）:"
+                : "字幕範圍預覽（灰框＝螢幕; 橘＝主字幕帶, 青＝額外區域）:",
+                new GUIStyle(GUI.skin.label) { fontSize = 11 });
+            float aspect = hasImg ? (float)m_PreviewTexture.width / Mathf.Max(1, m_PreviewTexture.height) : (16f / 9f);
+            float vizW = hasImg ? 360f : 240f;
+            float vizH = vizW / Mathf.Max(0.1f, aspect);
+            Rect box = GUILayoutUtility.GetRect(vizW, vizH, GUILayout.ExpandWidth(false));
+            if (hasImg) GUI.DrawTexture(box, m_PreviewTexture, ScaleMode.StretchToFill);
+            else UnityEditor.EditorGUI.DrawRect(box, new Color(0.13f, 0.13f, 0.16f));
+            DrawRectBorder(box, new Color(0.65f, 0.65f, 0.72f), 1.5f);
+            // 主帶 (橘) + 額外區域 (青) — 同一套底部原點轉換
+            DrawBandRect(box, m_OcrYBottomPct, m_OcrHPct, new Color(1f, 0.6f, 0.1f, 0.5f), new Color(1f, 0.7f, 0.2f));
+            foreach (var r in m_OcrExtraRegions)
+                DrawBandRect(box, r.x, r.y, new Color(0.2f, 0.85f, 0.9f, 0.4f), new Color(0.3f, 0.9f, 1f));
+            int pctLo = Mathf.RoundToInt(Mathf.Clamp01(m_OcrYBottomPct) * 100f);
+            int pctHi = Mathf.RoundToInt(Mathf.Clamp01(m_OcrYBottomPct + m_OcrHPct) * 100f);
+            GUILayout.Label($"主字幕帶：距畫面下緣 {pctLo}% ~ {pctHi}%（滿寬）。字幕沒被橘框罩到就調「起始 y」。",
+                new GUIStyle(GUI.skin.label) { fontSize = 10 });
+        }
+
+        // 單一帶位 → 預覽矩形 (底部原點轉 GUI top-down 座標; clamp 不出框)
+        static void DrawBandRect(Rect iBox, float iYBottom, float iH, Color iFill, Color iBorder)
+        {
+            float yB = Mathf.Clamp01(iYBottom);
+            float h = Mathf.Clamp01(iH);
+            if (h <= 0f || yB >= 1f) return;
+            float top = iBox.yMax - Mathf.Min(1f, yB + h) * iBox.height;
+            float bottom = iBox.yMax - yB * iBox.height;
+            if (bottom - top < 0.5f) return;
+            var band = new Rect(iBox.x, top, iBox.width, bottom - top);
+            UnityEditor.EditorGUI.DrawRect(band, iFill);
+            DrawRectBorder(band, iBorder, 1f);
+        }
+
+        // 畫矩形邊框（四條 t 粗細的線）
+        static void DrawRectBorder(Rect r, Color c, float t)
+        {
+            UnityEditor.EditorGUI.DrawRect(new Rect(r.x, r.y, r.width, t), c);
+            UnityEditor.EditorGUI.DrawRect(new Rect(r.x, r.yMax - t, r.width, t), c);
+            UnityEditor.EditorGUI.DrawRect(new Rect(r.x, r.y, t, r.height), c);
+            UnityEditor.EditorGUI.DrawRect(new Rect(r.xMax - t, r.y, t, r.height), c);
         }
 
         // 讀 PID 檔 → 驗該 PID 是否為存活 process。檔缺 / 內容非數字 / process 不存在 → false。

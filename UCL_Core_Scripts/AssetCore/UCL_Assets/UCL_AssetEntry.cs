@@ -195,8 +195,9 @@ namespace UCL.Core
             var aLocalizeIDs = cache.m_LocalizeIDs;
             if (!aIDs.IsNullOrEmpty())
             {
-
-                var aAt = UCL.Core.UI.UCL_GUILayout.PopupAuto(aIDs.IndexOf(ID), aLocalizeIDs, iDataDic, "ID", 8, GUILayout.ExpandWidth(true));
+                // ID 下拉改用分組版（2026-07-28 Tim 拍板）：依 "_" 前綴自動分組摺疊（A_01/A_02 → A 組）,
+                // 全部同組時 PopupGrouped 內部自動退化為原版 PopupAuto 行為, 舊資料零視覺變化。
+                var aAt = UCL.Core.UI.UCL_GUILayout.PopupGrouped(aIDs.IndexOf(ID), aLocalizeIDs, iDataDic, "ID", "_", 8, GUILayout.ExpandWidth(true));
                 if (aAt >= 0 && aAt < aIDs.Count)
                 {
                     ID = aIDs[aAt];

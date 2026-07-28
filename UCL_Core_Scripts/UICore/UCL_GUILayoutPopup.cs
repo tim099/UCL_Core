@@ -749,6 +749,232 @@ namespace UCL.Core.UI
             dic.SetData(nameof(aIsShow), aIsShow);
             return iIndex;
         }
+
+        #region PopupGrouped
+        /// <summary>
+        /// 分組版下拉選單（PopupSearchCache 的分組擴充, 2026-07-28 Tim 拍板規格）。
+        /// 職責：依「分隔符前綴」自動把選項摺成分組（例 A_01/A_02/B_01/C → A、B、Other 三組），
+        ///       展開面板內嵌一列分組切換（All(預設)/各組/Other），選組後只列該組選項；搜尋欄照常可用（先組過濾再搜尋）。
+        /// 規格拍板：
+        ///   - 單層分組：取「第一個分隔符前」的字串當組名（A_B_01 → A 組）；無分隔符 → Other（未分組）
+        ///   - 全部同組（含全部未分組）→ 隱藏分組列, 直接套用原版 PopupAuto 行為
+        ///   - 無 Other 內容則省略 Other 選項；選組後顯示全名（不去前綴）；標籤固定英文 All / Other（不 localize）
+        /// 數值影響：回傳值恆為「原始 iDisplayOptions 的 index」（組過濾與搜尋過濾經 indexMapping 雙層映回）。
+        /// </summary>
+        /// <param name="iIndex">當前選中項於 iDisplayOptions 的 index</param>
+        /// <param name="iDisplayOptions">全部選項</param>
+        /// <param name="iDataDic">GUI 狀態快取容器</param>
+        /// <param name="iKey">快取 key（同一容器多個下拉時區分用）</param>
+        /// <param name="iSeparator">分組分隔符（預設 "_"；動畫路徑類選項可傳 "/"）</param>
+        /// <param name="iSearchThreshold">退化為原版 PopupAuto 時的搜尋欄門檻（僅單組退化路徑使用）</param>
+        public static int PopupGrouped(int iIndex, IList<string> iDisplayOptions, UCL_ObjectDictionary iDataDic, string iKey,
+            string iSeparator = "_", int iSearchThreshold = 10, params GUILayoutOption[] iOptions)
+        {
+            if (iDisplayOptions.Count == 0)
+            {
+                Debug.LogError($"{nameof(UCL_GUILayout)}.{nameof(PopupGrouped)} iDisplayOptions.Count == 0");
+                return 0;
+            }
+            // 分組標籤（拍板：固定英文, 不走 localize）
+            const string AllGroup = "All";
+            const string OtherGroup = "Other";
+
+            var dic = iDataDic.GetSubDic(iKey);
+            bool clearCache = false;
+
+            // --- 區塊職責：分組推導（快取, 選項數量變動時重建）---
+            // 物理意義：每個選項的組名 = 第一個分隔符「前」的字串（單層分組）；
+            //           無分隔符、或分隔符在字首（組名為空）→ 歸入 Other（未分組）。
+            // 數值影響：groupNames 為組序清單（首次出現順序, Other 恆排最後）; optionGroups[i] = 第 i 個選項的組名。
+            int count = dic.GetData(nameof(count), -1);
+            List<string> groupNames = dic.GetData<List<string>>(nameof(groupNames), null);
+            string[] optionGroups = dic.GetData<string[]>(nameof(optionGroups), null);
+            if (count != iDisplayOptions.Count || groupNames == null || optionGroups == null)
+            {
+                count = iDisplayOptions.Count;
+                dic.SetData(nameof(count), count);
+                clearCache = true;
+
+                groupNames = new List<string>();
+                optionGroups = new string[count];
+                bool aHasOther = false;
+                for (int i = 0; i < count; i++)
+                {
+                    string aOpt = iDisplayOptions[i] ?? string.Empty;
+                    int aSep = string.IsNullOrEmpty(iSeparator) ? -1 : aOpt.IndexOf(iSeparator, System.StringComparison.Ordinal);
+                    string aGroup = aSep > 0 ? aOpt.Substring(0, aSep) : OtherGroup;
+                    if (aGroup == OtherGroup) aHasOther = true;
+                    else if (!groupNames.Contains(aGroup)) groupNames.Add(aGroup);
+                    optionGroups[i] = aGroup;
+                }
+                if (aHasOther) groupNames.Add(OtherGroup); // 無未分組內容則省略 Other 選項（拍板）
+                dic.SetData(nameof(groupNames), groupNames);
+                dic.SetData(nameof(optionGroups), optionGroups);
+            }
+
+            // --- 退化路徑（拍板 問題1）：全部同一分組（含全部未分組）→ 隱藏分組列, 套用原版 ---
+            if (groupNames.Count <= 1)
+            {
+                return PopupAuto(iIndex, iDisplayOptions, iDataDic, iKey + "_Plain", iSearchThreshold, iOptions);
+            }
+
+            if (iIndex < 0) iIndex = 0;
+            if (iIndex >= count) iIndex = count - 1;
+            string curOption = iDisplayOptions[iIndex];
+
+            bool aIsShow = dic.GetData(nameof(aIsShow), false);
+            if (aIsShow)//展開面板：收合鈕 + 分組列 + 搜尋列 + 分頁選項清單
+            {
+                GUILayout.BeginVertical(iOptions);
+
+                if (GUILayout.Button(curOption, UCL_GUIStyle.ButtonStyle, iOptions))
+                {
+                    aIsShow = false;
+                }
+
+                // --- 區塊職責：分組切換列（嵌入面板內的下拉, 拍板規格）---
+                // 數值影響：groupSel 存於本 key 的 subdic（per-下拉記憶）; 換組觸發 clearCache 重建過濾快取。
+                string groupSel = dic.GetData(nameof(groupSel), AllGroup);
+                {
+                    var aGroupOptions = new List<string>(groupNames.Count + 1) { AllGroup };
+                    aGroupOptions.AddRange(groupNames);
+                    int aGroupIdx = Mathf.Max(0, aGroupOptions.IndexOf(groupSel));
+                    GUILayout.BeginHorizontal(iOptions);
+                    GUILayout.Label("Group", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    int aGroupNew = Popup(aGroupIdx, aGroupOptions, dic.GetSubDic("GroupPopup"), "Sel");
+                    GUILayout.EndHorizontal();
+                    if (aGroupNew != aGroupIdx && aGroupNew >= 0 && aGroupNew < aGroupOptions.Count)
+                    {
+                        groupSel = aGroupOptions[aGroupNew];
+                        dic.SetData(nameof(groupSel), groupSel);
+                        clearCache = true;
+                    }
+                }
+
+                // --- 搜尋列（同 PopupSearchCache; 搜尋輸入存本 key 的 subdic, 不跨下拉共用）---
+                const string SearchKey = "Search";
+                string input = dic.GetData(SearchKey, string.Empty);
+                GUILayout.BeginHorizontal(iOptions);
+                GUILayout.Label(UCL_LocalizeManager.Get("Search"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                var newInput = GUILayout.TextField(input, UCL_GUIStyle.TextFieldStyle);
+                if (newInput != input)
+                {
+                    clearCache = true;
+                    input = newInput;
+                }
+                GUILayout.EndHorizontal();
+                dic.SetData(SearchKey, input);
+
+                Regex regex = null;
+                if (!string.IsNullOrEmpty(input))
+                {
+                    string key = nameof(regex);
+                    if (clearCache)
+                    {
+                        dic.Remove(key);
+                    }
+                    if (!dic.ContainsKey(key))
+                    {
+                        try
+                        {
+                            regex = new Regex(input, RegexOptions.Compiled | RegexOptions.IgnoreCase);
+                            dic.Add(key, regex);
+                        }
+                        catch (System.Exception iE)
+                        {
+                            regex = null;
+                            Debug.LogException(iE);
+                        }
+                    }
+                    else//use cache
+                    {
+                        regex = dic.GetData(key, regex);
+                    }
+                }
+
+                // --- 區塊職責：組過濾 + 搜尋過濾（快取, 雙層 indexMapping 合成映回原始 index）---
+                // 計算邏輯：先依 groupSel 過濾（All = 不過濾）, 再依 regex 過濾; 每層都維護「顯示序 → 原始 index」映射。
+                IList<string> aIDs = iDisplayOptions;
+                Dictionary<int, int> indexMapping = null;
+                {
+                    string key = nameof(aIDs);
+                    if (clearCache)
+                    {
+                        dic.Remove(key);
+                        dic.Remove(nameof(indexMapping));
+                    }
+                    if (!dic.ContainsKey(key))
+                    {
+                        var aFiltered = new List<string>();
+                        var aMapping = new Dictionary<int, int>();
+                        for (int i = 0; i < iDisplayOptions.Count; i++)
+                        {
+                            if (groupSel != AllGroup && optionGroups[i] != groupSel) continue; // 組過濾
+                            var aID = iDisplayOptions[i];
+                            if (regex != null && !regex.IsMatch(aID)) continue; // 搜尋過濾
+                            aMapping[aFiltered.Count] = i;
+                            aFiltered.Add(aID);
+                        }
+                        aIDs = aFiltered;
+                        indexMapping = aMapping;
+                        dic.Add(key, aIDs);
+                        dic.Add(nameof(indexMapping), indexMapping);
+                    }
+                    else//use cache
+                    {
+                        aIDs = dic.GetData(key, aIDs);
+                        indexMapping = dic.GetData(nameof(indexMapping), indexMapping);
+                    }
+                }
+
+                // --- 分頁 + 選項按鈕（同 PopupSearchCache; 選中經 indexMapping 映回原始 index）---
+                const int MaxItemsPerPage = 20;
+                int itemCount = aIDs.Count;
+                var result = DrawSelectPage(dic.GetSubDic(nameof(DrawSelectPage)), itemCount, MaxItemsPerPage);
+                int startIndex = result.startIndex;
+                int lastIndex = Mathf.Min(itemCount, startIndex + MaxItemsPerPage);
+                for (int i = 0; i < aIDs.Count; i++)
+                {
+                    if (i >= lastIndex)
+                    {
+                        break;
+                    }
+                    if (i < startIndex)
+                    {
+                        continue;
+                    }
+                    var aOption = aIDs[i];
+                    string aDisplayName = aOption; // 顯示全名（拍板 問題2: 不去前綴）
+                    if (regex != null)
+                    {
+                        aDisplayName = regex.HightLight(aDisplayName, input, Color.red);
+                    }
+                    if (GUILayout.Button(aDisplayName, UI.UCL_GUIStyle.ButtonStyle, iOptions))
+                    {
+                        aIsShow = false;
+                        if (indexMapping != null && indexMapping.ContainsKey(i))
+                        {
+                            iIndex = indexMapping[i];
+                        }
+                        else
+                        {
+                            iIndex = i;
+                        }
+                    }
+                }
+                GUILayout.EndVertical();
+            }
+            else
+            {
+                if (GUILayout.Button(curOption, UCL_GUIStyle.ButtonStyle, iOptions))
+                {
+                    aIsShow = true;
+                }
+            }
+            dic.SetData(nameof(aIsShow), aIsShow);
+            return iIndex;
+        }
+        #endregion
         #endregion
 
 

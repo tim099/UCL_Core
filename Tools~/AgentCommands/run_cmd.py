@@ -64,6 +64,24 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+
+def print_fail_verdict(text: str) -> None:
+    """
+    區塊職責：印出失敗判決行 — stderr 照舊（exit-code 慣例）+ stdout 同文鏡像一份。
+    物理意義：caller 經 PowerShell 5.1 以 `2>&1` 呼叫本 script 時，PS 會把 native stderr
+             逐行攔成 NativeCommandError ErrorRecord，用 console codepage (cp950) 重寫
+             並混入本地化雜訊（「位於 線路:1 字元:1」）— caller 的 utf-8 reader 讀到
+             0xa6 等 cp950 lead byte 即拋 UnicodeDecodeError，stderr 上的 ✗ 判決整段被吞
+             （實證 2026-07-28：dirty bytes 固定出現在 stdout 結束後的 stderr 區段）。
+             native stdout 則不論有無 2>&1 都是 raw passthrough 不經 PS 重編碼，
+             判決行鏡像於 stdout 保證失敗案例穩定可見。
+    數值影響：正常 caller（Bash / 直接 capture、分流讀）會看到判決兩次（stdout+stderr 各一），
+             接受此冗餘換取 PS 2>&1 場景下的可見性。
+    """
+    print(text, file=sys.stderr)
+    sys.stderr.flush()
+    print(text, flush=True)
+
 # ===========================================================
 # Tavern client-side schema 驗證 — submit 前先擋常見錯誤
 # 目的：避免「等 1s round-trip 才知道參數錯」 + 修正 agent 常踩的 alias 陷阱
@@ -247,6 +265,43 @@ def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
     # post 沒帶 persona → 反查登入 lock 自動補（防漏帶 persona，Tim 2026-05-27）
     if op == "post":
         _autofill_persona_from_lock(arg_pairs)
+        # 保留 tag 的 meta schema 預檢（Tim 2026-07-28 拍板「錯誤資訊在發送流程就知道」）—
+        # 鏡像 Cmd_Tavern T06.3 server 端驗證: 缺必填 meta 在 client 端 <0.01s 就擋,
+        # 不必等 Editor round-trip 才在 ErrorLog 看到 RejectLastOp。
+        ok, err = _validate_reserved_tag_meta(arg_pairs.get("meta") or "")
+        if not ok:
+            return False, err
+    return True, ""
+
+
+# 區塊職責: 保留 tag meta schema 表 — 鏡像 Cmd_Tavern.Op_Post 的 T06.3 驗證 (server 端為權威)。
+# 物理意義: meta 格式 "k:v;k2:v2"; tag 命中保留字時要求對應必填 key。
+# 數值影響: 新增保留 tag 時兩端同步擴表 (server: Cmd_Tavern.cs Op_Post; client: 本表)。
+RESERVED_TAG_META_SCHEMA = {
+    "task-assign": ["task_id", "task_body", "assigned_by", "requires_ack"],
+    "task-ack": ["task_id", "action"],
+}
+
+
+def _validate_reserved_tag_meta(meta_raw: str) -> tuple[bool, str]:
+    """解析 meta 字串, tag 為保留字時檢查必填 key。回 (ok, error_message)。"""
+    if not meta_raw:
+        return True, ""
+    meta = {}
+    for seg in meta_raw.split(";"):
+        if ":" in seg:
+            k, _, v = seg.partition(":")
+            meta[k.strip()] = v.strip()
+    tag = meta.get("tag", "")
+    required = RESERVED_TAG_META_SCHEMA.get(tag)
+    if not required:
+        return True, ""
+    missing = [k for k in required if not meta.get(k)]
+    if missing:
+        return False, (f"meta tag={tag} 為保留 tag (T06.3 schema), 缺必填 meta key: {missing}\n"
+                       f"     ↳ required: {' / '.join(required)}（你目前 meta 帶的: {sorted(meta.keys())}）")
+    if tag == "task-ack" and meta.get("action") not in ("accept", "decline", "defer"):
+        return False, f"meta tag=task-ack 的 action 必須是 accept|decline|defer（目前: {meta.get('action')!r}）"
     return True, ""
 
 # ===========================================================
@@ -655,15 +710,13 @@ def cmd_submit(args: argparse.Namespace) -> int:
     # --arg-file 展開（讀檔失敗 → 直接擋，不寫 queue）
     ok, err = expand_arg_files(arg_pairs, getattr(args, "arg_file", []))
     if not ok:
-        print(f"✗ --arg-file 展開失敗：\n  {err}", file=sys.stderr)
-        sys.stderr.flush()
+        print_fail_verdict(f"✗ --arg-file 展開失敗：\n  {err}")
         return 2
 
     # T-Backtick-Guard：偵測反引號被 bash 吃掉 → block（見 check_backtick_loss 區塊註解）
     ok, err = check_backtick_loss(arg_pairs, allow=getattr(args, "allow_backtick_loss", False))
     if not ok:
-        print(f"✗ Backtick-loss guard 攔截：\n  {err}", file=sys.stderr)
-        sys.stderr.flush()
+        print_fail_verdict(f"✗ Backtick-loss guard 攔截：\n  {err}")
         return 2
 
     # 區塊職責：Tavern Cmd 的 client-side 預檢
@@ -672,8 +725,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
     if args.cmd_type == "Tavern":
         ok, err = validate_tavern_args(arg_pairs)
         if not ok:
-            print(f"✗ Tavern client-side 預檢失敗：\n  {err}", file=sys.stderr)
-            sys.stderr.flush()
+            print_fail_verdict(f"✗ Tavern client-side 預檢失敗：\n  {err}")
             return 2
 
     # 區塊職責：寫入前先確認沒有前一輪殘留的 trigger
@@ -731,9 +783,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     # 同窗口寫的 fail marker（stamp 是別人的 id）會被判 unknown 不誤報
                     status, err = check_cmd_result_file(cmd_type, submit_time, cmd_id=cmd_id)
                     if status == "failed":
-                        print(f"  ✗ Cmd disappeared from queue BUT output file shows failure:", file=sys.stderr)
-                        print(f"  {err}", file=sys.stderr)
-                        sys.stderr.flush()
+                        print_fail_verdict(f"  ✗ Cmd disappeared from queue BUT output file shows failure:\n  {err}")
                         return 2
                 print(f"  ✓ Cmd disappeared from queue → Success (OneShot completed)")
                 if output_file:
@@ -750,8 +800,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 return 0
             if result == "Failed":
                 err = cmd.get("LastRunError") or "(no error message)"
-                print(f"  ✗ Cmd failed: {err}", file=sys.stderr)
-                sys.stderr.flush()
+                print_fail_verdict(f"  ✗ Cmd failed: {err}")
                 # 區塊職責：失敗的 OneShot 預設會留在 queue.json（runner 設計如此），
                 #          但這會讓「下一次 submit 時整個 batch 把舊的失敗 cmd 一起重跑」
                 #          → agent / 人類體感「每次都卡住」。
@@ -772,8 +821,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
 
         time.sleep(poll_interval)
 
-    print(f"  ✗ Timeout after {timeout_sec}s — Editor not running, "
-          f"or UCL_AgentCommandWatcher disabled?", file=sys.stderr)
+    print_fail_verdict(f"  ✗ Timeout after {timeout_sec}s — Editor not running, "
+                       f"or UCL_AgentCommandWatcher disabled?")
     return 3
 
 
@@ -790,15 +839,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     # --arg-file 展開（讀檔失敗 → 直接擋，不寫 queue）
     ok, err = expand_arg_files(arg_pairs, getattr(args, "arg_file", []))
     if not ok:
-        print(f"✗ --arg-file 展開失敗：\n  {err}", file=sys.stderr)
-        sys.stderr.flush()
+        print_fail_verdict(f"✗ --arg-file 展開失敗：\n  {err}")
         return 2
 
     # T-Backtick-Guard：偵測反引號被 bash 吃掉 → block（見 check_backtick_loss 區塊註解）
     ok, err = check_backtick_loss(arg_pairs, allow=getattr(args, "allow_backtick_loss", False))
     if not ok:
-        print(f"✗ Backtick-loss guard 攔截：\n  {err}", file=sys.stderr)
-        sys.stderr.flush()
+        print_fail_verdict(f"✗ Backtick-loss guard 攔截：\n  {err}")
         return 2
 
     # 區塊職責：ergonomic shim — 把 --arg wait-reply=N 視同 --wait-reply N
@@ -850,8 +897,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.cmd_type == "Tavern":
         ok, err = validate_tavern_args(arg_pairs)
         if not ok:
-            print(f"✗ Tavern client-side 預檢失敗：\n  {err}", file=sys.stderr)
-            sys.stderr.flush()
+            print_fail_verdict(f"✗ Tavern client-side 預檢失敗：\n  {err}")
             return 2
 
     ensure_idle(timeout_sec=args.ack_timeout, poll_interval=args.poll_interval)
@@ -1526,8 +1572,10 @@ def _ancestor_raw_cmdlines(max_depth: int = 5) -> list[str]:
             f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId=$id\" -ErrorAction SilentlyContinue; "
             f"if(-not $p){{break}}; Write-Output $p.CommandLine; $id=$p.ParentProcessId }}"
         )
+        # errors="replace"：PS 輸出走 console codepage (cp950)，父命令列若混到非法 byte
+        # 序列，預設 strict decode 會拋 UnicodeDecodeError 炸掉 guard — replace 保底不炸
         out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script],
-                             capture_output=True, text=True, timeout=15)
+                             capture_output=True, text=True, errors="replace", timeout=15)
         chains = [ln for ln in (out.stdout or "").splitlines() if ln.strip()]
     else:
         # POSIX: /proc/<pid>/cmdline（NUL 分隔）+ /proc/<pid>/stat 第 4 欄是 ppid

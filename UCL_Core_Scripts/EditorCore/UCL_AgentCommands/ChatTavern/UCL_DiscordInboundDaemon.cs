@@ -609,8 +609,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
                 string uid = author.GetString("id", "");
                 if (string.IsNullOrEmpty(uid)) return "no-author-id";
-                // 顯示名優先序：server 暱稱 > global_name > username（對齊舊 python bot）
-                string display = author.GetString("global_name", "");
+                // 顯示名優先序：guild 暱稱（member.nick）> global_name > username > uid。
+                // 註（Tim 2026-07-28）：舊 python bot 還會先查 notify_config 的 discord_user_mentions
+                //   反轉表把 uid 映射成統一顯示名 —— **刻意不 port**：Tim 有 Tim / Tim1125 兩個獨立帳號，
+                //   分別顯示才是正確語意，硬映射成同一個名字反而抹掉「哪個帳號發的」這個資訊。
+                string display = "";
+                var member = msg.Contains("member") ? msg["member"] : null;
+                if (member != null) display = member.GetString("nick", "");
+                if (string.IsNullOrEmpty(display)) display = author.GetString("global_name", "");
                 if (string.IsNullOrEmpty(display)) display = author.GetString("username", "");
                 if (string.IsNullOrEmpty(display)) display = uid;
 

@@ -4,7 +4,9 @@
 // 設計取捨 (Tim 2026-05-28 拍板)：
 //   - 仿 UCL_ChatTavernPage 提升為 EditorMenu 外部主要按鈕 (ShowInPageMenu => false)
 //   - 酒館系統開關預設關閉，存 PlayerPrefs (走 UCL_ChatTavernSystemControl 單一真相源)
-//   - 關閉 → 停止酒館各自動廣播 + 背景程序 (Bartender daemon / Discord inbound daemon)
+//   - 關閉 → 停止酒館各自動廣播 + 背景程序 (Bartender daemon)
+//   - Discord 雙向同步 (outbound mirror / inbound relay) 是獨立開關, 不受酒館系統總開關影響
+//     (Tim 2026-07-28 拍板: 各自獨立關注點)
 //   - 打開 → SetEnabled 內由 OFF→ON 自動 fire 重啟，讓 daemon 重新初始化
 #if UNITY_EDITOR
 using System.Collections.Generic;
@@ -118,6 +120,46 @@ namespace UCL.Core.EditorLib.Page
                 if (GUILayout.Button("開啟酒館後台管理頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                 {
                     UCL_ChatTavernAdminPage.Create();
+                }
+
+                // 區塊職責：Discord 雙向同步的兩顆 daemon 開關直接搬到控制台（Tim 2026-07-28 要求）
+                // 物理意義：outbound = 酒館訊息 → Discord（UCL_DiscordMirrorDaemon）；
+                //          inbound = Discord → 酒館（UCL_DiscordInboundDaemon）。兩者皆 EditorPrefs
+                //          per-machine 持久化、預設 OFF，**與「聊天酒館系統」總開關無關**（獨立關注點）。
+                // 數值影響：inbound 還要 config 的 tavern_inbound.enabled 為 true 才真的運作 →
+                //          兩道閘門任一未開就標示原因，不讓人以為開了就會動（禁靜默失敗）。
+                GUILayout.Space(4);
+                GUILayout.Label("<b>Discord 雙向同步</b>（各自獨立開關，跟上方酒館系統總開關無關）", UCL_GUIStyle.LabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool outOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.Enabled;
+                    GUILayout.Label("  📤 Outbound（酒館→Discord）", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(230)));
+                    if (GUILayout.Button(outOn ? "● 啟用中（按一下關閉）" : "○ 已關閉（按一下啟用）",
+                            UCL_GUIStyle.GetButtonStyle(outOn ? new Color(0.4f, 0.85f, 0.5f) : new Color(0.85f, 0.5f, 0.4f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.Enabled = !outOn;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool inOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
+                    bool inCfg = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ConfigEnabled;
+                    GUILayout.Label("  📥 Inbound（Discord→酒館）", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(230)));
+                    if (GUILayout.Button(inOn ? "● 啟用中（按一下關閉）" : "○ 已關閉（按一下啟用）",
+                            UCL_GUIStyle.GetButtonStyle(inOn ? new Color(0.4f, 0.85f, 0.5f) : new Color(0.85f, 0.5f, 0.4f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled = !inOn;
+                    }
+                    if (inOn && !inCfg)
+                        GUILayout.Label("⚠ config tavern_inbound.enabled=false → 仍不會運作", UCL_GUIStyle.LabelStyle);
+                    else if (inOn)
+                        GUILayout.Label($"路由 {UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ActiveRouteCount} 頻道 · "
+                                        + $"本 session 中繼 {UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.RelayedThisSession} 筆",
+                                        UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
                 }
             }
         }

@@ -57,6 +57,15 @@ namespace UCL.Core.EditorLib.Page
         List<string> m_LogTail = new List<string>();
         bool m_Loaded = false;
 
+        // ==== Inbound（Discord → 酒館）顯示快取（Tim 2026-07-28）====
+        // 物理意義：三份外部真相各掃一次進快取 — 中繼器存活（Process 註冊中心）、頻道路由
+        //          （ChatTavern/discord_channel_routing.json）、bot token secret（_secrets 掃描）。
+        // 數值影響：只在 LoadData（開頁 / 按 Refresh）掃，不每幀碰磁碟與 process 列舉。
+        string m_InboundRelayStatus = "(未載入)";
+        string m_InboundRoutingSummary = "(未載入)";
+        readonly List<string> m_InboundRoutingRows = new List<string>();
+        string m_InboundTokenStatus = "(未載入)";
+
         // ==== Webhook 設定 — 下拉選取模式（Tim 2026-07-16 拍板，交互仿 Persona 頭像 panel）====
         // 區塊職責：六個 webhook 消費端（全走統一 schema：webhook_urls / webhook_file / webhook_env_var，
         //          優先序 ENV > FILE > CONFIG）的觀看與操作 — 下拉選 stream → 純文字顯示該 stream 的
@@ -71,8 +80,8 @@ namespace UCL.Core.EditorLib.Page
         {
             "tavern_mirror（酒館訊息 → Discord）",
             "treasury_mirror（記帳 embed → Discord）",
-            "wake_notify（喚醒通知 → Discord）",
-            "queue-idle（頂層 — queue 完工通知）",
+            "wake_notify（⚠ 已退役 — 無消費者）",
+            "queue-idle（⚠ 已退役 — 無消費者）",
             "tavern_inbound（Discord → 酒館 inbound）",
             "quest_routing（task lifecycle 分流）",
         };
@@ -231,6 +240,11 @@ namespace UCL.Core.EditorLib.Page
                 {
                     Debug.LogWarning($"[TavernAdmin] 列舉房間目錄失敗: {exRooms.Message}");
                 }
+
+                // Inbound 三份外部真相各掃一次（Tim 2026-07-28）— 中繼器存活 / 頻道路由 / bot token secret
+                m_InboundRelayStatus = ScanInboundRelayStatus();
+                ScanInboundRouting();
+                m_InboundTokenStatus = ScanInboundTokenStatus();
             }
             catch (Exception e)
             {
@@ -259,6 +273,8 @@ namespace UCL.Core.EditorLib.Page
             if (!m_Loaded) LoadData();
 
             DrawMirrorStatePanel();
+            GUILayout.Space(8);
+            DrawInboundPanel();
             GUILayout.Space(8);
             DrawAvatarOverridePanel();
             GUILayout.Space(8);
@@ -718,12 +734,14 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    // Discord 同步總開關（Tim 2026-07-15 拍板：統一一個 toggle）— 一次寫五條 notify stream
-                    // 的 enabled：tavern_mirror / treasury_mirror（記帳頻道，之前漏網的 bank 訊息就是它）/
-                    // wake_notify / 頂層 enabled（queue-idle）/ tavern_inbound（Discord→酒館 inbound）。
-                    // 顯示狀態以 tavern_mirror.enabled 為代表（master 寫入後五者同步）。
-                    // 語意：預設 off、缺欄位視為 off（各 stream Python 端 get("enabled") falsy 同語意）。
-                    // 邊界：tavern_inbound 由 daemon 啟動時讀 config — 切換後需從控制台重啟酒館系統才生效。
+                    // Discord 同步總開關（Tim 2026-07-15 拍板：統一一個 toggle）— 一次寫「仍有消費者」的
+                    // 三條 stream 的 enabled：tavern_mirror（酒館訊息）/ treasury_mirror（記帳頻道，
+                    // 之前漏網的 bank 訊息就是它）/ tavern_inbound（Discord→酒館 inbound）。
+                    // 2026-07-28: wake_notify 與頂層 enabled（queue-idle）隨 python notify 一同退役
+                    //   （無 C# 對應實作、實測長期零活動）→ 不再寫入，避免「開了卻沒人讀」的假象。
+                    // 顯示狀態以 tavern_mirror.enabled 為代表（master 寫入後三者同步）。
+                    // 語意：預設 off、缺欄位視為 off（C# GetBool("enabled", false)）。
+                    // 邊界：tavern_inbound 目前無 C# 中繼器接管 — 開關只表意圖，見下方 Inbound 區塊實況。
                     bool newEnabled = GUILayout.Toggle(enabled,
                         enabled ? " <color=#66ff66>● Discord 同步啟用中（按一下全部關閉）</color>" : " <color=#ff8866>○ Discord 同步已關閉（按一下全部啟用）</color>",
                         new GUIStyle(UCL_GUIStyle.ButtonStyle) { richText = true }, GUILayout.ExpandWidth(false));
@@ -731,15 +749,13 @@ namespace UCL.Core.EditorLib.Page
                     {
                         WriteConfigRoot(cfg =>
                         {
-                            // 頂層 enabled = queue-idle stream
-                            cfg["enabled"] = newEnabled;
-                            foreach (var block in new[] { "tavern_mirror", "treasury_mirror", "wake_notify", "tavern_inbound" })
+                            foreach (var block in new[] { "tavern_mirror", "treasury_mirror", "tavern_inbound" })
                             {
                                 if (!cfg.Contains(block)) cfg[block] = JsonData.ParseJson("{}");
                                 cfg[block]["enabled"] = newEnabled;
                             }
                         });
-                        Debug.Log($"[TavernAdmin] Discord 同步總開關 → {newEnabled}（tavern/treasury/wake/queue-idle/inbound 五 stream 同步寫入；inbound 需重啟酒館系統生效）");
+                        Debug.Log($"[TavernAdmin] Discord 同步總開關 → {newEnabled}（tavern_mirror / treasury_mirror / tavern_inbound 三 stream 同步寫入）");
                     }
                     GUILayout.Space(8);
                     GUILayout.Label($"連續失敗計數：{failures}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
@@ -765,6 +781,272 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("<b>最近同步 log</b>（_drain.log [tavern] 尾 5 筆）：", WrapLabelStyle);
                     foreach (var line in m_LogTail) GUILayout.Label($"  {line}", WrapLabelStyle);
                 }
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Discord → 酒館 Inbound 設定（Tim 2026-07-28 拍板：inbound 設定收進本後台）
+        // 物理意義：inbound 是 outbound mirror 的對偶方向 — Discord 頻道訊息中繼進酒館。三份資料：
+        //          ① notify_config.json tavern_inbound.enabled（總開關，Mirror panel 的總開關已連動寫它）
+        //          ② ChatTavern/discord_channel_routing.json mappings（channel → room 對照，CRUD 在
+        //             UCL_DiscordChannelRoutingPage，本 panel 只做唯讀摘要 + 跳轉）
+        //          ③ _secrets/discord_bot_token（bot token，安裝/解密走 UCL_SecretManagerPage）
+        // 數值影響：本 panel 不改 routing / 不碰 secret 明文，只讀狀態 + 導流到對應專頁，
+        //          避免同一份資料兩處可寫造成分歧（single source of truth 原則）。
+        // 邊界：inbound 中繼器 2026-07-28 起由 C# UCL_DiscordInboundDaemon（in-process REST 輪詢）接管；
+        //      本 panel 直接讀它的兩道閘門（EditorPrefs Enabled × config tavern_inbound.enabled）與
+        //      中繼統計 / 最近錯誤，另偵測遺留 python bot 以警示遷移期雙寫。
+        // ===========================================================
+
+        // secret 檔名（不含副檔名）— .enc 為加密本體、.txt 為安裝後明文（bot / 未來 native 讀它）
+        const string InboundTokenSecretStem = "discord_bot_token";
+
+        void DrawInboundPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_Dic, "InboundFold", 21, iDefaultValue: true);
+                    GUILayout.Label("<b>📥 Discord → 酒館 Inbound</b>", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                // ── ① 總開關狀態（唯讀顯示；寫入走上方 Mirror panel 的總開關，避免兩處可寫）──
+                bool inboundEnabled = false;
+                string botStatus = "(未知)";
+                try
+                {
+                    var ib = (m_Config != null && m_Config.Contains("tavern_inbound")) ? m_Config["tavern_inbound"] : null;
+                    if (ib != null)
+                    {
+                        inboundEnabled = ib.GetBool("enabled", false);
+                        botStatus = ib.GetString("bot_status", "(未知)");
+                    }
+                }
+                catch { /* 缺欄位視為 off */ }
+                GUILayout.Label(inboundEnabled
+                    ? $"  設定開關：<color=#66ff66>● enabled</color>（config bot_status={botStatus}）"
+                    : $"  設定開關：<color=#ff8866>○ disabled</color>（config bot_status={botStatus}）", WrapLabelStyle);
+                GUILayout.Label("  ↳ 開關寫入走上方「Discord 同步」總開關（一次寫 tavern_mirror / treasury_mirror / tavern_inbound）。", WrapLabelStyle);
+
+                // ── ② 中繼器實際狀態 — 誠實顯示「有沒有東西在跑」，不靠 config 猜 ──
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"  中繼器：{m_InboundRelayStatus}", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                    // native daemon 開關（EditorPrefs, per-machine）+ 手動立即輪詢一輪
+                    bool prefOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
+                    if (GUILayout.Button(prefOn ? "⏹ 停用 native inbound" : "▶ 啟用 native inbound",
+                            UCL_GUIStyle.GetButtonStyle(prefOn ? new Color(0.9f, 0.5f, 0.4f) : new Color(0.4f, 0.8f, 0.5f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled = !prefOn;
+                        LoadData();
+                    }
+                    if (GUILayout.Button("🔄 立即檢查一輪", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ForcePoll();
+                        Debug.Log("[TavernAdmin] 手動觸發 inbound daemon ForcePoll（輪一個頻道；多頻道請連按或等 round-robin）");
+                    }
+                }
+
+                // ── ③ channel → room 對照摘要（唯讀）+ 跳轉專頁 CRUD ──
+                GUILayout.Space(4);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"  頻道對照：{m_InboundRoutingSummary}", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("🔀 開啟頻道路由設定", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_DiscordChannelRoutingPage.Create();
+                    }
+                }
+                foreach (var row in m_InboundRoutingRows) GUILayout.Label($"    {row}", WrapLabelStyle);
+
+                // ── ④ Bot token secret 狀態 + 跳轉 Secret Manager ──
+                GUILayout.Space(4);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"  Bot token：{m_InboundTokenStatus}", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("🔑 開啟 Secret Manager", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        OpenSecretManagerPage();
+                    }
+                }
+                GUILayout.Label("  ↳ token 明文只由 Secret Manager 以 passphrase 解出（本頁不顯示、不寫入明文）。native daemon 讀同一份 .txt。", WrapLabelStyle);
+            }
+        }
+
+        // 區塊職責：inbound 中繼器狀態 — native daemon 為主、外部 python bot 為輔
+        // 物理意義：2026-07-28 起 inbound 由 C# UCL_DiscordInboundDaemon（in-process REST 輪詢）接管。
+        //          native 是 in-process，不會出現在 Process 註冊中心 → 直接讀 daemon 自己的狀態欄位；
+        //          註冊中心那條僅用來偵測「遺留的外部 python bot 還在跑」（遷移期雙寫警示）。
+        // 數值影響：LoadData 時取一次快照；顯示兩個閘門（EditorPrefs Enabled × config enabled）與
+        //          本 session 中繼筆數 / 最近錯誤，讓靜默失敗看得見。
+        const string InboundRelayProcTag = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.RelayTag;
+
+        static string ScanInboundRelayStatus()
+        {
+            var D = typeof(UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon);
+            _ = D;   // 型別引用僅為讓 asmdef 依賴顯式化（同組件，無循環風險）
+            try
+            {
+                bool prefOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
+                bool cfgOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ConfigEnabled;
+                bool live = prefOn && cfgOn;
+                int routes = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ActiveRouteCount;
+                bool token = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.HasToken;
+                int relayed = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.RelayedThisSession;
+                string err = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.LastError;
+                string lastPoll = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.LastPollUtc;
+
+                string head;
+                if (live && token)
+                    head = $"<color=#66ff66>● native 運行中</color>（輪詢 {routes} 頻道，本 session 已中繼 {relayed} 筆"
+                           + (string.IsNullOrEmpty(lastPoll) ? "，尚未完成第一輪" : $"，最近輪詢 {lastPoll}") + "）";
+                else if (live && !token)
+                    head = "<color=#ffcc44>◐ 已啟用但 token 未就緒</color> — 輪詢無法進行，請安裝 bot token";
+                else if (!prefOn && cfgOn)
+                    head = "<color=#ff8866>○ native daemon 未啟用</color>（config 意圖為 on）— 選單 UCL/Discord Mirror/Toggle Inbound Daemon";
+                else if (prefOn && !cfgOn)
+                    head = "<color=#ff8866>○ config tavern_inbound.enabled = false</color>（daemon 已啟用但被 config 關）";
+                else
+                    head = "<color=#ff8866>○ 未啟用</color>（daemon 開關與 config 皆為 off）";
+
+                // 遺留 python bot 偵測 — 遷移期若兩者同時在跑會雙寫同一批訊息
+                string legacy = "";
+                try
+                {
+                    foreach (var (rec, status) in UCL_ProcessRegistryService.LoadAllWithStatus())
+                    {
+                        if (rec == null || rec.tag != InboundRelayProcTag) continue;
+                        if (status == UCL_ProcessStatus.Alive)
+                        {
+                            legacy = $"　⚠ <color=#ffcc44>另偵測到外部 python bot 存活（pid={rec.pid}）— 兩者同時跑會雙寫，請收掉其一</color>";
+                            break;
+                        }
+                    }
+                }
+                catch { /* 註冊中心查詢失敗不影響主狀態 */ }
+
+                string errLine = string.IsNullOrEmpty(err) ? "" : $"　⛔ 最近錯誤：{err}";
+                return head + legacy + errLine;
+            }
+            catch (Exception e)
+            {
+                return $"(狀態查詢失敗：{e.Message})";
+            }
+        }
+
+        // 區塊職責：channel → room 路由摘要（唯讀）— CRUD 歸 UCL_DiscordChannelRoutingPage，本頁只顯示
+        // 物理意義：discord_channel_routing.json 是 single source of truth（bot 啟動時讀）；
+        //          本摘要讓 Tim 在後台一眼看見「幾條啟用 / 對到哪些房」，不必切頁。
+        // 數值影響：只讀不寫；enabled=false 的列也顯示（標示停用），避免「設了卻沒生效」被藏起來。
+        void ScanInboundRouting()
+        {
+            m_InboundRoutingRows.Clear();
+            try
+            {
+                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "discord_channel_routing.json");
+                if (!File.Exists(path))
+                {
+                    m_InboundRoutingSummary = "(discord_channel_routing.json 不存在)";
+                    return;
+                }
+                var jd = JsonData.ParseJson(File.ReadAllText(path));
+                if (jd == null || !jd.Contains("mappings") || !jd["mappings"].IsArray)
+                {
+                    m_InboundRoutingSummary = "(mappings 欄缺失或格式非陣列)";
+                    return;
+                }
+                var maps = jd["mappings"];
+                int total = maps.Count, on = 0;
+                for (int i = 0; i < total; i++)
+                {
+                    var m = maps[i];
+                    if (m == null) continue;
+                    bool en = m.GetBool("enabled", false);
+                    if (en) on++;
+                    string label = m.GetString("label", "");
+                    string room = m.GetString("tavern_room", "?");
+                    string cls = m.GetString("source_class", "");
+                    int prio = m.GetInt("priority", 0);
+                    string chId = m.GetString("channel_id", "?");
+                    // channel id 是公開識別碼（非 secret），但只露尾 6 碼夠辨識又不佔版面
+                    string chShort = chId.Length > 6 ? "…" + chId.Substring(chId.Length - 6) : chId;
+                    m_InboundRoutingRows.Add(en
+                        ? $"<color=#66ff66>●</color> {label} (ch {chShort}) → <b>{room}</b>  [{cls}/p{prio}]"
+                        : $"<color=#888888>○ {label} (ch {chShort}) → {room}  [停用]</color>");
+                }
+                m_InboundRoutingSummary = $"{on} 條啟用 / 共 {total} 條";
+            }
+            catch (Exception e)
+            {
+                m_InboundRoutingSummary = $"(讀取失敗：{e.Message})";
+            }
+        }
+
+        // 區塊職責：bot token secret 狀態 — 只看檔案存在性（.enc 入庫了沒 / .txt 安裝了沒）
+        // 物理意義：.enc = 加密本體（可 commit）；.txt = 安裝後明文（gitignored，中繼器實際讀它）。
+        //          本頁只報「有沒有 / 裝了沒」，絕不顯示或寫入明文內容。
+        // 設計取捨（assembly 邊界）：UCL_SecretScanner / UCL_SecretCrypto 住 UCL_CoreEditor，而該 asmdef
+        //          references UCL_Core（本檔所在）→ 反向直接引用會造成循環依賴。metadata（label/hint）
+        //          因此不在本頁顯示，需要就按鈕跳 Secret Manager 看；存在性用 File.Exists 判定即足夠誠實。
+        // 數值影響：.txt 缺席即中繼器起不來 → 提示去 Secret Manager 安裝（本 panel 有跳轉鈕）。
+        static string ScanInboundTokenStatus()
+        {
+            try
+            {
+                string dir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_secrets");
+                string enc = Path.Combine(dir, InboundTokenSecretStem + ".enc");
+                string txt = Path.Combine(dir, InboundTokenSecretStem + ".txt");
+                bool hasEnc = File.Exists(enc), hasTxt = File.Exists(txt);
+                if (hasTxt)
+                    return $"<color=#66ff66>● 已安裝</color>（明文 {InboundTokenSecretStem}.txt 就緒{(hasEnc ? "，加密本體在庫" : "，⚠ 無 .enc 加密本體")}）";
+                if (hasEnc)
+                    return $"<color=#ff8866>○ 未安裝</color> — 已有 {InboundTokenSecretStem}.enc 但缺明文，中繼器起不來；請以 passphrase 安裝";
+                return $"<color=#ff8866>○ 找不到 {InboundTokenSecretStem}.enc</color> — 尚未入庫任何 bot token";
+            }
+            catch (Exception e)
+            {
+                return $"(secret 狀態查詢失敗：{e.Message})";
+            }
+        }
+
+        // 區塊職責：跨 assembly 開啟 Secret Manager 頁（UCL_CoreEditor → 本組件無法直接 reference）
+        // 物理意義：以型別全名在已載入 assembly 中反射找 UCL_SecretManagerPage 並呼其 static Create()。
+        // 數值影響：找不到（下游專案未含 SecretManager 模組）→ 印 warning 不拋例外，按鈕變 no-op。
+        static void OpenSecretManagerPage()
+        {
+            const string typeName = "UCL.Core.EditorLib.SecretManager.UCL_SecretManagerPage";
+            try
+            {
+                Type t = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try { t = asm.GetType(typeName); } catch { continue; }
+                    if (t != null) break;
+                }
+                if (t == null)
+                {
+                    Debug.LogWarning($"[TavernAdmin] 找不到 {typeName} — 本專案未含 SecretManager 模組？");
+                    return;
+                }
+                var mi = t.GetMethod("Create", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (mi == null)
+                {
+                    Debug.LogWarning($"[TavernAdmin] {typeName} 無 public static Create()");
+                    return;
+                }
+                mi.Invoke(null, null);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TavernAdmin] 開啟 Secret Manager 失敗：{e.Message}");
             }
         }
 

@@ -623,7 +623,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string senderId = "discord:" + uid;
                 // identity 先 ensure — Cmd_Tavern / 渲染端靠 identities.json 找 display_name，
                 // 沒註冊會退回顯示 "discord:<uid>"（不好看）
-                try { UCL_ChatTavernIO.GetOrCreateIdentity(senderId, display, "human"); }
+                // kind 用 "discord-user" —— identities.json 內既有 18 筆 Discord 來源身分（python 時代註冊）
+                // 全是這個值，寫 "human" 會造成同源身分兩種 kind 的 schema 漂移（2026-07-28 實測抓到）。
+                try { UCL_ChatTavernIO.GetOrCreateIdentity(senderId, display, "discord-user"); }
                 catch (Exception e) { Debug.LogWarning($"[DiscordInbound] identity ensure 失敗（繼續中繼）: {e.Message}"); }
 
                 var meta = new Dictionary<string, string>

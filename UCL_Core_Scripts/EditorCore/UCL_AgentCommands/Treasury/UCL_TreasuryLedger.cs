@@ -209,58 +209,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
             Debug.Log($"[Treasury] {typeStr} {amount} → account={accountId} (balance: {balanceBefore} → {balanceAfter})");
 
-            // T41 — 寫完 entry fire-and-forget Discord broadcast
-            // 物理意義：每筆 ledger 變動同步到 Discord 記帳頻道（embed: 變動金額 / 原因 / 總額）
-            // 數值影響：fail swallow 不擋 ledger 主流程；spawn Python notify_treasury.py 跑 Discord POST
-            try
-            {
-                FireDiscordBroadcastAsync(fullPath);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Treasury] FireDiscordBroadcast 失敗（ledger 已寫，僅 broadcast 跳過）：{ex.Message}");
-            }
-
+            // Discord broadcast 不在此觸發 (2026-07-28 python 路徑移除)：ledger 是 append-only 事件流，
+            // UCL_DiscordTreasuryMirror 以 cursor pull 撿走新 entry（冪等、漏送可補），寫入端零 spawn。
             return entry;
         }
 
-        // ==========================================================
-        // 區塊職責：T41 — fire-and-forget Discord broadcast
-        // 物理意義：T-TREASURY (Tim 2026-07-15 拍板方案 C) — push 收編 pull adapter：改 spawn 統一
-        //          mirror run（notify_discord --mode tavern），entry 由 pull adapter 依 cursor 撿走
-        //          （冪等重試；push 版 webhook fail = 該筆通知永久丟失的弱點就此移除）。
-        // 數值影響：~1-2s 內 Discord 端收到 embed；C# 不等 process 完成
-        // 邊界：腳本不存在 → 退舊專案位置 shim（shim 也轉統一 run）→ 再不存在 silent skip
-        // ==========================================================
-        static void FireDiscordBroadcastAsync(string entryFilePath)
-        {
-            try
-            {
-                // 物理意義：獲取 UCL_Core 的專案相對路徑，以此組合出正確的 Tools~ python 腳本執行路徑
-                string corePathRel = UCL_EditorPath.CorePath;
-                string scriptPath = string.IsNullOrEmpty(corePathRel) ? null
-                    : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel,
-                        "Tools~", "AgentCommands", "PromptQueue", "notify_discord.py")).Replace('\\', '/');
-                // 2026-07-21 shim 移除: 主專案 PromptQueue/notify_treasury.py fallback 已刪 (該 shim 本就轉發到
-                // 上面的 UCL_Core notify_discord.py, UCL_Core 缺席時 shim 也失效)。UCL_Core 缺 → silent skip。
-                if (scriptPath == null || !File.Exists(scriptPath)) return;   // notify 系統未安裝 silent skip
-
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = $"\"{scriptPath}\" --mode tavern",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = false,
-                };
-                System.Diagnostics.Process.Start(psi);   // fire-and-forget；不 await
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Treasury] FireDiscordBroadcast spawn fail: {ex.Message}");
-            }
-        }
 
         // ==========================================================
         // 區塊職責：agent_id ↔ env_marker 對應檢查 — 判定本筆 ledger entry 該不該被標 signature_mismatch

@@ -1030,10 +1030,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// <summary>追加一筆訊息（自動分配 seq + ts + _writer 簽章）。回傳分配後的 seq。
         /// T38: 內部委派 UCL_ChatTavernIO_PerMsgFile.WriteMessageFile — 改寫單檔 per message
         /// （取代既有 jsonl append-only），seq 改為 reader 動態 derive。
-        /// fireDiscordMirror=true (預設) — 寫完 fire-and-forget 觸發 notify_discord.py --mode tavern,
-        /// 讓任何 post entry point (Cmd_Tavern.Op_Post / IMGUI DoSend / 別 Cmd) 自動 mirror 到 Discord.
-        /// quiet 場景 (e.g. 測試 / 內部 system message) 傳 false 跳過.</summary>
-        public static int AppendMessage(string roomId, UCL_ChatMessage msg, bool fireDiscordMirror = true)
+        /// Discord 鏡像 (2026-07-28 起)：寫檔後不再做任何觸發 — UCL_DiscordMirrorDaemon 自己 poll
+        /// 訊息檔並依 per-webhook 游標送出，寫入端與傳送端徹底解耦（舊版每筆 post spawn 一隻
+        /// python notify_discord.py，是 2026-07-28 併發失控事故的結構性根因）。</summary>
+        public static int AppendMessage(string roomId, UCL_ChatMessage msg)
         {
             // 寫入臨界區 (2026-07-27, Tim 拍板抽離成 Service + lock)：
             // 「寫檔 (WriteMessageFile) + derive seq (CountMessageFiles) + 寫 _seq.txt」這段本來散在這裡，
@@ -1053,105 +1053,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // per-room lock 保證的是「同一房間內不會有兩筆訊息因為交錯執行而算出同一個 seq」。
             int derivedSeq = UCL_ChatTavernWriteService.WriteMessageWithSeq(roomId, msg);
 
-            // R6.6 / DoSend-mirror-fix — 下沉 Discord mirror 觸發到 IO 層,
-            // 所有 post path (Cmd_Tavern RPC / UCL_ChatTavernPage IMGUI Send / 別 Cmd) 自動受益.
-            // 之前只有 Cmd_Tavern.Op_Post 顯式呼叫 TryFireDiscordTavernMirrorAsync — IMGUI Send 漏觸發.
-            if (fireDiscordMirror)
-            {
-                TryFireDiscordTavernMirrorAsync();
-            }
+            // Discord 鏡像不在此觸發 (2026-07-28 python 路徑移除)：UCL_DiscordMirrorDaemon 以
+            // EditorApplication.update 1Hz 自行 poll + per-webhook 游標送出，寫入端零額外成本。
             return derivedSeq;
         }
 
-        // ===========================================================
-        // 區塊：Discord Tavern Mirror 即時觸發 (從 Cmd_Tavern 下沉至 IO 層)
-        // 物理意義：spawn Python notify_discord.py --mode tavern fire-and-forget;
-        //          跟 Stop hook 路徑形成雙路徑 hybrid (Stop hook 是 safety net)
-        // 數值影響：兩路共用 _tavern_state.json last_seen_seq → idempotent; fail 不影響 post
-        // 設計取捨：原本住在 Cmd_Tavern.Op_Post 內,但 UCL_ChatTavernPage.DoSend / 別 Cmd 直接呼叫
-        //          AppendMessage 繞過此 hook → Discord 沒立刻收到. 下沉到 IO 層 = 任何 entry
-        //          point append message 自動 mirror, 未來新 caller 不必各自記得 fire.
-        // ===========================================================
-
-        // 區塊職責：T0.5 mirror spawn single-flight 止血閘（2026-07-19 事故後補；Discord Mirror Phase B 緊急前置）
-        // 物理意義：原 fire-and-forget 每筆 post 無條件 Process.Start，無並發上限。2026-07-19 實錄——zombie
-        //          lock holder 讓後續每隻 spawn 繞鎖 lock-free 執行 + 卡住，累積 3578 隻 python → Unity
-        //          編譯管線 OOM、整台機器降速。本閘把 C# 端「同時存活的 mirror python」上限釘死在 1。
-        // 數值影響：s_LastMirrorProc 追蹤上一隻 spawn 的 handle；仍存活且未逾齡 → 跳過本次 spawn（期間新訊息
-        //          由那隻 python 自己的 cursor 撿走，或 Stop-hook safety net 兜底，不會漏）。domain reload 後
-        //          static 欄位歸零 → 自然放行一隻新的（reload 頻率遠低於 spawn 風暴，可接受）。
-        // 逃生閥：追蹤的 proc 存活超過 MAX_AGE 視為卡死 → 放行一隻新 spawn（避免 mirror 永久停擺），但不 kill
-        //        舊的（kill 屬破壞性、超本閘範圍；native daemon cutover 後整條 python 路徑會被移除）。
-        static System.Diagnostics.Process s_LastMirrorProc = null;   // 上一隻 mirror python handle（null = 無/已結束）
-        static DateTime s_LastMirrorSpawnUtc = DateTime.MinValue;    // 上次 spawn 的 UTC 時刻（算存活時長用）
-        const double MIRROR_SINGLEFLIGHT_MAX_AGE_SEC = 90.0;         // 逾此秒數仍存活視為卡死 → 逃生閥放行
-
-        public static void TryFireDiscordTavernMirrorAsync()
-        {
-            try
-            {
-                // 區塊職責：T4 mirror_owner 原子切換閘（basecamp 拍板 · 疑慮5）→ Phase C 定版
-                // 物理意義：owner=native 時 tavern mirror 由 C# daemon、treasury 由 C# UCL_DiscordTreasuryMirror
-                //          雙雙接管 — 本 spawn 路徑（mode=tavern 只跑 tavern+treasury 兩 stream）已無事可做，
-                //          回到「native owner 不 spawn」= per-post python 程序徹底歸零（3578 殭屍 family 的
-                //          結構性根絕）。wake / queue-idle 等其餘 stream 由 Stop-hook 的 python run 覆蓋，
-                //          且 python 端 tavern/treasury 各有 mirror_owner 自查閘（Stop-hook 路徑防雙送）。
-                // 數值影響：native owner 下直接 return；revert（owner 翻回 python）即恢復本 spawn 路徑。
-                if (UCL_DiscordMirrorDaemon.IsNativeOwner) return;
-
-                // T-MOVE (Tim 2026-07-15 拍板): notify_discord.py 已搬 UCL_Core Tools~ — 優先走新位置，
-                // 舊專案位置留 shim 當 fallback（過渡一版；資料 config/state 仍在專案 PromptQueue/）
-                string corePathRel = UCL_EditorPath.CorePath;
-                string scriptPath = string.IsNullOrEmpty(corePathRel) ? null
-                    : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel,
-                        "Tools~", "AgentCommands", "PromptQueue", "notify_discord.py")).Replace('\\', '/');
-                // 2026-07-21 shim 移除: 主專案 PromptQueue/notify_discord.py fallback 已刪 (該 shim 本就轉發到
-                // 上面的 UCL_Core notify_discord.py)。UCL_Core 缺 → silent skip。
-                if (scriptPath == null || !File.Exists(scriptPath)) return;   // notify 系統未安裝 → silent skip
-
-                // 區塊職責：T0.5 single-flight 前置檢查 — 上一隻 mirror python 仍存活且未逾齡就跳過本次 spawn
-                // 物理意義：把並發 mirror python 上限釘死在 1，根絕 2026-07-19 那種 3578 隻累積 OOM 事故
-                // 數值影響：跳過不影響資料正確性 — 期間 append 的新訊息由存活那隻 python 的 cursor（或 Stop-hook）撿走
-                try
-                {
-                    if (s_LastMirrorProc != null && !s_LastMirrorProc.HasExited)
-                    {
-                        double aliveSec = (DateTime.UtcNow - s_LastMirrorSpawnUtc).TotalSeconds;
-                        if (aliveSec < MIRROR_SINGLEFLIGHT_MAX_AGE_SEC)
-                        {
-                            return;   // 仍有 mirror 在跑且未逾齡 → single-flight 跳過本次 spawn
-                        }
-                        // 逾齡逃生閥：疑似卡死，放行新 spawn（但不 kill 舊的，kill 超本閘範圍）
-                        Debug.LogWarning($"[Tavern] 前一隻 mirror python 存活 {aliveSec:F0}s 疑似卡住，放行新 spawn（不 kill 舊的）");
-                    }
-                }
-                catch { /* HasExited 可能因 proc 資訊消失而拋 → 當作已結束，往下 spawn */ }
-
-                // P0 fix (summit QA 2026-07-16 — 52 隻殭屍程序驗屍結論)：原本 Redirect + async drain 的寫法
-                // 在 Editor domain reload 時 managed drain callback 被殺、OS pipe handle 卻還活著 →
-                // child 寫滿 4KB pipe buffer 永久 block → 殭化。這兩天高頻重編譯 = 高頻堆屍。
-                // 改完全不 redirect（對齊 UCL_TreasuryLedger 的 field-proven 無 redirect spawn）：
-                // 無 console 的 GUI 父程序下 python sys.stdout 為 None、print 是 no-op（腳本已有 try 防護），
-                // 真正的診斷輸出全走腳本自己的 _drain.log — pipe 從系統中消失，殭屍斷根。
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = $"\"{scriptPath}\" --mode tavern",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = false,
-                    WorkingDirectory = UCL_RepoPath.RepoRoot,
-                };
-                // T0.5：capture handle 供下次 single-flight 檢查（fire-and-forget：無 pipe 無 callback，domain reload 免疫）
-                s_LastMirrorProc = Process.Start(psi);
-                s_LastMirrorSpawnUtc = DateTime.UtcNow;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] discord mirror spawn fail (post path 不受影響；Stop hook 會兜底)：{ex.Message}");
-            }
-        }
 
         /// <summary>讀取整個房間 messages — T38 委派 UCL_ChatTavernIO_PerMsgFile.LoadAllMessages
         /// （walk per-msg dir + ordinal sort + derive seq）。</summary>

@@ -46,7 +46,6 @@ namespace UCL.Core.EditorLib.Page
         // ==== T6.5：native owner 下的同步進度快取（LoadData 時算好，DrawTavernRoomRows 讀快取，不每幀讀檔）====
         // 物理意義：native 游標是 per-webhook ts_high（無 seq）→ 由 UCL_DiscordMirrorDaemon.GetRoomNativeProgress
         //          反推「已同步到 seq / 待同步筆數」；python owner 下這些不填，顯示照舊走 last_seen_seq。
-        bool m_NativeOwnerCached = false;                                            // 本次 LoadData 當下的 owner 快照（避免每幀重判）
         Dictionary<string, int> m_RoomNativeSynced = new Dictionary<string, int>();  // native：已同步到 seq
         Dictionary<string, int> m_RoomNativePending = new Dictionary<string, int>(); // native：待同步筆數
         Dictionary<string, bool> m_RoomNativeCapped = new Dictionary<string, bool>();// native：待同步是否超反推上限（顯示標「≥」）
@@ -128,7 +127,6 @@ namespace UCL.Core.EditorLib.Page
             m_RoomNativeSynced.Clear(); m_RoomNativePending.Clear(); m_RoomNativeCapped.Clear();
             m_AvatarOverrides.Clear(); m_LogTail.Clear();
             // T6.5：本次載入的 mirror owner 快照 — native 下同步進度改由 daemon 反推（見下方 rooms 迴圈）
-            m_NativeOwnerCached = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.IsNativeOwner;
             try
             {
                 if (File.Exists(NotifyConfigPath)) m_Config = JsonData.ParseJson(File.ReadAllText(NotifyConfigPath));
@@ -150,8 +148,7 @@ namespace UCL.Core.EditorLib.Page
                             int maxSeq = 0;
                             if (File.Exists(seqPath)) int.TryParse(File.ReadAllText(seqPath).Trim(), out maxSeq);
                             m_RoomMaxSeq[room] = maxSeq;
-                            // T6.5：native owner → 同步進度/draft 走 daemon 反推的 native 游標；python → 舊 last_seen_seq
-                            if (m_NativeOwnerCached)
+                            // 2026-07-28：native 為唯一 owner → 同步進度/draft 一律走 daemon 反推的 native 游標
                             {
                                 UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.GetRoomNativeProgress(
                                     room, maxSeq, out int synced, out int pending, out bool capped);
@@ -159,10 +156,6 @@ namespace UCL.Core.EditorLib.Page
                                 m_RoomNativePending[room] = pending;
                                 m_RoomNativeCapped[room] = capped;
                                 m_SeqDraft[room] = synced.ToString();
-                            }
-                            else
-                            {
-                                m_SeqDraft[room] = GetLastSeen(room).ToString();
                             }
                         }
                     }
@@ -257,18 +250,9 @@ namespace UCL.Core.EditorLib.Page
             m_SelectedUrlDraft = p == null ? "" : (m_AvatarOverrides.FirstOrDefault(kv => kv.Key == p).Value ?? "");
         }
 
-        int GetLastSeen(string room)
-        {
-            try
-            {
-                if (m_State != null && m_State.Contains("rooms") && m_State["rooms"].Contains(room))
-                {
-                    return m_State["rooms"][room].GetInt("last_seen_seq", 0);
-                }
-            }
-            catch { /* 缺欄位視為 0 */ }
-            return 0;
-        }
+        // 註：舊的 GetLastSeen(room)（讀 rooms.<room>.last_seen_seq）已於 2026-07-28 移除 —
+        //     那是 python mirror 的 per-room 位置浮水印；native 游標走 rooms.<room>.webhooks 的
+        //     ts_high + per-webhook seen-set，進度一律經 UCL_DiscordMirrorDaemon.GetRoomNativeProgress 取得。
 
         protected override void ContentOnGUI()
         {
@@ -417,13 +401,8 @@ namespace UCL.Core.EditorLib.Page
             // 物理意義：native owner 下游標是 per-webhook ts_high（無 seq）→ 控件改呼叫 daemon.AdminSetRoomCursorToSeq
             //          把「seq N 邊界」翻成 ts_high+seen 重設全房 webhook；顯示的「已同步/待同步」也改由 daemon
             //          反推 native 游標（見 LoadData 的 GetRoomNativeProgress）。python owner 下維持舊 last_seen_seq。
-            // 數值影響：兩模式控件皆可用（不再 disable）；native 動作寫 _tavern_state.json rooms.<room>.webhooks、
-            //          python 動作寫 rooms.<room>.last_seen_seq。往回調在兩模式都會讓區間訊息重發到 Discord。
-            // 用 LoadData 當下的 owner 快照（m_NativeOwnerCached）— 與同批算好的 native 進度快取保持同源，不每幀重判。
-            bool nativeOwner = m_NativeOwnerCached;
-            GUILayout.Label(nativeOwner
-                ? "  🟢 mirror_owner=native：同步游標由 C# daemon 以 ts_high + per-webhook 管理（_tavern_state.json rooms.<room>.webhooks）。下列「套用 seq / 追平」已串接 daemon（把 seq 邊界翻成 ts_high 重設全房 webhook）。"
-                : "  ⚙ mirror_owner=python：同步游標為 per-room last_seen_seq（notify_discord.py 讀）。下列「套用 seq / 追平」直改該欄位。", WrapLabelStyle);
+            // 數值影響：動作寫 _tavern_state.json rooms.<room>.webhooks；往回調會讓區間訊息重發到 Discord。
+            GUILayout.Label("  🟢 同步游標由 C# mirror daemon 以 ts_high + per-webhook 管理（_tavern_state.json rooms.<room>.webhooks）。下列「套用 seq / 追平」已串接 daemon（把 seq 邊界翻成 ts_high 重設全房 webhook）。", WrapLabelStyle);
 
             // 延後動作（IMGUI 陷阱修正）：套用 seq / 追平會呼 LoadData() 重建 m_WatchedRooms，
             // 若在下方 foreach 內同步執行 = 列舉中改集合 → InvalidOperationException（Tim 2026-07-21 實測踩到）。
@@ -435,9 +414,9 @@ namespace UCL.Core.EditorLib.Page
             {
                 int maxSeq = m_RoomMaxSeq.GetValueOrDefault(room, 0);
                 // 已同步/待同步：native 走 daemon 反推快取；python 走 last_seen_seq
-                int lastSeen = nativeOwner ? m_RoomNativeSynced.GetValueOrDefault(room, 0) : GetLastSeen(room);
-                int pending = nativeOwner ? m_RoomNativePending.GetValueOrDefault(room, 0) : Math.Max(0, maxSeq - lastSeen);
-                bool capped = nativeOwner && m_RoomNativeCapped.GetValueOrDefault(room, false);
+                int lastSeen = m_RoomNativeSynced.GetValueOrDefault(room, 0);
+                int pending = m_RoomNativePending.GetValueOrDefault(room, 0);
+                bool capped = m_RoomNativeCapped.GetValueOrDefault(room, false);
                 using (new GUILayout.HorizontalScope("box"))
                 {
                     GUILayout.Label($"<b>{room}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
@@ -510,7 +489,7 @@ namespace UCL.Core.EditorLib.Page
             // 迴圈外執行延後動作（此時已離開 m_WatchedRooms 列舉，LoadData 重建集合安全）— 一幀至多一個按鈕觸發
             if (applyRoom != null)
             {
-                ApplyRoomSeq(applyRoom, applyTargetSeq, m_RoomMaxSeq.GetValueOrDefault(applyRoom, 0), nativeOwner);
+                ApplyRoomSeq(applyRoom, applyTargetSeq, m_RoomMaxSeq.GetValueOrDefault(applyRoom, 0));
             }
             else if (registerRoom != null)
             {
@@ -561,27 +540,12 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：套用 seq / 追平的實際寫入 — 依 owner 分流（native → daemon 游標重設；python → last_seen_seq）
         // 物理意義：native 呼叫 UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq（seq→ts_high+seen 重設全房 webhook），
         //          回狀態字串 log；python 維持舊 WriteStateField 直改 rooms.<room>.last_seen_seq。
-        // 數值影響：native 路徑 daemon 端已 Save 落 disk，故此處補呼 LoadData 讓 UI 進度快取對齊；python 路徑
-        //          WriteStateField 內部本就會 LoadData，不重複呼叫。
-        void ApplyRoomSeq(string room, int targetSeq, int maxSeq, bool nativeOwner)
+        // 數值影響：daemon 端已 Save 落 disk，故此處補呼 LoadData 讓 UI 進度快取對齊磁碟真相。
+        void ApplyRoomSeq(string room, int targetSeq, int maxSeq)
         {
-            if (nativeOwner)
-            {
-                string result = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq(room, targetSeq, maxSeq);
-                Debug.Log($"[TavernAdmin] native 套用 seq：{result}");
-                LoadData();   // daemon 端已 Save，重載讓進度快取對齊磁碟真相
-            }
-            else
-            {
-                string r = room; int t = targetSeq;
-                WriteStateField(s =>
-                {
-                    if (!s.Contains("rooms")) s["rooms"] = JsonData.ParseJson("{}");
-                    if (!s["rooms"].Contains(r)) s["rooms"][r] = JsonData.ParseJson("{}");
-                    s["rooms"][r]["last_seen_seq"] = t;
-                });
-                Debug.Log($"[TavernAdmin] python {r}.last_seen_seq → {t}（設小=重放區間 / 設大或追平=跳過區間）");
-            }
+            string result = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.AdminSetRoomCursorToSeq(room, targetSeq, maxSeq);
+            Debug.Log($"[TavernAdmin] 套用 seq：{result}");
+            LoadData();   // daemon 端已 Save，重載讓進度快取對齊磁碟真相
         }
 
         /// <summary>對指定 stream 的 webhook_urls 做受控寫入（增/刪）。</summary>
@@ -784,21 +748,11 @@ namespace UCL.Core.EditorLib.Page
                         WriteStateField(s => s["consecutive_failures"] = 0);
                     }
                     GUILayout.FlexibleSpace();
-                    // 手動觸發一次 mirror run — T6.5：owner 分流。native → daemon.ForceTick（立即掃描送出）；
-                    // python → IO 層 fire-and-forget spawn（T6.6 後 spawn 在 native owner 下也會跑 python，
-                    // 但那條只剩 treasury 有意義 — tavern 的「立即同步」在 native 下走 ForceTick 才是真觸發）。
+                    // 手動觸發一次 mirror run — 2026-07-28 起只有 native 一條路：daemon.ForceTick 立即掃描送出
                     if (GUILayout.Button("▶ 立即觸發同步", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                     {
-                        if (UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.IsNativeOwner)
-                        {
-                            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.ForceTick();
-                            Debug.Log("[TavernAdmin] 手動觸發 native daemon ForceTick（掃描 + 送出立即跑一輪）");
-                        }
-                        else
-                        {
-                            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync();
-                            Debug.Log("[TavernAdmin] 手動觸發 notify_discord.py --mode tavern（數秒後按 Refresh 看結果）");
-                        }
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.ForceTick();
+                        Debug.Log("[TavernAdmin] 手動觸發 mirror daemon ForceTick（掃描 + 送出立即跑一輪）");
                     }
                 }
 

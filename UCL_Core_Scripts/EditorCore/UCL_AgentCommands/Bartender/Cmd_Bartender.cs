@@ -342,7 +342,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         { "queried_limit", limit.ToString() },
                     },
                 };
-                UCL_ChatTavernIO.AppendMessage(room, msg, fireDiscordMirror: true);
+                UCL_ChatTavernIO.AppendMessage(room, msg);
             }
         }
 

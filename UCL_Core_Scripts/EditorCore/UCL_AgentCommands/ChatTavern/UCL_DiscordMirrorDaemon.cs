@@ -1,5 +1,6 @@
 ﻿// 區塊職責：Discord Mirror 常駐背景 daemon（Unity Editor 內）— tavern→Discord 同步的 C# native 版本骨架
-// 物理意義：取代現行「每筆 AppendMessage fire-and-forget spawn python notify_discord.py」的模型。
+// 物理意義：取代舊「每筆 AppendMessage fire-and-forget spawn python notify_discord.py」的模型
+//          （2026-07-28 python 路徑已整條移除，本 daemon 為 Discord 唯一傳送者）。
 //          2026-07-19 實錄：舊模型在 zombie lock 下累積 3578 隻 python → Unity 編譯 OOM。改常駐 daemon
 //          （[InitializeOnLoad] + EditorApplication.update poll）從源頭消滅 per-message spawn 那一族病理。
 // 設計取捨（對齊已 ship 的 UCL_BartenderDaemon）：
@@ -58,8 +59,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         /// <summary>
-        /// daemon 是否啟用（cutover 開關）。預設 OFF — 開發期避免跟現行 python mirror 路徑雙送。
-        /// 走 EditorPrefs 持久化，跨 domain reload / Editor 重啟不失。
+        /// daemon 是否啟用。預設 OFF（Tim 2026-07-28 拍板維持顯式 opt-in）— 走 EditorPrefs 持久化，
+        /// 跨 domain reload / Editor 重啟不失，每台機器各自決定要不要鏡像。
+        /// ⚠ 2026-07-28 python mirror 路徑已整條移除 → 本開關關著 = Discord 完全靜音（無備援路徑）。
+        /// 開關位置：選單 UCL/Discord Mirror/Toggle Mirror Daemon，或酒館 Admin 頁。
         /// </summary>
         public static bool Enabled
         {
@@ -72,58 +75,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
         }
 
-        /// <summary>選單手動 toggle enable — 給 T2~T6 開發期驗證 daemon tick 用（cutover 前 python 仍為 live owner）。</summary>
-        [MenuItem("UCL/Discord Mirror/Toggle Native Daemon (dev)")]
+        /// <summary>選單手動 toggle enable — 暫停 / 恢復 Discord 鏡像（native 為唯一傳送者）。</summary>
+        [MenuItem("UCL/Discord Mirror/Toggle Mirror Daemon")]
         static void ToggleEnabledMenu()
         {
             Enabled = !Enabled;
         }
 
-        // ===========================================================
-        // 區塊：mirror_owner 原子切換開關（疑慮5 · basecamp 拍板 · T4）
-        // 物理意義：cutover 用單一 config flag mirror_owner: "python" | "native"。python spawn 閘讀它 →
-        //          native 就不 spawn；daemon live 送出路徑也讀它 → 只有 native 才真送。原子切換零雙送窗，
-        //          cutover = 翻一行、可 revert（對比「同時開兩條各自判斷」會有 race 雙送窗）。
-        // 數值影響：帶 5s 快取 — 避免 AppendMessage hot path 每筆 post 都讀檔；預設 "python"（安全側：
-        //          讀不到 config / 解析失敗都 fallback python，維持既有行為，不會誤把 ownership 交給未就緒的 native）。
-        // ===========================================================
-        const double OWNER_CACHE_TTL_SEC = 5.0;
-        static string s_CachedOwner = null;
-        static double s_OwnerCacheTime = -999;
-
-        /// <summary>當前 mirror ownership（"python" | "native"）— 讀 notify_config.json 的 mirror_owner，帶 5s 快取。</summary>
-        public static string MirrorOwner
-        {
-            get
-            {
-                double now = EditorApplication.timeSinceStartup;
-                if (s_CachedOwner != null && now - s_OwnerCacheTime < OWNER_CACHE_TTL_SEC)
-                {
-                    return s_CachedOwner;
-                }
-                string owner = "python";   // 安全側預設
-                try
-                {
-                    string path = System.IO.Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue", "notify_config.json");
-                    if (System.IO.File.Exists(path))
-                    {
-                        var jd = UCL.Core.JsonLib.JsonData.ParseJson(System.IO.File.ReadAllText(path));
-                        if (jd != null && jd.IsObject)
-                        {
-                            string v = jd.GetString("mirror_owner", "python");
-                            if (v == "native" || v == "python") owner = v;
-                        }
-                    }
-                }
-                catch { owner = "python"; }   // 任何失敗 → 安全側 python
-                s_CachedOwner = owner;
-                s_OwnerCacheTime = now;
-                return owner;
-            }
-        }
-
-        /// <summary>native daemon 是否為當前 live owner（mirror_owner == "native"）。python spawn 閘 + daemon 送出路徑共用。</summary>
-        public static bool IsNativeOwner => MirrorOwner == "native";
 
         // ===========================================================
         // 區塊：update tick — 節流 + fail-safe 包裹
@@ -279,11 +237,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             DrainInFlight();
 
             // Phase C：treasury（bank）通知 native 模組 — 在途 drain 永遠跑；掃描僅 native owner 時啟用
-            //（python notify_treasury_entries 在 owner=native 下自查閘跳過 → 單寫者互鎖延伸到 treasury）
-            UCL_DiscordTreasuryMirror.Tick(Enabled && IsNativeOwner);
+            //（2026-07-28 python notify_treasury_entries 已移除 → native 為 treasury 唯一傳送者）
+            UCL_DiscordTreasuryMirror.Tick(Enabled);
 
             // mirror_owner 硬互鎖：只有 native owner 才掃描送出真房訊息（basecamp 拍板）
-            if (!IsNativeOwner) return;
 
             if (!s_HeartbeatLogged)
             {

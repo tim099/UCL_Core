@@ -638,7 +638,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             };
             // quiet=true (測試用) → 跳過 Discord mirror (其他 IO 寫檔行為照舊).
             bool quiet = string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase);
-            int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: !quiet);
+            int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
 
             // R7 (T07 chat-flow-robust) — 每次發言自動更新 sender presence（status=active + current_room）
             // 物理意義：跟 R7 mention parser + cross-channel notify 配套 — 查 presence.current_room 提示對方來哪個房
@@ -756,7 +756,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 TryAutoRecruitOnDingAck(senderPersona, senderId, earlyMeta);
             }
 
-            // Discord tavern mirror 觸發已下沉到 UCL_ChatTavernIO.AppendMessage (fireDiscordMirror=true 預設).
+            // Discord tavern mirror 由 UCL_DiscordMirrorDaemon poll 訊息檔送出 (2026-07-28: 寫入端不再觸發).
             // quiet 旗標已在上方 AppendMessage 呼叫處 thread through.
         }
 

@@ -732,7 +732,7 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         // 區塊：操作通知 — 每筆 bank 寫操作發一則到聊天酒館主頻道（Tim 2026-07-21 追加需求）
         // 物理意義：仿系統 NPC（酒保 tavern-keeper）廣播 — 走 UCL_ChatTavernIO.AppendMessage("tavern", ...)，
-        //          fireDiscordMirror=true 讓通知自動鏡射到 Discord（Tim 手機即時收到後台動了什麼）。
+        //          訊息寫入酒館後由 C# mirror daemon 自動鏡射到 Discord（Tim 手機即時收到後台動了什麼）。
         //          參考 ScreenStream 開播通知 / work_session start announce 的同一套系統廣播慣例。
         // 數值影響：純發訊息，不動任何帳；失敗只記 warning 不擋主操作（通知是輔助，不該讓已成功的寫帳回滾）。
         // ===========================================================
@@ -753,7 +753,7 @@ namespace UCL.Core.EditorLib.Page
                         { "category", "meta" },
                         { "source", "BankAdminPage" },
                     },
-                }, fireDiscordMirror: true);
+                });
             }
             catch (Exception e)
             {

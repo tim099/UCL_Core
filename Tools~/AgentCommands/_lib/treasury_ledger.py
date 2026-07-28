@@ -18,7 +18,7 @@
 跨專案用法 (UCL_Core 內的 writer):
     sys.path.insert(0, str(_HERE))          # _HERE = Tools~/AgentCommands
     from _lib.treasury_ledger import fire_broadcast
-    fire_broadcast(entry_abs_path)          # 自動 backfill 餘額 + 廣播, fire-and-forget
+    finalize_entry(entry_abs_path)          # 自動 backfill 餘額 (Discord 由 C# mirror pull)
 
 ledger 路徑慣例 (self-locating 依據):
     <repo>/AgentCommands/Treasury/ledger/<YYYY-MM-DD>/<HHMMSS>_<ms>_<uuid>__{credit|debit}.json
@@ -28,7 +28,6 @@ from __future__ import annotations
 import glob
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -151,62 +150,38 @@ def backfill_balance_fields(entry_path: str | Path) -> bool:
 
 
 # ===========================================================
-# 廣播觸發 (backfill → spawn notify_treasury.py)
+# Entry 收尾 (balance backfill) — 2026-07-28: 廣播 spawn 已移除
 # ===========================================================
-def fire_broadcast(entry_path: str | Path, *, quiet: bool = True) -> None:
-    """先補 null balance, 再 fire-and-forget 觸發一次 Discord mirror run (廣播新 entry)。
+def finalize_entry(entry_path: str | Path, *, quiet: bool = True) -> None:
+    """補齊 entry 的 balance_before/after 欄位。
 
-    物理意義: 直接呼叫 UCL_Core 自己的 notify_discord.py --mode tavern (sibling, 同 submodule 內),
-              不再繞主專案 PromptQueue/notify_treasury.py shim (2026-07-21 shim 移除, 去掉
-              「UCL_Core shared lib 反向依賴 consumer 專案」的耦合)。--mode tavern 觸發統一 mirror run,
-              新 entry 由 treasury pull adapter 依 cursor 冪等撿走 (同 entry 不重複發送)。
-    安全: notify_discord.py 不存在 / python 缺 → silent skip, 絕不擋 caller 主流程。
+    物理意義: 只做「重放算餘額回填」— 修掉「餘額 None → None」顯示問題的那一步。
+    Discord 廣播 (2026-07-28 起): 不在此 spawn 任何 python。ledger 是 append-only 事件流,
+              C# UCL_DiscordTreasuryMirror 依 cursor pull 撿走新 entry (冪等、漏送可補)。
+              舊版在此 fire-and-forget spawn notify_discord.py, 是 2026-07-28 python
+              併發失控事故 (單一殭屍鎖 holder → 後續全部無鎖並發) 的 spawn 來源之一。
+    安全: 任何失敗都 swallow, 絕不擋 caller 主流程 (entry 已落盤)。
     """
     entry_path = Path(entry_path)
     if not entry_path.exists():
         return
-
-    # (1) 補餘額 — 修掉「None → None」的根本
     try:
         backfill_balance_fields(entry_path)
     except Exception as ex:
         if not quiet:
             print(f"[treasury_ledger] backfill fail (continuing): {ex}", file=sys.stderr)
 
-    # (2) UCL_Core 自己的 notify_discord.py (sibling: _lib → AgentCommands → PromptQueue)
-    script_path = Path(__file__).resolve().parent.parent / "PromptQueue" / "notify_discord.py"
-    if not script_path.exists():
-        if not quiet:
-            print(f"[treasury_ledger] notify_discord.py not found: {script_path}", file=sys.stderr)
-        return
 
-    # cwd 仍用 entry 反推的 consumer repo root (mirror run 要在 consumer 的 ChatTavern/ledger 資料脈絡下跑)
-    try:
-        repo_root = _repo_root_of(entry_path)
-    except IndexError:
-        if not quiet:
-            print(f"[treasury_ledger] cannot derive repo root from {entry_path}", file=sys.stderr)
-        return
-
-    cmd = [sys.executable, str(script_path), "--mode", "tavern"]
-    try:
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL if quiet else None,
-            stderr=subprocess.DEVNULL if quiet else None,
-            cwd=str(repo_root),
-        )
-    except Exception as ex:
-        if not quiet:
-            print(f"[treasury_ledger] spawn fail: {ex}", file=sys.stderr)
+# 舊名保留為 alias — 呼叫端逐步改名期間不斷線 (語意已變: 不再廣播, 只 backfill)
+fire_broadcast = finalize_entry
 
 
 if __name__ == "__main__":
     # CLI debug: backfill + broadcast 一筆 entry
     import argparse
-    p = argparse.ArgumentParser(description="UCL_Core treasury ledger broadcast helper")
+    p = argparse.ArgumentParser(description="UCL_Core treasury ledger entry finalizer (balance backfill)")
     p.add_argument("entry_path", help="ledger entry json path (absolute)")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
-    fire_broadcast(args.entry_path, quiet=not args.verbose)
-    print(f"Fired broadcast for {args.entry_path}")
+    finalize_entry(args.entry_path, quiet=not args.verbose)
+    print(f"Finalized (balance backfilled): {args.entry_path}")

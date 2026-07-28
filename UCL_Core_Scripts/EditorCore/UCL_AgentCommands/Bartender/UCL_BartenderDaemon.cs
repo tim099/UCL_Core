@@ -408,10 +408,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             var state = UCL_BartenderIO.LoadState();
             bool stateDirty = false;
             bool triggersDirty = false;
-            // Bug fix (Tim QA 2026-05-12): same-tick 多 fire → 多 mirror spawn race condition
-            // → Discord 收到 duplicate. 改為 tick 內所有 fire 走 fireDiscordMirror=false (跳過內部 mirror),
-            //   tick 結束統一 spawn 一次 mirror, 涵蓋所有新 bartender posts.
-            bool anyFiredThisTick = false;
+            // 2026-07-28: Discord 鏡像改由 UCL_DiscordMirrorDaemon poll，寫入端不再觸發任何 spawn
+            //   → 原「tick 內抑制 mirror、tick 末批次 spawn 一次」的協調機制連同 python 路徑一起移除。
 
             // 把 trigger 按 target_room group 起來, 同 room 只 load 一次訊息
             var byRoom = new Dictionary<string, List<UCL_BartenderTrigger>>();
@@ -469,7 +467,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     if (kind != UCL_BartenderInlineParser.InlineCommandKind.None)
                     {
                         bool registered = HandleInlineRegistration(kind, msg, roomId);
-                        if (registered) anyFiredThisTick = true;
                         // 註冊訊息本身不參與 keyword trigger match (control msg)
                     }
                     else
@@ -482,10 +479,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                             if (!IsKeywordMatch(msg.body, t.keyword)) continue;
 
                             // 命中 — fire bartender 訊息 (跳過內部 mirror, tick 末批次處理)
-                            FireTrigger(t, msg, roomId, fireDiscordMirror: false);
+                            FireTrigger(t, msg, roomId);
                             t.remaining_triggers -= 1;
                             triggersDirty = true;
-                            anyFiredThisTick = true;
                         }
                     }
 
@@ -521,12 +517,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (triggersDirty) UCL_BartenderIO.SaveTriggers(triggerList);
             if (stateDirty) UCL_BartenderIO.SaveState(state);
 
-            // 批次 mirror — 同 tick 內若有任何 fire, 統一 spawn 一次 notify_discord, 一次涵蓋所有新 posts.
-            // 避免 same-tick 多 fire 各自 spawn race condition.
-            if (anyFiredThisTick)
-            {
-                UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync();
-            }
         }
 
         // ===========================================================
@@ -573,8 +563,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         // 區塊：Inline registration handler — 解析 [進行留言] / [進行時間規則] marker → register
         // 物理意義：使用者在 tavern 直接發 control msg, daemon 解析後走跟 Cmd_Bartender 同 IO 層,
-        //          register 完發 bartender 確認回應 (跟 fire trigger 同樣 fireDiscordMirror=false batch).
-        // 數值影響：register 成功才 return true, daemon 才會把這筆 fire 計入 anyFiredThisTick
+        //          register 完發 bartender 確認回應 (跟 fire trigger 同路徑).
+        // 數值影響：register 成功才 return true
         // ===========================================================
         static bool HandleInlineRegistration(
             UCL_BartenderInlineParser.InlineCommandKind kind,
@@ -700,7 +690,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 body = body,
                 meta = meta,
             };
-            UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: false);
+            UCL_ChatTavernIO.AppendMessage(roomId, msg);
         }
 
         static string Truncate(string s, int max)
@@ -828,7 +818,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         // Fire trigger — post 留言內容到 tavern (走 AppendMessage 自動 Discord mirror)
         // ===========================================================
-        static void FireTrigger(UCL_BartenderTrigger t, UCL_ChatMessage triggeringMsg, string roomId, bool fireDiscordMirror = true)
+        static void FireTrigger(UCL_BartenderTrigger t, UCL_ChatMessage triggeringMsg, string roomId)
         {
             // 顯示格式: [{creator}的留言({N})] {message}
             // N = remaining_triggers 包含本次 (即 fire 前的 count)
@@ -853,7 +843,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 },
             };
 
-            UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: fireDiscordMirror);
+            UCL_ChatTavernIO.AppendMessage(roomId, msg);
         }
 
         // ===========================================================
@@ -879,8 +869,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             var state = UCL_BartenderIO.LoadState();
             bool stateDirty = false;
-            // 同 Keyword fix — tick 內所有 fire 走 fireDiscordMirror=false, tick 末批次 spawn
-            bool anyFiredThisTick = false;
 
             DateTime now = DateTime.Now;  // local time
             string today = now.ToString("yyyy-MM-dd");
@@ -935,10 +923,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 var latest = dueReminders[dueReminders.Count - 1];
                 var skipped = dueReminders.GetRange(0, dueReminders.Count - 1);
 
-                FireTimeReminder(latest.rule, latest.roomId, fireDiscordMirror: false);
+                FireTimeReminder(latest.rule, latest.roomId);
                 state.fired_today_keys.Add(latest.reminderKey);
                 stateDirty = true;
-                anyFiredThisTick = true;
 
                 foreach (var s in skipped)
                 {
@@ -958,11 +945,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 // 行為與修改前 (dueReminders.Count==1 分支) 完全一致；並發但非 catch-up 時新增全發, 不誤殺。
                 foreach (var only in dueReminders)
                 {
-                    FireTimeReminder(only.rule, only.roomId, fireDiscordMirror: false);
+                    FireTimeReminder(only.rule, only.roomId);
                     state.fired_today_keys.Add(only.reminderKey);
                 }
                 stateDirty = true;
-                anyFiredThisTick = true;
             }
 
             // ---- Pass 3: Penalty 累積（獨立於 reminder catch-up 併發，逐 rule 照舊判斷）----
@@ -985,20 +971,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 string penaltyKey = $"{today}::{rule.id}::penalty::{penaltyTick}";
                 if (!state.fired_today_keys.Contains(penaltyKey))
                 {
-                    FirePenaltyWarning(rule, roomId, penaltyTick, overtimeMin, fireDiscordMirror: false);
+                    FirePenaltyWarning(rule, roomId, penaltyTick, overtimeMin);
                     state.fired_today_keys.Add(penaltyKey);
                     stateDirty = true;
-                    anyFiredThisTick = true;
                 }
             }
 
             if (stateDirty) UCL_BartenderIO.SaveState(state);
 
-            // 批次 mirror — 同 tick 內所有 reminder/penalty fire 共用一次 Discord broadcast
-            if (anyFiredThisTick)
-            {
-                UCL_ChatTavernIO.TryFireDiscordTavernMirrorAsync();
-            }
         }
 
         static bool TryParseHHmm(string s, out int hour, out int min)
@@ -1013,7 +993,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             return true;
         }
 
-        static void FireTimeReminder(UCL_BartenderTimeRule rule, string roomId, bool fireDiscordMirror = true)
+        static void FireTimeReminder(UCL_BartenderTimeRule rule, string roomId)
         {
             string target = string.IsNullOrEmpty(rule.target_id) ? "" : $"@{rule.target_id} ";
             string body = $"⏰ **酒保時間提醒** ({rule.time_hhmm})\n\n{target}{rule.reminder_msg}";
@@ -1035,7 +1015,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     { "rule_time", rule.time_hhmm ?? "" },
                 },
             };
-            UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: fireDiscordMirror);
+            UCL_ChatTavernIO.AppendMessage(roomId, msg);
         }
 
         // ===========================================================
@@ -1048,7 +1028,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //   - tick 6-8: +3 HP / tick (severe)
         //   - tick N=9+: +4 HP / tick (critical)
         // ===========================================================
-        static void FirePenaltyWarning(UCL_BartenderTimeRule rule, string roomId, int penaltyTick, double overtimeMin, bool fireDiscordMirror = true)
+        static void FirePenaltyWarning(UCL_BartenderTimeRule rule, string roomId, int penaltyTick, double overtimeMin)
         {
             // 計算 累積 HP loss (tick 1 ~ penaltyTick)
             int totalHpLoss = 0;
@@ -1087,7 +1067,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     { "overtime_min", ((int)overtimeMin).ToString() },
                 },
             };
-            UCL_ChatTavernIO.AppendMessage(roomId, msg, fireDiscordMirror: fireDiscordMirror);
+            UCL_ChatTavernIO.AppendMessage(roomId, msg);
         }
 
         // ===========================================================

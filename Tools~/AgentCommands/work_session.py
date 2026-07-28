@@ -390,15 +390,16 @@ def fire_salary_credit(bank: str, persona: str, amount: int, session_id: str, ch
     path = date_dir / fname
     path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # T29→2026-06-06 fix (Tim QA, summit): 走 UCL_Core canonical treasury_ledger.fire_broadcast。
-    # 物理意義: 原本裸 spawn notify_treasury.py 會「繞過 balance backfill」→ 薪資 entry 的
-    #          balance_before/after 永遠 null → Discord 進帳卡顯示「餘額 None → None」(四個 session 全中)。
-    #          改走 fire_broadcast: 先重放算餘額回填 entry, 再 spawn notify_treasury.py, 顯示與落盤都對。
-    # 數值影響: 仍是 fire-and-forget, 不擋 salary 主流程; lib/script 缺 → silent skip。
+    # T29→2026-06-06 fix (Tim QA, summit): 走 UCL_Core canonical treasury_ledger 的 backfill。
+    # 物理意義: 不回填的話薪資 entry 的 balance_before/after 永遠 null → Discord 進帳卡顯示
+    #          「餘額 None → None」(四個 session 全中)。
+    # 2026-07-28: 本步只做 balance backfill — Discord 廣播由 C# UCL_DiscordTreasuryMirror 依
+    #          cursor pull 撿走 (python spawn 路徑已整條移除)。
+    # 數值影響: 不擋 salary 主流程; lib 缺 → silent skip。
     try:
         sys.path.insert(0, str(_HERE))
-        from _lib.treasury_ledger import fire_broadcast
-        fire_broadcast(path)   # path 為絕對路徑 (date_dir under _LEDGER_ROOT); lib 自 self-locate repo root
+        from _lib.treasury_ledger import finalize_entry
+        finalize_entry(path)   # path 為絕對路徑 (date_dir under _LEDGER_ROOT); lib 自 self-locate repo root
     except Exception:
         pass   # silent skip — 廣播失敗絕不影響已落盤的 ledger entry
 

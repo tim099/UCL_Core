@@ -198,6 +198,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
             File.WriteAllText(fullPath, SerializeEntry(entry), new UTF8Encoding(false));
 
+            // 區塊職責：新 entry 直接餵 balance 快取（不等下次 GetBalance 列舉才發現）
+            // 物理意義：entry 檔 immutable, 寫出當下即可安全計入；順手推進 watermark + 回寫 snapshot,
+            //          讓「寫完就關 Editor」的場景下次冷啟動也能熱啟。
+            lock (s_BalanceCacheLock)
+            {
+                if (s_ProcessedEntryPaths.Add(fullPath))
+                {
+                    ApplyEntryToCache_NoLock(entry);
+                    string rel = fullPath.Substring(UCL_TreasuryPaths.GetLedgerRoot().Length).Replace('\\', '/');
+                    if (string.CompareOrdinal(rel, s_MaxProcessedRelPath) > 0) s_MaxProcessedRelPath = rel;
+                    SaveSnapshot_NoLock();
+                }
+            }
+
             if (sigMismatch)
             {
                 Debug.LogWarning(
@@ -248,21 +262,246 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ==========================================================
-        // 區塊職責：GetBalance — 對 account 跑 replay 算當下餘額
-        // 物理意義：no mutable snapshot；reader 走全 ledger sort by ts
-        // 數值影響：純讀無副作用
+        // 區塊職責：Balance 增量快取（path-keyed）+ 落盤 snapshot — GetBalance 效能修復
+        // 物理意義：ledger entry 檔是 append-only / immutable（寫出後永不改寫）→
+        //          每檔的餘額貢獻可以永久快取。原版 GetBalance 每次呼叫 LoadAllEntries
+        //          全量 read+parse 整個 ledger（實測 10,000+ 檔 / 14MB）——ChatTavernPage
+        //          每 2 秒刷餘額、每筆 post 的 auto-debit 又各叫 2 次，等於主執行緒
+        //          反覆全帳本重放；冷碟 + 防毒逐檔掃描時第一次就是數十秒卡頓
+        //          （2026-07-28 Tim 回報「初開 40 秒 + 開啟後嚴重卡頓」的根因）。
+        // 修法（跟 ChatTavern PerMsgFile parse cache 同構）：
+        //   1) 記憶體層：balances dict + 已處理檔案集合；每次 GetBalance 只「列舉路徑」
+        //      （便宜, 不讀內容, 跨 process 新檔照樣看到），只對沒見過的新檔 read+parse。
+        //   2) 落盤層：accounts/_balances.snapshot.txt 存（watermark 相對路徑 + 已處理檔數
+        //      + 各帳戶餘額）。domain reload / Editor 重啟後冷啟動只需 parse「watermark 之後」
+        //      的新檔——把一次性冷成本從全帳本壓到增量。
+        // 正確性防線（外觀 OK ≠ 真的 OK 家族自檢）：
+        //   - 餘額是加法交換律安全的（credit/debit 求和與順序無關），不依賴 sort。
+        //   - snapshot 載入時驗證「≤ watermark 的現存檔數 == 記錄的檔數」，不符（手動刪檔 /
+        //     git 操作動到舊 entry）→ 整組丟棄走全量重放，寧慢不錯。
+        //   - 記憶體層偵測到「已處理數 > 現存檔數」（檔案消失）→ 同樣整組重建。
+        //   - git merge 補進「舊日期」entry：記憶體層列舉自然涵蓋（不在已處理集合 → 會被 parse）；
+        //     snapshot 層由 ≤watermark 檔數驗證擋下。
+        //   - snapshot 讀不到 / 格式壞 → 靜默走全量重放（慢但正確, 永不錯帳）。
+        // 數值影響：GetBalance 由 O(全帳本 read+parse) 降到 O(列舉) + O(新增檔)；
+        //          無新 entry 時 0 次讀檔內容。
+        // ==========================================================
+        static readonly object s_BalanceCacheLock = new object();
+        // 已處理的 entry 檔（full path）；含壞檔（parse 失敗也記，不重複讀不重複洗 log）
+        static readonly HashSet<string> s_ProcessedEntryPaths = new HashSet<string>();
+        // 各帳戶餘額 — key = accountId + "\n" + currency（\n 不可能出現在 id / currency 內）
+        static readonly Dictionary<string, int> s_BalanceCache = new Dictionary<string, int>();
+        // 已處理檔中字典序最大的 root-relative path — snapshot watermark 用
+        static string s_MaxProcessedRelPath = "";
+        // snapshot 是否已嘗試載入（每個 domain reload 生命週期只試一次）
+        static bool s_SnapshotLoadAttempted = false;
+
+        const string BalanceSnapshotFileName = "_balances.snapshot.txt";
+        static string GetBalanceSnapshotPath()
+            => Path.Combine(UCL_TreasuryPaths.GetAccountsRoot(), BalanceSnapshotFileName);
+
+        static string BalanceKey(string accountId, string currency)
+            => accountId + "\n" + (string.IsNullOrEmpty(currency) ? "tavern_token" : currency);
+
+        /// <summary>清空 balance 快取（記憶體 + 落盤 snapshot）。
+        /// 手動修改 / 刪除 ledger entry 檔後呼叫，強制下次 GetBalance 全量重放。</summary>
+        public static void InvalidateBalanceCache()
+        {
+            lock (s_BalanceCacheLock)
+            {
+                s_ProcessedEntryPaths.Clear();
+                s_BalanceCache.Clear();
+                s_MaxProcessedRelPath = "";
+                s_SnapshotLoadAttempted = true;   // 別再把剛失效的 snapshot 撿回來
+                try
+                {
+                    string snap = GetBalanceSnapshotPath();
+                    if (File.Exists(snap)) File.Delete(snap);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Treasury] InvalidateBalanceCache 刪 snapshot 失敗（不影響正確性, 下次載入會被驗證擋下）：{ex.Message}");
+                }
+            }
+        }
+
+        // 區塊職責：把單筆 entry 的餘額貢獻累進快取（呼叫端必須已持有 s_BalanceCacheLock）
+        // 物理意義：credit 加 / debit 減；其他 type 忽略（與原版 GetBalance 邏輯一致）
+        static void ApplyEntryToCache_NoLock(TreasuryLedgerEntry e)
+        {
+            if (e == null || string.IsNullOrEmpty(e.account_id)) return;
+            string key = BalanceKey(e.account_id, e.currency);
+            s_BalanceCache.TryGetValue(key, out int bal);
+            if (e.type == "credit") bal += e.amount;
+            else if (e.type == "debit") bal -= e.amount;
+            else return;   // 未知 type 不動餘額也不建 key
+            s_BalanceCache[key] = bal;
+        }
+
+        // 區塊職責：同步快取到磁碟現況（呼叫端必須已持有 s_BalanceCacheLock）
+        // 物理意義：列舉 ledger 全部 entry 路徑 → 首次先試 snapshot 熱啟 → 只 parse 沒見過的新檔。
+        // 數值影響：更新 s_BalanceCache / s_ProcessedEntryPaths / s_MaxProcessedRelPath；
+        //          有新檔被 parse 時回寫 snapshot（下次冷啟動直接接力）。
+        static void SyncBalanceCache_NoLock()
+        {
+            string root = UCL_TreasuryPaths.GetLedgerRoot();
+            if (!Directory.Exists(root))
+            {
+                // ledger 根目錄不存在 = 沒有任何帳 — 對齊原版行為（全部餘額 0）
+                s_ProcessedEntryPaths.Clear();
+                s_BalanceCache.Clear();
+                s_MaxProcessedRelPath = "";
+                return;
+            }
+
+            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+
+            // 冷啟動：先試 snapshot 熱啟（只有本 domain reload 週期第一次進來才試）
+            if (!s_SnapshotLoadAttempted)
+            {
+                s_SnapshotLoadAttempted = true;
+                TryLoadSnapshot_NoLock(root, files);
+            }
+
+            // 防線：檔案消失（歸檔 / 手動刪 / git 操作）→ 增量前提破裂 → 整組重建
+            if (s_ProcessedEntryPaths.Count > files.Length)
+            {
+                Debug.LogWarning(
+                    $"[Treasury] balance 快取偵測到 ledger 檔數縮水（cached={s_ProcessedEntryPaths.Count} > disk={files.Length}）" +
+                    $"— 增量前提破裂, 整組重建（全量重放一次）。");
+                s_ProcessedEntryPaths.Clear();
+                s_BalanceCache.Clear();
+                s_MaxProcessedRelPath = "";
+            }
+
+            int newProcessed = 0;
+            foreach (var f in files)
+            {
+                if (!s_ProcessedEntryPaths.Add(f)) continue;   // 已處理（含壞檔）
+                newProcessed++;
+                try
+                {
+                    var entry = ParseEntry(File.ReadAllText(f, Encoding.UTF8));
+                    ApplyEntryToCache_NoLock(entry);
+                }
+                catch (Exception ex)
+                {
+                    // 壞檔：已記入 processed 集合（不重複讀）；對齊原版 LoadAllEntries skip 行為
+                    Debug.LogError($"[Treasury] balance 快取 skip malformed ledger entry {Path.GetFileName(f)}: {ex.Message}");
+                }
+                string rel = f.Substring(root.Length).Replace('\\', '/');
+                if (string.CompareOrdinal(rel, s_MaxProcessedRelPath) > 0) s_MaxProcessedRelPath = rel;
+            }
+
+            // 有新檔被消化 → 回寫 snapshot（讓下次 domain reload / Editor 重啟直接熱啟）
+            if (newProcessed > 0)
+            {
+                SaveSnapshot_NoLock();
+            }
+        }
+
+        // 區塊職責：載入落盤 snapshot 並驗證（呼叫端必須已持有 s_BalanceCacheLock）
+        // 物理意義：snapshot 宣稱「≤ watermark 的檔已全部算進 balances, 共 count 個」。
+        //          載入前用現存檔案清單覆核該宣稱：≤ watermark 的現存檔數必須恰好等於 count，
+        //          多了（merge 補舊檔）或少了（刪檔）都整組丟棄走全量重放 — 寧慢不錯。
+        // 檔案格式（純文字, 行分隔, 免 JSON escape 麻煩）：
+        //   line 1: watermark=<root-relative path>
+        //   line 2: count=<int>
+        //   line 3+: <accountId>\t<currency>\t<balance>
+        static void TryLoadSnapshot_NoLock(string root, string[] files)
+        {
+            string snapPath = GetBalanceSnapshotPath();
+            if (!File.Exists(snapPath)) return;
+
+            string watermark = null;
+            int count = -1;
+            var balances = new List<(string key, int bal)>();
+            try
+            {
+                foreach (var line in File.ReadAllLines(snapPath, Encoding.UTF8))
+                {
+                    if (line.StartsWith("watermark=", StringComparison.Ordinal))
+                        watermark = line.Substring("watermark=".Length);
+                    else if (line.StartsWith("count=", StringComparison.Ordinal))
+                        int.TryParse(line.Substring("count=".Length), out count);
+                    else if (line.Contains('\t'))
+                    {
+                        var parts = line.Split('\t');
+                        if (parts.Length == 3 && int.TryParse(parts[2], out int bal))
+                            balances.Add((BalanceKey(parts[0], parts[1]), bal));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Treasury] balance snapshot 讀取失敗 — 改走全量重放：{ex.Message}");
+                return;
+            }
+            if (string.IsNullOrEmpty(watermark) || count < 0) return;   // 格式不完整 → 丟棄
+
+            // 覆核宣稱：現存檔中 rel path ≤ watermark 的檔數必須 == count
+            var covered = new List<string>(count);
+            foreach (var f in files)
+            {
+                string rel = f.Substring(root.Length).Replace('\\', '/');
+                if (string.CompareOrdinal(rel, watermark) <= 0) covered.Add(f);
+            }
+            if (covered.Count != count)
+            {
+                Debug.LogWarning(
+                    $"[Treasury] balance snapshot 驗證失敗（≤watermark 現存檔數 {covered.Count} != 記錄 {count}）" +
+                    $"— ledger 歷史被動過（刪檔 / merge 補檔）, 丟棄 snapshot 走全量重放。");
+                return;
+            }
+
+            // 驗證通過 → 熱啟：watermark 內的檔標為已處理（不 parse）, 餘額直接繼承
+            foreach (var f in covered) s_ProcessedEntryPaths.Add(f);
+            foreach (var (key, bal) in balances) s_BalanceCache[key] = bal;
+            s_MaxProcessedRelPath = watermark;
+        }
+
+        // 區塊職責：回寫落盤 snapshot（呼叫端必須已持有 s_BalanceCacheLock）
+        // 物理意義：快取當下狀態 = 「≤ s_MaxProcessedRelPath 的 s_ProcessedEntryPaths.Count 個檔
+        //          已全數計入 s_BalanceCache」— 寫壞了也只是下次驗證失敗走全量, 不會錯帳。
+        static void SaveSnapshot_NoLock()
+        {
+            try
+            {
+                var sb = new StringBuilder(256 + s_BalanceCache.Count * 48);
+                sb.Append("watermark=").Append(s_MaxProcessedRelPath).Append('\n');
+                sb.Append("count=").Append(s_ProcessedEntryPaths.Count).Append('\n');
+                foreach (var kv in s_BalanceCache)
+                {
+                    int nl = kv.Key.IndexOf('\n');
+                    if (nl < 0) continue;   // 防禦：key 必為 account\ncurrency
+                    sb.Append(kv.Key, 0, nl).Append('\t')
+                      .Append(kv.Key, nl + 1, kv.Key.Length - nl - 1).Append('\t')
+                      .Append(kv.Value).Append('\n');
+                }
+                Directory.CreateDirectory(UCL_TreasuryPaths.GetAccountsRoot());
+                File.WriteAllText(GetBalanceSnapshotPath(), sb.ToString(), new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                // snapshot 寫失敗不影響正確性（記憶體快取仍對）, 只是下次冷啟動慢
+                Debug.LogWarning($"[Treasury] balance snapshot 寫入失敗（不影響本次餘額正確性）：{ex.Message}");
+            }
+        }
+
+        // ==========================================================
+        // 區塊職責：GetBalance — 增量快取版（語意等價原版全帳本 replay）
+        // 物理意義：先同步快取到磁碟現況（只 parse 新檔）, 再 O(1) 查表。
+        //          餘額 = credit 總和 - debit 總和, 加法交換律 → 與 parse 順序無關,
+        //          與原版「sort by ts 後逐筆累加」結果完全一致。
+        // 數值影響：純讀無副作用（除快取熱化 / snapshot 回寫）。
         // ==========================================================
         public static int GetBalance(string accountId, string currency = "tavern_token")
         {
-            int balance = 0;
-            foreach (var e in LoadAllEntries())
+            lock (s_BalanceCacheLock)
             {
-                if (e.account_id != accountId) continue;
-                if (e.currency != currency) continue;
-                if (e.type == "credit") balance += e.amount;
-                else if (e.type == "debit") balance -= e.amount;
+                SyncBalanceCache_NoLock();
+                return s_BalanceCache.TryGetValue(BalanceKey(accountId, currency), out int bal) ? bal : 0;
             }
-            return balance;
         }
 
         // ==========================================================

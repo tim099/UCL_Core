@@ -113,6 +113,10 @@ namespace UCL.Core.EditorLib.Page
         bool m_AutoPoll = true;
         double m_LastPollTime = 0;
         const double PollIntervalSec = 2.0;
+        // seq 閘門狀態（2026-07-28 卡頓修復）：上次 poll 看到的 _seq.txt 值 + 房間 —
+        // seq 沒變（= 沒有新訊息）就跳過 Tail 的全房間路徑列舉 + 排序（tavern 房 13,000+ 檔）
+        int m_LastPolledSeq = -1;
+        string m_LastPolledRoomId = null;
 
         // 區塊職責：頁面首次繪製時的一次性自動初始化旗標
         // 物理意義：第一次 ContentOnGUI 時：若沒有任何房間 → 建一間 default；若沒選中房間 → 自動選第一間
@@ -182,6 +186,9 @@ namespace UCL.Core.EditorLib.Page
         static GUIStyle s_NameStyleBold;
         static GUIStyle s_BodyStyleWrap;
         static GUIStyle s_BodyStyleNonChat;          // wrap + italic（join/leave/system 用）
+        static GUIStyle s_RichTextLabelStyle;        // richText label（token 餘額顯示用）— 原每幀 new
+        static GUIStyle s_InputHintStyle;            // input bar「以 X 身分發言」淡藍提示 — 原每幀 new
+        static GUIStyle s_BartenderWarnStyle;        // 酒保連喝計數警示（橘紅）— 原每幀 new
         static System.Text.StringBuilder s_MetaBuilder;  // DrawMessageRow meta拼接 reuse；Clear() 不釋放 capacity
 
         // ===== Treasury Balance Cache =====
@@ -356,9 +363,10 @@ namespace UCL.Core.EditorLib.Page
                     string drinkLabel = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.DrunkFmt"), m_BartenderConsecutiveDrinks);
                     if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
                         drinkLabel += UCL_CodeLocalize.Get("Tavern.Bartender.RestHintSuffix");
-                    var style = new GUIStyle(UCL_GUIStyle.LabelStyle);
-                    if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
-                        style.normal.textColor = new Color(1f, 0.5f, 0.3f);
+                    // static cache 取代每幀 new GUIStyle；達警示門檻才換橘紅樣式
+                    EnsureMessageStyles();
+                    var style = m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks
+                        ? s_BartenderWarnStyle : UCL_GUIStyle.LabelStyle;
                     GUILayout.Label(drinkLabel, style);
                 }
 
@@ -998,8 +1006,9 @@ namespace UCL.Core.EditorLib.Page
                 UpdateTokenBalance();
                 string tokenDisplay = string.IsNullOrEmpty(SelectedIdentityId) ? "---" : m_CachedTokenBalance.ToString();
                 GUILayout.Space(10);
+                EnsureMessageStyles();   // static cache 取代每幀 new GUIStyle
                 GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Balance.Fmt"), tokenDisplay),
-                    new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    s_RichTextLabelStyle, GUILayout.ExpandWidth(false));
 
                 GUILayout.FlexibleSpace();
 
@@ -1362,7 +1371,8 @@ namespace UCL.Core.EditorLib.Page
                     using (new GUILayout.VerticalScope())
                     {
                         var (idntId, idntName, idntKind) = ResolveSelectedIdentity();
-                        var hintStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.7f, 0.85f, 1f) } };
+                        EnsureMessageStyles();   // static cache 取代每幀 new GUIStyle
+                        var hintStyle = s_InputHintStyle;
                         string asWho = string.IsNullOrEmpty(idntId)
                             ? UCL_CodeLocalize.Get("Tavern.Input.NoIdentity")
                             : string.Format(UCL_CodeLocalize.Get("Tavern.Input.SpeakingAsFmt"), idntName, idntKind);
@@ -1618,9 +1628,16 @@ namespace UCL.Core.EditorLib.Page
 
         // 區塊職責：Auto-Poll 主迴圈 — 每 PollIntervalSec 重抓 rooms / messages / members
         // 物理意義：別 agent 透過 Cmd_Tavern 建房 / 改 identities 時，本 Page 不知情；
-        //          靠 polling 偵測 jsonl mtime 變動。三項都 cheap（< 1ms IO）。
+        //          靠 polling 偵測變動。rooms / members cheap；messages 的 Tail 雖只讀尾端
+        //          內容，但每次仍要「列舉 + 排序全房間檔案路徑」（tavern 房 13,000+ 檔 →
+        //          每 2 秒兩個 13k string 陣列 + sort = 常態 GC / CPU 抖動）。
+        // seq 閘門（2026-07-28 卡頓修復）：所有合法寫入都走 UCL_ChatTavernWriteService
+        //          臨界區並 bump _seq.txt → 讀 _seq.txt（一次小檔 IO）就是可靠的
+        //          「房間有沒有新訊息」訊號。seq 沒變 → 跳過 Tail 的全房列舉。
         // 數值影響：rooms 永遠 poll（讓使用者能看到別人剛建的房）；
-        //          messages / members 只在已選中房間才 poll（沒選中沒意義）。
+        //          messages / members 只在已選中房間且 seq 有變才重抓。
+        //          seq==0（房間沒 _seq.txt 的 legacy / 空房）→ fallback 每次照舊重抓，
+        //          寧可多抓也不漏訊息。手動 Refresh 鈕（RefreshAll）不受閘門影響。
         void HandleAutoPoll()
         {
             if (!m_AutoPoll) return;
@@ -1631,8 +1648,17 @@ namespace UCL.Core.EditorLib.Page
             RefreshRooms();
             if (!string.IsNullOrEmpty(SelectedRoomId))
             {
-                RefreshMessages();
-                RefreshMembers();
+                int curSeq = UCL_ChatTavernIO.ReadCurrentSeq(SelectedRoomId);
+                bool changed = curSeq == 0                        // 無 _seq.txt → 無從判斷, 照舊重抓
+                            || curSeq != m_LastPolledSeq          // 有新訊息（或 counter 被外部校正）
+                            || SelectedRoomId != m_LastPolledRoomId;   // 換房後第一次 poll
+                if (changed)
+                {
+                    m_LastPolledSeq = curSeq;
+                    m_LastPolledRoomId = SelectedRoomId;
+                    RefreshMessages();
+                    RefreshMembers();
+                }
             }
         }
 
@@ -1703,6 +1729,11 @@ namespace UCL.Core.EditorLib.Page
             s_NameStyleBold = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
             s_BodyStyleWrap = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
             s_BodyStyleNonChat = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true, fontStyle = FontStyle.Italic };
+            // 2026-07-28 卡頓修復順手件：以下三個原本在 DrawIdentityPicker / DrawInputBar /
+            // DrawBartenderInfoBar 內每幀 new GUIStyle（RequiresConstantRepaint 下 = 穩定 GC 壓力）
+            s_RichTextLabelStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true };
+            s_InputHintStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.7f, 0.85f, 1f) } };
+            s_BartenderWarnStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(1f, 0.5f, 0.3f) } };
         }
 
         // 區塊職責：在 Editor 內以 UCL_MarkdownViewerPage 開啟 .md 檔

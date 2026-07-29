@@ -8,6 +8,10 @@
 //   - Discord 雙向同步 (outbound mirror / inbound relay) 是獨立開關, 不受酒館系統總開關影響
 //     (Tim 2026-07-28 拍板: 各自獨立關注點)
 //   - 打開 → SetEnabled 內由 OFF→ON 自動 fire 重啟，讓 daemon 重新初始化
+//   - 各 section 可折疊 (Tim 2026-07-29 要求, 比照 UCL_ChatTavernAdminPage)：**關鍵操作
+//     (開關 / 重啟 / 開啟管理頁 / Discord 兩顆同步開關) 一律畫在折疊外層 header**，
+//     收合後仍可一鍵操作；折疊內只放說明文字與低頻設定。折疊狀態走專用 m_FoldDic
+//     (不與 PopupSearchCache 共用 — 見該欄位註解的血證)。
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using System.IO;
@@ -48,6 +52,13 @@ namespace UCL.Core.EditorLib.Page
         };
         // PopupSearchCache 內部狀態容器 — 對齊 UCL_EditorMenuPage 的 m_PagePickerDic 模式
         readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
+        // 區塊職責：各 section 折疊狀態 — **刻意跟 m_PickerDic 分開**
+        // 物理意義：折疊是使用者 UI 偏好（該長存）；PopupSearchCache 是衍生資料（選項變了該失效）。
+        // 血證（2026-07-29 Tim QA, UCL_ChatTavernAdminPage）：兩者共用一個 dictionary 時，
+        //          資料重載路徑上的 dic.Clear() 會把折疊值一併清掉 → 下一幀退回 iDefaultValue，
+        //          症狀是「按某個開關就自動展開、而且收不起來」，看起來像 key 撞名實際是共用快取被清。
+        //          本頁目前沒有 Clear 路徑，但先分開，免得日後有人加 Clear 又踩一次。
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
         // Apply 後的回饋訊息 (取代 EditorUtility.DisplayDialog,持久顯示直到下次 Apply)
         string m_LastApplyMessage = "";
 
@@ -79,12 +90,20 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🧠 知識庫後台</b>", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("Agent 長期記憶 / 文檔語意向量檢索：依賴安裝、bge-m3 權重預熱、Docs / Lessons 索引重建、檢索測試。", UCL_GUIStyle.LabelStyle);
-                if (GUILayout.Button("開啟知識庫後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
+                bool aShow;
+                // header：折疊鈕 + 標題 + **開啟管理頁（關鍵操作）提到折疊外層**
+                using (new GUILayout.HorizontalScope())
                 {
-                    UCL_KnowledgeBaseAdminPage.Create();
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "KnowledgeBaseFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🧠 知識庫後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟知識庫後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_KnowledgeBaseAdminPage.Create();
+                    }
+                    GUILayout.FlexibleSpace();
                 }
+                if (!aShow) return;
+                GUILayout.Label("Agent 長期記憶 / 文檔語意向量檢索：依賴安裝、bge-m3 權重預熱、Docs / Lessons 索引重建、檢索測試。", UCL_GUIStyle.LabelStyle);
             }
         }
 
@@ -97,12 +116,19 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🏦 銀行後台</b>", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("Treasury token 帳戶餘額 / 開戶 / 打款（薪酬入戶）/ 跨 bank 轉帳；繪圖券 & 酒館券 查詢與發放。", UCL_GUIStyle.LabelStyle);
-                if (GUILayout.Button("開啟銀行後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
                 {
-                    UCL_BankAdminPage.Create();
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "BankAdminFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🏦 銀行後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟銀行後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_BankAdminPage.Create();
+                    }
+                    GUILayout.FlexibleSpace();
                 }
+                if (!aShow) return;
+                GUILayout.Label("Treasury token 帳戶餘額 / 開戶 / 打款（薪酬入戶）/ 跨 bank 轉帳；繪圖券 & 酒館券 查詢與發放。", UCL_GUIStyle.LabelStyle);
             }
         }
 
@@ -115,12 +141,24 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🍺 酒館後台</b>", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("Discord mirror 同步進度（per-room 已同步 seq）、persona 頭像 override URL、底層 config / state 檔案管理。", UCL_GUIStyle.LabelStyle);
-                if (GUILayout.Button("開啟酒館後台管理頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                bool aShow;
+                // header：折疊鈕 + 標題 + **開啟管理頁（關鍵操作）提到折疊外層**
+                using (new GUILayout.HorizontalScope())
                 {
-                    UCL_ChatTavernAdminPage.Create();
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "TavernAdminFold", 21, iDefaultValue: true);
+                    GUILayout.Label("<b>🍺 酒館後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟酒館後台管理頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ChatTavernAdminPage.Create();
+                    }
+                    GUILayout.FlexibleSpace();
                 }
+
+                if (!aShow) return;
+
+                // Discord 兩顆開關折疊 因為超過一行!!
+                DrawDiscordSyncToggles();
+                GUILayout.Label("Discord mirror 同步進度（per-room 已同步 seq）、persona 頭像 override URL、底層 config / state 檔案管理。", UCL_GUIStyle.LabelStyle);
 
                 // 區塊職責：Discord 雙向同步的兩顆 daemon 開關直接搬到控制台（Tim 2026-07-28 要求）
                 // 物理意義：outbound = 酒館訊息 → Discord（UCL_DiscordMirrorDaemon）；
@@ -128,8 +166,28 @@ namespace UCL.Core.EditorLib.Page
                 //          per-machine 持久化、預設 OFF，**與「聊天酒館系統」總開關無關**（獨立關注點）。
                 // 數值影響：inbound 還要 config 的 tavern_inbound.enabled 為 true 才真的運作 →
                 //          兩道閘門任一未開就標示原因，不讓人以為開了就會動（禁靜默失敗）。
-                GUILayout.Space(4);
-                GUILayout.Label("<b>Discord 雙向同步</b>（各自獨立開關，跟上方酒館系統總開關無關）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("↑ 兩顆 Discord 開關已提到本區塊 header 下方（折疊時仍可操作）。", UCL_GUIStyle.LabelStyle);
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Discord 雙向同步的兩顆 daemon 開關（Tim 2026-07-28 要求搬進控制台）
+        // 物理意義：outbound = 酒館訊息 → Discord（UCL_DiscordMirrorDaemon）；
+        //          inbound = Discord → 酒館（UCL_DiscordInboundDaemon）。兩者皆 EditorPrefs
+        //          per-machine 持久化、預設 OFF，**與「聊天酒館系統」總開關無關**（獨立關注點）。
+        // 數值影響：inbound 還要 config 的 tavern_inbound.enabled 為 true 才真的運作 →
+        //          兩道閘門任一未開就標示原因，不讓人以為開了就會動（禁靜默失敗）。
+        // 設計取捨：抽成獨立方法並畫在折疊 **外層** —— 這是本頁最高頻操作，收合狀態下也要一鍵可切。
+        // ===========================================================
+        void DrawDiscordSyncToggles()
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("  <b>Discord 雙向同步</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label("（獨立開關，與酒館系統總開關無關）", UCL_GUIStyle.LabelStyle);
+                GUILayout.FlexibleSpace();
+            }
+            {
                 using (new GUILayout.HorizontalScope())
                 {
                     bool outOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.Enabled;
@@ -174,28 +232,20 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                // 標題 + 當前狀態燈
                 bool enabled = UCL_ChatTavernSystemControl.IsEnabled;
+                bool aShow;
+                // ---- header：折疊鈕 + 標題 + 狀態燈 + **關鍵操作（開關 / 重啟）提到折疊外層** ----
+                // 物理意義：收合後仍要能一鍵開關與重啟 —— 常用操作不該被折疊藏起來（AdminPage 同款模式）。
                 using (new GUILayout.HorizontalScope())
                 {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "TavernSystemFold", 21, iDefaultValue: false);
                     GUILayout.Label("<b>聊天酒館系統</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
                     var stateStyle = new GUIStyle(UCL_GUIStyle.LabelStyle);
                     stateStyle.normal.textColor = enabled ? new Color(0.4f, 1f, 0.4f) : new Color(1f, 0.5f, 0.4f);
-                    GUILayout.Label(enabled ? "● 運行中" : "○ 已停止", stateStyle);
-                    GUILayout.FlexibleSpace();
-                }
+                    GUILayout.Label(enabled ? "● 運行中" : "○ 已停止", stateStyle, GUILayout.ExpandWidth(false));
+                    
 
-                GUILayout.Space(2);
-                GUILayout.Label(
-                    "控制酒保自動廣播（關鍵字觸發 / 時間規則 / 跨日保管費）與 Discord inbound 背景子程序。\n" +
-                    "關閉後酒館停止一切自動廣播與背景程序；打開時自動重啟系統。",
-                    UCL_GUIStyle.LabelStyle);
-
-                GUILayout.Space(4);
-
-                // 開關 toggle — 變動才寫，避免每幀 PlayerPrefs IO
-                using (new GUILayout.HorizontalScope())
-                {
+                    // 開關 toggle — 變動才寫，避免每幀 PlayerPrefs IO
                     bool newEnabled = GUILayout.Toggle(
                         enabled,
                         enabled ? " 系統啟用中（按一下關閉）" : " 系統已關閉（按一下啟用）",
@@ -206,21 +256,26 @@ namespace UCL.Core.EditorLib.Page
                         UCL_ChatTavernSystemControl.SetEnabled(newEnabled);
                         Debug.Log($"[ControlPanel] 聊天酒館系統 → {(newEnabled ? "啟用 (自動重啟)" : "關閉")}");
                     }
-
-                    GUILayout.Space(8);
-
                     // 手動重啟 — 只有系統啟用時才有意義 (停止狀態重啟無作用)
-                    // 採 GUI.enabled 手動 save/restore (對齊 UCL_EditorMenuPage),避免依賴 UnityEditor.EditorGUI.DisabledScope
-                    bool oldEnabled = GUI.enabled;
+                    // 採 GUI.enabled 手動 save/restore (對齊 UCL_EditorMenuPage)，避免依賴 EditorGUI.DisabledScope
+                    bool oldGUIEnabled = GUI.enabled;
                     GUI.enabled = enabled;
                     if (GUILayout.Button("重啟系統", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         UCL_ChatTavernSystemControl.Restart();
                         Debug.Log("[ControlPanel] 手動重啟聊天酒館系統");
                     }
-                    GUI.enabled = oldEnabled;
+                    GUI.enabled = oldGUIEnabled;
                     GUILayout.FlexibleSpace();
                 }
+                if (!aShow) return;
+
+                GUILayout.Space(2);
+                GUILayout.Label(
+                    "控制酒保自動廣播（關鍵字觸發 / 時間規則 / 跨日保管費）與酒館背景子程序。\n" +
+                    "關閉後酒館停止一切自動廣播與背景程序；打開時自動重啟系統。\n" +
+                    "註：Discord 雙向同步是獨立開關（見「🍺 酒館後台」區塊），不受本開關影響。",
+                    UCL_GUIStyle.LabelStyle);
             }
         }
 
@@ -240,14 +295,17 @@ namespace UCL.Core.EditorLib.Page
 
             using (new GUILayout.VerticalScope("box"))
             {
-                // ---- 標題 + 當前已套用模式提示 ----
+                // ---- header：折疊鈕 + 標題 + 當前已套用模式提示（狀態留在外層，收合也看得到）----
+                bool aShow;
                 using (new GUILayout.HorizontalScope())
                 {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "AgentCmdPathFold", 21, iDefaultValue: false);
                     GUILayout.Label("<b>AgentCommands 資料路徑</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(200));
                     var committedMode = (AgentCommandsPathMode)PlayerPrefs.GetInt(UCL_AgentCommandsPath.PrefKeyMode, 0);
                     GUILayout.Label($"已套用: {s_PathModeLabels[(int)committedMode]}", UCL_GUIStyle.LabelStyle);
                     GUILayout.FlexibleSpace();
                 }
+                if (!aShow) return;
                 GUILayout.Space(2);
                 GUILayout.Label(
                     "持久狀態資料 (酒館 / 銀行 / persona / 書籍 / Lessons / baton / Rules) 的存放根目錄。\n" +

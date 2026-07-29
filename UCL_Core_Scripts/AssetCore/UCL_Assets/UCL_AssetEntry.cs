@@ -89,6 +89,14 @@ namespace UCL.Core
         /// <returns></returns>
         virtual public List<string> GetAllIDsWithCache() => GetAllIDs(true);
 
+        /// <summary>
+        /// ID 下拉「首次開啟時」預設選取的分組（<see cref="UI.UCL_GUILayout.PopupGrouped"/> 的 ID 底線前綴分組，
+        /// 非 asset meta 的 <see cref="GroupID"/>）。
+        /// 空字串 = 維持原本的 All（全列）；指定的組名不存在於當前選項時自動退回 All。
+        /// 使用者手動換組後以其選擇為準（每個下拉各自記憶），本值只影響初始狀態。
+        /// 例：分色圖欄位 override 成 "ClickAreas"，開欄位即只列 ClickAreas_* 的素材。
+        /// </summary>
+        virtual public string DefaultGroupID => string.Empty;
         public IList<string> GetLocalizeIDs()
         {
             return GetLocalizeIDs(GetAllIDs());
@@ -195,9 +203,13 @@ namespace UCL.Core
             var aLocalizeIDs = cache.m_LocalizeIDs;
             if (!aIDs.IsNullOrEmpty())
             {
+
                 // ID 下拉改用分組版（2026-07-28 Tim 拍板）：依 "_" 前綴自動分組摺疊（A_01/A_02 → A 組）,
                 // 全部同組時 PopupGrouped 內部自動退化為原版 PopupAuto 行為, 舊資料零視覺變化。
-                var aAt = UCL.Core.UI.UCL_GUILayout.PopupGrouped(aIDs.IndexOf(ID), aLocalizeIDs, iDataDic, "ID", "_", 8, GUILayout.ExpandWidth(true));
+                // DefaultGroupID（2026-07-29）：子類可 override 指定「首次開啟時預設選哪一組」—
+                // 空字串 = 維持原本的 All; 指定的組名不存在時 PopupGrouped 內部自動退回 All。
+                var aAt = UCL.Core.UI.UCL_GUILayout.PopupGrouped(aIDs.IndexOf(ID), aLocalizeIDs, iDataDic, "ID", "_", 8,
+                    DefaultGroupID, GUILayout.ExpandWidth(true));
                 if (aAt >= 0 && aAt < aIDs.Count)
                 {
                     ID = aIDs[aAt];

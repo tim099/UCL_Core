@@ -768,7 +768,7 @@ namespace UCL.Core.UI
         /// <param name="iSeparator">分組分隔符（預設 "_"；動畫路徑類選項可傳 "/"）</param>
         /// <param name="iSearchThreshold">退化為原版 PopupAuto 時的搜尋欄門檻（僅單組退化路徑使用）</param>
         public static int PopupGrouped(int iIndex, IList<string> iDisplayOptions, UCL_ObjectDictionary iDataDic, string iKey,
-            string iSeparator = "_", int iSearchThreshold = 10, params GUILayoutOption[] iOptions)
+            string iSeparator = "_", int iSearchThreshold = 10, string iDefaultGroup = null, params GUILayoutOption[] iOptions)
         {
             if (iDisplayOptions.Count == 0)
             {
@@ -834,7 +834,14 @@ namespace UCL.Core.UI
 
                 // --- 區塊職責：分組切換列（嵌入面板內的下拉, 拍板規格）---
                 // 數值影響：groupSel 存於本 key 的 subdic（per-下拉記憶）; 換組觸發 clearCache 重建過濾快取。
-                string groupSel = dic.GetData(nameof(groupSel), AllGroup);
+                // iDefaultGroup：**僅作為首次開啟時的預設選取組**（之後以使用者手選的 groupSel 為準）；
+                //               指定的組名不存在於當前選項時退回 All, 避免過濾出空清單。
+                string aInitGroup = AllGroup;
+                if (!string.IsNullOrEmpty(iDefaultGroup) && groupNames.Contains(iDefaultGroup))
+                {
+                    aInitGroup = iDefaultGroup;
+                }
+                string groupSel = dic.GetData(nameof(groupSel), aInitGroup);
                 {
                     var aGroupOptions = new List<string>(groupNames.Count + 1) { AllGroup };
                     aGroupOptions.AddRange(groupNames);

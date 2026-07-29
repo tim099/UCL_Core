@@ -279,10 +279,59 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         /// <summary>匯出結果 —— 給面板顯示與 Cmd 回報用。</summary>
+        // ===========================================================
+        // 區塊職責：schema 預檢總開關（Tim 2026-07-30 追加）—— 關閉時等同「產物不存在」。
+        // 物理意義：**用檔案旗標而不是 EditorPrefs**，因為這個開關要跨語言生效：
+        //          C# 端據它停止更新產物，Python 端據它跳過預檢。EditorPrefs 只有 C# 讀得到，
+        //          再叫 C# 把狀態鏡射進某處給 Python 讀，就又是一份雙端鏡像 —— 那正是本工作在治的病。
+        //          旗標檔存在 = 停用（檔案存在與否本身就是狀態，不必解析內容，沒有格式可漂）。
+        // 數值影響：停用時 → Export()/AutoSync 一律不寫檔（產物凍結在停用當下的版本）；
+        //          Python 端不讀產物、不驗雜湊、不做參數預檢，行為與產物不存在時逐字相同。
+        //          per-machine（gitignored）：這是「我這台機器現在不想要預檢」，不該傳染給別人。
+        // ===========================================================
+        public const string DisableFlagFileName = "_cmd_schema_disabled.local";
+
+        public static string DisableFlagPath =>
+            Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, DisableFlagFileName);
+
+        /// <summary>schema 預檢是否已停用（旗標檔存在即停用）。</summary>
+        public static bool PreflightDisabled
+        {
+            get { try { return File.Exists(DisableFlagPath); } catch { return false; } }
+            set
+            {
+                try
+                {
+                    string path = DisableFlagPath;
+                    if (value)
+                    {
+                        string dir = Path.GetDirectoryName(path);
+                        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                        // 內容純粹給人看；判定只看檔案在不在
+                        File.WriteAllText(path,
+                            "schema 預檢已停用（本機）。\n"
+                            + "效果：C# 不再更新 commands_schema.json；Python 端跳過參數預檢（等同產物不存在）。\n"
+                            + "重新啟用：控制台 → Cmd 後台管理頁 → 勾回「啟用 schema 預檢」，或直接刪除本檔。\n",
+                            new UTF8Encoding(false));
+                    }
+                    else if (File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[CmdSchema] 切換預檢開關失敗：{e.Message}");
+                }
+            }
+        }
+
         public struct ExportResult
         {
             /// <summary>是否真的寫了檔（內容未變 → false）。</summary>
             public bool Written;
+            /// <summary>是否因為預檢已停用而整個跳過（此時 Written 必為 false）。</summary>
+            public bool SkippedDisabled;
             /// <summary>產物絕對路徑。</summary>
             public string Path;
             /// <summary>本次計算出的來源雜湊。</summary>
@@ -301,6 +350,20 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         public static ExportResult Export()
         {
+            // 停用中 → 不生成、不寫檔（產物凍結）。這條擋在最前面，連 BuildSchemaJson 的反射成本都不付。
+            // 三個入口（面板 / Cmd_ExportCmdSchema / AutoSync）都走本方法，所以擋這裡就是全擋。
+            if (PreflightDisabled)
+            {
+                return new ExportResult
+                {
+                    Written = false,
+                    SkippedDisabled = true,
+                    Path = SchemaPath,
+                    SourceHash = "",
+                    CommandCount = 0,
+                    SpecCount = 0,
+                };
+            }
             string json = BuildSchemaJson();
             string path = SchemaPath;
             string dir = Path.GetDirectoryName(path);
@@ -408,6 +471,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             try
             {
+                // 停用中 → 連檢查都不做（「停止更新產物」的字面意思）。擋在最前面，零成本返回。
+                if (UCL_CmdSchemaExporter.PreflightDisabled) return;
+
                 DateTime last = UCL_CmdSchemaExporter.LastAutoSyncUtc;
                 DateTime now = DateTime.UtcNow;
 

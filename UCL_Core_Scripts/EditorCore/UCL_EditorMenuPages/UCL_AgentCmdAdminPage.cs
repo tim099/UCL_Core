@@ -54,6 +54,41 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                // 區塊職責：預檢總開關（Tim 2026-07-30 追加）。
+                // 物理意義：停用 = 本機不再更新產物，且 Python 端跳過參數預檢（等同產物不存在）。
+                //          狀態存在旗標檔（非 EditorPrefs），因為 Python 也要讀得到；
+                //          EditorPrefs 只有 C# 看得見，再鏡射一份給 Python 就又是雙端鏡像。
+                // 數值影響：停用時本區塊其餘查詢一律跳過 —— 連 IsInSync 的雜湊成本都不付。
+                bool disabled = UCL_CmdSchemaExporter.PreflightDisabled;
+                bool wantEnabled = !disabled;
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("<b>🔄 Cmd Schema 同步</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    bool newEnabled = GUILayout.Toggle(wantEnabled, " 啟用 schema 預檢", GUILayout.ExpandWidth(false));
+                    if (newEnabled != wantEnabled)
+                    {
+                        UCL_CmdSchemaExporter.PreflightDisabled = !newEnabled;
+                        Debug.Log($"[CmdSchema] schema 預檢已{(newEnabled ? "啟用" : "停用")}"
+                                + $"（旗標檔：{UCL_CmdSchemaExporter.DisableFlagPath}）");
+                        disabled = !newEnabled;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                if (disabled)
+                {
+                    GUILayout.Label("<color=#FFB347>⏸ 預檢已停用（本機）</color> —— "
+                        + "C# 端**停止更新產物**（自動同步與手動按鈕都不寫檔）；"
+                        + "Python 端跳過參數預檢，行為與「產物不存在」逐字相同。",
+                        UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label("停用不影響任何 Cmd 的實際執行 —— 參數對錯一律由 Editor 判定，"
+                        + "只是少了 client 端提早回報的便利。產物檔會凍結在停用當下的版本。",
+                        UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label($"旗標檔：{UCL_CmdSchemaExporter.DisableFlagPath}（per-machine，不入 git）",
+                        UCL_GUIStyle.LabelStyle);
+                    return;     // 停用時不做同步狀態查詢，也不顯示重新生成按鈕
+                }
+
                 bool inSync = false;
                 string artifactHash = null, currentHash = null;
                 try
@@ -68,7 +103,6 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     showDetail = UCL_GUILayout.Toggle(m_FoldDic, "SyncDetailFold", 18, iDefaultValue: false);
-                    GUILayout.Label("<b>🔄 Cmd Schema 同步</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label(inSync
                             ? "<color=#5FD35F>✅ 已同步</color>"
                             : "<color=#FFB347>⚠ 未同步（產物落後於 Cmd 原始碼）</color>",
@@ -126,9 +160,13 @@ namespace UCL.Core.EditorLib.Page
             try
             {
                 var r = UCL_CmdSchemaExporter.Export();
-                m_LastActionMsg = r.Written
-                    ? $"<color=#5FD35F>✅ 已更新產物</color> — {r.CommandCount} 個 cmd（{r.SpecCount} 個有 ArgsSpec）"
-                    : $"<color=#9FD3FF>ℹ 內容未變，未寫檔</color> — 本來就是同步狀態（{r.CommandCount} 個 cmd）";
+                // 「因停用而跳過」必須跟「內容未變」分開報 —— 兩者都是 Written=false，
+                // 但前者是「什麼都沒檢查」、後者是「檢查過且一致」。混報就是同碼失聲。
+                m_LastActionMsg = r.SkippedDisabled
+                    ? "<color=#FFB347>⏸ 預檢已停用，未生成</color> — 先勾回「啟用 schema 預檢」再試"
+                    : r.Written
+                        ? $"<color=#5FD35F>✅ 已更新產物</color> — {r.CommandCount} 個 cmd（{r.SpecCount} 個有 ArgsSpec）"
+                        : $"<color=#9FD3FF>ℹ 內容未變，未寫檔</color> — 本來就是同步狀態（{r.CommandCount} 個 cmd）";
                 AssetDatabase.Refresh();
             }
             catch (Exception e)

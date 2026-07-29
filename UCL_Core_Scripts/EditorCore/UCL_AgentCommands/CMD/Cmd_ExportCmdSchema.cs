@@ -52,6 +52,22 @@ namespace UCL.Core.EditorLib.AgentCommands
             var r = UCL_CmdSchemaExporter.Export();
 
             var sb = new System.Text.StringBuilder();
+            // 「因停用而跳過」必須與「已同步」分開報：兩者 Written 都是 false，但一個是**沒檢查**、
+            // 一個是**檢查過且一致**。報成同一句就是同碼失聲（caller 分不出來，還以為同步好了）。
+            if (r.SkippedDisabled)
+            {
+                sb.AppendLine("# ⏸ Cmd Schema 匯出已跳過（預檢停用中）");
+                sb.AppendLine();
+                sb.AppendLine("- 狀態：**未生成、未寫檔** —— 本機的 schema 預檢處於停用狀態");
+                sb.AppendLine($"- 旗標檔：`{UCL_CmdSchemaExporter.DisableFlagPath}`");
+                sb.AppendLine();
+                sb.AppendLine("重新啟用：控制台 → Cmd 後台管理頁 → 勾回「啟用 schema 預檢」，或刪除上面那個旗標檔。");
+                sb.AppendLine("停用期間 Python 端會跳過參數預檢（等同產物不存在），Cmd 執行本身不受影響。");
+                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+                Debug.Log("[Cmd:ExportCmdSchema] skipped — schema preflight disabled on this machine.");
+                return;
+            }
+
             sb.AppendLine("# ✅ Cmd Schema 匯出完成");
             sb.AppendLine();
             sb.AppendLine(r.Written

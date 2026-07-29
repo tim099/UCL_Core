@@ -70,6 +70,9 @@ def configure(queue_dir: Path, tavern_dir: Path, detect_env_marker: Callable[[],
 # 用 mtime 等於在最該生效的場景擲骰子，且沉默地擲（gura QA 2026-07-29 推翻原案）。
 # ===========================================================
 SCHEMA_FILE_NAME = "commands_schema.json"
+# 預檢總開關的旗標檔 —— 與 C# UCL_CmdSchemaExporter.DisableFlagFileName 同名（存在即停用）。
+# 用檔案而非 EditorPrefs：這個開關要跨語言生效，EditorPrefs 只有 C# 讀得到。
+SCHEMA_DISABLE_FLAG_NAME = "_cmd_schema_disabled.local"
 SUPPORTED_SCHEMA_VERSION = 1        # 與 C# UCL_CmdSchemaExporter.SchemaVersion 對齊
 
 # 產物載入狀態 —— 供 selftest 與診斷輸出檢視（不參與判斷邏輯）
@@ -152,6 +155,14 @@ def _ensure_schema_loaded() -> None:
     path = QUEUE_DIR / SCHEMA_FILE_NAME if QUEUE_DIR else None
     SCHEMA_STATUS = {"loaded": False, "stale": False, "reason": "", "path": str(path) if path else None}
     try:
+        # 總開關（Tim 2026-07-30）：旗標檔存在 = 本機停用 schema 預檢。
+        # 停用時**連產物都不讀** —— 行為與「產物不存在」逐字相同（這是開關的定義）。
+        # 判定只看檔案在不在，沒有內容格式可漂；C# 端同一個檔，兩端不需要各自維護狀態。
+        if QUEUE_DIR and (QUEUE_DIR / SCHEMA_DISABLE_FLAG_NAME).is_file():
+            SCHEMA_STATUS["reason"] = "預檢已停用（旗標檔存在）→ 跳過 schema 預檢"
+            print("  ℹ schema 預檢已停用（本機）→ **跳過參數預檢**（不影響送出，由 Editor 判）。\n"
+                  "     重新啟用：控制台 → Cmd 後台管理頁 → 勾回「啟用 schema 預檢」", file=sys.stderr)
+            return
         if path is None or not path.is_file():
             # 產物是 per-machine 衍生物、**不入 git**（Tim 2026-07-30 拍板）—— 所以新 clone／新機器
             # 上缺席是**常態不是錯誤**。此處 fail-open：跳過 schema 預檢，行為退回「送出去讓 Editor 判」。

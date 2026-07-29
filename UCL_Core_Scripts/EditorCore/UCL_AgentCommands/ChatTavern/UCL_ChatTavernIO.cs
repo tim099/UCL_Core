@@ -1106,13 +1106,61 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 契約：中繼寫入端**必須**在 meta 帶 source=<來源>（Discord daemon 已帶 source=discord + source_class
         //      + relay + channel_label + discord_msg_id）；sender_id 的 "<來源>:" 前綴是第二道識別。
         // ===========================================================
+        // ⚠ 白名單而非黑名單（2026-07-29 當天修正）：meta.source 是**自由字串欄位**，
+        //   實際資料裡有 BankAdminPage / free-time-2026-05-15-001 / tavern_summon 等「非中繼」來源標記。
+        //   初版寫成「source != agent 即外部中繼」→ 後台通知會被 mirror daemon 當 echo 跳過，
+        //   Tim 手機就收不到銀行後台廣播（自己上午才建的 IsEcho 改寫踩到自己）。
+        //   因此改成「已知中繼來源前綴」白名單；新增中繼通道（line / webhook…）時擴這裡。
+        static readonly string[] RELAY_SOURCE_PREFIXES = { "discord", "line", "telegram", "webhook" };
+
         public static bool IsExternalRelay(UCL_ChatMessage msg)
         {
             if (msg == null) return false;
-            if (msg.meta != null && msg.meta.TryGetValue("source", out var aSrc)
-                && !string.IsNullOrEmpty(aSrc) && aSrc != "agent") return true;
+            if (msg.meta != null && msg.meta.TryGetValue("source", out var aSrc) && !string.IsNullOrEmpty(aSrc))
+            {
+                string aLower = aSrc.ToLowerInvariant();
+                foreach (var aPrefix in RELAY_SOURCE_PREFIXES)
+                {
+                    if (aLower.StartsWith(aPrefix)) return true;
+                }
+            }
+            // 第二道識別：中繼身分的 sender_id 慣例是「<來源>:<外部 uid>」
             if (!string.IsNullOrEmpty(msg.sender_id) && msg.sender_id.StartsWith("discord:")) return true;
             return false;
+        }
+
+        /// <summary>
+        /// IsExternalRelay 判定自我檢查（不開遊戲）：涵蓋中繼來源 / 後台來源 / 純 agent 三類。
+        /// run_cmd.py run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO --arg member=SelfTestIsExternalRelay
+        /// </summary>
+        public static string SelfTestIsExternalRelay()
+        {
+            UCL_ChatMessage M(string src, string senderId) => new UCL_ChatMessage
+            {
+                sender_id = senderId,
+                body = "x",
+                meta = src == null ? null : new Dictionary<string, string> { { "source", src } },
+            };
+            var aCases = new List<(string name, UCL_ChatMessage msg, bool expect)>
+            {
+                ("discord 中繼",          M("discord", "discord:123"), true),
+                ("discord-simulated",     M("discord-simulated", "zeta"), true),
+                ("BankAdminPage 後台",    M("BankAdminPage", "tavern-keeper"), false),
+                ("free-time-xxx",         M("free-time-2026-05-15-001", "zeta"), false),
+                ("tavern_summon",         M("tavern_summon", "zeta"), false),
+                ("無 meta 的 agent 發言", M(null, "zeta"), false),
+                ("sender_id 帶 discord:", M(null, "discord:456"), true),
+            };
+            var aFail = new List<string>();
+            foreach (var c in aCases)
+            {
+                bool aGot = IsExternalRelay(c.msg);
+                if (aGot != c.expect) aFail.Add($"{c.name}(期望 {c.expect} 得到 {aGot})");
+            }
+            string aResult = $"UCL_ChatTavernIO.SelfTestIsExternalRelay: {aCases.Count - aFail.Count}/{aCases.Count} pass"
+                + (aFail.Count > 0 ? $" ❌ 失敗: {string.Join(" / ", aFail)}" : " ✅");
+            Debug.LogWarning(aResult);
+            return aResult;
         }
 
         /// <summary>

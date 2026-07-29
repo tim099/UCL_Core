@@ -96,23 +96,39 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 物理意義：見上方跨語言契約 ①②。用 SortedDictionary + Ordinal 比較，確保與 Python 的
         //          `sorted(list)` 逐字一致（Ordinal = 按碼位比較，跟 Python 預設字串排序同語意）。
         // 數值影響：純檔案系統列舉；找不到 registry 檔不視為錯誤（跨專案結構可能不同）。
+        // 檔案清單快取 —— 見下方 CollectSourceFiles 的成本說明。
+        static SortedDictionary<string, string> s_CachedSourceFiles;
+
         static SortedDictionary<string, string> CollectSourceFiles()
         {
+            // 區塊職責：清單快取（Tim 2026-07-30 回報面板卡頓的**主因**）。
+            // 物理意義：下面那兩個 GetFiles(AllDirectories) 是整棵 Assets 的遞迴掃描 ——
+            //          本專案 Assets 底下有 46633 個項目，實測**一次 213ms**。
+            //          IsInSync 走 ComputeSourceHash → 走這裡，而 IMGUI 每 frame 呼叫 IsInSync，
+            //          等於每秒花數百 ms 在重複列舉同一批檔 → 面板整個卡住。
+            // 數值影響：快取範圍是**一次 domain reload**（static 欄位）。這正好是安全邊界：
+            //          Cmd 檔集合只會因「新增/刪除 .cs」而變，而那必然觸發編譯 → domain reload → 快取歸零。
+            //          另有 InvalidateSyncCache() 可手動清（生成後呼叫）。
+            if (s_CachedSourceFiles != null) return s_CachedSourceFiles;
+
             var result = new SortedDictionary<string, string>(StringComparer.Ordinal);
             string repoRoot = UCL_RepoPath.RepoRoot.Replace('\\', '/').TrimEnd('/');
             string assetsDir = Path.Combine(UCL_RepoPath.UnityProjectRoot, "Assets");
             if (!Directory.Exists(assetsDir)) return result;
 
-            // ① 所有 Cmd_*.cs
-            foreach (var abs in Directory.GetFiles(assetsDir, "Cmd_*.cs", SearchOption.AllDirectories))
+            // ① Cmd_*.cs ＋ UCL_AgentCommandRegistry.cs（後者檔名不符 Cmd_* 但改它會改變產物內容）
+            // **一次走訪、就地篩兩種檔名** —— 原本是兩次 GetFiles(AllDirectories)，等於把整棵
+            // Assets（46633 項）走兩遍。合併後省掉一半，語意完全相同（結果照 SortedDictionary 排序）。
+            foreach (var abs in Directory.EnumerateFiles(assetsDir, "*.cs", SearchOption.AllDirectories))
             {
-                AddRelative(result, repoRoot, abs);
+                string name = Path.GetFileName(abs);
+                if (name.StartsWith("Cmd_", StringComparison.Ordinal)
+                    || string.Equals(name, "UCL_AgentCommandRegistry.cs", StringComparison.Ordinal))
+                {
+                    AddRelative(result, repoRoot, abs);
+                }
             }
-            // ① 附加 registry（type_aliases 來源；檔名不符 Cmd_* 但改它會改變產物內容）
-            foreach (var abs in Directory.GetFiles(assetsDir, "UCL_AgentCommandRegistry.cs", SearchOption.AllDirectories))
-            {
-                AddRelative(result, repoRoot, abs);
-            }
+            s_CachedSourceFiles = result;
             return result;
         }
 
@@ -390,11 +406,17 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 try { if (h.ArgsSpec != null) specCount++; } catch { /* 取值失敗視為未宣告，上面已警告 */ }
             }
+            // 在清快取**之前**取雜湊：此時清單快取仍熱，直接算即可；
+            // 清了再算會讓 Export 自己多付一次整棵 Assets 的遞迴掃描（實測 213ms）。
+            string sourceHash = ComputeSourceHash();
+            // 產物剛變 → 同步狀態快取必須失效，否則面板會在節流窗內繼續顯示生成前的舊判定
+            // （「已更新產物」卻還標著 ⚠ 未同步，看起來像沒生效）。放在最後一步。
+            InvalidateSyncCache();
             return new ExportResult
             {
                 Written = needWrite,
                 Path = path,
-                SourceHash = ComputeSourceHash(),
+                SourceHash = sourceHash,
                 CommandCount = handlers.Count,
                 SpecCount = specCount,
             };
@@ -419,9 +441,90 @@ namespace UCL.Core.EditorLib.AgentCommands
             set => UnityEditor.EditorPrefs.SetString(AutoSyncPrefKey, value.Ticks.ToString());
         }
 
+        // ===========================================================
+        // 區塊職責：IsInSync 的快取層 —— IMGUI 每個 frame 都會呼叫，不可每次都算完整雜湊。
+        // 物理意義：ComputeSourceHash() 要讀 52 個檔的完整 bytes（實測 ~1.1s）。而 IMGUI 的
+        //          OnGUI 每秒重繪多次（Layout + Repaint 各一輪），等於每秒讀上百個檔 ——
+        //          面板一開就卡死（Tim 2026-07-30 回報）。
+        // 數值影響：兩段防護，成本遞減：
+        //   ① 時間節流：距上次檢查未滿 MinRecheckSeconds → 直接回傳上次結果（frame 內零 IO）。
+        //   ② stat 簽章：滿了才 stat 52 次（每檔 mtime+size，~1ms）；簽章沒變 → 沿用上次算出的雜湊，
+        //      仍不讀檔。簽章變了才真的重算。
+        // ⚠ mtime 只是**快取失效提示**，不是正確性判準 —— 判同步與否的權威始終是內容 SHA-256。
+        //   反過來用才安全：簽章一變就重算（白算一次無害），不會把「已改動」洗成「還同步」。
+        //   這與 Python 端 tavern_cmd._stat_signature 是同一套設計，兩端同構。
+        // ===========================================================
+        const double MinRecheckSeconds = 1.0;
+
+        static double s_LastCheckTime = -1;
+        static string s_CachedStatSig;
+        static string s_CachedSourceHash;
+        static string s_CachedArtifactHash;
+        static bool s_CachedInSync;
+
+        /// <summary>清掉同步狀態快取 —— 生成後或使用者手動要求時呼叫，下次查詢會重算。</summary>
+        public static void InvalidateSyncCache()
+        {
+            s_LastCheckTime = -1;
+            s_CachedStatSig = null;
+            s_CachedSourceFiles = null;     // 檔案清單也一併重掃（新增/刪除 Cmd 檔後才需要）
+        }
+
+        // 便宜的變更偵測：只 stat 不讀內容。格式為「相對路徑|mtime ticks|長度」串接後雜湊。
+        static string ComputeStatSignature()
+        {
+            var files = CollectSourceFiles();
+            var sb = new StringBuilder();
+            foreach (var kv in files)
+            {
+                try
+                {
+                    var fi = new FileInfo(kv.Value);
+                    sb.Append(kv.Key).Append('|').Append(fi.LastWriteTimeUtc.Ticks)
+                      .Append('|').Append(fi.Length).Append('\n');
+                }
+                catch
+                {
+                    sb.Append(kv.Key).Append("|missing\n");
+                }
+            }
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+                var hex = new StringBuilder(hash.Length * 2);
+                foreach (byte b in hash) hex.Append(b.ToString("x2"));
+                return hex.ToString();
+            }
+        }
+
         public static bool IsInSync(out string artifactHash, out string currentHash)
         {
-            currentHash = ComputeSourceHash();
+            // ① 時間節流 —— IMGUI 一個 frame 內可能呼叫多次，這層讓其餘呼叫零成本
+            double now = UnityEditor.EditorApplication.timeSinceStartup;
+            if (s_LastCheckTime >= 0 && now - s_LastCheckTime < MinRecheckSeconds)
+            {
+                artifactHash = s_CachedArtifactHash;
+                currentHash = s_CachedSourceHash;
+                return s_CachedInSync;
+            }
+            s_LastCheckTime = now;
+
+            // ② stat 簽章沒變 → 來源檔沒動過，沿用上次算出的內容雜湊（不讀檔）
+            string sig = ComputeStatSignature();
+            currentHash = (sig == s_CachedStatSig && s_CachedSourceHash != null)
+                ? s_CachedSourceHash
+                : ComputeSourceHash();
+            s_CachedStatSig = sig;
+            s_CachedSourceHash = currentHash;
+
+            bool result = IsInSyncUncached(currentHash, out artifactHash);
+            s_CachedArtifactHash = artifactHash;
+            s_CachedInSync = result;
+            return result;
+        }
+
+        static bool IsInSyncUncached(string currentHash, out string artifactHash)
+        {
             artifactHash = null;
             try
             {

@@ -37,6 +37,10 @@ namespace UCL.Core.EditorLib.Page
         // 上一次按下「重新生成」的結果摘要 —— 只是給人看的回饋，不是狀態來源
         string m_LastActionMsg = "";
 
+        // 已註冊 Cmd 清單的顯示列快取（(名稱, spec 標籤)）—— 見 DrawCommandListSection 的成本說明。
+        // null = 尚未算過。domain reload 會重建本頁物件，快取自然歸零，不需額外失效機制。
+        List<(string, string)> m_CmdRows;
+
         protected override void ContentOnGUI()
         {
             DrawSyncSection();
@@ -63,8 +67,10 @@ namespace UCL.Core.EditorLib.Page
                 bool wantEnabled = !disabled;
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("<b>🔄 Cmd Schema 同步</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    bool newEnabled = GUILayout.Toggle(wantEnabled, " 啟用 schema 預檢", GUILayout.ExpandWidth(false));
+                    GUILayout.Label("<b>🔄 Cmd Schema 同步 </b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                    GUILayout.Label("啟用 schema 預檢", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false)); 
+                    bool newEnabled = UCL_GUILayout.CheckBox(wantEnabled);
                     if (newEnabled != wantEnabled)
                     {
                         UCL_CmdSchemaExporter.PreflightDisabled = !newEnabled;
@@ -107,24 +113,27 @@ namespace UCL.Core.EditorLib.Page
                             ? "<color=#5FD35F>✅ 已同步</color>"
                             : "<color=#FFB347>⚠ 未同步（產物落後於 Cmd 原始碼）</color>",
                         UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    GUILayout.FlexibleSpace();
+                    
                     if (GUILayout.Button("重新生成 commands_schema.json",
                             UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.9f, 0.7f)), GUILayout.ExpandWidth(false)))
                     {
                         RegenerateSchema();
                     }
+                    GUILayout.FlexibleSpace();
                 }
 
-                GUILayout.Label("Python client 端 (`tavern_cmd.py`) 的參數預檢讀這份產物。"
-                    + "新增／修改 Cmd 後請按上面的按鈕，或跑 `run_cmd.py run ExportCmdSchema`（兩者等價）。",
-                    UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("未同步不會擋住任何功能 —— Python 端偵測到 hash 不符會自動降級成「不做參數預檢」，"
-                    + "把判斷權交還給 Editor。同步只是讓 client 能提早回報參數錯誤。",
-                    UCL_GUIStyle.LabelStyle);
+
 
                 
                 if (showDetail)
                 {
+                    GUILayout.Label("Python client 端 (`tavern_cmd.py`) 的參數預檢讀這份產物。"
+                        + "新增／修改 Cmd 後請按上面的按鈕，或跑 `run_cmd.py run ExportCmdSchema`（兩者等價）。",
+                        UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label("未同步不會擋住任何功能 —— Python 端偵測到 hash 不符會自動降級成「不做參數預檢」，"
+                        + "把判斷權交還給 Editor。同步只是讓 client 能提早回報參數錯誤。",
+                        UCL_GUIStyle.LabelStyle);
+
                     string path = UCL_CmdSchemaExporter.SchemaPath;
                     GUILayout.Label($"產物路徑：{path}", UCL_GUIStyle.LabelStyle);
                     GUILayout.Label($"存在：{(File.Exists(path) ? "是" : "否")}", UCL_GUIStyle.LabelStyle);
@@ -138,7 +147,7 @@ namespace UCL.Core.EditorLib.Page
                         UCL_GUIStyle.LabelStyle);
                     using (new GUILayout.HorizontalScope())
                     {
-                        if (File.Exists(path) && GUILayout.Button("開啟產物", GUILayout.ExpandWidth(false)))
+                        if (File.Exists(path) && GUILayout.Button("開啟產物", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             EditorUtility.RevealInFinder(path);
                         }
@@ -195,24 +204,40 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (!show) return;
 
-                var handlers = UCL_AgentCommandRegistry.ListHandlers();
-                GUILayout.Label($"共 {handlers.Count} 個（reflection 自動發現 UCL_AgentCommandHandlerBase 子類）。",
+                // 區塊職責：清單內容快取 —— 每 frame 重算會卡（Tim 2026-07-30 回報面板卡頓）。
+                // 物理意義：`h.ArgsSpec` 是**計算屬性**，每次取值都重建整個 spec 物件；
+                //          Cmd_Tavern 那個含 34 個 op 與其 required/alias 字典。
+                //          51 個 handler × 每秒數個 frame，等於每秒重建上百個字典 —— 純浪費，
+                //          因為這份清單只會在「重新編譯（handler 集合可能變）」時改變。
+                // 數值影響：只在快取為 null 時算一次；domain reload（改 code 後）本頁物件會重建，
+                //          快取自然歸零，不需要額外的失效機制。
+                if (m_CmdRows == null)
+                {
+                    var handlers = UCL_AgentCommandRegistry.ListHandlers();
+                    m_CmdRows = new List<(string, string)>(handlers.Count);
+                    foreach (var h in handlers)
+                    {
+                        UCL_CmdArgsSpec spec = null;
+                        try { spec = h.ArgsSpec; } catch { /* 取值失敗視為未宣告，匯出端已警告 */ }
+                        int opCount = spec?.Ops?.Count ?? 0;
+                        string specTag = spec == null
+                            ? "<color=#999999>— 無 ArgsSpec（不做 client 預檢）</color>"
+                            : (opCount > 0
+                                ? $"<color=#5FD35F>✔ ArgsSpec（{opCount} 個 op）</color>"
+                                : "<color=#5FD35F>✔ ArgsSpec</color>");
+                        m_CmdRows.Add(($"  `{h.CommandType}`", specTag));
+                    }
+                }
+
+                GUILayout.Label($"共 {m_CmdRows.Count} 個（reflection 自動發現 UCL_AgentCommandHandlerBase 子類）。",
                     UCL_GUIStyle.LabelStyle);
 
-                foreach (var h in handlers)
+                foreach (var row in m_CmdRows)
                 {
-                    UCL_CmdArgsSpec spec = null;
-                    try { spec = h.ArgsSpec; } catch { /* 取值失敗視為未宣告，匯出端已警告 */ }
-                    int opCount = spec?.Ops?.Count ?? 0;
-                    string specTag = spec == null
-                        ? "<color=#999999>— 無 ArgsSpec（不做 client 預檢）</color>"
-                        : (opCount > 0
-                            ? $"<color=#5FD35F>✔ ArgsSpec（{opCount} 個 op）</color>"
-                            : "<color=#5FD35F>✔ ArgsSpec</color>");
                     using (new GUILayout.HorizontalScope())
                     {
-                        GUILayout.Label($"  `{h.CommandType}`", UCL_GUIStyle.LabelStyle, GUILayout.Width(220));
-                        GUILayout.Label(specTag, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.Label(row.Item1, UCL_GUIStyle.LabelStyle, GUILayout.Width(220));
+                        GUILayout.Label(row.Item2, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                         GUILayout.FlexibleSpace();
                     }
                 }

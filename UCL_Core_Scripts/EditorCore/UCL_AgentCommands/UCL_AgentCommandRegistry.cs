@@ -93,6 +93,13 @@ namespace UCL.Core.EditorLib.AgentCommands
             return null;
         }
 
+        // 區塊職責：把別名表公開給 schema 匯出器 — 讓 Python 端不必再手抄第二份。
+        // 物理意義：本表與 run_cmd.py 的 TYPE_ALIASES 原本是同一張表的兩份手抄鏡像（第四處鏡像）。
+        //          匯出進 commands_schema.json 後，Python 端改讀產物，這一族漂移就結構性消失。
+        // 數值影響：回唯讀視圖，呼叫端不能改動內部狀態。
+        /// <summary>cmd type 別名對照（alias → canonical），供 <c>UCL_CmdSchemaExporter</c> 匯出。</summary>
+        public static IReadOnlyDictionary<string, string> ListTypeAliases() => s_TypeAliases;
+
         /// <summary>列出所有已註冊的指令類型名稱（按字母排序）。</summary>
         public static IReadOnlyList<string> ListTypes()
         {

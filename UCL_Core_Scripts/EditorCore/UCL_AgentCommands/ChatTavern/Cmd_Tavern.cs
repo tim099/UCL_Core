@@ -59,6 +59,123 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md";
 
+        // ===========================================================
+        // 區塊職責：機器可讀的 op 參數規格 — 由 Cmd_ExportCmdSchema 反射匯出成 commands_schema.json，
+        //          取代 Python 端手抄的 TAVERN_OP_SCHEMA。
+        // 物理意義：本表的**唯一事實來源是本檔下方的 switch 與各 Op_ 方法**：
+        //          - Required = 該 Op_ 方法真的會 RejectLastOp("...缺少 X") 的那些參數
+        //          - Aliases  = 該方法內 GetArg(a,"x", GetArg(a,"y", ...)) 的巢狀鏈，**順序即優先序**
+        //          維護方式：改了某個 Op_ 方法的 reject 條件或 GetArg 巢狀鏈 → 同步改本表對應那筆
+        //          （兩者相距數十行，co-location 是本設計刻意依賴的保護；見 Plan §3）。
+        // 數值影響：只影響 client 端預檢的嚴格度，不影響 Editor 端執行 —— server 端永遠是權威。
+        //          宣告錯的方向不對稱：漏寫 required 只是少擋一次（server 仍會擋）；
+        //          **多寫 required 會擋掉合法呼叫**（血證：Python 舊表有六處比 server 嚴）。
+        //          拿不準時寧可少寫。
+        // ===========================================================
+        public override UCL_CmdArgsSpec ArgsSpec => new UCL_CmdArgsSpec
+        {
+            Ops = new Dictionary<string, UCL_CmdOpSpec>
+            {
+                // ─── 房間 / 訊息 ───────────────────────────────────────────
+                ["createroom"] = new UCL_CmdOpSpec {
+                    Required = new[] { "id" },
+                    Aliases = new Dictionary<string, string> { ["room"] = "id", ["owner"] = "owner_agent" } },
+                ["create_trpg_room"] = new UCL_CmdOpSpec {
+                    Required = new[] { "campaign" },
+                    // campaign > id > room；owner_agent > owner > gm
+                    Aliases = new Dictionary<string, string> {
+                        ["id"] = "campaign", ["room"] = "campaign", ["owner"] = "owner_agent", ["gm"] = "owner_agent" } },
+                ["listrooms"] = new UCL_CmdOpSpec(),
+                ["join"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "id" },
+                    // id > sender_id > sender（注意順序與 post 相反 —— join 的 canonical 是 id）
+                    Aliases = new Dictionary<string, string> { ["sender_id"] = "id", ["sender"] = "id" } },
+                ["post"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "sender", "body" },
+                    // sender > sender_id > id
+                    Aliases = new Dictionary<string, string> { ["sender_id"] = "sender", ["id"] = "sender" } },
+                ["read"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
+                ["members"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
+                // leave 在本檔沒有任何 reject —— 刻意不宣告 required（多寫會擋掉合法呼叫）
+                ["leave"] = new UCL_CmdOpSpec {
+                    Aliases = new Dictionary<string, string> { ["sender_id"] = "sender", ["id"] = "sender" } },
+                // wait 只 reject room；since_seq 有預設值，不是必填
+                ["wait"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
+                ["wait_check"] = new UCL_CmdOpSpec { Required = new[] { "wait_id" } },
+
+                // ─── Note ────────────────────────────────────────────────
+                // note_write 只 reject room / key —— body 允許空（等同清空內容）
+                ["note_write"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
+                ["note_append"] = new UCL_CmdOpSpec { Required = new[] { "room", "key", "body" } },
+                ["note_read"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
+                ["note_list"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
+                ["note_delete"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
+
+                // ─── Quest Workflow ──────────────────────────────────────
+                // task_create 只 reject room / task_id —— title 沒 reject（Python 舊表誤列為必填）
+                ["task_create"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_claim"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "claimer" },
+                    // claimer > actor > sender
+                    Aliases = new Dictionary<string, string> { ["actor"] = "claimer", ["sender"] = "claimer" } },
+                ["task_progress"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "actor", "summary" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_done"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "actor" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_release"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "actor", "reason" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_force_reclaim"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "claimer", "reason" },
+                    Aliases = new Dictionary<string, string> { ["actor"] = "claimer", ["sender"] = "claimer" } },
+                ["task_review_request"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "actor" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_reject"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "actor", "reason" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_reopen"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "task_id", "actor", "reason" },
+                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                ["task_next"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "agent_id" },
+                    Aliases = new Dictionary<string, string> { ["id"] = "agent_id", ["sender"] = "agent_id" } },
+                ["task_state"] = new UCL_CmdOpSpec { Required = new[] { "room", "task_id" } },
+                ["task_list"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
+                ["inbox_read"] = new UCL_CmdOpSpec {
+                    Required = new[] { "room", "agent_id" },
+                    Aliases = new Dictionary<string, string> { ["id"] = "agent_id", ["sender"] = "agent_id" } },
+                ["events_since"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
+
+                // ─── Presence ────────────────────────────────────────────
+                ["set_presence"] = new UCL_CmdOpSpec {
+                    Required = new[] { "id", "status" },
+                    // id > sender > sender_id
+                    Aliases = new Dictionary<string, string> { ["sender"] = "id", ["sender_id"] = "id" } },
+                // set_focus / set_mood 只 reject agent_id —— focus / mood 允許空（等同清除）
+                ["set_focus"] = new UCL_CmdOpSpec {
+                    Required = new[] { "agent_id" },
+                    Aliases = new Dictionary<string, string> {
+                        ["id"] = "agent_id", ["sender"] = "agent_id", ["sender_id"] = "agent_id" } },
+                ["set_mood"] = new UCL_CmdOpSpec {
+                    Required = new[] { "agent_id" },
+                    Aliases = new Dictionary<string, string> {
+                        ["id"] = "agent_id", ["sender"] = "agent_id", ["sender_id"] = "agent_id" } },
+                // get_presence 無必填（不帶 id = 查全部）
+                ["get_presence"] = new UCL_CmdOpSpec {
+                    Aliases = new Dictionary<string, string> { ["target"] = "id", ["target_id"] = "id" } },
+
+                // ─── Session macro ───────────────────────────────────────
+                ["session_enter"] = new UCL_CmdOpSpec {
+                    Required = new[] { "agent_id" },
+                    Aliases = new Dictionary<string, string> { ["id"] = "agent_id", ["sender"] = "agent_id" } },
+            }
+        };
+
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
             string op = GetArg(args, "op", "").ToLowerInvariant();

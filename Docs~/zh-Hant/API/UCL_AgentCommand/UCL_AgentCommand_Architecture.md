@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-06-07
+last_updated: 2026-07-29
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -135,6 +135,31 @@ public class Cmd_MyCustom : UCL_AgentCommandHandlerBase
 - `CommandType` 必須唯一（相同會 LogError 並覆蓋既有）
 - `CommandType` 大小寫不敏感（queue.json 寫成 `"myCustom"` 也會 match）
 - 撞名 → registry 會 LogError + 用後寫入者覆蓋前者
+
+### 5.1 🔄 新增／修改 Cmd 後請同步 schema（Tim 2026-07-29 拍板）
+
+Python client (`run_cmd.py`) 在送出前會做**參數預檢**（少帶必填、別名歸一），依據是
+`<RepoRoot>/AgentCommands/commands_schema.json` —— 那份產物由 C# 反射 handler 的
+`ArgsSpec` 生成。**改動 Cmd 之後請同步一次**，三個入口任選：
+
+| 入口 | 怎麼做 |
+|---|---|
+| 控制台 | `UCL_ControlPanelPage` → **🧾 Cmd 後台** → 開啟管理頁 → 「重新生成 commands_schema.json」 |
+| Cmd（給 agent） | `python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run ExportCmdSchema` |
+| 自動 | 編譯完成時檢查，**每台機器每天最多自動觸發一次**（節流時間戳存 EditorPrefs，不入 git） |
+
+三者呼叫同一個 `UCL_CmdSchemaExporter.Export()`，產出逐字相同；內容未變則不寫檔。
+
+**想讓 client 幫忙擋參數 → 覆寫 `ArgsSpec`**（`UCL_CmdArgsSpec`；有子 op 的填 `Ops`）。
+不覆寫完全合法，意思是「這個 Cmd 不需要 client 預檢」，只是少一層提早回饋。
+
+> ⚠ **忘了同步不會壞掉**：Python 端比對 `source_hash`（**內容雜湊，不是檔案時間** —— git 不存 mtime，
+> clone 後全部檔案時間都是當下，用 mtime 判會在最該生效的場景擲骰子）。
+> 不符 → **參數預檢自動降級為不擋**，把判斷權交還 Editor。
+> 未知 op 同理一律放行 —— 便利性功能不該有能力擋掉正確性
+> （血證 2026-07-29：`create_trpg_room` 在 C# 完整實作，卻因 Python 手抄表漏抄而被擋死）。
+>
+> 完整設計：[`Plan_AgentCmd_Schema_Reflection_Export`](../../Plan/Plan_AgentCmd_Schema_Reflection_Export.md)
 
 ---
 

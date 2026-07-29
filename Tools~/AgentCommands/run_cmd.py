@@ -117,228 +117,6 @@ def print_cmd_error_report(cmd_id: "str | None", max_lines: int = 60) -> None:
 
 
 # ===========================================================
-# Tavern client-side schema 驗證 — submit 前先擋常見錯誤
-# 目的：避免「等 1s round-trip 才知道參數錯」 + 修正 agent 常踩的 alias 陷阱
-# 結構：{op: {required: [...], aliases: {alias: canonical}, optional: [...]}}
-# 注意：Editor 端已支援 alias 寬進；本表額外給 client 提示與修正建議
-# ===========================================================
-TAVERN_OP_SCHEMA = {
-    "createroom":  {"required": ["id"],          "aliases": {"room": "id", "owner": "owner_agent"},               "optional": ["name", "description", "owner_agent", "mirror_kinds"]},
-    "listrooms":   {"required": [],              "aliases": {},                                                   "optional": []},
-    "join":        {"required": ["room", "id"],  "aliases": {"sender": "id", "sender_id": "id"},                  "optional": ["name", "kind"]},
-    "post":        {"required": ["room", "sender", "body"], "aliases": {"sender_id": "sender", "id": "sender"},   "optional": ["reply_to", "meta", "refs"]},
-    "read":        {"required": ["room"],        "aliases": {},                                                   "optional": ["tail", "from", "to", "since_seq", "limit", "search"]},
-    "members":     {"required": ["room"],        "aliases": {},                                                   "optional": []},
-    "leave":       {"required": ["room", "sender"], "aliases": {"sender_id": "sender", "id": "sender"},           "optional": []},
-    "wait":        {"required": ["room", "since_seq"], "aliases": {},                                             "optional": ["timeout", "owner"]},
-    "wait_check":  {"required": ["wait_id"],     "aliases": {},                                                   "optional": []},
-    "note_write":  {"required": ["room", "key", "body"], "aliases": {},                                           "optional": []},
-    "note_append": {"required": ["room", "key", "body"], "aliases": {},                                           "optional": ["sender"]},
-    "note_read":   {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
-    "note_list":   {"required": ["room"],        "aliases": {},                                                   "optional": []},
-    "note_delete": {"required": ["room", "key"], "aliases": {},                                                   "optional": []},
-    "set_presence": {"required": ["id", "status"], "aliases": {"sender": "id", "sender_id": "id"},               "optional": []},
-    "set_focus":    {"required": ["agent_id", "focus"], "aliases": {"id": "agent_id", "sender": "agent_id", "sender_id": "agent_id"}, "optional": []},
-    "set_mood":     {"required": ["agent_id", "mood"],  "aliases": {"id": "agent_id", "sender": "agent_id", "sender_id": "agent_id"}, "optional": []},
-    "get_presence": {"required": [],              "aliases": {"target": "id", "target_id": "id"},               "optional": ["id"]},
-    # Quest Workflow MVP A — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md
-    # 共通：每 op 都會 auto-fill idempotency_key=<uuid4>（除非 user 顯式給）
-    # R6 — quiet=true 抑制 task event → messages.jsonl 鏡像（測試 / 自動化大批 ops 用）
-    "task_create":   {"required": ["room", "task_id", "title"], "aliases": {"sender": "actor"},
-                      "optional": ["role", "priority", "depends_on", "suggested_owner", "body", "actor", "idempotency_key", "quiet"]},
-    "task_claim":    {"required": ["room", "task_id", "claimer"], "aliases": {"sender": "claimer", "actor": "claimer"},
-                      "optional": ["lease_hours", "lease_seconds", "plan", "idempotency_key", "quiet"]},
-    "task_progress": {"required": ["room", "task_id", "actor", "summary"], "aliases": {"sender": "actor"},
-                      "optional": ["artifacts", "idempotency_key", "quiet"]},
-    "task_done":     {"required": ["room", "task_id", "actor"], "aliases": {"sender": "actor"},
-                      "optional": ["summary", "idempotency_key", "quiet"]},
-    "task_release":  {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
-                      "optional": ["idempotency_key", "quiet"]},
-    "task_review_request": {"required": ["room", "task_id", "actor"], "aliases": {"sender": "actor"},
-                      "optional": ["reviewer", "idempotency_key", "quiet"]},
-    "task_reject":   {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
-                      "optional": ["idempotency_key", "quiet"]},
-    "task_reopen":   {"required": ["room", "task_id", "actor", "reason"], "aliases": {"sender": "actor"},
-                      "optional": ["idempotency_key", "quiet"]},
-    "task_list":     {"required": ["room"], "aliases": {}, "optional": ["owner", "role", "status"]},
-    "task_next":     {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
-                      "optional": ["top"]},
-    "task_state":    {"required": ["room", "task_id"], "aliases": {}, "optional": []},
-    "inbox_read":    {"required": ["room", "agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
-                      "optional": []},
-    "events_since":  {"required": ["room"], "aliases": {},
-                      "optional": ["since_seq", "filter_type", "limit"]},
-    # T04 session-enter macro — 1 op 取代 inbox_read + get_presence + set_presence + read（quest tavern-entry-latency O3）
-    "session_enter": {"required": ["agent_id"], "aliases": {"id": "agent_id", "sender": "agent_id"},
-                      "optional": ["room", "tail", "focus", "mood", "inbox_room", "next"]},
-    "task_force_reclaim": {"required": ["room", "task_id", "claimer", "reason"],
-                           "aliases": {"sender": "claimer", "actor": "claimer"},
-                           "optional": ["lease_hours", "idempotency_key", "quiet", "force"]},
-}
-
-# Quest ops 集合 — auto-fill idempotency_key 用（純查詢 op 不需要）
-QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "task_done", "task_release",
-                                  "task_review_request", "task_reject", "task_reopen", "task_force_reclaim"}
-
-
-# 區塊職責: op=post 沒帶 persona 時，根據登入 session lock 反推填入 persona。
-# 物理意義: 發言身分 (persona) 是酒館顯示/帳務分流的關鍵欄位；agent 常漏帶 → Discord/酒館
-#           顯示缺 persona。早安 ritual 寫 lock 時已記錄 (session_token / claim_origin / agent
-#           → persona) 的對應，這裡走三段 fallback 反查未過期 lock，自動補上。
-# 數值影響: 只在 persona 缺席時填入，不覆寫顯式值；反查失敗 graceful degrade（不擋發言）。
-# fallback 鏈 (precise → loose，命中即止):
-#   (1) session_token 精準匹配 — 最權威 (跨 env / 跨 ppid 都穩)
-#   (2) claim_origin (env_hash) 匹配 — 同 env 多 persona 取 locked_at 最新
-#   (3) agent marker 匹配 — claim_origin 不穩的 agent (e.g. Gemini env 落 unknown-<cwd>-<ppid>
-#       fallback，ppid 每次 invoke 變 → (2) 對不上) 的救援；偵測 caller agent
-#       (claude-code/gemini/antigravity)，online lock 中該 agent 恰好 1 個才填，多個 ambiguous 不猜。
-def _autofill_persona_from_lock(arg_pairs: dict) -> None:
-    # 已顯式帶 persona → 尊重不覆寫
-    if (arg_pairs.get("persona") or "").strip():
-        return
-    try:
-        # 重用 awakening 的 env-hash / lock helper，避免反查邏輯雙份漂移
-        import importlib
-        awk = importlib.import_module("awakening")
-        # session dir 優先用 run_cmd 的 QUEUE_DIR（走 CLAUDE_PROJECT_DIR + git-walk，
-        # 比 awakening._SESSION_DIR 的 cwd 敏感解析穩）；缺則 fallback awk 解析。
-        session_dir = QUEUE_DIR / "_session"
-        if not session_dir.exists():
-            session_dir = awk._SESSION_DIR
-        if not session_dir.exists():
-            return
-        # 一次載入所有未過期 lock（後續三段 fallback 共用）
-        live_locks = []
-        for lp in session_dir.glob("_persona_*.json"):
-            try:
-                with open(lp, "r", encoding="utf-8") as f:
-                    lock = json.load(f)
-            except Exception:
-                continue
-            if not awk.is_lock_expired(lock):
-                live_locks.append(lock)
-        if not live_locks:
-            return
-
-        chosen = None
-        why = ""
-
-        # (1) session_token 精準匹配
-        want_token = (arg_pairs.get("session_token") or "").strip()
-        if want_token:
-            for lock in live_locks:
-                if lock.get("session_token") == want_token:
-                    chosen, why = lock, "session_token"
-                    break
-
-        # (2) claim_origin (env_hash) 匹配 — 多筆取最新
-        if chosen is None:
-            my_origin = awk.compute_claim_origin()
-            origin_hits = [lk for lk in live_locks if awk.lock_claim_origin(lk) == my_origin]
-            if origin_hits:
-                chosen = max(origin_hits, key=lambda d: d.get("locked_at", ""))
-                why = "claim_origin"
-
-        # (3) agent marker 匹配 — claim_origin 不穩 agent 的救援；恰好 1 個才填
-        if chosen is None:
-            marker = (_detect_caller_env_marker() or "").lower()
-            if marker and marker != "unknown":
-                agent_hits = [lk for lk in live_locks
-                              if (lk.get("agent") or "").lower() == marker
-                              or (lk.get("agent") or "").lower().startswith(marker + "-")]
-                if len(agent_hits) == 1:
-                    chosen = agent_hits[0]
-                    why = "agent-marker"
-                elif len(agent_hits) > 1:
-                    print(f"  ⚠ persona 自動反查：agent '{marker}' 有 {len(agent_hits)} 個 online "
-                          f"persona，無法判定該填哪個（請顯式帶 --arg persona=...）", file=sys.stderr)
-
-        if chosen is None:
-            return
-        persona = (chosen.get("persona") or "").strip()
-        if persona:
-            arg_pairs["persona"] = persona
-            print(f"  ℹ persona 自動填入（反查 session lock，by {why}）：{persona}", file=sys.stderr)
-    except Exception as e:
-        # 反查任何環節出錯都不阻擋發言（degrade gracefully）
-        print(f"  ⚠ persona 自動反查略過（{type(e).__name__}: {e}）", file=sys.stderr)
-
-
-def validate_tavern_args(arg_pairs: dict) -> tuple[bool, str]:
-    """Tavern Cmd 提交前驗證；回 (ok, error_message)。
-    寬進：alias 自動歸一到 canonical 名。"""
-    op = (arg_pairs.get("op") or "").lower().strip()
-    if not op:
-        return False, "Tavern Cmd 缺少 op 參數。可用 op：" + ", ".join(sorted(TAVERN_OP_SCHEMA.keys()))
-    schema = TAVERN_OP_SCHEMA.get(op)
-    if schema is None:
-        return False, f"Tavern op '{op}' 未知；可用：{', '.join(sorted(TAVERN_OP_SCHEMA.keys()))}"
-    # alias 歸一（mutate arg_pairs）
-    aliases_used = []
-    for alias, canon in schema["aliases"].items():
-        if alias in arg_pairs and canon not in arg_pairs:
-            arg_pairs[canon] = arg_pairs.pop(alias)
-            aliases_used.append(f"{alias}→{canon}")
-        elif alias in arg_pairs and canon in arg_pairs:
-            del arg_pairs[alias]
-            aliases_used.append(f"removed dup {alias}")
-    if aliases_used:
-        print(f"  ℹ Tavern alias 歸一：{', '.join(aliases_used)}", file=sys.stderr)
-    # required 檢查
-    missing = [r for r in schema["required"] if not arg_pairs.get(r)]
-    if missing:
-        all_args = list(arg_pairs.keys())
-        msg = f"Tavern op={op} 缺少必要參數：{missing}（你目前傳的：{all_args}）"
-        if schema["aliases"]:
-            msg += f"\n     ↳ 可接受的 alias：{schema['aliases']}"
-        return False, msg
-    # Quest ops auto-fill idempotency_key（user 沒顯式給就自動 uuid4）
-    if op in QUEST_OPS_NEEDING_IDEMPOTENCY and not arg_pairs.get("idempotency_key"):
-        arg_pairs["idempotency_key"] = str(uuid.uuid4())
-        print(f"  ℹ idempotency_key 自動填入：{arg_pairs['idempotency_key']}", file=sys.stderr)
-    # post 沒帶 persona → 反查登入 lock 自動補（防漏帶 persona，Tim 2026-05-27）
-    if op == "post":
-        _autofill_persona_from_lock(arg_pairs)
-        # 保留 tag 的 meta schema 預檢（Tim 2026-07-28 拍板「錯誤資訊在發送流程就知道」）—
-        # 鏡像 Cmd_Tavern T06.3 server 端驗證: 缺必填 meta 在 client 端 <0.01s 就擋,
-        # 不必等 Editor round-trip 才在 ErrorLog 看到 RejectLastOp。
-        ok, err = _validate_reserved_tag_meta(arg_pairs.get("meta") or "")
-        if not ok:
-            return False, err
-    return True, ""
-
-
-# 區塊職責: 保留 tag meta schema 表 — 鏡像 Cmd_Tavern.Op_Post 的 T06.3 驗證 (server 端為權威)。
-# 物理意義: meta 格式 "k:v;k2:v2"; tag 命中保留字時要求對應必填 key。
-# 數值影響: 新增保留 tag 時兩端同步擴表 (server: Cmd_Tavern.cs Op_Post; client: 本表)。
-RESERVED_TAG_META_SCHEMA = {
-    "task-assign": ["task_id", "task_body", "assigned_by", "requires_ack"],
-    "task-ack": ["task_id", "action"],
-}
-
-
-def _validate_reserved_tag_meta(meta_raw: str) -> tuple[bool, str]:
-    """解析 meta 字串, tag 為保留字時檢查必填 key。回 (ok, error_message)。"""
-    if not meta_raw:
-        return True, ""
-    meta = {}
-    for seg in meta_raw.split(";"):
-        if ":" in seg:
-            k, _, v = seg.partition(":")
-            meta[k.strip()] = v.strip()
-    tag = meta.get("tag", "")
-    required = RESERVED_TAG_META_SCHEMA.get(tag)
-    if not required:
-        return True, ""
-    missing = [k for k in required if not meta.get(k)]
-    if missing:
-        return False, (f"meta tag={tag} 為保留 tag (T06.3 schema), 缺必填 meta key: {missing}\n"
-                       f"     ↳ required: {' / '.join(required)}（你目前 meta 帶的: {sorted(meta.keys())}）")
-    if tag == "task-ack" and meta.get("action") not in ("accept", "decline", "defer"):
-        return False, f"meta tag=task-ack 的 action 必須是 accept|decline|defer（目前: {meta.get('action')!r}）"
-    return True, ""
-
-# ===========================================================
 # 路徑解析 — 跨專案通用（不假設 UCL_Core 放在哪一層）
 # ===========================================================
 # 上層專案可能把 UCL_Core 放在不同位置（CardGame/Assets/UCL/ 或 Assets/UCL/ 或 root）
@@ -503,6 +281,22 @@ TAVERN_DIR = DATA_ROOT / "ChatTavern"  # T-PATH-01: 走可 override 資料根;�
 import tavern_handshake as _handshake   # 同層模組；run_cmd 以 script 執行時其所在夾即 sys.path[0]
 
 _handshake.configure(tavern_dir=TAVERN_DIR, git_root=GIT_ROOT)
+
+# 區塊職責：Tavern Cmd 的 client 端規則（送前預檢 / wait-reply 政策 / banner）→ 已抽離到兄弟模組
+# 物理意義：run_cmd 是**對 36 個 cmd type 一視同仁**的通用 RPC 管線；「Tavern 這一個 cmd 的參數
+#          長什麼樣、哪些 op 要等回覆」是單一 cmd 的業務規則，佔了本檔兩成篇幅卻只服務 1/36
+#          （Tim 2026-07-29 拍板拆分，本檔 1304 → 1082 行）。
+# 數值影響：模組不自行解析路徑、不自行偵測環境 —— 此處注入 QUEUE_DIR / TAVERN_DIR / env-marker 偵測器。
+#          env-marker 用 lambda 包一層是**刻意的 late binding**：_detect_caller_env_marker 定義在本檔
+#          更下方，此處直接取名會拿到 NameError；lambda 到呼叫時才解析，且維持「configure 緊鄰 import」
+#          不留「忘了 configure」的縫。
+import tavern_cmd as _tavern_cmd
+
+_tavern_cmd.configure(
+    queue_dir=QUEUE_DIR,
+    tavern_dir=TAVERN_DIR,
+    detect_env_marker=lambda: _detect_caller_env_marker(),
+)
 # UCL_CompileErrorTracker 寫入：mtime 推進 + errors/warnings 計數 → recompile 子命令的「完成」依據
 COMPILE_STATUS_PATH = QUEUE_DIR / ".compile_status.json"
 # Cmd 輸出（如 commands_catalog.md）落在 CardGame/AgentCommands/，避開外層 git root + submodule
@@ -651,6 +445,9 @@ def make_id(cmd_type: str) -> str:
 
 
 # 區塊職責：cmd_type 別名表 — 把常見打錯名稱自動 rewrite 到正確 cmd type
+# ⚠ S5（2026-07-29）起本表是 **fallback**，不是主來源：normalize_cmd_type() 優先讀
+#   commands_schema.json 的 type_aliases（由 UCL_AgentCommandRegistry.s_TypeAliases 生成）。
+#   本表只在產物不存在時生效，僅為離線可用性保留；**新增別名請加在 C# Registry 那邊，不要加這裡**。
 # 物理意義：人類 / 跨 agent 容易把 cmd type 跟資料夾名 / skill 名混淆
 #          （例：『ChatTavern』是 dir 名 / skill 名，但 cmd type 是『Tavern』）
 # 數值影響：rewrite 後印警告但不 abort — 好心 fail-open；正名後跑跟原來一樣
@@ -667,10 +464,17 @@ TYPE_ALIASES = {
 
 
 def normalize_cmd_type(cmd_type: str) -> str:
-    """套用 TYPE_ALIASES — 找不到就回原樣（fail-open，讓 Editor 端 reject）."""
+    """套用 cmd type 別名 — 找不到就回原樣（fail-open，讓 Editor 端 reject）。
+
+    S5（2026-07-29）：別名表**優先取 C# 生成的 commands_schema.json**，本檔的 TYPE_ALIASES 退為
+    產物不存在時的 fallback。本表與 `UCL_AgentCommandRegistry.s_TypeAliases` 原本是同一張表的
+    兩份手抄鏡像（本 plan 點名的第四處）；改讀產物後，Registry 是唯一事實來源。
+    """
     if not cmd_type:
         return cmd_type
-    canonical = TYPE_ALIASES.get(cmd_type.lower())
+    # 產物內的 key 是 C# 原樣大小寫（e.g. "ChatTavern"），本端比對一律小寫化後查
+    generated = {k.lower(): v for k, v in (_tavern_cmd.TYPE_ALIASES_FROM_SCHEMA or {}).items()}
+    canonical = generated.get(cmd_type.lower()) or TYPE_ALIASES.get(cmd_type.lower())
     if canonical and canonical != cmd_type:
         print(f"  ℹ️  cmd_type '{cmd_type}' → '{canonical}' (auto-aliased — see TYPE_ALIASES in run_cmd.py)")
         return canonical
@@ -746,7 +550,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
     # 物理意義：Editor round-trip 約 1s 才報錯；client 預檢 < 0.01s 就能擋下 typo / alias 錯
     # 數值影響：失敗 → 立刻 return 2 不寫 queue，不污染 _last_op.md
     if args.cmd_type == "Tavern":
-        ok, err = validate_tavern_args(arg_pairs)
+        ok, err = _tavern_cmd.validate_args(arg_pairs)
         if not ok:
             print_fail_verdict(f"✗ Tavern client-side 預檢失敗：\n  {err}")
             return 2
@@ -873,54 +677,21 @@ def cmd_run(args: argparse.Namespace) -> int:
         print_fail_verdict(f"✗ --arg-stdin 展開失敗：\n  {err}")
         return 2
 
-    # 區塊職責：ergonomic shim — 把 --arg wait-reply=N 視同 --wait-reply N
-    # 物理意義：使用者 / agent 直覺會把 wait-reply 當 cmd arg 寫成 --arg wait-reply=N
-    #          （因為 room / sender / op 都是 --arg 語法），但實際上它是 script flag。
-    #          沒這 shim 的話，--arg wait-reply=0 只是塞進 cmd args dict 被 Cmd_Tavern 忽略，
-    #          script 仍走 default 540s，user 看 timeout 印出來才發現踩坑。
-    # 數值影響：promote 後從 arg_pairs 移除（避免變 cmd noise / 寫進 meta）；
-    #          顯式 --wait-reply 永遠優先，shim 只在 args.wait_reply is None 時生效
-    for _key in ("wait-reply", "wait_reply"):
-        if _key in arg_pairs:
-            _val = arg_pairs.pop(_key)
-            if getattr(args, "wait_reply", None) is None:
-                try:
-                    args.wait_reply = float(_val)
-                    print(f"  ℹ️  偵測到 --arg {_key}={_val} → promote 為 --wait-reply（建議直接用 script flag）")
-                except ValueError:
-                    print(f"  ⚠ --arg {_key}={_val} 無法轉 float，已忽略")
+    # 區塊職責：wait-reply 決策 —— shim（--arg wait-reply=N 視同 script flag）＋ 預設值政策。
+    # 物理意義：「哪些 op 算跟人交流、要等多久」是 Tavern 的**業務規則**不是 RPC 機制，
+    #          已抽到 tavern_cmd（見該模組 resolve_wait_reply / promote_wait_reply_arg）。
+    # 數值影響：顯式 --wait-reply > shim promote 出來的值 > 依 op/meta 的預設；
+    #          進場與查詢類 op 一律強制 0（在 resolve_wait_reply 內覆寫，連顯式值也蓋）。
+    _promoted = _tavern_cmd.promote_wait_reply_arg(arg_pairs)
+    _explicit = getattr(args, "wait_reply", None)
+    if _explicit is None:
+        _explicit = _promoted
+    args.wait_reply = _tavern_cmd.resolve_wait_reply(args.cmd_type, arg_pairs, _explicit)
 
-    # 區塊職責：--wait-reply 默認值決策
-    # 物理意義：Tavern op=post 是「交流」場景，預設等 540s 同步握手；其他 cmd 不等
-    # 數值影響：args.wait_reply 在後段被 cmd_run 結尾段讀，> 0 才走 wait_for_tavern_reply
-    # Solo Brainstorm 例外：meta 帶 tag:solo-brainstorm → 下一則 post 是同 agent 自己發，
-    #   wait-reply 等於自己等自己，純浪費；自動 override 成 0 (fire-and-forget)。
-    #   使用者顯式 --wait-reply N 永遠優先（None 才走 default 決策）。
-    if getattr(args, "wait_reply", None) is None:
-        if args.cmd_type.lower() == "tavern" and arg_pairs.get("op", "").lower() == "post":
-            meta_str = arg_pairs.get("meta", "") or ""
-            if "tag:solo-brainstorm" in meta_str or "tag=solo-brainstorm" in meta_str:
-                args.wait_reply = 0.0
-                print("  ℹ️  偵測到 tag:solo-brainstorm — 自動 --wait-reply 0（自言自語不等回覆）")
-            else:
-                # 540s = 9 min — 留 60s buffer 給 Claude Code Bash tool 的 10 min 硬上限。
-                # 想拉滿請顯式 --wait-reply 600 並把 Bash 呼叫帶 timeout=600000ms。
-                args.wait_reply = 540.0
-        else:
-            args.wait_reply = 0.0
-
-    # 區塊職責：O4 - 入場與查詢類 Op 強制 wait-reply = 0.0
-    # 物理意義：(read, inbox_read, get_presence) 等進場與查詢類 Op 不需要進行同步等待，
-    #          強制 override 設為 0.0 秒以消除無謂的同步等待。
-    # 數值影響：不論 args.wait_reply 先前為何值，皆會被強制覆寫為 0.0，使 client-side 直接 fire-and-forget 結束
-    _op = arg_pairs.get("op", "").lower()
-    if args.cmd_type.lower() == "tavern" and _op in ("read", "inbox_read", "get_presence", "wait_check", "task_list", "session_enter", "set_focus", "set_mood"):
-        args.wait_reply = 0.0
-        print(f"  ℹ️  偵測到進場與查詢類 Op (op={_op}) — 自動強制 --wait-reply 0")
     # Tavern client-side 預檢（cmd_run 自己 inline submit，需獨立呼叫一次；
     # cmd_submit 的同名檢查只服務 `submit` 子命令）
     if args.cmd_type == "Tavern":
-        ok, err = validate_tavern_args(arg_pairs)
+        ok, err = _tavern_cmd.validate_args(arg_pairs)
         if not ok:
             print_fail_verdict(f"✗ Tavern client-side 預檢失敗：\n  {err}")
             return 2
@@ -949,32 +720,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     if rc != 0:
         return rc
 
-    # ─── T28 work-mode banner plumb to caller stdout (crest-001 QA 2026-05-14) ─────
-    # 區塊職責: Cmd success 後抓 _last_op.md 內的 work-mode banner section 印到 caller stdout
-    # 物理意義: Op_Post 寫 banner 到 _last_op.md, 但 caller 沒人讀那檔. wait-reply 是讀
-    #          messages.jsonl 等對方 reply (T38 後 jsonl 不存在直接 short-circuit).
-    #          兩條路都沒接到 banner → caller 看不到 work-session hint.
-    # 數值影響: 純 stdout print, 不擋 wait-reply 主流程
+    # T28 work-mode banner plumb to caller stdout (crest-001 QA 2026-05-14) → 實作在 tavern_cmd
     if args.cmd_type.lower() == "tavern" and arg_pairs.get("op", "").lower() == "post":
-        try:
-            # 讀 room-level _last_view.md (不是全局 _last_op.md, 後者會被其他 cmd 覆蓋)
-            _room = arg_pairs.get("room", "")
-            last_op_path = TAVERN_DIR / "rooms" / _room / "_last_view.md" if _room else None
-            if last_op_path and last_op_path.exists():
-                last_op_content = last_op_path.read_text(encoding="utf-8")
-                # 抓 work-session banner (以 "⏰ **work-session active**" 開頭, 到下個 markdown header 或 EOF)
-                import re as _re
-                banner_match = _re.search(
-                    r"⏰ \*\*work-session active\*\*[^\n]*\n[🎯💸⛔📋🚫💭💬][^\n]*",
-                    last_op_content,
-                )
-                if banner_match:
-                    print("\n──── 上班 hint ────")
-                    print(banner_match.group(0))
-                    print("───────────────────")
-        except Exception as _banner_e:
-            # fail-swallow, 不擋主流程
-            pass
+        _tavern_cmd.print_work_mode_banner(arg_pairs.get("room", ""))
 
     # ─── Tavern 同步握手（僅 op=post）─────────────────────────────────
     # 區塊職責：A 發完訊息後 client-side polling messages.jsonl 等對方回覆

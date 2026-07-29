@@ -33,6 +33,19 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>支援的 Args 格式說明（純文字 / Markdown，給 Page 顯示）。</summary>
         public virtual string ArgsSchema => "";
 
+        // 區塊職責：機器可讀的參數規格 —— 供 reflection 匯出成 commands_schema.json 給 Python client 預檢用。
+        // 物理意義：與上方 ArgsSchema 職責分明 —— ArgsSchema 寫「這參數是什麼意思」（人讀），
+        //          本屬性寫「哪些必填、哪些是別名」（機器讀）。以前後者只存在於 Python 端手抄表，
+        //          抄漏就會發生「C# 有實作但 client 擋死」（血證 2026-07-29 create_trpg_room）。
+        // 數值影響：預設 null = 不提供結構化規格；匯出時該 Cmd 只出名稱，client 不對它做參數預檢。
+        //          **不覆寫是完全合法的選擇**，不是遺漏 —— 意思是「我沒有要 client 幫忙擋參數」。
+        /// <summary>
+        /// 機器可讀的 Args 規格（給 <c>Cmd_ExportCmdSchema</c> 反射匯出）。預設 null = 不提供。
+        /// 詳見 <see cref="UCL_CmdArgsSpec"/> 與
+        /// <c>Docs~/zh-Hant/Plan/Plan_AgentCmd_Schema_Reflection_Export.md</c>。
+        /// </summary>
+        public virtual UCL_CmdArgsSpec ArgsSpec => null;
+
         /// <summary>
         /// 範例 Args（給 Page「Fill Example」按鈕用，格式為 <c>k1=v1;k2=v2</c>）。
         /// 子類覆寫此屬性以提供「一鍵填入即可執行」的預設參數，方便人類在 Editor 內快速試跑。

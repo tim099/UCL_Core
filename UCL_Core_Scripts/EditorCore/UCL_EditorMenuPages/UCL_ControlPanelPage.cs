@@ -79,6 +79,8 @@ namespace UCL.Core.EditorLib.Page
             DrawPersonaAgentAdminSection();
             GUILayout.Space(8);
             DrawKnowledgeBaseAdminSection();
+
+            DrawAgentCmdAdminSection();
             GUILayout.Space(8);
             DrawAgentCommandsPathSection();
         }
@@ -88,6 +90,35 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：push UCL_KnowledgeBaseAdminPage — Agent 長期記憶 / 文檔語意向量檢索的
         //          依賴安裝、bge-m3 權重預熱、索引重建、檢索測試管理頁。
         // ===========================================================
+        // ===========================================================
+        // 區塊：Cmd 後台管理入口（Tim 2026-07-29 拍板）
+        // 物理意義：push UCL_AgentCmdAdminPage — 已註冊 Cmd 清單 + **schema 同步**（手動刷新按鈕）。
+        //          Python client 端的參數預檢讀 C# 反射生成的 commands_schema.json；
+        //          以前 Python 那張表是手抄的，抄漏就會「C# 有實作但 client 擋死」
+        //          （血證 2026-07-29：create_trpg_room）。本入口讓同步這件事有個看得到的地方按。
+        // ===========================================================
+        void DrawAgentCmdAdminSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "AgentCmdAdminFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🧾 Cmd 後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟 Cmd 後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.95f, 0.8f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_AgentCmdAdminPage.Create();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                GUILayout.Label("已註冊 Agent Command 清單，以及 Python client 端預檢用的 commands_schema.json 同步狀態與手動刷新。"
+                    + "新增／修改 Cmd 後請按同步（或跑 `run_cmd.py run ExportCmdSchema`，兩者等價）。",
+                    UCL_GUIStyle.LabelStyle);
+            }
+        }
+
         void DrawKnowledgeBaseAdminSection()
         {
             using (new GUILayout.VerticalScope("box"))

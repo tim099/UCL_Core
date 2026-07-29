@@ -3,7 +3,7 @@ title: UCL_AgentCommandsPage
 description: 用於排隊、檢視、觸發儲存於 AgentCommands/queue.json 的 agent 指令的編輯器頁面。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AgentCommandsPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-13
+last_updated: 2026-07-29
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -118,6 +118,29 @@ Unity 重新編譯後，`HelloWorld` 會自動出現在 **Available Commands** �
 
 > [!IMPORTANT]
 > `CommandType` 比對**大小寫不敏感**，但在整個 AppDomain 中必須**唯一**。重複的 type 會 log error 並由後註冊者覆蓋。
+
+> [!IMPORTANT]
+> **新增／修改 Cmd 後請同步 schema**（Tim 2026-07-29 拍板）。Python client 的參數預檢依據
+> `<RepoRoot>/AgentCommands/commands_schema.json`，那是 C# 反射 handler `ArgsSpec` 生成的產物。
+> 三個等價入口：
+> 1. 控制台 → **🧾 Cmd 後台** → 「重新生成 commands_schema.json」
+> 2. `run_cmd.py run ExportCmdSchema`
+> 3. 編譯完成自動檢查（**每台機器每天最多一次**）
+>
+> 忘了同步不會壞掉 —— Python 端比對內容雜湊，不符就把參數預檢**自動降級為不擋**。
+> 詳見 [`UCL_AgentCommand_Architecture` §5.1](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md)。
+
+## 4a. 🧾 Cmd 後台管理頁（UCL_AgentCmdAdminPage）
+
+入口：`UCL_ControlPanelPage` → **🧾 Cmd 後台** → 「開啟 Cmd 後台管理頁」。
+
+| 區塊 | 內容 |
+|---|---|
+| 🔄 Cmd Schema 同步 | 同步狀態（✅ 已同步 / ⚠ 未同步）、手動重新生成按鈕、產物路徑與雙方 hash、每日自動同步的上次檢查時間 |
+| 🧾 已註冊 Cmd | reflection 掃到的全部 handler，標示各自有無宣告 `ArgsSpec`（無 = 不做 client 預檢，屬合法狀態） |
+
+與 `Cmd_ExportCmdSchema` **等價** —— 兩者呼叫同一個 `UCL_CmdSchemaExporter.Export()`，
+產出逐字相同、內容未變則不寫檔（產物入 git，避免製造 diff 噪音）。
 
 ## 5. 相關類別
 

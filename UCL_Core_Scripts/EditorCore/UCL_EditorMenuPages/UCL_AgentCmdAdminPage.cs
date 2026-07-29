@@ -64,9 +64,10 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label($"<color=red>同步狀態查詢失敗：{e.Message}</color>", UCL_GUIStyle.LabelStyle);
                 }
-
+                bool showDetail = false;
                 using (new GUILayout.HorizontalScope())
                 {
+                    showDetail = UCL_GUILayout.Toggle(m_FoldDic, "SyncDetailFold", 18, iDefaultValue: false);
                     GUILayout.Label("<b>🔄 Cmd Schema 同步</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label(inSync
                             ? "<color=#5FD35F>✅ 已同步</color>"
@@ -87,7 +88,7 @@ namespace UCL.Core.EditorLib.Page
                     + "把判斷權交還給 Editor。同步只是讓 client 能提早回報參數錯誤。",
                     UCL_GUIStyle.LabelStyle);
 
-                bool showDetail = UCL_GUILayout.Toggle(m_FoldDic, "SyncDetailFold", 18, iDefaultValue: false);
+                
                 if (showDetail)
                 {
                     string path = UCL_CmdSchemaExporter.SchemaPath;
@@ -150,7 +151,7 @@ namespace UCL.Core.EditorLib.Page
                 bool show;
                 using (new GUILayout.HorizontalScope())
                 {
-                    show = UCL_GUILayout.Toggle(m_FoldDic, "CmdListFold", 21, iDefaultValue: true);
+                    show = UCL_GUILayout.Toggle(m_FoldDic, "CmdListFold", 21, iDefaultValue: false);
                     GUILayout.Label("<b>🧾 已註冊 Cmd</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
                 }

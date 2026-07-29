@@ -46,7 +46,14 @@ def configure(queue_dir: Path, tavern_dir: Path, detect_env_marker: Callable[[],
     QUEUE_DIR = queue_dir
     TAVERN_DIR = tavern_dir
     DETECT_ENV_MARKER = detect_env_marker
-    _load_generated_schema()
+    # ⚠ 這裡**刻意不載入 schema** —— configure 的職責只有「注入依賴」。
+    # 載入與過期驗算改為 lazy（見 _ensure_schema_loaded / _ensure_freshness_checked）。
+    # 原因：run_cmd 在**模組層**呼叫本函式，也就是 import 就跑、在 argparse 決定跑哪個子命令**之前**。
+    # 把載入＋雜湊驗算塞在這裡，等於讓 `list` / `catalog` / `recompile` / 任何非 Tavern cmd
+    # 全部付一次「走遍 repo ＋ 讀 52 檔算 SHA-256」的成本（實測 `run_cmd.py list` 0.899s，
+    # 而直譯器啟動基準只有 0.034s；六支工具是 spawn run_cmd 當 subprocess，每次 spawn 都付一遍）。
+    # gura QA 2026-07-29 量出這條；它不報錯只是慢，落在「感覺不出來但天天付」的區間。
+    _reset_schema_state()
 
 
 # ===========================================================
@@ -72,47 +79,91 @@ SCHEMA_STATUS = {"loaded": False, "stale": False, "reason": "not-configured", "p
 TYPE_ALIASES_FROM_SCHEMA: dict = {}
 
 
-def _iter_cmd_source_files(repo_root: Path):
-    """跨語言契約：回「repo 相對路徑（正斜線）→ 絕對路徑」，序數排序。
+# 產物快取（per-machine，不入 git）—— 見 _ensure_freshness_checked 的三段說明
+FRESHNESS_CACHE_NAME = "_cmd_schema_freshness.local.json"
 
-    ⚠ 規則必須與 C# `UCL_CmdSchemaExporter.CollectSourceFiles` **逐字相同**，否則雜湊永遠不符：
-      ① <UnityProjectRoot>/Assets 底下所有 `Cmd_*.cs` ＋ `UCL_AgentCommandRegistry.cs`
-      ② 以 repo 相對路徑、正斜線、序數排序
-    這裡不知道 UnityProjectRoot 是哪一層（跨專案不定），改以「repo 底下所有 Assets 目錄」涵蓋 ——
-    單一 Unity 專案時與 C# 端等價；多 Unity 專案的 repo 會多含檔案，屆時兩端一起改。
+# lazy 狀態旗標：None = 還沒做過；True/False = 已做過（不重複）
+_SCHEMA_LOADED: bool = False
+_FRESHNESS_CHECKED: bool = False
+
+
+def _reset_schema_state() -> None:
+    """configure() 時清狀態 —— 下次真的要用 schema 才會載入／驗算。"""
+    global _SCHEMA_LOADED, _FRESHNESS_CHECKED, TAVERN_OP_SCHEMA, TYPE_ALIASES_FROM_SCHEMA, SCHEMA_STATUS
+    _SCHEMA_LOADED = False
+    _FRESHNESS_CHECKED = False
+    TAVERN_OP_SCHEMA = {}
+    TYPE_ALIASES_FROM_SCHEMA = {}
+    SCHEMA_STATUS = {"loaded": False, "stale": False, "reason": "lazy-未載入", "path": None}
+
+
+def compute_source_hash(repo_root: Path, rel_files) -> str:
+    """依**產物指定的檔案清單**重算來源雜湊。
+
+    契約（與 C# `UCL_CmdSchemaExporter.ComputeSourceHash` 對齊）：
+      ③ 逐檔餵入 相對路徑 UTF-8 bytes → 一個 0 byte → 檔案原始 bytes（不做換行正規化）
+      ④ SHA-256，小寫 hex
+    **① 檔案集合與 ② 排序由 C# 決定並寫進產物的 `source_files`** —— 本端不自己 glob。
+    原本兩端各寫一份 glob 規則，實測 Python 那份已在撈 `Library/PackageCache/*/Assets` 與
+    `.git/modules/`，且跨專案（多 Unity 專案的 repo）永久不等價 → 預檢永久靜默降級。
+    現在集合只有一個來源，本端只負責驗算。
     """
-    out = {}
-    for assets in repo_root.glob("**/Assets"):
-        if not assets.is_dir():
-            continue
-        for pattern in ("Cmd_*.cs", "UCL_AgentCommandRegistry.cs"):
-            for abs_p in assets.rglob(pattern):
-                try:
-                    rel = abs_p.resolve().relative_to(repo_root).as_posix()
-                except ValueError:
-                    continue
-                out[rel] = abs_p
-    return dict(sorted(out.items(), key=lambda kv: kv[0]))
-
-
-def compute_source_hash(repo_root: Path) -> str:
-    """重算來源雜湊 —— 契約見 `_iter_cmd_source_files` 與 C# 端註解（③ 路徑 bytes + 0 + 原始 bytes；④ SHA-256 小寫 hex）。"""
     import hashlib
     h = hashlib.sha256()
-    for rel, abs_p in _iter_cmd_source_files(repo_root).items():
+    for rel in rel_files:                       # 順序照產物給的（C# 已序數排序）
         h.update(rel.encode("utf-8"))
         h.update(b"\x00")
-        h.update(abs_p.read_bytes())      # 不做換行正規化 —— 兩端讀同一顆磁碟上的同一份 bytes
+        h.update((repo_root / rel).read_bytes())
     return h.hexdigest()
 
 
-def _load_generated_schema() -> None:
-    global TAVERN_OP_SCHEMA, TYPE_ALIASES_FROM_SCHEMA, SCHEMA_STATUS
+def _stat_signature(repo_root: Path, rel_files) -> str:
+    """回「清單內每個檔的 (路徑, mtime_ns, size)」的雜湊 —— 只作為**快取失效提示**。
+
+    ⚠ 這不是正確性判準。判過期的權威始終是內容 SHA-256（見 compute_source_hash）——
+    mtime 在 clone / checkout 後會整批變動，拿來判新舊會在「clone 下來直接用」這個主場景擲骰子。
+    但反過來用是安全的：**簽章一變就重算**（可能白算一次，無害）；簽章沒變就沿用上次算過的內容雜湊
+    （檔案內容改了卻能維持 mtime＋size 完全不變的情況，實務上要刻意構造才做得出來）。
+    這條讓常態路徑從「讀 52 個檔的完整 bytes」降成「stat 52 次」。
+    """
+    import hashlib
+    h = hashlib.sha256()
+    for rel in rel_files:
+        try:
+            st = (repo_root / rel).stat()
+            h.update(f"{rel}|{st.st_mtime_ns}|{st.st_size}\n".encode("utf-8"))
+        except OSError:
+            h.update(f"{rel}|missing\n".encode("utf-8"))
+    return h.hexdigest()
+
+
+# ─── 階段一：載入產物（便宜 —— 讀一個 ~5KB 的 JSON）────────────────────────
+# 何時需要：要查 op schema（validate_args）或 type_aliases（run_cmd.normalize_cmd_type）時。
+# 刻意**不**在這裡驗新鮮度：驗算貴，而「知道有哪些 op」跟「這份表夠不夠新」是兩件事 ——
+# type_aliases 這種純資料就算表舊了照樣可用，不必為它付雜湊成本。
+_SCHEMA_RAW: dict = {}
+
+
+def _ensure_schema_loaded() -> None:
+    global TAVERN_OP_SCHEMA, TYPE_ALIASES_FROM_SCHEMA, SCHEMA_STATUS, _SCHEMA_LOADED, _SCHEMA_RAW
+    if _SCHEMA_LOADED:
+        return
+    _SCHEMA_LOADED = True
     path = QUEUE_DIR / SCHEMA_FILE_NAME if QUEUE_DIR else None
     SCHEMA_STATUS = {"loaded": False, "stale": False, "reason": "", "path": str(path) if path else None}
     try:
         if path is None or not path.is_file():
-            SCHEMA_STATUS["reason"] = "產物不存在 → 不做 schema 預檢（跑一次 ExportCmdSchema 即可啟用）"
+            # 產物是 per-machine 衍生物、**不入 git**（Tim 2026-07-30 拍板）—— 所以新 clone／新機器
+            # 上缺席是**常態不是錯誤**。此處 fail-open：跳過 schema 預檢，行為退回「送出去讓 Editor 判」。
+            # 自癒管道有兩條，都不需要人記得：
+            #   ① Unity 端 UCL_CmdSchemaAutoSync 偵測到產物不存在 → 無視每日節流立刻生成
+            #   ② 手動：下面這行指令，或 控制台 → Cmd 後台管理頁 → 重新生成
+            # 這裡**不由 Python 自動觸發生成**：那要 spawn run_cmd 送 cmd 進 Editor，
+            # Editor 沒開時會卡滿 ack timeout，而且 run_cmd import 就會走到這條路 → 自我遞迴。
+            SCHEMA_STATUS["reason"] = "產物不存在 → 跳過 schema 預檢（fail-open）"
+            print("  ℹ commands_schema.json 不存在 → **本次跳過參數預檢**（不影響送出，由 Editor 判）。\n"
+                  "     產生它：run_cmd.py run ExportCmdSchema"
+                  "（Unity 下次編譯也會自動補上）", file=sys.stderr)
             return
         data = json.loads(path.read_text(encoding="utf-8"))
         ver = data.get("schema_version")
@@ -135,16 +186,65 @@ def _load_generated_schema() -> None:
             for op, spec in ops.items()
         }
         TYPE_ALIASES_FROM_SCHEMA = dict(data.get("type_aliases") or {})
+        _SCHEMA_RAW = data
         SCHEMA_STATUS["loaded"] = True
+        SCHEMA_STATUS["reason"] = "已載入（新鮮度未驗）"
+    except Exception as e:
+        # 讀產物的任何環節出錯都不該影響發言能力
+        SCHEMA_STATUS["reason"] = f"載入失敗（{type(e).__name__}: {e}）→ 不做 schema 預檢"
+        print(f"  ⚠ commands_schema.json 載入失敗（{type(e).__name__}）→ 本次不做 schema 預檢", file=sys.stderr)
 
-        # 過期偵測 —— 產物內 hash vs 現場重算
-        artifact_hash = data.get("source_hash") or ""
-        try:
-            current_hash = compute_source_hash(QUEUE_DIR.parent)
-        except Exception as e:
-            SCHEMA_STATUS["reason"] = f"無法重算來源雜湊（{type(e).__name__}）→ 不判定過期"
+
+# ─── 階段二：驗新鮮度（貴 —— 但只在「即將據此擋人」時才做）────────────────────
+# 何時需要：**只有 required 檢查會擋人**，所以只在要 enforce required 前驗一次。
+# alias 歸一、type_aliases 這些「純轉換不擋人」的用途不觸發驗算 —— 表舊了頂多少一條 alias，
+# 那是便利性折損，不是正確性事故，不值得為它付成本。
+#
+# 三層成本遞減：
+#   ① 產物沒給 source_files → 無法驗 → **降級**（不 enforce）。不 glob 猜集合（見 compute_source_hash）。
+#   ② stat 簽章與上次相同 → 直接沿用上次結論（常態路徑，只 stat 不讀檔）。
+#   ③ 簽章不同 → 老實讀檔重算 SHA-256，並把結論寫回 per-machine 快取。
+def _ensure_freshness_checked() -> None:
+    global SCHEMA_STATUS, _FRESHNESS_CHECKED
+    if _FRESHNESS_CHECKED or not SCHEMA_STATUS.get("loaded"):
+        return
+    _FRESHNESS_CHECKED = True
+    try:
+        rel_files = list(_SCHEMA_RAW.get("source_files") or [])
+        artifact_hash = _SCHEMA_RAW.get("source_hash") or ""
+        if not rel_files or not artifact_hash:
+            # ① 舊版 / 外來產物沒帶清單 → 無法驗證。此處**選擇降級**（不 enforce required）：
+            #    無法驗證的表與過期的表風險同型 —— 拿它擋人可能擋掉合法呼叫，而放行最壞只是慢一趟。
+            SCHEMA_STATUS["stale"] = True
+            SCHEMA_STATUS["reason"] = "產物未帶 source_files（舊版產物）→ 無法驗新鮮度，預檢降級"
+            print("  ⚠ commands_schema.json 未帶 source_files → 無法驗新鮮度，**參數預檢降級為不擋**。\n"
+                  "     重新生成即可帶上：run_cmd.py run ExportCmdSchema", file=sys.stderr)
             return
-        if artifact_hash and artifact_hash != current_hash:
+
+        repo_root = QUEUE_DIR.parent
+        sig = _stat_signature(repo_root, rel_files)
+        cache_path = QUEUE_DIR / FRESHNESS_CACHE_NAME
+        cached = {}
+        try:
+            if cache_path.is_file():
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            cached = {}       # 快取壞掉不是錯誤，重算就好
+
+        # ② 快取命中：同一份產物 + 同一組檔案 stat 簽章 → 沿用上次算出的內容雜湊
+        if cached.get("artifact_hash") == artifact_hash and cached.get("stat_sig") == sig:
+            current_hash = cached.get("source_hash") or ""
+        else:
+            # ③ 老實重算，並寫回快取（per-machine，gitignored）
+            current_hash = compute_source_hash(repo_root, rel_files)
+            try:
+                cache_path.write_text(json.dumps(
+                    {"artifact_hash": artifact_hash, "stat_sig": sig, "source_hash": current_hash},
+                    ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            except OSError:
+                pass          # 寫不了快取只是下次再算一遍，不影響正確性
+
+        if artifact_hash != current_hash:
             SCHEMA_STATUS["stale"] = True
             SCHEMA_STATUS["reason"] = "產物落後於 Cmd 原始碼"
             # 第一道防線是**改變行為**不是印字：過期 → 參數預檢整體降級（見 validate_args）
@@ -154,9 +254,9 @@ def _load_generated_schema() -> None:
         else:
             SCHEMA_STATUS["reason"] = "ok"
     except Exception as e:
-        # 讀產物的任何環節出錯都不該影響發言能力
-        SCHEMA_STATUS["reason"] = f"載入失敗（{type(e).__name__}: {e}）→ 不做 schema 預檢"
-        print(f"  ⚠ commands_schema.json 載入失敗（{type(e).__name__}）→ 本次不做 schema 預檢", file=sys.stderr)
+        # 驗不了就降級，不擋人（無法驗證 ≠ 不通過，但也 ≠ 可以拿來擋）
+        SCHEMA_STATUS["stale"] = True
+        SCHEMA_STATUS["reason"] = f"新鮮度驗算失敗（{type(e).__name__}: {e}）→ 預檢降級"
 
 
 # ===========================================================
@@ -316,6 +416,7 @@ def validate_args(arg_pairs: dict) -> tuple[bool, str]:
     早期版本把 B 放在 A 的成功路徑之後，未知 op 會 early-return → 連 persona 反查一起跳過；
     產物缺席時所有 op 都算未知，等於整個 B 層失效（Tim 2026-07-29 提問時發現，已改為兩層獨立）。
     """
+    _ensure_schema_loaded()      # lazy：真的要查 schema 了才讀產物（見 configure 的效能說明）
     op = (arg_pairs.get("op") or "").lower().strip()
     if not op:
         # 缺 op 是**確定失敗**（Cmd_Tavern 第一件事就是讀 op），不是「我不認識」→ 維持 fail-closed
@@ -328,9 +429,11 @@ def validate_args(arg_pairs: dict) -> tuple[bool, str]:
     #   ② 產物過期（source_hash 不符）→ 已在載入時警告過一次，這裡不再逐筆吵
     #   ③ 產物有但不認得這個 op → 可能是產物落後；便利性功能不該擋掉正確性
     #      （血證 2026-07-29：`create_trpg_room` 在 C# 完整實作卻被 client 擋死）
+    # 注意：這裡**不看 stale** —— 新鮮度是 lazy 驗的，只在真的要擋人（required）前才付成本。
+    # alias 歸一即使表舊了也照做：它不擋人，最壞是少歸一一條，屬便利性折損不是正確性事故。
     schema = TAVERN_OP_SCHEMA.get(op)
-    schema_active = bool(TAVERN_OP_SCHEMA) and not SCHEMA_STATUS.get("stale") and schema is not None
-    if bool(TAVERN_OP_SCHEMA) and not SCHEMA_STATUS.get("stale") and schema is None:
+    schema_active = schema is not None
+    if TAVERN_OP_SCHEMA and schema is None:
         print(f"  ⚠ Tavern op '{op}' 不在 schema 產物內 — **放行交給 Editor 判**。\n"
               f"     若這是打錯字，Editor 會回報；若這是新增的 op，代表產物落後 →\n"
               f"     重新同步：run_cmd.py run ExportCmdSchema", file=sys.stderr)
@@ -348,7 +451,10 @@ def validate_args(arg_pairs: dict) -> tuple[bool, str]:
         if aliases_used:
             print(f"  ℹ Tavern alias 歸一：{', '.join(aliases_used)}", file=sys.stderr)
 
-        missing = [r for r in schema["required"] if not arg_pairs.get(r)]
+        # 只有 required 檢查會**擋人**，所以到這裡才付新鮮度驗算的成本；
+        # 驗完若判定過期 → 整層降級不擋（拿一份已知不對的表擋人比沒有表更糟）。
+        _ensure_freshness_checked()
+        missing = [] if SCHEMA_STATUS.get("stale") else [r for r in schema["required"] if not arg_pairs.get(r)]
         if missing:
             msg = f"Tavern op={op} 缺少必要參數：{missing}（你目前傳的：{list(arg_pairs.keys())}）"
             if schema["aliases"]:
@@ -484,6 +590,9 @@ def _selftest() -> int:
     rc = importlib.import_module("run_cmd")
     configure(queue_dir=rc.QUEUE_DIR, tavern_dir=rc.TAVERN_DIR,
               detect_env_marker=rc._detect_caller_env_marker)
+    # 立刻取樣：configure 當下應該還沒載入任何 schema（lazy 前提，見測項⑦）。
+    # 必須在這裡取 —— 後面任何 validate_args 都會觸發載入，取晚了就永遠是 True。
+    _loaded_right_after_configure = _SCHEMA_LOADED
 
     failures: list[str] = []
 
@@ -583,20 +692,29 @@ def _selftest() -> int:
     check("configure 注入 TAVERN_DIR", TAVERN_DIR is not None, True)
     check("configure 注入 env-marker 偵測器", callable(DETECT_ENV_MARKER), True)
 
-    # ⑦ 產物載入 —— 確認 client 端真的在用 C# 生成的 schema，而不是靜默沿用手抄 fallback。
-    #    這項是本輪 codegen 的「有沒有真的接上」監視器：接上但沒生效是最糟的形態（看起來一切正常）。
+    # ⑦ lazy 前提監視器 —— configure() **不可以**順手載入 schema。
+    #    若有人把載入搬回 configure，所有非 Tavern 子命令（list / catalog / recompile…）
+    #    會重新開始付「走遍 repo ＋ 讀 52 檔算 SHA-256」的成本，而**那不會有人喊痛**
+    #    （不報錯，只是每筆慢 0.9 秒）。所以顯式測「configure 完成當下仍未載入」。
+    #    取樣點在本函式開頭（configure 之後、任何 validate_args 之前），見 `_loaded_right_after_configure`。
+    check("configure 後 schema 仍未載入（lazy 生效）", _loaded_right_after_configure, False)
+
+    # ⑧ 產物載入 —— 確認 client 端真的在用 C# 生成的 schema，而不是靜默什麼都沒接上。
+    #    接上但沒生效是最糟的形態（看起來一切正常）。
+    _ensure_schema_loaded()
+    _ensure_freshness_checked()
     print(f"  [schema] loaded={SCHEMA_STATUS.get('loaded')} stale={SCHEMA_STATUS.get('stale')} "
           f"reason={SCHEMA_STATUS.get('reason')}")
-    check("schema 產物已載入（非沿用手抄 fallback）", SCHEMA_STATUS.get("loaded"), True)
+    check("schema 產物已載入", SCHEMA_STATUS.get("loaded"), True)
     check("schema 未過期", SCHEMA_STATUS.get("stale"), False)
     check("產物含 create_trpg_room（原本漂掉的那個）", "create_trpg_room" in TAVERN_OP_SCHEMA, True)
     check("產物帶出 type_aliases（第四處鏡像來源）", bool(TYPE_ALIASES_FROM_SCHEMA), True)
-    # 跨語言雜湊契約：Python 重算的值必須等於產物內 C# 寫的值，否則過期偵測永遠誤報
+    check("產物帶出 source_files（集合定義的唯一來源）", bool(_SCHEMA_RAW.get("source_files")), True)
+    # 跨語言雜湊契約：Python 依產物清單重算的值必須等於產物內 C# 寫的值，否則過期偵測永遠誤報
     try:
-        import json as _json
-        _art = _json.loads((QUEUE_DIR / SCHEMA_FILE_NAME).read_text(encoding="utf-8")).get("source_hash")
-        check("跨語言 hash 契約一致（C# 寫的 == Python 算的）",
-              _art == compute_source_hash(QUEUE_DIR.parent), True)
+        _art = _SCHEMA_RAW.get("source_hash")
+        _mine = compute_source_hash(QUEUE_DIR.parent, _SCHEMA_RAW.get("source_files") or [])
+        check("跨語言 hash 契約一致（C# 寫的 == Python 算的）", _art == _mine, True)
     except Exception as _e:
         check("跨語言 hash 契約一致（C# 寫的 == Python 算的）", f"讀取失敗:{type(_e).__name__}", True)
 

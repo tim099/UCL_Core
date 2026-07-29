@@ -472,6 +472,8 @@ def normalize_cmd_type(cmd_type: str) -> str:
     """
     if not cmd_type:
         return cmd_type
+    # lazy 載入產物 —— 只讀一個 ~5KB JSON，不觸發雜湊驗算（新鮮度只在要擋人時才驗）
+    _tavern_cmd._ensure_schema_loaded()
     # 產物內的 key 是 C# 原樣大小寫（e.g. "ChatTavern"），本端比對一律小寫化後查
     generated = {k.lower(): v for k, v in (_tavern_cmd.TYPE_ALIASES_FROM_SCHEMA or {}).items()}
     canonical = generated.get(cmd_type.lower()) or TYPE_ALIASES.get(cmd_type.lower())

@@ -52,13 +52,22 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          （gura QA 2026-07-29 推翻原案）。內容雜湊與檔案時間、clone 順序、時區全部無關。
         // 數值影響：純讀檔計算，不寫任何東西。
         //
-        // ⚠ 跨語言契約 —— Python 端 (tavern_cmd.py) 必須用**逐字相同**的規則重算，否則永遠不相符：
+        // ⚠ 跨語言契約 —— Python 端 (tavern_cmd.py) 重算時必須得到相同結果：
         //   ① 檔案集合 = <UnityProjectRoot>/Assets 底下所有檔名符合 `Cmd_*.cs` 者
         //                 ＋ UCL_AgentCommandRegistry.cs（type_aliases 的來源，檔名不符 Cmd_* 故顯式加入）
         //   ② 以「repo 相對路徑、正斜線、序數排序」決定順序
         //   ③ 逐檔餵入：相對路徑的 UTF-8 bytes → 一個 0 byte → 檔案原始 bytes（**不做換行正規化**）
         //   ④ SHA-256，輸出小寫 hex
         //   改動任一條規則 = 破壞契約，必須同步兩端並升 SchemaVersion。
+        //
+        // 🔑 ①（集合定義）**不再由兩端各自實作** —— 產物內以 `source_files` 明列參與雜湊的相對路徑，
+        //   Python 照清單讀檔驗算即可，不自己去猜哪些檔算數。
+        //   原本兩端各寫一份 glob 規則（C# 錨 UnityProjectRoot/Assets；Python 用 repo 下所有 Assets），
+        //   gura QA 2026-07-29 實測：Python 那份**已經在撈 Library/PackageCache/*/Assets 與 .git/modules/**，
+        //   目前對得上只因 Unity 官方 package 剛好沒人用 Cmd_ 開頭命名；且 UCL_Core 是跨專案 submodule，
+        //   多 Unity 專案的 repo 一掛上就永久不符 → 預檢永久降級且沉默（同碼失聲）。
+        //   把「兩份規則要逐字相同」這個維持不住的契約，換成「**一份規則（本檔）＋一份驗算（Python）**」；
+        //   清單本身進 diff，誰多誰少一眼看得到。
         // ===========================================================
         public static string ComputeSourceHash()
         {
@@ -132,6 +141,18 @@ namespace UCL.Core.EditorLib.AgentCommands
             sb.Append("  \"schema_version\": ").Append(SchemaVersion).Append(",\n");
             sb.Append("  \"source_hash\": \"").Append(ComputeSourceHash()).Append("\",\n");
             sb.Append("  \"generator\": \"UCL_CmdSchemaExporter\",\n");
+
+            // source_files —— 參與雜湊的檔案清單（repo 相對路徑，已序數排序）。
+            // 這是「集合定義的唯一來源」：Python 照這份讀檔驗算，不自己 glob（見 ComputeSourceHash 上方契約說明）。
+            // 已排序 ⇒ 穩定序，內容沒變時零 diff；清單本身可被 review，多一個少一個看得出來。
+            sb.Append("  \"source_files\": [");
+            var srcFiles = CollectSourceFiles().Keys.ToList();
+            for (int i = 0; i < srcFiles.Count; i++)
+            {
+                sb.Append(i == 0 ? "\n" : ",\n");
+                sb.Append("    ").Append(Quote(srcFiles[i]));
+            }
+            sb.Append(srcFiles.Count > 0 ? "\n  ],\n" : "],\n");
 
             // type_aliases —— 消滅第四處鏡像（run_cmd.TYPE_ALIASES 與 Registry.s_TypeAliases 原本各一份）
             sb.Append("  \"type_aliases\": {");
@@ -389,10 +410,26 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 DateTime last = UCL_CmdSchemaExporter.LastAutoSyncUtc;
                 DateTime now = DateTime.UtcNow;
-                // 節流：未到期就直接返回 —— 這是「不做事」的分支，不算雜湊、不碰檔案
-                if (last != DateTime.MinValue && now - last < Interval) return;
+
+                // 區塊職責：產物不存在 → **無視每日節流，立刻生成**（Tim 2026-07-30 拍板）
+                // 物理意義：產物是 per-machine 衍生物、不入 git（跨機器 source_hash 必然不同，
+                //          入 git 只會製造永久 diff 與假過期）。於是新 clone／新機器上它一定缺席，
+                //          而缺席時 Python 端會**整個跳過參數預檢**（fail-open）——
+                //          若還要再等最多 24 小時的節流才生成，等於白白讓預檢空窗一天。
+                //          「缺檔」與「檔舊了」是兩種不同狀況：後者可以慢慢來，前者要立刻補。
+                // 數值影響：只在檔案不存在時繞過節流；生成後仍會記錄時間戳，之後回到每日節奏。
+                bool missing = !File.Exists(UCL_CmdSchemaExporter.SchemaPath);
+                // 節流：未到期且產物已存在 → 直接返回（「不做事」的分支，不算雜湊、不碰檔案）
+                if (!missing && last != DateTime.MinValue && now - last < Interval) return;
 
                 UCL_CmdSchemaExporter.LastAutoSyncUtc = now;   // 先記時間，避免失敗時每次編譯都重試
+                if (missing)
+                {
+                    var rm = UCL_CmdSchemaExporter.Export();
+                    Debug.Log($"[CmdSchema] 產物不存在 → 已自動生成（不受每日節流限制）"
+                            + $"— {rm.CommandCount} 個 cmd（{rm.SpecCount} 個有 ArgsSpec）→ {rm.Path}");
+                    return;
+                }
                 // 已同步 → 什麼都不必做（out 需具名：本專案 C# 版本不接受無型別的 `out _`）
                 string artifactHash, currentHash;
                 if (UCL_CmdSchemaExporter.IsInSync(out artifactHash, out currentHash)) return;

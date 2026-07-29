@@ -177,7 +177,25 @@ namespace UCL.Core.EditorLib.Page
                 LoadData();
             }
         }
+        /// <summary>
+        /// 註：舊的 GetLastSeen(room)（讀 rooms.<room>.last_seen_seq）已於 2026-07-28 移除 —
+        /// 那是 python mirror 的 per-room 位置浮水印；native 游標走 rooms.<room>.webhooks 的
+        /// ts_high + per-webhook seen-set，進度一律經 UCL_DiscordMirrorDaemon.GetRoomNativeProgress 取得。
+        /// </summary>
+        protected override void ContentOnGUI()
+        {
+            if (!m_Loaded) LoadData();
 
+            DrawMirrorStatePanel();
+            GUILayout.Space(8);
+            DrawInboundPanel();
+            GUILayout.Space(8);
+            DrawAvatarOverridePanel();
+            GUILayout.Space(8);
+            DrawWebhookPanel();
+            GUILayout.Space(8);
+            DrawFilesPanel();
+        }
         // ===========================================================
         // 區塊：資料載入
         // 物理意義：config / state / 各房 _seq.txt / log tail 一次讀齊進快取；draft 欄位同步重置。
@@ -403,25 +421,6 @@ namespace UCL.Core.EditorLib.Page
         {
             string p = SelectedPersona;
             m_SelectedUrlDraft = p == null ? "" : (m_AvatarOverrides.FirstOrDefault(kv => kv.Key == p).Value ?? "");
-        }
-
-        // 註：舊的 GetLastSeen(room)（讀 rooms.<room>.last_seen_seq）已於 2026-07-28 移除 —
-        //     那是 python mirror 的 per-room 位置浮水印；native 游標走 rooms.<room>.webhooks 的
-        //     ts_high + per-webhook seen-set，進度一律經 UCL_DiscordMirrorDaemon.GetRoomNativeProgress 取得。
-
-        protected override void ContentOnGUI()
-        {
-            if (!m_Loaded) LoadData();
-
-            DrawMirrorStatePanel();
-            GUILayout.Space(8);
-            DrawInboundPanel();
-            GUILayout.Space(8);
-            DrawAvatarOverridePanel();
-            GUILayout.Space(8);
-            DrawWebhookPanel();
-            GUILayout.Space(8);
-            DrawFilesPanel();
         }
 
         // ===========================================================

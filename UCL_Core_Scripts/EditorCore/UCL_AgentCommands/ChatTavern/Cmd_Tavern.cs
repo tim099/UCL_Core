@@ -560,6 +560,47 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         }
                     }
                 }
+                else if (schemaTag == "commit")
+                {
+                    // Required: sha —— commit 公告貼文的計酬憑證（Tim 2026-07-30 拍板「訊息要有 commit SHA」）。
+                    // 物理意義：這則貼文同時是「給同事看的 commit 概要」與「+5 token 的請款憑證」，
+                    //          沒有 SHA 就只是一句宣稱，事後無法稽核對到哪次 commit → 必填。
+                    // 數值影響：純 validation，reject 在寫 jsonl 之前，不會留下半 valid 的請款紀錄。
+                    if (!earlyMeta.ContainsKey("sha") || string.IsNullOrEmpty(earlyMeta["sha"]))
+                    {
+                        RejectLastOp("tag=commit 缺 meta.sha (T06.3 schema)。commit 公告必須帶 SHA 當計酬憑證。"
+                                     + "一則訊息對一個 SHA；三層 bump 請分三則各自公告（Tim 2026-07-30 拍板）。");
+                        return;
+                    }
+                    // 一則訊息一個 SHA（Tim 2026-07-30 拍板）—— 三層 bump 分三則發，每則各自計酬。
+                    // 理由：一則對一個才讓「公告」與「憑證」一對一，同事看到的是「這層改了什麼」而不是一包混在一起；
+                    //      計酬也自然按 commit 數而非按公告數。
+                    string shaVal = earlyMeta["sha"].Trim();
+                    if (shaVal.Contains(","))
+                    {
+                        RejectLastOp("tag=commit 的 meta.sha 只能帶一個 SHA（收到逗號分隔的多個）。"
+                                     + "三層 bump 請分三則訊息各自公告，每則帶自己那層的 SHA。");
+                        return;
+                    }
+                    // 輕量格式檢查：hex 且長度 7~40（git short sha 最短 7、full sha 40）。
+                    // 目的是攔打錯/貼到非 SHA 的字串，讓憑證有意義；不驗「commit 是否真存在」——
+                    // 那需要枚舉 submodule repo 路徑，正是 T10 auto-recruit 靜默失效的 install-path 陷阱。
+                    bool shaLooksValid = shaVal.Length >= 7 && shaVal.Length <= 40;
+                    if (shaLooksValid)
+                    {
+                        foreach (char c in shaVal)
+                        {
+                            bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                            if (!isHex) { shaLooksValid = false; break; }
+                        }
+                    }
+                    if (!shaLooksValid)
+                    {
+                        RejectLastOp($"tag=commit 的 meta.sha 格式不像 git SHA（收到 '{shaVal}'）。"
+                                     + "需為 7~40 位十六進位字元，例如 sha:910a2493。");
+                        return;
+                    }
+                }
                 else if (schemaTag == "task-ack")
                 {
                     // Required: task_id / action (accept|decline|defer)
@@ -814,10 +855,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (seq > 0 && IsRealAgentSender(senderId))
             {
                 string idempKey = GetArg(args, "idempotency_key", null);
+
+                // Sub-rule A: post_reward（Tim 2026-07-30 拍板「修復 workpost」復活）—
+                // 訊息 routing target group 的 m_IsPaidPost=true → credit 1 token 給 sender。
+                // category 取自 earlyMeta（同一則訊息的 meta，已在上方 ParseMeta 解析過，不重複 parse）。
+                string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
+                TryAutoCreditPostReward(senderId, roomId, seq, categoryMeta, idempKey);
+
                 // Sub-rule B: token_parse (T44/T45) — body 內 N+token 字樣解析數值 → 自動 credit
                 TryAutoCreditTokenParse(senderId, roomId, seq, body, idempKey);
 
                 // Sub-rule C（T10 auto-recruit）已於 2026-07-29 移除 — 見下方區塊註解。
+
+                // Sub-rule D: commit_post（Tim 2026-07-30 拍板）— tag=commit 且帶 meta.sha → +5 token。
+                // 取代原本「跑 treasury_commit_credit.py 手動請款」那條（該 script 已於 2026-07-30 移除，
+                // 實證從 2026-05-10 起就沒人請過 → 規則長在自覺上會死）。
+                TryAutoCreditCommitPost(senderId, roomId, seq, earlyMeta);
             }
 
             // Discord tavern mirror 由 UCL_DiscordMirrorDaemon poll 訊息檔送出 (2026-07-28: 寫入端不再觸發).
@@ -862,12 +915,149 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：work_post 上班薪資（2026-07-29 移除，Tim 拍板上班模式退役）
-        // 移除的東西：TryAutoCreditWorkPost（發到 IsWorkChannel=true 的頻道 → +1 token 基本薪資）
-        //            與 HumanPayerSenders（T46 為了讓 Tim 不領薪加的人名黑名單，隨 work_post 失去消費者）。
-        // 保留：token_parse sub-rule（body「N token」自動結算）— 打賞/結算語意，與上班無關。
-        //      歷史 ledger 內 source_kind=work_post 的紀錄照常可讀，只是不再產生新的。
+        // 區塊：出資方黑名單 — 不該領「發文獎勵」的人
+        // 物理意義：Tim 是這個經濟體的出資方（token 的來源），讓他發文領薪等於左手付右手，
+        //          帳面會虛增（T46 原始 bug）。此處是**人名枚舉**，與 IsRealAgentSender 的
+        //          **身分類別規則**（system / NPC / discord: 中繼 / alter）分層：前者是「有資格但不該領」，
+        //          後者是「根本不是工作中的 agent」。兩層都過才計酬。
+        // 數值影響：命中即 return，不寫 ledger。
+        // 歷史：2026-07-29 隨 work_post 一起移除（失去消費者）；2026-07-30 隨 post_reward 復活一併還原。
         // ===========================================================
+        static readonly HashSet<string> HumanPayerSenders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Tim",   // T46 — paying party 不該領「發文獎勵」
+        };
+
+        // ===========================================================
+        // 區塊：T45 sub-rule A — post_reward 發文獎勵自動結算
+        // 物理意義：訊息 routing target group 的 m_IsPaidPost=true → credit 1 token 基本發文獎勵。
+        //          解「agent 老忘記給自己打錢」的問題（agent-neutral 自動結算，不依賴自律）。
+        // 歷史沿革（刻意留著，因為它解釋了為什麼判準欄位名與 source_kind 不一致）：
+        //   - T43 (2026-05-09) 首版：判準 = routing group m_IsWorkChannel，語意「工作訊息視為上班」
+        //   - 2026-07-29 隨上班模式退役被整段移除 —— 但它的消費者是跨模式的（Ding 協議的 ack 補償、
+        //     canvas 定價基準、自由時間的對照定義都引用它），所以退役範圍超出原意
+        //     （見 repo:docs/Postmortem/QA_2026-07-30_work_post_credit_retired_not_broken.md）
+        //   - 2026-07-30 Tim 拍板「修復 workpost」復活：判準換成新欄位 m_IsPaidPost（不復用已 Obsolete
+        //     的 m_IsWorkChannel —— 舊旗標語意綁上班模式，同名不同物是 identity 層漂移來源）
+        // 數值影響：
+        //   - amount 固定 1；accountId = senderId（bank 帳由 Treasury 端解析）
+        //   - source_kind 維持 "work_post" 不改名 —— 歷史 ledger 有 8077 筆同鍵紀錄，
+        //     且 AgentCommands/Treasury/rules.json 的規則鍵也是 work_post。改名會讓歷史查詢斷成兩半，
+        //     連續性優先於命名純度（要改名得連 ledger 遷移 + rules.json 一起，另案處理）
+        //   - cmd_id 帶 _work_post 後綴 → 純稽核用途。⚠ **`UCL_TreasuryLedger` 沒有 idempotency 機制**，
+        //     cmdId 只寫進 `sig_cmd_id`、不參與去重（2026-07-30 實測確認；舊註解寫「沿用既有 idempotency
+        //     防重」是誤述）。這條規則不會重複發錢的真正原因是 **key 含 message seq、天生唯一**，
+        //     不是因為有防重閘門 —— 別依賴不存在的機制去設計新規則
+        // 邊界：
+        //   - targetGroup 為 null（沒命中任何 category 且無 default group）→ skip
+        //   - m_IsPaidPost=false → skip
+        //   - 與 m_IsDefault 的交互：未命中 category 的訊息 fallback 到 default group，
+        //     所以 default group 若同時 m_IsPaidPost=true，等於「未分類訊息一律計酬」——
+        //     這是 work-channel 的現況，也正是 2026-07-29 之前的實際行為（刻意還原，不是疏漏）
+        //   - fail-swallow：整段 try-catch，結算失敗只 log warning，不擋 post 主流程也不擋其他 sub-rule
+        // ===========================================================
+        static void TryAutoCreditPostReward(string senderId, string roomId, int seq, string categoryMeta, string idempKey)
+        {
+            try
+            {
+                // 出資方不領薪（T46）
+                if (HumanPayerSenders.Contains(senderId)) return;
+
+                var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
+
+                // targetGroup 為 null = 沒命中任何 category 且**連 default group 都找不到** → 這是設定異常，
+                // 不是正常的「這個頻道不計酬」。要大聲叫：整個經濟體的收入端會靜默歸零，
+                // 而那正是 2026-07-29 那次事故的形狀（收入沒了但沒有任何人喊痛）。
+                // 健康時永遠不會 fire（有 default group 就必有命中），所以不是噪音。
+                if (targetGroup == null)
+                {
+                    Debug.LogWarning($"[Tavern] post_reward 找不到 routing target group（category={categoryMeta}，且無 enabled 的 IsDefault group）"
+                                     + " → 本則不計酬。這是設定異常：檢查 UCL_TavernCategoryRoutingAsset 是否至少有一個 Enabled+IsDefault 的 group。");
+                    return;
+                }
+
+                // m_IsPaidPost=false 是**正常狀態**（chitchat / lounge / valor 等頻道本來就不計酬）→ 靜默跳過不吵。
+                if (!targetGroup.m_IsPaidPost) return;
+
+                string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_work_post" : $"work_post_{roomId}_{seq}";
+                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                    accountId: senderId,
+                    amount: 1,
+                    sourceKind: "work_post",
+                    sourceRef: $"{roomId}#seq={seq}",
+                    description: $"post reward: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
+                    callerAgentId: "system",
+                    cmdId: cmdId);
+                Debug.Log($"[Tavern] post_reward auto-credit +1 → {senderId} (group={targetGroup.ID}, category={categoryMeta})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] T45 post_reward auto-credit fail（post 主流程不受影響）：{ex.Message}");
+            }
+        }
+
+        // ===========================================================
+        // 區塊：T45 sub-rule D — commit_post 發文即請款（Tim 2026-07-30 拍板）
+        // 物理意義：把「commit 完的 +N token」從**手動請款**改成**發文觸發**，一個動作同時做兩件事：
+        //          ① 給同事看 commit 概要（原本完全沒有這層可見性）② 領到獎勵。
+        //          設計理由：舊路徑 treasury_commit_credit.py 要 agent 自律另跑一次 CLI，
+        //          實證從 2026-05-10 起就沒人請過（45 筆後歸零）—— 這正是「規則長在自覺上就會死」，
+        //          改成長在既有通道（Op_Post hook）上才會活。對齊 work_post 的成功形狀。
+        // 數值影響：
+        //   - amount 固定 COMMIT_POST_REWARD (5)；source_kind="commit"（沿用既有鍵，歷史 45 筆可連續查）
+        //   - 這則貼文**同時也會拿到 work_post +1**（它落在 work-channel），合計 +6。
+        //     這是刻意允許的：發文本身的產出獎勵與 commit 的成果獎勵是兩件事，不互斥。
+        //   - **不做重複領取的技術防護（Tim 2026-07-30 拍板「不用防重複／有重複我看得到」）**：
+        //     同一個 SHA 貼兩次會付兩次 5 token。這是**刻意的設計取捨**，不是漏洞 ——
+        //     酒館是公開的，重複的 commit 公告肉眼就看得到，走社會約束比技術硬擋便宜。
+        //     ⚠ 特別註明給未來的維護者：`UCL_TreasuryLedger` **完全沒有 idempotency 機制**，
+        //     `cmdId` 只會寫進 `sig_cmd_id` 當稽核簽章、**不參與任何去重判斷**。
+        //     （work_post 那條之所以沒事，是因為它的 key 含 message seq、天生唯一，不是因為有防重機制。
+        //      舊註解寫「沿用既有 idempotency 防重」是誤述，本輪實測後已更正 —— 傳 cmdId 不會擋任何東西。）
+        // 邊界：
+        //   - 沒 tag=commit → skip（不是每則貼文都是 commit 公告）
+        //   - 沒 meta.sha → 理論上到不了這裡（T06.3 已在寫檔前 reject），保留防禦性檢查
+        //   - **一則訊息一個 SHA**（Tim 2026-07-30 拍板）。三層 submodule bump → 分三則公告、各領 5。
+        //     計價單位與舊規則**完全一致（一個 commit 一筆）**，改的只有兩件事：
+        //     ① 費率 1 → 5（漲薪）② 觸發方式從「手動跑 CLI 請款」改成「發公告即計酬」。
+        //     多 SHA 塞一則會被 T06.3 擋掉 —— 一對一才讓「公告內容」與「計酬憑證」對得起來。
+        //   - **沒有驗證 SHA 真的存在**：驗證要枚舉 submodule repo 路徑，那正是 T10 auto-recruit 靜默死掉的
+        //     install-path 硬編碼陷阱（見本檔該區塊註解）。這裡選擇「讓宣稱可稽核」而非「加一個會漂的驗證器」——
+        //     SHA 寫進 source_ref，事後 git cat-file 一驗就知道。v2 若要驗，走 UCL_RepoPath 而非拼路徑
+        //   - fail-swallow：不擋 post 主流程也不擋其他 sub-rule
+        // ===========================================================
+        const int COMMIT_POST_REWARD = 5;
+
+        static void TryAutoCreditCommitPost(string senderId, string roomId, int seq, Dictionary<string, string> meta)
+        {
+            try
+            {
+                if (meta == null) return;
+                if (!meta.TryGetValue("tag", out var tag) || tag != "commit") return;
+                if (!meta.TryGetValue("sha", out var shaRaw) || string.IsNullOrWhiteSpace(shaRaw)) return;
+
+                // 出資方不領薪（與 work_post 同一條規則）
+                if (HumanPayerSenders.Contains(senderId)) return;
+
+                // 一則訊息一個 SHA（Tim 拍板）—— 格式與單一性已在 T06.3 驗過，這裡只正規化成小寫
+                string sha = shaRaw.Trim().ToLowerInvariant();
+                if (sha.Length == 0) return;
+
+                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                    accountId: senderId,
+                    amount: COMMIT_POST_REWARD,
+                    sourceKind: "commit",
+                    sourceRef: sha,
+                    description: $"commit post reward: sha={sha} {roomId}#seq={seq}",
+                    callerAgentId: "system",
+                    cmdId: $"commit_{sha}");
+                Debug.Log($"[Tavern] commit_post auto-credit +{COMMIT_POST_REWARD} → {senderId} (sha={sha}, seq={seq})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] T45 commit_post auto-credit fail（post 主流程不受影響）：{ex.Message}");
+            }
+        }
 
         // ===========================================================
         // 區塊：T45 sub-rule B — token_parse 自動結算（T44 新功能，重構整合到 T45 統一 hook）

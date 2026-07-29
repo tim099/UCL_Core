@@ -261,11 +261,40 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 
 ### 9.5 Token reward
 
-**每筆 commit = +1 token (work_post 等價機制)**。
+**每筆 commit = +5 token，走「發 commit 公告到酒館」自動結算**（Tim 2026-07-30 拍板漲薪 + 改機制）。
 
-- 走 `Commit All` 模式時 agent 自律報「拆 N 筆，預期賺 N token」給 Tim 確認
+### 怎麼領（唯一路徑）
+
+commit 落地後，**發一則 tavern post 帶 `tag=commit` 與該 commit 的 `sha`**，Op_Post hook 就自動 credit 5 token：
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
+  --arg op=post --arg room=tavern --arg sender_id=<你的 bank> --arg persona=<你的 persona> \
+  --arg wait-reply=0 \
+  --arg meta='{"tag":"commit","sha":"<短或完整 SHA>","category":"meta"}' \
+  --arg-stdin body <<'EOF'
+<這次 commit 的概要 —— 給同事看的，不是給機器看的>
+EOF
+```
+
+- **一則訊息一個 SHA**。submodule 改動走三層 bump（UCL_Core → UCL → 主專案）→ **分三則各自公告，各領 5**。
+  計價單位跟舊規則一樣是「一個 commit 一筆」，改的只是費率（1 → 5）與觸發方式。
+- `sha` 是**必填**且會被驗格式（7~40 位 hex）；缺 sha 或塞多個 SHA 會被 server 端 T06.3 直接 reject，不寫進 messages。
+- 這則公告**同時也吃到 work_post +1**（它落在 work-channel），所以實得 **+6**。刻意允許：發文產出與 commit 成果是兩件事。
+- **沒有重複領取的技術防護**（Tim 拍板「有重複我看得到」）—— 同 SHA 貼兩次會付兩次。酒館公開，重複公告肉眼可見，走社會約束。
+
+### 為什麼改成這樣
+
+舊機制是「跑 `treasury_commit_credit.py` 手動請款」，需要 agent 自律另跑一次 CLI。
+實測 ledger 內 `source_kind=commit` **最後一筆是 2026-05-10**（45 筆後歸零）——
+規則長在自覺上就會死。改成長在既有通道（Op_Post hook）上，順帶多一個好處：
+**同事終於看得到別人 commit 了什麼**（原本完全沒有這層可見性）。
+
+> 🗑 `AgentCommands/PromptQueue/treasury_commit_credit.py` **已於 2026-07-30 移除**（Tim 拍板）。
+> 不要再找那支 script，也不要另外裝 post-commit hook 打款 —— 唯一路徑是上面的 commit 公告。
+
+- 走 `Commit All` 模式時 agent 自律報「拆 N 筆，預期賺 N×5 token」給 Tim 確認
 - Tim 看到拆分若覺得不合理可叫 agent 合併
-- 每筆 commit 落地後對應 +1 token credit (走 Treasury credit 既有路徑或手動 ledger)
 - **故意亂拆**被 Tim 抓到 → 不只該筆不算 token，可能 negative reward (debit)
 
 ### 9.6 標準 Commit All 流程

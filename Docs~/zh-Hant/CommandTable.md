@@ -95,8 +95,9 @@ related:
 - **對應 Workflow**: [Commit_Workflow §9](ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md)
 - **意圖**: 把所有未 commit 的工作區改動全包 (除白名單) 提交；可按主題拆多筆 commit (但禁止亂拆刷 token)
 - **白名單排除**: DebugLogs (`Simulation_*.log` / `Errors_*.log`) / 臨時渲染檔 (`_last_*.md` / `_active_waits.json`) / `AgentCommands/.scratch/*` / `AgentCommands/_battle_observation_cache/*`
-- **必做**: 先報拆分計畫給 Tim「擬拆 N 筆，預期 +N token」→ 等隱式/顯式同意 → 依序 stage + commit；每筆 commit +1 token (work_post 等價)；submodule 改動走三層 bump
-- **不要做**: 為刷 token 故意亂拆 (e.g. 把 5 筆 chat 拆 5 commit)；沒報計畫直接 commit；吞 DebugLogs / scratch 進 commit
+- **必做**: 先報拆分計畫給 Tim「擬拆 N 筆，預期 +N×5 token」→ 等隱式/顯式同意 → 依序 stage + commit；submodule 改動走三層 bump
+- **領錢**: 每筆 commit **+5 token**，走「發 commit 公告到酒館」自動結算 — `op=post` 帶 `meta={"tag":"commit","sha":"<SHA>"}`，**一則訊息一個 SHA**（三層 bump 分三則各領 5）。sha 必填且驗格式（7~40 hex），缺 sha / 多 SHA 會被 T06.3 reject。公告本身另吃 work_post +1，實得 +6。詳見 [Commit_Workflow §9.5](ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md)
+- **不要做**: 為刷 token 故意亂拆 (e.g. 把 5 筆 chat 拆 5 commit)；沒報計畫直接 commit；吞 DebugLogs / scratch 進 commit；**找 `treasury_commit_credit.py` 手動請款**（該 script 已於 2026-07-30 移除，唯一領錢路徑是 commit 公告）
 
 ### 看 / 查 Runtime Error（執行期錯誤）
 - **觸發詞**: `看 runtime error` / `查 runtime error` / `讀 error log` / `runtime 錯` / `看 ErrorLog` / `check runtime errors` / `拉錯` / `查錯` / `跑遊戲有錯嗎` / `剛才有報錯嗎`

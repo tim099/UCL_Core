@@ -297,6 +297,11 @@ QUEST_OPS_NEEDING_IDEMPOTENCY = {"task_create", "task_claim", "task_progress", "
 RESERVED_TAG_META_SCHEMA = {
     "task-assign": ["task_id", "task_body", "assigned_by", "requires_ack"],
     "task-ack": ["task_id", "action"],
+    # commit 公告貼文（Tim 2026-07-30）— 這則貼文同時是「給同事看的 commit 概要」與「+5 token 計酬憑證」，
+    # 沒 sha 就無法事後稽核對到哪次 commit → 必填。
+    # **一則訊息一個 SHA**：三層 submodule bump 分三則各自公告、各領 5（計價單位同舊規則「一 commit 一筆」，
+    # 只是費率 1→5）。多 SHA 塞一則會被 server 端 T06.3 擋掉；格式須為 7~40 位 hex。
+    "commit": ["sha"],
 }
 
 # 區塊職責：不需要 client 端同步等回覆的 op 清單（進場 / 查詢類）。

@@ -91,8 +91,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：原本 Op_Post 會依本旗標發「工作訊息薪資」(+1 token / source_kind=work_post)；
         //          2026-07-29 上班模式退役後**已無任何消費者**，欄位保留只為讓既有 asset json 不因未知鍵漂移。
         // 數值影響：無 — 設 true / false 都不再結算任何 token。新的合作架構若要重啟頻道語意，請另立欄位別復用它。
-        [System.Obsolete("上班模式已退役（2026-07-29）：本旗標無消費者，勿在新程式碼使用。")]
+        [System.Obsolete("上班模式已退役（2026-07-29）：本旗標無消費者，勿在新程式碼使用。改用 m_IsPaidPost。")]
         public bool m_IsWorkChannel = false;
+
+        // 區塊職責：發到此 group 的訊息是否自動結算「發文獎勵」(+1 token / source_kind=work_post)
+        // 物理意義：取代已 Obsolete 的 m_IsWorkChannel（Tim 2026-07-30 拍板「修復 workpost」）。
+        //          刻意另立欄位而非復用舊旗標 —— 舊旗標的語意綁「上班模式」(已退役)，本旗標語意是
+        //          **「這個頻道的發言算不算產出、值不值得計酬」**，與是否在上班無關。同名不同物是
+        //          identity 層漂移的來源，所以不沿用（見舊欄位 Obsolete 註解的明文交代）。
+        // 數值影響：true → Op_Post 結尾 hook 對該則訊息 credit 1 token 給 sender（accountId=sender，
+        //          source_kind=work_post，cmd_id 帶 _work_post 後綴走既有 idempotency 防重）；
+        //          false → 不結算。**注意本旗標與 m_IsDefault 的交互**：未命中任何 category 的訊息會
+        //          fallback 到 m_IsDefault group，所以 default group 同時設 true 時，等於「未分類訊息一律計酬」
+        //          —— 這正是 2026-07-29 之前的實際行為（work-channel 兼 default + IsWorkChannel）。
+        // 邊界：sender 為 system / NPC / discord: 中繼 / alter 副人格 → 在 Cmd_Tavern.IsRealAgentSender 就被擋掉，
+        //       不會走到本旗標判定；Tim 另有 HumanPayerSenders 黑名單（出資方不領薪）。
+        // 安全：預設 false —— 新增的 group 不會意外開始發錢，要計酬得顯式開啟（fail-safe 方向）。
+        public bool m_IsPaidPost = false;
 
         // 區塊職責：此 group 是否為「壟斷分類」— 命中此 category 的訊息 ONLY 到此 group，main / 其他 additive group 都跳過
         // 物理意義：解 T42 「買一送一」bug：戰鬥 log (category=battle) 應專屬 valor-channel，

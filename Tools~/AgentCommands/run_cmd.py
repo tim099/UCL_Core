@@ -82,6 +82,40 @@ def print_fail_verdict(text: str) -> None:
     sys.stderr.flush()
     print(text, flush=True)
 
+
+# ===========================================================
+# 區塊職責：cmd 失敗時把 Editor 端落檔的詳細錯誤報告印給 caller（Tim 2026-07-29 拍板）
+# 物理意義：queue 只留 LastRunError 一行；完整 stack / inner exception 鏈以前只在 Editor
+#          console，client（agent）看不到，遇到「外層例外遮罩真兇」的情況根本查不動。
+#          Runner 現在會寫 <DataRoot>/_cmd_errors/<cmdId>.md 與 _last_cmd_error.md，
+#          本函式在判失敗後把它印出來（截斷 60 行，附完整路徑供細讀）。
+# 數值影響：純讀檔輸出；檔案不存在（舊版 Editor / 落檔失敗）→ 靜默跳過，不影響失敗回報。
+# ===========================================================
+def print_cmd_error_report(cmd_id: "str | None", max_lines: int = 60) -> None:
+    try:
+        candidates = []
+        if cmd_id:
+            candidates.append(Path(DATA_ROOT) / "_cmd_errors" / f"{cmd_id}.md")
+        candidates.append(Path(DATA_ROOT) / "_last_cmd_error.md")
+        for p in candidates:
+            if not p.is_file():
+                continue
+            text = p.read_text(encoding="utf-8", errors="replace")
+            # _last_cmd_error.md 是「最近一筆」— 若不是本筆 cmd 就別誤導 caller
+            if cmd_id and p.name == "_last_cmd_error.md" and cmd_id not in text:
+                continue
+            lines = text.splitlines()
+            print("  ── Editor 端詳細錯誤報告 ──")
+            for ln in lines[:max_lines]:
+                print(f"  {ln}")
+            if len(lines) > max_lines:
+                print(f"  …（省略 {len(lines) - max_lines} 行）")
+            print(f"  📄 完整報告：{p}")
+            return
+    except Exception:
+        pass   # 報告只是加值，讀不到不該再蓋掉原始錯誤
+
+
 # ===========================================================
 # Tavern client-side schema 驗證 — submit 前先擋常見錯誤
 # 目的：避免「等 1s round-trip 才知道參數錯」 + 修正 agent 常踩的 alias 陷阱
@@ -784,6 +818,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     status, err = check_cmd_result_file(cmd_type, submit_time, cmd_id=cmd_id)
                     if status == "failed":
                         print_fail_verdict(f"  ✗ Cmd disappeared from queue BUT output file shows failure:\n  {err}")
+                        print_cmd_error_report(cmd_id)
                         return 2
                 print(f"  ✓ Cmd disappeared from queue → Success (OneShot completed)")
                 if output_file:
@@ -801,6 +836,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
             if result == "Failed":
                 err = cmd.get("LastRunError") or "(no error message)"
                 print_fail_verdict(f"  ✗ Cmd failed: {err}")
+                print_cmd_error_report(cmd.get("Id"))
                 # 區塊職責：失敗的 OneShot 預設會留在 queue.json（runner 設計如此），
                 #          但這會讓「下一次 submit 時整個 batch 把舊的失敗 cmd 一起重跑」
                 #          → agent / 人類體感「每次都卡住」。

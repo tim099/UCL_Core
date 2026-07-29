@@ -248,7 +248,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                     {
                         using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
                         {
-                            var handlerTask = handler.ExecuteAsync(c.Args ?? new Dictionary<string, string>(), cts.Token);
+                            // .Preserve()（2026-07-29 修）：UniTask 是 struct-based single-await —
+                            // 同一個 UniTask 被 await 兩次會拋
+                            // 「Token version is not matched, can not await twice or get Status after await」。
+                            // 本區塊下面刻意要「WhenAny 之後再 await handlerTask 一次」來解包 exception，
+                            // 兩次 await 同一個 task 正是那個錯誤的成因（血證：Cmd_NoteLesson 每次都掛，
+                            // 而且錯誤訊息把真正的 handler 例外整個蓋掉，看起來像 runner 壞了）。
+                            // Preserve() 讓它可重複 await，語意不變。
+                            var handlerTask = handler.ExecuteAsync(c.Args ?? new Dictionary<string, string>(), cts.Token).Preserve();
                             var timeoutTask = UniTask.Delay(System.TimeSpan.FromSeconds(timeoutSec), DelayType.Realtime, cancellationToken: cts.Token);
                             var winner = await UniTask.WhenAny(handlerTask, timeoutTask);
                             if (winner == 1)
@@ -305,6 +312,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                             c.LastRunAt = DateTime.UtcNow.ToString("o");
                             failed++;
                             Debug.LogError($"[UCL_AgentCmd] ✗ '{c.Type}' (id={c.Id}) failed: {e}");
+                            // 詳細錯誤落檔（Tim 2026-07-29）：只印 Editor log 的話，python client 只拿到
+                            // e.Message 一行 —— 遇到被遮罩的錯誤（例如 UniTask token 錯誤蓋掉真正的 handler
+                            // 例外）就查不動，得請人肉去翻 Editor console。落檔讓 client 端能自己讀 stack。
+                            WriteCmdErrorReport(c, e);
                         }
                     }
                     finally
@@ -335,6 +346,80 @@ namespace UCL.Core.EditorLib.AgentCommands
                     UCL_AgentCommandTrigger.Clear(agentId);
                 }
                 lock (s_RunningLock) s_RunningAgents.Remove(norm);
+            }
+        }
+
+        // ===========================================================
+        // 區塊：cmd 失敗詳情落檔（Tim 2026-07-29 拍板）
+        // 物理意義：失敗時 queue 只留 LastRunError 一行（e.Message），完整 stack 只在 Editor console —
+        //          python client 看不到，agent 得請人肉翻 log。落檔後 client 可直接讀，
+        //          尤其對「被遮罩的錯誤」（外層例外蓋掉真正的 handler 例外）是唯一線索。
+        // 數值影響：寫兩個地方 —
+        //          <DataRoot>/_cmd_errors/<cmdId>.md（永久保留，可回溯任何一筆）
+        //          <DataRoot>/_last_cmd_error.md（最近一筆，client 預設讀這份）
+        //          任何 IO 失敗都吞掉：報告寫不出來不該再蓋掉原始錯誤。
+        // ===========================================================
+        static void WriteCmdErrorReport(UCL_AgentCommand c, Exception e)
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(
+                    UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "_cmd_errors");
+                System.IO.Directory.CreateDirectory(dir);
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"# ✗ Cmd 失敗：{c.Type}");
+                sb.AppendLine();
+                sb.AppendLine($"- **cmd_id**: `{c.Id}`");
+                sb.AppendLine($"- **type**: `{c.Type}` / mode: `{c.Mode}`");
+                sb.AppendLine($"- **失敗時間**: {DateTime.Now:yyyy-MM-dd HH:mm:ss} (local) / {DateTime.UtcNow:o} (UTC)");
+                sb.AppendLine($"- **例外型別**: `{e.GetType().FullName}`");
+                sb.AppendLine($"- **訊息**: {e.Message}");
+                sb.AppendLine();
+                sb.AppendLine("## Args");
+                if (c.Args == null || c.Args.Count == 0)
+                {
+                    sb.AppendLine("(無)");
+                }
+                else
+                {
+                    foreach (var kv in c.Args)
+                    {
+                        string v = kv.Value ?? "";
+                        // 長 body 截斷 — 報告是給人看的，全文本來就在 queue/History
+                        if (v.Length > 300) v = v.Substring(0, 300) + $"…（共 {kv.Value.Length} 字）";
+                        sb.AppendLine($"- `{kv.Key}` = {v.Replace("\n", "\\n")}");
+                    }
+                }
+                sb.AppendLine();
+                sb.AppendLine("## Stack trace");
+                sb.AppendLine("```");
+                sb.AppendLine(e.ToString());
+                sb.AppendLine("```");
+
+                // inner exception 鏈全展開 — 被遮罩的真兇通常躲在這裡
+                var inner = e.InnerException;
+                int depth = 0;
+                while (inner != null && depth < 5)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"## Inner exception #{++depth}：`{inner.GetType().FullName}`");
+                    sb.AppendLine("```");
+                    sb.AppendLine(inner.ToString());
+                    sb.AppendLine("```");
+                    inner = inner.InnerException;
+                }
+
+                string report = sb.ToString();
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, $"{c.Id}.md"),
+                    report, new System.Text.UTF8Encoding(false));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(
+                    UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "_last_cmd_error.md"),
+                    report, new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception ex2)
+            {
+                Debug.LogWarning($"[UCL_AgentCmd] 失敗詳情落檔失敗（不影響原始錯誤回報）：{ex2.Message}");
             }
         }
     }

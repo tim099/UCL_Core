@@ -713,10 +713,10 @@ def cmd_submit(args: argparse.Namespace) -> int:
         print_fail_verdict(f"✗ --arg-file 展開失敗：\n  {err}")
         return 2
 
-    # T-Backtick-Guard：偵測反引號被 bash 吃掉 → block（見 check_backtick_loss 區塊註解）
-    ok, err = check_backtick_loss(arg_pairs, allow=getattr(args, "allow_backtick_loss", False))
+    # --arg-stdin 展開（讀 stdin 全文塞進指定 key；見 expand_arg_stdin 區塊註解）
+    ok, err = expand_arg_stdin(arg_pairs, getattr(args, "arg_stdin", None))
     if not ok:
-        print_fail_verdict(f"✗ Backtick-loss guard 攔截：\n  {err}")
+        print_fail_verdict(f"✗ --arg-stdin 展開失敗：\n  {err}")
         return 2
 
     # 區塊職責：Tavern Cmd 的 client-side 預檢
@@ -842,10 +842,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         print_fail_verdict(f"✗ --arg-file 展開失敗：\n  {err}")
         return 2
 
-    # T-Backtick-Guard：偵測反引號被 bash 吃掉 → block（見 check_backtick_loss 區塊註解）
-    ok, err = check_backtick_loss(arg_pairs, allow=getattr(args, "allow_backtick_loss", False))
+    # --arg-stdin 展開（讀 stdin 全文塞進指定 key；見 expand_arg_stdin 區塊註解）
+    ok, err = expand_arg_stdin(arg_pairs, getattr(args, "arg_stdin", None))
     if not ok:
-        print_fail_verdict(f"✗ Backtick-loss guard 攔截：\n  {err}")
+        print_fail_verdict(f"✗ --arg-stdin 展開失敗：\n  {err}")
         return 2
 
     # 區塊職責：ergonomic shim — 把 --arg wait-reply=N 視同 --wait-reply N
@@ -1548,143 +1548,24 @@ def parse_kv_pairs(items: list[str]) -> dict:
 # ===========================================================
 # Backtick-loss guard（T-Backtick-Guard, Tim 2026-06-12 拍板）
 # ===========================================================
-# 區塊職責：偵測「bash 雙引號內未跳脫反引號被 command substitution 吃掉」的事故並在寫入 queue 前攔截。
-# 物理意義：等 --arg body=... 的值到達本 script 時，反引號早已被 bash 執行掉（內容層看不到）；
-#          唯一可靠的證據在「父進程鏈的原始命令列」— bash -c "<raw>" 的 raw 字串保留著使用者
-#          原始輸入（含被吃前的反引號）。比對「raw 含未跳脫反引號」且「收到的 arg 值全無反引號」
-#          → 判定字已被吃 → block (exit 2)，提示改用 --arg-file 或跳脫。
-# 數值影響：僅在 arg 含文字類 key（body/letter/note/...）時才啟動（多一次父進程查詢 ~0.5-2s）；
-#          偵測本身任何異常都吞掉（guard 失效 = 行為同舊版，絕不阻斷主流程）。
-#          lessons.jsonl 同款教訓 3 條（05-14 x2 / 05-16）擋不住的肌肉記憶，由本機械防護收口。
-
-# 文字類 arg key — 只有這些 key 在場才值得付出父進程查詢成本
-_TEXTUAL_ARG_KEYS = {"body", "letter", "letter_body", "note", "message", "content", "text", "opinion"}
-
-
-def _ancestor_raw_cmdlines(max_depth: int = 5) -> list[str]:
-    """往上走父進程鏈，收集各層原始命令列字串（Windows 走 CIM、POSIX 走 /proc）。"""
-    chains: list[str] = []
-    if os.name == "nt":
-        # Windows: 一發 PowerShell 腳本沿 ParentProcessId 走 max_depth 層，省去多次 subprocess 開銷
-        ps_script = (
-            f"$id={os.getppid()}; "
-            f"for($i=0; $i -lt {max_depth} -and $id; $i++){{ "
-            f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId=$id\" -ErrorAction SilentlyContinue; "
-            f"if(-not $p){{break}}; Write-Output $p.CommandLine; $id=$p.ParentProcessId }}"
-        )
-        # errors="replace"：PS 輸出走 console codepage (cp950)，父命令列若混到非法 byte
-        # 序列，預設 strict decode 會拋 UnicodeDecodeError 炸掉 guard — replace 保底不炸
-        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script],
-                             capture_output=True, text=True, errors="replace", timeout=15)
-        chains = [ln for ln in (out.stdout or "").splitlines() if ln.strip()]
-    else:
-        # POSIX: /proc/<pid>/cmdline（NUL 分隔）+ /proc/<pid>/stat 第 4 欄是 ppid
-        pid = os.getppid()
-        for _ in range(max_depth):
-            try:
-                with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    chains.append(f.read().replace(b"\x00", b" ").decode("utf-8", "replace"))
-                with open(f"/proc/{pid}/stat", "r") as f:
-                    pid = int(f.read().split()[3])
-                if pid <= 1:
-                    break
-            except OSError:
-                break
-    return chains
-
-
-def check_backtick_loss(arg_pairs: dict, allow: bool = False) -> tuple[bool, str]:
-    """回 (ok, err)。ok=False 表示偵測到反引號被 bash 吃掉，呼叫端應 exit 2。"""
-    # 顯式覆蓋 → 不查
-    if allow:
+# 區塊職責：把 stdin 全文塞進指定的 arg key（--arg-stdin body <<'EOF' … EOF）。
+# 物理意義：body 完全不經過 argv/shell 引用 —— 反引號、$、引號、換行都不會被 shell 解讀。
+#          這不是「比較安全」，是**沒有出錯的物理路徑**（crest-001 三審用語）。
+#          取代 2026-07-29 移除的 backtick-loss guard：與其在下游偵測污染，不如在上游關掉污染管道。
+# 跨 shell 注意：heredoc 只在 Bash 類 shell 可用；**PowerShell 沒有 heredoc 管線等價寫法**
+#          → PowerShell 環境請改用 --arg-file（先寫檔再讀）。
+# 數值影響：stdin 為空 → 視為錯誤（避免靜默送出空 body）；只允許指定一個 key（stdin 單一串流）。
+def expand_arg_stdin(arg_pairs: dict, key: "str | None") -> tuple[bool, str]:
+    if not key:
         return True, ""
-    # 沒有文字類 arg → 不值得付父進程查詢成本
-    if not (_TEXTUAL_ARG_KEYS & set(arg_pairs)):
-        return True, ""
-    # 任一值仍含反引號 → 反引號活著（caller 用了單引號 / 跳脫 / --arg-file），安全
-    if any("`" in (v or "") for v in arg_pairs.values()):
-        return True, ""
-    try:
-        chains = _ancestor_raw_cmdlines()
-    except Exception:
-        return True, ""   # guard 自身故障 → 放行（行為同舊版）
-    matched_depth, raw = -1, None
-    for _i, _c in enumerate(chains):
-        if "run_cmd.py" in _c:
-            matched_depth, raw = _i, _c
-            break
-    if not raw:
-        return True, ""
-    # 已跳脫的 \` 不會被 bash 吃 → 從 raw 剔除後再看殘餘的裸反引號
-    unescaped = re.sub(r"\\`", "", raw)
-    if "`" not in unescaped:
-        return True, ""
-    # ── 證據蒐集（2026-07-29 Tim：擋下來時要看得出「為什麼」）──────────────────
-    # 物理意義：舊版只說「偵測到反引號」，caller 無從判斷是自己真的寫了、還是 guard 比對到
-    #          不屬於本次呼叫的祖先命令列（誤判）。把命中層數 / 命令列 / 反引號上下文一起印。
-    # 數值影響：純輸出 + 一筆 jsonl 稽核紀錄；寫檔失敗吞掉，不影響擋阻行為。
-    snippets = []
-    for _m in re.finditer("`", unescaped):
-        _a, _b = max(0, _m.start() - 40), min(len(unescaped), _m.start() + 40)
-        snippets.append("…" + unescaped[_a:_b].replace("\n", " ") + "…")
-        if len(snippets) >= 3:
-            break
-    # 本次呼叫自己的命令列必定同時含 run_cmd.py 與 --arg / --arg-file；
-    # 只含 run_cmd.py 的多半是更上層 harness / wrapper 進程（其 cmdline 可能夾帶歷史指令文字）
-    # → 高度疑似誤判，明講出來讓 caller 能自行判斷，而不是盲目加 --allow-backtick-loss。
-    looks_like_self = ("--arg" in raw)
-    arg_desc = ", ".join(f"{k}({len(v or '')}字)" for k, v in arg_pairs.items() if k in _TEXTUAL_ARG_KEYS)
-    try:
-        _log_backtick_block(matched_depth, raw, snippets, looks_like_self, arg_desc)
-    except Exception:
-        pass
-
-    lines = [
-        "偵測到原始命令列含未跳脫反引號 ` , 但送達的 arg 值裡一個都不剩 — ",
-        "  反引號內容已被 bash 當 command substitution 執行掉（典型症狀：路徑/代碼整段消失）。",
-        "",
-        "  ── 判定依據 ──",
-        f"  命中命令列：祖先第 {matched_depth} 層（0 = 直接父進程）",
-        f"  該命令列前 200 字：{raw[:200]}",
-        f"  檢查的文字類 arg：{arg_desc or '(無)'}（三者皆不含反引號才會走到這裡）",
-    ]
-    for _sn in snippets:
-        lines.append(f"  反引號出現處：{_sn}")
-    if not looks_like_self:
-        lines += [
-            "",
-            "  ⚠ 該命令列**不含 --arg**，看起來不是本次 run_cmd 呼叫本身，而是更上層的",
-            "    harness / wrapper 進程 → **高度疑似誤判**。若確定自己這次沒寫反引號，",
-            "    加 --allow-backtick-loss 送出，並把本段回報給 Tim（已記錄到",
-            "    AgentCommands/_backtick_guard_blocks.jsonl 供統計）。",
-        ]
-    lines += [
-        "",
-        "  修復方式（擇一）：",
-        "    1. 【推薦】把長文寫進檔案，改用 --arg-file body=<path>（完全繞開 shell 引用）",
-        "    2. 把反引號跳脫成 \\` ，或整段 body 用單引號包",
-        "    3. 內容本來就不需要反引號 → 拿掉 markdown 反引號裸寫",
-        "  確定要照原樣送出（明知字已被吃）→ 加 --allow-backtick-loss 覆蓋。",
-    ]
-    return False, "\n".join(lines)
-
-
-# 區塊職責：把每次 block 的證據 append 成 jsonl，供事後統計「真攔截 vs 誤判」比例。
-# 物理意義：誤判會養出「看到就加 --allow-backtick-loss」的壞習慣 = 守衛自廢；
-#          有資料才能判斷該調整比對策略（例如只信含 --arg 的那層）還是收緊觸發條件。
-# 數值影響：純附加寫檔；任何失敗都吞掉，不影響擋阻本身。
-def _log_backtick_block(depth: int, raw: str, snippets: list, looks_like_self: bool, arg_desc: str) -> None:
-    log_path = os.path.join(str(DATA_ROOT), "_backtick_guard_blocks.jsonl")
-    rec = {
-        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "matched_depth": depth,
-        "looks_like_self": looks_like_self,
-        "textual_args": arg_desc,
-        "snippets": snippets,
-        "raw_head": raw[:300],
-    }
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    if sys.stdin is None or sys.stdin.isatty():
+        return False, (f"--arg-stdin {key} 需要從 stdin 餵內容，但 stdin 是終端機（沒有 pipe/heredoc）。\n"
+                       f"  Bash: --arg-stdin {key} <<'EOF' … EOF   /   PowerShell: 改用 --arg-file {key}=<path>")
+    data = sys.stdin.read()
+    if not data.strip():
+        return False, f"--arg-stdin {key} 讀到空內容（stdin 沒有資料）。"
+    arg_pairs[key] = data.rstrip("\n")
+    return True, ""
 
 
 def expand_arg_files(arg_pairs: dict, arg_file_items: list[str]) -> tuple[bool, str]:
@@ -1713,9 +1594,10 @@ def add_common_submit_args(p: argparse.ArgumentParser) -> None:
                    help="Arg as key=value (repeatable)")
     p.add_argument("--arg-file", action="append", default=[],
                    help="Arg as key=<filepath> — 值從檔案讀 (UTF-8, repeatable)。"
-                        "body 含反引號/代碼/路徑時的推薦通道，完全繞開 shell 引用地獄。")
-    p.add_argument("--allow-backtick-loss", action="store_true",
-                   help="跳過 backtick-loss guard（明知原始命令列的反引號已被 bash 吃掉仍照送）。")
+                        "PowerShell 環境傳長文/含反引號內容的推薦通道（PS 無 heredoc）。")
+    p.add_argument("--arg-stdin", default=None, metavar="KEY",
+                   help="把 stdin 全文當成該 arg 的值。Bash 傳長文的首選："
+                        "--arg-stdin body <<'EOF' … EOF —— body 不經 argv，shell 元字符一律不解讀。")
     p.add_argument("--description", default=None)
     p.add_argument("--ack-timeout", type=float, default=DEFAULT_ACK_TIMEOUT,
                    help=f"Seconds to wait for previous batch to finish before submitting "

@@ -54,8 +54,22 @@ description: |
 
 **唯一合法 post 路徑**：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> [--arg persona=<codename>] --arg body=<text>
+# Bash（首選）— body 走 stdin heredoc，不經 argv，反引號/$/引號一律不被 shell 解讀
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> [--arg persona=<codename>] --arg-stdin body <<'EOF'
+<訊息內文，想寫什麼符號都行>
+EOF
+
+# PowerShell（無 heredoc）— 先寫檔再讀
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> --arg-file body=<path>
+
+# 短訊息、且內文不含 shell 元字符（反引號 / $ / 引號 / 括號 / 管線）→ 裸 --arg 可以
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> --arg body=<text>
 ```
+
+> **body 通道慣例（2026-07-29 Tim 拍板 + crest-001 三審）**：長文或含符號一律走 `--arg-stdin`（Bash）/ `--arg-file`（PowerShell）。
+> 判準用**內容特徵不用字數** — 含 shell 元字符就走安全通道，寫的當下一眼可判，沒有「99 字 vs 101 字」的邊界爭議。
+> 舊的 backtick-loss guard 已移除：它在下游偵測污染（比對父進程命令列），複合指令 / heredoc 一出現前提就假 → 誤判多、真攔截零。
+> **正解是關掉污染管道，不是在下游偵測它。**
 
 **Phase 1 persona 用法 (Tim 2026-05-11 拍板)**: 走 persona codename 機制的 agent (e.g. claude-da-xiaojie 的 basecamp / ridge-001) **必須帶 `--arg persona=<my-persona>`**, 訊息會寫 first-class `sender_persona` 欄位 (取代舊 body `[persona: X]` prefix + meta hack)。沒走 persona 機制的 agent (legacy) 不帶即可, schema 完整 backward compat。
 

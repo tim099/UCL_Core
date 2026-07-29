@@ -1,13 +1,18 @@
 // 區塊職責：Persona & Agent 後台管理頁 — agent 開帳（含對應 bank）/ persona 建立（可選 fork 來源）/
-//            persona 換綁 agent（Tim 2026-07-29 拍板，參考 UCL_ChatTavernAdminPage 與 UCL_BankAdminPage）。
+//            persona 換綁 agent / persona 角色卡（PersonaCard）檢視與補建
+//            （Tim 2026-07-29 拍板，參考 UCL_ChatTavernAdminPage 與 UCL_BankAdminPage）。
 // 物理意義：agent 與 persona 是兩層身分 —
 //          (1) agent = 帳號層（claude-code / Zeta / Altair…），對應一個 bank（token 帳戶）；
 //              權威表 = AgentCommands/AwakenInit/_registry_meta.json 的 agent_banks。
 //          (2) persona = 人格層（summit / crest-001…），一檔一 persona，
 //              存 AgentCommands/AwakenInit/personas/<name>.json，內含 agent 欄指向所屬 agent。
-//          以前這些只能手改 JSON 或走 awakening.py CLI；本頁把三個高頻操作搬進 Editor。
-// 數值影響：寫兩處檔案 —
-//          _registry_meta.json 的 agent_banks（開 agent）、personas/<name>.json（建 persona / 換綁）；
+//          再往上還有一層純展示資產：UCL_ChatTavernPersonaCardAsset（同 ID 對齊 persona），
+//          存頭像 sprite / 顏色 / 口頭禪 / 擅長清單。persona 有檔但沒卡 = 「有名字沒臉」，
+//          會讓 UCL_ChatTavernAdminPage 的頭像 Override 下拉選不到它（gura 之前正是此狀態）。
+//          以前這些只能手改 JSON 或走 awakening.py CLI；本頁把四個高頻操作搬進 Editor。
+// 數值影響：寫三處 —
+//          _registry_meta.json 的 agent_banks（開 agent）、personas/<name>.json（建 persona / 換綁）、
+//          <當前編輯模組>/UCL_Assets/UCL_ChatTavernPersonaCardAsset/<persona>.json（一鍵建卡）；
 //          可選種子額度走 UCL_TreasuryLedger.Credit（append-only，與 BankAdminPage 開戶同一路徑）。
 // 設計取捨：
 //   - persona 檔 schema **鏡像 awakening.py 的 fork_persona / 新建路徑**（identity_vector 64 維 [-1,1]、
@@ -22,10 +27,11 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using UCL.Core.JsonLib;
+using UCL.Core.Page;                                // UCL_CommonEditPage / UCL_SelectAssetPage（角色卡跳轉編輯）
 using UCL.Core.UI;
 using UCL.Core.EditorLib.AgentCommands.Treasury;    // 開 agent 時的可選種子額度
-using UCL.Core.EditorLib.AgentCommands.ChatTavern;  // 操作通知發酒館主頻道
-using UnityEditor;                                  // EditorApplication.timeSinceStartup（二段確認倒數）
+using UCL.Core.EditorLib.AgentCommands.ChatTavern;  // 操作通知發酒館主頻道 + UCL_ChatTavernPersonaCardAsset
+using UnityEditor;                                  // EditorApplication.timeSinceStartup（二段確認倒數）/ AssetDatabase.Refresh
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.Page
@@ -66,11 +72,26 @@ namespace UCL.Core.EditorLib.Page
             public string name;
             public string agent;
             public string model;
+            public string layerRole;      // persona 檔的 layer_role — 一鍵建角色卡時預填 m_RoleSettings
             public int wakeCount;
             public string status;
             public string forkedFrom;
             public int lineageDepth;
         }
+
+        // ==== Persona 角色卡（PersonaCard）====
+        // 區塊職責：persona 檔（AwakenInit/personas/*.json）↔ UCL_ChatTavernPersonaCardAsset 的對應狀態。
+        // 物理意義：兩者以**同 ID** 對齊 — persona 檔是 awakening state 真相源（誰存在 / 歸屬 / 醒幾次），
+        //          角色卡是同一 persona 的展示層（頭像 sprite / 顏色 / 口頭禪 / 擅長）。
+        //          m_CardIds 走 UCL_ChatTavernPersonaCardAsset.Util.GetAllIDs()，與
+        //          UCL_ChatTavernAdminPage 頭像 Override 下拉**同一來源** —— 這裡列得到的，那邊才選得到。
+        // 數值影響：本區塊預設純讀；唯一寫入是「一鍵建立角色卡」（Save() 寫一個新 .json）。
+        readonly HashSet<string> m_CardIds = new HashSet<string>(StringComparer.Ordinal);   // 已存在角色卡的 ID
+        readonly List<string> m_CardPersonaOptions = new List<string>();                    // 下拉顯示（● 有卡 / ○ 無卡）
+        int m_CardPersonaIdx = 0;
+        // 快照 + 對應 ID：避免每幀 CreateData 重讀磁碟；讀取失敗時 id 仍記住（不無限重試）
+        UCL_ChatTavernPersonaCardAsset m_CardPreview = null;
+        string m_CardPreviewId = null;
 
         // ==== 折疊狀態與 Popup 快取分開存（workflow §5.1 血證：混用會讓 LoadData 清空折疊）====
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();      // Popup cache（LoadData 會 Clear）
@@ -116,6 +137,8 @@ namespace UCL.Core.EditorLib.Page
         void LoadData()
         {
             m_Loaded = true;
+            // 記住重載前選中的 persona（角色卡面板）— 建完卡會 LoadData，選擇不該被彈回第一項
+            string prevCardPersona = SelectedCardPersona;
             m_AgentKeys.Clear();
             m_AgentToBank.Clear();
             m_Personas.Clear();
@@ -159,6 +182,7 @@ namespace UCL.Core.EditorLib.Page
                                 name = Path.GetFileNameWithoutExtension(pf),
                                 agent = pj.GetString("agent", ""),
                                 model = pj.GetString("model", ""),
+                                layerRole = pj.GetString("layer_role", ""),
                                 wakeCount = pj.GetInt("wake_count", 0),
                                 status = pj.GetString("status", "offline"),
                                 forkedFrom = pj.GetString("forked_from", ""),
@@ -182,11 +206,51 @@ namespace UCL.Core.EditorLib.Page
                         if (n.StartsWith("_persona_")) m_LockedPersonas.Add(n.Substring("_persona_".Length));
                     }
                 }
+
+                // 區塊職責：掃 PersonaCard asset ID → 標記每個 persona 有無對應角色卡
+                // 物理意義：GetAllIDs() 走 UCL_ModuleService（當前編輯模組 + 依賴模組），與
+                //          UCL_ChatTavernAdminPage 頭像 Override 下拉同一支來源，兩頁看到的集合一致。
+                // 數值影響：純讀取；掃失敗只警告（UI 全顯示為「無卡」），不擋 persona / agent 一覽。
+                m_CardIds.Clear();
+                try
+                {
+                    foreach (var id in UCL_ChatTavernPersonaCardAsset.Util.GetAllIDs())
+                    {
+                        if (!string.IsNullOrEmpty(id)) m_CardIds.Add(id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[PersonaAgentAdmin] PersonaCard GetAllIDs 失敗（角色卡面板將顯示為全無卡）：{ex.Message}");
+                }
             }
             catch (Exception ex)
             {
                 SetResult($"❌ 載入失敗：{ex.Message}");
             }
+            // 放在 try 外：載入中途拋錯時 m_Personas 可能只填了一半，選項仍必須跟它同步重建，
+            // 否則下拉標籤與實際 persona 清單長度分歧（顯示 A 實際選到 B）。
+            RebuildCardOptions(prevCardPersona);
+        }
+
+        // 區塊職責：重建角色卡下拉選項並還原選中項
+        // 物理意義：選項字串前綴是**有無角色卡**的視覺標記（● 有 / ○ 無），值本體仍是 persona 名。
+        // 數值影響：純 UI 狀態；順帶作廢 card 快照（資料重載後舊快照可能已過期）。
+        void RebuildCardOptions(string iRestoreSelection)
+        {
+            m_CardPersonaOptions.Clear();
+            foreach (var p in m_Personas)
+            {
+                m_CardPersonaOptions.Add($"{(m_CardIds.Contains(p.name) ? "●" : "○")} {p.name}");
+            }
+            m_CardPersonaIdx = 0;
+            if (!string.IsNullOrEmpty(iRestoreSelection))
+            {
+                int idx = m_Personas.FindIndex(p => p.name == iRestoreSelection);
+                if (idx >= 0) m_CardPersonaIdx = idx;
+            }
+            m_CardPreview = null;
+            m_CardPreviewId = null;
         }
 
         protected override void ContentOnGUI()
@@ -194,6 +258,8 @@ namespace UCL.Core.EditorLib.Page
             if (!m_Loaded) LoadData();
 
             DrawOverviewPanel();
+            GUILayout.Space(8);
+            DrawPersonaCardPanel();
             GUILayout.Space(8);
             DrawCreateAgentPanel();
             GUILayout.Space(8);
@@ -258,6 +324,175 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.FlexibleSpace();
                     }
                 }
+            }
+        }
+
+        // ===========================================================
+        // 區塊：Persona 角色卡（PersonaCard）— 檢視對應狀態 / 缺卡一鍵補建 / 有卡跳轉編輯
+        // 物理意義：下拉列出 personas/ 目錄全體（真相源），前綴 ● / ○ 直接標示有無同 ID 的
+        //          UCL_ChatTavernPersonaCardAsset。缺卡 → 一鍵建（預填歸屬 agent / layer_role / tag）；
+        //          有卡 → 顯示基本資訊並可跳 UCL_CommonEditPage 細編。
+        // 數值影響：讀取不寫；「一鍵建立」寫一個新 asset .json（已存在一律不覆寫，避免蓋掉手工調過的卡）。
+        // 設計取捨：不自動批次補全所有缺卡 —— 建卡等於宣告「這個 persona 要有臉」，該由人逐個決定；
+        //          批次需求走既有 Cmd_SeedTavernIdentityAssets 的同類做法，不在管理頁塞隱式大動作。
+        // ===========================================================
+        void DrawPersonaCardPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                int missing = m_Personas.Count(p => !m_CardIds.Contains(p.name));
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "PersonaCardFold", 21, iDefaultValue: true);
+                    GUILayout.Label("<b>🎭 Persona 角色卡</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(missing > 0
+                            ? $"卡 {m_CardIds.Count} 張 / persona {m_Personas.Count} 個　<color=yellow>尚缺 {missing}</color>"
+                            : $"卡 {m_CardIds.Count} 張 / persona {m_Personas.Count} 個　✓ 全員有卡",
+                        WrapLabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("📋 角色卡清單頁", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        DoOpenCardSelectPage();
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                if (m_Personas.Count == 0)
+                {
+                    GUILayout.Label("尚無 persona —— 請先在下方「建立 Persona」開一個。", WrapLabelStyle);
+                    return;
+                }
+
+                // persona 下拉（● 有卡 / ○ 無卡）+ 該 persona 的歸屬與 wake 次數（一眼確認選對人）
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("persona", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    int idx = UCL_GUILayout.PopupSearchCache(m_CardPersonaIdx, m_CardPersonaOptions, m_Dic, "CardPersonaPicker",
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(240)));
+                    if (idx != m_CardPersonaIdx && idx >= 0 && idx < m_CardPersonaOptions.Count)
+                    {
+                        m_CardPersonaIdx = idx;
+                        m_CardPreview = null;      // 換選擇 → 快照失效，下次繪製重讀
+                        m_CardPreviewId = null;
+                    }
+                    var row = SelectedCardRow();
+                    if (row != null)
+                    {
+                        GUILayout.Label($"@{(string.IsNullOrEmpty(row.agent) ? "(未綁)" : row.agent)}", WrapLabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                        GUILayout.Label($"wake#{row.wakeCount}", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label(m_LockedPersonas.Contains(row.name) ? "★ 線上" : "　", WrapLabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                string persona = SelectedCardPersona;
+                if (string.IsNullOrEmpty(persona)) return;
+
+                if (!m_CardIds.Contains(persona)) DrawCardMissingBlock(persona);
+                else DrawCardExistBlock(persona);
+
+                GUILayout.Space(4);
+                if (missing > 0)
+                {
+                    GUILayout.Label($"○ 尚缺角色卡：{string.Join(" / ", m_Personas.Where(p => !m_CardIds.Contains(p.name)).Select(p => p.name))}",
+                        WrapLabelStyle);
+                }
+                // 孤兒卡 = 有角色卡但 personas/ 沒同名檔（persona 改名殘留、或純展示用的非 awakening 角色）
+                var orphans = m_CardIds.Where(id => !m_Personas.Any(p => p.name == id))
+                                       .OrderBy(x => x, StringComparer.Ordinal).ToList();
+                if (orphans.Count > 0)
+                {
+                    GUILayout.Label($"🃏 孤兒卡（有卡但 personas/ 無同名檔）：{string.Join(" / ", orphans)}"
+                        + "　—— 改名殘留或非 awakening 角色，不影響喚醒流程。", WrapLabelStyle);
+                }
+                GUILayout.Label($"角色卡寫入當前編輯模組 <b>[{UCL_ModuleService.CurEditModuleID}]</b> 的 "
+                    + "UCL_Assets/UCL_ChatTavernPersonaCardAsset/。有卡之後 UCL_ChatTavernAdminPage 的"
+                    + "「Persona 頭像 Override」下拉才選得到這個 persona。", WrapLabelStyle);
+            }
+        }
+
+        // 區塊職責：選中 persona 沒有角色卡時的區塊 — 說明後果 + 一鍵建立 + 預填內容公告
+        // 物理意義：缺卡的實際症狀是「酒館頭像 Override 選不到它」+ Discord 頭像只能退 agent 層 fallback。
+        // 數值影響：按下按鈕才寫檔；本區塊本身純顯示。
+        void DrawCardMissingBlock(string iPersona)
+        {
+            var row = SelectedCardRow();
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label($"⚠ <b>{iPersona}</b> 尚無角色卡（頭像 Override 下拉選不到它）",
+                    UCL_GUIStyle.GetLabelStyle(Color.yellow), GUILayout.ExpandWidth(false));
+                if (GUILayout.Button("✨ 一鍵建立角色卡", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.9f, 1f)),
+                        GUILayout.ExpandWidth(false)))
+                    DoCreateCard(iPersona);
+                GUILayout.FlexibleSpace();
+            }
+            GUILayout.Label($"建立後預填：歸屬 agent = <b>{(row != null && !string.IsNullOrEmpty(row.agent) ? row.agent : "(未綁)")}</b>、"
+                + $"角色設定 = persona 檔的 layer_role（{Ellipsis(row?.layerRole, 40)}）、tag = 該 agent 名。"
+                + "頭像 sprite / 顏色 / 口頭禪 / 擅長清單一律留空，之後用「編輯角色卡」慢慢填。", WrapLabelStyle);
+        }
+
+        // 區塊職責：選中 persona 已有角色卡時的區塊 — 基本資訊摘要 + 跳轉編輯頁
+        // 物理意義：只讀展示層欄位；歸屬 agent 與 persona 檔不一致時明確警示
+        //          （persona 檔的 agent 才是權威 —— 換綁只改 persona 檔，卡上的 OwnerAgentId 會留舊值）。
+        // 數值影響：不寫檔；「編輯角色卡」開的是 clone 編輯頁，要在那頁按存檔才落地。
+        void DrawCardExistBlock(string iPersona)
+        {
+            EnsureCardPreview(iPersona);
+            var card = m_CardPreview;
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label($"✅ <b>{iPersona}</b> 已有角色卡", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                if (GUILayout.Button("✏ 編輯角色卡", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)),
+                        GUILayout.ExpandWidth(false)))
+                    DoOpenCardEdit(iPersona);
+                if (GUILayout.Button("🔄 重讀", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    m_CardPreviewId = null;
+                    m_CardPreview = null;
+                }
+                GUILayout.FlexibleSpace();
+            }
+            if (card == null)
+            {
+                GUILayout.Label($"⚠ 角色卡 `{iPersona}` 存在但讀取失敗（詳見 Console）— 檔案可能格式壞了。",
+                    UCL_GUIStyle.GetLabelStyle(Color.yellow));
+                return;
+            }
+
+            var row = SelectedCardRow();
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("歸屬 agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                GUILayout.Label(string.IsNullOrEmpty(card.m_OwnerAgentId) ? "(空)" : $"<b>{card.m_OwnerAgentId}</b>",
+                    WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                GUILayout.Label("頭像 sprite", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                string spriteId = card.m_AvatarSprite != null ? card.m_AvatarSprite.ID : null;
+                GUILayout.Label(string.IsNullOrEmpty(spriteId) ? "(未指定)" : spriteId, WrapLabelStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                GUILayout.Label("顏色", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                // 色塊：hex 解析成功就用該色畫字，失敗 / 空值顯示 (空)（不猜色，避免誤導）
+                if (!string.IsNullOrEmpty(card.m_ColorHex) && ColorUtility.TryParseHtmlString(card.m_ColorHex, out var c))
+                    GUILayout.Label($"██ {card.m_ColorHex}", UCL_GUIStyle.GetLabelStyle(c), GUILayout.ExpandWidth(false));
+                else
+                    GUILayout.Label(string.IsNullOrEmpty(card.m_ColorHex) ? "(空)" : $"{card.m_ColorHex}(解析失敗)",
+                        WrapLabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.FlexibleSpace();
+            }
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("清單欄位", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                GUILayout.Label($"口頭禪 × {Count(card.m_Catchphrases)}　擅長 × {Count(card.m_Skills)}　"
+                    + $"不擅長 × {Count(card.m_AntiSkills)}　外觀 prompt {(string.IsNullOrEmpty(card.m_AppearancePrompt) ? "無" : $"{card.m_AppearancePrompt.Length} 字")}",
+                    WrapLabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.FlexibleSpace();
+            }
+            GUILayout.Label($"角色設定：{Ellipsis(card.m_RoleSettings, 120)}", WrapLabelStyle);
+            if (row != null && !string.IsNullOrEmpty(row.agent) && card.m_OwnerAgentId != row.agent)
+            {
+                GUILayout.Label($"⚠ 歸屬不一致：卡上是 <b>{(string.IsNullOrEmpty(card.m_OwnerAgentId) ? "(空)" : card.m_OwnerAgentId)}</b>，"
+                    + $"persona 檔是 <b>{row.agent}</b>。persona 檔才是權威（換綁只改它）—— "
+                    + "建議進編輯頁把卡上的歸屬對齊。", UCL_GUIStyle.GetLabelStyle(Color.yellow));
             }
         }
 
@@ -641,8 +876,104 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // 區塊：角色卡操作實作
+        // 物理意義：建卡 = 對這個 persona 宣告「它要有臉」；卡與 persona 檔以同 ID 對齊，此處不改 persona 檔。
+        // 數值影響：Save() 寫一個新 .json 到當前編輯模組；已存在則一律跳過（絕不覆寫手工調過的卡）。
+        // ===========================================================
+        void DoCreateCard(string iPersona)
+        {
+            var row = m_Personas.FirstOrDefault(p => p.name == iPersona);
+            if (row == null) { SetResult($"❌ 建立角色卡失敗：找不到 persona `{iPersona}`（請按「重新載入」）"); return; }
+
+            try
+            {
+                var asset = new UCL_ChatTavernPersonaCardAsset(iPersona);   // ctor → Init(iID)，設 ID
+                // 檔案已在磁碟但 GetAllIDs 沒列到（模組快取未刷新）→ 寧可漏建也不覆寫，改叫使用者重掃
+                if (asset.ContainsAsset(iPersona))
+                {
+                    SetResult($"ℹ 角色卡 `{iPersona}` 的檔案其實已存在（模組快取沒刷新）— 已跳過建立，不覆寫既有內容");
+                    asset.ClearAllCache();
+                    LoadData();
+                    return;
+                }
+
+                // 預填三欄（其餘留空給人細編）：歸屬 agent / 角色設定沿用 layer_role / tag 標所屬 agent
+                asset.m_OwnerAgentId = row.agent ?? "";
+                asset.m_RoleSettings = row.layerRole ?? "";
+                asset.m_Tags = new List<string>();
+                if (!string.IsNullOrEmpty(row.agent)) asset.m_Tags.Add(row.agent);
+
+                asset.Save();
+                asset.ClearAllCache();          // 清型別快取 → 下次 GetAllIDs 掃得到新卡
+                AssetDatabase.Refresh();        // 讓 Unity 看到新 .json（同 Cmd_SeedTavernIdentityAssets 收尾）
+
+                SetResult($"✅ 建立角色卡：`{iPersona}`（歸屬 {(string.IsNullOrEmpty(row.agent) ? "(未綁)" : row.agent)}）"
+                    + $" → 模組 [{UCL_ModuleService.CurEditModuleID}]。接著可按「✏ 編輯角色卡」填頭像 / 顏色 / 口頭禪。");
+                Debug.Log($"[PersonaAgentAdmin] create persona card {iPersona} owner={row.agent}");
+                NotifyTavern(
+                    $"🎭 **身分後台｜建立 Persona 角色卡**\n" +
+                    $"persona **{iPersona}** 有臉了 —— 角色卡建立完成，歸屬 agent **{(string.IsNullOrEmpty(row.agent) ? "(未綁)" : row.agent)}**。\n" +
+                    $"📝 說明：角色卡是展示層（頭像 sprite / 顏色 / 口頭禪 / 擅長清單），跟 persona 檔以同名對齊。" +
+                    $"有卡之後酒館後台的「Persona 頭像 Override」下拉才選得到它，Discord 頭像也才能釘到自己那張。",
+                    "persona-agent-create-card");
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 建立角色卡失敗：{ex.Message}"); }
+        }
+
+        // 跳轉編輯：對齊 UCL_SelectAssetPage 的「進頁前先 OnEdit() 建資料夾 → CommonEditPage.Create(clone)」流程
+        void DoOpenCardEdit(string iPersona)
+        {
+            try
+            {
+                var util = UCL_ChatTavernPersonaCardAsset.Util;
+                util.OnEdit();                                  // 確保 SaveFolderPath 存在（否則編輯頁存檔會找不到目錄）
+                var asset = util.GetData(iPersona, false);       // false = 不吃快取，讀當前磁碟內容
+                if (asset == null) { SetResult($"❌ 開啟編輯頁失敗：讀不到角色卡 `{iPersona}`"); return; }
+                UCL_CommonEditPage.Create(asset);               // Create = clone 一份編輯，要在該頁按存檔才寫回
+                SetResult($"✏ 已開啟 `{iPersona}` 的角色卡編輯頁 —— 改完記得在那頁存檔（本頁的顯示按「🔄 重讀」更新）");
+            }
+            catch (Exception ex) { SetResult($"❌ 開啟編輯頁失敗：{ex.Message}"); }
+        }
+
+        // 開角色卡型別的標準選取頁（要批次瀏覽 / 刪卡 / 用內建 Create 流程時走這裡）
+        void DoOpenCardSelectPage()
+        {
+            try { UCL_SelectAssetPage.Create<UCL_ChatTavernPersonaCardAsset>(); }
+            catch (Exception ex) { SetResult($"❌ 開啟角色卡清單頁失敗：{ex.Message}"); }
+        }
+
+        // 讀取當前選中 persona 的角色卡快照；讀失敗也記住 id（避免每幀重試打磁碟）
+        void EnsureCardPreview(string iPersona)
+        {
+            if (m_CardPreviewId == iPersona) return;
+            m_CardPreviewId = iPersona;
+            m_CardPreview = null;
+            try { m_CardPreview = UCL_ChatTavernPersonaCardAsset.Util.GetData(iPersona, false); }
+            catch (Exception ex) { Debug.LogWarning($"[PersonaAgentAdmin] 讀角色卡 `{iPersona}` 失敗：{ex.Message}"); }
+        }
+
+        // ===========================================================
         // 區塊：小工具
         // ===========================================================
+        string SelectedCardPersona =>
+            (m_Personas.Count > 0 && m_CardPersonaIdx >= 0 && m_CardPersonaIdx < m_Personas.Count)
+                ? m_Personas[m_CardPersonaIdx].name : null;
+
+        PersonaRow SelectedCardRow() =>
+            (m_Personas.Count > 0 && m_CardPersonaIdx >= 0 && m_CardPersonaIdx < m_Personas.Count)
+                ? m_Personas[m_CardPersonaIdx] : null;
+
+        static int Count(List<string> iList) => iList != null ? iList.Count : 0;
+
+        // 自由文字顯示用：截斷 + 把 '<' 換成全角（label 開了 richText，裸 '<' 會被吃成標籤導致整行消失）
+        static string Ellipsis(string iText, int iMax)
+        {
+            if (string.IsNullOrEmpty(iText)) return "(空)";
+            string s = iText.Replace('<', '＜').Replace('\n', ' ');
+            return s.Length <= iMax ? s : s.Substring(0, iMax) + "…";
+        }
+
         string SelectedRebindPersona =>
             (m_Personas.Count > 0 && m_RebindPersonaIdx >= 0 && m_RebindPersonaIdx < m_Personas.Count)
                 ? m_Personas[m_RebindPersonaIdx].name : null;

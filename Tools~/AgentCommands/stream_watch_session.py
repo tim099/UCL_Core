@@ -14,8 +14,8 @@ stream_watch_session.py — 直播連續觀看模式 (Stream Watch Mode) CLI
 設計依據:
   - 觀看 workflow 心智模型 = 有界 ring-buffer producer-consumer (basecamp 2026-06-06 設計)
   - frame→montage 引擎: AgentCommands/Tools/screenstream_montage.py (--after-mtime/--max-tiles/next-cursor)
-  - session 骨架鏡像: UCL_Core/Tools~/AgentCommands/waiter_session.py
-  - end-time 機制鏡像: remote_work_session.py (2026-05-18 Tim 重構成 --end-time HH:mm)
+  - session 骨架: 原鏡像自 waiter_session.py（該檔已隨 session 模式退役刪除 2026-07-29）
+  - end-time 機制: 原鏡像自 remote_work_session.py（同上已刪；--end-time HH:mm 慣例保留）
 
 CLI 子命令:
   start    — 開新 watch session, 寫 state, 走 tavern-keeper 開播陪看 announcement
@@ -25,7 +25,7 @@ CLI 子命令:
   status   — 列單一 session JSON
   list     — 列當前 active watch sessions
 
-依賴: UCL_Core work_session.py 的 utility helpers (consumer→library 方向, 合法)
+依賴: UCL_Core Tools~/AgentCommands/_lib/session_common.py 的共用 helpers（原本住 work_session.py，2026-07-29 抽出）
 """
 
 from __future__ import annotations
@@ -42,15 +42,15 @@ try:
 except Exception:
     pass
 
-# 區塊職責：import work_session helpers — 本檔已遷入 <UCL_Core>/Tools~/AgentCommands (2026-07-26 Tim 拍板),
-#          與 work_session.py 同目錄, 不再需要經專案端 AgentCommands._lib.tavern_paths 反查 UCL_Core 位置。
+# 區塊職責：import 共用 session helpers（_lib/session_common.py）— 本檔已遷入 <UCL_Core>/Tools~/AgentCommands,
+#          與 _lib 同目錄, 不需經專案端 AgentCommands._lib.tavern_paths 反查 UCL_Core 位置。
 # 物理意義：script 目錄自動在 sys.path (python 直跑) — 顯式 insert 一次保 daemon/子行程場景也安全。
 # 數值影響：路徑算錯 → import 失敗 fail-fast, 代表環境壞了, 不該 silent 跑下去。
 _HERE = Path(__file__).resolve().parent                 # <UCL_Core>/Tools~/AgentCommands
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from work_session import (  # noqa: E402
+from _lib.session_common import (  # noqa: E402
     utcnow_iso,
     parse_iso,
     short_uuid,
@@ -61,7 +61,7 @@ from work_session import (  # noqa: E402
     _REPO_ROOT,
 )
 
-# 區塊職責：本 module 自有 state 檔, 跟 waiter/work session 完全分開避免混淆
+# 區塊職責：本 module 自有 state 檔（work/waiter/remote 三種舊 session 模式已於 2026-07-29 退役）
 _SESSIONS_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "stream_watch_sessions.json"
 _AUDIT_DIR = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "stream_watch_session_audit"
 

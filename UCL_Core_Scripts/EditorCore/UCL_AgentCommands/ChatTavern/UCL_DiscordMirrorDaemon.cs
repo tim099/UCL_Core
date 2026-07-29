@@ -443,12 +443,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // echo 排除：discord_inbound relay 寫回 tavern 的訊息不再 mirror 回 Discord（防迴圈）— 對齊 python config
-        static bool IsEcho(UCL_ChatMessage msg)
-        {
-            if (msg.meta != null && msg.meta.TryGetValue("source", out var src) && src == "discord") return true;
-            if (!string.IsNullOrEmpty(msg.sender_id) && msg.sender_id.StartsWith("discord:")) return true;
-            return false;
-        }
+        // 2026-07-29：判定改走 UCL_ChatTavernIO.IsExternalRelay（單一事實源 meta.source 的共用讀取點），
+        //            本地不再各自比對字串 — 未來新增中繼來源（LINE / webhook…）時防迴圈自動跟上。
+        static bool IsEcho(UCL_ChatMessage msg) => UCL_ChatTavernIO.IsExternalRelay(msg);
 
         // 區塊職責：Bug B fix — cursor-driven 掃描窗收集（取代固定 Tail(SCAN_TAIL_N)）
         // 物理意義：固定尾窗在「積壓 > N」（burst / 429 backoff 期間訊息照進 / daemon 離線恢復）時，

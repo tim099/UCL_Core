@@ -373,7 +373,6 @@ namespace UCL.Core.EditorLib.Page
 
                 // ---- 安全護欄檢查 ----
                 bool tavernOn = UCL_ChatTavernSystemControl.IsEnabled;
-                bool hasActiveWS = HasActiveWorkSession();
                 bool validInput = m_PathDraftMode switch
                 {
                     AgentCommandsPathMode.GlobalAbsolute => !string.IsNullOrEmpty((m_PathDraftAbsolute ?? "").Trim()) && Path.IsPathRooted(m_PathDraftAbsolute.Trim()),
@@ -384,7 +383,6 @@ namespace UCL.Core.EditorLib.Page
                 if (!validInput) blockReason = m_PathDraftMode == AgentCommandsPathMode.GlobalAbsolute
                     ? "請填入有效的絕對路徑 (rooted)" : "請填入相對路徑";
                 else if (tavernOn) blockReason = "聊天酒館系統目前是啟用中 — 請先到上面把系統關閉再改路徑 (避免 daemon 寫到舊路徑半途)";
-                else if (hasActiveWS) blockReason = "偵測到 active work-session — 請先結束 work-session 再改路徑 (執行狀態會撕裂)";
 
                 // ---- 套用按鈕 + 重新載入 ----
                 // 用 GUI.enabled 手動 save/restore 取代 UnityEditor.EditorGUI.DisabledScope (對齊 UCL_EditorMenuPage)
@@ -482,32 +480,6 @@ namespace UCL.Core.EditorLib.Page
             catch { return false; }
         }
 
-        // 是否有 active work-session (未 ended / 未 aborted)
-        // 物理意義: 當前資料根下的 ChatTavern/work_sessions.json 解析 active_sessions 陣列
-        static bool HasActiveWorkSession()
-        {
-            try
-            {
-                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "work_sessions.json");
-                if (!File.Exists(path)) return false;
-                string content = File.ReadAllText(path);
-                if (string.IsNullOrEmpty(content)) return false;
-                var jd = JsonData.ParseJson(content);
-                if (jd == null || !jd.IsObject) return false;
-                var active = jd["active_sessions"];
-                if (active == null || !active.IsArray) return false;
-                for (int i = 0; i < active.Count; i++)
-                {
-                    var entry = active[i];
-                    if (entry == null || !entry.IsObject) continue;
-                    if (entry.GetBool("ended", false)) continue;
-                    if (entry.GetBool("aborted", false)) continue;
-                    return true;  // 找到一個 active 就夠擋
-                }
-                return false;
-            }
-            catch { return false; }
-        }
     }
 }
 #endif

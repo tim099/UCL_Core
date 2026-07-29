@@ -87,11 +87,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          如果完全沒 default group → fallback 到既有 tavern_mirror.webhook_urls
         public bool m_IsDefault = false;
 
-        // 區塊職責：此 group 是否視為「工作頻道」— 發訊息到此 group 自動 credit 1 token (Tim 拍板)
-        // 物理意義：Op_Post 結尾 hook 會用本旗標判定要不要發「工作訊息薪資」(per Tim 規則：工作訊息視為上班，固定 1 token)
-        // 數值影響：true → Op_Post auto-credit accountId=sender amount=1 source_kind=work_post；false → 不結算
-        // 邊界：跟 m_IsDefault 是兩個獨立旗標 — 一個 group 可以是 default 但不是 work（譬如 lounge 設 default 不該領薪），
-        //      也可以是 work 但不是 default（譬如未來 review-channel 也算工作）
+        // 區塊職責：（已停用）此 group 是否視為「工作頻道」
+        // 物理意義：原本 Op_Post 會依本旗標發「工作訊息薪資」(+1 token / source_kind=work_post)；
+        //          2026-07-29 上班模式退役後**已無任何消費者**，欄位保留只為讓既有 asset json 不因未知鍵漂移。
+        // 數值影響：無 — 設 true / false 都不再結算任何 token。新的合作架構若要重啟頻道語意，請另立欄位別復用它。
+        [System.Obsolete("上班模式已退役（2026-07-29）：本旗標無消費者，勿在新程式碼使用。")]
         public bool m_IsWorkChannel = false;
 
         // 區塊職責：此 group 是否為「壟斷分類」— 命中此 category 的訊息 ONLY 到此 group，main / 其他 additive group 都跳過

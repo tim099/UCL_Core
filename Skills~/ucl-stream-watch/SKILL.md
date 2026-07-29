@@ -135,7 +135,7 @@ $PY bookmark --book <片slug> --chapter <看到哪集> --note "看到哪 + 觀�
 
 ## ⛔ Hard Rules
 
-1. **Session 等到期 / Tim 顯式叫停才 end** — 提前 end 不加 `--early-confirm` 被擋（exit 2），同 waiter
+1. **Session 等到期 / Tim 顯式叫停才 end** — 提前 end 不加 `--early-confirm` 被擋（exit 2）
 2. **每 cycle 一定呼叫 `cycle` 取最新狀態** — 自己腦補 elapsed/remaining 會誤 end
 3. **每輪發完評論必跑 `record_observation --next-cursor --tavern-seq`** — 不記 = 沒 bonus + frame cursor 不推進 (下輪重疊) + 酒館已讀游標不推進 (下輪重顯同訊息)
 4. **cursor 一律餵 montage report 的 next-cursor** — 不要自己塞 wall-clock，會漂
@@ -261,7 +261,7 @@ python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py end --session sw-
 ## 📚 相關
 
 - 設計同源鐵律：ring buffer 檔名 index ≠ 時間序（identity layer）/ 禁靜默截斷（overflow 報 lost）/ cross-layer 驗證（讀真圖不只信 stdout）
-- 對偶 session 模式：`ucl-waiter`（接客）/ `ucl-remote-work`（遠端工作）/ `ucl-work-session`（上班）— 同 start/cycle/end + 結算骨架
+- 註：work-session / remote-work / waiter 三種舊 session 模式已於 2026-07-29 全數退役；本 skill 的 start/cycle/end + 結算骨架自成一套。
 - 區別：`ucl-watch-video`（看 YouTube 網路影片抓轉錄稿）≠ 本 skill（看 Tim 即時螢幕直播）
 - 心得分享：`ucl-chat-tavern` Task Share 規範
 - **觀影心得整合：`reading-library` skill**（影集＝書、每集＝章；用 `library.py` 的 add-book/log-chapter/add-character/add-term/revise-view/bookmark/resume/review，與讀書共用同一套機制與心得庫）。範例已建檔：`vivy-fluorite-eyes-song`《Vivy 螢石之眼之歌》。

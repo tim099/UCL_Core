@@ -671,70 +671,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 Debug.LogWarning($"[Tavern] persona lock renew fail（post 不受影響）：{ex.Message}");
             }
 
-            // R7 (T02 chat-flow-robust) — Mention 解析 → 自動寫對方 inbox
-            // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準
-            // 數值影響：sender 自己 / 系統 id（_開頭）/ 非 identities.json 已註冊者 全跳過
-            // Robustness：try-catch 包整段 — regex 或 IO 失敗都不該擋 post 主流程（post 已 AppendMessage 成功）
-            // 共筆：Gemini大小姐 在 T02 task_claim 同步並行寫了基礎版；本小姐補白名單 / 系統 id 過濾 / try-catch 保護
-            try
-            {
-                var matches = System.Text.RegularExpressions.Regex.Matches(body, @"@([a-zA-Z0-9_-]+)");
-                if (matches.Count > 0)
-                {
-                    var mentionedIds = new HashSet<string>();
-                    foreach (System.Text.RegularExpressions.Match m in matches) mentionedIds.Add(m.Groups[1].Value);
-
-                    // 載入白名單（防 @everyone / 拼錯亂寫 inbox）— Tim 2026-07-24 persona-first 拍板：
-                    // 白名單來源 = identities.json（agent 層）∪ AwakenInit/personas（persona 層）。
-                    // 物理意義：persona 是通知主 key，@persona 精準命中 inbox/persona.md；@agent 命中 inbox/agent.md（共用信箱）。
-                    //          兩者都由下方 AppendInbox(targetId) 依 id 各自寫檔，天然分流、零 fan-out（basecamp 2026-07-24 拍磚）。
-                    // 併不是拆：純移除白名單會被 @everyone / 書名 slug（@summit-masthead-bet）灌垃圾 inbox 檔。
-                    var identList = UCL_ChatTavernIO.LoadIdentities();
-                    var validIds = new HashSet<string>();
-                    foreach (var idRow in identList.identities) validIds.Add(idRow.id);
-                    foreach (var personaId in UCL_ChatTavernIO.LoadPersonaIds()) validIds.Add(personaId);
-
-                    int notifyCount = 0;
-                    foreach (string targetId in mentionedIds)
-                    {
-                        if (targetId == senderId) continue;            // 不 mention 自己
-                        if (targetId.StartsWith("_")) continue;        // 系統 id（_quest_system 等）跳過
-                        if (!validIds.Contains(targetId)) continue;    // 白名單外（@everyone / 拼錯）跳過
-                        string inboxTitle = $"💬 被 {senderName} 提及 (seq={seq})";
-                        string inboxBody = $"在房間 `{room.name}`，{senderName} 提到了你：\n> {Truncate(body, 200)}\n\n建議動作：前往該房回覆。";
-                        UCL_ChatTavernQuestIO.AppendInbox(roomId, targetId, seq, inboxTitle, inboxBody);
-                        notifyCount++;
-                    }
-                    if (notifyCount > 0)
-                    {
-                        Debug.Log($"[Tavern] post {roomId}/seq={seq} mention 寫 inbox ×{notifyCount}: {string.Join(",", mentionedIds)}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] mention parse 失敗（post 不受影響）：{ex.Message}");
-            }
+            // R7 mention 解析 → inbox：2026-07-29 下沉到 UCL_ChatTavernIO.AppendMessage（唯一寫入點）。
+            // 理由：它是「寫入不變量」不是 agent 行為 hook — 掛在 Op_Post 會讓其餘 6 個寫入端（Discord
+            //      inbound / 酒保 / quest IO / BankAdminPage…）的 @mention 全部靜默漏掉（實證 seq 9504）。
+            //      同「判定做在源頭、一個開關管所有路」哲學。這裡不可以再寫一份，否則雙重通知。
 
             var tail = UCL_ChatTavernIO.Tail(roomId, 100);
             // 中性措辭：_last_view.md 會被任何 agent 讀到，不能用「你」（會讓讀者誤以為自己是上一位 poster）
             string header = $"> 上一筆 post (seq={seq}) by {senderName}：「{Truncate(body, 80)}」";
-            // T28 (Tim 2026-05-14 拍板) — work-mode banner: 若 sender 在 active work_session 內, append 精簡上班規則提示到 header
-            // 物理意義: agent 每筆 post 看到 banner = 反射弧訓練, 防 early-clockout / 派工漏 dispatch / phantom-payroll
-            // 數值影響: 純 render-layer banner, 不寫 message.jsonl 不發 Discord noise
-            string workBanner = TryBuildWorkSessionBanner(senderPersona, seq);
-            if (!string.IsNullOrEmpty(workBanner))
-            {
-                header += "\n\n" + workBanner;
-            }
+            // 註 (2026-07-29)：原本這裡會附 work-mode banner（sender 在 active work_session 時提示上班規則），
+            //                 隨上班模式退役一併移除。
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 
             // T45 — Op_Post 結尾統一 auto-credit / auto-debit hook（重構自 T43 work_post 單一規則）
             // 物理意義：把所有「post 寫入時自動結算」的規則集中在這個區塊；每個 sub-rule 獨立 fail-swallow 互不影響
-            // 數值影響：sub-rule 1 = work_post (T43, 發到 work-channel +1 token)；
-            //          sub-rule 2 = token_parse (T44/T45, body 內 N+token 字樣 → +N token，限 sender=Tim)
+            // 數值影響：sub-rule = token_parse (T44/T45, body 內 N+token 字樣 → +N token，限 sender=Tim)
+            //          （work_post 上班薪資 sub-rule 已於 2026-07-29 隨上班模式退役移除）
             // 邊界：
             //   - sender 是 system / NPC / quest 系統 / alter 副人格 → skip 全部 sub-rule（不領薪）
             //   - seq <= 0（idempotent skip 或寫入失敗）→ skip 防重
@@ -743,17 +697,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (seq > 0 && IsRealAgentSender(senderId))
             {
                 string idempKey = GetArg(args, "idempotency_key", null);
-                string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
-
-                // Sub-rule A: work_post (T43) — routing target group's IsWorkChannel=true → +1 token 基本薪資
-                TryAutoCreditWorkPost(senderId, roomId, seq, categoryMeta, idempKey);
-
                 // Sub-rule B: token_parse (T44/T45) — body 內 N+token 字樣解析數值 → 自動 credit
                 TryAutoCreditTokenParse(senderId, roomId, seq, body, idempKey);
 
-                // Sub-rule C: T10 (Tim 2026-05-14) — ding-ack auto-recruit
-                // tag=ack-only → spawn work_session.py add-worker-auto 把 sender 加進 active sessions
-                TryAutoRecruitOnDingAck(senderPersona, senderId, earlyMeta);
+                // Sub-rule C（T10 auto-recruit）已於 2026-07-29 移除 — 見下方區塊註解。
             }
 
             // Discord tavern mirror 由 UCL_DiscordMirrorDaemon poll 訊息檔送出 (2026-07-28: 寫入端不再觸發).
@@ -761,77 +708,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：T10 sub-rule C — tavern post auto-recruit (Tim 2026-05-14 早 + 下午拍板)
-        // T22 update (2026-05-14 下午): 拿掉 tag=ack-only 限制 — 任何 real-agent
-        //                              tavern post → trigger auto-recruit. 解 gura/calli
-        //                              ack 後仍不知道有 session 的問題 (Tim 觀察: 「她們完全沒意識到」)
-        // 物理意義：別大小姐進酒館發任何訊息 → 自動加進所有 active work sessions workers list
-        // 數值影響：fire-and-forget spawn python subprocess 跑 work_session.py add-worker-auto
-        //          沒 active session → silent no-op; 已 manager/worker → skip
-        // 邊界：
-        //   - 任何 real-agent post (已過 IsRealAgentSender) 都觸發 — 不再要求 tag (T22)
-        //   - 加進所有 active sessions (Tim Q2=B 拍板)
-        //   - Tim 黑名單 (HumanPayerSenders) — 不被招募
-        //   - 缺 sender_persona 仍嘗試 (用 senderId 當 persona, work_session.py 自己處理 resolve)
-        //   - 副作用承擔: 員工碰巧進酒館聊天會被拖進 session 領薪 (Tim 拍板接受 Q2=B 更猛副作用)
+        // 區塊：T10 auto-recruit（2026-07-29 移除，Tim 拍板）
+        // 移除的東西：TryAutoRecruitOnDingAck / FindWorkSessionScript — 「real-agent 在酒館發言 →
+        //            fire-and-forget spawn work_session.py add-worker-auto 把 sender 加進 active session」。
+        // 為什麼移除：script 路徑寫死 CardGame/Assets/UCL/UCL_Core 與 Assets/UCL/UCL_Core 兩個候選，
+        //            本專案 UCL_Core 掛在 Assets/Plugins/UCL_Core → 兩個都 miss → File.Exists 失敗後
+        //            silent return（連 warning 都不印）。也就是說這條路在本專案從未執行過，
+        //            是「靜默失效的 install-path 硬編碼」（見 ucl-core-paths 慣例）。
+        // 之後要復原怎麼做：不要再 spawn python — 改在 C# 端直接讀寫
+        //            <DataRoot>/ChatTavern/work_sessions.json（與 work_session.py 共讀同一份，
+        //            同 awakening.py ↔ UCL_LoginStatusPage 的雙實作先例）。
         // ===========================================================
-        static void TryAutoRecruitOnDingAck(string senderPersona, string senderId, Dictionary<string, string> meta)
-        {
-            try
-            {
-                // T22: 移除 tag=ack-only 限制 — 任何 real-agent tavern post 都嘗試 recruit
-                // (caller 已過 IsRealAgentSender 確認非 system/NPC/alter, 是真 agent 訊息)
-
-                // Tim 黑名單 — Tim 不打工
-                if (HumanPayerSenders.Contains(senderId)) return;
-
-                // sender_persona 缺時用 senderId 當 fallback (work_session.py resolve_persona 自己判)
-                string personaArg = !string.IsNullOrWhiteSpace(senderPersona) ? senderPersona : senderId;
-
-                // Locate work_session.py — 走 RepoRoot 拼路徑
-                string scriptPath = Path.Combine(UCL_RepoPath.RepoRoot,
-                    "CardGame", "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py");
-                if (!File.Exists(scriptPath))
-                {
-                    // UCL_Core 可能在別路徑 (扁平 layout / TEVI 等) — 嘗試其他可能 path
-                    scriptPath = FindWorkSessionScript();
-                    if (string.IsNullOrEmpty(scriptPath)) return;
-                }
-
-                // Fire-and-forget: spawn python subprocess, 不等結果不擋 post 主流程
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = $"\"{scriptPath}\" add-worker-auto --persona \"{personaArg}\"",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    WorkingDirectory = UCL_RepoPath.RepoRoot,
-                };
-                var proc = System.Diagnostics.Process.Start(psi);
-                // 不 wait — fire-and-forget. Process 自己跑完釋放.
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] T10 auto-recruit fail-swallow: {ex.Message}");
-            }
-        }
-
-        static string FindWorkSessionScript()
-        {
-            // 嘗試從常見 UCL_Core 位置反推
-            string[] candidates = new[]
-            {
-                Path.Combine(UCL_RepoPath.RepoRoot, "CardGame", "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py"),
-                Path.Combine(UCL_RepoPath.RepoRoot, "Assets", "UCL", "UCL_Core", "Tools~", "AgentCommands", "work_session.py"),
-            };
-            foreach (var c in candidates)
-            {
-                if (File.Exists(c)) return c;
-            }
-            return null;
-        }
 
         // ===========================================================
         // 區塊：T43 — sender 真實 agent 判定（給 work_post / token_parse auto-credit 用）
@@ -847,6 +734,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (lower.StartsWith("_")) return false;                         // _quest_system / _system / _bot 等慣例 reserved
             if (lower == "system") return false;
             if (lower == "tavern-keeper") return false;                      // 酒保 NPC
+            // 外部中繼身分一律不進經濟結算（2026-07-29）— 這是**身分類別規則**不是人名枚舉：
+            // Discord 中繼進來的 sender_id 是 "discord:<uid>"（真人，不是工作中的 agent）。
+            // 不擋的話 token_parse 會把 Tim 從手機打的「+50 token」當自動結算指令執行。
+            if (lower.StartsWith("discord:")) return false;
             if (lower.Contains("bot")) return false;                         // 一般 bot 慣例
             if (lower.EndsWith("-alter")) return false;                      // solo brainstorm 副人格
 
@@ -854,49 +745,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：T46 — Human payer 黑名單（Bug 修：Tim 不該領 work_post 薪資）
-        // 物理意義：Tim 等 human paying party 發訊息進酒館不該被視為「工作的 agent」自動領薪
-        //          原 IsRealAgentSender 把 Tim 當 real agent 通過 → work_post +1 給 Tim → Tim 帳戶莫名累積 token
-        // 數值影響：T46 修 — work_post helper 開頭排除 human payer；token_parse 規則不受影響（Tim 仍可自結算）
-        // 邊界：未來若有其他 human user (如 PM / Designer) 加進此 set 即可
+        // 區塊：work_post 上班薪資（2026-07-29 移除，Tim 拍板上班模式退役）
+        // 移除的東西：TryAutoCreditWorkPost（發到 IsWorkChannel=true 的頻道 → +1 token 基本薪資）
+        //            與 HumanPayerSenders（T46 為了讓 Tim 不領薪加的人名黑名單，隨 work_post 失去消費者）。
+        // 保留：token_parse sub-rule（body「N token」自動結算）— 打賞/結算語意，與上班無關。
+        //      歷史 ledger 內 source_kind=work_post 的紀錄照常可讀，只是不再產生新的。
         // ===========================================================
-        static readonly HashSet<string> HumanPayerSenders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Tim",   // T46 — paying party 不該領「工作薪資」
-        };
-
-        // ===========================================================
-        // 區塊：T45 sub-rule A — work_post 自動結算（T43 邏輯獨立成 helper 給統一 hook 區塊呼叫）
-        // 物理意義：訊息 routing target group's m_IsWorkChannel=true → credit 1 token 基本薪資
-        // 數值影響：fail-swallow；ledger source_kind=work_post；source_ref=<room>#seq=N；cmd_id 帶 _work_post 後綴
-        // T46 修：HumanPayerSenders 黑名單跳過（Tim 不領薪）
-        // ===========================================================
-        static void TryAutoCreditWorkPost(string senderId, string roomId, int seq, string categoryMeta, string idempKey)
-        {
-            try
-            {
-                // T46 — human paying party 不該領 work_post 薪資（Bug 修）
-                if (HumanPayerSenders.Contains(senderId)) return;
-
-                var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
-                if (targetGroup == null || !targetGroup.m_IsWorkChannel) return;
-
-                string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_work_post" : $"work_post_{roomId}_{seq}";
-                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
-                    accountId: senderId,
-                    amount: 1,
-                    sourceKind: "work_post",
-                    sourceRef: $"{roomId}#seq={seq}",
-                    description: $"work post: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
-                    callerAgentId: "system",
-                    cmdId: cmdId);
-                Debug.Log($"[Tavern] work_post auto-credit +1 → {senderId} (group={targetGroup.ID}, category={categoryMeta})");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] T45 work_post auto-credit fail（post 主流程不受影響）：{ex.Message}");
-            }
-        }
 
         // ===========================================================
         // 區塊：T45 sub-rule B — token_parse 自動結算（T44 新功能，重構整合到 T45 統一 hook）
@@ -1672,91 +1526,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return s.Length <= max ? s : s.Substring(0, max) + "...";
         }
 
-        // ===========================================================
-        // T28 (Tim 2026-05-14 拍板) — Work-Mode Banner
-        // 區塊職責: 偵測 sender persona 在 active work_session, build 精簡上班規則 banner 給 _last_op.md / _last_view header.
-        // 物理意義: 每筆 post agent 看到 banner = 反射弧訓練; 5 條 rule 輪播避免 banner blindness.
-        //          靜默 (return "") 條件: persona 空 / 無 active session / file 讀失敗
-        // 數值影響: 純 render-layer banner; 不寫 jsonl 不發 Discord; 不擋 post 主流程 (try-catch fail-swallow)
-        // ===========================================================
-        static readonly string[] s_WorkModeRules = new string[]
-        {
-            "🎯 reflex check: 看 task → 派給誰? 為何不是我? (manager 反射弧, D2 弱項今日 4 次)",
-            "⛔ end 前必加 --early-confirm flag (now < end_ts - 60s 自動擋)",
-            "💸 sender 沒 contribute 證據 = salary skip (phantom-payroll guard)",
-            "📋 中型 task 走 Quest workflow: task_create → claim → done lifecycle",
-            "🚫 abort 限解卡死 — 「fresh context / dogfood」不算 (T14 hard rule)",
-        };
-
-        // Helper: 抽 JSON 字串 value, 容忍 "key":"v" / "key": "v" 兩種空白
-        static string ExtractJsonStrValue(string json, string key)
-        {
-            string[] patterns = { $"\"{key}\":\"", $"\"{key}\": \"" };
-            foreach (var pat in patterns)
-            {
-                int idx = json.IndexOf(pat);
-                if (idx >= 0)
-                {
-                    int s = idx + pat.Length;
-                    int e = json.IndexOf('"', s);
-                    if (e > s) return json.Substring(s, e - s);
-                }
-            }
-            return "";
-        }
-
-        static string TryBuildWorkSessionBanner(string senderPersona, int seq)
-        {
-            if (string.IsNullOrEmpty(senderPersona)) return "";
-            try
-            {
-                // 走可 override 資料根;預設 = RepoRoot/AgentCommands/ChatTavern/work_sessions.json
-                string path = System.IO.Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "work_sessions.json");
-                if (!System.IO.File.Exists(path)) return "";
-                // 容忍 pretty-print 空白變體 — 主要 work_sessions.json 是 pretty (Python json.dump indent=2),
-                // 但 IdentityAsset / RoomAsset 是 compact, 防範未來 schema 變動
-                string json = System.IO.File.ReadAllText(path, System.Text.Encoding.UTF8);
-                // Lightweight string search — 避免 full JSON parse 開銷 (banner 是 hot path 每筆 post 跑)
-                // 找 \"persona\":\"<senderPersona>\" + \"ended\":false 配對 (粗略但夠用 — false positive 印 banner 不會傷)
-                // 容忍 pretty-print 空白變體: "persona":"X" 跟 "persona": "X" 都要 match
-                string personaTokenA = $"\"persona\":\"{senderPersona}\"";
-                string personaTokenB = $"\"persona\": \"{senderPersona}\"";
-                if (!json.Contains(personaTokenA) && !json.Contains(personaTokenB))
-                { return ""; }
-                // 找 active_sessions block 簡單檢查 (sender 在 manager.persona 或 workers[].persona)
-                int activeIdx = json.IndexOf("\"active_sessions\"");
-                if (activeIdx < 0) { Debug.LogWarning("[Tavern banner] active_sessions key not found"); return ""; }
-                // 從 active_sessions block 內找 senderPersona token + session id + end_ts
-                int historyIdx = json.IndexOf("\"history\"", activeIdx);
-                string activeBlock = historyIdx > activeIdx
-                    ? json.Substring(activeIdx, historyIdx - activeIdx)
-                    : json.Substring(activeIdx);
-                if (!activeBlock.Contains(personaTokenA) && !activeBlock.Contains(personaTokenB)) return "";
-                // 抽 end_ts (第一個 hit 視為 sender's session — multi-session 場景 banner 可能不精準, MVP 接受)
-                string endTs = ExtractJsonStrValue(activeBlock, "end_ts");
-                string sessId = ExtractJsonStrValue(activeBlock, "id");
-                // 算剩餘分鐘
-                string remainStr = "";
-                if (!string.IsNullOrEmpty(endTs))
-                {
-                    if (System.DateTime.TryParse(endTs, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var endDt))
-                    {
-                        double remainMin = (endDt - System.DateTime.UtcNow).TotalMinutes;
-                        remainStr = remainMin >= 0
-                            ? $"剩 {remainMin:F0} min @{endTs.Substring(11, 5)}Z"
-                            : $"OVERDUE {(-remainMin):F0} min";
-                    }
-                }
-                // 5 rule rotation by seq
-                string rule = s_WorkModeRules[seq % s_WorkModeRules.Length];
-                return $"⏰ **work-session active**: `{sessId}` ({remainStr})\n{rule}";
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] work-mode banner build 失敗 (post 不受影響): {ex.Message}");
-                return "";
-            }
-        }
 
         // ===========================================================
         // ═══════════════ Quest Workflow ops (MVP A) ═══════════════

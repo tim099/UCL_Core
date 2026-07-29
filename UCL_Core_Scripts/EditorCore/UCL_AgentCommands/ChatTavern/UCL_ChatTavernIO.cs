@@ -1053,9 +1053,137 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // per-room lock 保證的是「同一房間內不會有兩筆訊息因為交錯執行而算出同一個 seq」。
             int derivedSeq = UCL_ChatTavernWriteService.WriteMessageWithSeq(roomId, msg);
 
+            // 寫入不變量 (2026-07-29 下沉自 Cmd_Tavern.Op_Post)：
+            // 「任何進到房間的訊息都該觸發提及通知」跟來源無關 — 它是寫入不變量，不是 agent 行為 hook，
+            // 所以住在唯一寫入點才對。原本只掛在 Op_Post，導致 Discord inbound / 酒保 / quest IO /
+            // BankAdminPage 這 6 個呼叫端的 @mention 全部不進 inbox（2026-07-29 實證：Tim 從 Discord
+            // @summit 的訊息 summit 完全收不到）。放這裡天然 exactly-once（AppendMessage 是唯一寫入點）。
+            NotifyMentions(roomId, msg, derivedSeq);
+
             // Discord 鏡像不在此觸發 (2026-07-28 python 路徑移除)：UCL_DiscordMirrorDaemon 以
             // EditorApplication.update 1Hz 自行 poll + per-webhook 游標送出，寫入端零額外成本。
             return derivedSeq;
+        }
+
+        // ===========================================================
+        // 區塊：@mention → 對方 inbox 自動通知（R7；2026-07-29 自 Op_Post 下沉至此）
+        // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準。
+        // 數值影響：sender 自己 / 系統 id（_ 開頭）/ 非白名單者全跳過；白名單 = identities.json（agent 層）
+        //          ∪ AwakenInit/personas（persona 層），各自寫 inbox/<id>.md 天然分流。
+        // 效能：白名單解析走 TTL 快取（預設 60s）— 下沉後酒保 / Discord daemon 等高頻寫入端也會走這條，
+        //      每筆含 @ 的訊息都重讀兩份檔會變成每秒 IO。
+        // Robustness：整段 try-catch fail-swallow — regex / IO 失敗都不該讓已寫入的訊息回報失敗。
+        // ===========================================================
+        const double MENTION_WHITELIST_TTL_SEC = 60.0;
+        static HashSet<string> s_MentionWhitelist = null;
+        static double s_MentionWhitelistAt = -1;
+
+        static HashSet<string> GetMentionWhitelist()
+        {
+            double now = UnityEditor.EditorApplication.timeSinceStartup;
+            if (s_MentionWhitelist != null && (now - s_MentionWhitelistAt) < MENTION_WHITELIST_TTL_SEC)
+            {
+                return s_MentionWhitelist;
+            }
+            var aValid = new HashSet<string>();
+            var aIdentList = LoadIdentities();
+            if (aIdentList != null && aIdentList.identities != null)
+            {
+                foreach (var aRow in aIdentList.identities) aValid.Add(aRow.id);
+            }
+            foreach (var aPersonaId in LoadPersonaIds()) aValid.Add(aPersonaId);
+            s_MentionWhitelist = aValid;
+            s_MentionWhitelistAt = now;
+            return aValid;
+        }
+
+        // ===========================================================
+        // 區塊：外部中繼判定（2026-07-29 契約化）
+        // 物理意義：「這則訊息源自系統外部（Discord 等中繼），不是 agent 在酒館內發言」是**單一事實**，
+        //          存一份在 meta.source；防迴圈（mirror 不推回）與行為分流（未來的中繼專用處理）
+        //          都是這個事實的消費者 — 兩個讀取點、一份事實，不會有兩個布林同步漂移的問題。
+        // 數值影響：純判定無 IO。新增中繼來源（LINE / webhook…）時擴充本函式即可，呼叫端不必改。
+        // 契約：中繼寫入端**必須**在 meta 帶 source=<來源>（Discord daemon 已帶 source=discord + source_class
+        //      + relay + channel_label + discord_msg_id）；sender_id 的 "<來源>:" 前綴是第二道識別。
+        // ===========================================================
+        public static bool IsExternalRelay(UCL_ChatMessage msg)
+        {
+            if (msg == null) return false;
+            if (msg.meta != null && msg.meta.TryGetValue("source", out var aSrc)
+                && !string.IsNullOrEmpty(aSrc) && aSrc != "agent") return true;
+            if (!string.IsNullOrEmpty(msg.sender_id) && msg.sender_id.StartsWith("discord:")) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 驗收用：模擬「非 Op_Post 寫入端」（Discord daemon / 酒保）直呼 AppendMessage 時，
+        /// mention 是否仍會寫進對方 inbox。回傳摘要（同時以 Warning 落 log 供 agent 對帳）。
+        /// 走 run_cmd.py run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO --arg member=SelfTestMentionNotify
+        /// </summary>
+        public static string SelfTestMentionNotify()
+        {
+            const string aRoom = "chat-flow-robust";   // 低流量的既有房，不污染主廳
+            const string aTarget = "crest-001";
+            string aInboxPath = System.IO.Path.Combine(
+                UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot,
+                "ChatTavern", "rooms", aRoom, "inbox", aTarget + ".md");
+            long aBefore = System.IO.File.Exists(aInboxPath) ? new System.IO.FileInfo(aInboxPath).Length : 0;
+
+            var aMsg = new UCL_ChatMessage
+            {
+                sender_id = "discord:selftest",
+                sender_name = "SelfTest(模擬 Discord 中繼)",
+                kind = "chat",
+                body = $"@{aTarget} inbox 下沉驗收：本筆直呼 AppendMessage，未經 Op_Post。",
+                meta = new Dictionary<string, string> { { "source", "discord" }, { "tag", "selftest" } },
+            };
+            int aSeq = AppendMessage(aRoom, aMsg);
+
+            long aAfter = System.IO.File.Exists(aInboxPath) ? new System.IO.FileInfo(aInboxPath).Length : 0;
+            bool aOk = aAfter > aBefore;
+            string aResult = $"UCL_ChatTavernIO.SelfTestMentionNotify: room={aRoom} seq={aSeq} " +
+                $"inbox {aBefore}→{aAfter} bytes → {(aOk ? "✅ 非 Op_Post 寫入端也會通知" : "❌ 仍未通知")}";
+            Debug.LogWarning(aResult);
+            return aResult;
+        }
+
+        static void NotifyMentions(string roomId, UCL_ChatMessage msg, int seq)
+        {
+            try
+            {
+                if (msg == null || string.IsNullOrEmpty(msg.body) || seq <= 0) return;
+                string aSenderId = msg.sender_id ?? string.Empty;
+                var aMatches = System.Text.RegularExpressions.Regex.Matches(msg.body, @"@([a-zA-Z0-9_-]+)");
+                if (aMatches.Count == 0) return;
+
+                var aMentioned = new HashSet<string>();
+                foreach (System.Text.RegularExpressions.Match m in aMatches) aMentioned.Add(m.Groups[1].Value);
+
+                var aValidIds = GetMentionWhitelist();
+                string aSenderName = !string.IsNullOrEmpty(msg.sender_name) ? msg.sender_name : aSenderId;
+                var aRoom = GetRoom(roomId);
+                string aRoomName = aRoom != null && !string.IsNullOrEmpty(aRoom.name) ? aRoom.name : roomId;
+
+                int aNotifyCount = 0;
+                foreach (string aTargetId in aMentioned)
+                {
+                    if (aTargetId == aSenderId) continue;            // 不 mention 自己
+                    if (aTargetId.StartsWith("_")) continue;         // 系統 id（_quest_system 等）
+                    if (!aValidIds.Contains(aTargetId)) continue;    // 白名單外（@everyone / 拼錯 / 書名 slug）
+                    string aTitle = $"💬 被 {aSenderName} 提及 (seq={seq})";
+                    string aBody = $"在房間 `{aRoomName}`，{aSenderName} 提到了你：\n> {(msg.body.Length > 200 ? msg.body.Substring(0, 200) + "…" : msg.body)}\n\n建議動作：前往該房回覆。";
+                    UCL_ChatTavernQuestIO.AppendInbox(roomId, aTargetId, seq, aTitle, aBody);
+                    aNotifyCount++;
+                }
+                if (aNotifyCount > 0)
+                {
+                    Debug.Log($"[ChatTavern] {roomId}/seq={seq} mention 寫 inbox ×{aNotifyCount}: {string.Join(",", aMentioned)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ChatTavern] mention 通知失敗（訊息已寫入，不受影響）：{ex.Message}");
+            }
         }
 
 

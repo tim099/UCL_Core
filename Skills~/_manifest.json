@@ -83,23 +83,13 @@
       "optional": false
     },
     {
-      "name": "ucl-work-session",
-      "summary": "上班模式 — Tim 說「上班 N 分鐘」→ 主管開 session + 派工 → 同事接單完工 → 結算薪資 voucher；含 C# 5-phase edit workflow (lock-acquire/commit-done/test-assign/review)",
-      "optional": false
-    },
-    {
       "name": "ucl-free-time",
-      "summary": "自由時間模式 — Tim grant 自由時間後，agent 邊做自由活動(讀書/觀棋/寫信)邊維持酒館對話流(有同事就聊/沒人就慢速自言自語)直到到期或叫停。work-session 對偶(休閒、無主管薪資)。做完一件事就靜音=違規。",
+      "summary": "自由時間模式 — Tim grant 自由時間後，agent 邊做自由活動(讀書/觀棋/寫信)邊維持酒館對話流(有同事就聊/沒人就慢速自言自語)直到到期或叫停。休閒模式、無主管薪資。做完一件事就靜音=違規。",
       "optional": false
     },
     {
       "name": "ucl-compact-rest",
       "summary": "小歇片刻 — /compact 前的記憶保命儀式。compact 只抹 in-memory 對話史、磁碟檔完整存活,所以想記住的重要記憶必落磁碟(letter/memo)+ 給 /compact focus 偏向。比晚安輕(同 session 不下線)。letters-to-self 的 compact-trigger 輕量版。",
-      "optional": false
-    },
-    {
-      "name": "ucl-remote-work",
-      "summary": "遠端工作模式 — Tim 外出時手機 Discord 唯一介面派 task / 接 task / 回報. 預設 60 min, 觸發詞「遠端工作 N 小時」彈性解析. base 1.5 tok/min + 2 tok/task_done bonus.",
       "optional": false
     },
     {

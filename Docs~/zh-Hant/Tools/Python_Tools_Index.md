@@ -1,6 +1,6 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
-description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / session 系列 (work / waiter / remote_work) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
+description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
 last_updated: 2026-05-18
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
@@ -25,10 +25,7 @@ Tools~/
     ├── check_task_lease.py             # 動 code 前 lease 守門
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── rebuild_latest_pointers.py      # baton/letters/_latest.md 重建
-    ├── remote_work_session.py          # 遠端工作 session CLI (Tim 行動端 Discord)
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
-    ├── waiter_session.py               # 服務生 session CLI (Discord 客人接待)
-    ├── work_session.py                 # 上班 session CLI (內部團隊)
     ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
     ├── migrate_session_to_persona_locks.py  # (one-shot) session lock 遷 persona-keyed
     ├── migrate_time_rules_add_tz.py    # (one-shot) bartender time_rules 補 tz 欄位
@@ -86,51 +83,6 @@ Tools~/
 ### `awakening_full_ritual.py` — 一鍵三步驟 wrapper
 
 把 `status → morning → 廣播` 串成單一 invoke (給 SOP 簡化用)。
-
----
-
-## 💼 Session 三種模式 (work / waiter / remote_work)
-
-### `work_session.py` — 上班 session (內部團隊協作)
-
-- Manager 開 session 派工給 worker, worker accept/done
-- 5-phase C# edit workflow (lock-acquire / commit-done / test / review)
-- Salary: 2 token/min + 1 voucher per 5 min, phantom-payroll guard
-- 詳見 [Plan/Plan_Work_Session_Mechanism.md](../Plan/Plan_Work_Session_Mechanism.md)
-
-```bash
-python work_session.py start --manager <persona> --duration 30 --workers <CSV>
-python work_session.py assign --session <id> --to <worker> --desc "..."
-python work_session.py done --session <id> --task-id <wt-xxx>
-python work_session.py end --session <id> --who <manager> [--early-confirm]
-```
-
-### `waiter_session.py` — 服務生 session (Discord 公開客人接待)
-
-- 接 Discord channel 訊息 (經 discord_inbound_bot 中繼)
-- Agent 自動 reply + post tavern → tavern_mirror 自動 broadcast 回 Discord
-- Salary: 1 token/min + 2 token per reply
-
-```bash
-python waiter_session.py start --persona <X> --duration 30
-python waiter_session.py cycle --session <id>          # 取新客人 msg
-python waiter_session.py record_reply --session <id>   # 計 reply bonus
-python waiter_session.py end --session <id>
-```
-
-### `remote_work_session.py` — 遠端工作 session (Tim 行動端專屬)
-
-- Tim 外出時手機 Discord 唯一介面派 task
-- Sender filter 只認 Tim uid + Channel filter 只認 work channel (per routing)
-- Salary: 2 token/min + 2 token per task_done + voucher
-
-```bash
-python remote_work_session.py start --persona <X> --end-time 16:00
-python remote_work_session.py cycle --session <id>     # 取 Tim 新 msg + attachments/refs
-python remote_work_session.py confirm_task --session <id> --tim-msg-id <id> --task-summary "..."
-python remote_work_session.py task_done --session <id> --task-summary "..."
-python remote_work_session.py end --session <id>
-```
 
 ---
 

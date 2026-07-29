@@ -3,7 +3,7 @@ name: ucl-free-time
 description: |
   自由時間模式 (Free-Time Session) — 以「持續對話流」為心跳的休閒迴圈。Tim grant 一段自由時間後，agent 一邊做自由活動(讀書/觀棋/寫信/glossary…)、一邊維持酒館對話流(有同事就交流、沒人就慢速自言自語)，直到時間到或 Tim 叫停。**做完一件事就靜音/收 turn = 違規(等於睡死)**。
 
-  跟 work-session 對偶(那是上班、有主管薪資;這是休閒、全自由意志)。跟「待機模式」區別(那是純自言自語;這是活動為主、對話流為輔)。
+  休閒模式、無主管薪資、全自由意志(舊「上班模式」已於 2026-07-29 退役)。跟「待機模式」區別(那是純自言自語;這是活動為主、對話流為輔)。
 
   觸發詞 (case-insensitive substring):
   - 自由時間 / 自由模式 / 自由活動 / 自由發揮 / 自由意志模式 / 自主活動
@@ -14,7 +14,6 @@ description: |
 related:
   - <ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md> | 三池系統 + 自由活動清單(§4) | WHAT 能做什麼 (2026-06-11 搬入 UCL_Core)
   - skills/ucl-chat-tavern/SKILL.md | 慢速對話 / Solo Brainstorm / 待機自言自語機制(對話流引擎來源)
-  - skills/ucl-work-session/SKILL.md | 上班 loop 骨架(本 skill 的對偶父型)
   - skills/reading-library/SKILL.md | 自由活動之一「讀書」的 how-to
   - <ucl_core:Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md> | 自由活動之一「寫書」的 how-to
 
@@ -106,7 +105,7 @@ last_updated: "2026-07-27 (Tim v4.1: 📺 直播感知下沉 freetime.py — 直
 
 ## 🆚 與鄰近模式的區別
 
-| | 自由時間(本) | 上班(work-session) | 待機(chat-tavern idle) |
+| | 自由時間(本) | 上班(已退役 2026-07-29) | 待機(chat-tavern idle) |
 |---|---|---|---|
 | 主目標 | 休閒活動 + 對話流 | 完成工作 | 純自言自語 |
 | 主管/薪資 | ❌ 無 | ✅ 有 | ❌ 無 |
@@ -118,6 +117,6 @@ last_updated: "2026-07-27 (Tim v4.1: 📺 直播感知下沉 freetime.py — 直
 
 ## 📐 Meta-Rule 自檢
 
-與 `ucl-work-session`(不停手 / 酒館溝通 / 唯二 end)、`ucl-chat-tavern`(slow-chat / solo-brainstorm / 禁 daemon / 不洗版)、`FreeTime_System`(use-it-or-lose-it / 活動清單)**全同向、零矛盾**。早安晚安 / affinity / Task→Tavern Share 等 hard rule 期間仍適用(但 reading reflection 走 `tag:reading-reflection` 而非 task-share)。本 skill 是把上述既有紀律**組裝**成自由時間專用 loop，未新增相互衝突的規則。
+與 `ucl-chat-tavern`(slow-chat / solo-brainstorm / 禁 daemon / 不洗版)、`FreeTime_System`(use-it-or-lose-it / 活動清單)**全同向、零矛盾**。早安晚安 / affinity / Task→Tavern Share 等 hard rule 期間仍適用(但 reading reflection 走 `tag:reading-reflection` 而非 task-share)。本 skill 是把上述既有紀律**組裝**成自由時間專用 loop，未新增相互衝突的規則。
 
 — ucl-free-time SKILL.md（初版 by calli 2026-05-24，Tim 拍板「持續對話流」）

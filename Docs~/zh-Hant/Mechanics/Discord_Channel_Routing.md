@@ -6,7 +6,6 @@ target_audience: [AI_Agent, Developer]
 aliases: [discord routing, channel routing, channel mappings]
 tags: [discord, chat-tavern, routing, config]
 related:
-  - ucl_core:Docs~/zh-Hant/Mechanics/Waiter_Session_System.md | Waiter Session | 接待 Discord 客人 stand-by 機制 (cycle 用 priority desc 排序)
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordInboundDaemon.cs | Inbound Daemon | 讀本 routing 表（mtime 快取，存檔即生效）
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordGatewayClient.cs | Gateway Client | WebSocket 連線（bot 上線顯示 + MESSAGE_CREATE 即時推送）
   - ucl_core:Docs~/zh-Hant/Mechanics/Discord_Tavern_Mirror.md | Tavern Mirror | outbound（tavern→Discord）；與本文方向相反，已全 C# 化
@@ -36,10 +35,10 @@ AgentCommands/ChatTavern/discord_channel_routing.json
 ```
 
 由以下兩個 consumer 讀：
-- **Python**：`AgentCommands/Tools/discord_inbound_bot.py` 啟動時 `load_routing()`
+- **C# Inbound Daemon**：`UCL_DiscordInboundDaemon` 每 tick 依 mtime 快取重讀（存檔即生效）
 - **C# Editor**：`UCL_DiscordChannelRoutingPage` 編輯時 read/write
 
-> 注意：bot 是啟動時讀，不熱更新。改 config 後要 kill 現有 python process，daemon 5s 內自動 respawn 讀新檔。
+> 2026-07-29 更新：python `discord_inbound_bot.py` 已隨 inbound C# 化刪除，**不再需要 kill process / 等 respawn**；改完 routing 存檔即生效。
 
 ---
 
@@ -57,7 +56,7 @@ AgentCommands/ChatTavern/discord_channel_routing.json
       "tavern_room": "tavern",                // 對應 ChatTavern room id
       "label": "公開聊天酒館",                  // 顯示用名稱 (UI / 日誌 / agent context)
       "source_class": "external",             // freeform tag (慣例: external / internal / work / chitchat / urgent)
-      "priority": 10,                         // int, 越高越優先 (waiter cycle 按此 desc 排序)
+      "priority": 10,                         // int, 越高越優先 (供 inbound 路由排序用)
       "enabled": true,                        // false = bot 跳過此 channel 不 relay
       "guild_id": "1039197199013269584",      // (選填) 為了 audit / 跨 server 區分
       "tags": ["work"],                       // (選填) 自由分類 tag list
@@ -75,7 +74,7 @@ AgentCommands/ChatTavern/discord_channel_routing.json
 | `tavern_room` | ✅ | 對應 ChatTavern room id（多 channel 可指同一 room → 多對一）|
 | `label` | 建議 | 人類可讀名稱，agent context + UI 顯示用 |
 | `source_class` | ✅ | **Freeform string**（不限 enum）。慣例 tag 見下節 |
-| `priority` | ✅ | int，越高越優先；waiter cycle 排序鍵 |
+| `priority` | ✅ | int，越高越優先；inbound 路由排序鍵 |
 | `enabled` | ✅ | false = 整 row 失效 |
 | `guild_id` | ❌ | Discord server ID (audit) |
 | `tags` | ❌ | array of string，自由分類 |
@@ -196,7 +195,7 @@ outbound mirror（`UCL_DiscordMirrorDaemon`）看到 `meta.source == "discord"` 
 - **重排**：每 row 右側 `▲▼` 上下移
 - **儲存**：頂部 `Save` 寫回 JSON（手構序列化保留 meta 欄位）
 - **Refresh**：重讀 JSON（會丟掉未存改動）
-- **Restart Bot**：印出 PowerShell 命令引導 kill python（避免誤殺其他 python.exe；MVP 不直接 kill）
+- **Restart Bot**：（歷史遺留按鈕；inbound 已 C# 化、存檔即生效，不需重啟外部 process）
 - **Open JSON**：在檔案總管打開 JSON 所在資料夾
 
 ### Save 行為
@@ -270,7 +269,6 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 - [`<UCL_Core>/Tools~/AgentCommands/discord_inbound_bot.py`](../../../Tools~/AgentCommands/discord_inbound_bot.py)
 - [`<UCL_Core>/Tools~/AgentCommands/waiter_session.py`](../../../Tools~/AgentCommands/waiter_session.py)
 - [`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs)
-- [`<UCL_Core>/Docs~/zh-Hant/Mechanics/Waiter_Session_System.md`](Waiter_Session_System.md)
 - [`docs/Workflows/Discord_Inbound_Workflow.md`](../../../../../../docs/Workflows/Discord_Inbound_Workflow.md)（主專案，整體 setup SOP）
 
 ---

@@ -122,7 +122,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 | 文件 | 一句話描述 |
 |---|---|
-| 🐍 [Tools/Python_Tools_Index](Tools/Python_Tools_Index.md) ⭐ | **UCL_Core/Tools~ 全 Python 工具索引** — awakening (morning/goodnight) / session 系列 (work / waiter / remote_work) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。含 project-specific Tools 對照 + Localize 工具缺位提醒 |
+| 🐍 [Tools/Python_Tools_Index](Tools/Python_Tools_Index.md) ⭐ | **UCL_Core/Tools~ 全 Python 工具索引** — awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。含 project-specific Tools 對照 + Localize 工具缺位提醒 |
 
 ---
 

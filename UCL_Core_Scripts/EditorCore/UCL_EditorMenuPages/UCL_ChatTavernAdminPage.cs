@@ -140,7 +140,9 @@ namespace UCL.Core.EditorLib.Page
         //          → 修改後按套用寫回設定檔。persona 清單 = persona pool（AwakenInit/personas/*.json）
         //          ∪ 既有 override keys（config 裡有但 pool 沒有的也要能選到、能清）。
         List<string> m_PersonaNames = new List<string>();     // 下拉值清單
-        List<string> m_PersonaOptions = new List<string>();   // 下拉顯示字串（有 override 的標 ●）
+        List<string> m_PersonaOptions = new List<string>();   // 下拉顯示字串（有 override 標 ●；無角色卡標「（無卡）」）
+        // 有 PersonaCard asset 的 ID —— 用來把「臨時覆寫」與「正式身分」在 UI 上區分開
+        readonly HashSet<string> m_PersonaCardIds = new HashSet<string>(StringComparer.Ordinal);
         int m_SelectedPersonaIdx = 0;
         string m_SelectedUrlDraft = "";                        // 當前選中 persona 的 URL 編輯 draft
         // 區塊職責：兩個 UCL_ObjectDictionary 刻意分開 — 生命週期不同，混用會互相連坐
@@ -257,26 +259,55 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
-                // 區塊職責：建 persona 下拉清單 — PersonaCard asset 全 ID（Tim 2026-07-15 拍板改用
-                //          UCL_ChatTavernPersonaCardAsset.Util.GetAllIDs()）∪ 既有 override keys
-                // 物理意義：PersonaCard 是 persona 的正式 asset 真相源（不依賴 AwakenInit/personas 目錄
-                //          存在與否）；config 裡有但 card 沒有的（改名/測試殘留）也要能選到才能清
+                // 區塊職責：建 persona 下拉清單 — 三源 union：
+                //          PersonaCard asset 全 ID ∪ 既有 override keys ∪ AwakenInit/personas 全體
+                // 物理意義：這個下拉管的是「persona 在 Discord 顯示成什麼」= **展示層**；
+                //          PersonaCard 管的是「persona 是誰」= 身分層。override 天生是臨時覆寫，
+                //          不該要求先辦正式身分手續（貼便利貼不用先申請門牌）——
+                //          故缺卡的 persona 也要能選到、能直接釘 URL。
+                //          （crest-001 2026-07-29 判「住錯樓層」：單一路徑該用在身分，不該用在救急。）
+                // 數值影響：只影響可選項；override 的生效與 PersonaCard 完全無關（見
+                //          UCL_DiscordIdentityResolver.ResolveAvatarUrl 第 1 層純字串查表 sender_persona）。
+                //          config 有但 card / personas 都沒有的（改名殘留）也保留，否則清不掉。
                 var names = new SortedSet<string>(StringComparer.Ordinal);
+                m_PersonaCardIds.Clear();
                 try
                 {
                     foreach (var id in UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernPersonaCardAsset.Util.GetAllIDs())
                     {
-                        if (!string.IsNullOrEmpty(id) && !id.StartsWith("_")) names.Add(id);
+                        if (!string.IsNullOrEmpty(id) && !id.StartsWith("_"))
+                        {
+                            names.Add(id);
+                            m_PersonaCardIds.Add(id);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"[TavernAdmin] PersonaCard GetAllIDs fail: {ex.Message}");
                 }
+                // persona pool（awakening state 真相源）— 走 UCL_ChatTavernIO 既有 helper，不自行列目錄
+                try
+                {
+                    foreach (var id in UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO.LoadPersonaIds())
+                    {
+                        if (!string.IsNullOrEmpty(id)) names.Add(id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[TavernAdmin] LoadPersonaIds fail: {ex.Message}");
+                }
                 foreach (var kv in m_AvatarOverrides) names.Add(kv.Key);
                 m_PersonaNames = names.ToList();
                 var overrideKeys = new HashSet<string>(m_AvatarOverrides.Select(kv => kv.Key));
-                m_PersonaOptions = m_PersonaNames.Select(n => overrideKeys.Contains(n) ? $"● {n}" : n).ToList();
+                // 前綴標記：● 已有 override / ○（無卡）尚無角色卡 —— 讓「臨時覆寫」與「正式身分」在選單上就分得開
+                m_PersonaOptions = m_PersonaNames.Select(n =>
+                {
+                    string mark = overrideKeys.Contains(n) ? "● " : "";
+                    string cardHint = m_PersonaCardIds.Contains(n) ? "" : "（無卡）";
+                    return $"{mark}{n}{cardHint}";
+                }).ToList();
                 m_Dic.Clear();   // 下拉選項變了 → 清 PopupSearchCache（折疊狀態在 m_FoldDic，不受影響）
 
                 // 還原選中項 + 同步 URL draft（找不到舊選中 → 回第 0 項）
@@ -1284,6 +1315,30 @@ namespace UCL.Core.EditorLib.Page
                     }
                     GUILayout.Label(hasOverride ? "<color=#66ff66>● 已設定</color>" : "<color=#999999>○ 未設定（走 fallback 鏈）</color>", WrapLabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
+                }
+
+                // 區塊職責：缺卡 persona 的「臨時性可見」提示 + 通往正式身分的入口
+                // 物理意義：override 是展示層的臨時覆寫，PersonaCard 才是身分層的正規值。
+                //          所有 override 機制的通病是**它會悄悄變永久** —— 只要沒人看見它是臨時的。
+                //          （crest-001 2026-07-29：「補 union 要附一條，讓臨時性可見」。）
+                // 數值影響：純顯示 + 一顆跳頁按鈕；不改任何 config。缺卡不阻擋套用 URL（救急零前置）。
+                {
+                    string sel = SelectedPersona;
+                    if (!string.IsNullOrEmpty(sel) && !m_PersonaCardIds.Contains(sel))
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"⚠ <b>{sel}</b> 尚無角色卡 —— 這裡設的是<b>臨時覆寫</b>，"
+                                + "正式身分值（頭像 sprite / 代表色 / 口頭禪）該落在角色卡上",
+                                UCL_GUIStyle.GetLabelStyle(Color.yellow), GUILayout.ExpandWidth(false));
+                            if (GUILayout.Button("🎭 開角色卡面板", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                // 跳 Persona & Agent 管理頁 — 那裡的「🎭 Persona 角色卡」面板可一鍵建卡
+                                UCL_PersonaAgentAdminPage.Create();
+                            }
+                            GUILayout.FlexibleSpace();
+                        }
+                    }
                 }
 
                 // 現有 override 總覽（唯讀）— 操作走上方下拉

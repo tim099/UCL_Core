@@ -463,8 +463,14 @@ namespace UCL.Core.EditorLib.Page
             var row = SelectedCardRow();
             using (new GUILayout.HorizontalScope())
             {
+                // 區塊職責：歸屬 agent 一律 **derive 自 persona 檔**，不顯示卡上存的值
+                // 物理意義：「這個 persona 歸誰」是歸屬事實，事實源只有 personas/<name>.json 的 agent 欄
+                //          （換綁只改那裡）。展示層不該有自己版本的「你歸誰」。
+                // 數值影響：卡上的 m_OwnerAgentId 不再參與顯示 → 兩處不一致在物理上無從發生，
+                //          原本的黃字警示因此整條移除。警示是把一致性外包給人類注意力，
+                //          而同一天的 wait-reply 事件已證明「有警示 ≠ 會有人修」（見 glossary 同碼失聲）。
                 GUILayout.Label("歸屬 agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                GUILayout.Label(string.IsNullOrEmpty(card.m_OwnerAgentId) ? "(空)" : $"<b>{card.m_OwnerAgentId}</b>",
+                GUILayout.Label(row != null && !string.IsNullOrEmpty(row.agent) ? $"<b>{row.agent}</b>" : "(未綁)",
                     WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                 GUILayout.Label("頭像 sprite", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                 string spriteId = card.m_AvatarSprite != null ? card.m_AvatarSprite.ID : null;
@@ -488,12 +494,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.FlexibleSpace();
             }
             GUILayout.Label($"角色設定：{Ellipsis(card.m_RoleSettings, 120)}", WrapLabelStyle);
-            if (row != null && !string.IsNullOrEmpty(row.agent) && card.m_OwnerAgentId != row.agent)
-            {
-                GUILayout.Label($"⚠ 歸屬不一致：卡上是 <b>{(string.IsNullOrEmpty(card.m_OwnerAgentId) ? "(空)" : card.m_OwnerAgentId)}</b>，"
-                    + $"persona 檔是 <b>{row.agent}</b>。persona 檔才是權威（換綁只改它）—— "
-                    + "建議進編輯頁把卡上的歸屬對齊。", UCL_GUIStyle.GetLabelStyle(Color.yellow));
-            }
         }
 
         // ===========================================================
@@ -897,8 +897,9 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
 
-                // 預填三欄（其餘留空給人細編）：歸屬 agent / 角色設定沿用 layer_role / tag 標所屬 agent
-                asset.m_OwnerAgentId = row.agent ?? "";
+                // 預填兩欄（其餘留空給人細編）：角色設定沿用 layer_role / tag 標所屬 agent
+                // ⚠ 刻意**不寫** m_OwnerAgentId：歸屬事實只該有一份，住在 personas/<name>.json 的 agent 欄。
+                //   卡上再存一份就是雙寫來源，換綁後必然漂移（全 repo 無任何 consumer 讀它，存了純製造漂移）。
                 asset.m_RoleSettings = row.layerRole ?? "";
                 asset.m_Tags = new List<string>();
                 if (!string.IsNullOrEmpty(row.agent)) asset.m_Tags.Add(row.agent);

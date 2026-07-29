@@ -24,9 +24,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     {
         public const string DefaultID = "Default";
 
-        // 區塊職責：所屬 agent 帳號 id (e.g. "claude-da-xiaojie" / "antigravity-da-xiaojie")
-        // 物理意義：persona 不獨立存在, 隸屬某 agent — 此欄記錄歸屬關係, 跟 identities.json 對 join
-        // 數值影響：runtime lookup 時可由 agent_id + persona_codename 雙鍵命中
+        // 區塊職責：[LEGACY 2026-07-29 — 勿再寫入] 所屬 agent 帳號 id
+        // 物理意義：persona 的歸屬事實**只有一份真相源** = AgentCommands/AwakenInit/personas/<name>.json
+        //          的 agent 欄（persona 換綁只改那裡）。本欄是同一事實的第二份拷貝 = 雙寫來源，
+        //          換綁後必然漂移，而展示層不該有自己版本的「你歸誰」。
+        // 數值影響：全 repo 無任何 consumer 讀它；UCL_PersonaAgentAdminPage 自 2026-07-29 起
+        //          顯示改 derive persona 檔、建卡不再寫入本欄。既有 8 張卡的殘值一律**忽略**。
+        //          欄位本身保留是為了不做破壞性 schema 變更（移除須連同既有卡一次性清理，另案處理）。
         public string m_OwnerAgentId = string.Empty;
 
         // 區塊職責：persona 的頭像 sprite — 跟 IdentityAsset 走同一個 UCL_SpriteAssetEntry 機制

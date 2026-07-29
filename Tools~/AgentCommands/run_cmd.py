@@ -1605,24 +1605,86 @@ def check_backtick_loss(arg_pairs: dict, allow: bool = False) -> tuple[bool, str
     if any("`" in (v or "") for v in arg_pairs.values()):
         return True, ""
     try:
-        raw = next((c for c in _ancestor_raw_cmdlines() if "run_cmd.py" in c), None)
+        chains = _ancestor_raw_cmdlines()
     except Exception:
         return True, ""   # guard 自身故障 → 放行（行為同舊版）
+    matched_depth, raw = -1, None
+    for _i, _c in enumerate(chains):
+        if "run_cmd.py" in _c:
+            matched_depth, raw = _i, _c
+            break
     if not raw:
         return True, ""
     # 已跳脫的 \` 不會被 bash 吃 → 從 raw 剔除後再看殘餘的裸反引號
     unescaped = re.sub(r"\\`", "", raw)
     if "`" not in unescaped:
         return True, ""
-    return False, (
-        "偵測到原始命令列含未跳脫反引號 ` , 但送達的 arg 值裡一個都不剩 — \n"
-        "  反引號內容已被 bash 當 command substitution 執行掉（典型症狀：路徑/代碼整段消失）。\n"
-        "  修復方式（擇一）：\n"
-        "    1. 【推薦】把長文寫進檔案，改用 --arg-file body=<path>（完全繞開 shell 引用）\n"
-        "    2. 把反引號跳脫成 \\` ，或整段 body 用單引號包\n"
-        "    3. 內容本來就不需要反引號 → 拿掉 markdown 反引號裸寫\n"
-        "  確定要照原樣送出（明知字已被吃）→ 加 --allow-backtick-loss 覆蓋。"
-    )
+    # ── 證據蒐集（2026-07-29 Tim：擋下來時要看得出「為什麼」）──────────────────
+    # 物理意義：舊版只說「偵測到反引號」，caller 無從判斷是自己真的寫了、還是 guard 比對到
+    #          不屬於本次呼叫的祖先命令列（誤判）。把命中層數 / 命令列 / 反引號上下文一起印。
+    # 數值影響：純輸出 + 一筆 jsonl 稽核紀錄；寫檔失敗吞掉，不影響擋阻行為。
+    snippets = []
+    for _m in re.finditer("`", unescaped):
+        _a, _b = max(0, _m.start() - 40), min(len(unescaped), _m.start() + 40)
+        snippets.append("…" + unescaped[_a:_b].replace("\n", " ") + "…")
+        if len(snippets) >= 3:
+            break
+    # 本次呼叫自己的命令列必定同時含 run_cmd.py 與 --arg / --arg-file；
+    # 只含 run_cmd.py 的多半是更上層 harness / wrapper 進程（其 cmdline 可能夾帶歷史指令文字）
+    # → 高度疑似誤判，明講出來讓 caller 能自行判斷，而不是盲目加 --allow-backtick-loss。
+    looks_like_self = ("--arg" in raw)
+    arg_desc = ", ".join(f"{k}({len(v or '')}字)" for k, v in arg_pairs.items() if k in _TEXTUAL_ARG_KEYS)
+    try:
+        _log_backtick_block(matched_depth, raw, snippets, looks_like_self, arg_desc)
+    except Exception:
+        pass
+
+    lines = [
+        "偵測到原始命令列含未跳脫反引號 ` , 但送達的 arg 值裡一個都不剩 — ",
+        "  反引號內容已被 bash 當 command substitution 執行掉（典型症狀：路徑/代碼整段消失）。",
+        "",
+        "  ── 判定依據 ──",
+        f"  命中命令列：祖先第 {matched_depth} 層（0 = 直接父進程）",
+        f"  該命令列前 200 字：{raw[:200]}",
+        f"  檢查的文字類 arg：{arg_desc or '(無)'}（三者皆不含反引號才會走到這裡）",
+    ]
+    for _sn in snippets:
+        lines.append(f"  反引號出現處：{_sn}")
+    if not looks_like_self:
+        lines += [
+            "",
+            "  ⚠ 該命令列**不含 --arg**，看起來不是本次 run_cmd 呼叫本身，而是更上層的",
+            "    harness / wrapper 進程 → **高度疑似誤判**。若確定自己這次沒寫反引號，",
+            "    加 --allow-backtick-loss 送出，並把本段回報給 Tim（已記錄到",
+            "    AgentCommands/_backtick_guard_blocks.jsonl 供統計）。",
+        ]
+    lines += [
+        "",
+        "  修復方式（擇一）：",
+        "    1. 【推薦】把長文寫進檔案，改用 --arg-file body=<path>（完全繞開 shell 引用）",
+        "    2. 把反引號跳脫成 \\` ，或整段 body 用單引號包",
+        "    3. 內容本來就不需要反引號 → 拿掉 markdown 反引號裸寫",
+        "  確定要照原樣送出（明知字已被吃）→ 加 --allow-backtick-loss 覆蓋。",
+    ]
+    return False, "\n".join(lines)
+
+
+# 區塊職責：把每次 block 的證據 append 成 jsonl，供事後統計「真攔截 vs 誤判」比例。
+# 物理意義：誤判會養出「看到就加 --allow-backtick-loss」的壞習慣 = 守衛自廢；
+#          有資料才能判斷該調整比對策略（例如只信含 --arg 的那層）還是收緊觸發條件。
+# 數值影響：純附加寫檔；任何失敗都吞掉，不影響擋阻本身。
+def _log_backtick_block(depth: int, raw: str, snippets: list, looks_like_self: bool, arg_desc: str) -> None:
+    log_path = os.path.join(str(DATA_ROOT), "_backtick_guard_blocks.jsonl")
+    rec = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "matched_depth": depth,
+        "looks_like_self": looks_like_self,
+        "textual_args": arg_desc,
+        "snippets": snippets,
+        "raw_head": raw[:300],
+    }
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
 def expand_arg_files(arg_pairs: dict, arg_file_items: list[str]) -> tuple[bool, str]:

@@ -303,7 +303,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 sb.AppendLine();
                 foreach (var h in hits)
                 {
-                    sb.AppendLine($"- **{h.term}**: {h.oneLine} → [`docs/Glossary/{h.relativeSubPath}`](docs/Glossary/{h.relativeSubPath})");
+                    sb.AppendLine($"- **{h.term}**: {h.oneLine}");
+                    sb.AppendLine($"(docs/Glossary/{h.relativeSubPath})");
                 }
                 return sb.ToString();
             }

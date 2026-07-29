@@ -74,18 +74,64 @@ namespace UCL.Core.EditorLib.Page
         //          （只露 webhook id，token 全隱），驗證用 GET 取回 Discord 端頻道名顯示健康度。
         // 數值影響：增刪走 WriteConfigRoot 原子落檔（照現行慣例寫 config，Q1 Tim 拍板行為不變）；
         //          新增一律先驗證通過才入庫（擋貼錯 URL）。
-        static readonly string[] s_WebhookStreamKeys =
-            { "tavern_mirror", "treasury_mirror", "wake_notify", "queue-idle", "tavern_inbound", "quest_routing" };
-        static readonly string[] s_WebhookStreamLabels =
+        // 區塊職責：stream 清單 — 從 config **動態發現**（Tim 2026-07-28 要求「新增 & 刪除 stream」）
+        // 物理意義：原本是硬編 static 陣列 → 新增一條 stream 得改 code。改為掃 notify_config 根層：
+        //          任何「物件且帶 webhook_urls / webhook_env_var / webhook_file 任一欄」的 key 就是一條 stream，
+        //          外加兩個特殊位置：queue-idle（= config 根本身）與 quest_routing（nested 在 tavern_mirror 下）。
+        // 數值影響：LoadData 時重建；新增 = 寫一個 {enabled:false, webhook_urls:[]} 空塊；
+        //          刪除 = 移除該 key（core stream 擋刪，見 s_CoreStreamKeys）。
+        // 邊界：core stream（有 C# 消費者）誤刪會靜默停掉鏡像 → UI 直接不給刪，只能改內容。
+        static readonly HashSet<string> s_CoreStreamKeys = new HashSet<string>
+            { "tavern_mirror", "treasury_mirror", "tavern_inbound", "quest_routing", "queue-idle" };
+        // 已知 stream 的人話說明（未列者顯示「自訂」）
+        static readonly Dictionary<string, string> s_StreamDesc = new Dictionary<string, string>
         {
-            "tavern_mirror（酒館訊息 → Discord）",
-            "treasury_mirror（記帳 embed → Discord）",
-            "wake_notify（⚠ 已退役 — 無消費者）",
-            "queue-idle（⚠ 已退役 — 無消費者）",
-            "tavern_inbound（Discord → 酒館 inbound）",
-            "quest_routing（task lifecycle 分流）",
+            { "tavern_mirror",   "酒館訊息 → Discord" },
+            { "treasury_mirror", "記帳 embed → Discord" },
+            { "tavern_inbound",  "Discord → 酒館 inbound" },
+            { "quest_routing",   "task lifecycle 分流（nested）" },
+            { "wake_notify",     "⚠ 已退役 — 無消費者" },
+            { "queue-idle",      "⚠ 已退役 — 無消費者（= config 根層）" },
         };
+
+        List<string> m_StreamKeys = new List<string>();      // 動態發現的 stream key
+        List<string> m_StreamLabels = new List<string>();    // 對應下拉顯示字串
         int m_SelectedStreamIdx = 0;
+        string m_NewStreamKey = "";                          // 新增 stream 的 key 輸入
+        string m_PendingDeleteStream = null;                 // 二段確認：待確認刪除的 stream key
+
+        // 掃 config 建 stream 清單（LoadData 呼叫）
+        void RebuildStreamList()
+        {
+            m_StreamKeys.Clear();
+            m_StreamLabels.Clear();
+            var found = new List<string>();
+            try
+            {
+                if (m_Config != null && m_Config.IsObject && m_Config.Dic != null)
+                {
+                    foreach (var kv in m_Config.Dic)
+                    {
+                        var v = kv.Value;
+                        if (v == null || !v.IsObject) continue;
+                        bool isStream = v.Contains("webhook_urls") || v.Contains("webhook_env_var") || v.Contains("webhook_file");
+                        if (isStream) found.Add(kv.Key);
+                    }
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[TavernAdmin] 掃 stream 失敗: {e.Message}"); }
+            found.Sort(StringComparer.Ordinal);
+            // 特殊位置：quest_routing（nested）與 queue-idle（根層）不在上面的掃描結果內，手動補
+            if (!found.Contains("quest_routing")) found.Add("quest_routing");
+            if (!found.Contains("queue-idle")) found.Add("queue-idle");
+            foreach (var k in found)
+            {
+                m_StreamKeys.Add(k);
+                string desc = s_StreamDesc.TryGetValue(k, out var d) ? d : "自訂";
+                m_StreamLabels.Add($"{k}（{desc}）{(s_CoreStreamKeys.Contains(k) ? " 🔒" : "")}");
+            }
+            if (m_SelectedStreamIdx >= m_StreamKeys.Count) m_SelectedStreamIdx = 0;
+        }
         string m_NewWebhookUrl = "";
         readonly Dictionary<string, string> m_WebhookProbe = new Dictionary<string, string>();   // url → 驗證結果快取
 
@@ -97,7 +143,16 @@ namespace UCL.Core.EditorLib.Page
         List<string> m_PersonaOptions = new List<string>();   // 下拉顯示字串（有 override 的標 ●）
         int m_SelectedPersonaIdx = 0;
         string m_SelectedUrlDraft = "";                        // 當前選中 persona 的 URL 編輯 draft
-        readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();  // PopupSearchCache cache
+        // 區塊職責：兩個 UCL_ObjectDictionary 刻意分開 — 生命週期不同，混用會互相連坐
+        // 物理意義：m_Dic 存 PopupSearchCache（**衍生資料**：下拉選項變了就該失效 → LoadData 會 Clear 它）；
+        //          m_FoldDic 存各區塊折疊狀態（**使用者 UI 偏好**：不該因為資料重載而被重置）。
+        // 血證（2026-07-28 Tim QA）：折疊狀態原本也塞 m_Dic → 按「Discord 同步總開關」→ WriteConfigRoot
+        //          → LoadData → m_Dic.Clear() → 折疊值消失 → 下一幀退回 iDefaultValue(true) = 強制展開。
+        //          症狀是「按總開關就展開、而且收不起來」，看起來像 key 撞名，實際是共用快取被整個清掉。
+        //          同理 WriteStateField / Refresh / 套用 seq / 新增刪除 stream 全都會觸發 LoadData，
+        //          折疊只要跟 popup 共用字典就會被反覆重置。
+        readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();      // PopupSearchCache（LoadData 會清）
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();  // 折疊狀態（永不隨 LoadData 清）
 
         GUIStyle m_WrapLabelStyle;
         GUIStyle WrapLabelStyle
@@ -111,7 +166,9 @@ namespace UCL.Core.EditorLib.Page
                 return m_WrapLabelStyle;
             }
         }
-
+        /// <summary>當前下拉選中的 persona 名（清單空回 null）。</summary>
+        string SelectedPersona => (m_PersonaNames.Count > 0 && m_SelectedPersonaIdx >= 0 && m_SelectedPersonaIdx < m_PersonaNames.Count)
+                ? m_PersonaNames[m_SelectedPersonaIdx] : null;
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
@@ -202,7 +259,7 @@ namespace UCL.Core.EditorLib.Page
                 m_PersonaNames = names.ToList();
                 var overrideKeys = new HashSet<string>(m_AvatarOverrides.Select(kv => kv.Key));
                 m_PersonaOptions = m_PersonaNames.Select(n => overrideKeys.Contains(n) ? $"● {n}" : n).ToList();
-                m_Dic.Clear();   // 下拉選項變了 → 清 PopupSearchCache
+                m_Dic.Clear();   // 下拉選項變了 → 清 PopupSearchCache（折疊狀態在 m_FoldDic，不受影響）
 
                 // 還原選中項 + 同步 URL draft（找不到舊選中 → 回第 0 項）
                 m_SelectedPersonaIdx = prevSelected != null ? Math.Max(0, m_PersonaNames.IndexOf(prevSelected)) : 0;
@@ -241,6 +298,8 @@ namespace UCL.Core.EditorLib.Page
                     Debug.LogWarning($"[TavernAdmin] 列舉房間目錄失敗: {exRooms.Message}");
                 }
 
+                RebuildStreamList();   // stream 下拉改動態發現（可增刪）
+
                 // Inbound 三份外部真相各掃一次（Tim 2026-07-28）— 中繼器存活 / 頻道路由 / bot token secret
                 m_InboundRelayStatus = ScanInboundRelayStatus();
                 ScanInboundRouting();
@@ -251,11 +310,93 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning($"[TavernAdmin] load fail: {e.Message}");
             }
         }
+        // ===========================================================
+        // 區塊1：Mirror 同步狀態
+        // 物理意義：per-room「同步到哪一筆」可視化 — last_seen_seq（可編輯）vs 房間 max seq；
+        //          差額 = 尚未推到 Discord 的筆數（0 = 已追平）。
+        // 數值影響：套用 seq 直接改 _tavern_state.json；設小 = 重放區間訊息、設大 = 跳過區間訊息，
+        //          屬管理員操作，前排顯示警語。
+        // ===========================================================
+        void DrawMirrorStatePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                bool enabled = false;
+                try
+                {
+                    var tm = (m_Config != null && m_Config.Contains("tavern_mirror")) ? m_Config["tavern_mirror"] : null;
+                    if (tm != null) enabled = tm.GetBool("enabled", false);
+                }
+                catch { /* 缺欄位視為 off */ }
 
-        /// <summary>當前下拉選中的 persona 名（清單空回 null）。</summary>
-        string SelectedPersona =>
-            (m_PersonaNames.Count > 0 && m_SelectedPersonaIdx >= 0 && m_SelectedPersonaIdx < m_PersonaNames.Count)
-                ? m_PersonaNames[m_SelectedPersonaIdx] : null;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "MirrorFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>📡 Discord Mirror 同步狀態</b>", WrapLabelStyle);
+
+                    // Discord 同步總開關 一次寫「仍有消費者」的三條 stream 的 enabled：tavern_mirror（酒館訊息）/ treasury_mirror（記帳頻道，
+                    // 之前漏網的 bank 訊息就是它）/ tavern_inbound（Discord→酒館 inbound）。
+                    // 2026-07-28: wake_notify 與頂層 enabled（queue-idle）隨 python notify 一同退役
+                    //   （無 C# 對應實作、實測長期零活動）→ 不再寫入，避免「開了卻沒人讀」的假象。
+                    // 顯示狀態以 tavern_mirror.enabled 為代表（master 寫入後三者同步）。
+                    // 語意：預設 off、缺欄位視為 off（C# GetBool("enabled", false)）。
+                    // 邊界：tavern_inbound 目前無 C# 中繼器接管 — 開關只表意圖，見下方 Inbound 區塊實況。
+                    bool newEnabled = GUILayout.Toggle(enabled,
+                        enabled ? " <color=#66ff66>● Discord 同步啟用中（按一下全部關閉）</color>" : " <color=#ff8866>○ Discord 同步已關閉（按一下全部啟用）</color>",
+                        new GUIStyle(UCL_GUIStyle.ButtonStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    if (newEnabled != enabled)
+                    {
+                        WriteConfigRoot(cfg =>
+                        {
+                            foreach (var block in new[] { "tavern_mirror", "treasury_mirror", "tavern_inbound" })
+                            {
+                                if (!cfg.Contains(block)) cfg[block] = JsonData.ParseJson("{}");
+                                cfg[block]["enabled"] = newEnabled;
+                            }
+                        });
+                        Debug.Log($"[TavernAdmin] Discord 同步總開關 → {newEnabled}（tavern_mirror / treasury_mirror / tavern_inbound 三 stream 同步寫入）");
+                    }
+
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+
+                int failures = 0;
+                try { if (m_State != null) failures = m_State.GetInt("consecutive_failures", 0); } catch { }
+
+                using (new GUILayout.HorizontalScope())
+                {
+
+                    GUILayout.Space(8);
+                    GUILayout.Label($"連續失敗計數：{failures}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (failures > 0 && GUILayout.Button("歸零", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    {
+                        WriteStateField(s => s["consecutive_failures"] = 0);
+                    }
+                    GUILayout.FlexibleSpace();
+                    // 手動觸發一次 mirror run — 2026-07-28 起只有 native 一條路：daemon.ForceTick 立即掃描送出
+                    if (GUILayout.Button("▶ 立即觸發同步", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.ForceTick();
+                        Debug.Log("[TavernAdmin] 手動觸發 mirror daemon ForceTick（掃描 + 送出立即跑一輪）");
+                    }
+                }
+
+                // per-room 同步進度 + 套用 seq → 移至「🔗 Webhook 設定」panel 下拉的 tavern_mirror 分支
+                // （Tim 2026-07-16 整合拍板 — 本 panel 收斂成全域資訊：總開關 / 失敗計數 / 觸發 / log）
+                GUILayout.Label("per-room 同步進度與套用 seq → 下方「🔗 Webhook 設定」選 tavern_mirror。", WrapLabelStyle);
+
+                if (m_LogTail.Count > 0)
+                {
+                    GUILayout.Label("<b>最近同步 log</b>（_drain.log [tavern] 尾 5 筆）：", WrapLabelStyle);
+                    foreach (var line in m_LogTail) GUILayout.Label($"  {line}", WrapLabelStyle);
+                }
+            }
+        }
+
+
 
         // 區塊職責：把 URL draft 同步成「當前選中 persona 的現有 override」— 無設定則為空字串
         void SyncUrlDraftFromSelection()
@@ -588,20 +729,113 @@ namespace UCL.Core.EditorLib.Page
             });
         }
 
+        // ===========================================================
+        // 區塊：stream 新增 / 刪除（Tim 2026-07-28 要求）
+        // 物理意義：一條 stream = notify_config 根層一個帶 webhook_* 欄的物件。新增只建空殼
+        //          （enabled=false + 空 webhook_urls），URL 仍走下方「驗證並新增」逐條入庫。
+        // 數值影響：新增/刪除都是 WriteConfigRoot 原子落檔 + LoadData 重建清單。
+        // 邊界：① core stream（有 C# 消費者：tavern_mirror / treasury_mirror / tavern_inbound /
+        //          quest_routing / queue-idle）**不給刪** —— 誤刪會靜默停掉鏡像，這是最貴的失敗。
+        //      ② 刪除走二段確認（第一下 arm、第二下才真刪），避免手滑。
+        //      ③ key 需為合法 JSON key：非空、無空白、不與既有重複。
+        // ===========================================================
+        void DrawStreamAddRemoveRow(string iSelectedKey)
+        {
+            bool isCore = s_CoreStreamKeys.Contains(iSelectedKey);
+            using (new GUILayout.HorizontalScope())
+            {
+                // ── 刪除當前選中 stream ──
+                if (isCore)
+                {
+                    GUILayout.Label("  🔒 core stream（有 C# 消費者）不可刪除 — 只能改內容或關 enabled",
+                        WrapLabelStyle, GUILayout.ExpandWidth(false));
+                }
+                else if (m_PendingDeleteStream == iSelectedKey)
+                {
+                    if (GUILayout.Button($"⚠ 再按一次確認刪除「{iSelectedKey}」",
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.5f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    {
+                        string k = iSelectedKey;
+                        WriteConfigRoot(cfg => { if (cfg.Contains(k)) cfg.Remove(k); });
+                        Debug.Log($"[TavernAdmin] 已刪除 stream「{k}」（config 區塊整塊移除）");
+                        m_PendingDeleteStream = null;
+                        m_SelectedStreamIdx = 0;
+                        LoadData();
+                    }
+                    if (GUILayout.Button("取消", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        m_PendingDeleteStream = null;
+                }
+                else
+                {
+                    if (GUILayout.Button($"🗑 刪除 stream「{iSelectedKey}」", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                        m_PendingDeleteStream = iSelectedKey;
+                }
+                GUILayout.FlexibleSpace();
+            }
+            // ── 新增 stream ──
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("新增 stream", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                bool add = GUILayout.Button("＋ 建立", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false));
+                m_NewStreamKey = GUILayout.TextField(m_NewStreamKey ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                GUILayout.Label("(key 如 my_channel_mirror；建空殼後再加 URL)", UCL_GUIStyle.LabelStyle);
+                GUILayout.FlexibleSpace();
+                if (add)
+                {
+                    string nk = (m_NewStreamKey ?? "").Trim();
+                    if (string.IsNullOrEmpty(nk) || nk.IndexOf(' ') >= 0)
+                    {
+                        Debug.LogWarning("[TavernAdmin] stream key 不可為空或含空白");
+                    }
+                    else if (m_StreamKeys.Contains(nk))
+                    {
+                        Debug.LogWarning($"[TavernAdmin] stream「{nk}」已存在");
+                    }
+                    else
+                    {
+                        WriteConfigRoot(cfg =>
+                        {
+                            var blk = JsonData.ParseJson("{}");
+                            blk["enabled"] = new JsonData(false);
+                            blk["webhook_urls"] = JsonData.ParseJson("[]");
+                            cfg[nk] = blk;
+                        });
+                        Debug.Log($"[TavernAdmin] 已建立 stream「{nk}」（enabled=false + 空 webhook_urls；下一步加 URL）");
+                        m_NewStreamKey = "";
+                        LoadData();
+                        int idx = m_StreamKeys.IndexOf(nk);
+                        if (idx >= 0) m_SelectedStreamIdx = idx;
+                    }
+                }
+            }
+        }
+
         void DrawWebhookPanel()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🔗 Webhook 設定</b>（來源優先序 ENV > secret file > config；本頁操作 config 列表）", WrapLabelStyle);
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "WebhookFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🔗 Webhook 設定</b>（來源優先序 ENV > secret file > config；本頁操作 config 列表）", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
 
-                // Stream 下拉（仿 Persona panel 交互）
+                if (m_StreamKeys.Count == 0) RebuildStreamList();
+
+                // Stream 下拉（仿 Persona panel 交互）+ 增刪
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("Stream", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_SelectedStreamIdx = UCL_GUILayout.PopupSearchCache(m_SelectedStreamIdx, s_WebhookStreamLabels.ToList(), m_Dic, "WebhookStreamPicker");
+                    m_SelectedStreamIdx = UCL_GUILayout.PopupSearchCache(m_SelectedStreamIdx, m_StreamLabels, m_Dic, "WebhookStreamPicker");
                 }
-                string key = s_WebhookStreamKeys[Math.Clamp(m_SelectedStreamIdx, 0, s_WebhookStreamKeys.Length - 1)];
+                string key = m_StreamKeys.Count > 0
+                    ? m_StreamKeys[Math.Clamp(m_SelectedStreamIdx, 0, m_StreamKeys.Count - 1)] : "tavern_mirror";
                 var block = GetStreamBlock(m_Config, key);
+
+                DrawStreamAddRemoveRow(key);
 
                 // 純文字同步狀態（未同步資訊）
                 foreach (var line in BuildStreamInfoLines(key, block))
@@ -709,80 +943,7 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // ===========================================================
-        // 區塊：Mirror 同步狀態
-        // 物理意義：per-room「同步到哪一筆」可視化 — last_seen_seq（可編輯）vs 房間 max seq；
-        //          差額 = 尚未推到 Discord 的筆數（0 = 已追平）。
-        // 數值影響：套用 seq 直接改 _tavern_state.json；設小 = 重放區間訊息、設大 = 跳過區間訊息，
-        //          屬管理員操作，前排顯示警語。
-        // ===========================================================
-        void DrawMirrorStatePanel()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                GUILayout.Label("<b>📡 Discord Mirror 同步狀態</b>", WrapLabelStyle);
 
-                bool enabled = false;
-                try
-                {
-                    var tm = (m_Config != null && m_Config.Contains("tavern_mirror")) ? m_Config["tavern_mirror"] : null;
-                    if (tm != null) enabled = tm.GetBool("enabled", false);
-                }
-                catch { /* 缺欄位視為 off */ }
-                int failures = 0;
-                try { if (m_State != null) failures = m_State.GetInt("consecutive_failures", 0); } catch { }
-
-                using (new GUILayout.HorizontalScope())
-                {
-                    // Discord 同步總開關（Tim 2026-07-15 拍板：統一一個 toggle）— 一次寫「仍有消費者」的
-                    // 三條 stream 的 enabled：tavern_mirror（酒館訊息）/ treasury_mirror（記帳頻道，
-                    // 之前漏網的 bank 訊息就是它）/ tavern_inbound（Discord→酒館 inbound）。
-                    // 2026-07-28: wake_notify 與頂層 enabled（queue-idle）隨 python notify 一同退役
-                    //   （無 C# 對應實作、實測長期零活動）→ 不再寫入，避免「開了卻沒人讀」的假象。
-                    // 顯示狀態以 tavern_mirror.enabled 為代表（master 寫入後三者同步）。
-                    // 語意：預設 off、缺欄位視為 off（C# GetBool("enabled", false)）。
-                    // 邊界：tavern_inbound 目前無 C# 中繼器接管 — 開關只表意圖，見下方 Inbound 區塊實況。
-                    bool newEnabled = GUILayout.Toggle(enabled,
-                        enabled ? " <color=#66ff66>● Discord 同步啟用中（按一下全部關閉）</color>" : " <color=#ff8866>○ Discord 同步已關閉（按一下全部啟用）</color>",
-                        new GUIStyle(UCL_GUIStyle.ButtonStyle) { richText = true }, GUILayout.ExpandWidth(false));
-                    if (newEnabled != enabled)
-                    {
-                        WriteConfigRoot(cfg =>
-                        {
-                            foreach (var block in new[] { "tavern_mirror", "treasury_mirror", "tavern_inbound" })
-                            {
-                                if (!cfg.Contains(block)) cfg[block] = JsonData.ParseJson("{}");
-                                cfg[block]["enabled"] = newEnabled;
-                            }
-                        });
-                        Debug.Log($"[TavernAdmin] Discord 同步總開關 → {newEnabled}（tavern_mirror / treasury_mirror / tavern_inbound 三 stream 同步寫入）");
-                    }
-                    GUILayout.Space(8);
-                    GUILayout.Label($"連續失敗計數：{failures}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (failures > 0 && GUILayout.Button("歸零", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
-                    {
-                        WriteStateField(s => s["consecutive_failures"] = 0);
-                    }
-                    GUILayout.FlexibleSpace();
-                    // 手動觸發一次 mirror run — 2026-07-28 起只有 native 一條路：daemon.ForceTick 立即掃描送出
-                    if (GUILayout.Button("▶ 立即觸發同步", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
-                    {
-                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.ForceTick();
-                        Debug.Log("[TavernAdmin] 手動觸發 mirror daemon ForceTick（掃描 + 送出立即跑一輪）");
-                    }
-                }
-
-                // per-room 同步進度 + 套用 seq → 移至「🔗 Webhook 設定」panel 下拉的 tavern_mirror 分支
-                // （Tim 2026-07-16 整合拍板 — 本 panel 收斂成全域資訊：總開關 / 失敗計數 / 觸發 / log）
-                GUILayout.Label("per-room 同步進度與套用 seq → 下方「🔗 Webhook 設定」選 tavern_mirror。", WrapLabelStyle);
-
-                if (m_LogTail.Count > 0)
-                {
-                    GUILayout.Label("<b>最近同步 log</b>（_drain.log [tavern] 尾 5 筆）：", WrapLabelStyle);
-                    foreach (var line in m_LogTail) GUILayout.Label($"  {line}", WrapLabelStyle);
-                }
-            }
-        }
 
         // ===========================================================
         // 區塊：Discord → 酒館 Inbound 設定（Tim 2026-07-28 拍板：inbound 設定收進本後台）
@@ -806,10 +967,19 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.VerticalScope("box"))
             {
                 bool aShow;
+                bool prefOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
                 using (new GUILayout.HorizontalScope())
                 {
-                    aShow = UCL_GUILayout.Toggle(m_Dic, "InboundFold", 21, iDefaultValue: true);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "InboundFold", 21, iDefaultValue: false);
                     GUILayout.Label("<b>📥 Discord → 酒館 Inbound</b>", WrapLabelStyle);
+
+                    // native daemon 開關（EditorPrefs, per-machine）
+                    if (GUILayout.Button(prefOn ? "⏹ 停用 native inbound" : "▶ 啟用 native inbound",
+                            UCL_GUIStyle.GetButtonStyle(prefOn ? new Color(0.9f, 0.5f, 0.4f) : new Color(0.4f, 0.8f, 0.5f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled = !prefOn;
+                        LoadData();
+                    }
                     GUILayout.FlexibleSpace();
                 }
                 if (!aShow) return;
@@ -837,16 +1007,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label($"  中繼器：{m_InboundRelayStatus}", WrapLabelStyle);
                     GUILayout.FlexibleSpace();
-                    // native daemon 開關（EditorPrefs, per-machine）+ 手動立即輪詢一輪
-                    bool prefOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
-                    if (GUILayout.Button(prefOn ? "⏹ 停用 native inbound" : "▶ 啟用 native inbound",
-                            UCL_GUIStyle.GetButtonStyle(prefOn ? new Color(0.9f, 0.5f, 0.4f) : new Color(0.4f, 0.8f, 0.5f)),
-                            GUILayout.ExpandWidth(false)))
-                    {
-                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled = !prefOn;
-                        LoadData();
-                    }
-                    if (GUILayout.Button("🔄 立即檢查一輪", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button("🔄 立即檢查一輪", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))//手動立即輪詢一輪
                     {
                         UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ForcePoll();
                         Debug.Log("[TavernAdmin] 手動觸發 inbound daemon ForcePoll（輪一個頻道；多頻道請連按或等 round-robin）");
@@ -1062,7 +1223,14 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🎭 Persona 頭像 Override</b>（key=sender_persona；最高優先級，直接釘任意外部 URL）", WrapLabelStyle);
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "AvatarFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🎭 Persona 頭像 Override</b>（key=sender_persona；最高優先級，直接釘任意外部 URL）", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
 
                 if (m_PersonaNames.Count == 0)
                 {
@@ -1139,7 +1307,14 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🗂 底層檔案</b>", WrapLabelStyle);
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "FilesFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🗂 底層檔案</b>", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
                 DrawFileRow("notify_config.json（mirror/頭像/路由設定）", NotifyConfigPath);
                 DrawFileRow("_tavern_state.json（同步進度 state）", TavernStatePath);
                 DrawFileRow("_drain.log（同步結果 log）", DrainLogPath);

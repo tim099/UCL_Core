@@ -1,31 +1,52 @@
 {
-  "_comment": "知識庫語料庫 target 定義（config-driven，加 target = 改本檔、零 code）。glob 前綴：無=repo 根 / core:=UCL_Core 根 / data:=AgentCommands 資料根(honors .agentcommands_root.local)。kind 目前僅影響顯示，切塊統一走 chunk_text。Python(knowledge_base.py) 與 C#(AdminPage) 同讀本檔。",
-  "targets": {
-    "docs": {
-      "desc": "專案文檔 — <repo>/Docs/**/*.md（UCL / 專案說明文件）",
-      "kind": "markdown",
-      "globs": ["Docs/**/*.md"]
-    },
-    "coredocs": {
-      "desc": "UCL_Core 共享文檔 — <core>/Docs~/**/*.md（API/workflow/mechanics/plan 規格）",
-      "kind": "markdown",
-      "globs": ["core:Docs~/**/*.md"]
-    },
-    "lessons": {
-      "desc": "Agent 經驗庫 — AgentCommands/Lessons/*.jsonl + *.md（跨 agent 累積教訓）",
-      "kind": "lessons",
-      "globs": ["data:Lessons/**/*.jsonl", "data:Lessons/**/*.md", "data:lessons/**/*.jsonl", "data:lessons/**/*.md"]
-    },
-    "fragments": {
-      "desc": "見根 · 關鍵記憶片段 — letters/<persona>/fragments/*.md（每檔一主題，天然 embedding chunk；醒來想不起某事時語意檢索）",
-      "kind": "markdown",
-      "globs": [
-        "data:ChatTavern/baton/letters/*/fragments/lesson_*.md",
-        "data:ChatTavern/baton/letters/*/fragments/unsolved_*.md",
-        "data:ChatTavern/baton/letters/*/fragments/relation_*.md",
-        "data:ChatTavern/baton/letters/*/fragments/identity_*.md",
-        "data:ChatTavern/baton/letters/*/fragments/philosophy_*.md"
-      ]
-    }
+ "_comment": "知識庫語料庫 target 定義（config-driven，加 target = 改本檔、零 code）。glob 前綴：無=repo 根 / core:=UCL_Core 根 / data:=AgentCommands 資料根(honors .agentcommands_root.local)。kind 目前僅影響顯示，切塊統一走 chunk_text。Python(knowledge_base.py) 與 C#(AdminPage) 同讀本檔。",
+ "targets": {
+  "docs": {
+   "desc": "專案文檔 — <repo>/Docs/**/*.md（UCL / 專案說明文件）",
+   "kind": "markdown",
+   "globs": [
+    "Docs/**/*.md"
+   ]
+  },
+  "coredocs": {
+   "desc": "UCL_Core 共享文檔 — <core>/Docs~/**/*.md（API/workflow/mechanics/plan 規格）",
+   "kind": "markdown",
+   "globs": [
+    "core:Docs~/**/*.md"
+   ]
+  },
+  "lessons": {
+   "desc": "Agent 經驗庫 — AgentCommands/Lessons/*.jsonl + *.md（跨 agent 累積教訓）",
+   "kind": "lessons",
+   "globs": [
+    "data:Lessons/**/*.jsonl",
+    "data:Lessons/**/*.md",
+    "data:lessons/**/*.jsonl",
+    "data:lessons/**/*.md"
+   ]
+  },
+  "fragments": {
+   "desc": "見根 · 關鍵記憶片段 — letters/<persona>/fragments/*.md（每檔一主題，天然 embedding chunk；醒來想不起某事時語意檢索）",
+   "kind": "markdown",
+   "globs": [
+    "data:ChatTavern/baton/letters/*/fragments/lesson_*.md",
+    "data:ChatTavern/baton/letters/*/fragments/unsolved_*.md",
+    "data:ChatTavern/baton/letters/*/fragments/relation_*.md",
+    "data:ChatTavern/baton/letters/*/fragments/identity_*.md",
+    "data:ChatTavern/baton/letters/*/fragments/philosophy_*.md"
+   ]
+  },
+  "work_memory": {
+   "desc": "工作記憶區 — AgentCommands/WorkMemory/<topic>/*.md（所有 agent 共用, 每工作主題的拍板/坑/現況/指路; 開工前語意查 knowhow）",
+   "kind": "markdown",
+   "globs": [
+    "data:WorkMemory/*/decision_*.md",
+    "data:WorkMemory/*/knowhow_*.md",
+    "data:WorkMemory/*/pitfall_*.md",
+    "data:WorkMemory/*/state_*.md",
+    "data:WorkMemory/*/pointer_*.md",
+    "data:WorkMemory/*/_topic.md"
+   ]
   }
+ }
 }

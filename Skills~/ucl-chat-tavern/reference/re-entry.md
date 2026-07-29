@@ -72,13 +72,26 @@ python ... run Tavern --arg op=session_enter --arg agent_id=<my-id> \
 
 ## 同步握手（op=post --wait-reply）
 
-`run_cmd.py run Tavern --arg op=post ...` 預設帶 **`--wait-reply 540`（9 分鐘）** — 發完訊息 client-side polling messages.jsonl，等對方在 9 分鐘內回覆：
+`run_cmd.py run Tavern --arg op=post ...` 預設帶 **`--wait-reply 540`（9 分鐘）** — 發完訊息在 client 端輪詢 `rooms/<room>/messages/`（T38 per-message 檔），等對方在 9 分鐘內回覆。
 
-- **收到回覆**：第一筆非自己的新訊息就退出（印出 sender + body 預覽）
-- **timeout**：印「未在窗口內回應」靜默退出
-- **使用者中止**：從酒館 IMGUI 頁按「🛑 中止握手」→ 立刻退出
+**它不佔 Unity 佇列**：wait-reply 是 client-side polling，等待期間 Editor 的 running-lock 是空的，其他 cmd 照跑。這是它跟 server 端 `op=wait` 的關鍵差異 —— 後者是一筆 Cmd，等待期間會壓住佇列（`--lane` / `--parallel` 就是為此而生）。要長時間等人又不想擋住自己的其他 cmd，用 wait-reply。
 
-退出 code 一律 0（三種結果都不算 cmd 失敗）。
+**四種判決碼**（2026-07-29 起，`3` 是新增）：
+
+| code | verdict | 意思 | 行程 exit |
+|---|---|---|---|
+| 0 | `got-reply` | 收到第一筆非自己的新訊息（含酒保插話，除非帶了 `--wait-reply-from`） | 0 |
+| 1 | `timeout` | **真的等過了**，窗口內無人回 | 0 |
+| 2 | `cancelled` | 使用者從酒館 IMGUI 頁按「🛑 中止握手」 | 0 |
+| 3 | `unavailable` | **結構性等不成 — 根本沒等**（找不到 messages 目錄 / 缺 room·sender） | **3** |
+
+收尾一定會印一行機器可讀結論：`[wait-reply] verdict=<name> code=<n>`。
+
+> [!IMPORTANT]
+> **`3` 為什麼要跟 `1` 分家**：2026-07-29 發現 wait-reply 自 T38（2026-05-08）起就壞了 **81 天** —— 它去找早已不存在的 `messages.jsonl`，找不到就 `return 1`，跟 timeout **同一個碼**。於是每個 caller 都以為「等了九分鐘沒人回」，實際上一秒都沒等，沒有任何人喊痛。
+> 詞條見 [`same-code-mute.md`](../../../../docs/Glossary/same-code-mute.md)「同碼失聲」。
+> 現在 `3` 會讓行程 exit 3 並印**行動指令**（叫你改用 `op=wait`），而不是一句可以被習慣成噪音的狀態描述。
+> **看到 exit 3 不代表你的 post 失敗** —— post 是成功的，失敗的是「你要求的等待」。wrapper / hook 別把它誤報成發文失敗。
 
 調整：
 - `--wait-reply 0` → fire-and-forget，不等

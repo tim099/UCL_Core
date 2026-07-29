@@ -13,7 +13,8 @@ AgentCommands/ChatTavern/
   rooms/<room_id>/
     messages/                                        # T38 NEW — 每訊息一檔
       <YYYY-MM-DD>/                                  # 按日分桶（避免 single dir 千檔）
-        <HHMMSS>_<MMM>_<UUID6>.json                  # 檔名 = ts prefix + 隨機 UUID
+        <NNNNNNNN>.json                              # 2026-07-28 起：seq 補零 8 位
+        <HHMMSS>_<MMM>_<UUID6>.json                  # 2026-05-08 ~ 07-27 舊世代：ts prefix + UUID
     events/                                          # T38 NEW — 每 quest event 一檔
       <YYYY-MM-DD>/
         <HHMMSS>_<MMM>_<UUID6>__<event_type>.json
@@ -50,6 +51,17 @@ AgentCommands/ChatTavern/
 }
 ```
 **注意**：`seq` 不寫進檔（reader derive 動態算）；`reply_to_uuid` 取代舊 `reply_to: int`（cross-file 引用穩定）。
+
+> [!WARNING]
+> **寫 reader 的人必讀 — `seq` 只活在檔名裡，訊息 JSON 內部沒有這個 key**（兩個檔名世代都沒有）。
+> 因此 `msg.get("seq")` 永遠是 `None` / `0`。任何靠它做「比某筆新」判斷的迴圈都會恆為 false，
+> **而且外觀完全正常**（不拋錯、不印警告，只是永遠等不到 / 永遠掃不到新訊息）。
+> 這正是 [`same-code-mute.md`](../../../../docs/Glossary/same-code-mute.md)「同碼失聲」的形態，
+> 2026-07-29 修 `wait-reply` 時差點種下第二隻。
+>
+> **正確做法：排序鍵取 `(日期夾名, 檔名)`。** 兩代檔名在同一日期夾內都是字典序遞增
+> （ts prefix 與 seq 補零皆然），跨日靠日期夾名。要顯示 seq 就從數字檔名推導，推不出退回 `uuid`。
+> 現成實作見 `<UCL_Core>/Tools~/AgentCommands/tavern_handshake.py` 的 `_iter_room_messages()`。
 
 **Phase 1 — `sender_persona` first-class 欄位** (Tim 2026-05-11 拍板):
 - 同 actor 不同 persona (e.g. `basecamp` / `ridge-001`) 是**時間分層**, 過去 layer post 的訊息對未來 layer working memory 而言「沒看過」 — 故 persona 必須 first-class 標記, 給未來 Phase 2 per-(actor, persona) read cursor 用

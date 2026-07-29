@@ -1161,17 +1161,44 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
                 var aValidIds = GetMentionWhitelist();
                 string aSenderName = !string.IsNullOrEmpty(msg.sender_name) ? msg.sender_name : aSenderId;
-                var aRoom = GetRoom(roomId);
-                string aRoomName = aRoom != null && !string.IsNullOrEmpty(aRoom.name) ? aRoom.name : roomId;
+                // 房間用 roomId 不用顯示名：agent 要回覆時 op=post --arg room=<roomId> 吃的就是這個值，
+                // 顯示名（如「酒館主廳 (Tavern)」）看得懂但貼不進指令，反而要再查一次。
+                string aRoomRef = roomId;
+
+                // 區塊職責：組 inbox 條目的標題與內文（2026-07-29 Tim 拍板精簡版）
+                // 物理意義：標題列 = 「誰、對誰、什麼時候、什麼性質」四件事一行看完；
+                //          房名放建議句（掃 inbox 時才知道要去哪個房回），不重複塞標題。
+                // 數值影響：純渲染。附加標記皆為「有才印」— 沒有的情況版面跟舊版一樣短。
+                //   📱 = 外部中繼（Discord 等）進來的訊息，跟 agent 在館內發言區分；
+                //   [tag] = meta.tag（task-share / ack-only / idle-self-talk…）給 triage 用；
+                //   ↩seq=N = 這筆是回覆某則，接 thread 用；📎N = 帶 N 個附件。
+                string aSenderLabel = !string.IsNullOrEmpty(msg.sender_persona)
+                    ? $"{aSenderName}@{msg.sender_persona}" : aSenderName;
+                var aMarks = new List<string>();
+                if (IsExternalRelay(msg)) aMarks.Add("📱");
+                if (msg.meta != null && msg.meta.TryGetValue("tag", out var aTag) && !string.IsNullOrEmpty(aTag)) aMarks.Add($"[{aTag}]");
+                if (msg.reply_to.HasValue && msg.reply_to.Value > 0) aMarks.Add($"↩seq={msg.reply_to.Value}");
+                if (msg.refs != null && msg.refs.Count > 0) aMarks.Add($"📎{msg.refs.Count}");
+                string aMarkStr = aMarks.Count > 0 ? " " + string.Join(" ", aMarks) : string.Empty;
+
+                bool aTruncated = msg.body.Length > 200;
+                string aQuoted = aTruncated ? msg.body.Substring(0, 200) + "…" : msg.body;
+                string aTail = aTruncated ? $"（全文 seq={seq}）" : string.Empty;
 
                 int aNotifyCount = 0;
                 foreach (string aTargetId in aMentioned)
                 {
-                    if (aTargetId == aSenderId) continue;            // 不 mention 自己
+                    // 不通知自己 — 必須同時比 sender_id 與 sender_persona（crest-001 QA 2026-07-29）：
+                    // sender_id 是 bank/agent 層 id（cc / zeta），persona 才是 @ 得到的名字（crest-001 / summit）。
+                    // 只比 sender_id 的話，persona 在文中提到自己名字（例如「請 Tim 發一筆 @crest-001」）
+                    // 就會通知到自己 — 她親自當了案例。
+                    // 邊界：只跳過「完全同名」；同 actor 的跨 persona（basecamp 提到 ridge-001）仍算真通知，要送。
+                    if (aTargetId == aSenderId) continue;
+                    if (!string.IsNullOrEmpty(msg.sender_persona) && aTargetId == msg.sender_persona) continue;
                     if (aTargetId.StartsWith("_")) continue;         // 系統 id（_quest_system 等）
                     if (!aValidIds.Contains(aTargetId)) continue;    // 白名單外（@everyone / 拼錯 / 書名 slug）
-                    string aTitle = $"💬 被 {aSenderName} 提及 (seq={seq})";
-                    string aBody = $"在房間 `{aRoomName}`，{aSenderName} 提到了你：\n> {(msg.body.Length > 200 ? msg.body.Substring(0, 200) + "…" : msg.body)}\n\n建議動作：前往該房回覆。";
+                    string aTitle = $"💬 {aSenderLabel} @妳{aMarkStr}";
+                    string aBody = $"> {aQuoted}\n\n建議前往 `{aRoomRef}` 房回覆{aTail}";
                     UCL_ChatTavernQuestIO.AppendInbox(roomId, aTargetId, seq, aTitle, aBody);
                     aNotifyCount++;
                 }

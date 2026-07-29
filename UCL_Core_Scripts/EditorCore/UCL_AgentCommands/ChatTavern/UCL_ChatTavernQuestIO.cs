@@ -751,15 +751,26 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>append 一筆 inbox entry（任務 unblock / handoff 等通知）。
         /// T21 — 寫入後若 entry 數 > InboxCapMax → 自動 trim 舊的搬到 _archive.md，留最新 InboxCapKeep。</summary>
+        // 版面（2026-07-29 Tim 拍板精簡）：時間併進標題列、拿掉獨立的 _at 行 —
+        // 每條省一行，掃 inbox 時同螢幕能多看幾條；時間改本機時區（跟 Editor log / Discord 對得起來），
+        // 檔頭 legend 說明一次即可。條目仍以 "## [seq=" 起首 —
+        // tavern_catchup.read_inbox_entries 與 inbox_ack.count_mentions 都錨定這個 prefix，不可改。
         public static void AppendInbox(string roomId, string agentId, int eventSeq, string title, string body)
         {
             EnsureInboxDir(roomId);
+            string aPath = GetInboxPath(roomId, agentId);
             var sb = new StringBuilder();
+            if (!File.Exists(aPath))
+            {
+                sb.AppendLine($"> 📥 **{agentId}** 的 inbox — 新到最舊由上往下 append。時間為**本機時區**。");
+                sb.AppendLine($"> 處理完跑 `inbox_ack.py` 歸檔；要看被截斷的全文跑 `tavern_query.py seq <N> --full`。");
+            }
             sb.AppendLine();
-            sb.AppendLine($"## [seq={eventSeq}] {title}");
-            sb.AppendLine($"_at {UCL_ChatTavernIO.NowUtcIso()}_");
+            // 時區顯式標註（crest-001 QA 2026-07-29）：inbox 內新舊格式會並存一段時間，
+            // 舊條目是 UTC 的 `_at ...Z_`、新條目是本機時間 — 不標偏移量就會有人把 14:47 當 UTC 讀。
+            sb.AppendLine($"## [seq={eventSeq}] {title} ({System.DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zz})");
             if (!string.IsNullOrEmpty(body)) { sb.AppendLine(); sb.AppendLine(body); }
-            File.AppendAllText(GetInboxPath(roomId, agentId), sb.ToString(), new UTF8Encoding(false));
+            File.AppendAllText(aPath, sb.ToString(), new UTF8Encoding(false));
             // T21 — append 後 lazy trim
             try { TrimInboxIfOverCap(roomId, agentId); }
             catch (Exception ex) { Debug.LogWarning($"[Quest T21] inbox trim 失敗（容忍，append 已完成）：{ex.Message}"); }

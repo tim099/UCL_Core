@@ -209,15 +209,38 @@ def load_activities():
 #          agent 不需要另讀本檔, 骰面本身就攜帶直播資訊; 鎖定**不強制** (仍僅供參考, 自由意志優先)。
 # 數值影響: 只影響 enter/shuffle 的顯示順序與活動名; 讀檔失敗視同未直播 (fail-soft)。
 LIVE_INFO_PATH = _REPO_ROOT / "AgentCommands" / "_screenstream" / "_live_info.json"
+# 直播的**實際控制開關** — daemon 靠它決定要不要錄，是比旗標更上游的事實。
+STREAM_CONFIG_PATH = _REPO_ROOT / "AgentCommands" / "_screenstream" / "_config.json"
 STREAM_WATCH_ID = "stream-watch"
 
 
 def _live_stream_info():
+    """回本場直播資訊；未直播回 None。
+
+    ⚠ **不只看旗標存在，還要跟 `_config.json.enabled` 對帳**（Tim 2026-07-30 回報後補）。
+    「檔案存在 = 直播中」這個不變式原本只有 daemon 一方維護，而停止錄影的實作是
+    **立刻 Process.Kill() 收掉 daemon** —— 它根本沒機會執行 clear_live_info()，
+    於是每次停播都留下孤兒旗標。實證：旗標停在 2026-07-28 那場，而 enabled 早已是 false，
+    骰面卻連續兩天把「觀看直播」鎖第 1 位，三個 persona 同時被同一個假訊號誤導。
+
+    C# 端已補上停播清檔（單一 choke point），但**讀取端不該把正確性押在寫入端有沒有做對**：
+    `_live_info.json` 存在而 `enabled=false` 是定義上的矛盾，這種矛盾要當「沒直播」處理 ——
+    誤判沒直播只是少一個推薦，誤判有直播會讓人跑去陪看一個不存在的節目。
+    """
     try:
-        if LIVE_INFO_PATH.is_file():
-            info = json.loads(LIVE_INFO_PATH.read_text(encoding="utf-8"))
-            if isinstance(info, dict):
-                return info
+        if not LIVE_INFO_PATH.is_file():
+            return None
+        info = json.loads(LIVE_INFO_PATH.read_text(encoding="utf-8"))
+        if not isinstance(info, dict):
+            return None
+        # 對帳：控制開關關著 → 旗標是殘留，不是事實
+        try:
+            cfg = json.loads(STREAM_CONFIG_PATH.read_text(encoding="utf-8"))
+            if isinstance(cfg, dict) and not cfg.get("enabled", False):
+                return None
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass    # 讀不到 config → 無法反證，維持原本「有旗標就算直播」的行為
+        return info
     except (OSError, json.JSONDecodeError, ValueError):
         pass
     return None

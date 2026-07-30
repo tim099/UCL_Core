@@ -125,6 +125,8 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                     if (killed > 0)
                         Debug.Log($"[UCL_ScreenStream] 錄影已停止 → 收掉 {killed} 顆孤兒 daemon (registry sweep)");
                 }
+                // 未錄影 → 清掉宣稱「正在直播」的殘留檔（Tim 2026-07-30 回報）
+                ClearLiveStateFiles();
                 return;
             }
 
@@ -314,6 +316,50 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             if (p == null) return false;
             try { return !p.HasExited; }
             catch { return false; }
+        }
+
+        // ===========================================================
+        // 區塊職責：清掉「宣稱正在直播」的殘留狀態檔（Tim 2026-07-30 回報）。
+        // 物理意義：`_live_info.json` 的契約是**「檔案存在 = 直播中」**，維護者原本只有 daemon 自己
+        //          （transition 到 enabled=false 時呼叫 clear_live_info）。但停止錄影的實作是
+        //          **立刻 Process.Kill() 收掉 daemon** —— 那不是 graceful shutdown，daemon 根本沒機會
+        //          觀察到 transition。等於**每一次停止錄影都會漏一個孤兒旗標**，不是偶發是結構性：
+        //          我們在清潔工打掃之前就把他殺了。
+        //          實證：`_config.json.enabled=false`、pid 指的 process 早已不存在，
+        //          而 `_live_info.json` 還停在兩天前那場（`started_at 2026-07-28T13:29`）——
+        //          於是 `freetime.py` 的骰面一直把「觀看直播」鎖第 1 位，三個 persona 同時被誤導。
+        // 數值影響：純刪檔，且**只在 enabled=false 時**呼叫 —— 此時這些檔按定義就不該存在。
+        //          冪等（檔不在就跳過），失敗只記 warning：清不掉殘留不該讓 daemon 管理本身出錯。
+        //   - `_live_info.json`：直播中旗標，freetime 骰面的唯一判準 → 未錄影時一律清
+        //   - `_daemon.pid`：daemon 只在自己乾淨退出時刪它，被 Kill() 時同樣留下 —— 同一族的謊。
+        //     ⚠ **但只在它指向的 process 已不存在時才清**：上面的孤兒偵測（IsPidFileProcessAlive）
+        //     正是靠這個檔找到「domain reload 後失聯、卻還活著」的 daemon。若無條件刪掉，
+        //     registry sweep 萬一沒收乾淨，下一輪就再也偵測不到那顆孤兒 —— 為了掃掉一個謊
+        //     而弄瞎唯一的偵測器，划不來。
+        // ===========================================================
+        static void ClearLiveStateFiles()
+        {
+            string dir = Path.Combine(UCL_RepoPath.RepoRoot, "AgentCommands", "_screenstream");
+            TryDeleteStaleFile(Path.Combine(dir, "_live_info.json"), "_live_info.json");
+            // pid 指的 process 還活著 → 那不是殘留，是孤兒的線索，留著讓下一輪 tick 收拾
+            if (!IsPidFileProcessAlive())
+            {
+                TryDeleteStaleFile(Path.Combine(dir, "_daemon.pid"), "_daemon.pid");
+            }
+        }
+
+        static void TryDeleteStaleFile(string path, string label)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                File.Delete(path);
+                Debug.Log($"[UCL_ScreenStream] 未錄影 → 清掉殘留的 {label}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[UCL_ScreenStream] 清 {label} 失敗（不影響 daemon 管理）：{e.Message}");
+            }
         }
 
         static string ResolvePython()

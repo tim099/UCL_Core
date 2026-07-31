@@ -48,4 +48,43 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         public bool signature_mismatch;                 // sig_agent_id_claimed 跟 sig_env_marker 不一致 → true
     }
+
+    // ===========================================================
+    // 區塊職責：請款單（payout request）— agent 主張「我該收一筆錢」，等 Tim 從後台批款
+    // 物理意義：跟 ledger entry 是**兩種不同的東西**：
+    //          ledger entry = 已成事實的收付（帳面餘額的組成部分）
+    //          請款單       = 尚未發生的主張（核准後才生出對應 ledger entry）
+    //          分開存的理由：混進 ledger 會讓餘額包含未核准的主張 —— 那是假帳。
+    // 數值影響：本類別純資料；金額只在**核准時**才透過 UCL_TreasuryLedger.Credit 變成真錢。
+    //          status 是唯一會被就地改寫的欄位（pending → approved / rejected / cancelled），
+    //          其餘欄位建立後不可變 —— 改了就對不上核准當時所依據的內容。
+    // 設計取捨：**target_bank 由請款者顯式宣告，不從聊天 sender 推斷。**
+    //          2026-07-31 血證：commit 薪資 hook 拿貼文 sender 當帳戶，summit 帶了 persona 名
+    //          （`summit` 而非 bank `zeta`）→ 錢進了影子帳戶。身分層 routing 靠推斷必出事，
+    //          所以請款單要求顯式寫明收款 bank，並在核准時由人眼二次確認。
+    // ===========================================================
+    public class TreasuryPayoutRequest
+    {
+        public string request_id;          // <UUID6> — 對齊檔名，核准 / 駁回 / 取消都用它定位
+        public string requested_at;        // ISO 8601 UTC + ms
+        public string status;              // "pending" / "approved" / "rejected" / "cancelled"
+
+        // ---- 請款內容（建立後不可變）----
+        public string target_bank;         // 收款帳戶（bank id，例 cc / zeta / Myth）— 顯式宣告，不推斷
+        public int amount;                 // 正整數
+        public string currency = "tavern_token";
+        public string reason;              // 為什麼該付這筆（給人看的，核准與否靠它判斷）
+        public string source_kind;         // 核准後寫進 ledger 的 source_kind（例 commit / tim_grant）
+        public string source_ref;          // 憑證引用（SHA / task_id / message uuid…），可為空
+
+        // ---- 請款者身分（雙欄：agent 層 + persona 層，跟酒館訊息同慣例）----
+        public string requester_agent;     // agent id（例 claude-code / Zeta / Myth）
+        public string requester_persona;   // persona codename（例 gura / summit），可為空
+
+        // ---- 審批結果（pending 時全空）----
+        public string decided_at;          // ISO 8601 UTC + ms
+        public string decided_by;          // 核准者（後台批款一律 "Tim"）
+        public string decision_note;       // 駁回理由 / 核准備註
+        public string ledger_entry_uuid;   // 核准後對應的 ledger entry uuid（對帳用）
+    }
 }

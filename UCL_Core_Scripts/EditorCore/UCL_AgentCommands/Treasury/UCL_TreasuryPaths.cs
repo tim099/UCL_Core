@@ -19,6 +19,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public const string LedgerDirName = "ledger";
         public const string AccountsDirName = "accounts";
         public const string RulesFile = "rules.json";
+        // 區塊職責：請款單（payout request）存放目錄名
+        // 物理意義：請款單是「還沒發生的錢」—— 它跟 ledger 是兩種東西：ledger 記已成事實的收付，
+        //          請款單記「某 agent 主張該收一筆錢」。核准後才會生出對應的 ledger entry。
+        //          兩者刻意分開存：混進 ledger 會讓「帳面餘額」包含未核准的主張，那是假帳。
+        // 數值影響：路徑 = <Treasury>/requests/<YYYY-MM-DD>/<HHMMSS_fff>_<UUID6>__request.json
+        public const string RequestsDirName = "requests";
 
         /// <summary>Treasury 根目錄 — 走可 override 的資料根 (UCL_AgentCommandsPath.DataRoot)。
         /// 2026-05-28 修正:原本用 UnityProjectRoot/.. 與其他子系統不一致 (nested layout 脆弱),
@@ -52,6 +58,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         /// <summary>per-account snapshot cache 路徑</summary>
         public static string GetAccountSnapshotPath(string accountId)
             => Path.Combine(GetAccountsRoot(), $"{accountId}.snapshot.json");
+
+        /// <summary>請款單根目錄（<Treasury>/requests）。</summary>
+        public static string GetRequestsRoot()
+            => Path.Combine(GetTreasuryDir(), RequestsDirName);
+
+        /// <summary>請款單的當日分桶目錄 — 與 ledger 同構（按日分桶，避免單一目錄千檔）。</summary>
+        public static string GetRequestDateDir(DateTime utcDate)
+            => Path.Combine(GetRequestsRoot(), utcDate.ToString("yyyy-MM-dd"));
+
+        /// <summary>建構請款單檔名 — <HHMMSS_fff>_<UUID6>__request.json（沿用 ledger 的檔名形狀）。</summary>
+        public static string BuildRequestFileName(DateTime utcTime, string uuid6)
+            => $"{utcTime:HHmmss_fff}_{uuid6}__request.json";
 
         public static void EnsureTreasuryDir()
         {

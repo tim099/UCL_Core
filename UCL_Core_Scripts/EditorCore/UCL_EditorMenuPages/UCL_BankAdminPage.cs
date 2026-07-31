@@ -91,6 +91,18 @@ namespace UCL.Core.EditorLib.Page
         // 操作結果訊息（持久顯示直到下次操作，取代 Editor-only DisplayDialog）
         string m_LastResultMsg = "";
 
+        // ==== 📨 請款審批 ====
+        // 區塊職責：待審請款單快取 + 每張單的備註 draft + 核准二段確認狀態
+        // 物理意義：請款單存在磁碟（Treasury/requests/），列表只在 LoadData / 操作後 / 按重新載入時重讀 ——
+        //          跟本頁餘額快取同一個理由：IMGUI 每 repaint frame 都跑，每幀掃目錄會卡頓。
+        // 數值影響：純顯示狀態；真正的錢在 OnApproveClicked → UCL_TreasuryRequestStore.Approve 才動。
+        readonly List<UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryPayoutRequest> m_PendingRequests
+            = new List<UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryPayoutRequest>();
+        readonly Dictionary<string, string> m_RequestNoteDrafts = new Dictionary<string, string>();
+        string m_ApproveArmedId = null;      // 二段確認：第一次點 arm，第二次才真的打款
+        double m_ApproveArmedAt = 0;
+        const double APPROVE_ARM_WINDOW_SEC = 5.0;
+
         GUIStyle m_WrapLabelStyle;
         GUIStyle WrapLabelStyle
         {
@@ -194,6 +206,9 @@ namespace UCL.Core.EditorLib.Page
             {
                 Debug.LogWarning($"[BankAdmin] load fail: {e.Message}");
             }
+            // 待審請款單一併讀進來（放 try 外：上面掛掉不該讓審批面板變成空的假象 ——
+            // 「沒有待審單」與「載入失敗」是兩件事，不能長得一樣）
+            ReloadPayoutRequests();
         }
 
         // ===========================================================
@@ -281,6 +296,8 @@ namespace UCL.Core.EditorLib.Page
             DrawTokenOpsPanel();      // 開戶 / 打款 / 轉帳
             GUILayout.Space(6);
             DrawVoucherPanel();       // 繪圖券 + 酒館券 查詢 / 發放
+            GUILayout.Space(6);
+            DrawPayoutRequestPanel(); // 📨 agent 請款審批（核准 = 實際打款）
             GUILayout.Space(6);
             DrawResultPanel();
         }
@@ -725,6 +742,154 @@ namespace UCL.Core.EditorLib.Page
             var reg = JsonData.ParseJson(File.ReadAllText(RegistryMetaPath));
             mutate(reg);
             AtomicWrite(RegistryMetaPath, reg.ToJsonBeautify());
+        }
+
+        // ===========================================================
+        // 區塊：📨 請款審批 — agent 走 Cmd_Treasury op=request 開單，這裡核准即實際打款
+        // 物理意義：補上「agent 主張該收錢」的正規管道。此前只有兩極：自動 hook（規則寫死，
+        //          超出規則的勞動無處可請）或口頭請 Tim credit（無單據、無稽核、講過就忘）。
+        // 數值影響：**核准是本頁唯一會依他人主張動錢的入口** → 金額 / 收款 bank / 理由三者
+        //          必須同屏可見才按得下去；核准後由 UCL_TreasuryRequestStore.Approve 寫 ledger。
+        // 邊界：
+        //   - 只列 pending（已決的單子留在檔案裡供稽核，不佔畫面）
+        //   - 核准走**二段確認**（先 arm 再確認，5 秒窗口）—— 後台是單人操作，沒有旁人可看，
+        //     誤觸就是真的付錢出去。commit 公告那條刻意不防重複是因為酒館公開、肉眼可見；
+        //     這裡沒有那層社會約束，所以必須由機制擋。
+        //   - 收款 bank 不在合法帳號宇宙 → 標紅警告但**不阻擋**（可能是刻意開新帳戶），
+        //     由人決定。靜默擋掉會讓請款者不知道為什麼沒下文。
+        // ===========================================================
+        void DrawPayoutRequestPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"<b>📨 請款審批</b>（pending {m_PendingRequests.Count} 筆；agent 走 <b>Cmd_Treasury op=request</b> 開單）",
+                        WrapLabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("🔄 重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        ReloadPayoutRequests();
+                        SetResult($"✓ 已重新載入請款單（pending {m_PendingRequests.Count} 筆）");
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                if (m_PendingRequests.Count == 0)
+                {
+                    GUILayout.Label("（目前沒有待審請款單）", WrapLabelStyle);
+                    return;
+                }
+
+                foreach (var req in m_PendingRequests)
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        bool armed = IsApproveArmed(req.request_id);
+                        bool bankKnown = m_BankIds.Contains(req.target_bank);
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"<b>{req.amount} {req.currency}</b> → bank <b>{req.target_bank}</b>"
+                                    + (bankKnown ? "" : "　<color=yellow>⚠ 非既有帳號</color>"),
+                                WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                            GUILayout.Label($"{req.requester_agent}@{req.requester_persona}", WrapLabelStyle,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                            GUILayout.Label($"`{req.request_id}`  {req.requested_at}", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                            GUILayout.FlexibleSpace();
+                        }
+                        GUILayout.Label($"理由：{req.reason}", WrapLabelStyle);
+                        GUILayout.Label($"source_kind / ref：{req.source_kind} / {(string.IsNullOrEmpty(req.source_ref) ? "(無)" : req.source_ref)}",
+                            WrapLabelStyle);
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label("備註", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                            string prev = m_RequestNoteDrafts.TryGetValue(req.request_id, out var d) ? d : "";
+                            m_RequestNoteDrafts[req.request_id] = GUILayout.TextField(prev, UCL_GUIStyle.TextFieldStyle,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(260)));
+
+                            var armColor = armed ? new Color(1f, 0.5f, 0.4f) : new Color(0.5f, 1f, 0.6f);
+                            if (GUILayout.Button(armed ? "✔ 確認打款（再按一次）" : "✔ 核准打款",
+                                    UCL_GUIStyle.GetButtonStyle(armColor), GUILayout.ExpandWidth(false)))
+                                OnApproveClicked(req);
+                            if (GUILayout.Button("✘ 駁回", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                                OnRejectClicked(req);
+                            GUILayout.FlexibleSpace();
+                        }
+                    }
+                }
+                GUILayout.Label("核准 = 立即寫入 ledger（等同打款）；駁回只改狀態不動錢。"
+                    + "已決的單子留在 <b>AgentCommands/Treasury/requests/</b> 供稽核，不再列於此。", WrapLabelStyle);
+            }
+        }
+
+        void ReloadPayoutRequests()
+        {
+            m_PendingRequests.Clear();
+            try
+            {
+                m_PendingRequests.AddRange(
+                    UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryRequestStore.List(pendingOnly: true));
+            }
+            catch (Exception ex)
+            {
+                SetResult($"❌ 載入請款單失敗：{ex.Message}");
+            }
+        }
+
+        bool IsApproveArmed(string requestId) =>
+            !string.IsNullOrEmpty(requestId) && m_ApproveArmedId == requestId
+            && (EditorApplication.timeSinceStartup - m_ApproveArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+
+        void OnApproveClicked(UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryPayoutRequest req)
+        {
+            // 二段確認：第一次點只 arm（5 秒內再按才真的付錢）
+            if (!IsApproveArmed(req.request_id))
+            {
+                m_ApproveArmedId = req.request_id;
+                m_ApproveArmedAt = EditorApplication.timeSinceStartup;
+                SetResult($"⏳ 待確認：核准 `{req.request_id}` → 付 {req.amount} {req.currency} 給 `{req.target_bank}`"
+                    + "（5 秒內再按一次「確認打款」生效）");
+                return;
+            }
+            m_ApproveArmedId = null;
+            try
+            {
+                string note = m_RequestNoteDrafts.TryGetValue(req.request_id, out var n) ? n : "";
+                var done = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryRequestStore.Approve(
+                    req.request_id, decidedBy: "Tim", note: note);
+                SetResult($"✅ 已打款：`{done.request_id}` +{done.amount} {done.currency} → `{done.target_bank}`"
+                    + $"（ledger entry {done.ledger_entry_uuid}）");
+                NotifyTavern(
+                    $"💰 **銀行後台｜請款核准**\n" +
+                    $"請款單 `{done.request_id}` 核准 —— **+{done.amount} {done.currency}** 已打入 bank **{done.target_bank}**。\n" +
+                    $"📝 原請款理由：{done.reason}\n" +
+                    (string.IsNullOrEmpty(note) ? "" : $"📌 審批備註：{note}\n") +
+                    $"🧾 請款者：{done.requester_agent}@{done.requester_persona}",
+                    "payout-request-approved");
+                m_BalancesDirty = true;
+                ReloadPayoutRequests();
+            }
+            catch (Exception ex) { SetResult($"❌ 核准失敗：{ex.Message}"); }
+        }
+
+        void OnRejectClicked(UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryPayoutRequest req)
+        {
+            try
+            {
+                string note = m_RequestNoteDrafts.TryGetValue(req.request_id, out var n) ? n : "";
+                var done = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryRequestStore.Close(
+                    req.request_id, UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryRequestStore.StatusRejected,
+                    decidedBy: "Tim", note: note);
+                SetResult($"✘ 已駁回：`{done.request_id}`（{done.amount} {done.currency} → `{done.target_bank}`）"
+                    + (string.IsNullOrEmpty(note) ? "　※ 建議填備註讓請款者知道為什麼" : $"　理由：{note}"));
+                NotifyTavern(
+                    $"🚫 **銀行後台｜請款駁回**\n" +
+                    $"請款單 `{done.request_id}`（{done.amount} {done.currency} → bank {done.target_bank}）被駁回，**未打款**。\n" +
+                    (string.IsNullOrEmpty(note) ? "📝 未附理由。\n" : $"📝 理由：{note}\n") +
+                    $"🧾 請款者：{done.requester_agent}@{done.requester_persona}",
+                    "payout-request-rejected");
+                ReloadPayoutRequests();
+            }
+            catch (Exception ex) { SetResult($"❌ 駁回失敗：{ex.Message}"); }
         }
 
         void SetResult(string msg) { m_LastResultMsg = msg; }

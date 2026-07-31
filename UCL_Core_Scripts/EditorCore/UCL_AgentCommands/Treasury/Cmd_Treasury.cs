@@ -24,7 +24,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "debit: account=帳戶ID amount=N use_kind=enum [use_ref=...] [description=...] [caller=自報agent_id] — 出帳；caller 必須==account（除非 system）\n" +
             "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
-            "verify: account=帳戶ID — 跑 replay 驗 balance_after consistency";
+            "verify: account=帳戶ID — 跑 replay 驗 balance_after consistency\n" +
+            "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 UCL_BankAdminPage 批款）\n" +
+            "request_list: [pending_only=true|false] [max=200] — 列請款單\n" +
+            "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單";
 
         public override string ExampleArgs =>
             "op=balance;account=claude-da-xiaojie";
@@ -53,6 +56,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
                     case "audit":    Op_Audit(args); break;
                     case "verify":   Op_Verify(args); break;
+                    // 請款流程（Tim 2026-07-31 拍板）—— agent 開單，Tim 從 UCL_BankAdminPage 批款
+                    case "request":        Op_Request(args); break;
+                    case "request_list":   Op_RequestList(args); break;
+                    case "request_cancel": Op_RequestCancel(args); break;
                     default:
                         Cmd_Tavern_Helpers.RejectLastOp($"未知 op: {op}");
                         break;
@@ -258,6 +265,91 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string status = driftCount == 0 ? "\n✅ ledger consistent" : "\n❌ DRIFT detected\n\n" + sb.ToString();
             Cmd_Tavern_Helpers.WriteLastOp(head + status);
             Debug.Log($"[Treasury] verify {account}: {entries.Count} entries, drift={driftCount}");
+        }
+
+        // ===========================================================
+        // 區塊：請款流程（Tim 2026-07-31 拍板）— agent 開單 → Tim 在 UCL_BankAdminPage 批款
+        // 物理意義：補上「agent 主張該收錢」這條正規管道。在此之前只有兩種極端：
+        //          ① 自動 hook（work_post / commit 公告）—— 規則寫死，超出規則的勞動無處可請
+        //          ② 請 Tim 手動 credit —— 沒有單據、沒有稽核痕跡、講過就忘
+        //          請款單填補中間：**有單據、可審批、可駁回、可追溯**。
+        // 數值影響：op=request / request_cancel 完全不動餘額（純檔案）；
+        //          錢只在 Tim 於後台按「核准」時才由 UCL_TreasuryRequestStore.Approve 產生。
+        // 邊界：target_bank 必須是**bank id 不是 persona 名** —— 2026-07-31 血證：
+        //      commit hook 拿貼文 sender 當帳戶，summit 帶 persona 名 `summit`（bank 應為 `zeta`）
+        //      → 錢進影子帳戶。這裡改為顯式宣告 + 後台人眼二次確認，不做任何推斷。
+        // ===========================================================
+        void Op_Request(Dictionary<string, string> args)
+        {
+            string targetBank = GetArg(args, "target_bank", "");
+            string reason = GetArg(args, "reason", "");
+            string amountRaw = GetArg(args, "amount", "");
+            if (string.IsNullOrEmpty(targetBank)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 target_bank（收款 bank id，例 cc / zeta / Myth —— 不是 persona 名）"); return; }
+            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 reason —— 審批者要有東西可判，不接受無理由請款"); return; }
+            if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
+            { Cmd_Tavern_Helpers.RejectLastOp($"request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
+
+            try
+            {
+                var req = UCL_TreasuryRequestStore.Create(
+                    targetBank: targetBank,
+                    amount: amount,
+                    reason: reason,
+                    sourceKind: GetArg(args, "source_kind", "manual_request"),
+                    sourceRef: GetArg(args, "source_ref", ""),
+                    requesterAgent: GetArg(args, "agent", GetArg(args, "caller", "")),
+                    requesterPersona: GetArg(args, "persona", ""),
+                    currency: GetArg(args, "currency", "tavern_token"));
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"# 🧾 請款單已開 — `{req.request_id}`");
+                sb.AppendLine();
+                sb.AppendLine($"- 金額：**{req.amount} {req.currency}**");
+                sb.AppendLine($"- 收款 bank：**{req.target_bank}**");
+                sb.AppendLine($"- 理由：{req.reason}");
+                sb.AppendLine($"- source_kind / ref：{req.source_kind} / {(string.IsNullOrEmpty(req.source_ref) ? "(無)" : req.source_ref)}");
+                sb.AppendLine($"- 請款者：{req.requester_agent}@{req.requester_persona}");
+                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等 Tim 從 UCL_BankAdminPage 的「📨 請款審批」批款");
+                Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            }
+            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp($"request 參數不合法：{ex.Message}"); }
+        }
+
+        void Op_RequestList(Dictionary<string, string> args)
+        {
+            bool pendingOnly = GetArg(args, "pending_only", "true").ToLowerInvariant() != "false";
+            if (!int.TryParse(GetArg(args, "max", "200"), out int max) || max <= 0) max = 200;
+            var list = UCL_TreasuryRequestStore.List(pendingOnly, max);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"# 🧾 請款單列表（{(pendingOnly ? "只列 pending" : "全部")}，共 {list.Count} 筆）");
+            sb.AppendLine();
+            if (list.Count == 0) sb.AppendLine("（無）");
+            foreach (var r in list)
+            {
+                sb.AppendLine($"- `{r.request_id}` **{r.amount} {r.currency}** → `{r.target_bank}`　[{r.status}]"
+                    + $"　{r.requester_agent}@{r.requester_persona}　{r.requested_at}");
+                sb.AppendLine($"    理由：{r.reason}");
+                if (!string.IsNullOrEmpty(r.decision_note)) sb.AppendLine($"    審批備註：{r.decision_note}");
+            }
+            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Debug.Log($"[Treasury] request_list: {list.Count} 筆（pendingOnly={pendingOnly}）");
+        }
+
+        void Op_RequestCancel(Dictionary<string, string> args)
+        {
+            string id = GetArg(args, "request_id", "");
+            if (string.IsNullOrEmpty(id)) { Cmd_Tavern_Helpers.RejectLastOp("request_cancel 缺少 request_id"); return; }
+            try
+            {
+                var req = UCL_TreasuryRequestStore.Close(
+                    id, UCL_TreasuryRequestStore.StatusCancelled,
+                    decidedBy: GetArg(args, "agent", GetArg(args, "caller", "agent")),
+                    note: GetArg(args, "note", ""));
+                Cmd_Tavern_Helpers.WriteLastOp($"# 🗑 請款單已撤回 — `{req.request_id}`\n\n"
+                    + $"- 原請款：{req.amount} {req.currency} → `{req.target_bank}`\n- 狀態：**{req.status}**\n");
+            }
+            catch (System.Exception ex) { Cmd_Tavern_Helpers.RejectLastOp($"request_cancel 失敗：{ex.Message}"); }
         }
 
         string BuildEntryMd(string action, TreasuryLedgerEntry e)

@@ -10,7 +10,8 @@ Usage (run from anywhere):
     python <UCL_Core>/Tools~/install_skills.py [options]
 
 Options:
-    --target <claude>     Target agent format. Default: claude. (cursor / agents-md / gemini planned.)
+    --target <claude|antigravity|codex>
+                          Target agent format. Default: claude. Codex installs into .codex/skills.
     --include <a,b,c>     Only install these skills (comma list).
     --exclude <a,b,c>     Skip these skills.
     --link                Use directory symlink/junction instead of copy. Lets edits in UCL_Core sync immediately. May fail without admin on Windows.
@@ -23,7 +24,7 @@ Behaviour:
     1. Locate host project root by walking up from this script's directory until
        a `.git` directory or `.claude/` directory is found (cap 8 levels).
     2. For each skill directory in `Skills~/` (skipping names starting with `_`
-       or ending with `~`), install into `<root>/.claude/skills/<name>/`.
+       or ending with `~`), install into the target workspace skill directory.
     3. Each installed skill gets a `.ucl_source` file recording only the source
        path (a presence/provenance marker). No per-file hashes and no git commit
        are stored: installed copies are a disposable mirror of Skills~/, and
@@ -36,7 +37,7 @@ Behaviour:
        (no --include/--exclude), installed skill *directories* whose source was
        removed from Skills~ (retired skills, marked by .ucl_source) are also
        uninstalled — otherwise the Editor page would judge them Stale forever.
-    5. Writes `.claude/skills/.ucl_installed` as a global marker so agent-side
+    5. Writes `<target-skill-dir>/.ucl_installed` as a global marker so agent-side
        self-checks can detect installation.
 
 Exit codes:
@@ -364,7 +365,7 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False, tar
     src_rel_keys: set[str] = set()
 
     # 逐檔：內文相同 → 跳過；不同 / 不存在 → 覆蓋。（不算 hash，直接比對內文）
-    # antigravity 的 SKILL.md 安裝時注入 trigger frontmatter，故比對/寫入用轉換後內文。
+    # Antigravity 的 SKILL.md 安裝時注入 trigger frontmatter，故比對/寫入用轉換後內文。
     for src_file in src_dir.rglob("*"):
         if not src_file.is_file():
             continue
@@ -496,10 +497,10 @@ def filter_skills(all_skills: Iterable[str], include: set[str], exclude: set[str
 
 # 區塊職責：CLI 主要進入點，分析執行參數並分發拷貝任務至指定 Agent 端。
 # 物理意義：這協調了整個 Skill 機制的安裝與解除安裝生命週期，動態將對應的目錄或單一檔案副本部署到專案主體中。
-# 數值影響：這修改了專案 `.claude/skills/` 或 `.agents/rules/` 目錄下的靜態檔案結構。
+# 數值影響：這修改了專案 `.claude/skills/` 或 `.agents/skills/` 目錄下的靜態檔案結構。
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install UCL_Core skills into the host project.")
-    parser.add_argument("--target", default="claude", choices=["claude", "antigravity"], help="Agent target format.")
+    parser.add_argument("--target", default="claude", choices=["claude", "antigravity", "codex"], help="Agent target format.")
     parser.add_argument("--include", help="Comma-separated list of skill names to include (others skipped).")
     parser.add_argument("--exclude", help="Comma-separated list of skill names to skip.")
     parser.add_argument("--include-optional", dest="include_optional", action="store_true",
@@ -519,7 +520,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.target == "antigravity":
         skills_dst_root = project_root / ".agents" / "skills"
         
-        # Cleanup legacy antigravity rules (.md files)
+        # 區塊職責：清理舊版 Antigravity rules 目錄，讓 Antigravity skill 根只保留目前鏡像。
+        # 物理意義：Antigravity 讀 .agents/skills；遺留的 .agents/rules 不是目前載入來源。
+        # 數值影響：只刪除帶 .ucl_source marker 的 UCL 舊規則，不會碰使用者自行建立的規則。
         legacy_rules_dir = project_root / ".agents" / "rules"
         if legacy_rules_dir.is_dir():
             for md_file in legacy_rules_dir.glob("*.md"):
@@ -534,6 +537,8 @@ def main(argv: list[str] | None = None) -> int:
                     legacy_rules_dir.rmdir()
             except OSError:
                 pass
+    elif args.target == "codex":
+        skills_dst_root = project_root / ".codex" / "skills"
     else:
         skills_dst_root = project_root / ".claude" / "skills"
 

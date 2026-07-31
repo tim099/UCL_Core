@@ -1,12 +1,12 @@
 // 區塊職責：Agent Skill 管理頁 — 第一次開 UCL_WelcomePage 時自動 push 到頂、
 //            提供 onboarding 強制曝光，後續可從 Welcome 卡片或選單再開。
 // 物理意義：UCL_Core 的 Skills~/ 是跨專案 Skill 的 source-of-truth；不同 agent
-//            (Claude Code / Antigravity / 規劃中：Cursor / Gemini …) 的安裝路徑由
+//            (Claude Code / Antigravity / Codex / 規劃中：Cursor / Gemini …) 的安裝路徑由
 //            install_skills.py 的 --target 分支處理。本頁是 IMGUI 視覺化前端，
 //            幫不會打 CLI 的開發者把「裝 Skill 給 AI 用」這件事一鍵化。
 // 數值影響：每個 target 一顆按鈕 spawn `python install_skills.py --target X`；
 //            安裝結果寫對應 dst 的 .ucl_installed（Claude → .claude/skills/，
-//            Antigravity → .agents/rules/）；「我知道了」勾選會寫 EditorPrefs，
+//            Antigravity → .agents/skills、Codex → .codex/skills）；「我知道了」勾選會寫 EditorPrefs，
 //            下次不再自動彈本頁。
 #if UNITY_EDITOR
 using System;
@@ -34,7 +34,8 @@ namespace UCL.Core.EditorLib.Page
     ///   <item>選單 <c>UCL → Agent Skill Manager</c></item>
     /// </list>
     ///
-    /// 目前支援 Claude Code（--target claude）與 Antigravity（--target antigravity），
+    /// 目前支援 Claude Code（--target claude）、Antigravity（--target antigravity）與
+    /// Codex（--target codex），
     /// 各自渲染一行狀態 + 安裝按鈕；另提供「Install All」一鍵跑所有 target。
     /// 其他 agent (Cursor / Gemini) 的 target 由 install_skills.py 後續擴充。
     /// 本頁預留 Per-Agent × Per-Skill 切換 matrix 的 UI 區塊（目前只有 placeholder）。
@@ -261,7 +262,7 @@ namespace UCL.Core.EditorLib.Page
         // 區塊：Skill 安裝狀態偵測（direct content compare, Tim 2026-07-14）
         // 物理意義：逐檔直接比對「Skills~/<skill> 源檔案內文」vs「已裝目錄內文」是否相同，
         //          不算 hash、不讀 marker 的 ucl_core_commit / source_hash（那會隨 commit churn
-        //          且看不出已裝端實際內容）。antigravity 端 SKILL.md 因 install 會注入 trigger
+        //          且看不出已裝端實際內容）。Antigravity 端 SKILL.md 因 install 會注入 trigger
         //          frontmatter，比對前對源套同樣轉換。結果在 RefreshStatus 一次算完並快取，
         //          只有安裝 / skill 操作(m_StatusDirty=true)才重算 — 不每幀重掃磁碟。
         // ===========================================================
@@ -282,13 +283,15 @@ namespace UCL.Core.EditorLib.Page
         {
             Claude = 0,
             Antigravity = 1,
+            Codex = 2,
         }
-        static readonly AgentTarget[] AllTargets = { AgentTarget.Claude, AgentTarget.Antigravity };
+        static readonly AgentTarget[] AllTargets = { AgentTarget.Claude, AgentTarget.Antigravity, AgentTarget.Codex };
 
         static string TargetCliName(AgentTarget t) => t switch
         {
             AgentTarget.Claude => "claude",
             AgentTarget.Antigravity => "antigravity",
+            AgentTarget.Codex => "codex",
             _ => "claude",
         };
 
@@ -296,15 +299,19 @@ namespace UCL.Core.EditorLib.Page
         {
             AgentTarget.Claude => "Claude Code",
             AgentTarget.Antigravity => "Antigravity",
+            AgentTarget.Codex => "Codex",
             _ => t.ToString(),
         };
 
         // 不同 target 的安裝目錄（相對 host project root）
-        // Claude → .claude/skills/、Antigravity → .agents/skills/，全域 .ucl_installed marker 都放在該目錄根
+        // Claude → .claude/skills/；Antigravity → .agents/skills；Codex → .codex/skills。
+        // Codex 需要自己的安裝根與 marker，不能以 Antigravity 的 .agents/skills 狀態冒充已安裝。
+        // 數值影響：每個 target 的同步狀態完全獨立；同步 Codex 不會修改 Antigravity 的 skill 鏡像。
         static string TargetMarkerRelDir(AgentTarget t) => t switch
         {
             AgentTarget.Claude => Path.Combine(".claude", "skills"),
             AgentTarget.Antigravity => Path.Combine(".agents", "skills"),
+            AgentTarget.Codex => Path.Combine(".codex", "skills"),
             _ => Path.Combine(".claude", "skills"),
         };
 
@@ -941,7 +948,7 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 // 區塊職責：每個 target 一行（label + 狀態 + 按鈕）
-                // 物理意義：Claude / Antigravity 各自獨立安裝；狀態互不影響
+                // 物理意義：三個 agent 都有獨立安裝目錄；Codex 使用 .codex/skills，不讀取 Antigravity 的 marker。
                 // 數值影響：每行內 RunInstall(target) 只動該 target 的 dst 目錄
                 foreach (var t in AllTargets)
                 {

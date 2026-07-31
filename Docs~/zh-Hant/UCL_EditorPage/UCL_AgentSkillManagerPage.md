@@ -3,7 +3,7 @@ title: UCL_AgentSkillManagerPage — Agent Skill 安裝管理頁
 description: IMGUI 視覺化前端，把 UCL_Core/Skills~/ 內的工作流 skill 一鍵安裝給各家 AI agent。第一次開 UCL_WelcomePage 時自動彈出，強制 onboarding 曝光。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-07-27
+last_updated: 2026-07-31
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Skills~/README.md | Skills~ 來源目錄 | source-of-truth + manifest 規範
@@ -73,7 +73,10 @@ Hash 規格：per-skill 對目錄下所有檔案（`.` 開頭隱藏檔除外）�
 | Target | CLI flag | 安裝目錄 | Marker 路徑 |
 |---|---|---|---|
 | Claude Code | `--target claude` | `<root>/.claude/skills/` | `.claude/skills/.ucl_installed` |
-| Antigravity | `--target antigravity` | `<root>/.agents/rules/` | `.agents/rules/.ucl_installed` |
+| Antigravity | `--target antigravity` | `<root>/.agents/skills/` | `.agents/skills/.ucl_installed` |
+| Codex | `--target codex` | `<root>/.codex/skills/` | `.codex/skills/.ucl_installed` |
+
+Codex 使用獨立的 `.codex/skills/` 鏡像與 `.ucl_installed` marker。這避免 Codex 頁面讀到 Antigravity 的 `.agents/skills/.ucl_installed` 後誤判為已安裝；Codex 同步不會修改 Antigravity 目錄，也不套用 Antigravity 專用的 trigger frontmatter 轉換。
 
 頁底另一顆「🚀 一鍵安裝全部 target」會 sequential 跑所有 target — UI 在期間 disabled，每個 target 結束就釋放自己的 install lock。
 

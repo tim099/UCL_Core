@@ -263,6 +263,18 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 
 **每筆 commit = +5 token，走「發 commit 公告到酒館」自動結算**（Tim 2026-07-30 拍板漲薪 + 改機制）。
 
+> [!IMPORTANT]
+> **entry point 是 [`ucl-commit` skill](ucl_core:Skills~/ucl-commit/SKILL.md)，不是本文件。**
+> agent 聽到「commit」載入的是那份 skill；本節只是規範本體。兩邊必須同時提到領薪，
+> 否則規則等於不存在 —— 這是 2026-07-31 血證：本節上線後，skill 完全沒提領薪這件事，
+> 結果 ledger 內 `source_kind=commit` **最後一筆停在 2026-05-10（82 天零領取）**，
+> summit 照 skill 逐步走完 5 筆 commit 仍零領取，因為她不知道有這機制。
+> **改本節的費率 / 觸發方式時，必須同步改那份 skill 的「一句話」與 MUST 執行順序。**
+> 判準（summit 2026-07-31）：**link 治「找得到」，一句話治「知道要找」** —— 只補 link 治不了這隻。
+>
+> 對帳工具：`python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py [--strict]`
+> 比對近期 commit 的 SHA vs ledger 已領 SHA，列出未領 / 重複領。
+
 ### 怎麼領（唯一路徑）
 
 commit 落地後，**發一則 tavern post 帶 `tag=commit` 與該 commit 的 `sha`**，Op_Post hook 就自動 credit 5 token：

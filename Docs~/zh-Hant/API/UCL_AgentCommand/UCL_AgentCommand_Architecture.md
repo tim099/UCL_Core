@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-07-29
+last_updated: 2026-08-01
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -34,7 +34,7 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
 │      │                                                              │
 │      │ 1) 寫指令到 queue                                              │
 │      ↓                                                              │
-│   AgentCommands/queue.json                                          │
+│   AgentCommands/queues/<persona>/queue.json                         │
 │      │                                                              │
 │      ↓ 2) 觸發（4 種方式）                                            │
 └──────┬──────────────────────────────────────────────────────────────┘
@@ -63,7 +63,7 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
                                 │
                                 │ 6) 寫回 queue（OneShot 移除 / Repeatable RunCount++ / 失敗記錯誤）
                                 ↓
-                   AgentCommands/queue.json （更新後）
+                   AgentCommands/queues/<persona>/queue.json （更新後）
 ```
 
 ---
@@ -73,7 +73,7 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
 | 類別 | 路徑 | 角色 |
 |---|---|---|
 | `UCL_AgentCommand` | `UCL_AgentCommand.cs` | 單一指令的資料模型（`Id` / `Type` / `Mode` / `Args` / `LastRunResult` / 等）— 對應 queue.json 一筆 |
-| `UCL_AgentCommandQueue` | `UCL_AgentCommandQueue.cs` | queue.json 的讀寫 helper（`Load(agentId)` / `Save(data, agentId)` / `GetQueuePath(agentId)` — agentId=null → default; 非 null → per-agent，見 §8.1）|
+| `UCL_AgentCommandQueue` | `UCL_AgentCommandQueue.cs` | queue.json 的讀寫 helper（`Load(id)` / `Save(data, id)` / `GetQueuePath(id)` / `GetDeclaredPersona(id)` — id 形狀為 `<persona>` 或 `<persona>/<lane>`，null → anonymous，見 §8.1）|
 | `UCL_AgentCommandRunner` | `UCL_AgentCommandRunner.cs` | 主執行器；含 `[MenuItem] Tools/UCL/Agent Commands/Run Pending` 入口 |
 | `UCL_AgentCommandRegistry` | `UCL_AgentCommandRegistry.cs` | 反射發現所有 `UCL_AgentCommandHandlerBase` 子類；`Get(type)` / `ListHandlers()` |
 | `UCL_AgentCommandHandlerBase` | `UCL_AgentCommandHandlerBase.cs` | **新增指令的擴充點** — 抽象基底，子類覆寫 `CommandType` + `ExecuteAsync()` |
@@ -248,43 +248,66 @@ python Tools~/AgentCommands/run_cmd.py catalog
 
 ---
 
-## 8.1 Multi-Queue Per-Agent Mode（Tim 2026-05-13 拍板）
+## 8.1 Multi-Queue：persona 資料夾制（Tim 2026-08-01 拍板，取代 2026-05-13 的平鋪檔名制）
 
-為解決「單 cmd 卡死阻塞整 pipeline + 多 agent 並行 submit 撞 race」問題（quest `agent-command-pipeline-parallelize` 方案 A），系統支援 **per-agent queue 隔離**。
+為解決「單 cmd 卡死阻塞整 pipeline + 多 agent 並行 submit 撞 race」問題（quest `agent-command-pipeline-parallelize` 方案 A），系統支援 **per-persona queue 隔離**。
+
+> **2026-08-01 改版**：舊制把 queue 平鋪成 `queues/queue-<persona>-<lane>.json`，「這筆是誰派的」得從**檔名字串反推** —— 而 `queue-ame-design` 無法判定「`-design` 是用途還是名字的一部分」，`chess-0` 更是完全沒有 persona。
+> 改成資料夾之後，**身分（資料夾）與通道（檔名後綴）在檔案系統層就分開了**，不必解析任何字串。
+> 這也讓身分解析階梯的 tier 2「queue 反推」從「推論」降級成**單純讀路徑**。
 
 ### 路徑對照
 
 | Mode | Queue 檔 | Trigger | Running |
 |---|---|---|---|
-| **Default (legacy)** | `AgentCommands/queue.json` | `AgentCommands/pending.trigger` | `AgentCommands/pending.trigger.running` |
-| **Per-Agent** `<X>` | `AgentCommands/queues/queue-<X>.json` | `AgentCommands/queues/pending-<X>.trigger` | `AgentCommands/queues/pending-<X>.trigger.running` |
+| **本命** `<persona>` | `AgentCommands/queues/<persona>/queue.json` | `…/<persona>/pending.trigger` | `…/<persona>/pending.trigger.running` |
+| **子通道** `<persona>/<lane>` | `AgentCommands/queues/<persona>/queue-<lane>.json` | `…/<persona>/pending-<lane>.trigger` | `…/<persona>/pending-<lane>.trigger.running` |
+| **匿名**（未宣告身分） | `AgentCommands/queues/anonymous/queue.json` | `…/anonymous/pending.trigger` | `…/anonymous/pending.trigger.running` |
+
+- **最外層共用 `AgentCommands/queue.json` 已廢除**（連同根層 `pending.trigger`）。每筆派遣都住在某個資料夾底下，掃描規則因此是一條**沒有例外**的「資料夾名 = 身分」。
+- **`anonymous` 是保留字，不是 persona** —— 身分解析讀到它必須回「本層沒有答案」，**不可回字串 `"anonymous"`**。
+  這不是潔癖：`bank_resolver` 對認不出的身分有命名慣例 fallback（`{name}-da-xiaojie`，隱含開新 bank），
+  讓 `anonymous` 流進記帳層等於替一個不存在的人開戶。C# 端取值走 `UCL_AgentCommandQueue.GetDeclaredPersona()`，它對匿名回 `null`。
+- `queues/anonymous/` 的流量**自己就是「還有多少未署名派遣」的儀表** —— 不需要有人記得去統計。
 
 ### Python CLI
 
 ```bash
-# Legacy default queue (backward compat, 既有 caller 完全不變)
-python run_cmd.py run <Type> --arg key=val
+# 本命 queue（一般用法）
+python run_cmd.py --persona <你的persona> run <Type> --arg key=val
 
-# Per-agent queue (gemini / claude / antigravity / Zeta)
-python run_cmd.py --agent-id gemini run <Type> --arg key=val
+# 子通道（同 persona 並行，見下）
+python run_cmd.py --persona <你的persona> --lane <通道> run <Type> --arg key=val
+
+# 不帶身分 → queues/anonymous/（能跑，但沒署名）
+python run_cmd.py run <Type> --arg key=val
 ```
+
+**舊 `--agent-id` 不報錯，但整串會當成資料夾名** —— `--agent-id ame-sw` 會長出 `queues/ame-sw/`。
+它合法、能跑，但它是**遷移待辦的可見形式**：看到那種資料夾就表示該 caller 還沒改。
+（Tim 2026-08-01 選這個而不是報錯：不擋人做事，但讓沒改的地方看得見。
+刻意**不做字串轉譯** —— 任何轉譯都得回頭猜「`ame-sw` 是人還是人+通道」，而擺脫那個猜測正是本次改版的全部意義。）
 
 ### 同 Persona 並行子通道 `--lane` / `--parallel`（T06, 2026-06-07 summit）
 
-**問題**：同一 `--agent-id`（或 default）的 queue 是**串行**的 —— per-agent IsRunning 擋同 agent 重入（防同一 queue.json 的 write race）。所以「同 persona 的下一筆 cmd 會等前一筆跑完」。
+**問題**：同一 persona 的本命 queue 是**串行**的 —— per-agent IsRunning 擋重入（防同一 queue.json 的 write race）。所以「同 persona 的下一筆 cmd 會等前一筆跑完」。
 
-**解**：`--lane <name>` 在 base agent-id 上疊一條**獨立子通道**，effective queue id = `<agent-id|main>~<lane>`，走獨立 queue + running-lock → 與 base queue **並行不阻塞**。
+**解**：`--lane <name>` 在自己的 persona 資料夾內開一個**獨立子通道檔**，queue id = `<persona>/<lane>`，走獨立 queue + running-lock → 與本命 queue **並行不阻塞**。
+
+> 分隔符是 `/` 而不是舊制的 `~`：它現在對應**真實的目錄層級**，不是編碼在字串裡的假層級。
+> 這是「身分 vs 通道」兩種語意分家的落點 —— 舊制 `--agent-id` 一個欄位同時扛兩者，
+> 疊到第三種語意就沒人解得開（kotoko 2026-07-31 建議②）。
 
 ```bash
-# 前一筆長 cmd 在跑 (e.g. 啟動遊戲 / 進 PlayMode), base queue 被佔住
-python run_cmd.py --agent-id zeta-summit run RCG_StartNewGame --arg from=reset
+# 前一筆長 cmd 在跑 (e.g. 啟動遊戲 / 進 PlayMode), 本命 queue 被佔住
+python run_cmd.py --persona summit run RCG_StartNewGame --arg from=reset
 
 # 同 persona 同時插一筆快 cmd (讀畫面), 走 lane 不必等上面那筆結束
-python run_cmd.py --agent-id zeta-summit --lane read run BattleSnapshot --arg observer=zeta
-#   → effective id = 'zeta-summit~read' → queues/queue-zeta-summit~read.json (獨立並行)
+python run_cmd.py --persona summit --lane read run BattleSnapshot --arg observer=zeta
+#   → queue id = 'summit/read' → queues/summit/queue-read.json (獨立並行)
 
 # --parallel 是 --lane parallel 的捷徑
-python run_cmd.py --agent-id zeta-summit --parallel run BattleSnapshot --arg observer=zeta
+python run_cmd.py --persona summit --parallel run BattleSnapshot --arg observer=zeta
 ```
 
 - **business identity 不變**：lane 只影響「走哪條 queue」（routing key），cmd 的 `caller` / `sender` / treasury / tavern 身分仍由 `--arg` 決定，跟 lane 無關。
@@ -307,8 +330,9 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 
 `UCL_AgentCommandWatcher.OnEditorUpdate`（1Hz throttled）改成兩段掃：
 
-1. `TryDispatchAgent(null)` — 看 default `pending.trigger`
-2. `foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())` — scan `queues/queue-*.json` 列出所有 per-agent → 各自 `TryDispatchAgent(agentId)`
+1. `TryDispatchAgent(null)` — 匿名落點（`queues/anonymous/pending.trigger`）
+2. `foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())` — 掃 `queues/<persona>/queue*.json`，
+   本命回 `"<persona>"`、子通道回 `"<persona>/<lane>"` → 各自 `TryDispatchAgent(agentId)`
 
 多 trigger 同時存在會並行 dispatch（per-agent Runner 互不阻塞，Runner 端用 `HashSet<string> s_RunningAgents + lock` 防同 agent 重入）。
 
@@ -325,7 +349,11 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 - ✅ **Per-cmd timeout** — Shipped 2026-05-13。`UCL_AgentCommandHandlerBase.TimeoutSeconds` virtual property default 1200s (20 min)；子類 override + caller args `_timeout_sec=N` per-call 覆寫。Runner `UniTask.WhenAny + Delay + Cancel` wrap。
 - **Editor 主執行緒 bottleneck**：multi-queue **不解多核並行**，CPU-heavy cmd 仍序列；IO-heavy async cmd 才有效
 - **Cancel ≠ Timeout**：handler 多數沒 honor `CancellationToken`，timeout fire 後 cmd 仍跑到自己結束（Runner 不被卡死，但真實取消失敗）— audit / retrofit 待做
-- **Migration plan**：legacy queue.json fallback 仍支援 60 天，stderr deprecation warning，90%+ caller 遷移後 reject
+- ~~**Migration plan**：legacy queue.json fallback 仍支援 60 天…~~ → **已作廢**。2026-08-01 改 persona 資料夾制時
+  直接切換、**不做相容層**：切換前點清 36 個舊 queue 全為空、0 筆在途 cmd，沒有需要搬運的狀態，
+  因此不寫遷移碼也不雙讀。（原本提過「自動遷移」方案，前提是「舊 queue 可能躺著別人在途的工作」——
+  Tim 指出並經點清確認**沒有在途工作**，該前提不成立，方案連同遷移腳本一併作廢。
+  雙軌讀寫本身就是我們一路在治的鏡像債：同一個身分有兩個合法位置，不一致時不會有人喊。）
 
 ---
 
@@ -342,7 +370,7 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 **default queue 卡住 ≠ 全系統卡** —— per-agent queue 各自獨立 running lock（§8.1）。直接換 `--agent-id` 走另一條 queue 即可繞過：
 
 ```bash
-# default (queue.json) 卡住時 → 改走獨立 per-agent queue
+# 本命 queue 卡住時 → 改走同 persona 的獨立子通道 (--lane)
 python run_cmd.py --agent-id <你的id> run <Type> --arg key=val
 
 # 連該 agent queue 也卡了 → 換一個全新沒用過的 id（全新 queue 必乾淨）
@@ -356,8 +384,8 @@ python run_cmd.py --agent-id <你的id>-2 run <Type> --arg key=val
 ```bash
 # 1. 刪 orphan running lock (default 或 per-agent)
 rm AgentCommands/pending.trigger.running
-rm AgentCommands/queues/pending-<X>.trigger.running
-# 2. 移除卡死的 queue 條目（編 queue.json / queues/queue-<X>.json，刪該筆 Command）
+rm AgentCommands/queues/<persona>/pending[-<lane>].trigger.running
+# 2. 移除卡死的 queue 條目（編 queues/<persona>/queue[-<lane>].json，刪該筆 Command）
 ```
 
 Watcher 端有 **orphan-lock 自癒**：偵測「`.running` 檔存在但 in-memory runner idle」→ 自動 `Resuming runner!`（log 可見）。進 PlayMode 後 `OnPlayModeStateChanged` 會 `ResetRunningAgents()` 清記憶體 flag 鋪路。但若 in-memory runner 已被 domain reload 搞到半死，自癒不一定救得回 → 此時靠「換 queue 繞行」或 Editor reset（exit play / recompile / 重啟）。

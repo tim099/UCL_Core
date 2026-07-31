@@ -20,17 +20,75 @@ namespace UCL.Core.EditorLib.AgentCommands
 {
     /// <summary>
     /// queue.json 的讀寫管理。
-    /// 路徑：&lt;repoRoot&gt;/AgentCommands/queue.json
+    /// 路徑：&lt;repoRoot&gt;/AgentCommands/queues/&lt;persona&gt;/queue[-&lt;lane&gt;].json
     /// repoRoot 由 <see cref="UCL_RepoPath.RepoRoot"/> 解析（git-walk，與 Python run_cmd.py 對齊）。
+    /// ⚠ 路徑樣板**兩邊各有一份**（本檔與 run_cmd.py），改動必須同時進行 ——
+    ///   任一邊落後，trigger 就寫在對方沒在看的地方，而那種斷線是**靜默**的
+    ///   （cmd 永遠 pending 到 timeout，沒有任何錯誤訊息指向真因）。
     /// </summary>
     public static class UCL_AgentCommandQueue
     {
         public const string QueueDirRelative = "AgentCommands";
         public const string QueueFileName = "queue.json";
         // 區塊職責：multi-queue 子資料夾名稱 (agent-command-pipeline-parallelize T02)
-        // 物理意義：per-agent queue 路徑樣板：<AgentCommandsDir>/queues/queue-<agentId>.json
-        //          legacy default queue 仍在 <AgentCommandsDir>/queue.json 不動 (backward compat).
+        // 物理意義：**persona 資料夾制**（Tim 2026-08-01 拍板，取代原本的平鋪檔名制）——
+        //          <AgentCommandsDir>/queues/<persona>/queue.json
+        //          <AgentCommandsDir>/queues/<persona>/queue-<lane>.json
+        //          舊制是 queues/queue-<persona>.json 與 queues/queue-<persona>-<lane>.json 平鋪，
+        //          「這筆是誰派的」得從檔名字串反推，而 queue-ame-design 無法判定
+        //          「-design 是用途還是名字的一部分」。改成資料夾之後身分與通道
+        //          **在檔案系統層就分開了**，不必解析任何字串。
+        // 數值影響：切換式改版，**無相容層**（切換時 36 個舊 queue 全為空、0 筆在途 cmd，
+        //          點清後直接刪除；沒有需要搬運的狀態，因此不寫遷移碼也不雙讀）。
+        //          最外層共用 <AgentCommandsDir>/queue.json 一併廢除。
         public const string QueuesSubdir = "queues";
+
+        // 區塊職責：未宣告身分者的落點（Tim 2026-08-01）。
+        // 物理意義：不帶身分的派遣不再落「最外層共用 queue.json」這個特例，而是落一個
+        //          **名字就說明狀態**的資料夾。好處是掃描規則變成一條沒有例外的
+        //          「資料夾名 = 身分」，而且 queues/anonymous/ 的流量自己就是
+        //          「還有多少未署名派遣」的儀表 —— 不需要有人記得去統計。
+        // ⚠ 這是**保留字，不是 persona**：身分解析讀到它必須回「本層沒有答案」，
+        //   不可回字串 "anonymous"。否則它會流進記帳層，而 bank_resolver 的命名慣例
+        //   fallback（{canonical}-da-xiaojie）會為一個不存在的人隱含開帳戶。
+        public const string AnonymousQueueId = "anonymous";
+
+        // 區塊職責：queueId 的形狀 —— "<persona>" 或 "<persona>/<lane>"。
+        // 物理意義：呼叫端（Watcher / Page / Runner）仍然只傳**一個不透明字串**，簽名不變；
+        //          但這個字串現在是**路徑形狀**而不是要猜的名字 —— '/' 是呼叫端自己組出來的
+        //          結構分隔符，不是我們從 "ame-design" 這種字串裡猜出來的邊界。
+        public const char LaneSeparator = '/';
+
+        /// <summary>把 queueId 拆成 (資料夾, lane)。lane 可為 null。空值 → anonymous。</summary>
+        /// <remarks>
+        /// 只切**第一個** '/'：persona 名不含 '/'，其餘一律歸 lane。
+        /// 含 ".." 或反斜線的段落視為不合法 → 落 anonymous 並警告（這些值來自 CLI，
+        /// 不做防護的話是一條寫出 queues/ 之外的路徑穿越）。
+        /// </remarks>
+        public static void SplitQueueId(string queueId, out string folder, out string lane)
+        {
+            folder = AnonymousQueueId;
+            lane = null;
+            if (string.IsNullOrEmpty(queueId)) return;
+            string id = queueId.Replace('\\', LaneSeparator).Trim();
+            int i = id.IndexOf(LaneSeparator);
+            string f = i < 0 ? id : id.Substring(0, i);
+            string l = i < 0 ? null : id.Substring(i + 1).Replace(LaneSeparator.ToString(), "-");
+            if (!IsSafeSegment(f) || (l != null && !IsSafeSegment(l)))
+            {
+                Debug.LogWarning($"[UCL_AgentCommandQueue] 不合法的 queueId '{queueId}' → 落 {AnonymousQueueId}。");
+                return;
+            }
+            folder = f;
+            lane = string.IsNullOrEmpty(l) ? null : l;
+        }
+
+        static bool IsSafeSegment(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s == "." || s == "..") return false;
+            if (s.IndexOf("..", StringComparison.Ordinal) >= 0) return false;
+            return s.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+        }
 
         // 區塊職責：lock-file 機制使用的兩個 trigger 檔名
         // 物理意義：
@@ -42,61 +100,83 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>
         /// 取得 queue 檔絕對路徑。
-        /// agentId=null → legacy default <c>AgentCommands/queue.json</c>。
-        /// agentId 非 null → per-agent <c>AgentCommands/queues/queue-&lt;agentId&gt;.json</c>。
+        /// agentId=null → <c>AgentCommands/queues/anonymous/queue.json</c>。
+        /// "&lt;persona&gt;" → <c>queues/&lt;persona&gt;/queue.json</c>；
+        /// "&lt;persona&gt;/&lt;lane&gt;" → <c>queues/&lt;persona&gt;/queue-&lt;lane&gt;.json</c>。
         /// </summary>
         public static string GetQueuePath(string agentId = null)
         {
-            if (string.IsNullOrEmpty(agentId))
-                return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueueFileName);
-            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, $"queue-{agentId}.json");
+            SplitQueueId(agentId, out string folder, out string lane);
+            string file = string.IsNullOrEmpty(lane) ? QueueFileName : $"queue-{lane}.json";
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, folder, file);
         }
 
-        /// <summary>取得 AgentCommands 資料夾的絕對路徑 (或 per-agent queues/ 子資料夾)。</summary>
+        /// <summary>取得該 queue 所屬的 persona 資料夾絕對路徑（queues/&lt;persona&gt;/）。</summary>
         public static string GetQueueDir(string agentId = null)
         {
-            if (string.IsNullOrEmpty(agentId))
-                return UCL_RepoPath.AgentCommandsDir;
-            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir);
+            SplitQueueId(agentId, out string folder, out _);
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, folder);
         }
 
-        /// <summary>取得 pending trigger 路徑。agentId null → legacy default; 非 null → queues/pending-&lt;agent&gt;.trigger.</summary>
+        /// <summary>取得 pending trigger 路徑：queues/&lt;persona&gt;/pending[-&lt;lane&gt;].trigger。</summary>
         public static string GetTriggerPath(string agentId = null)
         {
-            if (string.IsNullOrEmpty(agentId))
-                return Path.Combine(UCL_RepoPath.AgentCommandsDir, TriggerFileName);
-            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, $"pending-{agentId}.trigger");
+            SplitQueueId(agentId, out string folder, out string lane);
+            string file = string.IsNullOrEmpty(lane) ? TriggerFileName : $"pending-{lane}.trigger";
+            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, folder, file);
         }
 
         /// <summary>取得 running trigger 路徑。對應 GetTriggerPath()。</summary>
         public static string GetRunningTriggerPath(string agentId = null)
         {
-            if (string.IsNullOrEmpty(agentId))
-                return Path.Combine(UCL_RepoPath.AgentCommandsDir, RunningTriggerFileName);
-            return Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir, $"pending-{agentId}.trigger.running");
+            return GetTriggerPath(agentId) + ".running";
         }
 
-        /// <summary>確保資料夾存在 (default AgentCommands/ 或 per-agent queues/).</summary>
+        /// <summary>確保該 queue 的 persona 資料夾存在。</summary>
         public static void EnsureDir(string agentId = null)
         {
             string dir = GetQueueDir(agentId);
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
         }
 
-        /// <summary>列舉現存 per-agent queue 的 agentId 清單 (scan queues/queue-*.json)。Watcher 用。</summary>
+        /// <summary>
+        /// 列舉現存 queue 的 id 清單（掃 queues/&lt;persona&gt;/queue*.json）。Watcher 用。
+        /// 回傳形狀："&lt;persona&gt;"（本命 queue）或 "&lt;persona&gt;/&lt;lane&gt;"（子通道）。
+        /// </summary>
         public static System.Collections.Generic.List<string> ListAgentIds()
         {
             var list = new System.Collections.Generic.List<string>();
             string queuesDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir);
             if (!Directory.Exists(queuesDir)) return list;
-            foreach (var f in Directory.GetFiles(queuesDir, "queue-*.json"))
+            foreach (var dir in Directory.GetDirectories(queuesDir))
             {
-                string name = Path.GetFileNameWithoutExtension(f);
-                // queue-<agentId> → agentId
-                if (name.StartsWith("queue-"))
-                    list.Add(name.Substring("queue-".Length));
+                string persona = Path.GetFileName(dir);
+                if (string.IsNullOrEmpty(persona)) continue;
+                foreach (var f in Directory.GetFiles(dir, "queue*.json"))
+                {
+                    string name = Path.GetFileNameWithoutExtension(f);
+                    if (name == "queue") list.Add(persona);                       // 本命
+                    else if (name.StartsWith("queue-"))                           // 子通道
+                        list.Add(persona + LaneSeparator + name.Substring("queue-".Length));
+                }
             }
             return list;
+        }
+
+        /// <summary>
+        /// 從 queueId 取得宣告的 persona —— 身分解析階梯 tier 2「queue 反推」。
+        /// 查不到 / 匿名一律回 null。
+        /// </summary>
+        /// <remarks>
+        /// ⚠ 回 null 的語意是「**本層沒有答案**」，不是「查無此人」——
+        /// 呼叫端不可把它當否定證據，該往解析階梯的下一層走。
+        /// anonymous 回 null 是刻意的：它是狀態不是人（見 AnonymousQueueId 註解）。
+        /// </remarks>
+        public static string GetDeclaredPersona(string agentId)
+        {
+            if (string.IsNullOrEmpty(agentId)) return null;
+            SplitQueueId(agentId, out string folder, out _);
+            return folder == AnonymousQueueId ? null : folder;
         }
 
         /// <summary>讀取 queue.json — 不存在或解析失敗時回傳空 queue。</summary>

@@ -132,7 +132,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 // (1) 掃 default trigger (legacy queue.json)
                 TryDispatchAgent(null);
-                // (2) 掃 per-agent triggers — scan queues/queue-*.json 列表的 agentIds
+                // (2) 掃 per-persona triggers — scan queues/<persona>/queue*.json 列出的 queue id
                 foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())
                 {
                     TryDispatchAgent(agentId);

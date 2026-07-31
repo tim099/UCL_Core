@@ -169,7 +169,7 @@ def _resolve_agentcommands_data_root(git_root: Path) -> Path:
 DATA_ROOT = _resolve_agentcommands_data_root(GIT_ROOT)
 
 # agent-command-pipeline-parallelize T05: per-agent queue 子目錄
-# 物理意義: --agent-id <X> 帶進來 → queue/trigger 寫進 queues/queue-<X>.json 跟 queues/pending-<X>.trigger
+# 物理意義: queue id '<persona>' / '<persona>/<lane>' → queues/<persona>/queue[-<lane>].json + pending[-<lane>].trigger
 # null → legacy default 路徑 (queue.json + pending.trigger) 不變 (backward compat)
 _AGENT_ID: str | None = None   # set by main() argparse
 
@@ -177,26 +177,71 @@ def set_agent_id(agent_id: str | None) -> None:
     global _AGENT_ID
     _AGENT_ID = agent_id if agent_id else None
 
+# cmd-identity P1: 顯式 persona 宣告（--persona）。與 _AGENT_ID 分開存 ——
+# 前者是「我是誰」，後者是「走哪條 queue」；預設情況同值，但帶 --agent-id / --lane 時會分岔。
+_PERSONA: str | None = None    # set by main() argparse
+
+def set_persona(persona: str | None) -> None:
+    global _PERSONA
+    _PERSONA = (persona or "").strip() or None
+
+# 區塊職責: queue / trigger 的路徑樣板 —— **persona 資料夾制**（Tim 2026-08-01 拍板）
+#   queues/<persona>/queue.json            ← --persona X
+#   queues/<persona>/queue-<lane>.json     ← --persona X --lane Y
+#   queues/<persona>/pending[-<lane>].trigger[.running]
+#   queues/anonymous/…                     ← 沒帶身分（保留字，不是 persona）
+# 物理意義: 舊制平鋪成 queues/queue-<persona>-<lane>.json，「這筆誰派的」要從檔名反推，
+#   而 queue-ame-design 無法判定「-design 是用途還是名字的一部分」。改資料夾之後
+#   身分（資料夾）與通道（檔名後綴）**在檔案系統層就分開**，不必解析任何字串。
+# 數值影響: 切換式改版無相容層 —— 切換時 36 個舊 queue 全空、0 筆在途 cmd（已點清），
+#   舊檔直接刪除；最外層共用 queue.json 一併廢除。
+#   ⚠ C# 端樣板在 UCL_AgentCommandQueue.cs，兩邊**必須同時改**：任一邊落後，
+#     trigger 就寫在對方沒在看的地方，而那種斷線是**靜默**的（cmd 永遠 pending 到 timeout）。
+ANONYMOUS_QUEUE_ID = "anonymous"   # 保留字：身分解析讀到它回 None，不可當 persona 用
+
+_SPLIT_CACHE: tuple[str, str, str | None] | None = None   # (原始 id, 資料夾, lane)
+
+def _split_queue_id() -> tuple[str, str | None]:
+    """把 _AGENT_ID 拆成 (資料夾, lane)。空值 → anonymous。只切第一個 '/'。
+
+    數值影響：結果快取在 _SPLIT_CACHE —— 四個路徑函式各呼叫一次，不快取的話
+             一次派遣會把同一句「不合法 id」的警告印 9 遍。**同一件事說一次**：
+             洗版的警告跟沒有警告一樣會被略過。
+    """
+    global _SPLIT_CACHE
+    raw = (_AGENT_ID or "").replace("\\", "/").strip()
+    if _SPLIT_CACHE is not None and _SPLIT_CACHE[0] == raw:
+        return _SPLIT_CACHE[1], _SPLIT_CACHE[2]
+    if not raw:
+        result = (ANONYMOUS_QUEUE_ID, None)
+    else:
+        folder, sep, lane = raw.partition("/")
+        lane = lane.replace("/", "-") if sep else ""
+        # 路徑穿越防護：這些值來自 CLI，不擋的話是一條寫出 queues/ 之外的路
+        bad = any(seg and (seg in (".", "..") or ".." in seg) for seg in (folder, lane))
+        if bad:
+            print(f"  ⚠ 不合法的 queue id '{raw}' → 落 {ANONYMOUS_QUEUE_ID}。", file=sys.stderr)
+            result = (ANONYMOUS_QUEUE_ID, None)
+        else:
+            result = (folder, (lane or None))
+    _SPLIT_CACHE = (raw, result[0], result[1])
+    return result
+
 def queue_path() -> Path:
-    if _AGENT_ID:
-        return QUEUE_DIR / "queues" / f"queue-{_AGENT_ID}.json"
-    return QUEUE_DIR / "queue.json"
+    folder, lane = _split_queue_id()
+    return QUEUE_DIR / "queues" / folder / (f"queue-{lane}.json" if lane else "queue.json")
 
 def trigger_path() -> Path:
-    if _AGENT_ID:
-        return QUEUE_DIR / "queues" / f"pending-{_AGENT_ID}.trigger"
-    return QUEUE_DIR / "pending.trigger"
+    folder, lane = _split_queue_id()
+    return QUEUE_DIR / "queues" / folder / (f"pending-{lane}.trigger" if lane else "pending.trigger")
 
 def running_path() -> Path:
-    if _AGENT_ID:
-        return QUEUE_DIR / "queues" / f"pending-{_AGENT_ID}.trigger.running"
-    return QUEUE_DIR / "pending.trigger.running"
+    return trigger_path().with_name(trigger_path().name + ".running")
 
 def queue_dir_for_writing() -> Path:
-    """寫入 queue/trigger 前 mkdir 用的對應 dir (default = QUEUE_DIR, agent-mode = queues/)."""
-    if _AGENT_ID:
-        return QUEUE_DIR / "queues"
-    return QUEUE_DIR
+    """寫入 queue/trigger 前 mkdir 用的對應 dir（= 該 persona 的資料夾）。"""
+    folder, _lane = _split_queue_id()
+    return QUEUE_DIR / "queues" / folder
 
 # ===========================================================
 # False-success race fix (T02, 2026-05-16 basecamp)
@@ -278,6 +323,7 @@ TAVERN_DIR = DATA_ROOT / "ChatTavern"  # T-PATH-01: 走可 override 資料根;�
 #          （Tim 2026-07-29 拍板抽離，本檔 1860 → 1314 行）。旗標檔與台詞庫路徑一併搬過去。
 # 數值影響：模組不自行解析資料根 —— 此處 configure() 注入 TAVERN_DIR / GIT_ROOT。
 #          override 規則（T-PATH-01）只存在於本檔，複製一份到那邊必然漂移。
+
 import tavern_handshake as _handshake   # 同層模組；run_cmd 以 script 執行時其所在夾即 sys.path[0]
 
 _handshake.configure(tavern_dir=TAVERN_DIR, git_root=GIT_ROOT)
@@ -547,6 +593,25 @@ def append_cmd(cmd_type: str, mode: str, args: dict, description: str) -> str:
     # 數值影響: 已帶 _caller_env_marker (test override) → 不覆寫; 沒帶 → 走 _detect_caller_env_marker
     if "_caller_env_marker" not in args:
         args["_caller_env_marker"] = _detect_caller_env_marker()
+    # 區塊職責: cmd-identity P1 —— 顯式 --persona 戳進 args（tier 1）
+    # 物理意義: 沿用上面 _caller_env_marker 的同一個形狀（caller 端偵測後傳進 args，
+    #          2026-05-11 Treasury bug 的修法）。下游拿得到 persona 就不必反查 session lock，
+    #          而反查那層（tavern_cmd 的 autofill）**同 claim_origin 多 lock 時是靜默猜的**
+    #          （tavern_cmd.py:443 的 max(locked_at)）—— 讓正常路徑根本走不到那行，
+    #          比在那行加一句警告更接近「止血」（basecamp 拍板二 seq 14118）。
+    # 數值影響: **只在缺席時填**，不覆寫 caller 顯式的 --arg persona=（那是更貼近該 cmd 的宣告）。
+    #          兩者不同 → 出聲但照 --arg 走：這是 caller 自己給的兩個矛盾指令，
+    #          該讓人知道，不該由工具挑一個安靜執行。
+    if _PERSONA:
+        _arg_persona = str(args.get("persona") or "").strip()
+        if not _arg_persona:
+            args["persona"] = _PERSONA
+        elif _arg_persona != _PERSONA:
+            print(f"  ⚠ 身分宣告衝突：--persona {_PERSONA} vs --arg persona={_arg_persona} "
+                  f"→ 依 --arg 值送出（較貼近該 cmd）。請確認哪個才是你要的。", file=sys.stderr)
+    # 註：tier 2「queue 反推」**不再寫 queue 頂層欄位** —— persona 資料夾制之後
+    #     身分由路徑本身承載（queues/<persona>/…），再存一份欄位就是第二個宣稱點，
+    #     兩者哪天不一致沒有任何機制會喊（Tim 2026-08-01 改版，欄位機制當日退役未上線）。
     queue = load_queue()
     cmd_id = make_id(cmd_type)
     queue["Commands"].append({
@@ -1060,21 +1125,34 @@ def main() -> int:
         epilog=__doc__,
     )
     # agent-command-pipeline-parallelize T05: --agent-id 切 per-agent queue/trigger
-    # 物理意義: 有帶 → 寫 AgentCommands/queues/queue-<X>.json + pending-<X>.trigger
-    #          沒帶 → legacy AgentCommands/queue.json + pending.trigger (backward compat)
+    # 物理意義: 帶值 → 整串當 persona 資料夾名 → queues/<X>/queue.json（Tim 2026-08-01 選項 b）
+    #          沒帶 → queues/anonymous/（最外層共用 queue.json 已廢除）
+    # ⚠ 已被 --persona 取代：本旗標不報錯但不做字串轉譯 —— 打 --agent-id ame-sw 會長出
+    #   queues/ame-sw/ 這種資料夾，它是**遷移待辦的可見形式**，不是正常用法。
     # 用途: 多 agent 並行 (Claude/Antigravity/Gemini/Zeta) 各自獨立 queue, 互不阻塞
     parser.add_argument("--agent-id", default=None,
-                        help="Per-agent queue isolation. 帶值 → 走 queues/queue-<X>.json + pending-<X>.trigger; "
-                             "沒帶 → 走 legacy queue.json (default fallback, 跟舊 caller 完全相容)")
+                        help="[已被 --persona 取代] 整串當資料夾名 → queues/<X>/queue.json；沒帶 → queues/anonymous/。"
+                             "不報錯但不轉譯：看到 queues/ame-sw/ 這種資料夾就表示該 caller 還沒改。")
     # agent-command-pipeline-parallelize T06: 同 persona 內並行子通道
     # 物理意義: 同一 --agent-id (或 default) 的 queue 是串行的 (per-agent IsRunning 防 write race);
-    #          --lane 在其上疊一條獨立子通道 → effective id = '<base|main>~<lane>' → 與 base queue 並行不阻塞。
+    #          --lane 在自己的 persona 資料夾內開獨立子通道檔 → queue id = '<persona>/<lane>' → 與本命 queue 並行不阻塞。
     # 用途: 前一筆長 cmd (e.g. 啟動遊戲) 還在跑, 帶 --lane 送讀畫面等快 cmd 不必等它結束。
     parser.add_argument("--lane", default=None,
-                        help="同 persona 並行子通道。effective queue id = '<agent-id|main>~<lane>' → 獨立 queue/running-lock, "
+                        help="同 persona 並行子通道。queue id = '<persona>/<lane>' → queues/<persona>/queue-<lane>.json 獨立 running-lock, "
                              "與 base / default queue 並行不阻塞。前一筆長 cmd 沒跑完時插一筆快 cmd 用。")
     parser.add_argument("--parallel", action="store_true",
                         help="= --lane parallel 的捷徑 (固定 'parallel' 子通道)。")
+    # cmd-identity P1: 顯式身分宣告（Tim 2026-07-31 拍板「建議可以要求帶 persona 參數，
+    #   沒有的情況才嘗試解析」；交接 seq 14112 / 拍板 seq 14118）
+    # 物理意義: 讓每一筆 Cmd 都知道**是誰派的**。同時做兩件事 ——
+    #   ① 決定 queue 路由 —— persona 就是資料夾名（→ queues/<persona>/queue.json）
+    #   ② 戳進 cmd args + queue 檔頂層，讓下游（Tavern post / Treasury 記帳）不必反查猜
+    # 為何是新欄位而不是改 --agent-id 的語意: --agent-id 現在同時是「身分」與「並行通道」
+    #   （--lane 會產生 main~parallel），再往上疊第三種語意就沒人解得開了（kotoko 建議②）。
+    parser.add_argument("--persona", default=None,
+                        help="顯式宣告這筆 cmd 是誰派的（身分解析階梯 tier 1，最權威）。"
+                             "同時決定 queue 路由 → queues/<persona>/queue.json；"
+                             "並戳進 cmd args 讓下游不必反查 session lock 去猜。")
     sub = parser.add_subparsers(dest="action", required=True)
 
     # submit
@@ -1137,13 +1215,22 @@ def main() -> int:
 
     args = parser.parse_args()
     # agent-command-pipeline-parallelize T06: --lane / --parallel 在 base agent-id 上疊並行子通道
-    # 物理意義: lane 設定 → effective id = '<base|main>~<lane>' → 獨立 queue/running-lock, 與 base/default 並行不阻塞
+    # 物理意義: lane 設定 → queue id = '<persona>/<lane>' → 獨立 queue 檔 + running-lock, 與本命 queue 並行不阻塞
     # 數值影響: 無 lane → 行為跟改動前完全相同 (effective = base agent_id)
     _base_agent = getattr(args, "agent_id", None)
     _lane = getattr(args, "lane", None) or ("parallel" if getattr(args, "parallel", False) else None)
-    _effective_agent = f"{_base_agent or 'main'}~{_lane}" if _lane else _base_agent
+    # cmd-identity P1: --persona 在沒帶 --agent-id 時兼任路由來源。
+    #   優先序刻意是 --agent-id > --persona：帶了 --agent-id 表示 caller 明確要那條通道
+    #   （e.g. basecamp-sw 看直播專用 queue），身分仍由 --persona 宣告並戳進 args ——
+    #   **路由與身分是兩件事，只是預設情況下同一個值**。
+    _persona = (getattr(args, "persona", None) or "").strip() or None
+    _base_agent = _base_agent or _persona
+    # lane 是**檔名後綴**不是 id 的一部分：queues/<persona>/queue-<lane>.json。
+    # 分隔符從舊制的 '~' 改成 '/' —— 它現在對應真實的目錄層級，不是一個編碼在字串裡的假層級。
+    _effective_agent = f"{_base_agent or ANONYMOUS_QUEUE_ID}/{_lane}" if _lane else _base_agent
     # 設 global _AGENT_ID 讓 queue_path/trigger_path 等函式拿 dynamic value
     set_agent_id(_effective_agent)
+    set_persona(_persona)
     return args.func(args)
 
 

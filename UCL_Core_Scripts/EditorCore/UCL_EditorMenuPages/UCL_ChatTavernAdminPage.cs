@@ -16,6 +16,8 @@ using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
+// 只引這一個型別（本檔其餘 ChatTavern 型別沿用全限定寫法，避免整包 using 撞名）
+using UCL_ChatTavernSettings = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernSettings;
 
 namespace UCL.Core.EditorLib.Page
 {
@@ -195,6 +197,8 @@ namespace UCL.Core.EditorLib.Page
             DrawAvatarOverridePanel();
             GUILayout.Space(8);
             DrawWebhookPanel();
+            GUILayout.Space(8);
+            DrawParamSettingsPanel();
             GUILayout.Space(8);
             DrawFilesPanel();
         }
@@ -1352,6 +1356,99 @@ namespace UCL.Core.EditorLib.Page
                 }
                 GUILayout.Label("提示：URL 顯式設定不做 HEAD 預檢 — 壞連結 Discord 端會 silent fallback 預設頭像；Discord 對同名 webhook 頭像有快取，換圖後可能要再發一筆訊息才刷新。", WrapLabelStyle);
             }
+        }
+
+        // ===========================================================
+        // 區塊：⚙ 參數設定 — 渲染筆數（Tim 2026-07-31 拍板：把硬編的「串幾筆」搬到後台可調）
+        // 區塊職責：UCL_ChatTavernSettings 四個筆數參數的唯一 UI 入口。
+        // 物理意義：這四個數字直接決定 agent 讀回 _last_op.md / _last_view.md 時吃掉多少 context —
+        //          原本 op=read 預設 100 筆，實測一次早安 catch-up 就是 66k token。
+        // 數值影響：draft 只是輸入暫存，按「套用」才寫 PlayerPrefs；寫入前經 Clamp 收進 [1, 500]。
+        //          改完即時生效（下一個 Cmd 就吃新值），不需重啟 Editor。
+        // ===========================================================
+        readonly Dictionary<string, string> m_ParamDraft = new Dictionary<string, string>();  // 參數輸入 draft（key = pref 名）
+
+        void DrawParamSettingsPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "ParamFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>⚙ 參數設定（渲染筆數）</b>", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("↩ 全部回預設", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ChatTavernSettings.ResetAll();
+                        m_ParamDraft.Clear();   // draft 清掉 → 下次繪製重新從實際值帶入
+                        Debug.Log("[TavernAdmin] 渲染筆數參數已全部回預設");
+                    }
+                }
+                if (!aShow) return;
+
+                GUILayout.Label($"  筆數合法區間 [{UCL_ChatTavernSettings.MinCount}, {UCL_ChatTavernSettings.MaxCount}]；"
+                                + "超出範圍會自動夾回。改完即時生效，下一個 Cmd 就吃新值。", WrapLabelStyle);
+                GUILayout.Space(4);
+
+                DrawParamRow("op=read 預設筆數", "ReadTail",
+                    UCL_ChatTavernSettings.ReadTailCount, UCL_ChatTavernSettings.DefaultReadTailCount,
+                    v => UCL_ChatTavernSettings.ReadTailCount = v,
+                    "agent 沒帶 tail 時 _last_op.md 串幾筆 — 早安 catch-up 的主要成本來源");
+                DrawParamRow("post / join 後重渲染筆數", "LastView",
+                    UCL_ChatTavernSettings.LastViewTailCount, UCL_ChatTavernSettings.DefaultLastViewTailCount,
+                    v => UCL_ChatTavernSettings.LastViewTailCount = v,
+                    "每次發言後 _last_view.md / _last_op.md 回串幾筆給 poster 讀");
+                DrawParamRow("search 預設命中上限", "SearchLimit",
+                    UCL_ChatTavernSettings.SearchLimit, UCL_ChatTavernSettings.DefaultSearchLimit,
+                    v => UCL_ChatTavernSettings.SearchLimit = v,
+                    "op=read search=... 未帶 limit 時");
+                DrawParamRow("since_seq 預設回補上限", "SinceLimit",
+                    UCL_ChatTavernSettings.SinceLimit, UCL_ChatTavernSettings.DefaultSinceLimit,
+                    v => UCL_ChatTavernSettings.SinceLimit = v,
+                    "op=read since_seq=... 未帶 limit 時");
+            }
+        }
+
+        // 區塊職責：單一筆數參數列 — 顯示現值 / 輸入 draft / 套用 / 單項回預設。
+        // 設計取捨：照本頁既有慣例用 TextField + draft（非 EditorGUILayout.IntField）— 邊打字邊寫 prefs
+        //          會讓「打到一半的 1」先被當成 1 存進去，套用鍵是刻意的一道閘。
+        void DrawParamRow(string label, string draftKey, int current, int defaultValue,
+                          Action<int> apply, string hint)
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label($"  {label}：現值 <b>{current}</b>（預設 {defaultValue}）", WrapLabelStyle);
+                GUILayout.FlexibleSpace();
+                if (!m_ParamDraft.ContainsKey(draftKey)) m_ParamDraft[draftKey] = current.ToString();
+                m_ParamDraft[draftKey] = GUILayout.TextField(m_ParamDraft[draftKey], UCL_GUIStyle.TextFieldStyle,
+                                                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                if (GUILayout.Button("套用", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    if (int.TryParse(m_ParamDraft[draftKey], out int parsed))
+                    {
+                        int clamped = UCL_ChatTavernSettings.Clamp(parsed);
+                        apply(clamped);
+                        m_ParamDraft[draftKey] = clamped.ToString();   // 夾過的值要回寫 draft，否則 UI 說謊
+                        if (clamped != parsed) Debug.LogWarning($"[TavernAdmin] {label}：{parsed} 超出範圍，已夾為 {clamped}");
+                        else Debug.Log($"[TavernAdmin] {label} → {clamped}");
+                    }
+                    else
+                    {
+                        // 非數字不靜默吞：說清楚沒改，並把輸入還原成現值
+                        Debug.LogWarning($"[TavernAdmin] {label}：「{m_ParamDraft[draftKey]}」不是整數，未套用");
+                        m_ParamDraft[draftKey] = current.ToString();
+                    }
+                    GUI.FocusControl(null);
+                }
+                if (GUILayout.Button("↩", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    apply(defaultValue);
+                    m_ParamDraft[draftKey] = defaultValue.ToString();
+                    GUI.FocusControl(null);
+                }
+            }
+            GUILayout.Label($"      ↳ {hint}", WrapLabelStyle);
         }
 
         // ===========================================================

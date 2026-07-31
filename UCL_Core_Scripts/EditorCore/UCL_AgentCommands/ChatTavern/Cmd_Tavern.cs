@@ -450,7 +450,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 body = $"{ident.display_name} 進入了酒館",
             });
 
-            var tail = UCL_ChatTavernIO.Tail(roomId, 100);
+            var tail = UCL_ChatTavernIO.Tail(roomId, UCL_ChatTavernSettings.LastViewTailCount);
             // 注意：_last_view.md 是房間共用快照，可能被任何 agent 讀到；header 用中性措辭避免誤導讀者把上一位當成自己
             string header = $"> 上一筆事件 (seq={seq})：「{ident.display_name}」（id=`{ident.id}`）加入房間「{room.name}」";
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
@@ -851,7 +851,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //      inbound / 酒保 / quest IO / BankAdminPage…）的 @mention 全部靜默漏掉（實證 seq 9504）。
             //      同「判定做在源頭、一個開關管所有路」哲學。這裡不可以再寫一份，否則雙重通知。
 
-            var tail = UCL_ChatTavernIO.Tail(roomId, 100);
+            var tail = UCL_ChatTavernIO.Tail(roomId, UCL_ChatTavernSettings.LastViewTailCount);
             // 中性措辭：_last_view.md 會被任何 agent 讀到，不能用「你」（會讓讀者誤以為自己是上一位 poster）
             string header = $"> 上一筆 post (seq={seq}) by {senderName}：「{Truncate(body, 80)}」";
             // 註 (2026-07-29)：原本這裡會附 work-mode banner（sender 在 active work_session 時提示上班規則），
@@ -1270,12 +1270,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string title;
             if (!string.IsNullOrEmpty(search))
             {
-                messages = UCL_ChatTavernIO.Search(roomId, search, limit > 0 ? limit : 100);
+                messages = UCL_ChatTavernIO.Search(roomId, search, limit > 0 ? limit : UCL_ChatTavernSettings.SearchLimit);
                 title = $"🔍 {room.name} — 搜尋 \"{search}\"（命中 {messages.Count}）";
             }
             else if (since >= 0)
             {
-                messages = UCL_ChatTavernIO.Since(roomId, since, limit > 0 ? limit : 200);
+                messages = UCL_ChatTavernIO.Since(roomId, since, limit > 0 ? limit : UCL_ChatTavernSettings.SinceLimit);
                 title = $"📥 {room.name} — since_seq={since}（{messages.Count} 筆）";
             }
             else if (from > 0 || to > 0)
@@ -1285,7 +1285,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             else
             {
-                int n = tail > 0 ? tail : 100;
+                // 未帶 tail → 走後台「⚙ 參數設定」的預設筆數（原硬編 100）。
+                // 註：本分支目前**不吃** `limit`（limit 只在 search / since 分支生效）——
+                //    打 limit=12 會靜默拿到預設筆數，那筆帳另案處理（calli 2026-07-31 盤點 C-2）。
+                int n = tail > 0 ? tail : UCL_ChatTavernSettings.ReadTailCount;
                 messages = UCL_ChatTavernIO.Tail(roomId, n);
                 title = $"🍺 {room.name} — 最新 {messages.Count} 筆";
             }

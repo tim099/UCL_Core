@@ -440,21 +440,30 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
         # 「今天沒什麼事，晚安」這種簽到式的信撐不起明天的接續，補到夠讀為止。
         letters = _recent_self_letters(aw, persona)
         if letters and _letter_body_lines(aw, letters[0]) < SHORT_LETTER_LINES:
-            merged = list(body)          # body 是行陣列（_demote_headings 回 list）
+            # ① 先決定要撈哪幾封（由新往舊逐封累積，行數決定停在哪）
             used = [letters[0]]
             total = _letter_body_lines(aw, letters[0])
             for older in letters[1:1 + MERGE_MAX_EXTRA]:
-                when = (aw._read_frontmatter_field(older, "written_at") or older.name)[:10]
-                merged += ["", "---", "", f"### 📅 {when}（往前補：上一封太短）", ""]
-                merged += _demote_headings(
-                    _strip_all_frontmatter(older.read_text(encoding="utf-8")))
                 used.append(older)
                 total += _letter_body_lines(aw, older)
                 if total > MERGE_STOP_LINES:
                     break     # 補足即止 —— 目的是讓明天讀得下去，不是搬整本日記
+            # ② 倒序重組成「最早 → 最新」再寫（Tim 2026-07-31）：
+            #    讀的人是在補一段連續的日子，時序推進才讀得順；
+            #    由新往舊倒帶會讓因果反過來（先看到結果、再看到起因）。
+            merged = []
+            for i, f in enumerate(reversed(used)):
+                when = (aw._read_frontmatter_field(f, "written_at") or f.name)[:10]
+                is_newest = (i == len(used) - 1)
+                tag = "最新一封" if is_newest else "往前補"
+                if merged:
+                    merged += ["", "---", ""]
+                merged += [f"### 📅 {when}（{tag}）", ""]
+                merged += _demote_headings(
+                    _strip_all_frontmatter(f.read_text(encoding="utf-8")))
             body = merged
             title5 = (f"🍃 §5 見樹 — 最新 letter 太短，已往前合併 {len(used)} 封"
-                      f"（`_latest.md` + 前 {len(used) - 1} 封）")
+                      f"（由早到近；最新那封在最後）")
         sections.append((title5, body, False))
 
     # §6 待辦狀態（機械判定，最短，必讀）

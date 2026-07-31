@@ -1697,6 +1697,15 @@ def cmd_morning(args: argparse.Namespace) -> int:
         print(f"🔧 wake_count 快取={cached} 與磁碟推導={derived} 不符 "
               f"(wakes/ 有 {derived - 1} 封收尾信) —— 採磁碟值。", file=sys.stderr)
     p["wake_count"] = derived
+    # 見林書籤跟著校到同一套編號 —— 每次早安都查, 不只在遷移那一次。
+    # 理由: wake_count 推導是每天跑的, 書籤換算若只掛在遷移, 兩者節奏不一致就會漏人
+    #       (資料夾已存在但書籤還是舊值的 persona, 遷移不會再跑 → 書籤永遠沒人換算 → gap 負值)。
+    # 本函式冪等, 沒動過編號的人算出來等於原值, 不會亂改。
+    _rb = rebase_consolidation_bookmark(chosen, p)
+    if _rb:
+        print(f"🔧 見林書籤 last_consolidated_wake {_rb[0]} → {_rb[1]}"
+              f"（換算到 wakes/ 的編號；不換算的話 gap 會變負數，濃縮提醒靜默失效）",
+              file=sys.stderr)
     p["status"] = "online"
     # T06.1 (Plan_Standby_Dispatch_Bartender, 2026-05-14): availability 欄
     # 物理意義: 剛上線即可接 task — agent 進入待機 (idle) 狀態
@@ -2238,6 +2247,30 @@ def _plan_letter_migration(persona: str) -> list:
     return plan
 
 
+def rebase_consolidation_bookmark(persona: str, pd: dict):
+    """把見林書籤(last_consolidated_wake)換算到 wakes/ 的新編號; 有改回 (舊, 新), 沒改回 None。
+
+    區塊職責: 重編號之後書籤若留在舊編號空間, gap = wake_count - 書籤 會變負數,
+              永遠不可能 >= 門檻 → **長期記憶濃縮從此再也不會被提醒, 而且完全無聲**。
+    物理意義: 書籤本質是「濃縮到哪個時間點」—— 那個時間戳(last_consolidated_at)不受
+              重編號影響。數一數 wakes/ 裡 written_at 不晚於它的信有幾封, 即新編號下的書籤。
+    數值影響: **冪等** —— 沒重編號過的 persona 算出來等於原值, 不會亂動。
+              因此可以每次早安都跑, 不必只掛在遷移那一次
+              (2026-07-31 實測缺口: 資料夾已存在但書籤是舊值的人, 遷移不會再跑,
+               書籤就永遠沒人換算 —— 兩件事的觸發節奏不一致, 中間就漏人)。
+    """
+    old = pd.get("last_consolidated_wake")
+    lc_at = pd.get("last_consolidated_at")
+    if not old or not lc_at:
+        return None          # 沒書籤或沒時間戳 → 無從換算, 交給 consolidation_status 的 digest fallback
+    new = sum(1 for f in list_wake_letters(persona)
+              if (_read_frontmatter_field(f, "written_at") or "") <= lc_at)
+    if new == old or new <= 0:
+        return None
+    pd["last_consolidated_wake"] = new
+    return (old, new)
+
+
 def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
     """實際執行遷移: 頂層收尾信 → wakes/<6位序號>_<ts>.md，並同步 registry.wake_count。
 
@@ -2291,12 +2324,11 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
         # (實測 apex-one: 書籤 25、新 wake_count 15 → gap -10)。
         # 換算法: 書籤本質是「濃縮到哪個時間點」, 那個時間戳沒有被重編號影響 ——
         # 數一數 wakes/ 裡 written_at 不晚於它的信有幾封, 那個數就是新編號下的書籤。
-        old_lc = pd.get("last_consolidated_wake")
-        lc_at = pd.get("last_consolidated_at")
-        if lc_at and old_lc:
-            new_lc = sum(1 for f in list_wake_letters(persona)
-                         if (_read_frontmatter_field(f, "written_at") or "") <= lc_at)
-            pd["last_consolidated_wake"] = new_lc
+        rebased = rebase_consolidation_bookmark(persona, pd)
+        if rebased:
+            old_lc, new_lc = rebased
+        else:
+            old_lc = new_lc = pd.get("last_consolidated_wake")
         if own_reg:
             save_registry(reg)
     return {"moved": moved, "skipped": skipped, "renumbered": renumbered,

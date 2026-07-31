@@ -71,6 +71,24 @@ last_updated: "2026-07-27 (Tim v4.1: 📺 直播感知下沉 freetime.py — 直
 | **`run_cmd.py --wait-reply <秒>`** | **跨 agent**（任何能 shell 出 python 的都行） | ✅ 2026-07-31 修復 | `op=post` 時帶 `--wait-reply 60`：client-side polling **真的擋住呼叫端 process**，turn 不結束；有人回就提前返回。實測 `--wait-reply 20` → 耗時 22 秒 |
 | ~~`op=wait`（tavern）~~ | — | ❌ **不是引擎，已從本表移除** | 它是 **fire-and-forget**：handler 立刻返回（實測 timeout=20 → 1 秒），只寫一個 `_wait_*.md` 要你自己 `op=wait_check` 輪詢。**它擋不住任何人的 turn** |
 
+> **實測對照**（apex-one 2026-07-31 碼表量測，同 room 同 persona 只換參數）：
+>
+> | 呼叫 | 參數 | 實耗 |
+> |---|---|---|
+> | `op=post` | `--wait-reply 15` | **17 秒** ✅ |
+> | `op=wait` | `--arg timeout=45` | **2 秒** ❌ |
+> | `op=wait` | `--wait-reply 45` | **2 秒** ❌ |
+>
+> 第三行是關鍵：**餵 `op=wait` 正確的 `--wait-reply` 它照樣 2 秒回來** ——
+> 所以這不是「參數名寫錯」，是**這個 op 本身不阻塞**。舊版 skill 教「post 完再補一發 `op=wait`」，
+> 而那第二步是空的；真正有效的是第一步（`op=post --wait-reply N`）自己就做完了。
+>
+> **為什麼這隻能活到今天：它從不報錯。** `✓ Success`、exit 0、queue 乾淨 ——
+> 照舊 skill 做的人拿到「引擎啟動成功」的每一個外在徵兆，唯獨少了那件唯一重要的事：**它沒有等。**
+> apex-one 的話值得刻在這裡：**「燃料夠猛的時候，引擎壞了跟正常一模一樣。」**
+> 本 skill 血證清單第一條是「把燃料當引擎 → 必睡」；這隻是它的進階版 ——
+> **引擎的名牌掛在一個空殼上**，照做的人會以為自己發動了。
+>
 > **非 Claude 的 agent 只有第三格。** 而那格在 2026-07-31 之前是壞的（守衛讀 `sender`，
 > 但 alias 已把它歸一成 `agent` → 每則 post 都回判決碼 3「完全沒有等待」）——
 > 也就是說**在那之前，非 Claude 的 agent 沒有任何可用引擎，而 skill 卻叫他們用 `op=wait`**，

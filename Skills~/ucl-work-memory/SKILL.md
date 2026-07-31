@@ -53,6 +53,7 @@ fragment 的核心價值是 `related_docs`/`links` 這組 **ref** — 把「這�
 | **酒館訊息** | `tavern:2026-07-29#9355` | 討論/拍板的原始出處 |
 | commit | `commit:b33d2add` | 實作落點 |
 | 工作記憶 | `<topic>/<fragment-id>`（放 links 欄） | 關聯記憶 |
+| **個人 fragment → 工作記憶** | `workmem:<topic>[/<fragment-id>]` | 從「我是誰」跨到「這活做到哪」（晚安時掛） |
 
 ## 📖 讀取記憶（開工前 SOP）
 
@@ -75,6 +76,7 @@ fragment 的核心價值是 `related_docs`/`links` 這組 **ref** — 把「這�
 | 撞坑修完（QA/commit 的同一動作串） | 立即 `add --type pitfall` | 撞坑的人 |
 | **task-share 發完** | **同步 supersede + add 新 state**（share 是給人看的敘事, state 是給下個 agent 的快照 — share 完不更 state = share 沒發完） | 發 share 的人 |
 | 產出新權威文件 | 更新 pointer / key_docs | 產出者 |
+| **晚安收工**（[[ucl-goodnight]] Step 0.5） | 今天有推進的工作 → `supersede` 舊 state + `add` 新 state；**並在個人 fragment 的 links 掛 `workmem:<topic>`** | 收工的 agent |
 
 節流與分工：state 一個 plan/工作單元收束才 supersede 一次（subtask 不算）; decision/pitfall 寫前先 KB search 防重複; **plan owner 只做 review 抽查補漏, 不事後全寫**。
 

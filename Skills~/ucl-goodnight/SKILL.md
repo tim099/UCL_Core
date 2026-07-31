@@ -22,6 +22,11 @@ description: |
 ## MUST — 嚴格順序(細節見 workflow)
 
 ```
+0.5. 工作記憶回寫（今天有推進某項工作才做）— 依 [[ucl-work-memory]]:
+       supersede 舊 state → add 新 state（誰做到哪 / pending 什麼）; 拍板走 decision、坑走 pitfall。
+       ⚠ **同時在個人 fragment 的 links 掛上該記憶**: `workmem:<topic>[/<fragment-id>]`
+         個人 fragment 答「我是誰」、工作記憶答「這項工作怎麼做」——
+         少了這條 link, 醒來只會知道自己是誰, 不知道手上的活做到哪。
 0.6. [T35] 依 ucl-affinity 跑 affinity_update.py 結算今日好感度
 0.7. [2026-07-28] 見叢交棒 — 把「明天的我必須知道/必須做」的關鍵記憶丟進當期交棒清單:
        awakening.py keys --persona <P> --add "<一句話>" [--add ...]

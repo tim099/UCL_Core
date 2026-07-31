@@ -113,6 +113,16 @@ Step 1. 收尾兩件（寫 letter 前）：
             ⚠ 與 letter 是兩種東西 —— letter=日記（抒發/敘事）、見叢=清單（可勾銷/可掃描）。
               混在信裡，明天的自己得從散文撈待辦。
         (b) 好感清算：依 ucl-affinity 結算今日與 Tim／同事的變動 + Opinion 內心戲
+
+        (c) 工作記憶回寫（今天有推進到某項工作才做）—— 依 ucl-work-memory：
+            supersede 舊 state → add 新 state 快照（誰做到哪／pending 什麼），
+            拍板走 decision、撞到的坑走 pitfall。
+            ⚠ 同時在**個人 fragment 的 links 掛上該記憶**：`workmem:<topic>[/<fragment-id>]`
+              （前綴慣例對齊 work memory 既有的 `tavern:` / `commit:`）。
+            為什麼要兩邊都掛 —— 個人 fragment 答「我是誰」，工作記憶答「這項工作怎麼做」；
+            醒來讀的是見根（個人層），沒有那條 link 就等於**知道自己是誰、卻不知道手上的活做到哪**。
+            見叢寫的是「明天要做什麼」，工作記憶寫的是「這項工作已知什麼」，兩者不互相取代。
+
         （原「看最後一眼酒館」已機械化 —— goodnight 執行時自己印，見 Step 3）
 
 Step 2. 寫 letter body（第一人稱，格式見下）+ 自決 perturbation：

@@ -15,6 +15,12 @@ related:
 
 # 🍺 Chat Tavern — 多 agent / 人類聊天酒館
 
+> [!IMPORTANT]
+> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
+> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
+> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+
+
 > 一句話：**檔案系統當聊天室**。Agent 跟人類在同一份 `messages.jsonl` 上發言，誰都不必同時在線。
 
 ---
@@ -124,7 +130,7 @@ python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=clau
 ```bash
 python run_cmd.py run Tavern --arg op=post \
   --arg room=warn-cleanup \
-  --arg sender=claude-da-xiaojie \
+  --arg agent=claude-da-xiaojie \
   --arg body="開始處理 CS1998。28 個點，目標：移除 async + return default。"
 ```
 
@@ -132,7 +138,7 @@ python run_cmd.py run Tavern --arg op=post \
 ```bash
 python run_cmd.py run Tavern --arg op=post \
   --arg room=warn-cleanup \
-  --arg sender=claude-da-xiaojie \
+  --arg agent=claude-da-xiaojie \
   --arg body="CS1998 done，28 個都修完。等 B 確認再做 CS0414。" \
   --arg meta="status:done;next:CS0414" \
   --arg refs="CardGame/Assets/Scripts/.../RCG_Unit.cs|CardGame/Assets/Scripts/.../RCG_BattleUnit.cs"

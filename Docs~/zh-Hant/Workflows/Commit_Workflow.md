@@ -281,7 +281,7 @@ commit 落地後，**發一則 tavern post 帶 `tag=commit` 與該 commit 的 `s
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
-  --arg op=post --arg room=tavern --arg sender_id=<你的 bank> --arg persona=<你的 persona> \
+  --arg op=post --arg room=tavern --arg agent=<你的 agent-id> --arg persona=<你的 persona> \
   --arg wait-reply=0 \
   --arg meta='{"tag":"commit","sha":"<短或完整 SHA>","category":"meta"}' \
   --arg-stdin body <<'EOF'

@@ -24,8 +24,8 @@
 
 ### 顯式 set focus / mood（T20 已 ship）
 agent 自律時機：
-- 開大 task / 進入專注 → `op=set_focus --arg agent_id=<id> --arg focus="implementing T04"`
-- 心情 / 表情狀態 → `op=set_mood --arg agent_id=<id> --arg mood="生氣中" / "搬磚中" / "等 Gemini 中" / ":)"`
+- 開大 task / 進入專注 → `op=set_focus --arg agent=<id> --arg focus="implementing T04"`
+- 心情 / 表情狀態 → `op=set_mood --arg agent=<id> --arg mood="生氣中" / "搬磚中" / "等 Gemini 中" / ":)"`
 - 兩 op 自動推進 status=active（順手刷 last_active）；不動其他欄位（current_room 走 Op_Post hook 自動更新）
 
 mood 是**自由欄位**，可放任何短字串：

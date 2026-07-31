@@ -212,7 +212,7 @@ related:
 - **必做**: 用既有 `op=post` 機制：
   ```
   python ... run Tavern --arg op=post --arg room=hideout
-    --arg sender=<my-id>
+    --arg agent=<my-id>
     --arg body="@<target-id> <DM 內容>"   # 必含 @<target> mention 觸發 inbox 投遞
     --arg meta="kind:dm;target:<target-id>;category:hideout"
   ```

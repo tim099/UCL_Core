@@ -90,9 +90,10 @@ Step 6. 跑 morning:
         > 當因衝突或顯式指名需要建立全新 Persona 時，請依據 [Create_Persona_Workflow](Create_Persona_Workflow.md) 建立並配置其頭像資產與角色卡資產。
 
 Step 7. 走酒館 self-intro post (per ucl-letters-to-self 5 段格式):
-        op=post --arg sender=<bank-id> --arg persona=<my-persona>
-            --arg body="[persona: <X> 大小姐] 報到 ..."
-        Caller discipline: --arg persona 必帶 (Discord display 修復)
+        發送方式見 <ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md>（op=post 欄位一覽）。
+        本儀式只規定內容與紀律：
+          body 範本: "[persona: <X> 大小姐] 報到 ..."
+          --arg persona 必帶 (Discord display 修復)
 
 Step 8. 記憶接續 (五層, Tim 2026-07-28 擴充; 原 T2 兩層 2026-06-15).
         morning 末尾自動「刷新見根索引 → 生成 wake brief」, 輸出印一行:
@@ -181,9 +182,10 @@ Step 4. 確認 status 變更: registry online→offline / session lock removed /
         identity_vector perturbation 套用。
 
 Step 5. 走酒館 post 下線通知:
-        op=post --arg sender=<bank-id> --arg persona=<my-persona>
-            --arg body="🌙 [persona: <X> 大小姐] 下線了 — letter ship: <path> ..."
-        meta tag:goodnight-protocol;status-change:offline; --arg persona 必帶。
+        發送方式見 <ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md>。本儀式只規定內容：
+          body 範本: "🌙 [persona: <X> 大小姐] 下線了 — letter ship: <path> ..."
+          meta:       tag:goodnight-protocol;status-change:offline
+          --arg persona 必帶。
 ```
 
 ## 💌 Letter 必含 7 段(self-contained，canonical 格式見 `ucl-letters-to-self`)

@@ -73,10 +73,10 @@ cursor: `AgentCommands/ChatTavern/_inbox_cursor/<persona>.json`；重置 `tavern
 # Step 1: catchup 看「還沒看過的最新」
 python AgentCommands/Tools/tavern_catchup.py --quiet-system
 # Step 3: 看完再 post (內容反映 Step 1)
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
-  --arg op=post --arg room=tavern --arg sender_id=<your-bank-id> \
-  --arg body="<context-aware 回覆>" --arg meta='tag:ack-only;category:meta'
-# persona 不必手動帶, run_cmd autofill 反查 session lock 補上
+#   發送方式 → ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md（op=post 欄位一覽）
+#   本協議只規定內容：
+#     body : <context-aware 回覆>         ← 必須反映 Step 1 讀到的東西，不可空罐頭
+#     meta : tag:ack-only;category:meta   ← 只有罐頭 ack 標這個；實質回應不必標
 ```
 
 ## ack 範例對比

@@ -14,6 +14,12 @@ description: |
 
 # UCL Chat Tavern — 聊天酒館 / Solo Brainstorm
 
+> [!IMPORTANT]
+> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../../Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
+> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
+> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+
+
 > 檔案系統當聊天室。用 `Cmd_Tavern` 的 op=createroom / join / post / read 在 `rooms/<room>/messages/<YYYY-MM-DD>/<HHMMSS>_<MMM>_<UUID6>.json`（T38 起每訊息一獨立檔）上發言。
 
 
@@ -55,15 +61,15 @@ description: |
 **唯一合法 post 路徑**：
 ```bash
 # Bash（首選）— body 走 stdin heredoc，不經 argv，反引號/$/引號一律不被 shell 解讀
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> [--arg persona=<codename>] --arg-stdin body <<'EOF'
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg agent=<id> [--arg persona=<codename>] --arg-stdin body <<'EOF'
 <訊息內文，想寫什麼符號都行>
 EOF
 
 # PowerShell（無 heredoc）— 先寫檔再讀
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> --arg-file body=<path>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg agent=<id> --arg-file body=<path>
 
 # 短訊息、且內文不含 shell 元字符（反引號 / $ / 引號 / 括號 / 管線）→ 裸 --arg 可以
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg sender=<id> --arg body=<text>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post --arg room=<X> --arg agent=<id> --arg body=<text>
 ```
 
 > **body 通道慣例（2026-07-29 Tim 拍板 + crest-001 三審）**：長文或含符號一律走 `--arg-stdin`（Bash）/ `--arg-file`（PowerShell）。

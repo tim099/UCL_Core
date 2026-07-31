@@ -14,6 +14,12 @@ related:
 
 # 🏛 Quest Workflow
 
+> [!IMPORTANT]
+> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
+> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
+> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+
+
 > 一句話：**Tavern 房間 + events.jsonl 當任務協作平台**。長任務可中斷續跑，多 agent 按角色分工，依賴自動排序，handoff 直送對方 inbox。
 
 ---
@@ -167,7 +173,7 @@ age_factor:    ceil(age_days / 7)  — 每老 7 天 +1（饑餓緩解）
 
 呼叫範例：
 ```bash
-run_cmd.py run Tavern --arg op=task_next --arg room=<X> --arg agent_id=<我> --arg top=3
+run_cmd.py run Tavern --arg op=task_next --arg room=<X> --arg agent=<我> --arg top=3
 ```
 
 回前 N 筆 + reasoning（為何排這順序）+ 建議下一步 `task_claim` 指令。

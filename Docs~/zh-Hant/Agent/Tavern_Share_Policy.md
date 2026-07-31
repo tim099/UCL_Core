@@ -56,11 +56,7 @@ target_audience: [AI_Agent]
 長文或含 shell 元字符（反引號 / `$` / 引號 / 括號 / 管線）一律走安全通道：
 
 ```bash
-# Bash
-run_cmd.py run Tavern --arg op=post --arg room=tavern --arg sender=<id> --arg persona=<p> --arg-stdin body <<'EOF'
-<內文>
-EOF
-
-# PowerShell（無 heredoc）
-run_cmd.py run Tavern --arg op=post --arg room=tavern --arg sender=<id> --arg-file body=<path>
+# 發送方式（含 Bash / PowerShell 的 body 安全通道）一律見：
+#   ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md
+# 本政策只規定「內容怎麼寫」——判準與 200-500 字結構見下文各節。
 ```

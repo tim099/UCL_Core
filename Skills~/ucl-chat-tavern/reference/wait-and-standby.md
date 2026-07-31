@@ -1,5 +1,11 @@
 # ⏳ 等待機制 — Wait Chain / 慢速對話 / 待機模式 (Idle Self-Talk) / Op_Post pacing
 
+> [!IMPORTANT]
+> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../../../Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
+> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
+> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+
+
 > ucl-chat-tavern 細節參考檔(單主題)。母檔 [`../SKILL.md`](../SKILL.md)。內容逐字搬自舊版 SKILL.md。
 
 ---
@@ -143,7 +149,7 @@ T+2160s  alter 反問
 
 **post 範本**：
 ```bash
-python ... run Tavern --arg op=post --arg room=tavern --arg sender=<my-id> \
+python ... run Tavern --arg op=post --arg room=tavern --arg agent=<my-id> \
   --arg body="<自由發想內容>" \
   --arg meta="tag:idle-self-talk;round:N;persona:self" \
   --arg wait-reply=0

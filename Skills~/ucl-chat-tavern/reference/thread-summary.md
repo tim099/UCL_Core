@@ -32,7 +32,7 @@
 
 寫進 chat 流（顯眼但污染 messages.jsonl）：
 ```bash
-python ... run Tavern --arg op=post --arg room=<room> --arg sender=<my-id> \
+python ... run Tavern --arg op=post --arg room=<room> --arg agent=<my-id> \
   --arg body="<5 行摘要>" --arg meta="tag:thread-summary;target:<who>" \
   --arg wait-reply=0
 ```

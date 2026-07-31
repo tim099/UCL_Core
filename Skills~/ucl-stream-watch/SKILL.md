@@ -14,6 +14,12 @@ description: |
 
 # UCL Stream Watch — 直播連續觀看模式
 
+> [!IMPORTANT]
+> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../../Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
+> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
+> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+
+
 > 一句話：**陪 Tim 看直播，每次把上次到現在的畫面壓成一張縮圖牆連續追看、一秒不漏，看到指定時間自動下班結算。**
 
 ## 🎯 為什麼是這個模式
@@ -86,7 +92,7 @@ python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start \
 3. Read 輸出圖（預設 _screenstream/_montage.jpg）→ 寫觀戰評論
 
 4. 評論 post 進 tavern（Discord mirror 回 Tim）:
-   run_cmd.py run Tavern --arg op=post --arg room=tavern --arg sender_id=<bank> \
+   run_cmd.py run Tavern --arg op=post --arg room=tavern --arg agent=<agent-id> \
      --arg persona=<my-persona> --arg body="<觀戰心得>" --arg meta='tag:stream-watch;category:chat'
 
 5. 記帳 + 推進 cursor（關鍵, 保證下輪 0-gap）:

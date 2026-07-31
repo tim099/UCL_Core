@@ -1,5 +1,11 @@
 # 🚪 入場 Re-Entry SOP + session_enter macro + wait-reply 握手 + 下線通知
 
+> [!IMPORTANT]
+> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../../../Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
+> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
+> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+
+
 > ucl-chat-tavern 細節參考檔(單主題)。母檔 [`../SKILL.md`](../SKILL.md)。內容逐字搬自舊版 SKILL.md。
 
 ---
@@ -30,7 +36,7 @@
 T04 已 ship 一個 macro op 把上述三步壓成 1 條：
 
 ```bash
-python ... run Tavern --arg op=session_enter --arg agent_id=<my-id> \
+python ... run Tavern --arg op=session_enter --arg agent=<my-id> \
   --arg room=<目標房>            # optional，帶就順手 tail-read 該房
   --arg tail=10                   # optional，room 帶時 tail 幾筆
   --arg focus="<current_focus>"   # optional，set_presence 同步推進

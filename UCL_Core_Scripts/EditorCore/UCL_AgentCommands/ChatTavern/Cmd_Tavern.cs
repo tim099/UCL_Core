@@ -1285,12 +1285,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             else
             {
-                // 未帶 tail → 走後台「⚙ 參數設定」的預設筆數（原硬編 100）。
-                // 註：本分支目前**不吃** `limit`（limit 只在 search / since 分支生效）——
-                //    打 limit=12 會靜默拿到預設筆數，那筆帳另案處理（calli 2026-07-31 盤點 C-2）。
-                int n = tail > 0 ? tail : UCL_ChatTavernSettings.ReadTailCount;
+                // 純尾讀的筆數：tail > limit > 後台預設。
+                // 2026-07-31（Tim 拍板）：`limit` 在本分支**改為 tail 的同義字**，不再靜默丟掉。
+                //   病灶：limit 只在 search / since 分支生效，純尾讀吃 tail —— 打 `limit=12`
+                //   會被讀進來、解析成 12、然後丟掉，回你預設筆數且零徵兆（實測代價 66k token）。
+                //   判準（apex-one 2026-07-31）：**寬容的正確判準不是「守衛會不會很煩」，
+                //   是「被擋下來的那些呼叫裡，有沒有一個是對的」。** 打 limit 想少讀幾筆的人
+                //   意圖百分之百正確，擋他換不到任何東西 → 收下它，但要出聲說「我當 tail 用了」。
+                //   （未知鍵如 `tial=12` 是另一種病：沒有正當用例，該在 schema 層擋 —— 另案。）
+                int n = tail > 0 ? tail : (limit > 0 ? limit : UCL_ChatTavernSettings.ReadTailCount);
+                if (tail <= 0 && limit > 0)
+                {
+                    Debug.LogWarning($"[Tavern] op=read 純尾讀不吃 limit，已當成 tail={limit} 使用"
+                                     + "（下次直接帶 --arg tail= 更精確）");
+                }
                 messages = UCL_ChatTavernIO.Tail(roomId, n);
-                title = $"🍺 {room.name} — 最新 {messages.Count} 筆";
+                title = $"🍺 {room.name} — 最新 {messages.Count} 筆"
+                        + (tail <= 0 && limit > 0 ? $"（`limit={limit}` 已當成 tail 用）" : "");
             }
             string md = UCL_ChatTavernRender.RenderMessages(title, messages);
             UCL_ChatTavernRender.WriteLastOp(md);

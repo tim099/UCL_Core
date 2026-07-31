@@ -57,6 +57,74 @@ def configure(queue_dir: Path, tavern_dir: Path, detect_env_marker: Callable[[],
 
 
 # ===========================================================
+# 區塊職責：catch-up cursor 的**兩階段提交**（Tim 2026-07-31 拍板；apex-one 形式化）
+# 物理意義：cursor(`_inbox_cursor/<persona>.json` 的 last_seen_ts) 代表「我看到這裡了」。
+#          brief §8 只是**把訊息攤在你面前**，不等於你讀了 —— 所以它寫 pending；
+#          真正的確認是**你開口**（self-intro / 任何一則 post 成功）→ pending 升 last_seen_ts。
+# 為何不在 brief 生成時直接推：brief 每次 morning 重生成，compact 後重生成一次就會把沒讀過的
+#          標成已讀（吃掉的是同事對你說的話）。為何不推「現在」：發文前三秒同事剛講的話
+#          你根本沒看到，推 now 等於偷吃。pending 存的是 **§8 實際涵蓋到的最後一則的 ts**。
+# 失敗方向：早安半途掛掉 → pending 不提交 → 明天重看一次。
+#          **重看不痛，吞掉無感 —— 要選一個方向壞，選會吵的那個。**（apex-one 2026-07-31）
+# 數值影響：只動 `_inbox_cursor/<persona>.json`；提交是單調的（pending <= 現有 last_seen_ts 就不動）。
+# ===========================================================
+def _cursor_file(persona: str):
+    if TAVERN_DIR is None or not persona:
+        return None
+    return TAVERN_DIR / "_inbox_cursor" / f"{persona}.json"
+
+
+def _cursor_load(persona: str) -> dict:
+    f = _cursor_file(persona)
+    if f is None or not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}          # 壞檔不擋流程，當成空的重來
+
+
+def _cursor_save(persona: str, data: dict) -> bool:
+    f = _cursor_file(persona)
+    if f is None:
+        return False
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def cursor_write_pending(persona: str, covered_ts: str) -> bool:
+    """階段一：記下「brief §8 涵蓋到這裡」。不動 last_seen_ts。"""
+    if not persona or not covered_ts:
+        return False
+    d = _cursor_load(persona)
+    if covered_ts <= (d.get("last_seen_ts") or ""):
+        return False       # 已經確認過的位置，不必再 pending
+    d["pending_ts"] = covered_ts
+    return _cursor_save(persona, d)
+
+
+def cursor_commit_pending(persona: str):
+    """階段二：開口了 → pending 升 last_seen_ts。回實際提交的 ts；沒東西可提交回 None。"""
+    if not persona:
+        return None
+    d = _cursor_load(persona)
+    pend = d.get("pending_ts") or ""
+    if not pend or pend <= (d.get("last_seen_ts") or ""):
+        return None
+    d["last_seen_ts"] = pend
+    d.pop("pending_ts", None)
+    # updated_at 跟著推 —— 不然這欄會停在「上次 tavern_catchup 跑的時間」，
+    # 看檔的人會以為 cursor 很久沒動（欄位自己說謊，正是今天在治的那族）
+    import datetime as _dt
+    d["updated_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    return pend if _cursor_save(persona, d) else None
+
+
+# ===========================================================
 # 區塊職責：載入 C# 反射生成的 commands_schema.json —— 這是 op 規格的**唯一**來源。
 # 物理意義：手抄鏡像會漂（血證 2026-07-29：`create_trpg_room` 在 C# 完整實作卻被 client 擋死；
 #          另有六處 required 比 server 還嚴，會擋掉合法呼叫）。產物由 C# 端

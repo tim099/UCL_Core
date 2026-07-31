@@ -309,9 +309,21 @@ def _tavern_catchup_lines(aw, persona: str, count: int = None) -> list:
         cursor_ts = mod.load_cursor(persona) or ""
     except Exception:
         pass
-    out = [f"> peek 模式：**不推進 cursor**（cursor 目前在 `{cursor_ts or '(未設)'}`，"
-           f"推進掛在 self-intro post 之後）。他人訊息近 {len(msgs)} 筆"
-           f"（另濾掉 {dropped} 筆系統噪音／自己發的）：", ""]
+    # 兩階段提交・階段一：把「§8 實際涵蓋到的最後一則」記成 pending（**不動 last_seen_ts**）。
+    # 階段二在 post 成功時（tavern_cmd.cursor_commit_pending）—— 開口才算讀完。
+    covered = max((m.get("ts") or "") for m in raw) if raw else ""
+    pending_note = ""
+    try:
+        import tavern_cmd as _tc                      # 同目錄；awakening 已把本目錄補進 sys.path
+        if _tc.TAVERN_DIR is None:                    # 由 brief 端獨立跑時 caller 沒 configure 過
+            _tc.configure(queue_dir=aw._DATA_ROOT, tavern_dir=aw._DATA_ROOT / "ChatTavern",
+                          detect_env_marker=lambda: "unknown")
+        if covered and _tc.cursor_write_pending(persona, covered):
+            pending_note = f"；已記 pending 到 `{covered}`（**發文成功後才提交**）"
+    except Exception as ex:
+        pending_note = f"；⚠ pending 記錄失敗（{ex}）—— 這次讀完不會被記住"
+    out = [f"> peek 模式：**不推進 cursor**（cursor 目前在 `{cursor_ts or '(未設)'}`{pending_note}）。"
+           f"他人訊息近 {len(msgs)} 筆（另濾掉 {dropped} 筆系統噪音／自己發的）：", ""]
     for m in msgs:
         ts = (m.get("ts") or "")[11:19]
         who = m.get("sender_id", "?")

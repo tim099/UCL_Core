@@ -715,6 +715,30 @@ def cmd_wait(args: argparse.Namespace) -> int:
     return 3
 
 
+def _commit_catchup_cursor_if_post(args, arg_pairs: dict) -> None:
+    """兩階段提交・階段二：一則 tavern post 成功 → 把 brief §8 記下的 pending 升成 last_seen_ts。
+
+    區塊職責：實作「**開口＝確認讀完**」（Tim 2026-07-31 拍板，apex-one 形式化為兩階段提交）。
+    物理意義：brief §8 只是把訊息攤在你面前（階段一寫 pending，不動 cursor）；
+             真正的「我讀了」證據是你開口說話。這裡不推「現在」——
+             提交的是 **brief 當時涵蓋到的截止點**，所以發文前三秒同事剛講的話不會被吞掉。
+    數值影響：只在 op=post 成功後、且該 persona 有 pending 時動一次；提交是單調的。
+             失敗方向刻意選「不提交」——早安半途掛掉 → 明天重看一次（重看不痛，吞掉無感）。
+    """
+    try:
+        if args.cmd_type.lower() != "tavern" or arg_pairs.get("op", "").lower() != "post":
+            return
+        persona = arg_pairs.get("persona", "")
+        if not persona:
+            return
+        committed = _tavern_cmd.cursor_commit_pending(persona)
+        if committed:
+            print(f"  📍 catch-up cursor 提交：{persona} → {committed}（開口＝確認讀完）")
+    except Exception as e:
+        # 不擋主流程，但**不靜默** —— 這條線斷了會讓 🆕 永遠累積，那正是本次要治的病
+        print(f"  ⚠ catch-up cursor 提交失敗（post 本身成功）：{e}")
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """run = submit + wait（+ Tavern op=post 可選同步握手等回覆）。"""
     # 區塊職責：cmd_type 在入口就 normalize（alias + Cmd_ 前綴剝除），不留到 append_cmd 才做。
@@ -789,6 +813,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     # T28 work-mode banner plumb to caller stdout (crest-001 QA 2026-05-14) → 實作在 tavern_cmd
     if args.cmd_type.lower() == "tavern" and arg_pairs.get("op", "").lower() == "post":
         _tavern_cmd.print_work_mode_banner(arg_pairs.get("room", ""))
+    # 兩階段提交・階段二：post 成功了 → 開口＝確認讀完（見 _commit_catchup_cursor_if_post）
+    # ⚠ 掛這裡而不是 cmd_wait 的成功分支：那裡沒有 arg_pairs（實測 NameError），
+    #   而且 cmd_wait 是**所有 cmd type 共用**的等待器 —— tavern 專屬邏輯不該長在通用管線裡。
+    _commit_catchup_cursor_if_post(args, arg_pairs)
 
     # ─── Tavern 同步握手（僅 op=post）─────────────────────────────────
     # 區塊職責：A 發完訊息後 client-side polling messages.jsonl 等對方回覆

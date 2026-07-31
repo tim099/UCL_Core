@@ -97,6 +97,28 @@ namespace UCL.Core.EditorLib.Page
         public static string PrefKey_LastSkillChanges =>
             $"UCL_Core.AgentSkill.LastChanges@{ProjectFingerprint}";
 
+        // ===========================================================
+        // 區塊：UI
+        // ===========================================================
+        protected override void ContentOnGUI()
+        {
+            if (m_StatusDirty) RefreshStatus();
+
+            // 注意：不要在這裡再開 BeginScrollView — UCL_EditorPage.OnGUI 已經包了 ScrollViewScope。
+            // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException（Unity 6 才會被內部靜默 recover）。
+            DrawHeader();
+            GUILayout.Space(8);
+            DrawFoldSection("AgentSkillConceptFold", "ℹ 概覽", DrawConcept, true);
+            GUILayout.Space(8);
+            DrawFoldSection("AgentSkillInstallFold", "🧩 Skills 同步", DrawOneClickInstall, true);
+            GUILayout.Space(8);
+            DrawFoldSection("AgentEntryDocsFold", "📄 Agent Entry Documents", DrawEntryDocsInstall, true);
+            GUILayout.Space(8);
+            DrawFoldSection("AgentSkillMatrixFold", "▦ Per-Agent × Per-Skill", DrawAgentMatrixPlaceholder, false);
+            GUILayout.Space(8);
+            DrawFoldSection("AgentSkillFooterFold", "⚙ 其他設定", DrawFooter, false);
+        }
+
         // 區塊職責：static 解析 Skills~ 源根目錄（MaybeAutoPopupOnWelcome 無 instance 可用）。
         // 物理意義：與 RefreshStatus 同一條解析鏈（UnityProjectRoot + CorePath）；解析失敗回 null。
         static string TryResolveSkillsRoot()
@@ -276,6 +298,14 @@ namespace UCL.Core.EditorLib.Page
             Stale,
         }
 
+        // 區塊職責：將 AgentTemplateManifest.json 轉為 Editor 可查詢的目標入口契約。
+        // 物理意義：範本來源與 consumer 載入位置由同一份 manifest 管理，避免 UI 與 Python 安裝器漂移。
+        // 數值影響：只在 RefreshStatus 讀取少量文字檔；讀取失敗會將對應入口顯示為未安裝。
+        [Serializable]
+        class EntryManifestData { public int version; public EntryManifestItem[] entries; }
+        [Serializable]
+        class EntryManifestItem { public string target; public string template; public string destination; }
+
         // 區塊職責：支援的 install target 列舉
         // 物理意義：對應 install_skills.py 的 --target choices
         // 數值影響：每個 target 各自有 RunInstall 按鈕 + 狀態列；MarkerRelDir / CliName / DisplayName 三 helper 統一管理映射
@@ -317,6 +347,8 @@ namespace UCL.Core.EditorLib.Page
 
         // Per-target 狀態：合併單一 dict 比平行欄位更易擴充新 target
         readonly Dictionary<AgentTarget, InstallStatus> m_StatusByTarget = new Dictionary<AgentTarget, InstallStatus>();
+        readonly Dictionary<AgentTarget, InstallStatus> m_EntryStatusByTarget = new Dictionary<AgentTarget, InstallStatus>();
+        readonly Dictionary<AgentTarget, string> m_EntryDetailByTarget = new Dictionary<AgentTarget, string>();
         readonly HashSet<AgentTarget> m_InstallingSet = new HashSet<AgentTarget>();
 
         // 區塊職責：per-skill 狀態快取（給 Matrix 用；Per-Agent × Per-Skill, Tim 2026-07-27）。
@@ -337,6 +369,10 @@ namespace UCL.Core.EditorLib.Page
         // Matrix 的 agent 下拉選單 state（UCL_GUILayout.Popup 需要 ObjectDictionary 存展開狀態）
         int m_MatrixTargetIdx = 0;
         readonly UCL_ObjectDictionary m_PopupDataDic = new UCL_ObjectDictionary();
+        // 區塊職責：保存各管理區塊的折疊狀態，與 popup 快取分離避免 UI 狀態互相清除。
+        // 物理意義：折疊是使用者在本頁瀏覽大量同步細節時的顯示偏好，不是技能或入口文件的資料狀態。
+        // 數值影響：只影響 IMGUI 繪製範圍；不改變 RefreshStatus、安裝器呼叫或檔案內容。
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
 
         // 區塊職責：記錄各 target 上次安裝被跳過的檔案數（install_skills.py 的 local-edit 保護）
         // 物理意義：exit=2 + stdout 的 "skipped=N" 代表有 N 檔因本地改動沒被覆蓋 — 內容實際未更新；
@@ -384,13 +420,19 @@ namespace UCL.Core.EditorLib.Page
         {
             m_StatusDirty = false;
             m_StatusByTarget.Clear();
+            m_EntryStatusByTarget.Clear();
+            m_EntryDetailByTarget.Clear();
             m_SkillRowCacheByTarget.Clear();
             m_StaleSkillsByTarget.Clear();
 
             string corePathRel = UCL_EditorPath.CorePath;
             if (string.IsNullOrEmpty(corePathRel))
             {
-                foreach (var t in AllTargets) m_StatusByTarget[t] = InstallStatus.NoUCLCore;
+                foreach (var t in AllTargets)
+                {
+                    m_StatusByTarget[t] = InstallStatus.NoUCLCore;
+                    m_EntryStatusByTarget[t] = InstallStatus.NoUCLCore;
+                }
                 return;
             }
             string projRootForCore = UCL_RepoPath.UnityProjectRoot;
@@ -399,13 +441,106 @@ namespace UCL.Core.EditorLib.Page
             string hostRoot = FindHostProjectRoot();
             if (string.IsNullOrEmpty(hostRoot))
             {
-                foreach (var t in AllTargets) m_StatusByTarget[t] = InstallStatus.NoProjectRoot;
+                foreach (var t in AllTargets)
+                {
+                    m_StatusByTarget[t] = InstallStatus.NoProjectRoot;
+                    m_EntryStatusByTarget[t] = InstallStatus.NoProjectRoot;
+                }
                 return;
             }
             m_HostProjectRoot = hostRoot;
 
-            foreach (var t in AllTargets) ComputeStatusFor(t, hostRoot);
+            foreach (var t in AllTargets)
+            {
+                ComputeStatusFor(t, hostRoot);
+                ComputeEntryStatusFor(t, hostRoot);
+            }
             BuildSkillRowCache(hostRoot);
+        }
+
+        // 區塊職責：以 manifest 指定的完整範本內容比對 consumer 專案入口檔與 sidecar。
+        // 物理意義：入口檔不同於 skills，既有檔案預設保留；sidecar 才表示已納入 UCL 管理。
+        // 數值影響：檔案行數只供 Stale 摘要顯示，不參與同步或覆寫決策。
+        void ComputeEntryStatusFor(AgentTarget target, string hostRoot)
+        {
+            try
+            {
+                string manifestPath = Path.Combine(m_UCLCorePath, "AgentEntry", "AgentTemplateManifest.json");
+                var manifest = JsonUtility.FromJson<EntryManifestData>(File.ReadAllText(manifestPath));
+                var spec = manifest?.entries?.FirstOrDefault(x => x.target == TargetCliName(target));
+                if (spec == null || string.IsNullOrEmpty(spec.template) || string.IsNullOrEmpty(spec.destination))
+                {
+                    m_EntryStatusByTarget[target] = InstallStatus.NoUCLCore;
+                    m_EntryDetailByTarget[target] = "AgentTemplateManifest.json has no matching entry.";
+                    return;
+                }
+                if (!ArePathsOnSameVolume(hostRoot, m_UCLCorePath))
+                {
+                    m_EntryStatusByTarget[target] = InstallStatus.NoUCLCore;
+                    m_EntryDetailByTarget[target] = "Project root and UCL_Core must be on the same drive.";
+                    return;
+                }
+
+                string sourcePath = Path.Combine(m_UCLCorePath, spec.template);
+                string destinationPath = Path.Combine(hostRoot, spec.destination);
+                if (!File.Exists(sourcePath))
+                {
+                    m_EntryStatusByTarget[target] = InstallStatus.NoUCLCore;
+                    m_EntryDetailByTarget[target] = $"Template missing: {spec.template}";
+                    return;
+                }
+                string coreRel = Path.GetRelativePath(hostRoot, m_UCLCorePath).Replace('\\', '/');
+                string expected = NormalizeEntryText(File.ReadAllText(sourcePath).Replace("{{UCL_CORE_PATH}}", coreRel));
+                if (!File.Exists(destinationPath))
+                {
+                    m_EntryStatusByTarget[target] = InstallStatus.NotInstalled;
+                    m_EntryDetailByTarget[target] = $"Missing: {spec.destination}";
+                    return;
+                }
+                string installed = NormalizeEntryText(File.ReadAllText(destinationPath));
+                string sidecarPath = destinationPath + ".ucl_source";
+                if (installed == expected && File.Exists(sidecarPath))
+                {
+                    m_EntryStatusByTarget[target] = InstallStatus.Synced;
+                    m_EntryDetailByTarget[target] = $"Synced: {spec.destination}";
+                    return;
+                }
+                m_EntryStatusByTarget[target] = InstallStatus.Stale;
+                m_EntryDetailByTarget[target] = installed == expected
+                    ? $"{spec.destination}: content matches; management sidecar is missing."
+                    : $"{spec.destination}: source {expected.Split('\n').Length} lines, installed {installed.Split('\n').Length} lines.";
+            }
+            catch (Exception ex)
+            {
+                m_EntryStatusByTarget[target] = InstallStatus.NoUCLCore;
+                m_EntryDetailByTarget[target] = ex.Message;
+            }
+        }
+
+        // 區塊職責：將入口檔內容正規化為 Python read_text 的跨平台換行語意。
+        // 物理意義：Git autocrlf 可把同一份 Markdown 寫成 CRLF；這不代表 agent 規則的內容漂移。
+        // 數值影響：只影響 UI 的內容相等判定與行數摘要，保留原檔位元組且不觸發額外寫入。
+        static string NormalizeEntryText(string text)
+        {
+            return (text ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
+        }
+
+        // 區塊職責：判斷 host project 與 UCL_Core 是否實際位於相同磁碟區。
+        // 物理意義：Unity/Mono 可能保留根路徑的 slash 樣式（D:\\ 或 D:/）；字串不同不代表不同磁碟。
+        // 數值影響：只在不同 volume 時阻止 Path.GetRelativePath；同 volume 的分隔符差異不再誤鎖三個同步按鈕。
+        static bool ArePathsOnSameVolume(string firstPath, string secondPath)
+        {
+            try
+            {
+                string firstRoot = (Path.GetPathRoot(Path.GetFullPath(firstPath)) ?? "").Replace('\\', '/').TrimEnd('/');
+                string secondRoot = (Path.GetPathRoot(Path.GetFullPath(secondPath)) ?? "").Replace('\\', '/').TrimEnd('/');
+                return !string.IsNullOrEmpty(firstRoot)
+                    && string.Equals(firstRoot, secondRoot, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // 區塊職責：對單一 target 計算安裝狀態（direct content compare, 不讀 marker hash/commit）。
@@ -704,6 +839,56 @@ namespace UCL.Core.EditorLib.Page
             foreach (var t in AllTargets) RunInstall(t, force);
         }
 
+        // 區塊職責：呼叫安裝器的 --entry-docs 模式，僅同步指定 agent 的根入口檔。
+        // 物理意義：入口檔可能是使用者既有設定；非 force 時 Python 會輸出 diff 並保留原檔。
+        // 數值影響：Exit=2 表示偵測到不同內容而未覆寫，Refresh 後會維持 Stale 狀態。
+        void RunInstallEntryDocs(AgentTarget target, bool force = false)
+        {
+            if (m_InstallingSet.Contains(target)) return;
+            m_InstallingSet.Add(target);
+            try
+            {
+                string scriptPath = Path.Combine(m_UCLCorePath, "Tools~", "install_skills.py");
+                using (var p = new Process())
+                {
+                    p.StartInfo.FileName = "python";
+                    p.StartInfo.Arguments = $"\"{scriptPath}\" --target {TargetCliName(target)} --entry-docs"
+                        + (force ? " --force-overwrite" : "");
+                    p.StartInfo.UseShellExecute = false;
+                    p.StartInfo.RedirectStandardOutput = true;
+                    p.StartInfo.RedirectStandardError = true;
+                    p.StartInfo.CreateNoWindow = true;
+                    p.Start();
+                    string stdout = p.StandardOutput.ReadToEnd();
+                    string stderr = p.StandardError.ReadToEnd();
+                    p.WaitForExit(30000);
+                    string tag = TargetDisplayName(target);
+                    if (!string.IsNullOrEmpty(stdout)) Debug.Log($"[AgentSkillManager:{tag}] Entry stdout:\n{stdout}");
+                    if (!string.IsNullOrEmpty(stderr)) Debug.LogWarning($"[AgentSkillManager:{tag}] Entry stderr:\n{stderr}");
+                    if (p.ExitCode == 0) Debug.Log($"[AgentSkillManager:{tag}] Entry document synchronized.");
+                    else if (p.ExitCode == 2) Debug.LogWarning($"[AgentSkillManager:{tag}] Entry preserved; use Force Sync to replace it.");
+                    else Debug.LogError($"[AgentSkillManager:{tag}] Entry installer exit={p.ExitCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AgentSkillManager:{TargetDisplayName(target)}] Entry install failed: {ex.Message}");
+            }
+            finally
+            {
+                m_InstallingSet.Remove(target);
+                m_StatusDirty = true;
+            }
+        }
+
+        // 區塊職責：依序同步三個 agent 的入口檔，讓所有 consumer 載入點可一次納管。
+        // 物理意義：每一 target 都由 manifest 決定來源與目的地，不會推導或共用錯誤目錄。
+        // 數值影響：任一不同既有檔會以 Exit=2 保留，其他 target 仍可繼續處理。
+        void RunInstallAllEntryDocs(bool force = false)
+        {
+            foreach (var t in AllTargets) RunInstallEntryDocs(t, force);
+        }
+
         // 區塊職責：逐 skill 安裝/解除安裝 — spawn install_skills.py --target <t> --include <skill> [--uninstall] [--force-overwrite]
         // 物理意義：對接 install_skills.py 的 per-skill 化(merge marker / partial uninstall / drift 警告)。
         //          uninstall 預設不帶 force → 若該 skill 被本地改過, Python 端會警告跳過(破壞看得見);
@@ -882,38 +1067,37 @@ namespace UCL.Core.EditorLib.Page
             return sb.ToString();
         }
 
-        // ===========================================================
-        // 區塊：UI
-        // ===========================================================
 
-        protected override void ContentOnGUI()
+
+        // 區塊職責：以 Control Panel 同款 header 將既有管理內容包成可折疊區塊。
+        // 物理意義：同步與矩陣資訊密度高，折疊可讓使用者只展開當前要操作的區段。
+        // 數值影響：收合時不繪製 body，減少 GUI 配置；狀態資料仍由 RefreshStatus 正常維護。
+        void DrawFoldSection(string key, string title, Action body, bool defaultExpanded)
         {
-            if (m_StatusDirty) RefreshStatus();
-
-            // 注意：不要在這裡再開 BeginScrollView — UCL_EditorPage.OnGUI 已經包了 ScrollViewScope。
-            // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException（Unity 6 才會被內部靜默 recover）。
-            DrawHeader();
-            GUILayout.Space(8);
-            DrawConcept();
-            GUILayout.Space(8);
-            DrawOneClickInstall();
-            GUILayout.Space(8);
-            DrawAgentMatrixPlaceholder();
-            GUILayout.Space(8);
-            DrawFooter();
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool expanded;
+                using (new GUILayout.HorizontalScope())
+                {
+                    expanded = UCL_GUILayout.Toggle(m_FoldDic, key, 21, iDefaultValue: defaultExpanded);
+                    GUILayout.Label($"<b>{title}</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (expanded) body?.Invoke();
+            }
         }
 
         void DrawHeader()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
-                {
-                    fontSize = 20,
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                };
-                GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Title"), titleStyle);
+                //var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
+                //{
+                //    fontSize = 20,
+                //    fontStyle = FontStyle.Bold,
+                //    alignment = TextAnchor.MiddleCenter,
+                //};
+                //GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Title"), titleStyle);
 
                 var sub = new GUIStyle(UCL_GUIStyle.LabelStyle)
                 {
@@ -998,6 +1182,58 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：把 status enum 翻成顏色 / label / 按鈕文字 + dst 路徑顯示，
         //          使用者一眼可看到「Claude 已同步、Antigravity 尚未安裝」之類的狀況
         // 數值影響：點擊按鈕呼叫 RunInstall(target)；該 target 的 m_InstallingSet bit 控制 DisabledScope
+        // 區塊職責：呈現三種 agent 的入口檔同步狀態與安全覆寫操作。
+        // 物理意義：入口檔是 agent 真正讀取的起點；skills 已安裝不代表入口設定已同步。
+        // 數值影響：一般 Sync 不覆寫不同內容，Force Sync 才會要求安裝器以範本取代目標檔。
+        void DrawEntryDocsInstall()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
+                GUILayout.Label("Agent Entry Documents", titleStyle);
+                GUILayout.Label("Manage the root rules each agent actually loads. Source and destination come from AgentTemplateManifest.json.", WrapLabelStyle);
+                bool anyBlocked = false;
+                foreach (var target in AllTargets)
+                {
+                    InstallStatus status = m_EntryStatusByTarget.TryGetValue(target, out var value)
+                        ? value : InstallStatus.NotInstalled;
+                    bool canInstall = status != InstallStatus.NoProjectRoot && status != InstallStatus.NoUCLCore;
+                    if (!canInstall) anyBlocked = true;
+                    string detail = m_EntryDetailByTarget.TryGetValue(target, out var text) ? text : "";
+                    Color statusColor = status == InstallStatus.Synced ? new Color(0.6f, 0.9f, 0.6f)
+                        : status == InstallStatus.Stale ? new Color(1f, 0.65f, 0.25f)
+                        : new Color(1f, 0.85f, 0.2f);
+                    using (new GUILayout.HorizontalScope("box"))
+                    {
+                        var statusStyle = new GUIStyle(WrapLabelStyle);
+                        statusStyle.normal.textColor = statusColor;
+                        GUILayout.Label($"{TargetDisplayName(target)} — {status}", statusStyle, GUILayout.Width(210));
+                        GUILayout.Label(detail, WrapLabelStyle);
+                        bool installing = m_InstallingSet.Contains(target);
+                        using (new EditorGUI.DisabledScope(!canInstall || installing))
+                        {
+                            if (GUILayout.Button("Sync Entry", UCL_GUIStyle.ButtonStyle, GUILayout.Width(100)))
+                                RunInstallEntryDocs(target);
+                            if (GUILayout.Button("Force Sync", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)), GUILayout.Width(105)))
+                                RunInstallEntryDocs(target, force: true);
+                        }
+                    }
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    using (new EditorGUI.DisabledScope(anyBlocked || m_InstallingSet.Count > 0))
+                    {
+                        if (GUILayout.Button("Sync All Entry Documents", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)), GUILayout.Height(28)))
+                            RunInstallAllEntryDocs();
+                        if (GUILayout.Button("Force Sync All Entries", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)), GUILayout.Height(28)))
+                            RunInstallAllEntryDocs(force: true);
+                    }
+                    if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        m_StatusDirty = true;
+                }
+            }
+        }
+
         void DrawTargetRow(AgentTarget t)
         {
             InstallStatus status = m_StatusByTarget.TryGetValue(t, out var s) ? s : InstallStatus.NotInstalled;

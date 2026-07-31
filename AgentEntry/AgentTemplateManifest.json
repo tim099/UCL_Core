@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "target": "claude",
+      "template": "ClaudeTemplate/CLAUDE.md",
+      "destination": "CLAUDE.md"
+    },
+    {
+      "target": "codex",
+      "template": "CodexTemplate/AGENTS.md",
+      "destination": "AGENTS.md"
+    },
+    {
+      "target": "antigravity",
+      "template": "AntigravityTemplate/Antigravity_Rules.md",
+      "destination": ".agents/rules/UCL_Core_Entry.md"
+    }
+  ]
+}

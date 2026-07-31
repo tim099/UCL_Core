@@ -49,6 +49,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -67,6 +68,7 @@ SCRIPT = Path(__file__).resolve()
 UCL_CORE_ROOT = SCRIPT.parent.parent  # Tools~/install_skills.py -> UCL_Core/
 SKILLS_SRC = UCL_CORE_ROOT / "Skills~"
 MANIFEST = SKILLS_SRC / "_manifest.json"
+ENTRY_MANIFEST = UCL_CORE_ROOT / "AgentEntry" / "AgentTemplateManifest.json"
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +154,68 @@ def load_manifest() -> dict:
     if not MANIFEST.is_file():
         raise SystemExit(f"Manifest not found: {MANIFEST}")
     return json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+
+def load_entry_manifest() -> dict:
+    """Load the per-target agent-entry distribution contract."""
+    if not ENTRY_MANIFEST.is_file():
+        raise SystemExit(f"Entry manifest not found: {ENTRY_MANIFEST}")
+    return json.loads(ENTRY_MANIFEST.read_text(encoding="utf-8"))
+
+
+def find_entry_spec(target: str) -> dict:
+    """Return one target's entry contract from the shared manifest."""
+    entries = load_entry_manifest().get("entries", [])
+    for spec in entries:
+        if spec.get("target") == target:
+            return spec
+    raise SystemExit(f"Entry manifest has no target: {target}")
+
+
+def install_entry_doc(target: str, project_root: Path, log: _Log, force: bool) -> bool:
+    """Install one full entry document without merging user-maintained content.
+
+    Returns False when a different existing file is intentionally preserved.
+    """
+    spec = find_entry_spec(target)
+    src = UCL_CORE_ROOT / spec["template"]
+    dst = project_root / spec["destination"]
+    if not src.is_file():
+        raise SystemExit(f"Entry template not found: {src}")
+
+    try:
+        core_rel = os.path.relpath(UCL_CORE_ROOT, project_root).replace("\\", "/")
+    except ValueError as exc:
+        raise SystemExit(
+            "Entry documents require project root and UCL_Core on the same drive; "
+            f"cannot resolve {UCL_CORE_ROOT} from {project_root}."
+        ) from exc
+    source_text = src.read_text(encoding="utf-8").replace("{{UCL_CORE_PATH}}", core_rel)
+    if dst.is_file():
+        installed = dst.read_text(encoding="utf-8")
+        if installed == source_text:
+            log.info(f"Entry synced: {dst}")
+            sidecar = dst.with_name(dst.name + ".ucl_source")
+            if not sidecar.is_file():
+                log.action("Adopt entry", sidecar)
+                if not log.dry:
+                    write_json_atomic(sidecar, {"source": spec["template"], "target": target}, trailing_newline=True)
+            return True
+        if not force:
+            diff = "".join(difflib.unified_diff(
+                installed.splitlines(keepends=True), source_text.splitlines(keepends=True),
+                fromfile=str(dst), tofile=str(src), n=3,
+            ))
+            log.warn(f"Entry preserved (use --force-overwrite to replace): {dst}\n{diff}")
+            return False
+
+    log.action("Install entry", dst)
+    if not log.dry:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(source_text, encoding="utf-8", newline="\n")
+        sidecar = dst.with_name(dst.name + ".ucl_source")
+        write_json_atomic(sidecar, {"source": spec["template"], "target": target}, trailing_newline=True)
+    return True
 
 
 # 區塊職責：定位 UCL_SkillConfigAsset 的「真實 source of truth」目錄。
@@ -507,6 +571,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="Also install manifest optional=true skills (default-OFF) in a full install.")
     parser.add_argument("--link", action="store_true", help="Use symlink/junction instead of copy (Claude only).")
     parser.add_argument("--uninstall", action="store_true", help="Remove previously installed UCL skills.")
+    parser.add_argument("--entry-docs", action="store_true", help="Install the target's managed agent entry document only.")
     parser.add_argument("--dry-run", action="store_true", help="Print actions without changing files.")
     parser.add_argument("--quiet", action="store_true", help="Suppress per-file logs.")
     parser.add_argument("--project-root", help="Override host project root detection.")
@@ -520,23 +585,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.target == "antigravity":
         skills_dst_root = project_root / ".agents" / "skills"
         
-        # 區塊職責：清理舊版 Antigravity rules 目錄，讓 Antigravity skill 根只保留目前鏡像。
-        # 物理意義：Antigravity 讀 .agents/skills；遺留的 .agents/rules 不是目前載入來源。
-        # 數值影響：只刪除帶 .ucl_source marker 的 UCL 舊規則，不會碰使用者自行建立的規則。
-        legacy_rules_dir = project_root / ".agents" / "rules"
-        if legacy_rules_dir.is_dir():
-            for md_file in legacy_rules_dir.glob("*.md"):
-                marker = legacy_rules_dir / f"{md_file.name}.ucl_source"
-                if marker.is_file():
-                    log.info(f"Removing legacy antigravity rule: {md_file}")
-                    if not args.dry_run:
-                        md_file.unlink()
-                        marker.unlink()
-            try:
-                if not any(legacy_rules_dir.iterdir()) and not args.dry_run:
-                    legacy_rules_dir.rmdir()
-            except OSError:
-                pass
+        # 區塊職責：保留 Antigravity 的 rules 注入目錄，不在 skill 安裝時清理。
+        # 物理意義：Antigravity session 會自動讀取 .agents/rules/*.md 並注入 user rules；它不是舊版輸出。
+        # 數值影響：此分支只同步 .agents/skills，絕不刪除 .agents/rules 及其 sidecar，避免移除正在生效的規則。
     elif args.target == "codex":
         skills_dst_root = project_root / ".codex" / "skills"
     else:
@@ -545,6 +596,9 @@ def main(argv: list[str] | None = None) -> int:
     log.info(f"UCL_Core: {UCL_CORE_ROOT}")
     log.info(f"Project root: {project_root}")
     log.info(f"Target dir:  {skills_dst_root}")
+
+    if args.entry_docs:
+        return 0 if install_entry_doc(args.target, project_root, log, args.force_overwrite) else 2
 
     discovered = discover_skills()
     if not discovered:

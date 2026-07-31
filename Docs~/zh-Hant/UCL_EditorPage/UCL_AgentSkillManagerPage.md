@@ -99,7 +99,35 @@ target 狀態列在 Stale 時會**點名未同步的 skill 清單**（`⚠ 未�
 
 ---
 
-## 7. 跨專案使用
+## 7. Agent Entry Documents（2026-07-31）
+
+管理頁的 **Agent Entry Documents** 區塊管理 agent 實際載入的入口檔，與 skills 的 `.ucl_installed` 狀態分開判斷。
+
+| Target | CLI flag | manifest template | consumer destination |
+|---|---|---|---|
+| Claude Code | `--target claude --entry-docs` | `ClaudeTemplate/CLAUDE.md` | `CLAUDE.md` |
+| Codex | `--target codex --entry-docs` | `CodexTemplate/AGENTS.md` | `AGENTS.md` |
+| Antigravity | `--target antigravity --entry-docs` | `AntigravityTemplate/Antigravity_Rules.md` | `.agents/rules/UCL_Core_Entry.md` |
+
+來源與目的地只由 `ucl_core:AgentEntry/AgentTemplateManifest.json` 定義。UI 會直接將範本中的
+`{{UCL_CORE_PATH}}` 代入相對 UCL_Core 路徑後比對完整內容：缺檔為 `NotInstalled`；內容不同或
+缺少 `.ucl_source` sidecar 為 `Stale`；完整一致才是 `Synced`。一般 **Sync Entry** 保留不同既有檔並輸出 diff；
+**Force Sync** 才會覆寫。
+
+內容比對會先把 `CRLF`／`CR` 正規化為 `LF`，與 Python `read_text` 的換行語意一致；Git `autocrlf` 不會造成無法同步的幻影 `Stale`。
+
+入口文件需要 host project 與 UCL_Core 位於同一磁碟區，才能產生可攜的相對路徑。判定會先完整正規化並統一根目錄分隔符；`D:\` 與 `D:/` 是同一磁碟，不會被誤判為跨碟。
+
+### 摺疊式版面與 Control Panel 入口（2026-07-31）
+
+管理頁使用與 `UCL_ControlPanelPage` 相同的 `UCL_GUILayout.Toggle` 摺疊模式，將概覽、Skills 同步、
+Agent Entry Documents、Per-Agent × Per-Skill 與其他設定分開記憶顯示狀態。收合只減少繪製，不會停止狀態刷新。
+
+Control Panel 的 **🧩 Agent Skills** 區塊保留「開啟 Agent Skill Manager」按鈕在摺疊 header 外層；因此不必展開說明就能進入管理頁。
+
+---
+
+## 8. 跨專案使用
 
 本頁住在 `UCL_Core/`，跟 `Skills~/` 同源；UCL_Core 換到別專案 → 自動跟著走。Per-project EditorPrefs 確保多專案使用時不串味。
 

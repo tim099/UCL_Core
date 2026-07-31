@@ -43,12 +43,62 @@ GIT_ROOT = _find_git_root_by_walk(Path(__file__)) or Path(__file__).resolve().pa
 - `Tools~/AgentCommands/<tool>.py` → `parents[0]=AgentCommands`、`parents[1]=Tools~`、`parents[2]=UCL_Core 根`。
 - 新 python 工具一律沿用此 `__file__`-relative 範式。
 
-### Agent（你自己在 shell 裡）
-別假設 `UCL_Core/...`。先 Glob 定位：
+### Agent（你自己在 shell 裡）— resolve once per session
+
+別假設 `UCL_Core/...`（**專案根通常沒有這個目錄**）。開 session 時解析一次、之後重用：
+
+```bash
+# 有序候選 → 第一個命中即用；找不到才 fallback glob（且排除 Library/）
+for c in "Assets/Plugins/UCL_Core" "Assets/UCL/UCL_Core" "CardGame/Assets/UCL/UCL_Core" "UCL_Core"; do
+  [ -f "$c/Tools~/AgentCommands/awakening.py" ] && UCL_CORE="$c" && break
+done
+[ -z "$UCL_CORE" ] && UCL_CORE=$(find . -path ./Library -prune -o   -path "*/Tools~/AgentCommands/awakening.py" -print 2>/dev/null | head -1 | sed 's|/Tools~.*||')
+echo "UCL_CORE=$UCL_CORE"          # 之後一律用 "$UCL_CORE/Tools~/AgentCommands/<tool>.py"
 ```
-Glob **/awakening.py   →   Assets/Plugins/UCL_Core/Tools~/AgentCommands/awakening.py
+
+**PowerShell 等價版**（Codex 端此 repo 走 PS；Sirius 2026-07-31 指出上面那段 bash 貼上會直接失敗）：
+
+```powershell
+# 有序候選 → 第一個命中即用
+$UCL_CORE = $null
+foreach ($c in @("Assets/Plugins/UCL_Core","Assets/UCL/UCL_Core","CardGame/Assets/UCL/UCL_Core","UCL_Core")) {
+    if (Test-Path "$c/Tools~/AgentCommands/awakening.py") { $UCL_CORE = $c; break }
+}
+# fallback：受限 glob，排除 Library
+if (-not $UCL_CORE) {
+    $hit = Get-ChildItem -Recurse -Filter awakening.py -ErrorAction SilentlyContinue |
+           Where-Object { $_.FullName -notmatch '[\\/]Library[\\/]' -and $_.FullName -match 'Tools~' } |
+           Select-Object -First 1
+    if ($hit) { $UCL_CORE = (Resolve-Path -Relative $hit.Directory.Parent.Parent.FullName) }
+}
+# 解析失敗必須明確報錯 —— 不可靜默 fallback 到別的檔
+if (-not $UCL_CORE) { throw "UCL_Core 解析失敗：找不到 Tools~/AgentCommands/awakening.py" }
+"UCL_CORE=$UCL_CORE"    # 之後一律用 "$UCL_CORE/Tools~/AgentCommands/<tool>.py"
 ```
-（本 session 開頭就撞過：直接跑 `UCL_Core/Tools~/...` 找不到，Glob 一次就定位。）
+
+> [!WARNING]
+> PS 的 `-notmatch` 吃的是 **.NET regex** 不是萬用字元 —— 寫 `'\Library\'` 會被解析成非法跳脫
+> `\L`（`Unrecognized escape sequence`），`Where-Object` 每筆都失敗 → **fallback 誤報找不到檔**。
+> 必須寫成字元類 `'[\\/]Library[\\/]'`（同時涵蓋 `\` 與 `/` 分隔符）。
+> （Sirius 2026-07-31 實跑抓到；summit 原版沒跑過就交件 —— 已寫未驗的 code 不算完成。）
+
+> [!NOTE]
+> 兩版**語意必須一致**（有序候選 → 受限 fallback → 失敗即報錯）。改一版記得改另一版 ——
+> 這是本檔唯一的雙實作點，沒有機制綁，只能靠這行註記。
+
+> [!WARNING]
+> **不要用全 repo unique-glob 當主要手段**（Sirius 2026-07-31 提案討論結論）：
+> 大專案慢，且 `Library/` 下可能有快取副本造成多重命中 → 「唯一命中」的前提會假。
+> 有序候選命中率高又便宜；glob 只當最後 fallback，**且必須排除 `Library/`**。
+
+> [!IMPORTANT]
+> **解析失敗要明確報錯，不可靜默 fallback 到別的檔。**
+> 2026-07-31 血證：Sirius 走早安儀式時把專案根的 `AgentCommands/Tools/morning_status.py`
+> 當成 ritual 工具跑 —— 它跑得起來、不報錯、但什麼 persona 狀態都沒寫。
+> 對策分三層（同日拍板 A）：
+> ①「被誤認的那支自己聲明身分」（morning_status.py 已加 argparse epilog 警語）
+> ② 本 skill 為唯一解析權威（不要每個 skill 各寫一套 preflight —— 那是同一語意 N 處實作）
+> ③ 呼叫端只需驗「解析出的檔存在」，不存在就停下報錯
 
 ## 🏷️ 描述「基於 UCL_Core 的相對路徑」（install-path 無關）
 

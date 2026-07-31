@@ -82,7 +82,35 @@ namespace UCL.Core.EditorLib.Page
 
             DrawAgentCmdAdminSection();
             GUILayout.Space(8);
+            DrawAgentSkillManagerSection();
+            GUILayout.Space(8);
             DrawAgentCommandsPathSection();
+        }
+
+        // ===========================================================
+        // 區塊職責：提供 Agent Skill Manager 的控制台入口。
+        // 物理意義：skills 與 agent entry documents 的同步屬於日常專案設定，從控制台可直接到管理頁。
+        // 數值影響：按鈕只 push Editor page；不會自行執行安裝器、覆寫入口檔或寫入設定。
+        // ===========================================================
+        void DrawAgentSkillManagerSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "AgentSkillManagerFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🧩 Agent Skills</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟 Agent Skill Manager", UCL_GUIStyle.GetButtonStyle(new Color(0.65f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_AgentSkillManagerPage.Create();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                GUILayout.Label("管理 Claude Code、Codex、Antigravity 的 Skills 與 Agent Entry Documents 同步狀態。"
+                    + "入口檔不同內容預設保留，只有在管理頁明確按 Force Sync 才覆寫。", UCL_GUIStyle.LabelStyle);
+            }
         }
 
         // ===========================================================

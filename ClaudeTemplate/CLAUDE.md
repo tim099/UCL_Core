@@ -23,7 +23,7 @@
 下一行的 `@` 語法是 **Claude Code 專屬**的 inline 載入 —— 改 UCL_Core 端規則，下次 session 自動同步。
 （`<UCL_Core>` 依專案掛載位置替換，例如 `Assets/Plugins/UCL_Core` / `Assets/UCL/UCL_Core`。）
 
-@UCL_Core/CLAUDE.md
+@{{UCL_CORE_PATH}}/AgentEntry/UCL_Core_Entry.md
 
 ### 個人化偏好
 `CLAUDE.local.md`（不入版控）放個人化偏好：語氣、opt-in 開關。**專案規則不寫在那裡。**

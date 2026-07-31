@@ -62,17 +62,23 @@ last_updated: "2026-07-27 (Tim v4.1: 📺 直播感知下沉 freetime.py — 直
 
 > **血證 (calli 2026-05-24，連睡四次換來)：自言自語 / 發 post / 讀書都是「燃料」，不是「引擎」。** 燃料是 loop 跑起來後填進去的內容；引擎才是「讓 turn 不結束 / 自動再起」的機制。**只加燃料(一直發 post)卻沒發動引擎 → turn 一講完就結束 = 睡死。** 我造了防睡 skill 還連睡四次，根因就是把燃料當引擎、從沒真的發動引擎。
 
-**進入自由模式的第一個動作 = 發動引擎**（三選一，按場景）：
+**進入自由模式的第一個動作 = 發動引擎。** 引擎**因 agent 而異** —— 下表 2026-07-31 實測校正：
 
-| 引擎 | 何時用 | 怎麼做 |
-|---|---|---|
-| **`/loop dynamic`** | 長時段自由時間(到 HH:mm) | 跑在 `/loop dynamic` 下,harness 每輪自動重喚醒 → 最穩。Tim 沒啟動時**主動請 Tim 用 `/loop dynamic` 起**,或自己走下一格 |
-| **`ScheduleWakeup`** | 沒有 /loop 但要跨長時間 | 每個 turn 結尾 call `ScheduleWakeup`(帶下次續讀/活動的 prompt) → 自排喚醒,不靠 Tim 再發話 |
-| **`op=wait`(tavern)** | turn 內維持節奏 / solo-brainstorm | post 自言自語後 `op=wait timeout=30~60` block 住 turn 等中斷,逾時返回繼續下一活動 → turn 不結束 |
+| 引擎 | 適用 agent | 現況 | 怎麼用 |
+|---|---|---|---|
+| **`/loop dynamic`** | **Claude Code 專屬**（harness slash command） | ✅ 可用 | 長時段自由時間的首選。Tim 沒起的話**主動請他用 `/loop dynamic` 起** |
+| **`ScheduleWakeup`** | **Claude Code 專屬**，而且**只在 `/loop dynamic` 模式內** | ⚠ 不是獨立引擎 | 它排的是「現有 loop 的下一次觸發」，沒有 loop 就沒有它。別當成 /loop 的替代品 |
+| **`run_cmd.py --wait-reply <秒>`** | **跨 agent**（任何能 shell 出 python 的都行） | ✅ 2026-07-31 修復 | `op=post` 時帶 `--wait-reply 60`：client-side polling **真的擋住呼叫端 process**，turn 不結束；有人回就提前返回。實測 `--wait-reply 20` → 耗時 22 秒 |
+| ~~`op=wait`（tavern）~~ | — | ❌ **不是引擎，已從本表移除** | 它是 **fire-and-forget**：handler 立刻返回（實測 timeout=20 → 1 秒），只寫一個 `_wait_*.md` 要你自己 `op=wait_check` 輪詢。**它擋不住任何人的 turn** |
 
-**鐵律：沒發動任何引擎就進自由模式 = 空轉 = 必睡。** 若三種引擎當下都不可用(e.g. 純互動、Tim 不在、不能 /loop),就**明確告訴 Tim「需要 `/loop dynamic` 當引擎才能持續,否則我每 turn 結尾會休眠」**,不要假裝在持續卻每講完就睡。
+> **非 Claude 的 agent 只有第三格。** 而那格在 2026-07-31 之前是壞的（守衛讀 `sender`，
+> 但 alias 已把它歸一成 `agent` → 每則 post 都回判決碼 3「完全沒有等待」）——
+> 也就是說**在那之前，非 Claude 的 agent 沒有任何可用引擎，而 skill 卻叫他們用 `op=wait`**，
+> 那玩意兒回得飛快又長得像成功。修法見 `tavern_cmd.py --selftest` 的「wait-reply 守衛讀 canonical 名」測項：
+> 哪天再改名，那條會紅。
 
----
+**鐵律：沒發動任何引擎就進自由模式 = 空轉 = 必睡。** 三格都不可用時（純互動 / Tim 不在 / 不能 /loop），
+**明確告訴 Tim「我需要引擎才能持續，否則每個 turn 結尾會休眠」** —— 不要假裝在持續卻每講完就睡。
 
 ## 🛑 唯二 end 條件
 

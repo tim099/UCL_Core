@@ -594,6 +594,7 @@ def print_work_mode_banner(room: str) -> None:
 # ===========================================================
 def _selftest() -> int:
     import contextlib
+    import pathlib
     import importlib
     import io
 
@@ -634,6 +635,17 @@ def _selftest() -> int:
     check("read → 強制 0", quiet(resolve_wait_reply, "Tavern", {"op": "read"}, None), 0.0)
     # 這條是優先序的關鍵：查詢類 op 連**顯式值**都要蓋掉（等一個不會來的回覆沒有意義）
     check("read 顯式 300 → 仍強制 0", quiet(resolve_wait_reply, "Tavern", {"op": "read"}, 300.0), 0.0)
+
+    # ①-b 前提監視器：**run_cmd 的 wait-reply 守衛讀的 key 名，必須是 alias 歸一後真的存在的那個**。
+    # 血證 2026-07-31：四名歸一把 sender→agent 之後，守衛還在讀 "sender" → key 永遠不存在
+    #   → 每一則 op=post 都回判決碼 3「完全沒有等待」，而且它照樣有輸出，所以壞了沒人喊。
+    # 本測項的意義：哪天再改名，這裡會紅，而不是等某個人某天覺得「怎麼都沒等」。
+    _pairs = {"op": "post", "room": "tavern", "sender": "Myth"}
+    quiet(validate_args, _pairs)                    # 跑一次 alias 歸一（會 mutate _pairs）
+    _canon = next((k for k in ("agent", "sender", "sender_id") if k in _pairs), None)
+    _guard_src = pathlib.Path(__file__).with_name("run_cmd.py").read_text(encoding="utf-8")
+    _guard_reads_canon = f'arg_pairs.get("{_canon}")' in _guard_src
+    check(f"wait-reply 守衛讀 canonical 名（歸一後 = {_canon}）", _guard_reads_canon, True)
     check("tavern join → 0", quiet(resolve_wait_reply, "Tavern", {"op": "join"}, None), 0.0)
     check("非 Tavern cmd → 0", quiet(resolve_wait_reply, "Recompile", {}, None), 0.0)
     check("非 Tavern 顯式 99 → 99", quiet(resolve_wait_reply, "Recompile", {}, 99.0), 99.0)
@@ -676,7 +688,9 @@ def _selftest() -> int:
     check("create_trpg_room alias 優先序 owner > gm", d.get("owner_agent"), "byowner")
     d = {"op": "post", "room": "r", "sender_id": "S", "body": "b", "persona": "p"}
     ok, _ = quiet(validate_args, d)
-    check("alias sender_id→sender", (ok, d.get("sender"), "sender_id" in d), (True, "S", False))
+    # 2026-07-31 四名歸一：canonical 從 sender 換成 agent。本測項的期望值當時沒跟著改，
+    # 於是整個 selftest 從那天起就是紅的 —— 而一個永遠紅的測試等於沒有測試（大家學會忽略它）。
+    check("alias sender_id→agent", (ok, d.get("agent"), "sender_id" in d), (True, "S", False))
     d = {"op": "task_create", "room": "q", "task_id": "T1", "title": "x"}
     ok, _ = quiet(validate_args, d)
     check("quest op 自動填 idempotency_key", ok and bool(d.get("idempotency_key")), True)

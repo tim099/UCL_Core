@@ -801,7 +801,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         and getattr(args, "wait_reply", 0) > 0
     ):
         room = arg_pairs.get("room", "")
-        my_sender = arg_pairs.get("sender", "")
+        # 區塊職責：取「我是誰」——**必須讀 alias 歸一後的 canonical 名**。
+        # 血證（2026-07-31）：2026-07-31 四名歸一把 sender/sender_id/agent_id 全改成 agent 之後，
+        #   這裡還在讀 "sender" → 那個 key 永遠不存在 → 每一則 op=post 都回判決碼 3
+        #   「完全沒有等待」。守衛讀錯欄位 = 守衛永遠不成立，而且它「照樣有輸出」所以沒人喊。
+        #   保留舊名當 fallback：alias 表若哪天沒歸一到，至少不要整個瞎掉。
+        my_sender = (arg_pairs.get("agent")
+                     or arg_pairs.get("sender")
+                     or arg_pairs.get("sender_id") or "")
         wait_seconds = float(args.wait_reply)
         sender_filter = getattr(args, "wait_reply_from", None)
         # 區塊職責：判決碼往上傳 —— 舊版把 wait_for_tavern_reply() 的回傳直接丟掉

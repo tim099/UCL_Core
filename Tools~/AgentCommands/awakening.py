@@ -1655,6 +1655,10 @@ def cmd_morning(args: argparse.Namespace) -> int:
         if _st["old_wake_count"] != _st["new_wake_count"]:
             print(f"   ⚠ wake_count {_st['old_wake_count']} → {_st['new_wake_count']} "
                   f"（改由收尾信數推導；舊值是 registry 快取）")
+        if _st.get("new_consolidated") is not None and _st["new_consolidated"] != _st["old_consolidated"]:
+            print(f"   ⚠ 見林書籤 last_consolidated_wake "
+                  f"{_st['old_consolidated']} → {_st['new_consolidated']}"
+                  f"（換算到新編號；不換算的話 gap 會變負數，濃縮提醒從此靜默失效）")
 
     # ④ fork（可選）：以 preferred 為母體開新分身並改喚醒它
     chosen, decision = preferred, "preferred"
@@ -2275,12 +2279,27 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
     for tmp, dst in staged:
         tmp.rename(dst)
     new_wc = wake_letter_count(persona)
+    old_lc = new_lc = None
     if persona in reg.get("personas", {}):
-        reg["personas"][persona]["wake_count"] = new_wc
+        pd = reg["personas"][persona]
+        pd["wake_count"] = new_wc
+        # 見林書籤要跟著換算到新編號 —— 否則 last_consolidated_wake 留在舊編號空間,
+        # 而 gap = wake_count - last_consolidated 會變負數, 永遠不可能 >= 門檻,
+        # 於是**長期記憶濃縮從此再也不會被提醒**, 而且完全無聲
+        # (實測 apex-one: 書籤 25、新 wake_count 15 → gap -10)。
+        # 換算法: 書籤本質是「濃縮到哪個時間點」, 那個時間戳沒有被重編號影響 ——
+        # 數一數 wakes/ 裡 written_at 不晚於它的信有幾封, 那個數就是新編號下的書籤。
+        old_lc = pd.get("last_consolidated_wake")
+        lc_at = pd.get("last_consolidated_at")
+        if lc_at and old_lc:
+            new_lc = sum(1 for f in list_wake_letters(persona)
+                         if (_read_frontmatter_field(f, "written_at") or "") <= lc_at)
+            pd["last_consolidated_wake"] = new_lc
         if own_reg:
             save_registry(reg)
     return {"moved": moved, "skipped": skipped, "renumbered": renumbered,
-            "old_wake_count": old_wc, "new_wake_count": new_wc}
+            "old_wake_count": old_wc, "new_wake_count": new_wc,
+            "old_consolidated": old_lc, "new_consolidated": new_lc}
 
 
 def cmd_migrate_letters(args: argparse.Namespace) -> int:

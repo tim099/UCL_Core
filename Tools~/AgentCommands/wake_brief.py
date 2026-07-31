@@ -85,12 +85,18 @@ def _newest_self_letter(aw, persona):
     數值影響：只認 `type: letter_to_future_self` —— 排除同夾的 peer_letter_from_persona
              （同事寄來的信）與 `_` 開頭的機械產物（`_wake_brief.md` 若誤入，會因為
              '_' 的字元序大於數字而被當成「最新」，那是個安靜的災難）。
+
+    ⚠ **必須連 `wakes/` 一起掃**（2026-07-31）：收尾信改版之後，遷移後新寫的
+      goodnight 信**只存在於 `wakes/`**，頂層不會有副本。只掃頂層的話，
+      `sync_latest_pointer` 會拿一封更舊的信去覆蓋正確的 `_latest.md`，
+      而且印一行「已校正」—— **自癒器倒退見樹，還宣稱自己修好了。**
+      實例：apex-one `_latest.md` 指 07-31（正確），只掃頂層撈到的是 07-29。
     """
     d = aw._LETTERS_DIR_TPL / persona
     if not d.exists():
         return None
     best, best_ts = None, ""
-    for f in d.iterdir():
+    for f in list(d.iterdir()) + aw.list_wake_letters(persona):
         if not f.is_file() or f.suffix != ".md" or f.name.startswith("_"):
             continue
         if aw._read_frontmatter_field(f, "type") != "letter_to_future_self":

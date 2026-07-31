@@ -1648,7 +1648,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
     #     這件事沒有任何需要人判斷的輸入 —— 信按 written_at 升冪，第一封就是 wake #1 ——
     #     所以由工具在早安時自動補齊，不再要求「醒來的人先去跑一行指令」
     #     （那正是這波在拆的模式：把該工具判的事丟給剛醒的人）。
-    #     判準是 wakes/ 目錄不存在；目錄本身就是「已遷移」的旗標，故只會跑一次。
+    #     判準見 letters_migration_pending —— **不在這裡復誦**（早一版這行寫「wakes/ 目錄
+    #     不存在」，判準改成內容比對之後就變成假話，而且它還指名該函式，兩邊互相打臉）。
     #     ⚠ 它會改寫 registry.wake_count（多數 persona 是變動不是確認），所以印出前後值。
     if letters_migration_pending(preferred):
         _st = migrate_letters_to_wakes(preferred, reg)
@@ -2282,10 +2283,13 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
               目錄即「已遷移」標記，所以 0 封信也要把 wakes/ 建出來。
 
     ⚠ **複製不是搬移**(Tim 2026-07-31): 頂層原檔原地保留不動，wakes/ 放的是改名後的副本。
-      代價是同一封信存在兩處(見 list_episodic_letters 的去重)，換到的是這次遷移完全可逆 ——
-      真的搞砸了，刪掉 wakes/ 就回到原狀，不必從 git 撈。
-      也因為原檔留著，「頂層還有沒有收尾信」不再能當遷移完成的判準，
-      只有 wakes/ 目錄存在與否可以 —— 這正是 letters_migration_pending 現在的判準。
+      代價是同一封信存在兩處(見 list_episodic_letters 的去重)。
+
+      ⛔ **但「刪掉 wakes/ 就回到原狀」只對遷移進去的那批成立** ——
+      遷移之後 write_letter 寫的新收尾信**只存在於 wakes/，頂層沒有副本**，
+      刪掉目錄等於把它從工作目錄抹掉(git 裡若已 commit 還撈得回, 但那已經不是「不必從 git 撈」了)。
+      本註解早一版寫著無條件可逆, 是假的 —— apex-one 2026-07-31 用她自己那封信抓到。
+      要退回請改成「只刪掉有頂層原檔的那些」, 或先把只存在於 wakes/ 的信搬回頂層。
     """
     own_reg = reg is None
     if own_reg:

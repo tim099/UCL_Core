@@ -84,8 +84,16 @@ def _section_lines(title: str, lines: list) -> list:
 #            與其讓醒來的人讀完一句話就沒了，不如把前幾天一起端上來。
 #   數值影響：只影響 §5 顯示，不動任何檔案；合併來源一律是收尾信本身，不重新詮釋內容。
 SHORT_LETTER_LINES = 10      # 少於這個行數 → 判定「太短」，啟動往前合併
-MERGE_MAX_EXTRA = 4          # 最多往前再撈幾封（不含最新那封）
-MERGE_STOP_LINES = 100       # 累積超過這個行數就停 —— 目的是補足，不是把整本日記搬過來
+MERGE_MAX_EXTRA = 9          # 最多往前再撈幾封（不含最新那封）
+                             #   9 是對齊見林：一份見林濃縮 10 封，所以合併上限也是 10 封
+                             #   （最新 1 + 往前 9）—— 剛好不超過一個見林單位（Tim 2026-07-31）
+MERGE_STOP_LINES = 100       # 累積超過這個行數就**不再往下撈**
+                             #   ⚠ 語意是「還要不要再撈下一封」，不是總量上限：
+                             #   判斷在 append 之後，所以撞線那封會整封進去，總行數可能遠超 100
+                             #   （apex-one 2026-07-31 造 fixture 驗出：3+200 → 總量 203）。
+                             #   刻意保留這個行為 —— 若改成「超過就不收」，遇到
+                             #   「3 行短信 + 一封 200 行長信」會變成一封都不補，
+                             #   讀的人只剩那 3 行，比超量更糟。**至少補一封**是底線。
 
 
 def _letter_body_lines(aw, path) -> int:
@@ -439,6 +447,7 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
         # 最新那封太短 → 往前合併更早的收尾信（Tim 2026-07-31）。
         # 「今天沒什麼事，晚安」這種簽到式的信撐不起明天的接續，補到夠讀為止。
         letters = _recent_self_letters(aw, persona)
+        used = []
         if letters and _letter_body_lines(aw, letters[0]) < SHORT_LETTER_LINES:
             # ① 先決定要撈哪幾封（由新往舊逐封累積，行數決定停在哪）
             used = [letters[0]]
@@ -447,7 +456,12 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
                 used.append(older)
                 total += _letter_body_lines(aw, older)
                 if total > MERGE_STOP_LINES:
-                    break     # 補足即止 —— 目的是讓明天讀得下去，不是搬整本日記
+                    break     # 至少補一封, 超過就不再往下撈（語意見上方常數註解）
+        # len(used) > 1 才算真的有合併。只有一封信可補（新 persona 第一次晚安就寫得短）時，
+        # 早一版仍印「已往前合併 1 封」而實際一封都沒補 ——
+        # **顯示層說謊比排版難看嚴重**：讀的人會以為自己手上有更多上下文
+        # （apex-one 2026-07-31 fixture E-1 抓到）。
+        if len(used) > 1:
             # ② 倒序重組成「最早 → 最新」再寫（Tim 2026-07-31）：
             #    讀的人是在補一段連續的日子，時序推進才讀得順；
             #    由新往舊倒帶會讓因果反過來（先看到結果、再看到起因）。

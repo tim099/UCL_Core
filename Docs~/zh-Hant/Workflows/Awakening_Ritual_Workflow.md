@@ -57,8 +57,9 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 Step 2. Read <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
         morning 末尾自動重生成，九區塊，順序即優先序：
           §0 身分卡 / §1 見根 / §2 見叢 / §3 見森 / §4 見林 / §5 見樹（最新 letter 全文；
-          最新那封內文少於 10 行時自動往前合併更早的收尾信，最多再補 4 封、
-          累積超過 100 行即止 —— 一句話的簽到式晚安信撐不起明天的接續）
+          最新那封內文太短時自動往前合併更早的收尾信 —— 一句話的簽到式晚安信
+          撐不起明天的接續。門檻與上限見 wake_brief.py 頂部三個常數，
+          本檔不復誦數字；上限對齊見林一個單位（最新 1 + 往前 9 = 10 封））
           §6 記憶維護狀態 / §7 待辦收件匣（全房間 inbox，標房間 id）
           §8 酒館 catch-up（peek，不推進 cursor）/ §9 今日動作清單
         主檔上限 2000 行；溢出的非必讀區塊整段移進 _wake_brief_part2.md（不砍內容）。

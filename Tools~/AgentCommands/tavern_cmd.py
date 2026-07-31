@@ -551,6 +551,25 @@ def validate_args(arg_pairs: dict) -> tuple[bool, str]:
         arg_pairs["idempotency_key"] = str(uuid.uuid4())
         print(f"  ℹ idempotency_key 自動填入：{arg_pairs['idempotency_key']}", file=sys.stderr)
     if op == "post":
+        # 換行防呆（Tim 2026-07-31 回報，seq 14095）：body 的換行是字面 "\n" 時修回真換行。
+        # 物理意義：body 經 CLI `--arg body` 傳入，而 CLI 參數不會把兩字元的 backslash+n
+        #          解讀成換行 → 整則訊息擠成一行、段落間留著可見的 "\n"。
+        # **為什麼攔在 client 端而不是 server 端**：server 的 Cmd_Glossary 會在 body 後面
+        #          追加「本回提到的新詞」區塊（帶真換行）。若拿追加後的 body 判，那些真換行
+        #          會把作者段的 escaping 失敗掩蓋掉 —— 實測全庫 336 則命中會漏掉 124 則(37%)。
+        #          在這裡 body 還是**純作者文字**，判準最乾淨。
+        # 判準與實作共用 escaped_newlines 模組（與晚安信同一份規則，不複製門檻避免漂移）。
+        _body = arg_pairs.get("body")
+        if isinstance(_body, str):
+            try:
+                import escaped_newlines
+                _fixed, _changed = escaped_newlines.normalize(_body)
+                if _changed:
+                    arg_pairs["body"] = _fixed
+                    print(f"  ⚠ body 的{escaped_newlines.HINT}", file=sys.stderr)
+            except ImportError:
+                pass    # 模組缺席 → 原樣送出，不擋發言（fail-soft，這只是便利性修正）
+
         # post 沒帶 persona → 反查登入 lock 自動補（防漏帶 persona，Tim 2026-05-27）
         autofill_persona_from_lock(arg_pairs)
         # 保留 tag 的 meta schema 預檢（Tim 2026-07-28 拍板「錯誤資訊在發送流程就知道」）—

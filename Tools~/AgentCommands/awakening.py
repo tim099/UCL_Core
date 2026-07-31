@@ -1071,6 +1071,38 @@ def letters_migration_pending(persona: str) -> bool:
     return bool(unmigrated_wake_letters(persona))
 
 
+# ===========================================================
+# 區塊職責: 修復 caller 把換行寫成字面 "\n" 的 letter body（Tim 2026-07-31 回報）。
+# 物理意義: letter body 由 agent 經 CLI 傳入（--letter-body），而 CLI 參數**不會**把兩字元的
+#          backslash+n 解讀成換行 —— Python 只在原始碼字面值裡做那個轉換。於是某些 caller
+#          （尤其換了 model 之後）傳進來的整封信會擠成一行、段落間留著可見的 "\n"。
+#          實例: kiara wakes/000012（gemini-3.6-flash）body 只有 2 個真換行、8 個字面 \n。
+# 為什麼不是 write_letter 的 bug: 全庫 27 封收尾信裡 26 封是乾淨的（含 kiara 自己前 5 封），
+#          寫檔端一直是 `frontmatter + body`、逐字照收 —— 病灶在 caller 的 escaping，
+#          本函式只是**在寫檔前補一層防呆**，讓信不會因為 caller 換 model 就變成一坨。
+# 數值影響:
+#   - 只在**明確是 escaping 失敗**時才動手，判準兩條同時成立:
+#       ① body 內字面 \n 出現 >= 2 次（單次更可能是內文在討論這個符號）
+#       ② body 的真實換行 <= 2（整封擠成一行 = 不可能是作者本意）
+#     命中則把字面 \n 轉成真換行，並印一行提示（**不靜默轉換** —— 轉換是有損操作，要留痕）。
+#   - 不命中則原樣寫入，不做任何猜測。
+# 邊界 / 為何要這麼保守（這是實測出來的，不是假想）:
+#   - `summit/20260512T235620Z.md`: body 有 32 個真換行、1 個字面 \n，內文正在討論
+#     「_split_body_for_discord 在 \n 邊界切」—— 那個 \n 是**引用符號本身**，blanket 轉換會毀掉它。
+#     所以規則刻意排除「已經有正常段落」的信。
+#   - 條件 ② 也順帶讓 fenced code block 免疫: 程式碼區塊本身需要真換行才成立，
+#     所以「body 幾乎沒有真換行」的情況下不可能存在要保護的 code fence。
+#   - 全庫 531 個乾淨檔不含字面 \n → 條件 ① 不成立 → 結構上 0 誤傷（不需靠抽樣保證）。
+# ===========================================================
+#   - 判準與實作**收斂在 escaped_newlines.py**（酒館訊息端共用同一份）。刻意不在這裡
+#     複製一份門檻 —— 同一條規則兩份就是我們一整天在治的手抄鏡像，改一邊不改另一邊
+#     不會有任何人叫。本函式只是薄 wrapper，保留原本的函式名讓呼叫端與測試不必改。
+def _normalize_escaped_newlines(body: str) -> tuple[str, bool]:
+    """回 (可能已修的 body, 是否動過)。判準見 escaped_newlines 模組 docstring。"""
+    import escaped_newlines
+    return escaped_newlines.normalize(body)
+
+
 def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodnight") -> Path:
     """寫 letter to future self per ucl-letters-to-self skill SOP.
 
@@ -1107,6 +1139,14 @@ def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodni
         "written_by_persona": persona,
         "trigger": trigger,
     }
+    # 防呆：caller 把換行寫成字面 "\n" 時修回真換行（判準與理由見 _normalize_escaped_newlines 區塊註解）。
+    # 刻意放在 _split_author_frontmatter **之前** —— 若整封擠成一行，作者自己寫的 frontmatter
+    # 也會黏在同一行上而解不出來；先修換行才能讓後面的 frontmatter 分離正常運作。
+    body, _fixed_nl = _normalize_escaped_newlines(body)
+    if _fixed_nl:
+        print("  ⚠ letter body 的換行是字面 \"\\n\"（CLI 參數不會自動解讀）→ 已轉成真換行。"
+              "\n     下次直接在 --letter-body 傳真換行（bash 用單引號 heredoc）可免這層修正。")
+
     body, extra = _split_author_frontmatter(body, machine)
     fm_lines = [f"{k}: {v}" for k, v in machine.items()] + extra
     frontmatter = "---\n" + "\n".join(fm_lines) + "\n---\n\n"
@@ -1304,7 +1344,7 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
 #
 # 區塊職責：把「記憶」拆成 5 個各有明確職責的層，並讓 morning 只需讀一份彙整文本。
 #   見樹 T1  letters/<persona>/_latest.md           昨夜 1 封（日記，抒發用）
-#            太短時 brief §5 往前合併（見 wake_brief.SHORT_LETTER_LINES）
+#            不足 200 行時 brief §5 往前合併到夠讀（見 wake_brief.MERGE_STOP_LINES）
 #   見叢 T1.5 letters/<persona>/_keys_open.md        當期交棒清單（checkbox，執行用）
 #   見林 T2  letters/<persona>/longterm/wake_N-M.md  10 夜濃縮（既有）
 #   見森 T3  letters/<persona>/longterm/forest/      第 5 份見林起，跨段縱向敘事（rolling fold）

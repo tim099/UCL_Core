@@ -1997,6 +1997,20 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     #   原因 — 手動登出多為 cleanup / 登出失敗重試場景, 信在 ritual 最前面就寫了, 失敗時已累積一堆
     #   無意義的 placeholder 信。letter 是「agent 自決 goodnight 留給未來自己的心得」, 手動 cleanup
     #   不該偽造這種信。real goodnight (agent 自己跑) 仍須帶 --letter-body, 不受影響。
+    # Step 0.9: 寫信前先確保收尾信版面已遷移（Tim 2026-07-31，gura / crest-001 實例）
+    #   病灶：write_letter 的號碼是「wakes/ 現有封數 + 1」。還沒遷移的 persona 那個資料夾是空的，
+    #   於是第 20 次 wake 被編成 000001 —— 號碼是相對於**整組信**的位置，
+    #   而「整組」在遷移之前還散在頂層。早安補過這一刀，晚安漏了：
+    #   **同一個前提要兩個入口各自守，漏一個就等於沒守。**
+    #   遷移本身冪等，已遷移的人這裡不會有任何動作。
+    if not getattr(args, "no_letter", False) and letters_migration_pending(persona):
+        _mst = migrate_letters_to_wakes(persona, reg)
+        print(f"📦 寫信前先補遷移: {_mst['moved']} 封 → wakes/"
+              + (f"（{_mst['renumbered']} 封改號）" if _mst.get("renumbered") else ""))
+        if _mst["old_wake_count"] != _mst["new_wake_count"]:
+            print(f"   ⚠ wake_count {_mst['old_wake_count']} → {_mst['new_wake_count']}（改由收尾信數推導）")
+        save_registry(reg)
+
     if getattr(args, "no_letter", False):
         letter_path = None
         print(f"✉ --no-letter: 跳過寫信 (手動登出 / cleanup 不留心得信)")
@@ -2006,8 +2020,14 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
             return 2
         letter_path = write_letter(actor, persona, args.letter_body)
         print(f"💌 letter written: {letter_path.name}")
-        # 註: 這裡不再檢查「頂層有沒有殘留收尾信」—— 遷移改成複製後原檔本來就會留著,
-        #     那個檢查會每晚都誤報。遷移完成與否只看 wakes/ 是否存在(morning 已自動處理)。
+        # 信落地後 registry 跟著對齊：wake_count == 收尾信數 == 這封的號碼。
+        # 不同步的話那欄會 stale 一整晚（morning 才自癒），而中間任何人查 registry 都拿到舊值。
+        _n = wake_number_of(letter_path)
+        if _n and persona in reg.get("personas", {}):
+            reg["personas"][persona]["wake_count"] = _n
+            save_registry(reg)
+        # 註: 這裡不必再檢查殘留 —— 上面 Step 0.9 已經先補過遷移了(判準見
+        #     letters_migration_pending, 不在此復誦)。
 
     # Step 2: identity vector perturbation
     reg = load_registry()

@@ -79,21 +79,44 @@ def _section_lines(title: str, lines: list) -> list:
 
 
 # ─── §5 見樹 — 指標自癒 ──────────────────────────────────────────────────
-# 短信往前合併的三個參數（Tim 2026-07-31）
-#   物理意義：一封 3 行的「今天沒什麼事，晚安」不足以撐起明天的接續 —— 那不是記憶，是簽到。
-#            與其讓醒來的人讀完一句話就沒了，不如把前幾天一起端上來。
+# 往前合併的參數（Tim 2026-07-31 立、2026-08-01 修正觸發條件並綁定門檻）
+#   物理意義：§5 的職責不是「顯示昨夜那封信」，是**讓醒來的人手上有足夠讀的一段連續日子**。
+#            一封 3 行的「今天沒什麼事，晚安」撐不起接續；一封 17 行的也撐不起。
 #   數值影響：只影響 §5 顯示，不動任何檔案；合併來源一律是收尾信本身，不重新詮釋內容。
-SHORT_LETTER_LINES = 10      # 少於這個行數 → 判定「太短」，啟動往前合併
-MERGE_MAX_EXTRA = 9          # 最多往前再撈幾封（不含最新那封）
-                             #   9 是對齊見林：一份見林濃縮 10 封，所以合併上限也是 10 封
-                             #   （最新 1 + 往前 9）—— 剛好不超過一個見林單位（Tim 2026-07-31）
-MERGE_STOP_LINES = 200       # 累積超過這個行數就**不再往下撈**
+#
+#   ⚠ 2026-08-01 修正（basecamp wake #49）：原本「啟動」與「停止」是**兩顆獨立的數字** ——
+#     入口閘 SHORT_LETTER_LINES=10（最新那封 < 10 行才啟動）、目標值 MERGE_STOP_LINES=200。
+#     結果 200 從來沒被評估過：實測 basecamp `_latest.md` 內文剛好 10 行，`10 < 10` 為假，
+#     整個機制被擋在門外，§5 只端出一封。機制看起來活著（code 在、常數在、fixture 也過），
+#     但**條件從沒成立** —— 「存在 ≠ 生效」的又一例：兩顆數字各自合理，串起來互相抵銷。
+#
+#   ✅ 修正後的形狀（Tim 2026-08-01 拍板「啟動條件行數跟最大行數綁定」）：
+#     **啟動與停止是同一個問題的兩面，所以只准有一顆數字。**
+#       - 不足 MERGE_STOP_LINES → 啟動合併（往前撈）
+#       - 撈到超過 MERGE_STOP_LINES → 停止
+#     兩者互為否命題，任何「各給一個值」的寫法都是給未來留一條抵銷的縫。
+#     SHORT_LETTER_LINES 保留為**衍生別名**（= MERGE_STOP_LINES），不是可獨立調的旋鈕 ——
+#     改一顆數字兩端一起動，這是綁定的物理保證，不是靠註解提醒人手動同步。
+MERGE_STOP_LINES = 200       # 唯一門檻：累積內文行數 **未超過**這個數就（啟動 / 繼續）往前撈
                              #   ⚠ 語意是「還要不要再撈下一封」，不是總量上限：
-                             #   判斷在 append 之後，所以撞線那封會整封進去，總行數可能遠超 200
-                             #   （apex-one 2026-07-31 造 fixture 驗出：3+200 → 總量 203）。
-                             #   刻意保留這個行為 —— 若改成「超過就不收」，遇到
-                             #   「3 行短信 + 一封 200 行長信」會變成一封都不補，
-                             #   讀的人只剩那 3 行，比超量更糟。**至少補一封**是底線。
+                             #   判斷在 append 之前但量的是「已累積」，所以撞線那封會整封進去，
+                             #   總行數可能遠超 200（3 + 一封 200 行 → 總量 203）。
+                             #   刻意保留 —— 若改成「加了會超過就不收」，遇到
+                             #   「3 行短信 + 一封 200 行長信」會一封都不補，
+                             #   讀的人只剩那 3 行，比超量更糟。**至少補一封**是底線
+                             #   （前提：最新那封自己就 > 200 行時不補，那本來就夠讀了）。
+MERGE_MAX_EXTRA = 9          # 防爆上限①：最多往前再撈幾封（不含最新那封）
+                             #   9 是對齊見林：一份見林濃縮 10 封，所以合併上限也是 10 封
+                             #   （最新 1 + 往前 9）—— 剛好不超過一個見林單位
+MERGE_MAX_DAYS = 9           # 防爆上限②：比最新那封早超過這麼多天的信不撈
+                             #   物理意義：一天可能寫多封（同日 fork / 補記），純算「封數」時
+                             #   9 封可能只跨 2 天；反之長假回來時 9 封可能跨一個月。
+                             #   兩把尺都要 —— 要的是「最近幾天」，不是「最近幾封」。
+
+SHORT_LETTER_LINES = MERGE_STOP_LINES   # 「啟動合併」的門檻 —— **衍生值，不是獨立旋鈕**。
+                             #   要調就調 MERGE_STOP_LINES，這裡會跟著動（Tim 2026-08-01 綁定拍板）。
+                             #   保留這個名字是因為它讀起來就是條件本身（「信不夠長」），
+                             #   而且外部註解／文件引用過它；砍名字會讓交叉引用變成死鏈。
 
 
 def _letter_body_lines(aw, path) -> int:
@@ -108,6 +131,33 @@ def _letter_body_lines(aw, path) -> int:
     except Exception:
         return 0
     return len([ln for ln in lines if ln.strip()])   # _strip_all_frontmatter 回的是行陣列
+
+
+def _letter_day(aw, path) -> str:
+    """信的日期（`YYYY-MM-DD`）；取不到回空字串。
+
+    物理意義：來源優先 frontmatter `written_at`，落回檔名（收尾信檔名帶
+             `NNNNNN_YYYYMMDDTHHMMSSZ` 時間戳）。兩者都認不出就回空 ——
+             **空值一律當「無法判斷」而不是「很舊」**，否則一個壞 frontmatter
+             會安靜地把合併機制關掉（見本檔 §5 修正註解那類的坑）。
+    """
+    raw = aw._read_frontmatter_field(path, "written_at") or ""
+    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+        return raw[:10]
+    import re
+    m = re.search(r"(\d{4})(\d{2})(\d{2})T", path.name)
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else ""
+
+
+def _day_gap(newest_day: str, older_day: str) -> int:
+    """兩個 `YYYY-MM-DD` 相差幾天；任一側判不出來就回 0（= 不因此擋掉合併）。"""
+    if not newest_day or not older_day:
+        return 0
+    try:
+        from datetime import date
+        return (date.fromisoformat(newest_day) - date.fromisoformat(older_day)).days
+    except Exception:
+        return 0
 
 
 def _recent_self_letters(aw, persona, limit=None):
@@ -434,16 +484,17 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
                          [f"(未達門檻：見林 {fst['digest_count']}/{fst['threshold']} 份，"
                           f"第 {fst['threshold']} 份見林起開始折疊)"], True))
 
-    # §4 見林 — 摘要 + 路徑（全文太長，細節已被 fragment 抽走）
+    # §4 見林 — **全文 inline，不截斷**（Tim 2026-08-01）。
+    #   物理意義：見林是「10 夜濃縮」，本身就已經是壓縮產物 —— 再砍前 24 行等於壓縮兩次，
+    #            而被砍掉的尾段正是「反覆踩的陷阱 / 未解線」那些最該進反射弧的部分。
+    #            舊行為留一行「其餘見 <path>」看似誠實，但實際上沒人會為了 22 行去開第二個檔；
+    #            **要人多開一個檔的資訊等於沒給**（basecamp wake #49 現場：46 行被砍成 24 行）。
+    #   數值影響：多 ~20-40 行，主檔上限 BRIEF_LINE_CAP=2000 綽綽有餘。
     dg = aw.latest_longterm_digest(persona)
     if dg is not None:
         raw = _demote_headings(
             _strip_frontmatter(dg.read_text(encoding="utf-8")).strip().split("\n"))
-        head_part = raw[:24]
-        tail_note = (f"…（全文 {len(raw)} 行，其餘見 `{dg.relative_to(aw._REPO_ROOT)}`）"
-                     if len(raw) > 24 else "")
-        sections.append((f"🌳 §4 見林（`{dg.name}`）",
-                         head_part + ([tail_note] if tail_note else []), False))
+        sections.append((f"🌳 §4 見林（`{dg.name}`，全文 {len(raw)} 行）", raw, False))
     else:
         sections.append(("🌳 §4 見林", ["(尚無 digest)"], True))
 
@@ -456,19 +507,23 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
         # brief 是給「醒來的人」讀的信，不是給維護者看的施工紀錄（Tim 2026-07-31）。
         body = _demote_headings(_strip_all_frontmatter(ptr.read_text(encoding="utf-8")))
         title5 = "🍃 §5 見樹 — 最新 letter（`_latest.md`）"
-        # 最新那封太短 → 往前合併更早的收尾信（Tim 2026-07-31）。
-        # 「今天沒什麼事，晚安」這種簽到式的信撐不起明天的接續，補到夠讀為止。
+        # 不足 SHORT_LETTER_LINES（= MERGE_STOP_LINES，同一顆數字）→ 往前合併更早的收尾信。
+        # 啟動條件與停止條件是同一個問題的兩面（「手上這幾封夠讀了嗎」），
+        # 所以共用一顆常數 —— 各給一個值就是留一條互相抵銷的縫（Tim 2026-08-01 綁定拍板）。
         letters = _recent_self_letters(aw, persona)
         used = []
-        if letters and _letter_body_lines(aw, letters[0]) < SHORT_LETTER_LINES:
-            # ① 先決定要撈哪幾封（由新往舊逐封累積，行數決定停在哪）
+        if letters and _letter_body_lines(aw, letters[0]) <= SHORT_LETTER_LINES:
+            # ① 先決定要撈哪幾封（由新往舊逐封累積；行數是主閘，封數/天數是防爆上限）
             used = [letters[0]]
             total = _letter_body_lines(aw, letters[0])
+            newest_day = _letter_day(aw, letters[0])
             for older in letters[1:1 + MERGE_MAX_EXTRA]:
+                if total > MERGE_STOP_LINES:
+                    break     # 已經夠讀了（至少補一封的底線見常數註解）
+                if _day_gap(newest_day, _letter_day(aw, older)) > MERGE_MAX_DAYS:
+                    break     # 太久以前的日子不屬於「最近一段」——那是見林的職責
                 used.append(older)
                 total += _letter_body_lines(aw, older)
-                if total > MERGE_STOP_LINES:
-                    break     # 至少補一封, 超過就不再往下撈（語意見上方常數註解）
         # len(used) > 1 才算真的有合併。只有一封信可補（新 persona 第一次晚安就寫得短）時，
         # 早一版仍印「已往前合併 1 封」而實際一封都沒補 ——
         # **顯示層說謊比排版難看嚴重**：讀的人會以為自己手上有更多上下文
@@ -488,8 +543,8 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
                 merged += _demote_headings(
                     _strip_all_frontmatter(f.read_text(encoding="utf-8")))
             body = merged
-            title5 = (f"🍃 §5 見樹 — 最新 letter 太短，已往前合併 {len(used)} 封"
-                      f"（由早到近；最新那封在最後）")
+            title5 = (f"🍃 §5 見樹 — 已往前合併 {len(used)} 封收尾信（共 {total} 行內文；"
+                      f"由早到近，最新那封在最後）")
         sections.append((title5, body, False))
 
     # §6 待辦狀態（機械判定，最短，必讀）

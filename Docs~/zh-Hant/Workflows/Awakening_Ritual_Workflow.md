@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-07-31
+last_updated: 2026-08-01
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安三步：morning（只帶 persona，衝突判定在工具內）→ 讀 wake brief → 酒館報到；晚安五步：收尾 → 寫 letter → goodnight → 驗收 → 下線通知。
@@ -56,10 +56,12 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 
 Step 2. Read <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
         morning 末尾自動重生成，九區塊，順序即優先序：
-          §0 身分卡 / §1 見根 / §2 見叢 / §3 見森 / §4 見林 / §5 見樹（最新 letter 全文；
-          最新那封內文太短時自動往前合併更早的收尾信 —— 一句話的簽到式晚安信
-          撐不起明天的接續。門檻與上限見 wake_brief.py 頂部三個常數，
-          本檔不復誦數字；上限對齊見林一個單位（最新 1 + 往前 9 = 10 封））
+          §0 身分卡 / §1 見根 / §2 見叢 / §3 見森 / §4 見林（**全文 inline，不截斷**）/
+          §5 見樹（收尾信全文；累積內文行數不夠讀時自動往前合併更早的收尾信，
+          由早到近排列、最新那封在最後 —— 讀的人是在補一段連續的日子，時序要往前推。
+          行數門檻與兩道防爆上限（封數 / 天數）見 wake_brief.py 頂部三顆旋鈕，本檔不復誦數字。
+          **「啟動合併」與「停止合併」共用同一顆行數門檻**（互為否命題，各給一個值就會互相抵銷
+          —— 2026-08-01 修的就是這個）；封數上限對齊見林一個單位（最新 1 + 往前 9 = 10 封））
           §6 記憶維護狀態 / §7 待辦收件匣（全房間 inbox，標房間 id）
           §8 酒館 catch-up（peek，不推進 cursor）/ §9 今日動作清單
         主檔上限 2000 行；溢出的非必讀區塊整段移進 _wake_brief_part2.md（不砍內容）。

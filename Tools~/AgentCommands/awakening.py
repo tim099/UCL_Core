@@ -49,7 +49,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
               見林寫入後自動: 歸檔當期見叢 + 提示抽 fragment + 檢查見森門檻.
     root-index --persona X        見根: 掃 fragments/ 機械重建 _root_index.md (手改會被覆寫)
     keys --persona X [--add "…"]  見叢: append (隨時可加, 不限儀式) / 列出當期清單
-    brief --persona X             重生成 _wake_brief.md (五層彙整單一可直讀文本; morning 自動跑)
+    brief --persona X             重生成 _wake_brief.md (身分+五層記憶+營運層單一文本; morning 自動跑)
 
 範例:
   python awakening.py morning --persona basecamp --agent claude-code --model claude-sonnet
@@ -897,86 +897,10 @@ def fork_persona(reg: dict, source: str, target: str,
     return target
 
 
-def auto_fork_codename(reg: dict, source: str) -> str:
-    """
-    挑 Hololive Myth pool 內未被佔用的 codename 給 auto-fork 用.
+# 註（2026-07-31）：select_persona（80/20 自決）與 auto_fork_codename（Myth pool 自動挑名）
+#   隨 persona 顯式必填 / explicit-online-fork 廢除一併移除 —— 兩者都是「工具替人選身分」，
+#   而身分決定現在一律由使用者顯式給。fork 命名走顯式 --fork-name。
 
-    用途: explicit-persona + 該 persona 已在線時 (explicit-online-fork T01, Tim 2026-05-14 拍板),
-    不勞 agent 自決, CLI 直接從 MYTH_POOL 挑下一個未用 codename.
-
-    Fallback: pool 5 個全用光 → 走 <source>-myth-<n> 後綴 (從 2 起跳).
-    """
-    used = set(reg["personas"].keys())
-    for name in MYTH_POOL:
-        if name not in used:
-            return name
-    n = 2
-    while f"{source}-myth-{n}" in used:
-        n += 1
-    return f"{source}-myth-{n}"
-
-
-# ─── T05 simplified persona selection (2026-05-14, Zeta + 大小姐 拍板) ────
-# Q3 80/20 random override 機制保留但 trigger condition 改 B (wake_count==0).
-# 廢棄 last_session_keys history — session 概念在 T05 後不再以 "chat" 為單位
-# (claim_identity = "<agent>-<persona>" 直接是 session_key, 一旦持有就是同 session).
-# Random override 池過濾「當下 online」personas — 由 active lock files 判斷 (避免 collision-by-random).
-
-
-def select_persona(preferred: str, reg: dict, agent: str,
-                   rng: random.Random | None = None,
-                   force_random: bool = False,
-                   session_key: str | None = None) -> tuple[str, str]:
-    """
-    T05 spec (2026-05-14):
-      - 不存在 → 100% create new (caller 處理 register)
-      - 存在 + wake_count > 0 → 100% honor preferred (skip random)
-      - 存在 + wake_count == 0 (首次喚醒) → 80% use preferred / 20% random override
-        到 same-agent 且當下 offline 的 other persona
-
-    Trigger 由 Q3 「per-session-key first-time」改 「per-persona first-wake (wake_count==0)」.
-    理由: T05 session_key 直接 = (agent,persona) 之後, 「first time per session」概念失效
-    (持有 persona 即是該 session), 改 wake_count==0 保留「真新 persona 才 fire」的原意.
-    Production 下幾乎不 fire (多數 morning 喚已 wake_count>0 的既有 persona) — 機制保留休眠.
-
-    Random override 池過濾「當下 online」personas — 走 read_lock(name) is None 判斷,
-    避免抽中已上線者導致 lock conflict-by-random (Zeta 2026-05-14 提案).
-
-    force_random=True (--force-random flag, QA / debug) → bypass wake_count gate.
-
-    回 (chosen_persona, decision_path) 其中 decision_path ∈ {"new", "preferred", "override"}
-    """
-    rng = rng or random
-    if preferred not in reg["personas"]:
-        return preferred, "new"
-
-    p = reg["personas"][preferred]
-    wake_count = p.get("wake_count", 0)
-
-    # T05.4 trigger B: 只在 wake_count == 0 才考慮 random override
-    should_check_random = force_random or wake_count == 0
-    if not should_check_random:
-        return preferred, "preferred"
-
-    if force_random or rng.random() < OVERRIDE_PROBABILITY:
-        # 找 same-agent + 當下 offline (無 active lock) 的其他 persona
-        candidates = []
-        for name, q in reg["personas"].items():
-            if q.get("agent") != agent or name == preferred:
-                continue
-            other_lock = read_lock(name)
-            if other_lock is not None and not is_lock_expired(other_lock):
-                # 已上線 — skip (避免 random-induced collision)
-                continue
-            candidates.append(name)
-        if candidates:
-            chosen = rng.choice(candidates)
-            return chosen, "override"
-        # 沒 offline candidates → 退回 preferred
-    return preferred, "preferred"
-
-
-# ─── Tavern post (走 TavernClient SDK) ──────────────────────────────────
 def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = None,
                 room: str = "tavern", session_token: str | None = None,
                 timeout: float | None = None) -> bool:
@@ -1013,6 +937,43 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
 
 
 # ─── Letter to future self ──────────────────────────────────────────────
+def _split_author_frontmatter(body: str, machine: dict) -> tuple:
+    """把作者自己寫的 frontmatter 從 body 拆出來，回 (去頭的 body, 要併入的額外欄位行)。
+
+    區塊職責：**單一 letter 只該有一份 frontmatter**（Tim 2026-07-31 抓到）。
+    物理意義：letter 模板（ucl-letters-to-self 七段格式）教作者自己寫一份 frontmatter，
+             而 write_letter 又會再包一層 —— 於是每封信開頭都疊了兩坨幾乎一樣的 header，
+             差別只在機器版時間精確到毫秒、作者版多了 session_context / intended_reader。
+             不是誰寫錯，是**兩邊都以為自己負責那塊**。
+    數值影響：機器欄位（type / actor / written_at / written_by_persona / trigger）以本函式為準；
+             作者的其餘欄位（session_context / intended_reader / 自訂欄）原樣併入。
+             作者若寫了同名欄且值不同 → 保留成 `<key>_as_written`（**不靜默丟掉他寫的東西**）。
+    邊界：body 不以 --- 開頭 → 原樣回傳，extra 為空。
+    """
+    s = body.lstrip("\n")
+    if not s.startswith("---"):
+        return body, []
+    end = s.find("\n---", 3)
+    if end == -1:
+        return body, []                      # 有頭無尾 = 不是 frontmatter，別亂切
+    block = s[3:end].strip("\n")
+    rest = s[end + 4:].lstrip("\n")
+    extra = []
+    for line in block.split("\n"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        k, sep, v = line.partition(":")
+        if not sep:
+            continue
+        k, v = k.strip(), v.strip()
+        if k in machine:
+            if v and v != str(machine[k]):
+                extra.append(f"{k}_as_written: {v}")   # 機器版勝出，但作者版留痕
+            continue
+        extra.append(f"{k}: {v}")
+    return rest, extra
+
+
 def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodnight") -> Path:
     """寫 letter to future self per ucl-letters-to-self skill SOP.
 
@@ -1033,15 +994,17 @@ def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodni
 
     ts = utcnow_compact()
     path = letters_dir / f"{ts}.md"
-    frontmatter = f"""---
-type: letter_to_future_self
-actor: {actor}
-written_at: {utcnow_iso()}
-written_by_persona: {persona}
-trigger: {trigger}
----
-
-"""
+    # 機器欄位（provenance）— 這幾個以本函式為準，作者寫的同名欄不採用
+    machine = {
+        "type": "letter_to_future_self",
+        "actor": actor,
+        "written_at": utcnow_iso(),
+        "written_by_persona": persona,
+        "trigger": trigger,
+    }
+    body, extra = _split_author_frontmatter(body, machine)
+    fm_lines = [f"{k}: {v}" for k, v in machine.items()] + extra
+    frontmatter = "---\n" + "\n".join(fm_lines) + "\n---\n\n"
     with open(path, "w", encoding="utf-8") as f:
         f.write(frontmatter + body + "\n")
 
@@ -1165,13 +1128,13 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
     當 fallback（brief 生成失敗 / 想直接看原檔時用），但 agent 的預設動作只需 Read brief。
     """
     st = consolidation_status(persona, reg, threshold)
-    # 見根/見叢/見森/見林/見樹 五層彙整成單一可直讀文本（機械生成，手改會被覆寫）
+    # §0 身分 + 見根/見叢/見森/見林/見樹 + §7-9 營運層，彙整成單一可直讀文本（機械生成，手改會被覆寫）
     try:
         write_root_index(persona)                      # 先刷新見根索引（brief 會 inline 它）
         brief = write_wake_brief(persona, reg, p, threshold)
         print(f"\n## 📖 記憶接續 — 讀這一份就好")
         print(f"   → `{brief.relative_to(_REPO_ROOT)}`  "
-              f"(五層彙整: 見根→見森→見林→見叢→見樹; 每次 morning 重生成)")
+              f"(§0 身分 → §1-6 記憶 → §7-9 營運; 每次 morning 重生成)")
         part2 = brief.parent / "_wake_brief_part2.md"
         if part2.exists():
             print(f"   ↳ 續讀檔(超出主檔上限已分檔, 視情況再讀): `{part2.relative_to(_REPO_ROOT)}`")
@@ -1225,7 +1188,8 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
 # ─────────────────────────────────────────────────────────────────────────
 FOREST_DIGEST_THRESHOLD = 5      # 第 N 份見林起開始折見森（digest 計數，非 wake 計數）
 ROOT_INDEX_SHOW_LIMIT = 12       # 見根索引「必讀」區塊顯示上限；其餘明說隱藏筆數（禁靜默截斷）
-BRIEF_LINE_CAP = 1000            # wake brief 主檔行數上限（Tim 2026-07-28 由 250 放寬）
+# （BRIEF_LINE_CAP / BRIEF_CATCHUP_COUNT 已隨 wake brief 生成搬到 wake_brief.py；
+#   本檔下方保留 BRIEF_LINE_CAP 別名供 cmd_brief 顯示用，避免兩處各定義一份會漂的數字）
 FRAG_TYPE_ORDER = ["lesson", "unsolved", "relation", "identity", "philosophy"]
 
 
@@ -1251,22 +1215,6 @@ def keys_open_path(persona: str) -> Path:
 
 def keys_archive_dir(persona: str) -> Path:
     return _LETTERS_DIR_TPL / persona / "keys"
-
-
-def _strip_frontmatter(text: str) -> str:
-    """去掉開頭 --- ... --- 區塊（brief inline 時不重複貼 frontmatter）。"""
-    m = re.match(r"^---\n.*?\n---\n", text, re.S)
-    return text[m.end():] if m else text
-
-
-def _demote_headings(lines: list) -> list:
-    """把 inline 進 brief 的原檔標題降一階（h1 去掉、h2→h3…）— 避免與 brief 的 §區塊標題撞階層。"""
-    out = []
-    for l in lines:
-        if l.startswith("# "):
-            continue
-        out.append("#" + l if l.startswith("## ") else l)
-    return out
 
 
 def parse_fragment(path: Path) -> dict:
@@ -1479,316 +1427,108 @@ def write_forest(persona: str, body: str) -> Path:
 
 
 # ─── Wake brief — morning 的單一可直讀文本 ──────────────────────────────
-def _section_lines(title: str, lines: list) -> list:
-    return [f"## {title}", ""] + lines + [""]
+# ─── wake brief（已抽離到 wake_brief.py）────────────────────────────────
+# 區塊職責：本檔只保留「呼叫入口」——組裝與排版全在 wake_brief.py（Tim 2026-07-31：這支太肥）。
+# 設計取捨：把本模組自己當參數傳過去（sys.modules[__name__]），避免 wake_brief 反過來
+#          import awakening 造成循環匯入 / 第二份模組實例（狀態讀寫仍是本檔的地盤）。
+# 自我定位再 import：以 script 執行時 sys.path[0] 剛好是本目錄，但**被別的工具 import 時不是**
+# （tavern_cmd.py 就會 import_module("awakening")）。不補這兩行 = 換個 cwd 就 ModuleNotFoundError。
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import wake_brief as _wb                       # noqa: E402 — 必須在 sys.path 補完之後
+
+BRIEF_LINE_CAP = _wb.BRIEF_LINE_CAP            # 對外沿用舊名（cmd_brief 顯示用）
 
 
 def build_wake_brief(persona: str, reg: dict, p: dict,
                      threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> tuple:
-    """組裝 wake brief → (主檔文字, 續讀檔文字 or None)。
-
-    區塊職責：把五層記憶收成一份文本，agent 只 Read 一份即完成「見根→森→林→叢→樹」。
-    數值影響：主檔上限 BRIEF_LINE_CAP 行；超出的區塊**整段移到續讀檔**（不砍內容），
-      主檔末尾列出可續讀清單 → 不丟資訊、又不強迫每次全吃（Tim 2026-07-28 拍板）。
-    """
-    st = consolidation_status(persona, reg, threshold)
-    fst = forest_status(persona)
-    head = ["---", "type: wake_brief", f"persona: {persona}",
-            f"wake_count: {p.get('wake_count', 0)}", f"generated_at: {utcnow_iso()}",
-            "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
-            "---", "",
-            f"# 🌅 Wake Brief — {persona} wake #{p.get('wake_count', 0)}", "",
-            "> 讀這一份即完成五層記憶接續（見根→見森→見林→見叢→見樹）。",
-            "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。", ""]
-
-    sections = []   # (title, lines, essential)
-
-    # §1 見根 — 機械索引 inline（必讀，最短）
-    if load_fragments(persona):
-        idx = _strip_frontmatter(render_root_index(persona)).strip().split("\n")
-        # 去掉索引自己的 h1、並把 h2 降成 h3 — 避免 inline 後與 brief 的 §區塊標題撞階層
-        idx = [("#" + l if l.startswith("## ") else l) for l in idx if not l.startswith("# ")]
-        sections.append((f"🌱 §1 見根 — 必讀關鍵記憶（`{root_index_path(persona).name}`）",
-                         idx, True))
-    else:
-        sections.append(("🌱 §1 見根 — 必讀關鍵記憶",
-                         ["(尚無 fragment；下次見林時抽取)"], True))
-
-    # §2 見叢 — 當期交棒清單（未勾銷全列 + 最近 3 條已勾銷）
-    todo, done = keys_entries(persona)
-    kl = [f"- [ ] {t}" for t in todo] or ["(當期無未勾銷事項)"]
-    if done:
-        kl += [""] + [f"- [x] {d}" for d in done[-3:]]
-    sections.append((f"🌿 §2 見叢 — 當期交棒清單（{len(todo)} 未完 / {len(done)} 已完）", kl, True))
-
-    # §3 見森 — 最新一代縱向敘事 inline
-    if fst["latest_forest"] is not None:
-        fbody = _strip_frontmatter(fst["latest_forest"].read_text(encoding="utf-8")).strip().split("\n")
-        sections.append((f"🌲 §3 見森 gen{fst['forest_count']}（`{fst['latest_forest'].name}`）",
-                         fbody, False))
-    else:
-        sections.append(("🌲 §3 見森",
-                         [f"(未達門檻：見林 {fst['digest_count']}/{fst['threshold']} 份，"
-                          f"第 {fst['threshold']} 份見林起開始折疊)"], True))
-
-    # §4 見林 — 摘要 + 路徑（全文太長，細節已被 fragment 抽走）
-    dg = latest_longterm_digest(persona)
-    if dg is not None:
-        raw = _demote_headings(
-            _strip_frontmatter(dg.read_text(encoding="utf-8")).strip().split("\n"))
-        head_part = raw[:24]
-        tail_note = (f"…（全文 {len(raw)} 行，其餘見 `{dg.relative_to(_REPO_ROOT)}`）"
-                     if len(raw) > 24 else "")
-        sections.append((f"🌳 §4 見林（`{dg.name}`）",
-                         head_part + ([tail_note] if tail_note else []), False))
-    else:
-        sections.append(("🌳 §4 見林", ["(尚無 digest)"], True))
-
-    # §5 見樹 — 昨夜 letter 全文
-    lt = _LETTERS_DIR_TPL / persona / "_latest.md"
-    if lt.exists():
-        sections.append((f"🍃 §5 見樹 — 昨夜 letter（`_latest.md`）",
-                         _demote_headings(
-                             _strip_frontmatter(lt.read_text(encoding="utf-8")).strip().split("\n")),
-                         False))
-
-    # §6 待辦狀態（機械判定，最短，必讀）
-    todo6 = []
-    if st["overdue"]:
-        todo6.append(f"- ⚠ **見林 OVERDUE**：gap={st['gap']}/{threshold}，"
-                     f"待濃縮 {len(st['pending_letters'])} 封 → "
-                     f"`awakening.py consolidate --persona {persona}`")
-    else:
-        todo6.append(f"- ✓ 見林進度：gap={st['gap']}/{threshold}（上次到 wake {st['last_consolidated_wake']}）")
-    if fst["overdue"]:
-        todo6.append(f"- ⚠ **見森待折**：{fst['pending']} 份新見林未折疊 → "
-                     f"`awakening.py consolidate --persona {persona} --level forest`")
-    elif fst["eligible"]:
-        todo6.append(f"- ✓ 見森已折到第 {fst['folded_digest_count']} 份見林（gen{fst['forest_count']}）")
-    else:
-        todo6.append(f"- ○ 見森未達門檻：見林 {fst['digest_count']}/{fst['threshold']} 份")
-    parent = p.get("forked_from")
-    if parent and p.get("wake_count", 0) == 1:
-        pf = latest_forest(parent) or latest_longterm_digest(parent)
-        if pf is not None:
-            todo6.append(f"- 🧬 fork 初醒：額外讀母 persona '{parent}' 的 "
-                         f"`{pf.relative_to(_REPO_ROOT)}` 接血統")
-    sections.append(("📋 §6 記憶維護狀態", todo6, True))
-
-    # 組裝 + 上限處理：超出上限的「非必讀」區塊整段移進續讀檔
-    main, overflow, used = list(head), [], len(head)
-    moved = []
-    for title, lines, essential in sections:
-        block = _section_lines(title, lines)
-        if essential or used + len(block) <= BRIEF_LINE_CAP:
-            main += block
-            used += len(block)
-        else:
-            overflow += block
-            moved.append(title)
-    if moved:
-        main += ["## 📎 可續讀（超出主檔上限，已分檔不刪內容）", ""]
-        main += [f"- {t}" for t in moved]
-        main += ["", f"→ 續讀檔：`_wake_brief_part2.md`（視情況再讀）", ""]
-    return "\n".join(main), ("\n".join(overflow) if overflow else None)
+    return _wb.build_wake_brief(sys.modules[__name__], persona, reg, p, threshold)
 
 
 def write_wake_brief(persona: str, reg: dict, p: dict,
                      threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> Path:
-    """生成 wake brief 主檔（必要時連帶續讀檔），回主檔路徑。"""
-    main, overflow = build_wake_brief(persona, reg, p, threshold)
-    d = _LETTERS_DIR_TPL / persona
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / "_wake_brief.md"
-    path.write_text(main, encoding="utf-8")
-    part2 = d / "_wake_brief_part2.md"
-    if overflow:
-        part2.write_text(
-            f"---\ntype: wake_brief_part2\npersona: {persona}\ngenerated_at: {utcnow_iso()}\n---\n\n"
-            + overflow, encoding="utf-8")
-    elif part2.exists():
-        part2.unlink()   # 這次沒溢出 → 收掉上次殘留，避免讀到過期續讀檔
-    return path
+    return _wb.write_wake_brief(sys.modules[__name__], persona, reg, p, threshold)
+
 
 
 # ─── Subcommands ────────────────────────────────────────────────────────
 def cmd_morning(args: argparse.Namespace) -> int:
-    """喚醒 ritual: init + fork check + 80/20 select + lock + tavern post."""
-    # 區塊: --strict-persona 跟 --force-random 互斥檢查
-    # 物理意義: strict = 顯式不要 override, force_random = 強制 override, 兩者語意對立
-    if getattr(args, "strict_persona", False) and getattr(args, "force_random", False):
-        print("❌ --strict-persona 跟 --force-random 互斥, 不能同時給", file=sys.stderr)
+    """喚醒 ritual — persona 顯式必填、agent 由綁定反推、已在線即中斷。
+
+    2026-07-31 Tim 拍板重寫。刪掉的三段舊邏輯與理由：
+      - persona 80/20 自決：把身分決定權交給一個「還沒讀記憶的自己」，順序本身就是反的。
+      - same-caller reuse no-op：靜默 no-op 跟「真的醒了」長得一樣；改成撞牆並明說「妳已經在線」。
+      - explicit-online-fork / --strict-persona / --rebind-agent：
+        「顯式打名字 + 已在線」在新規則下是**停**，不是自動生分身；
+        其餘旗標都是剛醒的人替自己簽字的旁路。換綁走後台，不從 ritual 開後門。
+    """
+    reg = load_registry()
+    preferred = args.persona
+    model = args.model
+
+    # ① persona 必須已註冊 —— 打錯字不該變成「幫你建一個新人格」
+    if preferred not in reg.get("personas", {}):
+        print(f"❌ persona '{preferred}' 不存在。", file=sys.stderr)
+        names = sorted(reg.get("personas", {}).keys())
+        print(f"   可選（{len(names)}）: {', '.join(names)}", file=sys.stderr)
+        print("   要開新 persona 走後台「🧬 Persona & Agent 管理頁」，或 --fork-name <NEW> 從既有 persona 分出。",
+              file=sys.stderr)
         return 2
 
-    reg = load_registry()
-    raw_agent = args.agent
-    # Normalize agent name (case-insensitive + alias) per Tim 2026-05-13 拍板
-    # agent-login-case-insensitive T01: Windows 大小寫不敏感, 'Gemini' → 'antigravity'.
-    agent = normalize_agent(reg, raw_agent)
-    model = args.model
-    preferred = args.persona
+    # ② agent 一律反推（registry 查表 = 機械事實，不是自決）
+    p = reg["personas"][preferred]
+    agent = normalize_agent(reg, p.get("agent") or "")
+    if not agent:
+        print(f"❌ persona '{preferred}' 沒有綁定 agent，無法反推。請從後台補上 agent 歸屬。", file=sys.stderr)
+        return 2
     bank_account = resolve_bank_account(reg, agent, model)
-    # T05: session_key = "<agent>-<persona>" (claim identity). process identity 走 PID.
     session_key = compute_session_key(agent, preferred)
 
     print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
-    if agent != raw_agent:
-        print(f"   Agent={agent} (normalized from '{raw_agent}') / Model={model} / Bank={bank_account}")
-    else:
-        print(f"   Agent={agent} / Model={model} / Bank={bank_account}")
-    print(f"   Preferred persona: {preferred}")
+    print(f"   Persona={preferred} / Agent={agent}（由綁定反推）/ Model={model} / Bank={bank_account}")
 
-    # Step 0: Same-persona re-awakening short-circuit (Tim 2026-05-13 v2 — persona-keyed + caller verify)
-    # 規則：preferred persona 已有 active lock + lock 是當前 caller 的 (session_key 對得上)
-    #      → reuse no-op (不 fork / 不 wake_count++ / 不 broadcast).
-    # CRITICAL: 必須檢查 lock 的 session_key 跟當前 caller 一致, 否則 = 別 conversation
-    # 拿同 persona = 該走 Step 1 fork conflict, 不可 reuse 別人的 lock (Zeta QA-6 抓到).
-    #
-    # T05 (2026-05-14, Zeta + 大小姐 拍板): claim/process identity split.
-    #   session_key (lock body) = "<agent>-<persona>" claim identity (clean display)
-    #   claim_origin (lock body) = env_hash proof-of-same-environment (lock_is_mine 用)
-    #   pid (lock body) = 純診斷 (CLI 每次 invoke 都新 PID, 不可靠當 ownership)
-    # 結果: 同 chat 多次 morning → 同 claim_origin → reuse; 跨 IDE / 跨 user 同 persona
-    # → 不同 claim_origin → fork conflict. Multi-chat 同 IDE 不同 persona → T03 session_key 邏輯.
-    my_claim_origin = compute_claim_origin()
-    existing_lock = read_lock(preferred)
-    # lock_is_mine 三重條件:
-    #   (1) lock 存在 (2) 未過期 (3) claim_origin 對得上
-    #   (4) lock.agent == caller agent (防 Zeta dispatch subprocess 之後 claude-code 反過來搶 Zeta persona)
-    lock_is_mine = (existing_lock is not None
-                    and not is_lock_expired(existing_lock)
-                    and lock_claim_origin(existing_lock) == my_claim_origin
-                    and existing_lock.get("agent") == agent)
-
-    # explicit-online-fork (T01, Tim 2026-05-14 拍板): caller 帶 --explicit-persona 顯式指名
-    # 已在線 persona → auto-fork 出新分身 (Hololive Myth pool codename).
-    # 區分 Form 1 (`早安大小姐` 無名字 → idempotent reuse) vs Form 3 (`/ucl-morning <a> <p>`
-    # 顯式指名 → 視作「我要該 persona 的新分身」). 自決名字由 CLI 從 MYTH_POOL 挑下個未用.
-    # CRITICAL: 只在 lock_is_mine (同 caller) 場景觸發 — 跨 caller 仍走 Step 1 (要 --fork-name).
-    target_persona = preferred
-    fork_happened = False
-    if lock_is_mine and preferred in reg["personas"]:
-        if getattr(args, "explicit_persona", False):
-            new_name = auto_fork_codename(reg, preferred)
-            print(f"♻→🌱 '{preferred}' 已在線 (lock_is_mine) + --explicit-persona → auto-fork '{new_name}' (Hololive Myth pool)")
-            target_persona = fork_persona(reg, source=preferred, target=new_name,
-                                          agent=agent, model=model)
-            fork_happened = True
-            print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
-            # fall through to Step 2+
+    # ③ 唯一的中斷條件：該 persona 目前是否在線
+    #    只看「這個 persona 有沒有人在用」——不比對 claim_origin / pid，
+    #    同一個 env 多 persona 並存是常態不是事故（summit 2026-07-31 指出的誤殺風險）。
+    #    過期 lock 不自動豁免：那本來就不該發生，由 Tim 從後台登出（Tim 拍板）。
+    #    檢查對象是「本次真正要佔用的那個 persona」——帶 --fork-name 時是新分身，不是母體。
+    #    （母體在線不該擋 fork：fork 出來的是**另一個** persona，沒有同時登入同一個。）
+    occupy = args.fork_name or preferred
+    occupy_reg = reg["personas"].get(occupy, {})
+    existing_lock = read_lock(occupy)
+    if existing_lock is not None or occupy_reg.get("status") == "online":
+        print(f"⛔ '{occupy}' 目前在線 —— 同一個 persona 不得同時登入兩次，流程中止。", file=sys.stderr)
+        if existing_lock is not None:
+            print(f"   lock: session_key={existing_lock.get('session_key', '?')} "
+                  f"pid={existing_lock.get('pid', '?')} locked_at={existing_lock.get('locked_at', '?')}"
+                  f"{' (已過期)' if is_lock_expired(existing_lock) else ''}", file=sys.stderr)
         else:
-            print(f"♻ same-persona + same-caller re-awakening detected (lock owned by me)")
-            print(f"   reuse policy: 不 fork, 不 wake_count++, 不 re-broadcast")
-            print(f"   若想換 persona → 先跑 goodnight 釋放 lock 再 morning")
-            print(f"   若想 fork 新分身 → 加 --explicit-persona (auto Myth codename)")
-            print(f"")
-            print(f"🌅 Morning ritual (no-op):")
-            print(f"   chosen_persona: {preferred}")
-            print(f"   wake_count:     {reg['personas'][preferred].get('wake_count', '?')} (unchanged)")
-            print(f"   session_locked: {lock_path(preferred)}")
-            print(f"   tavern_post:    SKIPPED (idempotent)")
-            # T07: reuse 場景仍印當前 token (agent 可能 chat 失憶, 需要重撈)
-            reuse_token = (existing_lock or {}).get("session_token", "")
-            if reuse_token:
-                print(f"   🎫 session_token: {reuse_token} (reused — 寫進 lock 跟 _tokens.json)")
-                print(f"      失憶時跑: awakening.py whoami --token {reuse_token}")
-            return 0
+            print("   registry status=online 但查無 lock（上次下線沒走完）", file=sys.stderr)
+        print("   解法：讓它先下線（後台「登入狀態」頁登出，或該 session 跑 goodnight），再重跑。", file=sys.stderr)
+        print("   ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟。", file=sys.stderr)
+        return 2
 
-    # Step 1: Fork conflict check (persona-keyed v2 + caller-aware)
-    # 同 persona 已被**別 caller** lock occupy → 必 fork (要顯式 --fork-name).
-    # 純 registry status=online 沒 lock → stale state (上次 goodnight 沒清), 視作可 reuse, 不 fork.
-    # T05: lock_owned_by_other = claim_origin 不同 (env_hash 不匹配 = 別環境)
-    lock_owned_by_other = (existing_lock is not None
-                            and not is_lock_expired(existing_lock)
-                            and lock_claim_origin(existing_lock) != my_claim_origin)
-    if preferred in reg["personas"]:
-        p = reg["personas"][preferred]
-        if lock_owned_by_other:
-            other_origin = existing_lock.get("claim_origin", "?")
-            other_sk = existing_lock.get("session_key", "?")
-            print(f"⚠ CONFLICT: '{preferred}' 已被別 environment 上線 (claim_origin={other_origin}, session_key={other_sk}) — 需 fork")
-            if not args.fork_name:
-                print(f"❌ --fork-name 必填 (Tim 2026-05-12 拍板規則更新)", file=sys.stderr)
-                print(f"   agent 該自決 fresh codename (山脈隱喻系列, 不帶 fork suffix)", file=sys.stderr)
-                print(f"   範例: crest-001 / ravine / basecamp-east / summit / meadow / plateau", file=sys.stderr)
-                print(f"   重跑: python awakening.py morning --persona {preferred} --fork-name <NEW_NAME> ...", file=sys.stderr)
-                return 2
-            target_persona = fork_persona(reg, source=preferred, target=args.fork_name,
-                                          agent=agent, model=model)
-            fork_happened = True
-            print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
-        elif p.get("status") == "online" and not existing_lock:
-            # Stale state — registry 說 online 但沒 lock = 上次 goodnight 沒走完 / spoof 殘留.
-            print(f"♻ '{preferred}' registry=online 但無 lock (stale) — reclaim, 不 fork")
+    # ④ fork（可選）：以 preferred 為母體開新分身並改喚醒它
+    chosen, decision = preferred, "preferred"
+    fork_happened = False
+    if args.fork_name:
+        chosen = fork_persona(reg, source=preferred, target=args.fork_name,
+                              agent=agent, model=model)
+        fork_happened = True
+        decision = "fork"
+        print(f"🌱 fork '{preferred}' → '{chosen}' "
+              f"(lineage: {' → '.join(reg['personas'][chosen]['fork_lineage'])} → {chosen})")
+        # session_key 要跟著換成「實際佔用的那個 persona」——
+        # 否則 fork 出來的 lock 會掛著母體的名字，之後查 lock 對不上人。
+        session_key = compute_session_key(agent, chosen)
 
-    # Step 2: persona selection
-    # 邏輯優先序:
-    #   (a) fork_happened → explicit conflict resolution, honor target_persona
-    #   (b) --strict-persona flag → manual opt-in, skip random (留向後相容路徑)
-    #   (c) 預設 → select_persona 自動判 same-session re-morning (skip random) vs first time (apply 80/20)
-    # Tim 2026-05-13 校正: random override 只在 session 初始化 apply (per session_key history)
-    if fork_happened:
-        chosen, decision = target_persona, "fork"
-        print(f"✓ using forked '{chosen}' (skip 80/20 — fork is explicit identity intent)")
-    elif getattr(args, "strict_persona", False):
-        chosen, decision = target_persona, "preferred-strict"
-        print(f"🔒 strict mode — honor explicit --persona '{chosen}' (skipped 80/20 random override)")
-    else:
-        chosen, decision = select_persona(target_persona, reg, agent,
-                                           force_random=args.force_random,
-                                           session_key=session_key)
-    if decision == "new":
-        # 不存在 → register new persona (creating fresh)
-        print(f"✨ creating new persona '{chosen}' (per Q2 implicit register)")
-        v = gen_vector()
-        now = utcnow_iso()
-        reg["personas"][chosen] = {
-            "agent": agent, "model": model,
-            "layer_role": f"newly created via morning ritual @ {now}",
-            "wake_count": 0, "status": "offline", "availability": "offline", "last_active": None,
-            "identity_vector": v,
-            "vector_history": [{"at": now, "hash": hash_vector(v),
-                                "delta_mag": 0.0, "trigger": "new_via_morning"}],
-            "fork_lineage": [], "forked_from": None, "forked_at": None,
-            "created_at": now,
-        }
-    elif decision == "override":
-        print(f"🎲 20% random override: 你選 '{target_persona}' 但被拉到 '{chosen}'")
-    else:
-        print(f"✓ using preferred '{chosen}'")
+    p = reg["personas"][chosen]
 
     # Step 3: wake_count++ + set status active
-    p = reg["personas"][chosen]
-    # cross-agent-persona-claim-fix T01 (Tim 2026-05-13 拍板, 方案 A)：
-    # 原 7a99db8 (Zeta 2026-05-12) 加 silent auto-rebind 為解決 fork_persona 沒繼承 caller agent
-    # 的問題, 但 conflates 兩個 case:
-    #   (A) Legitimate re-bind (Zeta 接手 summit, summit 原為 claude-code 主動轉手)
-    #   (B) Accidental cross-agent claim (caller 誤 --agent X --persona Y, Y.agent=Z, X≠Z)
-    # 兩 case 對 code 看起來都是 (persona.agent != caller agent). Silent rebind 等於 assume 永遠是 (A),
-    # 結果 (B) 場景下污染 persona ownership。
-    # 改 reject + 顯式 path (方案 A): caller 必須帶 --rebind-agent 顯式 ack 接手, 否則 exit 2 + hint。
-    if p.get("agent") != agent and not fork_happened:
-        # caller 帶 --fork-name 但 Step 1 沒走 fork (e.g. 沒 lock conflict) → 在這走 fork
-        if args.fork_name:
-            print(f"⚠ Cross-agent claim 但 caller 帶 --fork-name '{args.fork_name}' → fork 新 persona")
-            target_persona = fork_persona(reg, source=chosen, target=args.fork_name,
-                                          agent=agent, model=model)
-            fork_happened = True
-            chosen = target_persona
-            p = reg["personas"][chosen]
-            print(f"   → fresh codename '{target_persona}' (lineage: {' → '.join(reg['personas'][target_persona]['fork_lineage'])} → {target_persona})")
-        elif not getattr(args, "rebind_agent", False):
-            print(f"❌ Cross-agent persona claim 偵測到:", file=sys.stderr)
-            print(f"   persona '{chosen}' 屬於 agent='{p.get('agent')}'", file=sys.stderr)
-            print(f"   但 caller 帶 --agent='{agent}'", file=sys.stderr)
-            print(f"   請顯式選一條 path:", file=sys.stderr)
-            print(f"     (a) --rebind-agent       — 確認接手 (取代 silent rebind)", file=sys.stderr)
-            print(f"     (b) --fork-name <NEW>    — fork 新 persona (保 '{chosen}' 不動)", file=sys.stderr)
-            print(f"     (c) 換別的 persona       — --persona <自家 persona>", file=sys.stderr)
-            return 2
-        else:
-            print(f"⚠ rebind persona '{chosen}' agent: {p.get('agent')} → {agent} (--rebind-agent ack)")
-            p["agent"] = agent
+    # 註（2026-07-31）：cross-agent claim 檢查連同 --rebind-agent 一併移除 ——
+    #   agent 現在是從 persona.agent 反推的，caller 已經沒有「宣稱錯 agent」的管道，
+    #   這個守衛守的是一扇不存在的門。換綁走後台「🧬 Persona & Agent 管理頁」。
     if model and p.get("model") != model:
         p["model"] = model
     p["wake_count"] += 1
@@ -1872,66 +1612,17 @@ def cmd_morning(args: argparse.Namespace) -> int:
     print(f"      enforce mode: {enforce_state} (Tim 從 UCL_LoginStatusPage 切)")
     print(f"      失憶救援: awakening.py whoami --token {new_token}")
 
-    # T06.4 (Plan_Standby_Dispatch_Bartender, 2026-05-14):
-    # morning ritual 結尾 print pending bartender assignments + inbox @mentions
-    # 解 「無法 push 喚醒 Claude Code session」 的 Plan B P0 路徑 — 自然輪詢
-    # 醒來就 catch up 累積的訊息。Robustness: assignments.json / inbox 不存在 → silent skip。
-    _print_pending_for_persona(chosen)
+    # T06.4 的 stdout 版待辦預覽已於 2026-07-31 移除 —— 改由 wake brief §7 落檔（Tim 拍板）。
+    # 兩個理由：① stdout 會被 compact 吃掉，落檔的不會；
+    #          ② 舊版讀的 inbox 路徑（ChatTavern/inbox/<bank>.md）在 2026-07-24「讀取端收斂」
+    #             搬到 rooms/<room>/inbox/ 之後就一直是空目錄，而它 except: pass ——
+    #             於是它「什麼都沒印」跟「真的沒待辦」長得一模一樣，靜默了整整一週。
+    print(f"   📥 待辦 / 收件匣 / 酒館 catch-up → 見 wake brief §7-§8")
 
     # T-LongTermMemory (Tim 2026-06-15): 長期記憶讀取指引 + overdue 整理提醒
     # morning 除昨夜 letter(見樹) 也讀近期長期記憶 digest(見林); gap 過門檻則提示補整理。
     _print_longterm_memory_block(reg, chosen, p)
     return 0
-
-
-def _print_pending_for_persona(persona: str) -> None:
-    """T06.4 — morning ritual 結尾掃 pending assignments + inbox @mentions 給 agent 看。
-
-    讀取兩個來源:
-      1. AgentCommands/ChatTavern/bartender/assignments.json (T06.2 寫入的 pending task)
-      2. AgentCommands/ChatTavern/inbox/<bank_account>.md (跨房 @mention 累積)
-    兩處皆不存在 → silent skip (不擋 ritual)。
-    """
-    # T-PATH-01: 走可 override 資料根
-    assignments_path = _DATA_ROOT / "ChatTavern" / "bartender" / "assignments.json"
-    inbox_dir = _DATA_ROOT / "ChatTavern" / "inbox"
-    pending_for_me = []
-    if assignments_path.exists():
-        try:
-            with open(assignments_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            for entry in data.get("pending", []):
-                if entry.get("target_persona") == persona and entry.get("status", "pending") == "pending":
-                    pending_for_me.append(entry)
-        except Exception:
-            pass   # silent skip; 不擋 ritual
-    if pending_for_me:
-        print(f"\n📬 Pending bartender assignments for '{persona}' ({len(pending_for_me)}):")
-        for e in pending_for_me:
-            print(f"   - [{e.get('assignment_id', '?')}] {e.get('task_body', '?')[:80]}")
-            print(f"     by {e.get('supervisor', '?')} @ {e.get('created_at', '?')}")
-    # inbox @mentions — 任何含 bank_account 命名的檔
-    if inbox_dir.exists():
-        try:
-            reg = load_registry()
-            bank = None
-            for entry in reg.get("personas", {}).values():
-                pass   # bank derived per agent at write_lock time; query reg.agent_banks
-            # 從 lock body 反查 bank_account 的最簡路徑
-            lock = read_lock(persona)
-            if lock:
-                bank = lock.get("bank_account")
-            if bank:
-                inbox_file = inbox_dir / f"{bank}.md"
-                if inbox_file.exists() and inbox_file.stat().st_size > 0:
-                    print(f"\n📨 Inbox for '{bank}' (read full: {inbox_file.relative_to(_REPO_ROOT)}):")
-                    with open(inbox_file, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    # print 前 500 char preview
-                    preview = content[:500] + ("…" if len(content) > 500 else "")
-                    print(preview)
-        except Exception:
-            pass   # silent skip
 
 
 def _infer_caller_agent_family() -> str | None:
@@ -2905,28 +2596,15 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pm = sub.add_parser("morning", help="喚醒 ritual (Cmd_GoodMorning)")
-    pm.add_argument("--agent", required=True, help="e.g. claude-code / antigravity")
-    pm.add_argument("--model", required=True, help="e.g. claude-sonnet / gemini-2.5-pro")
-    pm.add_argument("--persona", required=True, help="preferred persona codename")
+    # 2026-07-31 Tim 拍板：persona 是唯一身分輸入；agent 一律由 persona 綁定反推，不再是參數。
+    # 廢除 --agent / --explicit-persona / --strict-persona / --force-random / --rebind-agent：
+    #   前者讓 caller 有機會宣稱錯身分；後四者都是「剛醒的人自己 ack 自己」的旁路。
+    #   換綁 agent 走後台「🧬 Persona & Agent 管理頁」，不從 ritual 開後門。
+    pm.add_argument("--persona", required=True, help="要喚醒的 persona codename（唯一身分輸入）")
+    pm.add_argument("--model", required=True, help="自報型號 e.g. Opus 5 / gemini-2.5-pro")
     pm.add_argument("--note", default="", help="optional 喚醒 note")
     pm.add_argument("--fork-name", default=None,
-                    help="conflict 時必填: agent 自決 fresh codename (山脈隱喻, 不帶 fork suffix). "
-                         "範例: crest-001 / ravine / basecamp-east / summit")
-    pm.add_argument("--explicit-persona", action="store_true",
-                    help="caller 顯式指名 persona (e.g. /ucl-morning <agent> <persona> Form 3 or "
-                         "早安<X>大小姐 帶名字). 若該 persona 已在線 (lock_is_mine) → auto-fork "
-                         "Hololive Myth pool codename (gura/calli/kiara/ame/ina). 若無 lock → 走 fresh wake. "
-                         "T01 Tim 2026-05-14 拍板, 區分 idempotent reuse (Form 1 無名字) vs 顯式新分身意圖.")
-    pm.add_argument("--force-random", action="store_true",
-                    help="強制走 20% random override (testing/diversity 用)")
-    pm.add_argument("--strict-persona", action="store_true",
-                    help="顯式 --persona 時跳過 20% random override — conversation continuity 場景用 "
-                         "(Zeta 2026-05-13 task: 人類層 conversation 連續性 = persona 連續性). "
-                         "預設仍走 80/20 random (per Q3 spec); 互斥 --force-random.")
-    pm.add_argument("--rebind-agent", action="store_true",
-                    help="顯式 ack cross-agent persona claim (e.g. Zeta 接手 summit 場景). "
-                         "預設行為改成 reject (per cross-agent-persona-claim-fix T01, Tim 2026-05-13 拍板). "
-                         "若 caller 確認要接手該 persona, 帶此 flag rebind persona.agent ← caller --agent.")
+                    help="以 --persona 為母體 fork 一個新 persona 並喚醒它（fork 流程日後重做）")
     pm.set_defaults(func=cmd_morning)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")
@@ -3001,7 +2679,7 @@ def main():
     pkeys.set_defaults(func=cmd_keys)
 
     # wake brief: 手動重生成 (morning 會自動生成; 這支給「改完 fragment 想立刻重讀」用)
-    pbrief = sub.add_parser("brief", help="重生成 wake brief (五層彙整單一文本)")
+    pbrief = sub.add_parser("brief", help="重生成 wake brief (身分+記憶+營運單一文本)")
     pbrief.add_argument("--persona", required=True)
     pbrief.set_defaults(func=cmd_brief)
     pcons.add_argument("--threshold", type=int, default=DEFAULT_CONSOLIDATION_THRESHOLD,

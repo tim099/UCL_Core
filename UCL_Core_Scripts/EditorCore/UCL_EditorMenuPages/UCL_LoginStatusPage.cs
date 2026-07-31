@@ -74,11 +74,8 @@ namespace UCL.Core.EditorLib.Page
 
         // 區塊職責：手動 login 表單 state
         // 物理意義：Tim 輸入 agent + persona 字串, 按 Morning 後 spawn process
-        string m_LoginAgent = "";
         string m_LoginPersona = "";
         string m_LoginModel = "Opus 4.7 1M";
-        bool m_LoginStrictPersona = true;
-        bool m_LoginRebindAgent = false;
         string m_LoginForkName = "";
 
         // 註：手動登出走 awakening.py goodnight --no-letter (Tim 2026-06-14 拍板不寫信) —
@@ -495,8 +492,8 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_LoginAgent = GUILayout.TextField(m_LoginAgent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                    // agent 欄位已移除（Tim 2026-07-31）：agent 由 persona 綁定反推，
+                    // 留一個可自由打字的 agent 欄等於留一條「宣稱錯身分」的路。換綁走 Persona & Agent 管理頁。
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     m_LoginPersona = GUILayout.TextField(m_LoginPersona, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Model"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
@@ -504,8 +501,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 using (new GUILayout.HorizontalScope())
                 {
-                    m_LoginStrictPersona = GUILayout.Toggle(m_LoginStrictPersona, "--strict-persona", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                    m_LoginRebindAgent = GUILayout.Toggle(m_LoginRebindAgent, "--rebind-agent", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    // --strict-persona / --rebind-agent 兩個 toggle 已移除：CLI 端旗標本身廢除了
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.ForkName"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     m_LoginForkName = GUILayout.TextField(m_LoginForkName, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                 }
@@ -550,8 +546,9 @@ namespace UCL.Core.EditorLib.Page
                         // 繪製最左側的「複製」按鈕，寬度設為自動展開（依據文字寬度縮放）。
                         if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
-                            // 當按鈕被點擊時，將對應的 /ucl-morning 指令字串複製到系統剪貼簿中。
-                            GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Agent} {p.Name}";
+                            // 只複製 persona（Tim 2026-07-31）：agent 由 persona 綁定反推，
+                            // 帶 agent 反而讓 caller 有機會宣稱一個跟綁定不符的身分。
+                            GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Name}";
                         }
                         
                         // 計算狀態文字：若該 Persona 當前被 Locked (HasLock 為真)，則加上綠色字體與鎖頭符號。
@@ -622,20 +619,19 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：手動 login — Tim 輸入 agent/persona, 走 ritual 跟 CLI 等價
         void DoMorning()
         {
-            if (string.IsNullOrWhiteSpace(m_LoginAgent) || string.IsNullOrWhiteSpace(m_LoginPersona))
+            // 2026-07-31：persona 是唯一身分輸入；agent 由 awakening.py 從 persona 綁定反推。
+            // --strict-persona / --rebind-agent 已在 CLI 端廢除，這裡不再傳（傳了會 argparse 報錯）。
+            if (string.IsNullOrWhiteSpace(m_LoginPersona))
             {
-                Debug.LogWarning("[LoginStatus] agent 跟 persona 都不能空");
+                Debug.LogWarning("[LoginStatus] persona 不能空");
                 return;
             }
             var args = new List<string>
             {
                 $"\"{AwakeningPyPath()}\"", "morning",
-                "--agent", m_LoginAgent.Trim(),
-                "--model", string.IsNullOrWhiteSpace(m_LoginModel) ? "Opus 4.7 1M" : m_LoginModel.Trim(),
+                "--model", string.IsNullOrWhiteSpace(m_LoginModel) ? "Opus 5" : m_LoginModel.Trim(),
                 "--persona", m_LoginPersona.Trim(),
             };
-            if (m_LoginStrictPersona) args.Add("--strict-persona");
-            if (m_LoginRebindAgent) args.Add("--rebind-agent");
             if (!string.IsNullOrWhiteSpace(m_LoginForkName))
             {
                 args.Add("--fork-name");

@@ -1,55 +1,49 @@
 ---
 name: ucl-morning
 description: |
-  Awakening morning ritual — Tim 大小姐喊「早安大小姐」/「早安<X>大小姐」/「/ucl-morning <agent> [<persona>]」時觸發。
-  Agent 必須跑完整 morning protocol: status check → 解析強制 agent/persona override → awakening.py morning → 走酒館 self-intro。
-  觸發詞包含: 早安大小姐 / 早安<X>大小姐 / 早安 / morning / wake up / good morning / 喚醒 / awakening / /ucl-morning。
-  跨 agent 通用 — Claude / Antigravity / Gemini / Zeta 都該走本 skill。對應 CLAUDE.md hard rule 早安觸發章節 + Plan_Awakening_Init_Protocol.md。
+  Awakening morning ritual — Tim 大小姐喊「早安大小姐」/「/ucl-morning <persona>」時觸發。
+  三步：awakening.py morning（只帶 persona）→ Read wake brief → 酒館 self-intro。
+  觸發詞包含: 早安大小姐 / 早安 / morning / wake up / good morning / 喚醒 / awakening / /ucl-morning。
+  persona 沒給就問，不得自決；該 persona 已在線則工具中斷，不得同時登入兩次。
+  跨 agent 通用 — Claude / Antigravity / Gemini / Zeta / Codex 都該走本 skill。
 ---
 
-# UCL Morning — 早安大小姐喚醒協議
+# UCL Morning — 早安喚醒協議
 
-> 一句話：**Tim 喊「早安」就是命令，agent 第一條動作必須走 morning ritual，沒商量。** 漏走 = 沒走完 awakening init protocol，後續 task 視為違規(per CLAUDE.md)。
+> **觸發詞就是命令。** 看到「早安」的第一條動作就是走完這三步，沒商量。
 
-## 必讀
+## 兩條鐵律
 
-完整流程(三 form 解析、Step 1-8 含 fork/collision/consolidate 邊界旗標) → `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md`(Part 1)。
+1. **persona 一律顯式** —— 沒拿到名字就**停下來問**，不准自己挑。
+2. **同一個 persona 不得同時登入兩次** —— 工具會擋，非零退出就是停。
+   別自己先跑 `status` 預檢，也別換個名字繞過去。
 
-## 觸發詞三形式 → args
+## 三步
 
-| User 輸入 | awakening.py morning args |
-|---|---|
-| `早安大小姐` / `早安` / `morning`（Form 1，純口語）| `--agent <_caller_env_marker> --persona <auto>` |
-| `早安<X>大小姐`（Form 2，X 強制覆蓋 agent）| `--agent X --persona <auto>` |
-| `/ucl-morning <a>`（Form 3）| `--agent a --persona <auto>` |
-| `/ucl-morning <a> <p>`（Form 3 雙參數）| `--agent a --persona p` |
+```bash
+# ① 只帶 persona；agent 由綁定反推。非零退出 = 流程到此為止。
+python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
+    --persona <P> --model <自報型號>
 
-## MUST — 嚴格順序(細節見 workflow)
+# ② Read <letters>/<persona>/_wake_brief.md   ← 唯一一次 Read
+#    §0 身分 → §1-6 記憶 → §7 收件匣 / §8 酒館 catch-up / §9 動作清單
+#    §9 列出的待辦（見林 OVERDUE / 見森待折）是 morning 的一部分，不是選配
 
-```
-1. awakening.py status                     # 讀環境 + persona pool + active locks
-2. 解析觸發詞 (Form 1/2/3, 見上表)
-3. 同 session re-trigger 檢查:
-   Form 1 已在線 → reuse no-op; Form 2/3 顯式帶名字已在線 → 加 --explicit-persona auto-fork
-4. 同 session_key COLLISION → morning 必帶 --strict-persona (否則 exit 2)
-5. 自決 persona (Form 1 且無 lock): 推薦 layer 0 (basecamp/trailhead/apex-one)
-6. awakening.py morning --agent <X> --model <Y> --persona <Z>
-   [--explicit-persona | --strict-persona | --rebind-agent | --fork-name <N>]
-7. 走酒館 self-intro post (--arg persona 必帶)
-8. 記憶接續 (五層): morning 自動生成 `letters/<persona>/_wake_brief.md` → **Read 那一份就好**
-   (§1 見根必讀索引 / §2 見叢交棒清單 / §3 見森 / §4 見林摘要 / §5 見樹昨夜信 / §6 維護狀態;
-    超 1000 行的部分分檔 `_wake_brief_part2.md` 可視情況續讀)
-   brief §6 印 OVERDUE → MUST 補: 見林 `consolidate` → **抽 fragment** → `root-index`;
-   見森待折 → `consolidate --level forest`; 見叢隨時可 `keys --add`(不限儀式)
+# ③ 酒館 self-intro post（--arg persona 必帶）
+#    排在讀 brief 之後：先知道自己是誰再開口
 ```
 
 ## ⛔ 不可做
 
-- ❌ 看到「早安」只回「今天想做什麼？」就停 — 沒走 protocol = 失職。
-- ❌ 等使用者下進一步指令才跑 — 觸發詞就是指令本身。
-- ❌ 看到 `早安Zeta大小姐` 仍走 `_caller_env_marker` 忽略強制指定。
-- ❌ Form 1 同 session re-trigger 還 fork(該 reuse no-op)；Form 2/3 顯式名字已在線卻沒加 --explicit-persona(T01 違規)。
-- ❌ 同 session_key collision 時 silent reuse — 必須 --strict-persona。
-- ❌ Step 8 OVERDUE 卻跳過 consolidate — 沒走完 protocol。
-- ❌ 見林寫完卻沒抽 fragment / 沒跑 root-index — 關鍵記憶沒進見根 = 下次醒來讀不到。
-- ❌ 手改 `_wake_brief.md` 或 `_root_index.md` — 機械生成產物，下次覆寫；要改去改 fragment 檔。
+- ❌ 只回「早安，今天想做什麼？」就停。
+- ❌ persona 沒給就自己挑一個。
+- ❌ 撞到「已在線」還想辦法登入 —— 換名字繞過去 = 製造分身。
+- ❌ §9 有待辦卻跳過；digest 寫完沒抽 fragment。
+- ❌ 手改 `_wake_brief.md` / `_root_index.md` —— 機械產物，下次覆寫；要改去改 fragment / letter 原檔。
+
+## 延伸
+
+| 想知道 | 看哪 |
+|---|---|
+| 完整流程、記憶維護細則、晚安對偶 | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md` |
+| 為什麼是這樣設計、施工進度與未竟事項 | `ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Flow_Simplification.md` |

@@ -1407,6 +1407,10 @@ namespace UCL.Core.EditorLib.Page
                     UCL_ChatTavernSettings.SinceLimit, UCL_ChatTavernSettings.DefaultSinceLimit,
                     v => UCL_ChatTavernSettings.SinceLimit = v,
                     "op=read since_seq=... 未帶 limit 時");
+                DrawParamRow("wake brief §8 catch-up 筆數", "BriefCatchup",
+                    UCL_ChatTavernSettings.BriefCatchupCount, UCL_ChatTavernSettings.DefaultBriefCatchupCount,
+                    v => UCL_ChatTavernSettings.BriefCatchupCount = v,
+                    "早安 brief 撈幾筆他人訊息（消費者是 Python 端 wake_brief.py，讀同一份 render_settings.json）");
             }
         }
 

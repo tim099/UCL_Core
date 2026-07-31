@@ -76,13 +76,16 @@ baton/letters/_unassigned/            ← 早期沒 frontmatter persona meta 的
 
 ## 二、Letter 必含 7 段（self-contained 自閉合）★canonical 格式
 
+> [!IMPORTANT]
+> **frontmatter 只寫這兩欄**（Tim 2026-07-31）。`type` / `actor` / `written_at` /
+> `written_by_persona` / `trigger` 由 `write_letter()` 自動補 —— 作者再寫一份會變成
+> **同一封信兩坨 header**（歷史信件全中）。工具現在會合併，作者寫的同名欄會被降級成
+> `<key>_as_written` 留痕；但**別依賴合併，直接別寫**。
+
 ```markdown
 ---
-type: letter_to_future_self
-actor: <agent_id>
-written_at: <UTC ISO>
 session_context: "<this session 主軸一句>"
-intended_reader: "<同 agent_id 跨 compact/reload 的延續者>"
+intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 ---
 
 # 💌 給未來大小姐的話

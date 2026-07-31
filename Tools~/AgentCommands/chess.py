@@ -624,7 +624,17 @@ def broadcast(g, header, sender_persona, say=""):
     )
     meta = json.dumps({"tag": "chess", "category": "chat", "game": g["index"]})
     sender = sender_persona or "chess-system"
-    cmd = [sys.executable, str(_RUN_CMD), "--agent-id", f"chess-{g['index']}",
+    # 身分＝下棋的 persona，通道＝棋局編號（Tim 2026-08-01 persona 資料夾制）。
+    #   舊寫法是 --agent-id chess-<index>，在新制下棋局編號會變成**資料夾名也就是身分**，
+    #   長出 queues/chess-1/ queues/chess-2/ 每局一個 —— 棋局不是人，那是身分層污染。
+    #   改用 --lane 之後落 queues/<persona>/queue-chess-<index>.json：
+    #   原本「每局獨立 queue 不互相阻塞」的意圖保留，身分則回到真正下棋的人身上。
+    #   sender_persona 缺席（系統代發）→ 不帶 --persona，落 anonymous/queue-chess-N.json，
+    #   誠實表示「這局沒有具名發送者」，不假造一個叫 chess-system 的人。
+    cmd = [sys.executable, str(_RUN_CMD)]
+    if sender_persona:
+        cmd += ["--persona", sender_persona]
+    cmd += ["--lane", f"chess-{g['index']}",
            "run", "Tavern", "--arg", "op=post", "--arg", "room=tavern",
            "--arg", f"sender_id={sender}", "--arg", f"persona={sender}",
            "--arg", f"body={body}", "--arg", f"meta={meta}"]

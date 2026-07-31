@@ -202,9 +202,16 @@ namespace UCL.Core.EditorLib.AgentCommands
                     var handler = UCL_AgentCommandRegistry.Get(c.Type);
                     if (handler == null)
                     {
-                        Debug.LogError($"[UCL_AgentCmd] Unknown command type '{c.Type}' (id={c.Id}). Registered: {string.Join(", ", UCL_AgentCommandRegistry.ListTypes())}");
+                        // 區塊職責：Unknown type 的錯誤訊息帶 did-you-mean 與完整註冊清單進 LastRunError。
+                        // 物理意義：過去清單只印 Editor console，CLI 呼叫端只收到一句錯誤，得挖 Editor.log
+                        //          才知道正名（summit 血證 2026-07-31）— 錯誤必須離開私有欄位才算存在。
+                        // 數值影響：LastRunError 變長（建議 + 32 個名稱 ≈ 數百字元），由 run_cmd 原樣印給呼叫端。
+                        var suggestions = UCL_AgentCommandRegistry.SuggestTypes(c.Type);
+                        string didYouMean = suggestions.Count > 0 ? $" Did you mean: {string.Join(" / ", suggestions)}?" : "";
+                        string registered = string.Join(", ", UCL_AgentCommandRegistry.ListTypes());
+                        Debug.LogError($"[UCL_AgentCmd] Unknown command type '{c.Type}' (id={c.Id}).{didYouMean} Registered: {registered}");
                         c.LastRunResult = "Failed";
-                        c.LastRunError = $"Unknown command type '{c.Type}'";
+                        c.LastRunError = $"Unknown command type '{c.Type}'.{didYouMean} Registered: {registered}";
                         c.LastRunAt = DateTime.UtcNow.ToString("o");
                         failed++;
                         continue;

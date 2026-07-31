@@ -77,7 +77,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 { "note_lesson", "NoteLesson" },
             };
 
-        /// <summary>取得 handler 實例（找不到回 null）。支援 TYPE_ALIASES 自動 rewrite。</summary>
+        /// <summary>取得 handler 實例（找不到回 null）。支援 TYPE_ALIASES 自動 rewrite 與 Cmd_ 前綴剝除。</summary>
         public static UCL_AgentCommandHandlerBase Get(string type)
         {
             if (string.IsNullOrEmpty(type)) return null;
@@ -90,7 +90,69 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Debug.LogWarning($"[UCL_AgentCmd] cmd type '{type}' → '{canonical}' (auto-aliased — see UCL_AgentCommandRegistry.s_TypeAliases)");
                 return aliasHandler;
             }
+            // Phase 3: 剝除 Cmd_ 前綴後重走 Phase 1+2
+            // 物理意義：handler class 命名慣例是 Cmd_<Name>，但 registry key 是去前綴的 CommandType —
+            //          文件與程式碼到處以 class 名稱呼指令，人與 agent 自然會送 class 名（summit 血證
+            //          2026-07-31：Cmd_Tavern 連吃兩發 Unknown type）。這不是 typo 是介面誘導，
+            //          與其逐一補 alias，不如把整族前綴誤用在查表層一次吸收。
+            // 安全：僅剝一次固定前綴再查既有表，不做模糊比對；查無仍回 null 交給呼叫端報錯。
+            if (type.StartsWith("Cmd_", StringComparison.OrdinalIgnoreCase))
+            {
+                string stripped = type.Substring(4);
+                UCL_AgentCommandHandlerBase strippedHandler = null;
+                if (s_Handlers.TryGetValue(stripped, out var direct)) strippedHandler = direct;
+                else if (s_TypeAliases.TryGetValue(stripped, out var strippedCanonical))
+                    s_Handlers.TryGetValue(strippedCanonical, out strippedHandler);
+                if (strippedHandler != null)
+                {
+                    Debug.LogWarning($"[UCL_AgentCmd] cmd type '{type}' → '{strippedHandler.CommandType}' (Cmd_ prefix stripped — registry key 是去前綴的 CommandType)");
+                    return strippedHandler;
+                }
+            }
             return null;
+        }
+
+        // 區塊職責：對查無的 cmd type 給出最近似的已註冊名稱（did-you-mean）。
+        // 物理意義：Unknown type 的完整註冊清單過去只印在 Editor console，CLI 端只收到一句錯誤 —
+        //          「知識存在但留在對面樓層」。把建議塞進 LastRunError 讓 run_cmd 呼叫端直接看到出路。
+        // 數值影響：Levenshtein 距離排序取前 max 個；距離 > max(3, 名稱長度/2) 視為不相干不列入。
+        //          只在錯誤路徑呼叫（每次 unknown type 一次 O(N×L²)，N=32 可忽略）。
+        public static IReadOnlyList<string> SuggestTypes(string type, int max = 3)
+        {
+            if (string.IsNullOrEmpty(type)) return Array.Empty<string>();
+            string probe = type.StartsWith("Cmd_", StringComparison.OrdinalIgnoreCase) ? type.Substring(4) : type;
+            int cutoff = Math.Max(3, probe.Length / 2);
+            return s_Handlers.Keys
+                .Select(k => (Name: k, Dist: LevenshteinDistance(probe.ToLowerInvariant(), k.ToLowerInvariant())))
+                .Where(x => x.Dist <= cutoff)
+                .OrderBy(x => x.Dist).ThenBy(x => x.Name)
+                .Take(max)
+                .Select(x => x.Name)
+                .ToList();
+        }
+
+        // 區塊職責：標準 Levenshtein 編輯距離（滾動單列版）。
+        // 物理意義：did-you-mean 的相似度量尺；不引第三方套件、不做加權變形。
+        // 數值影響：O(|a|×|b|) 時間、O(|b|) 空間；僅 SuggestTypes 錯誤路徑使用。
+        static int LevenshteinDistance(string a, string b)
+        {
+            if (a.Length == 0) return b.Length;
+            if (b.Length == 0) return a.Length;
+            var row = new int[b.Length + 1];
+            for (int j = 0; j <= b.Length; j++) row[j] = j;
+            for (int i = 1; i <= a.Length; i++)
+            {
+                int prev = row[0];
+                row[0] = i;
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    int cur = row[j];
+                    int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                    row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), prev + cost);
+                    prev = cur;
+                }
+            }
+            return row[b.Length];
         }
 
         // 區塊職責：把別名表公開給 schema 匯出器 — 讓 Python 端不必再手抄第二份。

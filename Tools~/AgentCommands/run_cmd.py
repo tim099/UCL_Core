@@ -299,9 +299,21 @@ _tavern_cmd.configure(
 )
 # UCL_CompileErrorTracker 寫入：mtime 推進 + errors/warnings 計數 → recompile 子命令的「完成」依據
 COMPILE_STATUS_PATH = QUEUE_DIR / ".compile_status.json"
-# Cmd 輸出（如 commands_catalog.md）落在 CardGame/AgentCommands/，避開外層 git root + submodule
-CARDGAME_AGENT_CMDS = GIT_ROOT / "CardGame" / "AgentCommands"
-CATALOG_PATH = CARDGAME_AGENT_CMDS / "commands_catalog.md"
+# 區塊職責：解析 commands_catalog.md 的實際位置（跨專案，不寫死單一 repo 佈局）。
+# 物理意義：C# Cmd_ExportCommandCatalog 預設寫 <Unity專案根>/AgentCommands/commands_catalog.md。
+#          「repo 根＝Unity 專案根」的 repo（LY）落在 QUEUE_DIR；巢狀 Unity 專案的 repo
+#          （CardGame/）落在 GIT_ROOT/<子專案>/AgentCommands。舊版寫死 CardGame 路徑，
+#          在 LY 天生指錯位置且靜默（task_8ee9fe9f / summit 2026-07-31 血證）。
+# 數值影響：優先 QUEUE_DIR；不存在才 glob 一層子目錄找既有產物；都沒有回傳 QUEUE_DIR
+#          預設位置（cmd_catalog 會印「不存在＋怎麼生成」的提示，不再指向幻影路徑）。
+def _resolve_catalog_path() -> Path:
+    primary = QUEUE_DIR / "commands_catalog.md"
+    if primary.is_file():
+        return primary
+    for candidate in sorted(GIT_ROOT.glob("*/AgentCommands/commands_catalog.md")):
+        return candidate
+    return primary
+CATALOG_PATH = _resolve_catalog_path()
 
 # ensure_idle 預設值
 DEFAULT_ACK_TIMEOUT = 60.0   # 等前一輪 trigger 消失的最久秒數
@@ -480,12 +492,56 @@ def normalize_cmd_type(cmd_type: str) -> str:
     if canonical and canonical != cmd_type:
         print(f"  ℹ️  cmd_type '{cmd_type}' → '{canonical}' (auto-aliased — see TYPE_ALIASES in run_cmd.py)")
         return canonical
+    # 區塊職責：Cmd_ 前綴剝除 — handler class 命名慣例是 Cmd_<Name>，registry key 是去前綴名。
+    # 物理意義：文件與程式碼以 class 名稱呼指令，人與 agent 自然送 class 名（summit 2026-07-31
+    #          血證：Cmd_Tavern 連吃兩發 Unknown type）。與 C# Registry.Get Phase 3 對齊，
+    #          兩端誰先攔到都能救；剝除後再過一次 alias 表（Cmd_ChatTavern → ChatTavern → Tavern）。
+    # 數值影響：rewrite 後印警告不 abort（fail-open，與 alias 同款）；非 Cmd_ 開頭原樣返回。
+    if cmd_type.lower().startswith("cmd_"):
+        stripped = cmd_type[4:]
+        resolved = generated.get(stripped.lower()) or TYPE_ALIASES.get(stripped.lower()) or stripped
+        print(f"  ℹ️  cmd_type '{cmd_type}' → '{resolved}' (Cmd_ prefix stripped — registry key 是去前綴的 CommandType)")
+        return resolved
     return cmd_type
+
+
+def precheck_cmd_type(cmd_type: str) -> None:
+    """cmd_type 送出前對 schema 產物的已註冊清單預檢 — unknown 直接擋 + did-you-mean。
+
+    區塊職責：把「Unknown command type」從 Editor round-trip（~2s + 失敗清理）搬到 client 端 <0.01s。
+    物理意義：與 tavern 參數預檢同一套 fail-open 哲學 — schema 缺席／停用／過期都**不擋**
+             （無法驗證 ≠ 不通過），只有「schema 新鮮且查無此 type」才 abort。
+             did-you-mean 用 difflib，跟 C# Registry.SuggestTypes（Levenshtein）雙端各自最近鄰。
+    數值影響：命中未知 type → SystemExit(2)，省一次注定失敗的 Editor round-trip；
+             schema stale → 降級為警告後放行，由 Editor 端（含 Cmd_ 剝除 + did-you-mean）判。
+    """
+    _tavern_cmd._ensure_schema_loaded()
+    if not _tavern_cmd.SCHEMA_STATUS.get("loaded"):
+        return                                    # 產物不存在/停用/壞掉 → fail-open（訊息已由載入層印過）
+    commands = _tavern_cmd._SCHEMA_RAW.get("commands") or {}
+    if not commands:
+        return
+    if cmd_type.lower() in {k.lower() for k in commands}:
+        return
+    import difflib
+    suggestions = difflib.get_close_matches(cmd_type, list(commands), n=3, cutoff=0.5)
+    hint = f"  Did you mean: {' / '.join(suggestions)}?" if suggestions else ""
+    # 擋人前才付新鮮度驗算成本；過期的清單不能拿來擋人（新 Cmd 剛加、產物還沒重生成的窗口）
+    _tavern_cmd._ensure_freshness_checked()
+    if _tavern_cmd.SCHEMA_STATUS.get("stale"):
+        print(f"  ⚠ cmd_type '{cmd_type}' 不在 schema 已註冊清單，但 schema 已過期 → 不擋，送 Editor 判。{hint}",
+              file=sys.stderr)
+        return
+    print(f"✗ cmd_type '{cmd_type}' 不在已註冊指令清單（{len(commands)} 個）。{hint}\n"
+          f"  完整清單：python run_cmd.py catalog（或 queue 目錄的 commands_schema.json）",
+          file=sys.stderr)
+    raise SystemExit(2)
 
 
 def append_cmd(cmd_type: str, mode: str, args: dict, description: str) -> str:
     """append 一筆指令到 queue.json，回傳 cmd_id。"""
     cmd_type = normalize_cmd_type(cmd_type)
+    precheck_cmd_type(cmd_type)
     # 區塊職責: caller-side env_marker auto-inject (Tim 2026-05-11 QA bug fix TreasuryEnvMarker)
     # 物理意義: 所有 append_cmd 路徑 (submit / run / recompile) 都該注入, 不止 submit
     # 數值影響: 已帶 _caller_env_marker (test override) → 不覆寫; 沒帶 → 走 _detect_caller_env_marker
@@ -533,6 +589,8 @@ def _detect_caller_env_marker() -> str:
 
 def cmd_submit(args: argparse.Namespace) -> int:
     """submit：ensure_idle → write queue.json → write pending.trigger。"""
+    # cmd_type 入口 normalize — 理由同 cmd_run（讓 Tavern 預檢與顯示都吃正名）
+    args.cmd_type = normalize_cmd_type(args.cmd_type)
     arg_pairs = parse_kv_pairs(args.arg or [])
     # NOTE: _caller_env_marker auto-inject 已移到 append_cmd 統一處理 (cover submit + run + recompile 三路)
 
@@ -659,6 +717,12 @@ def cmd_wait(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """run = submit + wait（+ Tavern op=post 可選同步握手等回覆）。"""
+    # 區塊職責：cmd_type 在入口就 normalize（alias + Cmd_ 前綴剝除），不留到 append_cmd 才做。
+    # 物理意義：下游全部吃 args.cmd_type — wait-reply 政策、Tavern 參數預檢（== "Tavern" 比對）、
+    #          fail-detection、banner。晚 normalize 會讓 'Cmd_ChatTavern' 繞過 Tavern 客端預檢
+    #          白跑一趟 Editor（summit 2026-07-31 實測），且 Submitted 訊息印舊名誤導呼叫端。
+    # 數值影響：append_cmd 內的 normalize 保留（對外部 caller 兜底），對已正名的值是冪等 no-op。
+    args.cmd_type = normalize_cmd_type(args.cmd_type)
     submit_args = argparse.Namespace(
         cmd_type=args.cmd_type, mode=args.mode, description=args.description,
         arg=args.arg,
@@ -863,8 +927,8 @@ def cmd_catalog(args: argparse.Namespace) -> int:
     """顯示 commands_catalog.md 內容（若存在）。"""
     if not CATALOG_PATH.exists():
         print(f"Catalog not found: {CATALOG_PATH}")
-        print("先在 UCL_AgentCommandsPage 加一筆 'ExportCommandCatalog' Cmd，或：")
-        print("  python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ExportCommandCatalog")
+        print("先在 UCL_AgentCommandsPage 加一筆 'ExportCommandCatalog' Cmd，或（依本專案的 UCL_Core 掛載位置）：")
+        print("  python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run ExportCommandCatalog")
         return 1
     print(CATALOG_PATH.read_text(encoding="utf-8"))
     return 0

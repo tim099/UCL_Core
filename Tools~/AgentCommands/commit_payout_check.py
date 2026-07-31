@@ -194,13 +194,26 @@ def main() -> int:
         print("補領方式（一則訊息一個 SHA，別合併 —— 多 SHA 會被 T06.3 reject）：")
         for name, sha, subject in unpaid:
             print(f"  # {name}: {subject[:50]}")
-            print(f"  run_cmd.py run Tavern --arg op=post --arg room=tavern --arg sender=<bank> "
+            print(f"  run_cmd.py run Tavern --arg op=post --arg room=tavern --arg agent=<agent-id> "
                   f"--arg persona=<persona> --wait-reply 0 "
                   f"--arg meta='{{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}' "
                   f"--arg-stdin body <<'EOF' … EOF")
         if args.strict:
-            return 1
-    return 0
+            return _announce(1, f"{len(unpaid)} 筆未領（--strict）")
+    return _announce(0, "無未領" if not unpaid else f"{len(unpaid)} 筆未領（未帶 --strict，不視為失敗）")
+
+
+# 區塊職責：把自己的退出碼印進 stdout 最後一行
+# 物理意義：caller 幾乎都會接管線（`| tail` / `| grep`），而 `cmd | tail; echo $?` 拿到的是
+#          **tail 的**退出碼 —— 真正的碼被管線吃掉，且看起來完全正常。
+#          2026-07-31 gura 一天內對這條踩了三次（同事早上才教過），第三次差點誤報同事一隻不存在的 bug。
+# 數值影響：純 stdout 一行 `[exit] code=N reason=...`，不改任何回傳值或行為。
+# 設計取捨：與其要求每個 caller「記得別接管線」（避開型規則，每次都要判斷），
+#          不如讓工具**一律自報**（唯一手勢，不需要判斷）。同一條原則：機制別靠人的記性。
+def _announce(code: int, reason: str) -> int:
+    print()
+    print(f"[exit] code={code} reason={reason}")
+    return code
 
 
 if __name__ == "__main__":

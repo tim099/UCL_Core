@@ -79,6 +79,48 @@ def _section_lines(title: str, lines: list) -> list:
 
 
 # ─── §5 見樹 — 指標自癒 ──────────────────────────────────────────────────
+# 短信往前合併的三個參數（Tim 2026-07-31）
+#   物理意義：一封 3 行的「今天沒什麼事，晚安」不足以撐起明天的接續 —— 那不是記憶，是簽到。
+#            與其讓醒來的人讀完一句話就沒了，不如把前幾天一起端上來。
+#   數值影響：只影響 §5 顯示，不動任何檔案；合併來源一律是收尾信本身，不重新詮釋內容。
+SHORT_LETTER_LINES = 10      # 少於這個行數 → 判定「太短」，啟動往前合併
+MERGE_MAX_EXTRA = 4          # 最多往前再撈幾封（不含最新那封）
+MERGE_STOP_LINES = 100       # 累積超過這個行數就停 —— 目的是補足，不是把整本日記搬過來
+
+
+def _letter_body_lines(aw, path) -> int:
+    """信的**內文**行數（剝掉 frontmatter）。
+
+    數值影響：用內文而非整檔行數 —— frontmatter 固定佔 5-7 行，
+             拿整檔量會讓「一句話的信」看起來有 9 行而躲過門檻。
+             量的是給人讀的部分，不是機器欄位。
+    """
+    try:
+        lines = _strip_all_frontmatter(path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    return len([ln for ln in lines if ln.strip()])   # _strip_all_frontmatter 回的是行陣列
+
+
+def _recent_self_letters(aw, persona, limit=None):
+    """該 persona 的自寫信，**新到舊**排序（頂層 + wakes/，去重）。"""
+    d = aw._LETTERS_DIR_TPL / persona
+    if not d.exists():
+        return []
+    toplevel = {f.name for f in d.iterdir() if f.is_file() and f.suffix == ".md"}
+    items = []
+    for f in list(d.iterdir()) + aw.list_wake_letters(persona):
+        if not f.is_file() or f.suffix != ".md" or f.name.startswith("_"):
+            continue
+        if f.parent.name == "wakes" and f.name.split("_", 1)[-1] in toplevel:
+            continue    # 遷移副本與頂層原檔是同一封，算一次
+        if aw._read_frontmatter_field(f, "type") != "letter_to_future_self":
+            continue
+        items.append((aw._read_frontmatter_field(f, "written_at") or f.name, f))
+    items.sort(key=lambda t: t[0], reverse=True)
+    return [f for _ts, f in items][:limit] if limit else [f for _ts, f in items]
+
+
 def _newest_self_letter(aw, persona):
     """掃目錄取最新一封『自己寫給自己』的 letter。
 
@@ -393,7 +435,27 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
         # 自癒有沒有發生走 stdout 回報（見 write_wake_brief 的 last_heal 旗標），不寫進正文 ——
         # brief 是給「醒來的人」讀的信，不是給維護者看的施工紀錄（Tim 2026-07-31）。
         body = _demote_headings(_strip_all_frontmatter(ptr.read_text(encoding="utf-8")))
-        sections.append(("🍃 §5 見樹 — 最新 letter（`_latest.md`）", body, False))
+        title5 = "🍃 §5 見樹 — 最新 letter（`_latest.md`）"
+        # 最新那封太短 → 往前合併更早的收尾信（Tim 2026-07-31）。
+        # 「今天沒什麼事，晚安」這種簽到式的信撐不起明天的接續，補到夠讀為止。
+        letters = _recent_self_letters(aw, persona)
+        if letters and _letter_body_lines(aw, letters[0]) < SHORT_LETTER_LINES:
+            merged = list(body)          # body 是行陣列（_demote_headings 回 list）
+            used = [letters[0]]
+            total = _letter_body_lines(aw, letters[0])
+            for older in letters[1:1 + MERGE_MAX_EXTRA]:
+                when = (aw._read_frontmatter_field(older, "written_at") or older.name)[:10]
+                merged += ["", "---", "", f"### 📅 {when}（往前補：上一封太短）", ""]
+                merged += _demote_headings(
+                    _strip_all_frontmatter(older.read_text(encoding="utf-8")))
+                used.append(older)
+                total += _letter_body_lines(aw, older)
+                if total > MERGE_STOP_LINES:
+                    break     # 補足即止 —— 目的是讓明天讀得下去，不是搬整本日記
+            body = merged
+            title5 = (f"🍃 §5 見樹 — 最新 letter 太短，已往前合併 {len(used)} 封"
+                      f"（`_latest.md` + 前 {len(used) - 1} 封）")
+        sections.append((title5, body, False))
 
     # §6 待辦狀態（機械判定，最短，必讀）
     todo6 = []

@@ -39,6 +39,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
 
   記憶五層 (Tim 2026-07-28 拍板; 見 Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md Step 8):
     見樹 T1   letters/<persona>/_latest.md            昨夜 1 封 (日記/抒發)
+                                                      太短(<10 行)時 brief 會往前合併更早的信
     見叢 T1.5 letters/<persona>/_keys_open.md         當期交棒清單 (可勾銷/執行用)
     見林 T2   longterm/wake_<N>-<M>.md                ~10 夜反思濃縮
     見森 T3   longterm/forest/gen_<NNN>_*.md          第 5 份見林起, 跨段縱向敘事 (rolling fold)
@@ -1303,6 +1304,7 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
 #
 # 區塊職責：把「記憶」拆成 5 個各有明確職責的層，並讓 morning 只需讀一份彙整文本。
 #   見樹 T1  letters/<persona>/_latest.md           昨夜 1 封（日記，抒發用）
+#            太短時 brief §5 往前合併（見 wake_brief.SHORT_LETTER_LINES）
 #   見叢 T1.5 letters/<persona>/_keys_open.md        當期交棒清單（checkbox，執行用）
 #   見林 T2  letters/<persona>/longterm/wake_N-M.md  10 夜濃縮（既有）
 #   見森 T3  letters/<persona>/longterm/forest/      第 5 份見林起，跨段縱向敘事（rolling fold）

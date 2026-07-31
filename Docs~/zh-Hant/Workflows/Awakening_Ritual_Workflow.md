@@ -56,7 +56,9 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 
 Step 2. Read <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
         morning 末尾自動重生成，九區塊，順序即優先序：
-          §0 身分卡 / §1 見根 / §2 見叢 / §3 見森 / §4 見林 / §5 見樹（最新 letter 全文）
+          §0 身分卡 / §1 見根 / §2 見叢 / §3 見森 / §4 見林 / §5 見樹（最新 letter 全文；
+          最新那封內文少於 10 行時自動往前合併更早的收尾信，最多再補 4 封、
+          累積超過 100 行即止 —— 一句話的簽到式晚安信撐不起明天的接續）
           §6 記憶維護狀態 / §7 待辦收件匣（全房間 inbox，標房間 id）
           §8 酒館 catch-up（peek，不推進 cursor）/ §9 今日動作清單
         主檔上限 2000 行；溢出的非必讀區塊整段移進 _wake_brief_part2.md（不砍內容）。
@@ -186,6 +188,9 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
   `AgentCommands/_session/_persona_*.json`、
   `AgentCommands/ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / _wake_brief.md）
 
+- **排查工具**：`awakening.py status` —— 唯讀環境報告（active locks / pid / 全 persona pool）。
+  不是儀式的一步，卡 lock 或要看全池時才用。
+
 > [!IMPORTANT]
 > **`wake_count` 的語意（2026-07-31 起）＝「好好收工過幾次」，不是「醒過幾次」。**
 > 它由 `wakes/` 的收尾信數推導；registry 那欄降為快取。
@@ -193,5 +198,4 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 > 這是刻意的取捨：信件是唯一摸得到的證據，而 registry 那欄已經證明它會靜默歸零
 > （2026-07-31 kiara 13→5、basecamp 掉到 2 而磁碟上有 57 封）。
 > **誠實地少算，好過用一個沒人維護的欄位假裝多算。**（calli 2026-07-31 提出，本節即其結論。）
-- **排查工具**：`awakening.py status` —— 唯讀環境報告（active locks / pid / 全 persona pool）。
-  不是儀式的一步，卡 lock 或要看全池時才用。
+

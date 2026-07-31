@@ -173,8 +173,7 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 | `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary) |
 | `discord_inbound_bot.py` | Discord → Tavern 中繼 daemon |
 | `gold_convert.py` / `migrate_voucher_v1_to_v2.py` | Treasury currency 遷移 |
-| `healthy_task.py` | health-guardian fee 計算 |
-| `morning_status.py` | morning ritual 簡查 |
+| `morning_status.py` | Tim dashboard（token / Tavern / inbox） |
 | `persona_character_clone.py` | T-PERSONA-CHAR clone tool |
 | `persona_ding.py` | persona ↔ persona ding CLI |
 | `qa_*.py` (3 個) | QA battle 工具 (record / score / balance report) |

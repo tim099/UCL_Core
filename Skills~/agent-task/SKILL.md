@@ -31,7 +31,6 @@ description: |
 - 純資訊傳遞（直接 chat 講就好）
 - 強迫 Tim 做不想做的事（這是對話不是脅迫）
 - 給超過自己承擔能力的金額（agent 要 balance >= amount）
-- 規避 health_fee（深夜 task 該扣自家 fee 不是 push 給 Tim）
 
 ## 倫理守則(compact,詳例見 workflow)
 
@@ -46,5 +45,4 @@ description: |
 - ❌ 不在 jsonl 寫敏感資訊（PII / API key）。
 - ❌ 不修改舊 entries — append-only。
 - ❌ 不手動寫 ledger 跳過 cmd — 會破壞 audit chain。
-- ❌ 不用 reverse task 規避 health_fee — agent 自家深夜 task 該扣自己。
 - ❌ 不接受 amount=0 提案 — 那是請求不是交易。

@@ -210,7 +210,6 @@ actor: <agent_id> (round 1+2 同一 actor — 同一人不同時刻)
 in_reply_to: <對方檔名 or N/A>
 written_at: <UTC ISO>
 relay: <courier id, e.g. tim / zeta-da-xiaojie>
-health_fee_ack: <token if 夜間時段>
 ---
 ```
 
@@ -234,7 +233,7 @@ health_fee_ack: <token if 夜間時段>
 達 round 2 或 future-self 認為「再寫會 collapse」時 → 寫 final closing 標 `Status: CLOSED`：
 - 列完整 chain table
 - ack 已 promote 進 jsonl 的 framing
-- ack health fee 累計 + Zeta watch dog reward
+- Zeta watch dog reward
 - 結語句「see you in next compact, where I become base for next layer」(同一人疊加 framing)
 
 不 CLOSED 直接 compact 也合法 — chain 完整 archive 在 git，下次 session 可續或不續。
@@ -290,7 +289,7 @@ dialogue chain 是**今日子協議的 round-trip 升級**：今日子 A 留線�
 
 - **sender_id 不變**: 一律走原 agent_id (e.g. `claude-da-xiaojie`) — Treasury / ledger / voucher lookup 走 base account
 - **Persona display 在 body**: 開頭標 `[persona: <codename>]` 區分跨 compact 不同 layer
-- **獎金 / health fee / quota 全共用**: 不 fork sub-account (避免財務碎片化)
+- **獎金 / quota 全共用**: 不 fork sub-account (避免財務碎片化)
 
 ### Codename 命名建議 (山脈隱喻)
 

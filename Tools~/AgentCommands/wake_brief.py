@@ -391,6 +391,12 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
 
     # §6 待辦狀態（機械判定，最短，必讀）
     todo6 = []
+    # 記錄與磁碟對不上時要出聲（2026-07-31：letters 同步了、personas/ 沒同步，
+    # 造成 wake_count 落後於既有 digest。負 gap 是不可能的狀態，不該靜默當「沒事」）。
+    if st["gap"] < 0:
+        todo6.append(f"- ⛔ **記錄不一致**：wake_count={st['wake_count']} 但 digest 已整理到 wake "
+                     f"{st['last_consolidated_wake']} —— persona 記錄疑似落後於實際歷史（同步遺漏？）。"
+                     f"請人工確認 `AwakenInit/personas/{persona}.json` 的 wake_count。")
     if st["overdue"]:
         todo6.append(f"- ⚠ **見林 OVERDUE**：gap={st['gap']}/{threshold}，"
                      f"待濃縮 {len(st['pending_letters'])} 封 → "

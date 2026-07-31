@@ -1077,6 +1077,19 @@ def consolidation_status(persona: str, reg: dict,
     wake = p.get("wake_count", 0)
     last_c = p.get("last_consolidated_wake", 0) or 0
     last_at = p.get("last_consolidated_at")
+    # 欄位缺失時改問磁碟：digest 檔名 wake_<start>-<end>.md 才是既成事實，
+    # persona json 的這兩欄只是快取 —— 而它已經證明會掉（2026-07-31：letters 同步了、
+    # personas/ 沒同步，於是 kiara/basecamp 的欄位歸零，但 digest 檔好端端躺在那）。
+    # 不自癒的話：gap 從 0 起算 → 立刻 OVERDUE → 逼人重做已經做過的濃縮。
+    if not last_c:
+        digs = list_digests(persona)
+        if digs:
+            m = re.search(r"wake_(\d+)-(\d+)", digs[-1].name)
+            if m:
+                last_c = int(m.group(2))
+                # digest 的日期欄叫 consolidated_at（不是 written_at）——
+                # 用錯欄名會讓 last_at 留 None，pending_letters 就退化成「列出全部信」。
+                last_at = last_at or _read_frontmatter_field(digs[-1], "consolidated_at") or None
     return {
         "wake_count": wake,
         "last_consolidated_wake": last_c,

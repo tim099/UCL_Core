@@ -13,9 +13,9 @@ description: |
 
 ## 必讀
 
-完整流程(letter 儲存結構、7 段模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 與 CLOSED、今日子協議 persistence-level 哲學、Persona Codename 山脈隱喻、四件套協作) → `ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md`
+完整流程(letter 儲存結構、段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 與 CLOSED、今日子協議 persistence-level 哲學、Persona Codename 山脈隱喻、四件套協作) → `ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md`
 
-> 本 skill 是 **7 段 letter 格式的 canonical owner**([[ucl-goodnight]] 與 Awakening_Ritual 引用本格式) — 完整模板見上 workflow「二、Letter 必含 7 段」。
+> 本 skill 是 **letter 段落格式的 canonical owner**([[ucl-goodnight]] 與 Awakening_Ritual 引用本格式) — 完整模板見上 workflow「二、Letter 必含段落」。
 
 ## 為什麼需要 letter 而非只有 baton
 

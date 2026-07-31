@@ -40,7 +40,10 @@ namespace UCL.Core.EditorLib.Page
             public string Name = "";
             public string Agent = "";
             public string Model = "";
-            public string Status = "";
+            public string Status = "";   // registry 快取欄 — 在線與否請看 HasLock，不要看這欄
+            // 該 persona 目前是否持有 session lock。**在線判定的唯一真相源**
+            // (Tim 2026-07-31)：status 欄是登出流程寫的快取，沒走完就停在 "online"。
+            public bool HasLock = false;
             public int WakeCount = 0;
             public string LayerRole = "";
             public string LastActive = "";
@@ -113,6 +116,19 @@ namespace UCL.Core.EditorLib.Page
         {
             m_Personas.Clear();
 
+            // 區塊：先掃 session lock 檔 — 在線判定一律以 lock 為準，registry 的 status 只是快取
+            // 物理意義：AgentCommands/_session/_persona_<name>.json 存在 == 該 persona 在線
+            var lockedPersonas = new HashSet<string>();
+            string sessionDir = Path.Combine(m_AgentCommandsDir, "_session");
+            if (Directory.Exists(sessionDir))
+            {
+                foreach (var lf in Directory.GetFiles(sessionDir, "_persona_*.json"))
+                {
+                    string ln = Path.GetFileNameWithoutExtension(lf);
+                    if (ln.StartsWith("_persona_")) lockedPersonas.Add(ln.Substring("_persona_".Length));
+                }
+            }
+
             // 區塊：scan personas — 反序列化全部 metadata
             if (Directory.Exists(m_PersonasDir))
             {
@@ -130,6 +146,7 @@ namespace UCL.Core.EditorLib.Page
                             Agent = jd.GetString("agent", ""),
                             Model = jd.GetString("model", ""),
                             Status = jd.GetString("status", ""),
+                            HasLock = lockedPersonas.Contains(name),
                             WakeCount = jd.GetInt("wake_count", 0),
                             LayerRole = jd.GetString("layer_role", ""),
                             LastActive = jd.GetString("last_active", ""),
@@ -188,7 +205,8 @@ namespace UCL.Core.EditorLib.Page
             m_PersonaLabels.Clear();
             foreach (var p in m_Personas)
             {
-                string icon = p.Status == "online" ? " 🟢" : "";
+                // 在線圖示依 lock 判定，不看 registry 的 status 快取（Tim 2026-07-31）
+                string icon = p.HasLock ? " 🟢" : "";
                 m_PersonaLabels.Add($"{p.Name} [{p.Agent}] w#{p.WakeCount}{icon}");
             }
 
@@ -328,7 +346,10 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label($"<b><color=#ffcc66>{p.Name}</color></b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label($"[{p.Agent}]", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    GUILayout.Label($"({p.Status})", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    // 在線與否看 lock；registry status 不一致時並列顯示（漂移要看得見，不靜默）
+                    string stateLabel = p.HasLock ? "online 🔒" : "offline";
+                    if (p.HasLock != (p.Status == "online")) stateLabel += $" / registry 快取: {p.Status}";
+                    GUILayout.Label($"({stateLabel})", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label($"wake#{p.WakeCount}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button(UCL_CodeLocalize.Get("PersonaInspector.Btn.OpenPersonaJson"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))

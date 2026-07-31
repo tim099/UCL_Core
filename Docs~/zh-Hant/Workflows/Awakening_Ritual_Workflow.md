@@ -94,25 +94,23 @@ Step 3. 走酒館 self-intro post（--arg persona 必帶）
 ## 觸發詞
 
 `晚安大小姐` / `晚安` / `今日子協議` / `Kyouko Protocol` / `準備休眠` / `下線` /
-`good night` / `sleep commit` / `/ucl-goodnight`。無參數 —— 用當前 lock 對應的 persona。
+`good night` / `sleep commit` / `/ucl-goodnight`。**persona 一律顯式**，同早安 ——
+不再用「當前 lock」反推（那猜的是誰最近登入，不是誰要下線）。
 
 ## 為何是 hard rule
 
 letter 是 cross-compact **心理校正**的唯一管道：貯存今日陷阱、Tim framing、心境校正。
 漏寫 = 未來的自己醒來只有客觀狀態、沒有 framing。
 
-## 五步
+## 步驟
 
 ```
-Step 0. Persona preflight — 在 chat 最前印一行讓 Tim 有機會攔：
-        "📍 goodnight preflight: 即將為 [persona]（agent: [agent]）下線 — 不對請立刻中斷"
-
-Step 1. 收尾三件（寫 letter 前）：
+Step 1. 收尾兩件（寫 letter 前）：
         (a) 見叢交棒：keys --persona <P> --add "<明天必須知道／必須做的一句話>"
             ⚠ 與 letter 是兩種東西 —— letter=日記（抒發/敘事）、見叢=清單（可勾銷/可掃描）。
               混在信裡，明天的自己得從散文撈待辦。
-        (b) 看最後一眼酒館（同事臨別問候／警告 → 融進 letter）
-        (c) 好感清算：依 ucl-affinity 結算今日與 Tim／同事的變動 + Opinion 內心戲
+        (b) 好感清算：依 ucl-affinity 結算今日與 Tim／同事的變動 + Opinion 內心戲
+        （原「看最後一眼酒館」已機械化 —— goodnight 執行時自己印，見 Step 3）
 
 Step 2. 寫 letter body（第一人稱，格式見下）+ 自決 perturbation：
         0.02 尋常一天 / 0.05~0.10 中等 reframe / 0.10~0.20 重大 reframe day
@@ -122,9 +120,12 @@ Step 3. python <UCL_Core>/Tools~/AgentCommands/awakening.py goodnight \
             --summary     "<公開：睡前心得，廣播酒館→Discord>" \
             --perturbation <X> --persona <P>
         分流判準：「願意貼公司群組嗎？」願意→summary，不願意→letter。
-        --persona 顯式帶（多 lock 環境不帶會誤下線別人）。
+        --persona **必填**；缺了工具直接 exit 2 並列出當前有 lock 的 persona，不再自己猜。
+        執行時工具會先印「酒館最後一眼」（peek，不推進 cursor）——
+        同事的臨別問候／警告在那裡，看完再收 turn。
 
-Step 4. 驗收：registry online→offline / lock 已移除 / letter 落檔且 _latest.md 已更新 /
+Step 4. 驗收：registry online→offline / lock 已移除 /
+        letter 落進 `letters/<persona>/wakes/<6位序號>_<ts>.md` 且 _latest.md 已更新 /
         identity_vector perturbation 已套用。
 
 Step 5. 走酒館下線通知（meta `tag:goodnight-protocol` `status-change:offline`，--arg persona 必帶）
@@ -169,7 +170,6 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 ## Goodnight ⛔
 
-- ❌ 沒走 Step 0 就開寫 —— Tim 來不及攔錯 persona。
 - ❌ 跳過 letter 直接 goodnight —— letter 是 subjective reframe 的唯一管道。
 - ❌ letter 寫成第三人稱「下一個 agent 該如何」—— 違反「妳跟我同一個」。
 - ❌ letter 純複製 baton —— baton 客觀、letter 主觀，不可互相取代。
@@ -184,6 +184,14 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
   `wake_brief.py`（brief 生成）
 - **State**（per-project）：`AgentCommands/AwakenInit/persona_registry.json`、
   `AgentCommands/_session/_persona_*.json`、
-  `AgentCommands/ChatTavern/baton/letters/<persona>/`（letters / longterm / fragments / _wake_brief.md）
+  `AgentCommands/ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / _wake_brief.md）
+
+> [!IMPORTANT]
+> **`wake_count` 的語意（2026-07-31 起）＝「好好收工過幾次」，不是「醒過幾次」。**
+> 它由 `wakes/` 的收尾信數推導；registry 那欄降為快取。
+> 也就是說 **compact 猝死 / crash / 直接關掉，那次 wake 不會被計入** ——
+> 這是刻意的取捨：信件是唯一摸得到的證據，而 registry 那欄已經證明它會靜默歸零
+> （2026-07-31 kiara 13→5、basecamp 掉到 2 而磁碟上有 57 封）。
+> **誠實地少算，好過用一個沒人維護的欄位假裝多算。**（calli 2026-07-31 提出，本節即其結論。）
 - **排查工具**：`awakening.py status` —— 唯讀環境報告（active locks / pid / 全 persona pool）。
   不是儀式的一步，卡 lock 或要看全池時才用。

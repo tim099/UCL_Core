@@ -234,15 +234,17 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
                 // 區塊職責：對 Persona 池進行多級排序
-                // 物理意義：第一優先級為 Status 為 "online" (不分大小寫) 的 Persona 排在最前面，第二優先級為 WakeCount 的降序排列，第三優先級為 Persona 名字的升序排列以保持確定性。
-                // 數值影響：不修改資料庫，僅變更 UI 中資料的渲染順序，優先呈現目前活動在線的 Persona 以利觀察。
+                // 物理意義：第一優先級為「持有 lock」的 Persona 排最前，第二優先級為 WakeCount 降序，第三優先級為名字升序以保持確定性。
+                // 數值影響：不修改資料庫，僅變更 UI 渲染順序。
+                //   ⚠ 判準用 HasLock 不是 registry 的 status 欄 (Tim 2026-07-31 回報)：
+                //   status 是快取，登出流程沒走完就會停在 "online"（實測 zenith-one：status=online 但無 lock），
+                //   於是上方「活躍 Lock」清單與下方 Persona 池對同一個人給出兩種答案。
+                //   lock 檔的存在與否是既成事實，快取不是 —— 一律以 lock 為準。
                 m_Pool.Sort((a, b) =>
                 {
-                    // 偵測 a 的狀態是否等於 "online" (忽略大小寫差異)
-                    bool aOnline = string.Equals(a.Status, "online", StringComparison.OrdinalIgnoreCase);
-                    // 偵測 b 的狀態是否等於 "online" (忽略大小寫差異)
-                    bool bOnline = string.Equals(b.Status, "online", StringComparison.OrdinalIgnoreCase);
-                    
+                    bool aOnline = a.HasLock;
+                    bool bOnline = b.HasLock;
+
                     // 如果兩者的在線狀態不一致
                     if (aOnline != bOnline)
                     {
@@ -551,8 +553,18 @@ namespace UCL.Core.EditorLib.Page
                             GUIUtility.systemCopyBuffer = $"/ucl-morning {p.Name}";
                         }
                         
-                        // 計算狀態文字：若該 Persona 當前被 Locked (HasLock 為真)，則加上綠色字體與鎖頭符號。
-                        string status = p.HasLock ? $"<color=#66ff99>{p.Status} 🔒</color>" : p.Status;
+                        // 計算狀態文字：**一律由 lock 判定**，不顯示 registry 的 status 快取欄。
+                        //   舊版直接印 p.Status，於是登出沒走完的 persona 會停在 "online"
+                        //   （zenith-one 實測），跟上方「活躍 Lock」清單自相矛盾。
+                        //   快取與 lock 不一致時附註一行 —— 修不修是另一回事，但**不准靜默**：
+                        //   這種漂移沒人喊就會一直在（今天的 wake_count 事件同一個病）。
+                        bool statusDrift = p.HasLock
+                            != string.Equals(p.Status, "online", StringComparison.OrdinalIgnoreCase);
+                        string status = p.HasLock
+                            ? "<color=#66ff99>online 🔒</color>"
+                            : "offline";
+                        if (statusDrift)
+                            status += $" <color=#ffcc66>(registry 快取: {p.Status})</color>";
                         
                         // 建立狀態 (Status) 欄位的垂直排版區間，使欄位小標題與資料數值呈上下排版。
                         using (new GUILayout.VerticalScope())

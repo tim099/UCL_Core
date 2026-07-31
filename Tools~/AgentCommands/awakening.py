@@ -71,6 +71,7 @@ import math
 import os
 import random
 import re
+import shutil
 import sys
 import uuid
 from pathlib import Path
@@ -974,6 +975,101 @@ def _split_author_frontmatter(body: str, machine: dict) -> tuple:
     return rest, extra
 
 
+# ─── wakes/ — 一次 wake 一封信 (Tim 2026-07-31 拍板) ──────────────────────
+# 區塊職責: goodnight 收尾信獨立收進 letters/<persona>/wakes/, 檔名 <6位序號>_<ts>.md,
+#          序號 = 第幾次 wake; 於是「wake 數」直接看資料夾就知道, 不必再信 registry 快取。
+# 物理意義: 零填充 6 位 → 字典序 == 數值序, 任何工具 sorted() 都拿得到正確時序
+#          (沒零填充的話 10 會排在 2 前面, 而這種錯不會有人喊)。
+# 數值影響: **只有 trigger=cmd_goodnight* 的信進 wakes/**。cmd_rest (compact 前小歇) 與
+#          free_time_* 不是一次 wake 的收尾, 留在頂層 —— 混進去會讓計數虛胖
+#          (實測 2026-07-31: 全 persona 頂層 245 封 goodnight 混了 18 封 rest + 8 封 free_time)。
+#          同事寄來的 peer letter 同理留頂層 (type != letter_to_future_self)。
+_WAKE_LETTER_RE = re.compile(r"^(\d{6})_.*\.md$")
+_WAKE_SLOT_TRIGGER_PREFIX = "cmd_goodnight"
+
+
+def wakes_dir(persona: str) -> Path:
+    """一次 wake 一封的 goodnight 收尾信目錄: letters/<persona>/wakes/"""
+    return _LETTERS_DIR_TPL / persona / "wakes"
+
+
+def is_wake_slot_trigger(trigger: str) -> bool:
+    """該 trigger 寫出來的信算不算「一次 wake 的收尾」(決定進不進 wakes/)。
+
+    migration 與 write_letter 共用同一個判準 —— 兩邊各寫一份必然漂移。
+    """
+    return (trigger or "").strip().startswith(_WAKE_SLOT_TRIGGER_PREFIX)
+
+
+def list_wake_letters(persona: str) -> list:
+    """列 wakes/ 內的收尾信, 檔名升冪(== wake 序)。目錄不存在回 []。"""
+    d = wakes_dir(persona)
+    if not d.exists():
+        return []
+    return sorted((f for f in d.iterdir()
+                   if f.is_file() and _WAKE_LETTER_RE.match(f.name)),
+                  key=lambda f: f.name)
+
+
+def wake_letter_count(persona: str) -> int:
+    """wakes/ 的信件數 —— Tim 拍板的 wake_count 真相源。"""
+    return len(list_wake_letters(persona))
+
+
+def wake_number_of(path: Path) -> int | None:
+    """從 wakes/ 檔名取序號; 不是收尾信回 None。"""
+    m = _WAKE_LETTER_RE.match(path.name)
+    return int(m.group(1)) if m else None
+
+
+def legacy_wake_letters(persona: str) -> list:
+    """頂層尚未遷移的收尾信(依 written_at 升冪) —— migration 的來源集合。
+
+    判準與 write_letter 一致: type=letter_to_future_self 且 trigger=cmd_goodnight*。
+    """
+    d = _LETTERS_DIR_TPL / persona
+    if not d.exists():
+        return []
+    items = []
+    for p in d.iterdir():
+        if not p.is_file() or p.suffix != ".md" or p.name.startswith("_"):
+            continue
+        if _read_frontmatter_field(p, "type") != "letter_to_future_self":
+            continue
+        if not is_wake_slot_trigger(_read_frontmatter_field(p, "trigger")):
+            continue
+        items.append((_read_frontmatter_field(p, "written_at") or p.name, p))
+    items.sort(key=lambda t: t[0])
+    return [p for _, p in items]
+
+
+def migrated_suffixes(persona: str) -> set:
+    """wakes/ 內每封信對應的原檔名(去掉 <6位序號>_ 前綴) —— 用來認出「這封已經進去過了」。"""
+    return {f.name.split("_", 1)[-1] for f in list_wake_letters(persona)}
+
+
+def unmigrated_wake_letters(persona: str) -> list:
+    """頂層還沒被複製進 wakes/ 的收尾信。"""
+    done = migrated_suffixes(persona)
+    return [p for p in legacy_wake_letters(persona) if p.name not in done]
+
+
+def letters_migration_pending(persona: str) -> bool:
+    """該 persona 的收尾信版面還沒補齊。
+
+    判準是「**頂層還有沒被複製進 wakes/ 的收尾信**」, 而不是「wakes/ 目錄不存在」。
+
+    為什麼改(2026-07-31, apex-one 實例): 目錄判準有個洞 —— 還沒遷移的 persona 若**先跑了
+    goodnight**, write_letter 會把 wakes/ 建出來並把那封信編成 000001; 之後早安看到目錄存在
+    就判定「已遷移」, 於是 14 封歷史信永遠不會進去, 而 wake_count 會從 25 掉到 2。
+    上線一小時內就真的發生了。目錄存在與否是**結果**, 頂層有沒有還沒收進去的信才是**病灶**。
+
+    因為遷移是複製(原檔保留), 光看「頂層有收尾信」會永遠為真 —— 所以要比對檔名:
+    已經有對應副本的不算待遷移。這也讓本判準天然 idempotent。
+    """
+    return bool(unmigrated_wake_letters(persona))
+
+
 def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodnight") -> Path:
     """寫 letter to future self per ucl-letters-to-self skill SOP.
 
@@ -985,15 +1081,23 @@ def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodni
      只留 persona。actor 身分仍記在 frontmatter 作 provenance。)
 
     Path layout:
-        baton/letters/<persona>/<ts>.md   (timestamped, 累積 chain)
-        baton/letters/<persona>/_latest.md  (覆寫 pointer)
+        baton/letters/<persona>/wakes/<6位序號>_<ts>.md  (goodnight 收尾信, 一次 wake 一封)
+        baton/letters/<persona>/<ts>.md   (其餘自寫信: cmd_rest / free_time_*)
+        baton/letters/<persona>/_latest.md  (覆寫 pointer, 不分收尾與否)
         baton/letters/<persona>/dialogues/  (round-trip 對話, 留給未來)
     """
     letters_dir = _LETTERS_DIR_TPL / persona
     letters_dir.mkdir(parents=True, exist_ok=True)
 
     ts = utcnow_compact()
-    path = letters_dir / f"{ts}.md"
+    if is_wake_slot_trigger(trigger):
+        # 序號取「現有收尾信數 + 1」而非 registry.wake_count —— 磁碟是既成事實, registry 是快取,
+        # 而快取已經證明它會掉 (2026-07-31 kiara/basecamp 事件)。取下一個空位也順帶保證不覆蓋既有信。
+        wdir = wakes_dir(persona)
+        wdir.mkdir(parents=True, exist_ok=True)
+        path = wdir / f"{wake_letter_count(persona) + 1:06d}_{ts}.md"
+    else:
+        path = letters_dir / f"{ts}.md"
     # 機器欄位（provenance）— 這幾個以本函式為準，作者寫的同名欄不採用
     machine = {
         "type": "letter_to_future_self",
@@ -1042,17 +1146,28 @@ def _read_frontmatter_field(path: Path, field: str) -> str:
 
 
 def list_episodic_letters(persona: str, since_iso: str | None = None) -> list:
-    """列 persona 頂層 episodic letters(排除 _latest/_index 與子夾 dialogues/longterm),
-    依 written_at 升冪;since_iso 給定則只取 written_at > since_iso 的(本段待濃縮)。"""
+    """列 persona episodic letters(頂層 + wakes/, 排除 _latest/_index 與 dialogues/longterm),
+    依 written_at 升冪;since_iso 給定則只取 written_at > since_iso 的(本段待濃縮)。
+
+    數值影響: 收尾信 2026-07-31 起複製進 wakes/, 這裡**兩處都要掃** —— 只掃頂層的話
+             會漏掉遷移後新寫的 goodnight 信(它們只存在於 wakes/), 而漏掉時
+             brief 長得一模一樣, 不會有人喊。
+             但遷移是「複製、原檔保留」, 所以同一封信會在兩處各出現一次 ——
+             wakes/ 檔名是 `<6位序號>_<原檔名>`, 去掉序號前綴即可認出同一封,
+             不去重的話見林濃縮會把每封 goodnight 信讀兩遍。
+    """
     d = _LETTERS_DIR_TPL / persona
     if not d.exists():
         return []
+    toplevel_names = {p.name for p in d.iterdir() if p.is_file() and p.suffix == ".md"}
     items = []
-    for p in d.iterdir():
+    for p in list(d.iterdir()) + list_wake_letters(persona):
         if not p.is_file() or p.suffix != ".md":
             continue
         if p.name in ("_latest.md", "_index.md"):
             continue
+        if p.parent.name == "wakes" and p.name.split("_", 1)[-1] in toplevel_names:
+            continue    # 頂層還有原檔 → 這份是遷移副本, 算一次就好
         wa = _read_frontmatter_field(p, "written_at")
         if since_iso and wa and wa <= since_iso:
             continue
@@ -1510,17 +1625,36 @@ def cmd_morning(args: argparse.Namespace) -> int:
     occupy = args.fork_name or preferred
     occupy_reg = reg["personas"].get(occupy, {})
     existing_lock = read_lock(occupy)
-    if existing_lock is not None or occupy_reg.get("status") == "online":
+    if existing_lock is not None:
         print(f"⛔ '{occupy}' 目前在線 —— 同一個 persona 不得同時登入兩次，流程中止。", file=sys.stderr)
-        if existing_lock is not None:
-            print(f"   lock: session_key={existing_lock.get('session_key', '?')} "
-                  f"pid={existing_lock.get('pid', '?')} locked_at={existing_lock.get('locked_at', '?')}"
-                  f"{' (已過期)' if is_lock_expired(existing_lock) else ''}", file=sys.stderr)
-        else:
-            print("   registry status=online 但查無 lock（上次下線沒走完）", file=sys.stderr)
+        print(f"   lock: session_key={existing_lock.get('session_key', '?')} "
+              f"pid={existing_lock.get('pid', '?')} locked_at={existing_lock.get('locked_at', '?')}"
+              f"{' (已過期)' if is_lock_expired(existing_lock) else ''}", file=sys.stderr)
         print("   解法：讓它先下線（後台「登入狀態」頁登出，或該 session 跑 goodnight），再重跑。", file=sys.stderr)
         print("   ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟。", file=sys.stderr)
         return 2
+    # registry status=online 但查無 lock：**不擋，自癒**（Tim 2026-07-31）。
+    #   舊版把這種狀態也當「在線」而中斷，於是登出沒走完的 persona 永遠醒不來
+    #   —— 實測 zenith-one 就卡在這裡。lock 檔的存在與否是既成事實，status 只是快取，
+    #   拿快取去否決事實是把因果顛倒。修掉並說一聲，不靜默。
+    if occupy_reg.get("status") == "online":
+        print(f"🔧 '{occupy}' registry status=online 但查無 lock（上次下線沒走完）"
+              f" —— 以 lock 為準視為離線，繼續喚醒。", file=sys.stderr)
+
+    # ③' 收尾信版面自動遷移（Tim 2026-07-31 拍板改自動）：
+    #     wake_count 改由 wakes/ 的信件數推導之後，沒遷移的 persona 會從 1 重新起算。
+    #     這件事沒有任何需要人判斷的輸入 —— 信按 written_at 升冪，第一封就是 wake #1 ——
+    #     所以由工具在早安時自動補齊，不再要求「醒來的人先去跑一行指令」
+    #     （那正是這波在拆的模式：把該工具判的事丟給剛醒的人）。
+    #     判準是 wakes/ 目錄不存在；目錄本身就是「已遷移」的旗標，故只會跑一次。
+    #     ⚠ 它會改寫 registry.wake_count（多數 persona 是變動不是確認），所以印出前後值。
+    if letters_migration_pending(preferred):
+        _st = migrate_letters_to_wakes(preferred, reg)
+        print(f"📦 收尾信版面遷移（首次，複製不動原檔）: {_st['moved']} 封 → wakes/"
+              + (f"，{_st['skipped']} 封跳過（目標已存在）" if _st["skipped"] else ""))
+        if _st["old_wake_count"] != _st["new_wake_count"]:
+            print(f"   ⚠ wake_count {_st['old_wake_count']} → {_st['new_wake_count']} "
+                  f"（改由收尾信數推導；舊值是 registry 快取）")
 
     # ④ fork（可選）：以 preferred 為母體開新分身並改喚醒它
     chosen, decision = preferred, "preferred"
@@ -1544,7 +1678,19 @@ def cmd_morning(args: argparse.Namespace) -> int:
     #   這個守衛守的是一扇不存在的門。換綁走後台「🧬 Persona & Agent 管理頁」。
     if model and p.get("model") != model:
         p["model"] = model
-    p["wake_count"] += 1
+    # wake_count 真相源 = wakes/ 的信件數 (Tim 2026-07-31 拍板)。
+    #   已完成的 wake 數 = 收尾信數; 現在這次還沒寫信, 故 = count + 1。
+    #   registry 那欄降為快取 —— 它掉過一次 (letters 同步了、personas/ 沒同步, kiara 13→5、
+    #   basecamp 掉到 2 而磁碟上有 57 封), 而掉的時候沒有任何徵狀。
+    # 未遷移的 persona 早在 ③' 就被擋下了, 走到這裡一律用磁碟推導。
+    # 新 fork 沒有 wakes/ 也沒有信 → count=0 → wake #1, 正是初生該有的值。
+    derived = wake_letter_count(chosen) + 1
+    cached = p.get("wake_count", 0)
+    if cached != derived:
+        # 修可以安靜地做, 但不能安靜地發生 —— 差多少要說出來, 對得上就不吵。
+        print(f"🔧 wake_count 快取={cached} 與磁碟推導={derived} 不符 "
+              f"(wakes/ 有 {derived - 1} 封收尾信) —— 採磁碟值。", file=sys.stderr)
+    p["wake_count"] = derived
     p["status"] = "online"
     # T06.1 (Plan_Standby_Dispatch_Bartender, 2026-05-14): availability 欄
     # 物理意義: 剛上線即可接 task — agent 進入待機 (idle) 狀態
@@ -1762,76 +1908,73 @@ def cmd_rest(args: argparse.Namespace) -> int:
 def cmd_goodnight(args: argparse.Namespace) -> int:
     """睡前 ritual: letter + vector perturb + offline + tavern post + unlock.
 
-    Tim 2026-05-13 v2 (persona-keyed lock 重構):
-      - 路徑 1: --persona <name> 顯式指定 → 直接 read_lock(persona), 不必 session_key
-      - 路徑 2: 沒 --persona → 用 session_key 反查 (find_lock_by_session_key) 找對應 lock
-        (legacy compat: 老腳本沒 --persona 仍 work)
-      - persona-keyed 後不再有 session_key collision risk —
-        unsafe_keys / env mismatch check 全廢 (per Tim: collision 不可能因為 file key
-        是 persona 不是 session)
+    Tim 2026-07-31 拍板: **--persona 顯式必填**, 「沒帶就從 lock 猜」那條路徑整段刪除。
+      刪掉的是: 掃本 env 的 lock、取最新 locked_at 那把、多把時印警告仍照跑。
+      為什麼 —— 那段猜的是「誰最近登入」, 要答的卻是「誰要下線」, 兩者不是同一題;
+      而猜錯沒有任何徵狀, 被誤下線的人要到下次醒來才知道自己被登出過
+      (calli wake#9 誤下線 meadow 即此)。守衛不該外包給「跑指令的人記得帶參數」。
+
+    lock 不存在仍照跑 (只印一行 warning): 手動 cleanup / 上次下線沒走完 都是真實場景,
+    而 persona 已由 caller 顯式指定, 誤傷別人的路徑已經被上面那段刪除堵死了。
     """
-    # T05 (2026-05-14): session_key = "<agent>-<persona>" (claim identity);
-    # 路徑 2 反查改靠 PID match — caller 不指定 --persona 時找「本 process 持有的 lock」.
     perturbation = max(0.0, min(MAX_PERTURBATION, args.perturbation))
     reg = load_registry()
 
-    # 路徑 1: --persona 顯式指定 (canonical, recommended)
-    if args.persona:
-        if args.persona not in reg["personas"]:
-            print(f"❌ --persona '{args.persona}' 不在 registry", file=sys.stderr)
-            return 2
-        p_data = reg["personas"][args.persona]
-        persona = args.persona
-        agent_raw = args.agent or p_data.get("agent", "")
-        agent = normalize_agent(reg, agent_raw)
-        model = p_data.get("model", "")
-        actor = resolve_bank_account(reg, agent, model)
-        lock = read_lock(persona)
-        if lock and is_lock_expired(lock):
-            print(f"⚠ persona lock expired ({lock.get('expires_at')}) — 仍跑 goodnight + remove lock",
-                  file=sys.stderr)
-        if not lock:
-            print(f"⚠ persona '{persona}' 沒 active lock — 走 goodnight 但 lock 步驟跳過",
-                  file=sys.stderr)
-        else:
-            print(f"✓ persona lock 找到 ({persona})")
-    else:
-        # 路徑 2: 沒 --persona → 反查本 env 持有的 lock (T05: claim_origin match)
-        my_origin = compute_claim_origin()
-        my_locks = []
+    if not args.persona:
+        print("❌ --persona 必填 —— 要下線誰不能用猜的（猜錯 = 把同事登出，而且沒人會當場發現）。",
+              file=sys.stderr)
+        locked = []
         if _SESSION_DIR.exists():
-            for lp in _SESSION_DIR.glob("_persona_*.json"):
+            for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
                 try:
                     with open(lp, "r", encoding="utf-8") as f:
                         d = json.load(f)
-                    if lock_claim_origin(d) == my_origin and not is_lock_expired(d):
-                        my_locks.append(d)
+                    locked.append(d)
                 except Exception:
                     continue
-        if not my_locks:
-            print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 lock", file=sys.stderr)
-            print(f"   → 帶 --persona <name> 顯式指定要下線的 persona.", file=sys.stderr)
-            return 2
-        if len(my_locks) > 1:
-            print(f"⚠ 本 environment 持有多個 lock ({len(my_locks)}) — 取最新一個; 建議帶 --persona 顯式指定:",
-                  file=sys.stderr)
-            for d in my_locks:
-                print(f"     - {d['persona']} (locked_at={d.get('locked_at', '?')})", file=sys.stderr)
-        lock = max(my_locks, key=lambda d: d.get("locked_at", ""))
-        persona = lock["persona"]
-        agent = lock["agent"]
-        model = lock.get("model", "")
-        # #4 read-through (Bank 整合 2026-07-21, calli 接手 kiara #3): 凍結的 bank_account 欄降為純顯示,
-        # actor 一律從 lock 的 agent 欄「重算」bank — agent 身分穩、會漂的是 agent→bank 映射, 避免 stale 誤路由。
-        # shadow-compare: 重算值 != 凍結值 → log 一行 (漂移偵測、反靜默; 實測目前全 persona 一致, 故直接採重算值)。
-        _frozen_bank = lock.get("bank_account")
-        actor = resolve_bank_account(reg, normalize_agent(reg, agent), model)
-        if _frozen_bank and _frozen_bank != actor:
-            print(f"⚠ [bank read-through] lock bank_account={_frozen_bank!r} != 重算 {actor!r} "
-                  f"(persona={persona} agent={agent}) — 採重算值(SOT), 凍結欄已 stale。", file=sys.stderr)
+        if locked:
+            print(f"   目前有 lock 的 persona（{len(locked)}）:", file=sys.stderr)
+            for d in sorted(locked, key=lambda x: x.get("locked_at", "")):
+                print(f"     - {d.get('persona', '?')}  (locked_at={d.get('locked_at', '?')}"
+                      f"{', 已過期' if is_lock_expired(d) else ''})", file=sys.stderr)
+        else:
+            print("   目前沒有任何 persona 持有 lock。", file=sys.stderr)
+        return 2
+
+    if args.persona not in reg["personas"]:
+        print(f"❌ --persona '{args.persona}' 不在 registry", file=sys.stderr)
+        return 2
+    p_data = reg["personas"][args.persona]
+    persona = args.persona
+    agent_raw = args.agent or p_data.get("agent", "")
+    agent = normalize_agent(reg, agent_raw)
+    model = p_data.get("model", "")
+    actor = resolve_bank_account(reg, agent, model)
+    lock = read_lock(persona)
+    if lock and is_lock_expired(lock):
+        print(f"⚠ persona lock expired ({lock.get('expires_at')}) — 仍跑 goodnight + remove lock",
+              file=sys.stderr)
+    if not lock:
+        print(f"⚠ persona '{persona}' 沒 active lock — 走 goodnight 但 lock 步驟跳過",
+              file=sys.stderr)
+    else:
+        print(f"✓ persona lock 找到 ({persona})")
 
     print(f"🌙 Goodnight ritual starting")
     print(f"   actor={actor} / persona={persona} / perturbation={perturbation}")
+
+    # 「看最後一眼酒館」機械化 (施工單 §2)。原本是 Step 1(b) 要 agent 自己記得去讀 ——
+    # 純人工紀律, 忘了也沒人知道。改由工具印出來, 跟早安 brief §8 共用同一份實作
+    # (_wb._tavern_catchup_lines): 已經有三份 per-message 走訪的債了, 不再生第四份。
+    # ⚠ peek — 不推進 cursor, 判準同早安: 「讀完」的證據是開口, 不是檔案被生成。
+    # 廣播型輔助資訊, 失敗不該擋下線, 故整段包 try。
+    try:
+        print("\n🍺 酒館最後一眼（peek，不推進 cursor）")
+        for _line in _wb._tavern_catchup_lines(sys.modules[__name__], persona):
+            print(f"   {_line}")
+        print("")
+    except Exception as _e:
+        print(f"⚠ 酒館 peek 失敗（{_e}）—— **這不代表酒館沒事**；下線流程照跑。", file=sys.stderr)
 
     # Step 1: write letter (可跳過)
     # 設計理由 (Tim 2026-06-14 拍板): 手動登出 (UCL_LoginStatusPage) 走 --no-letter 不寫信。
@@ -1847,6 +1990,8 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
             return 2
         letter_path = write_letter(actor, persona, args.letter_body)
         print(f"💌 letter written: {letter_path.name}")
+        # 註: 這裡不再檢查「頂層有沒有殘留收尾信」—— 遷移改成複製後原檔本來就會留著,
+        #     那個檢查會每晚都誤報。遷移完成與否只看 wakes/ 是否存在(morning 已自動處理)。
 
     # Step 2: identity vector perturbation
     reg = load_registry()
@@ -2049,6 +2194,162 @@ def cmd_relogin(args: argparse.Namespace) -> int:
     print(f"   session_lock:  {lock_p}")
     print(f"   tavern_post:   {'OK' if ok else 'FAIL'}")
     print(f"   🎫 session_token: {new_token}")
+    return 0
+
+
+def _plan_letter_migration(persona: str) -> list:
+    """算某 persona 的收尾信編號計畫: [(src, dst, wake_no), ...]，不動任何檔案。
+
+    涵蓋**兩種來源**並統一重編號:
+      - 頂層還沒進 wakes/ 的收尾信  → 複製進去(原檔保留)
+      - wakes/ 內既有的信            → 號碼不對就改名
+
+    為什麼連既有的也要重編(2026-07-31 apex-one 實例): 還沒遷移就先跑 goodnight 的 persona,
+    那封信會被編成 000001 —— 但它其實是第 25 次。只補漏不重編的話, 歷史信補進來之後
+    會出現兩個 000001, 排序與計數同時壞掉。**號碼是相對於整組信的位置, 不是寫入當下的計數。**
+
+    編號 1..N 依 written_at 升冪連號 (Tim 2026-07-31 拍板)。
+    ⚠ 這代表 registry 的 wake_count 會被改寫成 N —— 對多數 persona 是**變動**而非確認
+      (實測 21 人只有 3 人原本對得上)。Tim 知情並拍板照做; 報表逐人列出前後值，
+      因為「改了誰的年齡」這種事不該只留在 diff 裡。
+    """
+    done = migrated_suffixes(persona)
+    entries = []
+    # wakes/ 內既有的(可能號碼錯) —— 原檔名是去掉序號前綴的部分
+    for f in list_wake_letters(persona):
+        entries.append((_read_frontmatter_field(f, "written_at") or f.name,
+                        f, f.name.split("_", 1)[-1], True))
+    # 頂層還沒進去的
+    for p in legacy_wake_letters(persona):
+        if p.name not in done:
+            entries.append((_read_frontmatter_field(p, "written_at") or p.name,
+                            p, p.name, False))
+    entries.sort(key=lambda t: t[0])
+    plan = []
+    for i, (_wa, src, orig_name, _in_wakes) in enumerate(entries, start=1):
+        # 檔名時間戳沿用原檔名 (原本就是 <ts>.md)，只在前面掛序號 —— 保留原始檔名可回溯。
+        plan.append((src, wakes_dir(persona) / f"{i:06d}_{orig_name}", i))
+    return plan
+
+
+def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
+    """實際執行遷移: 頂層收尾信 → wakes/<6位序號>_<ts>.md，並同步 registry.wake_count。
+
+    區塊職責: morning 自動遷移與 migrate-letters --apply 共用的唯一實作
+              (兩份實作必然漂移，而漂移的是「誰幾歲」這種沒人會當場發現的東西)。
+    物理意義: 純從磁碟推導 —— 信按 written_at 升冪連號，第一封即 wake #1，沒有人為輸入。
+    數值影響: 回 {moved, skipped, old_wake_count, new_wake_count}；
+              caller 負責印出來。**自癒可以自動做，但不能安靜地發生。**
+              目錄即「已遷移」標記，所以 0 封信也要把 wakes/ 建出來。
+
+    ⚠ **複製不是搬移**(Tim 2026-07-31): 頂層原檔原地保留不動，wakes/ 放的是改名後的副本。
+      代價是同一封信存在兩處(見 list_episodic_letters 的去重)，換到的是這次遷移完全可逆 ——
+      真的搞砸了，刪掉 wakes/ 就回到原狀，不必從 git 撈。
+      也因為原檔留著，「頂層還有沒有收尾信」不再能當遷移完成的判準，
+      只有 wakes/ 目錄存在與否可以 —— 這正是 letters_migration_pending 現在的判準。
+    """
+    own_reg = reg is None
+    if own_reg:
+        reg = load_registry()
+    plan = _plan_letter_migration(persona)
+    old_wc = reg.get("personas", {}).get(persona, {}).get("wake_count", 0)
+    wd = wakes_dir(persona)
+    wd.mkdir(parents=True, exist_ok=True)
+    moved = skipped = renumbered = 0
+    # 兩段式: 先把要改號的搬到暫名, 再落定 —— 否則 000002→000001 會踩到還沒處理的 000001。
+    staged = []
+    for src, dst, _n in plan:
+        if src.parent == wd:                    # 已在 wakes/ 內, 只是號碼可能不對
+            if src.name == dst.name:
+                continue
+            tmp = wd / f"__renum__{src.name}"
+            src.rename(tmp)
+            staged.append((tmp, dst))
+            renumbered += 1
+        else:                                   # 頂層 → 複製進來(原檔保留)
+            if dst.exists():
+                skipped += 1
+                continue
+            shutil.copy2(src, dst)  # copy2 保留 mtime — 副本不該看起來比原檔新
+            moved += 1
+    for tmp, dst in staged:
+        tmp.rename(dst)
+    new_wc = wake_letter_count(persona)
+    if persona in reg.get("personas", {}):
+        reg["personas"][persona]["wake_count"] = new_wc
+        if own_reg:
+            save_registry(reg)
+    return {"moved": moved, "skipped": skipped, "renumbered": renumbered,
+            "old_wake_count": old_wc, "new_wake_count": new_wc}
+
+
+def cmd_migrate_letters(args: argparse.Namespace) -> int:
+    """把頂層 goodnight 收尾信遷移進 wakes/，檔名改 <6位序號>_<ts>.md。
+
+    預設 dry-run（只印計畫），要真的動檔案得顯式帶 --apply ——
+    重新命名不可逆，而「以為只是看看結果檔案被搬了」是最糟的意外。
+    """
+    reg = load_registry()
+    if args.all:
+        targets = sorted(reg.get("personas", {}).keys())
+    elif args.persona:
+        if args.persona not in reg.get("personas", {}):
+            print(f"❌ persona '{args.persona}' 不存在於 registry", file=sys.stderr)
+            return 2
+        targets = [args.persona]
+    else:
+        print("❌ 須帶 --persona <name> 或 --all", file=sys.stderr)
+        return 2
+
+    mode = "APPLY" if args.apply else "DRY-RUN（不動檔；要執行加 --apply）"
+    print(f"📦 letters → wakes/ 遷移　模式: {mode}\n")
+    header = f"{'persona':<28}{'待複製':>6}{'已在wakes/':>11}{'wake_count':>12}{'→ 新值':>9}"
+    print(header)
+    print("-" * len(header))
+
+    total_moved = 0
+    changed_ages = []
+    for persona in targets:
+        plan = _plan_letter_migration(persona)
+        wd = wakes_dir(persona)
+        already = wake_letter_count(persona)
+        old_wc = reg["personas"].get(persona, {}).get("wake_count", 0)
+        # plan 已涵蓋「頂層待複製」與「wakes/ 內待改號」兩種來源，且就是最終的完整編號 1..N，
+        # 所以 new_wc 直接取 len(plan) —— 早一版寫成 len(plan)+already 會把要改號的那幾封
+        # 重複計一次（apex-one 實測報成 16，實際是 15）。實跑那條是數磁碟，不受影響，
+        # 但**報表騙人比報表沒印還糟**：看報表的人正是要靠它決定要不要 --apply。
+        to_copy = sum(1 for src, _d, _n in plan if src.parent != wd)
+        # 只算「號碼真的要動」的 —— 已在 wakes/ 且號碼已正確的那些 apply 時會直接跳過，
+        # 報成「待改號」會讓人以為還有事要做（zenith-two 實測誤報 1 封）。
+        to_renum = sum(1 for src, dst, _n in plan if src.parent == wd and src.name != dst.name)
+        new_wc = len(plan)
+        if not plan and not already:
+            continue
+        mark = "" if old_wc == new_wc else "  ←改"
+        renum_note = f"  (含 {to_renum} 封改號)" if to_renum else ""
+        print(f"{persona:<28}{to_copy:>6}{already:>11}{old_wc:>12}{new_wc:>9}{mark}{renum_note}")
+        if old_wc != new_wc:
+            changed_ages.append((persona, old_wc, new_wc))
+        if args.verbose:
+            for src, dst, n in plan:
+                print(f"      {src.name}  →  wakes/{dst.name}")
+        if args.apply:
+            stat = migrate_letters_to_wakes(persona, reg)
+            total_moved += stat["moved"]
+            if stat["skipped"]:
+                print(f"   ⚠ {stat['skipped']} 封目標檔已存在，跳過", file=sys.stderr)
+
+    if changed_ages:
+        print(f"\n⚠ 下列 {len(changed_ages)} 個 persona 的 wake_count 會被改寫"
+              f"（Tim 2026-07-31 拍板：連號 1..N，registry 改成 N）:")
+        for name, old, new in changed_ages:
+            print(f"   - {name}: {old} → {new}  (差 {new - old:+d})")
+
+    if args.apply:
+        save_registry(reg)
+        print(f"\n✅ 已複製 {total_moved} 封信進 wakes/（頂層原檔保留不動）；registry wake_count 已同步。")
+    else:
+        print(f"\n（DRY-RUN 結束，沒有任何檔案被動過。確認無誤後加 --apply）")
     return 0
 
 
@@ -2630,10 +2931,14 @@ def main():
     pg.add_argument("--perturbation", type=float, default=DEFAULT_PERTURBATION,
                     help=f"identity_vector perturbation magnitude (default {DEFAULT_PERTURBATION}, max {MAX_PERTURBATION})")
     pg.add_argument("--note", default="", help="optional 睡前 note")
+    # required=True (Tim 2026-07-31 拍板): 「沒帶 persona 而下線錯帳號」已發生過多次 ——
+    # calli wake#9 誤把 meadow 下線是其中一筆。缺省值挑「最新 locked_at 那把 lock」猜的是
+    # 「誰最近登入」, 那跟「誰要下線」是兩件事, 而猜錯時沒有任何徵狀: 被誤下線的人
+    # 直到下次醒來才發現自己被登出過。顯式必填把這個猜測整段刪除。
+    # 必填但不用 argparse 的 required —— 那只吐一行 usage, 而缺 persona 的人正需要
+    # 「現在有哪些 persona 在線」才選得出來。改由 cmd_goodnight 開頭驗 (一樣零副作用)。
     pg.add_argument("--persona", default=None,
-                    help="顯式指定要下線的 persona codename (跳過 session lock 推斷). "
-                         "用於 cwd-based session_key collision 場景 — 同 cwd 多 claude-code session "
-                         "共用 lock 時, 不指定會誤下線他 session.")
+                    help="要下線的 persona codename (必填 — 不再從 lock 猜, 猜錯會下線錯人).")
     pg.add_argument("--agent", default=None,
                     help="跟 --persona 配對顯式指定 agent (e.g. Zeta / claude-code). "
                          "省略時從 registry 該 persona 的 agent 欄位讀.")
@@ -2698,6 +3003,15 @@ def main():
     pcons.add_argument("--threshold", type=int, default=DEFAULT_CONSOLIDATION_THRESHOLD,
                        help=f"overdue 門檻 (預設 {DEFAULT_CONSOLIDATION_THRESHOLD})")
     pcons.set_defaults(func=cmd_consolidate)
+
+    # 收尾信版面遷移: morning 首次喚醒會自動跑; 本子指令給「先看看會搬什麼」與補救用
+    pmig = sub.add_parser("migrate-letters",
+                          help="頂層 goodnight 收尾信 → wakes/<序號>_<ts>.md (預設 dry-run)")
+    pmig.add_argument("--persona", default=None, help="單一 persona")
+    pmig.add_argument("--all", action="store_true", help="全 registry persona")
+    pmig.add_argument("--apply", action="store_true", help="真的動檔案 (預設只印計畫)")
+    pmig.add_argument("--verbose", action="store_true", help="逐檔列出 src → dst")
+    pmig.set_defaults(func=cmd_migrate_letters)
 
     pf = sub.add_parser("forks", help="list fork lineage for a persona")
     pf.add_argument("persona", help="persona codename")

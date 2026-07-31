@@ -87,18 +87,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         ["id"] = "campaign", ["room"] = "campaign", ["owner"] = "owner_agent", ["gm"] = "owner_agent" } },
                 ["listrooms"] = new UCL_CmdOpSpec(),
                 ["join"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "id" },
+                    Required = new[] { "room", "agent" },
                     // id > sender_id > sender（注意順序與 post 相反 —— join 的 canonical 是 id）
-                    Aliases = new Dictionary<string, string> { ["sender_id"] = "id", ["sender"] = "id" } },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["post"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "sender", "body" },
+                    Required = new[] { "room", "agent", "body" },
                     // sender > sender_id > id
-                    Aliases = new Dictionary<string, string> { ["sender_id"] = "sender", ["id"] = "sender" } },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["read"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["members"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 // leave 在本檔沒有任何 reject —— 刻意不宣告 required（多寫會擋掉合法呼叫）
                 ["leave"] = new UCL_CmdOpSpec {
-                    Aliases = new Dictionary<string, string> { ["sender_id"] = "sender", ["id"] = "sender" } },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 // wait 只 reject room；since_seq 有預設值，不是必填
                 ["wait"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["wait_check"] = new UCL_CmdOpSpec { Required = new[] { "wait_id" } },
@@ -115,64 +115,62 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // task_create 只 reject room / task_id —— title 沒 reject（Python 舊表誤列為必填）
                 ["task_create"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_claim"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "claimer" },
                     // claimer > actor > sender
-                    Aliases = new Dictionary<string, string> { ["actor"] = "claimer", ["sender"] = "claimer" } },
+                    Aliases = new Dictionary<string, string> { ["actor"] = "claimer", ["agent"] = "claimer", ["agent_id"] = "claimer", ["sender"] = "claimer", ["sender_id"] = "claimer" } },
                 ["task_progress"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "actor", "summary" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_done"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "actor" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_release"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "actor", "reason" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_force_reclaim"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "claimer", "reason" },
-                    Aliases = new Dictionary<string, string> { ["actor"] = "claimer", ["sender"] = "claimer" } },
+                    Aliases = new Dictionary<string, string> { ["actor"] = "claimer", ["agent"] = "claimer", ["agent_id"] = "claimer", ["sender"] = "claimer", ["sender_id"] = "claimer" } },
                 ["task_review_request"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "actor" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_reject"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "actor", "reason" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_reopen"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "task_id", "actor", "reason" },
-                    Aliases = new Dictionary<string, string> { ["sender"] = "actor" } },
+                    Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_next"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "agent_id" },
-                    Aliases = new Dictionary<string, string> { ["id"] = "agent_id", ["sender"] = "agent_id" } },
+                    Required = new[] { "room", "agent" },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["task_state"] = new UCL_CmdOpSpec { Required = new[] { "room", "task_id" } },
                 ["task_list"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["inbox_read"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "agent_id" },
-                    Aliases = new Dictionary<string, string> { ["id"] = "agent_id", ["sender"] = "agent_id" } },
+                    Required = new[] { "room", "agent" },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["events_since"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
 
                 // ─── Presence ────────────────────────────────────────────
                 ["set_presence"] = new UCL_CmdOpSpec {
-                    Required = new[] { "id", "status" },
-                    // id > sender > sender_id
-                    Aliases = new Dictionary<string, string> { ["sender"] = "id", ["sender_id"] = "id" } },
+                    Required = new[] { "agent", "status" },
+                    // agent > agent_id > sender > sender_id > id
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 // set_focus / set_mood 只 reject agent_id —— focus / mood 允許空（等同清除）
                 ["set_focus"] = new UCL_CmdOpSpec {
-                    Required = new[] { "agent_id" },
-                    Aliases = new Dictionary<string, string> {
-                        ["id"] = "agent_id", ["sender"] = "agent_id", ["sender_id"] = "agent_id" } },
+                    Required = new[] { "agent" },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["set_mood"] = new UCL_CmdOpSpec {
-                    Required = new[] { "agent_id" },
-                    Aliases = new Dictionary<string, string> {
-                        ["id"] = "agent_id", ["sender"] = "agent_id", ["sender_id"] = "agent_id" } },
+                    Required = new[] { "agent" },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 // get_presence 無必填（不帶 id = 查全部）
                 ["get_presence"] = new UCL_CmdOpSpec {
                     Aliases = new Dictionary<string, string> { ["target"] = "id", ["target_id"] = "id" } },
 
                 // ─── Session macro ───────────────────────────────────────
                 ["session_enter"] = new UCL_CmdOpSpec {
-                    Required = new[] { "agent_id" },
-                    Aliases = new Dictionary<string, string> { ["id"] = "agent_id", ["sender"] = "agent_id" } },
+                    Required = new[] { "agent" },
+                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
             }
         };
 
@@ -432,7 +430,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             // alias 寬進：sender / sender_id 也接受（與 op=post 的 sender 命名統一）
-            string identityId = GetArg(args, "id", GetArg(args, "sender_id", GetArg(args, "sender", "")));
+            string identityId = GetArg(args, "id", GetAgentArg(args));
             string displayName = GetArg(args, "name", identityId);
             string kind = GetArg(args, "kind", "agent");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("join 缺少 room"); return; }
@@ -464,11 +462,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 區塊：op=post — 主功能。寫訊息 + 重渲染 _last_view.md（最新 100 筆）
         // 物理意義：這是 agent 與酒館互動的主要入口；output 直接給 agent 當下回合 prompt
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：「哪個 agent」這個參數的**唯一讀取入口**（Tim 2026-07-31 拍板改名 agent）
+        // 物理意義：同一個概念在本檔曾用五種名字被讀：`sender` / `sender_id` / `agent_id` / `id` /
+        //          `actor`(+`claimer`)，各 op 的優先序還不一致。歧義已經付過學費 ——
+        //          2026-07-31 commit 薪資 hook 拿未驗證的 `sender` 當帳戶，
+        //          summit 帶了 persona 名 `summit`（bank 應為 `zeta`）→ 錢進影子帳戶。
+        //          正名為 `agent`，其餘全部降為別名，**值域語意統一為「agent / bank 層識別，不是 persona」**。
+        // 數值影響：優先序 `agent` > `agent_id` > `sender` > `sender_id`。
+        //          ⚠ **刻意不收 `id`** —— `id` 在本檔是超載名：op=createroom/campaign 的 `id` 是
+        //          房間 / campaign id，收進來會把房名當 agent 用。需要 `id` 當 agent 的 op
+        //          （identity / presence 系列）自己在呼叫端補一層，別下沉到這裡。
+        // 邊界：全部缺 → 回空字串，由各 op 自行 reject（本 helper 不決定必填與否）。
+        // ===========================================================
+        static string GetAgentArg(Dictionary<string, string> args, string defaultVal = "")
+            => GetArg(args, "agent",
+                   GetArg(args, "agent_id",
+                       GetArg(args, "sender",
+                           GetArg(args, "sender_id", defaultVal))));
+
         async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
-            // alias 寬進：sender_id / id 也接受（與 op=join 的 id 命名相容）
-            string senderId = GetArg(args, "sender", GetArg(args, "sender_id", GetArg(args, "id", "")));
+            // 正名 agent；sender / sender_id / agent_id 為別名，id 另外補（與 op=join 的 id 命名相容）
+            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
             string body = GetArg(args, "body", "");
             string replyToStr = GetArg(args, "reply_to", "");
             string metaStr = GetArg(args, "meta", "");
@@ -1304,7 +1321,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_Leave(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            string senderId = GetArg(args, "sender", GetArg(args, "sender_id", GetArg(args, "id", "")));
+            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
             if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { RejectLastOp("leave 需要 room + sender（可用 sender= / sender_id= / id=）"); return; }
             var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == senderId);
             string name = ident?.display_name ?? senderId;
@@ -1501,7 +1518,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string roomId = GetArg(args, "room", "");
             string key = GetArg(args, "key", "");
             string body = GetArg(args, "body", "");
-            string sender = GetArg(args, "sender", null);
+            // 走統一入口（agent > agent_id > sender > sender_id）；全缺回空字串 → 下游視為未署名
+            string sender = GetAgentArg(args);
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("note_append 缺少 room"); return; }
             if (string.IsNullOrEmpty(key)) { RejectLastOp("note_append 缺少 key"); return; }
             if (string.IsNullOrEmpty(body)) { RejectLastOp("note_append 缺少 body"); return; }
@@ -1850,7 +1868,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string dependsOn = GetArg(args, "depends_on", "");  // CSV
             string suggestedOwner = GetArg(args, "suggested_owner", "");
             string body = GetArg(args, "body", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             // T37 — Quest Group：邏輯關聯多 task 的 group ID
             // 物理意義：同 group_id 的所有 task 全 done 時 Op_TaskDone 會自動觸發 group_complete event
@@ -1905,7 +1923,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetArg(args, "sender", "")));
+            string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetAgentArg(args)));
             string leaseHoursStr = GetArg(args, "lease_hours", "24");
             // lease_seconds 為 lease_hours 的 override（測試 / 短任務用；非 0 即生效）
             // 物理意義：給「2 秒就 stale」這種測試場景用；正常 claim 不必傳此參數
@@ -1976,7 +1994,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string summary = GetArg(args, "summary", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_progress 缺少 room"); return; }
@@ -2014,7 +2032,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             // R6.1 — summary：done 時 actor 對「我做完什麼」的詳細交代（建議帶傲嬌語氣，個性化體驗）
             // 物理意義：完成時詳述工作內容 → 對話流自然形成工作日誌；後續 task_state 也讀得到
@@ -2208,7 +2226,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string reason = GetArg(args, "reason", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_release 缺少 room"); return; }
@@ -2266,7 +2284,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetArg(args, "sender", "")));
+            string claimer = GetArg(args, "claimer", GetArg(args, "actor", GetAgentArg(args)));
             string reason = GetArg(args, "reason", "");
             string leaseHoursStr = GetArg(args, "lease_hours", "24");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
@@ -2347,7 +2365,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string reviewer = GetArg(args, "reviewer", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_review_request 缺少 room"); return; }
@@ -2397,7 +2415,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string reason = GetArg(args, "reason", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_reject 缺少 room"); return; }
@@ -2444,7 +2462,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            string actor = GetArg(args, "actor", GetArg(args, "sender", ""));
+            string actor = GetArg(args, "actor", GetAgentArg(args));
             string reason = GetArg(args, "reason", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_reopen 缺少 room"); return; }
@@ -2490,7 +2508,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_TaskNext(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            string agentId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", "")));
+            string agentId = GetAgentArg(args, GetArg(args, "id", ""));
             int top = ParseIntArg(args, "top", 1);
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_next 缺少 room"); return; }
             if (string.IsNullOrEmpty(agentId)) { RejectLastOp("task_next 缺少 agent_id"); return; }
@@ -2666,7 +2684,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_InboxRead(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            string agentId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", "")));
+            string agentId = GetAgentArg(args, GetArg(args, "id", ""));
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("inbox_read 缺少 room"); return; }
             if (string.IsNullOrEmpty(agentId)) { RejectLastOp("inbox_read 缺少 agent_id（可用 agent_id / id / sender）"); return; }
 
@@ -2779,18 +2797,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         void Op_SetPresence(Dictionary<string, string> args)
         {
-            string senderId = GetArg(args, "id", GetArg(args, "sender", GetArg(args, "sender_id", "")));
+            string senderId = GetArg(args, "id", GetAgentArg(args));
             string status = GetArg(args, "status", "");
-            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_presence 缺少 id (或 sender / sender_id)"); return; }
-            if (string.IsNullOrEmpty(status)) { RejectLastOp("set_presence 缺少 status (active / busy / offline)"); return; }
+            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_presence 缺少 agent (別名 agent_id / sender / sender_id / id)"); return; }
+            if (string.IsNullOrEmpty(status)) { RejectLastOp("set_presence 缺少 status (active / busy / idle / offline)"); return; }
 
-            UCL_ChatTavernIO.SetPresence(senderId, status);
+            // 區塊職責：room / focus / mood 三個選填欄位一併寫入
+            // 物理意義：文件（Cmd_Tavern.md §2.3）一直把這三個列為常用選填，但舊實作只讀 id+status
+            //          → 帶了也**靜默不生效**。summit QA 2026-07-31 抓到：「文件說有而實作沒有，
+            //          比沒寫更危險」。完整版 SetPresence 本來就吃這三個參數（R7 T07），是這裡沒接。
+            // 數值影響：傳 null 的欄位在 SetPresence 內不覆寫既有值（focus 更新不會清掉 mood，反之亦然），
+            //          所以只帶 status 的舊呼叫行為完全不變。
+            string room = GetArg(args, "room", null);
+            string focus = GetArg(args, "focus", GetArg(args, "current_focus", null));
+            string mood = GetArg(args, "mood", null);
+            UCL_ChatTavernIO.SetPresence(senderId, status, room, focus, mood);
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("# ✅ set_presence");
             sb.AppendLine();
-            sb.AppendLine($"- id: `{senderId}`");
+            sb.AppendLine($"- agent: `{senderId}`");
             sb.AppendLine($"- status: `{status}`");
+            if (!string.IsNullOrEmpty(room)) sb.AppendLine($"- room: `{room}`");
+            if (!string.IsNullOrEmpty(focus)) sb.AppendLine($"- focus: `{focus}`");
+            if (!string.IsNullOrEmpty(mood)) sb.AppendLine($"- mood: `{mood}`");
             sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
 
             UCL_ChatTavernRender.WriteLastOp(sb.ToString());
@@ -2805,7 +2835,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         void Op_SetFocus(Dictionary<string, string> args)
         {
-            string senderId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", GetArg(args, "sender_id", ""))));
+            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
             string focus = GetArg(args, "focus", "");
             if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_focus 缺少 agent_id (或 id / sender / sender_id)"); return; }
 
@@ -2824,7 +2854,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         void Op_SetMood(Dictionary<string, string> args)
         {
-            string senderId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", GetArg(args, "sender_id", ""))));
+            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
             string mood = GetArg(args, "mood", "");
             if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_mood 缺少 agent_id (或 id / sender / sender_id)"); return; }
 
@@ -2897,7 +2927,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         void Op_SessionEnter(Dictionary<string, string> args)
         {
-            string agentId = GetArg(args, "agent_id", GetArg(args, "id", GetArg(args, "sender", "")));
+            string agentId = GetAgentArg(args, GetArg(args, "id", ""));
             if (string.IsNullOrEmpty(agentId)) { RejectLastOp("session_enter 缺少 agent_id"); return; }
 
             string roomId = GetArg(args, "room", "");

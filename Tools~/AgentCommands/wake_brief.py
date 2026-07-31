@@ -105,13 +105,17 @@ MERGE_STOP_LINES = 200       # 唯一門檻：累積內文行數 **未超過**�
                              #   「3 行短信 + 一封 200 行長信」會一封都不補，
                              #   讀的人只剩那 3 行，比超量更糟。**至少補一封**是底線
                              #   （前提：最新那封自己就 > 200 行時不補，那本來就夠讀了）。
-MERGE_MAX_EXTRA = 9          # 防爆上限①：最多往前再撈幾封（不含最新那封）
+MERGE_MAX_EXTRA = 9          # 唯一防爆上限：最多往前再撈幾封（不含最新那封）
                              #   9 是對齊見林：一份見林濃縮 10 封，所以合併上限也是 10 封
                              #   （最新 1 + 往前 9）—— 剛好不超過一個見林單位
-MERGE_MAX_DAYS = 9           # 防爆上限②：比最新那封早超過這麼多天的信不撈
-                             #   物理意義：一天可能寫多封（同日 fork / 補記），純算「封數」時
-                             #   9 封可能只跨 2 天；反之長假回來時 9 封可能跨一個月。
-                             #   兩把尺都要 —— 要的是「最近幾天」，不是「最近幾封」。
+                             #
+                             #   ⚠ 尺只有一把，量的是**封數不是天數**（Tim 2026-08-01 更正）：
+                             #   我一度把「或超過 9 天前」實作成獨立的日期閘，那是我對規格的
+                             #   加料詮釋。加料的後果是可觀測的 —— gura 上一封距今 17 天，
+                             #   日期閘會讓她一封都補不到，§5 只剩 17 行；而「空窗久」正是
+                             #   最需要把舊信端上來的情況，閘門剛好對著它關。
+                             #   教訓：**規格沒說的維度不要自己補一把尺**，補了就是多一個
+                             #   會靜默否決主閘的條件（同族：見上方「兩顆數字互相抵銷」）。
 
 SHORT_LETTER_LINES = MERGE_STOP_LINES   # 「啟動合併」的門檻 —— **衍生值，不是獨立旋鈕**。
                              #   要調就調 MERGE_STOP_LINES，這裡會跟著動（Tim 2026-08-01 綁定拍板）。
@@ -147,17 +151,6 @@ def _letter_day(aw, path) -> str:
     import re
     m = re.search(r"(\d{4})(\d{2})(\d{2})T", path.name)
     return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else ""
-
-
-def _day_gap(newest_day: str, older_day: str) -> int:
-    """兩個 `YYYY-MM-DD` 相差幾天；任一側判不出來就回 0（= 不因此擋掉合併）。"""
-    if not newest_day or not older_day:
-        return 0
-    try:
-        from datetime import date
-        return (date.fromisoformat(newest_day) - date.fromisoformat(older_day)).days
-    except Exception:
-        return 0
 
 
 def _recent_self_letters(aw, persona, limit=None):
@@ -516,12 +509,9 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             # ① 先決定要撈哪幾封（由新往舊逐封累積；行數是主閘，封數/天數是防爆上限）
             used = [letters[0]]
             total = _letter_body_lines(aw, letters[0])
-            newest_day = _letter_day(aw, letters[0])
             for older in letters[1:1 + MERGE_MAX_EXTRA]:
                 if total > MERGE_STOP_LINES:
                     break     # 已經夠讀了（至少補一封的底線見常數註解）
-                if _day_gap(newest_day, _letter_day(aw, older)) > MERGE_MAX_DAYS:
-                    break     # 太久以前的日子不屬於「最近一段」——那是見林的職責
                 used.append(older)
                 total += _letter_body_lines(aw, older)
         # len(used) > 1 才算真的有合併。只有一封信可補（新 persona 第一次晚安就寫得短）時，
@@ -534,7 +524,10 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             #    由新往舊倒帶會讓因果反過來（先看到結果、再看到起因）。
             merged = []
             for i, f in enumerate(reversed(used)):
-                when = (aw._read_frontmatter_field(f, "written_at") or f.name)[:10]
+                # 走 _letter_day 而非 `(written_at or f.name)[:10]`：後者的 fallback 是壞的 ——
+                # wakes/ 檔名是 `000045_20260720T154741Z.md`，切前 10 字得到 "000045_202"。
+                # 有 frontmatter 時看不出差別，所以這個 bug 會一直躲著（Tim 2026-08-01 拆日期閘時撞見）。
+                when = _letter_day(aw, f) or "日期不明"
                 is_newest = (i == len(used) - 1)
                 tag = "最新一封" if is_newest else "往前補"
                 if merged:

@@ -228,9 +228,86 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             lock (s_CacheLock)
             {
-                if (string.IsNullOrEmpty(roomId)) s_RoomCache.Clear();
-                else s_RoomCache.Remove(roomId);
+                if (string.IsNullOrEmpty(roomId))
+                {
+                    s_RoomCache.Clear();
+                    s_RoomFiles.Clear();
+                }
+                else
+                {
+                    s_RoomCache.Remove(roomId);
+                    s_RoomFiles.Remove(roomId);
+                }
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：排序後「路徑清單」快取 — 用目錄指紋判失效，取代每次 Directory.GetFiles 全房列舉
+        // 物理意義：上面那份 parse cache 刻意「不快取檔案清單」（設計取捨第一條），因為要保跨 process 新鮮度。
+        //          代價是每次呼叫都得列舉全房 —— tavern 房 14,242 檔實測 **32.4 ms**，而 mirror daemon 的
+        //          CollectScanMessages 一個 tick 會倍增回頁呼叫 7 次 Tail → 每秒 ~227 ms 光在列目錄。
+        //          本快取用「日期資料夾的 mtime 指紋」換掉全房列舉：71 個 dir 做 stat 實測 **0.86 ms**（38× 便宜），
+        //          且**新鮮度不打折** —— 任一 dir 內新增/刪除檔都會推進該 dir 的 LastWriteTime。
+        // 數值影響：指紋未變 → 直接回上次排好序的陣列（0 次列舉、0 次排序）；變了才重列重排。
+        // 設計取捨：
+        //   - 為何 stat 每個 date dir，不是「只看最新那個」：**git pull 會把訊息補進舊日期夾**
+        //     （本 repo 的訊息走 git 同步，2026-08-01 現場驗證過）。只看最新夾會漏掉那批。
+        //   - 為何連 root 自身 mtime 也算進去：涵蓋 date dir 的增刪、與直接落在 messages/ 下的檔。
+        //   - 回傳的是 **cache 內的陣列本體**（不複製，省 alloc）→ caller 約定 read-only，勿排序或改元素。
+        //     現有 caller（LoadAllMessages / Tail / LoadMessagesAfterSeq / CountMessageFiles）皆只讀。
+        // ===========================================================
+        sealed class RoomFileListCache
+        {
+            public string[] files;      // 已按 root-relative ordinal 排序
+            public string signature;    // 目錄指紋
+        }
+        static readonly Dictionary<string, RoomFileListCache> s_RoomFiles = new Dictionary<string, RoomFileListCache>();
+
+        static string BuildDirSignature(string root)
+        {
+            var sb = new StringBuilder();
+            var dirs = Directory.GetDirectories(root);
+            Array.Sort(dirs, StringComparer.Ordinal);
+            foreach (var d in dirs)
+            {
+                sb.Append(Path.GetFileName(d)).Append(':')
+                  .Append(Directory.GetLastWriteTimeUtc(d).Ticks).Append('|');
+            }
+            sb.Append("root:").Append(Directory.GetLastWriteTimeUtc(root).Ticks);
+            return sb.ToString();
+        }
+
+        /// <summary>取該房「排序後的全部訊息檔路徑」（目錄指紋命中則走快取）。回傳陣列為 cache 本體 —— 只讀，勿改。</summary>
+        static string[] GetSortedMessageFiles(string roomId, string root)
+        {
+            string sig;
+            try { sig = BuildDirSignature(root); }
+            catch { sig = null; }   // 指紋算不出（權限/競態）→ 退回每次重列（安全側，只是慢）
+
+            if (sig != null)
+            {
+                lock (s_CacheLock)
+                {
+                    if (s_RoomFiles.TryGetValue(roomId, out var hit) && hit.signature == sig) return hit.files;
+                }
+            }
+
+            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+            // ordinal sort = ts sort；先比 root-relative path（含 date dir 前綴）才能跨日正確。
+            // 預算 sort key 一次（避免 comparison delegate 每次比較 new 2 個 substring 的 O(N log N) alloc）。
+            var keys = new string[files.Length];
+            for (int i = 0; i < files.Length; i++)
+                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
+            Array.Sort(keys, files, StringComparer.Ordinal);
+
+            if (sig != null)
+            {
+                lock (s_CacheLock)
+                {
+                    s_RoomFiles[roomId] = new RoomFileListCache { files = files, signature = sig };
+                }
+            }
+            return files;
         }
 
         // ===========================================================
@@ -245,16 +322,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var list = new List<UCL_ChatMessage>();
             if (!Directory.Exists(root)) return list;
 
-            // 列「路徑」（便宜, 不讀內容）; 每 call 重列 → 跨 process 新檔照樣看到
-            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+            // 列「路徑」（便宜, 不讀內容）+ 排序 → 走目錄指紋快取（見 GetSortedMessageFiles）.
+            // 指紋涵蓋每個 date dir 的 mtime, 跨 process（Python / git pull）新檔照樣看得到.
+            string[] files = GetSortedMessageFiles(roomId, root);
             if (files.Length == 0) return list;
-
-            // ordinal sort = ts sort; 先比 root-relative path（含 date dir 前綴）才能跨日正確.
-            // 預算 sort key 一次（避免原版 comparison delegate 每比較 new 2 個 substring 的 O(N log N) alloc）.
-            var keys = new string[files.Length];
-            for (int i = 0; i < files.Length; i++)
-                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
-            Array.Sort(keys, files, StringComparer.Ordinal);
 
             lock (s_CacheLock)
             {
@@ -373,41 +444,54 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string root = GetMessagesRoot(roomId);
             if (!Directory.Exists(root)) return list;
 
-            // 只列舉路徑，不讀內容
-            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+            // 路徑列舉 + 排序走目錄指紋快取（2026-08-01）
+            string[] files = GetSortedMessageFiles(roomId, root);
             if (files.Length == 0) return list;
-
-            // 預算 sort key（root-relative path，含 date dir 前綴 → 跨日排序正確）一次
-            var keys = new string[files.Length];
-            for (int i = 0; i < files.Length; i++)
-                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
-            Array.Sort(keys, files, StringComparer.Ordinal);
 
             int total = files.Length;
             int start = total > n ? total - n : 0;   // 只讀尾端 n 筆（不足 n 則全讀）
 
+            // 2026-08-01：本迴圈原本每次都 File.ReadAllText + ParseMessage，**完全繞過** 上方那份
+            // path-keyed parse cache（那份只有 LoadAllMessages 在用）。mirror daemon 一秒倍增回頁七次
+            // → 每秒 ~3810 次 read+parse 在主執行緒上 = 可見卡頓。改走同一份 cache 後穩態只 parse 新檔。
+            // 共用 cache 也表示：同房若已被 LoadAllMessages 讀過，這裡的增量記憶體是零（同一個 dictionary）。
             int rejected = 0;
-            for (int i = start; i < total; i++)
+            lock (s_CacheLock)
             {
-                try
+                if (!s_RoomCache.TryGetValue(roomId, out var cache))
                 {
-                    string json = File.ReadAllText(files[i], Encoding.UTF8);
-                    var m = UCL_ChatTavernIO.ParseMessage(json);
-                    if (m != null)
-                    {
-                        m.seq = i + 1;   // 絕對序位（1-based），與 LoadAllMessages enumerate 順序一致
-                        list.Add(m);
-                    }
-                    else
-                    {
-                        rejected++;
-                        Debug.LogError($"[Tavern T38] Tail ParseMessage returned null for {Path.GetFileName(files[i])}");
-                    }
+                    cache = new RoomMsgCache();
+                    s_RoomCache[roomId] = cache;
                 }
-                catch (Exception ex)
+                for (int i = start; i < total; i++)
                 {
-                    rejected++;
-                    Debug.LogError($"[Tavern T38] Tail skipping malformed message file {Path.GetFileName(files[i])}: {ex.Message}");
+                    string f = files[i];
+                    if (cache.badPaths.Contains(f)) continue;   // 已知壞檔, 不重讀不重洗 error log
+                    if (!cache.byPath.TryGetValue(f, out var m))
+                    {
+                        try
+                        {
+                            string json = File.ReadAllText(f, Encoding.UTF8);
+                            m = UCL_ChatTavernIO.ParseMessage(json);
+                        }
+                        catch (Exception ex)
+                        {
+                            cache.badPaths.Add(f);
+                            rejected++;
+                            Debug.LogError($"[Tavern T38] Tail skipping malformed message file {Path.GetFileName(f)}: {ex.Message}");
+                            continue;
+                        }
+                        if (m == null)
+                        {
+                            cache.badPaths.Add(f);
+                            rejected++;
+                            Debug.LogError($"[Tavern T38] Tail ParseMessage returned null for {Path.GetFileName(f)}");
+                            continue;
+                        }
+                        cache.byPath[f] = m;
+                    }
+                    m.seq = i + 1;   // 絕對序位（1-based），與 LoadAllMessages enumerate 順序一致
+                    list.Add(m);
                 }
             }
             if (rejected > 0)
@@ -429,7 +513,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string root = GetMessagesRoot(roomId);
             if (!Directory.Exists(root)) return 0;
-            return Directory.GetFiles(root, "*.json", SearchOption.AllDirectories).Length;
+            return GetSortedMessageFiles(roomId, root).Length;   // 走目錄指紋快取（2026-08-01）
         }
 
         // ===========================================================
@@ -448,17 +532,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string root = GetMessagesRoot(roomId);
             if (!Directory.Exists(root)) return list;
 
-            string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
+            // 路徑列舉 + 排序走目錄指紋快取（2026-08-01）
+            string[] files = GetSortedMessageFiles(roomId, root);
             if (files.Length == 0) return list;
 
             int start = afterSeq < 0 ? 0 : afterSeq;
-            if (start >= files.Length) return list;   // 無新訊息 — 連 sort 都省
-
-            // 排序(只算 key 一次), 取 files[start..] 才 read+parse
-            var keys = new string[files.Length];
-            for (int i = 0; i < files.Length; i++)
-                keys[i] = files[i].Substring(root.Length).Replace('\\', '/');
-            Array.Sort(keys, files, StringComparer.Ordinal);
+            if (start >= files.Length) return list;   // 無新訊息
 
             lock (s_CacheLock)
             {

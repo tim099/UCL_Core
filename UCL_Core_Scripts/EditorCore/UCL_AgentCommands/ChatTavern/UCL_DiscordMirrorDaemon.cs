@@ -413,6 +413,44 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const int SCAN_TAIL_N = 30;                 // 每 room 每 tick 的起始掃描窗（cursor-driven 回頁的第一頁大小）
         const int SCAN_PAGE_MAX = 4096;             // 回頁深度硬上限（防 cursor 極舊時無界掃描；超限印警告不沉默截斷）
         const double CONFIG_CACHE_TTL_SEC = 5.0;
+
+        // ==== 缺口熔斷（Tim 2026-08-01 拍板：最小改動止血，根因排重構）====
+        const int BURST_GUARD_MAX_BACKLOG = 30;             // 單房積壓超過此數 → 停送（門檻對齊 SCAN_TAIL_N：一頁掃得完的量才算正常）
+        const double BURST_GUARD_WARN_INTERVAL_SEC = 60.0;  // 熔斷警告節流（daemon 每 CHECK_INTERVAL 秒一 tick，不節流會洗版）
+        static readonly HashSet<string> s_AdminBurstAllowed = new HashSet<string>();   // 刻意重放豁免（AdminPage 套用 seq 時加入）
+        static readonly Dictionary<string, double> s_BurstGuardLastWarn = new Dictionary<string, double>();
+
+        // ==== tick 早退（Tim 2026-08-01 拍板）====
+        // 物理意義：Scan 每秒一次，但「該房訊息數」與「該房 min ts_high」都沒動時，這一輪的掃描結果
+        //          必然與上一輪逐位元相同 —— 純白工。積壓卡住時（熔斷 / dead webhook 釘住下界）這個白工
+        //          會**永遠**每秒重做一次深回頁，正是 2026-08-01 Editor 卡頓的放大器。
+        // 數值影響：指紋未變且未超過 FORCE_RESCAN_SEC → 整房跳過（連 CollectScanMessages 都不進）。
+        // 邊界：backoff 到期會讓 ShouldSend 由 false 轉 true，**但不改變指紋** → 靠 FORCE_RESCAN_SEC
+        //      兜底，最遲 30 秒一定會再掃一次。所以早退最多延遲送出 30s，不會漏送。
+        const double FORCE_RESCAN_SEC = 30.0;
+        static readonly Dictionary<string, string> s_RoomScanSig = new Dictionary<string, string>();
+        static readonly Dictionary<string, double> s_RoomScanLastFull = new Dictionary<string, double>();
+
+        /// <summary>該房這輪值不值得掃：訊息數或 min ts_high 有變、或距上次掃描超過 FORCE_RESCAN_SEC 才回 true。</summary>
+        static bool RoomNeedsScan(string room, List<string> webhookIds)
+        {
+            double now = EditorApplication.timeSinceStartup;
+            string sig;
+            try
+            {
+                // CountMessages 已走目錄指紋快取（71 個 dir stat ≈ 0.86ms，非全房列舉 32ms）
+                sig = UCL_ChatTavernIO.CountMessages(room) + "|" + UCL_DiscordMirrorState.GetMinTsHigh(room, webhookIds);
+            }
+            catch { return true; }   // 指紋算不出 → 照掃（安全側：寧可白工，不可漏送）
+
+            bool changed = !s_RoomScanSig.TryGetValue(room, out var prev) || prev != sig;
+            bool stale = !s_RoomScanLastFull.TryGetValue(room, out double last) || now - last >= FORCE_RESCAN_SEC;
+            if (!changed && !stale) return false;
+
+            s_RoomScanSig[room] = sig;
+            s_RoomScanLastFull[room] = now;
+            return true;
+        }
         static MirrorConfigBlock s_CachedConfig = null;
         static double s_ConfigCacheTime = -999;
 
@@ -506,6 +544,55 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 n = Math.Min(n * 2, SCAN_PAGE_MAX);          // 倍增回頁，直到跨過下界或觸頂
             }
+        }
+
+        // 區塊職責：缺口熔斷 — 積壓超門檻時停送並示警，不讓 daemon 把整段歷史一口氣噴進 Discord
+        // 物理意義：游標（ts_high）是「已送達外部的高水位」，但它跟訊息走同一個 git repo、卻不是同一筆 commit。
+        //          pull 到比本機**舊**的 _tavern_state.json 就會把游標往回推（git 對這種檔案是 last-write-wins，
+        //          而高水位標記的正確合併語意是 max()）→ daemon 忠實地把「游標之後」的整段歷史重送一次。
+        //          2026-08-01 Tim 回報現場：本機同步到 seq 100、git 上已到 seq 200 → 一口氣連送 100 筆。
+        //          **本熔斷不修根因**（根因是「載入時單調化」+「per-machine 欄位拆檔」，已排重構）——
+        //          它只保證失敗會**吵**、不會變成 spam：外部可見的副作用先停住，等人來看一眼。
+        // 數值影響：backlog > BURST_GUARD_MAX_BACKLOG → 該房本輪整個跳過（不送、也不推游標，維持可重試）；
+        //          每 BURST_GUARD_WARN_INTERVAL_SEC 印一次警告。積壓降回門檻內自動放行，無需人工解鎖。
+        // 邊界：① AdminPage「套用 seq」是**刻意**重放 → AdminSetRoomCursorToSeq 把該房加進 s_AdminBurstAllowed
+        //          放行；追平後自動除名（下次 pull 造成的缺口仍照擋）。
+        //      ② min ts_high 解析不出（全新無高水位）→ **不熔斷**：該情形 CollectScanMessages 已退回
+        //          SCAN_TAIL_N(30) 固定窗，本來就送不出爆量，擋它反而讓新房永遠同步不了。
+        //      ③ 熔斷狀態只在記憶體（Editor 重開即重新武裝）— 失效方向是「再擋一次」，安全側。
+        static bool IsBurstGuardTripped(string room, List<UCL_ChatMessage> msgs, List<string> webhookIds)
+        {
+            // 與 CollectScanMessages 用同一組參數取下界 —— 兩邊對「積壓」的認定必須是同一個數，
+            // 否則熔斷擋的量跟實際會送的量對不上（iSkipEmpty 差一個旗標就會分岔）。
+            var minT = UCL_DiscordMirrorState.ParseIsoUtc(UCL_DiscordMirrorState.GetMinTsHigh(room, webhookIds));
+            if (minT == null) return false;   // 邊界②
+
+            int backlog = 0;
+            for (int i = 0; i < msgs.Count; i++)
+            {
+                var t = UCL_DiscordMirrorState.ParseIsoUtc(msgs[i].ts);
+                if (t != null && t.Value > minT.Value) backlog++;
+            }
+
+            if (backlog <= BURST_GUARD_MAX_BACKLOG)
+            {
+                s_AdminBurstAllowed.Remove(room);   // 追平 → 解除刻意重放豁免
+                return false;
+            }
+            if (s_AdminBurstAllowed.Contains(room)) return false;   // 邊界①
+
+            double now = EditorApplication.timeSinceStartup;
+            if (!s_BurstGuardLastWarn.TryGetValue(room, out double last) || now - last >= BURST_GUARD_WARN_INTERVAL_SEC)
+            {
+                s_BurstGuardLastWarn[room] = now;
+                Debug.LogWarning(
+                    $"[DiscordMirror] 缺口熔斷：`{room}` 積壓 {backlog} 筆 > 門檻 {BURST_GUARD_MAX_BACKLOG}，"
+                    + "本房 outbound 已暫停（不送、不推游標）。"
+                    + "常見成因：git pull 到較舊的 _tavern_state.json 把游標往回推。"
+                    + "確認後放行 → 控制台 → 酒館後台管理 → 🔗 Webhook 設定 → tavern_mirror → 對該房「套用 seq」"
+                    + "（設 = 目前 max seq＝認定已送過、跳過不補；設小＝刻意重放該區間）。");
+            }
+            return true;
         }
 
         // 區塊職責：T6 — 單一訊息的路由目標判定（對齊 python notify_tavern_messages 的三層 precedence）
@@ -653,10 +740,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 if (inflightFull) break;
                 if (string.IsNullOrEmpty(room)) continue;
+                // tick 早退：訊息數與 min ts_high 都沒動 → 這輪必然與上輪同結果，整房跳過
+                if (!RoomNeedsScan(room, allWids)) continue;
                 List<UCL_ChatMessage> msgs;
                 try { msgs = CollectScanMessages(room, allWids); }
                 catch { continue; }
                 if (msgs == null) continue;
+                // 缺口熔斷：積壓超門檻 → 本房整輪跳過（含鎖步推進，游標一格都不動 = 可重試）
+                if (IsBurstGuardTripped(room, msgs, allWids)) continue;
 
                 foreach (var msg in msgs)
                 {
@@ -788,6 +879,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             const string REPLAY_ALL_TS = "1970-01-01T00:00:00.000Z";
             if (iTargetSeq <= 0)
             {
+                s_AdminBurstAllowed.Add(room);   // 刻意重放豁免（見下方 AdminSetRoomCursors 處註解）
                 UCL_DiscordMirrorState.AdminSetRoomCursors(room, wids, REPLAY_ALL_TS, null);
                 return $"{room}：游標設到最舊（seq 0 = 全房重放，ts_high={REPLAY_ALL_TS}；下輪 daemon 依序重送全部 eligible 訊息到 Discord，深度上限 {SCAN_PAGE_MAX} 筆）";
             }
@@ -817,6 +909,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 seen[m.uuid] = m.ts;
             }
 
+            // 人在 AdminPage 按了「套用 seq」＝ 刻意操作游標，後續積壓是預期的 → 豁免缺口熔斷
+            // （IsBurstGuardTripped），追平後自動除名。不豁免的話 admin 重放會被自己的熔斷擋死。
+            // 只在**真的動了游標**的路徑上加豁免 —— 上面那些 return（讀檔失敗 / 找不到 target）不加，
+            // 否則一次失敗的 admin 操作會靜默解除該房的熔斷保護。
+            s_AdminBurstAllowed.Add(room);
             UCL_DiscordMirrorState.AdminSetRoomCursors(room, wids, targetTs, seen);
             return $"{room}：游標設到 seq {iTargetSeq}（ts_high={targetTs}，seen {seen.Count} 筆 × {wids.Count} webhook；seq>{iTargetSeq} 下輪重送、≤ 跳過）";
         }

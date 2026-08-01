@@ -80,6 +80,22 @@ def _resolve_data_root(root: Path) -> Path:
 REPO_ROOT = _resolve_repo_root()
 STREAM_DIR = _resolve_data_root(REPO_ROOT) / "_screenstream"
 FRAMES_DIR = STREAM_DIR / "frames"
+# ==== T-SSREC-01 錄播模式 (Tim 2026-08-01 拍板; 規格見 Docs~/zh-Hant/Plan/Plan_ScreenStream_Recording_Mode.md) ====
+# 物理意義: 直播是 ring (繞回去覆寫), 錄播是流 (不繞、不覆寫) —— 兩條各自單純, 不互相遷就。
+#          資料夾**開錄即命名** (recordings/<名稱>/)，所以沒有 rename 那一步 ——
+#          名稱在開錄時就已經知道 (後台欄位填的)，繞一圈反而不直覺 (Tim 2026-08-01 實測回饋)。
+#          rename 是同磁碟 O(1) metadata 操作 → 沒有複製、就沒有「匯出時與 writer 競爭」的問題。
+# 邊界: 錄播必須寫獨立資料夾 —— 它的 index 從 1 遞增, 會直接撞上 ring 的槽位 1,2,3… 互相覆蓋。
+# 2026-08-01 修正 (Tim 實測回饋「我以為會根據這個名稱錄製到資料夾」):
+#   原設計是「寫固定路徑 recording/、停錄才 rename 成名稱」。但名稱在**開錄時就已經知道**
+#   (Tim 在後台欄位填了)，所以直接用它建資料夾更直覺 —— 而且省掉 rename 那一步，
+#   連帶消除 Windows「目錄內有開啟 handle 時 rename 被拒」的風險。名稱留空才退回時間戳。
+RECORDINGS_DIR = STREAM_DIR / "recordings"          # 每段錄製一個資料夾: recordings/<名稱>/
+REC_LEGACY_DIR = STREAM_DIR / "recording"           # 舊版固定路徑 — 開機自癒會把殘留搬進 recordings/
+REC_MANIFEST_NAME = "manifest.json"
+# 檔名寬度: 錄播不 wrap, @1fps 約 2.8 小時就衝破 4 位數 (且 :04d 是最小寬度不截斷 →
+# 跨位數時字典序會崩: frame_10000 排在 frame_9999 前面)。6 位 @1fps 撐 11.6 天。
+FRAME_NAME_WIDTH = 6
 CONFIG_PATH = STREAM_DIR / "_config.json"
 LATEST_TXT = STREAM_DIR / "_latest.txt"
 LATEST_JPG = STREAM_DIR / "_latest.jpg"
@@ -132,6 +148,21 @@ DEFAULT_CONFIG = {
     # 數值影響: 預設 off — Tim 從 _config.json 開; workers=2 (fps=2 × ~300ms/幀 = 0.6 負載, 留 headroom)
     "ocr_enabled": False,
     "ocr_workers": 2,
+    # ==== T-SSREC-01 錄播模式開關 (Tim 2026-08-01) ====
+    # 物理意義: true → 每張 frame 除了寫 ring buffer, 另外寫一份進 recording/ (不 wrap、不覆寫)。
+    #          直播 loop 完全不受影響 —— 陪看的 montage 照樣讀 ring buffer (雙寫, 非二選一)。
+    # 數值影響: 多一次寫檔 (68 KB/幀實測) ≈ 245 MB/小時; 由 recording_stop_free_mb 兜底防塞爆磁碟。
+    # 邊界: 由 false→true 開新錄製段; true→false 停錄 (rename 成品 + 重建空資料夾)。
+    # ==== 靜音幻覺防治門檻 (T-STT-Silence, 2026-08-01) ====
+    # 物理意義: whisper 對無語音音軌會自信地吐字 (Tim 首試錄實證: 14 段全是「3/2/1」)。
+    #          三層防治的門檻放這裡讓 Tim QA 時能調, 不必改 code。
+    # 數值影響: rms_gate 0 = 停用前置閘; no_speech_max / logprob_min 對齊 whisper 官方預設。
+    "stt_rms_gate": 0.005,        # 低於此 RMS 的 chunk 根本不送 whisper (約 -46 dBFS)
+    "stt_no_speech_max": 0.6,     # segment 的 no_speech_prob 超過即丟
+    "stt_logprob_min": -1.0,      # segment 的 avg_logprob 低於即丟
+    "recording_enabled": False,
+    "recording_name": "",          # 停錄時的資料夾名稱; 空 → 用起始時間戳 (之後手動改名不影響任何機制)
+    "recording_stop_free_mb": 1024,  # 剩餘磁碟低於此值 → 自動停錄 (視同一次正常結束, 不是崩)
     # 字幕帶座標 — 底部原點語意 (Tim 2026-07-28 拍板): y_bottom=0 表示帶底貼畫面下緣, 高度往上長。
     # 舊頂部原點 key ocr_y_pct 的 config 由 subtitle_ocr.regions_from_config 讀取時自動換算遷移。
     "ocr_y_bottom_pct": 0.0,   # 帶底邊離畫面下緣距離 (0=貼底)
@@ -480,6 +511,291 @@ def make_blackout_image(size: tuple, reason_hint: str = ""):
     return img
 
 
+# ===========================================================
+# 區塊職責：T-SSREC-01 錄播模式 — 狀態機、manifest、開機自癒、停錄三步
+# 物理意義：錄播是一條「不輪替的流」。它與 ring buffer 的差別只有一個：不取 mod。
+#          但因此衍生三件必須處理的事 —— 獨立資料夾（否則撞 ring 槽位）、
+#          6 位數檔名（不 wrap 會衝破 4 位）、以及「中斷也要留下痕跡」。
+# 數值影響：index 嚴格不跳號（寫檔成功才配發下一號）。錄播的 index 是**播放軸**不是牆鐘測量 ——
+#          Tim 拍板：觀看錄播沒有時間壓力、可逐張看，所以連續性 > 牆鐘精度。
+#          牆鐘軸零成本另外有：檔案 mtime。兩軸各司其職，manifest 記 started_at 讓漂移可觀測。
+# 邊界：中斷（daemon 被砍 / Editor 崩 / 斷電）當下沒有任何 code 跑得到收尾 →
+#      不能依賴「結束時寫 stopped_at」。改用狀態機 + 開機自癒（見 recording_selfheal）。
+# ===========================================================
+_rec_state = {"active": False, "next_index": 1, "started_at": None, "started_epoch": 0.0,
+              "dir": None, "ocr_pool": None, "offsets": []}
+
+
+def _rec_dir() -> Path:
+    d = _rec_state.get("dir")
+    return Path(d) if d else (RECORDINGS_DIR / "_unnamed")
+
+
+def _rec_manifest_path() -> Path:
+    return _rec_dir() / REC_MANIFEST_NAME
+
+
+def _sanitize_name(name: str) -> str:
+    """檔名安全化 — Windows 禁字元 + 去頭尾空白; 空 → 時間戳由 caller 決定。"""
+    bad = '\/:*?"<>|'
+    return "".join(c for c in (name or "") if c not in bad).strip()
+
+
+def _rec_write_manifest(cfg: dict, status: str, **extra) -> None:
+    """寫 manifest。status: recording / complete / interrupted。fail-soft 不擋錄影。"""
+    try:
+        _rec_dir().mkdir(parents=True, exist_ok=True)
+        data = {
+            "status": status,
+            "started_at": _rec_state.get("started_at"),
+            # nominal = config 設定值; actual = 實測值。
+            # 血證 (Tim 2026-08-01 首次試錄): config 寫 fps=60，實際只有 2.29 fps —— 差 26 倍。
+            # 擷取跟不上設定值是常態 (grab+resize+JPEG 一輪 300ms+)，而 t(i)=i/fps 這條換算
+            # 完全依賴分母是真的。播放端一律用 actual_fps，nominal 只留作參考。
+            "fps": cfg.get("fps", 1),
+            "nominal_fps": cfg.get("fps", 1),
+            "actual_fps": _rec_actual_fps(),
+            "frame_count": _rec_state.get("next_index", 1) - 1,
+            "last_index": _rec_state.get("next_index", 1) - 1,
+            # 錄製**當下**的值 —— 事後沒字幕要分得出「當時沒開」還是「開了但辨識失敗」
+            "ocr_enabled": bool(cfg.get("ocr_enabled", False)),
+            "stt_enabled": bool(cfg.get("stt_enabled", False)),
+            "monitor": cfg.get("monitor"),
+            "resolution": cfg.get("resolution"),
+            "frame_name_width": FRAME_NAME_WIDTH,
+            "title": cfg.get("recording_name", "") or None,
+        }
+        data.update(extra)
+        tmp = _rec_manifest_path().with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, _rec_manifest_path())
+    except Exception as e:
+        log(f"recording manifest write fail: {e}", "WARN")
+
+
+def _rec_actual_fps() -> float:
+    """從實際 offsets 算真實擷取速率（不足 2 幀 → 0.0 表示未知，不假裝）。"""
+    offs = _rec_state.get("offsets") or []
+    if len(offs) < 2:
+        return 0.0
+    span = (offs[-1] - offs[0]) / 1000.0
+    return round((len(offs) - 1) / span, 3) if span > 0 else 0.0
+
+
+def _rec_flush_offsets() -> None:
+    """每幀的實際相對時間落 sidecar（frames.jsonl）。
+
+    為什麼不只靠 fps 換算：fps 是名目值且實測差到 26 倍；而且幀距本身會抖
+    （實測中位數 378ms、最大 5710ms 的卡頓）。offsets 是唯一能還原真實時間軸的東西，
+    且它跟著資料夾走 —— 複製 / 搬移不會像檔案 mtime 那樣被弄丟。
+    """
+    try:
+        offs = _rec_state.get("offsets") or []
+        if not offs:
+            return
+        lines = "".join(json.dumps({"i": i + 1, "offset_ms": ms}) + "\n" for i, ms in enumerate(offs))
+        (_rec_dir() / "frames.jsonl").write_text(lines, encoding="utf-8")
+    except Exception as e:
+        log(f"recording offsets flush fail: {e}", "WARN")
+
+
+def recording_start(cfg: dict) -> None:
+    """開錄：資料夾**開錄即命名**（Tim 2026-08-01 實測回饋）+ 立刻寫 status=recording 的 manifest。
+
+    名稱取自 config.recording_name；留空 → 起始時間戳。撞名自動加 _2/_3。
+    同時建 ocr/ 與 stt/ 子目錄 —— 錄播的字幕快取必須跟直播分開存：
+    兩邊的 frame 都叫 frame_000001.jpg，而 OCR cache 檔名是 `<frame stem>.json`，
+    共用目錄會直接互蓋（2026-08-01 首版實作踩到的真 bug）。
+    """
+    try:
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        started_epoch = time.time()
+        name = _sanitize_name(cfg.get("recording_name", ""))
+        if not name:
+            name = time.strftime("%Y%m%d_%H%M%S", time.localtime(started_epoch))
+        d = RECORDINGS_DIR / name
+        n = 2
+        while d.exists():
+            d = RECORDINGS_DIR / f"{name}_{n}"
+            n += 1
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "ocr").mkdir(exist_ok=True)
+        (d / "stt").mkdir(exist_ok=True)
+
+        _rec_state["dir"] = str(d)
+        _rec_state["active"] = True
+        _rec_state["next_index"] = 1
+        _rec_state["offsets"] = []
+        _rec_state["started_epoch"] = started_epoch
+        _rec_state["started_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        _rec_state["ocr_pool"] = _rec_start_ocr_pool(cfg, d)
+        _rec_write_manifest(cfg, "recording")
+        log(f"recording START → recordings/{d.name}")
+    except Exception as e:
+        _rec_state["active"] = False
+        log(f"recording start fail: {e}", "ERROR")
+
+
+def _rec_start_ocr_pool(cfg: dict, rec_dir: Path):
+    """錄播專用 OCR pool（cache 落 <rec>/ocr/）。
+
+    刻意獨立一個 pool 而不是共用直播那顆：OcrWorkerPool 的 cache 路徑是建構時綁死的
+    `cache_dir / (frame.stem + '.json')`，而兩邊 frame 同名 → 共用必互蓋。
+    workers 固定 1（錄播是背景工作，不跟直播搶 CPU）。
+    """
+    if not cfg.get("ocr_enabled", False):
+        return None
+    try:
+        from subtitle_ocr import OcrWorkerPool, regions_from_config, is_available
+        if not is_available():
+            return None
+        pool = OcrWorkerPool(
+            rec_dir / "ocr",
+            regions=regions_from_config(cfg),
+            min_confidence=float(cfg.get("ocr_min_conf", 0.5)),
+            workers=1,
+            adaptive=bool(cfg.get("ocr_adaptive", True)),
+        )
+        pool.start()
+        log("recording ocr pool started (workers=1, cache→<rec>/ocr/)")
+        return pool
+    except Exception as e:
+        log(f"recording ocr pool start fail: {e}", "WARN")
+        return None
+
+
+def _rec_copy_stt() -> int:
+    """把錄製時間窗內的 STT chunk 複製一份進 <rec>/stt/。
+
+    STT 是**牆鐘戳**的（stt/stt_<epoch>.json），跟 frame index 不同軸 —— 所以用起訖 epoch 篩。
+    複製而非移動：直播端仍需要它們。窗界各放寬 30 秒，避免邊界 chunk 被切掉。
+    只複製、不重算 —— 事後重算的時間戳對不上原始錄製時刻，混進去就再也分不出哪些是當場的。
+    """
+    n = 0
+    try:
+        if not STT_CACHE_DIR.is_dir():
+            return 0
+        lo = (_rec_state.get("started_epoch") or 0) - 30
+        hi = time.time() + 30
+        dest = _rec_dir() / "stt"
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in STT_CACHE_DIR.glob("stt_*.json"):
+            try:
+                ep = float(f.stem.split("_")[-1])
+            except ValueError:
+                continue
+            # ⚠ 檔名的 epoch 是**毫秒**（13 位），不是秒 —— 2026-08-01 首版寫成秒直接比對，
+            # 結果窗永遠命不中、靜默複製 0 筆。而我的沙箱 fixture 又是自己用秒造的，
+            # 於是測試「驗證了我的假設」而不是真實格式，一路綠燈到 Tim 實錄才發現。
+            # 這裡做寬容判斷而非寫死單位：>1e12 視為毫秒（秒要到西元 33658 年才會有 13 位）。
+            if ep > 1e12:
+                ep /= 1000.0
+            if lo <= ep <= hi:
+                shutil.copy2(f, dest / f.name)
+                n += 1
+    except Exception as e:
+        log(f"recording stt copy fail: {e}", "WARN")
+    return n
+
+
+def recording_stop(cfg: dict, status: str = "complete") -> None:
+    """停錄：關 OCR pool → 複製 STT → 落 offsets → 收尾 manifest。
+
+    資料夾在開錄時就已命名，所以**沒有 rename 這一步**（連帶沒有 Windows 目錄改名被拒的風險）。
+    """
+    if not _rec_state.get("active") and not _rec_state.get("dir"):
+        return
+    _rec_state["active"] = False
+    frames = _rec_state.get("next_index", 1) - 1
+    pool = _rec_state.get("ocr_pool")
+    if pool is not None:
+        try: pool.stop()
+        except Exception: pass
+        _rec_state["ocr_pool"] = None
+    stt_n = _rec_copy_stt()
+    _rec_flush_offsets()
+    stopped_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    _rec_write_manifest(cfg, status, stopped_at=stopped_at, stt_chunks=stt_n)
+    log(f"recording STOP({status}) → recordings/{_rec_dir().name}（{frames} 幀 / STT {stt_n} chunk / "
+        f"實測 {_rec_actual_fps()} fps）")
+    _rec_state["dir"] = None
+
+
+def recording_selfheal(cfg: dict) -> None:
+    """開機自癒：上次沒收乾淨的錄製段標成 interrupted。
+
+    「中斷視同錄製結束」預設了「結束時有人寫得下 stopped_at」——
+    而中斷最常見的形態（daemon 被砍 / Editor 崩 / 斷電）根本跑不到那一行。
+    所以痕跡靠**下次啟動**補：掃 recordings/*/manifest.json，status 還是 recording 的就收掉。
+    last_index 由檔名推導（檔名就是序號，一行 max）。
+    """
+    # 舊版固定路徑殘留（2026-08-01 改版前的 recording/）→ 搬進 recordings/ 一併收尾
+    try:
+        if REC_LEGACY_DIR.is_dir() and any(REC_LEGACY_DIR.glob("frame_*.jpg")):
+            RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+            dest = RECORDINGS_DIR / ("legacy_" + time.strftime("%Y%m%d_%H%M%S"))
+            os.rename(REC_LEGACY_DIR, dest)
+            log(f"錄播舊版殘留 recording/ → 搬進 recordings/{dest.name}", "WARN")
+    except Exception as e:
+        log(f"legacy recording dir migrate fail: {e}", "WARN")
+
+    if not RECORDINGS_DIR.is_dir():
+        return
+    for d in RECORDINGS_DIR.iterdir():
+        mp = d / REC_MANIFEST_NAME
+        if not (d.is_dir() and mp.exists()):
+            continue
+        try:
+            data = json.loads(mp.read_text(encoding="utf-8"))
+            if data.get("status") != "recording":
+                continue
+            idxs = [int(f.stem.split("_")[-1]) for f in d.glob("frame_*.jpg")]
+            last = max(idxs) if idxs else 0
+            data["status"] = "interrupted"
+            data["frame_count"] = last
+            data["last_index"] = last
+            data.setdefault("note", "daemon 重啟時偵測到未正常收尾 → 標記 interrupted（stopped_at 未知，以 last_index 為準）")
+            mp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            log(f"recording self-heal: recordings/{d.name} 未正常收尾（{last} 幀）→ interrupted", "WARN")
+        except Exception as e:
+            log(f"recording self-heal fail ({d.name}): {e}", "WARN")
+
+
+def migrate_frame_name_width() -> None:
+    """4 位數 → 6 位數一次性遷移：偵測到舊格式就清空 frames/。
+
+    ring buffer 本來就是 ephemeral（只留最近 N 秒），清掉零損失；
+    不清的話新舊檔名會混在同一資料夾直到輪替完，期間任何按檔名排序的讀取都會漂。
+    """
+    try:
+        old = [f for f in FRAMES_DIR.glob("frame_*.jpg") if len(f.stem.split("_")[-1]) < FRAME_NAME_WIDTH]
+        if not old:
+            return
+        log(f"frame 檔名寬度遷移（{len(old)} 個舊格式檔）→ 清空 frames/（ring buffer 為 ephemeral，零損失）")
+        for f in FRAMES_DIR.glob("frame_*.jpg"):
+            try: f.unlink()
+            except Exception: pass
+    except Exception as e:
+        log(f"frame name migration fail: {e}", "WARN")
+
+def migrate_frame_name_width() -> None:
+    """4 位數 → 6 位數一次性遷移：偵測到舊格式就清空 frames/。
+
+    ring buffer 本來就是 ephemeral（只留最近 N 秒），清掉零損失；
+    不清的話新舊檔名會混在同一資料夾直到輪替完，期間任何按檔名排序的讀取都會漂。
+    """
+    try:
+        old = [f for f in FRAMES_DIR.glob("frame_*.jpg") if len(f.stem.split("_")[-1]) < FRAME_NAME_WIDTH]
+        if not old:
+            return
+        log(f"frame 檔名寬度遷移（{len(old)} 個舊格式檔）→ 清空 frames/（ring buffer 為 ephemeral，零損失）")
+        for f in FRAMES_DIR.glob("frame_*.jpg"):
+            try: f.unlink()
+            except Exception: pass
+    except Exception as e:
+        log(f"frame name migration fail: {e}", "WARN")
+
+
 def atomic_write_jpeg(img, path: Path, quality: int) -> None:
     """tmp → rename 避免 reader 讀到半寫檔."""
     tmp = path.with_suffix(".jpg.tmp")
@@ -626,6 +942,13 @@ def main_loop() -> int:
             f"#{m['index']}={m['w']}x{m['h']}@({m['x']},{m['y']}){'(primary)' if m['primary'] else ''}"
             for m in monitors_cache))
     cfg = load_config()
+    # T-SSREC-01: 檔名寬度一次性遷移 + 上次沒收乾淨的錄製段自癒歸檔（見各自 docstring）
+    migrate_frame_name_width()
+    recording_selfheal(cfg)
+    # 錄播開關的 transition 偵測（與 enabled 同機制）
+    last_recording = bool(cfg.get("recording_enabled", False))
+    if last_recording:
+        recording_start(cfg)
     # T15 — 記初始 enabled 狀態, 偵測 transition
     last_enabled = bool(cfg.get("enabled", False))
     # 直播現場資訊對齊 (Tim 2026-07-27): daemon 重啟不觸發 transition —
@@ -714,11 +1037,45 @@ def main_loop() -> int:
                                 img = img.convert("RGB")
                         except Exception as e:
                             log(f"audio viz overlay fail: {e}", "WARN")
-                # Ring buffer: frame_idx 從 1 開始, mod max_frames
+                # Ring buffer: frame_idx 從 1 開始, mod max_frames（會繞回去覆寫）
                 frame_idx = (cfg["frame_count"] % cfg["max_frames"]) + 1
-                target = FRAMES_DIR / f"frame_{frame_idx:04d}.jpg"
+                target = FRAMES_DIR / f"frame_{frame_idx:0{FRAME_NAME_WIDTH}d}.jpg"
                 atomic_write_jpeg(img, target, cfg["quality"])
                 cfg["frame_count"] += 1
+
+                # ==== T-SSREC-01 錄播雙寫（Tim 2026-08-01）====
+                # 物理意義: 同一張截圖再寫一份進 recording/，**不取 mod** → 不繞、不覆寫。
+                #          刻意雙寫而非二選一：ring 照常滾 → 陪看的 montage 一行都不用改。
+                # 數值影響: index 嚴格不跳號 —— **寫檔成功後才配發下一號**，失敗就用同一號重試。
+                #          （「先 ++ 再寫」是更順手的寫法，但掉一張就永久跳號，ffmpeg 之類的
+                #            image-sequence 消費端會直接斷在那裡。這行不要被善意地改掉。）
+                if _rec_state.get("active"):
+                    try:
+                        rec_idx = _rec_state["next_index"]
+                        rec_target = _rec_dir() / f"frame_{rec_idx:0{FRAME_NAME_WIDTH}d}.jpg"
+                        atomic_write_jpeg(img, rec_target, cfg["quality"])
+                        _rec_state["next_index"] = rec_idx + 1      # ← 只在寫成功後前進
+                        # 每幀實際相對時間（ms）—— 不靠 fps 換算，因為 fps 是名目值
+                        # （Tim 首試錄實測 config 寫 60、實際 2.29，差 26 倍）
+                        _rec_state["offsets"].append(int((time.time() - _rec_state["started_epoch"]) * 1000))
+                        # 錄播的 OCR 走**自己的** pool（cache 落 <rec>/ocr/）——
+                        # 與直播共用會互蓋：兩邊 frame 同名，而 cache 檔名是 <frame stem>.json
+                        rec_pool = _rec_state.get("ocr_pool")
+                        if rec_pool is not None and not sensitive_now:
+                            try: rec_pool.submit(rec_target)
+                            except Exception: pass
+                        # 每 60 幀更新一次 manifest（讓外部看得到進度；崩了也有近期水位）
+                        if rec_idx % 60 == 0:
+                            _rec_write_manifest(cfg, "recording")
+                            _rec_flush_offsets()
+                            free_mb = shutil.disk_usage(str(STREAM_DIR)).free / (1024 * 1024)
+                            if free_mb < float(cfg.get("recording_stop_free_mb", 1024)):
+                                log(f"磁碟剩餘 {free_mb:.0f} MB 低於門檻 → 自動停錄（視同正常結束）", "WARN")
+                                recording_stop(cfg, status="complete")
+                                cfg["recording_enabled"] = False
+                                save_config(cfg)
+                    except Exception as e:
+                        log(f"recording write fail（本幀跳過，index 不前進）: {e}", "WARN")
                 try:
                     update_latest(frame_idx, target)
                 except Exception as e:
@@ -779,6 +1136,15 @@ def main_loop() -> int:
 
             # T15 — 偵測 enabled transition 觸發酒保廣播
             curr_enabled = bool(cfg.get("enabled", False))
+            # ==== T-SSREC-01 錄播 transition（與 enabled 同機制：false→true 開錄 / true→false 停錄）====
+            curr_recording = bool(cfg.get("recording_enabled", False))
+            if curr_recording != last_recording:
+                if curr_recording:
+                    recording_start(cfg)
+                else:
+                    recording_stop(cfg, status="complete")
+                last_recording = curr_recording
+
             if curr_enabled != last_enabled:
                 if curr_enabled:
                     post_bartender_announce("start", cfg, monitors_cache)
@@ -926,6 +1292,10 @@ def main_loop() -> int:
                                 model_size=str(cfg.get("stt_model", "small")),
                                 language=(cfg.get("stt_lang") or None),
                                 chunk_sec=float(cfg.get("stt_chunk_sec", 15)),
+                                # 靜音幻覺防治門檻（Tim 2026-08-01 QA 可調）
+                                rms_gate=float(cfg.get("stt_rms_gate", 0.005)),
+                                no_speech_max=float(cfg.get("stt_no_speech_max", 0.6)),
+                                logprob_min=float(cfg.get("stt_logprob_min", -1.0)),
                                 progress_cb=_stt_progress,
                                 prompt=_stt_prompt,
                                 # T-STT-Watchdog: worker 內部失敗 (擷取炸/恢復) 直通 daemon log, 禁靜默

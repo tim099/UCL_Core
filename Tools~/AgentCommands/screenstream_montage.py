@@ -88,6 +88,25 @@ REPO_ROOT = _resolve_repo_root()
 DATA_ROOT = _resolve_data_root(REPO_ROOT)
 STREAM_DIR = DATA_ROOT / "_screenstream"
 FRAMES_DIR = STREAM_DIR / "frames"
+
+
+# ==== T-SSREC-01 錄播讀取（Tim 2026-08-01）====
+# 物理意義：錄播成品 (recordings/<名稱>/) 的 frame 命名與排序語意跟 ring buffer 完全一致，
+#          所以「讀錄播」不需要另一套工具 —— 只要讓 frame 來源可以換。
+# 邊界：錄播資料夾的 frame 直接放在夾底 (不是 <夾>/frames/)，且 OCR cache 在 <夾>/ocr/；
+#      ring buffer 則是 <_screenstream>/frames/ + <_screenstream>/ocr/ —— 兩者 parent 關係不同，
+#      故 OCR 目錄改用「先找 <frames_dir>/ocr，沒有才退 <frames_dir>.parent/ocr」。
+def set_frames_dir(path) -> None:
+    """把 frame 來源換成指定資料夾（讀錄播用）。None/空 = 維持 ring buffer 預設。"""
+    global FRAMES_DIR
+    if path:
+        FRAMES_DIR = Path(path)
+
+
+def resolve_ocr_dir():
+    """對應當前 FRAMES_DIR 的 OCR cache 目錄（錄播在夾內、ring buffer 在 parent）。"""
+    inner = FRAMES_DIR / "ocr"
+    return inner if inner.is_dir() else (FRAMES_DIR.parent / "ocr")
 DEFAULT_OUT = STREAM_DIR / "_montage.jpg"
 # daemon 端 STT 設定來源 (T-STT-AutoAttach, Tim 2026-07-10 拍板「不必帶 --stt, 啟動 STT 就自動打包」):
 # montage 讀此檔的 stt_enabled 決定是否自動附掛 STT 段 — 對齊酒館 ride 在 --ocr 上的 opt-out 語意。
@@ -349,6 +368,18 @@ def select_frames(args, all_frames):
         cutoff = newest - args.since_sec
         all_frames = [t for t in all_frames if t[2] >= cutoff]
 
+    # --index-range A-B: 錄播鑽子片段用。錄播 index 單調遞增（不 wrap）→ 直接對應時間先後；
+    # ring buffer 上 index 是會繞回去的槽位，對它用 range 沒有時間語意 —— 故僅建議搭 --frames-dir。
+    if getattr(args, "index_range", None):
+        try:
+            lo_s, _, hi_s = str(args.index_range).partition("-")
+            lo, hi = int(lo_s), int(hi_s)
+            before = len(all_frames)
+            all_frames = [t for t in all_frames if lo <= t[0] <= hi]
+            print(f"index-range {lo}-{hi}: {before} → {len(all_frames)} 張")
+        except Exception:
+            print(f"WARN: --index-range 格式錯誤 ({args.index_range!r})，需 'A-B'；本次忽略")
+
     if args.frames is not None:
         # 顯式槽位清單 (字串 "1,5,10")
         want = set()
@@ -587,6 +618,8 @@ def atomic_write_jpeg(img, path, quality):
 # Ops
 # ===========================================================
 def op_make(args):
+    # 讀錄播：把 frame 來源換掉即可 —— 命名與排序語意跟 ring buffer 一致，不需要第二套讀取工具
+    set_frames_dir(getattr(args, "frames_dir", None))
     all_frames = list_frames_by_mtime()
     if not all_frames:
         print(f"ERROR: 無 frame — {FRAMES_DIR} 空 (daemon 沒在跑或 enabled=false?)")
@@ -602,7 +635,7 @@ def op_make(args):
     if args.ocr and getattr(args, "ocr_clamp", True):
         try:
             from subtitle_ocr import read_ocr_status
-            _st = read_ocr_status(FRAMES_DIR.parent / "ocr")
+            _st = read_ocr_status(resolve_ocr_dir())
         except Exception:
             _st = None
         if _st and (time.time() - float(_st.get("updated_at", 0))) < 120.0:
@@ -792,7 +825,7 @@ def op_make(args):
             # 物理意義: daemon 端 worker pool 已在錄製當下預產 ocr/frame_NNNN.json, 這裡命中直接用;
             #          miss (daemon ocr_enabled 關 / cache stale) 才 fallback inline OCR。
             # 數值影響: cache 全命中時連 RapidOCR 3s 模型載入都省 (engine lazy init), 每輪 OCR 開銷 ~0s。
-            ocr_cache_dir = FRAMES_DIR.parent / "ocr"
+            ocr_cache_dir = resolve_ocr_dir()
             ocr_cache_hits = 0
             _engine = {"checked": False, "ok": False}
 
@@ -1186,6 +1219,10 @@ def main():
     pm.add_argument("--last", type=int, default=None, help="取 mtime 最新的 N 張 (預設窗口 60)")
     pm.add_argument("--every", type=int, default=None, help="窗口內每 K 張抽 1 (time-lapse)")
     pm.add_argument("--frames", default=None, help="顯式槽位清單, 如 '1,5,10' (仍按 mtime 排序)")
+    pm.add_argument("--frames-dir", default=None,
+                    help="改讀指定資料夾的 frame (讀錄播用, 如 _screenstream/recordings/<名稱>); 省略=ring buffer")
+    pm.add_argument("--index-range", default=None,
+                    help="只取 index 落在 A-B 的 frame (如 '20-40'), 給錄播鑽子片段用; 與 --last/--every 可併用")
     pm.add_argument("--since-sec", type=float, default=None,
                     help="只收最新 frame 往前 N 秒內的 (濾掉 daemon 重啟前的陳舊 frame; 看直播建議用)")
     pm.add_argument("--after-mtime", default=None,

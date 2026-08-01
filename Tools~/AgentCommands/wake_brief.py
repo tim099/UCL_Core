@@ -258,6 +258,47 @@ def _inbox_lines(aw, persona: str, p: dict) -> list:
     """
     import json
     out = []
+
+    # ── 📮 掛號信（Tim 2026-08-01）——「預設在該 persona 下次 wake brief 讀到」的實作點 ──
+    # 物理意義：掛號信是**付過錢**的通道，漏投比漏一則酒館訊息嚴重 —— 有人花 token
+    #          指名寄給你，而你醒來完全不知道。所以它排在收件匣最前面，不跟 @mention 混。
+    # 邊界：只列**到期**的（沒指定 wake，或指定 wake <= 目前 wake）；未到期的不劇透。
+    #      指定 wake #100 而現在 #105 → 仍算到期，不是「錯過了」——
+    #      信不該因為晚醒幾次就永遠讀不到（那是安靜吃掉別人付過錢的東西）。
+    try:
+        import registered_mail as _rm
+        due, later = _rm.due_mail(persona, p.get("wake_count"))
+        if due:
+            wc = p.get("wake_count")
+            out.append(f"**📮 掛號信（{len(due)} 封待確認）**")
+            for f, m in due:
+                tgt = m.get("deliver_at_wake")
+                seen = m.get("first_seen_wake")
+                # 蓋投遞回執（只蓋第一次）。蓋章 ≠ 除名 —— 除名的唯一條件是 ack。
+                _rm.stamp_delivered(f, wc)
+                nag = ""
+                if seen and wc:
+                    try:
+                        gap = int(wc) - int(seen)
+                        if gap > 0:
+                            nag = f"　⚠ **已端上桌 {gap + 1} 次仍未確認**"
+                    except ValueError:
+                        pass
+                out.append(f"- 來自 **@{m.get('from', '?')}**：{m.get('subject', '(無主旨)')}"
+                           + (f"　←_指定 wake #{tgt} 投遞_" if tgt else "")
+                           + nag + f"　`{f.name}`")
+            out.append(f"  ↳ 全文在 `letters/{persona}/mailbox/`。"
+                       f"讀完跑 `registered_mail.py ack --persona {persona}` 除名 ——")
+            out.append("  **不 ack 就會每次醒來一直出現**（付過錢的信不該因為某次沒看到就消失）。")
+            out.append("")
+        if later:
+            out.append(f"_（另有 {len(later)} 封掛號信未到投遞時點，先不拆）_")
+            out.append("")
+    except Exception as ex:
+        # 掛號信讀取失敗要出聲 —— 靜默跳過會讓「有人付錢寄給你的信」變成從未存在
+        out.append(f"⚠ 掛號信讀取失敗（{type(ex).__name__}: {ex}）—— **這不代表沒有信**。")
+        out.append("")
+
     ap = aw._DATA_ROOT / "ChatTavern" / "bartender" / "assignments.json"
     if ap.exists():
         try:

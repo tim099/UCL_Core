@@ -1,7 +1,7 @@
 ---
 title: Discord Channel Routing
 description: Discord channel → ChatTavern room 路由設定 — 多對一支援, source_class freeform tag, priority desc sort, IMGUI 編輯；含 inbound 中繼器現況（無自動 spawn）與遷移 C# 計畫
-last_updated: 2026-07-28
+last_updated: 2026-08-01
 target_audience: [AI_Agent, Developer]
 aliases: [discord routing, channel routing, channel mappings]
 tags: [discord, chat-tavern, routing, config]
@@ -125,7 +125,15 @@ AgentCommands/ChatTavern/discord_channel_routing.json
 
 ## 4. Bot 端處理流程
 
-1. **啟動**：`load_routing()` 讀此 JSON；若不存在 → fallback 讀 legacy `notify_config.tavern_inbound.channel_mappings`（自動補 `source_class=external, priority=0, enabled=true`）
+1. **啟動**：`load_routing()` 讀此 JSON。
+   > [!WARNING]
+   > **legacy fallback 已不存在（2026-08-01 更正）。** 上面這條「若不存在 → fallback 讀
+   > `notify_config.tavern_inbound.channel_mappings`」描述的是 2026-05-15 python
+   > `discord_inbound_bot.py` 的行為。該 bot 已於 2026-07-28 被 C# `UCL_DiscordInboundDaemon`
+   > 取代，而 C# 的 `GetRoutes()` **沒有 fallback 分支** —— 本 JSON 不存在就直接清空路由表、
+   > inbound 全停。
+   > legacy 欄位已在 2026-08-01 改名為 `_deprecated_channel_mappings`（全 repo grep 零讀取點；
+   > 且內容早已跟本表分岔 —— legacy 2 筆 vs 本表 3 筆）。**本 JSON 是唯一真相源。**
 2. **建 channel_map**：`build_channel_map()` 過濾 `enabled=true` 的 row → `{channel_id_int: routing_row_dict}`
 3. **on_message**：
    - 查 `channel_map.get(message.channel.id)` → 拿到 routing

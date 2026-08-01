@@ -248,9 +248,45 @@ def load_wav(path) -> np.ndarray:
 # ===========================================================
 # 轉錄 — audio → 帶時間戳文字段
 # ===========================================================
+# ===========================================================
+# 區塊職責：靜音幻覺防治 —— RMS 前置閘 + whisper 官方門檻 + segment 後過濾（三層）
+# 物理意義：whisper 對著沒有語音的音軌會**自信地**吐字。2026-08-01 Tim 首次試錄的實證：
+#          14 段全是孤立數字「3/2/1/2/1…」、每段恰好 2.0 秒 —— 那是幻覺的典型形狀。
+#          （wake#52 2026-07-09 就診斷過「靜音幻覺無 RMS gate」，一直沒修，今天補上。）
+# 數值影響：三層各治一種漏網：
+#   ① RMS 前置閘 —— 整段音量低於門檻**根本不送 whisper**（省 GPU + 從源頭免幻覺）。
+#      最可靠，因為它不依賴模型的自我評估。
+#   ② whisper 官方 threshold 參數 —— no_speech_threshold / logprob_threshold /
+#      compression_ratio_threshold 由 transcribe() 內建支援；另加 condition_on_previous_text=False
+#      （官方已知問題：跨窗接續會把幻覺一路滾雪球，關掉可斷開重複迴圈）。
+#   ③ segment 後過濾 no_speech_prob —— **必要，不是重複**：官方內建的抑制邏輯要求
+#      no_speech_prob > 門檻 **且** avg_logprob < 門檻**兩者同時成立**才丟棄。
+#      而靜音幻覺常常是「高 no_speech_prob 但模型很有信心」→ 內建那條不會 fire。
+#      單獨用 no_speech_prob 過一次才擋得住。
+# 邊界：門檻全部可從 config 調（Tim QA 用）。RMS 門檻預設保守（0.005，約 -46 dBFS），
+#      寧可放行邊緣音量也不要把小聲對白吃掉 —— 漏擋只是多幾段雜訊，誤擋是真的丟資訊。
+# ===========================================================
+DEFAULT_RMS_GATE = 0.005          # 低於此 RMS 視為靜音，不送 whisper（0 = 停用本閘）
+DEFAULT_NO_SPEECH_MAX = 0.6       # segment 的 no_speech_prob 超過即丟（對齊官方 no_speech_threshold 預設）
+DEFAULT_LOGPROB_MIN = -1.0        # segment 的 avg_logprob 低於即丟（對齊官方 logprob_threshold 預設）
+
+
+def audio_rms(audio: np.ndarray) -> float:
+    """整段音訊的 RMS（0~1）。空/壞資料回 0.0。"""
+    if audio is None or getattr(audio, "size", 0) == 0:
+        return 0.0
+    try:
+        return float(np.sqrt(np.mean(np.square(audio.astype(np.float32)))))
+    except Exception:
+        return 0.0
+
+
 def transcribe(audio: np.ndarray, language: str | None = None,
                model_size: str = DEFAULT_MODEL, device: str | None = None,
-               initial_prompt: str | None = None) -> list[dict]:
+               initial_prompt: str | None = None,
+               rms_gate: float = DEFAULT_RMS_GATE,
+               no_speech_max: float = DEFAULT_NO_SPEECH_MAX,
+               logprob_min: float = DEFAULT_LOGPROB_MIN) -> list[dict]:
     """把 float32 16k mono audio 丟 whisper 轉錄, 回帶時間戳的段列表。
 
     Args:
@@ -264,22 +300,55 @@ def transcribe(audio: np.ndarray, language: str | None = None,
     """
     if audio is None or audio.size < WHISPER_SAMPLE_RATE // 2:  # < 0.5s 直接跳過
         return []
+    # ① RMS 前置閘 —— 靜音根本不送 whisper。回空是**誠實的空**，不是幻覺的「1」。
+    if rms_gate > 0:
+        rms = audio_rms(audio)
+        if rms < rms_gate:
+            return []
     model = get_model(model_size, device)
     if model is None:
         return []
     try:
         import torch
         use_fp16 = (_pick_device() == "cuda")
+        # ② whisper 官方門檻參數（值皆為官方預設，顯式寫出讓它可被 config 覆蓋、也讓讀 code 的人看得到）
+        #    condition_on_previous_text=False 是刻意偏離預設 (True)：
+        #    官方已知問題 —— 跨窗接續會讓幻覺滾雪球（前一窗的垃圾變成下一窗的 prompt）。
         result = model.transcribe(audio.astype(np.float32), language=language,
                                   fp16=use_fp16, verbose=False,
-                                  initial_prompt=(initial_prompt or None))
+                                  initial_prompt=(initial_prompt or None),
+                                  no_speech_threshold=no_speech_max,
+                                  logprob_threshold=logprob_min,
+                                  compression_ratio_threshold=2.4,
+                                  condition_on_previous_text=False)
         segs = []
+        dropped = 0
         for s in result.get("segments", []):
             txt = (s.get("text") or "").strip()
-            if txt:
-                segs.append({"start": float(s.get("start", 0.0)),
-                             "end": float(s.get("end", 0.0)),
-                             "text": txt})
+            if not txt:
+                continue
+            # ③ 後過濾 —— **必須用 AND，不能用 OR**（2026-08-01 實測血證）。
+            #    首版我寫成 OR，理由是「官方內建要兩者同時成立才丟，擋不住高信心的靜音幻覺」。
+            #    論證很順，結論是錯的：Tim 直播現場實測，whisper 回了五段**真的對白**
+            #    （「正好許久沒救存檔了」等），而它們的 no_speech_prob 全是 0.685 > 0.6
+            #    → 我那層 OR 把五段全砍，字幕整個變空。
+            #    根因：no_speech_prob 是**每 30 秒窗共用一個值**、不是每段各算，
+            #    遊戲/動畫這種 BGM+人聲混音天生就偏高；而 avg_logprob=-0.291 遠高於 -1.0
+            #    表示模型其實很有信心。**官方用 AND 正是為了這種情形。**
+            #    → 靜音幻覺交給 ① RMS 前置閘處理（那才是對症的層）；這裡只沿用官方語意，不加碼。
+            nsp = float(s.get("no_speech_prob", 0.0))
+            alp = float(s.get("avg_logprob", 0.0))
+            if nsp > no_speech_max and alp < logprob_min:
+                dropped += 1
+                continue
+            segs.append({"start": float(s.get("start", 0.0)),
+                         "end": float(s.get("end", 0.0)),
+                         "text": txt,
+                         # 保留判定依據 —— 之後調門檻時看得到當初為什麼留/丟，不用重跑
+                         "no_speech_prob": round(nsp, 4),
+                         "avg_logprob": round(alp, 4)})
+        # 過濾筆數不靜默 —— 掛在模組級供 caller 查（本檔無 logger，避免為一行 debug 引入新依賴）
+        globals()["_last_filtered_count"] = dropped
         return segs
     except Exception as e:
         global _init_error
@@ -382,12 +451,26 @@ def read_stt_cache(after_epoch: float, until_epoch: float,
         hit += 1
         for s in chunk.get("segments", []):
             se, ee = float(s.get("start_epoch", 0.0)), float(s.get("end_epoch", 0.0))
-            # 段中心點落在窗口內即收 (避免跨界段重複/漏)
-            mid = (se + ee) / 2.0
-            if after_epoch <= mid <= until_epoch:
+            # 區塊職責: 跨界段的收錄語意 —— **重疊即收**，不是「中心點落在窗內才收」。
+            # 物理意義: 語音不會照觀看窗切齊。一段 20~32s 的話，在 15~25s 與 25~35s 兩個觀看窗
+            #          **都應該看得到** —— 前者看到它的開頭、後者看到它的結尾。
+            #          舊版用中心點判定 (mid=26 → 只有後窗收得到)，理由是「避免跨界段重複」；
+            #          但那個「重複」正是使用者要的**連續性**，不是噪音 (Tim 2026-08-01 指正)。
+            #          漏掉才是真的傷害：前窗的觀看者完全不知道那 5 秒有人在講話。
+            # 數值影響: 跨界段會在相鄰兩窗各出現一次，並標 partial 讓顯示端知道它是被切開的
+            #          ("head"=尾巴延伸到窗外 / "tail"=開頭在窗之前 / "both"=整個窗都在這句話中間)。
+            if se <= until_epoch and ee >= after_epoch:
                 txt = (s.get("text") or "").strip()
                 if txt:
-                    segs.append({"start_epoch": se, "end_epoch": ee, "text": txt})
+                    before = se < after_epoch
+                    after = ee > until_epoch
+                    partial = ("both" if (before and after) else
+                               "tail" if before else
+                               "head" if after else None)
+                    item = {"start_epoch": se, "end_epoch": ee, "text": txt}
+                    if partial:
+                        item["partial"] = partial
+                    segs.append(item)
     segs.sort(key=lambda x: x["start_epoch"])
     info["chunks_hit"] = hit
     # covered: cache 水位有蓋過窗口尾端 (daemon 沒落後)
@@ -474,7 +557,10 @@ class SttCacheWorker:
     def __init__(self, cache_dir: Path = STT_CACHE_DIR, model_size: str = DEFAULT_MODEL,
                  language: str | None = None, chunk_sec: float = DEFAULT_CHUNK_SEC,
                  retention_sec: float = DEFAULT_CACHE_RETENTION_SEC,
-                 progress_cb=None, prompt: str | None = None, warn_cb=None):
+                 progress_cb=None, prompt: str | None = None, warn_cb=None,
+                 rms_gate: float = DEFAULT_RMS_GATE,
+                 no_speech_max: float = DEFAULT_NO_SPEECH_MAX,
+                 logprob_min: float = DEFAULT_LOGPROB_MIN):
         self.cache_dir = Path(cache_dir)
         self.model_size = model_size
         self.language = language
@@ -482,6 +568,10 @@ class SttCacheWorker:
         #   改動需 toggle off→on 重起才生效 (同 model/lang)。空=不偏置。
         self.prompt = (prompt or "").strip() or None
         self.chunk_sec = float(chunk_sec)
+        # 靜音幻覺三層防治的門檻（可從 daemon config 調，Tim QA 用）—— 見 transcribe() 上方區塊註解
+        self.rms_gate = float(rms_gate)
+        self.no_speech_max = float(no_speech_max)
+        self.logprob_min = float(logprob_min)
         self.retention_sec = float(retention_sec)
         # progress_cb(chunk_num:int, n_segs:int, end_epoch:float) — 每寫完一個 chunk 回呼一次。
         # 物理意義: 讓 caller (CLI / daemon) 能定期輸出「還活著」的進度, 修「背景看似卡住」的 UX。
@@ -584,6 +674,8 @@ class SttCacheWorker:
                 self._error = None
                 write_stt_status_error(self.cache_dir, None)
             segs = transcribe(audio, language=self.language, model_size=self.model_size,
+                              rms_gate=self.rms_gate, no_speech_max=self.no_speech_max,
+                              logprob_min=self.logprob_min,
                               initial_prompt=self.prompt)
             t1 = time.time()
             try:
@@ -671,7 +763,12 @@ def build_stt_section_cached(segments: list[dict], info: dict, model_size: str =
         lines.append("- _(此窗口 cache 內無可辨識語音 / 靜音)_")
     else:
         for seg in segments:
-            lines.append(f"- [{_fmt_epoch_hms(seg['start_epoch'])}] {seg['text']}")
+            # 跨界段標記 —— 讓讀的人知道這句話被觀看窗切開了，別把半句當完整句解讀。
+            # ◂ = 開頭在本窗之前（你看到的是尾巴）；▸ = 結尾在本窗之後（你看到的是開頭）。
+            p = seg.get("partial")
+            pre = "◂ " if p in ("tail", "both") else ""
+            suf = " ▸" if p in ("head", "both") else ""
+            lines.append(f"- [{_fmt_epoch_hms(seg['start_epoch'])}] {pre}{seg['text']}{suf}")
     return "\n".join(lines) + "\n"
 
 

@@ -47,7 +47,23 @@ namespace UCL.Core.EditorLib.Page
         bool m_Enabled = false;
         int m_Fps = 1;
         int m_MaxFrames = 600;
+        // ==== T-SSREC-01 錄播模式（Tim 2026-08-01；規格見 ucl_core:Docs~/{lang}/Plan/Plan_ScreenStream_Recording_Mode.md）====
+        // 物理意義：直播是 ring（會繞回去覆寫），錄播是流（不繞、不覆寫）。兩者**同時**進行（雙寫）——
+        //          錄播不影響 ring，所以陪看的 montage 一行都不用改。
+        // 數值影響：daemon 每張 frame 多寫一份進 _screenstream/recording/；停錄時 rename 成
+        //          recordings/<名稱>/（同磁碟 O(1)，不搬檔）並重建空資料夾。
+        bool m_Recording = false;
+        string m_RecordingName = "";
         string m_Resolution = "1080p";
+        // ==== T-AudioViz 開關（Tim 2026-08-01 要求搬進本頁）====
+        // 物理意義：daemon 截圖前把系統音訊 FFT 疊成聲音圖譜 overlay 到畫面角落/底部 ——
+        //          agent 沒有耳朵，那條圖譜是它判讀「現在有沒有聲音、左右聲道、爆音」的替代感官。
+        // 血證：本專案（Bar）遷移後 audio_viz_enabled 是預設 false，而 EOV 是 true ——
+        //      功能沒壞、code 也在，只是設定沒跟過來，於是「聲音圖譜消失了」。
+        //      跟同日 routing asset 遺漏是同一族：**遷移漏的是設定，不是程式**。
+        bool m_AudioViz = false;
+        string m_AudioVizMode = "stereo_eq";
+        string m_AudioVizPosition = "bottom-stretch";
         int m_Quality = 65;
         string m_Monitor = "primary";
 
@@ -58,6 +74,13 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響: daemon SttCacheWorker lifecycle 綁 config.stt_enabled toggle, 每 loop reload 即生效;
         //          model/lang 改動需 toggle off→on 才重起 (開始/停止錄影天然觸發).
         bool m_SttSetting = false;
+        // ==== 靜音幻覺防治門檻（Tim 2026-08-01 要求可在本頁調）====
+        // 血證：首版把後過濾寫成 OR（no_speech_prob 高 **或** avg_logprob 低就丟），
+        //      直播現場實測把五段真對白全砍光（那批 nsp=0.685 但 logp=-0.291，模型其實很有信心）。
+        //      改回官方 AND 語意後正常。門檻放上來是為了讓這種事**下次能當場調出來**，不用改 code。
+        float m_SttRmsGate = 0.005f;      // 低於此 RMS 的 chunk 不送 whisper（0 = 停用前置閘）
+        float m_SttNoSpeechMax = 0.6f;    // 對齊官方 no_speech_threshold
+        float m_SttLogprobMin = -1.0f;    // 對齊官方 logprob_threshold
         string m_SttModel = "small";
         string m_SttLang = "";
         // T-STT-StaleFix (Tim 2026-07-20): stt_prompt = whisper 人名詞彙偏置 (陪看 skill 寫入) —
@@ -157,6 +180,8 @@ namespace UCL.Core.EditorLib.Page
 
         // Resolution dropdown options
         static readonly string[] s_ResolutionOptions = { "native", "2k", "1440p", "1080p", "720p", "480p" };
+        static readonly string[] s_AudioVizModeOptions = { "stereo_eq", "spectrogram" };
+        static readonly string[] s_AudioVizPosOptions = { "bottom-stretch", "bottom-right", "bottom-left", "top-right", "top-left" };
 
         // T14 — multi-monitor state
         // 物理意義: daemon 啟動時寫 _monitors.json 列舉所有 physical monitor;
@@ -252,6 +277,17 @@ namespace UCL.Core.EditorLib.Page
                     UnityEditor.EditorUtility.RevealInFinder(dir);
                 }
                 catch (Exception e) { Debug.LogWarning($"[ScreenStreamPage] 開啟資料夾失敗: {e.Message}"); }
+            }
+            // 錄播成品資料夾 (Tim 2026-08-01) — recordings/<名稱>/ 各段一夾，內含 frames + ocr/ + stt/ + manifest
+            if (GUILayout.Button("⏺ 開啟錄播資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
+            {
+                string recDir = Path.Combine(GetRepoRoot(), "AgentCommands", "_screenstream", "recordings");
+                try
+                {
+                    if (!Directory.Exists(recDir)) Directory.CreateDirectory(recDir);
+                    UnityEditor.EditorUtility.RevealInFinder(recDir);
+                }
+                catch (Exception e) { Debug.LogWarning($"[ScreenStreamPage] 開啟錄播資料夾失敗: {e.Message}"); }
             }
             // 入口按鈕 — 跳轉「影音管理」頁 (Tim 2026-07-26 要求): STT/OCR 依賴安裝、細部設定、試錄都在那頁
             if (GUILayout.Button("🎬 影音管理 (STT/OCR 安裝與設定)", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
@@ -413,13 +449,21 @@ namespace UCL.Core.EditorLib.Page
                         // 可編輯欄位: 3-way merge — Tim 沒動過的欄位吃磁碟新值, 編輯中的保留
                         m_Fps = MergeField(m_Fps, ref m_BaseFps, data.GetInt("fps", 1));
                         m_MaxFrames = MergeField(m_MaxFrames, ref m_BaseMaxFrames, data.GetInt("max_frames", 600));
+                        m_Recording = data.GetBool("recording_enabled", false);
+                        m_RecordingName = data.GetString("recording_name", "");
                         m_Resolution = MergeField(m_Resolution, ref m_BaseResolution, data.GetString("resolution", "1080p"));
+                        m_AudioViz = data.GetBool("audio_viz_enabled", false);
+                        m_AudioVizMode = data.GetString("audio_viz_mode", "stereo_eq");
+                        m_AudioVizPosition = data.GetString("audio_viz_position", "bottom-stretch");
                         m_Quality = MergeField(m_Quality, ref m_BaseQuality, data.GetInt("quality", 65));
                         m_Monitor = MergeField(m_Monitor, ref m_BaseMonitor, data.GetString("monitor", "primary"));
                         // STT: stt_setting 是 Page 意圖; 舊 config 只有 stt_enabled → fallback 讀它做遷移
                         m_SttSetting = MergeField(m_SttSetting, ref m_BaseSttSetting,
                             data.GetBool("stt_setting", data.GetBool("stt_enabled", false)));
                         m_SttModel = MergeField(m_SttModel, ref m_BaseSttModel, data.GetString("stt_model", "small"));
+                        m_SttRmsGate = (float)data.GetDouble("stt_rms_gate", 0.005);
+                        m_SttNoSpeechMax = (float)data.GetDouble("stt_no_speech_max", 0.6);
+                        m_SttLogprobMin = (float)data.GetDouble("stt_logprob_min", -1.0);
                         m_SttLang = MergeField(m_SttLang, ref m_BaseSttLang, data.GetString("stt_lang", ""));
                         m_StreamTitle = MergeField(m_StreamTitle, ref m_BaseStreamTitle, data.GetString("stream_title", ""));
                         // OCR 欄位 (Tim 2026-07-28 整合自影音管理頁) — 底部原點語意, 同套 3-way merge
@@ -475,6 +519,15 @@ namespace UCL.Core.EditorLib.Page
         /// 開始錄影時帶 true (Tim 2026-07-20 拍板): 每場開播都從乾淨偏置起跑,
         /// 上一場的人名 prompt 不再殘留造成跨場幻聽; 需要偏置的場由陪看 skill 開播後自行寫入。
         /// </summary>
+        /// <summary>簡易 float 輸入欄 —— 打到一半（"-" / "0." / 空字串）不會把值歸零。
+        /// 刻意不用 UCL_GUILayout.FloatField：那支的簽名是 (string label, float value)，
+        /// 這裡的版面已經自己畫了 Label，混用只會多一層對不上的參數。</summary>
+        static float FloatFieldSimple(float value, float width)
+        {
+            string txt = GUILayout.TextField(value.ToString("0.####"), GUILayout.Width(width));
+            return float.TryParse(txt, out float v) ? v : value;   // parse 不掉就保留原值
+        }
+
         void SaveToDisk(bool clearSttPrompt = false)
         {
             try
@@ -496,7 +549,12 @@ namespace UCL.Core.EditorLib.Page
                 existing["enabled"] = new JsonData(m_Enabled);
                 existing["fps"] = new JsonData(m_Fps);
                 existing["max_frames"] = new JsonData(m_MaxFrames);
+                existing["recording_enabled"] = new JsonData(m_Recording);
+                existing["recording_name"] = new JsonData(m_RecordingName ?? "");
                 existing["resolution"] = new JsonData(m_Resolution);
+                existing["audio_viz_enabled"] = new JsonData(m_AudioViz);
+                existing["audio_viz_mode"] = new JsonData(m_AudioVizMode ?? "stereo_eq");
+                existing["audio_viz_position"] = new JsonData(m_AudioVizPosition ?? "bottom-stretch");
                 existing["quality"] = new JsonData(m_Quality);
                 existing["monitor"] = new JsonData(m_Monitor);
                 // STT: stt_setting = Tim 意圖 (持久化); stt_enabled = 實效值 (錄影中且開了才真啟動 worker)
@@ -504,6 +562,9 @@ namespace UCL.Core.EditorLib.Page
                 existing["stt_setting"] = new JsonData(m_SttSetting);
                 existing["stt_enabled"] = new JsonData(m_Enabled && m_SttSetting);
                 existing["stt_model"] = new JsonData(m_SttModel);
+                existing["stt_rms_gate"] = new JsonData(m_SttRmsGate);
+                existing["stt_no_speech_max"] = new JsonData(m_SttNoSpeechMax);
+                existing["stt_logprob_min"] = new JsonData(m_SttLogprobMin);
                 existing["stt_lang"] = new JsonData(m_SttLang);
                 existing["stream_title"] = new JsonData(m_StreamTitle ?? "");
                 // OCR 欄位 (底部原點語意) — daemon 每 loop reload, band 改動走 T-OCR-AutoRestart 自動重起 pool
@@ -721,6 +782,27 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Label("(ring buffer 大小; 600 = 10 min @ 1fps)");
             GUILayout.EndHorizontal();
 
+            // ==== T-SSREC-01 錄播模式 ====
+            // 錄播無視 max_frames（不繞回去），寫進 _screenstream/recording/；
+            // 關掉時 daemon 會把它 rename 成 recordings/<名稱>/ 並重建空資料夾。
+            // 名稱可留空 → 用起始時間戳；事後手動改資料夾名不影響任何機制（真相在 manifest）。
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                bool newRec = GUILayout.Toggle(m_Recording,
+                    m_Recording ? " ⏺ 錄播中（不覆寫，關閉即歸檔）" : " ○ 錄播關閉（僅 ring buffer）",
+                    new GUIStyle(UCL_GUIStyle.ButtonStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                if (newRec != m_Recording)
+                {
+                    m_Recording = newRec;
+                    SaveToDisk();   // 立即落檔 — daemon 每 loop 重讀 config，下一秒生效
+                }
+                GUILayout.Label("名稱:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                m_RecordingName = GUILayout.TextField(m_RecordingName ?? "", UCL_GUIStyle.TextFieldStyle,
+                                                      GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                GUILayout.Label("(留空=用時間戳; 約 245 MB/小時 @1fps)", UCL_GUIStyle.LabelStyle);
+                GUILayout.FlexibleSpace();
+            }
+
             GUILayout.BeginHorizontal();
             GUILayout.Label("resolution:", GUILayout.Width(120));
             int curIdx = Array.IndexOf(s_ResolutionOptions, m_Resolution);
@@ -728,6 +810,36 @@ namespace UCL.Core.EditorLib.Page
             int newIdx = GUILayout.SelectionGrid(curIdx, s_ResolutionOptions, s_ResolutionOptions.Length);
             if (newIdx != curIdx) m_Resolution = s_ResolutionOptions[newIdx];
             GUILayout.EndHorizontal();
+
+            // ==== 🎵 聲音圖譜 overlay（Tim 2026-08-01）====
+            // agent 沒耳朵 —— 這條圖譜是它判讀音訊狀態的替代感官（有沒有聲音 / 左右聲道 / 爆音）。
+            // 判讀方式見 docs/Workflows/Audio_Viz_Reading_Guide.md。
+            using (new GUILayout.HorizontalScope("box"))
+            {
+                bool newViz = GUILayout.Toggle(m_AudioViz,
+                    m_AudioViz ? " 🎵 聲音圖譜 開（疊在截圖上）" : " ○ 聲音圖譜 關",
+                    new GUIStyle(UCL_GUIStyle.ButtonStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                if (newViz != m_AudioViz)
+                {
+                    m_AudioViz = newViz;
+                    SaveToDisk();   // 立即落檔 — daemon 每 loop 重讀 config，下一秒生效
+                }
+                using (new UnityEditor.EditorGUI.DisabledScope(!m_AudioViz))
+                {
+                    int mi = Array.IndexOf(s_AudioVizModeOptions, m_AudioVizMode);
+                    if (mi < 0) mi = 0;
+                    int nmi = GUILayout.SelectionGrid(mi, s_AudioVizModeOptions, s_AudioVizModeOptions.Length,
+                                                      GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    if (nmi != mi) { m_AudioVizMode = s_AudioVizModeOptions[nmi]; SaveToDisk(); }
+
+                    int pi = Array.IndexOf(s_AudioVizPosOptions, m_AudioVizPosition);
+                    if (pi < 0) pi = 0;
+                    int npi = GUILayout.SelectionGrid(pi, s_AudioVizPosOptions, s_AudioVizPosOptions.Length,
+                                                      GUILayout.Width(UCL_GUIStyle.GetScaledSize(380)));
+                    if (npi != pi) { m_AudioVizPosition = s_AudioVizPosOptions[npi]; SaveToDisk(); }
+                }
+                GUILayout.FlexibleSpace();
+            }
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("quality:", GUILayout.Width(120));
@@ -820,6 +932,23 @@ namespace UCL.Core.EditorLib.Page
                     int lNew = GUILayout.SelectionGrid(lIdx, s_SttLangLabels, s_SttLangLabels.Length);
                     if (lNew != lIdx) m_SttLang = s_SttLangValues[lNew];
                     GUILayout.EndHorizontal();
+
+                    // ==== 靜音幻覺防治門檻（Tim 2026-08-01）====
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("靜音閘 RMS:", GUILayout.Width(90));
+                    m_SttRmsGate = FloatFieldSimple(m_SttRmsGate, 70);
+                    GUILayout.Label("no_speech≤", GUILayout.Width(80));
+                    m_SttNoSpeechMax = FloatFieldSimple(m_SttNoSpeechMax, 60);
+                    GUILayout.Label("logprob≥", GUILayout.Width(70));
+                    m_SttLogprobMin = FloatFieldSimple(m_SttLogprobMin, 60);
+                    GUILayout.FlexibleSpace();
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  ⓘ 靜音閘: chunk 音量低於此值不送 whisper (0=停用). 對純靜音最有效, 治「對著無聲吐出 1/2/3」. "
+                        + "後兩者對齊 whisper 官方門檻, 且**兩者同時**成立才丟棄段落 —— "
+                        + "單獨用 no_speech 會把真對白砍掉 (2026-08-01 實測: 真對白的 no_speech_prob 可達 0.685).",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    GUILayout.Label("  ⚠ 改這幾個值要 **toggle STT 開關 off→on** 才生效 —— python 模組已載入記憶體, 改 config 不會重載 code.",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
 
                     GUILayout.Label("  ⓘ small 是品質vs速度甜蜜點; 看日番建議選 ja (自動偵測會飄). "
                         + "whisper 常駐 GPU ~460MB, 停錄影自動釋放.",

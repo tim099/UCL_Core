@@ -1356,7 +1356,15 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
 # 數值影響：見根索引與 wake brief 皆為機械生成產物 → 可隨時重建、可 diff、可寫回歸測試；
 #   手改會被下次生成覆寫（檔頭已標）。
 # ─────────────────────────────────────────────────────────────────────────
-FOREST_DIGEST_THRESHOLD = 5      # 第 N 份見林起開始折見森（digest 計數，非 wake 計數）
+FOREST_DIGEST_THRESHOLD = 3      # 第 N 份見林起開始折見森（digest 計數，非 wake 計數）
+# ⚠ 2026-08-01 Tim 由 5 改為 3，理由是**減少漂移**：
+#   rolling fold 每代只讀「上代見森 + 新見林」兩份（成本不隨壽命成長，這是設計），
+#   代價是 1~2 份見林在首折之前**沒有任何上層在看**。門檻 5 表示前四份各自獨立、
+#   到第五份才第一次被縱向整理，中間那段的內容只能靠 fragment 個別撈。
+#   改成 3 之後第三份見林剛好把 1~3 一起收進第一代見森 —— 首折涵蓋範圍變小、
+#   而且來得早，未被整理的窗口從「最多 4 份」縮到「最多 2 份」。
+#   數值影響：只影響**何時開始**折疊與 brief 的 §3 提示；已折的世代不受影響
+#   （append-only，舊世代全保留）。降門檻不會回溯重折，只會讓下一次判定提早成立。
 ROOT_INDEX_SHOW_LIMIT = 12       # 見根索引「必讀」區塊顯示上限；其餘明說隱藏筆數（禁靜默截斷）
 # （BRIEF_LINE_CAP / BRIEF_CATCHUP_COUNT 已隨 wake brief 生成搬到 wake_brief.py；
 #   本檔下方保留 BRIEF_LINE_CAP 別名供 cmd_brief 顯示用，避免兩處各定義一份會漂的數字）

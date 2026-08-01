@@ -671,6 +671,15 @@ def cmd_submit(args: argparse.Namespace) -> int:
         print_fail_verdict(f"✗ --arg-stdin 展開失敗：\n  {err}")
         return 2
 
+    # ⚠ 預檢**之前**先把 CLI 的 --persona 併進 arg_pairs（2026-08-01 P0b 接線修）：
+    #   append_cmd 也會做同一件事，但它跑在預檢**之後**。而 Tavern 預檢裡的身分解析
+    #   （tier 1 = 顯式宣告）讀的就是 arg_pairs —— 順序顛倒的話，明明帶了 --persona 的呼叫
+    #   會被當成「沒有宣告」，落到 lock 反查，然後在多 persona 在線時被判 ambiguous 擋下。
+    #   實測：少了這行，我自己帶 --persona basecamp 的貼文被自己的新解析器誤擋。
+    #   兩處都填是刻意的 —— append_cmd 服務所有 cmd type，這裡只為預檢補時序。
+    if _PERSONA and not str(arg_pairs.get("persona") or "").strip():
+        arg_pairs["persona"] = _PERSONA
+
     # 區塊職責：Tavern Cmd 的 client-side 預檢
     # 物理意義：Editor round-trip 約 1s 才報錯；client 預檢 < 0.01s 就能擋下 typo / alias 錯
     # 數值影響：失敗 → 立刻 return 2 不寫 queue，不污染 _last_op.md
@@ -842,6 +851,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     if _explicit is None:
         _explicit = _promoted
     args.wait_reply = _tavern_cmd.resolve_wait_reply(args.cmd_type, arg_pairs, _explicit)
+
+    # ⚠ 同 cmd_submit：預檢前先併入 CLI 的 --persona，否則顯式宣告在 tier 1 看不到。
+    #   **這個檢查有兩處**（cmd_submit 一處、cmd_run 一處，因為 cmd_run 自己 inline submit）——
+    #   我第一次只補了 cmd_submit，於是 `run` 路徑照樣誤擋（而日常都走 run，等於沒修）。
+    #   同一段邏輯散在兩個地方就是這種漏改的溫床，收攏是 runcmd 六模組拆分的待辦之一。
+    if _PERSONA and not str(arg_pairs.get("persona") or "").strip():
+        arg_pairs["persona"] = _PERSONA
 
     # Tavern client-side 預檢（cmd_run 自己 inline submit，需獨立呼叫一次；
     # cmd_submit 的同名檢查只服務 `submit` 子命令）

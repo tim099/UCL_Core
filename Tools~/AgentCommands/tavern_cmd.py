@@ -396,10 +396,15 @@ DEFAULT_POST_WAIT_REPLY_SEC = 540.0
 #   (3) agent marker 匹配 — claim_origin 不穩的 agent (e.g. Gemini env 落 unknown-<cwd>-<ppid>
 #       fallback，ppid 每次 invoke 變 → (2) 對不上) 的救援；偵測 caller agent
 #       (claude-code/gemini/antigravity)，online lock 中該 agent 恰好 1 個才填，多個 ambiguous 不猜。
-def autofill_persona_from_lock(arg_pairs: dict) -> None:
-    # 已顯式帶 persona → 尊重不覆寫
+def autofill_persona_from_lock(arg_pairs: dict) -> str:
+    """就地補 persona；回傳錯誤字串（空字串 = 放行）。
+
+    2026-08-01 起回傳型別由 None 改為 str —— 因為它現在**可能拒絕**（歧義時）。
+    回 "" 表示放行（含「查不到」），非空表示 caller 該擋下並把訊息交給使用者。
+    """
+    # 已顯式帶 persona → 尊重不覆寫（仍走解析器做層間一致性檢查，見下）
     if (arg_pairs.get("persona") or "").strip():
-        return
+        pass
     try:
         # 重用 awakening 的 env-hash / lock helper，避免反查邏輯雙份漂移
         import importlib
@@ -410,7 +415,7 @@ def autofill_persona_from_lock(arg_pairs: dict) -> None:
         if not session_dir.exists():
             session_dir = awk._SESSION_DIR
         if not session_dir.exists():
-            return
+            return ""
         # 一次載入所有未過期 lock（後續三段 fallback 共用）
         live_locks = []
         for lp in session_dir.glob("_persona_*.json"):
@@ -422,50 +427,47 @@ def autofill_persona_from_lock(arg_pairs: dict) -> None:
             if not awk.is_lock_expired(lock):
                 live_locks.append(lock)
         if not live_locks:
-            return
+            return ""       # 無人在線 = 本層沒有答案 → 放行（不是拒絕）
 
-        chosen = None
-        why = ""
+        # ── P0b：三態解析（2026-08-01）—— 內臟換成 persona_resolve，本函式只做接線 ──
+        # 舊實作的 tier 2 是這一行：
+        #     chosen = max(origin_hits, key=lambda d: d.get("locked_at", ""))
+        # 同一個 claim_origin 下多個 live lock（= 同機器 / 同 chat 開了多個 persona，
+        # **合法且常見**）時，它靜默挑 locked_at 最新的那個、零警告。
+        # kaguya 為此付過兩次代價：tavern post 誤推成 kiara（用別人的名字發言）、
+        # goodnight 誤跑成 basecamp（**蓋掉別人的 _latest.md**）。
+        # 使用者沒有做錯任何事，卻拿到別人的身分 —— 正因為場景合法，才更不能猜。
+        import persona_resolve as pr
+        # 把 claim_origin 正規化進 lock dict（解析器不依賴 awakening，才能單獨測）
+        norm = [dict(lk, _claim_origin=awk.lock_claim_origin(lk)) for lk in live_locks]
+        res = pr.resolve(
+            explicit=arg_pairs.get("persona"),
+            live_locks=norm,
+            my_origin=awk.compute_claim_origin(),
+            my_agent_marker=(DETECT_ENV_MARKER() or ""),
+            session_token=arg_pairs.get("session_token"),
+        )
 
-        # (1) session_token 精準匹配
-        want_token = (arg_pairs.get("session_token") or "").strip()
-        if want_token:
-            for lock in live_locks:
-                if lock.get("session_token") == want_token:
-                    chosen, why = lock, "session_token"
-                    break
+        if res.ok:
+            arg_pairs["persona"] = res.persona
+            if res.tier != 1:      # tier 1 是 caller 自己帶的，不必回報
+                print(f"  ℹ persona 自動填入（{res.note}）：{res.persona}", file=sys.stderr)
+            return ""
 
-        # (2) claim_origin (env_hash) 匹配 — 多筆取最新
-        if chosen is None:
-            my_origin = awk.compute_claim_origin()
-            origin_hits = [lk for lk in live_locks if awk.lock_claim_origin(lk) == my_origin]
-            if origin_hits:
-                chosen = max(origin_hits, key=lambda d: d.get("locked_at", ""))
-                why = "claim_origin"
+        if res.is_ambiguous:
+            # **寫入類 op 拒絕**（Tim/basecamp 2026-08-01 政策）。
+            # 為什麼不像以前 fail-open 挑一個：post 是署名行為，猜錯 = 冒名，
+            # 而冒名沒有人會當場發現 —— 那是最糟的失效。查不到才放行（見下），
+            # 歧義是「我知道有好幾個人但分不出是誰」，跟「這裡沒有身分」不是同一件事。
+            return res.describe_for_human("發文")
 
-        # (3) agent marker 匹配 — claim_origin 不穩 agent 的救援；恰好 1 個才填
-        if chosen is None:
-            marker = (DETECT_ENV_MARKER() or "").lower()
-            if marker and marker != "unknown":
-                agent_hits = [lk for lk in live_locks
-                              if (lk.get("agent") or "").lower() == marker
-                              or (lk.get("agent") or "").lower().startswith(marker + "-")]
-                if len(agent_hits) == 1:
-                    chosen = agent_hits[0]
-                    why = "agent-marker"
-                elif len(agent_hits) > 1:
-                    print(f"  ⚠ persona 自動反查：agent '{marker}' 有 {len(agent_hits)} 個 online "
-                          f"persona，無法判定該填哪個（請顯式帶 --arg persona=...）", file=sys.stderr)
-
-        if chosen is None:
-            return
-        persona = (chosen.get("persona") or "").strip()
-        if persona:
-            arg_pairs["persona"] = persona
-            print(f"  ℹ persona 自動填入（反查 session lock，by {why}）：{persona}", file=sys.stderr)
+        # none = 本層沒有答案（**不是查無此人**）→ 維持舊的 fail-open：不填、不擋。
+        # 有些 post 本來就不需要 persona，擋掉會製造新的斷點。
+        return ""
     except Exception as e:
         # 反查任何環節出錯都不阻擋發言（degrade gracefully）
         print(f"  ⚠ persona 自動反查略過（{type(e).__name__}: {e}）", file=sys.stderr)
+        return ""
 
 
 def validate_reserved_tag_meta(meta_raw: str) -> tuple[bool, str]:
@@ -571,7 +573,9 @@ def validate_args(arg_pairs: dict) -> tuple[bool, str]:
                 pass    # 模組缺席 → 原樣送出，不擋發言（fail-soft，這只是便利性修正）
 
         # post 沒帶 persona → 反查登入 lock 自動補（防漏帶 persona，Tim 2026-05-27）
-        autofill_persona_from_lock(arg_pairs)
+        _persona_err = autofill_persona_from_lock(arg_pairs)
+        if _persona_err:
+            return False, _persona_err      # 歧義 → 擋下（冒名比擋下嚴重）
         # 保留 tag 的 meta schema 預檢（Tim 2026-07-28 拍板「錯誤資訊在發送流程就知道」）—
         # 鏡像 Cmd_Tavern T06.3 server 端驗證: 缺必填 meta 在 client 端 <0.01s 就擋,
         # 不必等 Editor round-trip 才在 ErrorLog 看到 RejectLastOp。

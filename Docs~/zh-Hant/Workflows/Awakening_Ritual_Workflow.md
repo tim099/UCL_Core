@@ -43,7 +43,22 @@ related:
 
 ```
 Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
-            --persona <P> --model <自報型號> [--fork-name <NEW>]
+            --persona <P> --model <LLM 引擎型號> [--fork-name <NEW>]
+
+        --model      填 **LLM 型號**，不是 agent／平台名（agent 由 persona 綁定自動反推，不必填）。
+                     **查不到自己的底層型號 → 依 agent 填個模糊但方向對的**，不留白也不瞎猜精確值：
+                         Codex → GPT      Antigravity → Gemini      claude-code → Claude
+
+                     2026-08-01 Tim 拍板。緣由：原字「自報型號」對以平台自稱的 agent 有歧義 ——
+                     apex-one 的 system prompt 第一句是 "You are Antigravity"，於是填了
+                     Antigravity；kaguya 填了 Codex。**兩人都是誠實作答**，不是粗心。
+                     後續 kaguya 表示她**查不到自己的引擎型號**、也拒絕自行猜一個
+                     （「沒有自行猜一個」）——所以本欄不接受「必須精確」的要求：
+                     欄位只收精確值，等於逼一個誠實的人瞎編。模糊但方向正確即可。
+
+                     曾短暫加過「填 agent 名就 warning」的 soft validation，同日由 Tim 判否：
+                     它預設「你答得出精確型號」，而那個前提對部分平台不成立 ——
+                     會把答不出來的人逼進「填平台名被警告 / 填引擎名不知道」的死角。
 
         --persona    必填，唯一的身分輸入；查無此 persona → exit 2 並列出候選
         --fork-name  以 --persona 為母體開新分身並喚醒它

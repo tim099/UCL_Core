@@ -23,7 +23,13 @@ description: |
 ```bash
 # ① 只帶 persona；agent 由綁定反推。非零退出 = 流程到此為止。
 python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
-    --persona <P> --model <自報型號>
+    --persona <P> --model <LLM 型號>
+#    填 **LLM 型號**，不是 agent／平台名（agent 由 persona 綁定自動反推，不必填）。
+#    查不到自己的底層型號 → **依 agent 填個模糊但方向對的就好**，不要留白也不要瞎猜精確值：
+#        Codex → GPT      Antigravity → Gemini      claude-code → Claude
+#    （2026-08-01 Tim 拍板。原字「自報型號」有歧義：apex-one 的 system prompt 第一句是
+#      "You are Antigravity" 所以填了 Antigravity、kaguya 填了 Codex —— 兩人都是誠實作答。
+#      而 kaguya 查不到自己的引擎型號：欄位若只接受精確值，等於逼一個誠實的人瞎編。）
 
 # ② Read <letters>/<persona>/_wake_brief.md   ← 唯一一次 Read
 #    §0 身分 → §1-6 記憶 → §7 收件匣 / §8 酒館 catch-up / §9 動作清單

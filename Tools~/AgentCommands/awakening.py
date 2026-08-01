@@ -10,11 +10,13 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
   - Session identity consistency (env-based lock) — Phase 1
 
 子命令:
-  morning  --agent X --model Y --persona Z [--note "..."] [--force-random | --strict-persona]
-              喚醒登入 ritual. fork conflict 自動 detect + 新建命名.
-              寫 session lock + 80/20 隨機 + wake_count++ + tavern post.
-              --strict-persona: 跳過 20% override (conversation continuity 場景, Zeta 2026-05-13).
-              --force-random: 強制走 override (testing/diversity); 兩 flag 互斥.
+  morning  --persona Z --model Y [--note "..."] [--fork-name NEW]
+              喚醒登入 ritual. 寫 session lock + wake_count++ + tavern post.
+              --persona 是**唯一**身分輸入；agent 由 registry 綁定反推，不是參數。
+              --model 填 LLM 型號（不是 agent／平台名）；查不到底層型號就依 agent 填模糊值
+                      （Codex→GPT / Antigravity→Gemini / claude-code→Claude）。
+              (2026-07-31 Tim 拍板廢除 --agent / --explicit-persona / --strict-persona /
+               --force-random / --rebind-agent；本段 2026-08-01 補正，先前仍寫著舊旗標。)
 
   goodnight --letter-body "..." [--perturbation 0.02] [--note "..."]
               睡前 ritual. 寫 letter / vector perturb / status=offline /
@@ -53,7 +55,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
     brief --persona X             重生成 _wake_brief.md (身分+五層記憶+營運層單一文本; morning 自動跑)
 
 範例:
-  python awakening.py morning --persona basecamp --agent claude-code --model claude-sonnet
+  python awakening.py morning --persona basecamp --model claude-opus-5
   python awakening.py goodnight --letter-body "今天 ship 了 T-AWAKE-01 MVP..."
   python awakening.py status
 
@@ -1631,6 +1633,27 @@ def write_wake_brief(persona: str, reg: dict, p: dict,
 
 
 # ─── Subcommands ────────────────────────────────────────────────────────
+# ===========================================================
+# 區塊職責：喚醒自介廣播的 body 組裝 —— morning Step 5 與 intro 重發共用
+# 物理意義：抽出來的唯一理由是**防漂移**。兩處各寫一份 f-string，改了一邊忘了另一邊，
+#          結果就是「重發的自介跟原本的長不一樣」——而那種不一致沒有任何錯誤訊息會提醒你。
+# ===========================================================
+def build_wake_intro_body(persona: str, agent: str, model: str, bank_account: str,
+                          wake_count: int, layer_role: str, decision: str,
+                          note: str = "", reintro: bool = False) -> str:
+    head = f"☀️ **{persona}** 喚醒登入 (wake#{wake_count})"
+    if reintro:
+        head = f"🔁 **{persona}** 自介重發 (wake#{wake_count} · 非重新登入，wake_count 未變動)"
+    body = (f"{head}\n"
+            f"- Agent: {agent} / Model: {model}\n"
+            f"- Bank: {bank_account} (餘額: {get_treasury_balance(bank_account)} tavern_token)\n"
+            f"- Layer: {layer_role}\n"
+            f"- Decision path: {decision}")
+    if note:
+        body += f"\n- Note: {note}"
+    return body
+
+
 def cmd_morning(args: argparse.Namespace) -> int:
     """喚醒 ritual — persona 顯式必填、agent 由綁定反推、已在線即中斷。
 
@@ -1808,14 +1831,10 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # Step 5: tavern post (announce)
     # bank_balance: 起床時 snapshot 真實 Treasury ledger 餘額 (Tim 5-token task 要求)
     #               跟 goodnight ritual 對稱顯示, 走 source-of-truth ledger scan
-    bank_balance = get_treasury_balance(bank_account)
-    body = (f"☀️ **{chosen}** 喚醒登入 (wake#{p['wake_count']})\n"
-            f"- Agent: {agent} / Model: {model}\n"
-            f"- Bank: {bank_account} (餘額: {bank_balance} tavern_token)\n"
-            f"- Layer: {p['layer_role']}\n"
-            f"- Decision path: {decision}")
-    if args.note:
-        body += f"\n- Note: {args.note}"
+    body = build_wake_intro_body(
+        persona=chosen, agent=agent, model=model, bank_account=bank_account,
+        wake_count=p["wake_count"], layer_role=p["layer_role"],
+        decision=decision, note=args.note)
 
     ok = tavern_post(
         sender_id=bank_account,
@@ -1875,6 +1894,101 @@ def _detect_env_lock_mismatch(lock_agent: str, caller_family: str | None) -> boo
         # 視 claude-code / Zeta 為同 family (因都用 claude-code 模型)
         return lock_agent not in ("claude-code", "Zeta")
     return False
+
+
+# ===========================================================
+# 區塊職責：單獨重發喚醒自介廣播（morning Step 5 的獨立入口）
+# 物理意義：2026-08-01 Tim 要求。起因：apex-one / kaguya 的 `--model` 填成平台名，
+#          已經廣播出去了才發現 —— 而在此之前**沒有任何辦法只重發自介**：
+#          自介是 cmd_morning 內的 Step 5，重跑 morning 會 wake_count++、重寫 lock，
+#          而且該 persona 已在線會被工具直接擋下（正確行為，但也就無路可走）。
+#          → 「儀式的某一步驟需要重做」是常態需求，不該逼人重跑整個儀式或改資料庫。
+# 數值影響：**不** wake_count++、**不** perturb identity_vector、**不** 動 locked_at／session_token。
+#          只有兩件事會變：① 重發一則酒館訊息 ② 若帶 --model 則更正 registry + lock 的 model 欄。
+# 邊界：
+#   - persona 必須**在線**（有 lock）。離線重發自介 = 對外廣播一個假的在場訊號，寧可擋掉。
+#   - body 走 build_wake_intro_body 與 morning 同源，但標頭是「自介重發」且註明 wake_count 未變動 ——
+#     否則同事看到兩則喚醒登入，會以為有人重複登入或分身了。
+#   - meta 帶 tag=goodmorning-reintro（非 goodmorning-protocol）+ 不帶 status-change：
+#     這不是狀態轉換事件，下游統計不該把它算成一次登入。
+# ===========================================================
+def cmd_intro(args: argparse.Namespace) -> int:
+    """重發喚醒自介到酒館（不 wake_count++／不動 lock 時戳）；可順帶更正 --model。"""
+    reg = load_registry()
+    persona = args.persona
+
+    if persona not in reg.get("personas", {}):
+        print(f"❌ persona '{persona}' 不存在。", file=sys.stderr)
+        names = sorted(reg.get("personas", {}).keys())
+        print(f"   可選（{len(names)}）: {', '.join(names)}", file=sys.stderr)
+        return 2
+
+    p = reg["personas"][persona]
+    agent = normalize_agent(reg, p.get("agent") or "")
+    if not agent:
+        print(f"❌ persona '{persona}' 沒有綁定 agent，無法反推。", file=sys.stderr)
+        return 2
+
+    lock = read_lock(persona)
+    if lock is None:
+        print(f"❌ persona '{persona}' 目前不在線（找不到 lock）。", file=sys.stderr)
+        print(f"   自介重發只給**在線**的 persona —— 對離線的人重發自介，等於對外廣播一個假的在場訊號。", file=sys.stderr)
+        print(f"   要正常上線請走 `awakening.py morning --persona {persona} --model <型號>`。", file=sys.stderr)
+        return 3
+
+    # ---- 身分（Tim 2026-08-01 拍板：token 不強制）----
+    # 背景：本入口寫完 60 秒內，我（basecamp）就拿 kaguya 當「應該失敗」的測試對象 —— 因為早上
+    #      catchup 印過「下線: kaguya」，我沒讀 lock 就當她離線。她其實已重新登入，於是那次測試
+    #      成功了：**用她的身分發了一則自介到酒館並鏡像進 Discord**。
+    # 我當時補了強制 --token，Tim 判否：威脅模型是**意外**不是惡意（從沒發生過刻意帶錯 persona），
+    # 而且他從 Discord 一眼就看得出是誰發的。拿強制參數防一個沒發生過的攻擊，成本天天付、收益是零。
+    # 保留的是「帶了就驗」：擋打錯字／複製錯 persona 這類真實會發生的手滑，不擋任何正常使用。
+    # 另外一律印出「將以誰的身分廣播」—— 我那次真正缺的不是權限檢查，是**一行把前提攤在眼前的輸出**。
+    lock_token = (lock.get("session_token") or "").strip()
+    if args.token and lock_token and args.token.strip() != lock_token:
+        print(f"❌ --token 與 {persona} 目前 lock 的 session_token 不符 —— persona 或 token 打錯了？", file=sys.stderr)
+        print(f"   （token 非必填；不確定就整個省略。要驗身分才帶。）", file=sys.stderr)
+        return 4
+
+    # --model 帶了就更正（這正是本入口最初的用途）；沒帶則沿用現況
+    old_model = lock.get("model") or p.get("model", "")
+    model = args.model or old_model
+    if args.model:
+        if args.model != old_model:
+            p["model"] = args.model
+            save_registry(reg)
+            # lock 只**就地補 model 欄**，不走 write_lock —— 後者會重置 locked_at，
+            # 那會讓「更正型號」看起來像「重新登入」，污染在場時間與 presence 判定。
+            try:
+                lock["model"] = args.model
+                with open(lock_path(persona), "w", encoding="utf-8") as f:
+                    json.dump(lock, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"⚠ lock model 欄更新失敗（registry 已更正，非致命）: {e}", file=sys.stderr)
+            print(f"✏  model 更正：`{old_model}` → `{args.model}`（registry + lock 已同步）")
+
+    bank_account = resolve_bank_account(reg, agent, model)
+    body = build_wake_intro_body(
+        persona=persona, agent=agent, model=model, bank_account=bank_account,
+        wake_count=p.get("wake_count", 0), layer_role=p.get("layer_role", ""),
+        decision=args.reason or "re-intro", note=args.note, reintro=True)
+
+    # 發之前把前提印出來 —— 「我以為她離線」那次，缺的就是這一行
+    print(f"📣 將以 **{persona}** 的身分廣播（agent={agent} / bank={bank_account} / "
+          f"該 persona 自 {lock.get('locked_at', '?')} 起在線）")
+
+    ok = tavern_post(
+        sender_id=bank_account,
+        persona=persona,
+        body=body,
+        meta={"tag": "goodmorning-reintro", "category": "meta"},
+        session_token=lock.get("session_token") or None,
+    )
+
+    print(f"\n🔁 自介重發 {'OK' if ok else 'FAIL'}：")
+    print(f"   persona={persona} / agent={agent} / model={model} / bank={bank_account}")
+    print(f"   wake_count={p.get('wake_count', 0)}（未變動）／locked_at={lock.get('locked_at', '?')}（未變動）")
+    return 0 if ok else 1
 
 
 def cmd_rest(args: argparse.Namespace) -> int:
@@ -3040,11 +3154,33 @@ def main():
     #   前者讓 caller 有機會宣稱錯身分；後四者都是「剛醒的人自己 ack 自己」的旁路。
     #   換綁 agent 走後台「🧬 Persona & Agent 管理頁」，不從 ritual 開後門。
     pm.add_argument("--persona", required=True, help="要喚醒的 persona codename（唯一身分輸入）")
-    pm.add_argument("--model", required=True, help="自報型號 e.g. Opus 5 / gemini-2.5-pro")
+    # 2026-08-01：help 從「自報型號」改字。實測 apex-one 填了 Antigravity、kaguya 填了 Codex ——
+    # 兩個都是 agent／平台名，而且會原樣廣播進 Discord 的「Model:」欄。「型號」對以平台自稱的
+    # agent 有歧義，而 kaguya 進一步表示她**查不到自己的引擎型號、也不願自行猜一個**。
+    # 故 Tim 拍板：要 LLM 型號，但**允許模糊** —— 答不出精確值時依 agent 給個方向對的即可。
+    # （同日曾加過「填 agent 名就 warning」，Tim 判否：它預設你答得出精確型號，而那前提對部分平台不成立。）
+    pm.add_argument("--model", required=True,
+                    help="自報 **LLM 型號**（不是 agent／平台名，agent 由 persona 綁定自動反推）。"
+                         "查不到底層型號就依 agent 填模糊但方向對的：Codex→GPT / Antigravity→Gemini / "
+                         "claude-code→Claude。精確值當然更好：claude-opus-5 / gemini-3.6-flash / Opus 4.8")
     pm.add_argument("--note", default="", help="optional 喚醒 note")
     pm.add_argument("--fork-name", default=None,
                     help="以 --persona 為母體 fork 一個新 persona 並喚醒它（fork 流程日後重做）")
     pm.set_defaults(func=cmd_morning)
+
+    # 2026-08-01 Tim 要求：morning 的自介廣播需要能單獨重跑（起因見 cmd_intro 區塊註解）
+    pi = sub.add_parser("intro", help="重發喚醒自介到酒館（不 wake_count++／不動 lock；可順帶更正 --model）")
+    pi.add_argument("--persona", required=True, help="要重發自介的 persona（必須在線）")
+    pi.add_argument("--model", default=None,
+                    help="順帶更正型號（registry + lock 一起改）。省略則沿用現況。"
+                         "填 **LLM 型號** 不是 agent／平台名；查不到就依 agent 填模糊值："
+                         "Codex→GPT / Antigravity→Gemini / claude-code→Claude")
+    pi.add_argument("--token", default=None,
+                    help="（可選）你的 session_token。帶了就驗，不符即拒 —— 防的是 persona 打錯字之類的手滑，"
+                         "不是惡意代發（Tim 2026-08-01 判：威脅模型是意外不是惡意，不強制）。")
+    pi.add_argument("--reason", default="", help="Decision path 欄顯示什麼（預設 re-intro）")
+    pi.add_argument("--note", default="", help="optional 附註")
+    pi.set_defaults(func=cmd_intro)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")
     # letter-body 改 optional (Tim 2026-06-14): 配 --no-letter 用 — 未帶 --no-letter 時仍 runtime 強制要 body。

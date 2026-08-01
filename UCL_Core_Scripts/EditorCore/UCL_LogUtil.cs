@@ -107,7 +107,19 @@ namespace UCL.Core.EditorLib
         /// </summary>
         public static void InitLog()
         {
-            string folder = Path.Combine(Application.dataPath, "DebugLogs");
+            // 區塊職責：log 輸出夾 —— 名稱結尾的 `~` 是**功能性的，不是命名風格**。
+            // 物理意義：Unity 對 Assets/ 底下結尾為 `~` 的資料夾完全不做 asset import ——
+            //          不掃描、不建 .meta、不進 AssetDatabase。
+            // 為什麼要這樣（2026-08-01 Tim 回報 Editor 全域卡頓，實測根因之一）：
+            //          原本輸出到 Assets/DebugLogs/，累積到 **876 個檔 / 27MB**，
+            //          而且每寫一次 log，Editor.log 就出現一次
+            //          `Start importing Assets/DebugLogs/Simulation_*.log (DefaultImporter)` ——
+            //          純文字 log 對遊戲毫無用處，卻讓每次 asset refresh 都得掃過它們、
+            //          還各自產生一個 .meta 要追蹤。低 CPU + 高磁碟的卡頓有一份是它貢獻的。
+            // ⚠ 改名時必須同步的消費端：AgentCommands/Tools/debuglog_query.py 的候選路徑表。
+            //   那支是 agent 讀 log 的唯一入口，漏改就會變成「查不到 = 以為沒有錯誤」——
+            //   最糟的失效方式（安靜且看起來像好消息）。
+            string folder = Path.Combine(Application.dataPath, "DebugLogs~");
             Directory.CreateDirectory(folder);
             s_LogPath = Path.Combine(folder, $"Simulation_{System.DateTime.Now:HH_mm_ss}.log");
 

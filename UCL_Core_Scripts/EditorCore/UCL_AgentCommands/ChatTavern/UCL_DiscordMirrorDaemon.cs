@@ -144,7 +144,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         static readonly List<MirrorInFlight> s_InFlight = new List<MirrorInFlight>();
 
         // 區塊職責：每 tick 收割已完成的送出請求
-        // 物理意義：2xx→RecordSent+ClearBackoff；429→SetBackoff；其他 fail→不推 cursor（下輪重送，可見非隱形）
+        // 物理意義：2xx→RecordSent+ClearBackoff（連帶歸零 fail_streak / 熔斷）；
+        //          429→SetBackoff（retry-after）；
+        //          其他 fail→RecordFailure 分類：暫時性走指數退避 30s→1h、
+        //          **永久性（4xx 非 429）直接熔斷停送**（2026-08-01 前是一律「下輪重送」，
+        //          對 404 等於無限重試 + 每輪一則帶 stack trace 的警告）。
         // 數值影響：任一 cursor 變動 → Save() 立即落 disk（seen-set 活過 reload — kiara 要求）
         static void DrainInFlight()
         {
@@ -197,7 +201,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 else
                 {
-                    Debug.LogWarning($"[DiscordMirror] send fail {f.room}/{f.uuid} → {f.webhookId}: {res.error}（cursor 不推進，下輪重送）");
+                    // 失敗分類 + 退避 / 熔斷（Tim 2026-08-01）。原本這裡一律「下輪重送」，
+                    // 而 404 永遠不會變 200 → 無限重試 + 每輪一則帶 stack trace 的警告。
+                    // 詳見 UCL_DiscordMirrorState.RecordFailure 區塊註解。
+                    var (streak, backoffSec, shouldLog) =
+                        UCL_DiscordMirrorState.RecordFailure(f.room, f.webhookId, res.statusCode, res.error);
+                    anyStateChange = true;
+                    if (shouldLog)
+                    {
+                        if (UCL_DiscordMirrorState.IsPermanentFailure(res.statusCode))
+                            Debug.LogWarning(
+                                $"[DiscordMirror] ⛔ **熔斷** {f.room} → webhook {f.webhookId}：HTTP {res.statusCode} 是永久性錯誤"
+                                + $"（webhook/頻道已不存在或無權限），**停止自動重送**。{f.uuid} 未送達。\n"
+                                + $"   修好後走 AdminPage 重設游標或清除該 webhook 的熔斷狀態才會恢復 —— "
+                                + $"刻意不靠時間自動恢復：沒人介入過就恢復，只會回到無限重試。");
+                        else
+                            Debug.LogWarning(
+                                $"[DiscordMirror] send fail {f.room}/{f.uuid} → {f.webhookId}: {res.error}"
+                                + $"（第 {streak} 次連續失敗 → 退避 {backoffSec:F0}s 後重試）");
+                    }
                 }
 
                 f.req.Dispose();

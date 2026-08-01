@@ -21,7 +21,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     {
         public string ts_high = "";                                       // ISO ts 高水位（已確認送達的最新訊息 ts）
         public Dictionary<string, string> seen_uuids = new Dictionary<string, string>();  // uuid → ts（只留窗內）
-        public string backoff_until = "";                                 // ISO；非空 = 429 退避到期前不送
+        public string backoff_until = "";                                 // ISO；非空 = 退避到期前不送（429／一般失敗共用）
+        public int fail_streak = 0;                                       // 連續失敗次數（送達成功歸零）
+        public string dead_reason = "";                                   // 非空 = 熔斷：永久性錯誤，不再自動重送
     }
 
     /// <summary>
@@ -262,11 +264,87 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             cursor.backoff_until = until.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>清掉 backoff（送達成功後）。</summary>
+        /// <summary>清掉 backoff（送達成功後）。連帶歸零失敗連擊與熔斷。</summary>
         public static void ClearBackoff(string room, string webhookId)
         {
             EnsureLoaded();
-            GetOrCreateCursor(room, webhookId).backoff_until = "";
+            var c = GetOrCreateCursor(room, webhookId);
+            c.backoff_until = "";
+            c.fail_streak = 0;
+            c.dead_reason = "";
+        }
+
+        // ===========================================================
+        // 區塊：一般失敗退避 + 永久錯誤熔斷（Tim 2026-08-01 要求）
+        // 物理意義：原本錯誤處理只分三類 —— 成功 / 429 / **其他**，而「其他」一律
+        //          「cursor 不推進，下輪重送」。問題是 **404 是永久性錯誤**
+        //          （webhook 或頻道已不存在），重送一萬次也不會變 200。
+        //          實測後果：那筆訊息永遠 drain 不掉，每個 tick 重試一次、
+        //          每次印一則帶完整 stack trace 的 LogWarning（Unity 的 LogWarning 會做
+        //          ExtractStackTraceNoAlloc，是主執行緒上的昂貴操作）——
+        //          log 無限成長、主執行緒被吃，而且**沒有任何一則訊息告訴你它永遠不會成功**。
+        // 這是同碼失聲的教科書案例：把「等一下會好」跟「永遠不會好」壓成同一類，
+        //          於是選了對兩者都最糟的處理方式 —— 永遠等。
+        // 數值影響：
+        //   - 暫時性（5xx / 網路 / statusCode=0）→ 指數退避 30s→60→120…上限 1 小時，會自己恢復
+        //   - 永久性（400/401/403/404/405/410）→ **熔斷**：記 dead_reason，不再自動重送
+        //     （要復原走 ClearBackoff / admin 重設 —— 人介入過才恢復，不靠時間）
+        //   - 回傳值讓 caller 決定「這次要不要印 log」→ 只在狀態轉變時印，不是每次重試都印
+        // ===========================================================
+        const double FAIL_BACKOFF_BASE_SEC = 30.0;
+        const double FAIL_BACKOFF_MAX_SEC = 3600.0;
+
+        /// <summary>HTTP 狀態碼是否為「重送也不會成功」的永久性錯誤。</summary>
+        /// <remarks>429 不在此列（那是限流，走既有的 retry-after 路徑）。
+        /// statusCode=0 視為網路層失敗 → 暫時性（斷線會恢復）。</remarks>
+        public static bool IsPermanentFailure(long statusCode)
+            => statusCode == 400 || statusCode == 401 || statusCode == 403
+               || statusCode == 404 || statusCode == 405 || statusCode == 410;
+
+        /// <summary>記一次失敗。回 (連擊數, 退避秒數, 是否該印 log)。</summary>
+        public static (int streak, double backoffSec, bool shouldLog) RecordFailure(
+            string room, string webhookId, long statusCode, string error)
+        {
+            EnsureLoaded();
+            var c = GetOrCreateCursor(room, webhookId);
+            c.fail_streak++;
+            bool permanent = IsPermanentFailure(statusCode);
+
+            if (permanent)
+            {
+                bool first = string.IsNullOrEmpty(c.dead_reason);
+                c.dead_reason = $"HTTP {statusCode}: {error}";
+                // 熔斷仍給一個很長的 backoff —— 萬一 dead_reason 被別處清掉，也不會退回無限重試
+                SetBackoffOnCursor(c, FAIL_BACKOFF_MAX_SEC * 24);
+                return (c.fail_streak, FAIL_BACKOFF_MAX_SEC * 24, first);   // 只有轉入熔斷那一次印
+            }
+
+            double sec = Math.Min(FAIL_BACKOFF_BASE_SEC * Math.Pow(2, c.fail_streak - 1), FAIL_BACKOFF_MAX_SEC);
+            SetBackoffOnCursor(c, sec);
+            // 只在第 1 次、以及每翻倍到 2 的次方時印（1/2/4/8…）——
+            // 每次都印等於沒印：洗版的警告會被眼睛自動略過，跟靜默一樣糟。
+            bool shouldLog = (c.fail_streak & (c.fail_streak - 1)) == 0;
+            return (c.fail_streak, sec, shouldLog);
+        }
+
+        /// <summary>該 (room, webhook) 是否已熔斷（永久錯誤，不再自動重送）。</summary>
+        public static bool IsDead(string room, string webhookId)
+        {
+            EnsureLoaded();
+            return !string.IsNullOrEmpty(GetOrCreateCursor(room, webhookId).dead_reason);
+        }
+
+        /// <summary>熔斷原因（給 AdminPage / 稽核顯示）；未熔斷回空字串。</summary>
+        public static string DeadReason(string room, string webhookId)
+        {
+            EnsureLoaded();
+            return GetOrCreateCursor(room, webhookId).dead_reason ?? "";
+        }
+
+        static void SetBackoffOnCursor(UCL_MirrorWebhookCursor c, double seconds)
+        {
+            var until = DateTime.UtcNow.AddSeconds(seconds);
+            c.backoff_until = until.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
         }
 
         // ===========================================================

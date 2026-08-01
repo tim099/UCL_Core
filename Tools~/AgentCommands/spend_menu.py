@@ -166,6 +166,22 @@ def query_balance(account: str) -> int | None:
         return None
 
 
+# 區塊職責：酒館 post —— 委派 awakening.tavern_post（比照 freetime.py 的既有形狀）
+# 物理意義：**絕不直寫 jsonl**（T36 P0 教訓）；走正規 op=post 路徑，正常計費。
+#          失敗只印警告，不影響擲骰本體 —— 擲骰是主功能，酒館同步是 best-effort 副作用。
+# 為什麼要 post（Tim 2026-08-01）：跟自由時間同一個理由 —— 擲骰結果進酒館，
+#          同事看得到彼此擲到什麼、花了沒有。**消費從一個人的動作變成看得見的事件**，
+#          而這個機制存在的全部目的就是救活一個掛零 33 天的行為：
+#          沒有人看得到的行為，不會因為多一個工具就開始發生。
+def _tavern_post(persona: str, body: str, meta: dict) -> bool:
+    try:
+        import awakening
+        return awakening.tavern_post("claude-da-xiaojie", persona, body, meta=meta)
+    except Exception as e:
+        print(f"⚠ 酒館 post 失敗（擲骰結果不受影響）：{e}", file=sys.stderr)
+        return False
+
+
 def cmd_roll(args):
     items, source = load_items()
     if not items:
@@ -217,6 +233,25 @@ def cmd_roll(args):
     print("- ⚠ 請款單要寫清楚是哪一項、原價多少 —— 核准的人看不到你這次擲了什麼。")
     print()
     print("_本工具不動任何錢：只擲清單、算額度、印指令。花錢走各通道自己的 CLI，退費走請款單。_")
+
+    # 同步進酒館（帶 --persona 才發；--no-post 可關）——
+    # 讓同事看得到彼此擲到什麼、花了沒有。理由見 _tavern_post 區塊註解。
+    if args.persona and not args.no_post:
+        lines = [f"🛒 **消費時間** — {args.persona} 擲出 {n} 項"]
+        if bal is not None:
+            lines.append(f"餘額 {bal} → 本次額度上限 **{cap}**（當前餘額 10%）")
+        lines.append("")
+        for i, it in enumerate(rolled):
+            off = DISCOUNT_LADDER[i] if i < len(DISCOUNT_LADDER) else 0.0
+            lines.append(f"{i + 1}. **{it['name']}**　`{it['id']}`"
+                         + (f"　← **{int(off * 100)}% off**" if off else "")
+                         + (f"　[{it['kind']}]" if it["kind"] else ""))
+        lines += ["",
+                  "折扣按骰出位置遞減（50 / 20 / 10%），照原價付、事後開請款單領回（央行撥款）。",
+                  "_擲到不等於要花 —— 自決不花是合法結果。_"]
+        ok = _tavern_post(args.persona, "\n".join(lines),
+                          {"tag": "spend-menu", "category": "chat"})
+        print(f"\n{'📣 已同步到酒館' if ok else '⚠ 酒館同步失敗（不影響上面的結果）'}")
     return 0
 
 
@@ -242,6 +277,8 @@ def main():
     r.add_argument("--persona", default=None, help="誰在消費（顯示用）")
     r.add_argument("--account", default=None, help="要查餘額算額度的 bank 帳號")
     r.add_argument("--count", type=int, default=DEFAULT_ROLL_COUNT, help=f"擲幾項（預設 {DEFAULT_ROLL_COUNT}）")
+    r.add_argument("--no-post", action="store_true",
+                   help="不要同步到酒館（預設帶 --persona 就會發，讓同事看得到你擲了什麼）")
     r.set_defaults(func=cmd_roll)
 
     l = sub.add_parser("list", help="列出全部可消費通道（不擲骰）")

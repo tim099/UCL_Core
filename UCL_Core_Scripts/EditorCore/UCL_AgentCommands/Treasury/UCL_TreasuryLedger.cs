@@ -73,13 +73,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string sourceRef = null,
             string description = null,
             string callerAgentId = null,
-            string cmdId = null)
+            string cmdId = null,
+            string idempotencyKey = null)
         {
             if (string.IsNullOrEmpty(accountId)) throw new ArgumentException("accountId 必填");
             if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
             if (string.IsNullOrEmpty(sourceKind)) throw new ArgumentException("sourceKind 必填");
 
-            return WriteEntry(TreasuryEntryType.Credit, accountId, amount, sourceKind, sourceRef, description, callerAgentId, cmdId);
+            return WriteEntry(TreasuryEntryType.Credit, accountId, amount, sourceKind, sourceRef, description, callerAgentId, cmdId, idempotencyKey);
         }
 
         // ==========================================================
@@ -96,7 +97,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string useRef = null,
             string description = null,
             string callerAgentId = null,
-            string cmdId = null)
+            string cmdId = null,
+            string idempotencyKey = null)
         {
             if (string.IsNullOrEmpty(accountId)) throw new ArgumentException("accountId 必填");
             if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
@@ -109,6 +111,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     $"[Treasury] 不可動用對方帳戶：callerAgentId={callerAgentId} 嘗試 debit accountId={accountId}");
             }
 
+            // 冪等判重先於餘額檢查：重複請求該回既有 entry，而不是在餘額剛好不足時對重複請求噴
+            // 「餘額不足」— 那會把「已經扣過了」誤報成「扣不了」。
+            if (!string.IsNullOrEmpty(idempotencyKey))
+            {
+                var aDup = FindDuplicateByIdempotencyKey(TreasuryEntryType.Debit, accountId, idempotencyKey);
+                if (aDup != null) return aDup;
+            }
+
             // 餘額檢查
             int currentBalance = GetBalance(accountId);
             if (currentBalance < amount)
@@ -117,7 +127,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     $"[Treasury] {accountId} 餘額不足：當前 {currentBalance} < 請求 debit {amount}");
             }
 
-            return WriteEntry(TreasuryEntryType.Debit, accountId, amount, useKind, useRef, description, callerAgentId, cmdId);
+            return WriteEntry(TreasuryEntryType.Debit, accountId, amount, useKind, useRef, description, callerAgentId, cmdId, idempotencyKey);
         }
 
         // ==========================================================
@@ -125,6 +135,41 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 物理意義：建 TreasuryLedgerEntry + 寫 .json 檔（沿用 T38 atomic per-file）
         // 數值影響：自動填 ts / uuid / sig_*；append entry 到 ledger/<date>/
         // ==========================================================
+        // ==========================================================
+        // 區塊職責：冪等判重 — 同 (type, account, idempotency_key) 今天（含跨午夜昨天）已有 entry 即回傳它
+        // 物理意義：2026-08-01 雙扣事故對策。判重範圍限最近兩個 UTC 日期目錄 —— 重複請求的
+        //          實際場景是「秒級重跑 / retry」，兩日窗涵蓋跨午夜邊界；不掃全帳本（10,000+ 檔）。
+        // 數值影響：純讀。找到重複 → LogWarning + 回既有 entry（無寫入、無餘額變動）。
+        // 效能：先 Contains 字串粗篩再 ParseEntry 精確比對 —— date dir 每日約數百檔，毫秒級。
+        // ==========================================================
+        static TreasuryLedgerEntry FindDuplicateByIdempotencyKey(TreasuryEntryType type, string accountId, string key)
+        {
+            string typeStr = type == TreasuryEntryType.Credit ? "credit" : "debit";
+            string needle = "\"idempotency_key\":\"" + EscapeStr(key) + "\"";
+            DateTime now = DateTime.UtcNow;
+            foreach (var day in new[] { now, now.AddDays(-1) })
+            {
+                string dir = UCL_TreasuryPaths.GetLedgerDateDir(day);
+                if (!Directory.Exists(dir)) continue;
+                foreach (var f in Directory.GetFiles(dir, "*.json"))
+                {
+                    string json;
+                    try { json = File.ReadAllText(f, Encoding.UTF8); }
+                    catch (IOException) { continue; }
+                    if (!json.Contains(needle)) continue;          // 粗篩：key 不在就跳過
+                    var e = ParseEntry(json);
+                    if (e != null && e.idempotency_key == key && e.account_id == accountId && e.type == typeStr)
+                    {
+                        Debug.LogWarning(
+                            $"[Treasury] 冪等判重命中：{typeStr} account={accountId} key={key} 已於 {e.ts} 入帳" +
+                            $"（amount={e.amount}）— 本次請求被抑制，回傳既有 entry。");
+                        return e;
+                    }
+                }
+            }
+            return null;
+        }
+
         static TreasuryLedgerEntry WriteEntry(
             TreasuryEntryType type,
             string accountId,
@@ -133,9 +178,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string sourceRef,
             string description,
             string callerAgentId,
-            string cmdId)
+            string cmdId,
+            string idempotencyKey = null)
         {
             UCL_TreasuryPaths.EnsureTreasuryDir();
+
+            // 冪等判重（credit 路徑；debit 已在 Debit() 內先判 — 兩處都判是刻意的：
+            // WriteEntry 是共用底層，「同一前提要守就守在底層」，避免未來新 caller 繞過）
+            if (!string.IsNullOrEmpty(idempotencyKey))
+            {
+                var aDup = FindDuplicateByIdempotencyKey(type, accountId, idempotencyKey);
+                if (aDup != null) return aDup;
+            }
 
             DateTime utcTime = DateTime.UtcNow;
             string uuid6 = GenerateUUID6();
@@ -175,6 +229,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sig_env_marker = envMarker,
                 sig_cmd_id = cmdId ?? "",
                 signature_mismatch = sigMismatch,
+                idempotency_key = idempotencyKey,
             };
 
             // 寫檔
@@ -600,6 +655,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             sb.Append(",\"sig_env_marker\":\"").Append(EscapeStr(e.sig_env_marker)).Append("\"");
             sb.Append(",\"sig_cmd_id\":\"").Append(EscapeStr(e.sig_cmd_id)).Append("\"");
             sb.Append(",\"signature_mismatch\":").Append(e.signature_mismatch ? "true" : "false");
+            // 冪等鍵條件式 emit — 沒帶 key 的 entry 序列化結果與舊版逐字相同（backward compat）
+            if (!string.IsNullOrEmpty(e.idempotency_key))
+            {
+                sb.Append(",\"idempotency_key\":\"").Append(EscapeStr(e.idempotency_key)).Append("\"");
+            }
             sb.Append("}");
             return sb.ToString();
         }
@@ -624,6 +684,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             e.sig_env_marker        = ExtractStringField(json, "sig_env_marker");
             e.sig_cmd_id            = ExtractStringField(json, "sig_cmd_id");
             e.signature_mismatch    = ExtractBoolField(json, "signature_mismatch");
+            e.idempotency_key       = ExtractStringField(json, "idempotency_key");
             return e;
         }
 

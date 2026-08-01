@@ -1220,8 +1220,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 //   📱 = 外部中繼（Discord 等）進來的訊息，跟 agent 在館內發言區分；
                 //   [tag] = meta.tag（task-share / ack-only / idle-self-talk…）給 triage 用；
                 //   ↩seq=N = 這筆是回覆某則，接 thread 用；📎N = 帶 N 個附件。
+                // inbox 標題只稱 persona（Tim 2026-08-01 拍板，幽靈點名配套）：
+                // 顯示「月讀大小姐@kaguya」會養成「@agent persona」的錯誌寫法，而 mention regex 只認 @persona
+                // → 顯示層帶頭只稱 persona，稱呼習慣從讀到的格式養。無 persona 的訊息（酒保/系統）保留原顯示名。
                 string aSenderLabel = !string.IsNullOrEmpty(msg.sender_persona)
-                    ? $"{aSenderName}@{msg.sender_persona}" : aSenderName;
+                    ? msg.sender_persona : aSenderName;
                 var aMarks = new List<string>();
                 if (IsExternalRelay(msg)) aMarks.Add("📱");
                 if (msg.meta != null && msg.meta.TryGetValue("tag", out var aTag) && !string.IsNullOrEmpty(aTag)) aMarks.Add($"[{aTag}]");

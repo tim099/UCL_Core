@@ -23,6 +23,16 @@
       "optional": false
     },
     {
+      "name": "ucl-affinity",
+      "summary": "Affinity 好感度 auto-trigger — 對話內偵測 Tim/同事 affinity 變動 signal 立即 update emotion_vector (8 軸); 走 affinity_update.py CLI, 禁直編 relations.json",
+      "optional": false
+    },
+    {
+      "name": "ucl-auto-message",
+      "summary": "Auto-Message Trigger (Proposal #26) — key 命中 input 自動 inject 預設訊息; 每 fire 1 token, per-session 防循環",
+      "optional": false
+    },
+    {
       "name": "ucl-bartender",
       "summary": "酒保 (Bartender) 系統 — Editor 駐留 daemon 監看 tavern + 時鐘, 自動廣播留言觸發 + 時間提醒 + HP penalty 公式; Cmd_Bartender op=add/list/time_add/...",
       "optional": false
@@ -78,6 +88,11 @@
       "optional": false
     },
     {
+      "name": "ucl-glossary",
+      "summary": "Neologism Glossary (Proposal #25) — 自造新詞 + 解釋 md + tavern post auto-attach refs; 高精度 register 詞命中",
+      "optional": false
+    },
+    {
       "name": "ucl-goodnight",
       "summary": "Awakening goodnight ritual — 晚安大小姐 / 今日子協議, letter 寫進 baton + perturbation + offline 通知",
       "optional": false
@@ -88,8 +103,28 @@
       "optional": true
     },
     {
+      "name": "ucl-letters-to-self",
+      "summary": "Letters to Future Self + 跨 compact dialogue chain — 第一人稱寫信給未來的自己; 與 baton/handoff 四件套互補",
+      "optional": false
+    },
+    {
       "name": "ucl-morning",
       "summary": "Awakening morning ritual — 早安大小姐喚醒 + agent/persona 參數解析 + status check + tavern self-intro",
+      "optional": false
+    },
+    {
+      "name": "ucl-persona-ding",
+      "summary": "Persona↔Persona 自叮 — 同 actor 跨 persona 單次輕量 ping; 介於 letter(廣播)與 dialogue chain(深度)之間",
+      "optional": false
+    },
+    {
+      "name": "ucl-self-constitution",
+      "summary": "Agent 自我憲法 — 一次性建立 identity invariants, 之後受控微調 (constitutional amendment), 防 framing drift",
+      "optional": false
+    },
+    {
+      "name": "ucl-session-handoff",
+      "summary": "Session 搬家 — effective context export → 新 session 接力 (卡頓/quota 將盡/主動 restart 場景)",
       "optional": false
     },
     {
@@ -117,8 +152,13 @@
       "optional": true
     },
     {
-      "name": "valor-battle",
-      "summary": "T63 — 戰場觀察 + 介入指令集 (Cmd_BattleSnapshot/Action/Summary) + 60s cooldown + 4-layer broadcast policy → 英勇紋章 Discord channel",
+      "name": "ucl-work-memory",
+      "summary": "工作記憶區 — 跨 agent 共用、以工作主題為單位的 knowhow 庫; 開工讀取/完工回寫, 換手不斷線",
+      "optional": false
+    },
+    {
+      "name": "ucl-workflow-patch",
+      "summary": "Workflow 補丁 (Proposal #31) — QA confirm bug 後 register patch; 累積 ≥3 自動警示 refactor (anti-rot)",
       "optional": false
     }
   ]

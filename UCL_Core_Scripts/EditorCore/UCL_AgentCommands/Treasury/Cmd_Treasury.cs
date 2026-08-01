@@ -98,7 +98,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             { Cmd_Tavern_Helpers.RejectLastOp($"credit amount 無效或非正數: {amountStr}"); return; }
             if (string.IsNullOrEmpty(sourceKind)) { Cmd_Tavern_Helpers.RejectLastOp("credit 缺少 source_kind"); return; }
 
-            var entry = UCL_TreasuryLedger.Credit(account, amount, sourceKind, sourceRef, description, caller, cmdId);
+            // 冪等鍵（選帶）— 同 Op_Debit；退款 / 撥款重跑不該入帳兩次
+            string idemKey = GetArg(args, "idempotency_key", "");
+            var entry = UCL_TreasuryLedger.Credit(account, amount, sourceKind, sourceRef, description, caller, cmdId, idemKey);
             string md = BuildEntryMd("credit", entry);
             Cmd_Tavern_Helpers.WriteLastOp(md);
         }
@@ -112,13 +114,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string description = GetArg(args, "description", "");
             string caller = GetArg(args, "caller", "");
             string cmdId = GetArg(args, "cmd_id", "");
+            // 冪等鍵（選帶）— caller 顯式宣告「這筆要防重」；空 = 照舊不判重
+            string idemKey = GetArg(args, "idempotency_key", "");
 
             if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("debit 缺少 account"); return; }
             if (!int.TryParse(amountStr, out int amount) || amount <= 0)
             { Cmd_Tavern_Helpers.RejectLastOp($"debit amount 無效或非正數: {amountStr}"); return; }
             if (string.IsNullOrEmpty(useKind)) { Cmd_Tavern_Helpers.RejectLastOp("debit 缺少 use_kind"); return; }
 
-            var entry = UCL_TreasuryLedger.Debit(account, amount, useKind, useRef, description, caller, cmdId);
+            var entry = UCL_TreasuryLedger.Debit(account, amount, useKind, useRef, description, caller, cmdId, idemKey);
             string md = BuildEntryMd("debit", entry);
             Cmd_Tavern_Helpers.WriteLastOp(md);
         }

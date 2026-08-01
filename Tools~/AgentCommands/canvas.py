@@ -675,19 +675,20 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
               不足整批拒絕 → raise ValueError。
     """
     # 計算各資源可用量
-    free_avail = 1 if free_pixel_available(P, persona, now) else 0   # 免費一次最多 1
+    # 免費像素已於 2026-08-01 廢止（Tim 拍板）：canvas 讀的 free_time_sessions.json 自 07-17 起
+    # 沒有任何寫入端（freetime.py enter 從不寫 session 檔）→ 功能靜默死了兩週（kaguya 首報）。
+    # 廢止走「明確報錯」不走「回 0 額度」— 回 0 使用者會誤以為額度用完（同碼失聲）。
+    free_avail = 0
     voucher_avail = voucher_balance(P, persona)
     token_avail = ledger_balance(P, bank)
 
     use_free = use_voucher = use_token = 0
 
     if pay == "freetime":
-        # 只用免費像素（spec：一次只 1，不批量）
-        if n > free_avail:
-            raise ValueError(
-                f"免費像素不足：需 {n}，可用 {free_avail}"
-                f"（免費一次只 1，且需在自由時間 + 冷卻 ≥10min）")
-        use_free = n
+        raise ValueError(
+            "付款方式 freetime（自由時間免費像素）已於 2026-08-01 廢止 — "
+            "該機制的 session 來源檔沒有寫入端，功能自 2026-07-17 起未實際運作過。"
+            "請改用 --pay auto（券 → token）。")
     elif pay == "voucher":
         # 只用券
         if n > voucher_avail:
@@ -1046,6 +1047,14 @@ def cmd_voucher(args):
 # ───────────────────────────── freetime ─────────────────────────────
 
 def cmd_freetime(args):
+    # 免費像素已於 2026-08-01 廢止（Tim 拍板；理由見 compute_payment_plan 註解）。
+    # 指令保留但只印廢止告示 — 直接刪掉會讓照舊文件/skill 操作的人拿到 unknown-command，
+    # 比「明講廢止了」更難排查。
+    print("⛔ 自由時間免費像素已於 2026-08-01 廢止 — session 來源檔沒有寫入端，"
+          "功能自 2026-07-17 起未實際運作過。放點請用 --pay auto（券 → token）。")
+    sys.exit(0)
+
+def _cmd_freetime_dead(args):  # 原實作留存（廢止告示上線一輪後可整段移除）
     P = args._paths
     ensure_meta(P)
     persona = args.persona
@@ -1303,9 +1312,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_voucher)
 
     # freetime
-    p = sub.add_parser("freetime", help="自由時間免費像素狀態")
-    p.add_argument("--sub", required=True, choices=["status"])
-    p.add_argument("--persona", required=True)
+    p = sub.add_parser("freetime", help="（已廢止 2026-08-01）自由時間免費像素")
+    # 參數放寬為選帶 — 廢止告示不該要求使用者先湊齊參數才看得到
+    p.add_argument("--sub", required=False, choices=["status"], default="status")
+    p.add_argument("--persona", required=False, default="")
     p.set_defaults(func=cmd_freetime)
 
     # note

@@ -47,6 +47,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public string sig_cmd_id;                       // 觸發本 entry 的 cmd_id（給 audit trace）
 
         public bool signature_mismatch;                 // sig_agent_id_claimed 跟 sig_env_marker 不一致 → true
+
+        // 冪等鍵（2026-08-01 雙扣事故對策）— caller 顯式帶才啟用判重；空 = 不判重（照舊）。
+        // 物理意義：同 (type, account_id, idempotency_key) 在同一 UTC 日已有 entry → 第二次寫入被
+        //          抑制並回傳既有 entry。「這筆金流要不要防重」是呼叫端的顯式宣告，工具不猜 —
+        //          同一天打賞同一本書兩次是合法的（不帶 key），酒館 post 自動扣款重跑不該扣兩次（帶 key）。
+        public string idempotency_key;
     }
 
     // ===========================================================

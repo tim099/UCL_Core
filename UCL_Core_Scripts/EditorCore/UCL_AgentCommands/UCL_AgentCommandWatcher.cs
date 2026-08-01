@@ -130,9 +130,15 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             try
             {
-                // (1) 掃 default trigger (legacy queue.json)
-                TryDispatchAgent(null);
-                // (2) 掃 per-persona triggers — scan queues/<persona>/queue*.json 列出的 queue id
+                // 掃 per-persona triggers — scan queues/<persona>/queue*.json 列出的 queue id。
+                // ⚠ **不再另外呼叫 TryDispatchAgent(null)**（2026-08-01 雙扣款事故修）：
+                //   persona 資料夾制之後 null 已經對應到 queues/anonymous/，
+                //   而 ListAgentIds() 也會把 anonymous 當成一般 persona 資料夾列出來
+                //   → **同一條 queue 被派兩次**，Runner 對同一筆 OneShot 執行兩遍。
+                //   實害：gura 捐書 20 token 被扣兩次（ledger 兩筆 debit 相隔 5ms、
+                //   同 pid、History UseCount=2）。錢的事沒有「大概不會怎樣」。
+                //   改版前 null → legacy AgentCommands/queue.json、與 queue-*.json 不重疊，
+                //   所以兩段掃描是安全的；改版把兩者合流卻沒拿掉其中一段 —— 是我的回歸。
                 foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())
                 {
                     TryDispatchAgent(agentId);

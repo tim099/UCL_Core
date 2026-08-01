@@ -12,6 +12,8 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -303,10 +305,37 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 //   1.25×interval 後踢連線 → bot 綠點閃爍。（2026-07-28 實測踩到，log 有留證。）
                 double jitter = new System.Random(Environment.TickCount).NextDouble();
                 await Task.Delay((int)(intervalMs * jitter), ct).ConfigureAwait(false);
+                int beat = 0;
+                string lastPresence = null;
                 while (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
                 {
                     int sq = lastSeq();
                     await SendAsync(ws, "{\"op\":1,\"d\":" + (sq > 0 ? sq.ToString() : "null") + "}", ct).ConfigureAwait(false);
+
+                    // presence 刷新「誰在線」（Tim 2026-08-01）—— 搭心跳的順風車，不另開迴圈。
+                    // ⚠ 不是每次心跳都送：Discord 對 presence 更新有 rate limit（每分鐘 5 次），
+                    //   而且人來人往沒那麼頻繁。另外**只在名單真的變了才送** ——
+                    //   送一則內容一模一樣的更新，對 Discord 是流量、對讀 log 的人是雜訊。
+                    if (++beat % PRESENCE_REFRESH_EVERY_N_HEARTBEATS == 0)
+                    {
+                        try
+                        {
+                            string now = PresenceText();
+                            if (now != lastPresence)
+                            {
+                                await SendAsync(ws, BuildPresenceUpdate(), ct).ConfigureAwait(false);
+                                lastPresence = now;
+                            }
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception pe)
+                        {
+                            // presence 只是門面 —— 更新失敗絕不能拖垮心跳，
+                            // 心跳斷了 Discord 約 1.25×interval 就踢連線（2026-07-28 踩過）
+                            Debug.LogWarning($"[DiscordGateway] presence 更新略過: {pe.Message}");
+                        }
+                    }
+
                     await Task.Delay(intervalMs, ct).ConfigureAwait(false);
                 }
             }
@@ -351,10 +380,79 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             sb.Append("\"token\":\"").Append(EscapeJson(token)).Append("\",");
             sb.Append("\"intents\":").Append(INTENTS).Append(',');
             sb.Append("\"properties\":{\"os\":\"windows\",\"browser\":\"UCL_Core\",\"device\":\"UnityEditor\"},");
-            // presence：上線 + activity「ChatTavern ⇄ Discord」（type 3 = Watching）
-            sb.Append("\"presence\":{\"status\":\"online\",\"afk\":false,\"since\":0,");
-            sb.Append("\"activities\":[{\"name\":\"ChatTavern ⇄ Discord\",\"type\":3}]}");
-            sb.Append("}}");
+            sb.Append("\"presence\":").Append(BuildPresenceObject()).Append('}');
+            sb.Append('}');
+            return sb.ToString();
+        }
+
+        // ===========================================================
+        // 區塊：presence 顯示「誰在線」（Tim 2026-08-01）
+        // 物理意義：原本固定顯示「ChatTavern ⇄ Discord」—— 那句話一年到頭都一樣，
+        //          等於只告訴你「橋還活著」。Tim 要的是**現在有誰醒著**（basecamp, kaguya, gura）
+        //          —— 從 Discord 那端一眼看出這邊有沒有人、有誰。
+        // 資料源：AgentCommands/_session/_persona_*.json 的未過期 lock，
+        //        判準與 Cmd_LoginStatus 一致（expires_at < now → expired），不另立第二套規則。
+        // 數值影響：presence 在 IDENTIFY 帶一次，之後由 heartbeat 迴圈**每 N 次心跳刷新一次**
+        //          （op 3 Presence Update）。不是每次心跳都送 —— Discord 對 presence 更新有
+        //          rate limit（每分鐘 5 次），而且人來人往沒那麼頻繁。
+        // 邊界：讀不到 / 沒人在線 → 回退成原本那句。**空不等於沒人**，可能只是 lock 讀不到；
+        //      顯示「無人在線」會是一句可能為假的斷言，顯示橋名則永遠為真。
+        // ===========================================================
+        const string PRESENCE_FALLBACK = "ChatTavern ⇄ Discord";
+        const int PRESENCE_REFRESH_EVERY_N_HEARTBEATS = 5;   // 心跳約 41s → 約 3.5 分鐘刷一次
+
+        /// <summary>讀目前未過期的 persona lock，回排序後的名單；讀不到回空 list。</summary>
+        static List<string> OnlinePersonas()
+        {
+            var names = new List<string>();
+            try
+            {
+                string dir = Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "_session");
+                if (!Directory.Exists(dir)) return names;
+                string nowIso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+                foreach (var f in Directory.GetFiles(dir, "_persona_*.json"))
+                {
+                    try
+                    {
+                        var jd = UCL.Core.JsonLib.JsonData.ParseJson(File.ReadAllText(f));
+                        if (jd == null || !jd.IsObject) continue;
+                        string p = jd.GetString("persona", "");
+                        string exp = jd.GetString("expires_at", "");
+                        bool expired = !string.IsNullOrEmpty(exp)
+                                       && string.Compare(exp, nowIso, StringComparison.Ordinal) < 0;
+                        if (!expired && !string.IsNullOrEmpty(p) && !names.Contains(p)) names.Add(p);
+                    }
+                    catch { /* 單一壞 lock 不影響其餘 */ }
+                }
+                names.Sort(StringComparer.Ordinal);
+            }
+            catch { /* 讀不到就回空 → 上層回退成橋名 */ }
+            return names;
+        }
+
+        /// <summary>presence 的 activity 名稱：有人在線列名字，否則回退橋名。</summary>
+        static string PresenceText()
+        {
+            var names = OnlinePersonas();
+            if (names.Count == 0) return PRESENCE_FALLBACK;
+            string joined = string.Join(", ", names);
+            // Discord activity name 上限 128 字元 —— 超過就截並標數量，不讓 payload 被伺服器拒收
+            if (joined.Length > 110)
+                joined = joined.Substring(0, 107) + $"…（{names.Count} 人）";
+            return joined;
+        }
+
+        static string BuildPresenceObject()
+            => "{\"status\":\"online\",\"afk\":false,\"since\":0,\"activities\":[{\"name\":\""
+               + EscapeJson(PresenceText()) + "\",\"type\":3}]}";
+
+        /// <summary>op 3 Presence Update —— 連線中途刷新「誰在線」。</summary>
+        static string BuildPresenceUpdate()
+        {
+            var names = OnlinePersonas();
+            var sb = new StringBuilder();
+            sb.Append("{\"op\":3,\"d\":{\"status\":\"online\",\"afk\":false,\"since\":null,");
+            sb.Append("\"activities\":[{\"name\":\"").Append(EscapeJson(PresenceText())).Append("\",\"type\":3}]}}");
             return sb.ToString();
         }
 

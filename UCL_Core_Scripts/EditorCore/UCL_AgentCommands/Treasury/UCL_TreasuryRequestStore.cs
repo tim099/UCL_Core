@@ -149,8 +149,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                         amount: req.amount,
                         useKind: "payout_request_disbursement",
                         useRef: req.source_ref,
-                        description: $"payout request {req.request_id} 撥款給 @{req.target_bank}: {req.reason}",
-                        callerAgentId: string.IsNullOrEmpty(decidedBy) ? "system" : decidedBy,
+                        description: $"payout request {req.request_id} 撥款給 @{req.target_bank}"
+                                     + $"（核准者 {(string.IsNullOrEmpty(decidedBy) ? "system" : decidedBy)}）: {req.reason}",
+                        // ⚠ callerAgentId **必須是 "system"**，不能傳 decidedBy（2026-08-01 實測踩到）：
+                        //   Debit 有帳戶隔離鐵律 —— caller 非 "system" 且 != accountId 就拋例外
+                        //   （UCL_TreasuryLedger.cs「不可動用對方帳戶」）。傳 "Tim" 的話
+                        //   **每一次核准都會被自己的隔離規則擋死**，而且錯誤訊息長得像央行的問題。
+                        //   央行撥款本來就是系統內部轉帳（人只是按下核准），核准者身分記在
+                        //   description 與請款單的 decided_by 欄，不靠 callerAgentId 承載。
+                        callerAgentId: "system",
                         cmdId: $"payout_request_{req.request_id}");
                 }
                 catch (Exception ex)

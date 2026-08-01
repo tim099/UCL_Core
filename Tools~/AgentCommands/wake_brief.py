@@ -419,6 +419,156 @@ def _tavern_catchup_lines(aw, persona: str, count: int = None) -> list:
     return out
 
 
+# ── §6.5 見人 ──────────────────────────────────────────────────────────
+# 區塊職責：回答 brief 唯一沒人回答的問題 —— **「我認識誰」**（Tim 2026-08-01）。
+# 物理意義：見根答「我是誰」、見叢答「我要做什麼」、見樹答「我昨天經歷什麼」、
+#          affinity 答「分數多少」——**沒有一層答『這些同事是誰』**。
+#          醒來時他們只是酒館裡的一串名字：知道 kotoko 在做 P0a，但那是任務不是人。
+# 三段（Tim 指定）：
+#   (a) 在線同事的好感度 + 最近幾筆看法   ← 今天會碰到的人，優先
+#   (b) 前三高好感度的離線同事 + 看法     ← 重要但今天不在的人
+#   (c) 最近 5 則**我畫的**印象（全文）   ← 記憶接續：昨天與更早的我認識的人
+# ⚠ (c) 是「我對同事的印象」，**不是別人對我的評價**（我一度讀反並拿錯前提問了六個同事）。
+#   讀的人是未來的自己；被寫的人可以去讀自己的 portraits/，但不強迫、不進他的 brief。
+# 數值影響：非必讀（溢出時可移進續讀檔）；每人只印最新一幅、限最近 N 天 ——
+#          舊印象會被新印象自然取代，不會變成常駐標籤。
+PEOPLE_OPINION_COUNT = 2       # 每人印幾筆最近看法
+PEOPLE_OFFLINE_TOP = 3         # 離線同事取前幾高
+PEOPLE_PORTRAIT_COUNT = 5      # 印象全文印幾則
+PEOPLE_PORTRAIT_DAYS = 14      # 印象只看近 N 天（時效：讓舊印象自然退場）
+
+
+def _online_personas(aw) -> set:
+    """目前有 live lock 的 persona。讀不到回空集合 —— **空 ≠ 沒人在線**，只是查不到。"""
+    out = set()
+    try:
+        for lp in (aw._SESSION_DIR).glob("_persona_*.json"):
+            import json
+            try:
+                lock = json.loads(lp.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not aw.is_lock_expired(lock):
+                pn = (lock.get("persona") or "").strip()
+                if pn:
+                    out.add(pn)
+    except Exception:
+        pass
+    return out
+
+
+def _affinity_targets(aw, persona: str) -> dict:
+    """讀自己的 affinity；回 {對象: {score, tier, opinions[]}}。"""
+    import json
+    f = aw._DATA_ROOT / "ChatTavern" / "affinity" / persona / "relations.json"
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8")).get("targets", {}) or {}
+    except Exception:
+        return {}
+
+
+def _fmt_opinions(entry: dict, n: int) -> list:
+    """取最近 n 筆 opinion。schema 容錯：opinion 可能是 str 或 dict。"""
+    ops = entry.get("opinions") or []
+    out = []
+    for o in ops[-n:]:
+        if isinstance(o, dict):
+            txt = o.get("text") or o.get("opinion") or o.get("body") or ""
+            when = (o.get("at") or o.get("ts") or "")[:10]
+        else:
+            txt, when = str(o), ""
+        txt = txt.strip()
+        if txt:
+            out.append(f"    · {txt}" + (f"　_{when}_" if when else ""))
+    return out
+
+
+def _strip_portrait_chrome(body: str, about: str, headline: str) -> list:
+    """剝掉畫像檔開頭的 `# 🖼 <about> — by <who>` 與重複的 `**headline**`，回內文行陣列。
+
+    只剝**開頭連續的門面行**，不掃全文 —— 內文中間若剛好有同樣的字是作者寫的，
+    那是內容不是雜訊。剝太多比留一行重複更糟（那會吞掉別人寫的東西）。
+    """
+    lines = body.strip().split("\n")
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if not s:
+            i += 1
+            continue
+        if s.startswith("# ") and about in s:
+            i += 1
+            continue
+        if headline and s in (f"**{headline}**", headline):
+            i += 1
+            continue
+        break
+    return lines[i:]
+
+
+def _people_lines(aw, persona: str) -> list:
+    out = []
+    targets = _affinity_targets(aw, persona)
+    online = _online_personas(aw) - {persona}      # 自己不算「同事」
+
+    def block(name: str, tag: str = "") -> list:
+        e = targets.get(name) or {}
+        sc, tier = e.get("surface_score", "—"), e.get("tier", "")
+        head = f"- **{name}**　好感 {sc}" + (f"（{tier}）" if tier else "") + (f"　{tag}" if tag else "")
+        return [head] + _fmt_opinions(e, PEOPLE_OPINION_COUNT)
+
+    # (a) 在線
+    if online:
+        out.append(f"**🟢 現在在線（{len(online)} 人）**")
+        for n in sorted(online, key=lambda x: -(targets.get(x, {}).get("surface_score") or 0)):
+            out += block(n)
+        out.append("")
+    else:
+        out.append("**🟢 現在在線**：(無人在線，或 lock 讀取失敗 —— 空不代表真的沒人)")
+        out.append("")
+
+    # (b) 離線的前 N 高
+    offline = [(n, e.get("surface_score") or 0) for n, e in targets.items()
+               if n not in online and n.lower() not in ("tim",) and n != persona]
+    offline.sort(key=lambda t: -t[1])
+    if offline:
+        out.append(f"**⚪ 離線・好感前 {PEOPLE_OFFLINE_TOP}**")
+        for n, _s in offline[:PEOPLE_OFFLINE_TOP]:
+            out += block(n)
+        out.append("")
+
+    # (c) 我畫的印象（全文）
+    try:
+        import portraits as _pt
+        items = _pt.latest_per_person(persona, PEOPLE_PORTRAIT_COUNT, PEOPLE_PORTRAIT_DAYS)
+        if items:
+            out.append(f"**🖼 最近印象最深的 {len(items)} 位（我畫的，近 {PEOPLE_PORTRAIT_DAYS} 天・全文）**")
+            out.append("")
+            for it in items:
+                out.append(f"### 🖼 {it['about']}　_{it['at'][:10]}_"
+                           + (f"　{it['headline']}" if it["headline"] else ""))
+                out.append("")
+                # 剝掉畫像檔自己的 h1 標題與重複的粗體 headline —— brief 已經在上一行印過了。
+                # 同 §5 見樹剝 frontmatter 的理由：inline 進來的是**內容**，
+                # 檔案自己的門面在這裡是重複的雜訊（實測：一則印象會出現兩次標題）。
+                out += _strip_portrait_chrome(it["body"], it["about"], it["headline"])
+                out.append("")
+        else:
+            out.append(f"**🖼 印象**：近 {PEOPLE_PORTRAIT_DAYS} 天還沒畫過任何人 —— "
+                       f"晚安時挑 1~3 位今天印象最深的同事寫下（`portraits.py write`）。")
+            out.append("")
+    except Exception as ex:
+        # 讀不到要出聲：靜默跳過會讓「我認識誰」這一層看起來本來就是空的
+        out.append(f"⚠ 印象讀取失敗（{type(ex).__name__}: {ex}）—— **這不代表沒有印象**。")
+        out.append("")
+
+    if not targets:
+        out.append("_(還沒有 affinity 紀錄 —— 跟同事互動後走 `ucl-affinity` 結算)_")
+    return out
+
+
 def _next_actions_lines(persona: str, st: dict, fst: dict, threshold: int) -> list:
     """§9 今日動作清單 — 把 §6 的機械判定翻成**當場可執行的完整配方**。
 
@@ -609,6 +759,9 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             todo6.append(f"- 🧬 fork 初醒：額外讀母 persona '{parent}' 的 "
                          f"`{pf.relative_to(aw._REPO_ROOT)}` 接血統")
     sections.append(("📋 §6 記憶維護狀態", todo6, True))
+
+    # §6.5 見人 —— brief 唯一的空缺（Tim 2026-08-01）
+    sections.append(("🧑 §6.5 見人 — 我認識誰", _people_lines(aw, persona), False))
 
     # ── 營運層（§7-§9）：Tim 2026-07-31 R5 —— 併進同一份，但排在記憶層之後 ──
     sections.append(("📥 §7 待辦收件匣", _inbox_lines(aw, persona, p), False))

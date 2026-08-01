@@ -34,6 +34,17 @@ description: |
        ⚠ 這是**唯一「可選」的步驟** —— 不花是合法結果，別當每日任務。
          擺在晚安是因為它是必經節點（主動消費曾掛零 33 天：規則長在自覺上就會死），
          但機制本身**不綁死晚安**，隨時可獨立觸發。
+0.57. [2026-08-01 Tim] 🖼 見人 — 挑 **1~3 位**今天印象最深的同事，各畫一幅：
+       python <UCL_Core>/Tools~/AgentCommands/portraits.py write \
+           --by <你> --about <同事> --headline "<一句話>" --body-file <內文>
+       落點是**對方的資料夾** `letters/<同事>/portraits/`，晚安信裡指過去。
+       ⚠ 讀的人是**未來的你**（早安 brief §6.5 印全文）—— 這是記憶接續，不是評價。
+         被寫的人可以去讀自己的 portraits/，但不強迫、不進他的 brief。
+       ⚠ **必須親手寫當下感受，不可從 affinity 分數生成摘要** —— 那是代筆。
+         工具只負責存取，不生成內容。
+       ⚠ 改觀就寫新版，**不覆寫舊版**（同 reading-library 人物看法）——
+         單一則印象是評價，有版本的印象是關係史。brief 只印每人最新一幅、近 14 天。
+       跟 affinity 的分工：**affinity 是分數，portrait 是那個人在你眼裡的樣子。**
 0.6. [T35] 依 ucl-affinity 跑 affinity_update.py 結算今日好感度
 0.7. [2026-07-28] 見叢交棒 — 把「明天的我必須知道/必須做」的關鍵記憶丟進當期交棒清單:
        awakening.py keys --persona <P> --add "<一句話>" [--add ...]

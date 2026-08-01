@@ -4,7 +4,9 @@
 //            ② UCL_BankAdminPage 的請款審批面板（Tim 側，Editor GUI）
 //          兩端各寫一份檔案 IO = 雙實作，schema 一漂就對不上（2026-07-31 已經吃過
 //          「同一語意三處實作」的教訓，見 docs/Glossary/same-code-mute.md 一族）。故收攏於此。
-// 數值影響：本類別**不會**動任何餘額 —— 錢只在 Approve() 內經 UCL_TreasuryLedger.Credit 產生。
+// 數值影響：本類別只在 Approve() 內動錢，且 2026-08-01 起**不再憑空產生** —— 改為
+//          「央行 Debit → 收款方 Credit」的閉環撥款（Tim：請款流程改為從央行扣，經濟循環）。
+//          央行不足額 = 核准被拒，不偷偷 mint。詳見 Approve() 內區塊註解。
 //          Create/Cancel/Reject 全是純檔案操作，對帳面零影響。
 // 設計取捨：
 //   - **status 就地改寫**（pending → approved/rejected/cancelled）而非 append 新事件：
@@ -124,14 +126,80 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             if (req.status != StatusPending)
                 throw new InvalidOperationException($"請款單 {requestId} 目前是 {req.status}，只有 pending 可核准（防重複打款）");
 
-            var entry = UCL_TreasuryLedger.Credit(
-                accountId: req.target_bank,
-                amount: req.amount,
-                sourceKind: req.source_kind,
-                sourceRef: req.source_ref,
-                description: $"payout request {req.request_id} approved: {req.reason}",
-                callerAgentId: string.IsNullOrEmpty(decidedBy) ? "system" : decidedBy,
-                cmdId: $"payout_request_{req.request_id}");
+            // ── 區塊：請款改由央行出帳（Tim 2026-08-01「請款流程可以改為從央行扣（經濟循環）」）──
+            // 物理意義：此前核准是**憑空 Credit** —— token 從無到有，經濟體只進不出。
+            //          改成從央行扣之後閉環成立：保管費流進央行 → 核准的請款從央行流回 agent。
+            //          央行餘額因此是**這個經濟體真實的可支配預算**，不再是一個純統計數字。
+            // 數值影響：央行不足額 → **拒絕核准並明說差額**，不靜默憑空生錢。
+            //          這是刻意的：閉環經濟的意義就在於「發得出來的錢有上限」，
+            //          若不足時偷偷 mint，央行餘額就變成裝飾品，而且沒有人會發現。
+            //          真的要超發 → 走 BankAdminPage 打款先補央行（那是有紀錄的動作）。
+            // 邊界：收款方就是央行本身時不扣（自轉無意義，同 daemon 的央行豁免）。
+            // 設計取捨：debit→credit→rollback 的三段式照抄 Cmd_Treasury.Op_Transfer 的既有形狀，
+            //          不發明第二套轉帳流程。
+            string centralBank = UCL_CentralBankSettings.CentralBankAccount;
+            bool drawFromCentralBank = !string.IsNullOrEmpty(centralBank) && req.target_bank != centralBank;
+            TreasuryLedgerEntry cbDebit = null;
+            if (drawFromCentralBank)
+            {
+                try
+                {
+                    cbDebit = UCL_TreasuryLedger.Debit(
+                        accountId: centralBank,
+                        amount: req.amount,
+                        useKind: "payout_request_disbursement",
+                        useRef: req.source_ref,
+                        description: $"payout request {req.request_id} 撥款給 @{req.target_bank}: {req.reason}",
+                        callerAgentId: string.IsNullOrEmpty(decidedBy) ? "system" : decidedBy,
+                        cmdId: $"payout_request_{req.request_id}");
+                }
+                catch (Exception ex)
+                {
+                    int cbBalance = -1;
+                    try { cbBalance = UCL_TreasuryLedger.GetBalance(centralBank); } catch { }
+                    throw new InvalidOperationException(
+                        $"央行 `{centralBank}` 出帳失敗，請款單 {req.request_id} 未核准（沒有動任何錢）。" +
+                        $"央行餘額 {cbBalance} / 本單需 {req.amount}。" +
+                        $"要放行請先從銀行後台打款補足央行，不要繞過閉環。原因：{ex.Message}");
+                }
+            }
+
+            TreasuryLedgerEntry entry;
+            try
+            {
+                entry = UCL_TreasuryLedger.Credit(
+                    accountId: req.target_bank,
+                    amount: req.amount,
+                    sourceKind: req.source_kind,
+                    sourceRef: req.source_ref,
+                    description: $"payout request {req.request_id} approved: {req.reason}"
+                                 + (drawFromCentralBank ? $"（由 {centralBank} 撥款）" : ""),
+                    callerAgentId: string.IsNullOrEmpty(decidedBy) ? "system" : decidedBy,
+                    cmdId: $"payout_request_{req.request_id}");
+            }
+            catch (Exception ex)
+            {
+                // 央行已扣但收款方沒進帳 → 退回央行，否則那筆錢憑空消失且無聲
+                if (cbDebit != null)
+                {
+                    try
+                    {
+                        UCL_TreasuryLedger.Credit(centralBank, req.amount, "payout_request_rollback",
+                            req.source_ref + "|rollback",
+                            $"請款 {req.request_id} 撥款失敗回滾: {ex.Message}", "system",
+                            $"payout_request_{req.request_id}_rollback");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        throw new InvalidOperationException(
+                            $"請款 {req.request_id} Credit 失敗且央行回滾也失敗 —— " +
+                            $"央行有一筆懸空 debit（uuid={cbDebit.uuid}, 金額 {req.amount}）需人工處理。" +
+                            $"orig={ex.Message} / rollback={rollbackEx.Message}");
+                    }
+                }
+                throw new InvalidOperationException(
+                    $"請款 {req.request_id} 撥款失敗{(cbDebit != null ? "（央行已回滾，帳目平）" : "")}: {ex.Message}");
+            }
 
             req.status = StatusApproved;
             req.decided_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z";

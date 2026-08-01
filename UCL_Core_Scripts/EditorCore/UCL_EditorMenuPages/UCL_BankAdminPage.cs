@@ -63,6 +63,13 @@ namespace UCL.Core.EditorLib.Page
         int m_CacheTokenBal = 0;
         int m_CacheCanvasBal = 0;
         int m_CacheTavernBal = -1;        // -1 = 無法解析 persona 的 bank
+        int m_CacheCentralBankBal = -1;   // 🏦 央行餘額；-1 = 讀取失敗
+                                          // ⚠ 2026-08-01 回歸事故：央行面板初版每幀直接呼叫
+                                          //   UCL_TreasuryLedger.GetBalance(央行) —— 對一個上萬筆的 ledger
+                                          //   做 per-frame replay，Tim 回報「開頁嚴重卡頓無法操作」。
+                                          //   本區塊上方的註解**就是在警告這件事**，而我照樣踩了。
+                                          //   教訓：這頁任何新面板要顯示餘額，一律走快取，
+                                          //   不准在 Draw* 裡直接呼叫 GetBalance。
         string m_CacheForBank = "\0";     // 快取對應的選擇（sentinel 初值保證首幀必算）
         string m_CacheForPersona = "\0";
         bool m_BalancesDirty = true;      // LoadData / 操作後 / Refresh 設 true → 下輪強制重算
@@ -87,6 +94,14 @@ namespace UCL.Core.EditorLib.Page
         string m_CanvasGrantAmountDraft = "0";
         string m_TavernGrantAmountDraft = "0";   // 酒館券發放金額（Tim 2026-07-24：接上 UCL_TavernVoucherLedger canonical grant）
         string m_VoucherDescDraft = "";   // 繪圖券／酒館券發放共用的說明欄（Tim 2026-07-21：發券同步說明到酒館通知，仿打款）
+
+        // 🏦 央行政策參數草稿（Tim 2026-08-01）—— 進頁時由 LoadCentralBankDrafts() 從落盤值填入。
+        // 存草稿而非直接綁 property：TextField 每幀寫回會讓「打到一半的字」直接落盤
+        // （打 "50" 的過程中會先經過 "5"，那一瞬間費率就變成 0.5% 並生效）。
+        string m_ThresholdDraft = "";
+        string m_FeeRateDraft = "";
+        string m_MailFeeDraft = "";
+        bool m_ExemptCentralDraft = true;
 
         // 操作結果訊息（持久顯示直到下次操作，取代 Editor-only DisplayDialog）
         string m_LastResultMsg = "";
@@ -132,6 +147,12 @@ namespace UCL.Core.EditorLib.Page
         void LoadData()
         {
             m_Loaded = true;
+            // Treasury 餘額快取自 2026-08-01 起「初始化掃一遍之後純記憶體」（Tim 拍板）——
+            // 外部改動（git pull / 手動改檔 / 另一個 Editor）不會自動被看到。
+            // Refresh 是使用者唯一能表達「重新認識磁碟」的入口，所以在這裡強制重掃。
+            UCL_TreasuryLedger.InvalidateBalanceCache();
+            m_BalancesDirty = true;
+            LoadCentralBankDrafts();   // 央行政策草稿一併回讀（Refresh 也要跟著更新，不留舊值）
             m_RegistryMeta = null;
             m_BankIds.Clear(); m_AgentKeys.Clear(); m_AgentToBank.Clear();
             m_PersonaNames.Clear(); m_PersonaToAgent.Clear();
@@ -297,7 +318,9 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(6);
             DrawVoucherPanel();       // 繪圖券 + 酒館券 查詢 / 發放
             GUILayout.Space(6);
-            DrawPayoutRequestPanel(); // 📨 agent 請款審批（核准 = 實際打款）
+            DrawPayoutRequestPanel(); // 📨 agent 請款審批（核准 = 央行撥款）
+            GUILayout.Space(6);
+            DrawCentralBankPanel();   // 🏦 央行 / 保管費 / 掛號信費用
             GUILayout.Space(6);
             DrawResultPanel();
         }
@@ -377,6 +400,10 @@ namespace UCL.Core.EditorLib.Page
             m_CacheCanvasBal = string.IsNullOrEmpty(persona) ? 0 : GetCanvasVoucherBalance(persona);
             string pbank = string.IsNullOrEmpty(persona) ? "" : ResolvePersonaToBank(persona);
             m_CacheTavernBal = string.IsNullOrEmpty(pbank) ? -1 : GetTavernVoucherBalance(pbank, persona);
+            // 央行餘額跟選擇無關，但重算時機一致（選擇改變 / 操作後 / Refresh）——
+            // 它同樣是 full-ledger replay，絕不能放進 Draw* 每幀跑。
+            try { m_CacheCentralBankBal = UCL_TreasuryLedger.GetBalance(UCL_CentralBankSettings.CentralBankAccount); }
+            catch { m_CacheCentralBankBal = -1; }
             m_CacheForBank = bank;
             m_CacheForPersona = persona;
             m_BalancesDirty = false;
@@ -527,6 +554,101 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // ===========================================================
+        // 區塊：🏦 央行 / 保管費 —— Tim 2026-08-01「銀行後台管理頁可以調整保管費%數」
+        // 物理意義：這三個數字原本寫死在 UCL_BartenderDaemon 的 const 裡，要動就得改 code + 重編。
+        //          它們是**經濟政策參數**不是實作細節 —— 決定權該在後台，不在 C# 檔裡。
+        // 數值影響：改完立刻生效（daemon 每輪重讀），不必重啟 Editor 也不必重編。
+        //          費率以千分比存（50 = 5.0%），UI 收 % 字串再換算 —— 讓 Tim 打「5」或「2.5」都行。
+        // 邊界：**不在這裡放「立刻結算一次」按鈕** —— 保管費是每日一次的跨日事件，
+        //      手動觸發會讓同一天扣兩次（idempotency 靠的是 useRef per-day-per-account，
+        //      按鈕不會繞過它，但會讓人以為扣了兩次而去查一個不存在的 bug）。
+        // ===========================================================
+        void DrawCentralBankPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                EnsureBalances();      // 走快取；**絕不在 Draw* 裡直接 GetBalance**（見餘額快取區塊註解）
+                string cb = UCL_CentralBankSettings.CentralBankAccount;
+                int cbBalance = m_CacheCentralBankBal;
+
+                GUILayout.Label($"<b>🏦 {UCL_CentralBankSettings.CentralBankDisplayName}</b> — 公庫餘額 <b>{(cbBalance < 0 ? "讀取失敗" : cbBalance.ToString())}</b> tavern_token", WrapLabelStyle);
+                GUILayout.Label($"  帳號 <b>{cb}</b>｜跨日保管費全數存入此處（不再蒸發）；請款核准由此撥款（不足即拒絕，不憑空增發）。", WrapLabelStyle);
+
+                // ---- 保管費門檻 ----
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("保管費門檻", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    m_ThresholdDraft = GUILayout.TextField(m_ThresholdDraft ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label("token 以下不收費", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(130)));
+
+                    GUILayout.Label("費率", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                    m_FeeRateDraft = GUILayout.TextField(m_FeeRateDraft ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    GUILayout.Label($"%（超額部分；上限 {UCL_CentralBankSettings.MaxFeePermille / 10}%）", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                }
+
+                // ---- 掛號信費用 + 央行豁免 ----
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("掛號信", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    m_MailFeeDraft = GUILayout.TextField(m_MailFeeDraft ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label("token / 封（0 = 免費）", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                    m_ExemptCentralDraft = GUILayout.Toggle(m_ExemptCentralDraft, " 央行豁免自己的保管費", UCL_GUIStyle.LabelStyle);
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("💾 儲存政策參數", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                        DoSaveCentralBankSettings();
+                    if (GUILayout.Button("↩ 重讀", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        LoadCentralBankDrafts();
+                }
+                GUILayout.Label("  改完即生效（daemon 每輪重讀設定，不必重編）。參數落 <b>AgentCommands/Treasury/bank_settings.json</b>，Python 端讀同一份。", WrapLabelStyle);
+            }
+        }
+
+        void LoadCentralBankDrafts()
+        {
+            m_ThresholdDraft = UCL_CentralBankSettings.OvernightThreshold.ToString();
+            m_FeeRateDraft = UCL_CentralBankSettings.FeeRateDisplay;
+            m_MailFeeDraft = UCL_CentralBankSettings.RegisteredMailFee.ToString();
+            m_ExemptCentralDraft = UCL_CentralBankSettings.ExemptCentralBank;
+        }
+
+        void DoSaveCentralBankSettings()
+        {
+            // 三個欄位分別驗；**任何一個不合法就整批不存** —— 半套寫入會讓 Tim 以為改了兩項
+            // 實際只進一項，而畫面上看不出差別。
+            if (!int.TryParse((m_ThresholdDraft ?? "").Trim(), out int threshold) || threshold < 0)
+            { SetResult($"❌ 保管費門檻需為非負整數（收到 '{m_ThresholdDraft}'）"); return; }
+            if (!double.TryParse((m_FeeRateDraft ?? "").Trim(), out double ratePercent) || ratePercent < 0)
+            { SetResult($"❌ 費率需為非負數（收到 '{m_FeeRateDraft}'）"); return; }
+            if (!int.TryParse((m_MailFeeDraft ?? "").Trim(), out int mailFee) || mailFee < 0)
+            { SetResult($"❌ 掛號信費用需為非負整數（收到 '{m_MailFeeDraft}'）"); return; }
+
+            int permille = UCL_CentralBankSettings.ClampPermille((int)System.Math.Round(ratePercent * 10));
+            bool clamped = permille != (int)System.Math.Round(ratePercent * 10);
+
+            int oldThreshold = UCL_CentralBankSettings.OvernightThreshold;
+            string oldRate = UCL_CentralBankSettings.FeeRateDisplay;
+            int oldMailFee = UCL_CentralBankSettings.RegisteredMailFee;
+
+            UCL_CentralBankSettings.OvernightThreshold = threshold;
+            UCL_CentralBankSettings.OvernightFeePermille = permille;
+            UCL_CentralBankSettings.RegisteredMailFee = mailFee;
+            UCL_CentralBankSettings.ExemptCentralBank = m_ExemptCentralDraft;
+            LoadCentralBankDrafts();   // 回讀落盤值 —— 顯示的是實際生效值，不是我剛打的字
+
+            string clampNote = clamped ? $"（費率被夾到上限 {UCL_CentralBankSettings.MaxFeePermille / 10}%）" : "";
+            SetResult($"✅ 政策參數已存：門檻 {oldThreshold}→{threshold}｜費率 {oldRate}%→{UCL_CentralBankSettings.FeeRateDisplay}%｜掛號信 {oldMailFee}→{mailFee}｜央行豁免 {(m_ExemptCentralDraft ? "開" : "關")}{clampNote}");
+            NotifyTavern(
+                $"🏦 **銀行後台｜央行政策調整**\n" +
+                $"跨日保管費門檻 **{oldThreshold} → {threshold}**、費率 **{oldRate}% → {UCL_CentralBankSettings.FeeRateDisplay}%**、" +
+                $"掛號信 **{oldMailFee} → {mailFee}** token/封、央行豁免 **{(m_ExemptCentralDraft ? "開" : "關")}**。{clampNote}\n" +
+                $"📝 說明：保管費是全系統最大的一條資金流，它的參數變動會改變每個人每晚的餘額，所以改了要公告 —— 靜默調整等於偷偷改稅率。",
+                "bank-policy");
+        }
+
         void DrawResultPanel()
         {
             if (string.IsNullOrEmpty(m_LastResultMsg)) return;
@@ -592,13 +714,65 @@ namespace UCL.Core.EditorLib.Page
             try
             {
                 string desc = string.IsNullOrEmpty(m_DepositDescDraft) ? "後台打款（BankAdminPage）" : m_DepositDescDraft.Trim();
-                var e = UCL_TreasuryLedger.Credit(bank, amount, sourceKind, "bank_admin_deposit", desc, "system", null);
-                SetResult($"✅ 打款：`{bank}` +{amount}（{sourceKind}）餘額 {e.balance_before} → {e.balance_after}");
+
+                // ── 打款改由央行出帳（Tim 2026-08-01「績效獎金等也從央行打款」）──
+                // 物理意義：績效獎金走的就是這個入口。它原本憑空 Credit，改成從央行扣之後
+                //          「發獎金」會實際消耗公庫 —— 獎金池有上限，而那個上限看得見。
+                // 邊界：**收款方就是央行時不扣**（那是往公庫注資，也是唯一的合法增發入口）。
+                //      這條保留是刻意的：Tim 仍需要一個把新錢放進系統的方法，
+                //      而讓它只有一個入口、且該入口就叫「打款給央行」，比散落各處的憑空 credit 好查。
+                string centralBank = UCL_CentralBankSettings.CentralBankAccount;
+                bool drawFromCB = !string.IsNullOrEmpty(centralBank) && bank != centralBank;
+                TreasuryLedgerEntry cbDebit = null;
+                if (drawFromCB)
+                {
+                    int cbBal = -1;
+                    try { cbBal = UCL_TreasuryLedger.GetBalance(centralBank); } catch { }
+                    if (cbBal >= 0 && cbBal < amount)
+                    {
+                        SetResult($"❌ 打款失敗：央行 `{centralBank}` 餘額 {cbBal} < 本次 {amount}。" +
+                                  $"要發這筆請先「打款給央行本身」補足公庫（那是唯一的合法增發入口），不要繞過閉環。");
+                        return;
+                    }
+                    cbDebit = UCL_TreasuryLedger.Debit(centralBank, amount, "bank_admin_disbursement",
+                        "bank_admin_deposit", $"後台打款撥出給 @{bank}：{desc}", "system", null);
+                }
+
+                TreasuryLedgerEntry e;
+                try
+                {
+                    e = UCL_TreasuryLedger.Credit(bank, amount, sourceKind, "bank_admin_deposit",
+                        desc + (drawFromCB ? $"（由 {centralBank} 撥款）" : "（注資央行，合法增發）"), "system", null);
+                }
+                catch (Exception creditEx)
+                {
+                    if (cbDebit != null)
+                    {
+                        // 央行已扣但沒發出去 → 退回，否則錢憑空消失且無聲
+                        try
+                        {
+                            UCL_TreasuryLedger.Credit(centralBank, amount, "bank_admin_rollback",
+                                "bank_admin_deposit|rollback", $"打款失敗回滾: {creditEx.Message}", "system", null);
+                        }
+                        catch (Exception rbEx)
+                        {
+                            SetResult($"❌ 打款失敗且央行回滾也失敗 —— 央行有懸空 debit（uuid={cbDebit.uuid}, {amount}）需人工處理。orig={creditEx.Message} / rollback={rbEx.Message}");
+                            return;
+                        }
+                    }
+                    SetResult($"❌ 打款失敗{(cbDebit != null ? "（央行已回滾，帳目平）" : "")}：{creditEx.Message}");
+                    return;
+                }
+                SetResult($"✅ 打款：`{bank}` +{amount}（{sourceKind}）餘額 {e.balance_before} → {e.balance_after}"
+                          + (drawFromCB ? $"｜央行出帳 -{amount}" : "｜注資央行（增發）"));
                 Debug.Log($"[BankAdmin] 打款 {bank} +{amount} ({sourceKind})");
                 NotifyTavern(
-                    $"💵 **銀行後台｜打款**\n" +
+                    $"💵 **銀行後台｜{(drawFromCB ? "打款（央行撥出）" : "注資央行（增發）")}**\n" +
                     $"bank **{bank}** 入帳 +{amount} tavern_token（來源 {sourceKind}），餘額 {e.balance_before} → **{e.balance_after}**。\n" +
-                    $"📝 說明：把 token 直接發進某帳戶（薪酬／獎金／Tim grant），token 綁 bank(agent)。\n" +
+                    (drawFromCB
+                        ? $"🏦 由 **{centralBank}** 撥出 -{amount}，公庫餘額 → **{SafeBalance(centralBank)}**。\n"
+                        : $"🆕 本筆是**注資央行**（唯一的合法增發入口）—— 貨幣總量增加 {amount}。\n") +
+                    $"📝 說明：把 token 發進某帳戶（薪酬／績效獎金／Tim grant）。2026-08-01 起獎金由央行撥款，公庫不足即拒發。\n" +
                     $"📌 本次備註：{desc}",
                     "bank-deposit");
                 m_BalancesDirty = true;   // 餘額變動 → 快取失效
@@ -861,6 +1035,7 @@ namespace UCL.Core.EditorLib.Page
                 NotifyTavern(
                     $"💰 **銀行後台｜請款核准**\n" +
                     $"請款單 `{done.request_id}` 核准 —— **+{done.amount} {done.currency}** 已打入 bank **{done.target_bank}**。\n" +
+                    $"🏦 由 **{UCL_CentralBankSettings.CentralBankAccount}** 撥款，公庫餘額 → **{SafeBalance(UCL_CentralBankSettings.CentralBankAccount)}**。\n" +
                     $"📝 原請款理由：{done.reason}\n" +
                     (string.IsNullOrEmpty(note) ? "" : $"📌 審批備註：{note}\n") +
                     $"🧾 請款者：{done.requester_agent}@{done.requester_persona}",
@@ -890,6 +1065,13 @@ namespace UCL.Core.EditorLib.Page
                 ReloadPayoutRequests();
             }
             catch (Exception ex) { SetResult($"❌ 駁回失敗：{ex.Message}"); }
+        }
+
+        /// <summary>讀餘額給公告用；讀不到回 "?" 而不是丟例外（公告失敗不該讓已完成的金流看起來像失敗）。</summary>
+        static string SafeBalance(string account)
+        {
+            try { return UCL_TreasuryLedger.GetBalance(account).ToString(); }
+            catch { return "?"; }
         }
 
         void SetResult(string msg) { m_LastResultMsg = msg; }

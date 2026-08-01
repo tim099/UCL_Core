@@ -863,19 +863,57 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         // ===========================================================
         // 區塊：跨日存款保管費 (Anti-inflation, Tim 2026-05-13 拍板 5 token task)
-        // 物理意義：超過 OVERNIGHT_THRESHOLD (1000) token 的部分, 跨日時收 OVERNIGHT_FEE_RATE (5%) 保管費.
-        //          例: balance=1100 → excess=100 → fee=5 token (floor(100 × 0.05)).
-        //          目的: token 通膨抑制 — 鼓勵消費, 防止無限囤積.
-        // 數值影響：state.last_overnight_check_date 推進; 每 over-threshold account debit fee;
-        //          fee 用 system caller 走 Treasury Debit (account 隔離 bypass), 純 sink (無對應 credit).
+        // 物理意義：超過門檻的部分, 跨日時收保管費. 例: balance=1100, 門檻 1000, 費率 5%
+        //          → excess=100 → fee=5 token (floor(100 × 0.05)).
+        // ⚠ 2026-08-01 改版（Tim 拍板）—— **兩件事同時變了**：
+        //   ① 門檻與費率不再是 const，改讀 UCL_CentralBankSettings（後台可調，不必改 code 重編）
+        //   ② **保管費不再蒸發** —— 每筆 debit 之後對央行帳戶補一筆等額 credit.
+        //      原本是純 sink（token 消失）；現在是集中到公庫，之後由活動再分配回來.
+        //      Tim 的話：「這樣可以直觀知道有多少保管費, 且之後可以用央行的資金辦活動」.
+        //      ⚠ 這是**經濟模型層級的改變**：保管費是全系統 97% 的排水管道
+        //        （改版當日 189 筆 / 35,932 token，是 agent 主動消費總額 1,029 的 35 倍），
+        //        它變成蓄水池之後這個經濟體暫時沒有任何 sink。詳見 UCL_CentralBankSettings 檔頭。
+        // 數值影響：state.last_overnight_check_date 推進; 每 over-threshold account debit fee
+        //          + 央行同額 credit; 兩者都用 system caller 走 Treasury (account 隔離 bypass).
+        //          央行自己**豁免收費**（Tim 拍板）—— 不豁免的話 debit 與 credit 落在同一帳號,
+        //          淨額為零卻多兩筆無意義的帳. 豁免會**在廣播裡明列**, 不靜默跳過.
         // 觸發：daemon tick 每次跑, 但 state.last_overnight_check_date == today → skip.
         //       跨日 (今天 != state 紀錄日期) → 跑一輪檢查 + 更新 state.
         //       首次啟動 (state 為空) → init today, **不收費** (避免新裝立刻課稅).
-        // Idempotency：useRef = "overnight-fee-<date>-<account>", debit 前 scan ledger 確認沒重複 entry.
-        //              (state.last_overnight_check_date 給快速 short-circuit, useRef 是 ledger-level safeguard)
+        // Idempotency：debit useRef = "overnight-fee-<date>-<account>"；
+        //              credit sourceRef = "overnight-fee-credit-<date>-<account>"（**分開記**）.
+        //              兩者各自 scan ledger 判重 —— 刻意不共用一個旗標:
+        //              若 debit 成功後 crash 在 credit 之前, 共用旗標會讓那筆錢
+        //              「從使用者扣走了但沒進央行」而且再也補不回來（帳目永久漏水且無聲）.
+        //              分開判重則下一輪會偵測到「已扣未存」並單獨補上 credit.
         // ===========================================================
-        const int OVERNIGHT_THRESHOLD = 1000;
-        const double OVERNIGHT_FEE_RATE = 0.05;
+
+        /// <summary>把一筆保管費存進央行。回傳是否成功（失敗只警告，由下一輪的「已扣未存」偵測補）。</summary>
+        /// <remarks>
+        /// sourceRef 帶繳費者 account —— credit 落在央行帳上，account_id 是央行，
+        /// 沒有這個尾段就無從得知「這筆是誰繳的」，也無法做「已扣未存」判重。
+        /// </remarks>
+        static bool TryDepositToCentralBank(string centralBank, int amount, string today,
+                                            string payerAccount, string creditRefPrefix)
+        {
+            if (string.IsNullOrEmpty(centralBank) || amount <= 0) return false;
+            try
+            {
+                UCL_TreasuryLedger.Credit(
+                    accountId: centralBank,
+                    amount: amount,
+                    sourceKind: "overnight_storage_fee_deposit",
+                    sourceRef: $"{creditRefPrefix}{payerAccount}",
+                    description: $"跨日 {today} 存款保管費入庫（繳費者 @{payerAccount}）",
+                    callerAgentId: "system");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Bartender] 央行入庫失敗 payer={payerAccount} amount={amount}: {ex.Message}");
+                return false;
+            }
+        }
 
         static void CheckOvernightDeposits()
         {
@@ -913,14 +951,32 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // 3. Pre-build useRef set (idempotency check, 防 state crash mid-loop 後重跑重複扣)
             // 注意: Debit caller 用 useRef 參數名, 但 TreasuryLedgerEntry 內部欄位是 source_ref
             string useRefPrefix = $"overnight-fee-{today}-";
+            string creditRefPrefix = $"overnight-fee-credit-{today}-";
             var alreadyChargedToday = new HashSet<string>();
+            // 已存進央行的（account → 該帳戶那筆已 credit）。與 debit 分開記的理由見區塊註解：
+            // 共用旗標時，「debit 成功但 credit 前 crash」會讓那筆錢永久消失且無聲。
+            var alreadyDepositedToday = new HashSet<string>();
             foreach (var e in allEntries)
             {
                 if (e.type == "debit" && !string.IsNullOrEmpty(e.source_ref) && e.source_ref.StartsWith(useRefPrefix))
                 {
                     alreadyChargedToday.Add(e.account_id);
                 }
+                else if (e.type == "credit" && !string.IsNullOrEmpty(e.source_ref) && e.source_ref.StartsWith(creditRefPrefix))
+                {
+                    // source_ref 尾段即繳費者 account（credit 落在央行帳上，account_id 是央行）
+                    alreadyDepositedToday.Add(e.source_ref.Substring(creditRefPrefix.Length));
+                }
             }
+
+            // 本輪參數（後台可調；每輪重讀，Tim 改完不必等重編）
+            int overnightThreshold = UCL_CentralBankSettings.OvernightThreshold;
+            double overnightFeeRate = UCL_CentralBankSettings.OvernightFeeRate;
+            string centralBank = UCL_CentralBankSettings.CentralBankAccount;
+            bool exemptCentral = UCL_CentralBankSettings.ExemptCentralBank;
+            string rateDisplay = UCL_CentralBankSettings.FeeRateDisplay;
+            int centralBankIncome = 0;      // 本輪央行實收（廣播用）
+            var exemptReports = new List<string>();
 
             // 4. 對每 account 算超額 fee + debit
             //    Tim 2026-05-14 拍板補: audit broadcast 也列出沒扣費的 account 餘額 (full transparency)
@@ -935,23 +991,48 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 catch { continue; }
                 if (balance <= 0) continue;  // 0 或負數 account 不列 (純 noise)
 
-                // 已扣過 (state 失效但 ledger 正確) → 視為 safe 列出 (debit 已在 ledger)
-                if (alreadyChargedToday.Contains(account))
+                // 央行豁免 —— Tim 2026-08-01 拍板「豁免並且列出增額」。
+                // **明列不靜默**：靜默的豁免下次就沒人記得為什麼那個帳號不在扣費名單上。
+                if (exemptCentral && account == centralBank)
                 {
-                    safeReports.Add($"- @{account}: balance {balance} (今日已扣過, idempotent skip)");
-                    continue;
-                }
-                if (balance <= OVERNIGHT_THRESHOLD)
-                {
-                    safeReports.Add($"- @{account}: balance {balance} (≤ {OVERNIGHT_THRESHOLD}, 安全)");
+                    exemptReports.Add($"- 🏦 @{account}: balance {balance} (**央行豁免** — 對自己收費會讓 debit/credit 落在同一帳號)");
                     continue;
                 }
 
-                int excess = balance - OVERNIGHT_THRESHOLD;
-                int fee = (int)Math.Floor(excess * OVERNIGHT_FEE_RATE);
+                // 已扣過 (state 失效但 ledger 正確) → 視為 safe；但仍要確認那筆錢**進了央行**。
+                // 「已扣未存」是 debit 成功後 crash 在 credit 之前留下的漏水，這裡補上。
+                if (alreadyChargedToday.Contains(account))
+                {
+                    if (!alreadyDepositedToday.Contains(account))
+                    {
+                        int owed = 0;
+                        foreach (var e in allEntries)
+                        {
+                            if (e.type == "debit" && e.account_id == account
+                                && !string.IsNullOrEmpty(e.source_ref) && e.source_ref == $"{useRefPrefix}{account}")
+                            { owed = e.amount; break; }
+                        }
+                        if (owed > 0 && TryDepositToCentralBank(centralBank, owed, today, account, creditRefPrefix))
+                        {
+                            centralBankIncome += owed;
+                            safeReports.Add($"- @{account}: balance {balance} (今日已扣過；**補存央行 {owed}** — 前次扣款後未入庫)");
+                            continue;
+                        }
+                    }
+                    safeReports.Add($"- @{account}: balance {balance} (今日已扣過, idempotent skip)");
+                    continue;
+                }
+                if (balance <= overnightThreshold)
+                {
+                    safeReports.Add($"- @{account}: balance {balance} (≤ {overnightThreshold}, 安全)");
+                    continue;
+                }
+
+                int excess = balance - overnightThreshold;
+                int fee = (int)Math.Floor(excess * overnightFeeRate);
                 if (fee <= 0)
                 {
-                    safeReports.Add($"- @{account}: balance {balance} (excess {excess} × 5% = 0, floor 取整免費)");
+                    safeReports.Add($"- @{account}: balance {balance} (excess {excess} × {rateDisplay}% = 0, floor 取整免費)");
                     continue;
                 }
 
@@ -963,10 +1044,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         amount: fee,
                         useKind: "overnight_storage_fee",
                         useRef: useRef,
-                        description: $"跨日 {today} 存款保管費 5% (超過 {OVERNIGHT_THRESHOLD} 的 {excess} × 5% = {fee})",
+                        description: $"跨日 {today} 存款保管費 {rateDisplay}% (超過 {overnightThreshold} 的 {excess} × {rateDisplay}% = {fee}) → 存入 {centralBank}",
                         callerAgentId: "system");
-                    feeReports.Add($"- @{account}: balance {balance} → **-{fee} token** (excess {excess} × 5%)");
+                    feeReports.Add($"- @{account}: balance {balance} → **-{fee} token** (excess {excess} × {rateDisplay}%)");
                     totalFee += fee;
+                    // 扣完立刻入庫。失敗只警告不回滾 —— 使用者的錢已經扣了，
+                    // 這裡再拋會讓整輪中斷、其他帳戶連扣都沒扣。下一輪的「已扣未存」偵測會補。
+                    if (TryDepositToCentralBank(centralBank, fee, today, account, creditRefPrefix))
+                        centralBankIncome += fee;
                 }
                 catch (Exception ex)
                 {
@@ -983,7 +1068,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             //    一律分 [扣費] + [安全] 兩段, 各自可空, 一致格式.
             string body;
             string subtag;
-            string headerLine = $"🏦 **跨日存款保管費結算** ({today}) — 超過 {OVERNIGHT_THRESHOLD} token 部分收 {OVERNIGHT_FEE_RATE * 100:F0}%";
+            string headerLine = $"🏦 **跨日存款保管費結算** ({today}) — 超過 {overnightThreshold} token 部分收 {rateDisplay}%，全數存入 {UCL_CentralBankSettings.CentralBankDisplayName}";
             var bodySb = new System.Text.StringBuilder();
             bodySb.AppendLine(headerLine);
             bodySb.AppendLine();
@@ -993,7 +1078,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 bodySb.AppendLine($"### 💸 扣費帳戶 ({feeReports.Count} 個)");
                 bodySb.AppendLine(string.Join("\n", feeReports));
                 bodySb.AppendLine();
-                bodySb.AppendLine($"累計回收: **-{totalFee} token** (anti-inflation sink)");
+                bodySb.AppendLine($"累計回收: **-{totalFee} token**");
                 bodySb.AppendLine();
                 subtag = "overnight-deposit-fee";
             }
@@ -1011,7 +1096,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 bodySb.AppendLine();
             }
 
-            bodySb.Append("_鼓勵消費避免囤積; 1000 以下不收費_");
+            // 央行段 —— Tim 2026-08-01「豁免並且列出增額」。豁免與增額都必須看得見：
+            // 這是全系統最大的一條資金流，它流去哪不該只有 code 知道。
+            if (exemptReports.Count > 0)
+            {
+                bodySb.AppendLine($"### 🏦 豁免帳戶 ({exemptReports.Count} 個)");
+                bodySb.AppendLine(string.Join("\n", exemptReports));
+                bodySb.AppendLine();
+            }
+            try
+            {
+                int cbBalance = UCL_TreasuryLedger.GetBalance(centralBank);
+                bodySb.AppendLine($"### 🏦 {UCL_CentralBankSettings.CentralBankDisplayName}");
+                bodySb.AppendLine($"- 本次入庫: **+{centralBankIncome} token**");
+                bodySb.AppendLine($"- 央行餘額: **{cbBalance} token**");
+                if (centralBankIncome != totalFee)
+                    bodySb.AppendLine($"- ⚠ 入庫 {centralBankIncome} 與扣費 {totalFee} 不符 — 有帳戶扣了但沒入庫，下一輪會偵測並補存");
+                bodySb.AppendLine();
+            }
+            catch (Exception ex)
+            {
+                bodySb.AppendLine($"### 🏦 央行餘額讀取失敗: {ex.Message}");
+                bodySb.AppendLine();
+            }
+            bodySb.Append($"_保管費不再蒸發 — 集中到公庫，之後由活動再分配。{overnightThreshold} 以下不收費_");
             body = bodySb.ToString();
             var msg = new UCL_ChatMessage
             {
@@ -1025,6 +1133,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     { "subtag", subtag },
                     { "check_date", today },
                     { "total_fee", totalFee.ToString() },
+                    { "central_bank", centralBank },
+                    { "central_bank_income", centralBankIncome.ToString() },
                     { "accounts_charged", feeReports.Count.ToString() },
                     { "accounts_safe", safeReports.Count.ToString() },
                 },

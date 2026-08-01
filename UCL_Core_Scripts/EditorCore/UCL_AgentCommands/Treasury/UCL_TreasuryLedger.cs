@@ -313,6 +313,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 s_BalanceCache.Clear();
                 s_MaxProcessedRelPath = "";
                 s_SnapshotLoadAttempted = true;   // 別再把剛失效的 snapshot 撿回來
+                // ⚠ 必須一併重置初掃閘門 —— 否則「強制重掃」會變成「清空後永遠不重掃」，
+                //   所有餘額歸零且沒有任何錯誤訊息。這是本次加閘門時最容易漏的一行。
+                s_InitialScanDone = false;
                 try
                 {
                     string snap = GetBalanceSnapshotPath();
@@ -342,8 +345,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 物理意義：列舉 ledger 全部 entry 路徑 → 首次先試 snapshot 熱啟 → 只 parse 沒見過的新檔。
         // 數值影響：更新 s_BalanceCache / s_ProcessedEntryPaths / s_MaxProcessedRelPath；
         //          有新檔被 parse 時回寫 snapshot（下次冷啟動直接接力）。
+        // ==========================================================
+        // 區塊職責：初次掃描閘門（Tim 2026-08-01「只有在初始化時掃一遍，之後都用緩存」）
+        // 物理意義：原版每次 GetBalance 都跑一次 Directory.GetFiles(AllDirectories) ——
+        //          雖然「只列舉不讀內容」，但 ledger 已有上萬檔，**每幀列舉一萬個檔案並不便宜**。
+        //          2026-08-01 Tim 回報 BankAdminPage「嚴重卡頓無法操作」，根因就是
+        //          新面板每幀呼叫 GetBalance → 每幀一次萬檔列舉。
+        // 為什麼可以安全地不再列舉：**所有寫入都經過本 class 的 WriteEntry**，
+        //          而它寫完當下就把 entry 累進快取（見上方「新 entry 直接餵 balance 快取」）。
+        //          也就是說列舉只為了偵測「本 class 以外的人動了 ledger」。
+        // ⚠ 代價（誠實說明）：外部改動（git pull 帶進新 entry / 手動刪檔 / 另一個 Editor 實例寫入）
+        //          在下次 InvalidateBalanceCache() 或 domain reload 之前**不會被看到**。
+        //          這是 Tim 明確選的取捨 —— 要重掃就呼叫 InvalidateBalanceCache()（後台 Refresh 已接）。
+        //          不做「每 N 秒自動重掃」是刻意的：那會讓成本回到不可預測的地方，
+        //          而且卡頓會變成偶發性的（更難查）。寧可要「明確、可預期的陳舊」。
+        // ==========================================================
+        static bool s_InitialScanDone = false;
+
         static void SyncBalanceCache_NoLock()
         {
+            // 初掃完成後：純記憶體快取，零磁碟列舉。寫入端自行維護增量（見 WriteEntry）。
+            if (s_InitialScanDone) return;
+
             string root = UCL_TreasuryPaths.GetLedgerRoot();
             if (!Directory.Exists(root))
             {
@@ -398,6 +421,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             {
                 SaveSnapshot_NoLock();
             }
+
+            // 初掃完成 —— 之後 GetBalance 純走記憶體，不再列舉磁碟（見本函式上方區塊註解）。
+            // 要重新認識磁碟現況 → InvalidateBalanceCache()。
+            s_InitialScanDone = true;
         }
 
         // 區塊職責：載入落盤 snapshot 並驗證（呼叫端必須已持有 s_BalanceCacheLock）

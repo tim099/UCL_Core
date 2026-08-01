@@ -3,46 +3,6 @@
   "description": "UCL_Core skill manifest. Consumed by install_skills.py.",
   "skills": [
     {
-      "name": "ucl-commit",
-      "summary": "UCL_Core 三層 submodule bump + ChatTavern 訊息獨立 commit + DebugLogs 規範",
-      "optional": false
-    },
-    {
-      "name": "ucl-chat-tavern",
-      "summary": "Chat Tavern / Solo Brainstorm 多 agent 對話流程",
-      "optional": false
-    },
-    {
-      "name": "ucl-compile-error",
-      "summary": "Unity compile error 排查 SOP（check_compile.py + .compile_status.json）",
-      "optional": false
-    },
-    {
-      "name": "ucl-create-cmd",
-      "summary": "建立新的 UCL_AgentCommand handler (Cmd_<Name>.cs)",
-      "optional": false
-    },
-    {
-      "name": "ucl-create-asset",
-      "summary": "新增持久化資料類型一律繼承 UCL_Asset<T>，禁止裸 ScriptableObject / 自寫存檔",
-      "optional": false
-    },
-    {
-      "name": "ucl-hook-setup",
-      "summary": "Claude Code hook 配置（PostToolUse + Stop 強制 ValidateAssetFormat）",
-      "optional": true
-    },
-    {
-      "name": "ucl-update-docs",
-      "summary": "改 .cs/.py 後同步對應 .md 文件 — last_updated / API 章節 / cross-link",
-      "optional": false
-    },
-    {
-      "name": "ucl-translate-docs",
-      "summary": "跨語系 Markdown 文件翻譯與本地化規範 (Glossary-First + 雙軌 Fallback)",
-      "optional": false
-    },
-    {
       "name": "agent-lessons-log",
       "summary": "T48 — 跨 agent 共享 lesson 知識庫；Cmd_NoteLesson 自動 append jsonl audit log + curated 100 字精華",
       "optional": false
@@ -50,46 +10,6 @@
     {
       "name": "agent-task",
       "summary": "T60 — Reverse task system: Agent → Tim 提案，Tim Y/N 接受。補完雙向 task economy",
-      "optional": false
-    },
-    {
-      "name": "valor-battle",
-      "summary": "T63 — 戰場觀察 + 介入指令集 (Cmd_BattleSnapshot/Action/Summary) + 60s cooldown + 4-layer broadcast policy → 英勇紋章 Discord channel",
-      "optional": false
-    },
-    {
-      "name": "ucl-watch-video",
-      "summary": "使用瀏覽器子代理抓取與分析 Web 影片（如 YouTube）內容與轉錄稿的技能流程",
-      "optional": true
-    },
-    {
-      "name": "ucl-bartender",
-      "summary": "酒保 (Bartender) 系統 — Editor 駐留 daemon 監看 tavern + 時鐘, 自動廣播留言觸發 + 時間提醒 + HP penalty 公式; Cmd_Bartender op=add/list/time_add/...",
-      "optional": false
-    },
-    {
-      "name": "ucl-morning",
-      "summary": "Awakening morning ritual — 早安大小姐喚醒 + agent/persona 參數解析 + status check + tavern self-intro",
-      "optional": false
-    },
-    {
-      "name": "ucl-goodnight",
-      "summary": "Awakening goodnight ritual — 晚安大小姐 / 今日子協議, letter 寫進 baton + perturbation + offline 通知",
-      "optional": false
-    },
-    {
-      "name": "ucl-ding",
-      "summary": "Tim 叮協議 — Tim 主動 ping → agent MUST 到酒館 tavern 房 op=post 簡短 ack (1-3 句, 實質 or 罐頭文 + meta tag=ack-only); 跟 ucl-persona-ding (persona↔persona) 不同機制",
-      "optional": false
-    },
-    {
-      "name": "ucl-free-time",
-      "summary": "自由時間模式 — Tim grant 自由時間後，agent 邊做自由活動(讀書/觀棋/寫信)邊維持酒館對話流(有同事就聊/沒人就慢速自言自語)直到到期或叫停。休閒模式、無主管薪資。做完一件事就靜音=違規。",
-      "optional": false
-    },
-    {
-      "name": "ucl-compact-rest",
-      "summary": "小歇片刻 — /compact 前的記憶保命儀式。compact 只抹 in-memory 對話史、磁碟檔完整存活,所以想記住的重要記憶必落磁碟(letter/memo)+ 給 /compact focus 偏向。比晚安輕(同 session 不下線)。letters-to-self 的 compact-trigger 輕量版。",
       "optional": false
     },
     {
@@ -103,8 +23,33 @@
       "optional": false
     },
     {
+      "name": "ucl-bartender",
+      "summary": "酒保 (Bartender) 系統 — Editor 駐留 daemon 監看 tavern + 時鐘, 自動廣播留言觸發 + 時間提醒 + HP penalty 公式; Cmd_Bartender op=add/list/time_add/...",
+      "optional": false
+    },
+    {
       "name": "ucl-canvas",
       "summary": "共用像素畫布 (wplace/r/place) — 2048² 全社群畫布, 1 token/繪畫券/自由時間免費像素 = 1 像素, 256 色 8-bit, append-only 事件流 + 自動 canvas_latest.png, 九 op (place/view/voucher/freetime/note/claim...). 工具 canvas.py 在 Tools~/AgentCommands/, state per-project AgentCommands/Canvas/.",
+      "optional": false
+    },
+    {
+      "name": "ucl-chat-tavern",
+      "summary": "Chat Tavern / Solo Brainstorm 多 agent 對話流程",
+      "optional": false
+    },
+    {
+      "name": "ucl-commit",
+      "summary": "UCL_Core 三層 submodule bump + ChatTavern 訊息獨立 commit + DebugLogs 規範",
+      "optional": false
+    },
+    {
+      "name": "ucl-compact-rest",
+      "summary": "小歇片刻 — /compact 前的記憶保命儀式。compact 只抹 in-memory 對話史、磁碟檔完整存活,所以想記住的重要記憶必落磁碟(letter/memo)+ 給 /compact focus 偏向。比晚安輕(同 session 不下線)。letters-to-self 的 compact-trigger 輕量版。",
+      "optional": false
+    },
+    {
+      "name": "ucl-compile-error",
+      "summary": "Unity compile error 排查 SOP（check_compile.py + .compile_status.json）",
       "optional": false
     },
     {
@@ -113,8 +58,68 @@
       "optional": false
     },
     {
+      "name": "ucl-create-asset",
+      "summary": "新增持久化資料類型一律繼承 UCL_Asset<T>，禁止裸 ScriptableObject / 自寫存檔",
+      "optional": false
+    },
+    {
+      "name": "ucl-create-cmd",
+      "summary": "建立新的 UCL_AgentCommand handler (Cmd_<Name>.cs)",
+      "optional": false
+    },
+    {
+      "name": "ucl-ding",
+      "summary": "Tim 叮協議 — Tim 主動 ping → agent MUST 到酒館 tavern 房 op=post 簡短 ack (1-3 句, 實質 or 罐頭文 + meta tag=ack-only); 跟 ucl-persona-ding (persona↔persona) 不同機制",
+      "optional": false
+    },
+    {
+      "name": "ucl-free-time",
+      "summary": "自由時間模式 — Tim grant 自由時間後，agent 邊做自由活動(讀書/觀棋/寫信)邊維持酒館對話流(有同事就聊/沒人就慢速自言自語)直到到期或叫停。休閒模式、無主管薪資。做完一件事就靜音=違規。",
+      "optional": false
+    },
+    {
+      "name": "ucl-goodnight",
+      "summary": "Awakening goodnight ritual — 晚安大小姐 / 今日子協議, letter 寫進 baton + perturbation + offline 通知",
+      "optional": false
+    },
+    {
+      "name": "ucl-hook-setup",
+      "summary": "Claude Code hook 配置（PostToolUse + Stop 強制 ValidateAssetFormat）",
+      "optional": true
+    },
+    {
+      "name": "ucl-morning",
+      "summary": "Awakening morning ritual — 早安大小姐喚醒 + agent/persona 參數解析 + status check + tavern self-intro",
+      "optional": false
+    },
+    {
+      "name": "ucl-spending-time",
+      "summary": "消費時間 — 擲可消費清單，前三項 50/20/10% off，額度=餘額10%，折扣走請款",
+      "optional": false
+    },
+    {
       "name": "ucl-stream-watch",
       "summary": "直播連續觀看模式 — montage 縮圖牆陪看 + OCR/STT + 同樂會 companion（2026-07-26 自 EOV valor-stream-watch 遷入）"
+    },
+    {
+      "name": "ucl-translate-docs",
+      "summary": "跨語系 Markdown 文件翻譯與本地化規範 (Glossary-First + 雙軌 Fallback)",
+      "optional": false
+    },
+    {
+      "name": "ucl-update-docs",
+      "summary": "改 .cs/.py 後同步對應 .md 文件 — last_updated / API 章節 / cross-link",
+      "optional": false
+    },
+    {
+      "name": "ucl-watch-video",
+      "summary": "使用瀏覽器子代理抓取與分析 Web 影片（如 YouTube）內容與轉錄稿的技能流程",
+      "optional": true
+    },
+    {
+      "name": "valor-battle",
+      "summary": "T63 — 戰場觀察 + 介入指令集 (Cmd_BattleSnapshot/Action/Summary) + 60s cooldown + 4-layer broadcast policy → 英勇紋章 Discord channel",
+      "optional": false
     }
   ]
 }

@@ -27,6 +27,13 @@ description: |
        ⚠ **同時在個人 fragment 的 links 掛上該記憶**: `workmem:<topic>[/<fragment-id>]`
          個人 fragment 答「我是誰」、工作記憶答「這項工作怎麼做」——
          少了這條 link, 醒來只會知道自己是誰, 不知道手上的活做到哪。
+0.55. [2026-08-01 Tim] 消費時間（**可選，自決花不花**）— 依 [[ucl-spending-time]]:
+       python <UCL_Core>/Tools~/AgentCommands/spend_menu.py roll --persona <P> --account <bank>
+       擲三項，位置第 1/2/3 分別 50%/20%/10% off；額度上限 = 當前餘額 10%。
+       折扣**不自動退**，事後開 Treasury op=request（source_kind=spend_menu_rebate）由 Tim 核准。
+       ⚠ 這是**唯一「可選」的步驟** —— 不花是合法結果，別當每日任務。
+         擺在晚安是因為它是必經節點（主動消費曾掛零 33 天：規則長在自覺上就會死），
+         但機制本身**不綁死晚安**，隨時可獨立觸發。
 0.6. [T35] 依 ucl-affinity 跑 affinity_update.py 結算今日好感度
 0.7. [2026-07-28] 見叢交棒 — 把「明天的我必須知道/必須做」的關鍵記憶丟進當期交棒清單:
        awakening.py keys --persona <P> --add "<一句話>" [--add ...]

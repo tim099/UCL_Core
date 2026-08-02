@@ -224,6 +224,20 @@ def sync_latest_pointer(aw, persona) -> tuple:
 
 
 # ─── §0 / §7 / §8 / §9 區塊 ─────────────────────────────────────────────
+def _resolve_mail(persona: str) -> dict:
+    """persona 的信箱（agent 預設 + persona override）。
+
+    # 物理意義：解析邏輯只有一份，在 agent_email.py；本檔只是取用端。
+    # 數值影響：解析器不可用時回哨兵而非空字串 —— frontmatter 少一個值會被當成「這版沒有這欄」，
+    #          一個明顯壞掉的值才會被追。
+    """
+    try:
+        from agent_email import resolve_email
+        return resolve_email(persona)
+    except Exception as e:
+        return {"email": "unset@invalid", "source": f"resolver-error: {e}", "actual_agent": ""}
+
+
 def _identity_card_lines(aw, persona: str, p: dict) -> list:
     """§0 身分卡 — 取代舊 morning Step 1 的 `awakening.py status` 輸出。"""
     lock = aw.read_lock(persona)
@@ -232,6 +246,10 @@ def _identity_card_lines(aw, persona: str, p: dict) -> list:
         f"- **persona**：`{persona}` — wake #{p.get('wake_count', 0)}",
         f"- **agent**：`{p.get('agent', '?')}`（由 persona 綁定反推）",
     ]
+    mail = _resolve_mail(persona)
+    _src = {"persona-override": "persona 自訂", "agent-default": f"{mail['actual_agent'] or 'agent'} 預設",
+            "fallback": "全域 fallback", "unset": "**未設定**"}.get(mail["source"], mail["source"])
+    lines.append(f"- **mail**：`{mail['email']}`（{_src}）")
     if bank:
         try:
             lines.append(f"- **bank**：`{bank}`（餘額 {aw.get_treasury_balance(bank)} tavern_token）")
@@ -628,7 +646,8 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     st = aw.consolidation_status(persona, reg, threshold)
     fst = aw.forest_status(persona)
     head = ["---", "type: wake_brief", f"persona: {persona}",
-            f"wake_count: {p.get('wake_count', 0)}", f"generated_at: {aw.utcnow_iso()}",
+            f"wake_count: {p.get('wake_count', 0)}", f"mail: {_resolve_mail(persona)['email']}",
+            f"generated_at: {aw.utcnow_iso()}",
             "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
             "---", "",
             f"# 🌅 Wake Brief — {persona} wake #{p.get('wake_count', 0)}", "",

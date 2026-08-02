@@ -29,6 +29,7 @@ using System.Text;
 using UCL.Core.JsonLib;
 using UCL.Core.Page;                                // UCL_CommonEditPage / UCL_SelectAssetPage（角色卡跳轉編輯）
 using UCL.Core.UI;
+using UCL.Core.EditorLib.AgentCommands;             // UCL_AgentEmailRegistry（信箱解析）/ UCL_ActualAgent
 using UCL.Core.EditorLib.AgentCommands.Treasury;    // 開 agent 時的可選種子額度
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;  // 操作通知發酒館主頻道 + UCL_ChatTavernPersonaCardAsset
 using UnityEditor;                                  // EditorApplication.timeSinceStartup（二段確認倒數）/ AssetDatabase.Refresh
@@ -96,6 +97,22 @@ namespace UCL.Core.EditorLib.Page
         // ==== 折疊狀態與 Popup 快取分開存（workflow §5.1 血證：混用會讓 LoadData 清空折疊）====
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();      // Popup cache（LoadData 會 Clear）
         readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();  // 折疊狀態（永不隨資料重載清）
+
+        // ==== 信箱設定（agent 預設表 + persona override）====
+        // 區塊職責：本頁是信箱的**唯一設定入口**（Tim 2026-08-03 拍板），draft 與磁碟值分開存，
+        //          按「儲存」才寫檔 —— 邊打字邊寫檔會跟 awakening.py 同時寫 persona 檔打架。
+        readonly Dictionary<string, string> m_EmailDefaultDrafts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, string> m_EmailOverrideDrafts = new Dictionary<string, string>(StringComparer.Ordinal);
+        string m_EmailFallbackDraft = "";
+        bool m_EmailLoaded = false;
+        // 下拉選中的 persona + 該員的解析快取。
+        // 物理意義：Resolve() 每呼叫一次就讀一次 persona 檔與 registry；OnGUI 每幀重繪，
+        //          原本「逐列 Resolve 全部 persona」等於每幀掃 19 個檔。改成只算選中那一位，
+        //          並在切換 / 儲存時才重算 —— 面板顯示的仍是磁碟真值，只是不再每幀去問。
+        readonly UCL_ObjectDictionary m_EmailPersonaPopupDic = new UCL_ObjectDictionary();
+        string m_EmailSelectedPersona = "";
+        UCL_AgentEmailResolution m_EmailSelectedResolved = null;
+        int m_EmailFallbackCount = -1;
 
         // ==== 建 agent draft ====
         string m_NewAgentDraft = "";
@@ -259,6 +276,8 @@ namespace UCL.Core.EditorLib.Page
 
             DrawOverviewPanel();
             GUILayout.Space(8);
+            DrawEmailPanel();
+            GUILayout.Space(8);
             DrawPersonaCardPanel();
             GUILayout.Space(8);
             DrawCreateAgentPanel();
@@ -271,6 +290,214 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // 區塊：信箱 — agent 預設表（key = actual_agent）+ persona override
+        // 物理意義：預設表 key 用 actual_agent 而非顯示 agent —— 前者是封閉集合（三個值），後者每多一位
+        //          同事就多一格要填。但**沒有 actual_agent 的 persona 吃不到預設**（實測 19 位裡有 17 位
+        //          缺這欄），那些人必須逐一填 override；面板把他們標出來，不讓它靜默 fallback。
+        // 數值影響：override 空字串＝清除（回頭吃預設），不是寫入空信箱；按儲存才落檔。
+        // ===========================================================
+        void DrawEmailPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "EmailFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>📧 信箱設定</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (m_EmailFallbackCount > 0)
+                        GUILayout.Label($"<color=#ffcc66>⚠ {m_EmailFallbackCount} 位吃 fallback／未設定</color>",
+                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                if (!m_EmailLoaded) LoadEmailDrafts();
+
+                GUILayout.Label("<b>Agent 預設（key = actual_agent，封閉集合）</b>", WrapLabelStyle);
+                var aKeys = new List<string>(m_EmailDefaultDrafts.Keys);
+                aKeys.Sort(StringComparer.Ordinal);
+                foreach (var aKey in aKeys)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label(aKey, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                        m_EmailDefaultDrafts[aKey] = GUILayout.TextField(m_EmailDefaultDrafts[aKey] ?? "");
+                        DrawEmailMark(m_EmailDefaultDrafts[aKey]);
+                    }
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("fallback", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    m_EmailFallbackDraft = GUILayout.TextField(m_EmailFallbackDraft ?? "");
+                    DrawEmailMark(m_EmailFallbackDraft);
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("💾 儲存 Agent 預設", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.ExpandWidth(false)))
+                        SaveEmailDefaults();
+                    if (GUILayout.Button("↻ 捨棄未存編輯", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_EmailLoaded = false;
+                        SetResult("↻ 已重讀磁碟值（未儲存的編輯已捨棄）");
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                GUILayout.Label($"檔案：{UCL_AgentEmailRegistry.RegistryPath}", WrapLabelStyle);
+
+                GUILayout.Space(6);
+                GUILayout.Label("<b>Persona override（空白＝沿用 agent 預設）</b>", WrapLabelStyle);
+                if (m_Personas.Count == 0)
+                {
+                    GUILayout.Label("（沒有 persona 檔可設定）", WrapLabelStyle);
+                    return;
+                }
+
+                var aOptions = new List<string>();
+                foreach (var aRow in m_Personas)
+                {
+                    // 下拉標籤直接標出「這位有沒有自己的信箱」—— 選之前就看得到，不必逐個點開。
+                    string aOwn = m_EmailOverrideDrafts.TryGetValue(aRow.name, out var aDraft)
+                        ? aDraft : UCL_AgentEmailRegistry.LoadPersonaOverride(aRow.name);
+                    if (!m_EmailOverrideDrafts.ContainsKey(aRow.name)) m_EmailOverrideDrafts[aRow.name] = aOwn;
+                    aOptions.Add((string.IsNullOrWhiteSpace(aOwn) ? "○ " : "● ") + aRow.name);
+                }
+                int aCur = m_Personas.FindIndex(r => r.name == m_EmailSelectedPersona);
+                if (aCur < 0) aCur = 0;
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Persona", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    int aNext = UCL_GUILayout.PopupAuto(aCur, aOptions, m_EmailPersonaPopupDic, "EmailPersona", 10,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(260)));
+                    if (aNext < 0 || aNext >= m_Personas.Count) aNext = aCur;
+                    if (aNext != aCur || m_EmailSelectedResolved == null
+                        || m_EmailSelectedPersona != m_Personas[aNext].name)
+                    {
+                        m_EmailSelectedPersona = m_Personas[aNext].name;
+                        RefreshEmailSelection();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                string aPersona = m_EmailSelectedPersona;
+                var aRes = m_EmailSelectedResolved;
+                if (string.IsNullOrEmpty(aPersona) || aRes == null) return;
+                if (!m_EmailOverrideDrafts.ContainsKey(aPersona))
+                    m_EmailOverrideDrafts[aPersona] = UCL_AgentEmailRegistry.LoadPersonaOverride(aPersona);
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("actual_agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    GUILayout.Label(string.IsNullOrEmpty(aRes.ActualAgent)
+                        ? "<color=#ff9966>(無 — 這位吃不到 agent 預設，只能靠 override 或 fallback)</color>"
+                        : aRes.ActualAgent, WrapLabelStyle);
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("override", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    m_EmailOverrideDrafts[aPersona] = GUILayout.TextField(m_EmailOverrideDrafts[aPersona] ?? "");
+                    DrawEmailMark(m_EmailOverrideDrafts[aPersona]);
+                    if (GUILayout.Button("💾 儲存", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.Width(UCL_GUIStyle.GetScaledSize(72))))
+                    {
+                        SavePersonaEmail(aPersona, m_EmailOverrideDrafts[aPersona]);
+                        RefreshEmailSelection();
+                    }
+                    if (GUILayout.Button("清除", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(56))))
+                    {
+                        m_EmailOverrideDrafts[aPersona] = "";
+                        SavePersonaEmail(aPersona, "");
+                        RefreshEmailSelection();
+                    }
+                }
+                // 輸入框空白不代表「沒有信箱」—— 它可能正吃著 agent 預設或 fallback。
+                // 把 resolve 結果與來源攤開，才不會有人以為空白就是沒設定。
+                string aSrc = aRes.Source == "persona-override" ? "persona 自訂"
+                    : aRes.Source == "agent-default" ? $"{aRes.ActualAgent} 預設"
+                    : aRes.Source == "fallback" ? "全域 fallback" : "<color=#ff6666>未設定</color>";
+                GUILayout.Label($"→ 生效：<b>{aRes.Email}</b>（{aSrc}）", WrapLabelStyle);
+            }
+        }
+
+        // 空白一律放行（空白＝沿用上層），只標「有填但不像位址」。
+        void DrawEmailMark(string iValue)
+        {
+            bool aOk = string.IsNullOrWhiteSpace(iValue) || UCL_AgentEmailRegistry.LooksLikeEmail(iValue);
+            GUILayout.Label(aOk ? "" : "<color=#ff6666>格式?</color>",
+                UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(48)));
+        }
+
+        void LoadEmailDrafts()
+        {
+            m_EmailDefaultDrafts.Clear();
+            foreach (var aKv in UCL_AgentEmailRegistry.LoadDefaults()) m_EmailDefaultDrafts[aKv.Key] = aKv.Value;
+            m_EmailFallbackDraft = UCL_AgentEmailRegistry.LoadFallback();
+            m_EmailOverrideDrafts.Clear();
+            m_EmailSelectedResolved = null;
+            m_EmailLoaded = true;
+            RecountEmailFallback();
+        }
+
+        /// <summary>重算選中 persona 的生效值（切換 / 儲存後呼叫）—— 不在 OnGUI 每幀做。</summary>
+        void RefreshEmailSelection()
+        {
+            m_EmailSelectedResolved = string.IsNullOrEmpty(m_EmailSelectedPersona)
+                ? null : UCL_AgentEmailRegistry.Resolve(m_EmailSelectedPersona);
+            if (!string.IsNullOrEmpty(m_EmailSelectedPersona))
+                m_EmailOverrideDrafts[m_EmailSelectedPersona] =
+                    UCL_AgentEmailRegistry.LoadPersonaOverride(m_EmailSelectedPersona);
+            RecountEmailFallback();
+        }
+
+        /// <summary>標題列那個「幾位吃 fallback」的數字 —— 全掃一次很貴，只在載入與儲存後算。</summary>
+        void RecountEmailFallback()
+        {
+            int aCount = 0;
+            foreach (var aRow in m_Personas)
+                if (UCL_AgentEmailRegistry.Resolve(aRow.name).IsFallback) aCount++;
+            m_EmailFallbackCount = aCount;
+        }
+
+        // 任何一格格式不對就整批不存 —— 部分寫入會留下「一半新一半舊」的狀態，比不存難查。
+        void SaveEmailDefaults()
+        {
+            foreach (var aKv in m_EmailDefaultDrafts)
+            {
+                if (!string.IsNullOrWhiteSpace(aKv.Value) && !UCL_AgentEmailRegistry.LooksLikeEmail(aKv.Value))
+                {
+                    SetResult($"❌ {aKv.Key} 的值不像 email：{aKv.Value}（未儲存任何變更）");
+                    return;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(m_EmailFallbackDraft) && !UCL_AgentEmailRegistry.LooksLikeEmail(m_EmailFallbackDraft))
+            {
+                SetResult($"❌ fallback 的值不像 email：{m_EmailFallbackDraft}（未儲存任何變更）");
+                return;
+            }
+            if (UCL_AgentEmailRegistry.SaveDefaults(m_EmailDefaultDrafts, m_EmailFallbackDraft, out string aErr))
+            {
+                RefreshEmailSelection();   // 預設一改，很多人的生效值跟著變，顯示要跟上
+                SetResult($"✓ agent 預設已存 → {UCL_AgentEmailRegistry.RegistryPath}");
+            }
+            else
+                SetResult($"❌ 儲存失敗：{aErr}");
+        }
+
+        void SavePersonaEmail(string iPersona, string iEmail)
+        {
+            string aTrimmed = (iEmail ?? "").Trim();
+            if (!string.IsNullOrEmpty(aTrimmed) && !UCL_AgentEmailRegistry.LooksLikeEmail(aTrimmed))
+            {
+                SetResult($"❌ {iPersona} 的值不像 email：{aTrimmed}（未儲存）");
+                return;
+            }
+            if (UCL_AgentEmailRegistry.SavePersonaOverride(iPersona, aTrimmed, out string aErr))
+                SetResult(string.IsNullOrEmpty(aTrimmed)
+                    ? $"✓ {iPersona} 的 override 已清除（回頭吃 agent 預設）"
+                    : $"✓ {iPersona} → {aTrimmed}");
+            else
+                SetResult($"❌ {iPersona} 儲存失敗：{aErr}");
+        }
+
+        // ===========================================================
         // 區塊：一覽 — agent（含 bank / persona 數）與 persona（含 agent / wake# / 血統）
         // ===========================================================
         void DrawOverviewPanel()
@@ -280,7 +507,7 @@ namespace UCL.Core.EditorLib.Page
                 bool aShow;
                 using (new GUILayout.HorizontalScope())
                 {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "OverviewFold", 21, iDefaultValue: true);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "OverviewFold", 21);
                     GUILayout.Label("<b>🧬 身分一覽</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (GUILayout.Button("重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -344,7 +571,7 @@ namespace UCL.Core.EditorLib.Page
                 bool aShow;
                 using (new GUILayout.HorizontalScope())
                 {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "PersonaCardFold", 21, iDefaultValue: true);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "PersonaCardFold", 21);
                     GUILayout.Label("<b>🎭 Persona 角色卡</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label(missing > 0
                             ? $"卡 {m_CardIds.Count} 張 / persona {m_Personas.Count} 個　<color=yellow>尚缺 {missing}</color>"
@@ -508,7 +735,7 @@ namespace UCL.Core.EditorLib.Page
                 bool aShow;
                 using (new GUILayout.HorizontalScope())
                 {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "CreateAgentFold", 21, iDefaultValue: true);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "CreateAgentFold", 21);
                     GUILayout.Label("<b>➕ 建立 Agent（含 bank）</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (GUILayout.Button("建立", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.6f)), GUILayout.ExpandWidth(false)))
                         DoCreateAgent();
@@ -553,7 +780,7 @@ namespace UCL.Core.EditorLib.Page
                 bool aShow;
                 using (new GUILayout.HorizontalScope())
                 {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "CreatePersonaFold", 21, iDefaultValue: true);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "CreatePersonaFold", 21);
                     GUILayout.Label("<b>🌱 建立 Persona</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (GUILayout.Button("建立", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
                         DoCreatePersona();
@@ -616,7 +843,7 @@ namespace UCL.Core.EditorLib.Page
                 bool aShow;
                 using (new GUILayout.HorizontalScope())
                 {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "RebindFold", 21, iDefaultValue: true);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "RebindFold", 21);
                     GUILayout.Label("<b>🔗 Persona 換綁 Agent</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     string armLabel = IsRebindArmed(SelectedRebindPersona) ? "確認換綁（再按一次）" : "換綁";
                     var armColor = IsRebindArmed(SelectedRebindPersona)

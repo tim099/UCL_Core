@@ -38,6 +38,17 @@ namespace UCL.Core.EditorLib.Page
         int m_NewTriggerTokens = 1;
         UCL_ActualAgent m_RemoteTestAgent = UCL_ActualAgent.Codex;
         readonly UCL_ObjectDictionary m_RemoteTestAgentPopupDic = new UCL_ObjectDictionary();
+        // 區塊職責：persona 測試列的暫存選擇；清單本身每次繪製都重讀 lock 檔，不快取「誰在線」。
+        // 物理意義：在線與否隨時會變（同事登出 / lock 過期），把它快取住等於拿舊快照當現況。
+        // 數值影響：只保存「選了哪個名字」與「多重命中時選第幾個」，兩者都在清單變動時自動退回安全值。
+        string m_RemoteTestPersona = "";
+        readonly UCL_ObjectDictionary m_RemoteTestPersonaPopupDic = new UCL_ObjectDictionary();
+        readonly UCL_PersonaLocateOptions m_LocateOptions = new UCL_PersonaLocateOptions();
+        List<UCL_MonitorInfo> m_Monitors;
+        Texture2D m_LocatePreview;
+        string m_LocatePreviewError = "";
+        string m_LocateConfigStatus = "";
+        bool m_LocateRunning;
         // 區塊職責：保存各大區塊的展開偏好，供 UCL_GUILayout.Toggle 持久化讀寫。
         // 物理意義：折疊偏好與資料載入快取分離，Reload() 不會意外重置使用者剛選擇的展開狀態。
         // 數值影響：四個固定 key 各只保存一個 bool；首次開頁皆使用 false，避免管理頁載入即被長列表淹沒。
@@ -55,6 +66,10 @@ namespace UCL.Core.EditorLib.Page
 
         void Reload()
         {
+            // 定位設定跨 session 存活 —— 讀不到就用預設值，不擋其他區塊載入。
+            if (UCL_RemotePersonaLocateConfig.Load(m_LocateOptions, out string savedPersona)
+                && !string.IsNullOrEmpty(savedPersona))
+                m_RemoteTestPersona = savedPersona;
             m_Triggers = UCL_BartenderIO.LoadTriggers() ?? new UCL_BartenderTriggerList();
             m_TimeRules = UCL_BartenderIO.LoadTimeRules() ?? new UCL_BartenderTimeRuleList();
             m_State = UCL_BartenderIO.LoadState() ?? new UCL_BartenderState();
@@ -114,10 +129,226 @@ namespace UCL.Core.EditorLib.Page
                         UCL_RemoteWindowControl.TryActivateExplicitly(UCL_ActualAgentUtility.ToWindowTarget(m_RemoteTestAgent), out _);
                     GUI.enabled = true;
                 }
+                DrawPersonaLocateRow();
                 GUILayout.Label($"使用者已靜置 {UCL_RemoteWindowControl.UserIdleSeconds:0.0}s｜狀態：{UCL_RemoteWindowControl.LastResult}", UCL_GUIStyle.LabelStyle);
                 GUILayout.Label($"診斷檔：{UCL_RemoteWindowControl.DiagnosticPath}（每次按測試按鈕覆寫）", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
                 EditorGUILayout.HelpBox("此開關不存檔，重開 Editor / domain reload 後一定關閉。一般切換會在偵測到鍵鼠操作後讓出控制權；三顆測試按鈕是明示授權，會略過『剛按按鈕』造成的暫停，只嘗試切換指定的已開啟視窗，不會輸入文字或送出指令。", MessageType.Info);
             }
+        }
+
+        // 區塊職責：以在線 persona 為單位，跑「切視窗 → OCR 找 ##persona## → 只移動游標」的整條測試。
+        // 物理意義：清單只列有未過期 lock 的 persona —— 不列 registry 的 status 快取，那欄在登出沒走完時會停在 online。
+        // 數值影響：多重命中時不自動挑（session 標題列與側邊清單會同時命中同一個 token），
+        //          改成把候選列出來、由使用者指定 index 再測一次；整條流程只呼叫 SetCursorPos，不點擊。
+        void DrawPersonaLocateRow()
+        {
+            var online = UCL_ActivePersonaLocks.ListOnline();
+            UCL_PersonaLockInfo selected = null;
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("測試 persona", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                if (online.Count == 0)
+                {
+                    GUILayout.Label("（目前沒有在線的 persona）", UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                    return;
+                }
+                var names = online.ConvertAll(l => l.Persona);
+                if (!names.Contains(m_RemoteTestPersona)) m_RemoteTestPersona = names[0];
+                string next = UCL_GUILayout.PopupAuto(m_RemoteTestPersona, names, m_RemoteTestPersonaPopupDic,
+                    "RemoteTestPersona", 10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                if (next != m_RemoteTestPersona)
+                {
+                    m_RemoteTestPersona = next;
+                    m_LocateOptions.MatchIndex = -1;   // 換人就把候選選擇丟掉，別把 index 帶到另一份畫面上
+                }
+                selected = online.Find(l => l.Persona == m_RemoteTestPersona);
+                GUI.enabled = UCL_RemoteWindowControl.Enabled && selected != null && !m_LocateRunning;
+                if (GUILayout.Button("▶ 測試定位游標", UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 1f, 0.8f)), GUILayout.ExpandWidth(false)))
+                {
+                    m_LocateRunning = true;
+                    try { UCL_RemotePersonaLocator.RunCursorTest(selected, m_LocateOptions, out _); }
+                    finally { m_LocateRunning = false; }
+                }
+                GUI.enabled = true;
+                GUILayout.Label(selected == null ? ""
+                    : $"→ {UCL_ActualAgentUtility.ToWindowTarget(selected.ActualAgent)}｜token {selected.SessionToken}",
+                    UCL_GUIStyle.LabelStyle);
+                GUILayout.FlexibleSpace();
+            }
+            DrawLocateScanSettings();
+            DrawLocatePreview();
+            DrawLocateCandidates();
+        }
+
+        // 區塊職責：掃描範圍（哪塊螢幕 + 矩形範圍）與重試節奏的設定列。
+        // 物理意義：session 清單固定在視窗左側，掃全桌面既慢又會撈到別的視窗上的同名文字；
+        //          重試存在的理由是視窗剛被帶到前景時還沒重繪完，第一張抓到的可能是舊畫面。
+        // 數值影響：範圍是 0~1 比例（相對選定螢幕），解析度無關；次數含第一次，命中即跳出不空等。
+        void DrawLocateScanSettings()
+        {
+            m_Monitors ??= UCL_RemotePersonaLocator.ListMonitors();
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("掃描螢幕", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(30))))
+                    m_Monitors = UCL_RemotePersonaLocator.ListMonitors();
+                if (GUILayout.Toggle(m_LocateOptions.Monitor == "all", "all（全桌面）", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    m_LocateOptions.Monitor = "all";
+                foreach (var monitor in m_Monitors)
+                {
+                    string key = monitor.Index.ToString();
+                    if (GUILayout.Toggle(m_LocateOptions.Monitor == key, monitor.Label, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        m_LocateOptions.Monitor = key;
+                }
+                GUILayout.FlexibleSpace();
+            }
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("掃描範圍 x/y/w/h", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.RegionX = Mathf.Clamp01(EditorGUILayout.FloatField(m_LocateOptions.RegionX, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))));
+                m_LocateOptions.RegionY = Mathf.Clamp01(EditorGUILayout.FloatField(m_LocateOptions.RegionY, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))));
+                m_LocateOptions.RegionW = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.RegionW, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0.01f, 1f - m_LocateOptions.RegionX);
+                m_LocateOptions.RegionH = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.RegionH, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0.01f, 1f - m_LocateOptions.RegionY);
+                if (GUILayout.Button("整塊", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                { m_LocateOptions.RegionX = m_LocateOptions.RegionY = 0f; m_LocateOptions.RegionW = m_LocateOptions.RegionH = 1f; }
+                if (GUILayout.Button("左側 1/3", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                { m_LocateOptions.RegionX = m_LocateOptions.RegionY = 0f; m_LocateOptions.RegionW = 0.34f; m_LocateOptions.RegionH = 1f; }
+                GUILayout.FlexibleSpace();
+            }
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("切窗後等待(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.InitialDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.InitialDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 10f);
+                GUILayout.Label("重試次數", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.Attempts = Mathf.Clamp(EditorGUILayout.IntField(m_LocateOptions.Attempts, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))), 1, 20);
+                GUILayout.Label("每次間隔(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.AttemptDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.AttemptDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 10f);
+                GUILayout.FlexibleSpace();
+            }
+            // 多重命中的選擇政策：session 清單在視窗左緣，標題列與對話內容都在它右邊，所以預設取最左。
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("多重命中時", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                DrawPolicyToggle("leftmost", "取最左（預設）");
+                DrawPolicyToggle("topmost", "取最上");
+                DrawPolicyToggle("strict", "不自選・列出候選");
+                GUILayout.Space(12);
+                // 明示按鈕才寫檔：設定調到一半自動存，等於把試錯過程也存成「決定」。
+                if (GUILayout.Button("💾 保存設定", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
+                    m_LocateConfigStatus = UCL_RemotePersonaLocateConfig.Save(m_LocateOptions, m_RemoteTestPersona, out string saveError)
+                        ? $"已保存到 {UCL_RemotePersonaLocateConfig.Path_}"
+                        : $"保存失敗：{saveError}";
+                if (GUILayout.Button("↺ 讀回", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    bool loaded = UCL_RemotePersonaLocateConfig.Load(m_LocateOptions, out string loadedPersona);
+                    if (loaded && !string.IsNullOrEmpty(loadedPersona)) m_RemoteTestPersona = loadedPersona;
+                    m_LocateConfigStatus = loaded ? "已讀回保存的設定" : "沒有保存過的設定（使用預設值）";
+                }
+                GUILayout.FlexibleSpace();
+            }
+            if (!string.IsNullOrEmpty(m_LocateConfigStatus))
+                GUILayout.Label(m_LocateConfigStatus, new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+        }
+
+        void DrawPolicyToggle(string policy, string label)
+        {
+            bool on = m_LocateOptions.SelectPolicy == policy;
+            if (GUILayout.Toggle(on, label, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)) && !on)
+            {
+                m_LocateOptions.SelectPolicy = policy;
+                m_LocateOptions.MatchIndex = -1;   // 換政策就放掉手動指定，否則政策看起來沒生效
+            }
+        }
+
+        // 區塊職責：rect 預覽 —— 底圖是選定螢幕的當前截圖，橘框是實際會送去 OCR 的範圍。
+        // 物理意義：底圖抓「整塊螢幕」而不是 rect 內容；拿裁好的圖去調裁切範圍，永遠看不到自己漏掉了什麼。
+        // 數值影響：預覽不跑 OCR（不載模型），按下去秒級回應；圖只在按鈕按下時更新，不隨 repaint 重抓。
+        void DrawLocatePreview()
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("🖵 更新範圍預覽", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    RefreshLocatePreview();
+                GUILayout.Label(string.IsNullOrEmpty(m_LocatePreviewError)
+                    ? "（底圖＝選定螢幕當前畫面；橘框＝送去 OCR 的矩形範圍）"
+                    : $"預覽失敗：{m_LocatePreviewError}", UCL_GUIStyle.LabelStyle);
+                GUILayout.FlexibleSpace();
+            }
+            if (m_LocatePreview == null) return;
+            float aspect = (float)m_LocatePreview.width / Mathf.Max(1, m_LocatePreview.height);
+            float width = UCL_GUIStyle.GetScaledSize(420);
+            Rect box = GUILayoutUtility.GetRect(width, width / Mathf.Max(0.1f, aspect), GUILayout.ExpandWidth(false));
+            GUI.DrawTexture(box, m_LocatePreview, ScaleMode.StretchToFill);
+            DrawBorder(box, new Color(0.65f, 0.65f, 0.72f), 1.5f);
+            var region = new Rect(box.x + box.width * m_LocateOptions.RegionX,
+                                  box.y + box.height * m_LocateOptions.RegionY,
+                                  box.width * m_LocateOptions.RegionW,
+                                  box.height * m_LocateOptions.RegionH);
+            EditorGUI.DrawRect(region, new Color(1f, 0.6f, 0.1f, 0.18f));
+            DrawBorder(region, new Color(1f, 0.7f, 0.2f), 1.5f);
+        }
+
+        void RefreshLocatePreview()
+        {
+            if (!UCL_RemotePersonaLocator.CapturePreview(m_LocateOptions.Monitor, 640, out m_LocatePreviewError))
+            {
+                m_LocatePreview = null;
+                return;
+            }
+            try
+            {
+                byte[] bytes = System.IO.File.ReadAllBytes(UCL_RemotePersonaLocator.PreviewPath);
+                if (m_LocatePreview == null)
+                {
+                    m_LocatePreview = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                    m_LocatePreview.hideFlags = HideFlags.HideAndDontSave;
+                }
+                m_LocatePreview.LoadImage(bytes);
+                m_LocatePreviewError = "";
+            }
+            catch (Exception e)
+            {
+                m_LocatePreview = null;
+                m_LocatePreviewError = e.Message;
+            }
+        }
+
+        void DrawLocateCandidates()
+        {
+            var last = UCL_RemotePersonaLocator.LastResult;
+            if (last == null) return;
+            if (last.Matches.Count > 1)
+            {
+                string picked = last.Selected == null ? "未選定" : $"已用第 {last.SelectedIndex} 個";
+                EditorGUILayout.HelpBox($"畫面上有 {last.Matches.Count} 處 {last.Token}（標題列／側邊清單／對話內容都可能出現）。本次{picked}；下面可手動改指定：", MessageType.Info);
+                for (int i = 0; i < last.Matches.Count; i++)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        bool chosen = m_LocateOptions.MatchIndex == i;
+                        if (GUILayout.Toggle(chosen, chosen ? "● 指定這個" : "○ 指定", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)) != chosen)
+                            m_LocateOptions.MatchIndex = chosen ? -1 : i;
+                        string mark = i == last.SelectedIndex ? "◀ 本次採用" : "";
+                        GUILayout.Label($"{last.Matches[i].Describe(i)} {mark}", UCL_GUIStyle.LabelStyle);
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+                if (m_LocateOptions.MatchIndex >= 0)
+                    GUILayout.Label("（目前為手動指定；按上面的政策鈕可回到自動選擇）", UCL_GUIStyle.LabelStyle);
+            }
+            if (!last.Ok && last.Matches.Count == 0 && last.NearMisses.Count > 0)
+                GUILayout.Label($"近似未命中：{string.Join("；", last.NearMisses.ConvertAll(n => n.Text))}",
+                    new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+            GUILayout.Label($"定位診斷檔：{UCL_RemotePersonaLocator.DiagnosticPath}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+        }
+
+        static void DrawBorder(Rect r, Color c, float t)
+        {
+            EditorGUI.DrawRect(new Rect(r.x, r.y, r.width, t), c);
+            EditorGUI.DrawRect(new Rect(r.x, r.yMax - t, r.width, t), c);
+            EditorGUI.DrawRect(new Rect(r.x, r.y, t, r.height), c);
+            EditorGUI.DrawRect(new Rect(r.xMax - t, r.y, t, r.height), c);
         }
 
         void DrawDaemonSection()

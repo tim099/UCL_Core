@@ -176,6 +176,17 @@ def _try_init():
         _ocr_init_error = f"RapidOCR init 失敗: {e}"
 
 
+def get_engine():
+    """回共用的執行緒受限 engine (不可用時回 None) — 給需要 box 座標的 caller.
+
+    # 區塊職責: 對外唯一取 engine 的入口, 讓「不裁字幕帶、要原始 box」的 caller (persona_ocr_locate)
+    #          不必碰 _ocr_engine 私有變數, 也不會為了拿 box 另建零參數 RapidOCR()。
+    # 物理意義: 回的是同一顆 lazy-init 單例, 執行緒池已縮到 intra=2/inter=1 (T-OCR-CPU-Fix)。
+    # 數值影響: 不新增 engine 實例 → 不增加 idle busy-spin 的 CPU 底噪。
+    """
+    return _ocr_engine if is_available() else None
+
+
 def get_init_error() -> Optional[str]:
     """給 caller 用的 debug — 若 OCR 不可用, 印這個錯讓 user 知道為何."""
     if not _ocr_init_attempted:

@@ -99,6 +99,38 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             return succeeded;
         }
 
+        // 區塊職責：把游標移到指定 virtual desktop 座標；本檔沒有、也不會有 click / 鍵盤送出 API。
+        // 物理意義：SetCursorPos 只改游標位置，不產生任何滑鼠事件；即使落在錯的目標上也不會觸發動作。
+        // 數值影響：越界座標由 Windows 自行 clamp 到最近的螢幕；回傳值只反映 Win32 呼叫是否被接受。
+        public static bool TryMoveCursor(int x, int y, out string result)
+        {
+            if (!s_Enabled)
+            {
+                result = "請先在酒保後台啟動遠端視窗協作";
+                return false;
+            }
+            bool moved = SetCursorPos(x, y);
+            bool got = GetCursorPos(out POINT actual);
+            result = moved && got
+                ? $"游標已移到 ({actual.x}, {actual.y})"
+                : $"游標移動失敗（SetCursorPos={moved}）";
+            // 要求座標與實際座標不一致時說出來 —— 多螢幕 / DPI 落差會讓「呼叫成功」與「真的到位」分家。
+            if (moved && got && (actual.x != x || actual.y != y))
+                result = $"游標移到 ({actual.x}, {actual.y})，與要求的 ({x}, {y}) 不同（可能被螢幕邊界 clamp）";
+            return moved && got && actual.x == x && actual.y == y;
+        }
+
+        public static bool TryGetCursor(out int x, out int y)
+        {
+            x = y = 0;
+            if (!GetCursorPos(out POINT p)) return false;
+            x = p.x; y = p.y;
+            return true;
+        }
+
+        /// <summary>供 locator 在完成一次完整測試後，把結果掛回後台的狀態行。</summary>
+        public static void SetLastResult(string result) => s_LastResult = result;
+
         // 區塊職責：列舉可見 top-level window，以標題或程序名稱比對指定工具後呼叫 SetForegroundWindow。
         // 物理意義：Win32 視窗與 process metadata 比圖像可靠，無 DPI / icon badge / 深淺主題相依性。
         // 數值影響：只接受可見且非空標題的視窗；沒有唯一命中時保留目前焦點、不嘗試猜測點擊座標。
@@ -257,6 +289,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
         const int ShowRestore = 9;
         [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+        [StructLayout(LayoutKind.Sequential)] struct POINT { public int x; public int y; }
+        [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+        [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT point);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);

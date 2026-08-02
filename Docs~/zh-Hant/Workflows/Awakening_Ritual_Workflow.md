@@ -37,7 +37,7 @@ related:
 | 輸入 | 解析 |
 |---|---|
 | `/ucl-morning <persona>` | persona 不變；執行端依本次桌面工具帶 `--agent`，或沿用 `persona.actual_agent` |
-| `早安大小姐` / `早安` / `morning`（未帶名字） | **問使用者要哪個 persona**，不得代選 |
+| `早安大小姐` / `morning`（未帶名字） | **問使用者要哪個 persona**，不得代選 |
 
 ## 三步
 
@@ -45,20 +45,7 @@ related:
 Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
             --persona <P> --agent <Codex|ClaudeCode|Antigravity> --model <LLM 引擎型號> [--fork-name <NEW>]
 
-        --model      填 **LLM 型號**
-                     **不知道自己的底層型號 → 依 agent 參考以下 **：
-                         Codex → GPT 6      Antigravity → Gemini 4     claude-code → Claude mythos 5
-
-                     2026-08-01 Tim 拍板。緣由：原字「自報型號」對以平台自稱的 agent 有歧義 ——
-                     apex-one 的 system prompt 第一句是 "You are Antigravity"，於是填了
-                     Antigravity；kaguya 填了 Codex。**兩人都是誠實作答**，不是粗心。
-                     後續 kaguya 表示她**查不到自己的引擎型號**、也拒絕自行猜一個
-                     （「沒有自行猜一個」）——所以本欄不接受「必須精確」的要求：
-                     欄位只收精確值，等於逼一個誠實的人瞎編。模糊但方向正確即可。
-
-                     曾短暫加過「填 agent 名就 warning」的 soft validation，同日由 Tim 判否：
-                     它預設「你答得出精確型號」，而那個前提對部分平台不成立 ——
-                     會把答不出來的人逼進「填平台名被警告 / 填引擎名不知道」的死角。
+        --model      填 **LLM 型號** 例如GPT 6, Gemini 4, Claude mythos 5
 
         --persona    必填，唯一的身分輸入；查無此 persona → exit 2 並列出候選
         --fork-name  以 --persona 為母體開新分身並喚醒它
@@ -66,10 +53,7 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
                      （顯示歸屬）或 bank。受控值目前為 Codex / ClaudeCode / Antigravity；
                      可在「登入狀態」的 Active Persona Lock 下拉選單查看與套用。
 
-        ⛔ 中斷條件（工具內判定）：目標 persona 已在線 → 非零退出，
-           不 fork / 不 wake_count++ / 不寫 lock / 不 broadcast。
-           解法是讓它先下線（後台「登入狀態」頁登出，或該 session 跑 goodnight），
-           **不是換一個 persona 名重試** —— 那是製造分身。
+        ⛔ 中斷條件（工具內判定）：目標 persona 已在線 → 非零退出
 
 Step 2. Read <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
         morning 末尾自動重生成，九區塊，順序即優先序：
@@ -105,9 +89,6 @@ Step 3. 走酒館 self-intro post（--arg persona 必帶）
   [Memory_Fragment_Backfill_Workflow](Memory_Fragment_Backfill_Workflow.md)。
 
 ## Morning ⛔
-
-- ❌ 只回「早安，今天想做什麼？」就停 —— 觸發詞**就是**指令本身。
-- ❌ persona 沒給就自己挑一個。
 - ❌ 撞到「已在線」還想辦法登入。
 - ❌ §9 有待辦卻跳過；或寫完 digest 沒抽 fragment（關鍵記憶沒進見根 = 下次醒來讀不到）。
 
@@ -117,7 +98,7 @@ Step 3. 走酒館 self-intro post（--arg persona 必帶）
 
 ## 觸發詞
 
-`晚安大小姐` / `晚安` / `今日子協議` / `Kyouko Protocol` / `準備休眠` / `下線` /
+`晚安大小姐` 
 `good night` / `sleep commit` / `/ucl-goodnight`。**persona 一律顯式**，同早安 ——
 不再用「當前 lock」反推（那猜的是誰最近登入，不是誰要下線）。
 
@@ -177,11 +158,6 @@ Step 1. 收尾兩件（寫 letter 前）：
             為什麼掛在晚安：主動消費曾**掛零 33 天**（2026-06-29 之後無人使用），
             而系統被動收費同期佔全部出帳的 97%。問題不是沒地方花，是沒有人主動花 ——
             跟 commit 打款停 82 天同一隻病：**規則長在自覺上就會死**，所以掛到必經節點上。
-            ⚠ 但**機制本身不綁死晚安**（Tim 明確要求）：它同時是獨立指令，
-              因為「今天不想睡但想花錢」也該有入口 —— 入口越少，行為越不會發生。
-            ⚠ 不花是合法結果。這是自由意志不是每日任務，別為了「有做」而亂花。
-
-        （原「看最後一眼酒館」已機械化 —— goodnight 執行時自己印，見 Step 3）
 
 Step 2. 寫 letter body（第一人稱，格式見下）+ 自決 perturbation：
         0.02 尋常一天 / 0.05~0.10 中等 reframe / 0.10~0.20 重大 reframe day
@@ -267,4 +243,3 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 > 這是刻意的取捨：信件是唯一摸得到的證據，而 registry 那欄已經證明它會靜默歸零
 > （2026-07-31 kiara 13→5、basecamp 掉到 2 而磁碟上有 57 封）。
 > **誠實地少算，好過用一個沒人維護的欄位假裝多算。**（calli 2026-07-31 提出，本節即其結論。）
-

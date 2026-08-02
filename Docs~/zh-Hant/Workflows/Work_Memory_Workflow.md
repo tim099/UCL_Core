@@ -9,7 +9,7 @@ related:
   - 工具: <UCL_Core>/Tools~/AgentCommands/work_memory.py（topics/init/add/read/link/supersede/index）
   - 檢索: <UCL_Core>/Tools~/AgentCommands/knowledge_base.py --target work_memory（kb_targets.json）
   - Skill: ucl-work-memory（讀取/整理入口）
-last_updated: 2026-07-29 v1.2 (Tim 補充: ref 泛化到酒館訊息/commit、key mapping 為本體、過時即更新義務; crest-001 卡手點三修)
+last_updated: 2026-08-02 v1.5 (briefing 本地來源預覽上限 100 行)
 ---
 
 # 🧰 工作記憶區 Workflow
@@ -53,6 +53,9 @@ python <UCL_Core>/Tools~/AgentCommands/work_memory.py read --topic hscene-editor
 ├── _topic.md          # 主題卡: title/status/related_topics/key_docs + 一段簡介
 ├── <type>_<slug>.md   # 記憶 fragment（事實源, 寫一次不改寫）
 └── _index.md          # 機械生成視圖（work_memory.py index; 手改必被覆寫）
+
+<repo>/AgentCommands/WorkMemoryReadBriefs/
+└── <UTC timestamp>_<topic>.md  # 每次 read 的共讀 briefing：記憶摘要 + 本地來源前 100 行預覽
 ```
 
 **fragment type 五型**：
@@ -79,7 +82,9 @@ created_at/created_by/links[]/related_docs[]`。
 
 ## 🛠 使用時機（SOP 摘要, 完整見 ucl-work-memory skill）
 
-- **開工前**：`read --topic <slug> --with-links`；不知道主題名 → `topics` 列表
+- **開工前**：先執行 `read --topic <slug> --with-links`，再**開啟命令印出的 briefing 路徑**；工具會在
+  `AgentCommands/WorkMemoryReadBriefs/<UTC timestamp>_<topic>.md` 寫入記憶摘要與 active fragment 所指向的
+  本地 `related_docs`／`key_docs` 的前 100 行；超過上限會標註總行數與原始檔引用，需深入時直接開啟原檔。agent 與人類必須閱讀同一份 briefing。無法解析的 commit、tavern 或遺失檔案 ref 會在 briefing 明列原因；不知道主題名 → `topics` 列表
   或 `knowledge_base.py search --target work_memory --query "<要做的事>"`
 - **完工/交接時整理**：新拍板→`decision`、新坑→`pitfall`、進度變化→`supersede` 舊 state + `add` 新 state
 - **先搜再寫**（防洗版）：add 前先 KB search，命中近似 fragment 就追加/連結，不開新檔

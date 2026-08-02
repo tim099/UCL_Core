@@ -74,6 +74,8 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawTavernAdminSection();
             GUILayout.Space(8);
+            DrawBartenderAdminSection();
+            GUILayout.Space(8);
             DrawBankAdminSection();
             GUILayout.Space(8);
             DrawPersonaAgentAdminSection();
@@ -85,6 +87,29 @@ namespace UCL.Core.EditorLib.Page
             DrawAgentSkillManagerSection();
             GUILayout.Space(8);
             DrawAgentCommandsPathSection();
+        }
+
+        // ===========================================================
+        // 區塊職責：酒保後台入口。
+        // 物理意義：把報時、時間規則與關鍵字留言的日常控制收在專頁，控制台只負責導流。
+        // 數值影響：按鈕只開頁；不會在控制台靜默改動任何酒保規則。
+        // ===========================================================
+        void DrawBartenderAdminSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "BartenderAdminFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🍺 酒保後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟酒保管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.9f, 0.75f, 0.45f)), GUILayout.ExpandWidth(false)))
+                        UCL_BartenderAdminPage.Create();
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                GUILayout.Label("管理酒保報時、時間提醒、關鍵字留言、跨日檢查與目前掃描游標。報時可獨立關閉，不影響酒館或 Discord 同步。", UCL_GUIStyle.LabelStyle);
+            }
         }
 
         // ===========================================================

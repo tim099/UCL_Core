@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import re
 import sys
 from pathlib import Path
 
@@ -66,6 +67,15 @@ def _resolve_repo_root() -> Path:
 
 REPO_ROOT = _resolve_repo_root()
 WM_ROOT = REPO_ROOT / "AgentCommands" / "WorkMemory"
+# 區塊職責: 為每次 `read` 產生「agent 與人類共讀」的 briefing，含記憶摘要與權威來源全文。
+# 物理意義: briefing 置於 WorkMemory 外，避免 topics()/index()/知識庫把生成品誤判為工作記憶事實源。
+# 數值影響: 每次讀取新增一份 UTF-8 Markdown；檔名含微秒 UTC 時間戳，連續呼叫也不會互相覆寫。
+READ_BRIEF_ROOT = REPO_ROOT / "AgentCommands" / "WorkMemoryReadBriefs"
+UCL_CORE_ROOT = Path(__file__).resolve().parents[2]
+# 區塊職責: 限制每份來源在共讀 briefing 中的展開行數，保留辨識檔案職責所需的開頭上下文。
+# 物理意義: 完整來源仍以 related_docs 指向的原始檔為單一真相；briefing 僅是開工導覽，不取代原檔。
+# 數值影響: 每個來源最多貢獻 100 行，避免單一大型 C# 或 workflow 壓縮其他記憶與文件的可讀空間。
+READ_BRIEF_MAX_SOURCE_LINES = 100
 
 
 # ===========================================================
@@ -354,43 +364,138 @@ def op_index(args) -> int:
     return 0
 
 
+def resolve_related_doc(ref: str) -> tuple[Path | None, str]:
+    """將 related_docs 的本地檔案 ref 安全解析；非本地 ref 保留原因供 briefing 顯示。"""
+    # 區塊職責: 支援 `path:line` 與 `ucl_core:path`，同時拒絕 commit/tavern 等非檔案 ref。
+    # 物理意義: 僅允許 repo 或 UCL_Core submodule 內的檔案，避免記憶資料意外要求 briefing 洩出工作區外內容。
+    # 數值影響: 解析失敗只新增一條診斷文字，不中斷其餘來源的載入。
+    raw = ref.strip()
+    if raw.startswith(("commit:", "tavern:", "workmem:")):
+        return None, "非本地檔案引用"
+    base = REPO_ROOT
+    if raw.startswith("ucl_core:"):
+        base, raw = UCL_CORE_ROOT, raw.removeprefix("ucl_core:")
+    raw = re.sub(r":\d+(?:-\d+)?$", "", raw)
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    try:
+        resolved = candidate.resolve()
+        if not (resolved.is_relative_to(REPO_ROOT.resolve()) or resolved.is_relative_to(UCL_CORE_ROOT.resolve())):
+            return None, "路徑不在允許的工作區範圍"
+    except OSError as exc:
+        return None, f"路徑解析失敗: {exc}"
+    if not resolved.is_file():
+        return None, "檔案不存在或不是一般檔案"
+    return resolved, ""
+
+
+def save_read_brief(topic: str, with_links: bool, types: str, result: str,
+                    lines: list[str], related_docs: list[str]) -> Path:
+    """把 read 的記憶摘要及本地 related_docs 全文寫成 agent 與人類共讀的 briefing。"""
+    # 區塊職責: 單一 Markdown 同時承載本次 read 的記憶清單與有效本地來源全文。
+    # 物理意義: agent 在命令後開啟此檔即可取得與人類完全相同的輸入，不再靠終端截斷內容。
+    # 數值影響: 每份來源最多嵌入 READ_BRIEF_MAX_SOURCE_LINES 行；不可解析 ref 以文字診斷取代全文。
+    READ_BRIEF_ROOT.mkdir(parents=True, exist_ok=True)
+    read_at = datetime.datetime.now(datetime.timezone.utc)
+    brief_path = READ_BRIEF_ROOT / f"{read_at:%Y%m%d_%H%M%S_%fZ}_{topic}.md"
+    brief = [
+        "---",
+        f"title: 工作記憶 Read Brief — {topic}",
+        f"topic: {topic}",
+        f"read_at_utc: {read_at.isoformat()}",
+        f"result: {result}",
+        f"with_links: {str(with_links).lower()}",
+        f"types: {types or 'all'}",
+        "---",
+        "",
+        "# 工作記憶 Read Brief",
+        "",
+        "## 本次記憶摘要",
+        "",
+        *lines,
+    ]
+    if related_docs:
+        brief.extend(("## 已嵌入的本地來源", ""))
+        for ref in dict.fromkeys(related_docs):
+            source, reason = resolve_related_doc(ref)
+            brief.extend((f"### `{ref}`", ""))
+            if source is None:
+                brief.extend((f"> 未嵌入：{reason}。", ""))
+                continue
+            try:
+                content = source.read_text(encoding="utf-8")
+            except OSError as exc:
+                brief.extend((f"> 未嵌入：讀取失敗：{exc}", ""))
+                continue
+            suffix = source.suffix.lstrip(".") or "text"
+            source_lines = content.splitlines()
+            displayed_lines = source_lines[:READ_BRIEF_MAX_SOURCE_LINES]
+            brief.extend((f"~~~~{suffix}", "\n".join(displayed_lines), "~~~~", ""))
+            if len(source_lines) > READ_BRIEF_MAX_SOURCE_LINES:
+                omitted = len(source_lines) - READ_BRIEF_MAX_SOURCE_LINES
+                brief.extend((
+                    f"> ⚠ 已截斷：僅顯示前 {READ_BRIEF_MAX_SOURCE_LINES} / {len(source_lines)} 行，後續 {omitted} 行請直接查看原始檔 `{ref}`。",
+                    "",
+                ))
+    brief_path.write_text("\n".join(brief).rstrip() + "\n", encoding="utf-8")
+    return brief_path
+
+
 def op_read(args) -> int:
     d = topic_dir(args.topic)
     card_path = d / "_topic.md"
     if not card_path.exists():
-        print(f"✗ 主題不存在: {args.topic}。現有主題:")
-        op_topics(None)
+        # 區塊職責: 不存在的 topic 也留下 read 快照，讓人類可以回查失敗的原因與當時的輸入。
+        # 物理意義: 失敗輸出採用與成功讀取相同的稽核資料夾，避免讀取紀錄只保留「看似正常」的案例。
+        # 數值影響: 失敗讀取同樣只多一個小型 UTF-8 檔，不改變命令的 exit code（仍為 2）。
+        lines = [f"✗ 主題不存在: {args.topic}。現有主題:"]
+        if WM_ROOT.is_dir():
+            for topic in sorted(d.name for d in WM_ROOT.iterdir() if d.is_dir()):
+                lines.append(f"  - {topic}")
+        else:
+            lines.append("（工作記憶區為空 — 用 init 建第一個主題）")
+        brief_path = save_read_brief(args.topic, args.with_links, args.types, "not_found", lines, [])
+        lines.append(f"📄 共讀 briefing: {brief_path.relative_to(REPO_ROOT)}（請開啟此檔繼續讀取）")
+        print("\n".join(lines))
         return 2
     want_types = [t.strip() for t in (args.types or "").split(",") if t.strip()] or list(FRAGMENT_TYPES)
 
+    # 區塊職責: 先累積輸出再一次印出與落檔，確保終端內容和可稽核快照逐字一致。
+    # 物理意義: 人類日後可直接開啟快照驗證 agent 當時取得哪些 active/superseded/關聯記憶。
+    # 數值影響: 所有 read 路徑（含不存在的關聯目標）都被保留，避免遺漏診斷訊號。
+    lines: list[str] = []
+    related_docs: list[str] = []
     card = load_fragment(card_path)
-    print(f"🧠 工作記憶 — {card.get('title', args.topic)}  [{card.get('status', '?')}]")
+    lines.append(f"🧠 工作記憶 — {card.get('title', args.topic)}  [{card.get('status', '?')}]")
     if card.get("key_docs"):
-        print(f"   📚 權威文件: {', '.join(card['key_docs'])}")
+        lines.append(f"   📚 權威文件: {', '.join(card['key_docs'])}")
+        related_docs.extend(card["key_docs"])
     if card.get("related_topics"):
-        print(f"   ↔ 關聯主題: {', '.join(card['related_topics'])}")
+        lines.append(f"   ↔ 關聯主題: {', '.join(card['related_topics'])}")
     if card.get("_body"):
-        print(f"\n{card['_body']}\n")
+        lines.extend(("", card["_body"], ""))
 
     frags = [f for f in list_fragments(args.topic) if f.get("type") in want_types]
     linked_refs: list[str] = []
     for f in frags:
         status = f.get("status", "active")
         if status != "active":
-            print(f"--- ~~{f.get('id')}~~ [{status}]（正文略; 取代鏈見 links: {f.get('links')}）")
+            lines.append(f"--- ~~{f.get('id')}~~ [{status}]（正文略; 取代鏈見 links: {f.get('links')}）")
             continue
-        print(f"--- [{f.get('type')}] {f.get('title')}  (id: {f.get('id')}, by {f.get('created_by')} @ {f.get('created_at')})")
+        lines.append(f"--- [{f.get('type')}] {f.get('title')}  (id: {f.get('id')}, by {f.get('created_by')} @ {f.get('created_at')})")
         if f.get("related_docs"):
-            print(f"    📚 {', '.join(f['related_docs'])}")
+            lines.append(f"    📚 {', '.join(f['related_docs'])}")
+            related_docs.extend(f["related_docs"])
         if f.get("links"):
-            print(f"    ↔ {', '.join(f['links'])}")
+            lines.append(f"    ↔ {', '.join(f['links'])}")
             linked_refs.extend(f["links"])
-        print(f"{f.get('_body')}\n")
+        lines.extend((f.get("_body", ""), ""))
 
     # --with-links: 1-hop 拉關聯 fragment（跨主題）— 「讀取時根據情況一起讀關聯記憶」
     if args.with_links and linked_refs:
         seen = {f"{args.topic}/{f.get('id')}" for f in frags}
-        print("═══ 關聯記憶（1-hop, --with-links）═══")
+        lines.append("═══ 關聯記憶（1-hop, --with-links）═══")
         for ref in dict.fromkeys(linked_refs):   # 去重保序
             if ref in seen:
                 continue
@@ -401,10 +506,15 @@ def op_read(args) -> int:
                 continue
             frag = next((x for x in list_fragments(t) if x.get("id") == fid), None)
             if frag is None:
-                print(f"--- ⚠ 關聯目標不存在（dangling, 可能是未來主題）: {ref}")
+                lines.append(f"--- ⚠ 關聯目標不存在（dangling, 可能是未來主題）: {ref}")
                 continue
-            print(f"--- [來自 {t}] [{frag.get('type')}] {frag.get('title')}  (id: {frag.get('id')})")
-            print(f"{frag.get('_body')}\n")
+            lines.append(f"--- [來自 {t}] [{frag.get('type')}] {frag.get('title')}  (id: {frag.get('id')})")
+            related_docs.extend(frag.get("related_docs") or [])
+            lines.extend((frag.get("_body", ""), ""))
+
+    brief_path = save_read_brief(args.topic, args.with_links, args.types, "success", lines, related_docs)
+    lines.extend((f"📄 共讀 briefing: {brief_path.relative_to(REPO_ROOT)}（請開啟此檔繼續讀取）", ""))
+    print("\n".join(lines))
     return 0
 
 

@@ -29,7 +29,7 @@ last_updated: "2026-07-29 v1.1 (施工中同步機制 — crest-001 提案採納
 ```bash
 WM="python <UCL_Core>/Tools~/AgentCommands/work_memory.py"
 $WM topics                                              # 有哪些工作主題
-$WM read --topic hscene-editor-rework --with-links      # 開工前必跑（含 1-hop 關聯記憶）
+$WM read --topic hscene-editor-rework --with-links      # 先生成共讀 briefing（含 1-hop 關聯與本地來源前 100 行）
 $WM read --topic <t> --types state,pointer              # 只要進度+指路（最速接手）
 $WM init --topic <slug> --title <title> --desc <一段簡介>
 $WM add  --topic <t> --type <decision|knowhow|pitfall|state|pointer> \
@@ -57,7 +57,7 @@ fragment 的核心價值是 `related_docs`/`links` 這組 **ref** — 把「這�
 
 ## 📖 讀取記憶（開工前 SOP）
 
-1. `$WM read --topic <slug> --with-links` — 主題卡 + 全 fragment + 跨主題關聯
+1. `$WM read --topic <slug> --with-links` 後，**必須開啟命令印出的 `AgentCommands/WorkMemoryReadBriefs/...md`** — 該檔是 agent 與人類共讀的唯一輸入，含主題卡、fragment、跨主題關聯與有效本地 `related_docs`／`key_docs` 前 100 行；出現截斷標記時再直接讀原始檔
 2. 趕時間 → `--types state,pointer`：**進度快照**（接續上次開工）+ **文件地圖**（key→權威文件）
 3. 記憶指向的 ref 才是內容本體 — 記憶讀完按圖索驥, 別期待記憶裡有完整規格
 4. **讀者的更新義務（Tim 2026-07-29 拍板）**: 讀到**過時**的 fragment（state 與實況不符 / ref 指向已不存在 / 結論已被推翻）→ **當場處理**, 不是記在心裡:

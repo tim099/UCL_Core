@@ -1,9 +1,9 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-08-01
+last_updated: 2026-08-02
 status: active
 theme: persona_lifecycle
-summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安三步：morning（只帶 persona，衝突判定在工具內）→ 讀 wake brief → 酒館報到；晚安五步：收尾 → 寫 letter → goodnight → 驗收 → 下線通知。
+summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安三步：morning（persona 身分輸入 + 實際桌面 agent routing，衝突判定在工具內）→ 讀 wake brief → 酒館報到；晚安五步：收尾 → 寫 letter → goodnight → 驗收 → 下線通知。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta / Codex)
 canonical_term: Awakening Ritual
 related:
@@ -36,14 +36,14 @@ related:
 
 | 輸入 | 解析 |
 |---|---|
-| `/ucl-morning <persona>` | 就是 persona；agent 由 `persona.agent` 反推 |
+| `/ucl-morning <persona>` | persona 不變；執行端依本次桌面工具帶 `--agent`，或沿用 `persona.actual_agent` |
 | `早安大小姐` / `早安` / `morning`（未帶名字） | **問使用者要哪個 persona**，不得代選 |
 
 ## 三步
 
 ```
 Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
-            --persona <P> --model <LLM 引擎型號> [--fork-name <NEW>]
+            --persona <P> --agent <Codex|ClaudeCode|Antigravity> --model <LLM 引擎型號> [--fork-name <NEW>]
 
         --model      填 **LLM 型號**，不是 agent／平台名（agent 由 persona 綁定自動反推，不必填）。
                      **查不到自己的底層型號 → 依 agent 填個模糊但方向對的**，不留白也不瞎猜精確值：
@@ -62,7 +62,9 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 
         --persona    必填，唯一的身分輸入；查無此 persona → exit 2 並列出候選
         --fork-name  以 --persona 為母體開新分身並喚醒它
-        agent 不是參數；換綁走後台「🧬 Persona & Agent 管理頁」，不從 ritual 開後門
+        --agent      本次實際承載 persona 的桌面工具；只更新 `actual_agent`，不改 `persona.agent`
+                     （顯示歸屬）或 bank。受控值目前為 Codex / ClaudeCode / Antigravity；
+                     可在「登入狀態」的 Active Persona Lock 下拉選單查看與套用。
 
         ⛔ 中斷條件（工具內判定）：目標 persona 已在線 → 非零退出，
            不 fork / 不 wake_count++ / 不寫 lock / 不 broadcast。

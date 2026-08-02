@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
+using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -35,6 +37,7 @@ namespace UCL.Core.EditorLib.Page
         {
             public string Persona = "";
             public string Agent = "";
+            public string ActualAgent = "";
             public string Model = "";
             public string BankAccount = "";
             public string LockedAt = "";
@@ -51,6 +54,7 @@ namespace UCL.Core.EditorLib.Page
         {
             public string Name = "";
             public string Agent = "";
+            public string ActualAgent = "";
             public string Status = "";   // online / offline
             public int WakeCount = 0;
             public string LayerRole = "";
@@ -61,6 +65,8 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：快取資料
         // 物理意義：locks 列當前活躍, pool 列 registry 全部 personas (offline + online)
         List<LockEntry> m_Locks = new List<LockEntry>();
+        readonly Dictionary<string, UCL_ActualAgent> m_ActualAgentDrafts = new Dictionary<string, UCL_ActualAgent>();
+        readonly UCL_ObjectDictionary m_ActualAgentPopupDic = new UCL_ObjectDictionary();
         List<PersonaEntry> m_Pool = new List<PersonaEntry>();
         Dictionary<string, int> m_SameKeyCount = new Dictionary<string, int>();   // session_key → count (collision 偵測)
 
@@ -122,6 +128,7 @@ namespace UCL.Core.EditorLib.Page
         void LoadData()
         {
             m_Locks.Clear();
+            m_ActualAgentDrafts.Clear();
             m_Pool.Clear();
             m_SameKeyCount.Clear();
 
@@ -175,6 +182,7 @@ namespace UCL.Core.EditorLib.Page
                         {
                             Persona = jd.GetString("persona", ""),
                             Agent = jd.GetString("agent", ""),
+                            ActualAgent = jd.GetString("actual_agent", ""),
                             Model = jd.GetString("model", ""),
                             BankAccount = jd.GetString("bank_account", ""),
                             LockedAt = jd.GetString("locked_at", ""),
@@ -187,6 +195,7 @@ namespace UCL.Core.EditorLib.Page
                         entry.Expired = !string.IsNullOrEmpty(entry.ExpiresAt)
                                         && string.Compare(entry.ExpiresAt, DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"), StringComparison.Ordinal) < 0;
                         m_Locks.Add(entry);
+                        m_ActualAgentDrafts[entry.Persona] = UCL_ActualAgentUtility.ParseOrNone(entry.ActualAgent);
 
                         // 區塊：同 session_key 計數 (collision 偵測)
                         if (!string.IsNullOrEmpty(entry.SessionKey))
@@ -220,6 +229,7 @@ namespace UCL.Core.EditorLib.Page
                         {
                             Name = name,
                             Agent = jd.GetString("agent", ""),
+                            ActualAgent = jd.GetString("actual_agent", ""),
                             Status = jd.GetString("status", ""),
                             WakeCount = jd.GetInt("wake_count", 0),
                             LayerRole = jd.GetString("layer_role", ""),
@@ -415,7 +425,7 @@ namespace UCL.Core.EditorLib.Page
                         }
 #endif
                         string personaLabel = l.Expired ? string.Format(UCL_CodeLocalize.Get("LoginStatus.ExpiredFmt"), l.Persona) : l.Persona;
-                        using(new GUILayout.VerticalScope())
+                        using(new GUILayout.VerticalScope()) 
                         {
                             GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                             GUILayout.Label(personaLabel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
@@ -425,6 +435,17 @@ namespace UCL.Core.EditorLib.Page
                         {
                             GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                             GUILayout.Label(l.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
+                        }
+                        // 區塊職責：編輯實際承載 agent；它只影響 remote routing / 下次 morning 的 --agent，不動顯示歸屬或 bank。
+                        // 物理意義：同一 persona 可由不同桌面平台承載，而帳務與酒館顯示仍必須維持原本綁定。
+                        // 數值影響：套用同時寫 active lock 與 persona registry 的 actual_agent，下一次 morning 可帶入同一 agent。
+                        using (new GUILayout.VerticalScope())
+                        {
+                            GUILayout.Label("實際 Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                            UCL_ActualAgent current = m_ActualAgentDrafts.TryGetValue(l.Persona, out var draft) ? draft : UCL_ActualAgentUtility.ParseOrNone(l.ActualAgent);
+                            current = UCL_GUILayout.PopupAuto(current, m_ActualAgentPopupDic.GetSubDic(l.Persona), "ActualAgent", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                            m_ActualAgentDrafts[l.Persona] = current;
+                            if (GUILayout.Button("套用", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)))) ApplyActualAgent(l.Persona, current);
                         }
                         using (new GUILayout.VerticalScope())
                         {
@@ -644,6 +665,14 @@ namespace UCL.Core.EditorLib.Page
                 "--model", string.IsNullOrWhiteSpace(m_LoginModel) ? "Opus 5" : m_LoginModel.Trim(),
                 "--persona", m_LoginPersona.Trim(),
             };
+            var persona = m_Pool.Find(p => p.Name == m_LoginPersona.Trim());
+            var actual = UCL_ActualAgentUtility.ParseOrNone(persona?.ActualAgent ?? "");
+            if (actual == UCL_ActualAgent.None) actual = UCL_ActualAgentUtility.ParseOrNone(persona?.Agent ?? "");
+            if (actual != UCL_ActualAgent.None)
+            {
+                args.Add("--agent");
+                args.Add(UCL_ActualAgentUtility.ToStorageValue(actual));
+            }
             if (!string.IsNullOrWhiteSpace(m_LoginForkName))
             {
                 args.Add("--fork-name");
@@ -651,6 +680,49 @@ namespace UCL.Core.EditorLib.Page
             }
             // RunAwakening 現為背景非阻塞 — 完成後自動回主線程 LoadData()，不再同步 reload
             RunAwakening(args, "morning");
+        }
+
+        // 區塊職責：套用 active persona 的實際承載 agent，將同一值寫入 lock（當前在線事實）與 persona registry（下次早安預設）。
+        // 物理意義：顯示 agent / bank 是另兩條身份資料，這裡絕不改它們；只給遠端切換決定要帶哪個桌面 agent。
+        // 數值影響：使用 UTF-8 原子替換兩個 JSON；任一檔不存在即停止並保留另一個檔不變，避免造成半套設定。
+        void ApplyActualAgent(string persona, UCL_ActualAgent actualAgent)
+        {
+            string value = UCL_ActualAgentUtility.ToStorageValue(actualAgent);
+            if (string.IsNullOrEmpty(value))
+            {
+                Debug.LogWarning("[LoginStatus] 請先選擇實際 Agent 再套用");
+                return;
+            }
+            string lockPath = Path.Combine(m_SessionDir, $"_persona_{persona}.json");
+            string personaPath = Path.Combine(m_PersonasDir, persona + ".json");
+            if (!File.Exists(lockPath) || !File.Exists(personaPath))
+            {
+                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：lock 或 persona 檔不存在 ({persona})");
+                return;
+            }
+            try
+            {
+                var lockData = JsonData.ParseJson(File.ReadAllText(lockPath));
+                var personaData = JsonData.ParseJson(File.ReadAllText(personaPath));
+                lockData["actual_agent"] = new JsonData(value);
+                personaData["actual_agent"] = new JsonData(value);
+                AtomicWriteUtf8(lockPath, lockData.ToJsonBeautify());
+                AtomicWriteUtf8(personaPath, personaData.ToJsonBeautify());
+                Debug.Log($"[LoginStatus] {persona} actual_agent → {value}（顯示 Agent / bank 未變）");
+                LoadData();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：{exception.Message}");
+            }
+        }
+
+        static void AtomicWriteUtf8(string path, string content)
+        {
+            string tempPath = path + ".actual-agent.tmp";
+            File.WriteAllText(tempPath, content, new UTF8Encoding(false));
+            File.Copy(tempPath, path, true);
+            File.Delete(tempPath);
         }
 
         // 區塊職責：彈窗確認後 spawn awakening.py goodnight per persona

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.AgentCommands.Bartender;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.JsonLib;
@@ -23,6 +24,7 @@ namespace UCL.Core.EditorLib.Page
         const string KeyTimeRulesFold = "BartenderTimeRulesFold";
         const string KeyTriggersFold = "BartenderTriggersFold";
         const string KeyStateFold = "BartenderStateFold";
+        const string KeyRemoteWindowFold = "BartenderRemoteWindowFold";
 
         UCL_BartenderTriggerList m_Triggers = new UCL_BartenderTriggerList();
         UCL_BartenderTimeRuleList m_TimeRules = new UCL_BartenderTimeRuleList();
@@ -34,6 +36,8 @@ namespace UCL.Core.EditorLib.Page
         string m_NewTriggerKeyword = "";
         string m_NewTriggerMessage = "";
         int m_NewTriggerTokens = 1;
+        UCL_ActualAgent m_RemoteTestAgent = UCL_ActualAgent.Codex;
+        readonly UCL_ObjectDictionary m_RemoteTestAgentPopupDic = new UCL_ObjectDictionary();
         // 區塊職責：保存各大區塊的展開偏好，供 UCL_GUILayout.Toggle 持久化讀寫。
         // 物理意義：折疊偏好與資料載入快取分離，Reload() 不會意外重置使用者剛選擇的展開狀態。
         // 數值影響：四個固定 key 各只保存一個 bool；首次開頁皆使用 false，避免管理頁載入即被長列表淹沒。
@@ -69,11 +73,50 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("<b>🍺 酒保管理</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true, fontSize = 18 });
                 DrawDaemonSection();
                 GUILayout.Space(6);
+                DrawRemoteWindowSection();
+                GUILayout.Space(6);
                 DrawTimeRulesSection();
                 GUILayout.Space(6);
                 DrawTriggersSection();
                 GUILayout.Space(6);
                 DrawStateSection();
+            }
+        }
+
+        // 區塊職責：提供遠端協作視窗控制的明確啟動與可觀察測試入口。
+        // 物理意義：Enabled 與 pause 秒數皆為 static runtime state，不寫入規則檔或 PlayerPrefs；重開 Editor 必回關閉。
+        // 數值影響：一般自動切換遇到 OS 輸入後會等待設定秒數；三顆測試按鈕只切已開啟的指定 IDE 視窗，從不輸入文字。
+        void DrawRemoteWindowSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool show;
+                using (new GUILayout.HorizontalScope())
+                {
+                    show = UCL_GUILayout.Toggle(m_FoldDic, KeyRemoteWindowFold, 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🖥 遠端視窗協作</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    bool enabled = UCL_RemoteWindowControl.Enabled;
+                    bool next = GUILayout.Toggle(enabled, enabled ? "● 本次已啟動" : "○ 本次未啟動", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    if (next != enabled) UCL_RemoteWindowControl.SetEnabled(next);
+                    GUILayout.FlexibleSpace();
+                }
+                if (!show) return;
+                UCL_RemoteWindowControl.PauseOnUserInput = EditorGUILayout.ToggleLeft("偵測使用者操作後暫停（預設開啟）", UCL_RemoteWindowControl.PauseOnUserInput);
+                UCL_RemoteWindowControl.UserIdlePauseSeconds = EditorGUILayout.IntField("使用者操作後暫停（秒）", UCL_RemoteWindowControl.UserIdlePauseSeconds);
+                if (!UCL_RemoteWindowControl.PauseOnUserInput)
+                    EditorGUILayout.HelpBox("暫停護欄目前已關閉：一般自動輪循不會因鍵鼠輸入讓出控制權。此設定只在本次 Editor session 有效。", MessageType.Warning);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("手動測試 Agent", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    m_RemoteTestAgent = UCL_GUILayout.PopupAuto(m_RemoteTestAgent, m_RemoteTestAgentPopupDic, "RemoteTestAgent", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                    GUI.enabled = UCL_RemoteWindowControl.Enabled && m_RemoteTestAgent != UCL_ActualAgent.None;
+                    if (GUILayout.Button("▶ 測試切換", UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 0.88f, 1f)), GUILayout.ExpandWidth(false)))
+                        UCL_RemoteWindowControl.TryActivateExplicitly(UCL_ActualAgentUtility.ToWindowTarget(m_RemoteTestAgent), out _);
+                    GUI.enabled = true;
+                }
+                GUILayout.Label($"使用者已靜置 {UCL_RemoteWindowControl.UserIdleSeconds:0.0}s｜狀態：{UCL_RemoteWindowControl.LastResult}", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"診斷檔：{UCL_RemoteWindowControl.DiagnosticPath}（每次按測試按鈕覆寫）", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                EditorGUILayout.HelpBox("此開關不存檔，重開 Editor / domain reload 後一定關閉。一般切換會在偵測到鍵鼠操作後讓出控制權；三顆測試按鈕是明示授權，會略過『剛按按鈕』造成的暫停，只嘗試切換指定的已開啟視窗，不會輸入文字或送出指令。", MessageType.Info);
             }
         }
 

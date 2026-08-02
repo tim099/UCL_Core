@@ -1,6 +1,6 @@
 ---
 title: UCL_BartenderAdminPage — 酒保管理頁
-description: 集中管理酒保報時、時間提醒、關鍵字留言與 daemon 執行狀態的 Editor 後台。
+description: 集中管理酒保報時、時間提醒、關鍵字留言、daemon 狀態與 runtime-only 遠端視窗協作的 Editor 後台。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_BartenderAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
 last_updated: 2026-08-02
@@ -17,7 +17,7 @@ related:
 
 控制台 →「🍺 酒保後台」→「開啟酒保管理頁」。本頁管酒保的自動發言；Discord webhook 與 inbound 不在此處設定。
 
-四個管理區塊預設皆收合，避免規則列表壓過頁面入口；「常駐酒保」標頭保留總開關、報時、立即檢查與重新載入等高頻操作，其他明細需展開後才顯示。
+五個管理區塊預設皆收合，避免規則列表壓過頁面入口；「常駐酒保」與「遠端視窗協作」標頭保留高頻操作，其他明細需展開後才顯示。
 
 ## 可管理項目
 
@@ -25,6 +25,7 @@ related:
 |---|---|---|
 | 常駐酒保 | 酒館系統開關、立即 tick、重新載入 | `UCL_ChatTavernSystemControl` / `UCL_BartenderDaemon` |
 | 酒保報時 | 一鍵切換每日／每小時 `announce-rules-*` 報時規則 | `ChatTavern/bartender/time_rules.json` |
+| 遠端視窗協作 | runtime-only 啟動、使用者操作後暫停 checkbox／秒數、ActualAgent enum popup 的手動測試按鈕 | Win32 視窗列舉；不存檔 |
 | 時間規則 | 逐條開關、刪除、新增單次時間提醒 | `time_rules.json` |
 | 關鍵字留言 | 檢視剩餘觸發額度、刪除、新增全域 keyword trigger | `triggers.json` |
 | 執行狀態 | 各 room 已掃 seq、今天已觸發數、跨日檢查日期 | `state.json` |
@@ -39,3 +40,4 @@ related:
 - 酒保總開關與控制台的「聊天酒館系統」是同一個開關；關閉後所有酒保自動掃描與廣播停止。
 - 「立即檢查」只執行一次既有判定，不會強制重發今天已在 `fired_today_keys` 登記的時間規則。
 - 本頁新增的 keyword trigger 為全域 sender 比對、目標 room 為 `tavern`；需要指定 target 的進階規則可繼續用 `Cmd_Bartender` 或 inline 指令。
+- 遠端視窗協作預設關閉，且重開 Editor 或 domain reload 後一定關閉；「偵測使用者操作後暫停」checkbox 預設開啟，一般自動切換會在使用者最後一次鍵鼠輸入後暫停（預設 60 秒）。為測試自動輪循可在本次 session 關閉該 checkbox；它不存檔。機制只帶視窗到前景，不輸入文字、不按 Enter。測試按鈕是使用者明示授權，會略過剛點擊按鈕造成的暫停；識別時優先以 process basename，比對不到才退回視窗標題，避免工作階段標題中的 agent 名稱誤配。每次測試會覆寫 `ChatTavern/bartender/remote_window_last_test.md`，保留候選與全部可見視窗的 HWND、PID、process、標題、命中來源、切換前後 foreground 與 Win32 結果供除錯。

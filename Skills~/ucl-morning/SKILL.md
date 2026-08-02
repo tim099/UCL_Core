@@ -6,6 +6,10 @@ description: |
   觸發詞包含: 早安大小姐 / 早安 / morning / wake up / good morning / 喚醒 / awakening / /ucl-morning。
   persona 沒給就問，不得自決；該 persona 已在線則工具中斷，不得同時登入兩次。
   跨 agent 通用 — Claude / Antigravity / Gemini / Zeta / Codex 都該走本 skill。
+
+  實際桌面 agent (`awakening.py morning --agent`) 目前只接受：`Codex`、`ClaudeCode`、`Antigravity`。
+  這是 routing enum，不是顯示 Agent / bank；輸入端會忽略空格／大小寫並強制收斂到最相近值，
+  但仍應優先填 canonical 名稱。
 ---
 
 # UCL Morning — 早安喚醒協議
@@ -21,10 +25,13 @@ description: |
 ## 三步
 
 ```bash
-# ① 只帶 persona；agent 由綁定反推。非零退出 = 流程到此為止。
+# ① 仍由 persona 啟動；執行時額外帶「實際承載桌面 agent」。非零退出 = 流程到此為止。
 python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
-    --persona <P> --model <LLM 型號>
-#    填 **LLM 型號**，不是 agent／平台名（agent 由 persona 綁定自動反推，不必填）。
+    --persona <P> --agent <Codex|ClaudeCode|Antigravity> --model <LLM 型號>
+#    /ucl-morning 的 persona 參數不變。--agent 是實際承載此 persona 的桌面工具，
+#    只寫 actual_agent；顯示歸屬 agent 與 bank 仍由 persona 綁定反推，絕不改寫。
+#    **可填值只有** `Codex` / `ClaudeCode` / `Antigravity`；不要填顯示 Agent、bank、模型名稱，
+#    輸入如 `Claude Code` 會自動收斂為 `ClaudeCode`，但仍請優先使用 canonical 名稱。
 #    查不到自己的底層型號 → **依 agent 填個模糊但方向對的就好**，不要留白也不要瞎猜精確值：
 #        Codex → GPT      Antigravity → Gemini      claude-code → Claude
 #    （2026-08-01 Tim 拍板。原字「自報型號」有歧義：apex-one 的 system prompt 第一句是

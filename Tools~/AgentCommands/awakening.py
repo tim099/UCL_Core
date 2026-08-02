@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import difflib
 import hashlib
 import json
 import math
@@ -474,6 +475,32 @@ _DEFAULT_AGENT_ALIASES = _br_mod.DEFAULT_AGENT_ALIASES   # backward-compat alias
 normalize_agent = _br_mod.normalize_agent               # canonical agent key 正規化
 resolve_bank_account = _br_mod.resolve_bank_account      # agent → Treasury bank account
 
+# 區塊職責：把晨間 CLI 輸入的實際桌面 agent 強制收斂到 C# enum 的三個 canonical 值。
+# 物理意義：人類常輸入 "Claude Code"、大小寫差異或夾空格；lock routing 只能有一種拼法才能對應視窗控制。
+# 數值影響：非空輸入必選相似度最高的一個值（不靜默：caller 會印出收斂結果）；空值交由上層 fallback。
+_ACTUAL_AGENT_VALUES = ("Codex", "ClaudeCode", "Antigravity")
+
+
+def normalize_actual_agent(value: str) -> tuple[str, bool]:
+    raw = (value or "").strip()
+    if not raw:
+        return "", False
+    normalized = re.sub(r"[^a-z0-9]", "", raw.lower())
+    aliases = {
+        "codex": "Codex",
+        "claude": "ClaudeCode",
+        "claudecode": "ClaudeCode",
+        "antigravity": "Antigravity",
+    }
+    if normalized in aliases:
+        canonical = aliases[normalized]
+        return canonical, raw != canonical
+    candidate = max(
+        _ACTUAL_AGENT_VALUES,
+        key=lambda item: difflib.SequenceMatcher(None, normalized, item.lower()).ratio(),
+    )
+    return candidate, True
+
 
 def get_bonus_balance(bank_account: str) -> int:
     """Read total_remaining tokens from agent_bonus_quota.json (bonus quota — 酒館休息額度，跟 treasury bank balance 是兩個 pool)"""
@@ -609,7 +636,8 @@ def lock_path(persona: str) -> Path:
 
 def write_lock(persona: str, agent: str, model: str, bank_account: str,
                session_key: str | None = None,
-               session_token: str | None = None) -> Path:
+               session_token: str | None = None,
+               actual_agent: str | None = None) -> Path:
     """Write lock for persona. session_key 可選, 寫入 body 作 audit (不參與路由).
     T07 (2026-05-15 apex-two): session_token 帶入 lock body 當權威來源, agent 失憶可直接讀回.
     """
@@ -621,6 +649,9 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
     data = {
         "persona": persona,
         "agent": agent,
+        # 實際承載這個 persona 的桌面 agent；可與顯示歸屬 agent / bank account 不同。
+        # 空值 migration 時回退 agent，讓舊 lock 對 consumer 維持可讀。
+        "actual_agent": actual_agent or agent,
         "model": model,
         "bank_account": bank_account,
         "locked_at": now,
@@ -1655,7 +1686,7 @@ def build_wake_intro_body(persona: str, agent: str, model: str, bank_account: st
 
 
 def cmd_morning(args: argparse.Namespace) -> int:
-    """喚醒 ritual — persona 顯式必填、agent 由綁定反推、已在線即中斷。
+    """喚醒 ritual — persona 顯式必填、顯示歸屬與實際承載 agent 分離、已在線即中斷。
 
     2026-07-31 Tim 拍板重寫。刪掉的三段舊邏輯與理由：
       - persona 80/20 自決：把身分決定權交給一個「還沒讀記憶的自己」，順序本身就是反的。
@@ -1677,17 +1708,25 @@ def cmd_morning(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
 
-    # ② agent 一律反推（registry 查表 = 機械事實，不是自決）
+    # ② 顯示歸屬 agent / 實際承載 agent 分離。
+    #    display agent 決定 bank 與對外身分；--agent 只記錄本次實際桌面承載者，不得偷改前兩者。
     p = reg["personas"][preferred]
     agent = normalize_agent(reg, p.get("agent") or "")
     if not agent:
         print(f"❌ persona '{preferred}' 沒有綁定 agent，無法反推。請從後台補上 agent 歸屬。", file=sys.stderr)
         return 2
+    actual_agent_raw = args.agent or p.get("actual_agent") or agent
+    actual_agent, actual_agent_normalized = normalize_actual_agent(actual_agent_raw)
+    if not actual_agent:
+        print(f"❌ persona '{preferred}' 沒有實際承載 agent，無法建立 session lock。", file=sys.stderr)
+        return 2
+    if actual_agent_normalized:
+        print(f"ℹ actual agent 正規化：{actual_agent_raw!r} → {actual_agent}")
     bank_account = resolve_bank_account(reg, agent, model)
-    session_key = compute_session_key(agent, preferred)
+    session_key = compute_session_key(actual_agent, preferred)
 
     print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
-    print(f"   Persona={preferred} / Agent={agent}（由綁定反推）/ Model={model} / Bank={bank_account}")
+    print(f"   Persona={preferred} / Agent={agent}（顯示歸屬）/ ActualAgent={actual_agent} / Model={model} / Bank={bank_account}")
 
     # ③ 唯一的中斷條件：該 persona 目前是否在線
     #    只看「這個 persona 有沒有人在用」——不比對 claim_origin / pid，
@@ -1746,7 +1785,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
               f"(lineage: {' → '.join(reg['personas'][chosen]['fork_lineage'])} → {chosen})")
         # session_key 要跟著換成「實際佔用的那個 persona」——
         # 否則 fork 出來的 lock 會掛著母體的名字，之後查 lock 對不上人。
-        session_key = compute_session_key(agent, chosen)
+        session_key = compute_session_key(actual_agent, chosen)
 
     p = reg["personas"][chosen]
 
@@ -1756,6 +1795,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
     #   這個守衛守的是一扇不存在的門。換綁走後台「🧬 Persona & Agent 管理頁」。
     if model and p.get("model") != model:
         p["model"] = model
+    p["actual_agent"] = actual_agent
     # wake_count 真相源 = wakes/ 的信件數 (Tim 2026-07-31 拍板)。
     #   已完成的 wake 數 = 收尾信數; 現在這次還沒寫信, 故 = count + 1。
     #   registry 那欄降為快取 —— 它掉過一次 (letters 同步了、personas/ 沒同步, kiara 13→5、
@@ -1793,7 +1833,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
     my_origin_for_token = compute_claim_origin()
     new_token = issue_token(chosen, agent, bank_account, session_key, my_origin_for_token)
     lock_p = write_lock(chosen, agent, model, bank_account,
-                        session_key=session_key, session_token=new_token)
+                        session_key=session_key, session_token=new_token, actual_agent=actual_agent)
     print(f"🔒 persona lock written: {lock_p.name}")
 
     # T07: 自動 memo write _session_token.md — agent 失憶時讀 memo 撈回 token
@@ -1803,6 +1843,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
         f"---\n"
         f"persona: {chosen}\n"
         f"agent: {agent}\n"
+        f"actual_agent: {actual_agent}\n"
         f"session_token: {new_token}\n"
         f"issued_at: {utcnow_iso()}\n"
         f"claim_origin: {my_origin_for_token}\n"
@@ -1846,6 +1887,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
 
     print(f"\n🌅 Morning ritual complete:")
     print(f"   chosen_persona: {chosen}")
+    print(f"   actual_agent:  {actual_agent}")
     print(f"   wake_count:     {p['wake_count']}")
     print(f"   session_locked: {lock_p}")
     print(f"   tavern_post:    {'OK' if ok else 'FAIL (主 ritual 仍成功)'}")
@@ -2354,7 +2396,8 @@ def cmd_relogin(args: argparse.Namespace) -> int:
     my_origin = compute_claim_origin()
     new_token = issue_token(persona, agent, bank_account, session_key, my_origin)
     lock_p = write_lock(persona, agent, model, bank_account,
-                        session_key=session_key, session_token=new_token)
+                        session_key=session_key, session_token=new_token,
+                        actual_agent=p_data.get("actual_agent") or agent)
     print(f"🔒 persona lock re-written: {lock_p.name}")
 
     # memo (token 失憶救援, 同 morning)
@@ -3117,7 +3160,8 @@ def cmd_reissue_token(args: argparse.Namespace) -> int:
     new_token = issue_token(persona, agent, bank, session_key, claim_origin)
     # rewrite lock 把新 token 帶進去
     write_lock(persona, agent, lock.get("model", ""), bank,
-               session_key=session_key, session_token=new_token)
+               session_key=session_key, session_token=new_token,
+               actual_agent=lock.get("actual_agent") or agent)
     print(f"✓ reissued session_token for {persona}: {new_token}")
     print(f"   舊 active token 已標 expired (audit 仍可查)")
     return 0
@@ -3149,11 +3193,12 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pm = sub.add_parser("morning", help="喚醒 ritual (Cmd_GoodMorning)")
-    # 2026-07-31 Tim 拍板：persona 是唯一身分輸入；agent 一律由 persona 綁定反推，不再是參數。
-    # 廢除 --agent / --explicit-persona / --strict-persona / --force-random / --rebind-agent：
-    #   前者讓 caller 有機會宣稱錯身分；後四者都是「剛醒的人自己 ack 自己」的旁路。
-    #   換綁 agent 走後台「🧬 Persona & Agent 管理頁」，不從 ritual 開後門。
+    # persona 仍是唯一身份輸入；--agent 不是換綁，而是記錄本次「實際桌面承載 agent」。
+    # 它不得改 persona.agent（顯示歸屬）或 bank；這兩者仍由後台的正式綁定決定。
     pm.add_argument("--persona", required=True, help="要喚醒的 persona codename（唯一身分輸入）")
+    pm.add_argument("--agent", default=None,
+                    help="本次實際承載此 persona 的桌面 agent；只寫 actual_agent，不改顯示 agent 或 bank。"
+                         "省略時沿用 persona 的 actual_agent，舊資料再回退顯示 agent。")
     # 2026-08-01：help 從「自報型號」改字。實測 apex-one 填了 Antigravity、kaguya 填了 Codex ——
     # 兩個都是 agent／平台名，而且會原樣廣播進 Discord 的「Model:」欄。「型號」對以平台自稱的
     # agent 有歧義，而 kaguya 進一步表示她**查不到自己的引擎型號、也不願自行猜一個**。

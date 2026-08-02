@@ -529,28 +529,33 @@ namespace UCL.Core.EditorLib.Page
                     m_VoucherDescDraft = GUILayout.TextField(m_VoucherDescDraft ?? "", UCL_GUIStyle.TextFieldStyle);
                 }
 
-                // ---- 繪圖券（餘額用快取值，避免重複讀檔）----
+                // ---- 兩種券的數量欄與整合發放按鈕 ----
+                // 區塊職責：保留各券獨立數量輸入，但收束成單一操作與單一酒館公告。
+                // 物理意義：繪圖券與酒館券仍各自走自己的 canonical ledger；UI 合併不會混淆資產所有權或 history。
+                // 數值影響：填 0 的券種不寫帳；兩欄皆為 0 時不允許發放，避免產生空操作／空公告。
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label($"🎨 繪圖券 餘額: <b>{(hasPersona ? m_CacheCanvasBal.ToString() : "-")}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                     GUILayout.Label("發放", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
                     m_CanvasGrantAmountDraft = GUILayout.TextField(m_CanvasGrantAmountDraft ?? "0", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
-                    using (new EditorGUI.DisabledScope(!hasPersona))
-                        if (GUILayout.Button("發繪圖券", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
-                            DoGrantCanvasVoucher();
                 }
 
-                // ---- 酒館券（餘額用快取值；發放走 UCL_TavernVoucherLedger canonical grant）----
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label($"🍺 酒館券 餘額: <b>{(m_CacheTavernBal < 0 ? "-" : m_CacheTavernBal.ToString())}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                     GUILayout.Label("發放", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
                     m_TavernGrantAmountDraft = GUILayout.TextField(m_TavernGrantAmountDraft ?? "0", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
-                    using (new EditorGUI.DisabledScope(!hasPersona || m_CacheTavernBal < 0))
-                        if (GUILayout.Button("發酒館券", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.6f)), GUILayout.ExpandWidth(false)))
-                            DoGrantTavernVoucher();
                 }
-                GUILayout.Label("  查詢直讀；發放走各券 canonical C# ledger（繪圖券 UCL_CanvasVoucherLedger／酒館券 UCL_TavernVoucherLedger），正規路徑、含 history 審計。", WrapLabelStyle);
+                using (new EditorGUI.DisabledScope(!hasPersona))
+                {
+                    if (GUILayout.Button("一次發放券", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f))))
+                    {
+                        DoGrantVouchers();
+                    }
+                }
+
+                        
+                GUILayout.Label("  兩種券各自走 canonical C# ledger、共用一次公告；數量填 0 即略過該券種。", WrapLabelStyle);
             }
         }
 
@@ -766,9 +771,13 @@ namespace UCL.Core.EditorLib.Page
                 SetResult($"✅ 打款：`{bank}` +{amount}（{sourceKind}）餘額 {e.balance_before} → {e.balance_after}"
                           + (drawFromCB ? $"｜央行出帳 -{amount}" : "｜注資央行（增發）"));
                 Debug.Log($"[BankAdmin] 打款 {bank} +{amount} ({sourceKind})");
+                // 區塊職責：讓 token 打款公告能沿用目前 persona 下拉，直接通知實際使用者而非只顯示 bank。
+                // 物理意義：token 帳本仍以 bank 為主體；persona mention 只是酒館通知的收件人定位，不改 ledger 歸屬。
+                // 數值影響：未選 persona 時維持舊格式；已選時多一個 @mention，讓 ChatTavern inbox／Discord 提醒自動命中。
+                string personaMention = string.IsNullOrEmpty(SelectedPersona) ? "" : $" @{SelectedPersona}";
                 NotifyTavern(
                     $"💵 **銀行後台｜{(drawFromCB ? "打款（央行撥出）" : "注資央行（增發）")}**\n" +
-                    $"bank **{bank}** 入帳 +{amount} tavern_token（來源 {sourceKind}），餘額 {e.balance_before} → **{e.balance_after}**。\n" +
+                    $"bank **{bank}**{personaMention} 入帳 +{amount} tavern_token（來源 {sourceKind}），餘額 {e.balance_before} → **{e.balance_after}**。\n" +
                     (drawFromCB
                         ? $"🏦 由 **{centralBank}** 撥出 -{amount}，公庫餘額 → **{SafeBalance(centralBank)}**。\n"
                         : $"🆕 本筆是**注資央行**（唯一的合法增發入口）—— 貨幣總量增加 {amount}。\n") +
@@ -825,6 +834,57 @@ namespace UCL.Core.EditorLib.Page
                 "bank-transfer");
             m_BalancesDirty = true;   // 雙邊餘額變動 → 快取失效
             m_TransferAmountDraft = "0";
+        }
+
+        // 區塊職責：一次性發放繪圖券與酒館券，並以同一則通知告知選定 persona。
+        // 物理意義：兩種券仍分別委派其 canonical ledger；這個方法只收束 UI 操作、驗證與對外公告，避免兩則通知漂移。
+        // 數值影響：任一數量為 0 即不寫對應 ledger；兩者皆為 0 時零寫入、零公告；任一非零則各 append 一筆 history。
+        void DoGrantVouchers()
+        {
+            string persona = SelectedPersona;
+            if (string.IsNullOrEmpty(persona)) { SetResult("❌ 發券失敗：未選 persona"); return; }
+            if (!int.TryParse((m_CanvasGrantAmountDraft ?? "0").Trim(), out int canvasAmount) || canvasAmount < 0)
+            { SetResult($"❌ 發券失敗：繪圖券需為非負整數（收到 '{m_CanvasGrantAmountDraft}'）"); return; }
+            if (!int.TryParse((m_TavernGrantAmountDraft ?? "0").Trim(), out int tavernAmount) || tavernAmount < 0)
+            { SetResult($"❌ 發券失敗：酒館券需為非負整數（收到 '{m_TavernGrantAmountDraft}'）"); return; }
+            if (canvasAmount == 0 && tavernAmount == 0) { SetResult("❌ 發券失敗：至少填一種券的大於 0 數量"); return; }
+
+            string bank = tavernAmount > 0 ? ResolvePersonaToBank(persona) : "";
+            if (tavernAmount > 0 && string.IsNullOrEmpty(bank))
+            { SetResult($"❌ 發券失敗：persona '{persona}' 無法解析 bank，酒館券不能 mint；繪圖券亦未寫入。"); return; }
+
+            string desc = string.IsNullOrEmpty(m_VoucherDescDraft) ? "後台發券（BankAdminPage）" : m_VoucherDescDraft.Trim();
+            try
+            {
+                int canvasBefore = 0, canvasAfter = 0, tavernBefore = 0, tavernAfter = 0;
+                if (canvasAmount > 0)
+                    (canvasBefore, canvasAfter) = UCL_CanvasVoucherLedger.Grant(persona, canvasAmount, "admin_grant", desc);
+                if (tavernAmount > 0)
+                    (tavernBefore, tavernAfter) = UCL_TavernVoucherLedger.Grant(bank, persona, tavernAmount, "admin_grant", desc);
+
+                var summary = new List<string>();
+                var announcement = new StringBuilder($"🎫 **銀行後台｜發券** @{persona}\n");
+                if (canvasAmount > 0)
+                {
+                    summary.Add($"繪圖券 +{canvasAmount}（{canvasBefore} → {canvasAfter}）");
+                    announcement.AppendLine($"🎨 繪圖券 +{canvasAmount}，餘額 {canvasBefore} → **{canvasAfter}**。");
+                }
+                if (tavernAmount > 0)
+                {
+                    summary.Add($"酒館券 +{tavernAmount}（{tavernBefore} → {tavernAfter}）");
+                    announcement.AppendLine($"🍺 酒館券／自由時間券 +{tavernAmount}（bank {bank}），餘額 {tavernBefore} → **{tavernAfter}**。");
+                }
+                announcement.AppendLine("📝 兩種券各自走 canonical C# ledger；填 0 的券種已略過。");
+                announcement.Append($"📌 本次備註：{desc}");
+                SetResult($"✅ 發券：'{persona}' {string.Join("｜", summary)}");
+                Debug.Log($"[BankAdmin] 發券 {persona} canvas={canvasAmount} tavern={tavernAmount}");
+                NotifyTavern(announcement.ToString(), "voucher-grant");
+                m_BalancesDirty = true;
+                m_CanvasGrantAmountDraft = "0";
+                m_TavernGrantAmountDraft = "0";
+                m_VoucherDescDraft = "";
+            }
+            catch (Exception ex) { SetResult($"❌ 發券失敗（canonical ledger）：{ex.Message}"); }
         }
 
         // 發繪圖券（爭點二 canonical，2026-07-21 全室拍板）：**不 C# 直寫**，走 canvas.py voucher grant

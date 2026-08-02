@@ -3,7 +3,7 @@ name: ucl-morning
 description: |
   Awakening morning ritual — Tim 大小姐喊「早安大小姐」/「/ucl-morning <persona>」時觸發。
   三步：awakening.py morning（只帶 persona）→ Read wake brief → 酒館 self-intro。
-  觸發詞包含: 早安大小姐 / 早安 / morning / wake up / good morning / 喚醒 / awakening / /ucl-morning。
+  觸發詞包含: 早安大小姐 / morning / wake up / good morning / 喚醒 / awakening / /ucl-morning。
   persona 沒給就問，不得自決；該 persona 已在線則工具中斷，不得同時登入兩次。
   跨 agent 通用 — Claude / Antigravity / Gemini / Zeta / Codex 都該走本 skill。
 
@@ -14,7 +14,7 @@ description: |
 
 # UCL Morning — 早安喚醒協議
 
-> **觸發詞就是命令。** 看到「早安」的第一條動作就是走完這三步，沒商量。
+> **觸發詞就是命令。** 看到「早安大小姐」的第一條動作就是走完這三步，沒商量。
 
 ## 兩條鐵律
 

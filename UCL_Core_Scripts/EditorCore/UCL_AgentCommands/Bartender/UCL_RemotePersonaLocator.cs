@@ -67,6 +67,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public int MatchIndex = -1;
         /// <summary>多重命中的選擇政策：leftmost（預設）/ topmost / strict。</summary>
         public string SelectPolicy = "leftmost";
+        // 區塊職責：移到目標後的後續動作（Tim 2026-08-02 指定的下一步）。
+        // 物理意義：按左鍵＝把 session 選起來；輸入文字＝在輸入框裡打指令。**沒有送 Enter 的路徑**，
+        //          不是「預設關閉」而是整條 code path 不存在 —— 要送出永遠是人自己按。
+        // 數值影響：兩段延遲存在的理由是點擊後 UI 需要時間切 session、輸入框需要時間拿到焦點。
+        public bool ClickAfterMove;
+        public float ClickDelaySec = 0.3f;
+        public string TypeText = "/ucl-ding";
+        public bool TypeAfterClick;
+        public float TypeDelaySec = 0.6f;
+        /// <summary>per-agent 輸入前置動作完成後的等待（只有需要前置的 agent 會用到，如 Antigravity）。</summary>
+        public float FocusDelaySec = 0.5f;
+        /// <summary>比對方式：delimiter（##name## 用，預設）/ contains（找 UI 固定文字用）。</summary>
+        public string MatchMode = "delimiter";
+        /// <summary>逐字輸入時每個字之間的間隔 —— 零延遲會在對方 UI 重繪時掉字（2026-08-02 實測）。</summary>
+        public float TypeCharDelaySec = 0.03f;
 
         public bool IsFullRegion => RegionX <= 0f && RegionY <= 0f && RegionW >= 1f && RegionH >= 1f;
 
@@ -100,6 +115,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 data["attempts"] = new JsonData(options.Attempts);
                 data["attempt_delay_sec"] = new JsonData(options.AttemptDelaySec);
                 data["select_policy"] = new JsonData(options.SelectPolicy);
+                data["click_after_move"] = new JsonData(options.ClickAfterMove);
+                data["click_delay_sec"] = new JsonData(options.ClickDelaySec);
+                data["type_after_click"] = new JsonData(options.TypeAfterClick);
+                data["type_text"] = new JsonData(options.TypeText ?? "");
+                data["type_delay_sec"] = new JsonData(options.TypeDelaySec);
+                data["focus_delay_sec"] = new JsonData(options.FocusDelaySec);
+                data["type_char_delay_sec"] = new JsonData(options.TypeCharDelaySec);
                 data["last_persona"] = new JsonData(persona ?? "");
                 File.WriteAllText(Path_, data.ToJsonBeautify(), new UTF8Encoding(false));
                 return true;
@@ -129,6 +151,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 options.Attempts = data.GetInt("attempts", options.Attempts);
                 options.AttemptDelaySec = data.GetFloat("attempt_delay_sec", options.AttemptDelaySec);
                 options.SelectPolicy = data.GetString("select_policy", options.SelectPolicy);
+                options.ClickAfterMove = data.GetBool("click_after_move", options.ClickAfterMove);
+                options.ClickDelaySec = data.GetFloat("click_delay_sec", options.ClickDelaySec);
+                options.TypeAfterClick = data.GetBool("type_after_click", options.TypeAfterClick);
+                options.TypeText = data.GetString("type_text", options.TypeText);
+                options.TypeDelaySec = data.GetFloat("type_delay_sec", options.TypeDelaySec);
+                options.FocusDelaySec = data.GetFloat("focus_delay_sec", options.FocusDelaySec);
+                options.TypeCharDelaySec = data.GetFloat("type_char_delay_sec", options.TypeCharDelaySec);
                 persona = data.GetString("last_persona", "");
                 return true;
             }
@@ -203,11 +232,45 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             var target = result.Selected;
             bool moved = UCL_RemoteWindowControl.TryMoveCursor(target.CenterX, target.CenterY, out string moveResult);
-            summary = $"{lockInfo.Persona} → {windowTarget}｜{result.Reason}｜{moveResult}";
+            string actionResult = moved
+                ? RunPostMoveActions(options, lockInfo.ActualAgent)
+                : "（游標沒到位，後續動作全部略過）";
+            summary = $"{lockInfo.Persona} → {windowTarget}｜{result.Reason}｜{moveResult}｜{actionResult}";
             UCL_RemoteWindowControl.SetLastResult(summary);
             WriteDiagnostic(lockInfo, windowTarget, activateResult, result, summary);
             return moved;
         }
+
+        // 區塊職責：游標到位之後的按左鍵 / 輸入文字。
+        // 物理意義：SendInput 送出的是與真人無法分辨的輸入 —— 所以每一步之前都重新確認「前景視窗仍是
+        //          我剛切過去的那一個」。焦點被搶走時停手，而不是往別人的視窗裡點下去。
+        // 數值影響：不做這個檢查最壞情況是把 /ucl-ding 打進別人的聊天框並留下痕跡；檢查成本是一次
+        //          GetForegroundWindow。Enter 永遠不送 —— 這裡沒有那條路徑。
+        static string RunPostMoveActions(UCL_PersonaLocateOptions options, UCL_ActualAgent agent)
+        {
+            if (!options.ClickAfterMove) return "未啟用點擊（只移動游標）";
+            var expected = UCL_RemoteWindowControl.LastActivatedWindow;
+            if (!UCL_RemoteWindowControl.IsForeground(expected))
+                return $"⚠ 前景已不是目標視窗（現在是 {UCL_RemoteWindowControl.DescribeForeground()}），為避免點進別人的視窗而中止";
+
+            if (options.ClickDelaySec > 0f) Sleep(options.ClickDelaySec);
+            if (!UCL_RemoteWindowControl.TryClickLeft(out string clickResult))
+                return $"點擊失敗：{clickResult}";
+            if (!options.TypeAfterClick || string.IsNullOrEmpty(options.TypeText))
+                return $"{clickResult}（未啟用文字輸入）";
+
+            if (options.TypeDelaySec > 0f) Sleep(options.TypeDelaySec);
+            // per-agent 前置：有些桌面工具點完 session 焦點不會自己進輸入框（Antigravity 2.0），要補一段。
+            string prepare = UCL_RemoteAgentInput.PrepareInput(agent, options);
+            // 點擊可能切換了 session / 開了新視窗，打字前再確認一次焦點歸屬。
+            if (!UCL_RemoteWindowControl.IsForeground(expected))
+                return $"{clickResult}；但點擊後前景變成 {UCL_RemoteWindowControl.DescribeForeground()}，不輸入文字";
+            UCL_RemoteWindowControl.TryTypeText(options.TypeText, options.TypeCharDelaySec, out string typeResult);
+            return $"{clickResult}；{prepare}；{typeResult}（未送出 Enter — 手動測試流程沒有送出的路徑）";
+        }
+
+        static void Sleep(float seconds) =>
+            System.Threading.Thread.Sleep(Mathf.Clamp(Mathf.RoundToInt(seconds * 1000f), 0, 10000));
 
         /// <summary>
         /// 只跑 OCR 判讀，不切視窗也不動游標 —— 給「先看畫面上有幾個候選」用。
@@ -225,6 +288,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             args.Append($" --attempt-delay {Math.Max(0f, options.AttemptDelaySec):0.###}");
             if (options.MatchIndex >= 0) args.Append($" --index {options.MatchIndex}");
             if (!string.IsNullOrEmpty(options.SelectPolicy)) args.Append($" --select {options.SelectPolicy}");
+            if (!string.IsNullOrEmpty(options.MatchMode)) args.Append($" --match {options.MatchMode}");
 
             if (!RunScript(args.ToString(), timeoutSec, out string stdout, out string stderr,
                            out int exitCode, out string error))

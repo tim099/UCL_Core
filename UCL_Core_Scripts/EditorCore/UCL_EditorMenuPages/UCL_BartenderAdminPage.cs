@@ -48,6 +48,9 @@ namespace UCL.Core.EditorLib.Page
         Texture2D m_LocatePreview;
         string m_LocatePreviewError = "";
         string m_LocateConfigStatus = "";
+        string m_NotifyStatus = "";
+        List<UCL_NotifyCandidate> m_NotifyPool;
+        double m_NotifyPoolTime;
         bool m_LocateRunning;
         // 區塊職責：保存各大區塊的展開偏好，供 UCL_GUILayout.Toggle 持久化讀寫。
         // 物理意義：折疊偏好與資料載入快取分離，Reload() 不會意外重置使用者剛選擇的展開狀態。
@@ -89,6 +92,8 @@ namespace UCL.Core.EditorLib.Page
                 DrawDaemonSection();
                 GUILayout.Space(6);
                 DrawRemoteWindowSection();
+                GUILayout.Space(6);
+                DrawAutoNotifySection();
                 GUILayout.Space(6);
                 DrawTimeRulesSection();
                 GUILayout.Space(6);
@@ -226,6 +231,40 @@ namespace UCL.Core.EditorLib.Page
                 m_LocateOptions.AttemptDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.AttemptDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 10f);
                 GUILayout.FlexibleSpace();
             }
+            // 區塊職責：游標到位後要不要按左鍵 / 輸入文字。
+            // 物理意義：這兩步送出的是與真人無法分辨的輸入，所以預設全關，且每步之前都會重驗前景視窗。
+            // 數值影響：**沒有送出 Enter 的選項** —— 那條 code path 不存在，送出永遠由人自己按。
+            using (new GUILayout.HorizontalScope())
+            {
+                m_LocateOptions.ClickAfterMove = EditorGUILayout.ToggleLeft("移到位後按左鍵",
+                    m_LocateOptions.ClickAfterMove, GUILayout.Width(UCL_GUIStyle.GetScaledSize(130)));
+                GUI.enabled = m_LocateOptions.ClickAfterMove;
+                GUILayout.Label("點擊前等(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.ClickDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.ClickDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 10f);
+                m_LocateOptions.TypeAfterClick = EditorGUILayout.ToggleLeft("點擊後輸入文字",
+                    m_LocateOptions.TypeAfterClick, GUILayout.Width(UCL_GUIStyle.GetScaledSize(130)));
+                GUI.enabled = m_LocateOptions.ClickAfterMove && m_LocateOptions.TypeAfterClick;
+                m_LocateOptions.TypeText = EditorGUILayout.TextField(m_LocateOptions.TypeText, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                GUILayout.Label("輸入前等(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.TypeDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.TypeDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 10f);
+                GUILayout.Label("前置後等(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.FocusDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.FocusDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 5f);
+                GUILayout.Label("字間隔(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_LocateOptions.TypeCharDelaySec = Mathf.Clamp(EditorGUILayout.FloatField(m_LocateOptions.TypeCharDelaySec, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 0.5f);
+                GUI.enabled = true;
+                GUILayout.FlexibleSpace();
+            }
+            // 讓「這個 agent 到底會不會多送一段鍵」看得見 —— 不必去翻 code 才知道流程長怎樣。
+            {
+                var lockInfo = UCL_ActivePersonaLocks.Find(m_RemoteTestPersona);
+                var profile = UCL_RemoteAgentInput.Get(lockInfo?.ActualAgent ?? UCL_ActualAgent.None);
+                GUILayout.Label(profile.NeedsPreparation
+                    ? $"　↳ 此 agent 輸入前會先「{profile.ActionLabel}」：{profile.Note}"
+                    : "　↳ 此 agent 點完 session 會自動 focus，不做前置",
+                    new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+            }
+            if (m_LocateOptions.ClickAfterMove)
+                EditorGUILayout.HelpBox("按左鍵與輸入文字送出的是與真人無法分辨的輸入。每一步之前都會重新確認前景視窗仍是目標，焦點被搶走即中止。**不會送出 Enter** —— 程式裡沒有送出的路徑，要送出請自己按。", MessageType.Warning);
             // 多重命中的選擇政策：session 清單在視窗左緣，標題列與對話內容都在它右邊，所以預設取最左。
             using (new GUILayout.HorizontalScope())
             {
@@ -341,6 +380,77 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label($"近似未命中：{string.Join("；", last.NearMisses.ConvertAll(n => n.Text))}",
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
             GUILayout.Label($"定位診斷檔：{UCL_RemotePersonaLocator.DiagnosticPath}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+        }
+
+        // 區塊職責：自動通知（酒保 ding）— 定期掃在線 persona 的收信匣，依權重挑一個去戳。
+        // 物理意義：這是整條遠端路由裡唯一會按 Enter 的流程；它的目的就是替使用者送出，所以送出開關
+        //          擺在看得見的地方，而不是藏在別的設定底下。
+        // 數值影響：每輪只通知一個人；被通知者的 last_notified_seq 會推進，同一批 @ 不會每輪重戳。
+        void DrawAutoNotifySection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("<b>🔔 自動通知（收信 → 戳對應視窗）</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    bool enabled = UCL_RemoteNotifyService.Enabled;
+                    bool next = GUILayout.Toggle(enabled, enabled ? "● 自動通知中" : "○ 自動通知關閉", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    if (next != enabled) UCL_RemoteNotifyService.Enabled = next;
+                    GUILayout.FlexibleSpace();
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("檢查間隔(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    UCL_RemoteNotifyService.IntervalSeconds = Mathf.Clamp(
+                        EditorGUILayout.FloatField((float)UCL_RemoteNotifyService.IntervalSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55))), 5f, 3600f);
+                    GUILayout.Label("通知文字", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    UCL_RemoteNotifyService.NotifyText = EditorGUILayout.TextField(UCL_RemoteNotifyService.NotifyText, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    UCL_RemoteNotifyService.SendEnter = EditorGUILayout.ToggleLeft("輸入後送出 Enter",
+                        UCL_RemoteNotifyService.SendEnter, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                    if (GUILayout.Button("💾 保存", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
+                        m_NotifyStatus = UCL_RemoteNotifyService.SaveConfig(out string err) ? "自動通知設定已保存" : $"保存失敗：{err}";
+                    GUI.enabled = UCL_RemoteWindowControl.Enabled;
+                    if (GUILayout.Button("▶ 立即執行一次", UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 1f, 0.8f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_RemoteNotifyService.RunOnce(true, out string summary);
+                        m_NotifyStatus = summary;
+                    }
+                    GUI.enabled = true;
+                    GUILayout.FlexibleSpace();
+                }
+                if (UCL_RemoteNotifyService.SendEnter)
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("　↳ 送出前等(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        UCL_RemoteNotifyService.EnterDelaySeconds = Mathf.Clamp(
+                            EditorGUILayout.FloatField(UCL_RemoteNotifyService.EnterDelaySeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 10f);
+                        GUILayout.Label("Enter 次數", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        UCL_RemoteNotifyService.EnterPresses = Mathf.Clamp(
+                            EditorGUILayout.IntField(UCL_RemoteNotifyService.EnterPresses, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))), 1, 5);
+                        GUILayout.Label("每次間隔(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        UCL_RemoteNotifyService.EnterGapSeconds = Mathf.Clamp(
+                            EditorGUILayout.FloatField(UCL_RemoteNotifyService.EnterGapSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 5f);
+                        GUILayout.FlexibleSpace();
+                    }
+                    EditorGUILayout.HelpBox("送出 Enter 已開啟：這條流程會真的把訊息發出去。送出前會最後確認一次前景視窗仍是目標。\n若「文字進去了但沒送出」：先加大「送出前等」（自動完成清單要時間跳出來），仍不行再把 Enter 次數設 2（第一次可能被自動完成清單吃掉當作選取）。", MessageType.Warning);
+                }
+                if (!UCL_RemoteWindowControl.Enabled)
+                    EditorGUILayout.HelpBox("遠端視窗協作未啟動 —— 自動通知不會動作（該開關每次 Editor / domain reload 後必回關閉）。", MessageType.Info);
+                // ⚠ 通知池要掃每個房間的 inbox 檔 —— OnGUI 每次重繪都掃 = 拖著整個 Editor 做磁碟 IO。
+                //    節流成每 2 秒最多一次；顯示晚 2 秒無所謂，真正的判斷在 daemon 那邊各自重掃。
+                if (EditorApplication.timeSinceStartup - m_NotifyPoolTime > 2.0 || m_NotifyPool == null)
+                {
+                    m_NotifyPool = UCL_RemoteNotifyService.ScanPool();
+                    m_NotifyPoolTime = EditorApplication.timeSinceStartup;
+                }
+                GUILayout.Label($"通知池（{m_NotifyPool.Count}）— 權重＝新 @ 次數×10；平手看誰比較久沒被通知", UCL_GUIStyle.LabelStyle);
+                foreach (var candidate in m_NotifyPool) GUILayout.Label($"　• {candidate.Describe()}", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"最近一次：{UCL_RemoteNotifyService.LastRunSummary}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                if (!string.IsNullOrEmpty(m_NotifyStatus))
+                    GUILayout.Label(m_NotifyStatus, new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                GUILayout.Label($"執行紀錄：{UCL_RemoteNotifyService.LogPath}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+            }
         }
 
         static void DrawBorder(Rect r, Color c, float t)

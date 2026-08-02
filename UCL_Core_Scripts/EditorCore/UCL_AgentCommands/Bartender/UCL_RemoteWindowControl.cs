@@ -25,6 +25,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         static bool s_PauseOnUserInput = true;
         static int s_UserIdlePauseSeconds = DefaultUserIdlePauseSeconds;
         static string s_LastResult = "尚未測試";
+        static IntPtr s_LastActivated = IntPtr.Zero;
 
         /// <summary>本次 Editor session 是否允許一般前景切換；故意不寫 PlayerPrefs / 檔案。</summary>
         public static bool Enabled => s_Enabled;
@@ -120,6 +121,163 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             return moved && got && actual.x == x && actual.y == y;
         }
 
+        /// <summary>最近一次成功帶到前景的視窗；供後續動作驗證「焦點還在我以為的地方」。</summary>
+        public static IntPtr LastActivatedWindow => s_LastActivated;
+
+        public static bool IsForeground(IntPtr window) => window != IntPtr.Zero && GetForegroundWindow() == window;
+
+        public static string DescribeForeground() => DescribeWindow(GetForegroundWindow());
+
+        // 區塊職責：在游標當前位置按一次左鍵（down + up）。
+        // 物理意義：SendInput 送的是絕對意義上的「使用者點擊」，目標程式無從分辨 —— 所以呼叫端必須
+        //          在按之前確認前景視窗仍是自己剛切過去的那個，否則就是往別人的視窗裡點。
+        // 數值影響：不移動游標（座標由 TryMoveCursor 決定）；失敗只回 false，不重試、不改按鍵狀態。
+        public static bool TryClickLeft(out string result)
+        {
+            if (!s_Enabled)
+            {
+                result = "請先在酒保後台啟動遠端視窗協作";
+                return false;
+            }
+            var inputs = new INPUT[2];
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].union.mouse.dwFlags = MOUSEEVENTF_LEFTDOWN;
+            inputs[1].type = INPUT_MOUSE;
+            inputs[1].union.mouse.dwFlags = MOUSEEVENTF_LEFTUP;
+            uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            result = sent == inputs.Length ? "已按下左鍵" : $"左鍵送出不完整（{sent}/{inputs.Length}）";
+            return sent == inputs.Length;
+        }
+
+        // 區塊職責：把一段文字當鍵盤輸入送給目前焦點所在的控制項。
+        // 物理意義：走 KEYEVENTF_UNICODE 直接送字元，不經 virtual-key 對應 —— 鍵盤配置（注音／英數／
+        //          日文）不同也送得出同一串字；'/' 這種在某些配置要組合鍵的字元也不會走鐘。
+        // 數值影響：**本方法不送 Enter，也沒有送 Enter 的路徑**（Tim 2026-08-02 指定）。
+        //          換行字元一律被濾掉，不會因為文字裡夾了 \n 就意外送出。
+        // ⚠ 2026-08-02 實測：整串字一次 SendInput 送出（字間零延遲）會**掉字** —— `/ucl-ding` 進去變成
+        //   `/uclding`。原因不是某個字元特別，是時序：打 `/` 之後目標 app 的指令選單會跳出來並隨每個字
+        //   重新過濾，UI 重繪的那一瞬間正在飛過去的字就沒被收下。SendInput 依然回報「全部送出」——
+        //   又一次「Windows 收下 ≠ app 收到」。解法是逐字送 + 字間留間隔。
+        public static bool TryTypeText(string text, float perCharDelaySeconds, out string result)
+        {
+            if (!s_Enabled)
+            {
+                result = "請先在酒保後台啟動遠端視窗協作";
+                return false;
+            }
+            if (string.IsNullOrEmpty(text))
+            {
+                result = "沒有要輸入的文字";
+                return false;
+            }
+            int delayMs = Mathf.Clamp(Mathf.RoundToInt(perCharDelaySeconds * 1000f), 0, 500);
+            int skipped = 0, sentChars = 0, failedChars = 0;
+            foreach (char c in text)
+            {
+                if (c == '\r' || c == '\n') { skipped++; continue; }   // 絕不送出換行
+                var pair = new[] { MakeUnicodeKey(c, false), MakeUnicodeKey(c, true) };
+                if (SendInput((uint)pair.Length, pair, Marshal.SizeOf<INPUT>()) == pair.Length) sentChars++;
+                else failedChars++;
+                if (delayMs > 0) System.Threading.Thread.Sleep(delayMs);
+            }
+            if (sentChars == 0 && failedChars == 0)
+            {
+                result = "文字內容只有換行，已全部略過（本流程不送 Enter）";
+                return false;
+            }
+            string clean = text.Replace("\r", "").Replace("\n", "");
+            string note = skipped > 0 ? $"（略過 {skipped} 個換行字元）" : "";
+            result = failedChars == 0
+                ? $"已逐字輸入「{clean}」{sentChars} 字 / 每字間隔 {delayMs}ms{note} — 仍需目測確認對方收到幾個字"
+                : $"文字送出不完整（成功 {sentChars} / 失敗 {failedChars}）{note}";
+            return failedChars == 0;
+        }
+
+        // 區塊職責：送出一次 Enter。**這是全檔唯一會「送出」的動作，刻意獨立成一支具名方法。**
+        // 物理意義：送出是不可逆的一步 —— 訊息一旦發出去就收不回。所以它不藏在 TryTypeText 裡的換行，
+        //          也不是某個 bool 參數，而是呼叫端必須明確寫出 TrySendEnter 才會發生的事。
+        // 數值影響：只送 VK_RETURN down/up，不改任何 modifier；手動測試流程從不呼叫它，
+        //          只有自動通知（酒保 ding）在使用者明示開啟後才走這裡。
+        // ⚠ 2026-08-02 實測：只填 wVk（wScan=0）時 SendInput 回報全部送出，但目標 app（Electron 系）沒有反應。
+        //   Chromium 是從**掃描碼**建 DOM 鍵盤事件的，掃描碼 0 會讓它算出空的 event.code；
+        //   所以這裡補上 MapVirtualKey 取得的實體掃描碼（Enter = 0x1C），讓這顆鍵長得跟真鍵盤按下來的一樣。
+        //   ——「SendInput 回 true」只證明 Windows 收下了，不證明對方處理了。
+        public static bool TrySendEnter(int presses, float gapSeconds, out string result)
+        {
+            if (!s_Enabled)
+            {
+                result = "請先在酒保後台啟動遠端視窗協作";
+                return false;
+            }
+            presses = Mathf.Clamp(presses, 1, 5);
+            ushort scan = (ushort)MapVirtualKey(VK_RETURN, MAPVK_VK_TO_VSC);
+            int okCount = 0;
+            for (int i = 0; i < presses; i++)
+            {
+                if (i > 0 && gapSeconds > 0f)
+                    System.Threading.Thread.Sleep(Mathf.Clamp(Mathf.RoundToInt(gapSeconds * 1000f), 0, 5000));
+                var inputs = new INPUT[2];
+                inputs[0].type = INPUT_KEYBOARD;
+                inputs[0].union.keyboard.wVk = VK_RETURN;
+                inputs[0].union.keyboard.wScan = scan;
+                inputs[1].type = INPUT_KEYBOARD;
+                inputs[1].union.keyboard.wVk = VK_RETURN;
+                inputs[1].union.keyboard.wScan = scan;
+                inputs[1].union.keyboard.dwFlags = KEYEVENTF_KEYUP;
+                if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == inputs.Length) okCount++;
+            }
+            result = okCount == presses
+                ? $"已送出 Enter ×{presses}（scan=0x{scan:X2}）— 注意：這只代表 Windows 收下，不代表對方送出了"
+                : $"Enter 送出不完整（{okCount}/{presses} 次成功）";
+            return okCount == presses;
+        }
+
+        // 區塊職責：送一組 modifier + 主鍵的快捷鍵（例如 Ctrl+L）。
+        // 物理意義：按下順序 modifier→主鍵、放開順序主鍵→modifier；順序顛倒會讓某些 app 收到裸主鍵。
+        //          一律補掃描碼，理由同 TrySendEnter —— 掃描碼 0 在 Chromium 系會算出空的 event.code。
+        // 數值影響：只送這一組鍵，不碰剪貼簿、不改輸入法狀態；失敗只回 false。
+        public static bool TrySendHotkey(ushort virtualKey, bool ctrl, bool shift, bool alt, out string result)
+        {
+            if (!s_Enabled)
+            {
+                result = "請先在酒保後台啟動遠端視窗協作";
+                return false;
+            }
+            var list = new List<INPUT>();
+            if (ctrl) list.Add(MakeVirtualKey(VK_CONTROL, false));
+            if (shift) list.Add(MakeVirtualKey(VK_SHIFT, false));
+            if (alt) list.Add(MakeVirtualKey(VK_MENU, false));
+            list.Add(MakeVirtualKey(virtualKey, false));
+            list.Add(MakeVirtualKey(virtualKey, true));
+            if (alt) list.Add(MakeVirtualKey(VK_MENU, true));
+            if (shift) list.Add(MakeVirtualKey(VK_SHIFT, true));
+            if (ctrl) list.Add(MakeVirtualKey(VK_CONTROL, true));
+            var array = list.ToArray();
+            uint sent = SendInput((uint)array.Length, array, Marshal.SizeOf<INPUT>());
+            string label = $"{(ctrl ? "Ctrl+" : "")}{(shift ? "Shift+" : "")}{(alt ? "Alt+" : "")}0x{virtualKey:X2}";
+            result = sent == array.Length
+                ? $"已送出 {label}（同樣只代表 Windows 收下）"
+                : $"{label} 送出不完整（{sent}/{array.Length}）";
+            return sent == array.Length;
+        }
+
+        static INPUT MakeVirtualKey(ushort virtualKey, bool keyUp)
+        {
+            var input = new INPUT { type = INPUT_KEYBOARD };
+            input.union.keyboard.wVk = virtualKey;
+            input.union.keyboard.wScan = (ushort)MapVirtualKey(virtualKey, MAPVK_VK_TO_VSC);
+            if (keyUp) input.union.keyboard.dwFlags = KEYEVENTF_KEYUP;
+            return input;
+        }
+
+        static INPUT MakeUnicodeKey(char c, bool keyUp)
+        {
+            var input = new INPUT { type = INPUT_KEYBOARD };
+            input.union.keyboard.wScan = c;
+            input.union.keyboard.dwFlags = KEYEVENTF_UNICODE | (keyUp ? KEYEVENTF_KEYUP : 0u);
+            return input;
+        }
+
         public static bool TryGetCursor(out int x, out int y)
         {
             x = y = 0;
@@ -180,6 +338,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             bool requestAccepted = TryBringToForeground(matched, foregroundBefore);
             IntPtr foregroundAfter = GetForegroundWindow();
             bool success = foregroundAfter == matched;
+            s_LastActivated = success ? matched : IntPtr.Zero;   // 失敗就清掉，別讓後續動作拿舊的當「還在前景」
             result = success
                 ? $"已切換到「{matchedTitle}」"
                 : $"找到「{matchedTitle}」，但前景仍是 {DescribeWindow(foregroundAfter)}（Win32 request={requestAccepted}）";
@@ -292,6 +451,43 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         [StructLayout(LayoutKind.Sequential)] struct POINT { public int x; public int y; }
         [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT point);
+
+        // SendInput 結構 — 只用到 mouse 與 keyboard 兩種，union 大小由最大成員決定，不可拆開宣告。
+        const int INPUT_MOUSE = 0;
+        const int INPUT_KEYBOARD = 1;
+        const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        const uint MOUSEEVENTF_LEFTUP = 0x0004;
+        const uint KEYEVENTF_KEYUP = 0x0002;
+        const uint KEYEVENTF_UNICODE = 0x0004;
+        const ushort VK_RETURN = 0x0D;
+        const uint MAPVK_VK_TO_VSC = 0;
+        const ushort VK_CONTROL = 0x11;
+        const ushort VK_SHIFT = 0x10;
+        const ushort VK_MENU = 0x12;   // Alt
+        [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public IntPtr dwExtraInfo; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct HARDWAREINPUT { public uint uMsg; public ushort wParamL, wParamH; }
+
+        [StructLayout(LayoutKind.Explicit)]
+        struct INPUTUNION
+        {
+            [FieldOffset(0)] public MOUSEINPUT mouse;
+            [FieldOffset(0)] public KEYBDINPUT keyboard;
+            [FieldOffset(0)] public HARDWAREINPUT hardware;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct INPUT { public int type; public INPUTUNION union; }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern uint SendInput(uint count, INPUT[] inputs, int size);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);

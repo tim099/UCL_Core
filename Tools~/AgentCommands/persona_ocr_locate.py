@@ -229,8 +229,15 @@ def _delimiter_match(norm_text: str, name: str) -> bool:
     return False
 
 
-def locate(img, token: str, min_confidence: float):
-    """OCR 整張畫面 → (命中清單, near-miss 清單)。座標仍是影像像素。"""
+def locate(img, token: str, min_confidence: float, match_mode: str = "delimiter"):
+    """OCR 整張畫面 → (命中清單, near-miss 清單)。座標仍是影像像素。
+
+    match_mode:
+      delimiter — `##name##` 用：名字逐字相等且兩側各要有分隔符（預設，防聊天內容誤中）
+      contains  — 找輸入框 placeholder 這類固定 UI 文字用：正規化後包含即可
+                  （UI 文字沒有分隔符可依，而且常被 OCR 斷成半句，例如
+                   "Ask anything, @ to mention, / for actions" 只讀到前半）
+    """
     import numpy as np
     import subtitle_ocr
 
@@ -239,7 +246,7 @@ def locate(img, token: str, min_confidence: float):
         raise RuntimeError(subtitle_ocr.get_init_error() or "RapidOCR 不可用")
 
     result, _elapse = engine(np.array(img.convert("RGB")))
-    name = normalize(token).strip(DELIMITERS)
+    name = normalize(token).strip(DELIMITERS) if match_mode == "delimiter" else normalize(token)
     matches, near = [], []
     for item in (result or []):
         if not item or len(item) < 3:
@@ -257,7 +264,8 @@ def locate(img, token: str, min_confidence: float):
             "confidence": round(conf_f, 4),
             "box": [[float(p[0]), float(p[1])] for p in box],
         }
-        if name and _delimiter_match(norm, name) and conf_f >= min_confidence:
+        hit = (_delimiter_match(norm, name) if match_mode == "delimiter" else (name in norm))
+        if name and hit and conf_f >= min_confidence:
             matches.append(entry)
         elif len(near) < MAX_NEAR_MISS and name and name in norm:
             # 診斷用：名字出現但兩側沒有分隔符（或信度不足）時留證，
@@ -312,8 +320,10 @@ def main() -> int:
     ap.add_argument("--min-confidence", type=float, default=DEFAULT_MIN_CONF)
     ap.add_argument("--index", type=int, default=-1,
                     help="明示選第幾個（0-based，順序=由上到下）；給了就蓋過 --select")
-    ap.add_argument("--select", default="leftmost", choices=["leftmost", "topmost", "strict"],
-                    help="多重命中時怎麼選：leftmost=最靠畫面左側（預設）/ topmost=最上面 / strict=不選、直接失敗")
+    ap.add_argument("--select", default="leftmost", choices=["leftmost", "topmost", "bottommost", "strict"],
+                    help="多重命中時怎麼選：leftmost=最靠左（預設）/ topmost=最上 / bottommost=最下（輸入框用）/ strict=不選、直接失敗")
+    ap.add_argument("--match", default="delimiter", choices=["delimiter", "contains"],
+                    help="比對方式：delimiter=##name## 兩側要有分隔符（預設）/ contains=包含即可（找 UI 固定文字用）")
     ap.add_argument("--monitor", default="all", help="all（預設）/ primary / 實體 monitor index")
     ap.add_argument("--region", default="",
                     help="矩形掃描範圍 x,y,w,h（0~1 比例，相對選定 monitor 左上角）；空=整塊")
@@ -380,7 +390,7 @@ def main() -> int:
             except Exception as e:
                 print(f"WARN: 截圖存檔失敗: {e}", file=sys.stderr)
         try:
-            matches, near = locate(img, token, args.min_confidence)
+            matches, near = locate(img, token, args.min_confidence, args.match)
         except Exception as e:
             return emit(build_result(False, f"OCR 不可用: {e}", token, meta, [], []), EXIT_OCR_UNAVAILABLE)
         meta["attempt"] = attempt + 1
@@ -409,6 +419,10 @@ def main() -> int:
     if args.select == "topmost":
         chosen = min(range(len(matches)), key=lambda i: (matches[i]["screen_top"], matches[i]["screen_left"]))
         why = "取最上面"
+    elif args.select == "bottommost":
+        # 輸入框固定在視窗最下方；畫面上其他地方出現同一段 UI 文字時，最下面那個才是真的輸入框。
+        chosen = max(range(len(matches)), key=lambda i: (matches[i]["screen_bottom"], matches[i]["screen_left"]))
+        why = "取最下面"
     else:
         chosen = min(range(len(matches)), key=lambda i: (matches[i]["screen_left"], matches[i]["screen_top"]))
         why = "取最靠左"

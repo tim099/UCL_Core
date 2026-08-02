@@ -110,6 +110,11 @@ namespace UCL.Core.EditorLib.Page
         //          原本「逐列 Resolve 全部 persona」等於每幀掃 19 個檔。改成只算選中那一位，
         //          並在切換 / 儲存時才重算 —— 面板顯示的仍是磁碟真值，只是不再每幀去問。
         readonly UCL_ObjectDictionary m_EmailPersonaPopupDic = new UCL_ObjectDictionary();
+        // agent 預設型號：下拉選 agent，改該 agent 一格。與信箱分開存（檔名各自對應內容，不混一包）。
+        readonly Dictionary<string, string> m_ModelDrafts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly UCL_ObjectDictionary m_ModelAgentPopupDic = new UCL_ObjectDictionary();
+        UCL_ActualAgent m_ModelAgentSel = UCL_ActualAgent.Codex;
+        bool m_ModelLoaded = false;
         string m_EmailSelectedPersona = "";
         UCL_AgentEmailResolution m_EmailSelectedResolved = null;
         int m_EmailFallbackCount = -1;
@@ -278,6 +283,8 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawEmailPanel();
             GUILayout.Space(8);
+            DrawModelPanel();
+            GUILayout.Space(8);
             DrawPersonaCardPanel();
             GUILayout.Space(8);
             DrawCreateAgentPanel();
@@ -287,6 +294,80 @@ namespace UCL.Core.EditorLib.Page
             DrawRebindPanel();
             GUILayout.Space(8);
             DrawResultPanel();
+        }
+
+        // ===========================================================
+        // 區塊：型號 — agent 預設型號 + 「model 欄填成 agent 名」的自動翻譯
+        // 物理意義：提示使用者「該填什麼型號」實測會**讓人填錯**（apex-one 的 system prompt 第一句是
+        //          "You are Antigravity" 所以填了 Antigravity；kaguya 填了 Codex —— 兩人都誠實作答）。
+        //          所以不再靠提示，改成底層辨識：model 欄是 agent 名就翻成這裡設的預設型號。
+        // 數值影響：Claude / Gemini 這種單獨廠牌名**當型號不翻** —— 它們也可能是某人誠實給的模糊答案，
+        //          翻掉等於擦掉資訊。只翻明確的 agent 名（Codex / ClaudeCode / Antigravity / 別名）。
+        // ===========================================================
+        void DrawModelPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "ModelFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🏷 型號設定</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                if (!m_ModelLoaded)
+                {
+                    m_ModelDrafts.Clear();
+                    foreach (var aKv in UCL_AgentModelRegistry.LoadModels()) m_ModelDrafts[aKv.Key] = aKv.Value;
+                    m_ModelLoaded = true;
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    m_ModelAgentSel = UCL_GUILayout.PopupAuto(m_ModelAgentSel, m_ModelAgentPopupDic, "ModelAgent", 6,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                    GUILayout.FlexibleSpace();
+                }
+                if (m_ModelAgentSel == UCL_ActualAgent.None)
+                {
+                    GUILayout.Label("（選一個 agent）", WrapLabelStyle);
+                    return;
+                }
+                string aKey = m_ModelAgentSel.ToString();
+                if (!m_ModelDrafts.ContainsKey(aKey)) m_ModelDrafts[aKey] = "";
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("預設型號", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    m_ModelDrafts[aKey] = GUILayout.TextField(m_ModelDrafts[aKey] ?? "");
+                    if (GUILayout.Button("💾 儲存", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.Width(UCL_GUIStyle.GetScaledSize(72))))
+                    {
+                        if (UCL_AgentModelRegistry.SaveModels(m_ModelDrafts, out string aErr))
+                            SetResult($"✓ {aKey} 預設型號已存 → {UCL_AgentModelRegistry.RegistryPath}");
+                        else
+                            SetResult($"❌ 儲存失敗：{aErr}");
+                    }
+                }
+                GUILayout.Label($"檔案：{UCL_AgentModelRegistry.RegistryPath}", WrapLabelStyle);
+
+                // 攤開「誰會被這格影響」—— 只看設定值看不出效果，看得到受影響的人才知道改了什麼。
+                GUILayout.Space(4);
+                GUILayout.Label("<b>受本表翻譯影響的 persona</b>（model 欄填成 agent 名者）", WrapLabelStyle);
+                int aHit = 0;
+                foreach (var aRow in m_Personas)
+                {
+                    var aRes = UCL_AgentModelRegistry.Resolve(aRow.name);
+                    if (aRes.Source != "agent-translated" && aRes.Source != "agent-unmapped") continue;
+                    aHit++;
+                    string aNote = aRes.Source == "agent-translated"
+                        ? $"<b>{aRes.Model}</b>"
+                        : $"<color=#ffcc66>{aRes.Model}（{aRes.AgentKey} 尚未設預設型號，保留原值）</color>";
+                    GUILayout.Label($"  {aRow.name}：填了「{aRes.Raw}」→ {aNote}", WrapLabelStyle);
+                }
+                if (aHit == 0)
+                    GUILayout.Label("  （目前沒有人把 agent 名填進 model 欄）", WrapLabelStyle);
+            }
         }
 
         // ===========================================================

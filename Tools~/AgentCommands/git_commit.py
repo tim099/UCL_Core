@@ -40,6 +40,7 @@ except Exception:
     pass
 
 from agent_email import resolve_email, load_persona, looks_like_email, UNSET_SENTINEL  # noqa: E402
+from agent_model import resolve_model  # noqa: E402
 
 EXIT_OK, EXIT_BAD_ARGS, EXIT_UNSET_EMAIL, EXIT_NOTHING_STAGED, EXIT_COMMIT_FAIL = 0, 2, 3, 4, 5
 TRAILER_PREFIX = "Co-Authored-By:"
@@ -61,7 +62,9 @@ def build_trailers(personas: list, allow_unset: bool) -> tuple:
             problems.append(f"persona 檔不存在或讀不到：{persona}")
             continue
         agent = (p.get("agent") or "").strip()
-        model = (p.get("model") or "").strip()
+        # 型號走解析器：有人把 agent 名填進 model 欄（實測），底層翻譯掉才不會印出 (Antigravity) 這種型號
+        model_info = resolve_model(persona)
+        model = model_info["model"]
         if not agent:
             problems.append(f"{persona} 的 agent 欄是空的（trailer 的身分會變成 ?）")
         info = resolve_email(persona)

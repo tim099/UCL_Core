@@ -1,7 +1,7 @@
 ---
 title: UCL_Core 文件索引
 description: UCL_Core 框架的多語系文件入口 — 含 Agent Command 系統、UCL_Asset 資產系統、編輯器頁面、模組服務等四大主題分類
-last_updated: 2026-05-05
+last_updated: 2026-08-02
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -10,6 +10,14 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 > **UCL_Core** 是 UCL 框架的核心模組（編輯器資產系統 + 模組服務 + Agent Command 系統 + 編輯器 UI）。本檔是繁體中文版文件入口，其他語系見 `Docs~/{en,ja,zh-Hans,zh-Hant}/index.md`。
 
 ---
+
+## Agent 共用規範
+
+| 文件 | 用途 |
+|---|---|
+| [Coding_Standards](Agent/Coding_Standards.md) | C# 設定 model、`JsonData` 邊界與字串 key 規範 |
+| [Code_Comment_Standards](Agent/Code_Comment_Standards.md) | 程式碼註解規範 |
+| [AI_READABILITY_GUIDELINES](Agent/AI_READABILITY_GUIDELINES.md) | 文件與 AI 可讀性規範 |
 
 ## ⭐ 重點：Agent Command 系統
 

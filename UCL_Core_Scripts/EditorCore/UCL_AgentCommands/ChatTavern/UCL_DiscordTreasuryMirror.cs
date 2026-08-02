@@ -27,6 +27,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             public bool enabled = false;
             public List<string> webhook_urls = new List<string>();
+            public List<string> disabled_webhook_urls = new List<string>(); // 保留 URL 但不投遞（Admin toggle）
             public string webhook_file = "";
             public string webhook_env_var = "";
             public bool include_audit = false;
@@ -57,6 +58,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch (Exception e) { Debug.LogWarning($"[TreasuryMirror] config read fail: {e.Message}"); }
             if (cfg == null) cfg = new TreasuryConfigBlock();
             if (cfg.webhook_urls == null) cfg.webhook_urls = new List<string>();
+            if (cfg.disabled_webhook_urls == null) cfg.disabled_webhook_urls = new List<string>();
             s_CachedConfig = cfg;
             s_ConfigCacheTime = now;
             return cfg;
@@ -284,6 +286,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     if (!string.IsNullOrEmpty(u)) urls.Add(u.Trim());
             }
             catch (Exception e) { Debug.LogWarning($"[TreasuryMirror] url resolve fail: {e.Message}"); }
+            if (cfg.disabled_webhook_urls.Count == 0) return urls;
+            var disabled = new HashSet<string>(cfg.disabled_webhook_urls, StringComparer.Ordinal);
+            urls.RemoveAll(u => disabled.Contains(u));
             return urls;
         }
 

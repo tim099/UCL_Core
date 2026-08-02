@@ -341,6 +341,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return GetOrCreateCursor(room, webhookId).dead_reason ?? "";
         }
 
+        /// <summary>讀取既有 per-webhook 游標供後台呈現；不建立新 cursor，避免單純開 UI 改變同步基準。</summary>
+        public static bool TryGetCursorStatus(string room, string webhookId,
+            out string tsHigh, out string backoffUntil, out int failStreak, out string deadReason)
+        {
+            EnsureLoaded();
+            tsHigh = ""; backoffUntil = ""; failStreak = 0; deadReason = "";
+            if (string.IsNullOrEmpty(room) || string.IsNullOrEmpty(webhookId)) return false;
+            if (!s_State.TryGetValue(room, out var byWebhook)
+                || !byWebhook.TryGetValue(webhookId, out var cursor) || cursor == null) return false;
+
+            tsHigh = cursor.ts_high ?? "";
+            backoffUntil = cursor.backoff_until ?? "";
+            failStreak = cursor.fail_streak;
+            deadReason = cursor.dead_reason ?? "";
+            return true;
+        }
+
         static void SetBackoffOnCursor(UCL_MirrorWebhookCursor c, double seconds)
         {
             var until = DateTime.UtcNow.AddSeconds(seconds);

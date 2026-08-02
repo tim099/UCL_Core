@@ -1,7 +1,7 @@
 ---
 title: Discord Tavern Mirror
 description: 酒館訊息 → Discord 的 outbound 鏡像機制 — C# native daemon 單寫者、per-(room,webhook) ts_high 游標 + 有界窗 seen_uuids 去重、路由分流（quest/category）、webhook 身分與頭像解析鏈（含 persona_avatar_overrides 顯式覆寫）
-last_updated: 2026-07-28
+last_updated: 2026-08-02
 target_audience: [AI_Agent, Developer]
 aliases: [tavern mirror, discord mirror, 酒館鏡像, discord 頭像]
 tags: [discord, chat-tavern, mirror, webhook, avatar]
@@ -102,6 +102,10 @@ key = 訊息的 `sender_persona`（不是 sender_id）；適合把特定 persona
 送達 2xx 後 `RecordSent` 加入 seen、推進 ts_high、prune 窗外 uuid（seen-set 恆有界，永不無限膨脹）。
 **per-webhook 獨立**的價值：某 webhook 漏某筆可獨立補，不會被別的 webhook 進度掩蓋。
 
+永久性 HTTP 錯誤（400/401/403/404/405/410）會在該 `(room, webhook)` 記下 `dead_reason`，停送該 URL。
+**已永久停用的 cursor 不參與該 room 的最小 `ts_high`、積壓或鎖步推進**：保留 URL 與狀態供管理員修正，
+但不能讓一條已死 webhook 卡住其餘健康 webhook 的同步。
+
 > 舊 python 模型的 per-room `last_seen_seq`（依「檔名排序位置」推導的浮水印）**已不再被任何程式讀取**。
 > 該欄位可能仍殘留在 `_tavern_state.json`（native 走 read-modify-write 只動 `webhooks` 子樹，
 > 不碰未知欄位），但純屬歷史殘留。⚠ 位置推導 seq 是一族 bug 的來源（burst 亂序晚落地的檔案
@@ -164,7 +168,8 @@ python 端 `treasury_ledger.fire_broadcast` 已改名 `finalize_entry`，**只�
 | ▶ 立即觸發同步 | `UCL_DiscordMirrorDaemon.ForceTick()` — 掃描 + 送出立即跑一輪 |
 | 套用 seq N | `AdminSetRoomCursorToSeq(room, N, maxSeq)` — 把 seq 邊界翻成 ts_high 重設全房 webhook 游標 |
 | 追平 | `AdminSetRoomCursorToSeq(room, maxSeq, maxSeq)` — 全部跳過不送 |
-| 已同步/待同步顯示 | `GetRoomNativeProgress`（min ts_high 反推） |
+| 已同步/待同步顯示 | `GetRoomNativeProgress`（健康 webhook 的 min ts_high 反推；永久熔斷 URL 不納入房間進度） |
+| webhook 列的同步狀態 | tavern_mirror 每條 URL 顯示其最慢 room 的 `已同步 seq / 最新 seq / 待送數`；若任一 room 有退避或永久停用，同列提示原因；只讀既有 cursor，不會因開啟面板建立新游標 |
 | 連續失敗計數歸零 | 直改 `_tavern_state.json` 的 `consecutive_failures` |
 | 📥 Inbound 區塊 | 見 Channel Routing 文件 §7（狀態顯示 + 跳轉頻道路由頁 / Secret Manager） |
 

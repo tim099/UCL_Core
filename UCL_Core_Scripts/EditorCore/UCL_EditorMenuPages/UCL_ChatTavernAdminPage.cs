@@ -30,6 +30,76 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernAdminPage.md")]
     public class UCL_ChatTavernAdminPage : UCL_CommonEditorPage
     {
+        public const string KeyTavernMirror = "tavern_mirror";
+        public const string KeyTreasuryMirror = "treasury_mirror";
+        public const string KeyTavernInbound = "tavern_inbound";
+        public const string KeyQuestRouting = "quest_routing";
+        public const string KeyQueueIdle = "queue-idle";
+        public const string KeyWebhookUrls = "webhook_urls";
+        public const string KeyWebhookEnvVar = "webhook_env_var";
+        public const string KeyWebhookFile = "webhook_file";
+        public const string KeyDisabledWebhookUrls = "disabled_webhook_urls";
+
+        /// <summary>
+        /// Typed projection of notify_config.json for the Admin Page's known fields.
+        /// </summary>
+        public class NotifyConfig : UnityJsonSerializable
+        {
+            public bool enabled = false;
+            public bool verbose = false;
+            public int cooldown_minutes = 5;
+            public string webhook_file = "";
+            public string webhook_env_var = "";
+            public int disable_after_failures = 5;
+            public int tasks_per_message = 10;
+            public bool use_local_time = true;
+            public string channel_label = "";
+            public List<string> webhook_urls = new List<string>();
+            public TavernMirrorConfig tavern_mirror = new TavernMirrorConfig();
+            public WebhookConfig treasury_mirror = new WebhookConfig();
+            public InboundConfig tavern_inbound = new InboundConfig();
+            public List<string> watched_quest_rooms = new List<string>();
+            public string mirror_owner = "";
+        }
+
+        public class WebhookConfig : UnityJsonSerializable
+        {
+            public bool enabled = false;
+            public List<string> webhook_urls = new List<string>();
+            public List<string> disabled_webhook_urls = new List<string>();
+            public string webhook_file = "";
+            public string webhook_env_var = "";
+        }
+
+        public class TavernMirrorConfig : WebhookConfig
+        {
+            public List<string> rooms = new List<string>();
+            public List<string> kinds = new List<string>();
+            public List<string> exclude_senders = new List<string>();
+            public string title_template = "";
+            public int body_max = 1500;
+            public int burst_guard_max_backlog = 30;
+            public Dictionary<string, string> persona_avatar_overrides = new Dictionary<string, string>();
+            public WebhookConfig quest_routing = new WebhookConfig();
+        }
+
+        public class InboundConfig : UnityJsonSerializable
+        {
+            public bool enabled = false;
+            public string bot_status = "";
+        }
+
+        public class TavernState : UnityJsonSerializable
+        {
+            public int consecutive_failures = 0;
+            public TreasuryState treasury = new TreasuryState();
+        }
+
+        public class TreasuryState : UnityJsonSerializable
+        {
+            public string last_seen = "";
+        }
+
         public override string WindowName => "酒館後台管理";
         public override bool ShowInPageMenu => true;
 
@@ -42,8 +112,16 @@ namespace UCL.Core.EditorLib.Page
         static string DrainLogPath => Path.Combine(PromptQueueDir, "_drain.log");
 
         // ==== 顯示用快取（開頁/按 Refresh 才重讀檔，不每幀掃磁碟）====
+        /// <summary>
+        /// notify_config.json讀取為這份
+        /// </summary>
+        NotifyConfig m_NotifyConfig = new NotifyConfig();
         JsonData m_Config;                       // notify_config.json 整份（寫回時 round-trip）
+        /// <summary>
+        /// Typed projection of _tavern_state.json fields used by this page.
+        /// </summary>
         JsonData m_State;                        // _tavern_state.json 整份
+        TavernState m_TavernState = new TavernState();
         List<string> m_WatchedRooms = new List<string>();
         Dictionary<string, int> m_RoomMaxSeq = new Dictionary<string, int>();      // 房間當前 max seq（_seq.txt）
         Dictionary<string, string> m_SeqDraft = new Dictionary<string, string>();  // 套用 seq 編輯 draft
@@ -102,16 +180,18 @@ namespace UCL.Core.EditorLib.Page
         //          刪除 = 移除該 key（core stream 擋刪，見 s_CoreStreamKeys）。
         // 邊界：core stream（有 C# 消費者）誤刪會靜默停掉鏡像 → UI 直接不給刪，只能改內容。
         static readonly HashSet<string> s_CoreStreamKeys = new HashSet<string>
-            { "tavern_mirror", "treasury_mirror", "tavern_inbound", "quest_routing", "queue-idle" };
+            { KeyTavernMirror, KeyTreasuryMirror, KeyTavernInbound, KeyQuestRouting, KeyQueueIdle };
+
+
+
         // 已知 stream 的人話說明（未列者顯示「自訂」）
         static readonly Dictionary<string, string> s_StreamDesc = new Dictionary<string, string>
         {
-            { "tavern_mirror",   "酒館訊息 → Discord" },
-            { "treasury_mirror", "記帳 embed → Discord" },
-            { "tavern_inbound",  "Discord → 酒館 inbound" },
-            { "quest_routing",   "task lifecycle 分流（nested）" },
-            { "wake_notify",     "⚠ 已退役 — 無消費者" },
-            { "queue-idle",      "⚠ 已退役 — 無消費者（= config 根層）" },
+            { KeyTavernMirror,   "酒館訊息 → Discord" },
+            { KeyTreasuryMirror, "記帳 embed → Discord" },
+            { KeyTavernInbound,  "Discord → 酒館 inbound" },
+            { KeyQuestRouting,   "task lifecycle 分流（nested）" },
+            { KeyQueueIdle,      "⚠ 已退役 — 無消費者（= config 根層）" },
         };
 
         List<string> m_StreamKeys = new List<string>();      // 動態發現的 stream key
@@ -208,19 +288,29 @@ namespace UCL.Core.EditorLib.Page
             // T6.5：本次載入的 mirror owner 快照 — native 下同步進度改由 daemon 反推（見下方 rooms 迴圈）
             try
             {
-                if (File.Exists(NotifyConfigPath)) m_Config = JsonData.ParseJson(File.ReadAllText(NotifyConfigPath));
-                if (File.Exists(TavernStatePath)) m_State = JsonData.ParseJson(File.ReadAllText(TavernStatePath));
+                if (File.Exists(NotifyConfigPath))
+                {
+                    m_Config = JsonData.ParseJson(File.ReadAllText(NotifyConfigPath));
+                    m_NotifyConfig = new NotifyConfig();
+                    m_NotifyConfig.DeserializeFromJson(m_Config);
+                }
+                if (File.Exists(TavernStatePath))
+                {
+                    m_State = JsonData.ParseJson(File.ReadAllText(TavernStatePath));
+                    m_TavernState = new TavernState();
+                    m_TavernState.DeserializeFromJson(m_State);
+                }
 
-                var tm = (m_Config != null && m_Config.Contains("tavern_mirror")) ? m_Config["tavern_mirror"] : null;
+                var tm = m_NotifyConfig.tavern_mirror;
                 if (tm != null)
                 {
                     // watched rooms + 房間當前 max seq（rooms/<room>/_seq.txt，缺檔 = 0）
-                    if (tm.Contains("rooms") && tm["rooms"].IsArray)
+                    if (tm.rooms != null)
                     {
-                        for (int i = 0; i < tm["rooms"].Count; i++)
+                        for (int i = 0; i < tm.rooms.Count; i++)
                         {
                             // GetString() 無參 = 取字串節點本身的值；GetString("") 會把空字串當 key 查（bug 前科）
-                            string room = tm["rooms"][i].GetString();
+                            string room = tm.rooms[i];
                             if (string.IsNullOrEmpty(room)) continue;
                             m_WatchedRooms.Add(room);
                             string seqPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "rooms", room, "_seq.txt");
@@ -239,15 +329,12 @@ namespace UCL.Core.EditorLib.Page
                         }
                     }
                     // persona 頭像 override（_ 開頭 key 是註解欄，不進列表）
-                    if (tm.Contains("persona_avatar_overrides"))
+                    if (tm.persona_avatar_overrides != null)
                     {
-                        var po = tm["persona_avatar_overrides"];
-                        if (po.IsObject && po.Dic != null)
+                        foreach (var entry in tm.persona_avatar_overrides)
                         {
-                            foreach (var key in po.Dic.Keys.Where(k => !k.StartsWith("_")).OrderBy(k => k, StringComparer.Ordinal))
-                            {
-                                m_AvatarOverrides.Add(new KeyValuePair<string, string>(key, po.GetString(key, "")));
-                            }
+                            if (!entry.Key.StartsWith("_"))
+                                m_AvatarOverrides.Add(new KeyValuePair<string, string>(entry.Key, entry.Value ?? ""));
                         }
                     }
                 }
@@ -369,7 +456,10 @@ namespace UCL.Core.EditorLib.Page
                     {
                         var v = kv.Value;
                         if (v == null || !v.IsObject) continue;
-                        bool isStream = v.Contains("webhook_urls") || v.Contains("webhook_env_var") || v.Contains("webhook_file");
+                        // Inbound is a Discord → local-tavern consumer, not an outbound webhook stream.
+                        // Keep it exclusively in DrawInboundPanel even if legacy config carries webhook_* fields.
+                        if (kv.Key == KeyTavernInbound) continue;
+                        bool isStream = v.Contains(KeyWebhookUrls) || v.Contains(KeyWebhookEnvVar) || v.Contains(KeyWebhookFile);
                         if (isStream) found.Add(kv.Key);
                     }
                 }
@@ -377,8 +467,8 @@ namespace UCL.Core.EditorLib.Page
             catch (Exception e) { Debug.LogWarning($"[TavernAdmin] 掃 stream 失敗: {e.Message}"); }
             found.Sort(StringComparer.Ordinal);
             // 特殊位置：quest_routing（nested）與 queue-idle（根層）不在上面的掃描結果內，手動補
-            if (!found.Contains("quest_routing")) found.Add("quest_routing");
-            if (!found.Contains("queue-idle")) found.Add("queue-idle");
+            if (!found.Contains(KeyQuestRouting)) found.Add(KeyQuestRouting);
+            if (!found.Contains(KeyQueueIdle)) found.Add(KeyQueueIdle);
             foreach (var k in found)
             {
                 m_StreamKeys.Add(k);
@@ -403,8 +493,7 @@ namespace UCL.Core.EditorLib.Page
                 bool enabled = false;
                 try
                 {
-                    var tm = (m_Config != null && m_Config.Contains("tavern_mirror")) ? m_Config["tavern_mirror"] : null;
-                    if (tm != null) enabled = tm.GetBool("enabled", false);
+                    enabled = m_NotifyConfig.tavern_mirror != null && m_NotifyConfig.tavern_mirror.enabled;
                 }
                 catch { /* 缺欄位視為 off */ }
 
@@ -427,7 +516,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         WriteConfigRoot(cfg =>
                         {
-                            foreach (var block in new[] { "tavern_mirror", "treasury_mirror", "tavern_inbound" })
+                            foreach (var block in new[] { KeyTavernMirror, KeyTreasuryMirror, KeyTavernInbound })
                             {
                                 if (!cfg.Contains(block)) cfg[block] = JsonData.ParseJson("{}");
                                 cfg[block]["enabled"] = newEnabled;
@@ -442,7 +531,7 @@ namespace UCL.Core.EditorLib.Page
 
 
                 int failures = 0;
-                try { if (m_State != null) failures = m_State.GetInt("consecutive_failures", 0); } catch { }
+                failures = m_TavernState?.consecutive_failures ?? 0;
 
                 using (new GUILayout.HorizontalScope())
                 {
@@ -491,11 +580,11 @@ namespace UCL.Core.EditorLib.Page
         static JsonData GetStreamBlock(JsonData iCfg, string iKey)
         {
             if (iCfg == null) return null;
-            if (iKey == "queue-idle") return iCfg;
-            if (iKey == "quest_routing")
+            if (iKey == KeyQueueIdle) return iCfg;
+            if (iKey == KeyQuestRouting)
             {
-                var tm = iCfg.Contains("tavern_mirror") ? iCfg["tavern_mirror"] : null;
-                return (tm != null && tm.Contains("quest_routing")) ? tm["quest_routing"] : null;
+                var tm = iCfg.Contains(KeyTavernMirror) ? iCfg[KeyTavernMirror] : null;
+                return (tm != null && tm.Contains(KeyQuestRouting)) ? tm[KeyQuestRouting] : null;
             }
             return iCfg.Contains(iKey) ? iCfg[iKey] : null;
         }
@@ -544,11 +633,11 @@ namespace UCL.Core.EditorLib.Page
             {
                 switch (iKey)
                 {
-                    case "tavern_mirror":
+                    case KeyTavernMirror:
                         // per-room 同步進度 + 套用 seq 為互動列 — 在 DrawTavernRoomRows 繪製（Tim 2026-07-16 整合進下拉）
                         if (m_State != null) lines.Add($"連續失敗計數: {m_State.GetInt("consecutive_failures", 0)}");
                         break;
-                    case "treasury_mirror":
+                    case KeyTreasuryMirror:
                         string cursor = "";
                         if (m_State != null && m_State.Contains("treasury")) cursor = m_State["treasury"].GetString("last_seen", "");
                         lines.Add(string.IsNullOrEmpty(cursor) ? "cursor: (未建立 baseline)" : $"cursor: {cursor}");
@@ -579,7 +668,7 @@ namespace UCL.Core.EditorLib.Page
                             lines.Add($"連續失敗計數: {fails}" + (fails >= 5 ? "<color=#ff6666>（已 auto-disabled — webhook 曾 404，重發後請歸零）</color>" : ""));
                         }
                         break;
-                    case "queue-idle":
+                    case KeyQueueIdle:
                         string notifyStatePath = Path.Combine(PromptQueueDir, "_notify_state.json");
                         if (File.Exists(notifyStatePath))
                         {
@@ -587,7 +676,7 @@ namespace UCL.Core.EditorLib.Page
                             lines.Add($"last_done_seq: {ns.GetInt("last_done_seq", -1)} / 連續失敗: {ns.GetInt("consecutive_failures", 0)}");
                         }
                         break;
-                    case "tavern_inbound":
+                    case KeyTavernInbound:
                         if (iBlock != null)
                         {
                             lines.Add($"bot_status: {iBlock.GetString("bot_status", "(未知)")}");
@@ -755,8 +844,7 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope("box"))
             {
                 int curThreshold = UCL_DiscordMirrorDaemon.BURST_GUARD_MAX_BACKLOG;
-                var tmBlock = (m_Config != null && m_Config.Contains("tavern_mirror")) ? m_Config["tavern_mirror"] : null;
-                if (tmBlock != null) curThreshold = tmBlock.GetInt("burst_guard_max_backlog", curThreshold);
+                if (m_NotifyConfig.tavern_mirror != null) curThreshold = m_NotifyConfig.tavern_mirror.burst_guard_max_backlog;
                 if (curThreshold <= 0) curThreshold = UCL_DiscordMirrorDaemon.BURST_GUARD_MAX_BACKLOG;
 
                 GUILayout.Label("  ⛔ 缺口熔斷門檻（單房積壓超過就停送）", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
@@ -769,8 +857,8 @@ namespace UCL.Core.EditorLib.Page
                     {
                         WriteConfigRoot(cfg =>
                         {
-                            if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
-                            cfg["tavern_mirror"]["burst_guard_max_backlog"] = newTh;
+                            if (!cfg.Contains(KeyTavernMirror)) cfg[KeyTavernMirror] = JsonData.ParseJson("{}");
+                            cfg[KeyTavernMirror]["burst_guard_max_backlog"] = newTh;
                         });
                         Debug.Log($"[TavernAdmin] 缺口熔斷門檻 → {newTh}（原 {curThreshold}）；daemon config 快取 5s 內生效");
                     }
@@ -911,8 +999,8 @@ namespace UCL.Core.EditorLib.Page
             if (string.IsNullOrEmpty(roomId)) return;
             WriteConfigRoot(cfg =>
             {
-                if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
-                var tm = cfg["tavern_mirror"];
+                if (!cfg.Contains(KeyTavernMirror)) cfg[KeyTavernMirror] = JsonData.ParseJson("{}");
+                var tm = cfg[KeyTavernMirror];
                 if (!tm.Contains("rooms") || tm["rooms"] == null || !tm["rooms"].IsArray)
                     tm["rooms"] = JsonData.ParseJson("[]");
                 var rooms = tm["rooms"];
@@ -958,21 +1046,47 @@ namespace UCL.Core.EditorLib.Page
             WriteConfigRoot(cfg =>
             {
                 JsonData block;
-                if (iKey == "queue-idle") block = cfg;
-                else if (iKey == "quest_routing")
+                if (iKey == KeyQueueIdle) block = cfg;
+                else if (iKey == KeyQuestRouting)
                 {
-                    if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
-                    var tm = cfg["tavern_mirror"];
-                    if (!tm.Contains("quest_routing")) tm["quest_routing"] = JsonData.ParseJson("{}");
-                    block = tm["quest_routing"];
+                    if (!cfg.Contains(KeyTavernMirror)) cfg[KeyTavernMirror] = JsonData.ParseJson("{}");
+                    var tm = cfg[KeyTavernMirror];
+                    if (!tm.Contains(KeyQuestRouting)) tm[KeyQuestRouting] = JsonData.ParseJson("{}");
+                    block = tm[KeyQuestRouting];
                 }
                 else
                 {
                     if (!cfg.Contains(iKey)) cfg[iKey] = JsonData.ParseJson("{}");
                     block = cfg[iKey];
                 }
-                if (!block.Contains("webhook_urls")) block["webhook_urls"] = JsonData.ParseJson("[]");
+                if (!block.Contains(KeyWebhookUrls)) block[KeyWebhookUrls] = JsonData.ParseJson("[]");
                 mutateBlock(block);
+            });
+        }
+
+        static HashSet<string> GetDisabledWebhookUrls(JsonData block)
+        {
+            var disabled = new HashSet<string>(StringComparer.Ordinal);
+            if (block == null || !block.Contains(KeyDisabledWebhookUrls) || !block[KeyDisabledWebhookUrls].IsArray) return disabled;
+            for (int i = 0; i < block[KeyDisabledWebhookUrls].Count; i++)
+            {
+                string url = block[KeyDisabledWebhookUrls][i].GetString();
+                if (!string.IsNullOrEmpty(url)) disabled.Add(url);
+            }
+            return disabled;
+        }
+
+        void SetWebhookEnabled(string streamKey, string url, bool enabled)
+        {
+            WriteStreamWebhooks(streamKey, block =>
+            {
+                var disabled = GetDisabledWebhookUrls(block);
+                if (enabled) disabled.Remove(url);
+                else disabled.Add(url);
+
+                var saved = JsonData.ParseJson("[]");
+                foreach (var item in disabled.OrderBy(x => x, StringComparer.Ordinal)) saved.Add(new JsonData(item));
+                block[KeyDisabledWebhookUrls] = saved;
             });
         }
 
@@ -1044,7 +1158,7 @@ namespace UCL.Core.EditorLib.Page
                         {
                             var blk = JsonData.ParseJson("{}");
                             blk["enabled"] = new JsonData(false);
-                            blk["webhook_urls"] = JsonData.ParseJson("[]");
+                            blk[KeyWebhookUrls] = JsonData.ParseJson("[]");
                             cfg[nk] = blk;
                         });
                         Debug.Log($"[TavernAdmin] 已建立 stream「{nk}」（enabled=false + 空 webhook_urls；下一步加 URL）");
@@ -1079,7 +1193,7 @@ namespace UCL.Core.EditorLib.Page
                     m_SelectedStreamIdx = UCL_GUILayout.PopupSearchCache(m_SelectedStreamIdx, m_StreamLabels, m_Dic, "WebhookStreamPicker");
                 }
                 string key = m_StreamKeys.Count > 0
-                    ? m_StreamKeys[Math.Clamp(m_SelectedStreamIdx, 0, m_StreamKeys.Count - 1)] : "tavern_mirror";
+                    ? m_StreamKeys[Math.Clamp(m_SelectedStreamIdx, 0, m_StreamKeys.Count - 1)] : KeyTavernMirror;
                 var block = GetStreamBlock(m_Config, key);
 
                 DrawStreamAddRemoveRow(key);
@@ -1091,14 +1205,14 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 // tavern_mirror 專屬：per-room 同步進度 + 套用 seq（Tim 2026-07-16 整合進下拉）
-                if (key == "tavern_mirror")
+                if (key == KeyTavernMirror)
                 {
                     DrawTavernRoomRows();
                 }
 
                 // 來源鏈狀態
                 string envVar = ""; string secretFile = "";
-                try { envVar = block?.GetString("webhook_env_var", "") ?? ""; secretFile = block?.GetString("webhook_file", "") ?? ""; } catch { }
+                try { envVar = block?.GetString(KeyWebhookEnvVar, "") ?? ""; secretFile = block?.GetString(KeyWebhookFile, "") ?? ""; } catch { }
                 bool envSet = !string.IsNullOrEmpty(envVar) && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(envVar));
                 bool fileExists = !string.IsNullOrEmpty(secretFile) && File.Exists(Path.Combine(PromptQueueDir, secretFile));
                 GUILayout.Label($"  來源鏈：ENV {(envSet ? "<color=#66ff66>已設</color>" : "未設")}（{(string.IsNullOrEmpty(envVar) ? "-" : envVar)}） | secret file {(fileExists ? "<color=#66ff66>存在</color>" : "不存在")}（{(string.IsNullOrEmpty(secretFile) ? "-" : secretFile)}）", WrapLabelStyle);
@@ -1107,19 +1221,29 @@ namespace UCL.Core.EditorLib.Page
                 var urls = new List<string>();
                 try
                 {
-                    if (block != null && block.Contains("webhook_urls") && block["webhook_urls"].IsArray)
+                    if (block != null && block.Contains(KeyWebhookUrls) && block[KeyWebhookUrls].IsArray)
                     {
-                        for (int i = 0; i < block["webhook_urls"].Count; i++) urls.Add(block["webhook_urls"][i].GetString());
+                        for (int i = 0; i < block[KeyWebhookUrls].Count; i++) urls.Add(block[KeyWebhookUrls][i].GetString());
                     }
                 }
                 catch { }
                 if (urls.Count == 0) GUILayout.Label("  (config 無 webhook URL)", UCL_GUIStyle.LabelStyle);
 
+                var disabledUrls = GetDisabledWebhookUrls(block);
                 string deleteUrl = null;
+                string toggleUrl = null;
+                bool toggleEnabled = false;
                 foreach (var url in urls)
                 {
                     using (new GUILayout.HorizontalScope("box"))
                     {
+                        bool webhookEnabled = !disabledUrls.Contains(url);
+                        bool nextEnabled = UCL_GUILayout.CheckBox(webhookEnabled);
+                        if (nextEnabled != webhookEnabled)
+                        {
+                            toggleUrl = url;
+                            toggleEnabled = nextEnabled;
+                        }
                         GUILayout.Label(MaskWebhook(url), WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)));
                         GUILayout.Label(m_WebhookProbe.GetValueOrDefault(url, "(未驗證)"), WrapLabelStyle, GUILayout.ExpandWidth(false));
                         GUILayout.FlexibleSpace();
@@ -1132,6 +1256,49 @@ namespace UCL.Core.EditorLib.Page
                             deleteUrl = url;
                         }
                     }
+
+                    // tavern mirror 的游標是 per (room, webhook)。列表只顯示該 URL 最落後 room 的 seq，
+                    // 保留 webhook 級真相又不把每個 room 的明細塞滿面板。只讀既有 state，不建立 cursor。
+                    if (key == KeyTavernMirror)
+                    {
+                        string webhookId = UCL_DiscordWebhookClient.ExtractWebhookId(url);
+                        var rooms = m_NotifyConfig.tavern_mirror?.rooms;
+                        if (rooms != null)
+                        {
+                            string slowestRoom = null;
+                            int slowestSynced = int.MaxValue;
+                            int slowestLatest = 0;
+                            string problem = null;
+                            foreach (var room in rooms.Where(r => !string.IsNullOrEmpty(r)))
+                            {
+                                int latest = m_RoomMaxSeq.GetValueOrDefault(room, 0);
+                                if (UCL_DiscordMirrorState.TryGetCursorStatus(room, webhookId,
+                                    out _, out string backoffUntil, out int failStreak, out string deadReason)
+                                    && (!string.IsNullOrEmpty(deadReason) || !string.IsNullOrEmpty(backoffUntil)))
+                                    problem ??= !string.IsNullOrEmpty(deadReason)
+                                        ? $"<color=#ff6666>已永久停用：{deadReason}</color>"
+                                        : $"<color=#ffcc44>退避至 {backoffUntil}（連續失敗 {failStreak}）</color>";
+
+                                UCL_DiscordMirrorDaemon.GetWebhookNativeProgress(room, webhookId, latest,
+                                    out int synced, out _, out _);
+                                if (synced < slowestSynced)
+                                {
+                                    slowestRoom = room;
+                                    slowestSynced = synced;
+                                    slowestLatest = latest;
+                                }
+                            }
+                            if (slowestRoom != null)
+                                GUILayout.Label($"    同步進度：{slowestRoom} seq {slowestSynced} / {slowestLatest}"
+                                    + (slowestSynced < slowestLatest ? $"（待同步 {slowestLatest - slowestSynced} 筆）" : "（已同步）"), WrapLabelStyle);
+                            if (!string.IsNullOrEmpty(problem)) GUILayout.Label($"    狀態：{problem}", WrapLabelStyle);
+                        }
+                    }
+                }
+                if (toggleUrl != null)
+                {
+                    SetWebhookEnabled(key, toggleUrl, toggleEnabled);
+                    Debug.Log($"[TavernAdmin] {key} webhook {(toggleEnabled ? "enabled" : "disabled")} ({MaskWebhook(toggleUrl)})");
                 }
                 if (deleteUrl != null)
                 {
@@ -1139,13 +1306,20 @@ namespace UCL.Core.EditorLib.Page
                     // JsonData.Remove 只支援 Dictionary — list 刪除走重建（保留其餘順序）
                     WriteStreamWebhooks(k, b =>
                     {
-                        var arr = b["webhook_urls"];
+                        var arr = b[KeyWebhookUrls];
                         var kept = JsonData.ParseJson("[]");
                         for (int i = 0; i < arr.Count; i++)
                         {
                             if (arr[i].GetString() != du) kept.Add(new JsonData(arr[i].GetString()));
                         }
-                        b["webhook_urls"] = kept;
+                        b[KeyWebhookUrls] = kept;
+                        if (b.Contains(KeyDisabledWebhookUrls) && b[KeyDisabledWebhookUrls].IsArray)
+                        {
+                            var disabled = JsonData.ParseJson("[]");
+                            for (int i = 0; i < b[KeyDisabledWebhookUrls].Count; i++)
+                                if (b[KeyDisabledWebhookUrls][i].GetString() != du) disabled.Add(new JsonData(b[KeyDisabledWebhookUrls][i].GetString()));
+                            b[KeyDisabledWebhookUrls] = disabled;
+                        }
                     });
                     Debug.Log($"[TavernAdmin] {key}.webhook_urls 移除一條（{MaskWebhook(deleteUrl)}）");
                 }
@@ -1177,7 +1351,7 @@ namespace UCL.Core.EditorLib.Page
                                 if (urls.Contains(url)) Debug.LogWarning("[TavernAdmin] 該 URL 已在列表中");
                                 else
                                 {
-                                    WriteStreamWebhooks(key, b => b["webhook_urls"].Add(new JsonData(url)));
+                                    WriteStreamWebhooks(key, b => b[KeyWebhookUrls].Add(new JsonData(url)));
                                     Debug.Log($"[TavernAdmin] {key}.webhook_urls 新增（{MaskWebhook(url)}，驗證 {probe}）");
                                 }
                                 m_NewWebhookUrl = "";
@@ -1236,7 +1410,7 @@ namespace UCL.Core.EditorLib.Page
                 string botStatus = "(未知)";
                 try
                 {
-                    var ib = (m_Config != null && m_Config.Contains("tavern_inbound")) ? m_Config["tavern_inbound"] : null;
+                    var ib = (m_Config != null && m_Config.Contains(KeyTavernInbound)) ? m_Config[KeyTavernInbound] : null;
                     if (ib != null)
                     {
                         inboundEnabled = ib.GetBool("enabled", false);
@@ -1726,8 +1900,8 @@ namespace UCL.Core.EditorLib.Page
         {
             WriteConfigRoot(cfg =>
             {
-                if (!cfg.Contains("tavern_mirror")) cfg["tavern_mirror"] = JsonData.ParseJson("{}");
-                mutateTavernMirror(cfg["tavern_mirror"]);
+                if (!cfg.Contains(KeyTavernMirror)) cfg[KeyTavernMirror] = JsonData.ParseJson("{}");
+                mutateTavernMirror(cfg[KeyTavernMirror]);
             });
         }
 

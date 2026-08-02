@@ -15,6 +15,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -285,6 +286,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             public bool enabled = false;                          // quest 分流開關
             public string sender_match_prefix = "_quest_system";  // sender 前綴命中 → 走 quest webhooks（python Layer 1）
             public List<string> webhook_urls = new List<string>();// quest 頻道 webhook（config 直列；env/file 解析走 ResolveScopeUrls）
+            public List<string> disabled_webhook_urls = new List<string>(); // 保留 URL 但不投遞（Admin toggle）
             public string webhook_env_var = "";
             public string webhook_file = "";
         }
@@ -292,6 +294,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             public List<string> rooms = new List<string>();
             public List<string> webhook_urls = new List<string>();
+            public List<string> disabled_webhook_urls = new List<string>(); // 保留 URL 但不投遞（Admin toggle）
             public List<string> kinds = new List<string>();
             public List<string> exclude_senders = new List<string>();          // 這些 sender 不 mirror（python parity）
             public string title_template = "**`{room}` · {sender_name}** · seq {seq}";  // Discord 顯示 header（python 同款）
@@ -373,6 +376,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             catch (Exception e) { Debug.LogWarning($"[DiscordMirror] webhook URL resolve fail: {e.Message}"); }
             return outUrls;
+        }
+
+        /// <summary>移除操作員明確停用的 URL；保留原清單讓 Toggle 可逆且不必刪除 secret。</summary>
+        static List<string> FilterDisabledWebhookUrls(IEnumerable<string> urls, List<string> disabledUrls)
+        {
+            if (urls == null) return new List<string>();
+            if (disabledUrls == null || disabledUrls.Count == 0) return urls.Where(u => !string.IsNullOrEmpty(u)).ToList();
+            var disabled = new HashSet<string>(disabledUrls, StringComparer.Ordinal);
+            return urls.Where(u => !string.IsNullOrEmpty(u) && !disabled.Contains(u)).ToList();
         }
 
         // 區塊職責：載入（快取）全部 enabled routing groups → MirrorRoutingTarget list
@@ -525,10 +537,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (cfg == null) cfg = new MirrorConfigBlock();
             if (cfg.rooms == null) cfg.rooms = new List<string>();
             if (cfg.webhook_urls == null) cfg.webhook_urls = new List<string>();
+            if (cfg.disabled_webhook_urls == null) cfg.disabled_webhook_urls = new List<string>();
             if (cfg.kinds == null || cfg.kinds.Count == 0) cfg.kinds = new List<string> { "chat" };
             if (cfg.exclude_senders == null) cfg.exclude_senders = new List<string>();
             if (cfg.category_routing == null) cfg.category_routing = new MirrorCategoryRoutingBlock();
             if (cfg.quest_routing == null) cfg.quest_routing = new MirrorQuestRoutingBlock();
+            if (cfg.quest_routing.disabled_webhook_urls == null) cfg.quest_routing.disabled_webhook_urls = new List<string>();
             if (string.IsNullOrEmpty(cfg.title_template)) cfg.title_template = "**`{room}` · {sender_name}** · seq {seq}";
             if (cfg.body_max <= 0) cfg.body_max = 1500;
             if (cfg.burst_guard_max_backlog <= 0) cfg.burst_guard_max_backlog = BURST_GUARD_MAX_BACKLOG;
@@ -665,7 +679,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (cfg.quest_routing.enabled && !string.IsNullOrEmpty(cfg.quest_routing.sender_match_prefix)
                 && !string.IsNullOrEmpty(msg.sender_id) && msg.sender_id.StartsWith(cfg.quest_routing.sender_match_prefix))
             {
-                var questUrls = ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls);
+                var questUrls = FilterDisabledWebhookUrls(
+                    ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls),
+                    cfg.quest_routing.disabled_webhook_urls);
                 if (questUrls.Count > 0)
                 {
                     foreach (var u in questUrls) targets[u] = "quest";
@@ -770,7 +786,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             var routing = cfg.category_routing.enabled ? ReadRoutingTargets() : new List<MirrorRoutingTarget>();
             var mainUrls = new List<string>();
-            foreach (var u in cfg.webhook_urls)
+            foreach (var u in FilterDisabledWebhookUrls(cfg.webhook_urls, cfg.disabled_webhook_urls))
                 if (!string.IsNullOrEmpty(u) && !IsPlaceholderUrl(u)) mainUrls.Add(u);
             if (mainUrls.Count == 0 && routing.Count == 0) return;   // 完全無處可送
 
@@ -785,7 +801,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             foreach (var u in mainUrls) AddWid(u);
             foreach (var t in routing) foreach (var u in t.urls) AddWid(u);
             if (cfg.quest_routing.enabled)
-                foreach (var u in ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls)) AddWid(u);
+                foreach (var u in FilterDisabledWebhookUrls(
+                    ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls),
+                    cfg.quest_routing.disabled_webhook_urls)) AddWid(u);
 
             bool anyStateChange = false;
             bool inflightFull = false;
@@ -794,14 +812,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 if (inflightFull) break;
                 if (string.IsNullOrEmpty(room)) continue;
+                // 永久熔斷是「此 room 的此 webhook 已不可能自行恢復」。它不能再參與 min(ts_high)、
+                // backlog 或鎖步游標，否則單一已死 URL 會永遠把整房掃描下界拖在舊時間。
+                // URL 仍留在 config，讓管理員能看見/修正；只是其 cursor 不再阻塞健康 webhook。
+                var roomWids = allWids.Where(wid => !UCL_DiscordMirrorState.IsDead(room, wid)).ToList();
+                if (roomWids.Count == 0) continue;
                 // tick 早退：訊息數與 min ts_high 都沒動 → 這輪必然與上輪同結果，整房跳過
-                if (!RoomNeedsScan(room, allWids)) continue;
+                if (!RoomNeedsScan(room, roomWids)) continue;
                 List<UCL_ChatMessage> msgs;
-                try { msgs = CollectScanMessages(room, allWids); }
+                try { msgs = CollectScanMessages(room, roomWids); }
                 catch { continue; }
                 if (msgs == null) continue;
                 // 缺口熔斷：積壓超門檻 → 本房整輪跳過（含鎖步推進，游標一格都不動 = 可重試）
-                if (IsBurstGuardTripped(room, msgs, allWids, cfg.burst_guard_max_backlog)) continue;
+                if (IsBurstGuardTripped(room, msgs, roomWids, cfg.burst_guard_max_backlog)) continue;
 
                 foreach (var msg in msgs)
                 {
@@ -816,6 +839,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     var targets = eligible
                         ? ResolveMessageTargets(cfg, routing, mainUrls, msg)
                         : new Dictionary<string, string>();
+                    // 同一 URL 可以在別房仍健康；但本房已永久熔斷時不再把它當目標，避免它干擾
+                    // targetWids 與鎖步推進的判定。管理員清除熔斷後，下一輪自然重新納入。
+                    targets = targets.Where(kv =>
+                    {
+                        string wid = UCL_DiscordWebhookClient.ExtractWebhookId(kv.Key);
+                        return !string.IsNullOrEmpty(wid) && !UCL_DiscordMirrorState.IsDead(room, wid);
+                    }).ToDictionary(kv => kv.Key, kv => kv.Value);
 
                     // 目標 webhook id 集（給下方鎖步推進判「誰不是目標」）
                     var targetWids = new HashSet<string>();
@@ -857,7 +887,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     // 鎖步推進：這則訊息「不歸」的 webhook 直接記 processed（不送、不等 2xx）
                     // 沒有它，冷門 group webhook 的 ts_high 永遠停在上次收到自己 category 的時刻 →
                     // min(ts_high) 拖著整房每 tick 深回頁。ineligible 訊息 = 對全部 webhook 都記 processed。
-                    foreach (var wid in allWids)
+                    foreach (var wid in roomWids)
                     {
                         if (targetWids.Contains(wid)) continue;
                         if (!UCL_DiscordMirrorState.ShouldSend(room, wid, msg.uuid, msg.ts)) continue;
@@ -883,25 +913,28 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          URL 解析走與 Scan 相同的 ENV>FILE>config 優先序 + placeholder 過濾，確保重設到的 webhook
         //          集合跟 daemon 實際會送的集合一致（否則會漏設某 webhook → 該 webhook 仍按舊游標重送）。
         // 數值影響：回傳去重後的 webhook id 清單；room 參數目前僅語意標記（URL 為 config 全域、非 per-room）。
-        /// <summary>某房會觸及的全部 webhook id（main + routing groups + quest）— admin 重設/進度顯示的作用域。</summary>
-        public static List<string> GetRoomWebhookIds(string room)
+        /// <summary>某房會觸及的全部 webhook id（main + routing groups + quest）。進度預設排除永久熔斷 URL；
+        /// 管理員重設游標時傳 includeDead=true，才能在修好 URL 後手動恢復它。</summary>
+        public static List<string> GetRoomWebhookIds(string room, bool includeDead = false)
         {
             var wids = new List<string>();
             var set = new HashSet<string>();
             void Add(string url)
             {
                 string w = UCL_DiscordWebhookClient.ExtractWebhookId(url);
-                if (w != null && set.Add(w)) wids.Add(w);
+                if (w != null && (includeDead || !UCL_DiscordMirrorState.IsDead(room, w)) && set.Add(w)) wids.Add(w);
             }
             try
             {
                 var cfg = ReadConfig();
-                foreach (var u in cfg.webhook_urls)
+                foreach (var u in FilterDisabledWebhookUrls(cfg.webhook_urls, cfg.disabled_webhook_urls))
                     if (!string.IsNullOrEmpty(u) && !IsPlaceholderUrl(u)) Add(u);
                 var routing = cfg.category_routing.enabled ? ReadRoutingTargets() : new List<MirrorRoutingTarget>();
                 foreach (var t in routing) foreach (var u in t.urls) Add(u);
                 if (cfg.quest_routing.enabled)
-                    foreach (var u in ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls))
+                    foreach (var u in FilterDisabledWebhookUrls(
+                        ResolveScopeUrls(cfg.quest_routing.webhook_env_var, cfg.quest_routing.webhook_file, cfg.quest_routing.webhook_urls),
+                        cfg.quest_routing.disabled_webhook_urls))
                         Add(u);
             }
             catch (Exception e) { Debug.LogWarning($"[DiscordMirror] GetRoomWebhookIds fail: {e.Message}"); }
@@ -921,7 +954,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string AdminSetRoomCursorToSeq(string room, int iTargetSeq, int iMaxSeq)
         {
             if (string.IsNullOrEmpty(room)) return "room 為空";
-            var wids = GetRoomWebhookIds(room);
+            var wids = GetRoomWebhookIds(room, includeDead: true);
             if (wids.Count == 0) return $"{room}：config 無 configured webhook（無事可做）";
 
             // seq ≤ 0 = 全部重放：ts_high 設「遠古 sentinel」而非空字串（Tim 2026-07-21 實測踩到的坑）。
@@ -1011,6 +1044,40 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // 找到邊界（有一筆 ts≤min）或整房讀完（msgs 不足 n）→ cnt 即精確待送數
                 if (foundBoundary || msgs.Count < n) { oPending = cnt; break; }
                 if (n >= ADMIN_PROGRESS_CAP) { oPending = cnt; oCapped = true; break; }   // 積壓超上限，標「≥」
+                n = Math.Min(n * 2, ADMIN_PROGRESS_CAP);
+            }
+            oSyncedSeq = Math.Max(0, iMaxSeq - oPending);
+        }
+
+        /// <summary>反推單一 webhook 在某房的 seq 進度，供後台把「per-webhook cursor」轉成人可讀的 seq。</summary>
+        public static void GetWebhookNativeProgress(string room, string webhookId, int iMaxSeq,
+            out int oSyncedSeq, out int oPending, out bool oCapped)
+        {
+            oSyncedSeq = iMaxSeq; oPending = 0; oCapped = false;
+            if (string.IsNullOrEmpty(room) || string.IsNullOrEmpty(webhookId)) return;
+            if (UCL_DiscordMirrorState.IsDead(room, webhookId)) return;
+
+            string tsHigh = UCL_DiscordMirrorState.GetMinTsHigh(room, new List<string> { webhookId }, iSkipEmpty: true);
+            DateTime? high = UCL_DiscordMirrorState.ParseIsoUtc(tsHigh);
+            if (high == null) { oSyncedSeq = 0; oPending = iMaxSeq; return; }
+
+            int n = 64;
+            while (true)
+            {
+                List<UCL_ChatMessage> msgs;
+                try { msgs = UCL_ChatTavernIO.Tail(room, n); }
+                catch { break; }
+                if (msgs == null || msgs.Count == 0) { oPending = 0; break; }
+
+                int cnt = 0; bool foundBoundary = false;
+                for (int i = msgs.Count - 1; i >= 0; i--)
+                {
+                    var t = UCL_DiscordMirrorState.ParseIsoUtc(msgs[i].ts);
+                    if (t != null && t.Value > high.Value) cnt++;
+                    else { foundBoundary = true; break; }
+                }
+                if (foundBoundary || msgs.Count < n) { oPending = cnt; break; }
+                if (n >= ADMIN_PROGRESS_CAP) { oPending = cnt; oCapped = true; break; }
                 n = Math.Min(n * 2, ADMIN_PROGRESS_CAP);
             }
             oSyncedSeq = Math.Max(0, iMaxSeq - oPending);

@@ -123,6 +123,9 @@ namespace UCL.Core.EditorLib.Page
                 if (!show) return;
                 UCL_RemoteWindowControl.PauseOnUserInput = EditorGUILayout.ToggleLeft("偵測使用者操作後暫停（預設開啟）", UCL_RemoteWindowControl.PauseOnUserInput);
                 UCL_RemoteWindowControl.UserIdlePauseSeconds = EditorGUILayout.IntField("使用者操作後暫停（秒）", UCL_RemoteWindowControl.UserIdlePauseSeconds);
+                UCL_RemoteWindowControl.StrictForegroundCheck = EditorGUILayout.ToggleLeft(
+                    "前景驗證失敗時中止流程（預設關閉 — 真正的門是 OCR 掃不掃得到 token）",
+                    UCL_RemoteWindowControl.StrictForegroundCheck);
                 if (!UCL_RemoteWindowControl.PauseOnUserInput)
                     EditorGUILayout.HelpBox("暫停護欄目前已關閉：一般自動輪循不會因鍵鼠輸入讓出控制權。此設定只在本次 Editor session 有效。", MessageType.Warning);
                 using (new GUILayout.HorizontalScope())

@@ -126,6 +126,33 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         public static bool IsForeground(IntPtr window) => window != IntPtr.Zero && GetForegroundWindow() == window;
 
+        // 區塊職責：前景驗證要不要有否決權。**預設不否決（Tim 2026-08-02 拍板）。**
+        // 物理意義：真正的門是 OCR —— 視窗沒被帶到前面就不會露出來，`##persona##` 就掃不到，流程自己停住。
+        //          OCR 是**畫面證據**，前景 handle 比對只是代理指標；而代理指標會誤判（同 app 的兄弟視窗、
+        //          非同步切換的時間差），拿一個會誤判的代理去否決一個有證據的判斷，是本末倒置。
+        // 數值影響：關閉時不因前景不符中止，只把實況寫進紀錄；要恢復否決權把這顆打開即可。
+        public static bool StrictForegroundCheck = false;
+
+        /// <summary>前景是否仍是預期視窗（同 app 的兄弟視窗也算）；關閉嚴格模式時一律放行但回報實況。</summary>
+        public static bool ForegroundGuardPasses(IntPtr expected, out string note)
+        {
+            IntPtr current = GetForegroundWindow();
+            if (expected != IntPtr.Zero && current == expected) { note = "前景仍是目標"; return true; }
+            if (expected != IntPtr.Zero && current != IntPtr.Zero)
+            {
+                GetWindowThreadProcessId(expected, out uint expectedPid);
+                GetWindowThreadProcessId(current, out uint currentPid);
+                if (expectedPid != 0 && expectedPid == currentPid)
+                {
+                    note = "前景是同一個 app 的其他視窗（視為仍在目標）";
+                    return true;
+                }
+            }
+            note = $"前景已變成 {DescribeWindow(current)}";
+            if (!StrictForegroundCheck) note += "（嚴格前景驗證已關閉 → 仍繼續）";
+            return !StrictForegroundCheck;
+        }
+
         public static string DescribeForeground() => DescribeWindow(GetForegroundWindow());
 
         // 區塊職責：在游標當前位置按一次左鍵（down + up）。
@@ -336,14 +363,47 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
             IntPtr foregroundBefore = GetForegroundWindow();
             bool requestAccepted = TryBringToForeground(matched, foregroundBefore);
-            IntPtr foregroundAfter = GetForegroundWindow();
-            bool success = foregroundAfter == matched;
-            s_LastActivated = success ? matched : IntPtr.Zero;   // 失敗就清掉，別讓後續動作拿舊的當「還在前景」
+            bool success = WaitForForeground(matched, out IntPtr foregroundAfter, out string how);
+            // 成功時記**實際**在前景的那個 hwnd（可能是同 app 的兄弟視窗）—— 記成 matched 的話，
+            // 後續「焦點還在我以為的地方嗎」會對著一個沒在前景的 handle 比，永遠不成立。
+            s_LastActivated = success ? foregroundAfter : IntPtr.Zero;
             result = success
-                ? $"已切換到「{matchedTitle}」"
+                ? $"已切換到「{matchedTitle}」（{how}）"
                 : $"找到「{matchedTitle}」，但前景仍是 {DescribeWindow(foregroundAfter)}（Win32 request={requestAccepted}）";
             WriteDiagnostic(targetName, diagnostics, visibleWindows, result, matched, success, foregroundBefore, foregroundAfter);
             return success;
+        }
+
+        // 區塊職責：等前景真的變成目標視窗（或同一個 app 的其他視窗），最多等 ForegroundWaitMs。
+        // 物理意義：**SetForegroundWindow 是非同步的** —— 呼叫完立刻讀 GetForegroundWindow 常常還是舊的，
+        //          於是判成「切換失敗」，但使用者眼睛看到的是切成功了（2026-08-02 Tim 回報）。
+        //          這是「外觀 FAIL ≠ 真的 FAIL」的反向層次混淆：不是動作沒發生，是我量得太早。
+        // 數值影響：同 app 的兄弟視窗也算成功 —— 我們要的是「那個 app 到前面來了」，不是「剛好是我列舉到的
+        //          那個 hwnd」；app 常把焦點交給另一個 top-level 視窗（登入框、子視窗）。
+        const int ForegroundWaitMs = 1500;
+        const int ForegroundPollMs = 25;
+
+        static bool WaitForForeground(IntPtr target, out IntPtr foreground, out string how)
+        {
+            GetWindowThreadProcessId(target, out uint targetPid);
+            int waited = 0;
+            while (true)
+            {
+                foreground = GetForegroundWindow();
+                if (foreground == target) { how = waited == 0 ? "即時到位" : $"等 {waited}ms 到位"; return true; }
+                if (foreground != IntPtr.Zero)
+                {
+                    GetWindowThreadProcessId(foreground, out uint pid);
+                    if (pid == targetPid && pid != 0)
+                    {
+                        how = $"同一個 app 的其他視窗到前景（pid={pid}，等 {waited}ms）";
+                        return true;
+                    }
+                }
+                if (waited >= ForegroundWaitMs) { how = $"等滿 {ForegroundWaitMs}ms 仍未到位"; return false; }
+                System.Threading.Thread.Sleep(ForegroundPollMs);
+                waited += ForegroundPollMs;
+            }
         }
 
         // 區塊職責：用 restore + bring-to-top + 暫時 AttachThreadInput 完成 Windows 前景切換，並由 caller 做真實前景驗證。

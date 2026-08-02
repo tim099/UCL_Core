@@ -212,7 +212,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
 
             string windowTarget = UCL_ActualAgentUtility.ToWindowTarget(lockInfo.ActualAgent);
-            if (!UCL_RemoteWindowControl.TryActivateExplicitly(windowTarget, out string activateResult))
+            // 切換「失敗」不再中止（Tim 2026-08-02 拍板）：真正的門是下一步的 OCR ——
+            // 視窗沒到前面就不會露出來、token 就掃不到，流程自己會停。前景 handle 比對只是代理指標，
+            // 而它會因非同步切換與同 app 兄弟視窗而誤判，拿它否決有畫面證據的判斷是本末倒置。
+            bool activated = UCL_RemoteWindowControl.TryActivateExplicitly(windowTarget, out string activateResult);
+            if (!activated && UCL_RemoteWindowControl.StrictForegroundCheck)
             {
                 summary = $"切換視窗失敗：{activateResult}";
                 UCL_RemoteWindowControl.SetLastResult(summary);
@@ -250,8 +254,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             if (!options.ClickAfterMove) return "未啟用點擊（只移動游標）";
             var expected = UCL_RemoteWindowControl.LastActivatedWindow;
-            if (!UCL_RemoteWindowControl.IsForeground(expected))
-                return $"⚠ 前景已不是目標視窗（現在是 {UCL_RemoteWindowControl.DescribeForeground()}），為避免點進別人的視窗而中止";
+            if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string guardNote))
+                return $"⚠ {guardNote}，為避免點進別人的視窗而中止";
 
             if (options.ClickDelaySec > 0f) Sleep(options.ClickDelaySec);
             if (!UCL_RemoteWindowControl.TryClickLeft(out string clickResult))
@@ -263,8 +267,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // per-agent 前置：有些桌面工具點完 session 焦點不會自己進輸入框（Antigravity 2.0），要補一段。
             string prepare = UCL_RemoteAgentInput.PrepareInput(agent, options);
             // 點擊可能切換了 session / 開了新視窗，打字前再確認一次焦點歸屬。
-            if (!UCL_RemoteWindowControl.IsForeground(expected))
-                return $"{clickResult}；但點擊後前景變成 {UCL_RemoteWindowControl.DescribeForeground()}，不輸入文字";
+            if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string guardNote2))
+                return $"{clickResult}；但{guardNote2}，不輸入文字";
             UCL_RemoteWindowControl.TryTypeText(options.TypeText, options.TypeCharDelaySec, out string typeResult);
             return $"{clickResult}；{prepare}；{typeResult}（未送出 Enter — 手動測試流程沒有送出的路徑）";
         }

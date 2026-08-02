@@ -271,7 +271,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             bool activated = manual
                 ? UCL_RemoteWindowControl.TryActivateExplicitly(windowTarget, out string activateResult)
                 : UCL_RemoteWindowControl.TryActivate(windowTarget, out activateResult);
-            if (!activated)
+            // 切換「失敗」不再中止（Tim 2026-08-02 拍板）：下一步的 OCR 才是真正的門 ——
+            // 視窗沒到前面就掃不到 token，流程自己會停，而且那個停是有畫面證據的。
+            if (!activated && UCL_RemoteWindowControl.StrictForegroundCheck)
             {
                 summary = $"要通知 {chosen.Persona}，但切換視窗失敗：{activateResult}";
                 Finish(pool, chosen, summary, false);
@@ -298,9 +300,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
 
             var expected = UCL_RemoteWindowControl.LastActivatedWindow;
-            if (!UCL_RemoteWindowControl.IsForeground(expected))
+            if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string guardNote))
             {
-                summary = $"要通知 {chosen.Persona}，但前景已變成 {UCL_RemoteWindowControl.DescribeForeground()}，中止（不往別人的視窗點）";
+                summary = $"要通知 {chosen.Persona}，但{guardNote}，中止（不往別人的視窗點）";
                 Finish(pool, chosen, summary, false);
                 return false;
             }
@@ -312,9 +314,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return false;
             }
             Sleep(options.TypeDelaySec);
-            if (!UCL_RemoteWindowControl.IsForeground(expected))
+            if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string guardNote2))
             {
-                summary = $"通知 {chosen.Persona}：點擊後前景變成 {UCL_RemoteWindowControl.DescribeForeground()}，不輸入文字";
+                summary = $"通知 {chosen.Persona}：{guardNote2}，不輸入文字";
                 Finish(pool, chosen, summary, false);
                 return false;
             }
@@ -327,8 +329,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             {
                 Sleep(EnterDelaySeconds);
                 // 送出前最後一次確認焦點 —— 送出是不可逆的，這是唯一一次「錯了就收不回」的動作。
-                if (!UCL_RemoteWindowControl.IsForeground(expected))
-                    enterResult = $"未送出（送出前前景變成 {UCL_RemoteWindowControl.DescribeForeground()}）";
+                if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string enterGuard))
+                    enterResult = $"未送出（{enterGuard}）";
                 else
                 {
                     UCL_RemoteWindowControl.TrySendEnter(EnterPresses, EnterGapSeconds, out enterResult);

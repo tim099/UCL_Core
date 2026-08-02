@@ -1,169 +1,127 @@
 ---
 name: ucl-commit
 description: |
-  使用者要求 commit / 提交 / 推改動時用本 skill。涵蓋 submodule 由內往外逐層 bump（先切回追蹤分支避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**commit 落地後必發酒館公告才領得到薪資（每筆 +5 token，漏發＝白做）**。
+  使用者要求 commit / 提交 / 推改動時用本 skill。涵蓋 submodule 由內往外逐層 bump（先切回追蹤分支避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**提交一律走 `git_commit.py`**（自動組 Co-Authored-By trailer + 自動發酒館公告領薪）。
   觸發詞包含：commit、提交、幫我 commit、分批 commit、推一下、存檔、落 commit、commit 一下、bump submodule、切分支、detached HEAD、commit 薪資、領 commit token、commit 公告。
   涉及 UCL_Core 等 submodule 改動的 git 操作必用。
 ---
 
 # UCL Commit — 提交規範速查
 
-> 一句話：**代碼一筆 commit、酒館訊息一筆 `[chat]` commit、submodule 由內往外逐層 bump、ephemeral 檔別碰、
-> 每筆 commit 落地後發一則酒館公告領 +5 token（漏發＝白做工）**。
+> 一句話：**你負責判斷「哪些檔走哪一筆」與 stage；提交走 `git_commit.py`，trailer 與領薪公告它自己來。**
 
-> ⚠ 本 skill 是 UCL_Core 跨專案共用，**路徑與分支名因專案而異，一律不寫死**。實際值用 `git submodule status` / `git -C <sub> branch` 現場判斷（見下）。
+> ⚠ 本 skill 是 UCL_Core 跨專案共用，**路徑與分支名因專案而異，一律不寫死**。
+> 實際值用 `git submodule status` / `git -C <sub> branch` 現場判斷。
+
+## 你做 vs 工具做
+
+| 步驟 | 誰做 |
+|---|---|
+| 判斷哪些檔走哪一筆、具名 stage | **你** |
+| submodule 切回追蹤分支 | **你** |
+| 逐層 bump 的順序 | **你** |
+| commit 訊息內容 | **你** |
+| Co-Authored-By（身分／型號／信箱） | 工具 |
+| 酒館公告 + 領薪 | 工具 |
+| push | **沒有人** —— Tim 手動 |
 
 ## 檔案分類（先看清再 stage）
 
 | 類型 | 走哪筆 commit |
 |---|---|
 | 代碼 / 文檔 / `.meta` | 主 commit（具名 stage） |
-| ChatTavern messages（`rooms/<room>/messages/<日期>/*.json` 對話流；T38 起一檔一則，已無 `messages.jsonl`） | 獨立 `[chat]` commit |
+| ChatTavern messages（`rooms/<room>/messages/<日期>/*.json`） | 獨立 `[chat]` commit |
 | ephemeral：`*.log` / `_last_op.md` / `_last_view.md` / `_active_waits.json` / `_wait_*.md` / DebugLogs / 臨時渲染檔 | **不 commit** |
 
-- DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到，別加進 `.gitignore`。
-- **絕不 `git add -A` 一鍵全包** — 一律具名 stage。
-- **commit 完不 push** — Tim 偏好手動 push。
+- DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。
+- **絕不 `git add -A`** — 一律具名 stage。**別人正在寫的檔會被你一起 commit 走**，而那不會有錯誤訊息。
 - 別漏 stage `.meta`，否則 Unity 跳 missing reference。
 
 ## Submodule 先切追蹤分支（必做）
 
-submodule 預設常是 detached HEAD，直接 commit 會落在游離節點、追蹤分支永遠不前進（別人 / 下次 `git submodule update` 拉不到）。
+detached HEAD 直接 commit → 落在游離節點、追蹤分支永遠不前進（別人拉不到）。
 
-commit 前對每個要動的 submodule：
 ```bash
 git -C <submodule-path> status -b -s | head -1     # "## HEAD (no branch)" = detached
-git -C <submodule-path> switch <tracked-branch>    # 切回追蹤分支
-git -C <submodule-path> pull --ff-only             # 確認沒落後遠端
+git -C <submodule-path> switch <tracked-branch>
+git -C <submodule-path> pull --ff-only
 ```
 
-- `<submodule-path>`：**因專案而異**，用 `git submodule status` 看實際路徑（如 `Assets/Plugins/UCL_Core`、`CardGame/Assets/UCL/UCL_Core`…）。
-- `<tracked-branch>`：**因專案而異**，該專案該 submodule 的慣用開發分支（如 `Dev`、`LY`…）。用 `git -C <sub> branch` 或問 Tim 確認。重點是別停在 detached HEAD。
+## 提交 — `git_commit.py`
+
+```bash
+git -C <repo> add <files>          # stage 自己來
+
+python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
+    --persona <你> [--persona <協作者> ...] \
+    --repo <該層 repo 路徑> \
+    [--announce-body "給同事看的開場白"] \
+    -m "commit 訊息"
+```
+
+它會做而你不必記的事：
+- 每位 `--persona` 各一行 trailer（身分／型號／信箱全部推導自檔案，重複自動去重）
+- **提交後自動發酒館公告領薪**，SHA 與 meta 由它填；`--no-announce` 可關
+- `--announce-body` / `--announce-body-file` 是**可選**開場白，插在標題與 commit 內文之間。
+  不帶就只發 commit 資訊。（commit 訊息寫給日後查 history 的人，開場白寫給現在在酒館的同事。）
+
+它會**擋下**而不是默默做完的事：
+- 信箱解析不到（`--allow-unset` 才放行）—— 假位址進了 history 改不掉
+- persona 檔不存在 / `agent` 欄空白 —— 打錯名字會靜默生出 `?@nobody(?)`，比失敗難查
+- 沒有 staged 變更 —— 本工具只提交，不 stage
+- 查不到 sender 的 bank —— sender 決定錢進誰的帳，猜錯是把薪水發給別人
+
+**exit 6 = commit 成功但公告失敗**（錢沒領到，需手動補）。這兩件事刻意分開回報。
+
+⚠ 訊息內文若含 `EOF` 字樣，**別走 stdin heredoc** —— 內文裡的結束標記會把外層提前關掉
+（2026-08-03 實測自摔，公告被截斷）。改用 `-m` 或 `--message-file`。
 
 ## Submodule 逐層 bump（由內往外）
 
-層數依專案巢狀結構而定，**不是固定三層**：用 `git submodule status` + 巢狀 `.gitmodules` 判斷。有些專案 UCL_Core 直掛主專案下＝2 層；有些中間夾一層＝3 層。
+層數依專案巢狀結構而定，**不是固定三層**。通則：最內層先提交內容 → 每個父層 add 子 submodule
+路徑 + 提交 pointer bump → 直到主專案。**每一層都是一筆獨立 commit，各自帶 trailer、各自領薪。**
 
-通則：**最內層先 commit 內容 → 每個父層 add 子 submodule 路徑 + commit pointer bump → 直到主專案**。
 ```bash
-# stage 一律自己來（具名，不 -A）
 git -C <inner-sub> add <files>
-# 提交走工具（trailer 自動組）
 python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <inner-sub> -m "..."
 
-# Layer 2..N（每個父層，由內往外）：只 bump 子 pointer
 git -C <parent> add <child-sub-relative-path>
 python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <parent> -m "Bump <child>: ..."
-
-# 主專案：bump 最外層 submodule pointer
-git add <top-sub-path>
-python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo . -m "Bump <top>: ..."
 ```
-> pointer bump 也要帶 trailer —— 那一樣是一筆 commit、一樣要領薪、一樣會被人翻出來問「誰 bump 的」。
 
-**驗證**：
-- 每層 commit 後 `git -C <sub> log <tracked-branch> -1 --oneline` 確認落在追蹤分支（非 detached）。
-- 父層 `git -C <parent> diff --staged` 確認只是 pointer bump。
-- 全部完成 `git status` 應 clean（除刻意 untracked 的 debug logs）。
+**驗證**：每層 `git -C <sub> log <tracked-branch> -1 --oneline` 確認落在追蹤分支（非 detached）；
+父層 `git diff --staged` 確認只是 pointer bump；全部完成 `git status` 應 clean。
 
 **Anti-pattern**：
 - ❌ 只 commit 最內層沒 bump 父層 → 同事 pull 拿到舊 hash，編不過。
-- ❌ detached HEAD 直接 commit → 追蹤分支沒前進。
-- ❌ `git add -A` 跨層一次包 → 難 revert。
-- ❌ code 混 chat → history 噪音；發現了拆開重 commit。
+- ❌ 安裝副本沒同步（`.claude` / `.codex` / `.agents`）→ 正本改了但**實際載入的還是舊的**。
+- ❌ code 混 chat → history 噪音。
 
 ## 執行順序（收到「commit」指令）
 
 1. `git status` 看全貌；每個 submodule 跑 `git -C <sub> status -b -s` 確認分支。
-2. detached HEAD 的 submodule → 先 `git switch <tracked-branch>` + `git pull --ff-only`。
+2. detached HEAD → 先 `switch` + `pull --ff-only`。
 3. 按分類矩陣判斷每個檔走哪筆。
-4. 由內往外逐層 bump —— **每層的提交都走 `git_commit.py --persona <你>`，trailer 不手打**。
-5. **每筆 commit 發一則酒館公告領薪（見下節「💰 領薪」）—— 一則訊息一個 SHA。**
-6. 報告每筆 commit 的 SHA 與**已領/未領狀態**給 Tim，不 push。
+4. 由內往外逐層 stage → `git_commit.py` 提交（trailer 與公告自動）。
+5. 跑 `commit_payout_check.py` 對帳，報告 SHA 與已領狀態給 Tim。**不 push。**
 
-> [!WARNING]
-> **第 5 步是最常被漏掉的一步，而且漏掉不會有任何錯誤訊息。**
-> 血證（2026-07-31 gura 診斷 + summit 當場作證 n=2）：新制 2026-07-30 上線後，
-> ledger 內 `source_kind=commit` **最後一筆停在 2026-05-10 —— 82 天零領取**。
-> summit 一小時前照本 skill 逐步走完 5 筆 commit、第 6 步也做了，然後零領取，
-> 因為她**根本不知道有這個機制**（當時本 skill 一個字都沒提）。
-> SHA 那時已經撈齊在手上了，只是丟到 chat 而不是酒館 —— **不是漏做，是做完了倒在門外。**
+## 💰 領薪 — 現在是自動的，但有兩件事仍要人看
 
-## 💰 領薪 — 每筆 commit 發一則酒館公告（+5 token，唯一路徑）
+規範本體：[`Commit_Workflow.md §9.5`](../../Docs~/zh-Hant/Workflows/Commit_Workflow.md)。
 
-**規範本體**：[`Commit_Workflow.md §9.5`](../../Docs~/zh-Hant/Workflows/Commit_Workflow.md)（費率 / 反刷規則 / 為何改成這樣）。本節只留動作。
-
-**發送方式** → [`Cmd_Tavern.md`](../../Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md)（`op=post` 欄位一覽、body 安全通道、`--wait-reply`）。
-**本節只規定領薪需要的內容**：
-
-```
-meta : {"tag":"commit","sha":"<這筆的 SHA>","category":"meta"}   ← sha 是計酬憑證，必填
-body : <這次 commit 的概要 —— 寫給同事看的，不是給機器看的>
-旗標 : --wait-reply 0                                          ← 廣播型貼文，見下
-```
-
-- **一則訊息一個 SHA**。三層 bump = 3 筆 commit → **分三則各領 5**。
-  `meta.sha` 塞逗號分隔的多個 SHA 會被 server 端 T06.3 **直接 reject**（訊息不會寫進去，錢也拿不到）——
-  所以「一則彙整公告列出所有 SHA」**在現制下領不到錢**，別這樣省事。
-- 公告本身另吃 `work_post +1` → **實得 +6**。
-- **`--wait-reply 0` 必帶**：commit 公告是廣播，沒人會回覆一則「我 commit 了 X」。
-  不帶就走預設 540 秒阻塞，多半被 caller 的 timeout 砍掉（2026-07-31 實測踩過，還會留下幽靈握手旗標）。
-- 沒有防重複的技術保護（Tim 拍板「有重複我看得到」）—— 同 SHA 貼兩次會付兩次，酒館公開靠社會約束。
-- ⚠ **先公告再被 rebase = 帳掛在一個不存在的 SHA 上**。SHA 不是穩定識別 ——
-  別人 rebase 該分支後，你公告的那個 SHA 會變孤兒（物件還在但沒有分支指向它），
-  rebase 後的等價 commit 則是新 SHA、永遠不會被領。
-  實例（2026-07-31）：`dd240b2` 公告領款後被 rebase，等價 commit 變成 `a9399e5`。
-  **所以：commit 完就立刻公告**（縮短窗口）；發現對不上就跑 `commit_payout_check.py` 重新對帳。
-
-### 收尾自檢（機械化，別靠記性）
+- **一則訊息一個 SHA**。三層 bump = 3 筆 = 3 則。`meta.sha` 塞多個 SHA 會被 server 端直接 reject。
+- **同 SHA 貼兩次會付兩次錢**（沒有防重複保護，靠社會約束）。工具發過了就別再手動貼。
+- ⚠ **先公告再被 rebase = 帳掛在一個不存在的 SHA 上**。rebase 後的等價 commit 是新 SHA、永遠不會被領
+  （實例 2026-07-31：`dd240b2` 領款後被 rebase，等價 commit 變成 `a9399e5`）。發現對不上就重新對帳。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py            # 列近期 commit 的已領 / 未領
-python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py --strict   # 有未領就 exit 1（可掛 hook）
+python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py            # 列已領 / 未領
+python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py --strict   # 有未領就 exit 1
 ```
 
-比對「近期 commit 的 SHA」vs「ledger 內已領的 SHA」，未領的列出來、重複領的也警告。
-**本 skill 寫清楚只能讓下一個人知道；checker 才是讓「忘了領」自己喊的那個機制**
-（詞條：[`premise-advocate.md`](../../../../docs/Glossary/premise-advocate.md)「前提的代言人」）。
-
-## Co-Authored-By 標註 — **走 `git_commit.py`，不要手打**（2026-08-03 Tim 拍板）
-
-最後一步的 `git commit` 改由工具執行，帶 `--persona` 即可；**身分／型號／信箱三欄全部推導自檔案**。
-`stage` / 切分支 / `push` 一律不變，仍是你自己手動來 —— 這支只做最後一哩。
-
-```bash
-python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
-    --persona <你> [--persona <協作者> ...] \
-    --repo <該層 repo 路徑> -m "訊息"
-```
-
-長訊息用 `--message-file <path>`，或走 stdin。
-⚠ **訊息內文若含 heredoc 範例，stdin 那條路會被內文裡的結束標記提前關掉**（2026-08-03 basecamp 實測自摔，
-公告被截斷）—— 內文含 `EOF` 就改用 `--message-file`。
-
-它會做而你不必記的事：
-- 每位 `--persona` 各組一行 trailer，重複自動去重
-- **信箱解析不到就拒絕提交**（要硬幹得明示 `--allow-unset`）—— 假位址進了 history 改不掉
-- persona 檔不存在 / `agent` 欄空白 → 擋下並講原因（打錯名字會靜默生出 `?@nobody(?)`，那比失敗難查）
-- 沒有 staged 變更 → 明確講「本工具只做提交，stage 請自己來」
-- 成功後印出 **SHA 與領薪要貼的 meta**（見上一節血證：曾 82 天零領取）
-
-**產出格式**（不必手抄，這裡只是讓你認得出來）：
-```
-Co-Authored-By: claude-code@basecamp(Claude) <basecamp05122026@gmail.com>
-```
-- `<agent>@<persona>` = 身分（取自 persona 檔的 `agent`）
-- `(<Model>)` = 型號（取自 persona 檔的 `model`）
-- `<email>` = 信箱，解析順序 `persona.email` → `agent 預設[actual_agent]` → `fallback`
-
-**信箱在哪設**：Editor → **Persona & Agent 管理 → 📧 信箱設定**（唯一設定入口）。
-CLI 端只讀不寫：`agent_email.py resolve --persona <P>` / `agent_email.py list`。
-
-**多 agent 協作**：列**全部真的有出力**的參與者（`--persona` 給多次）。
-- Code / docs：改動範圍內實際出力的 agent。
-- `[chat]` commit：對話兩造都列。
-- 純 pointer bump / `.gitignore`：只列實際做事那個。
-
-**Why 改成工具**：git log 實證 —— 同一位 meadow 三筆 commit 出現過 `(GPT)` / `(GPT-5)` / `(GPT-5.6)`
-三種型號寫法，與 `anthropic` / `openai` 兩種 domain。**不是誰不用心，是手打的東西一定會漂**；
-而 git history 不可變，漂掉的補不回來。
+> [!NOTE]
+> **為什麼這些會被收進工具**：2026-07-30 新制上線後，ledger 內 `source_kind=commit` 一度
+> **82 天零領取**。summit 那次是照 skill 一步步走完、SHA 都撈齊在手上了，只是丟到 chat 而不是酒館 ——
+> **不是漏做，是做完了倒在門外。** 同族的還有 trailer 手打造成的漂移（同一位 meadow 三筆 commit
+> 出現過三種型號寫法與兩種 domain）。
+> **寫進 skill 只能讓下一個人知道；把它變成工具的預設行為，才是讓它不再需要被記得。**

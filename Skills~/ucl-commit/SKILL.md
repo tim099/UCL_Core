@@ -46,18 +46,20 @@ git -C <submodule-path> pull --ff-only             # 確認沒落後遠端
 
 通則：**最內層先 commit 內容 → 每個父層 add 子 submodule 路徑 + commit pointer bump → 直到主專案**。
 ```bash
-# Layer 1（最內 submodule）：commit 實際改動
+# stage 一律自己來（具名，不 -A）
 git -C <inner-sub> add <files>
-git -C <inner-sub> commit -m "..."
+# 提交走工具（trailer 自動組）
+python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <inner-sub> -m "..."
 
 # Layer 2..N（每個父層，由內往外）：只 bump 子 pointer
 git -C <parent> add <child-sub-relative-path>
-git -C <parent> commit -m "Bump <child>: ..."
+python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <parent> -m "Bump <child>: ..."
 
 # 主專案：bump 最外層 submodule pointer
 git add <top-sub-path>
-git commit -m "Bump <top>: ..."
+python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo . -m "Bump <top>: ..."
 ```
+> pointer bump 也要帶 trailer —— 那一樣是一筆 commit、一樣要領薪、一樣會被人翻出來問「誰 bump 的」。
 
 **驗證**：
 - 每層 commit 後 `git -C <sub> log <tracked-branch> -1 --oneline` 確認落在追蹤分支（非 detached）。
@@ -75,7 +77,7 @@ git commit -m "Bump <top>: ..."
 1. `git status` 看全貌；每個 submodule 跑 `git -C <sub> status -b -s` 確認分支。
 2. detached HEAD 的 submodule → 先 `git switch <tracked-branch>` + `git pull --ff-only`。
 3. 按分類矩陣判斷每個檔走哪筆。
-4. 由內往外逐層 bump。
+4. 由內往外逐層 bump —— **每層的提交都走 `git_commit.py --persona <你>`，trailer 不手打**。
 5. **每筆 commit 發一則酒館公告領薪（見下節「💰 領薪」）—— 一則訊息一個 SHA。**
 6. 報告每筆 commit 的 SHA 與**已領/未領狀態**給 Tim，不 push。
 
@@ -124,26 +126,44 @@ python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py --strict   # 有�
 **本 skill 寫清楚只能讓下一個人知道；checker 才是讓「忘了領」自己喊的那個機制**
 （詞條：[`premise-advocate.md`](../../../../docs/Glossary/premise-advocate.md)「前提的代言人」）。
 
-## Co-Authored-By 標註（每筆 commit 必帶）
+## Co-Authored-By 標註 — **走 `git_commit.py`，不要手打**（2026-08-03 Tim 拍板）
 
-每筆 commit 訊息**結尾固定帶 trailer**，身分與模型併成一行：
+最後一步的 `git commit` 改由工具執行，帶 `--persona` 即可；**身分／型號／信箱三欄全部推導自檔案**。
+`stage` / 切分支 / `push` 一律不變，仍是你自己手動來 —— 這支只做最後一哩。
 
+```bash
+python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
+    --persona <你> [--persona <協作者> ...] \
+    --repo <該層 repo 路徑> -m "訊息"
 ```
-Co-Authored-By: <agent>@<persona>(<Model>) <noreply@anthropic.com>
+
+長訊息用 `--message-file <path>`，或走 stdin。
+⚠ **訊息內文若含 heredoc 範例，stdin 那條路會被內文裡的結束標記提前關掉**（2026-08-03 basecamp 實測自摔，
+公告被截斷）—— 內文含 `EOF` 就改用 `--message-file`。
+
+它會做而你不必記的事：
+- 每位 `--persona` 各組一行 trailer，重複自動去重
+- **信箱解析不到就拒絕提交**（要硬幹得明示 `--allow-unset`）—— 假位址進了 history 改不掉
+- persona 檔不存在 / `agent` 欄空白 → 擋下並講原因（打錯名字會靜默生出 `?@nobody(?)`，那比失敗難查）
+- 沒有 staged 變更 → 明確講「本工具只做提交，stage 請自己來」
+- 成功後印出 **SHA 與領薪要貼的 meta**（見上一節血證：曾 82 天零領取）
+
+**產出格式**（不必手抄，這裡只是讓你認得出來）：
 ```
+Co-Authored-By: claude-code@basecamp(Claude) <basecamp05122026@gmail.com>
+```
+- `<agent>@<persona>` = 身分（取自 persona 檔的 `agent`）
+- `(<Model>)` = 型號（取自 persona 檔的 `model`）
+- `<email>` = 信箱，解析順序 `persona.email` → `agent 預設[actual_agent]` → `fallback`
 
-- `<agent>@<persona>` = **身分**，如 `zeta@summit`、`claude-code@basecamp`、`antigravity@apex-one`。
-- `(<Model>)` = **實際模型**，如 `(Claude Opus 4.8)`。
-- 一行同時看清「哪個 persona、跑哪個模型」做的——只標模型會遺失身分（本 session 早期 commit 就漏了）。
+**信箱在哪設**：Editor → **Persona & Agent 管理 → 📧 信箱設定**（唯一設定入口）。
+CLI 端只讀不寫：`agent_email.py resolve --persona <P>` / `agent_email.py list`。
 
-**多 agent 協作**：列**全部真的有出力**的參與者，每人各一行。
+**多 agent 協作**：列**全部真的有出力**的參與者（`--persona` 給多次）。
 - Code / docs：改動範圍內實際出力的 agent。
 - `[chat]` commit：對話兩造都列。
 - 純 pointer bump / `.gitignore`：只列實際做事那個。
 
-範例（summit 單獨完成一筆 code commit）：
-```
-Co-Authored-By: zeta@summit(Claude Opus 4.8) <noreply@anthropic.com>
-```
-
-**Why**：git history 不可變，事後補不了 co-author；一行標好身分＋模型，未來查協作 thread 對得起來。
+**Why 改成工具**：git log 實證 —— 同一位 meadow 三筆 commit 出現過 `(GPT)` / `(GPT-5)` / `(GPT-5.6)`
+三種型號寫法，與 `anthropic` / `openai` 兩種 domain。**不是誰不用心，是手打的東西一定會漂**；
+而 git history 不可變，漂掉的補不回來。

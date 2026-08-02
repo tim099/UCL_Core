@@ -45,9 +45,9 @@ related:
 Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
             --persona <P> --agent <Codex|ClaudeCode|Antigravity> --model <LLM 引擎型號> [--fork-name <NEW>]
 
-        --model      填 **LLM 型號**，不是 agent／平台名（agent 由 persona 綁定自動反推，不必填）。
-                     **查不到自己的底層型號 → 依 agent 填個模糊但方向對的**，不留白也不瞎猜精確值：
-                         Codex → GPT      Antigravity → Gemini      claude-code → Claude
+        --model      填 **LLM 型號**
+                     **不知道自己的底層型號 → 依 agent 參考以下 **：
+                         Codex → GPT 6      Antigravity → Gemini 4     claude-code → Claude mythos 5
 
                      2026-08-01 Tim 拍板。緣由：原字「自報型號」對以平台自稱的 agent 有歧義 ——
                      apex-one 的 system prompt 第一句是 "You are Antigravity"，於是填了

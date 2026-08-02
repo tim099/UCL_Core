@@ -353,7 +353,10 @@ def rebuild_index(topic: str) -> None:
             link_note = f"  ↔ {', '.join(links)}" if links else ""
             lines.append(f"- **{f.get('id')}** — {f.get('title', '')}{mark}{link_note}")
         lines.append("")
-    (d / "_index.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # 區塊職責: 輸出機械索引時正規化檔尾，只保留一個換行。
+    # 物理意義: section 之間仍以空白行分隔，但最後一個 section 不會留下無內容的尾端段落。
+    # 數值影響: 消除 git diff --check 的 EOF blank-line 警告，不改變任何 fragment 或索引項目。
+    (d / "_index.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
 def op_index(args) -> int:

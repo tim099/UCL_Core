@@ -22,11 +22,17 @@ git_commit.py — commit 的最後一步：帶 persona 參數，自動組 Co-Aut
   # 只看會組出什麼，不提交
   python git_commit.py --persona basecamp --dry-run -m "test"
 
+提交成功後**自動發一則酒館公告領薪**（`--no-announce` 可關）。公告內容取自 commit 訊息本身 ——
+領薪漏發是這條流程最兇的失血點（血證：新制上線後 source_kind=commit 曾 82 天零領取），
+而「記得發公告」本來就不該是人的責任。
+
 exit code: 0 成功 / 2 參數或 persona 有問題 / 3 信箱未設定 / 4 沒有 staged 變更 / 5 git commit 失敗
+         / 6 commit 成功但公告發送失敗（**錢沒領到，需手動補**）
 """
 
 from __future__ import annotations
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -39,10 +45,11 @@ try:
 except Exception:
     pass
 
-from agent_email import resolve_email, load_persona, looks_like_email, UNSET_SENTINEL  # noqa: E402
+from agent_email import resolve_email, load_persona, looks_like_email, UNSET_SENTINEL, _data_root  # noqa: E402
 from agent_model import resolve_model  # noqa: E402
 
 EXIT_OK, EXIT_BAD_ARGS, EXIT_UNSET_EMAIL, EXIT_NOTHING_STAGED, EXIT_COMMIT_FAIL = 0, 2, 3, 4, 5
+EXIT_ANNOUNCE_FAIL = 6
 TRAILER_PREFIX = "Co-Authored-By:"
 
 
@@ -80,6 +87,80 @@ def build_trailers(personas: list, allow_unset: bool) -> tuple:
     return lines, problems
 
 
+def resolve_sender(persona: str) -> str:
+    """公告的發文身分（bank account）。lock 有就用 lock 的，沒有就走 agent→bank 對照表。
+
+    # 物理意義：sender 決定錢進誰的帳，猜錯等於把薪水發給別人。lock 是當下真相，
+    #          registry 是靜態對照 —— 兩個都查不到就回空字串，讓 caller 明確失敗而不是亂發。
+    """
+    root = _data_root()
+    try:
+        lock = json.loads((root / "_session" / f"_persona_{persona}.json").read_text(encoding="utf-8"))
+        if lock.get("bank_account"):
+            return lock["bank_account"]
+    except Exception:
+        pass
+    try:
+        agent = (load_persona(persona).get("agent") or "").strip()
+        reg = json.loads((root / "AwakenInit" / "_registry_meta.json").read_text(encoding="utf-8"))
+        return (reg.get("agent_banks") or {}).get(agent, "") or ""
+    except Exception:
+        return ""
+
+
+def build_announcement(message: str, sha: str, repo: str, personas: list, intro: str = "") -> str:
+    """commit 訊息 → 公告內文。
+
+    # 區塊職責：把 commit 訊息原樣端上酒館，只加一行標頭與一行參與者。
+    # 物理意義：commit 訊息本來就是寫給人看的；再叫人另外寫一份公告，等於同一件事寫兩遍 ——
+    #          寫兩遍的東西一定有一遍會被省略，而被省略的通常是後面那遍（所以錢才領不到）。
+    # 數值影響：trailer 行從公告裡剝掉（讀的人不需要看信箱），改成一行「參與者」。
+    #          intro（--announce-body）插在標題與 commit 內文之間 —— commit 訊息是寫給「日後查
+    #          history 的人」，開場白是寫給「現在在酒館的同事」，兩種讀者要的東西不一樣。
+    """
+    lines = [ln for ln in message.splitlines() if not ln.strip().startswith(TRAILER_PREFIX)]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    subject = lines[0].strip() if lines else "(無標題)"
+    rest = "\n".join(lines[1:]).strip()
+    label = "主專案" if repo in (".", "") else Path(repo).name
+    out = [f"📦 **{label} `{sha}`** — {subject}", ""]
+    if intro.strip():
+        out += [intro.strip(), ""]
+    if rest:
+        out += [rest, ""]
+    out.append(f"👥 參與者：{' / '.join('@' + p for p in personas)}")
+    return "\n".join(out)
+
+
+def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
+    """發酒館公告；回 (成功, 說明)。走 run_cmd.py Tavern，body 經檔案避免引號地獄。"""
+    here = Path(__file__).resolve().parent
+    run_cmd = here / "run_cmd.py"
+    if not run_cmd.exists():
+        return False, f"找不到 run_cmd.py：{run_cmd}"
+    tmp = here / f"_announce_{sha}.md"
+    try:
+        tmp.write_text(body, encoding="utf-8")
+        meta = json.dumps({"tag": "commit", "sha": sha, "category": "meta"}, ensure_ascii=False)
+        cmd = [sys.executable, str(run_cmd), "run", "Tavern",
+               "--arg", "op=post", "--arg", "room=tavern",
+               "--arg", f"sender_id={sender}", "--arg", f"persona={persona}",
+               "--arg", f"meta={meta}", "--wait-reply", "0",
+               "--arg-file", f"body={tmp}"]
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        ok = r.returncode == 0 and "Success" in (r.stdout or "")
+        return ok, (r.stdout or "").strip().splitlines()[-1] if r.stdout else (r.stderr or "").strip()
+    except Exception as e:
+        return False, str(e)
+    finally:
+        # 公告是 ephemeral 產物，不該留在 repo 裡等人誤 commit
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+
+
 def compose_message(body: str, trailers: list) -> str:
     """把 trailer 併到訊息尾端；已經有同一行就不重複加（重跑同一個指令不該長出兩份）。"""
     text = body.rstrip("\n")
@@ -112,6 +193,12 @@ def main() -> int:
     ap.add_argument("--allow-unset", action="store_true",
                     help="信箱未設定仍提交（預設拒絕 —— 假位址進了 history 就改不掉）")
     ap.add_argument("--dry-run", action="store_true", help="只印組出來的訊息，不提交")
+    ap.add_argument("--no-announce", action="store_true",
+                    help="不自動發酒館公告（預設會發 —— 領薪不該靠人記得）")
+    ap.add_argument("--announce-body", default="",
+                    help="公告的開場白（插在標題與 commit 內文之間，寫給現在在酒館的同事看）")
+    ap.add_argument("--announce-body-file", default="",
+                    help="同上，改從檔案讀（長文或含特殊字元時用）")
     args = ap.parse_args()
 
     if not args.persona:
@@ -162,11 +249,35 @@ def main() -> int:
     for t in trailers:
         print(f"  {t}")
     print()
-    # 領薪是漏最兇的一步（血證：新制上線後 source_kind=commit 曾 82 天零領取），
-    # 所以把 SHA 與該貼的 meta 直接吐出來，不要求任何人記得格式。
-    print(f"💰 領薪提醒 — 這筆 SHA `{sha}` 要發一則酒館公告才算數（一則訊息一個 SHA）：")
-    print(f"   meta: {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}   --wait-reply 0")
-    return EXIT_OK
+
+    if args.no_announce:
+        print(f"💰 未自動公告（--no-announce）。這筆 SHA `{sha}` 要發一則酒館公告才領得到（一則訊息一個 SHA）：")
+        print(f"   meta: {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}   --wait-reply 0")
+        return EXIT_OK
+
+    primary = args.persona[0]
+    sender = resolve_sender(primary)
+    if not sender:
+        print(f"⚠ 查不到 {primary} 的 bank（lock 與 registry 都沒有）—— 公告未發，錢沒領到。", file=sys.stderr)
+        print(f"   手動補：meta {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}", file=sys.stderr)
+        return EXIT_ANNOUNCE_FAIL
+
+    intro = args.announce_body
+    if args.announce_body_file:
+        try:
+            intro = Path(args.announce_body_file).read_text(encoding="utf-8")
+        except Exception as e:
+            print(f"⚠ 讀 --announce-body-file 失敗（改用空開場）：{e}", file=sys.stderr)
+    ok, detail = post_announcement(build_announcement(message, sha, args.repo, args.persona, intro),
+                                   sha, sender, primary)
+    if ok:
+        print(f"📣 酒館公告已發（sha={sha} / sender={sender}）—— **不要再手動貼一次**，同 SHA 貼兩次會付兩次錢。")
+        return EXIT_OK
+    # commit 已經落地了，這裡失敗只有錢沒領到 —— 講清楚是哪一半失敗，別讓人以為 commit 也沒成功。
+    print(f"⚠ commit 成功但公告發送失敗：{detail}", file=sys.stderr)
+    print(f"   commit 已落地（{sha}），只有領薪那步沒完成。手動補一則帶 "
+          f"meta {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}} 的酒館貼文即可。", file=sys.stderr)
+    return EXIT_ANNOUNCE_FAIL
 
 
 if __name__ == "__main__":

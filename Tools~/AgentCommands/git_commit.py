@@ -58,8 +58,12 @@ def git(repo: str, *args: str) -> subprocess.CompletedProcess:
 
 
 def build_trailers(personas: list, allow_unset: bool) -> tuple:
-    """persona 清單 → (trailer 行清單, 錯誤訊息清單)。順序保持輸入順序，重複的只留第一次。"""
-    lines, problems, seen = [], [], set()
+    """persona 清單 → (trailer 行清單, 錯誤訊息清單, 注意事項清單)。
+
+    注意事項 = 「能跑但值得知道」的狀況（例如信箱吃的是全域 fallback 而不是自己的）——
+    它不該擋提交，但也不該完全不出聲：那正是會被默默帶進 history 的那種東西。
+    """
+    lines, problems, notes, seen = [], [], [], set()
     for persona in personas:
         if persona in seen:
             continue
@@ -76,6 +80,8 @@ def build_trailers(personas: list, allow_unset: bool) -> tuple:
             problems.append(f"{persona} 的 agent 欄是空的（trailer 的身分會變成 ?）")
         info = resolve_email(persona)
         email = info["email"]
+        if info["source"] == "fallback":
+            notes.append(f"{persona} 的信箱吃全域 fallback（{email}），不是自己的位址")
         if email == UNSET_SENTINEL or not looks_like_email(email):
             msg = f"{persona} 的信箱未設定或格式可疑（{email}）—— 到 Editor 的 Persona & Agent 管理頁設定"
             if allow_unset:
@@ -84,7 +90,7 @@ def build_trailers(personas: list, allow_unset: bool) -> tuple:
                 problems.append(msg)
                 continue
         lines.append(f"{TRAILER_PREFIX} {agent or '?'}@{persona}({model or '?'}) <{email}>")
-    return lines, problems
+    return lines, problems, notes
 
 
 def resolve_sender(persona: str) -> str:
@@ -108,7 +114,8 @@ def resolve_sender(persona: str) -> str:
         return ""
 
 
-def build_announcement(message: str, sha: str, repo: str, personas: list, intro: str = "") -> str:
+def build_announcement(message: str, sha: str, repo: str, personas: list, intro: str = "",
+                       bump_of: str = "") -> str:
     """commit 訊息 → 公告內文。
 
     # 區塊職責：把 commit 訊息原樣端上酒館，只加一行標頭與一行參與者。
@@ -119,6 +126,12 @@ def build_announcement(message: str, sha: str, repo: str, personas: list, intro:
     #          history 的人」，開場白是寫給「現在在酒館的同事」，兩種讀者要的東西不一樣。
     """
     lines = [ln for ln in message.splitlines() if not ln.strip().startswith(TRAILER_PREFIX)]
+    if bump_of:
+        # pointer bump 的公告刻意極簡：帳要留（SHA 在 meta 裡），但版面不該跟主 commit 搶。
+        # 這是「控制訊息量在讀取端、不在寫入端」的實作 —— 事件照存，只是呈現壓到一行。
+        subject_only = (lines[0].strip() if lines else "(無標題)")
+        label_b = "主專案" if repo in (".", "") else Path(repo).name
+        return f"📦 **{label_b} `{sha}`** — {subject_only}（pointer bump，內容見 `{bump_of}` 那則）"
     while lines and not lines[-1].strip():
         lines.pop()
     subject = lines[0].strip() if lines else "(無標題)"
@@ -199,6 +212,10 @@ def main() -> int:
                     help="公告的開場白（插在標題與 commit 內文之間，寫給現在在酒館的同事看）")
     ap.add_argument("--announce-body-file", default="",
                     help="同上，改從檔案讀（長文或含特殊字元時用）")
+    ap.add_argument("--bump-of", default="",
+                    help="本筆是某主 commit 的 pointer bump：公告壓成一行並指向該 SHA（帳照領）")
+    ap.add_argument("--verbose", action="store_true",
+                    help="成功時印完整細節（預設只印一行 —— 成功路徑瘦到看不見，異常才佔版面）")
     args = ap.parse_args()
 
     if not args.persona:
@@ -210,7 +227,7 @@ def main() -> int:
         print("ERROR: commit 訊息是空的（用 -m / --message-file / stdin）", file=sys.stderr)
         return EXIT_BAD_ARGS
 
-    trailers, problems = build_trailers(args.persona, args.allow_unset)
+    trailers, problems, notes = build_trailers(args.persona, args.allow_unset)
     if problems:
         for msg in problems:
             print(f"ERROR: {msg}", file=sys.stderr)
@@ -243,12 +260,16 @@ def main() -> int:
         print(f"ERROR: git commit 失敗：{result.stderr.strip()}", file=sys.stderr)
         return EXIT_COMMIT_FAIL
 
-    print(result.stdout.strip())
     sha = git(args.repo, "rev-parse", "--short", "HEAD").stdout.strip()
-    print()
-    for t in trailers:
-        print(f"  {t}")
-    print()
+    # 成功路徑刻意安靜（Alert Fatigue，apex-one 2026-08-03 命名）：
+    # 每次成功都印同一塊五行，看第八次它就是背景 —— 我今天就是這樣沒看見自己的 --no-announce。
+    # 所以正常成功只留一行，細節走 --verbose；異常路徑維持大聲。
+    if args.verbose:
+        print(result.stdout.strip())
+        for t in trailers:
+            print(f"  {t}")
+    for n in notes:
+        print(f"⚠ {n}", file=sys.stderr)
 
     if args.no_announce:
         print(f"💰 未自動公告（--no-announce）。這筆 SHA `{sha}` 要發一則酒館公告才領得到（一則訊息一個 SHA）：")
@@ -263,15 +284,21 @@ def main() -> int:
         return EXIT_ANNOUNCE_FAIL
 
     intro = args.announce_body
+    if args.bump_of and (args.announce_body or args.announce_body_file):
+        print("⚠ --bump-of 與 --announce-body 同時給了；bump 公告刻意極簡，開場白已忽略。", file=sys.stderr)
     if args.announce_body_file:
         try:
             intro = Path(args.announce_body_file).read_text(encoding="utf-8")
         except Exception as e:
             print(f"⚠ 讀 --announce-body-file 失敗（改用空開場）：{e}", file=sys.stderr)
-    ok, detail = post_announcement(build_announcement(message, sha, args.repo, args.persona, intro),
-                                   sha, sender, primary)
+    ok, detail = post_announcement(
+        build_announcement(message, sha, args.repo, args.persona, intro, args.bump_of),
+        sha, sender, primary)
     if ok:
-        print(f"📣 酒館公告已發（sha={sha} / sender={sender}）—— **不要再手動貼一次**，同 SHA 貼兩次會付兩次錢。")
+        if args.verbose:
+            print(f"📣 酒館公告已發（sha={sha} / sender={sender}）—— 不要再手動貼一次，同 SHA 貼兩次會付兩次錢。")
+        else:
+            print(f"✓ {sha} 已提交並公告（{primary}{'／bump of ' + args.bump_of if args.bump_of else ''}）")
         return EXIT_OK
     # commit 已經落地了，這裡失敗只有錢沒領到 —— 講清楚是哪一半失敗，別讓人以為 commit 也沒成功。
     print(f"⚠ commit 成功但公告發送失敗：{detail}", file=sys.stderr)

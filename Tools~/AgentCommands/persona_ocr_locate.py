@@ -247,7 +247,7 @@ def locate(img, token: str, min_confidence: float, match_mode: str = "delimiter"
 
     result, _elapse = engine(np.array(img.convert("RGB")))
     name = normalize(token).strip(DELIMITERS) if match_mode == "delimiter" else normalize(token)
-    matches, near = [], []
+    matches, near, fuzzy = [], [], []
     for item in (result or []):
         if not item or len(item) < 3:
             continue
@@ -267,13 +267,71 @@ def locate(img, token: str, min_confidence: float, match_mode: str = "delimiter"
         hit = (_delimiter_match(norm, name) if match_mode == "delimiter" else (name in norm))
         if name and hit and conf_f >= min_confidence:
             matches.append(entry)
-        elif len(near) < MAX_NEAR_MISS and name and name in norm:
-            # 診斷用：名字出現但兩側沒有分隔符（或信度不足）時留證，
-            # 才分得出是 OCR 讀歪了、session 沒命名、還是只是聊天裡提到這個名字。
-            near.append(entry)
+        elif name and name in norm:
+            # 區塊職責: 模糊候選分類（Tim 2026-08-03 拍板 — 找不到精確 token 時的降級選拔池）。
+            # 物理意義: 小字號白字深底下 `##` 常被 OCR 吃掉一側或整組（實測 `#Basecamp##Bsr` / 裸 `summit`）。
+            #          形態先驗: 單側分隔符殘影(0.8) > 獨立成框的裸名(0.5) > 長句含名(0=排除, 那是
+            #          聊天內文 decoy 本尊, 模糊化最大的誤中源）。
+            # 數值影響: fuzzy 候選**不直接當命中** — 只進 zoom-confirm 選拔（見 zoom_confirm）,
+            #          確認前不影響任何行為; near 照舊留診斷。
+            start = norm.find(name)
+            before = norm[start - 1] if start > 0 else ""
+            after_i = start + len(name)
+            after = norm[after_i] if after_i < len(norm) else ""
+            if before in DELIMITERS or after in DELIMITERS:
+                entry["fuzzy_prior"] = 0.8
+                entry["fuzzy_form"] = "delimiter-remnant"
+                fuzzy.append(entry)
+            elif norm == name:
+                entry["fuzzy_prior"] = 0.5
+                entry["fuzzy_form"] = "bare-standalone"
+                fuzzy.append(entry)
+            elif len(near) < MAX_NEAR_MISS:
+                near.append(entry)   # 長句含名 → 純診斷, 不入模糊池（聊天內文 decoy）
     # 由上到下、再由左到右 — 讓 index 在同一畫面下穩定可重現（不依 OCR 回傳順序）。
     matches.sort(key=lambda m: (min(p[1] for p in m["box"]), min(p[0] for p in m["box"])))
-    return matches, near
+    return matches, near, fuzzy
+
+
+# 區塊職責: 模糊候選的放大確認 — 裁切候選框鄰域、放大重跑 OCR, 要求讀回（近）精確 token 才算數。
+# 物理意義: 權重只決定「先放大誰」, **不決定「選誰」** — 最終答案永遠要求一次高解析度的回讀
+#          （Tim 2026-08-03: 不趕時間, 用 retry 換精確）。誤中代價是游標點錯 session,
+#          所以確認門檻取「至少單側分隔符 + 信度達標」, 裸名即使高信度也不算確認。
+# 數值影響: 每顆候選一次 crop OCR (~0.3-1s); 確認後座標用放大回讀的框映射回原圖（更精準）,
+#          映射失敗才退回候選原框。
+def zoom_confirm(img, candidate: dict, name: str, min_confidence: float, zoom: int = 4):
+    """回 confirmed entry（影像座標, 含 match_kind 標記）或 None。"""
+    from PIL import Image
+    xs = [p[0] for p in candidate["box"]]
+    ys = [p[1] for p in candidate["box"]]
+    bw, bh = max(xs) - min(xs), max(ys) - min(ys)
+    pad_x, pad_y = max(bw * 1.5, 24), max(bh * 1.5, 12)
+    x0 = max(0, int(min(xs) - pad_x)); y0 = max(0, int(min(ys) - pad_y))
+    x1 = min(img.width, int(max(xs) + pad_x)); y1 = min(img.height, int(max(ys) + pad_y))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    crop = img.crop((x0, y0, x1, y1))
+    crop = crop.resize((crop.width * zoom, crop.height * zoom), Image.LANCZOS)
+    try:
+        z_matches, _near, z_fuzzy = locate(crop, f"##{name}##", min_confidence, "delimiter")
+    except Exception:
+        return None
+    # 確認優先序: 精確（雙側分隔符）→ 單側殘影且信度 ≥ 0.5; 裸名不算確認
+    pool = z_matches or [f for f in z_fuzzy
+                         if f.get("fuzzy_form") == "delimiter-remnant" and f["confidence"] >= 0.5]
+    if not pool:
+        return None
+    best = max(pool, key=lambda m: m["confidence"])
+    out = dict(candidate)
+    out["match_kind"] = "fuzzy-confirmed"
+    out["fuzzy_zoom_text"] = best["text"]
+    out["fuzzy_zoom_confidence"] = best["confidence"]
+    # 座標映射: 放大圖框 → 原圖座標（除回 zoom、加回 crop 原點）; 讓落點吃高解析度的精確框
+    try:
+        out["box"] = [[x0 + p[0] / zoom, y0 + p[1] / zoom] for p in best["box"]]
+    except Exception:
+        pass   # 映射失敗退回候選原框 — 位置略糙但仍在正確目標上
+    return out
 
 
 def to_screen(entry: dict, meta: dict) -> dict:
@@ -324,6 +382,10 @@ def main() -> int:
                     help="多重命中時怎麼選：leftmost=最靠左（預設）/ topmost=最上 / bottommost=最下（輸入框用）/ strict=不選、直接失敗")
     ap.add_argument("--match", default="delimiter", choices=["delimiter", "contains"],
                     help="比對方式：delimiter=##name## 兩側要有分隔符（預設）/ contains=包含即可（找 UI 固定文字用）")
+    ap.add_argument("--no-fuzzy", action="store_true",
+                    help="停用模糊降級（預設啟用：精確找不到時, 分隔符殘影/獨立裸名候選經放大重 OCR 確認後可採用）")
+    ap.add_argument("--zoom-factor", type=int, default=4,
+                    help="模糊確認的放大倍率（預設 4；小字號側欄建議 3~4）")
     ap.add_argument("--monitor", default="all", help="all（預設）/ primary / 實體 monitor index")
     ap.add_argument("--region", default="",
                     help="矩形掃描範圍 x,y,w,h（0~1 比例，相對選定 monitor 左上角）；空=整塊")
@@ -390,20 +452,41 @@ def main() -> int:
             except Exception as e:
                 print(f"WARN: 截圖存檔失敗: {e}", file=sys.stderr)
         try:
-            matches, near = locate(img, token, args.min_confidence, args.match)
+            matches, near, fuzzy = locate(img, token, args.min_confidence, args.match)
         except Exception as e:
             return emit(build_result(False, f"OCR 不可用: {e}", token, meta, [], []), EXIT_OCR_UNAVAILABLE)
         meta["attempt"] = attempt + 1
         meta["attempts"] = attempts
         if matches:
             break
+        # 區塊職責: 模糊降級 — 精確 0 命中且本回合有候選 → 加權排序取前 3 顆做 zoom-confirm。
+        # 物理意義: 排序權重 = 形態先驗 × OCR 信度 × 位置分（左半 1.0 / 右半 0.8 — 只影響
+        #          「先放大誰」的順序, 不定生死; fuzzy 誤中源集中在中右側的聊天內文）。
+        # 數值影響: 確認成功 → 當命中跳出（帶 match_kind=fuzzy-confirmed, 不靜默冒充精確）;
+        #          全部確認失敗 → 本回合維持未命中, 續 retry。
+        if fuzzy and args.match == "delimiter" and not args.no_fuzzy:
+            name = normalize(token).strip(DELIMITERS)
+            img_w = img.width or 1
+            def _rank(c):
+                left_frac = min(p[0] for p in c["box"]) / img_w
+                return c["fuzzy_prior"] * c["confidence"] * (1.0 if left_frac <= 0.5 else 0.8)
+            confirmed = []
+            for cand in sorted(fuzzy, key=_rank, reverse=True)[:3]:
+                hit = zoom_confirm(img, cand, name, args.min_confidence, max(2, args.zoom_factor))
+                if hit:
+                    confirmed.append(hit)
+            if confirmed:
+                matches = confirmed
+                meta["fuzzy_fallback"] = True
+                break
 
     matches = [to_screen(m, meta) for m in matches]
     near = [to_screen(n, meta) for n in near]
+    fuzzy_note = "（模糊降級: 放大重 OCR 確認）" if meta.get("fuzzy_fallback") else ""
     if not matches:
         return emit(build_result(False, f"畫面上找不到 {token}", token, meta, matches, near), EXIT_NO_MATCH)
     if len(matches) == 1:
-        return emit(build_result(True, "唯一命中", token, meta, matches, near, 0), EXIT_OK)
+        return emit(build_result(True, f"唯一命中{fuzzy_note}", token, meta, matches, near, 0), EXIT_OK)
 
     # 區塊職責: 多重命中的選擇政策。
     # 物理意義: 多重命中是常態不是異常 —— session 標題列與側邊清單一定同時出現同一個 token，
@@ -426,7 +509,7 @@ def main() -> int:
     else:
         chosen = min(range(len(matches)), key=lambda i: (matches[i]["screen_left"], matches[i]["screen_top"]))
         why = "取最靠左"
-    return emit(build_result(True, f"{len(matches)} 個命中，{why}（第 {chosen} 個）",
+    return emit(build_result(True, f"{len(matches)} 個命中，{why}（第 {chosen} 個）{fuzzy_note}",
                              token, meta, matches, near, chosen), EXIT_OK)
 
 

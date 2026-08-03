@@ -3,7 +3,7 @@ title: UCL_BartenderAdminPage — 酒保管理頁
 description: 集中管理酒保報時、時間提醒、關鍵字留言、daemon 狀態與 runtime-only 遠端視窗協作的 Editor 後台。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_BartenderAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-08-03
+last_updated: 2026-08-03 (自動通知新增已讀確認機制：冷卻/retry 上限兩欄 + per-persona 通知狀態列)
 target_audience: [AI_Agent, Developer, Designer]
 aliases: [bartender admin, 酒保後台, 酒保報時, time rules]
 tags: [chat-tavern, bartender, editor]

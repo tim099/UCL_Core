@@ -12,6 +12,8 @@ using UCL.Core.EditorLib.AgentCommands.Bartender;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
+using Cysharp.Threading.Tasks;
+using System.Threading.Tasks;
 
 namespace UCL.Core.EditorLib.Page
 {
@@ -170,9 +172,16 @@ namespace UCL.Core.EditorLib.Page
                 GUI.enabled = UCL_RemoteWindowControl.Enabled && selected != null && !m_LocateRunning;
                 if (GUILayout.Button("▶ 測試定位游標", UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 1f, 0.8f)), GUILayout.ExpandWidth(false)))
                 {
-                    m_LocateRunning = true;
-                    try { UCL_RemotePersonaLocator.RunCursorTest(selected, m_LocateOptions, out _); }
-                    finally { m_LocateRunning = false; }
+                    // 區塊職責：防連點旗標要活過整段 async — .Forget() 立刻返回, try/finally 同幀放旗等於沒鎖
+                    //（2026-08-03 async 化 review 抓到的回歸; 寫法對齊 ListMonitors 的 guard 模式）。
+                    async UniTask RunCursorTest()
+                    {
+                        m_LocateRunning = true;
+                        try { await UCL_RemotePersonaLocator.RunCursorTest(selected, m_LocateOptions); }
+                        catch (Exception ex) { Debug.LogException(ex); }
+                        finally { m_LocateRunning = false; }
+                    }
+                    RunCursorTest().Forget();
                 }
                 GUI.enabled = true;
                 GUILayout.Label(selected == null ? ""
@@ -184,27 +193,53 @@ namespace UCL.Core.EditorLib.Page
             DrawLocatePreview();
             DrawLocateCandidates();
         }
-
+        bool m_MonitorListLoading = false;
+        public async UniTask ListMonitors()
+        {
+            if (m_MonitorListLoading) return;
+            m_MonitorListLoading = true;
+            try
+            {
+                m_Monitors = await UCL_RemotePersonaLocator.ListMonitors();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) 
+            { 
+                Debug.LogException(ex); 
+            }
+            m_MonitorListLoading = false;
+        }
         // 區塊職責：掃描範圍（哪塊螢幕 + 矩形範圍）與重試節奏的設定列。
         // 物理意義：session 清單固定在視窗左側，掃全桌面既慢又會撈到別的視窗上的同名文字；
         //          重試存在的理由是視窗剛被帶到前景時還沒重繪完，第一張抓到的可能是舊畫面。
         // 數值影響：範圍是 0~1 比例（相對選定螢幕），解析度無關；次數含第一次，命中即跳出不空等。
+        // ⚠ IMGUI 繪製方法必須維持同步 — 若改 async 且中途 await, 恢復點落在 OnGUI 之外會炸 layout
+        //   （2026-08-03 review; async 的部分只有 ListMonitors, 由它自己背 guard）。
         void DrawLocateScanSettings()
         {
-            m_Monitors ??= UCL_RemotePersonaLocator.ListMonitors();
+            if(m_Monitors == null)
+            {
+                ListMonitors().Forget();
+            }
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Label("掃描螢幕", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(30))))
-                    m_Monitors = UCL_RemotePersonaLocator.ListMonitors();
+                {
+                    ListMonitors().Forget();
+                }
                 if (GUILayout.Toggle(m_LocateOptions.Monitor == "all", "all（全桌面）", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     m_LocateOptions.Monitor = "all";
-                foreach (var monitor in m_Monitors)
+                if(m_Monitors != null)
                 {
-                    string key = monitor.Index.ToString();
-                    if (GUILayout.Toggle(m_LocateOptions.Monitor == key, monitor.Label, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        m_LocateOptions.Monitor = key;
+                    foreach (var monitor in m_Monitors)
+                    {
+                        string key = monitor.Index.ToString();
+                        if (GUILayout.Toggle(m_LocateOptions.Monitor == key, monitor.Label, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            m_LocateOptions.Monitor = key;
+                    }
                 }
+
                 GUILayout.FlexibleSpace();
             }
             using (new GUILayout.HorizontalScope())
@@ -327,10 +362,13 @@ namespace UCL.Core.EditorLib.Page
             DrawBorder(region, new Color(1f, 0.7f, 0.2f), 1.5f);
         }
 
-        void RefreshLocatePreview()
+        async UniTask RefreshLocatePreview()
         {
-            if (!UCL_RemotePersonaLocator.CapturePreview(m_LocateOptions.Monitor, 640, out m_LocatePreviewError))
+            var result = await UCL_RemotePersonaLocator.CapturePreview(m_LocateOptions.Monitor, 640);
+            if (!result.success)
             {
+                // 失敗必留話 — 舊版 out 參數會帶錯誤訊息, async 化時漏接會變靜默失敗（2026-08-03 review）
+                m_LocatePreviewError = string.IsNullOrEmpty(result.error) ? "預覽擷取失敗（未回報原因）" : result.error;
                 m_LocatePreview = null;
                 return;
             }
@@ -411,6 +449,13 @@ namespace UCL.Core.EditorLib.Page
                                 EditorGUILayout.FloatField((float)UCL_RemoteNotifyService.IntervalSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55))), 5f, 3600f);
                             GUILayout.Label("通知文字", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                             UCL_RemoteNotifyService.NotifyText = EditorGUILayout.TextField(UCL_RemoteNotifyService.NotifyText, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                            // 已讀確認機制的兩顆旋鈕（Tim 2026-08-03）：冷卻=無條件頻率限制; cap 達標停戳+酒館 @Tim
+                            GUILayout.Label("冷卻(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_RemoteNotifyService.CooldownSeconds = Mathf.Clamp(
+                                EditorGUILayout.FloatField(UCL_RemoteNotifyService.CooldownSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 3600f);
+                            GUILayout.Label("retry 上限", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_RemoteNotifyService.RetryCap = Mathf.Clamp(
+                                EditorGUILayout.IntField(UCL_RemoteNotifyService.RetryCap, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))), 1, 20);
                             UCL_RemoteNotifyService.SendEnter = EditorGUILayout.ToggleLeft("輸入後送出 Enter",
                                 UCL_RemoteNotifyService.SendEnter, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                             if (GUILayout.Button("💾 保存", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
@@ -418,8 +463,11 @@ namespace UCL.Core.EditorLib.Page
                             GUI.enabled = UCL_RemoteWindowControl.Enabled;
                             if (GUILayout.Button("▶ 立即執行一次", UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 1f, 0.8f)), GUILayout.ExpandWidth(false)))
                             {
-                                UCL_RemoteNotifyService.RunOnce(true, out string summary);
-                                m_NotifyStatus = summary;
+                                async UniTask RunOnce()
+                                {
+                                    m_NotifyStatus = (await UCL_RemoteNotifyService.RunOnce(true)).summary;
+                                };
+                                RunOnce().Forget();
                             }
                             GUI.enabled = true;
                             GUILayout.FlexibleSpace();
@@ -452,6 +500,15 @@ namespace UCL.Core.EditorLib.Page
                         }
                         GUILayout.Label($"通知池（{m_NotifyPool.Count}）— 權重＝新 @ 次數×10；平手看誰比較久沒被通知", UCL_GUIStyle.LabelStyle);
                         foreach (var candidate in m_NotifyPool) GUILayout.Label($"　• {candidate.Describe()}", UCL_GUIStyle.LabelStyle);
+                        // 已讀/冷卻/停戳狀態列 — 只列有事的 persona（無 pending 且不在冷卻的不佔版面）
+                        var notifyStates = UCL_RemoteNotifyService.DescribeNotifyStates();
+                        if (notifyStates.Count > 0)
+                        {
+                            GUILayout.Label("通知狀態（已讀確認機制）：", UCL_GUIStyle.LabelStyle);
+                            foreach (var line in notifyStates)
+                                GUILayout.Label($"　• {line}", new GUIStyle(UCL_GUIStyle.LabelStyle)
+                                { normal = { textColor = line.Contains("🔴") ? new Color(1f, 0.5f, 0.5f) : UCL_GUIStyle.LabelStyle.normal.textColor } });
+                        }
                         GUILayout.Label($"最近一次：{UCL_RemoteNotifyService.LastRunSummary}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
                         if (!string.IsNullOrEmpty(m_NotifyStatus))
                             GUILayout.Label(m_NotifyStatus, new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });

@@ -11,6 +11,8 @@ using System.Text;
 using UnityEngine;
 using UCL.Core.JsonLib;
 using UCL.Core.EditorLib.AgentCommands;
+using Cysharp.Threading.Tasks;
+using System.Threading.Tasks;
 
 namespace UCL.Core.EditorLib.AgentCommands.Bartender
 {
@@ -65,7 +67,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public int Attempts = 3;
         public float AttemptDelaySec = 0.6f;
         public int MatchIndex = -1;
-        /// <summary>多重命中的選擇政策：leftmost（預設）/ topmost / strict。</summary>
+        /// <summary>多重命中的選擇政策：leftmost（預設）/ topmost / strict。
+        /// 註（2026-08-03 Tim 拍板）：標題列 token 成唯一命中時直接用**無害** —— 能 OCR 到該 session 的
+        /// 標題列就代表視窗已在前景、就是目標 session，不做左側資格守門（曾實作 max-left-frac 後撤除）。</summary>
         public string SelectPolicy = "leftmost";
         // 區塊職責：移到目標後的後續動作（Tim 2026-08-02 指定的下一步）。
         // 物理意義：按左鍵＝把 session 選起來；輸入文字＝在輸入框裡打指令。**沒有送 Enter 的路徑**，
@@ -195,20 +199,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// 任一步失敗就停在該步，不會「找不到就隨便移一下」。
         /// </summary>
         /// <param name="matchIndex">多重命中時要選第幾個；-1 表示不指定（多重命中即停止並列出候選）。</param>
-        public static bool RunCursorTest(UCL_PersonaLockInfo lockInfo, UCL_PersonaLocateOptions options, out string summary)
+        public static async UniTask<(bool success, string summary)> RunCursorTest(UCL_PersonaLockInfo lockInfo, UCL_PersonaLocateOptions options)
         {
+            string summary;
             options ??= new UCL_PersonaLocateOptions();
             if (lockInfo == null)
             {
                 summary = "沒有選定 persona（或該 persona 的 lock 已消失）";
                 UCL_RemoteWindowControl.SetLastResult(summary);
-                return false;
+                return (false, summary);
             }
             if (lockInfo.ActualAgent == UCL_ActualAgent.None)
             {
                 summary = $"{lockInfo.Persona} 的 actual_agent 是空的（原始值「{lockInfo.ActualAgentRaw}」）；請先在登入狀態頁套用";
                 UCL_RemoteWindowControl.SetLastResult(summary);
-                return false;
+                return (false, summary);
             }
 
             string windowTarget = UCL_ActualAgentUtility.ToWindowTarget(lockInfo.ActualAgent);
@@ -221,28 +226,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 summary = $"切換視窗失敗：{activateResult}";
                 UCL_RemoteWindowControl.SetLastResult(summary);
                 WriteDiagnostic(lockInfo, windowTarget, activateResult, null, summary);
-                return false;
+                return (false, summary);
             }
 
-            var result = Locate(lockInfo.SessionToken, options);
+            var result = await Locate(lockInfo.SessionToken, options);
             LastResult = result;
             if (!result.Ok)
             {
                 summary = $"OCR 定位失敗：{result.Reason}";
                 UCL_RemoteWindowControl.SetLastResult(summary);
                 WriteDiagnostic(lockInfo, windowTarget, activateResult, result, summary);
-                return false;
+                return (false, summary);
             }
 
             var target = result.Selected;
             bool moved = UCL_RemoteWindowControl.TryMoveCursor(target.CenterX, target.CenterY, out string moveResult);
             string actionResult = moved
-                ? RunPostMoveActions(options, lockInfo.ActualAgent)
+                ? await RunPostMoveActions(options, lockInfo.ActualAgent)
                 : "（游標沒到位，後續動作全部略過）";
             summary = $"{lockInfo.Persona} → {windowTarget}｜{result.Reason}｜{moveResult}｜{actionResult}";
             UCL_RemoteWindowControl.SetLastResult(summary);
             WriteDiagnostic(lockInfo, windowTarget, activateResult, result, summary);
-            return moved;
+            return (moved, summary);
         }
 
         // 區塊職責：游標到位之後的按左鍵 / 輸入文字。
@@ -250,7 +255,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          我剛切過去的那一個」。焦點被搶走時停手，而不是往別人的視窗裡點下去。
         // 數值影響：不做這個檢查最壞情況是把 /ucl-ding 打進別人的聊天框並留下痕跡；檢查成本是一次
         //          GetForegroundWindow。Enter 永遠不送 —— 這裡沒有那條路徑。
-        static string RunPostMoveActions(UCL_PersonaLocateOptions options, UCL_ActualAgent agent)
+        static async UniTask<string> RunPostMoveActions(UCL_PersonaLocateOptions options, UCL_ActualAgent agent)
         {
             if (!options.ClickAfterMove) return "未啟用點擊（只移動游標）";
             var expected = UCL_RemoteWindowControl.LastActivatedWindow;
@@ -265,7 +270,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             if (options.TypeDelaySec > 0f) Sleep(options.TypeDelaySec);
             // per-agent 前置：有些桌面工具點完 session 焦點不會自己進輸入框（Antigravity 2.0），要補一段。
-            string prepare = UCL_RemoteAgentInput.PrepareInput(agent, options);
+            string prepare = await UCL_RemoteAgentInput.PrepareInput(agent, options);
             // 點擊可能切換了 session / 開了新視窗，打字前再確認一次焦點歸屬。
             if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string guardNote2))
                 return $"{clickResult}；但{guardNote2}，不輸入文字";
@@ -279,7 +284,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// <summary>
         /// 只跑 OCR 判讀，不切視窗也不動游標 —— 給「先看畫面上有幾個候選」用。
         /// </summary>
-        public static UCL_PersonaOcrResult Locate(string token, UCL_PersonaLocateOptions options,
+        public static async UniTask<UCL_PersonaOcrResult> Locate(string token, UCL_PersonaLocateOptions options,
                                                   int timeoutSec = DefaultTimeoutSec)
         {
             options ??= new UCL_PersonaLocateOptions();
@@ -294,16 +299,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (!string.IsNullOrEmpty(options.SelectPolicy)) args.Append($" --select {options.SelectPolicy}");
             if (!string.IsNullOrEmpty(options.MatchMode)) args.Append($" --match {options.MatchMode}");
 
-            if (!RunScript(args.ToString(), timeoutSec, out string stdout, out string stderr,
-                           out int exitCode, out string error))
+            var scriptResult = await RunScript(args.ToString(), timeoutSec);
+            if (!scriptResult.success)
             {
-                result.Reason = error;
-                result.RawStderr = stderr;
+                result.Reason = scriptResult.error;
+                result.RawStderr = scriptResult.stderr;
                 return result;
             }
-            result.ExitCode = exitCode;
-            result.RawStdout = stdout;
-            result.RawStderr = stderr;
+            result.ExitCode = scriptResult.exitCode;
+            result.RawStdout = scriptResult.stdout;
+            result.RawStderr = scriptResult.stderr;
             ParseInto(result);
             return result;
         }
@@ -312,33 +317,39 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// 抓一張選定螢幕的縮圖當 rect 預覽底圖 —— 不跑 OCR，所以按下去是秒級回應。
         /// 預覽刻意抓「整塊螢幕」而不是 rect 內：拿裁好的圖去調裁切範圍，永遠看不到自己漏掉了什麼。
         /// </summary>
-        public static bool CapturePreview(string monitor, int maxWidth, out string error)
+        public static async UniTask<(bool success, string error)> CapturePreview(string monitor, int maxWidth)
         {
+            string error = "";
             UCL_BartenderIO.EnsureBartenderDir();
             string args = $"--monitor {monitor} --preview \"{PreviewPath}\" --preview-max-width {maxWidth}";
-            if (!RunScript(args, QuickTimeoutSec, out string stdout, out string stderr, out _, out error))
-                return false;
+            var result = await RunScript(args, QuickTimeoutSec);
+            if (!result.success)
+            {
+                error = result.error;
+                return (false, error);
+            }
             try
             {
-                var data = JsonData.ParseJson(stdout);
-                if (data != null && data.GetBool("ok", false)) { error = ""; return true; }
-                error = data == null ? $"預覽輸出不是合法 JSON：{Truncate(stdout, 200)}"
+                var data = JsonData.ParseJson(result.stdout);
+                if (data != null && data.GetBool("ok", false)) { error = ""; return (true, error); }
+                error = data == null ? $"預覽輸出不是合法 JSON：{Truncate(result.stdout, 200)}"
                                      : data.GetString("reason", "預覽失敗");
             }
             catch (Exception e) { error = $"解析預覽輸出失敗：{e.Message}"; }
-            if (string.IsNullOrEmpty(error) && !string.IsNullOrEmpty(stderr)) error = Truncate(stderr, 200);
-            return false;
+            if (string.IsNullOrEmpty(error) && !string.IsNullOrEmpty(result.stderr)) error = Truncate(result.stderr, 200);
+            return (false, error);
         }
 
         /// <summary>列舉實體螢幕；由 python 端以 Win32 取得，與 ScreenStream 同一個座標系。</summary>
-        public static List<UCL_MonitorInfo> ListMonitors()
+        public static async UniTask<List<UCL_MonitorInfo>> ListMonitors()
         {
             var list = new List<UCL_MonitorInfo>();
-            if (!RunScript("--list-monitors", QuickTimeoutSec, out string stdout, out _, out _, out _))
+            var result = await RunScript("--list-monitors", QuickTimeoutSec);
+            if (!result.success)
                 return list;
             try
             {
-                var data = JsonData.ParseJson(stdout);
+                var data = JsonData.ParseJson(result.stdout);
                 var arr = data?.Get("monitors");
                 if (arr == null || !arr.IsArray) return list;
                 for (int i = 0; i < arr.Count; i++)
@@ -366,15 +377,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 區塊職責：所有 python 呼叫的單一出口 —— UTF-8、非阻塞讀兩條 pipe、逾時 kill、PID 進註冊中心。
         // 物理意義：兩條 pipe 都要掛 handler 再 WaitForExit，否則 stdout 塞滿時雙方互等。
         // 數值影響：逾時即 Kill 並回 false；finally 一定 Unregister，不留孤兒記錄。
-        static bool RunScript(string arguments, int timeoutSec,
-                              out string stdout, out string stderr, out int exitCode, out string error)
+        static async UniTask<(bool success, string stdout, string stderr, int exitCode, string error)> RunScript(string arguments, int timeoutSec)
         {
-            stdout = stderr = error = "";
-            exitCode = -1;
+            string stdout = "";
+            string stderr = "";
+            int exitCode = -1;
+            string error = "";
+            
             string scriptPath = ScriptPath;
-            if (!File.Exists(scriptPath)) { error = $"找不到判讀腳本：{scriptPath}"; return false; }
+            if (!File.Exists(scriptPath)) { error = $"找不到判讀腳本：{scriptPath}"; return (false, stdout, stderr, exitCode, error); }
             string pythonExe = ResolvePython();
-            if (string.IsNullOrEmpty(pythonExe)) { error = "PATH 中找不到 python"; return false; }
+            if (string.IsNullOrEmpty(pythonExe)) { error = "PATH 中找不到 python"; return (false, stdout, stderr, exitCode, error); }
 
             var outBuf = new StringBuilder();
             var errBuf = new StringBuilder();
@@ -394,29 +407,37 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8,
                 };
-                proc = new Process { StartInfo = psi };
-                proc.OutputDataReceived += (s, e) => { if (e.Data != null) outBuf.AppendLine(e.Data); };
-                proc.ErrorDataReceived += (s, e) => { if (e.Data != null) errBuf.AppendLine(e.Data); };
-                proc.Start();
-                pid = proc.Id;
-                UCL_ProcessRegistryService.Register(proc, ProcessTag,
-                    "persona session token OCR 判讀 (persona_ocr_locate.py)", nameof(UCL_RemotePersonaLocator),
-                    allowMultiple: true);
-                proc.BeginOutputReadLine();
-                proc.BeginErrorReadLine();
-                if (!proc.WaitForExit(timeoutSec * 1000))
+                bool success = false;
+                await Task.Run(() => 
                 {
-                    try { proc.Kill(); } catch { /* 已自行結束 */ }
-                    stderr = errBuf.ToString().Trim();
-                    error = $"判讀逾時（>{timeoutSec}s）已中止";
-                    return false;
-                }
-                exitCode = proc.ExitCode;
+                    proc = new Process { StartInfo = psi };
+                    proc.OutputDataReceived += (s, e) => { if (e.Data != null) outBuf.AppendLine(e.Data); };
+                    proc.ErrorDataReceived += (s, e) => { if (e.Data != null) errBuf.AppendLine(e.Data); };
+                    proc.Start();
+                    pid = proc.Id;
+                    UCL_ProcessRegistryService.Register(proc, ProcessTag,
+                        "persona session token OCR 判讀 (persona_ocr_locate.py)", nameof(UCL_RemotePersonaLocator),
+                        allowMultiple: true);
+                    proc.BeginOutputReadLine();
+                    proc.BeginErrorReadLine();
+                    if (!proc.WaitForExit(timeoutSec * 1000))
+                    {
+                        try { proc.Kill(); } catch { /* 已自行結束 */ }
+                        stderr = errBuf.ToString().Trim();
+                        error = $"判讀逾時（>{timeoutSec}s）已中止";
+                        return;
+                    }
+                    success = true;
+                    exitCode = proc.ExitCode;
+                });
+                if(!success) return (false, stdout, stderr, exitCode, error);
+
             }
+            catch (OperationCanceledException) { error = "判讀逾時（被取消）"; return (false, stdout, stderr, exitCode, error); }
             catch (Exception e)
             {
                 error = $"啟動判讀腳本失敗：{e.Message}";
-                return false;
+                return (false, stdout, stderr, exitCode, error);
             }
             finally
             {
@@ -425,7 +446,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
             stdout = outBuf.ToString().Trim();
             stderr = errBuf.ToString().Trim();
-            return true;
+            return (true, stdout, stderr, exitCode, error);
         }
 
         // 區塊職責：把 python 的單行 JSON 轉成 C# 結果物件。

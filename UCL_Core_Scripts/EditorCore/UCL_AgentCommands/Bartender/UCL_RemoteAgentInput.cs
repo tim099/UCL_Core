@@ -5,7 +5,9 @@
 // 數值影響：新增一個桌面工具＝在 Profiles 加一個 case，其餘流程不動；沒有 case 的一律視為「會自動 focus」，
 //          也就是維持舊行為，不會因為漏加設定就整條線壞掉。
 #if UNITY_EDITOR && UNITY_STANDALONE_WIN
+using Cysharp.Threading.Tasks;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UCL.Core.EditorLib.AgentCommands;
 
 namespace UCL.Core.EditorLib.AgentCommands.Bartender
@@ -78,7 +80,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// 執行該 agent 的輸入前置動作。回傳描述字串（無論有沒有動作都回，讓紀錄看得出走了哪條路）。
         /// </summary>
         /// <param name="focusDelaySeconds">送出快捷鍵後等多久再打字 —— 焦點切換需要時間，太快打字會落在舊焦點上。</param>
-        public static string PrepareInput(UCL_ActualAgent agent, UCL_PersonaLocateOptions options)
+        public static async UniTask<string> PrepareInput(UCL_ActualAgent agent, UCL_PersonaLocateOptions options)
         {
             var profile = Get(agent);
             float delay = options?.FocusDelaySec ?? 0.5f;
@@ -95,7 +97,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     return $"輸入前置：{profile.HotkeyLabel} 已送出並等 {delay:0.##}s";
 
                 case UCL_FocusMode.LocatePlaceholder:
-                    return LocateAndClickPlaceholder(profile, options, delay);
+                    return await LocateAndClickPlaceholder(profile, options, delay);
             }
             return "輸入前置：未知模式";
         }
@@ -105,7 +107,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          與「送一顆可能沒生效的快捷鍵」都可靠，因為**失敗會有畫面證據**（near-miss 留在結果裡）。
         // 數值影響：掃整塊選定螢幕（輸入框在視窗底部，套用主流程那個左側矩形會直接掃不到）；
         //          取最下方命中 —— 對話區可能出現同一段字，輸入框永遠在最下面。
-        static string LocateAndClickPlaceholder(UCL_AgentInputProfile profile, UCL_PersonaLocateOptions options, float delay)
+        static async Task<string> LocateAndClickPlaceholder(UCL_AgentInputProfile profile, UCL_PersonaLocateOptions options, float delay)
         {
             var probe = new UCL_PersonaLocateOptions
             {
@@ -118,7 +120,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 MatchMode = "contains",
                 MatchIndex = -1,
             };
-            var result = UCL_RemotePersonaLocator.Locate(profile.PlaceholderText, probe);
+            var result = await UCL_RemotePersonaLocator.Locate(profile.PlaceholderText, probe);
             if (!result.Ok || result.Selected == null)
                 return $"輸入前置：找不到輸入框（比對「{profile.PlaceholderText}」— {result.Reason}）";
             var box = result.Selected;

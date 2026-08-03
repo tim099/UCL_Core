@@ -110,9 +110,60 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawFoldSection("AgentSkillConceptFold", "ℹ 概覽", DrawConcept, true);
             GUILayout.Space(8);
-            DrawFoldSection("AgentSkillInstallFold", "🧩 Skills 同步", DrawOneClickInstall, true);
+            DrawFoldSection("AgentSkillInstallFold", "🧩 Skills 同步", DrawOneClickInstall, false,
+                () => {
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool anyInstalling = m_InstallingSet.Count > 0;
+                    bool anyBlocked = false;
+                    foreach (var t in AllTargets)
+                    {
+                        if (m_StatusByTarget.TryGetValue(t, out var st) &&
+                            (st == InstallStatus.NoProjectRoot || st == InstallStatus.NoUCLCore))
+                            anyBlocked = true;
+                    }
+
+                    using (new EditorGUI.DisabledScope(anyInstalling || anyBlocked))
+                    {
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.InstallAll"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)),
+                            GUILayout.Width(220), GUILayout.Height(32)))
+                        {
+                            RunInstallAll();
+                        }
+                        // 區塊職責：「強制同步全部」— 帶 --force-overwrite 重跑所有 target
+                        // 物理意義：一鍵安裝因 local-edit 保護跳過檔案時的顯式覆蓋出口；
+                        //          使用者明知會蓋掉本地改動才按（橘色按鈕示警，與跳過警告同色系）
+                        // 數值影響：對被跳過的檔案強制寫入 source 內容並刷新 .ucl_source 記錄
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.ForceSyncAll"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)),
+                            GUILayout.Width(260), GUILayout.Height(32)))
+                        {
+                            RunInstallAll(force: true);
+                        }
+                    }
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_StatusDirty = true;
+                    }
+                }
+            });
             GUILayout.Space(8);
-            DrawFoldSection("AgentEntryDocsFold", "📄 Agent Entry Documents", DrawEntryDocsInstall, true);
+            DrawFoldSection("AgentEntryDocsFold", "📄 Agent Entry Documents", DrawEntryDocsInstall, false, 
+                () => {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        using (new EditorGUI.DisabledScope(docsFoldAnyBlocked || m_InstallingSet.Count > 0))
+                        {
+                            if (GUILayout.Button("Sync All Entry Documents", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f))))
+                                RunInstallAllEntryDocs();
+                            if (GUILayout.Button("Force Sync All Entries", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f))))
+                                RunInstallAllEntryDocs(force: true);
+                        }
+                        if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            m_StatusDirty = true;
+                    }
+                });
             GUILayout.Space(8);
             DrawFoldSection("AgentSkillMatrixFold", "▦ Per-Agent × Per-Skill", DrawAgentMatrixPlaceholder, false);
             GUILayout.Space(8);
@@ -1072,7 +1123,7 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：以 Control Panel 同款 header 將既有管理內容包成可折疊區塊。
         // 物理意義：同步與矩陣資訊密度高，折疊可讓使用者只展開當前要操作的區段。
         // 數值影響：收合時不繪製 body，減少 GUI 配置；狀態資料仍由 RefreshStatus 正常維護。
-        void DrawFoldSection(string key, string title, Action body, bool defaultExpanded)
+        void DrawFoldSection(string key, string title, Action body, bool defaultExpanded, Action header = null)
         {
             using (new GUILayout.VerticalScope("box"))
             {
@@ -1081,6 +1132,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     expanded = UCL_GUILayout.Toggle(m_FoldDic, key, 21, iDefaultValue: defaultExpanded);
                     GUILayout.Label($"<b>{title}</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    header?.Invoke();
                     GUILayout.FlexibleSpace();
                 }
                 if (expanded) body?.Invoke();
@@ -1116,7 +1168,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.ConceptBody"), WrapLabelStyle);
             }
         }
-
         void DrawOneClickInstall()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -1138,46 +1189,10 @@ namespace UCL.Core.EditorLib.Page
                 {
                     DrawTargetRow(t);
                 }
-
-                GUILayout.Space(4);
-                using (new GUILayout.HorizontalScope())
-                {
-                    bool anyInstalling = m_InstallingSet.Count > 0;
-                    bool anyBlocked = false;
-                    foreach (var t in AllTargets)
-                    {
-                        if (m_StatusByTarget.TryGetValue(t, out var st) &&
-                            (st == InstallStatus.NoProjectRoot || st == InstallStatus.NoUCLCore))
-                            anyBlocked = true;
-                    }
-
-                    using (new EditorGUI.DisabledScope(anyInstalling || anyBlocked))
-                    {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.InstallAll"),
-                            UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)),
-                            GUILayout.Width(220), GUILayout.Height(32)))
-                        {
-                            RunInstallAll();
-                        }
-                        // 區塊職責：「強制同步全部」— 帶 --force-overwrite 重跑所有 target
-                        // 物理意義：一鍵安裝因 local-edit 保護跳過檔案時的顯式覆蓋出口；
-                        //          使用者明知會蓋掉本地改動才按（橘色按鈕示警，與跳過警告同色系）
-                        // 數值影響：對被跳過的檔案強制寫入 source 內容並刷新 .ucl_source 記錄
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.ForceSyncAll"),
-                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)),
-                            GUILayout.Width(260), GUILayout.Height(32)))
-                        {
-                            RunInstallAll(force: true);
-                        }
-                    }
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        m_StatusDirty = true;
-                    }
-                }
             }
         }
 
+        bool docsFoldAnyBlocked = false;
         // 區塊職責：單一 target 的狀態 + 安裝按鈕橫列
         // 物理意義：把 status enum 翻成顏色 / label / 按鈕文字 + dst 路徑顯示，
         //          使用者一眼可看到「Claude 已同步、Antigravity 尚未安裝」之類的狀況
@@ -1192,13 +1207,13 @@ namespace UCL.Core.EditorLib.Page
                 var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
                 GUILayout.Label("Agent Entry Documents", titleStyle);
                 GUILayout.Label("Manage the root rules each agent actually loads. Source and destination come from AgentTemplateManifest.json.", WrapLabelStyle);
-                bool anyBlocked = false;
+                
                 foreach (var target in AllTargets)
                 {
                     InstallStatus status = m_EntryStatusByTarget.TryGetValue(target, out var value)
                         ? value : InstallStatus.NotInstalled;
                     bool canInstall = status != InstallStatus.NoProjectRoot && status != InstallStatus.NoUCLCore;
-                    if (!canInstall) anyBlocked = true;
+                    if (!canInstall) docsFoldAnyBlocked = true;
                     string detail = m_EntryDetailByTarget.TryGetValue(target, out var text) ? text : "";
                     Color statusColor = status == InstallStatus.Synced ? new Color(0.6f, 0.9f, 0.6f)
                         : status == InstallStatus.Stale ? new Color(1f, 0.65f, 0.25f)
@@ -1218,18 +1233,6 @@ namespace UCL.Core.EditorLib.Page
                                 RunInstallEntryDocs(target, force: true);
                         }
                     }
-                }
-                using (new GUILayout.HorizontalScope())
-                {
-                    using (new EditorGUI.DisabledScope(anyBlocked || m_InstallingSet.Count > 0))
-                    {
-                        if (GUILayout.Button("Sync All Entry Documents", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)), GUILayout.Height(28)))
-                            RunInstallAllEntryDocs();
-                        if (GUILayout.Button("Force Sync All Entries", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)), GUILayout.Height(28)))
-                            RunInstallAllEntryDocs(force: true);
-                    }
-                    if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        m_StatusDirty = true;
                 }
             }
         }

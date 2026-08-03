@@ -106,7 +106,7 @@ namespace UCL.Core.EditorLib.Page
 
             // 注意：不要在這裡再開 BeginScrollView — UCL_EditorPage.OnGUI 已經包了 ScrollViewScope。
             // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException（Unity 6 才會被內部靜默 recover）。
-            DrawHeader();
+            //DrawHeader();
             GUILayout.Space(8);
             DrawFoldSection("AgentSkillConceptFold", "ℹ 概覽", DrawConcept, true);
             GUILayout.Space(8);
@@ -662,6 +662,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 Application.OpenURL(UCL_URL.ResolveURL("ucl_core:Skills~/README.md"));
             }
+            GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Subtitle"), UCL_GUIStyle.LabelStyle);
         }
         // 區塊職責：direct content compare — 源 skill 目錄 vs 已裝目錄，逐檔比對「內文是否相同」。
         // 物理意義：不算 hash（Tim 2026-07-14 拍板「甚至不用 hash，直接比對內文」）。claude 是原樣複製
@@ -1136,27 +1137,6 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.FlexibleSpace();
                 }
                 if (expanded) body?.Invoke();
-            }
-        }
-
-        void DrawHeader()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                //var titleStyle = new GUIStyle(UCL_GUIStyle.LabelStyle)
-                //{
-                //    fontSize = 20,
-                //    fontStyle = FontStyle.Bold,
-                //    alignment = TextAnchor.MiddleCenter,
-                //};
-                //GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Title"), titleStyle);
-
-                var sub = new GUIStyle(UCL_GUIStyle.LabelStyle)
-                {
-                    alignment = TextAnchor.MiddleCenter,
-                    fontStyle = FontStyle.Italic,
-                };
-                GUILayout.Label(UCL_CodeLocalize.Get("AgentSkill.Subtitle"), sub);
             }
         }
 

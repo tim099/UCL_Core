@@ -133,6 +133,37 @@ def resolve_model(persona: str) -> dict:
     return {"model": raw, "raw": raw, "source": "agent-unmapped", "agent_key": agent_key}
 
 
+def load_vendors() -> dict:
+    """actual_agent → 廠牌名（Codex→GPT / ClaudeCode→Claude / Antigravity→Gemini）。
+
+    # 物理意義：vendor 是**可驗的必填身分** —— 由 actual_agent 推導，不靠人填；
+    #          version 才是「知道就寫、不知道就留白」的那一半（meadow 2026-08-03：
+    #          「少一段版本不是資料不完整，而是明確保留『此刻不知道』的事實」）。
+    """
+    return (load_registry().get("vendors") or {})
+
+
+def format_trailer_model(persona: str) -> dict:
+    """trailer 的 (<vendor> / <version>) 字串。回 {"text":..., "vendor":..., "version":..., "source":...}
+
+    規則（2026-08-03 三票拍板）：
+      - vendor 由 actual_agent 推導；**推不出來就整段沿用 persona.model 原值**，不印假精確的 `?`
+      - version 取 persona.model（經 agent 名翻譯後的值）
+      - version 與 vendor 相同 → 只印 vendor（那代表這人只知道廠牌，沒有版本）
+      - **不剝 version 開頭的 vendor 前綴**：`GPT-5.6 Luna` 照印成 `GPT / GPT-5.6 Luna`。
+        冗餘只是難看，剝字串是猜測 —— 兩位同事都選了難看那個。
+    """
+    info = resolve_model(persona)
+    raw = info["model"]
+    actual_agent = (load_persona(persona).get("actual_agent") or "").strip()
+    vendor = (load_vendors().get(actual_agent) or "").strip() if actual_agent else ""
+    if not vendor:
+        return {"text": raw, "vendor": "", "version": raw, "source": "no-vendor:" + info["source"]}
+    if _norm(raw) == _norm(vendor) or not raw or raw == "?":
+        return {"text": vendor, "vendor": vendor, "version": "", "source": "vendor-only"}
+    return {"text": f"{vendor} / {raw}", "vendor": vendor, "version": raw, "source": "vendor+version"}
+
+
 def cmd_resolve(args) -> int:
     info = resolve_model(args.persona)
     if args.json:
@@ -151,11 +182,15 @@ def cmd_list(args) -> int:
         print(f"  {a:<14} {(reg.get('models') or {}).get(a) or '(未設定)'}")
     print()
     d = _data_root() / "AwakenInit" / "personas"
-    print("# persona 型號解析")
+    print("# agent 廠牌（key = actual_agent）")
+    for a in CANONICAL_AGENTS:
+        print(f"  {a:<14} {(reg.get('vendors') or {}).get(a) or '(未設定)'}")
+    print()
+    print("# persona trailer 型號欄")
     for f in sorted(d.glob("*.json")) if d.is_dir() else []:
-        info = resolve_model(f.stem)
-        mark = "→" if info["source"] == "agent-translated" else " "
-        print(f" {mark} {f.stem:<22} raw={info['raw'] or '(空)':<16} → {info['model']:<20} {info['source']}")
+        t = format_trailer_model(f.stem)
+        raw = resolve_model(f.stem)["raw"] or "(空)"
+        print(f"   {f.stem:<22} raw={raw:<20} → ({t['text']})   {t['source']}")
     return 0
 
 

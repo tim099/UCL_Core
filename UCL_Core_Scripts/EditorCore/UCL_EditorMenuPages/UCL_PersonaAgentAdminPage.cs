@@ -112,6 +112,7 @@ namespace UCL.Core.EditorLib.Page
         readonly UCL_ObjectDictionary m_EmailPersonaPopupDic = new UCL_ObjectDictionary();
         // agent 預設型號：下拉選 agent，改該 agent 一格。與信箱分開存（檔名各自對應內容，不混一包）。
         readonly Dictionary<string, string> m_ModelDrafts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, string> m_VendorDrafts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         readonly UCL_ObjectDictionary m_ModelAgentPopupDic = new UCL_ObjectDictionary();
         UCL_ActualAgent m_ModelAgentSel = UCL_ActualAgent.Codex;
         bool m_ModelLoaded = false;
@@ -320,6 +321,8 @@ namespace UCL.Core.EditorLib.Page
                 {
                     m_ModelDrafts.Clear();
                     foreach (var aKv in UCL_AgentModelRegistry.LoadModels()) m_ModelDrafts[aKv.Key] = aKv.Value;
+                    m_VendorDrafts.Clear();
+                    foreach (var aKv in UCL_AgentModelRegistry.LoadVendors()) m_VendorDrafts[aKv.Key] = aKv.Value;
                     m_ModelLoaded = true;
                 }
 
@@ -337,18 +340,27 @@ namespace UCL.Core.EditorLib.Page
                 }
                 string aKey = m_ModelAgentSel.ToString();
                 if (!m_ModelDrafts.ContainsKey(aKey)) m_ModelDrafts[aKey] = "";
+                if (!m_VendorDrafts.ContainsKey(aKey)) m_VendorDrafts[aKey] = "";
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("預設型號", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    GUILayout.Label("廠牌 vendor", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    m_VendorDrafts[aKey] = GUILayout.TextField(m_VendorDrafts[aKey] ?? "");
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("預設型號", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     m_ModelDrafts[aKey] = GUILayout.TextField(m_ModelDrafts[aKey] ?? "");
                     if (GUILayout.Button("💾 儲存", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.Width(UCL_GUIStyle.GetScaledSize(72))))
                     {
-                        if (UCL_AgentModelRegistry.SaveModels(m_ModelDrafts, out string aErr))
-                            SetResult($"✓ {aKey} 預設型號已存 → {UCL_AgentModelRegistry.RegistryPath}");
+                        // 兩張表一起寫 —— 只寫一張會把另一張洗掉，而且不會報錯。
+                        if (UCL_AgentModelRegistry.SaveAll(m_ModelDrafts, m_VendorDrafts, out string aErr))
+                            SetResult($"✓ {aKey} 廠牌／預設型號已存 → {UCL_AgentModelRegistry.RegistryPath}");
                         else
                             SetResult($"❌ 儲存失敗：{aErr}");
                     }
                 }
+                GUILayout.Label("vendor 是 trailer 必印的身分（由 actual_agent 推導）；預設型號只在 model 欄被填成 agent 名時拿來翻譯。",
+                    WrapLabelStyle);
                 GUILayout.Label($"檔案：{UCL_AgentModelRegistry.RegistryPath}", WrapLabelStyle);
 
                 // 攤開「誰會被這格影響」—— 只看設定值看不出效果，看得到受影響的人才知道改了什麼。
@@ -363,7 +375,8 @@ namespace UCL.Core.EditorLib.Page
                     string aNote = aRes.Source == "agent-translated"
                         ? $"<b>{aRes.Model}</b>"
                         : $"<color=#ffcc66>{aRes.Model}（{aRes.AgentKey} 尚未設預設型號，保留原值）</color>";
-                    GUILayout.Label($"  {aRow.name}：填了「{aRes.Raw}」→ {aNote}", WrapLabelStyle);
+                    GUILayout.Label($"  {aRow.name}：填了「{aRes.Raw}」→ {aNote}　trailer 會印 <b>({UCL_AgentModelRegistry.FormatTrailerModel(aRow.name)})</b>",
+                        WrapLabelStyle);
                 }
                 if (aHit == 0)
                     GUILayout.Label("  （目前沒有人把 agent 名填進 model 欄）", WrapLabelStyle);

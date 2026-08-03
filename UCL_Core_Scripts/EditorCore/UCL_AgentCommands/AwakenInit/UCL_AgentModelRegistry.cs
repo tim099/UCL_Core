@@ -80,7 +80,68 @@ namespace UCL.Core.EditorLib.AgentCommands
             return map;
         }
 
+        /// <summary>actual_agent → 廠牌名。vendor 是可驗的必填身分，由 actual_agent 推導不靠人填。</summary>
+        public static Dictionary<string, string> LoadVendors()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (UCL_ActualAgent agent in Enum.GetValues(typeof(UCL_ActualAgent)))
+            {
+                if (agent == UCL_ActualAgent.None) continue;
+                map[agent.ToString()] = "";
+            }
+            try
+            {
+                if (!File.Exists(RegistryPath)) return map;
+                var data = JsonData.ParseJson(File.ReadAllText(RegistryPath));
+                if (data == null || !data.Contains("vendors")) return map;
+                var vendors = data["vendors"];
+                foreach (var key in new List<string>(map.Keys))
+                    if (vendors.Contains(key)) map[key] = vendors.GetString(key, "");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[AgentModel] 讀廠牌表失敗（視為全空）：{e.Message}");
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// trailer 的型號欄字串。規則（2026-08-03 三票拍板）：
+        /// vendor 推不出來 → 整段沿用原值（不印假精確的 `?`）；version 等於 vendor → 只印 vendor；
+        /// **不剝 version 開頭的 vendor 前綴** —— 冗餘只是難看，剝字串是猜測。
+        /// </summary>
+        public static string FormatTrailerModel(string persona)
+        {
+            var resolved = Resolve(persona);
+            string raw = resolved.Model ?? "";
+            string actualAgent = "";
+            try
+            {
+                string path = PersonaPath(persona);
+                if (File.Exists(path))
+                {
+                    var data = JsonData.ParseJson(File.ReadAllText(path));
+                    if (data != null) actualAgent = data.GetString("actual_agent", "");
+                }
+            }
+            catch { /* 讀不到就當沒有 vendor */ }
+            if (string.IsNullOrEmpty(actualAgent)) return raw;
+            var vendors = LoadVendors();
+            if (!vendors.TryGetValue(actualAgent, out string vendor) || string.IsNullOrWhiteSpace(vendor))
+                return raw;
+            vendor = vendor.Trim();
+            if (string.IsNullOrEmpty(raw) || raw == "?" || Normalize(raw) == Normalize(vendor)) return vendor;
+            return $"{vendor} / {raw}";
+        }
+
         public static bool SaveModels(Dictionary<string, string> models, out string error)
+            => SaveAll(models, LoadVendors(), out error);
+
+        /// <summary>
+        /// 整檔覆寫 models + vendors。**兩張表必須一起寫** —— 只寫一張會把另一張洗掉
+        /// （同檔整檔覆寫的典型陷阱，而且它不會報錯）。
+        /// </summary>
+        public static bool SaveAll(Dictionary<string, string> models, Dictionary<string, string> vendors, out string error)
         {
             error = "";
             try
@@ -94,7 +155,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                 foreach (var kv in models)
                 {
                     string comma = (++i < models.Count) ? "," : "";
-                    sb.AppendLine($"    \"{kv.Key}\": \"{(kv.Value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"")}\"{comma}");
+                    sb.AppendLine($"    \"{kv.Key}\": \"{Esc(kv.Value)}\"{comma}");
+                }
+                sb.AppendLine("  },");
+                sb.AppendLine("  \"vendors\": {");
+                int j = 0;
+                foreach (var kv in vendors)
+                {
+                    string comma = (++j < vendors.Count) ? "," : "";
+                    sb.AppendLine($"    \"{kv.Key}\": \"{Esc(kv.Value)}\"{comma}");
                 }
                 sb.AppendLine("  }");
                 sb.AppendLine("}");
@@ -105,6 +174,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             catch (Exception e) { error = e.Message; return false; }
         }
+
+        static string Esc(string v) => (v ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
 
         /// <summary>這個字串是不是 agent 名？是的話回正規 actual_agent，不是（或有歧義）回空字串。</summary>
         public static string IdentifyAgent(string value)

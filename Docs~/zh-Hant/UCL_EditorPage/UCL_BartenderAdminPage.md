@@ -3,7 +3,7 @@ title: UCL_BartenderAdminPage — 酒保管理頁
 description: 集中管理酒保報時、時間提醒、關鍵字留言、daemon 狀態與 runtime-only 遠端視窗協作的 Editor 後台。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_BartenderAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-08-02
+last_updated: 2026-08-03
 target_audience: [AI_Agent, Developer, Designer]
 aliases: [bartender admin, 酒保後台, 酒保報時, time rules]
 tags: [chat-tavern, bartender, editor]
@@ -11,6 +11,7 @@ related:
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Bartender/UCL_BartenderDaemon.cs | UCL_BartenderDaemon | 酒保常駐掃描與發話實作
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Bartender/UCL_BartenderIO.cs | UCL_BartenderIO | triggers/time_rules/state 的唯一讀寫點
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernAdminPage.md | UCL_ChatTavernAdminPage | Discord 雙向同步管理頁；與本頁的酒保自動廣播分工
+  - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderTimeRulePage.md | UCL_BartenderTimeRulePage | 時間規則編輯子頁（2026-08-03 自本頁抽離, 顯式存檔）
 ---
 
 # 🍺 UCL_BartenderAdminPage — 酒保管理頁
@@ -26,7 +27,7 @@ related:
 | 常駐酒保 | 酒館系統開關、立即 tick、重新載入 | `UCL_ChatTavernSystemControl` / `UCL_BartenderDaemon` |
 | 酒保報時 | 一鍵切換每日／每小時 `announce-rules-*` 報時規則 | `ChatTavern/bartender/time_rules.json` |
 | 遠端視窗協作 | runtime-only 啟動、使用者操作後暫停 checkbox／秒數、ActualAgent enum popup 的手動測試按鈕 | Win32 視窗列舉；不存檔 |
-| 時間規則 | 逐條開關、刪除、新增單次時間提醒 | `time_rules.json` |
+| 時間規則 | 唯讀總覽 +「✏️ 開啟時間規則編輯頁」跳轉（編輯/新增/刪除 2026-08-03 抽離至 [UCL_BartenderTimeRulePage](UCL_BartenderTimeRulePage.md)，顯式存檔） | `time_rules.json` |
 | 關鍵字留言 | 檢視剩餘觸發額度、刪除、新增全域 keyword trigger | `triggers.json` |
 | 執行狀態 | 各 room 已掃 seq、今天已觸發數、跨日檢查日期 | `state.json` |
 

@@ -29,10 +29,6 @@ namespace UCL.Core.EditorLib.Page
         UCL_BartenderTriggerList m_Triggers = new UCL_BartenderTriggerList();
         UCL_BartenderTimeRuleList m_TimeRules = new UCL_BartenderTimeRuleList();
         UCL_BartenderState m_State = new UCL_BartenderState();
-        string m_NewRuleId = "";
-        string m_NewRuleTime = "09:00";
-        string m_NewRuleTarget = "";
-        string m_NewRuleMessage = "";
         string m_NewTriggerKeyword = "";
         string m_NewTriggerMessage = "";
         int m_NewTriggerTokens = 1;
@@ -491,9 +487,16 @@ namespace UCL.Core.EditorLib.Page
                     bool nextReports = GUILayout.Toggle(reportsEnabled, reportsEnabled ? "🕐 報時開啟" : "🕐 報時關閉", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
                     if (nextReports != reportsEnabled)
                     {
-                        foreach (var rule in m_TimeRules.rules)
+                        // 區塊職責：報時開關 — 當場重讀→只改 announce-rules-* 的 enabled→回存, 再同步快取。
+                        // 物理意義：拿本頁快取整包回存會把「編輯頁剛存的內容」蓋回舊版（stale 快取 clobber）;
+                        //          load-modify-save 讓本開關只動自己該動的欄位, 與編輯頁互不踩。
+                        // 數值影響：寫檔仍走 SaveTimeRules atomic write; m_TimeRules 快取同步為最新版。
+                        var fresh = UCL_BartenderIO.LoadTimeRules() ?? new UCL_BartenderTimeRuleList();
+                        fresh.rules ??= new List<UCL_BartenderTimeRule>();
+                        foreach (var rule in fresh.rules)
                             if (rule?.id != null && rule.id.StartsWith(ReportRulePrefix)) rule.enabled = nextReports;
-                        UCL_BartenderIO.SaveTimeRules(m_TimeRules);
+                        UCL_BartenderIO.SaveTimeRules(fresh);
+                        m_TimeRules = fresh;
                     }
                     if (GUILayout.Button("▶ 立即檢查", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.9f, 1f)), GUILayout.ExpandWidth(false))) UCL_BartenderDaemon.ForceTick();
                     if (GUILayout.Button("↻ 重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) Reload();
@@ -504,6 +507,10 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // 區塊職責：時間規則區 — 唯讀總覽 + 跳轉編輯頁（編輯功能 2026-08-03 抽離到 UCL_BartenderTimeRulePage）。
+        // 物理意義：本頁不再持有任何「改規則後整包回存」的路徑, 避免與編輯頁的顯式存檔語意打架
+        //          （AdminPage 快取的舊 list 一經 Save 會蓋掉編輯頁剛存的內容）。
+        // 數值影響：這裡只讀 m_TimeRules 快取來顯示; 開編輯頁回來按「↻ 重新載入」可刷新總覽。
         void DrawTimeRulesSection()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -513,39 +520,16 @@ namespace UCL.Core.EditorLib.Page
                 {
                     show = UCL_GUILayout.Toggle(m_FoldDic, KeyTimeRulesFold, 21, iDefaultValue: false);
                     GUILayout.Label($"<b>⏰ 時間規則（{m_TimeRules.rules.Count}）</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("✏️ 開啟時間規則編輯頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                        UCL_BartenderTimeRulePage.Create();
                     GUILayout.FlexibleSpace();
                 }
                 if (!show) return;
-                string deleteId = null;
+                GUILayout.Label("時間與內文的編輯、新增與刪除都在編輯頁（顯式存檔, 沒按存檔不寫回 json）。此處僅總覽。", UCL_GUIStyle.LabelStyle);
                 foreach (var rule in m_TimeRules.rules.OrderBy(r => r?.time_hhmm, StringComparer.Ordinal))
                 {
                     if (rule == null) continue;
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        bool next = UCL_GUILayout.CheckBox(rule.enabled);
-                        if (next != rule.enabled) { rule.enabled = next; UCL_BartenderIO.SaveTimeRules(m_TimeRules); }
-                        GUILayout.Label($"{rule.time_hhmm}  {rule.id} → {rule.target_room}  {(rule.penalty_enabled ? $"寬限 {rule.grace_minutes}m / penalty {rule.penalty_interval_minutes}m" : "單次提醒")}", UCL_GUIStyle.LabelStyle);
-                        GUILayout.FlexibleSpace();
-                        if (GUILayout.Button("刪除", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false))) deleteId = rule.id;
-                    }
-                    GUILayout.Label($"    {rule.reminder_msg}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
-                }
-                if (deleteId != null) { m_TimeRules.rules.RemoveAll(r => r != null && r.id == deleteId); UCL_BartenderIO.SaveTimeRules(m_TimeRules); }
-
-                GUILayout.Space(4);
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label("新增", UCL_GUIStyle.LabelStyle, GUILayout.Width(36));
-                    m_NewRuleId = GUILayout.TextField(m_NewRuleId, GUILayout.Width(170));
-                    m_NewRuleTime = GUILayout.TextField(m_NewRuleTime, GUILayout.Width(55));
-                    m_NewRuleTarget = GUILayout.TextField(m_NewRuleTarget, GUILayout.Width(90));
-                    m_NewRuleMessage = GUILayout.TextField(m_NewRuleMessage);
-                    if (GUILayout.Button("新增時間規則", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.ExpandWidth(false))
-                        && !string.IsNullOrWhiteSpace(m_NewRuleId) && !string.IsNullOrWhiteSpace(m_NewRuleTime) && !string.IsNullOrWhiteSpace(m_NewRuleMessage))
-                    {
-                        UCL_BartenderIO.RegisterTimeRule(m_NewRuleId.Trim(), m_NewRuleTime.Trim(), m_NewRuleTarget.Trim(), m_NewRuleMessage.Trim(), 0, false, 5, m_NewRuleTarget.Trim(), DefaultRoom);
-                        Reload();
-                    }
+                    GUILayout.Label($"{(rule.enabled ? "●" : "○")} {rule.time_hhmm}  {rule.id} → {rule.target_room}  {(rule.penalty_enabled ? $"寬限 {rule.grace_minutes}m / penalty {rule.penalty_interval_minutes}m" : "單次提醒")}", UCL_GUIStyle.LabelStyle);
                 }
             }
         }

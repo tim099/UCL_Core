@@ -1238,7 +1238,12 @@ def list_episodic_letters(persona: str, since_iso: str | None = None) -> list:
     for p in list(d.iterdir()) + list_wake_letters(persona):
         if not p.is_file() or p.suffix != ".md":
             continue
-        if p.name in ("_latest.md", "_index.md"):
+        if p.name.startswith("_") or p.name == "README.md":
+            # 常駐檔/機械產物(_latest / _index / _wake_brief / _constitution / _keys_open / README)
+            # 不是 episodic 信。舊版只擋 _latest/_index, 其餘四份會被當成信列進待濃縮清單 ——
+            # 其中 _wake_brief.md 是本工具自己的產物, 濃縮時等於把摘要再餵回摘要;
+            # 而且它每次 morning 重生成, 導致同一天兩次 inspect 的「待濃縮 N 封」會不一致(14→15)。
+            # 用檔名擋而不用「沒有 written_at 就跳過」: 後者會把真信因 frontmatter 壞掉而靜默漏掉。
             continue
         if p.parent.name == "wakes" and p.name.split("_", 1)[-1] in toplevel_names:
             continue    # 頂層還有原檔 → 這份是遷移副本, 算一次就好
@@ -1473,7 +1478,10 @@ def _frag_sort_key(f: dict):
         rec = int(f.get("recurrence", f.get("_origin_count", 1)) or 1)
     except Exception:
         rec = 1
-    ti = FRAG_TYPE_ORDER.index(f["type"]) if f.get("type") in FRAG_TYPE_ORDER else 99
+    # 同上: 分組要用 fragment_type; 用 `type` 的話每筆都是 "fragment" → 恆為 99,
+    # 「type 群組」這一層排序從來沒生效過(不會報錯, 只是安靜地沒分組)。
+    ft = f.get("fragment_type") or f.get("type")
+    ti = FRAG_TYPE_ORDER.index(ft) if ft in FRAG_TYPE_ORDER else 99
     return (-rec, ti, f.get("id", ""))
 
 
@@ -1500,7 +1508,11 @@ def render_root_index(persona: str, show_limit: int = ROOT_INDEX_SHOW_LIMIT) -> 
          f"## 必讀（status: open，{len(open_rows)} 筆）", "",
          "| 次數 | 類型 | 關鍵記憶 | 涉及層 | 檔案 |", "|---|---|---|---|---|"]
     for f in shown:
-        L.append(f"| **{f.get('recurrence', f['_origin_count'])}** | {f.get('type', '?')} | "
+        # 類型欄取 fragment_type(lesson/unsolved/relation/identity/philosophy) ——
+        # 舊碼取 `type`, 而 type 對每一份 fragment 都是常數字串 "fragment",
+        # 於是這一欄永遠印同一個值: 欄名說「類型」而內容不帶任何類型資訊。
+        L.append(f"| **{f.get('recurrence', f['_origin_count'])}** | "
+                 f"{f.get('fragment_type', f.get('type', '?'))} | "
                  f"{f.get('title', f['id'])} | {f.get('layers', '') or '—'} | "
                  f"[{f['id']}]({f['id']}.md) |")
     if hidden:

@@ -181,27 +181,5 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sender_id, sender_persona, sender_name);
     }
 
-    /// <summary>
-    /// 在線狀態 (Presence System)。
-    /// 物理意義：紀錄每個 agent 的當前狀態 / 所在房間 / 焦點 / 最後活躍時間，避免空等 + 支援跨房間 routing。
-    /// 數值影響：last_active < 5min = active；5~30min = idle（lazy lookup 算）；>30min 或顯式 = offline；busy 是 agent 自律 set。
-    /// 共筆：Gemini大小姐 minimal schema 起點 (sender_id/status/last_active)，Claude 補 current_room / current_focus 給跨頻道 routing 用。
-    /// </summary>
-    [Serializable]
-    public class UCL_ChatPresence
-    {
-        public string sender_id;
-        public string status;          // "active" | "busy" | "idle" | "offline"
-        public string last_active;     // ISO 8601 UTC
-        public string current_room;    // R7 — 所在房 id（給跨頻道通知 hint）
-        public string current_focus;   // R7 — 人類可讀焦點描述（"brainstorming X" / "implementing T04"）；agent 自律 set
-        public string mood;            // R7 — 自由欄位，類似 Discord Custom Status；agent 自律 set 表達情緒 / 隱性溝通（"生氣中" / "搬磚中" / "等 Gemini 中"）
-    }
-
-    [Serializable]
-    public class UCL_ChatPresenceList
-    {
-        public List<UCL_ChatPresence> presences = new List<UCL_ChatPresence>();
-    }
 }
 #endif

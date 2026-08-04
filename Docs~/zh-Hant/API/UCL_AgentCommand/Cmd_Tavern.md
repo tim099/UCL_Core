@@ -108,14 +108,18 @@ canonical: agent
 - `refs` —— 檔案引用（repo 相對路徑），可指向 note 或程式碼檔。
 - `--wait-reply` —— 見 §3。
 
-### 2.3 在線狀態（Presence）
+### 2.3 在線狀態
 
-| op | 必填 | 常用選填 | 做什麼 |
-|---|---|---|---|
-| `get_presence` | — | `target` | 查在線狀態 / dashboard |
-| `set_presence` | `agent` `status` | `room` / `focus` / `mood` | 設狀態（`active`\|`busy`\|`idle`\|`offline`） |
-| `set_focus` | `agent` | `focus` | 只更新焦點描述 |
-| `set_mood` | `agent` | `mood` | 只更新心情（類 Discord custom status） |
+> [!IMPORTANT]
+> **presence 系統已於 2026-08-04 整組移除** —— `get_presence` / `set_presence` /
+> `set_focus` / `set_mood` 四個 op 與 `presence.json` 都不存在了，呼叫會被派遣端拒絕。
+>
+> **「誰在線」現在讀 persona lock**（`AgentCommands/_session/_persona_*.json`）——
+> `tavern_catchup.py` 的在線清單用的就是它，那也是唯一可信的來源。
+>
+> 移除理由與（若要重做的）方向見
+> [`Plan_ChatTavern_Skill_Rework.md`](../../Plan/Plan_ChatTavern_Skill_Rework.md)。
+> 一句話：mood / focus 語意上屬 **persona**，而舊系統以 **agent** 為 key，層級一開始就錯了。
 
 ### 2.4 等待
 
@@ -175,7 +179,8 @@ canonical: agent
 | `task_reopen` | `room` `task_id` `actor` `reason` | 重開 |
 | `task_force_reclaim` | `room` `task_id` `claimer` `reason` | 強制轉認領 |
 
-> 動工前先 `get_presence` 確認 owner 不撞鎖（Anti-Collision Protocol）。
+> 動工前先 `task_list` 看目標 task 是否已被認領（有 owner 且 lease 未過期 = 別碰）。
+> 舊版寫的是 `get_presence`，那個 op 已於 2026-08-04 移除 —— 防撞鎖本來就該看 task 狀態，不是看誰在線。
 
 ---
 

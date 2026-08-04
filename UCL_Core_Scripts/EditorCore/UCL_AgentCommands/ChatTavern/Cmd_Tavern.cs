@@ -151,21 +151,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["events_since"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
 
-                // ─── Presence ────────────────────────────────────────────
-                ["set_presence"] = new UCL_CmdOpSpec {
-                    Required = new[] { "agent", "status" },
-                    // agent > agent_id > sender > sender_id > id
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
-                // set_focus / set_mood 只 reject agent_id —— focus / mood 允許空（等同清除）
-                ["set_focus"] = new UCL_CmdOpSpec {
-                    Required = new[] { "agent" },
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
-                ["set_mood"] = new UCL_CmdOpSpec {
-                    Required = new[] { "agent" },
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
-                // get_presence 無必填（不帶 id = 查全部）
-                ["get_presence"] = new UCL_CmdOpSpec {
-                    Aliases = new Dictionary<string, string> { ["target"] = "id", ["target_id"] = "id" } },
+                // 註（2026-08-04）：presence 系統整組移除（Tim：「整個移除好了，之後都要 per persona」）。
+                //   原本的 set_presence / set_focus / set_mood / get_presence 與 presence.json 一併退役。
+                //   移除理由：presence.json 以 **agent** 為 key，而 mood / focus 語意上屬於 **persona**
+                //   （一個 agent 底下多個 persona 會共用同一個心情）；且 status 欄長期全為 "active"，不帶資訊。
+                //   「誰在線」的可信來源是 persona lock（`_session/_persona_*.json`），catchup 讀的就是它。
+                //   ⚠ 這裡刻意不留「已停用」的 OpSpec 條目 —— 留著會讓參數預檢對一個不存在的 op
+                //   驗參數並通過，caller 得到「規格說可以」卻在派遣時才失敗的矛盾訊號。
 
                 // ─── Session macro ───────────────────────────────────────
                 ["session_enter"] = new UCL_CmdOpSpec {
@@ -201,10 +193,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "leave": Op_Leave(args); break;
                     case "wait": Op_Wait(args, token); break;
                     case "wait_check": Op_WaitCheck(args); break;
-                    case "set_presence": Op_SetPresence(args); break;
-                    case "set_focus": Op_SetFocus(args); break;
-                    case "set_mood": Op_SetMood(args); break;
-                    case "get_presence": Op_GetPresence(args); break;
                     case "note_write": Op_NoteWrite(args); break;
                     case "note_append": Op_NoteAppend(args); break;
                     case "note_read": Op_NoteRead(args); break;
@@ -823,7 +811,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 if (!senderId.StartsWith("_"))
                 {
-                    UCL_ChatTavernIO.SetPresence(senderId, "active", roomId, null);
                 }
             }
             catch (Exception ex)
@@ -2773,125 +2760,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：op=set_presence — 設定在線狀態
-        // 物理意義：手動宣告某個 agent/human 的狀態，例如下線休息 (offline)、忙碌中 (busy)。
-        // ===========================================================
-        void Op_SetPresence(Dictionary<string, string> args)
-        {
-            string senderId = GetArg(args, "id", GetAgentArg(args));
-            string status = GetArg(args, "status", "");
-            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_presence 缺少 agent (別名 agent_id / sender / sender_id / id)"); return; }
-            if (string.IsNullOrEmpty(status)) { RejectLastOp("set_presence 缺少 status (active / busy / idle / offline)"); return; }
-
-            // 區塊職責：room / focus / mood 三個選填欄位一併寫入
-            // 物理意義：文件（Cmd_Tavern.md §2.3）一直把這三個列為常用選填，但舊實作只讀 id+status
-            //          → 帶了也**靜默不生效**。summit QA 2026-07-31 抓到：「文件說有而實作沒有，
-            //          比沒寫更危險」。完整版 SetPresence 本來就吃這三個參數（R7 T07），是這裡沒接。
-            // 數值影響：傳 null 的欄位在 SetPresence 內不覆寫既有值（focus 更新不會清掉 mood，反之亦然），
-            //          所以只帶 status 的舊呼叫行為完全不變。
-            string room = GetArg(args, "room", null);
-            string focus = GetArg(args, "focus", GetArg(args, "current_focus", null));
-            string mood = GetArg(args, "mood", null);
-            UCL_ChatTavernIO.SetPresence(senderId, status, room, focus, mood);
-
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("# ✅ set_presence");
-            sb.AppendLine();
-            sb.AppendLine($"- agent: `{senderId}`");
-            sb.AppendLine($"- status: `{status}`");
-            if (!string.IsNullOrEmpty(room)) sb.AppendLine($"- room: `{room}`");
-            if (!string.IsNullOrEmpty(focus)) sb.AppendLine($"- focus: `{focus}`");
-            if (!string.IsNullOrEmpty(mood)) sb.AppendLine($"- mood: `{mood}`");
-            sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
-
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
-            Debug.Log($"[Tavern] set_presence {senderId} to {status}");
-        }
-
-        // ===========================================================
-        // T20 — op=set_focus / op=set_mood（per Antigravity P6 / Tim Round 30）
-        // 物理意義：對話中途精細更新 focus / mood，不必 raw write json 也不必重跑 session_enter
-        // 數值影響：呼叫 SetPresence(id, active, null, focus, null) / (id, active, null, null, mood)
-        //          status 自動推進 active（順手刷 last_active）；不動其他欄位
-        // ===========================================================
-        void Op_SetFocus(Dictionary<string, string> args)
-        {
-            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
-            string focus = GetArg(args, "focus", "");
-            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_focus 缺少 agent_id (或 id / sender / sender_id)"); return; }
-
-            UCL_ChatTavernIO.SetPresence(senderId, "active", null, focus, null);
-
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("# 🎯 set_focus");
-            sb.AppendLine();
-            sb.AppendLine($"- agent_id: `{senderId}`");
-            sb.AppendLine($"- focus: `{focus}`");
-            sb.AppendLine($"- status: `active` (auto-advanced)");
-            sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
-            Debug.Log($"[Tavern] set_focus {senderId} → {focus}");
-        }
-
-        void Op_SetMood(Dictionary<string, string> args)
-        {
-            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
-            string mood = GetArg(args, "mood", "");
-            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("set_mood 缺少 agent_id (或 id / sender / sender_id)"); return; }
-
-            UCL_ChatTavernIO.SetPresence(senderId, "active", null, null, mood);
-
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("# 🎭 set_mood");
-            sb.AppendLine();
-            sb.AppendLine($"- agent_id: `{senderId}`");
-            sb.AppendLine($"- mood: `{mood}`");
-            sb.AppendLine($"- status: `active` (auto-advanced)");
-            sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
-            Debug.Log($"[Tavern] set_mood {senderId} → {mood}");
-        }
-
-        // ===========================================================
-        // 區塊職責：op=get_presence — 查詢在線狀態
-        // 物理意義：查詢指定角色或所有人的在線狀態與最後活躍時間。
-        // ===========================================================
-        void Op_GetPresence(Dictionary<string, string> args)
-        {
-            string targetId = GetArg(args, "id", GetArg(args, "target", GetArg(args, "target_id", "")));
-
-            var presenceList = UCL_ChatTavernIO.LoadPresence();
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("# 🟢 Presence 在線狀態列表");
-            sb.AppendLine();
-            sb.AppendLine("| 角色 ID | 狀態 | 最後活躍時間 (UTC) |");
-            sb.AppendLine("| --- | --- | --- |");
-
-            if (!string.IsNullOrEmpty(targetId))
-            {
-                var found = presenceList.presences.Find(x => x.sender_id == targetId);
-                if (found != null)
-                {
-                    sb.AppendLine($"| `{found.sender_id}` | `{found.status}` | `{found.last_active}` |");
-                }
-                else
-                {
-                    sb.AppendLine($"| `{targetId}` | `offline` (未記錄) | - |");
-                }
-            }
-            else
-            {
-                foreach (var p in presenceList.presences)
-                {
-                    sb.AppendLine($"| `{p.sender_id}` | `{p.status}` | `{p.last_active}` |");
-                }
-            }
-
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
-            Debug.Log($"[Tavern] get_presence completed (target: {targetId ?? "all"})");
-        }
-
-        // ===========================================================
         // 區塊：op=session_enter — Antigravity / Gemini / Claude 入場 macro
         // 區塊職責：1 條 op 一次完成入場 4 件事 — inbox_read + dashboard read + presence set + room tail
         // 物理意義：解 latency S1+S2+S3+S5（quest tavern-entry-latency T04 / O3）
@@ -2923,7 +2791,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"# 🚪 session_enter — `{agentId}`");
             sb.AppendLine();
-            sb.AppendLine($"_macro op：1 條取代 inbox_read + get_presence + set_presence + read（latency 優化 quest T04）_");
+            sb.AppendLine($"_macro op：1 條取代 inbox_read + read（省一次 watcher tick；presence 系列已於 2026-08-04 移除）_");
             sb.AppendLine();
 
             // ── (1) inbox_read：強制走 inbox-first SOP（解 R4 認知落後）──
@@ -2940,47 +2808,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             sb.AppendLine();
 
-            // ── (2) presence dashboard：tavern-keeper.current_focus 一行（解 R1 沒做 presence 預檢）──
-            sb.AppendLine("## 🟢 Presence Dashboard");
-            sb.AppendLine();
-            try
-            {
-                var presenceList = UCL_ChatTavernIO.LoadPresence();
-                var keeper = presenceList.presences.Find(x => x.sender_id == "tavern-keeper");
-                if (keeper != null && !string.IsNullOrEmpty(keeper.current_focus))
-                {
-                    sb.AppendLine(keeper.current_focus);
-                }
-                else
-                {
-                    sb.AppendLine("_(dashboard 尚未生成 — SetPresence hook 應自動重建；可手動 set_presence 觸發)_");
-                }
-            }
-            catch (Exception e)
-            {
-                sb.AppendLine($"_(presence 讀取失敗：{e.Message})_");
-            }
-            sb.AppendLine();
-
-            // ── (3) set_presence：active + 可選 room/focus/mood 一次推進 ──
-            sb.AppendLine("## ✅ Presence 推進");
-            sb.AppendLine();
-            try
-            {
-                UCL_ChatTavernIO.SetPresence(agentId, "active", string.IsNullOrEmpty(roomId) ? null : roomId, focus, mood);
-                sb.AppendLine($"- status: `active`");
-                if (!string.IsNullOrEmpty(roomId)) sb.AppendLine($"- current_room: `{roomId}`");
-                if (!string.IsNullOrEmpty(focus)) sb.AppendLine($"- current_focus: `{focus}`");
-                if (!string.IsNullOrEmpty(mood)) sb.AppendLine($"- mood: `{mood}`");
-                sb.AppendLine($"- updated_at: `{UCL_ChatTavernIO.NowUtcIso()}`");
-            }
-            catch (Exception e)
-            {
-                sb.AppendLine($"_(set_presence 失敗：{e.Message})_");
-            }
-            sb.AppendLine();
-
-            // ── (4) room tail：可選 — agent 看完 inbox 再決定要不要爬 ──
+            // ── (2) room tail：可選 — agent 看完 inbox 再決定要不要爬 ──
             if (!string.IsNullOrEmpty(roomId))
             {
                 sb.AppendLine($"## 🍺 Room Tail — `{roomId}` 最新 {tail} 筆");

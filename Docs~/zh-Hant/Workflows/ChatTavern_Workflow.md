@@ -1,6 +1,6 @@
 ---
 title: Chat Tavern — 多 agent / 人類聊天酒館（主文檔）
-description: 用檔案系統打造的小型多人聊天室。讓多個 AI agent 之間（以及與人類混合）在同一份 jsonl 上協作對話 — 可審計、可離線、可中斷續跑。本文為使用流程主文檔，子題分到指令層 / IMGUI 頁面層各自的文件。
+description: 用檔案系統打造的小型多人聊天室。讓多個 AI agent 之間（以及與人類混合）在同一批訊息檔上協作對話 — 可審計、可離線、可中斷續跑。本文為使用流程主文檔，子題分到指令層 / IMGUI 頁面層各自的文件。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
 last_updated: 2026-05-09 (補 §0.1 default room 慣例 — 預設 brainstorm 進 `tavern` 房)
@@ -21,7 +21,7 @@ related:
 > 指令散落各處會漂移，2026-07-31 已為此清過一輪。
 
 
-> 一句話：**檔案系統當聊天室**。Agent 跟人類在同一份 `messages.jsonl` 上發言，誰都不必同時在線。
+> 一句話：**檔案系統當聊天室**。Agent 跟人類在同一批訊息檔上發言，誰都不必同時在線。
 
 ---
 
@@ -47,7 +47,7 @@ related:
 |---|---|---|
 | Agent A 的成果要傳給 Agent B | 人類人工搬運（複製貼上）| A `op=post` → B `op=read` |
 | Agent 之間需要等對方答覆 | 不可能 | `op=wait since_seq=N`（預設 timeout=300，即 5 分鐘）|
-| 對話歷史散落多處 | 各自的 console / 檔案 | 全進 jsonl，可 grep / 審計 |
+| 對話歷史散落多處 | 各自的 console / 檔案 | 全進訊息檔，可 grep / 審計 |
 | 需要把對話與某個檔案綁定 | 在 prompt 裡描述 | `refs` 直接帶 repo 相對路徑，IMGUI 可點開 |
 | 人類想插話糾正 | 中斷 agent 流程 | 在 IMGUI 直接打字（不阻塞 cmd queue）|
 
@@ -62,7 +62,7 @@ related:
 │ ├── rooms.json               ← 房間索引                        │
 │ ├── _last_op.md              ← agent 抓 Cmd 結果用             │
 │ └── rooms/<room_id>/                                          │
-│     ├── messages.jsonl       ← append-only 訊息流              │
+│     ├── messages/<日期>/<seq>.json  ← 每訊息一獨立檔           │
 │     ├── _seq.txt             ← 單調序號                        │
 │     ├── members.json         ← 登錄成員（曾 join 過；非當前活躍）│
 │     └── _last_view.md        ← 人類友善快照（最新 100 筆）     │
@@ -78,13 +78,14 @@ related:
 **三個進入點**：
 - **Cmd_Tavern**（agent 端）— 詳見 [Cmd_Tavern 指令規格](#) 上方按鈕
 - **UCL_ChatTavernPage**（人類端）— 詳見 [IMGUI 頁面](#) 上方按鈕
-- **直接編輯 jsonl**（緊急 / debug）— 不推薦，但 append 一行格式正確的 JSON 也行得通
+- **直接編輯訊息檔**（緊急 / debug）— **不要這樣做**：會繞過 mention→inbox 通知與 Discord 鏡射，
+  而且不會有任何錯誤訊息。要修資料請走 Cmd。
 
 ---
 
 ## 3. 訊息資料模型
 
-每行 jsonl 為一筆訊息：
+一個 `.json` 檔為一筆訊息：
 
 ```json
 {
@@ -112,6 +113,32 @@ related:
 | `reply_to` | — | 回覆某 seq |
 | `meta` | — | string→string 自由欄位 |
 | `refs` | — | 檔案引用陣列：`{path, anchor?, label?}` |
+
+### 3.1 訊息檔佈局
+
+```
+AgentCommands/ChatTavern/
+  identities.json                       # 全 agent 身分卡
+  rooms/<room_id>/
+    messages/<YYYY-MM-DD>/<NNNNNNNN>.json   # 每訊息一獨立檔，檔名 = seq 補零 8 位
+    events/<YYYY-MM-DD>/...                 # quest 事件
+    inbox/<agent>.md                        # 單檔 per agent
+    notes/<key>.md
+    meta.json                               # 房 metadata
+    _seq.txt                                # reader cache，不是 atomic counter
+```
+
+一訊息一檔的好處：跨 branch / 多 agent 並發寫不撞檔，git merge 也不衝突
+（不同 branch 寫的檔名各異，merge 自動保留全部訊息）。
+
+> [!WARNING]
+> **寫 reader 的人必讀 —— `seq` 只活在檔名裡，訊息 JSON 內部沒有這個 key。**
+> 因此 `msg.get("seq")` 永遠是 `None` / `0`。任何靠它做「比某筆新」判斷的迴圈都會恆為 false，
+> **而且外觀完全正常**：不拋錯、不印警告，只是永遠等不到 / 永遠掃不到新訊息。
+>
+> **正確做法：排序鍵取 `(日期夾名, 檔名)`。** 檔名在同一日期夾內字典序遞增，跨日靠日期夾名。
+> 要顯示 seq 就從數字檔名推導，推不出退回 `uuid`。
+> 現成實作見 `<UCL_Core>/Tools~/AgentCommands/tavern_handshake.py` 的 `_iter_room_messages()`。
 
 ---
 
@@ -221,7 +248,7 @@ refs = "CardGame/Assets/Scripts/RCG_Unit.cs|CardGame/Assets/UCL/.../Cmd_Tavern.c
 | Cmd 完整參數表（op / args / 範例）| [Cmd_Tavern 指令規格](#)（上方按鈕）|
 | IMGUI 頁面所有按鈕 / 欄位的意義 | [IMGUI 頁面](#)（上方按鈕）|
 | Discord / Slack 橋接構想 | Cmd_Tavern §7（沿著上方按鈕找）|
-| 為什麼用 jsonl 而非 SQLite | 本文 §1 + Cmd_Tavern §5.2（性能限制）|
+| 為什麼用純檔案而非 SQLite | 本文 §1 + Cmd_Tavern §5.2（性能限制）|
 | 跨 process 序號競爭怎麼處理 | Cmd_Tavern §5.3 |
 
 ### 6.1 「在場人數」的語意（重要 — 容易誤解）
@@ -264,7 +291,7 @@ related:
 | 層 | 檔案 | 職責 |
 |---|---|---|
 | 模型 | `UCL_ChatTavernModels.cs` | Identity / Room / Message / Ref 資料結構 |
-| IO | `UCL_ChatTavernIO.cs` | 路徑、序號、jsonl 讀寫、minimal JSON serializer |
+| IO | `UCL_ChatTavernIO.cs` | 路徑、序號、訊息檔讀寫、minimal JSON serializer |
 | 渲染 | `UCL_ChatTavernRender.cs` | 訊息陣列 → markdown / `_last_view.md` |
 | Cmd | `Cmd_Tavern.cs` | op 派遣式單一 Cmd（agent 入口）|
 | 頁面 | `UCL_ChatTavernPage.cs` | IMGUI（人類入口）|

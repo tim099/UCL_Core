@@ -1,0 +1,87 @@
+"""財務操作的唯一 python 通道 —— 一律經 Cmd（C# server 端），python 不直寫 ledger。
+
+規則（Tim 2026-08-04 定調）：
+    **銀行 / token 相關操作都必須透過 C# server 端。python 只當 API 層。**
+
+為什麼不能直寫（每一條都是實際會發生的後果，不是原則潔癖）：
+  1. **餘額快取會靜默失準** —— C# 端自 2026-08-01 起初掃後不再列舉磁碟
+     （`UCL_TreasuryLedger.s_InitialScanDone`），寫入端自行維護增量。
+     python 直寫的 entry 在下次 InvalidateBalanceCache / domain reload 之前
+     **C# 看不到**：後台顯示的餘額與磁碟不一致，而且沒有任何錯誤訊息。
+  2. **繞過冪等判重** —— C# `WriteEntry` 會用 idempotency_key 擋重複入帳；直寫沒有這層。
+  3. **簽章不可信** —— `sig_*` 欄位由寫入端自己填，python 直寫時會填成
+     `manual_filesystem_write_*`。2026-08-04 盤查時，「有沒有 sig_* 欄位」一度被
+     當成作者判準，結論剛好顛倒（實際 1,144 筆是 python 寫的）。
+     **偽造成本為零的欄位不能當身分證明。**
+  4. **balance_before/after 要另外回填** —— 直寫留 null，於是需要一支 python 去改寫
+     既有 entry（append-only 帳本被就地修改）。走 Cmd 則 C# 當場就填好。
+
+用法：
+    from _lib.treasury_cmd import treasury_debit, treasury_credit
+    ok, msg = treasury_debit(account="zeta", amount=3, source_kind="canvas_pixel",
+                             source_ref=event_uuid, description="...", caller="canvas.py")
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent          # .../Tools~/AgentCommands/_lib
+_RUN_CMD = _HERE.parent / "run_cmd.py"           # .../Tools~/AgentCommands/run_cmd.py
+
+
+def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, str]:
+    """送一個 Cmd 進 Editor 佇列並等它跑完。回 (ok, 訊息尾段)。"""
+    argv = [sys.executable, str(_RUN_CMD), "run", cmd_type, "--wait-reply", "0"]
+    for k, v in args.items():
+        argv += ["--arg", f"{k}={v}"]
+    try:
+        r = subprocess.run(argv, capture_output=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+    except Exception as e:
+        return False, f"Cmd 執行失敗：{e}"
+    out = (r.stdout or "") + (r.stderr or "")
+    ok = r.returncode == 0 and "Success" in out
+    return ok, out[-500:]
+
+
+def treasury_debit(*, account: str, amount: int, source_kind: str, source_ref: str,
+                   description: str, caller: str = "", currency: str = "tavern_token"):
+    """扣款。amount <= 0 直接視為成功（沒有要扣的東西，不必打擾 Editor）。"""
+    if amount <= 0:
+        return True, "amount<=0，無需扣款"
+    return _run("Treasury", {
+        "op": "debit", "account": account, "amount": amount, "currency": currency,
+        "use_kind": source_kind, "use_ref": source_ref,
+        "description": description,
+        # ⚠ caller 必須是 **帳戶本人**（或 "system"）—— UCL_TreasuryLedger 有帳戶隔離鐵律：
+        #   caller 非 "system" 且 != accountId 就拋例外「不可動用對方帳戶」。
+        #   傳工具名（"canvas.py"）會被自己的防盜用規則擋死，而錯誤訊息長得像帳本壞了。
+        #   語意上這裡就是「該帳戶花自己的錢」，所以 caller = account 是正確的宣告，
+        #   不是為了繞過檢查。真正的代操作（後台代所有帳戶）才用 "system"。
+        "caller": caller or account,
+    })
+
+
+def treasury_credit(*, account: str, amount: int, source_kind: str, source_ref: str,
+                    description: str, caller: str = "", currency: str = "tavern_token"):
+    """入帳。amount <= 0 直接視為成功。"""
+    if amount <= 0:
+        return True, "amount<=0，無需入帳"
+    return _run("Treasury", {
+        "op": "credit", "account": account, "amount": amount, "currency": currency,
+        "source_kind": source_kind, "source_ref": source_ref,
+        "description": description,
+        "caller": caller or account,   # 同 debit：帳戶隔離鐵律，見上方註解
+    })
+
+
+def canvas_voucher_consume(*, persona: str, amount: int, source_ref: str, description: str = ""):
+    """消繪圖券 —— 走 Cmd_CanvasVoucher（C# 是券的 canonical owner）。"""
+    if amount <= 0:
+        return True, "amount<=0，無需消券"
+    return _run("CanvasVoucher", {
+        "op": "consume", "persona": persona, "amount": amount,
+        "ref": source_ref, "description": description or f"canvas consume x{amount}",
+    })

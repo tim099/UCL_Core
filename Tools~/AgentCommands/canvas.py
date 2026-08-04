@@ -105,6 +105,11 @@ DEFAULT_REGISTRY_META = "AgentCommands/AwakenInit/_registry_meta.json"
 
 # ───────────────────────────── 時間工具 ─────────────────────────────
 
+# 財務操作一律走 Cmd（C# server 端）—— 見 _lib/treasury_cmd.py 的四條理由
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _lib.treasury_cmd import treasury_debit, canvas_voucher_consume  # noqa: E402
+
 def utcnow():
     """區塊職責：回 UTC datetime（單一時間源，避免多次呼叫漂移）"""
     return datetime.datetime.utcnow()
@@ -493,45 +498,16 @@ def ledger_balance(P: Paths, account_id: str, currency: str = "tavern_token") ->
     return total_credit - total_debit
 
 
-def write_ledger_entry(P: Paths, *, etype: str, amount: int, account_id: str,
-                       source_kind: str, source_ref: str, description: str) -> str:
-    """
-    區塊職責：filesystem 直寫一筆 Treasury ledger entry（對齊 qa_bug_reward 格式）
-    物理意義：token 付 = debit amount=1；券 / 免費像素 = 0-amount audit。
-    數值影響：回該 entry 的 short uuid（供事件檔 ledger_refs 引用）。
-    """
-    now = utcnow()
-    ts = iso_ms(now)
-    date_dir = now.strftime("%Y-%m-%d")
-    hhmmss = now.strftime("%H%M%S")
-    msec = f"{now.microsecond // 1000:03d}"
-    short_uuid = secrets.token_hex(3)
-    # 檔名 suffix 區分 credit / debit / audit（0-amount 視為 audit）
-    suffix = etype if etype in ("credit", "debit") else "audit"
-    filename = f"{hhmmss}_{msec}_{short_uuid}__{suffix}.json"
-    path = P.ledger / date_dir / filename
-
-    entry = {
-        "ts": ts,
-        "uuid": short_uuid,
-        "type": etype,                       # debit / audit
-        "amount": amount,                    # token=1；券/免費=0
-        "currency": "tavern_token",
-        "account_id": account_id,
-        "source_kind": source_kind,          # canvas_pixel / draw_voucher_consume / freetime_pixel
-        "source_ref": source_ref,            # <event_uuid>:<x>,<y> 等
-        "source_description": description,
-        "balance_before": None,              # 可 None（對齊 qa_bug_reward）
-        "balance_after": None,
-        "sig_agent_id_claimed": "system",
-        "sig_process_id": str(os.getpid()),
-        "sig_env_marker": "manual_filesystem_write_canvas",
-        "sig_cmd_id": f"canvas_{short_uuid}",
-        "signature_mismatch": False,
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_json(path, entry)
-    return short_uuid
+# 註（2026-08-04）：原本這裡有 write_ledger_entry —— **filesystem 直寫 Treasury ledger**。
+# 已移除：財務操作一律走 Cmd（C# server 端），python 不直寫（Tim 定調）。
+#   直寫的實際後果（不是原則潔癖）：
+#     · C# 餘額快取自 2026-08-01 起初掃後不再列舉磁碟 → 直寫的 entry 在下次
+#       InvalidateBalanceCache / domain reload 之前**後台看不到**，且無錯誤訊息。
+#     · 繞過 idempotency 判重；`sig_*` 由寫入端自填（本檔曾填 manual_filesystem_write_canvas），
+#       所以「有 sig_* 就是 C# 寫的」這個判準是假的 —— 2026-08-04 盤查時據此得出顛倒的結論。
+#     · balance_before/after 留 null，逼出另一支 python 去**改寫既有 entry**（append-only 被就地修改）。
+#   現在改為：**按總像素一次扣款**（Tim 拍板）——
+#   逐像素明細本來就在畫布自己的 event log（`pixels` + `pay_breakdown`），Treasury 只需要知道總額。
 
 
 # ───────────────────────── voucher ledger ─────────────────────────
@@ -757,57 +733,37 @@ def cmd_place(args):
             # 不在此手動釋放鎖：sys.exit 觸發 SystemExit，由外層 finally 統一釋放
             sys.exit(3)
 
-        # 步驟 3：逐像素扣款 + 收集 ledger_refs
-        # 把 n 個像素依 plan 順序分配付款方式（前 free 個用免費、次 voucher 個用券、餘 token）
-        pay_seq = (["free"] * plan["free"]
-                   + ["voucher"] * plan["voucher"]
-                   + ["token"] * plan["token"])
+        # 步驟 3：**批次結算**（Tim 2026-08-04：按總像素一次扣款，不再逐像素寫 ledger）
+        # 物理意義：token 扣款與消券都走 Cmd（C# server 端）；免費像素不動 Treasury。
+        #          逐像素明細留在畫布自己的 event log，Treasury 只記「這次花了多少」。
+        # 邊界：**Cmd 失敗一律整批拒絕**（先收錢再畫，不能反過來）——
+        #      畫了卻沒扣到錢等於免費像素，那比拒絕嚴重得多。
+        voucher_consumed = plan["voucher"]
+        free_consumed = plan["free"]
 
-        voucher_consumed = 0   # 本次扣券數（最後一次性更新 voucher ledger）
-        free_consumed = 0      # 本次用掉免費像素數（0 或 1）
+        if plan["token"] > 0:
+            ok, msg = treasury_debit(
+                account=bank, amount=plan["token"],
+                source_kind="canvas_pixel", source_ref=event_uuid,
+                description=f"canvas {plan['token']} px by {persona} (event {event_uuid})",
+                caller=bank)   # 帳戶本人花自己的錢（帳戶隔離鐵律，見 treasury_cmd.py）
+            if not ok:
+                print(f"❌ place 拒絕（Treasury 扣款失敗，未畫任何像素）：{msg}", file=sys.stderr)
+                sys.exit(3)
+            ledger_refs.append(f"treasury:{event_uuid}")
 
-        for px, method in zip(pixels, pay_seq):
-            x, y = px["x"], px["y"]
-            ref = f"{event_uuid}:{x},{y}"
-            if method == "token":
-                # 真實 Treasury debit
-                uid = write_ledger_entry(
-                    P, etype="debit", amount=1, account_id=bank,
-                    source_kind="canvas_pixel", source_ref=ref,
-                    description=f"canvas pixel @ ({x},{y}) by {persona}")
-                ledger_refs.append(uid)
-            elif method == "voucher":
-                # 0-amount audit（券真正增減記 voucher ledger）
-                uid = write_ledger_entry(
-                    P, etype="audit", amount=0, account_id=bank,
-                    source_kind="draw_voucher_consume",
-                    source_ref=f"voucher:{persona}:{x},{y}",
-                    description=f"draw voucher consumed @ canvas ({persona})")
-                ledger_refs.append(uid)
-                voucher_consumed += 1
-            else:  # free
-                # 0-amount audit（freetime_pixel）
-                uid = write_ledger_entry(
-                    P, etype="audit", amount=0, account_id=bank,
-                    source_kind="freetime_pixel",
-                    source_ref=f"freetime:{persona}:{x},{y}",
-                    description=f"free-time pixel @ canvas ({persona})")
-                ledger_refs.append(uid)
-                free_consumed += 1
-
-        # 步驟 4：更新 per-persona voucher ledger（消券）— 仍在鎖內，序列化讀-改-寫
         if voucher_consumed > 0:
-            v = load_voucher(P, persona)
-            v["balance"] = v.get("balance", 0) - voucher_consumed
-            for px in pixels[plan["free"]:plan["free"] + plan["voucher"]]:
-                v["history"].append({
-                    "ts": iso_ms(now), "uuid": secrets.token_hex(3),
-                    "type": "consume", "amount": 1,
-                    "source": "canvas_place",
-                    "ref": f"{event_uuid}:{px['x']},{px['y']}",
-                })
-            write_json(voucher_path(P, persona), v)
+            ok, msg = canvas_voucher_consume(
+                persona=persona, amount=voucher_consumed, source_ref=event_uuid,
+                description=f"canvas {voucher_consumed} px by {persona}")
+            if not ok:
+                print(f"❌ place 拒絕（消券失敗，未畫任何像素）：{msg}", file=sys.stderr)
+                sys.exit(3)
+            ledger_refs.append(f"voucher:{event_uuid}")
 
+        # 步驟 4：（已移除）本地 voucher ledger 寫入
+        # 消券已在步驟 3 走 Cmd_CanvasVoucher op=consume —— C# 是券的 canonical owner。
+        # 這裡若保留本地讀-改-寫會**雙重扣券**（Cmd 扣一次、本地再扣一次）。
         # 步驟 5：更新 per-persona freetime state（用掉免費像素 → 推進 cooldown）
         #   同時記下這次領用所屬的 active session id，供 free_pixel_available 做「冷卻不跨
         #   session 累積」判定（新 session id ≠ 舊記錄 → 重新起算）。

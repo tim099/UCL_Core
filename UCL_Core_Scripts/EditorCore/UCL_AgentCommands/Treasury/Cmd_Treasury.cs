@@ -63,6 +63,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     // 轉帳單（2026-08-04）—— 開單提案「A→B 搬錢」，Tim 從後台「💸 轉帳審批」核准。
                     // 與 request 分開的理由：請款消耗公庫、轉帳總量守恆，審批者要能一眼分辨。
                     case "transfer_request": Op_TransferRequest(args); break;
+                    // 每日結帳（2026-08-04）—— 平時由酒保跨日 tick 自動產生；
+                    // 這個 op 是給人手動補算用的（首次上線 backfill / 確認結帳狀態）。
+                    // 規格明訂「不自動 rebuild」，但**人必須有辦法補算** —— 否則
+                    // 一個不可手動觸發的機制既難驗證也難救援（可測性不是奢侈品）。
+                    case "closing_generate": Op_ClosingGenerate(args); break;
+                    case "closing_list": Op_ClosingList(args); break;
                     default:
                         Cmd_Tavern_Helpers.RejectLastOp($"未知 op: {op}");
                         break;
@@ -366,6 +372,49 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
             }
             catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp($"transfer_request 參數不合法：{ex.Message}"); }
+        }
+
+        // 區塊職責：op=closing_generate —— 補齊所有「已完結但尚未結帳」的 UTC 日期。
+        // 物理意義：平時由酒保跨日 tick 自動跑；本 op 給人手動補算（首次上線 / 確認狀態）。
+        // 數值影響：只寫 Treasury/closing/*.json，**不動任何餘額、不動 ledger**。
+        // 邊界：今天不會被結帳（今天還在寫）；已結過的日期不重複寫。
+        void Op_ClosingGenerate(Dictionary<string, string> args)
+        {
+            int n = UCL_TreasuryClosing.GenerateMissing(out string summary);
+            var sb = new StringBuilder();
+            sb.AppendLine($"# 📘 每日結帳 — 新產生 {n} 份");
+            sb.AppendLine();
+            sb.AppendLine($"- {summary}");
+            sb.AppendLine($"- 已結帳日期共 {UCL_TreasuryClosing.ListClosingDateKeys().Count} 份");
+            sb.AppendLine($"- 落檔位置：`{UCL_TreasuryPaths.GetClosingRoot()}`");
+            sb.AppendLine();
+            sb.AppendLine("餘額讀取 = 最近一份結帳 + 該日之後的 entry。已關帳期間不重算。");
+            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+        }
+
+        // 區塊職責：op=closing_list —— 列出已結帳日期與最新一份的內容摘要。
+        void Op_ClosingList(Dictionary<string, string> args)
+        {
+            var keys = UCL_TreasuryClosing.ListClosingDateKeys();
+            var sb = new StringBuilder();
+            sb.AppendLine($"# 📘 已結帳日期（{keys.Count} 份）");
+            sb.AppendLine();
+            if (keys.Count == 0)
+            {
+                sb.AppendLine("_(尚無結帳 — 餘額仍走全量重放；跑 `op=closing_generate` 可補算)_");
+            }
+            else
+            {
+                sb.AppendLine($"- 最早：`{keys[0]}`　最新：`{keys[keys.Count - 1]}`");
+                var latest = UCL_TreasuryClosing.LoadLatestBefore(
+                    UCL_TreasuryPaths.DateKey(System.DateTime.UtcNow));
+                if (latest != null)
+                {
+                    sb.AppendLine($"- 讀取基準：`{latest.DateKey}`（{latest.Balances.Count} 個帳戶／幣別，"
+                                  + $"累計 entry {latest.CumulativeEntryCount}）");
+                }
+            }
+            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
         }
 
         void Op_RequestList(Dictionary<string, string> args)

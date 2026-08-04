@@ -918,7 +918,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         static void CheckOvernightDeposits()
         {
             var state = UCL_BartenderIO.LoadState();
-            string today = DateTime.Now.ToString("yyyy-MM-dd");  // local time
+            // 區塊職責：日期一律走 **UTC**（Tim 2026-08-04 拍板統一時區）
+            // 物理意義：ledger 日期夾用 UTC，本流程原本用 local（台灣 +8）——
+            //          於是 local 00:00~08:00 產生的 entry 會落在**前一天**的 UTC 夾。
+            //          兩套曆並存時，結帳邊界會跟檔案位置對不上，
+            //          症狀是「餘額偶爾差一點，而且只在半夜出現」。
+            // 數值影響：結算時點由 local 00:00 變成 local 08:00（= UTC 00:00）。
+            //          `useRef` 判重 key 內嵌的日期也跟著變 UTC。
+            string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
             // First-run grace: state 沒紀錄 → init 成 today, 不收費
             if (string.IsNullOrEmpty(state.last_overnight_check_date))
@@ -928,8 +935,58 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return;
             }
 
+            // ── UTC 遷移 grace（一次性）─────────────────────────────────────
+            // 物理意義：state 裡存的可能是**遷移前的 local 日期**。若直接拿它跟 UTC today 比，
+            //          在 local 00:00~08:00 之間會判定「跨日了」而重跑一輪；
+            //          而判重用的 useRef 內嵌日期也不同（local D+1 vs UTC D）→ **重複扣款**。
+            // 數值影響：遷移後第一次執行只寫 state、**不收費**，並落一個不可逆的 marker。
+            //          代價是可能少收一天保管費 —— 相對於重複扣款，這方向明顯該選。
+            //          **壞要往安全的方向壞。**
+            // 設計取捨：不採「新舊 key 都查一次」的雙查期（gura 2026-08-04 提案，技術上更精確）——
+            //          雙查是過渡期專用邏輯，必須在某天被移除，而「該移除卻沒人記得移除」
+            //          的臨時碼在本 repo 是有血債的。一次性少收一天不留債。
+            string graceMarker = Path.Combine(UCL_BartenderIO.GetBartenderDir(), "utc_migration_grace.marker");
+            if (!File.Exists(graceMarker))
+            {
+                try
+                {
+                    Directory.CreateDirectory(UCL_BartenderIO.GetBartenderDir());
+                    File.WriteAllText(graceMarker,
+                        $"UTC 遷移 grace 已執行\nat_utc={DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss}Z\n"
+                        + $"prev_state_date={state.last_overnight_check_date}\nnew_state_date={today}\n"
+                        + "本次刻意不收保管費 —— 避免 local→UTC 換算期間重複扣款。\n",
+                        new System.Text.UTF8Encoding(false));
+                }
+                catch (Exception ex)
+                {
+                    // marker 寫不進去就**不要**跳過收費 —— 否則每輪都當成「還在 grace」而永遠不收費，
+                    // 那是比少收一天嚴重得多的靜默失效。
+                    Debug.LogWarning($"[Bartender] UTC grace marker 寫入失敗，本輪照常收費：{ex.Message}");
+                    goto skipGrace;
+                }
+                state.last_overnight_check_date = today;
+                UCL_BartenderIO.SaveState(state);
+                Debug.Log($"[Bartender] UTC 遷移 grace — state 由 '{state.last_overnight_check_date}' 對齊 UTC {today}，本輪不收費。");
+                return;
+            }
+            skipGrace:
+
             // 同一天已 check 過 → skip (短路, 避免每 5s 重跑)
             if (state.last_overnight_check_date == today) return;
+
+            // ── 每日結帳（掛在保管費之前）────────────────────────────────────
+            // 物理意義：跨日 tick 是唯一能確定「前一天已經寫完了」的時點，所以結帳掛在這裡。
+            //          先關帳再收費：保管費本身要讀全部帳戶餘額，結帳讓那件事變便宜。
+            // 數值影響：只寫 closing/*.json，不動任何餘額；失敗不擋收費（結帳是加速不是前提）。
+            try
+            {
+                int n = UCL_TreasuryClosing.GenerateMissing(out string closingSummary);
+                if (n > 0) Debug.Log($"[Bartender] 每日結帳：{closingSummary}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Bartender] 每日結帳失敗（不擋保管費）：{ex.Message}");
+            }
 
             // 跨日了 — 跑一輪檢查
             // 1. Load 全 ledger 一次 (cache reuse 兩個 pass)

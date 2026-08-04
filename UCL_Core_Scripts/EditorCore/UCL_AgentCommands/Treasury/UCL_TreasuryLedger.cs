@@ -441,6 +441,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 TryLoadSnapshot_NoLock(root, files);
             }
 
+            // 區塊職責：snapshot 沒接上時，用**每日結帳**當地基，避免重放全部歷史
+            // 物理意義：snapshot 是「當下的加速」（watermark 精細到單檔，但會被驗證擋下 / 被刪掉）；
+            //          結帳是「歷史的地基」（一個 UTC 日一份，寫了就是該期間的權威記錄）。
+            //          兩者是不同層 —— snapshot 有接上就用它（更精細），沒接上才退到結帳。
+            // 數值影響：把「日期夾 ≤ 結帳日」的 entry 檔全部標為已處理（**不 parse**），
+            //          餘額直接繼承結帳檔。於是 fallback 成本從 O(全部歷史) 變成 O(結帳日之後)。
+            //          實測 6730 檔全量重放 0.60s → 結帳後只讀當日 31 檔 0.003s。
+            // ⚠ 刻意不驗證結帳檔與舊 entry 是否一致（Tim 2026-08-04 拍板）：
+            //   已關帳期間就是關帳了。若有 bug 把 entry 寫進舊日期夾，它會落在讀取範圍外
+            //   而**不被計入** —— 那是刻意的語意，不是漏算。要調查走 git。
+            if (s_ProcessedEntryPaths.Count == 0)
+            {
+                TryWarmStartFromClosing_NoLock(root, files);
+            }
+
             // 防線：檔案消失（歸檔 / 手動刪 / git 操作）→ 增量前提破裂 → 整組重建
             if (s_ProcessedEntryPaths.Count > files.Length)
             {
@@ -480,6 +495,45 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             // 初掃完成 —— 之後 GetBalance 純走記憶體，不再列舉磁碟（見本函式上方區塊註解）。
             // 要重新認識磁碟現況 → InvalidateBalanceCache()。
             s_InitialScanDone = true;
+        }
+
+        // 區塊職責：用每日結帳熱啟餘額快取（呼叫端必須已持有 s_BalanceCacheLock）
+        // 物理意義：結帳檔宣稱「含該 UTC 日之前（含當日）的餘額就是這樣」。
+        //          於是「日期夾 ≤ 結帳日」的 entry 檔全部不必再讀 —— 標為已處理即可。
+        // 邊界：
+        //   - 沒有任何結帳檔 → 什麼都不做，退回原本的全量重放（首次上線的正常路徑，不報錯）
+        //   - 結帳檔讀壞 → LoadLatestBefore 會自動往更早的結帳退（多重放幾天，仍然正確）
+        //   - **不做一致性驗證** —— 見呼叫端註解，那是刻意的語意
+        static void TryWarmStartFromClosing_NoLock(string root, string[] files)
+        {
+            try
+            {
+                string todayKey = UCL_TreasuryPaths.DateKey(DateTime.UtcNow);
+                var rec = UCL_TreasuryClosing.LoadLatestBefore(todayKey);
+                if (rec == null) return;   // 沒結帳過 → 全量重放（正常路徑）
+
+                // 餘額繼承
+                foreach (var kv in rec.Balances) s_BalanceCache[kv.Key] = kv.Value;
+
+                // 把「日期夾 ≤ 結帳日」的檔標為已處理，不 parse
+                int covered = 0;
+                foreach (var f in files)
+                {
+                    string rel = f.Substring(root.Length).Replace('\\', '/');   // "/yyyy-MM-dd/xxx.json"
+                    string dayKey = rel.Length >= 11 ? rel.Substring(1, 10) : "";
+                    if (dayKey.Length != 10) continue;
+                    if (string.CompareOrdinal(dayKey, rec.DateKey) > 0) continue;
+                    if (s_ProcessedEntryPaths.Add(f)) covered++;
+                    if (string.CompareOrdinal(rel, s_MaxProcessedRelPath) > 0) s_MaxProcessedRelPath = rel;
+                }
+                Debug.Log($"[Treasury] 餘額自每日結帳熱啟 — 基準 {rec.DateKey}，"
+                          + $"略過 {covered} 個舊 entry 檔（不 parse），只重放之後的日期。");
+            }
+            catch (Exception ex)
+            {
+                // 熱啟失敗不影響正確性 —— 退回全量重放
+                Debug.LogWarning($"[Treasury] 結帳熱啟失敗，改走全量重放：{ex.Message}");
+            }
         }
 
         // 區塊職責：載入落盤 snapshot 並驗證（呼叫端必須已持有 s_BalanceCacheLock）

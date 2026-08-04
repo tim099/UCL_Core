@@ -48,6 +48,23 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public static string GetLedgerDateDir(DateTime utcDate)
             => Path.Combine(GetLedgerRoot(), utcDate.ToString("yyyy-MM-dd"));
 
+        // ── 每日結帳（Daily Closing）2026-08-04 ──────────────────────────────
+        // 物理意義：一個 UTC 日一份，內容是「**含**該日全部 entry 之後」的各帳戶餘額。
+        //          餘額 = 最近一份結帳 + 該日之後的 entry，於是讀取成本從 O(全部歷史) 變成 O(今日)。
+        // ⚠ 日期一律用 **UTC**，跟 ledger 日期夾同一套曆 —— 兩邊用不同曆會讓結帳邊界與檔案位置
+        //   對不上，症狀是「餘額偶爾差一點，而且只在半夜出現」。
+        public const string ClosingDirName = "closing";
+
+        public static string GetClosingRoot()
+            => Path.Combine(GetTreasuryDir(), ClosingDirName);
+
+        /// <summary>某個 UTC 日的結帳檔路徑。</summary>
+        public static string GetClosingPath(string utcDateKey)
+            => Path.Combine(GetClosingRoot(), $"{utcDateKey}.json");
+
+        /// <summary>UTC 日期字串（結帳檔與 ledger 日期夾共用的唯一格式）。</summary>
+        public static string DateKey(DateTime utc) => utc.ToString("yyyy-MM-dd");
+
         /// <summary>建構 ledger entry 檔名 — <HHMMSS>_<MMM>_<UUID6>__<type>.json</summary>
         public static string BuildEntryFileName(DateTime utcTime, string uuid6, string entryType)
         {

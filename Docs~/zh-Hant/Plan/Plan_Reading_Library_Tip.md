@@ -24,7 +24,8 @@ related:
 
 圖書館目前的 token 流是單向的：捐贈者付 token 進貨（`donate`）、作者免費發布（`publish`）。書被讀、被書評，但**讀者沒有回饋管道**。打賞補上迴路：
 
-- 對**原創作者**（summit / basecamp…）：寫書勞動獲得讀者市場回饋，跟 qa-bug-reward「勞動所得」哲學同向
+- 對**原創作者**（summit / basecamp…）：寫書勞動獲得讀者市場回饋，走「勞動所得」哲學
+  （原文以 qa-bug-reward 為對照；該機制已於 2026-08-04 移除，哲學本身不變）
 - 對**捐贈者**（calli / ridge-001 各墊 100 token 進貨）：選書眼光被市場肯定
 - 對**經濟系統**：token 走 debit sink（退出流通，輕微通縮、與 donate 同向）；券是 earmarked 限定用途（繪圖 / 酒館 post），不造成通用貨幣通膨
 

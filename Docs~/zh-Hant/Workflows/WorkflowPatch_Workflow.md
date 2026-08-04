@@ -1,9 +1,9 @@
 ---
 title: Workflow 補丁工作流 (Workflow Patch Workflow)
-last_updated: 2026-07-13
+last_updated: 2026-08-04
 status: active
 theme: agent_activity
-summary: workflow QA confirm bug 後 register patch entry；累積 ≥ 3 patches 自動警示強制 refactor 的 anti-rot 機制完整流程 — 儲存佈局、_index.json schema、workflow_patch.py 全 CLI (register / list / status / status-all / refactor)、agent 自律 SOP、與 qa-bug-reward 的 cross-link audit。
+summary: workflow QA confirm bug 後 register patch entry；累積 ≥ 3 patches 自動警示強制 refactor 的 anti-rot 機制完整流程 — 儲存佈局、_index.json schema、workflow_patch.py 全 CLI (register / list / status / status-all / refactor)、agent 自律 SOP。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Workflow Patch
 related:
@@ -41,7 +41,7 @@ docs/Workflows/_patches/<workflow-slug>/
   "workflow_slug": "commit-workflow",
   "patch_count": 2,
   "patches": [
-    {"id": 1, "filename": "001_xxx.md", "applied_at": "...", "applied_by": "...", "qa_bug_ref": "...", "summary": "..."},
+    {"id": 1, "filename": "001_xxx.md", "applied_at": "...", "applied_by": "...", "summary": "..."},
     {"id": 2, ...}
   ],
   "last_refactor_at": null,
@@ -60,8 +60,7 @@ python AgentCommands/Tools/workflow_patch.py register \
   --workflow commit-workflow \
   --root-cause "三層 bump 中 UCL submodule 未切 Dev 分支 → detached HEAD" \
   --patch-summary "commit 前必先 git -C UCL checkout Dev" \
-  --applied-by claude-da-xiaojie \
-  --qa-bug-ref CommitDetachedHEAD
+  --applied-by claude-da-xiaojie
 ```
 
 - 第 4 個 register → **reject** (強制走 refactor)
@@ -96,9 +95,8 @@ python ... workflow_patch.py refactor \
 ### 撞到 workflow bug + QA confirm
 
 1. **修正 workflow** (改 SKILL.md / 文檔 / cmd code)
-2. **走 qa-bug-reward**：`python qa_bug_reward.py grant --severity ... --bug-ref <X>` (grant Tim reward)
-3. **走 workflow_patch register**：同步 register patch entry，qa-bug-ref 填同 ref
-4. 看 status — 若 count = 3 → 標記 next time 必先 refactor
+2. **走 workflow_patch register**：register 一筆 patch entry
+3. 看 status — 若 count = 3 → 標記 next time 必先 refactor
 
 ### Refactor 時機
 
@@ -108,18 +106,20 @@ python ... workflow_patch.py refactor \
 3. **`workflow_patch refactor`** 標記完成
 4. Counter reset，重新追蹤新一輪
 
-### Cross-link 跟 qa-bug-reward
+### Patch audit
 
-每筆 patch 該帶 `--qa-bug-ref <X>` 對應 Tim QA reward ledger entry。這樣：
-- QA reward audit：看 ledger Tim 收 N token = 確認 N 個 bug
-- Patch audit：看 patches/ 看哪些 workflow 累積最多
-- Cross-reference：高 reward 但低 patch = 開發 bug；低 reward 但高 patch = workflow 設計 bug
+看 `patches/` 就知道哪些 workflow 累積最多補丁 —— 那是 workflow 設計問題的指標。
+
+> [!NOTE]
+> **2026-08-04**：原本這裡有一套「跟 qa-bug-reward cross-link」的稽核設計
+> （每筆 patch 帶 `--qa-bug-ref` 對應 Tim 的 QA reward ledger entry，
+> 用高 reward/低 patch 比值區分「開發 bug」與「workflow 設計 bug」）。
+> **QA 獎金功能已移除**，該 cross-link 連同 `--qa-bug-ref` 選項一併撤掉。
 
 ## 四、與其他 skill 協作
 
 | Skill | 互補 |
 |---|---|
-| `qa-bug-reward` | cross-link `qa_bug_ref` |
 | `ucl-commit` | commit-workflow 自己也適用本機制 (dogfood) |
 | `agent-lessons-log` | patch 寫進 lesson jsonl 跨 agent 共享 |
 | `ucl-glossary` | 「補丁」/「refactor」/「workflow rot」可進 glossary `category=protocol` |

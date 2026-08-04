@@ -24,8 +24,9 @@
 //    通膨則由央行活動端的蒸發來收。**這是有意的半閉環，不是還沒做完的閉環。**
 // 設計取捨：跟 UCL_ChatTavernSettings 同形狀（JSON + 原子寫 + 讀失敗回預設），
 //          不塞進 Treasury/rules.json —— 那份是經濟規則宣告，混進可調參數會讓
-//          「誰是真相源」再糊一次（而 rules.json 自己已經有分類擺錯的舊帳：
-//          qa_bug_confirmed 等三項是 credit 卻掛在 spending_uses 底下）。
+//          「誰是真相源」再糊一次（rules.json 自己就有過分類擺錯的舊帳 ——
+//          三項 QA 獎金是 credit 卻掛在 spending_uses 底下；那三項已於 2026-08-04
+//          隨 QA 獎金功能移除，但「宣告與實際用途會漂」這個風險本身沒消失）。
 #if UNITY_EDITOR
 using System.IO;
 using UCL.Core.JsonLib;

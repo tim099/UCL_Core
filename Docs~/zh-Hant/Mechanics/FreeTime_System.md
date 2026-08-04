@@ -181,8 +181,9 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
 ```
 Tim 說的話 → 應該怎麼處理
 ─────────────────────────────────────
-「+N token」 / 「N token 績效獎金」 / 「QA 獎金」
+「+N token」 / 「N token 績效獎金」
   → 績效獎金 → Cmd_Treasury op=credit (source_kind=performance_bonus)
+  （「QA 獎金」已於 2026-08-04 隨 QA 獎金功能移除，不再是獨立說法）
 
 「N 張酒館券」 / 「N 張招待券」 / 「N 次 free-style standup」
   → 酒館券 → 寫進 agent_bonus_quota.json history (kind=tavern_voucher)

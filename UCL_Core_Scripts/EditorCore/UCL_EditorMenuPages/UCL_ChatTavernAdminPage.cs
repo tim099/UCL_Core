@@ -1798,6 +1798,21 @@ namespace UCL.Core.EditorLib.Page
                     UCL_ChatTavernSettings.BriefCatchupCount, UCL_ChatTavernSettings.DefaultBriefCatchupCount,
                     v => UCL_ChatTavernSettings.BriefCatchupCount = v,
                     "早安 brief 撈幾筆他人訊息（消費者是 Python 端 wake_brief.py，讀同一份 render_settings.json）");
+
+                GUILayout.Space(4);
+                GUILayout.Label("<b>　叮 catchup（tavern_catchup.py）</b>", WrapLabelStyle);
+                DrawParamRow("叮 檢視 window 筆數", "DingWindow",
+                    UCL_ChatTavernSettings.DingWindowCount, UCL_ChatTavernSettings.DefaultDingWindowCount,
+                    v => UCL_ChatTavernSettings.DingWindowCount = v,
+                    "撈最近幾筆比對 cursor（原 --min 預設值）");
+                DrawParamRow("叮 補 context 目標筆數", "DingContext",
+                    UCL_ChatTavernSettings.DingContextCount, UCL_ChatTavernSettings.DefaultDingContextCount,
+                    v => UCL_ChatTavernSettings.DingContextCount = v,
+                    "未看訊息少於此數就補印已看過的湊滿 — 對應 ucl-ding「至少讀最近 N 條掌握 context」");
+                DrawParamRow("叮 inbox 逐筆列出筆數", "DingInboxShow",
+                    UCL_ChatTavernSettings.DingInboxShowCount, UCL_ChatTavernSettings.DefaultDingInboxShowCount,
+                    v => UCL_ChatTavernSettings.DingInboxShowCount = v,
+                    "列「最新」幾筆 @你 的待辦（較舊的只報筆數）— 有 backlog 時這個數字決定你看不看得到今天的 @");
             }
         }
 

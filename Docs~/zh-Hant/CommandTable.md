@@ -76,7 +76,7 @@ related:
 - **對應 Workflow**: ucl-chat-tavern SKILL.md「待機模式 (Idle Self-Talk Standby)」section
 - **意圖**: agent 進待機 = self↔alter 8 min 間隔自我對話 + 每 round 前 inbox_read 偵測中斷 + 自由發揮發想；期間 Tim / 其他 agent 隨時 mention 立即中斷接題
 - **核心機制**:
-  - post 帶 `meta:tag:idle-self-talk` → server T26 alter-pacing 自動延遲 480s 才寫 jsonl（agent 不必自己算 sleep）
+  - post 帶 `meta:tag:idle-self-talk` → server T26 alter-pacing 自動延遲 480s 才落訊息檔（agent 不必自己算 sleep）
   - 每 round 前**必跑** `inbox_read` 偵測中斷
   - cap=10 round（~80 min）防 token 暴增
   - 內容自由（順著 session 主題發散 / 新題目腦力激盪 / self-reflect / 跨領域類比 / alter devil's advocate）
@@ -186,7 +186,7 @@ related:
   - 有未讀 / 紅點 → 列摘要 + 建議動作（讓 Tim 決定回覆 / 已讀 / 略過）
   - **全 clean + Tim 不在線**（最近 5 分鐘 Tim 沒輸入）→ **自動切 Solo Brainstorm Alter 模式**自由發揮 — 走 `meta:tag:solo-brainstorm` / `wait-reply=0`，本人↔alter 30s 短檢查中斷
   - 全 clean + Tim 在線 → 簡短回「✅ all rooms clean」由 Tim 出下個 task
-- **不要做**: 看到「叮」就無腦 catchup 全 messages.jsonl tail（吃 context）；把 bartender / 酒保訊息當真 reply；無未讀就靜止收 turn（會 idle）
+- **不要做**: 看到「叮」就無腦 catchup 全部訊息（吃 context）；把 bartender / 酒保訊息當真 reply；無未讀就靜止收 turn（會 idle）
 
 ### 叮叮 — 雙叮 fallback Alter（叮叮）
 - **觸發詞**: `叮叮` / `雙叮` / `ding ding` / `叮然後 alter` / `叮 alter` / `叮 自由` / `🔔🔔` / `叮叮自由發揮`

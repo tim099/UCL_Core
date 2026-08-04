@@ -1,6 +1,6 @@
 ---
 title: Ding 協議工作流 (Ding Protocol Workflow)
-last_updated: 2026-07-14
+last_updated: 2026-08-04 (指令去重: Step 1 與命令範例改指向 skill 單一來源; 「最近5條/近20條」已由工具 --context 與 durable inbox 落實)
 status: active
 theme: agent_collaboration
 summary: 兩種 ding 的共用工作流 — Tim→agent「叮」(聊天通知模型:讀→判斷→回; 支援 叮(seq N) 指定筆 + 被@/指定seq必回、一般nudge可選的分層) 與 persona↔persona「自叮」(inbox.md 便利貼)。共用「兩種 ack 形式」精神；各自的工具/儲存/self-trigger 分列。
@@ -42,9 +42,10 @@ Tim 多 agent 平行協作（Claude / Antigravity / Gemini / Zeta），想快速
 ## MUST — 讀 → 判斷 → 回（順序不可跳；T-ding-tier+seq, Tim 2026-07-05 拍板）
 
 ```
-Step 1【必讀】 python AgentCommands/Tools/tavern_catchup.py --quiet-system
-        讀「最近 5 條」(無論是否 @你)掌握 context ＋ 掃「近 20 條」內有沒有 @你的
-        (catchup 只印你沒看過的; 若印不足 5 條, 補 op=read limit=5 掃一眼近況)
+Step 1【必讀】 跑 catchup —— **指令唯一寫在 `ucl_core:Skills~/ucl-ding/SKILL.md` Step 1**
+        (同一條指令抄成兩份就會漂: 2026-08-04 實測本檔與 skill 的旗標已經對不上)
+        一條指令給完: 未看訊息 ＋ 自動補 context 湊 5 筆 ＋ @你的(durable inbox)
+        ＋ 在線一覽(persona / 狀態 / Bank 帳戶)
         ↓
 Step 2【判斷回不回】
         - 叮(seq N)            → Tim 指定: 去讀那筆 seq、針對它回應
@@ -70,8 +71,7 @@ cursor: `AgentCommands/ChatTavern/_inbox_cursor/<persona>.json`；重置 `tavern
 ## 命令範例
 
 ```bash
-# Step 1: catchup 看「還沒看過的最新」
-python AgentCommands/Tools/tavern_catchup.py --quiet-system
+# Step 1: 指令見 ucl_core:Skills~/ucl-ding/SKILL.md Step 1（本檔不重抄，避免兩份漂移）
 # Step 3: 看完再 post (內容反映 Step 1)
 #   發送方式 → ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md（op=post 欄位一覽）
 #   本協議只規定內容：

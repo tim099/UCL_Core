@@ -33,6 +33,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public const int DefaultSearchLimit = 100;
         public const int DefaultSinceLimit = 200;
         public const int DefaultBriefCatchupCount = 10;   // wake brief §8：撈 10 筆他人訊息
+        // ── 叮 catchup（消費者是 Python 端 tavern_catchup.py）─────────────────────
+        // 這三個原本硬編在 py 裡（--min 10 / context 5 / inbox 前 10 筆），
+        // 而 ucl-ding 的規則正文寫的是「最近 5 條 + 近 20 條」—— 規則與實作各寫一份數字，
+        // 天生會漂。搬進同一份設定檔＝**規則的數字只有一個來源，而且 Tim 可以直接調**。
+        public const int DefaultDingWindowCount = 10;      // 檢視 window（撈最近幾筆）
+        public const int DefaultDingContextCount = 5;      // 未看不足此數就補印已看過的湊滿
+        public const int DefaultDingInboxShowCount = 10;   // inbox 逐筆列出「最新」幾筆
 
         // 檔名固定；目錄走可 override 的 AgentCommands 資料根（跨專案不寫死安裝路徑）
         public const string SettingsFileName = "render_settings.json";
@@ -79,6 +86,27 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             get => Get("brief_catchup_count", DefaultBriefCatchupCount, null);
             set => Set("brief_catchup_count", value);
+        }
+
+        /// <summary>叮 catchup 檢視 window：撈最近幾筆訊息比對 cursor（消費者 tavern_catchup.py）。</summary>
+        public static int DingWindowCount
+        {
+            get => Get("ding_window_count", DefaultDingWindowCount, null);
+            set => Set("ding_window_count", value);
+        }
+
+        /// <summary>叮 catchup 補 context：未看訊息少於此數時，補印已看過的湊滿（0 = 不補）。</summary>
+        public static int DingContextCount
+        {
+            get => Get("ding_context_count", DefaultDingContextCount, null);
+            set => Set("ding_context_count", value);
+        }
+
+        /// <summary>叮 catchup 的 inbox 逐筆列出「最新」幾筆（較舊的只報筆數，不逐筆洗版）。</summary>
+        public static int DingInboxShowCount
+        {
+            get => Get("ding_inbox_show_count", DefaultDingInboxShowCount, null);
+            set => Set("ding_inbox_show_count", value);
         }
 
         /// <summary>全部回預設 —— 直接刪檔，讓每個 getter 落回 Default*。</summary>

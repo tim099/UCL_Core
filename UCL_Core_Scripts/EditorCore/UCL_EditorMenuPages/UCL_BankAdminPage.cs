@@ -49,7 +49,15 @@ namespace UCL.Core.EditorLib.Page
 
         // ==== 顯示用快取（開頁 / 按 Refresh 才重讀檔，不每幀掃磁碟）====
         JsonData m_RegistryMeta;                                    // _registry_meta.json 整份
-        readonly List<string> m_BankIds = new List<string>();      // 帳號宇宙 = agent_banks values ∪ system_accounts keys
+        readonly List<string> m_BankIds = new List<string>();      // 帳號宇宙 = agent_banks values ∪ system_accounts keys ∪ ledger 內的孤兒帳戶
+        // 區塊職責：只存在於 ledger、卻沒有任何 agent_banks / system_accounts 對應的帳戶。
+        // 物理意義：這種帳戶**裡面有真的錢，但沒有主人**，而且後台原本完全看不到它 ——
+        //          帳號宇宙是從 registry 建的，ledger 裡冒出來的 account_id 不在其中。
+        // 血證（2026-08-04）：summit 長期用 `--arg sender=summit` 發文，persona 名被 alias 歸一
+        //          灌進 agent 欄，於是 2026-07-31 一筆 commit 領薪 +5 token 落進 `summit` 這個
+        //          不存在的帳戶。錢在帳上、餘額表算得出來，但下拉選單找不到它，**也就無法轉出**。
+        //          看不見的錢比不見的錢更難處理 —— 前者連「有問題」都不會被發現。
+        readonly HashSet<string> m_OrphanBankIds = new HashSet<string>(StringComparer.Ordinal);
         readonly List<string> m_AgentKeys = new List<string>();    // agent_banks 的 keys（開戶下拉用）
         readonly Dictionary<string, string> m_AgentToBank = new Dictionary<string, string>();  // agent → bank（agent_banks 原表）
         readonly List<string> m_PersonaNames = new List<string>(); // PersonaCard asset 全 ID
@@ -115,6 +123,18 @@ namespace UCL.Core.EditorLib.Page
         readonly List<UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryPayoutRequest> m_PendingRequests
             = new List<UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryPayoutRequest>();
         readonly Dictionary<string, string> m_RequestNoteDrafts = new Dictionary<string, string>();
+        // ==== 💸 轉帳審批（2026-08-04）====
+        // 物理意義：跟請款審批同形狀但不同語意 —— 請款是央行撥款（消耗公庫），轉帳是 A→B（總量守恆）。
+        //          主要用途是**歸戶**：把錢從孤兒 / 打錯字的帳戶搬回正主，且留下審批痕跡。
+        readonly List<UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryTransferRequest> m_PendingTransfers
+            = new List<UCL.Core.EditorLib.AgentCommands.Treasury.TreasuryTransferRequest>();
+        readonly Dictionary<string, string> m_TransferNoteDrafts = new Dictionary<string, string>();
+        string m_TransferArmedId = null;     // 二段確認，同請款
+        double m_TransferArmedAt = 0;
+        // 手動開單 draft（from / to 沿用上方 bank 下拉與轉帳目標下拉）
+        string m_NewTransferAmountDraft = "0";
+        string m_NewTransferReasonDraft = "";
+
         string m_ApproveArmedId = null;      // 二段確認：第一次點 arm，第二次才真的打款
         double m_ApproveArmedAt = 0;
         const double APPROVE_ARM_WINDOW_SEC = 5.0;
@@ -200,6 +220,26 @@ namespace UCL.Core.EditorLib.Page
                                 bankSet.Add(acc);
                     }
                 }
+                // ---- 孤兒帳戶：ledger 有、registry 沒有 ----
+                // 加進帳號宇宙是為了**看得見 + 轉得出去**，不是承認它合法；UI 會另外標記。
+                // 這裡不 auto-mint 任何 registry 條目 —— 補登記是人的決定，不是列表的副作用。
+                m_OrphanBankIds.Clear();
+                try
+                {
+                    foreach (var e in UCL_TreasuryLedger.LoadAllEntries())
+                    {
+                        if (e == null || string.IsNullOrEmpty(e.account_id)) continue;
+                        if (bankSet.Contains(e.account_id)) continue;
+                        m_OrphanBankIds.Add(e.account_id);
+                    }
+                    foreach (var orphan in m_OrphanBankIds) bankSet.Add(orphan);
+                }
+                catch (Exception ex)
+                {
+                    // 掃不到要出聲：靜默跳過會讓「沒有孤兒」與「沒掃成功」長得一樣
+                    Debug.LogWarning($"[BankAdmin] 掃 ledger 孤兒帳戶失敗（本次列表可能漏帳戶）: {ex.Message}");
+                }
+
                 m_BankIds.AddRange(bankSet);
 
                 // ---- persona 清單（PersonaCard asset 全 ID，跟 AdminPage 同來源）----
@@ -242,6 +282,7 @@ namespace UCL.Core.EditorLib.Page
             // 待審請款單一併讀進來（放 try 外：上面掛掉不該讓審批面板變成空的假象 ——
             // 「沒有待審單」與「載入失敗」是兩件事，不能長得一樣）
             ReloadPayoutRequests();
+            ReloadTransferRequests();
         }
 
         // ===========================================================
@@ -331,6 +372,8 @@ namespace UCL.Core.EditorLib.Page
             DrawVoucherPanel();       // 繪圖券 + 酒館券 查詢 / 發放
             GUILayout.Space(6);
             DrawPayoutRequestPanel(); // 📨 agent 請款審批（核准 = 央行撥款）
+            GUILayout.Space(6);
+            DrawTransferRequestPanel(); // 💸 轉帳審批（核准 = A→B 搬錢，總量守恆）
             GUILayout.Space(6);
             DrawCentralBankPanel();   // 🏦 央行 / 保管費 / 掛號信費用
             GUILayout.Space(6);
@@ -422,15 +465,57 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // 區塊：section 折疊（Tim 2026-08-04；形狀參考 UCL_ControlPanelPage）
+        // 物理意義：本頁 section 越長越多（總覽 / 開戶打款轉帳 / 券 / 請款審批 / 轉帳審批 / 央行），
+        //          全部展開時要捲很久才找得到目標。**預設收合**讓它回到「一眼看完標題列」的密度。
+        // 數值影響：純 UI；折疊狀態存 m_FoldDic（頁面 instance 生命週期）。
+        // 設計取捨：標題列即使收合也顯示關鍵摘要（餘額 / 待審筆數），
+        //          否則使用者得先展開才知道「這裡有沒有事」—— 那等於把資訊藏起來。
+        // ===========================================================
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
+
+        /// <summary>畫一個預設收合的 section；回傳是否展開。summary 收合時也看得到。</summary>
+        bool FoldHeader(string key, string title, string summary)
+        {
+            bool show = false;
+            using (new GUILayout.HorizontalScope())
+            {
+                show = UCL_GUILayout.Toggle(m_FoldDic, key, 21, iDefaultValue: false);
+                GUILayout.Label(title, new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                if (!string.IsNullOrEmpty(summary))
+                    GUILayout.Label(summary, new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                GUILayout.FlexibleSpace();
+            }
+            return show;
+        }
+
+        // ===========================================================
         // 區塊：帳戶總覽（唯讀）— 選定 bank 的 token 餘額 + 選定 persona 的兩種券餘額（全走快取）
         // ===========================================================
         void DrawOverviewPanel()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>💰 帳戶總覽</b>（唯讀）", WrapLabelStyle);
+                EnsureBalances();   // 摘要列要用餘額，先算（只在 dirty 時真的重算）
+                string orphanTag = m_OrphanBankIds.Count > 0
+                    ? $"　<color=yellow>⚠ {m_OrphanBankIds.Count} 孤兒帳戶</color>" : "";
+                bool showOv = FoldHeader("BankOverviewFold", "<b>💰 帳戶總覽</b>（唯讀）",
+                    $"　bank <b>{SelectedBank ?? "-"}</b>：<b>{m_CacheTokenBal}</b> token{orphanTag}");
+                if (!showOv) return;
 
-                EnsureBalances();   // 只在選擇變/dirty 時重算；steady-state 零 I/O（避免每幀 replay ledger 卡頓）
+                // 孤兒帳戶告警 —— 有錢卻沒有主人的帳戶必須主動攤開，不能等人自己去查 ledger
+                if (m_OrphanBankIds.Count > 0)
+                {
+                    GUILayout.Label($"  ⚠ <b>{m_OrphanBankIds.Count} 個孤兒帳戶</b>（只存在於 ledger，"
+                        + "沒有 agent_banks / system_accounts 對應）—— 多半是 agent 欄被填成 persona 名或打錯字造成：",
+                        WrapLabelStyle);
+                    foreach (var orphan in m_OrphanBankIds.OrderBy(x => x, StringComparer.Ordinal))
+                        GUILayout.Label($"　　• <b>{orphan}</b>：餘額 {SafeBalance(orphan)}"
+                            + "（已列入下拉選單，可選它做轉帳把錢轉回正主）", WrapLabelStyle);
+                    GUILayout.Label("　　↳ 錢轉走之後這個帳戶餘額為 0，但 ledger 紀錄會留著（append-only，本來就不該消失）。",
+                        WrapLabelStyle);
+                }
+
                 string bank = SelectedBank;
                 string persona = SelectedPersona;
 
@@ -464,6 +549,7 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                if (!FoldHeader("BankTokenOpsFold", "<b>🏦 帳號操作</b>", "")) return;
                 GUILayout.Label("<b>💵 Token 操作</b>（tavern_token，走 Treasury ledger）", WrapLabelStyle);
 
                 // ---- 開戶 ----
@@ -530,6 +616,7 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                if (!FoldHeader("BankVoucherFold", "<b>🎫 券</b>", "")) return;
                 GUILayout.Label("<b>🎫 券操作</b>（綁 persona；上方選定 persona = <b>" + (SelectedPersona ?? "(未選)") + "</b>）", WrapLabelStyle);
 
                 bool hasPersona = !string.IsNullOrEmpty(SelectedPersona);
@@ -585,6 +672,7 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                if (!FoldHeader("BankCentralFold", "<b>🏦 央行 / 政策參數</b>", "")) return;
                 EnsureBalances();      // 走快取；**絕不在 Draw* 裡直接 GetBalance**（見餘額快取區塊註解）
                 string cb = UCL_CentralBankSettings.CentralBankAccount;
                 int cbBalance = m_CacheCentralBankBal;
@@ -1042,9 +1130,13 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                bool showPay = FoldHeader("BankPayoutFold", "<b>📨 請款審批</b>",
+                    m_PendingRequests.Count > 0
+                        ? $"　<color=yellow><b>pending {m_PendingRequests.Count} 筆</b></color>" : "　(無待審)");
+                if (!showPay) return;
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label($"<b>📨 請款審批</b>（pending {m_PendingRequests.Count} 筆；agent 走 <b>Cmd_Treasury op=request</b> 開單）",
+                    GUILayout.Label($"（agent 走 <b>Cmd_Treasury op=request</b> 開單）",
                         WrapLabelStyle, GUILayout.ExpandWidth(false));
                     if (GUILayout.Button("🔄 重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -1113,6 +1205,175 @@ namespace UCL.Core.EditorLib.Page
             {
                 SetResult($"❌ 載入請款單失敗：{ex.Message}");
             }
+        }
+
+        // ===========================================================
+        // 區塊：💸 轉帳審批 —— 「從 A 帳戶轉多少到 B」的待審清單 + 手動開單
+        // 物理意義：跟請款審批同形狀、不同語意。請款＝央行撥款（消耗公庫）；轉帳＝A→B（總量守恆）。
+        //          分成兩張單是刻意的：審批者最需要一眼看清「這筆會不會消耗公庫」。
+        // 主要用途：**歸戶** —— 把錢從孤兒 / 打錯字的帳戶搬回正主，且留下「為什麼搬」的痕跡。
+        //          後台的「直接轉帳」也做得到同樣的事，但事後沒有人知道那筆為什麼被搬。
+        // 數值影響：pending 期間零影響；核准才 Debit→Credit（失敗回滾）。二段確認防連點。
+        // ===========================================================
+        void DrawTransferRequestPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool show = FoldHeader("BankTransferReqFold", "<b>💸 轉帳審批</b>",
+                    m_PendingTransfers.Count > 0
+                        ? $"　<color=yellow><b>pending {m_PendingTransfers.Count} 筆</b></color>" : "　(無待審)");
+                if (!show) return;
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("（核准 = 從 A 扣、給 B，總量守恆，<b>不動央行</b>）", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("🔄 重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        ReloadTransferRequests();
+                        SetResult($"✓ 已重新載入轉帳單（pending {m_PendingTransfers.Count} 筆）");
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                // ---- 手動開單（from = 上方 bank 下拉；to = 轉帳目標下拉）----
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    GUILayout.Label($"<b>＋ 開一張轉帳單</b>：<b>{SelectedBank ?? "(未選)"}</b> → <b>{TransferToBank ?? "(未選)"}</b>"
+                        + "（用上方兩個 bank 下拉選來源與目標）", WrapLabelStyle);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("金額", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        m_NewTransferAmountDraft = GUILayout.TextField(m_NewTransferAmountDraft, UCL_GUIStyle.TextFieldStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                        GUILayout.Label("理由", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        m_NewTransferReasonDraft = GUILayout.TextField(m_NewTransferReasonDraft, UCL_GUIStyle.TextFieldStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(280)));
+                        if (GUILayout.Button("📝 建立待審單", UCL_GUIStyle.GetButtonStyle(new Color(0.8f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
+                            DoCreateTransferRequest();
+                    }
+                }
+
+                if (m_PendingTransfers.Count == 0)
+                {
+                    GUILayout.Label("（目前沒有待審轉帳單）", WrapLabelStyle);
+                    return;
+                }
+
+                foreach (var req in m_PendingTransfers)
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        bool armed = IsTransferArmed(req.request_id);
+                        // 出款方餘額不足要在按下去之前就看得見，而不是核准失敗才知道
+                        int fromBal = -1;
+                        try { fromBal = UCL_TreasuryLedger.GetBalance(req.from_bank); } catch { }
+                        bool enough = fromBal < 0 || fromBal >= req.amount;
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label($"<b>{req.amount} {req.currency}</b>　<b>{req.from_bank}</b> → <b>{req.to_bank}</b>"
+                                    + (enough ? "" : $"　<color=red>⚠ 出款方餘額 {fromBal} 不足</color>"),
+                                WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(380)));
+                            GUILayout.Label($"{req.kind}", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                            GUILayout.Label($"`{req.request_id}`  {req.requested_at}", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                            GUILayout.FlexibleSpace();
+                        }
+                        GUILayout.Label($"理由：{req.reason}", WrapLabelStyle);
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label("備註", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                            string prev = m_TransferNoteDrafts.TryGetValue(req.request_id, out var d) ? d : "";
+                            m_TransferNoteDrafts[req.request_id] = GUILayout.TextField(prev, UCL_GUIStyle.TextFieldStyle,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                            GUI.enabled = enough;
+                            if (GUILayout.Button(armed ? "✅ 確認轉帳" : "核准",
+                                    UCL_GUIStyle.GetButtonStyle(armed ? new Color(1f, 0.8f, 0.4f) : new Color(0.75f, 1f, 0.8f)),
+                                    GUILayout.ExpandWidth(false)))
+                                OnTransferApproveClicked(req);
+                            GUI.enabled = true;
+                            if (GUILayout.Button("駁回", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.7f)), GUILayout.ExpandWidth(false)))
+                                OnTransferRejectClicked(req);
+                            GUILayout.FlexibleSpace();
+                        }
+                    }
+                }
+            }
+        }
+
+        void ReloadTransferRequests()
+        {
+            m_PendingTransfers.Clear();
+            try { m_PendingTransfers.AddRange(UCL_TreasuryTransferRequestStore.List(pendingOnly: true)); }
+            catch (Exception e) { Debug.LogWarning($"[BankAdmin] 讀轉帳單失敗: {e.Message}"); }
+        }
+
+        bool IsTransferArmed(string requestId) =>
+            !string.IsNullOrEmpty(requestId) && m_TransferArmedId == requestId
+            && (EditorApplication.timeSinceStartup - m_TransferArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+
+        void DoCreateTransferRequest()
+        {
+            string from = SelectedBank, to = TransferToBank;
+            if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to)) { SetResult("❌ 開單失敗：from / to bank 未選"); return; }
+            if (!int.TryParse((m_NewTransferAmountDraft ?? "0").Trim(), out int amount) || amount <= 0)
+            { SetResult($"❌ 開單失敗：金額需為正整數（收到 '{m_NewTransferAmountDraft}'）"); return; }
+            if (string.IsNullOrWhiteSpace(m_NewTransferReasonDraft)) { SetResult("❌ 開單失敗：理由必填 —— 審批者要有東西可判"); return; }
+            try
+            {
+                var req = UCL_TreasuryTransferRequestStore.Create(
+                    from, to, amount, m_NewTransferReasonDraft.Trim(),
+                    kind: m_OrphanBankIds.Contains(from) ? "orphan-consolidation" : "manual_transfer",
+                    requesterAgent: "BankAdminPage", requesterPersona: SelectedPersona);
+                SetResult($"✅ 轉帳單已建立 `{req.request_id}`：{amount} `{from}` → `{to}`（待審，尚未動錢）");
+                m_NewTransferAmountDraft = "0";
+                m_NewTransferReasonDraft = "";
+                ReloadTransferRequests();
+            }
+            catch (Exception ex) { SetResult($"❌ 開單失敗：{ex.Message}"); }
+        }
+
+        void OnTransferApproveClicked(TreasuryTransferRequest req)
+        {
+            if (!IsTransferArmed(req.request_id))
+            {
+                m_TransferArmedId = req.request_id;
+                m_TransferArmedAt = EditorApplication.timeSinceStartup;
+                SetResult($"⏳ 待確認：轉帳 `{req.request_id}` → {req.amount} 從 `{req.from_bank}` 到 `{req.to_bank}`"
+                    + "（5 秒內再按一次「確認轉帳」生效）");
+                return;
+            }
+            m_TransferArmedId = null;
+            try
+            {
+                string note = m_TransferNoteDrafts.TryGetValue(req.request_id, out var n) ? n : "";
+                var done = UCL_TreasuryTransferRequestStore.Approve(req.request_id, decidedBy: "Tim", note: note);
+                SetResult($"✅ 已轉帳：`{done.request_id}` {done.amount} `{done.from_bank}` → `{done.to_bank}`");
+                NotifyTavern(
+                    $"💸 **銀行後台｜轉帳核准**\n" +
+                    $"轉帳單 `{done.request_id}` 核准 —— **{done.amount} {done.currency}** 自 **{done.from_bank}** 轉入 **{done.to_bank}**。\n" +
+                    $"📊 餘額：`{done.from_bank}` → **{SafeBalance(done.from_bank)}**｜`{done.to_bank}` → **{SafeBalance(done.to_bank)}**\n" +
+                    $"📝 理由：{done.reason}\n" +
+                    (string.IsNullOrEmpty(note) ? "" : $"📌 審批備註：{note}\n") +
+                    $"🏷 分類：{done.kind}（總量守恆，未動央行）",
+                    "transfer-request-approved");
+                m_BalancesDirty = true;
+                LoadData();          // 孤兒帳戶餘額歸零後要重掃，列表才會反映現況
+                ReloadTransferRequests();
+            }
+            catch (Exception ex) { SetResult($"❌ 轉帳核准失敗：{ex.Message}"); }
+        }
+
+        void OnTransferRejectClicked(TreasuryTransferRequest req)
+        {
+            try
+            {
+                string note = m_TransferNoteDrafts.TryGetValue(req.request_id, out var n) ? n : "";
+                var done = UCL_TreasuryTransferRequestStore.Close(
+                    req.request_id, UCL_TreasuryTransferRequestStore.StatusRejected, decidedBy: "Tim", note: note);
+                SetResult($"✘ 已駁回轉帳單：`{done.request_id}`（{done.amount} {done.from_bank} → {done.to_bank}）"
+                    + (string.IsNullOrEmpty(note) ? "　※ 建議填備註說明為什麼" : $"　理由：{note}"));
+                ReloadTransferRequests();
+            }
+            catch (Exception ex) { SetResult($"❌ 駁回失敗：{ex.Message}"); }
         }
 
         bool IsApproveArmed(string requestId) =>

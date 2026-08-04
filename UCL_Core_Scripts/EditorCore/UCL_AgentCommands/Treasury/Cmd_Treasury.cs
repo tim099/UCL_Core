@@ -60,6 +60,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     case "request":        Op_Request(args); break;
                     case "request_list":   Op_RequestList(args); break;
                     case "request_cancel": Op_RequestCancel(args); break;
+                    // 轉帳單（2026-08-04）—— 開單提案「A→B 搬錢」，Tim 從後台「💸 轉帳審批」核准。
+                    // 與 request 分開的理由：請款消耗公庫、轉帳總量守恆，審批者要能一眼分辨。
+                    case "transfer_request": Op_TransferRequest(args); break;
                     default:
                         Cmd_Tavern_Helpers.RejectLastOp($"未知 op: {op}");
                         break;
@@ -317,6 +320,52 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
             }
             catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp($"request 參數不合法：{ex.Message}"); }
+        }
+
+        // 區塊職責：op=transfer_request —— 開一張「從 A 轉到 B」的待審轉帳單。
+        // 物理意義：讓「動別人帳戶的錢」也有提案通道，而不是只能由後台手按。
+        //          主要用途是**歸戶**（把錢從孤兒 / 打錯字的帳戶搬回正主）——
+        //          這種搬移必須留下「誰提的、為什麼」，否則事後只看得到 ledger 兩筆莫名的進出。
+        // 數值影響：**零** —— 只寫一張 pending 單，核准才動錢。
+        // 邊界：from == to / amount <= 0 / 缺 reason 一律拒收（由 Store 丟 ArgumentException 轉成 reject）。
+        //      **不檢查 from 是否為合法帳戶** —— 歸戶的出款方本來就常是不合法的孤兒帳戶。
+        void Op_TransferRequest(Dictionary<string, string> args)
+        {
+            string fromBank = GetArg(args, "from_bank", "");
+            string toBank = GetArg(args, "to_bank", "");
+            string reason = GetArg(args, "reason", "");
+            string amountRaw = GetArg(args, "amount", "");
+            if (string.IsNullOrEmpty(fromBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 from_bank（出款 bank id，不是 persona 名）"); return; }
+            if (string.IsNullOrEmpty(toBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 to_bank（收款 bank id）"); return; }
+            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 reason —— 審批者要有東西可判"); return; }
+            if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
+            { Cmd_Tavern_Helpers.RejectLastOp($"transfer_request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
+
+            try
+            {
+                var req = UCL_TreasuryTransferRequestStore.Create(
+                    fromBank: fromBank,
+                    toBank: toBank,
+                    amount: amount,
+                    reason: reason,
+                    kind: GetArg(args, "kind", "manual_transfer"),
+                    requesterAgent: GetArg(args, "agent", GetArg(args, "caller", "")),
+                    requesterPersona: GetArg(args, "persona", ""),
+                    currency: GetArg(args, "currency", "tavern_token"));
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"# 💸 轉帳單已開 — `{req.request_id}`");
+                sb.AppendLine();
+                sb.AppendLine($"- 金額：**{req.amount} {req.currency}**");
+                sb.AppendLine($"- 出款 bank：**{req.from_bank}**");
+                sb.AppendLine($"- 收款 bank：**{req.to_bank}**");
+                sb.AppendLine($"- 分類：{req.kind}");
+                sb.AppendLine($"- 理由：{req.reason}");
+                sb.AppendLine($"- 提案者：{req.requester_agent}@{req.requester_persona}");
+                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等 Tim 從 UCL_BankAdminPage 的「💸 轉帳審批」核准");
+                Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            }
+            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp($"transfer_request 參數不合法：{ex.Message}"); }
         }
 
         void Op_RequestList(Dictionary<string, string> args)

@@ -71,6 +71,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public static string BuildRequestFileName(DateTime utcTime, string uuid6)
             => $"{utcTime:HHmmss_fff}_{uuid6}__request.json";
 
+        // ── 轉帳單（2026-08-04）——與請款單同構，另開目錄以免兩種單混在一起難分辨 ──
+        public const string TransfersDirName = "transfer_requests";
+
+        public static string GetTransferRequestsRoot()
+            => Path.Combine(GetTreasuryDir(), TransfersDirName);
+
+        public static string GetTransferRequestDateDir(DateTime utcDate)
+            => Path.Combine(GetTransferRequestsRoot(), utcDate.ToString("yyyy-MM-dd"));
+
+        public static string BuildTransferRequestFileName(DateTime utcTime, string uuid6)
+            => $"{utcTime:HHmmss_fff}_{uuid6}__transfer.json";
+
         public static void EnsureTreasuryDir()
         {
             Directory.CreateDirectory(GetTreasuryDir());

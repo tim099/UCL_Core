@@ -69,6 +69,43 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
     //          （`summit` 而非 bank `zeta`）→ 錢進了影子帳戶。身分層 routing 靠推斷必出事，
     //          所以請款單要求顯式寫明收款 bank，並在核准時由人眼二次確認。
     // ===========================================================
+    // 區塊職責：轉帳單（TreasuryTransferRequest）—— 「從 A 帳戶轉多少到 B 帳戶」的待審提案。
+    // 物理意義：跟請款單的差別在**錢從哪來**。請款是「央行撥款給我」（單邊，央行出帳）；
+    //          轉帳是「A 的錢搬到 B」（雙邊，總量守恆，不動央行）。
+    //          兩者共用同一套「提案 → 人審 → 核准才動錢」的形狀，但混成同一張單會讓
+    //          審批者看不出這筆到底會不會消耗公庫 —— 那正是最該一眼看清的事，故分開。
+    // 數值影響：pending 期間零影響；核准時 Debit(from) → Credit(to)，credit 失敗回滾 debit。
+    // 主要用途：**歸戶** —— 把錢從孤兒 / 打錯字的帳戶搬回正主（2026-08-04 發現 31 個孤兒帳戶
+    //          持有 12,176 token，其中不少是 agent 欄被填成 persona 名造成的）。
+    //          這種搬移一定要留審批痕跡：直接後台轉帳雖然做得到，但事後沒有人知道為什麼搬。
+    // 註：不加 [Serializable] —— 本檔沒有 using System，且既有 TreasuryPayoutRequest 也沒加，
+    //     兩者同走 JsonConvert.LoadFieldFromJsonUnityVer 反射，不靠 Unity 序列化。
+    public class TreasuryTransferRequest
+    {
+        public string request_id;          // <UUID6> — 對齊檔名
+        public string requested_at;        // ISO 8601 UTC + ms
+        public string status;              // "pending" / "approved" / "rejected" / "cancelled"
+
+        // ---- 轉帳內容（建立後不可變）----
+        public string from_bank;           // 出款帳戶
+        public string to_bank;             // 收款帳戶
+        public int amount;                 // 正整數
+        public string currency = "tavern_token";
+        public string reason;              // 為什麼要搬這筆（審批者靠它判斷）
+        public string kind;                // 分類標籤（例 orphan-consolidation / correction / gift）
+
+        // ---- 提案者身分（雙欄：agent 層 + persona 層）----
+        public string requester_agent;
+        public string requester_persona;
+
+        // ---- 審批結果（pending 時全空）----
+        public string decided_at;
+        public string decided_by;
+        public string decision_note;
+        public string debit_entry_uuid;    // 核准後 from 端的 ledger entry
+        public string credit_entry_uuid;   // 核准後 to 端的 ledger entry
+    }
+
     public class TreasuryPayoutRequest
     {
         public string request_id;          // <UUID6> — 對齊檔名，核准 / 駁回 / 取消都用它定位

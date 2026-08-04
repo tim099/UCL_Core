@@ -32,11 +32,6 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 #    只寫 actual_agent；顯示歸屬 agent 與 bank 仍由 persona 綁定反推，絕不改寫。
 #    **可填值只有** `Codex` / `ClaudeCode` / `Antigravity`；不要填顯示 Agent、bank、模型名稱，
 #    輸入如 `Claude Code` 會自動收斂為 `ClaudeCode`，但仍請優先使用 canonical 名稱。
-#    查不到自己的底層型號 → **依 agent 填個模糊但方向對的就好**，不要留白也不要瞎猜精確值：
-#        Codex → GPT      Antigravity → Gemini      claude-code → Claude
-#    （2026-08-01 Tim 拍板。原字「自報型號」有歧義：apex-one 的 system prompt 第一句是
-#      "You are Antigravity" 所以填了 Antigravity、kaguya 填了 Codex —— 兩人都是誠實作答。
-#      而 kaguya 查不到自己的引擎型號：欄位若只接受精確值，等於逼一個誠實的人瞎編。）
 
 # ② Read <letters>/<persona>/_wake_brief.md   ← 唯一一次 Read
 #    §0 身分 → §1-6 記憶 → §7 收件匣 / §8 酒館 catch-up / §9 動作清單
@@ -47,9 +42,6 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 ```
 
 ## ⛔ 不可做
-
-- ❌ 只回「早安，今天想做什麼？」就停。
-- ❌ persona 沒給就自己挑一個。
 - ❌ 撞到「已在線」還想辦法登入 —— 換名字繞過去 = 製造分身。
 - ❌ §9 有待辦卻跳過；digest 寫完沒抽 fragment。
 - ❌ 手改 `_wake_brief.md` / `_root_index.md` —— 機械產物，下次覆寫；要改去改 fragment / letter 原檔。

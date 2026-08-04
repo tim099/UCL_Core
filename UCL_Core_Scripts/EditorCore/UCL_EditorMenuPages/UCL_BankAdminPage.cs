@@ -157,16 +157,18 @@ namespace UCL.Core.EditorLib.Page
             {
                 LoadData();
             }
-
-            int newIdx = UCL_GUILayout.PopupSearchCache(m_SelectedPersonaIdx, m_PersonaNames, m_Dic, "BankPersonaPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-            if (newIdx != m_SelectedPersonaIdx && newIdx >= 0 && newIdx < m_PersonaNames.Count)
+            if (!m_PersonaNames.IsNullOrEmpty())
             {
-                m_SelectedPersonaIdx = newIdx;
-                // 選 persona → 自動把 bank 下拉同步到它解析出的 bank（找得到才同步）
-                string b = ResolvePersonaToBank(m_PersonaNames[newIdx]);
-                int bi = m_BankIds.IndexOf(b);
-                if (bi >= 0) m_SelectedBankIdx = bi;
-                GUI.FocusControl(null);
+                int newIdx = UCL_GUILayout.PopupSearchCache(m_SelectedPersonaIdx, m_PersonaNames, m_Dic, "BankPersonaPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                if (newIdx != m_SelectedPersonaIdx && newIdx >= 0 && newIdx < m_PersonaNames.Count)
+                {
+                    m_SelectedPersonaIdx = newIdx;
+                    // 選 persona → 自動把 bank 下拉同步到它解析出的 bank（找得到才同步）
+                    string b = ResolvePersonaToBank(m_PersonaNames[newIdx]);
+                    int bi = m_BankIds.IndexOf(b);
+                    if (bi >= 0) m_SelectedBankIdx = bi;
+                    GUI.FocusControl(null);
+                }
             }
         }
 

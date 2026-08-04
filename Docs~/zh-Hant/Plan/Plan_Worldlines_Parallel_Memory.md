@@ -4,14 +4,14 @@ slug: worldlines-parallel-memory
 status: spec 已拍板；第一條 worldline `20260617-a` 已立骨架（**複製**，來源目錄保留）
 created_at: 2026-08-04T13:10:00Z
 created_by: Zeta@summit（山頂看門狗, wake#37）
-last_updated: 2026-08-04
+last_updated: 2026-08-05（P1 完成 + 更正「兩種定義」那條錯診斷）
 location: UCL_Core（cross-project — awakening.py / wake_brief / letters 佈局皆為跨專案基礎設施）
 target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening 儀式工作流 | 本 spec 落地後需補「§X 平行世界線」與見森語意
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Flow_Simplification.md | 早安流程瘦身 | wake_brief 四態／單檔化的前案，本 spec 沿用其「一份 brief」原則
   - ucl_core:Skills~/ucl-morning/SKILL.md | ucl-morning | 早安三步；worldline 不進三步，只進 brief 的一節
-  - ucl_core:Skills~/ucl-goodnight/SKILL.md | ucl-goodnight | wake_count 寫入端之一（本 spec §5 要收斂它與 morning 的欄位語意）
+  - ucl_core:Skills~/ucl-goodnight/SKILL.md | ucl-goodnight | wake_count 寫入端之一（§5 P1 已由 basecamp 完成：改比「差值符不符合預期」）
 ---
 
 > **跨專案位置說明**：本文件在 UCL_Core（submodule）。`awakening.py` / wake_brief 生成 / letters 目錄佈局
@@ -189,9 +189,17 @@ not_merged:                 # 禁靜默 —— 明寫什麼沒有被回流
 
 **結論：不新開工具，擴 `awakening.py` 子命令。** 理由是今天的血證：
 
-> `wake_count` 現在有兩個寫入者 —— `goodnight` 寫「已完成 wake 數」、`morning` 寫「信數+1＝當前編號」。
-> **同一個欄位、兩種定義**，於是「快取比磁碟少 1」是每天必然發生的廢話，
-> 而真訊號（差 2、且差的那 2 屬於另一條時空）淹在裡面。
+> `wake_count` 有兩個寫入者（`goodnight` 與 `morning`），而那條「每天必然發生的廢話」
+> 把真訊號（差 2、且差的那 2 屬於另一條時空）淹掉了。
+>
+> ⚠ **本節初版把原因寫成「兩個寫入者用兩種定義」—— 那是錯的診斷**（basecamp 2026-08-04 自我更正，
+> UCL_Core `6a3bb97`）：實測兩邊存的是**同一個量**（已經開始的最大 wake 編號）。
+> 真正的病是**比對對象錯** —— 這欄在早安時設計上就落後一天，拿 `cached != derived` 當異常
+> → 正常的一天必然差 1 → 天天叫；而真的掉一次 wake（crash／compact 猝死）反而相等 → **完全不叫**。
+> **一切正常時大聲、真的出事時沉默。**
+>
+> 結論不變（**別開第三個寫入者**），但理由要換成正確的那個：
+> **多一個寫入端 = 多一組「該拿什麼跟什麼比」的判斷，而今天證明了比錯對象比沒有比更糟。**
 
 **再開一支會寫 registry / letters 的工具，就是製造第三個寫入者** —— 同一個病的下一代。
 `awakening.py` 已是這兩處 state 的唯一寫入者，新功能掛它下面。
@@ -217,7 +225,7 @@ not_merged:                 # 禁靜默 —— 明寫什麼沒有被回流
 
 | 項 | 內容 | 為什麼要先做 |
 |---|---|---|
-| P1 | 收斂 `wake_count` 欄位語意（goodnight 的「已完成數」vs morning 的「當前編號」二選一，另一端改讀不改寫） | 不修就等於在一條每天在叫的通道上加警報 = 把真訊號丟進垃圾桶 |
+| P1 | ✅ **已完成**（basecamp, UCL_Core `6a3bb97`）：morning 的 `wake_count` 比對改看「差值符不符合預期」，不看相不相等。⚠ 本表初版寫「兩個寫入者兩種定義」，那是**錯的診斷** —— 實測兩邊存的是同一個量（已經開始的最大 wake 編號），問題在**比對對象**：這欄在早安時設計上就落後一天，拿 `cached != derived` 當異常 → 正常的一天必然差 1 → 每天噴一次廢話；而真的掉一次 wake（crash／compact 猝死）反而相等 → 完全不叫。**一切正常時大聲、真的出事時沉默。** | 不修就等於在一條每天在叫的通道上加警報 = 把真訊號丟進垃圾桶 |
 | P2 | digest 檔名改用 `written_at` span（吃掉「加 `timeline:` 欄消歧」那個症狀補丁） | 同名不同物在檔案系統層就不可能發生 |
 | P3 | `wake_count` / 見林書籤的「自癒」在**跨線不符**時改成 fail loud | 今天那兩筆假自癒就是這個缺口 |
 

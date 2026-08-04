@@ -23,6 +23,7 @@ using UCL.Core.EditorLib.AgentCommands.Treasury;   // UCL_TreasuryLedger / Treas
 using UCL.Core.EditorLib.AgentCommands.CanvasVoucher; // UCL_CanvasVoucherLedger（繪圖券 canonical，C# 直呼不 spawn python）
 using UCL.Core.EditorLib.AgentCommands.Voucher;       // UCL_TavernVoucherLedger（酒館券 canonical）+ 券共用底層
 using UCL.Core.EditorLib.AgentCommands.ChatTavern; // UCL_ChatTavernIO / UCL_ChatMessage（操作通知發酒館主頻道）
+using UCL.Core.EditorLib.AgentCommands.Mail;       // UCL_RegisteredMailIO（進帳類操作另寄一封免費系統掛號信）
 using UnityEditor;
 using UnityEngine;
 
@@ -135,6 +136,17 @@ namespace UCL.Core.EditorLib.Page
             if (GUILayout.Button("🔄 Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 LoadData();
+            }
+
+            int newIdx = UCL_GUILayout.PopupSearchCache(m_SelectedPersonaIdx, m_PersonaNames, m_Dic, "BankPersonaPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+            if (newIdx != m_SelectedPersonaIdx && newIdx >= 0 && newIdx < m_PersonaNames.Count)
+            {
+                m_SelectedPersonaIdx = newIdx;
+                // 選 persona → 自動把 bank 下拉同步到它解析出的 bank（找得到才同步）
+                string b = ResolvePersonaToBank(m_PersonaNames[newIdx]);
+                int bi = m_BankIds.IndexOf(b);
+                if (bi >= 0) m_SelectedBankIdx = bi;
+                GUI.FocusControl(null);
             }
         }
 
@@ -784,6 +796,18 @@ namespace UCL.Core.EditorLib.Page
                     $"📝 說明：把 token 發進某帳戶（薪酬／績效獎金／Tim grant）。2026-08-01 起獎金由央行撥款，公庫不足即拒發。\n" +
                     $"📌 本次備註：{desc}",
                     "bank-deposit");
+                // 績效獎金 / 薪酬 / Tim grant 都走這個入口 —— 收款人不在線時，掛號信是唯一會被讀到的通道
+                NotifyMail(SelectedPersona,
+                    $"入帳通知 — +{amount} tavern_token（{sourceKind}）",
+                    $"銀行後台打款：bank `{bank}` 入帳 **+{amount} tavern_token**。\n\n" +
+                    $"- **來源**：{sourceKind}\n" +
+                    $"- **餘額**：{e.balance_before} → **{e.balance_after}**\n" +
+                    (drawFromCB
+                        ? $"- **撥款來源**：央行 `{centralBank}`（公庫 → {SafeBalance(centralBank)}）\n"
+                        : "- **撥款來源**：注資央行（本筆為合法增發）\n") +
+                    $"\n**本次備註**：{desc}\n" +
+                    "\n---\n\n確認讀過後跑 `registered_mail.py ack --persona <你>` 除名。",
+                    "bank_admin_deposit");
                 m_BalancesDirty = true;   // 餘額變動 → 快取失效
                 m_DepositAmountDraft = "0";
             }
@@ -879,6 +903,14 @@ namespace UCL.Core.EditorLib.Page
                 SetResult($"✅ 發券：'{persona}' {string.Join("｜", summary)}");
                 Debug.Log($"[BankAdmin] 發券 {persona} canvas={canvasAmount} tavern={tavernAmount}");
                 NotifyTavern(announcement.ToString(), "voucher-grant");
+                NotifyMail(persona,
+                    $"發券通知 — {string.Join("／", summary)}",
+                    $"銀行後台發券給 @{persona}：\n\n"
+                    + (canvasAmount > 0 ? $"- 🎨 **繪圖券 +{canvasAmount}**，餘額 {canvasBefore} → **{canvasAfter}**\n" : "")
+                    + (tavernAmount > 0 ? $"- 🍺 **酒館券／自由時間券 +{tavernAmount}**（bank `{bank}`），餘額 {tavernBefore} → **{tavernAfter}**\n" : "")
+                    + $"\n**本次備註**：{desc}\n"
+                    + "\n---\n\n確認讀過後跑 `registered_mail.py ack --persona <你>` 除名。",
+                    "bank_admin_voucher_grant");
                 m_BalancesDirty = true;
                 m_CanvasGrantAmountDraft = "0";
                 m_TavernGrantAmountDraft = "0";
@@ -912,6 +944,13 @@ namespace UCL.Core.EditorLib.Page
                     $"📝 說明：繪圖券綁 persona，用於共用像素畫布繪圖（1 券 ≈ 1 像素）；本次走 C# canonical ledger 寫入。\n" +
                     $"📌 本次備註：{desc}",
                     "voucher-grant-canvas");
+                NotifyMail(persona,
+                    $"發券通知 — 繪圖券 +{amount}",
+                    $"銀行後台發放 **繪圖券 +{amount}** 給 @{persona}，餘額 {before} → **{after}**。\n\n" +
+                    "繪圖券綁 persona，用於共用像素畫布（1 券 ≈ 1 像素）。\n\n" +
+                    $"**本次備註**：{desc}\n" +
+                    "\n---\n\n確認讀過後跑 `registered_mail.py ack --persona <你>` 除名。",
+                    "bank_admin_canvas_voucher");
                 m_BalancesDirty = true;   // 繪圖券餘額變動 → 快取失效
                 m_CanvasGrantAmountDraft = "0";
                 m_VoucherDescDraft = "";
@@ -945,6 +984,13 @@ namespace UCL.Core.EditorLib.Page
                     $"📝 說明：酒館券綁 persona（分桶在 bank 下的 personas），用於自由時間 / 招待等；本次走 C# canonical ledger 寫入。\n" +
                     $"📌 本次備註：{desc}",
                     "voucher-grant-tavern");
+                NotifyMail(persona,
+                    $"發券通知 — 酒館券 +{amount}",
+                    $"銀行後台發放 **酒館券／自由時間券 +{amount}** 給 @{persona}（bank `{bank}`），" +
+                    $"餘額 {before} → **{after}**。\n\n" +
+                    $"**本次備註**：{desc}\n" +
+                    "\n---\n\n確認讀過後跑 `registered_mail.py ack --persona <你>` 除名。",
+                    "bank_admin_tavern_voucher");
                 m_BalancesDirty = true;   // 酒館券餘額變動 → 快取失效
                 m_TavernGrantAmountDraft = "0";
                 m_VoucherDescDraft = "";
@@ -1100,6 +1146,20 @@ namespace UCL.Core.EditorLib.Page
                     (string.IsNullOrEmpty(note) ? "" : $"📌 審批備註：{note}\n") +
                     $"🧾 請款者：{done.requester_agent}@{done.requester_persona}",
                     "payout-request-approved");
+                // 請款者本人多半不在線 —— 酒館公告他醒來時看不到，掛號信才會端到 wake brief 上
+                NotifyMail(done.requester_persona,
+                    $"請款單 {done.request_id} 已核准 — +{done.amount} {done.currency}",
+                    $"你的請款單 `{done.request_id}` 已由 **{done.decided_by}** 核准。\n\n" +
+                    $"- **金額**：+{done.amount} {done.currency}\n" +
+                    $"- **入帳 bank**：`{done.target_bank}`\n" +
+                    $"- **撥款來源**：央行 `{UCL_CentralBankSettings.CentralBankAccount}`\n" +
+                    $"- **核准時間**：{done.decided_at}\n" +
+                    $"- **ledger entry**：`{done.ledger_entry_uuid}`\n\n" +
+                    $"**原請款理由**：{done.reason}\n" +
+                    (string.IsNullOrEmpty(note) ? "" : $"\n**審批備註**：{note}\n") +
+                    "\n---\n\n錢已經在帳上了 —— 醒來時別再把這筆當成「待核准」。\n" +
+                    "確認讀過後跑 `registered_mail.py ack --persona <你>` 除名，否則每次醒來都會再看到這封。",
+                    $"payout_request_{done.request_id}");
                 m_BalancesDirty = true;
                 ReloadPayoutRequests();
             }
@@ -1166,6 +1226,29 @@ namespace UCL.Core.EditorLib.Page
             {
                 Debug.LogWarning($"[BankAdmin] tavern 通知發送失敗（silent，不擋主操作）: {e.Message}");
             }
+        }
+
+        // ===========================================================
+        // 區塊：進帳通知掛號信 — 每筆「有具體收款 persona」的核准 / 打款 / 發券另寄一封免費系統信
+        //      （Tim 2026-08-04：「通過的請款、獎金等都額外寄一份掛號信給目標 persona，系統信件不收費」）
+        // 物理意義：酒館公告是**廣播到現在** —— 收款人多半不在線，醒來時那則公告早被 catch-up 的
+        //          數十筆訊息推到視線外（今早 summit 就把已核准的請款當成「待核准」報了一次，
+        //          就是這條通道缺口的活體證據）。掛號信是**指名 + 定時 + 不 ack 不消失**，
+        //          會出現在收件人下一次 wake brief 的 §7 最前面。兩者不重複：一個給在線的人看，
+        //          一個給醒來的人看。
+        // 數值影響：**零** —— 系統信 fee=0，不經 Treasury。寄信失敗只記 warning，
+        //          絕不回滾已完成的金流（通知是輔助，錢是主體）。
+        // 邊界：persona 為空（後台只選了 bank 沒選 persona）→ 不寄，並在 Debug 留一行 ——
+        //      「沒有收件人」跟「寄失敗」是兩件事，不該混成同一句話。
+        // ===========================================================
+        static void NotifyMail(string persona, string subject, string body, string refId)
+        {
+            if (string.IsNullOrEmpty(persona))
+            {
+                Debug.Log($"[BankAdmin] 未指定收款 persona → 略過掛號信（{subject}）");
+                return;
+            }
+            UCL_RegisteredMailIO.SendSystemMail(persona, subject, body, refId: refId);
         }
 
         // ISO 8601 UTC + ms，對齊 Treasury / canvas 的 ts 格式 "yyyy-MM-ddTHH:mm:ss.fffZ"

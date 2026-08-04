@@ -978,26 +978,43 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             int centralBankIncome = 0;      // 本輪央行實收（廣播用）
             var exemptReports = new List<string>();
 
-            // 4. 對每 account 算超額 fee + debit
+            // ── 區塊：豁免帳戶先結算、先快照（Tim 2026-08-04 拍板）──────────────────────
+            // 物理意義：豁免帳戶的餘額原本是**在扣費迴圈中途**才讀的 —— 帳號字典序輪到它時，
+            //          排在它前面的帳戶已經扣完並把錢 credit 進央行了。於是廣播裡出現三個數字
+            //          彼此對不起來：豁免段 509、本次入庫 +358、央行餘額 611（509 既不是結算前
+            //          的 253 也不是結算後的 611，它是「跑到字母 p 的那一瞬間」）。
+            //          數字沒有錯，錯的是它沒有時點 —— 一個沒有時點的餘額，讀的人無法對帳，
+            //          而對不起來的帳看久了就會被當成雜訊忽略（比沒有更糟）。
+            // 修法：迴圈前先把豁免帳戶抓出來、當場讀餘額（此刻**尚未有任何資金移動**），
+            //      再用「排除豁免」的清單去跑扣費。於是廣播三個數字自動閉合：
+            //      結算前 253 ＋ 本次入庫 358 ＝ 結算後 611。
+            // 邊界：exemptCentral 關閉時集合為空 → 央行照常回到扣費清單，行為與從前一致。
+            //      豁免帳戶**餘額 0 也列**（下面 chargeable 迴圈的 `balance <= 0 continue`
+            //      是為了濾掉雜訊帳號，但豁免是一條 audit 聲明，不是雜訊）。
+            var exemptAccounts = new HashSet<string>();
+            if (exemptCentral && !string.IsNullOrEmpty(centralBank) && allAccounts.Contains(centralBank))
+                exemptAccounts.Add(centralBank);
+            foreach (var account in exemptAccounts.OrderBy(a => a))
+            {
+                string balText;
+                try { balText = UCL_TreasuryLedger.GetBalance(account).ToString(); }
+                catch { balText = "?"; }
+                exemptReports.Add($"- 🏦 @{account}: **結算前** balance {balText} " +
+                                  "(**央行豁免** — 對自己收費會讓 debit/credit 落在同一帳號)");
+            }
+
+            // 4. 對每 account 算超額 fee + debit（已排除豁免帳戶）
             //    Tim 2026-05-14 拍板補: audit broadcast 也列出沒扣費的 account 餘額 (full transparency)
             //    → 蒐集兩 list: feeReports (扣費) + safeReports (沒扣費, 但餘額 > 0)
             var feeReports = new List<string>();
             var safeReports = new List<string>();
             int totalFee = 0;
-            foreach (var account in allAccounts.OrderBy(a => a))
+            foreach (var account in allAccounts.Where(a => !exemptAccounts.Contains(a)).OrderBy(a => a))
             {
                 int balance;
                 try { balance = UCL_TreasuryLedger.GetBalance(account); }
                 catch { continue; }
                 if (balance <= 0) continue;  // 0 或負數 account 不列 (純 noise)
-
-                // 央行豁免 —— Tim 2026-08-01 拍板「豁免並且列出增額」。
-                // **明列不靜默**：靜默的豁免下次就沒人記得為什麼那個帳號不在扣費名單上。
-                if (exemptCentral && account == centralBank)
-                {
-                    exemptReports.Add($"- 🏦 @{account}: balance {balance} (**央行豁免** — 對自己收費會讓 debit/credit 落在同一帳號)");
-                    continue;
-                }
 
                 // 已扣過 (state 失效但 ledger 正確) → 視為 safe；但仍要確認那筆錢**進了央行**。
                 // 「已扣未存」是 debit 成功後 crash 在 credit 之前留下的漏水，這裡補上。
@@ -1073,6 +1090,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             bodySb.AppendLine(headerLine);
             bodySb.AppendLine();
 
+            // 豁免段排在**最前面**（Tim 2026-08-04）：它是「這輪誰不參與扣費」的前提宣告，
+            // 排在扣費結果後面會讀成「事後補充」，而它其實是這輪的起始狀態。
+            if (exemptReports.Count > 0)
+            {
+                bodySb.AppendLine($"### 🏦 豁免帳戶 ({exemptReports.Count} 個, 結算前餘額)");
+                bodySb.AppendLine(string.Join("\n", exemptReports));
+                bodySb.AppendLine();
+            }
+
             if (feeReports.Count > 0)
             {
                 bodySb.AppendLine($"### 💸 扣費帳戶 ({feeReports.Count} 個)");
@@ -1098,18 +1124,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             // 央行段 —— Tim 2026-08-01「豁免並且列出增額」。豁免與增額都必須看得見：
             // 這是全系統最大的一條資金流，它流去哪不該只有 code 知道。
-            if (exemptReports.Count > 0)
-            {
-                bodySb.AppendLine($"### 🏦 豁免帳戶 ({exemptReports.Count} 個)");
-                bodySb.AppendLine(string.Join("\n", exemptReports));
-                bodySb.AppendLine();
-            }
+            // （豁免清單已移到廣播最前面當前提宣告，這裡只收尾算增額。）
             try
             {
                 int cbBalance = UCL_TreasuryLedger.GetBalance(centralBank);
                 bodySb.AppendLine($"### 🏦 {UCL_CentralBankSettings.CentralBankDisplayName}");
                 bodySb.AppendLine($"- 本次入庫: **+{centralBankIncome} token**");
-                bodySb.AppendLine($"- 央行餘額: **{cbBalance} token**");
+                // 「結算後」三個字是這段能不能被對帳的關鍵 —— 上面豁免段標了「結算前」，
+                // 兩個時點都寫明，讀的人才能自己驗：結算前 ＋ 本次入庫 ＝ 結算後。
+                bodySb.AppendLine($"- 央行餘額: **{cbBalance} token**（結算後）");
                 if (centralBankIncome != totalFee)
                     bodySb.AppendLine($"- ⚠ 入庫 {centralBankIncome} 與扣費 {totalFee} 不符 — 有帳戶扣了但沒入庫，下一輪會偵測並補存");
                 bodySb.AppendLine();

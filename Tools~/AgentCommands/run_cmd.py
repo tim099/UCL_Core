@@ -915,7 +915,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         #   這裡還在讀 "sender" → 那個 key 永遠不存在 → 每一則 op=post 都回判決碼 3
         #   「完全沒有等待」。守衛讀錯欄位 = 守衛永遠不成立，而且它「照樣有輸出」所以沒人喊。
         #   保留舊名當 fallback：alias 表若哪天沒歸一到，至少不要整個瞎掉。
-        my_sender = (arg_pairs.get("agent")
+        # ⚠ 規格（Tim 2026-08-04）：**wait 相關一律以 persona 為身分主體**。
+        #   `agent` / `sender_id` 承載的是 agent_id，而 agent 層基本上只有 bank / token 操作才用。
+        #   這裡取的是「誰在等」，語意上是人格不是帳號，所以 persona 優先。
+        #   血證：只比 agent 層時，Myth/gura、Altair/apex-one、zeta/summit 這些
+        #   「agent 名 ≠ persona 名」的人全部比不中（2026-08-04 Round S 實測）。
+        #   後備鏈保留舊欄位：persona 沒帶時不要整條 wait 直接判 3（那是另一種靜默失效）。
+        my_sender = (arg_pairs.get("persona")
+                     or arg_pairs.get("agent")
                      or arg_pairs.get("sender")
                      or arg_pairs.get("sender_id") or "")
         wait_seconds = float(args.wait_reply)

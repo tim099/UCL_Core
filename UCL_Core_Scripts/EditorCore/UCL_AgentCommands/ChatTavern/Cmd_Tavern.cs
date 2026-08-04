@@ -1359,22 +1359,37 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //           timeout 時更新為 timeout。agent 用 op=wait_check 查狀態。
         //           預設 timeout=300 秒（5 分鐘）
         // ===========================================================
-        const int DefaultWaitTimeoutSec = 300;
+        // 預設 timeout 的真相源同樣在 UCL_TavernWaitSettings（後台可改）
+        static int DefaultWaitTimeoutSec
+        { get { UCL_TavernWaitSettings.EnsureLoaded(); return UCL_TavernWaitSettings.DefaultWaitTimeout; } }
+        // token 現已未使用（推進移交 tick service）；簽章保留以對齊 runner 的 op 分派慣例。
         void Op_Wait(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
             int sinceSeq = ParseIntArg(args, "since_seq", 0);
             int timeoutSec = ParseIntArg(args, "timeout", DefaultWaitTimeoutSec);
             string owner = GetArg(args, "owner", null);
+            // expect_from / waiter：wait 的「等誰、誰在等」語意（2026-08-04 自 python client 固化上來）。
+            // 有了它們，Editor 端才知道「誰正被 blocking 等著」—— 酒保自動通知據此加權。
+            string expectFrom = GetArg(args, "expect_from", null);
+            string waiter = GetArg(args, "waiter", null);
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("wait 缺少 room"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
 
             // 建 pending 條目
-            string waitId = UCL_ChatTavernIO.CreatePendingWait(roomId, sinceSeq, timeoutSec, owner);
+            string waitId = UCL_ChatTavernIO.CreatePendingWait(
+                roomId, sinceSeq, timeoutSec, owner, expectFrom, waiter, excludeBartender: true,
+                explicitWaitId: GetArg(args, "wait_id", null),
+                // npc_after：幾秒後酒保才開始插話。python 版本來就有 UCL_BARTENDER_TRIGGER_SEC
+                // 環境變數可調，固化上來時不該把它變成寫死的常數 —— 沒有旋鈕就等於每次驗證
+                // 都要枯等 7.5 分鐘，而「不可測的行為」跟「沒有那個行為」差不多。
+                npcAfterSec: ParseIntArg(args, "npc_after", 0));
 
-            // fire-and-forget 背景 task；token 來自 runner（Editor cancel 時會被取消，那是預期）
-            BackgroundWaitTask(waitId, roomId, sinceSeq, timeoutSec, token).Forget();
+            // 推進交給 UCL_TavernWaitService（EditorApplication.update tick）——
+            // 這裡**刻意不再 spawn 背景 task**：runner 的 cts 是 `using`，handler 一返回就 dispose，
+            // 綁在它身上的迴圈第一個 await 就會被取消並靜默吞掉（2026-08-04 實測，71/71 從沒等過）。
+            // tick service 的狀態全在 _active_waits.json，沒有會被 domain reload 弄丟的記憶體物件。
 
             // 立刻寫 _last_op.md 告知 caller
             string md =
@@ -1389,57 +1404,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Debug.Log($"[Tavern] wait fire-and-forget → wait_id={waitId} room={roomId} since={sinceSeq} timeout={timeoutSec}s");
         }
 
-        // 區塊職責：實際的監看迴圈
-        // 物理意義：每秒 poll _seq.txt；seq > since_seq → 寫 fulfilled；達 timeout → 寫 timeout
-        // 數值影響：直接動 _active_waits.json + 寫 _wait_<id>.md；不修改 messages.jsonl
-        async UniTask BackgroundWaitTask(string waitId, string roomId, int sinceSeq, int timeoutSec, CancellationToken token)
-        {
-            const int pollIntervalMs = 1000;
-            int waitedMs = 0;
-            int totalMs = timeoutSec * 1000;
-            try
-            {
-                while (waitedMs <= totalMs)
-                {
-                    if (token.IsCancellationRequested) return; // domain reload / Editor close → leave pending（下次 LoadActiveWaits 會被 finalize）
-                    int cur = UCL_ChatTavernIO.ReadCurrentSeq(roomId);
-                    if (cur > sinceSeq)
-                    {
-                        var newMsgs = UCL_ChatTavernIO.Since(roomId, sinceSeq, 0);
-                        var room = UCL_ChatTavernIO.GetRoom(roomId);
-                        string roomName = room?.name ?? roomId;
-                        string title = $"🔔 {roomName} — wait fulfilled (id={waitId}) — {newMsgs.Count} 筆新訊息";
-                        string md = UCL_ChatTavernRender.RenderMessages(title, newMsgs);
-                        WriteWaitResult(waitId, md);
-                        int firstSeq = newMsgs.Count > 0 ? newMsgs[0].seq : sinceSeq + 1;
-                        UCL_ChatTavernIO.UpdateWaitStatus(waitId, "fulfilled", firstSeq, newMsgs.Count);
-                        Debug.Log($"[Tavern] wait {waitId} → fulfilled after {waitedMs}ms ({newMsgs.Count} msgs)");
-                        return;
-                    }
-                    await UniTask.Delay(pollIntervalMs, cancellationToken: token);
-                    waitedMs += pollIntervalMs;
-                }
-                // timeout
-                string timeoutMd = $"# ⏱ Wait Timeout\n\n- wait_id: `{waitId}`\n- room: `{roomId}`\n- 等待 {timeoutSec}s 後仍無 seq > {sinceSeq} 的新訊息。\n";
-                WriteWaitResult(waitId, timeoutMd);
-                UCL_ChatTavernIO.UpdateWaitStatus(waitId, "timeout", 0, 0);
-                Debug.LogWarning($"[Tavern] wait {waitId} → timeout after {timeoutSec}s");
-            }
-            catch (OperationCanceledException)
-            {
-                // domain reload / Editor close — 條目留 pending，下次 FinalizeOrphanedPending 會處理
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[Tavern] BackgroundWaitTask {waitId} crashed: {ex}");
-                try
-                {
-                    WriteWaitResult(waitId, $"# ❌ Wait Crashed\n\n{ex.Message}\n");
-                    UCL_ChatTavernIO.UpdateWaitStatus(waitId, "cancelled", 0, 0);
-                }
-                catch { /* swallow secondary failure */ }
-            }
-        }
+        // 註（2026-08-04）：原本這裡有 BackgroundWaitTask —— 已刪除，推進改由
+        //   UCL_TavernWaitService（EditorApplication.update tick）負責。
+        //   刪掉而不是留著不呼叫：留著的死程式碼會讓下一個人以為 wait 有兩個推進者。
 
         static void WriteWaitResult(string waitId, string md)
         {

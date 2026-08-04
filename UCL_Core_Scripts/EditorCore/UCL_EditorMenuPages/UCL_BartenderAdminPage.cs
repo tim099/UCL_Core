@@ -47,6 +47,10 @@ namespace UCL.Core.EditorLib.Page
         string m_LocatePreviewError = "";
         string m_LocateConfigStatus = "";
         string m_NotifyStatus = "";
+
+        const string KeyWaitParamsFold = "DrawWaitParamsSection";
+
+        string m_WaitParamsStatus = "";
         List<UCL_NotifyCandidate> m_NotifyPool;
         double m_NotifyPoolTime;
         bool m_LocateRunning;
@@ -92,6 +96,7 @@ namespace UCL.Core.EditorLib.Page
                 DrawRemoteWindowSection();
                 GUILayout.Space(6);
                 DrawAutoNotifySection();
+                DrawWaitParamsSection();
                 GUILayout.Space(6);
                 DrawTimeRulesSection();
                 GUILayout.Space(6);
@@ -417,6 +422,71 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label($"近似未命中：{string.Join("；", last.NearMisses.ConvertAll(n => n.Text))}",
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
             GUILayout.Label($"定位診斷檔：{UCL_RemotePersonaLocator.DiagnosticPath}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+        }
+
+        // 區塊職責：wait / 酒保插話的參數旋鈕（Tim 2026-08-04 要求從寫死改為後台可調）。
+        // 物理意義：這些數字原本是 C# 常數。python 版本來有 UCL_BARTENDER_TRIGGER_SEC 可調，
+        //          固化到 C# 時被寫死 —— 於是驗一次酒保插話要枯等 7.5 分鐘。
+        //          2026-08-04 把觸發秒數調成 5 秒才在 40 秒內跑完一輪，並挖出
+        //          「op=wait 歷史 71 筆從沒真的等過」那隻。旋鈕本身就是照妖鏡。
+        // 數值影響：改完要按 💾 保存才落檔（tavern_wait_config.json）；未保存只影響本次 Editor session。
+        void DrawWaitParamsSection()
+        {
+            UCL_TavernWaitSettings.EnsureLoaded();
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool show = UCL_GUILayout.Toggle(m_FoldDic, KeyWaitParamsFold, 21, iDefaultValue: false);
+                    GUILayout.BeginVertical();
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("<b>⏳ Wait / 酒保插話 參數</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                        GUILayout.Label($"（插話 {UCL_TavernWaitSettings.NpcTriggerSeconds}s / 冷卻 {UCL_TavernWaitSettings.NpcCooldownSeconds}s / tick {UCL_TavernWaitSettings.TickIntervalSeconds:0.#}s）",
+                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                    }
+
+                    if (show)
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label("酒保插話觸發(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_TavernWaitSettings.NpcTriggerSeconds = Mathf.Clamp(
+                                EditorGUILayout.IntField(UCL_TavernWaitSettings.NpcTriggerSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55))), 1, 86400);
+                            GUILayout.Label("插話冷卻(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_TavernWaitSettings.NpcCooldownSeconds = Mathf.Clamp(
+                                EditorGUILayout.IntField(UCL_TavernWaitSettings.NpcCooldownSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0, 86400);
+                            GUILayout.Label("建議休息杯數", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_TavernWaitSettings.NpcRestHintDrinks = Mathf.Clamp(
+                                EditorGUILayout.IntField(UCL_TavernWaitSettings.NpcRestHintDrinks, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))), 1, 100);
+                        }
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label("wait tick 間隔(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_TavernWaitSettings.TickIntervalSeconds = Mathf.Clamp(
+                                EditorGUILayout.FloatField((float)UCL_TavernWaitSettings.TickIntervalSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0.1f, 60f);
+                            GUILayout.Label("預設 wait timeout(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_TavernWaitSettings.DefaultWaitTimeout = Mathf.Clamp(
+                                EditorGUILayout.IntField(UCL_TavernWaitSettings.DefaultWaitTimeout, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55))), 1, 86400);
+                            if (GUILayout.Button("💾 保存", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
+                                m_WaitParamsStatus = UCL_TavernWaitSettings.SaveConfig(out string err)
+                                    ? $"已保存 → {UCL_TavernWaitSettings.ConfigPath}" : $"保存失敗：{err}";
+                            // 回復預設只改記憶體，不直接覆蓋檔案 —— 誤按不該當場毀掉設定
+                            if (GUILayout.Button("↺ 回復預設", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                UCL_TavernWaitSettings.ResetToDefaults();
+                                m_WaitParamsStatus = "已回復預設值（尚未保存 — 要落檔請按 💾）";
+                            }
+                        }
+                        GUILayout.Label("　※ 觸發秒數調小可在數十秒內驗證酒保插話；正式值建議 450s（慢速模式 wait=480s 內不被打斷）。",
+                            new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                        if (!string.IsNullOrEmpty(m_WaitParamsStatus))
+                            GUILayout.Label($"　{m_WaitParamsStatus}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                    }
+                    GUILayout.EndVertical();
+                }
+            }
         }
 
         // 區塊職責：自動通知（酒保 ding）— 定期掃在線 persona 的收信匣，依權重挑一個去戳。

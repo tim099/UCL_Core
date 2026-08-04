@@ -115,6 +115,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public int result_count;       // 0 = N/A；fulfilled 時為新訊息數
         public string finished_at;     // ISO 8601 UTC；status 進入終態時填
         public string owner;           // 可選，發起 wait 的 identity_id
+
+        // ── 以下三欄為 2026-08-04 加入（Tim：系統性功能固化到 C# server 端）──
+        // 物理意義：wait 的完整語意本來散在 python 的 client-side polling（tavern_handshake.py）——
+        //          「等誰」「誰在等」只存在那個 process 的區域變數裡，磁碟上沒有任何紀錄。
+        //          於是 Editor 端想知道「現在誰被 blocking 等著」時無從得知，
+        //          酒保自動通知也就無法把「被等的人」加權（Tim 2026-08-04 要的權重 100）。
+        //          把它們寫進這裡＝wait 的意圖成為 server 端的一等公民，不再是 client 的私有狀態。
+        public string expect_from;     // 可選，只認這個 sender_id 的回覆（對應舊 --wait-reply-from）
+        public string waiter;          // 可選，發起 wait 的 persona（owner 的 persona 層，給「誰在等」顯示用）
+        public bool exclude_bartender; // 酒保的氛圍插話不算數（預設 true；等的就是酒保時自動關掉）
+
+        // 區塊職責：酒保插話的**可見性** —— 不打斷 wait，但要讓等待方知道發生過。
+        // 物理意義：python client 版把酒保插話當 weak reply 直接結束 wait，agent 才看得到它。
+        //          那是「為了讓人看見而砍掉正在做的事」。搬進 server 後改成：wait 照等，
+        //          插話次數記在這裡，等待方輪詢時看到計數變動就印出來 —— 兩件事都拿到。
+        // 數值影響：npc_cups 累加；達 UCL_TavernWaitNpc.RestHintDrinks 時等待方該自決收 turn。
+        public int npc_cups;           // 本次 wait 期間酒保插話累計杯數
+        public int npc_after_sec;      // 幾秒後才開始插話（0 = 用預設；測試/調校可調小）
     }
 
     /// <summary>active wait 清單（JsonUtility 序列化用包裝）。</summary>

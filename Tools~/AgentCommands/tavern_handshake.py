@@ -298,6 +298,34 @@ def maybe_send_bartender(room, agent, wait_start, target_agent=None):
 #          要顯示 seq 只能從數字檔名推導（推不出就顯示 uuid）。
 # ===========================================================
 
+def _is_same_persona(msg: dict, persona: str) -> bool:
+    """訊息是不是「某個 persona」發的。
+
+    規格（Tim 2026-08-04）：**wait 一律以 persona 為身分主體**。
+    訊息上的 `sender_id` 實際承載的是 agent_id（Myth / Altair / zeta），
+    而 agent 層基本上只有 bank / token 相關操作才用得到。
+    等人回話等的是「那個人格」不是「那個帳號」—— 一個 agent 底下可有多個 persona。
+
+    血證（2026-08-04 Round S）：`--wait-reply-from gura` 等不到 gura ——
+    她的訊息 sender_id='Myth'、sender_persona='gura'，只比 sender_id 完全比不中。
+    **對所有「agent 名 ≠ persona 名」的人（Myth/gura、Altair/apex-one、zeta/summit…）
+    這個過濾器從來沒有命中過**，而且它靜默等到 timeout，看起來只像「對方沒回」。
+
+    為什麼負向測試抓不到：過濾器「永遠不命中」時，所有「不該命中」的測試也照樣通過。
+    只有正向測試（該命中時真的命中）照得出這種壞法。
+
+    邊界：sender_persona 缺席（persona 欄加入前的舊訊息）才退回 sender_id。
+    不是每一層都比 —— 比多會讓「A 的 agent 名恰好等於 B 的 persona 名」誤命中。
+    """
+    if not msg or not persona:
+        return False
+    want = persona.casefold()
+    sp = (msg.get("sender_persona") or "").strip()
+    if sp:
+        return sp.casefold() == want
+    return (msg.get("sender_id") or "").casefold() == want
+
+
 def _clear_handshake_flags() -> None:
     """清掉握手旗標 — active / start / hurry 三個都清。
 
@@ -362,10 +390,19 @@ def _msg_display_id(key: tuple, msg: dict) -> str:
 
 
 def _latest_message_key(room: str, sender_id: str | None = None):
-    """最新一則訊息的排序鍵；給 sender_id 時只看該 sender。找不到回 None。"""
+    """最新一則訊息的排序鍵；給 sender_id 時只看該**人**（persona 層優先）。找不到回 None。
+
+    ⚠ 這裡的比對必須跟 `_is_same_persona` 用同一個身分層 —— 血證（2026-08-04）：
+      wait 的匹配改成 persona 層之後，這裡還留著 `msg["sender_id"] != sender_id`（agent 層）。
+      於是 caller 傳 persona 名（summit）時，比不中自己 sender_id='Zeta' 的新訊息，
+      往回撈到一則舊的 sender_id='summit' 畸形發文當 baseline，
+      **把該筆之後的所有歷史訊息都當成「新回覆」→ 0.0 秒就 got-reply**。
+      判決碼 0 看起來完全正常，實際上一秒都沒等、而且匹配的是測試開始前的訊息。
+      「同一語意兩處實作，只改了一處」——本 repo 最常復發的那一族。
+    """
     latest = None
     for key, msg in _iter_room_messages(room):
-        if sender_id and msg.get("sender_id") != sender_id:
+        if sender_id and not _is_same_persona(msg, sender_id):
             continue
         if latest is None or key > latest:
             latest = key
@@ -543,7 +580,7 @@ def wait_for_tavern_reply(
                 for key, msg in _iter_room_messages(room):
                     if baseline_key is not None and key <= baseline_key:
                         continue
-                    if msg.get("sender_id") == my_sender_id:
+                    if _is_same_persona(msg, my_sender_id):
                         # 自己後續發言不算回覆（避免 self 觸發）
                         continue
                     msg_id = _msg_display_id(key, msg)
@@ -593,7 +630,7 @@ def wait_for_tavern_reply(
                         )
                         # 酒保 weak reply 不該 reset 連喝計數 — counter 累積成 agent 自決休息的訊號
                         return WAIT_REPLY_GOT
-                    if sender_filter and msg.get("sender_id") != sender_filter:
+                    if sender_filter and not _is_same_persona(msg, sender_filter):
                         continue
                     # 命中真實 reply — 印出 + 清酒保連喝計數
                     body_preview = msg.get("body", "")

@@ -34,16 +34,31 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public int NewMentions;
         public int MaxSeq;
         public DateTime LastNotifiedUtc = DateTime.MinValue;
+        /// <summary>有人正掛著 <c>--wait-reply-from 這個 persona</c> 在 blocking 等她回話。</summary>
+        public bool WaitedFor;
+        /// <summary>誰在等（顯示用，回答「為什麼是她」）。</summary>
+        public string WaitedBy = "";
 
-        /// <summary>權重 = 新 @ 次數 × 10（Tim 2026-08-02 給的尺：2 次→20、1 次→10）。</summary>
-        public int Weight => NewMentions * 10;
+        /// <summary>被等待的加權（Tim 2026-08-04：「妳正在等 gura，gura 就該有 100 權重」）。</summary>
+        public const int WaitedForWeight = 100;
+
+        // 權重 = 新 @ 次數 × 10（Tim 2026-08-02 給的尺）＋ 被等待 100（Tim 2026-08-04）。
+        // 為什麼是**相加**而不是取代／取大值：
+        //   取代或 Max 都會讓「被等 + 累積 12 個 @」跟「被等 + 剛好 0 個 @」變成同分，
+        //   而前者顯然更該先戳。相加保留了 @ 次數當同組內的排序依據，
+        //   同時 100 這個級距讓「被等的人」穩定壓過任何 <10 個 @ 的人 —— 這就是「優先度更高」的實作。
+        public int Weight => NewMentions * 10 + (WaitedFor ? WaitedForWeight : 0);
 
         public string Describe()
         {
             string last = LastNotifiedUtc == DateTime.MinValue
                 ? "從未通知"
                 : $"上次 {LastNotifiedUtc.ToLocalTime():MM-dd HH:mm}";
-            return $"{Persona}：新 @ {NewMentions} 次 → 權重 {Weight}｜{last}";
+            // 權重組成攤開寫 —— 「為什麼是她」要能一眼看懂，不然後台只是一個沒有理由的數字
+            string breakdown = WaitedFor
+                ? $"新 @ {NewMentions} 次 ×10 ＋ 🔴 {WaitedBy} 等待中 {WaitedForWeight}"
+                : $"新 @ {NewMentions} 次 ×10";
+            return $"{Persona}：{breakdown} → 權重 {Weight}｜{last}";
         }
     }
 
@@ -151,6 +166,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             public int RetryCount;
             public DateTime CapAlertUtc = DateTime.MinValue;
             public int CapMaxSeq;   // 發 @Tim 告警當下 inbox 的最大 seq — 之後 Tim 的新 @ 一定 > 它
+            /// <summary>上次「認列她讀過酒館」的訊號時間（非通知後已讀，是無 pending 時的計數清除依據）。</summary>
+            public DateTime ReadSeenUtc = DateTime.MinValue;
 
             public bool HasPending => PendingSeq > Seq;
         }
@@ -184,6 +201,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         RetryCount = kv.Value.GetInt("retry_count", 0),
                         CapAlertUtc = ParseUtc(kv.Value.GetString("cap_alert_at", "")),
                         CapMaxSeq = kv.Value.GetInt("cap_max_seq", 0),
+                        ReadSeenUtc = ParseUtc(kv.Value.GetString("read_seen_at", "")),
                     };
                 }
             }
@@ -211,6 +229,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     entry["retry_count"] = new JsonData(kv.Value.RetryCount);
                     entry["cap_alert_at"] = new JsonData(FormatUtc(kv.Value.CapAlertUtc));
                     entry["cap_max_seq"] = new JsonData(kv.Value.CapMaxSeq);
+                    entry["read_seen_at"] = new JsonData(FormatUtc(kv.Value.ReadSeenUtc));
                     data[kv.Key] = entry;
                 }
                 File.WriteAllText(StatePath, data.ToJsonBeautify(), new UTF8Encoding(false));
@@ -233,6 +252,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             var state = LoadState();
             bool stateDirty = false;
             var now = DateTime.UtcNow;
+            var liveWaits = LoadLiveWaitTargets();   // persona → 正在等她的人（見 LoadLiveWaitTargets）
             foreach (var lockInfo in UCL_ActivePersonaLocks.ListOnline())
             {
                 if (!state.TryGetValue(lockInfo.Persona, out var record))
@@ -252,6 +272,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 }
 
                 CountInbox(lockInfo.Persona, record.Seq, out int newCount, out int maxSeq);
+
+                // ── 讀取軌（Tim 2026-08-04）：沒有 pending 也要能因「她讀了酒館」清掉累積計數 ──
+                // 沒有這段，從沒被通知過的人 @ 計數只增不減（gura 累積到 12 次的成因），
+                // 而權重是拿這個數字算的 —— 假資料排出來的順序，看起來跟真的一模一樣。
+                if (!record.HasPending && newCount > 0
+                    && TryCreditTavernRead(lockInfo.Persona, record, out var readAt))
+                {
+                    record.Seq = maxSeq;
+                    record.ReadSeenUtc = readAt;
+                    state[lockInfo.Persona] = record;
+                    stateDirty = true;
+                    newCount = 0;
+                }
+
+                // 入池仍以「有新 @」為條件 —— 被等待只加權、不創造通知理由。
+                // 沒被 @ 卻被戳，對收到的人是「不知道為什麼被叫」；擴大入池資格是另一個決定，留給 Tim 拍板。
                 if (newCount <= 0) continue;
 
                 // ── retry cap：達上限即停戳；Tim 在酒館再次 @ 才恢復（新 inbox 條目 seq > cap 時水位且標頭含 Tim）──
@@ -284,6 +320,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 // ── 冷卻軌：無條件頻率限制, 與已讀狀態無關 ──
                 if (now < record.CooldownUntilUtc) continue;
 
+                liveWaits.TryGetValue(lockInfo.Persona, out string waitedBy);
                 pool.Add(new UCL_NotifyCandidate
                 {
                     Lock = lockInfo,
@@ -291,6 +328,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     NewMentions = newCount,
                     MaxSeq = maxSeq,
                     LastNotifiedUtc = record.NotifiedUtc,
+                    WaitedFor = !string.IsNullOrEmpty(waitedBy),
+                    WaitedBy = waitedBy ?? "",
                 });
             }
             if (stateDirty) SaveState(state);
@@ -327,6 +366,79 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             catch (Exception e)
             {
                 Debug.LogWarning($"[RemoteNotify] 已讀檢查失敗（{persona}）: {e.Message}");
+            }
+            return false;
+        }
+
+        // ===========================================================
+        // 區塊：live 等待名冊 — 讀 server 端權威狀態 `_active_waits.json`
+        // 物理意義：被人 blocking 等著的 persona，戳她能解開一條卡住的鏈；只是累積了幾個 @ 的人，
+        //          晚三十秒戳沒有人被卡住。這是「誰最值得被戳」的最強訊號。
+        // 數值影響：只影響權重排序，不改變入池資格（見 ScanPool 內註解）。
+        // 邊界：只認 status=pending 且未過期的條目。過期判斷用 expires_at ——
+        //      Editor 崩潰 / domain reload 時背景 task 來不及收尾，條目會留在 pending，
+        //      靠時間自然失效比靠「一定有人收尾」可靠（本 repo 對 PID/旗標當存活訊號已有血證）。
+        // ⚠ 資料來源刻意是 C# 自己寫的 `_active_waits.json`（Tim 2026-08-04 定的方向：
+        //   系統性狀態由 server 端擁有）。**不要**改回讀 python 寫的檔 —— 那會讓
+        //   「誰在等誰」的真相源回到 client 端，而 client 是會被 kill 的那一端。
+        // ===========================================================
+        static Dictionary<string, string> LoadLiveWaitTargets()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var now = DateTime.UtcNow;
+                foreach (var w in ChatTavern.UCL_ChatTavernIO.LoadActiveWaits().waits)
+                {
+                    if (w == null || string.IsNullOrEmpty(w.expect_from)) continue;
+                    if (!string.Equals(w.status, "pending", StringComparison.OrdinalIgnoreCase)) continue;
+                    var expires = ParseUtc(w.expires_at);
+                    if (expires == DateTime.MinValue || expires <= now) continue;
+                    // 同一人被多人等 → 留先登記的那個名字（權重不疊加，避免被等 N 次就霸榜）
+                    if (!map.ContainsKey(w.expect_from))
+                        map[w.expect_from] = string.IsNullOrEmpty(w.waiter)
+                            ? (string.IsNullOrEmpty(w.owner) ? "有人" : w.owner) : w.waiter;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RemoteNotify] 等待名冊讀取失敗（本輪不加權）: {e.Message}");
+            }
+            return map;
+        }
+
+        // 區塊職責：沒有 pending 批次時，也要能因「她確實讀了酒館」而把累積的 @ 計數清掉。
+        // 物理意義：舊行為只在**通知過**（有 pending）時才驗已讀並推進水位。所以「從沒被通知過、
+        //          但天天在讀酒館」的人，@ 計數只增不減 —— gura 2026-08-04 累積到 12 次就是這個。
+        //          那個數字一旦失真，權重排序就是拿假資料在排，而且看起來完全正常。
+        // 數值影響：命中即把水位推到目前 inbox 最大 seq（等於本輪 newCount 歸零）。
+        // 設計取捨：**參考時點記的是「讀取訊號本身的時間」而不是 now**。用 now 的話，只要她讀過一次，
+        //          之後新進的 @ 會被同一個訊號一路清掉（她的 cursor 沒再動，卻永遠算「已讀」）。
+        //          記訊號時間 → 下次要再有新的讀取動作才會再清一次。
+        // ⚠ 已知取捨：她跑完 catchup 之後、本輪掃描之前才落地的 @，會被這次一起清掉（窗口 ≤ 一個掃描間隔）。
+        //   代價是少一次自動戳（對方仍可被 Tim 叮 / 下一個 @ 重新計數）；反向的代價是計數永久失真。
+        //   兩者相比，寧可偶爾少戳一次。
+        static bool TryCreditTavernRead(string persona, NotifyRecord record, out DateTime readAtUtc)
+        {
+            readAtUtc = DateTime.MinValue;
+            try
+            {
+                string cursorPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "_inbox_cursor", persona + ".json");
+                if (File.Exists(cursorPath))
+                {
+                    var mtime = File.GetLastWriteTimeUtc(cursorPath);
+                    if (mtime > record.ReadSeenUtc) { readAtUtc = mtime; return true; }
+                }
+                // 開口 = 她人在現場且看得到酒館（比 cursor 更強，但較貴，放後面）
+                if (record.ReadSeenUtc != DateTime.MinValue && HasSpokenSince(persona, record.ReadSeenUtc))
+                {
+                    readAtUtc = DateTime.UtcNow;
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RemoteNotify] 讀取確認掃描失敗（{persona}）: {e.Message}");
             }
             return false;
         }

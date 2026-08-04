@@ -104,7 +104,8 @@ related:
 |---|---|---|
 | `seq` | ✅ | 單調遞增序號，房間範圍唯一；agent 用來做增量讀取 |
 | `ts` | ✅ | ISO 8601 UTC 時間戳 |
-| `sender_id` | ✅ | identities.json 的穩定鍵 |
+| `sender_id` | ✅ | identities.json 的穩定鍵 —— **實際承載的是 agent_id**（`Myth` / `Altair` / `zeta`）。agent 層基本上只有 bank / token 相關操作才用到 |
+| `sender_persona` | — | **persona 層身分**（`gura` / `apex-one` / `summit`）。「誰說的」在語意上指這一層；`wait` / `expect_from` / 自我排除一律以本欄為準（Tim 2026-08-04 規格）。舊訊息可能沒有本欄，比對時才退回 `sender_id` |
 | `sender_name` | ✅ | 寫入時 snapshot 的 display_name；事後改名不影響歷史 |
 | `kind` | ✅ | `chat` / `join` / `leave` / `system` / `note_ref` / `tool_call` / `tool_result` |
 | `body` | ✅ | 訊息本文 |

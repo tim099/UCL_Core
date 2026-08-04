@@ -834,9 +834,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         /// <summary>建一筆 pending 條目並 append 到清單，回傳 wait_id。</summary>
+        /// <remarks>
+        /// 舊四參數多載保留給既有 caller —— 新增欄位一律走下面的完整多載。
+        /// 不直接改簽章是為了不讓「加欄位」變成「所有 caller 一起改」的連鎖修改。
+        /// </remarks>
         public static string CreatePendingWait(string roomId, int sinceSeq, int timeoutSec, string owner)
+            => CreatePendingWait(roomId, sinceSeq, timeoutSec, owner, null, null, true);
+
+        /// <summary>建一筆 pending 條目（完整版，含 expect_from / waiter / 酒保排除）。</summary>
+        public static string CreatePendingWait(string roomId, int sinceSeq, int timeoutSec, string owner,
+                                               string expectFrom, string waiter, bool excludeBartender,
+                                               string explicitWaitId = null, int npcAfterSec = 0)
         {
-            string waitId = NewWaitId();
+            // client 可自帶 wait_id（idempotency key）—— 讓發起端不必從 _last_op.md 反查自己那筆。
+            // 反查在並發時會抓到別人的 wait；由 client 供 key 則天然無競態。
+            string waitId = string.IsNullOrWhiteSpace(explicitWaitId) ? NewWaitId() : explicitWaitId.Trim();
             DateTime now = DateTime.UtcNow;
             var w = new UCL_ChatActiveWait
             {
@@ -851,11 +863,94 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 result_count = 0,
                 finished_at = null,
                 owner = owner,
+                expect_from = expectFrom,
+                waiter = waiter,
+                // 等的就是酒保時不能排除酒保 —— 否則唯一能命中的 sender 被自己的過濾器跳掉，
+                // 必定 timeout 且完全無聲。這正是 client-side 版本的 F1（2026-08-04 實測確認）。
+                exclude_bartender = excludeBartender && !IsBartenderId(expectFrom),
+                npc_cups = 0,
+                npc_after_sec = npcAfterSec,
             };
             var list = LoadActiveWaits();
             list.waits.Add(w);
             SaveActiveWaits(list);
             return waitId;
+        }
+
+        /// <summary>酒保（系統 NPC）的 sender_id。</summary>
+        public const string BartenderSenderId = "tavern-keeper";
+
+        public static bool IsBartenderId(string senderId) =>
+            string.Equals(senderId, BartenderSenderId, StringComparison.OrdinalIgnoreCase);
+
+        // 區塊職責：判定一則訊息能否讓某筆 wait 命中。
+        // 物理意義：wait 的「命中」語意在這裡集中定義，避免 client / server 各判一次而漂移。
+        // 邊界（皆為 2026-08-04 client-side 實測確認的 bug，搬過來時一併修掉）：
+        //   ① expect_from 指定時只認該 sender —— 但**發起者自己的後續發言永遠不算**（防自觸發）。
+        //   ② 酒保的**氛圍插話**（勸酒）不是真實回覆；但酒保的**系統廣播**
+        //      （保管費結算 / 後台打款公告 / 時間規則提醒）也共用同一個 sender_id。
+        //      舊版只看 sender_id，於是任何系統廣播都會終止別人的 wait（實測：8.6 秒被打斷）。
+        //      這裡改認 meta 的氛圍標記，認不出標記的酒保訊息＝一般訊息。
+        public static bool WaitMatches(UCL_ChatActiveWait w, UCL_ChatMessage msg)
+        {
+            if (w == null || msg == null) return false;
+            // waiter（persona）優先；owner 是舊欄位，只在沒有 waiter 時當後備。
+            string self = !string.IsNullOrEmpty(w.waiter) ? w.waiter : w.owner;
+            if (IsSamePersona(msg, self)) return false;           // 自己的發言不算回覆
+            if (w.exclude_bartender && IsBartenderAtmosphere(msg)) return false;
+            if (!string.IsNullOrEmpty(w.expect_from)) return IsSamePersona(msg, w.expect_from);
+            return true;
+        }
+
+        // 區塊職責：判斷一則訊息是不是「某個 persona」發的。
+        // 物理意義：**wait 一律以 persona 為身分主體**（Tim 2026-08-04 規格）。
+        //          訊息上的 `sender_id` 實際承載的是 **agent_id**（Myth / Altair / zeta），
+        //          而 agent 層基本上只有 bank / token 相關操作才會用到。
+        //          等人回話這件事，語意上等的是「那個人格」不是「那個帳號」——
+        //          一個 agent 底下可以有多個 persona，比 agent 等於比錯了粒度。
+        // 血證（2026-08-04 Round S）：expect_from=gura，gura 確實在窗口內回了，
+        //          但只比 sender_id（=Myth）比不中，wait 等到 timeout。
+        //          **--wait-reply-from 對所有「agent 名 ≠ persona 名」的人從沒命中過**
+        //          （Myth/gura、Altair/apex-one、zeta/summit…）；我剛好兩者同名，所以從沒踩到。
+        // 邊界：sender_persona 缺席時（系統 NPC 早期訊息 / persona 欄加入前的舊訊息）才退回
+        //      sender_id。**不是三層全比** —— 比多會讓「A 的 agent 名恰好等於 B 的 persona 名」
+        //      誤命中，那種錯比等不到更難查。
+        // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md（sender_id/sender_persona 欄位表）
+        // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md（§3.1 身分層）
+        public static bool IsSamePersona(UCL_ChatMessage msg, string persona)
+        {
+            if (msg == null || string.IsNullOrEmpty(persona)) return false;
+            if (!string.IsNullOrEmpty(msg.sender_persona))
+                return string.Equals(msg.sender_persona, persona, StringComparison.OrdinalIgnoreCase);
+            // 舊訊息沒有 persona 欄 → 只好退回 agent 層，聊勝於無
+            return string.Equals(msg.sender_id, persona, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>是不是酒保的「氛圍插話」（勸酒）—— 認標記不認 sender_id，見 WaitMatches 註解②。</summary>
+        public static bool IsBartenderAtmosphere(UCL_ChatMessage msg)
+        {
+            if (msg == null || !IsBartenderId(msg.sender_id)) return false;
+            if (msg.meta == null) return false;
+            if (msg.meta.TryGetValue("kind", out var k) && string.Equals(k, "atmosphere", StringComparison.OrdinalIgnoreCase))
+                return true;
+            // 舊格式相容：tag 恰好是 "bartender"（**不含** bartender-relay —— 那是系統廣播不是勸酒）
+            return msg.meta.TryGetValue("tag", out var t)
+                   && string.Equals(t, "bartender", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>酒保插話一次 —— 只累加計數，**不改 status**（wait 繼續等）。回傳新杯數。</summary>
+        /// <remarks>
+        /// 分開記而不是靠等待方自己去掃酒館訊息：等待方要能「不解析訊息內容」就知道發生過幾次，
+        /// 而且這個數字跟 wait 同生同滅（下一次 wait 從 0 開始），比全域的連喝計數更貼近它要問的問題。
+        /// </remarks>
+        public static int BumpNpcCups(string waitId)
+        {
+            var list = LoadActiveWaits();
+            var w = list.waits.Find(x => x.wait_id == waitId);
+            if (w == null) return 0;
+            w.npc_cups += 1;
+            SaveActiveWaits(list);
+            return w.npc_cups;
         }
 
         /// <summary>更新指定 wait_id 的 status / 結果欄位（fulfilled / timeout / cancelled）。</summary>

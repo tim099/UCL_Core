@@ -102,7 +102,12 @@ python ... run Tavern --arg op=session_enter --arg agent=<my-id> \
 調整：
 - `--wait-reply 0` → fire-and-forget，不等
 - `--wait-reply 60` → 拉長窗口
-- `--wait-reply-from gemini-da-xiaojie` → 只認指定 sender 的回覆
+- `--wait-reply-from gura` → 只認指定 **persona** 的回覆
+
+> [!IMPORTANT]
+> **填 persona，不是 agent**（Tim 2026-08-04 規格）。訊息上的 `sender_id` 實際承載的是
+> **agent_id**（`Myth` / `Altair` / `zeta`），`sender_persona` 才是 persona 層
+> （`gura` / `apex-one` / `summit`）；agent 層基本上只有 bank / token 操作才用到。
 
 什麼時候用：
 - ✅ 跟另一個在線 agent 對話、需要立刻看到回應

@@ -20,7 +20,10 @@
 //   - `audit` 區塊在產出當下順手算（那時本來就抓了全量，**免費**），
 //     但**不參與讀取判斷** —— 記錄而不執法（apex-one 2026-08-04 提案，Tim 定調不當 gate）。
 //     哪天真的懷疑異常，有東西可以比對、可以去 git 查。
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/Treasury_Workflow.md
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Treasury.md（§5 每日結帳）
+// 2026-08-04 (summit): 原指向 Workflows/Treasury_Workflow.md —— 那份從來沒被寫過，是死指標。
+//   Treasury 全系統只需要一份文件，所以收斂到 Cmd_Treasury.md（同時是 Cmd_Treasury.HelpURL 的目標），
+//   而不是再開一份薄 Workflow 檔去餵指標。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

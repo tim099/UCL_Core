@@ -1,7 +1,8 @@
 ﻿// 區塊職責：T40 Cmd_Treasury — agent CMD wrapper for Treasury Ledger
 // 物理意義：thin wrapper 委派 UCL_TreasuryLedger Static API；agent 透過 run_cmd.py 觸發
-// 數值影響：op-dispatch（balance / credit / debit / audit）
+// 數值影響：op-dispatch（12 個 op：餘額 / 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳）
 // 安全：debit 帳戶隔離鐵律由 Static API 處理；本層只 parse args + 寫 _last_op.md
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Treasury.md（§2 op 一覽 / §4 kind 不驗值）
 
 #if UNITY_EDITOR
 using System.Collections.Generic;
@@ -18,16 +19,23 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public override string CommandType => "Treasury";
         public override string ShortDescription => "Treasury Ledger — agent token 帳本（credit / debit / balance / audit）";
 
+        // ⚠ source_kind / use_kind 標「分類字串」而非「enum」是刻意的：C# 只驗非空、**不驗值**，
+        //   rules.json 的 income_sources / spending_uses 是宣告沒有任何程式讀它把關
+        //   （2026-08-04 實測：credit 有 15 種、debit 有 17 種用過但未宣告的值）。
+        //   寫「enum」會讓 caller 以為有人把關 —— 那是文件層說謊，理由見 Cmd_Treasury.md §4。
         public override string ArgsSchema =>
             "balance: account=帳戶ID（必填）[currency=tavern_token]\n" +
-            "credit: account=帳戶ID amount=N source_kind=enum [source_ref=...] [description=...] [caller=自報agent_id] — 進帳\n" +
-            "debit: account=帳戶ID amount=N use_kind=enum [use_ref=...] [description=...] [caller=自報agent_id] — 出帳；caller 必須==account（除非 system）\n" +
+            "credit: account=帳戶ID amount=N source_kind=分類字串(必填,不驗值) [source_ref=...] [description=...] [caller=自報agent_id] [idempotency_key=...] — 進帳\n" +
+            "debit: account=帳戶ID amount=N use_kind=分類字串(必填,不驗值) [use_ref=...] [description=...] [caller=自報agent_id] [idempotency_key=...] — 出帳；caller 必須==account（除非 system）\n" +
             "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
             "verify: account=帳戶ID — 跑 replay 驗 balance_after consistency\n" +
             "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 UCL_BankAdminPage 批款）\n" +
             "request_list: [pending_only=true|false] [max=200] — 列請款單\n" +
-            "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單";
+            "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單\n" +
+            "transfer_request: from_bank=出款bank to_bank=收款bank amount=N reason=為什麼該搬 [kind=manual_transfer] [agent=] [persona=] — 開轉帳單（不動錢，總量守恆；請款單消耗公庫，兩者刻意分開）\n" +
+            "closing_generate: （無參數）— 補算所有「已完結但未結帳」的 UTC 日；只寫 closing/*.json，不動餘額\n" +
+            "closing_list: （無參數）— 列已結帳日期與當前讀取基準";
 
         public override string ExampleArgs =>
             "op=balance;account=claude-da-xiaojie";
@@ -42,7 +50,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                Cmd_Tavern_Helpers.RejectLastOp("缺少 op 參數（balance / credit / debit / audit / verify）");
+                // 錯誤訊息列全部 op —— 舊版只列 5 個，漏掉的 7 個對讀錯誤訊息的人等於不存在。
+                Cmd_Tavern_Helpers.RejectLastOp(
+                    "缺少 op 參數（balance / credit / debit / transfer / audit / verify / "
+                    + "request / request_list / request_cancel / transfer_request / "
+                    + "closing_generate / closing_list）");
                 return;
             }
 

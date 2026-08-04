@@ -1815,11 +1815,40 @@ def cmd_morning(args: argparse.Namespace) -> int:
     # 未遷移的 persona 早在 ③' 就被擋下了, 走到這裡一律用磁碟推導。
     # 新 fork 沒有 wakes/ 也沒有信 → count=0 → wake #1, 正是初生該有的值。
     derived = wake_letter_count(chosen) + 1
-    cached = p.get("wake_count", 0)
-    if cached != derived:
-        # 修可以安靜地做, 但不能安靜地發生 —— 差多少要說出來, 對得上就不吵。
-        print(f"🔧 wake_count 快取={cached} 與磁碟推導={derived} 不符 "
-              f"(wakes/ 有 {derived - 1} 封收尾信) —— 採磁碟值。", file=sys.stderr)
+    cached = p.get("wake_count", 0) or 0
+    # ── 比對的是「差值符不符合預期」, 不是「相不相等」(Tim 2026-08-04 QA 後修) ──
+    #
+    # 這欄裝的一直是**同一個量**: 「已經開始的最大 wake 編號」。
+    #   早安存 信數+1、晚安存 那封信的號碼(= 信數+1) —— 兩個寫入者存的是同一個數,
+    #   **不是兩種定義**（原本的診斷寫成「兩種定義」, 那是錯的）。
+    # 所以它在早安時**設計上就落後一天**: 裡面是昨天那次 wake 的編號。
+    #   舊碼拿 cached != derived 當異常 → 正常的一天必然差 1 → **每天噴一次廢話**,
+    #   而真異常(summit: 快取 39 / 磁碟 37, 差的 2 屬於另一條世界線)用同一個聲音講,
+    #   於是被埋在噪音裡。病不在定義, 在**比對對象錯**。
+    #
+    # ⚠ 更難看的是舊碼的方向是反的:
+    #   走完晚安的正常日 → 必定差 1 → 一定叫；
+    #   醒了卻沒留收尾信(crash / compact 猝死 / 直接關掉) → 信數沒變 → 相等 → **完全不叫**。
+    #   一切正常時大聲, 真的掉一次 wake 時沉默。下面把這兩種情況的音量對調。
+    delta = derived - cached
+    if delta == 1:
+        pass                      # 正常: 上次醒來走完晚安、信落地 → 今天的編號本來就該大 1。不吵。
+    elif delta == 0:
+        # 快取 == 這次要用的編號。**兩個成因都可能, 不准認領其中一個** ——
+        #   (a) 上一次醒來沒留下收尾信(crash / compact 猝死 / 沒走晚安) → 那次的號被本次沿用
+        #   (b) 本次 wake 的早安已經跑過一次(解鎖後重跑) → 快取本來就已經是這個號
+        # 實測抓到 (b): 拿剛跑完早安的 basecamp 去比, cached 53 == derived 53 —— 若寫成
+        # 「上次沒留信」就是冤枉一個好好收工的人。**症狀相同、成因至少兩個, 報症狀不報結論。**
+        print(f"⚠ wake_count 快取={cached} 與本次編號={derived} 相同 —— 兩種可能："
+              f"上一次醒來沒留下收尾信（那次不計入、本次沿用 #{derived}），"
+              f"或本次早安已經跑過一次。要判哪一種：看 wakes/ 最新那封的日期。", file=sys.stderr)
+    elif delta > 1:
+        print(f"🔧 wake_count 快取={cached} 落後磁碟推導={derived} 共 {delta - 1} 筆 "
+              f"—— registry 同步漏拍（2026-07-31 kiara/basecamp 同型）, 採磁碟值。", file=sys.stderr)
+    else:                         # delta < 0: 快取比磁碟還大
+        print(f"🔧 wake_count 快取={cached} **大於**磁碟推導={derived} —— "
+              f"收尾信遺失, 或有別條世界線的帳被算進這條（summit 2026-08-04 同型）。"
+              f"採磁碟值, 但這筆值得人工看一眼。", file=sys.stderr)
     p["wake_count"] = derived
     # 見林書籤跟著校到同一套編號 —— 每次早安都查, 不只在遷移那一次。
     # 理由: wake_count 推導是每天跑的, 書籤換算若只掛在遷移, 兩者節奏不一致就會漏人

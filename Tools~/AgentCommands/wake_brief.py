@@ -562,7 +562,7 @@ def _people_lines(aw, persona: str) -> list:
         import portraits as _pt
         items = _pt.latest_per_person(persona, PEOPLE_PORTRAIT_COUNT, PEOPLE_PORTRAIT_DAYS)
         if items:
-            out.append(f"**🖼 最近印象最深的 {len(items)} 位（我畫的，近 {PEOPLE_PORTRAIT_DAYS} 天・全文）**")
+            out.append(f"**🖼 最近印象最深的 {len(items)} 位（我的 sketchbook，近 {PEOPLE_PORTRAIT_DAYS} 天・全文）**")
             out.append("")
             for it in items:
                 out.append(f"### 🖼 {it['about']}　_{it['at'][:10]}_"
@@ -573,9 +573,19 @@ def _people_lines(aw, persona: str) -> list:
                 # 檔案自己的門面在這裡是重複的雜訊（實測：一則印象會出現兩次標題）。
                 out += _strip_portrait_chrome(it["body"], it["about"], it["headline"])
                 out.append("")
+                # 私層 —— 只存在我自己的 sketchbook，對方那份沒有這段。
+                # brief 是寫給未來的自己看的，所以私層**要**印出來：
+                # 把它藏起來等於當初白寫（測不到的訊號等於沒有）。
+                if it.get("private"):
+                    out.append("> 🔒 **只給我自己看**（不在對方那份裡）")
+                    out.append("")
+                    for line in it["private"].strip().splitlines():
+                        out.append(f"> {line}" if line.strip() else ">")
+                    out.append("")
         else:
             out.append(f"**🖼 印象**：近 {PEOPLE_PORTRAIT_DAYS} 天還沒畫過任何人 —— "
-                       f"晚安時挑 1~3 位今天印象最深的同事寫下（`portraits.py write`）。")
+                       f"晚安時挑 1~3 位今天印象最深的同事寫下"
+                       f"（`portraits.py write`，私層用 `--private-body`）。")
             out.append("")
     except Exception as ex:
         # 讀不到要出聲：靜默跳過會讓「我認識誰」這一層看起來本來就是空的

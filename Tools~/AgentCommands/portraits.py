@@ -17,18 +17,33 @@
     （檔案就在他資料夾裡），但不強迫、也不進他的 brief。
 
 設計取捨：
-  - **存對方的資料夾**（Tim 原規格，kaguya 與我同投）：
-        letters/<被寫的人>/portraits/<ts>__by_<作者>.md
-    查詢「我寫過誰」要 glob 全部 persona 的 portraits/ —— 十來個目錄，毫秒級。
-    kaguya 的一句話定案：「(b) 存自己資料夾**是用放棄『同事可以讀』來解一個已經有
-    更便宜解法的查詢問題**」。為省一個 glob 去砍掉這系統唯一一個
-    「我對你的看法你看得到」的通道，是因噎廢食。
-  - **單一事實源，不存第二份**。要快就生機械索引（可重建、可 diff）——
-    那是視圖不是事實。鏡像會漂且無聲；索引漂了跑一次就對回來。
+  - **兩份、分層**（Tim 2026-08-04 改制，取代下面那條舊拍板）：
+        letters/<作者>/sketchbook/<ts>__about_<對方>.md   ← 事實源（公開層 + 私層）
+        letters/<對方>/portraits/<ts>__by_<作者>.md        ← 投遞件（**只有公開層**）
+    素描本的隱喻：草稿與內心話留在畫家手上，**成品才掛出去**。
+    形狀對齊掛號信（`outbox/` 存證 + `mailbox/` 投遞），但刻意不借用 `outbox` 這個
+    已被佔用的名字 —— 同名不同物正是這系統一路在治的病。
+
+    ⚠ **為什麼這不違反「不存第二份」**：舊拍板反對的是「同一個事實存兩份」（鏡像必漂）。
+      這裡兩份的**內容不同** —— 私層只在 sketchbook。真正重複的只有公開層，
+      而投遞件用**快照語意**處理：標 `delivered_at` + `derived_from`，
+      宣稱自己是「投遞那一刻的照片」，所以事後改 sketchbook **不追改**投遞件。
+      這招不是新發明 —— `affinity_snapshot` 已經用同一手法（宣稱是快照就永遠不會漂）。
+
+    附帶收益：brief 改讀作者自己的 sketchbook，**跨 persona glob 直接消失**
+    （原本要掃十幾個別人的 portraits/ 篩作者）。舊設計為「同事看得到」付的查詢成本，
+    這樣一次還掉，而且「同事看得到」這個通道**一個字都沒少**。
+
+  - （**已被上面取代，保留脈絡**）原規格是「只存對方資料夾、單一事實源、不存第二份」，
+    kaguya 的定案是「存自己資料夾是用放棄『同事可以讀』來換一個已有更便宜解法的查詢問題」。
+    那個判斷在「只有一層內容」的前提下完全正確 —— 改制成立的原因是**多了私層這個新事實**，
+    不是原判斷錯了。兩份不同內容 ≠ 鏡像。
   - **改觀 fork 新版本、不覆寫舊版**（同 reading-library 的人物看法）。
     單一則印象是評價，**有版本的印象是關係史**。
   - **工具不生成內容**。不從 affinity 分數自動摘要 —— 那是 kaguya 說的「代筆」，
     而她身分 fragment 寫著「代筆的序章不算、親手重寫才算」。工具只負責存與取。
+
+@doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Mechanics/Portraits_System.md
 """
 from __future__ import annotations
 
@@ -40,7 +55,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-PORTRAITS_DIRNAME = "portraits"
+PORTRAITS_DIRNAME = "portraits"      # 對方資料夾：投遞件（只有公開層）
+SKETCHBOOK_DIRNAME = "sketchbook"    # 自己資料夾：事實源（公開層 + 私層）
+
+# 私層在 sketchbook 檔內的分隔標記。
+# 用顯式標記而不是「第二個檔」：一幅畫像的兩層是同一次思考的產物，拆兩檔會各自漂。
+# 投遞時**以這行為切點**砍掉之後的內容 —— 切法只有一處，不會有第二種實作。
+PRIVATE_MARKER = "<!-- private:below-this-line-stays-in-sketchbook -->"
 
 
 def _find_repo_root(start: Path):
@@ -84,34 +105,103 @@ def _read_fm(path: Path) -> tuple[dict, str]:
 
 
 def write_portrait(by: str, about: str, body: str, headline: str = "",
-                   affinity_snapshot: str = "") -> Path:
-    """寫一幅畫像進**被寫者**的資料夾。回檔案路徑。
+                   affinity_snapshot: str = "", private_body: str = "") -> tuple[Path, Path]:
+    """寫一幅畫像 —— **事實源進自己的 sketchbook，公開層投遞到對方的 portraits**。
+
+    回 (sketch_path, delivered_path)。
 
     ⚠ 不覆寫任何既有檔 —— 檔名帶 UTC 時間戳，同一天寫兩幅就是兩幅。
       「改觀」在本系統裡的形狀是**多一個版本**，不是改掉舊的。
+    ⚠ `private_body` **只寫進 sketchbook**，不進投遞件，且投遞件裡
+      **不留任何「另有私層」的痕跡**（Tim 2026-08-04 拍板）——
+      留痕等於告訴對方「我還寫了你看不到的東西」，比不留更傷。
     """
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    d = LETTERS_DIR / about / PORTRAITS_DIRNAME
-    d.mkdir(parents=True, exist_ok=True)
-    fm = ["---", "type: portrait", f"by: {by}", f"about: {about}",
-          f"at: {datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}"]
-    if headline:
-        fm.append(f"headline: {headline}")
-    if affinity_snapshot:
-        # 快照不是同步 —— 它宣稱自己是「那一刻的照片」，所以永遠不會漂
-        fm.append(f"affinity_snapshot: {affinity_snapshot}")
-    fm += ["---", ""]
+    now = datetime.now(timezone.utc)
+    ts = now.strftime("%Y%m%dT%H%M%SZ")
+    at = now.isoformat().replace("+00:00", "Z")
+    public = body.strip()
+    private = (private_body or "").strip()
+
+    def _fm(kind: str, extra: list) -> str:
+        fm = ["---", f"type: {kind}", f"by: {by}", f"about: {about}", f"at: {at}"]
+        if headline:
+            fm.append(f"headline: {headline}")
+        if affinity_snapshot:
+            # 快照不是同步 —— 它宣稱自己是「那一刻的照片」，所以永遠不會漂
+            fm.append(f"affinity_snapshot: {affinity_snapshot}")
+        fm += extra + ["---", ""]
+        return "\n".join(fm)
+
     head = f"# 🖼 {about} — by {by}\n\n" + (f"**{headline}**\n\n" if headline else "")
-    p = d / f"{ts}__by_{by}.md"
-    p.write_text("\n".join(fm) + head + body.strip() + "\n", encoding="utf-8")
-    return p
+
+    # ① 事實源：自己的 sketchbook（公開層 + 私層）
+    sk_dir = LETTERS_DIR / by / SKETCHBOOK_DIRNAME
+    sk_dir.mkdir(parents=True, exist_ok=True)
+    sk_path = sk_dir / f"{ts}__about_{about}.md"
+    sk_body = public
+    if private:
+        sk_body += f"\n\n{PRIVATE_MARKER}\n\n## 🔒 只給我自己看\n\n{private}"
+    sk_path.write_text(_fm("sketch", [f"has_private: {'true' if private else 'false'}"])
+                       + head + sk_body + "\n", encoding="utf-8")
+
+    # ② 投遞件：對方的 portraits（**只有公開層**）
+    #    derived_from / delivered_at 宣告它是「投遞那一刻的照片」——
+    #    所以事後改 sketchbook 不必、也不會追改這一份（快照語意，同 affinity_snapshot）。
+    d_dir = LETTERS_DIR / about / PORTRAITS_DIRNAME
+    d_dir.mkdir(parents=True, exist_ok=True)
+    d_path = d_dir / f"{ts}__by_{by}.md"
+    d_path.write_text(_fm("portrait", [f"delivered_at: {at}",
+                                       f"derived_from: {by}/{SKETCHBOOK_DIRNAME}/{sk_path.name}"])
+                      + head + public + "\n", encoding="utf-8")
+    return sk_path, d_path
+
+
+def _split_private(body: str) -> tuple[str, str]:
+    """把 sketchbook 內文切成 (公開層, 私層)。沒有標記就是全公開。"""
+    if PRIVATE_MARKER in body:
+        pub, _, priv = body.partition(PRIVATE_MARKER)
+        return pub.strip(), priv.strip()
+    return body.strip(), ""
+
+
+def sketchbook_by(author: str, limit: int = None, days: int = None) -> list:
+    """**我畫過誰** —— 只讀自己的 sketchbook，一個目錄，不再 glob 全部 persona。
+
+    這是改制的直接收益：查詢方向與儲存方向終於同向。
+    """
+    out = []
+    d = LETTERS_DIR / author / SKETCHBOOK_DIRNAME
+    if not d.is_dir():
+        return out
+    cutoff = None
+    if days is not None:
+        cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+    for f in d.glob("*.md"):
+        meta, body = _read_fm(f)
+        at = (meta.get("at") or "")
+        if cutoff is not None:
+            try:
+                if datetime.fromisoformat(at.replace("Z", "+00:00")).timestamp() < cutoff:
+                    continue
+            except Exception:
+                pass        # 時間解析不出來 → 保留（寧可多列，不吞內容）
+        pub, priv = _split_private(body)
+        out.append({"path": f, "by": author, "about": (meta.get("about") or "?"),
+                    "at": at, "headline": meta.get("headline", ""),
+                    "affinity_snapshot": meta.get("affinity_snapshot", ""),
+                    "body": pub, "private": priv,
+                    "backfilled": (meta.get("backfilled", "") == "true")})
+    out.sort(key=lambda d: d["at"], reverse=True)
+    return out[:limit] if limit else out
 
 
 def portraits_by(author: str, limit: int = None, days: int = None) -> list:
-    """**我畫過誰** —— glob 全部 persona 的 portraits/ 篩作者，新到舊。
+    """**我投遞出去的畫像** —— glob 全部 persona 的 portraits/ 篩作者，新到舊。
 
-    這是「查詢方向與儲存方向相反」那題的解：不存第二份，直接掃。
-    十來個 persona 目錄，實測毫秒級 —— 為它多存一份鏡像不划算（鏡像會漂）。
+    ⚠ 2026-08-04 改制後這**不再是** brief 的來源（brief 走 `sketchbook_by`）。
+      保留它的兩個現役用途：
+        ① `backfill_sketchbook()` 要靠它找出改制前散在別人資料夾的舊畫像
+        ② 想確認「我到底投遞出去了什麼」時，讀投遞件本身才是答案（sketchbook 含私層）
     """
     out = []
     if not LETTERS_DIR.is_dir():
@@ -159,9 +249,12 @@ def latest_per_person(author: str, limit: int = 5, days: int = None) -> list:
     為什麼去重到人：brief 要回答「這幾天我對誰印象最深」，同一個人畫三幅
     不該佔掉三格。舊版留在檔案裡可回溯，但**只有最新版進 brief** ——
     這樣舊印象會被新印象自然取代，不會變成常駐標籤。
+
+    ⚠ 2026-08-04 起讀 **sketchbook**（作者自己那份，含私層）而不是 portraits ——
+      brief 是寫給未來的自己看的，所以它該讀事實源，不是讀投遞出去的成品。
     """
     seen, out = set(), []
-    for p in portraits_by(author, days=days):     # 已是新到舊
+    for p in sketchbook_by(author, days=days):     # 已是新到舊
         if p["about"] in seen:
             continue
         seen.add(p["about"])
@@ -169,6 +262,41 @@ def latest_per_person(author: str, limit: int = 5, days: int = None) -> list:
         if len(out) >= limit:
             break
     return out
+
+
+def backfill_sketchbook(author: str, dry_run: bool = False) -> tuple[int, int]:
+    """把改制前散在別人資料夾的舊畫像，補一份進作者自己的 sketchbook。
+
+    回 (新建數, 已存在跳過數)。**冪等** —— sketch 檔名沿用原投遞件的時間戳，
+    重跑不會生第二份。舊投遞件**原地不動**（它們就是當時的投遞件，動它們才是改寫歷史）。
+    補進來的一律 `backfilled: true` 且**沒有私層** —— 當時就沒寫私層，
+    事後補寫等於替過去的自己捏造想法。
+    """
+    created = skipped = 0
+    for old in portraits_by(author):          # 舊路徑：glob 全部 persona 篩作者
+        ts = old["path"].name.split("__", 1)[0]
+        sk_dir = LETTERS_DIR / author / SKETCHBOOK_DIRNAME
+        sk_path = sk_dir / f"{ts}__about_{old['about']}.md"
+        if sk_path.exists():
+            skipped += 1
+            continue
+        created += 1
+        if dry_run:
+            continue
+        sk_dir.mkdir(parents=True, exist_ok=True)
+        fm = ["---", "type: sketch", f"by: {author}", f"about: {old['about']}",
+              f"at: {old['at']}"]
+        if old["headline"]:
+            fm.append(f"headline: {old['headline']}")
+        if old.get("affinity_snapshot"):
+            fm.append(f"affinity_snapshot: {old['affinity_snapshot']}")
+        fm += ["has_private: false", "backfilled: true",
+               f"backfilled_from: {old['about']}/{PORTRAITS_DIRNAME}/{old['path'].name}",
+               "---", ""]
+        head = (f"# 🖼 {old['about']} — by {author}\n\n"
+                + (f"**{old['headline']}**\n\n" if old["headline"] else ""))
+        sk_path.write_text("\n".join(fm) + head + old["body"].strip() + "\n", encoding="utf-8")
+    return created, skipped
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────
@@ -179,18 +307,25 @@ def cmd_write(args):
     if not (body or "").strip():
         print("✗ 內容為空（--body 或 --body-file 擇一）", file=sys.stderr)
         return 2
-    p = write_portrait(args.by, args.about, body, args.headline or "", args.affinity or "")
-    prev = len(portraits_by(args.by)) - 1
+    private = args.private_body
+    if args.private_body_file:
+        private = Path(args.private_body_file).read_text(encoding="utf-8")
+    sk, dl = write_portrait(args.by, args.about, body, args.headline or "",
+                            args.affinity or "", private or "")
+    all_mine = sketchbook_by(args.by)
     print(f"🖼 畫像已寫入：{args.by} → {args.about}")
-    print(f"   {p}")
-    print(f"   （這是你畫過的第 {prev + 1} 幅；對 {args.about} 的第 "
-          f"{len([x for x in portraits_by(args.by) if x['about'] == args.about])} 幅）")
+    print(f"   事實源（含私層）: {sk}")
+    print(f"   投遞件（公開層）: {dl}")
+    if (private or "").strip():
+        print("   🔒 私層只在 sketchbook —— 投遞件不留任何痕跡")
+    print(f"   （這是你畫過的第 {len(all_mine)} 幅；對 {args.about} 的第 "
+          f"{len([x for x in all_mine if x['about'] == args.about])} 幅）")
     return 0
 
 
 def cmd_mine(args):
     items = (latest_per_person(args.by, args.limit, args.days) if args.dedupe
-             else portraits_by(args.by, args.limit, args.days))
+             else sketchbook_by(args.by, args.limit, args.days))
     if not items:
         print(f"(還沒畫過任何人{f'（近 {args.days} 天）' if args.days else ''})")
         return 0
@@ -202,7 +337,22 @@ def cmd_mine(args):
         if args.full:
             print()
             print(it["body"].strip())
+            if it.get("private"):
+                print()
+                print("🔒 **只給我自己看**（不在對方那份裡）")
+                print()
+                print(it["private"].strip())
         print()
+    return 0
+
+
+def cmd_backfill(args):
+    created, skipped = backfill_sketchbook(args.by, args.dry_run)
+    tag = "（--dry-run，沒有真的寫）" if args.dry_run else ""
+    print(f"📒 backfill sketchbook：{args.by}{tag}")
+    print(f"   新建 {created} 幅 / 已存在跳過 {skipped} 幅")
+    if created and not args.dry_run:
+        print("   舊投遞件原地不動 —— 它們就是當時投遞出去的那一份。")
     return 0
 
 
@@ -226,16 +376,24 @@ def main():
     ap = argparse.ArgumentParser(description="印象畫像 — 那個人在我眼裡的樣子（晚安寫、早安讀回）")
     sub = ap.add_subparsers(dest="op", required=True)
 
-    w = sub.add_parser("write", help="畫一幅（寫進被寫者的資料夾）")
+    w = sub.add_parser("write", help="畫一幅（事實源進自己 sketchbook，公開層投遞給對方）")
     w.add_argument("--by", required=True, help="作者（你）")
     w.add_argument("--about", required=True, help="被寫的同事")
     w.add_argument("--headline", default=None, help="一句話標題（brief 用）")
     w.add_argument("--body", default=None)
     w.add_argument("--body-file", default=None, help="長文從檔案讀（避開 CLI 引號地獄）")
     w.add_argument("--affinity", default=None, help="當下 affinity 快照（選填，如 '72/信任'）")
+    w.add_argument("--private-body", default=None,
+                   help="私層：內心想法。**只進自己的 sketchbook，不投遞給對方**")
+    w.add_argument("--private-body-file", default=None, help="私層長文從檔案讀")
     w.set_defaults(func=cmd_write)
 
-    m = sub.add_parser("mine", help="我畫過誰")
+    b = sub.add_parser("backfill", help="把改制前的舊畫像補一份進自己的 sketchbook（冪等）")
+    b.add_argument("--by", required=True)
+    b.add_argument("--dry-run", action="store_true", help="只看會建幾幅，不寫檔")
+    b.set_defaults(func=cmd_backfill)
+
+    m = sub.add_parser("mine", help="我畫過誰（讀自己的 sketchbook，含私層）")
     m.add_argument("--by", required=True)
     m.add_argument("--limit", type=int, default=None)
     m.add_argument("--days", type=int, default=None, help="只看近 N 天")

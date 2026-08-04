@@ -59,35 +59,55 @@ DEFAULT_H_PCT = 0.12
 DEFAULT_MIN_CONF = 0.5
 
 
+# 水平範圍預設 (2026-08-04 Tim 要求可調寬度/x 中心前, 帶一律滿寬)
+# 物理意義: x_center 0.5 = 畫面正中; w 1.0 = 滿寬。**缺欄位就是這兩個值 = 改動前的行為**,
+#          所以舊 config / 舊 cache / 只傳 (y,h) 的舊 caller 全部行為不變。
+DEFAULT_X_CENTER_PCT = 0.5
+DEFAULT_W_PCT = 1.0
+
+
 def normalize_regions(regions) -> list:
-    """任意 caller 輸入 → 正規化 [(y_bottom, h), ...] (clamp 0~1, 去無效項; 空輸入回預設單帶).
+    """任意 caller 輸入 → 正規化 [(y_bottom, h, x_center, w), ...] (clamp 0~1, 去無效項).
 
     # 區塊職責: regions 是跨層 (config json / CLI / pool / cache) 傳遞的核心型別, 收口統一驗證
-    # 物理意義: 接受 (y,h) tuple / [y,h] list / {"y_bottom_pct":y,"h_pct":h} dict 三種形態
-    # 數值影響: h<=0 的項剔除; 全剔光回 [(DEFAULT_Y_BOTTOM_PCT, DEFAULT_H_PCT)] — OCR 永遠有帶可裁
+    # 物理意義: 垂直 = 底部原點 (y_bottom 帶底離下緣, h 往上長);
+    #          水平 = 中心 + 寬度 (x_center 0.5 正中, w 1 滿寬) —— 字幕對齊畫面中央,
+    #          用「中心+寬」調寬時是往中間收, 左緣制會邊收邊往右推。
+    #          接受形態: (y,h) / [y,h] / (y,h,xc,w) / [y,h,xc,w] /
+    #                   {"y_bottom_pct","h_pct"[,"x_center_pct","w_pct"]}
+    # 數值影響: **回傳一律 4-tuple** —— 水平欄位缺席補 0.5/1.0 (滿寬 = 舊行為);
+    #          h<=0 或 w<=0 的項剔除; 全剔光回預設單帶 — OCR 永遠有帶可裁
     """
     out = []
     for r in (regions or []):
         try:
             if isinstance(r, dict):
                 y, h = float(r.get("y_bottom_pct", 0)), float(r.get("h_pct", 0))
+                xc = float(r.get("x_center_pct", DEFAULT_X_CENTER_PCT))
+                w = float(r.get("w_pct", DEFAULT_W_PCT))
             else:
                 y, h = float(r[0]), float(r[1])
+                xc = float(r[2]) if len(r) >= 4 else DEFAULT_X_CENTER_PCT
+                w = float(r[3]) if len(r) >= 4 else DEFAULT_W_PCT
         except (TypeError, ValueError, IndexError, KeyError):
             continue
         y = min(max(y, 0.0), 1.0)
         h = min(max(h, 0.0), 1.0)
-        if h <= 0.0 or y >= 1.0:
+        xc = min(max(xc, 0.0), 1.0)
+        w = min(max(w, 0.0), 1.0)
+        if h <= 0.0 or y >= 1.0 or w <= 0.0:
             continue
-        out.append((round(y, 4), round(h, 4)))
-    return out if out else [(DEFAULT_Y_BOTTOM_PCT, DEFAULT_H_PCT)]
+        out.append((round(y, 4), round(h, 4), round(xc, 4), round(w, 4)))
+    return out if out else [(DEFAULT_Y_BOTTOM_PCT, DEFAULT_H_PCT,
+                            DEFAULT_X_CENTER_PCT, DEFAULT_W_PCT)]
 
 
 def regions_from_config(cfg: dict) -> list:
     """從 daemon _config.json dict 解析完整 regions 清單 (主帶 + 額外區域) — daemon/montage 共用單一實作.
 
     # 區塊職責: config keys → [(y_bottom, h), ...]; 新舊 key 遷移收口在此一處
-    # 物理意義: 主帶 = ocr_y_bottom_pct/ocr_h_pct (底部原點); 額外區域 = ocr_extra_regions
+    # 物理意義: 主帶 = ocr_y_bottom_pct/ocr_h_pct (底部原點) + ocr_x_center_pct/ocr_w_pct
+    #          (水平中心與寬度, 缺席 = 0.5/1.0 滿寬); 額外區域 = ocr_extra_regions
     #          (list of {"y_bottom_pct","h_pct"} 或 [y,h]); 舊 config 只有頂部原點 ocr_y_pct 時
     #          自動換算 y_bottom = 1 - y_pct - h_pct (舊語意帶頂在 y_pct、往下長 h_pct)。
     # 數值影響: 回傳保證非空 (normalize_regions 兜底預設單帶)。
@@ -100,7 +120,9 @@ def regions_from_config(cfg: dict) -> list:
         y_bottom = 1.0 - float(cfg.get("ocr_y_pct", 0.78)) - h
     else:
         y_bottom = DEFAULT_Y_BOTTOM_PCT
-    regions = [(y_bottom, h)]
+    x_center = float(cfg.get("ocr_x_center_pct", DEFAULT_X_CENTER_PCT))
+    w = float(cfg.get("ocr_w_pct", DEFAULT_W_PCT))
+    regions = [(y_bottom, h, x_center, w)]
     extra = cfg.get("ocr_extra_regions")
     if isinstance(extra, list):
         regions += extra
@@ -222,16 +244,24 @@ def ocr_subtitle_band(
     y_bottom_pct: float = DEFAULT_Y_BOTTOM_PCT,
     h_pct: float = DEFAULT_H_PCT,
     min_confidence: float = DEFAULT_MIN_CONF,
+    x_center_pct: float = DEFAULT_X_CENTER_PCT,
+    w_pct: float = DEFAULT_W_PCT,
 ) -> str:
-    """單帶便捷版 (底部原點) — 委派 ocr_subtitle_regions."""
-    return ocr_subtitle_regions(frame_path, [(y_bottom_pct, h_pct)], min_confidence)
+    """單帶便捷版 (底部原點) — 委派 ocr_subtitle_regions。水平參數在後, 舊 caller 不受影響。"""
+    return ocr_subtitle_regions(frame_path, [(y_bottom_pct, h_pct, x_center_pct, w_pct)], min_confidence)
 
 
-def _crop_band_to_array(frame_path_or_img, y_bottom_pct: float, h_pct: float):
+def _crop_band_to_array(frame_path_or_img, y_bottom_pct: float, h_pct: float,
+                        x_center_pct: float = DEFAULT_X_CENTER_PCT,
+                        w_pct: float = DEFAULT_W_PCT):
     """裁字幕帶 → numpy array; 任何失敗回 None.
 
     # 區塊職責: OCR 各入口共用的 crop 前處理 (收 Path 或已開啟的 PIL Image — 多區域同幀免重複 decode)
-    # 物理意義: 底部原點比例制 — 帶的像素範圍 = [H*(1-y_bottom-h), H*(1-y_bottom)]; clamp 防越界
+    # 物理意義: 垂直為底部原點比例制 — 帶的像素範圍 = [H*(1-y_bottom-h), H*(1-y_bottom)];
+    #          水平為中心+寬 — [W*(xc-w/2), W*(xc+w/2)]，超出畫面的部分 clamp 掉
+    #          (往邊緣推寬帶時只會被切, 不會回繞到另一側)。
+    # 數值影響: 裁窄水平範圍會**減少送進 OCR 的像素**, 對兩側有雜訊 (台標/彈幕/UI) 的來源
+    #          能同時提升命中率與速度; 預設 0.5/1.0 = 滿寬 = 改動前行為。
     """
     try:
         from PIL import Image
@@ -245,7 +275,13 @@ def _crop_band_to_array(frame_path_or_img, y_bottom_pct: float, h_pct: float):
             y1 = min(int(h * (1.0 - y_bottom_pct)), h)
             if y1 <= y0:
                 return None
-            return np.array(img.crop((0, y0, w, y1)).convert("RGB"))
+            half = max(min(w_pct, 1.0), 0.0) * 0.5
+            xc = max(min(x_center_pct, 1.0), 0.0)
+            x0 = max(int(w * (xc - half)), 0)
+            x1 = min(int(w * (xc + half)), w)
+            if x1 <= x0:
+                return None
+            return np.array(img.crop((x0, y0, x1, y1)).convert("RGB"))
         if isinstance(frame_path_or_img, (str, Path)):
             with Image.open(frame_path_or_img) as img:
                 return _crop(img)
@@ -301,8 +337,8 @@ def _ocr_regions_with_engine(engine, frame_path: Path, regions: list,
     texts = []
     try:
         with Image.open(frame_path) as img:
-            for (y_bottom, h) in regions:
-                arr = _crop_band_to_array(img, y_bottom, h)
+            for (y_bottom, h, x_center, w) in regions:
+                arr = _crop_band_to_array(img, y_bottom, h, x_center, w)
                 if arr is None:
                     continue
                 try:
@@ -551,7 +587,7 @@ class OcrWorkerPool:
         payload = {
             "mtime": mtime,
             "text": text,
-            "regions": [list(r) for r in self.regions],   # 底部原點 [(y_bottom, h), ...] — 讀取端驗帶位對版
+            "regions": [list(r) for r in self.regions],   # [(y_bottom, h, x_center, w), ...] — 讀取端驗帶位對版
             "ocr_at": time.time(),
         }
         cpath = cache_path_for(self.cache_dir, frame_path)

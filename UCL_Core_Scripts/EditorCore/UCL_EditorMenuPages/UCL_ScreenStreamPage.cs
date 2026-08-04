@@ -16,6 +16,9 @@ using UCL.Core.ATTR;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UnityEngine;
+// 開播/停播廣播用 (酒保 NPC 身分 append 一則 tavern 訊息) —— 照本 repo 慣例用 alias, 不整包 using
+using UCL_ChatTavernIO = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO;
+using UCL_ChatMessage = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatMessage;
 
 namespace UCL.Core.EditorLib.Page
 {
@@ -97,12 +100,48 @@ namespace UCL.Core.EditorLib.Page
         //          daemon 每 loop reload, band 改動觸發 T-OCR-AutoRestart 自動重起 pool 套用。
         bool m_OcrEnabled = false;
         int m_OcrWorkers = 2;
-        float m_OcrYBottomPct = 0f;      // 帶底邊離畫面下緣距離 (0=貼底, Tim 拍板初始值 0)
-        float m_OcrHPct = 0.12f;         // 帶高度, 從底邊往上長
         float m_OcrMinConf = 0.5f;
-        // 額外字幕判定區域 — x=y_bottom_pct, y=h_pct (Vector2 只是輕量載體, 不涉幾何運算)
-        readonly List<Vector2> m_OcrExtraRegions = new List<Vector2>();
+        // 主字幕帶 — 與額外區域共用 OcrBand 型別 (Tim 2026-08-04: 抽成同一個 class)
+        readonly OcrBand m_OcrBand = new OcrBand(0f, 0.12f);
+        // 額外字幕判定區域 — 同型別, 同 UI, 同序列化
+        readonly List<OcrBand> m_OcrExtraRegions = new List<OcrBand>();
         bool m_ShowOcrExtraRegions = false;   // 可折疊 List 開合狀態
+
+        // 區塊職責: 一條 OCR 判定帶的幾何 — **主字幕帶與額外區域共用同一型別**
+        //          (原本主帶是兩個散落的 float、額外區域是 Vector2 借位當載體:
+        //           x 存 y_bottom、y 存 h —— 欄名與內容不同義, 加水平欄位後只會更難讀)。
+        // 物理意義: 垂直 = 底部原點 (YBottomPct = 帶底離畫面下緣, HPct 從底邊往上長);
+        //          水平 = **中心 + 寬度** (XCenterPct 0.5 = 畫面正中, WPct 1 = 滿寬)。
+        //          用「中心+寬」而不是「左緣+寬」: 字幕本來就對齊畫面中央, 調寬時人要的是
+        //          「往中間收」, 而左緣制會讓收窄同時把帶往右推, 每次都得再補調左緣。
+        // 數值影響: 對應 config 的 y_bottom_pct / h_pct / x_center_pct / w_pct。
+        //          **舊 config 沒有水平兩欄 → 落回 0.5 / 1.0 = 滿寬 = 改動前的行為**,
+        //          所以舊設定檔讀進來的 OCR 結果一格都不會變。
+        public class OcrBand
+        {
+            public float YBottomPct;
+            public float HPct;
+            public float XCenterPct = DEFAULT_X_CENTER_PCT;
+            public float WPct = DEFAULT_W_PCT;
+
+            public OcrBand() { }
+            public OcrBand(float iYBottom, float iH) { YBottomPct = iYBottom; HPct = iH; }
+            public OcrBand(float iYBottom, float iH, float iXCenter, float iW)
+            { YBottomPct = iYBottom; HPct = iH; XCenterPct = iXCenter; WPct = iW; }
+
+            /// <summary>水平範圍 → [0,1] 的左右緣 (clamp 進畫面; 寬度不足時回 false)。</summary>
+            public bool TryHorizontal(out float oLeft, out float oRight)
+            {
+                float w = Mathf.Clamp(WPct, 0f, 1f);
+                float xc = Mathf.Clamp01(XCenterPct);
+                oLeft = Mathf.Clamp01(xc - w * 0.5f);
+                oRight = Mathf.Clamp01(xc + w * 0.5f);
+                return (oRight - oLeft) > 0.0001f;
+            }
+        }
+
+        const float DEFAULT_X_CENTER_PCT = 0.5f;   // 畫面正中
+        const float DEFAULT_W_PCT = 1f;            // 滿寬 = 加這功能之前的固定行為
 
         // 區塊職責: 3-way merge baseline — 每個可編輯欄位記「上次從磁碟看到的值」
         // 物理意義: config 檔會被外部工具 (stream_watch_session.py / agent) 併發改寫;
@@ -122,6 +161,8 @@ namespace UCL.Core.EditorLib.Page
         int m_BaseOcrWorkers = 2;
         float m_BaseOcrYBottomPct = 0f;
         float m_BaseOcrHPct = 0.12f;
+        float m_BaseOcrXCenterPct = DEFAULT_X_CENTER_PCT;
+        float m_BaseOcrWPct = DEFAULT_W_PCT;
         float m_BaseOcrMinConf = 0.5f;
         // 額外區域的 baseline 用序列化字串比對 (list 整體當單一欄位做 3-way merge)
         string m_BaseOcrExtraRegions = "";
@@ -249,6 +290,7 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Button("⏹ 停止錄影", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
                     {
                         m_Enabled = false;
+                        PostStreamAnnounce(false);
                         SaveToDisk();
                         // 停止錄影 → daemon 同步收掉 (Tim 2026-07-28), 不等 manager 下一 tick (最多 5s)
                         AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
@@ -260,6 +302,7 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Button("▶ 開始錄影", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28), GUILayout.ExpandWidth(false)))
                     {
                         m_Enabled = true;
+                        PostStreamAnnounce(true);
                         SaveToDisk(clearSttPrompt: true);
                         // 開始錄影 → daemon 立即 spawn (存活綁 config.enabled, 不再常駐 idle)
                         AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
@@ -387,33 +430,43 @@ namespace UCL.Core.EditorLib.Page
             return result;
         }
 
-        // ── OCR 額外區域 serialize/parse (config json ↔ List<Vector2>) ──
+        // ── OCR 額外區域 serialize/parse (config json ↔ List<OcrBand>) ──
 
         // 序列化成穩定字串 (InvariantCulture) — 3-way merge 的 baseline 比對鍵
-        static string SerializeRegions(List<Vector2> iRegions)
+        static string SerializeRegions(List<OcrBand> iRegions)
         {
             var sb = new System.Text.StringBuilder();
             foreach (var r in iRegions)
             {
-                sb.Append(r.x.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
-                sb.Append(r.y.ToString("0.####", CultureInfo.InvariantCulture)).Append(';');
+                // 四個欄位都要進 baseline 鍵 —— 少寫水平兩欄的話, 只改寬度/中心會被
+                // 3-way merge 判成「Tim 沒動過」, 下一次 reload 就被磁碟值靜默蓋掉。
+                sb.Append(r.YBottomPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
+                sb.Append(r.HPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
+                sb.Append(r.XCenterPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
+                sb.Append(r.WPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(';');
             }
             return sb.ToString();
         }
 
-        // 讀 config.ocr_extra_regions — 接受 {"y_bottom_pct","h_pct"} 物件或 [y,h] 陣列兩種形態 (對齊 python normalize_regions)
-        static List<Vector2> ParseRegions(JsonData iData)
+        // 讀 config.ocr_extra_regions — 接受物件 {"y_bottom_pct","h_pct"[,"x_center_pct","w_pct"]}
+        // 或陣列 [y,h] / [y,h,xc,w] (對齊 python normalize_regions)。
+        // 水平兩欄缺席一律落回 0.5 / 1.0 = 滿寬, 所以舊 config 讀進來行為不變。
+        static List<OcrBand> ParseRegions(JsonData iData)
         {
-            var list = new List<Vector2>();
+            var list = new List<OcrBand>();
             if (iData == null || !iData.IsArray) return list;
             for (int i = 0; i < iData.Count; i++)
             {
                 JsonData e = iData[i];
                 if (e == null) continue;
                 if (e.IsObject)
-                    list.Add(new Vector2(e.GetFloat("y_bottom_pct", 0f), e.GetFloat("h_pct", 0f)));
+                    list.Add(new OcrBand(e.GetFloat("y_bottom_pct", 0f), e.GetFloat("h_pct", 0f),
+                                         e.GetFloat("x_center_pct", DEFAULT_X_CENTER_PCT),
+                                         e.GetFloat("w_pct", DEFAULT_W_PCT)));
                 else if (e.IsArray && e.Count >= 2)
-                    list.Add(new Vector2(e[0].GetFloat(0f), e[1].GetFloat(0f)));
+                    list.Add(new OcrBand(e[0].GetFloat(0f), e[1].GetFloat(0f),
+                                         e.Count >= 4 ? e[2].GetFloat(DEFAULT_X_CENTER_PCT) : DEFAULT_X_CENTER_PCT,
+                                         e.Count >= 4 ? e[3].GetFloat(DEFAULT_W_PCT) : DEFAULT_W_PCT));
             }
             return list;
         }
@@ -476,8 +529,12 @@ namespace UCL.Core.EditorLib.Page
                             : (data.Contains("ocr_y_pct")
                                 ? Mathf.Clamp01(1f - data.GetFloat("ocr_y_pct", 0.78f) - diskOcrH)
                                 : 0f);
-                        m_OcrYBottomPct = MergeField(m_OcrYBottomPct, ref m_BaseOcrYBottomPct, diskOcrYBottom);
-                        m_OcrHPct = MergeField(m_OcrHPct, ref m_BaseOcrHPct, diskOcrH);
+                        m_OcrBand.YBottomPct = MergeField(m_OcrBand.YBottomPct, ref m_BaseOcrYBottomPct, diskOcrYBottom);
+                        m_OcrBand.HPct = MergeField(m_OcrBand.HPct, ref m_BaseOcrHPct, diskOcrH);
+                        m_OcrBand.XCenterPct = MergeField(m_OcrBand.XCenterPct, ref m_BaseOcrXCenterPct,
+                            data.GetFloat("ocr_x_center_pct", DEFAULT_X_CENTER_PCT));
+                        m_OcrBand.WPct = MergeField(m_OcrBand.WPct, ref m_BaseOcrWPct,
+                            data.GetFloat("ocr_w_pct", DEFAULT_W_PCT));
                         m_OcrMinConf = MergeField(m_OcrMinConf, ref m_BaseOcrMinConf, data.GetFloat("ocr_min_conf", 0.5f));
                         // 額外區域: list 整體視為單一欄位 — UI 沒動過 (序列化 == baseline) 才吃磁碟值
                         var diskRegions = ParseRegions(data.Contains("ocr_extra_regions") ? data["ocr_extra_regions"] : null);
@@ -570,15 +627,19 @@ namespace UCL.Core.EditorLib.Page
                 // OCR 欄位 (底部原點語意) — daemon 每 loop reload, band 改動走 T-OCR-AutoRestart 自動重起 pool
                 existing["ocr_enabled"] = new JsonData(m_OcrEnabled);
                 existing["ocr_workers"] = new JsonData(m_OcrWorkers);
-                existing["ocr_y_bottom_pct"] = new JsonData(m_OcrYBottomPct);
-                existing["ocr_h_pct"] = new JsonData(m_OcrHPct);
+                existing["ocr_y_bottom_pct"] = new JsonData(m_OcrBand.YBottomPct);
+                existing["ocr_h_pct"] = new JsonData(m_OcrBand.HPct);
+                existing["ocr_x_center_pct"] = new JsonData(m_OcrBand.XCenterPct);
+                existing["ocr_w_pct"] = new JsonData(m_OcrBand.WPct);
                 existing["ocr_min_conf"] = new JsonData(m_OcrMinConf);
                 var regionsArr = new JsonData().ToArray();
                 foreach (var r in m_OcrExtraRegions)
                 {
                     var o = new JsonData();
-                    o["y_bottom_pct"] = new JsonData(r.x);
-                    o["h_pct"] = new JsonData(r.y);
+                    o["y_bottom_pct"] = new JsonData(r.YBottomPct);
+                    o["h_pct"] = new JsonData(r.HPct);
+                    o["x_center_pct"] = new JsonData(r.XCenterPct);
+                    o["w_pct"] = new JsonData(r.WPct);
                     regionsArr.Add(o);
                 }
                 existing["ocr_extra_regions"] = regionsArr;
@@ -608,8 +669,10 @@ namespace UCL.Core.EditorLib.Page
                 m_BaseStreamTitle = m_StreamTitle;
                 m_BaseOcrEnabled = m_OcrEnabled;
                 m_BaseOcrWorkers = m_OcrWorkers;
-                m_BaseOcrYBottomPct = m_OcrYBottomPct;
-                m_BaseOcrHPct = m_OcrHPct;
+                m_BaseOcrYBottomPct = m_OcrBand.YBottomPct;
+                m_BaseOcrHPct = m_OcrBand.HPct;
+                m_BaseOcrXCenterPct = m_OcrBand.XCenterPct;
+                m_BaseOcrWPct = m_OcrBand.WPct;
                 m_BaseOcrMinConf = m_OcrMinConf;
                 m_BaseOcrExtraRegions = SerializeRegions(m_OcrExtraRegions);
                 m_ConfigMtime = new FileInfo(path).LastWriteTime.Ticks;
@@ -1335,9 +1398,8 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
 
-                // 主字幕帶 — 底部原點雙 slider (0=畫面下方; 高度往上長)
-                m_OcrYBottomPct = UnityEditor.EditorGUILayout.Slider("字幕帶起始 y (0=畫面下方)", m_OcrYBottomPct, 0f, 1f);
-                m_OcrHPct = UnityEditor.EditorGUILayout.Slider("字幕帶高度 (從 y 往上長)", m_OcrHPct, 0.02f, 0.5f);
+                // 主字幕帶 — 與額外區域走同一段繪製 (Tim 2026-08-04: 同一個 class 同一套 UI)
+                DrawBandFields(m_OcrBand, "字幕帶");
                 m_OcrMinConf = UnityEditor.EditorGUILayout.Slider("最低信度過濾", m_OcrMinConf, 0f, 1f);
 
                 // 額外字幕判定區域 — 可折疊 List (可空; 有些影片字幕偶爾跑到上方)
@@ -1357,19 +1419,17 @@ namespace UCL.Core.EditorLib.Page
                             GUILayout.BeginHorizontal();
                             GUILayout.Label($"#{i + 1}", GUILayout.Width(30));
                             GUILayout.BeginVertical();
-                            r.x = UnityEditor.EditorGUILayout.Slider("起始 y (0=畫面下方)", r.x, 0f, 1f);
-                            r.y = UnityEditor.EditorGUILayout.Slider("高度 (往上長)", r.y, 0.02f, 0.5f);
+                            DrawBandFields(r, "");
                             GUILayout.EndVertical();
                             if (GUILayout.Button("✕", UCL_GUIStyle.ButtonStyle, GUILayout.Width(28), GUILayout.Height(36)))
                                 removeIdx = i;
                             GUILayout.EndHorizontal();
-                            m_OcrExtraRegions[i] = r;
                         }
                         if (removeIdx >= 0) m_OcrExtraRegions.RemoveAt(removeIdx);
                         if (GUILayout.Button("➕ 新增區域", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             // 預設值取「畫面上方帶」— 本 List 的典型用途 (底邊離下緣 85%, 高 10% → 覆蓋 85%~95%)
-                            m_OcrExtraRegions.Add(new Vector2(0.85f, 0.1f));
+                            m_OcrExtraRegions.Add(new OcrBand(0.85f, 0.1f));
                             m_ShowOcrExtraRegions = true;
                         }
                     }
@@ -1379,6 +1439,74 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("  ⓘ 設定隨「儲存設定 / 開始·停止錄影」寫入 config; daemon 偵測 band 改動自動重起 OCR pool 套用。",
                     new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
             }
+        }
+
+        // 區塊職責: 開播 / 停播的酒館廣播（酒保 NPC 身分）— 讓同事與 Discord 端知道 Tim 開台了。
+        // 物理意義: **事件的所有者是這顆按鈕**，不是 daemon 的存活狀態。
+        //          舊實作掛在 daemon 端「cfg.enabled 由 false 翻成 true」的 transition 上，
+        //          而 2026-07-28 daemon 生命週期改成「存活綁 enabled」之後，
+        //          daemon 一啟動 enabled 就已經是 true → **那個 transition 再也不會發生**，
+        //          停播時 daemon 直接被 kill → 也沒機會發。start/stop 兩個廣播就這樣一起消失，
+        //          而且沒有任何錯誤訊息（實證：酒館最後一筆是 2026-07-27，daemon log 內
+        //          announce 出現 0 次 —— 那支函式成功與失敗都會 log，所以是根本沒被呼叫）。
+        //          搬到按鈕端＝廣播不再需要從別的狀態推導出來。
+        // 數值影響: 純 append 一則 tavern 訊息（sender=tavern-keeper）；失敗只 LogWarning，
+        //          絕不擋開始/停止錄影本身 —— 廣播是通知，不是錄影的前置條件。
+        void PostStreamAnnounce(bool iStart)
+        {
+            try
+            {
+                string body;
+                string ev;
+                if (iStart)
+                {
+                    string title = (m_StreamTitle ?? "").Trim();
+                    string titleLine = string.IsNullOrEmpty(title) ? "" : $"📺 本場節目: {title}\n";
+                    body = "🍺📹 *咳咳, 諸位.* ScreenStream 直播開始啦!\n"
+                         + titleLine
+                         + $"Tim 開了錄影機, 每秒一張快照 ({m_Resolution} @ {m_Fps} fps, monitor={m_Monitor}).\n"
+                         + "想看 Tim 在玩什麼就 Read AgentCommands/_screenstream/_latest.jpg 吧.\n"
+                         + "——酒保提醒: 不 @ everyone 不擾人, 大家自由觀察.";
+                    ev = "screenstream-start";
+                }
+                else
+                {
+                    body = "🍺⏹ *直播結束.* ScreenStream 已停止 capture.\n"
+                         + "ring buffer 的畫面 10 min rolling 之後自動覆蓋, 想找剛剛某張的同事們抓緊看.\n"
+                         + "——酒保關燈了.";
+                    ev = "screenstream-stop";
+                }
+                UCL_ChatTavernIO.AppendMessage("tavern", new UCL_ChatMessage
+                {
+                    sender_id = UCL_ChatTavernIO.BartenderSenderId,
+                    sender_name = "酒保",
+                    sender_persona = UCL_ChatTavernIO.BartenderSenderId,
+                    kind = "chat",
+                    body = body,
+                    meta = new Dictionary<string, string>
+                    {
+                        { "tag", "bartender-rule-announce" },
+                        { "category", "meta" },
+                        { "event", ev },
+                    },
+                });
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[UCL_ScreenStreamPage] 開播/停播廣播失敗（不影響錄影）: {e.Message}");
+            }
+        }
+
+        // 區塊職責: 一條帶的四個 slider — 主帶與額外區域共用, 避免兩處各長一套欄位而漂移。
+        // 物理意義: 垂直兩個 (底部原點) + 水平兩個 (中心 / 寬度)。
+        // 數值影響: 寬度下限 0.05 (再窄字幕一定被切); 中心 0~1 且會被 clamp 進畫面。
+        static void DrawBandFields(OcrBand iBand, string iPrefix)
+        {
+            string p = string.IsNullOrEmpty(iPrefix) ? "" : iPrefix;
+            iBand.YBottomPct = UnityEditor.EditorGUILayout.Slider(p + "起始 y (0=畫面下方)", iBand.YBottomPct, 0f, 1f);
+            iBand.HPct = UnityEditor.EditorGUILayout.Slider(p + "高度 (從 y 往上長)", iBand.HPct, 0.02f, 0.5f);
+            iBand.WPct = UnityEditor.EditorGUILayout.Slider(p + "寬度 (1=滿寬)", iBand.WPct, 0.05f, 1f);
+            iBand.XCenterPct = UnityEditor.EditorGUILayout.Slider(p + "x 中心 (0.5=正中)", iBand.XCenterPct, 0f, 1f);
         }
 
         // 區塊職責: 字幕帶視覺化 — 底圖=當前畫面 (錄影中有 _latest.jpg) 或灰框 (16:9);
@@ -1399,25 +1527,29 @@ namespace UCL.Core.EditorLib.Page
             else UnityEditor.EditorGUI.DrawRect(box, new Color(0.13f, 0.13f, 0.16f));
             DrawRectBorder(box, new Color(0.65f, 0.65f, 0.72f), 1.5f);
             // 主帶 (橘) + 額外區域 (青) — 同一套底部原點轉換
-            DrawBandRect(box, m_OcrYBottomPct, m_OcrHPct, new Color(1f, 0.6f, 0.1f, 0.5f), new Color(1f, 0.7f, 0.2f));
+            DrawBandRect(box, m_OcrBand, new Color(1f, 0.6f, 0.1f, 0.5f), new Color(1f, 0.7f, 0.2f));
             foreach (var r in m_OcrExtraRegions)
-                DrawBandRect(box, r.x, r.y, new Color(0.2f, 0.85f, 0.9f, 0.4f), new Color(0.3f, 0.9f, 1f));
-            int pctLo = Mathf.RoundToInt(Mathf.Clamp01(m_OcrYBottomPct) * 100f);
-            int pctHi = Mathf.RoundToInt(Mathf.Clamp01(m_OcrYBottomPct + m_OcrHPct) * 100f);
-            GUILayout.Label($"主字幕帶：距畫面下緣 {pctLo}% ~ {pctHi}%（滿寬）。字幕沒被橘框罩到就調「起始 y」。",
+                DrawBandRect(box, r, new Color(0.2f, 0.85f, 0.9f, 0.4f), new Color(0.3f, 0.9f, 1f));
+            int pctLo = Mathf.RoundToInt(Mathf.Clamp01(m_OcrBand.YBottomPct) * 100f);
+            int pctHi = Mathf.RoundToInt(Mathf.Clamp01(m_OcrBand.YBottomPct + m_OcrBand.HPct) * 100f);
+            string wDesc = m_OcrBand.WPct >= 0.999f
+                ? "滿寬"
+                : $"寬 {Mathf.RoundToInt(m_OcrBand.WPct * 100f)}%、中心 {m_OcrBand.XCenterPct:0.##}";
+            GUILayout.Label($"主字幕帶：距畫面下緣 {pctLo}% ~ {pctHi}%（{wDesc}）。字幕沒被橘框罩到就調「起始 y」／「寬度」。",
                 new GUIStyle(GUI.skin.label) { fontSize = 10 });
         }
 
-        // 單一帶位 → 預覽矩形 (底部原點轉 GUI top-down 座標; clamp 不出框)
-        static void DrawBandRect(Rect iBox, float iYBottom, float iH, Color iFill, Color iBorder)
+        // 單一帶位 → 預覽矩形 (底部原點轉 GUI top-down 座標; 水平用中心+寬; clamp 不出框)
+        static void DrawBandRect(Rect iBox, OcrBand iBand, Color iFill, Color iBorder)
         {
-            float yB = Mathf.Clamp01(iYBottom);
-            float h = Mathf.Clamp01(iH);
+            float yB = Mathf.Clamp01(iBand.YBottomPct);
+            float h = Mathf.Clamp01(iBand.HPct);
             if (h <= 0f || yB >= 1f) return;
             float top = iBox.yMax - Mathf.Min(1f, yB + h) * iBox.height;
             float bottom = iBox.yMax - yB * iBox.height;
             if (bottom - top < 0.5f) return;
-            var band = new Rect(iBox.x, top, iBox.width, bottom - top);
+            if (!iBand.TryHorizontal(out float left, out float right)) return;
+            var band = new Rect(iBox.x + left * iBox.width, top, (right - left) * iBox.width, bottom - top);
             UnityEditor.EditorGUI.DrawRect(band, iFill);
             DrawRectBorder(band, iBorder, 1f);
         }

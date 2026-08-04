@@ -861,64 +861,13 @@ def clear_live_info() -> None:
         log(f"live info clear fail: {e}", "WARN")
 
 
-def post_bartender_announce(event: str, cfg: dict, monitors_cache: list) -> None:
-    """T15 — 透過酒保 NPC 廣播 ScreenStream start/end 事件給同事們.
-
-    物理意義: daemon 偵測 cfg.enabled toggle 變化 → 走 TavernClient SDK 寫一筆酒保訊息;
-              sender_id=tavern-keeper / meta tag=bartender-rule-announce 跟既有 NPC post 對齊.
-    數值影響: post fail (e.g. token enforce 擋) 不影響 daemon 主流程 (caught + log warning).
-    Privacy: body 純文字無 @everyone, 沒列 monitor 編號等敏感 (避免外洩 Tim 雙螢幕配置).
-    """
-    try:
-        # 動態 import 避免 daemon 啟動時必依賴 AgentCommands._lib
-        import sys as _sys
-        repo_root = REPO_ROOT   # 遷移後不再從 STREAM_DIR 反推 (pointer 場景會算錯), 直接用檔頭解析值
-        if str(repo_root) not in _sys.path:
-            _sys.path.insert(0, str(repo_root))
-        from AgentCommands._lib.tavern_client import TavernClient
-
-        client = TavernClient()
-        if event == "start":
-            res_label = cfg.get("resolution", "?")
-            mon_label = cfg.get("monitor", "?")
-            fps = cfg.get("fps", "?")
-            # 片名/描述 (Tim 2026-07-27): Page 端輸入的 stream_title, 有填才附加一行節目資訊
-            stream_title = str(cfg.get("stream_title") or "").strip()
-            title_line = f"📺 本場節目: {stream_title}\n" if stream_title else ""
-            body = (
-                f"🍺📹 *咳咳, 諸位.* ScreenStream 直播開始啦!\n"
-                f"{title_line}"
-                f"Tim 開了錄影機, 每秒一張快照 ({res_label} @ {fps} fps, monitor={mon_label}).\n"
-                f"想看 Tim 在玩什麼就 Read AgentCommands/_screenstream/_latest.jpg 吧.\n"
-                f"——酒保提醒: 不 @ everyone 不擾人, 大家自由觀察."
-            )
-            meta = "tag:bartender-rule-announce;category:meta;event:screenstream-start"
-        elif event == "stop":
-            count = cfg.get("frame_count", 0)
-            body = (
-                f"🍺⏹ *直播結束.* ScreenStream daemon 已停止 capture.\n"
-                f"本次累計 {count} frames 進 ring buffer (10 min rolling 之後自動覆蓋).\n"
-                f"想找剛剛某張畫面的同事們抓緊看. ——酒保關燈了."
-            )
-            meta = "tag:bartender-rule-announce;category:meta;event:screenstream-stop"
-        else:
-            return
-
-        res = client.post_message(
-            room="tavern",
-            sender="tavern-keeper",
-            body=body,
-            meta=meta,
-            wait_reply=0,
-            timeout=15.0,
-        )
-        if res.ok:
-            log(f"bartender announce '{event}' posted OK")
-        else:
-            err = res.error or (res.stderr or "")[:200].strip()
-            log(f"bartender announce '{event}' post fail: {err}", "WARN")
-    except Exception as e:
-        log(f"bartender announce '{event}' exception: {e}", "WARN")
+# 開播/停播的酒館廣播已搬到 Editor 端 (UCL_ScreenStreamPage.PostStreamAnnounce, 2026-08-04)。
+# 原本這裡有一支 post_bartender_announce()，掛在「cfg.enabled false→true」的 transition 上。
+# 2026-07-28 daemon 生命週期改成「存活綁 enabled」之後那個 transition 再也不會發生
+# (daemon 啟動時 enabled 已是 true; 停播時 daemon 被 kill)，於是兩個廣播一起靜默消失 ——
+# 實證: 酒館最後一筆 2026-07-27、daemon log 內 announce 出現 0 次 (該函式成功與失敗都會 log)。
+# 整支刪除而不是留著: 它內含一份訊息文案, 留下來就是同一段文字兩處各存一份 (必漂),
+# 而且哪天生命週期改回常駐 idle 就會雙發。事件的所有者是那顆按鈕, 不是 daemon 的存活狀態。
 
 
 def main_loop() -> int:
@@ -1146,11 +1095,15 @@ def main_loop() -> int:
                 last_recording = curr_recording
 
             if curr_enabled != last_enabled:
+                # 開播/停播的酒館廣播已搬到 Editor 按鈕端 (UCL_ScreenStreamPage.PostStreamAnnounce)。
+                # 為什麼不留在這裡: 2026-07-28 起 daemon 存活綁 cfg.enabled —— daemon 啟動時
+                # enabled 已是 true, 這個 transition 再也不會發生 (實證: 酒館最後一筆廣播
+                # 2026-07-27, 本 log 內 announce 出現 0 次); 停播時 daemon 直接被 kill,
+                # 也沒機會發。**留一份「幾乎不會執行」的廣播只會變成第二個寫入者**,
+                # 哪天生命週期又改回常駐 idle 就會雙發。本段只保留 _live_info 對齊。
                 if curr_enabled:
-                    post_bartender_announce("start", cfg, monitors_cache)
                     write_live_info(cfg)      # 落檔暫存本場直播資訊 (存活期 = 直播期間)
                 else:
-                    post_bartender_announce("stop", cfg, monitors_cache)
                     clear_live_info()         # 直播結束即清 — 檔案存在與否 = 是否直播中
                 last_enabled = curr_enabled
 

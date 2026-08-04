@@ -105,6 +105,32 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
         }
 
+        // ===========================================================
+        // 區塊職責：Editor 存活心跳 — 每 HEARTBEAT_INTERVAL_SECONDS 複寫一次 _heartbeat.txt
+        //          （檔名以 UCL_BartenderIO.HeartbeatFile 為準，別在註解裡另寫一份會漂的副本）
+        // 物理意義：讓「Editor 的 update 迴圈還在跑」變成磁碟上 stat 得到的事實。
+        //          編譯 / domain reload 期間 EditorApplication.update 不跑 → 心跳自然停 →
+        //          外部工具**不必送 Cmd 等 round-trip**（實測要 2-13 秒）就能判斷 Editor 忙不忙。
+        // 數值影響：每 0.5s 最多一次「單檔單行複寫」（約 25 bytes）。
+        // 設計取捨：0.5s（Tim 2026-08-04 定調）—— 判準是「大部分 compile 不會比這個快」，
+        //          所以任何一次編譯都必然跨過至少一個心跳週期、必然被看見。
+        //          刻意比業務 tick (CHECK_INTERVAL 5s) 密十倍：一次編譯只有 4-7 秒，
+        //          用 5s 解析度會整個蓋不住 —— **測不到的訊號等於沒有**。
+        // 邊界：心跳停止的充分條件不只編譯 —— domain reload / Editor 沒有焦點被降頻 /
+        //      modal dialog / Editor 掛掉 / Editor 關閉都會停。**它證明「沒在 tick」，
+        //      不證明「正在編譯」**；要斷定編譯還要配 .compile_status.json 一起看。
+        // ===========================================================
+        const double HEARTBEAT_INTERVAL_SECONDS = 0.5;
+        static double s_LastHeartbeat = -999.0;
+
+        static void BeatHeartbeat()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (now - s_LastHeartbeat < HEARTBEAT_INTERVAL_SECONDS) return;
+            s_LastHeartbeat = now;
+            UCL_BartenderIO.WriteHeartbeat();
+        }
+
         /// <summary>強制立刻 tick (給 Cmd_Bartender op=tick 手動觸發 / 測試用).</summary>
         public static void ForceTick()
         {
@@ -129,6 +155,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             try
             {
+                // ⚠ 心跳必須寫在**所有 early-return 之前**（2026-08-04）：
+                //   心跳回答的是「Editor 的 update 迴圈還活著嗎」，跟酒館業務開關無關。
+                //   若放在下面 IsEnabled 閘門之後，「Tim 把酒館系統關掉」會讓心跳停止，
+                //   讀取端就會把它誤讀成「還在編譯」—— 用一個層級的狀態去回答另一個層級的問題，
+                //   跟 in_progress 那隻誤判同構。
+                BeatHeartbeat();
+
                 // 聊天酒館系統總開關 OFF → 不做任何自動掃描 / 廣播 (per UCL_ControlPanelPage 控制台)
                 if (!UCL_ChatTavernSystemControl.IsEnabled) return;
                 double now = EditorApplication.timeSinceStartup;

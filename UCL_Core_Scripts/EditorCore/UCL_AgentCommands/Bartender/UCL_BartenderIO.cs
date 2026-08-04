@@ -23,6 +23,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public const string StateFile = "state.json";
         public const string AssignmentsFile = "assignments.json";  // T06.2 — task dispatch pending queue
 
+        // 區塊職責：Editor 存活心跳檔（2026-08-04 Tim 提案）
+        // 物理意義：daemon 每 HEARTBEAT_INTERVAL 秒複寫這一個檔。**心跳停止 = Editor 的 update
+        //          迴圈沒在跑**，最常見原因就是編譯 / domain reload。
+        //          讀取端只要 stat 一次 mtime 就知道 Editor 活不活，**不必送 Cmd 等 round-trip**。
+        // 設計取捨（Tim 2026-08-04 定調）：固定單檔複寫 + **單行內容只寫這次心跳時間**。
+        //          - 不按日分桶：這是「最新一刻」的訊號，歷史沒價值，留檔只會長垃圾。
+        //          - 不做 atomic tmp+move：mtime 就是訊號，內容讀到半寫最多這一輪跳過，
+        //            下半秒又有新的；為此多兩次檔案操作反而讓心跳自己變成 IO 負擔。
+        //          - 單行純文字（不是 JSON）：讀取端 stat mtime 就夠，連 parse 都不必；
+        //            內容那行時間是給人眼看的，也讓跨機器讀取不必依賴本機時鐘。
+        public const string HeartbeatFile = "_heartbeat.txt";
+
         // ===========================================================
         // 路徑 helper
         // ===========================================================
@@ -34,6 +46,24 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static string GetTimeRulesPath() => Path.Combine(GetBartenderDir(), TimeRulesFile);
         public static string GetStatePath() => Path.Combine(GetBartenderDir(), StateFile);
         public static string GetAssignmentsPath() => Path.Combine(GetBartenderDir(), AssignmentsFile);
+        public static string GetHeartbeatPath() => Path.Combine(GetBartenderDir(), HeartbeatFile);
+
+        // ===========================================================
+        // 區塊職責：寫一拍心跳 —— **單檔、單行、每次複寫**（Tim 2026-08-04 定調）
+        // 物理意義：把「我現在還在 tick」這件事變成磁碟上可 stat 的事實。
+        // 數值影響：一次 WriteAllText（一行 ISO8601，約 25 bytes）。節流由呼叫端負責，本函式不判頻率。
+        // 邊界：**任何失敗都吞掉** —— 心跳只是觀測訊號，絕不可因為寫檔失敗而影響 daemon 本業。
+        // ===========================================================
+        public static void WriteHeartbeat()
+        {
+            try
+            {
+                EnsureBartenderDir();
+                string iso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z";
+                File.WriteAllText(GetHeartbeatPath(), iso, new UTF8Encoding(false));
+            }
+            catch { /* 觀測訊號寫不進去就算了，不能影響 daemon 本業 */ }
+        }
 
         public static void EnsureBartenderDir()
         {

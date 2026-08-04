@@ -275,6 +275,47 @@ def parse_editor_log_recent(log_path: Path, max_lines: int = 5000) -> dict:
 # CLI
 # ===========================================================
 
+HEARTBEAT_PATH = (GIT_ROOT / "AgentCommands" / "ChatTavern" / "bartender" / "_heartbeat.txt")
+
+# 心跳正常節拍 0.5s（UCL_BartenderDaemon.HEARTBEAT_INTERVAL_SECONDS）。
+# 實測（2026-08-04 summit）：空閒 22 拍 min 0.50 / max 0.61 / avg 0.55s；
+# 編譯 + domain reload 期間最長斷 6.14s。門檻取 1.5s —— 正常節拍的 2.7 倍，
+# 落在「觀測到的最大正常值 0.61s」與「觀測到的最小異常值 1.16s」之間，兩側都有餘裕。
+HEARTBEAT_STALE_SECONDS = 1.5
+
+
+def check_editor_alive() -> int:
+    """
+    區塊職責：用酒保 daemon 的心跳檔判斷 Editor 的 update 迴圈還活著嗎。
+    物理意義：daemon hook 在 EditorApplication.update，編譯 / domain reload 期間整個迴圈不跑
+             → 心跳自然停。**stat 一個檔就知道，不必送 Cmd 等 round-trip**
+             （實測探針要 2.13s 空閒 / 13.13s 編譯中）。
+    邊界（很重要，別拿它當「正在編譯」的證明）：
+             心跳停止的原因不只編譯 —— domain reload / modal dialog / Editor 掛住 /
+             Editor 關閉都會停。它證明的是「**沒在 tick**」，不是「正在編譯」。
+             要斷定編譯，配 .compile_status.json 一起看。
+    回傳：0 = 心跳新鮮（Editor 在 tick）／1 = 心跳過期（沒在 tick）／3 = 沒有心跳檔。
+    """
+    if not HEARTBEAT_PATH.exists():
+        print("# 💓 Editor 心跳\n\n"
+              f"❔ **沒有心跳檔** — `{HEARTBEAT_PATH}`\n\n"
+              "酒保 daemon 沒跑過（Editor 沒開 / 這版還沒有心跳功能）。\n"
+              "此時無法用心跳判斷，退回送一支 Cmd 探針確認。")
+        return 3
+    age = time.time() - HEARTBEAT_PATH.stat().st_mtime
+    beat = HEARTBEAT_PATH.read_text(encoding="utf-8", errors="replace").strip()
+    fresh = age <= HEARTBEAT_STALE_SECONDS
+    print("# 💓 Editor 心跳\n")
+    print(f"- 最後一拍: `{beat}`")
+    print(f"- 距今: **{age:.2f}s**（門檻 {HEARTBEAT_STALE_SECONDS}s，正常節拍 0.5s）")
+    if fresh:
+        print("\n✅ **Editor 正在 tick** — 沒有卡在編譯 / domain reload。")
+    else:
+        print("\n⏳ **Editor 沒在 tick** — 編譯中 / domain reload / 卡住 / 已關閉。\n")
+        print("這不代表「正在編譯」，只代表「現在叫它做事會等」。要區分原因看 .compile_status.json。")
+    return 0 if fresh else 1
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description="Read UCL_CompileErrorTracker output and report Unity compile status.",
@@ -294,7 +335,15 @@ def main() -> int:
                    help="Poll interval for --watch (default 1.0s)")
     p.add_argument("--fallback-log", action="store_true",
                    help="If .compile_status.json missing, parse Unity Editor.log instead")
+    p.add_argument("--editor-alive", action="store_true",
+                   help="只看酒保心跳判斷 Editor 是否在 tick（0=在 tick / 1=沒在 tick / 3=無心跳檔）"
+                        "；不讀 compile status、不送 Cmd")
     args = p.parse_args()
+
+    # --editor-alive 是獨立查詢：純 stat 一個檔，不碰 compile status、不送 Cmd。
+    # 刻意做成附加旗標而非改寫既有路徑 —— 既有呼叫端行為一個字都不變。
+    if args.editor_alive:
+        return check_editor_alive()
 
     # --watch：等到 in_progress=false
     if args.watch:

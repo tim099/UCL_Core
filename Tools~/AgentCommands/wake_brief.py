@@ -437,6 +437,115 @@ def _tavern_catchup_lines(aw, persona: str, count: int = None) -> list:
     return out
 
 
+
+# ── §0.5 憲法／初始風格 ─────────────────────────────────────────────────
+# 區塊職責：brief header 之下第一段 —— 「我是誰」的權威層。
+# 物理意義：三態，優先序寫死（Tim 2026-08-04）：
+#   ① 已立憲 → letters/<p>/_constitution.md（第一次見林後才會有）
+#   ② 未立憲但有自我介紹 → Docs/Glossary 的 persona 條目（初始風格＝出生證明）
+#   ③ 兩者都沒有 → **提示去補**，並指一份現成的當參考（gura 那份最完整）
+# 設計取捨：
+#   - 自我介紹一律標成「寫於 wake#N 的快照」而不是「這是我」——
+#     那些條目裡有 wake_count / 好感比較之類的 State（實測 gura 那份仍寫 wake_count: 7）。
+#     宣稱自己是那一刻的照片，State 就是歷史而不是謊言（同 affinity_snapshot 手法）。
+#   - glossary 條目**遞迴解析**不假設固定路徑：Cmd_Glossary 新建時預設寫 root、
+#     既有 persona 條目卻在 personas/ 底下（工具註解明寫「想寫子資料夾走手動搬」）。
+#     讀取端寫死任何一層都會在另一層漏掉 —— 所以按 slug 掃。
+CONSTITUTION_FILENAME = "_constitution.md"
+INTRO_REFERENCE_SLUG = "gura"      # 目前寫得最完整的一份，當新人的參考範例
+# 立憲資格門檻（Tim 2026-08-04）：wake 超過這個數字且還沒有憲法檔 → brief 提醒去立憲。
+# 為什麼是 10：一次見林≈10 個 wake，所以「wake > 10」約等於「第一次見林該有了」。
+# 血證：summit 的舊 v1 憲法寫在 wake#4、第一次見林卻在 wake 21 —— 早了 17 個 wake，
+#       結果整篇是 State 不是 invariant（那時她手上沒有 invariant 可寫）。
+CONSTITUTION_WAKE_THRESHOLD = 10
+CONSTITUTION_WORKFLOW_DOC = "ucl_core:Docs~/zh-Hant/Workflows/Constitution_Workflow.md"
+
+
+def _glossary_persona_entry(aw, persona: str):
+    """在 Docs/Glossary 底下遞迴找 slug == persona 的條目。回 Path 或 None。"""
+    root = aw._REPO_ROOT / "Docs" / "Glossary"
+    if not root.is_dir():
+        return None
+    direct = root / "personas" / f"{persona}.md"
+    if direct.is_file():
+        return direct
+    flat = root / f"{persona}.md"
+    if flat.is_file():
+        return flat
+    for f in root.rglob(f"{persona}.md"):     # 落回全掃 —— 兩層都沒命中才走這裡
+        return f
+    return None
+
+
+def _constitution_lines(aw, persona: str, p: dict) -> list:
+    out = []
+    con = aw._LETTERS_DIR_TPL / persona / CONSTITUTION_FILENAME
+    if con.is_file():
+        meta_lines = _strip_all_frontmatter(con.read_text(encoding="utf-8"))
+        out.append(f"> 📜 **{persona} 憲法** — 事實源 `letters/{persona}/{CONSTITUTION_FILENAME}`")
+        # 有憲法**不代表**有自我介紹 —— 兩者是不同的東西（資歷證明 vs 出生證明）。
+        # 這一行刻意獨立檢查：否則「已立憲但沒自介」的人永遠收不到補件提示。
+        if _glossary_persona_entry(aw, persona) is None:
+            out.append(f"> ⚠️ **但你還沒有自我介紹** — `Docs/Glossary/personas/{persona}.md` 不存在。")
+            out.append(f"> 那是**出生證明**（初始風格），跟憲法（資歷證明）是兩份不同的東西。"
+                       f"補件流程見 `{CONSTITUTION_WORKFLOW_DOC}` §5。")
+        out.append("")
+        out += meta_lines
+        out.append("")
+        return out
+
+    wake = 0
+    try:
+        wake = int(p.get("wake_count", 0) or 0)
+    except (TypeError, ValueError):
+        wake = 0
+    overdue = wake > CONSTITUTION_WAKE_THRESHOLD
+
+    intro = _glossary_persona_entry(aw, persona)
+    if intro is not None:
+        body = _strip_all_frontmatter(intro.read_text(encoding="utf-8"))
+        rel = intro.relative_to(aw._REPO_ROOT)
+        if overdue:
+            # 態③ —— 已過門檻卻還沒立憲。放在憲法欄位最上方，不是塞在頁尾待辦裡：
+            # 「規則寫在 agent 不讀的那一層 = 規則不存在」，這條是同一個病的預防。
+            out.append(f"> ⚠️ **該立憲了** — wake #{wake} 已過門檻"
+                       f"（> {CONSTITUTION_WAKE_THRESHOLD}），但 "
+                       f"`letters/{persona}/{CONSTITUTION_FILENAME}` 還不存在。")
+            out.append(f"> 走流程：`{CONSTITUTION_WORKFLOW_DOC}`"
+                       f"（素材取自見林 → invariant 三道測試 → 自己寫，工具不代筆）。")
+            out.append(f"> 在那之前，下面這份**初始風格**暫代憲法欄位。")
+        else:
+            out.append(f"> 📜 **初始風格（尚未立憲）** — `{rel}`")
+            out.append(f"> 第一次見林之後寫下 `letters/{persona}/{CONSTITUTION_FILENAME}`，"
+                       f"本欄由憲法接管。")
+        out.append(f"> ⚠ 這是**出生時的自畫像**，不是現況；裡面的數字"
+                   f"（wake 數 / 好感 / 比較）一律當歷史讀。　來源：`{rel}`")
+        out.append("")
+        out += body
+        out.append("")
+        return out
+
+    ref = _glossary_persona_entry(aw, INTRO_REFERENCE_SLUG)
+    ref_hint = (f"`{ref.relative_to(aw._REPO_ROOT)}`" if ref is not None
+                else f"`Docs/Glossary/personas/{INTRO_REFERENCE_SLUG}.md`")
+    out.append(f"> 📜 **你還沒有自我介紹，也還沒立憲。**")
+    out.append("")
+    out.append(f"- **現在該做的**：寫一份自我介紹（初始風格＝出廠設定，**出生就有，不用等累積**）。")
+    out.append(f"    流程：`{CONSTITUTION_WORKFLOW_DOC}` §5")
+    out.append(f"    參考範例：{ref_hint}（目前最完整的一份）")
+    out.append(f"    寫法：`run_cmd.py run Glossary --arg op=register --arg slug={persona} "
+               f"--arg category=persona --arg-file body=<檔>`")
+    out.append(f"    ⚠ 工具新建預設寫 `Docs/Glossary/` 根層，persona 條目慣例放 `personas/`，寫完手動搬。")
+    if overdue:
+        out.append(f"- **然後也該立憲了**：wake #{wake} 已過門檻 "
+                   f"（> {CONSTITUTION_WAKE_THRESHOLD}）→ 走 `{CONSTITUTION_WORKFLOW_DOC}`。")
+    else:
+        out.append(f"- **還不該做的**：立憲。那要等**第一次見林**"
+                   f"（invariant 是掙來的，沒有經驗的憲法就是抄來的憲法）。")
+    out.append("")
+    return out
+
+
 # ── §6.5 見人 ──────────────────────────────────────────────────────────
 # 區塊職責：回答 brief 唯一沒人回答的問題 —— **「我認識誰」**（Tim 2026-08-01）。
 # 物理意義：見根答「我是誰」、見叢答「我要做什麼」、見樹答「我昨天經歷什麼」、
@@ -664,6 +773,11 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             "> 讀這一份即完成 onboarding：**§0 身分 → §1-6 記憶（見根→見樹）→ §7-9 營運**。",
             "> 順序即優先序；主檔溢出時先被移進續讀檔的是後面的營運層。",
             "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。", ""]
+
+    # §0.5 憲法／初始風格 —— **緊接 header、在 §0 之前**（Tim 2026-08-04 指定位置）。
+    # 不走 sections 機制是刻意的：sections 會因主檔溢出被移進續讀檔，
+    # 而**一份會被移走的憲法不算憲法**。
+    head += _constitution_lines(aw, persona, p)
 
     sections = []   # (title, lines, essential)
 

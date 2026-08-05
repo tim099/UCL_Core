@@ -97,10 +97,6 @@ namespace UCL.Core.EditorLib.Page
         //Vector2 m_TemplateScroll = Vector2.zero;                       // Templates 區塊內捲動位置
         //Vector2 m_HistoryScroll = Vector2.zero;                        // History 區塊內捲動位置
 
-        // 區塊職責：本頁所有 UI 字串走 UCL_CodeLocalize.Get(key) — 翻譯定義集中於 UCL_CodeLocalize.<lang>.cs
-        // 物理意義：避免在 IMGUI 程式碼中硬編多語字串；新增語系只需動 4 個 lang 檔，不必動 Page
-        // 數值影響：每幀多查一次 dict（O(1)），對 IMGUI 重繪成本可忽略
-        static string L(string key) => UCL_CodeLocalize.Get(key);
 
         // 區塊職責：長字串 Label 用的 wordWrap 樣式（lazy 建一次後重用）
         // 物理意義：UCL_GUIStyle.LabelStyle 預設不換行 → History 條目的 Args 一旦長到一行
@@ -128,7 +124,7 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
                 // 區塊職責：Refresh 時一併重整 History / Template 快取 + queue 選項清單
@@ -139,7 +135,7 @@ namespace UCL.Core.EditorLib.Page
                 m_TemplateCache = null;
                 RefreshQueueOptions();
             }
-            if (GUILayout.Button(L("AgentCmd.RunPending"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.RunPending"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
             {
                 // 選中 per-agent queue 時直接跑該 queue 的 Runner（Menu_RunPending 只跑 default）
                 if (string.IsNullOrEmpty(SelectedAgentId)) UCL_AgentCommandRunner.Menu_RunPending();
@@ -150,11 +146,11 @@ namespace UCL.Core.EditorLib.Page
             // 物理意義：失敗的 OneShot 預設會留在 queue（保留 LastRunError 給作者除錯），但若 cmd 本身打錯字
             //          (例 Type 拼錯 → Unknown command type)，留著也只會每次重試都失敗，不如一鍵清掉。
             // 數值影響：寫回 queue.json；不影響任何成功跑過的條目與 Repeatable。
-            if (GUILayout.Button(L("AgentCmd.ClearFailed"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ClearFailed"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
             {
                 ClearFailedCommands();
             }
-            if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 // per-agent queue 選中時開 queues/ 子資料夾（default 走原本的 Menu 入口）
                 if (string.IsNullOrEmpty(SelectedAgentId)) UCL_AgentCommandRunner.Menu_OpenQueueFolder();
@@ -178,7 +174,7 @@ namespace UCL.Core.EditorLib.Page
             m_QueueAgentIds = new List<string> { null };
             m_QueueOptions = new List<string>();
             int defaultCount = UCL_AgentCommandQueue.Load()?.Commands?.Count ?? 0;
-            m_QueueOptions.Add(string.Format(L("AgentCmd.QueueDefault"), defaultCount));
+            m_QueueOptions.Add(string.Format(UCL_CodeLocalize.Get("AgentCmd.QueueDefault"), defaultCount));
             foreach (var id in UCL_AgentCommandQueue.ListAgentIds())
             {
                 m_QueueAgentIds.Add(id);
@@ -204,7 +200,7 @@ namespace UCL.Core.EditorLib.Page
             }
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label(L("AgentCmd.QueueSelector"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.QueueSelector"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                 int newIdx = UCL_GUILayout.PopupSearchCache(m_SelectedQueueIdx, m_QueueOptions, m_Dic, "QueuePicker");
                 if (newIdx != m_SelectedQueueIdx)
                 {
@@ -229,7 +225,7 @@ namespace UCL.Core.EditorLib.Page
             // ==== queue.json 路徑提示 ====
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(string.Format(L("AgentCmd.QueuePath"), UCL_AgentCommandQueue.GetQueuePath(SelectedAgentId)), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.QueuePath"), UCL_AgentCommandQueue.GetQueuePath(SelectedAgentId)), UCL_GUIStyle.LabelStyle);
             }
 
             // ==== Watcher 狀態列 ====
@@ -255,7 +251,7 @@ namespace UCL.Core.EditorLib.Page
             }
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label(string.Format(L("AgentCmd.Stats"), total, oneshot, repeatable),
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.Stats"), total, oneshot, repeatable),
                     UCL_GUIStyle.LabelStyle);
             }
 
@@ -284,13 +280,13 @@ namespace UCL.Core.EditorLib.Page
             // ==== 提示 ====
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(L("AgentCmd.Tips"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(L("AgentCmd.Tip_OneShot"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(L("AgentCmd.Tip_Repeatable"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(L("AgentCmd.Tip_WaitInit"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(L("AgentCmd.Tip_FailedKept"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(L("AgentCmd.Tip_Watcher"), UCL_GUIStyle.LabelStyle);
-                GUILayout.Label(L("AgentCmd.Tip_ExportCatalog"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tips"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_OneShot"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_Repeatable"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_WaitInit"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_FailedKept"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_Watcher"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_ExportCatalog"), UCL_GUIStyle.LabelStyle);
             }
 
             //GUILayout.EndScrollView();
@@ -305,10 +301,10 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(L("AgentCmd.Commands"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Commands"), UCL_GUIStyle.LabelStyle);
                 if (m_Cached?.Commands == null || m_Cached.Commands.Count == 0)
                 {
-                    GUILayout.Label(L("AgentCmd.QueueEmpty"), UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.QueueEmpty"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -327,7 +323,7 @@ namespace UCL.Core.EditorLib.Page
                                 UCL_GUIStyle.LabelStyle, GUILayout.Width(220));
                             GUILayout.Label($"({c.Mode}, run×{c.RunCount})", UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
                             GUILayout.FlexibleSpace();
-                            if (GUILayout.Button(L("AgentCmd.Remove"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
                             {
                                 removeIdx = i;
                             }
@@ -372,11 +368,11 @@ namespace UCL.Core.EditorLib.Page
             var handlers = UCL_AgentCommandRegistry.ListHandlers();
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(L("AgentCmd.AddCommand"), UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.AddCommand"), UCL_GUIStyle.LabelStyle);
 
                 if (handlers.Count == 0)
                 {
-                    GUILayout.Label(L("AgentCmd.NoHandlers"), UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.NoHandlers"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -392,7 +388,7 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(L("AgentCmd.Command"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Command"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_SelectedCmdIdx = UCL_GUILayout.PopupSearchCache(
                         m_SelectedCmdIdx, displayOptions, m_Dic, "CmdPicker");
                 }
@@ -406,7 +402,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button((m_ShowCmdInfo ? "▼" : "▶") + " " + L("AgentCmd.CmdInfoToggle"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button((m_ShowCmdInfo ? "▼" : "▶") + " " + UCL_CodeLocalize.Get("AgentCmd.CmdInfoToggle"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             m_ShowCmdInfo = !m_ShowCmdInfo;
                         }
@@ -421,15 +417,15 @@ namespace UCL.Core.EditorLib.Page
                     {
                         if (!string.IsNullOrEmpty(selected.ArgsSchema))
                         {
-                            GUILayout.Label(string.Format(L("AgentCmd.ArgsSchema"), selected.ArgsSchema), UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.ArgsSchema"), selected.ArgsSchema), UCL_GUIStyle.LabelStyle);
                         }
                         if (!string.IsNullOrEmpty(selected.ExampleArgs))
                         {
-                            GUILayout.Label(string.Format(L("AgentCmd.Example"), selected.ExampleArgs), UCL_GUIStyle.LabelStyle);
+                            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.Example"), selected.ExampleArgs), UCL_GUIStyle.LabelStyle);
                         }
                         if (!string.IsNullOrEmpty(selected.HelpURL))
                         {
-                            if (GUILayout.Button(L("AgentCmd.ViewHelp"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ViewHelp"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                             {
                                 Application.OpenURL(UCL_URL.ResolveURL(selected.HelpURL));
                             }
@@ -440,7 +436,7 @@ namespace UCL.Core.EditorLib.Page
                 // Mode / Description / Args 表單欄位
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(L("AgentCmd.Mode"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Mode"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     if (GUILayout.Toggle(m_NewMode == UCL_AgentCommandMode.OneShot, "OneShot", UCL_GUIStyle.ButtonStyle))
                         m_NewMode = UCL_AgentCommandMode.OneShot;
                     if (GUILayout.Toggle(m_NewMode == UCL_AgentCommandMode.Repeatable, "Repeatable", UCL_GUIStyle.ButtonStyle))
@@ -449,22 +445,22 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(L("AgentCmd.Description"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Description"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_NewDescription = GUILayout.TextField(m_NewDescription ?? "", UCL_GUIStyle.TextFieldStyle);
                 }
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(L("AgentCmd.Args"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Args"), UCL_GUIStyle.LabelStyle, GUILayout.Width(100));
                     m_NewArgsRaw = GUILayout.TextField(m_NewArgsRaw ?? "", UCL_GUIStyle.TextFieldStyle);
-                    GUILayout.Label(L("AgentCmd.ArgsFormat"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.ArgsFormat"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     // 區塊職責：將選定 handler 的 ExampleArgs 一鍵塞進 Args 欄位
                     // 物理意義：人類使用者測試新 Cmd 時不必查文件就能看到可直接執行的參數樣本
                     // 數值影響：覆寫 m_NewArgsRaw；不修改 queue
                     bool hasExample = !string.IsNullOrEmpty(selected.ExampleArgs);
                     using (new UnityEditor.EditorGUI.DisabledScope(!hasExample))
                     {
-                        if (GUILayout.Button(L("AgentCmd.FillExample"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.FillExample"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             m_NewArgsRaw = selected.ExampleArgs;
                             GUI.FocusControl(null);
@@ -474,7 +470,7 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button(string.Format(L("AgentCmd.AddButton"), selected.CommandType, m_NewMode),
+                    if (GUILayout.Button(string.Format(UCL_CodeLocalize.Get("AgentCmd.AddButton"), selected.CommandType, m_NewMode),
                         UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                     {
                         AddCommand(selected.CommandType, m_NewMode, m_NewDescription, ParseArgsRaw(m_NewArgsRaw), source: "Manual");
@@ -488,9 +484,9 @@ namespace UCL.Core.EditorLib.Page
                     // 區塊職責：把當前表單存成模板（Name 欄位空 → 用 Type 當預設名稱）
                     // 物理意義：使用者可把常用組合一鍵存檔，下次到 Templates 面板挑回來即可重用
                     // 數值影響：寫入 AgentCommands/Templates/<Name>.json；不影響 queue
-                    GUILayout.Label(L("AgentCmd.SaveTemplateName"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.SaveTemplateName"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     m_SaveTemplateName = GUILayout.TextField(m_SaveTemplateName ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(160));
-                    if (GUILayout.Button(L("AgentCmd.SaveTemplate"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.SaveTemplate"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
                     {
                         string name = string.IsNullOrWhiteSpace(m_SaveTemplateName) ? selected.CommandType : m_SaveTemplateName.Trim();
                         SaveCurrentAsTemplate(name, selected.CommandType);
@@ -503,7 +499,7 @@ namespace UCL.Core.EditorLib.Page
                     // 區塊職責：Template 補充筆記欄位
                     // 物理意義：給人類讀的「為什麼存這個模板」說明；Save Template 時一併寫入 .json 的 Notes 欄位
                     // 數值影響：純 UI 寬度調整 — 各語系字長不同，給到 140px 是兼容 zh-Hant / en 的安全值
-                    GUILayout.Label(L("AgentCmd.TemplateNotes"), UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.TemplateNotes"), UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
                     m_SaveTemplateNotes = GUILayout.TextField(m_SaveTemplateNotes ?? "", UCL_GUIStyle.TextFieldStyle);
                 }
             }
@@ -529,20 +525,20 @@ namespace UCL.Core.EditorLib.Page
                 {
                     // 區塊職責：摺疊開關 — 用 button 形式而非 CheckBox 呈現「▼ / ▶」感覺
                     // 物理意義：把面板往下展開或收起；展開時才掃資料夾
-                    if (GUILayout.Button((m_ShowTemplates ? "▼" : "▶") + " " + L("AgentCmd.Templates"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button((m_ShowTemplates ? "▼" : "▶") + " " + UCL_CodeLocalize.Get("AgentCmd.Templates"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_ShowTemplates = !m_ShowTemplates;
                         // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
                     }
-                    GUILayout.Label(string.Format(L("AgentCmd.TemplatesCount"), m_TemplateCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.TemplatesCount"), m_TemplateCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
                     if (m_ShowTemplates)
                     {
-                        if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             m_TemplateCache = null;
                         }
-                        if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             UCL_AgentCommandTemplateStore.EnsureDir();
                             UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandTemplateStore.GetTemplatesDir());
@@ -559,10 +555,10 @@ namespace UCL.Core.EditorLib.Page
 
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(L("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
                     string newSearch = GUILayout.TextField(m_TemplateSearch ?? "", UCL_GUIStyle.TextFieldStyle);
                     if (newSearch != m_TemplateSearch) { m_TemplateSearch = newSearch; m_TemplatePage = 0; }   // 搜尋條件變 → 回第一頁
-                    if (GUILayout.Button(L("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_TemplateSearch = "";
                         m_TemplatePage = 0;
@@ -576,7 +572,7 @@ namespace UCL.Core.EditorLib.Page
 
                 if (visible.Count == 0)
                 {
-                    GUILayout.Label(L("AgentCmd.NoTemplates"), UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.NoTemplates"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -595,17 +591,17 @@ namespace UCL.Core.EditorLib.Page
                             GUILayout.Label($"<b>{t.Name}</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
                             GUILayout.Label($"{t.Type} ({t.Mode})", UCL_GUIStyle.LabelStyle, GUILayout.Width(260));
                             GUILayout.FlexibleSpace();
-                            if (GUILayout.Button(L("AgentCmd.ApplyToForm"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ApplyToForm"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                             {
                                 ApplyTemplateToForm(t);
                             }
-                            if (GUILayout.Button(L("AgentCmd.AddToQueue"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.AddToQueue"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)), GUILayout.ExpandWidth(false)))
                             {
                                 AddCommand(t.Type, t.Mode, t.Description, t.Args == null ? null : new Dictionary<string, string>(t.Args), source: $"Template:{t.Name}");
                                 UCL_AgentCommandTemplateStore.TouchLastUsed(t.Name);
                                 m_TemplateCache = null;
                             }
-                            if (GUILayout.Button(L("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
                             {
                                 deleteName = t.Name;
                             }
@@ -661,7 +657,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (GUILayout.Button("◀", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(36)))) page--;
                 }
-                GUILayout.Label(string.Format(L("AgentCmd.PageInfo"), page + 1, totalPages, totalCount),
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.PageInfo"), page + 1, totalPages, totalCount),
                     UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 using (new UnityEditor.EditorGUI.DisabledScope(page >= totalPages - 1))
                 {
@@ -712,20 +708,20 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button((m_ShowHistory ? "▼" : "▶") + " " + L("AgentCmd.History"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button((m_ShowHistory ? "▼" : "▶") + " " + UCL_CodeLocalize.Get("AgentCmd.History"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_ShowHistory = !m_ShowHistory;
                         // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
                     }
-                    GUILayout.Label(string.Format(L("AgentCmd.HistoryCount"), m_HistoryCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.HistoryCount"), m_HistoryCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
                     if (m_ShowHistory)
                     {
-                        if (GUILayout.Button(L("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             m_HistoryCache = null;
                         }
-                        if (GUILayout.Button(L("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             UCL_AgentCommandHistory.EnsureDir();
                             UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandHistory.GetHistoryDir());
@@ -743,10 +739,10 @@ namespace UCL.Core.EditorLib.Page
                 // ---- 搜尋 + 清理工具列 ----
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(L("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
                     string newSearch = GUILayout.TextField(m_HistorySearch ?? "", UCL_GUIStyle.TextFieldStyle);
                     if (newSearch != m_HistorySearch) { m_HistorySearch = newSearch; m_HistoryPage = 0; }   // 搜尋條件變 → 回第一頁
-                    if (GUILayout.Button(L("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         m_HistorySearch = "";
                         m_HistoryPage = 0;
@@ -758,32 +754,32 @@ namespace UCL.Core.EditorLib.Page
                 {
                     // 區塊職責：History 清理工具列 — 標籤寬度需容下不同語系字長
                     // 物理意義：90 / 150 是兼容 zh-Hant / en / ja 的安全寬度；數字輸入 50px 即可
-                    GUILayout.Label(L("AgentCmd.Cleanup"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
-                    GUILayout.Label(L("AgentCmd.OlderThanDays"), UCL_GUIStyle.LabelStyle, GUILayout.Width(150));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Cleanup"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.OlderThanDays"), UCL_GUIStyle.LabelStyle, GUILayout.Width(150));
                     string daysText = GUILayout.TextField(m_HistoryAgeDays.ToString(), UCL_GUIStyle.TextFieldStyle, GUILayout.Width(50));
                     if (int.TryParse(daysText, out var d) && d >= 0) m_HistoryAgeDays = d;
 
-                    if (GUILayout.Button(L("AgentCmd.DeleteOlder"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.DeleteOlder"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
                     {
                         int n = UCL_AgentCommandHistory.DeleteOlderThan(m_HistoryAgeDays);
                         Debug.Log($"[UCL_AgentCmd UI] Deleted {n} history entries older than {m_HistoryAgeDays} days.");
                         m_HistoryCache = null;
                     }
-                    if (GUILayout.Button(L("AgentCmd.Dedupe"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Dedupe"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.2f)), GUILayout.ExpandWidth(false)))
                     {
                         int n = UCL_AgentCommandHistory.DeleteDuplicates();
                         Debug.Log($"[UCL_AgentCmd UI] Deleted {n} duplicate history entries.");
                         m_HistoryCache = null;
                     }
-                    if (GUILayout.Button(L("AgentCmd.ClearAll"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ClearAll"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
                     {
                         // 區塊職責：清空整個 History 資料夾（不可逆）
                         // 物理意義：危險動作，所以加 Editor 級確認 dialog；即使外部 Page 被自動 Repaint 也不會誤觸
                         // 數值影響：實際刪檔；按取消則完全 no-op
                         if (UnityEditor.EditorUtility.DisplayDialog(
-                                L("AgentCmd.ClearAllConfirmTitle"),
-                                string.Format(L("AgentCmd.ClearAllConfirmBody"), m_HistoryCache?.Count ?? 0),
-                                L("AgentCmd.ConfirmDelete"), L("AgentCmd.ConfirmCancel")))
+                                UCL_CodeLocalize.Get("AgentCmd.ClearAllConfirmTitle"),
+                                string.Format(UCL_CodeLocalize.Get("AgentCmd.ClearAllConfirmBody"), m_HistoryCache?.Count ?? 0),
+                                UCL_CodeLocalize.Get("AgentCmd.ConfirmDelete"), UCL_CodeLocalize.Get("AgentCmd.ConfirmCancel")))
                         {
                             int n = UCL_AgentCommandHistory.Clear();
                             Debug.Log($"[UCL_AgentCmd UI] Cleared {n} history entries.");
@@ -798,7 +794,7 @@ namespace UCL.Core.EditorLib.Page
 
                 if (visible.Count == 0)
                 {
-                    GUILayout.Label(L("AgentCmd.NoHistory"), UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.NoHistory"), UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
@@ -817,11 +813,11 @@ namespace UCL.Core.EditorLib.Page
                             GUILayout.Label($"({e.Mode}, ×{e.UseCount})", UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
                             GUILayout.Label($"src: {e.Source ?? "?"}", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
                             GUILayout.FlexibleSpace();
-                            if (GUILayout.Button(L("AgentCmd.ApplyToForm"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ApplyToForm"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                             {
                                 ApplyHistoryToForm(e);
                             }
-                            if (GUILayout.Button(L("AgentCmd.ReAdd"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ReAdd"), UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
                             {
                                 AddCommand(e.Type, e.Mode, e.Description, e.Args == null ? null : new Dictionary<string, string>(e.Args), source: $"History:{e.Id}");
                                 m_HistoryCache = null;
@@ -829,11 +825,11 @@ namespace UCL.Core.EditorLib.Page
                             // 區塊職責：把這筆歷史轉存為模板（一鍵）
                             // 物理意義：使用者用過某個 cmd 後想常駐重用 → 不必到 Add Command 區塊重填，直接轉存
                             // 數值影響：寫一個新的 Templates/<Name>.json；同名衝突會自動加 _2 / _3 後綴
-                            if (GUILayout.Button(L("AgentCmd.ToTemplate"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ToTemplate"), UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
                             {
                                 ConvertHistoryToTemplate(e);
                             }
-                            if (GUILayout.Button(L("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
                             {
                                 deleteId = e.Id;
                             }
@@ -1010,7 +1006,7 @@ namespace UCL.Core.EditorLib.Page
                 //          原生 GUILayout.Toggle + LabelStyle（Workflow §7 地雷 1：傳 LabelStyle 會讓
                 //          toggle 圖示失效、熱區壞掉，使用者根本點不到 → 永遠停在預設狀態）
                 bool prevEnabled = UCL_AgentCommandWatcher.Enabled;
-                bool newEnabled = UCL_GUILayout.CheckBox(prevEnabled, L("AgentCmd.AutoWatcher"));
+                bool newEnabled = UCL_GUILayout.CheckBox(prevEnabled, UCL_CodeLocalize.Get("AgentCmd.AutoWatcher"));
                 if (newEnabled != prevEnabled)
                 {
                     UCL_AgentCommandWatcher.Enabled = newEnabled;
@@ -1027,13 +1023,13 @@ namespace UCL.Core.EditorLib.Page
                     UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
 
                 var last = UCL_AgentCommandWatcher.LastTriggerAt;
-                string lastText = last == DateTime.MinValue ? L("AgentCmd.Never") : last.ToString("HH:mm:ss");
-                GUILayout.Label(string.Format(L("AgentCmd.LastTrigger"), lastText), UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
+                string lastText = last == DateTime.MinValue ? UCL_CodeLocalize.Get("AgentCmd.Never") : last.ToString("HH:mm:ss");
+                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.LastTrigger"), lastText), UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
 
                 GUILayout.FlexibleSpace();
 
                 // 給人類測試 watcher 的便利按鈕：手動寫一個 pending.trigger
-                if (GUILayout.Button(L("AgentCmd.SimulateTrigger"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.SimulateTrigger"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
                     UCL_AgentCommandTrigger.CreatePending("editor-simulate", SelectedAgentId);
                 }

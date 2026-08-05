@@ -123,6 +123,12 @@ def _slugify(s: str) -> str:
     return s or "untitled"
 
 
+def _normalize_book_name(value: str) -> str:
+    """Comparison key for a user-supplied book name; keeps CJK and alphanumerics."""
+    value = (value or "").casefold().replace("×", "x")
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", value)
+
+
 def _atomic_write(path: Path, text: str) -> None:
     # 區塊職責: atomic write (寫 temp → os.replace) + backoff retry
     # 物理意義: 沿用 2026-05-21 run_cmd.py 學到的教訓 — Windows 強制檔鎖下, 直接 open("w")
@@ -339,6 +345,8 @@ def cmd_add_book(args):
         "title": args.title,
         "title_original": args.title_original or "",
         "author": args.author or "",
+        "aliases": list(dict.fromkeys([args.title, *(_split_list(args.aliases)),
+                                         *([args.title_original] if args.title_original else [])])),
         "reader_persona": reader,
         "status": "reading",
         "progress": {"current_chapter": 0, "last_read": _today()},
@@ -358,6 +366,60 @@ def cmd_add_book(args):
     print(f"   {_book_dir(book)}")
     if origin == "authored":
         print("   → 用 UCL_BookEditPage 寫章節; 完稿後跑 publish --book 發布入庫")
+    return 0
+
+
+def cmd_prepare(args):
+    """Resolve a requested title without guessing a mutation; print coverage for the reader."""
+    query = _normalize_book_name(args.title)
+    matches = []
+    for d in sorted(LIB_ROOT.iterdir()) if LIB_ROOT.exists() else []:
+        bj = d / "book.json"
+        if not bj.exists():
+            continue
+        data = _read_json(bj)
+        fields = [d.name, data.get("title", ""), data.get("title_original", ""), *data.get("aliases", [])]
+        hit = [v for v in fields if _normalize_book_name(v) == query]
+        if hit:
+            matches.append((d.name, data, hit))
+    if not matches:
+        print(f"❌ 找不到《{args.title}》的閱讀紀錄。請走 add-book，並把使用者提供的名稱放進 --aliases。")
+        return 1
+    print(f"🔎《{args.title}》候選（不自動合併）：")
+    for slug, data, hit in matches:
+        duplicate = data.get("canonical_book")
+        print(f"  - {slug}: 《{data.get('title')}》 命中={', '.join(hit)}"
+              + (f" → duplicate of {duplicate}" if duplicate else ""))
+    canonical = [(s, d) for s, d, _ in matches if d.get("status") != "duplicate"]
+    if len(canonical) != 1:
+        print("⚠ 候選不唯一；請明示 --book，勿自動選擇。")
+        return 2
+    slug, data = canonical[0]
+    reader = args.reader
+    branch = _main_book_dir(slug) / "branches" / reader
+    chapter_dir = branch / "chapters"
+    own = sorted(int(m.group(1)) for p in chapter_dir.glob("ch*.md") if (m := re.match(r"ch(\d+)_", p.name))) if chapter_dir.exists() else []
+    coverage = {}
+    for who in [_initial_reader(slug), *_list_branches(slug)]:
+        folder = _chapters_dir_for(slug, who)
+        nums = sorted(int(m.group(1)) for p in folder.glob("ch*.md") if (m := re.match(r"ch(\d+)_", p.name))) if folder.exists() else []
+        coverage[who or "main"] = nums
+    print(f"✅ canonical={slug}；{reader} 已讀章節: {own or '（尚無）'}")
+    print("📚 其他讀者覆蓋: " + "; ".join(f"{who}: {nums or '（尚無）'}" for who, nums in coverage.items()))
+    print("→ 決定追讀前，可用 resume --book " + slug + " --reader " + reader + " --up-to <N> 取得跨分支前情。")
+    brief = _DATA_ROOT / "ChatTavern" / "baton" / "letters" / reader / "_wake_brief.md"
+    report = LIB_ROOT / "_search_reports" / f"prepare_{_slugify(reader)}_{_slugify(args.title)}.md"
+    lines = ["# 閱讀入口解析報告", "", f"- query: {args.title}", f"- reader: {reader}",
+             f"- canonical: {slug}", f"- own_chapters: {own}",
+             f"- wake_brief: {brief.relative_to(_REPO_ROOT) if brief.exists() else 'not found'}", "",
+             "## 候選（人工確認用）"]
+    for candidate, item, hit in matches:
+        lines.append(f"- `{candidate}` — 命中: {', '.join(hit)}" +
+                     (f"；duplicate_of: `{item['canonical_book']}`" if item.get("canonical_book") else ""))
+    lines.extend(["", "## 讀取覆蓋", *[f"- {who}: {nums}" for who, nums in coverage.items()], "",
+                  "## 建議", f"以 `{slug}` 的 `{reader}` 分支續讀；缺章可先用 `resume --up-to` 跨分支補前情。"])
+    _atomic_write(report, "\n".join(lines) + "\n")
+    print(f"📄 可檢核報告: {report}")
     return 0
 
 
@@ -2212,12 +2274,18 @@ def build_parser():
     a.add_argument("--title", required=True)
     a.add_argument("--title-original", dest="title_original")
     a.add_argument("--author")
+    a.add_argument("--aliases", required=True, help="別名（使用者提供的書名必含；用 ; | 或換行分隔）")
     a.add_argument("--reader-persona", dest="reader_persona")
     a.add_argument("--origin", choices=["authored", "imported"],
                    help="authored=原創寫書(自由時間, 作者=捐贈者, 預設草稿) / imported=調入別人的書; 省略=沿用現況")
     a.add_argument("--author-persona", dest="author_persona",
                    help="原創書作者 persona (origin=authored 時; 預設=reader_persona)")
     a.set_defaults(func=cmd_add_book)
+
+    a = sub.add_parser("prepare", help="依 persona 與使用者書名找候選並報告閱讀覆蓋；不自動合併")
+    a.add_argument("--reader", required=True)
+    a.add_argument("--title", required=True, help="使用者直接說出的書名")
+    a.set_defaults(func=cmd_prepare)
 
     a = sub.add_parser("log-chapter", help="記錄一章")
     a.add_argument("--book", required=True)

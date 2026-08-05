@@ -703,6 +703,38 @@ def _live_progress(book: str, persona: str = "") -> dict:
             "source": str(bj.relative_to(_main_book_dir(book))) if bj else "?"}
 
 
+def _logged_coverage(book: str, persona: str):
+    """
+    區塊職責：算「這個 persona 實際落帳了幾章」以及是哪幾章
+    物理意義：**position ≠ coverage。** `progress.current_chapter` 是「讀到哪」的位置，
+             不是「讀過幾章」——中途插進來的人（我從 ch18 開始）位置是 20，實際只落帳 4 章。
+             同一個數字被讀成兩種意思，就是今天在抓的那族（名字比事實大）。
+    血證（2026-08-05 summit）：我做的書架卡片顯示「讀到 20」，Tim 問起才發現我的分支只有
+             ch01/18/19/20 四章。卡片沒說謊，是它只講了一半，而讀的人會補上另一半。
+    回傳：(章數, 緊湊區間字串如 "1,18-20")；沒有 chapters 目錄回 (0, "")。
+    """
+    d = _chapters_dir_for(book, persona)
+    nums = []
+    if d.exists():
+        for f in d.glob("ch*.md"):
+            m = _CH_FILE_RE.search(f.name)
+            if m:
+                nums.append(int(m.group(1)))
+    nums = sorted(set(nums))
+    if not nums:
+        return 0, ""
+    # 壓成區間：1,18,19,20 → "1,18-20"（一眼看得出缺口在哪，這才是重點）
+    parts, start, prev = [], nums[0], nums[0]
+    for n in nums[1:] + [None]:
+        if n is not None and n == prev + 1:
+            prev = n
+            continue
+        parts.append(str(start) if start == prev else f"{start}-{prev}")
+        if n is not None:
+            start = prev = n
+    return len(nums), ",".join(parts)
+
+
 def cmd_shelf_update(args):
     # 區塊職責: 建立/更新個人書架卡片（簡評 + 期待度 + 狀態），進度從 book.json 抽快照
     # 數值影響: 只寫 letters/<persona>/bookshelf/<slug>.md；不動 book.json
@@ -714,6 +746,7 @@ def cmd_shelf_update(args):
     bk = _read_json(_main_book_json(book))
     card = _parse_card(_shelf_card(persona, book))
     live = _live_progress(book, persona)
+    cov_n, cov_s = _logged_coverage(book, persona)
 
     ant = card.get("anticipation", "")
     if args.anticipation is not None:
@@ -745,6 +778,8 @@ def cmd_shelf_update(args):
         # 進度是快照，欄名直接寫明，免得未來的我把它當真相源
         f"progress_snapshot_chapter: {live.get('chapter', '')}",
         f"progress_snapshot_last_read: {live.get('last_read', '')}",
+        f"logged_chapters: {cov_n}",
+        f"logged_chapter_list: {cov_s or '(無)'}",
         f"progress_source: {live.get('source', '?')}",
         f"snapshot_synced_at: {_today()}",
         f"updated_at: {_today()}",
@@ -754,6 +789,9 @@ def cmd_shelf_update(args):
         "",
         "> 進度的真相源是 `BookNotes/<slug>/book.json`；本卡片的 progress_snapshot 只是當時的快照。",
         "> 主觀欄位（status / anticipation / 簡評）以本卡片為真相源。",
+        "",
+        f"> ⚠ **position ≠ coverage**：`progress_snapshot_chapter` 是「讀到哪」的位置，"
+        f"`logged_chapters` 才是「實際落帳幾章」。中途插進來讀的話兩者會差很多。",
         "",
         f"**期待度 {ant or '未設'}**"
         + (f" — {_ANTICIPATION[int(ant)]}" if ant.isdigit() else "")
@@ -765,7 +803,8 @@ def cmd_shelf_update(args):
     print(f"📚 書架卡片更新: {persona}/bookshelf/{book}.md")
     print(f"   狀態 {status}"
           + (f" / 期待度 {ant}（{_ANTICIPATION[int(ant)]}）" if ant else " / 期待度 未設")
-          + f" / 進度快照 第 {live.get('chapter', '?')} 章")
+          + f" / 位置 第 {live.get('chapter', '?')} 章"
+          + f" / 已落帳 {cov_n} 章（{cov_s or '無'}）")
     return 0
 
 
@@ -786,24 +825,38 @@ def cmd_shelf(args):
         live = _live_progress(book, persona)
         snap = fm.get("progress_snapshot_chapter", "")
         drift = str(live.get("chapter", "")) != str(snap)
+        cov_n, cov_s = _logged_coverage(book, persona)
         rows.append({
             "book": book, "title": fm.get("title", book),
             "status": fm.get("status", "?"),
             "ant": (fm.get("anticipation", "") or "").split("#")[0].strip(),
             "live": live.get("chapter"), "last": live.get("last_read", ""),
             "snap": snap, "drift": drift,
+            "cov_n": cov_n, "cov_s": cov_s,
         })
     key = (lambda r: (-(int(r["ant"]) if r["ant"].isdigit() else 0), r["last"] or "")) \
         if args.sort == "anticipation" else (lambda r: (r["last"] or "", ))
     rows.sort(key=key, reverse=(args.sort != "anticipation"))
     print(f"📚 {persona} 的書架（{len(rows)} 本，排序：{args.sort}）")
-    print(f"{'書':<28} {'狀態':<10} {'期待':<6} {'讀到':<6} {'最後閱讀':<12} 備註")
+    # 位置與覆蓋率並排 —— 只印位置的話讀的人會把它當成「讀了幾章」（實摔過）
+    print(f"{'書':<28} {'狀態':<10} {'期待':<6} {'位置':<6} {'已落帳':<14} {'最後閱讀':<12} 備註")
     for r in rows:
         ant = r["ant"]
         ant_s = f"{ant} {_ANTICIPATION.get(int(ant), '')[:4]}" if ant.isdigit() else "—"
         note = "⚠ 快照過期（卡片 " + str(r["snap"]) + "）" if r["drift"] else ""
+        cov = f"{r['cov_n']} 章({r['cov_s']})" if r['cov_n'] else "0 章"
+        # 區塊職責：位置與落帳章數落差 → 只報事實，**不猜原因**
+        # 血證（2026-08-05 Tim 更正）：我第一版寫「⚠ 位置≫落帳（中途插入？）」——
+        #   對《獵人》猜對了（我真的從 ch18 插入），對《荒川》猜錯了（主線讀者就是我，
+        #   落差來自早期沒有逐章落帳、編號還換過）。**同一個現象至少三種成因**：
+        #   中途插入 / 早期未逐章落帳 / 章號體系換過。
+        #   工具能觀測到落差，觀測不到原因 —— 猜出來的原因會被未來的我當成事實讀。
+        #   （這正是今天一整天在抓的那族：報告不可以比證據大。）
+        gap = ""
+        if str(r['live']).isdigit() and int(r['live']) > r['cov_n']:
+            gap = f"  ⚠ 落差 {int(r['live']) - r['cov_n']} 章未落帳（成因需人判斷）"
         print(f"{r['title'][:26]:<28} {r['status']:<10} {ant_s:<6} "
-              f"{str(r['live']):<6} {str(r['last']):<12} {note}")
+              f"{str(r['live']):<6} {cov:<14} {str(r['last']):<12} {note}{gap}")
     hot = [r for r in rows if r["ant"].isdigit() and int(r["ant"]) >= 4]
     if hot:
         print(f"\n🔥 下次優先（期待度 ≥4）: " + "、".join(f"{r['title']}（{r['ant']}）" for r in hot))

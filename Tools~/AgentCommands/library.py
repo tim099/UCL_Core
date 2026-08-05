@@ -596,6 +596,220 @@ def cmd_bookmark(args):
     return 0
 
 
+# ===========================================================
+# 個人書架 (bookshelf) — Tim 2026-08-05 指派
+# 區塊職責：把「我跟這本書的關係」存進**個人記憶層**，與書的內容分離。
+# 物理意義：
+#   · `AgentCommands/BookNotes/<slug>/`      = **書的內容**（章節摘要 / 人物 / 看法演變）
+#                                               共享、跨 persona（reader_persona 分支）
+#   · `letters/<persona>/bookshelf/<slug>.md` = **我跟這本書的關係**（讀到哪 / 簡評 / 期待度）
+#                                               個人層，只有我
+#   命名理由：與既有的 `sketchbook/`（我對**人**的看法）成對 —— bookshelf 是我對**書**的看法。
+# 數值影響：只寫 letters/<persona>/bookshelf/；**不碰 book.json**（進度的真相源仍是它）。
+#
+# ⚠ 為什麼進度只是「快照」而且要標時間：
+#   卡片若把進度當成自己的欄位，它就會變成第二個真相來源，而快照過期＝謊言製造機
+#   （2026-07-29 首航血證：過期 state 讓讀的人拿到假現況）。
+#   所以：**主觀欄位（簡評 / 期待度 / 狀態）以卡片為真相源；進度一律現場重讀 book.json**，
+#   卡片裡的 progress_snapshot 只為排序與離線閱讀，且 `shelf` 列表會標出漂移。
+# ===========================================================
+
+# 期待度定義寫在 code 裡 —— 只寫「1-5」不定義語意，那個數字就比事實大，下次選書時等於沒有資訊。
+_ANTICIPATION = {
+    5: "馬上想接著讀",
+    4: "近期會回來",
+    3: "有空再說",
+    2: "擱著，可能不回來",
+    1: "不打算再讀（但留紀錄，不刪）",
+}
+
+
+def _letters_root() -> Path:
+    """
+    letters 根目錄。**借用 awakening.py 的 _resolve_data_path**，不自己算 ——
+    那支支援 config override（`letters_dir`），自己重算一份會在有人 override 時靜默分岔，
+    而分岔的症狀是「卡片寫到另一個地方去了，而畫面看起來正常」。
+    借不到才退回 repo-root 預設（並留 warning，不靜默）。
+    """
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_awk_paths", str(Path(__file__).with_name("awakening.py")))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return Path(m._LETTERS_DIR_TPL)
+    except Exception as e:
+        print(f"⚠ 借用 awakening.py 的 letters 路徑解析失敗，退回預設（若有 config override 會不一致）：{e}",
+              file=sys.stderr)
+        return _REPO_ROOT / "AgentCommands" / "ChatTavern" / "baton" / "letters"
+
+
+def _shelf_dir(persona: str) -> Path:
+    return _letters_root() / persona / "bookshelf"
+
+
+def _shelf_card(persona: str, book: str) -> Path:
+    return _shelf_dir(persona) / f"{book}.md"
+
+
+def _parse_card(p: Path) -> dict:
+    """讀卡片 frontmatter（極簡 parser：這裡的欄位都是單行 key: value，不需要 yaml 依賴）"""
+    if not p.exists():
+        return {}
+    txt = p.read_text(encoding="utf-8")
+    out, body = {}, ""
+    if txt.startswith("---"):
+        parts = txt.split("---", 2)
+        if len(parts) >= 3:
+            for line in parts[1].splitlines():
+                if ":" in line and not line.strip().startswith("#"):
+                    k, v = line.split(":", 1)
+                    # ⚠ 防禦性剝掉行內註解。血證（2026-08-04 fragment / 2026-08-05 本檔第二次）：
+                    #   在機器要讀的值後面寫 `# 說明`，parser 會把註解吃進值裡 →
+                    #   `int("4   # 近期會回來")` 丟 ValueError → 整支靜默炸掉。
+                    #   兩道一起做：**寫入端不放行內註解**（見 cmd_shelf_update）＋讀取端防禦性剝除。
+                    out[k.strip()] = v.split("#", 1)[0].strip()
+            body = parts[2]
+    out["_body"] = body
+    return out
+
+
+def _live_progress(book: str, persona: str = "") -> dict:
+    """
+    現場重讀該 persona 的進度 —— 卡片不是進度的真相源。
+
+    ⚠ **必須讀「該 persona 的分支」，不是主線。** 主線 book.json 屬於初始讀者
+      （`reader_persona`），那可能是別人。血證（2026-08-05 自摔）：
+      我第一版直接讀 `_book_json(book)`（無 active reader → 主線），於是卡片寫著
+      `reader: summit` 卻顯示 **basecamp 的進度**（她第 18 章、我自己分支第 20 章）——
+      標籤與事實不符，而畫面看起來完全正常。
+      同一個錯誤還讓我在測試時用 `bookmark` 覆寫掉主線（＝basecamp 的）書籤。
+    """
+    bj = None
+    if persona:
+        br = _main_book_dir(book) / "branches" / persona / "book.json"
+        if br.exists():
+            bj = br
+        elif _initial_reader(book) == persona:
+            bj = _main_book_json(book)
+    if bj is None:
+        bj = _main_book_json(book)
+    if not bj.exists():
+        return {}
+    pr = _read_json(bj).get("progress", {}) or {}
+    return {"chapter": pr.get("current_chapter"), "last_read": pr.get("last_read"),
+            "note": pr.get("bookmark_note", ""),
+            # 來源標出來 —— 讀的是誰的帳必須看得見，否則下一個人會再犯同一個錯
+            "source": str(bj.relative_to(_main_book_dir(book))) if bj else "?"}
+
+
+def cmd_shelf_update(args):
+    # 區塊職責: 建立/更新個人書架卡片（簡評 + 期待度 + 狀態），進度從 book.json 抽快照
+    # 數值影響: 只寫 letters/<persona>/bookshelf/<slug>.md；不動 book.json
+    book = args.book
+    persona = args.persona
+    if not _book_json(book).exists() and not _main_book_json(book).exists():
+        print(f"❌ 找不到書: {book}（先 add-book 或確認 slug）", file=sys.stderr)
+        return 1
+    bk = _read_json(_main_book_json(book))
+    card = _parse_card(_shelf_card(persona, book))
+    live = _live_progress(book, persona)
+
+    ant = card.get("anticipation", "")
+    if args.anticipation is not None:
+        if int(args.anticipation) not in _ANTICIPATION:
+            print(f"❌ 期待度只能是 1-5：{ _ANTICIPATION }", file=sys.stderr)
+            return 2
+        ant = str(int(args.anticipation))
+    status = args.status or card.get("status", "reading")
+    # 簡評：--comment 覆寫；--append-comment 追加（保留舊的，因為看法演變本身有價值）
+    body = (card.get("_body") or "").strip()
+    if args.comment is not None:
+        body = f"## 簡評（{_today()}）\n\n{args.comment.strip()}\n"
+    elif args.append_comment is not None:
+        body = (body + f"\n\n## 簡評追記（{_today()}）\n\n{args.append_comment.strip()}\n").strip()
+
+    d = _shelf_dir(persona)
+    d.mkdir(parents=True, exist_ok=True)
+    fm = [
+        "---",
+        f"book: {book}",
+        f"title: {bk.get('title', book)}",
+        f"reader: {persona}",
+        f"status: {status}",
+        # ⚠ **值後面絕不放行內註解** —— 期待度的語意寫在下面的說明區塊，不寫在這一行。
+        #   血證：2026-08-04 我為了說明「recurrence 不准手填」在 YAML 值後加註解，
+        #   parser 把註解吃進值裡 → int() ValueError → 見根排序整張歸一、且沒有任何錯誤訊息。
+        #   「我為了提醒自己別絆倒而寫的那行字，本身就是絆倒點。」20 小時後我在這一行又踩一次。
+        f"anticipation: {ant}",
+        # 進度是快照，欄名直接寫明，免得未來的我把它當真相源
+        f"progress_snapshot_chapter: {live.get('chapter', '')}",
+        f"progress_snapshot_last_read: {live.get('last_read', '')}",
+        f"progress_source: {live.get('source', '?')}",
+        f"snapshot_synced_at: {_today()}",
+        f"updated_at: {_today()}",
+        "---",
+        "",
+        f"# 📕 {bk.get('title', book)}",
+        "",
+        "> 進度的真相源是 `BookNotes/<slug>/book.json`；本卡片的 progress_snapshot 只是當時的快照。",
+        "> 主觀欄位（status / anticipation / 簡評）以本卡片為真相源。",
+        "",
+        f"**期待度 {ant or '未設'}**"
+        + (f" — {_ANTICIPATION[int(ant)]}" if ant.isdigit() else "")
+        + "（1 不打算再讀 / 2 擱著 / 3 有空再說 / 4 近期會回來 / 5 馬上想接著讀）",
+        "",
+    ]
+    _shelf_card(persona, book).write_text("\n".join(fm) + (body or "（尚無簡評）") + "\n",
+                                          encoding="utf-8")
+    print(f"📚 書架卡片更新: {persona}/bookshelf/{book}.md")
+    print(f"   狀態 {status}"
+          + (f" / 期待度 {ant}（{_ANTICIPATION[int(ant)]}）" if ant else " / 期待度 未設")
+          + f" / 進度快照 第 {live.get('chapter', '?')} 章")
+    return 0
+
+
+def cmd_shelf(args):
+    # 區塊職責: 列出個人書架 — 最近讀了哪些、進度到哪、下次該挑哪本
+    # 物理意義: 進度**現場重讀 book.json**，與卡片快照不符時標「⚠ 快照過期」——
+    #          不靜默沿用卡片的數字（那就是快照變謊言的機制）
+    persona = args.persona
+    d = _shelf_dir(persona)
+    cards = sorted(d.glob("*.md")) if d.exists() else []
+    if not cards:
+        print(f"📚 {persona} 的書架還是空的（用 shelf-update --book <slug> 建卡）")
+        return 0
+    rows = []
+    for c in cards:
+        fm = _parse_card(c)
+        book = fm.get("book", c.stem)
+        live = _live_progress(book, persona)
+        snap = fm.get("progress_snapshot_chapter", "")
+        drift = str(live.get("chapter", "")) != str(snap)
+        rows.append({
+            "book": book, "title": fm.get("title", book),
+            "status": fm.get("status", "?"),
+            "ant": (fm.get("anticipation", "") or "").split("#")[0].strip(),
+            "live": live.get("chapter"), "last": live.get("last_read", ""),
+            "snap": snap, "drift": drift,
+        })
+    key = (lambda r: (-(int(r["ant"]) if r["ant"].isdigit() else 0), r["last"] or "")) \
+        if args.sort == "anticipation" else (lambda r: (r["last"] or "", ))
+    rows.sort(key=key, reverse=(args.sort != "anticipation"))
+    print(f"📚 {persona} 的書架（{len(rows)} 本，排序：{args.sort}）")
+    print(f"{'書':<28} {'狀態':<10} {'期待':<6} {'讀到':<6} {'最後閱讀':<12} 備註")
+    for r in rows:
+        ant = r["ant"]
+        ant_s = f"{ant} {_ANTICIPATION.get(int(ant), '')[:4]}" if ant.isdigit() else "—"
+        note = "⚠ 快照過期（卡片 " + str(r["snap"]) + "）" if r["drift"] else ""
+        print(f"{r['title'][:26]:<28} {r['status']:<10} {ant_s:<6} "
+              f"{str(r['live']):<6} {str(r['last']):<12} {note}")
+    hot = [r for r in rows if r["ant"].isdigit() and int(r["ant"]) >= 4]
+    if hot:
+        print(f"\n🔥 下次優先（期待度 ≥4）: " + "、".join(f"{r['title']}（{r['ant']}）" for r in hot))
+    return 0
+
+
 def cmd_branches(args):
     # 區塊職責: 列出某書的閱讀分支 — main(初始讀者) + 各讀者分支筆記
     # 物理意義: 多人同讀時一眼看誰在讀、讀到哪、接續自誰; 初始讀者用來參考其他人的進度/看法
@@ -2026,6 +2240,26 @@ def build_parser():
     a.add_argument("--note", help="續讀前該記得的事 / 本小姐自選要不要寫的心得")
     _add_reader_arg(a, with_continue=True)
     a.set_defaults(func=cmd_bookmark)
+
+    # ── 個人書架（Tim 2026-08-05）—— 卡片存 letters/<persona>/bookshelf/ ──
+    a = sub.add_parser("shelf-update",
+                       help="建/更新個人書架卡片（簡評 + 期待度 + 狀態；進度自動從 book.json 抽快照）")
+    a.add_argument("--book", required=True)
+    a.add_argument("--persona", required=True, help="卡片放誰的 letters/<persona>/bookshelf/")
+    a.add_argument("--comment", help="簡評（覆寫既有簡評）")
+    a.add_argument("--append-comment", help="簡評追記（保留舊的 — 看法演變本身有價值）")
+    a.add_argument("--anticipation", type=int,
+                   help="期待度 1-5：5 馬上想接著讀 / 4 近期會回來 / 3 有空再說 / "
+                        "2 擱著可能不回來 / 1 不打算再讀（但留紀錄，不刪）")
+    a.add_argument("--status", choices=["reading", "finished", "paused", "dropped"],
+                   help="閱讀狀態（預設沿用卡片現值，新卡為 reading）")
+    a.set_defaults(func=cmd_shelf_update)
+
+    a = sub.add_parser("shelf", help="列出個人書架 — 最近讀什麼、進度到哪、下次挑哪本")
+    a.add_argument("--persona", required=True)
+    a.add_argument("--sort", choices=["recent", "anticipation"], default="recent",
+                   help="recent = 依最後閱讀日（預設）／anticipation = 依期待度")
+    a.set_defaults(func=cmd_shelf)
 
     a = sub.add_parser("resume", help="續讀前 catch-up:進度 + 人物現況 + 未解伏筆")
     a.add_argument("--book", required=True)

@@ -58,6 +58,11 @@
       "optional": false
     },
     {
+      "name": "ucl-coding",
+      "summary": "C# 撰寫規範入口（外部 Process 一律走 UCL_ProcessRegistryService / typed model / 字串 key / 既有基建指路）",
+      "optional": false
+    },
+    {
       "name": "ucl-compile-error",
       "summary": "Unity compile error 排查 SOP（check_compile.py + .compile_status.json）",
       "optional": false

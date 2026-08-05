@@ -1,7 +1,7 @@
 ---
 title: C# Coding Standards
-description: UCL_Core C# 設定資料與字串 key 的共用撰寫規範。
-last_updated: 2026-08-02
+description: UCL_Core C# 設定資料、字串 key 與外部 Process 的共用撰寫規範。
+last_updated: 2026-08-05
 target_audience: [AI_Agent, Gameplay_Programmer, Tools_Maintainer]
 related:
   - Code_Comment_Standards.md | 程式碼註解規範 | 註解與文件化原則
@@ -42,3 +42,40 @@ if (config.Contains(KeyTavernMirror))
 
 > [!IMPORTANT]
 > 新增 key 時，先搜尋既有名稱與 schema；不要用近似拼字另建一個常數，避免產生雙重設定來源。
+
+## 外部 Process（硬規則）
+
+> [!CAUTION]
+> **C# 端開的每一顆外部 Process 都必須經過 `UCL_ProcessRegistryService` 登記。**
+> 直接 `new Process()` / `Process.Start()` 之後不登記 = 那顆 process 沒有任何人管得到它。
+
+**為什麼是硬規則**：Editor 的 domain reload / recompile 會把 C# 的 `Process` 物件整批清掉，
+但**作業系統層的 process 不會跟著死**。於是每次重編都可能再生一顆，舊的變成沒有 handle 的孤兒 ——
+累積下去就是 Tim 遇過的**屍潮**（重複開 process 直到電腦卡死）。
+這一族的壞法特別難查：每一顆單看都正常，症狀只有「電腦越來越慢」。
+
+```csharp
+// 1) spawn 前先收掉同 tag 的舊 process（singleton 語意；跨 domain reload 也有效，
+//    因為身分是從磁碟記錄讀回來的，不依賴 C# 端的 Process 物件）
+UCL_ProcessRegistryService.KillAllByTag("my_daemon");
+
+var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+proc.Start();
+
+// 2) spawn 後立刻登記 — tag 是穩定識別字，description 要寫「這顆在做什麼」
+UCL_ProcessRegistryService.Register(proc, "my_daemon",
+    "這顆 process 在做什麼（給人看，也給誤殺防護判斷）", nameof(MyCaller));
+
+// 3) 正常結束時反登記
+UCL_ProcessRegistryService.Unregister(proc.Id, "my_daemon");
+```
+
+- **身分 = PID + process name + start time**，不是只有 PID —— PID 會被 OS 回收再發，
+  只憑 PID 去 kill 會誤殺別人的 process（`UCL_ProcessStatus.PidReused` 就是為此存在）。
+- `Register` 預設 `allowMultiple=false`（singleton）：登記時會先收掉既存同 tag。
+  要「舊的先死新的才生」的嚴格順序，spawn 前自行呼叫 `KillAllByTag`。
+- **短命的一次性 process**（跑完即退、不需要被管理，例如寫一個 json 就結束）可以不登記，
+  但必須是**真的會自己退出**的那種；只要有「可能卡住」的可能性就要登記。
+- 檢視／處置走 `UCL_ProcessAdminPage`。
+
+參考實作：`UCL_ScreenStreamDaemon`（pre-spawn `KillAllByTag` + `Register` + 結束時 `Unregister`）。

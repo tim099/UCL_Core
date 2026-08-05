@@ -23,7 +23,7 @@ last_updated: 2026-08-05
 | 區塊 | 說明 |
 |---|---|
 | 來源 / 目標 | 任意兩個 repo（**不綁本專案**），可用 `…` 選資料夾 |
-| Submodule 開關 | 逐項勾選要不要同步；顯示父記錄 SHA / 磁碟 HEAD / drift 標記。**取消勾選父 submodule 會自動連帶排除其巢狀** |
+| Submodule 開關 | 搜尋式下拉（`UCL_GUILayout.PopupSearchCache`）+ 逐項勾選；顯示父記錄 SHA / 磁碟 HEAD / drift / 未 init。**取消勾選父 submodule 時，其下巢狀無論自己勾不勾都被屏蔽**（但巢狀自己的設定會保留，父恢復後回到原本選擇）。src 沒有 submodule 時**整區隱藏** —— `PopupSearchCache` 選項為 0 會 LogError |
 | 攤平基準 | `recorded`（父記錄的 gitlink SHA）／`head`（submodule 磁碟 HEAD）。**刻意沒有「自動」** —— 見下方 fail closed |
 | 清除 stale | 刪掉「上次同步寫過、這次來源已沒有」的檔。首次同步（無 manifest）不刪 |
 | 試跑 | **完全唯讀**，不寫任何檔。印出將寫入 / 已相同 / 衝突 / stale 清單 |
@@ -79,10 +79,28 @@ last_updated: 2026-08-05
 ## CLI
 
 ```bash
+# 只列 submodule（給 UI 畫勾選清單；不需要 --dst，不受 fail closed 影響）
+python <UCL_Core>/Tools~/git_flatten_sync.py --src <來源 repo> --list-submodules
+
+# 試跑 / 同步
 python <UCL_Core>/Tools~/git_flatten_sync.py \
     --src <來源 repo> --dst <目標 repo> \
     [--mode recorded|head] [--exclude a,b] [--prune] [--force] [--apply] [--format json]
 ```
+
+`--list-submodules` **列出全部，含被排除的** —— UI 的清單若只含納入項，
+取消勾選之後那一列就消失、使用者無法還原（頁面第一版就是這樣壞的）。
+**清單是「有什麼」，勾選是「要不要」，兩件事分開。**
+
+## Process 管理
+
+頁面呼叫腳本走 `UCL_ProcessRegistryService`（tag `git_flatten_sync`）：
+spawn 前 `KillAllByTag` → `Register` → 結束時 `Unregister`。
+
+全量同步可能跑數分鐘，而 domain reload / recompile 會清掉 C# 的 `Process` 物件，
+**但 OS 層的 python 不會跟著死** —— 沒有這道 guard，每次重編再按一次就多一顆孤兒，
+累積成屍潮。檢視／處置走 `UCL_ProcessAdminPage`。
+硬規則見 [`Coding_Standards.md`](../Agent/Coding_Standards.md) 的「外部 Process」。
 
 exit code：`0` 成功／`2` 參數錯／`3` 防呆拒絕／`4` fail closed（未 init / drift / 不可回溯）／
 `5` 有本地衝突而未帶 `--force`／`6` 驗證未通過。

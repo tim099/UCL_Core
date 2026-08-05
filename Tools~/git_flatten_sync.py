@@ -109,7 +109,10 @@ def discover(src: Path):
             recorded = ""     # owner 未 init → 讀不到，不猜
         initialized = (src / p / ".git").exists()
         subs.append({**r, "recorded_sha": recorded, "owner": owner_rel or "",
-                     "uninitialized": r["uninitialized"] or not initialized})
+                     "uninitialized": r["uninitialized"] or not initialized,
+                     # 該 submodule 自己也是個 superproject（有 .gitmodules）—— 只有資訊性用途，
+                     # 攤平時 .gitmodules 是按**路徑**濾掉的，不依賴這個欄位。
+                     "has_gitmodules": (src / p / ".gitmodules").is_file()})
     subs.sort(key=lambda s: s["path"].count("/"))
     return subs
 
@@ -228,7 +231,7 @@ def main():
     ap = argparse.ArgumentParser(
         description="Flatten a repo's submodules into plain files and sync to another repo's working dir.")
     ap.add_argument("--src", required=True)
-    ap.add_argument("--dst", required=True)
+    ap.add_argument("--dst", default="", help="目標 repo（--list-submodules 時不需要）")
     ap.add_argument("--exclude", default="", help="不同步的 submodule 路徑（逗號分隔），會連帶排除其巢狀")
     ap.add_argument("--mode", choices=["recorded", "head"], default=None,
                     help="攤父記錄的 gitlink SHA 還是 submodule 磁碟 HEAD。"
@@ -238,12 +241,41 @@ def main():
     ap.add_argument("--apply", action="store_true", help="真的寫入（預設 dry-run，完全唯讀）")
     ap.add_argument("--force", action="store_true", help="放行 warn 等級的防呆（fatal 永不放行）")
     ap.add_argument("--format", choices=["md", "json"], default="md")
+    ap.add_argument("--list-submodules", action="store_true",
+                    help="只列出 src 的所有 submodule（JSON）後結束。**含被排除的** —— "
+                         "給 UI 畫勾選清單用：清單只列納入的話，取消勾選之後那一列就消失、無法還原")
     args = ap.parse_args()
 
-    src, dst = Path(args.src).resolve(), Path(args.dst).resolve()
+    src = Path(args.src).resolve()
     if not (src / ".git").exists():
         print(f"✗ src 不是 git repo：{src}", file=sys.stderr)
         return 2
+
+    # 區塊職責：只列 submodule 就結束（給 UI 畫勾選清單）
+    # 物理意義：**列出全部，含被排除的** —— UI 的清單若只含納入項，取消勾選之後那一列就消失、
+    #          使用者無法還原（我第一版頁面吃 dry-run 的 inputs，正好踩到）。
+    #          也不做 drift / 未 init 的 fail closed —— 那是「要不要執行同步」的判準，
+    #          不是「這個專案有哪些 submodule」的判準。狀態照實回報，讓 UI 標記出來。
+    if args.list_submodules:
+        subs = discover(src)
+        print(json.dumps({
+            "src": str(src),
+            "src_sha": git(src, "rev-parse", "HEAD").strip(),
+            "submodules": [{
+                "path": s["path"], "owner": s["owner"],
+                "recorded_sha": s["recorded_sha"], "head_sha": s["head_sha"],
+                "drift": bool(s["recorded_sha"] and s["head_sha"]
+                              and s["recorded_sha"] != s["head_sha"]),
+                "uninitialized": bool(s["uninitialized"]),
+                "has_gitmodules": bool(s["has_gitmodules"]),
+            } for s in subs],
+        }, ensure_ascii=False, indent=1))
+        return 0
+
+    if not args.dst:
+        print("✗ 需要 --dst（只有 --list-submodules 可以省略）", file=sys.stderr)
+        return 2
+    dst = Path(args.dst).resolve()
     manifest_path = Path(args.manifest) if args.manifest else dst / MANIFEST_REL
 
     rep = {"src": str(src), "dst": str(dst), "schema": SCHEMA}

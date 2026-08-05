@@ -42,6 +42,14 @@ namespace UCL.Core.EditorLib.Page
             DrawTool(UCL_CodeLocalize.Get("ToolBox.LocalizeEdit"),
                 UCL_CodeLocalize.Get("ToolBox.LocalizeEdit.Desc"),
                 () => UCL_EditorPage.Create<UCL_LocalizeEditPage>());
+
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.ScreenStream"),
+                UCL_CodeLocalize.Get("ToolBox.ScreenStream.Desc"),
+                () => UCL_ScreenStreamPage.Create());
+
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.ProcessAdmin"),
+                UCL_CodeLocalize.Get("ToolBox.ProcessAdmin.Desc"),
+                () => UCL_ProcessAdminPage.Create());
         }
 
         // 區塊職責：畫一個工具列（按鈕 + 說明）

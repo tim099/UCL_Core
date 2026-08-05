@@ -37,6 +37,10 @@ namespace UCL.Core.EditorLib.Page
 
         const string PrefKey_Settings = "UCL_GitFlattenSync.Settings";
 
+        // Process 註冊中心的 tag —— 穩定識別字，KillAllByTag / Register / Unregister 三處共用。
+        // 硬規則：C# 開的每顆外部 Process 都要登記（見 Coding_Standards.md「外部 Process」）。
+        const string PROC_TAG = "git_flatten_sync";
+
         // 區塊職責：可保存的設定（Tim 2026-08-05：頁面設定要能下次直接讀取）
         // 物理意義：轉 JSON 存 EditorPrefs。**路徑是絕對路徑，跨機器不通用** ——
         //          Tim 明示可接受（換機器重填即可），所以不做環境變數替換那層複雜度。
@@ -59,11 +63,19 @@ namespace UCL.Core.EditorLib.Page
         public class SubEntry
         {
             public string Path = "";
+            public string Owner = "";
             public string Recorded = "";
             public string Head = "";
             public bool Drift = false;
+            public bool Uninitialized = false;
         }
         List<SubEntry> m_Subs = new List<SubEntry>();
+        // m_Scanned 區分「還沒掃」與「掃過但真的沒有 submodule」——
+        // 兩者都是 m_Subs.Count == 0，但前者要提示使用者去掃、後者該整區隱藏。
+        bool m_Scanned = false;
+        int m_SelectedSubIdx = 0;
+        // PopupSearchCache 的內部狀態容器（對齊 UCL_ControlPanelPage 的 m_PickerDic 慣例）
+        readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
 
         string m_Report = "";
         bool m_Running = false;
@@ -126,7 +138,9 @@ namespace UCL.Core.EditorLib.Page
             if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Refresh"), UCL_GUIStyle.ButtonStyle,
                     GUILayout.ExpandWidth(false)))
             {
-                RunScript(BuildArgs(dryRun: true, jsonFormat: true), "scan");
+                // 只掃 submodule 清單 —— 不需要 dst、不受 drift / 未 init 的 fail closed 影響。
+                // 清單是「這個 repo 有什麼」，同步條件是「能不能跑」，兩件事分開問。
+                RunScript(new List<string> { "--src", m_Settings.Src ?? "", "--list-submodules" }, "scan");
             }
         }
 
@@ -195,46 +209,135 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         // submodule 勾選
         // ===========================================================
+        // 區塊職責：submodule 選單 + 逐項同步開關
+        // 物理意義：清單由腳本 `--list-submodules` 提供（**含被排除的**）。
+        //          ⚠ 我第一版吃 dry-run 的 `inputs`，而那只含**納入**的 submodule ——
+        //            於是取消勾選之後那一列就消失、使用者無法還原。清單與勾選狀態是兩件事，
+        //            清單必須是「全部」，勾選才是「要不要」。
+        // 邊界：src 沒有 submodule 時**整區隱藏** ——
+        //      `UCL_GUILayout.PopupSearchCache` 在選項為 0 時會 LogError，
+        //      所以「若無則隱藏」不只是版面問題，是不能呼叫它。
         void DrawSubmodules()
         {
-            GUILayout.Label($"Submodule 同步開關（{m_Subs.Count} 個）", UCL_GUIStyle.LabelStyle);
+            if (m_Subs.Count == 0)
+            {
+                // 有 src 但還沒掃 → 給一行提示；掃過確定是 0 → 什麼都不畫（真的沒有 submodule）
+                if (!m_Scanned)
+                {
+                    GUILayout.Label("(尚未掃描 submodule — 按上方 Refresh)", UCL_GUIStyle.LabelStyle);
+                }
+                return;
+            }
+
+            GUILayout.Label($"Submodule 同步開關（{m_Subs.Count} 個，"
+                            + $"排除 {CountEffectivelyExcluded()} 個）", UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
-                if (m_Subs.Count == 0)
+                // ── 下拉選單：submodule 多的時候用來快速定位（Tim 2026-08-05 指定 PopupSearchCache）──
+                using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("(尚未掃描 — 按上方 Refresh 或「試跑」)", UCL_GUIStyle.LabelStyle);
-                    return;
+                    GUILayout.Label("選擇 submodule", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    var labels = new List<string>();
+                    foreach (var s in m_Subs)
+                    {
+                        labels.Add(BlockedByParent(s.Path) ? $"{s.Path}  (父被排除 → 屏蔽)"
+                            : m_Settings.Excluded.Contains(s.Path) ? $"{s.Path}  (排除)"
+                            : s.Path);
+                    }
+                    m_SelectedSubIdx = UCL_GUILayout.PopupSearchCache(
+                        Mathf.Clamp(m_SelectedSubIdx, 0, m_Subs.Count - 1),
+                        labels, m_PickerDic, "FlattenSubPicker");
+                    var sel = m_Subs[Mathf.Clamp(m_SelectedSubIdx, 0, m_Subs.Count - 1)];
+                    GUILayout.FlexibleSpace();
+                    DrawToggleFor(sel, "同步這個");
                 }
+
+                // ── 全清單：狀態一覽 + 逐項開關 ──
                 foreach (var s in m_Subs)
                 {
+                    bool blocked = BlockedByParent(s.Path);
                     using (new GUILayout.HorizontalScope())
                     {
-                        bool inc = !m_Settings.Excluded.Contains(s.Path);
-                        bool next = GUILayout.Toggle(inc, "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(20)));
-                        if (next != inc)
-                        {
-                            if (next) m_Settings.Excluded.Remove(s.Path);
-                            else if (!m_Settings.Excluded.Contains(s.Path)) m_Settings.Excluded.Add(s.Path);
-                            SaveSettings();
-                        }
-                        GUILayout.Label(s.Path, UCL_GUIStyle.LabelStyle,
+                        DrawToggleFor(s, "");
+                        GUILayout.Label(s.Path, blocked ? DimLabelStyle : UCL_GUIStyle.LabelStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(420)));
                         GUILayout.Label(Short(s.Recorded), UCL_GUIStyle.LabelStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
                         GUILayout.Label(Short(s.Head), UCL_GUIStyle.LabelStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                        if (s.Drift)
+                        if (blocked)
+                        {
+                            GUILayout.Label("⛔ 父被排除 → 無論本身設定都被屏蔽", DimLabelStyle);
+                        }
+                        else if (s.Uninitialized)
+                        {
+                            GUILayout.Label("⛔ 未 init（內容不在本機，腳本會拒絕執行）",
+                                UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.4f, 0.4f)));
+                        }
+                        else if (s.Drift)
                         {
                             GUILayout.Label("⚠ 父記錄≠磁碟 HEAD",
                                 UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.85f, 0.4f)));
                         }
                     }
                 }
-                // 勾掉父 submodule 時，腳本會自動連帶排除巢狀 —— 這裡明說，免得使用者以為漏了
-                GUILayout.Label("  ↳ 取消勾選父 submodule 時，其底下的巢狀 submodule 會自動一併排除。",
+                GUILayout.Label("  ↳ 取消勾選父 submodule 時，其下巢狀**無論自己勾不勾都被屏蔽**；"
+                                + "但它們自己的設定會保留，父恢復同步後就回到原本的選擇。",
                     UCL_GUIStyle.LabelStyle);
             }
         }
+
+        // 區塊職責：畫某個 submodule 的同步開關
+        // 物理意義：被父屏蔽時 toggle **禁用但不改值** —— 值改掉的話，父恢復同步後
+        //          使用者原本的選擇就永久遺失了（而那個遺失是靜默的）。
+        void DrawToggleFor(SubEntry s, string label)
+        {
+            bool blocked = BlockedByParent(s.Path);
+            bool inc = !m_Settings.Excluded.Contains(s.Path);
+            using (new EditorGUI.DisabledScope(blocked))
+            {
+                bool shown = inc && !blocked;   // 顯示為「不同步」，但底下存的值不動
+                bool next = GUILayout.Toggle(shown, label,
+                    string.IsNullOrEmpty(label) ? GUILayout.Width(UCL_GUIStyle.GetScaledSize(20))
+                        : GUILayout.ExpandWidth(false));
+                if (!blocked && next != inc)
+                {
+                    if (next) m_Settings.Excluded.Remove(s.Path);
+                    else if (!m_Settings.Excluded.Contains(s.Path)) m_Settings.Excluded.Add(s.Path);
+                    SaveSettings();
+                }
+            }
+        }
+
+        // 區塊職責：這個路徑有沒有任何**祖先** submodule 被排除
+        // 物理意義：Tim 2026-08-05 明示的規則 —— nested 的 root 被屏蔽時，child 無論設定都被屏蔽。
+        //          判準用路徑前綴（`a/b` 是 `a` 的後代），與腳本端 cascade_exclude 同一套語意。
+        //          比對前綴而不是只看直接 owner —— 三層巢狀時中間那層若被排除，最深那層也要屏蔽。
+        bool BlockedByParent(string path)
+        {
+            foreach (var ex in m_Settings.Excluded)
+            {
+                if (path.Length > ex.Length && path.StartsWith(ex + "/")) return true;
+            }
+            return false;
+        }
+
+        int CountEffectivelyExcluded()
+        {
+            int n = 0;
+            foreach (var s in m_Subs)
+            {
+                if (m_Settings.Excluded.Contains(s.Path) || BlockedByParent(s.Path)) n++;
+            }
+            return n;
+        }
+
+        GUIStyle m_DimLabelStyle;
+        GUIStyle DimLabelStyle => m_DimLabelStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
+        {
+            normal = { textColor = new Color(0.6f, 0.6f, 0.6f) },
+        };
 
         static string Short(string sha) => string.IsNullOrEmpty(sha) ? "—"
             : (sha.Length > 8 ? sha.Substring(0, 8) : sha);
@@ -388,7 +491,9 @@ namespace UCL.Core.EditorLib.Page
             m_Running = true;
             m_RunningLabel = label;
             m_Report = $"⏳ {label} 執行中…";
-            bool wantJson = args.Contains("json");
+            // 掃清單模式才解析 json —— 判準用 `--list-submodules` 這個旗標本身，
+            // 不用「args 裡有 json 字樣」（那會被 --format json 的一般 dry-run 誤命中）。
+            bool wantJson = args.Contains("--list-submodules");
 
             var argList = new List<string>(args);
             string argLine = "\"" + script + "\" " + string.Join(" ",
@@ -399,6 +504,7 @@ namespace UCL.Core.EditorLib.Page
                 var so = new System.Text.StringBuilder();
                 var se = new System.Text.StringBuilder();
                 int exit = -1;
+                int pid = -1;
                 try
                 {
                     using (var p = new Process())
@@ -414,7 +520,18 @@ namespace UCL.Core.EditorLib.Page
                         p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
                         p.OutputDataReceived += (_, e) => { if (e.Data != null) so.AppendLine(e.Data); };
                         p.ErrorDataReceived += (_, e) => { if (e.Data != null) se.AppendLine(e.Data); };
+                        // 區塊職責：spawn 前先收掉同 tag 的舊 process（singleton 語意）
+                        // 物理意義：全量同步可能跑數分鐘，而 domain reload / recompile 會清掉 C# 的
+                        //          Process 物件 —— **但 OS 層的 python 不會跟著死**。
+                        //          沒有這道 guard，每次重編再按一次就多一顆孤兒，累積成屍潮
+                        //          （重複開 process 直到電腦卡死，Tim 遇過）。
+                        //          KillAllByTag 的身分是從磁碟記錄讀回來的，所以跨 domain reload 仍有效。
+                        UCL_ProcessRegistryService.KillAllByTag(PROC_TAG);
                         p.Start();
+                        // spawn 後立刻登記 —— 身分 = PID + name + start time（只憑 PID 會誤殺被回收的 PID）
+                        UCL_ProcessRegistryService.Register(p, PROC_TAG,
+                            $"git_flatten_sync.py（{label}）", nameof(UCL_GitFlattenSyncPage));
+                        pid = p.Id;
                         p.BeginOutputReadLine();
                         p.BeginErrorReadLine();
                         // 30 分鐘上限：三萬檔的全量寫入 + 逐檔驗證確實會跑很久（效能不是本工具的優先）。
@@ -432,6 +549,13 @@ namespace UCL.Core.EditorLib.Page
                 catch (Exception e)
                 {
                     se.AppendLine(e.ToString());
+                }
+                finally
+                {
+                    // 反登記放 finally —— 例外路徑也要清，否則記錄檔留著一個已死的 PID，
+                    // 下次 KillAllByTag 會對它做身分驗證（會判 Dead 而跳過，不誤殺），
+                    // 但留著的殘檔會讓 UCL_ProcessAdminPage 顯示不存在的 process。
+                    if (pid > 0) UCL_ProcessRegistryService.Unregister(pid, PROC_TAG);
                 }
                 string stdout = so.ToString();
                 string stderr = se.ToString();
@@ -456,17 +580,33 @@ namespace UCL.Core.EditorLib.Page
         {
             try
             {
-                int i = stdout.IndexOf('{');
-                if (i < 0) return;
-                var jd = UCL.Core.JsonLib.JsonData.ParseJson(stdout.Substring(i));
+                int jsonStart = stdout.IndexOf('{');
+                if (jsonStart < 0) return;
+                var jd = UCL.Core.JsonLib.JsonData.ParseJson(stdout.Substring(jsonStart));
                 if (jd == null || !jd.IsObject) return;
-                if (!jd.Dic.TryGetValue("inputs", out var inputs) || inputs == null || !inputs.IsObject) return;
+                var arr = jd.Get("submodules");
+                if (arr == null || !arr.IsArray) return;
                 var list = new List<SubEntry>();
-                foreach (var kv in inputs.Dic)
+                for (int i = 0; i < arr.Count; i++)
                 {
-                    list.Add(new SubEntry { Path = kv.Key, Recorded = kv.Value?.GetString() ?? "" });
+                    var e = arr[i];
+                    if (e == null || !e.IsObject) continue;
+                    list.Add(new SubEntry
+                    {
+                        Path = e.GetString("path", ""),
+                        Owner = e.GetString("owner", ""),
+                        Recorded = e.GetString("recorded_sha", ""),
+                        Head = e.GetString("head_sha", ""),
+                        Drift = e.GetBool("drift", false),
+                        Uninitialized = e.GetBool("uninitialized", false),
+                    });
                 }
-                if (list.Count > 0) m_Subs = list;
+                // **空清單也要落地** —— 「這個 repo 真的沒有 submodule」是有效答案，
+                // 而 `if (count > 0)` 會讓它保留上一個 src 的清單，於是換了 src 之後
+                // 畫面還顯示舊 repo 的 submodule（看起來完全正常的錯）。
+                m_Subs = list;
+                m_Scanned = true;
+                m_SelectedSubIdx = 0;
             }
             catch (Exception e)
             {

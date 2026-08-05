@@ -965,8 +965,16 @@ def cmd_recompile(args: argparse.Namespace) -> int:
       1. 記錄當前 .compile_status.json mtime（pre-mtime）
       2. submit Cmd_Recompile（Unity 收到後呼叫 CompilationPipeline.RequestScriptCompilation）
       3. 等 cmd 從 queue 消失（=Unity 已接手，但 compile 可能還沒跑完）
-      4. poll .compile_status.json 直到 mtime > pre-mtime（=tracker 寫了新 status，compile 完成）
+      4. poll .compile_status.json 直到 **mtime 推進且 in_progress=false**（= compile 真的跑完）
       5. 讀新 status 的 total_errors / total_warnings，依結果回 exit code
+
+    ⚠ 第 4 步的「且 in_progress=false」是 2026-08-05 補的，別拿掉：
+      UCL_CompileErrorTracker 在 **compilationStarted** 也會寫一次 status
+      （in_progress=true / duration 0 / messages 清空）。只看 mtime 推進的話會抓到那一筆，
+      然後印出「✓ Compile finished (0.0s) — errors=0, warnings=0」——
+      **一個時間點正確、數字全假的綠燈**（實摔：真實結果是 7.188s / 37 warnings）。
+      這跟 2026-05-22 apex-two 那筆 CS1061 被漏報成 errors=0 是同一隻，
+      當時的結論寫「改用 check_compile.py 二次確認」而沒有回頭修這裡。
     """
     pre_mtime = COMPILE_STATUS_PATH.stat().st_mtime if COMPILE_STATUS_PATH.exists() else 0.0
     print(f"Recompile request — pre-compile mtime: {pre_mtime:.3f}")
@@ -995,9 +1003,13 @@ def cmd_recompile(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
 
-    # 3) wait for compile_status.json mtime to advance — 這才是「compile 真正完成」
-    print(f"  Waiting for {COMPILE_STATUS_PATH.name} mtime to advance past {pre_mtime:.3f}...")
+    # 3) wait for compile_status.json：**mtime 推進 + in_progress=false** 才算完成
+    #    只看 mtime 會抓到 compilationStarted 那一筆（in_progress=true / duration 0 / 空 messages），
+    #    印出「時間點正確、數字全假」的綠燈 —— 見本函式 docstring 的血證。
+    print(f"  Waiting for {COMPILE_STATUS_PATH.name} to advance past {pre_mtime:.3f} "
+          f"AND report in_progress=false...")
     deadline = time.time() + args.timeout
+    seen_start = False   # 只為了印一次「編譯開始了」，讓等待期間看得出進度
     while time.time() < deadline:
         if COMPILE_STATUS_PATH.exists():
             now_mtime = COMPILE_STATUS_PATH.stat().st_mtime
@@ -1007,8 +1019,20 @@ def cmd_recompile(args: argparse.Namespace) -> int:
                     with COMPILE_STATUS_PATH.open("r", encoding="utf-8-sig") as f:
                         st = json.load(f)
                 except Exception as e:
+                    # 半寫狀態 parse 失敗不該當致命 —— tracker 不做 atomic 寫入，
+                    # 下一輪 poll 就會讀到完整的。**這裡 return 3 會把「讀太早」誤報成「壞掉」。**
+                    if time.time() < deadline:
+                        time.sleep(args.poll_interval)
+                        continue
                     print(f"  ⚠ failed to parse compile_status.json: {e}", file=sys.stderr)
                     return 3
+                if st.get("in_progress", False):
+                    # 編譯正在跑 —— 這一筆是 compilationStarted 寫的，數字還沒定案，繼續等。
+                    if not seen_start:
+                        seen_start = True
+                        print("  … compile started (in_progress=true) — 等它跑完，不採信這一筆的數字")
+                    time.sleep(args.poll_interval)
+                    continue
                 errors = st.get("total_errors", 0)
                 warnings = st.get("total_warnings", 0)
                 duration = st.get("duration_seconds", 0)
@@ -1021,7 +1045,19 @@ def cmd_recompile(args: argparse.Namespace) -> int:
                     return 1
                 return 0
         time.sleep(args.poll_interval)
-    print(f"  ⚠ compile_status.json didn't advance within {args.timeout}s.", file=sys.stderr)
+    # 超時的兩種原因要分開講 —— 修法完全不同，講錯會把人送去查錯的地方：
+    #   seen_start=False → 編譯連開始都沒有（Unity 遞延重編，最常見是 Editor 沒有焦點）
+    #   seen_start=True  → 開始了但沒跑完（大型編譯／卡在 domain reload）
+    if seen_start:
+        print(f"  ⚠ compile 已開始但 {args.timeout}s 內沒結束（in_progress 一直是 true）。"
+              f"大型編譯或卡在 domain reload —— 加大 --timeout 或稍後用 check_compile.py 查。",
+              file=sys.stderr)
+    else:
+        print(f"  ⚠ {args.timeout}s 內 compile 連開始都沒有（status 沒推進到 in_progress=true）。"
+              f"Unity 常把外部改檔的重編遞延到視窗重獲焦點 —— 把 Unity 切到前景再試。"
+              f"想確認「這段時間到底有沒有編譯過」看心跳停跳台帳："
+              f"check_compile.py 的 STALE 區塊會印。",
+              file=sys.stderr)
     return 4
 
 

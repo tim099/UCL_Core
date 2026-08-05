@@ -61,13 +61,13 @@ namespace UCL.Core.EditorLib.Page
         readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
         // Apply 後的回饋訊息 (取代 EditorUtility.DisplayDialog,持久顯示直到下次 Apply)
         string m_LastApplyMessage = "";
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            GUILayout.Label("<b>控制台 — 專案重要設定</b>", UCL_GUIStyle.LabelStyle);
+        }
         protected override void ContentOnGUI()
         {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                GUILayout.Label("<b>控制台 — 專案重要設定</b>", UCL_GUIStyle.LabelStyle);
-            }
             GUILayout.Space(8);
 
             DrawChatTavernSystemSection();

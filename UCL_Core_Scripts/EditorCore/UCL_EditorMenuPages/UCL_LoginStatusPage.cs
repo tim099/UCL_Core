@@ -90,6 +90,9 @@ namespace UCL.Core.EditorLib.Page
         string m_AgentCommandsDir = "";
         string m_SessionDir = "";
         string m_PersonasDir = "";
+        // persona 信件庫根目錄（letters/<persona>/…）。與 UCL_PersonaInspectorPage 的 m_LettersDir 同一個位置，
+        // 兩邊都從 UCL_RepoPath.AgentCommandsDir 推導 —— 不寫死安裝路徑（AgentCommands 本身可能是 submodule）。
+        string m_LettersDir = "";
         string m_UCLCorePath = "";
 
         public override void Init(UCL_GUIPageController p_Controller)
@@ -101,6 +104,7 @@ namespace UCL.Core.EditorLib.Page
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
             m_SessionDir = Path.Combine(m_AgentCommandsDir, "_session");
             m_PersonasDir = Path.Combine(m_AgentCommandsDir, "AwakenInit", "personas");
+            m_LettersDir = Path.Combine(m_AgentCommandsDir, "ChatTavern", "baton", "letters");
             // 區塊：UCL_Core path 解析 — 走 UCL_EditorPath.CorePath (per AgentSkillManagerPage)
             string corePathRel = UCL_EditorPath.CorePath;
             if (!string.IsNullOrEmpty(corePathRel))
@@ -117,8 +121,37 @@ namespace UCL.Core.EditorLib.Page
             {
                 LoadData();
             }
+#if UNITY_EDITOR
+            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                OpenLettersFolder();
+            }
+#endif
         }
 
+
+        // 區塊職責：開啟 persona 信件庫資料夾
+        // 物理意義：AgentCommands/ChatTavern/baton/letters —— 每個 persona 一個子夾，
+        //          裡面是收尾信 / _keys_open.md / longterm/ / portraits/ 等。
+        //          路徑走 UCL_RepoPath.AgentCommandsDir（git-root walk）推導，不寫死安裝路徑：
+        //          AgentCommands 在部分專案是 submodule，寫死的路徑跨專案會靜默失效。
+        // 數值影響：純讀 + spawn 檔案管理器，不改任何檔。
+        //
+        // 為什麼開的是 letters 根而不是某個 persona 的子夾：
+        //   本頁沒有「當前選中 persona」這個狀態 —— m_LoginPersona 是手動登入表單的輸入欄，
+        //   拿它當「要開哪個夾」會讓同一個字串身兼兩種語意，按下去的結果無法從按鈕字面預測。
+        //   要看單一 persona 的信件走 Persona Inspector 頁（那裡有選中狀態）。
+        void OpenLettersFolder()
+        {
+            if (string.IsNullOrEmpty(m_LettersDir))
+            {
+                // 空字串 = Init 沒跑或 AgentCommandsDir 解析失敗；這種要叫出來，
+                // 否則按鈕按了沒反應會被當成 UI 壞掉，而真正的病在路徑解析。
+                Debug.LogWarning("[LoginStatus] letters 路徑未解析（Init 未執行？）—— 請按 Refresh 或重開本頁。");
+                return;
+            }
+            UCL_ExplorerUtil.Open(m_LettersDir, "LoginStatus");
+        }
 
         /// <summary>
         /// 區塊職責：載入並反序列化 lock + pool

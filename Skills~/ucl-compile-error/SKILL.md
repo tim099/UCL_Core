@@ -25,7 +25,37 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback
 
 # 改完檔等下一次 compile（agent 動完 .cs 後驗收用）
 python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 60
+
+# 新鮮度基準指定成「我剛改的那個檔」—— 一次 stat，比問 git 更精準也更便宜
+python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --since-file <你改的.cs>
+
+# CI / 腳本：狀態沒涵蓋改動就 exit 4（別讓過期綠燈通過驗收）
+python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --strict-fresh
 ```
+
+## 🚨 新鮮度守衛（2026-08-05 起預設開啟）
+
+**這支工具現在會先回答「這份狀態涵蓋你的改動嗎」，再回答「有沒有錯」。**
+
+狀態早於你最近一次 `.cs` 改動時，輸出最上方會蓋 `🚨 STALE` 橫幅，並且
+**不會印「✅ Clean compile」**（改印「無法判定」）。`--format json` 也帶 `stale` / `staleness` 欄位。
+
+- 基準怎麼來：預設問 git 拿**未提交的 `.cs`**（root + 髒 submodule，整個 process 只算一次）。
+  指定 `--since-file <path>` / `--since <epoch|ISO>` 則跳過 git，直接比那一個時間。
+- 併讀 `_heartbeat_stalls.jsonl`（酒保心跳的停跳台帳）：STALE 時會多印一行
+  「改動後心跳停跳 N 次」/「改動後沒有任何停跳紀錄」—— **後者代表編譯很可能連開始都還沒有**。
+- 逃生門：`--no-freshness` 關掉檢查（＝退回 2026-08-05 之前的行為）。
+
+> 🩸 2026-08-05 血證（summit）：`.compile_status.json` 寫在 `08:57:00`，我最後一筆 `.cs` 編輯在
+> `08:57:06` —— 工具把那份**早於我改動 6 秒**的快照當結論報出來，報的是紅燈 CS0103，我相信了，
+> 然後花 40 分鐘查一隻不存在的 bug。**對時間戳才看得出來。**
+> 這隻跟下面 2026-05-22 那筆是同一枚硬幣：那筆的解法寫「改用 `check_compile.py` 二次確認」，
+> 而當時 `check_compile.py` 自己也沒有新鮮度概念 —— 今天補的就是另外那一半。
+
+> [!WARNING]
+> 停跳台帳證明「Editor 凍過」，**不證明「編譯過」** —— domain reload / 資產匯入 /
+> 主執行緒長工 / Editor 關閉期間都會停跳。而且停跳只有在**恢復的那一拍**才寫得出來：
+> 進行中的凍結沒有紀錄，Editor 死掉不再回來則永遠不寫。**沒有條目 ≠ 沒有停跳。**
 
 ## 順序
 

@@ -26,8 +26,10 @@ Exit codes：
 """
 
 import argparse
+import datetime
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -100,10 +102,30 @@ def filter_messages(data: dict, errors_only: bool, max_count: int) -> list[dict]
     return msgs
 
 
-def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: int) -> str:
+def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: int,
+                    stale: dict | None = None) -> str:
     lines = []
     lines.append("# 🔧 Unity Compile Status")
     lines.append("")
+    # 區塊：新鮮度警告排在最前面 —— 它決定下面每一個數字能不能採信
+    if stale:
+        lines.append(f"> 🚨 **STALE — 這份狀態早於你的改動 {stale['lag_seconds']:.1f} 秒，"
+                     f"不是你程式的編譯結果。**")
+        lines.append(f">")
+        lines.append(f"> 最近改動：`{stale['ref_path']}`")
+        lines.append(f"> 下面的 errors / warnings 屬於**改動之前**那一次編譯 —— 綠燈不代表你的改動沒事，"
+                     f"紅燈也可能是改動前就修掉的舊錯。")
+        lines.append(f">")
+        stalls = recent_stalls(since=stale["ref_mtime"])
+        if stalls:
+            lines.append(f"> 💓 改動後心跳曾停跳 {len(stalls)} 次"
+                         f"（最長 {max(s.get('gap_seconds', 0) for s in stalls):.1f}s）"
+                         f"—— Editor 凍過，可能正在編譯，稍後重跑。")
+        else:
+            lines.append(f"> 💓 改動後**沒有任何停跳紀錄** —— 編譯很可能連開始都還沒有"
+                         f"（停跳證明凍結，凍結最常見的原因是編譯 / domain reload；"
+                         f"但 Editor 關閉或失焦降頻也會停跳，反之進行中的凍結不會有紀錄）。")
+        lines.append("")
     in_prog = data.get("in_progress", False)
     if in_prog:
         lines.append("> ⏳ **Compile in progress** — 結果尚未定案，請稍後再查。")
@@ -124,7 +146,12 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
         lines.append(f"- (showing first {max_count} after dedupe)")
     lines.append("")
     if not msgs:
-        if data.get("total_errors", 0) == 0 and data.get("total_warnings", 0) == 0:
+        if stale:
+            # 過期時**絕不印「✅ Clean compile」** —— 那句話本身就是今天那隻 bug 的本體：
+            # 它把「上一次編譯是乾淨的」講成「你的改動是乾淨的」。
+            lines.append("⚠ **無法判定** — 這份狀態不涵蓋你的改動（見上方 STALE）。"
+                         "重跑編譯後再查：`run_cmd.py recompile` 或 `--watch`。")
+        elif data.get("total_errors", 0) == 0 and data.get("total_warnings", 0) == 0:
             lines.append("✅ **Clean compile.**")
         else:
             lines.append("(no messages match filter)")
@@ -147,7 +174,7 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
     return "\n".join(lines)
 
 
-def render_json(data: dict, msgs: list[dict]) -> str:
+def render_json(data: dict, msgs: list[dict], stale: dict | None = None) -> str:
     out = {
         "timestamp": data.get("timestamp"),
         "duration_seconds": data.get("duration_seconds"),
@@ -155,6 +182,10 @@ def render_json(data: dict, msgs: list[dict]) -> str:
         "total_errors": data.get("total_errors"),
         "total_warnings": data.get("total_warnings"),
         "total_messages": data.get("total_messages"),
+        # 新鮮度必須進 json —— 只在 md 印警告的話，--format json 的呼叫端照樣採信過期結論，
+        # 而它們（腳本）比人更不會去看旁邊那行字。
+        "stale": bool(stale),
+        "staleness": stale,
         "messages": msgs,
     }
     return json.dumps(out, indent=2, ensure_ascii=False)
@@ -276,6 +307,180 @@ def parse_editor_log_recent(log_path: Path, max_lines: int = 5000) -> dict:
 # ===========================================================
 
 HEARTBEAT_PATH = (GIT_ROOT / "AgentCommands" / "ChatTavern" / "bartender" / "_heartbeat.txt")
+STALL_PATH = (GIT_ROOT / "AgentCommands" / "ChatTavern" / "bartender" / "_heartbeat_stalls.jsonl")
+
+
+# ===========================================================
+# 新鮮度基準（staleness guard）
+# ===========================================================
+# 要防的病（2026-08-05 summit 實摔）：`.compile_status.json` 寫在 08:57:00，
+# 我最後一筆 .cs 編輯在 08:57:06 —— 工具照樣把那份**早於我改動 6 秒**的快照當結論報出來，
+# 而它報的是紅燈（CS0103），我相信了。工具原本完全沒有「這份狀態是否涵蓋你的改動」這個概念。
+#
+# 為什麼吃 git 而不是走檔案樹（Tim 2026-08-05 擋下原設計 + 給方向）：
+#   原設計 walk 全專案 .cs 取最新 mtime。單次 0.39s 看似便宜，但 `--watch` 每秒 poll
+#   → 每秒走 1841 個檔，觀測工具自己變成負擔。
+#   實測成本：root `git status -- '*.cs'` 0.149s／單一 submodule 0.078s／走樹 0.389s。
+#   而**真正的修法不是換掃法，是別重複掃** —— 基準只在啟動時算一次（見 _REF_CACHE），
+#   `--watch` 之後每輪只 stat 狀態檔。頻率問題因此消失，跟用哪種掃法無關。
+#
+# 為什麼不做 Editor 端 stamp 檔：
+#   曾實作過 AssetPostprocessor 蓋章版，後撤。理由是 `OnPostprocessAllAssets` 是**靠簽章綁定的
+#   magic method** —— 簽章打錯不會有編譯錯誤，只會永遠不被呼叫，而它的壞法跟「沒有改動」
+#   完全一樣（不會叫的壞掉）。吃 git 資料不需要 Editor 配合，少一個那種零件。
+#
+# ⚠ 已知盲區（照實寫，別讓名字比事實大）：
+#   1. **已 commit 但沒編譯**看不出來 —— 判準是「工作區有未提交的 .cs 改動」，
+#      commit 完工作區就乾淨了。實務上 commit 前會編譯，所以接受這個缺口。
+#   2. Unity 自動產生／外部工具寫入的 .cs 若被 .gitignore 排除，這裡看不到。
+#   3. 只看 mtime，不看內容 —— 碰一下檔案（touch）也算改動。誤判方向刻意偏保守
+#      （多喊一次 STALE），反向漏喊會讓人相信過期的綠燈。
+
+_REF_CACHE: dict = {}
+
+
+def _git_changed_cs(repo: Path) -> list[Path]:
+    """
+    區塊職責：問 git「這個 repo 的工作區有哪些 .cs 被改動／新增」
+    物理意義：`git status --porcelain` 認 index + 工作區，包含未追蹤新檔（?? 行）。
+             **root repo 看不進 submodule** —— submodule 只會顯示成一行目錄狀態，
+             所以呼叫端必須對每個髒的 submodule 各問一次（見 newest_source_change）。
+    回傳：絕對路徑 list；git 不可用或該 repo 不存在回空 list（不拋例外，觀測工具不該擋住本業）。
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain", "--", "*.cs"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+        )
+        if r.returncode != 0:
+            return []
+        out = []
+        for line in (r.stdout or "").splitlines():
+            if len(line) < 4:
+                continue
+            # porcelain 格式：XY <path>；rename 會是 "R  old -> new"，取箭頭後那個
+            path = line[3:].strip().strip('"')
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1].strip().strip('"')
+            if not path.lower().endswith(".cs"):
+                continue
+            out.append(repo / path)
+        return out
+    except Exception:
+        return []
+
+
+def _root_scan(root: Path) -> tuple[list[Path], list[Path]]:
+    """
+    區塊職責：root 只問一次 git，同時取出「root 自己改的 .cs」與「哪些 submodule 是髒的」
+    物理意義：root 的 `git status --porcelain` 一份輸出裡本來就同時含兩種行 ——
+             檔案行（含 .cs）與髒 submodule 的目錄行（例 ` M Assets/Plugins/UCL_Core`）。
+             原本分兩次問（一次全 status 找 submodule、一次 filtered 找 .cs）是多花一次
+             process spawn，同一份資料問兩遍。
+    數值影響（實測 2026-08-05）：root 全 status 0.352s、單一 submodule filtered 0.03-0.07s。
+             只問髒的 submodule 是省時間的關鍵 —— `git submodule foreach` 是每個 submodule
+             一個 process，而髒的通常只有一兩個。
+    回傳：(root 的 .cs 絕對路徑, 髒 submodule 路徑)
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+        )
+        if r.returncode != 0:
+            return [], []
+        cs_files, subs = [], []
+        for line in (r.stdout or "").splitlines():
+            if len(line) < 4:
+                continue
+            path = line[3:].strip().strip('"')
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1].strip().strip('"')
+            p = root / path
+            if path.lower().endswith(".cs"):
+                cs_files.append(p)
+            elif (p / ".git").exists():   # submodule 的 .git 是 gitdir redirect 檔
+                subs.append(p)
+        return cs_files, subs
+    except Exception:
+        return [], []
+
+
+def newest_source_change() -> tuple[float, Path | None]:
+    """
+    區塊職責：取「最近一次 .cs 改動」的 mtime 與檔案，作為新鮮度基準
+    物理意義：union(root 未提交 .cs, 每個髒 submodule 未提交 .cs) 取 mtime 最大者。
+    數值影響：**整個 process 只算一次**（_REF_CACHE）——`--watch` 每輪重算才是真正的成本來源。
+    回傳：(mtime, path)；查不到回 (0.0, None)，呼叫端據此顯示「無法判定」而不是「新鮮」。
+    """
+    if "ref" in _REF_CACHE:
+        return _REF_CACHE["ref"]
+    files, dirty_subs = _root_scan(GIT_ROOT)
+    for sub in dirty_subs:
+        files.extend(_git_changed_cs(sub))
+    newest_t, newest_p = 0.0, None
+    for f in files:
+        try:
+            t = f.stat().st_mtime
+        except OSError:
+            continue
+        if t > newest_t:
+            newest_t, newest_p = t, f
+    _REF_CACHE["ref"] = (newest_t, newest_p)
+    return _REF_CACHE["ref"]
+
+
+def staleness(ref_mtime: float, ref_path: Path | None) -> dict | None:
+    """
+    區塊職責：判斷 .compile_status.json 是否早於基準時間
+    回傳：None = 新鮮（或無法判定）；dict = 過期，含 lag 秒數與參考檔。
+    """
+    if ref_mtime <= 0 or not STATUS_PATH.exists():
+        return None
+    status_t = STATUS_PATH.stat().st_mtime
+    if status_t >= ref_mtime:
+        return None
+    return {
+        "lag_seconds": ref_mtime - status_t,
+        "ref_path": str(ref_path) if ref_path else "?",
+        "status_mtime": status_t,
+        "ref_mtime": ref_mtime,
+    }
+
+
+def recent_stalls(since: float | None = None) -> list[dict]:
+    """
+    區塊職責：讀心跳停跳台帳（`_heartbeat_stalls.jsonl`，C# 端 UCL_BartenderIO 寫）
+    物理意義：一行一筆停跳，含 stalled_since / resumed_at / gap_seconds。
+             **停跳證明 Editor 凍過，不證明編譯過** —— domain reload / 資產匯入 /
+             主執行緒長工 / Editor 關閉期間都會停跳。呼叫端顯示時必須照這個口徑寫。
+    參數 since：只回 resumed_at 晚於該 epoch 秒的筆數（用來回答「我改完之後凍過嗎」）。
+    """
+    if not STALL_PATH.exists():
+        return []
+    out = []
+    try:
+        for line in STALL_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            if since is not None:
+                try:
+                    ts = datetime.datetime.strptime(
+                        e["resumed_at"].replace("Z", ""), "%Y-%m-%dT%H:%M:%S.%f"
+                    ).replace(tzinfo=datetime.timezone.utc).timestamp()
+                except Exception:
+                    continue
+                if ts < since:
+                    continue
+            out.append(e)
+    except Exception:
+        return []
+    return out
 
 # 心跳正常節拍 0.5s（UCL_BartenderDaemon.HEARTBEAT_INTERVAL_SECONDS）。
 # 實測（2026-08-04 summit）：空閒 22 拍 min 0.50 / max 0.61 / avg 0.55s；
@@ -338,6 +543,18 @@ def main() -> int:
     p.add_argument("--editor-alive", action="store_true",
                    help="只看酒保心跳判斷 Editor 是否在 tick（0=在 tick / 1=沒在 tick / 3=無心跳檔）"
                         "；不讀 compile status、不送 Cmd")
+    p.add_argument("--since-file", metavar="PATH",
+                   help="新鮮度基準改用這個檔的 mtime（1 次 stat，完全跳過 git）。"
+                        "你知道自己剛改了哪個檔時用它 —— 比問 git 更精準也更便宜")
+    p.add_argument("--since", metavar="EPOCH_OR_ISO",
+                   help="新鮮度基準改用指定時間（epoch 秒或 ISO8601）")
+    p.add_argument("--no-freshness", action="store_true",
+                   help="關掉新鮮度檢查（不問 git、不比 mtime）。"
+                        "⚠ 關掉之後這支工具就會像 2026-08-05 之前那樣，"
+                        "把早於你改動的舊快照當結論報出來")
+    p.add_argument("--strict-fresh", action="store_true",
+                   help="狀態過期時 exit 4（給 CI / 腳本用）。預設只印 STALE 警告不改 exit code，"
+                        "以免既有呼叫端行為被改變")
     args = p.parse_args()
 
     # --editor-alive 是獨立查詢：純 stat 一個檔，不碰 compile status、不送 Cmd。
@@ -375,12 +592,42 @@ def main() -> int:
                   file=sys.stderr)
             return 3
 
+    # 區塊：新鮮度基準決定 —— 三條路徑成本差很多，優先用最便宜且最精準的
+    #   --since-file / --since ：呼叫端自己知道改了什麼 → 1 次 stat / 0 次 IO
+    #   預設                  ：問 git 拿未提交的 .cs（**整個 process 只算一次**）
+    #   --no-freshness        ：完全不查（保留舊行為的逃生門）
+    stale = None
+    if not args.no_freshness:
+        ref_t, ref_p = 0.0, None
+        if args.since_file:
+            try:
+                ref_p = Path(args.since_file)
+                ref_t = ref_p.stat().st_mtime
+            except OSError as e:
+                print(f"[check_compile] --since-file 讀不到，新鮮度檢查跳過：{e}", file=sys.stderr)
+        elif args.since:
+            try:
+                ref_t = float(args.since)
+            except ValueError:
+                try:
+                    ref_t = datetime.datetime.fromisoformat(
+                        args.since.replace("Z", "+00:00")).timestamp()
+                except Exception as e:
+                    print(f"[check_compile] --since 解析失敗，新鮮度檢查跳過：{e}", file=sys.stderr)
+        else:
+            ref_t, ref_p = newest_source_change()
+        # Editor.log fallback 沒有 status 檔可比 mtime —— 不硬套，寧可不判也別亂判
+        if data.get("tracker") != "EditorLogFallback":
+            stale = staleness(ref_t, ref_p)
+
     msgs = filter_messages(data, args.errors_only, args.max)
     if args.format == "json":
-        print(render_json(data, msgs))
+        print(render_json(data, msgs, stale))
     else:
-        print(render_markdown(data, msgs, args.errors_only, args.max))
+        print(render_markdown(data, msgs, args.errors_only, args.max, stale))
 
+    if stale and args.strict_fresh:
+        return 4
     return 0 if data.get("total_errors", 0) == 0 else 2
 
 

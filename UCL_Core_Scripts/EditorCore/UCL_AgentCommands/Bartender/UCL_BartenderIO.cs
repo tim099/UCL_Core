@@ -35,6 +35,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //            內容那行時間是給人眼看的，也讓跨機器讀取不必依賴本機時鐘。
         public const string HeartbeatFile = "_heartbeat.txt";
 
+        // 區塊職責：心跳「停跳」台帳（2026-08-05 Tim 提案）
+        // 物理意義：心跳停止的那段空隙**本身就是 Editor 凍結過的物證** —— 編譯 / domain reload
+        //          會凍住 update 迴圈。`_heartbeat.txt` 只答「現在活不活」，答不出「剛剛凍過沒」；
+        //          本檔補的就是後者，讓「08:57 改完檔之後到底有沒有編譯過」變成可 stat 的事實，
+        //          而不必人去翻 Editor.log。
+        // 數值影響：只在 gap ≥ STALL_THRESHOLD_SECONDS 時寫一行；正常節拍 0.5s 完全不寫。
+        //
+        // 為什麼是 jsonl 而不是 json：讀取端只要「最後 N 行」，用行切就夠，連 parse 都不必失敗；
+        //          單檔 ring 保最近 STALL_KEEP 筆（Tim 原提 3 筆，實作取 10 —— 一個小檔的成本一樣，
+        //          而 3 筆會被無關停跳擠掉你真正要查的那一筆）。
+        //
+        // ⚠ 這個檔證明「凍過」，**不證明「編譯過」**（判準：名字只能叫停跳，不能叫編譯時段）：
+        //   domain reload / 資產匯入 / 主執行緒長工 / modal dialog / Editor 失焦降頻 /
+        //   **Editor 關閉期間**都會產生停跳。Editor 關了整夜再開，會落一筆數小時的 gap，
+        //   而那段時間顯然沒編譯 —— 讀取端要照這個前提解讀，不可反推「有 gap 就有編譯」。
+        // ⚠ 停跳只有在**恢復的那一拍**才寫得出來：正在凍結中沒有紀錄，Editor 死掉不再回來則永遠不寫。
+        //   **沒有條目 ≠ 沒有停跳**（不會叫的壞掉那一族）。
+        public const string StallFile = "_heartbeat_stalls.jsonl";
+
+        // 門檻取 3s：正常節拍 0.5s、alive 判定門檻 1.5s，3s 之上才算異常。
+        // 代價說清楚：4 秒級的編譯抓得到，1 秒級的增量編譯抓不到 —— 這是噪音與覆蓋率的交換，不是 bug。
+        const double STALL_THRESHOLD_SECONDS = 3.0;
+        const int STALL_KEEP = 10;
+
         // ===========================================================
         // 路徑 helper
         // ===========================================================
@@ -47,6 +71,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static string GetStatePath() => Path.Combine(GetBartenderDir(), StateFile);
         public static string GetAssignmentsPath() => Path.Combine(GetBartenderDir(), AssignmentsFile);
         public static string GetHeartbeatPath() => Path.Combine(GetBartenderDir(), HeartbeatFile);
+        public static string GetStallPath() => Path.Combine(GetBartenderDir(), StallFile);
 
         // ===========================================================
         // 區塊職責：寫一拍心跳 —— **單檔、單行、每次複寫**（Tim 2026-08-04 定調）
@@ -56,13 +81,77 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         public static void WriteHeartbeat()
         {
+            DateTime prev = default;
+            bool hasPrev = false;
             try
             {
                 EnsureBartenderDir();
+                // 先讀舊那一拍再覆寫 —— 順序不可換，覆寫後就沒有前一拍可比了。
+                hasPrev = TryReadHeartbeatUtc(out prev);
                 string iso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z";
                 File.WriteAllText(GetHeartbeatPath(), iso, new UTF8Encoding(false));
             }
             catch { /* 觀測訊號寫不進去就算了，不能影響 daemon 本業 */ }
+
+            // 停跳判定獨立一段 try —— 心跳本業已經寫完了，台帳失敗絕不可回頭影響它。
+            if (!hasPrev) return;
+            try
+            {
+                double gap = (DateTime.UtcNow - prev).TotalSeconds;
+                if (gap >= STALL_THRESHOLD_SECONDS) AppendStall(prev, gap);
+            }
+            catch { /* 同上 */ }
+        }
+
+        // 區塊職責：讀上一拍心跳時間（UTC）
+        // 物理意義：**必須從檔案讀，不可用 static 欄位快取。** domain reload 會清掉所有 static，
+        //          而 domain reload 正是我們要量的那件事 —— 用 static 就剛好在最該量到的時候失憶，
+        //          而且它會「安靜地量不到」（不會叫的壞掉）。
+        // 邊界：心跳檔刻意不做 atomic 寫入（見 HeartbeatFile 註解），所以有極小機率讀到半寫的內容。
+        //      parse 失敗就當沒有前一拍 —— 下半秒又有新的一拍，漏一次無害；
+        //      這裡**不可以**為了「補齊」而猜一個時間，猜出來的 gap 會變成假的物證。
+        static bool TryReadHeartbeatUtc(out DateTime utc)
+        {
+            utc = default;
+            string path = GetHeartbeatPath();
+            if (!File.Exists(path)) return false;
+            string raw = File.ReadAllText(path).Trim();
+            if (string.IsNullOrEmpty(raw)) return false;
+            return DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal
+                | System.Globalization.DateTimeStyles.AssumeUniversal, out utc);
+        }
+
+        // 區塊職責：把一筆停跳 append 進台帳，並裁到最近 STALL_KEEP 筆
+        // 物理意義：stalled_since = 最後一拍（凍結開始），resumed_at = 恢復那一拍（凍結結束），
+        //          gap_seconds = 兩者之差。三個欄位齊全才能回答「某個時間點之後有沒有凍過」。
+        // 數值影響：讀整檔（≤ STALL_KEEP 行）→ 加一行 → 裁切 → atomic 覆寫。
+        //          頻率極低（正常節拍完全不觸發），所以這裡值得用 tmp + replace，跟心跳的取捨不同。
+        static void AppendStall(DateTime stalledSince, double gapSeconds)
+        {
+            string path = GetStallPath();
+            var lines = new System.Collections.Generic.List<string>();
+            if (File.Exists(path))
+            {
+                foreach (var l in File.ReadAllLines(path))
+                {
+                    if (!string.IsNullOrWhiteSpace(l)) lines.Add(l);
+                }
+            }
+            string Iso(DateTime d) => d.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z";
+            lines.Add("{\"stalled_since\":\"" + Iso(stalledSince)
+                      + "\",\"resumed_at\":\"" + Iso(DateTime.UtcNow)
+                      + "\",\"gap_seconds\":"
+                      + gapSeconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
+                      + ",\"threshold_seconds\":"
+                      + STALL_THRESHOLD_SECONDS.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                      + "}");
+            if (lines.Count > STALL_KEEP) lines.RemoveRange(0, lines.Count - STALL_KEEP);
+
+            string tmp = path + ".tmp";
+            File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
         }
 
         public static void EnsureBartenderDir()

@@ -178,6 +178,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void TickInternal()
         {
+            //TODO 目前這個階段在Editor啟動時會卡好幾分鐘(懷疑是處理酒館訊息同步的初始化卡住) 需要分析卡住位置並優化
+
             // 區塊職責：tick 三件事 — (1) keyword triggers (2) time rules (3) overnight deposit fee
             // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動),
             //          最後檢查跨日存款保管費 (anti-inflation 機制)

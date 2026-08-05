@@ -513,8 +513,37 @@ def check_editor_alive() -> int:
     print("# 💓 Editor 心跳\n")
     print(f"- 最後一拍: `{beat}`")
     print(f"- 距今: **{age:.2f}s**（門檻 {HEARTBEAT_STALE_SECONDS}s，正常節拍 0.5s）")
+
+    # 區塊職責：併印最近停跳（Tim 2026-08-05 GO）
+    # 物理意義：心跳只答「此刻活不活」，那是**瞬時值**。單看它會得到「一切正常」，
+    #          而 2026-08-05 上午騙我 40 分鐘的就是這一句 —— 編譯被 Unity 遞延的 9 分鐘裡，
+    #          Editor 確實一直在 tick，「沒有卡在編譯」字面為真，卻被讀成「編譯沒問題」。
+    #          停跳台帳補的是時間軸：**最近一次凍結是什麼時候**。
+    stalls = recent_stalls()
+    if stalls:
+        last = stalls[-1]
+        try:
+            resumed = datetime.datetime.strptime(
+                last["resumed_at"].replace("Z", ""), "%Y-%m-%dT%H:%M:%S.%f"
+            ).replace(tzinfo=datetime.timezone.utc)
+            ago = time.time() - resumed.timestamp()
+            ago_txt = f"{ago:.0f}s 前" if ago < 3600 else f"{ago / 3600:.1f}h 前"
+        except Exception:
+            ago_txt = "?"
+        print(f"- 最近一次停跳: `{last.get('resumed_at', '?')}` 恢復"
+              f"（停了 **{last.get('gap_seconds', 0):.1f}s**，{ago_txt}）"
+              f"；台帳共 {len(stalls)} 筆")
+    else:
+        print("- 最近一次停跳: **無紀錄** —— 可能真的沒凍過，"
+              "也可能台帳剛被清或這版還沒有台帳功能（沒有條目 ≠ 沒有停跳）")
+
     if fresh:
-        print("\n✅ **Editor 正在 tick** — 沒有卡在編譯 / domain reload。")
+        print("\n✅ **Editor 正在 tick** — 此刻沒有凍結。")
+        # 這兩行是本次修正的重點：把「瞬時活著」跟「你的改動已經編過」明確切開。
+        print("\n⚠ **這不代表你的改動已經編譯過。** 心跳是瞬時值；Unity 常把外部改檔的重編"
+              "遞延到視窗重獲焦點，那段期間 Editor 一直在 tick。")
+        print("要問「我的改動編了沒」跑 `check_compile.py --errors-only`（新鮮度守衛會答），"
+              "不是看這裡。")
     else:
         print("\n⏳ **Editor 沒在 tick** — 編譯中 / domain reload / 卡住 / 已關閉。\n")
         print("這不代表「正在編譯」，只代表「現在叫它做事會等」。要區分原因看 .compile_status.json。")

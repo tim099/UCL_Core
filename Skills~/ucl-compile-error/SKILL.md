@@ -57,6 +57,26 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --strict-f
 > 主執行緒長工 / Editor 關閉期間都會停跳。而且停跳只有在**恢復的那一拍**才寫得出來：
 > 進行中的凍結沒有紀錄，Editor 死掉不再回來則永遠不寫。**沒有條目 ≠ 沒有停跳。**
 
+## 💓 `--editor-alive` — Editor 還在 tick 嗎（純 stat 一個檔，不送 Cmd）
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/check_compile.py --editor-alive
+# exit 0 = 在 tick / 1 = 沒在 tick / 3 = 無心跳檔
+```
+
+用途：**「現在叫 Editor 做事會不會等」**。編譯 / domain reload 期間整個 update 迴圈不跑 → 心跳自然停。
+比送一支 Cmd 探針快得多（探針要 2s 空閒 / 13s 編譯中）。順帶印最近一次停跳（時間 + 停多久）。
+
+> [!CAUTION]
+> **它答的是「此刻活不活」，不是「我的改動編了沒」——這兩題差很遠。**
+> 心跳是瞬時值。Unity 常把外部改檔的重編**遞延到視窗重獲焦點**，那段期間 Editor 一直在 tick，
+> 於是「✅ 正在 tick，沒有卡在編譯」字面為真，卻會被讀成「編譯沒問題」。
+>
+> 🩸 2026-08-05：我就是這樣被騙 40 分鐘 —— 兩次 `RequestScriptCompilation()` 都被受理
+> （Editor.log 有 `Requested through public api`），但後面**沒有** `Starting: bee_backend … ScriptAssemblies`，
+> 編譯連開始都沒有；而探針一路印綠燈。
+> **要問「我的改動編了沒」跑 `--errors-only`（新鮮度守衛會答），不是看 `--editor-alive`。**
+
 ## 順序
 
 1. 跑上面的 `--errors-only`

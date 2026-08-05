@@ -208,7 +208,10 @@ def main() -> int:
                     help="信箱未設定仍提交（預設拒絕 —— 假位址進了 history 就改不掉）")
     ap.add_argument("--dry-run", action="store_true", help="只印組出來的訊息，不提交")
     ap.add_argument("--no-announce", action="store_true",
-                    help="不自動發酒館公告（預設會發 —— 領薪不該靠人記得）")
+                    help="不自動發酒館公告（預設會發 —— 領薪不該靠人記得）。"
+                         "**必須同時給 --no-announce-reason**")
+    ap.add_argument("--no-announce-reason", default="",
+                    help="為什麼這筆不公告。沒有理由就不該關 —— 見 --no-announce 的說明")
     ap.add_argument("--announce-body", default="",
                     help="公告的開場白（插在標題與 commit 內文之間，寫給現在在酒館的同事看）")
     ap.add_argument("--announce-body-file", default="",
@@ -218,6 +221,23 @@ def main() -> int:
     ap.add_argument("--verbose", action="store_true",
                     help="成功時印完整細節（預設只印一行 —— 成功路徑瘦到看不見，異常才佔版面）")
     args = ap.parse_args()
+
+    # 區塊職責：--no-announce 必須帶理由（Tim 2026-08-05 拍板）
+    # 物理意義：**在 commit 發生之前擋下**，不是事後提醒 —— 提醒會被忽略，缺參數不會。
+    #          擋在 parse 之後、git commit 之前：這樣不會留下一筆「已提交但沒領薪」的殘局。
+    # 血證（summit 2026-08-05，同一天四次）：我三次順手打了 --no-announce 造成薪水沒領，
+    #          每次都自首、還把「別自己發明例外」寫進公告，然後第四次照樣打上去。
+    #          **三次同一個動作就不是失誤，是預設行為。**
+    #          而「寫下來只讓下一個人知道，不讓自己記得」—— 有效的修法是讓錯的做法在物理上不可行：
+    #          你得先想出一個理由，而想不出來的時候你就會發現自己沒有理由。
+    #          （同形狀的前例：反引號咬人三次後，有效修法不是記得別用 -m，是改用 --message-file。）
+    if args.no_announce and not args.no_announce_reason.strip():
+        print("✗ --no-announce 必須同時給 --no-announce-reason「為什麼這筆不公告」。\n"
+              "  預設會公告是刻意的：commit 就領薪，別自己發明例外\n"
+              "  （source_kind=commit 曾 82 天零領取，成因是「做完了倒在門外」）。\n"
+              "  想不出理由 = 你沒有理由 → 把 --no-announce 拿掉即可。",
+              file=sys.stderr)
+        return EXIT_BAD_ARGS
 
     if not args.persona:
         print("ERROR: 至少要一個 --persona", file=sys.stderr)
@@ -273,7 +293,9 @@ def main() -> int:
         print(f"⚠ {n}", file=sys.stderr)
 
     if args.no_announce:
-        print(f"💰 未自動公告（--no-announce）。這筆 SHA `{sha}` 要發一則酒館公告才領得到（一則訊息一個 SHA）：")
+        # 理由印出來 —— 給了理由卻沒人看得見，那個參數就只是形式（名字比事實大的一種）
+        print(f"💰 未自動公告（--no-announce，理由：{args.no_announce_reason.strip()}）。"
+              f"這筆 SHA `{sha}` 要發一則酒館公告才領得到（一則訊息一個 SHA）：")
         print(f"   meta: {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}   --wait-reply 0")
         return EXIT_OK
 

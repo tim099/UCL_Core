@@ -55,9 +55,22 @@ git -C <repo> add <files>          # stage 自己來
 python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
     --persona <你> [--persona <協作者> ...] \
     --repo <該層 repo 路徑> \
-    [--announce-body "給同事看的開場白"] \
-    -m "commit 訊息"
+    --message-file <訊息檔> \
+    [--announce-body-file <開場白檔>]
 ```
+
+> [!CAUTION]
+> **body 一律走檔案，inline 只準用在「無標點的短句」。**
+> `--message-file` / `--announce-body-file`，不要用 `-m "…"` / `--announce-body "…"` 塞長文。
+>
+> 🩸 2026-08-05 summit 一天被反引號咬**四次**（`commit -m` 兩次、`work_memory --body` 一次、
+> `--announce-body` 一次）。最後那次最難看：**同一道指令裡 commit 訊息走了 `--message-file`
+> （正確修法），公告內文卻用 inline** —— 修法只套用在我記得的那半邊。
+> 那次 `` `bookmark --reader` `` 被 shell 當命令替換**執行掉了**（log 留下 `command not found`），
+> 公告內文缺一整段，而**已公告領薪的訊息無法 amend**。
+>
+> 判準不是「含不含特殊字元」（那要人判斷，而人會錯）——**是「長文一律走檔案」**。
+> `--message-file` 有效不是因為你記得反引號會咬人，是因為它**根本不經過 shell 解析那一層**。
 
 它會做而你不必記的事：
 - 每位 `--persona` 各一行 trailer（身分／型號／信箱全部推導自檔案，重複自動去重）
@@ -70,11 +83,28 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
 - persona 檔不存在 / `agent` 欄空白 —— 打錯名字會靜默生出 `?@nobody(?)`，比失敗難查
 - 沒有 staged 變更 —— 本工具只提交，不 stage
 - 查不到 sender 的 bank —— sender 決定錢進誰的帳，猜錯是把薪水發給別人
+- **`--no-announce` 沒帶 `--no-announce-reason`**（exit 2，**擋在 commit 之前**，不留
+  「已提交但沒領薪」的殘局）
+
+### `--no-announce` 必須帶理由（2026-08-05 Tim 拍板）
+
+```bash
+--no-announce --no-announce-reason "為什麼這筆不公告"
+```
+
+> 🩸 血證：summit 2026-08-05 一天三次順手打了 `--no-announce`，造成薪水沒領；
+> **每次都自首、還把「規矩對我自己也一樣，別自己發明例外」寫進公告，然後下一次照樣打上去。**
+> 三次同一個動作就不是失誤，是預設行為。
+>
+> 修法刻意不是「再提醒一次」——**寫下來只讓下一個人知道，不讓自己記得。**
+> 現在你得先想出一個理由，而**想不出來的時候你就會發現自己沒有理由**。
+> 理由也會被印在「未公告」提示裡 —— 給了理由卻沒人看得見，那個參數就只是形式。
 
 **exit 6 = commit 成功但公告失敗**（錢沒領到，需手動補）。這兩件事刻意分開回報。
 
-⚠ 訊息內文若含 `EOF` 字樣，**別走 stdin heredoc** —— 內文裡的結束標記會把外層提前關掉
-（2026-08-03 實測自摔，公告被截斷）。改用 `-m` 或 `--message-file`。
+⚠ 也別走 stdin heredoc：內文若含 `EOF` 字樣，結束標記會把外層提前關掉
+（2026-08-03 實測自摔，公告被截斷）。**一律 `--message-file`** ——
+heredoc 與 `-m` 兩條路都會經過 shell，而上面那條 CAUTION 講的就是這一層。
 
 ## Submodule 逐層 bump（由內往外）
 

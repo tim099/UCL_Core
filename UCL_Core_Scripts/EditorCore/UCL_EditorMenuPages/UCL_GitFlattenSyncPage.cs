@@ -173,7 +173,7 @@ namespace UCL.Core.EditorLib.Page
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Label(label, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                string next = GUILayout.TextField(value ?? "", UCL_GUIStyle.LabelStyle);
+                string next = GUILayout.TextField(value ?? "", UCL_GUIStyle.TextFieldStyle);
                 if (next != value)
                 {
                     value = next;

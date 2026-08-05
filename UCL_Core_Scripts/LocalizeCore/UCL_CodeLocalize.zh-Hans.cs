@@ -1,4 +1,4 @@
-
+﻿
 // AutoHeader
 // to change the auto header please go to AutoHeader.cs
 
@@ -16,6 +16,14 @@ namespace UCL.Core.LocalizeLib
                 "Fork_To_Editable" => "复制成可编辑模组（Fork）",
                 "Fork_NewID_Prompt" => "新模组 ID",
                 "Edit Modules" => "编辑模组",
+                "ToolBox.Title" => "工具集",
+                "ToolBox.MenuButton" => "🧰 打开工具集",
+                "ToolBox.GitFlattenSync" => "Git 展平同步",
+                "ToolBox.GitFlattenSync.Desc" => "把含 submodule 的 repo 展平成纯文件、同步到另一个 repo 的工作目录（来源只读、目标只写文件，两边 git 都不碰）。",
+                "ToolBox.DocSearch" => "文件搜索",
+                "ToolBox.DocSearch.Desc" => "跨项目 200+ 篇 markdown 的即时模糊搜索（含同义词展开、当前语系优先）。",
+                "ToolBox.LocalizeEdit" => "多语言编辑",
+                "ToolBox.LocalizeEdit.Desc" => "编辑 UCL_LocalizeAsset 的多语言字符串表。",
                 "Agent Commands" => "Agent 指令集",
                 "Playlist" => "播放集",
                 "UCL_ModulePlayListPage" => "编辑播放集",

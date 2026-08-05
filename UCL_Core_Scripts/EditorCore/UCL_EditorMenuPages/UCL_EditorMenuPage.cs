@@ -104,13 +104,14 @@ namespace UCL.Core.EditorLib.Page
                     UCL_WelcomePage.Create();
                 }
 
-                // 區塊職責：文件搜尋頁入口
-                // 物理意義：跨專案 200+ 篇 markdown 的即時模糊搜尋（含同義詞展開 / 當前語系優先），
-                //          直接點按鈕就能搜，不必先進 Welcome 頁。
-                // 數值影響：push 一個 UCL_DocSearchPage 到當前 controller。
-                if (GUILayout.Button(UCL_CodeLocalize.Get("Welcome.Search.OpenPageButton"), UCL_GUIStyle.GetButtonStyle(Color.cyan)))
+                // 區塊職責：工具集入口（Tim 2026-08-05 指派 — 取代原本直通文件搜尋頁的那顆按鈕）
+                // 物理意義：工具型頁面（Git 攤平同步 / 文件搜尋 / 多語系編輯）收攏進 UCL_ToolBoxPage 一層。
+                //          外層按鈕會隨功能無上限成長，收一層之後**新增工具只改 UCL_ToolBoxPage**，
+                //          不必再動本檔。文件搜尋仍可從 Welcome 頁與工具集兩處進入，入口沒有變少。
+                // 數值影響：push 一個 UCL_ToolBoxPage 到當前 controller。
+                if (GUILayout.Button(UCL_CodeLocalize.Get("ToolBox.MenuButton"), UCL_GUIStyle.GetButtonStyle(Color.cyan)))
                 {
-                    UCL_DocSearchPage.Create();
+                    UCL_ToolBoxPage.Create();
                 }
 #endif
 

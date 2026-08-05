@@ -1,4 +1,4 @@
-
+﻿
 // AutoHeader
 // to change the auto header please go to AutoHeader.cs
 
@@ -16,6 +16,14 @@ namespace UCL.Core.LocalizeLib
                 "Fork_To_Editable" => "Fork to Editable Module",
                 "Fork_NewID_Prompt" => "New Module ID",
                 "Edit Modules" => "Edit Modules",
+                "ToolBox.Title" => "Tool Box",
+                "ToolBox.MenuButton" => "🧰 Open Tool Box",
+                "ToolBox.GitFlattenSync" => "Git Flatten Sync",
+                "ToolBox.GitFlattenSync.Desc" => "Flatten a repo's submodules into plain files and sync them into another repo's working directory (source is read-only; destination gets files only — neither git is touched).",
+                "ToolBox.DocSearch" => "Doc Search",
+                "ToolBox.DocSearch.Desc" => "Instant fuzzy search across 200+ markdown docs (synonym expansion, current locale first).",
+                "ToolBox.LocalizeEdit" => "Localize Edit",
+                "ToolBox.LocalizeEdit.Desc" => "Edit the multi-language string tables in UCL_LocalizeAsset.",
                 "Agent Commands" => "Agent Commands",
                 "Playlist" => "Playlist",
                 "UCL_ModulePlayListPage" => "Edit playlist",

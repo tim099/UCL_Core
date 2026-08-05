@@ -1,4 +1,4 @@
-
+﻿
 // AutoHeader
 // to change the auto header please go to AutoHeader.cs
 
@@ -16,6 +16,14 @@ namespace UCL.Core.LocalizeLib
                 "Fork_To_Editable" => "編集可能なモジュールへ複製（Fork）",
                 "Fork_NewID_Prompt" => "新しいモジュール ID",
                 "Edit Modules" => "Edit Modules",
+                "ToolBox.Title" => "ツールボックス",
+                "ToolBox.MenuButton" => "🧰 ツールボックスを開く",
+                "ToolBox.GitFlattenSync" => "Git フラット同期",
+                "ToolBox.GitFlattenSync.Desc" => "submodule を含む repo をプレーンなファイルへ展開し、別 repo の作業ディレクトリへ同期します（ソースは読み取りのみ、宛先はファイル書き込みのみ — どちらの git も触りません）。",
+                "ToolBox.DocSearch" => "ドキュメント検索",
+                "ToolBox.DocSearch.Desc" => "200 以上の markdown を横断する即時あいまい検索（同義語展開・現在のロケール優先）。",
+                "ToolBox.LocalizeEdit" => "多言語編集",
+                "ToolBox.LocalizeEdit.Desc" => "UCL_LocalizeAsset の多言語文字列テーブルを編集します。",
                 "Agent Commands" => "Agent 指令集",
                 "Playlist" => "プレイリスト",
                 "UCL_ModulePlayListPage" => "プレイリストを編集する",

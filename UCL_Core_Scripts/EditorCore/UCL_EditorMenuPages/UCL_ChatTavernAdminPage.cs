@@ -1830,6 +1830,40 @@ namespace UCL.Core.EditorLib.Page
                         }
                     }
                 }
+                GUILayout.Space(6);
+                GUILayout.Label("<b>訊息檔清單索引（冷啟動加速）</b>", WrapLabelStyle);
+                GUILayout.Label(
+                    "migration 之後 <b>seq == 檔名</b>，每個日期目錄裝一段連續 seq —— "
+                    + "於是「排序後的完整清單」可由一張<b>每日範圍表</b>算出來，不必列舉。"
+                    + "索引一天一行：大小跟<b>天數</b>成正比，不是跟訊息數成正比。"
+                    + "它治的是<b>冷啟動</b>（記憶體快取 domain reload 就沒了，而每次編譯都會 reload）。"
+                    + "索引由「全量列舉」那條路順手產生，任何一致性檢查不過就退回全量 —— 只會變慢，不會算錯。",
+                    WrapLabelStyle);
+                using (new EditorGUI.DisabledScope(m_MigrateRunning))
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("驗證索引（逐筆比對，慢）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.55f, 0.8f, 1f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        // 加速層唯一該被問的問題是「它有沒有改變答案」——
+                        // 所以驗法是兩條路各跑一次直接對撞，不是看數量、不是抽樣。
+                        try { m_MigrateReport = UCL_ChatTavernMessageIndex.Verify(); }
+                        catch (Exception e) { m_MigrateReport = $"🚨 驗證例外：{e}"; }
+                    }
+                    if (GUILayout.Button("刪除索引（下次自動重建）",
+                            UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        try
+                        {
+                            int n = UCL_ChatTavernMessageIndex.DeleteAll();
+                            UCL_ChatTavernIO_PerMsgFile.InvalidateMessageCache();
+                            m_MigrateReport = $"已刪除 {n} 份索引，並清空記憶體快取。下次讀取會以全量列舉重建。";
+                        }
+                        catch (Exception e) { m_MigrateReport = $"🚨 刪除例外：{e}"; }
+                    }
+                }
+
                 if (m_MigrateRunning)
                 {
                     GUILayout.Label($"⏳ 執行中（{m_MigrateRunningLabel}）— 進度條可取消", WrapLabelStyle);
@@ -1840,7 +1874,7 @@ namespace UCL.Core.EditorLib.Page
                                GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(200))))
                     {
                         m_MigrateScroll = sv.scrollPosition;
-                        EditorGUILayout.TextArea(m_MigrateReport, UCL_GUIStyle.LabelStyle);
+                        GUILayout.TextArea(m_MigrateReport, UCL_GUIStyle.TextAreaStyle);
                     }
                 }
             }
@@ -1951,7 +1985,7 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 區塊職責：單一筆數參數列 — 顯示現值 / 輸入 draft / 套用 / 單項回預設。
-        // 設計取捨：照本頁既有慣例用 TextField + draft（非 EditorGUILayout.IntField）— 邊打字邊寫 prefs
+        // 設計取捨：照本頁既有慣例用 TextField + draft（非 GUILayout.IntField）— 邊打字邊寫 prefs
         //          會讓「打到一半的 1」先被當成 1 存進去，套用鍵是刻意的一道閘。
         void DrawParamRow(string label, string draftKey, int current, int defaultValue,
                           Action<int> apply, string hint)

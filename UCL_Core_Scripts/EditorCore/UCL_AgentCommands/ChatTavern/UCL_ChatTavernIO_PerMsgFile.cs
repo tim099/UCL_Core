@@ -308,6 +308,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
             }
 
+            // ── 落盤索引（2026-08-06）：先問索引，問不到才全量列舉 ──
+            // 物理意義：上面那份 static 快取 domain reload 就沒了，而 domain reload 每次編譯都發生。
+            //          索引活在磁碟上，所以它治的是**冷啟動**；上面那份治的是穩態。兩者不重疊。
+            // 邊界：索引回 null = 它自己判定不可信（版本不合 / 壞檔 / seq 不連續 / 還有舊格式檔），
+            //      一律往下走全量列舉 —— **本區塊絕不因為索引而少給或給錯路徑**。
+            string[] indexed = UCL_ChatTavernMessageIndex.TryGetOrderedPaths(roomId, root, out _);
+            if (indexed != null)
+            {
+                if (sig != null)
+                {
+                    lock (s_CacheLock)
+                    {
+                        s_RoomFiles[roomId] = new RoomFileListCache { files = indexed, signature = sig };
+                    }
+                }
+                return indexed;
+            }
+
             string[] files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories);
             // ordinal sort = ts sort；先比 root-relative path（含 date dir 前綴）才能跨日正確。
             // 預算 sort key 一次（避免 comparison delegate 每次比較 new 2 個 substring 的 O(N log N) alloc）。
@@ -323,6 +341,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     s_RoomFiles[roomId] = new RoomFileListCache { files = files, signature = sig };
                 }
             }
+            // 全量算完了，順手把索引寫回去 —— 下次冷啟動就不必再算一次。
+            // 這是索引唯一的產生點：**只有走過完整、正確的那條路才有資格寫索引**
+            // （由推測產生的索引就是把猜測固化成事實）。
+            UCL_ChatTavernMessageIndex.Rebuild(roomId, root, files);
             return files;
         }
 

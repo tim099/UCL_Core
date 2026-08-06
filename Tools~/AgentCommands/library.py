@@ -163,6 +163,174 @@ def _write_json(path: Path, data) -> None:
     _atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 
 
+# New reader-root recall brief -------------------------------------------------
+# 區塊職責：將一位 persona 在一個新 Library media 的累積閱讀資料組成單一追回檔。
+# 物理意義：續讀前不必逐一開 reader.json、每個 chapter round 與角色 view；產物放回 persona
+#          自己的 letters/，與 _wake_brief.md 同樣是可重建的機械視圖，不是第二份筆記來源。
+# 數值影響：每次呼叫完整覆寫同一份 _reading_recall_<media-id>.md；原始章節與角色歷史不會被修改。
+_READER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def _require_reader_id(value: str, label: str) -> str:
+    """Reject path-like ids before deriving a reader root or a letters output path."""
+    if not value or not _READER_ID_RE.fullmatch(value):
+        raise ValueError(f"{label} 必須是英數、底線或連字號，且不可包含路徑分隔符：{value!r}")
+    return value
+
+
+def _require_reader_file_name(value: str, label: str) -> str:
+    """A manifest may select only a direct child file; it must never escape its chapter directory."""
+    candidate = Path(value or "")
+    if not value or candidate.name != value or value in {".", ".."}:
+        raise ValueError(f"{label} 必須是單一檔名，不可包含路徑：{value!r}")
+    return value
+
+
+def _read_text_or_note(path: Path, label: str) -> str:
+    """Keep a malformed or missing referenced file visible in the recall instead of silently omitting history."""
+    if not path.is_file():
+        return f"> [!WARNING]\n> 缺少 {label}: `{path.name}`\n"
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _new_library_root(media_id: str) -> Path:
+    return LIB_ROOT / "Library" / "media" / media_id
+
+
+def _render_reading_recall(persona: str, media_id: str) -> str:
+    """Render all existing reading history for exactly one ``media × persona`` reader root."""
+    persona = _require_reader_id(persona, "persona")
+    media_id = _require_reader_id(media_id, "media_id")
+    media_root = _new_library_root(media_id)
+    reader_root = media_root / "readers" / persona
+    reader_path = reader_root / "reader.json"
+    if not reader_path.is_file():
+        raise FileNotFoundError(f"找不到新閱讀紀錄：{reader_path}")
+
+    reader = _read_json(reader_path)
+    if reader.get("reader_persona") != persona:
+        raise ValueError(
+            f"reader.json.reader_persona={reader.get('reader_persona')!r}，與路徑 persona={persona!r} 不一致"
+        )
+    if reader.get("media_id") != media_id:
+        raise ValueError(
+            f"reader.json.media_id={reader.get('media_id')!r}，與請求 media_id={media_id!r} 不一致"
+        )
+
+    media = _read_json(media_root / "media.json") if (media_root / "media.json").is_file() else {}
+    work_id = media.get("work_id", "")
+    work_path = LIB_ROOT / "Library" / "works" / work_id / "work.json"
+    work = _read_json(work_path) if work_id and work_path.is_file() else {}
+    progress = reader.get("progress", {})
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    lines = [
+        "---",
+        "type: reading_recall",
+        f"persona: {persona}",
+        f"media_id: {media_id}",
+        f"work_id: {work_id or 'unknown'}",
+        f"generated_at: {now}",
+        "source_of_truth: AgentCommands/BookNotes/Library",
+        "---",
+        "",
+        f"# 閱讀追回｜{work.get('title') or media_id}",
+        "",
+        "> 此檔由 `library.py reading-recall` 機械生成；每次重新生成會覆寫。"
+        " 原始資料仍是 reader root 下的 JSON、chapter round 與 character view。",
+        "",
+        "## 目前狀態",
+        f"- reader_persona: `{persona}`",
+        f"- media: `{media_id}` ({media.get('media_kind', 'unknown')})",
+        f"- status: `{reader.get('status', 'unknown')}`",
+        f"- anticipation: {reader.get('anticipation', '未設定')}／5",
+        f"- current_chapter_id: `{progress.get('current_chapter_id', '未設定')}`",
+        f"- last_read: {progress.get('last_read', '未設定')}",
+        f"- bookmark: {progress.get('bookmark_note', '（無）')}",
+        "",
+        "### 目前看法",
+        reader.get("current_impression", "（尚無）"),
+        "",
+        "## 作品與媒材",
+        f"- work_id: `{work_id or 'unknown'}`",
+        f"- title: {work.get('title', '（未登錄）')}",
+        f"- title_original: {work.get('title_original', '（未登錄）')}",
+        f"- author: {work.get('author', '（未登錄）')}",
+        f"- genre_tags: {', '.join(work.get('genre_tags', [])) or '（未登錄）'}",
+        "",
+        "## 書架投影",
+        _read_text_or_note(reader_root / "bookshelf.md", "bookshelf 投影"),
+        "",
+        "## 已讀章節與 round 心得",
+    ]
+
+    chapter_dirs = sorted((p for p in (reader_root / "chapters").glob("*") if p.is_dir()), key=lambda p: p.name)
+    if not chapter_dirs:
+        lines.extend(["（尚無章節紀錄）", ""])
+    for chapter_dir in chapter_dirs:
+        manifest_path = chapter_dir / "chapter.json"
+        try:
+            manifest = _read_json(manifest_path)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            lines.extend([f"### `{chapter_dir.name}`", f"> [!WARNING]\n> 無法讀取 chapter.json：{exc}", ""])
+            continue
+        lines.extend([
+            f"### {manifest.get('display_number', chapter_dir.name)}｜{manifest.get('title', '（未命名）')}",
+            f"- chapter_id: `{manifest.get('chapter_id', chapter_dir.name)}`",
+            "",
+        ])
+        rounds = manifest.get("rounds", [])
+        if not rounds:
+            lines.extend(["（尚無 round）", ""])
+        for entry in rounds:
+            file_name = entry if isinstance(entry, str) else entry.get("file", "")
+            round_number = "?" if isinstance(entry, str) else entry.get("round", "?")
+            read_date = "" if isinstance(entry, str) else entry.get("reading_date", "")
+            try:
+                file_name = _require_reader_file_name(file_name, "round file")
+                round_body = _read_text_or_note(chapter_dir / file_name, "chapter round")
+            except ValueError as exc:
+                round_body = f"> [!WARNING]\n> {exc}\n"
+            lines.extend([
+                f"#### Round {round_number}" + (f"（{read_date}）" if read_date else ""),
+                round_body,
+                "",
+            ])
+
+    lines.append("## 角色資訊與觀點版本")
+    character_dirs = sorted((p for p in (reader_root / "characters").glob("*") if p.is_dir()), key=lambda p: p.name)
+    if not character_dirs:
+        lines.extend(["（尚無角色紀錄）", ""])
+    for character_dir in character_dirs:
+        profile_path = character_dir / "profile.json"
+        lines.extend([f"### `{character_dir.name}`", "#### 已確認 facts（profile.json）"])
+        if profile_path.is_file():
+            lines.extend(["```json", json.dumps(_read_json(profile_path), ensure_ascii=False, indent=2), "```"])
+        else:
+            lines.append("> [!WARNING]\n> 缺少 profile.json")
+        views = sorted(character_dir.glob("v*.md"), key=lambda p: p.name)
+        if not views:
+            lines.append("（尚無主觀 view 版本）")
+        for view_path in views:
+            lines.extend([f"#### {view_path.name}", _read_text_or_note(view_path, "character view"), ""])
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def cmd_reading_recall(args):
+    """Generate the per-persona, per-media resume document in that persona's letters directory."""
+    try:
+        persona = _require_reader_id(args.persona, "persona")
+        media_id = _require_reader_id(args.media_id, "media_id")
+        text = _render_reading_recall(persona, media_id)
+    except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"❌ 無法生成閱讀追回檔：{exc}", file=sys.stderr)
+        return 1
+    output = _DATA_ROOT / "ChatTavern" / "baton" / "letters" / persona / f"_reading_recall_{media_id}.md"
+    _atomic_write(output, text)
+    print(f"📚 已生成閱讀追回檔：{output}")
+    return 0
+
+
 def _frontmatter(d: dict) -> str:
     # 產生簡單 YAML frontmatter; list 用 [a, b] 行內表示。
     lines = ["---"]
@@ -2268,6 +2436,14 @@ def _add_reader_arg(parser, with_continue=False):
 def build_parser():
     p = argparse.ArgumentParser(prog="library.py", description="Reading Library CLI — 閱讀心得圖書館")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    a = sub.add_parser("reading-recall",
+                       help="依 persona + media 生成新 Library 的完整閱讀追回檔（不讀 Archive）")
+    a.add_argument("--persona", required=True,
+                   help="讀者 persona；必須與 readers/<persona>/reader.json 相符")
+    a.add_argument("--media-id", "--book-id", dest="media_id", required=True,
+                   help="新 Library media id；--book-id 是相容別名，例如 comic-delicious-in-dungeon")
+    a.set_defaults(func=cmd_reading_recall)
 
     a = sub.add_parser("add-book", help="建立新書 (--origin authored = 原創寫書)")
     a.add_argument("--id", help="書本 slug（缺則由 title 生成）")

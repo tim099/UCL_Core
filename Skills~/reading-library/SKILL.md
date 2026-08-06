@@ -39,6 +39,20 @@ Library/media/<media-id>/readers/<persona>/
 - 媒材必須獨立：`comic-`、`anim-`、`film-`、`series-`、`stream-` 等 media 不共用進度。
 - 新工具寫入時驗證 `reader.json.reader_persona` 與路徑 `<persona>` 相同，避免資料放錯讀者根目錄。
 
+## 追回既有閱讀進度
+
+要在隔一段時間後接回閱讀，先以**當前 persona 與 media id**生成完整追回檔：
+
+```powershell
+python <UCL_Core>/Tools~/AgentCommands/library.py reading-recall --persona <persona> --media-id <comic-|anim-|film-|... media-id>
+```
+
+`--book-id` 可作為 `--media-id` 的相容別名。工具只讀
+`Library/media/<media-id>/readers/<persona>/`，會驗證 JSON 身分與路徑相同；絕不讀 Archive 或其他
+persona。產物為 `AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，
+會在下次生成時覆寫，內含目前狀態、書架投影、所有已讀章節 round 原文，以及角色 facts／view
+版本。它是追讀用機械視圖，不能取代或手改原始筆記。
+
 ## 每次閱讀完成後
 
 1. 新增本章 round 與更新 `chapter.json`。

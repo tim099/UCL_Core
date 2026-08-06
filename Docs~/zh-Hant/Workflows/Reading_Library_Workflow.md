@@ -70,6 +70,26 @@ chapters/0001/r1_2026-08-06.md
 4. 從 `reader.json` 同步 `bookshelf.md`。
 5. 漫畫依 `reading-manga` 發出 `reading-reflection`。
 
+## 追回既有進度
+
+隔日或切換工作階段後，使用 persona 與**實際媒材 id**（不是 work id）重建單一追回檔：
+
+```powershell
+python <UCL_Core>/Tools~/AgentCommands/library.py reading-recall --persona <persona> --media-id <media-id>
+```
+
+`--book-id` 是 `--media-id` 的相容別名。工具只允許讀取
+`AgentCommands/BookNotes/Library/media/<media-id>/readers/<persona>/`，並驗證 `reader.json` 中的
+persona 與 media id；不會從 Archive 或別人的 reader root 補資料。輸出位於
+`AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，比照 `_wake_brief.md`
+是可重建、可覆寫的機械產物。
+
+追回檔依序收錄目前 bookmark／看法、作品與媒材資料、`bookshelf.md` 投影、所有章節 manifest 所列
+round 的完整筆記，以及每位角色的 `profile.json` 和全部 `vN_*.md`。原始 reader root 才是事實來源；
+不得手改追回檔來回填閱讀資料。
+
 ## 工具要求
 
-新的 `library.py` API 應以一次寫入操作更新 reader root、章節 round 與 bookshelf 投影，並驗證 persona 路徑一致性。legacy `library.py --book`、無讀者主線與 branches API 禁止用於新資料。
+`library.py reading-recall` 已提供新 schema 的唯讀追回入口。新的寫入 API 應以一次寫入操作更新
+reader root、章節 round 與 bookshelf 投影，並驗證 persona 路徑一致性。legacy `library.py --book`、
+無讀者主線與 branches API 禁止用於新資料。

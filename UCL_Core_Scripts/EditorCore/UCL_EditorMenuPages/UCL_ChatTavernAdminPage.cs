@@ -132,6 +132,9 @@ namespace UCL.Core.EditorLib.Page
         //          通用編輯面**（UCL_SelectAssetPage）。本頁刻意只做「看」+「跳過去」，不重造編輯欄位 ——
         //          同一份資料兩個編輯入口 = 兩份真相，而且欄位一加就得兩邊同步。
         // 數值影響：只在 LoadData 掃一次（GetAllIDs + GetData 會碰磁碟），不每幀掃。
+        // 計酬旗標就地修改的結果訊息（顯示用，不持久化）
+        string m_RoutingRepairMsg = "";
+
         class RoutingRowView
         {
             public UCL_TavernCategoryRoutingAsset asset;
@@ -788,6 +791,19 @@ namespace UCL.Core.EditorLib.Page
                                 GUILayout.Label(idLabel, WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
                                 GUILayout.Label(r.categories, WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                                 GUILayout.Label(r.flags, WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                                // 計酬旗標就地可改 —— 這個欄位錯了會**靜默**吃掉整個收入端（已發生兩次），
+                                // 所以它要在「看得到問題的那一頁」就能修，而不是轉去 Asset 編輯面。
+                                // ⚠ 寫入走 UCL_TavernRoutingRepair 直寫 JSON，**不用 UCL_Asset.Save()** ——
+                                //   後者的落點依當前編輯模組，會把檔案存到別的 module（原檔沒修卻多一份影子）。
+                                bool paidNow = r.asset != null && r.asset.m_IsPaidPost;
+                                bool paidNext = UCL_GUILayout.CheckBox(paidNow);
+                                GUILayout.Label("計酬", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                                if (paidNext != paidNow)
+                                {
+                                    m_RoutingRepairMsg = UCL_TavernRoutingRepair.SetPaidPost(r.id, paidNext);
+                                    Debug.Log($"[TavernAdmin] {m_RoutingRepairMsg}");
+                                    LoadRoutingRows();
+                                }
                                 // 解析到 0 個 URL = 設定看起來完整但實際送不出去（hideout 在 Bar 就是這樣）
                                 string urlLabel = r.resolvedUrls > 0
                                     ? $"<color=#66ff66>URL {r.resolvedUrls}</color> <color=#888888>({r.urlSource})</color>"
@@ -797,6 +813,16 @@ namespace UCL.Core.EditorLib.Page
                             }
                             if (r.enabled && r.flags.Contains("預設")) anyDefault = true;
                         }
+                        // 設定層健檢 —— 補「預設群存在、但不計酬 / 缺欄位」這兩種**靜默**失效。
+                        // 既有的兩道警告只涵蓋「沒有 group」與「沒有預設群」；
+                        // 而 2026-08-06 這次的形狀是「group 在、預設在，就是不計酬」——
+                        // 收入端整個歸零而沒有任何人喊痛，因為計酬那條分支是刻意靜默的。
+                        var routingIssues = UCL_TavernRoutingRepair.Diagnose();
+                        foreach (string issue in routingIssues)
+                            GUILayout.Label($"  <color=#ff6666>⚠ {issue}</color>", WrapLabelStyle);
+                        if (!string.IsNullOrEmpty(m_RoutingRepairMsg))
+                            GUILayout.Label($"  {m_RoutingRepairMsg}", WrapLabelStyle);
+
                         if (!anyDefault)
                         {
                             GUILayout.Label("  <color=#ff6666>⚠ 沒有任何「啟用中 + 預設」的群</color> —— 未命中 category 的訊息會沒有 fallback，"

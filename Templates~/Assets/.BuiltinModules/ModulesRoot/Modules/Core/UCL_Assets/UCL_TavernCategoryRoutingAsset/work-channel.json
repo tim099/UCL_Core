@@ -1,0 +1,18 @@
+{
+	"Categories":
+	[
+		"work",
+		"meta",
+		"chat"
+	],
+	"WebhookUrls":
+	[
+	],
+	"WebhookEnvVar":"",
+	"WebhookFile":"",
+	"Description":"工作頻道 — 未命中 category 的 default fallback + 發文計酬 (work_post +1 token) 的來源. 這是新專案的初始 group: 少了它 ResolveTargetGroup 會回 null, 未分類訊息沒有送達目標且發文計酬整個停掉 (2026-07-07 實際發生過, 自 06-14 起全斷). IsPaidPost 必須顯式為 True — 2026-07-30 判準由 IsWorkChannel 換成 IsPaidPost, 而缺欄位時 bool 預設值是 false, 那條分支刻意靜默 (chitchat 等頻道本來就不計酬), 於是收入端會無聲歸零 (2026-08-06 實際發生過).",
+	"Enabled":"True",
+	"IsDefault":"True",
+	"IsPaidPost":"True",
+	"Exclusive":"False"
+}

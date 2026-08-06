@@ -31,6 +31,12 @@ namespace UCL.Core.EditorLib.Page
     {
         public override string WindowName => UCL_CodeLocalize.Get("PersonaInspector.Title");
         public override bool ShowInPageMenu => true;
+
+        // fire-and-forget 的 Process 註冊 tag（硬規則：每顆外部 Process 都要登記）。
+        // ⚠ 本頁的 OpenInExplorer 是 UCL_ExplorerUtil 的**重複複本之一**（見該檔檔頭）。
+        //   併過去之後這個 const 與上面那段就該一起刪 —— 併不併待 Tim 拍板，
+        //   這裡先只補登記，不順手重構（兩件事混在一起改，出問題分不出是哪個造成的）。
+        const string PROC_TAG_EXPLORER = "explorer_open";
         public static UCL_PersonaInspectorPage Create() => UCL_EditorPage.Create<UCL_PersonaInspectorPage>();
 
         // 區塊職責：Persona registry 完整 entry
@@ -449,14 +455,20 @@ namespace UCL.Core.EditorLib.Page
                 if (File.Exists(path))
                 {
 #if UNITY_EDITOR_WIN
-                    Process.Start("explorer.exe", $"/select,\"{path}\"");
+                    UCL_ProcessRegistryService.StartAndRegister(
+                        new ProcessStartInfo("explorer.exe", $"/select,\"{path}\""),
+                        PROC_TAG_EXPLORER, $"開啟並選取：{path}", nameof(UCL_PersonaInspectorPage));
 #else
-                    Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+                    UCL_ProcessRegistryService.StartAndRegister(
+                        new ProcessStartInfo { FileName = path, UseShellExecute = true },
+                        PROC_TAG_EXPLORER, $"開啟：{path}", nameof(UCL_PersonaInspectorPage));
 #endif
                 }
                 else if (Directory.Exists(path))
                 {
-                    Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+                    UCL_ProcessRegistryService.StartAndRegister(
+                        new ProcessStartInfo { FileName = path, UseShellExecute = true },
+                        PROC_TAG_EXPLORER, $"開啟資料夾：{path}", nameof(UCL_PersonaInspectorPage));
                 }
                 else
                 {

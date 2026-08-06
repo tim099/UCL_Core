@@ -31,6 +31,15 @@ namespace UCL.Core.EditorLib
     /// </summary>
     public static class UCL_ExplorerUtil
     {
+        // Process 註冊中心的 tag。硬規則：C# 開的每顆外部 Process 都要登記
+        // （見 Docs~/zh-Hant/Agent/Coding_Standards.md「外部 Process」）。
+        // ⚠ 這一族是 **fire-and-forget**：呼叫端不等它，所以沒有 finally 可放 Unregister ——
+        //   走 StartAndRegister（allowMultiple，不是 singleton：使用者可以同時開好幾個檔案總管），
+        //   記錄由 CleanupStale 在 Editor 載入時回收。
+        //   2026-08-06 Tim 拍板「全部都要登記」：不會卡住不等於不會累積，
+        //   而**一份有例外的登記表，最危險的不是漏掉那幾筆，是它讓人停止懷疑**。
+        const string PROC_TAG = "explorer_open";
+
         /// <summary>
         /// 開啟指定路徑：檔案 → 開父夾並選中該檔；資料夾 → 進入該夾。
         /// 路徑不存在或開啟失敗都會留 log（不靜默失敗）。
@@ -64,15 +73,15 @@ namespace UCL.Core.EditorLib
                 if (isFile)
                 {
                     // /select 需要 Windows 慣用的反斜線；正斜線會讓 explorer 忽略選取只開父夾。
-                    Process.Start("explorer.exe", $"/select,\"{path.Replace('/', '\\')}\"");
+                    UCL_ProcessRegistryService.StartAndRegister(
+                        new ProcessStartInfo("explorer.exe", $"/select,\"{path.Replace('/', '\\')}\""),
+                        PROC_TAG, $"開啟檔案總管並選取：{path}", nameof(UCL_ExplorerUtil));
                     return true;
                 }
 #endif
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = path,
-                    UseShellExecute = true,
-                });
+                UCL_ProcessRegistryService.StartAndRegister(
+                    new ProcessStartInfo { FileName = path, UseShellExecute = true },
+                    PROC_TAG, $"以預設程式開啟：{path}", nameof(UCL_ExplorerUtil));
                 return true;
             }
             catch (Exception e)

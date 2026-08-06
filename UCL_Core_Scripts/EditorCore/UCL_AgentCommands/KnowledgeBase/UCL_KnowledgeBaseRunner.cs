@@ -39,6 +39,9 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
     /// </summary>
     public static class UCL_KnowledgeBaseRunner
     {
+        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
+        const string PROC_TAG = "knowledge_base_py";
+
         /// <summary>
         /// knowledge_base.py 絕對路徑。走 UCL_EditorPath.CorePath 動態解析 UCL_Core 掛載點，
         /// 跨專案安全 (不硬編 Assets/Plugins/UCL_Core)。
@@ -79,6 +82,7 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
 
         static KnowledgeBaseRunResult RunBlocking(string argLine, int timeoutMs, CancellationToken token)
         {
+            int aPid = -1;
             var result = new KnowledgeBaseRunResult { ExitCode = -1 };
             try
             {
@@ -105,6 +109,20 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
                     return result;
                 }
                 result.Launched = true;
+                // 硬規則：C# 開的每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                // ⚠ 這裡最需要登記，理由跟「會不會卡住」無關：下面那個輪詢 + Kill 的逾時防護
+                //   **只在 C# 的 Process 物件還活著時有效**。domain reload 一來物件沒了，
+                //   那顆 python 就沒有任何人管得到 —— 而它看起來是「已經處理過逾時」的那種，
+                //   最容易讓人以為安全。登記讓防護跨 domain reload 存活（身分從磁碟讀回）。
+                try {
+                    UCL_ProcessRegistryService.Register(proc, PROC_TAG,
+                        "knowledge_base.py", nameof(UCL_KnowledgeBaseRunner));
+                    aPid = proc.Id;
+                } catch (Exception regEx) {
+                    // 登記失敗不該擋住工作本身（process 已經在跑了），但要出聲：
+                    // 靜默失敗會讓這顆變成沒人管的孤兒，而那正是登記要防的事。
+                    Debug.LogWarning($"[UCL_KnowledgeBaseRunner] Process 登記失敗（該顆將無法被註冊中心接管）: {regEx.Message}");
+                }
 
                 // 非同步讀兩條 pipe，避免其一填滿造成死結
                 var outTask = proc.StandardOutput.ReadToEndAsync();
@@ -134,6 +152,12 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
             {
                 result.Error = $"❌ knowledge_base.py 執行例外: {e.Message}";
                 Debug.LogWarning($"[KnowledgeBaseRunner] argLine=`{argLine}` fail: {e}");
+            }
+            finally
+            {
+                // 反登記放 finally —— 例外路徑也要清，否則記錄檔留一個已死的 PID，
+                // 讓 UCL_ProcessAdminPage 顯示不存在的 process（監控畫面說謊比沒有監控更糟）。
+                if (aPid > 0) UCL_ProcessRegistryService.Unregister(aPid, PROC_TAG);
             }
             return result;
         }

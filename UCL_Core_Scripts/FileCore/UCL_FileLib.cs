@@ -696,7 +696,15 @@ namespace UCL.Core.FileLib
             try
             {
                 //Debug.LogWarning("asset_root + folder:" + asset_root + folder);
-                System.Diagnostics.Process.Start(aPath);//"explorer.exe", 
+                // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                // fire-and-forget → StartAndRegister（不 singleton、無 Unregister，靠 CleanupStale 回收）。
+#if UNITY_EDITOR
+                UCL.Core.EditorLib.UCL_ProcessRegistryService.StartAndRegister(
+                    new System.Diagnostics.ProcessStartInfo { FileName = aPath, UseShellExecute = true },
+                    "explorer_open", "OpenAssetExplorer:" + aPath, "UCL_FileLib");
+#else
+                System.Diagnostics.Process.Start(aPath);
+#endif
             }
             catch(System.Exception iE)
             {
@@ -713,7 +721,13 @@ namespace UCL.Core.FileLib
             //Debug.LogWarning("folder:" + folder);
             try
             {
-                System.Diagnostics.Process.Start(iFolder);//"explorer.exe", 
+#if UNITY_EDITOR
+                UCL.Core.EditorLib.UCL_ProcessRegistryService.StartAndRegister(
+                    new System.Diagnostics.ProcessStartInfo { FileName = iFolder, UseShellExecute = true },
+                    "explorer_open", "OpenExplorer:" + iFolder, "UCL_FileLib");
+#else
+                System.Diagnostics.Process.Start(iFolder);
+#endif
             }
             catch(System.Exception iE)
             {

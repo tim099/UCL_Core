@@ -28,6 +28,9 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md")]
     public class UCL_LoginStatusPage : UCL_CommonEditorPage
     {
+        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
+        const string PROC_TAG_PY = "loginstatus_py";
+
         public override string WindowName => UCL_CodeLocalize.Get("LoginStatus.Title");
         public override bool ShowInPageMenu => true;
         public override string SensitiveContentReason => "Contains sensitive login information";
@@ -924,6 +927,10 @@ namespace UCL.Core.EditorLib.Page
                         p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
                         p.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
                         p.Start();
+                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                    // using 宣告 → 正常結束與例外路徑都會反登記，成對性由語言保證。
+                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
+                        p, PROC_TAG_PY, "awakening / login 系列 python 工具", nameof(UCL_LoginStatusPage));
                         p.BeginOutputReadLine();
                         p.BeginErrorReadLine();
                         // 主線程已不阻塞 → tavern handshake 能被 Editor 正常處理, 通常數秒內結束。

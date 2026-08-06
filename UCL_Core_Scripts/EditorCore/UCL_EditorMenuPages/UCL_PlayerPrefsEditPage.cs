@@ -18,6 +18,9 @@ namespace UCL.Core.EditorLib.Page
     /// </summary>
     public class UCL_PlayerPrefsEditPage : UCL.Core.EditorLib.Page.UCL_EditorPage
     {
+        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
+        const string PROC_TAG_REG = "playerprefs_reg_query";
+
         /* -------------------------------------------------------------------------
          * 成員變數定義區塊
          * 負責存儲頁面狀態、快取的鍵值清單以及搜尋過濾器。
@@ -80,10 +83,25 @@ namespace UCL.Core.EditorLib.Page
                     CreateNoWindow = true
                 };
 
+                // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                // 這顆是等待型：有 Register 就要有 finally Unregister。
+                // ⚠ 原版 WaitForExit() **無逾時**，而本方法跑在主執行緒 —— reg 一旦卡住整個 Editor 凍結。
+                //   逾時值訂在「多久算異常」：reg query 正常是毫秒級，10 秒還沒回就是真的出事。
+                int aPid = -1;
+                try
+                {
                 using (Process process = Process.Start(startInfo))
                 {
+                    UCL.Core.EditorLib.UCL_ProcessRegistryService.Register(process, PROC_TAG_REG,
+                        "reg query PlayerPrefs 登錄檔", nameof(UCL_PlayerPrefsEditPage));
+                    aPid = process.Id;
+                    // ReadToEnd 要在 WaitForExit 之前 —— 反過來的話 reg 寫滿 stdout buffer 會卡住，
+                    // 而我們正在等它結束 → 互等（單一 stream 的 deadlock 形態）。
                     string output = process.StandardOutput.ReadToEnd();
-                    process.WaitForExit();
+                    if (!process.WaitForExit(10000))
+                    {
+                        UnityEngine.Debug.LogWarning("[PlayerPrefsEdit] reg query 逾時 10 秒 — 放棄讀取登錄檔。");
+                    }
 
                     // 解析 reg query 的輸出，每一行通常包含 [鍵名] [類型] [值]
                     string[] lines = output.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
@@ -106,6 +124,13 @@ namespace UCL.Core.EditorLib.Page
                     }
                     // 移除重複項（如果有）
                     m_Keys = m_Keys.Distinct().ToList();
+                }
+                }
+                finally
+                {
+                    // 反登記放 finally —— 例外路徑也要清，否則記錄檔留著一個已死的 PID，
+                    // 讓 UCL_ProcessAdminPage 顯示不存在的 process（監控畫面說謊比沒有監控更糟）。
+                    if (aPid > 0) UCL.Core.EditorLib.UCL_ProcessRegistryService.Unregister(aPid, PROC_TAG_REG);
                 }
 #elif UNITY_EDITOR_OSX
                 // macOS 上的 PlayerPrefs 存儲在 Library/Preferences/ 下的 .plist 檔案中

@@ -94,6 +94,36 @@ namespace UCL.Core.EditorLib
     /// UI 入口: UCL_ProcessAdminPage (Process 管理頁)。
     /// </summary>
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ProcessAdminPage.md")]
+    // 區塊職責：Editor 載入時自動清一次 Dead / PidReused 殘留記錄。
+    // 物理意義：**fire-and-forget 型的 spawn 沒有 `finally` 可以放 `Unregister`**
+    //          （`Process.Start` 完就 return，沒人等它），所以它們的記錄只能靠事後清。
+    //          2026-08-06 全面登記之前，這件事沒有自動觸發點 —— `CleanupStale` 只有
+    //          `UCL_ProcessAdminPage` 的手動按鈕會呼叫。那樣的話「全部登記」會把
+    //          「沒有屍潮」換成「殘檔堆積」，而堆積出來的畫面跟屍潮長得一樣，
+    //          一樣會訓練人忽略那張表。
+    // 數值影響：只刪 Dead / PidReused 的**記錄檔**，絕不碰任何活著的 process
+    //          （PidReused 那顆 PID 已易主，是別人的，只清記錄）。
+    // 設計取捨：掛 InitializeOnLoad 而不是掛在 `Register` 裡 —— 後者會讓每次 spawn 都多一次
+    //          全表掃描（Tim 2026-08-06 拍板）。domain reload 每次編譯都發生，頻率已足夠。
+    [UnityEditor.InitializeOnLoad]
+    static class UCL_ProcessRegistryAutoCleanup
+    {
+        static UCL_ProcessRegistryAutoCleanup()
+        {
+            // 例外一律吞掉但留 log —— 清理失敗不該擋住 Editor 啟動，
+            // 但**靜默失敗**會讓殘檔無聲累積，那正是這個機制要解的問題。
+            try
+            {
+                int n = UCL_ProcessRegistryService.CleanupStale();
+                if (n > 0) Debug.Log($"[ProcessRegistry] 啟動清理：移除 {n} 筆已死的 process 記錄");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ProcessRegistry] 啟動清理失敗（殘檔會留到下次或手動清）: {e.Message}");
+            }
+        }
+    }
+
     public static class UCL_ProcessRegistryService
     {
         const string REGISTRY_DIR_RELATIVE = "AgentCommands/_process_registry";
@@ -113,6 +143,66 @@ namespace UCL.Core.EditorLib
         /// 註: 新 process 此時尚未寫記錄檔, 不會誤殺自己; 若要「舊的先死新的才生」的嚴格順序,
         /// 請在 spawn 前自行呼叫 KillAllByTag (如 UCL_ScreenStreamDaemon 的 pre-spawn guard)。
         /// </summary>
+        /// <summary>
+        /// 區塊職責：fire-and-forget 型 spawn 的唯一入口（開檔案總管 / 用預設程式開檔 / 短命 CLI）。
+        /// 物理意義：這類 spawn **沒有 `finally` 可以放 `Unregister`** —— 呼叫端不等它。
+        ///          所以登記之後靠 <see cref="CleanupStale"/> 回收（Editor 載入時自動跑一次）。
+        ///          `allowMultiple: true` 是刻意的：使用者可以同時開好幾個檔案總管，
+        ///          這裡**不是** singleton 語意，套 KillAllByTag 會把上一個關掉。
+        /// 數值影響：登記失敗（回 null）不影響 process 本身 —— 那顆已經在跑了。
+        /// 邊界：`UseShellExecute = true` 時 `Process.Start` **可能回 null**（外殼把請求交給既存的
+        ///      應用程式實例，沒有新 process 可回）。那不是錯誤，只是沒東西可登記。
+        /// </summary>
+        /// <summary>
+        /// 區塊職責：等待型 spawn 的登記 + 自動反登記（`using` scope）。
+        /// 物理意義：`Register` / `Unregister` 必須成對，而**成對最常見的破法是例外路徑**——
+        ///          手寫 try/finally 時很容易只寫在正常路徑上，留下一筆已死的 PID 記錄。
+        ///          包成 IDisposable 之後，正常結束與丟例外都會反登記，成對性由語言保證而不是靠人記得。
+        /// 用法（C# 8 using 宣告，不必動既有括號結構）：
+        /// <code>
+        /// p.Start();
+        /// using var _ = UCL_ProcessRegistryService.RegisterScope(p, TAG, "在做什麼", nameof(MyPage));
+        /// // …既有的 ReadToEnd / WaitForExit(timeout) 照舊…
+        /// </code>
+        /// </summary>
+        public static IDisposable RegisterScope(System.Diagnostics.Process proc, string tag,
+            string description = "", string registeredBy = "", bool allowMultiple = false)
+            => new ProcRegScope(proc, tag, description, registeredBy, allowMultiple);
+
+        sealed class ProcRegScope : IDisposable
+        {
+            readonly int m_Pid;
+            readonly string m_Tag;
+            public ProcRegScope(System.Diagnostics.Process proc, string tag, string desc,
+                string by, bool allowMultiple)
+            {
+                m_Tag = tag;
+                m_Pid = -1;
+                try
+                {
+                    if (Register(proc, tag, desc, by, allowMultiple) != null) m_Pid = proc.Id;
+                }
+                catch (Exception e)
+                {
+                    // 登記失敗不擋工作本身（process 已經在跑了），但**不可靜默** ——
+                    // 沒登記成功卻沒人知道，那顆就是沒人管得到的孤兒。
+                    Debug.LogWarning($"[ProcessRegistry] 登記失敗（tag={tag}，該顆將無法被接管）: {e.Message}");
+                }
+            }
+            public void Dispose()
+            {
+                if (m_Pid > 0) Unregister(m_Pid, m_Tag);
+            }
+        }
+
+        public static UCL_ProcessRecord StartAndRegister(System.Diagnostics.ProcessStartInfo psi,
+            string tag, string description = "", string registeredBy = "")
+        {
+            var proc = System.Diagnostics.Process.Start(psi);
+            if (proc == null) return null;      // 外殼複用既有實例 — 正常情況，不是失敗
+            return Register(proc, tag, description, registeredBy, allowMultiple: true);
+        }
+
         public static UCL_ProcessRecord Register(System.Diagnostics.Process proc, string tag,
             string description = "", string registeredBy = "", bool allowMultiple = false)
         {

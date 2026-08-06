@@ -27,6 +27,9 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/Mechanics/Reading_Library.md")]
     public class UCL_LibraryManagePage : UCL_CommonEditorPage
     {
+        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
+        const string PROC_TAG_PY = "library_py";
+
         public override string WindowName => UCL_CodeLocalize.Get("LibraryManage.Title");
         public override bool ShowInPageMenu => true;
 
@@ -1031,6 +1034,10 @@ namespace UCL.Core.EditorLib.Page
                     p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
                     p.ErrorDataReceived += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
                     p.Start();
+                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                    // using 宣告 → 正常結束與例外路徑都會反登記，成對性由語言保證。
+                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
+                        p, PROC_TAG_PY, "library.py", nameof(UCL_LibraryManagePage));
                     p.BeginOutputReadLine();
                     p.BeginErrorReadLine();
                     p.WaitForExit(30000);

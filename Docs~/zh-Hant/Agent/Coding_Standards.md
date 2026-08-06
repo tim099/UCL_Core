@@ -1,7 +1,7 @@
 ---
 title: C# Coding Standards
 description: UCL_Core C# 設定資料、字串 key 與外部 Process 的共用撰寫規範。
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 target_audience: [AI_Agent, Gameplay_Programmer, Tools_Maintainer]
 related:
   - Code_Comment_Standards.md | 程式碼註解規範 | 註解與文件化原則
@@ -66,16 +66,142 @@ proc.Start();
 UCL_ProcessRegistryService.Register(proc, "my_daemon",
     "這顆 process 在做什麼（給人看，也給誤殺防護判斷）", nameof(MyCaller));
 
-// 3) 正常結束時反登記
+// 3) 反登記 —— **不是** 只在正常路徑呼叫。優先用 RegisterScope（見下），
+//    手寫時一律放 finally
 UCL_ProcessRegistryService.Unregister(proc.Id, "my_daemon");
 ```
+
+### 首選寫法：`RegisterScope`（`using` 宣告）
+
+**登記／反登記必須成對，而成對最常見的破法是例外路徑。** 手寫 `try/finally` 時很容易
+只寫在正常路徑上，留下一筆已死的 PID 記錄。包成 `IDisposable` 之後，成對性由語言保證：
+
+```csharp
+p.Start();
+using var _ = UCL_ProcessRegistryService.RegisterScope(p, TAG, "在做什麼", nameof(MyPage));
+// …既有的 ReadToEnd / WaitForExit(timeout) / 輪詢迴圈照舊，不必動任何括號…
+```
+
+C# 8 的 `using` 宣告在**離開所在區塊時**自動 Dispose ——
+正常結束、逾時 kill、使用者按 Cancel、丟例外，**四條路都會反登記**。
+它同時的好處是**加登記不必改動既有的括號結構**（一行插入），
+所以替既有程式碼補登記時風險最低。
+
+**fire-and-forget 型**（開檔案總管、用預設程式開檔 —— 呼叫端不等它，沒有 `finally` 可放）
+走另一支：
+
+```csharp
+UCL_ProcessRegistryService.StartAndRegister(psi, TAG, "在做什麼", nameof(MyPage));
+```
+
+它是 `allowMultiple`（**不是** singleton）—— 使用者可以同時開好幾個檔案總管，
+套 `KillAllByTag` 會把上一個關掉。記錄由 `CleanupStale()` 回收，
+而那支掛在 `[InitializeOnLoad]`（每次 domain reload 自動跑一次）。
+
+> [!NOTE]
+> **「不會卡住」不是不登記的理由**（Tim 2026-08-06 拍板全面登記）。
+> 不卡住不等於不會累積；而更重要的是：**一份有例外的登記表，
+> 最危險的不是漏掉那幾筆，是它讓人停止懷疑。**
+> `UCL_ProcessAdminPage` 的存在隱含它是完整的 —— 一旦有一批 spawn 按政策被排除，
+> 它回答的就不再是「Editor 開過什麼」，而是「我們選擇顯示什麼」。
+
+### 跑一次性外部工具的完整骨架（Editor 頁面呼叫 python / CLI）
+
+上面三步是**登記**的最小形；實際在頁面上跑工具還有四個一定要一起做的動作，
+少任何一個都會出現「外觀正常但壞掉」的結果。骨架：
+
+```csharp
+Task.Run(() =>                                  // ① 不在主執行緒跑
+{
+    var so = new StringBuilder(); var se = new StringBuilder();
+    int exit = -1, pid = -1;
+    try
+    {
+        using (var p = new Process())
+        {
+            p.StartInfo.FileName = "python";
+            p.StartInfo.Arguments = $"\"{script}\" {args}";
+            p.StartInfo.WorkingDirectory = UCL_RepoPath.RepoRoot;   // ② 子行程需要的 cwd
+            p.StartInfo.UseShellExecute = false;
+            p.StartInfo.RedirectStandardOutput = true;
+            p.StartInfo.RedirectStandardError  = true;
+            p.StartInfo.CreateNoWindow = true;
+            p.StartInfo.StandardOutputEncoding = Encoding.UTF8;      // ③ 編碼
+            p.StartInfo.StandardErrorEncoding  = Encoding.UTF8;
+            p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+            p.OutputDataReceived += (_, e) => { if (e.Data != null) so.AppendLine(e.Data); };
+            p.ErrorDataReceived  += (_, e) => { if (e.Data != null) se.AppendLine(e.Data); };
+
+            UCL_ProcessRegistryService.KillAllByTag(TAG);
+            p.Start();
+            UCL_ProcessRegistryService.Register(p, TAG, "在做什麼", nameof(MyPage));
+            pid = p.Id;
+            p.BeginOutputReadLine();                                  // ④ 兩條都要非阻塞讀
+            p.BeginErrorReadLine();
+            if (!p.WaitForExit(TIMEOUT_MS)) se.AppendLine("逾時 — 已放棄等待（行程可能仍在跑）");
+            else exit = p.ExitCode;
+        }
+    }
+    catch (Exception e) { se.AppendLine(e.ToString()); }
+    finally
+    {
+        if (pid > 0) UCL_ProcessRegistryService.Unregister(pid, TAG);  // ⑤ 一定放 finally
+    }
+    EditorApplication.delayCall += () => { /* 回主執行緒更新 UI */ };   // ⑥
+});
+```
+
+每一項的理由（都是踩過才寫下來的）：
+
+- **① 背景執行緒**：在主執行緒 `WaitForExit` 會凍住整個 Editor，連 AgentCommand watcher 一起卡死。
+- **② `WorkingDirectory`**：子行程若要跑 `git`（或任何依賴 cwd 的工具），沒設就會在 Unity 的
+  工作目錄執行，錯誤訊息通常長成「找不到檔案」而**指不到真正的原因**。
+- **③ 編碼三件套**：漏掉 `StandardXxxEncoding` 或 `PYTHONIOENCODING`，中文輸出會變亂碼，
+  而**亂碼看起來像工具壞了**，實際上工具是對的。
+- **④ 兩條 stream 都要非阻塞讀**：只讀一條時，子行程寫另一條把 buffer 填滿 →
+  子行程卡在 write、呼叫端卡在讀 → **永久 deadlock，沒有任何錯誤訊息**。
+- **⑤ `Unregister` 放 `finally`**：只寫在正常路徑的話，例外路徑會在記錄檔留下一個已死的 PID。
+  那不會誤殺（`KillAllByTag` 會做身分驗證判 Dead 而跳過），但殘檔會讓
+  `UCL_ProcessAdminPage` 顯示不存在的 process —— **監控畫面說謊比沒有監控更糟**。
+- **⑥ 回主執行緒才碰 UI**：Unity 的 API 不是 thread-safe；背景執行緒直接改 UI state 會偶發炸掉，
+  而它的偶發性正好讓它躲過測試。
+
+**逾時值不是「怕它跑太久」，是「多久算異常」。** 全量掃描本來就慢，
+所以門檻要訂在「命中代表真的出事」那個量級（例：攤平同步 30 分鐘），
+而不是訂在「使用者會不耐煩」那個量級。
+
+> [!IMPORTANT]
+> **`WaitForExit(timeout)` 是預設，不是唯一合法解。**
+> 需要「可取消」時，自寫輪詢迴圈（每 N ms 檢查 `HasExited` + cancel token／進度條 Cancel）
+> 是**正確的**，不該為了統一而改掉 —— `WaitForExit` 沒有取消能力，換過去等於刪功能。
+> 現行三處刻意保留輪詢：`UCL_KnowledgeBaseRunner`、`UCL_MediaAdminRunner`（吃
+> `CancellationToken`）、`UCL_BartenderDaemon`（進度條 Cancel）。
+>
+> 那三處**真正缺的從來不是逾時，是登記**：它們的 `Kill()` 只在 C# 的 `Process` 物件還活著時
+> 有效，domain reload 一來就失去對象 —— 而它們看起來是「已經處理過逾時」的那種，
+> **最容易讓人以為安全**。補上 `RegisterScope` 之後防護才跨得過 domain reload。
 
 - **身分 = PID + process name + start time**，不是只有 PID —— PID 會被 OS 回收再發，
   只憑 PID 去 kill 會誤殺別人的 process（`UCL_ProcessStatus.PidReused` 就是為此存在）。
 - `Register` 預設 `allowMultiple=false`（singleton）：登記時會先收掉既存同 tag。
   要「舊的先死新的才生」的嚴格順序，spawn 前自行呼叫 `KillAllByTag`。
-- **短命的一次性 process**（跑完即退、不需要被管理，例如寫一個 json 就結束）可以不登記，
-  但必須是**真的會自己退出**的那種；只要有「可能卡住」的可能性就要登記。
+- ~~短命的一次性 process 可以不登記~~ —— **2026-08-06 作廢，Tim 拍板全部都要登記。**
+  舊條文的判準是「會不會卡住」，而那個判準有兩個洞：不卡住不等於不會累積；
+  更重要的是它讓登記表變成一份**有例外的清單**（理由見上方 NOTE）。
+  短命的走 `StartAndRegister`，記錄由 `CleanupStale()` 自動回收，成本接近零。
 - 檢視／處置走 `UCL_ProcessAdminPage`。
 
-參考實作：`UCL_ScreenStreamDaemon`（pre-spawn `KillAllByTag` + `Register` + 結束時 `Unregister`）。
+參考實作：
+- **常駐型** `UCL_ScreenStreamDaemon`（pre-spawn `KillAllByTag` + `Register` + 結束時 `Unregister`）
+- **一次性工具型（首選範本）** `UCL_GitFlattenSyncPage` — tag `git_flatten_sync`，
+  上方六件事做齊的一份完整實作
+- **`RegisterScope` 用法** `UCL_AgentSkillManagerPage` / `UCL_LoginStatusPage` /
+  `UCL_LibraryManagePage` / `UCL_BartenderDaemon`（2026-08-06 全面補登記那批）
+- **fire-and-forget** `UCL_ExplorerUtil` — tag `explorer_open`
+
+> [!TIP]
+> 一次性工具還有一條**不屬於 Process 但常一起漏**的規則：**腳本路徑與資料路徑都不可寫死**。
+> 走 `UCL_EditorPath.CorePath` / `UCL_RepoPath` / 該子系統自己的解析器（例如
+> `UCL_ChatTavernIO.GetRoomsRoot()`），否則換一個專案就找不到檔 ——
+> 而 `File.Exists` 失敗後若 fail-soft return，那是**連 warning 都沒有的靜默失效**。
+> 解析失敗時要把**解析結果印出來**，讓人看得到它找去了哪裡。

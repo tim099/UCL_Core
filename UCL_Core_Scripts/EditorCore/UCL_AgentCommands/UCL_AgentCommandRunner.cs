@@ -101,11 +101,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             // 不是「進入」本資料夾。這裡直接用 OS shell 打開資料夾本身。
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = dir,
-                    UseShellExecute = true,
-                });
+                // 硬規則：C# 開的每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                // fire-and-forget → StartAndRegister（不 singleton、無 Unregister，靠 CleanupStale 回收）。
+                UCL.Core.EditorLib.UCL_ProcessRegistryService.StartAndRegister(
+                    new System.Diagnostics.ProcessStartInfo { FileName = dir, UseShellExecute = true },
+                    "explorer_open", $"開啟 queue 資料夾：{dir}", nameof(UCL_AgentCommandRunner));
             }
             catch (Exception e)
             {

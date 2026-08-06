@@ -43,6 +43,9 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_AgentSkillManagerPage.md")]
     public class UCL_AgentSkillManagerPage : UCL_CommonEditorPage
     {
+        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
+        const string PROC_TAG_PY = "skillmanager_py";
+
         public override string WindowName => "Agent Skill Manager";
 
         // opt-in 進 UCL_EditorMenuPage 的 Page 選擇器下拉
@@ -838,6 +841,10 @@ namespace UCL.Core.EditorLib.Page
                     p.StartInfo.RedirectStandardError = true;
                     p.StartInfo.CreateNoWindow = true;
                     p.Start();
+                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                    // using 宣告 → 正常結束與例外路徑都會反登記，成對性由語言保證。
+                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
+                        p, PROC_TAG_PY, "install_skills.py 等 skill 工具", nameof(UCL_AgentSkillManagerPage));
                     string stdout = p.StandardOutput.ReadToEnd();
                     string stderr = p.StandardError.ReadToEnd();
                     p.WaitForExit(30000);
@@ -911,6 +918,10 @@ namespace UCL.Core.EditorLib.Page
                     p.StartInfo.RedirectStandardError = true;
                     p.StartInfo.CreateNoWindow = true;
                     p.Start();
+                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                    // using 宣告 → 正常結束與例外路徑都會反登記，成對性由語言保證。
+                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
+                        p, PROC_TAG_PY, "install_skills.py 等 skill 工具", nameof(UCL_AgentSkillManagerPage));
                     string stdout = p.StandardOutput.ReadToEnd();
                     string stderr = p.StandardError.ReadToEnd();
                     p.WaitForExit(30000);
@@ -969,6 +980,10 @@ namespace UCL.Core.EditorLib.Page
                     p.StartInfo.RedirectStandardError = true;
                     p.StartInfo.CreateNoWindow = true;
                     p.Start();
+                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                    // using 宣告 → 正常結束與例外路徑都會反登記，成對性由語言保證。
+                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
+                        p, PROC_TAG_PY, "install_skills.py 等 skill 工具", nameof(UCL_AgentSkillManagerPage));
                     string stdout = p.StandardOutput.ReadToEnd();
                     string stderr = p.StandardError.ReadToEnd();
                     p.WaitForExit(30000);

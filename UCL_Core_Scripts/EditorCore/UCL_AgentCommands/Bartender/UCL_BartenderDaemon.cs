@@ -28,6 +28,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     [InitializeOnLoad]
     public static class UCL_BartenderDaemon
     {
+        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
+        const string PROC_TAG_PY = "bartender_tick_py";
+
         // 區塊職責：tick 間隔 + bartender 識別常數
         // 物理意義：CHECK_INTERVAL 5s 是 latency vs IO load 折衷 (太頻繁吃 disk, 太疏延遲高)
         const double CHECK_INTERVAL_SECONDS = 5.0;
@@ -597,6 +600,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 using (var proc = System.Diagnostics.Process.Start(psi))
                 {
                     if (proc == null) { err = "Process.Start return null"; return null; }
+
+                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
+                    // 這一顆在 **daemon tick 內**，所以是全 core 裡最容易累積的一處：
+                    // 單顆只活 5 秒，但 tick 反覆跑，而 domain reload 會讓下面那個 Kill 失去對象。
+                    // using 宣告 → 正常結束、逾時 kill、使用者 Cancel、丟例外，四條路都會反登記。
+                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
+                        proc, PROC_TAG_PY, "treasury 餘額查詢（tick 內）", nameof(UCL_BartenderDaemon));
 
                     // 進度可視化 + 可取消 (2026-07-26)：原本 proc.WaitForExit(5000) 是單一阻塞呼叫，
                     // 卡住時 Editor 的 "Hold on..." 對話框只會顯示 daemon.Tick 這一整包，看不出是在等

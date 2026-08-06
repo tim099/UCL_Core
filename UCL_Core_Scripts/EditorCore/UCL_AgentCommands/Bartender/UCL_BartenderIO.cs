@@ -35,6 +35,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //            內容那行時間是給人眼看的，也讓跨機器讀取不必依賴本機時鐘。
         public const string HeartbeatFile = "_heartbeat.txt";
 
+        // 區塊職責：tick 目前階段檔（2026-08-06，診斷長時間 TickInternal）
+        // 物理意義：心跳只能證明 EditorApplication.update 還活著；此檔補上酒保業務 tick
+        //          最後成功進入的階段，讓外部在主執行緒卡住時能直接定位等待的是哪個 sweep。
+        // 數值影響：每個業務 tick 最多覆寫 4 次、每次兩行 UTF-8 純文字；寫入失敗不影響本業。
+        // 設計取捨：不保留歷史、不用 JSON。診斷問題只需要「現在在哪」與進入時間，
+        //          固定檔名覆寫可讓外部工具不掃目錄即可讀取最新事實。
+        public const string TickStateFile = "_tick_state.txt";
+
         // 區塊職責：心跳「停跳」台帳（2026-08-05 Tim 提案）
         // 物理意義：心跳停止的那段空隙**本身就是 Editor 凍結過的物證** —— 編譯 / domain reload
         //          會凍住 update 迴圈。`_heartbeat.txt` 只答「現在活不活」，答不出「剛剛凍過沒」；
@@ -71,6 +79,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static string GetStatePath() => Path.Combine(GetBartenderDir(), StateFile);
         public static string GetAssignmentsPath() => Path.Combine(GetBartenderDir(), AssignmentsFile);
         public static string GetHeartbeatPath() => Path.Combine(GetBartenderDir(), HeartbeatFile);
+        public static string GetTickStatePath() => Path.Combine(GetBartenderDir(), TickStateFile);
         public static string GetStallPath() => Path.Combine(GetBartenderDir(), StallFile);
 
         // ===========================================================
@@ -101,6 +110,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 if (gap >= STALL_THRESHOLD_SECONDS) AppendStall(prev, gap);
             }
             catch { /* 同上 */ }
+        }
+
+        // 區塊職責：覆寫 bartender 業務 tick 的目前階段與進入時間。
+        // 物理意義：外部讀取端看到非 Idle 且時間長於預期，即可將卡頓縮小到對應的檢查流程。
+        // 數值影響：一次 WriteAllText（兩行、約 70 bytes）；刻意不做 atomic 寫入，避免診斷訊號本身增加 IO 延遲。
+        // 邊界：觀測檔寫入失敗必須吞掉，不能讓原本要診斷的 tick 因診斷工具而中斷。
+        public static void WriteTickState(string state)
+        {
+            try
+            {
+                EnsureBartenderDir();
+                string body = "State=" + (state ?? string.Empty) + "\n"
+                    + "EnteredAtUtc=" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z\n";
+                File.WriteAllText(GetTickStatePath(), body, new UTF8Encoding(false));
+            }
+            catch { /* 觀測訊號寫不進去就算了，不能影響 daemon 本業 */ }
         }
 
         // 區塊職責：讀上一拍心跳時間（UTC）

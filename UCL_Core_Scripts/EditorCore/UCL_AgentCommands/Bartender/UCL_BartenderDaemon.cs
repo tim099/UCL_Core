@@ -41,6 +41,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         static double s_LastCheckTime = 0;
         static bool s_Initialized = false;
 
+        const string TickStateIdle = "Idle";
+        const string TickStateCheckKeywordTriggers = nameof(CheckKeywordTriggers);
+        const string TickStateCheckTimeRules = nameof(CheckTimeRules);
+        const string TickStateCheckOvernightDeposits = nameof(CheckOvernightDeposits);
+
         // ===========================================================
         // 區塊：Tick 進度可視化 + 可取消 (2026-07-26, Tim 反映 Editor 卡住 "Hold on..." 好幾分鐘看不出卡在哪)
         // 物理意義：EditorApplication.update 若在單一 callback 內跑太久, Unity 只會顯示籠統的
@@ -178,8 +183,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void TickInternal()
         {
-            //TODO 目前這個階段在Editor啟動時會卡好幾分鐘(懷疑是處理酒館訊息同步的初始化卡住) 需要分析卡住位置並優化
-
             // 區塊職責：tick 三件事 — (1) keyword triggers (2) time rules (3) overnight deposit fee
             // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動),
             //          最後檢查跨日存款保管費 (anti-inflation 機制)
@@ -189,15 +192,25 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             //                 因 script 路徑硬編碼在本專案永遠 miss（靜默失效）已移除，見下方區塊註解。
             // 全 tick 包 try/finally — 任何階段丟例外或使用者按 Cancel 提早 return，
             // 進度條都保證被清掉，不留殘影卡住 Editor UI。
+            bool completed = false;
             try
             {
+                UCL_BartenderIO.WriteTickState(TickStateCheckKeywordTriggers);
                 CheckKeywordTriggers();
+
+                UCL_BartenderIO.WriteTickState(TickStateCheckTimeRules);
                 CheckTimeRules();
+
+                UCL_BartenderIO.WriteTickState(TickStateCheckOvernightDeposits);
                 CheckOvernightDeposits();
+                completed = true;
             }
             finally
             {
                 ClearProgress();
+                // 僅在三段皆正常返回時改回 Idle；例外時保留最後進入的 state，
+                // 才不會把失敗位置覆寫掉，讓外部診斷重新失去證據。
+                if (completed) UCL_BartenderIO.WriteTickState(TickStateIdle);
             }
         }
 

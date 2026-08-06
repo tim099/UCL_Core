@@ -74,6 +74,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         const string k_BatonDirName = "baton";
         const string k_LettersDirName = "letters";
 
+        public const string Key_CharacterId = "character_id";
         public const string Key_Name = "name";
         public const string Key_NameOriginal = "name_original";
         public const string Key_Facts = "facts";
@@ -480,6 +481,118 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case ChapterRelation.Prologue: return "序章（不參與連續性判定）";
             }
             return relation.ToString();
+        }
+
+        // ===========================================================
+        // 人物：facts（客觀，profile.json）與 view（主觀，vN_<date>.md）分離
+        // 物理意義：**改觀就 fork 新版本，絕不覆寫舊版** —— 好書值得重讀正因看法會變，
+        //          v1→v2→v3 的演變本身就是閱讀體驗（同構於 affinity opinion history / persona fork）。
+        // 數值影響：AddCharacter 只在人物不存在時建 v1；已存在一律要求走 ReviseView。
+        // ===========================================================
+        public static string AddCharacter(string mediaId, string persona, string characterId,
+                                          string name, string nameOriginal, string facts, string view,
+                                          out string error)
+        {
+            error = null;
+            if (LoadReader(mediaId, persona, out error) == null) return null;
+
+            string dir = Path.Combine(ReaderRoot(mediaId, persona), k_CharactersDirName, characterId);
+            string profilePath = Path.Combine(dir, k_ProfileJsonName);
+            if (File.Exists(profilePath))
+            {
+                error = $"人物已存在：{characterId} —— **看法有變請走 op=revise_view（fork 新版本）**，" +
+                        "不要用 add_character 覆寫既有 v1（那會抹掉當時的「還不知道」）。" +
+                        "只想補客觀 facts 也走 revise_view --facts。";
+                return null;
+            }
+
+            var profile = new JsonData();
+            profile[Key_CharacterId] = characterId;
+            profile[Key_Name] = name;
+            profile[Key_NameOriginal] = nameOriginal ?? "";
+            profile[Key_Facts] = facts ?? "";
+            profile[Key_SchemaVersion] = 1;
+            SaveJson(profilePath, profile);
+
+            string fileName = $"v1_{Today()}.md";
+            SaveText(Path.Combine(dir, fileName), RenderViewFile(characterId, 1, persona, null, view));
+
+            WriteRecallBrief(mediaId, persona, true, out _);
+            return $"- ✅ 新增人物 `{characterId}`（{name}）＋ 初版看法 `{fileName}`";
+        }
+
+        /// <summary>
+        /// 改觀 → fork 下一版 view（永不覆寫）。可同時補客觀 facts（那是可更新的已確認資料）。
+        /// </summary>
+        public static string ReviseView(string mediaId, string persona, string characterId,
+                                        string view, string changeReason, string facts,
+                                        out string error)
+        {
+            error = null;
+            if (LoadReader(mediaId, persona, out error) == null) return null;
+
+            string dir = Path.Combine(ReaderRoot(mediaId, persona), k_CharactersDirName, characterId);
+            string profilePath = Path.Combine(dir, k_ProfileJsonName);
+            JsonData profile = LoadJson(profilePath, out error);
+            if (profile == null)
+            {
+                error = $"{error}\n→ 人物不存在，第一次記請走 op=add_character。";
+                return null;
+            }
+
+            // 版本號取既有檔案最大值 + 1（掃磁碟而非猜，缺號也不會覆蓋既有版本）
+            int maxVersion = 0;
+            foreach (string existing in Directory.GetFiles(dir, "v*.md"))
+            {
+                Match m = k_ViewFilePattern.Match(Path.GetFileName(existing));
+                if (m.Success && int.TryParse(m.Groups[1].Value, out int n) && n > maxVersion) maxVersion = n;
+            }
+            int version = maxVersion + 1;
+
+            string fileName = $"v{version}_{Today()}.md";
+            string path = Path.Combine(dir, fileName);
+            if (File.Exists(path))
+            {
+                error = $"同日已有 {fileName} 但不在版本掃描結果內 —— 拒絕覆寫，請人先看一眼";
+                return null;
+            }
+            SaveText(path, RenderViewFile(characterId, version, persona, changeReason, view));
+
+            if (!string.IsNullOrEmpty(facts))
+            {
+                profile[Key_Facts] = facts;
+                SaveJson(profilePath, profile);
+            }
+
+            WriteRecallBrief(mediaId, persona, true, out _);
+            return $"- ✅ `{characterId}` 看法已 fork 為 **v{version}**（`{fileName}`）；" +
+                   $"v1–v{maxVersion} 保留不動" + (string.IsNullOrEmpty(facts) ? "" : "；facts 同步更新");
+        }
+
+        static readonly Regex k_ViewFilePattern = new Regex(@"^v(\d+)_");
+
+        /// <summary>view 檔內容 —— frontmatter 與既有樣本同構（character_id / version / date / reader_persona）。</summary>
+        static string RenderViewFile(string characterId, int version, string persona,
+                                     string changeReason, string view)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("---");
+            sb.AppendLine($"{Key_CharacterId}: {characterId}");
+            sb.AppendLine($"version: {version}");
+            sb.AppendLine($"date: {Today()}");
+            sb.AppendLine($"{Key_ReaderPersona}: {persona}");
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine($"## {persona} 的看法（v{version}）");
+            sb.AppendLine();
+            if (!string.IsNullOrEmpty(changeReason))
+            {
+                // 改觀理由單獨成段：**為什麼變**比**變成什麼**更難事後重建
+                sb.AppendLine($"> **改觀觸發**：{changeReason}");
+                sb.AppendLine();
+            }
+            sb.AppendLine(view.TrimEnd());
+            return sb.ToString();
         }
 
         /// <summary>只更新書籤與當前看法（op=bookmark）。</summary>

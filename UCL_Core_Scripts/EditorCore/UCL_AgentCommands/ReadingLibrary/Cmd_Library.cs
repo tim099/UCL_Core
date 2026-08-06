@@ -45,7 +45,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark（required） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view（required） | " +
+            "character=人物 id（add_character / revise_view required） | " +
+            "name=人物顯示名（add_character required） | name_original=原文讀音，供 STT prompt 用（選填） | " +
+            "facts=已確認的客觀資料（選填；與主觀 view 分開存） | " +
+            "view=你的第一人稱看法（add_character / revise_view required；長文走 --arg-stdin view） | " +
+            "change_reason=什麼畫面或台詞讓你改觀（revise_view required —— 為什麼變比變成什麼更難事後重建） | " +
             "persona=讀者 persona，必須與 readers/<persona>/reader.json 相符（required，無預設） | " +
             "media_id=媒材 id，前綴須與 media_kind 同字，例 film-xxx / comic-xxx（required，無預設） | " +
             "work_id=作品 id（media_init required；同作品跨媒材共用） | " +
@@ -98,6 +103,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "media_init": Op_MediaInit(args); break;
                 case "note_chapter": Op_NoteChapter(args); break;
                 case "bookmark": Op_Bookmark(args); break;
+                case "add_character": Op_AddCharacter(args); break;
+                case "revise_view": Op_ReviseView(args); break;
 
                 default:
                     throw new ArgumentException(
@@ -254,6 +261,63 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 (recall ?? $"> [!WARNING]\n> 心得已落盤，但讀回視圖生成失敗：{recallErr}\n"));
 
             Debug.Log($"[{CommandType}] note_chapter → {mediaId} / {persona} / {chapterId} r{roundNumber}");
+        }
+
+        /// <summary>
+        /// 區塊職責：第一次記一個人物（facts 客觀 / view 第一人稱，分開存）。
+        /// 物理意義：已存在就 reject 並指路 revise_view —— 覆寫 v1 等於抹掉「當時我還不知道」。
+        /// </summary>
+        void Op_AddCharacter(Dictionary<string, string> args)
+        {
+            string persona = RequireId(args, "persona");
+            string mediaId = RequireId(args, "media_id");
+            string characterId = RequireId(args, "character");
+            string name = GetArg(args, "name", "").Trim();
+            string view = GetArg(args, "view", "");
+
+            if (string.IsNullOrEmpty(name))
+                throw new ArgumentException($"[{CommandType}] name 必填（人物顯示名）");
+            if (string.IsNullOrWhiteSpace(view))
+                throw new ArgumentException(
+                    $"[{CommandType}] view 必填（你的第一人稱看法；長文走 --arg-stdin view）—— " +
+                    "只記 facts 不記看法的話，這套系統就退化成人物百科了");
+
+            string log = UCL_ReadingLibraryIO.AddCharacter(mediaId, persona, characterId, name,
+                GetArg(args, "name_original", "").Trim(), GetArg(args, "facts", "").Trim(), view,
+                out string error);
+            if (log == null)
+                throw new InvalidOperationException($"[{CommandType}] add_character 失敗：{error}");
+
+            Cmd_Library_Helpers.ResolveLastOp($"# 🧑 Library add_character\n\n{log}\n");
+            Debug.Log($"[{CommandType}] add_character → {mediaId} / {persona} / {characterId}");
+        }
+
+        /// <summary>
+        /// 區塊職責：改觀 → fork 下一版看法（絕不覆寫舊版）。
+        /// 物理意義：change_reason 必填 —— 「為什麼變」比「變成什麼」更難事後重建。
+        /// </summary>
+        void Op_ReviseView(Dictionary<string, string> args)
+        {
+            string persona = RequireId(args, "persona");
+            string mediaId = RequireId(args, "media_id");
+            string characterId = RequireId(args, "character");
+            string view = GetArg(args, "view", "");
+            string changeReason = GetArg(args, "change_reason", "").Trim();
+
+            if (string.IsNullOrWhiteSpace(view))
+                throw new ArgumentException($"[{CommandType}] view 必填（新版看法；長文走 --arg-stdin view）");
+            if (string.IsNullOrEmpty(changeReason))
+                throw new ArgumentException(
+                    $"[{CommandType}] change_reason 必填 —— 是什麼畫面／台詞讓你改觀？" +
+                    "沒有觸發事件的「改觀」多半只是換句話說，那不值得開新版本");
+
+            string log = UCL_ReadingLibraryIO.ReviseView(mediaId, persona, characterId, view, changeReason,
+                GetArg(args, "facts", "").Trim(), out string error);
+            if (log == null)
+                throw new InvalidOperationException($"[{CommandType}] revise_view 失敗：{error}");
+
+            Cmd_Library_Helpers.ResolveLastOp($"# 🧑 Library revise_view\n\n{log}\n");
+            Debug.Log($"[{CommandType}] revise_view → {mediaId} / {persona} / {characterId}");
         }
 
         /// <summary>只更新書籤 / 當前看法 / status（不落章節）。</summary>

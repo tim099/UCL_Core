@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-08-01
+last_updated: 2026-08-06
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -393,6 +393,70 @@ Watcher 端有 **orphan-lock 自癒**：偵測「`.running` 檔存在但 in-memo
 ### Editor reset（最後手段）
 
 換 queue 也救不回（in-memory runner 全壞）→ 退 PlayMode / 觸發一次 Recompile / 重啟 Editor，watcher + runner 重新 init 即恢復。
+
+---
+
+## 8.3 ⚠ 暫行手動解堵 SOP（2026-08-06 summit 補；根治前的臨時規程，Tim 指示）
+
+> [!IMPORTANT]
+> **順序不可顛倒：先確認真因，再清。** `run_cmd.py` timeout 時印的
+> 「Editor not running, or UCL_AgentCommandWatcher disabled?」是**猜測**，
+> 2026-08-06 連兩次真因都不是那兩個（Editor 活著、watcher 也沒關）。
+> 附了猜測的警示會讓人不去查真因 —— 照著猜測亂清，會把還沒跑的 cmd 一起刪掉。
+
+### 第一步：查三個可驗證的事實（別跳過）
+
+```bash
+# ① Editor 還活著嗎（心跳＝Editor 端最近寫過的檔）
+find AgentCommands -maxdepth 2 -newermt "-90 seconds" -type f
+#    有輸出 → Editor 在跑，問題不在「沒開」
+
+# ② 該筆 cmd 的 RunCount（真相在這裡）
+python -c "import json;d=json.load(open('AgentCommands/queues/<persona>/queue.json',encoding='utf-8'));[print(c['Id'],c['RunCount'],(c['LastRunError'] or '(none)')[:100]) for c in d['Commands']]"
+
+# ③ trigger 還在不在
+ls AgentCommands/queues/<persona>/
+```
+
+### 第二步：依真因對症
+
+| 事實組合 | 真因 | 處置 |
+|---|---|---|
+| `RunCount=0` + trigger 還在 + Editor 有心跳 | **trigger 落在 domain reload 窗口被靜默漏接**（watcher 的 FileSystemWatcher 被重載，事件沒了但檔還在） | **重寫 trigger 補一次事件**（見下），或人工按 ▶ Run Pending |
+| `RunCount>0` + `LastRunError` 有值 | cmd 真的失敗了，而**失敗會留在 queue**（§4.3）→ 後續批次被 `run_cmd` 的 pending 預檢擋住 | 讀 `AgentCommands/_cmd_errors/<cmd_id>.md` **確認錯誤內容後**，手動移除該筆 |
+| `.running` 檔存在但無心跳 | orphan lock（見 §8.2） | 刪 `.running`，必要時 Editor reset |
+| Editor 無心跳 | 真的沒開 / 凍結 | 人工介入，別動 queue |
+
+```bash
+# 【A】漏接 trigger → 重寫補事件（不動 queue 內容，最安全）
+python -c "import json,datetime;json.dump({'createdAt':datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),'submittedBy':'manual re-notify'},open('AgentCommands/queues/<persona>/pending.trigger','w'),indent=2)"
+
+# 【B】已確認失敗的那筆 → 依 cmd_id 移除（其餘不動）
+python -c "
+import json,sys
+p='AgentCommands/queues/<persona>/queue.json'; cid='<cmd_id>'
+d=json.load(open(p,encoding='utf-8'))
+keep=[c for c in d['Commands'] if c['Id']!=cid]
+assert len(keep)==len(d['Commands'])-1, '找不到該 cmd_id，先確認再清'
+d['Commands']=keep; json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=2)
+print('removed',cid)"
+```
+
+### 硬規則
+
+- **只清自己送的 cmd。** queue 是多租戶共用的；清別人的那筆等於中斷同事正在等的工作
+  （對照 §8.1 的「資料夾名＝身分」）。移除前先看 `Args` 裡的 `persona` / `_caller_env_marker` 是不是你。
+- **先讀 `_cmd_errors/<cmd_id>.md` 再移除。** 移掉之後那筆的 `LastRunError` 就沒了，
+  錯誤報告是唯一留下來的證據。
+- **不要用「queue 空了」當成功的證據。** `run_cmd.py` 目前以「cmd 從 queue 消失」推論成功；
+  手動移除失敗的那筆之後，同一個 cmd_id 在 `run_cmd` 眼裡會長得像成功。
+  手動清完請自己去看 `_last_op.md` / 產物是否真的落地。
+
+> **根治計畫**（Tim 2026-08-06 拍板，尚未實作）：失敗的 OneShot 應該
+> ① 輸出 log ② 寫進 `History` ③ **直接從 queue 移除不堵塞**；
+> 而 `run_cmd.py` 必須**同時**改成「以 cmd_id 查結果」而非「以消失推論成功」——
+> 只做前者不做後者，等於把每一次失敗都印成 `✓ Success`。
+> 進度與細節見工作記憶 `reading-library-cmd`（`decision_queue-failure-must-not-block`）。
 
 ---
 

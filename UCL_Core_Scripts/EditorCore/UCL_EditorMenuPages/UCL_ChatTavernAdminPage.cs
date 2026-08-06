@@ -1760,16 +1760,16 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         // 區塊：🗄 維護（檔名 migration）
         // 區塊職責：把「訊息檔名 → 全域 seq」這件一次性遷移，做成頁面上可手動觸發的入口。
-        // 物理意義：判斷與對帳**全在 Python**（`Tools~/AgentCommands/migrate_message_filenames.py`）——
-        //          本區塊只負責帶參數、開 process、把輸出貼回來。C# 不重寫一份改名邏輯：
-        //          兩份實作遲早不一致，而不一致的那天沒人會發現（畫面看起來永遠正常）。
-        // 數值影響：dry-run 完全唯讀。apply 只改**檔名**，不碰任何檔案內容。
-        // 邊界：rooms 目錄走 `UCL_ChatTavernIO.GetRoomsRoot()`、腳本路徑走 `UCL_EditorPath.CorePath`
-        //      —— 兩者都**不寫死安裝路徑**，所以本流程跨專案可用（見 ucl-core-paths）。
+        // 物理意義：判斷與對帳全在 `UCL_ChatTavernMessageFileMigration`（同 namespace 的 C# 實作）——
+        //          本區塊只負責畫按鈕、擋前置條件、把報告貼回來，**不含任何改名邏輯**。
+        //          那支直接呼叫 `UCL_ChatTavernIO_PerMsgFile.GetOrderedMessageFilePaths()`，
+        //          也就是 seq 排序的**同一個函式本人** —— 不是複製一份排序規則。
+        // 數值影響：dry-run 完全唯讀。apply 只改**檔名**，不碰任何檔案內容、不動 git。
+        // 邊界：rooms 目錄由該 migration 走 `UCL_ChatTavernIO.GetRoomsRoot()` 解析，
+        //      不寫死安裝路徑，跨專案可用（見 ucl-core-paths）。
         // ⚠ 執行前必須關閉聊天酒館系統總開關：改名進行中的窗口裡 seq 對應是錯亂的，
         //   bartender 可能對舊訊息誤觸發 keyword trigger（會真的發文）。本區塊會擋（見下）。
         // ===========================================================
-        const string MigrateProcTag = "tavern_migrate_msgnames";
         string m_MigrateReport = "";
         Vector2 m_MigrateScroll;
         bool m_MigrateRunning;
@@ -1832,7 +1832,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (m_MigrateRunning)
                 {
-                    GUILayout.Label($"⏳ 執行中（{m_MigrateRunningLabel}）— 一萬檔約數十秒", WrapLabelStyle);
+                    GUILayout.Label($"⏳ 執行中（{m_MigrateRunningLabel}）— 進度條可取消", WrapLabelStyle);
                 }
                 if (!string.IsNullOrEmpty(m_MigrateReport))
                 {
@@ -1860,95 +1860,33 @@ namespace UCL.Core.EditorLib.Page
                 new ButtonData("取消"));
         }
 
-        // 區塊職責：開 python process 跑 migration（照 UCL_GitFlattenSyncPage 的既有慣例）
-        // 物理意義：硬規則 —— C# 開的每顆外部 Process 都要登記進 UCL_ProcessRegistryService。
-        //          沒登記的話，domain reload 會清掉 C# 的 Process 物件而 **OS 層的 python 不會跟著死**，
-        //          每次重編再按一次就多一顆孤兒，累積成屍潮。
+        // 區塊職責：跑 migration（**直接呼叫 C# 實作，不開 process**）
+        // 物理意義：排序的唯一事實源在 UCL_ChatTavernIO_PerMsgFile.GetOrderedMessageFilePaths()，
+        //          migration 直接用同一個函式 —— 不是複製規則（見該 migration 檔的檔頭）。
+        //          少開一顆 process 就少一整族問題：登記 / 編碼 / stream deadlock / 逾時 / 跨平台 python。
+        // 數值影響：dry-run 完全唯讀；apply 只改檔名。兩者都在主執行緒跑（有可取消的進度條）。
         void RunMigrate(bool apply)
         {
-            string core = UCL_EditorPath.CorePath;
-            if (string.IsNullOrEmpty(core))
-            {
-                m_MigrateReport = "✗ 找不到 UCL_Core 路徑（UCL_EditorPath.CorePath 為空）";
-                return;
-            }
-            string script = Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, core,
-                "Tools~", "AgentCommands", "migrate_message_filenames.py"));
-            if (!File.Exists(script))
-            {
-                m_MigrateReport = $"✗ 找不到 migrate_message_filenames.py（解析結果: {script}）";
-                return;
-            }
-            string roomsDir = UCL_ChatTavernIO.GetRoomsRoot();
-            if (!Directory.Exists(roomsDir))
-            {
-                m_MigrateReport = $"✗ 找不到 rooms 目錄（解析結果: {roomsDir}）";
-                return;
-            }
-
             m_MigrateRunning = true;
             m_MigrateRunningLabel = apply ? "apply" : "dry-run";
-            m_MigrateReport = $"⏳ {m_MigrateRunningLabel} 執行中…";
-
-            string argLine = $"\"{script}\" --rooms-dir \"{roomsDir}\"" + (apply ? " --apply --git" : "");
-
-            System.Threading.Tasks.Task.Run(() =>
+            try
             {
-                var so = new System.Text.StringBuilder();
-                var se = new System.Text.StringBuilder();
-                int exit = -1;
-                int pid = -1;
-                try
-                {
-                    using (var p = new System.Diagnostics.Process())
-                    {
-                        p.StartInfo.FileName = "python";
-                        p.StartInfo.Arguments = argLine;
-                        p.StartInfo.WorkingDirectory = UCL_RepoPath.RepoRoot;   // git mv 需要在 repo 內
-                        p.StartInfo.UseShellExecute = false;
-                        p.StartInfo.RedirectStandardOutput = true;
-                        p.StartInfo.RedirectStandardError = true;
-                        p.StartInfo.CreateNoWindow = true;
-                        p.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
-                        p.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
-                        p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-                        // stdout / stderr 必須同時非阻塞讀：只讀一個時 child 寫另一個把 buffer 填滿
-                        // → child 卡在 write、caller 卡在讀 → 永久 deadlock。
-                        p.OutputDataReceived += (_, e) => { if (e.Data != null) so.AppendLine(e.Data); };
-                        p.ErrorDataReceived += (_, e) => { if (e.Data != null) se.AppendLine(e.Data); };
-                        UCL_ProcessRegistryService.KillAllByTag(MigrateProcTag);   // singleton 語意
-                        p.Start();
-                        UCL_ProcessRegistryService.Register(p, MigrateProcTag,
-                            $"migrate_message_filenames.py（{(apply ? "apply" : "dry-run")}）",
-                            nameof(UCL_ChatTavernAdminPage));
-                        pid = p.Id;
-                        p.BeginOutputReadLine();
-                        p.BeginErrorReadLine();
-                        if (!p.WaitForExit(20 * 60 * 1000))
-                            se.AppendLine("[TavernMigrate] 20 分鐘未結束 — 已放棄等待（行程可能仍在跑）");
-                        else
-                            exit = p.ExitCode;
-                    }
-                }
-                catch (Exception e)
-                {
-                    se.AppendLine(e.ToString());
-                }
-                finally
-                {
-                    // 反登記放 finally —— 例外路徑也要清，否則記錄檔留著一個已死的 PID
-                    if (pid > 0) UCL_ProcessRegistryService.Unregister(pid, MigrateProcTag);
-                }
-                string stdout = so.ToString();
-                string stderr = se.ToString();
-                EditorApplication.delayCall += () =>
-                {
-                    m_MigrateRunning = false;
-                    m_MigrateRunningLabel = "";
-                    m_MigrateReport = (string.IsNullOrEmpty(stderr) ? "" : $"— stderr —\n{stderr}\n")
-                                      + stdout + $"\n— exit code: {exit} —";
-                };
-            });
+                var r = apply
+                    ? UCL_ChatTavernMessageFileMigration.Apply()
+                    : UCL_ChatTavernMessageFileMigration.Plan();
+                m_MigrateReport = UCL_ChatTavernMessageFileMigration.Format(r, apply);
+            }
+            catch (Exception e)
+            {
+                // 例外不可靜默：使用者按了按鈕什麼都沒發生，看起來跟 UI 壞掉一樣。
+                m_MigrateReport = $"🚨 執行例外：{e}";
+                Debug.LogError($"[TavernAdmin] migration 例外: {e}");
+            }
+            finally
+            {
+                m_MigrateRunning = false;
+                m_MigrateRunningLabel = "";
+            }
         }
 
         void DrawParamSettingsPanel()

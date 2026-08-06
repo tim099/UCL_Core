@@ -277,6 +277,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return sb.ToString();
         }
 
+        // ===========================================================
+        // 區塊職責：對外公開「訊息排序」這個唯一事實源。
+        // 物理意義：seq 的定義就是「本清單的 index + 1」。任何需要知道 seq ↔ 檔案對應的工具
+        //          （例如檔名 migration）**必須用這一支**，不可自己重寫一套排序 ——
+        //          重寫的那份跟本體只要有一絲不同，seq 就會整體位移，
+        //          而位移後的外觀完全正常（每一則訊息都還在，只是全部對到別人）。
+        // 數值影響：純讀。回傳的是 cache 本體 —— **只讀，勿改內容**。
+        // 邊界：房間不存在 / 無 messages 目錄 → 回空陣列。
+        // ===========================================================
+        public static string[] GetOrderedMessageFilePaths(string roomId)
+        {
+            string root = GetMessagesRoot(roomId);
+            if (!Directory.Exists(root)) return Array.Empty<string>();
+            return GetSortedMessageFiles(roomId, root);
+        }
+
         /// <summary>取該房「排序後的全部訊息檔路徑」（目錄指紋命中則走快取）。回傳陣列為 cache 本體 —— 只讀，勿改。</summary>
         static string[] GetSortedMessageFiles(string roomId, string root)
         {

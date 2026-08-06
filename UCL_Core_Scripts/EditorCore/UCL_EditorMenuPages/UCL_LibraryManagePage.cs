@@ -27,6 +27,13 @@ namespace UCL.Core.EditorLib.Page
     [HelpURL("ucl_core:Docs~/{lang}/Mechanics/Reading_Library.md")]
     public class UCL_LibraryManagePage : UCL_CommonEditorPage
     {
+        public static UCL_LibraryManagePage Create()
+        {
+            var page = new UCL_LibraryManagePage();
+            UCL_GUIPageController.CurrentRenderIns.Push(page);
+            return page;
+        }
+
         // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
         const string PROC_TAG_PY = "library_py";
 

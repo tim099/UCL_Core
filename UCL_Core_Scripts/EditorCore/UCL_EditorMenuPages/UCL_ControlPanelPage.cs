@@ -82,11 +82,37 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawKnowledgeBaseAdminSection();
 
+            DrawLibraryManageSection();
+            GUILayout.Space(8);
             DrawAgentCmdAdminSection();
             GUILayout.Space(8);
             DrawAgentSkillManagerSection();
             GUILayout.Space(8);
             DrawAgentCommandsPathSection();
+        }
+
+        // 區塊職責：既有圖書館管理頁入口。
+        // 物理意義：Control Panel 提供日常管理入口；閱讀心得的新／舊資料定位則交由
+        //          UCL_ReadingNotesManagePage，避免此處把兩種資料模型混成一個操作面。
+        // 數值影響：只 push page，不讀寫 BookNotes 或 Books。
+        void DrawLibraryManageSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "LibraryManageFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>📚 圖書館管理</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟圖書館管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))
+                        UCL_LibraryManagePage.Create();
+                    if (GUILayout.Button("閱讀心得入口", UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 0.95f, 0.75f)), GUILayout.ExpandWidth(false)))
+                        UCL_ReadingNotesManagePage.Create();
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                GUILayout.Label("圖書館管理頁負責既有 Books / Library 操作；閱讀心得入口可依作品名稱列出 Archive 與新 Library 的手動開啟路徑，不會讓新流程讀取 Archive。", UCL_GUIStyle.LabelStyle);
+            }
         }
 
         // ===========================================================

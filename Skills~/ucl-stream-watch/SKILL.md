@@ -5,7 +5,7 @@ description: |
   每 cycle 把「上次看到→現在」所有 frame 用 montage 壓成一張縮圖牆 (一張不漏)，讀圖後發觀戰評論進 tavern
   (Discord mirror 回 Tim 手機)，到設定的結束時間 (--end-time HH:mm) 自動下班 + 結算薪資。
   跟 ucl-watch-video (看 YouTube 網路影片抓轉錄稿) 是兩回事 — 本 skill 是「看 Tim 的即時螢幕直播」。
-  整合 reading-library:影集每集當一章寫觀影心得入庫(library.py),開場先讀前幾集心得 (resume-first / bookmark-last,跟讀書同一套)。
+  整合 reading-library:觀影心得寫入新 Library 的 work → media → persona → read_session；開場先讀同 persona 同 media 的既有 session。
   Lite v0.5 後支援同樂會模式: `--mode primary` (主觀影者, 預設) / `--mode companion` (加入既有 primary 場陪同觀影, 可自由選擇看哪段)。
   觸發詞 (case-insensitive substring): 看直播 / 觀看直播 / 陪看 / 陪我看直播 / 觀戰直播 / 直播陪看 /
     看直播到 / 看到幾點 / watch stream / stream watch / 連續觀看 / 觀戰模式 /
@@ -52,17 +52,7 @@ ScreenStream daemon 每秒寫一張 frame 進 600 槽 ring buffer（只留 10 �
 ### Step 0. 前置確認
 - daemon 在跑？看 `AgentCommands/_screenstream/_config.json` 的 `enabled:true` + frames 有新鮮幀
 - 確認 persona 已上線（morning lock）；**`start` 的 `--persona` 為必填**（Tim 2026-07-02 拍板取消 auto-infer — 多 lock 環境同 env_hash 多 persona 無從分辨會挑錯人，未傳會抱錯）。顯式帶你這 session lock 的 persona（e.g. `--persona ame`）
-- **【觀影心得·先讀】認得出在看哪部片 / 影集 → 先查閱讀心得庫有沒有「前幾集」的筆記**（跟讀書一樣 resume-first）：
-  ```bash
-  PY="python <UCL_Core>/Tools~/AgentCommands/library.py"   # <UCL_Core> = 本專案的 UCL_Core 掛載點 (各專案不同, 見 ucl-core-paths skill)
-  $PY list | grep -i <片名關鍵字>                 # 或 $PY search --query <片名>
-  # 有 → resume 喚回人物/名詞/未解伏筆/上次看到哪，續看才接得上：
-  $PY resume --book <slug>
-  # 要看 ep N → 撈跨分支最完整前情 (多 viewer 場常有同事分支比主線多章):
-  $PY resume --book <slug> [--reader <me>] --up-to N   # 逐章 fallback: [me分支→主線→其他分支]; slug 分歧標 ⑂ 分叉不代合併
-  # 沒有 → 本場開新書（見 Step 2.5）
-  ```
-  確認問 Tim 在看哪部（片名不確定時），才能正確比對既有心得。
+- **【觀影心得·先讀】認得出在看哪部片 / 影集 → 先查同 persona、同 media 的新 Library session**：有既有 session 才喚回人物／名詞／伏筆／bookmark；沒有就先確認 work、實際媒材與 persona，再建立新 session。片名不確定時先問 Tim；不得用 legacy `library.py --book` 或 Archive 補前情。
 
 ### Step 1. 開 session
 ```bash
@@ -105,22 +95,9 @@ python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start \
 6. ScheduleWakeup ~45–60s 後再來一輪（遠小於 600s buffer）
 ```
 
-### Step 2.5 邊看邊寫觀影心得（reading-library 整合，跟讀書一樣）
+### Step 2.5 邊看邊寫觀影心得（reading-library 整合）
 
-觀影＝看一本「動態的書」，**影集每集＝一章**。把劇情心得沉澱進閱讀心得庫，下次（或下一集）續看才有前情可參考。用 `library.py`（同讀書工具）：
-
-```bash
-PY="python <UCL_Core>/Tools~/AgentCommands/library.py"
-# 開新書（首次看這部片，origin=imported；劇集名當 title）
-$PY add-book --id <片slug> --title <中文名> --title-original <原文名> --origin imported --reader-persona <my-persona>
-$PY tag --book <片slug> --add "動畫,觀影心得,stream-watch,..."
-# 看的過程中(自律時機，通常一集結束/一個 arc 收束時)：
-$PY add-character --book <片slug> --id <cid> --name <角色> --chapter <集> --headline ... --facts ... --view ...   # 新角色登場
-$PY add-term      --book <片slug> --term <名詞> --category place|term|faction|work --definition ...              # 世界觀名詞
-$PY log-chapter   --book <片slug> --chapter <集> --title <集名/arc> --summary ... --events "A | B" --views ... --new-characters "c1 | c2" --foreshadow "未解A | 待解B"
-# 對人物「改觀」(劇情翻轉顛覆先前印象) → revise-view（fork 新版本，不覆寫）
-$PY revise-view   --book <片slug> --character <cid> --chapter <集> --headline ... --change-reason ... --view ... --diff ...
-```
+觀影心得寫進新 Library：先固定 work、媒材（影集用 `series-`、電影用 `film-`、直播用 `stream-`）、當前 persona 與 read session。集數只在固定內容邊界的 media 內有意義；直播場次以時間為身分，不假裝是作品章節。工具 API 重做完成前不要呼叫舊 `library.py`。
 
 **自律時機 & 誠實守則**：
 - 不必每個 montage cycle 都寫心得（那是 tavern 觀戰評論的事）；**心得在「一集結束 / 一個 arc 收束 / 重要轉折」時沉澱一筆**，避免洗版式記帳。
@@ -132,12 +109,7 @@ python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py end --session <SI
 # 到期 (cycle 回 expired) → 直接 end; 提前 (Tim 叫停) → 必加 --early-confirm 否則 exit 2
 # 結算 base(1/min) + observation bonus(2/筆), 走 tavern-keeper 發收播 announcement
 ```
-**收播前 MUST 收尾觀影心得**（跟讀書 bookmark-last 一樣）：
-```bash
-$PY bookmark --book <片slug> --chapter <看到哪集> --note "看到哪 + 觀看限制(縮圖/集數來源) + 續看前該記得的人物/伏筆/題眼"
-# 可選：$PY review --book <片slug> --reviewer <persona> --scope episode:N --rating ... --pitch ... --for-whom ... --content-note ...
-```
-下次開同一部片的 stream-watch，Step 0 的「先讀」就會撈到這本書、resume 接回前情。
+**收播前 MUST 收尾觀影心得**：更新該 session 的 bookmark，記下觀看限制（縮圖／集數來源）、人物、伏筆與下次的接續點。下次只由相同 persona 與相同 media 的新 session 接回前情。
 
 ## ⛔ Hard Rules
 
@@ -148,7 +120,7 @@ $PY bookmark --book <片slug> --chapter <看到哪集> --note "看到哪 + 觀�
 5. **評論走 tavern op=post**（mirror 自動回 Discord），不要直接打 webhook
 6. **cycle 間隔 45–60s**，絕不接近 600s buffer span（落後太多 overflow 真丟幀）
 7. **熱點高密度自律** — montage 裡看到劇烈變化，下輪自動切高密度 / region，並 `--hotspot` 記帳
-8. **【觀影心得整合】開場先讀、收播前收尾**（跟讀書 resume-first / bookmark-last 同骨架）— Step 0 認得出片名就先查 `library.py` 有無前幾集筆記並 resume；看的過程在「集 / arc 收束」沉澱 `log-chapter` + 人物/名詞；Step 3 收播前 `bookmark` 收尾。心得是 reading-library（持久、可跨次續看參考），tavern 觀戰評論是即時陪聊——兩者不同、別混為一談。
+8. **【觀影心得整合】開場先讀、收播前收尾**：只查相同 persona／media 的新 Library session；在集／arc 收束時沉澱章節、人物與名詞，收播前更新該 session bookmark。心得是持久記錄，tavern 觀戰評論是即時陪聊，兩者不混用。
 9. **字幕帶自校準**（給要讀對白的場景）— 字幕垂直位置隨影片/播放器版面跑（16:10 螢幕看 16:9 內容常不在螢幕底）。要精讀對白時：抓一張全幅量字幕落點 → `--crop-pct 0,<y>,1,<h>` 裁字幕帶；可一輪讀「視覺全幅 12 格(含字幕錨點) + 字幕帶密集格」兩圖交錯，視覺當錨點、字幕帶填空隙。**信實測幀、信 Tim 的 ground-truth 回饋，別憑目測堆疊縮圖**（血淚:曾被畫面內新聞標題誤導、校 4 次才定位）。
 
 10. **字幕 OCR 同步輸出（T-Subtitle-OCR, Tim 2026-06-09 拍板）** — 縮圖牆字幕辨識率長期低，現在 `screenstream_montage.py` 加 `--ocr` flag：直接走回 ring buffer 原始 1080p frame crop 字幕帶 → RapidOCR (Paddle ch_PP-OCRv4 ONNX, 純 CPU) → 輸出 sidecar `_montage.subtitles.md` 按 tile 編號對齊。用法：
@@ -270,6 +242,6 @@ python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py end --session sw-
 - 註：work-session / remote-work / waiter 三種舊 session 模式已於 2026-07-29 全數退役；本 skill 的 start/cycle/end + 結算骨架自成一套。
 - 區別：`ucl-watch-video`（看 YouTube 網路影片抓轉錄稿）≠ 本 skill（看 Tim 即時螢幕直播）
 - 心得分享：`ucl-chat-tavern` Task Share 規範
-- **觀影心得整合：`reading-library` skill**（影集＝書、每集＝章；用 `library.py` 的 add-book/log-chapter/add-character/add-term/revise-view/bookmark/resume/review，與讀書共用同一套機制與心得庫）。範例已建檔：`vivy-fluorite-eyes-song`《Vivy 螢石之眼之歌》。
+- **觀影心得整合：`reading-library` skill**（新 Library 的 work/media/persona/read_session；影集、電影、直播是不同 media，不共用進度或章節）。
 - **🎙 STT 語音轉錄專章：[STT.md](STT.md)**（T-STT-AutoStart, 2026-07-09）— whisper 語音轉文字的完整說明：daemon cache vs live 即時擷取兩條路徑、`start --stt` 開播同步啟動 daemon worker（收播自動還原）、`--stt-lang ja` 看日番必帶、cache 沒起來時 `audio_transcribe.py live 15 --lang ja` fallback、ASR 咬人名的誠實引用守則、user-site import 坑與殘缺 system torch 孤兒。**要用語音感官的場一律先讀該檔。**
 - **🎵 Audio Viz 判讀指南：[docs/Workflows/Audio_Viz_Reading_Guide.md](../../../docs/Workflows/Audio_Viz_Reading_Guide.md)** — montage 上的右下角 / 底部 stereo spectrogram 怎麼讀（顏色→聲音對應、L/R 通道、peak hold、靜音/飽和判讀）。觀戰評論要提到音訊狀態時必看，是 agent 沒耳朵時的補充感官 modality。

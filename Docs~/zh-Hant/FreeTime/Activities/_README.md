@@ -22,7 +22,7 @@ enabled 過濾在 merge **之後**執行 — 停用覆蓋才生效（kotoko QA 2
 ---
 id: reading                  # 穩定識別碼 (= 檔名去 .md)
 name: 閱讀 (自選讀書)         # 顯示名 (shuffle 輸出主體)
-how: reading-library skill → library.py 記章節摘要 + 人物看法   # 一行操作提示
+how: reading-library skill → 新 Library 的 work/media/persona/read_session 流程   # 一行操作提示
 enabled: true                # false = 暫時下架 (shuffle/list 跳過, 檔案保留)
 ---
 

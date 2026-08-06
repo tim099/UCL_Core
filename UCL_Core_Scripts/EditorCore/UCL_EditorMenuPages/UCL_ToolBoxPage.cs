@@ -50,6 +50,14 @@ namespace UCL.Core.EditorLib.Page
             DrawTool(UCL_CodeLocalize.Get("ToolBox.ProcessAdmin"),
                 UCL_CodeLocalize.Get("ToolBox.ProcessAdmin.Desc"),
                 () => UCL_ProcessAdminPage.Create());
+
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.LibraryManage"),
+                UCL_CodeLocalize.Get("ToolBox.LibraryManage.Desc"),
+                () => UCL_LibraryManagePage.Create());
+
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.ReadingNotesManage"),
+                UCL_CodeLocalize.Get("ToolBox.ReadingNotesManage.Desc"),
+                () => UCL_ReadingNotesManagePage.Create());
         }
 
         // 區塊職責：畫一個工具列（按鈕 + 說明）

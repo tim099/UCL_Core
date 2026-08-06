@@ -123,7 +123,18 @@ def atomic_write_json(path: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 def tavern_post(sender_id: str, body: str, meta: dict, persona: str = "") -> bool:
-    """Post to tavern via Cmd_Tavern. Returns True if cmd accepted (we don't wait)."""
+    """Post a broadcast announcement to tavern via Cmd_Tavern. Returns True if the cmd completed.
+
+    區塊職責：session 類工具（陪看 / 上班）的開播・收播・加入廣播出口。
+    物理意義：這些是**廣播**——沒有人會回，所以顯式帶 ``--wait-reply 0``。
+    數值影響：不帶那個旗標時 run_cmd 會用預設等回覆窗口，於是**每次都等到呼叫端 120s timeout
+              才回 False**，並在 stderr 印「⚠ tavern_post fail」——而訊息其實早就落地了。
+              那不是偶發，是結構上必定發生（2026-08-06 summit 一晚實測四次：兩場陪看的
+              開播與收播公告全部回報 timeout，四次訊息都在酒館裡）。
+              它也是 basecamp 長期教訓「送出成功 ≠ 對方收到」的鏡像：「等待失敗 ≠ 對方沒收到」。
+    ⚠ 原本這行 docstring 寫「we don't wait」而程式其實在等 —— 註解比事實大，
+      兩者不符時壞的一邊是註解沒被執行、於是沒有人發現。旗標與這段說明是同一次修的。
+    """
     import subprocess
     cmd = [
         sys.executable, str(_RUN_CMD), "run", "Tavern",
@@ -132,6 +143,7 @@ def tavern_post(sender_id: str, body: str, meta: dict, persona: str = "") -> boo
         "--arg", f"sender_id={sender_id}",
         "--arg", f"body={body}",
         "--arg", f"meta={json.dumps(meta, ensure_ascii=False)}",
+        "--wait-reply", "0",
     ]
     if persona:
         cmd.extend(["--arg", f"persona={persona}"])

@@ -1857,6 +1857,56 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
                 GUILayout.Space(6);
+                GUILayout.Label("<b>發文計酬補款（增發，不從央行扣）</b>", WrapLabelStyle);
+                GUILayout.Label(
+                    "找出「當時該發 +1 token 卻沒發」的訊息並補上。判準走<b>現行發放路徑的同一支函式</b>"
+                    + "（Cmd_Tavern.IsPostRewardEligible）—— 不是另寫一份，否則補出來的是"
+                    + "「補款作者以為當時會發的」而不是當時真的會發的。"
+                    + " 冪等靠<b>帳本</b>：跑之前把 ledger 裡所有 work_post 的 source_ref 收成集合逐則比對，"
+                    + "<b>重跑不會付兩次</b>（判準是「帳上有沒有這筆」，不是旗標）。"
+                    + " 不設時間窗 —— 時間窗要人挑，挑錯就漏補，而漏補是靜默的。",
+                    WrapLabelStyle);
+                using (new EditorGUI.DisabledScope(m_MigrateRunning))
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("試算（唯讀）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.55f, 0.8f, 1f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        try
+                        {
+                            var res = UCL_TavernPostRewardBackfill.Run(false);
+                            m_MigrateReport = UCL_TavernPostRewardBackfill.Format(res, false);
+                        }
+                        catch (Exception e) { m_MigrateReport = "🚨 試算例外：" + e; }
+                    }
+                    if (GUILayout.Button("執行補款（增發 token）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.35f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        // 動錢一律二次確認；而確認頁第一句就要講「這是增發」——
+                        // 「補款」這個詞聽起來像從某處搬錢過來，但它不是（不從央行或任何帳戶扣）。
+                        UCL_OptionPage.Create("確認執行發文計酬補款？",
+                            "會對「當時該發卻沒發」的每一則訊息 <b>增發 1 token</b> 給發文者。\n\n"
+                            + "· 這是<b>增發</b>，不從央行或任何帳戶扣款\n"
+                            + "· 判準與現行發放路徑同一支函式（不會補到本來就不該發的）\n"
+                            + "· 冪等靠 ledger 既有紀錄比對，<b>重跑不會重複增發</b>\n"
+                            + "· 建議先按「試算」看各帳戶會拿到多少\n\n"
+                            + "增發後<b>不會自動回收</b>（要退只能人工反向扣）。",
+                            new ButtonData("執行增發", () =>
+                            {
+                                try
+                                {
+                                    var res = UCL_TavernPostRewardBackfill.Run(true);
+                                    m_MigrateReport = UCL_TavernPostRewardBackfill.Format(res, true);
+                                }
+                                catch (Exception e) { m_MigrateReport = "🚨 補款例外：" + e; }
+                            }, UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.5f, 0.3f))),
+                            new ButtonData("取消"));
+                    }
+                }
+
+                GUILayout.Space(6);
                 GUILayout.Label("<b>訊息檔清單索引（冷啟動加速）</b>", WrapLabelStyle);
                 GUILayout.Label(
                     "migration 之後 <b>seq == 檔名</b>，每個日期目錄裝一段連續 seq —— "

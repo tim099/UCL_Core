@@ -899,6 +899,31 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：黑名單 system / NPC / quest / alter 等不該領薪的 sender；其餘視為真實 agent
         // 數值影響：純 string 判定無 IO 成本；新增 reserved name 直接擴 prefix list
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：post_reward 的**發放判準單一入口** — 現行發放路徑與事後補款共用。
+        // 物理意義：補款若自己複製一份判準，補出來的數字就不是「當時本來會發的」，
+        //          而是「補款作者以為當時會發的」。那種差異沒有人會發現 ——
+        //          帳看起來是平的，只是平在錯的基準上。所以兩邊必須是同一個函式。
+        // 數值影響：純判定，不寫任何帳。amount 固定 1 由呼叫端負責。
+        // 邊界：回 false 時 skipReason 一律有值（給補款報表列出「為什麼這則沒發」）。
+        // ===========================================================
+        public static bool IsPostRewardEligible(string senderId, string categoryMeta,
+            out string groupId, out string skipReason)
+        {
+            groupId = ""; skipReason = "";
+            if (!IsRealAgentSender(senderId)) { skipReason = "非真實 agent（system / NPC / bot / alter / discord 中繼）"; return false; }
+            if (HumanPayerSenders.Contains(senderId)) { skipReason = "出資方不領薪（T46）"; return false; }
+
+            var g = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
+            if (g == null) { skipReason = "找不到 routing target group（設定異常：無命中且無 enabled 的 default group）"; return false; }
+            groupId = g.ID;
+            if (!g.m_IsPaidPost) { skipReason = $"group `{g.ID}` 不計酬（IsPaidPost=false）"; return false; }
+            return true;
+        }
+
+        /// <summary>post_reward 在 ledger 的 source_ref 格式 —— 補款靠它判斷「這則發過沒」。</summary>
+        public static string PostRewardSourceRef(string roomId, int seq) => $"{roomId}#seq={seq}";
+
         static bool IsRealAgentSender(string senderId)
         {
             if (string.IsNullOrWhiteSpace(senderId)) return false;
@@ -964,31 +989,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
-                // 出資方不領薪（T46）
-                if (HumanPayerSenders.Contains(senderId)) return;
-
-                var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
-
-                // targetGroup 為 null = 沒命中任何 category 且**連 default group 都找不到** → 這是設定異常，
-                // 不是正常的「這個頻道不計酬」。要大聲叫：整個經濟體的收入端會靜默歸零，
-                // 而那正是 2026-07-29 那次事故的形狀（收入沒了但沒有任何人喊痛）。
-                // 健康時永遠不會 fire（有 default group 就必有命中），所以不是噪音。
-                if (targetGroup == null)
+                // 判準走共用入口 —— 事後補款（UCL_TavernPostRewardBackfill）呼叫的是同一支。
+                // 兩邊各寫一份的話，補款算出來的會是「補款作者以為當時會發的」，而不是當時真的會發的。
+                if (!IsPostRewardEligible(senderId, categoryMeta, out string groupIdOk, out string skipWhy))
                 {
-                    Debug.LogWarning($"[Tavern] post_reward 找不到 routing target group（category={categoryMeta}，且無 enabled 的 IsDefault group）"
-                                     + " → 本則不計酬。這是設定異常：檢查 UCL_TavernCategoryRoutingAsset 是否至少有一個 Enabled+IsDefault 的 group。");
+                    // 設定異常要大聲叫（收入端會靜默歸零 —— 2026-07-07 / 2026-08-06 各發生過一次）；
+                    // 「這個頻道本來就不計酬」則安靜跳過，否則每一則 chitchat 都吵一次 = 訓練人忽略警告。
+                    if (skipWhy.StartsWith("找不到 routing target group"))
+                        Debug.LogWarning($"[Tavern] post_reward {skipWhy}（category={categoryMeta}）→ 本則不計酬。"
+                                         + " 檢查 UCL_TavernCategoryRoutingAsset 是否至少有一個 Enabled+IsDefault+IsPaidPost 的 group。");
                     return;
                 }
-
-                // m_IsPaidPost=false 是**正常狀態**（chitchat / lounge / valor 等頻道本來就不計酬）→ 靜默跳過不吵。
-                if (!targetGroup.m_IsPaidPost) return;
+                var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
 
                 string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_work_post" : $"work_post_{roomId}_{seq}";
                 UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
                     accountId: senderId,
                     amount: 1,
                     sourceKind: "work_post",
-                    sourceRef: $"{roomId}#seq={seq}",
+                    sourceRef: PostRewardSourceRef(roomId, seq),
                     description: $"post reward: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
                     callerAgentId: "system",
                     cmdId: cmdId);
@@ -1217,7 +1236,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                                 accountId: senderId,
                                 amount: creditSum,
                                 sourceKind: "token_parse",
-                                sourceRef: $"{roomId}#seq={seq}",
+                                sourceRef: PostRewardSourceRef(roomId, seq),
                                 description: $"token parse fallback: +{creditSum} to {senderId} ({creditCount} matches, seq={seq})",
                                 callerAgentId: "system",
                                 cmdId: $"{cmdIdBase}_fallback");

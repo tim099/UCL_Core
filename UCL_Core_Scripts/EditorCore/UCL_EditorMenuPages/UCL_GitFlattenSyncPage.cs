@@ -21,6 +21,7 @@ using System.Diagnostics;
 using System.IO;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
+using UCL.Core.StringExtensionMethods;   // CopyToClipboard —— 既有基建，不在本頁另寫一份剪貼簿寫入
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
@@ -52,6 +53,12 @@ namespace UCL.Core.EditorLib.Page
             public string Mode = "";                     // "" / "recorded" / "head"
             public List<string> Excluded = new List<string>();
             public bool Prune = false;
+            // 讓 dst 檔案集合與 src 一致（對應腳本 --delete-extra）。
+            // 與 Prune 是**兩件事**：Prune 只認得本工具寫過的遺留（候選＝manifest），
+            // 這個認的是「dst 追蹤了但 src 沒有」的檔（候選＝dst 自己的 git 清單）。
+            // 存檔是安全的 —— 它的候選集合永遠限縮在「dst 的 git 還原得回來」的範圍內，
+            // 這點跟 ForceOnce 不同（那個一旦存起來會蓋掉救不回來的本地修改）。
+            public bool DeleteExtra = false;
             public string ManifestOverride = "";
         }
 
@@ -81,6 +88,52 @@ namespace UCL.Core.EditorLib.Page
         bool m_Running = false;
         string m_RunningLabel = "";
         Vector2 m_ReportScroll = Vector2.zero;
+
+        // 複製鈕的即時回饋（見 DrawReport）。純顯示狀態，不進 EditorPrefs ——
+        // 它描述的是「剛剛那一下按成功沒有」，跨 session 保存沒有意義。
+        const double COPY_HINT_SECONDS = 3.0;   // 提示存活秒數
+        string m_CopyHint = "";
+        double m_CopyHintAt = 0;
+
+        // 區塊職責：腳本回傳的 exit code，用來把「拒絕原因」翻成本頁的操作指引（見 ExitHintLines）。
+        // 物理意義：腳本的拒絕訊息寫的是 CLI 旗標（`--force` / `--mode`），因為它也要在沒有 Editor 的
+        //          環境跑，那邊那樣寫是對的。但**在本頁按按鈕的人手上沒有命令列** ——
+        //          照字面讀只會得到一個做不到的指示。所以 exit code 留在 C# 這一側，
+        //          由擁有 UI 的人翻成「該動本頁哪一個控制項」。
+        // 邊界：翻譯只加不改 —— 原始報告全文照樣顯示在下方，這裡只在它上面補一段指路。
+        const int EXIT_DRIFT = 4;       // 父記錄與磁碟 HEAD 不一致
+        const int EXIT_CONFLICT = 5;    // dst 上有本地修改
+        const int EXIT_NO_DST_GIT = 7;  // 要求 --delete-extra 但 dst 不是 git repo
+        int m_LastExit = 0;
+
+        // 區塊職責：dst 是不是 git repo —— 決定「同步刪除」那個選項出不出現。
+        // 物理意義：Tim 2026-08-06「這個功能可以在兩端都有 git 時才提供」。
+        //          src 必為 git（工具的前提），所以實際要判的只有 dst。
+        // 數值影響：純顯示閘門。**真正的把關在腳本**（dst 非 repo → exit 7 fail closed）——
+        //          UI 少畫一個勾只是別讓人白按，不是防線；防線只能有一道，而它在唯一事實來源那邊。
+        // 設計取捨：快取而不是每幀 File.Exists —— 本頁有 RequiresConstantRepaint，
+        //          每幀敲磁碟會在大專案上變成可觀測的卡頓。Dst 字串一變就重算。
+        string m_DstGitCheckedFor;
+        bool m_DstIsGitRepo;
+        bool DstIsGitRepo()
+        {
+            string dst = m_Settings.Dst ?? "";
+            if (m_DstGitCheckedFor == dst) return m_DstIsGitRepo;
+            m_DstGitCheckedFor = dst;
+            // `.git` 可能是目錄（一般 repo）也可能是檔案（submodule / worktree）—— 兩種都算。
+            // 只判目錄的話，掛成 submodule 的 dst 會被誤判成「沒有 git」而少一個選項，
+            // 而使用者只會看到選項不見了，不會知道為什麼。
+            string g = string.IsNullOrEmpty(dst) ? null : Path.Combine(dst, ".git");
+            m_DstIsGitRepo = g != null && (Directory.Exists(g) || File.Exists(g));
+            return m_DstIsGitRepo;
+        }
+
+        // 區塊職責：一次性的 `--force`（放行 warn 等級防呆）。
+        // 物理意義：**刻意不進 EditorPrefs、且每次執行後歸零。** 其餘設定存起來是方便，
+        //          這一個存起來是災難：它的語意是「這一次我認了」，不是「以後都算了」。
+        //          設定一次就永久生效的覆寫開關，就是預設值裝填好的槍 ——
+        //          下一次同步會安靜地蓋掉 dst 上的本地修改，而畫面跟正常成功一模一樣。
+        bool m_ForceOnce = false;
         GUIStyle m_MonoStyle;
         GUIStyle MonoStyle => m_MonoStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
         {
@@ -94,6 +147,19 @@ namespace UCL.Core.EditorLib.Page
         {
             base.Init(p_Controller);
             LoadSettings();
+            // 進頁面自動掃一次 submodule 清單（Tim 2026-08-06）。
+            // 理由不只是省一次點擊：設定是從 EditorPrefs 讀回來的，**可能是好幾天前的**，
+            // 而 submodule 清單同一時間可能已經增刪。不掃就會拿舊勾選狀態配新 repo，
+            // 而畫面看起來完全正常 —— 使用者不會知道自己在看一份過期的清單。
+            RefreshSubmodules();
+        }
+
+        // 掃 submodule 清單 —— 進頁面與「重整」鈕共用同一條路徑（唯一入口）。
+        // 兩處各寫一份參數的話，改一邊忘一邊會讓「重整」與「自動掃」得到不同結果。
+        void RefreshSubmodules()
+        {
+            if (string.IsNullOrEmpty(m_Settings.Src)) return;
+            RunScript(new List<string> { "--src", m_Settings.Src, "--list-submodules" }, "scan");
         }
 
         // ===========================================================
@@ -140,7 +206,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 // 只掃 submodule 清單 —— 不需要 dst、不受 drift / 未 init 的 fail closed 影響。
                 // 清單是「這個 repo 有什麼」，同步條件是「能不能跑」，兩件事分開問。
-                RunScript(new List<string> { "--src", m_Settings.Src ?? "", "--list-submodules" }, "scan");
+                RefreshSubmodules();
             }
         }
 
@@ -339,6 +405,15 @@ namespace UCL.Core.EditorLib.Page
             normal = { textColor = new Color(0.6f, 0.6f, 0.6f) },
         };
 
+        // 警示字色 —— 只給「這一下會弄壞東西」的說明用，不拿來當一般強調。
+        // 到處都紅就等於沒有紅（假警報訓練人忽略警報）。
+        GUIStyle m_WarnStyle;
+        GUIStyle WarnStyle => m_WarnStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
+        {
+            wordWrap = true,
+            normal = { textColor = new Color(1f, 0.55f, 0.35f) },
+        };
+
         static string Short(string sha) => string.IsNullOrEmpty(sha) ? "—"
             : (sha.Length > 8 ? sha.Substring(0, 8) : sha);
 
@@ -365,10 +440,88 @@ namespace UCL.Core.EditorLib.Page
                         SaveSettings();
                     }
                 }
-                bool prune = GUILayout.Toggle(m_Settings.Prune,
-                    " 清除 stale（刪掉「上次同步寫過、這次來源已沒有」的檔；首次同步不刪）");
+                GUILayout.BeginHorizontal();
+                bool prune = UCL_GUILayout.CheckBox(m_Settings.Prune);
+                GUILayout.Label(" 清除 stale（刪掉「上次同步寫過、這次來源已沒有」的檔；首次同步不刪）", UCL_GUIStyle.LabelStyle);
+                GUILayout.EndHorizontal();
                 if (prune != m_Settings.Prune) { m_Settings.Prune = prune; SaveSettings(); }
+
+                // 覆寫開關 —— 對應腳本的 `--force`。在此之前面板根本沒有這個控制項，
+                // 於是腳本印「確認要蓋才加 --force」時，按按鈕的人是走進死路的：
+                // 提示要求的動作在他的介面上不存在（名字比事實大的鄰居 —— 指示比能力大）。
+                // 它與其他選項不同：**不存檔、執行後歸零**（見 m_ForceOnce 註解）。
+                // 同步刪除 —— **只在 dst 也是 git repo 時才出現**（Tim 2026-08-06「兩端都有 git 才提供」）。
+                // 它靠 dst 的追蹤清單決定刪誰，也靠 dst 的 git 才還原得回來；
+                // 沒有 git 就兩者皆無，那時提供這個勾等於提供一個沒有還原點的刪除鍵。
+                if (DstIsGitRepo())
+                {
+                    GUILayout.BeginHorizontal();
+                    bool del = UCL_GUILayout.CheckBox(m_Settings.DeleteExtra);
+                    GUILayout.Label(" 同步刪除（--delete-extra）— 刪掉「dst 有追蹤、但 src 已經沒有」的檔，讓兩邊檔案集合一致",
+                        UCL_GUIStyle.LabelStyle);
+                    GUILayout.EndHorizontal();
+                    if (del != m_Settings.DeleteExtra) { m_Settings.DeleteExtra = del; SaveSettings(); }
+                    if (m_Settings.DeleteExtra)
+                    {
+                        GUILayout.Label("　　候選只取 dst **有追蹤**的檔（untracked / Library 等一律不碰）；"
+                                        + "排除的 submodule 底下不動。刪錯可用 dst 自己的 git 還原。",
+                            DimLabelStyle);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(m_Settings.Dst))
+                {
+                    // 不靜默隱藏 —— 選項憑空消失時，使用者只會以為工具沒有這個功能。
+                    GUILayout.Label("　（dst 不是 git repo → 不提供「同步刪除」：沒有追蹤清單可判斷刪誰，也沒有還原點）",
+                        DimLabelStyle);
+                }
+
+                // 覆寫開關 —— 對應腳本的 `--force`。在此之前面板根本沒有這個控制項，
+                // 於是腳本印「確認要蓋才加 --force」時，按按鈕的人是走進死路的：
+                // 提示要求的動作在他的介面上不存在（名字比事實大的鄰居 —— 指示比能力大）。
+                // 它與其他選項不同：**不存檔、執行後歸零**（見 m_ForceOnce 註解）。
+                GUILayout.BeginHorizontal();
+                // ⚠ 這裡的 current value 必須是 m_ForceOnce 自己。
+                // 2026-08-06 一度誤傳 m_Settings.Prune：勾「清除 stale」會讓覆寫授權
+                // **一起靜默打開**，而且覆寫鈕自己永遠勾不動（每幀被 Prune 覆寫回去）。
+                // 一個「勾 A 會打開 B」的 UI 不會報錯，只會在某次同步把本地修改蓋掉。
+                m_ForceOnce = UCL_GUILayout.CheckBox(m_ForceOnce);
+                GUILayout.Label(" ⚠ 覆寫 dst 上被本地改過的檔（--force）— 僅本次有效，執行後自動關閉", UCL_GUIStyle.LabelStyle);
+                GUILayout.EndHorizontal();
+
+                if (m_ForceOnce)
+                {
+                    GUILayout.Label("　　本地修改會被蓋掉且救不回來（dst 的 git 不會被動，所以沒有還原點）。",
+                        WarnStyle);
+                }
             }
+        }
+
+        // 區塊職責：把腳本的 exit code 翻成「在本頁該動哪一個控制項」。
+        // 物理意義：見 m_LastExit 註解 —— 腳本講 CLI，本頁講按鈕，各自講自己擁有的那一層。
+        // 數值影響：純顯示，不改任何設定；使用者仍須自己動手（不代按）。
+        List<string> ExitHintLines()
+        {
+            var o = new List<string>();
+            if (m_LastExit == EXIT_DRIFT)
+            {
+                o.Add("🧭 本頁怎麼做：上方「攤平基準」目前是「(未指定)」，改選 "
+                      + "「recorded 父記錄的 gitlink SHA」或「head submodule 磁碟 HEAD」。");
+                o.Add("　 兩者都會外觀成功：recorded 會少掉尚未 bump 的內容，"
+                      + "head 會多一份無法回溯的內容。也可以先把來源的 parent bump 做完，drift 就消失。");
+            }
+            else if (m_LastExit == EXIT_CONFLICT)
+            {
+                o.Add("🧭 本頁怎麼做：勾選上方「⚠ 覆寫 dst 上被本地改過的檔（--force）」再按一次「同步到目標」。");
+                o.Add("　 那個勾**只對這一次有效**，執行後會自動關閉 —— 不會變成以後的預設。");
+            }
+            else if (m_LastExit == EXIT_NO_DST_GIT)
+            {
+                o.Add("🧭 本頁怎麼做：目標 repo 不是 git repo，所以「同步刪除」無法執行 —— "
+                      + "取消勾選它，或把目標換成一個 git repo。");
+                o.Add("　 這不是保守：刪除候選要靠 dst 的追蹤清單決定，還原也要靠它的 git。"
+                      + "兩者都沒有時，刪下去就真的沒了。");
+            }
+            return o;
         }
 
         // ===========================================================
@@ -412,9 +565,15 @@ namespace UCL.Core.EditorLib.Page
                 $"來源: {m_Settings.Src}\n目標: {m_Settings.Dst}\n"
                 + $"基準: {(string.IsNullOrEmpty(m_Settings.Mode) ? "未指定" : m_Settings.Mode)}\n"
                 + $"排除 submodule: {excluded} 個\n"
-                + $"清除 stale: {(m_Settings.Prune ? "是" : "否")}\n\n"
+                + $"清除 stale: {(m_Settings.Prune ? "是" : "否")}\n"
+                + $"同步刪除: {(m_Settings.DeleteExtra ? "是（dst 追蹤但 src 沒有的檔會被刪）" : "否")}\n\n"
                 + "這會**直接覆寫目標工作目錄裡的檔案**（不 commit、不動目標的 git）。\n"
-                + "目標上被本地改過的檔會先被擋下並列出，不會被無聲蓋掉。\n"
+                // 兩種情況要講的是**不同的一句話**。共用一句「會被擋下」在 force 打開時是假的，
+                // 而二次確認彈窗說謊比沒有彈窗更糟：它讓人以為自己被保護著。
+                + (m_ForceOnce
+                    ? "⚠ 已勾「覆寫本地修改（--force）」：目標上被改過的檔**會直接被蓋掉**，"
+                      + "而 dst 的 git 不會被動，所以沒有還原點。\n"
+                    : "目標上被本地改過的檔會先被擋下並列出，不會被無聲蓋掉。\n")
                 + "還沒試跑過的話，建議先按「試跑」看清單。";
             UCL_OptionPage.Create("確認同步到目標？", body,
                 new ButtonData("同步", () => RunScript(BuildArgs(dryRun: false, jsonFormat: false), "sync"),
@@ -425,7 +584,45 @@ namespace UCL.Core.EditorLib.Page
         void DrawReport()
         {
             if (string.IsNullOrEmpty(m_Report)) return;
-            GUILayout.Label("報告", UCL_GUIStyle.LabelStyle);
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("報告", UCL_GUIStyle.LabelStyle);
+                // 複製鈕（Tim 2026-08-06）：下方 TextArea 本來就能選取，但**「能選」跟「選得到」是兩回事** ——
+                // 報告關在固定高度的 ScrollView 裡，錯誤動輒數十行、dry-run 更是上千行，
+                // 要貼給人看得先滾到底再拖選。一鍵拿全文才是這個區塊實際被使用的方式。
+                // 複製的是**整份報告**（stderr + stdout + exit code）而不是只取 stderr：
+                // 貼錯誤訊息時，exit code 與它前面那幾行 stdout 往往才是判斷的依據，
+                // 只給 stderr 等於替讀的人先做了一次「哪些不重要」的判斷。
+                if (GUILayout.Button("複製", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    m_Report.CopyToClipboard();
+                    // 讀回來才算數：systemCopyBuffer 在剪貼簿被別的程式鎖住時會**靜默失敗**，
+                    // 而「沒複製到」與「複製成功」在畫面上長得一模一樣（按鈕都彈回來）。
+                    // 一個不會叫的失敗最難抓 —— 所以這裡回讀比對，並把字元數印出來當可對帳的證據。
+                    m_CopyHint = GUIUtility.systemCopyBuffer == m_Report
+                        ? $"✓ 已複製 {m_Report.Length} 字元"
+                        : "✗ 複製失敗（剪貼簿被占用？）";
+                    m_CopyHintAt = EditorApplication.timeSinceStartup;
+                }
+                // 提示只活 COPY_HINT_SECONDS 秒 —— 常駐會讓人分不清這次按的還是上次按的。
+                // 本頁有 RequiresConstantRepaint，時間到自然消失，不必另外排 repaint。
+                if (!string.IsNullOrEmpty(m_CopyHint)
+                    && EditorApplication.timeSinceStartup - m_CopyHintAt < COPY_HINT_SECONDS)
+                {
+                    GUILayout.Label(m_CopyHint, UCL_GUIStyle.LabelStyle);
+                }
+                GUILayout.FlexibleSpace();
+            }
+            // 操作指引排在報告**上方** —— 拒絕訊息在數千行報告的最後一行，
+            // 而滾到底才看得到的指引，跟沒有指引差別不大。
+            var hints = ExitHintLines();
+            if (hints.Count > 0)
+            {
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    foreach (var h in hints) GUILayout.Label(h, WarnStyle);
+                }
+            }
             using (var sv = new GUILayout.ScrollViewScope(m_ReportScroll, GUILayout.MinHeight(
                        UCL_GUIStyle.GetScaledSize(260))))
             {
@@ -464,6 +661,13 @@ namespace UCL.Core.EditorLib.Page
                 a.Add("--manifest"); a.Add(m_Settings.ManifestOverride);
             }
             if (m_Settings.Prune) a.Add("--prune");
+            // --delete-extra 在 dry-run 也要帶：它是報告的一部分（要先看清單才敢按同步），
+            // 而 dry-run 完全唯讀，帶了不會刪任何東西。
+            // 這點跟 --force 相反 —— 那個在 dry-run 帶了會**消音衝突清單**，所以只在 apply 帶。
+            if (m_Settings.DeleteExtra) a.Add("--delete-extra");
+            // --force 只在**真的要寫**時才帶：dry-run 是唯讀的，帶了不會改變它讀到什麼，
+            // 只會讓試跑報告不再列出衝突 —— 那等於把唯一一次看清單的機會消音。
+            if (!dryRun && m_ForceOnce) a.Add("--force");
             if (!dryRun) a.Add("--apply");
             if (jsonFormat) { a.Add("--format"); a.Add("json"); }
             return a;
@@ -563,6 +767,11 @@ namespace UCL.Core.EditorLib.Page
                 {
                     m_Running = false;
                     m_RunningLabel = "";
+                    m_LastExit = exit;              // 留著把拒絕原因翻成本頁操作指引（見 ExitHintLines）
+                    // 覆寫授權用完即棄：它的語意是「這一次我認了」。
+                    // 放在這裡而不是送出參數時歸零 —— 送出時就關掉的話，執行中畫面會顯示未勾選，
+                    // 而那時它其實正在生效，畫面會說一個當下不成立的話。
+                    m_ForceOnce = false;
                     m_Report = (string.IsNullOrEmpty(stderr) ? "" : $"— stderr —\n{stderr}\n")
                                + stdout
                                + $"\n— exit code: {exit} —";

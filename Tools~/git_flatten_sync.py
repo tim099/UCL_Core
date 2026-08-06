@@ -19,6 +19,25 @@
 #   ④ 跨次回歸靠「由來源圖獨立產生的輸入清單」，不是拿本次輸出比上次輸出（Sirius）——
 #      後者是自己的輸出替自己背書。
 #   ⑤ 破壞性動作預設不做：stale 刪除要 --prune，且第一次執行（無 manifest）只報告不刪。
+#   ⑥ 刪除有**兩個**旗標，因為候選集合與風險級別不同（2026-08-06 Tim：「D 刪除了 dst 還留著」）：
+#      · --prune        候選＝manifest（本工具上次寫過什麼）→ 只認得**自己造成的**遺留。
+#      · --delete-extra 候選＝**dst 自己的 git 追蹤清單** 減去 src 攤平清單 → 兩邊檔案集合一致。
+#        後者刪的是「本工具從沒寫過的檔」，所以候選集合必須是 tracked：**tracked 才有還原點**
+#        （本工具不動 dst 的 git ⇒ 刪掉 untracked 就真的沒了）。也因此它需要
+#        **兩端都是 git repo**；dst 不是 → exit 7 fail closed，不靜默降級成「那就不刪」
+#        （勾了選項卻沒有作用，是最難發現的一種壞）。
+#        排除的 submodule 底下一律不列入候選 —— 排除的語意是「這塊我不同步」，
+#        不是「這塊在 src 不存在」，算進差集會把使用者刻意保留的整個目錄刪光。
+#
+# ⚠ exit code 有第二個消費端（2026-08-06，Tim 指出面板走死路後加）：
+#   `UCL_GitFlattenSyncPage` 用 **4 = drift / 5 = dst 有本地修改** 把拒絕原因翻成
+#   「在面板上該動哪一個控制項」。原因：本檔的拒絕訊息寫的是 CLI 旗標（`--force` / `--mode`），
+#   那對 CI / agent 是對的，但**按按鈕的人手上沒有命令列** —— 照字面讀會得到一個做不到的指示。
+#   於是「講 CLI」與「講按鈕」各自留在擁有那一層的檔案裡，這裡不去猜 UI 長什麼樣。
+#   代價是這兩個數字成了跨語言契約：**改動 4 / 5 的語意，要同步改那支頁面的 EXIT_DRIFT /
+#   EXIT_CONFLICT**，否則面板會安靜地指向錯的控制項（訊息還是對的，指路變成錯的）。
+#   （7 = --delete-extra 但 dst 不是 git repo，同屬這份契約。）
+# @doc-sync: ../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_GitFlattenSyncPage.cs
 #
 # 為什麼不用 git archive（實測後否決，別再繞回去）：
 #   · archive **會帶 .gitmodules**，且對 gitlink 產生空目錄條目
@@ -160,7 +179,9 @@ def source_files(src: Path, src_sha: str, subs, excluded, mode: str):
             if path == ".gitmodules" or path.endswith("/.gitmodules"):
                 skipped["gitmodules"] += 1
                 continue
-            files[full] = {"sha": blob, "mode": m, "repo": str(repo)}
+            # rel = 該檔在**自己那個 repo 內**的路徑。
+            # smudge 與 lfs 索引都以 repo 為座標系，用 full（含 submodule 前綴）會查不到。
+            files[full] = {"sha": blob, "mode": m, "repo": str(repo), "rel": path}
 
     harvest(src, src_sha, "")
     for s in subs:
@@ -216,6 +237,112 @@ def guard(src: Path, dst: Path, force: bool):
 # ===========================================================
 # manifest（跨次同步的唯一狀態：這支工具上次寫過哪些檔）
 # ===========================================================
+LFS_MAGIC = b"version https://git-lfs.github.com/spec/v1"
+
+
+def lfs_pointer(data: bytes):
+    """是 Git LFS 指標就回 (oid_sha256, size)，否則回 None。
+
+    區塊職責：辨認「blob 內容不是檔案內容」的那一類檔。
+    物理意義：LFS 追蹤的檔，**存進 git 的 blob 是一張約 130 bytes 的指標**，
+             真內容由 checkout 時的 smudge filter 從 LFS 物件庫還原。
+             所以 `cat-file -p` 拿到的是指標 —— 對 LFS 檔而言，
+             **「讀 blob」與「讀檔案」是兩個不同的座標系**。
+    數值影響：純判讀，不改資料。指標很小且格式固定，先擋 size 再比對，成本可忽略。
+    """
+    if len(data) > 400 or not data.startswith(LFS_MAGIC):
+        return None
+    oid = size = None
+    for line in data.decode("utf-8", "replace").splitlines():
+        if line.startswith("oid sha256:"):
+            oid = line.split(":", 1)[1].strip()
+        elif line.startswith("size "):
+            try:
+                size = int(line.split(" ", 1)[1].strip())
+            except ValueError:
+                return None
+    return (oid, size) if oid and size is not None else None
+
+
+def smudge(repo: str, path: str, sha: str) -> bytes:
+    """套用 clean/smudge filter 取檔案的**工作目錄內容**（LFS 檔會還原成真檔）。
+
+    物理意義：`cat-file --filters` 跟 `cat-file -p` 的差別就是「檔案」與「blob」的差別。
+             一般檔兩者相同，LFS 檔差了整個檔案本體。
+    設計取捨：**只對偵測到是 LFS 指標的檔呼叫**，不是全部走 --filters ——
+             它一檔一個 process，9000 檔全走會慢到不能用；而 798 檔可以接受。
+    邊界：LFS 物件不在本機（未 pull）時 git 會回指標本身或報錯 —— 呼叫端必須驗，不可信這裡的回傳。
+    """
+    r = subprocess.run(["git", "-C", repo, "cat-file", "--filters",
+                        "--path=" + path, sha], capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"cat-file --filters 失敗（path={path}）：{r.stderr.decode('utf-8', 'replace').strip()}")
+    return r.stdout
+
+
+def lfs_index(files: dict) -> dict:
+    """{ 落地路徑 → LFS oid(sha256) }，只含 LFS 追蹤的檔。
+
+    區塊職責：告訴其餘三段（比對 / 寫入 / 驗證）「這個檔的事實源是 sha256 不是 blob sha」。
+    物理意義：LFS 檔有兩個雜湊 —— git blob sha（指標的）與 oid sha256（真內容的）。
+             一旦 dst 落地的是**真內容**，拿 blob sha 去比就永遠不相等，
+             於是每次同步都會把全部 LFS 檔判成「本地被改過」（798 筆假衝突）。
+    設計取捨：一個 repo 一次 `git lfs ls-files`，不逐檔 check-attr。
+             LFS 未安裝 / 該 repo 沒用 LFS → 回空，全流程退回純 blob 語意（本來就正確）。
+    """
+    by_repo = {}
+    for full, info in files.items():
+        by_repo.setdefault(info["repo"], []).append((full, info["rel"]))
+    out = {}
+    for repo, items in by_repo.items():
+        try:
+            raw = git(repo, "lfs", "ls-files", "-l")
+        except Exception:
+            continue        # 沒裝 lfs / 這個 repo 不用 lfs —— 不是錯誤
+        oid_by_rel = {}
+        for line in raw.splitlines():
+            # 格式：`<oid> <*|-> <path>`（* = 本機有物件，- = 只有指標）
+            parts = line.split(" ", 2)
+            if len(parts) == 3:
+                oid_by_rel[parts[2].strip().replace("\\", "/")] = parts[0].strip()
+        for full, rel in items:
+            oid = oid_by_rel.get(rel)
+            if oid:
+                out[full] = oid
+    return out
+
+
+def dst_tracked_files(dst: Path):
+    """dst 端**被自己的 git 追蹤**的檔案清單（posix 相對路徑集合）。gitlink 條目排除。
+
+    區塊職責：`--delete-extra` 的刪除候選集合來源。
+    物理意義：這是本工具第一次**讀 dst 的 git**（先前只寫 dst 的檔）。仍然唯讀 ——
+             不 fetch、不 commit、不改 index。檔頭那句「dst 只寫檔案」因此擴充為
+             「dst 只寫檔案、必要時唯讀查詢它的 index」，不是被推翻。
+    為什麼候選集合是「dst 的 tracked 檔」而不是「dst 磁碟上的所有檔」：
+      ① **可回復。** 凡是 tracked 的，刪掉都能用 dst 自己的 git 還原；
+         untracked 的刪掉就沒了，而本工具不動 dst 的 git ⇒ 沒有還原點。
+         破壞性動作只准落在「有還原點」的集合上。
+      ② **對稱。** src 端本來就只攤平 tracked 內容（設計決策③）。
+         拿「src 的 tracked」去減「dst 的**全部**」不是同一個座標系，
+         算出來的差集會包含 Library/ Temp/ 與 dst 自己的 ignored 產物 —— 那是刪掉整個專案。
+      ③ gitlink（mode 160000）排除：那是 submodule 指標不是檔案，
+         用刪檔的方式處理它會刪掉別人的整個工作目錄。
+    """
+    out = git(dst, "ls-files", "-s", "-z")
+    files = set()
+    for rec in out.split("\0"):
+        if not rec:
+            continue
+        meta, _, path = rec.partition("\t")
+        if not path:
+            continue
+        if meta.split(" ", 1)[0] == "160000":   # gitlink — 不是檔案
+            continue
+        files.add(path)
+    return files
+
+
 def load_manifest(path: Path):
     if not path.is_file():
         return None
@@ -238,6 +365,9 @@ def main():
                          "drift 時**必填**（不猜）；一致時可省略")
     ap.add_argument("--manifest", default=None, help=f"manifest 路徑（預設 <dst>/{MANIFEST_REL}）")
     ap.add_argument("--prune", action="store_true", help="刪除「上次寫過、這次不在清單」的檔（預設只報告）")
+    ap.add_argument("--delete-extra", action="store_true",
+                    help="讓 dst 與 src 檔案集合一致：刪掉「dst 有追蹤、但 src 沒有」的檔"
+                         "（候選集合＝dst 的 tracked 檔，可用 dst 的 git 還原；排除的 submodule 底下不動）")
     ap.add_argument("--apply", action="store_true", help="真的寫入（預設 dry-run，完全唯讀）")
     ap.add_argument("--force", action="store_true", help="放行 warn 等級的防呆（fatal 永不放行）")
     ap.add_argument("--format", choices=["md", "json"], default="md")
@@ -358,13 +488,23 @@ def main():
     prev = load_manifest(manifest_path)
     prev_files = (prev or {}).get("files", {})
 
+    # ---- LFS 索引：哪些檔的「內容雜湊」該用 sha256 而不是 git blob sha ----
+    lfs = lfs_index(files)
+
+    def expect_hash(path, info):
+        """該檔落地後應有的內容雜湊（LFS 走 oid sha256，其餘走 git blob sha）。"""
+        return lfs.get(path) or info["sha"]
+
+    def actual_hash(path, data):
+        return hashlib.sha256(data).hexdigest() if path in lfs else blob_sha(data)
+
     # ---- 與 dst 現況比對：要寫的 / 已相同的 / 本地被改過的 / 該清的 ----
     to_write, identical, conflicts = [], [], []
     for path, info in sorted(files.items()):
         target = dst / path
         if target.is_file():
-            cur = blob_sha(target.read_bytes())
-            if cur == info["sha"]:
+            cur = actual_hash(path, target.read_bytes())
+            if cur == expect_hash(path, info):
                 identical.append(path)
                 continue
             # 差異來源要分清：上次是我們寫的（安全覆蓋）vs 有人在 dst 改過（衝突）
@@ -375,6 +515,43 @@ def main():
         else:
             to_write.append(path)
     stale = sorted(set(prev_files) - set(files))
+
+    # ---- extra：dst 有、src 沒有（--delete-extra 的對象）----
+    # 區塊職責：補上 stale 結構上碰不到的那一塊。
+    # 物理意義：stale 的候選集合是 **manifest**（＝「這支工具上次寫過什麼」），
+    #          所以它只認得**自己造成的**遺留。使用者要的「兩邊檔案一致」是另一個問題：
+    #          dst 上那些「本工具從沒寫過、但 src 也沒有」的檔（首次同步、或別人放的）
+    #          永遠不會出現在 stale 裡 —— 而那正是 A,B,C,D 場景裡的 D。
+    #          兩者刻意分開兩個旗標，因為**風險級別不同**：
+    #          prune 刪的是自己寫過的（來源已知），delete-extra 刪的是別人的檔。
+    extra = []
+    extra_note = ""
+    if args.delete_extra:
+        try:
+            tracked = dst_tracked_files(dst)
+        except RuntimeError as e:
+            # dst 不是 git repo（或 git 壞了）→ 沒有候選集合、也沒有還原點。
+            # **fail closed**：不退回「那就不刪」——靜默降級會讓使用者以為同步過了，
+            # 而 D 還躺在那裡（勾了選項卻沒有作用，是最難發現的一種壞）。
+            print(f"# 🚫 中止 — --delete-extra 需要 dst 是一個 git repo（要靠它的追蹤清單決定刪誰、"
+                  f"並且靠它才還原得回來）\n{e}")
+            return 7
+        # 排除的 submodule 底下一律不動：排除的語意是「這塊我不同步」，
+        # 不是「這塊在 src 不存在」。把它算進差集 = 使用者勾了排除、結果那整個目錄被刪光。
+        skip_prefixes = tuple(p.rstrip("/") + "/" for p in excluded)
+        manifest_rel = None
+        try:
+            manifest_rel = manifest_path.relative_to(dst).as_posix()
+        except ValueError:
+            pass    # manifest 被 --manifest 移到 dst 之外 → 本來就不在候選集合裡
+        for p in sorted(tracked - set(files)):
+            if skip_prefixes and p.startswith(skip_prefixes):
+                continue
+            if manifest_rel and p == manifest_rel:
+                continue    # 已揭露的工具產物，不列入驗證集合也不刪
+            extra.append(p)
+        if excluded:
+            extra_note = f"（已跳過 {len(excluded)} 個排除 submodule 底下的路徑）"
 
     # ---- 報告 ----
     out.append(f"# 攤平同步計畫\n")
@@ -427,10 +604,21 @@ def main():
             out.append(f"  - …另 {len(stale) - 20} 筆")
         if prev is None:
             out.append("\n（首次同步無 manifest —— 本工具**不會**去猜 dst 上既存檔案是誰寫的，一律不刪。）")
+    if args.delete_extra:
+        out.append(f"\n## 🗑 extra（dst 有追蹤、src 沒有 → 兩邊一致就該刪）{extra_note}")
+        if extra:
+            for p in extra[:20]:
+                out.append(f"  - `{p}`")
+            if len(extra) > 20:
+                out.append(f"  - …另 {len(extra) - 20} 筆")
+            out.append(f"\n共 **{len(extra)}** 筆。這些檔在 dst 的 git 裡有紀錄，"
+                       f"刪錯了可以用 dst 自己的 git 還原（本工具不動它的 git）。")
+        else:
+            out.append("  （無 —— dst 的追蹤內容沒有多出 src 以外的檔）")
 
     rep.update({"mode": mode, "src_sha": src_sha, "expected": len(files),
                 "identical": len(identical), "to_write": len(to_write),
-                "conflicts": conflicts, "stale": stale,
+                "conflicts": conflicts, "stale": stale, "extra": extra,
                 "excluded": sorted(excluded), "skipped": skipped,
                 "inputs": {s["path"]: (s["head_sha"] if mode == "head" else s["recorded_sha"])
                            for s in included}})
@@ -457,6 +645,7 @@ def main():
     for path, info in files.items():
         by_repo.setdefault(info["repo"], []).append((path, info["sha"]))
     written = 0
+    lfs_restored = []
     for repo, items in by_repo.items():
         # cat-file --batch：一個 repo 一個 process（32k 個檔開 32k 個 process 會慢到不能用）
         need = [(p, sha) for p, sha in items if p in set(to_write)]
@@ -485,6 +674,24 @@ def main():
                         raise RuntimeError(f"cat-file 輸出中斷（path={p}）")
                     data += chunk
                 proc.stdout.read(1)                     # 物件尾端換行
+                # ---- LFS：blob 是指標，要換座標系再讀一次 ----
+                # 2026-08-06 血證：LY 有 62 條 LFS 規則、798 個 LFS 檔（*.dll *.png *.fbx *.wav …）。
+                # 沒有這段時，dst 會收到 798 張 130 bytes 的指標檔，
+                # 而 Unity 只會抱怨「namespace 找不到」—— 指不到真正原因。
+                ptr = lfs_pointer(data)
+                if ptr is not None:
+                    oid, psize = ptr
+                    real = smudge(repo, p, sha)
+                    # 驗證用**指標自帶的 sha256**，不是 git blob sha ——
+                    # blob sha 驗的是指標本身（那必然通過，而且什麼都沒證明）。
+                    got = hashlib.sha256(real).hexdigest()
+                    if got != oid or len(real) != psize:
+                        raise RuntimeError(
+                            f"LFS 還原失敗（path={p}）：期望 sha256={oid} size={psize}，"
+                            f"實得 sha256={got} size={len(real)}。"
+                            f"多半是本機沒有該 LFS 物件 —— 先在來源跑 `git lfs pull`。")
+                    data = real
+                    lfs_restored.append(p)
                 tgt = dst / p
                 tgt.parent.mkdir(parents=True, exist_ok=True)
                 tgt.write_bytes(data)
@@ -492,7 +699,9 @@ def main():
         finally:
             proc.stdin.close()
             proc.wait()
-    out.append(f"  寫入 {written} 檔")
+    out.append(f"  寫入 {written} 檔"
+               + (f"（其中 {len(lfs_restored)} 個 LFS 檔已還原真內容，不是 130 bytes 的指標）"
+                  if lfs_restored else ""))
 
     pruned = []
     if args.prune and prev is not None:
@@ -505,19 +714,57 @@ def main():
     elif stale:
         out.append(f"  stale {len(stale)} 檔未動（{'首次同步不刪' if prev is None else '未帶 --prune'}）")
 
+    deleted_extra = []
+    if args.delete_extra:
+        # 這裡刪的是**別人的檔**（本工具從沒寫過），所以：
+        #   · 只刪 dst 追蹤清單算出來的差集（見 dst_tracked_files 的三條理由）
+        #   · 刪完順手清空目錄 —— 留一堆空資料夾在 Unity 專案裡會生出空的 .meta 提示，
+        #     而「兩邊一致」這個目標本來就不該留下 src 沒有的目錄。
+        for p in extra:
+            f = dst / p
+            if f.is_file():
+                f.unlink()
+                deleted_extra.append(p)
+        removed_dirs = 0
+        for p in deleted_extra:
+            d = (dst / p).parent
+            # 往上收，但**絕不越過 dst**（rglob 的父鏈往上會走出專案外）
+            while d != dst and dst in d.parents:
+                try:
+                    next(d.iterdir())
+                    break                       # 還有東西，停手
+                except StopIteration:
+                    d.rmdir()
+                    removed_dirs += 1
+                    d = d.parent
+                except OSError:
+                    break                       # 權限 / 佔用 —— 留著比硬刪安全
+        out.append(f"  刪除 extra {len(deleted_extra)} 檔"
+                   + (f"（連帶清掉 {removed_dirs} 個變空的目錄）" if removed_dirs else ""))
+    elif extra:
+        out.append(f"  extra {len(extra)} 檔未動（未帶 --delete-extra）")
+
     # ---- 全量驗證（Tim 優先序②：確保內容完全同步）----
     # 判準：dst 上每個檔的內容，用**獨立重算的 blob SHA** 對上來源 blob SHA。
     #      這裡不呼叫 git hash-object —— 用被測工具自己的雜湊驗它自己是循環論證。
-    out.append("\n## 全量驗證（逐檔獨立重算雜湊）")
+    # ⚠ **驗證必須跟落地內容同一個座標系**（2026-08-06 血證）。
+    #   舊版一律 `blob_sha(檔案內容) == blob sha`。對 LFS 檔那是**指標對指標** ——
+    #   dst 收到 130 bytes 的假檔，而這一段照樣印「✅ 內容完全同步（逐檔位元組級一致）」。
+    #   那句話在 blob 座標系是真的，在「使用者拿到什麼檔」這個座標系是徹底的謊。
+    #   實害：osawari01 收到 798 張指標，Unity 只說得出「namespace 找不到」，指不到真因。
+    #   教訓不是「驗得不夠細」，是**驗錯了對象**：檢查再嚴，只要它跟目標不在同一個座標系，
+    #   它在結構上就永遠看不見這一類錯。
+    out.append("\n## 全量驗證（逐檔獨立重算雜湊；LFS 檔比 oid sha256）")
     missing, mismatch = [], []
     for path, info in files.items():
         f = dst / path
         if not f.is_file():
             missing.append(path)
             continue
-        if blob_sha(f.read_bytes()) != info["sha"]:
+        if actual_hash(path, f.read_bytes()) != expect_hash(path, info):
             mismatch.append(path)
-    out.append(f"  應有 {len(files)} 檔 / 缺 **{len(missing)}** / 內容不符 **{len(mismatch)}**")
+    out.append(f"  應有 {len(files)} 檔 / 缺 **{len(missing)}** / 內容不符 **{len(mismatch)}**"
+               + (f" / 其中 LFS 檔 {len(lfs)} 個（已還原真內容，非指標）" if lfs else ""))
     for p in (missing + mismatch)[:10]:
         out.append(f"    ✗ {p}")
     ok = not missing and not mismatch
@@ -533,7 +780,10 @@ def main():
         #          （實摔：測 F 第一次執行報 stale=1，第二次帶 --prune 卻刪 0 檔。
         #           因為第一次收尾就把它從 manifest 抹掉了。）
         #          少東西會被發現，多東西不會 —— 所以責任清單只能在**實際刪除後**才縮小。
-        manifest_files = {p: i["sha"] for p, i in sorted(files.items())}
+        # 存的是**落地內容的雜湊**（LFS 走 oid sha256），不是 blob sha ——
+        # 因為下一次比對是拿它去對 actual_hash(磁碟內容)。存 blob sha 的話，
+        # 全部 LFS 檔下次都會被判成「本地被改過」而變成假衝突。
+        manifest_files = {p: expect_hash(p, i) for p, i in sorted(files.items())}
         orphan_kept = []
         for p in stale:
             if p in pruned:

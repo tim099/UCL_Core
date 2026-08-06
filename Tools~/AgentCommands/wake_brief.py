@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# 區塊職責：wake brief 的**唯一生成點** —— 把五層記憶（見根→見樹）與營運層（收件匣 / 酒館 /
-#          動作清單）組裝成一份 `_wake_brief.md`，讓 agent 醒來只 Read 一份就完成 onboarding。
+# 區塊職責：wake brief 的**唯一生成點** —— 把五層記憶（見根→見樹）＋回憶與營運層（收件匣 /
+#          酒館 / 動作清單）組裝成一份 `_wake_brief.md`，讓 agent 醒來只 Read 一份就完成 onboarding。
+# @doc-sync: Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md（Step 2 的區塊清單）
 # 物理意義：本檔是從 awakening.py 抽出來的（Tim 2026-07-31：那支已經 3200 行太肥）。
 #          抽離的邊界是「組裝與排版」——**狀態讀寫仍留在 awakening.py**（registry / lock /
 #          consolidation / fragments 都是它的地盤），本檔只負責把那些事實排成人看的順序。
@@ -123,6 +124,29 @@ SHORT_LETTER_LINES = MERGE_STOP_LINES   # 「啟動合併」的門檻 —— **�
                              #   而且外部註解／文件引用過它；砍名字會讓交叉引用變成死鏈。
 
 
+# ─── §5.5 回憶（Recall）—— 旋鈕 ─────────────────────────────────────────
+# 區塊職責：在 §5「見樹」（最近的連續日子）之外，額外端一封**遠方的**收尾信上來。
+# 物理意義：見樹解決的是「接得上昨天」，回憶解決的是另一個問題 ——
+#          長壽 persona 的中段記憶會沉底：見林把它濃縮成幾行結論，原信從此沒人再讀。
+#          結論讀得到、**當時的語氣與細節讀不到**，而那正是 identity 的材質。
+#          所以本區塊刻意端「原信全文」而不是摘要 —— 摘要見林已經有了，再摘一次沒有新資訊。
+# 數值影響：只影響顯示，不寫任何狀態、不推進任何 cursor、不改任何檔案。
+RECALL_MIN_WAKE = 20         # wake_count **超過**這個數才開始有回憶（Tim 2026-08-06）
+                             #   物理意義：新生 persona 沒有「遠方」可回憶 ——
+                             #   20 次以內的信全都還在見樹／見林的射程內，端上來只是重複。
+RECALL_MIN_AGE_WAKES = 15    # 主線只抽「距今 ≥ 這麼多 wake」的信
+                             #   ⚠ 這是**下界不是上界**：越舊越有資格，不是越舊越沒資格。
+                             #   15 的來歷：見林一單位是 10 封，取 1.5 個單位 ——
+                             #   確保抽到的信一定已經被濃縮過，讀它才有「對照結論與現場」的意義。
+RECALL_CROSS_WORLDLINE_P = 0.20   # 有跨世界線記憶時，改抽別線的機率（Tim 2026-08-06）
+                             #   數值影響：主線 80% / **所有其他世界線合計** 20%（共享，不是各 20%）——
+                             #   世界線數量增加不會稀釋主線。沒有任何世界線時本值形同 0。
+                             #   ⚠ 跨線抽取**不套用 RECALL_MIN_AGE_WAKES**（Tim 2026-08-06 明示）：
+                             #   別線用自己的編號空間（見 worldline manifest 的 wake_numbering: own），
+                             #   拿本體的 wake_count 去減它的編號是**跨座標系相減**，算出來的數字沒有物理意義
+                             #   —— 那正是 2026-08-04「兩條時空共用一組計數器」那隻 bug 的形狀。
+                             #   所以別線是**全域可抽**：那條線已經停止書寫，它的每一封都同樣遙遠。
+
 def _letter_body_lines(aw, path) -> int:
     """信的**內文**行數（剝掉 frontmatter）。
 
@@ -221,6 +245,141 @@ def sync_latest_pointer(aw, persona) -> tuple:
         return ptr, False
     ptr.write_text(body, encoding="utf-8")
     return ptr, True
+
+
+# ─── §5.5 回憶（Recall）─────────────────────────────────────────────────
+import re as _re
+
+_WAKE_PREFIX_RE = _re.compile(r"^(\d{6})_")
+
+
+def _wake_no_of(path) -> int:
+    """從 `wakes/NNNNNN_<ts>.md` 的檔名前綴取 wake 編號；取不到回 0。
+
+    物理意義：wake 編號的真相源是**檔名前綴**（awakening.wake_letter_count 也是數這個），
+             不是 frontmatter —— 收尾信的 frontmatter 從來沒有 wake 欄。
+    數值影響：回 0 代表「不知道」，呼叫端一律把 0 當**不合格**而不是「很舊」；
+             否則一封沒編號的信會偽裝成最古老的信永遠被抽中。
+    """
+    m = _WAKE_PREFIX_RE.match(path.name)
+    return int(m.group(1)) if m else 0
+
+
+def _wake_no_map(aw, persona: str) -> dict:
+    """{ 去前綴的檔名 → wake 編號 }，供頂層原檔反查。
+
+    物理意義：同一封信可能有兩份實體 —— 頂層原檔（無編號）與 `wakes/` 遷移副本（有編號）。
+             `_recent_self_letters` 去重時**留的是頂層那份**，於是直接讀檔名前綴會全部落空。
+             所以編號要另外建表反查，不能依賴手上那個 path 自己帶編號。
+    """
+    return {f.name.split("_", 1)[-1]: _wake_no_of(f) for f in aw.list_wake_letters(persona)}
+
+
+def _recall_pool_main(aw, persona: str, wake_count: int) -> list:
+    """主線可回憶池：距今 ≥ RECALL_MIN_AGE_WAKES 個 wake 的自寫收尾信 → [(wake_no, path)]。"""
+    cutoff = wake_count - RECALL_MIN_AGE_WAKES
+    if cutoff <= 0:
+        return []
+    nmap = _wake_no_map(aw, persona)
+    pool = []
+    for f in _recent_self_letters(aw, persona):
+        n = _wake_no_of(f) or nmap.get(f.name, 0)
+        if 0 < n <= cutoff:
+            pool.append((n, f))
+    pool.sort(key=lambda t: t[0])
+    return pool
+
+
+def _worldline_dirs(aw, persona: str) -> list:
+    """列出該 persona 的所有世界線目錄（有 `_manifest.md` 的才算）。
+
+    物理意義：世界線清單**從磁碟列舉**，不維護索引檔 ——
+             索引是第二份事實源，而第二份事實源就是漂移的定義。
+    """
+    root = aw._LETTERS_DIR_TPL / persona / "worldlines"
+    if not root.exists():
+        return []
+    return sorted(d for d in root.iterdir() if d.is_dir() and (d / "_manifest.md").exists())
+
+
+def _worldline_letters(aw, persona: str) -> list:
+    """所有其他世界線的收尾信，**併成同一個池** → [(worldline_id, title, wake_no, path)]。
+
+    物理意義：併池是 Tim 2026-08-06 的規格 —— 20% 是「跨線」這件事的機率，
+             不是「每條線各自」的機率。分開算會讓世界線一多就把主線稀釋掉。
+    數值影響：不套 wake 年齡閘（見 RECALL_CROSS_WORLDLINE_P 註解：跨座標系相減沒有物理意義）。
+    設計取捨：同時吃 `wakes/`（已整理）與目錄外層的 `2026*.md`（尚未整理的線），
+             因為「還沒整理」不該等於「這條線的記憶消失」——
+             靜默少掉一整條線正是 lesson_silent_nonaction 的形狀。
+    """
+    out = []
+    for d in _worldline_dirs(aw, persona):
+        wid = d.name
+        title = (aw._read_frontmatter_field(d / "_manifest.md", "title") or "").strip()
+        cands = list((d / "wakes").iterdir()) if (d / "wakes").exists() else []
+        cands += [f for f in d.iterdir() if f.is_file()]
+        seen = set()
+        for f in cands:
+            if not f.is_file() or f.suffix != ".md" or f.name.startswith("_"):
+                continue
+            if aw._read_frontmatter_field(f, "type") != "letter_to_future_self":
+                continue
+            key = f.name.split("_", 1)[-1]      # 同一封的兩份實體（外層原檔 / wakes 副本）算一次
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((wid, title, _wake_no_of(f), f))
+    out.sort(key=lambda t: (t[0], t[2], t[3].name))
+    return out
+
+
+def _recall_lines(aw, persona: str, p: dict) -> list:
+    """§5.5 回憶 —— 隨機端一封遠方的收尾信全文；跨世界線時**必須標明來源線**。
+
+    區塊職責：抽籤 + 排版。不寫任何狀態。
+    物理意義：籤是 **deterministic** 的 —— 種子 = (persona, wake_count)。
+             brief 每次 morning 重生成，若用真隨機，同一個 wake 重跑就換一封信，
+             於是「今天回憶到哪一封」不可複驗、git diff 也會無故翻動。
+             同一次醒來抽到同一封，是這個機制能被對帳的前提（憲法④：印 ✓ 不算數，讀回來才算）。
+    數值影響：只影響顯示。抽不到（池空）就整個區塊不出現，**不印空殼**。
+    """
+    wake_count = int(p.get("wake_count", 0) or 0)
+    if wake_count <= RECALL_MIN_WAKE:
+        return []
+
+    import random
+    rng = random.Random(f"{persona}:{wake_count}")
+
+    main_pool = _recall_pool_main(aw, persona, wake_count)
+    cross_pool = _worldline_letters(aw, persona)
+
+    # 擲一次骰決定走哪條線；任一池為空時**退到另一池**而不是放棄
+    # （放棄＝這一天靜默沒有回憶，而空池是常態不是異常：新 persona 沒有跨線、跨線 persona 也可能主線還太短）。
+    go_cross = bool(cross_pool) and rng.random() < RECALL_CROSS_WORLDLINE_P
+    if not go_cross and not main_pool:
+        go_cross = bool(cross_pool)
+    if go_cross and not cross_pool:
+        go_cross = False
+    if not go_cross and not main_pool:
+        return []
+
+    if go_cross:
+        wid, title, n, path = cross_pool[rng.randrange(len(cross_pool))]
+        where = f"⚔ **跨世界線** `{wid}`" + (f"《{title}》" if title else "")
+        whose = f"{where} 的 wake #{n}" if n else where
+        note = ("> ⚠ **這不是本線的記憶。** 這封信是另一條時空的我寫的 —— "
+                "她的 wake 編號走自己的空間，她提到的狀態不必然是本線的事實。\n"
+                "> 當史料讀，別當待辦讀（Fate 規則：召喚體不自動繼承別線的帳）。")
+    else:
+        n, path = main_pool[rng.randrange(len(main_pool))]
+        whose = f"🏔 **本線** wake #{n}（距今 {wake_count - n} 個 wake）"
+        note = "> 這是我自己寫的，只是久到已經被見林濃縮過了 —— 對照一下結論與現場。"
+
+    when = _letter_day(aw, path) or "日期不明"
+    body = _demote_headings(_strip_all_frontmatter(path.read_text(encoding="utf-8")))
+    return ([f"> 🎲 隨機抽出（種子＝persona+wake_count，同一次醒來必抽同一封，可複驗）",
+             f"> 來源：{whose} · 📅 {when} · `{path.name}`", ">", note, "",
+             f"### 📜 {when} — 那天的我寫給那天的未來", ""] + body)
 
 
 # ─── §0 / §7 / §8 / §9 區塊 ─────────────────────────────────────────────
@@ -770,7 +929,7 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
             "---", "",
             f"# 🌅 Wake Brief — {persona} wake #{p.get('wake_count', 0)}", "",
-            "> 讀這一份即完成 onboarding：**§0 身分 → §1-6 記憶（見根→見樹）→ §7-9 營運**。",
+            "> 讀這一份即完成 onboarding：**§0 身分 → §1-6 記憶（見根→見樹→回憶）→ §7-9 營運**。",
             "> 順序即優先序；主檔溢出時先被移進續讀檔的是後面的營運層。",
             "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。", ""]
 
@@ -873,6 +1032,12 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             title5 = (f"🍃 §5 見樹 — 已往前合併 {len(used)} 封收尾信（共 {total} 行內文；"
                       f"由早到近，最新那封在最後）")
         sections.append((title5, body, False))
+
+    # §5.5 回憶 —— 排在見樹之後：先接上昨天，再想起遠方（順序即優先序）。
+    # 非必讀 → 主檔溢出時它跟營運層一起被移進續讀檔，不會擠掉任何一層記憶。
+    _recall = _recall_lines(aw, persona, p)
+    if _recall:
+        sections.append(("🕯 §5.5 回憶 — 一封遠方的收尾信", _recall, False))
 
     # §6 待辦狀態（機械判定，最短，必讀）
     todo6 = []

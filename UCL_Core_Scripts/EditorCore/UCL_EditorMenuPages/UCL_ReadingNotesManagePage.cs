@@ -135,35 +135,83 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.VerticalScope("box"))
                     {
+                        DrawEntryRecallRow(entry);
                         using (new GUILayout.HorizontalScope())
                         {
                             if (GUILayout.Button("📂 開啟", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                                 UCL_ExplorerUtil.Open(entry.Path, nameof(UCL_ReadingNotesManagePage));
                             GUILayout.Label($"<b>{entry.Kind}</b>　{entry.Title}\n{entry.Detail}\n{entry.Path}", WrapLabelStyle);
                         }
-                        // 追回檢視：每位 reader 一顆鈕 —— 讀取與 Cmd_Library op=recall 走同一段服務層
-                        //（Tim 2026-08-06 拍板「頁面讀取與 Cmd 走同一段」；這裡不自己 parse 任何 JSON）。
-                        if (!string.IsNullOrEmpty(entry.MediaId) && entry.Readers.Count > 0)
-                        {
-                            using (new GUILayout.HorizontalScope())
-                            {
-                                GUILayout.Label("追回：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                                foreach (string reader in entry.Readers)
-                                {
-                                    if (GUILayout.Button($"📖 {reader}", UCL_GUIStyle.ButtonStyle,
-                                            GUILayout.ExpandWidth(false)))
-                                    {
-                                        LoadRecall(entry.MediaId, reader);
-                                    }
-                                }
-                                GUILayout.FlexibleSpace();
-                            }
-                        }
                     }
                 }
             }
-            DrawRecallPanel();
         }
+
+        // 區塊職責：單一結果列的追回控制列 + inline 檢視（2026-08-07 三方規格定案）。
+        // 物理意義：
+        //   · persona 用下拉（Tim：同書多讀者是常態）—— PopupSearchCache，選項為 0 時整列不畫
+        //     （它對零選項會 LogError，這不是版面選擇）。
+        //   · 檢視 **inline 展開在該列下方、互斥**（Sirius：從 LibraryManagePage 入口過來，
+        //     work→media 一對多讓多結果是主路徑；比較行為要求「看的跟點的在一起」）。
+        //   · Archive 列給 dim 提示不給鈕 —— 沒有 reader root 可讀；同名並排時「沒有鈕」
+        //     要讀成狀態而不是故障。
+        void DrawEntryRecallRow(SearchEntry entry)
+        {
+            if (string.IsNullOrEmpty(entry.MediaId))
+            {
+                // Archive（legacy）：說清楚為什麼不能追回，別讓人以為按鈕壞了
+                GUILayout.Label("　（legacy —— 遷移到新格式後才可追回；遷移走 op=scan / migrate，本頁不代辦）",
+                    DimLabelStyle);
+                return;
+            }
+            if (entry.Readers.Count == 0)
+            {
+                GUILayout.Label("　（尚無任何 reader root —— 這個 media 還沒有人讀過）", DimLabelStyle);
+                return;
+            }
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("追回 persona：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_ReaderSel.TryGetValue(entry.MediaId, out int cur);
+                GUILayout.BeginHorizontal(GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(150)));
+                int next = UCL_GUILayout.PopupSearchCache(Mathf.Clamp(cur, 0, entry.Readers.Count - 1), entry.Readers, m_PickerDic, $"RecallReaderPicker_{entry.MediaId}");
+                GUILayout.EndHorizontal();
+                if (next != cur) m_ReaderSel[entry.MediaId] = next;
+                string reader = entry.Readers[Mathf.Clamp(next, 0, entry.Readers.Count - 1)];
+                bool isOpen = m_RecallMediaId == entry.MediaId && !string.IsNullOrEmpty(m_RecallText);
+                if (GUILayout.Button(isOpen && m_RecallReader == reader ? "✕ 收合" : "📖 追回",
+                        UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    if (isOpen && m_RecallReader == reader)
+                    {
+                        m_RecallText = "";
+                        m_RecallMediaId = "";
+                    }
+                    else
+                    {
+                        LoadRecall(entry.MediaId, reader);   // 互斥：載入即把上一列的展開換掉
+                    }
+                }
+                GUILayout.FlexibleSpace();
+            }
+            // inline 展開：只有「目前展開的那一列」畫檢視面板
+            if (m_RecallMediaId == entry.MediaId && !string.IsNullOrEmpty(m_RecallText))
+            {
+                DrawRecallPanel();
+            }
+        }
+
+        readonly Dictionary<string, int> m_ReaderSel = new Dictionary<string, int>();
+        // PopupSearchCache 的內部狀態容器 —— 獨立於 m_FoldDic（折疊值與下拉快取共用一個
+        // dict 的話，資料重載路徑的 Clear 會把折疊狀態一併吃掉）。
+        readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
+
+        GUIStyle m_DimLabelStyle;
+        GUIStyle DimLabelStyle => m_DimLabelStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
+        {
+            normal = { textColor = new Color(0.6f, 0.6f, 0.6f) },
+            wordWrap = true,
+        };
 
         // ===========================================================
         // 區塊職責：追回檢視 —— 在頁內直接看 RenderRecall 的輸出（Tim QA 的主要對象）。
@@ -177,11 +225,15 @@ namespace UCL.Core.EditorLib.Page
         string m_RecallText = "";
         bool m_RecallFull = false;   // 預設精簡（round 只列索引）—— 全文動輒數千行，QA 先看骨架
         Vector2 m_RecallScroll = Vector2.zero;
+        // 最近一次「產生追回檔」寫出的路徑 —— 給「開啟檔案位置」鈕用（Tim 2026-08-07）。
+        // 只在本次產檔成功後有值；換 media/reader 檢視就清掉，別讓按鈕開到上一本的檔。
+        string m_LastBriefPath = "";
 
         void LoadRecall(string mediaId, string reader)
         {
             m_RecallMediaId = mediaId;
             m_RecallReader = reader;
+            m_LastBriefPath = "";   // 換檢視對象就失效 —— 開檔鈕只指向「這次」產的檔
             string text = AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.RenderRecall(
                 mediaId, reader, m_RecallFull, out string error);
             m_RecallText = text ?? $"✗ 追回讀取失敗：{error}";
@@ -209,6 +261,13 @@ namespace UCL.Core.EditorLib.Page
                         string path = AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.WriteRecallBrief(
                             m_RecallMediaId, m_RecallReader, true, out string error);
                         m_LastStatus = path != null ? $"✓ 追回檔已寫出：{path}" : $"✗ 追回檔寫出失敗：{error}";
+                        m_LastBriefPath = path ?? "";
+                    }
+                    // 產檔成功後才出現 —— 開父夾並選中該檔（UCL_ExplorerUtil 對檔案路徑的既有行為）
+                    if (!string.IsNullOrEmpty(m_LastBriefPath)
+                        && GUILayout.Button("📂 開啟檔案位置", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ExplorerUtil.Open(m_LastBriefPath, nameof(UCL_ReadingNotesManagePage));
                     }
                     if (GUILayout.Button("✕ 關閉", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -244,8 +303,10 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
 
-            SearchArchive(query);
+            // Library 先、Archive 後（Tim 2026-08-07）：新版才有追回等可操作功能，該站結果頂端；
+            // Archive 是遷移參考，沉底 —— 順序即分層，不用額外的分組標題。
             SearchLibrary(query);
+            SearchArchive(query);
             m_LastStatus = $"「{query}」找到 {m_Results.Count} 個入口。Archive 結果只供人工確認與遷移，不會被新流程讀取。";
         }
 

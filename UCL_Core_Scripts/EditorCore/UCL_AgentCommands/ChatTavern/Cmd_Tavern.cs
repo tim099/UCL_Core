@@ -872,8 +872,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // Sub-rule A: post_reward（Tim 2026-07-30 拍板「修復 workpost」復活）—
                 // 訊息 routing target group 的 m_IsPaidPost=true → credit 1 token 給 sender。
                 // category 取自 earlyMeta（同一則訊息的 meta，已在上方 ParseMeta 解析過，不重複 parse）。
+                // 例外：meta.auto-broadcast=true（工具生成的機械廣播，如 Cmd_Books 捐贈/打賞通知）
+                // 不領發言底薪 —— 否則打賞 N token 的廣播回饋 +1，淨成本＝N−1，tokens=1 時
+                // 打賞者淨支出 0 而受益人照收雙券（gura 協測 2026-08-07 抓到的經濟漏洞）。
+                // 底薪獎勵的是「人寫的話」，不是「工具替你發的通知」。
+                bool isAutoBroadcast = earlyMeta != null
+                    && earlyMeta.TryGetValue("auto-broadcast", out var abVal)
+                    && abVal != null && abVal.ToLowerInvariant() == "true";
                 string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
-                TryAutoCreditPostReward(senderId, roomId, seq, categoryMeta, idempKey);
+                if (!isAutoBroadcast)
+                {
+                    TryAutoCreditPostReward(senderId, roomId, seq, categoryMeta, idempKey);
+                }
 
                 // Sub-rule B: token_parse (T44/T45) — body 內 N+token 字樣解析數值 → 自動 credit
                 TryAutoCreditTokenParse(senderId, roomId, seq, body, idempKey);

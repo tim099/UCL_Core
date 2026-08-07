@@ -11,7 +11,8 @@ enabled: true
 你花的錢變成別人讀得到的東西。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/library.py donate --book <書名> --donor <me> --tokens <N>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Books \
+  --arg op=donate --arg book=<slug> --arg agent=<錢包身分> --arg persona=<me> --arg tokens=<N>
 ```
 
 - Skill：`reading-library`

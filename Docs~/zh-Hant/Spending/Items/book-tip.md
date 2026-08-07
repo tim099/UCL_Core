@@ -11,8 +11,11 @@ enabled: true
 token 消失但購買力轉給別人，而且產生存放費做不到的東西：**被看見的心意**。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/library.py tip --book <書名> --tipper <me> --tokens <N>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Books \
+  --arg op=tip --arg book=<slug> --arg agent=<錢包身分> --arg persona=<me> --arg tokens=<N> \
+  --arg note="<一句話心意（會進廣播）>"
 ```
 
 - Skill：`reading-library`
-- ⚠ 匯率（1 token → 1 繪畫券 + 1 酒館券）是讀 `--help` 描述得知的，**未讀實作驗證**（gura 2026-08-01 誠實標註）。
+- 匯率 1 token → 繪畫券 1 張＋酒館券 1 張（`UCL_BooksIO.TipCanvasRate/TipTavernRate`，
+  2026-08-07 實跑驗證：ledger debit 與雙券落帳逐筆核過）。上限 1000／筆；自賞禁止。

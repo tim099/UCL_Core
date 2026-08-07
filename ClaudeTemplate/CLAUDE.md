@@ -25,5 +25,11 @@
 
 @{{UCL_CORE_PATH}}/AgentEntry/UCL_Core_Entry.md
 
+### Windows 上跑 shell 指令：一律用 Bash 工具，不要用 PowerShell 工具
+Enterprise policy 要求指令必須 sandbox，而 Claude Code 的 **PowerShell 工具在 Windows 無法 sandbox**，
+任何指令都會被擋（錯誤訊息開頭是 `Enterprise policy requires sandboxing...`）。
+**Bash 工具（Git Bash）可以 sandbox，直接通** —— python / git / 各種 CLI 全走 Bash，用 POSIX 語法。
+這不是單一 skill 的問題，是本環境所有 shell 操作共通；撞到該錯誤 = 換 Bash 重跑，不是指令本身有問題。
+
 ### 個人化偏好
 `CLAUDE.local.md`（不入版控）放個人化偏好：語氣、opt-in 開關。**專案規則不寫在那裡。**

@@ -122,6 +122,53 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             return result;
         }
 
+        /// <summary>
+        /// 區塊職責：全 Library 的 media 總表（瀏覽下拉與 scan 共用）。
+        /// 物理意義：一筆 = media.json + work.json title + readers 目錄名 —— 只讀 metadata，
+        ///          不碰章節正文；title 缺檔退回 mediaId（瀏覽不因缺料斷掉，缺料是 scan 的事）。
+        /// </summary>
+        public class MediaEntry
+        {
+            public string MediaId = "";
+            public string MediaKind = "";
+            public string WorkId = "";
+            public string Title = "";
+            public List<string> Readers = new List<string>();
+        }
+
+        public static List<MediaEntry> ListMediaEntries()
+        {
+            var result = new List<MediaEntry>();
+            string root = Path.Combine(LibraryRoot, k_MediaDirName);
+            if (!Directory.Exists(root)) return result;
+            foreach (string dir in Directory.GetDirectories(root))
+            {
+                var e = new MediaEntry { MediaId = Path.GetFileName(dir) };
+                JsonData media = LoadJson(Path.Combine(dir, k_MediaJsonName), out _);
+                if (media != null)
+                {
+                    e.MediaKind = media.GetString(Key_MediaKind, "");
+                    e.WorkId = media.GetString(Key_WorkId, "");
+                }
+                e.Title = e.MediaId;
+                if (!string.IsNullOrEmpty(e.WorkId))
+                {
+                    JsonData work = LoadJson(Path.Combine(WorkRoot(e.WorkId), k_WorkJsonName), out _);
+                    if (work != null) e.Title = work.GetString(Key_Title, e.MediaId);
+                }
+                string readersRoot = Path.Combine(dir, k_ReadersDirName);
+                if (Directory.Exists(readersRoot))
+                {
+                    foreach (string readerDir in Directory.GetDirectories(readersRoot))
+                        e.Readers.Add(Path.GetFileName(readerDir));
+                    e.Readers.Sort(StringComparer.OrdinalIgnoreCase);
+                }
+                result.Add(e);
+            }
+            result.Sort((a, b) => string.Compare(a.MediaId, b.MediaId, StringComparison.Ordinal));
+            return result;
+        }
+
         /// <summary>列出某 media 底下的 reader persona（同一部作品可有多位讀者各自一份紀錄）。</summary>
         public static List<string> ListReaders(string mediaId)
         {
@@ -713,8 +760,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 if (aliases != null && aliases.IsArray && aliases.Count > 0)
                 {
                     var names = new List<string>();
-                    for (int i = 0; i < aliases.Count; i++) names.Add(aliases[i].GetString());
-                    sb.AppendLine($"- 別名（搜尋用）：{string.Join(" / ", names)}");
+                    for (int i = 0; i < aliases.Count; i++)
+                    {
+                        string a = AliasToString(aliases[i]);   // 物件形狀 alias 也要印，別靜默跳過
+                        if (!string.IsNullOrEmpty(a)) names.Add(a);
+                    }
+                    if (names.Count > 0) sb.AppendLine($"- 別名（搜尋用）：{string.Join(" / ", names)}");
                 }
             }
             sb.AppendLine($"- status：`{reader.GetString(Key_Status, "unknown")}`　" +
@@ -989,6 +1040,227 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         }
 
         /// <summary>把某筆 round 的酒館 seq 寫回索引 —— 「已發文」的可驗證 receipt。</summary>
+        // ===========================================================
+        // 區塊職責：op=scan —— Library / Archive 的重複與異常候選審計（唯讀）。
+        // 物理意義：Q4 定案「scan 先印候選、人工核對」—— 本方法**不合併不搬移不改任何檔**，
+        //          只產一份給人裁決的清單。判準沿 Plan_Library_Media_Migration 的實測教訓：
+        //          前綴法誤報 60%、title 法漏一半 → 用 normalize 撒網、人工收網。
+        // 數值影響：唯一的寫入是報告檔 BookNotes/_migration/scan_report.md（機械產物，
+        //          每次覆寫）；資料層一個位元組都不動。
+        // 掃四類：
+        //   A. Archive ↔ Library 疑似同作品（slug / title / title_original / aliases normalize 命中）
+        //   B. Library 內部疑似重複（同 normalize title 但**不同 work_id** —— 同 work 多 media 是
+        //      設計上的合法形狀，不列）
+        //   C. reader 異常：資料夾名 unknown / 缺 reader.json / reader_persona 與資料夾名不一致
+        //      （含大小寫不一致 —— NTFS 遮著它，Linux 上會把追回檔寫到版控外）
+        //   D. Archive 讀不到 metadata 的 entry（book.json 缺或壞 —— 連被比對的資格都沒有，要人看）
+        // ===========================================================
+        public static string ScanLibrary(out string reportPath, out string error)
+        {
+            error = null;
+            reportPath = null;
+            var sb = new StringBuilder();
+            var mediaEntries = ListMediaEntries();
+
+            // media 的 normalize 鍵集合（title / mediaId 去前綴 / work_id / aliases）
+            var mediaKeys = new List<(MediaEntry entry, HashSet<string> keys)>();
+            foreach (var m in mediaEntries)
+            {
+                var keys = new HashSet<string>();
+                AddKey(keys, m.Title);
+                AddKey(keys, m.WorkId);
+                int dash = m.MediaId.IndexOf('-');
+                AddKey(keys, dash > 0 ? m.MediaId.Substring(dash + 1) : m.MediaId);
+                JsonData work = string.IsNullOrEmpty(m.WorkId) ? null
+                    : LoadJson(Path.Combine(WorkRoot(m.WorkId), k_WorkJsonName), out _);
+                if (work != null)
+                {
+                    AddKey(keys, work.GetString(Key_TitleOriginal, ""));
+                    JsonData aliases = work.Contains(Key_Aliases) ? work[Key_Aliases] : null;
+                    if (aliases != null && aliases.IsArray)
+                    {
+                        for (int i = 0; i < aliases.Count; i++) AddKey(keys, AliasToString(aliases[i]));
+                    }
+                }
+                mediaKeys.Add((m, keys));
+            }
+
+            sb.AppendLine("---");
+            sb.AppendLine("type: library_scan_report");
+            sb.AppendLine($"generated_at: {DateTime.Now:yyyy-MM-ddTHH:mm:sszzz}");
+            sb.AppendLine("generated: mechanical   # 每次 op=scan 覆寫；本工具唯讀，遷移一律人工");
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("# 🔍 Library 審計報告（op=scan）");
+            sb.AppendLine();
+            sb.AppendLine($"- Library media：{mediaEntries.Count} 個");
+
+            // ── A + D：Archive 比對 ──
+            string archiveRoot = Path.Combine(BookNotesRoot, "Archive");
+            int archiveCount = 0, hitCount = 0;
+            var sectionA = new StringBuilder();
+            var sectionD = new StringBuilder();
+            if (Directory.Exists(archiveRoot))
+            {
+                foreach (string dir in Directory.GetDirectories(archiveRoot))
+                {
+                    string slug = Path.GetFileName(dir);
+                    // `_` 開頭是系統目錄（_recommended / _search_reports…），不是書 —— 不進統計也不進 D 節
+                    if (slug.StartsWith("_", StringComparison.Ordinal)) continue;
+                    archiveCount++;
+                    JsonData book = LoadJson(Path.Combine(dir, "book.json"), out string bookErr);
+                    if (book == null)
+                    {
+                        sectionD.AppendLine($"- `{slug}`：{bookErr}");
+                        continue;
+                    }
+                    string title = book.GetString(Key_Title, "");
+                    string titleOriginal = book.GetString(Key_TitleOriginal, "");
+                    var archiveKeys = new HashSet<string>();
+                    AddKey(archiveKeys, slug);
+                    AddKey(archiveKeys, title);
+                    AddKey(archiveKeys, titleOriginal);
+                    foreach (var (m, keys) in mediaKeys)
+                    {
+                        bool hit = false;
+                        foreach (var k in archiveKeys)
+                        {
+                            if (keys.Contains(k)) { hit = true; break; }
+                        }
+                        if (!hit) continue;
+                        hitCount++;
+                        sectionA.AppendLine($"- Archive `{slug}`（{title}） ↔ Library `{m.MediaId}`（{m.Title}）" +
+                                            $"　readers: {string.Join(", ", m.Readers)}");
+                    }
+                }
+            }
+            sb.AppendLine($"- Archive entry：{archiveCount} 個");
+            sb.AppendLine();
+            sb.AppendLine($"## A. Archive ↔ Library 疑似同作品（{hitCount} 組 —— 逐組人工裁決，不自動遷移）");
+            sb.AppendLine();
+            sb.Append(sectionA.Length > 0 ? sectionA.ToString() : "（無命中）\n");
+            sb.AppendLine();
+
+            // ── B：Library 內部疑似重複（同 normalize title、不同 work_id）──
+            sb.AppendLine("## B. Library 內部疑似重複（同名但不同 work_id —— arakawa 型爛帳的形狀）");
+            sb.AppendLine();
+            var byTitle = new Dictionary<string, List<MediaEntry>>();
+            foreach (var m in mediaEntries)
+            {
+                string k = Normalize(m.Title);
+                if (k.Length == 0) continue;
+                if (!byTitle.TryGetValue(k, out var list)) byTitle[k] = list = new List<MediaEntry>();
+                list.Add(m);
+            }
+            int dupGroups = 0;
+            foreach (var kv in byTitle)
+            {
+                var workIds = new HashSet<string>();
+                foreach (var m in kv.Value) workIds.Add(m.WorkId);
+                if (kv.Value.Count < 2 || workIds.Count < 2) continue;   // 同 work 多 media 合法
+                dupGroups++;
+                sb.AppendLine($"- 「{kv.Value[0].Title}」：" +
+                              string.Join(" / ", kv.Value.ConvertAll(m => $"`{m.MediaId}`(work={m.WorkId})")));
+            }
+            if (dupGroups == 0) sb.AppendLine("（無命中）");
+            sb.AppendLine();
+
+            // ── C：reader 異常 ──
+            sb.AppendLine("## C. reader 異常（unknown / 缺 reader.json / persona 與資料夾名不一致）");
+            sb.AppendLine();
+            int anomalies = 0;
+            foreach (var m in mediaEntries)
+            {
+                foreach (string reader in m.Readers)
+                {
+                    string readerJson = ReaderJsonPath(m.MediaId, reader);
+                    if (reader == "unknown")
+                    {
+                        anomalies++;
+                        sb.AppendLine($"- `{m.MediaId}/readers/unknown`：persona 解析失敗的 fallback 產物 —— " +
+                                      "逐檔認領或併入正主，不可當真讀者");
+                        continue;
+                    }
+                    if (!File.Exists(readerJson))
+                    {
+                        anomalies++;
+                        sb.AppendLine($"- `{m.MediaId}/readers/{reader}`：缺 reader.json");
+                        continue;
+                    }
+                    JsonData reader0 = LoadJson(readerJson, out _);
+                    string declared = reader0 != null ? reader0.GetString(Key_ReaderPersona, "") : "";
+                    if (declared != reader)
+                    {
+                        anomalies++;
+                        bool caseOnly = string.Equals(declared, reader, StringComparison.OrdinalIgnoreCase);
+                        sb.AppendLine($"- `{m.MediaId}/readers/{reader}`：reader.json 宣告 `{declared}`" +
+                                      (caseOnly ? "（**大小寫不一致** —— NTFS 遮著，Linux 上追回檔會寫進版控外的 letters/）"
+                                          : "（宣告與路徑不同人）"));
+                    }
+                }
+            }
+            if (anomalies == 0) sb.AppendLine("（無異常）");
+            sb.AppendLine();
+            if (sectionD.Length > 0)
+            {
+                sb.AppendLine("## D. Archive metadata 讀不到（連被比對的資格都沒有 —— 要人看）");
+                sb.AppendLine();
+                sb.Append(sectionD);
+                sb.AppendLine();
+            }
+            sb.AppendLine("> 本報告唯讀生成；**任何合併 / 搬移 / 改名都不由工具代辦**（Q3 定案：偵測自動、遷移人工）。");
+
+            string report = sb.ToString();
+            try
+            {
+                string dir = Path.Combine(BookNotesRoot, "_migration");
+                Directory.CreateDirectory(dir);
+                reportPath = Path.Combine(dir, "scan_report.md");
+                File.WriteAllText(reportPath, report, new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                // 報告落檔失敗不吞掉輸出 —— 印出來的那份還在
+                error = $"報告檔寫出失敗（內容仍在輸出中）：{ex.Message}";
+                reportPath = null;
+            }
+            return report;
+        }
+
+        static void AddKey(HashSet<string> keys, string raw)
+        {
+            string k = Normalize(raw);
+            if (k.Length > 0) keys.Add(k);
+        }
+
+        // 區塊職責：alias 條目轉字串 —— aliases 也有兩形狀（facts 同族病，2026-08-07 scan 實測抓到）：
+        // mononoke 是字串陣列、arakawa 是物件陣列（{slug,source,note} / {title,note}）。
+        // GetString 對物件回空字串 → 物件形狀的 alias 被靜默跳過。
+        static string AliasToString(JsonData alias)
+        {
+            if (alias == null) return "";
+            if (alias.IsObject)
+            {
+                string t = alias.GetString(Key_Title, "");
+                if (string.IsNullOrEmpty(t)) t = alias.GetString("slug", "");
+                return t;
+            }
+            return alias.GetString();
+        }
+
+        // normalize：小寫 + 只留字母數字（含 CJK）—— 標點、空白、連字號全掃掉。
+        // 用途是撒網不是判定：normalize 相等 = 候選，不 = 同作品（人工收網）。
+        static string Normalize(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "";
+            var sb = new StringBuilder();
+            foreach (char c in raw.ToLowerInvariant())
+            {
+                if (char.IsLetterOrDigit(c)) sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
         // ===========================================================
         // 區塊職責：組一則「章節心得 → 酒館」的發文內文（op=share 用）。
         // 物理意義：round 檔是事實源，酒館貼文是投影 —— 本方法只讀不寫；

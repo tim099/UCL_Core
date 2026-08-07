@@ -84,10 +84,150 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
+            DrawBrowsePanel();
+            GUILayout.Space(8);
             DrawSearchPanel();
             GUILayout.Space(8);
             DrawResultsPanel();
         }
+
+        // ===========================================================
+        // 區塊職責：三層下拉瀏覽（Tim 2026-08-07）—— 媒材 kind → 該 kind 所有筆記 → 該筆記所有 persona。
+        // 物理意義：搜尋是「知道書名找入口」，瀏覽是「不知道有什麼、逛」—— 兩條路互補。
+        //          資料走 UCL_ReadingLibraryIO.ListMediaEntries（只讀 metadata），檢視按鈕
+        //          重用同一個 LoadRecall / DrawRecallPanel —— 讀取永遠只有服務層那一段。
+        // 數值影響：純唯讀；清單在開頁載一次，「🔄」手動重整（Library 寫入頻率低，不每幀掃碟）。
+        // ===========================================================
+        const string FoldBrowse = "ReadingNotesBrowseFold";
+        List<AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.MediaEntry> m_MediaEntries;
+        int m_BrowseKindSel = 0;
+        int m_BrowseMediaSel = 0;
+        int m_BrowseReaderSel = 0;
+
+        void EnsureMediaEntries(bool forceReload = false)
+        {
+            if (m_MediaEntries == null || forceReload)
+            {
+                m_MediaEntries = AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.ListMediaEntries();
+            }
+        }
+
+        void DrawBrowsePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool show;
+                using (new GUILayout.HorizontalScope())
+                {
+                    show = UCL_GUILayout.Toggle(m_FoldDic, FoldBrowse, 21, iDefaultValue: true);
+                    if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        EnsureMediaEntries(forceReload: true);
+                    }
+                    GUILayout.Label("<b>🗂 全庫瀏覽</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                    GUILayout.FlexibleSpace();
+                }
+                if (!show) return;
+                EnsureMediaEntries();
+                if (m_MediaEntries.Count == 0)
+                {
+                    GUILayout.Label("（Library 沒有任何 media）", DimLabelStyle);
+                    return;
+                }
+
+                // ── 第一層：媒材 kind ──
+                var kinds = new List<string>();
+                foreach (var e in m_MediaEntries)
+                {
+                    string k = string.IsNullOrEmpty(e.MediaKind) ? "(未標)" : e.MediaKind;
+                    if (!kinds.Contains(k)) kinds.Add(k);
+                }
+                kinds.Sort(StringComparer.Ordinal);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("媒材", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    int kindNext = UCL_GUILayout.PopupSearchCache(
+                        Mathf.Clamp(m_BrowseKindSel, 0, kinds.Count - 1), kinds, m_PickerDic, "BrowseKindPicker");
+                    if (kindNext != m_BrowseKindSel)
+                    {
+                        m_BrowseKindSel = kindNext;
+                        m_BrowseMediaSel = 0;    // 換 kind 就重置下游選擇 —— 舊 index 指向的是另一張清單
+                        m_BrowseReaderSel = 0;
+                    }
+                    //GUILayout.FlexibleSpace(); 會擠壓下拉選單不好操作
+                }
+                string kind = kinds[Mathf.Clamp(m_BrowseKindSel, 0, kinds.Count - 1)];
+
+                // ── 第二層：該 kind 底下的筆記（media）──
+                var medias = m_MediaEntries.FindAll(
+                    e => (string.IsNullOrEmpty(e.MediaKind) ? "(未標)" : e.MediaKind) == kind);
+                if (medias.Count == 0)
+                {
+                    GUILayout.Label("（此媒材下沒有筆記）", DimLabelStyle);
+                    return;
+                }
+                var mediaLabels = medias.ConvertAll(e => $"{e.Title}　({e.MediaId})");
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("筆記", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    int mediaNext = UCL_GUILayout.PopupSearchCache(
+                        Mathf.Clamp(m_BrowseMediaSel, 0, medias.Count - 1), mediaLabels, m_PickerDic,
+                        $"BrowseMediaPicker_{kind}");
+                    if (mediaNext != m_BrowseMediaSel)
+                    {
+                        m_BrowseMediaSel = mediaNext;
+                        m_BrowseReaderSel = 0;
+                    }
+                    //GUILayout.FlexibleSpace(); 會擠壓下拉選單不好操作
+                }
+                var media = medias[Mathf.Clamp(m_BrowseMediaSel, 0, medias.Count - 1)];
+
+                // ── 第三層：該筆記底下的 persona 心得 ──
+                if (media.Readers.Count == 0)
+                {
+                    GUILayout.Label("（這個 media 還沒有任何 reader root）", DimLabelStyle);
+                    return;
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    string reader = media.Readers[Mathf.Clamp(m_BrowseReaderSel, 0, media.Readers.Count - 1)];
+                    bool isOpen = m_RecallHost == "browse" && m_RecallMediaId == media.MediaId
+                                  && m_RecallReader == reader && !string.IsNullOrEmpty(m_RecallText);
+                    //按鈕放在前方 避免版面不夠時跑到畫面外按不到
+                    if (GUILayout.Button(isOpen ? "✕ 收合" : "📖 檢視心得", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        if (isOpen)
+                        {
+                            m_RecallText = "";
+                            m_RecallMediaId = "";
+                        }
+                        else
+                        {
+                            m_RecallHost = "browse";
+                            LoadRecall(media.MediaId, reader);
+                        }
+                    }
+
+
+                    GUILayout.Label("persona", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    m_BrowseReaderSel = UCL_GUILayout.PopupSearchCache(
+                        Mathf.Clamp(m_BrowseReaderSel, 0, media.Readers.Count - 1), media.Readers, m_PickerDic,
+                        $"BrowseReaderPicker_{media.MediaId}");
+
+                    //GUILayout.FlexibleSpace(); 會擠壓下拉選單不好操作
+                }
+                if (m_RecallHost == "browse" && m_RecallMediaId == media.MediaId
+                    && !string.IsNullOrEmpty(m_RecallText))
+                {
+                    DrawRecallPanel();
+                }
+            }
+        }
+
+        // 檢視面板目前掛在哪個區塊（"browse" / "search"）—— 同一個 media 可能同時出現在
+        // 瀏覽選擇與搜尋結果裡，不標 host 的話兩處會同時畫出同一份面板。
+        string m_RecallHost = "";
 
         void DrawSearchPanel()
         {
@@ -178,7 +318,8 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.EndHorizontal();
                 if (next != cur) m_ReaderSel[entry.MediaId] = next;
                 string reader = entry.Readers[Mathf.Clamp(next, 0, entry.Readers.Count - 1)];
-                bool isOpen = m_RecallMediaId == entry.MediaId && !string.IsNullOrEmpty(m_RecallText);
+                bool isOpen = m_RecallHost == "search" && m_RecallMediaId == entry.MediaId
+                              && !string.IsNullOrEmpty(m_RecallText);
                 if (GUILayout.Button(isOpen && m_RecallReader == reader ? "✕ 收合" : "📖 追回",
                         UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                 {
@@ -189,13 +330,15 @@ namespace UCL.Core.EditorLib.Page
                     }
                     else
                     {
-                        LoadRecall(entry.MediaId, reader);   // 互斥：載入即把上一列的展開換掉
+                        m_RecallHost = "search";
+                        LoadRecall(entry.MediaId, reader);   // 互斥：載入即把上一列（含瀏覽區）的展開換掉
                     }
                 }
                 GUILayout.FlexibleSpace();
             }
-            // inline 展開：只有「目前展開的那一列」畫檢視面板
-            if (m_RecallMediaId == entry.MediaId && !string.IsNullOrEmpty(m_RecallText))
+            // inline 展開：只有「目前展開的那一列」畫檢視面板（host 標記防瀏覽區同 media 重複畫）
+            if (m_RecallHost == "search" && m_RecallMediaId == entry.MediaId
+                && !string.IsNullOrEmpty(m_RecallText))
             {
                 DrawRecallPanel();
             }
@@ -250,7 +393,12 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label($"<b>📖 追回檢視</b>　{m_RecallMediaId} / {m_RecallReader}",
                         UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    bool full = GUILayout.Toggle(m_RecallFull, " round 全文", GUILayout.ExpandWidth(false));
+
+                    GUILayout.BeginHorizontal();
+                    bool full = UCL_GUILayout.CheckBox(m_RecallFull);
+                    GUILayout.Label("round 全文", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.EndHorizontal();
+
                     if (full != m_RecallFull)
                     {
                         m_RecallFull = full;

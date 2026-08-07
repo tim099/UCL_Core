@@ -119,6 +119,21 @@ persona 與 media id；不會從 Archive 或別人的 reader root 補資料。�
 round 的完整筆記，以及每位角色的 `profile.json` 和全部 `vN_*.md`。原始 reader root 才是事實來源；
 不得手改追回檔來回填閱讀資料。
 
+## 審計（op=scan，2026-08-07 上線）
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library --arg op=scan
+```
+
+唯讀掃四類候選、印報告＋落 `BookNotes/_migration/scan_report.md`（機械產物）：
+A. Archive ↔ Library 疑似同作品（slug / title / 原文名 / aliases normalize 命中）
+B. Library 內部同名但不同 work_id（arakawa 型重複；同 work 多 media 是合法形狀不列）
+C. reader 異常（`unknown` / 缺 reader.json / persona 與資料夾名不一致含大小寫）
+D. Archive 讀不到 metadata 的 entry（`_` 開頭系統目錄除外）
+
+**normalize 相等＝候選，不＝同作品** —— 撒網自動、收網人工（Q3/Q4 定案：偵測自動、遷移人工，
+工具不代辦任何合併 / 搬移 / 改名）。
+
 ## 工具要求
 
 `library.py reading-recall` 已提供新 schema 的唯讀追回入口。新的寫入 API 應以一次寫入操作更新

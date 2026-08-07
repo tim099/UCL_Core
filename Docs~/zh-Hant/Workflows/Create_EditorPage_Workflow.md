@@ -3,7 +3,7 @@ title: 建立新的 UCL_CommonEditorPage 子類工作流
 description: 步驟化 SOP — 從零開出一頁可被 GUIPageController 推送的 Editor 頁面。涵蓋繼承關係、必/選 override、入口點掛接、**區塊折疊與排版守則（按鈕靠左、單排、關鍵操作提到折疊外）**、狀態快取分層、樣式選用、與 12 條實戰地雷。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-07-29 (整份重寫 — 吸收 ChatTavernAdminPage / ControlPanelPage 實作經驗, 新增 §4 版面與折疊守則 / §5 狀態快取分層 / 地雷 #11 #12)
+last_updated: 2026-08-07 (新增 L4：下拉行尾不放 FlexibleSpace；emoji 用常見款 — ⟳ Unity 畫不出來，刷新用 🔄。Tim 於閱讀心得管理頁實測)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create EditorPage, UCL_CommonEditorPage workflow, 寫新 editor 頁, editor page 排版, 折疊守則]
 tags: [workflow, editor, ui, imgui, layout, fold]
@@ -153,6 +153,7 @@ protected override void TopBarButtons()
 | **L1** | **按鈕靠左**。`GUILayout.FlexibleSpace()` 放在**行尾**，不要放在按鈕前面把按鈕推到右邊 | Label 文字長度會隨內容 / 語系 / 縮放變動；按鈕被推到右邊時，視窗一窄就**跑出可見範圍點不到** |
 | **L2** | **Label 可能很長時，按鈕放 Label 前面** | 長 Label 會把後面的按鈕整個擠出畫面。順序改成「折疊鈕 → 按鈕 → Label → FlexibleSpace」就永遠點得到 |
 | **L3** | **折疊外層的控件只能占「一排」**。超過一排的東西一律進折疊區 | header 是常駐可見區，多排會讓收合失去意義（收了還是很高）|
+| **L4** | **搜尋式下拉（`PopupSearchCache`）所在的行，行尾不要放 `FlexibleSpace()`** —— 讓下拉吃掉剩餘寬度；要限寬改用 `MinWidth` 包 | FlexibleSpace 會把下拉擠到最小寬度，**選項文字被截斷、點擊區縮成一小條**，不好操作（Tim 2026-08-07 實測於閱讀心得管理頁）。L1 的「FlexibleSpace 放行尾」是對**按鈕**行說的 —— 下拉行是例外，兩條不衝突 |
 
 ### 4.2 標準 header 寫法（照抄這個）
 
@@ -186,6 +187,23 @@ void DrawTavernAdminSection()
 - **每個 Label / Button 都帶 `GUILayout.ExpandWidth(false)`** — 否則它會搶走剩餘寬度，把後面的控件推出去
 - `if (!aShow) return;` 直接返回，別用 `if (aShow) { ... }` 包一大塊（少一層縮排、diff 更乾淨）
 - 折疊鈕的 size 用 `21`（全專案一致的 ▼/► 尺寸）
+- **按鈕 / 標題的 emoji 用「常見 emoji」，別用特殊符號字元** —— Unity IMGUI 內建字型
+  畫不出 `⟳`（U+27F3）這類箭頭符號，會顯示成空白或豆腐，而且**不報錯**；
+  刷新一律用 `🔄`（Tim 2026-08-07 實測）。不確定能不能顯示 → 抄既有頁面用過的
+  （🔄 📂 📖 🍺 ✕ ⚠ 都驗過），別自己從字元表挑。
+
+下拉選單行的寫法（L4 —— 與按鈕行相反，行尾**沒有** FlexibleSpace）：
+
+```csharp
+using (new GUILayout.HorizontalScope())
+{
+    GUILayout.Label("媒材", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+    m_KindSel = UCL_GUILayout.PopupSearchCache(m_KindSel, kinds, m_PickerDic, "KindPicker");
+    // 行尾不放 FlexibleSpace —— 下拉要吃掉剩餘寬度才好點好讀。
+    // 真要限制下拉寬度：用 MinWidth 包住，不是用 FlexibleSpace 擠。
+    // GUILayout.BeginHorizontal(GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(150))); ... EndHorizontal();
+}
+```
 
 ### 4.3 什麼該留在折疊外層？
 

@@ -45,7 +45,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share（required） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan（required；scan 免其他參數） | " +
             "agent=酒館發文的錢包身分，例 Zeta（share required —— 計酬進誰的帳不能猜） | " +
             "room=酒館房間 id（share 選填，default tavern） | " +
             "round=要分享的 round 號（share 選填；缺 = 該章最新一輪） | " +
@@ -109,12 +109,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "add_character": Op_AddCharacter(args); break;
                 case "revise_view": Op_ReviseView(args); break;
                 case "share": await Op_Share(args, token); break;
+                case "scan": Op_Scan(); break;
 
                 default:
                     throw new ArgumentException(
                         $"[{CommandType}] 未知 op：{op}" +
                         "（可用：paths / recall / media_init / note_chapter / bookmark / " +
-                        "add_character / revise_view / share）");
+                        "add_character / revise_view / share / scan）");
             }
         }
 
@@ -328,6 +329,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             Cmd_Library_Helpers.ResolveLastOp(
                 $"# 📚 Library share\n\n- ✅ 已發酒館：seq={seq}（{mediaId} / {chapterId} r{round} by {persona}）\n{receiptNote}");
             Debug.Log($"[{CommandType}] share → {mediaId}/{chapterId} r{round} seq={seq}");
+        }
+
+        /// <summary>
+        /// 區塊職責：op=scan —— Library / Archive 重複與異常候選審計（唯讀，Q4 定案）。
+        /// 物理意義：印候選給人裁決；不合併、不搬移、不改資料（Q3：偵測自動、遷移人工）。
+        /// 數值影響：唯一寫入是報告檔 _migration/scan_report.md（機械產物）。
+        /// </summary>
+        void Op_Scan()
+        {
+            string report = UCL_ReadingLibraryIO.ScanLibrary(out string reportPath, out string error);
+            Cmd_Library_Helpers.ResolveLastOp(
+                report +
+                (reportPath != null ? $"\n\n📄 報告檔：`{reportPath}`" : "") +
+                (string.IsNullOrEmpty(error) ? "" : $"\n\n> [!WARNING]\n> {error}"));
+            Debug.Log($"[{CommandType}] scan 完成" + (reportPath != null ? $" → {reportPath}" : ""));
         }
 
         /// <summary>

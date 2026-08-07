@@ -100,16 +100,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
 人的入口：**閱讀心得管理頁**（工具集 → 閱讀心得管理）搜尋作品後，Library 命中列每位
 reader 一顆「📖 追回」鈕，頁內直接檢視 —— 與 Cmd 走同一段 `UCL_ReadingLibraryIO.RenderRecall`。
 
-> ⚠ `library.py reading-recall`（Python 版）**退位程序進行中**：閘為「C# 版與其輸出
-> diff 收斂」（Sirius 複驗，2026-08-07 定案），過閘後直接刪除。在那之前**別交錯跑兩版**
-> —— 兩版寫同一個檔，目前互有對方沒有的節。
-
-```powershell
-# （退位前的 legacy 入口，僅供 diff 驗證）
-python <UCL_Core>/Tools~/AgentCommands/library.py reading-recall --persona <persona> --media-id <media-id>
-```
-
-`--book-id` 是 `--media-id` 的相容別名。工具只允許讀取
+工具只允許讀取
 `AgentCommands/BookNotes/Library/media/<media-id>/readers/<persona>/`，並驗證 `reader.json` 中的
 persona 與 media id；不會從 Archive 或別人的 reader root 補資料。輸出位於
 `AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，比照 `_wake_brief.md`
@@ -136,6 +127,6 @@ D. Archive 讀不到 metadata 的 entry（`_` 開頭系統目錄除外）
 
 ## 工具要求
 
-`library.py reading-recall` 已提供新 schema 的唯讀追回入口。新的寫入 API 應以一次寫入操作更新
-reader root、章節 round 與 bookshelf 投影，並驗證 persona 路徑一致性。legacy `library.py --book`、
-無讀者主線與 branches API 禁止用於新資料。
+新 schema 的讀寫**唯一實作者是 `UCL_ReadingLibraryIO`**（agent 入口 `Cmd_Library`、
+人的入口為閱讀心得管理頁）。寫入以一次操作更新 reader root、章節 round 與 bookshelf 投影，
+並驗證 persona 路徑一致性。legacy `library.py --book`、無讀者主線與 branches API 禁止用於新資料。

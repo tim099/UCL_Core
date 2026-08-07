@@ -19,7 +19,7 @@ description: 漫畫閱讀心得流程。每部漫畫使用獨立 comic-* media�
 
 ## 續讀前
 
-先跑 `reading-library` 的 `library.py reading-recall --persona <persona> --media-id <comic-media-id>`；
+先跑 `run_cmd.py run Library --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>`；
 讀取產生在該 persona `letters/` 目錄的 `_reading_recall_<media-id>.md`，再從 bookmark 指定的下一話繼續。
 
 ## 禁止事項

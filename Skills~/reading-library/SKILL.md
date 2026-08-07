@@ -43,15 +43,18 @@ Library/media/<media-id>/readers/<persona>/
 
 要在隔一段時間後接回閱讀，先以**當前 persona 與 media id**生成完整追回檔：
 
-```powershell
-python <UCL_Core>/Tools~/AgentCommands/library.py reading-recall --persona <persona> --media-id <comic-|anim-|film-|... media-id>
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+  --arg op=recall --arg persona=<persona> --arg media_id=<comic-|anim-|film-|... media-id>
 ```
 
-`--book-id` 可作為 `--media-id` 的相容別名。工具只讀
-`Library/media/<media-id>/readers/<persona>/`，會驗證 JSON 身分與路徑相同；絕不讀 Archive 或其他
-persona。產物為 `AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，
-會在下次生成時覆寫，內含目前狀態、書架投影、所有已讀章節 round 原文，以及角色 facts／view
-版本。它是追讀用機械視圖，不能取代或手改原始筆記。
+（人的入口：閱讀心得管理頁的「📖 追回」，同一段服務層。）
+
+工具只讀 `Library/media/<media-id>/readers/<persona>/`，會驗證 JSON 身分與路徑相同；
+絕不讀 Archive 或其他 persona。產物為
+`AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，
+會在下次生成時覆寫，內含目前狀態、作品與媒材資料、書架投影、所有已讀章節 round 原文，
+以及角色 facts／view 版本。它是追讀用機械視圖，不能取代或手改原始筆記。
 
 ## 每次閱讀完成後
 

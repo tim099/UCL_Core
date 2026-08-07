@@ -40,37 +40,21 @@ namespace UCL.Core.EditorLib.Page
         public override string WindowName => UCL_CodeLocalize.Get("LibraryManage.Title");
         public override bool ShowInPageMenu => true;
 
-        // 區塊職責：書籍 entry 結構 — 對齊 BookNotes/<slug>/book.json schema
-        // 物理意義：一檔一本書，含 id/標題/作者/讀者 persona/狀態/進度/人物與卷與標籤計數/捐贈狀態
+        // 區塊職責：書籍 entry — 對齊**新 Library** 的 media（media.json + 其 work.json + readers/）
+        // 物理意義：一筆 = 一個 media（一部作品的一種媒材，例如「迷宮飯的漫畫版」）。
+        //          書名與作者住 work.json（跨媒材共用），media.json 只有 id / work_id / media_kind，
+        //          所以本結構是兩個檔 join 出來的視圖，不是任何單一檔的鏡射。
+        //          舊的 BookNotes/<slug>/book.json 欄位（進度 / 書籤 / 人物 / arc / 卷 / 書評）
+        //          一律不再進來 —— 那些現在住 readers/<persona>/ 底下，是閱讀心得頁的職責。
         public class BookEntry
         {
-            public string Id = "";
-            public string Title = "";
+            public string Id = "";            // media_id
+            public string WorkId = "";
+            public string MediaKind = "";     // comic / film / novel …
+            public string Title = "";         // 取自 work.json；join 不到則退回 media_id
             public string TitleOriginal = "";
             public string Author = "";
-            public string ReaderPersona = "";
-            public string Status = "";
-            public int CurrentChapter = 0;
-            public string LastRead = "";
-            public string BookmarkNote = "";
-            public int CharacterCount = 0;
-            public int ArcCount = 0;
-            public int VolumeCount = 0;
-            public int ReviewCount = 0;
-            public string Tags = "";          // tags[] join 成逗號字串供顯示
-            // 詳細資訊（選取後展開顯示用 — LoadData 一次載齊，避免渲染時重讀檔）
-            public List<string> Characters = new List<string>();   // 人物 id 清單
-            public List<string> ArcLines = new List<string>();      // 「chapters — title」
-            public List<string> VolumeLines = new List<string>();   // 「卷N title (ch X-Y) [status]」
-            public List<string> ReviewLines = new List<string>();   // 「reviewer scope ★rating — pitch」
-            // 捐贈狀態（join 自 _donations.json）
-            public bool IsDonated = false;
-            public string Donor = "";
-            public string DonorPersona = "";
-            public int DonorTokens = 0;
-            public string DonatedAt = "";
-            // 全文書庫存在性（Books/<id>/ 是否有實際全文 — 區分 BookNotes 筆記 vs Books 全文）
-            public bool HasFullText = false;
+            public List<string> Readers = new List<string>();   // readers/<persona> 目錄名
         }
 
         // 區塊職責：捐贈 entry 結構 — 對齊 Books/_donations.json 的 donations[] schema
@@ -121,14 +105,6 @@ namespace UCL.Core.EditorLib.Page
         List<DonationEntry> m_Donations = new List<DonationEntry>();
         List<RecommendEntry> m_Recommends = new List<RecommendEntry>();
 
-        // 區塊職責：新增書籍表單 state
-        // 物理意義：Tim 輸入 id/標題/原文名/作者/讀者 persona，按「新增」後 spawn library.py add-book
-        string m_NewBookId = "";
-        string m_NewBookTitle = "";
-        string m_NewBookTitleOriginal = "";
-        string m_NewBookAuthor = "";
-        string m_NewBookReaderPersona = "";
-
         // 區塊職責：捐贈表單 state
         // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 bank id + token 數，按「捐贈」後 spawn library.py donate
         string m_DonateBook = "";
@@ -136,17 +112,19 @@ namespace UCL.Core.EditorLib.Page
         string m_DonateTokens = "100";
         string m_DonatePersona = "";
 
-        // 區塊職責：書籤表單 state
-        // 物理意義：Tim 選書 + 輸入章節 + 心得，按「書籤」後 spawn library.py bookmark
-        string m_BookmarkBook = "";
-        string m_BookmarkChapter = "";
-        string m_BookmarkNote = "";
-
         // 區塊職責：BookNotes 下拉選單 state（對齊 UCL_AffinitySystemPage 的 persona picker 模式）
         // 物理意義：m_SelectedBookId = 當前選中的 BookNotes id；m_BookPickerDic 給 PopupSearchCache 暫存搜尋 state
         //          m_BookDisplayOptions = 下拉顯示字串清單（「title (id)」），index 對齊 m_Books 排序後順序
         string m_SelectedBookId = "";
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
+        // 區塊職責：各 section 的折疊狀態 — **刻意跟 m_Dic 分開**（比照 UCL_ControlPanelPage）
+        // 物理意義：折疊是使用者的 UI 偏好（該長存）；PopupSearchCache 是衍生資料（選項變了該失效）。
+        // 血證（2026-07-29 Tim QA, UCL_ChatTavernAdminPage）：兩者共用同一個 dictionary 時，
+        //          資料重載路徑上的 dic.Clear() 會把折疊值一併清掉 → 下一幀退回 iDefaultValue，
+        //          症狀是「按某個開關就自動展開、而且收不起來」，看起來像 key 撞名，實際是共用快取被清。
+        //          本頁的 m_Dic 目前沒有 Clear 路徑，但 LoadData() 已經在 Clear 一堆集合了 ——
+        //          哪天有人順手加一行 m_Dic.Clear() 就會踩中，先分開比事後查便宜。
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
         List<string> m_BookDisplayOptions = new List<string>();
 
         // 區塊職責：全文書庫（Books/）下拉選單 state
@@ -156,12 +134,9 @@ namespace UCL.Core.EditorLib.Page
         string m_SelectedFullBook = "";
         List<string> m_FullBookDisplayOptions = new List<string>();
 
-        // 區塊職責：scroll 位置 + 推薦展開開關
-        //Vector2 m_DetailScroll = Vector2.zero;
-        bool m_ShowRecommends = false;
-
         string m_AgentCommandsDir = "";
         string m_BookNotesDir = "";
+        string m_LibraryDir = "";
         string m_BooksDir = "";
         string m_UCLCorePath = "";
 
@@ -172,6 +147,8 @@ namespace UCL.Core.EditorLib.Page
             // 物理意義：BookNotes / Books 落 per-project repo root；library.py 在 UCL_Core 給 process spawn
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
             m_BookNotesDir = Path.Combine(m_AgentCommandsDir, "BookNotes");
+            // 新 Library 根 —— 書籍索引的事實源（舊的 BookNotes/<slug>/ 已空）
+            m_LibraryDir = Path.Combine(m_BookNotesDir, "Library");
             m_BooksDir = Path.Combine(m_AgentCommandsDir, "Books");
             // 區塊：UCL_Core path 解析 — 走 UCL_EditorPath.CorePath（對齊 UCL_LoginStatusPage）
             string corePathRel = UCL_EditorPath.CorePath;
@@ -248,146 +225,86 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning($"[LibraryManage] donations scan failed: {e.Message}");
             }
 
-            // 區塊：建立 book → donation 快速查表（join 用）
-            var donationByBook = new Dictionary<string, DonationEntry>();
-            foreach (var d in m_Donations)
+            // 區塊：scan 新 Library —— works/<work-id>/work.json + media/<media-id>/media.json
+            // 物理意義：**舊的 BookNotes/<slug>/book.json 已經完全不存在了**（2026-08-07 實測：
+            //          BookNotes/ 底下只剩 Archive / Library / _migration 三個目錄，零本 book.json）。
+            //          原本這裡掃的是那個空掉的 store，所以清單永遠是空的、數量永遠是 0 ——
+            //          而它不會報錯，只會安靜地顯示「找不到」。改成掃新 Library。
+            //          資料模型：work（作品，跨媒材共用書名/作者）→ media（媒材，comic/film/…）
+            //          → readers/<persona>（每位讀者一份進度）。本頁列到 media 這一層，
+            //          因為閱讀心得是掛在 media 上的，而 work 只是它的書名來源。
+            // 數值影響：純唯讀。缺 work.json 的 media 仍會列出（書名退回 media_id），
+            //          不因為 join 不到就整筆吞掉 —— 吞掉的話清單少一本沒人看得出來。
+            var workById = new Dictionary<string, JsonData>();
+            string worksDir = Path.Combine(m_LibraryDir, "works");
+            if (Directory.Exists(worksDir))
             {
-                if (!string.IsNullOrEmpty(d.Book)) donationByBook[d.Book] = d;
-            }
-
-            // 區塊：scan BookNotes/*/book.json
-            // 物理意義：每個子目錄一本書，book.json 是 metadata 入口
-            if (Directory.Exists(m_BookNotesDir))
-            {
-                foreach (var dir in Directory.GetDirectories(m_BookNotesDir))
+                foreach (var dir in Directory.GetDirectories(worksDir))
                 {
-                    string bookJson = Path.Combine(dir, "book.json");
-                    if (!File.Exists(bookJson)) continue;
+                    string workJson = Path.Combine(dir, "work.json");
+                    if (!File.Exists(workJson)) continue;
                     try
                     {
-                        var jd = JsonData.ParseJson(File.ReadAllText(bookJson));
-                        if (jd == null || !jd.IsObject || jd.Dic == null) continue;
-
-                        // 區塊：Id 一律取「資料夾名」當權威 slug（cross-layer 身份鐵律）
-                        // 物理意義：library.py --book <slug> 解析的是 BookNotes/<資料夾名>/，資料夾名才是唯一鍵。
-                        //          book.json 內的 "id" 欄可能漂移（如 farseer-trilogy_01/02/03 都誤寫成 "farseer-trilogy"），
-                        //          信它會導致下拉重複 + 開錯資料夾 + library.py slug 對不上，故一律忽略改用資料夾名。
-                        string folderSlug = Path.GetFileName(dir);
-                        var entry = new BookEntry
-                        {
-                            Id = folderSlug,
-                            Title = jd.GetString("title", ""),
-                            TitleOriginal = jd.GetString("title_original", ""),
-                            Author = jd.GetString("author", ""),
-                            ReaderPersona = jd.GetString("reader_persona", ""),
-                            Status = jd.GetString("status", ""),
-                        };
-
-                        // 區塊：progress 子物件 — current_chapter / last_read / bookmark_note
-                        if (jd.Dic.TryGetValue("progress", out var prog) && prog != null && prog.IsObject)
-                        {
-                            entry.CurrentChapter = prog.GetInt("current_chapter", 0);
-                            entry.LastRead = prog.GetString("last_read", "");
-                            entry.BookmarkNote = prog.GetString("bookmark_note", "");
-                        }
-
-                        // 區塊：陣列計數 — characters / arcs / volumes / reviews 取數量供標頭顯示
-                        entry.CharacterCount = CountArray(jd, "characters");
-                        entry.ArcCount = CountArray(jd, "arcs");
-                        entry.VolumeCount = CountArray(jd, "volumes");
-                        entry.ReviewCount = CountArray(jd, "reviews");
-
-                        // 區塊：詳細明細 — 選取後展開顯示，LoadData 一次載齊
-                        // 物理意義：characters 是字串陣列(人物 id)；arcs/volumes/reviews 是物件陣列，各取關鍵欄位 join 成一行
-                        if (jd.Dic.TryGetValue("characters", out var charsNode) && charsNode != null && charsNode.IsArray)
-                        {
-                            for (int i = 0; i < charsNode.Count; i++)
-                                entry.Characters.Add(charsNode[i].GetString());
-                        }
-                        if (jd.Dic.TryGetValue("arcs", out var arcsNode) && arcsNode != null && arcsNode.IsArray)
-                        {
-                            for (int i = 0; i < arcsNode.Count; i++)
-                            {
-                                var a = arcsNode[i];
-                                if (a == null || !a.IsObject) continue;
-                                entry.ArcLines.Add($"ch {a.GetString("chapters", "?")} — {a.GetString("title", "")}");
-                            }
-                        }
-                        if (jd.Dic.TryGetValue("volumes", out var volsNode) && volsNode != null && volsNode.IsArray)
-                        {
-                            for (int i = 0; i < volsNode.Count; i++)
-                            {
-                                var v = volsNode[i];
-                                if (v == null || !v.IsObject) continue;
-                                entry.VolumeLines.Add($"卷{v.GetInt("n", 0)} {v.GetString("title", "")} (ch {v.GetString("chapters", "?")}) [{v.GetString("status", "")}]");
-                            }
-                        }
-                        if (jd.Dic.TryGetValue("reviews", out var revsNode) && revsNode != null && revsNode.IsArray)
-                        {
-                            for (int i = 0; i < revsNode.Count; i++)
-                            {
-                                var rv = revsNode[i];
-                                if (rv == null || !rv.IsObject) continue;
-                                entry.ReviewLines.Add($"{rv.GetString("reviewer", "?")} [{rv.GetString("scope", "")}] ★{rv.GetInt("rating", 0)} — {rv.GetString("pitch", "")}");
-                            }
-                        }
-
-                        // 區塊：全文書庫存在性 — Books/<id>/ 有目錄才算有實際全文（區分 BookNotes 筆記 vs Books 全文）
-                        entry.HasFullText = Directory.Exists(Path.Combine(m_BooksDir, entry.Id));
-
-                        // 區塊：tags[] join 成逗號字串
-                        if (jd.Dic.TryGetValue("tags", out var tagsNode) && tagsNode != null && tagsNode.IsArray)
-                        {
-                            var sb = new StringBuilder();
-                            for (int i = 0; i < tagsNode.Count; i++)
-                            {
-                                if (i > 0) sb.Append(", ");
-                                sb.Append(tagsNode[i].GetString());
-                            }
-                            entry.Tags = sb.ToString();
-                        }
-
-                        // 區塊：join 捐贈狀態
-                        if (donationByBook.TryGetValue(entry.Id, out var dn))
-                        {
-                            entry.IsDonated = true;
-                            entry.Donor = dn.Donor;
-                            entry.DonorPersona = dn.DonorPersona;
-                            entry.DonorTokens = dn.Tokens;
-                            entry.DonatedAt = dn.DonatedAt;
-                        }
-
-                        m_Books.Add(entry);
+                        var jd = JsonData.ParseJson(File.ReadAllText(workJson));
+                        if (jd != null && jd.IsObject) workById[Path.GetFileName(dir)] = jd;
                     }
                     catch (Exception e)
                     {
-                        Debug.LogWarning($"[LibraryManage] parse {bookJson} failed: {e.Message}");
+                        Debug.LogWarning($"[LibraryManage] 讀取失敗 {workJson}: {e.Message}");
                     }
                 }
+            }
 
-                // 區塊職責：排序 — reading 狀態優先（活躍書置頂），其次按 last_read 降序，再按 title 升序保證確定性
-                // 數值影響：不改資料，只變 UI 渲染順序，把「正在讀的書」放最上方利於觀察
-                m_Books.Sort((a, b) =>
+            string mediaRoot = Path.Combine(m_LibraryDir, "media");
+            if (Directory.Exists(mediaRoot))
+            {
+                foreach (var dir in Directory.GetDirectories(mediaRoot))
                 {
-                    bool aReading = string.Equals(a.Status, "reading", StringComparison.OrdinalIgnoreCase);
-                    bool bReading = string.Equals(b.Status, "reading", StringComparison.OrdinalIgnoreCase);
-                    if (aReading != bReading) return bReading.CompareTo(aReading);
-                    int lastReadCompare = string.Compare(b.LastRead, a.LastRead, StringComparison.Ordinal);
-                    if (lastReadCompare != 0) return lastReadCompare;
-                    return string.Compare(a.Title, b.Title, StringComparison.Ordinal);
-                });
-
-                // 區塊：建下拉選單顯示清單 + 維持/重設選取
-                // 物理意義：display 字串 = 「title (id)」，index 對齊 m_Books 排序後順序；
-                //          若先前選取的 id 仍存在則保留，否則預設選第一本
+                    string mediaId = Path.GetFileName(dir);
+                    string mediaJson = Path.Combine(dir, "media.json");
+                    var entry = new BookEntry { Id = mediaId, Title = mediaId };
+                    try
+                    {
+                        if (File.Exists(mediaJson))
+                        {
+                            var md = JsonData.ParseJson(File.ReadAllText(mediaJson));
+                            if (md != null && md.IsObject)
+                            {
+                                entry.WorkId = md.GetString("work_id", "");
+                                entry.MediaKind = md.GetString("media_kind", "");
+                            }
+                        }
+                        // 書名 / 作者來自 work.json —— media.json 本身只有 id 與種類，不重複存書名
+                        if (!string.IsNullOrEmpty(entry.WorkId) && workById.TryGetValue(entry.WorkId, out var wd))
+                        {
+                            entry.Title = wd.GetString("title", mediaId);
+                            entry.TitleOriginal = wd.GetString("title_original", "");
+                            entry.Author = wd.GetString("author", "");
+                        }
+                        // 讀者清單：readers/<persona>/ 一位一個目錄
+                        string readersDir = Path.Combine(dir, "readers");
+                        if (Directory.Exists(readersDir))
+                        {
+                            foreach (var rd in Directory.GetDirectories(readersDir))
+                                entry.Readers.Add(Path.GetFileName(rd));
+                            entry.Readers.Sort(StringComparer.OrdinalIgnoreCase);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[LibraryManage] 讀取失敗 {mediaJson}: {e.Message}");
+                    }
+                    m_Books.Add(entry);
+                }
+                m_Books.Sort((a, b) => string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase));
                 m_BookDisplayOptions.Clear();
                 foreach (var b in m_Books)
-                    m_BookDisplayOptions.Add(string.IsNullOrEmpty(b.Title) ? b.Id : $"{b.Title} ({b.Id})");
-                if ((string.IsNullOrEmpty(m_SelectedBookId) || m_Books.FindIndex(x => x.Id == m_SelectedBookId) < 0)
-                    && m_Books.Count > 0)
                 {
-                    m_SelectedBookId = m_Books[0].Id;
+                    string kind = string.IsNullOrEmpty(b.MediaKind) ? "" : $" ‧ {b.MediaKind}";
+                    m_BookDisplayOptions.Add($"{b.Title}{kind} ({b.Id})");
                 }
+                if (string.IsNullOrEmpty(m_SelectedBookId) && m_Books.Count > 0)
+                    m_SelectedBookId = m_Books[0].Id;
             }
 
             // 區塊：讀推薦書單（T-split 2026-07-20：優先 _recommended/ 資料夾一 rec 一檔；退回舊單檔）
@@ -501,182 +418,122 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：安全計算某 key 對應陣列的元素數量
-        // 物理意義：characters / arcs / volumes / reviews 都是陣列，缺欄位或非陣列時回 0
-        static int CountArray(JsonData jd, string key)
-        {
-            if (jd != null && jd.IsObject && jd.Dic != null
-                && jd.Dic.TryGetValue(key, out var node) && node != null && node.IsArray)
-            {
-                return node.Count;
-            }
-            return 0;
-        }
-
+        // 區塊職責：頁面主體 — 各項目分類為可折疊 section（Tim 2026-08-07 要求，比照 UCL_ControlPanelPage）
+        // 物理意義：**關鍵操作一律畫在折疊外層 header**，收合後仍可一鍵操作；折疊內只放清單與低頻明細。
+        //          預設開合依使用頻率：書籍索引與全文書庫預設展開，捐贈/表單/推薦預設收合。
         protected override void ContentOnGUI()
         {
             DrawBookNotesSection();
-            GUILayout.Space(12);
+            GUILayout.Space(8);
             DrawBooksFullSection();
-            GUILayout.Space(12);
+            GUILayout.Space(8);
             DrawDonations();
-            GUILayout.Space(12);
-            DrawAddBookForm();
             GUILayout.Space(8);
             DrawDonateForm();
             GUILayout.Space(8);
-            DrawBookmarkForm();
-            GUILayout.Space(12);
             DrawRecommendations();
         }
 
-        // 區塊職責：BookNotes 區塊 — 下拉選單選一本筆記 + 顯示其詳細資訊
-        // 物理意義：對齊 UCL_AffinitySystemPage 的「選 persona → 看 details」模式：上方 PopupSearchCache 選 BookNotes，
-        //          下方完整展開該筆記（metadata / 進度 / 書籤 / 人物 / arc / 卷 / 書評 / 捐贈狀態）+ 操作按鈕。
-        // 注意命名：本區塊讀的是 BookNotes（讀書筆記），非 Books（全文書庫，在 AgentCommands/Books）。
+        // 區塊職責：書籍索引區塊 — 下拉選一本書 → 導覽到該書的閱讀心得頁 / 資料夾。
+        // 物理意義：**本區塊不再顯示 BookNotes 的閱讀內容**（進度 / 書籤 / 人物 / arc / 卷 / 書評）。
+        //          那份 store 已廢棄（Tim 2026-08-07），閱讀心得的唯一入口改為 UCL_ReadingNotesManagePage；
+        //          本頁只保留「有哪些書」與「怎麼過去」，避免同一份心得在兩個頁面各有一套顯示與判讀。
+        //          留下的資料夾 / book.json 按鈕是**人工遷移**用的（要找得回 Archive 對應筆記），
+        //          它們開的是檔案總管，不是在本頁重新詮釋內容。
+        // 注意命名：本區塊掃的是 BookNotes 目錄（舊筆記索引），非 Books（全文書庫，在 AgentCommands/Books）。
         void DrawBookNotesSection()
-        {
-            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.BookNotes.HeaderFmt"), m_Books.Count), UCL_GUIStyle.LabelStyle);
-
-            if (m_Books.Count == 0)
-            {
-                using (new GUILayout.VerticalScope("box"))
-                {
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.BookNotes.EmptyFmt"), m_BookNotesDir), UCL_GUIStyle.LabelStyle);
-                }
-                return;
-            }
-
-            // 區塊：下拉選單列（對齊 Affinity 的 PopupSearchCache 用法）
-            using (new GUILayout.HorizontalScope("box"))
-            {
-                GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.BookNotes.SelectLabel"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                int curIdx = m_Books.FindIndex(x => x.Id == m_SelectedBookId);
-                if (curIdx < 0) curIdx = 0;
-                int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_BookDisplayOptions, m_Dic.GetSubDic("BookPicker"), "BookNotesPicker");
-                if (newIdx >= 0 && newIdx < m_Books.Count) m_SelectedBookId = m_Books[newIdx].Id;
-                GUILayout.FlexibleSpace();
-            }
-
-            // 區塊：取選中的 BookNotes，畫詳細面板
-            var b = m_Books.Find(x => x.Id == m_SelectedBookId);
-            if (b == null) return;
-            DrawBookNoteDetail(b, m_Dic.GetSubDic(b.Id));
-        }
-
-        // 區塊職責：單一 BookNotes 的詳細資訊面板
-        // 物理意義：把選中筆記的所有欄位完整展開 — metadata + 進度 + 書籤 + 人物清單 + arc + 卷 + 書評 + 捐贈狀態，附操作按鈕
-        // 數值影響：純 UI；操作按鈕 spawn library.py（show-book / resume / 開資料夾）
-        void DrawBookNoteDetail(BookEntry b, UCL_ObjectDictionary dic)
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                bool showDetail = false;
-                //m_DetailScroll = GUILayout.BeginScrollView(m_DetailScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
+                bool aShow;
+                // header：折疊鈕 + 標題 + **關鍵操作提到折疊外層**（收合後仍能開閱讀心得頁）
                 using (new GUILayout.HorizontalScope())
                 {
-                    showDetail = UCL_GUILayout.Toggle(dic, "showDetail");
-                    // 標題列：書名
-                    string fullText = b.HasFullText
-                        ? $"  <color=#66ff99>{UCL_CodeLocalize.Get("LibraryManage.Detail.HasFullText")}</color>"
-                        : $"  <color=#ffaa66>{UCL_CodeLocalize.Get("LibraryManage.Detail.NotesOnly")}</color>";
-                    GUILayout.Label($"<b><size=15>{b.Title}</size></b>{fullText}({b.Id})", UCL_GUIStyle.LabelStyle);
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "BookIndexFold", 21, iDefaultValue: true);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.BookNotes.HeaderFmt"), m_Books.Count),
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.OpenReadingNotes"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 0.95f, 0.75f)), GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_ReadingNotesManagePage.Create();
+                    }
+                    GUILayout.FlexibleSpace();
                 }
+                if (!aShow) return;
 
-                if (showDetail)
+                if (m_Books.Count == 0)
                 {
-                    // 原文名 + 作者
-                    if (!string.IsNullOrEmpty(b.TitleOriginal))
-                        GUILayout.Label($"<i>{b.TitleOriginal}</i>", UCL_GUIStyle.LabelStyle);
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Detail.AuthorFmt"), b.Author), UCL_GUIStyle.LabelStyle);
-
-                    GUILayout.Space(4);
-
-                    // 區塊職責：操作按鈕列 — 開資料夾 / 開檔 / spawn library.py 各唯讀 op
-                    // 物理意義：📂 筆記資料夾 = BookNotes/<id>；📂 全文資料夾 = Books/<id>（僅有全文才顯示）；
-                    //          📄 book.json = 直接開 metadata 檔；其餘 spawn library.py（概覽/續讀/arc/名詞/書評/卷別），輸出印 Console
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.ShowBook"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            RunLibrary(new List<string> { $"\"{LibraryPyPath()}\"", "show-book", "--book", b.Id }, $"show-book {b.Id}");
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Resume"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            RunLibrary(new List<string> { $"\"{LibraryPyPath()}\"", "resume", "--book", b.Id }, $"resume {b.Id}");
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.NotesFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            OpenInExplorer(Path.Combine(m_BookNotesDir, b.Id));
-                        // 全文資料夾僅在 Books/<id>/ 存在時顯示（避免點了開不存在路徑）
-                        if (b.HasFullText && GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.FullTextFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            OpenInExplorer(Path.Combine(m_BooksDir, b.Id));
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.OpenJson"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            OpenFile(Path.Combine(m_BookNotesDir, b.Id, "book.json"));
-                    }
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Arcs"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            RunLibrary(new List<string> { $"\"{LibraryPyPath()}\"", "arcs", "--book", b.Id, "--full" }, $"arcs {b.Id}");
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Terms"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            RunLibrary(new List<string> { $"\"{LibraryPyPath()}\"", "terms", "--book", b.Id }, $"terms {b.Id}");
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Volumes"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            RunLibrary(new List<string> { $"\"{LibraryPyPath()}\"", "volumes", "--book", b.Id }, $"volumes {b.Id}");
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Reviews"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            RunLibrary(new List<string> { $"\"{LibraryPyPath()}\"", "reviews", "--book", b.Id }, $"reviews {b.Id}");
-                        GUILayout.FlexibleSpace();
-                    }
-
-                    GUILayout.Space(4);
-
-                    // metadata 列：id / 狀態 / 讀者 / 標籤
-                    GUILayout.Label($"<size=10>id: {b.Id}</size>", UCL_GUIStyle.LabelStyle);
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.StatusFmt"), b.Status), UCL_GUIStyle.LabelStyle);
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.ReaderFmt"), b.ReaderPersona), UCL_GUIStyle.LabelStyle);
-                    if (!string.IsNullOrEmpty(b.Tags))
-                        GUILayout.Label($"<color=#cccccc>🏷 {b.Tags}</color>", UCL_GUIStyle.LabelStyle);
-
-                    // 進度 + 書籤
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.ProgressFmt"), b.CurrentChapter, TruncTs(b.LastRead)), UCL_GUIStyle.LabelStyle);
-                    if (!string.IsNullOrEmpty(b.BookmarkNote))
-                        GUILayout.Label($"<color=#dddddd>🔖 {b.BookmarkNote}</color>", UCL_GUIStyle.LabelStyle);
-
-                    // 捐贈狀態
-                    if (b.IsDonated)
-                    {
-                        string personaSuffix = string.IsNullOrEmpty(b.DonorPersona) ? "" : $" / {b.DonorPersona}";
-                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Detail.DonatedFmt"), $"{b.Donor}{personaSuffix}", b.DonorTokens, b.DonatedAt), UCL_GUIStyle.LabelStyle);
-                    }
-
-                    // 摘要計數
-                    GUILayout.Space(4);
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.CountsFmt"),
-                        b.CharacterCount, b.ArcCount, b.VolumeCount, b.ReviewCount), UCL_GUIStyle.LabelStyle);
-
-                    // 卷別
-                    DrawDetailList(b.VolumeLines, "LibraryManage.Detail.VolumesLabel");
-                    // arc 階段大綱
-                    DrawDetailList(b.ArcLines, "LibraryManage.Detail.ArcsLabel");
-                    // 書評
-                    DrawDetailList(b.ReviewLines, "LibraryManage.Detail.ReviewsLabel");
-                    // 人物清單（id 逗號 join，免一行一個太長）
-                    if (b.Characters.Count > 0)
-                    {
-                        GUILayout.Space(4);
-                        GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Detail.CharactersLabel"), b.Characters.Count), UCL_GUIStyle.LabelStyle);
-                        GUILayout.Label($"<size=10><color=#cccccc>{string.Join(", ", b.Characters)}</color></size>", UCL_GUIStyle.LabelStyle);
-                    }
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.BookNotes.EmptyFmt"), m_BookNotesDir), UCL_GUIStyle.LabelStyle);
+                    return;
                 }
 
+                // 區塊：下拉選單列（對齊 Affinity 的 PopupSearchCache 用法）
+                using (new GUILayout.HorizontalScope("box"))
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.BookNotes.SelectLabel"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    int curIdx = m_Books.FindIndex(x => x.Id == m_SelectedBookId);
+                    if (curIdx < 0) curIdx = 0;
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_BookDisplayOptions, m_Dic.GetSubDic("BookPicker"), "BookNotesPicker");
+                    if (newIdx >= 0 && newIdx < m_Books.Count) m_SelectedBookId = m_Books[newIdx].Id;
+                    GUILayout.FlexibleSpace();
+                }
 
-                //GUILayout.EndScrollView();
+                // 區塊：取選中的書，畫「身分 + 導覽」面板
+                var b = m_Books.Find(x => x.Id == m_SelectedBookId);
+                if (b == null) return;
+                DrawBookNavPanel(b);
             }
         }
 
-        // 區塊職責：通用「標題 + 條列」明細區塊（卷/arc/書評共用）
-        // 物理意義：清單空就不畫；非空印一個 localize 標題 + 逐行條列
-        void DrawDetailList(List<string> lines, string labelKey)
+        // 區塊職責：單一書籍的「身分 + 導覽」面板 —— 取代原本的 BookNotes 明細面板。
+        // 物理意義：只回答兩件事 —— **這是哪本書**、**要去哪裡看它的心得**。
+        //          原本這裡展開的進度 / 書籤 / 人物 / arc / 卷 / 書評全部移除：那些欄位讀的是已廢棄的
+        //          BookNotes store（Tim 2026-08-07 拍板），留著會讓同一份心得有兩個顯示來源，
+        //          而兩邊遲早不一致 —— 到時候看的人無從判斷哪一份才是現況。
+        // 數值影響：純唯讀導覽。開頁按鈕以**書名**帶入 UCL_ReadingNotesManagePage 並自動搜尋；
+        //          資料夾 / book.json 按鈕開檔案總管，供人工遷移時對照原件。
+        void DrawBookNavPanel(BookEntry b)
         {
-            if (lines == null || lines.Count == 0) return;
-            GUILayout.Space(4);
-            GUILayout.Label(string.Format(UCL_CodeLocalize.Get(labelKey), lines.Count), UCL_GUIStyle.LabelStyle);
-            foreach (var line in lines)
-                GUILayout.Label($" • {line}", UCL_GUIStyle.LabelStyle);
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // 標題列：書名 ‧ 媒材種類（media_id）
+                string kind = string.IsNullOrEmpty(b.MediaKind)
+                    ? ""
+                    : $"  <color=#88ccff>{b.MediaKind}</color>";
+                GUILayout.Label($"<b><size=15>{b.Title}</size></b>{kind}　({b.Id})", UCL_GUIStyle.LabelStyle);
+                if (!string.IsNullOrEmpty(b.TitleOriginal))
+                    GUILayout.Label($"<i>{b.TitleOriginal}</i>", UCL_GUIStyle.LabelStyle);
+                if (!string.IsNullOrEmpty(b.Author))
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Detail.AuthorFmt"), b.Author), UCL_GUIStyle.LabelStyle);
+
+                // 讀者清單 —— 只列「有誰讀過」，進度與心得一律去閱讀心得頁看，本頁不複述。
+                if (b.Readers.Count > 0)
+                {
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Detail.ReadersFmt"),
+                        b.Readers.Count, string.Join(", ", b.Readers)), UCL_GUIStyle.LabelStyle);
+                }
+
+                GUILayout.Space(4);
+
+                // 區塊：導覽按鈕列
+                // 物理意義：📖 閱讀心得 = 帶書名開 UCL_ReadingNotesManagePage（該頁跨 Archive 與新 Library 比對標題）；
+                //          資料夾 / media.json 開檔案總管與檔案，不在本頁重新詮釋內容。
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.OpenReadingNotesForBook"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 0.95f, 0.75f)), GUILayout.ExpandWidth(false)))
+                    {
+                        // 以書名而非 id 定位：閱讀心得頁是跨 Archive 與 Library 比對 metadata 標題的，
+                        // 而 Archive 那側用的是舊 slug，兩邊只有書名對得起來。
+                        UCL_ReadingNotesManagePage.CreateForTitle(b.Title);
+                    }
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.NotesFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        OpenInExplorer(Path.Combine(m_LibraryDir, "media", b.Id));
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.OpenJson"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        OpenFile(Path.Combine(m_LibraryDir, "media", b.Id, "media.json"));
+                    GUILayout.FlexibleSpace();
+                }
+            }
         }
 
         // 區塊職責：全文書庫（Books/）區塊 — 下拉選一本全文書 + 顯示捐贈者/資訊 + 跳轉編輯 Page 按鈕
@@ -684,19 +541,27 @@ namespace UCL.Core.EditorLib.Page
         //          「✏ 編輯書籍」按鈕 new 一個 UCL_BookEditPage 設好 slug 後 Push（跳轉到章節編輯 prototype）。
         void DrawBooksFullSection()
         {
-            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.HeaderFmt"), m_FullBooks.Count), UCL_GUIStyle.LabelStyle);
-
-            if (m_FullBooks.Count == 0)
-            {
-                using (new GUILayout.VerticalScope("box"))
-                {
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.EmptyFmt"), m_BooksDir), UCL_GUIStyle.LabelStyle);
-                }
-                return;
-            }
-
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShow;
+                // header：折疊鈕 + 標題 + **關鍵操作（開全文資料夾）提到折疊外層**
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "BooksFullFold", 21, iDefaultValue: true);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.HeaderFmt"), m_FullBooks.Count),
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.FullTextFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        OpenInExplorer(m_BooksDir);
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                if (m_FullBooks.Count == 0)
+                {
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Books.EmptyFmt"), m_BooksDir), UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
                 // 下拉選單列 + 編輯按鈕
                 using (new GUILayout.HorizontalScope())
                 {
@@ -760,9 +625,18 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：捐贈者清單 — 讀 _donations.json 顯示誰認領了哪本書、花多少 token
         void DrawDonations()
         {
-            GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Donations.HeaderFmt"), m_Donations.Count), UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "DonationsFold", 21, iDefaultValue: false);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Donations.HeaderFmt"), m_Donations.Count),
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
                 if (m_Donations.Count == 0)
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Donations.Empty"), UCL_GUIStyle.LabelStyle);
@@ -804,59 +678,34 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：新增書籍表單 — spawn library.py add-book
-        // 物理意義：Tim 填 id/標題/原文名/作者/讀者 persona，建一本新書的 book.json
-        void DrawAddBookForm()
-        {
-            GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.AddBook.Title"), UCL_GUIStyle.LabelStyle);
-            using (new GUILayout.VerticalScope("box"))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Id"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_NewBookId = GUILayout.TextField(m_NewBookId, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Title"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    m_NewBookTitle = GUILayout.TextField(m_NewBookTitle, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                }
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.TitleOriginal"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_NewBookTitleOriginal = GUILayout.TextField(m_NewBookTitleOriginal, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Author"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    m_NewBookAuthor = GUILayout.TextField(m_NewBookAuthor, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                }
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.ReaderPersona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_NewBookReaderPersona = GUILayout.TextField(m_NewBookReaderPersona, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.AddBook"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        DoAddBook();
-                    }
-                }
-                GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.AddBook.Hint"), UCL_GUIStyle.LabelStyle);
-            }
-        }
 
         // 區塊職責：捐贈表單 — spawn library.py donate（會扣 token，故確認後再跑）
         void DrawDonateForm()
         {
-            GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Donate.Title"), UCL_GUIStyle.LabelStyle);
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "DonateFormFold", 21, iDefaultValue: false);
+                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Donate.Title"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Book"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_DonateBook = GUILayout.TextField(m_DonateBook, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    m_DonateBook = GUILayout.TextField(m_DonateBook, UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Donor"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    m_DonateDonor = GUILayout.TextField(m_DonateDonor, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    m_DonateDonor = GUILayout.TextField(m_DonateDonor, UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                 }
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.DonorPersona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_DonatePersona = GUILayout.TextField(m_DonatePersona, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                    m_DonatePersona = GUILayout.TextField(m_DonatePersona, UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.DonorTokens"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    m_DonateTokens = GUILayout.TextField(m_DonateTokens, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    m_DonateTokens = GUILayout.TextField(m_DonateTokens, UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Donate"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
                         DoDonate();
@@ -866,40 +715,24 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：書籤表單 — spawn library.py bookmark（記讀到哪 + 心得）
-        void DrawBookmarkForm()
-        {
-            GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Bookmark.Title"), UCL_GUIStyle.LabelStyle);
-            using (new GUILayout.VerticalScope("box"))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Book"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_BookmarkBook = GUILayout.TextField(m_BookmarkBook, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.Chapter"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                    m_BookmarkChapter = GUILayout.TextField(m_BookmarkChapter, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("LibraryManage.Btn.Bookmark"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        DoBookmark();
-                    }
-                }
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Field.BookmarkNote"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_BookmarkNote = GUILayout.TextField(m_BookmarkNote, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(true));
-                }
-            }
-        }
 
         // 區塊職責：推薦書單（預設收合，點開展看）
+        // 物理意義：折疊改走 m_FoldDic —— 原本用自己的 bool 欄位，與其他 section 兩套寫法；
+        //          統一成同一個 idiom，之後加 section 的人只會看到一種樣板。
         void DrawRecommendations()
         {
-            m_ShowRecommends = GUILayout.Toggle(m_ShowRecommends,
-                string.Format(UCL_CodeLocalize.Get("LibraryManage.Recommend.HeaderFmt"), m_Recommends.Count),
-                UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-            if (!m_ShowRecommends) return;
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "RecommendsFold", 21, iDefaultValue: false);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LibraryManage.Recommend.HeaderFmt"), m_Recommends.Count),
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
                 if (m_Recommends.Count == 0)
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Recommend.Empty"), UCL_GUIStyle.LabelStyle);
@@ -920,35 +753,6 @@ namespace UCL.Core.EditorLib.Page
 
         // ==================== Process actions ====================
 
-        // 區塊職責：spawn library.py add-book
-        // 物理意義：建一本新書 book.json；id/title/author 為必填，缺則擋下
-        void DoAddBook()
-        {
-            if (string.IsNullOrWhiteSpace(m_NewBookId) || string.IsNullOrWhiteSpace(m_NewBookTitle) || string.IsNullOrWhiteSpace(m_NewBookAuthor))
-            {
-                Debug.LogWarning("[LibraryManage] add-book: id / title / author 都不能空");
-                return;
-            }
-            var args = new List<string>
-            {
-                $"\"{LibraryPyPath()}\"", "add-book",
-                "--id", m_NewBookId.Trim(),
-                "--title", $"\"{m_NewBookTitle.Trim()}\"",
-                "--author", $"\"{m_NewBookAuthor.Trim()}\"",
-            };
-            if (!string.IsNullOrWhiteSpace(m_NewBookTitleOriginal))
-            {
-                args.Add("--title-original");
-                args.Add($"\"{m_NewBookTitleOriginal.Trim()}\"");
-            }
-            if (!string.IsNullOrWhiteSpace(m_NewBookReaderPersona))
-            {
-                args.Add("--reader-persona");
-                args.Add(m_NewBookReaderPersona.Trim());
-            }
-            RunLibrary(args, $"add-book {m_NewBookId}");
-            LoadData();
-        }
 
         // 區塊職責：彈窗確認後 spawn library.py donate
         // 物理意義：捐贈會扣 token（走 Cmd_Treasury debit），destructive，故先 popup 確認
@@ -988,29 +792,6 @@ namespace UCL.Core.EditorLib.Page
             );
         }
 
-        // 區塊職責：spawn library.py bookmark
-        // 物理意義：記讀到哪章 + 可選心得；book / chapter 必填
-        void DoBookmark()
-        {
-            if (string.IsNullOrWhiteSpace(m_BookmarkBook) || string.IsNullOrWhiteSpace(m_BookmarkChapter))
-            {
-                Debug.LogWarning("[LibraryManage] bookmark: book / chapter 都不能空");
-                return;
-            }
-            var args = new List<string>
-            {
-                $"\"{LibraryPyPath()}\"", "bookmark",
-                "--book", m_BookmarkBook.Trim(),
-                "--chapter", m_BookmarkChapter.Trim(),
-            };
-            if (!string.IsNullOrWhiteSpace(m_BookmarkNote))
-            {
-                args.Add("--note");
-                args.Add($"\"{m_BookmarkNote.Trim()}\"");
-            }
-            RunLibrary(args, $"bookmark {m_BookmarkBook}");
-            LoadData();
-        }
 
         // 區塊職責：實際 spawn library.py subprocess（對齊 UCL_LoginStatusPage.RunAwakening 的 async 雙 stream 讀法）
         // 物理意義：async stdout + stderr 並行消費，避免 .NET Process redirect deadlock

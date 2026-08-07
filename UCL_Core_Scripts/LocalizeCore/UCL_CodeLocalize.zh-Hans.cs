@@ -194,6 +194,7 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.Btn.Install" => "🚀 安装",
                 "AgentSkill.Btn.InstallAll" => "🚀 一键安装全部 target",
                 "AgentSkill.Btn.ForceSyncAll" => "⚡ 强制同步全部 (复盖本地改动)",
+                "AgentSkill.Btn.ForceSyncAll.Synced" => "✅ 已全部同步 (仍可按下强制重写)",
                 "AgentSkill.SkippedWarn" => "⚠ 上次安装有 {0} 档因本地改动被跳过，内容未更新 — 用「重装」或「强制同步」复盖 (详见 Console)",
                 "AgentSkill.Btn.Sync" => "🔄 同步到当前版本",
                 "AgentSkill.Btn.Reinstall" => "🔁 重新安装",

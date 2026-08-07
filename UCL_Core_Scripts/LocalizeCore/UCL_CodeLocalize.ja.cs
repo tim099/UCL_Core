@@ -194,6 +194,7 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.Btn.Install" => "🚀 インストール",
                 "AgentSkill.Btn.InstallAll" => "🚀 全 target をワンクリックインストール",
                 "AgentSkill.Btn.ForceSyncAll" => "⚡ 全て強制同期（ローカル変更を上書き）",
+                "AgentSkill.Btn.ForceSyncAll.Synced" => "✅ すべて同期済み（強制上書きは引き続き可能）",
                 "AgentSkill.SkippedWarn" => "⚠ 前回のインストールで {0} 件がローカル変更のためスキップされ、内容が未更新です — 「再インストール」または「強制同期」で上書き（詳細は Console）",
                 "AgentSkill.Btn.Sync" => "🔄 現在のバージョンへ同期",
                 "AgentSkill.Btn.Reinstall" => "🔁 再インストール",

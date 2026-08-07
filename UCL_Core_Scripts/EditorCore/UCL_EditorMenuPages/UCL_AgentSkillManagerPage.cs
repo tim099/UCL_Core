@@ -118,13 +118,7 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     bool anyInstalling = m_InstallingSet.Count > 0;
-                    bool anyBlocked = false;
-                    foreach (var t in AllTargets)
-                    {
-                        if (m_StatusByTarget.TryGetValue(t, out var st) &&
-                            (st == InstallStatus.NoProjectRoot || st == InstallStatus.NoUCLCore))
-                            anyBlocked = true;
-                    }
+                    bool anyBlocked = AnyBlocked(m_StatusByTarget);
 
                     using (new EditorGUI.DisabledScope(anyInstalling || anyBlocked))
                     {
@@ -136,11 +130,15 @@ namespace UCL.Core.EditorLib.Page
                         }
                         // 區塊職責：「強制同步全部」— 帶 --force-overwrite 重跑所有 target
                         // 物理意義：一鍵安裝因 local-edit 保護跳過檔案時的顯式覆蓋出口；
-                        //          使用者明知會蓋掉本地改動才按（橘色按鈕示警，與跳過警告同色系）
+                        //          使用者明知會蓋掉本地改動才按。按鈕外觀跟著「還有沒有東西可同步」走：
+                        //          有待同步 → 橘色示警文案（與跳過警告同色系）；全部 Synced → 綠色「已全部同步」，
+                        //          讓使用者不必展開逐 target 列就知道這一鍵按下去是否會有實質變動。
+                        //          全同步時仍可按（force 是覆蓋本地改動的逃生門，不因外觀變綠就取消功能）。
                         // 數值影響：對被跳過的檔案強制寫入 source 內容並刷新 .ucl_source 記錄
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.ForceSyncAll"),
-                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f)),
-                            GUILayout.Width(260), GUILayout.Height(32)))
+                        bool needsSync = AnyNeedsSync(m_StatusByTarget);
+                        if (GUILayout.Button(
+                            UCL_CodeLocalize.Get(needsSync ? "AgentSkill.Btn.ForceSyncAll" : "AgentSkill.Btn.ForceSyncAll.Synced"),
+                            UCL_GUIStyle.GetButtonStyle(needsSync ? ForceSyncColor : AllSyncedColor), GUILayout.ExpandWidth(false)))
                         {
                             RunInstallAll(force: true);
                         }
@@ -156,11 +154,17 @@ namespace UCL.Core.EditorLib.Page
                 () => {
                     using (new GUILayout.HorizontalScope())
                     {
-                        using (new EditorGUI.DisabledScope(docsFoldAnyBlocked || m_InstallingSet.Count > 0))
+                        // blocked 直接由 m_EntryStatusByTarget 現算，不再讀 DrawEntryDocsInstall 寫的旗標 —
+                        // 那個旗標只在區塊「展開」時才會被寫，收合狀態下按鈕的 disable 判斷會用到過期值。
+                        using (new EditorGUI.DisabledScope(AnyBlocked(m_EntryStatusByTarget) || m_InstallingSet.Count > 0))
                         {
                             if (GUILayout.Button("Sync All Entry Documents", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f))))
                                 RunInstallAllEntryDocs();
-                            if (GUILayout.Button("Force Sync All Entries", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f))))
+                            // 與 Skills 區同一條規則：有待同步入口檔 → 橘色示警；全部 Synced → 綠色「已全部同步」
+                            bool entryNeedsSync = AnyNeedsSync(m_EntryStatusByTarget);
+                            if (GUILayout.Button(
+                                entryNeedsSync ? "⚡ Force Sync All Entries" : "✅ All Entries Synced",
+                                UCL_GUIStyle.GetButtonStyle(entryNeedsSync ? ForceSyncColor : AllSyncedColor)))
                                 RunInstallAllEntryDocs(force: true);
                         }
                         if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -172,6 +176,27 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawFoldSection("AgentSkillFooterFold", "⚙ 其他設定", DrawFooter, false);
         }
+
+        // ===========================================================
+        // 區塊：「還有沒有東西可同步」聚合判定（頂部強制同步鈕的變色 / 文案來源）
+        // 物理意義：NotInstalled / Stale = 源與已裝端有差異，按下去會有實質變動；Synced = 逐檔內文一致，
+        //          按下去只是原地重寫。NoProjectRoot / NoUCLCore 是環境問題（另由 AnyBlocked 鎖按鈕），
+        //          不算「待同步」—— 環境壞掉時按鈕已 disabled，文案是綠是橘都不影響行為。
+        // 數值影響：純讀 RefreshStatus 建好的狀態快取，不掃磁碟；每幀呼叫成本為三次 dict 查詢。
+        // ===========================================================
+        static bool NeedsSync(InstallStatus s) => s == InstallStatus.NotInstalled || s == InstallStatus.Stale;
+        static bool IsBlocked(InstallStatus s) => s == InstallStatus.NoProjectRoot || s == InstallStatus.NoUCLCore;
+
+        static bool AnyNeedsSync(Dictionary<AgentTarget, InstallStatus> statusMap) =>
+            AllTargets.Any(t => statusMap.TryGetValue(t, out var s) && NeedsSync(s));
+
+        static bool AnyBlocked(Dictionary<AgentTarget, InstallStatus> statusMap) =>
+            AllTargets.Any(t => statusMap.TryGetValue(t, out var s) && IsBlocked(s));
+
+        /// <summary>還有東西可同步時的強制同步鈕底色（橘 — 與「有檔案被跳過」警告同色系）。</summary>
+        static readonly Color ForceSyncColor = new Color(1f, 0.7f, 0.3f);
+        /// <summary>全部已同步時的強制同步鈕底色（綠 — 與各 target 的 Synced 狀態同色系）。</summary>
+        static readonly Color AllSyncedColor = new Color(0.5f, 0.85f, 0.55f);
 
         // 區塊職責：static 解析 Skills~ 源根目錄（MaybeAutoPopupOnWelcome 無 instance 可用）。
         // 物理意義：與 RefreshStatus 同一條解析鏈（UnityProjectRoot + CorePath）；解析失敗回 null。
@@ -1187,7 +1212,6 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        bool docsFoldAnyBlocked = false;
         // 區塊職責：單一 target 的狀態 + 安裝按鈕橫列
         // 物理意義：把 status enum 翻成顏色 / label / 按鈕文字 + dst 路徑顯示，
         //          使用者一眼可看到「Claude 已同步、Antigravity 尚未安裝」之類的狀況
@@ -1207,8 +1231,7 @@ namespace UCL.Core.EditorLib.Page
                 {
                     InstallStatus status = m_EntryStatusByTarget.TryGetValue(target, out var value)
                         ? value : InstallStatus.NotInstalled;
-                    bool canInstall = status != InstallStatus.NoProjectRoot && status != InstallStatus.NoUCLCore;
-                    if (!canInstall) docsFoldAnyBlocked = true;
+                    bool canInstall = !IsBlocked(status);
                     string detail = m_EntryDetailByTarget.TryGetValue(target, out var text) ? text : "";
                     Color statusColor = status == InstallStatus.Synced ? new Color(0.6f, 0.9f, 0.6f)
                         : status == InstallStatus.Stale ? new Color(1f, 0.65f, 0.25f)

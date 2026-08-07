@@ -194,6 +194,7 @@ namespace UCL.Core.LocalizeLib
                 "AgentSkill.Btn.Install" => "🚀 Install",
                 "AgentSkill.Btn.InstallAll" => "🚀 Install all targets",
                 "AgentSkill.Btn.ForceSyncAll" => "⚡ Force-sync all (overwrite local changes)",
+                "AgentSkill.Btn.ForceSyncAll.Synced" => "✅ All synced (force-rewrite still available)",
                 "AgentSkill.SkippedWarn" => "⚠ Last install skipped {0} file(s) due to local changes; content not updated — use 'Reinstall' or 'Force-sync' to overwrite (see Console)",
                 "AgentSkill.Btn.Sync" => "🔄 Sync to current version",
                 "AgentSkill.Btn.Reinstall" => "🔁 Reinstall",

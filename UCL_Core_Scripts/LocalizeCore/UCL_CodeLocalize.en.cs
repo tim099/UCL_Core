@@ -20,6 +20,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.MenuButton" => "🧰 Open Tool Box",
                 "ToolBox.GitFlattenSync" => "Git Flatten Sync",
                 "ToolBox.GitFlattenSync.Desc" => "Flatten a repo's submodules into plain files and sync them into another repo's working directory (source is read-only; destination gets files only — neither git is touched).",
+                "ToolBox.GitSubmoduleSync" => "Git Submodule Sync",
+                "ToolBox.GitSubmoduleSync.Desc" => "Batch checkout-default-branch / pull / push across all submodules — one status table shows who is detached or ahead, so branches stop drifting after submodule update.",
                 "ToolBox.DocSearch" => "Doc Search",
                 "ToolBox.DocSearch.Desc" => "Instant fuzzy search across 200+ markdown docs (synonym expansion, current locale first).",
                 "ToolBox.LocalizeEdit" => "Localize Edit",

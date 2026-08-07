@@ -20,6 +20,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.MenuButton" => "🧰 開啟工具集",
                 "ToolBox.GitFlattenSync" => "Git 攤平同步",
                 "ToolBox.GitFlattenSync.Desc" => "把含 submodule 的 repo 攤平成純檔案、同步到另一個 repo 的工作目錄（來源只讀、目標只寫檔案，兩邊 git 都不碰）。",
+                "ToolBox.GitSubmoduleSync" => "Git Submodule 同步",
+                "ToolBox.GitSubmoduleSync.Desc" => "批量對所有 submodule 切預設 branch / pull / push —— 一張狀態表看誰 detached、誰 ahead，防止 submodule update 後分支跑掉。",
                 "ToolBox.DocSearch" => "文件搜尋",
                 "ToolBox.DocSearch.Desc" => "跨專案 200+ 篇 markdown 的即時模糊搜尋（含同義詞展開、當前語系優先）。",
                 "ToolBox.LocalizeEdit" => "多語系編輯",

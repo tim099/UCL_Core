@@ -35,6 +35,10 @@ namespace UCL.Core.EditorLib.Page
                 UCL_CodeLocalize.Get("ToolBox.GitFlattenSync.Desc"),
                 () => UCL_GitFlattenSyncPage.Create());
 
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.GitSubmoduleSync"),
+                UCL_CodeLocalize.Get("ToolBox.GitSubmoduleSync.Desc"),
+                () => UCL_GitSubmoduleSyncPage.Create());
+
             DrawTool(UCL_CodeLocalize.Get("ToolBox.DocSearch"),
                 UCL_CodeLocalize.Get("ToolBox.DocSearch.Desc"),
                 () => UCL_DocSearchPage.Create());

@@ -1041,6 +1041,36 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
 
         /// <summary>把某筆 round 的酒館 seq 寫回索引 —— 「已發文」的可驗證 receipt。</summary>
         // ===========================================================
+        // 區塊職責：讀「已遷移 Archive」集合 —— _migration/registry.json 是唯一標記處。
+        // 物理意義：**Archive 不可修改**（Tim 鐵律），所以「已遷移」不寫進 Archive 本身，
+        //          寫在 registry（state=migrated 的 record）。讀取端（管理頁 / op=scan）
+        //          預設隱藏這個集合裡的 slug —— 已裁決過的東西不該每次都端回檯面。
+        // 數值影響：唯讀；registry 缺檔 / 壞檔 → 空集合（fail-open：寧可多列不可少列）。
+        // ===========================================================
+        public static HashSet<string> LoadMigratedArchiveSlugs()
+        {
+            var o = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string path = Path.Combine(BookNotesRoot, "_migration", "registry.json");
+            JsonData reg = LoadJson(path, out _);
+            if (reg == null || !reg.Contains("records")) return o;
+            JsonData records = reg["records"];
+            if (records == null || !records.IsArray) return o;
+            const string prefix = "BookNotes/Archive/";
+            for (int i = 0; i < records.Count; i++)
+            {
+                JsonData r = records[i];
+                if (r == null || !r.IsObject) continue;
+                if (r.GetString("state", "") != "migrated") continue;
+                string src = r.GetString("source_id", "");
+                if (src.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    o.Add(src.Substring(prefix.Length).Trim().TrimEnd('/'));
+                }
+            }
+            return o;
+        }
+
+        // ===========================================================
         // 區塊職責：op=scan —— Library / Archive 的重複與異常候選審計（唯讀）。
         // 物理意義：Q4 定案「scan 先印候選、人工核對」—— 本方法**不合併不搬移不改任何檔**，
         //          只產一份給人裁決的清單。判準沿 Plan_Library_Media_Migration 的實測教訓：
@@ -1055,12 +1085,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         //      （含大小寫不一致 —— NTFS 遮著它，Linux 上會把追回檔寫到版控外）
         //   D. Archive 讀不到 metadata 的 entry（book.json 缺或壞 —— 連被比對的資格都沒有，要人看）
         // ===========================================================
-        public static string ScanLibrary(out string reportPath, out string error)
+        public static string ScanLibrary(out string reportPath, out string error, bool showMigrated = false)
         {
             error = null;
             reportPath = null;
             var sb = new StringBuilder();
             var mediaEntries = ListMediaEntries();
+            // 已遷移的 Archive 預設不進候選（Tim 2026-08-07：已裁決過的不重複端上檯面；
+            // 要查帶 --arg show_migrated=true）。隱藏數量必須印出來 —— 靜默隱藏＝下一隻閘門讀快取。
+            var migrated = LoadMigratedArchiveSlugs();
+            int hiddenMigrated = 0;
 
             // media 的 normalize 鍵集合（title / mediaId 去前綴 / work_id / aliases）
             var mediaKeys = new List<(MediaEntry entry, HashSet<string> keys)>();
@@ -1107,6 +1141,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                     string slug = Path.GetFileName(dir);
                     // `_` 開頭是系統目錄（_recommended / _search_reports…），不是書 —— 不進統計也不進 D 節
                     if (slug.StartsWith("_", StringComparison.Ordinal)) continue;
+                    if (!showMigrated && migrated.Contains(slug)) { hiddenMigrated++; continue; }
                     archiveCount++;
                     JsonData book = LoadJson(Path.Combine(dir, "book.json"), out string bookErr);
                     if (book == null)
@@ -1134,7 +1169,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                     }
                 }
             }
-            sb.AppendLine($"- Archive entry：{archiveCount} 個");
+            sb.AppendLine($"- Archive entry：{archiveCount} 個"
+                          + (hiddenMigrated > 0
+                              ? $"（另 {hiddenMigrated} 筆已遷移預設隱藏 —— `--arg show_migrated=true` 顯示）"
+                              : ""));
             sb.AppendLine();
             sb.AppendLine($"## A. Archive ↔ Library 疑似同作品（{hitCount} 組 —— 逐組人工裁決，不自動遷移）");
             sb.AppendLine();

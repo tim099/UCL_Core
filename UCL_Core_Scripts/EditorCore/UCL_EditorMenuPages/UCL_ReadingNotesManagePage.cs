@@ -249,6 +249,20 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("書名", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     m_Query = GUILayout.TextField(m_Query, UCL_GUIStyle.TextFieldStyle);
                 }
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 已遷移 Archive 預設隱藏（Tim 2026-08-07）——「已遷移」的標記就是
+                    // _migration/registry.json（Archive 不可修改，標記只能活在它外面）。
+                    // 切換即重搜 —— 開關與清單對不上是最誤導人的畫面。
+                    bool next = GUILayout.Toggle(m_ShowMigrated, " 顯示已遷移的 Archive（預設隱藏）",
+                        GUILayout.ExpandWidth(false));
+                    if (next != m_ShowMigrated)
+                    {
+                        m_ShowMigrated = next;
+                        if (!string.IsNullOrEmpty((m_Query ?? "").Trim())) Search();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
                 GUILayout.Label(m_LastStatus, UCL_GUIStyle.LabelStyle);
             }
         }
@@ -454,31 +468,44 @@ namespace UCL.Core.EditorLib.Page
             // Library 先、Archive 後（Tim 2026-08-07）：新版才有追回等可操作功能，該站結果頂端；
             // Archive 是遷移參考，沉底 —— 順序即分層，不用額外的分組標題。
             SearchLibrary(query);
-            SearchArchive(query);
-            m_LastStatus = $"「{query}」找到 {m_Results.Count} 個入口。Archive 結果只供人工確認與遷移，不會被新流程讀取。";
+            int hiddenMigrated = SearchArchive(query);
+            m_LastStatus = $"「{query}」找到 {m_Results.Count} 個入口" +
+                           (hiddenMigrated > 0 ? $"（另隱藏 {hiddenMigrated} 筆已遷移 Archive —— 勾上方開關顯示）" : "") +
+                           "。Archive 結果只供人工確認與遷移，不會被新流程讀取。";
         }
 
         // Archive 是歷史原件：只讀每個 entry 的 book.json 標題來定位資料夾，絕不讀 chapters / characters。
-        void SearchArchive(string query)
+        // 回傳「因已遷移而隱藏」的命中數 —— 隱藏必須被計數顯示，靜默隱藏＝使用者以為資料不見了。
+        int SearchArchive(string query)
         {
-            if (!Directory.Exists(m_ArchiveDir)) return;
+            if (!Directory.Exists(m_ArchiveDir)) return 0;
+            // 已遷移標記的唯一事實源是 _migration/registry.json（Archive 不可修改）——
+            // 每次搜尋載一次（不逐列載；registry 是小檔但迴圈裡重複 IO 沒有理由）
+            var migrated = AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.LoadMigratedArchiveSlugs();
+            int hidden = 0;
             foreach (string dir in Directory.GetDirectories(m_ArchiveDir))
             {
+                string slug = Path.GetFileName(dir);
                 string metadataPath = Path.Combine(dir, "book.json");
                 JsonData data = ReadObject(metadataPath);
                 if (data == null) continue;
                 string title = data.GetString("title", "");
                 string original = data.GetString("title_original", "");
-                if (!Matches(query, title, original, Path.GetFileName(dir))) continue;
+                if (!Matches(query, title, original, slug)) continue;
+                bool isMigrated = migrated.Contains(slug);
+                if (!m_ShowMigrated && isMigrated) { hidden++; continue; }
                 m_Results.Add(new SearchEntry
                 {
-                    Kind = "Archive（legacy，唯讀）",
-                    Title = string.IsNullOrEmpty(title) ? Path.GetFileName(dir) : title,
-                    Detail = $"slug: {Path.GetFileName(dir)}　原文: {original}",
+                    Kind = isMigrated ? "Archive（legacy，唯讀 · ✅ 已遷移）" : "Archive（legacy，唯讀）",
+                    Title = string.IsNullOrEmpty(title) ? slug : title,
+                    Detail = $"slug: {slug}　原文: {original}",
                     Path = dir,
                 });
             }
+            return hidden;
         }
+
+        bool m_ShowMigrated = false;
 
         // 新 schema：先索引 work 的標題，再把命中的 work 對應到 media folder。
         // JSON 在此是 schema 邊界的唯讀 projection；未表示的欄位不會被寫回或遺失。

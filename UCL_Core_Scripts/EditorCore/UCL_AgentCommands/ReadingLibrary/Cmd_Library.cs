@@ -45,7 +45,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan（required；scan 免其他參數） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan（required） | " +
+            "show_migrated=true（scan 選填：連已遷移的 Archive 一起列；預設隱藏） | " +
             "agent=酒館發文的錢包身分，例 Zeta（share required —— 計酬進誰的帳不能猜） | " +
             "room=酒館房間 id（share 選填，default tavern） | " +
             "round=要分享的 round 號（share 選填；缺 = 該章最新一輪） | " +
@@ -109,7 +110,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "add_character": Op_AddCharacter(args); break;
                 case "revise_view": Op_ReviseView(args); break;
                 case "share": await Op_Share(args, token); break;
-                case "scan": Op_Scan(); break;
+                case "scan": Op_Scan(args); break;
 
                 default:
                     throw new ArgumentException(
@@ -336,9 +337,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// 物理意義：印候選給人裁決；不合併、不搬移、不改資料（Q3：偵測自動、遷移人工）。
         /// 數值影響：唯一寫入是報告檔 _migration/scan_report.md（機械產物）。
         /// </summary>
-        void Op_Scan()
+        void Op_Scan(Dictionary<string, string> args)
         {
-            string report = UCL_ReadingLibraryIO.ScanLibrary(out string reportPath, out string error);
+            // 已遷移 Archive 預設隱藏（Tim 2026-08-07）—— 已裁決過的不重複端上檯面
+            bool showMigrated = GetArg(args, "show_migrated", "").Trim().ToLowerInvariant() == "true";
+            string report = UCL_ReadingLibraryIO.ScanLibrary(out string reportPath, out string error, showMigrated);
             Cmd_Library_Helpers.ResolveLastOp(
                 report +
                 (reportPath != null ? $"\n\n📄 報告檔：`{reportPath}`" : "") +

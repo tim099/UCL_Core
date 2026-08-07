@@ -39,6 +39,10 @@ namespace UCL.Core.EditorLib.Page
                 UCL_CodeLocalize.Get("ToolBox.GitSubmoduleSync.Desc"),
                 () => UCL_GitSubmoduleSyncPage.Create());
 
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.AutoCommit"),
+                UCL_CodeLocalize.Get("ToolBox.AutoCommit.Desc"),
+                () => UCL_AutoCommitPage.Create());
+
             DrawTool(UCL_CodeLocalize.Get("ToolBox.DocSearch"),
                 UCL_CodeLocalize.Get("ToolBox.DocSearch.Desc"),
                 () => UCL_DocSearchPage.Create());

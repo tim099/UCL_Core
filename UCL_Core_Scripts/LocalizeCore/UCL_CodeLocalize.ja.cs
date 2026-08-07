@@ -22,6 +22,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.GitFlattenSync.Desc" => "submodule を含む repo をプレーンなファイルへ展開し、別 repo の作業ディレクトリへ同期します（ソースは読み取りのみ、宛先はファイル書き込みのみ — どちらの git も触りません）。",
                 "ToolBox.GitSubmoduleSync" => "Git Submodule 同期",
                 "ToolBox.GitSubmoduleSync.Desc" => "全 submodule に対して既定 branch への checkout / pull / push を一括実行 — detached や ahead を一覧で把握し、submodule update 後のブランチずれを防ぎます。",
+                "ToolBox.AutoCommit" => "自動 Commit",
+                "ToolBox.AutoCommit.Desc" => "AgentCommands の自動生成ファイル（酒場メッセージ / Treasury / runtime state）をグループ分けし、ボタンで各グループを個別 commit（メッセージ自動生成）。ephemeral ファイルは常に除外。",
                 "ToolBox.DocSearch" => "ドキュメント検索",
                 "ToolBox.DocSearch.Desc" => "200 以上の markdown を横断する即時あいまい検索（同義語展開・現在のロケール優先）。",
                 "ToolBox.LocalizeEdit" => "多言語編集",

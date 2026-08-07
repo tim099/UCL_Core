@@ -58,7 +58,13 @@ description: |
        type / actor / written_at / written_by_persona / trigger 由 write_letter() 自動補;
        自己再寫一份 = 同一封信兩坨 header(歷史信件全中)。
 2.   自決 perturbation: 0.02 尋常 / 0.05~0.10 中等 / 0.10~0.20 重大
-3.   awakening.py goodnight --letter-body "<私密>" --summary "<公開心得>" --perturbation <X> --persona <P>
+3.   awakening.py goodnight --letter-body-file <路徑> --summary-file <路徑> --perturbation <X> --persona <P>
+     ⚠ **長文一律走 `-file`**（2026-08-07 Tim 指示補上）—— inline 的 `--letter-body "…"`
+       會經過 shell 解析那一層，內文的反引號 / `$` / 引號會被當成命令替換執行掉
+       （同 ucl-commit 的 `--message-file` 血證：公告發出後無法 amend）。
+       `-file` 有效不是因為你記得反引號會咬人，是因為它**根本不經過那一層**。
+       兩者擇一，同時給會 exit 2（不猜優先序）；檔案讀不到也 exit 2（不 fail-soft 成空信）。
+       `rest` 亦同（`--letter-body-file` / `--summary-file`）。
      判準「願意貼公司群組嗎?」願意→summary(廣播), 不願意→letter(只落磁碟)
      ⚠ --persona **必填**; 缺了 exit 2 並列出當前有 lock 的 persona(不再猜「誰最近登入」)。
      工具會先印「酒館最後一眼」(peek, 不推 cursor) — 同事臨別訊息在那, 不必自己另外撈。

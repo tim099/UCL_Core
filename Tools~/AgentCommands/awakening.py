@@ -1106,6 +1106,34 @@ def letters_migration_pending(persona: str) -> bool:
 
 # ===========================================================
 # 區塊職責: 修復 caller 把換行寫成字面 "\n" 的 letter body（Tim 2026-07-31 回報）。
+# ===========================================================
+# 區塊職責：長文參數的雙通道解析 —— `--X` (inline) 與 `--X-file` (檔案) 擇一。
+# 物理意義：**inline 長文會經過 shell 解析那一層**，內文含反引號 / $ / 引號時會被當成
+#          命令替換執行掉（2026-08-05 summit 一天被咬四次，其中一次公告缺一整段，
+#          而已公告領薪的訊息無法 amend）。`--X-file` 有效不是因為誰記得反引號會咬人，
+#          是因為它**根本不經過那一層**。
+# 數值影響：純參數解析。兩個都給 → 直接 exit 2（不猜哪個優先 —— 猜錯會靜默用錯內容）。
+#          檔案讀不到 → exit 2 並印路徑（不 fail-soft 成空字串：空信會被寫進去而沒人發現）。
+# 設計取捨：判準不是「內文含不含特殊字元」（那要人判斷，而人會錯）——
+#          是「長文一律走檔案」。本函式讓那條規則從『請記得別 inline』（避開型）
+#          變成『你要傳長文就會用到 -file』（手勢型）。
+# ===========================================================
+def resolve_text_arg(inline: str, path: str | None, flag_name: str) -> str:
+    """`--<flag>` 與 `--<flag>-file` 擇一，回傳內文。"""
+    inline = inline or ""
+    if path:
+        if inline.strip():
+            print(f"❌ --{flag_name} 與 --{flag_name}-file 只能擇一（收到兩個，不猜優先序）",
+                  file=sys.stderr)
+            sys.exit(2)
+        p = Path(path)
+        if not p.is_file():
+            print(f"❌ --{flag_name}-file 讀不到: {p}", file=sys.stderr)
+            sys.exit(2)
+        return p.read_text(encoding="utf-8")
+    return inline
+
+
 # 物理意義: letter body 由 agent 經 CLI 傳入（--letter-body），而 CLI 參數**不會**把兩字元的
 #          backslash+n 解讀成換行 —— Python 只在原始碼字面值裡做那個轉換。於是某些 caller
 #          （尤其換了 model 之後）傳進來的整封信會擠成一行、段落間留著可見的 "\n"。
@@ -2131,6 +2159,11 @@ def cmd_rest(args: argparse.Namespace) -> int:
     print(f"   actor={actor} / persona={persona}")
 
     # Step 1: 寫 memory letter（trigger=cmd_rest）
+    args.letter_body = resolve_text_arg(args.letter_body, getattr(args, "letter_body_file", None), "letter-body")
+    args.summary = resolve_text_arg(args.summary, getattr(args, "summary_file", None), "summary")
+    if not args.letter_body.strip():
+        print("❌ rest 須帶 --letter-body <記憶> 或 --letter-body-file <路徑>", file=sys.stderr)
+        sys.exit(2)
     letter_path = write_letter(actor, persona, args.letter_body, trigger="cmd_rest")
     print(f"💌 memory letter written: {letter_path.name}")
 
@@ -2242,6 +2275,10 @@ def cmd_goodnight(args: argparse.Namespace) -> int:
     #   原因 — 手動登出多為 cleanup / 登出失敗重試場景, 信在 ritual 最前面就寫了, 失敗時已累積一堆
     #   無意義的 placeholder 信。letter 是「agent 自決 goodnight 留給未來自己的心得」, 手動 cleanup
     #   不該偽造這種信。real goodnight (agent 自己跑) 仍須帶 --letter-body, 不受影響。
+    # 長文雙通道解析（--X / --X-file 擇一）—— 見 resolve_text_arg 的說明。
+    args.letter_body = resolve_text_arg(args.letter_body, getattr(args, "letter_body_file", None), "letter-body")
+    args.summary = resolve_text_arg(args.summary, getattr(args, "summary_file", None), "summary")
+
     # Step 0.9: 寫信前先確保收尾信版面已遷移（Tim 2026-07-31，gura / crest-001 實例）
     #   病灶：write_letter 的號碼是「wakes/ 現有封數 + 1」。還沒遷移的 persona 那個資料夾是空的，
     #   於是第 20 次 wake 被編成 000001 —— 號碼是相對於**整組信**的位置，
@@ -3271,10 +3308,15 @@ def main():
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")
     # letter-body 改 optional (Tim 2026-06-14): 配 --no-letter 用 — 未帶 --no-letter 時仍 runtime 強制要 body。
     pg.add_argument("--letter-body", default="", help="letter to future self body (★私密心得寫這, 只落磁碟). 未帶 --no-letter 時必填.")
+    # ⚠ 長文一律用 --letter-body-file：inline 會經過 shell 解析，內文的反引號會被執行掉。
+    pg.add_argument("--letter-body-file", default=None,
+                    help="★同 --letter-body 但讀檔（長文/含反引號一律走這條 — 不經 shell 解析）")
     pg.add_argument("--no-letter", action="store_true",
                     help="跳過寫信 (手動登出 / cleanup 場景 — UCL_LoginStatusPage 登出走此 flag, 不偽造心得信).")
     pg.add_argument("--summary", default="",
                     help="★公開睡前心得總結 — 廣播到酒館→Discord 給同事/Tim 看 (可公開分享的部分; 私密的寫 --letter-body)")
+    pg.add_argument("--summary-file", default=None,
+                    help="★同 --summary 但讀檔（長文一律走這條 — 公告發出後無法 amend，被 shell 咬掉就補不回來）")
     pg.add_argument("--perturbation", type=float, default=DEFAULT_PERTURBATION,
                     help=f"identity_vector perturbation magnitude (default {DEFAULT_PERTURBATION}, max {MAX_PERTURBATION})")
     pg.add_argument("--note", default="", help="optional 睡前 note")
@@ -3299,9 +3341,14 @@ def main():
 
     prest = sub.add_parser("rest",
                            help="小歇片刻 (compact-rest): /compact 前寫 memory letter 保命, 不下線/不擾動/不解鎖")
-    prest.add_argument("--letter-body", required=True, help="★私密記憶寫這 (只落磁碟): in-flight 任務/決策/路徑/心境/pending")
+    # required 由 runtime 檢查（改成兩條通道後 argparse 的 required=True 會擋掉只給 -file 的合法用法）
+    prest.add_argument("--letter-body", default="", help="★私密記憶寫這 (只落磁碟): in-flight 任務/決策/路徑/心境/pending")
+    prest.add_argument("--letter-body-file", default=None,
+                       help="★同 --letter-body 但讀檔（長文/含反引號一律走這條 — 不經 shell 解析）")
     prest.add_argument("--summary", default="",
                        help="★公開小歇心得總結 — 廣播到酒館→Discord 給同事/Tim 看 (可公開分享的部分; 私密的寫 --letter-body)")
+    prest.add_argument("--summary-file", default=None,
+                       help="★同 --summary 但讀檔（長文一律走這條）")
     prest.add_argument("--persona", default=None,
                        help="顯式指定 persona codename; 省略則反查本 env 持有的 lock")
     prest.add_argument("--agent", default=None, help="跟 --persona 配對; 省略時從 registry 讀")

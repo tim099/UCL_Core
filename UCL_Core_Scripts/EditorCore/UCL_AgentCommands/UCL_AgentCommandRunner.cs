@@ -27,9 +27,11 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// 2. await UCL_ModuleService.WaitUntilInitialized(token)（會自動觸發初始化 + 等待完成）
     /// 3. 反向遍歷每筆指令（方便就地移除）：
     ///    - 從 Registry 找 handler，呼叫 handler.ExecuteAsync(args, token)
-    ///    - 成功：RunCount++ / 寫 LastRunAt+Result=Success；若 Mode==OneShot 直接從 queue 移除
-    ///    - 失敗：寫 LastRunError + Result=Failed（不中斷，繼續下一筆，指令仍留在 queue）
-    /// 4. 寫回 queue.json
+    ///    - 成功：RunCount++ / 寫 LastRunAt+Result=Success + result 檔；OneShot 直接從 queue 移除
+    ///    - 失敗：寫 LastRunError + Result=Failed + 錯誤報告檔 + result 檔（不中斷，繼續下一筆）；
+    ///      **OneShot 失敗也自動出隊**（2026-08-07 —— 殘留會被每批重跑，見 catch 區塊註解），
+    ///      Repeatable 留在 queue（語意本來就是反覆跑）
+    /// 4. 寫回 queue.json；verdict 一律在 _cmd_results/&lt;id&gt;.json（消失＝結束，不再＝成功）
     /// </summary>
     public static class UCL_AgentCommandRunner
     {
@@ -214,6 +216,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                         c.LastRunError = $"Unknown command type '{c.Type}'.{didYouMean} Registered: {registered}";
                         c.LastRunAt = DateTime.UtcNow.ToString("o");
                         failed++;
+                        // 失敗即出隊（Tim 2026-08-07 拍板，成對改的 Editor 半邊）——
+                        // unknown type 留在 queue 只會每批重印一次同樣的錯，永遠不會自己好。
+                        WriteCmdErrorReport(c, new InvalidOperationException(c.LastRunError));
+                        WriteCmdResult(c, success: false, error: c.LastRunError);
+                        if (c.Mode == UCL_AgentCommandMode.OneShot)
+                        {
+                            commands.RemoveAt(i);
+                            removed++;
+                        }
                         continue;
                     }
 
@@ -288,6 +299,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                         c.RunCount++;
                         succeeded++;
                         Debug.Log($"[UCL_AgentCmd] ✓ '{c.Type}' (id={c.Id}) succeeded. RunCount={c.RunCount}");
+                        // 成功也落 result 檔 —— 成對改的關鍵：失敗會出隊之後，「從 queue 消失」
+                        // 就同時可能是成功或失敗，python 端不能再用消失推論成功，
+                        // 要有一份 per-cmd 的 verdict 可讀（消失＝結束，verdict 在 result 檔）。
+                        WriteCmdResult(c, success: true, error: null);
 
                         // OneShot 成功 → 直接從 queue 中移除（任務已完成）
                         if (c.Mode == UCL_AgentCommandMode.OneShot)
@@ -323,6 +338,23 @@ namespace UCL.Core.EditorLib.AgentCommands
                             // e.Message 一行 —— 遇到被遮罩的錯誤（例如 UniTask token 錯誤蓋掉真正的 handler
                             // 例外）就查不動，得請人肉去翻 Editor console。落檔讓 client 端能自己讀 stack。
                             WriteCmdErrorReport(c, e);
+                            WriteCmdResult(c, success: false, error: e.Message);
+                            // 區塊職責：失敗的 OneShot 即時出隊（Tim 2026-08-07 拍板 —— queue 不堵塞的
+                            //          Editor 半邊；python 半邊是 run_cmd 改讀 result 檔，不再消失＝成功）。
+                            // 物理意義：舊行為「失敗留在 queue」的災難鏈：caller 沒等到（no-wait / timeout /
+                            //          session 死掉）→ 殘留永遠在 → 之後**每一批都重跑它一次**（副作用重放，
+                            //          Tavern post 會重發、轉帳會重轉）→ 若它是掛住型失敗，每批多等一次
+                            //          per-cmd timeout → ensure_idle 60 秒放棄 → 「後續指令無法執行」。
+                            // 數值影響：verdict 不因出隊而遺失 —— _cmd_errors/<id>.md（stack 全文）與
+                            //          _cmd_results/<id>.json（機器可讀 verdict）都在出隊前寫完。
+                            //          Repeatable 照舊留在 queue（它的語意本來就是反覆跑）。
+                            if (c.Mode == UCL_AgentCommandMode.OneShot)
+                            {
+                                commands.RemoveAt(i);
+                                removed++;
+                                Debug.Log($"[UCL_AgentCmd] ↳ '{c.Type}' (id={c.Id}) 失敗已自動出隊"
+                                          + "（verdict 在 _cmd_results/，詳情在 _cmd_errors/）");
+                            }
                         }
                     }
                     finally
@@ -336,7 +368,8 @@ namespace UCL.Core.EditorLib.AgentCommands
 
                 data.Commands = commands;
                 UCL_AgentCommandQueue.Save(data, agentId);
-                Debug.Log($"[UCL_AgentCmd:{labelTag}] Done. {succeeded} succeeded / {failed} failed / {removed} OneShot removed after success.");
+                Debug.Log($"[UCL_AgentCmd:{labelTag}] Done. {succeeded} succeeded / {failed} failed / {removed} OneShot removed (success or auto-dequeued failure).");
+                PurgeOldCmdResults();
             }
             finally
             {
@@ -353,6 +386,67 @@ namespace UCL.Core.EditorLib.AgentCommands
                     UCL_AgentCommandTrigger.Clear(agentId);
                 }
                 lock (s_RunningLock) s_RunningAgents.Remove(norm);
+            }
+        }
+
+        // ===========================================================
+        // 區塊：per-cmd 執行結果落檔（Tim 2026-08-07 拍板 —— 成對改的 Editor 半邊）
+        // 物理意義：失敗會自動出隊之後，「cmd 從 queue 消失」同時可能是成功或失敗 ——
+        //          python 端需要一份機器可讀的 verdict 檔，不能再用消失推論成功。
+        //          成功與失敗都寫（只寫失敗的話，「沒有檔」又變回要推論的空白）。
+        // 數值影響：<DataRoot>/_cmd_results/<cmdId>.json；失敗時附 error 與
+        //          error_report 路徑（_cmd_errors/<id>.md）。IO 失敗吞掉 ——
+        //          result 檔寫不出來時 python 端 fallback 回舊推論，不擋執行。
+        // ===========================================================
+        static void WriteCmdResult(UCL_AgentCommand c, bool success, string error)
+        {
+            try
+            {
+                string dataRoot = UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot;
+                string dir = System.IO.Path.Combine(dataRoot, "_cmd_results");
+                System.IO.Directory.CreateDirectory(dir);
+                var jd = new UCL.Core.JsonLib.JsonData();
+                jd["id"] = new UCL.Core.JsonLib.JsonData(c.Id ?? "");
+                jd["type"] = new UCL.Core.JsonLib.JsonData(c.Type ?? "");
+                jd["mode"] = new UCL.Core.JsonLib.JsonData(c.Mode.ToString());
+                jd["result"] = new UCL.Core.JsonLib.JsonData(success ? "Success" : "Failed");
+                jd["finished_at"] = new UCL.Core.JsonLib.JsonData(DateTime.UtcNow.ToString("o"));
+                if (!success)
+                {
+                    jd["error"] = new UCL.Core.JsonLib.JsonData(error ?? "");
+                    jd["error_report"] = new UCL.Core.JsonLib.JsonData(
+                        System.IO.Path.Combine(dataRoot, "_cmd_errors", $"{c.Id}.md"));
+                }
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, $"{c.Id}.json"),
+                    jd.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[UCL_AgentCmd] result 落檔失敗（python 端會 fallback 舊推論）：{ex.Message}");
+            }
+        }
+
+        // result 檔只服務「caller 稍後來對答案」的窗口 —— 3 天後還沒人讀就不會有人讀了。
+        // 每批結尾清一次；_cmd_errors/ 刻意不清（那是回溯用的永久紀錄，且已 gitignore）。
+        static void PurgeOldCmdResults()
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(
+                    UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "_cmd_results");
+                if (!System.IO.Directory.Exists(dir)) return;
+                var cutoff = DateTime.UtcNow.AddDays(-3);
+                foreach (var f in System.IO.Directory.GetFiles(dir, "*.json"))
+                {
+                    if (System.IO.File.GetLastWriteTimeUtc(f) < cutoff)
+                    {
+                        System.IO.File.Delete(f);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[UCL_AgentCmd] result 檔清理失敗（不影響執行）：{ex.Message}");
             }
         }
 

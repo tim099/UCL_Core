@@ -91,6 +91,25 @@ def print_fail_verdict(text: str) -> None:
 #          本函式在判失敗後把它印出來（截斷 60 行，附完整路徑供細讀）。
 # 數值影響：純讀檔輸出；檔案不存在（舊版 Editor / 落檔失敗）→ 靜默跳過，不影響失敗回報。
 # ===========================================================
+def read_cmd_result(cmd_id: str):
+    """讀 Editor 端落的 per-cmd verdict 檔（成對改的 python 半邊，2026-08-07）。
+
+    區塊職責：cmd 從 queue 消失後的**權威判定來源**。
+    物理意義：Editor 端現在「失敗的 OneShot 也自動出隊」—— 消失只代表「結束」，
+             成功或失敗要看 _cmd_results/<id>.json（Runner 在出隊前寫）。
+             舊的「消失＝成功」推論只剩 fallback 地位（舊版 Editor / result 檔寫失敗）。
+    數值影響：回傳 dict（含 result / error / error_report）或 None（檔不存在／壞檔）。
+    """
+    try:
+        p = Path(DATA_ROOT) / "_cmd_results" / f"{cmd_id}.json"
+        if not p.is_file():
+            return None
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None   # 壞檔當沒有 —— fallback 舊推論，不擋判定
+
+
 def print_cmd_error_report(cmd_id: "str | None", max_lines: int = 60) -> None:
     try:
         candidates = []
@@ -734,9 +753,29 @@ def cmd_wait(args: argparse.Namespace) -> int:
             queue = load_queue()
             cmd = find_cmd(queue, cmd_id)
             if cmd is None:
-                # T02 race fix (2026-05-16 basecamp): C# 端 fail 後 auto-remove
-                # cmd 比 Python 輪詢快 → cmd is None 不等於 success.
-                # 解法: 檢 cmd_type 對應 last_op 檔案的 fail marker.
+                # 區塊職責：消失後的判定 —— 權威來源是 result 檔（成對改 2026-08-07）。
+                # 物理意義：Editor 端失敗的 OneShot 也會自動出隊，「消失」只代表結束；
+                #          成功或失敗看 _cmd_results/<id>.json。找不到 result 檔才走舊推論
+                #          （舊版 Editor / result 落檔失敗），並把「這是推論」講出來。
+                verdict = read_cmd_result(cmd_id)
+                if verdict is not None:
+                    if verdict.get("result") == "Failed":
+                        err = verdict.get("error") or "(no error message)"
+                        print_fail_verdict(f"  ✗ Cmd failed（Editor 已自動出隊）: {err}")
+                        report_path = verdict.get("error_report")
+                        print_cmd_error_report(cmd_id)
+                        if report_path:
+                            print(f"  📄 詳細錯誤檔：{report_path}")
+                        return 2
+                    print(f"  ✓ Cmd completed → Success（result 檔判定，非推論）")
+                    if output_file:
+                        if output_file.exists():
+                            print(f"  ✓ Output file exists: {output_file}")
+                        else:
+                            print(f"  ⚠ Output file NOT found: {output_file}")
+                    return 0
+                # ── fallback：無 result 檔（舊版 Editor）──
+                # T02 race fix (2026-05-16 basecamp): 檢 cmd_type 對應 last_op 檔案的 fail marker.
                 cmd_type = getattr(args, "cmd_type", None)
                 submit_time = getattr(args, "submit_time", None)
                 if cmd_type and submit_time is not None:
@@ -747,7 +786,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
                         print_fail_verdict(f"  ✗ Cmd disappeared from queue BUT output file shows failure:\n  {err}")
                         print_cmd_error_report(cmd_id)
                         return 2
-                print(f"  ✓ Cmd disappeared from queue → Success (OneShot completed)")
+                print(f"  ✓ Cmd disappeared from queue → Success (推論：無 result 檔的舊版 fallback)")
                 if output_file:
                     if output_file.exists():
                         print(f"  ✓ Output file exists: {output_file}")

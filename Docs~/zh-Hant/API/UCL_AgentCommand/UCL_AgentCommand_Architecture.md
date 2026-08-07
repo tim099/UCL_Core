@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-08-06
+last_updated: 2026-08-07 (§4.3 失敗自動出隊 + _cmd_results verdict 檔；§8.3 手動 SOP 降級為殘餘情境用)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -88,8 +88,8 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
 ```
 [1] Agent 寫進 queue → Executed=false, LastRunResult=null
 [2] Run Pending 觸發 → runner 跑 ExecuteAsync
-[3a] 成功 → 從 queue 移除（不留紀錄；agent 看 queue 沒這筆即知 ✓）
-[3b] 失敗 → 留在 queue，LastRunResult="Failed"，LastRunError=詳情
+[3a] 成功 → 寫 _cmd_results/<id>.json (Success) → 從 queue 移除
+[3b] 失敗 → 寫 _cmd_errors/<id>.md + _cmd_results/<id>.json (Failed) → 也從 queue 移除（§4.3）
 ```
 
 ### 4.2 Repeatable
@@ -98,16 +98,29 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
 [1] Agent 寫進 queue → RunCount=0
 [2] Run Pending 觸發 → 跑一次
 [3a] 成功 → RunCount++ ，留在 queue 裡，LastRunResult="Success"
-[3b] 失敗 → 同 OneShot 失敗（留 queue + 錯誤訊息）
+[3b] 失敗 → 錯誤報告與 verdict 檔照寫，但 Repeatable 留在 queue（語意本來就是反覆跑）
 [4] 下次 Run Pending → 又跑一次（RunCount++）
 ```
 
-### 4.3 失敗的指令會留在 queue
+### 4.3 失敗的 OneShot 自動出隊（2026-08-07 起；成對改）
 
-刻意設計 — agent 看到失敗指令還在，可以：
-1. 看 LastRunError 修問題
-2. 改 Args 或修 Handler，重新 Run Pending（同一筆繼續嘗試）
-3. 確認沒救 → 從 queue.json 手動刪除
+**舊行為**（失敗留在 queue）已廢除 —— 殘留的失敗 OneShot 會被之後**每一批重跑**
+（副作用重放：Tavern post 重發、轉帳重轉），掛住型失敗還會讓每批多等一次 per-cmd
+timeout → `ensure_idle` 60 秒放棄 → 「後續指令無法執行」。
+
+現行為（Runner 端 / run_cmd 端**成對**，缺一邊都是災難）：
+
+| 端 | 行為 |
+|---|---|
+| Editor Runner | 失敗（含 unknown type）→ 寫 `_cmd_errors/<id>.md`（stack 全文）＋ `_cmd_results/<id>.json`（機器可讀 verdict）→ **OneShot 直接出隊**；Repeatable 照舊留著（語意本來就是反覆跑） |
+| `run_cmd.py wait` | cmd 從 queue 消失 → **先讀 `_cmd_results/<id>.json` 判定**（Failed → 印錯誤簡報＋詳細錯誤檔路徑，exit 2）；無 result 檔才 fallback 舊推論（舊版 Editor） |
+
+成功也寫 result 檔 —— 失敗會出隊之後「消失」同時可能是成功或失敗，
+「沒有檔」不能再當判定依據。result 檔 3 天自動清（純 handshake）；
+`_cmd_errors/` 永久保留（回溯用，已 gitignore）。
+
+失敗後要重試：讀 `_cmd_errors/<id>.md` 修好參數，**重新 submit 一筆** ——
+不再有「改 queue 裡那筆繼續嘗試」的模式。
 
 ---
 
@@ -452,11 +465,11 @@ print('removed',cid)"
   手動移除失敗的那筆之後，同一個 cmd_id 在 `run_cmd` 眼裡會長得像成功。
   手動清完請自己去看 `_last_op.md` / 產物是否真的落地。
 
-> **根治計畫**（Tim 2026-08-06 拍板，尚未實作）：失敗的 OneShot 應該
-> ① 輸出 log ② 寫進 `History` ③ **直接從 queue 移除不堵塞**；
-> 而 `run_cmd.py` 必須**同時**改成「以 cmd_id 查結果」而非「以消失推論成功」——
-> 只做前者不做後者，等於把每一次失敗都印成 `✓ Success`。
-> 進度與細節見工作記憶 `reading-library-cmd`（`decision_queue-failure-must-not-block`）。
+> **根治已上線**（2026-08-07 summit 實作，Tim 2026-08-06 拍板）：失敗的 OneShot
+> ① 錯誤報告落檔 ② 寫 `_cmd_results/<id>.json` verdict ③ **直接從 queue 移除不堵塞**；
+> `run_cmd.py` **同步**改為「以 result 檔判定」而非「以消失推論成功」（見 §4.3）。
+> 本節的手動 SOP 保留給兩種殘餘情境：**trigger 落在 domain reload 窗口被漏接**
+>（那是另一條病，見上表第一列）、以及舊版 Editor 沒有 result 檔的 fallback。
 
 ---
 

@@ -31,6 +31,9 @@ namespace UCL.Core.EditorLib.Page
             public string Title = "";
             public string Detail = "";
             public string Path = "";
+            // 只有 Library 命中才有：追回檢視按鈕用（Archive 是 legacy 唯讀，沒有 reader root）
+            public string MediaId = "";
+            public List<string> Readers = new List<string>();
         }
 
         readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
@@ -45,6 +48,24 @@ namespace UCL.Core.EditorLib.Page
         public override bool ShowInPageMenu => true;
 
         public static UCL_ReadingNotesManagePage Create() => UCL_EditorPage.Create<UCL_ReadingNotesManagePage>();
+
+        // 區塊職責：帶著書名開頁 —— 給外部頁（UCL_LibraryManagePage）「開啟對應該書的頁面」用。
+        // 物理意義：接合鍵取**書名**而不是 id。BookNotes 用 slug（`arakawa`）、新 Library 用
+        //          media_id（`comic-arakawa-under-the-bridge`），兩套命名對不起來；而本頁本來就是
+        //          以 metadata 標題跨 Archive 與 Library 比對，書名是目前唯一兩邊都有的鍵。
+        //          （若日後建了 slug ↔ media_id 對應表，這裡才有條件改成精確定位。）
+        // 數值影響：純唯讀搜尋。書名為空則只開頁不搜尋 —— 維持「空手入頁」的原行為，
+        //          不要因為呼叫端沒給書名就跑一次空字串搜尋（那會把全庫都撈出來）。
+        public static UCL_ReadingNotesManagePage CreateForTitle(string iTitle)
+        {
+            var aPage = Create();
+            if (!string.IsNullOrWhiteSpace(iTitle))
+            {
+                aPage.m_Query = iTitle.Trim();
+                aPage.Search();
+            }
+            return aPage;
+        }
 
         public override void Init(UCL_GUIPageController p_Controller)
         {
@@ -112,15 +133,106 @@ namespace UCL.Core.EditorLib.Page
 
                 foreach (SearchEntry entry in m_Results)
                 {
-                    using (new GUILayout.HorizontalScope("box"))
+                    using (new GUILayout.VerticalScope("box"))
                     {
-                        if (GUILayout.Button("📂 開啟", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            UCL_ExplorerUtil.Open(entry.Path, nameof(UCL_ReadingNotesManagePage));
-                        GUILayout.Label($"<b>{entry.Kind}</b>　{entry.Title}\n{entry.Detail}\n{entry.Path}", WrapLabelStyle);
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            if (GUILayout.Button("📂 開啟", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                UCL_ExplorerUtil.Open(entry.Path, nameof(UCL_ReadingNotesManagePage));
+                            GUILayout.Label($"<b>{entry.Kind}</b>　{entry.Title}\n{entry.Detail}\n{entry.Path}", WrapLabelStyle);
+                        }
+                        // 追回檢視：每位 reader 一顆鈕 —— 讀取與 Cmd_Library op=recall 走同一段服務層
+                        //（Tim 2026-08-06 拍板「頁面讀取與 Cmd 走同一段」；這裡不自己 parse 任何 JSON）。
+                        if (!string.IsNullOrEmpty(entry.MediaId) && entry.Readers.Count > 0)
+                        {
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label("追回：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                foreach (string reader in entry.Readers)
+                                {
+                                    if (GUILayout.Button($"📖 {reader}", UCL_GUIStyle.ButtonStyle,
+                                            GUILayout.ExpandWidth(false)))
+                                    {
+                                        LoadRecall(entry.MediaId, reader);
+                                    }
+                                }
+                                GUILayout.FlexibleSpace();
+                            }
+                        }
                     }
                 }
             }
+            DrawRecallPanel();
         }
+
+        // ===========================================================
+        // 區塊職責：追回檢視 —— 在頁內直接看 RenderRecall 的輸出（Tim QA 的主要對象）。
+        // 物理意義：與 Cmd_Library op=recall 共用 UCL_ReadingLibraryIO.RenderRecall（唯一 schema
+        //          實作者），本頁不長第二套讀取。「產生追回檔」= WriteRecallBrief，寫的也是
+        //          Cmd 寫的那個檔（letters/<persona>/_reading_recall_<media>.md）。
+        // 數值影響：檢視純讀；產檔會覆寫該 persona 的追回檔（機械產物，本來就每次重生成）。
+        // ===========================================================
+        string m_RecallMediaId = "";
+        string m_RecallReader = "";
+        string m_RecallText = "";
+        bool m_RecallFull = false;   // 預設精簡（round 只列索引）—— 全文動輒數千行，QA 先看骨架
+        Vector2 m_RecallScroll = Vector2.zero;
+
+        void LoadRecall(string mediaId, string reader)
+        {
+            m_RecallMediaId = mediaId;
+            m_RecallReader = reader;
+            string text = AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.RenderRecall(
+                mediaId, reader, m_RecallFull, out string error);
+            m_RecallText = text ?? $"✗ 追回讀取失敗：{error}";
+            m_RecallScroll = Vector2.zero;
+        }
+
+        void DrawRecallPanel()
+        {
+            if (string.IsNullOrEmpty(m_RecallText)) return;
+            GUILayout.Space(8);
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"<b>📖 追回檢視</b>　{m_RecallMediaId} / {m_RecallReader}",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    bool full = GUILayout.Toggle(m_RecallFull, " round 全文", GUILayout.ExpandWidth(false));
+                    if (full != m_RecallFull)
+                    {
+                        m_RecallFull = full;
+                        LoadRecall(m_RecallMediaId, m_RecallReader);   // 切換即重讀，別讓畫面跟開關對不上
+                    }
+                    if (GUILayout.Button("💾 產生追回檔", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        string path = AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.WriteRecallBrief(
+                            m_RecallMediaId, m_RecallReader, true, out string error);
+                        m_LastStatus = path != null ? $"✓ 追回檔已寫出：{path}" : $"✗ 追回檔寫出失敗：{error}";
+                    }
+                    if (GUILayout.Button("✕ 關閉", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_RecallText = "";
+                        return;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                using (var sv = new GUILayout.ScrollViewScope(m_RecallScroll,
+                           GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(320))))
+                {
+                    m_RecallScroll = sv.scrollPosition;
+                    // 唯讀 TextArea：QA 時要能選取比對，不是只能看
+                    UnityEditor.EditorGUILayout.TextArea(m_RecallText, RecallTextStyle);
+                }
+            }
+        }
+
+        GUIStyle m_RecallTextStyle;
+        GUIStyle RecallTextStyle => m_RecallTextStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
+        {
+            wordWrap = true,
+            richText = false,
+        };
 
         void Search()
         {
@@ -185,12 +297,23 @@ namespace UCL.Core.EditorLib.Page
                 string mediaId = media.GetString("media_id", Path.GetFileName(mediaDir));
                 string mediaKind = media.GetString("media_kind", "unknown");
                 if (!Matches(query, title, mediaId, workId)) continue;
+                // readers 清單給追回檢視按鈕用 —— 只列目錄名，不在搜尋階段讀 reader.json
+                var readers = new List<string>();
+                string readersRoot = Path.Combine(mediaDir, "readers");
+                if (Directory.Exists(readersRoot))
+                {
+                    foreach (string readerDir in Directory.GetDirectories(readersRoot))
+                        readers.Add(Path.GetFileName(readerDir));
+                    readers.Sort(StringComparer.OrdinalIgnoreCase);
+                }
                 m_Results.Add(new SearchEntry
                 {
                     Kind = "Library（新 schema）",
                     Title = title,
                     Detail = $"media_id: {mediaId}　media_kind: {mediaKind}　work_id: {workId}",
                     Path = mediaDir,
+                    MediaId = mediaId,
+                    Readers = readers,
                 });
             }
         }

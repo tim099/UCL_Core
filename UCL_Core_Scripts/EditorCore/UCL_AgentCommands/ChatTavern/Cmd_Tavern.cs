@@ -469,8 +469,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                        GetArg(args, "sender",
                            GetArg(args, "sender_id", defaultVal))));
 
+        // 區塊職責：最近一次 Op_Post 寫入的 seq —— 給 in-process 呼叫端（Cmd_Library op=share 等）取回。
+        // 物理意義：Op_Post 是 400 行熱路徑，不為回傳值改控制流；用與 CurrentCmdId 同型的
+        //          static slot 慣例遞出。Runner 單線程逐筆執行，slot 不會被並發覆寫。
+        // 數值影響：Op_Post 進場歸零；成功寫入後 = seq。呼叫端讀到 0 = post 被拒或未寫入
+        //          （原因在 _last_op.md）。**只在同一筆 cmd 的執行流程內讀**，跨 cmd 讀是舊值。
+        public static int LastPostSeq;
+
         async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
+            LastPostSeq = 0;
             string roomId = GetArg(args, "room", "");
             // 正名 agent；sender / sender_id / agent_id 為別名，id 另外補（與 op=join 的 id 命名相容）
             string senderId = GetAgentArg(args, GetArg(args, "id", ""));
@@ -802,6 +810,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // quiet=true (測試用) → 跳過 Discord mirror (其他 IO 寫檔行為照舊).
             bool quiet = string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase);
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
+            LastPostSeq = seq;   // in-process 呼叫端（op=share 等）由此取回 —— 見欄位註解
 
             // R7 (T07 chat-flow-robust) — 每次發言自動更新 sender presence（status=active + current_room）
             // 物理意義：跟 R7 mention parser + cross-channel notify 配套 — 查 presence.current_room 提示對方來哪個房
@@ -875,6 +884,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // 取代原本「跑 treasury_commit_credit.py 手動請款」那條（該 script 已於 2026-07-30 移除，
                 // 實證從 2026-05-10 起就沒人請過 → 規則長在自覺上會死）。
                 TryAutoCreditCommitPost(senderId, roomId, seq, earlyMeta);
+
+                // Sub-rule E: reading_note（Tim 2026-08-07 拍板）— tag=reading-note → +3 token。
+                // 凡套用閱讀心得架構的分享（Cmd_Library op=share 自動蓋此 tag）一筆心得同一價。
+                // 防重不在這裡：op=share 端以 round 的 shared_seq receipt 拒絕重發（源頭把關），
+                // 本 sub-rule 只認 tag —— 手貼同 tag 骗酬與 commit 同 SHA 重貼同屬社會約束層。
+                TryAutoCreditReadingNote(senderId, roomId, seq, earlyMeta);
             }
 
             // Discord tavern mirror 由 UCL_DiscordMirrorDaemon poll 訊息檔送出 (2026-07-28: 寫入端不再觸發).
@@ -1050,6 +1065,41 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //   - fail-swallow：不擋 post 主流程也不擋其他 sub-rule
         // ===========================================================
         const int COMMIT_POST_REWARD = 5;
+
+        // 一筆閱讀心得的分享獎金（Tim 2026-08-07 拍板：不限漫畫，套用閱讀心得架構者一律同價）
+        const int READING_NOTE_REWARD = 3;
+
+        // ===========================================================
+        // 區塊：T45 sub-rule E — reading_note 分享獎金
+        // 物理意義：閱讀心得走 Cmd_Library op=share 發進酒館（meta.tag=reading-note）→ +3 token。
+        //          與 sub-rule A（post_reward +1）可疊加 —— A 是「發了話」的底薪，E 是「交了心得」的稿費，
+        //          兩者計的是不同的事（與 commit_post 疊加邏輯同型）。
+        // 數值影響：source_kind="reading_note"、source_ref=<room>#seq=<seq>（seq 唯一 → 天然冪等鍵）。
+        // 邊界：fail-swallow 不擋 post 主流程；出資方（HumanPayerSenders）不領。
+        // ===========================================================
+        static void TryAutoCreditReadingNote(string senderId, string roomId, int seq, Dictionary<string, string> meta)
+        {
+            try
+            {
+                if (meta == null) return;
+                if (!meta.TryGetValue("tag", out var tag) || tag != "reading-note") return;
+                if (HumanPayerSenders.Contains(senderId)) return;
+
+                UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
+                    accountId: senderId,
+                    amount: READING_NOTE_REWARD,
+                    sourceKind: "reading_note",
+                    sourceRef: PostRewardSourceRef(roomId, seq),
+                    description: $"reading note share reward: {roomId}#seq={seq}",
+                    callerAgentId: "system",
+                    cmdId: $"reading_note_{roomId}_{seq}");
+                Debug.Log($"[Tavern] reading_note auto-credit +{READING_NOTE_REWARD} → {senderId} (seq={seq})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] T45 reading_note auto-credit fail（post 主流程不受影響）：{ex.Message}");
+            }
+        }
 
         static void TryAutoCreditCommitPost(string senderId, string roomId, int seq, Dictionary<string, string> meta)
         {

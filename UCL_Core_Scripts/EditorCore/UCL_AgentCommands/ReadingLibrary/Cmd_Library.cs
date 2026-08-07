@@ -45,7 +45,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view（required） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share（required） | " +
+            "agent=酒館發文的錢包身分，例 Zeta（share required —— 計酬進誰的帳不能猜） | " +
+            "room=酒館房間 id（share 選填，default tavern） | " +
+            "round=要分享的 round 號（share 選填；缺 = 該章最新一輪） | " +
             "character=人物 id（add_character / revise_view required） | " +
             "name=人物顯示名（add_character required） | name_original=原文讀音，供 STT prompt 用（選填） | " +
             "facts=已確認的客觀資料（選填；與主觀 view 分開存） | " +
@@ -105,11 +108,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "bookmark": Op_Bookmark(args); break;
                 case "add_character": Op_AddCharacter(args); break;
                 case "revise_view": Op_ReviseView(args); break;
+                case "share": await Op_Share(args, token); break;
 
                 default:
                     throw new ArgumentException(
                         $"[{CommandType}] 未知 op：{op}" +
-                        "（可用：paths / recall / media_init / note_chapter / bookmark）");
+                        "（可用：paths / recall / media_init / note_chapter / bookmark / " +
+                        "add_character / revise_view / share）");
             }
         }
 
@@ -261,6 +266,68 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 (recall ?? $"> [!WARNING]\n> 心得已落盤，但讀回視圖生成失敗：{recallErr}\n"));
 
             Debug.Log($"[{CommandType}] note_chapter → {mediaId} / {persona} / {chapterId} r{roundNumber}");
+        }
+
+        /// <summary>
+        /// 區塊職責：把某章某 round 的心得發進酒館，並把 seq 落回該 round 當 receipt。
+        /// 物理意義：發文**必須**走 Cmd_Tavern 的 Op_Post 同一條 pipeline（in-process 經 registry 呼叫）——
+        ///           自呼 WriteMessageWithSeq 會漏 mirror / inbox 路由 / mention 解析 / 計酬判定四件事
+        ///           （2026-08-06 定案的硬規則）。seq 由 Cmd_Tavern.LastPostSeq static slot 取回。
+        /// 數值影響：心得檔只讀不寫（除了 shared_seq receipt）；發文失敗不回滾任何檔
+        ///           （檔優先於投影）。同 round 已有 shared_seq → 拒發（防重複計酬）。
+        /// </summary>
+        async UniTask Op_Share(Dictionary<string, string> args, CancellationToken token)
+        {
+            string persona = RequireId(args, "persona");
+            string mediaId = RequireId(args, "media_id");
+            string agent = GetArg(args, "agent", "").Trim();
+            if (string.IsNullOrEmpty(agent))
+                throw new ArgumentException($"[{CommandType}] agent 必填（酒館發文的錢包身分）—— 計酬進誰的帳不能猜");
+            string chapterId = GetArg(args, "chapter", "").Trim();
+            if (!UCL_ReadingLibraryIO.IsValidChapterId(chapterId))
+                throw new ArgumentException($"[{CommandType}] chapter 須為四位數字：{chapterId}");
+            int round = int.TryParse(GetArg(args, "round", "").Trim(), out int r) ? r : 0;
+
+            string body = UCL_ReadingLibraryIO.BuildShareBody(mediaId, persona, chapterId, ref round, out string error);
+            if (body == null)
+                throw new InvalidOperationException($"[{CommandType}] share 失敗：{error}");
+
+            // 經 registry 拿 Tavern handler —— 跟 queue 分發同一個 instance，同一條 Op_Post pipeline
+            var tavern = UCL_AgentCommandRegistry.Get("Tavern");
+            if (tavern == null)
+                throw new InvalidOperationException($"[{CommandType}] 找不到 Tavern handler —— registry 未註冊？");
+            var tavernArgs = new Dictionary<string, string>
+            {
+                ["op"] = "post",
+                ["room"] = GetArg(args, "room", "tavern").Trim(),
+                ["agent"] = agent,
+                ["persona"] = persona,
+                ["body"] = body,
+                ["meta"] = "{\"tag\":\"reading-note\",\"category\":\"reading\"}",
+            };
+            // token enforce / caller 環境標記照原樣穿透 —— share 不該是繞過驗證的側門
+            if (args.TryGetValue("session_token", out string st) && !string.IsNullOrEmpty(st))
+                tavernArgs["session_token"] = st;
+            if (args.TryGetValue("_caller_env_marker", out string cem) && !string.IsNullOrEmpty(cem))
+                tavernArgs["_caller_env_marker"] = cem;
+
+            ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+            await tavern.ExecuteAsync(tavernArgs, token);
+            int seq = ChatTavern.Cmd_Tavern.LastPostSeq;
+            if (seq <= 0)
+                throw new InvalidOperationException(
+                    $"[{CommandType}] 酒館發文未取得 seq —— post 可能被 Op_Post 拒絕（原因見 _last_op.md）。" +
+                    "心得檔不受影響，修好參數重新 share 即可。");
+
+            UCL_ReadingLibraryIO.RecordSharedSeq(mediaId, persona, chapterId, round, seq, out string recErr);
+            string receiptNote = string.IsNullOrEmpty(recErr)
+                ? $"- receipt：`shared_seq={seq}` 已落 chapter.json round {round}"
+                : $"> [!WARNING]\n> 已發文（seq={seq}）但 receipt 落檔失敗：{recErr}\n" +
+                  $"> 請人工把 shared_seq={seq} 補進該 round —— 別重發（會重複計酬）。";
+
+            Cmd_Library_Helpers.ResolveLastOp(
+                $"# 📚 Library share\n\n- ✅ 已發酒館：seq={seq}（{mediaId} / {chapterId} r{round} by {persona}）\n{receiptNote}");
+            Debug.Log($"[{CommandType}] share → {mediaId}/{chapterId} r{round} seq={seq}");
         }
 
         /// <summary>

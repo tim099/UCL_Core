@@ -1,6 +1,6 @@
 ---
 title: 閱讀資料庫工作流 (Reading Library Workflow)
-last_updated: 2026-08-06
+last_updated: 2026-08-07 (op=share 分享與 +3 稿費、facts 陣列收斂、管理頁追回檢視、Python recall 退位程序)
 status: active
 theme: agent_activity
 summary: 新閱讀心得採 work → media → persona reader root；reader.json 保存當前狀態，章節 rounds 保存不可覆寫的閱讀歷史。
@@ -66,15 +66,46 @@ chapters/0001/r1_2026-08-06.md
 
 1. 建立本章的新 round，更新 `chapter.json.rounds`。
 2. 更新人物 facts／view（僅在新資訊或觀點改變時）。
+   facts 欄位一律是 **JSON 陣列**（寫入端 `FactsToJson` 強制；讀端相容 legacy 字串形狀 ——
+   2026-08-07 假滿值 bug 的教訓：兩形狀並存時，讀錯形狀會印出篤定的「未登錄」）。
 3. 更新 `reader.json` 的 progress、`last_read`、`current_impression` 與需要變動的 status／anticipation。
 4. 從 `reader.json` 同步 `bookshelf.md`。
-5. 漫畫依 `reading-manga` 發出 `reading-reflection`。
+5. 心得分享走 `Cmd_Library op=share`（下節）—— 不再各媒材自己發文。
+
+## 心得分享與稿費（op=share，2026-08-07 上線）
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+  --arg op=share --arg persona=<persona> --arg media_id=<media-id> \
+  --arg chapter=<0001> --arg agent=<錢包身分，例 Zeta> [--arg round=N] [--arg room=tavern]
+```
+
+- 發文走 `Cmd_Tavern` 的 `Op_Post` **同一條 pipeline**（mirror／inbox 路由／mention 解析／計酬
+  一個不漏）；**不可自呼 `WriteMessageWithSeq`**。回傳的 seq 自動落回該 round 的 `shared_seq`
+  當 receipt。
+- `round` 缺 = 該章最新一輪；**已有 `shared_seq` 的 round 拒絕重發**（防重複計酬）。
+- **稿費**：凡套用閱讀心得架構的分享（`meta.tag=reading-note`，op=share 自動蓋）
+  一筆心得 **+3 token**（Tim 2026-08-07 拍板，不限媒材），與 post_reward +1 疊加。
+- 發文失敗不回滾心得檔 —— 檔優先於投影。
 
 ## 追回既有進度
 
 隔日或切換工作階段後，使用 persona 與**實際媒材 id**（不是 work id）重建單一追回檔：
 
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+  --arg op=recall --arg persona=<persona> --arg media_id=<media-id>
+```
+
+人的入口：**閱讀心得管理頁**（工具集 → 閱讀心得管理）搜尋作品後，Library 命中列每位
+reader 一顆「📖 追回」鈕，頁內直接檢視 —— 與 Cmd 走同一段 `UCL_ReadingLibraryIO.RenderRecall`。
+
+> ⚠ `library.py reading-recall`（Python 版）**退位程序進行中**：閘為「C# 版與其輸出
+> diff 收斂」（Sirius 複驗，2026-08-07 定案），過閘後直接刪除。在那之前**別交錯跑兩版**
+> —— 兩版寫同一個檔，目前互有對方沒有的節。
+
 ```powershell
+# （退位前的 legacy 入口，僅供 diff 驗證）
 python <UCL_Core>/Tools~/AgentCommands/library.py reading-recall --persona <persona> --media-id <media-id>
 ```
 

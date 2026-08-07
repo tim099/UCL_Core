@@ -510,7 +510,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             profile[Key_CharacterId] = characterId;
             profile[Key_Name] = name;
             profile[Key_NameOriginal] = nameOriginal ?? "";
-            profile[Key_Facts] = facts ?? "";
+            profile[Key_Facts] = FactsToJson(facts);   // 一律陣列 —— 寫端收斂，見 FactsToJson
             profile[Key_SchemaVersion] = 1;
             SaveJson(profilePath, profile);
 
@@ -560,7 +560,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
 
             if (!string.IsNullOrEmpty(facts))
             {
-                profile[Key_Facts] = facts;
+                profile[Key_Facts] = FactsToJson(facts);   // 一律陣列 —— 寫端收斂，見 FactsToJson
                 SaveJson(profilePath, profile);
             }
 
@@ -730,6 +730,40 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             sb.AppendLine();
             sb.AppendLine(reader.GetString(Key_CurrentImpression, "（尚無）"));
             sb.AppendLine();
+            // 「作品與媒材」「書架投影」兩節 —— Python 版有、C# 初版漏（Sirius diff 抓到）。
+            // 收斂規則是逐節點名補齊，不是整段照抄任一邊（兩版互有對方沒有的節）。
+            sb.AppendLine("## 🗂 作品與媒材");
+            sb.AppendLine();
+            sb.AppendLine($"- work_id: `{(string.IsNullOrEmpty(workId) ? "unknown" : workId)}`");
+            if (work != null)
+            {
+                sb.AppendLine($"- title: {work.GetString(Key_Title, "（未登錄）")}");
+                sb.AppendLine($"- title_original: {work.GetString(Key_TitleOriginal, "（未登錄）")}");
+                sb.AppendLine($"- author: {work.GetString(Key_Author, "（未登錄）")}");
+                JsonData tags = work.Contains(Key_GenreTags) ? work[Key_GenreTags] : null;
+                if (tags != null && tags.IsArray && tags.Count > 0)
+                {
+                    var tagList = new List<string>();
+                    for (int i = 0; i < tags.Count; i++) tagList.Add(tags[i].GetString());
+                    sb.AppendLine($"- genre_tags: {string.Join(", ", tagList)}");
+                }
+                else
+                {
+                    sb.AppendLine("- genre_tags: （未登錄）");
+                }
+            }
+            else
+            {
+                sb.AppendLine("- （work.json 未登錄或讀取失敗 —— 只列 media 層資訊）");
+            }
+            sb.AppendLine();
+            sb.AppendLine("## 🗄 書架投影");
+            sb.AppendLine();
+            string shelfPath = Path.Combine(ReaderRoot(mediaId, persona), k_BookshelfName);
+            sb.AppendLine(File.Exists(shelfPath)
+                ? File.ReadAllText(shelfPath, Encoding.UTF8).TrimEnd()
+                : "（無 bookshelf 投影）");
+            sb.AppendLine();
             sb.AppendLine("## 📚 章節與 round");
             sb.AppendLine();
 
@@ -772,6 +806,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 for (int i = 0; i < rounds.Count; i++)
                 {
                     JsonData entry = rounds[i];
+                    // legacy round 條目可能是純字串檔名（Python 舊格式；library.py 端也容忍）——
+                    // 用物件 API 讀字串節點會拿到預設值，round 心得就靜默消失。
+                    if (entry != null && entry.IsString)
+                    {
+                        string legacyFile = entry.GetString();
+                        sb.AppendLine($"- **r?**（—）`{legacyFile}`　⚠ legacy 字串條目（無 round/日期欄）");
+                        if (fullRounds)
+                        {
+                            string legacyPath = Path.Combine(dir, legacyFile);
+                            sb.AppendLine();
+                            sb.AppendLine(File.Exists(legacyPath)
+                                ? File.ReadAllText(legacyPath, Encoding.UTF8).TrimEnd()
+                                : $"> [!WARNING]\n> 索引指向的 round 檔不存在：`{legacyFile}`");
+                            sb.AppendLine();
+                        }
+                        continue;
+                    }
                     string file = entry.GetString(Key_File, "");
                     sb.AppendLine($"- **r{entry.GetInt(Key_Round, 0)}**（{entry.GetString(Key_ReadingDate, "")}）" +
                                   $"`{file}`" +
@@ -836,8 +887,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 {
                     string nameOriginal = profile.GetString(Key_NameOriginal, "");
                     if (!string.IsNullOrEmpty(nameOriginal)) sb.AppendLine($"- 原文讀音：{nameOriginal}");
-                    string facts = profile.GetString(Key_Facts, "");
-                    sb.AppendLine("- **已確認 facts**：" + (string.IsNullOrEmpty(facts) ? "（未登錄）" : facts));
+                    // facts 有兩種形狀：陣列（Python 時代寫的 legacy corpus）與字串（C# 初版寫的）。
+                    // 舊碼用 GetString 讀 —— 對陣列節點回傳預設值 "" → 印「（未登錄）」且無 warning。
+                    // 那是一個滿的、寫得很篤定的錯值：讀的人會以為自己真的沒登錄過
+                    //（Sirius 2026-08-07 用 dungeon 測資抓到，三個角色全中）。
+                    var facts = ReadFactsList(profile);
+                    if (facts.Count == 0)
+                    {
+                        sb.AppendLine("- **已確認 facts**：（未登錄）");
+                    }
+                    else
+                    {
+                        sb.AppendLine("- **已確認 facts**：");
+                        foreach (var f in facts) sb.AppendLine($"  - {f}");
+                    }
                 }
 
                 // view 版本史：v1 → vN 依檔名排序並列，**不只印最新版**
@@ -859,6 +922,55 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             }
         }
 
+        // 區塊職責：讀 profile.json 的 facts —— 同時吃陣列與字串兩種形狀。
+        // 物理意義：legacy corpus（Python 寫的）是 JSON 陣列；C# 初版寫成單一字串。
+        //          schema 收斂方向是**陣列**（沿 corpus 多數），字串形狀讀入時按行拆開，
+        //          兩種來源在視圖層長一樣 —— 讀端相容、寫端從此只寫陣列（見 AddCharacter）。
+        static List<string> ReadFactsList(JsonData profile)
+        {
+            var o = new List<string>();
+            if (profile == null || !profile.Contains(Key_Facts)) return o;
+            JsonData f = profile[Key_Facts];
+            if (f == null) return o;
+            if (f.IsArray)
+            {
+                for (int i = 0; i < f.Count; i++)
+                {
+                    string s = f[i]?.GetString() ?? "";
+                    if (!string.IsNullOrEmpty(s)) o.Add(s);
+                }
+            }
+            else
+            {
+                string s = f.GetString();
+                if (!string.IsNullOrEmpty(s))
+                {
+                    foreach (var line in s.Split('\n'))
+                    {
+                        string t = line.Trim();
+                        if (t.Length > 0) o.Add(t);
+                    }
+                }
+            }
+            return o;
+        }
+
+        // facts 寫入端的唯一出口：一律寫**陣列**（多行輸入按行拆）。
+        // 字串與陣列兩種寫法並存就是這次假滿值 bug 的土壤 —— 寫端收斂成一種。
+        static JsonData FactsToJson(string facts)
+        {
+            var arr = new JsonData().ToArray();
+            if (!string.IsNullOrEmpty(facts))
+            {
+                foreach (var line in facts.Split('\n'))
+                {
+                    string t = line.Trim();
+                    if (t.Length > 0) arr.Add(t);
+                }
+            }
+            return arr;
+        }
+
         // ===========================================================
         // 區塊職責：把追回檔寫進該 persona 自己的 letters/ —— 與 _wake_brief.md 同一個家。
         // 物理意義：**沿用 Python 版的同一個檔名與路徑**（`_reading_recall_<media-id>.md`）。
@@ -877,6 +989,88 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         }
 
         /// <summary>把某筆 round 的酒館 seq 寫回索引 —— 「已發文」的可驗證 receipt。</summary>
+        // ===========================================================
+        // 區塊職責：組一則「章節心得 → 酒館」的發文內文（op=share 用）。
+        // 物理意義：round 檔是事實源，酒館貼文是投影 —— 本方法只讀不寫；
+        //          發文成敗都不回滾心得檔（檔優先於投影，basecamp 2026-08-06 定案）。
+        // 數值影響：roundNumber<=0 → 取該章最大 round 並回填；已有 shared_seq 的 round
+        //          直接拒絕（同一則心得重發會重複計酬，與 commit 同 SHA 重貼同型）。
+        // ===========================================================
+        public static string BuildShareBody(string mediaId, string persona, string chapterId,
+                                            ref int roundNumber, out string error)
+        {
+            error = null;
+            if (LoadReader(mediaId, persona, out error) == null) return null;
+            string chapterDir = ChapterDir(mediaId, persona, chapterId);
+            JsonData chapter = LoadJson(Path.Combine(chapterDir, k_ChapterJsonName), out error);
+            if (chapter == null) return null;
+            JsonData rounds = chapter.Contains(Key_Rounds) ? chapter[Key_Rounds] : null;
+            if (rounds == null || !rounds.IsArray || rounds.Count == 0)
+            {
+                error = "chapter.json 缺 rounds —— 先 note_chapter 再 share";
+                return null;
+            }
+            JsonData hit = null;
+            JsonData maxEntry = null;
+            int maxRound = 0;
+            for (int i = 0; i < rounds.Count; i++)
+            {
+                JsonData entry = rounds[i];
+                if (entry == null || entry.IsString) continue;   // legacy 字串條目沒有 round 號可對
+                int rn = entry.GetInt(Key_Round, 0);
+                if (rn > maxRound) { maxRound = rn; maxEntry = entry; }
+                if (roundNumber > 0 && rn == roundNumber) hit = entry;
+            }
+            if (roundNumber <= 0) { hit = maxEntry; roundNumber = maxRound; }
+            if (hit == null)
+            {
+                error = $"找不到 round {roundNumber}（該章最大 round = {maxRound}）";
+                return null;
+            }
+            if (hit.Contains(Key_SharedSeq))
+            {
+                error = $"round {roundNumber} 已發過（seq={hit.GetInt(Key_SharedSeq, 0)}）—— " +
+                        "重發會重複領發文計酬；真要重發請先人工清掉該 round 的 shared_seq";
+                return null;
+            }
+            string file = hit.GetString(Key_File, "");
+            string roundPath = Path.Combine(chapterDir, file);
+            if (!File.Exists(roundPath))
+            {
+                error = $"索引指向的 round 檔不存在：{file}";
+                return null;
+            }
+            string content = StripFrontmatter(File.ReadAllText(roundPath, Encoding.UTF8)).Trim();
+
+            // 標頭：作品名（media → work 兩跳，缺檔就退回 mediaId，不因標頭缺料擋分享）
+            string workTitle = mediaId;
+            JsonData media = LoadJson(Path.Combine(MediaRoot(mediaId), k_MediaJsonName), out _);
+            if (media != null)
+            {
+                string workId = media.GetString(Key_WorkId, "");
+                JsonData work = string.IsNullOrEmpty(workId) ? null
+                    : LoadJson(Path.Combine(WorkRoot(workId), k_WorkJsonName), out _);
+                if (work != null) workTitle = work.GetString(Key_Title, mediaId);
+            }
+            string display = chapter.GetString(Key_DisplayNumber, "");
+            if (string.IsNullOrEmpty(display)) display = chapterId;
+            string chapterTitle = chapter.GetString(Key_Title, "");
+
+            return $"📖 **閱讀心得｜{workTitle}** {display}" +
+                   (string.IsNullOrEmpty(chapterTitle) ? "" : $"｜{chapterTitle}") +
+                   $"　(r{roundNumber} by {persona})\n\n{content}";
+        }
+
+        // frontmatter 只認「檔案開頭」的 --- 區塊 —— 內文中的 hr 不受影響。
+        static string StripFrontmatter(string text)
+        {
+            if (string.IsNullOrEmpty(text) || !text.StartsWith("---")) return text;
+            int end = text.IndexOf("\n---", 3, StringComparison.Ordinal);
+            if (end < 0) return text;
+            int lineEnd = text.IndexOf('\n', end + 1);
+            return lineEnd < 0 ? "" : text.Substring(lineEnd + 1);
+        }
+
         public static void RecordSharedSeq(string mediaId, string persona, string chapterId,
                                            int roundNumber, int seq, out string error)
         {

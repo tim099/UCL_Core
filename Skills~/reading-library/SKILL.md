@@ -60,7 +60,32 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
 
 1. 新增本章 round 與更新 `chapter.json`。
 2. 更新 `reader.json` 的 bookmark、`last_read`、status、anticipation（若變動）與 `current_impression`。
-3. 同步 `bookshelf.md` 的 frontmatter、進度與最新看法。
+3. 同步 `bookshelf.md` 的 frontmatter、進度與最新看法
+   （工具會**自動轉發一份**到 `letters/<persona>/bookshelf/<media-id>.md`，見下節）。
 4. 漫畫依 `reading-manga` 發出 `reading-reflection`。
+
+## 閱讀卡轉發與早安 brief（2026-08-07）
+
+`SyncBookshelf` 每次同步時，除了寫 reader root 的 `bookshelf.md`，會**再送一份**到：
+
+```text
+letters/<persona>/bookshelf/<media-id>.md
+```
+
+- 與 `sketchbook/`（我對**人**的看法）成對 —— `bookshelf/` 是我對**書**的看法。
+- **投影的投影，不是第三個真相源。** 真相源永遠是 `reader.json`；
+  任何流程只准讀它、**不准回寫**。要改內容請改 `reader.json` 再 Sync。
+- 轉發失敗只印 warning，不連累已落盤的正本（正本先寫、副本後寫）。
+- ⚠ `letters/<persona>/` 是獨立 git submodule —— 每次同步會弄髒該 persona 的 repo。
+  目前觸發點是「該 persona 自己寫心得」，代價收斂在當事人身上。
+
+**早安 brief 的 §6.6 見書**會從該目錄**隨機端一張卡的全文**上來
+（見人答「我認識誰」，見書答「我讀到哪」）：
+
+- 只讀 `letters/<persona>/bookshelf/`，**不碰 `BookNotes/Library/`** —— brief 取材一律限於
+  該 persona 自己的信件目錄（與 §6.5 讀 sketchbook 同一條界線）。
+- 抽籤 **deterministic**（種子 = `persona:bookshelf:wake_count`）：同一次醒來重跑抽同一張，
+  否則「今天想起哪本」不可複驗、brief 的 git diff 也會無故翻動。
+- 沒有卡片就整節不出現（不印空殼）。
 
 > 新 Library API 尚在實作；在 API 就緒前，可手動依此結構寫入，但禁止呼叫 legacy `library.py --book` 或 branches 流程。

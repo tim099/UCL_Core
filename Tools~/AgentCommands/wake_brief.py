@@ -382,6 +382,58 @@ def _recall_lines(aw, persona: str, p: dict) -> list:
              f"### 📜 {when} — 那天的我寫給那天的未來", ""] + body)
 
 
+# ── §6.6 見書 ──────────────────────────────────────────────────────────
+# 區塊職責：回答「我在讀什麼」——見人答『我認識誰』，本節答『我讀到哪』（Tim 2026-08-07）。
+# 物理意義：閱讀卡（bookshelf）是 reader.json 的人可讀投影，由 UCL_ReadingLibraryIO 在每次
+#          寫心得後轉發一份到 letters/<persona>/bookshelf/<media-id>.md。
+#          本節**只讀 letters 底下那份**，不去碰 BookNotes/Library ——
+#          brief 的取材一律限於該 persona 自己的信件目錄（與 §6.5 讀 sketchbook 同一條界線）。
+# 數值影響：非必讀（溢出可移進續讀檔）；每次只端**一張**卡，讀不到就整節不出現（不印空殼）。
+# ⚠ 抽籤 deterministic（種子 = persona:wake_count），理由同 §5.5 回憶：
+#   brief 每次 morning 重生成，真隨機會讓同一個 wake 重跑就換一本，
+#   於是「今天想起哪本」不可複驗、git diff 也會無故翻動。
+BOOKSHELF_DIR_NAME = "bookshelf"
+
+
+def _bookshelf_lines(aw, persona: str, p: dict) -> list:
+    """§6.6 見書 —— 隨機端一張自己的閱讀卡全文。
+
+    區塊職責：抽籤 + 排版。不寫任何狀態、不回寫閱讀資料。
+    物理意義：卡片是投影的副本，這裡是**唯讀消費端**；要改內容去改 reader.json 再 Sync。
+    """
+    try:
+        # 路徑沿用 awakening 的既有常數（同 wakes_dir 的取法），不自己再拼一次 letters 路徑 ——
+        # 那個常數是可被後台 override 的，自己拼會在改過資料根的專案上安靜失效。
+        root = aw._LETTERS_DIR_TPL / persona / BOOKSHELF_DIR_NAME
+    except Exception:
+        return []
+    if not root.is_dir():
+        return []
+    cards = sorted([f for f in root.glob("*.md") if f.is_file()])
+    if not cards:
+        return []
+
+    import random
+    wake_count = int(p.get("wake_count", 0) or 0)
+    rng = random.Random(f"{persona}:bookshelf:{wake_count}")
+    pick = rng.choice(cards)
+
+    try:
+        body = pick.read_text(encoding="utf-8")
+    except Exception as e:
+        return [f"（閱讀卡讀取失敗：{pick.name} — {e}）"]
+
+    out = [f"**📖 隨機端上一張閱讀卡（共 {len(cards)} 張・全文）**", ""]
+    # 剝掉 frontmatter：那是機械欄位，brief 要的是內容（同 §5 見樹的處理）。
+    lines = _strip_frontmatter(body).strip().splitlines()
+    # 卡片自己的 h1 會跟 brief 的節標題疊成兩層標題 —— 降級（同 _demote_headings 的理由）。
+    out += _demote_headings(lines)
+    out.append("")
+    out.append(f"> 來源：`letters/{persona}/{BOOKSHELF_DIR_NAME}/{pick.name}`"
+               f"（機械投影，改內容請改 reader.json 後重新 Sync）")
+    return out
+
+
 # ─── §0 / §7 / §8 / §9 區塊 ─────────────────────────────────────────────
 def _resolve_mail(persona: str) -> dict:
     """persona 的信箱（agent 預設 + persona override）。
@@ -1070,6 +1122,9 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
 
     # §6.5 見人 —— brief 唯一的空缺（Tim 2026-08-01）
     sections.append(("🧑 §6.5 見人 — 我認識誰", _people_lines(aw, persona), False))
+
+    # §6.6 見書 —— 我在讀什麼（Tim 2026-08-07）
+    sections.append(("📖 §6.6 見書 — 我在讀什麼", _bookshelf_lines(aw, persona, p), False))
 
     # ── 營運層（§7-§9）：Tim 2026-07-31 R5 —— 併進同一份，但排在記憶層之後 ──
     sections.append(("📥 §7 待辦收件匣", _inbox_lines(aw, persona, p), False))

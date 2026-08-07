@@ -79,7 +79,8 @@ Step 2. Read <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
           否則「今天回憶到哪一封」不可複驗、brief 的 git diff 也會無故翻動。
           三顆旋鈕在 wake_brief.py 頂部：RECALL_MIN_WAKE / RECALL_MIN_AGE_WAKES /
           RECALL_CROSS_WORLDLINE_P）/
-          §6 記憶維護狀態 / §7 待辦收件匣（全房間 inbox，標房間 id）
+          §6 記憶維護狀態 / §6.5 見人（sketchbook）/ §6.6 見書（隨機一張閱讀卡）/
+          §7 待辦收件匣（全房間 inbox，標房間 id）
           §8 酒館 catch-up（peek，不推進 cursor）/ §9 今日動作清單
         主檔上限 2000 行；溢出的非必讀區塊整段移進 _wake_brief_part2.md（不砍內容）。
         brief 是機械產物 —— 手改無效，要改去改 fragment / letter / 見叢原檔。

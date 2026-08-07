@@ -63,7 +63,21 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 文件 | 說明 |
 |---|---|
 | 🎨 **[UCL_GUILayout_Overview](API/UCL_GUILayout/UCL_GUILayout_Overview.md)** ⭐ | **8 檔 partial class 的整體導覽** — 設計分層、檔案職責、API 速查（按用途分組）、跨檔共通模式（三段式多載 / `[SerializeReference]` 多型自動偵測 / 反射快取）、三個少見但高價值 helper（`IntFieldAuto` / `PopupSearchCache` / `DrawCopyPaste`）|
+| 🪞 **[DrawObjectData](API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md)** ⭐ | **反射自動繪製整個物件介面** — 一行畫完一頁；四個客製化介面由小到大接管（`UCLI_ShortName` 名稱 / `UCLI_IsEnable` CheckBox / `UCLI_NameOnGUI` 整條標題列 / `UCLI_FieldOnGUI` 整個欄位）＋ NameOnGUI 與 IsEnable **互斥**的坑 |
 | 🎨 [UCL_GUIStyle_Overview](API/UCL_GUIStyle/UCL_GUIStyle_Overview.md) | **IMGUI 樣式中央** — `BoxStyle` / `ButtonStyle` / `LabelStyle` / `TextField/Area`、DPI 全域 `Scale`、EditorWindow / Runtime 雙 cache、`LabelStyle` 反指守則（不可給互動控制項） |
+
+---
+
+## ProviderCore（可替換的求值策略）
+
+把一個「值欄位」從固定值升級成可替換的求值策略；使用端只認 `GetXxx()`。
+宣告欄位務必加 `[SerializeReference]` —— 那是多型的**唯一觸發訊號**，少了它會**靜默**丟掉子類資料。
+
+| 文件 | 說明 |
+|---|---|
+| 🔤 **[UCL_StringProvider](API/ProviderCore/UCL_StringProvider.md)** ⭐ | **字串提供者基底** — implicit operator 雙向轉換、`[SerializeReference]` 必要性、序列化格式（ClassName）、用 `UCL_GUILayout.DrawList` 編輯清單、如何新增子類 |
+| 📝 [UCL_StringValueProvider](API/ProviderCore/UCL_StringValueProvider.md) | 預設實作 — 回傳固定字串；`ToString()` 空值顯示 `(empty)` 的理由 |
+| 🎲 [UCL_StringBookRecommendProvider](API/ProviderCore/UCL_StringBookRecommendProvider.md) | 從圖書館藏書隨機挑 N 本（預設 10）回傳書名；**Editor-only**（依賴 UCL_BooksIO）、無藏書回空字串 |
 
 ---
 

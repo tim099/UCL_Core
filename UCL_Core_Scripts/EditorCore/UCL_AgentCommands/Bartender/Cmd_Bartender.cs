@@ -52,11 +52,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 [time_add] 新增時間規則
   id=<rule_id>          規則 id (人類可讀)
   time=<HH:mm>          時間 (24-hour, e.g. 23:50)
-  target=<id>           提醒對象 (e.g. Tim)
   msg=<reminder>        提醒訊息
-  grace=<min>           寬限分鐘, 預設 10
-  penalty=<true/false>  啟用 HP penalty, 預設 false
-  penalty_interval=<min> penalty 重複間隔, 預設 5
 
 [time_list]   列時間規則
 
@@ -203,12 +199,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             string id = GetArg(args, "id", "");
             string time = GetArg(args, "time", "");
-            string target = GetArg(args, "target", "");
             string msg = GetArg(args, "msg", "");
-            int grace = ParseInt(GetArg(args, "grace", "10"), 10);
-            bool penalty = GetArg(args, "penalty", "false").ToLowerInvariant() == "true";
-            int penaltyInterval = ParseInt(GetArg(args, "penalty_interval", "5"), 5);
-            string penaltyTarget = GetArg(args, "penalty_target", target);
             string room = GetArg(args, "room", "tavern");
 
             if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ time_add 缺 id"); return; }
@@ -216,15 +207,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (string.IsNullOrEmpty(msg)) { WriteLastOp("❌ time_add 缺 msg"); return; }
 
             // 走 shared register helper
-            UCL_BartenderIO.RegisterTimeRule(
-                id, time, target, msg, grace, penalty, penaltyInterval, penaltyTarget, room);
+            UCL_BartenderIO.RegisterTimeRule(id, time, msg, room);
 
             WriteLastOp(
                 $"✅ Time rule `{id}` 新增/覆寫\n\n" +
                 $"- 時間: {time} (local)\n" +
-                $"- 對象: {target}\n" +
-                $"- 寬限: {grace} 分鐘\n" +
-                $"- penalty: {(penalty ? $"啟用 (每 {penaltyInterval} min 廣播一次累積 HP loss)" : "停用")}\n" +
                 $"- room: {room}\n" +
                 $"- msg: {Truncate(msg, 100)}");
         }
@@ -235,12 +222,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (data.rules.Count == 0) { WriteLastOp("📭 目前沒有任何時間規則."); return; }
             var sb = new StringBuilder();
             sb.AppendLine($"# ⏰ Bartender Time Rules ({data.rules.Count} 筆)\n");
-            sb.AppendLine("| id | time | target | grace | penalty | room | enabled |");
-            sb.AppendLine("|---|---|---|---|---|---|---|");
+            sb.AppendLine("| id | time | room | enabled |");
+            sb.AppendLine("|---|---|---|---|");
             foreach (var r in data.rules)
             {
                 if (r == null) continue;
-                sb.AppendLine($"| `{r.id}` | {r.time_hhmm} | {r.target_id} | {r.grace_minutes}min | {(r.penalty_enabled ? $"✓ /{r.penalty_interval_minutes}min" : "—")} | {r.target_room} | {r.enabled} |");
+                sb.AppendLine($"| `{r.id}` | {r.time_hhmm} | {r.target_room} | {r.enabled} |");
             }
             WriteLastOp(sb.ToString());
         }

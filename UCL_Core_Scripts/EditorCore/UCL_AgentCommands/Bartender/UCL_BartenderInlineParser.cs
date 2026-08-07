@@ -146,11 +146,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             public string id;
             public string time_hhmm;
-            public string target;
             public string msg;
-            public int grace = 10;
-            public bool penalty = false;
-            public int penalty_interval = 5;
             public string room = "tavern";
             public bool valid;
             public string error;
@@ -220,21 +216,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             spec.id = (ExtractValue(remaining, new[] { "id", "規則id" }) ?? "").Trim();
             spec.time_hhmm = (ExtractValue(remaining, new[] { "time", "時間" }) ?? "").Trim();
-            spec.target = (ExtractValue(remaining, new[] { "target", "對象" }) ?? "").Trim();
             spec.room = (ExtractValue(remaining, new[] { "room", "房間" }) ?? "tavern").Trim();
 
-            string graceRaw = ExtractValue(remaining, new[] { "grace", "寬限" });
-            if (!string.IsNullOrEmpty(graceRaw) && int.TryParse(graceRaw.Trim(), out int g)) spec.grace = Math.Max(0, g);
 
-            string penaltyRaw = ExtractValue(remaining, new[] { "penalty", "扣血" });
-            if (!string.IsNullOrEmpty(penaltyRaw))
-            {
-                string p = penaltyRaw.Trim().ToLowerInvariant();
-                spec.penalty = (p == "true" || p == "1" || p == "yes" || p == "y" || p == "啟用");
-            }
 
-            string penaltyIntervalRaw = ExtractValue(remaining, new[] { "penalty_interval", "扣血間隔" });
-            if (!string.IsNullOrEmpty(penaltyIntervalRaw) && int.TryParse(penaltyIntervalRaw.Trim(), out int pi)) spec.penalty_interval = Math.Max(1, pi);
 
             if (string.IsNullOrEmpty(spec.id)) { spec.error = "缺 id (規則 id)"; return spec; }
             if (string.IsNullOrEmpty(spec.time_hhmm)) { spec.error = "缺 time (HH:mm)"; return spec; }
@@ -302,9 +287,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             "room", "房間",
             "id", "規則id",
             "time", "時間",
-            "grace", "寬限",
-            "penalty", "扣血",
-            "penalty_interval", "扣血間隔",
             "account", "帳戶", "帳號", "acct",
             "limit", "筆數", "近期",
         };

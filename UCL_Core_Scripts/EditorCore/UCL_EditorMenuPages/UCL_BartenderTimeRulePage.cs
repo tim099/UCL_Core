@@ -10,6 +10,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UCL.Core.EditorLib.AgentCommands.Bartender;
+using UCL.Core.JsonLib;   // CloneObject / SerializeToJson —— 與 SaveTimeRules 同一個序列化器
 using UCL.Core.UI;
 
 namespace UCL.Core.EditorLib.Page
@@ -22,7 +23,7 @@ namespace UCL.Core.EditorLib.Page
         public static UCL_BartenderTimeRulePage Create() => UCL_EditorPage.Create<UCL_BartenderTimeRulePage>();
 
         // 區塊職責：工作副本與 dirty 狀態。
-        // 物理意義：m_WorkingRules 是 time_rules.json 的 deep copy（JsonUtility round-trip），
+        // 物理意義：m_WorkingRules 是 time_rules.json 的 deep copy（UCL.Core.JsonLib round-trip），
         //          編輯全打在副本上；m_SavedSnapshot 存「上次載入/存檔時」的序列化字串，
         //          dirty 判定 = 現況序列化 != snapshot（不靠人肉 flag，改什麼欄位都測得到）。
         // 數值影響：Reload 與 Save 都會重設 snapshot；副本與原檔的唯一同步點是 DoSave()。
@@ -30,23 +31,38 @@ namespace UCL.Core.EditorLib.Page
         string m_SavedSnapshot = "";
         string m_StatusMsg = "";
 
-        string m_NewRuleId = "";
-        string m_NewRuleTime = "09:00";
-        string m_NewRuleTarget = "";
 
-        bool IsDirty => m_WorkingRules != null && JsonUtility.ToJson(m_WorkingRules) != m_SavedSnapshot;
+        // 區塊職責：每條規則的 reminder_lines 清單 GUI 狀態（展開 / 搬移 / 刪除旗標由 DrawList 自行存取）。
+        // 物理意義：以 rule.id 分子字典 —— 換一條規則就換一份狀態，避免兩條規則共用展開狀態。
+        readonly UCL_ObjectDictionary m_RuleDic = new UCL_ObjectDictionary();
+
+        bool IsDirty => m_WorkingRules != null && SnapshotOf(m_WorkingRules) != m_SavedSnapshot;
+
+        // 區塊職責：把整份規則序列化成一個可比較的字串（dirty 判定 + 存檔基準）。
+        // 物理意義：**必須跟 SaveTimeRules 用同一個序列化器**（UCL.Core.JsonLib）——
+        //          reminder_lines 是多型清單，換一個序列化器就換一種形狀，
+        //          dirty 判定會跟實際落盤內容對不起來（改了卻說沒改，或反過來）。
+        static string SnapshotOf(UCL_BartenderTimeRuleList iList)
+        {
+            if (iList == null || iList.rules == null) return "";
+            // 整份交給 UCL 內建序列化 —— 與 SaveTimeRules 走同一條路，
+            // dirty 判定才會跟實際落盤內容一致。
+            return iList.SerializeToJson().ToJson();
+        }
 
         // 區塊職責：載入 time_rules.json 成工作副本（捨棄未存修改）。
-        // 物理意義：JsonUtility round-trip 做 deep copy — 讀進來的物件不與任何快取共享參照，
+        // 物理意義：UCL.Core.JsonLib round-trip 做 deep copy — 讀進來的物件不與任何快取共享參照，
         //          避免「別處持有同一份 list 順手 Save」把本頁未完成的編輯寫出去。
         // 數值影響：m_SavedSnapshot 同步重設 → dirty 歸零。
         void LoadWorkingCopy()
         {
             var loaded = UCL_BartenderIO.LoadTimeRules() ?? new UCL_BartenderTimeRuleList();
             loaded.rules ??= new List<UCL_BartenderTimeRule>();
-            m_WorkingRules = JsonUtility.FromJson<UCL_BartenderTimeRuleList>(JsonUtility.ToJson(loaded));
+            // deep copy 走 UCL 內建 CloneObject（UCL_JsonExtension）—— 不自己刻 round-trip 迴圈。
+            // 它內部就是「序列化再反序列化」，但與存檔共用同一個序列化器，不會有第二套語意。
+            m_WorkingRules = loaded.CloneObject();
             m_WorkingRules.rules ??= new List<UCL_BartenderTimeRule>();
-            m_SavedSnapshot = JsonUtility.ToJson(m_WorkingRules);
+            m_SavedSnapshot = SnapshotOf(m_WorkingRules);
             m_StatusMsg = "";
         }
 
@@ -69,7 +85,9 @@ namespace UCL.Core.EditorLib.Page
                     m_StatusMsg = $"✗ 規則 `{rule.id}` 的時間「{rule.time_hhmm}」不是合法 HH:mm — 未存檔（格式錯誤的規則 daemon 會靜默跳過, 等於悄悄停用）";
                     return;
                 }
-                if (string.IsNullOrWhiteSpace(rule.reminder_msg))
+                // 判空看的是**組裝後**的結果 —— 有 provider 但每個都求值成空字串，
+                // 廣播出去仍然是空訊息，跟沒填一樣要擋。
+                if (string.IsNullOrWhiteSpace(rule.GetReminderBody()))
                 {
                     m_StatusMsg = $"✗ 規則 `{rule.id}` 的內文是空的 — 未存檔";
                     return;
@@ -82,7 +100,7 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
             UCL_BartenderIO.SaveTimeRules(m_WorkingRules);
-            m_SavedSnapshot = JsonUtility.ToJson(m_WorkingRules);
+            m_SavedSnapshot = SnapshotOf(m_WorkingRules);
             m_StatusMsg = $"✓ 已存檔（{m_WorkingRules.rules.Count} 條）{DateTime.Now:HH:mm:ss}";
         }
 
@@ -145,102 +163,101 @@ namespace UCL.Core.EditorLib.Page
         {
             if (m_WorkingRules == null) LoadWorkingCopy();   // 首幀 lazy-load（不在 ctor 碰 IO）
 
-            using (new GUILayout.HorizontalScope())
-            {
-                GUILayout.Label($"<b>⏰ 時間規則（{m_WorkingRules.rules.Count}）{(IsDirty ? " *未存檔" : "")}</b>",
-                    new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
-                GUILayout.FlexibleSpace();
-            }
-            GUILayout.Label("修改只留在本頁，**按「💾 存檔」才寫回 time_rules.json**。時間格式 HH:mm（24 小時制）。",
-                UCL_GUIStyle.LabelStyle);
-            if (!string.IsNullOrEmpty(m_StatusMsg))
-                GUILayout.Label(m_StatusMsg, new GUIStyle(UCL_GUIStyle.LabelStyle)
-                { wordWrap = true, normal = { textColor = m_StatusMsg.StartsWith("✓") ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.5f, 0.5f) } });
-            GUILayout.Space(6);
+            GUILayout.Label("修改只留在本頁，**按「💾 存檔」才寫回 time_rules.json**。時間格式 HH:mm（24 小時制）。", UCL_GUIStyle.LabelStyle);
+            UCL_GUILayout.DrawObjectData(m_WorkingRules, m_RuleDic.GetSubDic(nameof(m_WorkingRules)), "時間規則清單", false);
 
-            DrawRulesPanel();
-            GUILayout.Space(8);
-            DrawAddRulePanel();
+            //using (new GUILayout.HorizontalScope())
+            //{
+            //    GUILayout.Label($"<b>⏰ 時間規則（{m_WorkingRules.rules.Count}）{(IsDirty ? " *未存檔" : "")}</b>",
+            //        new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+            //    GUILayout.FlexibleSpace();
+            //}
+            
+            //if (!string.IsNullOrEmpty(m_StatusMsg))
+            //    GUILayout.Label(m_StatusMsg, new GUIStyle(UCL_GUIStyle.LabelStyle)
+            //    { wordWrap = true, normal = { textColor = m_StatusMsg.StartsWith("✓") ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.5f, 0.5f) } });
+            //GUILayout.Space(6);
+
+            //DrawRulesPanel();
+            //GUILayout.Space(8);
+            //DrawAddRulePanel();
         }
 
-        // 區塊職責：規則清單 — 每條可編輯 time_hhmm / reminder_msg + enabled 開關 + 刪除。
-        // 物理意義：清單依 time_hhmm 排序顯示但**不重排底層 list**（排序只是視圖, 存檔保持原順序,
-        //          diff 才不會因顯示順序抖動）；TextArea 不自帶 scroll（Page 外層已有, 避免雙層卷軸）。
-        // 數值影響：一切修改僅落工作副本；刪除也只是副本移除, 按存檔才生效。
-        void DrawRulesPanel()
-        {
-            string deleteId = null;
-            foreach (var rule in m_WorkingRules.rules.OrderBy(r => r?.time_hhmm, StringComparer.Ordinal).ToList())
-            {
-                if (rule == null) continue;
-                using (new GUILayout.VerticalScope("box"))
-                {
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        bool next = UCL_GUILayout.CheckBox(rule.enabled);
-                        if (next != rule.enabled) rule.enabled = next;
-                        GUILayout.Label("時間", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                        string newTime = GUILayout.TextField(rule.time_hhmm ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(55)));
-                        if (newTime != rule.time_hhmm) rule.time_hhmm = newTime;
-                        if (!TryParseHHmm(rule.time_hhmm))
-                            GUILayout.Label("⚠ 非 HH:mm", new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(1f, 0.5f, 0.5f) } }, GUILayout.ExpandWidth(false));
-                        if (GUILayout.Button("刪除", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
-                            deleteId = rule.id;
-                        GUILayout.Label($"`{rule.id}` → {rule.target_room}{(string.IsNullOrEmpty(rule.target_id) ? "" : $" @{rule.target_id}")}  {(rule.penalty_enabled ? $"寬限 {rule.grace_minutes}m / penalty {rule.penalty_interval_minutes}m" : "單次提醒")}",
-                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                        GUILayout.FlexibleSpace();
-                    }
-                    string newMsg = GUILayout.TextArea(rule.reminder_msg ?? "", UCL_GUIStyle.TextAreaStyle,
-                        GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(40)));
-                    if (newMsg != rule.reminder_msg) rule.reminder_msg = newMsg;
-                }
-            }
-            if (deleteId != null) m_WorkingRules.rules.RemoveAll(r => r != null && r.id == deleteId);
-        }
 
-        // 區塊職責：新增規則列 — 從 AdminPage 抽離過來的建立入口。
-        // 物理意義：新規則直接進工作副本（內文先給佔位字串, 建完就地編輯）, 與其他修改一樣等存檔才落地；
-        //          與 AdminPage 舊版差異 = 舊版 RegisterTimeRule 即時寫檔, 本頁統一走顯式存檔語意。
-        // 數值影響：同 id 已存在 → 拒絕並提示（存檔時也有重複檢查, 這裡先擋掉好路徑）。
-        void DrawAddRulePanel()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                GUILayout.Label("<b>新增規則</b>（id / HH:mm / target 可空 — 建立後直接在上方編輯內文）",
-                    new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true });
-                using (new GUILayout.HorizontalScope())
-                {
-                    m_NewRuleId = GUILayout.TextField(m_NewRuleId, GUILayout.Width(UCL_GUIStyle.GetScaledSize(170)));
-                    m_NewRuleTime = GUILayout.TextField(m_NewRuleTime, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55)));
-                    m_NewRuleTarget = GUILayout.TextField(m_NewRuleTarget, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                    if (GUILayout.Button("＋ 新增", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.ExpandWidth(false)))
-                    {
-                        string id = m_NewRuleId.Trim();
-                        if (string.IsNullOrEmpty(id)) m_StatusMsg = "✗ 新增失敗：id 不可空";
-                        else if (m_WorkingRules.rules.Any(r => r != null && r.id == id)) m_StatusMsg = $"✗ 新增失敗：id `{id}` 已存在";
-                        else
-                        {
-                            m_WorkingRules.rules.Add(new UCL_BartenderTimeRule
-                            {
-                                id = id,
-                                time_hhmm = m_NewRuleTime.Trim(),
-                                target_id = m_NewRuleTarget.Trim(),
-                                reminder_msg = "（在此編輯提醒內文）",
-                                grace_minutes = 0,
-                                penalty_enabled = false,
-                                penalty_interval_minutes = 5,
-                                penalty_target = m_NewRuleTarget.Trim(),
-                                target_room = "tavern",
-                                enabled = true,
-                            });
-                            m_NewRuleId = "";
-                            m_StatusMsg = $"＋ 已加入 `{id}`（尚未存檔）";
-                        }
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-            }
-        }
+        // 區塊職責：單一規則的「提醒內文」編輯 —— 一個 UCL_StringProvider 清單，一個元素 = 一行。
+        // 物理意義：交給 UCL_GUILayout.DrawList 畫，而不是自己刻 TextArea 陣列 ——
+        //          DrawList 自帶新增 / 刪除 / 搬移與**多型子類下拉**，所以日後新增
+        //          UCL_StringProvider 子類（時間 / 查表 / 隨機…）時本頁一行都不用改。
+        //          自己刻的話，那些子類會編得過、但在這頁選不到。
+        // 數值影響：僅改工作副本；下方預覽呼叫的是 daemon 廣播時的同一支 GetReminderBody()，
+        //          所以「這裡看到的」與「屆時播出去的」在定義上一致，不會有兩套 join。
+        //void DrawReminderLines(UCL_BartenderTimeRule iRule)
+        //{
+        //    if (iRule == null) return;
+        //    if (iRule.reminder_lines == null) iRule.reminder_lines = new List<UCL_StringProvider>();
+
+        //    var aDic = m_RuleDic.GetSubDic(string.IsNullOrEmpty(iRule.id) ? "(noid)" : iRule.id);
+        //    UCL_GUILayout.DrawList(iRule.reminder_lines, aDic.GetSubDic("reminder_lines"), "提醒內文（每個元素一行）", true);
+
+        //    // 預覽：把實際會廣播的字串攤出來。多行 provider 最容易錯的是「換行到底接在哪」，
+        //    // 而那件事只有把組裝結果印出來才看得見。
+        //    string aBody = iRule.GetReminderBody();
+        //    if (string.IsNullOrWhiteSpace(aBody))
+        //    {
+        //        GUILayout.Label("<color=#ff8888>⚠ 組裝後是空訊息 — 存檔會被擋</color>",
+        //            new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true });
+        //    }
+        //    else
+        //    {
+        //        GUILayout.Label($"<color=#aaaaaa>預覽（{iRule.reminder_lines.Count} 行，廣播時以換行串接）：</color>",
+        //            new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true });
+        //        GUILayout.Label(aBody, UCL_GUIStyle.LabelStyle);
+        //    }
+        //}
+
+        //// 區塊職責：新增規則列 — 從 AdminPage 抽離過來的建立入口。
+        //// 物理意義：新規則直接進工作副本（內文先給佔位字串, 建完就地編輯）, 與其他修改一樣等存檔才落地；
+        ////          與 AdminPage 舊版差異 = 舊版 RegisterTimeRule 即時寫檔, 本頁統一走顯式存檔語意。
+        //// 數值影響：同 id 已存在 → 拒絕並提示（存檔時也有重複檢查, 這裡先擋掉好路徑）。
+        //void DrawAddRulePanel()
+        //{
+        //    using (new GUILayout.VerticalScope("box"))
+        //    {
+        //        GUILayout.Label("<b>新增規則</b>（id / HH:mm / target 可空 — 建立後直接在上方編輯內文）",
+        //            new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true });
+        //        using (new GUILayout.HorizontalScope())
+        //        {
+        //            m_NewRuleId = GUILayout.TextField(m_NewRuleId, GUILayout.Width(UCL_GUIStyle.GetScaledSize(170)));
+        //            m_NewRuleTime = GUILayout.TextField(m_NewRuleTime, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55)));
+        //            m_NewRuleTarget = GUILayout.TextField(m_NewRuleTarget, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+        //            if (GUILayout.Button("＋ 新增", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.ExpandWidth(false)))
+        //            {
+        //                string id = m_NewRuleId.Trim();
+        //                if (string.IsNullOrEmpty(id)) m_StatusMsg = "✗ 新增失敗：id 不可空";
+        //                else if (m_WorkingRules.rules.Any(r => r != null && r.id == id)) m_StatusMsg = $"✗ 新增失敗：id `{id}` 已存在";
+        //                else
+        //                {
+        //                    m_WorkingRules.rules.Add(new UCL_BartenderTimeRule
+        //                    {
+        //                        id = id,
+        //                        time_hhmm = m_NewRuleTime.Trim(),
+        //                        target_id = m_NewRuleTarget.Trim(),
+        //                        reminder_lines = new List<UCL_StringProvider> { new UCL_StringValueProvider("（在此編輯提醒內文）") },
+        //                        grace_minutes = 0,
+        //                        penalty_enabled = false,
+        //                        penalty_interval_minutes = 5,
+        //                        penalty_target = m_NewRuleTarget.Trim(),
+        //                        target_room = "tavern",
+        //                        enabled = true,
+        //                    });
+        //                    m_NewRuleId = "";
+        //                    m_StatusMsg = $"＋ 已加入 `{id}`（尚未存檔）";
+        //                }
+        //            }
+        //            GUILayout.FlexibleSpace();
+        //        }
+        //    }
+        //}
     }
 }
 #endif

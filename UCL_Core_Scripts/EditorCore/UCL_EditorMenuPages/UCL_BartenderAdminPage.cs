@@ -656,7 +656,7 @@ namespace UCL.Core.EditorLib.Page
                 foreach (var rule in m_TimeRules.rules.OrderBy(r => r?.time_hhmm, StringComparer.Ordinal))
                 {
                     if (rule == null) continue;
-                    GUILayout.Label($"{(rule.enabled ? "●" : "○")} {rule.time_hhmm}  {rule.id} → {rule.target_room}  {(rule.penalty_enabled ? $"寬限 {rule.grace_minutes}m / penalty {rule.penalty_interval_minutes}m" : "單次提醒")}", UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label($"{(rule.enabled ? "●" : "○")} {rule.time_hhmm}  {rule.id} → {rule.target_room}  單次提醒", UCL_GUIStyle.LabelStyle);
                 }
             }
         }

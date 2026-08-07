@@ -3,13 +3,17 @@ name: ucl-coding
 description: |
   UCL_Core C# 撰寫規範入口 — 動 C# 之前該知道的硬規則與慣例。
   涵蓋：外部 Process 一律走 UCL_ProcessRegistryService（防屍潮）、設定與 JSON 資料的 typed model 原則、
-  字串 key 常數化、註解規範、以及「該用哪個既有基建而不是自己重造」的指路。
+  字串 key 常數化、註解規範、IMGUI 一律走 UCL 封裝（優先 DrawObjectData 自動繪製），
+  以及「該用哪個既有基建而不是自己重造」的指路。
   觸發詞（case-insensitive substring，任一命中即 lazy-load）：
   - coding 規範 / coding standard / 撰寫規範 / 程式規範 / code style / 命名規範
   - 開 Process / Process.Start / spawn process / 子行程 / daemon / 屍潮 / 殭屍行程 / process 卡死
   - JsonData / typed model / 設定檔欄位 / EditorPrefs key / const string / 字串 key
   - 註解怎麼寫 / 區塊職責 / 物理意義 / 數值影響
   - 我要新增 C# 檔 / 要改 UCL_Core 的 code / 這段該放哪
+  - 畫介面 / IMGUI / GUILayout / Editor 頁
+  - DrawObjectData / DrawList / 自動繪製 / 手刻欄位
+  - UCLI_ShortName / UCLI_IsEnable / UCLI_NameOnGUI / UCLI_FieldOnGUI / SerializeReference 多型下拉
 ---
 
 # UCL Coding — C# 撰寫規範入口
@@ -34,8 +38,26 @@ description: |
 **不要直接堆 `GUILayout` 原生 API** —— UCL_Core 有一整層封裝，處理了 DPI 縮放、樣式一致性、
 搜尋式下拉、折疊狀態快取等等，而那些是原生 API 沒有的。
 
+> [!IMPORTANT]
+> **先問「能不能整個交給 `DrawObjectData` 畫」，再考慮手刻欄位。**
+> `UCL_GUILayout.DrawObjectData(obj, dic, name, false)` 用反射走訪欄位自動畫出整個編輯介面 ——
+> 巢狀物件、`List` / `Dictionary`、`[SerializeReference]` 多型下拉、折疊狀態全部內建。
+> 資料類別加欄位時，頁面**一行都不用改**。
+>
+> 顯示不滿意時**也不要退回手刻**，改實作對應介面只接管那一層：
+>
+> | 介面 | 接管範圍 |
+> |---|---|
+> | `UCLI_ShortName` | 顯示名稱（List 元素尤其該實作，否則每個元素都顯示型別名） |
+> | `UCLI_IsEnable` | 名稱前多一個 CheckBox（接到既有 enable 欄位，別另開狀態） |
+> | `UCLI_NameOnGUI` | 整條標題列 |
+> | `UCLI_FieldOnGUI` | 整個欄位的繪製（慣例：先呼叫 `DrawField` 再往下追加） |
+>
+> 用法、繪製順序與互斥陷阱 → `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md`
+
 | 要做什麼 | 走哪裡 |
 |---|---|
+| **自動畫出整個物件的編輯介面** | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md` |
 | 頁面骨架（`WindowName` / `ContentOnGUI` / `TopBarButtons` / `HelpURL`） | `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md` |
 | 建新頁的完整流程與地雷 | `ucl_core:Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md` |
 | 版面元件（popup / 搜尋下拉 / 各種 field） | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md` |
@@ -48,6 +70,12 @@ description: |
 - `UCL_GUILayout.PopupSearchCache` **選項為 0 時會 LogError** → 沒選項就整區隱藏。
 - 折疊狀態的 `UCL_ObjectDictionary` **不要跟 PopupSearchCache 共用** ——
   資料重載路徑上的 `Clear()` 會把折疊值一併清掉（症狀是「收不起來」，看起來像 key 撞名）。
+- `UCLI_NameOnGUI` 與 `UCLI_IsEnable` **互斥** —— 實作前者，後者的 CheckBox（以及 Icon、
+  名稱 Label、多型下拉）就不會被畫（原始碼是 if / else）。症狀是「加了 NameOnGUI 之後 CheckBox 不見了」。
+- `DrawObjectData` 的 `iIsAlwaysShowDetail: true` **會跳過整條標題列** ——
+  `UCLI_NameOnGUI` / `UCLI_IsEnable` 都畫在那裡，設 true 等於兩個介面同時失效。
+- 多型欄位（`List<基底型別>`）**一定要加 `[SerializeReference]`** —— 那是 UCL 判定多型的唯一訊號，
+  少了它存檔會丟掉子類資料，**而且不會報錯**。
 
 ## ⛔ 三條最常被違反的硬規則
 
@@ -74,6 +102,8 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 | 用檔案管理器開啟路徑 | `UCL_ExplorerUtil` |
 | 存持久化資料 | `UCL_Asset<T>` |
 | 頁面設定記住上次的值 | `EditorPrefs`（key 用 `const string`） |
+| **畫一個資料物件的編輯介面** | `UCL_GUILayout.DrawObjectData`（別手刻欄位；客製化走四個 `UCLI_*` 介面） |
+| 畫一個 List（含新增／刪除／搬移／多型下拉） | `UCL_GUILayout.DrawList` |
 | 搜尋式下拉選單 | `UCL_GUILayout.PopupSearchCache`（⚠ 選項為 0 時會 LogError，要先擋） |
 | 二次確認彈窗 | `UCL_OptionPage.Create(title, msg, ButtonData…)` |
 | 多語系字串 | `UCL_CodeLocalize.Get(key)`（**四語系檔都要加**；少鍵不會編譯錯，只會顯示成鍵名） |

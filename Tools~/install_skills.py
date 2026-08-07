@@ -330,8 +330,12 @@ def _extract_trigger_words(frontmatter: str) -> list[str]:
             collected.append(s)
         else:
             break
-    # 每行去掉開頭的 '- ' 子類 bullet 標記 (否則相鄰行會黏成「X - Y」融合 token)
-    blob = " ".join(re.sub(r"^\s*-\s+", " ", ln) for ln in collected)
+    # 每行去掉開頭的 '- ' 子類 bullet 標記，並以 '/' 接行。
+    # 🩸 2026-08-07：原本是「把 '- ' 換成空白、再用空白 join」——那是為了避開「X - Y」融合，
+    #    但換來另一種融合：行尾詞與下一行首詞黏成「X  Y」單一 token（雙空白可辨識）。
+    #    實測 ucl-coding 36 個觸發詞中有 7 對被黏死（= 14 個詞永遠 match 不到），而且不會報錯。
+    #    改用 '/' 接行 —— 那本來就是下面 split 認得的分隔符，行邊界因此變成真正的邊界。
+    blob = "/".join(re.sub(r"^\s*-\s+", "", ln) for ln in collected)
     # 觸發詞清單不含句號「。」— 句號後一律是散文, 截斷 (解 canvas/ding 同行尾巴衝進 prose)
     blob = blob.split("。")[0]
     words: list[str] = []

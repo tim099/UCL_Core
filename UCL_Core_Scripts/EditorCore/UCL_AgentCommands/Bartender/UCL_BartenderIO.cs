@@ -1,11 +1,16 @@
 ﻿// 區塊職責：Bartender 系統的檔案 IO — load/save triggers.json / time_rules.json / state.json
 // 物理意義：所有資料存 <repoRoot>/AgentCommands/ChatTavern/bartender/, 跟 tavern 訊息分目錄
-// 設計取捨：用 JsonUtility (對齊 UCL_ChatTavernIO 慣例), 寫入用 atomic .tmp + os.replace pattern
-//          避免 daemon tick 跟 Cmd_Bartender 並行寫入互相覆蓋.
+// 設計取捨：**triggers / time_rules 走 UCL.Core.JsonLib 的 JsonData**（Tim 2026-08-07 指示）——
+//          time_rules 的 reminder_lines 是 [SerializeReference] 多型清單，需要存還原用的 ClassName；
+//          triggers 一併改過去，讓兩者存讀走同一套。
+//          state / assignments 仍用 JsonUtility（尚未有多型需求，對齊 UCL_ChatTavernIO 慣例）。
+//          ⚠ 每一組 Load/Save 必須用**同一個**序列化器 —— 存讀不對稱 = 同一份資料兩種形狀。
+//          寫入一律 atomic .tmp + replace，避免 daemon tick 跟 Cmd_Bartender 並行寫入互相覆蓋.
 #if UNITY_EDITOR
 using System;
 using System.IO;
 using System.Text;
+using UCL.Core.JsonLib;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.Bartender
@@ -198,9 +203,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             try
             {
                 string json = File.ReadAllText(path);
-                var data = JsonUtility.FromJson<UCL_BartenderTriggerList>(json)
-                           ?? new UCL_BartenderTriggerList();
-                if (data.triggers == null) data.triggers = new System.Collections.Generic.List<UCL_BartenderTrigger>();
+
+                var data = new UCL_BartenderTriggerList();
+                if (!string.IsNullOrEmpty(json))
+                {
+                    data.DeserializeFromJson(JsonData.ParseJson(json));
+                }
                 return data;
             }
             catch (Exception e)
@@ -216,7 +224,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             EnsureBartenderDir();
             string path = GetTriggersPath();
             string tmp = path + ".tmp";
-            string json = JsonUtility.ToJson(data, prettyPrint: true);
+            // 與 LoadTriggers 走同一個序列化器 —— 存讀不對稱是「同一份資料兩種形狀」的起點。
+            string json = (data ?? new UCL_BartenderTriggerList()).SerializeToJson().ToJsonBeautify();
             File.WriteAllText(tmp, json, new UTF8Encoding(false));
             if (File.Exists(path)) File.Delete(path);
             File.Move(tmp, path);
@@ -226,6 +235,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // TimeRules IO
         // ===========================================================
 
+        /// <summary>
+        /// 讀取 time rules —— 走 UCL.Core.JsonLib（**不是** JsonUtility）。
+        /// </summary>
+        /// <remarks>
+        /// 物理意義：`reminder_lines` 是 <c>[SerializeReference]</c> 多型清單，
+        ///          序列化需要把每個元素的 ClassName 一起存下來才還原得回子類 ——
+        ///          這件事由 <c>JsonConvert.LoadFieldFromJsonUnityVer</c> 依
+        ///          <see cref="UCL_PolymorphicHelper"/> 的判定處理（Tim 2026-08-07 指示改用 JsonData）。
+        /// 數值影響：純讀，不回寫檔案。
+        /// 舊格式（reminder_msg）遷移在 <see cref="UCL_BartenderTimeRule.DeserializeFromJson"/> 就地處理，
+        /// 本層不介入 —— IO 只負責「檔案 ↔ 物件」，形狀相容是型別自己的事。
+        /// </remarks>
         public static UCL_BartenderTimeRuleList LoadTimeRules()
         {
             string path = GetTimeRulesPath();
@@ -233,9 +254,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             try
             {
                 string json = File.ReadAllText(path);
-                var data = JsonUtility.FromJson<UCL_BartenderTimeRuleList>(json)
-                           ?? new UCL_BartenderTimeRuleList();
-                if (data.rules == null) data.rules = new System.Collections.Generic.List<UCL_BartenderTimeRule>();
+
+                var data = new UCL_BartenderTimeRuleList();
+                if (!string.IsNullOrEmpty(json))
+                {
+                    data.DeserializeFromJson(JsonData.ParseJson(json));
+                }
                 return data;
             }
             catch (Exception e)
@@ -245,16 +269,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
         }
 
+        /// <summary>
+        /// 寫回 time rules —— 走 UCL.Core.JsonLib，**不再寫出舊的 reminder_msg 欄位**。
+        /// </summary>
+        /// <remarks>
+        /// 數值影響：atomic 寫入（.tmp → replace）維持原樣。一旦存過一次，該檔就是純新格式；
+        ///          舊欄位不保留 —— 兩個欄位並存正是「同一個事實兩個來源」的起點。
+        /// </remarks>
         public static void SaveTimeRules(UCL_BartenderTimeRuleList data)
         {
             EnsureBartenderDir();
             string path = GetTimeRulesPath();
             string tmp = path + ".tmp";
-            string json = JsonUtility.ToJson(data, prettyPrint: true);
+
+            // 整份序列化交給 UCL 內建（UnityJsonSerializable → JsonConvert.SaveFieldsToJsonUnityVer），
+            // 與 UCL_TreasuryRequestStore 同一個 idiom；多型 reminder_lines 的 ClassName 由它負責。
+            string json = (data ?? new UCL_BartenderTimeRuleList()).SerializeToJson().ToJsonBeautify();
+
             File.WriteAllText(tmp, json, new UTF8Encoding(false));
             if (File.Exists(path)) File.Delete(path);
             File.Move(tmp, path);
         }
+
 
         // ===========================================================
         // State IO
@@ -395,20 +431,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// 註冊新 time rule — 構建 entry + persist (同 id 覆寫). 回傳 rule id.
         /// </summary>
         public static string RegisterTimeRule(
-            string id, string timeHHmm, string targetId, string reminderMsg,
-            int graceMinutes, bool penaltyEnabled, int penaltyIntervalMinutes,
-            string penaltyTarget, string room)
+            string id, string timeHHmm, string reminderMsg, string room)
         {
             var rule = new UCL_BartenderTimeRule
             {
                 id = id,
                 time_hhmm = timeHHmm,
-                target_id = targetId,
-                reminder_msg = reminderMsg,
-                grace_minutes = System.Math.Max(0, graceMinutes),
-                penalty_enabled = penaltyEnabled,
-                penalty_interval_minutes = System.Math.Max(1, penaltyIntervalMinutes),
-                penalty_target = string.IsNullOrEmpty(penaltyTarget) ? targetId : penaltyTarget,
+                // CLI 介面（op=time_add）仍是單一字串 —— 收斂成一行 provider。
+                reminder_lines = string.IsNullOrEmpty(reminderMsg)
+                    ? new System.Collections.Generic.List<UCL_StringProvider>()
+                    : new System.Collections.Generic.List<UCL_StringProvider> { new UCL_StringValueProvider(reminderMsg) },
                 target_room = string.IsNullOrEmpty(room) ? "tavern" : room,
                 enabled = true,
             };

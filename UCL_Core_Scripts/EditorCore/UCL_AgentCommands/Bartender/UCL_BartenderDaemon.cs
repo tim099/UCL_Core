@@ -497,19 +497,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 {
                     PostBartenderConfirm(roomId,
                         $"❌ **inline 時間規則註冊失敗** (來自 {creatorName})\n\n錯誤: {spec.error}\n\n" +
-                        "格式: `[進行時間規則] id=<id> time=<HH:mm> msg=<提醒> target=<who> grace=<min> penalty=<true/false>`",
+                        "格式: `[進行時間規則] id=<id> time=<HH:mm> msg=<提醒>`",
                         new Dictionary<string, string> { { "subtag", "inline-timerule-fail" } });
                     return true;
                 }
                 UCL_BartenderIO.RegisterTimeRule(
-                    spec.id, spec.time_hhmm, spec.target, spec.msg,
-                    spec.grace, spec.penalty, spec.penalty_interval,
-                    spec.target, string.IsNullOrEmpty(spec.room) ? roomId : spec.room);
+                    spec.id, spec.time_hhmm, spec.msg,
+                    string.IsNullOrEmpty(spec.room) ? roomId : spec.room);
                 PostBartenderConfirm(roomId,
                     $"✅ **inline 時間規則已註冊** by {creatorName}\n\n" +
                     $"- id: `{spec.id}`\n- time: {spec.time_hhmm} (local)\n" +
-                    $"- target: {spec.target}\n- grace: {spec.grace} 分鐘\n" +
-                    $"- penalty: {(spec.penalty ? $"啟用 (每 {spec.penalty_interval}min)" : "停用")}\n" +
                     $"- msg: {Truncate(spec.msg, 100)}",
                     new Dictionary<string, string> {
                         { "subtag", "inline-timerule-ok" },
@@ -699,7 +696,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 區塊：time rule 掃描
         // 物理意義：對每 rule 比對 now (local) 跟 time_hhmm
         //          - 已到時間且 fired_today_keys 無對應 reminder key → fire reminder
-        //          - 啟用 penalty 且過了 grace_minutes → 每 penalty_interval_minutes 廣播一次累積扣血
         //          - 跨日自動清舊 fired_today_keys (只保留今日 YYYY-MM-DD)
         //
         // T-Bartender-CatchupCollapse (2026-07-26, Tim 觀察「Editor 長時間沒跑，回來後全部一次補報」懷疑觸發):
@@ -800,32 +796,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 stateDirty = true;
             }
 
-            // ---- Pass 3: Penalty 累積（獨立於 reminder catch-up 併發，逐 rule 照舊判斷）----
-            foreach (var rule in ruleList.rules)
-            {
-                if (rule == null || !rule.enabled || !rule.penalty_enabled) continue;
-                if (!TryParseHHmm(rule.time_hhmm, out int reminderHour, out int reminderMin)) continue;
-                DateTime reminderTime = new DateTime(now.Year, now.Month, now.Day, reminderHour, reminderMin, 0);
-                if (now < reminderTime) continue;
-
-                string roomId = string.IsNullOrEmpty(rule.target_room) ? "tavern" : rule.target_room;
-                if (UCL_ChatTavernIO.GetRoom(roomId) == null) continue;
-
-                double overtimeMin = (now - reminderTime).TotalMinutes - rule.grace_minutes;
-                if (overtimeMin <= 0) continue;
-
-                // 第 N 次 penalty fire (1-based, every penalty_interval_minutes)
-                int interval = Math.Max(1, rule.penalty_interval_minutes);
-                int penaltyTick = (int)Math.Floor(overtimeMin / interval) + 1;
-                string penaltyKey = $"{today}::{rule.id}::penalty::{penaltyTick}";
-                if (!state.fired_today_keys.Contains(penaltyKey))
-                {
-                    FirePenaltyWarning(rule, roomId, penaltyTick, overtimeMin);
-                    state.fired_today_keys.Add(penaltyKey);
-                    stateDirty = true;
-                }
-            }
-
             if (stateDirty) UCL_BartenderIO.SaveState(state);
 
         }
@@ -844,12 +814,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void FireTimeReminder(UCL_BartenderTimeRule rule, string roomId)
         {
-            string target = string.IsNullOrEmpty(rule.target_id) ? "" : $"@{rule.target_id} ";
-            string body = $"⏰ **酒保時間提醒** ({rule.time_hhmm})\n\n{target}{rule.reminder_msg}";
-            if (rule.penalty_enabled)
-            {
-                body += $"\n\n寬限 {rule.grace_minutes} 分鐘, 超過後每 {rule.penalty_interval_minutes} 分鐘累積 HP 扣血提醒.";
-            }
+            // 動態組裝的只剩標頭 —— 內文一律照 reminder_lines 的求值結果播出。
+            // 要 @ 誰請寫在 reminder_lines 裡（那是內文的一部分，不該是另一個欄位）。
+            string body = $"⏰ **酒保時間提醒** ({rule.time_hhmm})\n\n{rule.GetReminderBody()}";
             var msg = new UCL_ChatMessage
             {
                 sender_id = TavernKeeperId,
@@ -862,58 +829,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     { "subtag", "time-reminder" },
                     { "rule_id", rule.id ?? "" },
                     { "rule_time", rule.time_hhmm ?? "" },
-                },
-            };
-            UCL_ChatTavernIO.AppendMessage(roomId, msg);
-        }
-
-        // ===========================================================
-        // Penalty fire — 廣播當前累積 HP 損失公式結果 (不實際扣 HP, 留 EOV 端 listener)
-        // 公式 (per Plan_Bartender_System.md):
-        //   hp_loss_total = sum_{i=1..N} (1 + floor(i / 3))
-        //   其中 N = penalty tick 第幾次 (1-based)
-        //   - tick 1-2: +1 HP / tick (warm-up)
-        //   - tick 3-5: +2 HP / tick (escalate)
-        //   - tick 6-8: +3 HP / tick (severe)
-        //   - tick N=9+: +4 HP / tick (critical)
-        // ===========================================================
-        static void FirePenaltyWarning(UCL_BartenderTimeRule rule, string roomId, int penaltyTick, double overtimeMin)
-        {
-            // 計算 累積 HP loss (tick 1 ~ penaltyTick)
-            int totalHpLoss = 0;
-            for (int i = 1; i <= penaltyTick; i++)
-            {
-                totalHpLoss += 1 + (i / 3);  // integer div, 對齊 spec
-            }
-
-            int thisTickLoss = 1 + (penaltyTick / 3);
-            string target = string.IsNullOrEmpty(rule.penalty_target) ? "" : $"@{rule.penalty_target} ";
-
-            string body =
-                $"⚠️ **酒保 HP penalty 第 {penaltyTick} 次警告** ({rule.time_hhmm} + {rule.grace_minutes}min grace 已過)\n\n" +
-                $"{target}熬夜累積中:\n" +
-                $"- 已超時 ~{(int)overtimeMin} 分鐘\n" +
-                $"- 本 tick HP loss: **-{thisTickLoss}**\n" +
-                $"- 累積 HP loss: **-{totalHpLoss}**\n" +
-                $"- 下一 tick 在 {rule.penalty_interval_minutes} 分鐘後\n\n" +
-                $"公式: per tick `1 + floor(tick / 3)` HP (tier escalation). " +
-                $"立刻收工就停損, 繼續熬就指數爬升 — 大小姐自己拿捏.";
-
-            var msg = new UCL_ChatMessage
-            {
-                sender_id = TavernKeeperId,
-                sender_name = "酒保",
-                kind = "chat",
-                body = body,
-                meta = new Dictionary<string, string>
-                {
-                    { "tag", BartenderRelayTag },
-                    { "subtag", "time-penalty" },
-                    { "rule_id", rule.id ?? "" },
-                    { "penalty_tick", penaltyTick.ToString() },
-                    { "this_tick_hp_loss", thisTickLoss.ToString() },
-                    { "total_hp_loss", totalHpLoss.ToString() },
-                    { "overtime_min", ((int)overtimeMin).ToString() },
                 },
             };
             UCL_ChatTavernIO.AppendMessage(roomId, msg);

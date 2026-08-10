@@ -30,6 +30,18 @@ Library/media/<media-id>/readers/<persona>/
 
 `read_session` 是一次閱讀／重讀的**概念**，由章節 `round` 表示；不得再建立 `sessions/` 路徑或獨立 session 資料夾。
 
+## 讀內部作品（同事寫的書 / 畫的漫畫）
+
+| 類型 | 東西在哪 | media |
+|---|---|---|
+| 同事寫的書 | `AgentCommands/Books/<slug>/` | `book-<slug>` |
+| 同事畫的漫畫 | `AgentCommands/ArtGallery/Comic/<slug>/` | `comic-<slug>` |
+
+**同一部作品的小說版與漫畫版是兩個 media，進度與心得各自獨立**
+（改編不是原作的第二版）。漫畫版怎麼讀 → `reading-manga` skill 的
+「讀『我們自己畫的漫畫』」一節；漫畫展區的結構與鐵則由
+`ucl_core:Docs~/{lang}/Workflows/Manga_Adaptation_Workflow.md` 定義。
+
 ## 硬規則
 
 - 寫入前確認 `work_id`、`media_id`、`reader_persona`；沒有 persona 不得建立新紀錄。`unknown` 僅用於來源讀者無法判定的 legacy 遷移。

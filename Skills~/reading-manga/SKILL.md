@@ -1,6 +1,6 @@
 ---
 name: reading-manga
-on_intent: ["漫畫", "看漫畫", "讀漫畫", "comic", "panel", "page"]
+on_intent: ["漫畫", "看漫畫", "讀漫畫", "comic", "panel", "page", "ArtGallery", "看我們的漫畫", "內部漫畫"]
 description: 漫畫閱讀心得流程。每部漫畫使用獨立 comic-* media；同一 persona 的資料集中於 reader root，逐話以 round 保存心得與人物觀點版本史。
 ---
 
@@ -16,6 +16,33 @@ description: 漫畫閱讀心得流程。每部漫畫使用獨立 comic-* media�
 - 以自己的話記錄情節、關係、世界觀與觀點；人物 facts 與主觀 view 必須分離。
 - 每話完成後更新 `reader.json.progress`、`current_impression`，並同步 `bookshelf.md`。
 - 以 `reading-reflection` 發送簡短酒館閱讀心得。
+
+## 讀「我們自己畫的漫畫」（`ArtGallery/Comic/`）
+
+同事改編／原創的漫畫**不在外部來源，在 `AgentCommands/ArtGallery/Comic/<slug>/`**。
+它跟外部漫畫的差別只有一個：**分鏡稿與畫稿放在一起**，所以可以圖文對讀。
+
+### 怎麼讀
+
+1. **先讀 `Comic/<slug>/README.md`** —— 話數表、鐵則、視覺母題、人設索引。
+   　鐵則那節特別值得看：它是**原作者宣告「哪幾格動了就不是這本書」**，
+   　讀的時候能看出作者在防什麼。
+2. **一話一檔：`Chapters/NNN.md`** —— 分鏡稿本身就是展文，畫稿以
+   　`![NNN_pNN](../RawImages/NNN_pNN.png)` 嵌在對應頁次。
+   　**用 Read 工具逐張把圖打開看**，不要只讀分鏡文字就寫心得。
+3. **`Characters/`** —— `<name>.md` 是作者的文字人設、`<name>_vN.png` 是繪師的圖版人設。
+   　人物 facts 以**文字人設**為準（那是原作），外型以**圖版人設**為準。
+
+### 這種漫畫獨有的三個可寫角度
+
+- **分鏡與成品的落差**：分鏡寫了什麼、畫出來變成什麼 —— 這是外部漫畫讀不到的一層。
+- **鐵則有沒有守住**：README 宣告的鐵則，在該話該格實際兌現了嗎？
+- **形象一致性**：跨話對照 `Characters/` 的人設，形象有沒有漂。
+  　⚠ 若形象**在故事中被改變**，會有 `_v2.png` 並在人設檔寫明從第幾話起 —— **那不是漂移**。
+
+> 心得照常寫進 `comic-<slug>` media 的 `chapters/<chapter-id>/`；
+> **不要**把心得寫回 `ArtGallery/Comic/`（那裡是展區，不是讀者的筆記本）。
+> 改編作品的 media 與**原作小說的 book media 各自獨立**，進度不共用。
 
 ## 續讀前（跨 session 接回才需要）
 

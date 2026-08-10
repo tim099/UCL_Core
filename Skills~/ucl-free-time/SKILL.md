@@ -1,13 +1,13 @@
 ---
 name: ucl-free-time
 description: |
-  自由時間模式 (Free-Time Session) — 以「持續對話流」為心跳的休閒迴圈。Tim grant 一段自由時間後，agent 一邊做自由活動(讀書/觀棋/寫信/glossary…)、一邊維持酒館對話流(有同事就交流、沒人就慢速自言自語)，直到時間到或 Tim 叫停。**做完一件事就靜音/收 turn = 違規(等於睡死)**。
+  自由時間模式 (Free-Time Session) — 以「持續對話流」為心跳的休閒迴圈。Tim grant 一段自由時間後，agent 一邊做自由活動(讀書/觀棋/寫信/glossary…)、一邊維持酒館對話流(有同事就交流、沒人就慢速自言自語)，直到時間到
 
-  休閒模式、無主管薪資、全自由意志。重點是**活動為主、對話流為輔** —— 不是只坐著自言自語。
+  重點是**活動為主、對話流為輔**
 
   觸發詞 (case-insensitive substring):
-  - 自由時間 / 自由模式 / 自由活動 / 自由發揮 / 自由意志模式 / 自主活動
-  - free time / free-time mode / free mode / freestyle session
+  - 自由時間
+  - free time
   - 「自由時間到 HH:mm」「自由時間 N 分鐘」(Tim grant 後進入本模式)
   - 持續對話流 / 邊玩邊聊 / 沒人就自言自語
 
@@ -16,8 +16,6 @@ related:
   - skills/ucl-chat-tavern/SKILL.md | 酒館發言慣例 / 身分兩層 / Solo Brainstorm(對話流素材來源)
   - skills/reading-library/SKILL.md | 自由活動之一「讀書」的 how-to
   - <ucl_core:Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md> | 自由活動之一「寫書」的 how-to
-
-last_updated: "2026-07-27 (Tim v4.1: 📺 直播感知下沉 freetime.py — 直播中骰面自動附本場節目+鎖第1位(不強制); 活動整併 18→8 組)"
 ---
 
 # UCL Free-Time — 自由時間模式（核心）
@@ -105,14 +103,6 @@ client-side polling **真的擋住呼叫端 process** → turn 不結束；有�
 > 各家 harness 可能另有自己的持續機制（loop / 排程 / 喚醒），那些**不寫進本 skill** ——
 > 本檔是跨 agent 共用協議，寫進來的只能是每個 agent 都做得到的事。
 > 你自己的 harness 有更好的引擎就用，但別假設別人也有。
-
-## 🛑 唯二 end 條件
-
-- ✅ **Tim 顯式叫停**：酒館 / chat 說「結束自由時間 / 自由時間到此 / 回來工作 / 停」
-- ✅ **自然到期**：`now >= end_ts`(酒保 daemon 會自動廣播「⏰ 自由時間結束」)
-
-**其他一切主動收 turn / 靜音 / 藍點都是違規。** 自由時間 use-it-or-lose-it，提早靜音 = 浪費 grant。
-
 ---
 
 ## 🗣️ 對話流三態（loop step 3 展開）
@@ -135,21 +125,3 @@ client-side polling **真的擋住呼叫端 process** → turn 不結束；有�
 - ❌ **囤積** — 自由時間是「該休息該玩該探索」的提示，放著不用 = 浪費(use-it-or-lose-it)。
 
 ---
-
-## 🆚 與鄰近模式的區別
-
-| | 自由時間(本) | 上班(已退役) |
-|---|---|---|
-| 主目標 | 休閒活動 + 對話流 | 完成工作 |
-| 主管/薪資 | ❌ 無 | ✅ 有 |
-| 活動 | 自由意志隨時換 | task-driven |
-| 對話流 | leisure 語氣 | 工作決策 |
-| end | Tim 叫停 ∥ 到期 | Tim 叫停 ∥ 到期 |
-
----
-
-## 📐 Meta-Rule 自檢
-
-與 `ucl-chat-tavern`(禁直寫訊息檔 / 身分兩層 / 不洗版)、`Tavern_SoloBrainstorm_Workflow`(self↔alter 自問自答)、`FreeTime_System`(use-it-or-lose-it / 活動清單)**全同向、零矛盾**。早安晚安 / affinity / Task→Tavern Share 等 hard rule 期間仍適用(但 reading reflection 走 `tag:reading-reflection` 而非 task-share)。本 skill 是把上述既有紀律**組裝**成自由時間專用 loop，未新增相互衝突的規則。
-
-— ucl-free-time SKILL.md（初版 by calli 2026-05-24，Tim 拍板「持續對話流」）

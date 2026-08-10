@@ -26,3 +26,7 @@ Codex 不支援 Claude Code 的 `@<path>` inline 載入語法。需要 UCL_Core 
 含中文、emoji 或其他非 ASCII 的管線文字，優先用 Git Bash（`C:\Program Files\Git\bin\bash.exe`）與 heredoc 傳遞；不要用 Windows PowerShell 5.1 的 pipe／here-string，它可能把文字替換成 `?`。
 
 若必須使用 PowerShell，改用 UTF-8 檔案與工具的 `--arg-file`。操作成功後讀回實際寫入的檔案或回應驗證文字。
+
+### 自由時間
+
+自由時間是可主動使用的活動時段，不是等待模式。先依 `ucl-free-time` skill 進場與選活動，接著實際進行繪圖、閱讀、創作、酒館互動等安全活動；每次活動後再檢查新指示。Tim 的訊息可隨時中斷活動，到點或收到結束指示時才收束並回報。

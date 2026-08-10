@@ -106,6 +106,7 @@ namespace UCL.Core.EditorLib.Page
         protected override void ContentOnGUI()
         {
             if (m_StatusDirty) RefreshStatus();
+            var layoutHeight = GUILayout.Height(UCL_GUIStyle.GetScaledSize(22));
 
             // 注意：不要在這裡再開 BeginScrollView — UCL_EditorPage.OnGUI 已經包了 ScrollViewScope。
             // 巢狀 ScrollView 在 Unity 2021 IMGUI 會拋 InvalidCastException（Unity 6 才會被內部靜默 recover）。
@@ -123,8 +124,7 @@ namespace UCL.Core.EditorLib.Page
                     using (new EditorGUI.DisabledScope(anyInstalling || anyBlocked))
                     {
                         if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.InstallAll"),
-                            UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)),
-                            GUILayout.Width(220), GUILayout.Height(32)))
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)), GUILayout.ExpandWidth(false), layoutHeight))
                         {
                             RunInstallAll();
                         }
@@ -138,12 +138,12 @@ namespace UCL.Core.EditorLib.Page
                         bool needsSync = AnyNeedsSync(m_StatusByTarget);
                         if (GUILayout.Button(
                             UCL_CodeLocalize.Get(needsSync ? "AgentSkill.Btn.ForceSyncAll" : "AgentSkill.Btn.ForceSyncAll.Synced"),
-                            UCL_GUIStyle.GetButtonStyle(needsSync ? ForceSyncColor : AllSyncedColor), GUILayout.ExpandWidth(false)))
+                            UCL_GUIStyle.GetButtonStyle(needsSync ? ForceSyncColor : AllSyncedColor), GUILayout.ExpandWidth(false), layoutHeight))
                         {
                             RunInstallAll(force: true);
                         }
                     }
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false), layoutHeight))
                     {
                         m_StatusDirty = true;
                     }
@@ -158,16 +158,16 @@ namespace UCL.Core.EditorLib.Page
                         // 那個旗標只在區塊「展開」時才會被寫，收合狀態下按鈕的 disable 判斷會用到過期值。
                         using (new EditorGUI.DisabledScope(AnyBlocked(m_EntryStatusByTarget) || m_InstallingSet.Count > 0))
                         {
-                            if (GUILayout.Button("Sync All Entry Documents", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f))))
+                            if (GUILayout.Button("Sync All Entry Documents", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 1f)), layoutHeight))
                                 RunInstallAllEntryDocs();
                             // 與 Skills 區同一條規則：有待同步入口檔 → 橘色示警；全部 Synced → 綠色「已全部同步」
                             bool entryNeedsSync = AnyNeedsSync(m_EntryStatusByTarget);
                             if (GUILayout.Button(
                                 entryNeedsSync ? "⚡ Force Sync All Entries" : "✅ All Entries Synced",
-                                UCL_GUIStyle.GetButtonStyle(entryNeedsSync ? ForceSyncColor : AllSyncedColor)))
+                                UCL_GUIStyle.GetButtonStyle(entryNeedsSync ? ForceSyncColor : AllSyncedColor), layoutHeight))
                                 RunInstallAllEntryDocs(force: true);
                         }
-                        if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false), layoutHeight))
                             m_StatusDirty = true;
                     }
                 });

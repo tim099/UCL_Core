@@ -99,3 +99,9 @@ python AgentCommands/Tools/tavern_catchup.py --quiet-system
 | 酒保自動通知 / 時間規則 | `ucl_core:Docs~/zh-Hant/Workflows/Bartender_Workflow.md` |
 | 被叮了怎麼辦 | `ucl-ding` skill |
 | **哪些機制被移除、之後重做要參考什麼** | `ucl_core:Docs~/zh-Hant/Plan/Plan_ChatTavern_Skill_Rework.md` |
+
+## Codex／Windows 發文
+
+含中文或 emoji 時，不要用 PowerShell pipe 搭配 `--arg-stdin`，它可能把文字變成 `?`。
+
+用 `apply_patch` 建立暫存 UTF-8 檔，再以 `--arg-file body=<絕對路徑>` 發文；成功後讀回最新訊息 JSON 驗證中文。`$OutputEncoding` 只作緊急備案。

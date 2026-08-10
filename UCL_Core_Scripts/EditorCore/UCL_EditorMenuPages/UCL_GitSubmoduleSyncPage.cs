@@ -22,6 +22,10 @@
 //     dirty（有未 commit 修改）同樣跳過 —— 本頁不做 stash，那是把別人的工作區當自己的。
 //   · Push 順序**由深到淺**（巢狀最深的先推、root 最後）：parent 的 bump commit 引用 child SHA，
 //     先推 parent 會讓別人 pull 到指向不存在 commit 的 gitlink。
+//   · **多 remote push（2026-08-10 Tim 提，預設 off）**：同一份程式碼同時掛 GitHub 與 GitLab 時，
+//     只推 origin 會讓另一邊靜默落後。開關開著時逐 repo 展開它自己的 remote 清單各推一次；
+//     每個 repo 推完全部 remote 才換下一個 repo —— 深→淺的順序對**每一個** remote 各自成立，
+//     所以 gitlink 不變量不因多 remote 而破。pull 不跟進（從哪合併是 merge 決策，不是同步）。
 //   · git 預設讀 UCL_RepoPath.RepoRoot（目前專案的 git root），保留可改路徑（Tim 2026-08-07）。
 //   · 設定存 EditorPrefs（JSON 字串）—— 跟 FlattenSync 同一套慣例，跨機器不通用可接受。
 // RequiresConstantRepaint：批次操作在背景跑，逐項進度與完成報告要即時反映。
@@ -72,6 +76,13 @@ namespace UCL.Core.EditorLib.Page
             // root repo 本身要不要一起 pull / push（切 branch 不含 root —— 專案根切分支
             // 影響整個 Unity 工程，那個動作該是人自己下的，不進批次）。
             public bool IncludeRoot = false;
+            // push 要推到「該 repo 設定的每一個 remote」還是只推 origin（預設 false = 只推 origin）。
+            // 物理意義：同一份程式碼同時掛 GitHub 與 GitLab 時，只推 origin 會讓另一邊靜默落後 ——
+            //          而落後的那一邊不會叫（沒人 pull 它就沒人知道），正是最難抓的壞法。
+            // 為何預設 off：開著等於把「推去哪」從一個明確的名字擴張成「repo 現在恰好設了什麼」，
+            //          而 remote 清單是每台機器各自的 local config。擴大寫入範圍要人顯式點頭。
+            // ⚠ pull 不跟進多 remote —— 從哪個 remote 合併是 merge 決策，不是同步動作。
+            public bool PushAllRemotes = false;
         }
 
         [Serializable]
@@ -95,6 +106,10 @@ namespace UCL.Core.EditorLib.Page
             public string GitmodulesBranch = "";  // .gitmodules 的 branch 欄（可空）
             public string HeuristicBranch = "";   // 掃描時算好的啟發式預設（規則見 TargetBranch）
             public List<string> Branches = new List<string>();  // 本地+origin 的 branch 名（下拉選項用）
+            // 該 repo 設定的 remote 名清單。**只給畫面顯示與二次確認用** ——
+            // 真正 push 時的清單在 RunOne 內即時重問（理由同 dirty / branch：
+            // 掃描結果是照片，而「要推去哪些遠端」是決定不是報告）。
+            public List<string> Remotes = new List<string>();
             public bool Dirty = false;            // 有未 commit 的追蹤檔修改
             public bool Uninitialized = false;    // status 前綴 '-'：內容不在本機
             public int Ahead = -1;                // 對 upstream；-1 = 無 upstream / 未知
@@ -319,6 +334,19 @@ namespace UCL.Core.EditorLib.Page
                                     + "專案根換分支該是人自己下的動作）", UCL_GUIStyle.LabelStyle);
                     if (inc != m_Settings.IncludeRoot) { m_Settings.IncludeRoot = inc; SaveSettings(); }
                 }
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool all = UCL_GUILayout.CheckBox(m_Settings.PushAllRemotes);
+                    GUILayout.Label(" Push 到該 repo 的**所有** remote（關 = 只推 origin）",
+                        UCL_GUIStyle.LabelStyle);
+                    if (all != m_Settings.PushAllRemotes) { m_Settings.PushAllRemotes = all; SaveSettings(); }
+                }
+                if (m_Settings.PushAllRemotes)
+                {
+                    GUILayout.Label("　⚠ 推去哪由各 repo 的 remote 設定決定（每台機器各自的 local config）。"
+                                    + "一個 remote 失敗不影響其他 remote，但整列會記成失敗並逐個列出。"
+                                    + "Pull 不跟進 —— 從哪合併是 merge 決策。", WarnStyle);
+                }
             }
         }
 
@@ -429,6 +457,19 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label($"↑{Mathf.Max(s.Ahead, 0)} ↓{Mathf.Max(s.Behind, 0)}",
                         UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 }
+                // 多 remote 的列標出來（單一 remote 不標 —— 那是常態，標了等於雜訊）。
+                // 開了「推所有 remote」卻一個 remote 都沒有 → 那列 push 會跳過，先在表上講。
+                if (s.Remotes.Count > 1)
+                {
+                    GUILayout.Label($"⇈ {string.Join(" / ", s.Remotes)}",
+                        m_Settings.PushAllRemotes ? UCL_GUIStyle.LabelStyle : DimLabelStyle,
+                        GUILayout.ExpandWidth(false));
+                }
+                else if (m_Settings.PushAllRemotes && s.Remotes.Count == 0 && !s.Uninitialized)
+                {
+                    GUILayout.Label("⚠ 無 remote", UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.85f, 0.4f)),
+                        GUILayout.ExpandWidth(false));
+                }
                 if (!string.IsNullOrEmpty(s.FetchAge))
                 {
                     GUILayout.Label(s.FetchAge, DimLabelStyle, GUILayout.ExpandWidth(false));
@@ -489,11 +530,31 @@ namespace UCL.Core.EditorLib.Page
             {
                 if (!m_Settings.Excluded.Contains(s.Path)) included++;
             }
+            // 「推去哪」要在按下去之前講清楚，而且講的是**具體的 remote 名字**不是「所有」——
+            // 「所有」是設定的名字，人要確認的是它今天實際展開成什麼（清單取自掃描快照，
+            // 真正執行時會再問一次即時值；兩者若在這幾秒內分岔，報告會逐個列出實際推了誰）。
+            string pushWhere = "origin";
+            if (push && m_Settings.PushAllRemotes)
+            {
+                var seen = new List<string>();
+                foreach (var s in m_Subs)
+                {
+                    if (m_Settings.Excluded.Contains(s.Path) || s.Uninitialized) continue;
+                    foreach (var r in s.Remotes)
+                    {
+                        if (!seen.Contains(r)) seen.Add(r);
+                    }
+                }
+                pushWhere = seen.Count == 0 ? "（掃描時沒看到任何 remote）"
+                    : $"所有 remote —— 掃描時看到的有: {string.Join(", ", seen)}";
+            }
             string body =
                 $"Repo: {m_Settings.Root}\n"
                 + $"對象: {included} 個 submodule{(m_Settings.IncludeRoot ? " + root repo" : "")}\n"
                 + $"動作: {(checkout ? "切到預設 branch → " : "")}{(pull ? "pull（ff-only）→ " : "")}"
-                + $"{(push ? "push（由深到淺，root 最後）" : "")}\n\n"
+                + $"{(push ? "push（由深到淺，root 最後）" : "")}\n"
+                + (push ? $"推去: {pushWhere}\n" : "")
+                + "\n"
                 + "Push 會把各 repo 目標 branch 上的本地 commit 寫到遠端。\n"
                 + "dirty / detached 有未合併 commit 的項目會被跳過並列出，不會被硬切或硬推。";
             UCL_OptionPage.Create($"確認 {label}？", body,
@@ -688,6 +749,19 @@ namespace UCL.Core.EditorLib.Page
                                 else if (all.Contains("main"))
                                     s.HeuristicBranch = "main";
                             }
+                            // remote 名清單（顯示用）—— 多 remote 的 repo 在狀態表上要看得出來，
+                            // 否則「push 到所有 remote」這個開關開下去，人不知道自己剛剛推去了幾個地方。
+                            var (e8, o8, _) = Git(abs, "remote");
+                            if (e8 == 0)
+                            {
+                                var remotes = new List<string>();
+                                foreach (var raw8 in o8.Split('\n'))
+                                {
+                                    string r = raw8.Trim();
+                                    if (r.Length > 0) remotes.Add(r);
+                                }
+                                s.Remotes = remotes;
+                            }
                             // 上次 fetch 距今（FETCH_HEAD mtime）—— staleness 逐列標，
                             // 一句全域警語會把剛 fetch 的跟三天沒動的混為一談。
                             var (e7, o7, _) = Git(abs, "rev-parse --git-dir");
@@ -786,6 +860,9 @@ namespace UCL.Core.EditorLib.Page
             targets.Sort((a, b) => Depth(b.Path).CompareTo(Depth(a.Path)));
             bool includeRoot = m_Settings.IncludeRoot;
             string rootBranchOverride = m_Settings.DefaultBranch;
+            // 同 resolvedTargets 的理由：設定欄位在背景跑到一半時仍可被編輯，
+            // 邊跑邊讀會讓同一輪批次前半推 origin、後半推全部。
+            bool pushAllRemotes = m_Settings.PushAllRemotes;
             // 目標 branch 在主執行緒先解析成快照 —— 背景執行緒跑到一半時，設定欄位仍可被編輯，
             // 邊跑邊讀 m_Settings 會讓同一輪批次前後用到不同的目標。
             var resolvedTargets = new Dictionary<SubEntry, string>();
@@ -808,7 +885,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         string abs = Path.Combine(root, s.Path);
                         string target = resolvedTargets[s];
-                        string note = RunOne(abs, s, target, checkout, pull, push, log);
+                        string note = RunOne(abs, s, target, checkout, pull, push, pushAllRemotes, log);
                         notes.Add((s, note));
                         if (note.StartsWith("✓")) ok++;
                         else if (note.StartsWith("⏭")) skip++;
@@ -833,7 +910,8 @@ namespace UCL.Core.EditorLib.Page
                         else
                         {
                             string note = RunOne(root, rootEntry, rb,
-                                checkoutStep: false, pullStep: pull, pushStep: push, log: log);
+                                checkoutStep: false, pullStep: pull, pushStep: push,
+                                pushAllRemotes: pushAllRemotes, log: log);
                             if (note.StartsWith("✓")) ok++;
                             else if (note.StartsWith("⏭")) skip++;
                             else fail++;
@@ -869,7 +947,8 @@ namespace UCL.Core.EditorLib.Page
         //          「dirty 一律跳過」的承諾就靜默失效，報告還照印 ✓。
         //          兩條本地 git 指令的成本比起 pull/push 走網路是零頭。
         string RunOne(string abs, SubEntry s, string target,
-            bool checkoutStep, bool pullStep, bool pushStep, System.Text.StringBuilder log)
+            bool checkoutStep, bool pullStep, bool pushStep, bool pushAllRemotes,
+            System.Text.StringBuilder log)
         {
             if (string.IsNullOrEmpty(target))
             {
@@ -946,19 +1025,68 @@ namespace UCL.Core.EditorLib.Page
             }
             if (pushStep)
             {
-                if (s.CurBranch != target)
+                // 用 cur（本函式開頭剛問到的即時值）不是 s.CurBranch（掃描快照）——
+                // 快照在「一鍵同步」下必定是舊的：checkout 剛把 HEAD 移到 target，而快照還停在
+                // 移動前的 (detached)，於是每一個「剛被切好的」repo 都會在這裡被判成不在目標 branch
+                // 而靜默跳過 push。一鍵同步推不動東西的原因就是這一行（2026-08-10 修）。
+                if (cur != target)
                 {
-                    log.AppendLine($"⏭ {s.Path} 不在目標 branch（{s.CurBranch} ≠ {target}）—— 不 push");
+                    log.AppendLine($"⏭ {s.Path} 不在目標 branch（{cur} ≠ {target}）—— 不 push");
                     return "⏭ 不在目標 branch";
                 }
-                var (eu, ou, su) = Git(abs, $"push origin {target}");
-                if (eu != 0)
+                // 要推去哪：即時問 git，不讀 s.Remotes 快照（同 dirty / branch 的理由 ——
+                // 快照是照片，而這裡在下決定。掃描到現在之間有人加了 remote 的話，
+                // 照片會讓「推所有 remote」漏掉那一個，而漏掉不會叫）。
+                var remotes = new List<string>();
+                if (pushAllRemotes)
                 {
-                    log.AppendLine($"✗ {s.Path} push 失敗: {FirstLine(su)}");
-                    return "✗ push 失敗";
+                    var (er, orr, sr) = Git(abs, "remote");
+                    if (er != 0)
+                    {
+                        log.AppendLine($"✗ {s.Path} 讀不到 remote 清單 —— 不 push: {FirstLine(sr)}");
+                        return "✗ remote 讀取失敗";
+                    }
+                    foreach (var rawr in orr.Split('\n'))
+                    {
+                        string r = rawr.Trim();
+                        if (r.Length > 0) remotes.Add(r);
+                    }
+                    if (remotes.Count == 0)
+                    {
+                        // 「沒有 remote」不是成功也不是失敗，是沒地方推 —— 照本頁慣例列出來跳過，
+                        // 不靜默當成 ✓（那會讓報告說推完了，而其實一個位元組都沒出去）。
+                        log.AppendLine($"⏭ {s.Path} 沒有設定任何 remote —— 不 push");
+                        return "⏭ 無 remote";
+                    }
                 }
-                // push 成功的訊息在 stderr（git 的慣例），只看 stdout 會以為它沒說話
-                log.AppendLine($"✓ {s.Path} push: {FirstLine(string.IsNullOrEmpty(su) ? ou : su)}");
+                else
+                {
+                    remotes.Add("origin");
+                }
+                // 一個 remote 失敗不中斷其他 remote —— GitHub 推成功、GitLab 認證掛掉是兩件獨立的事，
+                // 因為後者放棄前者就等於白跑。但整列記成失敗（部分成功不是成功）。
+                int pushOk = 0;
+                var pushFailed = new List<string>();
+                foreach (var remote in remotes)
+                {
+                    var (eu, ou, su) = Git(abs, $"push {remote} {target}");
+                    if (eu != 0)
+                    {
+                        log.AppendLine($"✗ {s.Path} push {remote} 失敗: {FirstLine(su)}");
+                        pushFailed.Add(remote);
+                        continue;
+                    }
+                    pushOk++;
+                    // push 成功的訊息在 stderr（git 的慣例），只看 stdout 會以為它沒說話
+                    log.AppendLine($"✓ {s.Path} push {remote}: {FirstLine(string.IsNullOrEmpty(su) ? ou : su)}");
+                }
+                if (pushFailed.Count > 0)
+                {
+                    return pushOk > 0
+                        ? $"✗ push {pushOk}/{remotes.Count}（失敗: {string.Join(",", pushFailed)}）"
+                        : "✗ push 失敗";
+                }
+                if (remotes.Count > 1) return $"✓ push ×{remotes.Count}";
             }
             return "✓";
         }

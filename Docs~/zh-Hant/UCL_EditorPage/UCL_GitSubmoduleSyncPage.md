@@ -1,6 +1,6 @@
 ---
 title: UCL_GitSubmoduleSyncPage — Git Submodule 同步頁
-last_updated: 2026-08-07
+last_updated: 2026-08-10
 ---
 
 # UCL_GitSubmoduleSyncPage
@@ -27,12 +27,13 @@ last_updated: 2026-08-07
 | Repo 根目錄 | 預設 `UCL_RepoPath.RepoRoot`（本專案 git root），可改路徑 / 按「本專案」還原 |
 | 全域預設 branch | 目標 branch 的最後一層 fallback；解析順序見下方 |
 | root repo 開關 | root 可一起 pull / push；**切 branch 永遠不含 root**（專案根換分支該是人自己下的動作） |
-| 狀態表 | 每個 submodule 一列：納入勾選、目前 branch（detached 紅 / 偏離目標黃 / 對齊綠）、逐項 branch 覆寫、dirty / 未 init / ↑ahead ↓behind |
+| Push 到所有 remote 開關 | 見下節。關（預設）= 只推 `origin` |
+| 狀態表 | 每個 submodule 一列：納入勾選、目前 branch（detached 紅 / 偏離目標黃 / 對齊綠）、逐項 branch 覆寫、dirty / 未 init / ↑ahead ↓behind / `⇈` 多 remote 清單 |
 | 重新掃描 | 唯讀。進頁面自動跑一次（不 fetch，快） |
 | Fetch 全部後掃描 | 逐 submodule `git fetch` 再掃 —— **ahead/behind 要準需要先 fetch** |
 | 切到預設 branch | 逐項 checkout 到目標 branch（安全線見下） |
 | Pull（ff-only） | `git pull --ff-only origin <target>`；分岔就 fail loud 列出，不替人 merge |
-| Push | 二次確認後執行；**由深到淺**（巢狀最深先推、root 最後） |
+| Push | 二次確認後執行；**由深到淺**（巢狀最深先推、root 最後）、每 repo 推完它的全部 remote 才換下一個 |
 | 一鍵同步 | 切 → pull → push 一條龍，同樣走二次確認 |
 
 設定存 `EditorPrefs`（JSON）。路徑是絕對路徑，換機器要重填（慣例同 FlattenSync）。
@@ -72,6 +73,36 @@ parent 的 bump commit 引用 child 的 SHA。先推 parent 的話，別人 pull
 指向**遠端還不存在的 commit** 的 gitlink —— 而且是靜默壞（clone / update 的人才會發現）。
 所以巢狀最深的先推，root 最後。
 
+## Push 到所有 remote（2026-08-10，預設 off）
+
+同一份程式碼同時掛 GitHub 與 GitLab 時，只推 `origin` 會讓另一邊**靜默落後** ——
+而落後的那一邊不會叫（沒人 pull 它就沒人知道）。開這個開關後，push 對每個 repo
+展開它自己的 remote 清單（`git remote`）各推一次。
+
+| 行為 | 規則 |
+|---|---|
+| 推去哪 | 該 repo `git remote` 列出的**每一個** remote，branch 一律是解析出來的目標 branch |
+| 順序 | 一個 repo 推完它的全部 remote，才換下一個 repo（repo 之間仍是深→淺） |
+| 一個 remote 失敗 | **不中斷其他 remote** —— GitHub 成功、GitLab 認證掛掉是兩件獨立的事，為後者放棄前者等於白跑 |
+| 部分成功怎麼記 | 整列記成**失敗**（`✗ push 2/3（失敗: gitlab）`）—— 部分成功不是成功 |
+| 該 repo 沒有任何 remote | 跳過並列出（`⏭ 無 remote`），不靜默算成 ✓ |
+| Pull | **不跟進** —— 從哪個 remote 合併是 merge 決策，不是同步動作，仍固定 `origin` |
+
+深→淺的 gitlink 不變量不因多 remote 而破：對**每一個** remote 來說，child 都在 parent 之前推出去。
+
+二次確認視窗印的是**具體 remote 名字**（掃描時看到的清單）而不是「所有 remote」——
+「所有」是設定的名字，人要確認的是它今天實際展開成什麼。狀態表上多 remote 的列標 `⇈ a / b`。
+
+> [!NOTE]
+> 執行時的 remote 清單是**即時重問**的，狀態表那份只給顯示與確認視窗用
+> （理由同下節：照片能拿來報告，不能拿來下決定 —— 掃描後才加的 remote 會被照片漏掉，而漏掉不會叫）。
+
+> [!TIP]
+> 只想要「一個 remote 推兩個 URL」的鏡像效果，git 原生就有：
+> `git remote set-url --add --push origin <url2>`。代價是 fetch 仍只從第一個 URL、
+> ahead/behind 只反映其中一邊，而且要逐 repo 逐機器設。本開關反過來：remote 各自獨立、
+> 狀態各自看得到，代價是要一次寫多個遠端。
+
 ## 安全線用即時值，不用掃描快照（Sirius 2026-08-07 砸磚）
 
 dirty / 目前 branch 的判斷在**批次執行當下**逐 repo 重新問 git，不讀狀態表的快照 ——
@@ -92,3 +123,8 @@ Push 端則刻意**不**強制 fetch：non-fast-forward 被拒本來就很大聲
 - untracked 檔不算 dirty（不擋 checkout / pull；算進來會讓每個 submodule 都紅，假警報訓練人忽略警報）。
 - `GIT_TERMINAL_PROMPT=0`：認證失敗直接 fail 列出，不會停在看不見的終端等輸入。
 - 單條 git 指令逾時 5 分鐘 —— 命中代表卡住（credential / 網路），不是「檔案多」。
+- **child push 失敗不會擋住 parent push**：批次不中斷，parent 照樣推出去，於是遠端會短暫出現
+  指向不存在 commit 的 gitlink。報告會把 child 那筆記成 `✗`，但**需要人自己看**。
+  （2026-08-10 記錄，待拍板是否改成「child 失敗則跳過其 parent」。）
+- `pull` 固定 `origin`：remote 不叫 `origin` 的 repo（例如只有 `github` / `gitlab`）pull 會失敗列出。
+  多 remote push 開關不改變這件事。

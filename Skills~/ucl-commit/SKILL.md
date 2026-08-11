@@ -1,7 +1,7 @@
 ---
 name: ucl-commit
 description: |
-  使用者要求 commit / 提交 / 推改動時用本 skill。涵蓋 submodule 由內往外逐層 bump（先切回追蹤分支避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**提交一律走 `git_commit.py`**（自動組 Co-Authored-By trailer + 自動發酒館公告領薪）。
+  使用者要求 commit / 提交 / 推改動時用本 skill。**預設只 commit 改動所在的那一層（單層），逐層 bump 父層要使用者明說 commit all / 全包 / 逐層 bump 才做。** 涵蓋 submodule 先切回追蹤分支（避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**提交一律走 `git_commit.py`**（自動組 Co-Authored-By trailer + 自動發酒館公告領薪）。
   觸發詞包含：commit、提交、幫我 commit、分批 commit、推一下、存檔、落 commit、commit 一下、bump submodule、切分支、detached HEAD、commit 薪資、領 commit token、commit 公告。
   涉及 UCL_Core 等 submodule 改動的 git 操作必用。
 ---
@@ -9,6 +9,20 @@ description: |
 # UCL Commit — 提交規範速查
 
 > 一句話：**你負責判斷「哪些檔走哪一筆」與 stage；提交走 `git_commit.py`，trailer 與領薪公告它自己來。**
+
+> [!IMPORTANT]
+> ## 預設是單層（Tim 2026-08-11 拍板）
+>
+> 收到「commit」→ **只提交改動所在的那一層，不 bump 父層。**
+> 逐層 bump 是**選配**，只在使用者明說時做：`commit all` / `全包` / `逐層 bump` / `bump 到主專案`。
+>
+> **為什麼預設不 bump**：bump 是一個**對外的宣告**（「這個版本可以拿去用了」），
+> 而剛寫完的東西通常還沒被實跑驗過。預設 bump 等於每次存檔都對同事廣播一次未驗收的版本。
+> 單層則讓「寫完」跟「發佈」分開 —— 前者我自己決定，後者要人點頭。
+>
+> **代價要講清楚，因為它不會叫**：單層之後**父層指標仍指著舊 hash**，
+> 同事 pull 主專案拿到的還是舊版。所以單層 commit 完的回報**必須明說這件事**，
+> 不能只報 SHA 就當交付完成 —— 那會讓人以為東西已經到得了別人手上。
 
 > ⚠ 本 skill 是 UCL_Core 跨專案共用，**路徑與分支名因專案而異，一律不寫死**。
 > 實際值用 `git submodule status` / `git -C <sub> branch` 現場判斷。
@@ -19,7 +33,7 @@ description: |
 |---|---|
 | 判斷哪些檔走哪一筆、具名 stage | **你** |
 | submodule 切回追蹤分支 | **你** |
-| 逐層 bump 的順序 | **你** |
+| 逐層 bump 的順序（**只在使用者說 commit all 時**） | **你** |
 | commit 訊息內容 | **你** |
 | Co-Authored-By（身分／型號／信箱） | 工具 |
 | 酒館公告 + 領薪 | 工具 |
@@ -106,7 +120,9 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
 （2026-08-03 實測自摔，公告被截斷）。**一律 `--message-file`** ——
 heredoc 與 `-m` 兩條路都會經過 shell，而上面那條 CAUTION 講的就是這一層。
 
-## Submodule 逐層 bump（由內往外）
+## Submodule 逐層 bump（由內往外）—— **選配，使用者說了才做**
+
+> 觸發：`commit all` / `全包` / `逐層 bump` / `bump 到主專案`。沒說 = 只做單層，跳過本節。
 
 層數依專案巢狀結構而定，**不是固定三層**。通則：最內層先提交內容 → 每個父層 add 子 submodule
 路徑 + 提交 pointer bump → 直到主專案。**每一層都是一筆獨立 commit，各自帶 trailer、各自領薪。**
@@ -123,17 +139,27 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <par
 父層 `git diff --staged` 確認只是 pointer bump；全部完成 `git status` 應 clean。
 
 **Anti-pattern**：
-- ❌ 只 commit 最內層沒 bump 父層 → 同事 pull 拿到舊 hash，編不過。
+- ❌ 使用者說了 `commit all` 卻只 commit 最內層 → 同事 pull 拿到舊 hash，編不過。
+  （單層模式下**不是** anti-pattern，那是預設行為 —— 但**必須在回報裡明說父層還指著舊 hash**，
+  見上方 IMPORTANT。沒說 = 讓人以為東西已經到得了別人手上。）
+- ❌ 沒人說 commit all 就自己 bump 到主專案 → 把未驗收的版本對同事廣播出去。
 - ❌ 安裝副本沒同步（`.claude` / `.codex` / `.agents`）→ 正本改了但**實際載入的還是舊的**。
+  ⚠ `.agents` 那份**不是逐位元組相同**（antigravity target 會注入一行 `trigger:`）——
+  同步時是**套用同一個編輯**，不是把正本複製過去（複製會把那行吃掉）。
 - ❌ code 混 chat → history 噪音。
 
 ## 執行順序（收到「commit」指令）
 
+0. **先判層數**：使用者說了 `commit all` / `全包` / `逐層 bump` 嗎？沒說 = **單層**。
 1. `git status` 看全貌；每個 submodule 跑 `git -C <sub> status -b -s` 確認分支。
 2. detached HEAD → 先 `switch` + `pull --ff-only`。
 3. 按分類矩陣判斷每個檔走哪筆。
-4. 由內往外逐層 stage → `git_commit.py` 提交（trailer 與公告自動）。
+4. stage → `git_commit.py` 提交（trailer 與公告自動）。
+   **單層**：只做改動所在那一層，做完就停。
+   **commit all**：由內往外逐層 stage + bump。
 5. 跑 `commit_payout_check.py` 對帳，報告 SHA 與已領狀態給 Tim。**不 push。**
+   單層時**一併報「父層仍指著舊 hash，同事 pull 拿到的還是舊版」**——
+   那句不是免責聲明，是這次交付真實的邊界。
 
 ## 💰 領薪 — 現在是自動的，但有兩件事仍要人看
 

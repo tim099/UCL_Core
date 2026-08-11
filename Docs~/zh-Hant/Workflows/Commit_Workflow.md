@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
-description: 跨專案共享的提交規則 — submodule 三層 bump 流程、submodule 內 commit 前先切 Dev 分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-05-16
+description: 跨專案共享的提交規則 — **預設單層**（只提交改動所在那層，逐層 bump 要使用者明說）、submodule 逐層 bump 流程、submodule 內 commit 前先切追蹤分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
+last_updated: 2026-08-11
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
@@ -10,14 +10,28 @@ related:
 
 # 📦 Commit Workflow — 提交規範
 
-> 一句話：**代碼一筆 commit、酒館訊息一筆 commit、submodule 改動三層 bump、ephemeral 檔別碰**。本檔由所有引用 UCL_Core 的專案共享。
+> 一句話：**代碼一筆 commit、酒館訊息一筆 commit、預設只提交改動所在那一層、ephemeral 檔別碰**。本檔由所有引用 UCL_Core 的專案共享。
+
+> [!IMPORTANT]
+> ## 層數預設：單層（Tim 2026-08-11 拍板）
+>
+> 收到「commit」→ **只提交改動所在的那一層，不 bump 父層。**
+> 逐層 bump（本檔 §3）是**選配**，只在使用者明說時執行：
+> `commit all` / `全包` / `逐層 bump` / `bump 到主專案`。
+>
+> **為什麼**：bump 是一個對外的宣告（「這版可以拿去用了」），而剛寫完的東西通常還沒被實跑驗過。
+> 預設 bump 等於每次存檔都對同事廣播一次未驗收的版本。單層把「寫完」跟「發佈」分開。
+>
+> **代價要講出來，因為它不會叫**：單層之後父層指標仍指著舊 hash，同事 pull 主專案拿到的是舊版。
+> 所以單層 commit 完的回報**必須明說這件事** —— 只報 SHA 會讓人以為東西已經到得了別人手上。
 
 ---
 
 ## 1. 為什麼要有提交規範
 
 - 代碼變動 + 聊天紀錄混一筆 commit → 日後查 history 時雜訊大、git blame 失焦
-- submodule 沒 bump 上層 → 同事 / CI 拉下來編譯失敗
+- 該 bump 上層卻沒 bump（`commit all` 模式下）→ 同事 / CI 拉下來編譯失敗
+  （單層模式下不 bump 是**預期行為**，但回報時要明說父層還在舊 hash —— 見上方層數預設）
 - DebugLogs / `_last_op.md` 之類的 ephemeral 進 history → 倉庫膨脹，無價值
 
 本檔釘死「**哪個檔案進哪一筆 commit**」與「**什麼順序動**」。
@@ -289,7 +303,8 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
 EOF
 ```
 
-- **一則訊息一個 SHA**。submodule 改動走三層 bump（UCL_Core → UCL → 主專案）→ **分三則各自公告，各領 5**。
+- **一則訊息一個 SHA**。走 `commit all` 逐層 bump（UCL_Core → UCL → 主專案）時 → **分三則各自公告，各領 5**；
+  單層則只有一則一筆。**層數是使用者的決定，不是領薪的手段** —— 別為了多領而自己加層。
   計價單位跟舊規則一樣是「一個 commit 一筆」，改的只是費率（1 → 5）與觸發方式。
 - `sha` 是**必填**且會被驗格式（7~40 位 hex）；缺 sha 或塞多個 SHA 會被 server 端 T06.3 直接 reject，不寫進 messages。
 - 這則公告**同時也吃到 work_post +1**（它落在 work-channel），所以實得 **+6**。刻意允許：發文產出與 commit 成果是兩件事。
@@ -317,7 +332,7 @@ EOF
 3. 自律分組 (按 9.4 判斷指引)
 4. 報告分組計畫給 Tim：「擬拆 N 筆：A / B / C，每筆 +1 token，共 +N」
 5. Tim 點頭 (隱式 / 顯式) → 依序 stage + commit
-6. Submodule 改動走三層 bump (per §3)
+6. 層數：預設**單層**；使用者說 `commit all` 才逐層 bump (per §3)
 7. 落 commit 後不 push (per §7)
 ```
 

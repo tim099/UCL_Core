@@ -1116,8 +1116,10 @@ def op_make(args):
                         _seg = _stt.transcribe(audio, language=stt_lang_eff,
                                                model_size=stt_model_eff)
                         # 真實 epoch: end=擷取返回時刻 t1, start=t1-實測秒數 (不用 want, 誠實對齊)
+                        # audio_sec=measured — 這條路本來就量了實測秒數, 現在一併落盤
+                        # (Tim 2026-08-11: 讓覆蓋率變成可驗指標, 不再靠 bracket 自我證明)
                         _stt.write_stt_chunk(_stt.STT_CACHE_DIR, t1 - measured, t1, _seg,
-                                             stt_model_eff)
+                                             stt_model_eff, audio_sec=measured)
                         stt_live_cov = (measured, max(1e-6, until_ep - after_ep))
             segs, info = _stt.read_stt_cache(after_ep, until_ep)
             section = _stt.build_stt_section_cached(

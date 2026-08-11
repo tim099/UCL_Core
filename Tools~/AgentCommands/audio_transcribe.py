@@ -480,7 +480,8 @@ def read_stt_cache(after_epoch: float, until_epoch: float,
 
 
 def write_stt_chunk(cache_dir, start_epoch: float, end_epoch: float,
-                    segments: list[dict], model_size: str = DEFAULT_MODEL) -> str:
+                    segments: list[dict], model_size: str = DEFAULT_MODEL,
+                    audio_sec: float | None = None) -> str:
     """把一個 chunk 的段 (相對時間戳→絕對 epoch) atomic 寫成 cache json + 更新 status watermark。
 
     區塊職責: module-level 寫入函式, 給 SttCacheWorker (常駐) 與 montage --stt-live (同步現抓) 共用,
@@ -488,6 +489,17 @@ def write_stt_chunk(cache_dir, start_epoch: float, end_epoch: float,
     物理意義: segments 的 start/end 是「段內相對秒」→ 加 start_epoch 還原絕對 epoch, montage 依此對齊窗口。
     數值影響: watermark latest_end_epoch 取 max(既有, 本 chunk end) — montage-live 亂序寫時不倒退水位。
     回傳: 寫出的 cache 檔絕對路徑 (str)。
+
+    audio_sec (Tim 2026-08-11 拍板, Sirius 血證): **實際送進 whisper 的音訊秒數**
+      (`audio.size / WHISPER_SAMPLE_RATE`), 與 start/end_epoch 那對 bracket 是**兩件事**。
+      物理意義: bracket 是「loop 這一圈的牆上時間」(t0=擷取前 / t1=轉錄後), 由建構方式保證
+                前後相鄰 → **它結構上不可能顯示漏錄, 即使真的漏了**。
+                2026-08-11 實測 44 chunk 得「覆蓋率 99.9% / 0 gap」, 而那個數字是自我實現的:
+                拿 bracket 算覆蓋率等於拿迴圈時間戳證明迴圈沒有中斷。
+      數值影響: 只多一個欄位, 不改 bracket 語意 (montage read_stt_cache 仍依 bracket 篩窗口);
+                有了它才能算真覆蓋率 = Σaudio_sec / span, 並看出 bracket 比音訊長多少
+                (實測平均約 +0.8s → **sidecar 上的 STT 時間戳系統性偏晚, 該當 ±1s 讀**)。
+      None = 呼叫端沒量 (舊行為), 欄位不寫入 —— 缺值與 0 要分得出來, 不給預設。
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -497,6 +509,9 @@ def write_stt_chunk(cache_dir, start_epoch: float, end_epoch: float,
     fname = cache_dir / f"stt_{int(start_epoch * 1000)}.json"
     payload = {"start_epoch": start_epoch, "end_epoch": end_epoch,
                "model": model_size, "segments": abs_segs}
+    # 缺值不寫欄位 —— 「沒量」與「量到 0 秒」是兩件事, 混成 0 會讓覆蓋率統計靜默偏低
+    if audio_sec is not None:
+        payload["audio_sec"] = round(float(audio_sec), 3)
     tmp = fname.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     tmp.replace(fname)
@@ -609,9 +624,16 @@ class SttCacheWorker:
         except Exception:
             pass
 
-    def _write_chunk(self, start_epoch: float, end_epoch: float, segments: list[dict]) -> None:
-        """把一個 chunk atomic 寫成 cache json + 更新 status (委派 module-level write_stt_chunk 共用)。"""
-        write_stt_chunk(self.cache_dir, start_epoch, end_epoch, segments, self.model_size)
+    def _write_chunk(self, start_epoch: float, end_epoch: float, segments: list[dict],
+                     audio_sec: float | None = None) -> None:
+        """把一個 chunk atomic 寫成 cache json + 更新 status (委派 module-level write_stt_chunk 共用)。
+
+        audio_sec: 實際送進 whisper 的音訊秒數 —— 見 write_stt_chunk 的說明。
+                   montage --stt-live 那條路早就在量它 (gura 磚1「覆蓋% 要用實測不用請求秒數」),
+                   常駐 worker 這條路先前沒量 → 本參數把兩條路拉到同一個誠實標準。
+        """
+        write_stt_chunk(self.cache_dir, start_epoch, end_epoch, segments, self.model_size,
+                        audio_sec=audio_sec)
 
     def _cleanup(self, now_epoch: float) -> None:
         """刪超過 retention 的舊 cache (rolling, 對齊 frame ring buffer 不無限長大)。"""
@@ -679,7 +701,8 @@ class SttCacheWorker:
                               initial_prompt=self.prompt)
             t1 = time.time()
             try:
-                self._write_chunk(t0, t1, segs)
+                # audio.size / SR = 這一圈真的送進 whisper 的秒數 (不是 chunk_sec 設定值, 也不是 t1-t0)
+                self._write_chunk(t0, t1, segs, audio_sec=audio.size / WHISPER_SAMPLE_RATE)
                 self.chunk_count += 1
                 # 進度回呼 — 讓 caller 定期輸出心跳 (修「背景看似卡住」); 回呼失敗不影響主流程
                 if self.progress_cb is not None:

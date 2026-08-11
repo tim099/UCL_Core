@@ -86,8 +86,21 @@ namespace UCL.Core.EditorLib.Page
         float m_SttLogprobMin = -1.0f;    // 對齊官方 logprob_threshold
         string m_SttModel = "small";
         string m_SttLang = "";
-        // T-STT-StaleFix (Tim 2026-07-20): stt_prompt = whisper 人名詞彙偏置 (陪看 skill 寫入) —
-        //   Page 不編輯它, 只顯示殘留 + 提供清除; 開始錄影時自動清空, 防上一場人名偏置跨場造成幻聽.
+        // 區塊職責: stt_prompt = whisper 人名詞彙偏置 (initial_prompt) —— **Page 可編輯欄位** (Tim 2026-08-11)。
+        // 沿革與取捨 (改了 T-STT-StaleFix 的一半, 記在這裡免得下次有人以為是退化):
+        //   ① 2026-07-20 T-STT-StaleFix: Page 只顯示殘留 + 手動清除, 且**開始錄影自動清空** ——
+        //      當時 stt_prompt 的唯一寫入者是陪看 skill, 血證是「換片後殘留讓 whisper 幻聽出舊片人名」。
+        //      在「Tim 看不到也改不到」的前提下, 自動清空是對的: 看不見的殘留只能靠自動清。
+        //   ② 2026-08-11 改為可編輯 + **開始錄影不再清空**: 因為自動清空與可編輯**直接互斥** ——
+        //      填完 prompt 按「開始錄影」就被抹掉, 欄位等於裝飾。
+        //      跨場殘留的防護改由「欄位常駐可見 + 提示每片一份」承擔: 殘留看得見就不是殘留, 是設定。
+        //   ③ 為什麼值得做: 2026-08-11 陪看《もののけ姫》八輪實測, **專有名詞崩壞是最大失效類**
+        //      (シシ神 七種寫法 / ナゴ→名古屋 / サン→カゴは3だ / 天王様→店長様 / もののけ→物抜け),
+        //      而 initial_prompt 正是它的正解, 管線 (config→daemon→worker→transcribe) 早就通到底, 只差內容。
+        // 物理意義: whisper 的 initial_prompt 是**偏置不是約束** —— 提高這些詞的機率, 不保證命中。
+        // 數值影響: 上限約 224 token, 塞太多會把前面擠掉 → 只放**當前這一部片**的專有名詞, 不要寫句子;
+        //          換片要改 (這是它跟 stream_title 同一種「每片一份」的欄位)。
+        //          daemon 偵測 prompt 變更會自動重起 worker → 存檔即生效, 不必停/啟錄影。
         string m_SttPrompt = "";
         // 片名/描述 (Tim 2026-07-27): 可空; 有填則 daemon 開播的酒館廣播附加「📺 本場節目: <此文字>」。
         //   持久化在 config.stream_title, 不自動清空 (欄位在頁面上看得見, 換片自行改/清)。
@@ -156,6 +169,9 @@ namespace UCL.Core.EditorLib.Page
         bool m_BaseSttSetting = false;
         string m_BaseSttModel = "small";
         string m_BaseSttLang = "";
+        // stt_prompt 進 3-way merge (Tim 2026-08-11): 它現在有**兩個寫入者** (Tim 手打 / 陪看 skill),
+        // 而 MergeField 的語意剛好解這題 —— Tim 沒動過就吃 skill 寫的新值, 正在編輯就不被蓋掉。
+        string m_BaseSttPrompt = "";
         string m_BaseStreamTitle = "";
         bool m_BaseOcrEnabled = false;
         int m_BaseOcrWorkers = 2;
@@ -276,8 +292,8 @@ namespace UCL.Core.EditorLib.Page
         {
             base.TopBarButtons();
             // 區塊職責: 開始/停止錄影鈕 (Tim 2026-07-28: 自內文移到 Top Bar + 移除 5 秒二段確認, 點擊直接生效)
-            // 物理意義: 開始錄影 = 同步保存當前所有 UI 設定 + 清空上一場 stt_prompt 人名偏置 (防跨場幻聽,
-            //          T-STT-StaleFix 慣例不變); daemon 每 loop reload config 反應 enabled toggle。
+            // 物理意義: 開始錄影 = 同步保存當前所有 UI 設定 (含 stt_prompt 人名偏置 —— 2026-08-11 起
+            //          該欄由 Page 擁有, 開播不再清空); daemon 每 loop reload config 反應 enabled toggle。
             // 數值影響: TopBarButtons 可能先於 ContentOnGUI 執行 → 先走 EnsureInitialReload 保 config 已載;
             //          config 未載入 (檔不存在) 時不畫錄影鈕, 走內文的「初始化」流程。
             EnsureInitialReload();
@@ -303,7 +319,9 @@ namespace UCL.Core.EditorLib.Page
                     {
                         m_Enabled = true;
                         PostStreamAnnounce(true);
-                        SaveToDisk(clearSttPrompt: true);
+                        // 2026-08-11 起**不再清空 stt_prompt** —— 它已是 Page 可編輯欄位, 清掉等於
+                        // 每次開播都抹掉 Tim 剛填的人名偏置 (原因見 m_SttPrompt 宣告處沿革註解)。
+                        SaveToDisk();
                         // 開始錄影 → daemon 立即 spawn (存活綁 config.enabled, 不再常駐 idle)
                         AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
                     }
@@ -495,7 +513,8 @@ namespace UCL.Core.EditorLib.Page
                         m_Enabled = data.GetBool("enabled", false);
                         m_FrameCount = data.GetInt("frame_count", 0);
                         m_StartedAt = data.GetString("started_at", "");
-                        m_SttPrompt = data.GetString("stt_prompt", "");
+                        // 可編輯欄位 → 走 3-way merge (skill 寫入會生效, Tim 編輯中不被蓋)
+                        m_SttPrompt = MergeField(m_SttPrompt, ref m_BaseSttPrompt, data.GetString("stt_prompt", ""));
                         // daemon 實效開關 (staleness 警示用): 沒開的功能本來就不會有新資料, 不該警告
                         m_SttEnabledCfg = data.GetBool("stt_enabled", false);
                         m_OcrEnabledCfg = data.GetBool("ocr_enabled", false);
@@ -623,6 +642,9 @@ namespace UCL.Core.EditorLib.Page
                 existing["stt_no_speech_max"] = new JsonData(m_SttNoSpeechMax);
                 existing["stt_logprob_min"] = new JsonData(m_SttLogprobMin);
                 existing["stt_lang"] = new JsonData(m_SttLang);
+                // 人名詞彙偏置 — Page 擁有此欄 (Tim 2026-08-11), 每次 save 一律寫回 UI 當前值。
+                // 清除 = 把欄位清空再存 (見下方 clearSttPrompt), 不再由「開始錄影」代勞。
+                existing["stt_prompt"] = new JsonData(m_SttPrompt ?? "");
                 existing["stream_title"] = new JsonData(m_StreamTitle ?? "");
                 // OCR 欄位 (底部原點語意) — daemon 每 loop reload, band 改動走 T-OCR-AutoRestart 自動重起 pool
                 existing["ocr_enabled"] = new JsonData(m_OcrEnabled);
@@ -643,7 +665,8 @@ namespace UCL.Core.EditorLib.Page
                     regionsArr.Add(o);
                 }
                 existing["ocr_extra_regions"] = regionsArr;
-                // T-STT-StaleFix: 開始錄影時清空人名詞彙偏置 (防上一場殘留跨場幻聽); 其餘 save 保留既有值
+                // 「清除偏置」鈕走這條 (Tim 2026-08-11 起僅此一處呼叫; 開始錄影已不再自動清空 —— 原因見
+                //  m_SttPrompt 宣告處的沿革註解: 自動清空與可編輯欄位互斥)
                 if (clearSttPrompt)
                 {
                     existing["stt_prompt"] = new JsonData("");
@@ -666,6 +689,7 @@ namespace UCL.Core.EditorLib.Page
                 m_BaseSttSetting = m_SttSetting;
                 m_BaseSttModel = m_SttModel;
                 m_BaseSttLang = m_SttLang;
+                m_BaseSttPrompt = m_SttPrompt;
                 m_BaseStreamTitle = m_StreamTitle;
                 m_BaseOcrEnabled = m_OcrEnabled;
                 m_BaseOcrWorkers = m_OcrWorkers;
@@ -743,41 +767,58 @@ namespace UCL.Core.EditorLib.Page
             }
 
             // ===========================================================
-            // Status banner — 強烈視覺
-            // ===========================================================
+            // Status strip — 單行狀態條 (Tim 2026-08-11: 原本三塊佔掉太多版面, 併成一行)
+            // 區塊職責: 錄影狀態 + 幀數 + daemon 健康**一行講完**; 細節 (started_at / DEAD 說明) 收摺頁。
+            // 沿革: 原本是「fontSize 24 大字 box」+「停止 box」+ 獨立一行 Daemon process, 共約 5 行高。
+            //       Tim 的理由: Top Bar 的「⏹ 停止錄影 / ▶ 開始錄影」鈕本身就已經是錄影狀態指示器,
+            //       頁內再用大字重述一次是重複資訊。
+            // 物理意義: **底色仍保留紅/綠** —— 本頁存在的理由之一就是「錄影中」要不可誤認 (2026-05-16 拍板),
+            //          所以壓縮的是字級與行數, 不是警示本身。
+            // 數值影響: 純版面; m_FrameCount / m_LatestFrame / m_DaemonAlive 來源與更新節奏都沒變。
             var oldColor = GUI.backgroundColor;
-            if (m_Enabled)
+            GUI.backgroundColor = m_Enabled ? new Color(0.8f, 0.1f, 0.1f) : new Color(0.2f, 0.5f, 0.2f);
+            bool aShowStatusDetail;
+            using (new GUILayout.VerticalScope(GUI.skin.box))
             {
-                GUI.backgroundColor = new Color(0.8f, 0.1f, 0.1f);
-                GUILayout.BeginVertical(GUI.skin.box);
-                GUILayout.Label("🔴 錄影中 RECORDING", new GUIStyle(GUI.skin.label)
-                    { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter });
-                GUILayout.Label($"已截 {m_FrameCount} frames, 當前 latest: frame_{m_LatestFrame}",
-                    new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter });
-                if (!string.IsNullOrEmpty(m_StartedAt))
+                GUI.backgroundColor = oldColor;   // 只染 box 底, 內部元件維持正常色
+                GUILayout.BeginHorizontal();
+                aShowStatusDetail = UCL_GUILayout.Toggle(m_Dic, "StatusFold", 18, iDefaultValue: false);
+                if (m_Enabled)
                 {
-                    GUILayout.Label($"started_at: {m_StartedAt}",
-                        new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10 });
+                    GUILayout.Label("🔴 錄影中", new GUIStyle(GUI.skin.label)
+                    { fontSize = 15, fontStyle = FontStyle.Bold });
+                    GUILayout.Label($"{m_FrameCount} frames · latest frame_{m_LatestFrame}",
+                        new GUIStyle(GUI.skin.label) { fontSize = 11 });
                 }
-                GUILayout.EndVertical();
-            }
-            else
-            {
-                GUI.backgroundColor = new Color(0.2f, 0.5f, 0.2f);
-                GUILayout.BeginVertical(GUI.skin.box);
-                GUILayout.Label("⚫ 停止 (daemon 已同步停止, 按 Top Bar「▶ 開始錄影」啟動)", new GUIStyle(GUI.skin.label)
-                    { fontSize = 18, alignment = TextAnchor.MiddleCenter });
-                GUILayout.EndVertical();
+                else
+                {
+                    GUILayout.Label("⚫ 停止", new GUIStyle(GUI.skin.label)
+                    { fontSize = 15, fontStyle = FontStyle.Bold });
+                    GUILayout.Label("按 Top Bar「▶ 開始錄影」啟動", new GUIStyle(GUI.skin.label) { fontSize = 11 });
+                }
+                GUILayout.FlexibleSpace();
+                // daemon 健康併進同一行 — 只在「不健康」時才需要文字說明, 正常態一顆燈就夠
+                string aDaemonShort = m_DaemonAlive ? "🟢 daemon"
+                    : m_Enabled ? "🔴 daemon DEAD" : "⚫ daemon";
+                GUILayout.Label(aDaemonShort, new GUIStyle(GUI.skin.label) { fontSize = 11 });
+                GUILayout.EndHorizontal();
+
+                if (aShowStatusDetail)
+                {
+                    // 摺頁內容 = 原本常駐但少看的兩筆; 展開才佔版面
+                    if (!string.IsNullOrEmpty(m_StartedAt))
+                    {
+                        GUILayout.Label($"  started_at: {m_StartedAt}",
+                            new GUIStyle(GUI.skin.label) { fontSize = 10 });
+                    }
+                    string aDaemonState = m_DaemonAlive ? "🟢 ALIVE (daemon 運行中)"
+                        : m_Enabled ? "🔴 DEAD (錄影中但無存活 daemon — 等 Editor respawn, ~5s)"
+                                    : "⚫ 停止 (未錄影時 daemon 同步停止, 開始錄影自動啟動)";
+                    GUILayout.Label($"  Daemon process: {aDaemonState}",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10 });
+                }
             }
             GUI.backgroundColor = oldColor;
-
-            GUILayout.Space(10);
-
-            // Daemon health — daemon 存活綁錄影開關 (Tim 2026-07-28): 停止錄影時 daemon 同步停止是正常態
-            string aDaemonState = m_DaemonAlive ? "🟢 ALIVE (daemon 運行中)"
-                : m_Enabled ? "🔴 DEAD (錄影中但無存活 daemon — 等 Editor respawn, ~5s)"
-                            : "⚫ 停止 (未錄影時 daemon 同步停止, 開始錄影自動啟動)";
-            GUILayout.Label($"Daemon process: {aDaemonState}");
             GUILayout.Space(5);
 
             // T14 — Preview (錄影中才顯示)
@@ -1020,23 +1061,43 @@ namespace UCL.Core.EditorLib.Page
                         + "依賴安裝/健檢請開「影音管理」頁.",
                         new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
 
-                    // T-STT-StaleFix (Tim 2026-07-20) — 人名詞彙偏置 (stt_prompt) 殘留可視化
-                    // 物理意義: 陪看 skill 開播會寫入該片角色名做 whisper 偏置; 換片沒清會讓 whisper
-                    //          幻聽出舊片人名。開始錄影已自動清空, 此處另給手動清除鈕 + 讓殘留看得見.
-                    if (!string.IsNullOrEmpty(m_SttPrompt))
+                    // ==== 人名詞彙偏置 (stt_prompt) — 可編輯 (Tim 2026-08-11) ====
+                    // 區塊職責: whisper initial_prompt 的輸入欄 + 字數/token 風險提示 + 清除鈕。
+                    // 物理意義: 專有名詞是 STT 最大失效類 (2026-08-11 陪看八輪實測), 而這是它的正解;
+                    //          偏置是機率加權不是白名單, 填了仍可能沒命中。
+                    // 數值影響: 存檔即生效 (daemon 偵測 prompt 變更自動重起 worker, 不必停/啟錄影)。
+                    GUILayout.Space(4);
+                    GUILayout.Label("  🏷 人名詞彙偏置 (whisper initial_prompt) — 只填**這一部片**的專有名詞, 逗號分隔:",
+                        new GUIStyle(GUI.skin.label) { fontSize = 11, fontStyle = FontStyle.Bold });
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(12);
+                    m_SttPrompt = GUILayout.TextArea(m_SttPrompt ?? "", GUILayout.MinHeight(38));
+                    using (new GUILayout.VerticalScope(GUILayout.Width(80)))
                     {
-                        GUILayout.BeginHorizontal();
-                        string promptPreview = m_SttPrompt.Length > 60 ? m_SttPrompt.Substring(0, 60) + "…" : m_SttPrompt;
-                        GUILayout.Label($"  🏷 殘留人名偏置 (stt_prompt): {promptPreview}",
-                            new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
-                        if (GUILayout.Button("清除偏置", GUILayout.Width(80)))
+                        if (GUILayout.Button("清除", GUILayout.Width(76)))
                         {
                             SaveToDisk(clearSttPrompt: true);
                         }
-                        GUILayout.EndHorizontal();
-                        GUILayout.Label("  ⓘ 開始錄影時會自動清空此偏置 (每場從乾淨狀態起跑, 防跨場幻聽).",
-                            new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                        // 長度警示 —— whisper prompt 上限約 224 token; 中日文粗估 1 字≈1 token,
+                        // 超了是**靜默截斷前段**, 所以要在 UI 就擋住 (不會有 error log 告訴你)
+                        int aPromptLen = (m_SttPrompt ?? "").Length;
+                        GUILayout.Label(aPromptLen > 200 ? $"⚠ {aPromptLen} 字" : $"{aPromptLen} 字",
+                            new GUIStyle(GUI.skin.label)
+                            { fontSize = 10, alignment = TextAnchor.MiddleCenter });
                     }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  ⓘ 上限約 224 token (中日文粗估 1 字≈1 token) — **超過會靜默截掉前段**, 所以只放專有名詞、別寫句子.",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    // 生效時機 —— 打字不會自動生效, 要按下方「💾 儲存設定」寫 config, daemon 才看得到。
+                    // 錄影中改也可以: daemon 的 T-STT-AutoRestart 把 (model, lang, prompt) 當簽章比對,
+                    // 任一改變就換一顆 worker（prompt 綁建構子, 不可熱改）→ 代價是卸/載 whisper 數秒,
+                    // **銜接損失 ≤1 個 chunk**（現行 chunk_sec 設定值）。截圖與 OCR 完全不受影響（不同 worker）。
+                    GUILayout.Label("  ⓘ 生效時機: 打完要按下方「💾 儲存設定」. **錄影中改也會套用** —— daemon 偵測到變更會換一顆 "
+                        + "whisper worker, 代價是重載模型數秒、STT 銜接**損失 ≤1 個 chunk**; 截圖／OCR 不受影響.",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    GUILayout.Label("  ⚠ **每片一份**: 換片沒改 → whisper 會把上一部片的人名硬套到這一部 (2026-07-20 血證). "
+                        + "換片時跟「📺 片名/描述」一起改.",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
                 }
             }
 

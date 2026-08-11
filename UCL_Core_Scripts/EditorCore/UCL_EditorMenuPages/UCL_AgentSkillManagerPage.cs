@@ -61,10 +61,10 @@ namespace UCL.Core.EditorLib.Page
         // 指紋必須用穩定值（dataPath hash）— 任何隨開發活動自然變動的值（如 git commit）都不配
         // 當快照 key，否則永遠判定有變動（summit install marker churn 血證）。
         static string s_PrefKey_Acknowledged;
-        static string s_ProjectFingerprint;
 
-        static string ProjectFingerprint =>
-            s_ProjectFingerprint ??= Application.dataPath.GetHashCode().ToString("X");
+        /// <summary>走共用解析點 <see cref="UCL_RepoPath.ProjectFingerprint"/>
+        /// （本檔原本有一份逐字相同的私有副本，2026-08-11 收攏；演算法未變，既有 key 不失效）。</summary>
+        static string ProjectFingerprint => UCL_RepoPath.ProjectFingerprint;
 
         /// <summary>EditorPrefs key — 使用者勾過「永不自動彈」的 opt-out 旗標。空 = 未勾。</summary>
         public static string PrefKey_Acknowledged =>

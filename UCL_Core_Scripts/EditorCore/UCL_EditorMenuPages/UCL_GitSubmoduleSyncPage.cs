@@ -50,7 +50,19 @@ namespace UCL.Core.EditorLib.Page
         public override string WindowName => "UCL_GitSubmoduleSync";
         public override bool ShowInPageMenu => true;
 
-        const string PrefKey_Settings = "UCL_GitSubmoduleSync.Settings";
+        // 區塊職責：設定的 EditorPrefs key —— **綁專案**
+        // 物理意義：EditorPrefs 是 per-machine（全機所有 Unity 專案共用一份），所以不加綴的
+        //          `"UCL_GitSubmoduleSync.Settings"` 會讓 A 專案的設定直接生效在 B 專案。
+        //          血證（2026-08-11）：在 LY 設好的 `Root=D:/Unity/LY` 漂進 Bar 專案，於是在 Bar
+        //          按 pull / 一鍵同步時，本頁**誠實地對 LY 動手並回報一整排 ✓**，而 Bar 的
+        //          submodule 一個位元組都沒動 —— 綠燈全亮、量到的是別的 repo。
+        //          同一份設定裡的 `Overrides` 更毒：`AgentCommands -> LY` 這條漂到 Bar 之後，
+        //          「一鍵同步」會試著把 Bar 的 AgentCommands 從 main 切到 LY。
+        //          ⚠ 舊 key（無後綴）刻意不遷移、也不刪：遷移等於把汙染過的值搬進第一個開啟的專案，
+        //            正是本次要根治的東西。舊值留在 registry 當孤兒，無害。
+        static string s_PrefKey_Settings;
+        static string PrefKey_Settings =>
+            s_PrefKey_Settings ??= $"UCL_GitSubmoduleSync.Settings@{UCL_RepoPath.ProjectFingerprint}";
 
         // Process 註冊中心的 tag —— KillAllByTag / Register / Unregister 三處共用。
         // 硬規則：C# 開的每顆外部 Process 都要登記（見 Coding_Standards.md「外部 Process」）。
@@ -66,7 +78,12 @@ namespace UCL.Core.EditorLib.Page
         [Serializable]
         public class SyncSettings
         {
-            public string Root = "";
+            // **不進 EditorPrefs**（[NonSerialized] → JsonUtility 兩向都跳過）。
+            // 物理意義：「這一頁對哪個 repo 動手」是本頁最危險的一個值，而持久化它等於讓
+            //          一個看不見的舊值決定今天的目標。key 已經綁專案，這裡再加一道：
+            //          **每次開頁一律回到本專案**，要跨 repo 操作就當次自己打路徑（不留過夜）。
+            //          兩道合起來的不變量：開頁那一刻，目標永遠是「我現在開著的這個專案」。
+            [NonSerialized] public string Root = "";
             // 全域預設 branch —— 逐項覆寫與 .gitmodules 都沒給時的最後一層。
             // 空字串 = 沒有預設：解析不到目標 branch 的 submodule 會被跳過並列出，
             // 不會靜默拿「目前所在 branch」頂替（那等於沒有這個功能）。
@@ -187,7 +204,10 @@ namespace UCL.Core.EditorLib.Page
             }
             m_Settings.Excluded ??= new List<string>();
             m_Settings.Overrides ??= new List<BranchOverride>();
-            if (string.IsNullOrEmpty(m_Settings.Root)) m_Settings.Root = UCL_RepoPath.RepoRoot;
+            // 無條件重設，不是「空才填」——「空才填」正是舊行為，而它讓一個存了不知道多久的
+            // 舊 Root 沉默地當今天的目標。Root 已標 [NonSerialized]，這裡是第二道保險：
+            // 就算哪天有人把 [NonSerialized] 拿掉，開頁的目標仍然是本專案。
+            m_Settings.Root = UCL_RepoPath.RepoRoot;
         }
 
         void SaveSettings()
@@ -200,6 +220,22 @@ namespace UCL.Core.EditorLib.Page
             {
                 Debug.LogWarning($"[GitSubmoduleSync] 設定保存失敗: {e.Message}");
             }
+        }
+
+        // 區塊職責：兩個路徑指不指同一個 repo
+        // 物理意義：純字串比對會把 `D:/Unity/LY`、`D:\Unity\LY`、`D:/Unity/LY/` 判成三個不同的
+        //          repo，於是警示對著同一個 repo 亂叫 —— 假警報訓練人忽略警報，那比沒有警報糟。
+        //          正規化分隔符 + 去尾斜線 + 忽略大小寫（Windows 檔案系統語意）。
+        //          不用 Path.GetFullPath：它會對不存在的路徑丟例外，而這欄是使用者隨手打的。
+        static bool SameRepo(string a, string b)
+        {
+            return string.Equals(NormRepo(a), NormRepo(b), StringComparison.OrdinalIgnoreCase);
+        }
+
+        static string NormRepo(string p)
+        {
+            if (string.IsNullOrEmpty(p)) return "";
+            return p.Replace('\\', '/').TrimEnd('/');
         }
 
         string GetOverride(string path)
@@ -310,6 +346,15 @@ namespace UCL.Core.EditorLib.Page
                         SaveSettings();
                         GUI.FocusControl(null);
                     }
+                }
+                // Root 指向別的 repo 是**合法用法**（在 A 專案裡整理 B 專案），但它必須用吵的 ——
+                // 沉默的話，畫面上的一切（狀態表、報告、綠燈）都會是另一個 repo 的實話，
+                // 而人讀到的是「我的專案沒事」。這一格就是 2026-08-11 那次的現場。
+                if (!SameRepo(m_Settings.Root, UCL_RepoPath.RepoRoot))
+                {
+                    GUILayout.Label($"⚠ 目標不是本專案 —— 下面所有狀態與按鈕都作用在 {m_Settings.Root}，"
+                                    + $"不是你現在開著的 {UCL_RepoPath.RepoRoot}。"
+                                    + "確定要操作本專案的話按上面的「本專案」。", WarnStyle);
                 }
                 using (new GUILayout.HorizontalScope())
                 {
@@ -548,8 +593,13 @@ namespace UCL.Core.EditorLib.Page
                 pushWhere = seen.Count == 0 ? "（掃描時沒看到任何 remote）"
                     : $"所有 remote —— 掃描時看到的有: {string.Join(", ", seen)}";
             }
+            // 目標不是本專案時，把這件事放在確認框**第一行** —— 這是唯一一個
+            // 「按下去之後才發現搞錯對象就來不及」的欄位（push 會寫遠端）。
             string body =
-                $"Repo: {m_Settings.Root}\n"
+                (SameRepo(m_Settings.Root, UCL_RepoPath.RepoRoot)
+                    ? ""
+                    : $"⚠ 目標不是你現在開著的專案（{UCL_RepoPath.RepoRoot}）\n\n")
+                + $"Repo: {m_Settings.Root}\n"
                 + $"對象: {included} 個 submodule{(m_Settings.IncludeRoot ? " + root repo" : "")}\n"
                 + $"動作: {(checkout ? "切到預設 branch → " : "")}{(pull ? "pull（ff-only）→ " : "")}"
                 + $"{(push ? "push（由深到淺，root 最後）" : "")}\n"

@@ -52,11 +52,10 @@ namespace UCL.Core.EditorLib.Page
 
         static string s_PrefKey_ShownVersion;
         static string s_PrefKey_AutoOpenDisabled;
-        static string s_ProjectFingerprint;
 
-        /// <summary>專案指紋 — Application.dataPath 的 hash，用於 EditorPrefs key 加綴。</summary>
-        static string ProjectFingerprint =>
-            s_ProjectFingerprint ??= Application.dataPath.GetHashCode().ToString("X");
+        /// <summary>專案指紋 — 走共用解析點 <see cref="UCL_RepoPath.ProjectFingerprint"/>
+        /// （本檔原本有一份逐字相同的私有副本，2026-08-11 收攏；演算法未變，既有 key 不失效）。</summary>
+        static string ProjectFingerprint => UCL_RepoPath.ProjectFingerprint;
 
         /// <summary>EditorPrefs key — 已展示版本（首次安裝時為空）。Per-project namespaced。</summary>
         public static string PrefKey_ShownVersion =>

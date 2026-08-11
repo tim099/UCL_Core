@@ -1,6 +1,6 @@
 ---
 title: UCL_GitSubmoduleSyncPage — Git Submodule 同步頁
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 ---
 
 # UCL_GitSubmoduleSyncPage
@@ -24,7 +24,7 @@ last_updated: 2026-08-10
 
 | 區塊 | 說明 |
 |---|---|
-| Repo 根目錄 | 預設 `UCL_RepoPath.RepoRoot`（本專案 git root），可改路徑 / 按「本專案」還原 |
+| Repo 根目錄 | **每次開頁一律回到本專案**（`UCL_RepoPath.RepoRoot`）。當次可改路徑跨 repo 操作，但**不留過夜**；改成別的 repo 時頁面與確認框都會警示 |
 | 全域預設 branch | 目標 branch 的最後一層 fallback；解析順序見下方 |
 | root repo 開關 | root 可一起 pull / push；**切 branch 永遠不含 root**（專案根換分支該是人自己下的動作） |
 | Push 到所有 remote 開關 | 見下節。關（預設）= 只推 `origin` |
@@ -36,7 +36,33 @@ last_updated: 2026-08-10
 | Push | 二次確認後執行；**由深到淺**（巢狀最深先推、root 最後）、每 repo 推完它的全部 remote 才換下一個 |
 | 一鍵同步 | 切 → pull → push 一條龍，同樣走二次確認 |
 
-設定存 `EditorPrefs`（JSON）。路徑是絕對路徑，換機器要重填（慣例同 FlattenSync）。
+## 設定存哪 —— 以及它 2026-08-11 之前會咬人的地方
+
+設定存 `EditorPrefs`（JSON），key 是 **`UCL_GitSubmoduleSync.Settings@<ProjectFingerprint>`**。
+路徑是絕對路徑，換機器要重填。
+
+> [!WARNING]
+> **`EditorPrefs` 是 per-machine，不是 per-project** —— 同一台機器上所有 Unity 專案共用
+> `HKCU\Software\Unity Technologies\Unity Editor 5.x` 一份。
+>
+> **血證（2026-08-11）**：本頁 2026-08-10 之前的 key 沒有加專案後綴，於是在 LY 設好的
+> `Root=D:/Unity/LY` 漂進了 Bar 專案。在 Bar 按 pull / 一鍵同步時，本頁**誠實地對 LY 動手、
+> 回報一整排 ✓**，而 Bar 的 submodule 一個位元組都沒動 —— 綠燈全亮，量到的是別的 repo。
+> 同一份設定裡的 `Overrides` 更毒：`AgentCommands -> LY` 漂到 Bar 之後，一鍵同步會試著把
+> Bar 的 `AgentCommands` 從 `main` 切到 `LY`。
+>
+> **現在的三道防線**
+> 1. key 加 `@<ProjectFingerprint>`（`UCL_RepoPath.ProjectFingerprint`）→ 各專案各一份設定
+> 2. `Root` 標 `[NonSerialized]` 且開頁**無條件**重設成本專案 → 不存在「存了不知道多久的舊目標」
+> 3. `Root` ≠ 本專案時，頁面顯示警示、確認框第一行也講 → 跨 repo 操作合法，但必須用吵的
+>
+> ⚠ 舊 key（無後綴）**刻意不遷移、也不刪**：遷移等於把汙染過的值搬進第一個開啟的專案，
+> 正是本次要根治的東西。舊值留在 registry 當孤兒，無害；想清掉自己去 registry 刪。
+
+> [!NOTE]
+> 任何**屬於單一專案**的 `EditorPrefs` key 都該加 `UCL_RepoPath.ProjectFingerprint`。
+> 該 getter 是這件事的唯一解析點（`UCL_WelcomePage` / `UCL_AgentSkillManagerPage`
+> 原本各有一份逐字相同的私有副本，2026-08-11 收攏過去；演算法未變，既有 key 不失效）。
 
 ## 目標 branch 解析順序
 

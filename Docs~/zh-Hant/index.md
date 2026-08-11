@@ -122,7 +122,9 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 |---|---|
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` 等 prefix 機制 |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬寫本地化字串的處理 |
-| 🎨 [Manga_Adaptation_Workflow](Workflows/Manga_Adaptation_Workflow.md) | **小說漫畫化 SOP** — 原作/分鏡/作畫三角分工 / `ArtGallery/Comic/<slug>/` 展區結構 / 分鏡稿記法（字幕 vs 對白、`▸註` 寫理由）/ **動筆前必拍板三件事**（版面走向・語言與專有名詞表・話數切分）/ 鐵則機制與「到期日」標註 / 六階段 SOP（**重讀原作・試畫一頁先於量產**）|
+| 🎨 [Manga_Adaptation_Workflow](Workflows/Manga_Adaptation_Workflow.md) | **小說漫畫化 SOP・總文件** — 原作/分鏡/作畫分工 / `ArtGallery/Comic/<slug>/` 展區結構 / **圖文分離**（字幕台詞住 `.md`、畫面零文字）/ 完成的定義與雙向驗收 / 六階段 SOP（**重讀原作・試畫一頁先於量產**）/ **收播與開播**（機械層 vs 手寫層・流程版本戳記）|
+| 🖋 [Manga_Adaptation_Author](Workflows/Manga_Adaptation_Author.md) | **漫畫化・作者篇**（原作／分鏡） — 動筆前必拍板三件事 / 文字人設寫什麼＋**用分鏡點名次數判誰要建檔** / 分鏡稿記法（字幕 vs 對白、`▸註` 寫理由）/ 鐵則機制與「到期日」/ **身分錨點 vs 自然偏移**（只守髮色・服裝・身高）/ 回報問題要標小中大 |
+| 🖌 [Manga_Adaptation_Artist](Workflows/Manga_Adaptation_Artist.md) | **漫畫化・繪師篇**（作畫） — **三視圖人設且零標註**（它會被當參考圖餵進去）/ **掛參考圖 > 文字重建** / **約束有預算**（硬的進 prompt、軟的靠人審）/ 畫面上准與不准出現的字 / **修正路徑：小問題走原圖微調不重生成** |
 | 🛠️ [Create_Cmd_Workflow](Workflows/Create_Cmd_Workflow.md) | **建立新的 `Cmd_<Name>.cs` 子類 SOP** — 命名 / 檔案位置決策樹（UCL_Core vs 下游模組） / 標準範本（CommandType / ShortDescription / ArgsSchema / HelpURL） / ExecuteAsync 守則 / Editor 驗收 / 8 大常見地雷 / **§9 文件放置自動判斷方案**（`source_root` frontmatter + `Cmd_ValidateDocPlacement`）|
 | 🛠️ [Create_EditorPage_Workflow](Workflows/Create_EditorPage_Workflow.md) ⭐ | **建立新的 `UCL_CommonEditorPage` 子類 SOP** — 繼承關係 / 必/選 override / TopBarButtons 客製 / 入口點掛接（父頁 / Welcome 卡片 / 選單） / UI 元件選用對照（連結 UCL_GUILayout 與 UCL_GUIStyle 文件） / HelpURL `{lang}` 佔位 / 8 大常見地雷 / 驗收清單 |
 | 🛠️ [Create_Persona_Workflow](Workflows/Create_Persona_Workflow.md) | 步驟化 SOP — 在 UCL_Core 與 Python 喚醒系統下，建立全新 Persona 人格所需的一切設定。涵蓋 Registry 註冊、頭像生成與 UCL_SpriteAsset 登記、UCL_ChatTavernPersonaCardAsset 角色卡配置，以及 Templates~ 備份同步工作流。 |

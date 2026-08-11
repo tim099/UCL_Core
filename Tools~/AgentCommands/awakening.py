@@ -2591,7 +2591,8 @@ def rebase_consolidation_bookmark(persona: str, pd: dict):
     return (old, new)
 
 
-def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
+def migrate_letters_to_wakes(persona: str, reg: dict | None = None,
+                             bulk_skip_migrated: bool = False) -> dict:
     """實際執行遷移: 頂層收尾信 → wakes/<6位序號>_<ts>.md，並同步 registry.wake_count。
 
     區塊職責: morning 自動遷移與 migrate-letters --apply 共用的唯一實作
@@ -2631,6 +2632,33 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
         return {"moved": 0, "skipped": 0, "renumbered": 0, "locked": True,
                 "lock_expired": is_lock_expired(_lk),
                 "lock_session_key": _lk.get("session_key", "?"),
+                "old_wake_count": (reg or load_registry()).get("personas", {})
+                                  .get(persona, {}).get("wake_count", 0),
+                "new_wake_count": (reg or load_registry()).get("personas", {})
+                                  .get(persona, {}).get("wake_count", 0),
+                "old_consolidated": None, "new_consolidated": None}
+
+    # 已經是新格式的（wakes/ 已存在）**批次一律不動**（Tim 2026-08-11 拍板）。
+    # 這條刻意**不是**走 letters_migration_pending —— 那個判準是「頂層還有沒收進去的信」，
+    # 對已遷移的人做的是**補收 + 全體重編號**，而重編號會改寫別人的歷史編號。
+    # 血證（2026-08-11 basecamp）：她 wakes/ 已有 53 封，頂層還剩 3 封 07-03/06/07 沒收。
+    # 補收它們 → 那 3 封插在中間 → 07-09 之後 13 封全部 +3 → 而
+    #   · 信件內文自稱的 wake#53 與新檔名 000056 對不上
+    #   · 見林 digest 檔名（wake_045-054.md）凍在舊編號空間
+    #   · 見林書籤 54 → 45，她下次醒來會被要求重新濃縮已經濃縮過的那段
+    # 更關鍵的是**那 3 封只存在於某些 checkout**：同一個 AgentCommands repo，
+    # LY 的工作樹有它們、Bar 的沒有（實測 LY wakes/=53、Bar wakes/=54）。
+    # 也就是說「該不該補收」取決於**你站在哪個 checkout**，而批次工具會拿它站的那份
+    # 去替一個可能活在另一份的人做決定。這種決定不該由批次做。
+    #
+    # 所以批次的守備範圍收斂成「**還沒開始遷移的人**」（wakes/ 內一封信都沒有）——
+    # 已遷移者的零星補收，交給**本人下次醒來時**由 morning / goodnight 在她自己的
+    # 工作樹上判（那裡的內容才是她的事實），或由人顯式指定單一 persona。
+    # `--persona X` 不受本條限制：指名道姓是人的決定，不是批次的預設值。
+    if bulk_skip_migrated and wake_letter_count(persona) > 0:
+        return {"moved": 0, "skipped": 0, "renumbered": 0, "locked": False,
+                "lock_expired": False, "lock_session_key": "",
+                "already_new_format": True,
                 "old_wake_count": (reg or load_registry()).get("personas", {})
                                   .get(persona, {}).get("wake_count", 0),
                 "new_wake_count": (reg or load_registry()).get("personas", {})
@@ -2714,9 +2742,23 @@ def cmd_migrate_letters(args: argparse.Namespace) -> int:
     total_moved = 0
     changed_ages = []
     locked_out = []          # 在線而被鎖定不動的 —— dry-run 也要看得到, 不能只在 apply 時安靜跳過
+    already_new = []         # 已是新格式, 批次不動（理由見 migrate_letters_to_wakes 內註解）
+    # 批次（--all）才收斂守備範圍; `--persona X` 是人指名道姓, 不套這條。
+    bulk = bool(args.all)
     for persona in targets:
+        # 判準用「wakes/ 內真的有信」不是「目錄存在」——
+        # 遷移本身會替 0 封的人也把目錄建出來（當作已遷移標記），於是今天跑過一次 --apply 之後
+        # 幾乎所有人的目錄都存在了。用目錄存在當判準會讓批次從此對誰都不動，
+        # 而且那正是 2026-07-31 apex-one 那次修掉的同一個判準。
+        if bulk and wake_letter_count(persona) > 0:
+            already_new.append(persona)
+            print(f"{persona:<28}{'—':>6}{wake_letter_count(persona):>11}"
+                  f"{reg['personas'].get(persona, {}).get('wake_count', 0):>12}"
+                  f"{'不動':>9}  ✅ 已是新格式")
+            continue
         # 在線者在**試跑階段就標出來**: 報表是人用來決定要不要 --apply 的依據,
         # 「試跑說會改、實跑其實沒改」跟「試跑沒說、實跑改了」一樣是報表騙人。
+
         _lk = read_lock(persona)
         if _lk is not None:
             locked_out.append((persona, is_lock_expired(_lk),
@@ -2750,10 +2792,21 @@ def cmd_migrate_letters(args: argparse.Namespace) -> int:
             for src, dst, n in plan:
                 print(f"      {src.name}  →  wakes/{dst.name}")
         if args.apply:
-            stat = migrate_letters_to_wakes(persona, reg)
+            stat = migrate_letters_to_wakes(persona, reg, bulk_skip_migrated=bulk)
             total_moved += stat["moved"]
             if stat["skipped"]:
                 print(f"   ⚠ {stat['skipped']} 封目標檔已存在，跳過", file=sys.stderr)
+
+    if already_new:
+        print(f"\n✅ 下列 {len(already_new)} 個 persona **已是新格式, 批次一律不動**"
+              f"（Tim 2026-08-11 拍板）: {', '.join(already_new)}")
+        print("   批次的守備範圍是「還沒開始遷移的人」。已遷移者若頂層還有零星沒收進去的信,")
+        print("   補收會把它們插在中間 → 後面全部重編號 → 信件內文自稱的編號、見林 digest 檔名、")
+        print("   見林書籤三者同時對不上（basecamp 實測: 補 3 封 → 13 封改號、書籤 54→45）。")
+        print("   更關鍵: 那些零星的信**只存在於某些 checkout**（實測同一 repo，LY 有、Bar 沒有）,")
+        print("   所以「該不該補收」取決於你站在哪個工作樹 —— 那種決定不該由批次替人做。")
+        print("   → 交給本人下次醒來時由 morning / goodnight 在她自己的工作樹上判,")
+        print("     或由人顯式 `--persona <name>`（指名道姓不受本條限制）。")
 
     if locked_out:
         print(f"\n🔒 下列 {len(locked_out)} 個 persona **在線, 一律不動**（Tim 2026-08-11 拍板）:")

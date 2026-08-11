@@ -17,11 +17,13 @@ CLI:
   python media_admin.py status                  # 依賴 + device + config 總覽 (人類可讀)
   python media_admin.py get-config              # 白名單 config 欄位 (純 JSON, 給 C# 頁面填表)
   python media_admin.py set-config k=v [k=v..]  # 寫回 daemon config (白名單 + 型別轉換)
-  python media_admin.py install --stt           # pip install openai-whisper + soundcard + numpy
-  python media_admin.py install --torch-cuda    # torch 換 CUDA 版 (cu124 wheel, GPU 加速)
-  python media_admin.py install --ocr           # pip install rapidocr-onnxruntime
-  python media_admin.py install --ocr-cuda      # onnxruntime 換 GPU 版 (CUDAExecutionProvider)
+  python media_admin.py list-plugins            # 插件清單 + 安裝狀態 + 可用動作 (純 JSON, 給頁面建下拉)
+  python media_admin.py plugin --id stt --action install     # 安裝
+  python media_admin.py plugin --id ocr --action uninstall   # 解除安裝
   python media_admin.py test-stt [--sec N]      # 委派專案端 audio_transcribe.py live N 試錄
+
+插件與動作的唯一定義處是本檔的 PLUGINS 註冊表 (Tim 2026-08-11 拍板: 插件會越來越多,
+頁面改成「下拉選插件 → 顯示該插件的動作」, 新增插件只改這張表, C# 端不必動)。
 """
 from __future__ import annotations
 
@@ -425,45 +427,50 @@ def _pip_install(args: list[str]) -> int:
     return r.returncode
 
 
-def op_install(stt: bool, torch_cuda: bool, ocr: bool, ocr_cuda: bool) -> int:
-    # 依 flag 分別裝; 全 false 視為參數錯誤
-    if not (stt or torch_cuda or ocr or ocr_cuda):
-        print("❌ install 需要 --stt / --torch-cuda / --ocr / --ocr-cuda 至少一個")
-        return 1
+def _pip_uninstall(pkgs: list[str]) -> int:
+    # 區塊職責：反覆 uninstall 直到該套件在所有 site 都不存在。
+    # 物理意義：pip 一次只卸「sys.path 順位最前」的那一份 — user-site 與 system site 可能各有一份
+    #          (torch 孤兒的前科就是這樣來的)。只跑一次會留下被遮蔽的第二份, 而 status 仍會顯示 ✅,
+    #          於是「解除安裝成功」是假的。迴圈到 pip 不再回報 Successfully 為止才算真的乾淨。
+    # 數值影響：上限 4 輪 — 正常最多 2 份 (user/system), 留餘裕但不無限迴圈。
     rc = 0
-    if stt:
-        # openai-whisper 會自帶拉 torch (預設 CPU wheel); soundcard = WASAPI loopback 擷取
-        rc |= _pip_install(["openai-whisper", "soundcard", "numpy"])
-    if torch_cuda and rc == 0:
-        # GPU 加速: 換 CUDA wheel (RTX 系列適用); 體積大, 頁面按鈕已標注耐心等。
-        # ⚠ 2026-07-26 血教訓 (Tim QA): 只帶 --upgrade 會踩「已滿足」陷阱 —
-        #   system site 若已有較新的 CPU 版 (如 2.13.0+cpu > cu124 index 最新 2.6.0),
-        #   pip 認定 requirement satisfied → 空跑 exit 0 → 誤報安裝完成。
-        #   對策: ①index 換 cu126 (有與新版同號的 +cu126 build) ②--force-reinstall 強制重裝
-        #        ③裝完 subprocess 實測 torch.cuda.is_available() 才算成功 (不信 pip exit 0)。
-        #   ④--force-reinstall 會連依賴一起強制重裝, 但 --index-url 已把 PyPI 換成 pytorch index —
-        #     那上面沒有 typing-extensions 等一般依賴 → ResolutionImpossible (2026-07-26 第二層坑)。
-        #     故 torch 本體帶 --no-deps 強裝 (CUDA 版與同號 CPU 版依賴集相同, 既有依賴照用),
-        #     驗收 subprocess 會抓到真缺依賴的情況, 不會靜默壞。
-        rc |= _pip_install(["torch", "--index-url", "https://download.pytorch.org/whl/cu126",
-                            "--upgrade", "--force-reinstall", "--no-deps"])
-        if rc == 0:
-            rc |= _verify_torch_cuda()
-    if ocr and rc == 0:
-        rc |= _pip_install(["rapidocr-onnxruntime"])
-    if ocr_cuda and rc == 0:
-        # OCR GPU 加速: rapidocr 底層走 onnxruntime — 換 onnxruntime-gpu 後
-        # CUDAExecutionProvider 才會列入 available providers (status 的「OCR CUDA」行驗收)。
-        # ⚠ 2026-07-26 嵌合體坑 (Tim QA): onnxruntime 與 onnxruntime-gpu 兩個 dist 共用同一個
-        #   onnxruntime/ package 目錄 — 疊裝會混出「GPU 的 provider DLL + CPU 的 pybind pyd」嵌合體,
-        #   providers 只剩 [Azure, CPU]。正解: 先把兩個 dist 全部 uninstall 乾淨 (user+system 都掃),
-        #   清掉殘留資料夾, 再乾淨裝 onnxruntime-gpu, 最後 subprocess 實測 providers 含 CUDA 才算成功。
-        rc |= _reinstall_ort_gpu()
+    for _ in range(4):
+        cmd = [sys.executable, "-m", "pip", "uninstall", "-y"] + pkgs
+        print(f"$ {' '.join(cmd)}")
+        sys.stdout.flush()
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        if out:
+            print(out[-1500:])
+        if "Successfully uninstalled" not in out:
+            break   # 這一輪沒卸掉任何東西 → 已經沒有殘留
     return rc
+
+
+def _install_torch_cuda() -> int:
+    # 區塊職責：torch 換 CUDA wheel — 體積大 (數 GB), 頁面按鈕已標注耐心等。
+    # ⚠ 2026-07-26 血教訓 (Tim QA): 只帶 --upgrade 會踩「已滿足」陷阱 —
+    #   system site 若已有較新的 CPU 版 (如 2.13.0+cpu > cu124 index 最新 2.6.0),
+    #   pip 認定 requirement satisfied → 空跑 exit 0 → 誤報安裝完成。
+    #   對策: ①index 換 cu126 (有與新版同號的 +cu126 build) ②--force-reinstall 強制重裝
+    #        ③裝完 subprocess 實測 torch.cuda.is_available() 才算成功 (不信 pip exit 0)。
+    #   ④--force-reinstall 會連依賴一起強制重裝, 但 --index-url 已把 PyPI 換成 pytorch index —
+    #     那上面沒有 typing-extensions 等一般依賴 → ResolutionImpossible (2026-07-26 第二層坑)。
+    #     故 torch 本體帶 --no-deps 強裝 (CUDA 版與同號 CPU 版依賴集相同, 既有依賴照用),
+    #     驗收 subprocess 會抓到真缺依賴的情況, 不會靜默壞。
+    rc = _pip_install(["torch", "--index-url", "https://download.pytorch.org/whl/cu126",
+                       "--upgrade", "--force-reinstall", "--no-deps"])
+    return rc if rc != 0 else _verify_torch_cuda()
 
 
 def _reinstall_ort_gpu() -> int:
     # 區塊職責：onnxruntime GPU 乾淨重裝 — 卸雙 dist → 清殘骸 → 裝 gpu → 驗收 providers
+    # 物理意義: rapidocr 底層走 onnxruntime — 換 onnxruntime-gpu 後 CUDAExecutionProvider
+    #          才會列入 available providers (status 的「OCR CUDA」行驗收)。
+    # ⚠ 2026-07-26 嵌合體坑 (Tim QA): onnxruntime 與 onnxruntime-gpu 兩個 dist 共用同一個
+    #   onnxruntime/ package 目錄 — 疊裝會混出「GPU 的 provider DLL + CPU 的 pybind pyd」嵌合體,
+    #   providers 只剩 [Azure, CPU]。正解: 先把兩個 dist 全部 uninstall 乾淨 (user+system 都掃),
+    #   清掉殘留資料夾, 再乾淨裝 onnxruntime-gpu, 最後 subprocess 實測 providers 含 CUDA 才算成功。
     import shutil
     # (1) 反覆 uninstall 直到兩個 dist 都不見 (pip 一次只卸 sys.path 順位最前的那份; user/system 都可能有)
     for _ in range(4):
@@ -519,6 +526,128 @@ def _verify_torch_cuda() -> int:
     return r.returncode
 
 
+# ===========================================================
+# 區塊：插件註冊表 — 「一個插件 = 一組動作」的唯一定義處
+# 物理意義：頁面的下拉選單、動作按鈕、確認文案全部由這張表生成 —— 新增一個插件只改這裡，
+#          C# 端一行都不用動 (Tim 2026-08-11 拍板：插件會越來越多, 不要繼續加按鈕)。
+# 數值影響：packages 是 pip 名稱, probe 是 import 名稱 (兩者常不同, 例 rapidocr-onnxruntime →
+#          rapidocr_onnxruntime); danger=True 的動作在頁面上會先跳確認框。
+# ⚠ 共用套件不入任何插件的 uninstall 清單 —— numpy / torch 被 daemon、montage、audio-viz 共用,
+#   卸掉會靜默弄壞整條陪看鏈。torch 另立獨立動作, 由人明確選擇, 不夾帶在「解除安裝 STT」裡。
+# ===========================================================
+PLUGINS = {
+    "stt": {
+        "name": "STT 語音轉文字 (openai-whisper)",
+        "desc": "whisper 轉錄 + soundcard 系統音訊擷取。torch 是它的推論後端，另立動作管理。",
+        "probe": ["whisper", "soundcard"],
+        "actions": [
+            {"id": "install", "label": "📦 安裝 STT 依賴",
+             "hint": "openai-whisper + soundcard + numpy（預設拉 CPU 版 torch）", "danger": False},
+            {"id": "uninstall", "label": "🗑 解除安裝 STT 依賴",
+             "hint": "只卸 openai-whisper + soundcard。numpy 與 torch 保留 —— 它們被錄影/縮圖/音訊視覺化共用。",
+             "danger": True},
+        ],
+    },
+    "torch": {
+        "name": "torch 推論後端 (STT 用)",
+        "desc": "whisper 的推論後端。CUDA 版可 GPU 加速；體積大，切換請耐心等。",
+        "probe": ["torch"],
+        "actions": [
+            {"id": "cuda", "label": "⚡ 換 CUDA 版 (cu126 wheel)",
+             "hint": "GPU 加速轉錄。裝完會實測 torch.cuda.is_available() 才算成功。", "danger": False},
+            {"id": "uninstall", "label": "🗑 解除安裝 torch",
+             "hint": "⚠ 卸掉後 whisper 無法推論，STT 整條鏈停擺。重裝需重新下載數 GB。", "danger": True},
+        ],
+    },
+    "ocr": {
+        "name": "OCR 字幕讀取 (rapidocr)",
+        "desc": "縮圖牆字幕辨識。底層走 onnxruntime，CPU/GPU 兩個 dist 不可疊裝。",
+        "probe": ["rapidocr_onnxruntime", "onnxruntime"],
+        "actions": [
+            {"id": "install", "label": "📦 安裝 OCR 依賴",
+             "hint": "rapidocr-onnxruntime（含 CPU 版 onnxruntime）", "danger": False},
+            {"id": "cuda", "label": "⚡ 換 CUDA 版 (onnxruntime-gpu)",
+             "hint": "先卸乾淨兩個 dist 再裝 GPU 版，最後實測 providers 含 CUDA 才算成功。", "danger": False},
+            {"id": "cpu", "label": "↩ 還原 CPU 版 onnxruntime",
+             "hint": "不是移除，是降級：卸 onnxruntime-gpu → 裝回 CPU 版，OCR 仍可用。", "danger": True},
+            {"id": "uninstall", "label": "🗑 解除安裝 OCR 依賴",
+             "hint": "⚠ 卸 rapidocr-onnxruntime + onnxruntime(+gpu)。卸掉後 montage --ocr 無字幕輸出。",
+             "danger": True},
+        ],
+    },
+}
+
+
+def op_list_plugins() -> int:
+    # 區塊職責：把註冊表 + 當前安裝狀態吐成 JSON 給 C# 頁面建下拉選單
+    # 物理意義：頁面不自己維護清單 → 表與 UI 永遠同步 (不會出現「表加了、按鈕沒加」的漂移)
+    _ensure_user_site()
+    out = {"plugins": []}
+    for pid, meta in PLUGINS.items():
+        probes = []
+        installed = True
+        for mod in meta["probe"]:
+            ok, ver = _probe_import(mod)
+            probes.append({"module": mod, "ok": ok, "info": ver})
+            installed = installed and ok
+        out["plugins"].append({
+            "id": pid,
+            "name": meta["name"],
+            "desc": meta["desc"],
+            "installed": installed,
+            "probes": probes,
+            "actions": meta["actions"],
+        })
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 0
+
+
+def op_plugin(plugin_id: str, action: str) -> int:
+    # 區塊職責：執行某插件的某個動作 — 頁面唯一的安裝/解除安裝入口
+    # ⚠ 未知 id/action 一律 fail-fast 並列出合法值, 不做模糊比對 (裝/卸是不可逆動作, 猜錯代價太大)
+    meta = PLUGINS.get(plugin_id)
+    if meta is None:
+        print(f"❌ 未知插件 `{plugin_id}` (可用: {', '.join(PLUGINS)})")
+        return 1
+    valid = [a["id"] for a in meta["actions"]]
+    if action not in valid:
+        print(f"❌ 插件 `{plugin_id}` 沒有動作 `{action}` (可用: {', '.join(valid)})")
+        return 1
+    print(f"▶ {meta['name']} — {action}")
+    sys.stdout.flush()
+
+    if plugin_id == "stt":
+        if action == "install":
+            return _pip_install(["openai-whisper", "soundcard", "numpy"])
+        if action == "uninstall":
+            # numpy / torch 刻意不卸 —— 見 PLUGINS 註解的共用套件警告
+            rc = _pip_uninstall(["openai-whisper", "soundcard"])
+            print("ℹ numpy 與 torch 保留（錄影/縮圖/音訊視覺化共用）。要卸 torch 請選 torch 插件。")
+            return rc
+    if plugin_id == "torch":
+        if action == "cuda":
+            return _install_torch_cuda()
+        if action == "uninstall":
+            rc = _pip_uninstall(["torch"])
+            print("ℹ torch 已卸除 — whisper 將無法推論。要恢復請先跑 STT 插件的『安裝』(會拉回 CPU 版 torch)。")
+            return rc
+    if plugin_id == "ocr":
+        if action == "install":
+            return _pip_install(["rapidocr-onnxruntime"])
+        if action == "cuda":
+            return _reinstall_ort_gpu()
+        if action == "cpu":
+            # 降級而非移除：兩個 dist 共用同一個 package 目錄, 必須先卸乾淨再裝 CPU 版 (同 _reinstall_ort_gpu 教訓)
+            _pip_uninstall(["onnxruntime", "onnxruntime-gpu"])
+            rc = _pip_install(["onnxruntime"])
+            print("ℹ 已還原 CPU 版 onnxruntime — OCR 仍可用, 只是不吃 GPU。" if rc == 0 else "")
+            return rc
+        if action == "uninstall":
+            return _pip_uninstall(["rapidocr-onnxruntime", "onnxruntime", "onnxruntime-gpu"])
+    print(f"❌ 動作 `{action}` 尚未實作 (插件 {plugin_id})")
+    return 1
+
+
 def op_test_stt(sec: int, model: str, lang: str) -> int:
     # 區塊職責：試錄 — 委派專案端 audio_transcribe.py live N (真正的擷取/轉錄邏輯不重造)
     at = audio_transcribe_path()
@@ -543,11 +672,10 @@ def main(argv: list[str]) -> int:
     sub.add_parser("get-config")
     p_set = sub.add_parser("set-config")
     p_set.add_argument("pairs", nargs="+", help="key=value (白名單欄位)")
-    p_in = sub.add_parser("install")
-    p_in.add_argument("--stt", action="store_true")
-    p_in.add_argument("--torch-cuda", action="store_true")
-    p_in.add_argument("--ocr", action="store_true")
-    p_in.add_argument("--ocr-cuda", action="store_true")
+    sub.add_parser("list-plugins")
+    p_pl = sub.add_parser("plugin")
+    p_pl.add_argument("--id", required=True, help="插件 id (見 list-plugins)")
+    p_pl.add_argument("--action", required=True, help="動作 id (見 list-plugins)")
     p_ts = sub.add_parser("test-stt")
     p_ts.add_argument("--sec", type=int, default=8)
     p_ts.add_argument("--model", default="small")
@@ -559,8 +687,10 @@ def main(argv: list[str]) -> int:
         return op_get_config()
     if a.op == "set-config":
         return op_set_config(a.pairs)
-    if a.op == "install":
-        return op_install(a.stt, a.torch_cuda, a.ocr, a.ocr_cuda)
+    if a.op == "list-plugins":
+        return op_list_plugins()
+    if a.op == "plugin":
+        return op_plugin(a.id, a.action)
     if a.op == "test-stt":
         return op_test_stt(a.sec, a.model, a.lang)
     return 1

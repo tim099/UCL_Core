@@ -55,6 +55,17 @@ namespace UCL.Core.EditorLib.Page
         float m_OcrHPct = 0.12f;        // 字幕帶高度比例 (從底邊往上長)
         float m_OcrMinConf = 0.5f;      // OCR 最低信度過濾 (0~1)
 
+        // ==== 插件清單 (media_admin.py list-plugins 的 C# 鏡像；本頁不自己維護清單) ====
+        class PluginAction { public string Id, Label, Hint; public bool Danger; }
+        class PluginInfo
+        {
+            public string Id, Name, Desc, ProbeSummary;
+            public bool Installed;
+            public PluginAction[] Actions = new PluginAction[0];
+        }
+        PluginInfo[] m_Plugins = new PluginInfo[0];
+        int m_PluginIdx = 0;
+
         // ==== 試錄參數 ====
         int m_TestSec = 8;              // 試錄秒數 (擷取即 wall-clock 阻塞，別設太長)
 
@@ -78,6 +89,7 @@ namespace UCL.Core.EditorLib.Page
         {
             RunOp("狀態", "status", 60000);
             RunOp("讀取設定", "get-config", 30000);
+            RunOp("插件清單", "list-plugins", 60000);
         }
 
         protected override void TopBarButtons()
@@ -136,28 +148,70 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊 2：依賴安裝 — whisper / torch CUDA / rapidocr
+        // 區塊 2：插件管理 — 下拉選插件 → 只顯示該插件的動作（安裝 / 解除安裝 / 切換後端）
+        // 物理意義：清單與動作全部由 media_admin.py 的 PLUGINS 註冊表生成 (list-plugins)。
+        //          新增插件只改 python 那張表，本頁一行都不用動 —— 這是 Tim 2026-08-11 拍板的理由：
+        //          插件會越來越多，繼續一顆一顆加按鈕會讓這一區無限膨脹。
         void DrawInstallPanel()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>2. 依賴安裝</b>（pip --user 落 user-site；torch 較大，請耐心等）", WrapStyle);
-                EditorGUILayout.HelpBox(
-                    "安裝走 media_admin.py（op=install），跨專案/機器可重現。" +
-                    "whisper 預設拉 CPU 版 torch；有 NVIDIA GPU 再按第二顆換 CUDA 版加速轉錄。",
-                    MessageType.None);
+                GUILayout.Label("<b>2. 插件管理</b>（pip --user 落 user-site；torch 較大，請耐心等）", WrapStyle);
+                if (m_Plugins == null || m_Plugins.Length == 0)
+                {
+                    EditorGUILayout.HelpBox("插件清單尚未載入 — 按上方「🔄 重新整理狀態」。", MessageType.None);
+                    return;
+                }
+
+                // 下拉選單：顯示名前綴安裝狀態，讓「這個裝了沒」不必展開就看得到
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("插件", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                    m_PluginIdx = Mathf.Clamp(m_PluginIdx, 0, m_Plugins.Length - 1);
+                    m_PluginIdx = UCL_GUILayout.PopupSearchCache(m_PluginIdx, PluginMenuNames(), m_Dic, "m_PluginIdx");
+                }
+
+                var p = m_Plugins[Mathf.Clamp(m_PluginIdx, 0, m_Plugins.Length - 1)];
+                GUILayout.Label(p.Desc, WrapStyle);
+                GUILayout.Label(p.ProbeSummary, WrapStyle);
+                GUILayout.Space(4);
+
                 using (new EditorGUI.DisabledScope(m_Busy))
                 {
-                    if (GUILayout.Button("📦 安裝 STT 依賴（openai-whisper + soundcard + numpy）", UCL_GUIStyle.ButtonStyle, GUILayout.Height(30)))
-                        RunOp("安裝 STT 依賴", "install --stt", 1800000);
-                    if (GUILayout.Button("⚡ torch 換 CUDA 版（cu124 wheel，GPU 加速）", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
-                        RunOp("torch 換 CUDA 版", "install --torch-cuda", 1800000);
-                    if (GUILayout.Button("🔡 安裝 OCR 依賴（rapidocr-onnxruntime）", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
-                        RunOp("安裝 OCR 依賴", "install --ocr", 1800000);
-                    if (GUILayout.Button("⚡ OCR 換 CUDA 版（onnxruntime-gpu，GPU 加速）", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
-                        RunOp("OCR 換 CUDA 版", "install --ocr-cuda", 1800000);
+                    foreach (var a in p.Actions)
+                    {
+                        if (GUILayout.Button(a.Label, UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                            InvokePluginAction(p, a);
+                        if (!string.IsNullOrEmpty(a.Hint))
+                            GUILayout.Label($"　↳ {a.Hint}", WrapStyle);
+                    }
                 }
             }
+        }
+
+        // 下拉顯示名 — 「✅/⬜ 插件名」；狀態直接寫進選項字串，收合時也看得到
+        string[] PluginMenuNames()
+        {
+            var names = new string[m_Plugins.Length];
+            for (int i = 0; i < m_Plugins.Length; i++)
+                names[i] = (m_Plugins[i].Installed ? "✅ " : "⬜ ") + m_Plugins[i].Name;
+            return names;
+        }
+
+        // 執行插件動作 — danger 動作先跳確認框
+        // 物理意義：解除安裝/降級不可逆（重裝要重新下載數 GB），而按鈕誤觸的成本全落在人身上，
+        //          所以把「你正要卸什麼」原樣攤在對話框裡，不用泛稱。
+        void InvokePluginAction(PluginInfo p, PluginAction a)
+        {
+            if (a.Danger)
+            {
+                bool ok = EditorUtility.DisplayDialog(
+                    "確認執行",
+                    $"插件：{p.Name}\n動作：{a.Label}\n\n{a.Hint}\n\n這個動作不可逆，確定執行？",
+                    "確定執行", "取消");
+                if (!ok) return;
+            }
+            RunOp($"{p.Name} — {a.Label}", $"plugin --id {p.Id} --action {a.Id}", 1800000);
         }
 
         // 區塊 3：STT 設定 — 對齊 daemon config 白名單欄位
@@ -425,13 +479,93 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // 區塊：list-plugins JSON 回填 — python 註冊表 → 頁面下拉選單
+        // 物理意義：頁面完全不知道有哪些插件，全部問 python；解析失敗保留舊清單而不是清空
+        //          （清空會讓整區消失，看起來像「沒有插件」而不是「讀取失敗」）。
+        // ===========================================================
+        void ParsePluginsJson(string json)
+        {
+            try
+            {
+                var root = JsonData.ParseJson(json);
+                var arr = root?.Get("plugins");
+                if (arr == null || !arr.IsArray) return;
+                var list = new System.Collections.Generic.List<PluginInfo>();
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var d = arr[i];
+                    if (d == null) continue;
+                    var info = new PluginInfo
+                    {
+                        Id = d.GetString("id", ""),
+                        Name = d.GetString("name", "(未命名)"),
+                        Desc = d.GetString("desc", ""),
+                        Installed = d.GetBool("installed", false),
+                    };
+                    if (string.IsNullOrEmpty(info.Id)) continue;
+                    // 依賴探測摘要 — 讓「哪一個沒裝」看得到，不是只給一個總結的 ✅/⬜
+                    var probes = d.Get("probes");
+                    if (probes != null && probes.IsArray)
+                    {
+                        var sb = new System.Text.StringBuilder("依賴：");
+                        for (int j = 0; j < probes.Count; j++)
+                        {
+                            var pr = probes[j];
+                            if (pr == null) continue;
+                            if (j > 0) sb.Append("　");
+                            sb.Append(pr.GetBool("ok", false) ? "✅ " : "❌ ");
+                            sb.Append(pr.GetString("module", "?"));
+                            string ver = pr.GetString("info", "");
+                            if (pr.GetBool("ok", false) && !string.IsNullOrEmpty(ver) && ver != "?")
+                                sb.Append($" {ver}");
+                        }
+                        info.ProbeSummary = sb.ToString();
+                    }
+                    var acts = d.Get("actions");
+                    if (acts != null && acts.IsArray)
+                    {
+                        var al = new System.Collections.Generic.List<PluginAction>();
+                        for (int j = 0; j < acts.Count; j++)
+                        {
+                            var ad = acts[j];
+                            if (ad == null) continue;
+                            string aid = ad.GetString("id", "");
+                            if (string.IsNullOrEmpty(aid)) continue;
+                            al.Add(new PluginAction
+                            {
+                                Id = aid,
+                                Label = ad.GetString("label", aid),
+                                Hint = ad.GetString("hint", ""),
+                                Danger = ad.GetBool("danger", false),
+                            });
+                        }
+                        info.Actions = al.ToArray();
+                    }
+                    list.Add(info);
+                }
+                if (list.Count == 0) return;   // 空清單視為讀取異常，保留舊值
+                m_Plugins = list.ToArray();
+                m_PluginIdx = Mathf.Clamp(m_PluginIdx, 0, m_Plugins.Length - 1);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[MediaAdminPage] 解析 list-plugins JSON 失敗: {e.Message}");
+                Debug.LogException(e);
+            }
+        }
+
+        // ===========================================================
         // 區塊：async 執行 — 委派 UCL_MediaAdminRunner，完成後回主執行緒更新 UI + Repaint
         // 物理意義：重活 (install/試錄) 全在背景 python，Editor 不凍結；完成才刷 UI。
         // ===========================================================
+        // 唯讀輕量 op — 可與其他操作並行，且不搶 m_Busy 旗標
+        static bool IsReadOnlyOp(string label) =>
+            label == "讀取設定" || label == "插件清單" || label == "狀態刷新";
+
         void RunOp(string label, string argLine, int timeoutMs)
         {
-            if (m_Busy && label != "讀取設定") return;   // 讀取設定允許與狀態並行 (皆輕量唯讀)
-            if (label != "讀取設定") { m_Busy = true; m_BusyLabel = label; }
+            if (m_Busy && !IsReadOnlyOp(label)) return;
+            if (!IsReadOnlyOp(label)) { m_Busy = true; m_BusyLabel = label; }
             var win = EditorWindow.focusedWindow;   // 捕捉當前宿主視窗，完成後主動 Repaint
             RunOpAsync(label, argLine, timeoutMs, win).Forget();
         }
@@ -440,17 +574,26 @@ namespace UCL.Core.EditorLib.Page
         {
             var r = await UCL_MediaAdminRunner.RunAsync(argLine, CancellationToken.None, timeoutMs);
             await UniTask.SwitchToMainThread();
-            if (label != "讀取設定")
+            if (!IsReadOnlyOp(label))
             {
                 m_Busy = false;
                 m_BusyLabel = "";
                 m_LastOutput = $"[{label}]\n{r.DisplayText}";
             }
-            if (label == "狀態") m_StatusText = r.DisplayText;
+            if (label == "狀態" || label == "狀態刷新") m_StatusText = r.DisplayText;
             if (label == "讀取設定") ParseConfigJson(r.Stdout ?? "");
+            if (label == "插件清單") ParsePluginsJson(r.Stdout ?? "");
             // 套用設定成功後回讀一次，確保頁面顯示 = 檔案實況 (cross-layer 驗證，不只信自己送出的值)
             if (label.StartsWith("套用") && r.ExitCode == 0)
                 RunOp("讀取設定", "get-config", 30000);
+            // 插件動作跑完一律重新探測 — 「pip 說成功」不算數，import 得回來才算 (判準④)。
+            // ⚠ 走「狀態刷新」這個唯讀 label 而非「狀態」：後者會覆寫 m_LastOutput，
+            //   把使用者正要讀的 pip 安裝紀錄洗掉。
+            if (argLine.StartsWith("plugin "))
+            {
+                RunOp("狀態刷新", "status", 60000);
+                RunOp("插件清單", "list-plugins", 60000);
+            }
             if (win != null) win.Repaint();
         }
     }

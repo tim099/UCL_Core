@@ -1,10 +1,10 @@
 ---
 title: 影音管理頁 (UCL_MediaAdminPage)
-description: STT (whisper 語音轉文字) 與 OCR (字幕讀取) 的可視化管理入口 — 依賴安裝 / daemon config 設定調整 / STT 試錄。後端唯一真相源為 media_admin.py。
-tags: [editor-page, media, stt, ocr, whisper]
-aliases: [影音管理, STT 管理頁, 語音轉文字管理, 字幕 OCR 管理, media admin]
+description: STT (whisper 語音轉文字) 與 OCR (字幕讀取) 的可視化管理入口 — 插件安裝/解除安裝 / daemon config 設定調整 / STT 試錄。後端唯一真相源為 media_admin.py。
+tags: [editor-page, media, stt, ocr, whisper, plugin]
+aliases: [影音管理, STT 管理頁, 語音轉文字管理, 字幕 OCR 管理, media admin, 插件管理]
 target_audience: [AI_Agent, Tools_User]
-last_updated: 2026-07-25
+last_updated: 2026-08-11
 ---
 
 # 🎬 影音管理頁 (UCL_MediaAdminPage)
@@ -33,10 +33,37 @@ audio_transcribe.py (專案端, 試錄) / screenstream daemon / montage --ocr
 | # | 面板 | 做什麼 |
 |---|---|---|
 | 1 | 環境與依賴狀態 | whisper / torch(+CUDA) / soundcard / numpy / rapidocr / onnxruntime(+OCR CUDA provider) import 健檢 + config 總覽；面板可用 ▼/► 折疊 |
-| 2 | 依賴安裝 | `install --stt`（openai-whisper + soundcard + numpy）/ `--torch-cuda`（cu124 wheel，STT GPU 加速）/ `--ocr`（rapidocr-onnxruntime）/ `--ocr-cuda`（onnxruntime-gpu，OCR GPU 加速）；pip `--user` 落 user-site |
+| 2 | **插件管理** | **下拉選插件 → 只顯示該插件的動作**（安裝 / 解除安裝 / 切換後端）；清單與動作由 python 的 `PLUGINS` 註冊表生成，pip `--user` 落 user-site |
 | 3 | STT 設定 | `stt_setting`（錄影時同步啟動）/ `stt_model` / `stt_lang` / `stt_chunk_sec` / `stt_prompt`（詞彙偏置，人名用原文字形） |
 | 4 | OCR 字幕讀取設定 | `ocr_enabled` / `ocr_workers` / 字幕帶 `y_pct`/`h_pct` / `min_conf` |
 | 5 | STT 試錄 | 委派專案端 `audio_transcribe.py live N` 驗整條鏈 |
+
+## 插件註冊表（Tim 2026-08-11 拍板：插件會越來越多，不要繼續加按鈕）
+
+**唯一定義處是 `media_admin.py` 的 `PLUGINS` dict。** 頁面不維護任何清單 —— 它跑 `list-plugins`
+拿 JSON 再建下拉選單與按鈕，所以**新增一個插件只改 python 那張表，C# 一行都不用動**。
+
+| 插件 id | 內容 | 動作 |
+|---|---|---|
+| `stt` | openai-whisper + soundcard | `install` / `uninstall` |
+| `torch` | whisper 的推論後端 | `cuda`（cu126 wheel）/ `uninstall` |
+| `ocr` | rapidocr-onnxruntime + onnxruntime | `install` / `cuda` / `cpu`（降級回 CPU）/ `uninstall` |
+
+**註冊表欄位**：`name` / `desc` / `probe`（import 名，供健檢）/ `actions[{id,label,hint,danger}]`。
+`danger: true` 的動作在頁面上會先跳確認框，對話框直接列出 `hint` 全文（不用泛稱）。
+
+### ⚠ 解除安裝的兩條硬規則
+
+1. **共用套件不進任何插件的卸載清單。** `numpy` 與 `torch` 被 daemon / montage / audio-viz 共用，
+   夾帶卸掉會**靜默弄壞整條陪看鏈**。所以 `stt/uninstall` 只卸 whisper + soundcard，
+   torch 另立插件由人明確選擇。
+2. **卸載要迴圈到乾淨為止。** pip 一次只卸「sys.path 順位最前」的那一份，user-site 與 system site
+   可能各有一份（torch 孤兒的前科）。`_pip_uninstall()` 反覆執行到 pip 不再回報
+   `Successfully uninstalled`——**只跑一次會留下被遮蔽的第二份，而 status 仍顯示 ✅，
+   於是「解除安裝成功」是假的。**
+
+另：`ocr/cpu` 是**降級不是移除**（卸 gpu dist → 裝回 CPU 版，OCR 仍可用）——
+名字與事實要對得上，不要把它寫成「解除安裝 CUDA」。
 
 ## 設定欄位語意（重要）
 
@@ -50,9 +77,13 @@ audio_transcribe.py (專案端, 試錄) / screenstream daemon / montage --ocr
 python <UCL_Core>/Tools~/AgentCommands/media_admin.py status
 python <UCL_Core>/Tools~/AgentCommands/media_admin.py get-config
 python <UCL_Core>/Tools~/AgentCommands/media_admin.py set-config stt_model=small stt_lang=ja
-python <UCL_Core>/Tools~/AgentCommands/media_admin.py install --stt
+python <UCL_Core>/Tools~/AgentCommands/media_admin.py list-plugins
+python <UCL_Core>/Tools~/AgentCommands/media_admin.py plugin --id stt --action install
+python <UCL_Core>/Tools~/AgentCommands/media_admin.py plugin --id ocr --action uninstall
 python <UCL_Core>/Tools~/AgentCommands/media_admin.py test-stt --sec 8 --model small --lang ja
 ```
+
+未知 `--id` / `--action` 一律 fail-fast 並列出合法值（裝/卸不可逆，不做模糊比對）。
 
 ## 相關
 

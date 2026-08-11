@@ -546,6 +546,16 @@ namespace UCL.Core.EditorLib.Page
                     {
                         RunBatch("pull", checkout: false, pull: true, push: false);
                     }
+                    // 區塊職責：「把本地全部弄到最新」的一鍵入口，但**不碰遠端**
+                    // 物理意義：detached 的列被單獨的「Pull」跳過是對的（pull 不負責移動 branch），
+                    //          但那讓「我只想把本地拉到最新」變成要按兩顆、而且順序錯了就沒效果。
+                    //          這顆＝一鍵同步減掉 push。**不走二次確認**：它不寫任何遠端，
+                    //          而二次確認的成本要留給真的收不回來的動作 —— 到處都要確認 = 沒有確認。
+                    if (GUILayout.Button("切 → pull（不推）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.55f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
+                    {
+                        RunBatch("checkout+pull", checkout: true, pull: true, push: false);
+                    }
                     // 寫遠端的動作走二次確認（慣例同 FlattenSync 的同步鈕）
                     if (GUILayout.Button("Push",
                             UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.35f)), GUILayout.ExpandWidth(false)))
@@ -564,8 +574,13 @@ namespace UCL.Core.EditorLib.Page
                 }
                 GUILayout.FlexibleSpace();
             }
-            GUILayout.Label("　跳過不硬上：dirty / detached 上有未合併 commit / 解析不到目標 branch 的項目"
-                            + "一律跳過並在報告列出 —— 本頁不 stash、不 force、不替人做決定。", DimLabelStyle);
+            // 這行字要跟實作逐項對得上 —— 舊版寫「dirty 一律跳過」而 push 其實照推，
+            // 那種「承諾比實作大」的說明比沒有說明更糟：它讓人不去查。
+            GUILayout.Label("　跳過不硬上：**沒勾的列不動**；dirty（有未 commit 修改）不切也不 pull；"
+                            + "HEAD 有未合併 commit / 解析不到目標 branch 的項目一律跳過並在報告列出。"
+                            + "\n　—— 本頁不 stash、不 force、不替人做決定。"
+                            + "（Push 不受 dirty 影響：推的是已 commit 的東西，跟工作目錄乾不乾淨無關。）",
+                DimLabelStyle);
         }
 
         void ConfirmAndRun(string label, bool checkout, bool pull, bool push)
@@ -1034,6 +1049,35 @@ namespace UCL.Core.EditorLib.Page
                 // 目標 ref：本地有拿本地、沒有拿 origin/<target>（等下 checkout 也照這個順序）。
                 bool hasLocal = Git(abs, $"rev-parse --verify --quiet refs/heads/{target}").exit == 0;
                 bool hasRemote = Git(abs, $"rev-parse --verify --quiet refs/remotes/origin/{target}").exit == 0;
+                // 先把**本地目標分支**快轉到 origin，再拿它當尺（Tim 2026-08-11：
+                // 「detached 狀態要先 pull 目標分支，然後才 checkout」）。
+                // 物理意義：上面那道 `fetch --quiet` 只更新 `origin/*`，**不動 `refs/heads/*`**。
+                //          於是本地 branch 落後時會發生兩件事，而兩件都不會叫：
+                //          ① 下面的 `--is-ancestor HEAD <local>` 拿過期的尺量 → detached 在
+                //             origin tip 的 submodule 被判「HEAD 未合併」整列跳過。
+                //             那道安全線在保護一個不存在的風險，而跳過訊息看起來完全像盡責。
+                //          ② 就算通過，`checkout <local>` 會把工作目錄**倒退**到舊 commit，
+                //             等後面 pull 再前進 —— Unity 專案白吃一輪 reimport。
+                //          `fetch origin <t>:<t>` 可以在**不 checkout** 的情況下快轉本地分支，
+                //          而且非 fast-forward 時 git 自己會拒絕（不需要我們再判一次）。
+                //          ⚠ 只在目標分支「已存在且沒被 checkout」時做：
+                //            · 目標就是目前所在 branch → git 直接 refuse（本函式此處必定
+                //              `cur != target`，所以碰不到，但條件寫明不靠上下文）
+                //            · 本地還沒有這條 branch → 留給下面 `checkout -b --track` 建，
+                //              那條路會**順便設好 upstream**；用 refspec 建出來的分支沒有 upstream，
+                //              ahead/behind 會變成「未知」。
+                //          plain fetch 失敗（離線）就不再試第二次 —— 同一個原因報兩次是雜訊。
+                if (eft == 0 && hasLocal && cur != target)
+                {
+                    var (eff, _, sff) = Git(abs, $"fetch origin {target}:{target}");
+                    if (eff != 0)
+                    {
+                        // 非 ff（本地分支有 origin 沒有的 commit）→ 不硬上，維持舊尺往下走；
+                        // 下面的 ancestor 檢查仍然是最後一道關。
+                        log.AppendLine($"⚠ {s.Path} 本地 {target} 無法快轉到 origin"
+                                       + $"（{FirstLine(sff)}）—— 以下判斷用本地既有位置");
+                    }
+                }
                 if (!hasLocal && !hasRemote)
                 {
                     log.AppendLine($"⏭ {s.Path} 找不到 branch「{target}」（本地與剛 fetch 完的 origin 都沒有）");
@@ -1042,7 +1086,10 @@ namespace UCL.Core.EditorLib.Page
                 string checkRef = hasLocal ? target : $"origin/{target}";
                 if (Git(abs, $"merge-base --is-ancestor HEAD {checkRef}").exit != 0)
                 {
-                    log.AppendLine($"⏭ {s.Path} 目前 HEAD 不在「{checkRef}」歷史上（可能有未合併 commit）"
+                    // 訊息要講清楚這把尺是新的 —— 舊版在本地分支落後時也印同一句，
+                    // 於是「真的有未合併 commit」跟「尺過期」長得一模一樣，而後者才是常態。
+                    log.AppendLine($"⏭ {s.Path} 目前 HEAD 不在「{checkRef}」歷史上"
+                                   + $"（{checkRef} 已先快轉到 origin，所以這是真的有未合併 commit）"
                                    + "—— 不切，請先合併後再來");
                     return "⏭ HEAD 未合併";
                 }
@@ -1061,8 +1108,25 @@ namespace UCL.Core.EditorLib.Page
             {
                 if (cur != target)
                 {
-                    log.AppendLine($"⏭ {s.Path} 不在目標 branch（{cur} ≠ {target}）—— 不 pull");
+                    // 指路而不是死路：單獨按「Pull」時 detached 的列必定落在這裡，而
+                    // 「不在目標 branch」只講了事實、沒講下一步該按什麼（同族：一個沒有出口的訊息）。
+                    log.AppendLine($"⏭ {s.Path} 不在目標 branch（{cur} ≠ {target}）—— 不 pull"
+                                   + "；要一次到位請按「切 → pull（不推）」");
                     return "⏭ 不在目標 branch";
+                }
+                // dirty 一樣擋（Tim 2026-08-11：有本地改動就不動它）。
+                // 這道原本**只在 checkout 那半有**，而按鈕下方寫的是「dirty 一律跳過」——
+                // 承諾涵蓋全頁、實作只涵蓋一半，正是「名字比事實大」。
+                // 為什麼 pull 也要擋：git 確實會拒絕覆蓋衝突檔，但那是**逐檔**的保護，
+                // 不衝突的檔照 ff 過去 —— 於是「我還沒 commit 的工作」跟「剛拉下來的新版」
+                // 混在同一個工作目錄裡，而人不會知道那一刻發生過合併。
+                // 用即時值不是掃描快照，理由同 checkout 那半（兩次點擊之間 Unity 會寫 .meta）。
+                var (edp, odp, _) = Git(abs, "status --porcelain --untracked-files=no");
+                if (edp != 0 || odp.Trim().Length > 0)
+                {
+                    log.AppendLine($"⏭ {s.Path} dirty（有未 commit 修改{(edp != 0 ? "，或 status 失敗" : "")}）"
+                                   + "—— 不 pull，請先自行處理");
+                    return "⏭ dirty";
                 }
                 // ff-only：本頁不替人做 merge / rebase 的決定 —— 分岔了就 fail loud 列出來
                 var (ep, op, sp) = Git(abs, $"pull --ff-only origin {target}");

@@ -32,7 +32,8 @@ last_updated: 2026-08-11
 | 重新掃描 | 唯讀。進頁面自動跑一次（不 fetch，快） |
 | Fetch 全部後掃描 | 逐 submodule `git fetch` 再掃 —— **ahead/behind 要準需要先 fetch** |
 | 切到預設 branch | 逐項 checkout 到目標 branch（安全線見下） |
-| Pull（ff-only） | `git pull --ff-only origin <target>`；分岔就 fail loud 列出，不替人 merge |
+| Pull（ff-only） | `git pull --ff-only origin <target>`；分岔就 fail loud 列出，不替人 merge。**detached 的列會被跳過** —— pull 不負責移動 branch，訊息會指路到下一顆 |
+| 切 → pull（不推） | 一鍵同步**減掉 push**。「我只想把本地全部弄到最新」用這顆；不寫任何遠端，所以**不走二次確認** |
 | Push | 二次確認後執行；**由深到淺**（巢狀最深先推、root 最後）、每 repo 推完它的全部 remote 才換下一個 |
 | 一鍵同步 | 切 → pull → push 一條龍，同樣走二次確認 |
 
@@ -87,7 +88,8 @@ last_updated: 2026-08-11
 
 | 情況 | 為什麼 |
 |---|---|
-| dirty（有未 commit 的追蹤檔修改） | 切 branch / pull 可能吃掉未收的工作；stash 是把別人的工作區當自己的 |
+| **狀態表沒勾的列** | 勾選＝納入批次。沒勾的一律不進 targets，連 git 都不會被呼叫 |
+| dirty（有未 commit 的追蹤檔修改）—— **切與 pull 都擋** | 切 branch 會吃掉未收的工作；pull 雖然 git 會逐檔拒絕覆蓋衝突檔，但**不衝突的檔照 ff 過去** → 未 commit 的工作跟新拉的版本混在同一個工作目錄，而人不會知道那一刻發生過合併。stash 是把別人的工作區當自己的，本頁不做。<br>⚠ **Push 不受 dirty 影響**：推的是已 commit 的東西，跟工作目錄乾不乾淨無關。（2026-08-11 之前本頁的說明寫「dirty 一律跳過」而實作只涵蓋 checkout —— 承諾比實作大，那種說明比沒有說明更糟，因為它讓人不去查。） |
 | detached HEAD 不在目標 branch 歷史上 | 上面可能有未合併 commit，切走 = 指標脫錨（reflog 能救但沒人會去看） |
 | 目標 branch 本地與 origin 都不存在 | 無中生有一條 branch 不是同步，是建構 —— 該是人自己做的 |
 | pull 遇到分岔（non-fast-forward） | merge / rebase 的選擇不該由批次工具代下 |
@@ -136,8 +138,32 @@ dirty / 目前 branch 的判斷在**批次執行當下**逐 repo 重新問 git�
 照片乾淨、現在髒了的話，「dirty 跳過」的承諾會靜默失效。
 
 同一次砸磚定的另一條：**checkout 之前先對該 repo `fetch`**（只有真的要切的才 fetch）——
-「branch 存不存在」「HEAD 有沒有未合併 commit」兩道檢查都拿 `origin/<target>` 當尺，
-過期的尺做出來的是**決定**（切 / 不切）不是報告，決定要用新鮮資料做。
+「branch 存不存在」「HEAD 有沒有未合併 commit」兩道檢查都要用新鮮的尺，
+過期的尺做出來的是**決定**（切 / 不切）不是報告。
+
+> [!IMPORTANT]
+> ### 先快轉目標分支，再 checkout（Tim 2026-08-11）
+>
+> ⚠ 本節原本寫「兩道檢查都拿 `origin/<target>` 當尺」—— **那句是錯的**：
+> 本地已有該 branch 時，程式拿的是**本地那條**（`checkRef = hasLocal ? target : origin/target`）。
+> 而 `git fetch` 只更新 `refs/remotes/*`，**不動 `refs/heads/*`** —— 所以「切之前先 fetch」
+> 這道防線對「本地分支落後」完全無效，而文件那句話讓它看起來已經被涵蓋了。
+>
+> **兩個後果，都不會叫**：
+> 1. detached 在 `origin/<target>` tip 的 submodule，會被 `--is-ancestor HEAD <本地舊 branch>`
+>    判成「HEAD 未合併」**整列跳過** —— 那道安全線在保護一個不存在的風險，
+>    而跳過訊息（「可能有未合併 commit」）看起來完全像盡責。
+> 2. 就算通過，`checkout <本地舊 branch>` 會把工作目錄**倒退**到舊 commit，
+>    等後面 pull 再前進 —— Unity 專案白吃一輪 reimport。
+>
+> **現在的順序**：`fetch` → **`git fetch origin <target>:<target>`（把本地目標分支快轉）**
+> → 兩道檢查 → `checkout`。
+> refspec fetch 可以在**不 checkout** 的情況下快轉本地分支，非 fast-forward 時 git 自己拒絕。
+> 只在「目標分支已存在且不是目前所在」時做；本地還沒有這條 branch 時走原本的
+> `checkout -b --track origin/<target>`（那條會順便設好 upstream，refspec 建的不會）。
+>
+> 沙盒實證（2026-08-11）：本地 `master` 停在 c1、detached HEAD 在 origin 的 c2 →
+> 現行安全線 ✗ 跳過；先 refspec fetch 後 ✓ 通過並直接落在 c2。
 Push 端則刻意**不**強制 fetch：non-fast-forward 被拒本來就很大聲，fetch 只是把
 「遠端大聲拒絕」換成「本地大聲跳過」，沒換到資訊。
 

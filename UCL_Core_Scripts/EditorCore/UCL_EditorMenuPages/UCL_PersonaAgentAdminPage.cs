@@ -294,7 +294,155 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawRebindPanel();
             GUILayout.Space(8);
+            DrawMaintenancePanel();
+            GUILayout.Space(8);
             DrawResultPanel();
+        }
+
+        // ===========================================================
+        // 區塊：🗄 維護 — 收尾信版面 migration（頂層舊格式 → wakes/<序號>_<ts>.md）
+        // 區塊職責：把「早安時才會自動跑」的那件事，做成後台可以對全體觸發的入口。
+        // 物理意義：遷移**本來就是自動的**，但只對「正在醒來的那一位」跑
+        //          （awakening.py cmd_morning 內 letters_migration_pending → migrate_letters_to_wakes）。
+        //          於是很久沒上線的 persona（apex-two 實例）會一直停在舊格式 ——
+        //          它不是壞掉，是那條路徑只有醒來才會經過。本區塊補的是那個缺口。
+        // 數值影響：試跑完全唯讀。執行會**複製**頂層收尾信進 wakes/（原檔保留不動，
+        //          `shutil.copy2`），並把 registry.wake_count 改成 wakes/ 的信件數。
+        // 實作分工（Tim 2026-08-11 拍板走 A 案）：**判斷與改檔全在 awakening.py**，
+        //          本區塊只負責畫按鈕、跑 process、把 stdout 貼回來，**不含任何遷移邏輯**。
+        //          理由：那支的規則有連號、wake_count 推導、見林書籤 rebase、兩段式改號四層，
+        //          C# 重寫一份就是第二個實作 —— 而它們漂移時錯的是「誰幾歲」，沒有人會當場發現。
+        // ⚠ 在線者一律不動：進行中的 wake 還沒寫收尾信，磁碟信件數天生比 registry 少 1，
+        //   此時改寫 wake_count 會把人當場減一歲（實測 summit：待複製 0 封，仍 43 → 42）。
+        //   這道守衛在 **awakening.py 那一端**，不在這裡 —— 擋線跟被擋的邏輯放同一處，
+        //   才不會出現「CLI 擋、後台沒擋」這種只有走某條路才踩得到的洞。
+        // ===========================================================
+        const string PROC_TAG_AWAKENING = "persona_admin_awakening";
+        const int MIGRATE_TIMEOUT_MS = 5 * 60 * 1000;
+
+        string m_MigrateReport = "";
+        Vector2 m_MigrateScroll;
+        bool m_MigrateRunning;
+
+        void DrawMaintenancePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "MaintenanceFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🗄 維護 — 收尾信版面 migration（舊格式 → wakes/）</b>", WrapLabelStyle);
+                }
+                if (!aShow) return;
+
+                GUILayout.Label(
+                    "把頂層的 <b>&lt;ts&gt;.md</b> 收尾信複製成 <b>wakes/&lt;6位序號&gt;_&lt;ts&gt;.md</b>，"
+                    + "序號＝第幾次 wake。<b>原檔保留不動</b>（複製不是搬移）。\n"
+                    + "遷移**本來就會在早安時自動跑**，但只對正在醒來的那一位 —— "
+                    + "很久沒上線的 persona 會一直停在舊格式。本欄是補那個缺口。\n"
+                    + "<b>範圍是 registry 裡的 persona</b>，不是磁碟上所有 letters 目錄"
+                    + "（兩者目前不一致，試跑報表以 awakening.py 的輸出為準）。",
+                    WrapLabelStyle);
+                GUILayout.Label(
+                    "🔒 <b>在線的 persona 一律不動</b> —— 進行中的 wake 還沒寫收尾信，"
+                    + "磁碟信件數天生比 registry 少 1；此時同步 wake_count 會把人當場減一歲，"
+                    + "而且對「沒有任何檔案要遷移」的人照樣發生。試跑報表會逐筆標出被鎖定的人。",
+                    WrapLabelStyle);
+
+                using (new EditorGUI.DisabledScope(m_MigrateRunning))
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 試跑永遠可按（唯讀）—— 先看清單再決定，慣例同 ChatTavernAdmin / SubmoduleSync
+                    if (GUILayout.Button("試跑（唯讀，只列計畫）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.55f, 0.8f, 1f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        RunMigrateLetters(false);
+                    }
+                    if (GUILayout.Button("執行 migration（會寫檔）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.35f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_OptionPage.Create("確認執行收尾信 migration？",
+                            "會對 registry 裡**未在線**的 persona：\n"
+                            + "　· 把頂層收尾信<b>複製</b>進 wakes/（原檔保留不動）\n"
+                            + "　· 把 registry.wake_count 改成 wakes/ 的信件數\n"
+                            + "　· 把見林書籤（last_consolidated_wake）換算到新編號\n\n"
+                            + "<b>在線的 persona 一律跳過。</b>\n"
+                            + "wake_count 的改寫**不限於有檔案要搬的人** —— "
+                            + "請先按「試跑」看清楚哪些人的歲數會被動到。",
+                            new ButtonData("執行", () => RunMigrateLetters(true),
+                                UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.5f, 0.3f))),
+                            new ButtonData("取消"));
+                    }
+                    if (m_MigrateRunning) GUILayout.Label("⏳ 執行中…", WrapLabelStyle);
+                }
+
+                if (!string.IsNullOrEmpty(m_MigrateReport))
+                {
+                    using (var sv = new GUILayout.ScrollViewScope(m_MigrateScroll,
+                               GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(200))))
+                    {
+                        m_MigrateScroll = sv.scrollPosition;
+                        EditorGUILayout.TextArea(m_MigrateReport, UCL_GUIStyle.LabelStyle);
+                    }
+                }
+            }
+        }
+
+        // 區塊職責：跑 awakening.py migrate-letters 並把輸出貼回報告區
+        // 物理意義：Process 走 UCL_ProcessCli（內含 ProcessRegistry 登記 / 雙 stream 非阻塞讀 /
+        //          逾時 kill）—— 硬規則：C# 開的每顆外部 Process 都要登記，不自己刻 Process.Start。
+        //          背景執行緒跑（WaitForExit 會擋 UI），回主執行緒才寫 m_MigrateReport。
+        // 數值影響：apply=false 唯讀；apply=true 由 awakening.py 決定寫什麼。
+        void RunMigrateLetters(bool apply)
+        {
+            if (m_MigrateRunning) return;
+            string corePathRel = UCL_EditorPath.CorePath;
+            if (string.IsNullOrEmpty(corePathRel))
+            {
+                m_MigrateReport = "✗ 解析不到 UCL_Core 路徑（UCL_EditorPath.CorePath 為空）";
+                return;
+            }
+            // 不寫死 install path（見 ucl-core-paths）—— 各專案掛載位置不同，寫死的跨專案必壞，
+            // 而且通常是靜默壞（File.Exists 失敗後 fail-soft，連 warning 都沒有）。
+            string script = Path.GetFullPath(Path.Combine(
+                UCL_RepoPath.UnityProjectRoot, corePathRel, "Tools~/AgentCommands/awakening.py"));
+            if (!File.Exists(script))
+            {
+                m_MigrateReport = $"✗ 找不到 awakening.py：{script}";
+                return;
+            }
+            m_MigrateRunning = true;
+            m_MigrateReport = apply ? "⏳ 執行 migration…" : "⏳ 試跑…";
+            string repoRoot = UCL_RepoPath.RepoRoot;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string text;
+                try
+                {
+                    // 路徑含空白時參數會被切斷 —— 引號是呼叫端的責任（UCL_ProcessCli 明寫）
+                    string args = $"\"{script}\" migrate-letters --all" + (apply ? " --apply" : "");
+                    var (exit, so, se) = UCL_ProcessCli.Run("python", args, repoRoot,
+                        PROC_TAG_AWAKENING, nameof(UCL_PersonaAgentAdminPage), MIGRATE_TIMEOUT_MS);
+                    // stderr 不丟掉：awakening.py 把「跳過幾封」「wake_count 異常」印在 stderr，
+                    // 只收 stdout 會讓報告看起來乾淨而其實漏了警告（那正是這頁在治的病）。
+                    text = so;
+                    if (!string.IsNullOrEmpty(se)) text += "\n\n── stderr ──\n" + se;
+                    if (exit != 0) text = $"✗ awakening.py 結束碼 {exit}\n\n" + text;
+                }
+                catch (Exception e)
+                {
+                    text = "🚨 例外：" + e;
+                }
+                EditorApplication.delayCall += () =>
+                {
+                    m_MigrateRunning = false;
+                    m_MigrateReport = text;
+                    if (apply) LoadData();   // 歲數變了，總覽表要重讀 —— 報告說改了不算數
+                };
+            });
         }
 
         // ===========================================================

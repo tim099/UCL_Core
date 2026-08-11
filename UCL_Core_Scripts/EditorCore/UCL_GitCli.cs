@@ -1,12 +1,11 @@
-// 區塊職責：Editor 端「跑一條 git 指令」的唯一共用封裝
-// 物理意義：UCL_GitSubmoduleSyncPage 與 UCL_AutoCommitPage 都要直呼 git CLI ——
-//          Process 樣板（雙 stream 非阻塞讀 / ProcessRegistry 登記 / 逾時 kill /
-//          GIT_TERMINAL_PROMPT）各寫一份就是漂移的起點，收攏成一個靜態方法。
-// 數值影響：本身不判斷指令安全性 —— 讀寫語意由呼叫端的 args 決定；
-//          只保證「不 deadlock、不留孤兒、不停在看不見的認證提示」三件事。
+// 區塊職責：Editor 端「跑一條 git 指令」的薄殼 —— 只補 git 專屬的兩件事
+// 物理意義：Process 樣板本體 2026-08-11 抽到 UCL_ProcessCli。抽的理由：本檔原本是唯一一份
+//          完整樣板，但它寫死 FileName="git"，於是 UCL_LibraryManagePage 要跑 python 時
+//          **又手刻了第二份**；Persona 後台要跑 awakening.py 時不再加第三份。
+//          本檔留下的只有：執行檔名 "git" + GIT_TERMINAL_PROMPT=0。
+// 數值影響：本身不判斷指令安全性 —— 讀寫語意由呼叫端的 args 決定。
+//          「不 deadlock、不留孤兒、不停在看不見的認證提示」由 UCL_ProcessCli 保證。
 #if UNITY_EDITOR
-using System;
-using System.Diagnostics;
 
 namespace UCL.Core.EditorLib
 {
@@ -28,58 +27,18 @@ namespace UCL.Core.EditorLib
         public static (int exit, string stdout, string stderr) Run(
             string workDir, string args, string procTag, string owner, int timeoutMs)
         {
-            var so = new System.Text.StringBuilder();
-            var se = new System.Text.StringBuilder();
-            int exit = -1;
-            int pid = -1;
-            try
-            {
-                using (var p = new Process())
+            // 薄殼：Process 樣板本體在 UCL_ProcessCli（2026-08-11 抽出）。
+            // 本檔只保留「git 專屬」的兩件事，其餘一行都不重複：
+            //   ① 執行檔名 "git"
+            //   ② GIT_TERMINAL_PROMPT=0 —— 認證失敗時 git 會停在終端等輸入，而這裡沒有終端。
+            //      關掉讓它直接 fail，錯誤才會離開私有欄位（卡住的失敗最難抓）。
+            // 簽名刻意不變 —— 既有呼叫端（SubmoduleSync / AutoCommit）一行都不用改。
+            return UCL_ProcessCli.Run("git", args, workDir, procTag, owner, timeoutMs,
+                env: new System.Collections.Generic.Dictionary<string, string>
                 {
-                    p.StartInfo.FileName = "git";
-                    p.StartInfo.Arguments = args;
-                    p.StartInfo.WorkingDirectory = workDir;
-                    p.StartInfo.UseShellExecute = false;
-                    p.StartInfo.RedirectStandardOutput = true;
-                    p.StartInfo.RedirectStandardError = true;
-                    p.StartInfo.CreateNoWindow = true;
-                    p.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
-                    p.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
-                    // 認證失敗時 git 會停在終端等輸入，而這裡沒有終端 ——
-                    // 關掉讓它直接 fail，錯誤才會離開私有欄位（卡住的失敗最難抓）。
-                    p.StartInfo.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0";
-                    // stdout / stderr 同時非阻塞讀 —— 只讀一個 stream 時 child 填滿另一邊
-                    // buffer 會互卡成永久 deadlock（本專案踩過不只一次）。
-                    p.OutputDataReceived += (_, e) => { if (e.Data != null) so.AppendLine(e.Data); };
-                    p.ErrorDataReceived += (_, e) => { if (e.Data != null) se.AppendLine(e.Data); };
-                    p.Start();
-                    // spawn 後立刻登記（身分 = PID + name + start time）—— 短命指令也要登記，
-                    // pull / push 走網路可能活數分鐘，夠跨一次 domain reload 變孤兒。
-                    UCL_ProcessRegistryService.Register(p, procTag,
-                        $"git {Truncate(args, 60)}", owner);
-                    pid = p.Id;
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
-                    if (!p.WaitForExit(timeoutMs))
-                    {
-                        try { p.Kill(); } catch { /* 已死就算了 —— 目的只是別留孤兒 */ }
-                        se.AppendLine($"[UCL_GitCli] git {args} 逾時（{timeoutMs / 1000}s）— 已強制結束");
-                    }
-                    else
-                    {
-                        exit = p.ExitCode;
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                se.AppendLine(e.ToString());
-            }
-            finally
-            {
-                if (pid > 0) UCL_ProcessRegistryService.Unregister(pid, procTag);
-            }
-            return (exit, so.ToString().TrimEnd(), se.ToString().TrimEnd());
+                    ["GIT_TERMINAL_PROMPT"] = "0",
+                },
+                displayName: $"git {Truncate(args, 60)}");
         }
 
         static string Truncate(string s, int n)

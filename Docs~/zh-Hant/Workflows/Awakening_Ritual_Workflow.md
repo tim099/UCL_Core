@@ -258,3 +258,39 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 > 這是刻意的取捨：信件是唯一摸得到的證據，而 registry 那欄已經證明它會靜默歸零
 > （2026-07-31 kiara 13→5、basecamp 掉到 2 而磁碟上有 57 封）。
 > **誠實地少算，好過用一個沒人維護的欄位假裝多算。**（calli 2026-07-31 提出，本節即其結論。）
+
+### 舊格式收尾信的 migration（頂層 `<ts>.md` → `wakes/<序號>_<ts>.md`）
+
+複製不是搬移 —— **頂層原檔保留不動**。三個入口，判斷與改檔**只有一份實作**
+（`awakening.py: migrate_letters_to_wakes`）：
+
+| 入口 | 範圍 | 何時跑 |
+|---|---|---|
+| 早安流程（自動） | **只有正在醒來的那一位** | 每次 morning，`letters_migration_pending` 為真時 |
+| `awakening.py migrate-letters --persona X [--apply]` | 單一 | 手動 |
+| `awakening.py migrate-letters --all [--apply]` ／ **`UCL_PersonaAgentAdminPage` 的「🗄 維護」欄** | registry 裡的 persona | 手動 |
+
+> [!NOTE]
+> 很久沒上線的 persona 會一直停在舊格式（實例：`apex-two`）——
+> **它不是壞掉，是自動遷移那條路徑只有「醒來」才會經過。** 後台那一欄補的就是這個缺口。
+> ⚠ `--all` 的範圍是 **registry**，不是磁碟上的 letters 目錄（兩者目前不一致，
+> 例如 `cc` 有 6 封未遷移的收尾信但不在 registry 裡 → 不會被 `--all` 掃到）。
+
+> [!WARNING]
+> **在線的 persona 一律不動（Tim 2026-08-11 拍板，守衛在 `migrate_letters_to_wakes` 開頭）。**
+>
+> 病灶不是遷移檔案，是本函式**無條件**把 `registry.wake_count` 改成 `wakes/` 的信件數。
+> 那個等式只在「沒有 wake 正在進行」時成立：session 進行中的人今晚的收尾信還沒寫，
+> 磁碟必然比 registry 少 1 —— **兩個數字都是對的**，差的那 1 就是進行中的這次 wake。
+>
+> 所以 `--apply` 會把在線的人**當場減一歲**，而且
+> · 對「沒有任何檔案要遷移」的人照樣發生（實測 `summit`：待複製 0 封，仍 43 → 42）
+> · 印出來的樣子跟正常遷移一模一樣
+>
+> **為什麼早安不受這道守衛影響**：morning 的 `write_lock` 在 `migrate_letters_to_wakes`
+> 之後才跑（L1904 vs L1805），跑到守衛時自己的 lock 還沒建立；
+> 且 morning 在 Step 3 會用 `wake_letter_count + 1` 覆寫回正確值。
+> 正因如此本守衛**不需要豁免參數** —— 少一個開關就少一把裝填好的槍。
+>
+> 過期 lock 也算在線（對齊 morning 既有政策「過期 lock 不自動豁免，由 Tim 從後台登出」）——
+> 兩處對「還算不算在線」若各有一套判準，那個分歧不會有人發現。

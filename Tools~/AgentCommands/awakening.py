@@ -240,14 +240,30 @@ OVERRIDE_PROBABILITY = 0.20  # Q3 spec: 80/20 random override
 
 
 # ─── utilities ──────────────────────────────────────────────────────────
+def _utcnow() -> datetime.datetime:
+    """現在時刻的 **naive UTC** datetime —— 全檔唯一取時點。
+
+    區塊職責: 取代 `datetime.datetime.utcnow()`(Python 3.12 起 DeprecationWarning)。
+    物理意義: 回的是**去掉 tzinfo 的 UTC**, 與 utcnow() 逐位元組等價 ——
+              刻意不回 tz-aware: 本檔多處拿它跟 `strptime` 解析出來的 naive 值比大小
+              (見 is_lock_expired), 混用 aware/naive 會直接 TypeError。
+              「順手升級成 tz-aware」看起來比較現代, 但那會把一個安靜的警告
+              換成一個會炸的錯 —— 換法要等價, 不是要新潮。
+    為什麼值得修: 那行警告會印在 stderr, 而 UCL_PersonaAgentAdminPage 的維護欄
+              **會把 stderr 貼進報告**。於是每份報告底下永遠掛著一段 Python 警告,
+              真警告就藏在裡面 —— 假警報訓練人忽略警報。
+    """
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
 def utcnow_iso() -> str:
-    n = datetime.datetime.utcnow()
+    n = _utcnow()
     return n.strftime("%Y-%m-%dT%H:%M:%S.") + f"{n.microsecond//1000:03d}Z"
 
 
 def utcnow_compact() -> str:
     """For filenames: 20260512T075000Z"""
-    return datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    return _utcnow().strftime("%Y%m%dT%H%M%SZ")
 
 
 def short_uuid(n: int = 4) -> str:
@@ -643,7 +659,7 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
     """
     _SESSION_DIR.mkdir(parents=True, exist_ok=True)
     now = utcnow_iso()
-    expires = (datetime.datetime.utcnow() +
+    expires = (_utcnow() +
                datetime.timedelta(hours=SESSION_LOCK_TTL_HOURS)).strftime(
         "%Y-%m-%dT%H:%M:%S.") + "000Z"
     data = {
@@ -713,7 +729,7 @@ def find_lock_by_session_key(session_key: str) -> dict | None:
 def is_lock_expired(lock: dict) -> bool:
     try:
         exp = datetime.datetime.strptime(lock["expires_at"][:19], "%Y-%m-%dT%H:%M:%S")
-        return datetime.datetime.utcnow() > exp
+        return _utcnow() > exp
     except Exception:
         return True
 
@@ -2594,6 +2610,33 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
       本註解早一版寫著無條件可逆, 是假的 —— apex-one 2026-07-31 用她自己那封信抓到。
       要退回請改成「只刪掉有頂層原檔的那些」, 或先把只存在於 wakes/ 的信搬回頂層。
     """
+    # ── 在線者一律不動 (Tim 2026-08-11 拍板) ───────────────────────────────
+    # 病灶不是「遷移檔案」而是本函式**無條件**改寫 registry.wake_count = wakes/ 信件數。
+    # 那個等式只在「沒有 wake 正在進行」時成立: session 進行中的人今晚的收尾信還沒寫,
+    # 磁碟必然比 registry 少 1 —— 兩個數字都是對的, 差的那 1 就是進行中的這次 wake。
+    # 於是 `migrate-letters --apply` 會把在線的人**當場減一歲**, 而且
+    #   · 對「沒有任何檔案要遷移」的人照樣發生 (實測 summit: 待複製 0, 仍 43 → 42)
+    #   · 印出來的樣子跟正常遷移一模一樣
+    # 這是「修對了型別 (用磁碟推導年齡)、修錯了對象 (把進行中那次 wake 當成不存在)」。
+    #
+    # 為什麼早安不受影響 (查過才寫, 不是假設): morning 的 write_lock 在 L1904,
+    # 而它呼叫本函式在 L1805 —— 跑到這裡時自己的 lock 還沒建立, 所以本守衛擋不到它;
+    # 且 morning 在 Step 3 (L1845) 會用 `wake_letter_count + 1` 覆寫回正確值。
+    # 正因如此本函式**不需要豁免參數** —— 少一個開關就少一把裝填好的槍。
+    #
+    # 過期 lock 也算在線: 「過期 lock 不自動豁免」是 morning 既有政策 (L1774),
+    # 兩處對「還算不算在線」若各有一套判準, 那個分歧不會有人發現。
+    _lk = read_lock(persona)
+    if _lk is not None:
+        return {"moved": 0, "skipped": 0, "renumbered": 0, "locked": True,
+                "lock_expired": is_lock_expired(_lk),
+                "lock_session_key": _lk.get("session_key", "?"),
+                "old_wake_count": (reg or load_registry()).get("personas", {})
+                                  .get(persona, {}).get("wake_count", 0),
+                "new_wake_count": (reg or load_registry()).get("personas", {})
+                                  .get(persona, {}).get("wake_count", 0),
+                "old_consolidated": None, "new_consolidated": None}
+
     own_reg = reg is None
     if own_reg:
         reg = load_registry()
@@ -2639,6 +2682,7 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None) -> dict:
         if own_reg:
             save_registry(reg)
     return {"moved": moved, "skipped": skipped, "renumbered": renumbered,
+            "locked": False, "lock_expired": False, "lock_session_key": "",
             "old_wake_count": old_wc, "new_wake_count": new_wc,
             "old_consolidated": old_lc, "new_consolidated": new_lc}
 
@@ -2669,7 +2713,19 @@ def cmd_migrate_letters(args: argparse.Namespace) -> int:
 
     total_moved = 0
     changed_ages = []
+    locked_out = []          # 在線而被鎖定不動的 —— dry-run 也要看得到, 不能只在 apply 時安靜跳過
     for persona in targets:
+        # 在線者在**試跑階段就標出來**: 報表是人用來決定要不要 --apply 的依據,
+        # 「試跑說會改、實跑其實沒改」跟「試跑沒說、實跑改了」一樣是報表騙人。
+        _lk = read_lock(persona)
+        if _lk is not None:
+            locked_out.append((persona, is_lock_expired(_lk),
+                               _lk.get("session_key", "?")))
+            old_wc = reg["personas"].get(persona, {}).get("wake_count", 0)
+            print(f"{persona:<28}{'—':>6}{wake_letter_count(persona):>11}"
+                  f"{old_wc:>12}{'不動':>9}  🔒 在線"
+                  + ("（lock 已過期）" if is_lock_expired(_lk) else ""))
+            continue
         plan = _plan_letter_migration(persona)
         wd = wakes_dir(persona)
         already = wake_letter_count(persona)
@@ -2698,6 +2754,15 @@ def cmd_migrate_letters(args: argparse.Namespace) -> int:
             total_moved += stat["moved"]
             if stat["skipped"]:
                 print(f"   ⚠ {stat['skipped']} 封目標檔已存在，跳過", file=sys.stderr)
+
+    if locked_out:
+        print(f"\n🔒 下列 {len(locked_out)} 個 persona **在線, 一律不動**（Tim 2026-08-11 拍板）:")
+        for name, expired, skey in locked_out:
+            print(f"   - {name}　session_key={skey}"
+                  + ("　⚠ lock 已過期（該從後台登出，不自動豁免）" if expired else ""))
+        print("   理由: 進行中的 wake 還沒寫收尾信, 磁碟信件數天生比 registry 少 1；"
+              "此時改寫 wake_count 會把人當場減一歲, 而且對「沒東西要遷移」的人照樣發生。")
+        print("   要處理他們: 等對方走完晚安（或從後台登出）之後再跑一次。")
 
     if changed_ages:
         print(f"\n⚠ 下列 {len(changed_ages)} 個 persona 的 wake_count 會被改寫"

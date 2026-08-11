@@ -51,6 +51,12 @@ related:
 
 ## 一、資料結構
 
+> 📁 **可直接複製的空白樣板**：`repo:AgentCommands/ArtGallery/Comic/template/`
+> 整個目錄複製成 `ArtGallery/Comic/<slug>/`，再把 `<尖括號>` 換掉即可開工。
+> 樣板內含 `README` / `NAMING` / `DRAWING_MEMO` / 分鏡 / 人設 / 物件設定，
+> 以及 **`RawImages/character_v1.png`（三視圖的格式範例）**。
+> ⚠ 那張圖示範的是**版面規格**（三視等高等比・純白・中性站姿・零文字），不是畫風。
+
 ```
 ArtGallery/Comic/<slug>/
   README.md                  總覽 / 話數表 / 鐵則 / 視覺母題 / 人設索引

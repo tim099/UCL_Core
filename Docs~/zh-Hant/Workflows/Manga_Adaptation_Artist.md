@@ -21,7 +21,10 @@ related:
 
 ## 一、圖版人設：三視圖，而且零標註
 
-樣板：`ArtGallery/Comic/template/Character.png`
+格式範例：`repo:AgentCommands/ArtGallery/Comic/template/RawImages/character_v1.png`
+（整套空白樣板在 `template/`，見[總文件 §一](Manga_Adaptation_Workflow.md)）
+
+⚠ 那張示範的是**版面規格**，不是畫風。
 
 | 項目 | 規格 |
 |---|---|

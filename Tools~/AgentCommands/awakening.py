@@ -1072,6 +1072,64 @@ def wake_number_of(path: Path) -> int | None:
     return int(m.group(1)) if m else None
 
 
+# ─── rests/ — 非收尾的自寫信 (Tim 2026-08-12 拍板) ─────────────────────────
+# 區塊職責: cmd_rest / free_time_* 這類「不是一次 wake 收尾」的自寫信集中收進
+#          letters/<persona>/rests/, 檔名沿用 <ts>.md（不掛序號）。
+# 物理意義: 頂層自此只該在 migration 期間被讀取 —— rest 信留頂層的舊設計讓
+#          「根目錄乾不乾淨」永遠是假的（每封 rest 信都會再落一枚）。
+# 數值影響: rests/ 的檔案數**不影響 wake_count**（真相源仍是 wakes/ 檔案數）——
+#          這正是它不能進 wakes/ 的理由: 混進去計數虛胖且序號要重編
+#          (實測 2026-07-31: 全 persona 頂層 245 封 goodnight 混了 18 封 rest + 8 封 free_time)。
+#          同事寄來的 peer letter (type != letter_to_future_self) 不歸這裡管, 仍留頂層。
+def rests_dir(persona: str) -> Path:
+    """非收尾自寫信目錄 (cmd_rest / free_time_*): letters/<persona>/rests/"""
+    return _LETTERS_DIR_TPL / persona / "rests"
+
+
+def list_rest_letters(persona: str) -> list:
+    """列 rests/ 內的自寫信, 檔名升冪。目錄不存在回 []。"""
+    d = rests_dir(persona)
+    if not d.exists():
+        return []
+    return sorted((f for f in d.iterdir()
+                   if f.is_file() and f.suffix == ".md" and not f.name.startswith("_")),
+                  key=lambda f: f.name)
+
+
+def migrate_rest_letters(persona: str) -> dict:
+    """頂層非收尾自寫信 → rests/（**搬移**, 不是複製）。回 {moved: [名], skipped: [名]}。
+
+    區塊職責: morning 自動遷移的唯一實作 —— 冪等, 頂層沒有合格檔案時零動作。
+    物理意義: 判準與 write_letter 的分流一致 —— type=letter_to_future_self 且
+             **非** is_wake_slot_trigger。收尾信不歸這裡（那是 wakes/ 遷移的事）,
+             peer letter / 常駐檔 (_*, README) 也不動。
+    數值影響: 搬移語意 (Tim 2026-08-12 拍板, 取代 07-31「複製不動原檔」——
+             該拍板針對的是 wakes/ 遷移當時的可回退性, rests/ 沒有計數耦合,
+             留兩份只會製造 list_episodic_letters 之外第二套去重需求)。
+             目標已存在同名檔 → 跳過並回報, 不覆蓋 —— 覆蓋錯了救不回來, 跳過錯了看得見。
+    """
+    d = _LETTERS_DIR_TPL / persona
+    out = {"moved": [], "skipped": []}
+    if not d.exists():
+        return out
+    rdir = rests_dir(persona)
+    for p in sorted(d.iterdir()):
+        if not p.is_file() or p.suffix != ".md" or p.name.startswith("_") or p.name == "README.md":
+            continue
+        if _read_frontmatter_field(p, "type") != "letter_to_future_self":
+            continue
+        if is_wake_slot_trigger(_read_frontmatter_field(p, "trigger")):
+            continue
+        rdir.mkdir(parents=True, exist_ok=True)
+        dst = rdir / p.name
+        if dst.exists():
+            out["skipped"].append(p.name)
+            continue
+        p.rename(dst)
+        out["moved"].append(p.name)
+    return out
+
+
 def legacy_wake_letters(persona: str) -> list:
     """頂層尚未遷移的收尾信(依 written_at 升冪) —— migration 的來源集合。
 
@@ -1192,7 +1250,7 @@ def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodni
 
     Path layout:
         baton/letters/<persona>/wakes/<6位序號>_<ts>.md  (goodnight 收尾信, 一次 wake 一封)
-        baton/letters/<persona>/<ts>.md   (其餘自寫信: cmd_rest / free_time_*)
+        baton/letters/<persona>/rests/<ts>.md  (其餘自寫信: cmd_rest / free_time_*; 2026-08-12 前落頂層)
         baton/letters/<persona>/_latest.md  (覆寫 pointer, 不分收尾與否)
         baton/letters/<persona>/dialogues/  (round-trip 對話, 留給未來)
     """
@@ -1207,7 +1265,10 @@ def write_letter(actor: str, persona: str, body: str, trigger: str = "cmd_goodni
         wdir.mkdir(parents=True, exist_ok=True)
         path = wdir / f"{wake_letter_count(persona) + 1:06d}_{ts}.md"
     else:
-        path = letters_dir / f"{ts}.md"
+        # 非收尾自寫信進 rests/（Tim 2026-08-12 拍板）—— 頂層只留給 migration 讀。
+        rdir = rests_dir(persona)
+        rdir.mkdir(parents=True, exist_ok=True)
+        path = rdir / f"{ts}.md"
     # 機器欄位（provenance）— 這幾個以本函式為準，作者寫的同名欄不採用
     machine = {
         "type": "letter_to_future_self",
@@ -1264,22 +1325,24 @@ def _read_frontmatter_field(path: Path, field: str) -> str:
 
 
 def list_episodic_letters(persona: str, since_iso: str | None = None) -> list:
-    """列 persona episodic letters(頂層 + wakes/, 排除 _latest/_index 與 dialogues/longterm),
+    """列 persona episodic letters(頂層 + wakes/ + rests/, 排除 _latest/_index 與 dialogues/longterm),
     依 written_at 升冪;since_iso 給定則只取 written_at > since_iso 的(本段待濃縮)。
 
-    數值影響: 收尾信 2026-07-31 起複製進 wakes/, 這裡**兩處都要掃** —— 只掃頂層的話
-             會漏掉遷移後新寫的 goodnight 信(它們只存在於 wakes/), 而漏掉時
-             brief 長得一模一樣, 不會有人喊。
-             但遷移是「複製、原檔保留」, 所以同一封信會在兩處各出現一次 ——
+    數值影響: 收尾信 2026-07-31 起複製進 wakes/, rest 信 2026-08-12 起搬進 rests/ ——
+             **三處都要掃**。只掃頂層的話會漏掉遷移後新寫的信(它們只存在於子目錄),
+             而漏掉時 brief 長得一模一樣, 不會有人喊(見林濃縮靜默少讀幾封,
+             正是 lesson_silent_nonaction 的形狀)。
+             wakes/ 遷移是「複製、原檔保留」, 所以同一封信可能在兩處各出現一次 ——
              wakes/ 檔名是 `<6位序號>_<原檔名>`, 去掉序號前綴即可認出同一封,
              不去重的話見林濃縮會把每封 goodnight 信讀兩遍。
+             rests/ 是**搬移**語意, 天然無重複, 不參與去重。
     """
     d = _LETTERS_DIR_TPL / persona
     if not d.exists():
         return []
     toplevel_names = {p.name for p in d.iterdir() if p.is_file() and p.suffix == ".md"}
     items = []
-    for p in list(d.iterdir()) + list_wake_letters(persona):
+    for p in list(d.iterdir()) + list_wake_letters(persona) + list_rest_letters(persona):
         if not p.is_file() or p.suffix != ".md":
             continue
         if p.name.startswith("_") or p.name == "README.md":
@@ -1828,6 +1891,17 @@ def cmd_morning(args: argparse.Namespace) -> int:
             print(f"   ⚠ 見林書籤 last_consolidated_wake "
                   f"{_st['old_consolidated']} → {_st['new_consolidated']}"
                   f"（換算到新編號；不換算的話 gap 會變負數，濃縮提醒從此靜默失效）")
+
+    # ③'' rest 信版面自動遷移（Tim 2026-08-12 拍板）：頂層非收尾自寫信搬進 rests/。
+    #     冪等、不動 wake_count、不動收尾信與 peer letter；判準見 migrate_rest_letters。
+    #     自癒可以自動做，但不能安靜地發生 —— 有搬就印清單。
+    _rst = migrate_rest_letters(preferred)
+    if _rst["moved"]:
+        print(f"📦 rest 信版面遷移: {len(_rst['moved'])} 封 → rests/ "
+              f"({', '.join(_rst['moved'][:3])}{'…' if len(_rst['moved']) > 3 else ''})")
+    if _rst["skipped"]:
+        print(f"   ⚠ {len(_rst['skipped'])} 封跳過（rests/ 已有同名檔, 不覆蓋）: "
+              f"{', '.join(_rst['skipped'])}")
 
     # ④ fork（可選）：以 preferred 為母體開新分身並改喚醒它
     chosen, decision = preferred, "preferred"

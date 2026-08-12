@@ -178,13 +178,17 @@ def _letter_day(aw, path) -> str:
 
 
 def _recent_self_letters(aw, persona, limit=None):
-    """該 persona 的自寫信，**新到舊**排序（頂層 + wakes/，去重）。"""
+    """該 persona 的自寫信，**新到舊**排序（頂層 + wakes/ + rests/，去重）。
+
+    rests/ 是 2026-08-12 起 rest 信的新家（搬移語意、無重複）——
+    不掃的話 rest 信從見樹靜默消失，而 brief 長得一模一樣。
+    """
     d = aw._LETTERS_DIR_TPL / persona
     if not d.exists():
         return []
     toplevel = {f.name for f in d.iterdir() if f.is_file() and f.suffix == ".md"}
     items = []
-    for f in list(d.iterdir()) + aw.list_wake_letters(persona):
+    for f in list(d.iterdir()) + aw.list_wake_letters(persona) + aw.list_rest_letters(persona):
         if not f.is_file() or f.suffix != ".md" or f.name.startswith("_"):
             continue
         if f.parent.name == "wakes" and f.name.split("_", 1)[-1] in toplevel:
@@ -213,7 +217,8 @@ def _newest_self_letter(aw, persona):
     if not d.exists():
         return None
     best, best_ts = None, ""
-    for f in list(d.iterdir()) + aw.list_wake_letters(persona):
+    # rests/ 也要掃 —— rest 信更新 _latest.md，漏掃的話 sync 會拿舊信倒退指標（同上警語）。
+    for f in list(d.iterdir()) + aw.list_wake_letters(persona) + aw.list_rest_letters(persona):
         if not f.is_file() or f.suffix != ".md" or f.name.startswith("_"):
             continue
         if aw._read_frontmatter_field(f, "type") != "letter_to_future_self":

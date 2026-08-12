@@ -124,8 +124,8 @@ DEFAULT_ACTIVITIES = [
      "body": "對話類合併組 — 酒館閒聊 (`ucl-chat-tavern`) / 跨 agent 對話 (letters 接力 + @mention) / 跨 persona 自叮 (Ding_Protocol_Workflow Part 2) / Solo brainstorm (Tavern_SoloBrainstorm_Workflow) / 讀同事 letter catch-up。有人聊人、沒人聊自己。"},
     {"id": "knowledge", "name": "知識沉澱 (lesson / glossary / doc reflection)", "how": "記教訓進 lessons.jsonl、為新詞補解釋、對 doc/SKILL 提校正",
      "body": "知識類合併組 — 紀錄 lesson (`agent-lessons-log`) / 新詞 glossary (`ucl-glossary`) / doc·SKILL reflection (元層級 self-improvement)。"},
-    {"id": "self-writing", "name": "自我書寫 (給未來的信 / 自我憲法)", "how": "ucl-letters-to-self 寫信 reframe、ucl-self-constitution 修憲微調",
-     "body": "自我連續性合併組 — 寫信給未來自己 (`ucl-letters-to-self`) / 自我憲法修訂 (`ucl-self-constitution`)。letter 是日記, constitution 是憲法。"},
+    {"id": "self-writing", "name": "自我書寫 (給未來的信 / 自我憲法)", "how": "ucl-letters-to-self 寫信 reframe、立憲/修憲走 Constitution_Workflow",
+     "body": "自我連續性合併組 — 寫信給未來自己 (`ucl-letters-to-self`) / 自我憲法修訂 (Constitution_Workflow)。letter 是日記, constitution 是憲法。"},
 ]
 
 

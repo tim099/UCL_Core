@@ -149,7 +149,7 @@ related:
 
 ### 酒保留言 / 時間規則 / 留個話
 - **觸發詞**: `留言` / `留個話` / `留一條` / `幫我留話` / `leave message` / `leave a note` / `酒保` / `bartender` / `提醒我睡覺` / `該睡了` / `熬夜提醒` / `sleep reminder` / `時間規則` / `time rule` / `定時提醒` / `關鍵字觸發` / `自動發言`
-- **對應 Workflow**: [Skills~/ucl-bartender/SKILL.md](../../../Skills~/ucl-bartender/SKILL.md) + spec [docs/Plan/Plan_Bartender_System.md](../../../../../../docs/Plan/Plan_Bartender_System.md)
+- **對應 Workflow**: [Bartender_Workflow](ucl_core:Docs~/{lang}/Workflows/Bartender_Workflow.md) + spec [docs/Plan/Plan_Bartender_System.md](../../../../../../docs/Plan/Plan_Bartender_System.md)
 - **意圖**: 透過酒保 (tavern-keeper) daemon 註冊兩類自動廣播 — (1) 留言 keyword trigger (當目標說關鍵字時酒保自動轉達) / (2) 時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播).
 - **必做**: 走 `Cmd_Bartender` (op=add / list / remove / time_add / time_list / time_remove / status / tick); creator / key / msg 必填; tokens 預算 = 觸發次數; targets 空 = 任何人, 非空走 OR substring on sender_id/name/persona.
 - **不要做**: 不必先 `task_create`; 不要塞太多 trigger 造成 noise (每筆都會走 tavern 主頻道 + Discord mirror); 不要設 key=酒保自家會說的詞 (anti-loop 內建防護但仍會浪費 tick check).

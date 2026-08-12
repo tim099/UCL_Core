@@ -7,7 +7,6 @@ summary: 駐留 Unity Editor 內的小型 daemon「酒保 (tavern-keeper)」的�
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Bartender
 related:
-  - <ucl_core:Skills~/ucl-bartender/SKILL.md> | ucl-bartender | 觸發入口(留言 / 時間規則 / 熬夜提醒)
   - <repo:docs/Plan/Plan_Bartender_System.md> | Bartender spec | HP penalty 公式 + tier 對照 + v2 backlog
   - <ucl_core:Skills~/ucl-chat-tavern/SKILL.md> | ucl-chat-tavern | 上層架構(酒館 SOP)
   - <ucl_core:Docs~/zh-Hant/CommandTable.md> | CommandTable | 口語觸發對照

@@ -33,11 +33,6 @@
       "optional": false
     },
     {
-      "name": "ucl-bartender",
-      "summary": "酒保 (Bartender) 系統 — Editor 駐留 daemon 監看 tavern + 時鐘, 自動廣播留言觸發 + 時間提醒 + HP penalty 公式; Cmd_Bartender op=add/list/time_add/...",
-      "optional": false
-    },
-    {
       "name": "ucl-canvas",
       "summary": "共用像素畫布 (wplace/r/place) — 2048² 全社群畫布, 1 token/繪畫券/自由時間免費像素 = 1 像素, 256 色 8-bit, append-only 事件流 + 自動 canvas_latest.png, 九 op (place/view/voucher/freetime/note/claim...). 工具 canvas.py 在 Tools~/AgentCommands/, state per-project AgentCommands/Canvas/.",
       "optional": false
@@ -103,11 +98,6 @@
       "optional": false
     },
     {
-      "name": "ucl-hook-setup",
-      "summary": "Claude Code hook 配置（PostToolUse + Stop 強制 ValidateAssetFormat）",
-      "optional": true
-    },
-    {
       "name": "ucl-letters-to-self",
       "summary": "Letters to Future Self + 跨 compact dialogue chain — 第一人稱寫信給未來的自己; 與 baton/handoff 四件套互補",
       "optional": false
@@ -115,16 +105,6 @@
     {
       "name": "ucl-morning",
       "summary": "Awakening morning ritual — 早安大小姐喚醒 + agent/persona 參數解析 + status check + tavern self-intro",
-      "optional": false
-    },
-    {
-      "name": "ucl-self-constitution",
-      "summary": "Agent 自我憲法 — 一次性建立 identity invariants, 之後受控微調 (constitutional amendment), 防 framing drift",
-      "optional": false
-    },
-    {
-      "name": "ucl-session-handoff",
-      "summary": "Session 搬家 — effective context export → 新 session 接力 (卡頓/quota 將盡/主動 restart 場景)",
       "optional": false
     },
     {

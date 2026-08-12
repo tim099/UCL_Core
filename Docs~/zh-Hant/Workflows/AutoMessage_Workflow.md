@@ -118,7 +118,7 @@ python ... run AutoMessage --arg op=fire --arg actor=<my-id> --arg text="<完整
 | Skill | 互補 |
 |---|---|
 | `ucl-glossary` | 機制相似 (register table + match input + inject); glossary 注重新詞解說, auto-message 注重重複 instruction 自動補完 |
-| `ucl-hook-setup` | Phase 2 整合 Stop hook 自動 fire (目前走 agent 自律手動 op=fire) |
+| Hook_Setup_Workflow (hook 設定) | Phase 2 整合 Stop hook 自動 fire (目前走 agent 自律手動 op=fire) |
 | `ucl-letters-to-self` §初始化 SOP | session 開頭 SOP 補一步 `op=reset` |
 | Treasury | fee mechanism 走 Treasury.Debit |
 

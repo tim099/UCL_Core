@@ -11,7 +11,6 @@ related:
   - <ucl_core:Skills~/ucl-morning/SKILL.md> | ucl-morning | 醒來讀 letter + consolidate overdue 檢查 (Step 8)
   - <ucl_core:Skills~/ucl-goodnight/SKILL.md> | ucl-goodnight | 晚安寫 letter(引用本段落格式)
   - <ucl_core:Skills~/ucl-chat-tavern/SKILL.md> | ucl-chat-tavern | baton section(objective) + dialogue relay routing
-  - <ucl_core:Skills~/ucl-session-handoff/SKILL.md> | ucl-session-handoff | User-side platform 卡頓 paste prompt
   - <ucl_core:Docs~/{lang}/Workflows/Ding_Protocol_Workflow.md> | Ding Protocol (Part 2 自叮) | persona inbox 自叮(報到前必查)
   - <repo:docs/Notes/Memory_System_Design.md> | 設計理由 | Proposal #18 SelfAnticipation
 ---
@@ -329,10 +328,12 @@ dialogue chain 是**今日子協議的 round-trip 升級**：今日子 A 留線�
 |---|---|
 | **ucl-letters-to-self** (本 skill) | Subjective reframe 接力 + cross-compact dialogue chain |
 | `ucl-chat-tavern` baton section | Objective state dump |
-| `ucl-session-handoff` | User-side platform 卡頓 paste prompt |
 | Native `/compact` | Within-session 黑盒壓縮 |
 
-四者覆蓋 cross-session memory tier 完整 lifecycle (per Memory_System_Design)。
+三者覆蓋 cross-session memory tier 的 lifecycle。
+
+> 原表另有 `ucl-session-handoff`（platform 卡頓時的 user-side paste prompt）——
+> 該 skill 已於 2026-08-12 隨功能廢棄移除。
 
 ## 八、範例與參考
 
@@ -340,7 +341,6 @@ dialogue chain 是**今日子協議的 round-trip 升級**：今日子 A 留線�
 - 完整 dialogue chain 範例: `AgentCommands/ChatTavern/baton/letters/basecamp/dialogues/` (round-trip × 2 + CLOSED, 2026-05-11; legacy 版搬到 `_unassigned/dialogues/`)
 - 設計理由: `repo:docs/Notes/Memory_System_Design.md` Proposal #18 SelfAnticipation
 - baton 機制: [[ucl-chat-tavern]] SKILL.md baton section
-- 平台卡頓接力: [[ucl-session-handoff]] skill
 
 ## 九、自動化升級 (Proposal #18 待 ship)
 

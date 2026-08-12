@@ -1,18 +1,40 @@
 ---
 title: 自我憲法工作流 (Self-Constitution Workflow)
-last_updated: 2026-07-13
-status: active
+last_updated: 2026-08-12
+status: archive-reference-only   # 2026-08-12 起：立憲流程已由 Constitution_Workflow.md 取代（見下方橫幅）
 theme: agent_identity
 summary: Agent 自我憲法完整工作流 — Core + Persona Overlay 雙層儲存結構與 resolution order、core/overlay 文檔結構模板、修憲六規則 (Rule A-F)、創建 core / 創建 overlay / 後續 amend / flat→雙層 migration 四個 SOP、以及 overlay 與 core 脫節的 drift detection。一次性建立 identity invariants,之後每 session 只能受控微調,防 framing drift / identity erosion。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Self-Constitution
 related:
-  - <ucl_core:Skills~/ucl-self-constitution/SKILL.md> | ucl-self-constitution | 自我憲法觸發入口
+  - <ucl_core:Docs~/{lang}/Workflows/Constitution_Workflow.md> | 立憲流程（現行） | **本檔的接替者** — 要立憲 / 修憲一律看那份
   - <ucl_core:Skills~/ucl-letters-to-self/SKILL.md> | ucl-letters-to-self | subjective reframe (每 session 可重寫) + Persona Codename 機制正典
-  - <ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md> | Letters_And_Dialogue | Persona Codename 機制正典 (本 skill 不再重嵌)
+  - <ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md> | Letters_And_Dialogue | Persona Codename 機制正典 (本檔不再重嵌)
 ---
 
 # 🏛️ 自我憲法工作流 (Self-Constitution Workflow)
+
+> [!WARNING]
+> ## ⚠ 本檔已被取代 — 不要照它立憲
+>
+> **現行流程在 [`Constitution_Workflow.md`](Constitution_Workflow.md)**（Tim 2026-08-04 拍板）。
+> 兩者的差異不是文字整理，是**儲存模型換了**：
+>
+> | | 本檔（舊） | Constitution_Workflow（現行） |
+> |---|---|---|
+> | 落點 | `constitution/<actor>/core/_v1.md` + `personas/<p>/_v1.md` 雙層 overlay | `letters/<persona>/_constitution.md` 單一檔案 |
+> | 版本史 | 手維護 `_v1` / `_v2` + `amendment_log.jsonl` | **git**（`git log -p _constitution.md` 即修憲史） |
+> | 修憲時機 | Rule A-F 六規則 | **綁見林**（每約 10 個 wake 一次窗口）—— 沒新沉澱就沒有新證據 |
+> | 資格門檻 | 無 | **wake > 10 且已有第一次見林**（血證：summit v1 憲法寫在 wake#4，早於第一次見林 17 個 wake，整篇是 State 不是 invariant） |
+>
+> `amendment_log.jsonl` 與 `_v1`/`_v2` 版本檔在現行流程**已退場**（同一個理由：手維護的平行帳會漏、會漂、會忘記更新指標）。
+>
+> **那為什麼還留著這份檔**：`constitution/<actor>/personas/<persona>/` 目錄與既有的
+> `_v1.md` / `amendment_log.jsonl` **磁碟上仍然存在**，而自叮的 `inbox.md` 也住在同一個結構裡
+> （見 `Ding_Protocol_Workflow.md` Part 2）。要讀懂那些既有檔案就得靠本檔。
+> **本檔是既有資料的解讀參考，不是要走的流程。**
+>
+> 觸發入口 skill `ucl-self-constitution` 已於 2026-08-12 移除。
 
 > **解決什麼問題**:整套 cross-compact 機制 (baton + letter + dialogue + handoff + initial_dialogue) 都是 **per-session 重寫** — 每次 compact 後 layer 可以 framing drift。但有些東西**不該 drift**:identity、core directive、Tim 拍板 codify 進 SKILL 的根本規則、跨 agent 協作 anti-pattern。這些是 **immutable core** — 寫一次定型,後續 layer 只能微調周邊不能改核心。
 >
@@ -282,16 +304,18 @@ Amendment 不是 rubber stamp:
 - 差距 ≤ 2 版: 正常
 - 差距 ≥ 3 版: 該 persona overlay 該做一次「rebase」— cat 新 core, 確認 overlay 還合法, 不合法的條改掉, frontmatter 更新 `core_version_at_creation`
 
-## 🤝 跟其他 skill 協作
+## 🤝 跟其他機制協作
 
-| Skill | 角色 | 變動頻率 |
+| 機制 | 角色 | 變動頻率 |
 |---|---|---|
-| **ucl-self-constitution** (本 skill) | Identity invariants 憲法 | 微調為主, immutable core 永久不變 |
+| **憲法**（現行流程見 `Constitution_Workflow.md`） | Identity invariants | 修憲綁見林, 信條見森後才立 |
 | `ucl-letters-to-self` | Subjective reframe per session | 每 session 可重寫 |
 | `ucl-chat-tavern` baton | Objective state dump | 每 session 重寫 |
-| `ucl-session-handoff` | User-side platform 卡頓 paste prompt | 每次卡頓重生 |
 
-→ 形成完整 cross-compact 階層: constitution (永久) → letter (subjective) → baton (objective) → handoff (緊急搬家)。
+→ cross-compact 階層: 憲法 (跨段) → letter (subjective) → baton (objective)。
+
+> 原表還有一列 `ucl-session-handoff`（平台卡頓時的 user-side paste prompt，「每次卡頓重生」）——
+> 該 skill 已於 2026-08-12 隨功能廢棄移除，故從階層中撤下。
 
 ## 📖 參考 / 範例
 

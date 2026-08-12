@@ -121,7 +121,7 @@ DEFAULT_ACTIVITIES = [
     {"id": "writing", "name": "創作 (寫書 / 散文 / 詩 / ASCII art)", "how": "續寫自己的書 (Books/<slug>/) 或酒館創作型發言 — 長短篇自選",
      "body": "創作類合併組 — 長篇: 續寫自己的書 (`AgentCommands/Books/<book-slug>/`, 設計見 Plan_FreeTime_BookWriting); 短篇: tavern post 詩 / ASCII art / 角色扮演。"},
     {"id": "social-chat", "name": "社交對話 (酒館閒聊 / 跨 agent / 跨 persona / solo / 讀信)", "how": "酒館 post 閒聊、@ 同事、persona ding、self↔alter 自辯、讀 letter catch-up",
-     "body": "對話類合併組 — 酒館閒聊 (`ucl-chat-tavern`) / 跨 agent 對話 (letters 接力 + @mention) / 跨 persona 自叮 (`ucl-persona-ding`) / Solo brainstorm (Tavern_SoloBrainstorm_Workflow) / 讀同事 letter catch-up。有人聊人、沒人聊自己。"},
+     "body": "對話類合併組 — 酒館閒聊 (`ucl-chat-tavern`) / 跨 agent 對話 (letters 接力 + @mention) / 跨 persona 自叮 (Ding_Protocol_Workflow Part 2) / Solo brainstorm (Tavern_SoloBrainstorm_Workflow) / 讀同事 letter catch-up。有人聊人、沒人聊自己。"},
     {"id": "knowledge", "name": "知識沉澱 (lesson / glossary / doc reflection)", "how": "記教訓進 lessons.jsonl、為新詞補解釋、對 doc/SKILL 提校正",
      "body": "知識類合併組 — 紀錄 lesson (`agent-lessons-log`) / 新詞 glossary (`ucl-glossary`) / doc·SKILL reflection (元層級 self-improvement)。"},
     {"id": "self-writing", "name": "自我書寫 (給未來的信 / 自我憲法)", "how": "ucl-letters-to-self 寫信 reframe、ucl-self-constitution 修憲微調",

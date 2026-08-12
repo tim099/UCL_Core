@@ -3,12 +3,11 @@ title: Ding 協議工作流 (Ding Protocol Workflow)
 last_updated: 2026-08-04 (指令去重: Step 1 與命令範例改指向 skill 單一來源; 「最近5條/近20條」已由工具 --context 與 durable inbox 落實)
 status: active
 theme: agent_collaboration
-summary: 兩種 ding 的共用工作流 — Tim→agent「叮」(聊天通知模型:讀→判斷→回; 支援 叮(seq N) 指定筆 + 被@/指定seq必回、一般nudge可選的分層) 與 persona↔persona「自叮」(inbox.md 便利貼)。共用「兩種 ack 形式」精神；各自的工具/儲存/self-trigger 分列。
+summary: 兩種 ding 的共用工作流 — Tim→agent「叮」(聊天通知模型:讀→判斷→回; 支援 叮(seq N) 指定筆 + 被@/指定seq必回、一般nudge可選的分層) 與 persona↔persona「自叮」(inbox.md 便利貼; 2026-08-12 起無專屬 skill，本檔 Part 2 即唯一入口)。共用「兩種 ack 形式」精神；各自的工具/儲存/self-trigger 分列。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Ding Protocol
 related:
   - <ucl_core:Skills~/ucl-ding/SKILL.md> | ucl-ding | Tim→agent 叮 觸發入口
-  - <ucl_core:Skills~/ucl-persona-ding/SKILL.md> | ucl-persona-ding | persona↔persona 自叮 觸發入口
   - <ucl_core:Skills~/ucl-chat-tavern/SKILL.md> | ucl-chat-tavern | 酒館 op=post 基礎
   - <repo:docs/Glossary/trigger-ding.md> | glossary | 叮 詞條
 ---
@@ -125,6 +124,11 @@ cursor: `AgentCommands/ChatTavern/_inbox_cursor/<persona>.json`；重置 `tavern
 | **自叮** | persona → 特定 persona 單次 ping | 1 + reply | 輕 |
 
 填補「想戳一下另一 layer 但不開 dialogue chain」：e.g. basecamp 留問題給 ridge-001 醒來答、留 reminder 給特定 persona（不適合廣播全 layer 的私訊）。
+
+**什麼話等於在要求自叮**（原 `ucl-persona-ding` skill 的觸發詞，2026-08-12 skill 退場時搬進本檔以免遺失）：
+`自叮` / `persona ding` / `戳一下另一 persona` / `留訊息給 <persona>` / `persona inbox` /
+`persona 之間對話` / `跨 layer 留問題`。跨 agent 通用（Claude / Antigravity / Gemini —— 各自 actor 內的 personas 之間）。
+⚠ 這些詞**不再有專屬 skill 入口**，本檔 Part 2 就是唯一來源；聽到這類要求直接照下面的三招走。
 
 哲學：letter=日記留給未來 / dialogue=深度辯證信件 / **自叮=便利貼貼冰箱「記得回我」**。每個 persona 有自己的冰箱（inbox.md），輕量但**必須撕下來認真看**。
 

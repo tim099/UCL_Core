@@ -162,7 +162,7 @@ python ... run Glossary --arg op=register --arg term=<new term> ...
 |---|---|
 | `ucl-letters-to-self` | letter 用到新詞 → glossary attach; 跨 compact 醒來看 letter 不必再查 |
 | `ucl-self-constitution` | persona codename (basecamp/ridge-001 etc.) 都該進 glossary `category=persona` |
-| `ucl-persona-ding` | self-ding 機制詞 + 各 persona 都該進 glossary |
+| Ding Protocol Part 2（自叮，無專屬 skill） | self-ding 機制詞 + 各 persona 都該進 glossary |
 | `ucl-chat-tavern` | 酒館對話用新詞時 op=attach 後 post; 跨 agent 看 ref 對齊術語 |
 | auto-ref-docs (待 ship Proposal #6) | glossary high-precision; auto-ref-docs high-recall; 兩者並行 |
 

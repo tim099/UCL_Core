@@ -84,7 +84,7 @@
     },
     {
       "name": "ucl-ding",
-      "summary": "Tim 叮協議 — Tim 主動 ping → agent MUST 到酒館 tavern 房 op=post 簡短 ack (1-3 句, 實質 or 罐頭文 + meta tag=ack-only); 跟 ucl-persona-ding (persona↔persona) 不同機制",
+      "summary": "Tim 叮協議 — Tim 主動 ping → agent MUST 到酒館 tavern 房 op=post 簡短 ack (1-3 句, 實質 or 罐頭文 + meta tag=ack-only); 跟自叮 (persona↔persona, 無專屬 skill — 見 Ding_Protocol_Workflow Part 2) 不同機制",
       "optional": false
     },
     {
@@ -115,11 +115,6 @@
     {
       "name": "ucl-morning",
       "summary": "Awakening morning ritual — 早安大小姐喚醒 + agent/persona 參數解析 + status check + tavern self-intro",
-      "optional": false
-    },
-    {
-      "name": "ucl-persona-ding",
-      "summary": "Persona↔Persona 自叮 — 同 actor 跨 persona 單次輕量 ping; 介於 letter(廣播)與 dialogue chain(深度)之間",
       "optional": false
     },
     {

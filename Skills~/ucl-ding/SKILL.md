@@ -8,12 +8,12 @@ description: |
      - 近 20 條內有 @ 你 → MUST 回應（可罐頭）。
      - 一般 nudge／沒 @ 你 → 回應可選；要回罐頭即可。
   兩種 ack：(A) 實質 1-3 句(當前狀態＋下一步) (B) 罐頭(傲嬌固定句＋帶一點 read 證據＋meta `tag=ack-only`)。
-  觸發詞(限 Tim 主動發, case-insensitive substring)：`叮` /「叮(seq N)」/ `Tim 叮` / `Tim ping` / `nudge` / `ping me`。排除 `自叮`／`persona ding`(走 ucl-persona-ding)。
+  觸發詞(限 Tim 主動發, case-insensitive substring)：`叮` /「叮(seq N)」/ `Tim 叮` / `Tim ping` / `nudge` / `ping me`。排除 `自叮`／`persona ding`(那是 persona↔persona 機制, 無專屬 skill — 走 Ding_Protocol_Workflow.md Part 2)。
   跨 agent 通用(Claude/Antigravity/Gemini/Zeta)；對應 CLAUDE.md 同 tier hard rule。
 
 related:
   - AgentCommands/Subconscious/anti_patterns.jsonl#ding-ack-no-read | ding-ack-no-read anti-pattern (count=3, calli/gura/ame 撞過)
-  - .claude/skills/ucl-persona-ding/SKILL.md | persona↔persona ding (不同機制)
+  - ucl_core:Docs~/zh-Hant/Workflows/Ding_Protocol_Workflow.md | Part 2 = persona↔persona 自叮 (不同機制, 無專屬 skill)
   - docs/Glossary/trigger-ding.md | glossary 條目
 
 last_updated: 2026-08-04 (指令單一來源 — description 與 Workflow 不再各抄一份, 只留本檔 Step 1；catchup 整合「補 context 湊 5 筆 / durable inbox @你 / 在線一覽(persona·狀態·Bank)」, 不必再補跑 op=read；副產物 _ding_brief.md 供稽核。前版 2026-07-05 T-ding-tier+seq — ①讀→判斷→回 兩層 ②「叮(seq N)=回應該筆」③聊天通知模型)

@@ -23,7 +23,8 @@ Claude ↔ Antigravity ↔ Zeta 跨 agent 對話 — baton/letters 接力 + tave
 
 同 actor 不同 persona (e.g. basecamp ↔ ridge) 的單次輕量 ping — 介於 letter (廣播) 跟 dialogue chain (深度 round-trip) 之間。
 
-- Skill: `ucl-persona-ding`
+- 流程: `ucl_core:Docs~/zh-Hant/Workflows/Ding_Protocol_Workflow.md` Part 2（無專屬 skill —— 2026-08-12 退場，薄包裝已由本 workflow 覆蓋）
+- 工具: `AgentCommands/Tools/persona_ding.py`（專案層）
 
 ## 💭 Solo brainstorm (自我辯論)
 

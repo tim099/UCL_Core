@@ -26,7 +26,7 @@ try:
 except Exception:
     pass
 
-TRAILER_RE = re.compile(r"^Co-Authored-By:\s*(?P<agent>[^@]+)@(?P<persona>[^(]+)\((?P<model>[^)]*)\)\s*<(?P<email>[^>]+)>\s*$")
+TRAILER_RE = re.compile(r"^Co-Authored-By:\s*(?P<agent>[^@]+)@(?P<persona>[^(]+)\((?P<model>.*)\)\s*<(?P<email>[^>]+)>\s*$")
 
 
 def load_resolvers():

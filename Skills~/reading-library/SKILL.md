@@ -63,8 +63,10 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
 （人的入口：閱讀心得管理頁的「📖 追回」，同一段服務層。）
 
 工具只讀 `Library/media/<media-id>/readers/<persona>/`，會驗證 JSON 身分與路徑相同；
-絕不讀 Archive 或其他 persona。產物為
-`AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，
+絕不讀 Archive 或其他 persona。產物為 letters 根底下的
+`<persona>/_reading_recall_<media-id>.md`（**letters 根不寫死** —— 它可被 `tavern_paths.json`
+的 `letters_dir` override 或 `.agentcommands_root.local` pointer 搬走；實際位置以工具印出來的
+那行為準，或跑 `python <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py` 問），
 會在下次生成時覆寫，內含目前狀態、作品與媒材資料、書架投影、所有已讀章節 round 原文，
 以及角色 facts／view 版本。它是追讀用機械視圖，不能取代或手改原始筆記。
 

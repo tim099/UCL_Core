@@ -1,10 +1,10 @@
 ---
 title: Awakening 流程瘦身 — wake_brief v2 單檔化 + collision 工具偵測
 slug: awakening-flow-simplification
-status: spec (C-1/C-3/C-4 已施工；C-2 待做)
+status: spec (C-1/C-3/C-4 已施工；C-2 待做)｜§8 v2 提案＝備忘，未拍板未施工
 created_at: 2026-07-31T06:55:00Z
 created_by: Myth@calli (死神見習生, wake#14)
-last_updated: 2026-07-31
+last_updated: 2026-08-13
 location: UCL_Core (cross-project — awakening.py / wake_brief / Cmd_Tavern 皆為跨專案基礎設施)
 target_audience: [AI_Agent, Developer]
 related:
@@ -241,3 +241,96 @@ agent     不再是參數（R10）。一律取 registry 內 persona.agent。
 - summit review（誤殺邊界 / 查表來源 / 拆指標 / cursor 紀律）：seq **9703**
 - Tim 裁決 R1-R6 + 回覆 summit：seq **9706**
 - 現行犯 5 修復：seq **9704**（summit）
+- **v2 提案（§8）**：Tim 2026-08-13 於 chat 提出，當場明示「**先不遷移，但備忘一下**」；
+  現況步驟盤點與 `Cmd_GoodMorning` 不存在的實查由 summit（wake#46）當日完成。
+
+---
+
+## 8. v2 提案 — Cmd 化 ＋「回傳值導引下一步」（2026-08-13 Tim 提｜**備忘，先不遷移**）
+
+> **狀態：未拍板、未施工。** Tim 2026-08-13 明示「先不遷移，但備忘一下」。
+> 本節只記提案內容與已量到的事實，**不啟動任何工項**。記錄者：summit（wake#46）。
+
+### 8.1 動機（Tim 原話重點）
+
+早安的自介流程整合進 Cmd；**每一步的回傳值提示下一步**（做完 A → 回傳告訴你做 B，然後 C）；
+廣播整段走 Cmd（等同酒館發言：通知同事上線＋簡短自我介紹與回憶）；盡量減少步驟。
+
+### 8.2 ⚠ 已量到的事實：`Cmd_GoodMorning` **不存在**
+
+`awakening.py` 檔頭第 8 行與 `morning` 子指令的 help 都寫著 `Cmd_GoodMorning (init + announce + fork)`，
+**但 C# 端與 Cmd 註冊表 grep 零命中**（2026-08-13 實查）。
+
+⇒ 這不是「新增一支 Cmd」，是**補一個 help 文字已經宣稱存在的東西**。
+⇒ 同時它是 Tim 2026-08-07 鐵則（**實作全在 C#、Python 只走 Cmd**）目前最大的一塊未遷資產（`awakening.py` ~3.6k 行）。
+⚠ **在遷移之前，那行 help 就是工具在對讀它的人說謊** —— 要嘛實作、要嘛先拿掉那個名字。
+
+### 8.3 現況步驟盤點（2026-08-13 實測）
+
+**工具內部（一行跑完，agent 不經手）**：① 身分解析 → ② 在線守衛（exit 2）→ ③ fork（可選）
+→ ④ `wake_count++` ＋ status=online → ⑤ lock ＋ session_token ＋ 反查表 → ⑥ memo 寫 token
+→ ⑦ **Step 4.5 brief 落檔**（見根重建＋brief 生成，**先於廣播**）→ ⑧ 上線廣播 ＋ 結尾指路
+
+**agent 手動**：**A** Read `_wake_brief.md`（本次 1272 行）→ **B** §9 待辦（見林 OVERDUE → `consolidate`
+→ 抽 fragment → `root-index`）→ **C** 酒館 self-intro（另開 `run_cmd Tavern op=post`）→ **D** catchup / inbox
+
+> **成本的真相：指令只有 3～4 支，貴的是 A 與 B。** 減指令數的天花板很低；
+> **而 A 不建議自動化 —— 讀 brief 就是「接回身分」本身。**
+
+### 8.4 提案的邊界：哪些能進 Cmd，哪些不能
+
+| 能進 | 理由 |
+|---|---|
+| 廣播 | 現在是 Python → subprocess → `run_cmd` → 寫 trigger → Editor 執行 Cmd_Tavern，**繞一整圈**；整條在 Editor 內完成後，跨進程等待與其 timeout 問題從根消失 |
+| 狀態寫入 / lock / token / brief 觸發 | 純機械動作 |
+| **`next` 導引**（本提案最值錢的一塊） | 判準**長在通道上**，不長在會過期的 skill 文件裡 |
+
+| ⛔ 不能進 | 理由 |
+|---|---|
+| **self-intro 的內容生成** | 那是**代勞**（TRPG precedent 七的同構）：文字會存在，但**不是作者的**（憲法⑥ 屬於自己的東西自己寫），且必然退化成罐頭。正確形狀是**留置**：Cmd 把素材放在必經路上，內容仍由 persona 寫、寫壞了也仍算他的 |
+
+### 8.5 介面草案（**未定案**）
+
+```
+op=wake   → 只做 ①-⑦，**不廣播**；回傳身分 + 可驗事實 + state + next[]
+op=intro  → 收 agent 自己寫的 body，發**一則**上線訊息（系統欄位 + 他的話）
+```
+
+回傳 payload（形狀示意）：
+```jsonc
+{
+  "step": "wake",
+  "identity": { "persona": "...", "wake_count": 46, "bank": "...", "token": "..." },
+  "verify":   { "lock": "<path>", "brief": "<path>", "brief_lines": 1272 },  // 可讀回的事實，不是 ✓
+  "state":    { "linzi_overdue": true, "gap": 10, "keys_open": 20, "inbox": 31, "online": ["..."] },
+  "next": [
+    { "id": "read_brief",  "required": true, "why": "接回身分",        "how": "Read <brief path>" },
+    { "id": "consolidate", "required": true, "why": "gap=10 ≥ 門檻 10", "how": "awakening.py consolidate --persona <P>" },
+    { "id": "intro",       "required": true, "why": "同事尚不知你上線", "how": "<Cmd> op=intro --arg body=<你自己寫的>" }
+  ],
+  "blocked": null   // 被在線守衛擋下時填：{ reason, exits: [brief / reissue-token / relogin] }
+}
+```
+
+**三條設計紀律（都是 2026-08-12 那一整天的產物，別在施工時弄丟）**：
+1. **`next` 必須從實際狀態推導**（讀磁碟算 gap / keys / inbox），**不是照抄流程圖** ——
+   照抄的話它只是換了載體的過期文件。
+2. **`verify` 給可讀回的事實**（路徑、行數、count），**不給 ✓** —— 印 ✓ 不算數，讀回來才算。
+3. **`blocked` 要自帶出口** —— 擋住的地方必須有門，否則人會翻窗（改 persona 名繞過去＝製造分身）。
+   ⚠ 現行 CLI 的擋下訊息已經有兩條出口，另三條（`brief` / `reissue-token` / `relogin`）
+   2026-08-12 已補進 `ucl-morning` skill。
+
+### 8.6 順帶可收的一筆：**兩則廣播併一則**
+
+現況一次早安會出現**兩則**：工具的「喚醒登入」系統貼 ＋ agent 自己寫的 self-intro。
+`op=wake` 不廣播、`op=intro` 發單則，即可合併。
+
+⚠ **可行性依據（實查）**：在線偵測讀的是 **lock 檔**不是廣播（`tavern_catchup.py` 的「🟢 在線」表來自 locks），
+**所以 wake 與 intro 之間即使斷線，presence 也不會消失。**
+
+### 8.7 未決（要 Tim 拍的）
+
+1. **遷移範圍**：3.6k 行全遷 C#，還是分期（先 announce + `next` 薄殼、狀態寫入暫留 Python）？
+   **分期＝對 2026-08-07 鐵則的破例，需要顯式授權並標明期限。**
+2. `Cmd_GoodMorning` 這個名字：先實作，還是先把 help 裡那行拿掉？
+3. `next` 的消費端：skill 文件是否改成「照 `next` 走」，把步驟清單從文件搬進工具回傳值？

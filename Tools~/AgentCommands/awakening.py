@@ -81,9 +81,17 @@ import uuid
 from pathlib import Path
 
 # Windows utf-8
+# line_buffering=True (2026-08-12, apex-one 報坑 → kaguya/summit/basecamp 三方同判 → Tim 拍板):
+#   本工具幾乎都被 agent 用 pipe 呼叫(背景 Task / run_command / subprocess), 而 python 對
+#   非 tty 的 stdout 預設是**整塊緩衝** —— 於是進度一行都不流出來, 呼叫端只看得到黑畫面,
+#   等到 timeout 就當它 hang 住推進背景。實測(3.10.11): 子行程 print 後 sleep 3s,
+#   呼叫端拿到第一行的時間 3.03s → 開了 line_buffering 之後 0.02s。
+#   ⚠ 這只治「看不看得見進度」, 不縮短總時長; 真的跑超過呼叫端 timeout 照樣會被背景化。
+#   為什麼修在這裡而不是叫每個呼叫端加 `-u`: 那是要 N 份 skill 文本 + 每個 agent 每次都記得,
+#   漏一個就靜默退化。規則長在通道上, 不長在自覺上。
 try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 except Exception:
     pass
 
@@ -222,6 +230,18 @@ MAX_PERTURBATION = 0.2
 # best-effort 下線廣播硬上限（2026-07-22 rec 1+3）：goodnight 核心（信/perturb/offline/解鎖）
 # 都在廣播前落地，廣播純附帶。用短上限避免 Editor 卡住時阻塞到觸發外層 timeout（summit 遇的 SIGTERM 143）。
 GOODNIGHT_BROADCAST_TIMEOUT_SEC = 12.0
+
+# 其餘 ritual 廣播的硬上限（2026-08-12，Tim 拍板；summit 提、basecamp/kaguya/apex-one 同輪審）。
+# 區塊職責：morning / intro / rest / relogin 四個 best-effort 廣播的等待上限。
+# 物理意義：2026-07-22 只有 goodnight 吃到上限，其餘四處沿用 TavernClient 預設 60s ——
+#          **不是無上限**（那是 summit 當日先報後更正的誤述），但 60s 仍高於呼叫端常見的
+#          10s／背景化門檻，於是「看起來 hang」。四處同型卻只修一格＝修法的射程等於當初報案人的視野。
+# 數值影響：30s。取值依據：本機實測整條 morning（lock→brief，含舊順序的廣播）約 10.2s，
+#          取 ~3x headroom；同時遠低於呼叫端 120s，卡住時快速放棄而不拖死 ritual。
+#          與 goodnight 的 12s 刻意不同值：下線廣播純禮貌，這四處（尤其 morning）是同事看到
+#          「他上線了」的唯一一則訊息，值得多等一點，但不值得等到整支被砍。
+#          ⚠ 逾時代價＝少一則廣播（fail-soft，印 FAIL 不擋 ritual），補救走 `awakening.py intro`。
+BROADCAST_TIMEOUT_SEC = 30.0
 FORK_CHAIN_CAP = 5
 
 # Hololive EN Myth 組 codename pool (Tim 2026-05-14 拍板, explicit-online-fork T01)
@@ -960,9 +980,13 @@ def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = Non
     session_token (T07): enforce ON 時必帶，否則 Cmd_Tavern reject。caller (e.g. cmd_goodnight)
     從 lock.session_token 撈來透傳即可；None / "" → 不附（enforce OFF 路徑）.
 
-    timeout (2026-07-22): 顯式短上限透傳給 TavernClient。best-effort 廣播（如 goodnight 下線通知）
-    應帶短 timeout，避免 Editor 卡住時阻塞到觸發外層呼叫者的 timeout（SIGTERM 143）。
-    None → 沿用 TavernClient 預設 60s（morning 等一般 caller）。
+    timeout (2026-07-22 / 2026-08-12): 顯式短上限透傳給 TavernClient。best-effort 廣播應帶短
+    timeout，避免 Editor 卡住時阻塞到觸發外層呼叫者的 timeout（SIGTERM 143）。
+    2026-08-12 起 **ritual 的五個呼叫點全部顯式帶值**（goodnight=12s，morning / intro / rest /
+    relogin=30s，見兩顆常數的註解）—— 在那之前只有 goodnight 帶，其餘四處落在 client 預設 60s。
+    None → 仍沿用 TavernClient 預設 60s，留給非 ritual 的臨時 caller。
+    ⚠ 這裡的 timeout 是「等 Cmd 跑完」的上限，跟 `wait_reply`（等別人回話）是兩件事；
+      本函式一律 `wait_reply=0`，**ritual 廣播從不等回覆**。手動 run_cmd 走 post 才有 540s 預設等待。
     """
     try:
         from _lib.tavern_client import TavernClient   # type: ignore
@@ -1434,18 +1458,41 @@ def write_longterm_digest(persona: str, reg: dict, body: str,
     return path
 
 
+def write_wake_brief_files(persona: str, reg: dict, p: dict,
+                           threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD):
+    """刷新見根索引 + 生成 wake brief，回傳 (brief_path | None, err | None)。
+
+    區塊職責：把「記憶落檔」從結尾那支列印函式裡拆出來，讓 cmd_morning 能在**廣播之前**先跑。
+    物理意義：本函式成功之前，這次醒來的記憶在磁碟上並不存在 —— 它是 ritual 裡
+             「這個 persona 有沒有腦袋」的那一步，純本機、不碰 Editor（實測 ~1.8s）。
+    失敗處置：不丟例外（維持 ritual 原本的 fail-soft），把 err 帶回去由呼叫端印。
+    """
+    try:
+        write_root_index(persona)                      # 先刷新見根索引（brief 會 inline 它）
+        return write_wake_brief(persona, reg, p, threshold), None
+    except Exception as e:
+        return None, e
+
+
 def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
-                                 threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> None:
+                                 threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD,
+                                 brief_result: tuple | None = None) -> None:
     """morning 結尾印長期記憶讀取指引 + overdue 提醒(skill 引導 agent 動作)。
 
     2026-07-28：記憶升為五層後，主動作改成「讀一份 wake brief」——本函式仍印各層原檔路徑
     當 fallback（brief 生成失敗 / 想直接看原檔時用），但 agent 的預設動作只需 Read brief。
+
+    brief_result：cmd_morning 已在廣播前先落檔，這裡只負責印，不重生成
+                 （None = 沒人先生成過，維持原本「印的時候順便生」的行為給其他呼叫端）。
     """
     st = consolidation_status(persona, reg, threshold)
     # §0 身分 + 見根/見叢/見森/見林/見樹 + §7-9 營運層，彙整成單一可直讀文本（機械生成，手改會被覆寫）
+    if brief_result is None:
+        brief_result = write_wake_brief_files(persona, reg, p, threshold)
+    brief, brief_err = brief_result
     try:
-        write_root_index(persona)                      # 先刷新見根索引（brief 會 inline 它）
-        brief = write_wake_brief(persona, reg, p, threshold)
+        if brief_err is not None:
+            raise brief_err
         print(f"\n## 📖 記憶接續 — 讀這一份就好")
         print(f"   → `{brief.relative_to(_REPO_ROOT)}`  "
               f"(§0 身分 → §1-6 記憶 → §7-9 營運; 每次 morning 重生成)")
@@ -2028,6 +2075,40 @@ def cmd_morning(args: argparse.Namespace) -> int:
     except Exception as e:
         print(f"⚠ memo write failed (non-fatal): {e}", file=sys.stderr)
 
+    # Step 4.5: wake brief 落檔 —— 必須排在 Step 5 廣播之前
+    # 設計理由 (2026-08-12: apex-one 報坑 → kaguya / summit / basecamp 三方砸磚 → Tim 拍板):
+    #   原順序是 write_lock → tavern_post → brief（brief 落在結尾的列印函式裡）。而 tavern_post
+    #   要等 Unity Editor watcher 來回，是整條 ritual **唯一的外部依賴**、也是唯一秒級的等待。
+    #   呼叫端 timeout 砍在那個窗口 = lock 說 online、酒館也宣告「他醒了」，
+    #   而磁碟上沒有 brief —— **一個沒有記憶的殼在線上，且沒有任何一處會叫**。
+    #   brief 生成純本機、實測約 1.8s，沒有理由排在外部等待之後。
+    #   ⚠ 被拿掉的那段有多寬？**不是「秒級」**。以下兩筆都是 2026-08-12 的現場實測,
+    #     ⚠ 且**都量在本次修改之前 —— 它們是「舊順序」的數, 不是現況**(summit 指正, 照收):
+    #         apex-one wake#24  lock 10:14:41.956Z → brief 10:18:19.865Z ＝ **218s**
+    #         summit   wake#46  lock 10:05:27.370Z → brief 10:05:37.557Z ＝ **10.2s**
+    #     同一天、同一份 code、同一種呼叫方式, **差 21 倍** —— 窗口寬度不是常數,
+    #     它是「Editor 來回有多慢」的函數。拿任何單一樣本當全體都會估錯, 兩個方向都會。
+    #   ⚠ 而**新窗口(lock → 本步驟, 純本機)目前只有 basecamp 機器上的 1.8s 這一個樣本**,
+    #     其他機器沒有人量過。要替下面那個 B 案找證據, 該量的是「新窗口在最慢那台機器上多寬」。
+    #   對稱於 goodnight 已有的處置（見 cmd_goodnight: 權威狀態變更移到廣播之前）——
+    #   那邊修過了，morning 這邊一直沒修，對稱性只做了一半。
+    #   ⚠ 仍維持 fail-soft：生不出來不擋 ritual，改由結尾印出失敗原因與 fallback 原檔路徑。
+    #
+    # ⚠⚠ 殘餘窗口 —— 這裡**沒有**解決原子性，只是把窗口縮小了（summit 2026-08-12 指出，照實記）：
+    #   `write_lock` 仍先於本步驟，中間仍有約 1.8s 的純本機空窗。而兩條失敗路徑的可見度不同：
+    #     ① exception path（brief 拋例外、進程還活著）→ 下面那筆 stderr 會叫。
+    #     ② kill path（呼叫端 timeout 砍掉 / 中斷）→ **進程死了，什麼都不會印**，
+    #        磁碟上只剩「lock=online 而沒有 brief」，且沒有任何一處會叫。
+    #   要蓋住 ②，唯一的辦法是把證據放在磁碟而不是 stdout（kaguya 的 B 案：lock 記 `brief_written`,
+    #   缺了就在下一次任何操作時吼）。**B 案尚未實作**, Tim 拍的板只含本次順序調整。
+    #   留這段話的理由：別讓「窗口縮小」在紀錄上長成「原子性解決了」—— 名字比事實大就是下一個人踩的坑。
+    brief_result = write_wake_brief_files(chosen, reg, p)
+    if brief_result[0] is not None:
+        print(f"🧠 wake brief 落檔: {brief_result[0].relative_to(_REPO_ROOT)}（先於上線廣播）")
+    else:
+        print(f"⚠ wake brief 生成失敗（non-fatal，詳見結尾 fallback）: {brief_result[1]}",
+              file=sys.stderr)
+
     # Step 5: tavern post (announce)
     # bank_balance: 起床時 snapshot 真實 Treasury ledger 餘額 (Tim 5-token task 要求)
     #               跟 goodnight ritual 對稱顯示, 走 source-of-truth ledger scan
@@ -2042,6 +2123,7 @@ def cmd_morning(args: argparse.Namespace) -> int:
         body=body,
         meta={"tag": "goodmorning-protocol", "category": "meta",
               "status-change": "online", "decision": decision},
+        timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解（原本沿用 client 預設 60s）
     )
 
     print(f"\n🌅 Morning ritual complete:")
@@ -2064,7 +2146,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
 
     # T-LongTermMemory (Tim 2026-06-15): 長期記憶讀取指引 + overdue 整理提醒
     # morning 除昨夜 letter(見樹) 也讀近期長期記憶 digest(見林); gap 過門檻則提示補整理。
-    _print_longterm_memory_block(reg, chosen, p)
+    # brief 已在 Step 4.5 落檔（廣播之前），這裡只印指路，不重生成
+    _print_longterm_memory_block(reg, chosen, p, brief_result=brief_result)
     return 0
 
 
@@ -2184,6 +2267,7 @@ def cmd_intro(args: argparse.Namespace) -> int:
         body=body,
         meta={"tag": "goodmorning-reintro", "category": "meta"},
         session_token=lock.get("session_token") or None,
+        timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
     )
 
     print(f"\n🔁 自介重發 {'OK' if ok else 'FAIL'}：")
@@ -2282,6 +2366,7 @@ def cmd_rest(args: argparse.Namespace) -> int:
             sender_id=actor, persona=persona, body=body,
             meta={"tag": "compact-rest", "category": "meta", "letter": letter_path.name},
             session_token=broadcast_token,
+            timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
         )
         print(f"📢 小歇 tavern 通知: {'OK' if ok else 'fail (非致命)'}")
 
@@ -2594,6 +2679,7 @@ def cmd_relogin(args: argparse.Namespace) -> int:
         meta={"tag": "relogin-protocol", "category": "meta",
               "status-change": "online", "mode": "relogin"},
         session_token=new_token,
+        timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
     )
 
     print("\n🔄 Relogin complete:")

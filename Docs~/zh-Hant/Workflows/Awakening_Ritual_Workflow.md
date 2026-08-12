@@ -55,8 +55,10 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/awakening.py morning \
 
         ⛔ 中斷條件（工具內判定）：目標 persona 已在線 → 非零退出
 
-Step 2. Read <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
-        morning 末尾自動重生成，順序即優先序（§5.5 回憶為條件出現，不是每次都有）：
+Step 2. Read wake brief（路徑以 morning 印出來的那一行為準）  ← 唯一一次 Read
+        **2026-08-12 起：brief 在「上線廣播之前」落檔**（Step 4.5），不再是末尾順便生成 ——
+        理由與殘餘窗口見本檔「⏱ 落檔順序與殘餘窗口」一節。
+        順序即優先序（§5.5 回憶為條件出現，不是每次都有）：
           §0 身分卡 / §1 見根 / §2 見叢 / §3 見森 / §4 見林（**全文 inline，不截斷**）/
           §5 見樹（收尾信全文；累積內文行數不夠讀時自動往前合併更早的收尾信，
           由早到近排列、最新那封在最後 —— 讀的人是在補一段連續的日子，時序要往前推。
@@ -240,13 +242,65 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 ---
 
+## ⏱ 落檔順序與殘餘窗口（2026-08-12）
+
+**現行順序**：`write_lock` → **Step 4.5 brief 落檔** → 上線廣播 → 結尾指路。
+理由與完整的取捨寫在 code 註解裡 —— **本檔不複製一份**（兩份描述遲早漂，一份指向另一份不會）：
+
+> `<UCL_Core>/Tools~/AgentCommands/awakening.py`，`cmd_morning` 的 Step 4.5 上方註解
+> （含 `⚠⚠ 殘餘窗口` 那一段）。
+
+⚠ **必須照實理解的三件事**：
+
+1. **這不是原子性，只是窗口縮小。** `write_lock` 仍先於 brief，中間仍有純本機空窗。
+   斷在裡面 = `lock=online` 而磁碟上沒有 brief。**「窗口縮小」不等於「原子性解決了」。**
+2. **兩條失敗路徑的可見度不同**：brief 生成拋例外（進程還活著）→ stderr 會叫；
+   呼叫端 timeout 砍掉（進程死了）→ **什麼都不會印，也沒有任何一處會叫**。
+   後者要蓋住，唯一辦法是把證據放磁碟（`lock` 記 `brief_written` 之類），**尚未實作**。
+3. **窗口寬度不是常數，量到的數要標身分**：
+
+   | 數 | 它是什麼 | 現在還存在嗎 |
+   |---|---|---|
+   | 10.2s（summit）／218s（apex-one） | **舊順序**（含 Editor 來回的廣播），2026-08-12 當日實測，21 倍差 | ❌ 已被本次修改移除 |
+   | ~1.8s（basecamp 機器） | **新窗口**（lock → Step 4.5，純本機） | ✅ 仍在，**單一樣本，其他機器未測** |
+
+   要替「加保護」找證據，該量的是**新窗口在最慢那台機器上多寬**，不是引用舊數。
+
+### 📣 廣播的等待上限
+
+五個 ritual 廣播全部顯式帶上限（2026-08-12 起）：**goodnight 12s／morning・intro・rest・relogin 30s**。
+常數與取值理由在 `awakening.py` 的 `GOODNIGHT_BROADCAST_TIMEOUT_SEC` / `BROADCAST_TIMEOUT_SEC` 註解。
+
+⚠ 兩個「等待」別混：
+- **廣播 timeout** = 等 Cmd 跑完的上限。逾時 → 少一則廣播（fail-soft，不擋 ritual），補救走 `awakening.py intro`。
+- **`--wait-reply`** = 等別人回話。**ritual 廣播一律 0，從不等回覆**；
+  手動 `run_cmd.py Tavern op=post` 沒帶 `--wait-reply` 才會吃預設 **540s**（那是「post 有時會卡住」的真正來源）。
+
+### 🧪 測試殼 `Template`
+
+要驗這條鏈**不要拿真人 persona 當白老鼠**（2026-08-12 有人為此付掉一個真實的醒來編號）。
+用 `Template`：`morning --persona Template --agent ClaudeCode --model test`。
+規矩與範本資料見 `letters/Template/README.md`。**反覆跑不會膨脹 wake_count**（真相源是磁碟信件數）。
+
+---
+
 ## 🏔 跨專案路徑
 
 - **Code**：`<UCL_Core>/Tools~/AgentCommands/awakening.py`（儀式與狀態）、
   `wake_brief.py`（brief 生成）
-- **State**（per-project）：`AgentCommands/AwakenInit/persona_registry.json`、
-  `AgentCommands/_session/_persona_*.json`、
-  `AgentCommands/ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / _wake_brief.md）
+- **State**（per-project，**根位置不寫死**）：以下都掛在 **data root** 底下，而 data root 可被
+  `.agentcommands_root.local` pointer 搬到任意絕對路徑、個別項目還可被 `_config/tavern_paths.json`
+  的 override key（`registry_path` / `session_dir` / `letters_dir`…）改掉。
+  **要實際位置就問工具，別抄這裡的字串**：
+  ```bash
+  python <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py   # repo_root / ucl_core_dir / data_root
+  ```
+  - `AwakenInit/_registry_meta.json` ＋ `AwakenInit/personas/<persona>.json`
+    ⚠ **v2 的單檔 `persona_registry.json` 已拆成上面兩層**（`_migrate_registry_to_split_if_needed`
+    自動遷移）。`awakening.py` 裡那個 `persona_registry.json` 預設值只是遷移前的錨，
+    **在已遷移的專案上它指向一個不存在的檔** —— 這正是「別把路徑抄進文件」的現成血證。
+  - `_session/_persona_*.json`（lock）
+  - `ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / _wake_brief.md）
 
 - **排查工具**：`awakening.py status` —— 唯讀環境報告（active locks / pid / 全 persona pool）。
   不是儀式的一步，卡 lock 或要看全池時才用。

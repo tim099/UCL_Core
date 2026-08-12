@@ -16,6 +16,11 @@ Options:
     --exclude <a,b,c>     Skip these skills.
     --link                Use directory symlink/junction instead of copy. Lets edits in UCL_Core sync immediately. May fail without admin on Windows.
     --uninstall           Remove previously installed UCL skills (anything under .claude/skills/ marked with .ucl_source).
+                          Works on skills whose source is gone from Skills~ too (see Behaviour 6).
+    --force-remove-unmarked
+                          With --uninstall: also remove installed directories that have NO
+                          .ucl_source marker. Off by default — unmarked directories are assumed
+                          to be hand-placed by the user, and deleting those is not recoverable.
     --dry-run             Print actions without changing files.
     --quiet               Suppress per-file logs.
     --project-root <p>    Override host project root detection.
@@ -39,11 +44,18 @@ Behaviour:
        uninstalled — otherwise the Editor page would judge them Stale forever.
     5. Writes `<target-skill-dir>/.ucl_installed` as a global marker so agent-side
        self-checks can detect installation.
+    6. `--uninstall` picks its candidates from `Skills~` ∪ *installed directories*,
+       not from `Skills~` alone. A retired skill exists only on the installed side,
+       so filtering by source would make `--include <retired> --uninstall` a silent
+       no-op (exit 0, removed=[]) — the caller cannot tell "nothing to do" from
+       "could not do it". Names explicitly asked for via --include that end up not
+       removed make this exit 2.
 
 Exit codes:
     0  success (or nothing to do)
     1  unrecoverable error (no project root, etc.)
-    2  partial — some skills skipped due to local edits or include/exclude
+    2  partial — some skills skipped due to local edits or include/exclude,
+       or (with --uninstall) an explicitly --include'd skill was not removed
 """
 
 from __future__ import annotations
@@ -522,16 +534,28 @@ def link_skill(src_dir: Path, dst_dir: Path, log: _Log) -> bool:
         return False
 
 
-def remove_skill(dst_dir: Path, log: _Log, force: bool = False) -> bool:
+def remove_skill(dst_dir: Path, log: _Log, force: bool = False, allow_unmarked: bool = False) -> bool:
     """Remove a previously installed skill if it has the .ucl_source marker.
 
     Installed copies are a disposable mirror of source (not hand-edited), so
-    removal is unconditional. `force` accepted for signature compatibility."""
+    removal is unconditional. `force` accepted for signature compatibility.
+
+    區塊職責: 刪除的唯一入口 — 全量 orphan 掃描、default-OFF reconcile 與 --uninstall 都走這裡。
+    物理意義: .ucl_source 是「這個目錄是本工具裝的」的唯一憑證。沒有它的目錄預設不刪, 因為那
+             有可能是使用者自己手放的 skill, 而刪除不可逆。`allow_unmarked` 是給呼叫端「我已經
+             讓人看見並確認過這一筆」的顯式放行 —— 只有 --uninstall + --force-remove-unmarked
+             會帶, 全量同步的 orphan 掃描永遠不帶 (自動流程不該碰來源不明的目錄)。
+    數值影響: allow_unmarked=True 時, 無 marker 目錄也會被 rmtree; 放行時額外印一行 warn,
+             因為「刪了一個不是我裝的東西」必須留在 log 裡, 不能只有靜默成功。
+             ⚠ `force` 刻意不放行無 marker: force 的既有語意是「覆蓋本地改動」, 讓它兼任
+             「刪除來源不明目錄」會使一顆既有旗標多出一個破壞性副作用。"""
     if not dst_dir.exists():
         return False
     if not (dst_dir / ".ucl_source").is_file() and not dst_dir.is_symlink():
-        log.warn(f"no .ucl_source marker, skipping: {dst_dir}")
-        return False
+        if not allow_unmarked:
+            log.warn(f"no .ucl_source marker, skipping: {dst_dir}")
+            return False
+        log.warn(f"no .ucl_source marker, removing anyway (--force-remove-unmarked): {dst_dir}")
     log.action("remove", dst_dir)
     if not log.dry:
         if dst_dir.is_symlink():
@@ -580,6 +604,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quiet", action="store_true", help="Suppress per-file logs.")
     parser.add_argument("--project-root", help="Override host project root detection.")
     parser.add_argument("--force-overwrite", "--force", action="store_true", help="Force overwrite skills that have local edits.")
+    # 與 --force-overwrite 刻意分成兩顆：前者是「覆蓋內容」, 本旗標是「刪掉來源不明的目錄」。
+    # 合成一顆會讓使用者為了同步內容而順手獲得刪除他自己放的 skill 的權限。
+    parser.add_argument("--force-remove-unmarked", dest="force_remove_unmarked", action="store_true",
+                        help="With --uninstall: also remove installed dirs that have no .ucl_source marker.")
     args = parser.parse_args(argv)
 
     log = _Log(quiet=args.quiet, dry=args.dry_run)
@@ -665,10 +693,42 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
 
     if args.uninstall:
+        # 區塊職責: uninstall 的候選集 = Skills~ 現存 ∪ 已裝目錄（不是只有 Skills~）。
+        # 物理意義: 「已退場的 skill」定義上只存在於已裝端 —— 源端已經沒有它了。若候選集只從
+        #          discovered 濾, `--include <退場的> --uninstall` 會濾成空集、迴圈零次、
+        #          removed=[] 而 exit 0：呼叫端（Editor 頁的移除鈕）拿到的是「成功」, 而實際上
+        #          那個目錄還在磁碟上、agent 下次還是會載入它。這是靜默 no-op, 比失敗難查。
+        # 數值影響: 候選集加入已裝端目錄名（含無 .ucl_source 者 —— 是否真的刪由 remove_skill
+        #          的 allow_unmarked 閘門決定, 這裡只負責讓它「進得了候選集」）。
+        uninstall_pool = list(discovered)
+        if skills_dst_root.is_dir():
+            for child in sorted(skills_dst_root.iterdir()):
+                if child.is_dir() and child.name not in uninstall_pool:
+                    uninstall_pool.append(child.name)
+        uninstall_selected = filter_skills(uninstall_pool, include, exclude)
+        log.info(f"Uninstall selected: {uninstall_selected}")
+
         removed: list[str] = []
-        for name in selected:
-            if remove_skill(skills_dst_root / name, log, force=args.force_overwrite):
+        for name in uninstall_selected:
+            if remove_skill(skills_dst_root / name, log,
+                            force=args.force_overwrite, allow_unmarked=args.force_remove_unmarked):
                 removed.append(name)
+
+        # 區塊職責: 顯式點名的 --include 名字若沒被移除, 必須吵 + 以 exit 2 回報。
+        # 物理意義: 「我要你刪 X」跟「順手掃一圈」是兩種請求。前者沒發生 = 動作失敗, 不是 no-op;
+        #          回 0 會讓 Editor 頁把它畫成成功、狀態列卻依然顯示殘留 → 使用者只能瞎猜。
+        #          全量 uninstall（無 --include）不套本規則: 無 marker 目錄被跳過是既有的保護行為,
+        #          已有 warn 逐筆點名, 不該讓常態路徑變成非零退出。
+        unresolved: list[str] = []
+        if include:
+            unresolved = [n for n in sorted(include) if n not in removed]
+            for name in unresolved:
+                dst = skills_dst_root / name
+                if not dst.exists():
+                    log.warn(f"--include {name}: not installed under {skills_dst_root} (nothing to remove)")
+                else:
+                    log.err(f"--include {name}: still present at {dst} "
+                            f"(no .ucl_source marker — rerun with --force-remove-unmarked to remove it)")
         # 區塊職責: per-skill uninstall 要更新 marker 而非整個刪 (basecamp R2 review)
         # 物理意義: 只 uninstall 子集(--include 單 skill)時, 從 installed_skills 移除被刪的、保留其餘;
         #          若清空才刪 marker。--include 沒給(全 uninstall) → 刪 marker。
@@ -689,7 +749,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 marker.unlink()
         log.info(f"Uninstall complete. removed={removed}")
-        return 0
+        return 2 if unresolved else 0
 
     total_copied = 0
     total_skipped = 0

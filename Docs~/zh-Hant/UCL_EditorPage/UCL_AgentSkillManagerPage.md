@@ -3,7 +3,7 @@ title: UCL_AgentSkillManagerPage — Agent Skill 安裝管理頁
 description: IMGUI 視覺化前端，把 UCL_Core/Skills~/ 內的工作流 skill 一鍵安裝給各家 AI agent。第一次開 UCL_WelcomePage 時自動彈出，強制 onboarding 曝光。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-07-31
+last_updated: 2026-08-12
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Skills~/README.md | Skills~ 來源目錄 | source-of-truth + manifest 規範
@@ -96,6 +96,40 @@ target 狀態列在 Stale 時會**點名未同步的 skill 清單**（`⚠ 未�
 1. **源檔在同步後又被編輯**（moving target — agent 正在改 Skills~ 時最常見；看名單對時間即可確認）
 2. 檔案被 local-edit 保護跳過（黃字 skipped 警告；用「強制同步」覆蓋）
 3. 停用中的 skill 殘留實體（同步時 reconcile 自動移除，正常會收斂）
+4. **源端已移除的 skill 殘留實體**（`源 Skills~ 已刪除, 已裝端殘留`）—— 見下節
+
+### 已裝但源端沒有（retired / 非受管）— 2026-08-12
+
+Matrix 主體是**以 `Skills~` 為枚舉基準**逐一列出，所以「UCL_Core 已經把某個 skill 移除、但已裝端還留著」
+的目錄**結構上不可能出現在那份清單裡**。而 agent 載入 skill 時只掃安裝目錄、**不看 `.ucl_source` 標記** ——
+於是那個 skill 仍然會被吃進 context。**看不見 + 仍生效 = 靜默僵屍。**
+
+Matrix 區塊底部因此多一段「⚠ 已裝但 Skills~ 源端沒有」，清單為空時整段不繪製（常態零噪音）。兩類分色：
+
+| 類別 | 判準 | 顯示 | 移除 |
+|---|---|---|---|
+| **殘留·可移除** | 有 `.ucl_source` | 橘字（待處理的異常） | 二次確認後直接移除 |
+| **非受管** | 無 `.ucl_source` | 灰字（常態存在，不是警報） | 二次確認 + 帶 `--force-remove-unmarked` |
+
+分色不是美觀問題：兩類同色的話，長期把自己的 skill 放在 `.claude/skills/` 的人每次開頁都看到一片橘字，
+**警報會被訓練成背景音**。無標記者一律視為使用者手放（或標記遺失），任何自動流程都不動它 ——
+但**不顯示比不刪更糟**：不刪只是留著，不顯示是連存在都不承認。
+
+移除一律走 `EditorUtility.DisplayDialog` 二次確認，因為那是 `rmtree` 整個目錄且**源端已無副本**，
+復原只能靠 git。此處**不動** `UCL_SkillConfigAsset` —— 那份 config 的 ID 對應「源端存在的 skill」的啟用狀態，
+為一個源端已不存在的名字寫 `Enabled=false` 只會留下一筆永遠沒人比對的孤兒設定。
+
+> [!IMPORTANT]
+> **`--include <名字> --uninstall` 對 retired skill 曾是靜默 no-op**（2026-08-12 修）。
+> `install_skills.py` 的候選集原本只從 `discover_skills()`（＝`Skills~` 現存）過濾，
+> 而 retired skill 定義上只存在於已裝端 → 濾成空集、迴圈零次、`removed=[]` 而 **exit 0**。
+> 呼叫端（本頁的移除鈕）會拿到「成功」，目錄卻還在磁碟上。
+> 修法：uninstall 的候選集改成 **`Skills~` ∪ 已裝目錄**；且**顯式 `--include` 的名字沒被移除時 exit 2**
+> —— 「我要你刪 X」跟「順手掃一圈」是兩種請求，前者沒發生是動作失敗，不是 no-op。
+
+三處枚舉規則（hash 快照 / Matrix 主體 / orphan 判定）現在共用 `EnumerateSkillDirs`，
+規則與 Python `discover_skills()` 逐條對齊（跳過 `_` 前綴、`~` 結尾、`.` 前綴，且**要求目錄內有 `SKILL.md`**）。
+本頁原本有三份各自略有差異的副本，那正是「頁面說已同步、實際沒裝」這類靜默不一致的來源。
 
 ---
 

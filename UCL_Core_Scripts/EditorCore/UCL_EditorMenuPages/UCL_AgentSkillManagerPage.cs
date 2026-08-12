@@ -208,13 +208,20 @@ namespace UCL.Core.EditorLib.Page
             return Directory.Exists(root) ? root : null;
         }
 
-        // 區塊職責：列舉合法 skill 目錄（與 BuildSkillRowCache 同規則，抽 helper 防兩處漂移）。
+        // 區塊職責：列舉合法 skill 目錄（唯一枚舉點 — hash 快照 / Matrix / orphan 判定共用，防多處漂移）。
+        // 物理意義：規則必須跟 install_skills.py 的 discover_skills() 逐條對齊，否則兩端對「有哪些 skill」
+        //          的認知會分岔 —— 而分岔的表現是「頁面說已同步、實際沒裝」這類靜默不一致。
+        //          Python 端：跳過 `_` 前綴與 `~` 結尾，且**要求目錄內有 SKILL.md**。
+        //          `.` 前綴為本端額外防護（.DS_Store 之類的偽目錄不該變成一列 skill）。
+        // 數值影響：不含 SKILL.md 的目錄一律不算 skill —— 這決定 orphan 判定的基準集合，
+        //          源端若掉了 SKILL.md，Python 會把已裝端當 orphan 掃掉，本端必須看到同一件事。
         static IEnumerable<string> EnumerateSkillDirs(string skillsRoot)
         {
             foreach (var dir in Directory.GetDirectories(skillsRoot))
             {
                 string name = Path.GetFileName(dir);
                 if (name.StartsWith("_") || name.EndsWith("~") || name.StartsWith(".")) continue;
+                if (!File.Exists(Path.Combine(dir, "SKILL.md"))) continue;
                 yield return dir;
             }
         }
@@ -439,6 +446,19 @@ namespace UCL.Core.EditorLib.Page
         readonly Dictionary<AgentTarget, Dictionary<string, SkillRowState>> m_SkillRowCacheByTarget
             = new Dictionary<AgentTarget, Dictionary<string, SkillRowState>>();
 
+        // 區塊職責：per-target 的「已裝端有、Skills~ 源端沒有」目錄（retired / 來源不明），給 Matrix 的 orphan 區用。
+        // 物理意義：Matrix 主體是對 Skills~ 逐一列出，源端不存在的東西**結構上不可能出現在那份清單裡** ——
+        //          於是「UCL_Core 已經移除、但已裝端還留著」的 skill 沒有任何 UI 表面看得到它，
+        //          而 agent 端載入 skill 只掃安裝目錄、不看 marker，所以它照樣會被吃進 context。
+        //          hasMarker=true（有 .ucl_source）＝本工具裝的殘留，移除是安全的；
+        //          hasMarker=false ＝來源不明（使用者手放 / marker 遺失），自動流程一律不動它，
+        //          只在這裡「顯示」並要求二次確認才刪 —— 不顯示比不刪更糟：不刪只是留著，
+        //          不顯示是連存在都不承認。
+        // 數值影響：純顯示 + 提供移除入口；由 BuildOrphanRowCache 在 RefreshStatus 內一次算完並快取。
+        struct OrphanRow { public string name; public bool hasMarker; }
+        readonly Dictionary<AgentTarget, List<OrphanRow>> m_OrphanRowsByTarget
+            = new Dictionary<AgentTarget, List<OrphanRow>>();
+
         // 區塊職責：per-target 的 stale skill 名單（狀態列可視化 — 修「按了同步還是 Stale 但不知道誰害的」）
         // 物理意義：Stale 是聚合結果, 不列出兇手時使用者只能瞎猜（2026-07-27 Antigravity 同步疑雲的教訓:
         //          真相是源檔在同步後又被編輯, 但頁面只說 Stale 不說哪個 skill → 無從對帳）。
@@ -503,6 +523,7 @@ namespace UCL.Core.EditorLib.Page
             m_EntryDetailByTarget.Clear();
             m_SkillRowCacheByTarget.Clear();
             m_StaleSkillsByTarget.Clear();
+            m_OrphanRowsByTarget.Clear();
 
             string corePathRel = UCL_EditorPath.CorePath;
             if (string.IsNullOrEmpty(corePathRel))
@@ -535,6 +556,47 @@ namespace UCL.Core.EditorLib.Page
                 ComputeEntryStatusFor(t, hostRoot);
             }
             BuildSkillRowCache(hostRoot);
+            BuildOrphanRowCache(hostRoot);
+        }
+
+        // 區塊職責：逐 target 掃出「已裝端有、Skills~ 源端沒有」的目錄。
+        // 物理意義：判定基準是 EnumerateSkillDirs（＝與 install_skills.py discover_skills() 對齊的
+        //          「源端有哪些 skill」）。名字不在那份集合裡 = 源端沒有它，兩種來源：
+        //          ① UCL_Core 把該 skill 退場了（有 .ucl_source，本工具裝的殘留）
+        //          ② 使用者自己手放的 skill（無 marker）—— 這種絕不自動刪。
+        // 數值影響：只讀目錄名與 marker 是否存在，不比對內文（orphan 沒有源可比）；
+        //          Skills~ 解析失敗時一律回空清單 —— 源端讀不到就無從判定誰是孤兒，
+        //          此時若照算會把**全部**已裝 skill 標成 orphan 並附上移除鈕，那是災難。
+        void BuildOrphanRowCache(string hostRoot)
+        {
+            m_OrphanRowsByTarget.Clear();
+            string skillsRoot = Path.Combine(m_UCLCorePath, "Skills~");
+            if (!Directory.Exists(skillsRoot)) return;
+            var srcNames = new HashSet<string>(
+                EnumerateSkillDirs(skillsRoot).Select(Path.GetFileName), StringComparer.Ordinal);
+            if (srcNames.Count == 0) return;   // 同上：源端空 = 無從判定，不畫任何 orphan
+
+            foreach (var t in AllTargets)
+            {
+                var list = new List<OrphanRow>();
+                string installRoot = Path.Combine(hostRoot, TargetMarkerRelDir(t));
+                if (Directory.Exists(installRoot))
+                {
+                    foreach (var instDir in Directory.GetDirectories(installRoot)
+                        .OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal))
+                    {
+                        string name = Path.GetFileName(instDir);
+                        if (name.StartsWith(".")) continue;      // .ucl_installed 之類的管理檔／隱藏目錄
+                        if (srcNames.Contains(name)) continue;   // 源端還有 → 由 Matrix 主體負責
+                        list.Add(new OrphanRow
+                        {
+                            name = name,
+                            hasMarker = File.Exists(Path.Combine(instDir, ".ucl_source")),
+                        });
+                    }
+                }
+                m_OrphanRowsByTarget[t] = list;
+            }
         }
 
         // 區塊職責：以 manifest 指定的完整範本內容比對 consumer 專案入口檔與 sidecar。
@@ -827,10 +889,11 @@ namespace UCL.Core.EditorLib.Page
             {
                 var cache = new Dictionary<string, SkillRowState>();
                 string installRoot = Path.Combine(hostRoot, TargetMarkerRelDir(t));
-                foreach (var dir in Directory.GetDirectories(skillsRoot))
+                // 走共用枚舉器 — 與 hash 快照 / orphan 判定同一條規則（含 SKILL.md 要求），
+                // 本處原本自帶一份只濾 `_` / `~` 的副本，是三處枚舉規則漂移的來源。
+                foreach (var dir in EnumerateSkillDirs(skillsRoot))
                 {
                     string name = Path.GetFileName(dir);
-                    if (name.StartsWith("_") || name.EndsWith("~")) continue;
                     string instDir = Path.Combine(installRoot, name);
                     bool installed = File.Exists(Path.Combine(instDir, ".ucl_source")) || Directory.Exists(instDir);
                     bool disabled = disabledSet.Contains(name);
@@ -982,7 +1045,11 @@ namespace UCL.Core.EditorLib.Page
         //          uninstall 預設不帶 force → 若該 skill 被本地改過, Python 端會警告跳過(破壞看得見);
         //          force=true 才強制(覆蓋本地改動 / 強制移除)。
         // 數值影響：target 由 Matrix 下拉選單決定(Per-Agent × Per-Skill, Tim 2026-07-27)；跑完 m_StatusDirty=true 刷新
-        void RunInstallSkill(AgentTarget target, string skill, bool uninstall, bool force = false)
+        // allowUnmarked：只在「移除來源不明目錄」時帶（--force-remove-unmarked）。刻意與 force 分開 ——
+        //   force 的語意是「覆蓋本地改動」，讓它兼任「刪掉不是我裝的目錄」會使一顆既有旗標多一個破壞性副作用。
+        //   Python 端同名閘門在 remove_skill(allow_unmarked)；不帶時無 marker 目錄會被擋下並以 exit 2 回報。
+        void RunInstallSkill(AgentTarget target, string skill, bool uninstall, bool force = false,
+            bool allowUnmarked = false)
         {
             if (string.IsNullOrEmpty(skill)) return;
             try
@@ -996,6 +1063,7 @@ namespace UCL.Core.EditorLib.Page
                 string args = $"\"{scriptPath}\" --target {TargetCliName(target)} --include {skill}";
                 if (uninstall) args += " --uninstall";
                 if (force) args += " --force-overwrite";
+                if (uninstall && allowUnmarked) args += " --force-remove-unmarked";
                 using (var p = new Process())
                 {
                     p.StartInfo.FileName = "python";
@@ -1397,10 +1465,9 @@ namespace UCL.Core.EditorLib.Page
                 // 狀態 per-skill：未裝 / 已同步 / ⚠已改動(drift) / 🚫停用(UCL_SkillConfigAsset Enabled=false)。
                 // 停用語意：disabled 但實體還在 → 「🚫停用·待移除」(下次同步會解除安裝);
                 //          disabled 且已移除 → 「🚫停用」。按鈕同步 UCL_SkillConfigAsset(裝→Enabled=true / 移除→false)。
-                foreach (var dir in Directory.GetDirectories(skillsRoot).OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal))
+                foreach (var dir in EnumerateSkillDirs(skillsRoot).OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal))
                 {
                     string name = Path.GetFileName(dir);
-                    if (name.StartsWith("_") || name.EndsWith("~")) continue;
                     // 讀 RefreshStatus 建好的 per-skill 快取（不每幀掃磁碟；安裝/skill 操作後 m_StatusDirty 才刷新）
                     if (!rowCache.TryGetValue(name, out var row)) continue;
                     bool installed = row.installed;
@@ -1467,6 +1534,70 @@ namespace UCL.Core.EditorLib.Page
                             // drift 時提供強制重裝（覆蓋本地改動）
                             if (row.drift && GUILayout.Button(UCL_CodeLocalize.Get("AgentSkill.Btn.Reinstall"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
                                 RunInstallSkill(matrixTarget, name, uninstall: false, force: true);
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+
+                DrawOrphanRows(matrixTarget);
+            }
+        }
+
+        // 區塊職責：Matrix 底部的「已裝但源端沒有」區 — 唯一看得見 retired / 來源不明 skill 的表面。
+        // 物理意義：Matrix 主體以 Skills~ 為枚舉基準，源端沒有的東西進不了那個迴圈；而 agent 載入 skill
+        //          只掃安裝目錄、不看 marker，所以那些目錄仍然在生效。看不見 + 仍生效 = 靜默僵屍。
+        //          兩類分色刻意不同：
+        //            有 .ucl_source（本工具裝的殘留）→ 橘字，是待處理的異常，移除安全。
+        //            無 marker（使用者手放 / marker 遺失）→ 灰字，是常態存在的非受管目錄，不是警報。
+        //          若兩類同色，長期擺著自己 skill 的人每次開頁都看到一片橘 → 警報被訓練成背景音。
+        // 數值影響：清單為空時整段不繪製（常態零噪音）；移除一律走 EditorUtility.DisplayDialog 二次確認，
+        //          因為這是 rmtree 整個目錄且源端已無副本 —— 復原只能靠 git。
+        void DrawOrphanRows(AgentTarget target)
+        {
+            if (!m_OrphanRowsByTarget.TryGetValue(target, out var orphans) || orphans.Count == 0) return;
+
+            int retiredCount = orphans.Count(o => o.hasMarker);
+            GUILayout.Space(6);
+            using (new GUILayout.VerticalScope("box"))
+            {
+                var headStyle = new GUIStyle(WrapLabelStyle) { fontStyle = FontStyle.Bold };
+                headStyle.normal.textColor = retiredCount > 0 ? new Color(1f, 0.6f, 0.2f) : new Color(0.7f, 0.7f, 0.7f);
+                GUILayout.Label($"⚠ 已裝但 Skills~ 源端沒有 — 殘留 {retiredCount} / 非受管 {orphans.Count - retiredCount}",
+                    headStyle);
+                GUILayout.Label("源端已移除的 skill 不會自己消失，而 agent 載入時不看安裝標記 —— 這些目錄仍然生效。"
+                    + "有標記者可直接移除；無標記者視為你自己放的，需二次確認。", WrapLabelStyle);
+
+                string installRoot = Path.Combine(m_HostProjectRoot, TargetMarkerRelDir(target));
+                float btnWidth = UCL_GUIStyle.GetScaledSize(100);
+                foreach (var orphan in orphans)
+                {
+                    string absDir = Path.Combine(installRoot, orphan.name);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        var st = new GUIStyle(UCL_GUIStyle.LabelStyle);
+                        st.normal.textColor = orphan.hasMarker ? new Color(1f, 0.6f, 0.2f) : new Color(0.65f, 0.65f, 0.65f);
+                        GUILayout.Label(orphan.hasMarker ? "殘留·可移除" : "非受管",
+                            st, GUILayout.Width(UCL_GUIStyle.GetScaledSize(110)));
+                        GUILayout.Label(orphan.name, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+
+                        // 開啟資料夾 — orphan 沒有源檔可預覽（Matrix 主體的「📄 預覽」讀的是 Skills~ 源），
+                        // 唯一能看的是已裝端內容本身，所以這裡給的是「開資料夾」而不是預覽。
+                        if (GUILayout.Button("📂 開啟", UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
+                            EditorUtility.RevealInFinder(absDir);
+
+                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Remove"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(btnWidth)))
+                        {
+                            // 二次確認的文案依兩類分開 —— 無 marker 那類要明說「不是本工具裝的」，
+                            // 否則使用者會以為只是刪一份可重裝的鏡像。
+                            string msg = orphan.hasMarker
+                                ? $"移除已裝端殘留目錄？\n\n{absDir}\n\nSkills~ 源端已無此 skill，移除後要復原只能從 git 取回。"
+                                : $"這個目錄沒有 .ucl_source 標記 —— 不是本工具安裝的（可能是你自己放的 skill）。\n\n{absDir}\n\n仍要刪除嗎？此操作不可復原。";
+                            if (EditorUtility.DisplayDialog("Agent Skill Manager", msg, "移除", "取消"))
+                            {
+                                // 不動 UCL_SkillConfigAsset —— 那份 config 的 ID 對應「源端存在的 skill」的啟用狀態；
+                                // 為一個源端已不存在的名字寫 Enabled=false 只會留下一筆永遠沒人比對的孤兒設定。
+                                RunInstallSkill(target, orphan.name, uninstall: true, allowUnmarked: !orphan.hasMarker);
+                            }
                         }
                         GUILayout.FlexibleSpace();
                     }

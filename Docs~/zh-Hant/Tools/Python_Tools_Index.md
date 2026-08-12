@@ -120,6 +120,16 @@ UCL_SKIP_TASK_CHECK=1 git commit ...     # bypass
 Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`。
 首次接 UCL_Core 後跑一次, 之後 UCL_Core bump 後手動再跑。
 
+移除相關（2026-08-12）：
+
+- `--uninstall` 的候選集是 **`Skills~` 現存 ∪ 已裝目錄** —— 已從 `Skills~` 退場的 skill
+  只存在於已裝端, 只從源端濾會讓 `--include <退場的> --uninstall` 變成**靜默 no-op**（exit 0、`removed=[]`）。
+- 顯式 `--include` 點名的 skill 沒被移除 → **exit 2** 並印出原因（未安裝 / 無 marker 被擋）。
+- `--force-remove-unmarked` 才會刪**沒有 `.ucl_source`** 的目錄（預設視為使用者手放的 skill, 不動）。
+  與 `--force-overwrite` 刻意分兩顆旗標: 前者是覆蓋內容, 後者是刪除來源不明目錄。
+- 全量同步（無 `--include/--exclude`）會自動掃掉**有 marker** 的 orphan 目錄; 無 marker 者永遠不自動刪,
+  改由 `UCL_AgentSkillManagerPage` 的 Matrix 底部區塊顯示 + 二次確認移除。
+
 ---
 
 ## 🛠 Misc

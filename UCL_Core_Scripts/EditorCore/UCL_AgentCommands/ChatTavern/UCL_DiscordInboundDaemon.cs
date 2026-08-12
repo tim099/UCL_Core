@@ -29,7 +29,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 {
     /// <summary>
     /// Discord → 酒館 inbound 中繼（REST 輪詢）。Editor 內單執行緒單寫者，無 subprocess、無長連線。
-    /// 開關：EditorPrefs（per-machine，預設 OFF）× `notify_config.json` 的 `tavern_inbound.enabled`（意圖）。
+    /// 開關：UCL_ProjectEditorPrefs（per-project，預設 OFF）× `notify_config.json` 的 `tavern_inbound.enabled`（意圖）。
     /// 路由：`ChatTavern/discord_channel_routing.json` 的 mappings（enabled 列）。
     /// 游標：`_tavern_state.json` → `inbound.channels.&lt;channelId&gt;.last_message_id`。
     /// </summary>
@@ -89,14 +89,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>
         /// daemon 是否啟用。預設 OFF（對齊 outbound mirror 的顯式 opt-in 慣例）— EditorPrefs 持久化，
-        /// per-machine，跨 domain reload / Editor 重啟不失。實際是否運作還要 config 的 tavern_inbound.enabled 為 true。
+        /// per-project（UCL_ProjectEditorPrefs），跨 domain reload / Editor 重啟不失。實際是否運作還要 config 的 tavern_inbound.enabled 為 true。
         /// </summary>
         public static bool Enabled
         {
-            get => EditorPrefs.GetBool(EnabledPrefKey, false);
+            get => UCL_ProjectEditorPrefs.GetBool(EnabledPrefKey, false);
             set
             {
-                EditorPrefs.SetBool(EnabledPrefKey, value);
+                UCL_ProjectEditorPrefs.SetBool(EnabledPrefKey, value);
                 s_TokenMissingLogged = false;   // 重新 toggle → 允許再警告一次 token 缺席
                 Debug.Log($"[DiscordInbound] Enabled = {value}");
             }
@@ -124,7 +124,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>
         /// 兩道閘門都開才會真的運作（AdminPage / 控制台顯示用）：
-        ///   ① 本 daemon 的 per-machine 開關（EditorPrefs，預設 OFF）— 控制台 / 酒館後台 / 選單皆可切
+        ///   ① 本 daemon 的 per-project 開關（UCL_ProjectEditorPrefs，預設 OFF）— 控制台 / 酒館後台 / 選單皆可切
         ///   ② config 意圖（notify_config.json → tavern_inbound.enabled）
         /// 註（Tim 2026-07-28 拍板）：**不掛**酒館系統總開關（UCL_ChatTavernSystemControl）—
         ///   那顆管的是酒館自動廣播與 Bartender 等背景程序，inbound 中繼是獨立關注點，各自開關。

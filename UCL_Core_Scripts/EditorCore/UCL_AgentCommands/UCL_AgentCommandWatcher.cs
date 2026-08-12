@@ -50,10 +50,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>Watcher 是否啟用（讀 EditorPrefs，預設 true）。</summary>
         public static bool Enabled
         {
-            get => EditorPrefs.GetBool(EditorPrefsEnabledKey, true);
+            get => UCL_ProjectEditorPrefs.GetBool(EditorPrefsEnabledKey, true);
             set
             {
-                EditorPrefs.SetBool(EditorPrefsEnabledKey, value);
+                UCL_ProjectEditorPrefs.SetBool(EditorPrefsEnabledKey, value);
                 Debug.Log($"[UCL_AgentCmdWatcher] Enabled = {value}");
             }
         }

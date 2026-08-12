@@ -155,7 +155,7 @@ namespace UCL.Core.EditorLib.Page
         {
             try
             {
-                string json = EditorPrefs.GetString(PrefKey_Settings, "");
+                string json = UCL_ProjectEditorPrefs.GetString(PrefKey_Settings, "");
                 if (!string.IsNullOrEmpty(json))
                 {
                     var s = JsonUtility.FromJson<PageSettings>(json);
@@ -177,7 +177,7 @@ namespace UCL.Core.EditorLib.Page
         {
             try
             {
-                EditorPrefs.SetString(PrefKey_Settings, JsonUtility.ToJson(m_Settings));
+                UCL_ProjectEditorPrefs.SetString(PrefKey_Settings, JsonUtility.ToJson(m_Settings));
             }
             catch (Exception e)
             {

@@ -32,7 +32,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     {
         // 區塊職責：tick 間隔 + enable 開關持久化 key
         // 物理意義：CHECK_INTERVAL 1s 是 mirror 即時性與 IO load 的折衷（tick 內僅輕量增量掃描）
-        // 數值影響：EnabledPrefKey 走 EditorPrefs（per-machine 持久，跨 domain reload 不失）— cutover 開關
+        // 數值影響：EnabledPrefKey 走 UCL_ProjectEditorPrefs（per-project 持久，跨 domain reload 不失）— cutover 開關
         const double CHECK_INTERVAL_SECONDS = 1.0;
         const string EnabledPrefKey = "UCL_DiscordMirrorDaemon.Enabled";
 
@@ -67,10 +67,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// </summary>
         public static bool Enabled
         {
-            get => EditorPrefs.GetBool(EnabledPrefKey, false);
+            get => UCL_ProjectEditorPrefs.GetBool(EnabledPrefKey, false);
             set
             {
-                EditorPrefs.SetBool(EnabledPrefKey, value);
+                UCL_ProjectEditorPrefs.SetBool(EnabledPrefKey, value);
                 s_HeartbeatLogged = false;   // 重置心跳，讓 toggle 後能再看到一次「alive」log
                 Debug.Log($"[DiscordMirror] Enabled = {value}");
             }
@@ -443,7 +443,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          （改一行 .cs、進退 play mode 都會觸發）。操作員按了「解除熔斷」、daemon 才送出幾筆，
         //          下一次編譯就悄悄重新武裝，而且沒有任何提示。**「按了卻自己失效」比沒有按鈕更糟**：
         //          前者你以為問題解決了。
-        // 數值影響：改存 EditorPrefs（per-machine）。豁免是「這台機器上的操作員做的判斷」，
+        // 數值影響：改存 UCL_ProjectEditorPrefs（per-project）。豁免是「這台機器此專案的操作員做的判斷」，
         //          天生不該跟著 git 跑到別人的工作區 —— 這正是 _tavern_state.json 走 git 踩過的坑。
         // 邊界：積壓降回門檻內 → 自動清除豁免（自癒），下次缺口照擋。
         const string BURST_ALLOW_PREF_PREFIX = "UCL_DiscordMirror_BurstAllow_";
@@ -451,14 +451,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>該房目前是否已被操作員解除熔斷（跨 domain reload 存活）。</summary>
         public static bool IsBurstAllowed(string room)
-            => !string.IsNullOrEmpty(room) && EditorPrefs.GetBool(BurstAllowPrefKey(room), false);
+            => !string.IsNullOrEmpty(room) && UCL_ProjectEditorPrefs.GetBool(BurstAllowPrefKey(room), false);
 
         /// <summary>設定／清除該房的熔斷豁免。AdminPage「解除熔斷 / 重新武裝」按鈕的接點。</summary>
         public static void SetBurstAllowed(string room, bool allowed)
         {
             if (string.IsNullOrEmpty(room)) return;
-            if (allowed) EditorPrefs.SetBool(BurstAllowPrefKey(room), true);
-            else EditorPrefs.DeleteKey(BurstAllowPrefKey(room));
+            if (allowed) UCL_ProjectEditorPrefs.SetBool(BurstAllowPrefKey(room), true);
+            else UCL_ProjectEditorPrefs.DeleteKey(BurstAllowPrefKey(room));
             Debug.Log($"[DiscordMirror] `{room}` 熔斷豁免 → {(allowed ? "已解除（下一輪 tick 起恢復送出）" : "已重新武裝")}");
         }
 

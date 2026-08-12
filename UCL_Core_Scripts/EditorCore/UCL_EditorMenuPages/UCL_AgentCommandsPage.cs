@@ -191,7 +191,7 @@ namespace UCL.Core.EditorLib.Page
             if (m_QueueAgentIds == null)
             {
                 RefreshQueueOptions();
-                string saved = UnityEditor.EditorPrefs.GetString(PrefKey_SelectedQueue, "");
+                string saved = UCL_ProjectEditorPrefs.GetString(PrefKey_SelectedQueue, "");
                 if (!string.IsNullOrEmpty(saved))
                 {
                     int idx = m_QueueAgentIds.IndexOf(saved);
@@ -205,7 +205,7 @@ namespace UCL.Core.EditorLib.Page
                 if (newIdx != m_SelectedQueueIdx)
                 {
                     m_SelectedQueueIdx = newIdx;
-                    UnityEditor.EditorPrefs.SetString(PrefKey_SelectedQueue, SelectedAgentId ?? "");
+                    UCL_ProjectEditorPrefs.SetString(PrefKey_SelectedQueue, SelectedAgentId ?? "");
                     m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
                 }
             }

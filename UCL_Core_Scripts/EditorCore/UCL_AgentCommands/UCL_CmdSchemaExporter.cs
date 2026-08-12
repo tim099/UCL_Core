@@ -427,7 +427,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 物理意義：面板要能在**不寫檔**的前提下回答「現在同步了嗎」。
         // 數值影響：純讀取。產物不存在 / 解析不出 hash → 回 false（視為未同步）。
         // ===========================================================
-        /// <summary>每日自動同步的「上次檢查時間」EditorPrefs key（per-machine，見 <see cref="UCL_CmdSchemaAutoSync"/>）。</summary>
+        /// <summary>每日自動同步的「上次檢查時間」UCL_ProjectEditorPrefs key（per-project，見 <see cref="UCL_CmdSchemaAutoSync"/>）。</summary>
         public const string AutoSyncPrefKey = "UCL_CmdSchema_LastAutoSyncTicks";
 
         /// <summary>上次自動檢查時間（本機）；從未檢查過回 <see cref="DateTime.MinValue"/>。</summary>
@@ -435,10 +435,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             get
             {
-                string raw = UnityEditor.EditorPrefs.GetString(AutoSyncPrefKey, "");
+                string raw = UCL_ProjectEditorPrefs.GetString(AutoSyncPrefKey, "");
                 return long.TryParse(raw, out long ticks) ? new DateTime(ticks, DateTimeKind.Utc) : DateTime.MinValue;
             }
-            set => UnityEditor.EditorPrefs.SetString(AutoSyncPrefKey, value.Ticks.ToString());
+            set => UCL_ProjectEditorPrefs.SetString(AutoSyncPrefKey, value.Ticks.ToString());
         }
 
         // ===========================================================
@@ -553,7 +553,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     //   - 到期且雜湊相符 → 只更新節流時間戳，不寫產物。
     //   - 到期且雜湊不符 → 呼叫 Export()（內容未變仍不落筆），並印一行說明。
     //
-    // ⚠ 節流時間戳存 **EditorPrefs（per-machine）**，刻意不寫進產物：
+    // ⚠ 節流時間戳存 **UCL_ProjectEditorPrefs（per-project）**，刻意不寫進產物：
     //   產物入 git 且我們特意移除了所有 wall-clock 欄位以達成「內容沒變 = 零 diff」；
     //   把「上次檢查時間」寫回產物等於親手把剛消滅的 diff 噪音請回來，而且會讓每台機器
     //   互相覆寫對方的時間戳 —— 那是 per-machine 狀態，本來就不該進版控。

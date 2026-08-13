@@ -56,6 +56,39 @@ def get_rgb332_color(idx):
     b = (idx & 0x03) * 255 // 3
     return (r, g, b)
 
+# ───────────────── 2D 共用畫布讀取（stamp2d 用） ─────────────────
+# 區塊職責：讀 2D 共用畫布某矩形區域裡「**確實被畫過**」的像素，供 stamp2d 投影成 voxel。
+# 物理意義：2D 畫布的事實源是 Canvas/events（append-only、同座標 last-write-wins）；
+#          canvas_latest.png 只是投影。而**未繪製與故意畫成純白在色值上完全同一個 index(255)**
+#          —— 所以「有沒有人畫過」只能靠 canvas.py 的 painted-mask，看色值一定分不出來。
+#          （Tim 2026-08-13 規格：未繪製＝空、不放 voxel；而畫過的白必須留下白 voxel。）
+# 數值影響：回傳 [(u, v, color_index), ...]，只含 mask=1 的格子；u/v 是相對來源區域左上角的偏移。
+# 邊界：**不重造 replay 邏輯** —— 依絕對檔案路徑載入同目錄 canvas.py 重用 build_buffer(with_mask=True)，
+#      2D 端的判定規則永遠只有一份（造第二份就是 2026-06-04 canvas drift bug 的形狀）。
+def load_canvas_painted(src_x1, src_y1, src_x2, src_y2):
+    import importlib.util as _ilu
+    _cv_path = Path(__file__).resolve().parent / "canvas.py"
+    _spec = _ilu.spec_from_file_location("_ucl_canvas_for_sculpt", _cv_path)
+    _cv = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_cv)
+
+    x1, x2 = min(src_x1, src_x2), max(src_x1, src_x2)
+    y1, y2 = min(src_y1, src_y2), max(src_y1, src_y2)
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(_cv.CANVAS_W - 1, x2), min(_cv.CANVAS_H - 1, y2)
+
+    buf, mask = _cv.build_buffer(_cv.Paths(_cv.DEFAULT_CANVAS_ROOT, _cv.DEFAULT_TREASURY_ROOT),
+                                with_mask=True)
+    out = []
+    for y in range(y1, y2 + 1):
+        row = y * _cv.CANVAS_W
+        for x in range(x1, x2 + 1):
+            pos = row + x
+            if mask[pos]:                      # 只收「畫過」的；沒畫過的直接不存在
+                out.append((x - x1, y - y1, buf[pos]))
+    return out, (x2 - x1 + 1), (y2 - y1 + 1)
+
+
 class SparseVoxelSpace:
     def __init__(self):
         # Key: "x,y,z", Value: color_index (0..255)
@@ -171,6 +204,13 @@ def apply_event_to_space(space, ev):
         x, y, z = ev.get("x", 0), ev.get("y", 0), ev.get("z", 0)
         color = ev.get("color", 19)
         space.set_voxel(x, y, z, color)
+    elif op == "stamp2d":
+        # 逐 voxel 帶自己的顏色（來自 2D 像素），所以不能共用 box 的單色 placed_voxels 欄位；
+        # 欄位名刻意不同 —— 同名不同 shape 會讓舊分支「成功地」讀錯。
+        # ⚠ 這個分支是必要的，不是選配：cache 失效時 load_space_state 會重播 events，
+        #   而未知 op 會被**安靜略過** ⇒ stamp 過的東西下次重播就消失（靜默失效）。
+        for v in ev.get("placed_colored", []):
+            space.set_voxel(v[0], v[1], v[2], v[3])
 
 def save_cache(space):
     cache_path = get_cache_file()
@@ -257,6 +297,125 @@ def cmd_box(args):
         "skipped_count": skipped_count,
         "event_file": str(ev_file)
     }, ensure_ascii=False, indent=2))
+
+# ───────────────── stamp2d：把 2D 共用畫布的一塊貼進 3D ─────────────────
+# 區塊職責：讀 2D 區域的已繪像素 → 依 facing 決定貼在哪個平面、沿法線擠出 thickness 層 → 落 voxel。
+# 物理意義：facing 是**貼片的法線**（貼紙朝哪邊看）。平面內兩軸的取法固定如下，
+#          並且會原樣印在回傳 JSON 的 axis_map 欄位裡（呼叫端不必猜、可事後對帳）：
+#            ±Z 法線 → u→X、v→Y（v 反向，讓圖不上下顛倒）
+#            ±Y 法線 → u→X、v→Z（地板/天花板；v 沿 Z 前進）
+#            ±X 法線 → u→Z、v→Y（v 反向，同上）
+#          2D 的 y 往下增長（影像慣例），3D 的 Y 往上 —— 所以垂直軸一律翻轉，
+#          否則貼上去的山會倒過來（而它看起來只會「怪」，不會報錯）。
+# 數值影響：voxel 數 = 已繪像素數 × thickness（**不是區域面積 × thickness** —— 未繪製不佔）。
+#          與 box 一致：預設不覆蓋既有 voxel（skipped 計數回報）；--overwrite 才蓋。
+#          色索引與 2D 同一張 RGB332 盤，1:1 直通、不需映射表（兩邊解碼式逐位元相同）。
+# ⚠ 顏色 0 的例外：3D 用 0 表示「空」（carve 就是寫 0），所以 2D 的純黑(index 0) 若原樣寫進去
+#   會變成「沒放」。畫過的東西必須留下痕跡 ⇒ 純黑重映到最接近的非零暗色 index 4 (0,36,0)，
+#   並在回傳 JSON 的 remapped_black 計數回報 —— 不靜默改人家的顏色。
+# 失敗處置：越界/過大/區域無已繪像素 → 印原因 + 非零退出，不寫事件（沒東西可貼不是成功）。
+def cmd_stamp2d(args):
+    space = load_space_state()
+
+    thickness = max(1, int(args.thickness))
+    facing = (args.facing or "z+").lower().replace("+z", "z+").replace("-z", "z-")
+    if facing not in ("x+", "x-", "y+", "y-", "z+", "z-"):
+        print(f"❌ facing 非法: {args.facing}（可用 x+ x- y+ y- z+ z-）")
+        return 2
+    try:
+        at = [int(v) for v in str(args.at).split(",")]
+        if len(at) != 3:
+            raise ValueError
+    except ValueError:
+        print(f"❌ --at 需為 'x,y,z': {args.at}")
+        return 2
+
+    painted, region_w, region_h = load_canvas_painted(args.src_x1, args.src_y1,
+                                                      args.src_x2, args.src_y2)
+    if not painted:
+        print(json.dumps({"status": "empty", "op": "stamp2d",
+                          "reason": "來源區域沒有任何已繪製像素 —— 未繪製視為空，無可貼內容",
+                          "region_w": region_w, "region_h": region_h},
+                         ensure_ascii=False, indent=2))
+        return 3
+
+    total = len(painted) * thickness
+    if total > 1000000:
+        print(f"❌ 體積過大：{total} voxels（上限 1,000,000）")
+        return 1
+
+    # facing → (u 軸, v 軸, 法線軸) 與 v 是否翻轉
+    axis_map = {
+        "z+": ("x", "y", "z", True),  "z-": ("x", "y", "z", True),
+        "y+": ("x", "z", "y", False), "y-": ("x", "z", "y", False),
+        "x+": ("z", "y", "x", True),  "x-": ("z", "y", "x", True),
+    }
+    u_ax, v_ax, n_ax, flip_v = axis_map[facing]
+    n_dir = 1 if facing.endswith("+") else -1
+    ax_i = {"x": 0, "y": 1, "z": 2}
+
+    placed, skipped, oob, remapped_black = [], 0, 0, 0
+    for (u, v, cidx) in painted:
+        if cidx == 0:                       # 3D 的 0 = 空 → 純黑重映到最近的非零暗色
+            cidx = 4
+            remapped_black += 1
+        vv = (region_h - 1 - v) if flip_v else v
+        for t in range(thickness):
+            p = list(at)
+            p[ax_i[u_ax]] += u
+            p[ax_i[v_ax]] += vv
+            p[ax_i[n_ax]] += n_dir * t
+            x, y, z = p
+            if not (0 <= x <= 255 and 0 <= y <= 255 and 0 <= z <= 255):
+                oob += 1
+                continue
+            if not args.overwrite and space.get_voxel(x, y, z) != 0:
+                skipped += 1
+                continue
+            placed.append([x, y, z, cidx])
+
+    if not placed:
+        print(json.dumps({"status": "empty", "op": "stamp2d",
+                          "reason": "所有目標格都越界或已被佔用（--overwrite 可覆蓋）",
+                          "out_of_bounds": oob, "skipped_occupied": skipped},
+                         ensure_ascii=False, indent=2))
+        return 3
+
+    ev_data = {
+        "op": "stamp2d",
+        "persona": args.persona,
+        "src": {"x1": args.src_x1, "y1": args.src_y1, "x2": args.src_x2, "y2": args.src_y2,
+                "region_w": region_w, "region_h": region_h},
+        "at": at, "facing": facing, "thickness": thickness,
+        "axis_map": {"u": u_ax, "v": v_ax, "normal": n_ax, "v_flipped": flip_v},
+        "painted_source_pixels": len(painted),
+        "placed_count": len(placed),
+        "skipped_occupied": skipped,
+        "out_of_bounds": oob,
+        "remapped_black": remapped_black,
+        "placed_colored": placed,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    ev_file = record_event(ev_data)
+    apply_event_to_space(space, ev_data)
+    space.last_event_file = str(ev_file.relative_to(get_sculpt_dir() / "events"))
+    save_cache(space)
+
+    print(json.dumps({
+        "status": "success", "op": "stamp2d", "persona": args.persona,
+        "region": f"{region_w}x{region_h}",
+        "painted_source_pixels": len(painted),   # 已繪像素數（未繪製不算）
+        "placed_count": len(placed),
+        "skipped_occupied": skipped,
+        "out_of_bounds": oob,
+        "remapped_black": remapped_black,
+        "at": at, "facing": facing, "thickness": thickness,
+        "axis_map": ev_data["axis_map"],
+        "event_file": str(ev_file)
+    }, ensure_ascii=False, indent=2))
+    return 0
+
 
 def cmd_carve(args):
     space = load_space_state()
@@ -884,6 +1043,19 @@ def main():
     p_carve.add_argument("--z2", type=int, required=True)
     p_carve.add_argument("--persona", required=True)
     p_carve.set_defaults(func=cmd_carve)
+
+    # stamp2d
+    p_st = subparsers.add_parser("stamp2d", help="把 2D 共用畫布某區域貼進 3D (未繪製=空, 不放 voxel)")
+    p_st.add_argument("--src-x1", type=int, required=True, dest="src_x1")
+    p_st.add_argument("--src-y1", type=int, required=True, dest="src_y1")
+    p_st.add_argument("--src-x2", type=int, required=True, dest="src_x2")
+    p_st.add_argument("--src-y2", type=int, required=True, dest="src_y2")
+    p_st.add_argument("--at", required=True, help="3D 錨點 'x,y,z' (來源區域左上角貼在這)")
+    p_st.add_argument("--facing", default="z+", help="貼片法線: x+ x- y+ y- z+ z- (預設 z+)")
+    p_st.add_argument("--thickness", type=int, default=1, help="沿法線擠出層數 (預設 1)")
+    p_st.add_argument("--overwrite", action="store_true", help="覆蓋既有 voxel (預設跳過並回報)")
+    p_st.add_argument("--persona", required=True)
+    p_st.set_defaults(func=cmd_stamp2d)
 
     # view
     p_view = subparsers.add_parser("view", help="渲染 2.5D 等角視圖 (帶打光陰影)")

@@ -99,6 +99,24 @@ _br_mod = _ilu.module_from_spec(_br_spec)
 _br_spec.loader.exec_module(_br_mod)
 resolve_bank_account = _br_mod.resolve_bank_account       # agent → Treasury bank account
 load_registry_meta = _br_mod.load_registry_meta           # 輕量讀 _registry_meta.json
+resolve_persona_to_agent = _br_mod.resolve_persona_to_agent  # persona → agent（fail-loud，不 silent-default）
+PersonaResolutionError = _br_mod.PersonaResolutionError
+
+
+# 區塊職責：--agent 未帶時由 persona 反推所屬 agent（persona→agent→bank 兩跳鏈的第一跳）。
+# 物理意義：**話認 persona、錢認 agent**。舊版 --agent 預設寫死 "claude-code"，於是任何
+#           persona 不顯式帶 --agent，帳就記到 claude-code 的 bank 上 —— 多租戶環境裡的
+#           預設值就是裝填好的槍（血證 2026-08-13：summit 以自己身分放 10 點，回報寫
+#           bank=claude-da-xiaojie＝basecamp 的帳戶；當次 100% 走免費額度才沒真的扣錯人）。
+# 數值影響：只影響「錢記到誰頭上」；persona / 像素內容不受影響。反推走既有 SOT
+#           （personas/<name>.json 的 agent 欄），**不另存第二張 persona→agent 表**。
+# 失敗處置：fail-loud —— 反推不出來就炸，不回退到任何預設 agent（silent-default 是本 bug 本體）。
+def resolve_agent_for_persona(persona: str) -> str:
+    """讀 personas/*.json 的 agent 欄（awakening.load_registry 的 SOT），回傳所屬 agent。"""
+    _awk_spec = _ilu.spec_from_file_location("_ucl_awakening_for_canvas", _HERE / "awakening.py")
+    _awk_mod = _ilu.module_from_spec(_awk_spec)
+    _awk_spec.loader.exec_module(_awk_mod)
+    return resolve_persona_to_agent(_awk_mod.load_registry(), persona)
 
 # 預設 persona registry meta 路徑（agent_banks source of truth）；測試用 --registry-meta 覆蓋。
 # 物理意義：registry 住在 AgentCommands/AwakenInit/_registry_meta.json，與 treasury 同 AgentCommands 根。
@@ -685,7 +703,15 @@ def cmd_place(args):
     P = args._paths
     ensure_meta(P)
     persona = args.persona
+    # agent 決定「錢記到誰頭上」：未顯式帶就由 persona 反推（見 resolve_agent_for_persona 的區塊註解）。
     agent = args.agent
+    if not agent:
+        try:
+            agent = resolve_agent_for_persona(persona)
+        except Exception as e:
+            print(f"❌ place 拒絕: 無法由 persona '{persona}' 反推所屬 agent（{e}）—— "
+                  f"請顯式帶 --agent（拒絕 silent-default 到別人的帳戶）", file=sys.stderr)
+            return 2
     # agent → bank：走共用 resolver（與 awakening.py 同一 source of truth）。
     # registry meta 缺檔 → load_registry_meta 回空 dict → resolver 退命名慣例 fallback，不 fatal。
     reg = load_registry_meta(P.registry_meta)
@@ -1210,7 +1236,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--color", default=None, help="palette index 0-255 或 #RRGGBB")
     p.add_argument("--pixels", default=None, help='批量 JSON: [{"x","y","color"}]')
     p.add_argument("--persona", required=True)
-    p.add_argument("--agent", default="claude-code", help="決定扣哪個 bank（預設 claude-code）")
+    p.add_argument("--agent", default=None,
+                   help="決定扣哪個 bank（省略＝由 --persona 反推所屬 agent；反推失敗會拒絕，不 default）")
     p.add_argument("--pay", choices=["auto", "freetime", "voucher", "token"], default="auto")
     p.set_defaults(func=cmd_place)
 
@@ -1282,8 +1309,12 @@ def main(argv=None):
     args._paths = Paths(args.root, args.treasury_root,
                         getattr(args, "freetime_sessions", None),
                         getattr(args, "registry_meta", None))
-    args.func(args)
+    # handler 的回傳值就是 process 退出碼（None → 0）。
+    # 物理意義：原本這行丟掉回傳值，於是 handler 內所有 `return 2`（拒絕路徑）都印著 ❌ 卻 exit 0 ——
+    #          呼叫端（skill / 上層腳本 / CI）拿退出碼判成功時，看到的是綠燈而事情沒做。
+    #          血證 2026-08-13：place 的 persona→agent 反推守衛拒絕後仍 exit 0（summit 驗自己的修法時撞到）。
+    return args.func(args) or 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

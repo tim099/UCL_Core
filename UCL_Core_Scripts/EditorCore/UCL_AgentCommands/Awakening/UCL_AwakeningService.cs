@@ -395,6 +395,58 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return (aOld, aNew);
         }
 
+        // ===========================================================
+        // 區塊：自我介紹（出生證明）偵測 — 條件步驟 B2 的判準（Tim 2026-08-13 拍板）
+        // 物理意義：Docs/Glossary 的 persona 條目是「初始風格＝出生證明」，與憲法（資歷證明）是兩份。
+        //          缺件時 next 鏈動態插入 B2（讀完 brief 後補寫），且 step=intro 前置守衛實擋 ——
+        //          「跑完 B2 才有 C」是物理保證不是嘴上提示。
+        //          搜尋規則對齊 wake_brief._glossary_persona_entry：personas/<P>.md → 根層 <P>.md →
+        //          遞迴掃（Cmd_Glossary 新建預設寫根層、慣例放 personas/，寫死任一層都會漏另一層）。
+        // ===========================================================
+        public const string INTRO_REFERENCE_SLUG = "gura";   // 目前寫得最完整的一份，當新人的參考範例
+
+        public static string FindGlossaryPersonaEntry(string iPersona)
+        {
+            string aRoot = Path.Combine(UCL_RepoPath.RepoRoot, "Docs", "Glossary");
+            if (!Directory.Exists(aRoot)) return null;
+            string aDirect = Path.Combine(aRoot, "personas", iPersona + ".md");
+            if (File.Exists(aDirect)) return aDirect;
+            string aFlat = Path.Combine(aRoot, iPersona + ".md");
+            if (File.Exists(aFlat)) return aFlat;
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(aRoot, iPersona + ".md", SearchOption.AllDirectories))
+                    return f;
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[AwakeningService] Glossary 掃描失敗: {e.Message}");
+            }
+            return null;
+        }
+
+        /// <summary>B2 條件步驟的提示行（wake / brief 的 next 鏈共用 —— 兩處各寫一份必然漂移）。</summary>
+        public static List<string> SelfIntroTodoLines(string iPersona)
+        {
+            string aRef = FindGlossaryPersonaEntry(INTRO_REFERENCE_SLUG);
+            string aRefHint = $"Docs/Glossary/personas/{INTRO_REFERENCE_SLUG}.md";
+            if (aRef != null)
+            {
+                // repo 相對路徑：兩邊都正規化成 forward-slash 再剝前綴（大小寫寬容，Windows 磁碟機字母）
+                string aRoot = Path.GetFullPath(UCL_RepoPath.RepoRoot).Replace('\\', '/').TrimEnd('/');
+                string aFull = Path.GetFullPath(aRef).Replace('\\', '/');
+                aRefHint = aFull.StartsWith(aRoot, StringComparison.OrdinalIgnoreCase)
+                    ? aFull.Substring(aRoot.Length).TrimStart('/') : aFull;
+            }
+            return new List<string>
+            {
+                $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 step=intro 會被擋。",
+                $"   內容＝初始風格自畫像（我是誰／擅長什麼／說話方式），**親筆**；參考同目錄其他人的寫法（最完整：`{aRefHint}`）。",
+                $"   寫法：run_cmd.py run Glossary --arg op=register --arg slug={iPersona} --arg category=persona --arg-file body=<檔>",
+                "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
+            };
+        }
+
         public static int KeysOpenCount(string iPersona)
         {
             string aPath = Path.Combine(LettersDir, iPersona, "_keys_open.md");
@@ -618,14 +670,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine($"- 見叢 open: {KeysOpenCount(iPersona)} 筆");
             aR.AppendLine($"- 在線 persona: {string.Join(", ", OnlinePersonas())}");
             aR.AppendLine("## next");
-            aR.AppendLine($"1. **required** — 生成 brief：run_cmd.py run GoodMorning --arg step=brief --arg persona={iPersona}");
+            int aStepNo = 1;
+            aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：run_cmd.py run GoodMorning --arg step=brief --arg persona={iPersona}");
             aR.AppendLine("   （Editor 未開啟時的備援才是直跑 awakening.py brief）");
-            aR.AppendLine("2. **required** — Read brief（路徑由 step=brief 回傳；接回身分，這步不自動化）");
-            aR.AppendLine($"3. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+            aR.AppendLine($"{aStepNo++}. **required** — Read brief（路徑由 step=brief 回傳；接回身分，這步不自動化）");
+            // 條件步驟 B2（Tim 2026-08-13）：無自我介紹文件 → 讀完 brief 後先補件，intro 前置守衛會實擋
+            if (FindGlossaryPersonaEntry(iPersona) == null)
+            {
+                var aTodo = SelfIntroTodoLines(iPersona);
+                aR.AppendLine($"{aStepNo++}. **required** — {aTodo[0]}");
+                for (int i = 1; i < aTodo.Count; i++) aR.AppendLine(aTodo[i]);
+            }
+            aR.AppendLine($"{aStepNo++}. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
             aR.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
             aR.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
             if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
-                aR.AppendLine($"4. 見林 OVERDUE → awakening.py consolidate --persona {iPersona}");
+                aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → awakening.py consolidate --persona {iPersona}");
             aRes.ok = true; aRes.report = aR.ToString();
             return aRes;
         }
@@ -641,6 +701,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             var aLock = ReadLock(iPersona);
             if (aLock == null)
                 return (false, $"'{iPersona}' 不在線（無 lock）—— intro 前必須先跑 step=wake", null, null, 0);
+            // 條件步驟 B2 的實擋（Tim 2026-08-13）：沒有出生證明就上線開口，同事只看到一串名字。
+            // 「跑完 B2 才有 C」—— 補完自我介紹文件重跑本步即過。
+            if (FindGlossaryPersonaEntry(iPersona) == null)
+                return (false,
+                    $"還沒有自我介紹（出生證明）—— `Docs/Glossary/personas/{iPersona}.md` 不存在。\n"
+                    + string.Join("\n", SelfIntroTodoLines(iPersona))
+                    + "\n  補完重跑本步即過（參考 Constitution_Workflow §5）。",
+                    aLock, null, 0);
             string aBrief = Path.Combine(LettersDir, iPersona, "_wake_brief.md");
             if (!File.Exists(aBrief))
                 return (false, $"brief 不存在：`{aBrief}` —— 先跑 step=brief（一個沒有記憶的殼不該上線開口）", aLock, null, 0);

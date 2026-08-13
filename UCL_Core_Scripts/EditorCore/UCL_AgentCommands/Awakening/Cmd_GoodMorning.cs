@@ -99,8 +99,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     if (aResult.ok)
                     {
                         aSb.AppendLine("## next");
-                        aSb.AppendLine($"1. **required** — Read `{aResult.briefPath}`（接回身分 —— 這步不自動化）");
-                        aSb.AppendLine($"2. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+                        int aNo = 1;
+                        aSb.AppendLine($"{aNo++}. **required** — Read `{aResult.briefPath}`（接回身分 —— 這步不自動化）");
+                        // 條件步驟 B2：無自我介紹文件 → 讀完 brief 後先補件（intro 前置守衛會實擋）
+                        if (UCL_AwakeningService.FindGlossaryPersonaEntry(aPersona) == null)
+                        {
+                            var aTodo = UCL_AwakeningService.SelfIntroTodoLines(aPersona);
+                            aSb.AppendLine($"{aNo++}. **required** — {aTodo[0]}");
+                            for (int i = 1; i < aTodo.Count; i++) aSb.AppendLine(aTodo[i]);
+                        }
+                        aSb.AppendLine($"{aNo++}. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
                         aSb.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
                         aSb.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
                     }

@@ -985,7 +985,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             }
             var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
             var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aRaw); aP.name = iPersona;
-            // letter-before-sleep 前置守衛
+            // letter-before-sleep 前置守衛。
+            // ⚠ 這道閘的兩邊是**同一把尺量的兩個時刻**：wakes/ 信數（現在）vs wake_count 快取
+            //   （step=wake 時由「當時信數+1」蓋章的期望）——它驗的是「期望的轉移有沒有兌現」。
+            //   **不准簡化成 sleep 端自己重數信數當快取比對**（看起來更簡潔）——兩邊同源同時刻
+            //   = 閘門安靜地永綠，而簡化它的人不會知道自己拆了閘（apex-one 2026-08-13 失效預言，照收）。
             int aLetters = WakeLetterCount(iPersona);
             if (!iNoLetter && aLetters != aP.wake_count)
             {

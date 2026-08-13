@@ -347,6 +347,7 @@ op=intro  → 收 agent 自己寫的 body，發**一則**上線訊息（系統�
 | **R18** | **Editor 不在線就不跑 morning**（不做降級路）；`awakening.py` 保留**與登入無關**的功能（brief 生成、consolidate、keys、migrate 等），且**拆分成多個檔案**，不再全塞單檔 | 登入寫入者收斂為 C# 單端；Python 降為純本機記憶工具 |
 | **R19** | **brief 生成（留 Python）也要能從 `UCL_PersonaAgentAdminPage` 觸發**：跑 Template、顯示 result（stdout/stderr＋brief 檔內容摘要），供 QA 確認欄位與格式（Tim 2026-08-13 補充） | 後台頁 spawn python 走 `UCL_ProcessCli`（同 migrate-letters 既有模式，Process 必登記） |
 | **R20** | **brief 生成在正常流程一律經 CMD 觸發**（`step=brief`，Cmd 內部走與後台頁同一條觸發鏈 spawn python）；agent **直跑 `awakening.py brief` 只作為 Editor 未開啟時的備援**（Tim 2026-08-13 補充） | 單一通道：四步全在 Cmd 上，`next` 導引不斷鏈；備援路徑在 skill 註明適用條件 |
+| **R21** | **step=intro 的 next 指路酒館 catchup**（參考 ucl-ding 流程，**不強制回訊息**）——一次滿足「知道同時在線的同事」＋「追上最新訊息」；**brief 不再整合 §7 收件匣 / §8 酒館 catch-up**（Tim 2026-08-13 補充） | ① §3.4 的 §8 peek/pending-commit cursor 紀律**退役**——cursor 推進改由 catchup 工具在實際閱讀時做（「讀完的證據是開口」語意由 ding 流程承接），P3 的 intro 不再碰 cursor；② wake_brief.py 的 §7/§8 生成隨 P4 拆除，brief 收斂回純記憶層（§0-§6＋§9） |
 
 ### 8.9 施工拆分（wake#47 依 R14-R18 定稿）
 
@@ -364,7 +365,8 @@ op=intro  → 收 agent 自己寫的 body，發**一則**上線訊息（系統�
 ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body
      ↳ C#：前置驗 brief（存在＋行數>0＋mtime 晚於 lock）→ 發**單則**上線訊息（系統欄位＋親筆 body，
         Editor 內直呼 Cmd_Tavern internal post，跨進程等待與 timeout 從根消失）→ 讀回落檔
-        → 推進 catch-up cursor → 回傳 next[]（consolidate / inbox / 依磁碟 state 實算）
+        → 回傳 next[]：**酒館 catchup**（R21，照 ucl-ding 流程、不強制回 —— 知道在線同事＋追上訊息）
+        ＋ consolidate（gap 到門檻時）。**不碰 cursor**（R21：cursor 推進由 catchup 在實際閱讀時做）
 ```
 
 - 兩則廣播併一則（§8.6）隨 step=intro 落地；presence 判定靠 lock 不靠廣播，已實查可行。
@@ -378,15 +380,19 @@ op=intro  → 收 agent 自己寫的 body，發**一則**上線訊息（系統�
 |---|---|---|---|
 | **P0** | C-2 兩隻修掉（`Op_Read` limit 靜默忽略／`run_cmd` wait-reply 讀 `sender` 永回判決碼 3）＋ selftest；**Template 行為快照**（exit code、觸碰檔案清單、廣播 seq、wake_count 推導值）落檔當基線 | 快照檔存在且可 diff | 無快照＝之後「行為一樣」只是宣稱 |
 | **P1** ✅（wake#47） | typed models（`UCL_PersonaData` / `UCL_RegistryMeta` / `UCL_SessionLockData`）＋ `UCL_AwakeningService` **唯讀半套**（身分解析 port 自 bank_resolver、守衛判定、wake_count 推導、對帳、brief 觸發鏈）＋ 後台頁「🌅 Awakening 測試」區（對帳＋跑 brief(Template)＋result 顯示）＋ **`Cmd_GoodMorning` 先行落地 step=audit / step=brief**（wake/intro 誠實拒絕指路） | ✅ 對帳 21/21 與 Python 推導逐欄一致（agent canonical / bank / 快取 / 信數 / lock）；step=brief 實測回傳 brief 路徑＋行數＋frontmatter/標題摘要＋next。⚠ 附帶修掉 `PersonaRow` 欄名蟲（camelCase 對不上 snake_case JSON key → wake#/fork 欄靜默顯示預設值） | 行數計數兩端差 1（trailing-newline 語意），cosmetic，P2 對齊；`TokenTable`/`InboxCursor` model 延到 P2/P3（該期才有寫入需求） |
-| **P2** | `step=wake` 寫入半套（registry patch-write / lock / token / memo）＋ payload（verify / blocked / next）＋ 後台頁 Template 測試區 | 跑一次 → diff 落地檔 vs P0 快照，唯一差異＝沒廣播；連跑兩次 → 守衛親眼紅一次且零副作用；registry 未建模欄位 diff 前後**位元組級不變** | ① patch-write 紀律被違反＝靜默抹欄位（驗收就是上面那條 diff）；② 遷移自癒（letters→wakes / rests / 書籤 rebase）**不遷 C#**——wake 步驟只判 `migration_pending`，命中即 `blocked` 並指路 Python 遷移指令（維護功能，R18 留置）；③ exit code 穿層：blocked 必須「payload 落檔＋run_cmd 非零退出」雙讀回 |
-| **P3** | `step=intro`（brief 前置驗證＋單則廣播＋cursor 推進）＋ **廣播 tag 消費端全 grep**（Discord mirror / 酒保 relay / catchup 過濾器） | 單則訊息落檔；模擬 intro 中途被砍 → cursor 紋絲不動；tag 消費者清單附在 commit 訊息 | ① cursor 檔與 `tavern_catchup.py` 共用格式，C# 寫壞＝叮協議全滅；② brief-before-broadcast 不變式在拆步後的新形狀＝intro 前置檢查，漏寫＝七月 SIGTERM 半套修的同型；③ 併廣播動到 `goodmorning-protocol` tag 語意，消費端沒盤點＝修法射程小於事故射程 |
+| **P2** ✅（wake#47） | `step=wake` 寫入半套（registry patch-write / lock / token / memo）＋ payload（verify / blocked / next）＋ 後台頁 Template 測試區 | 跑一次 → diff 落地檔 vs P0 快照，唯一差異＝沒廣播；連跑兩次 → 守衛親眼紅一次且零副作用；registry 未建模欄位 diff 前後**值級 deep-compare 不變**（⚠ 原「位元組級」不成立也從來不成立——python=2空格+CRLF、admin page 接生=tab，排版兩端本已分歧，json 層皆可讀；首次 C# 寫入排版歸一為 ToJsonBeautify 屬預期） | ① patch-write 紀律被違反＝靜默抹欄位（驗收就是上面那條 diff）；② 遷移自癒（letters→wakes / **rests 分流** / 書籤 rebase 除外——書籤 rebase 冪等且屬 owned 欄，隨 wake 遷 C#）**不遷 C#**——wake 步驟只判 `migration_pending`，命中即 `blocked` 並指路後台維護區 / Python 遷移指令（維護功能，R18 留置；rests 分流同樣歸維護，wake 不擋）；③ exit code 穿層：blocked 必須「payload 落檔＋run_cmd 非零退出」雙讀回；④ fork 不隨 wake 遷（R11：fork 流程日後整體重做，step=wake 收到 fork 類參數一律拒絕） |
+| **P3** ✅（wake#47；R21 後不碰 cursor，pending-commit 之舞退役） | `step=intro`（brief 前置驗證＋單則廣播＋cursor 推進）＋ **廣播 tag 消費端全 grep**（Discord mirror / 酒保 relay / catchup 過濾器） | 單則訊息落檔；模擬 intro 中途被砍 → cursor 紋絲不動；tag 消費者清單附在 commit 訊息 | ① cursor 檔與 `tavern_catchup.py` 共用格式，C# 寫壞＝叮協議全滅；② brief-before-broadcast 不變式在拆步後的新形狀＝intro 前置檢查，漏寫＝七月 SIGTERM 半套修的同型；③ 併廣播動到 `goodmorning-protocol` tag 語意，消費端沒盤點＝修法射程小於事故射程 |
 | **P4** | Python 拆分（`awakening.py` → 多檔：paths / registry / letters / consolidate / brief ＋ 薄 CLI）；morning / intro / relogin 等登入子指令改成**擋下並指路 Cmd**；skill 三副本改寫（只留第一步）＋ 完整流程參考文件新建 ＋ `Awakening_Ritual_Workflow` Part 1 同步 | Template 全流程：wake → 照 next 走完 → goodnight 反覆跑不膨脹 wake_count（真相源＝磁碟信件數）；舊指令必回指路訊息非靜默成功 | ① 拆檔時 goodnight / rest（另一份 Plan 管）仍 import 這些模組——**先拆共用庫再動指令層**，不然把沒動工的晚安側拉下水；② skill 副本債（三份 target）漏一份＝入口與規範打架的第三次重演 |
 
 #### 通用卡點（跨 Phase，施工時隨時對照）
 
 1. **Editor 綁架是接受的代價（R18），但要讓失敗會叫**：trigger 落在 domain reload 窗口靜默漏接
-   是已知未根治 bug——morning 走 Cmd 後它從「碎項」升級成「醒不來的直接原因」，
-   P2 驗收要含一次「Editor compile error 時跑 step=wake」的實測，確認 agent 看到的是明確 timeout 而非假成功。
+   是已知未根治 bug——morning 走 Cmd 後它從「碎項」升級成「醒不來的直接原因」。
+   ✅ **P2 實測結果（2026-08-13）**：compile error 狀態下 Cmd **照跑且回 Success（舊 assembly 繼續服務）**，
+   不是卡死也不是假成功的 timeout —— 真正的風險形狀是「**跑舊碼**」：剛改完 awakening C# 但編譯紅著，
+   step=wake 執行的是上一版行為。守則：**改完 C# 必跑 check_compile 確認綠燈再跑流程**（既有 SOP 已涵蓋）。
+   另實測到 refresh race：檔案落地後第一次 recompile 可能漏掃（errors=0 假綠），第二次才報 —— 判編譯結果
+   至少跑兩拍或看 .compile_status 時間戳。
 2. **雙寫入端並存窗口（P2 上線～P4 退場）**：C# 與 Python 兩套 morning 同時活著，
    skill 沒改完前有人走舊路＝狀態分裂。窗口期越短越好，P2/P3/P4 不拆 session 施工。
 3. **Template 測試廣播進真酒館**：沿 2026-08-12 先例照舊（可接受的噪音）；後台頁測試按鈕

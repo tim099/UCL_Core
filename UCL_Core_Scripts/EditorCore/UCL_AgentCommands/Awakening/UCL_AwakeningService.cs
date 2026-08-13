@@ -245,6 +245,421 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return (aOk, aSb.ToString(), aExists ? aBriefPath : null, aLines);
         }
 
+        // ===========================================================
+        // 區塊：寫入半套（P2 step=wake / P3 step=intro）— port 自 awakening.py cmd_morning ①-⑥
+        // 物理意義：登入寫入者收斂為 C# 單端（R18）。與 Python 端的刻意差異只有三處，全屬 audit 欄：
+        //          ① claim_origin：Python 是 caller env hash，這裡是 "cmd-goodmorning:<env_marker>"
+        //            （Editor 代跑，caller env 不可見；該欄本來就 audit-only 不參與判定）
+        //          ② pid：Editor 進程 pid（Python 是 CLI pid；同樣純診斷欄）
+        //          ③ 檔案排版：ToJsonBeautify（tab）——排版兩端本已分歧（python=2空格CRLF、
+        //            admin page 接生=tab），json 值層完全等價。
+        // 數值影響：寫 registry（patch-write）/ lock / _tokens.json / memo 四處 —— 全部 tmp+replace 原子寫。
+        // ===========================================================
+        public static string MemosDir => ResolveOverridablePath("memos_dir", Path.Combine("ChatTavern", "baton", "memos"));
+
+        public const int SESSION_LOCK_TTL_HOURS = 24;   // ⚠ 與 awakening.py SESSION_LOCK_TTL_HOURS / Cmd_Tavern PERSONA_LOCK_TTL_HOURS 同步
+        public const int CONSOLIDATE_GAP_THRESHOLD = 10;
+
+        public static string NowIso() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+        static void AtomicWrite(string iPath, string iContent)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(iPath));
+            string aTmp = iPath + ".tmp";
+            File.WriteAllText(aTmp, iContent, new UTF8Encoding(false));
+            if (File.Exists(iPath)) File.Delete(iPath);
+            File.Move(aTmp, iPath);
+        }
+
+        /// <summary>實際承載 agent 正規化 — port 自 awakening.normalize_actual_agent（alias 直中 → 最近似候選）。</summary>
+        public static (string canonical, bool changed) NormalizeActualAgent(string iValue)
+        {
+            string aRaw = (iValue ?? "").Trim();
+            if (string.IsNullOrEmpty(aRaw)) return ("", false);
+            string aNorm = Regex.Replace(aRaw.ToLowerInvariant(), "[^a-z0-9]", "");
+            var aAliases = new Dictionary<string, string>
+            {
+                { "codex", "Codex" }, { "claude", "ClaudeCode" },
+                { "claudecode", "ClaudeCode" }, { "antigravity", "Antigravity" },
+            };
+            if (aAliases.TryGetValue(aNorm, out string aHit)) return (aHit, aRaw != aHit);
+            string[] aCandidates = { "Codex", "ClaudeCode", "Antigravity" };
+            string aBest = aCandidates.OrderByDescending(c => Similarity(aNorm, c.ToLowerInvariant())).First();
+            return (aBest, true);
+        }
+
+        // 簡化版相似度（Levenshtein ratio）— Python 端用 difflib，僅在「打了怪字串」的救援路徑會走到，
+        // 兩端對 canonical / alias 輸入行為完全一致。
+        static double Similarity(string a, string b)
+        {
+            if (a.Length == 0 && b.Length == 0) return 1.0;
+            int[,] d = new int[a.Length + 1, b.Length + 1];
+            for (int i = 0; i <= a.Length; i++) d[i, 0] = i;
+            for (int j = 0; j <= b.Length; j++) d[0, j] = j;
+            for (int i = 1; i <= a.Length; i++)
+                for (int j = 1; j <= b.Length; j++)
+                    d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                                       d[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            return 1.0 - (double)d[a.Length, b.Length] / Math.Max(a.Length, b.Length);
+        }
+
+        /// <summary>讀 md frontmatter 單欄（port 自 awakening._read_frontmatter_field；找不到回空字串）。</summary>
+        public static string ReadFrontmatterField(string iPath, string iField)
+        {
+            try
+            {
+                using (var aReader = new StreamReader(iPath))
+                {
+                    string aLine = aReader.ReadLine();
+                    if (aLine == null || aLine.Trim() != "---") return "";
+                    string aPrefix = iField + ":";
+                    for (int i = 0; i < 100; i++)
+                    {
+                        aLine = aReader.ReadLine();
+                        if (aLine == null || aLine.Trim() == "---") return "";
+                        if (aLine.StartsWith(aPrefix))
+                            return aLine.Substring(aPrefix.Length).Trim().Trim('"', '\'');
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[AwakeningService] frontmatter 讀取失敗 {iPath}: {e.Message}");
+            }
+            return "";
+        }
+
+        static IEnumerable<string> WakeLetterFiles(string iPersona)
+        {
+            string aDir = Path.Combine(LettersDir, iPersona, "wakes");
+            if (!Directory.Exists(aDir)) yield break;
+            foreach (var f in Directory.GetFiles(aDir).OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal))
+                if (s_WakeLetterRe.IsMatch(Path.GetFileName(f))) yield return f;
+        }
+
+        /// <summary>
+        /// 收尾信版面遷移是否 pending — port 自 awakening.letters_migration_pending：
+        /// 判準是「頂層還有沒被複製進 wakes/ 的收尾信」（比對檔名尾段），不是「wakes/ 目錄不存在」。
+        /// </summary>
+        public static bool LettersMigrationPending(string iPersona)
+        {
+            string aTop = Path.Combine(LettersDir, iPersona);
+            if (!Directory.Exists(aTop)) return false;
+            var aDone = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var f in WakeLetterFiles(iPersona))
+            {
+                string aName = Path.GetFileName(f);
+                int aIdx = aName.IndexOf('_');
+                aDone.Add(aIdx >= 0 ? aName.Substring(aIdx + 1) : aName);
+            }
+            foreach (var f in Directory.GetFiles(aTop, "*.md"))
+            {
+                string aName = Path.GetFileName(f);
+                if (aName.StartsWith("_")) continue;
+                if (aDone.Contains(aName)) continue;
+                if (ReadFrontmatterField(f, "type") != "letter_to_future_self") continue;
+                if (!ReadFrontmatterField(f, "trigger").StartsWith("cmd_goodnight")) continue;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 見林書籤換算（port 自 rebase_consolidation_bookmark，冪等）——
+        /// 有改動時 mutate iRawPersona 並回 (舊, 新)；沒書籤 / 沒變回 null。
+        /// </summary>
+        public static (int oldVal, int newVal)? RebaseBookmark(string iPersona, JsonData iRawPersona)
+        {
+            int aOld = iRawPersona.GetInt("last_consolidated_wake", 0);
+            string aAt = iRawPersona.GetString("last_consolidated_at", "");
+            if (aOld <= 0 || string.IsNullOrEmpty(aAt)) return null;
+            int aNew = WakeLetterFiles(iPersona)
+                .Count(f => string.CompareOrdinal(ReadFrontmatterField(f, "written_at"), aAt) <= 0
+                            && !string.IsNullOrEmpty(ReadFrontmatterField(f, "written_at")));
+            if (aNew == aOld || aNew <= 0) return null;
+            iRawPersona["last_consolidated_wake"] = new JsonData(aNew);
+            return (aOld, aNew);
+        }
+
+        public static int KeysOpenCount(string iPersona)
+        {
+            string aPath = Path.Combine(LettersDir, iPersona, "_keys_open.md");
+            if (!File.Exists(aPath)) return 0;
+            try { return File.ReadAllLines(aPath).Count(l => l.TrimStart().StartsWith("- [ ]")); }
+            catch { return 0; }
+        }
+
+        public static List<string> OnlinePersonas()
+        {
+            var aList = new List<string>();
+            if (!Directory.Exists(SessionDir)) return aList;
+            foreach (var f in Directory.GetFiles(SessionDir, "_persona_*.json"))
+            {
+                string aName = Path.GetFileNameWithoutExtension(f);
+                aList.Add(aName.Substring("_persona_".Length));
+            }
+            aList.Sort(StringComparer.Ordinal);
+            return aList;
+        }
+
+        /// <summary>step 回傳值落檔路徑 —— persona 步驟放 letters/&lt;persona&gt;/（與 _wake_brief 同層同慣例），
+        /// 底線開頭＝機械產物、每次該步驟重跑即覆寫（Tim 2026-08-13 拍板：每步回傳值落檔供 QA）。</summary>
+        public static string StepPayloadPath(string iPersona, string iStep)
+            => Path.Combine(LettersDir, iPersona, $"_goodmorning_{iStep}.md");
+
+        public class StepResult
+        {
+            public bool ok;
+            public bool blocked;      // 守衛/前置檢查擋下（非例外、狀態零副作用）
+            public string report = "";
+        }
+
+        // ===========================================================
+        // 區塊：step=wake — cmd_morning ①-⑥ 的 C# 本體（不含 brief 生成、不含廣播）
+        // 順序不變式：守衛與遷移判定全過**才**開始寫入；任何 blocked 路徑零副作用。
+        // ===========================================================
+        public static StepResult StepWake(string iPersona, string iModelArg, string iActualAgentArg, string iEnvMarker)
+        {
+            var aR = new StringBuilder();
+            var aRes = new StepResult();
+            aR.AppendLine($"# GoodMorning step=wake persona={iPersona}  ts=`{NowIso()}`");
+            aR.AppendLine();
+
+            var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
+            string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
+
+            // ① persona 必須已註冊 —— 打錯字不該變成「幫你建一個新人格」
+            if (!File.Exists(aPersonaPath))
+            {
+                var aNames = Directory.Exists(PersonasDir)
+                    ? Directory.GetFiles(PersonasDir, "*.json").Select(Path.GetFileNameWithoutExtension)
+                        .Where(n => !n.StartsWith("_")).OrderBy(n => n, StringComparer.Ordinal).ToList()
+                    : new List<string>();
+                aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不存在");
+                aR.AppendLine($"- 可選（{aNames.Count}）: {string.Join(", ", aNames)}");
+                aR.AppendLine("- exits: 開新 persona 走後台「🧬 Persona & Agent 管理頁」（不從 ritual 開後門）");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+
+            var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aRaw); aP.name = iPersona;
+
+            // ② 顯示歸屬 agent / 實際承載 agent 分離（display agent 決定 bank 與對外身分）
+            string aAgent = NormalizeAgent(aMeta, aP.agent ?? "");
+            if (string.IsNullOrEmpty(aAgent))
+            {
+                aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 沒有綁定 agent，無法反推");
+                aR.AppendLine("- exits: 後台「🧬 Persona & Agent 管理頁」補上 agent 歸屬");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            string aActualRaw = !string.IsNullOrEmpty(iActualAgentArg) ? iActualAgentArg
+                : (!string.IsNullOrEmpty(aP.actual_agent) ? aP.actual_agent : aAgent);
+            var (aActual, aActualChanged) = NormalizeActualAgent(aActualRaw);
+            if (string.IsNullOrEmpty(aActual))
+            {
+                aR.AppendLine($"## blocked\n- reason: 無實際承載 agent，無法建立 session lock");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            if (aActualChanged) aR.AppendLine($"ℹ actual agent 正規化：'{aActualRaw}' → {aActual}");
+            string aBank = ResolveBankAccount(aMeta, aAgent);
+            string aSessionKey = $"{aActual}-{iPersona}";
+            aR.AppendLine($"- Persona={iPersona} / Agent={aAgent}（顯示歸屬）/ ActualAgent={aActual} / Bank={aBank}");
+
+            // ③ 唯一的中斷條件：該 persona 目前是否在線（lock 為真相源；過期不豁免，R9）
+            var aLock = ReadLock(iPersona);
+            if (aLock != null)
+            {
+                bool aExpired = false;
+                try
+                {
+                    aExpired = DateTime.TryParse(aLock.expires_at?.Substring(0, Math.Min(19, aLock.expires_at.Length)),
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                        out DateTime aExp) && DateTime.UtcNow > aExp;
+                }
+                catch { }
+                aR.AppendLine($"## blocked");
+                aR.AppendLine($"- reason: ⛔ '{iPersona}' 目前在線 —— 同一個 persona 不得同時登入兩次");
+                aR.AppendLine($"- lock: session_key={aLock.session_key} pid={aLock.pid} locked_at={aLock.locked_at}{(aExpired ? " (已過期 — 不自動豁免，R9)" : "")}");
+                aR.AppendLine("- exits:");
+                aR.AppendLine("  - 讓它先下線：後台「登入狀態」頁登出，或該 session 跑 goodnight，再重跑本步");
+                aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ step=brief 或 awakening.py brief（純本機，不動 lock）");
+                aR.AppendLine("  - lock 在但 token 丟了 → awakening.py reissue-token --persona " + iPersona);
+                aR.AppendLine("  - 晚安後想續線 → awakening.py relogin --persona " + iPersona);
+                aR.AppendLine("- ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            if (aP.status == "online")
+                aR.AppendLine($"🔧 '{iPersona}' registry status=online 但查無 lock（上次下線沒走完）—— 以 lock 為準視為離線，繼續喚醒。");
+
+            // ③' 收尾信版面遷移 pending → blocked（遷移屬維護功能留 Python，R18/§8.9 P2 卡點②）
+            if (LettersMigrationPending(iPersona))
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine("- reason: 收尾信版面尚未遷移（頂層有未複製進 wakes/ 的收尾信）——此時推導 wake_count 會算錯歲數");
+                aR.AppendLine("- exits: 後台「🗄 維護」區跑 migration（試跑→執行），或 python awakening.py migrate-letters --all --apply");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+
+            // ④ wake_count 推導（真相源 = wakes/ 信件數；delta 四分支語意 port 自 cmd_morning）
+            int aLetters = WakeLetterCount(iPersona);
+            int aDerived = aLetters + 1;
+            int aCached = aP.wake_count;
+            int aDelta = aDerived - aCached;
+            if (aDelta == 1) { /* 正常：上次走完晚安 → 今天編號本來就大 1，不吵 */ }
+            else if (aDelta == 0)
+                aR.AppendLine($"⚠ wake_count 快取={aCached} 與本次編號={aDerived} 相同 —— 兩種可能：上一次醒來沒留收尾信（本次沿用 #{aDerived}），或本次早安已跑過一次。要判哪一種：看 wakes/ 最新那封的日期。");
+            else if (aDelta > 1)
+                aR.AppendLine($"🔧 wake_count 快取={aCached} 落後磁碟推導={aDerived} 共 {aDelta - 1} 筆 —— registry 同步漏拍，採磁碟值。");
+            else
+                aR.AppendLine($"🔧 wake_count 快取={aCached} **大於**磁碟推導={aDerived} —— 收尾信遺失，或別條世界線的帳被算進這條。採磁碟值，但這筆值得人工看一眼。");
+
+            var aRb = RebaseBookmark(iPersona, aRaw);
+            if (aRb != null)
+                aR.AppendLine($"🔧 見林書籤 last_consolidated_wake {aRb.Value.oldVal} → {aRb.Value.newVal}（換算到 wakes/ 編號；不換算 gap 會變負數，濃縮提醒靜默失效）");
+
+            // ⑤ registry patch-write（只改 owned 欄；identity_vector 等未建模欄原樣保留）
+            string aModel = aRaw.GetString("model", "");
+            if (!string.IsNullOrEmpty(iModelArg) && aModel != iModelArg) { aRaw["model"] = iModelArg; aModel = iModelArg; }
+            aRaw["actual_agent"] = aActual;
+            aRaw["wake_count"] = aDerived;
+            aRaw["status"] = "online";
+            aRaw["availability"] = "idle";
+            aRaw["last_active"] = NowIso();
+            AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
+
+            // ⑥ token（同 persona 舊 active 標 expired，audit trail 保留）+ lock + memo
+            string aToken = Guid.NewGuid().ToString("N");
+            string aClaimOrigin = $"cmd-goodmorning:{(string.IsNullOrEmpty(iEnvMarker) ? "editor" : iEnvMarker)}";
+            string aTokensPath = Path.Combine(SessionDir, "_tokens.json");
+            JsonData aTokens = File.Exists(aTokensPath) ? JsonData.ParseJson(File.ReadAllText(aTokensPath)) : new JsonData();
+            if (aTokens == null || !aTokens.IsObject) aTokens = new JsonData();
+            if (!aTokens.Contains("tokens")) aTokens["tokens"] = new JsonData();
+            var aTokDic = aTokens["tokens"];
+            if (aTokDic.IsObject && aTokDic.Dic != null)
+            {
+                foreach (var aKey in aTokDic.Dic.Keys.ToList())
+                {
+                    var aRec = aTokDic[aKey];
+                    if (aRec.GetString("persona", "") == iPersona && aRec.GetString("status", "") == "active")
+                    {
+                        aRec["status"] = "expired";
+                        aRec["expired_at"] = NowIso();
+                        aRec["expired_reason"] = "reissued";
+                    }
+                }
+            }
+            var aNewRec = new JsonData();
+            aNewRec["persona"] = iPersona;
+            aNewRec["agent"] = aAgent;
+            aNewRec["bank_account"] = aBank;
+            aNewRec["issued_at"] = NowIso();
+            aNewRec["claim_origin"] = aClaimOrigin;
+            aNewRec["session_key"] = aSessionKey;
+            aNewRec["status"] = "active";
+            aTokDic[aToken] = aNewRec;
+            AtomicWrite(aTokensPath, aTokens.ToJsonBeautify());
+
+            var aLockJson = new JsonData();
+            aLockJson["persona"] = iPersona;
+            aLockJson["agent"] = aAgent;
+            aLockJson["actual_agent"] = aActual;
+            aLockJson["model"] = aModel;
+            aLockJson["bank_account"] = aBank;
+            aLockJson["locked_at"] = NowIso();
+            aLockJson["expires_at"] = DateTime.UtcNow.AddHours(SESSION_LOCK_TTL_HOURS).ToString("yyyy-MM-ddTHH:mm:ss.") + "000Z";
+            aLockJson["session_key"] = aSessionKey;
+            aLockJson["claim_origin"] = aClaimOrigin;
+            aLockJson["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id;
+            aLockJson["session_token"] = aToken;
+            AtomicWrite(LockPath(iPersona), aLockJson.ToJsonBeautify());
+
+            string aMemoPath = Path.Combine(MemosDir, aAgent, iPersona, "_session_token.md");
+            string aMemoBody =
+                "---\n" +
+                $"persona: {iPersona}\nagent: {aAgent}\nactual_agent: {aActual}\n" +
+                $"session_token: {aToken}\nissued_at: {NowIso()}\nclaim_origin: {aClaimOrigin}\n" +
+                "---\n\n# Session Token (auto-written by Cmd_GoodMorning step=wake)\n\n" +
+                "## 失憶時怎麼撈回 token\n\n```bash\nawakening.py whoami --token " + aToken + "\n```\n\n" +
+                "## 三層 recovery\n- 輕 (scroll-back 找得到) → whoami --token <X>\n- 中 (compact 後沒了) → 讀本 memo\n" +
+                $"- 重 (memo / lock 都不見) → awakening.py reissue-token --persona {iPersona}\n\n" +
+                $"## Lock file\n`{LockPath(iPersona)}` 內 session_token 欄是權威來源.\n";
+            AtomicWrite(aMemoPath, aMemoBody);
+
+            // 回傳 payload：verify 給可讀回的事實（路徑/值），不給 ✓
+            var aReadback = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            int aGap = 0;
+            int aBookmark = aReadback.GetInt("last_consolidated_wake", 0);
+            if (aBookmark > 0) aGap = aDerived - aBookmark;
+            aR.AppendLine();
+            aR.AppendLine("## identity");
+            aR.AppendLine($"- persona: {iPersona} / wake_count: **{aDerived}** / agent: {aAgent} / actual: {aActual} / bank: {aBank}");
+            aR.AppendLine($"- session_token: {aToken}（enforce 狀態見 UCL_LoginStatusPage；失憶救援 awakening.py whoami --token {aToken}）");
+            aR.AppendLine("## verify（讀回的事實，不是 ✓）");
+            aR.AppendLine($"- registry: `{aPersonaPath}` → wake_count={aReadback.GetInt("wake_count", -1)} status={aReadback.GetString("status", "?")}");
+            aR.AppendLine($"- lock: `{LockPath(iPersona)}`（exists={File.Exists(LockPath(iPersona))}）");
+            aR.AppendLine($"- memo: `{aMemoPath}`（exists={File.Exists(aMemoPath)}）");
+            aR.AppendLine("## state");
+            aR.AppendLine($"- 見林 gap: {aGap}/{CONSOLIDATE_GAP_THRESHOLD}{(aGap >= CONSOLIDATE_GAP_THRESHOLD ? "（**OVERDUE — 排進今日**）" : "")}");
+            aR.AppendLine($"- 見叢 open: {KeysOpenCount(iPersona)} 筆");
+            aR.AppendLine($"- 在線 persona: {string.Join(", ", OnlinePersonas())}");
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. **required** — 生成 brief：run_cmd.py run GoodMorning --arg step=brief --arg persona={iPersona}");
+            aR.AppendLine("   （Editor 未開啟時的備援才是直跑 awakening.py brief）");
+            aR.AppendLine("2. **required** — Read brief（路徑由 step=brief 回傳；接回身分，這步不自動化）");
+            aR.AppendLine($"3. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body（body 親筆，Cmd 只組系統欄位）");
+            if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
+                aR.AppendLine($"4. 見林 OVERDUE → awakening.py consolidate --persona {iPersona}");
+            aRes.ok = true; aRes.report = aR.ToString();
+            return aRes;
+        }
+
+        // ===========================================================
+        // 區塊：step=intro 前置檢查 — brief-before-broadcast 不變式的新形狀（§8.9 P3 卡點②）
+        // 物理意義：拆步之後「brief 落檔先於廣播」不再是同一支函式內的順序，而是 intro 的顯式守衛：
+        //          必須在線（lock 存在）、brief 存在、行數 > 0、mtime 不早於 locked_at。
+        // ===========================================================
+        public static (bool ok, string error, UCL_SessionLockData lockData, string briefPath, int briefLines)
+            PrecheckIntro(string iPersona)
+        {
+            var aLock = ReadLock(iPersona);
+            if (aLock == null)
+                return (false, $"'{iPersona}' 不在線（無 lock）—— intro 前必須先跑 step=wake", null, null, 0);
+            string aBrief = Path.Combine(LettersDir, iPersona, "_wake_brief.md");
+            if (!File.Exists(aBrief))
+                return (false, $"brief 不存在：`{aBrief}` —— 先跑 step=brief（一個沒有記憶的殼不該上線開口）", aLock, null, 0);
+            int aLines;
+            try { aLines = File.ReadAllLines(aBrief).Length; }
+            catch (Exception e) { return (false, $"brief 讀取失敗: {e.Message}", aLock, aBrief, 0); }
+            if (aLines <= 0)
+                return (false, $"brief 是空檔：`{aBrief}`", aLock, aBrief, 0);
+            try
+            {
+                if (DateTime.TryParse(aLock.locked_at?.Substring(0, Math.Min(19, aLock.locked_at.Length)),
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                        out DateTime aLockedAt)
+                    && File.GetLastWriteTimeUtc(aBrief) < aLockedAt.AddSeconds(-1))
+                    return (false, $"brief 比本次 lock 舊（brief mtime < locked_at）—— 是上一次醒來的殘留，先跑 step=brief 重生成", aLock, aBrief, aLines);
+            }
+            catch { /* 時間解析失敗不擋 —— 檔案存在且非空已是主要防線 */ }
+            return (true, null, aLock, aBrief, aLines);
+        }
+
+        /// <summary>上線自介的系統欄位段 — port 自 awakening.build_wake_intro_body（餘額走 UCL_TreasuryLedger）。</summary>
+        public static string BuildIntroHeader(string iPersona, string iAgent, string iModel, string iBank,
+                                              int iWakeCount, string iLayerRole)
+        {
+            int aBalance = 0;
+            try { aBalance = Treasury.UCL_TreasuryLedger.GetBalance(iBank); }
+            catch (Exception e) { UnityEngine.Debug.LogWarning($"[AwakeningService] 餘額查詢失敗: {e.Message}"); }
+            return $"☀️ **{iPersona}** 喚醒登入 (wake#{iWakeCount})\n" +
+                   $"- Agent: {iAgent} / Model: {iModel}\n" +
+                   $"- Bank: {iBank} (餘額: {aBalance} tavern_token)\n" +
+                   $"- Layer: {iLayerRole}\n" +
+                   $"- Decision path: preferred";
+        }
+
         /// <summary>brief 檔內容摘要（QA 欄位/格式用）：frontmatter 全文＋各段標題行。</summary>
         public static string SummarizeBrief(string iBriefPath, int iMaxLines = 80)
         {

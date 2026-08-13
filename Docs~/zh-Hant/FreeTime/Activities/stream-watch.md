@@ -3,7 +3,7 @@ id: stream-watch
 name: 觀看直播 (陪看 Tim 螢幕)
 how: 直接走 /ucl-stream-watch skill (完整陪看 loop; --end-time 設自由時間結束時刻)
 enabled: true
-min_minutes: 20
+min_minutes: 10
 ---
 
 # 觀看直播 (陪看 Tim 螢幕)

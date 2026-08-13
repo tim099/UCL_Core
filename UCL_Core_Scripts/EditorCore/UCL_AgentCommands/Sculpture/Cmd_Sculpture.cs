@@ -41,7 +41,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             "op=box|carve|view|stats (必填) | persona=<name> — box/carve 必填 | " +
             "x1..z2=<0-255> — box/carve 必填（AABB 兩角） | color=<0-255> — box 選填(預設 19) | " +
             "pay=auto|freetime|voucher|token — 選填(預設 auto：免費像素→券→token) | " +
-            "region=<x1..x2,y1..y2,z1..z2> / exclude_color=<c,c,..> / exhibit=<展品ID> / light_dir=<x,y,z> / ambient=<0-1> — view 選填 | " +
+            "region=<x1..x2,y1..y2,z1..z2> / exclude_color=<c,c,..> / exhibit=<展品ID> / light_dir=<x,y,z> / ambient=<0-1> / zoom=<倍率;省略=自動縮放> — view 選填 | " +
             "費率：⌈實際落地數/100⌉，禁覆蓋 skip 不收費；回傳落檔 letters/<persona>/_sculpture_<op>.md";
 
         public override string ExampleArgs => "op=stats";
@@ -195,6 +195,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 string aExhibit = GetArg(iArgs, "exhibit", "");
                 string aLightDir = GetArg(iArgs, "light_dir", "");
                 string aAmbient = GetArg(iArgs, "ambient", "");
+                string aZoom = GetArg(iArgs, "zoom", "");
                 // ⚠ 一律用 `--opt=value` 等號形式：light-dir 的值以 '-' 開頭（如 -1,-1,-2），
                 //   空格分隔會被 argparse 當旗標吃掉（Tim 2026-08-13 後台實測 exit=2 血證）
                 if (!string.IsNullOrEmpty(aRegion)) aCli += $" --region=\"{aRegion}\"";
@@ -202,6 +203,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 if (!string.IsNullOrEmpty(aExhibit)) aCli += $" --exhibit=\"{aExhibit}\"";
                 if (!string.IsNullOrEmpty(aLightDir)) aCli += $" --light-dir=\"{aLightDir}\"";
                 if (!string.IsNullOrEmpty(aAmbient)) aCli += $" --ambient={aAmbient}";
+                if (!string.IsNullOrEmpty(aZoom)) aCli += $" --zoom={aZoom}";
             }
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aCli, UCL_RepoPath.RepoRoot,
                 PROC_TAG, nameof(Cmd_Sculpture), ENGINE_TIMEOUT_MS);

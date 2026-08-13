@@ -339,6 +339,7 @@ def cmd_exhibit(args):
             "ambient": args.ambient if args.ambient is not None else 0.4,
             "smooth": bool(args.smooth),
             "shadow": bool(getattr(args, "shadow", False)),
+            "zoom": getattr(args, "zoom", None),
             "created_at": datetime.now().isoformat()
         }
         fpath = save_exhibit(ex_id, preset)
@@ -366,6 +367,7 @@ def render_exhibit_photo(preset):
     ambient_val = preset.get("ambient", 0.4)
     smooth_mode = preset.get("smooth", True)
     shadow_mode = bool(preset.get("shadow", False))
+    zoom_val = preset.get("zoom")
 
     try:
         light_vec = [float(v) for v in light_dir_str.split(",")]
@@ -416,7 +418,9 @@ def render_exhibit_photo(preset):
 
     visible_points.sort(key=lambda item: item[0])
 
-    # 自動置中 (2026-08-13): 依可見 voxel 的等角投影包圍盒平移 origin — 作品在空間任何角落都拍得到
+    # 自動置中＋自動縮放 (2026-08-13; --zoom 可覆寫): 依投影包圍盒縮放置中 —
+    # 固定縮放時大場景會爆出畫布 (Tim 實測), 自動模式「只縮不放大」把整個場景收進畫面;
+    # --zoom 給定時用指定倍率 (1.0 = 原始 24px/voxel, <1 縮小, >1 放大特寫)。
     if visible_points:
         iso_xs = []
         iso_ys = []
@@ -425,8 +429,17 @@ def render_exhibit_photo(preset):
             iso_ys.append((x + y) * H_half - z * Z_step)
         min_x, max_x = min(iso_xs) - W_half, max(iso_xs) + W_half
         min_y, max_y = min(iso_ys) - H_half, max(iso_ys) + H_half + Z_step
-        origin_x = img_w // 2 - (min_x + max_x) // 2
-        origin_y = img_h // 2 - (min_y + max_y) // 2
+        if zoom_val and zoom_val > 0:
+            s = float(zoom_val)
+        else:
+            ext_x = max(1.0, max_x - min_x)
+            ext_y = max(1.0, max_y - min_y)
+            s = min(1.0, (img_w * 0.92) / ext_x, (img_h * 0.92) / ext_y)
+        W_half *= s
+        H_half *= s
+        Z_step *= s
+        origin_x = img_w // 2 - (min_x + max_x) * s / 2
+        origin_y = img_h // 2 - (min_y + max_y) * s / 2
 
     for _, x, y, z, color_idx in visible_points:
         cx = origin_x + (x - y) * W_half
@@ -539,6 +552,7 @@ def cmd_view(args):
     ambient_val = args.ambient if args.ambient is not None else 0.4
     smooth_mode = args.smooth
     shadow_mode = bool(getattr(args, 'shadow', False))
+    zoom_val = getattr(args, 'zoom', None)
 
     # If --exhibit <id> is specified, auto-load its Preset!
     if args.exhibit:
@@ -553,6 +567,8 @@ def cmd_view(args):
                 smooth_mode = preset["smooth"]
             if "shadow" in preset and not shadow_mode:
                 shadow_mode = bool(preset["shadow"])
+            if preset.get("zoom") and not zoom_val:
+                zoom_val = preset["zoom"]
             print(f"🏛️ 正在一鍵載入展品 [{args.exhibit}] 《{preset['title']}》 觀測與打光 Preset (創作者: {preset['author']})...")
 
     # Parse light dir
@@ -610,7 +626,9 @@ def cmd_view(args):
 
     visible_points.sort(key=lambda item: item[0])
 
-    # 自動置中 (2026-08-13): 依可見 voxel 的等角投影包圍盒平移 origin — 作品在空間任何角落都拍得到
+    # 自動置中＋自動縮放 (2026-08-13; --zoom 可覆寫): 依投影包圍盒縮放置中 —
+    # 固定縮放時大場景會爆出畫布 (Tim 實測), 自動模式「只縮不放大」把整個場景收進畫面;
+    # --zoom 給定時用指定倍率 (1.0 = 原始 24px/voxel, <1 縮小, >1 放大特寫)。
     if visible_points:
         iso_xs = []
         iso_ys = []
@@ -619,8 +637,17 @@ def cmd_view(args):
             iso_ys.append((x + y) * H_half - z * Z_step)
         min_x, max_x = min(iso_xs) - W_half, max(iso_xs) + W_half
         min_y, max_y = min(iso_ys) - H_half, max(iso_ys) + H_half + Z_step
-        origin_x = img_w // 2 - (min_x + max_x) // 2
-        origin_y = img_h // 2 - (min_y + max_y) // 2
+        if zoom_val and zoom_val > 0:
+            s = float(zoom_val)
+        else:
+            ext_x = max(1.0, max_x - min_x)
+            ext_y = max(1.0, max_y - min_y)
+            s = min(1.0, (img_w * 0.92) / ext_x, (img_h * 0.92) / ext_y)
+        W_half *= s
+        H_half *= s
+        Z_step *= s
+        origin_x = img_w // 2 - (min_x + max_x) * s / 2
+        origin_y = img_h // 2 - (min_y + max_y) * s / 2
 
     for _, x, y, z, color_idx in visible_points:
         # Exact Center of Top Face Rhombus
@@ -866,6 +893,7 @@ def main():
     p_view.add_argument("--ambient", type=float, default=0.4, help="環境光強度 (0.0~1.0)")
     p_view.add_argument("--smooth", action="store_true", help="開啟平滑表面模式 (自動消除相鄰同平面內部網格線)")
     p_view.add_argument("--shadow", action="store_true", help="開啟 cast shadow (被其他 voxel 擋光的面變暗 — 解正交圖深度歧義)")
+    p_view.add_argument("--zoom", type=float, default=None, help="觀測距離/縮放倍率 (1.0=原始 24px/voxel; 省略=自動縮放收進畫布)")
     p_view.add_argument("--exhibit", help="一鍵載入指定展品 ID 的觀看與打光 Preset")
     p_view.set_defaults(func=cmd_view)
 
@@ -880,6 +908,7 @@ def main():
     p_ex_reg.add_argument("--desc", help="展品理念介紹")
     p_ex_reg.add_argument("--region", help="最佳觀測空間裁剪")
     p_ex_reg.add_argument("--shadow", action="store_true", help="展品照與導覽預設開陰影")
+    p_ex_reg.add_argument("--zoom", type=float, default=None, help="展品預設觀測縮放 (省略=自動)")
     p_ex_reg.add_argument("--exclude-color", help="排除顏色")
     p_ex_reg.add_argument("--bg-color", help="背景顏色")
     p_ex_reg.add_argument("--skybox", help="Skybox 貼圖路徑")

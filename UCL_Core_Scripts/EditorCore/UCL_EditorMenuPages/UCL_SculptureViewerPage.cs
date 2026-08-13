@@ -57,6 +57,7 @@ namespace UCL.Core.EditorLib.Page
         float m_LightAzimuth = 225f;     // 方位角（度）— 預設對應 -1,-1 方向
         float m_LightElevation = 55f;    // 仰角（度）— 越大光越從頭頂打
         bool m_Shadow;                   // cast shadow 開關（Tim 2026-08-13 拍板可開關，預設關）
+        string m_Zoom = "";              // 觀測距離倍率（空=引擎自動縮放收進畫布）
         int m_SelectedExhibit;           // 下拉選單當前展品 index（對齊 m_Exhibits 排序）
         readonly List<string> m_ExhibitOptions = new List<string>();   // 下拉顯示字串（「title (id)」）
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();   // PopupAuto 搜尋 state
@@ -151,6 +152,7 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 m_Ambient = DrawField("ambient (0.0~1.0)", m_Ambient);
+                m_Zoom = DrawField("zoom（觀測距離倍率；空=自動縮放收進畫布，1.0=原始 24px/voxel）", m_Zoom);
                 m_Shadow = GUILayout.Toggle(m_Shadow, " ☁ 陰影（cast shadow — 解正交圖深度歧義）", UCL_GUIStyle.LabelStyle);
                 if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderManual"),
                         UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.Width(UCL_GUIStyle.GetScaledSize(200))))
@@ -162,6 +164,7 @@ namespace UCL.Core.EditorLib.Page
                     //   必須用 `--opt=value` 等號形式（Tim 2026-08-13 實測 exit=2 血證）
                     if (!string.IsNullOrEmpty(m_LightDir)) aArgs += $" --light-dir=\"{m_LightDir}\"";
                     if (!string.IsNullOrEmpty(m_Ambient)) aArgs += $" --ambient={m_Ambient}";
+                    if (!string.IsNullOrEmpty(m_Zoom)) aArgs += $" --zoom={m_Zoom}";
                     if (m_Shadow) aArgs += " --shadow";
                     Render(aArgs);
                 }

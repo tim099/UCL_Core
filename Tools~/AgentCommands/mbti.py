@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-MBTI Personality Assessment CLI & Web App Generator
-UCL_Core AgentCommands Package - Dynamic Expandable Question Bank & Letter Archiving Edition
+MBTI 2.0 Personality & 8 Cognitive Functions Assessment CLI
+UCL_Core AgentCommands Package
+Support Likert 1-5 Scale, -A/-T Subtypes, and 8 Cognitive Functions (Ni, Ne, Si, Se, Ti, Te, Fi, Fe)
 """
 
 import os
@@ -24,7 +25,44 @@ def get_mbti_base_dir():
     return d
 
 def get_questions_path():
-    return get_mbti_base_dir() / "questions.json"
+    return get_mbti_base_dir() / "questions_v2.json"
+
+# 2.0 Advanced Question Bank with 8 Cognitive Functions & -A/-T Dimension
+DEFAULT_QUESTIONS_V2 = [
+    # --- EI Dimension ---
+    {"id": 1, "dim": "EI", "func": "Fe", "prompt": "在團體社交場合中，我習慣主動帶動氣氛並關注大家的情緒需求。", "weightA": "E", "weightB": "I"},
+    {"id": 2, "dim": "EI", "func": "Se", "prompt": "經歷長時間的社交互動後，比起繼續狂歡，我更需要獨處時間來恢復能量。", "weightA": "I", "weightB": "E"},
+    {"id": 3, "dim": "EI", "func": "Ne", "prompt": "我喜歡邊對話邊激發點子，在與人的思想碰撞中梳理想法。", "weightA": "E", "weightB": "I"},
+    {"id": 4, "dim": "EI", "func": "Si", "prompt": "週末或空閒時，我更傾向享受安靜獨處、專注個人興趣或沉澱休息。", "weightA": "I", "weightB": "E"},
+    {"id": 5, "dim": "EI", "func": "Fe", "prompt": "我傾向於擁有廣泛的社交網絡與多圈子的朋友。", "weightA": "E", "weightB": "I"},
+
+    # --- SN Dimension ---
+    {"id": 6, "dim": "SN", "func": "Ni", "prompt": "在面對複雜事物時，我擅長捕捉隱含的概念、未來的趨勢與背後深層的規律。", "weightA": "N", "weightB": "S"},
+    {"id": 7, "dim": "SN", "func": "Si", "prompt": "在處理任務時，我高度重視過往經驗、具體數據事實與確切細節。", "weightA": "S", "weightB": "N"},
+    {"id": 8, "dim": "SN", "func": "Ne", "prompt": "對於抽象的哲學理論、前沿概念與無限的可能性，我會感到無比興奮。", "weightA": "N", "weightB": "S"},
+    {"id": 9, "dim": "SN", "func": "Se", "prompt": "比起空想與抽象推演，我更看重眼前當下的實用性與可操作步驟。", "weightA": "S", "weightB": "N"},
+    {"id": 10, "dim": "SN", "func": "Ni", "prompt": "看書或看電影時，我更被故事背後的世界觀與象徵隱喻所吸引。", "weightA": "N", "weightB": "S"},
+
+    # --- TF Dimension ---
+    {"id": 11, "dim": "TF", "func": "Te", "prompt": "做出重大決策時，我會完全置個人情感於度外，純粹依據客觀數據與邏輯自洽。", "weightA": "T", "weightB": "F"},
+    {"id": 12, "dim": "TF", "func": "Fi", "prompt": "當朋友傾訴遭遇時，我的首要反應是給予深刻的情感共鳴與價值關懷。", "weightA": "F", "weightB": "T"},
+    {"id": 13, "dim": "TF", "func": "Ti", "prompt": "對於不符合邏輯自洽、內部定義模糊的主張，我會非常敏感並強烈質疑。", "weightA": "T", "weightB": "F"},
+    {"id": 14, "dim": "TF", "func": "Fe", "prompt": "在團隊中，維持群體和諧與兼顧每個人的感受，比硬拼邏輯對錯更為重要。", "weightA": "F", "weightB": "T"},
+    {"id": 15, "dim": "TF", "func": "Te", "prompt": "我極度看重效率、指標與驗證結果，認為結果才是不不可忽視的本體。", "weightA": "T", "weightB": "F"},
+
+    # --- JP Dimension ---
+    {"id": 16, "dim": "JP", "func": "Te", "prompt": "我習慣預先制定詳盡的時程排程，並嚴格按部就班推進落地。", "weightA": "J", "weightB": "P"},
+    {"id": 17, "dim": "JP", "func": "Ne", "prompt": "我喜歡保持日程與方案的彈性，過於僵硬固定反而讓我感到受限束縛。", "weightA": "P", "weightB": "J"},
+    {"id": 18, "dim": "JP", "func": "Si", "prompt": "事物有條不紊、分類明確並快速歸檔落盤，能給我巨大的安全感。", "weightA": "J", "weightB": "P"},
+    {"id": 19, "dim": "JP", "func": "Se", "prompt": "面對突發狀況與最後一刻的期限，我更能激發出靈感與極速應變能力。", "weightA": "P", "weightB": "J"},
+    {"id": 20, "dim": "JP", "func": "Te", "prompt": "對我來說，事情越早明確定案 (Closure) 越好，不喜歡懸而未決的狀態。", "weightA": "J", "weightB": "P"},
+
+    # --- AT Dimension (Identity: Assertive -A vs Turbulent -T) ---
+    {"id": 21, "dim": "AT", "func": "Fi", "prompt": "發生失誤或面對批評時，我會長時間反覆深入自省並追求完美改進。", "weightA": "T_sub", "weightB": "A_sub"},
+    {"id": 22, "dim": "AT", "func": "Te", "prompt": "我對自己的決定與能力充滿自信，面對壓力能保持平靜不易產生焦慮過載。", "weightA": "A_sub", "weightB": "T_sub"},
+    {"id": 23, "dim": "AT", "func": "Ti", "prompt": "我常對自己的產出與細節感到不夠完美，並自我要求設立更高的標準防線。", "weightA": "T_sub", "weightB": "A_sub"},
+    {"id": 24, "dim": "AT", "func": "Se", "prompt": "遇到挫折時，我能迅速釋懷並冷靜將注意力轉向未來的下一個目標。", "weightA": "A_sub", "weightB": "T_sub"}
+]
 
 def load_questions():
     path = get_questions_path()
@@ -32,9 +70,11 @@ def load_questions():
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
-            print(f"⚠️ 讀取題庫失敗 ({e})，使用備用預設題目。")
-    return []
+        except Exception:
+            pass
+    # save default v2
+    save_questions(DEFAULT_QUESTIONS_V2)
+    return DEFAULT_QUESTIONS_V2
 
 def save_questions(questions):
     path = get_questions_path()
@@ -60,56 +100,79 @@ TYPES_INFO = {
     "ESFP": {"title": "表演者 (Entertainer)", "desc": "自發、精力充沛且熱情的表演者，周遭生活絕不枯燥。"}
 }
 
-def calculate_mbti(answers):
+def eval_likert(scores_list):
+    """
+    scores_list: list of ints (1 to 5) for each question in load_questions()
+    1 = Strongly Disagree, 3 = Neutral, 5 = Strongly Agree
+    Returns continuous percentage calculation & 8 cognitive functions profile
+    """
     questions = load_questions()
-    if isinstance(answers, list):
-        answers = {i+1: val for i, val in enumerate(answers)}
+    dim_sums = {"E": 0, "I": 0, "S": 0, "N": 0, "T": 0, "F": 0, "J": 0, "P": 0, "A_sub": 0, "T_sub": 0}
+    dim_max = {"E": 0, "I": 0, "S": 0, "N": 0, "T": 0, "F": 0, "J": 0, "P": 0, "A_sub": 0, "T_sub": 0}
     
-    scores = {"E": 0, "I": 0, "S": 0, "N": 0, "T": 0, "F": 0, "J": 0, "P": 0}
-    dim_counts = {"EI": 0, "SN": 0, "TF": 0, "JP": 0}
-    
-    for q in questions:
-        qid = q["id"]
-        dim = q["dim"]
-        ans = answers.get(qid, "").upper()
-        if ans == "A":
-            val = q["optionA"]["val"]
-            scores[val] += 1
-            dim_counts[dim] += 1
-        elif ans == "B":
-            val = q["optionB"]["val"]
-            scores[val] += 1
-            dim_counts[dim] += 1
-            
-    ei = "E" if scores["E"] >= scores["I"] else "I"
-    sn = "S" if scores["S"] >= scores["N"] else "N"
-    tf = "T" if scores["T"] >= scores["F"] else "F"
-    jp = "J" if scores["J"] >= scores["P"] else "P"
-    
-    mbti_type = f"{ei}{sn}{tf}{jp}"
-    
-    def calc_ratio(part, total):
-        return int((part / total * 100)) if total > 0 else 50
+    cog_functions = {"Ni": 0, "Ne": 0, "Si": 0, "Se": 0, "Ti": 0, "Te": 0, "Fi": 0, "Fe": 0}
+    cog_max = {"Ni": 0, "Ne": 0, "Si": 0, "Se": 0, "Ti": 0, "Te": 0, "Fi": 0, "Fe": 0}
 
-    breakdown = {
-        "EI": {"E": scores["E"], "I": scores["I"], "ratioE": calc_ratio(scores["E"], dim_counts["EI"])},
-        "SN": {"S": scores["S"], "N": scores["N"], "ratioS": calc_ratio(scores["S"], dim_counts["SN"])},
-        "TF": {"T": scores["T"], "F": scores["F"], "ratioT": calc_ratio(scores["T"], dim_counts["TF"])},
-        "JP": {"J": scores["J"], "P": scores["P"], "ratioJ": calc_ratio(scores["J"], dim_counts["JP"])}
-    }
-    
-    info = TYPES_INFO.get(mbti_type, {"title": mbti_type, "desc": ""})
-    
+    for idx, q in enumerate(questions):
+        val = scores_list[idx] if idx < len(scores_list) else 3
+        # Likert 1-5 to score points: (val - 1) is 0..4
+        wA = q["weightA"]
+        wB = q["weightB"]
+        func = q.get("func")
+
+        # Option A weight gets (val - 1), Option B weight gets (5 - val)
+        scoreA = val - 1
+        scoreB = 5 - val
+
+        dim_sums[wA] += scoreA
+        dim_sums[wB] += scoreB
+        dim_max[wA] += 4
+        dim_max[wB] += 4
+
+        if func in cog_functions:
+            cog_functions[func] += scoreA
+            cog_max[func] += 4
+
+    # Calculate ratios
+    def calc_pct(vA, vB):
+        tot = vA + vB
+        return int((vA / tot) * 100) if tot > 0 else 50
+
+    pctE = calc_pct(dim_sums["E"], dim_sums["I"])
+    pctS = calc_pct(dim_sums["S"], dim_sums["N"])
+    pctT = calc_pct(dim_sums["T"], dim_sums["F"])
+    pctJ = calc_pct(dim_sums["J"], dim_sums["P"])
+    pctA = calc_pct(dim_sums["A_sub"], dim_sums["T_sub"])
+
+    mbti_base = f"{'E' if pctE>=50 else 'I'}{'S' if pctS>=50 else 'N'}{'T' if pctT>=50 else 'F'}{'J' if pctJ>=50 else 'P'}"
+    subtype = "-A (堅定型)" if pctA >= 50 else "-T (謹慎自省型)"
+    full_type = f"{mbti_base}{'-A' if pctA>=50 else '-T'}"
+
+    # Cognitive Functions Percentage
+    cog_pct = {}
+    for fn, val in cog_functions.items():
+        mx = cog_max[fn]
+        cog_pct[fn] = int((val / mx) * 100) if mx > 0 else 50
+
+    info = TYPES_INFO.get(mbti_base, {"title": mbti_base, "desc": ""})
+
     return {
-        "type": mbti_type,
-        "title": info["title"],
+        "type": full_type,
+        "base_type": mbti_base,
+        "title": f"{info['title']} [{subtype}]",
         "description": info["desc"],
-        "scores": scores,
-        "breakdown": breakdown
+        "percentages": {
+            "E": pctE, "I": 100 - pctE,
+            "S": pctS, "N": 100 - pctS,
+            "T": pctT, "F": 100 - pctT,
+            "J": pctJ, "P": 100 - pctJ,
+            "A": pctA, "T_sub": 100 - pctA
+        },
+        "cognitive_functions": cog_pct
     }
 
 def get_records_path():
-    return get_mbti_base_dir() / "mbti_records.json"
+    return get_mbti_base_dir() / "mbti_records_v2.json"
 
 def load_records():
     path = get_records_path()
@@ -150,45 +213,60 @@ def save_to_letter(persona, result, answers_str):
     today_str = now.strftime("%Y%m%d")
     date_iso = now.strftime("%Y-%m-%dT%H:%M:%S+08:00")
     
-    mbti_type = result["type"]
-    filename = f"{today_str}-w{wake_count}-{mbti_type}.md"
+    full_type = result["type"]
+    filename = f"{today_str}-w{wake_count}-{full_type}.md"
     
     letter_dir = get_repo_root() / "AgentCommands" / "ChatTavern" / "baton" / "letters" / persona / "mbti"
     letter_dir.mkdir(parents=True, exist_ok=True)
     file_path = letter_dir / filename
     
-    bd = result["breakdown"]
+    pct = result["percentages"]
+    cog = result["cognitive_functions"]
     
     content = f"""---
-type: mbti_record
+type: mbti_record_v2
 persona: {persona}
 wake_count: {wake_count}
-mbti_type: {mbti_type}
+mbti_type: {full_type}
 tested_at: {date_iso}
 ---
 
-# 🧠 MBTI 性格潛能測驗紀錄 — {persona} (wake #{wake_count})
+# 🧠 MBTI 2.0 性格與認知功能深度測驗 — {persona} (wake #{wake_count})
 
 > **測驗時間**：`{date_iso}`  
-> **測驗結果**：**{mbti_type}** — {result['title']}  
+> **測驗結果**：**{full_type}** — {result['title']}  
 
 ## 📝 性格描述
 
 {result['description']}
 
-## 📊 四維度傾向百分比
+## 📊 五維度連續傾向百分比 (Likert Scale)
 
-- **[E/I] 外向 vs 內向**：外向 `{bd['EI']['E']}` vs 內向 `{bd['EI']['I']}`  (E: `{bd['EI']['ratioE']}%` / I: `{100-bd['EI']['ratioE']}%`)
-- **[S/N] 實感 vs 直覺**：實感 `{bd['SN']['S']}` vs 直覺 `{bd['SN']['N']}`  (S: `{bd['SN']['ratioS']}%` / N: `{100-bd['SN']['ratioS']}%`)
-- **[T/F] 思考 vs 情感**：思考 `{bd['TF']['T']}` vs 情感 `{bd['TF']['F']}`  (T: `{bd['TF']['ratioT']}%` / F: `{100-bd['TF']['ratioT']}%`)
-- **[J/P] 判斷 vs 感知**：判斷 `{bd['JP']['J']}` vs 感知 `{bd['JP']['P']}`  (J: `{bd['JP']['ratioJ']}%` / P: `{100-bd['JP']['ratioJ']}%`)
+- **[E/I] 外向 vs 內向**：E `{pct['E']}%` / I `{pct['I']}%`
+- **[S/N] 實感 vs 直覺**：S `{pct['S']}%` / N `{pct['N']}%`
+- **[T/F] 思考 vs 情感**：T `{pct['T']}%` / F `{pct['F']}%`
+- **[J/P] 判斷 vs 感知**：J `{pct['J']}%` / P `{pct['P']}%`
+- **[-A/-T] 堅定 vs 謹慎**：-A `{pct['A']}%` / -T `{pct['T_sub']}%`
 
-## 🔑 答題序列
+## 🕸️ 8 大認知功能能量指標 (Cognitive Functions)
+
+| 功能標籤 | 功能名稱 | 能量強弱百分比 |
+|---|---|---|
+| **Ni** | 內向直覺 (洞察與願景) | `{cog['Ni']}%` |
+| **Ne** | 外向直覺 (發散與可能性) | `{cog['Ne']}%` |
+| **Si** | 內向實感 (經驗與慣例) | `{cog['Si']}%` |
+| **Se** | 外向實感 (當下感官體驗) | `{cog['Se']}%` |
+| **Ti** | 內向邏輯 (架構自洽剖析) | `{cog['Ti']}%` |
+| **Te** | 外向邏輯 (效率執行驗證) | `{cog['Te']}%` |
+| **Fi** | 內向情感 (核心價值信念) | `{cog['Fi']}%` |
+| **Fe** | 外向情感 (社群和諧關懷) | `{cog['Fe']}%` |
+
+## 🔑 李克特 1-5 階答題序列
 
 `{answers_str}`
 
 ---
-*由 MBTI 心理測驗系統自動生成存檔於 letters/{persona}/mbti/{filename}*
+*由 MBTI 2.0 心理測驗系統自動生成存檔於 letters/{persona}/mbti/{filename}*
 """
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -197,74 +275,69 @@ tested_at: {date_iso}
 
 def cmd_list(args):
     questions = load_questions()
-    print(f"📋 MBTI 測驗題目清單 (共 {len(questions)} 題):")
+    print(f"📋 MBTI 2.0 測驗題目清單 (共 {len(questions)} 題, 支援 Likert 1-5 打分):")
     print("=" * 60)
     for q in questions:
-        author = q.get("author", "system")
-        print(f"Q{q['id']}. [{q['dim']}] {q['prompt']} (出題: {author})")
-        print(f"    A. {q['optionA']['text']} ({q['optionA']['val']})")
-        print(f"    B. {q['optionB']['text']} ({q['optionB']['val']})")
-        print("-" * 60)
-
-def cmd_add_question(args):
-    questions = load_questions()
-    new_id = max([q["id"] for q in questions] + [0]) + 1
-    new_q = {
-        "id": new_id,
-        "dim": args.dim.upper(),
-        "prompt": args.prompt,
-        "optionA": {"text": args.opt_a, "val": args.val_a.upper()},
-        "optionB": {"text": args.opt_b, "val": args.val_b.upper()},
-        "author": args.author or "anonymous"
-    }
-    questions.append(new_q)
-    save_questions(questions)
-    print(f"✅ 成功新增 MBTI 題目 Q{new_id} [{new_q['dim']}] (出題人: {new_q['author']})")
-    print(f"   題目：{new_q['prompt']}")
-    print(f"   A. {new_q['optionA']['text']} ({new_q['optionA']['val']})")
-    print(f"   B. {new_q['optionB']['text']} ({new_q['optionB']['val']})")
+        print(f"Q{q['id']}. [{q['dim']} · {q.get('func', 'Core')}] {q['prompt']}")
+    print("=" * 60)
 
 def cmd_eval(args):
     questions = load_questions()
-    ans_str = args.answers.replace(" ", "").upper()
-    if len(ans_str) != len(questions) or any(c not in "AB" for c in ans_str):
-        print(f"❌ 錯誤：請提供長度為 {len(questions)} 的 A/B 答案字串")
+    ans_str = args.answers.replace(" ", "")
+    
+    # Support both 1-5 Likert string (e.g., "543215544332211") or old A/B string
+    if len(ans_str) != len(questions):
+        print(f"❌ 錯誤：答案字串長度需與當前總題數 ({len(questions)} 題) 一致！")
+        return 1
+
+    scores_list = []
+    if all(c in "12345" for c in ans_str):
+        scores_list = [int(c) for c in ans_str]
+    elif all(c.upper() in "AB" for c in ans_str):
+        scores_list = [5 if c.upper() == 'A' else 1 for c in ans_str]
+    else:
+        print("❌ 錯誤：答案請使用 1-5 階數字 (例如: 543215432154321543215432) 或 A/B 字符！")
         return 1
         
-    ans_list = list(ans_str)
-    res = calculate_mbti(ans_list)
+    res = eval_likert(scores_list)
     
-    print("\n🎉 MBTI 測驗結果計算完成！")
-    print("=" * 50)
+    print("\n🎉 MBTI 2.0 深度測驗結果計算完成！")
+    print("=" * 60)
     if args.persona:
         print(f"👤 Persona: {args.persona}")
     print(f"✨ 測驗類型: {res['type']} — {res['title']}")
     print(f"📝 人格描述: {res['description']}")
-    print("-" * 50)
-    print("📊 四維度剖析:")
-    bd = res['breakdown']
-    print(f"  • [E/I] 外向 {bd['EI']['E']} vs 內向 {bd['EI']['I']}  (E: {bd['EI']['ratioE']}%)")
-    print(f"  • [S/N] 實感 {bd['SN']['S']} vs 直覺 {bd['SN']['N']}  (S: {bd['SN']['ratioS']}%)")
-    print(f"  • [T/F] 思考 {bd['TF']['T']} vs 情感 {bd['TF']['F']}  (T: {bd['TF']['ratioT']}%)")
-    print(f"  • [J/P] 判斷 {bd['JP']['J']} vs 感知 {bd['JP']['P']}  (J: {bd['JP']['ratioJ']}%)")
-    print("=" * 50)
+    print("-" * 60)
+    print("📊 五維度傾向剖析 (Likert Scale):")
+    pct = res['percentages']
+    print(f"  • [E/I] 外向 {pct['E']}% vs 內向 {pct['I']}%")
+    print(f"  • [S/N] 實感 {pct['S']}% vs 直覺 {pct['N']}%")
+    print(f"  • [T/F] 思考 {pct['T']}% vs 情感 {pct['F']}%")
+    print(f"  • [J/P] 判斷 {pct['J']}% vs 感知 {pct['P']}%")
+    print(f"  • [-A/-T] 堅定 {pct['A']}% vs 謹慎自省 {pct['T_sub']}%")
+    print("-" * 60)
+    print("🕸️ 8 大認知功能能量 (Cognitive Functions):")
+    cog = res['cognitive_functions']
+    print(f"  Ni: {cog['Ni']}% | Ne: {cog['Ne']}% | Si: {cog['Si']}% | Se: {cog['Se']}%")
+    print(f"  Ti: {cog['Ti']}% | Te: {cog['Te']}% | Fi: {cog['Fi']}% | Fe: {cog['Fe']}%")
+    print("=" * 60)
     
     if args.persona:
         save_record(args.persona, res)
-        print(f"💾 已記錄 {args.persona} 的測驗結果至 AgentCommands/MBTI/mbti_records.json")
+        print(f"💾 已記錄 {args.persona} 的 2.0 測驗結果至 AgentCommands/MBTI/mbti_records_v2.json")
         letter_file = save_to_letter(args.persona, res, ans_str)
         print(f"✉️ 已同步存檔至 {args.persona} 個人信箱紀錄：\n   {letter_file}")
 
 def cmd_show(args):
     records = load_records()
     if not records:
-        print("📭 目前尚無任何 MBTI 測驗記錄。")
+        print("📭 目前尚無任何 MBTI 2.0 測驗記錄。")
         return
-    print("\n🏆 全社群 MBTI 測驗榜單:")
+    print("\n🏆 全社群 MBTI 2.0 深度測驗榜單:")
     print("=" * 60)
     for p, rec in records.items():
         res = rec["result"]
-        print(f"• Persona: {p:<12} | MBTI: {res['type']} ({res['title']})")
+        print(f"• Persona: {p:<12} | MBTI: {res['type']:<10} ({res['title']})")
     print("=" * 60)
 
 def main():
@@ -275,27 +348,16 @@ def main():
         except Exception:
             pass
 
-    parser = argparse.ArgumentParser(description="UCL MBTI Personality Assessment Tool")
+    parser = argparse.ArgumentParser(description="UCL MBTI 2.0 Personality & 8 Cognitive Functions CLI")
     subparsers = parser.add_subparsers(dest="command")
 
     # list
     p_list = subparsers.add_parser("list", help="列出測驗題目")
     p_list.set_defaults(func=cmd_list)
 
-    # add-question
-    p_add = subparsers.add_parser("add-question", help="自訂擴充 MBTI 題目")
-    p_add.add_argument("--dim", required=True, choices=["EI", "SN", "TF", "JP"], help="測試維度 (EI/SN/TF/JP)")
-    p_add.add_argument("--prompt", required=True, help="題幹描述")
-    p_add.add_argument("--opt-a", required=True, help="選項 A 文字")
-    p_add.add_argument("--val-a", required=True, choices=["E", "I", "S", "N", "T", "F", "J", "P"], help="選項 A 對應性格標籤")
-    p_add.add_argument("--opt-b", required=True, help="選項 B 文字")
-    p_add.add_argument("--val-b", required=True, choices=["E", "I", "S", "N", "T", "F", "J", "P"], help="選項 B 對應性格標籤")
-    p_add.add_argument("--author", help="出題者 persona 名稱")
-    p_add.set_defaults(func=cmd_add_question)
-
     # eval
-    p_eval = subparsers.add_parser("eval", help="評估答案字串")
-    p_eval.add_argument("--answers", "-a", required=True, help="A/B 答案字串 (長度需與當前總題數一致)")
+    p_eval = subparsers.add_parser("eval", help="評估 1-5 階 Likert 答案字串")
+    p_eval.add_argument("--answers", "-a", required=True, help="1-5 階數字或 A/B 答案字串 (長度 24 題)")
     p_eval.add_argument("--persona", "-p", help="Persona 名稱 (若填寫則自動存檔)")
     p_eval.set_defaults(func=cmd_eval)
 

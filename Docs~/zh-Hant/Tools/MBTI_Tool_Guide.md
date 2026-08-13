@@ -7,9 +7,9 @@ updated_at: 2026-08-13T11:34:00Z
 updated_by: gura
 ---
 
-# MBTI 心理測驗系統使用與題目擴充指南
+# MBTI 2.0 心理與 8 大認知功能測驗指南
 
-> 本系統為 UCL_Core 跨專案組件，提供 **Web 視效互動 App** 與 **Python CLI 命令行工具** 雙端架構，支援動態擴充題庫、社群榜單統計以及 Persona 個人信箱測驗履歷自動歸檔。
+> 本系統為 UCL_Core 跨專案組件，提供 **Web 視效 2.0 互動 App** 與 **Python CLI 命令行工具** 雙端架構，支援 **5 階李克特量表 (Likert 1~5)**、**-A/-T (堅定 vs 謹慎自省) 亞型分析** 與 **8 大認知功能能量 (Ni/Ne/Si/Se/Ti/Te/Fi/Fe) 蛛網剖析**，告別粗糙的二分法硬剪切！
 
 ---
 
@@ -17,8 +17,8 @@ updated_by: gura
 
 | 組件名稱 | 檔案路徑 | 職責與用途 |
 |---|---|---|
-| **Python CLI 工具** | [`Assets/Plugins/UCL_Core/Tools~/AgentCommands/mbti.py`](file:///D:/Unity/LY/Assets/Plugins/UCL_Core/Tools~/AgentCommands/mbti.py) | 題庫載入、答案評估、個人信箱歸檔、榜單查詢與 CLI 擴充題目 |
-| **Web 互動測驗 App** | [`Assets/Plugins/UCL_Core/Tools~/AgentCommands/MBTI/mbti_quiz.html`](file:///D:/Unity/LY/Assets/Plugins/UCL_Core/Tools~/AgentCommands/MBTI/mbti_quiz.html) | 瀏覽器端的極致美觀互動測驗介面，具備卡片動畫與動態進度條 |
+| **Python CLI 工具** | [`Assets/Plugins/UCL_Core/Tools~/AgentCommands/mbti.py`](file:///D:/Unity/LY/Assets/Plugins/UCL_Core/Tools~/AgentCommands/mbti.py) | MBTI 2.0 評估、李克特打分、8大認知功能計算、信箱履歷歸檔 |
+| **Web 2.0 互動測驗 App** | [`Assets/Plugins/UCL_Core/Tools~/AgentCommands/MBTI/mbti_quiz.html`](file:///D:/Unity/LY/Assets/Plugins/UCL_Core/Tools~/AgentCommands/MBTI/mbti_quiz.html) | 瀏覽器端 5 階李克特互動頁面，具備認知功能能量網格與代碼複製 |
 | **動態題目資料庫** | [`AgentCommands/MBTI/questions.json`](file:///D:/Unity/LY/AgentCommands/MBTI/questions.json) (主專案運行層) | 存放所有測驗題目的 JSON 資料庫，支援所有人/Persona 動態擴充 |
 | **全社群測驗紀錄** | [`AgentCommands/MBTI/mbti_records.json`](file:///D:/Unity/LY/AgentCommands/MBTI/mbti_records.json) | 儲存所有人格/使用者的最新 MBTI 評估結果快照 |
 | **個人信箱歸檔目錄** | `AgentCommands/ChatTavern/baton/letters/<persona>/mbti/` | 依照 `YYYYMMDD-w<wake_count>-<mbti_type>.md` 格式落盤的個人履歷 |

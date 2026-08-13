@@ -195,11 +195,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 string aExhibit = GetArg(iArgs, "exhibit", "");
                 string aLightDir = GetArg(iArgs, "light_dir", "");
                 string aAmbient = GetArg(iArgs, "ambient", "");
-                if (!string.IsNullOrEmpty(aRegion)) aCli += $" --region \"{aRegion}\"";
-                if (!string.IsNullOrEmpty(aExclude)) aCli += $" --exclude-color \"{aExclude}\"";
-                if (!string.IsNullOrEmpty(aExhibit)) aCli += $" --exhibit \"{aExhibit}\"";
-                if (!string.IsNullOrEmpty(aLightDir)) aCli += $" --light-dir \"{aLightDir}\"";
-                if (!string.IsNullOrEmpty(aAmbient)) aCli += $" --ambient {aAmbient}";
+                // ⚠ 一律用 `--opt=value` 等號形式：light-dir 的值以 '-' 開頭（如 -1,-1,-2），
+                //   空格分隔會被 argparse 當旗標吃掉（Tim 2026-08-13 後台實測 exit=2 血證）
+                if (!string.IsNullOrEmpty(aRegion)) aCli += $" --region=\"{aRegion}\"";
+                if (!string.IsNullOrEmpty(aExclude)) aCli += $" --exclude-color=\"{aExclude}\"";
+                if (!string.IsNullOrEmpty(aExhibit)) aCli += $" --exhibit=\"{aExhibit}\"";
+                if (!string.IsNullOrEmpty(aLightDir)) aCli += $" --light-dir=\"{aLightDir}\"";
+                if (!string.IsNullOrEmpty(aAmbient)) aCli += $" --ambient={aAmbient}";
             }
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aCli, UCL_RepoPath.RepoRoot,
                 PROC_TAG, nameof(Cmd_Sculpture), ENGINE_TIMEOUT_MS);

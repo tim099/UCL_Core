@@ -54,6 +54,9 @@ namespace UCL.Core.EditorLib.Page
         string m_ExcludeColor = "";
         string m_LightDir = "-1,-1,-2";
         string m_Ambient = "0.35";
+        float m_LightAzimuth = 225f;     // 方位角（度）— 預設對應 -1,-1 方向
+        float m_LightElevation = 55f;    // 仰角（度）— 越大光越從頭頂打
+        bool m_Shadow;                   // cast shadow 開關（Tim 2026-08-13 拍板可開關，預設關）
         string m_LastRenderLog = "";
         Texture2D m_ViewTex;
         DateTime m_ViewTexTime;
@@ -93,7 +96,8 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Button($"🏛 {aEx.Title}", UCL_GUIStyle.GetButtonStyle(Color.cyan),
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(240))))
                     {
-                        Render($" --exhibit \"{aEx.Id}\"");   // preset 由引擎讀 exhibits.json，本頁不重組參數
+                        // preset 由引擎讀展品檔，本頁不重組參數；陰影開關疊加在 preset 上
+                        Render($" --exhibit=\"{aEx.Id}\"{(m_Shadow ? " --shadow" : "")}");
                     }
                     GUILayout.Label($"{aEx.Id}｜by {aEx.Author}｜region {aEx.Region}\n{aEx.Description}", WrapLabelStyle);
                 }
@@ -108,22 +112,56 @@ namespace UCL.Core.EditorLib.Page
                 m_Region = DrawField("region (x1..x2,y1..y2,z1..z2)", m_Region);
                 m_ExcludeColor = DrawField("exclude-color (c,c,..)", m_ExcludeColor);
                 m_LightDir = DrawField("light-dir (x,y,z)", m_LightDir);
+
+                // 打光角度滑桿（Tim 2026-08-13 追加）：方位角/仰角 → 自動組 light-dir 向量
+                // （手填向量與滑桿雙軌 —— 滑桿動了才覆寫文字欄，直接打字的自由保留）
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"☀ 方位角 {m_LightAzimuth:F0}°", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(130)));
+                    float aNewAz = GUILayout.HorizontalSlider(m_LightAzimuth, 0f, 360f,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                    GUILayout.Label($"仰角 {m_LightElevation:F0}°", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    float aNewEl = GUILayout.HorizontalSlider(m_LightElevation, 5f, 85f,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                    if (!Mathf.Approximately(aNewAz, m_LightAzimuth) || !Mathf.Approximately(aNewEl, m_LightElevation))
+                    {
+                        m_LightAzimuth = aNewAz;
+                        m_LightElevation = aNewEl;
+                        m_LightDir = AnglesToLightDir(m_LightAzimuth, m_LightElevation);
+                    }
+                }
+
                 m_Ambient = DrawField("ambient (0.0~1.0)", m_Ambient);
+                m_Shadow = GUILayout.Toggle(m_Shadow, " ☁ 陰影（cast shadow — 解正交圖深度歧義）", UCL_GUIStyle.LabelStyle);
                 if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderManual"),
                         UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.Width(UCL_GUIStyle.GetScaledSize(200))))
                 {
                     string aArgs = "";
-                    if (!string.IsNullOrEmpty(m_Region)) aArgs += $" --region \"{m_Region}\"";
-                    if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color \"{m_ExcludeColor}\"";
-                    if (!string.IsNullOrEmpty(m_LightDir)) aArgs += $" --light-dir \"{m_LightDir}\"";
-                    if (!string.IsNullOrEmpty(m_Ambient)) aArgs += $" --ambient {m_Ambient}";
+                    if (!string.IsNullOrEmpty(m_Region)) aArgs += $" --region=\"{m_Region}\"";
+                    if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color=\"{m_ExcludeColor}\"";
+                    // ⚠ light-dir 的值以 '-' 開頭（如 -1,-1,-2）—— argparse 會把空格分隔的值當旗標吃掉，
+                    //   必須用 `--opt=value` 等號形式（Tim 2026-08-13 實測 exit=2 血證）
+                    if (!string.IsNullOrEmpty(m_LightDir)) aArgs += $" --light-dir=\"{m_LightDir}\"";
+                    if (!string.IsNullOrEmpty(m_Ambient)) aArgs += $" --ambient={m_Ambient}";
+                    if (m_Shadow) aArgs += " --shadow";
                     Render(aArgs);
                 }
             }
 
             if (!string.IsNullOrEmpty(m_LastRenderLog))
             {
-                GUILayout.Label(m_LastRenderLog, WrapLabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 錯誤/輸出訊息一鍵複製（Tim 2026-08-13 追加）—— 貼給 agent 排錯不用手抄
+                    if (GUILayout.Button("📋 複製", UCL_GUIStyle.GetButtonStyle(Color.white),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(70))))
+                    {
+                        GUIUtility.systemCopyBuffer = m_LastRenderLog;
+                    }
+                    GUILayout.Label(m_LastRenderLog, WrapLabelStyle);
+                }
             }
 
             // ── 渲染結果：_last_view.png（檔案 mtime 變了才重載，避免每幀 IO）──
@@ -179,29 +217,46 @@ namespace UCL.Core.EditorLib.Page
             m_Exhibits.Clear();
             try
             {
-                if (!File.Exists(ExhibitsJsonPath)) return;
-                var aJd = JsonData.ParseJson(File.ReadAllText(ExhibitsJsonPath, System.Text.Encoding.UTF8));
-                if (aJd == null || !aJd.IsObject) return;
-                foreach (string aKey in aJd.Keys)
+                // 新版佈局優先：exhibits/<id>.json 一展一檔（per-entry，解單檔多寫者）；
+                // 舊單檔 exhibits.json 作 fallback（migration 期間兩邊都讀，同 id 新版蓋舊版）
+                var aById = new Dictionary<string, ExhibitEntry>();
+                if (File.Exists(ExhibitsJsonPath))
                 {
-                    var aE = aJd[aKey];
-                    m_Exhibits.Add(new ExhibitEntry
-                    {
-                        Id = ReadStr(aE, "id", aKey),
-                        Title = ReadStr(aE, "title", aKey),
-                        Author = ReadStr(aE, "author", "?"),
-                        Description = ReadStr(aE, "description", ""),
-                        Region = ReadStr(aE, "region", ""),
-                        ExcludeColor = ReadStr(aE, "exclude_color", ""),
-                        CreatedAt = ReadStr(aE, "created_at", ""),
-                    });
+                    var aJd = JsonData.ParseJson(File.ReadAllText(ExhibitsJsonPath, System.Text.Encoding.UTF8));
+                    if (aJd != null && aJd.IsObject)
+                        foreach (string aKey in aJd.Keys) AddExhibit(aById, aJd[aKey], aKey);
                 }
+                string aDir = Path.Combine(SculptureDir, "exhibits");
+                if (Directory.Exists(aDir))
+                {
+                    foreach (var aFile in Directory.GetFiles(aDir, "*.json"))
+                    {
+                        var aJd = JsonData.ParseJson(File.ReadAllText(aFile, System.Text.Encoding.UTF8));
+                        if (aJd != null) AddExhibit(aById, aJd, Path.GetFileNameWithoutExtension(aFile));
+                    }
+                }
+                m_Exhibits.AddRange(aById.Values);
                 m_Exhibits.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
             }
             catch (Exception e)
             {
-                m_LastRenderLog = $"✗ exhibits.json 讀取失敗: {e.Message}";
+                m_LastRenderLog = $"✗ 展品清單讀取失敗: {e.Message}";
             }
+        }
+
+        static void AddExhibit(Dictionary<string, ExhibitEntry> ioById, JsonData iE, string iFallbackId)
+        {
+            string aId = ReadStr(iE, "id", iFallbackId);
+            ioById[aId] = new ExhibitEntry
+            {
+                Id = aId,
+                Title = ReadStr(iE, "title", aId),
+                Author = ReadStr(iE, "author", "?"),
+                Description = ReadStr(iE, "description", ""),
+                Region = ReadStr(iE, "region", ""),
+                ExcludeColor = ReadStr(iE, "exclude_color", ""),
+                CreatedAt = ReadStr(iE, "created_at", ""),
+            };
         }
 
         static string ResolveEngineScript()
@@ -211,6 +266,17 @@ namespace UCL.Core.EditorLib.Page
             string aScript = Path.GetFullPath(Path.Combine(
                 UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/sculpt.py"));
             return File.Exists(aScript) ? aScript : null;
+        }
+
+        /// <summary>方位角/仰角（度）→ 平行光方向向量字串（指向場景、z 向下為負）。</summary>
+        static string AnglesToLightDir(float iAzimuthDeg, float iElevationDeg)
+        {
+            float aAz = iAzimuthDeg * Mathf.Deg2Rad;
+            float aEl = iElevationDeg * Mathf.Deg2Rad;
+            float aX = Mathf.Cos(aEl) * Mathf.Cos(aAz);
+            float aY = Mathf.Cos(aEl) * Mathf.Sin(aAz);
+            float aZ = -Mathf.Sin(aEl);
+            return $"{aX:F2},{aY:F2},{aZ:F2}";
         }
 
         static string ReadStr(JsonData iJd, string iKey, string iDefault = "")

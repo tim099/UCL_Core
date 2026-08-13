@@ -40,6 +40,7 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.SculptureViewer.Desc" => "Render the shared 3D voxel space — one-click exhibit presets or manual region/lighting parameters.",
                 "SculptureViewer.Title" => "3D Sculpture Viewer",
                 "SculptureViewer.Exhibits" => "🏛 Exhibits (from exhibits.json)",
+                "SculptureViewer.RenderExhibit" => "Render exhibit",
                 "SculptureViewer.Reload" => "Reload",
                 "SculptureViewer.RenderAll" => "Render full scene",
                 "SculptureViewer.NoExhibit" => "(no registered exhibits — sculpt.py exhibit register)",

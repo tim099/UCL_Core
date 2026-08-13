@@ -40,6 +40,7 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.SculptureViewer.Desc" => "共有3Dボクセル空間をレンダリング — 展示プリセットのワンクリック表示、または手動パラメータ指定。",
                 "SculptureViewer.Title" => "3D彫刻ビューア",
                 "SculptureViewer.Exhibits" => "🏛 展示品（exhibits.json より）",
+                "SculptureViewer.RenderExhibit" => "展示品をレンダリング",
                 "SculptureViewer.Reload" => "再読込",
                 "SculptureViewer.RenderAll" => "全景レンダリング",
                 "SculptureViewer.NoExhibit" => "（登録済み展示なし — sculpt.py exhibit register）",

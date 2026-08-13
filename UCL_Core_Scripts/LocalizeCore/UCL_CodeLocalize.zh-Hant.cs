@@ -40,6 +40,7 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.SculptureViewer.Desc" => "渲染共用 3D 體素空間看大家的作品 — 一鍵展品 preset 或手動設定觀測參數。",
                 "SculptureViewer.Title" => "3D 雕刻觀測",
                 "SculptureViewer.Exhibits" => "🏛 展品導覽（讀 exhibits.json）",
+                "SculptureViewer.RenderExhibit" => "渲染展品",
                 "SculptureViewer.Reload" => "重新整理",
                 "SculptureViewer.RenderAll" => "渲染整體全景",
                 "SculptureViewer.NoExhibit" => "（尚無登錄展品 — sculpt.py exhibit register）",

@@ -682,6 +682,125 @@ def cmd_view(args):
     print(f"  visible_rendered: {len(visible_points)}")
     print(f"  output_path     : {out_file}")
 
+
+# 區塊職責: 模型匯出 (Tim 2026-08-13 追加) — 觀測區域 → .obj(+.mtl) / MagicaVoxel .vox
+# 物理意義: docstring 一直宣稱有 exporter 但 CLI 沒有入口 (名字比事實大) — 本段補實。
+#          只匯出 region 內、未被 exclude-color 濾掉的 voxel; 面剔除同 render 語意
+#          (六方向鄰居存在即不出面 — Minecraft 式 culling, 匯出檔輕量)。
+# 數值影響: obj 座標 = 世界座標 (Y-up 慣例: 世界 z(高) 寫到 obj y); vox 座標平移到 region 原點
+#          (MagicaVoxel 單模型上限 256^3, region 裁剪後必在範圍內)。純新增檔案, 不動空間狀態。
+
+def _filtered_voxels(space, region_str, exclude_color_str):
+    rx1, rx2, ry1, ry2, rz1, rz2 = 0, 255, 0, 255, 0, 255
+    if region_str:
+        try:
+            parts = region_str.replace(" ", "").split(",")
+            rx1, rx2 = [int(n) for n in parts[0].split("..")]
+            ry1, ry2 = [int(n) for n in parts[1].split("..")]
+            rz1, rz2 = [int(n) for n in parts[2].split("..")]
+        except Exception:
+            pass
+    exclude_colors = set()
+    if exclude_color_str:
+        try:
+            exclude_colors = {int(c) for c in exclude_color_str.split(",")}
+        except Exception:
+            pass
+    out = {}
+    for key, color_idx in space.voxels.items():
+        if color_idx in exclude_colors:
+            continue
+        x, y, z = map(int, key.split(","))
+        if rx1 <= x <= rx2 and ry1 <= y <= ry2 and rz1 <= z <= rz2:
+            out[(x, y, z)] = color_idx
+    return out
+
+
+# 六個面: (鄰居偏移, 4 頂點 offset — 以 voxel min 角為原點)
+_FACES = [
+    ((1, 0, 0),  [(1,0,0),(1,1,0),(1,1,1),(1,0,1)]),
+    ((-1, 0, 0), [(0,0,1),(0,1,1),(0,1,0),(0,0,0)]),
+    ((0, 1, 0),  [(1,1,0),(0,1,0),(0,1,1),(1,1,1)]),
+    ((0, -1, 0), [(0,0,0),(1,0,0),(1,0,1),(0,0,1)]),
+    ((0, 0, 1),  [(0,0,1),(1,0,1),(1,1,1),(0,1,1)]),
+    ((0, 0, -1), [(0,1,0),(1,1,0),(1,0,0),(0,0,0)]),
+]
+
+
+def cmd_export(args):
+    space = load_space_state()
+    vox = _filtered_voxels(space, args.region, args.exclude_color)
+    if not vox:
+        print("⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出")
+        return 1
+    fmt = args.format
+    out_dir = get_sculpt_dir() / "exports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    out_path = Path(args.out) if args.out else out_dir / f"sculpt_{stamp}.{fmt}"
+
+    if fmt == "obj":
+        used_colors = sorted({c for c in vox.values()})
+        mtl_path = out_path.with_suffix(".mtl")
+        with open(mtl_path, "w", encoding="utf-8") as mf:
+            for c in used_colors:
+                r, g, b = get_rgb332_color(c)
+                mf.write(f"newmtl c{c}\nKd {r/255:.4f} {g/255:.4f} {b/255:.4f}\n")
+        face_count = 0
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(f"mtllib {mtl_path.name}\n")
+            vi = 1
+            for c in used_colors:
+                f.write(f"usemtl c{c}\n")
+                for (x, y, z), color in vox.items():
+                    if color != c:
+                        continue
+                    for (dx, dy, dz), corners in _FACES:
+                        if (x + dx, y + dy, z + dz) in vox:
+                            continue  # 被鄰居遮住的面不出 (culling)
+                        for (ox, oy, oz) in corners:
+                            f.write(f"v {x + ox} {z + oz} {y + oy}\n")
+                        f.write(f"f {vi} {vi+1} {vi+2} {vi+3}\n")
+                        vi += 4
+                        face_count += 1
+        print("# 📦 OBJ 匯出完成")
+        print(f"  voxels    : {len(vox)}")
+        print(f"  faces     : {face_count} (culled)")
+        print(f"  obj       : {out_path}")
+        print(f"  mtl       : {mtl_path}")
+        return 0
+
+    if fmt == "vox":
+        import struct
+        xs = [k[0] for k in vox]; ys = [k[1] for k in vox]; zs = [k[2] for k in vox]
+        mnx, mny, mnz = min(xs), min(ys), min(zs)
+        sx, sy, sz = max(xs)-mnx+1, max(ys)-mny+1, max(zs)-mnz+1
+        if max(sx, sy, sz) > 256:
+            print(f"⚠ region 尺寸 {sx}x{sy}x{sz} 超過 MagicaVoxel 單模型上限 256 — 縮小觀測區域再匯")
+            return 1
+        xyzi = b"".join(struct.pack("<4B", k[0]-mnx, k[1]-mny, k[2]-mnz, c if c > 0 else 1)
+                        for k, c in vox.items())
+        def chunk(cid, content, children=b""):
+            return cid + struct.pack("<ii", len(content), len(children)) + content + children
+        size_c = chunk(b"SIZE", struct.pack("<3i", sx, sy, sz))
+        xyzi_c = chunk(b"XYZI", struct.pack("<i", len(vox)) + xyzi)
+        pal = b""
+        for i in range(1, 257):
+            r, g, b = get_rgb332_color(i % 256)
+            pal += struct.pack("<4B", r, g, b, 255)
+        rgba_c = chunk(b"RGBA", pal)
+        main = chunk(b"MAIN", b"", size_c + xyzi_c + rgba_c)
+        with open(out_path, "wb") as f:
+            f.write(b"VOX " + struct.pack("<i", 150) + main)
+        print("# 📦 VOX 匯出完成 (MagicaVoxel)")
+        print(f"  voxels    : {len(vox)}  size: {sx}x{sy}x{sz}")
+        print(f"  vox       : {out_path}")
+        return 0
+
+    print(f"❌ 未知格式: {fmt}")
+    return 2
+
+
 def cmd_stats(args):
     space = load_space_state()
     voxels = space.voxels
@@ -756,6 +875,13 @@ def main():
     p_ex.set_defaults(func=cmd_exhibit)
 
     # stats
+    p_export = subparsers.add_parser("export", help="匯出觀測區域為 3D 模型檔 (.obj+.mtl / MagicaVoxel .vox)")
+    p_export.add_argument("--format", required=True, choices=["obj", "vox"])
+    p_export.add_argument("--region", help="觀測區域裁剪 (x1..x2,y1..y2,z1..z2; 省略=全空間)")
+    p_export.add_argument("--exclude-color", help="排除顏色 (逗號分隔)")
+    p_export.add_argument("--out", help="輸出路徑 (省略=Sculpture/exports/sculpt_<ts>.<fmt>)")
+    p_export.set_defaults(func=cmd_export)
+
     p_stats = subparsers.add_parser("stats", help="顯示統計資訊")
     p_stats.set_defaults(func=cmd_stats)
 

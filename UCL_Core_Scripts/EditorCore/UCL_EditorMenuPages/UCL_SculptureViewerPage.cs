@@ -57,6 +57,9 @@ namespace UCL.Core.EditorLib.Page
         float m_LightAzimuth = 225f;     // 方位角（度）— 預設對應 -1,-1 方向
         float m_LightElevation = 55f;    // 仰角（度）— 越大光越從頭頂打
         bool m_Shadow;                   // cast shadow 開關（Tim 2026-08-13 拍板可開關，預設關）
+        int m_SelectedExhibit;           // 下拉選單當前展品 index（對齊 m_Exhibits 排序）
+        readonly List<string> m_ExhibitOptions = new List<string>();   // 下拉顯示字串（「title (id)」）
+        readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();   // PopupAuto 搜尋 state
         string m_LastRenderLog = "";
         Texture2D m_ViewTex;
         DateTime m_ViewTexTime;
@@ -89,16 +92,30 @@ namespace UCL.Core.EditorLib.Page
             {
                 GUILayout.Label(UCL_CodeLocalize.Get("SculptureViewer.NoExhibit"), UCL_GUIStyle.LabelStyle);
             }
-            foreach (var aEx in m_Exhibits)
+            else
             {
+                // 下拉選單（Tim 2026-08-13 改版 — 展品多了逐列按鈕會佔滿頁面；PopupAuto 過門檻自帶搜尋）
                 using (new GUILayout.HorizontalScope("box"))
                 {
-                    if (GUILayout.Button($"🏛 {aEx.Title}", UCL_GUIStyle.GetButtonStyle(Color.cyan),
-                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(240))))
+                    int aNewSel = UCL_GUILayout.PopupAuto(m_SelectedExhibit, m_ExhibitOptions, m_Dic, "ExhibitPicker",
+                        10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                    if (aNewSel != m_SelectedExhibit && aNewSel >= 0 && aNewSel < m_Exhibits.Count)
+                    {
+                        m_SelectedExhibit = aNewSel;
+                        // 選中展品 → 觀測參數帶入 preset（手動區與匯出跟著這個 region 走）
+                        m_Region = m_Exhibits[aNewSel].Region;
+                        m_ExcludeColor = m_Exhibits[aNewSel].ExcludeColor;
+                    }
+                    if (GUILayout.Button("🏛 " + UCL_CodeLocalize.Get("SculptureViewer.RenderExhibit"),
+                            UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
                     {
                         // preset 由引擎讀展品檔，本頁不重組參數；陰影開關疊加在 preset 上
-                        Render($" --exhibit=\"{aEx.Id}\"{(m_Shadow ? " --shadow" : "")}");
+                        Render($" --exhibit=\"{m_Exhibits[m_SelectedExhibit].Id}\"{(m_Shadow ? " --shadow" : "")}");
                     }
+                }
+                if (m_SelectedExhibit >= 0 && m_SelectedExhibit < m_Exhibits.Count)
+                {
+                    var aEx = m_Exhibits[m_SelectedExhibit];
                     GUILayout.Label($"{aEx.Id}｜by {aEx.Author}｜region {aEx.Region}\n{aEx.Description}", WrapLabelStyle);
                 }
             }
@@ -148,6 +165,22 @@ namespace UCL.Core.EditorLib.Page
                     if (m_Shadow) aArgs += " --shadow";
                     Render(aArgs);
                 }
+
+                // 匯出模型檔（Tim 2026-08-13 追加）：只匯出觀測區域（region/exclude 同上方欄位）
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("📦 匯出 .obj", UCL_GUIStyle.GetButtonStyle(Color.yellow),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(130))))
+                    {
+                        Export("obj");
+                    }
+                    if (GUILayout.Button("📦 匯出 .vox", UCL_GUIStyle.GetButtonStyle(Color.yellow),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(130))))
+                    {
+                        Export("vox");
+                    }
+                    GUILayout.Label("匯出範圍＝上方 region／exclude-color（空 region＝全空間）", WrapLabelStyle);
+                }
             }
 
             if (!string.IsNullOrEmpty(m_LastRenderLog))
@@ -183,6 +216,25 @@ namespace UCL.Core.EditorLib.Page
                 ? (aSo ?? "").Trim()
                 : $"✗ 渲染失敗（exit={aExit}）\n{aSo}\n{aSe}";
             m_ViewTexTime = default;   // 強制下次重載 texture
+        }
+
+        // 區塊職責：匯出觀測區域為 3D 模型檔（spawn 引擎 export — 面剔除/材質由引擎管，本頁只轉參數）
+        void Export(string iFormat)
+        {
+            string aScript = ResolveEngineScript();
+            if (aScript == null)
+            {
+                m_LastRenderLog = "✗ 解析不到 sculpt.py（CorePath 空或檔案不存在）";
+                return;
+            }
+            string aArgs = $"\"{aScript}\" export --format={iFormat}";
+            if (!string.IsNullOrEmpty(m_Region)) aArgs += $" --region=\"{m_Region}\"";
+            if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color=\"{m_ExcludeColor}\"";
+            var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs,
+                UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
+            m_LastRenderLog = aExit == 0
+                ? (aSo ?? "").Trim()
+                : $"✗ 匯出失敗（exit={aExit}）\n{aSo}\n{aSe}";
         }
 
         // 區塊職責：顯示 _last_view.png — mtime 快取（texture 只在檔案變動時重建）
@@ -237,6 +289,9 @@ namespace UCL.Core.EditorLib.Page
                 }
                 m_Exhibits.AddRange(aById.Values);
                 m_Exhibits.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+                m_ExhibitOptions.Clear();
+                foreach (var aEx in m_Exhibits) m_ExhibitOptions.Add($"{aEx.Title} ({aEx.Id})");
+                if (m_SelectedExhibit >= m_Exhibits.Count) m_SelectedExhibit = 0;
             }
             catch (Exception e)
             {

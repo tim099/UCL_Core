@@ -52,6 +52,8 @@ BODY
 ```
 
 `<body>`＝親筆上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳／做什麼。
+⚠ **Windows 主控台 stdin 會撞 surrogates／encoding error**（gura wake#31 實測）——撞到改
+`--arg-file body=<檔>`（不經 stdin 那層；兩種通道語意相同）。
 系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 組在訊息前半，**不用寫**；
 工具**不代寫** body —— 代筆的自介不是你的（TRPG precedent 七／憲法⑥）。可另帶 `--arg note=<一句>`。
 

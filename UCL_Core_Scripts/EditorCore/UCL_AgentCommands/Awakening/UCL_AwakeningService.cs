@@ -683,6 +683,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             }
             aR.AppendLine($"{aStepNo++}. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
             aR.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
+            aR.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
             aR.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
             if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
                 aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → awakening.py consolidate --persona {iPersona}");

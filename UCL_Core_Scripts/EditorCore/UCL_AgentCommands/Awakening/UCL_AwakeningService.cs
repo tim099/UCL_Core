@@ -147,7 +147,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         {
             var aSb = new StringBuilder();
             var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
-            aSb.AppendLine($"# 🧪 Awakening 對帳（C# 唯讀掃描） ts=`{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}`");
+            aSb.AppendLine($"# 🧪 Awakening 對帳（C# 唯讀掃描） ts=`{NowLocal()}`（本地時間）");
             aSb.AppendLine();
             aSb.AppendLine($"- DataRoot: `{DataRoot}`");
             aSb.AppendLine($"- LettersDir: `{LettersDir}`　SessionDir: `{SessionDir}`");
@@ -208,16 +208,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // ===========================================================
         public const string PROC_TAG = "awakening_service_brief";
 
-        public static (bool ok, string report, string briefPath, int briefLines) RunBrief(
-            string iPersona, string iCallerName, int iTimeoutMs = 120000)
+        /// <summary>
+        /// awakening.py 絕對路徑解析。⚠ **只能在主執行緒呼叫**（內部走 UCL_EditorPath.CorePath =
+        /// AssetDatabase.FindAssets）——背景緒要用時，先在主執行緒解析好再把結果傳進去
+        /// （RunBrief 的 iScriptPath 參數就是為此存在；快取暖了之後背景緒僥倖能跑，冷啟動必炸）。
+        /// </summary>
+        public static string ResolveAwakeningScriptPath()
         {
             string aCoreRel = UCL_EditorPath.CorePath;
-            if (string.IsNullOrEmpty(aCoreRel))
-                return (false, "✗ 解析不到 UCL_Core 路徑（UCL_EditorPath.CorePath 為空）", null, 0);
+            if (string.IsNullOrEmpty(aCoreRel)) return null;
             string aScript = Path.GetFullPath(Path.Combine(
                 UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/awakening.py"));
-            if (!File.Exists(aScript))
-                return (false, $"✗ 找不到 awakening.py：{aScript}", null, 0);
+            return File.Exists(aScript) ? aScript : null;
+        }
+
+        public static (bool ok, string report, string briefPath, int briefLines) RunBrief(
+            string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null)
+        {
+            string aScript = iScriptPath ?? ResolveAwakeningScriptPath();
+            if (string.IsNullOrEmpty(aScript))
+                return (false, "✗ 解析不到 awakening.py（CorePath 空或檔案不存在；背景緒呼叫請先在主執行緒 ResolveAwakeningScriptPath）", null, 0);
 
             string aArgs = $"\"{aScript}\" brief --persona \"{iPersona}\"";
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs, UCL_RepoPath.RepoRoot,
@@ -261,6 +271,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public const int CONSOLIDATE_GAP_THRESHOLD = 10;
 
         public static string NowIso() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+        /// <summary>本地時間字串 —— **只給人讀的 payload 標頭用**（自由時間等約定都以本地時間溝通，
+        /// Tim 2026-08-13 拍板）。存檔欄位（registry/lock/token 的 *_at）仍一律 UTC ISO，與 python 端對齊。</summary>
+        public static string NowLocal() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz");
 
         static void AtomicWrite(string iPath, string iContent)
         {
@@ -422,7 +436,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         {
             var aR = new StringBuilder();
             var aRes = new StepResult();
-            aR.AppendLine($"# GoodMorning step=wake persona={iPersona}  ts=`{NowIso()}`");
+            aR.AppendLine($"# GoodMorning step=wake persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
@@ -607,7 +621,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine($"1. **required** — 生成 brief：run_cmd.py run GoodMorning --arg step=brief --arg persona={iPersona}");
             aR.AppendLine("   （Editor 未開啟時的備援才是直跑 awakening.py brief）");
             aR.AppendLine("2. **required** — Read brief（路徑由 step=brief 回傳；接回身分，這步不自動化）");
-            aR.AppendLine($"3. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body（body 親筆，Cmd 只組系統欄位）");
+            aR.AppendLine($"3. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+            aR.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
+            aR.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
             if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
                 aR.AppendLine($"4. 見林 OVERDUE → awakening.py consolidate --persona {iPersona}");
             aRes.ok = true; aRes.report = aR.ToString();

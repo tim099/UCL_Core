@@ -530,13 +530,16 @@ namespace UCL.Core.EditorLib.Page
             if (m_AwakenTestRunning) return;
             m_AwakenTestRunning = true;
             m_AwakenTestReport = "⏳ 生成 brief…";
+            // 路徑解析留在主執行緒（CorePath 走 AssetDatabase，main-thread-only）；背景緒只收現成值
+            string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
+            string aWarmLetters = UCL_AwakeningService.LettersDir;
             System.Threading.Tasks.Task.Run(() =>
             {
                 string aText;
                 try
                 {
                     var aResult = UCL_AwakeningService.RunBrief(
-                        AWAKEN_TEST_PERSONA, nameof(UCL_PersonaAgentAdminPage), BRIEF_TIMEOUT_MS);
+                        AWAKEN_TEST_PERSONA, nameof(UCL_PersonaAgentAdminPage), BRIEF_TIMEOUT_MS, aScript);
                     var aSb = new StringBuilder();
                     aSb.AppendLine(aResult.ok ? "✅ brief 生成（判定依據＝落地檔存在且行數 > 0，非 stdout）" : "✗ brief 生成失敗");
                     aSb.AppendLine(aResult.report);

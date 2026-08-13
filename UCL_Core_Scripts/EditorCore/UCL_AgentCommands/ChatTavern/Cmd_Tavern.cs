@@ -1808,7 +1808,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
                 if (!File.Exists(path))
-                    return "_tokens.json 不存在 (跑 awakening.py morning 發 token)";
+                    return "_tokens.json 不存在 (跑 run_cmd GoodMorning step=wake 發 token)";
                 string json = File.ReadAllText(path);
                 var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
                 if (jd == null || !jd.IsObject || jd.Dic == null)
@@ -1838,7 +1838,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
                 if (!File.Exists(path))
-                    return "_tokens.json 不存在 (跑 awakening.py morning 發 token)";
+                    return "_tokens.json 不存在 (跑 run_cmd GoodMorning step=wake 發 token)";
                 string json = File.ReadAllText(path);
                 var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
                 if (jd == null || !jd.IsObject || jd.Dic == null)

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using UCL.Core.EditorLib.AgentCommands;
+using UCL.Core.EditorLib.AgentCommands.Awakening;   // UCL_AwakeningService（morning 已遷 C#，Cmd_GoodMorning 同一份實作）
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -85,7 +86,7 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：Tim 輸入 agent + persona 字串, 按 Morning 後 spawn process
         string m_LoginPersona = "";
         string m_LoginModel = "Opus 4.7 1M";
-        string m_LoginForkName = "";
+        // m_LoginForkName 已移除（2026-08-13 R11/R14）：fork 走後台「🧬 Persona & Agent 管理頁」
 
         // 註：手動登出走 awakening.py goodnight --no-letter (Tim 2026-06-14 拍板不寫信) —
         //     原 DEFAULT_MANUAL_LETTER placeholder 已移除, 不再偽造心得信。
@@ -558,12 +559,8 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.Model"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     m_LoginModel = GUILayout.TextField(m_LoginModel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                 }
-                using (new GUILayout.HorizontalScope())
-                {
-                    // --strict-persona / --rebind-agent 兩個 toggle 已移除：CLI 端旗標本身廢除了
-                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Field.ForkName"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_LoginForkName = GUILayout.TextField(m_LoginForkName, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                }
+                // fork 欄位已移除（2026-08-13 R11/R14）：morning 遷 C# 後 fork 不隨 wake 走 ——
+                // 開分身走後台「🧬 Persona & Agent 管理頁」（建 persona 可選 fork 來源），建完再正常登入。
                 using (new GUILayout.HorizontalScope())
                 {
                     if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Morning"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -684,38 +681,69 @@ namespace UCL.Core.EditorLib.Page
 
         // ==================== Process actions ====================
 
-        // 區塊職責：spawn awakening.py morning
-        // 物理意義：手動 login — Tim 輸入 agent/persona, 走 ritual 跟 CLI 等價
+        // 區塊職責：手動 login — 走 C# UCL_AwakeningService（與 Cmd_GoodMorning 同一份實作），不再 spawn python
+        // 物理意義：morning 已遷移 C#（Plan_Awakening_Flow_Simplification R14-R18，2026-08-13），
+        //          awakening.py morning 現為指路 stub。頁面登入 = step=wake + step=brief 兩步代跑；
+        //          step=intro（上線自介）屬 persona 親筆內容，**不代發** —— 本人上線後自己跑。
+        // 數值影響：StepWake 寫 registry/lock/token/memo（原子）；RunBrief spawn python 生成 brief。
+        //          報告走 Debug.Log（與 RunAwakening 同慣例）；完成後回主線程 LoadData()。
         void DoMorning()
         {
-            // 2026-07-31：persona 是唯一身分輸入；agent 由 awakening.py 從 persona 綁定反推。
-            // --strict-persona / --rebind-agent 已在 CLI 端廢除，這裡不再傳（傳了會 argparse 報錯）。
             if (string.IsNullOrWhiteSpace(m_LoginPersona))
             {
                 Debug.LogWarning("[LoginStatus] persona 不能空");
                 return;
             }
-            var args = new List<string>
+            if (m_AwakeningRunning)
             {
-                $"\"{AwakeningPyPath()}\"", "morning",
-                "--model", string.IsNullOrWhiteSpace(m_LoginModel) ? "Opus 5" : m_LoginModel.Trim(),
-                "--persona", m_LoginPersona.Trim(),
-            };
-            var persona = m_Pool.Find(p => p.Name == m_LoginPersona.Trim());
-            var actual = UCL_ActualAgentUtility.ParseOrNone(persona?.ActualAgent ?? "");
-            if (actual == UCL_ActualAgent.None) actual = UCL_ActualAgentUtility.ParseOrNone(persona?.Agent ?? "");
-            if (actual != UCL_ActualAgent.None)
-            {
-                args.Add("--agent");
-                args.Add(UCL_ActualAgentUtility.ToStorageValue(actual));
+                Debug.LogWarning("[LoginStatus] 已有 awakening 操作進行中 — 等前一筆完成再操作");
+                return;
             }
-            if (!string.IsNullOrWhiteSpace(m_LoginForkName))
+            string aPersona = m_LoginPersona.Trim();
+            string aModel = string.IsNullOrWhiteSpace(m_LoginModel) ? "" : m_LoginModel.Trim();
+            var aEntry = m_Pool.Find(p => p.Name == aPersona);
+            var aActual = UCL_ActualAgentUtility.ParseOrNone(aEntry?.ActualAgent ?? "");
+            if (aActual == UCL_ActualAgent.None) aActual = UCL_ActualAgentUtility.ParseOrNone(aEntry?.Agent ?? "");
+            string aActualStr = aActual != UCL_ActualAgent.None ? UCL_ActualAgentUtility.ToStorageValue(aActual) : "";
+            // 主執行緒先解析路徑＋暖快取（CorePath 走 AssetDatabase、DataRoot 走 PlayerPrefs，皆 main-thread 資源）
+            string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
+            string aWarmLetters = UCL_AwakeningService.LettersDir;
+            m_AwakeningRunning = true;
+            System.Threading.Tasks.Task.Run(() =>
             {
-                args.Add("--fork-name");
-                args.Add(m_LoginForkName.Trim());
-            }
-            // RunAwakening 現為背景非阻塞 — 完成後自動回主線程 LoadData()，不再同步 reload
-            RunAwakening(args, "morning");
+                try
+                {
+                    var aWake = UCL_AwakeningService.StepWake(aPersona, aModel, aActualStr, "login-page");
+                    if (aWake.ok)
+                    {
+                        Debug.Log($"[LoginStatus:morning] step=wake 完成:\n{aWake.report}");
+                        var aBrief = UCL_AwakeningService.RunBrief(aPersona, nameof(UCL_LoginStatusPage), 120000, aScript);
+                        if (aBrief.ok)
+                            Debug.Log($"[LoginStatus:morning] ✓ wake+brief 完成:\n{aBrief.report}\n"
+                                      + "上線自介（step=intro）屬本人親筆，請該 persona 自己跑 run_cmd GoodMorning step=intro。");
+                        else
+                            Debug.LogError($"[LoginStatus:morning] brief 生成失敗（wake 已完成，登入有效）:\n{aBrief.report}");
+                    }
+                    else
+                    {
+                        Debug.LogError($"[LoginStatus:morning] step=wake {(aWake.blocked ? "blocked" : "失敗")}:\n{aWake.report}");
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[LoginStatus:morning] 例外: {e}");
+                }
+                finally
+                {
+#if UNITY_EDITOR
+                    UnityEditor.EditorApplication.delayCall += () =>
+                    {
+                        m_AwakeningRunning = false;
+                        LoadData();
+                    };
+#endif
+                }
+            });
         }
 
         // 區塊職責：套用 active persona 的實際承載 agent，將同一值寫入 lock（當前在線事實）與 persona registry（下次早安預設）。

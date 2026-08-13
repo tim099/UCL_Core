@@ -83,23 +83,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 case "brief":
                 {
                     RequirePersona(aStep, aPersona);
-                    // 長跑段丟背景執行緒 —— spawn python + WaitForExit 會擋 Editor 主執行緒
+                    // 路徑解析在主執行緒先做（CorePath 走 AssetDatabase，main-thread-only）；
+                    // 長跑段（spawn python + WaitForExit）才丟背景執行緒，不擋 Editor 主執行緒。
+                    string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
+                    string aWarmLetters = UCL_AwakeningService.LettersDir;   // 暖 DataRoot 快取（PlayerPrefs 同屬主執行緒資源）
                     var aResult = await UniTask.RunOnThreadPool(
-                        () => UCL_AwakeningService.RunBrief(aPersona, nameof(Cmd_GoodMorning)),
+                        () => UCL_AwakeningService.RunBrief(aPersona, nameof(Cmd_GoodMorning), 120000, aScript),
                         cancellationToken: token);
                     var aSb = new StringBuilder();
-                    aSb.AppendLine($"# GoodMorning step=brief persona={aPersona}  ts=`{UCL_AwakeningService.NowIso()}`");
+                    aSb.AppendLine($"# GoodMorning step=brief persona={aPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
                     aSb.AppendLine();
                     aSb.AppendLine(aResult.report);
+                    // QA 欄位/格式摘要**不進回傳值**（Tim 2026-08-13 拍板）——agent 的下一步是讀 brief 本體，
+                    // 摘要對它是純噪音；人工 QA 走後台頁「📄 生成 brief」按鈕（那裡會顯示 SummarizeBrief）。
                     if (aResult.ok)
                     {
-                        aSb.AppendLine("## brief 摘要（QA 欄位/格式用）");
-                        aSb.AppendLine("```");
-                        aSb.AppendLine(UCL_AwakeningService.SummarizeBrief(aResult.briefPath));
-                        aSb.AppendLine("```");
                         aSb.AppendLine("## next");
                         aSb.AppendLine($"1. **required** — Read `{aResult.briefPath}`（接回身分 —— 這步不自動化）");
-                        aSb.AppendLine($"2. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body（body 親筆）");
+                        aSb.AppendLine($"2. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+                        aSb.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
+                        aSb.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
                     }
                     string aPath = UCL_AwakeningService.StepPayloadPath(aPersona, "brief");
                     WritePayload(aPath, aSb.ToString());
@@ -161,7 +164,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     int aSeq = ChatTavern.Cmd_Tavern.LastPostSeq;
 
                     var aSb = new StringBuilder();
-                    aSb.AppendLine($"# GoodMorning step=intro persona={aPersona}  ts=`{UCL_AwakeningService.NowIso()}`");
+                    aSb.AppendLine($"# GoodMorning step=intro persona={aPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
                     aSb.AppendLine();
                     if (aSeq <= 0)
                     {

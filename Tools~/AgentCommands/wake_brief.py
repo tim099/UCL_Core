@@ -961,8 +961,8 @@ def _next_actions_lines(persona: str, st: dict, fst: dict, threshold: int) -> li
         out.append("- 記憶維護無待辦（見 §6）。")
     out += [
         f"- 隨時可丟未解線（不限儀式）：`awakening.py keys --persona {persona} --add \"<一句話>\"`",
-        "- **下一步**：讀完本 brief → 走酒館 self-intro post（`--arg persona` 必帶）；"
-        "post 成功後才推 §8 的 catch-up cursor。",
+        f"- **下一步**：讀完本 brief → `run_cmd.py run GoodMorning --arg step=intro --arg persona={persona} --arg-stdin body`（<body> 親筆）；"
+        "之後照回傳檔 next 跑酒館 catchup（在線同事＋未讀＋inbox 都在那，不強制回）。",
         "- 本檔是機械產物，**手改無效**（下次覆寫）—— 要改去改 fragment / letter / 見叢原檔。",
     ]
     return out
@@ -986,7 +986,8 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
             "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
             "---", "",
             f"# 🌅 Wake Brief — {persona} wake #{p.get('wake_count', 0)}", "",
-            "> 讀這一份即完成 onboarding：**§0 身分 → §1-6 記憶（見根→見樹→回憶）→ §7-9 營運**。",
+            "> 讀這一份即完成 onboarding：**§0 身分 → §1-6 記憶（見根→見樹→回憶）→ §9 動作清單**。",
+            "> （§7 收件匣／§8 酒館 catch-up 已退出 brief —— intro 之後跑酒館 catchup 一次補齊，R21）",
             "> 順序即優先序；主檔溢出時先被移進續讀檔的是後面的營運層。",
             "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。", ""]
 
@@ -1131,10 +1132,12 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     # §6.6 見書 —— 我在讀什麼（Tim 2026-08-07）
     sections.append(("📖 §6.6 見書 — 我在讀什麼", _bookshelf_lines(aw, persona, p), False))
 
-    # ── 營運層（§7-§9）：Tim 2026-07-31 R5 —— 併進同一份，但排在記憶層之後 ──
-    sections.append(("📥 §7 待辦收件匣", _inbox_lines(aw, persona, p), False))
-    sections.append(("🍺 §8 酒館 catch-up（peek，不推進 cursor）",
-                     _tavern_catchup_lines(aw, persona), False))
+    # ── 營運層：§7 收件匣 / §8 酒館 catch-up 於 2026-08-13 退出 brief（R21）──
+    # 這兩樣改由 step=intro 之後的酒館 catchup 一次補齊（在線同事＋未讀＋inbox），
+    # brief 收斂回純記憶層＋§9 動作清單；§8 的 peek/pending-commit cursor 之舞隨之退役
+    # （cursor 由 catchup 在實際閱讀時推進 ——「讀完的證據是開口」語意由 ding 流程承接）。
+    # _inbox_lines / _tavern_catchup_lines 保留：後台「⚙ 參數設定」與 ding 工具仍是消費者的
+    # 潛在共用點，等 P4b 收攏歸屬時一起處置，本輪不動實作只斷接線。
     sections.append(("🎯 §9 今日動作清單", _next_actions_lines(persona, st, fst, threshold), True))
 
     # 組裝 + 上限處理：超出上限的「非必讀」區塊整段移進續讀檔

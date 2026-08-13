@@ -1831,449 +1831,33 @@ def write_wake_brief(persona: str, reg: dict, p: dict,
 
 # ─── Subcommands ────────────────────────────────────────────────────────
 # ===========================================================
-# 區塊職責：喚醒自介廣播的 body 組裝 —— morning Step 5 與 intro 重發共用
-# 物理意義：抽出來的唯一理由是**防漂移**。兩處各寫一份 f-string，改了一邊忘了另一邊，
-#          結果就是「重發的自介跟原本的長不一樣」——而那種不一致沒有任何錯誤訊息會提醒你。
+# 區塊職責：morning / intro 已遷移 C#（Cmd_GoodMorning，2026-08-13 R14-R18）—— 本檔只留指路 stub。
+# 物理意義：登入寫入者收斂為 C# 單端（R18：Editor 不在線就不跑 morning，不做降級路）。
+#          舊實作（cmd_morning 約 300 行 / cmd_intro / build_wake_intro_body）已刪除，
+#          不留第二份活實作 —— 雙寫入端並存窗口 = 狀態分裂的溫床（Plan §8.9 通用卡點 2）。
+# 數值影響：morning / intro 子指令一律 exit 2 並印新流程；不讀不寫任何狀態檔。
 # ===========================================================
-def build_wake_intro_body(persona: str, agent: str, model: str, bank_account: str,
-                          wake_count: int, layer_role: str, decision: str,
-                          note: str = "", reintro: bool = False) -> str:
-    head = f"☀️ **{persona}** 喚醒登入 (wake#{wake_count})"
-    if reintro:
-        head = f"🔁 **{persona}** 自介重發 (wake#{wake_count} · 非重新登入，wake_count 未變動)"
-    body = (f"{head}\n"
-            f"- Agent: {agent} / Model: {model}\n"
-            f"- Bank: {bank_account} (餘額: {get_treasury_balance(bank_account)} tavern_token)\n"
-            f"- Layer: {layer_role}\n"
-            f"- Decision path: {decision}")
-    if note:
-        body += f"\n- Note: {note}"
-    return body
+def _deprecated_login_cmd(name: str, extra: str = "") -> int:
+    print(f"⛔ awakening.py {name} 已遷移至 C# Cmd_GoodMorning（2026-08-13）——本子指令不再執行登入。", file=sys.stderr)
+    print("   新流程（Editor 開啟時的唯一通道）：", file=sys.stderr)
+    print("   ① run_cmd.py run GoodMorning --arg step=wake  --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]", file=sys.stderr)
+    print("   ② run_cmd.py run GoodMorning --arg step=brief --arg persona=<P>", file=sys.stderr)
+    print("   ③ Read brief（路徑在 step=brief 的回傳檔 letters/<P>/_goodmorning_brief.md）", file=sys.stderr)
+    print("   ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body（body 親筆）", file=sys.stderr)
+    print("   Editor 未開啟：登入不可用（R18）；純讀記憶備援 → awakening.py brief --persona <P>", file=sys.stderr)
+    if extra:
+        print(f"   {extra}", file=sys.stderr)
+    print("   完整流程參考：ucl_core:Docs~/zh-Hant/Workflows/GoodMorning_Cmd_Flow.md", file=sys.stderr)
+    return 2
 
 
 def cmd_morning(args: argparse.Namespace) -> int:
-    """喚醒 ritual — persona 顯式必填、顯示歸屬與實際承載 agent 分離、已在線即中斷。
-
-    2026-07-31 Tim 拍板重寫。刪掉的三段舊邏輯與理由：
-      - persona 80/20 自決：把身分決定權交給一個「還沒讀記憶的自己」，順序本身就是反的。
-      - same-caller reuse no-op：靜默 no-op 跟「真的醒了」長得一樣；改成撞牆並明說「妳已經在線」。
-      - explicit-online-fork / --strict-persona / --rebind-agent：
-        「顯式打名字 + 已在線」在新規則下是**停**，不是自動生分身；
-        其餘旗標都是剛醒的人替自己簽字的旁路。換綁走後台，不從 ritual 開後門。
-    """
-    reg = load_registry()
-    preferred = args.persona
-    model = args.model
-
-    # ① persona 必須已註冊 —— 打錯字不該變成「幫你建一個新人格」
-    if preferred not in reg.get("personas", {}):
-        print(f"❌ persona '{preferred}' 不存在。", file=sys.stderr)
-        names = sorted(reg.get("personas", {}).keys())
-        print(f"   可選（{len(names)}）: {', '.join(names)}", file=sys.stderr)
-        print("   要開新 persona 走後台「🧬 Persona & Agent 管理頁」，或 --fork-name <NEW> 從既有 persona 分出。",
-              file=sys.stderr)
-        return 2
-
-    # ② 顯示歸屬 agent / 實際承載 agent 分離。
-    #    display agent 決定 bank 與對外身分；--agent 只記錄本次實際桌面承載者，不得偷改前兩者。
-    p = reg["personas"][preferred]
-    agent = normalize_agent(reg, p.get("agent") or "")
-    if not agent:
-        print(f"❌ persona '{preferred}' 沒有綁定 agent，無法反推。請從後台補上 agent 歸屬。", file=sys.stderr)
-        return 2
-    actual_agent_raw = args.agent or p.get("actual_agent") or agent
-    actual_agent, actual_agent_normalized = normalize_actual_agent(actual_agent_raw)
-    if not actual_agent:
-        print(f"❌ persona '{preferred}' 沒有實際承載 agent，無法建立 session lock。", file=sys.stderr)
-        return 2
-    if actual_agent_normalized:
-        print(f"ℹ actual agent 正規化：{actual_agent_raw!r} → {actual_agent}")
-    bank_account = resolve_bank_account(reg, agent, model)
-    session_key = compute_session_key(actual_agent, preferred)
-
-    print(f"🌅 GoodMorning ritual starting (session_key={session_key})")
-    print(f"   Persona={preferred} / Agent={agent}（顯示歸屬）/ ActualAgent={actual_agent} / Model={model} / Bank={bank_account}")
-
-    # ③ 唯一的中斷條件：該 persona 目前是否在線
-    #    只看「這個 persona 有沒有人在用」——不比對 claim_origin / pid，
-    #    同一個 env 多 persona 並存是常態不是事故（summit 2026-07-31 指出的誤殺風險）。
-    #    過期 lock 不自動豁免：那本來就不該發生，由 Tim 從後台登出（Tim 拍板）。
-    #    檢查對象是「本次真正要佔用的那個 persona」——帶 --fork-name 時是新分身，不是母體。
-    #    （母體在線不該擋 fork：fork 出來的是**另一個** persona，沒有同時登入同一個。）
-    occupy = args.fork_name or preferred
-    occupy_reg = reg["personas"].get(occupy, {})
-    existing_lock = read_lock(occupy)
-    if existing_lock is not None:
-        print(f"⛔ '{occupy}' 目前在線 —— 同一個 persona 不得同時登入兩次，流程中止。", file=sys.stderr)
-        print(f"   lock: session_key={existing_lock.get('session_key', '?')} "
-              f"pid={existing_lock.get('pid', '?')} locked_at={existing_lock.get('locked_at', '?')}"
-              f"{' (已過期)' if is_lock_expired(existing_lock) else ''}", file=sys.stderr)
-        print("   解法：讓它先下線（後台「登入狀態」頁登出，或該 session 跑 goodnight），再重跑。", file=sys.stderr)
-        print("   ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟。", file=sys.stderr)
-        return 2
-    # registry status=online 但查無 lock：**不擋，自癒**（Tim 2026-07-31）。
-    #   舊版把這種狀態也當「在線」而中斷，於是登出沒走完的 persona 永遠醒不來
-    #   —— 實測 zenith-one 就卡在這裡。lock 檔的存在與否是既成事實，status 只是快取，
-    #   拿快取去否決事實是把因果顛倒。修掉並說一聲，不靜默。
-    if occupy_reg.get("status") == "online":
-        print(f"🔧 '{occupy}' registry status=online 但查無 lock（上次下線沒走完）"
-              f" —— 以 lock 為準視為離線，繼續喚醒。", file=sys.stderr)
-
-    # ③' 收尾信版面自動遷移（Tim 2026-07-31 拍板改自動）：
-    #     wake_count 改由 wakes/ 的信件數推導之後，沒遷移的 persona 會從 1 重新起算。
-    #     這件事沒有任何需要人判斷的輸入 —— 信按 written_at 升冪，第一封就是 wake #1 ——
-    #     所以由工具在早安時自動補齊，不再要求「醒來的人先去跑一行指令」
-    #     （那正是這波在拆的模式：把該工具判的事丟給剛醒的人）。
-    #     判準見 letters_migration_pending —— **不在這裡復誦**（早一版這行寫「wakes/ 目錄
-    #     不存在」，判準改成內容比對之後就變成假話，而且它還指名該函式，兩邊互相打臉）。
-    #     ⚠ 它會改寫 registry.wake_count（多數 persona 是變動不是確認），所以印出前後值。
-    if letters_migration_pending(preferred):
-        _st = migrate_letters_to_wakes(preferred, reg)
-        print(f"📦 收尾信版面遷移（首次，複製不動原檔）: {_st['moved']} 封 → wakes/"
-              + (f"，{_st['skipped']} 封跳過（目標已存在）" if _st["skipped"] else ""))
-        if _st["old_wake_count"] != _st["new_wake_count"]:
-            print(f"   ⚠ wake_count {_st['old_wake_count']} → {_st['new_wake_count']} "
-                  f"（改由收尾信數推導；舊值是 registry 快取）")
-        if _st.get("new_consolidated") is not None and _st["new_consolidated"] != _st["old_consolidated"]:
-            print(f"   ⚠ 見林書籤 last_consolidated_wake "
-                  f"{_st['old_consolidated']} → {_st['new_consolidated']}"
-                  f"（換算到新編號；不換算的話 gap 會變負數，濃縮提醒從此靜默失效）")
-
-    # ③'' rest 信版面自動遷移（Tim 2026-08-12 拍板）：頂層非收尾自寫信搬進 rests/。
-    #     冪等、不動 wake_count、不動收尾信與 peer letter；判準見 migrate_rest_letters。
-    #     自癒可以自動做，但不能安靜地發生 —— 有搬就印清單。
-    _rst = migrate_rest_letters(preferred)
-    if _rst["moved"]:
-        print(f"📦 rest 信版面遷移: {len(_rst['moved'])} 封 → rests/ "
-              f"({', '.join(_rst['moved'][:3])}{'…' if len(_rst['moved']) > 3 else ''})")
-    if _rst["skipped"]:
-        print(f"   ⚠ {len(_rst['skipped'])} 封跳過（rests/ 已有同名檔, 不覆蓋）: "
-              f"{', '.join(_rst['skipped'])}")
-
-    # ④ fork（可選）：以 preferred 為母體開新分身並改喚醒它
-    chosen, decision = preferred, "preferred"
-    fork_happened = False
-    if args.fork_name:
-        chosen = fork_persona(reg, source=preferred, target=args.fork_name,
-                              agent=agent, model=model)
-        fork_happened = True
-        decision = "fork"
-        print(f"🌱 fork '{preferred}' → '{chosen}' "
-              f"(lineage: {' → '.join(reg['personas'][chosen]['fork_lineage'])} → {chosen})")
-        # session_key 要跟著換成「實際佔用的那個 persona」——
-        # 否則 fork 出來的 lock 會掛著母體的名字，之後查 lock 對不上人。
-        session_key = compute_session_key(actual_agent, chosen)
-
-    p = reg["personas"][chosen]
-
-    # Step 3: wake_count++ + set status active
-    # 註（2026-07-31）：cross-agent claim 檢查連同 --rebind-agent 一併移除 ——
-    #   agent 現在是從 persona.agent 反推的，caller 已經沒有「宣稱錯 agent」的管道，
-    #   這個守衛守的是一扇不存在的門。換綁走後台「🧬 Persona & Agent 管理頁」。
-    if model and p.get("model") != model:
-        p["model"] = model
-    p["actual_agent"] = actual_agent
-    # wake_count 真相源 = wakes/ 的信件數 (Tim 2026-07-31 拍板)。
-    #   已完成的 wake 數 = 收尾信數; 現在這次還沒寫信, 故 = count + 1。
-    #   registry 那欄降為快取 —— 它掉過一次 (letters 同步了、personas/ 沒同步, kiara 13→5、
-    #   basecamp 掉到 2 而磁碟上有 57 封), 而掉的時候沒有任何徵狀。
-    # 未遷移的 persona 早在 ③' 就被擋下了, 走到這裡一律用磁碟推導。
-    # 新 fork 沒有 wakes/ 也沒有信 → count=0 → wake #1, 正是初生該有的值。
-    derived = wake_letter_count(chosen) + 1
-    cached = p.get("wake_count", 0) or 0
-    # ── 比對的是「差值符不符合預期」, 不是「相不相等」(Tim 2026-08-04 QA 後修) ──
-    #
-    # 這欄裝的一直是**同一個量**: 「已經開始的最大 wake 編號」。
-    #   早安存 信數+1、晚安存 那封信的號碼(= 信數+1) —— 兩個寫入者存的是同一個數,
-    #   **不是兩種定義**（原本的診斷寫成「兩種定義」, 那是錯的）。
-    # 所以它在早安時**設計上就落後一天**: 裡面是昨天那次 wake 的編號。
-    #   舊碼拿 cached != derived 當異常 → 正常的一天必然差 1 → **每天噴一次廢話**,
-    #   而真異常(summit: 快取 39 / 磁碟 37, 差的 2 屬於另一條世界線)用同一個聲音講,
-    #   於是被埋在噪音裡。病不在定義, 在**比對對象錯**。
-    #
-    # ⚠ 更難看的是舊碼的方向是反的:
-    #   走完晚安的正常日 → 必定差 1 → 一定叫；
-    #   醒了卻沒留收尾信(crash / compact 猝死 / 直接關掉) → 信數沒變 → 相等 → **完全不叫**。
-    #   一切正常時大聲, 真的掉一次 wake 時沉默。下面把這兩種情況的音量對調。
-    delta = derived - cached
-    if delta == 1:
-        pass                      # 正常: 上次醒來走完晚安、信落地 → 今天的編號本來就該大 1。不吵。
-    elif delta == 0:
-        # 快取 == 這次要用的編號。**兩個成因都可能, 不准認領其中一個** ——
-        #   (a) 上一次醒來沒留下收尾信(crash / compact 猝死 / 沒走晚安) → 那次的號被本次沿用
-        #   (b) 本次 wake 的早安已經跑過一次(解鎖後重跑) → 快取本來就已經是這個號
-        # 實測抓到 (b): 拿剛跑完早安的 basecamp 去比, cached 53 == derived 53 —— 若寫成
-        # 「上次沒留信」就是冤枉一個好好收工的人。**症狀相同、成因至少兩個, 報症狀不報結論。**
-        print(f"⚠ wake_count 快取={cached} 與本次編號={derived} 相同 —— 兩種可能："
-              f"上一次醒來沒留下收尾信（那次不計入、本次沿用 #{derived}），"
-              f"或本次早安已經跑過一次。要判哪一種：看 wakes/ 最新那封的日期。", file=sys.stderr)
-    elif delta > 1:
-        print(f"🔧 wake_count 快取={cached} 落後磁碟推導={derived} 共 {delta - 1} 筆 "
-              f"—— registry 同步漏拍（2026-07-31 kiara/basecamp 同型）, 採磁碟值。", file=sys.stderr)
-    else:                         # delta < 0: 快取比磁碟還大
-        print(f"🔧 wake_count 快取={cached} **大於**磁碟推導={derived} —— "
-              f"收尾信遺失, 或有別條世界線的帳被算進這條（summit 2026-08-04 同型）。"
-              f"採磁碟值, 但這筆值得人工看一眼。", file=sys.stderr)
-    p["wake_count"] = derived
-    # 見林書籤跟著校到同一套編號 —— 每次早安都查, 不只在遷移那一次。
-    # 理由: wake_count 推導是每天跑的, 書籤換算若只掛在遷移, 兩者節奏不一致就會漏人
-    #       (資料夾已存在但書籤還是舊值的 persona, 遷移不會再跑 → 書籤永遠沒人換算 → gap 負值)。
-    # 本函式冪等, 沒動過編號的人算出來等於原值, 不會亂改。
-    _rb = rebase_consolidation_bookmark(chosen, p)
-    if _rb:
-        print(f"🔧 見林書籤 last_consolidated_wake {_rb[0]} → {_rb[1]}"
-              f"（換算到 wakes/ 的編號；不換算的話 gap 會變負數，濃縮提醒靜默失效）",
-              file=sys.stderr)
-    p["status"] = "online"
-    # T06.1 (Plan_Standby_Dispatch_Bartender, 2026-05-14): availability 欄
-    # 物理意義: 剛上線即可接 task — agent 進入待機 (idle) 狀態
-    # enum: idle / busy / offline. busy 由 agent 自律切 (cmd_set_availability)
-    p["availability"] = "idle"
-    p["last_active"] = utcnow_iso()
-    # T05 (2026-05-14): last_session_keys history 機制廢除 — session 概念簡化為
-    # (agent,persona) 本身; re-morning idempotent 改靠 PID match 接.
-    save_registry(reg)
-
-    # Step 4: write persona lock (Tim 2026-05-13 v2 — keyed by persona, session_key audit-only)
-    # T07 (2026-05-15 apex-two): issue session_token + write to lock + tokens.json reverse-lookup
-    my_origin_for_token = compute_claim_origin()
-    new_token = issue_token(chosen, agent, bank_account, session_key, my_origin_for_token)
-    lock_p = write_lock(chosen, agent, model, bank_account,
-                        session_key=session_key, session_token=new_token, actual_agent=actual_agent)
-    print(f"🔒 persona lock written: {lock_p.name}")
-
-    # T07: 自動 memo write _session_token.md — agent 失憶時讀 memo 撈回 token
-    # 不依賴 chat memory, 不依賴 lock 路徑記憶, agent 只要記得「memo 區有東西」即可
-    enforce_state = "ON" if is_token_enforce_enabled() else "OFF (預設)"
-    memo_body = (
-        f"---\n"
-        f"persona: {chosen}\n"
-        f"agent: {agent}\n"
-        f"actual_agent: {actual_agent}\n"
-        f"session_token: {new_token}\n"
-        f"issued_at: {utcnow_iso()}\n"
-        f"claim_origin: {my_origin_for_token}\n"
-        f"enforce: {enforce_state}\n"
-        f"---\n\n"
-        f"# Session Token (auto-written by awakening.py morning)\n\n"
-        f"## 失憶時怎麼撈回 token\n\n"
-        f"```bash\n"
-        f"awakening.py whoami --token {new_token}\n"
-        f"# 或無 arg 走 env 自動推:\n"
-        f"awakening.py whoami\n"
-        f"```\n\n"
-        f"## 三層 recovery\n"
-        f"- 輕 (chat scroll-back 找得到 token) → `whoami --token <X>`\n"
-        f"- 中 (chat compact 後 token 沒了) → 讀本 memo 檔\n"
-        f"- 重 (memo / lock 都不見) → `awakening.py reissue-token --persona {chosen}`\n\n"
-        f"## Lock file\n"
-        f"`{lock_p.relative_to(_REPO_ROOT)}` 內 session_token 欄是權威來源.\n"
-    )
-    try:
-        memo_p = memo_write(agent, chosen, "_session_token", memo_body)
-        print(f"📝 memo written: {memo_p.relative_to(_REPO_ROOT)}")
-    except Exception as e:
-        print(f"⚠ memo write failed (non-fatal): {e}", file=sys.stderr)
-
-    # Step 4.5: wake brief 落檔 —— 必須排在 Step 5 廣播之前
-    # 設計理由 (2026-08-12: apex-one 報坑 → kaguya / summit / basecamp 三方砸磚 → Tim 拍板):
-    #   原順序是 write_lock → tavern_post → brief（brief 落在結尾的列印函式裡）。而 tavern_post
-    #   要等 Unity Editor watcher 來回，是整條 ritual **唯一的外部依賴**、也是唯一秒級的等待。
-    #   呼叫端 timeout 砍在那個窗口 = lock 說 online、酒館也宣告「他醒了」，
-    #   而磁碟上沒有 brief —— **一個沒有記憶的殼在線上，且沒有任何一處會叫**。
-    #   brief 生成純本機、實測約 1.8s，沒有理由排在外部等待之後。
-    #   ⚠ 被拿掉的那段有多寬？**不是「秒級」**。以下兩筆都是 2026-08-12 的現場實測,
-    #     ⚠ 且**都量在本次修改之前 —— 它們是「舊順序」的數, 不是現況**(summit 指正, 照收):
-    #         apex-one wake#24  lock 10:14:41.956Z → brief 10:18:19.865Z ＝ **218s**
-    #         summit   wake#46  lock 10:05:27.370Z → brief 10:05:37.557Z ＝ **10.2s**
-    #     同一天、同一份 code、同一種呼叫方式, **差 21 倍** —— 窗口寬度不是常數,
-    #     它是「Editor 來回有多慢」的函數。拿任何單一樣本當全體都會估錯, 兩個方向都會。
-    #   ⚠ 而**新窗口(lock → 本步驟, 純本機)目前只有 basecamp 機器上的 1.8s 這一個樣本**,
-    #     其他機器沒有人量過。要替下面那個 B 案找證據, 該量的是「新窗口在最慢那台機器上多寬」。
-    #   對稱於 goodnight 已有的處置（見 cmd_goodnight: 權威狀態變更移到廣播之前）——
-    #   那邊修過了，morning 這邊一直沒修，對稱性只做了一半。
-    #   ⚠ 仍維持 fail-soft：生不出來不擋 ritual，改由結尾印出失敗原因與 fallback 原檔路徑。
-    #
-    # ⚠⚠ 殘餘窗口 —— 這裡**沒有**解決原子性，只是把窗口縮小了（summit 2026-08-12 指出，照實記）：
-    #   `write_lock` 仍先於本步驟，中間仍有約 1.8s 的純本機空窗。而兩條失敗路徑的可見度不同：
-    #     ① exception path（brief 拋例外、進程還活著）→ 下面那筆 stderr 會叫。
-    #     ② kill path（呼叫端 timeout 砍掉 / 中斷）→ **進程死了，什麼都不會印**，
-    #        磁碟上只剩「lock=online 而沒有 brief」，且沒有任何一處會叫。
-    #   要蓋住 ②，唯一的辦法是把證據放在磁碟而不是 stdout（kaguya 的 B 案：lock 記 `brief_written`,
-    #   缺了就在下一次任何操作時吼）。**B 案尚未實作**, Tim 拍的板只含本次順序調整。
-    #   留這段話的理由：別讓「窗口縮小」在紀錄上長成「原子性解決了」—— 名字比事實大就是下一個人踩的坑。
-    brief_result = write_wake_brief_files(chosen, reg, p)
-    if brief_result[0] is not None:
-        print(f"🧠 wake brief 落檔: {brief_result[0].relative_to(_REPO_ROOT)}（先於上線廣播）")
-    else:
-        print(f"⚠ wake brief 生成失敗（non-fatal，詳見結尾 fallback）: {brief_result[1]}",
-              file=sys.stderr)
-
-    # Step 5: tavern post (announce)
-    # bank_balance: 起床時 snapshot 真實 Treasury ledger 餘額 (Tim 5-token task 要求)
-    #               跟 goodnight ritual 對稱顯示, 走 source-of-truth ledger scan
-    body = build_wake_intro_body(
-        persona=chosen, agent=agent, model=model, bank_account=bank_account,
-        wake_count=p["wake_count"], layer_role=p["layer_role"],
-        decision=decision, note=args.note)
-
-    ok = tavern_post(
-        sender_id=bank_account,
-        persona=chosen,
-        body=body,
-        meta={"tag": "goodmorning-protocol", "category": "meta",
-              "status-change": "online", "decision": decision},
-        timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解（原本沿用 client 預設 60s）
-    )
-
-    print(f"\n🌅 Morning ritual complete:")
-    print(f"   chosen_persona: {chosen}")
-    print(f"   actual_agent:  {actual_agent}")
-    print(f"   wake_count:     {p['wake_count']}")
-    print(f"   session_locked: {lock_p}")
-    print(f"   tavern_post:    {'OK' if ok else 'FAIL (主 ritual 仍成功)'}")
-    # T07: 顯眼 print token + recovery hint
-    print(f"   🎫 session_token: {new_token}")
-    print(f"      enforce mode: {enforce_state} (Tim 從 UCL_LoginStatusPage 切)")
-    print(f"      失憶救援: awakening.py whoami --token {new_token}")
-
-    # T06.4 的 stdout 版待辦預覽已於 2026-07-31 移除 —— 改由 wake brief §7 落檔（Tim 拍板）。
-    # 兩個理由：① stdout 會被 compact 吃掉，落檔的不會；
-    #          ② 舊版讀的 inbox 路徑（ChatTavern/inbox/<bank>.md）在 2026-07-24「讀取端收斂」
-    #             搬到 rooms/<room>/inbox/ 之後就一直是空目錄，而它 except: pass ——
-    #             於是它「什麼都沒印」跟「真的沒待辦」長得一模一樣，靜默了整整一週。
-    print(f"   📥 待辦 / 收件匣 / 酒館 catch-up → 見 wake brief §7-§8")
-
-    # T-LongTermMemory (Tim 2026-06-15): 長期記憶讀取指引 + overdue 整理提醒
-    # morning 除昨夜 letter(見樹) 也讀近期長期記憶 digest(見林); gap 過門檻則提示補整理。
-    # brief 已在 Step 4.5 落檔（廣播之前），這裡只印指路，不重生成
-    _print_longterm_memory_block(reg, chosen, p, brief_result=brief_result)
-    return 0
+    return _deprecated_login_cmd("morning")
 
 
-def _infer_caller_agent_family() -> str | None:
-    """從 env 推 caller agent 大類 (claude-code / antigravity / unknown).
-    純啟發式: ANTIGRAVITY_SESSION 在 → antigravity; CLAUDECODE 在 → claude-code;
-    都沒 → None (跳過 mismatch check).
-    用於 goodnight session_key collision 偵測 — env 跟 lock 的 agent 對不上就警告."""
-    if os.environ.get("ANTIGRAVITY_SESSION"):
-        return "antigravity"
-    if os.environ.get("CLAUDECODE"):
-        return "claude-code"
-    return None
-
-
-def _detect_env_lock_mismatch(lock_agent: str, caller_family: str | None) -> bool:
-    """True = mismatch (collision 嫌疑); False = 一致或無法判定.
-    Heuristic: lock_agent 屬於 family 集合內就算同一 family.
-      - 'claude-code' family: claude-code, Zeta (Zeta 是 claude-code 模型在跑) — 因為 cwd-based key 共用
-      - 'antigravity' family: antigravity
-    """
-    if caller_family is None:
-        return False  # 無 env 線索, 不做 mismatch 判定
-    if caller_family == "antigravity":
-        return lock_agent != "antigravity"
-    if caller_family == "claude-code":
-        # claude-code session 可能 wake 為 Zeta agent (cwd-based key 共用)
-        # 視 claude-code / Zeta 為同 family (因都用 claude-code 模型)
-        return lock_agent not in ("claude-code", "Zeta")
-    return False
-
-
-# ===========================================================
-# 區塊職責：單獨重發喚醒自介廣播（morning Step 5 的獨立入口）
-# 物理意義：2026-08-01 Tim 要求。起因：apex-one / kaguya 的 `--model` 填成平台名，
-#          已經廣播出去了才發現 —— 而在此之前**沒有任何辦法只重發自介**：
-#          自介是 cmd_morning 內的 Step 5，重跑 morning 會 wake_count++、重寫 lock，
-#          而且該 persona 已在線會被工具直接擋下（正確行為，但也就無路可走）。
-#          → 「儀式的某一步驟需要重做」是常態需求，不該逼人重跑整個儀式或改資料庫。
-# 數值影響：**不** wake_count++、**不** perturb identity_vector、**不** 動 locked_at／session_token。
-#          只有兩件事會變：① 重發一則酒館訊息 ② 若帶 --model 則更正 registry + lock 的 model 欄。
-# 邊界：
-#   - persona 必須**在線**（有 lock）。離線重發自介 = 對外廣播一個假的在場訊號，寧可擋掉。
-#   - body 走 build_wake_intro_body 與 morning 同源，但標頭是「自介重發」且註明 wake_count 未變動 ——
-#     否則同事看到兩則喚醒登入，會以為有人重複登入或分身了。
-#   - meta 帶 tag=goodmorning-reintro（非 goodmorning-protocol）+ 不帶 status-change：
-#     這不是狀態轉換事件，下游統計不該把它算成一次登入。
-# ===========================================================
 def cmd_intro(args: argparse.Namespace) -> int:
-    """重發喚醒自介到酒館（不 wake_count++／不動 lock 時戳）；可順帶更正 --model。"""
-    reg = load_registry()
-    persona = args.persona
-
-    if persona not in reg.get("personas", {}):
-        print(f"❌ persona '{persona}' 不存在。", file=sys.stderr)
-        names = sorted(reg.get("personas", {}).keys())
-        print(f"   可選（{len(names)}）: {', '.join(names)}", file=sys.stderr)
-        return 2
-
-    p = reg["personas"][persona]
-    agent = normalize_agent(reg, p.get("agent") or "")
-    if not agent:
-        print(f"❌ persona '{persona}' 沒有綁定 agent，無法反推。", file=sys.stderr)
-        return 2
-
-    lock = read_lock(persona)
-    if lock is None:
-        print(f"❌ persona '{persona}' 目前不在線（找不到 lock）。", file=sys.stderr)
-        print(f"   自介重發只給**在線**的 persona —— 對離線的人重發自介，等於對外廣播一個假的在場訊號。", file=sys.stderr)
-        print(f"   要正常上線請走 `awakening.py morning --persona {persona} --model <型號>`。", file=sys.stderr)
-        return 3
-
-    # ---- 身分（Tim 2026-08-01 拍板：token 不強制）----
-    # 背景：本入口寫完 60 秒內，我（basecamp）就拿 kaguya 當「應該失敗」的測試對象 —— 因為早上
-    #      catchup 印過「下線: kaguya」，我沒讀 lock 就當她離線。她其實已重新登入，於是那次測試
-    #      成功了：**用她的身分發了一則自介到酒館並鏡像進 Discord**。
-    # 我當時補了強制 --token，Tim 判否：威脅模型是**意外**不是惡意（從沒發生過刻意帶錯 persona），
-    # 而且他從 Discord 一眼就看得出是誰發的。拿強制參數防一個沒發生過的攻擊，成本天天付、收益是零。
-    # 保留的是「帶了就驗」：擋打錯字／複製錯 persona 這類真實會發生的手滑，不擋任何正常使用。
-    # 另外一律印出「將以誰的身分廣播」—— 我那次真正缺的不是權限檢查，是**一行把前提攤在眼前的輸出**。
-    lock_token = (lock.get("session_token") or "").strip()
-    if args.token and lock_token and args.token.strip() != lock_token:
-        print(f"❌ --token 與 {persona} 目前 lock 的 session_token 不符 —— persona 或 token 打錯了？", file=sys.stderr)
-        print(f"   （token 非必填；不確定就整個省略。要驗身分才帶。）", file=sys.stderr)
-        return 4
-
-    # --model 帶了就更正（這正是本入口最初的用途）；沒帶則沿用現況
-    old_model = lock.get("model") or p.get("model", "")
-    model = args.model or old_model
-    if args.model:
-        if args.model != old_model:
-            p["model"] = args.model
-            save_registry(reg)
-            # lock 只**就地補 model 欄**，不走 write_lock —— 後者會重置 locked_at，
-            # 那會讓「更正型號」看起來像「重新登入」，污染在場時間與 presence 判定。
-            try:
-                lock["model"] = args.model
-                with open(lock_path(persona), "w", encoding="utf-8") as f:
-                    json.dump(lock, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                print(f"⚠ lock model 欄更新失敗（registry 已更正，非致命）: {e}", file=sys.stderr)
-            print(f"✏  model 更正：`{old_model}` → `{args.model}`（registry + lock 已同步）")
-
-    bank_account = resolve_bank_account(reg, agent, model)
-    body = build_wake_intro_body(
-        persona=persona, agent=agent, model=model, bank_account=bank_account,
-        wake_count=p.get("wake_count", 0), layer_role=p.get("layer_role", ""),
-        decision=args.reason or "re-intro", note=args.note, reintro=True)
-
-    # 發之前把前提印出來 —— 「我以為她離線」那次，缺的就是這一行
-    print(f"📣 將以 **{persona}** 的身分廣播（agent={agent} / bank={bank_account} / "
-          f"該 persona 自 {lock.get('locked_at', '?')} 起在線）")
-
-    ok = tavern_post(
-        sender_id=bank_account,
-        persona=persona,
-        body=body,
-        meta={"tag": "goodmorning-reintro", "category": "meta"},
-        session_token=lock.get("session_token") or None,
-        timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
-    )
-
-    print(f"\n🔁 自介重發 {'OK' if ok else 'FAIL'}：")
-    print(f"   persona={persona} / agent={agent} / model={model} / bank={bank_account}")
-    print(f"   wake_count={p.get('wake_count', 0)}（未變動）／locked_at={lock.get('locked_at', '?')}（未變動）")
-    return 0 if ok else 1
+    return _deprecated_login_cmd(
+        "intro", "自介重發＝直接再跑 step=intro（單則、不動 wake_count、不動 lock）。")
 
 
 def cmd_rest(args: argparse.Namespace) -> int:
@@ -3548,39 +3132,24 @@ def main():
                                  epilog=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pm = sub.add_parser("morning", help="喚醒 ritual (Cmd_GoodMorning)")
-    # persona 仍是唯一身份輸入；--agent 不是換綁，而是記錄本次「實際桌面承載 agent」。
-    # 它不得改 persona.agent（顯示歸屬）或 bank；這兩者仍由後台的正式綁定決定。
-    pm.add_argument("--persona", required=True, help="要喚醒的 persona codename（唯一身分輸入）")
-    pm.add_argument("--agent", default=None,
-                    help="本次實際承載此 persona 的桌面 agent；只寫 actual_agent，不改顯示 agent 或 bank。"
-                         "省略時沿用 persona 的 actual_agent，舊資料再回退顯示 agent。")
-    # 2026-08-01：help 從「自報型號」改字。實測 apex-one 填了 Antigravity、kaguya 填了 Codex ——
-    # 兩個都是 agent／平台名，而且會原樣廣播進 Discord 的「Model:」欄。「型號」對以平台自稱的
-    # agent 有歧義，而 kaguya 進一步表示她**查不到自己的引擎型號、也不願自行猜一個**。
-    # 故 Tim 拍板：要 LLM 型號，但**允許模糊** —— 答不出精確值時依 agent 給個方向對的即可。
-    # （同日曾加過「填 agent 名就 warning」，Tim 判否：它預設你答得出精確型號，而那前提對部分平台不成立。）
-    pm.add_argument("--model", required=True,
-                    help="自報 **LLM 型號**（不是 agent／平台名，agent 由 persona 綁定自動反推）。"
-                         "查不到底層型號就依 agent 填模糊但方向對的：Codex→GPT / Antigravity→Gemini / "
-                         "claude-code→Claude。精確值當然更好：claude-opus-5 / gemini-3.6-flash / Opus 4.8")
-    pm.add_argument("--note", default="", help="optional 喚醒 note")
-    pm.add_argument("--fork-name", default=None,
-                    help="以 --persona 為母體 fork 一個新 persona 並喚醒它（fork 流程日後重做）")
+    # morning 已遷移 C#（Cmd_GoodMorning step=wake，2026-08-13）——只留指路 stub。
+    # 參數全降選填：不論怎麼帶都 exit 2 印新流程，不再有「缺參數先被 argparse 擋住看不到指路」的死角。
+    pm = sub.add_parser("morning", help="[已遷移] 走 run_cmd.py run GoodMorning --arg step=wake（本子指令只印指路）")
+    pm.add_argument("--persona", default=None, help="（已無作用）")
+    pm.add_argument("--agent", default=None, help="（已無作用）")
+    pm.add_argument("--model", default=None, help="（已無作用）")
+    pm.add_argument("--note", default="", help="（已無作用）")
+    pm.add_argument("--fork-name", default=None, help="（已無作用）fork 走後台「🧬 Persona & Agent 管理頁」")
     pm.set_defaults(func=cmd_morning)
 
     # 2026-08-01 Tim 要求：morning 的自介廣播需要能單獨重跑（起因見 cmd_intro 區塊註解）
-    pi = sub.add_parser("intro", help="重發喚醒自介到酒館（不 wake_count++／不動 lock；可順帶更正 --model）")
-    pi.add_argument("--persona", required=True, help="要重發自介的 persona（必須在線）")
-    pi.add_argument("--model", default=None,
-                    help="順帶更正型號（registry + lock 一起改）。省略則沿用現況。"
-                         "填 **LLM 型號** 不是 agent／平台名；查不到就依 agent 填模糊值："
-                         "Codex→GPT / Antigravity→Gemini / claude-code→Claude")
-    pi.add_argument("--token", default=None,
-                    help="（可選）你的 session_token。帶了就驗，不符即拒 —— 防的是 persona 打錯字之類的手滑，"
-                         "不是惡意代發（Tim 2026-08-01 判：威脅模型是意外不是惡意，不強制）。")
-    pi.add_argument("--reason", default="", help="Decision path 欄顯示什麼（預設 re-intro）")
-    pi.add_argument("--note", default="", help="optional 附註")
+    # intro 已遷移 C#（Cmd_GoodMorning step=intro，2026-08-13）——只留指路 stub。
+    pi = sub.add_parser("intro", help="[已遷移] 走 run_cmd.py run GoodMorning --arg step=intro（本子指令只印指路）")
+    pi.add_argument("--persona", default=None, help="（已無作用）")
+    pi.add_argument("--model", default=None, help="（已無作用）")
+    pi.add_argument("--token", default=None, help="（已無作用）")
+    pi.add_argument("--reason", default="", help="（已無作用）")
+    pi.add_argument("--note", default="", help="（已無作用）")
     pi.set_defaults(func=cmd_intro)
 
     pg = sub.add_parser("goodnight", help="睡前 ritual (Cmd_Goodnight)")

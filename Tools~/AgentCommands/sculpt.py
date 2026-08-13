@@ -746,10 +746,17 @@ def cmd_export(args):
             for c in used_colors:
                 r, g, b = get_rgb332_color(c)
                 mf.write(f"newmtl c{c}\nKd {r/255:.4f} {g/255:.4f} {b/255:.4f}\n")
+        # 繞序自我驗證 (Tim 2026-08-13 Unity 實測 backface culling 抓出翻面):
+        # 世界(z-up)→OBJ(y-up) 交換兩軸=鏡像, 手排頂點表的手性會全翻 —— 不靠手排,
+        # 每面用叉積驗「法線是否朝外」, 不合就反轉頂點序; 並寫出 vn 供引擎直接用。
+        def _obj_coord(wx, wy, wz):
+            return (wx, wz, wy)   # OBJ y-up
+
         face_count = 0
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(f"mtllib {mtl_path.name}\n")
             vi = 1
+            ni = 1
             for c in used_colors:
                 f.write(f"usemtl c{c}\n")
                 for (x, y, z), color in vox.items():
@@ -758,10 +765,20 @@ def cmd_export(args):
                     for (dx, dy, dz), corners in _FACES:
                         if (x + dx, y + dy, z + dz) in vox:
                             continue  # 被鄰居遮住的面不出 (culling)
-                        for (ox, oy, oz) in corners:
-                            f.write(f"v {x + ox} {z + oz} {y + oy}\n")
-                        f.write(f"f {vi} {vi+1} {vi+2} {vi+3}\n")
+                        pts = [_obj_coord(x + ox, y + oy, z + oz) for (ox, oy, oz) in corners]
+                        nrm = _obj_coord(dx, dy, dz)   # 外向法線 (OBJ 座標)
+                        # 叉積 (p1-p0)×(p2-p0) 與外向同向 = CCW 正確; 反向 = 反轉頂點序
+                        ux, uy, uz = (pts[1][0]-pts[0][0], pts[1][1]-pts[0][1], pts[1][2]-pts[0][2])
+                        vx, vy, vz = (pts[2][0]-pts[0][0], pts[2][1]-pts[0][1], pts[2][2]-pts[0][2])
+                        cxn = (uy*vz - uz*vy, uz*vx - ux*vz, ux*vy - uy*vx)
+                        if cxn[0]*nrm[0] + cxn[1]*nrm[1] + cxn[2]*nrm[2] < 0:
+                            pts.reverse()
+                        for (px, py, pz) in pts:
+                            f.write(f"v {px} {py} {pz}\n")
+                        f.write(f"vn {nrm[0]} {nrm[1]} {nrm[2]}\n")
+                        f.write(f"f {vi}//{ni} {vi+1}//{ni} {vi+2}//{ni} {vi+3}//{ni}\n")
                         vi += 4
+                        ni += 1
                         face_count += 1
         print("# 📦 OBJ 匯出完成")
         print(f"  voxels    : {len(vox)}")

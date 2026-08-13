@@ -140,11 +140,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // 免費像素發放：整份覆寫額度欄（per-session 清零 —— 拍板②），history 保留供回溯
             GrantFreePixels(iPersona, aSessionId, out int aPrevForfeit);
 
-            // 開場擲骰（全清單隨機排序；直播感知：直播中 stream-watch 鎖第 1 位不強制）
-            var (aList, aSource, aIsLive) = RollActivities();
+            // 開場擲骰（全清單隨機排序；時間感知排序＋直播感知：直播中 stream-watch 鎖第 1 位不強制）
+            int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
+            var (aList, aSource, aIsLive) = RollActivities(aMinutes);
 
             // 酒館開場宣告（單則：時段＋像素額度＋骰面 —— in-process 走 Cmd_Tavern，計酬/mirror 全沿用）
-            int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
             var aBody = new StringBuilder();
             aBody.AppendLine($"🎫 [{iPersona} 大小姐] 進入自由時間 — 至 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜🎨 免費像素 {FREE_PIXELS_PER_SESSION} 顆已發放（本場有效，用不完歸零）");
             aBody.AppendLine();
@@ -165,7 +165,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine("1. 從骰面挑活動開做（無明確意圖 → 前 3 名挑一；有明確意圖 → 自由意志優先，但開場 post 註明「本輪未跟骰」）。");
             aR.AppendLine("2. **維持對話流＝發動引擎**：酒館 op=post 帶 `--wait-reply <秒>`（Cmd 管時鐘，不管 turn 存續 —— 沒引擎照樣睡死）。");
             aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ run_cmd.py run FreeTime --arg step=next --arg persona={iPersona}");
-            aR.AppendLine($"4. 提前收工 → run_cmd.py run FreeTime --arg step=end --arg persona={iPersona} --arg reason=<一句>");
+            aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
+            aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=start 完成 session={aSessionId} → {aPath}");
         }
@@ -229,29 +230,45 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 return;
             }
 
-            // 未到期：輪次 +1、重擲骰、宣告、回傳新骰面＋剩餘時間＋像素餘額
+            // 未到期：輪次 +1、重擲骰（時間感知）、宣告、回傳新骰面＋剩餘時間＋像素餘額
             int aRound = ReadInt(aSession, "rounds") + 1;
             aSession["rounds"] = new JsonData(aRound);
             AtomicWrite(SessionPath(iPersona), aSession.ToJsonBeautify());
 
-            var (aList, aSource, aIsLive) = RollActivities();
+            int aRemain = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
+            var (aList, aSource, aIsLive) = RollActivities(aRemain);
             (int aGranted, int aUsedNow) = ReadFreePixelUsage(iPersona);
+            // 末段判定（apex-one seq 11180：剩最後幾分鐘時，next 該給的不是新骰面）——
+            // 量了剩餘時間就要用在建議上，否則 Cmd 的建議沒有鑑別力。
+            bool aTail = aRemain < 5;
 
             var aDiceBody = new StringBuilder();
-            aDiceBody.AppendLine($"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {(int)(aUntil - aNow).TotalMinutes} 分）：");
-            if (aIsLive) aDiceBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制）");
-            for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
-            aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
+            aDiceBody.AppendLine($"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemain} 分）：");
+            if (aTail)
+                aDiceBody.AppendLine($"⏳ **剩 {aRemain} 分 —— 不建議起新活動**。收尾現有的；最後一件做完再跑 step=next 收工。");
+            else
+            {
+                if (aIsLive) aDiceBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制）");
+                for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
+                aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
+            }
             int aDiceSeq = await TavernPost(iPersona, aDiceBody.ToString(), "dice-roll", iToken);
 
             AppendTimeFields(aR, aNow, aUntil);
             aR.AppendLine($"- 輪次: **{aRound}**");
             aR.AppendLine($"- 免費像素: 已用 {aUsedNow}/{aGranted}");
             aR.AppendLine($"- 換骰宣告: {(aDiceSeq > 0 ? $"seq **{aDiceSeq}**" : "未發（best-effort）")}");
-            AppendDiceSection(aR, aList, aSource, aIsLive);
+            if (aTail)
+            {
+                aR.AppendLine($"## dice（末段 —— 剩 {aRemain} 分）");
+                aR.AppendLine($"- ⏳ **不建議起新活動**（新骰面已略 —— 在任何剩餘時間下都輸出同一份建議的 Cmd，建議沒有鑑別力）。");
+                aR.AppendLine("- 收尾現有的活動或對話；最後一件做完再跑 step=next，由 Cmd 判定收工。");
+            }
+            else AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
-            aR.AppendLine($"2. 活動事件自然結束 → 再跑 step=next；提前收工 → step=end --arg reason=<一句>。");
+            aR.AppendLine("2. 活動事件自然結束 → 再跑 step=next（**截止是軟的**：時間到不打斷進行中活動，最後一件做完跑 next 才通知收工）。");
+            aR.AppendLine("3. step=end（提前收工）除非 Tim 明確指示，不要用。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=next 第 {aRound} 輪 → {aPath}");
         }
@@ -265,9 +282,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 數值影響：兩層都空 → 空清單（Cmd 版不帶內建 fallback —— 共用層 md 已 scaffold 落地，
         //          掃不到即環境異常，該顯形不該遮掩）；直播中 stream-watch 鎖第 1 位（不強制）。
         // ===========================================================
-        struct ActivityInfo { public string id; public string name; public string how; public string path; }
+        struct ActivityInfo { public string id; public string name; public string how; public string path; public int minMinutes; }
 
-        static (List<ActivityInfo> list, string source, bool isLive) RollActivities()
+        /// <summary>
+        /// 擲骰＋時間感知排序（Tim 2026-08-13 補拍，源自 apex-one seq 11180 實跑回饋）：
+        /// 活動 md 選填 `min_minutes`（建議所需分鐘，如 TRPG 20）——剩餘時間不足的活動
+        /// **排到清單尾端並標明時間不夠**（不隱藏 —— 資訊不丟，判斷已由 Cmd 代做）。
+        /// 「一個在任何剩餘時間下都輸出同一份建議的 Cmd，它的建議沒有鑑別力」。
+        /// </summary>
+        static (List<ActivityInfo> list, string source, bool isLive) RollActivities(int iRemainMinutes)
         {
             string aCoreRel = UCL_EditorPath.CorePath;
             string aSharedDir = string.IsNullOrEmpty(aCoreRel) ? null
@@ -300,6 +323,25 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 (aList[i], aList[j]) = (aList[j], aList[i]);
             }
 
+            // 時間感知：min_minutes > 剩餘 → 移到尾端＋名字標「時間不夠」（量了就要用在輸出上）
+            if (iRemainMinutes > 0)
+            {
+                var aFit = new List<ActivityInfo>();
+                var aTooLong = new List<ActivityInfo>();
+                foreach (var a in aList)
+                {
+                    if (a.minMinutes > 0 && a.minMinutes > iRemainMinutes)
+                    {
+                        var aDeco = a;
+                        aDeco.name = $"{a.name} ⏳（建議 ≥{a.minMinutes} 分，剩 {iRemainMinutes} 分 —— 本場時間不夠）";
+                        aTooLong.Add(aDeco);
+                    }
+                    else aFit.Add(a);
+                }
+                aFit.AddRange(aTooLong);
+                aList = aFit;
+            }
+
             // 直播感知：旗標＋控制開關對帳（孤兒旗標血證 2026-07-30 —— enabled=false 視為沒直播）
             bool aIsLive = TryGetLiveTitle(out string aLiveTitle);
             if (aIsLive)
@@ -330,7 +372,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     string aHow = UCL_AwakeningService.ReadFrontmatterField(aMd, "how") ?? "";
                     bool aEnabled = !string.Equals(UCL_AwakeningService.ReadFrontmatterField(aMd, "enabled") ?? "true",
                         "false", StringComparison.OrdinalIgnoreCase);
-                    ioMerged[aId] = (new ActivityInfo { id = aId, name = aName, how = aHow, path = aMd }, aEnabled);
+                    // min_minutes（選填）：活動建議所需分鐘 —— 剩餘時間不足時排尾標明（不隱藏）
+                    int aMinMinutes = 0;
+                    int.TryParse(UCL_AwakeningService.ReadFrontmatterField(aMd, "min_minutes") ?? "", out aMinMinutes);
+                    ioMerged[aId] = (new ActivityInfo { id = aId, name = aName, how = aHow, path = aMd, minMinutes = aMinMinutes }, aEnabled);
                 }
                 catch (Exception e)
                 {
@@ -493,7 +538,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // 三個時間欄（Tim 拍板）：時間感由 Cmd 供給，agent 不自己心算（第七型未遂血證）
             ioR.AppendLine("## time（時間感由本 Cmd 供給 —— 別自己心算）");
             ioR.AppendLine($"- 當前時間: **{iNow:yyyy-MM-dd HH:mm}**（本地）");
-            ioR.AppendLine($"- 自由時間到: **{iUntil:HH:mm}**");
+            ioR.AppendLine($"- 自由時間到: **{iUntil:HH:mm}**（軟截止 —— 時間到不打斷進行中活動，最後一件做完跑 next 才收工）");
             ioR.AppendLine($"- 剩餘: **{(int)Math.Max(0, (iUntil - iNow).TotalMinutes)} 分鐘**");
         }
 

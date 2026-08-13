@@ -153,8 +153,8 @@ run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
 |---|---|---|---|
 | `start` | 守衛（**必須在線**＋不疊開；過期殘留 session 自動收掉）→ session 註冊（until）→ **發 10 顆免費像素**（per-session 清零）→ 開場擲骰（雙層活動 md，直播感知）→ 酒館開場宣告 | `letters/<P>/_freetime_start.md` | 工具 |
 | （做活動） | 骰面挑活動（跟骰規則）＋維持對話流（引擎 `--wait-reply` —— **Cmd 不管 turn 存續**）| — | persona |
-| `next` | **活動事件自然結束時跑**（棋局終局／繪圖收筆／聊天告一段落 —— Tim 拍板的觸發點）。對系統時鐘：未到期→輪次+1 重擲＋宣告；**已到期→收工**（關 session＋像素作廢＋收工宣告）——過期再 next 是收工不是報錯 | `letters/<P>/_freetime_next.md` | 工具 |
-| `end` | 提前收工（reason 進宣告與 payload —— 提早離席的形狀可觀測，不靜默）| `letters/<P>/_freetime_end.md` | 工具 |
+| `next` | **活動事件自然結束時跑**（棋局終局／繪圖收筆／聊天告一段落 —— Tim 拍板的觸發點）。對系統時鐘：未到期→輪次+1 重擲＋宣告（**剩 <5 分改印「不建議起新活動」**，不再給整副骰面）；**已到期→收工**（關 session＋像素作廢＋收工宣告）——過期再 next 是收工不是報錯 | `letters/<P>/_freetime_next.md` | 工具 |
+| `end` | 提前收工（reason 進宣告與 payload）。**除非 Tim 明確指示，不要用** —— 正常收工一律由 next 對時鐘自動判定 | `letters/<P>/_freetime_end.md` | 工具 |
 
 ```bash
 run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm 本地>
@@ -170,6 +170,12 @@ run_cmd.py run FreeTime --arg step=end   --arg persona=<P> [--arg reason=<一句
   session state `<DataRoot>/FreeTime/sessions/<P>.json`、額度 `<DataRoot>/Canvas/freetime/<P>.json`
   —— **改任一端 schema 必須同步另一端**（Cmd_FreeTime.cs ↔ canvas.py）。
 - `until` 解析：HH:mm 本地；已過的時刻 12 小時內視為打錯（blocked），超過視為深夜跨日（+1 天）。
+- **截止是軟的**（Tim 2026-08-13 補拍）：until 到了**不打斷進行中的活動**——最後一件活動
+  做完跑 next 才通知收工（例：14:10 截止、14:12 繪圖收筆 → 此時的 next 才宣布收工）。
+  免費像素在收工前仍可用（canvas 端只認 session active 旗標，不拿 end_ts 掐額度）。
+- **活動時間需求**（apex-one seq 11180 回饋 → Tim 拍板）：活動 md 選填 `min_minutes`
+  （建議所需分鐘，如 gaming/stream-watch=20）——擲骰時剩餘時間不足的活動**排尾＋標明
+  「時間不夠」**（不隱藏）；剩 <5 分時 next 直接改印「不建議起新活動」。
 - `freetime.py enter` 已退役為指路 stub（exit 2）；純參考擲骰用 `freetime.py shuffle`。
 
 ## 11. 完整一天（Template 測試殼可整輪重放）

@@ -24,6 +24,7 @@ id: reading                  # 穩定識別碼 (= 檔名去 .md)
 name: 閱讀 (自選讀書)         # 顯示名 (shuffle 輸出主體)
 how: reading-library skill → 新 Library 的 work/media/persona/read_session 流程   # 一行操作提示
 enabled: true                # false = 暫時下架 (shuffle/list 跳過, 檔案保留)
+min_minutes: 20              # 選填 — 建議所需分鐘 (Cmd_FreeTime 擲骰時剩餘時間不足 → 排尾標明「時間不夠」，不隱藏)
 ---
 
 # 閱讀 (自選讀書)

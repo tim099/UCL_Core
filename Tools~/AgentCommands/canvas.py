@@ -557,9 +557,10 @@ def free_session_path(P: Paths, persona: str) -> Path:
 def active_free_session(P: Paths, persona: str, now: datetime.datetime) -> dict | None:
     """
     區塊職責：判 persona 是否在 active 自由時間 session
-    物理意義：讀 Cmd_FreeTime 寫的 per-persona session 檔（active=true 且 now∈[start,end]）。
-              active=true 但已過 end_ts ＝ agent 超時沒跑 step=next —— 額度視為失效
-              （時限判定只認時鐘），下次 next/start 會把 session 正式收掉。
+    物理意義：讀 Cmd_FreeTime 寫的 per-persona session 檔。**截止是軟的**（Tim 2026-08-13
+              補拍）：until 過了不打斷進行中的活動，最後一件做完跑 step=next 才收工 ——
+              所以這裡只認 active 旗標＋start 已到，**不拿 end_ts 掐額度**；
+              session 的關閉（active=false）由 Cmd_FreeTime next/end/stale-on-start 負責。
     數值影響：命中回 {"id": session_id, "end_ts": ...}，否則 None。
     """
     s = read_json(free_session_path(P, persona))
@@ -568,12 +569,9 @@ def active_free_session(P: Paths, persona: str, now: datetime.datetime) -> dict 
     if not s.get("active"):
         return None
     start = parse_iso(s.get("start_ts"))
-    end = parse_iso(s.get("end_ts"))
-    if start is None or end is None:
+    if start is None or start > now:
         return None
-    if start <= now <= end:
-        return {"id": s.get("session_id"), "end_ts": s.get("end_ts")}
-    return None
+    return {"id": s.get("session_id"), "end_ts": s.get("end_ts")}
 
 
 def free_pixels_available(P: Paths, persona: str, now: datetime.datetime) -> int:
@@ -1017,7 +1015,10 @@ def cmd_freetime(args):
         print(f"  自由時間: ✅ active（session 至 {session.get('end_ts')}）")
         if end:
             remain = (end - now).total_seconds()
-            print(f"  session 剩餘: {int(remain // 60)} 分 {int(remain % 60)} 秒")
+            if remain >= 0:
+                print(f"  session 剩餘: {int(remain // 60)} 分 {int(remain % 60)} 秒")
+            else:
+                print("  已過軟截止 —— 最後一件活動做完跑 step=next 收工（額度在收工前仍可用）")
     if session and ft.get("session_id") == session.get("id"):
         print(f"  免費像素: {max(0, granted - used)} 顆可用（本場已用 {used}/{granted}）")
     elif session:

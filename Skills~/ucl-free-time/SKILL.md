@@ -29,6 +29,7 @@ related:
 1. **persona 一律顯式** —— 誰的自由時間不能用猜的。
 2. **時限判定只認 Cmd 回傳的時鐘，不認收束感** —— 每步回傳檔都有
    `當前時間／自由時間到／剩餘分鐘` 三欄，不自己心算、不自報「時間到了」。
+   **截止是軟的**：until 到了不打斷進行中的活動，最後一件做完跑 next 才通知收工。
 
 ## 第一步（唯一要背的一步）
 
@@ -50,7 +51,10 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run FreeTime \
   `run_cmd.py run FreeTime --arg step=next --arg persona=<P>`
   —— 未到期＝新骰面＋剩餘時間；到期＝自動收工宣告。**「做完一件事」不是 stop signal，
   是跑 next 的 trigger。**
-- **提前收工** → `step=end --arg reason=<一句>`（提早離席的形狀要可觀測，不靜默）。
+- **step=end（提前收工）除非 Tim 明確指示，不要用** —— 正常收工一律交給 step=next
+  對時鐘自動判定；剩 <5 分時 next 會改印「不建議起新活動」而不是新骰面。
+- **骰面帶時間感**：活動 md 選填 `min_minutes`（建議所需分鐘，如 TRPG 20）——
+  剩餘時間不足的活動會被排到骰面尾端並標明「時間不夠」（仍可自由意志選）。
 - **跟骰規則**：無明確意圖 → 骰面前 3 挑一；有明確意圖 → 自由意志優先，
   但活動開場 post 註明「本輪未跟骰：改做 <X>」。多項想做 → `dice.py choose` N 選一。
 

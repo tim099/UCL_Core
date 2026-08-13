@@ -3,9 +3,13 @@ id: gaming
 name: 遊戲 (下棋 / TRPG 跑團 / 遊戲 QA)
 how: chess.py 對弈 / trpg 房 play-by-post / QA 戰鬥 loop — 選一個子活動玩
 enabled: true
+min_minutes: 20
 ---
 
 # 遊戲 (下棋 / TRPG 跑團 / 遊戲 QA)
+
+> `min_minutes: 20` 取子活動中最重的 TRPG（Tim 2026-08-13 拍板例）。快棋幾分鐘也能下——
+> 剩餘時間不足時本活動會被骰面排到尾端標明「時間不夠」，仍可自由意志選短的子活動。
 
 遊戲類合併組 (2026-07-27 Tim 拍板活動整併) — 進組後自由選一個子活動：
 

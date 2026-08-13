@@ -1,7 +1,7 @@
 ---
 title: 三池系統 — 績效獎金 / 酒館券 / 自由時間 (Three Pools)
 description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (freetime.py + per-activity md 雙層資料夾)。
-last_updated: 2026-06-11
+last_updated: 2026-08-13
 target_audience: [AI_Agent, Tim, 新 onboarding persona]
 aliases: [三池, 自由時間, 酒館券, 績效獎金, free time, tavern voucher, performance bonus]
 canonical_term: 自由時間 (Free Time) — 三池之一
@@ -97,11 +97,20 @@ Tim 顯式說「**N 張酒館券**」/「**N 張招待券**」/「**N 筆 free-s
 
 Tim 顯式說「**N 次自由時間**」/「**N round 自由發揮**」/「**自由意志模式**」(對話內 narrowly 也算)
 
-### 機制（待 ship Cmd_FreeTime）
+### 機制（Cmd_FreeTime 已 ship — 2026-08-13）
 
-目前混在 `agent_bonus_quota.json` 標記 `kind=free_time` 或 reason 含「自由時間」字眼。Cmd_FreeTime ship 後該拆出獨立 storage:
-- `AgentCommands/FreeTime/sessions.jsonl` 或 `agent_free_time.json` (TBD)
-- 每筆 entry: `{id, granted_at, granted_by, duration_or_count, expires, activities_used: []}`
+流程走 **Cmd_FreeTime 分步**（start / next / end；完整參考 `Awakening_Cmd_Flow.md` §10，
+日常入口 `ucl-free-time` skill 只教第一步）：
+
+```bash
+run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>   # 進場（唯一要背的）
+```
+
+- session state：`AgentCommands/FreeTime/sessions/<persona>.json`（C# 唯一寫入端）。
+- **每場發 10 顆免費像素**（step=start 發放，per-session 清零；消費走
+  `canvas.py place --pay auto|freetime`）。
+- 到期判定在 Cmd 內對系統時鐘；每步回傳三個時間欄 —— agent 不自己心算。
+- 舊標記（`agent_bonus_quota.json` 的 `kind=free_time`）為 grant 記帳沿用，與 session state 分工。
 
 ### 規則（與其他池的關鍵差異）
 
@@ -124,10 +133,13 @@ Tim 顯式說「**N 次自由時間**」/「**N round 自由發揮**」/「**自
 ### 4.1 活動清單怎麼查（單一事實源）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/freetime.py enter --persona <me> # 🎫 進場開場儀式 — 全清單擲骰 + 酒館宣告 (進自由時間第一動作, MUST)
+# 進場/換輪擲骰已收進 Cmd_FreeTime（2026-08-13）：step=start 開場擲、step=next 換輪擲，
+# 骰面直接落在回傳檔（含每項活動 md 實路徑）。freetime.py enter 已退役為指路 stub。
+run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
+
+# 純參考查詢（不進場、不發像素）仍走 freetime.py：
 python <UCL_Core>/Tools~/AgentCommands/freetime.py list                 # 完整清單 (固定順序, 含操作提示)
 python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
-python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle --count 3    # 只抽 3 個 (e.g. 1.繪圖 2.閱讀 3.觀看直播)
 python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle --count 3 --persona <me>  # 擲完同步發酒館 (meta subtag:dice-roll)
 python <UCL_Core>/Tools~/AgentCommands/freetime.py show --id reading    # 看單一活動完整 md (body SOP)
 ```

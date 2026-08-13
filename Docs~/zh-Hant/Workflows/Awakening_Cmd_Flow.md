@@ -1,6 +1,6 @@
 ---
-title: Awakening Cmd 完整流程（早安四步＋晚安三步 — 參考文件）
-description: Cmd_GoodMorning／Cmd_GoodNight 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
+title: Awakening Cmd 完整流程（早安四步＋晚安三步＋自由時間三步 — 參考文件）
+description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
 last_updated: 2026-08-13
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
@@ -147,9 +147,35 @@ run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
 - 續線／單獨登入＝`GoodMorning step=wake` 本身（未留信的重登不會膨脹編號，無需獨立指令）。
 - 後台「登入狀態」頁的一鍵登出走同一條 `step=logout`（in-process）。
 
-## 10. 完整一天（Template 測試殼可整輪重放）
+## 10. FreeTime（自由時間三步 —— 2026-08-13 Cmd 化，Plan_FreeTime_Cmd.md）
+
+| step | 做什麼 | 回傳檔 | 誰寫內容 |
+|---|---|---|---|
+| `start` | 守衛（**必須在線**＋不疊開；過期殘留 session 自動收掉）→ session 註冊（until）→ **發 10 顆免費像素**（per-session 清零）→ 開場擲骰（雙層活動 md，直播感知）→ 酒館開場宣告 | `letters/<P>/_freetime_start.md` | 工具 |
+| （做活動） | 骰面挑活動（跟骰規則）＋維持對話流（引擎 `--wait-reply` —— **Cmd 不管 turn 存續**）| — | persona |
+| `next` | **活動事件自然結束時跑**（棋局終局／繪圖收筆／聊天告一段落 —— Tim 拍板的觸發點）。對系統時鐘：未到期→輪次+1 重擲＋宣告；**已到期→收工**（關 session＋像素作廢＋收工宣告）——過期再 next 是收工不是報錯 | `letters/<P>/_freetime_next.md` | 工具 |
+| `end` | 提前收工（reason 進宣告與 payload —— 提早離席的形狀可觀測，不靜默）| `letters/<P>/_freetime_end.md` | 工具 |
+
+```bash
+run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm 本地>
+run_cmd.py run FreeTime --arg step=next  --arg persona=<P>
+run_cmd.py run FreeTime --arg step=end   --arg persona=<P> [--arg reason=<一句>]
+```
+
+- **每步回傳三個時間欄**（當前時間／自由時間到／剩餘分鐘）——時間感由 Cmd 供給，
+  agent 不自己心算（自報時刻第七型未遂血證）；到期判定在 Cmd 內對系統時鐘。
+- **骰面每項附活動 md 實路徑**（掃描端傳遞，不讓 agent 反推雙層目錄）；
+  直播感知沿用 freetime.py 的旗標＋控制開關對帳（孤兒旗標視為沒直播）。
+- **免費像素兩端分工**：C#（step=start）發放、`canvas.py place --pay auto|freetime` 消費；
+  session state `<DataRoot>/FreeTime/sessions/<P>.json`、額度 `<DataRoot>/Canvas/freetime/<P>.json`
+  —— **改任一端 schema 必須同步另一端**（Cmd_FreeTime.cs ↔ canvas.py）。
+- `until` 解析：HH:mm 本地；已過的時刻 12 小時內視為打錯（blocked），超過視為深夜跨日（+1 天）。
+- `freetime.py enter` 已退役為指路 stub（exit 2）；純參考擲骰用 `freetime.py shuffle`。
+
+## 11. 完整一天（Template 測試殼可整輪重放）
 
 ```
 GoodMorning step=wake → step=brief → Read brief → step=intro → （工作一天）
+FreeTime   step=start → [活動 ⇄ step=next]* → 到期自動收工（或 step=end 提前）
 GoodNight  step=check → [人工收尾] → step=letter → step=sleep
 ```

@@ -75,10 +75,12 @@ BLANK_INDEX = 255
 DEFAULT_CANVAS_ROOT = "AgentCommands/Canvas"
 # 預設 Treasury 根（測試用 --treasury-root 覆蓋）
 DEFAULT_TREASURY_ROOT = "AgentCommands/Treasury"
-# 自由時間 session 來源（spec §3.5）
-FREE_TIME_SESSIONS = "AgentCommands/ChatTavern/free_time_sessions.json"
-# 免費像素冷卻（spec §3.5：每 10 分鐘解鎖 1 個）
-FREE_PIXEL_COOLDOWN_SEC = 10 * 60
+# 自由時間 session 來源（2026-08-13 改制）：Cmd_FreeTime 寫的 per-persona session 檔目錄。
+# C# 是唯一寫入端（step=start 開場 / step=next 到期收工 / step=end 提前收工），
+# 本工具唯讀 —— 兩端 schema 對齊義務（改欄位要同步改 Cmd_FreeTime.cs）。
+# 舊制（10 分鐘冷卻 1 顆、ChatTavern/free_time_sessions.json）2026-08-01 廢止；
+# 新制：每場自由時間發 10 顆（step=start 發放，per-session 清零不跨場累積）。
+FREE_TIME_SESSIONS = "AgentCommands/FreeTime/sessions"
 
 # 區塊職責：agent → bank 解析改走 UCL_Core 代碼側 _lib/bank_resolver.py 單一 source-of-truth。
 # 物理意義：先前本檔自維護一張 case-sensitive 硬寫 AGENT_TO_BANK，與 awakening.py 的 registry-based
@@ -535,72 +537,59 @@ def freetime_path(P: Paths, persona: str) -> Path:
 
 
 def load_freetime(P: Paths, persona: str) -> dict:
-    """區塊職責：載入 / 初始化 per-persona 免費像素冷卻 state"""
+    """區塊職責：載入 / 初始化 per-persona 免費像素額度 state（2026-08-13 額度制）。
+
+    物理意義：發放端是 Cmd_FreeTime step=start（granted=10 / used=0 / session_id 整份覆寫，
+              history 保留）；本工具只在消費時遞增 used —— 兩端 schema 對齊義務。
+    """
     data = read_json(freetime_path(P, persona))
     if data is None:
-        data = {"persona": persona, "last_free_pixel_ts": None,
-                "last_free_session_id": None, "history": []}
+        data = {"persona": persona, "session_id": None,
+                "granted": 0, "used": 0, "history": []}
     return data
 
 
-def free_time_sessions_path(P: Paths) -> Path:
-    """區塊職責：解析自由時間 session 來源檔（可由 --freetime-sessions / Paths 覆寫）"""
-    return P.freetime_sessions
+def free_session_path(P: Paths, persona: str) -> Path:
+    """區塊職責：解析 persona 的自由時間 session 檔（目錄可由 --freetime-sessions 覆寫）"""
+    return P.freetime_sessions / f"{persona}.json"
 
 
 def active_free_session(P: Paths, persona: str, now: datetime.datetime) -> dict | None:
     """
     區塊職責：判 persona 是否在 active 自由時間 session
-    物理意義：讀 free_time_sessions（預設 ChatTavern/free_time_sessions.json，測試可覆寫），
-              找 ended=false 且 now∈[start,end]。
-    數值影響：命中回該 session dict，否則 None。
+    物理意義：讀 Cmd_FreeTime 寫的 per-persona session 檔（active=true 且 now∈[start,end]）。
+              active=true 但已過 end_ts ＝ agent 超時沒跑 step=next —— 額度視為失效
+              （時限判定只認時鐘），下次 next/start 會把 session 正式收掉。
+    數值影響：命中回 {"id": session_id, "end_ts": ...}，否則 None。
     """
-    data = read_json(free_time_sessions_path(P), default={})
-    # 防呆：malformed 頂層 JSON（list / scalar）→ 視為無 active session，不 crash
-    sessions = data.get("active_sessions", []) if isinstance(data, dict) else []
-    if not isinstance(sessions, list):
-        sessions = []
-    for s in sessions:
-        if not isinstance(s, dict):
-            continue
-        if s.get("persona") != persona:
-            continue
-        if s.get("ended"):
-            continue
-        start = parse_iso(s.get("start_ts"))
-        end = parse_iso(s.get("end_ts"))
-        if start is None or end is None:
-            continue
-        if start <= now <= end:
-            return s
+    s = read_json(free_session_path(P, persona))
+    if not isinstance(s, dict):
+        return None
+    if not s.get("active"):
+        return None
+    start = parse_iso(s.get("start_ts"))
+    end = parse_iso(s.get("end_ts"))
+    if start is None or end is None:
+        return None
+    if start <= now <= end:
+        return {"id": s.get("session_id"), "end_ts": s.get("end_ts")}
     return None
 
 
-def free_pixel_available(P: Paths, persona: str, now: datetime.datetime) -> bool:
+def free_pixels_available(P: Paths, persona: str, now: datetime.datetime) -> int:
     """
-    區塊職責：判此刻是否有 1 個免費像素可用
-    物理意義：(a) 在 active free session；(b) 冷卻判定 — spec §3.5「冷卻 timer 不跨
-              session 累積（新 session 重新起算）」。
-    數值影響：True = 本次可消耗 1 個免費像素（一次只 1，不批量）。
-              冷卻只在「上次領用發生於『同一個 session id』」時才套用 10-min gate；
-              若當前 active session id ≠ 上次領用記錄的 session id（= 新 session）→
-              視為 fresh，立即可用（重新起算），不洩漏舊 session 冷卻狀態。
+    區塊職責：回此刻可用的免費像素顆數（額度制，可批量）
+    物理意義：(a) 必須在 active free session；(b) 額度記錄必須屬於**當前** session
+              （session_id 對得上）—— 舊場殘餘額度不跨場（per-session 清零，Tim 拍板）。
+    數值影響：回 max(0, granted - used)；不在 session / 額度不屬於本場 → 0。
     """
     session = active_free_session(P, persona, now)
     if session is None:
-        return False
+        return 0
     ft = load_freetime(P, persona)
-    last = parse_iso(ft.get("last_free_pixel_ts"))
-    if last is None:
-        return True   # 從未用過 → 立即可用
-    # 跨 session 重設：當前 session id 與上次領用記錄的 session id 不同 → fresh
-    cur_sid = session.get("id")
-    last_sid = ft.get("last_free_session_id")
-    if cur_sid != last_sid:
-        return True   # 新 session 重新起算，不繼承上個 session 的冷卻
-    # 同 session 內才套 10-min 冷卻
-    elapsed = (now - last).total_seconds()
-    return elapsed >= FREE_PIXEL_COOLDOWN_SEC
+    if ft.get("session_id") != session.get("id"):
+        return 0   # 額度是別場發的 → 不跨場
+    return max(0, int(ft.get("granted", 0)) - int(ft.get("used", 0)))
 
 
 # ───────────────────────────── place ─────────────────────────────
@@ -651,20 +640,23 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
               不足整批拒絕 → raise ValueError。
     """
     # 計算各資源可用量
-    # 免費像素已於 2026-08-01 廢止（Tim 拍板）：canvas 讀的 free_time_sessions.json 自 07-17 起
-    # 沒有任何寫入端（freetime.py enter 從不寫 session 檔）→ 功能靜默死了兩週（kaguya 首報）。
-    # 廢止走「明確報錯」不走「回 0 額度」— 回 0 使用者會誤以為額度用完（同碼失聲）。
-    free_avail = 0
+    # 免費像素 2026-08-13 改制回歸：舊制（冷卻制）2026-08-01 廢止的死因是 session 來源檔
+    # 沒有寫入端；新制寫入端 = Cmd_FreeTime step=start（每場 10 顆，per-session 清零），
+    # 本工具讀 session 檔 + 額度檔判可用量 —— 有寫入端了，回歸。
+    free_avail = free_pixels_available(P, persona, now)
     voucher_avail = voucher_balance(P, persona)
     token_avail = ledger_balance(P, bank)
 
     use_free = use_voucher = use_token = 0
 
     if pay == "freetime":
-        raise ValueError(
-            "付款方式 freetime（自由時間免費像素）已於 2026-08-01 廢止 — "
-            "該機制的 session 來源檔沒有寫入端，功能自 2026-07-17 起未實際運作過。"
-            "請改用 --pay auto（券 → token）。")
+        # 只用免費像素
+        if n > free_avail:
+            raise ValueError(
+                f"免費像素不足：需 {n}，{persona} 本場可用 {free_avail} — "
+                "額度來自 Cmd_FreeTime step=start（每場 10 顆，不跨場累積）；"
+                "不在自由時間 session 內時額度為 0。")
+        use_free = n
     elif pay == "voucher":
         # 只用券
         if n > voucher_avail:
@@ -764,18 +756,15 @@ def cmd_place(args):
         # 步驟 4：（已移除）本地 voucher ledger 寫入
         # 消券已在步驟 3 走 Cmd_CanvasVoucher op=consume —— C# 是券的 canonical owner。
         # 這裡若保留本地讀-改-寫會**雙重扣券**（Cmd 扣一次、本地再扣一次）。
-        # 步驟 5：更新 per-persona freetime state（用掉免費像素 → 推進 cooldown）
-        #   同時記下這次領用所屬的 active session id，供 free_pixel_available 做「冷卻不跨
-        #   session 累積」判定（新 session id ≠ 舊記錄 → 重新起算）。
+        # 步驟 5：更新 per-persona freetime state（額度制：used 遞增；發放端是 Cmd_FreeTime）
         if free_consumed > 0:
             ft = load_freetime(P, persona)
-            ft["last_free_pixel_ts"] = iso_ms(now)
-            session_now = active_free_session(P, persona, now)
-            ft["last_free_session_id"] = session_now.get("id") if session_now else None
-            ft["history"].append({
+            ft["used"] = int(ft.get("used", 0)) + free_consumed
+            ft.setdefault("history", []).append({
                 "ts": iso_ms(now), "uuid": secrets.token_hex(3),
                 "ref": f"{event_uuid}",
-                "session_id": ft["last_free_session_id"],
+                "session_id": ft.get("session_id"),
+                "count": free_consumed,
             })
             write_json(freetime_path(P, persona), ft)
     finally:
@@ -1003,14 +992,8 @@ def cmd_voucher(args):
 # ───────────────────────────── freetime ─────────────────────────────
 
 def cmd_freetime(args):
-    # 免費像素已於 2026-08-01 廢止（Tim 拍板；理由見 compute_payment_plan 註解）。
-    # 指令保留但只印廢止告示 — 直接刪掉會讓照舊文件/skill 操作的人拿到 unknown-command，
-    # 比「明講廢止了」更難排查。
-    print("⛔ 自由時間免費像素已於 2026-08-01 廢止 — session 來源檔沒有寫入端，"
-          "功能自 2026-07-17 起未實際運作過。放點請用 --pay auto（券 → token）。")
-    sys.exit(0)
-
-def _cmd_freetime_dead(args):  # 原實作留存（廢止告示上線一輪後可整段移除）
+    # 2026-08-13 額度制回歸（舊冷卻制 2026-08-01 廢止 — 死因是 session 來源檔沒有寫入端；
+    # 新制寫入端 = Cmd_FreeTime step=start，本工具唯讀 session 檔 + 讀寫額度檔 used 欄）。
     P = args._paths
     ensure_meta(P)
     persona = args.persona
@@ -1022,33 +1005,25 @@ def _cmd_freetime_dead(args):  # 原實作留存（廢止告示上線一輪後�
 
     session = active_free_session(P, persona, now)
     ft = load_freetime(P, persona)
-    last = parse_iso(ft.get("last_free_pixel_ts"))
+    granted = int(ft.get("granted", 0))
+    used = int(ft.get("used", 0))
 
-    print(f"# ⏱ {persona} 自由時間免費像素狀態")
+    print(f"# 🎨 {persona} 自由時間免費像素狀態（額度制：每場 10 顆，不跨場累積）")
     if session is None:
-        print(f"  自由時間: ❌ 不在 active session（免費像素不可用）")
+        print("  自由時間: ❌ 不在 active session（免費像素額度為 0）")
+        print("  進場: run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>")
     else:
         end = parse_iso(session.get("end_ts"))
         print(f"  自由時間: ✅ active（session 至 {session.get('end_ts')}）")
         if end:
             remain = (end - now).total_seconds()
             print(f"  session 剩餘: {int(remain // 60)} 分 {int(remain % 60)} 秒")
-
-    # 冷卻顯示與 free_pixel_available 一致：跨 session 重新起算
-    cross_session_fresh = (session is not None
-                           and session.get("id") != ft.get("last_free_session_id"))
-    if last is None:
-        print(f"  免費像素: ✅ 立即可用（從未領用）" if session else "  免費像素: 待進入自由時間")
-    elif cross_session_fresh:
-        print(f"  免費像素: ✅ 可用（新 session 重新起算，不繼承舊冷卻）" if session
-              else "  免費像素: 待進入自由時間")
+    if session and ft.get("session_id") == session.get("id"):
+        print(f"  免費像素: {max(0, granted - used)} 顆可用（本場已用 {used}/{granted}）")
+    elif session:
+        print(f"  免費像素: 0 顆（額度記錄屬於別場 session — 發放端是 step=start，跑過才有）")
     else:
-        elapsed = (now - last).total_seconds()
-        if elapsed >= FREE_PIXEL_COOLDOWN_SEC:
-            print(f"  免費像素: ✅ 可用（距上次 {int(elapsed // 60)} 分）")
-        else:
-            wait = FREE_PIXEL_COOLDOWN_SEC - elapsed
-            print(f"  免費像素: ⏳ 還需等 {int(wait // 60)} 分 {int(wait % 60)} 秒")
+        print(f"  （上場記錄: 已用 {used}/{granted} — 不跨場）")
 
 
 # ───────────────────────────── note ─────────────────────────────
@@ -1221,7 +1196,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--treasury-root", default=DEFAULT_TREASURY_ROOT,
                         help=f"treasury 根（預設 {DEFAULT_TREASURY_ROOT}）")
     parser.add_argument("--freetime-sessions", default=None,
-                        help=f"自由時間 session 來源檔（測試隔離用；預設 {FREE_TIME_SESSIONS}）")
+                        help=f"自由時間 session 檔目錄（Cmd_FreeTime 寫的 per-persona json；測試隔離用；預設 {FREE_TIME_SESSIONS}）")
     parser.add_argument("--registry-meta", default=None,
                         help=f"persona registry meta 檔（agent_banks source of truth；測試隔離用；預設 {DEFAULT_REGISTRY_META}）")
 
@@ -1267,11 +1242,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ref", default=None, help="grant 業務 ref (e.g. book:<slug>)")
     p.set_defaults(func=cmd_voucher)
 
-    # freetime
-    p = sub.add_parser("freetime", help="（已廢止 2026-08-01）自由時間免費像素")
-    # 參數放寬為選帶 — 廢止告示不該要求使用者先湊齊參數才看得到
+    # freetime（2026-08-13 額度制回歸：每場 10 顆，發放端 = Cmd_FreeTime step=start）
+    p = sub.add_parser("freetime", help="自由時間免費像素狀態（額度制：每場 10 顆，不跨場累積）")
     p.add_argument("--sub", required=False, choices=["status"], default="status")
-    p.add_argument("--persona", required=False, default="")
+    p.add_argument("--persona", required=True)
     p.set_defaults(func=cmd_freetime)
 
     # note

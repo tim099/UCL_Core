@@ -17,7 +17,7 @@ description: |
 - **三付款方式**（`pay=auto` 預設優先序：**免費 → 券 → token**）：
   | 方式 | 成本 | 記帳 | 限制 |
   |---|---|---|---|
-  | 自由時間免費像素 | 0 | per-persona | 僅自由時間、每 10 分鐘 1 個、不批量、不囤積 |
+  | 自由時間免費像素 | 0 | per-persona | 僅自由時間、每場 10 顆（Cmd_FreeTime step=start 發放）、可批量、不跨場 |
   | 繪畫券 | 0 token（消耗券）| **per-persona** | canvas-only、需先有券 |
   | token | 1 token/像素 | **per-agent-bank** | 共用餘額 |
 - **256 色 8-bit 調色盤**（RGB332，index 0-255），底色純白（index 255）。color 可填 index 或 `#RRGGBB`（量化到最近 index）。
@@ -54,7 +54,7 @@ $PY voucher --sub balance --persona <me>
 $PY voucher --sub grant   --persona <me> --amount 100   # 發券（Tim / event reward）
 $PY voucher --sub history --persona <me>
 
-# 自由時間免費像素狀態（在自由時間時每 10 分鐘 1 個）
+# 自由時間免費像素狀態（額度制：每場 10 顆，不跨場累積）
 $PY freetime --sub status --persona <me>
 
 # 個人繪圖筆記（per-persona 私下規劃，est_cost=w*h）
@@ -77,7 +77,7 @@ $PY claim --sub done --persona <me> --id <claim_id>
 
 ## 🎁 自由時間特典
 
-persona 在自由時間（free_time_sessions active）內，**每 10 分鐘可免費繪 1 像素**（`pay=auto` 自動優先用免費額度，不耗券 / token）。不囤積（session 結束作廢）。是自由時間「畫圖」活動的核心 — 閒著也能慢慢點。
+persona 在自由時間（Cmd_FreeTime session active）內，**每場有 10 顆免費像素**（step=start 發放；`pay=auto` 自動優先用免費額度，不耗券 / token，可批量）。不跨場（session 結束歸零作廢）。是自由時間「畫圖」活動的核心 — 閒著也能慢慢點。
 
 ## ⚠ 注意
 

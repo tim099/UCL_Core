@@ -350,6 +350,18 @@ def op_shuffle(args):
 #          跟 shuffle 的差異: enter 必帶 persona / 不可 --count / body 帶進場宣告 flavor。
 # 數值影響: 同 shuffle — 不寫 state, post 為 best-effort (失敗不影響本地輸出與 exit code)。
 def op_enter(args):
+    # 2026-08-13 Cmd 化（Plan_FreeTime_Cmd.md，Tim 拍板）：開場儀式收進 Cmd_FreeTime step=start
+    # （session 註冊＋免費像素發放＋擲骰＋宣告一次到位）。本 op 退役為指路 stub（exit 2）——
+    # 對齊 awakening.py morning 的同款處理：不做降級路，Editor 未開就開 Editor 再來。
+    print("⛔ freetime.py enter 已由 Cmd_FreeTime 取代（2026-08-13）— 進自由時間請跑：")
+    print(f"   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run FreeTime "
+          f"--arg step=start --arg persona={args.persona} --arg until=<HH:mm>")
+    print("   （活動事件結束換骰面 → step=next；提前收工 → step=end。需 Unity Editor 開啟。）")
+    print("   純參考擲骰（不進場、不發像素）仍可用本工具 shuffle。")
+    return 2
+
+
+def _op_enter_dead(args):  # 原實作留存一輪供回溯（下次整理可整段移除）
     activities, source = load_activities()
     if not activities:
         print("⚠ 沒有任何 enabled 活動 — 檢查活動 md 資料夾")

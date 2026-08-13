@@ -1,7 +1,7 @@
 ---
 title: 自由時間 Cmd 化 — Cmd_FreeTime 分步 + 免費像素回歸
 slug: freetime-cmd
-status: spec（2026-08-13 Tim 拍板方向；分步設計 by summit wake#47，細節待拍後施工）
+status: approved-in-progress（2026-08-13 Tim 拍板 §6 四題＋step=next 觸發點，summit wake#48 施工中）
 created_at: 2026-08-13T03:15:00Z
 created_by: summit
 location: UCL_Core (cross-project)
@@ -36,6 +36,10 @@ skill 與文件**整個重寫，不基於舊版本修改**。
        ＋「活動做完 → 再跑 step=next」＋剩餘時間
 ② （做活動：讀書/繪圖/觀棋/寫信/畫布…；有同事就交流、沒人就慢速自語 —— 行為層歸 skill）
 ③ run_cmd.py run FreeTime --arg step=next --arg persona=<P>
+     ↳ 觸發時間點（Tim 2026-08-13 補拍）：**當前自由時間事件的自然結束**——棋局結束、
+       繪圖收筆、聊天告一段落、讀完一個段落…。step=next 是**活動邊界的檢查點**，
+       不是週期輪詢；「事件結束」正是舊病「完成的時刻被當成 stop signal」發作的位置，
+       把 Cmd 釘在這個時間點＝把「回 loop」從自覺變成通道（完成 → 跑 next → 拿新骰面）。
      ↳ 讀 session state 對系統時鐘：
        ・未到期 → 輪次+1、重擲骰 → 回傳：新骰面前 3＋剩餘時間＋像素餘額＋「做完再跑 step=next」
        ・已到期 → 「⏰ 時間到」＋關 session ＋ 酒館收工宣告（in-process）
@@ -91,9 +95,14 @@ skill 與文件**整個重寫，不基於舊版本修改**。
 - 像素：start 後 canvas freetime 額度 +10；canvas.py 端可用 `--pay freetime` 消費（兩端對齊實測）。
 - 全程 payload 檔逐步落檔供 QA；persona 缺 → 非零退出。
 
-## 6. 待 Tim 拍
+## 6. 拍板紀錄（Tim 2026-08-13，四題照建議定案）
 
-1. `step=end`（提前收工）要不要收進第一版（建議要——提早收工要有名字的出口，不然又是靜默）。
-2. 像素 per-session 清零 vs 累積（建議清零：「每次 10 顆」語意乾淨，用不完歸零）。
-3. 完整流程文件：併入 Awakening_Cmd_Flow.md（建議）vs 獨立一份。
-4. start 是否強制在線（建議強制：自由時間是登入後的狀態；未登入先走 step=wake）。
+1. ✅ `step=end`（提前收工）**收進第一版**——提早收工要有名字的出口，不靜默。
+2. ✅ 像素 **per-session 清零**——「每次 10 顆」語意乾淨，用不完歸零。
+3. ✅ 完整流程文件**併入 Awakening_Cmd_Flow.md**——守衛/回傳檔慣例同款，兩份必漂移。
+4. ✅ start **強制在線**（lock 存在）——自由時間是登入後的狀態；未登入先走 GoodMorning step=wake。
+
+另拍（同日補充）：`step=next` 的觸發時間點＝**當前活動事件的自然結束**（已寫入 §1 ③）。
+施工追加項（酒館討論產出）：step=next 回傳的「下一件活動」**附活動 md 的實路徑**——
+由掃描端傳遞，不讓 agent 拿活動名反推雙層目錄（「路徑不該被推導，該被傳遞」，
+同族先例：result outputs 欄 `802a118`、inbox 截斷附真路徑 `8118ba3`）。

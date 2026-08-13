@@ -25,7 +25,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             "Discord Mirror smoke test — send one message to the git-ignored test webhook via the native poll-send path.";
 
         public override string ArgsSchema =>
-            "content=message body to send (default a timestamped smoke marker)";
+            "content=message body to send (default a timestamped smoke marker) | " +
+            "file=<repo 相對或絕對路徑> — 選填；帶了走 multipart 附件上傳（圖片實際發進頻道；多檔用 | 分隔）";
 
         public override string ExampleArgs => "content=mirror smoke hello";
 
@@ -56,6 +57,24 @@ namespace UCL.Core.EditorLib.AgentCommands
             string content = (args != null && args.TryGetValue("content", out var c) && !string.IsNullOrEmpty(c))
                 ? c
                 : "[mirror-smoke] native poll-send edit-mode resume test";
+
+            // file=<path>（選填）：multipart 附件上傳 —— outbound 圖片通道測試（Tim 2026-08-13）
+            string fileArg = (args != null && args.TryGetValue("file", out var f)) ? f : "";
+            if (!string.IsNullOrEmpty(fileArg))
+            {
+                var files = new List<string>();
+                foreach (var raw in fileArg.Split('|'))
+                {
+                    string p = raw.Trim();
+                    if (string.IsNullOrEmpty(p)) continue;
+                    // repo 相對路徑 → 絕對（傳遞的終點形式；讀檔在 client 端做，不存在會回報跳過）
+                    files.Add(Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(UCL_RepoPath.RepoRoot, p)));
+                }
+                Debug.Log($"[AgentCmd:MirrorSmoke] 觸發 SmokeTestWithFiles（{files.Count} 檔；結果看 [DiscordMirror] log）");
+                UCL_DiscordMirrorDaemon.SmokeTestWithFiles(url, content, files);
+                await UniTask.CompletedTask;
+                return;
+            }
 
             Debug.Log("[AgentCmd:MirrorSmoke] 觸發 SmokeTest（結果看 [DiscordMirror] log；send 需幾秒，等 tick 輪詢）");
             UCL_DiscordMirrorDaemon.SmokeTest(url, content);

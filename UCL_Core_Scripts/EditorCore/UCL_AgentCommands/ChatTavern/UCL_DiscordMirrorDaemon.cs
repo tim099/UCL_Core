@@ -250,6 +250,28 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Debug.Log("[DiscordMirror] smoke: request 發出，等 tick 輪詢 isDone（驗 edit-mode poll resume）");
         }
 
+        /// <summary>
+        /// Smoke test（附件版，Tim 2026-08-13）：走 multipart（payload_json + files[N]）把本地圖檔
+        /// 實際上傳到 webhook 頻道 —— outbound 附件通道的第一次紅綠測試。判讀與 cursor 語意同 SmokeTest。
+        /// </summary>
+        public static void SmokeTestWithFiles(string url, string content, System.Collections.Generic.IList<string> filePaths)
+        {
+            var req = UCL_DiscordWebhookClient.StartPostMultipart(url, content, "mirror-smoke", null, null,
+                filePaths, out var skipped);
+            foreach (var s in skipped) Debug.LogWarning($"[DiscordMirror] smoke 附件跳過：{s}");
+            if (req == null) { Debug.LogWarning("[DiscordMirror] smoke: malformed webhook url"); return; }
+            s_InFlight.Add(new MirrorInFlight
+            {
+                req = req,
+                room = "_smoke",
+                webhookId = UCL_DiscordWebhookClient.ExtractWebhookId(url),
+                uuid = "smoke-multipart",
+                ts = "",
+                recordOnSuccess = false,
+            });
+            Debug.Log($"[DiscordMirror] smoke(multipart): request 發出（附件 {(filePaths?.Count ?? 0) - skipped.Count} 檔），等 tick 輪詢 isDone");
+        }
+
         // ===========================================================
         // 區塊：tick 主體 — 先 drain in-flight（永遠），再依 owner 互鎖決定是否 scan 送出
         // 物理意義：DrainInFlight 永遠跑（收割 smoke / 正式送出）；Scan 只在 native owner 時跑（mirror_owner 硬互鎖）

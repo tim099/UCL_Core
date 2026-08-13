@@ -211,6 +211,89 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return null;
         }
 
+        // ===========================================================
+        // 區塊：multipart 附件上傳（Tim 2026-08-13 派 task — outbound 圖片實際發進頻道）
+        // 物理意義：Discord webhook 收檔案只認 multipart/form-data：payload_json part（原 JSON）
+        //          ＋ files[N] binary part。JSON-only 的 StartPost 永遠傳不了本地檔 —— refs 記的
+        //          是 repo 內路徑，Discord 端無公網 URL 可解析，唯一通道就是把 bytes 直接帶上去。
+        // 數值影響：手組 boundary + UploadHandlerRaw（與 StartPost 同驅動模型，poll/429/in-flight
+        //          架構全沿用）；單檔上限 MAX_ATTACH_BYTES（Discord 免 boost 8MB，留 buffer 取 7.5MB），
+        //          超限/讀檔失敗的檔**跳過並回報**（oSkipped），不整包失敗 —— 降級可見不靜默。
+        // ===========================================================
+        const long MAX_ATTACH_BYTES = 7_500_000;
+
+        static string GuessContentType(string path)
+        {
+            switch (System.IO.Path.GetExtension(path).ToLowerInvariant())
+            {
+                case ".png": return "image/png";
+                case ".jpg":
+                case ".jpeg": return "image/jpeg";
+                case ".gif": return "image/gif";
+                case ".webp": return "image/webp";
+                default: return "application/octet-stream";
+            }
+        }
+
+        /// <summary>
+        /// 發出一次 multipart POST（payload_json + files[N]），不 await —— 回 UnityWebRequest 供 daemon
+        /// 輪詢 isDone（judge 用 InterpretResult，與 StartPost 同款）。讀不進/超限的檔進 oSkipped。
+        /// 全部檔都失敗時仍送出純 JSON multipart（訊息不因附件死掉）。
+        /// </summary>
+        public static UnityWebRequest StartPostMultipart(
+            string url, string content, string username, string avatarUrl, string embedsJson,
+            System.Collections.Generic.IList<string> filePaths,
+            out System.Collections.Generic.List<string> oSkipped)
+        {
+            oSkipped = new System.Collections.Generic.List<string>();
+            if (string.IsNullOrEmpty(url) || ExtractWebhookId(url) == null) return null;
+            url = AppendWaitTrue(url);
+            string payloadJson = BuildPayloadJson(content, username, avatarUrl, embedsJson);
+            string boundary = "----UCLMirror" + Guid.NewGuid().ToString("N");
+
+            var body = new System.IO.MemoryStream();
+            void WriteText(string s) { var b = Encoding.UTF8.GetBytes(s); body.Write(b, 0, b.Length); }
+
+            WriteText($"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n");
+            WriteText(payloadJson);
+            WriteText("\r\n");
+
+            int aIndex = 0;
+            if (filePaths != null)
+            {
+                foreach (var aPath in filePaths)
+                {
+                    try
+                    {
+                        var aInfo = new System.IO.FileInfo(aPath);
+                        if (!aInfo.Exists) { oSkipped.Add($"{aPath}（不存在）"); continue; }
+                        if (aInfo.Length > MAX_ATTACH_BYTES) { oSkipped.Add($"{aPath}（{aInfo.Length / 1024 / 1024.0:F1}MB 超限）"); continue; }
+                        byte[] aBytes = System.IO.File.ReadAllBytes(aPath);
+                        string aName = System.IO.Path.GetFileName(aPath);
+                        WriteText($"--{boundary}\r\nContent-Disposition: form-data; name=\"files[{aIndex}]\"; filename=\"{aName}\"\r\nContent-Type: {GuessContentType(aPath)}\r\n\r\n");
+                        body.Write(aBytes, 0, aBytes.Length);
+                        WriteText("\r\n");
+                        aIndex++;
+                        if (aIndex >= 10) break;   // Discord 每則上限 10 檔
+                    }
+                    catch (Exception e)
+                    {
+                        oSkipped.Add($"{aPath}（讀檔失敗: {e.Message}）");
+                    }
+                }
+            }
+            WriteText($"--{boundary}--\r\n");
+
+            var req = new UnityWebRequest(url, "POST");
+            req.uploadHandler = new UploadHandlerRaw(body.ToArray());
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", $"multipart/form-data; boundary={boundary}");
+            req.SetRequestHeader("User-Agent", USER_AGENT);
+            req.timeout = REQUEST_TIMEOUT_SEC * 4;   // 附件 body 大，逾時放寬
+            req.SendWebRequest();
+            return req;
+        }
+
         public static UnityWebRequest StartPost(string url, string content, string username, string avatarUrl, string embedsJson)
         {
             if (string.IsNullOrEmpty(url) || ExtractWebhookId(url) == null) return null;

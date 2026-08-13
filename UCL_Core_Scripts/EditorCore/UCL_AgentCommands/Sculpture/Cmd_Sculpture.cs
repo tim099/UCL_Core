@@ -41,7 +41,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             "op=box|carve|view|stats (必填) | persona=<name> — box/carve 必填 | " +
             "x1..z2=<0-255> — box/carve 必填（AABB 兩角） | color=<0-255> — box 選填(預設 19) | " +
             "pay=auto|freetime|voucher|token — 選填(預設 auto：免費像素→券→token) | " +
-            "region=<x1..x2,y1..y2,z1..z2> / exclude_color=<c,c,..> — view 選填 | " +
+            "region=<x1..x2,y1..y2,z1..z2> / exclude_color=<c,c,..> / exhibit=<展品ID> / light_dir=<x,y,z> / ambient=<0-1> — view 選填 | " +
             "費率：⌈實際落地數/100⌉，禁覆蓋 skip 不收費；回傳落檔 letters/<persona>/_sculpture_<op>.md";
 
         public override string ExampleArgs => "op=stats";
@@ -189,10 +189,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             string aCli = $"\"{aScript}\" {iOp}";
             if (iOp == "view")
             {
+                // pass-through 觀測參數（含展品 preset 與打光 —— 引擎旗標為準，這裡只轉譯不加工）
                 string aRegion = GetArg(iArgs, "region", "");
                 string aExclude = GetArg(iArgs, "exclude_color", "");
+                string aExhibit = GetArg(iArgs, "exhibit", "");
+                string aLightDir = GetArg(iArgs, "light_dir", "");
+                string aAmbient = GetArg(iArgs, "ambient", "");
                 if (!string.IsNullOrEmpty(aRegion)) aCli += $" --region \"{aRegion}\"";
                 if (!string.IsNullOrEmpty(aExclude)) aCli += $" --exclude-color \"{aExclude}\"";
+                if (!string.IsNullOrEmpty(aExhibit)) aCli += $" --exhibit \"{aExhibit}\"";
+                if (!string.IsNullOrEmpty(aLightDir)) aCli += $" --light-dir \"{aLightDir}\"";
+                if (!string.IsNullOrEmpty(aAmbient)) aCli += $" --ambient {aAmbient}";
             }
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aCli, UCL_RepoPath.RepoRoot,
                 PROC_TAG, nameof(Cmd_Sculpture), ENGINE_TIMEOUT_MS);

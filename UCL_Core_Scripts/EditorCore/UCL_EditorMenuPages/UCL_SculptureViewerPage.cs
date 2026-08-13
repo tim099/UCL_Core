@@ -153,7 +153,12 @@ namespace UCL.Core.EditorLib.Page
 
                 m_Ambient = DrawField("ambient (0.0~1.0)", m_Ambient);
                 m_Zoom = DrawField("zoom（觀測距離倍率；空=自動縮放收進畫布，1.0=原始 24px/voxel）", m_Zoom);
-                m_Shadow = GUILayout.Toggle(m_Shadow, " ☁ 陰影（cast shadow — 解正交圖深度歧義）", UCL_GUIStyle.LabelStyle);
+                using(new GUILayout.HorizontalScope()) 
+                {
+                    m_Shadow = UCL_GUILayout.CheckBox(m_Shadow);
+                    GUILayout.Label(" ☁ 陰影（cast shadow — 解正交圖深度歧義）", UCL_GUIStyle.LabelStyle);
+                }
+
                 if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderManual"),
                         UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.Width(UCL_GUIStyle.GetScaledSize(200))))
                 {

@@ -799,6 +799,18 @@ namespace UCL.Core
         /// </summary>
         /// <param name="iToken"></param>
         /// <returns></returns>
+        // 區塊職責：等 ModuleService 初始化完成。
+        // 物理意義：`m_Initialized` 只在 InitAsync 的**最後一行**才設，所以 InitAsync 只要沒走完
+        //          （throw / 卡在某個 await），這裡就是無限期等待。舊版無聲無息 ——
+        //          呼叫端只會表現成「那個功能沒動」，而沒有任何一行字說明它在等什麼
+        //          （血證：UCL_AgentCommandWatcher 曾把 update 訂閱掛在本函式之後，
+        //           結果整條 AgentCommand 通道靜默死亡，2026-08-13）。
+        // 數值影響：**語意不變 —— 逾時只出聲、不放棄等待**（提早返回會讓呼叫端拿到未初始化的
+        //          ModuleService 去做事，那是把一個看得見的等待換成一個看不見的錯誤）。
+        //          預設 30s 警告一次，之後每 60s 再叫一次，避免一次性警告被洗掉後就再也沒人知道。
+        const double WaitInitWarnSeconds = 30.0;
+        const double WaitInitRepeatWarnSeconds = 60.0;
+
         public static async UniTask WaitUntilInitialized(CancellationToken iToken)
         {
             if (Initialized)
@@ -806,7 +818,23 @@ namespace UCL.Core
                 return;
             }
             var moduleService = UCL_ModuleService.Ins;
-            await UniTask.WaitUntil(() => moduleService.m_Initialized, cancellationToken: iToken);
+            // ⚠ 本檔在 AssetCore（runtime 組件）—— 時間源不可用 UnityEditor.EditorApplication，
+            //   否則 build 編不過。Time.realtimeSinceStartup 在 Editor（含非播放中）與 runtime 都會前進。
+            double startTime = Time.realtimeSinceStartup;
+            double nextWarnAt = startTime + WaitInitWarnSeconds;
+            await UniTask.WaitUntil(() =>
+            {
+                if (moduleService.m_Initialized) return true;
+                double now = Time.realtimeSinceStartup;
+                if (now >= nextWarnAt)
+                {
+                    nextWarnAt = now + WaitInitRepeatWarnSeconds;
+                    Debug.LogError($"[UCL_ModuleService] WaitUntilInitialized 已等待 {now - startTime:0}s 仍未初始化完成"
+                        + " —— InitAsync 沒走完（m_Initialized 在其最後一行才設）。"
+                        + " 等待會繼續，但依賴它的功能在此之前都不會動作。");
+                }
+                return false;
+            }, cancellationToken: iToken);
         }
         /// <summary>
         /// Init UCL_ModuleService

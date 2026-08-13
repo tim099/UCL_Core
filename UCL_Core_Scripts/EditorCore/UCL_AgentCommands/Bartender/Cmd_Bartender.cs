@@ -63,6 +63,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
 [tick]        強制立刻 tick (測試 / dogfood 用)
 
+[notify_scan] 自動通知掃描診斷 — 回答「通知池為什麼是空的」(逐人判定 + 逐房 inbox 分解)
+  ⚠ **純觀測**: 不寫 state / 不發告警 / 不戳任何人, 查幾次都不改變系統
+
 [balance]     查詢 Treasury 帳戶餘額 + 最近 N 筆進出帳 (走 AgentCommands/Tools/balance_query.py)
   account=<id>          要查的 account (e.g. claude-da-xiaojie / Tim)
   limit=<int>           近期進出帳筆數, 預設 10 (cap 100)
@@ -88,6 +91,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     case "time_remove":   Op_TimeRemove(args); break;
                     case "status":        Op_Status(args); break;
                     case "tick":          Op_Tick(args); break;
+                    case "notify_scan":   Op_NotifyScan(args); break;
                     case "balance":       Op_Balance(args); break;
                     // T06.2 — Plan_Standby_Dispatch_Bartender task dispatch (Pull MVP)
                     case "assign_add":    Op_AssignAdd(args); break;
@@ -95,7 +99,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     case "assign_remove": Op_AssignRemove(args); break;
                     case "assign_ack":    Op_AssignAck(args); break;
                     default:
-                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / balance / assign_add / assign_list / assign_remove / assign_ack");
+                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / notify_scan / balance / assign_add / assign_list / assign_remove / assign_ack");
                         break;
                 }
             }
@@ -104,6 +108,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 WriteLastOp($"❌ Cmd_Bartender exception: {e.Message}\n{e.StackTrace}");
                 Debug.LogWarning($"[Cmd_Bartender] op={op} fail: {e}");
             }
+        }
+
+        // ===========================================================
+        // op=notify_scan — 自動通知掃描診斷（純觀測）
+        // 物理意義：後台面板只有人坐在 Editor 前才看得到；遠端多視窗協作卡住時人常常不在場。
+        //          這個 op 讓 agent 自己查「我被 @ 了為什麼沒被戳」，答案落在 _last_op.md。
+        // ===========================================================
+        void Op_NotifyScan(Dictionary<string, string> args)
+        {
+#if UNITY_STANDALONE_WIN
+            WriteLastOp(UCL_RemoteNotifyService.BuildDiagnosticReport());
+#else
+            WriteLastOp("❌ notify_scan 只在 Windows Editor 可用（遠端視窗協作是 Win32 API）");
+#endif
         }
 
         // ===========================================================

@@ -62,11 +62,93 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
     }
 
+    // 區塊職責：單一房間的 inbox 統計 — 通知池為什麼是空的，答案常常藏在「哪一房」而不是「幾筆」。
+    // 物理意義：每個房間**各自**從 1 開始編 seq（tavern 已到 15000+，TRPG 側房還在 100 出頭），
+    //          而已讀水位 record.Seq 只有一個、跨房共用。於是高編號房把低編號房整房遮蔽：
+    //          水位被 tavern 推到 15073 之後，trpg-yachiyo 的 seq=109 永遠不可能 > 水位。
+    // 數值影響：MaxSeq < 水位 ⇒ 這房**不論再進幾筆 @ 都不會被算成新的**（Masked=true）。
+    //          這不是「晚一輪才戳」，是永久靜默 —— 而且它的外觀跟「大家都已讀」完全一樣。
+    public class UCL_RoomInboxStat
+    {
+        public string Room = "";
+        public int Entries;
+        public int MinSeq;
+        public int MaxSeq;
+        public int NewCount;
+        /// <summary>整房被水位遮蔽：本房最大 seq 都低於水位，本房的 @ 永遠不會進池。</summary>
+        public bool Masked;
+
+        public string Describe() =>
+            $"{Room}：{Entries} 筆（seq {MinSeq}-{MaxSeq}）→ 新 @ {NewCount}"
+            + (Masked ? "　⚠ 整房遮蔽（本房最大 seq 低於水位，永遠算不出新 @）" : "");
+    }
+
+    // 區塊職責：一名在線 persona 在某一輪掃描裡的去向 —— 入池或被淘汰，附「為什麼」。
+    // 物理意義：舊版只看得到「池裡有誰」。池是空的時候，六種完全不同的成因（沒在線 / 沒條目 /
+    //          都已讀 / 本輪被認列已讀 / 停戳 / 冷卻）長成同一句「沒有人有新的 @」——
+    //          那句話沒有說謊，它只是把六個答案壓成一個，於是查不出是哪一個。
+    // 數值影響：只記錄，不參與任何判定；ScanPool 每輪重建。
+    public class UCL_NotifyScanTrace
+    {
+        public string Persona = "";
+        public string ActualAgent = "";
+        public int AckedSeq;
+        public int MaxSeq;
+        public int NewMentions;
+        public bool Pooled;
+        public int Weight;
+        // 這幾個 key 同時被 switch 比對、寫進 trace jsonl、供外部工具 grep ——
+        // 字面值散在三處遲早對不起來（本 repo 對「兩邊各拼一次字串」已有血證），一律走常數。
+        public const string VerdictPooled = "pooled";
+        public const string VerdictNoInbox = "no_inbox";
+        public const string VerdictAllAcked = "all_acked";
+        public const string VerdictCreditedRead = "credited_read";
+        public const string VerdictRetryCap = "retry_cap";
+        public const string VerdictCooldown = "cooldown";
+
+        /// <summary>淘汰原因 key（入池為 <see cref="VerdictPooled"/>）；可能值見上方 Verdict* 常數。</summary>
+        public string Verdict = "";
+        public string Detail = "";
+        /// <summary>誰正 blocking 等她回話（空＝沒人等）。**被淘汰時也要記** —— 「有人卡在她身上
+        /// 而她沒被戳」是最該一眼看到的狀態，只在入池時才記等於看不到出事的那一半。</summary>
+        public string WaitedBy = "";
+        public List<UCL_RoomInboxStat> Rooms = new List<UCL_RoomInboxStat>();
+
+        public string Icon()
+        {
+            switch (Verdict)
+            {
+                case UCL_NotifyScanTrace.VerdictPooled: return "✅";
+                case UCL_NotifyScanTrace.VerdictCreditedRead: return "🟡";
+                case UCL_NotifyScanTrace.VerdictRetryCap: return "🔴";
+                case UCL_NotifyScanTrace.VerdictCooldown: return "🕐";
+                case UCL_NotifyScanTrace.VerdictAllAcked: return "⚪";
+                default: return "▫";
+            }
+        }
+
+        /// <summary>有任一房被水位遮蔽 —— 這是 per-room seq 撞全域水位的現場指紋。</summary>
+        public bool HasMaskedRoom
+        {
+            get
+            {
+                foreach (var r in Rooms) if (r.Masked) return true;
+                return false;
+            }
+        }
+
+        public string Describe() =>
+            $"{Icon()} {Persona}（{ActualAgent}）：新 @ {NewMentions}｜水位 seq {AckedSeq}／inbox 最大 {MaxSeq}"
+            + (string.IsNullOrEmpty(WaitedBy) ? "" : $"｜🔴 {WaitedBy} 等待中")
+            + $" → {Detail}";
+    }
+
     public static class UCL_RemoteNotifyService
     {
         const string ConfigFileName = "remote_notify_config.json";
         const string StateFileName = "remote_notify_state.json";
         const string LogFileName = "remote_notify_last_run.md";
+        const string TraceFileName = "remote_notify_trace.jsonl";
         static readonly Regex InboxEntryRegex = new Regex(@"^##\s*\[seq=(\d+)\]", RegexOptions.Multiline);
 
         public static bool Enabled;
@@ -76,6 +158,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static string NotifyText = "/ucl-ding";
         /// <summary>是否在輸入完成後送出。關閉時只把文字打進去、停在送出前一步。</summary>
         public static bool SendEnter = true;
+        // 區塊職責：輸入方式 —— 剪貼簿貼上（預設）或逐字輸入。
+        // 物理意義：逐字會被目標端的 slash 自動完成清單重繪吃掉字（兩筆血證都掉 `/ucl-ding` 的 `-`
+        //          → 對方收到 `/uclding` → Unknown command）。貼上是一次事件，成因不存在。
+        //          Tim 2026-08-13 拍板走貼上，已知代價是短暫動到系統剪貼簿（用後即還原）。
+        // 數值影響：UsePasteInput=true 時 TypeCharDelay 不生效；PasteRestoreDelayMs 是「貼上後等多久
+        //          才還原剪貼簿」—— 還原太快會跟目標 app 讀剪貼簿搶時間。
+        public static bool UsePasteInput = true;
+        public static int PasteRestoreDelayMs = 300;
+        // 區塊職責：通知文字尾註 —— 讓收到的人知道「這是系統打的，不是人打的」，以及「誰在等你」。
+        // 物理意義：慣例上 Tim 手動戳是打「叮」、酒保自動戳是 `/ucl-ding`（2026-08-02），但那個區別
+        //          只有知道慣例的人分得出來。Tim 2026-08-13 要求顯式寫出來。
+        //          而被握手等待而觸發的那種，收到的人**沒有新 @ 可看** —— 不告訴她是誰在等，
+        //          她會收到一個沒有理由的戳（那正是舊註解擔心的事，處方是告知而不是不戳）。
+        // 數值影響：只加長文字。⚠ 尾註前**必須有空格** —— `/ucl-ding（…）` 黏在一起就是另一個
+        //          Unknown command，等於親手複製本次要修的那隻 bug。
+        public static bool AppendContextNote = true;
         // 區塊職責：送出前的等待與按鍵次數 —— 2026-08-02 實測「文字進去了、Enter 沒生效」後開出來的旋鈕。
         // 物理意義：打完字到「輸入框真的準備好接受送出」之間有空窗（slash 指令的自動完成清單要跳出來、
         //          前端要跑完 debounce）；太快按下去，那顆 Enter 落在還沒準備好的 UI 上就沒有效果。
@@ -90,15 +188,36 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 數值影響：冷卻預設 60s；cap 預設 3, 達標即停戳並發酒館 @Tim（一批只發一次）。
         public static float CooldownSeconds = 60f;
         public static int RetryCap = 3;
+        // 區塊職責：認列已讀的「往前標」安全邊界（Tim 2026-08-13 提案）。
+        // 物理意義：讀取訊號（cursor 推進／她開口）只證明「那個時刻她在讀／在打字」，
+        //   不證明她看到了**幾乎同時到達**的那一筆 @。而正在回覆的那幾秒，恰好是新 @ 最容易落地的時候
+        //   —— 於是「她在回覆」被當成「她讀了剛剛那筆」，那筆 @ 就永久靜默。
+        //   ⇒ 把認列的截止點往前推一段：只認「明顯早於讀取動作」的 @。
+        // 數值影響：**取值有實測依據** —— summit 那筆的落差是 6.9 秒
+        //   （@ 到達 14:30:15.101Z、認列已讀 14:30:22）。所以 5 秒救不回它，10 秒才行；
+        //   預設取 15 秒留餘裕。失敗方向刻意偏向「多戳一次」——
+        //   照 summit 的判準：過度通知可回收，漏通知不可回收。
+        public static float ReadCreditMarginSeconds = 15f;
         /// <summary>判定「Tim 的 @」用的 sender 標記（inbox 條目標頭行包含任一即算）— Discord inbound 顯名。</summary>
         static readonly string[] TimMarkers = { "Tim1125", "Tim099", " Tim " };
 
         public static string LastRunSummary = "尚未執行";
         public static DateTime LastRunUtc = DateTime.MinValue;
 
+        // 區塊職責：最近一次 ScanPool 的完整判定痕跡 — 給後台顯示與事後查帳用。
+        // 物理意義：LastScanUtc 存在的理由是「板子有兩種騙人方式」的第二種：一句三小時前的
+        //          「沒有人有新的 @」跟兩秒前的那句長得一模一樣。沒有掃描時間，看板無法自證新鮮。
+        // 數值影響：純顯示，不參與判定。ScanPool 每輪覆寫（含後台每 2 秒的節流掃描）。
+        public static List<UCL_NotifyScanTrace> LastScanTraces = new List<UCL_NotifyScanTrace>();
+        public static DateTime LastScanUtc = DateTime.MinValue;
+        /// <summary>把「池為什麼是空的」壓成一句可讀的話（取代舊的單一句「沒有人有新的 @」）。</summary>
+        public static string LastScanVerdict = "尚未掃描";
+        public static int LastScanOnlineCount;
+
         public static string ConfigPath => Path.Combine(UCL_BartenderIO.GetBartenderDir(), ConfigFileName).Replace('\\', '/');
         public static string StatePath => Path.Combine(UCL_BartenderIO.GetBartenderDir(), StateFileName).Replace('\\', '/');
         public static string LogPath => Path.Combine(UCL_BartenderIO.GetBartenderDir(), LogFileName).Replace('\\', '/');
+        public static string TracePath => Path.Combine(UCL_BartenderIO.GetBartenderDir(), TraceFileName).Replace('\\', '/');
 
         static string RoomsDir => Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "rooms").Replace('\\', '/');
 
@@ -122,6 +241,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 data["enter_gap_sec"] = new JsonData(EnterGapSeconds);
                 data["cooldown_seconds"] = new JsonData(CooldownSeconds);
                 data["retry_cap"] = new JsonData(RetryCap);
+                data["use_paste_input"] = new JsonData(UsePasteInput);
+                data["paste_restore_delay_ms"] = new JsonData(PasteRestoreDelayMs);
+                data["append_context_note"] = new JsonData(AppendContextNote);
+                data["read_credit_margin_sec"] = new JsonData(ReadCreditMarginSeconds);
                 File.WriteAllText(ConfigPath, data.ToJsonBeautify(), new UTF8Encoding(false));
                 return true;
             }
@@ -144,6 +267,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 EnterGapSeconds = data.GetFloat("enter_gap_sec", EnterGapSeconds);
                 CooldownSeconds = data.GetFloat("cooldown_seconds", CooldownSeconds);
                 RetryCap = data.GetInt("retry_cap", RetryCap);
+                UsePasteInput = data.GetBool("use_paste_input", UsePasteInput);
+                PasteRestoreDelayMs = data.GetInt("paste_restore_delay_ms", PasteRestoreDelayMs);
+                AppendContextNote = data.GetBool("append_context_note", AppendContextNote);
+                ReadCreditMarginSeconds = data.GetFloat("read_credit_margin_sec", ReadCreditMarginSeconds);
             }
             catch (Exception e)
             {
@@ -246,17 +373,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         /// <summary>掃所有房間的 inbox，回「有新 @ 且不在冷卻/停戳狀態的在線 persona」候選池（權重降冪）。
         /// 同時執行已讀確認掃描（pending 驗三信號）與 cap 告警 —— 這兩件事掛在同一個節奏上, 不另開心跳。</summary>
-        public static List<UCL_NotifyCandidate> ScanPool()
+        /// <param name="applyStateChanges">false＝純觀測：照樣做完全部判定（結果與真掃描一致），但**不落 state**。
+        /// 觀測端（後台重繪、headless 診斷 op）一律用 false —— 掃描本身會推進已讀水位，
+        /// 讓「看一眼」變成「改一筆」，那會把正在追的訊號改掉（後台每 2 秒重繪 = 每 2 秒推一次水位）。</param>
+        public static List<UCL_NotifyCandidate> ScanPool(bool applyStateChanges = true)
         {
             var pool = new List<UCL_NotifyCandidate>();
             var state = LoadState();
             bool stateDirty = false;
             var now = DateTime.UtcNow;
+            var traces = new List<UCL_NotifyScanTrace>();
             var liveWaits = LoadLiveWaitTargets();   // persona → 正在等她的人（見 LoadLiveWaitTargets）
             foreach (var lockInfo in UCL_ActivePersonaLocks.ListOnline())
             {
                 if (!state.TryGetValue(lockInfo.Persona, out var record))
                     record = new NotifyRecord();
+
+                var trace = new UCL_NotifyScanTrace
+                {
+                    Persona = lockInfo.Persona,
+                    ActualAgent = lockInfo.ActualAgent.ToString(),
+                };
+                traces.Add(trace);
 
                 // ── 已讀軌：pending 批次驗三信號, 任一成立才推進 acked seq ──
                 if (record.HasPending && IsReadConfirmed(lockInfo.Persona, record))
@@ -271,24 +409,76 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     stateDirty = true;
                 }
 
-                CountInbox(lockInfo.Persona, record.Seq, out int newCount, out int maxSeq);
+                CountInbox(lockInfo.Persona, record.Seq, out int newCount, out int maxSeq, trace.Rooms);
+                trace.AckedSeq = record.Seq;
+                trace.MaxSeq = maxSeq;
+                trace.NewMentions = newCount;
 
                 // ── 讀取軌（Tim 2026-08-04）：沒有 pending 也要能因「她讀了酒館」清掉累積計數 ──
                 // 沒有這段，從沒被通知過的人 @ 計數只增不減（gura 累積到 12 次的成因），
                 // 而權重是拿這個數字算的 —— 假資料排出來的順序，看起來跟真的一模一樣。
                 if (!record.HasPending && newCount > 0
-                    && TryCreditTavernRead(lockInfo.Persona, record, out var readAt))
+                    && TryCreditTavernRead(lockInfo.Persona, record, out var readAt, out string readSignal))
                 {
-                    record.Seq = maxSeq;
-                    record.ReadSeenUtc = readAt;
-                    state[lockInfo.Persona] = record;
-                    stateDirty = true;
-                    newCount = 0;
+                    // ── 往前標的安全邊界（Tim 2026-08-13）──
+                    // 有任何一筆新 @ 是「幾乎跟讀取動作同時到」的 ⇒ 本輪整批不認列。
+                    // ⚠ 刻意 all-or-nothing：單一水位裝不下「這幾筆算讀了、那幾筆沒有」，
+                    //   而拆成 per-room／per-entry 是另一塊板（summit 主張改時間戳水位，未拍板）。
+                    // ⚠ 不認列時 **ReadSeenUtc 也不推進** —— 否則訊號被消耗掉卻沒生效，
+                    //   下一輪不會重新評估，而那正是靜默漏通知的長相。
+                    //   於是行為變成：她必須在那筆 @ 到達**之後**再做一次讀取動作才會被認列。
+                    var cutoff = readAt.AddSeconds(-Math.Max(0f, ReadCreditMarginSeconds));
+                    if (HasNewEntryNewerThan(lockInfo.Persona, record.Seq, cutoff, out string freshNote))
+                    {
+                        trace.Detail = $"讀取訊號有（{readSignal}）但**不認列** —— {freshNote}"
+                                     + $"（往前標 {ReadCreditMarginSeconds:0}s；她需要在該筆之後再讀一次）";
+                        if (applyStateChanges)
+                            AppendTrace("credit_deferred", lockInfo.Persona,
+                                $"signal={readSignal} margin={ReadCreditMarginSeconds:0}s kept={newCount} | {freshNote}");
+                    }
+                    else
+                    {
+                        trace.Verdict = UCL_NotifyScanTrace.VerdictCreditedRead;
+                        trace.Detail = $"本輪被認列已讀（訊號：{readSignal}）→ 水位 {record.Seq}→{maxSeq}，"
+                                     + $"吃掉 {newCount} 筆新 @，不入池";
+                        record.Seq = maxSeq;
+                        record.ReadSeenUtc = readAt;
+                        state[lockInfo.Persona] = record;
+                        stateDirty = true;
+                        if (applyStateChanges)
+                            AppendTrace(UCL_NotifyScanTrace.VerdictCreditedRead, lockInfo.Persona,
+                                $"signal={readSignal} acked→{maxSeq} swallowed={newCount}");
+                        newCount = 0;
+                    }
                 }
 
-                // 入池仍以「有新 @」為條件 —— 被等待只加權、不創造通知理由。
-                // 沒被 @ 卻被戳，對收到的人是「不知道為什麼被叫」；擴大入池資格是另一個決定，留給 Tim 拍板。
-                if (newCount <= 0) continue;
+                // 區塊職責：入池資格 —— 「有新 @」**或**「有人正 blocking 等她回話」。
+                // 物理意義：舊版只認新 @，被等待僅加權（Tim 2026-08-04）。但被等待這件事本身就是
+                //   「有一條鏈卡在她身上」，而**最需要被戳的時候正好是新 @ 算不出來的時候**：
+                //   @ 落在被水位遮蔽的側房、或被 credited_read 當成已讀吃掉 —— 兩種都會讓
+                //   等待方無限期掛著（實測：2026-08-13 14:30:22 basecamp 的 @ 因「她開口過」被吞）。
+                //   舊註解的顧慮（「沒被 @ 卻被戳，對方不知道為什麼被叫」）成立，處方是**告知**
+                //   而不是不戳 —— 所以 trace / 看板 / 執行紀錄都會標明「是誰在等」。
+                // 數值影響：權重 = 0×10 + 100；冷卻軌與 retry cap 仍然照舊把關（被等不等於可以連打）。
+                // ⚠ 這段必須在 credited_read 之後 —— 被吞掉的那一筆正是要靠這裡救回來。
+                liveWaits.TryGetValue(lockInfo.Persona, out string waitedBy);
+                bool waitedFor = !string.IsNullOrEmpty(waitedBy);
+                if (waitedFor) trace.WaitedBy = waitedBy;
+
+                if (newCount <= 0 && !waitedFor)
+                {
+                    if (string.IsNullOrEmpty(trace.Verdict))
+                    {
+                        bool anyEntry = trace.Rooms.Count > 0;
+                        trace.Verdict = anyEntry ? UCL_NotifyScanTrace.VerdictAllAcked : UCL_NotifyScanTrace.VerdictNoInbox;
+                        trace.Detail = anyEntry
+                            ? (trace.HasMaskedRoom
+                                ? $"沒有新 @ —— ⚠ 但有房被水位遮蔽（見下方逐房分解）：水位 {record.Seq} 是別的房推上去的"
+                                : $"沒有新 @（inbox 條目都 ≤ 水位 {record.Seq}）")
+                            : "inbox 沒有任何條目";
+                    }
+                    continue;
+                }
 
                 // ── retry cap：達上限即停戳；Tim 在酒館再次 @ 才恢復（新 inbox 條目 seq > cap 時水位且標頭含 Tim）──
                 if (record.HasPending && record.RetryCount >= Math.Max(1, RetryCap))
@@ -305,36 +495,138 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     else
                     {
                         // 停戳期間發一次（且只一次）酒館 @Tim 告警 —— 放棄要出聲, 不做沉默背景化
-                        if (record.CapAlertUtc == DateTime.MinValue)
+                        // ⚠ 純觀測不得發告警 —— 發文是對外動作，不是「看一眼」的副作用
+                        if (record.CapAlertUtc == DateTime.MinValue && applyStateChanges)
                         {
-                            PostCapAlert(lockInfo.Persona, record.RetryCount, newCount);
+                            // ⚠ 分辨兩種完全不同的狀況：真的沒生命跡象 vs 她活著只是那筆 @ 沒被認列。
+                            //   舊版一律說「請確認該 session 是否還活著」—— 今晚對 basecamp 誤報過一次
+                            //   （她全程在發文、跑編譯）。往前標上線後不認列的情況變多，
+                            //   若不分辨，等於用一個吵的假警報換掉一個靜默的漏通知。
+                            bool aliveEvidence = HasSpokenSince(lockInfo.Persona, record.PendingSinceUtc);
+                            PostCapAlert(lockInfo.Persona, record.RetryCount, newCount, aliveEvidence);
                             record.CapAlertUtc = now;
                             record.CapMaxSeq = maxSeq;
                             state[lockInfo.Persona] = record;
                             stateDirty = true;
+                            AppendTrace("cap_alert", lockInfo.Persona,
+                                $"retry={record.RetryCount} pending_mentions={newCount}");
                         }
+                        trace.Verdict = UCL_NotifyScanTrace.VerdictRetryCap;
+                        trace.Detail = $"停戳（已通知 {record.RetryCount} 次無已讀跡象，達 cap {RetryCap}）"
+                                     + $"—— 等 Tim 再 @ 或已讀確認才恢復";
                         continue;
                     }
                 }
 
                 // ── 冷卻軌：無條件頻率限制, 與已讀狀態無關 ──
-                if (now < record.CooldownUntilUtc) continue;
+                if (now < record.CooldownUntilUtc)
+                {
+                    trace.Verdict = UCL_NotifyScanTrace.VerdictCooldown;
+                    trace.Detail = $"冷卻中，還剩 {(record.CooldownUntilUtc - now).TotalSeconds:0}s"
+                                 + $"（有 {newCount} 筆新 @ 在等）";
+                    continue;
+                }
 
-                liveWaits.TryGetValue(lockInfo.Persona, out string waitedBy);
-                pool.Add(new UCL_NotifyCandidate
+                var candidate = new UCL_NotifyCandidate
                 {
                     Lock = lockInfo,
                     Persona = lockInfo.Persona,
                     NewMentions = newCount,
                     MaxSeq = maxSeq,
                     LastNotifiedUtc = record.NotifiedUtc,
-                    WaitedFor = !string.IsNullOrEmpty(waitedBy),
+                    WaitedFor = waitedFor,
                     WaitedBy = waitedBy ?? "",
-                });
+                };
+                pool.Add(candidate);
+                trace.Pooled = true;
+                trace.Verdict = UCL_NotifyScanTrace.VerdictPooled;
+                trace.Weight = candidate.Weight;
+                // 入池理由要能一眼分辨「因為被 @」還是「因為有人在等」——
+                // 後者是新開的資格，出事時要能立刻指認是哪一條把她拉進來的
+                if (newCount <= 0 && waitedFor)
+                    trace.Detail = $"入池（**無新 @，因 🔴 {waitedBy} 等待中**），權重 {candidate.Weight}";
+                else trace.Detail = $"入池，權重 {candidate.Weight}"
+                             + (candidate.WaitedFor ? $"（含 🔴 {candidate.WaitedBy} 等待中 +100）" : "");
             }
-            if (stateDirty) SaveState(state);
+            if (stateDirty && applyStateChanges) SaveState(state);
             pool.Sort(Compare);
+            LastScanTraces = traces;
+            LastScanUtc = now;
+            LastScanOnlineCount = traces.Count;
+            LastScanVerdict = SummarizeScan(traces, pool.Count);
             return pool;
+        }
+
+        // 區塊職責：把整輪掃描壓成一句「為什麼是這個結果」。
+        // 物理意義：取代舊的固定句「沒有人有新的 @（通知池是空的）」—— 那句把六種成因壓成一個答案，
+        //          於是「真的沒人叫她」跟「有人叫她但訊號被吃掉」在畫面上完全同形。
+        // 數值影響：純顯示字串；池非空時只報池的大小與頭名，不干擾原有摘要。
+        static string SummarizeScan(List<UCL_NotifyScanTrace> traces, int poolCount)
+        {
+            if (traces.Count == 0) return "沒有在線 persona（lock 一個都查不到）";
+
+            // 最該吼出來的一種狀態：有人 blocking 等她、而她沒被戳 ⇒ 那條鏈正掛著。
+            // 放在池非空的分支之前 —— 池裡有別人不代表被等的那個人有進去。
+            var stuckWaits = new List<string>();
+            foreach (var t in traces)
+                if (!string.IsNullOrEmpty(t.WaitedBy) && !t.Pooled)
+                    stuckWaits.Add($"{t.WaitedBy} 等 {t.Persona}（{t.Verdict}）");
+            string waitAlarm = stuckWaits.Count > 0
+                ? $"　⛔ 有人在等卻沒進池：{string.Join("、", stuckWaits)}"
+                : "";
+
+            if (poolCount > 0) return $"{traces.Count} 人在線，{poolCount} 人入池{waitAlarm}";
+
+            var counts = new Dictionary<string, int>();
+            int masked = 0;
+            foreach (var t in traces)
+            {
+                counts.TryGetValue(t.Verdict, out int c);
+                counts[t.Verdict] = c + 1;
+                if (t.HasMaskedRoom) masked++;
+            }
+            var parts = new List<string>();
+            foreach (var kv in counts)
+            {
+                string label;
+                switch (kv.Key)
+                {
+                    case UCL_NotifyScanTrace.VerdictCreditedRead: label = "本輪被認列已讀"; break;
+                    case UCL_NotifyScanTrace.VerdictRetryCap: label = "停戳(達 cap)"; break;
+                    case UCL_NotifyScanTrace.VerdictCooldown: label = "冷卻中"; break;
+                    case UCL_NotifyScanTrace.VerdictAllAcked: label = "無新 @"; break;
+                    case UCL_NotifyScanTrace.VerdictNoInbox: label = "inbox 無條目"; break;
+                    default: label = kv.Key; break;
+                }
+                parts.Add($"{kv.Value} 人{label}");
+            }
+            string tail = masked > 0
+                ? $"　⚠ {masked} 人有【整房被水位遮蔽】的房間 —— 那些房的 @ 永遠算不出新的"
+                : "";
+            return $"池空：{traces.Count} 人在線（{string.Join("、", parts)}）{tail}{waitAlarm}";
+        }
+
+        // 區塊職責：值得留底的事件寫進 append-only jsonl（不是每輪都寫）。
+        // 物理意義：last_run.md 每輪覆寫，所以「三小時前那次為什麼沒戳」永遠查不到 ——
+        //          而 TRPG 卡住那幾次正是事後才想查。覆寫檔查不了歷史，這就是它存在的理由。
+        // 數值影響：只在「認列已讀吃掉 @ / cap 告警 / 實際戳了 / 戳失敗」四種事件寫一行；
+        //          常態一天幾十行，不做輪替也不會長爆。
+        static void AppendTrace(string kind, string persona, string detail)
+        {
+            try
+            {
+                UCL_BartenderIO.EnsureBartenderDir();
+                var data = new JsonData();
+                data["at"] = new JsonData(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                data["kind"] = new JsonData(kind ?? "");
+                data["persona"] = new JsonData(persona ?? "");
+                data["detail"] = new JsonData(detail ?? "");
+                File.AppendAllText(TracePath, data.ToJson() + "\n", new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RemoteNotify] 寫 trace 失敗（不擋流程）: {e.Message}");
+            }
         }
 
         // ===========================================================
@@ -418,21 +710,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ⚠ 已知取捨：她跑完 catchup 之後、本輪掃描之前才落地的 @，會被這次一起清掉（窗口 ≤ 一個掃描間隔）。
         //   代價是少一次自動戳（對方仍可被 Tim 叮 / 下一個 @ 重新計數）；反向的代價是計數永久失真。
         //   兩者相比，寧可偶爾少戳一次。
-        static bool TryCreditTavernRead(string persona, NotifyRecord record, out DateTime readAtUtc)
+        static bool TryCreditTavernRead(string persona, NotifyRecord record, out DateTime readAtUtc, out string signal)
         {
             readAtUtc = DateTime.MinValue;
+            signal = "";
             try
             {
                 string cursorPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "_inbox_cursor", persona + ".json");
                 if (File.Exists(cursorPath))
                 {
                     var mtime = File.GetLastWriteTimeUtc(cursorPath);
-                    if (mtime > record.ReadSeenUtc) { readAtUtc = mtime; return true; }
+                    if (mtime > record.ReadSeenUtc)
+                    {
+                        readAtUtc = mtime;
+                        signal = $"catchup cursor 推進（{mtime.ToLocalTime():HH:mm:ss}）";
+                        return true;
+                    }
                 }
                 // 開口 = 她人在現場且看得到酒館（比 cursor 更強，但較貴，放後面）
                 if (record.ReadSeenUtc != DateTime.MinValue && HasSpokenSince(persona, record.ReadSeenUtc))
                 {
                     readAtUtc = DateTime.UtcNow;
+                    signal = "她在通知後開口過";
                     return true;
                 }
             }
@@ -441,6 +740,74 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 Debug.LogWarning($"[RemoteNotify] 讀取確認掃描失敗（{persona}）: {e.Message}");
             }
             return false;
+        }
+
+        // 區塊職責：判斷「新 @ 裡有沒有任何一筆的到達時間晚於 cutoff」（往前標邊界的判別器）。
+        // 物理意義：到達時間的事實源是**訊息本體** `messages/<date>/<seq>.json` 的 `ts`（UTC、毫秒）。
+        //   inbox 條目行尾那個 `(2026-08-13 22:30:15 +08)` 是**投影**：秒精度、本地時區、可再生
+        //   （summit 2026-08-13 實測指出），拿投影當判準遲早被格式咬。
+        // 數值影響：只在「認列已讀那一刻」呼叫，開檔數 = 新 @ 筆數（常態 1-3），
+        //   不是每輪掃描都開 —— 避開「每輪 N 次 file open」的主執行緒稅。
+        // ⚠ 日期資料夾**不從 seq 推**（推導出來的路徑會漂），改用檔名在各日期夾裡找。
+        // ⚠ 讀不到 ts 的一律**當成「新的」**（＝阻止認列）：寧可多戳一次，
+        //   也不要用一個查不到的時間把一筆 @ 靜默吃掉。
+        static bool HasNewEntryNewerThan(string persona, int sinceSeq, DateTime cutoffUtc, out string note)
+        {
+            note = "";
+            try
+            {
+                if (!Directory.Exists(RoomsDir)) return false;
+                foreach (string roomDir in Directory.GetDirectories(RoomsDir))
+                {
+                    string inboxPath = Path.Combine(roomDir, "inbox", persona + ".md");
+                    if (!File.Exists(inboxPath)) continue;
+                    foreach (Match match in InboxEntryRegex.Matches(File.ReadAllText(inboxPath)))
+                    {
+                        if (!int.TryParse(match.Groups[1].Value, out int seq) || seq <= sinceSeq) continue;
+                        var ts = TryGetMessageTs(roomDir, seq);
+                        string room = Path.GetFileName(roomDir);
+                        if (ts == DateTime.MinValue)
+                        {
+                            note = $"{room} seq {seq} 讀不到 ts（保守當成剛到）";
+                            return true;
+                        }
+                        if (ts > cutoffUtc)
+                        {
+                            note = $"{room} seq {seq} 到達於 {ts:HH:mm:ss}，晚於截止點 {cutoffUtc:HH:mm:ss}";
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                note = $"判別失敗，保守不認列：{e.Message}";
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>從訊息本體取到達時間（UTC）。找不到回 MinValue。</summary>
+        static DateTime TryGetMessageTs(string roomDir, int seq)
+        {
+            try
+            {
+                string messagesDir = Path.Combine(roomDir, "messages");
+                if (!Directory.Exists(messagesDir)) return DateTime.MinValue;
+                string fileName = seq.ToString("D8") + ".json";
+                foreach (string dateDir in Directory.GetDirectories(messagesDir))
+                {
+                    string path = Path.Combine(dateDir, fileName);
+                    if (!File.Exists(path)) continue;
+                    var msg = JsonData.ParseJson(File.ReadAllText(path));
+                    return ParseUtc(msg?.GetString("ts", "") ?? "");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RemoteNotify] 讀訊息 ts 失敗（seq {seq}）: {e.Message}");
+            }
+            return DateTime.MinValue;
         }
 
         /// <summary>inbox 檔內是否還存在 sinceSeq &lt; seq ≤ uptoSeq 的條目（還在=未歸檔=未讀）。</summary>
@@ -509,7 +876,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 區塊職責：retry cap 達標時的酒館告警 — 以酒保身分 @Tim 點名一次。
         // 物理意義：「N 次戳不醒」是值得人看一眼的異常（多半是殭屍 session）, 不是背景音；
         //          但一批只發一次（CapAlertUtc 把關）, 不然告警自己就變成連續 @ 轟炸。
-        static void PostCapAlert(string persona, int retryCount, int pendingMentions)
+        static void PostCapAlert(string persona, int retryCount, int pendingMentions, bool aliveEvidence)
         {
             try
             {
@@ -518,9 +885,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     sender_id = "tavern-keeper",
                     sender_name = "酒保",
                     kind = "chat",
-                    body = $"🔕 **自動通知放棄回報** @Tim — `{persona}` 已通知 {retryCount} 次仍無已讀跡象"
-                         + $"（累積 {pendingMentions} 筆 @ 未讀）。已停止自動重戳；"
-                         + $"你在酒館再次 @{persona} 會重置 retry 恢復通知，或請確認該 session 是否還活著。",
+                    body = aliveEvidence
+                        ? $"🔕 **自動通知放棄回報** @Tim — `{persona}` 已通知 {retryCount} 次仍無已讀跡象"
+                          + $"（累積 {pendingMentions} 筆 @ 未讀），**但她在這段期間有發文 ⇒ session 活著**。"
+                          + $"所以這不是「她死了」，是**通知沒有轉成已讀**（她可能沒看到那一筆，或讀取訊號沒被認列）。"
+                          + $"已停止自動重戳；你在酒館再次 @{persona} 會重置 retry。"
+                        : $"🔕 **自動通知放棄回報** @Tim — `{persona}` 已通知 {retryCount} 次仍無已讀跡象"
+                          + $"（累積 {pendingMentions} 筆 @ 未讀），**且這段期間沒有任何發文** ⇒ 可能是殭屍 session。"
+                          + $"已停止自動重戳；你在酒館再次 @{persona} 會重置 retry，或請確認該 session 是否還活著。",
                     meta = new Dictionary<string, string>
                     {
                         { "tag", "bartender-relay" },
@@ -549,7 +921,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 區塊職責：數某個 persona 在所有房間 inbox 裡、seq 大於 sinceSeq 的待辦筆數。
         // 物理意義：inbox 條目就是被 @ 的那一筆；已 ack 的會被 inbox_ack.py 移走，所以檔內容 = 待處理。
         // 數值影響：只掃 `inbox/<persona>.md`，不掃 `_archive`（歸檔＝已看過，不該再拿來要人注意）。
-        static void CountInbox(string persona, int sinceSeq, out int newCount, out int maxSeq)
+        // ⚠ rooms 參數（可為 null）是本函式唯一的診斷出口：newCount 是跨房加總，看不出「哪一房被吃掉」。
+        //   而 seq 是 per-room 編號、水位卻是跨房共用一個 —— 分解到房才看得見遮蔽（見 UCL_RoomInboxStat）。
+        static void CountInbox(string persona, int sinceSeq, out int newCount, out int maxSeq,
+            List<UCL_RoomInboxStat> rooms = null)
         {
             newCount = 0;
             maxSeq = sinceSeq;
@@ -560,12 +935,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 {
                     string path = Path.Combine(roomDir, "inbox", persona + ".md");
                     if (!File.Exists(path)) continue;
+                    var stat = new UCL_RoomInboxStat { Room = Path.GetFileName(roomDir), MinSeq = int.MaxValue };
                     foreach (Match match in InboxEntryRegex.Matches(File.ReadAllText(path)))
                     {
                         if (!int.TryParse(match.Groups[1].Value, out int seq)) continue;
+                        stat.Entries++;
+                        if (seq < stat.MinSeq) stat.MinSeq = seq;
+                        if (seq > stat.MaxSeq) stat.MaxSeq = seq;
                         if (seq > maxSeq) maxSeq = seq;
-                        if (seq > sinceSeq) newCount++;
+                        if (seq > sinceSeq) { newCount++; stat.NewCount++; }
                     }
+                    if (stat.Entries == 0) continue;
+                    if (stat.MinSeq == int.MaxValue) stat.MinSeq = 0;
+                    // 遮蔽判定：本房最大 seq 都低於水位 ⇒ 本房再進幾筆 @ 都算不出新的（永久靜默，非延遲）
+                    stat.Masked = stat.MaxSeq < sinceSeq;
+                    rooms?.Add(stat);
                 }
             }
             catch (Exception e)
@@ -610,13 +994,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string summary = "";
             if (!UCL_RemoteWindowControl.Enabled)
             {
-                summary = "遠端視窗協作未啟動（本次 Editor session 需手動開啟）";
+                // ⚠ 這裡以前不寫 LastRunSummary/LastRunUtc —— 於是開關關掉之後，後台繼續顯示上一次
+                //   成功的摘要（可能是幾小時前的），畫面上看起來「剛剛才通知過」。板子的第二種騙法。
+                summary = "遠端視窗協作未啟動（本次 Editor session 需手動開啟）—— 本輪沒有掃描也沒有通知";
+                LastRunSummary = summary;
+                LastRunUtc = DateTime.UtcNow;
                 return (false, summary);
             }
             var pool = ScanPool();
             if (pool.Count == 0)
             {
-                summary = "沒有人有新的 @（通知池是空的）";
+                // 成因照實報（SummarizeScan 已把六種成因分開）——「沒有人有新的 @」只是其中一種。
+                summary = LastScanVerdict;
                 LastRunSummary = summary;
                 LastRunUtc = DateTime.UtcNow;
                 return (false, summary);
@@ -686,7 +1075,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
             // per-agent 前置（Antigravity 需要 Ctrl+L 才會聚焦到輸入框；Codex / ClaudeCode 不需要）。
             string prepare = await UCL_RemoteAgentInput.PrepareInput(chosen.Lock.ActualAgent, options);
-            UCL_RemoteWindowControl.TryTypeText(NotifyText, options.TypeCharDelaySec, out string typeResult);
+            // 輸入路徑：預設剪貼簿貼上（原子、不會被自動完成清單重繪吃字）；
+            // 貼上失敗才退回逐字 —— 退回時把兩段結果都寫進紀錄，否則事後看不出走了哪條路。
+            string sentText = BuildNotifyText(chosen);
+            string typeResult;
+            if (UsePasteInput)
+            {
+                if (!UCL_RemoteWindowControl.TryPasteText(sentText, PasteRestoreDelayMs, out typeResult))
+                {
+                    UCL_RemoteWindowControl.TryTypeText(sentText, options.TypeCharDelaySec, out string fallback);
+                    typeResult = $"{typeResult} → 已退回逐字輸入：{fallback}";
+                }
+            }
+            else UCL_RemoteWindowControl.TryTypeText(sentText, options.TypeCharDelaySec, out typeResult);
 
             string enterResult;
             if (SendEnter)
@@ -715,10 +1116,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             LastRunSummary = summary;
             LastRunUtc = DateTime.UtcNow;
+            // 區塊職責：冷卻軌的取證欄位（2026-08-13 加）。
+            // 物理意義：實測到對 basecamp 的連續通知間隔是 69/71/71/99/71 秒，而設定是 120 秒 ——
+            //   冷卻沒被遵守，成因未知。單一 Editor 已確認（另兩個 Unity 進程是 -batchMode 的
+            //   AssetImportWorker，不跑 InitializeOnLoad），所以「兩個 daemon 互蓋」已被排除。
+            //   要分辨剩下的可能（載入時 state 裡本來就沒有冷卻／CooldownSeconds 不是 120／
+            //   有第三者覆寫 state），必須知道**這一輪從磁碟讀到的冷卻值**是什麼。
+            // 數值影響：純記錄，不參與判定。
+            string cooldownBefore = "";
             if (notified)
             {
                 var state = LoadState();
                 if (!state.TryGetValue(chosen.Persona, out var record)) record = new NotifyRecord();
+                cooldownBefore = FormatUtc(record.CooldownUntilUtc);
                 record.NotifiedUtc = DateTime.UtcNow;
                 record.PendingSeq = Math.Max(record.PendingSeq, chosen.MaxSeq);
                 if (record.PendingSinceUtc == DateTime.MinValue || record.RetryCount == 0)
@@ -728,7 +1138,55 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 state[chosen.Persona] = record;
                 SaveState(state);
             }
+            AppendTrace(notified ? "notified" : "notify_failed", chosen?.Persona ?? "",
+                $"pool={pool?.Count ?? 0} weight={chosen?.Weight ?? 0} new_at={chosen?.NewMentions ?? 0}"
+                + $" cooldown_sec={CooldownSeconds} cooldown_read_from_state={(string.IsNullOrEmpty(cooldownBefore) ? "(空)" : cooldownBefore)}"
+                + $" | {summary}");
             WriteLog(pool, chosen, summary, notified);
+        }
+
+        /// <summary>組出實際要送進對方輸入框的文字：基礎指令 ＋（可選）系統自動輸入標記與等待者。</summary>
+        static string BuildNotifyText(UCL_NotifyCandidate chosen)
+        {
+            string baseText = NotifyText ?? "";
+            if (!AppendContextNote || string.IsNullOrEmpty(baseText)) return baseText;
+            // ⚠ 空格不可省：slash 指令與參數之間沒有空格 = 變成一個不存在的指令名
+            // 措辭刻意短（Tim 2026-08-13 指定「/ucl-ding （系統自動輸入）就好」）——
+            // 收件端要的是「這是機器打的」這一個位元，不是一段解釋；
+            // 握手那種多帶一個名字，因為她沒有新 @ 可看、需要知道是誰卡在她身上。
+            string note = chosen != null && chosen.WaitedFor && !string.IsNullOrEmpty(chosen.WaitedBy)
+                ? $"（系統自動輸入 — {chosen.WaitedBy} 等待中）"
+                : "（系統自動輸入）";
+            return baseText + " " + note;
+        }
+
+        // 區塊職責：headless 診斷報告 — 純觀測跑一輪 ScanPool，把判定痕跡組成純文字。
+        // 物理意義：後台那面板子只有坐在 Editor 前面的人看得到；agent 查「為什麼沒戳我」只能靠這個。
+        //          而遠端多視窗協作的除錯現場，人常常不在（TRPG 卡住那幾次就是事後才想查）。
+        // 數值影響：applyStateChanges=false ⇒ 不寫 state、不發告警、不寫 jsonl；查幾次都不改變系統。
+        public static string BuildDiagnosticReport()
+        {
+            var pool = ScanPool(applyStateChanges: false);
+            var text = new StringBuilder();
+            text.AppendLine("# 酒保自動通知 — 掃描診斷（純觀測，未改動任何狀態）");
+            text.AppendLine();
+            text.AppendLine($"- 掃描時間：`{LastScanUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}`（本地）");
+            text.AppendLine($"- 自動通知開關：`{Enabled}`｜遠端視窗協作：`{UCL_RemoteWindowControl.Enabled}`"
+                          + $"｜間隔 `{IntervalSeconds}s`｜冷卻 `{CooldownSeconds}s`｜retry cap `{RetryCap}`"
+                          + $"｜認列已讀往前標 `{ReadCreditMarginSeconds:0}s`");
+            text.AppendLine($"- 判定：**{LastScanVerdict}**");
+            text.AppendLine($"- 通知池：{pool.Count} 人" + (pool.Count > 0 ? $"（頭名 {pool[0].Persona}）" : ""));
+            if (!Enabled || !UCL_RemoteWindowControl.Enabled)
+                text.AppendLine("- ⚠ 開關未全開 ⇒ **daemon 這輪不會真的戳任何人**（本報告只反映「若開著會怎麼判」）");
+            text.AppendLine();
+            text.AppendLine("## 逐人判定");
+            if (LastScanTraces.Count == 0) text.AppendLine("（沒有在線 persona）");
+            else foreach (var t in LastScanTraces)
+            {
+                text.AppendLine($"- {t.Describe()}");
+                foreach (var r in t.Rooms) text.AppendLine($"    - {r.Describe()}");
+            }
+            return text.ToString();
         }
 
         /// <summary>AdminPage 用的 per-persona 通知狀態摘要（🕐 冷卻中 / ⏳ 等待已讀 / 🔴 停戳 / ✓ 無待確認）。</summary>
@@ -769,6 +1227,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 text.AppendLine("## 通知池（權重降冪；平手看誰比較久沒被通知）");
                 if (pool == null || pool.Count == 0) text.AppendLine("（空）");
                 else foreach (var c in pool) text.AppendLine($"- {c.Describe()}");
+                text.AppendLine();
+                // 逐人判定痕跡 —— 池是空的時候，這一段才是唯一能回答「為什麼」的地方
+                text.AppendLine($"## 掃描判定（在線 {LastScanOnlineCount} 人）：{LastScanVerdict}");
+                if (LastScanTraces.Count == 0) text.AppendLine("（無在線 persona）");
+                else foreach (var t in LastScanTraces)
+                {
+                    text.AppendLine($"- {t.Describe()}");
+                    foreach (var r in t.Rooms) text.AppendLine($"    - {r.Describe()}");
+                }
                 File.WriteAllText(LogPath, text.ToString(), new UTF8Encoding(false));
             }
             catch (Exception e)

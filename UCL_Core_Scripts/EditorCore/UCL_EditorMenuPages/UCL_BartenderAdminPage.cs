@@ -27,6 +27,7 @@ namespace UCL.Core.EditorLib.Page
         const string KeyTriggersFold = "BartenderTriggersFold";
         const string KeyStateFold = "BartenderStateFold";
         const string KeyRemoteWindowFold = "BartenderRemoteWindowFold";
+        const string KeyNotifyTraceFold = "BartenderNotifyTraceFold";
 
         UCL_BartenderTriggerList m_Triggers = new UCL_BartenderTriggerList();
         UCL_BartenderTimeRuleList m_TimeRules = new UCL_BartenderTimeRuleList();
@@ -53,6 +54,8 @@ namespace UCL.Core.EditorLib.Page
         string m_WaitParamsStatus = "";
         List<UCL_NotifyCandidate> m_NotifyPool;
         double m_NotifyPoolTime;
+        /// <summary>逐人判定痕跡展開狀態（實際值存在 m_FoldDic，這裡只是本次繪製的暫存）。</summary>
+        bool m_ShowNotifyTrace;
         bool m_LocateRunning;
         // 區塊職責：保存各大區塊的展開偏好，供 UCL_GUILayout.Toggle 持久化讀寫。
         // 物理意義：折疊偏好與資料載入快取分離，Reload() 不會意外重置使用者剛選擇的展開狀態。
@@ -121,9 +124,24 @@ namespace UCL.Core.EditorLib.Page
                     bool enabled = UCL_RemoteWindowControl.Enabled;
                     bool next = GUILayout.Toggle(enabled, enabled ? "● 本次已啟動" : "○ 本次未啟動", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
                     if (next != enabled) UCL_RemoteWindowControl.SetEnabled(next);
+                    // 區塊職責：永久開關（落 UCL_ProjectEditorPrefs，預設關閉）。
+                    // 物理意義：跟左邊那顆是**兩顆獨立的開關**，刻意不互相偷改 ——
+                    //          「這次要用」與「這台機器上一直要用」是兩個不同的決定。
+                    //          唯一的耦合是：打開永久開關時順手把本次也打開（否則使用者要點兩次才生效，
+                    //          而「我已經打開了為什麼沒動」正是最容易誤判成壞掉的形狀）。
+                    bool persist = UCL_RemoteWindowControl.PersistEnabled;
+                    bool nextPersist = GUILayout.Toggle(persist, persist ? "🔒 永久啟用中" : "🔓 永久啟用關閉",
+                        UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                    if (nextPersist != persist)
+                    {
+                        UCL_RemoteWindowControl.PersistEnabled = nextPersist;
+                        if (nextPersist) UCL_RemoteWindowControl.SetEnabled(true);
+                    }
                     GUILayout.FlexibleSpace();
                 }
                 if (!show) return;
+                if (UCL_RemoteWindowControl.PersistEnabled)
+                    EditorGUILayout.HelpBox("永久啟用已開：每次 domain reload / Editor 重啟後會自動把「本次啟動」設回開啟（存在 UCL_ProjectEditorPrefs，附專案指紋）。\n⚠ 這是刻意豁免掉「重編後必回關閉」那條護欄 —— 其餘護欄（使用者操作後暫停、送出前前景驗證）全部照舊。關掉這顆即恢復每次手動啟用。", MessageType.Warning);
                 UCL_RemoteWindowControl.PauseOnUserInput = EditorGUILayout.ToggleLeft("偵測使用者操作後暫停（預設開啟）", UCL_RemoteWindowControl.PauseOnUserInput);
                 UCL_RemoteWindowControl.UserIdlePauseSeconds = EditorGUILayout.IntField("使用者操作後暫停（秒）", UCL_RemoteWindowControl.UserIdlePauseSeconds);
                 UCL_RemoteWindowControl.StrictForegroundCheck = EditorGUILayout.ToggleLeft(
@@ -523,6 +541,12 @@ namespace UCL.Core.EditorLib.Page
                             GUILayout.Label("冷卻(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                             UCL_RemoteNotifyService.CooldownSeconds = Mathf.Clamp(
                                 EditorGUILayout.FloatField(UCL_RemoteNotifyService.CooldownSeconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50))), 0f, 3600f);
+                            // 認列已讀的往前標（Tim 2026-08-13）：正在回覆的那幾秒最容易落新 @，
+                            // 而讀取訊號會把它們一起當成已讀。取 15s 是實測值（唯一血證落差 6.9s，5s 不夠）。
+                            GUILayout.Label("已讀往前標(s)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            UCL_RemoteNotifyService.ReadCreditMarginSeconds = Mathf.Clamp(
+                                EditorGUILayout.FloatField(UCL_RemoteNotifyService.ReadCreditMarginSeconds,
+                                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(45))), 0f, 300f);
                             GUILayout.Label("retry 上限", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                             UCL_RemoteNotifyService.RetryCap = Mathf.Clamp(
                                 EditorGUILayout.IntField(UCL_RemoteNotifyService.RetryCap, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))), 1, 20);
@@ -542,6 +566,28 @@ namespace UCL.Core.EditorLib.Page
                             GUI.enabled = true;
                             GUILayout.FlexibleSpace();
                         }
+                        // 區塊職責：輸入方式與尾註（掉字修法，Tim 2026-08-13 拍板走剪貼簿）。
+                        // 物理意義：逐字輸入會被目標端 slash 自動完成清單重繪吃掉字（兩筆血證都掉
+                        //          `/ucl-ding` 的 `-`）。貼上是一次事件，成因不存在 —— 代價是短暫
+                        //          動到系統剪貼簿（用後即還原，含失敗路徑）。
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            UCL_RemoteNotifyService.UsePasteInput = EditorGUILayout.ToggleLeft(
+                                "剪貼簿貼上（推薦 — 逐字會掉字）", UCL_RemoteNotifyService.UsePasteInput,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(210)));
+                            if (UCL_RemoteNotifyService.UsePasteInput)
+                            {
+                                GUILayout.Label("　↳ 還原剪貼簿前等(ms)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                UCL_RemoteNotifyService.PasteRestoreDelayMs = Mathf.Clamp(
+                                    EditorGUILayout.IntField(UCL_RemoteNotifyService.PasteRestoreDelayMs,
+                                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(55))), 0, 5000);
+                            }
+                            GUILayout.FlexibleSpace();
+                        }
+                        UCL_RemoteNotifyService.AppendContextNote = EditorGUILayout.ToggleLeft(
+                            "文字尾端標註「系統自動輸入」（握手觸發時附上誰在等）", UCL_RemoteNotifyService.AppendContextNote);
+                        if (UCL_RemoteNotifyService.UsePasteInput)
+                            EditorGUILayout.HelpBox("剪貼簿貼上：原內容會先 cache、貼完並等待上面那個延遲後自動還原（例外／失敗路徑也會還原）。\n⚠ 還原前有一段該延遲長度的窗口，剪貼簿內容是通知文字 —— 這是等目標 app 讀取所必需，不是遺漏。若連原內容都讀不到，會選擇不還原並在 Editor log 出聲（不拿空字串蓋掉你的剪貼簿）。", MessageType.Info);
                         if (UCL_RemoteNotifyService.SendEnter)
                         {
                             using (new GUILayout.HorizontalScope())
@@ -560,16 +606,49 @@ namespace UCL.Core.EditorLib.Page
                             EditorGUILayout.HelpBox("送出 Enter 已開啟：這條流程會真的把訊息發出去。送出前會最後確認一次前景視窗仍是目標。\n若「文字進去了但沒送出」：先加大「送出前等」（自動完成清單要時間跳出來），仍不行再把 Enter 次數設 2（第一次可能被自動完成清單吃掉當作選取）。", MessageType.Warning);
                         }
                         if (!UCL_RemoteWindowControl.Enabled)
-                            EditorGUILayout.HelpBox("遠端視窗協作未啟動 —— 自動通知不會動作（該開關每次 Editor / domain reload 後必回關閉）。", MessageType.Info);
+                            EditorGUILayout.HelpBox("遠端視窗協作未啟動 —— 自動通知不會動作。該開關預設每次 Editor / domain reload 後回到關閉；不想每次手動開 → 到「🖥 遠端視窗協作」打開「🔒 永久啟用」。", MessageType.Info);
                         // ⚠ 通知池要掃每個房間的 inbox 檔 —— OnGUI 每次重繪都掃 = 拖著整個 Editor 做磁碟 IO。
                         //    節流成每 2 秒最多一次；顯示晚 2 秒無所謂，真正的判斷在 daemon 那邊各自重掃。
                         if (EditorApplication.timeSinceStartup - m_NotifyPoolTime > 2.0 || m_NotifyPool == null)
                         {
-                            m_NotifyPool = UCL_RemoteNotifyService.ScanPool();
+                            // ⚠ applyStateChanges:false — 後台是**觀測端**。ScanPool 會推進已讀水位，
+                            //   而這裡每 2 秒重繪一次 ⇒ 開著這頁就等於每 2 秒替所有人認列一次已讀，
+                            //   把正在追的 @ 訊號改掉（真正該落 state 的是 daemon 那條實際會戳人的路徑）。
+                            m_NotifyPool = UCL_RemoteNotifyService.ScanPool(applyStateChanges: false);
                             m_NotifyPoolTime = EditorApplication.timeSinceStartup;
                         }
                         GUILayout.Label($"通知池（{m_NotifyPool.Count}）— 權重＝新 @ 次數×10；平手看誰比較久沒被通知", UCL_GUIStyle.LabelStyle);
                         foreach (var candidate in m_NotifyPool) GUILayout.Label($"　• {candidate.Describe()}", UCL_GUIStyle.LabelStyle);
+                        // 區塊職責：逐人判定痕跡 —— 池是空的時候，唯一能回答「為什麼」的地方。
+                        // 物理意義：「通知池（0）」有六種完全不同的成因，舊版全部長成同一句話。攤開之後
+                        //          「沒人叫她」跟「有人叫她但訊號被吃掉」在畫面上就不再同形。
+                        // 數值影響：純顯示；資料來自剛才那次 ScanPool（節流 2 秒），不額外掃磁碟。
+                        GUILayout.Label($"掃描判定（{(UCL_RemoteNotifyService.LastScanUtc == System.DateTime.MinValue ? "尚未掃描" : UCL_RemoteNotifyService.LastScanUtc.ToLocalTime().ToString("HH:mm:ss"))}）：{UCL_RemoteNotifyService.LastScanVerdict}",
+                            new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            m_ShowNotifyTrace = UCL_GUILayout.Toggle(m_FoldDic, KeyNotifyTraceFold, 21, iDefaultValue: false);
+                            GUILayout.Label($"逐人判定痕跡（{UCL_RemoteNotifyService.LastScanTraces.Count} 人在線）",
+                                UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            GUILayout.FlexibleSpace();
+                        }
+                        if (m_ShowNotifyTrace)
+                        {
+                            foreach (var trace in UCL_RemoteNotifyService.LastScanTraces)
+                            {
+                                // 遮蔽是永久靜默（不是延遲），所以用紅字 —— 它跟「大家都已讀」外觀相同
+                                var color = trace.HasMaskedRoom ? new Color(1f, 0.55f, 0.55f)
+                                    : trace.Pooled ? new Color(0.6f, 1f, 0.6f)
+                                    : UCL_GUIStyle.LabelStyle.normal.textColor;
+                                GUILayout.Label($"　　• {trace.Describe()}",
+                                    new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true, normal = { textColor = color } });
+                                foreach (var room in trace.Rooms)
+                                    GUILayout.Label($"　　　　- {room.Describe()}",
+                                        new GUIStyle(UCL_GUIStyle.LabelStyle)
+                                        { wordWrap = true, normal = { textColor = room.Masked ? new Color(1f, 0.55f, 0.55f) : UCL_GUIStyle.LabelStyle.normal.textColor } });
+                            }
+                            EditorGUILayout.HelpBox("⚠ 「整房遮蔽」＝該房最大 seq 低於已讀水位。每個房間各自從 1 開始編 seq（tavern 已 15000+，TRPG 側房 100 出頭），而水位跨房共用一個 —— 一旦水位被 tavern 推高，側房的 @ 就永遠算不出「新的」，通知池會顯示 0 而畫面上跟「大家都已讀」完全一樣。", MessageType.Warning);
+                        }
                         // 已讀/冷卻/停戳狀態列 — 只列有事的 persona（無 pending 且不在冷卻的不佔版面）
                         var notifyStates = UCL_RemoteNotifyService.DescribeNotifyStates();
                         if (notifyStates.Count > 0)

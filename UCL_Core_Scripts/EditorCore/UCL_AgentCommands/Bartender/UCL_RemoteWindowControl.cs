@@ -14,21 +14,64 @@ using UnityEngine;
 namespace UCL.Core.EditorLib.AgentCommands.Bartender
 {
     /// <summary>
-    /// 遠端模式的最小權限視窗協作控制器。static runtime state 在 domain reload / Editor 重啟後回到關閉，
-    /// 所以使用者必須每次從 Bartender Admin 明確啟動，避免背景程序意外搶走本機操作權。
+    /// 遠端模式的最小權限視窗協作控制器。runtime 開關（<see cref="Enabled"/>）在 domain reload /
+    /// Editor 重啟後回到關閉，使用者每次從 Bartender Admin 明確啟動；
+    /// 需要跨重編保留時，另外打開 <see cref="PersistEnabled"/>（**opt-in，預設關閉**，
+    /// Tim 2026-08-13 要求：每次重 compile 都要手動開一次太痛）。
     /// </summary>
+    [InitializeOnLoad]
     public static class UCL_RemoteWindowControl
     {
         const int DefaultUserIdlePauseSeconds = 60;
         const string DiagnosticFileName = "remote_window_last_test.md";
+        /// <summary>永久開關的 EditorPrefs key（走 UCL_ProjectEditorPrefs → 自動附專案指紋，不會跨專案互汙）。</summary>
+        const string EditorPrefsPersistKey = "UCL.RemoteWindow.PersistEnabled";
         static bool s_Enabled;
         static bool s_PauseOnUserInput = true;
         static int s_UserIdlePauseSeconds = DefaultUserIdlePauseSeconds;
         static string s_LastResult = "尚未測試";
         static IntPtr s_LastActivated = IntPtr.Zero;
 
-        /// <summary>本次 Editor session 是否允許一般前景切換；故意不寫 PlayerPrefs / 檔案。</summary>
+        /// <summary>本次 Editor session 是否允許一般前景切換；本身是 runtime-only（不落檔）。</summary>
         public static bool Enabled => s_Enabled;
+
+        // 區塊職責：永久開關 — 讓 runtime 開關在 domain reload / Editor 重啟後自動恢復。
+        // 物理意義：runtime 開關會被重置是**刻意的護欄**（背景程序不該在沒人同意時搶走鍵鼠）。
+        //          這顆是那條護欄的顯式豁免：使用者一次性簽名「這台機器上我要它一直開著」，
+        //          於是每次重編不用再點一次。**預設 false** —— 會移動游標並按 Enter 的能力
+        //          不該因為「裝了這個版本」就自己開起來（Tim 2026-08-13 明確指定預設關閉）。
+        // 數值影響：唯一效果是載入時把 s_Enabled 設回 true；不改任何其他護欄
+        //          （PauseOnUserInput / 使用者閒置秒數 / 送出前前景驗證全數照舊）。
+        public static bool PersistEnabled
+        {
+            get => UCL_ProjectEditorPrefs.GetBool(EditorPrefsPersistKey, false);
+            set => UCL_ProjectEditorPrefs.SetBool(EditorPrefsPersistKey, value);
+        }
+
+        // 區塊職責：載入時依永久開關恢復 runtime 開關。
+        // 物理意義：**就地同步做，不得經 EditorApplication.delayCall。**
+        //   ⚠ 本函式第一版就是用 delayCall 寫的（理由寫「照 UCL_AgentCommandWatcher 的先例」）——
+        //   而那個先例正是同一天剛被抓出來的 bug：delayCall 是單次 schedule，Editor 在背景時
+        //   domain reload 後那一拍可能永遠不來。實測血證（2026-08-13 22:22）：Tim 已把永久開關按成
+        //   ON（EditorPrefs 讀回 0x1），reload 後 Enabled 仍是 false、恢復用的 log 一行都沒印 ——
+        //   **抄的不是慣例，是還沒修掉的缺陷。**
+        //   讀 EditorPrefs 與 Application.dataPath 在 cctor 內是安全的（純字串 + registry 讀取，
+        //   不碰 UniTask / PlayerLoop / AssetDatabase），所以沒有延後的必要。
+        // 數值影響：PersistEnabled=false 時完全不動作（與加本功能之前逐位元一致）；
+        //   為 true 時 s_Enabled 在 cctor 當下即為 true，不存在「reload 後有一段視窗是關的」。
+        static UCL_RemoteWindowControl()
+        {
+            try
+            {
+                if (!PersistEnabled) return;
+                s_Enabled = true;
+                UnityEngine.Debug.Log("[RemoteWindowControl] 永久開關為開 → 已自動恢復遠端視窗協作（重編後不需手動再開）。");
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[RemoteWindowControl] 永久開關恢復失敗（維持關閉）: {e.Message}");
+            }
+        }
 
         /// <summary>一般自動切換是否在偵測到使用者鍵鼠操作後暫停；runtime-only，預設安全開啟。</summary>
         public static bool PauseOnUserInput
@@ -218,6 +261,71 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 ? $"已逐字輸入「{clean}」{sentChars} 字 / 每字間隔 {delayMs}ms{note} — 仍需目測確認對方收到幾個字"
                 : $"文字送出不完整（成功 {sentChars} / 失敗 {failedChars}）{note}";
             return failedChars == 0;
+        }
+
+        // 區塊職責：以剪貼簿 + Ctrl+V 一次貼入整串文字（逐字輸入的替代路徑）。
+        // 物理意義：逐字輸入是**一顆一顆**送 KEYEVENTF_UNICODE，而目標端在 `/ucl` 之後會跳出
+        //          slash 指令自動完成清單並開始過濾 —— UI 重繪那一瞬吃掉一顆鍵，字就少了。
+        //          血證兩筆（summit 2026-08-03、basecamp 2026-08-13）**掉的都是同一個字元、同一個位置**：
+        //          `/ucl-ding` 的那個 `-` → 對方收到 `/uclding` → Unknown command。
+        //          加大字間隔只降低機率（Tim 觀察到「有改善」符合此模型）；貼上是**一次事件**，
+        //          把成因整個拿掉而不是把機率調小。
+        // 數值影響：不再有 perCharDelay（整串一次進去）；改為貼上後等 restoreDelayMs 才還原剪貼簿 ——
+        //          太早還原會跟目標 app 讀取剪貼簿搶時間。
+        // ⚠ 副作用誠實寫在這裡：**會動到使用者的系統剪貼簿**。用後即還原（含失敗路徑），
+        //   但還原前有一段短暫窗口內容是通知文字；這是選這條路的已知代價，不是 bug。
+        public static bool TryPasteText(string text, int restoreDelayMs, out string result)
+        {
+            if (!s_Enabled)
+            {
+                result = "請先在酒保後台啟動遠端視窗協作";
+                return false;
+            }
+            if (string.IsNullOrEmpty(text))
+            {
+                result = "沒有要輸入的文字";
+                return false;
+            }
+            string previous = null;
+            try
+            {
+                previous = GUIUtility.systemCopyBuffer;   // 先存 —— 還原不了就等於偷了使用者的剪貼簿
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[RemoteWindowControl] 讀取原剪貼簿失敗（將不還原）: {e.Message}");
+            }
+            try
+            {
+                GUIUtility.systemCopyBuffer = text;
+                if (!TrySendHotkey(VK_V, ctrl: true, shift: false, alt: false, out string hotkeyResult))
+                {
+                    result = $"貼上失敗（Ctrl+V 未送出：{hotkeyResult}）";
+                    return false;
+                }
+                System.Threading.Thread.Sleep(Mathf.Clamp(restoreDelayMs, 0, 5000));
+                // ⚠ 這裡回報的只是「Ctrl+V 已送出」—— 跟 Enter 那條同一課：
+                //   SendInput 成功不證明目標 app 貼進去了。真正的驗收仍是對方視窗上看得到的字。
+                result = $"已貼上「{text}」（{text.Length} 字，一次送出，無逐字掉字風險）"
+                       + " — 仍需目測確認對方輸入框內容";
+                return true;
+            }
+            catch (Exception e)
+            {
+                result = $"貼上發生例外：{e.Message}";
+                return false;
+            }
+            finally
+            {
+                if (previous != null)
+                {
+                    try { GUIUtility.systemCopyBuffer = previous; }
+                    catch (Exception e)
+                    {
+                        UnityEngine.Debug.LogWarning($"[RemoteWindowControl] 還原剪貼簿失敗（內容仍是通知文字）: {e.Message}");
+                    }
+                }
+            }
         }
 
         // 區塊職責：送出一次 Enter。**這是全檔唯一會「送出」的動作，刻意獨立成一支具名方法。**
@@ -524,6 +632,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         const ushort VK_CONTROL = 0x11;
         const ushort VK_SHIFT = 0x10;
         const ushort VK_MENU = 0x12;   // Alt
+        const ushort VK_V = 0x56;      // 剪貼簿貼上用（Ctrl+V）
         [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
 
         [StructLayout(LayoutKind.Sequential)]

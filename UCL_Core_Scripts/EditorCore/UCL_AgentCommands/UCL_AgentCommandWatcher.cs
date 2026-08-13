@@ -64,14 +64,31 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         static UCL_AgentCommandWatcher()
         {
-            // 區塊職責：[InitializeOnLoad] cctor 內延到下一個 editor tick 才啟動 Register
-            // 物理意義：cctor 在 EditorAssemblies.ProcessInitializeOnLoadAttributes 連續呼叫，
-            //          此時 UniTask 的 PlayerLoopHelper 內部尚未 init —— 直接 await UniTask
-            //          會在 PlayerLoopHelper.AddAction 撞 NRE。delayCall 推到下一個 editor
-            //          tick，UniTask 基礎設施已就緒，後續 await WaitUntilInitialized 才安全。
-            // 數值影響：Register chain 啟動延後 ~16ms；對既有「Register 完成前不訂閱 update」
-            //          的保證無影響（Register() 函式體不動）。
-            EditorApplication.delayCall += () => Register().Forget();
+            // 區塊職責：就地、同步訂閱 EditorApplication.update。
+            // 物理意義：**訂閱不得經過 EditorApplication.delayCall。**
+            //   舊版是 `delayCall += () => Register().Forget()`，理由是「cctor 內 await UniTask 會撞
+            //   PlayerLoopHelper NRE」—— 那個理由對 **await** 成立，但訂閱一個 delegate 不碰 UniTask，
+            //   被一起推到 delayCall 是搭便車。而 delayCall 是**單次 schedule**，
+            //   domain reload 後若沒有觸發它的那一拍（Editor 在背景、沒人動它），它就不會來 ——
+            //   於是 update 永遠不訂閱，**整條 AgentCommand 通道靜默死亡**。
+            //   ⚠ 同 repo 早有這一課：UCL_BartenderDaemon 檔頭第 5 行寫著
+            //   「用 EditorApplication.update（非 delayCall）—— 持續 tick，不靠單次 schedule」，
+            //   而它的心跳在事故現場照跳，watcher 卻死了 —— 兩者差別只有註冊方式。
+            //   血證（2026-08-13 basecamp wake#57，同日重現三次）：reload 後 `Registered.` 一次都沒出現、
+            //   pending.trigger 躺 24 分鐘、run_cmd 端只有 timeout、Editor 端零 error、心跳全程正常。
+            //   唯一復原路徑是人去 focus Unity —— 那正是「補上缺的那一拍」。
+            // 數值影響：訂閱從「下一個 delayCall 拍（可能永遠不來）」提前到「cctor 當下」。
+            //   路徑字串只用於 log，取得失敗不影響訂閱（已就地 try 起來）。
+            EditorApplication.update += OnEditorUpdate;
+            s_Registered = true;
+            try
+            {
+                Debug.Log($"[UCL_AgentCmdWatcher] Registered. Watching: {UCL_AgentCommandQueue.GetTriggerPath()}");
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"[UCL_AgentCmdWatcher] Registered.（trigger 路徑取得失敗，不影響監看：{e.Message}）");
+            }
 
             // 區塊職責：監聽編輯器 PlayMode 狀態變更事件
             // 物理意義：在進入 PlayMode 或退出 PlayMode 時，觸發對應的清理或自我修復動作。
@@ -93,14 +110,22 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        /// <summary>確保 update 訂閱已註冊（idempotent）。</summary>
-        public static async UniTask Register()
+        // 區塊職責：手動補註冊入口（idempotent）—— 正常路徑是 cctor 已就地訂閱，這裡是給
+        //          Unregister() 之後想再開回來的呼叫端用。
+        // 物理意義：**已無任何 await** —— 訂閱不再依賴 ModuleService。
+        //   舊版第一行是 `await UCL_ModuleService.WaitUntilInitialized(default)`，理由寫「確保
+        //   GetTriggerPath() 可用」，而那個理由不成立：GetTriggerPath / ListAgentIds 只用到
+        //   `UCL_RepoPath.AgentCommandsDir`（＝ RepoRoot 字串組合），與 ModuleService 無關；
+        //   而 m_Initialized 只在 InitAsync 最後一行才設，等不到就是無聲無限期掛著。
+        //   （簽名保留 UniTask 回傳型別以免動到呼叫端；實際同步完成。）
+        // 數值影響：訂閱時機由「ModuleService 就緒後」提前到「呼叫當下」。
+        public static UniTask Register()
         {
-            if (s_Registered) return;
-            await UCL_ModuleService.WaitUntilInitialized(default); // 等 ModuleService 就緒（通常很快），確保 UCL_AgentCommandQueue.GetTriggerPath() 可用
+            if (s_Registered) return UniTask.CompletedTask;
             EditorApplication.update += OnEditorUpdate;
             s_Registered = true;
-            Debug.Log($"[UCL_AgentCmdWatcher] Registered. Watching: {UCL_AgentCommandQueue.GetTriggerPath()}");
+            Debug.Log($"[UCL_AgentCmdWatcher] Registered (手動). Watching: {UCL_AgentCommandQueue.GetTriggerPath()}");
+            return UniTask.CompletedTask;
         }
 
         /// <summary>取消訂閱（給 Page 上的 toggle 用；通常不需要）。</summary>

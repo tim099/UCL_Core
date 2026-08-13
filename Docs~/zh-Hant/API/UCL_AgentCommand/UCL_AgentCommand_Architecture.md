@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-08-07 (§4.3 失敗自動出隊 + _cmd_results verdict 檔；§8.3 手動 SOP 降級為殘餘情境用)
+last_updated: 2026-08-13 (§4.3 result 檔新增 outputs 欄 —— 回傳檔路徑隨 verdict 印出，caller 不再靠 skill 背路徑)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -118,6 +118,14 @@ timeout → `ensure_idle` 60 秒放棄 → 「後續指令無法執行」。
 成功也寫 result 檔 —— 失敗會出隊之後「消失」同時可能是成功或失敗，
 「沒有檔」不能再當判定依據。result 檔 3 天自動清（純 handshake）；
 `_cmd_errors/` 永久保留（回溯用，已 gitignore）。
+
+**`outputs` 欄（2026-08-13 起）**：handler 落回傳檔時經
+`UCL_AgentCommandRunner.ReportOutputFile(path)` 回報，Runner 寫進 result 檔的
+`outputs`（string 陣列，成功與失敗都寫 —— blocked 也是先落 payload 再 throw，
+出口清單就在那個檔裡）；`run_cmd.py` 隨 verdict 一起印 `📄 回傳檔：<路徑>`。
+動機：回傳檔位置（如 letters root）跨專案會漂，caller 靠 skill 文字背路徑會讀錯
+（wake#48 血證）——路徑由落檔的那隻手回報，天生不漂。舊版 result 檔沒有此欄，
+python 端靜默跳過。目前接上的 handler：Cmd_GoodMorning / Cmd_GoodNight（`WritePayload`）。
 
 失敗後要重試：讀 `_cmd_errors/<id>.md` 修好參數，**重新 submit 一筆** ——
 不再有「改 queue 裡那筆繼續嘗試」的模式。

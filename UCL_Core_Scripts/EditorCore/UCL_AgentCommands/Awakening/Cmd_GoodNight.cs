@@ -154,6 +154,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(iPath));
                 File.WriteAllText(iPath, iReport, new UTF8Encoding(false));
+                // 回報產出檔 → result 檔 outputs 欄，run_cmd 端隨 verdict 印路徑（不再靠 skill 背）
+                UCL_AgentCommandRunner.ReportOutputFile(iPath);
             }
             catch (Exception e)
             {

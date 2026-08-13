@@ -55,6 +55,27 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 數值影響：沒設（IMGUI 手動跑 handler 等非 queue 路徑）→ null → WriteLastOp 不 stamp，行為不變。
         public static string CurrentCmdId = null;
 
+        // 區塊職責：per-cmd 產出檔收集 slot（Tim 2026-08-13 拍板 —— 路徑直接寫進 result 檔）
+        // 物理意義：handler 落回傳檔（如 letters/<P>/_goodmorning_wake.md）時 caller 只拿到
+        //          Success/Failed，「檔在哪」得靠 skill/文件的文字背 —— letters root 跨專案
+        //          會漂，agent 照字面讀就 File not found（wake#48 血證）。handler 經
+        //          ReportOutputFile 回報 → WriteCmdResult 寫進 _cmd_results/<id>.json 的
+        //          outputs 欄位 → run_cmd.py 隨 verdict 一起印，路徑不再靠背。
+        // 數值影響：成功與失敗都寫（blocked 也會先落 payload 再 throw，路徑同樣有用）；
+        //          同路徑去重、保序。非 queue 路徑（IMGUI 手動跑 handler）沒有 result 檔，
+        //          回報無處可去 —— 清單在下一筆 cmd 起跑前 Clear，不跨筆污染。
+        static readonly List<string> s_CurrentCmdOutputs = new List<string>();
+
+        /// <summary>handler 回報本次執行落了哪個檔（絕對路徑）；會寫進 result 檔 outputs 欄，caller 端隨 verdict 印出。</summary>
+        public static void ReportOutputFile(string iPath)
+        {
+            if (string.IsNullOrEmpty(iPath)) return;
+            lock (s_CurrentCmdOutputs)
+            {
+                if (!s_CurrentCmdOutputs.Contains(iPath)) s_CurrentCmdOutputs.Add(iPath);
+            }
+        }
+
         /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
         public static bool IsRunning => IsRunningForAgent(null);
 
@@ -250,6 +271,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // T-LastOp-CmdId (2026-06-12)：把當前 cmd 的 queue Id 放進 static slot，
                     // 供下游 WriteLastOp stamp 進 _last_op.md（per-cmd finally 清掉防 cross-cmd leak）
                     CurrentCmdId = c.Id;
+                    // 產出檔 collector 每筆起跑前歸零 —— WriteCmdResult 在 finally 之前讀，
+                    // 這裡不清的話上一筆（或非 queue 路徑）的回報會混進本筆 outputs
+                    lock (s_CurrentCmdOutputs) s_CurrentCmdOutputs.Clear();
                     // 區塊職責: per-cmd timeout (agent-command-handler-timeout T02, Tim 2026-05-13 拍板)
                     // 物理意義: handler.TimeoutSeconds (default 1200 = 20min) 為 type-level default
                     //          caller 帶 args._timeout_sec=N → 即時覆寫該筆 cmd timeout (per-call override)
@@ -411,6 +435,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                 jd["mode"] = new UCL.Core.JsonLib.JsonData(c.Mode.ToString());
                 jd["result"] = new UCL.Core.JsonLib.JsonData(success ? "Success" : "Failed");
                 jd["finished_at"] = new UCL.Core.JsonLib.JsonData(DateTime.UtcNow.ToString("o"));
+                // outputs：handler 經 ReportOutputFile 回報的產出檔（回傳檔 / payload）——
+                // caller 端（run_cmd.py）隨 verdict 一起印，agent 不用再靠 skill 文字背路徑
+                lock (s_CurrentCmdOutputs)
+                {
+                    if (s_CurrentCmdOutputs.Count > 0)
+                    {
+                        var aOutputs = new UCL.Core.JsonLib.JsonData();
+                        foreach (var aOut in s_CurrentCmdOutputs) aOutputs.Add(aOut);
+                        jd["outputs"] = aOutputs;
+                    }
+                }
                 if (!success)
                 {
                     jd["error"] = new UCL.Core.JsonLib.JsonData(error ?? "");

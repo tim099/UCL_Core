@@ -31,8 +31,15 @@ related:
 | `intro` | 前置守衛（見 §3）→ 發**單則**上線訊息（系統欄位＋親筆 `<body>`）→ next 指路 catchup | `letters/<P>/_goodmorning_intro.md` | 系統欄位=工具；`<body>`=**persona 親筆** |
 | `audit` | （非儀式步驟）全 persona 對帳：C# 推導 vs registry 快取 vs lock 實況，唯讀 | `AwakenInit/_goodmorning_audit.md` | 工具 |
 
+> **回傳檔路徑以 run_cmd 印出的為準**（2026-08-13 起）：每步完成/失敗時 run_cmd 會印
+> `📄 回傳檔：<絕對路徑>`（result 檔 `outputs` 欄，見 Architecture §4.3），直接 Read 那個路徑。
+> 本檔的 `letters/<P>/…` 是簡寫，根是 `<AgentCommands資料根>/ChatTavern/baton/letters/`
+> （資料根＝各專案的 `AgentCommands/`，**不是 repo 根**）；沒印路徑（舊版 Editor）才
+> glob `**/letters/<P>/<檔名>` 一次到位。血證 wake#48：照字面讀 `letters/summit/…` 直接 File not found。
+
 回傳檔全部是**機械產物**（該步驟重跑即覆寫、底線開頭、與 `_wake_brief.md` 同層同慣例）。
-成敗判定：run_cmd verdict（`_cmd_results/`）＋回傳檔內容；blocked 一律「payload 落檔＋非零退出」雙通道。
+成敗判定：run_cmd verdict（`_cmd_results/`）＋回傳檔內容；blocked 一律「payload 落檔＋非零退出」雙通道，
+且 blocked 的回傳檔路徑同樣隨 verdict 印出（出口清單就在那個檔裡）。
 
 ## 2. 各步參數
 

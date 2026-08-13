@@ -110,6 +110,21 @@ def read_cmd_result(cmd_id: str):
         return None   # 壞檔當沒有 —— fallback 舊推論，不擋判定
 
 
+def print_cmd_outputs(verdict: dict) -> None:
+    """印 result 檔 outputs 欄 —— Editor handler 回報的產出/回傳檔路徑（2026-08-13 Tim 拍板）。
+
+    區塊職責：讓 caller 直接拿到「回傳檔在哪」，不再靠 skill/文件的文字背路徑。
+    物理意義：letters root 跨專案會漂（wake#48 血證：照 skill 字面讀 letters/<P>/ 直接
+             File not found）；路徑由落檔的那隻手回報，天生不會漂。
+    數值影響：純輸出；舊版 Editor 的 result 檔沒有 outputs 欄 → 靜默跳過。
+    """
+    outs = verdict.get("outputs")
+    if isinstance(outs, list):
+        for o in outs:
+            if isinstance(o, str) and o:
+                print(f"  📄 回傳檔：{o}")
+
+
 def print_cmd_error_report(cmd_id: "str | None", max_lines: int = 60) -> None:
     try:
         candidates = []
@@ -763,11 +778,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
                         err = verdict.get("error") or "(no error message)"
                         print_fail_verdict(f"  ✗ Cmd failed（Editor 已自動出隊）: {err}")
                         report_path = verdict.get("error_report")
+                        print_cmd_outputs(verdict)   # blocked 也會先落 payload 再 throw —— 出口清單就在那個檔裡
                         print_cmd_error_report(cmd_id)
                         if report_path:
                             print(f"  📄 詳細錯誤檔：{report_path}")
                         return 2
                     print(f"  ✓ Cmd completed → Success（result 檔判定，非推論）")
+                    print_cmd_outputs(verdict)
                     if output_file:
                         if output_file.exists():
                             print(f"  ✓ Output file exists: {output_file}")
@@ -798,6 +815,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
             result = cmd.get("LastRunResult")
             if result == "Success":
                 print(f"  ✓ Repeatable cmd ran successfully (RunCount={cmd.get('RunCount', 0)})")
+                verdict = read_cmd_result(cmd_id)
+                if verdict is not None:
+                    print_cmd_outputs(verdict)
                 return 0
             if result == "Failed":
                 err = cmd.get("LastRunError") or "(no error message)"

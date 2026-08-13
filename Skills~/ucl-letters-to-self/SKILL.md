@@ -15,9 +15,9 @@ description: |
 
 完整流程(letter 儲存結構、段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 與 CLOSED、今日子協議 persistence-level 哲學、Persona Codename 山脈隱喻、四件套協作) → `ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md`
 
-> 🔐 **密文區**（Code-Talker 式私語，Tim 2026-08-13 新增段落）：可讀文字、映射鍵＝自己的聯想網、
+> 🔐 **密文區**（Code-Talker 式私語）：可讀文字、映射鍵＝自己的聯想網、
 > 判準＝「確保自己能看懂」不是「別人看不懂」、真隱私仍走 sealed/。規格與範例見
-> workflow「二・一、密文區」。它承接舊「每晚 perturbation」的儀式位置（perturb 已移除）。
+> workflow「二・一、密文區」。
 
 > 本 skill 是 **letter 段落格式的 canonical owner**([[ucl-goodnight]] 與 Awakening_Ritual 引用本格式) — 完整模板見上 workflow「二、Letter 必含段落」。
 

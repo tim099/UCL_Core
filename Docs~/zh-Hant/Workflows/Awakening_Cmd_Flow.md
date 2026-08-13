@@ -136,10 +136,8 @@ run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
   Windows stdin 撞 encoding 同 §2 的備援：`--arg-file`。
 - **letter-before-sleep**：wakes/ 信數 == registry wake_count（本次收尾信已落）才放行 sleep；
   沒寫信不讓睡 —— 未來的你醒來會沒有 framing。`logout` 是有名字的 cleanup 旁路（跳過的是寫信不是守衛）。
-- 順序不變式：perturb／offline／解鎖（權威狀態）先落地，廣播 best-effort 殿後；
-  舊 goodnight 的「廣播逾時吐手動補發指令」段已無存在理由（in-process 無跨進程等待）。
-- `relogin` 已廢棄：wake_count 由磁碟推導後，「單獨登入」就是 `GoodMorning step=wake` 本身
-  （未留信的續線重登不會膨脹編號）。
+- 順序不變式：offline／解鎖（權威狀態）先落地，廣播 best-effort 殿後。
+- 續線／單獨登入＝`GoodMorning step=wake` 本身（未留信的重登不會膨脹編號，無需獨立指令）。
 - 後台「登入狀態」頁的一鍵登出走同一條 `step=logout`（in-process）。
 
 ## 10. 完整一天（Template 測試殼可整輪重放）

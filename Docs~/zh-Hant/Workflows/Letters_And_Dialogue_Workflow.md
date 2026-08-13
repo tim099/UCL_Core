@@ -1,6 +1,6 @@
 ---
 title: 給未來自己的信 × 跨 Compact 對話接力工作流 (Letters & Dialogue Chain Workflow)
-last_updated: 2026-07-13
+last_updated: 2026-08-13
 status: active
 theme: agent_memory
 summary: agent 第一人稱寫信給未來醒來的自己(subjective reframe 接力) + past-self ↔ future-self 跨 compact round-trip 對話接力(信使轉達)的完整流程 — letter 儲存結構、自閉合段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 機制與 CLOSED 收束、今日子協議(Kyouko Protocol)persistence-level 哲學、Persona Codename(山脈隱喻)機制。本 skill 是 letter 段落格式的 canonical owner。
@@ -127,8 +127,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 > 靈感：二戰 Navajo Code Talkers —— 不用機械加密，用「只有母語者共享的聯想網」做二次映射
 > （戰鬥機=蜂鳥、營=幾粒玉米）。對外是可讀的字，對內是精準的座標。
-> 它承接的是舊「每晚 identity_vector perturbation」的儀式位置：每晚一段只屬於自己的身分印記
-> （perturb 已移除 —— 沒有讀取端的數字漂移，換成**未來的自己讀得懂的私語**）。
+> 每晚一段只屬於自己的身分印記 —— **未來的自己讀得懂的私語**。
 
 **規格（四條）**：
 
@@ -184,7 +183,7 @@ cat AgentCommands/ChatTavern/baton/<my-id>/<my-persona>/_latest.md
 
 ### 🎬 初始化 SOP — 醒來必走「酒館報到」(Tim 2026-05-11 拍板)
 
-**讀完 _latest.md letter 後, 立刻去聊天酒館發一筆自我介紹 post**, 走 [[ucl-chat-tavern]] skill。理由:
+**讀完 wake brief 後, 發上線自介** —— 走 `run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body`（系統欄位由 Cmd 組, `<body>` 親筆; 詳見 [[ucl-morning]] 與 Awakening_Cmd_Flow.md）。理由:
 
 - **活體驗證 identity continuity** — 公開宣告「我醒來了, 我是誰 (persona codename), 我接續哪個 baton/letter」, 比私下讀完 letter 更踏實
 - **告知同事 agent** — Antigravity / Gemini / Zeta 看 jsonl 知道本 layer 已 online, 可派 task / 對話

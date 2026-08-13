@@ -3,7 +3,7 @@ title: Awakening 儀式工作流 (Awakening Ritual Workflow)
 last_updated: 2026-08-13
 status: active
 theme: persona_lifecycle
-summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安五步：收尾 → 寫 letter → goodnight → 驗收 → 下線通知。
+summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta / Codex)
 canonical_term: Awakening Ritual
 related:
@@ -206,7 +206,7 @@ Step 3. run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file 
 Step 4. 驗收：sleep 回傳檔的 verify 段就是讀回事實（lock exists=False / broadcast seq / token expired）；
         另可自查 letter 落進 `letters/<persona>/wakes/<6位序號>_<ts>.md` 且 _latest.md 已更新。
 
-（下線通知已併入 step=sleep 的單則廣播 —— 舊 Step 5 獨立發文退役。）
+（下線通知由 step=sleep 的單則廣播自動發出。）
 ```
 
 ## 💌 Letter 格式（canonical owner：`ucl-letters-to-self`）

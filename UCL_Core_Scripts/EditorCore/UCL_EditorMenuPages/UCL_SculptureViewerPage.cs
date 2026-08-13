@@ -212,9 +212,10 @@ namespace UCL.Core.EditorLib.Page
             }
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", $"\"{aScript}\" view{iViewArgs}",
                 UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
-            m_LastRenderLog = aExit == 0
+            // 時間戳＋動作前綴：舊錯誤訊息跟新結果長得一樣會誤導（Tim 2026-08-13 回報「報錯沒清除」）
+            m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} view]\n" + (aExit == 0
                 ? (aSo ?? "").Trim()
-                : $"✗ 渲染失敗（exit={aExit}）\n{aSo}\n{aSe}";
+                : $"✗ 渲染失敗（exit={aExit}）\n{aSo}\n{aSe}");
             m_ViewTexTime = default;   // 強制下次重載 texture
         }
 
@@ -232,9 +233,9 @@ namespace UCL.Core.EditorLib.Page
             if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color=\"{m_ExcludeColor}\"";
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs,
                 UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
-            m_LastRenderLog = aExit == 0
+            m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} export {iFormat}]\n" + (aExit == 0
                 ? (aSo ?? "").Trim()
-                : $"✗ 匯出失敗（exit={aExit}）\n{aSo}\n{aSe}";
+                : $"✗ 匯出失敗（exit={aExit}）\n{aSo}\n{aSe}");
         }
 
         // 區塊職責：顯示 _last_view.png — mtime 快取（texture 只在檔案變動時重建）

@@ -30,6 +30,7 @@ using UCL.Core.JsonLib;
 using UCL.Core.Page;                                // UCL_CommonEditPage / UCL_SelectAssetPage（角色卡跳轉編輯）
 using UCL.Core.UI;
 using UCL.Core.EditorLib.AgentCommands;             // UCL_AgentEmailRegistry（信箱解析）/ UCL_ActualAgent
+using UCL.Core.EditorLib.AgentCommands.Awakening;   // UCL_PersonaData / UCL_AwakeningService（GoodMorning Cmd 遷移）
 using UCL.Core.EditorLib.AgentCommands.Treasury;    // 開 agent 時的可選種子額度
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;  // 操作通知發酒館主頻道 + UCL_ChatTavernPersonaCardAsset
 using UnityEditor;                                  // EditorApplication.timeSinceStartup（二段確認倒數）/ AssetDatabase.Refresh
@@ -68,16 +69,16 @@ namespace UCL.Core.EditorLib.Page
         readonly HashSet<string> m_LockedPersonas = new HashSet<string>();                       // 有 session lock（線上）
         bool m_Loaded = false;
 
-        class PersonaRow
+        // 區塊職責：persona 一覽列 — typed model 本體在 UCL_PersonaData（Awakening/UCL_AwakeningData.cs），
+        //          本類只補 UI 衍生值。
+        // ⚠ 血證（2026-08-13 wake#47 修）：舊版自帶 camelCase 欄位（wakeCount/layerRole/forkedFrom），
+        //   而 UnityJsonSerializable 的欄名匹配是 exact（僅剝 m_ 前綴）—— JSON key 是 snake_case，
+        //   對不上**不報錯、靜默留預設值**，於是總覽表的 wake# 全顯示 0、fork 欄全顯示（原生）。
+        //   欄位名必須與 JSON key 逐字相同；衍生值一律用 property（serializer 只走 field）。
+        class PersonaRow : UCL_PersonaData
         {
-            public string name;
-            public string agent;
-            public string model;
-            public string layerRole;      // persona 檔的 layer_role — 一鍵建角色卡時預填 m_RoleSettings
-            public int wakeCount;
-            public string status;
-            public string forkedFrom;
-            public int lineageDepth;
+            /// <summary>fork 鏈深 — 由 fork_lineage 推導（UI 顯示用）。</summary>
+            public int lineageDepth => fork_lineage != null ? fork_lineage.Count : 0;
         }
 
         // ==== Persona 角色卡（PersonaCard）====
@@ -200,18 +201,20 @@ namespace UCL.Core.EditorLib.Page
                         {
                             var pj = JsonData.ParseJson(File.ReadAllText(pf));
                             if (pj == null) continue;
-                            var row = new PersonaRow
-                            {
-                                name = Path.GetFileNameWithoutExtension(pf),
-                                agent = pj.GetString("agent", ""),
-                                model = pj.GetString("model", ""),
-                                layerRole = pj.GetString("layer_role", ""),
-                                wakeCount = pj.GetInt("wake_count", 0),
-                                status = pj.GetString("status", "offline"),
-                                forkedFrom = pj.GetString("forked_from", ""),
-                                lineageDepth = (pj.Contains("fork_lineage") && pj["fork_lineage"].IsArray)
-                                    ? pj["fork_lineage"].Count : 0,
-                            };
+                            var row = new PersonaRow();
+                            row.name = Path.GetFileNameWithoutExtension(pf);
+                            row.DeserializeFromJson(pj);
+                            //{
+                            //    name = Path.GetFileNameWithoutExtension(pf),
+                            //    agent = pj.GetString("agent", ""),
+                            //    model = pj.GetString("model", ""),
+                            //    layerRole = pj.GetString("layer_role", ""),
+                            //    wakeCount = pj.GetInt("wake_count", 0),
+                            //    status = pj.GetString("status", "offline"),
+                            //    forkedFrom = pj.GetString("forked_from", ""),
+                            //    lineageDepth = (pj.Contains("fork_lineage") && pj["fork_lineage"].IsArray)
+                            //        ? pj["fork_lineage"].Count : 0,
+                            //};
                             m_Personas.Add(row);
                             if (!string.IsNullOrEmpty(row.agent) && m_AgentPersonaCount.ContainsKey(row.agent))
                                 m_AgentPersonaCount[row.agent]++;
@@ -295,6 +298,8 @@ namespace UCL.Core.EditorLib.Page
             DrawRebindPanel();
             GUILayout.Space(8);
             DrawMaintenancePanel();
+            GUILayout.Space(8);
+            DrawAwakeningTestPanel();
             GUILayout.Space(8);
             DrawResultPanel();
         }
@@ -450,6 +455,106 @@ namespace UCL.Core.EditorLib.Page
                     m_MigrateRunning = false;
                     m_MigrateReport = text;
                     if (apply) LoadData();   // 歲數變了，總覽表要重讀 —— 報告說改了不算數
+                };
+            });
+        }
+
+        // ===========================================================
+        // 區塊：🌅 Awakening 測試 — GoodMorning Cmd 遷移的 QA 入口（Plan_Awakening_Flow_Simplification §8.8 R14/R19）
+        // 區塊職責：用 Template 測試殼實測 UCL_AwakeningService 的每一半套 —— 對帳（唯讀掃描）與
+        //          brief 生成（經與 Cmd step=brief 同一條觸發鏈 spawn python），result 貼回本頁供 QA 欄位/格式。
+        // 物理意義：邏輯全在 UCL_AwakeningService（static，與 Cmd_GoodMorning 共用零複製）；
+        //          本區塊只畫按鈕、跑背景 Task、貼報告 —— 同 DrawMaintenancePanel 的分工原則。
+        // 數值影響：對帳純唯讀；brief 生成寫檔者是 Python 端（awakening.py brief，只重生成機械產物）。
+        //          測試殼廣播/錢類規矩見 letters/Template/README.md —— brief 不廣播、不動錢，安全。
+        // ===========================================================
+        const string AWAKEN_TEST_PERSONA = "Template";
+        const int BRIEF_TIMEOUT_MS = 2 * 60 * 1000;
+
+        string m_AwakenTestReport = "";
+        Vector2 m_AwakenTestScroll;
+        bool m_AwakenTestRunning;
+
+        void DrawAwakeningTestPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "AwakenTestFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🌅 Awakening 測試（GoodMorning Cmd 遷移 QA）</b>", WrapLabelStyle);
+                }
+                if (!aShow) return;
+
+                GUILayout.Label(
+                    "邏輯層 = UCL_AwakeningService（與 Cmd_GoodMorning 共用）。"
+                    + $"brief 測試固定跑測試殼 `{AWAKEN_TEST_PERSONA}`（規矩見 letters/{AWAKEN_TEST_PERSONA}/README.md）。",
+                    WrapLabelStyle);
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    using (new UnityEditor.EditorGUI.DisabledScope(m_AwakenTestRunning))
+                    {
+                        if (GUILayout.Button("🧪 對帳（全 persona，唯讀）", UCL_GUIStyle.ButtonStyle))
+                        {
+                            // 純檔案掃描（數十檔），主執行緒直接跑；出錯貼報告不炸頁
+                            try { m_AwakenTestReport = UCL_AwakeningService.AuditReport(); }
+                            catch (Exception e) { m_AwakenTestReport = "🚨 對帳例外：" + e; }
+                        }
+                        if (GUILayout.Button($"📄 生成 brief（{AWAKEN_TEST_PERSONA}）", UCL_GUIStyle.ButtonStyle))
+                        {
+                            RunAwakenBriefTest();
+                        }
+                    }
+                    if (m_AwakenTestRunning) GUILayout.Label("⏳ 執行中…", WrapLabelStyle);
+                }
+
+                if (!string.IsNullOrEmpty(m_AwakenTestReport))
+                {
+                    using (var sv = new GUILayout.ScrollViewScope(m_AwakenTestScroll,
+                               GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(240))))
+                    {
+                        m_AwakenTestScroll = sv.scrollPosition;
+                        EditorGUILayout.TextArea(m_AwakenTestReport, UCL_GUIStyle.LabelStyle);
+                    }
+                }
+            }
+        }
+
+        // 區塊職責：brief 生成測試 — 背景執行緒 spawn python（WaitForExit 會擋 UI），回主執行緒貼報告。
+        // 物理意義：走 UCL_AwakeningService.RunBrief —— 與 Cmd_GoodMorning step=brief **同一條觸發鏈**（R20），
+        //          此處測通 = Cmd 那條也通（同一份實作，差別只在入口）。
+        void RunAwakenBriefTest()
+        {
+            if (m_AwakenTestRunning) return;
+            m_AwakenTestRunning = true;
+            m_AwakenTestReport = "⏳ 生成 brief…";
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string aText;
+                try
+                {
+                    var aResult = UCL_AwakeningService.RunBrief(
+                        AWAKEN_TEST_PERSONA, nameof(UCL_PersonaAgentAdminPage), BRIEF_TIMEOUT_MS);
+                    var aSb = new StringBuilder();
+                    aSb.AppendLine(aResult.ok ? "✅ brief 生成（判定依據＝落地檔存在且行數 > 0，非 stdout）" : "✗ brief 生成失敗");
+                    aSb.AppendLine(aResult.report);
+                    if (aResult.ok)
+                    {
+                        aSb.AppendLine("── brief 摘要（frontmatter 全文＋段落標題，QA 欄位/格式用）──");
+                        aSb.AppendLine(UCL_AwakeningService.SummarizeBrief(aResult.briefPath));
+                    }
+                    aText = aSb.ToString();
+                }
+                catch (Exception e)
+                {
+                    aText = "🚨 例外：" + e;
+                }
+                EditorApplication.delayCall += () =>
+                {
+                    m_AwakenTestRunning = false;
+                    m_AwakenTestReport = aText;
                 };
             });
         }
@@ -785,7 +890,7 @@ namespace UCL.Core.EditorLib.Page
 
                 GUILayout.Space(4);
                 GUILayout.Label("<b>Persona（人格層）</b>　★ = 目前有 session lock（線上）", WrapLabelStyle);
-                foreach (var p in m_Personas.OrderByDescending(x => x.wakeCount))
+                foreach (var p in m_Personas.OrderByDescending(x => x.wake_count))
                 {
                     using (new GUILayout.HorizontalScope())
                     {
@@ -794,10 +899,10 @@ namespace UCL.Core.EditorLib.Page
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
                         GUILayout.Label($"@{(string.IsNullOrEmpty(p.agent) ? "(未綁)" : p.agent)}", WrapLabelStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        GUILayout.Label($"wake#{p.wakeCount}", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label($"wake#{p.wake_count}", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
                         GUILayout.Label(p.status, WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
-                        GUILayout.Label(string.IsNullOrEmpty(p.forkedFrom)
-                                ? "（原生）" : $"fork←{p.forkedFrom}（鏈深 {p.lineageDepth}）",
+                        GUILayout.Label(string.IsNullOrEmpty(p.forked_from)
+                                ? "（原生）" : $"fork←{p.forked_from}（鏈深 {p.lineageDepth}）",
                             WrapLabelStyle, GUILayout.ExpandWidth(false));
                         GUILayout.FlexibleSpace();
                     }
@@ -857,7 +962,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         GUILayout.Label($"@{(string.IsNullOrEmpty(row.agent) ? "(未綁)" : row.agent)}", WrapLabelStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        GUILayout.Label($"wake#{row.wakeCount}", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label($"wake#{row.wake_count}", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
                         GUILayout.Label(m_LockedPersonas.Contains(row.name) ? "★ 線上" : "　", WrapLabelStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     }
@@ -906,7 +1011,7 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.FlexibleSpace();
             }
             GUILayout.Label($"建立後預填：歸屬 agent = <b>{(row != null && !string.IsNullOrEmpty(row.agent) ? row.agent : "(未綁)")}</b>、"
-                + $"角色設定 = persona 檔的 layer_role（{Ellipsis(row?.layerRole, 40)}）、tag = 該 agent 名。"
+                + $"角色設定 = persona 檔的 layer_role（{Ellipsis(row?.layer_role, 40)}）、tag = 該 agent 名。"
                 + "頭像 sprite / 顏色 / 口頭禪 / 擅長清單一律留空，之後用「編輯角色卡」慢慢填。", WrapLabelStyle);
         }
 
@@ -1378,7 +1483,7 @@ namespace UCL.Core.EditorLib.Page
                 // 預填兩欄（其餘留空給人細編）：角色設定沿用 layer_role / tag 標所屬 agent
                 // ⚠ 刻意**不寫** m_OwnerAgentId：歸屬事實只該有一份，住在 personas/<name>.json 的 agent 欄。
                 //   卡上再存一份就是雙寫來源，換綁後必然漂移（全 repo 無任何 consumer 讀它，存了純製造漂移）。
-                asset.m_RoleSettings = row.layerRole ?? "";
+                asset.m_RoleSettings = row.layer_role ?? "";
                 asset.m_Tags = new List<string>();
                 if (!string.IsNullOrEmpty(row.agent)) asset.m_Tags.Add(row.agent);
 

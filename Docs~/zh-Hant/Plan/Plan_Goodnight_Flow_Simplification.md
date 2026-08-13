@@ -1,11 +1,11 @@
 ---
 title: Goodnight 流程瘦身 — 施工單（交接給 kiara）
 slug: goodnight-flow-simplification
-status: handoff (2026-07-31 calli → kiara，Tim 指派)
+status: spec-v2 (2026-08-13 Tim 拍板 Cmd 化方向；§7 分步分析 by summit，細節待拍後施工。原 §1 已於 2026-07-31 落地；§2/§3 被 §7 吸收)
 created_at: 2026-07-31T08:30:00Z
 created_by: Myth@calli
 assigned_to: Myth@kiara
-last_updated: 2026-07-31
+last_updated: 2026-08-13
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -103,3 +103,81 @@ Step 0 有一行 preflight 要 agent 自己印出「即將為 X 下線」讓 Tim
 - **文件跑在實作前面時要標落差**，別讓讀的人以為工具已經會了。
 - **移除規則時連它的 antipattern 警告一起移除** —— 規則不存在了就不必再警告，
   留著只會讓下一個人以為那條還在。
+
+---
+
+## 7. v2 — Cmd 化分步（2026-08-13 Tim 拍板方向；分析 by summit wake#47，**待拍細節後施工**）
+
+> 對偶於早安側已完工的 Cmd_GoodMorning P0-P4（Plan_Awakening_Flow_Simplification §8.8-§8.10，
+> R14-R21 全落地、gura wake#31 真人驗收通過）。**手法照抄那邊**：邏輯抽 static class（沿用
+> `UCL_AwakeningService`）、Cmd 分步＋每步回傳檔 `## next` 明示下一步、每步落檔
+> `letters/<P>/_goodnight_<step>.md`、完整流程只在參考文件（重構時才讀）、skill 只教第一步。
+> §1-§3 的舊工項全數被本節吸收（§1 persona 必填已於 2026-07-31 落地）。
+
+### 7.1 現況解剖（cmd_goodnight 的工具段 vs 人工段）
+
+**工具段**（awakening.py cmd_goodnight，2026-08-13 現況）：
+persona 守衛（必填＋registry 存在；無 lock 印警告照跑=cleanup 場景）→ 酒館最後一眼 peek →
+letter 前遷移自癒 → write_letter＋wake_count 同步 → vector perturb＋vector_history →
+status/availability=offline → **解鎖先於廣播**（Editor↔subprocess 死鎖的修法）→
+下線廣播（timeout＋失敗吐手動補發指令的 graceful degradation）→ expire token。
+
+**人工段**（workflow Part 2 Step 1，維持人工不機械化，施工單 §5 已定）：
+見叢交棒（keys）／好感清算（affinity）／工作記憶回寫（workmem）／見人畫像（portraits）／
+消費時間（可選）→ 寫 letter 內文 → 驗收。
+
+### 7.2 分步設計（三步＋沿用 audit）
+
+```
+① run GoodNight --arg step=check --arg persona=<P>          【唯讀起手 — skill 只教這步】
+     ↳ C#：驗 persona/lock（無 lock 警告不擋，cleanup 語意保留）＋ 酒館最後一眼
+        （沿用 catchup 邏輯 peek、不推 cursor —— 施工單 §2 直接在這裡結案）
+     ↳ 回傳檔 next：人工收尾清單（keys / affinity / workmem / portraits / 消費時間[可選]，
+        依 §8.10 判準全部**提示型不實擋** —— 記憶維護不該變成「睡不著的原因」）
+        → 下一步 step=letter（<letter_body> 親筆說明，對偶早安 <body>）
+② run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
+     ↳ C#：遷移 pending → blocked 指路維護（同 wake 的守衛②）；write_letter port（編號=信數+1、
+        frontmatter、_latest.md 指標更新）＋ registry wake_count 同步（patch-write）
+     ↳ 回傳檔 next：step=sleep（<summary> 親筆=公開睡前心得，私密的留在信裡）
+     ↳ cleanup 場景（手動登出）跳過本步 —— 不偽造心得信（--no-letter 語意由 step=sleep 承接）
+③ run GoodNight --arg step=sleep --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=..] [--arg no_letter=true]
+     ↳ 前置守衛（letter-before-sleep，對偶 brief-before-broadcast）：
+        wakes/ 信數 == registry wake_count（本次收尾信已落）才放行；
+        未落 → blocked 指路 step=letter；顯式 no_letter=true 走 cleanup 旁路（有名字的旁路≠守衛旁路：
+        它跳過的是「寫信」不是「守衛」，且會在廣播裡標明「未留信」——與現行 --no-letter 語意逐字同）
+     ↳ C#：vector perturb＋history append（patch-write）→ offline → 解鎖 → **單則**下線廣播
+        （summary＋系統欄位併一則；Cmd_Tavern in-process → 跨進程 timeout／死鎖／
+        「手動補發指令」graceful-degradation 整段從根消失）→ expire token（廣播後，enforce 序不變）
+     ↳ 回傳檔 next：驗收讀回（lock 不存在＋status=offline 的事實）＋消費時間（可選）提醒
+```
+
+每步回傳檔 `letters/<P>/_goodnight_<step>.md`（機械產物、同 `_goodmorning_*` 慣例、進各 persona
+repo 的 .gitignore）；標頭本地時間；blocked 一律「payload 落檔＋非零退出」雙通道。
+
+### 7.3 卡點（按嚴重度）
+
+1. **UCL_LoginStatusPage 登出路徑**（施工單 §4-1）：現 spawn `goodnight --no-letter`——
+   python 退場前必須先切 C#（`step=sleep no_letter=true` 的 service 直呼，同 DoMorning 手法）。
+   雙寫入端窗口同早安教訓：**一個 session 內完成，不隔夜**。
+2. **write_letter port 的對帳義務**：編號規則（信數+1）、frontmatter 欄位、`_latest.md` 指標、
+   escaped-newline normalize —— C# 版與 python `write_letter` 逐項對齊；rest 信（cmd_rest）
+   仍走 python 同一支，**兩端共存期間規則改任一端要同步**（wake 計數兩端對齊的既有義務擴大到寫入端）。
+3. **relogin 的歸屬**（早安側掛帳）：goodnight 遷完後 awakening.py 剩的登入類只有 relognin/reissue-token
+   —— 建議隨本工項一起遷（`GoodMorning step=relogin`？）或明文再留置一輪，別再飄。
+4. **無 lock 照跑 vs blocked**：python 現行「無 lock 警告照跑」（cleanup 真實場景）。
+   Cmd 版建議保留（守衛只防「下線別人」，persona 已顯式；擋掉 cleanup 會逼人手刪檔案）。
+5. **廣播 tag 消費端**：`goodnight-protocol` 同 morning 掃過 —— 施工前 grep 一次（修法射程紀律）。
+6. **雙儀式共用 service**：morning 已佔 `UCL_AwakeningService`——goodnight 邏輯進同一 class
+   還是拆 `UCL_GoodnightService`？建議同一 class 分 region（lock/registry/paths 全共用，拆開反而複製）。
+
+### 7.4 要 Tim 拍的（含施工單 §4 兩題收斂）
+
+1. **Cmd 名**：獨立 `Cmd_GoodNight`（建議 —— 與 GoodMorning 對稱、schema 乾淨），
+   還是併進 Cmd_GoodMorning 加 step？
+2. §4-1 → 併入卡點 1（LoginStatusPage 同輪切 C#）：可照做？
+3. §4-2 lock 歸屬驗證 → 建議與早安一致**不比對 claim_origin/pid**（同一個 persona 一套定義）。
+4. relogin 是否隨本工項遷 C#（卡點 3）。
+5. 參考文件：`GoodMorning_Cmd_Flow.md` 擴成早晚安一份（改名 `Awakening_Cmd_Flow.md`），
+   還是晚安另立一份？建議**一份**（守衛/回傳檔/測試殼章節全共用，兩份必漂移）。
+6. 人工收尾清單（step=check 的 next）維持固定 checklist，或做狀態偵測（affinity 今天有無結算、
+   workmem 有無新 state）？建議先固定清單＋標可選（偵測各件的成本與誤報率不一，逐件另議）。

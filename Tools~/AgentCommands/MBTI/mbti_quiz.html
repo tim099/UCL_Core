@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UCL 社群 MBTI 16 型人格性格潛能測驗</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --card-bg: rgba(22, 28, 45, 0.75);
+      --card-border: rgba(99, 102, 241, 0.25);
+      --accent-cyan: #38bdf8;
+      --accent-purple: #818cf8;
+      --accent-pink: #f472b6;
+      --accent-gold: #fbbf24;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+    }
+
+    body {
+      background: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 10% 10%, rgba(99, 102, 241, 0.18) 0px, transparent 50%),
+        radial-gradient(at 90% 90%, rgba(244, 114, 182, 0.15) 0px, transparent 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .container::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* Start Screen */
+    .screen {
+      display: none;
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .header-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      background: rgba(129, 140, 248, 0.15);
+      border: 1px solid rgba(129, 140, 248, 0.3);
+      border-radius: 99px;
+      color: var(--accent-purple);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: 1px;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1.3;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      color: var(--text-sub);
+      font-size: 1rem;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px 28px;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(99, 102, 241, 0.5);
+    }
+
+    /* Question Screen */
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+      border-radius: 99px;
+      transition: width 0.3s ease;
+    }
+
+    .q-number {
+      font-size: 0.9rem;
+      color: var(--accent-cyan);
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .q-text {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+
+    .option-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .option-card:hover {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(129, 140, 248, 0.4);
+      transform: translateX(4px);
+    }
+
+    .option-tag {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: var(--text-sub);
+    }
+
+    .option-card:hover .option-tag {
+      background: var(--accent-purple);
+      color: #fff;
+    }
+
+    /* Result Screen */
+    .result-card {
+      text-align: center;
+      padding: 10px 0;
+    }
+
+    .result-badge {
+      font-size: 3rem;
+      font-weight: 900;
+      letter-spacing: 4px;
+      background: linear-gradient(135deg, #38bdf8 0%, #f472b6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .result-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent-gold);
+      margin-bottom: 16px;
+    }
+
+    .result-desc {
+      color: var(--text-sub);
+      font-size: 1rem;
+      line-height: 1.7;
+      margin-bottom: 32px;
+      text-align: justify;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .dim-bar-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+
+    .dim-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-sub);
+      margin-bottom: 6px;
+    }
+
+    .dim-progress {
+      height: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 99px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .dim-fill-left {
+      height: 100%;
+      background: var(--accent-cyan);
+    }
+
+    .dim-fill-right {
+      height: 100%;
+      background: var(--accent-pink);
+    }
+
+    .action-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Start Screen -->
+  <div id="screen-start" class="screen active">
+    <div class="header-badge">UCL TAVERN COMMUNITY</div>
+    <h1>16 型人格心理潛能測驗</h1>
+    <p class="subtitle">歡迎來到 UCL 社群性格靈魂檢測站！只需 20 題精準二選一問答，即可解鎖屬於你的 MBTI 核心特質與四維度性格圖譜。</p>
+    <button class="btn" onclick="startQuiz()">開始測驗 🚀</button>
+  </div>
+
+  <!-- Quiz Screen -->
+  <div id="screen-quiz" class="screen">
+    <div class="progress-bar-container">
+      <div id="progress-fill" class="progress-bar-fill"></div>
+    </div>
+    <div id="q-number" class="q-number">QUESTION 01 / 20</div>
+    <div id="q-text" class="q-text">題目讀取中...</div>
+
+    <div id="option-a" class="option-card" onclick="selectOption('A')">
+      <span id="opt-a-text">選項 A</span>
+      <span class="option-tag">A</span>
+    </div>
+
+    <div id="option-b" class="option-card" onclick="selectOption('B')">
+      <span id="opt-b-text">選項 B</span>
+      <span class="option-tag">B</span>
+    </div>
+  </div>
+
+  <!-- Result Screen -->
+  <div id="screen-result" class="screen">
+    <div class="result-card">
+      <div class="header-badge">YOUR PERSONALITY TYPE</div>
+      <div id="res-type" class="result-badge">INTJ</div>
+      <div id="res-title" class="result-title">建築師 (Architect)</div>
+      <div id="res-desc" class="result-desc">性情描述...</div>
+
+      <div style="margin-bottom: 24px; font-weight: 700; text-align: left; color: #fff;">📊 四維度傾向分析</div>
+
+      <div class="dim-bar-group">
+        <div class="dim-label"><span>[E] 外向 <b id="ratio-e">50%</b></span><span>[I] 內向 <b id="ratio-i">50%</b></span></div>
+        <div class="dim-progress"><div id="fill-e" class="dim-fill-left" style="width:50%"></div><div id="fill-i" class="dim-fill-right" style="width:50%"></div></div>
+      </div>
+
+      <div class="dim-bar-group">
+        <div class="dim-label"><span>[S] 實感 <b id="ratio-s">50%</b></span><span>[N] 直覺 <b id="ratio-n">50%</b></span></div>
+        <div class="dim-progress"><div id="fill-s" class="dim-fill-left" style="width:50%"></div><div id="fill-n" class="dim-fill-right" style="width:50%"></div></div>
+      </div>
+
+      <div class="dim-bar-group">
+        <div class="dim-label"><span>[T] 思考 <b id="ratio-t">50%</b></span><span>[F] 情感 <b id="ratio-f">50%</b></span></div>
+        <div class="dim-progress"><div id="fill-t" class="dim-fill-left" style="width:50%"></div><div id="fill-f" class="dim-fill-right" style="width:50%"></div></div>
+      </div>
+
+      <div class="dim-bar-group">
+        <div class="dim-label"><span>[J] 判斷 <b id="ratio-j">50%</b></span><span>[P] 感知 <b id="ratio-p">50%</b></span></div>
+        <div class="dim-progress"><div id="fill-j" class="dim-fill-left" style="width:50%"></div><div id="fill-p" class="dim-fill-right" style="width:50%"></div></div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn" onclick="copyResultCode()">複製測驗程式碼 📋</button>
+        <button class="btn btn-secondary" onclick="restartQuiz()">重新測試 🔄</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let questions = [
+    { id: 1, prompt: "在社交聚會或團體活動後，你通常感覺：", optA: "精力充沛，還想繼續聊天交流 (E)", optB: "精力被消耗，需要獨處來充電恢復 (I)", dimA: "E", dimB: "I" },
+    { id: 2, prompt: "當你在新環境遇到陌生人時，你傾向於：", optA: "主動開口開啟對話 (E)", optB: "保持觀察，等待對方主動發言 (I)", dimA: "E", dimB: "I" },
+    { id: 3, prompt: "你的思考與溝通習慣更接近：", optA: "邊說邊想，在對話中梳理脈絡 (E)", optB: "先在腦中想清楚完整架構再說出來 (I)", dimA: "E", dimB: "I" },
+    { id: 4, prompt: "週末或空閒時間，你更喜歡：", optA: "約朋友外出活動、逛街或聚會 (E)", optB: "待在家裡看書、玩遊戲或專注個人興趣 (I)", dimA: "E", dimB: "I" },
+    { id: 5, prompt: "你的社交圈與人際關係更接近：", optA: "朋友廣泛，認識許多不同圈子的人 (E)", optB: "圈子較小，但幾位知己關係非常深厚 (I)", dimA: "E", dimB: "I" },
+    
+    { id: 6, prompt: "在理解新事物與處理問題時，你更關注：", optA: "具體的事實、細節與實務經驗 (S)", optB: "未來的可能性、整體概念與潛在關聯 (N)", dimA: "S", dimB: "N" },
+    { id: 7, prompt: "你更吸引並喜歡學習哪種知識：", optA: "有明確應用步驟與實用價值的技巧 (S)", optB: "抽象的理論、哲學思考與創新模型 (N)", dimA: "S", dimB: "N" },
+    { id: 8, prompt: "別人通常如何形容你的性格風格：", optA: "腳踏實地、務實且注重細節 (S)", optB: "富有想像力、點子多且靈感不斷 (N)", dimA: "S", dimB: "N" },
+    { id: 9, prompt: "閱讀書籍或欣賞影視作品時，你更注意：", optA: "具體的情節推進、人物動作與畫面描繪 (S)", optB: "背後隱含的世界觀、象徵意義與深層隱喻 (N)", dimA: "S", dimB: "N" },
+    { id: 10, prompt: "面對一項全新的專案或任務時，你習慣：", optA: "參考既有成功範例與成熟 SOP 執行 (S)", optB: "嘗試自創新方法與全新的解題角度 (N)", dimA: "S", dimB: "N" },
+    
+    { id: 11, prompt: "做重大決定或評估方案時，你主要依據：", optA: "客觀邏輯、數據與公平標準 (T)", optB: "個人價值觀、情感與對他人的感受影響 (F)", dimA: "T", dimB: "F" },
+    { id: 12, prompt: "當朋友找你傾訴遇到的困境時，你的第一反應是：", optA: "幫他分析原因並給予客觀理性的解決建議 (T)", optB: "給予同理心安慰、情緒陪伴與情感支持 (F)", dimA: "T", dimB: "F" },
+    { id: 13, prompt: "在工作中，你更難接受自己被認為是：", optA: "不合邏輯、不嚴謹或能力不足 (T)", optB: "冷酷無情、缺乏關懷或傷害了他人 (F)", dimA: "T", dimB: "F" },
+    { id: 14, prompt: "團隊討論中發生意見對立時，你傾向於：", optA: "對事不對人，堅持真理與事實邏輯 (T)", optB: "顧及團隊和諧，尋求照顧大家感受的折衷方案 (F)", dimA: "T", dimB: "F" },
+    { id: 15, prompt: "評價一種觀點或主張時，你最看重：", optA: "是否邏輯自洽、證據充分 (T)", optB: "是否符合人性關懷與善意動機 (F)", dimA: "T", dimB: "F" },
+    
+    { id: 16, prompt: "你的日常工作與生活風格更接近：", optA: "喜歡預先擬定計畫並按部就班執行 (J)", optB: "喜歡保持彈性與隨興應變 (P)", dimA: "J", dimB: "P" },
+    { id: 17, prompt: "當面臨專案截止日期 (Deadline) 時，你通常：", optA: "提前規劃排程並穩健推進完成 (J)", optB: "在最後一刻前激發靈感與爆發力完成 (P)", dimA: "J", dimB: "P" },
+    { id: 18, prompt: "你的工作環境與檔案整理狀態通常是：", optA: "井井有條，分類明確且隨時可歸位 (J)", optB: "隨意擺放，看似雜亂但自己心知肚明 (P)", dimA: "J", dimB: "P" },
+    { id: 19, prompt: "對於尚未確定細節的旅程或行程，你感到：", optA: "有點不安，希望能早點定案與排好景點 (J)", optB: "充滿期待，享受留白與未知的驚喜 (P)", dimA: "J", dimB: "P" },
+    { id: 20, prompt: "事情定案 (Closure) 對你來說：", optA: "越早落盤確定越感踏實安心 (J)", optB: "保持開放選項更讓人覺得有可能性 (P)", dimA: "J", dimB: "P" }
+  ];
+
+  // Try fetching dynamic questions.json if hosted or local server
+  fetch('./questions.json')
+    .then(res => res.json())
+    .then(data => {
+      if (Array.isArray(data) && data.length > 0) {
+        questions = data.map(q => ({
+          id: q.id,
+          prompt: q.prompt,
+          optA: `${q.optionA.text} (${q.optionA.val})`,
+          optB: `${q.optionB.text} (${q.optionB.val})`,
+          dimA: q.optionA.val,
+          dimB: q.optionB.val,
+          author: q.author || 'system'
+        }));
+        console.log(`Successfully loaded ${questions.length} dynamic questions from questions.json!`);
+      }
+    })
+    .catch(() => {
+      console.log('Using default embedded question bank.');
+    });
+
+  const typesInfo = {
+    "INTJ": { title: "建築師 (Architect)", desc: "富有想像力且戰略性的思想家，一切皆在計畫之中。深謀遠慮、獨立嚴謹。" },
+    "INTP": { title: "邏輯學家 (Logician)", desc: "具開創性的發明家，對知識有著無窮的渴望。喜歡分析理論與系統邏輯。" },
+    "ENTJ": { title: "指揮官 (Commander)", desc: "大膽、富有想像力且意志強大的領導者，總能找到或開創道路。" },
+    "ENTP": { title: "辯論家 (Debater)", desc: "聰穎好奇的思想家，絕不放過任何腦力激盪與思想交鋒的機會。" },
+    "INFJ": { title: "提倡者 (Advocate)", desc: "安靜而神秘，同時鼓舞人心且不知疲倦的理想主義者。具深刻洞察力。" },
+    "INFP": { title: "調停者 (Mediator)", desc: "詩意、善良與利他主義者，總是熱情地為正義與價值觀事業付出。" },
+    "ENFJ": { title: "主人公 (Protagonist)", desc: "富有魅力與鼓舞人心的領導者，有能力讓聽眾為之著迷。" },
+    "ENFP": { title: "競選者 (Campaigner)", desc: "熱情、富有創造力且社交自由的靈魂，總能找到微笑的理由。" },
+    "ISTJ": { title: "物流師 (Logistician)", desc: "注重事實、可靠且不容置疑的務實者。重視誠信與紀律。" },
+    "ISFJ": { title: "守衛者 (Defender)", desc: "非常專注且溫和的守護者，時刻準備著保護愛的人。" },
+    "ESTJ": { title: "總管 (Executive)", desc: "出色的管理者，在管理事物或人員方面無與倫比。" },
+    "ESFJ": { title: "執政官 (Consul)", desc: "極具同理心、社交活躍且受歡迎的人，總是熱心提供幫助。" },
+    "ISTP": { title: "鑑賞家 (Virtuoso)", desc: "大膽而務實的實驗家，掌握各種工具的使用與技術實踐。" },
+    "ISFP": { title: "探險家 (Adventurer)", desc: "靈動且富有魅力的藝術家，隨時準備探索與體驗新事物。" },
+    "ESTP": { title: "企業家 (Entrepreneur)", desc: "聰明、精力充沛且極具洞察力的人，真正享受生活在刃尖上。" },
+    "ESFP": { title: "表演者 (Entertainer)", desc: "自發、精力充沛且熱情的表演者，周遭生活絕不枯燥。" }
+  };
+
+  let currentStep = 0;
+  let userAnswers = [];
+
+  function switchScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function startQuiz() {
+    currentStep = 0;
+    userAnswers = [];
+    switchScreen('screen-quiz');
+    renderQuestion();
+  }
+
+  function renderQuestion() {
+    const q = questions[currentStep];
+    document.getElementById('q-number').innerText = `QUESTION ${String(currentStep + 1).padStart(2, '0')} / 20`;
+    document.getElementById('q-text').innerText = q.prompt;
+    document.getElementById('opt-a-text').innerText = q.optA;
+    document.getElementById('opt-b-text').innerText = q.optB;
+
+    const progress = ((currentStep + 1) / questions.length) * 100;
+    document.getElementById('progress-fill').style.width = `${progress}%`;
+  }
+
+  function selectOption(choice) {
+    userAnswers.push(choice);
+    currentStep++;
+    if (currentStep < questions.length) {
+      renderQuestion();
+    } else {
+      showResults();
+    }
+  }
+
+  function showResults() {
+    let scores = { E:0, I:0, S:0, N:0, T:0, F:0, J:0, P:0 };
+    questions.forEach((q, idx) => {
+      const choice = userAnswers[idx];
+      const val = choice === 'A' ? q.dimA : q.dimB;
+      scores[val]++;
+    });
+
+    const ei = scores.E >= scores.I ? "E" : "I";
+    const sn = scores.S >= scores.N ? "S" : "N";
+    const tf = scores.T >= scores.F ? "T" : "F";
+    const jp = scores.J >= scores.P ? "J" : "P";
+    const finalType = `${ei}${sn}${tf}${jp}`;
+
+    const info = typesInfo[finalType] || { title: finalType, desc: "" };
+
+    document.getElementById('res-type').innerText = finalType;
+    document.getElementById('res-title').innerText = info.title;
+    document.getElementById('res-desc').innerText = info.desc;
+
+    const rE = Math.round((scores.E / 5) * 100);
+    const rI = 100 - rE;
+    const rS = Math.round((scores.S / 5) * 100);
+    const rN = 100 - rS;
+    const rT = Math.round((scores.T / 5) * 100);
+    const rF = 100 - rT;
+    const rJ = Math.round((scores.J / 5) * 100);
+    const rP = 100 - rJ;
+
+    document.getElementById('ratio-e').innerText = `${rE}%`;
+    document.getElementById('ratio-i').innerText = `${rI}%`;
+    document.getElementById('fill-e').style.width = `${rE}%`;
+    document.getElementById('fill-i').style.width = `${rI}%`;
+
+    document.getElementById('ratio-s').innerText = `${rS}%`;
+    document.getElementById('ratio-n').innerText = `${rN}%`;
+    document.getElementById('fill-s').style.width = `${rS}%`;
+    document.getElementById('fill-n').style.width = `${rN}%`;
+
+    document.getElementById('ratio-t').innerText = `${rT}%`;
+    document.getElementById('ratio-f').innerText = `${rF}%`;
+    document.getElementById('fill-t').style.width = `${rT}%`;
+    document.getElementById('fill-f').style.width = `${rF}%`;
+
+    document.getElementById('ratio-j').innerText = `${rJ}%`;
+    document.getElementById('ratio-p').innerText = `${rP}%`;
+    document.getElementById('fill-j').style.width = `${rJ}%`;
+    document.getElementById('fill-p').style.width = `${rP}%`;
+
+    switchScreen('screen-result');
+  }
+
+  function copyResultCode() {
+    const codeStr = userAnswers.join('');
+    const cliCmd = `python Assets/Plugins/UCL_Core/Tools~/AgentCommands/mbti.py eval --answers ${codeStr} --persona <你的名字>`;
+    navigator.clipboard.writeText(cliCmd).then(() => {
+      alert(`測驗結果代碼已複製到剪貼簿！\n\nCLI 算分指令：\n${cliCmd}`);
+    });
+  }
+
+  function restartQuiz() {
+    switchScreen('screen-start');
+  }
+</script>
+</body>
+</html>

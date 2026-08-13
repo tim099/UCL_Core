@@ -45,6 +45,6 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
 
 | 想知道 | 看哪 |
 |---|---|
-| 完整四步流程、每步參數/回傳檔/卡住出口（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/GoodMorning_Cmd_Flow.md` |
+| 完整四步流程、每步參數/回傳檔/卡住出口（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md` |
 | 記憶維護細則、晚安對偶 | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md` |
 | 設計沿革與拍板（R1-R21） | `ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Flow_Simplification.md` |

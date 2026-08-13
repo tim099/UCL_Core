@@ -1,7 +1,7 @@
 ---
 title: Goodnight 流程瘦身 — 施工單（交接給 kiara）
 slug: goodnight-flow-simplification
-status: spec-v2 (2026-08-13 Tim 拍板 Cmd 化方向；§7 分步分析 by summit，細節待拍後施工。原 §1 已於 2026-07-31 落地；§2/§3 被 §7 吸收)
+status: done (2026-08-13 §7 v2 全數施工完成 by summit wake#47 —— Cmd_GoodNight check/letter/sleep/logout + logout 獨立 + relogin 廢棄 + 每晚 perturb 移除(B案,密文區承接) + 文件合併 Awakening_Cmd_Flow.md；Template 全鏈實測)
 created_at: 2026-07-31T08:30:00Z
 created_by: Myth@calli
 assigned_to: Myth@kiara
@@ -106,7 +106,7 @@ Step 0 有一行 preflight 要 agent 自己印出「即將為 X 下線」讓 Tim
 
 ---
 
-## 7. v2 — Cmd 化分步（2026-08-13 Tim 拍板方向；分析 by summit wake#47，**待拍細節後施工**）
+## 7. v2 — Cmd 化分步（2026-08-13 拍板並**已施工完成**；六題裁決見 §7.4 註記）
 
 > 對偶於早安側已完工的 Cmd_GoodMorning P0-P4（Plan_Awakening_Flow_Simplification §8.8-§8.10，
 > R14-R21 全落地、gura wake#31 真人驗收通過）。**手法照抄那邊**：邏輯抽 static class（沿用
@@ -170,14 +170,30 @@ repo 的 .gitignore）；標頭本地時間；blocked 一律「payload 落檔＋
 6. **雙儀式共用 service**：morning 已佔 `UCL_AwakeningService`——goodnight 邏輯進同一 class
    還是拆 `UCL_GoodnightService`？建議同一 class 分 region（lock/registry/paths 全共用，拆開反而複製）。
 
-### 7.4 要 Tim 拍的（含施工單 §4 兩題收斂）
+### 7.4 Tim 六題裁決（2026-08-13，全數落地）
+
+1. Cmd 名 → **獨立 `Cmd_GoodNight`** ✅
+2. LoginStatusPage 登出 → **走 Cmd（step=logout in-process）**；logout **可單獨跑、不綁晚安流程、persona 顯式必填** ✅
+3. lock 歸屬 → **不比對 claim_origin/pid**（與早安一致）✅
+4. relogin → **廢棄**（wake_count 磁碟推導後「單獨登入」＝step=wake 本身；stub 指路）✅
+5. 參考文件 → **合併**：GoodMorning_Cmd_Flow.md 改名 `Awakening_Cmd_Flow.md`，晚安入 §9-§10 ✅
+6. 人工收尾清單 → **固定 checklist**（step=check 的 next）；每步回傳落檔 `_goodnight_<step>.md` ✅
+
+**拍板補遺（同日）**：
+- **每晚 perturbation 移除（B 案）** —— identity_vector 無早安/brief 消費端（唯二讀取者＝fork 起點
+  copy 與 forks 診斷指令），凍結在出生值、fork 時才動。
+- 其儀式位置由 **letter 🔐 密文區** 承接（Code-Talker 式私語：可讀文字、映射鍵＝自己的聯想網、
+  判準＝自己能看懂、真隱私仍走 sealed/）—— 規格與範例見
+  Letters_And_Dialogue_Workflow「二・一」，canonical owner ucl-letters-to-self。
+
+### 7.4' 原「要 Tim 拍的」清單（已全數裁決，留檔）
 
 1. **Cmd 名**：獨立 `Cmd_GoodNight`（建議 —— 與 GoodMorning 對稱、schema 乾淨），
    還是併進 Cmd_GoodMorning 加 step？
 2. §4-1 → 併入卡點 1（LoginStatusPage 同輪切 C#）：可照做？
 3. §4-2 lock 歸屬驗證 → 建議與早安一致**不比對 claim_origin/pid**（同一個 persona 一套定義）。
 4. relogin 是否隨本工項遷 C#（卡點 3）。
-5. 參考文件：`GoodMorning_Cmd_Flow.md` 擴成早晚安一份（改名 `Awakening_Cmd_Flow.md`），
+5. 參考文件：`Awakening_Cmd_Flow.md` 擴成早晚安一份（改名 `Awakening_Cmd_Flow.md`），
    還是晚安另立一份？建議**一份**（守衛/回傳檔/測試殼章節全共用，兩份必漂移）。
 6. 人工收尾清單（step=check 的 next）維持固定 checklist，或做狀態偵測（affinity 今天有無結算、
    workmem 有無新 state）？建議先固定清單＋標可選（偵測各件的成本與誤報率不一，逐件另議）。

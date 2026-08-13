@@ -768,6 +768,278 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aOut.AppendLine($"（共 {aLines.Length} 行；上面是 frontmatter 全文＋段落標題索引）");
             return aOut.ToString();
         }
+
+        // ===========================================================
+        // 區塊：Goodnight 半套（Cmd_GoodNight check/letter/sleep/logout — Plan_Goodnight §7，
+        //       Tim 2026-08-13 六題拍板）。與 morning 共用本 class（lock/registry/paths 全同源）。
+        // 物理意義：write_letter / expire_token 由 awakening.py port（每晚 perturb 已移除，B 案）（規則逐項對齊：
+        //          編號=信數+1、frontmatter 機器欄勝出但作者版留痕、_latest.md 指標、）。
+        // 數值影響：letter / registry / lock / tokens 四寫入全原子；順序不變式「核心先落地、廣播 best-effort」
+        //          沿用（in-process 廣播已無死鎖根因，但權威狀態先行的原則不因此放鬆）。
+        // ===========================================================
+        const int CHECK_TAVERN_PEEK_COUNT = 10;
+
+        /// <summary>字面 "\n" 修回真換行 —— 簡化版 escaped_newlines.normalize（Cmd 路徑 body 走檔案/stdin，
+        /// 命中機率低；判準取保守面：整段無真換行且含 ≥2 個字面 \n 才動）。</summary>
+        static (string body, bool fixedNl) NormalizeEscapedNewlines(string iBody)
+        {
+            if (iBody.Contains("\n")) return (iBody, false);
+            int aCount = (iBody.Length - iBody.Replace("\\n", "").Length) / 2;
+            if (aCount < 2) return (iBody, false);
+            return (iBody.Replace("\\r\\n", "\n").Replace("\\n", "\n"), true);
+        }
+
+        /// <summary>作者自寫 frontmatter 拆併 —— port 自 _split_author_frontmatter（機器欄勝出、作者版留痕 *_as_written）。</summary>
+        static (string rest, List<string> extra) SplitAuthorFrontmatter(string iBody, Dictionary<string, string> iMachine)
+        {
+            string s = iBody.TrimStart('\n');
+            var aExtra = new List<string>();
+            if (!s.StartsWith("---")) return (iBody, aExtra);
+            int aEnd = s.IndexOf("\n---", 3, StringComparison.Ordinal);
+            if (aEnd == -1) return (iBody, aExtra);
+            string aBlock = s.Substring(3, aEnd - 3).Trim('\n');
+            string aRest = s.Substring(aEnd + 4).TrimStart('\n');
+            foreach (var aLine in aBlock.Split('\n'))
+            {
+                if (string.IsNullOrWhiteSpace(aLine) || aLine.TrimStart().StartsWith("#")) continue;
+                int aSep = aLine.IndexOf(':');
+                if (aSep < 0) continue;
+                string k = aLine.Substring(0, aSep).Trim();
+                string v = aLine.Substring(aSep + 1).Trim();
+                if (iMachine.ContainsKey(k))
+                {
+                    if (!string.IsNullOrEmpty(v) && v != iMachine[k]) aExtra.Add($"{k}_as_written: {v}");
+                    continue;
+                }
+                aExtra.Add($"{k}: {v}");
+            }
+            return (aRest, aExtra);
+        }
+
+        /// <summary>收尾信落檔 —— port 自 awakening.write_letter（trigger=cmd_goodnight 固定走 wakes/；
+        /// rest 信仍歸 python cmd_rest，本函式不管）。回 (信路徑, 信編號)。</summary>
+        public static (string path, int number) WriteWakeLetter(string iActor, string iPersona, string iBody)
+        {
+            string aLettersDir = Path.Combine(LettersDir, iPersona);
+            string aWakesDir = Path.Combine(aLettersDir, "wakes");
+            Directory.CreateDirectory(aWakesDir);
+            int aNumber = WakeLetterCount(iPersona) + 1;   // 磁碟是既成事實，registry 是快取
+            string aTs = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'");
+            string aPath = Path.Combine(aWakesDir, $"{aNumber:D6}_{aTs}.md");
+            var aMachine = new Dictionary<string, string>
+            {
+                { "type", "letter_to_future_self" },
+                { "actor", iActor },
+                { "written_at", NowIso() },
+                { "written_by_persona", iPersona },
+                { "trigger", "cmd_goodnight" },
+            };
+            var (aBody, aFixedNl) = NormalizeEscapedNewlines(iBody);
+            var (aRest, aExtra) = SplitAuthorFrontmatter(aBody, aMachine);
+            var aFm = new StringBuilder("---\n");
+            foreach (var kv in aMachine) aFm.Append(kv.Key).Append(": ").Append(kv.Value).Append('\n');
+            foreach (var aLine in aExtra) aFm.Append(aLine).Append('\n');
+            aFm.Append("---\n\n");
+            string aFull = aFm + aRest + "\n";
+            AtomicWrite(aPath, aFull);
+            AtomicWrite(Path.Combine(aLettersDir, "_latest.md"), aFull);   // per-persona pointer，同步覆寫
+            return (aPath, aNumber);
+        }
+
+        /// <summary>同 persona 全部 active token 標 expired（不刪，留 audit）—— port 自 expire_token。回筆數。</summary>
+        public static int ExpireTokens(string iPersona, string iReason)
+        {
+            string aTokensPath = Path.Combine(SessionDir, "_tokens.json");
+            if (!File.Exists(aTokensPath)) return 0;
+            JsonData aTokens = JsonData.ParseJson(File.ReadAllText(aTokensPath));
+            if (aTokens == null || !aTokens.Contains("tokens")) return 0;
+            var aDic = aTokens["tokens"];
+            if (!aDic.IsObject || aDic.Dic == null) return 0;
+            int aN = 0;
+            foreach (var aKey in aDic.Dic.Keys.ToList())
+            {
+                var aRec = aDic[aKey];
+                if (aRec.GetString("persona", "") != iPersona || aRec.GetString("status", "") != "active") continue;
+                aRec["status"] = "expired";
+                aRec["expired_at"] = NowIso();
+                aRec["expired_reason"] = iReason;
+                aN++;
+            }
+            if (aN > 0) AtomicWrite(aTokensPath, aTokens.ToJsonBeautify());
+            return aN;
+        }
+
+        // ===========================================================
+        // 區塊：step=check — 唯讀起手（酒館最後一眼 in-process，peek 語意天然成立：讀檔不動 cursor）
+        // ===========================================================
+        public static StepResult StepCheck(string iPersona)
+        {
+            var aR = new StringBuilder();
+            var aRes = new StepResult();
+            aR.AppendLine($"# GoodNight step=check persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            if (!File.Exists(Path.Combine(PersonasDir, iPersona + ".json")))
+            {
+                aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry —— 要下線誰不能用猜的");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            var aLock = ReadLock(iPersona);
+            aR.AppendLine(aLock != null
+                ? $"- lock: 🔒 {aLock.session_key}（locked_at={aLock.locked_at}）"
+                : "- lock: 無 —— cleanup 場景（上次下線沒走完）；本流程照走，lock 步驟會自動跳過");
+            aR.AppendLine();
+            aR.AppendLine($"## 🍺 酒館最後一眼（最近 {CHECK_TAVERN_PEEK_COUNT} 筆，peek 不動 cursor）");
+            try
+            {
+                foreach (var aMsg in ChatTavern.UCL_ChatTavernIO.Tail("tavern", CHECK_TAVERN_PEEK_COUNT))
+                {
+                    string aTag = aMsg.meta != null && aMsg.meta.TryGetValue("tag", out var t) ? $" «{t}»" : "";
+                    string aBody = (aMsg.body ?? "").Replace("\r", "").Replace("\n", " ⏎ ");
+                    if (aBody.Length > 160) aBody = aBody.Substring(0, 160) + "…";
+                    aR.AppendLine($"- [{aMsg.ts}] {aMsg.DisplayName}{aTag}: {aBody}");
+                }
+            }
+            catch (Exception e)
+            {
+                aR.AppendLine($"⚠ 酒館 peek 失敗（{e.Message}）—— **這不代表酒館沒事**；流程照走。");
+            }
+            aR.AppendLine();
+            aR.AppendLine("## next（人工收尾清單 —— 全部提示型，不實擋；做完才進 step=letter）");
+            aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
+            aR.AppendLine("2. 好感清算：依 ucl-affinity 結算今日變動（affinity_update.py）");
+            aR.AppendLine("3. 工作記憶回寫（今天有推進某項工作才做，依 ucl-work-memory）");
+            aR.AppendLine("4. 見人畫像：挑 1~3 位印象最深的同事（portraits.py write，親筆）");
+            aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
+            aR.AppendLine($"6. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；私密心得寫這裡，只落磁碟不廣播）。");
+            aR.AppendLine("   信內含 🔐 密文區（Code-Talker 式私語 —— 可讀文字、映射鍵是妳自己的聯想網；規格見 Letters_And_Dialogue_Workflow 二・一）。");
+            aR.AppendLine("   （手動登出 / cleanup 不寫信 → 直接 run GoodNight --arg step=logout --arg persona=<P>，不偽造心得信）");
+            aRes.ok = true; aRes.report = aR.ToString(); return aRes;
+        }
+
+        // ===========================================================
+        // 區塊：step=letter — 收尾信落檔＋registry wake_count 同步
+        // ===========================================================
+        public static StepResult StepLetter(string iPersona, string iLetterBody)
+        {
+            var aR = new StringBuilder();
+            var aRes = new StepResult();
+            aR.AppendLine($"# GoodNight step=letter persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
+            if (!File.Exists(aPersonaPath))
+            {
+                aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            if (string.IsNullOrWhiteSpace(iLetterBody))
+            {
+                aR.AppendLine("## blocked\n- reason: letter_body 空 —— 收尾信必須親筆（工具不代筆）；cleanup 不寫信走 step=logout");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            if (LettersMigrationPending(iPersona))
+            {
+                aR.AppendLine("## blocked\n- reason: 收尾信版面尚未遷移 —— 此時寫信會把編號寫錯（第 N 次 wake 被編成 000001）");
+                aR.AppendLine("- exits: 後台「🗄 維護」區跑 migration，或 python awakening.py migrate-letters --all --apply");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
+            var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            string aActor = ResolveBankAccount(aMeta, NormalizeAgent(aMeta, aRaw.GetString("agent", "")));
+            var (aPath, aNumber) = WriteWakeLetter(aActor, iPersona, iLetterBody);
+            // 信落地後 registry 對齊（wake_count == 這封的號碼）—— 不同步會 stale 一整晚
+            aRaw["wake_count"] = aNumber;
+            AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
+            string aLatest = Path.Combine(LettersDir, iPersona, "_latest.md");
+            aR.AppendLine("## verify（讀回的事實）");
+            aR.AppendLine($"- letter: `{aPath}`（exists={File.Exists(aPath)}，wake #{aNumber}）");
+            aR.AppendLine($"- _latest.md 指標: `{aLatest}`（mtime 已更新={File.GetLastWriteTimeUtc(aLatest) > DateTime.UtcNow.AddMinutes(-1)}）");
+            aR.AppendLine($"- registry wake_count → {aNumber}");
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. **required** — 下線：run_cmd.py run GoodNight --arg step=sleep --arg persona={iPersona} [--arg-file summary=<檔>] [--arg perturbation=0.02]");
+            aR.AppendLine("   <summary>＝**親筆**公開睡前心得（廣播給同事/Tim 看的部分；私密的已在信裡，不用重複）。");
+            aRes.ok = true; aRes.report = aR.ToString(); return aRes;
+        }
+
+        // ===========================================================
+        // 區塊：step=sleep / step=logout — offline → 解鎖 → 廣播 → expire（每晚 perturb 已移除，B 案）
+        // 順序不變式：權威狀態（offline/解鎖）先落地，廣播 best-effort 殿後 ——
+        // in-process 已無死鎖根因，但「廣播失敗不得留下半睡的人」的原則不因此放鬆。
+        // letter-before-sleep：wakes/ 信數 == 將寫入的 wake_count 才放行（logout 顯式跳過 —— 它跳過的
+        // 是「寫信」不是守衛，廣播會標明未留信）。
+        // </summary>
+        // ===========================================================
+        public static StepResult PrepareSleep(string iPersona, bool iNoLetter, out string oBroadcastBody, out string oToken, out UCL_PersonaData oP)
+        {
+            var aR = new StringBuilder();
+            var aRes = new StepResult();
+            oBroadcastBody = null; oToken = null; oP = null;
+            string aStepName = iNoLetter ? "logout" : "sleep";
+            aR.AppendLine($"# GoodNight step={aStepName} persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
+            if (!File.Exists(aPersonaPath))
+            {
+                aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry —— 要下線誰不能用猜的");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aRaw); aP.name = iPersona;
+            // letter-before-sleep 前置守衛
+            int aLetters = WakeLetterCount(iPersona);
+            if (!iNoLetter && aLetters != aP.wake_count)
+            {
+                aR.AppendLine($"## blocked");
+                aR.AppendLine($"- reason: 本次收尾信尚未落地（wakes/ 信數={aLetters}，registry wake_count={aP.wake_count}）—— 沒寫信不讓睡，未來的妳醒來會沒有 framing");
+                aR.AppendLine($"- exits: 先跑 step=letter；手動登出 / cleanup 不寫信 → 改跑 step=logout（會在廣播標明未留信）");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            var aLock = ReadLock(iPersona);
+            if (aLock == null)
+                aR.AppendLine($"⚠ persona '{iPersona}' 沒 active lock —— cleanup 場景，lock 步驟跳過");
+
+            var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
+            string aAgent = NormalizeAgent(aMeta, aP.agent ?? "");
+            string aActor = ResolveBankAccount(aMeta, aAgent);
+
+            // 每晚 perturb 已移除（Tim 2026-08-13 拍板 B 案）：identity_vector 無早安/brief 消費端，
+            // 唯二讀取者是 fork 起點 copy 與 forks 診斷指令 —— 「每晚身分微漂」的儀式概念
+            // 由晚安信的 🔐 密文區（Code-Talker 式二次映射，見 ucl-letters-to-self）承接。
+            // identity_vector 自此凍結在出生值，fork 時才動；vector_history 停止每晚長大。
+
+            aRaw["status"] = "offline";
+            aRaw["availability"] = "offline";
+            aRaw["last_active"] = NowIso();
+            AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
+            aR.AppendLine("📴 status → offline");
+
+            // 解鎖（權威狀態，先於廣播）；token 先撈——expire 要等廣播後（enforce ON 時廣播要用活 token）
+            oToken = aLock?.session_token;
+            if (aLock != null && File.Exists(LockPath(iPersona)))
+            {
+                File.Delete(LockPath(iPersona));
+                aR.AppendLine("🔓 persona lock removed");
+            }
+
+            // 廣播 body（系統欄位；summary 由 Cmd 端併入 —— 單則）
+            int aBalance = 0;
+            try { aBalance = Treasury.UCL_TreasuryLedger.GetBalance(aActor); } catch { }
+            string aLetterLine = iNoLetter
+                ? "- letter: (略 — 手動登出/cleanup 未留信)"
+                : $"- letter ship: wakes/ 第 {aP.wake_count:D6} 封（私密心得在信裡）";
+            oBroadcastBody =
+                $"🌙 **{iPersona}** 進入今日子協議 — 晚安\n\n" +
+                "{SUMMARY}" +
+                "📢 @同事們 我下線了, 別對我跑 op=wait 24min wait chain — 我不會主動回應.\n" +
+                "但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n" +
+                aLetterLine + "\n" +
+                $"- agent/model: {aAgent}/{aRaw.GetString("model", "")}\n" +
+                $"- bank account: {aActor} (餘額: {aBalance} Token)\n\n" +
+                "⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得用 affinity 更新好感度喔！";
+            oP = aP;
+            aRes.ok = true; aRes.report = aR.ToString();
+            return aRes;
+        }
     }
 }
 #endif

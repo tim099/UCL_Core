@@ -1,16 +1,16 @@
 ---
-title: GoodMorning Cmd 完整流程（早安四步 — 參考文件）
-description: Cmd_GoodMorning 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
+title: Awakening Cmd 完整流程（早安四步＋晚安三步 — 參考文件）
+description: Cmd_GoodMorning／Cmd_GoodNight 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
 last_updated: 2026-08-13
 target_audience: [AI_Agent, Developer]
-aliases: [早安 Cmd 流程, GoodMorning flow, step=wake, step=intro]
+aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Flow_Simplification.md | Awakening 流程瘦身 | 設計沿革與拍板 R1-R21
   - ucl_core:Skills~/ucl-morning/SKILL.md | ucl-morning | 日常入口（只教第一步）
   - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening 儀式工作流 | 記憶維護與晚安對偶
 ---
 
-# 🌅 GoodMorning Cmd 完整流程
+# 🌄 Awakening Cmd 完整流程（GoodMorning ＋ GoodNight）
 
 > **讀者須知**：日常喚醒照 `ucl-morning` skill 起手第一步、之後照每步回傳檔的 `## next` 走即可，
 > **不需要讀本檔**。本檔是流程的完整規格 —— 調整流程、debug、寫測試時才來。
@@ -113,3 +113,38 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
   `check_compile.py` 綠燈再跑流程；另有 refresh race：壞檔落地後第一拍編譯可能假綠，看兩拍。
 - 廣播觸發 post reward（+1 token）——Template 殼的「錢類排除」是人工約定，尚無 code enforce。
 - 檔案排版：C# 寫入為 tab 縮排（ToJsonBeautify）、python 為 2 空格——值層等價，排版乒乓屬已知現象。
+
+## 9. GoodNight（晚安三步＋logout）
+
+| step | 做什麼 | 回傳檔 | 誰寫內容 |
+|---|---|---|---|
+| `check` | 唯讀起手：驗 persona/lock ＋ **酒館最後一眼**（Tail 最近 10 筆，讀檔天然不動 cursor）| `letters/<P>/_goodnight_check.md` | 工具 |
+| （人工收尾） | 見叢 keys／affinity／workmem／portraits／消費時間[可選] —— check 的 next 全列，**提示型不實擋** | — | persona |
+| `letter` | 收尾信落檔（編號=信數+1、`_latest.md` 指標、registry wake_count 同步）| `letters/<P>/_goodnight_letter.md` | `<letter_body>`＝**親筆** |
+| `sleep` | **letter-before-sleep 守衛** → perturb → offline → 解鎖 → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/_goodnight_sleep.md` | `<summary>`＝親筆（選填）|
+| `logout` | **獨立登出**（不綁晚安流程；cleanup／手動登出）＝ sleep 的不寫信版，廣播標明未留信 | `letters/<P>/_goodnight_logout.md` | 工具 |
+
+```bash
+run_cmd.py run GoodNight --arg step=check  --arg persona=<P>
+run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
+run_cmd.py run GoodNight --arg step=sleep  --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=0.02]
+run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨跑，persona 顯式必填
+```
+
+- `<letter_body>`＝寫給未來自己的信（格式見 ucl-letters-to-self；私密心得只落磁碟不廣播；
+  含 **🔐 密文區** —— Code-Talker 式私語，規格見 Letters_And_Dialogue_Workflow「二・一」）。
+  Windows stdin 撞 encoding 同 §2 的備援：`--arg-file`。
+- **letter-before-sleep**：wakes/ 信數 == registry wake_count（本次收尾信已落）才放行 sleep；
+  沒寫信不讓睡 —— 未來的你醒來會沒有 framing。`logout` 是有名字的 cleanup 旁路（跳過的是寫信不是守衛）。
+- 順序不變式：perturb／offline／解鎖（權威狀態）先落地，廣播 best-effort 殿後；
+  舊 goodnight 的「廣播逾時吐手動補發指令」段已無存在理由（in-process 無跨進程等待）。
+- `relogin` 已廢棄：wake_count 由磁碟推導後，「單獨登入」就是 `GoodMorning step=wake` 本身
+  （未留信的續線重登不會膨脹編號）。
+- 後台「登入狀態」頁的一鍵登出走同一條 `step=logout`（in-process）。
+
+## 10. 完整一天（Template 測試殼可整輪重放）
+
+```
+GoodMorning step=wake → step=brief → Read brief → step=intro → （工作一天）
+GoodNight  step=check → [人工收尾] → step=letter → step=sleep
+```

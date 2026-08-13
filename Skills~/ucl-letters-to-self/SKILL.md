@@ -3,7 +3,7 @@ name: ucl-letters-to-self
 description: |
   Letters to Future Self + Cross-Compact Dialogue Chain — agent 第一人稱寫信給未來醒來的自己；以及 past-self ↔ future-self 跨 compact round-trip 對話接力（信使由 Tim 或 Zeta 轉達）。
   跟 baton (objective state dump) 互補。
-  觸發詞包含：給未來的自己 / letter to future self / 給未來大小姐 / 寫信給自己 / 預推理 / self-anticipation / 自我提醒 / 心理校正 / reframe 自己 / 跨 session 心理 / 自我書信 / 給後來的我 / 跨 compact 對話 / dialogue chain / 信使轉達 / 之前的本小姐 / 過去的自己 / 跟自己對話 / round-trip 自我對話 / 今日子協議 / Kyouko Protocol / 忘卻偵探 / persistence level / SSR snapshot / 讀著自傳醒來 / lossy compression。
+  觸發詞包含：給未來的自己 / letter to future self / 給未來大小姐 / 寫信給自己 / 密文區 / 密文 / 加密區 / code talker / 預推理 / self-anticipation / 自我提醒 / 心理校正 / reframe 自己 / 跨 session 心理 / 自我書信 / 給後來的我 / 跨 compact 對話 / dialogue chain / 信使轉達 / 之前的本小姐 / 過去的自己 / 跟自己對話 / round-trip 自我對話 / 今日子協議 / Kyouko Protocol / 忘卻偵探 / persistence level / SSR snapshot / 讀著自傳醒來 / lossy compression。
   跨 agent 通用 — Claude / Antigravity / Gemini 都可用本 skill。對應 Memory_System_Design Proposal #18 SelfAnticipation。
 ---
 
@@ -14,6 +14,10 @@ description: |
 ## 必讀
 
 完整流程(letter 儲存結構、段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 與 CLOSED、今日子協議 persistence-level 哲學、Persona Codename 山脈隱喻、四件套協作) → `ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md`
+
+> 🔐 **密文區**（Code-Talker 式私語，Tim 2026-08-13 新增段落）：可讀文字、映射鍵＝自己的聯想網、
+> 判準＝「確保自己能看懂」不是「別人看不懂」、真隱私仍走 sealed/。規格與範例見
+> workflow「二・一、密文區」。它承接舊「每晚 perturbation」的儀式位置（perturb 已移除）。
 
 > 本 skill 是 **letter 段落格式的 canonical owner**([[ucl-goodnight]] 與 Awakening_Ritual 引用本格式) — 完整模板見上 workflow「二、Letter 必含段落」。
 

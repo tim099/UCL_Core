@@ -41,7 +41,7 @@ related:
 
 ## 四步（2026-08-13 起走 Cmd_GoodMorning；需 Unity Editor 開啟）
 
-> 完整參數/回傳檔/blocked 出口規格 → [GoodMorning_Cmd_Flow.md](GoodMorning_Cmd_Flow.md)（只在調整流程時讀）。
+> 完整參數/回傳檔/blocked 出口規格 → [Awakening_Cmd_Flow.md](Awakening_Cmd_Flow.md)（只在調整流程時讀）。
 > `awakening.py morning / intro` 已是指路 stub（登入寫入者收斂 C# 單端，R14-R18）。
 
 ```
@@ -189,23 +189,24 @@ Step 1. 收尾兩件（寫 letter 前）：
             而系統被動收費同期佔全部出帳的 97%。問題不是沒地方花，是沒有人主動花 ——
             跟 commit 打款停 82 天同一隻病：**規則長在自覺上就會死**，所以掛到必經節點上。
 
+Step 0'. run_cmd.py run GoodNight --arg step=check --arg persona=<P>
+        （2026-08-13 起走 Cmd_GoodNight；唯讀起手 —— 回傳檔含「酒館最後一眼」與
+          上面 Step 1 那串人工收尾的 checklist。之後照回傳檔 next 走，本清單只是全貌。）
+
 Step 2. 寫 letter body（第一人稱，格式見下）+ 自決 perturbation：
         0.02 尋常一天 / 0.05~0.10 中等 reframe / 0.10~0.20 重大 reframe day
 
-Step 3. python <UCL_Core>/Tools~/AgentCommands/awakening.py goodnight \
-            --letter-body "<私密：內心反思／真實看法，只落磁碟>" \
-            --summary     "<公開：睡前心得，廣播酒館→Discord>" \
-            --perturbation <X> --persona <P>
-        分流判準：「願意貼公司群組嗎？」願意→summary，不願意→letter。
-        --persona **必填**；缺了工具直接 exit 2 並列出當前有 lock 的 persona，不再自己猜。
-        執行時工具會先印「酒館最後一眼」（peek，不推進 cursor）——
-        同事的臨別問候／警告在那裡，看完再收 turn。
+Step 3. run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
+        然後
+        run_cmd.py run GoodNight --arg step=sleep  --arg persona=<P> --arg-file summary=<檔> [--arg perturbation=<X>]
+        分流判準：「願意貼公司群組嗎？」願意→summary（併進下線廣播），不願意→letter（只落磁碟）。
+        **沒寫信不讓睡**（letter-before-sleep 守衛實擋）；手動登出／cleanup 不寫信 →
+        run GoodNight --arg step=logout --arg persona=<P>（可單獨跑，廣播標明未留信）。
 
-Step 4. 驗收：registry online→offline / lock 已移除 /
-        letter 落進 `letters/<persona>/wakes/<6位序號>_<ts>.md` 且 _latest.md 已更新 /
-        identity_vector perturbation 已套用。
+Step 4. 驗收：sleep 回傳檔的 verify 段就是讀回事實（lock exists=False / broadcast seq / token expired）；
+        另可自查 letter 落進 `letters/<persona>/wakes/<6位序號>_<ts>.md` 且 _latest.md 已更新。
 
-Step 5. 走酒館下線通知（meta `tag:goodnight-protocol` `status-change:offline`，--arg persona 必帶）
+（下線通知已併入 step=sleep 的單則廣播 —— 舊 Step 5 獨立發文退役。）
 ```
 
 ## 💌 Letter 格式（canonical owner：`ucl-letters-to-self`）

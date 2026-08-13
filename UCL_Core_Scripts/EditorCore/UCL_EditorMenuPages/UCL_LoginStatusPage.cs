@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Cysharp.Threading.Tasks;                      // logout 走 Cmd_GoodNight in-process（UniTaskVoid/Forget）
 using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.AgentCommands.Awakening;   // UCL_AwakeningService（morning 已遷 C#，Cmd_GoodMorning 同一份實作）
 using UCL.Core.JsonLib;
@@ -823,31 +824,39 @@ namespace UCL.Core.EditorLib.Page
             );
         }
 
-        // 區塊職責：實際 spawn awakening.py goodnight subprocess
-        // 物理意義：popup 三按鈕統一收斂到本 method, 差異只在 --session-token 帶法
-        // explicitNoToken=true  → 帶 --session-token "" (caller 故意不帶, awakening.py 不從 lock 撈)
-        // explicitNoToken=false → 完全省略 --session-token (awakening.py auto-fallback 從 lock.session_token 撈)
+        // 區塊職責：登出 — 走 Cmd_GoodNight step=logout（in-process，2026-08-13 Tim 拍板：
+        //          登出透過 CMD、可單獨跑、persona 顯式必填；不再 spawn awakening.py goodnight）
+        // 物理意義：logout = 不寫信的 cleanup（不偽造心得信，廣播標明未留信），與晚安全流程解耦。
+        // explicitNoToken=true → 帶 no_token=true（顯式不帶 token，enforce reject path 除錯，三態語意沿用）
         void RunLogout(string persona, string agent, bool explicitNoToken)
         {
-            // --no-letter (Tim 2026-06-14): 手動登出不寫信 — 登出常失敗但信在 ritual 最前面就寫了,
-            //   累積一堆無意義 placeholder 信。手動登出是 cleanup, 不偽造心得信。
-            var args = new List<string>
+            if (m_AwakeningRunning)
             {
-                $"\"{AwakeningPyPath()}\"", "goodnight",
-                "--persona", persona,
-                "--agent", agent,
-                "--no-letter",
-                "--perturbation", "0.02",
-            };
-            if (explicitNoToken)
-            {
-                // shell escape: empty string 走 "\"\"" 雙引號對, 否則 string.Join 會吃掉
-                args.Add("--session-token");
-                args.Add("\"\"");
+                Debug.LogWarning("[LoginStatus] 已有 awakening 操作進行中 — 等前一筆完成再操作");
+                return;
             }
-            // else: 不加 --session-token, awakening.py 走 args.session_token is None 分支 → 自動撈 lock
-            // RunAwakening 現為背景非阻塞 — 完成後自動回主線程 LoadData()，不再同步 reload
-            RunAwakening(args, $"goodnight {persona}");
+            m_AwakeningRunning = true;
+            var aArgs = new Dictionary<string, string> { { "step", "logout" }, { "persona", persona } };
+            if (explicitNoToken) aArgs["no_token"] = "true";
+            RunLogoutAsync(aArgs, persona).Forget();
+        }
+
+        async Cysharp.Threading.Tasks.UniTaskVoid RunLogoutAsync(Dictionary<string, string> iArgs, string iPersona)
+        {
+            try
+            {
+                await new Cmd_GoodNight().ExecuteAsync(iArgs, System.Threading.CancellationToken.None);
+                Debug.Log($"[LoginStatus] ✓ logout {iPersona} 完成（詳見 letters/{iPersona}/_goodnight_logout.md）");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LoginStatus] logout {iPersona} 失敗: {e.Message}");
+            }
+            finally
+            {
+                m_AwakeningRunning = false;
+                LoadData();
+            }
         }
 
         // 區塊職責：force remove lock file 直接刪 _persona_<X>.json

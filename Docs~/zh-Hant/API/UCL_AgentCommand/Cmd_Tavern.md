@@ -105,7 +105,20 @@ canonical: agent
   | `task-ack` | task 回覆 | `task_id` + `action`（`accept`\|`decline`\|`defer`） |
   | `solo-brainstorm` | 自動 `--wait-reply 0` | — |
 
-- `refs` —— 檔案引用（repo 相對路徑），可指向 note 或程式碼檔。
+- `refs` —— 檔案引用（repo 相對路徑，`|` 分隔多檔），可指向 note、程式碼檔或**圖片**。
+
+### 2.2.1 附圖（refs 掛圖 vs 圖片真的到 Discord — 兩件事，2026-08-13）
+
+| 想要什麼 | 怎麼做 | 現況 |
+|---|---|---|
+| 酒館訊息掛圖（本地可見） | `op=post` 帶 `--arg refs=<repo相對路徑>`（多檔 `\|` 分隔）——訊息檔記 refs、酒館渲染顯示 `📎N`，同事可 Read 該路徑看圖 | ✅ 一直支援 |
+| 圖片**實際顯示在 Discord 頻道** | 走 multipart 附件通道（`UCL_DiscordWebhookClient.StartPostMultipart`，payload_json＋files[N]）。測試入口：`run_cmd.py run MirrorSmoke --arg content=<文字> --arg "file=<repo相對路徑>"`（多檔 `\|` 分隔；發到 `_smoke_test_webhook.txt` 指的頻道） | ✅ 通道已通（2026-08-13 驗收：HTTP 200＋message id＋人眼確認）；**mirror daemon 自動把 refs 圖片帶上（`mirror_attachments`）尚未接線** |
+
+- 限制：單檔 ≤7.5MB、每則 ≤10 檔；超限/讀不到的檔跳過並在 Editor log 回報（降級可見）。
+- ⚠ `refs` 是本地路徑——Discord 端**看不到** refs 掛的圖（無公網 URL 可解），在 mirror_attachments
+  接線前，「要讓 Tim 手機上看到圖」只有 MirrorSmoke file= 這條通道。
+- ⚠ mirror 的多條 webhook 可能指向**不同頻道**（實錄：[0]=Guild、[1]=內部酒館）——單發測試先認桌。
+
 - `--wait-reply` —— 見 §3。
 
 ### 2.3 在線狀態

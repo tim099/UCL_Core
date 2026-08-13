@@ -338,6 +338,7 @@ def cmd_exhibit(args):
             "light_dir": args.light_dir or "-1,-1,-1",
             "ambient": args.ambient if args.ambient is not None else 0.4,
             "smooth": bool(args.smooth),
+            "shadow": bool(getattr(args, "shadow", False)),
             "created_at": datetime.now().isoformat()
         }
         fpath = save_exhibit(ex_id, preset)
@@ -364,6 +365,7 @@ def render_exhibit_photo(preset):
     light_dir_str = preset.get("light_dir", "-1,-1,-1")
     ambient_val = preset.get("ambient", 0.4)
     smooth_mode = preset.get("smooth", True)
+    shadow_mode = bool(preset.get("shadow", False))
 
     try:
         light_vec = [float(v) for v in light_dir_str.split(",")]
@@ -414,6 +416,18 @@ def render_exhibit_photo(preset):
 
     visible_points.sort(key=lambda item: item[0])
 
+    # 自動置中 (2026-08-13): 依可見 voxel 的等角投影包圍盒平移 origin — 作品在空間任何角落都拍得到
+    if visible_points:
+        iso_xs = []
+        iso_ys = []
+        for _, x, y, z, _c in visible_points:
+            iso_xs.append((x - y) * W_half)
+            iso_ys.append((x + y) * H_half - z * Z_step)
+        min_x, max_x = min(iso_xs) - W_half, max(iso_xs) + W_half
+        min_y, max_y = min(iso_ys) - H_half, max(iso_ys) + H_half + Z_step
+        origin_x = img_w // 2 - (min_x + max_x) // 2
+        origin_y = img_h // 2 - (min_y + max_y) // 2
+
     for _, x, y, z, color_idx in visible_points:
         cx = origin_x + (x - y) * W_half
         cy = origin_y + (x + y) * H_half - z * Z_step
@@ -423,9 +437,15 @@ def render_exhibit_photo(preset):
         left_col = apply_lighting(base_rgb, (-0.707, 0.707, 0.0), light_vec, ambient_val)
         right_col = apply_lighting(base_rgb, (0.707, 0.707, 0.0), light_vec, ambient_val)
 
+        # 陰影 (可開關): 被其他 voxel 擋住光 → 三面同乘暗係數
+        if shadow_mode and is_shadowed(x, y, z, voxel_set, light_vec):
+            top_col = apply_shadow(top_col)
+            left_col = apply_shadow(left_col)
+            right_col = apply_shadow(right_col)
+
         has_top_neighbor = (x, y, z + 1) in voxel_set
-        has_left_neighbor = (x - 1, y, z) in voxel_set
-        has_right_neighbor = (x, y - 1, z) in voxel_set
+        has_left_neighbor = (x, y + 1, z) in voxel_set
+        has_right_neighbor = (x + 1, y, z) in voxel_set
 
         pad = 0.5 if smooth_mode else 0.0
 
@@ -456,6 +476,40 @@ def render_exhibit_photo(preset):
     img.save(out_file)
     return out_file
 
+
+# 區塊職責: 陰影判定 (Tim 2026-08-13 追加, 可開關) — 從 voxel 中心朝光源反方向做 voxel 行進,
+#          途中撞到任何實心 voxel = 在陰影中 (面色乘暗係數)。
+# 物理意義: 正交等角圖沒有影子會有深度歧義 (並排被誤讀成疊放 — Tim 實際誤讀過一次),
+#          cast shadow 讓「誰在誰上面/前面」重新可判。
+# 數值影響: O(可見voxel × 行進步數上限120); 千級 voxel 無感, 十萬級再考慮 shadow map 快取。
+#          遮擋集合用 render 過濾後的 voxel_set — 被 exclude-color/region 排除的東西不投影
+#          (「排除=不存在」語意一致)。
+SHADOW_FACTOR = 0.55
+
+def is_shadowed(x, y, z, voxel_set, light_vec):
+    lx, ly, lz = light_vec
+    mag = (lx * lx + ly * ly + lz * lz) ** 0.5
+    if mag < 1e-6:
+        return False
+    # 朝光源方向 = light_dir 的反向
+    sx, sy, sz = -lx / mag, -ly / mag, -lz / mag
+    fx, fy, fz = x + 0.5, y + 0.5, z + 0.5
+    step = 0.5
+    for i in range(1, 241):  # 最遠 120 voxel
+        fx += sx * step; fy += sy * step; fz += sz * step
+        cx, cy, cz = int(fx), int(fy), int(fz)
+        if not (0 <= cx <= 255 and 0 <= cy <= 255 and 0 <= cz <= 255):
+            return False
+        if (cx, cy, cz) == (x, y, z):
+            continue
+        if (cx, cy, cz) in voxel_set:
+            return True
+    return False
+
+
+def apply_shadow(col):
+    return tuple(int(c * SHADOW_FACTOR) for c in col)
+
 def apply_lighting(rgb, face_normal, light_dir_vec, ambient=0.4):
     # Normalize light vector
     lx, ly, lz = light_dir_vec
@@ -484,6 +538,7 @@ def cmd_view(args):
     light_dir_str = args.light_dir or "-1,-1,-1"
     ambient_val = args.ambient if args.ambient is not None else 0.4
     smooth_mode = args.smooth
+    shadow_mode = bool(getattr(args, 'shadow', False))
 
     # If --exhibit <id> is specified, auto-load its Preset!
     if args.exhibit:
@@ -496,6 +551,8 @@ def cmd_view(args):
             ambient_val = preset.get("ambient", ambient_val)
             if "smooth" in preset:
                 smooth_mode = preset["smooth"]
+            if "shadow" in preset and not shadow_mode:
+                shadow_mode = bool(preset["shadow"])
             print(f"🏛️ 正在一鍵載入展品 [{args.exhibit}] 《{preset['title']}》 觀測與打光 Preset (創作者: {preset['author']})...")
 
     # Parse light dir
@@ -553,6 +610,18 @@ def cmd_view(args):
 
     visible_points.sort(key=lambda item: item[0])
 
+    # 自動置中 (2026-08-13): 依可見 voxel 的等角投影包圍盒平移 origin — 作品在空間任何角落都拍得到
+    if visible_points:
+        iso_xs = []
+        iso_ys = []
+        for _, x, y, z, _c in visible_points:
+            iso_xs.append((x - y) * W_half)
+            iso_ys.append((x + y) * H_half - z * Z_step)
+        min_x, max_x = min(iso_xs) - W_half, max(iso_xs) + W_half
+        min_y, max_y = min(iso_ys) - H_half, max(iso_ys) + H_half + Z_step
+        origin_x = img_w // 2 - (min_x + max_x) // 2
+        origin_y = img_h // 2 - (min_y + max_y) // 2
+
     for _, x, y, z, color_idx in visible_points:
         # Exact Center of Top Face Rhombus
         cx = origin_x + (x - y) * W_half
@@ -564,10 +633,16 @@ def cmd_view(args):
         left_col = apply_lighting(base_rgb, (-0.707, 0.707, 0.0), light_vec, ambient_val)
         right_col = apply_lighting(base_rgb, (0.707, 0.707, 0.0), light_vec, ambient_val)
 
+        # 陰影 (可開關): 被其他 voxel 擋住光 → 三面同乘暗係數
+        if shadow_mode and is_shadowed(x, y, z, voxel_set, light_vec):
+            top_col = apply_shadow(top_col)
+            left_col = apply_shadow(left_col)
+            right_col = apply_shadow(right_col)
+
         # Occlusion Checks (Strict Expose Check)
         has_top_neighbor = (x, y, z + 1) in voxel_set
-        has_left_neighbor = (x - 1, y, z) in voxel_set
-        has_right_neighbor = (x, y - 1, z) in voxel_set
+        has_left_neighbor = (x, y + 1, z) in voxel_set
+        has_right_neighbor = (x + 1, y, z) in voxel_set
 
         # Overlap offset to eliminate any sub-pixel raster gaps
         pad = 0.5 if smooth_mode else 0.0
@@ -654,6 +729,7 @@ def main():
     p_view.add_argument("--light-dir", help="平行日光照方向向量 (例如 '-1,-1,-1')")
     p_view.add_argument("--ambient", type=float, default=0.4, help="環境光強度 (0.0~1.0)")
     p_view.add_argument("--smooth", action="store_true", help="開啟平滑表面模式 (自動消除相鄰同平面內部網格線)")
+    p_view.add_argument("--shadow", action="store_true", help="開啟 cast shadow (被其他 voxel 擋光的面變暗 — 解正交圖深度歧義)")
     p_view.add_argument("--exhibit", help="一鍵載入指定展品 ID 的觀看與打光 Preset")
     p_view.set_defaults(func=cmd_view)
 
@@ -667,6 +743,7 @@ def main():
     p_ex_reg.add_argument("--author", required=True, help="創作者")
     p_ex_reg.add_argument("--desc", help="展品理念介紹")
     p_ex_reg.add_argument("--region", help="最佳觀測空間裁剪")
+    p_ex_reg.add_argument("--shadow", action="store_true", help="展品照與導覽預設開陰影")
     p_ex_reg.add_argument("--exclude-color", help="排除顏色")
     p_ex_reg.add_argument("--bg-color", help="背景顏色")
     p_ex_reg.add_argument("--skybox", help="Skybox 貼圖路徑")

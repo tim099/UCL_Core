@@ -72,9 +72,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>
         /// 寫入一筆訊息並分配 seq 的臨界區入口 — 取代原本散在 UCL_ChatTavernIO.AppendMessage 裡的邏輯。
-        /// 回傳分配好的 seq（msg.seq 也已同步設定，供 caller 直接使用）。
+        /// 回傳 (分配好的 seq, 實際寫出的訊息檔絕對路徑)（msg.seq 也已同步設定，供 caller 直接使用）。
+        ///
+        /// fullPath 為什麼要往外傳（2026-08-13）：下游（inbox 條目截斷提示）需要指出「全文在哪個檔」。
+        /// 由 seq 反推檔名雖然目前算得出來（檔名＝seq:D8、日期夾＝msg.ts 的 UTC 日），但那是**推論**：
+        /// seq 是讀取端按檔案排序位置 derive 的流水號，一旦有人刪掉一個訊息檔，之後每一筆的
+        /// 「seq→檔名」都會錯開一格，而錯開後拼出來的路徑**依然存在**、只是指向別人的訊息 ——
+        /// 那種壞法不會報錯。這裡把寫入當下的真路徑直接傳出去，下游零推論。
         /// </summary>
-        public static int WriteMessageWithSeq(string roomId, UCL_ChatMessage msg)
+        public static (int seq, string fullPath) WriteMessageWithSeq(string roomId, UCL_ChatMessage msg)
         {
             object roomLock = GetRoomLock(roomId);
             lock (roomLock)
@@ -90,7 +96,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
                 // 檔名現在直接用 seq (2026-07-27, 拿掉 uuid6 — seq 已保證不重複, 不需要隨機尾碼防撞檔)。
                 // T38: PerMsgFile 內部處理 ts / uuid(仍寫進內容, 只是不進檔名) / _writer / _pid 簽章。
-                var (record, _, wrote) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFileWithSeq(roomId, msg, derivedSeq);
+                var (record, fullPath, wrote) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFileWithSeq(roomId, msg, derivedSeq);
 
                 if (!wrote)
                 {
@@ -107,7 +113,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                             $"快取疑似跟磁碟漂移，重新問磁碟真相校正 (attempt {attempt}/{maxRetries})。");
                         int trueCount = UCL_ChatTavernIO_PerMsgFile.CountMessageFiles(roomId);
                         derivedSeq = trueCount + 1;
-                        (record, _, wrote) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFileWithSeq(roomId, msg, derivedSeq);
+                        // fullPath 必須跟著重新賦值：撞檔那一次算出的路徑指向的是**別人的**訊息檔，
+                        // 沿用它會讓下游 inbox 指到錯的全文（而那個檔存在，所以不會有人發現）。
+                        (record, fullPath, wrote) = UCL_ChatTavernIO_PerMsgFile.WriteMessageFileWithSeq(roomId, msg, derivedSeq);
                         healed = wrote;
                     }
                     if (!healed)
@@ -128,7 +136,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 catch { /* fail swallow — 不影響訊息已寫入的事實 */ }
 
-                return derivedSeq;
+                return (derivedSeq, fullPath);
             }
         }
     }

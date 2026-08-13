@@ -1674,13 +1674,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
 
         /// <summary>把絕對路徑轉成 repo 相對（給 refs / 顯示用，跨 OS slash 統一）。</summary>
-        static string ToRepoRelative(string absPath)
-        {
-            string norm = absPath.Replace('\\', '/');
-            string root = UCL_RepoPath.RepoRoot.TrimEnd('/') + "/";
-            if (norm.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return norm.Substring(root.Length);
-            return norm;
-        }
+        // 2026-08-13：本地重複實作已收斂到 UCL_ChatTavernIO.ToRepoRelative（同一件事原本這檔一份、
+        // UCL_DiscordInboundDaemon 一份、新增 inbox 路徑提示時差點再長第三份）。保留本包裝是為了不動
+        // 檔內既有 6 個呼叫點的可讀性。
+        static string ToRepoRelative(string absPath) => UCL_ChatTavernIO.ToRepoRelative(absPath);
 
         /// <summary>解析 meta — 雙模式自動偵測:
         /// (1) JSON 物件: raw 以 '{' 開頭 → 走 JsonData.ParseJson, top-level k/v 提取為 Dict.

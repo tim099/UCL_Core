@@ -985,14 +985,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 順序 vs 唯一性 (Tim 2026-07-27 拍板)：seq 只要求「不重複」，不要求嚴格對應「送出順序」——
             // Cmd_Tavern.Op_Post 的 T26 pacing delay 本來就會讓送出順序跟實際寫入順序不同，這點可接受；
             // per-room lock 保證的是「同一房間內不會有兩筆訊息因為交錯執行而算出同一個 seq」。
-            int derivedSeq = UCL_ChatTavernWriteService.WriteMessageWithSeq(roomId, msg);
+            var (derivedSeq, aMsgFilePath) = UCL_ChatTavernWriteService.WriteMessageWithSeq(roomId, msg);
 
             // 寫入不變量 (2026-07-29 下沉自 Cmd_Tavern.Op_Post)：
             // 「任何進到房間的訊息都該觸發提及通知」跟來源無關 — 它是寫入不變量，不是 agent 行為 hook，
             // 所以住在唯一寫入點才對。原本只掛在 Op_Post，導致 Discord inbound / 酒保 / quest IO /
             // BankAdminPage 這 6 個呼叫端的 @mention 全部不進 inbox（2026-07-29 實證：Tim 從 Discord
             // @summit 的訊息 summit 完全收不到）。放這裡天然 exactly-once（AppendMessage 是唯一寫入點）。
-            NotifyMentions(roomId, msg, derivedSeq);
+            NotifyMentions(roomId, msg, derivedSeq, aMsgFilePath);
 
             // Discord 鏡像不在此觸發 (2026-07-28 python 路徑移除)：UCL_DiscordMirrorDaemon 以
             // EditorApplication.update 1Hz 自行 poll + per-webhook 游標送出，寫入端零額外成本。
@@ -1129,7 +1129,28 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return aResult;
         }
 
-        static void NotifyMentions(string roomId, UCL_ChatMessage msg, int seq)
+        // 區塊職責：絕對路徑 → repo 相對路徑（給寫進 md / 給 agent 直接拿去讀的字串用）。
+        // 物理意義：inbox / 回傳檔是跨機器被讀的文字，絕對路徑帶著別人機器上不存在的碟號與使用者名，
+        //          repo 相對才是所有 agent 都貼得進工具的形式。
+        // 數值影響：純字串處理；不在 repo 底下的路徑原樣回傳（不硬裁），null/空回空字串。
+        public static string ToRepoRelative(string absPath)
+        {
+            if (string.IsNullOrEmpty(absPath)) return string.Empty;
+            try
+            {
+                string aRoot = UCL_RepoPath.RepoRoot.Replace('\\', '/').TrimEnd('/') + "/";
+                string aFull = Path.GetFullPath(absPath).Replace('\\', '/');
+                if (aFull.StartsWith(aRoot, StringComparison.OrdinalIgnoreCase)) return aFull.Substring(aRoot.Length);
+                return aFull;
+            }
+            catch { return absPath.Replace('\\', '/'); }
+        }
+
+        // msgFilePath（2026-08-13 新增）：這筆訊息「實際寫出的那個檔」的絕對路徑，由 AppendMessage
+        // 從寫入端原樣傳進來。用途是讓被截斷的 inbox 條目能直接指出全文在哪 —— 讀的人不必知道
+        // messages/<日期>/<seq:D8>.json 這條命名慣例，也不必自己從 seq 反推（反推會在檔案被刪過的
+        // 房間指向別人的訊息，而且指錯了不會報錯）。傳空字串代表呼叫端沒給，此時只印 seq，不編造路徑。
+        static void NotifyMentions(string roomId, UCL_ChatMessage msg, int seq, string msgFilePath = null)
         {
             try
             {
@@ -1168,7 +1189,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
                 bool aTruncated = msg.body.Length > 200;
                 string aQuoted = aTruncated ? msg.body.Substring(0, 200) + "…" : msg.body;
-                string aTail = aTruncated ? $"（全文 seq={seq}）" : string.Empty;
+                // 截斷時附上原訊息檔路徑（Tim 2026-08-13 拍板）：舊版只給「（全文 seq=N）」，
+                // 而 seq 不是路徑 —— 讀到的人得自己知道 messages/<日期夾>/<seq:D8>.json 這條慣例才找得到，
+                // 實務上就是不去找，於是被截掉的 200 字之後全部靜默流失。
+                // 路徑只印「寫入端交過來的真路徑」；沒拿到就退回舊格式，**不由 seq 反推編造**。
+                string aTail = string.Empty;
+                if (aTruncated)
+                {
+                    string aRel = ToRepoRelative(msgFilePath);
+                    aTail = string.IsNullOrEmpty(aRel)
+                        ? $"（全文 seq={seq}）"
+                        : $"（全文 seq={seq} — 完整原文請讀 `{aRel}`）";
+                }
 
                 int aNotifyCount = 0;
                 foreach (string aTargetId in aMentioned)

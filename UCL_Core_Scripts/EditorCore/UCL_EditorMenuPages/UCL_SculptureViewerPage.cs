@@ -395,10 +395,13 @@ namespace UCL.Core.EditorLib.Page
             GUI.DrawTexture(aRect, m_SliceTex, ScaleMode.ScaleToFit);
         }
 
-        // 區塊職責：在系統檔案總管開啟資料夾（專案既有慣例，同 UCL_SecretManagerPage）。
-        // 物理意義：RevealInFinder 對不存在的路徑會定位到 parent —— 所以先建資料夾，
-        //          否則「按了沒反應」會被當成按鈕壞掉，而它其實只是沒有那個資料夾。
-        //          （避開的是 EditorUtility.OpenFolderPanel 那個 modal 選擇器，不是本 API。）
+        // 區塊職責：在系統檔案總管開啟資料夾。
+        // 物理意義：**一律走 UCL_ExplorerUtil** —— 它把開檔案總管這件事收成唯一入口，
+        //          外部 Process 有登記進 ProcessRegistry（硬規則：C# 開的每顆 process 都要登記），
+        //          路徑不存在也會留 log 而不是靜默失敗。自己 call EditorUtility.RevealInFinder
+        //          會少掉那兩層（summit 2026-08-14 第一版就這麼寫，違規當日自糾）。
+        // 數值影響：先建資料夾再開 —— 否則第一次按會定位到 parent 或沒反應，
+        //          而那看起來像按鈕壞掉，其實只是那個資料夾還不存在。
         void RevealFolder(string iDir)
         {
             if (string.IsNullOrWhiteSpace(iDir))
@@ -409,7 +412,8 @@ namespace UCL.Core.EditorLib.Page
             try
             {
                 Directory.CreateDirectory(iDir);
-                UnityEditor.EditorUtility.RevealInFinder(iDir);
+                if (!UCL_ExplorerUtil.Open(iDir, nameof(UCL_SculptureViewerPage)))
+                    m_LastRenderLog = $"✗ 開啟資料夾失敗（詳見 Console）：{iDir}";
             }
             catch (Exception e)
             {

@@ -92,7 +92,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     {
                         { "op", "post" },
                         { "room", "tavern" },
-                        { "agent", aActor },
                         { "persona", aPersona },
                         { "body", aBody },
                         { "meta", "{\"tag\":\"goodnight-protocol\",\"category\":\"meta\",\"status-change\":\"offline\"}" },

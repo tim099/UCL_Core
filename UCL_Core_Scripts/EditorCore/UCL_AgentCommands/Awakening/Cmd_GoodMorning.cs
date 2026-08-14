@@ -162,7 +162,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     {
                         { "op", "post" },
                         { "room", "tavern" },
-                        { "agent", aLock.bank_account },
                         { "persona", aPersona },
                         { "body", aMerged },
                         { "session_token", aLock.session_token },   // enforce ON 時的通行證；OFF 時無害

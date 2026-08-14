@@ -510,22 +510,23 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         {
             try
             {
+                // 區塊職責：自由時間的開場 / 換骰 / 收工宣告發文
+                // ⚠ 2026-08-14 修（apex-one 讀 code 抓到）：此處原本是
+                //     `lock 讀不到 bank → LogWarning + return 0`，也就是**沒錢就沒聲音**。
+                //   那與同日立的原則正好相反：解析不到帳號只影響計酬，**不擋發言** ——
+                //   發言權與收款權是兩回事。而且失敗形式是 LogWarning + 回 0，
+                //   於是宣告會**安靜地不出現**，同事看酒館只會以為「她這場沒發」。
+                //   現在 bank 已完全不參與發文（計酬由 persona 反解），閘門的前提本身也消失了。
                 var aLock = UCL_AwakeningService.ReadLock(iPersona);
-                if (aLock == null || string.IsNullOrEmpty(aLock.bank_account))
-                {
-                    Debug.LogWarning($"[FreeTime] lock 讀不到 bank（宣告跳過）persona={iPersona}");
-                    return 0;
-                }
                 var aArgs = new Dictionary<string, string>
                 {
                     { "op", "post" },
                     { "room", "tavern" },
-                    { "agent", aLock.bank_account },
                     { "persona", iPersona },
                     { "body", iBody },
                     { "meta", $"{{\"tag\":\"free-time\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}" },
                 };
-                if (!string.IsNullOrEmpty(aLock.session_token)) aArgs["session_token"] = aLock.session_token;
+                if (aLock != null && !string.IsNullOrEmpty(aLock.session_token)) aArgs["session_token"] = aLock.session_token;
                 ChatTavern.Cmd_Tavern.LastPostSeq = 0;
                 await new ChatTavern.Cmd_Tavern().ExecuteAsync(aArgs, iToken);
                 return ChatTavern.Cmd_Tavern.LastPostSeq;

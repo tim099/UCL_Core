@@ -462,12 +462,50 @@ namespace UCL.Core.EditorLib.AgentCommands
         static string s_CachedArtifactHash;
         static bool s_CachedInSync;
 
+        // 區塊職責：把 ②stat 簽章那層快取**跨 domain reload 保留**（本機、per-project，不入 git）。
+        // 物理意義：上面的 static 欄位每次 domain reload 就歸零，而 AutoSync 正好掛在編譯之後 ——
+        //          於是每次編譯都必然落到「簽章沒有可比對的舊值」→ 付一次完整雜湊（~1.1s）。
+        //          原本的日期節流就是為了迴避這個成本，代價是**改完最多 24 小時都是過期的**
+        //          （2026-08-14：整個上午每一條 Cmd 都在印降級警告，根因即此）。
+        //          把簽章與它對應的雜湊一起存進 prefs 之後，「來源沒動過」只要 52 次 stat（~1ms）
+        //          就能判定，於是節流不再需要 —— 真的改了才付那 1.1s，而那正是該付的時候。
+        // 數值影響：⚠ 兩個值**必須成對讀寫** —— 簽章對應的是「算那次雜湊時的來源狀態」，
+        //          只存一個等於下次拿舊雜湊去配新簽章。存錯配對不會報錯，會安靜地宣稱已同步。
+        //          ⚠ 也**只能**當快取鍵用：mtime 在 clone 後只反映寫檔次序（gura QA 2026-07-29 推翻過
+        //          「拿 mtime 當同步判準」的方案，而本產物確實入 git）。這裡安全是因為
+        //          新 clone 的機器 prefs 是空的 → 簽章對不上 → 照樣重算，永遠不會把「已改」洗成「同步」。
+        const string StatSigPrefKey = "UCL_CmdSchema_LastStatSig";
+        const string SourceHashPrefKey = "UCL_CmdSchema_LastSourceHash";
+
+        /// <summary>把 stat 簽章與其對應的內容雜湊從 prefs 載回記憶體快取（只在記憶體快取為空時）。</summary>
+        static void SeedCacheFromPrefs()
+        {
+            if (s_CachedStatSig != null) return;
+            string sig = UCL_ProjectEditorPrefs.GetString(StatSigPrefKey, "");
+            string hash = UCL_ProjectEditorPrefs.GetString(SourceHashPrefKey, "");
+            // 成對才採用 —— 缺一個就當作沒有（寧可多算一次，不可拿舊雜湊配新簽章）
+            if (string.IsNullOrEmpty(sig) || string.IsNullOrEmpty(hash)) return;
+            s_CachedStatSig = sig;
+            s_CachedSourceHash = hash;
+        }
+
+        /// <summary>把當前的 stat 簽章與內容雜湊成對寫進 prefs。</summary>
+        static void PersistCacheToPrefs()
+        {
+            if (string.IsNullOrEmpty(s_CachedStatSig) || string.IsNullOrEmpty(s_CachedSourceHash)) return;
+            UCL_ProjectEditorPrefs.SetString(StatSigPrefKey, s_CachedStatSig);
+            UCL_ProjectEditorPrefs.SetString(SourceHashPrefKey, s_CachedSourceHash);
+        }
+
         /// <summary>清掉同步狀態快取 —— 生成後或使用者手動要求時呼叫，下次查詢會重算。</summary>
         public static void InvalidateSyncCache()
         {
             s_LastCheckTime = -1;
             s_CachedStatSig = null;
             s_CachedSourceFiles = null;     // 檔案清單也一併重掃（新增/刪除 Cmd 檔後才需要）
+            // prefs 也要清，否則下次 SeedCacheFromPrefs 會把剛清掉的那份載回來（清了等於沒清）
+            UCL_ProjectEditorPrefs.SetString(StatSigPrefKey, "");
+            UCL_ProjectEditorPrefs.SetString(SourceHashPrefKey, "");
         }
 
         // 便宜的變更偵測：只 stat 不讀內容。格式為「相對路徑|mtime ticks|長度」串接後雜湊。
@@ -510,12 +548,16 @@ namespace UCL.Core.EditorLib.AgentCommands
             s_LastCheckTime = now;
 
             // ② stat 簽章沒變 → 來源檔沒動過，沿用上次算出的內容雜湊（不讀檔）
+            //    先從 prefs 載回上次的簽章/雜湊 —— 記憶體快取撐不過 domain reload，
+            //    而 AutoSync 正好每次編譯後跑（見 SeedCacheFromPrefs 的區塊註解）。
+            SeedCacheFromPrefs();
             string sig = ComputeStatSignature();
             currentHash = (sig == s_CachedStatSig && s_CachedSourceHash != null)
                 ? s_CachedSourceHash
                 : ComputeSourceHash();
             s_CachedStatSig = sig;
             s_CachedSourceHash = currentHash;
+            PersistCacheToPrefs();
 
             bool result = IsInSyncUncached(currentHash, out artifactHash);
             s_CachedArtifactHash = artifactHash;
@@ -558,11 +600,19 @@ namespace UCL.Core.EditorLib.AgentCommands
     //   把「上次檢查時間」寫回產物等於親手把剛消滅的 diff 噪音請回來，而且會讓每台機器
     //   互相覆寫對方的時間戳 —— 那是 per-machine 狀態，本來就不該進版控。
     // ===========================================================
+    // 區塊職責：編譯完成後讓產物跟上來源 —— 「新鮮」這件事由**內容**決定，不由時間決定。
+    // 物理意義：2026-08-14 改版前這裡是**每日節流**：未到期且產物存在就直接 return，連 hash 都不比。
+    //          於是改完 Cmd 的 C# 之後，產物最多 24 小時都是過期的，而過期時 Python 端預檢
+    //          **自動降級成不擋** —— 那行降級警告因此天天出現，被讀成背景音（判準 1：假警報比沒有警報更糟）。
+    //          節流的原因是真的：ComputeSourceHash 要讀 52 個檔完整 bytes（實測 ~1.1s）。
+    //          但 IsInSync 早就有 stat 簽章那層便宜閘（~1ms），只是它的快取活不過 domain reload，
+    //          所以每次編譯都會落到完整雜湊 —— 節流其實是在迴避「快取沒跨 reload」這件事。
+    //          把簽章跨 reload 保存之後（見 SeedCacheFromPrefs），便宜閘真的變便宜，節流就不再需要。
+    // 數值影響：未動過 Cmd 來源的編譯 ≈ 52 次 stat；動過才付 1.1s 並重寫產物。
+    //          **不再有「過期但沒人補」的窗口** —— 最多過期一次編譯的時間。
     [UnityEditor.InitializeOnLoad]
     public static class UCL_CmdSchemaAutoSync
     {
-        /// <summary>節流間隔 — 每台機器每天最多自動觸發一次。</summary>
-        public static readonly TimeSpan Interval = TimeSpan.FromDays(1);
 
         static UCL_CmdSchemaAutoSync()
         {
@@ -577,21 +627,19 @@ namespace UCL.Core.EditorLib.AgentCommands
                 // 停用中 → 連檢查都不做（「停止更新產物」的字面意思）。擋在最前面，零成本返回。
                 if (UCL_CmdSchemaExporter.PreflightDisabled) return;
 
-                DateTime last = UCL_CmdSchemaExporter.LastAutoSyncUtc;
                 DateTime now = DateTime.UtcNow;
 
-                // 區塊職責：產物不存在 → **無視每日節流，立刻生成**（Tim 2026-07-30 拍板）
-                // 物理意義：產物是 per-machine 衍生物、不入 git（跨機器 source_hash 必然不同，
-                //          入 git 只會製造永久 diff 與假過期）。於是新 clone／新機器上它一定缺席，
-                //          而缺席時 Python 端會**整個跳過參數預檢**（fail-open）——
-                //          若還要再等最多 24 小時的節流才生成，等於白白讓預檢空窗一天。
-                //          「缺檔」與「檔舊了」是兩種不同狀況：後者可以慢慢來，前者要立刻補。
-                // 數值影響：只在檔案不存在時繞過節流；生成後仍會記錄時間戳，之後回到每日節奏。
+                // 區塊職責：產物不存在 → 立刻生成（Tim 2026-07-30 拍板）
+                // 物理意義：缺席時 Python 端會**整個跳過參數預檢**（fail-open），所以一刻都不能等。
+                //          「缺檔」與「檔舊了」是兩種不同狀況，但改用內容判定之後兩者都是立刻補 ——
+                //          差別只剩「缺檔連 hash 都不必算」。
+                // ⚠ 舊註解在這裡寫「產物是 per-machine 衍生物、不入 git」——**那是假的**：
+                //   commands_schema.json 確實被 AgentCommands submodule 追蹤（2026-08-14 實查）。
+                //   兩處註解互相矛盾（ComputeSourceHash 上方寫「入 git 是主要理由」），
+                //   留此記錄；要改哪一邊是資料歸屬決定，不在本次改動範圍。
                 bool missing = !File.Exists(UCL_CmdSchemaExporter.SchemaPath);
-                // 節流：未到期且產物已存在 → 直接返回（「不做事」的分支，不算雜湊、不碰檔案）
-                if (!missing && last != DateTime.MinValue && now - last < Interval) return;
 
-                UCL_CmdSchemaExporter.LastAutoSyncUtc = now;   // 先記時間，避免失敗時每次編譯都重試
+                UCL_CmdSchemaExporter.LastAutoSyncUtc = now;   // 純資訊（面板顯示「上次檢查」），不再當閘門
                 if (missing)
                 {
                     var rm = UCL_CmdSchemaExporter.Export();
@@ -600,18 +648,20 @@ namespace UCL.Core.EditorLib.AgentCommands
                     return;
                 }
                 // 已同步 → 什麼都不必做（out 需具名：本專案 C# 版本不接受無型別的 `out _`）
+                // IsInSync 內含 stat 簽章便宜閘：來源沒動過時只 stat 不讀檔（~1ms），
+                // 這就是拿掉日期節流之後仍然不卡編譯的原因。
                 string artifactHash, currentHash;
                 if (UCL_CmdSchemaExporter.IsInSync(out artifactHash, out currentHash)) return;
 
                 var r = UCL_CmdSchemaExporter.Export();
-                Debug.Log($"[CmdSchema] 每日自動同步：{(r.Written ? "已更新" : "內容未變")} "
+                Debug.Log($"[CmdSchema] 來源變動 → 自動同步：{(r.Written ? "已更新" : "內容未變")} "
                         + $"— {r.CommandCount} 個 cmd（{r.SpecCount} 個有 ArgsSpec）→ {r.Path}\n"
                         + "（手動同步：控制台 → Cmd 後台管理頁，或 run_cmd.py run ExportCmdSchema）");
             }
             catch (Exception e)
             {
                 // 自動同步是加值機制，失敗絕不可影響編譯流程
-                Debug.LogWarning($"[CmdSchema] 每日自動同步失敗（不影響編譯）：{e.Message}");
+                Debug.LogWarning($"[CmdSchema] 編譯後自動同步失敗（不影響編譯）：{e.Message}");
             }
         }
     }

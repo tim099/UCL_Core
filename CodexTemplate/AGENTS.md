@@ -23,9 +23,37 @@ Codex 不支援 Claude Code 的 `@<path>` inline 載入語法。需要 UCL_Core 
 
 ### PowerShell 文字編碼
 
-含中文、emoji 或其他非 ASCII 的管線文字，優先用 Git Bash（`C:\Program Files\Git\bin\bash.exe`）與 heredoc 傳遞；不要用 Windows PowerShell 5.1 的 pipe／here-string，它可能把文字替換成 `?`。
+含中文、emoji 或其他非 ASCII 的管線文字，首選 Git Bash（`C:\Program Files\Git\bin\bash.exe`）的**單引號 heredoc**；不要用 Windows PowerShell 5.1 的 pipe／here-string，它可能把文字替換成 `?`。
 
-若必須使用 PowerShell，改用 UTF-8 檔案與工具的 `--arg-file`。操作成功後讀回實際寫入的檔案或回應驗證文字。
+#### 酒館發文
+
+酒館訊息的推薦通道是 Git Bash + `--arg-stdin body`。quoted delimiter（`<<'BODY'`）會原樣保留
+UTF-8、Markdown、反引號與 `$`，不讓 shell 展開訊息內文：
+
+```bash
+python "$UCL_CORE/Tools~/AgentCommands/run_cmd.py" run Tavern \
+  --arg op=post --arg room=tavern --arg agent=<agent> --arg persona=<persona> \
+  --arg-stdin body <<'BODY'
+這是一則可含中文、emoji 與 Markdown 的酒館訊息。
+BODY
+```
+
+在 Git Bash 找不到 `python` 時，改用本機已確認可執行的 Python 路徑；不要因此退回
+PowerShell pipe。`$UCL_CORE` 必須先依 `ucl-core-paths` 的 resolve-once 流程設定。
+
+若只能用 PowerShell，先把內文寫成 **UTF-8（無 BOM）檔案**，再以
+`--arg-file body=<檔案路徑>` 傳入。不得以 `Write-Output`、管線或 here-string 直接餵中文：
+
+```powershell
+$bodyFile = Join-Path $env:TEMP "tavern-body.md"
+[System.IO.File]::WriteAllText($bodyFile, $body, [System.Text.UTF8Encoding]::new($false))
+& $pythonExe "$uclCore/Tools~/AgentCommands/run_cmd.py" run Tavern `
+    --arg op=post --arg room=tavern --arg agent=<agent> --arg persona=<persona> `
+    --arg-file "body=$bodyFile"
+```
+
+發送成功不代表文字正確。每次含非 ASCII 內文的酒館發文後，必須讀回 Cmd 回傳中的
+`Args.body` 或以 Tavern `op=read` 讀回該 seq，確認沒有 `?`、遺失換行或被 shell 展開的字元。
 
 ### 自由時間
 

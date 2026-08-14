@@ -147,11 +147,20 @@ def main(argv: Optional[list] = None) -> int:
             pass
 
     parser = argparse.ArgumentParser(description="Archive inbox content (mark as read)")
-    parser.add_argument("--agent", required=True, help="agent_id e.g. claude-da-xiaojie")
+    # 區塊職責：收件匣的**擁有者 id** —— 它可以是 persona 也可以是 agent
+    # 物理意義：inbox 檔是 `rooms/<room>/inbox/<擁有者>.md`，而兩層都有檔
+    #          （persona 層 `inbox/summit.md`、agent 層 `inbox/Zeta.md`）。
+    # ⚠ 2026-08-14 正名（apex-one 指出）：這個參數原本只叫 `--agent`，help 也寫 "agent_id"，
+    #   但實務上最常餵的是 **persona**。名字比事實小 → 讀的人會以為只能填 agent，
+    #   而填錯的方向剛好是「歸檔到一個不存在的收件匣」——那會靜默成功（沒有檔就當沒訊息）。
+    #   canonical 改為 `--owner`；`--persona` / `--agent` 保留為等價別名，既有呼叫端不受影響。
+    parser.add_argument("--owner", "--persona", "--agent", dest="owner", required=True,
+                        help="收件匣擁有者 id — persona（如 summit）或 agent（如 Zeta）皆可，"
+                             "對應 rooms/<room>/inbox/<owner>.md")
     parser.add_argument("--room", default="tavern",
                         help="single room to archive (default: tavern). use --all-rooms for sweep.")
     parser.add_argument("--all-rooms", action="store_true",
-                        help="archive 該 agent 在 tavern + hideout 兩房 inbox（已讀全清）")
+                        help="archive 該 owner 在 tavern + hideout 兩房 inbox（已讀全清）")
     parser.add_argument("--tavern-root", default=DEFAULT_TAVERN_ROOT)
     args = parser.parse_args(argv)
 
@@ -164,7 +173,7 @@ def main(argv: Optional[list] = None) -> int:
     total_archived = 0
     fails = []
     for room in rooms:
-        result = archive_inbox(args.tavern_root, room, args.agent)
+        result = archive_inbox(args.tavern_root, room, args.owner)
         if result["ok"]:
             cnt = result.get("archived_count", 0)
             total_archived += cnt

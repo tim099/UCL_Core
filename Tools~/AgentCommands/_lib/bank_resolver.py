@@ -18,6 +18,7 @@ Canonical 規則 (Tim 2026-06-04 拍板):
 """
 
 import json
+import sys as _sys
 from pathlib import Path
 
 
@@ -101,8 +102,27 @@ def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
     for combo in reg.get("agent_model_combos", []):
         if combo["agent"] == canonical:
             return combo["bank_account"]
-    # Step 4: 命名慣例 fallback（canonical 仍認不出 → 開新 bank）
-    return f"{canonical}-da-xiaojie"
+    # Step 4: 認不出 → **原樣回傳 canonical 名並大聲警告，絕不 derive 新 bank 名**
+    #
+    # ⚠ 2026-08-14 修（summit）：本步原本是 `return f"{canonical}-da-xiaojie"` ——
+    #   「registry 認不出 → 隱含開新 bank」。那句話讀起來像便利功能，實際是**孤兒帳戶製造機**：
+    #   它會憑空造出一個沒有主人的帳號名，而錢就落在那裡，沒有任何一層會出聲。
+    #
+    #   實查 12,742 筆 ledger 留著它的指紋：`gemini-da-xiaojie`(94 token)、
+    #   `zeta-da-xiaojie`(3)、`ClaudeCode-da-xiaojie`(1)、`tim099-da-xiaojie`(1)，
+    #   以及最有說服力的 `antigravity-da-xiaojie-da-xiaojie`(**雙後綴**) ——
+    #   derive 跑在一個已經 derive 過的名字上。
+    #
+    #   同期 C# 端（UCL_TreasuryAccountResolver）對同一個問題的答案是相反的：
+    #   「查不到就標記 Unresolved 並原樣通過，絕不 derive、絕不 mint」。
+    #   兩套實作對同一問題給出相反答案 = 已經在產出的 split-brain。本步向 C# 對齊。
+    #
+    #   為什麼是「原樣回傳」而不是丟例外：拒絕會讓一筆真實勞動的薪水直接消失，
+    #   而標記只是讓它留在看得見的地方等人歸戶。**標記比丟棄安全。**
+    print(f"⚠ [bank_resolver] agent '{agent}' 查無登記的 bank（canonical='{canonical}'）—— "
+          f"原樣回傳，不 derive。錢會落在孤兒帳戶，請到銀行後台補登記或加別名。",
+          file=_sys.stderr)
+    return canonical
 
 
 class PersonaResolutionError(LookupError):

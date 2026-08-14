@@ -45,7 +45,6 @@ _REPO_ROOT = _resolve_repo_root()
 
 _SESSIONS_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "work_sessions.json"
 _QUOTA_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "agent_bonus_quota.json"
-_LEDGER_ROOT = _REPO_ROOT / "AgentCommands" / "Treasury" / "ledger"
 _PERSONAS_DIR = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "personas"
 # run_cmd.py is sibling — UCL_Core/Tools~/AgentCommands/run_cmd.py.
 _RUN_CMD = _HERE / "run_cmd.py"
@@ -67,7 +66,6 @@ _br_spec.loader.exec_module(_br_mod)
 _REPO_ROOT = _resolve_repo_root()
 
 _QUOTA_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "agent_bonus_quota.json"
-_LEDGER_ROOT = _REPO_ROOT / "AgentCommands" / "Treasury" / "ledger"
 _PERSONAS_DIR = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "personas"
 _RUN_CMD = _HERE / "run_cmd.py"
 _REGISTRY_META_PATH = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "_registry_meta.json"
@@ -155,48 +153,45 @@ def tavern_post(sender_id: str, body: str, meta: dict, persona: str = "") -> boo
         return False
 
 
-# ─── Treasury ledger entry (direct write, Phase 1 bypass Cmd_Treasury) ──
+# ─── Treasury 薪資入帳（走 Cmd_Treasury，不再直寫 ledger）──────────────
 
 def fire_salary_credit(bank: str, persona: str, amount: int, session_id: str, checkpoint: str) -> str:
-    """Write a credit ledger entry. Returns the file path."""
-    ts = utcnow_iso()
-    n = datetime.datetime.utcnow()
-    fname = f"{n.strftime('%H%M%S')}_{n.microsecond // 1000:03d}_{short_uuid()}__credit.json"
-    date_dir = _LEDGER_ROOT / n.strftime("%Y-%m-%d")
-    date_dir.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "ts": ts,
-        "uuid": short_uuid(6),
-        "type": "credit",
-        "amount": amount,
-        "currency": "tavern_token",
-        "account_id": bank,
-        "source_kind": "work_session_salary",
-        "source_ref": f"ws:{session_id}:{checkpoint}:{persona}",
-        "source_description": f"上班 session 薪資 — {persona} {checkpoint}",
-        "balance_before": None,
-        "balance_after": None,
-        "sig_agent_id_claimed": "system",
-        "sig_process_id": str(os.getpid()),
-        "sig_env_marker": "work_session_prototype",
-        "sig_cmd_id": "",
-        "signature_mismatch": False,
-    }
-    path = date_dir / fname
-    path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+    """上班 session 薪資入帳。成功回傳可追溯的 source_ref，失敗回空字串。
 
-    # T29→2026-06-06 fix (Tim QA, summit): 走 UCL_Core canonical treasury_ledger 的 backfill。
-    # 物理意義: 不回填的話薪資 entry 的 balance_before/after 永遠 null → Discord 進帳卡顯示
-    #          「餘額 None → None」(四個 session 全中)。
-    # 2026-07-28: 本步只做 balance backfill — Discord 廣播由 C# UCL_DiscordTreasuryMirror 依
-    #          cursor pull 撿走 (python spawn 路徑已整條移除)。
-    # 數值影響: 不擋 salary 主流程; lib 缺 → silent skip。
+    區塊職責：把薪資結算交給唯一的金流寫入端（C# UCL_TreasuryLedger），本函式只負責組參數。
+    物理意義：本函式原本**直接寫 ledger json 檔**（原註解自承 "direct write, Phase 1 bypass
+             Cmd_Treasury"）。那條旁路繞過了 C# 端的全部保護：
+               · 帳號解析與歸一（agent 名大小寫 / persona 名 / 別名）
+               · 已銷戶帳號拒收
+               · balance_before/after 計算（原本靠事後 backfill 補，補不到就是兩個 null）
+               · 餘額快取即時累進
+             2026-08-14 實查：孤兒帳戶裡 `gemini-da-xiaojie` / `zeta-da-xiaojie` /
+             `ClaudeCode-da-xiaojie` / `antigravity-da-xiaojie-da-xiaojie`（**雙後綴**）
+             都是這條路配合 bank_resolver 的 derive 產生的。
+    數值影響：金額與 source_kind 不變（`work_session_salary`，歷史查詢連續性優先）；
+             改變的是**誰來寫**。balance 欄位由 C# 自填，事後 backfill 不再需要。
+    邊界：Cmd 需要 Editor 在線。薪資結算本來就發生在有 Editor 的場次（直播陪看），
+         而「寧可失敗也不要繞過收銀台」是刻意取捨 —— 靜默直寫的帳比沒入帳的帳難查。
+    """
+    if amount <= 0:
+        return ""
+    ref = f"ws:{session_id}:{checkpoint}:{persona}"
     try:
         sys.path.insert(0, str(_HERE))
-        from _lib.treasury_ledger import finalize_entry
-        finalize_entry(path)   # path 為絕對路徑 (date_dir under _LEDGER_ROOT); lib 自 self-locate repo root
-    except Exception:
-        pass   # silent skip — 廣播失敗絕不影響已落盤的 ledger entry
+        from _lib.treasury_cmd import treasury_credit
+        ok, out = treasury_credit(
+            account=bank, amount=amount,
+            source_kind="work_session_salary", source_ref=ref,
+            description=f"上班 session 薪資 — {persona} {checkpoint}",
+            caller="system",          # 內部自動入帳，非使用者發起
+        )
+    except Exception as e:
+        print(f"❌ 薪資入帳失敗（{type(e).__name__}: {e}）—— 未入帳，請人工補", file=sys.stderr)
+        return ""
+    if not ok:
+        print(f"❌ 薪資入帳被拒：{out}", file=sys.stderr)
+        return ""
+    return ref
 
     return str(path.relative_to(_REPO_ROOT))
 

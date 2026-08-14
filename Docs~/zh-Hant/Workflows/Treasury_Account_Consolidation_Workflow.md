@@ -208,6 +208,14 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Invoke \
    不要再加第三個 —— 同一張表三處可寫的漂移不會報錯。
 7. **後台頁的 `Draw*` 內不准直接算餘額或跑解析** —— 那是每 repaint frame 一次。
    一律走快取，在「資料重載 / 操作後 / Refresh」時才重算。
+8. **止漏只覆蓋走該入口的路徑。** 解析長在 `UCL_TreasuryLedger.Credit/Debit`，
+   所以**繞過它的旁路完全不受保護**。2026-08-14 找到的那條：
+   `_lib/session_common.fire_salary_credit` 直接寫 ledger json 檔（原註解自承
+   `direct write, Phase 1 bypass Cmd_Treasury`），配合 Python resolver 當時的
+   「認不出就 derive `{名字}-da-xiaojie`」，正是 `gemini-da-xiaojie` /
+   `antigravity-da-xiaojie-da-xiaojie`（**雙後綴**）這批孤兒的來源。
+   兩者都已修（改走 `op=credit`；derive 改成原樣回傳 + 警告）。
+   **判準：問「還有誰能寫 ledger」，不要問「我的解析寫對了嗎」。**
 
 ---
 

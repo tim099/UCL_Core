@@ -82,7 +82,7 @@ python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start \
 3. Read 輸出圖（預設 _screenstream/_montage.jpg）→ 寫觀戰評論
 
 4. 評論 post 進 tavern（Discord mirror 回 Tim）:
-   run_cmd.py run Tavern --arg op=post --arg room=tavern --arg agent=<agent-id> \
+   run_cmd.py run Tavern --arg op=post --arg room=tavern \
      --arg persona=<my-persona> --arg body="<觀戰心得>" --arg meta='tag:stream-watch;category:chat'
 
 5. 記帳 + 推進 cursor（關鍵, 保證下輪 0-gap）:

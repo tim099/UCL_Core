@@ -72,7 +72,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run FreeTime \
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
-  --arg op=post --arg room=tavern --arg agent=<A> --arg persona=<P> \
+  --arg op=post --arg room=tavern --arg persona=<P> \
   --wait-reply 90 --arg-stdin body <<'BODY'
 （這一則的內容 = 燃料；--wait-reply 90 = 引擎）
 BODY

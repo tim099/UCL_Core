@@ -90,10 +90,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     Required = new[] { "room", "agent" },
                     // id > sender_id > sender（注意順序與 post 相反 —— join 的 canonical 是 id）
                     Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                // post 的身分欄位是 **persona**：發言認 persona，顯示身分與計酬帳號都由它推導。
+                // （sender / sender_id / agent_id 等別名仍會被歸一到 agent 欄並被接受，
+                //   但它只影響顯示身分、不決定錢，且不再是必填 —— 呼叫端只要給 persona。）
                 ["post"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "agent", "body" },
-                    // sender > sender_id > id
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Required = new[] { "room", "persona", "body" },
+                    Aliases = new Dictionary<string, string> {
+                        ["sender_persona"] = "persona",
+                        ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
                 ["read"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["members"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 // leave 在本檔沒有任何 reject —— 刻意不宣告 required（多寫會擋掉合法呼叫）
@@ -491,7 +495,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 數值影響：null/empty = legacy 行為不變；有值 = 寫進 message json sender_persona 欄位
             string senderPersona = GetArg(args, "persona", GetArg(args, "sender_persona", ""));
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("post 缺少 room"); return; }
-            if (string.IsNullOrEmpty(senderId)) { RejectLastOp("post 缺少 sender（身分ID；可用 sender= / sender_id= / id=）"); return; }
+            if (string.IsNullOrEmpty(senderPersona)) { RejectLastOp("post 缺少 persona —— 發言一律認 persona"); return; }
+
+            // ===========================================================
+            // 區塊職責：sender_id 由 persona 推導（呼叫端只需要給 persona）
+            // 物理意義：sender_id 是**顯示身分**（identities.json / 頭像資產 / Discord 使用者名 /
+            //          solo-alter 配對都以它為鍵），此前要呼叫端自己填，而填錯不會有人叫 ——
+            //          填成 persona 名或大小寫不同的 agent 名，都會在下游安靜生出新身分與新帳戶。
+            // 數值影響：純顯示身分的補值。**錢不走這裡**（計酬一律由 persona 解析，見
+            //          TryAutoCreditPostReward）—— 兩者刻意分離，避免顯示身分再次變成金流的路由依據。
+            // 邊界：推導不出來（persona 未註冊於 registry）→ 退回用 persona 名本身當顯示身分，
+            //      不擋發言。發言權不該綁在帳號登記上。
+            // ===========================================================
+            if (string.IsNullOrEmpty(senderId))
+            {
+                var idres = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver.Resolve(senderPersona);
+                senderId = idres.IsUnresolved ? senderPersona : idres.AccountId;
+            }
             if (string.IsNullOrEmpty(body)) { RejectLastOp("post 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
@@ -882,7 +902,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string categoryMeta = (earlyMeta != null && earlyMeta.TryGetValue("category", out var catVal)) ? catVal : "";
                 if (!isAutoBroadcast)
                 {
-                    TryAutoCreditPostReward(senderId, roomId, seq, categoryMeta, idempKey);
+                    TryAutoCreditPostReward(senderId, senderPersona, roomId, seq, categoryMeta, idempKey);
                 }
 
                 // Sub-rule B: token_parse (T44/T45) — body 內 N+token 字樣解析數值 → 自動 credit
@@ -1010,7 +1030,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //     這是 work-channel 的現況，也正是 2026-07-29 之前的實際行為（刻意還原，不是疏漏）
         //   - fail-swallow：整段 try-catch，結算失敗只 log warning，不擋 post 主流程也不擋其他 sub-rule
         // ===========================================================
-        static void TryAutoCreditPostReward(string senderId, string roomId, int seq, string categoryMeta, string idempKey)
+        static void TryAutoCreditPostReward(string senderId, string payPersona, string roomId, int seq, string categoryMeta, string idempKey)
         {
             try
             {
@@ -1027,16 +1047,41 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 var targetGroup = UCL_TavernCategoryRoutingAsset.ResolveTargetGroup(categoryMeta);
 
+                // ===========================================================
+                // 區塊職責：計酬帳號由 **persona** 決定，不是 sender_id
+                // 物理意義：sender_id 是「顯示身分」，可以是 agent 名 / bank / `discord:<uid>` / 系統 NPC；
+                //          而錢要落在 bank。此前直接拿 sender_id 當帳號，於是
+                //          `--arg agent=Zeta` 就在 `Zeta` 開了一個有錢沒主人的帳戶（實測 310 token，
+                //          且到 2026-08-14 當天仍在增加）。
+                // 數值影響：persona 解析得到正式帳號才計酬；**解析不出來一律不計酬**（不再開新孤兒）。
+                //          這一條規則同時涵蓋三種發言者，不必寫三個特例：
+                //            · Discord 訪客 `discord:<uid>` —— 沒有 persona → 不計酬（Tim 2026-08-14 拍板）
+                //            · 系統 NPC（酒保 tavern-keeper）—— 非正式帳號 → 不計酬
+                //            · 人類 —— 沒有 persona → 不計酬
+                // 邊界：**不計酬不擋發言**。發言權與收款權是兩回事，把它們綁在一起會讓
+                //      「沒登記的人不能說話」，那不是這條規則要解決的問題。
+                // ===========================================================
+                var payee = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver.Resolve(payPersona ?? "");
+                if (string.IsNullOrEmpty(payPersona) || payee.IsUnresolved)
+                {
+                    Debug.Log($"[Tavern] post_reward skip — persona={(string.IsNullOrEmpty(payPersona) ? "(未帶)" : payPersona)}"
+                              + $" 解析不到正式帳號（sender={senderId}）→ 本則不計酬。"
+                              + " 若這是應該領薪的身分，去銀行後台補登記或加別名，而不是讓它落進孤兒帳戶。");
+                    return;
+                }
+
                 string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_work_post" : $"work_post_{roomId}_{seq}";
                 UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
-                    accountId: senderId,
+                    accountId: payee.AccountId,
                     amount: 1,
                     sourceKind: "work_post",
                     sourceRef: PostRewardSourceRef(roomId, seq),
                     description: $"post reward: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
                     callerAgentId: "system",
                     cmdId: cmdId);
-                Debug.Log($"[Tavern] post_reward auto-credit +1 → {senderId} (group={targetGroup.ID}, category={categoryMeta})");
+                Debug.Log($"[Tavern] post_reward auto-credit +1 → {payee.AccountId}"
+                          + $"（persona={payPersona}{(payee.Changed ? $" via {payee.Kind}" : "")}, sender={senderId},"
+                          + $" group={targetGroup.ID}, category={categoryMeta})");
             }
             catch (Exception ex)
             {

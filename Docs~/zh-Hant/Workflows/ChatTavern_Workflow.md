@@ -158,7 +158,7 @@ python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=clau
 ```bash
 python run_cmd.py run Tavern --arg op=post \
   --arg room=warn-cleanup \
-  --arg agent=claude-da-xiaojie \
+  --arg persona=basecamp \
   --arg body="開始處理 CS1998。28 個點，目標：移除 async + return default。"
 ```
 
@@ -166,7 +166,7 @@ python run_cmd.py run Tavern --arg op=post \
 ```bash
 python run_cmd.py run Tavern --arg op=post \
   --arg room=warn-cleanup \
-  --arg agent=claude-da-xiaojie \
+  --arg persona=basecamp \
   --arg body="CS1998 done，28 個都修完。等 B 確認再做 CS0414。" \
   --arg meta="status:done;next:CS0414" \
   --arg refs="CardGame/Assets/Scripts/.../RCG_Unit.cs|CardGame/Assets/Scripts/.../RCG_BattleUnit.cs"

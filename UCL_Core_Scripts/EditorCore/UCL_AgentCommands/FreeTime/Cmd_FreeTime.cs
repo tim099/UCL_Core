@@ -160,6 +160,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"- session: `{aSessionId}`（state: `{SessionPath(iPersona)}`）");
             aR.AppendLine($"- 免費像素: **{FREE_PIXELS_PER_SESSION} 顆**（canvas.py place --pay auto 自動優先用；per-session 清零{(aPrevForfeit > 0 ? $"，上場作廢 {aPrevForfeit} 顆" : "")}）");
             aR.AppendLine($"- 酒館開場宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort，不影響 session）")}");
+            AppendOnlineSection(aR, iPersona);
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑活動開做（無明確意圖 → 前 3 名挑一；有明確意圖 → 自由意志優先，但開場 post 註明「本輪未跟骰」）。");
@@ -235,36 +236,35 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aSession["rounds"] = new JsonData(aRound);
             AtomicWrite(SessionPath(iPersona), aSession.ToJsonBeautify());
 
-            int aRemain = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
+            double aRemainSec = Math.Max(0, (aUntil - aNow).TotalSeconds);
+            int aRemain = (int)(aRemainSec / 60);
             var (aList, aSource, aIsLive) = RollActivities(aRemain);
             (int aGranted, int aUsedNow) = ReadFreePixelUsage(iPersona);
-            // 末段判定（apex-one seq 11180：剩最後幾分鐘時，next 該給的不是新骰面）——
-            // 量了剩餘時間就要用在建議上，否則 Cmd 的建議沒有鑑別力。
-            bool aTail = aRemain < 5;
+            string aRemainText = aRemainSec < 60 ? $"{(int)aRemainSec} 秒" : $"{aRemain} 分";
 
+            // ⚠ 這裡曾經有一段「末段提示」（剩 N 分改印『不建議起新活動』而不是新骰面）。
+            // **2026-08-14 Tim 拍板拔掉**，理由不是它壞了，是它防的不是真問題：
+            //   截止是軟的 —— 晚起的活動只會讓場次順延，本來就不需要擋；停止由 Cmd 判定即可。
+            // 而它的代價是實測到的（apex-one 讀 Sirius 的 log）：三分鐘內連吐 5 次同一句話，
+            //   **同一句警語出現五次就會被訓練成背景音** —— 下一場真正該停手時那行字已經沒有重量。
+            // 中途曾改成「門檻可設定」（預設 60 秒，Tim 實際設 3 秒＝等同關閉），但那產生了更糟的形狀：
+            //   門檻 3 秒／設 0／功能根本不存在，**在回傳檔上輸出完全相同** ——
+            //   不只是「燈不會亮」，是連燈座都看不到（summit 當場在自己的回傳上撞到）。
+            // 所以修法不是把燈調暗，是把燈拆掉：**加規則之前先問，這是在防真實問題，
+            //   還是在防「我沒有把問題本身移走」。** 這次是後者。
             var aDiceBody = new StringBuilder();
-            aDiceBody.AppendLine($"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemain} 分）：");
-            if (aTail)
-                aDiceBody.AppendLine($"⏳ **剩 {aRemain} 分 —— 不建議起新活動**。收尾現有的；最後一件做完再跑 step=next 收工。");
-            else
-            {
-                if (aIsLive) aDiceBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制）");
-                for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
-                aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
-            }
+            aDiceBody.AppendLine($"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）：");
+            if (aIsLive) aDiceBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制）");
+            for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
+            aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
             int aDiceSeq = await TavernPost(iPersona, aDiceBody.ToString(), "dice-roll", iToken);
 
             AppendTimeFields(aR, aNow, aUntil);
             aR.AppendLine($"- 輪次: **{aRound}**");
             aR.AppendLine($"- 免費像素: 已用 {aUsedNow}/{aGranted}");
             aR.AppendLine($"- 換骰宣告: {(aDiceSeq > 0 ? $"seq **{aDiceSeq}**" : "未發（best-effort）")}");
-            if (aTail)
-            {
-                aR.AppendLine($"## dice（末段 —— 剩 {aRemain} 分）");
-                aR.AppendLine($"- ⏳ **不建議起新活動**（新骰面已略 —— 在任何剩餘時間下都輸出同一份建議的 Cmd，建議沒有鑑別力）。");
-                aR.AppendLine("- 收尾現有的活動或對話；最後一件做完再跑 step=next，由 Cmd 判定收工。");
-            }
-            else AppendDiceSection(aR, aList, aSource, aIsLive);
+            AppendOnlineSection(aR, iPersona);
+            AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
             aR.AppendLine("2. 活動事件自然結束 → 再跑 step=next（**截止是軟的**：時間到不打斷進行中活動，最後一件做完跑 next 才通知收工）。");
@@ -282,6 +282,48 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 數值影響：兩層都空 → 空清單（Cmd 版不帶內建 fallback —— 共用層 md 已 scaffold 落地，
         //          掃不到即環境異常，該顯形不該遮掩）；直播中 stream-watch 鎖第 1 位（不強制）。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：把「現在還有誰在線」端進回傳檔（Tim 2026-08-14 追加）。
+        // 物理意義：自由時間有一半的活動是**要有人才成立**的 —— 下棋、TRPG、聊天。
+        //          「誰在」這件事以前只能自己去跑 catchup 才知道，等於把一個能決定
+        //          選哪個活動的事實放在骰面之外。骰面說「遊戲」而沒人在線，那個建議是空的。
+        // 物理意義（來源）：在線判準走 UCL_ActivePersonaLocks.ListOnline() ——
+        //          **lock 檔存在且未過期**，不是 persona registry 的 status 欄
+        //          （登出流程沒走完時 status 會停在 online，拿它當來源會 @ 到不在的人）。
+        //          這是本專案唯一那份判定，不在這裡重造第二份。
+        // 數值影響：只印，不改任何狀態；自己不列進「其他人」（自己在不在線不需要被告知）。
+        //          清單為空時**明說是空的並附上「空≠沒人，只是查不到 lock」** ——
+        //          空清單被讀成「今天沒人」比讀成「查不到」危險，前者會讓人不去問。
+        // ===========================================================
+        static void AppendOnlineSection(StringBuilder ioR, string iSelf)
+        {
+            List<UCL_PersonaLockInfo> aLocks;
+            try { aLocks = UCL_ActivePersonaLocks.ListOnline(); }
+            catch (Exception e)
+            {
+                ioR.AppendLine($"## 在線同事\n- ⚠ 讀取失敗（{e.Message}）—— 不代表沒人，代表沒讀到。");
+                return;
+            }
+            var aOthers = new List<UCL_PersonaLockInfo>();
+            foreach (var l in aLocks)
+                if (!string.Equals(l.Persona, iSelf, StringComparison.OrdinalIgnoreCase)) aOthers.Add(l);
+
+            ioR.AppendLine($"## 在線同事（{aOthers.Count} 位 —— 約棋局 / TRPG / 聊天找得到人）");
+            if (aOthers.Count == 0)
+            {
+                ioR.AppendLine("- （查不到其他人的 lock）⚠ **空 ≠ 今天沒人**，只代表現在讀不到在線紀錄 ——");
+                ioR.AppendLine("  想找人就照樣去酒館問一聲，別把空清單當成「不用問了」。");
+                return;
+            }
+            foreach (var l in aOthers)
+            {
+                string aAgent = string.IsNullOrEmpty(l.Agent) ? "?" : l.Agent;
+                string aActual = string.IsNullOrEmpty(l.ActualAgentRaw) ? "" : $" / {l.ActualAgentRaw}";
+                ioR.AppendLine($"- **@{l.Persona}**（{aAgent}{aActual}）");
+            }
+            ioR.AppendLine("- 需要對手的活動（下棋 / TRPG）先 @ 一聲再開局 —— 開了才問等於替對方決定了他的自由時間。");
+        }
+
         struct ActivityInfo { public string id; public string name; public string how; public string path; public int minMinutes; }
 
         /// <summary>
@@ -292,27 +334,17 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         /// </summary>
         static (List<ActivityInfo> list, string source, bool isLive) RollActivities(int iRemainMinutes)
         {
-            string aCoreRel = UCL_EditorPath.CorePath;
-            string aSharedDir = string.IsNullOrEmpty(aCoreRel) ? null
-                : Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, aCoreRel, "Docs~/zh-Hant/FreeTime/Activities"));
-            string aProjectDir = Path.GetFullPath(Path.Combine(UCL_RepoPath.RepoRoot, "docs/FreeTime/Activities"));
-
-            var aMerged = new Dictionary<string, (ActivityInfo info, bool enabled)>();
+            // 掃描走 UCL_FreeTimeIO 的唯一實作（管理頁共用同一份 —— 兩份掃描器的漂移
+            // 症狀是「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯）。
+            // 過濾在 merge 之後：專案層的 enabled:false 才擋得住共用層的啟用（kotoko QA 血證）。
+            var aScanned = UCL_FreeTimeIO.ScanActivities();
             int aSharedCount = 0, aProjectCount = 0;
-            ScanActivityDir(aSharedDir, aMerged);
-            var aSharedIds = new HashSet<string>(aMerged.Keys);
-            ScanActivityDir(aProjectDir, aMerged);   // 同 id 專案層覆蓋（含停用覆蓋）
-
             var aList = new List<ActivityInfo>();
-            foreach (var kv in aMerged)
+            foreach (var a in aScanned)
             {
-                if (!kv.Value.enabled) continue;
-                aList.Add(kv.Value.info);
-                if (aSharedIds.Contains(kv.Key) && kv.Value.info.path != null
-                    && aProjectDir != null && kv.Value.info.path.StartsWith(aProjectDir, StringComparison.OrdinalIgnoreCase))
-                    aProjectCount++;   // 專案層覆蓋共用層的算專案
-                else if (aSharedIds.Contains(kv.Key)) aSharedCount++;
-                else aProjectCount++;
+                if (!a.enabled) continue;
+                aList.Add(new ActivityInfo { id = a.id, name = a.name, how = a.how, path = a.path, minMinutes = a.minMinutes });
+                if (a.isProjectLayer) aProjectCount++; else aSharedCount++;
             }
 
             // Fisher-Yates（System.Random —— 擲骰不需要密碼學強度）
@@ -357,31 +389,6 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 }
             }
             return (aList, $"UCL_Core 共用 {aSharedCount} + 專案 {aProjectCount}", aIsLive);
-        }
-
-        static void ScanActivityDir(string iDir, Dictionary<string, (ActivityInfo, bool)> ioMerged)
-        {
-            if (string.IsNullOrEmpty(iDir) || !Directory.Exists(iDir)) return;
-            foreach (var aMd in Directory.GetFiles(iDir, "*.md"))
-            {
-                if (Path.GetFileName(aMd).StartsWith("_")) continue;   // _README.md 等說明檔不算活動
-                try
-                {
-                    string aId = UCL_AwakeningService.ReadFrontmatterField(aMd, "id") ?? Path.GetFileNameWithoutExtension(aMd);
-                    string aName = UCL_AwakeningService.ReadFrontmatterField(aMd, "name") ?? Path.GetFileNameWithoutExtension(aMd);
-                    string aHow = UCL_AwakeningService.ReadFrontmatterField(aMd, "how") ?? "";
-                    bool aEnabled = !string.Equals(UCL_AwakeningService.ReadFrontmatterField(aMd, "enabled") ?? "true",
-                        "false", StringComparison.OrdinalIgnoreCase);
-                    // min_minutes（選填）：活動建議所需分鐘 —— 剩餘時間不足時排尾標明（不隱藏）
-                    int aMinMinutes = 0;
-                    int.TryParse(UCL_AwakeningService.ReadFrontmatterField(aMd, "min_minutes") ?? "", out aMinMinutes);
-                    ioMerged[aId] = (new ActivityInfo { id = aId, name = aName, how = aHow, path = aMd, minMinutes = aMinMinutes }, aEnabled);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[FreeTime] 活動 md 讀取失敗，跳過：{aMd}（{e.Message}）");
-                }
-            }
         }
 
         static bool TryGetLiveTitle(out string oTitle)

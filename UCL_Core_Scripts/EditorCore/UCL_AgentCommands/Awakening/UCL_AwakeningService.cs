@@ -343,6 +343,57 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return "";
         }
 
+        /// <summary>
+        /// 區塊職責：寫 md frontmatter 單欄（<see cref="ReadFrontmatterField"/> 的對偶，刻意放在它旁邊）。
+        /// 物理意義：只動 frontmatter 那一段，**正文一個字都不碰** —— 活動 md 的正文是給人讀的說明文件，
+        ///          用 GUI 改設定不該有機會改到它。欄位已存在→就地換值；不存在→附加在 frontmatter 尾端。
+        /// 數值影響：值含 `:`／`#`／前後空白時自動加雙引號（否則 YAML 讀回來會截斷或變成註解）。
+        ///          原子替換（.tmp → move）：半寫的 md 會讓下次掃描讀到殘缺 frontmatter。
+        /// 失敗處置：檔案不存在／沒有 frontmatter 起始 `---` → 回 false 並留 log，**不代為新建**
+        ///          （替沒有 frontmatter 的檔硬生一段，等於替使用者決定那個檔是什麼）。
+        /// </summary>
+        public static bool WriteFrontmatterField(string iPath, string iField, string iValue)
+        {
+            try
+            {
+                if (!File.Exists(iPath)) { UnityEngine.Debug.LogWarning($"[AwakeningService] frontmatter 寫入失敗，檔案不存在：{iPath}"); return false; }
+                var aLines = new List<string>(File.ReadAllLines(iPath));
+                if (aLines.Count == 0 || aLines[0].Trim() != "---")
+                {
+                    UnityEngine.Debug.LogWarning($"[AwakeningService] frontmatter 寫入失敗，缺起始 ---：{iPath}");
+                    return false;
+                }
+                int aEnd = -1;
+                for (int i = 1; i < aLines.Count; i++)
+                    if (aLines[i].Trim() == "---") { aEnd = i; break; }
+                if (aEnd < 0) { UnityEngine.Debug.LogWarning($"[AwakeningService] frontmatter 寫入失敗，缺結束 ---：{iPath}"); return false; }
+
+                string aRaw = iValue ?? "";
+                // 需要引號的情形：含分隔符/註解符、或前後有空白（YAML 會 trim 掉而使值悄悄變樣）
+                bool aNeedQuote = aRaw.Contains(":") || aRaw.Contains("#") || aRaw != aRaw.Trim();
+                string aOut = aNeedQuote ? $"\"{aRaw.Replace("\"", "\\\"")}\"" : aRaw;
+                string aLine = $"{iField}: {aOut}";
+
+                int aFound = -1;
+                string aPrefix = iField + ":";
+                for (int i = 1; i < aEnd; i++)
+                    if (aLines[i].StartsWith(aPrefix)) { aFound = i; break; }
+                if (aFound >= 0) aLines[aFound] = aLine;
+                else aLines.Insert(aEnd, aLine);
+
+                string aTmp = iPath + ".tmp";
+                File.WriteAllLines(aTmp, aLines, new UTF8Encoding(false));
+                if (File.Exists(iPath)) File.Delete(iPath);
+                File.Move(aTmp, iPath);
+                return true;
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[AwakeningService] frontmatter 寫入失敗 {iPath}: {e.Message}");
+                return false;
+            }
+        }
+
         static IEnumerable<string> WakeLetterFiles(string iPersona)
         {
             string aDir = Path.Combine(LettersDir, iPersona, "wakes");

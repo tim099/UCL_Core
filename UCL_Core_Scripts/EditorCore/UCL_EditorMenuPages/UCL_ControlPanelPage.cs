@@ -84,6 +84,8 @@ namespace UCL.Core.EditorLib.Page
 
             DrawLibraryManageSection();
             GUILayout.Space(8);
+            DrawFreeTimeAdminSection();
+            GUILayout.Space(8);
             DrawAgentCmdAdminSection();
             GUILayout.Space(8);
             DrawAgentSkillManagerSection();
@@ -112,6 +114,35 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (!aShow) return;
                 GUILayout.Label("圖書館管理頁負責既有 Books / Library 操作；閱讀心得入口可依作品名稱列出 Archive 與新 Library 的手動開啟路徑，不會讓新流程讀取 Archive。", UCL_GUIStyle.LabelStyle);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：自由時間後台入口（Tim 2026-08-14 派單）。
+        // 物理意義：活動清單（含建議時間）收在專頁，控制台只負責導流 ——
+        //          入口頁不靜默改設定（Editor Page 契約）。
+        // 數值影響：按鈕只開頁；活動的事實來源仍是 md frontmatter。
+        // ===========================================================
+        void DrawFreeTimeAdminSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "FreeTimeAdminFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🎲 自由時間管理</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟自由時間管理頁",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.85f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
+                        UCL_FreeTimeAdminPage.Create();
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                GUILayout.Label(
+                    "管理骰面上的活動項目（啟用 / 建議時間 min_minutes / 顯示名稱 / 做法）。\n"
+                    + "活動的事實來源是活動 md 的 frontmatter（UCL_Core 共用層 + 專案層，同 id 專案層覆蓋），"
+                    + "管理頁直接改那些欄位，不另存一份 override。",
+                    UCL_GUIStyle.LabelStyle);
             }
         }
 

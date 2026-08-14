@@ -72,6 +72,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          **多寫 required 會擋掉合法呼叫**（血證：Python 舊表有六處比 server 嚴）。
         //          拿不準時寧可少寫。
         // ===========================================================
+        // 區塊職責：agent 欄位的**唯一**別名表 —— ArgsSpec 與 GetAgentArg 都讀這一份。
+        // 物理意義：這張表原本被寫了 7 次（ArgsSpec 的各 op 裡 6 次 ＋ GetAgentArg 的巢狀 1 次），
+        //          於是它們可以各自漂移，而且**真的漂了**：GetAgentArg 解析
+        //          agent → agent_id → sender → sender_id，就是少了 `id`。
+        //          spec 說 `id` 是合法別名、handler 讀不到它 —— 宣告與實作不一致。
+        //          2026-08-14 實測那個分歧**從 CLI 看不見**：Python 端在送出前就把 id 改寫成 agent 了，
+        //          所以只有走 C# in-process 直呼叫的路徑（Cmd_FreeTime / GoodMorning / GoodNight）
+        //          才會現形，而它們剛好都不帶 id —— 又是「恰好沒事」而不是「不可能有事」。
+        // 數值影響：抽成一份之後，**那類漂移在結構上不可能再發生**（不是靠記得同步兩處）。
+        //          順序即優先序（見 UCL_CmdOpSpec.Aliases）：agent_id > sender > sender_id > id。
+        //          ⚠ 這張表是 agent 欄專用。`create_trpg_room` 的 `id → campaign`、
+        //            `join` 的註解等各有自己的語意，不共用本表 —— 同名不同義的別名不可以合併。
+        static readonly Dictionary<string, string> s_AgentAliases = new Dictionary<string, string>
+        {
+            ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent"
+        };
+
+        /// <summary>
+        /// agent 別名表 ＋ 該 op 專屬的額外別名（**agent 那幾條永遠先宣告**，維持既有優先序）。
+        /// 用它而不是複製整張表 —— 複製回來就等於把剛拔掉的漂移種回去。
+        /// </summary>
+        static Dictionary<string, string> AgentAliasesWith(params (string alias, string canonical)[] iExtra)
+        {
+            var aDict = new Dictionary<string, string>(s_AgentAliases);
+            foreach (var (aAlias, aCanonical) in iExtra) aDict[aAlias] = aCanonical;
+            return aDict;
+        }
+
         public override UCL_CmdArgsSpec ArgsSpec => new UCL_CmdArgsSpec
         {
             Ops = new Dictionary<string, UCL_CmdOpSpec>
@@ -89,7 +117,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 ["join"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "agent" },
                     // id > sender_id > sender（注意順序與 post 相反 —— join 的 canonical 是 id）
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Aliases = s_AgentAliases },
                 // post 的身分欄位是 **persona**：發言認 persona，顯示身分與計酬帳號都由它推導。
                 // （sender / sender_id / agent_id 等別名仍會被歸一到 agent 欄並被接受，
                 //   但它只影響顯示身分、不決定錢，且不再是必填 —— 呼叫端只要給 persona。）
@@ -97,14 +125,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     // persona **刻意不是必填**：沒帶＝匿名發言（不計酬但照發，Tim 2026-08-14）。
                     // 列進 Required 會讓系統元件（酒保 / daemon，本來就沒有 persona）發不了言。
                     Required = new[] { "room", "body" },
-                    Aliases = new Dictionary<string, string> {
-                        ["sender_persona"] = "persona",
-                        ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Aliases = AgentAliasesWith(("sender_persona", "persona")) },
                 ["read"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["members"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 // leave 在本檔沒有任何 reject —— 刻意不宣告 required（多寫會擋掉合法呼叫）
                 ["leave"] = new UCL_CmdOpSpec {
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Aliases = s_AgentAliases },
                 // wait 只 reject room；since_seq 有預設值，不是必填
                 ["wait"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["wait_check"] = new UCL_CmdOpSpec { Required = new[] { "wait_id" } },
@@ -149,12 +175,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     Aliases = new Dictionary<string, string> { ["agent"] = "actor", ["agent_id"] = "actor", ["sender"] = "actor", ["sender_id"] = "actor" } },
                 ["task_next"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "agent" },
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Aliases = s_AgentAliases },
                 ["task_state"] = new UCL_CmdOpSpec { Required = new[] { "room", "task_id" } },
                 ["task_list"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["inbox_read"] = new UCL_CmdOpSpec {
                     Required = new[] { "room", "agent" },
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Aliases = s_AgentAliases },
                 ["events_since"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
 
                 // 註（2026-08-04）：presence 系統整組移除（Tim：「整個移除好了，之後都要 per persona」）。
@@ -168,7 +194,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // ─── Session macro ───────────────────────────────────────
                 ["session_enter"] = new UCL_CmdOpSpec {
                     Required = new[] { "agent" },
-                    Aliases = new Dictionary<string, string> { ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
+                    Aliases = s_AgentAliases },
             }
         };
 
@@ -469,11 +495,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          （identity / presence 系列）自己在呼叫端補一層，別下沉到這裡。
         // 邊界：全部缺 → 回空字串，由各 op 自行 reject（本 helper 不決定必填與否）。
         // ===========================================================
+        // 區塊職責：取 agent 欄 —— **別名解析走與 ArgsSpec 同一張表、同一份實作**。
+        // 物理意義：原本是手寫的巢狀 GetArg（agent → agent_id → sender → sender_id），
+        //          與 ArgsSpec 宣告的表各寫一份，於是漂了一格：**巢狀版少了 `id`**。
+        //          spec 說 `id` 合法、handler 讀不到 —— 而那個不一致從 CLI 看不見
+        //          （Python 端送出前就把 id 改寫成 agent 了），只有 C# in-process 直呼叫才會現形。
+        // 數值影響：現在多認 `id`（與宣告一致）。既有呼叫端行為不變 ——
+        //          agent / agent_id / sender / sender_id 的優先序與原巢狀完全相同（表的宣告順序即優先序）。
         static string GetAgentArg(Dictionary<string, string> args, string defaultVal = "")
-            => GetArg(args, "agent",
-                   GetArg(args, "agent_id",
-                       GetArg(args, "sender",
-                           GetArg(args, "sender_id", defaultVal))));
+            => GetArg(UCL_CmdArgsValidator.ResolveAlias(args, s_AgentAliases), "agent", defaultVal);
 
         // 區塊職責：最近一次 Op_Post 寫入的 seq —— 給 in-process 呼叫端（Cmd_Library op=share 等）取回。
         // 物理意義：Op_Post 是 400 行熱路徑，不為回傳值改控制流；用與 CurrentCmdId 同型的

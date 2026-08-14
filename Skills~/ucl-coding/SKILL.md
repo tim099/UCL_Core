@@ -14,6 +14,8 @@ description: |
   - 畫介面 / IMGUI / GUILayout / Editor 頁
   - DrawObjectData / DrawList / 自動繪製 / 手刻欄位
   - UCLI_ShortName / UCLI_IsEnable / UCLI_NameOnGUI / UCLI_FieldOnGUI / SerializeReference 多型下拉
+  - Cmd_Invoke / 反射呼叫 / 不開 Editor 頁跑 C# / 怎麼驗證 API / SelfTest 怎麼跑
+  - UCL_Asset.Util / GetAllIDs / GetData / ContainsAsset / 取得資產實際資料 / 資產存不存在 / 資產沒存檔
 ---
 
 # UCL Coding — C# 撰寫規範入口
@@ -89,6 +91,87 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 
 **③ 不要寫死 UCL_Core 的安裝路徑** —— 各專案掛載位置不同，寫死跨專案必壞，
 而且通常是**靜默壞**（`File.Exists` 失敗後 fail-soft return，連 warning 都沒有）。見 `ucl-core-paths`。
+
+## 🔌 不開 Editor 頁也能操作 C# —— `Cmd_Invoke` 反射呼叫
+
+> [!IMPORTANT]
+> **要驗證一段 C#「真的做了什麼」，不要讀磁碟檔案推導，直接呼叫它的 API。**
+> `Cmd_Invoke` 讓 agent 從 CLI 反射呼叫 Editor 端任何 public（或加 `nonPublic=true` 的非 public）
+> 靜態／實例成員 —— 這是「事實有產物就去讀產物」在 C# 這一端的具體手勢。
+
+```bash
+# 靜態方法（最常用：自我檢查）
+run_cmd.py run Invoke --arg type=<Namespace.Type> --arg member=<Method>
+
+# 靜態屬性 → 存成變數（storeAs），供後續 invoke 當 target
+run_cmd.py run Invoke --arg type=UCL.Core.UCL_SpriteAsset --arg member=Util \
+    --arg kind=property --arg storeAs=spriteUtil
+
+# 實例方法：target=$變數；有多載或帶預設參數時要給 paramTypes + args
+run_cmd.py run Invoke --arg target='$spriteUtil' --arg member=GetData \
+    --arg paramTypes='System.String;System.Boolean' --arg args='<ID>;false'
+```
+
+| 參數 | 用途 |
+|---|---|
+| `type` | 完整型別名（含 namespace，大小寫精確）；有 `target` 時可省 |
+| `member` / `kind` | 成員名 / `method`(預設)｜`property`｜`field` |
+| `paramTypes` / `args` | `;` 分隔。**帶預設值的參數也要顯式給** —— 反射不會自動補預設值 |
+| `storeAs` / `target` | 把回傳值存成變數 / 以 `$變數` 當實例呼叫，可跨多次 invoke 串起來 |
+| `nonPublic=true` | 打到 private / internal 成員 |
+
+**回傳值在哪看**：`_cmd_results/*.json` 只記 Success/Fail，**不含回傳內容**。
+實際回傳印在 Unity Editor log 的 `[AgentCmd:Invoke] OK (型別) = 值`：
+
+```bash
+grep -n "AgentCmd:Invoke\] OK" ~/AppData/Local/Unity/Editor/Editor.log | tail -1
+```
+
+⚠ **`Cmd 回 Success` 只證明反射呼叫沒有拋例外**，不證明那個方法做對了事 ——
+要看結果就去讀上面那行，或再 invoke 一次查詢用的 API 對帳。
+
+### 搭配 `UCL_Asset` API：資產的事實來源是 API，不是 JSON 檔
+
+每個 `UCL_Asset<T>` 都有靜態單例 `T.Util`，拿到它就能操作整組資產：
+
+| 成員 | 用途 | 備註 |
+|---|---|---|
+| `Util`（static property） | 取工具實例 | 第一步一律 `storeAs` 存起來 |
+| `GetAllIDs(bool iUseCache)` | 全部資產 ID | 這是「有哪些資產」的**唯一**事實來源 |
+| `GetData(string iID, bool iUseCache)` | 取實際資料物件 | 再 `storeAs` 就能呼叫它自己的方法 |
+| `ContainsAsset(string iID)` | 存不存在 | 比 `File.Exists` 可信 —— 快取／註冊層都算進去了 |
+| `Delete(string iID)` | 刪資產 | ⚠ 不可逆，先確認 |
+| `Save()` | 落盤 | **改完記憶體不會自己存** |
+
+> 為什麼不掃磁碟 JSON：資產有快取層與註冊表，磁碟上有檔 ≠ 系統看得到它，
+> 系統看得到 ≠ 磁碟上那份是當前值。用 `ls` / 讀 JSON 得到的是**平行索引**，
+> 而平行索引跟事實不一致時**兩邊都能各自運作、都不報錯**。
+
+實例（本專案 2026-08-14 實跑）：
+```bash
+# ① 資料層自我檢查（不開遊戲）
+run_cmd.py run Invoke --arg type=LittleYellow.ClickAreaAsset --arg member=SelfTest
+
+# ② 三段式串接：Util → 取某份資產 → 呼叫它的方法 → 存檔
+run_cmd.py run Invoke --arg type=LittleYellow.SpriteAssetImporter --arg member=Util \
+    --arg kind=property --arg storeAs=impUtil
+run_cmd.py run Invoke --arg target='$impUtil' --arg member=GetData \
+    --arg paramTypes='System.String;System.Boolean' --arg args='ClickAreas_Scene2;false' \
+    --arg storeAs=imp
+run_cmd.py run Invoke --arg target='$imp' --arg member=Import
+run_cmd.py run Invoke --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
+```
+
+### 踩過的幾條
+
+- **`Save()` 要自己叫。** 改完記憶體不落盤，下次重載就沒了，而且**不會報錯**。
+- **匯入類 API 通常只新增不刪舊。** `SpriteAssetImporter.Import()` 會 `Clear()` 自己的清單重建，
+  但**磁碟上舊 ID 的資產檔不會被刪** —— 素材改名後跑重匯入，會得到「新舊兩套同時註冊」。
+  改名情境要先 `Delete` 舊 ID，否則下游看到的是兩份都存在（實測：`ContainsAsset` 新舊皆回 `True`）。
+- **帶 `EditorUtility.DisplayDialog` 的方法不要盲目 invoke** —— modal 對話框會卡住 Editor 主執行緒，
+  CLI 端只會看到 timeout。這種要嘛請人按，要嘛把邏輯層與對話框層拆開再呼叫邏輯層。
+- **靜態方法用 `type=`，實例方法用 `target=$var`** —— 兩者混用會得到「找不到成員」，
+  而錯誤訊息會提示 `try nonPublic=true`，那是誤導（真正的問題是 static/instance 選錯）。
 
 ## 判準：什麼時候該停下來找既有基建
 

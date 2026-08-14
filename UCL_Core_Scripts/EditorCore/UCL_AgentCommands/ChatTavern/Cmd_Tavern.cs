@@ -94,7 +94,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // （sender / sender_id / agent_id 等別名仍會被歸一到 agent 欄並被接受，
                 //   但它只影響顯示身分、不決定錢，且不再是必填 —— 呼叫端只要給 persona。）
                 ["post"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "persona", "body" },
+                    // persona **刻意不是必填**：沒帶＝匿名發言（不計酬但照發，Tim 2026-08-14）。
+                    // 列進 Required 會讓系統元件（酒保 / daemon，本來就沒有 persona）發不了言。
+                    Required = new[] { "room", "body" },
                     Aliases = new Dictionary<string, string> {
                         ["sender_persona"] = "persona",
                         ["agent_id"] = "agent", ["sender"] = "agent", ["sender_id"] = "agent", ["id"] = "agent" } },
@@ -480,6 +482,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          （原因在 _last_op.md）。**只在同一筆 cmd 的執行流程內讀**，跨 cmd 讀是舊值。
         public static int LastPostSeq;
 
+        // 區塊職責：匿名發言的顯示身分
+        // 物理意義：沒帶 persona 也沒帶 sender_id 時的 fallback。用一個**固定且看得出是匿名**的
+        //          名字，而不是留空 —— 留空會讓下游（identities 查找 / 頭像 / mention）各自
+        //          fallback 成不同東西，最後查不出這些訊息是同一種情況產生的。
+        const string AnonymousSenderId = "anonymous";
+
         async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
             LastPostSeq = 0;
@@ -495,22 +503,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 數值影響：null/empty = legacy 行為不變；有值 = 寫進 message json sender_persona 欄位
             string senderPersona = GetArg(args, "persona", GetArg(args, "sender_persona", ""));
             if (string.IsNullOrEmpty(roomId)) { RejectLastOp("post 缺少 room"); return; }
-            if (string.IsNullOrEmpty(senderPersona)) { RejectLastOp("post 缺少 persona —— 發言一律認 persona"); return; }
 
             // ===========================================================
-            // 區塊職責：sender_id 由 persona 推導（呼叫端只需要給 persona）
+            // 區塊職責：身分補值 —— persona 是唯一身分欄位，但**可以省略（省略＝匿名發言）**
             // 物理意義：sender_id 是**顯示身分**（identities.json / 頭像資產 / Discord 使用者名 /
-            //          solo-alter 配對都以它為鍵），此前要呼叫端自己填，而填錯不會有人叫 ——
-            //          填成 persona 名或大小寫不同的 agent 名，都會在下游安靜生出新身分與新帳戶。
+            //          solo-alter 配對都以它為鍵）；persona 是**歸屬身分**（誰說的、錢記給誰）。
+            //          此前要呼叫端自己填 sender_id，而填錯不會有人叫 —— 填成 persona 名或大小寫
+            //          不同的 agent 名，都會在下游安靜生出新身分與新帳戶。現在由 persona 推導。
             // 數值影響：純顯示身分的補值。**錢不走這裡**（計酬一律由 persona 解析，見
-            //          TryAutoCreditPostReward）—— 兩者刻意分離，避免顯示身分再次變成金流的路由依據。
-            // 邊界：推導不出來（persona 未註冊於 registry）→ 退回用 persona 名本身當顯示身分，
-            //      不擋發言。發言權不該綁在帳號登記上。
+            //          TryAutoCreditPostReward）—— 兩者刻意分離，避免顯示身分再次成為金流的路由依據。
+            // 邊界（Tim 2026-08-14 修正）：**沒帶 persona 不擋發言，當匿名處理。**
+            //   系統元件（酒保 / daemon）本來就沒有 persona，而人也會忘記帶 —— 這兩種情況
+            //   **在輸入上長得一模一樣**，所以不能用擋的：擋下去會讓系統元件發不了言，
+            //   而「忘了帶」的人拿到的是一個看起來像故障的 reject。
+            //   ⚠ 本檔先前把 persona 設成必填，與同一段程式自己寫的「不計酬不擋發言」矛盾 ——
+            //     兩條規則在同一個檔案裡打架，是 Tim 指出來的。
+            //   代價是「刻意匿名」與「忘了帶」無法從輸入分辨（empty-is-a-question 的原樣），
+            //   所以**一律在 Cmd 回傳檔提醒一次**：忘記的人在下一步就看得到，
+            //   而不是等到對帳才發現自己少領了一整天。
             // ===========================================================
+            bool anonymousPost = string.IsNullOrEmpty(senderPersona);
             if (string.IsNullOrEmpty(senderId))
             {
-                var idres = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver.Resolve(senderPersona);
-                senderId = idres.IsUnresolved ? senderPersona : idres.AccountId;
+                if (anonymousPost) senderId = AnonymousSenderId;
+                else
+                {
+                    var idres = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver.Resolve(senderPersona);
+                    senderId = idres.IsUnresolved ? senderPersona : idres.AccountId;
+                }
             }
             if (string.IsNullOrEmpty(body)) { RejectLastOp("post 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
@@ -873,6 +893,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 註 (2026-07-29)：原本這裡會附 work-mode banner（sender 在 active work_session 時提示上班規則），
             //                 隨上班模式退役一併移除。
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
+            // 區塊職責：沒帶 persona 時在**回傳檔**提醒（Tim 2026-08-14）
+            // 物理意義：「刻意匿名」與「忘了帶」在輸入上同形，機器分不出來 —— 所以不猜，兩種都講。
+            //          提醒寫進 _last_op.md（呼叫端一定會讀的那份）而不是只寫 Editor log：
+            //          忘記帶的人不會去翻 Editor log，而少領的錢要對帳才發現，那太晚了。
+            // 註：刻意用 Environment.NewLine 串接、不寫跳脫字元 —— 本段文字自己在講換行，
+            //     而上一版就是被自己的跳脫序列咬掉的（跨工具傳遞被提前解讀成真換行，編譯直接爆）。
+            if (anonymousPost)
+            {
+                md += System.Environment.NewLine + System.Environment.NewLine
+                    + "> ℹ️ **本則以匿名發出（未帶 `persona`）—— 不計酬。**" + System.Environment.NewLine
+                    + "> 若這是刻意匿名，忽略本則提醒即可；" + System.Environment.NewLine
+                    + "> 若是忘了帶，補上 `--arg persona=<你的 persona>` 重發一次才會計酬"
+                    + "（已發出的這則不會補發）。" + System.Environment.NewLine;
+            }
             UCL_ChatTavernRender.WriteLastOp(md);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 

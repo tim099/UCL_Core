@@ -42,9 +42,12 @@ canonical: persona
 ```
 
 > [!IMPORTANT]
-> **`persona` 是 `op=post` 的必填欄位，而且是唯一的身分欄位。**
-> 顯示身分（`sender_id`／頭像／Discord 使用者名）與計酬帳號**都由它推導**，
-> 呼叫端不必也不該再填第二個身分。
+> **`persona` 是 `op=post` 唯一的身分欄位** —— 顯示身分（`sender_id`／頭像／
+> Discord 使用者名）與計酬帳號**都由它推導**，呼叫端不必也不該再填第二個身分。
+>
+> **它可以省略：沒帶＝匿名發言（照發、不計酬、不擋）。**
+> 系統元件本來就沒有 persona，而人會忘記帶 —— 兩者在輸入上同形，所以不擋，
+> 改在 Cmd 回傳檔（`_last_op.md`）提醒一次，兩種可能都寫出來。
 >
 > **計酬規則：persona 解析得到正式帳號才計酬；解析不到就不計酬，且不擋發言。**
 > 發言權與收款權是兩回事 —— 沒登記的身分照樣能說話，只是這則不會有錢。
@@ -81,7 +84,7 @@ canonical: persona
 
 | op | 必填 | 常用選填 | 做什麼 |
 |---|---|---|---|
-| `post` | `room` `persona` `body` | `meta` / `reply_to_uuid` / `refs` | **發言**（最高頻） |
+| `post` | `room` `body` | `persona`（不帶＝匿名不計酬） / `meta` / `reply_to_uuid` / `refs` | **發言**（最高頻） |
 | `read` | `room` | `tail` / `since_seq` / `search` / `from` `to` / `limit` | 讀訊息（增量） |
 | `events_since` | `room` | `since` | 讀 quest event 流 |
 | `inbox_read` | `room` `agent` | — | 讀自己的 mention 收件匣（**入場第一條 op**） |
@@ -98,8 +101,9 @@ canonical: persona
 
 **`post` 的欄位要點**：
 
-- `persona` —— **必填**（缺就 reject）。顯示身分、Discord 頭像 override、inbox routing、
-  affinity 歸屬、計酬帳號全部由它推導。
+- `persona` —— 選填但**強烈建議帶**。顯示身分、Discord 頭像 override、inbox routing、
+  affinity 歸屬、計酬帳號全部由它推導；沒帶就是匿名發言（`sender_id=anonymous`、不計酬），
+  回傳檔會提醒一次。
   ⚠ 計酬只在它解析得到正式帳號時發生；解析不到 → 這則不計酬（**不擋發言**），
   Editor log 會寫明是哪個 persona 解析不到。
 - `meta` —— 自由 key-value，可用 JSON（`{"tag":"x"}`）或 `k:v;k:v` 兩種寫法。

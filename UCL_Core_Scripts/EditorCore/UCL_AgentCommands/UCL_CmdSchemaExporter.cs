@@ -13,8 +13,9 @@
 //          Cmd_ExportCmdSchema / 日後任何自動觸發）全部呼叫本類別的同一個 static 方法 ——
 //          各寫一份就是本設計正在治的病的下一個實例。
 //          設計依據：Docs~/zh-Hant/Plan/Plan_AgentCmd_Schema_Reflection_Export.md
-// 數值影響：只寫一個檔（<RepoRoot>/AgentCommands/commands_schema.json，入 git）。
-//          **內容未變則不落筆**（不動 mtime、不製造 git 噪音、不觸發 asset import）。
+// 數值影響：只寫一個檔（<RepoRoot>/AgentCommands/commands_schema.json，**不入 git** ——
+//          per-project 衍生物，Tim 2026-08-14 拍板，見 ComputeSourceHash 上方的 📌）。
+//          **內容未變則不落筆**（不動 mtime、不觸發 asset import）。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -46,11 +47,20 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // ===========================================================
         // 區塊職責：來源檔雜湊 —— 判斷「產物是否對應當前的 Cmd 原始碼」。
-        // 物理意義：**刻意不用 mtime**。git 不儲存 mtime（`git ls-tree` 只有 mode/type/blob/name），
-        //          clone 或 checkout 後所有檔案的 mtime 都是「當下寫檔時間」，先後只取決於寫檔次序 ——
-        //          而「clone 下來直接用」正是本產物入 git 的主要理由，用 mtime 等於在主場景擲骰子
-        //          （gura QA 2026-07-29 推翻原案）。內容雜湊與檔案時間、clone 順序、時區全部無關。
+        // 物理意義：**判同步與否一律用內容雜湊，不用 mtime**。git 不儲存 mtime
+        //          （`git ls-tree` 只有 mode/type/blob/name），clone 或 checkout 後所有檔案的 mtime
+        //          都是「當下寫檔時間」，先後只取決於寫檔次序（gura QA 2026-07-29 推翻 mtime 原案）。
+        //          內容雜湊與檔案時間、clone 順序、時區全部無關。
+        //          ⚠ mtime 仍**可以**當本機快取鍵用（見 ComputeStatSignature）—— 那是兩件事：
+        //          當快取鍵時猜錯只是白算一次；當同步判準時猜錯會把「已改」洗成「同步」。
         // 數值影響：純讀檔計算，不寫任何東西。
+        //
+        // 📌 產物**不入版控**（Tim 2026-08-14 拍板；同日移出追蹤並加進 AgentCommands/.gitignore）。
+        //   理由：UCL_Core 與 Cmd 體系是跨專案共用 lib，各專案有自己的專屬 Cmd，
+        //   於是 cmd 清單 / source_files / source_hash **每個專案都不同**。入 git 的後果不是衝突，
+        //   是 A 專案 commit 的產物在 B 專案永遠顯示「過期」→ 預檢自動降級成不擋。
+        //   （本段原本寫著相反的話「clone 下來直接用正是本產物入 git 的主要理由」，
+        //    與下方 AutoSync 的註解互相矛盾了一段時間；2026-08-14 實查後以後者為準。）
         //
         // ⚠ 跨語言契約 —— Python 端 (tavern_cmd.py) 重算時必須得到相同結果：
         //   ① 檔案集合 = <UnityProjectRoot>/Assets 底下所有檔名符合 `Cmd_*.cs` 者
@@ -614,13 +624,25 @@ namespace UCL.Core.EditorLib.AgentCommands
     public static class UCL_CmdSchemaAutoSync
     {
 
+        // 區塊職責：觸發點 —— **domain reload 之後**，不是 compilationFinished。
+        // 物理意義：`compilationFinished` 跑在**舊 domain**（新 assembly 尚未載入）。在那裡匯出會產生
+        //          一份**新鮮度戳記與內容來自不同時刻**的產物：
+        //            · source_files / source_hash 來自檔案系統 → 已含新檔（新的）
+        //            · commands 來自 UCL_AgentCommandRegistry.ListHandlers() 反射 → 舊 assembly（舊的）
+        //          2026-08-14 實證：新增 Cmd_SchemaSelfTest.cs 後，產物的 source_files 有它、
+        //          commands 沒有它，而 **hash 卻相符** —— 於是 IsInSync 從此回 true，
+        //          往後每次編譯都早退，這份錯的產物永遠不會被自動修正（只能手動 ExportCmdSchema）。
+        //          比「沒更新」更糟：沒更新會被 hash 抓到，這種錯**帶著一枚有效的新鮮度戳記**。
+        // 數值影響：改掛 delayCall（InitializeOnLoad 靜態建構子在 reload 後執行，delayCall 再延到
+        //          該幀結束，確保 registry 已就緒）。代價是每次 domain reload 都跑一次便宜閘，
+        //          而那本來就是我們要的頻率。
         static UCL_CmdSchemaAutoSync()
         {
             // InitializeOnLoad 確保 Editor 啟動 / domain reload 時都會掛上（與 UCL_CompileErrorTracker 同慣例）
-            UnityEditor.Compilation.CompilationPipeline.compilationFinished += OnCompilationFinished;
+            UnityEditor.EditorApplication.delayCall += OnAfterDomainReload;
         }
 
-        static void OnCompilationFinished(object _)
+        static void OnAfterDomainReload()
         {
             try
             {
@@ -633,10 +655,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                 // 物理意義：缺席時 Python 端會**整個跳過參數預檢**（fail-open），所以一刻都不能等。
                 //          「缺檔」與「檔舊了」是兩種不同狀況，但改用內容判定之後兩者都是立刻補 ——
                 //          差別只剩「缺檔連 hash 都不必算」。
-                // ⚠ 舊註解在這裡寫「產物是 per-machine 衍生物、不入 git」——**那是假的**：
-                //   commands_schema.json 確實被 AgentCommands submodule 追蹤（2026-08-14 實查）。
-                //   兩處註解互相矛盾（ComputeSourceHash 上方寫「入 git 是主要理由」），
-                //   留此記錄；要改哪一邊是資料歸屬決定，不在本次改動範圍。
+                // 📌 產物**不入版控**（per-project 衍生物）—— 2026-08-14 實查發現它當時仍被
+                //   AgentCommands submodule 追蹤，且與 ComputeSourceHash 上方的註解互相矛盾。
+                //   Tim 同日拍板：跨專案 lib ＋ 各專案專屬 Cmd ⇒ 產物內容天生不同，不該入 git。
+                //   已移出追蹤並加進 .gitignore，本註解與上方均已對齊事實。
                 bool missing = !File.Exists(UCL_CmdSchemaExporter.SchemaPath);
 
                 UCL_CmdSchemaExporter.LastAutoSyncUtc = now;   // 純資訊（面板顯示「上次檢查」），不再當閘門
@@ -661,7 +683,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             catch (Exception e)
             {
                 // 自動同步是加值機制，失敗絕不可影響編譯流程
-                Debug.LogWarning($"[CmdSchema] 編譯後自動同步失敗（不影響編譯）：{e.Message}");
+                Debug.LogWarning($"[CmdSchema] domain reload 後自動同步失敗（不影響編譯）：{e.Message}");
             }
         }
     }

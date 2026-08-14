@@ -143,6 +143,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             + $" → {Detail}";
     }
 
+    [InitializeOnLoad]
     public static class UCL_RemoteNotifyService
     {
         const string ConfigFileName = "remote_notify_config.json";
@@ -151,7 +152,56 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         const string TraceFileName = "remote_notify_trace.jsonl";
         static readonly Regex InboxEntryRegex = new Regex(@"^##\s*\[seq=(\d+)\]", RegexOptions.Multiline);
 
-        public static bool Enabled;
+        /// <summary>永久開關的 EditorPrefs key（走 UCL_ProjectEditorPrefs → 自動附專案指紋，不跨專案互汙）。</summary>
+        const string EditorPrefsPersistKey = "UCL.RemoteNotify.PersistEnabled";
+        static bool s_Enabled;
+
+        // ===========================================================
+        // 區塊職責：自動通知的「本次啟用」開關
+        // 物理意義：本欄位是 runtime-only（不落檔），所以**每次 domain reload / 重編都會回到關閉**。
+        //          那原本是刻意的護欄（會去戳別人視窗的能力不該在沒人同意時自己開著），
+        //          但它的失效形式很難看：重編一次就靜默關掉，而畫面上只是那顆鈕變回「○ 關閉」——
+        //          沒有任何一行訊息說「我剛剛把你關掉了」。
+        //          🩸 Tim 2026-08-14 回報：「compile 後是否會自動關閉」—— 是，而且這正是原因。
+        // 數值影響：false 時 Tick 完全不動作。
+        // ===========================================================
+        public static bool Enabled
+        {
+            get => s_Enabled;
+            set => s_Enabled = value;
+        }
+
+        // 區塊職責：永久開關 —— 讓上面那顆在 domain reload / Editor 重啟後自動恢復。
+        // 物理意義：形狀刻意與 UCL_RemoteWindowControl.PersistEnabled **完全相同**（同一個問題、同一個解），
+        //          不另創第二套慣例。兩顆是獨立的決定：「這次要用」與「這台機器上一直要用」。
+        //          **預設 false** —— 會自動去戳別人視窗的能力不該因為裝了這個版本就自己開起來。
+        // 數值影響：唯一效果是載入時把 s_Enabled 設回 true；其餘護欄（間隔、前景驗證、
+        //          使用者操作後暫停）全數照舊，一個都沒被豁免。
+        public static bool PersistEnabled
+        {
+            get => UCL_ProjectEditorPrefs.GetBool(EditorPrefsPersistKey, false);
+            set => UCL_ProjectEditorPrefs.SetBool(EditorPrefsPersistKey, value);
+        }
+
+        // 區塊職責：載入時依永久開關恢復本次開關。
+        // ⚠ **就地同步做，不得經 EditorApplication.delayCall。**
+        //   UCL_RemoteWindowControl 的同一段註解記著血證：delayCall 是單次 schedule，
+        //   Editor 在背景時 domain reload 後那一拍可能永遠不來 —— 於是永久開關按成 ON、
+        //   reload 後仍是 false、連恢復的 log 都沒印。抄慣例要抄修好的那版。
+        //   讀 EditorPrefs 在 cctor 內是安全的（純字串 + registry 讀取，不碰 UniTask / AssetDatabase）。
+        static UCL_RemoteNotifyService()
+        {
+            try
+            {
+                if (!PersistEnabled) return;
+                s_Enabled = true;
+                Debug.Log("[RemoteNotify] 永久開關為開 → 已自動恢復自動通知（重編後不需手動再開）。");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RemoteNotify] 永久開關恢復失敗（本次維持關閉）：{e.Message}");
+            }
+        }
         public static double IntervalSeconds = 30;
         // ⚠ 預設文字刻意是 `/ucl-ding` 而不是「叮」：Tim 手動戳是打「叮」，酒保自動戳是 `/ucl-ding`
         //   （Tim 2026-08-02 定的慣例）。改成一樣的字，收到的人就分不出這次是人在叫還是機器在叫。
@@ -232,7 +282,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             {
                 UCL_BartenderIO.EnsureBartenderDir();
                 var data = new JsonData();
-                data["enabled"] = new JsonData(Enabled);
+                // ⚠ 刻意不寫 `enabled`：本次啟用是 runtime 狀態，持久化只由 PersistEnabled（EditorPrefs）決定。
+                //   兩套持久化打架的血證見下方 LoadConfig 的區塊註解。
                 data["interval_seconds"] = new JsonData((float)IntervalSeconds);
                 data["notify_text"] = new JsonData(NotifyText ?? "");
                 data["send_enter"] = new JsonData(SendEnter);
@@ -258,7 +309,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 if (!File.Exists(ConfigPath)) return;
                 var data = JsonData.ParseJson(File.ReadAllText(ConfigPath));
                 if (data == null) return;
-                Enabled = data.GetBool("enabled", Enabled);
+                // ===========================================================
+                // ⚠ 這裡刻意**不再讀 `enabled`**（2026-08-14 修）
+                // 物理意義：`Enabled` 原本同時有兩套持久化 —— 設定檔的 `enabled` 欄，
+                //          以及（本次新加的）PersistEnabled/EditorPrefs。兩套會打架：
+                //          🩸 實測血證：cctor 依 PersistEnabled 把 Enabled 恢復成 true 並印了恢復 log，
+                //          然後 daemon 初始化呼叫 LoadConfig()，用設定檔裡的 `false` 把它蓋回去。
+                //          症狀正是 Tim 2026-08-14 看到的畫面：**「🔒 永久啟用中」但「○ 本次未啟用」**。
+                //          而且沒有任何一層出聲 —— 後寫的贏，而誰後寫取決於呼叫順序。
+                // 數值影響：`Enabled` 的持久化收斂為單一來源（PersistEnabled）。
+                //          舊設定檔裡殘留的 `enabled` 欄一律被忽略；SaveConfig 也不再寫它
+                //          （留一個沒人讀的欄位＝下一個人會拿它當事實）。
+                // 設計對齊：UCL_RemoteWindowControl 的同名開關本來就沒有檔案持久化，
+                //          只有 runtime + EditorPrefs 兩層。同一個問題不做兩種機制。
+                // ===========================================================
                 IntervalSeconds = data.GetFloat("interval_seconds", (float)IntervalSeconds);
                 NotifyText = data.GetString("notify_text", NotifyText);
                 SendEnter = data.GetBool("send_enter", SendEnter);

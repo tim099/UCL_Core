@@ -523,8 +523,23 @@ namespace UCL.Core.EditorLib.Page
                     {
                         GUILayout.Label("<b>🔔 自動通知（收信 → 戳對應視窗）</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
                         bool enabled = UCL_RemoteNotifyService.Enabled;
-                        bool next = GUILayout.Toggle(enabled, enabled ? "● 自動通知中" : "○ 自動通知關閉", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                        bool next = GUILayout.Toggle(enabled, enabled ? "● 本次已啟用" : "○ 本次未啟用", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
                         if (next != enabled) UCL_RemoteNotifyService.Enabled = next;
+                        // 區塊職責：永久開關（落 UCL_ProjectEditorPrefs，預設關閉）——
+                        //          形狀與「🖥 遠端視窗協作」那顆完全相同，同一個問題不做兩種介面。
+                        // 物理意義：左邊那顆是 runtime-only，**每次重編都會靜默回到關閉**
+                        //          （Tim 2026-08-14 回報）。這顆是那條護欄的顯式豁免。
+                        //          唯一耦合：打開永久開關時順手把本次也打開 —— 否則要點兩次才生效，
+                        //          而「我已經打開了為什麼沒動」正是最容易誤判成壞掉的形狀。
+                        bool notifyPersist = UCL_RemoteNotifyService.PersistEnabled;
+                        bool nextNotifyPersist = GUILayout.Toggle(notifyPersist,
+                            notifyPersist ? "🔒 永久啟用中" : "🔓 永久啟用關閉",
+                            UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                        if (nextNotifyPersist != notifyPersist)
+                        {
+                            UCL_RemoteNotifyService.PersistEnabled = nextNotifyPersist;
+                            if (nextNotifyPersist) UCL_RemoteNotifyService.Enabled = true;
+                        }
                         GUILayout.FlexibleSpace();
                     }
 

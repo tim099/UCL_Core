@@ -85,10 +85,23 @@ namespace UCL.Core.EditorLib.Page
         string m_StampCmdLine = "";               // 組好的 Cmd 指令（含 expect_pixels 閘門）
         Texture2D m_StampTex;
         DateTime m_StampTexTime;
+        // ── 📐 切片輸出區（3D→2D，voxel 色原樣當像素色；免費唯讀）──
+        string m_SliceRegion = "";       // x1..x2,y1..y2,z1..z2；法線軸跨度＝厚度
+        string m_SliceAxis = "z+";       // 投影法線與近端方向（'+' ＝近端是較小那端）
+        string m_SliceOut = "";          // 輸出 PNG（空＝引擎預設 Sculpture/_last_slice.png）
+        Texture2D m_SliceTex;
+        DateTime m_SliceTexTime;
+        string m_SliceOutResolved = "";  // 引擎回報的實際落檔路徑（不自己推）
+        // ── 匯出設定（Tim 2026-08-14 追加：可設路徑 + 一鍵開資料夾）──
+        // 空＝沿用引擎預設 Sculpture/exports；**檔名一律由引擎產生**，本頁不組檔名（避免兩邊分岔）
+        string m_ExportDir = "";
 
         static string SculptureDir => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture");
         static string ExhibitsJsonPath => Path.Combine(SculptureDir, "exhibits.json");
         static string LastViewPng => Path.Combine(SculptureDir, "_last_view.png");
+        static string LastSlicePng => Path.Combine(SculptureDir, "_last_slice.png");
+        // 匯出預設資料夾 —— 與 sculpt.py cmd_export 的 fallback 同值（兩端對齊義務）
+        static string DefaultExportDir => Path.Combine(SculptureDir, "exports");
         // 2D 共用畫布的 view 輸出（canvas.py 寫）—— 貼圖預覽讀透明變體，未繪製＝alpha 0
         static string CanvasLastViewTPng => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "_last_view_t.png");
         // ⚠ 不寫死 UCL_Core 掛載路徑（各專案不同會靜默壞）—— 由 CorePath 現算，只用於組給人複製的指令字串
@@ -106,6 +119,8 @@ namespace UCL.Core.EditorLib.Page
             DrawExhibitSection();
             GUILayout.Space(8);
             DrawManualSection();
+            GUILayout.Space(8);
+            DrawSliceSection();
             GUILayout.Space(8);
             DrawStampPreviewSection();
 
@@ -240,6 +255,17 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 // 匯出模型檔（Tim 2026-08-13 追加）：只匯出觀測區域（region/exclude 同上方欄位）
+                // 輸出資料夾可設（Tim 2026-08-14 追加）—— 空＝引擎預設；**檔名一律由引擎產生**
+                using (new GUILayout.HorizontalScope())
+                {
+                    m_ExportDir = DrawField("匯出資料夾（空＝預設）", m_ExportDir);
+                    if (GUILayout.Button("📂 開啟", UCL_GUIStyle.GetButtonStyle(Color.white),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                    {
+                        RevealFolder(string.IsNullOrWhiteSpace(m_ExportDir) ? DefaultExportDir : m_ExportDir);
+                    }
+                }
+                GUILayout.Label($"預設：{DefaultExportDir}", WrapLabelStyle);
                 using (new GUILayout.HorizontalScope())
                 {
                     if (GUILayout.Button("📦 匯出 .obj", UCL_GUIStyle.GetButtonStyle(Color.yellow),
@@ -255,6 +281,166 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("匯出範圍＝上方 region／exclude-color（空 region＝全空間）", WrapLabelStyle);
                 }
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：📐 切片輸出 — 把 region 內的 voxel **顏色原樣當像素色**輸出成 2D PNG。
+        // 物理意義：這是 stamp 的逆運算，不是 view 的變體 —— 不打光、不等角投影、不混色。
+        //          與 stamp 共用同一組軸映射，所以切出來的圖貼回同一個 at 會逐 voxel 還原。
+        //          厚度＝region 在法線軸上的跨度（寫 `210..210` 即厚度 1），>1 時前覆蓋後。
+        // 數值影響：免費唯讀（只 spawn sculpt.py slice）；引擎回報 non_transparent_pixels，
+        //          那個數字可直接當 stampimg 的 --expect-pixels 閘門。
+        // ===========================================================
+        void DrawSliceSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "SliceFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>📐 切片輸出（3D→2D PNG）</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("📐 產生切片", UCL_GUIStyle.GetButtonStyle(Color.magenta),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(130))))
+                    {
+                        RenderSlice();
+                    }
+                    if (GUILayout.Button("📂 開啟", UCL_GUIStyle.GetButtonStyle(Color.white),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                    {
+                        RevealFolder(Path.GetDirectoryName(SliceOutPath));
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                GUILayout.Label("voxel 顏色原樣當像素色（不打光／不投影／不混色）；空的地方透明。"
+                                + " 厚度＝region 在法線軸上的跨度，>1 時前覆蓋後。", WrapLabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("↩ 帶入上方 region", UCL_GUIStyle.GetButtonStyle(Color.white),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
+                    {
+                        m_SliceRegion = m_Region;   // 手動觀測區／展品 preset 的 region 直接沿用
+                    }
+                    GUILayout.Label("（展品選單會把 preset region 填進手動觀測區）", WrapLabelStyle);
+                }
+                m_SliceRegion = DrawField("region (x1..x2,y1..y2,z1..z2)", m_SliceRegion);
+                m_SliceAxis = DrawField("axis（法線與近端方向 x+ x- y+ y- z+ z-）", m_SliceAxis);
+                m_SliceOut = DrawField("輸出 PNG（空＝預設 _last_slice.png）", m_SliceOut);
+
+                DrawSliceTexture();
+            }
+        }
+
+        /// <summary>切片輸出路徑 —— 空欄位時退回引擎預設（與 sculpt.py 同值）。</summary>
+        string SliceOutPath => string.IsNullOrWhiteSpace(m_SliceOut) ? LastSlicePng : m_SliceOut;
+
+        // 區塊職責：spawn 引擎切片。region 必填 —— 空的話引擎會拒絕，這裡先擋下並說人話。
+        void RenderSlice()
+        {
+            m_SliceOutResolved = "";
+            string aScript = ResolveEngineScript();
+            if (aScript == null)
+            {
+                m_LastRenderLog = "✗ 解析不到 sculpt.py（CorePath 空或檔案不存在）";
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(m_SliceRegion))
+            {
+                m_LastRenderLog = "✗ 切片需要 region（x1..x2,y1..y2,z1..z2）—— 可按「帶入上方 region」";
+                return;
+            }
+            // ⚠ 一律 `--opt=value`：axis 的值含 '-'（如 z-），空格分隔會被 argparse 當旗標吃掉
+            string aArgs = $"\"{aScript}\" slice --region=\"{m_SliceRegion}\"";
+            if (!string.IsNullOrWhiteSpace(m_SliceAxis)) aArgs += $" --axis=\"{m_SliceAxis}\"";
+            if (!string.IsNullOrWhiteSpace(m_SliceOut)) aArgs += $" --out=\"{m_SliceOut}\"";
+            var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs,
+                UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
+            m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} slice]\n" + (aExit == 0
+                ? (aSo ?? "").Trim()
+                : $"✗ 切片失敗（exit={aExit}）\n{aSo}\n{aSe}");
+            if (aExit != 0) return;
+            // 落檔路徑讀引擎回報的 output_path —— 不自己推（--out 與預設兩條路，推錯會顯示到別張圖）
+            m_SliceOutResolved = ExtractJsonString(aSo, "output_path");
+            m_SliceTexTime = default;
+        }
+
+        // 區塊職責：顯示切片 PNG —— 與 3D 觀測圖、2D 貼圖預覽各自一張，別互相蓋掉。
+        void DrawSliceTexture()
+        {
+            string aPng = string.IsNullOrEmpty(m_SliceOutResolved) ? SliceOutPath : m_SliceOutResolved;
+            if (!File.Exists(aPng)) return;
+            var aMtime = File.GetLastWriteTimeUtc(aPng);
+            if (m_SliceTex == null || aMtime != m_SliceTexTime)
+            {
+                try
+                {
+                    var aBytes = File.ReadAllBytes(aPng);
+                    if (m_SliceTex == null) m_SliceTex = new Texture2D(2, 2);
+                    m_SliceTex.LoadImage(aBytes);
+                    m_SliceTex.filterMode = FilterMode.Point;   // 像素硬邊，別被雙線性糊掉
+                    m_SliceTexTime = aMtime;
+                }
+                catch (Exception e)
+                {
+                    m_LastRenderLog = $"✗ 切片 PNG 載入失敗: {e.Message}";
+                    return;
+                }
+            }
+            GUILayout.Label($"📄 {aPng}（{m_SliceTexTime.ToLocalTime():HH:mm:ss}；透明＝該處無 voxel）",
+                UCL_GUIStyle.LabelStyle);
+            float aSize = UCL_GUIStyle.GetScaledSize(256);
+            var aRect = GUILayoutUtility.GetRect(aSize, aSize, GUILayout.ExpandWidth(false));
+            GUI.DrawTexture(aRect, m_SliceTex, ScaleMode.ScaleToFit);
+        }
+
+        // 區塊職責：在系統檔案總管開啟資料夾（專案既有慣例，同 UCL_SecretManagerPage）。
+        // 物理意義：RevealInFinder 對不存在的路徑會定位到 parent —— 所以先建資料夾，
+        //          否則「按了沒反應」會被當成按鈕壞掉，而它其實只是沒有那個資料夾。
+        //          （避開的是 EditorUtility.OpenFolderPanel 那個 modal 選擇器，不是本 API。）
+        void RevealFolder(string iDir)
+        {
+            if (string.IsNullOrWhiteSpace(iDir))
+            {
+                m_LastRenderLog = "✗ 資料夾路徑是空的";
+                return;
+            }
+            try
+            {
+                Directory.CreateDirectory(iDir);
+                UnityEditor.EditorUtility.RevealInFinder(iDir);
+            }
+            catch (Exception e)
+            {
+                m_LastRenderLog = $"✗ 開啟資料夾失敗 {iDir}: {e.Message}";
+            }
+        }
+
+        /// <summary>
+        /// 從引擎 stdout 的 JSON 撈某個字串欄位（只取第一個匹配）。
+        /// 引擎印的是 pretty JSON，值裡的 Windows 路徑帶跳脫反斜線 —— 取出後要還原，
+        /// 否則 File.Exists 對 `D:\\Unity\\...` 一律 false（而那看起來像「檔案沒產生」）。
+        /// </summary>
+        static string ExtractJsonString(string iStdout, string iKey)
+        {
+            if (string.IsNullOrEmpty(iStdout)) return "";
+            string aNeedle = $"\"{iKey}\"";
+            int aIdx = iStdout.IndexOf(aNeedle, StringComparison.Ordinal);
+            if (aIdx < 0) return "";
+            int aColon = iStdout.IndexOf(':', aIdx + aNeedle.Length);
+            if (aColon < 0) return "";
+            int aOpen = iStdout.IndexOf('"', aColon);
+            if (aOpen < 0) return "";
+            var aSb = new System.Text.StringBuilder();
+            for (int i = aOpen + 1; i < iStdout.Length; i++)
+            {
+                char c = iStdout[i];
+                if (c == '\\' && i + 1 < iStdout.Length) { aSb.Append(iStdout[++i]); continue; }
+                if (c == '"') break;
+                aSb.Append(c);
+            }
+            return aSb.ToString();
         }
 
         // 區塊職責：把手動觀測欄位組成引擎旗標並渲染。
@@ -304,6 +490,8 @@ namespace UCL.Core.EditorLib.Page
             string aArgs = $"\"{aScript}\" export --format={iFormat}";
             if (!string.IsNullOrEmpty(m_Region)) aArgs += $" --region=\"{m_Region}\"";
             if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color=\"{m_ExcludeColor}\"";
+            // 只傳資料夾，檔名讓引擎依慣例產生 —— 本頁不組檔名（兩邊各組一份遲早分岔）
+            if (!string.IsNullOrWhiteSpace(m_ExportDir)) aArgs += $" --out-dir=\"{m_ExportDir}\"";
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs,
                 UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
             m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} export {iFormat}]\n" + (aExit == 0

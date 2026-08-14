@@ -1276,10 +1276,14 @@ def cmd_export(args):
         print("⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出")
         return 1
     fmt = args.format
-    out_dir = get_sculpt_dir() / "exports"
+    # 輸出位置三選一（優先序：完整路徑 > 指定資料夾 > 預設資料夾）
+    # ⚠ 檔名慣例（sculpt_<ts>.<fmt>）只准活在這裡：呼叫端若自己組檔名，兩邊遲早分岔，
+    #   而分岔的症狀是「檔案存在但不是我以為的那個」—— 不會報錯。
+    out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else get_sculpt_dir() / "exports"
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     out_path = Path(args.out) if args.out else out_dir / f"sculpt_{stamp}.{fmt}"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if fmt == "obj":
         used_colors = sorted({c for c in vox.values()})
@@ -1473,7 +1477,9 @@ def main():
     p_export.add_argument("--format", required=True, choices=["obj", "vox"])
     p_export.add_argument("--region", help="觀測區域裁剪 (x1..x2,y1..y2,z1..z2; 省略=全空間)")
     p_export.add_argument("--exclude-color", help="排除顏色 (逗號分隔)")
-    p_export.add_argument("--out", help="輸出路徑 (省略=Sculpture/exports/sculpt_<ts>.<fmt>)")
+    p_export.add_argument("--out", help="輸出完整路徑 (省略=<out-dir>/sculpt_<ts>.<fmt>)")
+    p_export.add_argument("--out-dir", dest="out_dir",
+                          help="輸出資料夾 (省略=Sculpture/exports；檔名仍由引擎依慣例產生)")
     p_export.set_defaults(func=cmd_export)
 
     p_stats = subparsers.add_parser("stats", help="顯示統計資訊")

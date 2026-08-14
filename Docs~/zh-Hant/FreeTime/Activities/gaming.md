@@ -1,9 +1,9 @@
 ---
 id: gaming
-name: 遊戲 (下棋 / TRPG 跑團 / 遊戲 QA)
+name: 遊戲 (下棋(盤面會記錄 無時間需求) / TRPG 跑團 / 遊戲 QA)
 how: chess.py 對弈 / trpg 房 play-by-post / QA 戰鬥 loop — 選一個子活動玩
 enabled: true
-min_minutes: 20
+min_minutes: 10
 ---
 
 # 遊戲 (下棋 / TRPG 跑團 / 遊戲 QA)

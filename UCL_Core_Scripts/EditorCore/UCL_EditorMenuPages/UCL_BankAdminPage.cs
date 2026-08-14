@@ -89,6 +89,19 @@ namespace UCL.Core.EditorLib.Page
         int m_SelectedBankIdx = 0;         // 上方 bank 下拉
         int m_TransferToBankIdx = 0;       // 轉帳的 to_account 下拉
 
+        // ==== 🧭 帳號解析規則（2026-08-14）====
+        // 區塊職責：registry 裡「決定錢落到哪個帳戶」的三張表的顯示與編輯 draft。
+        // 物理意義：agent_aliases / system_accounts / closed_accounts 此前**沒有任何頁面在管** ——
+        //          2026-08-04 那次補登記 system_accounts 是直接手改 JSON 的。
+        //          手改沒有閘門、沒有痕跡，而它改的是金流的路由表。
+        // ⚠ agent_banks 刻意唯讀：它已經有兩個寫入者（本頁「開戶」＋ Persona & Agent 管理頁「開 agent」），
+        //   再加第三個只會讓漂移更難查。要改去那兩處，本區只負責讓人看見全貌。
+        readonly Dictionary<string, string> m_Aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        readonly List<string> m_SystemAccounts = new List<string>();
+        string m_ProbeDraft = "";          // 解析試算輸入
+        string m_NewAliasFromDraft = "";   // 別名（來源字串）
+        string m_NewAliasToDraft = "";     // 對應的 canonical agent
+
         // 開戶
         string m_NewAgentDraft = "";       // 要開戶的 agent key
         string m_NewBankDraft = "";        // 對應 bank id（預設命名慣例 {agent}-da-xiaojie）
@@ -190,6 +203,11 @@ namespace UCL.Core.EditorLib.Page
             m_RegistryMeta = null;
             m_BankIds.Clear(); m_AgentKeys.Clear(); m_AgentToBank.Clear();
             m_PersonaNames.Clear(); m_PersonaToAgent.Clear();
+            m_Aliases.Clear(); m_SystemAccounts.Clear();
+            m_OrphanRowsDirty = true;   // 孤兒列（餘額／解析／綁定）跟著資料一起重算
+            // registry 可能剛被本頁（開戶／銷戶／別名／補登記）或外部改過 —— 解析器也要跟著重新認識磁碟，
+            // 否則畫面讀的是新表、解析走的是舊表，兩邊各自說得通而且都不報錯。
+            UCL_TreasuryAccountResolver.Invalidate();
             try
             {
                 // ---- registry meta：帳號宇宙 = agent_banks values ∪ system_accounts keys ----
@@ -219,7 +237,15 @@ namespace UCL.Core.EditorLib.Page
                         var sa = m_RegistryMeta["system_accounts"];
                         if (sa.IsObject && sa.Dic != null)
                             foreach (var acc in sa.Dic.Keys.Where(k => !k.StartsWith("_")))
-                                bankSet.Add(acc);
+                            { bankSet.Add(acc); m_SystemAccounts.Add(acc); }
+                    }
+                    // agent_aliases：解析規則的一張表，本頁「🧭 帳號解析規則」區可增刪
+                    if (m_RegistryMeta != null && m_RegistryMeta.Contains("agent_aliases"))
+                    {
+                        var al = m_RegistryMeta["agent_aliases"];
+                        if (al.IsObject && al.Dic != null)
+                            foreach (var k in al.Dic.Keys.Where(k => !k.StartsWith("_")))
+                                m_Aliases[k] = al.GetString(k, "");
                     }
                 }
                 // ---- 孤兒帳戶：ledger 有、registry 沒有 ----
@@ -228,12 +254,24 @@ namespace UCL.Core.EditorLib.Page
                 m_OrphanBankIds.Clear();
                 try
                 {
+                    // 已銷戶的帳號要退出孤兒名單與下拉選單。
+                    // ⚠ 銷戶**不刪 ledger entry**（append-only），所以下面這個掃描一定會把它撈回來 ——
+                    //   不在這裡濾掉的話，銷完戶按 Refresh 它照樣在，而且會同時出現在「孤兒」與
+                    //   「已銷戶」兩處。症狀看起來像「刷新沒作用」，實際是掃描沒把銷戶算進去。
+                    var closedSet = UCL_TreasuryAccountResolver.GetClosedAccounts();
                     foreach (var e in UCL_TreasuryLedger.LoadAllEntries())
                     {
                         if (e == null || string.IsNullOrEmpty(e.account_id)) continue;
                         if (bankSet.Contains(e.account_id)) continue;
                         m_OrphanBankIds.Add(e.account_id);
                     }
+                    // 例外：已銷戶卻**還有餘額**的，絕不隱藏。
+                    // 銷戶前置條件是餘額 0，所以這種情況代表閘門被繞過或事後又有錢進來 ——
+                    // 那正是最該被看見的一種帳，藏起來就變成「看不見的錢」。
+                    foreach (var closed in closedSet.Keys)
+                        if (m_OrphanBankIds.Contains(closed) && SafeGetTokenBalance(closed) == 0)
+                            m_OrphanBankIds.Remove(closed);
+
                     foreach (var orphan in m_OrphanBankIds) bankSet.Add(orphan);
                 }
                 catch (Exception ex)
@@ -368,6 +406,10 @@ namespace UCL.Core.EditorLib.Page
             DrawSelectorPanel();
             GUILayout.Space(6);
             DrawOverviewPanel();
+            GUILayout.Space(6);
+            DrawOrphanPanel();        // 👻 孤兒帳戶：標記遷移 / 銷戶（獨立區，收合時仍顯示可銷戶數）
+            GUILayout.Space(6);
+            DrawResolveRulesPanel();  // 🧭 帳號解析規則：試算 / alias / 系統帳號 / 已銷戶
             GUILayout.Space(6);
             DrawTokenOpsPanel();      // 開戶 / 打款 / 轉帳
             GUILayout.Space(6);
@@ -505,18 +547,11 @@ namespace UCL.Core.EditorLib.Page
                     $"　bank <b>{SelectedBank ?? "-"}</b>：<b>{m_CacheTokenBal}</b> token{orphanTag}");
                 if (!showOv) return;
 
-                // 孤兒帳戶告警 —— 有錢卻沒有主人的帳戶必須主動攤開，不能等人自己去查 ledger
+                // 孤兒帳戶的清單與操作已移到獨立區塊「👻 孤兒帳戶」——
+                // 它此前埋在本區的收合層裡，等於「要先猜到才找得到」。這裡只留一行指路。
                 if (m_OrphanBankIds.Count > 0)
-                {
-                    GUILayout.Label($"  ⚠ <b>{m_OrphanBankIds.Count} 個孤兒帳戶</b>（只存在於 ledger，"
-                        + "沒有 agent_banks / system_accounts 對應）—— 多半是 agent 欄被填成 persona 名或打錯字造成：",
+                    GUILayout.Label($"  ⚠ 另有 <b>{m_OrphanBankIds.Count}</b> 個孤兒帳戶 —— 見下方「👻 孤兒帳戶」區塊（標記遷移 / 銷戶）。",
                         WrapLabelStyle);
-                    foreach (var orphan in m_OrphanBankIds.OrderBy(x => x, StringComparer.Ordinal))
-                        GUILayout.Label($"　　• <b>{orphan}</b>：餘額 {SafeBalance(orphan)}"
-                            + "（已列入下拉選單，可選它做轉帳把錢轉回正主）", WrapLabelStyle);
-                    GUILayout.Label("　　↳ 錢轉走之後這個帳戶餘額為 0，但 ledger 紀錄會留著（append-only，本來就不該消失）。",
-                        WrapLabelStyle);
-                }
 
                 string bank = SelectedBank;
                 string persona = SelectedPersona;
@@ -541,6 +576,468 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else GUILayout.Label("  🎨 繪圖券 / 🍺 酒館券: (未選 persona)", WrapLabelStyle);
             }
+        }
+
+        // ===========================================================
+        // 區塊：孤兒帳戶清單 —— 從「唯讀告警」升級成「可操作」（Tim 2026-08-14）
+        // 物理意義：孤兒＝ledger 裡有錢、registry 裡沒有主人的 account_id。此前這裡只印一行字，
+        //          要處理得自己去下拉選單湊 from/to 手打金額 —— 35 個孤兒就是 35 次手打，
+        //          於是實際上沒有人會做，清單變成一個「看得見但不會被處理」的告警。
+        // 兩個動作，順序不可顛倒：
+        //   ① 標記遷移 —— 開一張 orphan-consolidation 轉帳單（pending，**不動錢**），
+        //      目標由帳號解析器建議；Tim 在下方「💸 轉帳審批」確認後按核准才真的搬。
+        //      這正是 Tim 要的「人工標記 → 後台確認 → 按下遷移」，而流程本體是既有的轉帳審批鏈，
+        //      不另造第二套。
+        //   ② 銷戶 —— 只有餘額歸零後才會出現。三道閘全過才准（見 DoCloseGhostAccount）。
+        // 數值影響：本區塊自身零金流 —— 標記只產生單據，銷戶只寫 registry 名單。
+        //          真正動錢的只有轉帳審批的核准鍵。
+        // ===========================================================
+        // 區塊職責：獨立的孤兒帳戶區 —— 標題列（收合狀態下唯一看得到的東西）必須自己說完
+        //          「有幾個」「其中幾個可以現在銷戶」。否則銷戶功能等於不存在：
+        //          它藏在別區的收合層裡，而使用者要先猜到那裡有東西才會展開（Tim 2026-08-14 回報找不到）。
+        void DrawOrphanPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                EnsureOrphanRows();      // ⚠ 走快取。本檔案上方那條血證：Draw* 內不准直接算餘額
+                int closable = 0, withMoney = 0;
+                foreach (var row in m_OrphanRows)
+                {
+                    if (row.Balance > 0) withMoney++;
+                    else if (row.Closable) closable++;
+                }
+                var closedNow = m_CacheClosedAccounts;
+                string summary = m_OrphanBankIds.Count == 0
+                    ? "　(無孤兒帳戶)"
+                    : $"　共 <b>{m_OrphanBankIds.Count}</b>｜有餘額待遷移 <color=yellow><b>{withMoney}</b></color>"
+                      + $"｜可銷戶 <color=#88ff88><b>{closable}</b></color>"
+                      + (closedNow.Count > 0 ? $"｜已銷戶 {closedNow.Count}" : "");
+                if (!FoldHeader("BankOrphanFold", "<b>👻 孤兒帳戶</b>（標記遷移 / 銷戶）", summary)) return;
+                if (m_OrphanBankIds.Count == 0 && closedNow.Count == 0)
+                {
+                    GUILayout.Label("（沒有孤兒帳戶 —— 每一筆錢都有登記在案的主人）", WrapLabelStyle);
+                    return;
+                }
+                DrawOrphanRows();
+            }
+        }
+
+        // 區塊職責：孤兒列的顯示資料快取 —— 每列要算餘額、跑解析、掃 persona 綁定，
+        //          35 列 × 每 repaint frame 是不可接受的（本檔案 2026-08-01 卡頓事故的同一形狀）。
+        // 物理意義：這些值只在「資料重載 / 操作後 / Refresh」才會變，跟餘額快取同一個時機。
+        struct OrphanRow
+        {
+            public string Id;
+            public int Balance;
+            public TreasuryAccountResolution Resolution;
+            public List<string> Personas;
+            public bool HasTarget;    // 解析得出且與自身不同 → 可標記遷移
+            public bool Closable;     // 餘額 0 且無綁定且非正式帳號且未銷戶 → 可銷戶
+        }
+        readonly List<OrphanRow> m_OrphanRows = new List<OrphanRow>();
+        Dictionary<string, string> m_CacheClosedAccounts = new Dictionary<string, string>(StringComparer.Ordinal);
+        bool m_OrphanRowsDirty = true;
+
+        void EnsureOrphanRows()
+        {
+            if (!m_OrphanRowsDirty && !m_BalancesDirty) return;
+            m_OrphanRows.Clear();
+            m_CacheClosedAccounts = UCL_TreasuryAccountResolver.GetClosedAccounts();
+            foreach (var orphan in m_OrphanBankIds.OrderBy(x => x, StringComparer.Ordinal))
+            {
+                // ⚠ 用 SafeGetTokenBalance（int）不是 SafeBalance（顯示字串，讀不到時回 "?"）——
+                //   餘額在這裡要參與「是否為 0」的判斷，那是閘門條件，不能拿顯示值來判。
+                var res = UCL_TreasuryAccountResolver.Resolve(orphan);
+                var personas = UCL_TreasuryAccountResolver.GetBoundPersonas(orphan);
+                int bal = SafeGetTokenBalance(orphan);
+                m_OrphanRows.Add(new OrphanRow
+                {
+                    Id = orphan,
+                    Balance = bal,
+                    Resolution = res,
+                    Personas = personas,
+                    HasTarget = !res.IsUnresolved && res.Changed,
+                    Closable = bal == 0 && personas.Count == 0
+                               && !UCL_TreasuryAccountResolver.IsCanonicalAccount(orphan)
+                               && !m_CacheClosedAccounts.ContainsKey(orphan),
+                });
+            }
+            m_OrphanRowsDirty = false;
+        }
+
+        void DrawOrphanRows()
+        {
+            GUILayout.Label($"  ⚠ <b>{m_OrphanBankIds.Count} 個孤兒帳戶</b>（只存在於 ledger，"
+                + "沒有 agent_banks / system_accounts 對應）—— 多半是 agent 名大小寫、"
+                + "agent 欄被填成 persona 名，或舊命名殘留：", WrapLabelStyle);
+
+            foreach (var row in m_OrphanRows)
+            {
+                string orphan = row.Id;
+                int bal = row.Balance;
+                var res = row.Resolution;
+                bool hasTarget = row.HasTarget;
+                var personas = row.Personas;
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"　　• <b>{orphan}</b>　餘額 <b>{bal}</b>", WrapLabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                    GUILayout.Label(
+                        hasTarget
+                            ? $"建議歸入 <b>{res.AccountId}</b>（{res.Trace}）"
+                            : "<color=#ff8866>無法判定歸屬</color>（解析器查無對應 —— 需人工選目標，走下方手動開單）",
+                        WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(420)));
+
+                    if (bal > 0)
+                    {
+                        using (new EditorGUI.DisabledScope(!hasTarget))
+                        {
+                            if (GUILayout.Button("📝 標記遷移", UCL_GUIStyle.GetButtonStyle(new Color(0.8f, 0.9f, 1f)),
+                                    GUILayout.ExpandWidth(false)))
+                                DoMarkOrphanMigration(orphan, res.AccountId, bal, res.Trace);
+                        }
+                    }
+                    else
+                    {
+                        // 餘額 0 才談銷戶 —— 有錢的帳戶銷掉等於把錢移出視野，比孤兒更難查
+                        if (GUILayout.Button("🚫 銷戶", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.8f, 0.6f)),
+                                GUILayout.ExpandWidth(false)))
+                            DoCloseGhostAccount(orphan);
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (personas.Count > 0)
+                    GUILayout.Label($"　　　　↳ <color=yellow>綁定 persona：{string.Join(", ", personas)}</color>"
+                        + "（有綁定就不准銷戶 —— 那筆錢的來源是這個 persona 的勞動）", WrapLabelStyle);
+            }
+
+            GUILayout.Label("　　↳ 標記遷移只開單不動錢；核准在下方「💸 轉帳審批」。"
+                + "錢搬走後帳戶餘額為 0，ledger 紀錄仍留著（append-only，本來就不該消失）。", WrapLabelStyle);
+
+            var closed = m_CacheClosedAccounts;   // 走快取：GetClosedAccounts 每次都配一份新 dict
+            if (closed.Count > 0)
+            {
+                GUILayout.Label($"  🚫 <b>已銷戶 {closed.Count} 個</b>（不再接受任何金流；歷史保留）：", WrapLabelStyle);
+                foreach (var kv in closed.OrderBy(x => x.Key, StringComparer.Ordinal))
+                    GUILayout.Label($"　　• <b>{kv.Key}</b>　{kv.Value}", WrapLabelStyle);
+            }
+        }
+
+        // 標記遷移：開一張 pending 轉帳單，**不動錢**。核准權留在轉帳審批面板。
+        void DoMarkOrphanMigration(string orphan, string target, int amount, string trace)
+        {
+            if (string.IsNullOrEmpty(target) || target == orphan)
+            { SetResult($"❌ 標記失敗：`{orphan}` 沒有可判定的歸屬目標，請用下方手動開單指定"); return; }
+            if (amount <= 0) { SetResult($"❌ 標記失敗：`{orphan}` 餘額為 {amount}，沒有東西可搬"); return; }
+            try
+            {
+                // 同一個孤兒已有 pending 單就不要再開第二張 —— 兩張都核准會扣兩次，
+                // 而第二次會因為餘額不足失敗，看起來像「系統壞了」而不是「我開重複了」。
+                foreach (var p in m_PendingTransfers)
+                    if (string.Equals(p.from_bank, orphan, StringComparison.Ordinal))
+                    { SetResult($"⚠ `{orphan}` 已有待審轉帳單 `{p.request_id}`（{p.amount} → {p.to_bank}），未重複開單"); return; }
+
+                var req = UCL_TreasuryTransferRequestStore.Create(
+                    orphan, target, amount,
+                    reason: $"孤兒帳戶歸戶：{trace}。全額 {amount} 搬回正主後此帳戶歸零，可再銷戶。",
+                    kind: "orphan-consolidation",
+                    requesterAgent: "BankAdminPage", requesterPersona: SelectedPersona);
+                SetResult($"✅ 已標記待遷移 `{req.request_id}`：{amount} `{orphan}` → `{target}`"
+                    + "（**尚未動錢** —— 到下方「💸 轉帳審批」確認後按核准才生效）");
+                ReloadTransferRequests();
+            }
+            catch (Exception ex) { SetResult($"❌ 標記失敗：{ex.Message}"); }
+        }
+
+        // ===========================================================
+        // 區塊：幽靈帳號銷戶（Tim 2026-08-14）
+        // 物理意義：ledger 是 append-only，帳戶**不是實體物件** —— 它只是「曾經出現在 entry 裡的
+        //          account_id」。所以銷戶不可能是刪除，只能是一份「已銷戶名單」：
+        //          寫入端據此拒收（fail-loud），後台據此把它移出待處理視野，而歷史一個字不動。
+        // 三道閘（任一不過就不准銷）：
+        //   ① 餘額必須為 0 —— 有錢還銷戶＝錢從視野消失，比孤兒更難查
+        //   ② 沒有 persona 綁定 —— 綁定不是欄位而是一條解析鏈（persona→agent→bank），
+        //      所以問的是「誰會解析到這裡」，不是「它的 persona 欄寫誰」
+        //   ③ 不是註冊在案的正式帳號 —— 銷掉 registry 裡的 bank 會讓該 agent 的薪水無處可去
+        // 數值影響：零金流。只在 _registry_meta.json 的 closed_accounts 加一筆。
+        // 可逆性：手動從 closed_accounts 移除即復戶 —— 所以這裡不做二段確認，
+        //        擋錯誤的是三道閘，不是手速。
+        // ===========================================================
+        void DoCloseGhostAccount(string account)
+        {
+            if (string.IsNullOrEmpty(account)) { SetResult("❌ 銷戶失敗：帳號為空"); return; }
+
+            // ⚠ 這一格刻意**不用** SafeGetTokenBalance —— 它讀失敗回 0，
+            //   而「讀不到餘額」與「餘額是 0」在這裡會導致完全相反的決定（放行 vs 擋下）。
+            //   閘門條件必須能分辨這兩者：讀不到就是讀不到，不准當成 0 放行。
+            int bal;
+            try { bal = UCL_TreasuryLedger.GetBalance(account); }
+            catch (Exception ex)
+            { SetResult($"❌ 銷戶失敗：`{account}` 餘額讀取失敗（{ex.Message}）—— 讀不到餘額不等於餘額為 0，不放行"); return; }
+            if (bal != 0)
+            { SetResult($"❌ 銷戶失敗：`{account}` 餘額為 {bal}，不是 0 —— 先標記遷移把錢搬回正主再銷"); return; }
+
+            var personas = UCL_TreasuryAccountResolver.GetBoundPersonas(account);
+            if (personas.Count > 0)
+            { SetResult($"❌ 銷戶失敗：`{account}` 仍有 persona 綁定（{string.Join(", ", personas)}）—— 先解除綁定再銷"); return; }
+
+            if (UCL_TreasuryAccountResolver.IsCanonicalAccount(account))
+            { SetResult($"❌ 銷戶失敗：`{account}` 是註冊在案的正式帳號（agent_banks / system_accounts），不是幽靈帳號"); return; }
+
+            if (UCL_TreasuryAccountResolver.IsClosed(account, out _))
+            { SetResult($"⚠ `{account}` 已經是銷戶狀態，未重複寫入"); return; }
+
+            try
+            {
+                string stamp = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                WriteRegistry(reg =>
+                {
+                    if (!reg.Contains(UCL_TreasuryAccountResolver.ClosedAccountsKey))
+                        reg[UCL_TreasuryAccountResolver.ClosedAccountsKey] = JsonData.ParseJson("{}");
+                    reg[UCL_TreasuryAccountResolver.ClosedAccountsKey][account] =
+                        $"幽靈帳號銷戶 {stamp}（餘額 0、無 persona 綁定、非註冊帳號）。ledger 歷史保留，不再接受任何金流。";
+                });
+                UCL_TreasuryAccountResolver.Invalidate();   // registry 剛改，下一次解析要看得到
+                SetResult($"🚫 已銷戶 `{account}`：往後任何 credit / debit 打進來都會被拒絕並點名來源。"
+                    + "ledger 歷史保留不動；要復戶就從 _registry_meta.json 的 closed_accounts 移除。");
+                NotifyTavern(
+                    $"🚫 **銀行後台｜幽靈帳號銷戶**\n" +
+                    $"帳號 **{account}** 已銷戶（餘額 0、無 persona 綁定、非註冊帳號，三道閘全過）。\n" +
+                    $"📝 說明：ledger 是 append-only，銷戶不刪任何歷史 —— 它只是一份拒收名單。" +
+                    $"往後有金流打進這個帳號會**當場拋錯並點名來源**，因為那代表還有呼叫路徑沒清乾淨。",
+                    "bank-account-closed");
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 銷戶失敗：{ex.Message}"); }
+        }
+
+        // ===========================================================
+        // 區塊：🧭 帳號解析規則 —— 決定「錢落到哪個帳戶」的路由表（Tim 2026-08-14）
+        // 物理意義：ledger 的 account_id 由 UCL_TreasuryAccountResolver 依四張表判定：
+        //          agent_banks（agent→bank）／agent_aliases（別名→agent）／system_accounts（終點帳號）
+        //          ／closed_accounts（拒收名單），外加 personas/<n>.json 的 agent 欄。
+        //          後三張此前**沒有任何 UI**，2026-08-04 補登記是直接手改 JSON —— 手改沒有閘門也沒有痕跡，
+        //          而它改的是金流的路由表。
+        // 數值影響：本區塊自身零金流。但它改的規則會決定**下一筆錢往哪走**，所以每個寫入動作
+        //          都先讓人看到「改完之後這個字串會解析成什麼」（試算欄），而不是改完等下一筆錢來驗。
+        // 邊界：agent_banks 唯讀 —— 它已有兩個寫入者（本頁開戶／Persona & Agent 管理頁開 agent），
+        //      這裡再加第三個只會讓漂移更難查。要改去那兩處。
+        // ===========================================================
+        void DrawResolveRulesPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // 本區用到的已銷戶快取由 EnsureOrphanRows 填 —— 不倚賴「孤兒區一定先畫過」這個假設，
+                // 因為畫面順序日後被調換不會有任何錯誤訊息，只會顯示成空的。
+                EnsureOrphanRows();
+                if (!FoldHeader("BankResolveRulesFold", "<b>🧭 帳號解析規則</b>",
+                        $"　agent {m_AgentToBank.Count}｜別名 {m_Aliases.Count}｜系統帳號 {m_SystemAccounts.Count}"
+                        + $"｜已銷戶 {m_CacheClosedAccounts.Count}")) return;
+
+                // ---- 試算：任何字串進來會變成哪個帳號 ----
+                GUILayout.Label("<b>🔍 解析試算</b>：輸入任意 agent / persona / 帳號字串，看它現在會解析成什麼（純讀，不寫任何東西）", WrapLabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("字串", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                    m_ProbeDraft = GUILayout.TextField(m_ProbeDraft ?? "", UCL_GUIStyle.TextFieldStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                }
+                if (!string.IsNullOrWhiteSpace(m_ProbeDraft))
+                {
+                    var pr = UCL_TreasuryAccountResolver.Resolve(m_ProbeDraft.Trim());
+                    GUILayout.Label(
+                        pr.IsUnresolved
+                            ? $"　<color=#ff8866>✘ 查無對應</color> —— 錢會留在 <b>{pr.AccountId}</b> 這個孤兒帳戶。"
+                              + "　修法：下面加一條別名，或去開戶／補登記成系統帳號。"
+                            : $"　✅ <b>{pr.AccountId}</b>　<i>{pr.Trace}</i>"
+                              + (UCL_TreasuryAccountResolver.IsClosed(pr.AccountId, out var cr)
+                                 ? $"　<color=#ff8866>⚠ 但此帳號已銷戶，金流會被拒收（{cr}）</color>" : ""),
+                        WrapLabelStyle);
+                }
+
+                GUILayout.Space(6);
+
+                // ---- agent_aliases：把認不出的字串接到既有 agent ----
+                GUILayout.Label($"<b>🔀 別名（agent_aliases）</b> {m_Aliases.Count} 筆"
+                    + "：把「解析不出來的字串」對到既有 agent。大小寫已由解析器自動處理，<b>這裡只放真正不同的拼法</b>"
+                    + "（舊命名如 <b>zeta-bank</b>、外部識別碼如 <b>discord:xxxx</b>）。", WrapLabelStyle);
+                foreach (var kv in m_Aliases.OrderBy(x => x.Key, StringComparer.Ordinal).ToList())
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        string bank = m_AgentToBank.TryGetValue(kv.Value, out var b) ? b : "?";
+                        GUILayout.Label($"　　<b>{kv.Key}</b> → agent <b>{kv.Value}</b> → bank <b>{bank}</b>",
+                            WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(460)));
+                        if (GUILayout.Button("刪除", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.7f)), GUILayout.ExpandWidth(false)))
+                            DoRemoveAlias(kv.Key);
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("＋ 別名", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                    m_NewAliasFromDraft = GUILayout.TextField(m_NewAliasFromDraft ?? "", UCL_GUIStyle.TextFieldStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    GUILayout.Label("→ agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(55)));
+                    if (m_AgentKeys.Count > 0)
+                    {
+                        int cur = Mathf.Max(0, m_AgentKeys.IndexOf(m_NewAliasToDraft));
+                        int ni = UCL_GUILayout.PopupSearchCache(cur, m_AgentKeys, m_Dic, "AliasAgentPicker",
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                        if (ni >= 0 && ni < m_AgentKeys.Count) m_NewAliasToDraft = m_AgentKeys[ni];
+                    }
+                    if (GUILayout.Button("新增", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.ExpandWidth(false)))
+                        DoAddAlias();
+                    GUILayout.FlexibleSpace();
+                }
+
+                GUILayout.Space(6);
+
+                // ---- system_accounts：把一個帳號本身認定為終點（不再往下解析）----
+                GUILayout.Label($"<b>🏛 系統／舊世代帳號（system_accounts）</b> {m_SystemAccounts.Count} 筆"
+                    + "：這些名字**就是帳戶本身**，解析到此為止。舊世代 bank 補登記在這裡 ——"
+                    + "登記進 agent_banks 會把該 agent 現行薪水導去舊帳戶（2026-08-04 拍板）。", WrapLabelStyle);
+                foreach (var acc in m_SystemAccounts.OrderBy(x => x, StringComparer.Ordinal))
+                    GUILayout.Label($"　　• <b>{acc}</b>　餘額 {SafeBalance(acc)}", WrapLabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label($"把目前選定的 bank <b>{SelectedBank ?? "(未選)"}</b> 補登記為系統帳號", WrapLabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(360)));
+                    using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(SelectedBank)
+                                                       || !m_OrphanBankIds.Contains(SelectedBank)))
+                    {
+                        if (GUILayout.Button("🏛 補登記", UCL_GUIStyle.GetButtonStyle(new Color(0.8f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
+                            DoRegisterSystemAccount(SelectedBank);
+                    }
+                    GUILayout.Label("（只對孤兒帳戶開放 —— 已登記的不必再登記）", WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+
+                GUILayout.Space(6);
+
+                // ---- closed_accounts：復戶 ----
+                var closed = m_CacheClosedAccounts;   // 同上：走快取，不在 Draw* 每幀重建
+                GUILayout.Label($"<b>🚫 已銷戶（closed_accounts）</b> {closed.Count} 筆：拒收任何金流；歷史保留。", WrapLabelStyle);
+                foreach (var kv in closed.OrderBy(x => x.Key, StringComparer.Ordinal))
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        // 已銷戶帳號的餘額應恆為 0（銷戶前置條件）。不為 0 = 閘門被繞過或事後有錢進來，
+                        // 那是必須當場看見的異常，不是一個可以安靜列在名單裡的狀態。
+                        int cbal = SafeGetTokenBalance(kv.Key);
+                        GUILayout.Label($"　　• <b>{kv.Key}</b>"
+                            + (cbal != 0 ? $"　<color=red>⚠ 餘額 {cbal} ≠ 0，請查金流來源</color>" : "")
+                            + $"　{kv.Value}", WrapLabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(560)));
+                        if (GUILayout.Button("↩ 復戶", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            DoReopenAccount(kv.Key);
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+
+                GUILayout.Space(6);
+                GUILayout.Label($"<b>🏦 agent → bank（agent_banks）</b> {m_AgentToBank.Count} 筆 —— <b>唯讀</b>。"
+                    + "寫入端有兩處：本頁「🏦 帳號操作 → 開戶」與「Persona & Agent 管理」頁的開 agent。"
+                    + "這裡不開第三個入口，因為同一張表三處可寫的漂移不會報錯。", WrapLabelStyle);
+                foreach (var kv in m_AgentToBank.OrderBy(x => x.Key, StringComparer.Ordinal))
+                    GUILayout.Label($"　　• <b>{kv.Key}</b> → <b>{kv.Value}</b>　餘額 {SafeBalance(kv.Value)}", WrapLabelStyle);
+            }
+        }
+
+        // 新增別名 —— 寫 registry 前先擋掉三種會讓規則失效或打架的輸入
+        void DoAddAlias()
+        {
+            string from = (m_NewAliasFromDraft ?? "").Trim();
+            string to = (m_NewAliasToDraft ?? "").Trim();
+            if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
+            { SetResult("❌ 新增別名失敗：來源字串與目標 agent 都必填"); return; }
+            if (!m_AgentToBank.ContainsKey(to))
+            { SetResult($"❌ 新增別名失敗：`{to}` 不在 agent_banks 裡 —— 先開戶，別讓別名指向不存在的 agent"); return; }
+
+            // 已經解析得出來的字串不需要別名。硬加只會製造一條「看起來在生效、其實從沒被用到」的規則，
+            // 而那種規則日後會被當成事實引用。
+            var cur = UCL_TreasuryAccountResolver.Resolve(from);
+            if (!cur.IsUnresolved)
+            { SetResult($"⚠ 未新增：`{from}` 目前已能解析（{cur.Trace}）—— 不需要別名。要改變它的去向請改對應的表。"); return; }
+
+            try
+            {
+                WriteRegistry(reg =>
+                {
+                    if (!reg.Contains("agent_aliases")) reg["agent_aliases"] = JsonData.ParseJson("{}");
+                    reg["agent_aliases"][from.ToLowerInvariant()] = to;   // key 一律小寫（解析器以小寫比對）
+                });
+                UCL_TreasuryAccountResolver.Invalidate();
+                var after = UCL_TreasuryAccountResolver.Resolve(from);
+                SetResult($"✅ 已新增別名：`{from}` → agent `{to}`。試算結果：{after}");
+                m_NewAliasFromDraft = "";
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 新增別名失敗：{ex.Message}"); }
+        }
+
+        void DoRemoveAlias(string aliasKey)
+        {
+            try
+            {
+                WriteRegistry(reg =>
+                {
+                    if (reg.Contains("agent_aliases")) reg["agent_aliases"].Remove(aliasKey);
+                });
+                UCL_TreasuryAccountResolver.Invalidate();
+                var after = UCL_TreasuryAccountResolver.Resolve(aliasKey);
+                SetResult($"🗑 已刪除別名 `{aliasKey}`。該字串現在的解析結果：{after}"
+                    + (after.IsUnresolved ? "　⚠ 往後打進這個名字的錢會變成孤兒。" : ""));
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 刪除別名失敗：{ex.Message}"); }
+        }
+
+        // 補登記系統帳號 —— 把孤兒認定為「它自己就是終點」，錢原地合法化，不搬動任何一分
+        void DoRegisterSystemAccount(string account)
+        {
+            if (string.IsNullOrEmpty(account)) { SetResult("❌ 補登記失敗：未選 bank"); return; }
+            if (UCL_TreasuryAccountResolver.IsCanonicalAccount(account))
+            { SetResult($"⚠ `{account}` 已經是正式帳號，未重複登記"); return; }
+            try
+            {
+                string stamp = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                int bal = SafeGetTokenBalance(account);
+                WriteRegistry(reg =>
+                {
+                    if (!reg.Contains("system_accounts")) reg["system_accounts"] = JsonData.ParseJson("{}");
+                    reg["system_accounts"][account] =
+                        $"{stamp} 由銀行後台補登記（補登記當下餘額 {bal}）。此名稱即帳戶本身，解析到此為止；"
+                        + "刻意不進 agent_banks —— 那會把對應 agent 的現行薪水導向本帳戶。";
+                });
+                UCL_TreasuryAccountResolver.Invalidate();
+                SetResult($"🏛 已補登記系統帳號 `{account}`（餘額 {bal} 原地不動）—— 它不再是孤兒，"
+                    + "往後打進這個名字的錢合法留在這裡。");
+                NotifyTavern(
+                    $"🏛 **銀行後台｜補登記系統帳號**\n" +
+                    $"帳號 **{account}**（餘額 **{bal}**）補登記為 system_account —— 它從「孤兒」變成「終點帳號」。\n" +
+                    $"📝 說明：這是**承認**而非搬錢，一分錢都沒動。刻意不寫進 agent_banks：那會把該 agent 的現行薪水導來這個舊帳戶。",
+                    "bank-system-account");
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 補登記失敗：{ex.Message}"); }
+        }
+
+        void DoReopenAccount(string account)
+        {
+            try
+            {
+                WriteRegistry(reg =>
+                {
+                    if (reg.Contains(UCL_TreasuryAccountResolver.ClosedAccountsKey))
+                        reg[UCL_TreasuryAccountResolver.ClosedAccountsKey].Remove(account);
+                });
+                UCL_TreasuryAccountResolver.Invalidate();
+                SetResult($"↩ 已復戶 `{account}` —— 它重新接受金流（並回到孤兒清單，除非已另行登記）。");
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 復戶失敗：{ex.Message}"); }
         }
 
         // ===========================================================
@@ -789,6 +1286,9 @@ namespace UCL.Core.EditorLib.Page
                     if (!reg.Contains("agent_banks")) reg["agent_banks"] = JsonData.ParseJson("{}");
                     reg["agent_banks"][agent] = bank;
                 });
+                // registry 剛變 → 讓帳號解析器立刻看到新戶，否則下一行的種子 credit
+                // 會把這個剛開的 bank 判成「查無對應」而警告成孤兒。
+                UCL_TreasuryAccountResolver.Invalidate();
 
                 // 可選種子額度：對新 bank 寫第一筆 system_init credit（帳戶隱式建立）
                 string seedMsg = "";
@@ -917,19 +1417,24 @@ namespace UCL.Core.EditorLib.Page
             string txId = "tx_" + Guid.NewGuid().ToString("N").Substring(0, 8);
             string desc = string.IsNullOrEmpty(m_TransferDescDraft) ? "後台轉帳（BankAdminPage）" : m_TransferDescDraft.Trim();
 
+            // ⚠ 本頁的轉帳三處一律 resolveAccount:false ——
+            //   from / to 是從**既有帳號下拉**選出來的（清單本身就含孤兒帳戶，那是歸戶的操作對象）。
+            //   判準：「從既有帳號清單選出來的」＝認字面；「從身分推導出來的」＝歸一。
+            //   若讓歸一介入，選 `summit` 會變成扣 `zeta` 的錢，而畫面顯示轉帳成功。
             // Step 1: Debit from（不足 / 隔離違規會 throw；caller=system 繞隔離）
             TreasuryLedgerEntry debitEntry;
-            try { debitEntry = UCL_TreasuryLedger.Debit(from, amount, "trade", txId, desc, "system", txId); }
+            try { debitEntry = UCL_TreasuryLedger.Debit(from, amount, "trade", txId, desc, "system", txId, idempotencyKey: null, resolveAccount: false); }
             catch (Exception ex) { SetResult($"❌ 轉帳 Debit 失敗：{ex.Message}"); return; }
 
             // Step 2: Credit to（罕見失敗 → rollback 退錢給 from）
-            try { UCL_TreasuryLedger.Credit(to, amount, "trade", txId, desc, "system", txId); }
+            try { UCL_TreasuryLedger.Credit(to, amount, "trade", txId, desc, "system", txId, idempotencyKey: null, resolveAccount: false); }
             catch (Exception ex)
             {
                 try
                 {
                     UCL_TreasuryLedger.Credit(from, amount, "transfer_rollback", txId + "|rollback",
-                        "Rollback failed transfer: " + ex.Message, "system", txId + "_rollback");
+                        "Rollback failed transfer: " + ex.Message, "system", txId + "_rollback",
+                        idempotencyKey: null, resolveAccount: false);
                     SetResult($"❌ 轉帳 Credit 失敗，已 rollback 退還 `{from}`：{ex.Message}");
                 }
                 catch (Exception rbEx)

@@ -122,7 +122,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     description: $"轉帳單 {req.request_id} → @{req.to_bank}（{req.kind}）: {req.reason}",
                     // callerAgentId 必須是 "system"：Debit 有帳戶隔離鐵律，caller 非 system
                     // 且 != accountId 就拋例外。核准者身分記在 decided_by，不靠這個欄位承載。
-                    callerAgentId: "system", cmdId: txId);
+                    callerAgentId: "system", cmdId: txId,
+                    // ⚠ resolveAccount: false —— 轉帳單的兩端都要**認字面**。
+                    //   歸戶單的出款方本來就是孤兒帳戶（`summit` / `Zeta` / `zeta-bank`…），
+                    //   一旦讓 Credit/Debit 的帳號歸一介入，出款方會被導向歸一後的正主帳戶：
+                    //   結果是從正主身上扣錢、孤兒的錢原封不動，而**轉帳單顯示核准成功**。
+                    //   單子上寫的帳號就是操作的對象，這裡不接受任何再詮釋。
+                    resolveAccount: false);
             }
             catch (Exception ex)
             {
@@ -140,14 +146,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     accountId: req.to_bank, amount: req.amount,
                     sourceKind: "transfer_request_in", sourceRef: txId,
                     description: $"轉帳單 {req.request_id} ← @{req.from_bank}（{req.kind}）: {req.reason}",
-                    callerAgentId: "system", cmdId: txId);
+                    callerAgentId: "system", cmdId: txId,
+                    resolveAccount: false);   // 同出款方：收款帳號由開單者指名，不再詮釋
             }
             catch (Exception ex)
             {
                 try
                 {
+                    // 回滾必須退回**原本被扣的那個帳號**（字面），否則錢會退到別人身上，
+                    // 而帳面上兩邊都「成功」—— 這是回滾路徑最不能出的錯。
                     UCL_TreasuryLedger.Credit(req.from_bank, req.amount, "transfer_request_rollback",
-                        txId + "|rollback", $"轉帳單 {req.request_id} 入帳失敗回滾: {ex.Message}", "system", txId + "_rollback");
+                        txId + "|rollback", $"轉帳單 {req.request_id} 入帳失敗回滾: {ex.Message}", "system", txId + "_rollback",
+                        idempotencyKey: null, resolveAccount: false);
                 }
                 catch (Exception rbEx)
                 {

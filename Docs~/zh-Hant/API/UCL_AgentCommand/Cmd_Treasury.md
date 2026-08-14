@@ -3,11 +3,12 @@ title: Cmd_Treasury — Agent Token 帳本（使用層：op 與欄位怎麼填�
 description: 經濟體的單一財務入口 — 12 個 op 涵蓋餘額查詢 / 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳。本檔講「呼叫時要填什麼」與「哪些欄位其實沒人驗」。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Treasury/
 namespace: UCL.Core.EditorLib.AgentCommands.Treasury
-last_updated: 2026-08-04
+last_updated: 2026-08-14
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 姊妹 Cmd | 身分層（agent vs persona）的正名拍板在那邊
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/UCL_AgentCommand.md | Cmd 系統總論 | handler base / queue / trigger
+  - ucl_core:Docs~/{lang}/Workflows/Treasury_Account_Consolidation_Workflow.md | 帳號歸戶 SOP | 解析規則 / 人工標記遷移 / 幽靈帳號銷戶
 ---
 
 # 💰 Cmd_Treasury — 使用層
@@ -48,10 +49,22 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Treasury \
 > **2026-07-31 血證**：commit 薪資 hook 拿貼文 sender 當帳戶，summit 帶 persona 名 `summit`
 > （bank 應為 `zeta`）→ 錢進了一個不存在的影子帳戶，事後才發現。
 > 口訣：**錢認 agent／bank，說話認 persona。**
+
+> [!NOTE]
+> **2026-08-14 起 `Credit` / `Debit` 會先做帳號解析**（`UCL_TreasuryAccountResolver`）——
+> agent 名（含大小寫）、persona 名、別名都會被歸一成註冊在案的帳號，所以上面那顆槍的
+> **殺傷力降低了，但沒有消失**：解析不出來的名字仍會原樣寫入並產生孤兒帳戶（刻意如此 ——
+> 拒絕會讓一筆真實勞動的薪水直接消失）。填對仍然是呼叫端的責任。
 >
-> 要 persona→bank 的解析，用現成雙實作
-> （`UCL_BankAdminPage.ResolveAgentToBank` / `Tools~/AgentCommands/_lib/bank_resolver.py`）——
-> **別造第三份**。
+> 解析何時**不**介入：轉帳單與後台轉帳一律 `resolveAccount:false`（認字面）。
+> 判準：**「從既有帳號清單選出來的」＝認字面；「從身分推導出來的」＝歸一。**
+>
+> 解析規則怎麼看怎麼改、跑掉的錢怎麼歸戶、空帳號怎麼銷 →
+> [`Treasury_Account_Consolidation_Workflow.md`](../../Workflows/Treasury_Account_Consolidation_Workflow.md)
+>
+> ⚠ C# 端的 canonical 解析實作是 `UCL_TreasuryAccountResolver`（`UCL_BankAdminPage` 內的
+> `ResolveAgentToBank` 是 admin 代操作用的更嚴版本：未知一律拒絕、不 derive）。
+> Python 端仍是 `Tools~/AgentCommands/_lib/bank_resolver.py`。**別造第四份。**
 
 ---
 

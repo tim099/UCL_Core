@@ -61,10 +61,52 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ==========================================================
+        // 區塊職責：帳號歸一 —— 寫任何一筆帳之前，把呼叫端給的字串換成註冊在案的正式帳號
+        // 物理意義：此前 account_id 是純字串直寫，於是 agent 名大小寫（`Zeta` vs bank `zeta`）、
+        //          persona 名（`summit`）、舊命名（`zeta-bank`）各自生出一個有錢沒主人的孤兒帳戶。
+        //          解析規則的唯一實作在 UCL_TreasuryAccountResolver（不在這裡再寫一套）。
+        // 數值影響：**決定錢落進哪個帳戶**。歸一命中 → 寫正式帳號；查不到 → 原樣寫入並警告
+        //          （不丟棄：丟棄會讓一筆真實勞動的薪水無聲消失，比記在錯帳戶更難查）。
+        // 邊界：已銷戶帳號一律拒收 —— 銷戶的前提是餘額 0 且無人綁定，還有錢進來就是有路徑沒清乾淨，
+        //      那必須當場炸出來，不能安靜補一筆讓帳戶自己復活。
+        // ==========================================================
+        static string ResolveAccountOrThrow(string accountId, bool resolveAccount, string opLabel)
+        {
+            string resolved = accountId;
+            if (resolveAccount)
+            {
+                var r = UCL_TreasuryAccountResolver.Resolve(accountId);
+                if (r.Changed)
+                {
+                    Debug.Log($"[Treasury] 帳號歸一（{opLabel}）：{r.Trace}");
+                    resolved = r.AccountId;
+                }
+                else if (r.IsUnresolved)
+                {
+                    Debug.LogWarning(
+                        $"[Treasury] ⚠ 帳號 `{accountId}` 查無對應（{opLabel}）—— 本筆仍會入帳，" +
+                        $"但它是**孤兒帳戶**（沒有 agent_banks / system_accounts 對應）。" +
+                        $"要嘛去 registry 補登記，要嘛走銀行後台標記遷移。");
+                }
+            }
+
+            if (UCL_TreasuryAccountResolver.IsClosed(resolved, out string closeReason))
+            {
+                throw new InvalidOperationException(
+                    $"[Treasury] 帳號 `{resolved}` 已銷戶，拒絕 {opLabel}（銷戶理由：{closeReason}）。" +
+                    $"還有金流打進已銷戶帳號 = 有呼叫路徑沒清乾淨，請查來源而不是重開帳戶。");
+            }
+            return resolved;
+        }
+
+        // ==========================================================
         // 區塊職責：Credit — 進帳
         // 物理意義：寫一筆 credit entry；Tim grant / task_completion 等都走這
         // 數值影響：account 餘額 += amount；ledger 多一筆 entry
         // 邊界：amount 必 > 0；source_kind 必填
+        // resolveAccount：預設歸一。**歸戶轉帳必須傳 false** —— 那種單子的收付方就是要指名
+        //          字面上的那個孤兒帳戶，歸一會把出款方導去別處，讓孤兒的錢永遠搬不走
+        //          而且轉帳看起來還成功了。
         // ==========================================================
         public static TreasuryLedgerEntry Credit(
             string accountId,
@@ -74,11 +116,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string description = null,
             string callerAgentId = null,
             string cmdId = null,
-            string idempotencyKey = null)
+            string idempotencyKey = null,
+            bool resolveAccount = true)
         {
             if (string.IsNullOrEmpty(accountId)) throw new ArgumentException("accountId 必填");
             if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
             if (string.IsNullOrEmpty(sourceKind)) throw new ArgumentException("sourceKind 必填");
+
+            accountId = ResolveAccountOrThrow(accountId, resolveAccount, $"credit {amount} ({sourceKind})");
 
             return WriteEntry(TreasuryEntryType.Credit, accountId, amount, sourceKind, sourceRef, description, callerAgentId, cmdId, idempotencyKey);
         }
@@ -90,6 +135,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 安全：account_id 必須等於 callerAgentId（per Plan §2.5 帳戶隔離鐵律）
         //       例外：callerAgentId 為空 / "system" 視為系統內部呼叫，跳過驗
         // ==========================================================
+        // resolveAccount：預設歸一（同 Credit）。歸戶轉帳的出款方必須傳 false，
+        //          否則會從歸一後的正主帳戶扣錢 —— 那不是搬帳，那是把正主的錢扣掉。
         public static TreasuryLedgerEntry Debit(
             string accountId,
             int amount,
@@ -98,17 +145,29 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string description = null,
             string callerAgentId = null,
             string cmdId = null,
-            string idempotencyKey = null)
+            string idempotencyKey = null,
+            bool resolveAccount = true)
         {
             if (string.IsNullOrEmpty(accountId)) throw new ArgumentException("accountId 必填");
             if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
             if (string.IsNullOrEmpty(useKind)) throw new ArgumentException("useKind 必填");
 
+            accountId = ResolveAccountOrThrow(accountId, resolveAccount, $"debit {amount} ({useKind})");
+
             // 帳戶隔離鐵律：debit 時 caller 必須是自己 account
-            if (!string.IsNullOrEmpty(callerAgentId) && callerAgentId != "system" && callerAgentId != accountId)
+            // ⚠ 比對前 caller 也要歸一：accountId 已被歸一成 bank，而 callerAgentId 常是 agent 名
+            //   （`Zeta` vs bank `zeta`）。只歸一一邊會讓每一筆合法扣款都被判成盜用 —— 而那個
+            //   例外訊息長得像資安事件，會把人帶去查一個不存在的攻擊。
+            string callerResolved = callerAgentId;
+            if (resolveAccount && !string.IsNullOrEmpty(callerAgentId) && callerAgentId != "system")
+                callerResolved = UCL_TreasuryAccountResolver.Resolve(callerAgentId).AccountId;
+
+            if (!string.IsNullOrEmpty(callerResolved) && callerResolved != "system" && callerResolved != accountId)
             {
                 throw new InvalidOperationException(
-                    $"[Treasury] 不可動用對方帳戶：callerAgentId={callerAgentId} 嘗試 debit accountId={accountId}");
+                    $"[Treasury] 不可動用對方帳戶：callerAgentId={callerAgentId}"
+                    + (string.Equals(callerResolved, callerAgentId, StringComparison.Ordinal) ? "" : $"（歸一後 {callerResolved}）")
+                    + $" 嘗試 debit accountId={accountId}");
             }
 
             // 冪等判重先於餘額檢查：重複請求該回既有 entry，而不是在餘額剛好不足時對重複請求噴

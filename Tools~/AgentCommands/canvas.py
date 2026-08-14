@@ -29,8 +29,13 @@ canvas.py — Shared Pixel Canvas MVP CLI（共用像素畫布）
 ops（argparse subcommands）:
   place / view / pixel / stats / snapshot / voucher / freetime / note / claim
 
-⚠ 鐵律：canvas_latest.png 維持不透明白底（下游預覽相容）；canvas_latest_t.png 為唯一透明輸出；
-  兩者皆衍生 render；非 ASCII 字串正常 UTF-8。
+⚠ 鐵律：canvas_latest.png 與 _last_view.png 維持不透明白底（下游預覽相容）；
+  透明輸出一律成對衍生、檔名加 `_t` 後綴（canvas_latest_t.png / _last_view_t.png）；
+  所有 png 皆衍生 render（事實源永遠是 events）；非 ASCII 字串正常 UTF-8。
+
+⚠ view 的透明變體是 3D stamp 的**輸入格式**（Tim 2026-08-14 拍板：2D→3D 一律先出預覽再轉繪）——
+  故 view 必須印出 `non_transparent_pixels` 與 sha256，讓下游 `sculpt.py stampimg --expect-pixels`
+  能把「人看過的那張圖」與「實際被貼的那份 bytes」對起來。數字不是資訊，是閘門。
 
 測試：--root / --treasury-root 可指向 temp 目錄，不污染真實 state。
 """
@@ -40,11 +45,13 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
+import hashlib
 import json
 import os
 import secrets
 import sys
 import time
+import zlib
 from pathlib import Path
 
 # 區塊職責：Windows console UTF-8 fallback
@@ -278,6 +285,21 @@ class Paths:
         return self.root / "_last_view.png"
 
     @property
+    def cache_meta(self) -> Path:
+        # 增量快取的 meta（指紋 / 檔案清單 / 水位）；衍生物，不入 git
+        return self.root / "_canvas_cache.json"
+
+    @property
+    def cache_bin(self) -> Path:
+        # 增量快取的 buffer+mask 二進位（各 CANVAS_W*CANVAS_H bytes）；衍生物，不入 git
+        return self.root / "_canvas_cache.bin"
+
+    @property
+    def last_view_t_png(self) -> Path:
+        # view 的 RGBA 透明變體（未繪製 → alpha 0）；3D stamp 的輸入格式
+        return self.root / "_last_view_t.png"
+
+    @property
     def ledger(self) -> Path:
         return self.treasury_root / "ledger"
 
@@ -419,22 +441,69 @@ def iter_events(P: Paths):
         yield ev
 
 
-def build_buffer(P: Paths, with_mask: bool = False):
+# ───────────────────────── 增量快取（buffer / mask 落盤）─────────────────────────
+# 區塊職責：把 replay 出來的 buf+mask 存成本地快取，下次能免 replay 或只 replay 新事件。
+# 物理意義：事實源永遠是 events/（append-only）；快取是**可隨時丟棄的衍生物**，
+#          任何一點不確定都退回全 replay —— 快取只能省時間，不准改變結果。
+# ⚠ 為什麼不照抄 3D 的 last_event_file 增量（Tim 2026-08-14 指出的 git 同步情境）：
+#   事件檔會**從 git 同步進來**，而同步進來的檔可以是「時間比較舊、名字排在前面」的。
+#   靠「找到上次那個檔名之後才算新的」會把它當成已處理 ⇒ **靜默漏掉**（3D 端目前是這個形狀，
+#   屬 gura 的引擎，已回報未擅改）。所以本快取用兩道判準，都以「不確定就重建」為預設：
+#     ① 檔案清單指紋：全部事件檔的 (相對路徑, 大小) 排序後 hash。
+#        新增／刪除／改大小 → 指紋變 ⇒ 不能直接用快取。
+#     ② 增量只在「舊檔全數原樣仍在，且新檔的 ts 都 ≥ 快取已套用的最大 ts」時才成立。
+#        git 拉進一筆昨天的事件 → 它的 ts 比較舊 ⇒ **全重建**，不做增量。
+#        （last-write-wins 是依 ts 定的，把舊事件套在新事件之後會塗出錯的顏色。）
+#   已知邊界：內容改了但**大小不變**的事件檔偵測不到 —— append-only 日誌不該發生
+#   （那是改歷史），真要防得逐檔 hash，成本從 stat 升到讀全檔，現階段不換。
+CACHE_SCHEMA = 1
+
+
+def _scan_event_manifest(P: Paths):
     """
-    區塊職責：從事件流 replay 出完整 index-map buffer（可選同步產出 painted-mask）
-    物理意義：底色填 BLANK_INDEX，逐事件逐像素塗（同座標 last-write-wins）。
-              mask 記「曾被畫過」的格子（不論顏色）— index 255 身兼空白底色與可畫純白，
-              透明渲染的判定必須靠 mask 而非色值，否則故意畫的白會消失。
-    數值影響：with_mask=False 回 buf（2048*2048 bytearray, 1 byte palette index）；
-              with_mask=True 回 (buf, mask)（mask 同尺寸 bytearray, 0=沒畫過 1=畫過）。
+    區塊職責：掃出所有事件檔的 (相對路徑, 位元組大小)，排序後回傳。
+    物理意義：只 stat 不解析 JSON —— 這是「要不要重建」的判斷成本下限。
     """
-    buf = bytearray([BLANK_INDEX]) * (CANVAS_W * CANVAS_H)  # 初始全空白底色
-    mask = bytearray(CANVAS_W * CANVAS_H) if with_mask else None  # 初始全 0 = 沒畫過
-    for ev in iter_events(P):
+    out = []
+    if not P.events.is_dir():
+        return out
+    for date_dir in sorted(P.events.iterdir()):
+        if not date_dir.is_dir():
+            continue
+        for ev_file in sorted(date_dir.iterdir()):
+            if ev_file.suffix != ".json":
+                continue
+            try:
+                out.append((f"{date_dir.name}/{ev_file.name}", ev_file.stat().st_size))
+            except OSError:
+                continue
+    out.sort()
+    return out
+
+
+def _manifest_hash(entries) -> str:
+    h = hashlib.sha256()
+    for rel, size in entries:
+        h.update(f"{rel}:{size}\n".encode("utf-8"))
+    return h.hexdigest()
+
+
+def _read_events_at(P: Paths, rels):
+    """區塊職責：只讀指定的事件檔並依 ts 排序（增量路徑用，不掃全目錄）。"""
+    evs = []
+    for rel in rels:
+        ev = read_json(P.events / rel)
+        if ev is not None:
+            evs.append(ev)
+    evs.sort(key=_event_sort_key)
+    return evs
+
+
+def _apply_events(buf, mask, events):
+    """區塊職責：把事件逐像素塗進 buf/mask（與全 replay 同一份塗法，不另寫第二套）。"""
+    for ev in events:
         for px in ev.get("pixels", []):
-            x = px.get("x")
-            y = px.get("y")
-            # 防呆：事件內若有越界座標（理論不會）直接跳過
+            x, y = px.get("x"), px.get("y")
             if x is None or y is None or not (0 <= x < CANVAS_W) or not (0 <= y < CANVAS_H):
                 continue
             try:
@@ -442,9 +511,113 @@ def build_buffer(P: Paths, with_mask: bool = False):
             except ValueError:
                 continue
             pos = y * CANVAS_W + x
-            buf[pos] = idx   # last-write-wins：直接覆蓋
-            if mask is not None:
-                mask[pos] = 1
+            buf[pos] = idx
+            mask[pos] = 1
+
+
+def load_cache(P: Paths):
+    """
+    區塊職責：讀快取 meta＋binary，回 (meta, buf, mask)；任何不完整一律回 None（退全 replay）。
+    數值影響：binary 佈局＝前 CANVAS_W*CANVAS_H bytes 是 buf，後同長度是 mask。
+    """
+    try:
+        if not P.cache_meta.is_file() or not P.cache_bin.is_file():
+            return None
+        meta = json.loads(P.cache_meta.read_text(encoding="utf-8"))
+        if meta.get("schema") != CACHE_SCHEMA:
+            return None                      # schema 換版 → 舊快取直接作廢，不猜相容
+        n = CANVAS_W * CANVAS_H
+        blob = zlib.decompress(P.cache_bin.read_bytes())
+        if len(blob) != n * 2:
+            return None                      # 長度不對＝壞檔，不硬讀
+        return meta, bytearray(blob[:n]), bytearray(blob[n:])
+    except (OSError, ValueError, zlib.error, json.JSONDecodeError):
+        return None                          # 壞快取不是錯誤路徑，是「重建」路徑
+
+
+def save_cache(P: Paths, buf, mask, entries, max_ts: str):
+    """區塊職責：落快取（先寫 .tmp 再 replace —— 半寫的快取比沒有快取更糟）。"""
+    try:
+        P.root.mkdir(parents=True, exist_ok=True)
+        tmp_bin = P.cache_bin.with_suffix(".bin.tmp")
+        # 數值影響：畫布 99.97% 是空白，8.4MB 原始資料 zlib level 1 壓成約 39KB。
+        # 用 level 1 不用 6：6 只多省 29KB 卻讓解壓從 10ms 變 16ms —— 快取的成本在**讀**不在存。
+        tmp_bin.write_bytes(zlib.compress(bytes(buf) + bytes(mask), 1))
+        os.replace(tmp_bin, P.cache_bin)
+        meta = {
+            "schema": CACHE_SCHEMA,
+            "manifest_hash": _manifest_hash(entries),
+            "event_count": len(entries),
+            "max_ts": max_ts,
+            "files": [list(e) for e in entries],
+            "built_at": iso_ms(utcnow()),
+        }
+        tmp_meta = P.cache_meta.with_suffix(".json.tmp")
+        tmp_meta.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp_meta, P.cache_meta)
+    except OSError:
+        pass                                 # 快取寫不進去不該擋住主流程（結果不受影響）
+
+
+def _max_ts_of(events) -> str:
+    """
+    區塊職責：取事件集合中「最晚」的 ts，回原始字串（空集合回空字串）。
+    ⚠ 比大小走 parse_iso 不走字串比對 —— ts 只要有一筆缺毫秒或帶不同時區寫法，
+      字串序就跟時間序不一致，而那種錯會安靜地把增量判定變成擲骰子。
+    """
+    best_dt, best_s = None, ""
+    for ev in events:
+        t = ev.get("ts") or ""
+        dt = parse_iso(t)
+        if dt is not None and (best_dt is None or dt > best_dt):
+            best_dt, best_s = dt, t
+    return best_s
+
+
+def build_buffer(P: Paths, with_mask: bool = False, use_cache: bool = True):
+    """
+    區塊職責：取得完整 index-map buffer（可選同步產出 painted-mask）—— 走快取，必要時 replay。
+    物理意義：底色填 BLANK_INDEX，逐事件逐像素塗（同座標 last-write-wins）。
+              mask 記「曾被畫過」的格子（不論顏色）— index 255 身兼空白底色與可畫純白，
+              透明渲染的判定必須靠 mask 而非色值，否則故意畫的白會消失。
+    數值影響：with_mask=False 回 buf（2048*2048 bytearray, 1 byte palette index）；
+              with_mask=True 回 (buf, mask)（mask 同尺寸 bytearray, 0=沒畫過 1=畫過）。
+              **回傳值與有沒有走快取無關** —— 快取只省時間，不准改變結果。
+    快取三路（判準見上方 CACHE_SCHEMA 區塊；use_cache=False 可強制全 replay 做對拍驗證）：
+      ① 指紋相同        → 直接用快取，零 replay
+      ② 舊檔原樣＋新檔 ts 都不早於快取 → 只 replay 新檔，疊加在快取上
+      ③ 其餘（含 git 拉進舊事件、檔案消失、快取壞掉）→ 全 replay 重建
+    """
+    entries = _scan_event_manifest(P)
+    if use_cache:
+        cached = load_cache(P)
+        if cached is not None:
+            meta, c_buf, c_mask = cached
+            if meta.get("manifest_hash") == _manifest_hash(entries):
+                return (c_buf, c_mask) if with_mask else c_buf          # 路 ①
+            old = {tuple(e) for e in meta.get("files", [])}
+            cur = set(entries)
+            if old and old <= cur:                                       # 舊檔全數原樣仍在
+                new_rels = [rel for rel, _ in sorted(cur - old)]
+                new_evs = _read_events_at(P, new_rels)
+                base_dt = parse_iso(meta.get("max_ts") or "")
+                # 新事件若有任何一筆早於快取水位 → 疊加會塗錯（last-write-wins 依 ts）⇒ 退全重建
+                ok = base_dt is None or all(
+                    (parse_iso(ev.get("ts") or "") or datetime.datetime.min) >= base_dt
+                    for ev in new_evs)
+                if ok:                                                   # 路 ②
+                    _apply_events(c_buf, c_mask, new_evs)
+                    save_cache(P, c_buf, c_mask, entries,
+                               _max_ts_of(new_evs) or meta.get("max_ts", ""))
+                    return (c_buf, c_mask) if with_mask else c_buf
+
+    # 路 ③：全 replay（也是 use_cache=False 的唯一路徑）
+    buf = bytearray([BLANK_INDEX]) * (CANVAS_W * CANVAS_H)  # 初始全空白底色
+    mask = bytearray(CANVAS_W * CANVAS_H)                   # 初始全 0 = 沒畫過
+    all_evs = list(iter_events(P))
+    _apply_events(buf, mask, all_evs)
+    if use_cache:
+        save_cache(P, buf, mask, entries, _max_ts_of(all_evs))
     return (buf, mask) if with_mask else buf
 
 
@@ -817,8 +990,8 @@ def cmd_place(args):
     write_json(ev_path, event)
 
     # 步驟 7：增量更新 buffer + 重渲 canvas_latest.png (+ canvas_latest_t.png 透明變體)
-    #   為簡潔 + 正確性，MVP 直接全 replay build buffer 再 encode；
-    #   buffer 是 cached 概念，這裡每次 place 後重建一次確保 last-write-wins 正確。
+    #   2026-08-14 起 build_buffer 走增量快取：剛落的這筆是「最新 ts 的新檔」⇒ 走路② 只 replay 它，
+    #   疊在快取上。正確性不因走快取而改變（cache --sub verify 逐格對拍過），省的是全 replay。
     buf, mask = build_buffer(P, with_mask=True)
     render_latest(P, buf, mask)
 
@@ -834,13 +1007,93 @@ def cmd_place(args):
     print(f"  canvas_latest_t: {P.latest_t_png} (透明變體)")
 
 
-# ───────────────────────────── view ─────────────────────────────
+# ───────────────────────────── cache ─────────────────────────────
+# 區塊職責：讓「快取現在走哪一路、什麼時候會刷新」看得見 —— 不用讀 code 也不用猜。
+# 物理意義：status 只 stat 不 replay（判斷成本下限）；verify 是**唯一有資格說「快取是對的」**的路徑
+#          —— 它把快取結果與全 replay 逐格對拍。印 ✓ 不算數，對拍過才算。
+def cmd_cache(args):
+    P = args._paths
+    ensure_meta(P)
+    entries = _scan_event_manifest(P)
+    cur_hash = _manifest_hash(entries)
 
+    if args.sub == "rebuild":
+        t0 = time.time()
+        build_buffer(P, with_mask=True, use_cache=False)   # 全 replay（不吃舊快取）
+        _, mask = build_buffer(P, with_mask=True)          # 再跑一次落快取
+        print("# ♻ 快取重建")
+        print(f"  事件檔   : {len(entries)}")
+        print(f"  已繪格數 : {sum(1 for m in mask if m)}")
+        print(f"  耗時     : {time.time() - t0:.2f}s")
+        return 0
+
+    if args.sub == "verify":
+        t0 = time.time()
+        c_buf, c_mask = build_buffer(P, with_mask=True, use_cache=True)
+        t_cache = time.time() - t0
+        t0 = time.time()
+        r_buf, r_mask = build_buffer(P, with_mask=True, use_cache=False)
+        t_replay = time.time() - t0
+        diff_buf = sum(1 for a, b in zip(c_buf, r_buf) if a != b)
+        diff_mask = sum(1 for a, b in zip(c_mask, r_mask) if a != b)
+        print("# 🔍 快取對拍（快取 vs 全 replay）")
+        print(f"  buf  差異格數: {diff_buf}")
+        print(f"  mask 差異格數: {diff_mask}")
+        print(f"  快取路徑耗時 : {t_cache:.3f}s ／ 全 replay: {t_replay:.3f}s")
+        if diff_buf or diff_mask:
+            print("❌ 快取與事實源不一致 —— 跑 `cache --sub rebuild`，並回報這訊息（這是 bug 不是雜訊）")
+            return 1
+        print("✅ 逐格一致")
+        return 0
+
+    # status —— 只 stat，不 replay
+    cached = load_cache(P)
+    print("# 📦 canvas 增量快取狀態")
+    print(f"  事件檔       : {len(entries)}")
+    print(f"  當前指紋     : {cur_hash[:16]}…")
+    if cached is None:
+        print("  快取         : 不存在 / 不可用 → 下次 build_buffer 走**全 replay** 並重建")
+        return 0
+    meta, _, _ = cached
+    print(f"  快取建於     : {meta.get('built_at', '?')}")
+    print(f"  快取事件數   : {meta.get('event_count', '?')}")
+    print(f"  快取水位 ts  : {meta.get('max_ts', '?')}")
+    if meta.get("manifest_hash") == cur_hash:
+        print("  下次判定     : ✅ 路① 指紋相同 —— 直接用，零 replay")
+        return 0
+    old = {tuple(e) for e in meta.get("files", [])}
+    cur = set(entries)
+    if old and old <= cur:
+        new_rels = [rel for rel, _ in sorted(cur - old)]
+        new_evs = _read_events_at(P, new_rels)
+        base_dt = parse_iso(meta.get("max_ts") or "")
+        stale = [ev.get("ts") for ev in new_evs
+                 if base_dt is not None
+                 and (parse_iso(ev.get("ts") or "") or datetime.datetime.min) < base_dt]
+        if stale:
+            print(f"  下次判定     : ♻ 路③ 全重建 —— 新進 {len(new_rels)} 檔中有 {len(stale)} 筆 ts 早於水位")
+            print(f"                （典型成因：git 同步拉進別人較早的事件；例：{stale[0]}）")
+        else:
+            print(f"  下次判定     : ⚡ 路② 增量 —— 只 replay 新增的 {len(new_rels)} 個事件檔")
+    else:
+        print(f"  下次判定     : ♻ 路③ 全重建 —— 有 {len(old - cur)} 個舊事件檔消失或大小改變")
+    return 0
+
+
+# ───────────────────────────── view ─────────────────────────────
+# 區塊職責：渲染當前畫布（可裁區、可放大）→ _last_view.png ＋ RGBA 透明變體 _last_view_t.png。
+# 物理意義：透明變體是「2D→3D 轉繪」的**輸入格式**（Tim 2026-08-14 拍板：先出預覽再轉繪）——
+#          未繪製 → alpha 0（3D 端不放 voxel）、畫過（含故意畫白）→ 不透明。
+#          未繪製與純白在 RGB 上同值，只有 alpha 分得出來，所以 3D 端不可吃 _last_view.png。
+# 數值影響：`non_transparent_pixels` 是**裁切與縮放之後**數出來的 —— 它描述檔案，不描述意圖；
+#          scale>1 時它會等比放大（那是呼叫端顯式選的放大貼，不是隱藏行為）。
+#          sha256 讓下游能證明「我吃的就是你看的那張」，配 stampimg --expect-pixels 成閘門。
 def cmd_view(args):
     P = args._paths
     ensure_meta(P)
-    buf = build_buffer(P)
+    buf, mask = build_buffer(P, with_mask=True)
     img = buffer_to_image(buf)
+    img_t = buffer_to_image_rgba(buf, mask)
 
     # 區域裁切（spec：region=x,y,w,h）
     if args.region:
@@ -856,18 +1109,36 @@ def cmd_view(args):
         x2 = min(x + w, CANVAS_W)
         y2 = min(y + h, CANVAS_H)
         img = img.crop((x, y, x2, y2))
+        img_t = img_t.crop((x, y, x2, y2))
 
     # 縮放（spec：scale 放大倍率，NEAREST 保像素硬邊）
+    # ⚠ 透明變體必須同用 NEAREST：任何插值都會生出 0<alpha<255 的半透明邊，
+    #   而 3D 端「畫過/沒畫過」是二值判定 —— 插值等於製造出畫布上不存在的像素。
     if args.scale and args.scale != 1:
         from PIL import Image as _Img
         img = img.resize((img.width * args.scale, img.height * args.scale),
                          resample=_Img.NEAREST)
+        img_t = img_t.resize((img_t.width * args.scale, img_t.height * args.scale),
+                             resample=_Img.NEAREST)
 
     P.last_view_png.parent.mkdir(parents=True, exist_ok=True)
     img.save(str(P.last_view_png))
+    img_t.save(str(P.last_view_t_png))
+
+    # 數出實際落檔的非透明像素（＝3D 端會放 voxel 的格數，thickness=1 時 1:1）
+    # RGBA tobytes 每像素 4 bytes，alpha 在第 4 個 → [3::4] 就是整張的 alpha 通道
+    # （不用 getdata：Pillow 14 要移除它，且逐 tuple 建物件在 2048² 上明顯慢）
+    opaque = sum(1 for a in img_t.tobytes()[3::4] if a != 0)
+    sha = hashlib.sha256(P.last_view_t_png.read_bytes()).hexdigest()
+
     print(f"# 🖼 view rendered")
     print(f"  size  : {img.width}x{img.height}")
     print(f"  path  : {P.last_view_png}")
+    print(f"  path_t: {P.last_view_t_png} (RGBA 透明變體 — 3D stamp 的輸入)")
+    print(f"  non_transparent_pixels: {opaque} / {img_t.width * img_t.height}")
+    print(f"  sha256_t: {sha}")
+    print(f"  → 貼進 3D：python sculpt.py stampimg --png \"{P.last_view_t_png}\" "
+          f"--expect-pixels {opaque} --at <x,y,z> --facing z+ --persona <P>")
 
 
 # ───────────────────────────── pixel ─────────────────────────────
@@ -1242,6 +1513,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_place)
 
     # view
+    p = sub.add_parser("cache", help="增量快取狀態 / 重建 / 對拍驗證")
+    p.add_argument("--sub", choices=["status", "rebuild", "verify"], default="status",
+                   help="status=看目前是哪一路；rebuild=丟棄重建；verify=快取 vs 全 replay 逐格對拍")
+    p.set_defaults(func=cmd_cache)
+
     p = sub.add_parser("view", help="渲染當前畫布 → _last_view.png")
     p.add_argument("--region", default=None, help="x,y,w,h（選）")
     p.add_argument("--scale", type=int, default=1, help="放大倍率（選）")

@@ -2,7 +2,7 @@
 name: ucl-canvas
 description: |
   Shared Pixel Canvas（共用像素畫布，wplace / r/place 概念）操作 SOP — 一塊 2048×2048 全社群共用畫布，花 1 token / 1 繪畫券 / 1 自由時間免費像素 繪 1 個像素，誰都能畫、誰都能覆蓋，即時看得到當前全貌。
-  涵蓋 place（放點）/ view（看當前畫布）/ pixel / stats / snapshot / voucher（繪畫券）/ freetime（自由時間免費像素）/ note（個人筆記）/ claim（共享宣稱區域）九個 op，三付款方式（pay=auto 優先序：免費→券→token）、256 色 8-bit RGB332 調色盤、append-only 事件流 + last-write-wins。
+  涵蓋 place（放點）/ view（看當前畫布）/ pixel / stats / snapshot / voucher（繪畫券）/ freetime（自由時間免費像素）/ note（個人筆記）/ claim（共享宣稱區域）/ cache（增量快取狀態/重建/對拍）十個 op，三付款方式（pay=auto 優先序：免費→券→token）、256 色 8-bit RGB332 調色盤、append-only 事件流 + last-write-wins。
   觸發詞包含：畫布 / 繪圖板 / 像素 / canvas / pixel / 放點 / 畫圖 / 繪畫券 / drawing voucher / wplace / r/place / 宣稱區域 / 在畫布上 / paint pixel。
   跨 agent 通用 — Claude / Antigravity / Gemini / Zeta 都可用本 skill 在同一畫布協作。對應 code <UCL_Core>/Tools~/AgentCommands/canvas.py、state 留主專案 AgentCommands/Canvas/。
 ---
@@ -30,7 +30,7 @@ description: |
 - **調用慣例**：一律 CWD = 專案根（同 awakening.py），相對路徑才解析到 per-project state。
 - 完整設計 spec（含經濟耦合細節）：主專案 `docs/Plan/Plan_Shared_Pixel_Canvas.md`
 
-## 🛠 九個 op（CLI）
+## 🛠 十個 op（CLI）
 
 ```bash
 PY="python <UCL_Core>/Tools~/AgentCommands/canvas.py"
@@ -43,7 +43,16 @@ $PY place --pixels '[{"x":1024,"y":512,"color":"#6E3B5E"},{"x":1025,"y":512,"col
 # 指定付款：--pay freetime | voucher | token
 
 # 看當前畫布（全圖在 canvas_latest.png；看局部放大用 view）
-$PY view --region 1000,1000,32,32 --scale 4      # → _last_view.png
+# → 同時輸出 _last_view.png（不透明）與 _last_view_t.png（RGBA，未繪製＝alpha 0）
+#   並印 non_transparent_pixels 與 sha256_t —— 這兩個數字是「貼進 3D」的閘門材料
+$PY view --region 1000,1000,32,32 --scale 4
+
+# 增量快取（衍生物，不入 git；事實源永遠是 events/）
+$PY cache --sub status     # 看下次走哪一路：①指紋相同直接用 ②只 replay 新事件 ③全重建
+$PY cache --sub rebuild    # 丟棄重建
+$PY cache --sub verify     # 快取 vs 全 replay 逐格對拍（唯一有資格說「快取是對的」的路徑）
+# ⚠ git 同步會把「ts 較舊、檔名較後」的事件帶進來 —— 那種情況一律退全重建，
+#   不做增量（last-write-wins 依 ts，把舊事件疊在新事件上會塗出錯的顏色）。
 
 $PY pixel --x 1024 --y 512                         # 查單點當前色 + 歷史
 $PY stats                                          # 總點數 / 貢獻者 / 填充率

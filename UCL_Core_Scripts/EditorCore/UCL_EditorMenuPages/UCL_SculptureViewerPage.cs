@@ -5,6 +5,10 @@
 //          本頁純唯讀不碰錢 —— 落子仍走 Cmd_Sculpture。
 // 數值影響：讀 AgentCommands/Sculpture/exhibits.json（展品 preset）與 _last_view.png；
 //          渲染 spawn python sculpt.py view（ProcessRegistry 登記，硬規則不裸 Process.Start）。
+// 版面（Tim 2026-08-14 要求，比照 UCL_ControlPanelPage）：三個 section 各自可折疊 ——
+//          **關鍵操作一律畫在折疊外層 header**（Reload／全景／手動渲染／產生預覽／複製指令），
+//          收合後仍可一鍵操作；折疊內只放低頻設定與大面積內容（欄位、滑桿、預覽圖）。
+//          折疊狀態走專用 m_FoldDic，不與 PopupAuto 的 m_Dic 共用（見該欄位註解的血證）。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -61,72 +65,148 @@ namespace UCL.Core.EditorLib.Page
         int m_SelectedExhibit;           // 下拉選單當前展品 index（對齊 m_Exhibits 排序）
         readonly List<string> m_ExhibitOptions = new List<string>();   // 下拉顯示字串（「title (id)」）
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();   // PopupAuto 搜尋 state
+        // 區塊職責：各 section 折疊狀態 — **刻意跟 m_Dic 分開**（比照 UCL_ControlPanelPage）
+        // 物理意義：折疊是使用者 UI 偏好（該長存）；PopupAuto 搜尋快取是衍生資料（選項變了該失效）。
+        // 血證（2026-07-29 Tim QA, UCL_ChatTavernAdminPage）：兩者共用一個 dictionary 時，
+        //          資料重載路徑上的 dic.Clear() 會把折疊值一併清掉 → 下一幀退回 iDefaultValue，
+        //          症狀是「按某個按鈕就自動展開、而且收不起來」，看起來像 key 撞名、實際是共用快取被清。
+        //          本頁 ReloadExhibits 目前不 Clear m_Dic，但先分開 —— 免得日後有人加 Clear 又踩一次。
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
         string m_LastRenderLog = "";
         Texture2D m_ViewTex;
         DateTime m_ViewTexTime;
         bool m_Loaded;
+        // ── 2D→3D 貼圖預覽區（唯讀：只出預覽與現成指令，落子走 Cmd_Sculpture）──
+        string m_StampRegion = "1000,1000,9,6";   // 來源區域 x,y,w,h（2D 畫布座標）
+        string m_StampAt = "10,10,10";            // 圖左上角貼在 3D 的哪一點
+        string m_StampFacing = "z+";              // 貼片法線
+        string m_StampThickness = "1";            // 沿法線擠出層數
+        string m_StampPersona = "";               // 誰付這筆帳（空＝指令貼出去要自己填）
+        string m_StampCmdLine = "";               // 組好的 Cmd 指令（含 expect_pixels 閘門）
+        Texture2D m_StampTex;
+        DateTime m_StampTexTime;
 
         static string SculptureDir => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture");
         static string ExhibitsJsonPath => Path.Combine(SculptureDir, "exhibits.json");
         static string LastViewPng => Path.Combine(SculptureDir, "_last_view.png");
+        // 2D 共用畫布的 view 輸出（canvas.py 寫）—— 貼圖預覽讀透明變體，未繪製＝alpha 0
+        static string CanvasLastViewTPng => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "_last_view_t.png");
+        // ⚠ 不寫死 UCL_Core 掛載路徑（各專案不同會靜默壞）—— 由 CorePath 現算，只用於組給人複製的指令字串
+        static string CoreToolsRel => $"{UCL_EditorPath.CorePath}/Tools~/AgentCommands";
 
+        // 區塊職責：頁面骨架 — 三個可折疊 section（比照 UCL_ControlPanelPage，Tim 2026-08-14 要求）。
+        // 物理意義：**關鍵操作一律畫在折疊外層 header**（Reload／全景／手動渲染／產生預覽／複製指令），
+        //          收合後仍可一鍵操作；折疊內只放低頻設定與大面積內容（欄位、滑桿、預覽圖）。
+        //          預設展開的只有展品導覽 —— 那是本頁的主要用途；另外兩區預設收起，
+        //          免得一進頁面就被一整片欄位淹掉（本頁的內容量已經是三個 section 的規模了）。
         protected override void ContentOnGUI()
         {
             if (!m_Loaded) { ReloadExhibits(); m_Loaded = true; }
 
-            // ── 展品導覽區：exhibits.json 直讀，一鍵套 preset 渲染 ──
-            GUILayout.Label(UCL_CodeLocalize.Get("SculptureViewer.Exhibits"), UCL_GUIStyle.LabelStyle);
-            using (new GUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.Reload"),
-                        UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.Width(UCL_GUIStyle.GetScaledSize(120))))
-                {
-                    ReloadExhibits();
-                }
-                if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderAll"),
-                        UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
-                {
-                    Render("");   // 無參數＝整體全景
-                }
-            }
-            if (m_Exhibits.Count == 0)
-            {
-                GUILayout.Label(UCL_CodeLocalize.Get("SculptureViewer.NoExhibit"), UCL_GUIStyle.LabelStyle);
-            }
-            else
-            {
-                // 下拉選單（Tim 2026-08-13 改版 — 展品多了逐列按鈕會佔滿頁面；PopupAuto 過門檻自帶搜尋）
-                using (new GUILayout.HorizontalScope("box"))
-                {
-                    int aNewSel = UCL_GUILayout.PopupAuto(m_SelectedExhibit, m_ExhibitOptions, m_Dic, "ExhibitPicker",
-                        10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
-                    if (aNewSel != m_SelectedExhibit && aNewSel >= 0 && aNewSel < m_Exhibits.Count)
-                    {
-                        m_SelectedExhibit = aNewSel;
-                        // 選中展品 → 觀測參數帶入 preset（手動區與匯出跟著這個 region 走）
-                        m_Region = m_Exhibits[aNewSel].Region;
-                        m_ExcludeColor = m_Exhibits[aNewSel].ExcludeColor;
-                    }
-                    if (GUILayout.Button("🏛 " + UCL_CodeLocalize.Get("SculptureViewer.RenderExhibit"),
-                            UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
-                    {
-                        // preset 由引擎讀展品檔，本頁不重組參數；陰影開關疊加在 preset 上
-                        Render($" --exhibit=\"{m_Exhibits[m_SelectedExhibit].Id}\"{(m_Shadow ? " --shadow" : "")}");
-                    }
-                }
-                if (m_SelectedExhibit >= 0 && m_SelectedExhibit < m_Exhibits.Count)
-                {
-                    var aEx = m_Exhibits[m_SelectedExhibit];
-                    GUILayout.Label($"{aEx.Id}｜by {aEx.Author}｜region {aEx.Region}\n{aEx.Description}", WrapLabelStyle);
-                }
-            }
-
+            DrawExhibitSection();
             GUILayout.Space(8);
+            DrawManualSection();
+            GUILayout.Space(8);
+            DrawStampPreviewSection();
 
-            // ── 手動觀測區：region / exclude-color / 打光 —— 直接對映引擎 view 旗標 ──
-            GUILayout.Label(UCL_CodeLocalize.Get("SculptureViewer.Manual"), UCL_GUIStyle.LabelStyle);
+            if (!string.IsNullOrEmpty(m_LastRenderLog))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    // 錯誤/輸出訊息一鍵複製（Tim 2026-08-13 追加）—— 貼給 agent 排錯不用手抄
+                    if (GUILayout.Button("📋 複製", UCL_GUIStyle.GetButtonStyle(Color.white),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(70))))
+                    {
+                        GUIUtility.systemCopyBuffer = m_LastRenderLog;
+                    }
+                    GUILayout.Label(m_LastRenderLog, WrapLabelStyle);
+                }
+            }
+
+            // ── 渲染結果：_last_view.png（檔案 mtime 變了才重載，避免每幀 IO）──
+            DrawViewTexture();
+        }
+
+        // ── 展品導覽區：exhibits.json 直讀，一鍵套 preset 渲染（預設展開＝本頁主要用途）──
+        void DrawExhibitSection()
+        {
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "ExhibitFold", 21, iDefaultValue: true);
+                    GUILayout.Label($"<b>🏛 {UCL_CodeLocalize.Get("SculptureViewer.Exhibits")}</b>",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.Reload"),
+                            UCL_GUIStyle.GetButtonStyle(Color.white), GUILayout.Width(UCL_GUIStyle.GetScaledSize(120))))
+                    {
+                        ReloadExhibits();
+                    }
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderAll"),
+                            UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
+                    {
+                        Render("");   // 無參數＝整體全景
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                if (m_Exhibits.Count == 0)
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("SculptureViewer.NoExhibit"), UCL_GUIStyle.LabelStyle);
+                }
+                else
+                {
+                    // 下拉選單（Tim 2026-08-13 改版 — 展品多了逐列按鈕會佔滿頁面；PopupAuto 過門檻自帶搜尋）
+                    using (new GUILayout.HorizontalScope("box"))
+                    {
+                        int aNewSel = UCL_GUILayout.PopupAuto(m_SelectedExhibit, m_ExhibitOptions, m_Dic, "ExhibitPicker",
+                            10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(300)));
+                        if (aNewSel != m_SelectedExhibit && aNewSel >= 0 && aNewSel < m_Exhibits.Count)
+                        {
+                            m_SelectedExhibit = aNewSel;
+                            // 選中展品 → 觀測參數帶入 preset（手動區與匯出跟著這個 region 走）
+                            m_Region = m_Exhibits[aNewSel].Region;
+                            m_ExcludeColor = m_Exhibits[aNewSel].ExcludeColor;
+                        }
+                        if (GUILayout.Button("🏛 " + UCL_CodeLocalize.Get("SculptureViewer.RenderExhibit"),
+                                UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
+                        {
+                            // preset 由引擎讀展品檔，本頁不重組參數；陰影開關疊加在 preset 上
+                            Render($" --exhibit=\"{m_Exhibits[m_SelectedExhibit].Id}\"{(m_Shadow ? " --shadow" : "")}");
+                        }
+                    }
+                    if (m_SelectedExhibit >= 0 && m_SelectedExhibit < m_Exhibits.Count)
+                    {
+                        var aEx = m_Exhibits[m_SelectedExhibit];
+                        GUILayout.Label($"{aEx.Id}｜by {aEx.Author}｜region {aEx.Region}\n{aEx.Description}", WrapLabelStyle);
+                    }
+                }
+            }
+        }
+
+        // ── 手動觀測區：region / exclude-color / 打光 —— 直接對映引擎 view 旗標 ──
+        // header 留「手動渲染」：收合狀態下沿用上次參數重跑是高頻操作，不該逼人先展開。
+        void DrawManualSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "ManualViewFold", 21, iDefaultValue: false);
+                    GUILayout.Label($"<b>🔭 {UCL_CodeLocalize.Get("SculptureViewer.Manual")}</b>",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderManual"),
+                            UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
+                    {
+                        RenderManual();
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
                 m_Region = DrawField("region (x1..x2,y1..y2,z1..z2)", m_Region);
                 m_ExcludeColor = DrawField("exclude-color (c,c,..)", m_ExcludeColor);
                 m_LightDir = DrawField("light-dir (x,y,z)", m_LightDir);
@@ -159,21 +239,6 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label(" ☁ 陰影（cast shadow — 解正交圖深度歧義）", UCL_GUIStyle.LabelStyle);
                 }
 
-                if (GUILayout.Button(UCL_CodeLocalize.Get("SculptureViewer.RenderManual"),
-                        UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.Width(UCL_GUIStyle.GetScaledSize(200))))
-                {
-                    string aArgs = "";
-                    if (!string.IsNullOrEmpty(m_Region)) aArgs += $" --region=\"{m_Region}\"";
-                    if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color=\"{m_ExcludeColor}\"";
-                    // ⚠ light-dir 的值以 '-' 開頭（如 -1,-1,-2）—— argparse 會把空格分隔的值當旗標吃掉，
-                    //   必須用 `--opt=value` 等號形式（Tim 2026-08-13 實測 exit=2 血證）
-                    if (!string.IsNullOrEmpty(m_LightDir)) aArgs += $" --light-dir=\"{m_LightDir}\"";
-                    if (!string.IsNullOrEmpty(m_Ambient)) aArgs += $" --ambient={m_Ambient}";
-                    if (!string.IsNullOrEmpty(m_Zoom)) aArgs += $" --zoom={m_Zoom}";
-                    if (m_Shadow) aArgs += " --shadow";
-                    Render(aArgs);
-                }
-
                 // 匯出模型檔（Tim 2026-08-13 追加）：只匯出觀測區域（region/exclude 同上方欄位）
                 using (new GUILayout.HorizontalScope())
                 {
@@ -190,23 +255,23 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("匯出範圍＝上方 region／exclude-color（空 region＝全空間）", WrapLabelStyle);
                 }
             }
+        }
 
-            if (!string.IsNullOrEmpty(m_LastRenderLog))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    // 錯誤/輸出訊息一鍵複製（Tim 2026-08-13 追加）—— 貼給 agent 排錯不用手抄
-                    if (GUILayout.Button("📋 複製", UCL_GUIStyle.GetButtonStyle(Color.white),
-                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(70))))
-                    {
-                        GUIUtility.systemCopyBuffer = m_LastRenderLog;
-                    }
-                    GUILayout.Label(m_LastRenderLog, WrapLabelStyle);
-                }
-            }
-
-            // ── 渲染結果：_last_view.png（檔案 mtime 變了才重載，避免每幀 IO）──
-            DrawViewTexture();
+        // 區塊職責：把手動觀測欄位組成引擎旗標並渲染。
+        // 物理意義：抽成方法是因為觸發點在**折疊 header**（收合時也要能按），
+        //          而欄位畫在折疊內 —— 兩者不同層，共用同一份組裝邏輯才不會分岔。
+        void RenderManual()
+        {
+            string aArgs = "";
+            if (!string.IsNullOrEmpty(m_Region)) aArgs += $" --region=\"{m_Region}\"";
+            if (!string.IsNullOrEmpty(m_ExcludeColor)) aArgs += $" --exclude-color=\"{m_ExcludeColor}\"";
+            // ⚠ light-dir 的值以 '-' 開頭（如 -1,-1,-2）—— argparse 會把空格分隔的值當旗標吃掉，
+            //   必須用 `--opt=value` 等號形式（Tim 2026-08-13 實測 exit=2 血證）
+            if (!string.IsNullOrEmpty(m_LightDir)) aArgs += $" --light-dir=\"{m_LightDir}\"";
+            if (!string.IsNullOrEmpty(m_Ambient)) aArgs += $" --ambient={m_Ambient}";
+            if (!string.IsNullOrEmpty(m_Zoom)) aArgs += $" --zoom={m_Zoom}";
+            if (m_Shadow) aArgs += " --shadow";
+            Render(aArgs);
         }
 
         // 區塊職責：spawn 引擎渲染（同步等待 —— 秒級渲染，對齊 LibraryManagePage spawn library.py 模式）
@@ -244,6 +309,161 @@ namespace UCL.Core.EditorLib.Page
             m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} export {iFormat}]\n" + (aExit == 0
                 ? (aSo ?? "").Trim()
                 : $"✗ 匯出失敗（exit={aExit}）\n{aSo}\n{aSe}");
+        }
+
+        // ===========================================================
+        // 區塊：2D→3D 貼圖預覽（Tim 2026-08-14 拍板流程「先出預覽再轉繪」的後台入口）
+        // 物理意義：本頁**只做預覽那一半** —— 預覽是唯讀免費（spawn canvas.py view），
+        //          真正落 voxel 走 Cmd_Sculpture（收銀台）。頁面直接落子＝繞過計費，不做。
+        //          預覽輸出 _last_view_t.png（RGBA，未繪製＝alpha 0）與非透明像素數，
+        //          那個數字原樣填進下方指令的 expect_pixels —— 人核准的圖與引擎吃的圖靠它對帳。
+        // 數值影響：來源區域填「x,y,w,h」（與 canvas view --region 同語意）；
+        //          預授權在 Cmd 端算 w×h×thickness，這裡只顯示不收費。
+        // ===========================================================
+        void DrawStampPreviewSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "StampPreviewFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>🖼 2D→3D 貼圖預覽</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    // 兩顆關鍵操作留在 header：收合狀態下「重出預覽 → 複製指令」是完整可用的一條路，
+                    // 展開只是為了改參數。複製鈕僅在指令存在時出現 —— 沒有閘門的指令本頁不給。
+                    if (GUILayout.Button("🖼 產生預覽", UCL_GUIStyle.GetButtonStyle(Color.cyan),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(130))))
+                    {
+                        RenderStampPreview();
+                    }
+                    if (!string.IsNullOrEmpty(m_StampCmdLine)
+                        && GUILayout.Button("📋 複製貼圖指令", UCL_GUIStyle.GetButtonStyle(Color.yellow),
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(160))))
+                    {
+                        GUIUtility.systemCopyBuffer = m_StampCmdLine;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                GUILayout.Label("唯讀免費（只 spawn canvas.py view）；落子仍走 Cmd_Sculpture ——"
+                                + " 本頁不碰錢，也不直接貼。", WrapLabelStyle);
+                m_StampRegion = DrawField("來源區域 x,y,w,h（2D 畫布座標）", m_StampRegion);
+                m_StampAt = DrawField("at（圖左上角貼在 3D 的 x,y,z）", m_StampAt);
+                m_StampFacing = DrawField("facing（貼片法線 x+ x- y+ y- z+ z-）", m_StampFacing);
+                m_StampThickness = DrawField("thickness（沿法線擠出層數）", m_StampThickness);
+                m_StampPersona = DrawField("persona（誰付這筆帳）", m_StampPersona);
+
+                if (!string.IsNullOrEmpty(m_StampCmdLine))
+                    GUILayout.Label(m_StampCmdLine, WrapLabelStyle);
+
+                DrawStampTexture();
+            }
+        }
+
+        // 區塊職責：spawn canvas.py view 產生 RGBA 預覽並解析非透明像素數 → 組出現成 Cmd 指令。
+        // 失敗處置：region 格式不合 / 引擎失敗 / 解析不到數字 → 訊息寫進 log 且**不組指令**
+        //          （組不出可信 expect_pixels 就不給指令 —— 給一個沒有閘門的指令比不給更糟）。
+        void RenderStampPreview()
+        {
+            m_StampCmdLine = "";
+            string aScript = ResolveCanvasScript();
+            if (aScript == null)
+            {
+                m_LastRenderLog = "✗ 解析不到 canvas.py（CorePath 空或檔案不存在）";
+                return;
+            }
+            var aRegion = ParseXywh(m_StampRegion);
+            if (!aRegion.HasValue)
+            {
+                m_LastRenderLog = $"✗ 來源區域需為 x,y,w,h 四個正整數（got '{m_StampRegion}'）";
+                return;
+            }
+            var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python",
+                $"\"{aScript}\" view --region=\"{m_StampRegion}\"",
+                UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
+            m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} stamp preview]\n" + (aExit == 0
+                ? (aSo ?? "").Trim()
+                : $"✗ 預覽失敗（exit={aExit}）\n{aSo}\n{aSe}");
+            if (aExit != 0) return;
+
+            int aOpaque = ParseOpaqueCount(aSo);
+            if (aOpaque < 0)
+            {
+                m_LastRenderLog += "\n✗ 解析不到 non_transparent_pixels —— 不組指令（沒有閘門的指令不給）";
+                return;
+            }
+            var (x, y, w, h) = aRegion.Value;
+            m_StampCmdLine =
+                $"python {CoreToolsRel}/run_cmd.py run Sculpture --arg op=stamp2d --arg persona={m_StampPersona} " +
+                $"--arg src_x1={x} --arg src_y1={y} --arg src_x2={x + w - 1} --arg src_y2={y + h - 1} " +
+                $"--arg at={m_StampAt} --arg facing={m_StampFacing} --arg thickness={m_StampThickness} " +
+                $"--arg expect_pixels={aOpaque}";
+            m_StampTexTime = default;   // 強制重載預覽 texture
+        }
+
+        // 區塊職責：顯示 _last_view_t.png（2D 預覽）— 與 3D 觀測圖分開兩張，別互相蓋掉。
+        void DrawStampTexture()
+        {
+            string aPng = CanvasLastViewTPng;
+            if (!File.Exists(aPng)) return;
+            var aMtime = File.GetLastWriteTimeUtc(aPng);
+            if (m_StampTex == null || aMtime != m_StampTexTime)
+            {
+                try
+                {
+                    var aBytes = File.ReadAllBytes(aPng);
+                    if (m_StampTex == null) m_StampTex = new Texture2D(2, 2);
+                    m_StampTex.LoadImage(aBytes);
+                    m_StampTex.filterMode = FilterMode.Point;   // 像素硬邊，別被雙線性糊掉
+                    m_StampTexTime = aMtime;
+                }
+                catch (Exception e)
+                {
+                    m_LastRenderLog = $"✗ 預覽 PNG 載入失敗: {e.Message}";
+                    return;
+                }
+            }
+            GUILayout.Label($"📄 {aPng}（{m_StampTexTime.ToLocalTime():HH:mm:ss}；透明＝未繪製，不會變 voxel）",
+                UCL_GUIStyle.LabelStyle);
+            float aSize = UCL_GUIStyle.GetScaledSize(256);
+            var aRect = GUILayoutUtility.GetRect(aSize, aSize, GUILayout.ExpandWidth(false));
+            GUI.DrawTexture(aRect, m_StampTex, ScaleMode.ScaleToFit);
+        }
+
+        /// <summary>解析 "x,y,w,h" 四個正整數；不合格回 null（不猜預設值）。</summary>
+        static (int x, int y, int w, int h)? ParseXywh(string iVal)
+        {
+            if (string.IsNullOrWhiteSpace(iVal)) return null;
+            var aParts = iVal.Split(',');
+            if (aParts.Length != 4) return null;
+            var aNums = new int[4];
+            for (int i = 0; i < 4; i++)
+                if (!int.TryParse(aParts[i].Trim(), out aNums[i])) return null;
+            if (aNums[2] <= 0 || aNums[3] <= 0) return null;
+            return (aNums[0], aNums[1], aNums[2], aNums[3]);
+        }
+
+        /// <summary>從 canvas.py view 的 stdout 撈 non_transparent_pixels 的值；找不到回 -1（不回 0 —— 0 是合法的「全透明」，會被誤當成功）。</summary>
+        static int ParseOpaqueCount(string iStdout)
+        {
+            if (string.IsNullOrEmpty(iStdout)) return -1;
+            const string aKey = "non_transparent_pixels:";
+            int aIdx = iStdout.IndexOf(aKey, StringComparison.Ordinal);
+            if (aIdx < 0) return -1;
+            string aRest = iStdout.Substring(aIdx + aKey.Length).TrimStart();
+            int aEnd = 0;
+            while (aEnd < aRest.Length && char.IsDigit(aRest[aEnd])) aEnd++;
+            return aEnd > 0 && int.TryParse(aRest.Substring(0, aEnd), out int aVal) ? aVal : -1;
+        }
+
+        static string ResolveCanvasScript()
+        {
+            string aCoreRel = UCL_EditorPath.CorePath;
+            if (string.IsNullOrEmpty(aCoreRel)) return null;
+            string aScript = Path.GetFullPath(Path.Combine(
+                UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/canvas.py"));
+            return File.Exists(aScript) ? aScript : null;
         }
 
         // 區塊職責：顯示 _last_view.png — mtime 快取（texture 只在檔案變動時重建）

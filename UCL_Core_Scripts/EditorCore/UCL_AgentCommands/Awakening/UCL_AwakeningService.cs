@@ -229,6 +229,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             if (string.IsNullOrEmpty(aScript))
                 return (false, "✗ 解析不到 awakening.py（CorePath 空或檔案不存在；背景緒呼叫請先在主執行緒 ResolveAwakeningScriptPath）", null, 0);
 
+            // 區塊職責：記下本次執行的起始時刻 —— brief 檔的驗收要靠它
+            // 物理意義：驗收條件原本是「檔存在 + 行數 > 0」，而**隔夜殘留完全滿足這兩項**。
+            //          🩸 wake#49（2026-08-13）：brief 撞 120s 上限被 kill，回傳檔照樣印
+            //          「📄 brief: …（1271 行）」—— 那是**前一天那份檔**的行數。
+            //          當天沒被騙到只因為人手動去看了 mtime；而該用的尺早就裝在下一格
+            //          （PrecheckIntro 會比 brief mtime vs locked_at），只是 brief 這一步自己沒拿。
+            // 數值影響：見下方 aFresh 判定。時間基準刻意用「本次執行開始」而不是 lock 的 locked_at ——
+            //          前者自成一格、不必多讀一個檔，而且語意更強：檔案必須是**這一次**寫出來的。
+            DateTime aStartedUtc = DateTime.UtcNow;
+
             string aArgs = $"\"{aScript}\" brief --persona \"{iPersona}\"";
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs, UCL_RepoPath.RepoRoot,
                 PROC_TAG, iCallerName, iTimeoutMs);
@@ -248,10 +258,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 try { aLines = File.ReadAllLines(aBriefPath).Length; }
                 catch (Exception e) { aSb.AppendLine($"⚠ brief 行數讀取失敗: {e.Message}"); }
             }
-            aSb.AppendLine(aExists
-                ? $"📄 brief: `{aBriefPath}`（{aLines} 行）"
-                : $"✗ brief 檔不存在：`{aBriefPath}`");
-            bool aOk = aExit == 0 && aExists && aLines > 0;
+            // 區塊職責：新鮮度判定 —— 這份 brief 是不是**這一次**產生的
+            // 邊界：容許 2 秒回溯（檔案系統時間戳解析度與時鐘微幅偏移），
+            //      而隔夜殘留差的是「小時」等級，2 秒容差擋不住它才叫失效。
+            //      讀不到 mtime 時**當成不新鮮**（不是當成新鮮）—— 讀不到與很新是兩件事。
+            DateTime aBriefUtc = DateTime.MinValue;
+            bool aFresh = false;
+            if (aExists)
+            {
+                try
+                {
+                    aBriefUtc = File.GetLastWriteTimeUtc(aBriefPath);
+                    aFresh = aBriefUtc >= aStartedUtc.AddSeconds(-2);
+                }
+                catch (Exception e) { aSb.AppendLine($"⚠ brief mtime 讀取失敗（視為不新鮮）: {e.Message}"); }
+            }
+
+            aSb.AppendLine(!aExists
+                ? $"✗ brief 檔不存在：`{aBriefPath}`"
+                : aFresh
+                    ? $"📄 brief: `{aBriefPath}`（{aLines} 行，mtime {aBriefUtc:yyyy-MM-dd HH:mm:ss}Z 晚於本次執行起點）"
+                    : $"✗ brief 檔存在但**不是本次產生的**：`{aBriefPath}`"
+                      + $"（{aLines} 行，mtime {aBriefUtc:yyyy-MM-dd HH:mm:ss}Z < 本次起點 {aStartedUtc:yyyy-MM-dd HH:mm:ss}Z）"
+                      + " —— 隔夜殘留／前次遺留，不算生成成功。多半是本次被 timeout kill 了。");
+            bool aOk = aExit == 0 && aExists && aLines > 0 && aFresh;
             return (aOk, aSb.ToString(), aExists ? aBriefPath : null, aLines);
         }
 

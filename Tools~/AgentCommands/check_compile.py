@@ -29,6 +29,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -102,8 +103,88 @@ def filter_messages(data: dict, errors_only: bool, max_count: int) -> list[dict]
     return msgs
 
 
+# ───────────────── ErrorLog 交叉對帳（第二來源） ─────────────────
+# 區塊職責：讀 UCL_LogUtil 寫的 Assets/DebugLogs~/Errors_latest.log，撈出編譯錯誤行，
+#          與 tracker 的 .compile_status.json 對帳。
+# 物理意義：**tracker 回答的是「這一趟 compile 的回調送來了什麼」，不是「專案現在有沒有錯」。**
+#          兩者在多數時候一致，而不一致的那一次正是最危險的一次 ——
+#          2026-08-14 實測：同一個時刻 10:11:47，tracker 寫 total_errors=0 印「✅ Clean compile」，
+#          而 Errors_latest.log 同秒記著 `error CS0103 ... UCL_ControlPanelPage.cs(146,21)`。
+#          （tracker 與出錯檔同屬 UCL_Core.asmdef —— 它檔頭宣稱自己在獨立 assembly，實際沒有。）
+#          Tim 指出「有的 error 只會跑到 Editor 內的 ErrorLog」，本區塊就是那條路的入口。
+# 數值影響：**只加不減** —— 對帳只會讓綠燈變紅，不會讓紅燈變綠（第二來源用來反駁，不用來背書）。
+#          時戳比對只取「時:分:秒」（ErrorLog 沒有日期），取 >= status 的時刻＝屬於這一趟或更後面。
+# 邊界：找不到 log／解析不出東西 → 靜靜跳過但**在報告裡註明沒有第二來源**，
+#      不可讓「對帳沒跑」長得像「對帳過了」。
+ERROR_LOG_RE = re.compile(r"^\s*\d+\.\[ERROR\]\[(\d{2}:\d{2}:\d{2})\]\s*(.*?error\s+CS\d+.*)$")
+
+
+def find_error_log() -> Path | None:
+    """定位 Errors_latest.log（Unity project 的 Assets/DebugLogs~ 下；不寫死專案結構）。"""
+    env = os.environ.get("UCL_DEBUGLOGS_DIR")
+    cands = []
+    if env:
+        cands.append(Path(env) / "Errors_latest.log")
+    cands.append(GIT_ROOT / "Assets" / "DebugLogs~" / "Errors_latest.log")
+    # UnityProject 可能不等於 git root：往上找含 Assets/DebugLogs~ 的那一層
+    for parent in [GIT_ROOT] + list(Path(__file__).resolve().parents):
+        cands.append(parent / "Assets" / "DebugLogs~" / "Errors_latest.log")
+    for c in cands:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            continue
+    return None
+
+
+def parse_error_log_compile_errors(log_path: Path, since_hhmmss: str | None) -> list[dict]:
+    """撈出 log 內的編譯錯誤行；since_hhmmss 有給就只取該時刻（含）之後的。"""
+    out = []
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        m = ERROR_LOG_RE.match(line)
+        if not m:
+            continue
+        ts, body = m.group(1), m.group(2).strip()
+        if since_hhmmss and ts < since_hhmmss:
+            continue
+        out.append({"time": ts, "text": body})
+    # 同一筆錯誤 Unity 常重複吐多次 —— 去重但保留最早時刻
+    seen, dedup = set(), []
+    for e in out:
+        if e["text"] in seen:
+            continue
+        seen.add(e["text"])
+        dedup.append(e)
+    return dedup
+
+
+def crosscheck_error_log(data: dict) -> dict:
+    """
+    回傳對帳結果：
+      {"available": bool, "path": str|None, "since": str|None, "entries": [...], "disagree": bool}
+    disagree = tracker 說 0 errors，但第二來源在同一時刻（含之後）看到編譯錯誤。
+    """
+    res = {"available": False, "path": None, "since": None, "entries": [], "disagree": False}
+    log = find_error_log()
+    if log is None:
+        return res
+    res["available"] = True
+    res["path"] = str(log)
+    ts = str(data.get("timestamp") or "")
+    since = ts.split("T")[1][:8] if "T" in ts and len(ts.split("T")[1]) >= 8 else None
+    res["since"] = since
+    res["entries"] = parse_error_log_compile_errors(log, since)
+    res["disagree"] = bool(res["entries"]) and int(data.get("total_errors", 0) or 0) == 0
+    return res
+
+
 def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: int,
-                    stale: dict | None = None) -> str:
+                    stale: dict | None = None, xcheck: dict | None = None) -> str:
     lines = []
     lines.append("# 🔧 Unity Compile Status")
     lines.append("")
@@ -140,11 +221,34 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
         lines.append(f"- ⚠ Source: Editor.log fallback (`{data.get('_log_path', '?')}`) — "
                      f"may be **stale**: Editor.log accumulates messages across multiple compile attempts. "
                      f"`.compile_status.json` is more reliable but requires Tracker to have run.")
+    # 對帳狀態常駐一行 —— 不只在乾淨分支顯示。看不見的對帳等於沒有對帳。
+    if xcheck is not None:
+        if not xcheck.get("available"):
+            lines.append("- 🔍 ErrorLog 對帳: **無第二來源**（找不到 `Assets/DebugLogs~/Errors_latest.log`）")
+        elif xcheck.get("disagree"):
+            lines.append(f"- 🔍 ErrorLog 對帳: **不一致（{len(xcheck['entries'])} 筆）** ← 見下方")
+        else:
+            lines.append(f"- 🔍 ErrorLog 對帳: 一致"
+                         f"（{xcheck.get('since') or '全檔'} 起無編譯錯誤）")
     if errors_only:
         lines.append(f"- (filter: errors only)")
     if max_count > 0 and len(msgs) >= max_count:
         lines.append(f"- (showing first {max_count} after dedupe)")
     lines.append("")
+    # 區塊：第二來源對帳 —— 只會讓綠燈變紅，不會讓紅燈變綠
+    if xcheck and xcheck.get("disagree"):
+        lines.append("🚨 **兩個來源不一致 —— tracker 說 0 errors，ErrorLog 同一時刻有編譯錯誤。**")
+        lines.append("")
+        lines.append(f"> tracker 回答的是「這一趟 compile 的回調送來了什麼」，不是「專案現在有沒有錯」。")
+        lines.append(f"> 第二來源：`{xcheck.get('path')}`"
+                     + (f"（只列 {xcheck.get('since')} 起）" if xcheck.get("since") else ""))
+        lines.append("")
+        for i, e in enumerate(xcheck.get("entries", [])[:20], 1):
+            lines.append(f"{i}. `[{e['time']}]` {e['text']}")
+        lines.append("")
+        lines.append("**以 ErrorLog 為準：這不是 clean compile。** 修完再跑一次 `run_cmd.py recompile`。")
+        return "\n".join(lines)
+
     if not msgs:
         if stale:
             # 過期時**絕不印「✅ Clean compile」** —— 那句話本身就是今天那隻 bug 的本體：
@@ -152,7 +256,13 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
             lines.append("⚠ **無法判定** — 這份狀態不涵蓋你的改動（見上方 STALE）。"
                          "重跑編譯後再查：`run_cmd.py recompile` 或 `--watch`。")
         elif data.get("total_errors", 0) == 0 and data.get("total_warnings", 0) == 0:
-            lines.append("✅ **Clean compile.**")
+            # ⚠ 沒有第二來源時不可講得像對帳過了 —— 「對帳沒跑」不准長得像「對帳過了」
+            if xcheck and xcheck.get("available"):
+                lines.append("✅ **Clean compile.**（已與 ErrorLog 對帳，兩個來源一致）")
+            else:
+                lines.append("✅ **Clean compile.** ⚠ 但**找不到 ErrorLog 第二來源**"
+                             "（`Assets/DebugLogs~/Errors_latest.log`）—— 本次只有 tracker 單一來源，"
+                             "而 tracker 曾在自身 assembly 編譯失敗時回報過 0 errors。")
         else:
             lines.append("(no messages match filter)")
         return "\n".join(lines)
@@ -650,13 +760,18 @@ def main() -> int:
             stale = staleness(ref_t, ref_p)
 
     msgs = filter_messages(data, args.errors_only, args.max)
+    # 第二來源對帳：tracker 之外、不經它批准就能進來的路（Tim 2026-08-14 指出）
+    xcheck = crosscheck_error_log(data)
     if args.format == "json":
         print(render_json(data, msgs, stale))
     else:
-        print(render_markdown(data, msgs, args.errors_only, args.max, stale))
+        print(render_markdown(data, msgs, args.errors_only, args.max, stale, xcheck))
 
     if stale and args.strict_fresh:
         return 4
+    # 對帳不一致時以 ErrorLog 為準 —— 退出碼必須跟著紅，否則 CI/腳本仍會當成通過
+    if xcheck.get("disagree"):
+        return 2
     return 0 if data.get("total_errors", 0) == 0 else 2
 
 

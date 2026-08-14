@@ -1,6 +1,6 @@
 ---
 title: Discord Channel Routing
-description: Discord channel → ChatTavern room 路由設定 — 多對一支援, source_class freeform tag, priority desc sort, IMGUI 編輯；含 inbound 中繼器現況（無自動 spawn）與遷移 C# 計畫
+description: Discord channel → ChatTavern room 路由設定 — 多對一支援、來源 metadata、Channel ID 驗證與名稱快取，以及 C# native inbound 中繼器的 IMGUI 編輯流程
 last_updated: 2026-08-14
 target_audience: [AI_Agent, Developer]
 aliases: [discord routing, channel routing, channel mappings]
@@ -15,7 +15,7 @@ related:
 
 # Discord Channel Routing
 
-> 一句話：**Discord channel 訊息 → ChatTavern room 的路由表**，支援多對一、freeform source_class tag、priority 排序，IMGUI 可編輯。
+> 一句話：**Discord channel 訊息 → ChatTavern room 的路由表**。每筆啟用路由只決定「哪個頻道」與「進哪個酒館房間」；`source_class`／`priority` 則隨訊息寫入 metadata，供下游流程判讀。
 
 > [!IMPORTANT]
 > **2026-07-28：inbound 已全面 C# 化。** `UCL_DiscordInboundDaemon` +
@@ -74,7 +74,7 @@ AgentCommands/ChatTavern/discord_channel_routing.json
 | `tavern_room` | ✅ | 對應 ChatTavern room id（多 channel 可指同一 room → 多對一）|
 | `label` | 建議 | 人類可讀名稱，agent context + UI 顯示用 |
 | `source_class` | ✅ | **Freeform string**（不限 enum）。慣例 tag 見下節 |
-| `priority` | ✅ | int，越高越優先；inbound 路由排序鍵 |
+| `priority` | ✅ | int，隨訊息寫入 `meta.priority`；下游 waiter／提示流程可據此排序 |
 | `enabled` | ✅ | false = 整 row 失效 |
 | `guild_id` | ❌ | Discord server ID (audit) |
 | `tags` | ❌ | array of string，自由分類 |
@@ -107,7 +107,7 @@ AgentCommands/ChatTavern/discord_channel_routing.json
 ]
 ```
 
-兩個 channel 訊息都進 `tavern` room，agent 看一個房間就行。priority 差異讓 internal 訊息排前。
+兩個 channel 訊息都進 `tavern` room，agent 看一個房間就行。priority 差異會保留在訊息 metadata，供下游流程優先處理 internal 訊息。
 
 ### 多對多（分流）
 
@@ -197,15 +197,12 @@ outbound mirror（`UCL_DiscordMirrorDaemon`）看到 `meta.source == "discord"` 
 
 ### 功能
 
-- **表格 CRUD**：每 row 顯示 Enabled / Channel ID / Label / Tavern Room / Source Class / Priority / Tags / Guild ID
-- **編輯**：直接 in-place 改欄位，dirty flag 變 `●`
-- **新增 Row**：頂部 `Add Row` 按鈕
-- **刪除**：每 row 右側 `✖ Remove`
-- **重排**：每 row 右側 `▲▼` 上下移
-- **儲存**：頂部 `Save` 寫回 JSON（手構序列化保留 meta 欄位）
-- **Refresh**：重讀 JSON（會丟掉未存改動）
-- **Restart Bot**：（歷史遺留按鈕；inbound 已 C# 化、存檔即生效，不需重啟外部 process）
-- **Open JSON**：在檔案總管打開 JSON 所在資料夾
+- **搜尋式下拉選擇**：清單以 `啟用狀態・已驗證頻道名稱（或 label）・目標 room・來源分類／優先度` 顯示；先選一筆再編輯，避免寬表格把不同語意的欄位混在一起。
+- **核心路由欄位**：Enabled、Discord Channel ID、Tavern Room、Source Class、Priority；啟用中的 row 必須同時有 Channel ID 和 Room ID，且同一 Channel ID 只能有一筆啟用路由。
+- **驗證 Channel ID**：以 bot token 呼叫 Discord `GET /channels/{id}`，成功顯示 `#頻道名稱`。名稱快取到本專案 EditorPrefs，下一次開頁直接顯示；按「驗證 Channel ID」才重新查詢。驗證按鈕固定先畫在水平列最左側，再畫頻道名稱，避免長名稱或窄視窗把操作推出畫面。token 不會暴露到頁面或 routing JSON。
+- **辨識與備註**：Label、Guild ID、Tags、Note 收在可展開區塊。它們用於管理、診斷或 metadata；Tags／Note 不改變中繼目標。
+- **新增、複製、刪除**：新增路由、以目前路由建立停用副本、或刪除選取路由。
+- **儲存／重讀／開 JSON**：Save 寫回 JSON，Refresh 重讀（會丟掉未存改動），Open JSON 在檔案總管開啟所在資料夾。
 
 ### Save 行為
 
@@ -267,8 +264,6 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 
 ## 9. Backlog
 
-- v2: Bot watch config 檔變動 → 自動 reload channel_map（不必 kill 重 spawn）
-- v3: Restart Bot 按鈕直接執行（native 接管後走 ProcessRegistry 精確 kill，不必 PowerShell）
 - v4: source_class enum validation + UI dropdown（保留 freeform 但提示常用 tag）
 - v5: per-channel custom reply persona（指定某 channel 由特定 persona 接）
 - v6: Priority queue mode（高 priority 訊息 cycle 獨佔，低 priority 排後）

@@ -3,7 +3,7 @@ title: UCL_GUIStyle 概覽
 description: UCL_Core 的 IMGUI 樣式中央 — 提供 BoxStyle / ButtonStyle / LabelStyle / TextField/Area / Slider 等共用樣式，附 DPI 全域縮放與 EditorWindow / Runtime 雙 cache 機制；包含一個關鍵反指守則（LabelStyle 不可給互動控制項）。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUIStyle.cs
 namespace: UCL.Core.UI
-last_updated: 2026-05-08 (補 §2.5 GUILayout 尺寸縮放守則 — Width/Height 一律包 GetScaledSize)
+last_updated: 2026-08-14
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [UCL_GUIStyle, GUIStyle 中央, IMGUI styles]
 tags: [api, ui, imgui, editor, style]
@@ -130,7 +130,7 @@ UCL_GUILayout 內部既有 helpers（`NumField` / `Label` 等）已自帶 GetSca
 
 | 想做的事 | 用什麼 |
 |---|---|
-| 純 checkbox toggle | `GUILayout.Toggle(value, label)`（省略第三參數，吃 `GUI.skin.toggle` 預設） |
+| 純 checkbox toggle | `UCL_GUILayout.CheckBox(value, label)`（統一 checkbox 與文字的 DPI 縮放） |
 | Button-like 兩態（AND/OR、Tab）| 第三參傳 `UCL_GUIStyle.ButtonStyle` |
 | 想要彩色 / 大字 label | `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(Color, size))` |
 

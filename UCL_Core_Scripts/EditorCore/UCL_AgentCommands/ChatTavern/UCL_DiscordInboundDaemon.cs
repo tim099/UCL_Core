@@ -413,6 +413,32 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return true;
         }
 
+        /// <summary>
+        /// 建立單一 Discord channel 的 REST 驗證 request，供 routing 管理頁確認 channel ID 並取得顯示名稱。
+        /// token 僅在 daemon 內解析；管理頁不接觸憑據。
+        /// </summary>
+        public static bool TryCreateChannelRequest(string channelId, out UnityWebRequest request, out string error)
+        {
+            request = null;
+            error = "";
+            if (!ulong.TryParse(channelId, out _))
+            {
+                error = "Channel ID 必須是正整數 snowflake";
+                return false;
+            }
+            string token = ResolveToken();
+            if (string.IsNullOrEmpty(token))
+            {
+                error = "bot token 未就緒，請先以 Secret Manager 安裝";
+                return false;
+            }
+            request = UnityWebRequest.Get($"{API_BASE}/channels/{channelId}");
+            request.timeout = REQUEST_TIMEOUT_SEC;
+            request.SetRequestHeader("Authorization", "Bot " + token);
+            request.SetRequestHeader("User-Agent", USER_AGENT);
+            return true;
+        }
+
         // ===========================================================
         // 區塊：游標 state（per-channel last_message_id）讀寫
         // 物理意義：Discord snowflake id 單調遞增 → `?after=<id>` 天然就是「比這筆新的」語意，

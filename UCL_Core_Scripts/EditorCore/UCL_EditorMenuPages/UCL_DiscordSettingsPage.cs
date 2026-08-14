@@ -200,8 +200,10 @@ namespace UCL.Core.EditorLib.Page
                 using (new GUILayout.HorizontalScope())
                 {
                     show = UCL_GUILayout.Toggle(m_FoldDic, "DiscordSettingsPeopleFold", 21, iDefaultValue: true);
+                    bool nextEnabled = UCL_GUILayout.CheckBox(m_WhitelistEnabled);
                     GUILayout.Label("<b>👥 Discord 人員與 @ 對照</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    bool nextEnabled = GUILayout.Toggle(m_WhitelistEnabled, "啟用", GUILayout.ExpandWidth(false));
+
+
                     if (nextEnabled != m_WhitelistEnabled) { WriteWhitelist(w => w[KeyEnabled] = new JsonData(nextEnabled)); return; }
                     GUILayout.FlexibleSpace();
                 }

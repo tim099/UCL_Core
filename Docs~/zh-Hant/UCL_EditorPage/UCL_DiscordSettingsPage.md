@@ -34,6 +34,7 @@ related:
 | 個人簡介 | 職位、溝通脈絡等；會隨 inbound 訊息寫入 `meta.discord_user_profile`，供 agent 回覆前參考 |
 
 啟用白名單時，未列帳號的真人訊息不會進酒館；空白清單代表全部拒絕。
+白名單的「啟用」布林設定使用 `UCL_GUILayout.CheckBox`；`UCL_GUILayout.Toggle` 僅保留給各區塊的摺疊狀態，避免把兩種 UI 語意混用。
 
 ## Guild 成員候選匯入
 

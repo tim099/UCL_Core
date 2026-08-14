@@ -11,7 +11,7 @@ source_files: |
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutDrawableTexture.cs
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutPainter.cs
 namespace: UCL.Core.UI
-last_updated: 2026-05-07
+last_updated: 2026-08-14
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [UCL_GUILayout, GUILayout 工具集, IMGUI helpers, DrawObject, Popup, DrawableTexture]
 tags: [api, ui, imgui, editor]
@@ -95,6 +95,10 @@ tags: [api, ui, imgui, editor]
 | `LabelAutoSize(name, fontSize, color)` / `ButtonAutoSize(name, fontSize, ...)` | 自適應寬度 |
 | ~~`Label(name, Color color)`~~ | **已廢棄** — 改用 `GUILayout.Label(text, UCL_GUIStyle.GetLabelStyle(color))` |
 | `FolderExplorer(dic, path, ...)` | 路徑導航 + 檔案篩選 UI |
+
+> [!IMPORTANT]
+> 布林設定使用 `UCL_GUILayout.CheckBox`，不要直接呼叫 `GUILayout.Toggle`；封裝會維持 checkbox 與文字的 DPI 縮放一致。
+> `UCL_GUILayout.Toggle` 專用於 `▼` / `►` 的摺疊顯示狀態，不可拿來取代一般設定開關。
 
 ### 3.2 集合編輯（`DrawList` / `DrawDictionary` / `DrawHashSet`）
 

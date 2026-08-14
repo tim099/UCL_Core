@@ -1,6 +1,7 @@
 ﻿// 區塊職責：Discord channel → ChatTavern room routing 編輯 UI
-// 物理意義：discord_channel_routing.json 是 single source of truth, 由 discord_inbound_bot.py 啟動時讀;
-//          本 page 提供 IMGUI CRUD: 列出 mappings + 改欄位 + 新增/刪除/啟停 + Save + Restart Bot.
+// 物理意義：discord_channel_routing.json 是 single source of truth，由 C# native
+//          UCL_DiscordInboundDaemon 以 mtime 快取讀取；本頁用「選取→編輯」流程管理 mappings，
+//          並可驗證 Channel ID、快取 Discord 頻道名稱、新增／複製／刪除與儲存。
 // 設計理由 (Tim 2026-05-15 拍板):
 //   notify_config.json 已肥到 137 行, 抽出 routing schema 獨立檔; 加 source_class freeform tag + priority desc
 //   讓 waiter cycle 能 sort 出內部/工作優先. UI 走 UCL_LoginStatusPage 同款 table + per-row action 模式.
@@ -10,13 +11,14 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
+using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
 using UCL.Core.UI;
 using UnityEngine;
+using UnityEngine.Networking;
 using Debug = UnityEngine.Debug;
 
 namespace UCL.Core.EditorLib.Page
@@ -45,14 +47,20 @@ namespace UCL.Core.EditorLib.Page
             public string GuildId = "";
             public string TagsCsv = "";               // tags array → CSV 編輯用 (UI 友善)
             public string Note = "";
+            public string CachedChannelName = "";
         }
 
         List<RoutingRow> m_Rows = new List<RoutingRow>();
-        Vector2 m_Scroll = Vector2.zero;
         bool m_Dirty = false;                         // unsaved changes flag
         string m_RoutingPath = "";
         string m_LastSaveTs = "";
-        string m_BotStatus = "(unknown)";
+        int m_SelectedRowIndex = -1;
+        readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
+        UnityWebRequest m_ChannelProbeRequest;
+        int m_ChannelProbeRowIndex = -1;
+        string m_ChannelProbeStatus = "";
+        const string ChannelNameCacheKeyPrefix = "UCL_DiscordChannelRoutingPage.ChannelName.";
 
         public override void Init(UCL_GUIPageController p_Controller)
         {
@@ -76,15 +84,13 @@ namespace UCL.Core.EditorLib.Page
                     SaveFile();
                 }
             }
-            if (GUILayout.Button("Add Row", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button("＋ 新增路由", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 m_Rows.Add(new RoutingRow { ChannelId = "", TavernRoom = "tavern", SourceClass = "external", Priority = 0, Enabled = true });
+                m_SelectedRowIndex = m_Rows.Count - 1;
                 m_Dirty = true;
             }
-            if (GUILayout.Button("Restart Bot", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                RestartBot();
-            }
+            if (GUILayout.Button("💬 Discord 設定", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) UCL_DiscordSettingsPage.Create();
             if (GUILayout.Button("Open JSON", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 if (File.Exists(m_RoutingPath)) UnityEditor.EditorUtility.RevealInFinder(m_RoutingPath);
@@ -98,6 +104,7 @@ namespace UCL.Core.EditorLib.Page
         {
             m_Rows.Clear();
             m_Dirty = false;
+            m_SelectedRowIndex = -1;
             if (!File.Exists(m_RoutingPath))
             {
                 Debug.LogWarning($"[DiscordChannelRouting] file not found, starting empty: {m_RoutingPath}");
@@ -132,6 +139,7 @@ namespace UCL.Core.EditorLib.Page
                         Enabled = item.GetBool("enabled", true),
                         GuildId = item.GetString("guild_id", ""),
                         Note = item.GetString("_note", ""),
+                        CachedChannelName = GetCachedChannelName(item.GetString("channel_id", "")),
                     };
                     // tags array → CSV
                     if (item.Dic.TryGetValue("tags", out var tagsJd) && tagsJd.IsArray)
@@ -146,6 +154,7 @@ namespace UCL.Core.EditorLib.Page
                     }
                     m_Rows.Add(row);
                 }
+                if (m_Rows.Count > 0) m_SelectedRowIndex = 0;
             }
             catch (Exception e)
             {
@@ -160,10 +169,16 @@ namespace UCL.Core.EditorLib.Page
             //          手構 JSON 對齊 schema, 之後外部 tool 用 json 函式庫讀仍正常.
             try
             {
+                string validation = GetValidationMessage();
+                if (!string.IsNullOrEmpty(validation))
+                {
+                    Debug.LogWarning($"[DiscordChannelRouting] 儲存取消：{validation}");
+                    return;
+                }
                 var sb = new System.Text.StringBuilder();
                 sb.Append("{\n");
                 sb.Append("  \"_schema_version\": 1,\n");
-                sb.Append("  \"_description\": \"Discord channel → ChatTavern room routing table. By discord_inbound_bot.py read; UCL_DiscordChannelRoutingPage edit. 多對一支援 (多 Discord channel 進同一 tavern room), 多對多 (不同 channel 配不同 room).\",\n");
+                sb.Append("  \"_description\": \"Discord channel → ChatTavern room routing table. Read by UCL_DiscordInboundDaemon; UCL_DiscordChannelRoutingPage edits it. 多對一支援 (多 Discord channel 進同一 tavern room), 多對多 (不同 channel 配不同 room).\",\n");
                 sb.Append("  \"_canonical_doc\": \"Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md\",\n");
                 sb.Append("  \"_taxonomy_note\": \"source_class 是 freeform string (Tim 2026-05-15 拍板, 不限 enum). 慣例 tag: external / internal / work / chitchat / urgent; 自訂任意。priority int, 越高越優先 (waiter cycle sort desc).\",\n");
                 sb.Append("  \"mappings\": [\n");
@@ -182,11 +197,12 @@ namespace UCL.Core.EditorLib.Page
                     if (!string.IsNullOrEmpty(r.TagsCsv))
                     {
                         var parts = r.TagsCsv.Split(',');
+                        int tagCount = 0;
                         for (int j = 0; j < parts.Length; j++)
                         {
                             string t = parts[j].Trim();
                             if (string.IsNullOrEmpty(t)) continue;
-                            if (j > 0) sb.Append(", ");
+                            if (tagCount++ > 0) sb.Append(", ");
                             sb.Append(JsonEscape(t));
                         }
                     }
@@ -250,57 +266,24 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
-        // Restart Bot — kill 現有 python process, 讓 daemon 重 spawn 讀新 config
-        // ===========================================================
-        void RestartBot()
-        {
-            // 區塊職責：尋找跑 discord_inbound_bot.py 的 python process, kill 它
-            // 物理意義：daemon 端 5s 內偵測子程序死掉自動 respawn, 新 process 啟動時讀 routing JSON
-            // 數值影響：純 kill, 不動 daemon 跟 config; 若沒 process running 印警告但不算錯
-            try
-            {
-                foreach (var proc in Process.GetProcessesByName("python"))
-                {
-                    try
-                    {
-                        // 跨平台 cmdline 抓不到 (Process.MainModule.FileName 只有 exe 路徑), 退而求其次:
-                        // 用 ProcessStartInfo 跑 wmic / Get-CimInstance? 太重. 直接 kill 全部 python.exe 風險高
-                        // → 改用 PID file pattern: 之後 daemon 寫 pid → 本 page 讀 → kill 精確 pid (TODO).
-                        // MVP: 印警告, 提示走外部腳本
-                    }
-                    catch { /* ignore */ }
-                    finally { proc.Dispose(); }
-                }
-                // MVP 策略: 提示 user 走外部 PowerShell 命令 (避免誤殺其他 python.exe)
-                m_BotStatus = $"[{DateTime.UtcNow:HH:mm:ss}] Restart 請走外部命令:\n"
-                              + "  PowerShell: Get-Process python | Where-Object { $_.MainWindowTitle -eq '' } | Stop-Process\n"
-                              + "  或精確: Get-CimInstance Win32_Process -Filter \"name='python.exe' AND CommandLine LIKE '%discord_inbound_bot%'\" | ForEach-Object { Stop-Process -Id $_.ProcessId }\n"
-                              + "  daemon 5s 內自動 respawn 新 process 讀新 routing.";
-                Debug.Log("[DiscordChannelRouting] " + m_BotStatus);
-            }
-            catch (Exception e)
-            {
-                m_BotStatus = $"restart 失敗: {e.Message}";
-                Debug.LogWarning("[DiscordChannelRouting] " + m_BotStatus);
-            }
-        }
-
-        // ===========================================================
         // UI
         // ===========================================================
         protected override void ContentOnGUI()
         {
+            PollChannelProbe();
             DrawHeader();
-            DrawTable();
-            DrawFooter();
+            DrawRoutePicker();
+            DrawSelectedRouteEditor();
+            DrawFieldGuide();
         }
 
         void DrawHeader()
         {
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label($"Routing rows: {m_Rows.Count}  ", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label($"File: {m_RoutingPath}", UCL_GUIStyle.LabelStyle);
+                int activeCount = 0;
+                for (int i = 0; i < m_Rows.Count; i++) if (m_Rows[i].Enabled) activeCount++;
+                GUILayout.Label($"<b>🔀 Discord 頻道 → 酒館房間</b>　{activeCount}/{m_Rows.Count} 啟用", UCL_GUIStyle.LabelStyle);
                 GUILayout.FlexibleSpace();
                 if (m_Dirty)
                 {
@@ -314,115 +297,221 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label($"Saved @ {m_LastSaveTs}", UCL_GUIStyle.LabelStyle);
                 }
             }
-            if (!string.IsNullOrEmpty(m_BotStatus))
+            GUILayout.Label("每一列只決定一件事：某個 Discord 頻道的訊息要不要進酒館，以及要進哪一個房間。儲存後 native inbound daemon 會自動讀取新設定。", UCL_GUIStyle.LabelStyle);
+            string validation = GetValidationMessage();
+            if (!string.IsNullOrEmpty(validation))
             {
-                GUILayout.Label(m_BotStatus, UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"⚠ {validation}", UCL_GUIStyle.LabelStyle);
             }
         }
 
-        void DrawTable()
+        void DrawRoutePicker()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                // 表頭
+                GUILayout.Label("<b>① 選擇要管理的頻道路由</b>", UCL_GUIStyle.LabelStyle);
+                if (m_Rows.Count == 0)
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("On", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(34)));
-                    GUILayout.Label("Channel ID", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label("Label", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                    GUILayout.Label("Tavern Room", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    GUILayout.Label("Source Class", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                    GUILayout.Label("Priority", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
-                    GUILayout.Label("Tags (csv)", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                    GUILayout.Label("Guild ID", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
-                    GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                    GUILayout.Label("尚未有路由。按上方「＋ 新增路由」建立第一筆。", UCL_GUIStyle.LabelStyle);
+                    return;
                 }
-
-                m_Scroll = GUILayout.BeginScrollView(m_Scroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
+                if (m_SelectedRowIndex < 0 || m_SelectedRowIndex >= m_Rows.Count) m_SelectedRowIndex = 0;
+                var labels = new List<string>();
                 for (int i = 0; i < m_Rows.Count; i++)
                 {
                     var r = m_Rows[i];
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        // Enabled toggle
-                        bool newEnabled = GUILayout.Toggle(r.Enabled, "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(34)));
-                        if (newEnabled != r.Enabled) { r.Enabled = newEnabled; m_Dirty = true; }
-
-                        // Channel ID
-                        string newCid = GUILayout.TextField(r.ChannelId ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                        if (newCid != r.ChannelId) { r.ChannelId = newCid; m_Dirty = true; }
-
-                        // Label
-                        string newLabel = GUILayout.TextField(r.Label ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        if (newLabel != r.Label) { r.Label = newLabel; m_Dirty = true; }
-
-                        // Tavern Room
-                        string newRoom = GUILayout.TextField(r.TavernRoom ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                        if (newRoom != r.TavernRoom) { r.TavernRoom = newRoom; m_Dirty = true; }
-
-                        // Source Class (freeform)
-                        string newSc = GUILayout.TextField(r.SourceClass ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                        if (newSc != r.SourceClass) { r.SourceClass = newSc; m_Dirty = true; }
-
-                        // Priority (int)
-                        string priStr = GUILayout.TextField(r.Priority.ToString(), GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
-                        if (int.TryParse(priStr, out int newPri))
-                        {
-                            if (newPri != r.Priority) { r.Priority = newPri; m_Dirty = true; }
-                        }
-
-                        // Tags CSV
-                        string newTags = GUILayout.TextField(r.TagsCsv ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        if (newTags != r.TagsCsv) { r.TagsCsv = newTags; m_Dirty = true; }
-
-                        // Guild ID
-                        string newGid = GUILayout.TextField(r.GuildId ?? "", GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
-                        if (newGid != r.GuildId) { r.GuildId = newGid; m_Dirty = true; }
-
-                        // Actions: Up / Down / Remove
-                        if (GUILayout.Button("▲", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(30))))
-                        {
-                            if (i > 0)
-                            {
-                                (m_Rows[i - 1], m_Rows[i]) = (m_Rows[i], m_Rows[i - 1]);
-                                m_Dirty = true;
-                            }
-                        }
-                        if (GUILayout.Button("▼", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(30))))
-                        {
-                            if (i < m_Rows.Count - 1)
-                            {
-                                (m_Rows[i + 1], m_Rows[i]) = (m_Rows[i], m_Rows[i + 1]);
-                                m_Dirty = true;
-                            }
-                        }
-                        if (GUILayout.Button("✖ Remove", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
-                        {
-                            m_Rows.RemoveAt(i);
-                            m_Dirty = true;
-                            GUILayout.EndScrollView();
-                            return;   // 重畫一輪避免 index 錯位
-                        }
-                    }
-                    if (!string.IsNullOrEmpty(r.Note))
-                    {
-                        GUILayout.Label($"      _note: {r.Note}", UCL_GUIStyle.LabelStyle);
-                    }
+                    string identity = !string.IsNullOrEmpty(r.CachedChannelName) ? "#" + r.CachedChannelName : (string.IsNullOrEmpty(r.Label) ? (string.IsNullOrEmpty(r.ChannelId) ? "未命名頻道" : r.ChannelId) : r.Label);
+                    labels.Add($"{(r.Enabled ? "●" : "○")} {identity}  →  {r.TavernRoom}  [{r.SourceClass}/p{r.Priority}]");
                 }
-                GUILayout.EndScrollView();
+                int next = UCL_GUILayout.PopupSearchCache(m_SelectedRowIndex, labels, m_PickerDic, "DiscordChannelRoutePicker");
+                if (next >= 0 && next < m_Rows.Count) m_SelectedRowIndex = next;
             }
         }
 
-        void DrawFooter()
+        void DrawSelectedRouteEditor()
+        {
+            if (m_SelectedRowIndex < 0 || m_SelectedRowIndex >= m_Rows.Count) return;
+            var r = m_Rows[m_SelectedRowIndex];
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>② 編輯選取路由</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("核心路由欄位（決定 Discord 訊息如何進入酒館）", UCL_GUIStyle.LabelStyle);
+                bool enabled = UCL_GUILayout.CheckBox(r.Enabled, "啟用這個頻道的 inbound 中繼");
+                if (enabled != r.Enabled) { r.Enabled = enabled; m_Dirty = true; }
+                DrawChannelIdField(r);
+                DrawChannelValidation(r);
+                DrawTextField("酒館 Room ID", "收到的訊息寫入哪個 Chat Tavern room，例如 tavern。", ref r.TavernRoom);
+                DrawTextField("來源分類", "寫入訊息 meta.source_class 的自由標籤，例如 external、internal 或 work。", ref r.SourceClass);
+                string priorityText = r.Priority.ToString();
+                string nextPriority = GUILayout.TextField(priorityText, UCL_GUIStyle.TextFieldStyle);
+                GUILayout.Label("優先度：會寫入訊息 meta.priority，供下游等待／提示流程判讀；數字越高代表越高優先。", UCL_GUIStyle.LabelStyle);
+                if (int.TryParse(nextPriority, out int priority) && priority != r.Priority) { r.Priority = priority; m_Dirty = true; }
+                using(new GUILayout.HorizontalScope())
+                {
+                    bool showMetadata = UCL_GUILayout.Toggle(m_FoldDic, "DiscordChannelRouteMetadata", 21, iDefaultValue: false);
+                    using(new GUILayout.VerticalScope())
+                    {
+                        GUILayout.Label("<b>辨識與備註（不影響中繼目標）</b>", UCL_GUIStyle.LabelStyle);
+                        if (showMetadata)
+                        {
+                            DrawTextField("顯示名稱", "只供管理頁與診斷辨識這個頻道。", ref r.Label);
+                            DrawTextField("Guild ID", "頻道所屬 Discord Guild；供診斷與 Discord 設定頁預填。", ref r.GuildId);
+                            DrawTextField("Tags（逗號分隔）", "組織用標籤；目前不改變中繼行為。", ref r.TagsCsv);
+                            DrawTextArea("備註", "給管理者的背景說明；不會送進酒館。", ref r.Note);
+                        }
+                    }
+                }
+
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("複製為新路由", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_Rows.Add(new RoutingRow { ChannelId = r.ChannelId, TavernRoom = r.TavernRoom, Label = r.Label + "（副本）", SourceClass = r.SourceClass, Priority = r.Priority, Enabled = false, GuildId = r.GuildId, TagsCsv = r.TagsCsv, Note = r.Note });
+                        m_SelectedRowIndex = m_Rows.Count - 1;
+                        m_Dirty = true;
+                        return;
+                    }
+                    if (GUILayout.Button("✖ 刪除選取路由", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_Rows.RemoveAt(m_SelectedRowIndex);
+                        m_SelectedRowIndex = m_Rows.Count == 0 ? -1 : Math.Min(m_SelectedRowIndex, m_Rows.Count - 1);
+                        m_Dirty = true;
+                    }
+                }
+            }
+        }
+
+        void DrawFieldGuide()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("規範:", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  • 多個 Discord channel 可配同一 tavern_room (多對一); 也可分流到不同 room", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  • Source Class freeform string (外慣例: external / internal / work / chitchat / urgent; 自訂任意)", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  • Priority 越高越優先 (waiter cycle 按 priority desc 排序, internal/work 通常設高)", UCL_GUIStyle.LabelStyle);
-                GUILayout.Label("  • 改完按 Save → 走 Restart Bot 提示 (外部 PowerShell 命令 kill python, daemon 5s 自動 respawn 讀新檔)", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("<b>③ 儲存與生效</b>", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("按上方 Save 後，UCL_DiscordInboundDaemon 會偵測檔案變更並自動套用，\n" +
+                    "不需要重啟 bot 或手動結束 Python process。驗證過的頻道名稱會快取在本專案 EditorPrefs，下次開頁直接顯示。", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("同一個酒館 room 可以接多個 Discord 頻道；\n" +
+                    "但啟用中的同一 Channel ID 不應重複，否則只會採用第一筆路由。", UCL_GUIStyle.LabelStyle);
             }
+        }
+
+        void DrawTextField(string label, string help, ref string value)
+        {
+            GUILayout.Label(label, UCL_GUIStyle.LabelStyle);
+            string next = GUILayout.TextField(value ?? "", UCL_GUIStyle.TextFieldStyle);
+            if (next != value) { value = next; m_Dirty = true; }
+            GUILayout.Label(help, UCL_GUIStyle.LabelStyle);
+        }
+
+        void DrawChannelIdField(RoutingRow row)
+        {
+            GUILayout.Label("Discord Channel ID", UCL_GUIStyle.LabelStyle);
+            string next = GUILayout.TextField(row.ChannelId ?? "", UCL_GUIStyle.TextFieldStyle);
+            if (next != row.ChannelId)
+            {
+                row.ChannelId = next;
+                row.CachedChannelName = GetCachedChannelName(next);
+                m_ChannelProbeStatus = "";
+                m_Dirty = true;
+            }
+            GUILayout.Label("要讀取的 Discord 文字頻道 ID（必填）。已驗證過的 ID 會直接帶入本機快取名稱。", UCL_GUIStyle.LabelStyle);
+        }
+
+        void DrawTextArea(string label, string help, ref string value)
+        {
+            GUILayout.Label(label, UCL_GUIStyle.LabelStyle);
+            string next = GUILayout.TextArea(value ?? "", UCL_GUIStyle.TextAreaStyle, GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(54)));
+            if (next != value) { value = next; m_Dirty = true; }
+            GUILayout.Label(help, UCL_GUIStyle.LabelStyle);
+        }
+
+        void DrawChannelValidation(RoutingRow row)
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                bool isProbing = m_ChannelProbeRequest != null && m_ChannelProbeRowIndex == m_SelectedRowIndex;
+                using (new EditorDisabledScope(isProbing || string.IsNullOrWhiteSpace(row.ChannelId)))
+                {
+                    if (GUILayout.Button(isProbing ? "驗證中…" : "🩺 驗證 Channel ID", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) StartChannelProbe(m_SelectedRowIndex, row.ChannelId);
+                }
+                string name = row.CachedChannelName;
+                GUILayout.Label(string.IsNullOrEmpty(name) ? "頻道名稱：未驗證" : $"<color=#66ff66>✓ #{name}（快取）</color>", UCL_GUIStyle.LabelStyle);
+            }
+            if (!string.IsNullOrEmpty(m_ChannelProbeStatus)) GUILayout.Label(m_ChannelProbeStatus, UCL_GUIStyle.LabelStyle);
+        }
+
+        static string GetCachedChannelName(string channelId)
+        {
+            return string.IsNullOrEmpty(channelId) ? "" : UCL_ProjectEditorPrefs.GetString(ChannelNameCacheKeyPrefix + channelId, "");
+        }
+
+        static void SetCachedChannelName(string channelId, string channelName)
+        {
+            if (!string.IsNullOrEmpty(channelId) && !string.IsNullOrEmpty(channelName)) UCL_ProjectEditorPrefs.SetString(ChannelNameCacheKeyPrefix + channelId, channelName);
+        }
+
+        void StartChannelProbe(int rowIndex, string channelId)
+        {
+            if (!UCL_DiscordInboundDaemon.TryCreateChannelRequest(channelId?.Trim(), out var request, out string error))
+            {
+                m_ChannelProbeStatus = $"<color=#ff6666>✗ {error}</color>";
+                return;
+            }
+            m_ChannelProbeRequest?.Dispose();
+            m_ChannelProbeRequest = request;
+            m_ChannelProbeRowIndex = rowIndex;
+            m_ChannelProbeStatus = "驗證中…";
+            m_ChannelProbeRequest.SendWebRequest();
+        }
+
+        void PollChannelProbe()
+        {
+            if (m_ChannelProbeRequest == null || !m_ChannelProbeRequest.isDone) return;
+            try
+            {
+                if (m_ChannelProbeRequest.result != UnityWebRequest.Result.Success)
+                {
+                    m_ChannelProbeStatus = $"<color=#ff6666>✗ HTTP {(long)m_ChannelProbeRequest.responseCode}：{m_ChannelProbeRequest.error}</color>";
+                    return;
+                }
+                var result = JsonData.ParseJson(m_ChannelProbeRequest.downloadHandler.text);
+                string channelName = result?.GetString("name", "") ?? "";
+                if (string.IsNullOrEmpty(channelName))
+                {
+                    m_ChannelProbeStatus = "<color=#ff6666>✗ Discord 回應未包含頻道名稱</color>";
+                    return;
+                }
+                if (m_ChannelProbeRowIndex >= 0 && m_ChannelProbeRowIndex < m_Rows.Count)
+                {
+                    var row = m_Rows[m_ChannelProbeRowIndex];
+                    row.CachedChannelName = channelName;
+                    SetCachedChannelName(row.ChannelId, channelName);
+                }
+                m_ChannelProbeStatus = $"<color=#66ff66>✓ #{channelName}（已快取）</color>";
+            }
+            catch (Exception e)
+            {
+                m_ChannelProbeStatus = $"<color=#ff6666>✗ 驗證回應解析失敗：{e.Message}</color>";
+            }
+            finally
+            {
+                m_ChannelProbeRequest.Dispose();
+                m_ChannelProbeRequest = null;
+                m_ChannelProbeRowIndex = -1;
+            }
+        }
+
+        string GetValidationMessage()
+        {
+            var enabledChannelIds = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < m_Rows.Count; i++)
+            {
+                var r = m_Rows[i];
+                if (!r.Enabled) continue;
+                if (string.IsNullOrWhiteSpace(r.ChannelId) || string.IsNullOrWhiteSpace(r.TavernRoom)) return "啟用中的路由必須同時填入 Discord Channel ID 與酒館 Room ID。";
+                if (!enabledChannelIds.Add(r.ChannelId)) return $"Discord Channel ID {r.ChannelId} 有多筆啟用路由；daemon 只會採用第一筆。";
+            }
+            return "";
         }
 
         // ===========================================================

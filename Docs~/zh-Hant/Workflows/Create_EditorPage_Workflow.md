@@ -3,7 +3,7 @@ title: 建立新的 UCL_CommonEditorPage 子類工作流
 description: 步驟化 SOP — 從零開出一頁可被 GUIPageController 推送的 Editor 頁面。涵蓋繼承關係、必/選 override、入口點掛接、**區塊折疊與排版守則（按鈕靠左、單排、關鍵操作提到折疊外）**、狀態快取分層、樣式選用、與 12 條實戰地雷。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-08-07 (新增 L4：下拉行尾不放 FlexibleSpace；emoji 用常見款 — ⟳ Unity 畫不出來，刷新用 🔄。Tim 於閱讀心得管理頁實測)
+last_updated: 2026-08-14
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create EditorPage, UCL_CommonEditorPage workflow, 寫新 editor 頁, editor page 排版, 折疊守則]
 tags: [workflow, editor, ui, imgui, layout, fold]
@@ -204,6 +204,30 @@ using (new GUILayout.HorizontalScope())
     // GUILayout.BeginHorizontal(GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(150))); ... EndHorizontal();
 }
 ```
+
+### 4.2.1 摺疊箭頭 + 可換行內容標題
+
+當摺疊標題下面可能展開多個欄位時，讓 `UCL_GUILayout.Toggle` 留在外層的 `HorizontalScope`，
+右側內容改放一個 `VerticalScope`。這樣箭頭固定在左上角，標題與展開內容自然維持同一個垂直欄位，
+不會因為內容變長而把箭頭或同列按鈕推開。
+
+```csharp
+using (new GUILayout.HorizontalScope())
+{
+    bool showMetadata = UCL_GUILayout.Toggle(m_FoldDic, "MetadataFold", 21, iDefaultValue: false);
+    using (new GUILayout.VerticalScope())
+    {
+        GUILayout.Label("<b>辨識與備註</b>", UCL_GUIStyle.LabelStyle);
+        if (showMetadata)
+        {
+            DrawTextField("顯示名稱", "管理與診斷用。", ref item.displayName);
+            DrawTextArea("備註", "不影響實際行為。", ref item.note);
+        }
+    }
+}
+```
+
+若此列另有操作按鈕，順序固定為「摺疊箭頭 → 按鈕 → `VerticalScope` 內容」；按鈕仍要放在可變長內容之前。
 
 ### 4.3 什麼該留在折疊外層？
 

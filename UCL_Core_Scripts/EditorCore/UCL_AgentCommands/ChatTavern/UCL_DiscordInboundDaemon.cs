@@ -50,6 +50,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const string USER_AGENT = "UCL_Core-DiscordInbound (Unity Editor)";
         const string EnabledPrefKey = "UCL_DiscordInboundDaemon.Enabled";
         const string TokenFileName = "discord_bot_token.txt";
+        const string NotifyConfigFileName = "notify_config.json";
+        const string KeyTavernInbound = "tavern_inbound";
+        const string KeyUserWhitelist = "user_whitelist";
+        const string KeyWhitelistEnabled = "enabled";
+        const string KeyWhitelistUsers = "users";
+        const string KeyUserId = "user_id";
+        const string KeyDisplayName = "display_name";
+        const string KeyProfile = "profile";
         /// <summary>Process 註冊中心 tag — AdminPage 顯示中繼器狀態時認這個字串（native 版沿用同 tag 語意）。</summary>
         public const string RelayTag = "discord_inbound";
 
@@ -59,6 +67,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         static InboundRoute s_InFlightRoute;     // 上述 request 對應的路由列
         static bool s_InFlightIsBaseline;        // 本次 request 是 baseline 探測（只學游標不轉發）
         static bool s_TokenMissingLogged;        // token 缺席只警告一次，不洗 console
+
+        // 區塊職責：Discord inbound 白名單快取（notify_config.json → tavern_inbound.user_whitelist）。
+        // 物理意義：頻道 routing 決定「哪個地方的訊息可進酒館」；此表再決定「該頻道裡的哪個 Discord 帳號可信」。
+        // 數值影響：enabled=false（缺欄位亦同）不過濾；enabled=true 時未列 user_id 一律略過，名稱覆寫只影響酒館顯示。
+        static readonly HashSet<string> s_WhitelistedUserIds = new HashSet<string>(StringComparer.Ordinal);
+        static readonly Dictionary<string, string> s_WhitelistedDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        static readonly Dictionary<string, string> s_WhitelistedProfiles = new Dictionary<string, string>(StringComparer.Ordinal);
+        static long s_WhitelistConfigMtime = -1;
+        static bool s_WhitelistEnabled;
 
         /// <summary>本 session 已中繼筆數（AdminPage 顯示用；domain reload 歸零）。</summary>
         public static int RelayedThisSession { get; private set; }
@@ -368,6 +385,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// <summary>token 是否就緒（AdminPage 顯示用；不回傳內容）。</summary>
         public static bool HasToken => !string.IsNullOrEmpty(ResolveToken());
 
+        /// <summary>
+        /// 建立 List Guild Members REST request（供 Discord Settings page 匯入候選成員）。
+        /// token 留在 daemon 內解析，呼叫端只負責送出與 dispose request，絕不接觸明文字串。
+        /// </summary>
+        public static bool TryCreateGuildMembersRequest(string guildId, string afterUserId,
+            out UnityWebRequest request, out string error)
+        {
+            request = null;
+            error = "";
+            if (!ulong.TryParse(guildId, out _))
+            {
+                error = "Guild ID 必須是正整數 snowflake";
+                return false;
+            }
+            string token = ResolveToken();
+            if (string.IsNullOrEmpty(token))
+            {
+                error = "bot token 未就緒，請先以 Secret Manager 安裝";
+                return false;
+            }
+            string suffix = string.IsNullOrEmpty(afterUserId) ? "" : "&after=" + afterUserId;
+            request = UnityWebRequest.Get($"{API_BASE}/guilds/{guildId}/members?limit=1000{suffix}");
+            request.timeout = REQUEST_TIMEOUT_SEC;
+            request.SetRequestHeader("Authorization", "Bot " + token);
+            request.SetRequestHeader("User-Agent", USER_AGENT);
+            return true;
+        }
+
         // ===========================================================
         // 區塊：游標 state（per-channel last_message_id）讀寫
         // 物理意義：Discord snowflake id 單調遞增 → `?after=<id>` 天然就是「比這筆新的」語意，
@@ -593,6 +638,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string msgId = msg.GetString("id", "");
                 string content = (msg.GetString("content", "") ?? "").Trim();
 
+                string uid = author.GetString("id", "");
+                if (string.IsNullOrEmpty(uid)) return "no-author-id";
+                if (!TryGetWhitelistedUserInfo(uid, out string approvedDisplayName, out string approvedProfile)) return "not-whitelisted";
+
                 // 附件：下載落地 + refs 關聯本地路徑（對齊舊 python bot 慣例，見 DownloadAttachments）
                 var refs = new List<UCL_ChatRef>();
                 var attachmentNames = new List<string>();
@@ -607,18 +656,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (string.IsNullOrEmpty(content))
                     content = $"[Discord 附件 {attachmentNames.Count} 個] " + string.Join(", ", attachmentNames);
 
-                string uid = author.GetString("id", "");
-                if (string.IsNullOrEmpty(uid)) return "no-author-id";
                 // 顯示名優先序：guild 暱稱（member.nick）> global_name > username > uid。
-                // 註（Tim 2026-07-28）：舊 python bot 還會先查 notify_config 的 discord_user_mentions
-                //   反轉表把 uid 映射成統一顯示名 —— **刻意不 port**：Tim 有 Tim / Tim1125 兩個獨立帳號，
-                //   分別顯示才是正確語意，硬映射成同一個名字反而抹掉「哪個帳號發的」這個資訊。
+                // 白名單列若填 display_name，則以該列為明示的實名覆寫；未填仍保留 Discord 自己的帳號區別。
                 string display = "";
                 var member = msg.Contains("member") ? msg["member"] : null;
                 if (member != null) display = member.GetString("nick", "");
                 if (string.IsNullOrEmpty(display)) display = author.GetString("global_name", "");
                 if (string.IsNullOrEmpty(display)) display = author.GetString("username", "");
                 if (string.IsNullOrEmpty(display)) display = uid;
+                if (!string.IsNullOrEmpty(approvedDisplayName)) display = approvedDisplayName;
 
                 string senderId = "discord:" + uid;
                 // identity 先 ensure — Cmd_Tavern / 渲染端靠 identities.json 找 display_name，
@@ -640,6 +686,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 };
                 if (!string.IsNullOrEmpty(route.guildId)) meta["discord_guild_id"] = route.guildId;
                 if (!string.IsNullOrEmpty(route.label)) meta["channel_label"] = route.label;
+                if (!string.IsNullOrEmpty(approvedProfile)) meta["discord_user_profile"] = approvedProfile;
 
                 if (refs.Count > 0) meta["attachments"] = refs.Count.ToString();
                 var record = new UCL_ChatMessage
@@ -660,6 +707,90 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 LastError = $"單筆中繼失敗: {e.Message}";
                 Debug.LogWarning($"[DiscordInbound] {LastError}");
                 return "exception";
+            }
+        }
+
+        // ===========================================================
+        // 區塊：白名單讀取與判定（config mtime 快取）
+        // 物理意義：AdminPage 存檔後，下一筆 inbound 自動吃到新名單；不須重啟 daemon 或重新連 Gateway。
+        // 數值影響：每次檔案 mtime 改變才重新 parse；設定檔讀壞時 fail-closed（原先已啟用白名單仍不放行陌生帳號）。
+        // ===========================================================
+        static string NotifyConfigPath => Path.Combine(UCL_AgentCommandsPath.DataRoot, "PromptQueue", NotifyConfigFileName);
+
+        static bool TryGetWhitelistedUserInfo(string userId, out string displayName, out string profile)
+        {
+            displayName = "";
+            profile = "";
+            RefreshWhitelistIfNeeded();
+            if (!s_WhitelistEnabled) return true;
+            if (!s_WhitelistedUserIds.Contains(userId)) return false;
+            s_WhitelistedDisplayNames.TryGetValue(userId, out displayName);
+            s_WhitelistedProfiles.TryGetValue(userId, out profile);
+            return true;
+        }
+
+        static void RefreshWhitelistIfNeeded()
+        {
+            try
+            {
+                string path = NotifyConfigPath;
+                if (!File.Exists(path))
+                {
+                    // 初始沒有設定檔 = 舊專案相容的「未啟用」；但運行中檔案消失不可把已啟用門禁打開。
+                    if (s_WhitelistConfigMtime >= 0)
+                    {
+                        LastError = "白名單設定檔在運行中消失；保留上一份 allowlist（fail-closed）";
+                        Debug.LogWarning($"[DiscordInbound] {LastError}");
+                    }
+                    return;
+                }
+                long mtime = new FileInfo(path).LastWriteTimeUtc.Ticks;
+                if (mtime == s_WhitelistConfigMtime) return;
+
+                // 先完成新快取再交換；讀檔失敗不能把既有 allowlist 清空成意外放行。
+                var nextIds = new HashSet<string>(StringComparer.Ordinal);
+                var nextNames = new Dictionary<string, string>(StringComparer.Ordinal);
+                var nextProfiles = new Dictionary<string, string>(StringComparer.Ordinal);
+                bool nextEnabled = false;
+                if (mtime >= 0)
+                {
+                    var config = JsonData.ParseJson(File.ReadAllText(path));
+                    var inbound = config != null && config.Contains(KeyTavernInbound) ? config[KeyTavernInbound] : null;
+                    var whitelist = inbound != null && inbound.Contains(KeyUserWhitelist) ? inbound[KeyUserWhitelist] : null;
+                    if (whitelist != null)
+                    {
+                        nextEnabled = whitelist.GetBool(KeyWhitelistEnabled, false);
+                        var users = whitelist.Contains(KeyWhitelistUsers) ? whitelist[KeyWhitelistUsers] : null;
+                        if (users != null && users.IsArray)
+                        {
+                            for (int i = 0; i < users.Count; i++)
+                            {
+                                var user = users[i];
+                                string id = user?.GetString(KeyUserId, "") ?? "";
+                                if (string.IsNullOrEmpty(id)) continue;
+                                nextIds.Add(id);
+                                string name = user.GetString(KeyDisplayName, "");
+                                if (!string.IsNullOrWhiteSpace(name)) nextNames[id] = name.Trim();
+                                string profile = user.GetString(KeyProfile, "");
+                                if (!string.IsNullOrWhiteSpace(profile)) nextProfiles[id] = profile.Trim();
+                            }
+                        }
+                    }
+                }
+
+                s_WhitelistedUserIds.Clear();
+                s_WhitelistedUserIds.UnionWith(nextIds);
+                s_WhitelistedDisplayNames.Clear();
+                foreach (var pair in nextNames) s_WhitelistedDisplayNames[pair.Key] = pair.Value;
+                s_WhitelistedProfiles.Clear();
+                foreach (var pair in nextProfiles) s_WhitelistedProfiles[pair.Key] = pair.Value;
+                s_WhitelistEnabled = nextEnabled;
+                s_WhitelistConfigMtime = mtime;
+            }
+            catch (Exception e)
+            {
+                LastError = $"白名單讀取失敗: {e.Message}";
+                Debug.LogWarning($"[DiscordInbound] {LastError}");
             }
         }
 

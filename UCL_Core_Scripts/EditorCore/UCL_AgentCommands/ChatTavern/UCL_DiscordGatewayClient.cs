@@ -32,12 +32,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 區塊職責：協議常數
         // 物理意義：intents 是「要訂閱哪些事件」的 bitmask；MESSAGE_CONTENT (1<<15) 是 **privileged intent**，
         //          必須在 Discord Developer Portal 手動開啟，否則 IDENTIFY 會被以 close code 4014 踢掉。
-        //          （舊 python bot 用 discord.py 設 intents.message_content = True，故該 portal 選項應已開。）
-        // 數值影響：GUILDS(1) + GUILD_MESSAGES(512) + MESSAGE_CONTENT(32768) = 33281。
+        //          GUILD_MEMBERS (1<<1) 讓 Discord Settings 可列 guild 成員，亦是 REST List Guild Members 的必要權限。
+        //          兩者都必須在 Discord Developer Portal 手動開啟，否則 IDENTIFY 會被以 close code 4014 踢掉。
+        // 數值影響：GUILDS(1) + GUILD_MEMBERS(2) + GUILD_MESSAGES(512) + MESSAGE_CONTENT(32768) = 33283。
         const int INTENT_GUILDS = 1 << 0;
+        const int INTENT_GUILD_MEMBERS = 1 << 1;
         const int INTENT_GUILD_MESSAGES = 1 << 9;
         const int INTENT_MESSAGE_CONTENT = 1 << 15;
-        const int INTENTS = INTENT_GUILDS | INTENT_GUILD_MESSAGES | INTENT_MESSAGE_CONTENT;
+        const int INTENTS = INTENT_GUILDS | INTENT_GUILD_MEMBERS | INTENT_GUILD_MESSAGES | INTENT_MESSAGE_CONTENT;
 
         const string GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
         const int RECEIVE_BUFFER_SIZE = 16 * 1024;

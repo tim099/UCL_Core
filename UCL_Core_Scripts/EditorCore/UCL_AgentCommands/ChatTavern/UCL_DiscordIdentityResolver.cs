@@ -23,6 +23,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "https://raw.githubusercontent.com/tim099/UCL_Core/Dev/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/Core/ModResources/Sprites/Avatars/";
         const string DEFAULT_AVATAR_PATTERN = "{base}{id}.png";
         const double CACHE_TTL_SEC = 5.0;
+        const string KeyTavernMirror = "tavern_mirror";
+        const string KeyTavernInbound = "tavern_inbound";
+        const string KeyUserWhitelist = "user_whitelist";
+        const string KeyWhitelistUsers = "users";
+        const string KeyUserId = "user_id";
+        const string KeyDisplayName = "display_name";
+        const string KeyAliases = "aliases";
 
         // ── 快取狀態 ──
         static double s_CacheTime = -999;
@@ -56,9 +63,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "PromptQueue", "notify_config.json");
             if (!File.Exists(path)) return;
             var jd = UCL.Core.JsonLib.JsonData.ParseJson(File.ReadAllText(path));
-            if (jd == null || !jd.IsObject || !jd.Contains("tavern_mirror")) return;
-            var tm = jd["tavern_mirror"];
-            if (tm == null || !tm.IsObject) return;
+            if (jd == null || !jd.IsObject) return;
+            var tm = jd.Contains(KeyTavernMirror) ? jd[KeyTavernMirror] : null;
+            if (tm == null || !tm.IsObject)
+            {
+                AddWhitelistMentionAliases(jd);
+                return;
+            }
 
             if (tm.Contains("avatar_url_base")) { var v = tm.GetString("avatar_url_base", ""); if (!string.IsNullOrEmpty(v)) s_AvatarBase = v; }
             if (tm.Contains("avatar_url_pattern")) { var v = tm.GetString("avatar_url_pattern", ""); if (!string.IsNullOrEmpty(v)) s_AvatarPattern = v; }
@@ -67,6 +78,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             CopyStringMap(tm, "persona_avatar_overrides", s_PersonaAvatar, httpOnly: true);
             // discord_user_mentions: {name: user_id}
             CopyStringMap(tm, "discord_user_mentions", s_UserMentions, httpOnly: false);
+            // 白名單使用者可在同一個 Discord ID 下登記多個稱呼（例如 David / Dump）。
+            // 既有 discord_user_mentions 是更明確的 outbound 設定，故此處只補未命中的 alias，不覆蓋它。
+            AddWhitelistMentionAliases(jd);
             // identity_overrides: {id: {avatar_url, username}}
             if (tm.Contains("identity_overrides"))
             {
@@ -83,6 +97,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     }
                 }
             }
+        }
+
+        // 區塊職責：把 inbound 白名單的顯示名稱與 aliases 投影成 outbound @mention 對照。
+        // 物理意義：同一真人可能在不同上下文被叫不同暱稱；全部收斂到他的 Discord snowflake，才不會 @ 錯人。
+        // 數值影響：只補 s_UserMentions 尚未存在的名稱，讓 tavern_mirror.discord_user_mentions 可顯式覆寫衝突。
+        static void AddWhitelistMentionAliases(UCL.Core.JsonLib.JsonData config)
+        {
+            var inbound = config.Contains(KeyTavernInbound) ? config[KeyTavernInbound] : null;
+            var whitelist = inbound != null && inbound.Contains(KeyUserWhitelist) ? inbound[KeyUserWhitelist] : null;
+            var users = whitelist != null && whitelist.Contains(KeyWhitelistUsers) ? whitelist[KeyWhitelistUsers] : null;
+            if (users == null || !users.IsArray) return;
+            for (int i = 0; i < users.Count; i++)
+            {
+                var user = users[i];
+                if (user == null) continue;
+                string id = user.GetString(KeyUserId, "");
+                if (string.IsNullOrEmpty(id)) continue;
+                AddMentionAlias(user.GetString(KeyDisplayName, ""), id);
+                var aliases = user.Contains(KeyAliases) ? user[KeyAliases] : null;
+                if (aliases == null || !aliases.IsArray) continue;
+                for (int j = 0; j < aliases.Count; j++) AddMentionAlias(aliases[j].GetString(), id);
+            }
+        }
+
+        static void AddMentionAlias(string alias, string userId)
+        {
+            string name = (alias ?? "").Trim();
+            if (!string.IsNullOrEmpty(name) && !s_UserMentions.ContainsKey(name)) s_UserMentions[name] = userId;
         }
 
         // identities.json = {"identities":[{id, display_name, ...}]}

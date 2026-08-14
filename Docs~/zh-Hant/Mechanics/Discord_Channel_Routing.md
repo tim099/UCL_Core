@@ -1,7 +1,7 @@
 ---
 title: Discord Channel Routing
 description: Discord channel → ChatTavern room 路由設定 — 多對一支援, source_class freeform tag, priority desc sort, IMGUI 編輯；含 inbound 中繼器現況（無自動 spawn）與遷移 C# 計畫
-last_updated: 2026-08-01
+last_updated: 2026-08-14
 target_audience: [AI_Agent, Developer]
 aliases: [discord routing, channel routing, channel mappings]
 tags: [discord, chat-tavern, routing, config]
@@ -135,7 +135,8 @@ AgentCommands/ChatTavern/discord_channel_routing.json
    > legacy 欄位已在 2026-08-01 改名為 `_deprecated_channel_mappings`（全 repo grep 零讀取點；
    > 且內容早已跟本表分岔 —— legacy 2 筆 vs 本表 3 筆）。**本 JSON 是唯一真相源。**
 2. **建 channel_map**：`build_channel_map()` 過濾 `enabled=true` 的 row → `{channel_id_int: routing_row_dict}`
-3. **on_message**：
+3. **user whitelist**：讀 `notify_config.json` 的 `tavern_inbound.user_whitelist`。預設關閉；開啟後僅 `users[].user_id` 命中的真人訊息可繼續。`display_name` 非空時是酒館端的明示顯示名稱覆寫，並可作 outbound @mention 的名稱；`aliases` 是同 ID 的額外 @mention 名稱（例如 `David`、`Dump` 都指向同一 snowflake）；`profile` 可記職位與溝通脈絡，並會寫入訊息的 `meta.discord_user_profile` 供 agent 參考；空白則保留 Discord 的 guild nick / global name / username。
+4. **on_message**：
    - 查 `channel_map.get(message.channel.id)` → 拿到 routing
    - 用 routing 的 `tavern_room` / `source_class` / `priority` / `label` 構造 meta
    - 寫進 tavern via `Cmd_Tavern op=post`，meta 帶上：
@@ -237,9 +238,11 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 | 中繼器實況 | `UCL_ProcessRegistryService`（tag `discord_inbound`）| 分辨 Alive / Dead / **PidReused**（PID 易主不誤判成活著）。**裸跑的 python bot 不進註冊中心 → 顯示「未偵測到」**，措辭刻意誠實不假裝在跑 |
 | 頻道對照 | 本檔 `mappings` | `N 條啟用 / 共 M 條` + 每列 `label (ch …末6碼) → room [class/p優先]`；停用列也顯示（標灰），避免「設了卻沒生效」被藏起來 |
 | Bot token | `AgentCommands/_secrets/discord_bot_token.{enc,txt}` | 只報存在性（入庫了沒 / 安裝了沒），**不顯示也不寫入明文** |
+| 使用者白名單 | `notify_config.json` → `tavern_inbound.user_whitelist` | 本頁可新增／移除 Discord user ID、填酒館顯示名稱與個人簡介；enabled 時非名單帳號略過，profile 隨 inbound 訊息提供給 agent |
 
 - **🔀 開啟頻道路由設定** → `UCL_DiscordChannelRoutingPage`（本檔的 CRUD 專頁，single source of truth）
 - **🔑 開啟 Secret Manager** → `UCL_SecretManagerPage`（token 以 passphrase 安裝 / 解密）
+- **💬 Discord 設定** → `UCL_DiscordSettingsPage`（白名單、名稱／別名、個人簡介與 Guild 成員候選匯入）。匯入使用 Discord List Guild Members API，需在 Developer Portal 啟用 `GUILD_MEMBERS` privileged intent；候選不會自動加入白名單。
 
 > 實作註（assembly 邊界）：`UCL_SecretManagerPage` / `UCL_SecretScanner` 住 `UCL_CoreEditor` asmdef，
 > 而該 asmdef **references `UCL_Core`**（AdminPage 所在）→ 反向直接引用會循環依賴。故開頁走**反射**

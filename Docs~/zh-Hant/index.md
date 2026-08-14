@@ -96,6 +96,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 👋 [UCL_WelcomePage](UCL_EditorPage/UCL_WelcomePage.md) ⭐ | **歡迎/總覽頁** — 首次安裝自動彈出，介紹 UCL_Core 主要功能與快速跳轉按鈕；可從選單 `UCL → Welcome` 隨時開啟 |
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒、關鍵字留言與 daemon 執行狀態的 Editor 後台。 |
+| [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | Discord inbound 白名單、名稱／別名、個人簡介與 Guild 成員候選匯入。 |
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |
 | [UCL_ModuleEditPage](UCL_EditorPage/UCL_ModuleEditPage.md) | 模組編輯頁面 |
 | [UCL_ModuleServiceEditPage](UCL_EditorPage/UCL_ModuleServiceEditPage.md) | 模組服務編輯頁面 |

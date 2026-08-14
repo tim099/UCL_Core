@@ -1450,6 +1450,13 @@ namespace UCL.Core.EditorLib.Page
                     ? $"  設定開關：<color=#66ff66>● enabled</color>（config bot_status={botStatus}）"
                     : $"  設定開關：<color=#ff8866>○ disabled</color>（config bot_status={botStatus}）", WrapLabelStyle);
                 GUILayout.Label("  ↳ 開關寫入走上方「Discord 同步」總開關（一次寫 tavern_mirror / treasury_mirror / tavern_inbound）。", WrapLabelStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("  使用者白名單、名稱／別名與個人簡介已統一移至 Discord 設定頁。", WrapLabelStyle);
+                    if (GUILayout.Button("💬 開啟 Discord 設定", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        UCL_DiscordSettingsPage.Create();
+                    GUILayout.FlexibleSpace();
+                }
 
                 // ── ② 中繼器實際狀態 — 誠實顯示「有沒有東西在跑」，不靠 config 猜 ──
                 using (new GUILayout.HorizontalScope())
@@ -1490,6 +1497,162 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("  ↳ token 明文只由 Secret Manager 以 passphrase 解出（本頁不顯示、不寫入明文）。native daemon 讀同一份 .txt。", WrapLabelStyle);
             }
         }
+
+        // 白名單設定已移至 UCL_DiscordSettingsPage；此段 legacy UI 不再編譯，待下次集中清理時刪除。
+#if false
+        // 區塊職責：管理可中繼進酒館的 Discord 帳號白名單與實名覆寫。
+        // 物理意義：channel routing 是場地門禁，user whitelist 是來賓門禁；兩者都通過，真人訊息才會進入酒館。
+        // 數值影響：開啟後未列 ID 一律被 daemon 略過；名稱欄只改酒館顯示，留空則保留 Discord 暱稱／帳號名。
+        void DrawInboundWhitelistSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("<b>👥 Discord 使用者白名單</b>", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                    bool nextEnabled = GUILayout.Toggle(m_InboundWhitelistEnabled, "啟用白名單", GUILayout.ExpandWidth(false));
+                    if (nextEnabled != m_InboundWhitelistEnabled)
+                    {
+                        WriteInboundWhitelist(whitelist => whitelist[KeyInboundWhitelistEnabled] = new JsonData(nextEnabled));
+                        return;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                GUILayout.Label(m_InboundWhitelistEnabled
+                    ? "已啟用：僅下列 Discord user ID 的真人訊息會中繼；空清單代表全部拒絕。"
+                    : "未啟用：不依 user ID 過濾；可先建立名單，再開啟此開關。", WrapLabelStyle);
+
+                for (int i = 0; i < m_InboundWhitelistUsers.Count; i++)
+                {
+                    var user = m_InboundWhitelistUsers[i];
+                    string foldKey = "InboundWhitelistProfile_" + user.user_id;
+                    bool showProfile;
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        showProfile = UCL_GUILayout.Toggle(m_FoldDic, foldKey, 21, iDefaultValue: false);
+                        GUILayout.Label(user.user_id, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(165)));
+                        user.display_name = GUILayout.TextField(user.display_name ?? "", UCL_GUIStyle.TextFieldStyle);
+                        if (GUILayout.Button("套用名稱", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            string id = user.user_id;
+                            string name = (user.display_name ?? "").Trim();
+                            WriteInboundWhitelist(whitelist =>
+                            {
+                                var users = whitelist[KeyInboundWhitelistUsers];
+                                for (int j = 0; j < users.Count; j++)
+                                    if (users[j].GetString(KeyInboundWhitelistUserId, "") == id)
+                                    {
+                                        users[j][KeyInboundWhitelistDisplayName] = new JsonData(name);
+                                        break;
+                                    }
+                            });
+                            return;
+                        }
+                        if (GUILayout.Button("✕ 移除", UCL_GUIStyle.GetButtonStyle(new Color(0.9f, 0.5f, 0.4f)), GUILayout.ExpandWidth(false)))
+                        {
+                            string id = user.user_id;
+                            WriteInboundWhitelist(whitelist =>
+                            {
+                                var users = whitelist[KeyInboundWhitelistUsers];
+                                var kept = JsonData.ParseJson("[]");
+                                for (int j = 0; j < users.Count; j++)
+                                    if (users[j].GetString(KeyInboundWhitelistUserId, "") != id) kept.Add(users[j]);
+                                whitelist[KeyInboundWhitelistUsers] = kept;
+                            });
+                            return;
+                        }
+                    }
+                    if (!showProfile) continue;
+                    GUILayout.Label("個人簡介（會隨此成員的 inbound 訊息提供給 agent）", UCL_GUIStyle.LabelStyle);
+                    user.profile = GUILayout.TextArea(user.profile ?? "", UCL_GUIStyle.TextFieldStyle,
+                        GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(55)));
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("套用個人簡介", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            string id = user.user_id;
+                            string profile = (user.profile ?? "").Trim();
+                            WriteInboundWhitelist(whitelist =>
+                            {
+                                var users = whitelist[KeyInboundWhitelistUsers];
+                                for (int j = 0; j < users.Count; j++)
+                                    if (users[j].GetString(KeyInboundWhitelistUserId, "") == id)
+                                    {
+                                        users[j][KeyInboundWhitelistProfile] = new JsonData(profile);
+                                        break;
+                                    }
+                            });
+                            return;
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+                    GUILayout.Label("@ 提及別名（以逗號分隔；顯示名稱也會自動可用）", UCL_GUIStyle.LabelStyle);
+                    string aliasesText = string.Join(", ", user.aliases ?? new List<string>());
+                    aliasesText = GUILayout.TextField(aliasesText, UCL_GUIStyle.TextFieldStyle);
+                    user.aliases = aliasesText.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(alias => alias.Trim()).Where(alias => !string.IsNullOrEmpty(alias))
+                        .Distinct(StringComparer.Ordinal).ToList();
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("套用提及別名", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            string id = user.user_id;
+                            var aliases = user.aliases.ToList();
+                            WriteInboundWhitelist(whitelist =>
+                            {
+                                var users = whitelist[KeyInboundWhitelistUsers];
+                                for (int j = 0; j < users.Count; j++)
+                                    if (users[j].GetString(KeyInboundWhitelistUserId, "") == id)
+                                    {
+                                        var array = JsonData.ParseJson("[]");
+                                        foreach (var alias in aliases) array.Add(new JsonData(alias));
+                                        users[j][KeyInboundWhitelistAliases] = array;
+                                        break;
+                                    }
+                            });
+                            return;
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("新增", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    m_NewInboundWhitelistUserId = GUILayout.TextField(m_NewInboundWhitelistUserId ?? "", UCL_GUIStyle.TextFieldStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(165)));
+                    m_NewInboundWhitelistDisplayName = GUILayout.TextField(m_NewInboundWhitelistDisplayName ?? "", UCL_GUIStyle.TextFieldStyle);
+                    if (GUILayout.Button("加入", UCL_GUIStyle.GetButtonStyle(new Color(0.4f, 0.8f, 0.5f)), GUILayout.ExpandWidth(false)))
+                    {
+                        string id = (m_NewInboundWhitelistUserId ?? "").Trim();
+                        string name = (m_NewInboundWhitelistDisplayName ?? "").Trim();
+                        if (!ulong.TryParse(id, out _))
+                        {
+                            Debug.LogWarning("[TavernAdmin] Discord user ID 必須是正整數 snowflake");
+                            return;
+                        }
+                        if (m_InboundWhitelistUsers.Any(user => user.user_id == id))
+                        {
+                            Debug.LogWarning($"[TavernAdmin] Discord user ID 已在白名單：{id}");
+                            return;
+                        }
+                        WriteInboundWhitelist(whitelist =>
+                        {
+                            var entry = JsonData.ParseJson("{}");
+                            entry[KeyInboundWhitelistUserId] = new JsonData(id);
+                            entry[KeyInboundWhitelistDisplayName] = new JsonData(name);
+                            entry[KeyInboundWhitelistProfile] = new JsonData("");
+                            entry[KeyInboundWhitelistAliases] = JsonData.ParseJson("[]");
+                            whitelist[KeyInboundWhitelistUsers].Add(entry);
+                        });
+                        m_NewInboundWhitelistUserId = "";
+                        m_NewInboundWhitelistDisplayName = "";
+                    }
+                }
+                GUILayout.Label("新增 ID：Discord 開發者模式 → 對使用者按右鍵 → 複製使用者 ID。實名可留空，便保留 Discord 顯示名稱。", WrapLabelStyle);
+            }
+        }
+#endif
 
         // 區塊職責：inbound 中繼器狀態 — native daemon 為主、外部 python bot 為輔
         // 物理意義：2026-07-28 起 inbound 由 C# UCL_DiscordInboundDaemon（in-process REST 輪詢）接管。
@@ -2153,6 +2316,29 @@ namespace UCL.Core.EditorLib.Page
                 mutateOverrides(tm["persona_avatar_overrides"]);
             });
         }
+
+        // 白名單寫入責任已移至 UCL_DiscordSettingsPage；保留 legacy code 為下次集中刪除前的編譯隔離。
+#if false
+        // 區塊職責：tavern_inbound.user_whitelist 的單一受控寫入入口。
+        // 物理意義：讓 AdminPage 與 inbound daemon 共用 notify_config.json 這份真相，不另建易漂移的 roster 檔。
+        // 數值影響：首次操作補齊最小 schema（enabled=false、users=[]）；寫入後 LoadData 重建畫面草稿。
+        void WriteInboundWhitelist(Action<JsonData> mutateWhitelist)
+        {
+            WriteConfigRoot(config =>
+            {
+                if (!config.Contains(KeyTavernInbound)) config[KeyTavernInbound] = JsonData.ParseJson("{}");
+                var inbound = config[KeyTavernInbound];
+                if (!inbound.Contains(KeyInboundUserWhitelist))
+                    inbound[KeyInboundUserWhitelist] = JsonData.ParseJson("{\"enabled\":false,\"users\":[]}");
+                var whitelist = inbound[KeyInboundUserWhitelist];
+                if (!whitelist.Contains(KeyInboundWhitelistEnabled))
+                    whitelist[KeyInboundWhitelistEnabled] = new JsonData(false);
+                if (!whitelist.Contains(KeyInboundWhitelistUsers) || !whitelist[KeyInboundWhitelistUsers].IsArray)
+                    whitelist[KeyInboundWhitelistUsers] = JsonData.ParseJson("[]");
+                mutateWhitelist(whitelist);
+            });
+        }
+#endif
 
         // 區塊職責：tavern_mirror 塊的泛用受控寫入 — avatar override 等子欄位共用
         void WriteTavernMirrorField(Action<JsonData> mutateTavernMirror)

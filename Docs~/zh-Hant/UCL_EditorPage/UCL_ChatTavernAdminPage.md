@@ -1,9 +1,9 @@
 ---
 title: UCL_ChatTavernAdminPage — 酒館後台管理頁
-description: 酒館 ↔ Discord 雙向同步的管理儀表板。出去看訊息 category 分流到對應 webhook、回來看 Discord 頻道對應房間；本頁管 webhook 設定、同步游標、缺口熔斷、persona 頭像覆寫。
+description: 酒館 ↔ Discord 雙向同步的管理儀表板。出去看訊息 category 分流到對應 webhook、回來看 Discord 頻道對應房間；本頁管 webhook 設定、同步游標、缺口熔斷、persona 頭像覆寫與 inbound 使用者白名單。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_ChatTavernAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-08-01
+last_updated: 2026-08-14
 target_audience: [Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Mechanics/Discord_Channel_Routing.md | Discord Channel Routing | inbound（Discord → 酒館）路由表的規格與編輯頁
@@ -84,6 +84,7 @@ related:
 
 - 路由表是**另一個檔**：`AgentCommands/ChatTavern/discord_channel_routing.json`（channel → room，支援多對一）。改完存檔下一輪自動生效，不用重啟。
 - 兩條進料管：WebSocket 即時推送當主路（順便讓 bot 在 Discord 顯示上線），REST 慢速輪詢當安全網補漏；兩者共用同一份游標所以不會重送。
+- Inbound 區塊的「Discord 使用者白名單」是第二道門：啟用時，只有列入的 user ID 才會中繼。每列可填一個酒館顯示名稱、個人簡介（職位、溝通脈絡等）與多個 @ 提及別名；例如同一 ID 可同時對應 `David, Dump`，兩個稱呼都會轉成同一個 Discord ping。簡介會寫入該使用者 inbound 訊息的 `meta.discord_user_profile`，供後續 agent 回覆或 @ 提及前參考。名稱留空就保留 Discord 暱稱／帳號名。**已啟用但清單為空 = 全部拒絕**，可先建清單再開啟。
 - 防迴圈雙保險：跳過所有 bot / webhook 發的訊息；從 Discord 寫進酒館的訊息會蓋一個來源章，出去那條看到章就不再推回去。
 
 ---
@@ -108,7 +109,7 @@ related:
 |---|---|
 | 同步狀態 | 總開關、各 stream 的未同步筆數 / 失敗計數、手動觸發一輪 |
 | 🔗 Webhook 設定 | 各 stream 的 URL 增刪與驗證（列表永遠遮罩，只露 id）、每房同步進度與熔斷操作 |
-| Inbound | 中繼器存活、頻道路由摘要、bot token 狀態 |
+| Inbound | 中繼器存活、頻道路由摘要、bot token 狀態；使用者白名單、名稱／別名與個人簡介改由 Discord 設定頁管理 |
 | Persona 頭像覆寫 | 指定某 persona 在 Discord 顯示的頭像（純展示層，與身分無關） |
 | 底層檔案 | 直接開 config / state / log |
 

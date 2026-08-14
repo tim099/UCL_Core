@@ -74,6 +74,8 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawTavernAdminSection();
             GUILayout.Space(8);
+            DrawDiscordSettingsSection();
+            GUILayout.Space(8);
             DrawBartenderAdminSection();
             GUILayout.Space(8);
             DrawBankAdminSection();
@@ -337,6 +339,27 @@ namespace UCL.Core.EditorLib.Page
                 // 數值影響：inbound 還要 config 的 tavern_inbound.enabled 為 true 才真的運作 →
                 //          兩道閘門任一未開就標示原因，不讓人以為開了就會動（禁靜默失敗）。
                 GUILayout.Label("↑ 兩顆 Discord 開關已提到本區塊 header 下方（折疊時仍可操作）。", UCL_GUIStyle.LabelStyle);
+            }
+        }
+
+        // 區塊職責：Discord 設定集中頁入口。
+        // 物理意義：把 inbound 人員名單、名稱／別名與 Guild 成員候選收斂到一頁；控制台只負責導流。
+        // 數值影響：按鈕不讀寫 Discord 或 notify_config，所有可變設定都在 UCL_DiscordSettingsPage 內顯式套用。
+        void DrawDiscordSettingsSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "DiscordSettingsFold", 21, iDefaultValue: false);
+                    GUILayout.Label("<b>💬 Discord 設定</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("開啟 Discord 設定頁", UCL_GUIStyle.GetButtonStyle(new Color(0.45f, 0.72f, 1f)), GUILayout.ExpandWidth(false)))
+                        UCL_DiscordSettingsPage.Create();
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+                GUILayout.Label("管理 inbound 白名單、顯示名稱、@ 提及別名與個人簡介；可從 Guild 匯入成員候選，再逐人加入白名單。", UCL_GUIStyle.LabelStyle);
             }
         }
 

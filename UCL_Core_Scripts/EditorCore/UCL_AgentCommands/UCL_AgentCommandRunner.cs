@@ -288,6 +288,24 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
                     try
                     {
+                        // 區塊職責：**執行前**的 ArgsSpec Required 檢查（2026-08-14 新增）。
+                        // 物理意義：ArgsSpec 在此之前是一份沒有人執行的宣告 —— 只有匯出器讀它。
+                        //          於是打錯參數名不會報錯，`GetArg(args, key, default)` 會安靜地給預設值，
+                        //          而 cmd 照樣回 Success。這道檢查讓「宣告了 Required」第一次有實際效果。
+                        // 數值影響：擋下時**不執行 handler**，並走既有的失敗路徑（catch → WriteCmdResult）。
+                        //          未宣告 ArgsSpec 的 handler 一律通過（37/39 目前如此）—— 那一態的語意
+                        //          尚未拍板，這裡刻意維持現況而不替它決定（見 UCL_CmdArgsValidator.Validate 的 remarks）。
+                        //
+                        // ⚠ **必須在 try 內。** 第一版我把它寫在 try 之前 —— 擋下時例外繞過了
+                        //   catch/WriteCmdResult，於是**沒有任何 result 檔落地**，client 一路輪詢到
+                        //   120s timeout。那比它要防的病更糟：原本是「靜默取預設值但會結束」，
+                        //   變成「擋住了，但呼叫端不知道，只知道掛住」（2026-08-14 實測自摔）。
+                        //   **一道防護的失敗方式，不可以比它防的東西更難診斷。**
+                        if (!UCL_CmdArgsValidator.Validate(handler, c.Args, out string aArgsError))
+                        {
+                            throw new System.ArgumentException(aArgsError);
+                        }
+
                         using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
                         {
                             // .Preserve()（2026-07-29 修）：UniTask 是 struct-based single-await —
@@ -512,6 +530,24 @@ namespace UCL.Core.EditorLib.AgentCommands
                 sb.AppendLine($"- **例外型別**: `{e.GetType().FullName}`");
                 sb.AppendLine($"- **訊息**: {e.Message}");
                 sb.AppendLine();
+
+                // 區塊職責：ArgsSpec 三態提示 —— **只在這裡出現**（2026-08-14 拍板）。
+                // 物理意義：「未宣告 ArgsSpec」有 37 個成員，做成清單掛在牆上第三天就沒人看。
+                //          裝在失敗報告裡則是長在必經的路上：讀這份報告的人正在查這個 Cmd，
+                //          而且一次只會看到一個。已用 [UCL_UnvalidatedArgs] 表態的不提示。
+                // 數值影響：純附註，不影響 verdict。取不到 handler（type 已移除）就跳過。
+                try
+                {
+                    var aHandler = UCL_AgentCommandRegistry.Get(c.Type);
+                    string aHint = UCL_CmdArgsValidator.DescribeSpecState(aHandler);
+                    if (!string.IsNullOrEmpty(aHint))
+                    {
+                        sb.AppendLine($"> ℹ️ {aHint}");
+                        sb.AppendLine();
+                    }
+                }
+                catch (Exception) { /* 提示是加值，取不到就不提示，絕不蓋掉原始錯誤 */ }
+
                 sb.AppendLine("## Args");
                 if (c.Args == null || c.Args.Count == 0)
                 {

@@ -26,6 +26,10 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// <para>參數：無。（產物路徑固定 <c>&lt;RepoRoot&gt;/AgentCommands/commands_schema.json</c>，
     /// 刻意不開放覆寫 —— Python 端是照固定路徑找的，讓它可變只會製造「寫到別處所以永遠不同步」。）</para>
     /// </summary>
+    // 本 Cmd 真的沒有參數（產物路徑固定、刻意不開放覆寫，見下方類別註解），
+    // 所以「不做參數驗證」是一個想清楚後的主張，不是還沒宣告 —— 用 attribute 把它簽下來。
+    [UCL_UnvalidatedArgs("本 Cmd 無任何參數：產物路徑固定為 <RepoRoot>/AgentCommands/commands_schema.json，"
+        + "刻意不開放覆寫（可變只會製造「寫到別處所以永遠不同步」）。沒有參數可驗。")]
     public class Cmd_ExportCmdSchema : UCL_AgentCommandHandlerBase
     {
         public override string CommandType => "ExportCmdSchema";

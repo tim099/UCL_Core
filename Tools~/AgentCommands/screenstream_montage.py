@@ -1104,7 +1104,15 @@ def op_make(args):
             # cache-only (Tim 2026-07-05 拍板「只讀緩存, 沒緩存的音訊直接無視靠 OCR」):
             #   讀 daemon STT worker 預產的 cache, 窗口 = [after-mtime, 最新幀 mtime (next_cursor)]。
             #   montage 端不現跑轉錄 → 多 viewer 同拉不重複運算 (對齊 OCR cache-first 鐵律)。
-            after_ep = float(args.after_mtime)
+            # 🩸 `--last N` 路徑上 args.after_mtime 是 None ⇒ 舊版 float(None) 直接炸,
+            #   而它被 fail-soft 接住成「⚠ STT 段渲染失敗」⇒ **手動呼叫 montage 的人永遠拿不到 STT 段**。
+            #   (basecamp 2026-08-15 定位到本行; `step=cycle` 走 --after-mtime 所以從沒踩到 —— 兩條路徑,
+            #    一條必壞一條全好, 而兩邊各自都「量過了」。)
+            # ⇒ 沒有 after-mtime 時窗口起點取**本次實際選中的最舊幀**, 那是這一輪真正涵蓋的左端。
+            if args.after_mtime is not None:
+                after_ep = float(args.after_mtime)
+            else:
+                after_ep = float(meta[0][2]) if meta else (time.time() - 60.0)
             until_ep = float(next_cursor) if next_cursor is not None else time.time()
             # T-STT-Live (2026-07-09, summit ship, 討論收斂 basecamp/apex-one/gura):
             #   容器場 daemon worker 起不來 (MSIX 隔離看不到 whisper) → cache 恆空。

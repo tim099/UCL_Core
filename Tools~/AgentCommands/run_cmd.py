@@ -124,6 +124,18 @@ def print_cmd_outputs(verdict: dict) -> None:
             if isinstance(o, str) and o:
                 print(f"  📄 回傳檔：{o}")
 
+    # values 欄 —— handler 經 ReportOutputValue 回報的純量結果（2026-08-15）。
+    # 與 outputs 分開印、分開判型：那一欄是**檔案路徑**，這一欄是**值**。
+    # 混在一起的話 `op=post` 的 seq 會被印成「📄 回傳檔：15173」——
+    # 名字比事實大，而下游會照字面把它當路徑去開。
+    # ⚠ 同一 key 可能出現多次（單一 cmd 內 Op_Post 跑不只一次）——**逐筆印，不去重、不合併**，
+    #   合併會讓「兩則各自的 seq」變成一個看起來很正常的錯數字。
+    vals = verdict.get("values")
+    if isinstance(vals, list):
+        for v in vals:
+            if isinstance(v, dict) and v.get("key"):
+                print(f"  🔢 {v.get('key')} = {v.get('value', '')}")
+
 
 def print_cmd_error_report(cmd_id: "str | None", max_lines: int = 60) -> None:
     try:

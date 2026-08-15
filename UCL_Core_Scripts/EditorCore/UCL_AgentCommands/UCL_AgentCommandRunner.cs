@@ -76,6 +76,33 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
+        // 區塊職責：per-cmd 回傳「值」收集 slot（2026-08-15）——與 s_CurrentCmdOutputs 對稱，
+        //          差別是那邊裝**檔案路徑**，這邊裝**純量結果**（seq / 筆數 / 判定…）。
+        // 物理意義：caller 目前只拿得到 Success/Failed ＋ 產出檔路徑。有一類結果既不是檔也不是
+        //          成敗 —— 最典型的是 `op=post` 剛寫進去的那個 seq。agent 拿不到它就只能**用數的**，
+        //          而自動公告（git_commit 領薪）會在兩人回合之間吃掉號碼 ⇒ 手數必漂，
+        //          且漂掉之後每一則引用都長得完全正常（2026-08-15 實測：兩人各兩筆 ↩seq 指錯）。
+        // ⚠ 為什麼不塞進 outputs：那個欄位的語意是**產出檔路徑**，run_cmd.py 印成「📄 回傳檔：…」。
+        //          把一個 seq 放進去會印出「📄 回傳檔：15173」——**名字比事實大**，而下游會照字面相信它。
+        // 數值影響：**純加法且惰性** —— 沒有 handler 呼叫就永遠是空的、result 檔不長 values 欄、
+        //          run_cmd.py 不印。「沒有人用它」是預設狀態，不是失敗狀態。
+        // 邊界：同 key 重複回報 → **保留全部、不覆寫**（單一 cmd 內 Op_Post 可能跑不只一次，
+        //      例如 task_done→share 的 Cmd_Tavern.cs:2355；後面蓋前面會讓 caller 拿到另一筆的號碼，
+        //      而它長得完全正常）。清單在下一筆 cmd 起跑前 Clear，不跨筆污染。
+        static readonly List<(string Key, string Value)> s_CurrentCmdValues = new List<(string, string)>();
+
+        /// <summary>handler 回報本次執行的一個純量結果（如 post_seq）；寫進 result 檔 values 欄，caller 端隨 verdict 印出。</summary>
+        /// <remarks>
+        /// **在產生值的當下呼叫（push），不要事後去撈某個 static（pull）。**
+        /// pull 的寫法會讓值離開它的壽命 —— `Cmd_Tavern.LastPostSeq` 的註解明寫「只在同一筆 cmd 的
+        /// 執行流程內讀」，而單一 cmd 內 Op_Post 可能跑兩次。push 讓那個競態**不存在**，而不是把它管好。
+        /// </remarks>
+        public static void ReportOutputValue(string iKey, string iValue)
+        {
+            if (string.IsNullOrEmpty(iKey)) return;
+            lock (s_CurrentCmdValues) s_CurrentCmdValues.Add((iKey, iValue ?? ""));
+        }
+
         /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
         public static bool IsRunning => IsRunningForAgent(null);
 
@@ -274,6 +301,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // 產出檔 collector 每筆起跑前歸零 —— WriteCmdResult 在 finally 之前讀，
                     // 這裡不清的話上一筆（或非 queue 路徑）的回報會混進本筆 outputs
                     lock (s_CurrentCmdOutputs) s_CurrentCmdOutputs.Clear();
+                    // 回傳值 collector 同理歸零 —— 漏這一行的話「上一筆的 seq」會出現在本筆的
+                    // result 檔裡，而它是個完全合理的數字，沒有任何地方會叫。
+                    lock (s_CurrentCmdValues) s_CurrentCmdValues.Clear();
                     // 區塊職責: per-cmd timeout (agent-command-handler-timeout T02, Tim 2026-05-13 拍板)
                     // 物理意義: handler.TimeoutSeconds (default 1200 = 20min) 為 type-level default
                     //          caller 帶 args._timeout_sec=N → 即時覆寫該筆 cmd timeout (per-call override)
@@ -462,6 +492,24 @@ namespace UCL.Core.EditorLib.AgentCommands
                         var aOutputs = new UCL.Core.JsonLib.JsonData();
                         foreach (var aOut in s_CurrentCmdOutputs) aOutputs.Add(aOut);
                         jd["outputs"] = aOutputs;
+                    }
+                }
+                // values：handler 經 ReportOutputValue 回報的純量結果（post_seq 等）。
+                // 陣列而非物件 —— 同一 key 可能出現多次（單一 cmd 內 Op_Post 跑兩次），
+                // 用物件會後面蓋前面，而被蓋掉的那筆長得完全正常。
+                lock (s_CurrentCmdValues)
+                {
+                    if (s_CurrentCmdValues.Count > 0)
+                    {
+                        var aValues = new UCL.Core.JsonLib.JsonData();
+                        foreach (var aKv in s_CurrentCmdValues)
+                        {
+                            var aOne = new UCL.Core.JsonLib.JsonData();
+                            aOne["key"] = new UCL.Core.JsonLib.JsonData(aKv.Key);
+                            aOne["value"] = new UCL.Core.JsonLib.JsonData(aKv.Value);
+                            aValues.Add(aOne);
+                        }
+                        jd["values"] = aValues;
                     }
                 }
                 if (!success)

@@ -46,7 +46,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public override string ArgsSchema =>
             "step=peek|start|join|cycle|observe|note (必填) | persona=<name> — **peek 以外全步驟必填**（peek 不帶則歸 _peek） | " +
             "seconds=<5..600> — peek 選填，看最近幾秒（預設 60） | raw=1 — peek 選填，不夾感官水位（看最新畫面，代價寫在回傳檔） | " +
-            "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問） | " +
+            "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問；" +
+            "**bilibili 一律 `bilibili-<up主 slug>` 並必帶 up=**） | " +
+            "up=<up主名> / title=<影片標題> / desc=<影片介紹> / url=<網址> — start 選填（bilibili 場 up 必填） | " +
             "body=<內文> — observe/note 必填（長文走 --arg-file） | " +
             "回傳落檔 letters/<persona>/_streamwatch_<step>.md（路徑隨 run_cmd verdict 印出）";
 
@@ -80,7 +82,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "peek": await StepPeek(aPersona, GetArg(args, "seconds", "").Trim(),
                                             GetArg(args, "raw", "").Trim(), token); return;
                 case "start": await StepStart(aPersona, GetArg(args, "until", "").Trim(),
-                                              GetArg(args, "media", "").Trim(), token); return;
+                                              GetArg(args, "media", "").Trim(),
+                                              new SourceMeta
+                                              {
+                                                  Up = GetArg(args, "up", "").Trim(),
+                                                  VideoTitle = GetArg(args, "title", "").Trim(),
+                                                  VideoDesc = GetArg(args, "desc", "").Trim(),
+                                                  Url = GetArg(args, "url", "").Trim(),
+                                              }, token); return;
                 case "cycle": await StepCycle(aPersona, token); return;
                 case "observe": await StepObserve(aPersona, GetArg(args, "body", ""), token); return;
                 case "note": await StepNote(aPersona, GetArg(args, "body", ""), token); return;
@@ -209,7 +218,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //          不確定就 blocked 問人 —— 憑印象取 slug 正是製造 work 分裂的那一步，
         //          而分裂之後既有 reader 的心得對新場次永遠隱形且不會有錯誤訊息。
         // ===========================================================
-        async UniTask StepStart(string iPersona, string iUntil, string iMedia, CancellationToken iToken)
+        /// <summary>
+        /// 這一場的來源資訊 —— **場次層，不是 work 層**。
+        /// 一個 up 主底下有很多支影片：up 主決定 work（誰在講），影片標題/介紹屬於這一場（今天講哪個案子）。
+        /// 兩者混在同一層，就會變成「每支影片一個 work」或「所有影片一個 work」——今天兩種都踩過。
+        /// </summary>
+        struct SourceMeta
+        {
+            public string Up;           // up 主（bilibili 場必填 —— 它就是 work 的身分）
+            public string VideoTitle;   // 這一場看的那支影片標題
+            public string VideoDesc;    // 影片介紹（Tim 之後會隨影片一起給）
+            public string Url;          // 影片網址（可回溯的原始出處）
+        }
+
+        async UniTask StepStart(string iPersona, string iUntil, string iMedia, SourceMeta iSrc, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "start");
             var aR = new StringBuilder();
@@ -259,11 +281,45 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 foreach (var w in aExisting) aR.AppendLine($"- `{w}`");
                 aR.AppendLine();
                 aR.AppendLine("⚠ 片名不確定 ⇒ **問 Tim，不要猜**。");
+                aR.AppendLine();
+                aR.AppendLine("### bilibili 場（Tim 2026-08-15 拍板）");
+                aR.AppendLine("- **鍵按 up 主分**：`media=bilibili-<up主 slug>` ＋ **必帶** `--arg up=<up主名>`");
+                aR.AppendLine("- 影片標題／介紹／網址走 `--arg title= / --arg desc= / --arg url=` —— 那是**場次層**，不進 work 名");
                 WritePayload(aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=start blocked：media 未指定（詳見 {aPath}）");
             }
 
+            // 守衛⑤：bilibili 的鍵**按 up 主分**（Tim 2026-08-15 拍板）
+            // 物理意義：up 主是「誰在講」，那是跨場不變的身分；影片是「今天講哪一個案子」，一場一個。
+            //          ⇒ work 認 up 主。兩種錯法今天各踩過一次：
+            //          `bilibili-stream`（**所有 bilibili 併成一個 work** —— 名字比事實大，判準⑤），
+            //          以及「每支影片一個 work」（work 爆炸，跨場心得永遠對不上）。
+            // ⚠ 這裡擋的是**泛名**，不是所有 bilibili 鍵 —— 擋掉 `bilibili` / `bilibili-stream` 這種
+            //   「看起來有指到東西、其實誰都指」的鍵。
+            if (iMedia.StartsWith("bilibili", StringComparison.OrdinalIgnoreCase))
+            {
+                string aTail = iMedia.Length > 8 ? iMedia.Substring(8).Trim('-', '_') : "";
+                bool aGeneric = aTail.Length == 0 || aTail == "stream" || aTail == "video" || aTail == "live";
+                if (aGeneric || string.IsNullOrEmpty(iSrc.Up))
+                {
+                    Blocked(aR, aPath,
+                        aGeneric ? $"`{iMedia}` 是泛名 —— 它會把**所有 bilibili 影片併成同一個 work**"
+                                 : $"bilibili 場必須帶 `--arg up=<up主名>` —— up 主就是這個 work 的身分",
+                        $"改成 --arg media=bilibili-<up主 slug> --arg up=<up主名> "
+                        + "[--arg title=<影片標題>] [--arg desc=<影片介紹>] [--arg url=<網址>]");
+                    aR.AppendLine("> 一個 up 主 = 一個 work（跨場累積心得）；一支影片 = 一場（`title`/`desc`/`url` 記在場次上）。");
+                    aR.AppendLine("> 🩸 `bilibili-stream` 是 2026-08-15 我自己取的，當天就被 Tim 打回：**名字比事實大**。");
+                    WritePayload(aPath, aR.ToString());
+                    throw new Exception($"[StreamWatch] step=start blocked：bilibili 鍵需按 up 主分（詳見 {aPath}）");
+                }
+            }
+
             bool aIsNewWork = !WorkExists(iMedia);
+            // ⚠ **新 work 要真的建出來**（2026-08-15 實證的洞）：
+            //   舊版只印一句「這是新 work」就過去了，從不落檔 ⇒ 下一場的「既有 work 清單」裡
+            //   **永遠不會有自己開過的場**（昨天 `bilibili-stream` 開過場，今天清單上找不到它）。
+            //   於是那份清單只證明「Library 有什麼」，不證明「觀影用過什麼」，而它的標題讓人以為是後者。
+            string aWorkNote = aIsNewWork ? CreateWork(iMedia, iSrc) : "";
 
             // session 註冊（C# 唯一寫入端）
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
@@ -281,6 +337,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aSession["tiles_total"] = new JsonData(0);
             aSession["start_seq"] = new JsonData(0);
             aSession["end_seq"] = new JsonData(0);
+            // 場次層來源資訊（up 主在 work 那層已經有了，這裡記的是**這一場看的那支**）
+            if (!string.IsNullOrEmpty(iSrc.Up)) aSession["up"] = new JsonData(iSrc.Up);
+            if (!string.IsNullOrEmpty(iSrc.VideoTitle)) aSession["video_title"] = new JsonData(iSrc.VideoTitle);
+            if (!string.IsNullOrEmpty(iSrc.VideoDesc)) aSession["video_desc"] = new JsonData(iSrc.VideoDesc);
+            if (!string.IsNullOrEmpty(iSrc.Url)) aSession["source_url"] = new JsonData(iSrc.Url);
             aSession["note_written"] = new JsonData(false);
             aSession["active"] = new JsonData(true);
             aSession["settled_at"] = new JsonData("");
@@ -291,6 +352,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
             var aBody = new StringBuilder();
             aBody.AppendLine($"📺 [{iPersona} 大小姐] 開播觀影 — 看到 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜媒材 `{iMedia}`{(aIsNewWork ? " ⚠ **新 work**" : "")}");
+            if (!string.IsNullOrEmpty(iSrc.Up)) aBody.AppendLine($"　UP 主：**{iSrc.Up}**");
+            if (!string.IsNullOrEmpty(iSrc.VideoTitle)) aBody.AppendLine($"　本場：{iSrc.VideoTitle}");
+            if (!string.IsNullOrEmpty(iSrc.VideoDesc)) aBody.AppendLine($"　簡介：{Truncate(iSrc.VideoDesc, 300)}");
+            if (!string.IsNullOrEmpty(iSrc.Url)) aBody.AppendLine($"　出處：{iSrc.Url}");
             aBody.AppendLine();
             aBody.AppendLine("陪同觀眾可跑 `step=join` 加入（挑段細看；主劇情由本場主觀影者在酒館帶）。");
             int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-start", iToken);
@@ -303,6 +368,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 回傳檔
             aR.AppendLine($"- session: `{aSessionId}`（state: `{SessionPath(iPersona)}`）");
             aR.AppendLine($"- media: `{iMedia}`{(aIsNewWork ? "　⚠ **這是新 work** —— 若這部片其實已存在於 Library，現在喊停比事後合併便宜" : "　✅ 命中既有 work")}");
+            if (!string.IsNullOrEmpty(aWorkNote)) aR.AppendLine($"- work 建檔: {aWorkNote}");
+            if (!string.IsNullOrEmpty(iSrc.Up)) aR.AppendLine($"- UP 主  : **{iSrc.Up}**（work 認這個；影片標題/介紹記在場次上）");
+            if (!string.IsNullOrEmpty(iSrc.VideoTitle)) aR.AppendLine($"- 本場影片: {iSrc.VideoTitle}");
+            if (!string.IsNullOrEmpty(iSrc.Url)) aR.AppendLine($"- 出處    : {iSrc.Url}");
             aR.AppendLine($"- 看到: {aUntil:HH:mm}（約 {aMinutes} 分鐘）");
             aR.AppendLine($"- 開播公告: {(aSeq > 0 ? $"seq **{aSeq}**（匯出區間左端點）" : "未發（best-effort，不影響 session）")}");
             AppendRetentionLine(aR);
@@ -1146,6 +1215,50 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static bool WorkExists(string iSlug)
         {
             try { return Directory.Exists(Path.Combine(WorksRoot(), iSlug)); } catch { return false; }
+        }
+
+        // ===========================================================
+        // 區塊：新 work 落檔 —— 開過的場要能被下一場查得到
+        // 物理意義：`work.json` 是 Library 既有 schema（work_id / title / author / aliases / genre_tags），
+        //          照它寫，不另創格式 —— 觀影與閱讀共用同一份 work 身分才叫共享鍵。
+        // ⚠ fail-soft：建檔失敗**不擋開場**（看直播不該被檔案系統擋住），但要把失敗字串帶回回傳檔 ——
+        //   靜默失敗的話，下一場又會看到「這是新 work」而永遠不知道為什麼建不起來。
+        // 數值影響：只寫 work 身分層（up 主／別名）。**影片標題與介紹不寫進來** ——
+        //   那是場次層，寫進 work 會讓 work 的 title 隨最後一場漂移。
+        // ===========================================================
+        static string CreateWork(string iSlug, SourceMeta iSrc)
+        {
+            try
+            {
+                string aDir = Path.Combine(WorksRoot(), iSlug);
+                string aFile = Path.Combine(aDir, "work.json");
+                if (File.Exists(aFile)) return $"已存在，未覆寫（`{aFile}`）";
+                Directory.CreateDirectory(aDir);
+
+                string aTitle = string.IsNullOrEmpty(iSrc.Up) ? iSlug : iSrc.Up;
+                var aJd = new JsonData();
+                aJd["work_id"] = new JsonData(iSlug);
+                aJd["title"] = new JsonData(aTitle);
+                aJd["author"] = new JsonData(string.IsNullOrEmpty(iSrc.Up) ? "" : iSrc.Up);
+                var aAliases = new JsonData();
+                if (!string.IsNullOrEmpty(iSrc.Up)) aAliases.Add(new JsonData(iSrc.Up));
+                aJd["aliases"] = aAliases;
+                var aTags = new JsonData();
+                if (iSlug.StartsWith("bilibili", StringComparison.OrdinalIgnoreCase))
+                {
+                    aTags.Add(new JsonData("bilibili"));
+                    aTags.Add(new JsonData("直播/影片頻道"));
+                }
+                aJd["genre_tags"] = aTags;
+                aJd["schema_version"] = new JsonData(1);
+                AtomicWrite(aFile, aJd.ToJsonBeautify());
+                return $"已建立 `{aFile}`（title=`{aTitle}`）—— 下一場起這個鍵會出現在既有清單裡";
+            }
+            catch (Exception e)
+            {
+                // 壞要往吵的方向壞：不擋開場，但這句必須被印出來
+                return $"⚠ **建檔失敗**（不擋開場，但下一場仍會被當成新 work）：{e.Message}";
+            }
         }
 
         static List<string> ListExistingWorks()

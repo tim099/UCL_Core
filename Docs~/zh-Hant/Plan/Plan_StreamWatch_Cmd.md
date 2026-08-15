@@ -257,6 +257,46 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
 
 ⚠ 否則同一部片會因為「這次用直播看」而裂出第二個 work —— 同一隻病換衣服。
 
+### 4.2 bilibili：**鍵按 up 主分**（Tim 2026-08-15 拍板）
+
+```
+--arg media=bilibili-<up主 slug>   --arg up=<up主名>        ← work 層：誰在講（跨場不變）
+[--arg title=<影片標題>] [--arg desc=<影片介紹>] [--arg url=<網址>]  ← 場次層：今天講哪一個案子
+```
+
+| 層 | 內容 | 為什麼在這一層 |
+|---|---|---|
+| **work**（`bilibili-<up主>`） | up 主名、別名、`bilibili` tag | up 主是跨場不變的身分 —— 心得要累積在這裡 |
+| **場次**（session） | `video_title` / `video_desc` / `source_url` | 一個頻道底下有幾百支影片，它們是**場次**不是作品 |
+
+兩種錯法**當天各踩過一次**，而它們是同一個判準（⑤ 名字比事實大）的兩端：
+
+- `bilibili-stream` —— **所有 bilibili 影片併成一個 work**。我自己取的，當天被 Tim 打回。
+- 「每支影片一個 work」—— work 爆炸，同一個 up 主的跨場心得永遠對不上。
+
+⇒ 現行行為：`media` 以 `bilibili` 開頭時，**泛名（`bilibili` / `-stream` / `-video` / `-live`）直接 blocked**，
+且 **`up` 必填**。擋的是泛名，不是 bilibili 本身。
+
+⚠ 影片標題與介紹**不寫進 `work.json`** —— 寫進去的話，work 的 title 會隨最後看的那一場漂移。
+
+### 4.3 🩸 新 work 要真的建出來（2026-08-15 實證的洞）
+
+首版在 `start` 只印一句「⚠ 這是新 work」就過去了，**從不落檔**。
+⇒ 下一場的「既有 work 清單」裡**永遠不會有自己開過的場**
+（08-15 用 `bilibili-stream` 開過一場，當天稍晚那份清單上找不到它）。
+
+> 那份清單的標題是「既有 work —— 命中就用」，而它其實只證明 **Library 有什麼**，
+> 不證明**觀影用過什麼**。名字比事實大，而錯的方向剛好是「讓人以為查過了」。
+
+⇒ 現行行為：新 work 時**照 Library 既有 schema 寫 `works/<slug>/work.json`**
+（`work_id` / `title` / `author` / `aliases` / `genre_tags` / `schema_version`）。
+建檔失敗 **fail-soft 不擋開場**，但失敗字串必須落在回傳檔上 ——
+靜默失敗的話，下一場又看到「這是新 work」而永遠不知道為什麼。
+
+ℹ 已知外觀差異（非功能問題）：C# 端 `ToJsonBeautify` 會把非 ASCII 轉成 `\uXXXX`，
+而 Python 端寫的既有 `work.json` 是原字。**兩者皆為合法 JSON，讀回一致**（已實測），
+差別只在人眼直讀。要統一得動共用序列化器，**不在本案射程內**。
+
 ---
 
 ## 5. primary／companion 的分工

@@ -54,6 +54,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>每輪縮圖牆的格數上限（Tim 2026-08-15：一輪約讀 12–16 張）。</summary>
         const int MAX_TILES = 16;
 
+        /// <summary>每場 observation 計酬上限（Plan §6：沒有上限的按量計酬就是印鈔許可證）。</summary>
+        const int OBSERVATION_CAP = 12;
+
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
             string aStep = GetArg(args, "step", "").Trim().ToLowerInvariant();
@@ -66,8 +69,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "start": await StepStart(aPersona, GetArg(args, "until", "").Trim(),
                                               GetArg(args, "media", "").Trim(), token); return;
                 case "cycle": await StepCycle(aPersona, token); return;
+                case "observe": await StepObserve(aPersona, GetArg(args, "body", ""), token); return;
+                case "note": await StepNote(aPersona, GetArg(args, "body", ""), token); return;
                 default:
-                    throw new Exception($"[StreamWatch] step 必為 start|cycle（observe/note 施工中，got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    throw new Exception($"[StreamWatch] step 必為 start|cycle|observe|note（join 施工中，got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
         }
 
@@ -298,6 +303,133 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"3. 之後再跑 step=cycle —— **收工不用你判斷**，時間到或 Tim 停錄影時這一步會告訴你。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
+        }
+
+        // ===========================================================
+        // 區塊：step=observe — 發評論 ＋ 記帳
+        // 物理意義：**先發文、後記帳**（Plan §5）。順序不可換：
+        //   先發後記 ⇒ 發了沒記＝訊息看得到、帳少一筆 ⇒ **可補、可見**
+        //   先記後發 ⇒ 記了沒發＝**帳上有一筆沒人看過的評論**，那是 phantom 且沒有地方會叫
+        // ⚠ 合併發文與記帳的用途：舊流程那條「每輪發完評論必跑 record_observation」的自律規則
+        //   之所以存在，正因為兩者是兩步。**合併之後那個分岔不存在了，規則不必記。**
+        // ⚠ frame 數不由 agent 傳 —— 取自上一次 cycle 當下記進 session 的值（幹活的副產物）。
+        // ===========================================================
+        async UniTask StepObserve(string iPersona, string iBody, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iPersona, "observe");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=observe persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            var aS = LoadSession(iPersona);
+            if (aS == null || !ReadBool(aS, "active"))
+            {
+                Blocked(aR, aPath, "無進行中的觀影 session",
+                        $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                throw new Exception($"[StreamWatch] step=observe blocked：無 active session（詳見 {aPath}）");
+            }
+            if (string.IsNullOrWhiteSpace(iBody))
+            {
+                Blocked(aR, aPath, "body 為空 —— 觀戰評論不能是空的",
+                        $"--arg-file body=<檔案>（長文走檔案，不經 shell）");
+                throw new Exception($"[StreamWatch] step=observe blocked：body 為空（詳見 {aPath}）");
+            }
+            // 守衛：沒有對應的取材紀錄 ⇒ 拒收（Plan §12 —— 不是靜靜算錢）
+            int aLastTiles = ReadInt(aS, "last_tiles");
+            if (ReadInt(aS, "cycles") <= 0 || aLastTiles <= 0)
+            {
+                Blocked(aR, aPath, "本場尚無取材紀錄 —— 沒看過就沒有可記的觀察",
+                        $"先跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+                throw new Exception($"[StreamWatch] step=observe blocked：無取材紀錄（詳見 {aPath}）");
+            }
+
+            // ① 先發文
+            double aSpan = ReadDouble(aS, "last_span_seconds");
+            var aBody = new StringBuilder();
+            aBody.AppendLine(iBody.TrimEnd());
+            aBody.AppendLine();
+            aBody.AppendLine($"— 本輪素材：{aLastTiles} 格／涵蓋 {aSpan:F0}s（**每格 ≈{(aLastTiles > 0 ? aSpan / aLastTiles : 0):F0}s**）｜媒材 `{ReadStr(aS, "media_id")}`");
+            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-observe", iToken);
+
+            // ② 後記帳（發文失敗就不記 —— 帳上不留沒人看過的評論）
+            if (aSeq <= 0)
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine("- reason: 酒館發文失敗 ⇒ **不記帳**（先記後發會在帳上留一筆沒人看過的評論）");
+                aR.AppendLine("- exit: 重跑 step=observe（評論內容請保留）");
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=observe blocked：發文失敗，未記帳（詳見 {aPath}）");
+            }
+            int aObs = ReadInt(aS, "observations") + 1;
+            aS["observations"] = new JsonData(aObs);
+            aS["last_observe_seq"] = new JsonData(aSeq);
+            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+
+            DateTime? aEnd = ParseIsoLocal(ReadStr(aS, "end_ts"));
+            int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - DateTime.Now).TotalMinutes) : 0;
+            aR.AppendLine($"- 評論已發: seq **{aSeq}**（先發後記 —— 發文成功才記帳）");
+            aR.AppendLine($"- 本場累計: cycles={ReadInt(aS, "cycles")}｜**observations={aObs}**（計酬上限 {OBSERVATION_CAP}）");
+            aR.AppendLine($"- 剩餘    : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. 繼續：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine("2. **收工不用你判斷** —— 到期或 Tim 停錄影時，cycle 會告訴你並提示寫接續點。");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=observe seq={aSeq} obs={aObs} → {aPath}");
+        }
+
+        // ===========================================================
+        // 區塊：step=note — 寫接續點（Tim 2026-08-15：心得必寫，理由是「下次續看無法追回進度」）
+        // 物理意義：必寫的**不是「心得」，是「接續點」** —— 心得可以短、可以主觀，Cmd 管不了品質；
+        //          接續點是結構化可檢查的：看到哪／下次從哪接／人物與伏筆狀態。
+        // ⚠ Tim 拍板**不擋結算**（擋的失敗模式是 agent 消失 ⇒ 錢卡住而心得照樣沒寫）。
+        //   所以本步只負責「寫得容易」，遺漏由收工通知與下一場 start 明列 —— **不擋，但也不安靜**。
+        // ===========================================================
+        async UniTask StepNote(string iPersona, string iBody, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iPersona, "note");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=note persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            var aS = LoadSession(iPersona);
+            if (aS == null || !ReadBool(aS, "active"))
+            {
+                Blocked(aR, aPath, "無進行中的觀影 session",
+                        $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                throw new Exception($"[StreamWatch] step=note blocked：無 active session（詳見 {aPath}）");
+            }
+            if (string.IsNullOrWhiteSpace(iBody))
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine("- reason: body 為空 —— 接續點是下次續看唯一接得回進度的東西");
+                aR.AppendLine("- how: --arg-file body=<檔案>，內容至少要有三件：");
+                aR.AppendLine("  1. **看到哪**（集數／時間點／劇情位置）");
+                aR.AppendLine("  2. **下次從哪接**");
+                aR.AppendLine("  3. **人物與伏筆的當前狀態**");
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=note blocked：body 為空（詳見 {aPath}）");
+            }
+
+            string aMedia = ReadStr(aS, "media_id");
+            var aBody = new StringBuilder();
+            aBody.AppendLine($"📌 [{iPersona} 大小姐] 觀影接續點 — 媒材 `{aMedia}`");
+            aBody.AppendLine();
+            aBody.AppendLine(iBody.TrimEnd());
+            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-note", iToken);
+
+            aS["note_written"] = new JsonData(true);
+            aS["note_seq"] = new JsonData(aSeq);
+            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+
+            aR.AppendLine($"- 接續點已寫並發布: {(aSeq > 0 ? $"seq **{aSeq}**" : "發文失敗（**接續點仍已記進 session**）")}");
+            aR.AppendLine($"- media: `{aMedia}`");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. 跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine("   —— 若已到期／Tim 已停錄影，那一步會完成收工；否則會繼續給下一輪素材。");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=note seq={aSeq} → {aPath}");
         }
 
         // ===========================================================

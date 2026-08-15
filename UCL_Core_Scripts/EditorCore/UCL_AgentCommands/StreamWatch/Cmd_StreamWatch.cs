@@ -81,6 +81,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 case "peek": await StepPeek(aPersona, GetArg(args, "seconds", "").Trim(),
                                             GetArg(args, "raw", "").Trim(), token); return;
+                case "capture": StepCapture(aPersona, GetArg(args, "on", "").Trim()); return;
                 case "start": await StepStart(aPersona, GetArg(args, "until", "").Trim(),
                                               GetArg(args, "media", "").Trim(),
                                               new SourceMeta
@@ -97,6 +98,48 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 default:
                     throw new Exception($"[StreamWatch] step 必為 peek|start|join|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
+        }
+
+        // ===========================================================
+        // 區塊：step=capture — 開／關錄影（Tim 2026-08-15 追加，方便測試與自助開播）
+        // 物理意義：**不自己寫 config** —— 串 `UCL_ScreenStreamPage.SetRecordingEnabled`，
+        //          跟 GUI 那顆「▶ 開始錄影 / ⏹ 停止錄影」走同一條規則（戳時刻／連動 stt_enabled／
+        //          發酒保公告／要求 daemon 同步）。⇒ 「Cmd 開的播」與「人開的播」在酒館裡長得一樣。
+        // ⚠ 這正是本日反覆栽的那族的預防：同一件事**不要有第二個寫入端**。
+        //   Cmd 若自己寫 `enabled`，就會出現「誰後寫誰贏、而誰後寫取決於呼叫順序」。
+        // 邊界：已經是該狀態 ⇒ 明說「未動作」並印讀值，不假裝做了一次切換。
+        // ===========================================================
+        void StepCapture(string iPersona, string iOn)
+        {
+            string aPath = PayloadPath(iPersona, "capture");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=capture persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            bool aOn;
+            if (iOn == "1" || iOn.Equals("true", StringComparison.OrdinalIgnoreCase) || iOn == "on") aOn = true;
+            else if (iOn == "0" || iOn.Equals("false", StringComparison.OrdinalIgnoreCase) || iOn == "off") aOn = false;
+            else
+            {
+                Blocked(aR, aPath, $"on 必須是 1/0（true/false、on/off 亦可）—— 收到 '{iOn}'",
+                        $"run_cmd.py run StreamWatch --arg step=capture --arg persona={iPersona} --arg on=1");
+                throw new Exception($"[StreamWatch] step=capture blocked：on 參數無效（詳見 {aPath}）");
+            }
+
+            string aNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetRecordingEnabled(aOn, iPersona);
+            aR.AppendLine("## 結果（讀回的事實）");
+            aR.AppendLine($"- {aNote}");
+            bool aNow = IsRecordingEnabled(out string aCfgNote);
+            aR.AppendLine($"- 回讀   : {aCfgNote}　←　**寫完再讀一次，不是看回傳值**");
+            AppendRetentionLine(aR);
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine(aOn
+                ? $"1. 看一眼：run_cmd.py run StreamWatch --arg step=peek --arg seconds=60\n"
+                + $"2. 正式開場：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>"
+                : "1. 已停止擷取。進行中的觀影 session 會在下一次 cycle 被判定為「Tim 停止錄影」並結算。");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=capture on={aOn} → {aPath}");
         }
 
         // ===========================================================

@@ -604,6 +604,101 @@ namespace UCL.Core.EditorLib.Page
             return float.TryParse(txt, out float v) ? v : value;   // parse 不掉就保留原值
         }
 
+        // ===========================================================
+        // 區塊：錄影開關的**唯一寫入規則** — GUI 按鈕與 Cmd_StreamWatch step=capture 都套這一份
+        // 物理意義：翻轉 `enabled` 從來不只是改一個 bool，它連帶三件事：
+        //          ① 戳 `enabled_changed_at`（下游結算要「什麼時候停的」，不是「什麼時候被發現的」）
+        //          ② 連動 `stt_enabled = enabled && stt_setting`（stt_setting 是意圖、stt_enabled 是實效值）
+        //          ③ 其餘欄位不動
+        // ⚠ 這三件若在兩個地方各寫一次，遲早給出不同答案 —— 那是本專案今天已經栽過兩次的形狀。
+        // 數值影響：同值重複寫入**不重戳時刻**（否則「一直在停」會被讀成「剛剛才停」）。
+        // ===========================================================
+        public static void ApplyEnabledInto(JsonData ioCfg, bool iOn)
+        {
+            bool aPrev = ioCfg.Contains("enabled") && (bool)ioCfg["enabled"];
+            if (aPrev != iOn)
+                ioCfg["enabled_changed_at"] = new JsonData(System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+            ioCfg["enabled"] = new JsonData(iOn);
+            bool aSetting = ioCfg.Contains("stt_setting") && (bool)ioCfg["stt_setting"];
+            ioCfg["stt_enabled"] = new JsonData(iOn && aSetting);
+        }
+
+        /// <summary>
+        /// 錄影開關的**程式入口**（Cmd_StreamWatch step=capture 用）—— 與 GUI 按鈕同一條規則。
+        /// <para>回傳一行給人看的讀數；不丟例外（錄影開關失敗不該炸掉呼叫端的流程）。</para>
+        /// ⚠ 它會發酒保公告並要求 daemon 立刻同步 —— 跟按鈕的行為一致，
+        /// 否則「Cmd 開的播」跟「人開的播」在酒館裡看起來不一樣。
+        /// </summary>
+        public static string SetRecordingEnabled(bool iOn, string iBy)
+        {
+            try
+            {
+                string aPath = Path.Combine(GetRepoRoot(), CONFIG_RELATIVE);
+                if (!File.Exists(aPath)) return $"⚠ 找不到 {aPath} —— 先開一次 ScreenStream 頁初始化";
+                var aCfg = JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
+                if (aCfg == null) return "⚠ _config.json 解析失敗";
+                bool aPrev = aCfg.Contains("enabled") && (bool)aCfg["enabled"];
+                if (aPrev == iOn)
+                    return $"已經是「{(iOn ? "錄影中" : "已停止")}」—— 未動作（`enabled` 讀值 {aPrev.ToString().ToLowerInvariant()}）";
+
+                ApplyEnabledInto(aCfg, iOn);
+                File.WriteAllText(aPath, aCfg.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+                PostStreamAnnounceStatic(iOn, aCfg);
+                AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
+                bool aStt = aCfg.Contains("stt_enabled") && (bool)aCfg["stt_enabled"];
+                return $"{(iOn ? "▶ 已開始錄影" : "⏹ 已停止錄影")}（by {iBy}）"
+                     + $"｜`enabled`={iOn.ToString().ToLowerInvariant()}｜`stt_enabled`={aStt.ToString().ToLowerInvariant()}"
+                     + $"｜已戳 `enabled_changed_at`｜已發酒保公告並要求 daemon 同步";
+            }
+            catch (System.Exception e) { return $"⚠ 切換失敗：{e.Message}"; }
+        }
+
+        /// <summary>公告的靜態版 —— 標題/解析度/fps/monitor 一律**讀 config**，不讀 GUI 欄位
+        /// （頁面沒開時 GUI 欄位是空的，而公告內容不該取決於有沒有人開著那一頁）。</summary>
+        static void PostStreamAnnounceStatic(bool iStart, JsonData iCfg)
+        {
+            try
+            {
+                string body, ev;
+                if (iStart)
+                {
+                    string aTitle = iCfg.Contains("stream_title") ? (iCfg["stream_title"].ToString() ?? "") : "";
+                    string aTitleLine = string.IsNullOrEmpty(aTitle.Trim()) ? "" : $"📺 本場節目: {aTitle}\n";
+                    string aRes = iCfg.Contains("resolution") ? iCfg["resolution"].ToString() : "?";
+                    string aFps = iCfg.Contains("fps") ? iCfg["fps"].ToString() : "?";
+                    string aMon = iCfg.Contains("monitor") ? iCfg["monitor"].ToString() : "?";
+                    body = "🍺📹 *咳咳, 諸位.* ScreenStream 直播開始啦!\n" + aTitleLine
+                         + $"每秒一張快照 ({aRes} @ {aFps} fps, monitor={aMon}).\n"
+                         + "想看在播什麼就 Read AgentCommands/_screenstream/_latest.jpg 吧.\n"
+                         + "——酒保提醒: 不 @ everyone 不擾人, 大家自由觀察.";
+                    ev = "screenstream-start";
+                }
+                else
+                {
+                    body = "🍺⏹ *直播結束.* ScreenStream 已停止 capture.\n"
+                         + "ring buffer 的畫面 rolling 之後自動覆蓋, 想找剛剛某張的同事們抓緊看.\n"
+                         + "——酒保關燈了.";
+                    ev = "screenstream-stop";
+                }
+                UCL_ChatTavernIO.AppendMessage("tavern", new UCL_ChatMessage
+                {
+                    sender_id = UCL_ChatTavernIO.BartenderSenderId,
+                    sender_name = "酒保",
+                    sender_persona = UCL_ChatTavernIO.BartenderSenderId,
+                    kind = "chat",
+                    body = body,
+                    meta = new Dictionary<string, string>
+                    {
+                        { "tag", "bartender-rule-announce" }, { "category", "meta" }, { "event", ev },
+                    },
+                });
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[UCL_ScreenStreamPage] 開播/停播廣播失敗（不影響錄影）: {e.Message}");
+            }
+        }
+
         void SaveToDisk(bool clearSttPrompt = false)
         {
             try
@@ -622,16 +717,9 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (existing == null) existing = new JsonData();
 
-                // 區塊職責：`enabled` 翻轉時**戳一個顯式時刻**（`enabled_changed_at`）。
-                // 物理意義：下游（Cmd_StreamWatch 結算）要知道「錄影是什麼時候停的」，
-                //          而不是「我什麼時候發現它停了」——兩者差多久，取決於 agent 多久才回來跑 cycle。
-                // 🩸 2026-08-15 實測：錄影停於 21:10:02，agent 21:16 才回來收 ⇒ 付到 21:14（多付 1 token）。
-                // ⚠ 不可改用檔案 mtime 推論：任何一個設定被改都會動 mtime，那是**推論不是讀數**
-                //   （同 Plan §2.2「只認顯式欄位」）。
-                bool aPrevEnabled = existing.Contains("enabled") && (bool)existing["enabled"];
-                if (aPrevEnabled != m_Enabled)
-                    existing["enabled_changed_at"] = new JsonData(System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
-                existing["enabled"] = new JsonData(m_Enabled);
+                // 錄影開關的寫入規則**只有一份**（ApplyEnabledInto）—— GUI 按鈕與 Cmd 都套它。
+                // 🩸 昨天才因為「同一件事兩個寫入端、責任邊界只存在於註解裡」栽過（PersistEnabled vs LoadConfig）。
+                ApplyEnabledInto(existing, m_Enabled);
                 existing["fps"] = new JsonData(m_Fps);
                 existing["max_frames"] = new JsonData(m_MaxFrames);
                 existing["recording_enabled"] = new JsonData(m_Recording);

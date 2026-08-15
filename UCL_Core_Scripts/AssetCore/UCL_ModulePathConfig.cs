@@ -118,17 +118,18 @@ namespace UCL.Core
         public async UniTask<JsonData> LoadConfig()
         {
             string aJson = string.Empty;
-            //string aPath = ConfigPath;
+            string aPath = string.Empty;
             try
             {
                 if (Application.isEditor)
                 {
-                    string aPath = ConfigPath;
+                    aPath = ConfigPath;
                     if (File.Exists(aPath)) aJson = File.ReadAllText(aPath);
                 }
                 else
                 {//改為固定讀取StreamingAssets內的Config
-                    aJson = await UCL_StreamingAssets.FullPath.LoadString(UCL_ModulePath.PersistantPath.ConfigInstallPath);
+                    aPath = UCL_ModulePath.PersistantPath.ConfigInstallPath;
+                    aJson = await UCL_StreamingAssets.FullPath.LoadString(aPath);
                 }
             }
             catch (System.Exception e)
@@ -139,7 +140,7 @@ namespace UCL.Core
             if (string.IsNullOrEmpty(aJson))
             {
                 //Debug.LogError($"LoadConfig() string.IsNullOrEmpty(aJson),path:{aPath}");
-                Debug.LogError($"{GetType().Name}.LoadConfig() string.IsNullOrEmpty(aJson)");
+                Debug.LogError($"{GetType().Name}.LoadConfig() string.IsNullOrEmpty(aJson), Path:{aPath}");
                 return null;
             }
             return JsonData.ParseJson(aJson);

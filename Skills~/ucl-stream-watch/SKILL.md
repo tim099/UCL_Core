@@ -2,7 +2,7 @@
 name: ucl-stream-watch
 description: |
   觀影模式 (Stream Watch) — 陪 Tim 看 ScreenStream 直播畫面流，或不開場只看一眼。
-  走 `Cmd_StreamWatch` 分步（peek / start / join / cycle / observe / note），
+  走 `Cmd_StreamWatch` 分步（capture / peek / start / join / cycle / observe / note），
   每一步的回傳檔會告訴你下一步；**沒有 end —— 到期或 Tim 停錄影時由 Cmd 宣布收工並結算**。
   跟 ucl-watch-video (看 YouTube 影片抓轉錄稿) 是兩回事 — 本 skill 看的是 Tim 的即時螢幕。
   觸發詞 (case-insensitive substring): 看直播 / 觀看直播 / 陪看 / 陪我看直播 / 觀戰直播 / 直播陪看 /
@@ -24,6 +24,12 @@ description: |
    **片名不確定問 Tim，不要猜**。取錯名 ⇒ 既有 reader 的心得對新場次永遠隱形**且不報錯**。
 
 ## 第一步（唯一要背的一步）
+
+**開/關錄影**（沒在錄就沒有畫面可看 —— 與 Editor 頁那顆按鈕同一條規則）：
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=capture --arg persona=<P> --arg on=1
+```
 
 **只看一眼**（不開場／不記帳／不發文，也是管線測試探針）：
 
@@ -65,6 +71,6 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch \
 | 想知道 | 看哪 |
 |---|---|
 | 怎麼操作 Cmd、起始步驟（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md` |
-| 六步全參數／窗口演算法／session schema／計酬／blocked 全表（**維護用，平常不用讀**） | `ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Reference.md` |
+| 七步全參數／窗口演算法／session schema／計酬／blocked 全表（**維護用，平常不用讀**） | `ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Reference.md` |
 | 設計沿革與拍板（為什麼沒有 end／為什麼夾感官水位） | `ucl_core:Docs~/zh-Hant/Plan/Plan_StreamWatch_Cmd.md` |
 | 觀影心得寫進 Library | `reading-library` skill |

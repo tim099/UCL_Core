@@ -37,6 +37,13 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=<st
 
 ## 起始步驟（只有這一步要記）
 
+**開／關直播錄影**（不必去點 Editor 頁；與那顆按鈕同一條規則）：
+
+```bash
+run_cmd.py run StreamWatch --arg step=capture --arg persona=<P> --arg on=1   # 0 = 停
+```
+
+
 **看一眼就走**（不開場、不記帳、不發文，也是測試探針）：
 
 ```bash

@@ -919,9 +919,6 @@ def main_loop() -> int:
     # T-OCR-Pipeline (Tim 2026-06-10) — OCR worker pool lifecycle 跟 ocr_enabled 同步
     # 物理意義: 每張 frame 寫盤後 submit 進 pool, worker threads 並行 OCR → ocr/frame_NNNN.json cache
     # 數值影響: pool 失敗 = None → submit skip (fail-soft, daemon 主流程不受影響)
-    ocr_pool = None
-    last_ocr_enabled = False
-    last_ocr_band = None   # T-OCR-AutoRestart: (y_pct, h_pct, min_conf, workers) 快照, 變更→自動重起 pool
     # T-STT-AutoRestart (Tim 2026-07-20): worker 運行中的 (model, lang, prompt) 快照 —
     #   config 任一項被改 → 自動 stop + 重起套用, 取代舊版「只 log WARN 等人工 toggle」的靜默失效設計
     #   (血證: 換片後 stt_lang/stt_prompt 殘留上一場, whisper 幻聽出舊片人名)
@@ -1023,13 +1020,8 @@ def main_loop() -> int:
                 except Exception as e:
                     log(f"update_latest fail: {e}", "WARN")
 
-                # T-OCR-Pipeline — frame 落盤即 submit 背景 OCR (錄製時就產字幕 cache)
-                # 物理意義: submit O(1) 非阻塞, 真 OCR 在 worker threads; blackout 幀跳過 (沒字幕可讀)
-                if ocr_pool is not None and not sensitive_now:
-                    try:
-                        ocr_pool.submit(target)
-                    except Exception as e:
-                        log(f"ocr submit fail: {e}", "WARN")
+                # (OCR 已移交 C# UCL_OcrWorkerSupervisor — 獨立行程掃 frames 目錄, 本 loop 不再 submit。
+                #  敏感畫面本來就寫成黑圖, 掃目錄版讀不到敏感內容; 代價僅多 OCR 幾張黑圖。)
                 
                 # 每 30 frame 才存 config (省 disk write)
                 if cfg["frame_count"] % 30 == 0:
@@ -1133,73 +1125,11 @@ def main_loop() -> int:
                 audio_capture = None  # 避免反覆 spam warn
                 last_audio_viz_enabled = False  # 允許 next toggle 重 init
 
-            # T-OCR-Pipeline — OCR pool lifecycle 跟 ocr_enabled toggle 同步
-            # 物理意義: toggle on → 起 worker pool (per-thread RapidOCR engine); off → stop 釋放 threads
-            # 數值影響: y/h/conf/workers 改動需 toggle off→on 重起 pool 才生效 (跟 audio viz 同慣例)
-            curr_ocr_enabled = bool(cfg.get("ocr_enabled", False))
-            # T-OCR-AutoRestart (Tim 2026-07-27) — 對偶 T-STT-AutoRestart：pool 運行中偵測 band/conf/workers
-            #   任一改變 → 自動 stop 讓下方 enabled-transition 以新設定重起。消滅「改字幕帶位置按套用卻沒 toggle
-            #   = 靜默沿用舊 band」bug (OcrWorkerPool 的 regions/conf/workers 綁建構子, 中途不可熱改)。
-            # regions 快照 (2026-07-28 底部原點 + 額外區域): regions_from_config 已正規化 round(4),
-            #   tuple 化後可直接比相等 — 主帶或任一額外區域增刪改都會觸發重起。
-            try:
-                from subtitle_ocr import regions_from_config as _regions_from_config
-                curr_ocr_regions = tuple(_regions_from_config(cfg))
-            except Exception:
-                curr_ocr_regions = ((0.0, 0.12),)
-            curr_ocr_band = (
-                curr_ocr_regions,
-                round(float(cfg.get("ocr_min_conf", 0.5)), 4),
-                int(cfg.get("ocr_workers", 2)),
-            )
-            if ocr_pool is not None and last_ocr_band is not None and curr_ocr_band != last_ocr_band:
-                log(f"ocr 設定改變 → 自動重起 pool 套用 (regions={curr_ocr_band[0]} "
-                    f"min_conf={curr_ocr_band[1]} workers={curr_ocr_band[2]})")
-                try:
-                    ocr_pool.stop()
-                except Exception as e:
-                    log(f"ocr pool stop fail (auto-restart): {e}", "WARN")
-                ocr_pool = None
-                last_ocr_enabled = False   # 强制走下方 enabled-transition 的啟動分支重起
-            last_ocr_band = curr_ocr_band
-            if curr_ocr_enabled != last_ocr_enabled:
-                if curr_ocr_enabled:
-                    try:
-                        from subtitle_ocr import OcrWorkerPool, is_available as _ocr_avail, get_init_error
-                        if not _ocr_avail():
-                            log(f"ocr pool start skip (engine 不可用): {get_init_error()}", "WARN")
-                            ocr_pool = None
-                        else:
-                            from subtitle_ocr import regions_from_config
-                            ocr_pool = OcrWorkerPool(
-                                OCR_CACHE_DIR,
-                                regions=regions_from_config(cfg),
-                                min_confidence=float(cfg.get("ocr_min_conf", 0.5)),
-                                workers=int(cfg.get("ocr_workers", 2)),
-                                adaptive=bool(cfg.get("ocr_adaptive", True)),
-                            )
-                            ocr_pool.start()
-                            log(f"ocr worker pool started (workers={ocr_pool.workers}, "
-                                f"regions={ocr_pool.regions})")
-                    except Exception as e:
-                        log(f"ocr pool start fail: {e}", "WARN")
-                        ocr_pool = None
-                else:
-                    if ocr_pool is not None:
-                        try:
-                            ocr_pool.stop()
-                            log(f"ocr worker pool stopped (processed={ocr_pool.processed}, "
-                                f"dropped={ocr_pool.dropped}, errors={ocr_pool.errors})")
-                        except Exception as e:
-                            log(f"ocr pool stop fail: {e}", "WARN")
-                        ocr_pool = None
-                last_ocr_enabled = curr_ocr_enabled
-            # worker engine init 全滅偵測 — 印一次 warn 後關掉避免 spam
-            if ocr_pool is not None and ocr_pool.errors > 0 and ocr_pool.processed == 0 and ocr_pool.last_error:
-                if not ocr_pool._threads or all(not t.is_alive() for t in ocr_pool._threads):
-                    log(f"ocr pool all workers dead (will fail-soft): {ocr_pool.last_error}", "WARN")
-                    ocr_pool = None
-                    last_ocr_enabled = False  # 允許 next toggle 重 init
+            # ── OCR 已移交 C# 端管理 (2026-08-15 遷移階段 2, Tim 拍板) ──
+            # 物理意義: OCR 現在是獨立行程 (`subtitle_ocr.py --serve`), 由 C# 的
+            #   UCL_OcrWorkerSupervisor 起停 / 依設定重起 / 依**產物水位**判定停滯重起。
+            # ⚠ 原本長在這裡的 T-OCR-Pipeline / T-OCR-AutoRestart / all-workers-dead 三段一併移除,
+            #   **不留停用版** — 留著就是第二個決策點, 而兩顆 pool 併寫同一份 cache 不會報錯。
 
             # ── STT 已移交 C# 端管理 (2026-08-15, Tim 拍板「python 儘量減少耦合, 都透過 C# 統一管理」) ──
             # 物理意義: STT 現在是**獨立行程** (`audio_transcribe.py serve`), 由 C# 的
@@ -1240,10 +1170,8 @@ def main_loop() -> int:
         if audio_capture is not None:
             try: audio_capture.stop()
             except Exception: pass
-        if ocr_pool is not None:
-            try: ocr_pool.stop()
-            except Exception: pass
-        # (STT 已移交 C# UCL_SttWorkerSupervisor 管理 — 本 daemon 沒有 stt_worker 可收)
+        # (OCR/STT 均已移交 C# supervisor 管理 — 本 daemon 沒有 pool/worker 可收;
+        #  錄播專用的 _rec_state["ocr_pool"] 仍在本 daemon 內, 由 _rec_stop 收。)
         cleanup_pid()
 
 

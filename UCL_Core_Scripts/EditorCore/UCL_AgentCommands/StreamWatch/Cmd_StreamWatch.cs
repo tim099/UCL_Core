@@ -39,12 +39,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public override string CommandType => "StreamWatch";
 
         public override string ShortDescription =>
-            "觀影模式 Cmd（step=peek/start/join/cycle/observe/note）。**peek 不開場、不記帳，看一眼就走**（也是測試探針）；" +
+            "觀影模式 Cmd（step=capture/peek/start/join/cycle/observe/note）。**capture 開關錄影**（串 Page 同一條規則）；" +
+            "**peek 不開場、不記帳，看一眼就走**（也是測試探針）；" +
             "start 鎖定媒材＋註冊看到幾點；cycle 自己合成縮圖牆並判定到期/中斷；" +
             "**沒有 end —— agent 不能自己結束 session**。";
 
         public override string ArgsSchema =>
-            "step=peek|start|join|cycle|observe|note (必填) | persona=<name> — **peek 以外全步驟必填**（peek 不帶則歸 _peek） | " +
+            "step=capture|peek|start|join|cycle|observe|note (必填) | persona=<name> — **peek 以外全步驟必填**（peek 不帶則歸 _peek） | "
+          + "on=1|0 — capture 必填（開/關錄影；串 UCL_ScreenStreamPage 同一條規則） | " +
             "seconds=<5..600> — peek 選填，看最近幾秒（預設 60） | raw=1 — peek 選填，不夾感官水位（看最新畫面，代價寫在回傳檔） | " +
             "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問；" +
             "**bilibili 一律 `bilibili-<up主 slug>` 並必帶 up=**） | " +

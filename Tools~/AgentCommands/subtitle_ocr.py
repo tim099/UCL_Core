@@ -670,9 +670,93 @@ class OcrWorkerPool:
 # ===========================================================
 
 
+def _serve(args) -> int:
+    """常駐模式主迴圈 — 掃目錄 → submit → 印心跳。停滯判定/重起交給 C# supervisor。"""
+    frames_dir = Path(args.frames_dir)
+    cache_dir = Path(args.cache_dir)
+    if not args.frames_dir or not args.cache_dir:
+        print("[ocr-serve] ✗ --serve 需要 --frames-dir 與 --cache-dir (由 C# 傳入)", flush=True)
+        return 1
+    if not frames_dir.exists():
+        print(f"[ocr-serve] ✗ frames 目錄不存在: {frames_dir}", flush=True)
+        return 1
+    regions = [(args.y_bottom_pct, args.h_pct)]
+    if args.extra_regions:
+        try:
+            regions += [tuple(r) for r in json.loads(args.extra_regions)]
+        except (ValueError, TypeError) as e:
+            print(f"[ocr-serve] ✗ --extra-regions 解析失敗: {e}", flush=True)
+            return 1
+    # 起手先把「我拿到什麼設定」印出來 —— C# 傳錯時這一行是唯一的對帳點。
+    print(f"[ocr-serve] frames={frames_dir} cache={cache_dir} workers={args.workers} "
+          f"min_conf={args.min_confidence} adaptive={not args.no_adaptive} regions={regions}", flush=True)
+    if not is_available():
+        # 壞要往吵的方向壞: 引擎沒裝好就**立刻非零退出**, 不起一個永遠不產出的行程。
+        print(f"[ocr-serve] ✗ RapidOCR 不可用: {get_init_error()}", flush=True)
+        return 2
+
+    pool = OcrWorkerPool(cache_dir, regions=regions,
+                         min_confidence=args.min_confidence,
+                         workers=args.workers, adaptive=not args.no_adaptive)
+    pool.start()
+    # cursor = 只吃比它新的 frame。預設 = 啟動時刻 (不回補整個 ring buffer, 否則一起手就落後幾十分鐘)。
+    cursor = time.time() - max(0.0, float(args.backfill_sec))
+    print(f"[ocr-serve] started — cursor={time.strftime('%H:%M:%S', time.localtime(cursor))} "
+          f"(backfill {args.backfill_sec:.0f}s)", flush=True)
+    last_beat = 0.0
+    try:
+        while True:
+            try:
+                batch = []
+                for f in frames_dir.glob("*.jpg"):
+                    try:
+                        mt = f.stat().st_mtime
+                    except OSError:
+                        continue
+                    if mt > cursor:
+                        batch.append((mt, f))
+                batch.sort()
+                for mt, f in batch:
+                    pool.submit(f)
+                    cursor = max(cursor, mt)   # cursor 只前進, 且只跟著**實際 submit 過**的 frame 走
+            except Exception as e:
+                print(f"[ocr-serve] ⚠ 掃描失敗 (續跑): {e}", flush=True)
+            now = time.time()
+            if now - last_beat >= 30.0:
+                last_beat = now
+                print(f"[ocr-serve] processed={pool.processed} skipped={pool.skipped} "
+                      f"dropped={pool.dropped} errors={pool.errors} stride={pool.stride} "
+                      f"watermark={time.strftime('%H:%M:%S', time.localtime(pool.watermark)) if pool.watermark else '(無)'}",
+                      flush=True)
+            time.sleep(max(0.2, float(args.poll_sec)))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        pool.stop()
+    print(f"[ocr-serve] stopped (processed={pool.processed})", flush=True)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="PaddleOCR 字幕帶 OCR helper.")
-    ap.add_argument("frame", help="原始 frame 路徑 (1080p 等高解析度)")
+    ap.add_argument("frame", nargs="?", help="原始 frame 路徑 (單張 debug 用; --serve 時不需要)")
+    # ── serve: 常駐模式 (2026-08-15 遷移階段 2) ──────────────────────
+    # 物理意義: 原本 OCR 是 screenstream_daemon 內的 thread pool, 由 capture loop 每寫一張 frame
+    #   submit 一次 (記憶體交棒)。拆成獨立行程後改**掃目錄**: 自帶 cursor, 只吃比 cursor 新的 frame。
+    # ⚠ 本行程**不讀 config、不做 repo-walk** — frames/cache 目錄與 regions/conf/workers 全部由
+    #   C# (UCL_OcrWorkerSupervisor) 顯式傳入。設定的事實源只有一個, python 這端不要有第二份解讀。
+    # ⚠ 也**不自我重起**: 停滯判定與重起是 C# 的職責 (同 audio_transcribe serve 的分工)。
+    # 行為差異 (刻意, 非疏漏): 舊版 capture loop 會對敏感畫面跳過 submit; 掃目錄版看不到那個旗標,
+    #   但敏感時**寫進磁碟的本來就是黑畫面** (daemon 端 make_blackout_image 直接換掉 img),
+    #   所以讀不到敏感內容 — 代價只是多 OCR 幾張黑圖 (近乎空結果)。
+    ap.add_argument("--serve", action="store_true", help="常駐模式: 掃 frames 目錄持續產字幕 cache")
+    ap.add_argument("--frames-dir", default="", help="serve: frame 來源目錄 (由 C# 傳入)")
+    ap.add_argument("--cache-dir", default="", help="serve: 字幕 cache 輸出目錄 (由 C# 傳入)")
+    ap.add_argument("--workers", type=int, default=2, help="serve: worker 執行緒數")
+    ap.add_argument("--no-adaptive", action="store_true", help="serve: 關掉 lag 自適應跳幀")
+    ap.add_argument("--poll-sec", type=float, default=1.0, help="serve: 掃目錄間隔")
+    ap.add_argument("--backfill-sec", type=float, default=0.0,
+                    help="serve: 起手回補最近 N 秒的既有 frame (預設 0 = 只吃啟動後的新 frame)")
     ap.add_argument("--y-bottom-pct", type=float, default=DEFAULT_Y_BOTTOM_PCT,
                     help=f"字幕帶底邊離畫面下緣距離 (比例 0~1, 0=貼底, 預設 {DEFAULT_Y_BOTTOM_PCT})")
     ap.add_argument("--h-pct", type=float, default=DEFAULT_H_PCT,
@@ -683,6 +767,12 @@ def main():
                     help="過濾低信度 (預設 0.5)")
     args = ap.parse_args()
 
+    if args.serve:
+        return _serve(args)
+
+    if not args.frame:
+        print("ERROR: 需要 frame 路徑 (或用 --serve 進常駐模式)", file=sys.stderr)
+        return 1
     frame_path = Path(args.frame)
     if not frame_path.exists():
         print(f"ERROR: frame not found: {frame_path}", file=sys.stderr)

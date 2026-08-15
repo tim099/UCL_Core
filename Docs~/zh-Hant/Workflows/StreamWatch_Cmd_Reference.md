@@ -21,10 +21,11 @@ related:
 > ⚠ 所以本檔有一條自我限制：**凡是會隨環境變動的數字（保存期、fps、費率、水位、格數上限）
 > 一律只寫「從哪裡讀」，不寫值。** 讀到本檔出現具體數值＝那一行已經是待修的 bug。
 
-## 1. 六步全表
+## 1. 七步全表
 
 | step | persona | 其他參數 | 動 session | 記帳 | 發酒館 |
 |---|---|---|---|---|---|
+| `capture` | 必填 | `on=1\|0` | ❌ | ❌ | 酒保開/停播公告 |
 | `peek` | **選填**（缺則歸 `_peek`） | `seconds`（預設 60，夾 5–600）／`raw=1` | ❌ 完全不碰 | ❌ | ❌ |
 | `start` | 必填＋須在線 | `until=HH:mm`（必）／`media`／`up`／`title`／`desc`／`url` | 建立 | ❌ | 開播公告 |
 | `join` | 必填＋須在線 | — | 建立（companion） | ❌ | 加入公告 |
@@ -144,6 +145,25 @@ sidecar 的判準是 **mtime 必須晚於本輪起跑**，不是 `File.Exists`�
 | `body 為空`（observe/note） | 走 `--arg-file` |
 
 ## 9. 外部依賴
+
+### 9.0 三顆常駐行程，各自一個 tag、各自一條心跳（2026-08-15 遷移完成）
+
+| 行程 | 由誰管 | tag | 心跳（**產物水位，不是 alive**） |
+|---|---|---|---|
+| 擷取＋audio viz | `UCL_ScreenStreamDaemon` | `screenstream_daemon` | `frames/` 最新檔 |
+| STT | `UCL_SttWorkerSupervisor` | `screenstream_stt` | `stt/` 最新 chunk **檔名 epoch** |
+| OCR | `UCL_OcrWorkerSupervisor` | `screenstream_ocr` | `ocr/` 最新 **`frame_*.json`** mtime |
+
+⚠ OCR 那格**只能數 `frame_*.json`**：同目錄的 `_status.json` 是 pool 每 0.5 秒重寫的狀態檔，
+把它算進來 ⇒ 心跳量到的是「pool 還活著」而不是「它產出了什麼」。
+🩸 紅路實測抓到過一次：清空所有產物而停滯偵測完全不觸發（量到替身）。
+
+⚠ **python 端一律不自我重起**、不讀 config、不 repo-walk —— 目錄與參數全由 C# 顯式傳入。
+決策點只留 C# 一個，否則「誰重起的」永遠查不清楚。
+
+⚠ **遷移守則（血證）**：C# 一編譯就生效，python daemon 要**重啟**才換 code ⇒
+順序必須是「先停擷取／重啟 daemon 讓它放掉該項 → 再讓 C# 接手」，反過來會有一段
+**兩顆同時寫同一份 cache** 的窗口，而它不報錯（2026-08-15 STT 那次實際撞到）。
 
 - **縮圖牆合成**＝`Tools~/AgentCommands/screenstream_montage.py`，由 Cmd spawn
   （`UCL_ProcessRegistryService.RegisterScope` 登記；`await Task.Run` 不阻塞主執行緒）。

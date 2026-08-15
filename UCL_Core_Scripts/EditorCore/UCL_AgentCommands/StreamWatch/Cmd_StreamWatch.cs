@@ -259,7 +259,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=cycle blocked：找不到縮圖牆工具（詳見 {aPath}）");
             }
 
-            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aOutPath, iToken);
+            var (aOcrOn, aSttOn) = ReadSensorFlags();
+            DateTime aRunStart = DateTime.Now;
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aOutPath, aOcrOn, aSttOn, iToken);
             if (!aOk)
             {
                 aR.AppendLine("## blocked");
@@ -284,16 +286,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
             string aSubPath = Path.ChangeExtension(aOutPath, ".subtitles.md");
-            bool aHasSub = File.Exists(aSubPath);
+            // ⚠ **只驗存在會被殘留檔騙**（2026-08-15 首跑實證：字幕檔是四天前 08-11 的，
+            //   而 File.Exists 照樣回 true ⇒ 回傳檔把它當成本輪字幕端給 agent 讀）。
+            //   同族血證：RunBrief 的「檔存在且行數>0」被隔夜殘留滿足（wake#49）。
+            //   ⇒ 判準改成 **mtime 必須晚於本輪起跑**。壞要往吵的方向壞：寧可說沒有，不可端舊的。
+            bool aHasSub = false;
+            string aSubNote = "";
+            try
+            {
+                if (File.Exists(aSubPath))
+                {
+                    DateTime aSubMtime = File.GetLastWriteTime(aSubPath);
+                    if (aSubMtime >= aRunStart.AddSeconds(-1)) aHasSub = true;
+                    else aSubNote = $"（磁碟上有一份 {aSubMtime:MM-dd HH:mm} 的殘留檔 —— **不是本輪的，已忽略**）";
+                }
+            }
+            catch { }
 
             aR.AppendLine("## 本輪素材");
             aR.AppendLine($"- 縮圖牆   : `{aOutPath}`　← 直接 Read");
             aR.AppendLine(aHasSub
-                ? $"- 字幕     : `{aSubPath}`　← 直接 Read"
-                : "- 字幕     : **本輪無字幕**（不是欄位不存在 —— 這一輪確實沒有）");
+                ? $"- 字幕     : `{aSubPath}`　← 直接 Read（**本輪產出**，mtime 已驗）"
+                : $"- 字幕     : **本輪無字幕**（不是欄位不存在 —— 這一輪確實沒有）{aSubNote}");
             aR.AppendLine($"- 涵蓋     : {aInfo.SpanText}");
             aR.AppendLine($"- 格數     : {aInfo.Tiles}　**每格 ≈{aInfo.PerTileSeconds:F0}s**　← 落後越多每格越粗，丟的是細節不是時間");
             AppendRetentionLine(aR);
+            aR.AppendLine($"- 感官     : OCR {(aOcrOn ? "開" : "關")}／STT {(aSttOn ? "開" : "關")}（讀自 _config.json，**不必傳旗標**）");
             aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
             aR.AppendLine();
@@ -440,7 +458,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ async 化讓 out 參數消失 ⇒ 回 tuple；**呼叫端漏接 err 就是靜默失敗**，所以失敗必落回傳檔。
         // ===========================================================
         static async UniTask<(bool ok, string stdout, string err)> RunMontageAsync(
-            string iScript, double iCursor, string iOutPath, CancellationToken iToken)
+            string iScript, double iCursor, string iOutPath, bool iOcr, bool iStt, CancellationToken iToken)
         {
             try
             {
@@ -448,6 +466,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aArgs.Append("\"").Append(iScript).Append("\" make");
                 if (iCursor > 0) aArgs.Append(" --after-mtime ").Append(iCursor.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 aArgs.Append(" --max-tiles ").Append(MAX_TILES);
+                // 區塊職責：感官旗標**不由呼叫端記得帶**（Tim 2026-08-15）——
+                // 物理意義：OCR/STT 的開關已經在 _config.json 裡（`ocr_enabled` / `stt_enabled`），
+                //          那才是事實源。要人再傳一次 flag，等於把同一件事存兩個地方，
+                //          而漏帶的那次**不會報錯，只會安靜地沒有字幕**（2026-08-15 首跑實踩：
+                //          我自己寫的第一版就忘了帶 --ocr，於是端出四天前的殘留 sidecar）。
+                // ⇒ 開著就給，不用問。規則長在通道上，不掛在記憶裡。
+                if (iOcr) aArgs.Append(" --ocr");
+                if (iStt) aArgs.Append(" --stt");
                 aArgs.Append(" --out \"").Append(iOutPath).Append("\"");
 
                 var aPsi = new System.Diagnostics.ProcessStartInfo
@@ -519,6 +545,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 區塊：ScreenStream 狀態 —— **只認顯式欄位**
         // ⚠ 不用 frame 新鮮度推論（Plan §2.2 的血證）
         // ===========================================================
+        /// <summary>讀 _config.json 的感官開關 —— 開著就自動供給，呼叫端不必傳旗標。</summary>
+        static (bool ocr, bool stt) ReadSensorFlags()
+        {
+            try
+            {
+                string aCfg = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
+                var aJd = JsonData.ParseJson(File.ReadAllText(aCfg, Encoding.UTF8));
+                bool aOcr = aJd != null && aJd.Contains("ocr_enabled") && (bool)aJd["ocr_enabled"];
+                bool aStt = aJd != null && aJd.Contains("stt_enabled") && (bool)aJd["stt_enabled"];
+                return (aOcr, aStt);
+            }
+            catch { return (false, false); }
+        }
+
         static bool IsRecordingEnabled(out string oNote)
         {
             oNote = "";

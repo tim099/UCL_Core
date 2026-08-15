@@ -249,6 +249,18 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aScript = ResolveMontageScript();
             string aOutPath = MontageOutPath(iPersona);
             double aCursor = ReadDouble(aS, "cursor_epoch");
+            // ⚠ 首輪沒有 cursor 會踩到雞生蛋（2026-08-15 自由時間實跑抓到）：
+            //   cursor=0 ⇒ 不傳 --after-mtime ⇒ 而 montage 的 --before-mtime 過濾與 next-cursor 回報
+            //   **都在 after-mtime 那個分支裡**  ⇒ 夾子不生效、cursor 也永遠設不起來，
+            //   於是每一輪都退回 `--last` 預設路徑 —— **而回傳檔照樣印「窗口尾端夾在這裡」**。
+            //   （旗標被接受卻未套用，跟今天稍早抓到的 `--max-tiles` 在 --last 路徑 no-op 同形。）
+            // ⇒ 首輪用 session 起始時刻當 cursor：語意上正確（從開播那一刻看起），
+            //   且保證每一輪都走 loop 路徑。
+            if (aCursor <= 0)
+            {
+                DateTime? aSt = ParseIsoLocal(ReadStr(aS, "start_ts"));
+                if (aSt.HasValue) aCursor = ToEpoch(aSt.Value.ToUniversalTime());
+            }
 
             if (string.IsNullOrEmpty(aScript))
             {

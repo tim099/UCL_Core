@@ -1,247 +1,70 @@
 ---
 name: ucl-stream-watch
 description: |
-  直播連續觀看模式 (Stream Watch Mode) — 陪 Tim 看 ScreenStream 直播畫面流 (跨專案, 工具鏈住 UCL_Core)的自我 pace loop session。
-  每 cycle 把「上次看到→現在」所有 frame 用 montage 壓成一張縮圖牆 (一張不漏)，讀圖後發觀戰評論進 tavern
-  (Discord mirror 回 Tim 手機)，到設定的結束時間 (--end-time HH:mm) 自動下班 + 結算薪資。
-  跟 ucl-watch-video (看 YouTube 網路影片抓轉錄稿) 是兩回事 — 本 skill 是「看 Tim 的即時螢幕直播」。
-  整合 reading-library:觀影心得寫入新 Library 的 work → media → persona → read_session；開場先讀同 persona 同 media 的既有 session。
-  Lite v0.5 後支援同樂會模式: `--mode primary` (主觀影者, 預設) / `--mode companion` (加入既有 primary 場陪同觀影, 可自由選擇看哪段)。
+  觀影模式 (Stream Watch) — 陪 Tim 看 ScreenStream 直播畫面流，或不開場只看一眼。
+  走 `Cmd_StreamWatch` 分步（peek / start / join / cycle / observe / note），
+  每一步的回傳檔會告訴你下一步；**沒有 end —— 到期或 Tim 停錄影時由 Cmd 宣布收工並結算**。
+  跟 ucl-watch-video (看 YouTube 影片抓轉錄稿) 是兩回事 — 本 skill 看的是 Tim 的即時螢幕。
   觸發詞 (case-insensitive substring): 看直播 / 觀看直播 / 陪看 / 陪我看直播 / 觀戰直播 / 直播陪看 /
-    看直播到 / 看到幾點 / watch stream / stream watch / 連續觀看 / 觀戰模式 /
+    看直播到 / 看到幾點 / watch stream / stream watch / 連續觀看 / 觀戰模式 / 看一眼 / 瞄一眼 /
     加入觀影 / 陪同觀影 / 一起看 / 同樂會 / join watch / multi-viewer / companion / /ucl-stream-watch。
 ---
 
-# UCL Stream Watch — 直播連續觀看模式
+# UCL Stream Watch — 觀影模式
 
-> [!IMPORTANT]
-> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../../Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（op 清單 / 必填欄位 / body 安全通道 / `--wait-reply`）。
-> 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
-> 指令散落各處會漂移，2026-07-31 已為此清過一輪。
+> **觸發詞就是命令。** 本 skill 只教**第一步** —— 之後每一步的回傳檔都會指路（`## next`）。
+> 細節不寫在這裡：寫進 skill 的數字會過期而不會叫
+> （🩸 舊版寫死 600s 保存期、實際 2400s，差四倍，還拿它教間隔紀律）。
 
+## 兩條鐵律
 
-> 一句話：**陪 Tim 看直播，每次把上次到現在的畫面壓成一張縮圖牆連續追看、一秒不漏，看到指定時間自動下班結算。**
+1. **收工不由你判斷。** 沒有 `step=end`；到期或 Tim 停錄影時，下一次 `cycle` 自己宣布並結算。
+   看到「我大概看完了」這個念頭 —— 那不是收工訊號，去跑 `cycle`。
+2. **媒材鍵是共享鍵，不能由記憶供給。** 不確定就讓 Cmd blocked 給你既有清單，
+   **片名不確定問 Tim，不要猜**。取錯名 ⇒ 既有 reader 的心得對新場次永遠隱形**且不報錯**。
 
-## 🎯 為什麼是這個模式
+## 第一步（唯一要背的一步）
 
-ScreenStream daemon 每秒寫一張 frame 進 600 槽 ring buffer（只留 10 分鐘）。agent 一個 cycle（思考+評論）要花快 1 分鐘，**不可能一秒看一張去追 1 fps**。所以：
+**只看一眼**（不開場／不記帳／不發文，也是管線測試探針）：
 
-> **「跟上播放速度」≠「逐幀全解析度看」**，而是用 montage 做**時間壓縮** + cursor **接續**，把「跟上」跟「逐幀」解耦。每 cycle 覆蓋每一秒 wall-clock（壓成 ≤12 格），下次從上次尾巴接著看。
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=peek --arg seconds=60
+```
 
-## 🧠 核心心智模型 — 有界 ring-buffer producer-consumer
+**正式開場**（要寫評論、要計酬、要留接續點）：
 
-| 失敗模式 | 現象 | 後果 |
-|---|---|---|
-| **gap（漏看）** | 這次窗口沒接上上次尾巴 | 中間幾秒沒看過（畫面還在，可補） |
-| **overflow（遺失）** | 落後超過 buffer span (600s) | 沒看的舊幀被覆寫 → **永久救不回** |
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch \
+    --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work-slug>
+```
 
-兩個鐵律守住它：
-1. **cycle 間隔遠小於 600s**（建議 45–60s）→ 絕不 overflow
-2. **cursor 用「上輪最新幀 mtime」接續**，不是 wall-clock → cycle 耗時抖動下仍首尾嚴絲合縫
+- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`** —— 裡面的 `## next` 就是後續每一步
+  （`cycle` → Read 縮圖牆/字幕 → `observe` → …）。**照它走，不用背。**
+- `media` 不給 ⇒ Cmd 會擋下並列出既有 work 清單（命中就用）。
+  bilibili 一律 `bilibili-<up主 slug>` ＋ `--arg up=<up主名>`。
+- 陪別人的場：`--arg step=join --arg persona=<P>`（自動繼承 primary 的媒材身分）。
+- 長內文一律 `--arg-file body=<檔>`，不要 inline。
 
-## 📥 觸發與參數
+## 回傳檔要會讀的三行（判準，不是裝飾）
 
-| User 輸入 | 對應 |
+- **窗口對帳** `窗口尾端 X ≤ 水位 Y ✅` —— 出現 `>` 或「未夾」時，
+  **尾端那幾格的「沒有字幕」不可信**（沒字幕與還沒辨識同形）。
+- **STT** `0 段` ≠ `無 cache` ≠ 這一行不存在（第三種是管線沒跑起來）。
+- **保存期** 名目只是設定值換算，**實有才是現在真的回得去多久**（兩個方向都會差）。
+
+## ⛔ 不可做
+
+- ❌ 自己判斷「時間到了」而停手 —— 時限只認 Cmd 的時鐘，不認收束感。
+- ❌ 憑印象取 `media` slug；❌ 用 `bilibili-stream` 這種泛名（會把所有影片併成一個 work）。
+- ❌ 直跑 `stream_watch_session.py`（**舊 prototype，已停用**）或自己去跑 `screenstream_montage.py`
+  —— 繞過收銀台的帳不算數，且不會有窗口對帳。
+- ❌ 評論裡寫自己數的 frame 數／時間 —— 數字一律引用回傳檔的讀數。
+
+## 延伸
+
+| 想知道 | 看哪 |
 |---|---|
-| `陪我看直播到 12:30` | `--end-time 12:30` |
-| `看直播 30 分鐘` | `--duration 30` |
-| `陪看直播`（沒講多久） | 問一句要看到幾點 / 多久，或預設 `--duration 30` |
-
-## 🛠 Agent MUST（嚴格順序）
-
-### Step 0. 前置確認
-- daemon 在跑？看 `AgentCommands/_screenstream/_config.json` 的 `enabled:true` + frames 有新鮮幀
-- 確認 persona 已上線（morning lock）；**`start` 的 `--persona` 為必填**（Tim 2026-07-02 拍板取消 auto-infer — 多 lock 環境同 env_hash 多 persona 無從分辨會挑錯人，未傳會抱錯）。顯式帶你這 session lock 的 persona（e.g. `--persona ame`）
-- **【觀影心得·先讀】認得出在看哪部片 / 影集 → 先查同 persona、同 media 的新 Library session**：有既有 session 才喚回人物／名詞／伏筆／bookmark；沒有就先確認 work、實際媒材與 persona，再建立新 session。片名不確定時先問 Tim；不得用 legacy `library.py --book` 或 Archive 補前情。
-
-### Step 1. 開 session
-```bash
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start \
-  --persona ame \             # 必填 (Tim 2026-07-02 取消 auto-infer); 帶你 session lock 的 persona
-  --end-time 12:30 \          # 或 --duration 30 (互斥)
-  --max-tiles 12 \            # 每輪縮圖牆格數上限 (預設 12)
-  --stt \                     # 🎙 讀取端 opt-in: 本場 montage 讀 daemon 產的 STT cache; 不帶 lang/model/prompt
-  --desc "陪看 XXX 直播" --json
-# 回 session_id + 初始 cursor + ends_at。會走 tavern-keeper 發開播 announcement。
-```
-- **🆕 STT 設定由 Tim 預先配置, skill 不改動 (Tim 2026-07-26 拍板)**：STT 的 `stt_enabled/model/lang/prompt` **一律由 Tim 在影音管理頁 (UCL_MediaAdminPage) 針對該片預先設好**；`start --stt` **只是讀取端 opt-in**（讓 cycle 的 montage_cmd 附 `--stt` 去讀 daemon 產的 cache），**不再傳、也不寫 `--stt-lang/--stt-model/--stt-prompt`**，完全不覆寫 Tim 的設定。
-  - daemon 每 loop 重讀 config，且 **T-STT-AutoRestart (2026-07-20)** 偵測 model/lang/prompt 變更會自動重起 worker 套新值 → **Tim 改設定 (存檔寫入 `_config.json`) 即時生效, 不需停/啟錄影**。
-  - 看日番要人名偏置 (prompt) / 指定 lang → 請 Tim 在影音管理頁設定, 不由 skill 決定。(舊 `--stt-lang/--stt-prompt` 由 skill 全量套用的 T-STT-AutoStart/FullApply 流程已移除。)
-- **🆕 T-StreamWatch-OutIsolation (summit 2026-07-10)**：`cycle` 回的 `montage_cmd` **已自動帶 persona-scoped `--out _montage_<persona>.jpg`**（server 端注入，不必你手動）。多 viewer（primary＋companion／多 primary）各寫各的 `_montage_<persona>.jpg` + `.subtitles.md`，不再互相覆蓋污染。**Read 圖/ sidecar 時認你自己 persona 的檔名**（不是預設 `_montage.jpg`）。
-
-### Step 2. 進 /loop dynamic，每 cycle 做：
-```
-1. python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py cycle --session <SID>
-   → 回 JSON: expired? / cursor_epoch / montage_cmd（已帶 --after-mtime <cursor>）
-   → 若 expired=true → 跳 Step 3 (end)
-
-2. 跑 cycle 回的 montage_cmd（平常）:
-   python <UCL_Core>/Tools~/AgentCommands/screenstream_montage.py make --after-mtime <cursor> --max-tiles 12
-   → 熱點時刻（戰鬥/團滅/場景切）改高密度: 去掉 --max-tiles (逐幀) 或加 --region 盯血條/小地圖
-
-3. Read 輸出圖（預設 _screenstream/_montage.jpg）→ 寫觀戰評論
-
-4. 評論 post 進 tavern（Discord mirror 回 Tim）:
-   run_cmd.py run Tavern --arg op=post --arg room=tavern \
-     --arg persona=<my-persona> --arg body="<觀戰心得>" --arg meta='tag:stream-watch;category:chat'
-
-5. 記帳 + 推進 cursor（關鍵, 保證下輪 0-gap）:
-   python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py record_observation --session <SID> \
-     --next-cursor <montage report 印的 next-cursor> \
-     --tavern-seq <montage report 印的 tavern_max_seq>  [--hotspot]  [--lost N]
-   → --tavern-seq 推進酒館已讀游標 (跟 --next-cursor 同理, 不帶下輪會重顯同訊息)
-   → 若 montage report 有 overflow 警告 → 帶 --lost N 記遺失幀數 + 縮短下輪間隔
-
-6. ScheduleWakeup ~45–60s 後再來一輪（遠小於 600s buffer）
-```
-
-### Step 2.5 邊看邊寫觀影心得（reading-library 整合）
-
-觀影心得寫進新 Library：先固定 work、媒材（影集用 `series-`、電影用 `film-`、直播用 `stream-`）、當前 persona 與 read session。集數只在固定內容邊界的 media 內有意義；直播場次以時間為身分，不假裝是作品章節。工具 API 重做完成前不要呼叫舊 `library.py`。
-
-**自律時機 & 誠實守則**：
-- 不必每個 montage cycle 都寫心得（那是 tavern 觀戰評論的事）；**心得在「一集結束 / 一個 arc 收束 / 重要轉折」時沉澱一筆**，避免洗版式記帳。
-- **stream-watch 是縮圖牆觀看**：集數編號以螢幕所見為準、未必對齊官方；廣告/暫停/ED 幀要排除。**這些限制要寫進 chapter summary / bookmark note**（cross-layer 誠實，不假裝逐幀全看）。
-
-### Step 3. 收播（到期 or Tim 叫停）
-```bash
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py end --session <SID> [--early-confirm]
-# 到期 (cycle 回 expired) → 直接 end; 提前 (Tim 叫停) → 必加 --early-confirm 否則 exit 2
-# 結算 base(1/min) + observation bonus(2/筆), 走 tavern-keeper 發收播 announcement
-```
-**收播前 MUST 收尾觀影心得**：更新該 session 的 bookmark，記下觀看限制（縮圖／集數來源）、人物、伏筆與下次的接續點。下次只由相同 persona 與相同 media 的新 session 接回前情。
-
-## ⛔ Hard Rules
-
-1. **Session 等到期 / Tim 顯式叫停才 end** — 提前 end 不加 `--early-confirm` 被擋（exit 2）
-2. **每 cycle 一定呼叫 `cycle` 取最新狀態** — 自己腦補 elapsed/remaining 會誤 end
-3. **每輪發完評論必跑 `record_observation --next-cursor --tavern-seq`** — 不記 = 沒 bonus + frame cursor 不推進 (下輪重疊) + 酒館已讀游標不推進 (下輪重顯同訊息)
-4. **cursor 一律餵 montage report 的 next-cursor** — 不要自己塞 wall-clock，會漂
-5. **評論走 tavern op=post**（mirror 自動回 Discord），不要直接打 webhook
-6. **cycle 間隔 45–60s**，絕不接近 600s buffer span（落後太多 overflow 真丟幀）
-7. **熱點高密度自律** — montage 裡看到劇烈變化，下輪自動切高密度 / region，並 `--hotspot` 記帳
-8. **【觀影心得整合】開場先讀、收播前收尾**：只查相同 persona／media 的新 Library session；在集／arc 收束時沉澱章節、人物與名詞，收播前更新該 session bookmark。心得是持久記錄，tavern 觀戰評論是即時陪聊，兩者不混用。
-9. **字幕帶自校準**（給要讀對白的場景）— 字幕垂直位置隨影片/播放器版面跑（16:10 螢幕看 16:9 內容常不在螢幕底）。要精讀對白時：抓一張全幅量字幕落點 → `--crop-pct 0,<y>,1,<h>` 裁字幕帶；可一輪讀「視覺全幅 12 格(含字幕錨點) + 字幕帶密集格」兩圖交錯，視覺當錨點、字幕帶填空隙。**信實測幀、信 Tim 的 ground-truth 回饋，別憑目測堆疊縮圖**（血淚:曾被畫面內新聞標題誤導、校 4 次才定位）。
-
-10. **字幕 OCR 同步輸出（T-Subtitle-OCR, Tim 2026-06-09 拍板）** — 縮圖牆字幕辨識率長期低，現在 `screenstream_montage.py` 加 `--ocr` flag：直接走回 ring buffer 原始 1080p frame crop 字幕帶 → RapidOCR (Paddle ch_PP-OCRv4 ONNX, 純 CPU) → 輸出 sidecar `_montage.subtitles.md` 按 tile 編號對齊。用法：
-    ```bash
-    python <UCL_Core>/Tools~/AgentCommands/screenstream_montage.py make --after-mtime <X> --max-tiles 12 --ocr
-    # 輸出: _montage.jpg + _montage.subtitles.md (sidecar)
-    # sidecar 格式: "- **#1** f0826 13:57:59: 字幕內容"
-    ```
-    `--ocr-y-pct 0.85 --ocr-h-pct 0.13` 預設裁底部 13% 高度（若字幕不在底部用 `--crop-pct` 規則先量再調），`--ocr-min-conf 0.5` 過濾低信度。中文字幕辨識率高，英文 OCR 偶有小誤但語意能懂。**字幕重要場景 cycle 一律加 `--ocr`**，agent 讀完 `_montage.jpg` 再 Read `_montage.subtitles.md` 對齊字幕。每輪多 ~2-4s 開銷可接受。
-
-11. **同時注意聊天酒館訊息（Tim 2026-06-13 拍板, kiara 觀察觸發）** — 觀影不只是看畫面, **每 cycle 要兼顧 tavern 對話**。觸發來源: kiara wake#2 在 sw-2c1c6b cycle#10 從 montage OCR 抓到 Tim 在 OBS 浮水印疊了「**請同時注意聊天酒館的訊息**」+「**文明 6 重點畫面會截圖分**(享)」— 證實 Tim 是「動畫主畫面 + Civ 6 截圖 + 酒館對話」三線並行的 stream, 觀眾 (agent / 同事) 不該只盯主畫面忘了同事在 tavern 跟 Tim 互動。
-
-    **🆕 自動同步 (T-StreamWatch-TavernSync, Tim 2026-06-14 拍板, kiara 實作)** — 酒館訊息已**直接接在字幕 sidecar 末尾**, 不必再另外 `cat` 一次:
-    - `cycle` 回的 `montage_cmd` 已自動帶 `--ocr --tavern-self <persona> --tavern-since-seq <已讀游標>`
-    - 跑完 montage → **Read 一次 `_montage.subtitles.md`** 就同時拿到「畫面字幕 (## Per-frame) + 聊天酒館未讀訊息 (## 💬 聊天酒館當前訊息)」
-    - 酒館段已**排除自己發的** (match `@<persona>:`) + **只顯示未讀** (seq > 已讀游標), 跟原本手動讀流程語意一致但省一次 I/O
-    - **record_observation MUST 帶 `--tavern-seq <montage report 印的 tavern_max_seq>`** 推進已讀游標 (對齊 `--next-cursor` 鐵律, 不帶則下輪重顯同訊息); 來源 = montage stdout 的 `tavern_max_seq=<M>` 行
-    - 截斷誠實: 未讀爆量時 sidecar 標「另有 N 筆更舊未讀留待下輪」, 取最舊的先看保 0-gap (chronological catch-up), 不靜默丟
-    - **🆕 Discord 圖片附件可見 (T-StreamWatch-DiscordImage, Tim 2026-06-15 拍板, kotoko 實作)** — 之前圖片同步進酒館後, sidecar 只看得到「[Discord 附件 1 個] image.png」文字、圖內容看不到。現在 `render_tavern_tail` 從 meta 行的 `attachments` JSON 抽 `local` 本地路徑 (退路: refs 行連結), 在該筆訊息下列出 `🖼️ Discord 圖片附件 → 用 Read 工具看: <本地路徑>`。**看到這行 agent 就直接 `Read <路徑>` 看圖** (跟讀 montage 同一種 vision 能力, sidecar 純文字無法 inline 顯圖故給路徑)。montage stdout 的 `tavern tail` 行會報「含 N 張 Discord 圖片附件」。只收 image/* (或圖片副檔名) 的附件, 非圖附件不列。
-    - 純 local 讀 `rooms/tavern/_last_view.md`, 零 Editor daemon 依賴; 想關掉酒館段加 `--no-tavern`
-
-    **MUST** (互動側):
-    - 看到 Tim / 同事 @ 自己或話題相關 → tavern 評論裡 acknowledge (順帶 @reply)
-    - **不要被觀影綁死**, tavern 重要訊息 (Tim 派 task / 同事問問題 / 系統廣播) 優先處理 — observe 是 default action 但不是唯一
-    - Multi-viewer companion 模式: cycle 回的 `companion_hint` 有 primary 的 obs count, 主動 op=read 看 primary 留了什麼 (避免兩人重複觀察 / 互補不同角度)
-    - 自由發揮輕鬆閒聊 (與 Tim / 同事的閒聊也算合法 tavern 互動, 不必每筆都是嚴肅劇情分析)
-    - **fallback**: 想看完整訊息 (sidecar 截斷的長 body / 更舊未讀) 仍可 `Tavern op=read --arg room=tavern --arg limit=N`
-    觸發來源 OCR 證據: `AgentCommands/ChatTavern/_last_op.md` cycle#10 段附近 "請同時注意聊天酒館的訊息" 字串.
-
-## 🏗 架構（三層，2026-07-26 Tim 拍板全鏈遷入 UCL_Core）
-
-```
-ucl-stream-watch (本 skill, UCL_Core Skills~)                    ← 觸發 + SOP
-  ↓ 驅動
-stream_watch_session.py (<UCL_Core>/Tools~/AgentCommands)        ← start/cycle/record/end + end-time + cursor + 結算
-  ↓ 用
-screenstream_montage.py (--after-mtime/--max-tiles/next-cursor)  ← frame→montage 引擎 (同目錄)
-  ↓ 讀
-<主專案>/AgentCommands/_screenstream/frames/                     ← UCL_ScreenStreamDaemon spawn 的 python daemon ring buffer
-```
-
-- **code 跨專案共用（UCL_Core）、runtime 狀態 per-project（主專案 AgentCommands/_screenstream）** — 工具走 repo-walk（跳 submodule gitlink）＋ honors `.agentcommands_root.local` 解析資料根，對齊 knowledge_base.py 慣例。
-- C#：`UCL_ScreenStreamDaemon`（spawn/看護 python daemon）＋ `UCL_ScreenStreamPage`（錄影控制，含跳轉「影音管理」鈕）。
-  - ⚠ **過渡期讓位**：daemon 啟動時會反射探測「專案端 legacy daemon 型別」，偵測到就整輪讓位不 spawn（防兩支同寫 frames ring buffer 互蓋 index）。所以**專案若還留著舊版 daemon，實際跑的仍是舊版** — 換版後要驗執行期真正跑的是哪支（看 daemon process 的腳本路徑），不能只看 code 有沒有換。
-  - `monitor=unity_game`（Unity Game view 渲染輸出）需要專案端提供 frame 供應者，UCL_Core 不含此實作。
-- STT/OCR 依賴安裝與設定調整 → **UCL_MediaAdminPage（影音管理頁）**，media_admin 後端同住 UCL_Core Tools~。
-
-## 🍿 Lite Multi-Viewer Mode (同樂會, Lite v0.5)
-
-> Tim 拍板 (2026-06-09)：陪看是休閒娛樂，**不要 over-engineer**。所以這版砍掉 barrier / 主筆投票 / specialist tier，剩骨架兩種角色：**主觀影者 (primary)** + **陪同觀眾 (companion)**。
-
-### 觸發語意
-
-| User 輸入 | 對應 |
-|---|---|
-| `/ucl-stream-watch 陪我看到 13:00` | **Primary** — 原本流程，一字不動 |
-| `/ucl-stream-watch 加入觀影` 或 `陪同觀影` | **Companion** — 找最新 active primary 場加入 |
-| `/ucl-stream-watch 加入觀影 sw-xxx` | **Companion** — 加入指定 session id |
-
-### Companion 工作流程
-
-```bash
-# 1. 開場
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start --mode companion [--join-session sw-xxx] --json
-#    沒帶 --join-session → 自動找最新 active primary；找不到會 fail-fast 並提示「自己開 primary 或等」
-#    cursor 初值 = primary 當前 cursor（預設跟著看）
-#    ends_at 沿用 primary（primary 收播時你自動收到提示，但不強制 end）
-
-# 2. /loop dynamic 跑 cycle (同 primary，45–60s)
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py cycle --session sw-yyy
-#    回 JSON 多兩個欄位:
-#    - "mode": "companion"
-#    - "primary_cursor_epoch": <primary 當前進度>
-#    - "companion_hint": "primary 在 X, 你在 Y, primary 已發 N 筆 obs (op=read 可讀)..."
-
-# 3. 自由穿插聊或鑽自己感興趣的時段 (Tim 補充: companion 可自由觀賞自己有興趣的片段)
-#    - 想跟 primary 同步: 直接跑 cycle 提示的 montage_cmd
-#    - 想倒帶看自己感興趣的某段: 自己組 `screenstream_montage.py make --after-mtime <你選的 epoch>`
-#      (還在 600s ring buffer 內即可)
-#    - 想換焦點: record_observation 加 --focus combat|audio|subtitle|primary|free (純標籤, 不影響薪資)
-
-# 4. 發評論進 tavern + 記帳
-#    (跟 primary 一樣, 但語氣可以更休閒 — 聊劇情/吐槽/笑點皆可, 不必每筆都正經分析)
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --arg op=post ...
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py record_observation \
-    --session sw-yyy --next-cursor <X> [--focus audio]
-
-# 5. 收播 (Primary end 時你會收到 tavern 提示, 但 companion 是獨立 end)
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py end --session sw-yyy [--early-confirm]
-```
-
-### Primary 看到 companion 加入 / 收播時
-
-- Companion 加入：tavern-keeper 自動廣播「🍿 陪同觀影 — XX 加入 YY 的觀影場」
-- Primary end：tavern-keeper 自動列出陪同同事 list 提示「primary 結束了, 你們也可以收播」
-- Primary 完全**不必管 companion**，只要照原本流程跑就好
-
-### 薪資 (休閒, 不複雜化)
-
-| 項目 | Primary | Companion |
-|---|---|---|
-| base | 1 token/min | 1 token/min |
-| obs bonus | 2/筆 | 2/筆 |
-| end bonus | 既有 50 | 不發（跟著 primary） |
-
-`--focus` 是純標籤（寫進 audit log）不影響薪資。
-
-### Hard Rules (Lite Mode 適用)
-
-跟單人 stream-watch 同套（Session 等到期才 end / cycle 跟現 cursor 同步 / mirror 自動回 Discord 等）— 不額外加 hard rule。**Companion 完全自由觀賞自己感興趣的片段**（Tim 拍板）— 不必跟 primary cursor 對齊，只要還在 600s ring buffer 內任意時段都可拉。
-
-### v2.0 大規格 (歸檔, 留給未來)
-
-完整的 BSP + Lead Notetaker + 5 specialist tier + depth gate + propose_lead 投票 → 暫存於 tavern plan-final v2.0（seq ~5094）。若未來真要做「合議型 brainstorm primitive」(code review / RFC 討論等場景)，從那撈出來改造。**休閒陪看不該走那套**。
-
-## 📚 相關
-
-- 設計同源鐵律：ring buffer 檔名 index ≠ 時間序（identity layer）/ 禁靜默截斷（overflow 報 lost）/ cross-layer 驗證（讀真圖不只信 stdout）
-- 註：work-session / remote-work / waiter 三種舊 session 模式已於 2026-07-29 全數退役；本 skill 的 start/cycle/end + 結算骨架自成一套。
-- 區別：`ucl-watch-video`（看 YouTube 網路影片抓轉錄稿）≠ 本 skill（看 Tim 即時螢幕直播）
-- 心得分享：`ucl-chat-tavern` Task Share 規範
-- **觀影心得整合：`reading-library` skill**（新 Library 的 work/media/persona/read_session；影集、電影、直播是不同 media，不共用進度或章節）。
-- **🎙 STT 語音轉錄專章：[STT.md](STT.md)**（T-STT-AutoStart, 2026-07-09）— whisper 語音轉文字的完整說明：daemon cache vs live 即時擷取兩條路徑、`start --stt` 開播同步啟動 daemon worker（收播自動還原）、`--stt-lang ja` 看日番必帶、cache 沒起來時 `audio_transcribe.py live 15 --lang ja` fallback、ASR 咬人名的誠實引用守則、user-site import 坑與殘缺 system torch 孤兒。**要用語音感官的場一律先讀該檔。**
-- **🎵 Audio Viz 判讀指南：[docs/Workflows/Audio_Viz_Reading_Guide.md](../../../docs/Workflows/Audio_Viz_Reading_Guide.md)** — montage 上的右下角 / 底部 stereo spectrogram 怎麼讀（顏色→聲音對應、L/R 通道、peak hold、靜音/飽和判讀）。觀戰評論要提到音訊狀態時必看，是 agent 沒耳朵時的補充感官 modality。
+| 怎麼操作 Cmd、起始步驟（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md` |
+| 六步全參數／窗口演算法／session schema／計酬／blocked 全表（**維護用，平常不用讀**） | `ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Reference.md` |
+| 設計沿革與拍板（為什麼沒有 end／為什麼夾感官水位） | `ucl_core:Docs~/zh-Hant/Plan/Plan_StreamWatch_Cmd.md` |
+| 觀影心得寫進 Library | `reading-library` skill |

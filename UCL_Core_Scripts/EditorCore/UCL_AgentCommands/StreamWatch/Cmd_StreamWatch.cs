@@ -1193,6 +1193,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             catch (Exception e) { oNote = $"讀 _config.json 失敗：{e.Message}（視為未錄影）"; return false; }
         }
 
+        // ===========================================================
+        // 區塊：保存期 —— **名目上限**與**現在真的有多少**是兩個數
+        // 物理意義：名目＝`max_frames / fps`（兩者都讀後台設定 `_config.json`，不寫死 ——
+        //          舊 skill 寫死 600s 而實際是 2400s，差四倍，還拿那個數去教間隔紀律）。
+        //          但名目**不是上限，也不是下限** —— 它只是設定值的換算，兩個方向都會失準：
+        //          ① 剛開播時 buffer 沒滿 ⇒ 實有遠小於名目（開播前 N 分鐘內「可回看 40 分鐘」是假的）
+        //          ② buffer 滿了但**實際擷取速率低於設定 fps** ⇒ 同樣張數涵蓋更長時間，實有反而大於名目
+        //             （2026-08-15 首次雙印就撞到：名目 2400s、實有 2472s / 2400 張）。
+        //          ⇒ 名目回答「設定要留多久」，實有回答「現在真的回得去多久」。要後者就別看前者。
+        // 數值影響：實有＝磁碟上最舊 frame 到現在的秒數（讀 mtime，不用檔案數推算 ——
+        //          daemon 重啟／手動清檔都會讓「檔案數 × fps」跟真實時間分家）。
+        // 邊界：讀不到就把**原因**印出來（壞要往吵的方向壞）；不得只印「讀取失敗」。
+        // ===========================================================
         static void AppendRetentionLine(StringBuilder ioR)
         {
             try
@@ -1202,9 +1215,30 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 int aMax = aJd.Contains("max_frames") ? int.Parse(aJd["max_frames"].ToString()) : 0;
                 int aFps = aJd.Contains("fps") ? int.Parse(aJd["fps"].ToString()) : 1;
                 if (aFps <= 0) aFps = 1;
-                ioR.AppendLine($"- 保存期   : {aMax / aFps}s（{aMax} frames / {aFps} fps —— **讀自 _config.json，不寫死**）");
+                string aHave = ActualBufferSpan();
+                ioR.AppendLine($"- 保存期   : 名目 {aMax / aFps}s（{aMax} frames / {aFps} fps，**讀自後台設定不寫死**）"
+                             + (string.IsNullOrEmpty(aHave) ? "" : $"｜{aHave}"));
             }
-            catch { ioR.AppendLine("- 保存期   : (讀取失敗)"); }
+            catch (Exception e) { ioR.AppendLine($"- 保存期   : ⚠ 讀取失敗（{e.Message}）—— **別把它當成沒有上限**"); }
+        }
+
+        /// <summary>磁碟上最舊 frame 到現在 ＝ 現在真的回得去多久。讀不到回空字串（由呼叫端決定怎麼說）。</summary>
+        static string ActualBufferSpan()
+        {
+            try
+            {
+                var aDir = new DirectoryInfo(Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "frames"));
+                if (!aDir.Exists) return "";
+                DateTime aOldest = DateTime.MaxValue; int aN = 0;
+                foreach (var f in aDir.GetFiles("*.jpg"))
+                {
+                    aN++;
+                    if (f.LastWriteTime < aOldest) aOldest = f.LastWriteTime;
+                }
+                if (aN == 0) return "**buffer 空**（磁碟上 0 張 frame）";
+                return $"實有 {(DateTime.Now - aOldest).TotalSeconds:F0}s（{aN} 張，最舊 {aOldest:HH:mm:ss}）";
+            }
+            catch { return ""; }
         }
 
         // ===========================================================

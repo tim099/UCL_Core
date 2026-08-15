@@ -881,6 +881,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             bool quiet = string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase);
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
             LastPostSeq = seq;   // in-process 呼叫端（op=share 等）由此取回 —— 見欄位註解
+            // 區塊職責：把剛寫進去的 seq 回報給 caller（out-of-process）。
+            // 物理意義：agent 發完文拿不到自己的 seq，就只能**用數的**；而 git_commit 的自動公告
+            //          會在兩人回合之間吃掉號碼 ⇒ 手數必漂，漂掉之後每一則 `↩seq=` 都長得完全正常
+            //          （2026-08-15 實測：summit 與 basecamp 在同一討論串各兩筆指錯）。
+            // ⚠ 在**寫入的當下** push，不是事後去撈 LastPostSeq —— 那顆 static 的壽命只到本流程內，
+            //   而單一 cmd 內本方法可能跑不只一次（:2355 task_done→share）。push 讓那個競態不存在。
+            //   同名多筆會各自出現在 result 的 values 陣列裡（刻意不合併，見 ReportOutputValue 註解）。
+            UCL_AgentCommandRunner.ReportOutputValue("post_seq", seq.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue("post_room", roomId ?? "");
 
             // R7 (T07 chat-flow-robust) — 每次發言自動更新 sender presence（status=active + current_room）
             // 物理意義：跟 R7 mention parser + cross-channel notify 配套 — 查 presence.current_room 提示對方來哪個房

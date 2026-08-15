@@ -622,6 +622,15 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (existing == null) existing = new JsonData();
 
+                // 區塊職責：`enabled` 翻轉時**戳一個顯式時刻**（`enabled_changed_at`）。
+                // 物理意義：下游（Cmd_StreamWatch 結算）要知道「錄影是什麼時候停的」，
+                //          而不是「我什麼時候發現它停了」——兩者差多久，取決於 agent 多久才回來跑 cycle。
+                // 🩸 2026-08-15 實測：錄影停於 21:10:02，agent 21:16 才回來收 ⇒ 付到 21:14（多付 1 token）。
+                // ⚠ 不可改用檔案 mtime 推論：任何一個設定被改都會動 mtime，那是**推論不是讀數**
+                //   （同 Plan §2.2「只認顯式欄位」）。
+                bool aPrevEnabled = existing.Contains("enabled") && (bool)existing["enabled"];
+                if (aPrevEnabled != m_Enabled)
+                    existing["enabled_changed_at"] = new JsonData(System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
                 existing["enabled"] = new JsonData(m_Enabled);
                 existing["fps"] = new JsonData(m_Fps);
                 existing["max_frames"] = new JsonData(m_MaxFrames);

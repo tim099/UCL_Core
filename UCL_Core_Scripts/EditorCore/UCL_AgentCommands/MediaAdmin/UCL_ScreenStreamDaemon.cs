@@ -362,6 +362,13 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             }
         }
 
+        /// <summary>
+        /// 對外公開的 python 解析（給同層其他 supervisor 用，例如 <see cref="UCL_SttWorkerSupervisor"/>）。
+        /// ⚠ 刻意共用同一支解析：兩個 supervisor 各自找 python，會出現「一顆用 3.10 一顆用 3.12」
+        /// 而症狀是其中一邊套件缺失 —— 那種故障查起來像環境問題，其實是**兩把尺**。
+        /// </summary>
+        public static string ResolvePythonPublic() => ResolvePython();
+
         static string ResolvePython()
         {
             // 優先順序: PATH 內 python → python3 (跑 --version 驗證可用)

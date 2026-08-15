@@ -922,20 +922,13 @@ def main_loop() -> int:
     ocr_pool = None
     last_ocr_enabled = False
     last_ocr_band = None   # T-OCR-AutoRestart: (y_pct, h_pct, min_conf, workers) 快照, 變更→自動重起 pool
-    # T-STT-Cache — STT worker lifecycle 跟 stt_enabled 同步 (對偶 ocr_pool)
-    stt_worker = None
-    last_stt_enabled = False
     # T-STT-AutoRestart (Tim 2026-07-20): worker 運行中的 (model, lang, prompt) 快照 —
     #   config 任一項被改 → 自動 stop + 重起套用, 取代舊版「只 log WARN 等人工 toggle」的靜默失效設計
     #   (血證: 換片後 stt_lang/stt_prompt 殘留上一場, whisper 幻聽出舊片人名)
-    last_stt_cfg = ("", "", "")
     # T-STT-Watchdog (2026-07-27 靜默殭屍事故) — worker 產出停滯偵測 state
     # 物理意義: 擷取失敗重試迴圈 (audio_transcribe._loop 空音訊分支) thread 不死,
     #          下方「dead 偵測」(要求 thread 已死) 永遠不觸發 → STT 靜默停擺 2h 無任何警訊。
     #          改追 chunk_count 水位: 停滯超過門檻 = 殭屍, 不管 thread 死活。
-    stt_last_chunk_count = -1     # 上次看到的 chunk 水位 (-1 = 尚無 worker)
-    stt_last_progress_ts = 0.0    # 水位最後推進時刻
-    stt_zombie_restarts = 0       # 連續殭屍重起次數 (有產出即歸零; ≥3 升級 ERROR)
     try:
         from screenstream_audio_viz import (
             AudioCapture,
@@ -1077,6 +1070,10 @@ def main_loop() -> int:
                     lock_content = STOP_LOCK_PATH.read_text(encoding="utf-8", errors="ignore").strip()
                     log(f"⛔ stop.lock detected → forcing enabled=false. reason: {lock_content[:200]}")
                     cfg["enabled"] = False
+                    # 顯式戳停止時刻 — 下游結算要的是「什麼時候停的」, 不是「什麼時候被發現的」。
+                    # (對偶: UCL_ScreenStreamPage 在 toggle 翻轉時寫同一個欄位。)
+                    cfg["enabled_changed_at"] = (
+                        datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
                     save_config(cfg)
                     STOP_LOCK_PATH.unlink()
                     log("stop.lock consumed (file removed)")
@@ -1204,114 +1201,13 @@ def main_loop() -> int:
                     ocr_pool = None
                     last_ocr_enabled = False  # 允許 next toggle 重 init
 
-            # T-STT-Cache (Quest T07, kotoko 2026-07-05) — STT worker lifecycle 跟 stt_enabled toggle 同步
-            # 物理意義: toggle on → 起 SttCacheWorker (自開 loopback 連續錄 chunk 轉錄寫 stt cache);
-            #          off → stop 釋放 thread + 卸 whisper。
-            # 數值影響: whisper GPU 常駐 (small ~460MB VRAM); fail-soft — 依賴缺只 log WARN, 不影響截圖主流程。
-            curr_stt_enabled = bool(cfg.get("stt_enabled", False))
-            # T-STT-AutoRestart (Tim 2026-07-20) — worker 運行中偵測 (model, lang, prompt) 任一改變 →
-            #   自動 stop 讓下方 enabled-transition 分支以新設定重起, 消滅「改設定沒 toggle = 靜默沿用舊值」整族 bug。
-            # 物理意義: worker 的 model/lang/prompt 綁建構子生命週期, 中途不可熱改 — 故設定變更 = 必須換一顆 worker。
-            # 數值影響: 重起成本 = 卸載+重載 whisper model (~數秒), 只在設定真的變了才發生; chunk 銜接損失 ≤1 chunk。
-            curr_stt_cfg = (
-                str(cfg.get("stt_model", "small")),
-                str(cfg.get("stt_lang") or ""),
-                str(cfg.get("stt_prompt") or "").strip(),
-            )
-            if stt_worker is not None and curr_stt_cfg != last_stt_cfg:
-                log(f"stt 設定改變 → 自動重起 worker 套用 (model={curr_stt_cfg[0]}, lang='{curr_stt_cfg[1]}', "
-                    f"prompt='{curr_stt_cfg[2][:30]}')")
-                try:
-                    stt_worker.stop()
-                except Exception as e:
-                    log(f"stt worker stop fail (auto-restart): {e}", "WARN")
-                stt_worker = None
-                last_stt_enabled = False   # 强制走下方 enabled-transition 的啟動分支重起
-            if curr_stt_enabled != last_stt_enabled:
-                if curr_stt_enabled:
-                    try:
-                        from audio_transcribe import SttCacheWorker, is_available as _stt_avail, init_error as _stt_err
-                        if not _stt_avail():
-                            log(f"stt worker start skip (whisper 不可用): {_stt_err()}", "WARN")
-                            stt_worker = None
-                        else:
-                            # progress_cb: 每寫一個 chunk 記一筆 daemon log (每 5 chunk 印一次避免洗版)
-                            def _stt_progress(n, n_segs, end_ep):
-                                if n % 5 == 1:
-                                    log(f"stt cache: {n} chunk 已寫 (最新 {n_segs} 段)")
-                            _stt_prompt = str(cfg.get("stt_prompt") or "").strip()
-                            stt_worker = SttCacheWorker(
-                                STT_CACHE_DIR,
-                                model_size=str(cfg.get("stt_model", "small")),
-                                language=(cfg.get("stt_lang") or None),
-                                chunk_sec=float(cfg.get("stt_chunk_sec", 15)),
-                                # 靜音幻覺防治門檻（Tim 2026-08-01 QA 可調）
-                                rms_gate=float(cfg.get("stt_rms_gate", 0.005)),
-                                no_speech_max=float(cfg.get("stt_no_speech_max", 0.6)),
-                                logprob_min=float(cfg.get("stt_logprob_min", -1.0)),
-                                progress_cb=_stt_progress,
-                                prompt=_stt_prompt,
-                                # T-STT-Watchdog: worker 內部失敗 (擷取炸/恢復) 直通 daemon log, 禁靜默
-                                warn_cb=lambda m: log(m, "WARN"),
-                            )
-                            stt_worker.start()
-                            # T-STT-AutoRestart: 記下這顆 worker 實際吃到的設定快照, 供上方變更偵測比對
-                            last_stt_cfg = curr_stt_cfg
-                            # T-STT-Watchdog: 重置停滯計時 (新 worker 從 0 起算)
-                            stt_last_chunk_count = stt_worker.chunk_count
-                            stt_last_progress_ts = time.time()
-                            _pnote = f", prompt='{_stt_prompt[:40]}…'" if _stt_prompt else ""
-                            log(f"stt cache worker started (model={stt_worker.model_size}, "
-                                f"lang='{cfg.get('stt_lang') or ''}', chunk={stt_worker.chunk_sec}s{_pnote})")
-                    except Exception as e:
-                        log(f"stt worker start fail: {e}", "WARN")
-                        stt_worker = None
-                else:
-                    if stt_worker is not None:
-                        try:
-                            stt_worker.stop()
-                            log("stt cache worker stopped")
-                        except Exception as e:
-                            log(f"stt worker stop fail: {e}", "WARN")
-                        stt_worker = None
-                last_stt_enabled = curr_stt_enabled
-            # STT worker 早死偵測 (擷取/模型失敗) — 印一次 warn 後關掉允許重 toggle
-            if stt_worker is not None and stt_worker.error() and (
-                    stt_worker._thread is None or not stt_worker._thread.is_alive()):
-                log(f"stt worker dead (will fail-soft): {stt_worker.error()}", "WARN")
-                stt_worker = None
-                last_stt_enabled = False
-            # T-STT-Watchdog (2026-07-27) — 殭屍偵測: thread 活著但 chunk 產出停滯。
-            # 物理意義: 上方 dead 偵測只抓「thread 已死」; 擷取失敗重試迴圈 thread 永遠活著 →
-            #          音訊堆疊 process 級壞死時 STT 靜默停擺 (血證: 2026-07-27 停擺 2h 零警訊)。
-            #          停滯門檻 = max(60s, 4×chunk_sec): 正常節奏每 chunk_sec 必有一筆, 4 倍容忍轉錄慢。
-            # 數值影響: 殭屍 → 重起 worker (model 有 module 級快取, 重起成本低; capture_live 每 chunk
-            #          重挑 default speaker, 裝置暫時性失效可自癒)。連續 3 次重起仍無產出 → 升級 ERROR
-            #          (疑似 process 級壞死, 只有重啟 daemon 救得回); 之後每 10 次才再叫, 防洗版。
-            if stt_worker is not None and stt_worker._thread is not None and stt_worker._thread.is_alive():
-                _now_ts = time.time()
-                if stt_worker.chunk_count != stt_last_chunk_count:
-                    stt_last_chunk_count = stt_worker.chunk_count
-                    stt_last_progress_ts = _now_ts
-                    stt_zombie_restarts = 0
-                elif _now_ts - stt_last_progress_ts > max(60.0, stt_worker.chunk_sec * 4):
-                    stt_zombie_restarts += 1
-                    _stall = _now_ts - stt_last_progress_ts
-                    _werr = stt_worker.error() or "(worker 未記錯誤)"
-                    if stt_zombie_restarts <= 3 or stt_zombie_restarts % 10 == 0:
-                        _esc = (" — 連續多次重起無效, 疑似 process 級音訊堆疊壞死, 需重啟 daemon 才能恢復"
-                                if stt_zombie_restarts >= 3 else "")
-                        log(f"stt watchdog: worker 活著但 {_stall:.0f}s 無 chunk 產出 "
-                            f"(第 {stt_zombie_restarts} 次殭屍重起); 最後錯誤: {_werr}{_esc}",
-                            "ERROR" if stt_zombie_restarts >= 3 else "WARN")
-                    try:
-                        stt_worker.stop()
-                    except Exception as e:
-                        log(f"stt watchdog stop fail: {e}", "WARN")
-                    stt_worker = None
-                    last_stt_enabled = False   # 走上方 enabled-transition 啟動分支重起
-                    stt_last_progress_ts = _now_ts
-            # (舊版 T-STT-Prompt「改了沒重起只 log WARN」偵測已由上方 T-STT-AutoRestart 自動重起機制取代)
+            # ── STT 已移交 C# 端管理 (2026-08-15, Tim 拍板「python 儘量減少耦合, 都透過 C# 統一管理」) ──
+            # 物理意義: STT 現在是**獨立行程** (`audio_transcribe.py serve`), 由 C# 的
+            #   UCL_SttWorkerSupervisor 起停/依設定重起/依**產物水位**判定停滯重起。
+            #   本 daemon 不再碰 STT — 兩邊都起 worker 會併寫同一份 stt cache, 而那不會報錯。
+            # ⚠ 原本長在這裡的三段 (T-STT-Cache 生命週期 / T-STT-AutoRestart / T-STT-Watchdog)
+            #   一併移除, **不保留停用版**: 留著就是第二個決策點, 而「誰重起的」會永遠查不清楚。
+            #   歷史與血證 (2026-07-27 靜默殭屍 2h) 見 git history 與 Plan_StreamWatch_Cmd.md。
 
             # T-AudioLog (Tim 2026-06-08, summit ship) — 每 N frame 觸發 dump audio log
             # 物理意義: 給 screenstream_montage.py 載入後可按 cycle 區間 slice 渲染 audio strip
@@ -1347,9 +1243,7 @@ def main_loop() -> int:
         if ocr_pool is not None:
             try: ocr_pool.stop()
             except Exception: pass
-        if stt_worker is not None:
-            try: stt_worker.stop()
-            except Exception: pass
+        # (STT 已移交 C# UCL_SttWorkerSupervisor 管理 — 本 daemon 沒有 stt_worker 可收)
         cleanup_pid()
 
 

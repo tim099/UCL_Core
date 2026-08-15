@@ -703,7 +703,31 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   正是 Plan §6 點名要防的那條。2026-08-15 首次結算實踩：
             //   start 17:06 / ends_at 17:15 / 中斷發現於 17:20 ⇒ 誤算 14 分（應為 8 分），多發 1 token。
             //   ⇒ 兩者取小：沒看的不能領，過了截止的也不能領。
-            DateTime aPaidUntil = iByInterrupt ? iNow : (iEnd ?? iNow);
+            // ⚠ 而中斷路徑上，`iNow` 是**發現時刻**不是停止時刻 —— 兩者差多久取決於 agent 多久才回來。
+            //   🩸 2026-08-15 實測：錄影停於 21:10:02，我 21:16:33 才回來收 ⇒ 付到 ends_at 21:14（多付 1 token）。
+            //   ⇒ 改讀寫入端戳的顯式欄位 `enabled_changed_at`；讀不到就退回發現時刻並**在回傳檔明說那是上限估計**
+            //     （不得靜默用估計值當事實）。
+            string aStopNote = "";
+            DateTime aPaidUntil;
+            if (iByInterrupt)
+            {
+                DateTime? aStopped = RecordingStoppedAt();
+                bool aUsable = aStopped.HasValue && aStart.HasValue
+                               && aStopped.Value >= aStart.Value && aStopped.Value <= iNow;
+                if (aUsable)
+                {
+                    aPaidUntil = aStopped.Value;
+                    aStopNote = $"（錄影停於 {aStopped.Value:HH:mm:ss}，**讀自 `enabled_changed_at`**；發現於 {iNow:HH:mm:ss}）";
+                }
+                else
+                {
+                    aPaidUntil = iNow;
+                    aStopNote = aStopped.HasValue
+                        ? $"（⚠ `enabled_changed_at`={aStopped.Value:HH:mm:ss} 落在本場之外，不採用 —— 付到發現時刻，**上限估計**）"
+                        : "（⚠ 讀不到 `enabled_changed_at` —— 付到發現時刻，**這是上限估計不是實際停止時刻**）";
+                }
+            }
+            else aPaidUntil = iEnd ?? iNow;
             if (iEnd.HasValue && aPaidUntil > iEnd.Value) aPaidUntil = iEnd.Value;
             int aPaidMin = aStart.HasValue ? (int)Math.Max(0, (aPaidUntil - aStart.Value).TotalMinutes) : 0;
 
@@ -772,6 +796,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             AtomicWrite(SessionPath(iPersona), ioS.ToJsonBeautify());
 
             ioR.AppendLine($"- 本場統計: cycles={ReadInt(ioS, "cycles")}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
+            if (!string.IsNullOrEmpty(aStopNote))
+                ioR.AppendLine($"- 計費上限: 付到 {aPaidUntil:HH:mm:ss} {aStopNote}");
             ioR.AppendLine($"- 結算    : {aPayNote}");
             ioR.AppendLine($"- 收播公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             ioR.AppendLine($"- 場次紀錄: seq **{ReadInt(ioS, "start_seq")} → {aSeq}**（匯出區間，`tavern` 房）");
@@ -1176,6 +1202,25 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 return (aOcr, aStt);
             }
             catch { return (false, false); }
+        }
+
+        /// <summary>
+        /// 錄影最後一次 enabled 翻轉的時刻（寫入端戳的顯式欄位 `enabled_changed_at`）。
+        /// <para>⚠ 它是「翻轉」時刻，不專指「停止」—— 呼叫端必須自己確認現在 enabled=false
+        /// 且該時刻落在本場區間內才可採用；不可假設它一定是停止（開播也會戳）。</para>
+        /// 讀不到回 null —— 由呼叫端決定怎麼說，不在這裡塞預設值當事實。
+        /// </summary>
+        static DateTime? RecordingStoppedAt()
+        {
+            try
+            {
+                string aCfg = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
+                if (!File.Exists(aCfg)) return null;
+                var aJd = JsonData.ParseJson(File.ReadAllText(aCfg, Encoding.UTF8));
+                if (aJd == null || !aJd.Contains("enabled_changed_at")) return null;
+                return ParseIsoLocal(aJd["enabled_changed_at"].ToString());
+            }
+            catch { return null; }
         }
 
         static bool IsRecordingEnabled(out string oNote)

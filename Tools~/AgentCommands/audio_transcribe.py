@@ -826,6 +826,21 @@ def _main(argv: list[str]) -> int:
     p_rc = sub.add_parser("read-cache")
     p_rc.add_argument("after", type=float, nargs="?", default=0.0)
     p_rc.add_argument("until", type=float, nargs="?", default=0.0)
+    # serve: 常駐模式 — 由 C# (UCL_SttWorkerSupervisor) 起停與監督, 本行程只負責「一直轉錄」。
+    # 物理意義: 把原本寄生在 screenstream_daemon 內的 STT thread 拉成獨立行程 ——
+    #   daemon 那顆對外只有一個 PID, C# 看得到的只有「活著」, 而 2026-07-27 的故障是
+    #   「活著而且兩小時什麼都沒產出」。獨立行程 + C# 讀產物水位 = 那種故障不再靜默。
+    # ⚠ 本模式**不做自我重起**: 停滯判定與重起是 C# 的職責 (單一 supervisor, 不要兩層都在猜)。
+    #   本行程只做兩件事: 轉錄, 以及把心跳印在 stdout 讓人看得到。
+    p_sv = sub.add_parser("serve")
+    p_sv.add_argument("--model", default=DEFAULT_MODEL)
+    p_sv.add_argument("--lang", default=None)
+    p_sv.add_argument("--prompt", default=None)
+    p_sv.add_argument("--chunk", type=float, default=DEFAULT_CHUNK_SEC)
+    p_sv.add_argument("--retention", type=float, default=DEFAULT_CACHE_RETENTION_SEC)
+    p_sv.add_argument("--rms-gate", type=float, default=DEFAULT_RMS_GATE)
+    p_sv.add_argument("--no-speech-max", type=float, default=DEFAULT_NO_SPEECH_MAX)
+    p_sv.add_argument("--logprob-min", type=float, default=DEFAULT_LOGPROB_MIN)
     args = ap.parse_args(argv)
 
     if args.cmd == "check":
@@ -841,6 +856,41 @@ def _main(argv: list[str]) -> int:
         if not ok:
             print(f"init_error: {init_error()}")
         return 0 if ok else 1
+
+    if args.cmd == "serve":
+        # 起手先把「我拿到什麼設定」印出來 —— 由 C# 傳進來的參數若被誤解, 這一行是唯一的對帳點。
+        print(f"[stt-serve] model={args.model} lang={args.lang or '(auto)'} chunk={args.chunk}s "
+              f"retention={args.retention}s prompt={'(有)' if (args.prompt or '').strip() else '(無)'}",
+              flush=True)
+        if not is_available():
+            # 壞要往吵的方向壞: 環境沒裝好就**立刻非零退出**, 讓 C# 當場看到失敗,
+            # 而不是起一個永遠不產出的行程 (那正是「活著而且什麼都沒做」)。
+            print(f"[stt-serve] ✗ whisper/torch 不可用: {init_error()}", flush=True)
+            return 2
+        worker = SttCacheWorker(
+            model_size=args.model, language=args.lang, chunk_sec=args.chunk,
+            retention_sec=args.retention, prompt=args.prompt,
+            rms_gate=args.rms_gate, no_speech_max=args.no_speech_max,
+            logprob_min=args.logprob_min,
+            progress_cb=lambda n, segs, end_ep: print(
+                f"[stt-serve] chunk#{n} segs={segs} end={time.strftime('%H:%M:%S', time.localtime(end_ep))}",
+                flush=True),
+            warn_cb=lambda m: print(f"[stt-serve] ⚠ {m}", flush=True),
+        )
+        worker.start()
+        print(f"[stt-serve] started (device={_pick_device()}) — 由 C# 端負責停止與重起", flush=True)
+        try:
+            while True:
+                time.sleep(1.0)
+                if worker.error():
+                    print(f"[stt-serve] ✗ worker error: {worker.error()}", flush=True)
+                    return 3
+        except KeyboardInterrupt:
+            pass
+        finally:
+            worker.stop()
+        print(f"[stt-serve] stopped (chunks={worker.chunk_count})", flush=True)
+        return 0
 
     if args.cmd == "live":
         print(f"擷取 {args.seconds}s 系統音訊 ...")

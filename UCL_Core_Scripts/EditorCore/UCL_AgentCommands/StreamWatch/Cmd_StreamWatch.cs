@@ -43,7 +43,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             "cycle 自己合成縮圖牆並判定到期/中斷；**沒有 end —— agent 不能自己結束 session**。";
 
         public override string ArgsSchema =>
-            "step=start|cycle|observe|note (必填) | persona=<name> — 全步驟必填 | " +
+            "step=start|join|cycle|observe|note (必填) | persona=<name> — 全步驟必填 | " +
             "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問） | " +
             "body=<內文> — observe/note 必填（長文走 --arg-file） | " +
             "回傳落檔 letters/<persona>/_streamwatch_<step>.md（路徑隨 run_cmd verdict 印出）";
@@ -72,8 +72,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "cycle": await StepCycle(aPersona, token); return;
                 case "observe": await StepObserve(aPersona, GetArg(args, "body", ""), token); return;
                 case "note": await StepNote(aPersona, GetArg(args, "body", ""), token); return;
+                case "join": await StepJoin(aPersona, token); return;
                 default:
-                    throw new Exception($"[StreamWatch] step 必為 start|cycle|observe|note（join 施工中，got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    throw new Exception($"[StreamWatch] step 必為 start|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
         }
 
@@ -257,8 +258,22 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             var (aOcrOn, aSttOn) = ReadSensorFlags();
+            double aWatermark = SensorWatermark(aOcrOn, aSttOn, out string aWmNote);
             DateTime aRunStart = DateTime.Now;
-            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aOutPath, aOcrOn, aSttOn, iToken);
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aWatermark, aOutPath, aOcrOn, aSttOn, iToken);
+            if (!aOk && (aErr ?? "").Contains("無 frame 命中"))
+            {
+                // 不是失敗，是**感官水位還沒追上上一輪的 cursor** —— 等一下再來就有了。
+                aR.AppendLine("## 本輪無新素材（不是錯誤）");
+                aR.AppendLine($"- 感官水位: {aWmNote}　←　尚未越過上一輪的 cursor");
+                aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
+                aR.AppendLine();
+                aR.AppendLine("## next");
+                aR.AppendLine($"1. 等 30–60 秒再跑一次 step=cycle（不必改任何參數）。");
+                WritePayload(aPath, aR.ToString());
+                Debug.Log($"[StreamWatch] step=cycle 感官水位未追上 → {aPath}");
+                return;
+            }
             if (!aOk)
             {
                 aR.AppendLine("## blocked");
@@ -309,6 +324,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 格數     : {aInfo.Tiles}　**每格 ≈{aInfo.PerTileSeconds:F0}s**　← 落後越多每格越粗，丟的是細節不是時間");
             AppendRetentionLine(aR);
             aR.AppendLine($"- 感官     : OCR {(aOcrOn ? "開" : "關")}／STT {(aSttOn ? "開" : "關")}（讀自 _config.json，**不必傳旗標**）");
+            aR.AppendLine($"- 感官水位 : {aWmNote}　←　**窗口尾端夾在這裡**：看的是已辨識完的段落，不是最新畫面");
             aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
             aR.AppendLine();
@@ -318,6 +334,112 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"3. 之後再跑 step=cycle —— **收工不用你判斷**，時間到或 Tim 停錄影時這一步會告訴你。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
+        }
+
+        // ===========================================================
+        // 區塊：step=join — 陪同觀眾（Plan §5）
+        // 物理意義：companion 的正確性條件跟 primary **相反** —— primary 的 gap 是失敗，
+        //          companion 的 gap 是正常（它挑段細看，不負責覆蓋）。
+        //          ⇒ 它**繼承 primary 的 media_id**（一場一個鍵，唯一來源），
+        //            並拿到 primary 至今的評論摘要 ＋ 酒館游標，一進場就在同一個劇情點上。
+        // ⚠ media_id 不由 companion 自己解析：憑印象取 slug 正是製造 work 分裂的那一步。
+        // ===========================================================
+        async UniTask StepJoin(string iPersona, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iPersona, "join");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=join persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            if (!UCL_AwakeningService.IsOnline(iPersona))
+            {
+                Blocked(aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
+                        $"先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
+                throw new Exception($"[StreamWatch] step=join blocked：persona 不在線（詳見 {aPath}）");
+            }
+
+            var aOwn = LoadSession(iPersona);
+            if (aOwn != null && ReadBool(aOwn, "active"))
+            {
+                Blocked(aR, aPath, "你已經有進行中的觀影 session —— 不疊開",
+                        "跑 step=cycle 繼續你自己那場");
+                throw new Exception($"[StreamWatch] step=join blocked：已有 session（詳見 {aPath}）");
+            }
+
+            // 找一個進行中的 primary（不是自己）
+            JsonData aPrimary = null; string aPrimaryPersona = "";
+            try
+            {
+                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
+                if (Directory.Exists(aDir))
+                {
+                    foreach (var f in Directory.GetFiles(aDir, "*.json"))
+                    {
+                        string aWho = Path.GetFileNameWithoutExtension(f);
+                        if (aWho == iPersona) continue;
+                        var aJd = JsonData.ParseJson(File.ReadAllText(f, Encoding.UTF8));
+                        if (aJd == null || !ReadBool(aJd, "active")) continue;
+                        if (ReadStr(aJd, "role") != "primary") continue;
+                        aPrimary = aJd; aPrimaryPersona = aWho; break;
+                    }
+                }
+            }
+            catch { }
+
+            if (aPrimary == null)
+            {
+                Blocked(aR, aPath, "找不到進行中的主觀影場",
+                        $"自己開一場：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                throw new Exception($"[StreamWatch] step=join blocked：無 primary 場（詳見 {aPath}）");
+            }
+
+            string aMedia = ReadStr(aPrimary, "media_id");
+            string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
+            var aS = new JsonData();
+            aS["persona"] = new JsonData(iPersona);
+            aS["session_id"] = new JsonData(aSessionId);
+            aS["role"] = new JsonData("companion");
+            aS["media_id"] = new JsonData(aMedia);            // ← 繼承，不自己解析
+            aS["parent_session_id"] = new JsonData(ReadStr(aPrimary, "session_id"));
+            aS["parent_persona"] = new JsonData(aPrimaryPersona);
+            aS["start_ts"] = new JsonData(UCL_AwakeningService.NowIso());
+            aS["end_ts"] = new JsonData(ReadStr(aPrimary, "end_ts"));   // 沿用 primary 的截止
+            aS["until_local"] = new JsonData(ReadStr(aPrimary, "until_local"));
+            aS["cursor_epoch"] = new JsonData(ReadDouble(aPrimary, "cursor_epoch"));
+            aS["cycles"] = new JsonData(0);
+            aS["observations"] = new JsonData(0);
+            aS["start_seq"] = new JsonData(0);
+            aS["end_seq"] = new JsonData(0);
+            aS["note_written"] = new JsonData(false);
+            aS["active"] = new JsonData(true);
+            aS["settled_at"] = new JsonData("");
+            aS["end_reason"] = new JsonData("");
+            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+
+            var aBody = new StringBuilder();
+            aBody.AppendLine($"🍿 [{iPersona} 大小姐] 加入觀影 — 陪同 @{aPrimaryPersona} 的場｜媒材 `{aMedia}`");
+            aBody.AppendLine();
+            aBody.AppendLine("陪同觀眾**挑段細看**，主劇情由主觀影者在酒館帶 —— gap 對我是正常的，不是漏看。");
+            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-join", iToken);
+            if (aSeq > 0) { aS["start_seq"] = new JsonData(aSeq); AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify()); }
+
+            aR.AppendLine($"- session : `{aSessionId}`（role=**companion**）");
+            aR.AppendLine($"- 陪同    : @{aPrimaryPersona}（{ReadStr(aPrimary, "session_id")}）");
+            aR.AppendLine($"- media   : `{aMedia}`　←　**繼承 primary，不自己解析**（一場一個鍵）");
+            aR.AppendLine($"- 截止    : {ReadStr(aPrimary, "until_local")}（沿用 primary）");
+            aR.AppendLine($"- primary 進度: 已 {ReadInt(aPrimary, "cycles")} 輪／{ReadInt(aPrimary, "observations")} 筆評論");
+            aR.AppendLine($"- 加入公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
+            aR.AppendLine();
+            aR.AppendLine("## 你的不變式跟 primary **不一樣**");
+            aR.AppendLine("- primary：連續覆蓋，gap ＝ 失敗");
+            aR.AppendLine("- **你（companion）：自由取樣，gap ＝ 正常** —— 挑段細看，主劇情靠酒館追");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. 取素材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"2. 讀主觀影者的劇情線：run_cmd.py run Tavern --arg op=read --arg room=tavern --arg limit=20");
+            aR.AppendLine($"3. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=join {iPersona} → 陪同 {aPrimaryPersona} media={aMedia}");
         }
 
         // ===========================================================
@@ -593,13 +715,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ async 化讓 out 參數消失 ⇒ 回 tuple；**呼叫端漏接 err 就是靜默失敗**，所以失敗必落回傳檔。
         // ===========================================================
         static async UniTask<(bool ok, string stdout, string err)> RunMontageAsync(
-            string iScript, double iCursor, string iOutPath, bool iOcr, bool iStt, CancellationToken iToken)
+            string iScript, double iCursor, double iBefore, string iOutPath, bool iOcr, bool iStt, CancellationToken iToken)
         {
             try
             {
                 var aArgs = new StringBuilder();
                 aArgs.Append("\"").Append(iScript).Append("\" make");
                 if (iCursor > 0) aArgs.Append(" --after-mtime ").Append(iCursor.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                if (iBefore > 0) aArgs.Append(" --before-mtime ").Append(iBefore.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 aArgs.Append(" --max-tiles ").Append(MAX_TILES);
                 // 區塊職責：感官旗標**不由呼叫端記得帶**（Tim 2026-08-15）——
                 // 物理意義：OCR/STT 的開關已經在 _config.json 裡（`ocr_enabled` / `stt_enabled`），
@@ -680,6 +803,66 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 區塊：ScreenStream 狀態 —— **只認顯式欄位**
         // ⚠ 不用 frame 新鮮度推論（Plan §2.2 的血證）
         // ===========================================================
+        // ===========================================================
+        // 區塊：感官水位 —— 看「已經辨識完的那一段」，不是「最新的那一段」（Tim 2026-08-15）
+        // 物理意義：OCR / STT 是**落後於 frame** 的（2026-08-15 實測：OCR ~1s、STT ~29s）。
+        //          窗口若追到最新幀，尾端那幾格必然沒有字幕與語音 —— 而 sidecar 只是**少那幾行**，
+        //          於是「這一格沒有語音」與「這一格還沒被辨識」在輸出上**同形**
+        //          （2026-08-15 首場實踩：我花了幾分鐘才分出 STT 是沒接上還是沒內容）。
+        // ⇒ 把窗口尾端夾在 min(OCR 水位, STT 水位) 上：**看到的每一格都有完整感官資料。**
+        // 數值影響：代價是畫面延遲數十秒 —— 觀影不是即時監控，看得清楚比看得即時重要。
+        // 邊界：感官關閉時該項不參與取小；兩項都關 ⇒ 回 0（不夾，行為同從前）。
+        // ===========================================================
+        static double SensorWatermark(bool iOcr, bool iStt, out string oNote)
+        {
+            double aWm = 0; var aParts = new List<string>();
+            try
+            {
+                string aRoot = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream");
+                if (iOcr)
+                {
+                    var aDir = new DirectoryInfo(Path.Combine(aRoot, "ocr"));
+                    if (aDir.Exists)
+                    {
+                        double aO = 0;
+                        foreach (var f in aDir.GetFiles())
+                        {
+                            double t = ToEpoch(f.LastWriteTimeUtc);
+                            if (t > aO) aO = t;
+                        }
+                        if (aO > 0) { aWm = (aWm <= 0 ? aO : Math.Min(aWm, aO)); aParts.Add($"OCR {FromEpochLocal(aO):HH:mm:ss}"); }
+                    }
+                }
+                if (iStt)
+                {
+                    var aDir = new DirectoryInfo(Path.Combine(aRoot, "stt"));
+                    if (aDir.Exists)
+                    {
+                        double aS2 = 0;
+                        foreach (var f in aDir.GetFiles("stt_*.json"))
+                        {
+                            // 檔名帶 epoch 毫秒 —— 用檔名不用 mtime：那是**內容代表的時刻**，
+                            // mtime 只是它被寫下的時刻，兩者在補寫/搬移時會分家。
+                            string aStem = Path.GetFileNameWithoutExtension(f.Name);
+                            int aUs = aStem.IndexOf('_');
+                            if (aUs >= 0 && long.TryParse(aStem.Substring(aUs + 1), out long aMs))
+                            {
+                                double t = aMs / 1000.0;
+                                if (t > aS2) aS2 = t;
+                            }
+                        }
+                        if (aS2 > 0) { aWm = (aWm <= 0 ? aS2 : Math.Min(aWm, aS2)); aParts.Add($"STT {FromEpochLocal(aS2):HH:mm:ss}"); }
+                    }
+                }
+            }
+            catch { }
+            oNote = aParts.Count > 0 ? string.Join("／", aParts) : "(無 cache，未夾尾端)";
+            return aWm;
+        }
+
+        static double ToEpoch(DateTime iUtc) => (iUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+        static DateTime FromEpochLocal(double iEp) => new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(iEp).ToLocalTime();
+
         /// <summary>讀 _config.json 的感官開關 —— 開著就自動供給，呼叫端不必傳旗標。</summary>
         static (bool ocr, bool stt) ReadSensorFlags()
         {

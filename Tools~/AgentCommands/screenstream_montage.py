@@ -400,6 +400,15 @@ def select_frames(args, all_frames):
     if getattr(args, "after_mtime", None) is not None:
         cutoff = parse_after_mtime(args.after_mtime)
         window = [t for t in all_frames if t[2] > cutoff]  # 嚴格大於: 不重收 cursor 那張
+        # --before-mtime: 夾住窗口**尾端**（2026-08-15 Tim 拍板）
+        # 物理意義: OCR / STT cache 落後於 frame（實測 OCR ~1s、STT ~29s）。窗口追到「現在」
+        #          ⇒ 最後幾格必然沒有字幕與語音，而 sidecar 只是**沒有那幾行**——
+        #          「這一格沒有語音」與「這一格還沒被辨識」在輸出上同形。
+        # ⇒ 讓呼叫端把尾端夾在「感官已跑完」的水位上：看到的每一格都有完整感官資料。
+        # 邊界: 夾完若空窗（水位還沒追上 cursor）→ 回空，呼叫端據此縮短輪詢間隔、不硬產一張沒內容的圖。
+        if getattr(args, "before_mtime", None) is not None:
+            before = parse_after_mtime(args.before_mtime)
+            window = [t for t in window if t[2] <= before]
         return subsample_newest_anchored(window, args)
 
     # last / every 推導 (smart default 只在「啥都沒帶」時生效)
@@ -1230,6 +1239,10 @@ def main():
     pm.add_argument("--after-mtime", default=None,
                     help="watching loop 用: 只收此 cursor 之後的 frame (epoch 秒 或 ISO8601); "
                          "配 --max-tiles 保證每 cycle 首尾接續 0-gap, 並回報 next-cursor")
+    pm.add_argument("--before-mtime", dest="before_mtime", default=None,
+                    help="窗口尾端上限 (epoch 秒 或 ISO8601); 配 --after-mtime 夾出 [after, before] 區間。"
+                         "用途: 把尾端夾在 OCR/STT cache 水位上, 讓每一格都有完整感官資料 "
+                         "(不夾的話追到最新幀, 尾端幾格必然沒字幕沒語音)")
     pm.add_argument("--max-tiles", type=int, default=None,
                     help="格數上限 (配 --after-mtime: 窗口超過則自動抽稀壓到上限內, 圖大小恆定)")
     # 裁切 (互斥)

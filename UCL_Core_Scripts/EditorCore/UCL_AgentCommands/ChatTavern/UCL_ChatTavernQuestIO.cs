@@ -751,10 +751,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>append 一筆 inbox entry（任務 unblock / handoff 等通知）。
         /// T21 — 寫入後若 entry 數 > InboxCapMax → 自動 trim 舊的搬到 _archive.md，留最新 InboxCapKeep。</summary>
-        // 版面（2026-07-29 Tim 拍板精簡）：時間併進標題列、拿掉獨立的 _at 行 —
-        // 每條省一行，掃 inbox 時同螢幕能多看幾條；時間改本機時區（跟 Editor log / Discord 對得起來），
-        // 檔頭 legend 說明一次即可。條目仍以 "## [seq=" 起首 —
-        // tavern_catchup.read_inbox_entries 與 inbox_ack.count_mentions 都錨定這個 prefix，不可改。
+        // 版面沿革（**兩層，別只讀一層**）：
+        //   2026-07-29 Tim 拍板精簡：時間併進標題列、**拿掉**獨立的 `_at` 行 —— 每條省一行，
+        //     掃 inbox 時同螢幕能多看幾條；時間改本機時區（跟 Editor log / Discord 對得起來）。
+        //   2026-08-15 basecamp：`_at` 行**加回來**，與標題列的本地時間並存。
+        //     ⚠ 加回來不是推翻那次精簡的判斷 —— 精簡當時沒有任何東西讀那一行，它確實只是版面。
+        //     是後來通知水位要換成時間戳，才發現**那次拿掉的正好是唯一可當判準的欄位**：
+        //     標題列那個是本地時區、秒精度、可再生的**投影**，跨房不可比。
+        //     ⇒ 現在兩者職責分開：標題列給人看、`_at` 給機器判。
+        // 條目仍以 "## [seq=" 起首 —— tavern_catchup.read_inbox_entries 與
+        // inbox_ack.count_mentions 都錨定這個 prefix，不可改。
         public static void AppendInbox(string roomId, string agentId, int eventSeq, string title, string body)
         {
             EnsureInboxDir(roomId);
@@ -769,6 +775,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 時區顯式標註（crest-001 QA 2026-07-29）：inbox 內新舊格式會並存一段時間，
             // 舊條目是 UTC 的 `_at ...Z_`、新條目是本機時間 — 不標偏移量就會有人把 14:47 當 UTC 讀。
             sb.AppendLine($"## [seq={eventSeq}] {title} ({System.DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zz})");
+            // 區塊職責：權威時間戳 —— 通知已讀水位唯一可比較的欄位。
+            // 物理意義：標題列那個 `(… +08)` 是**本地時區、秒精度、可再生**的投影，不可當判準；
+            //          這一行是 UTC 毫秒，跨房可比。⇒ 兩者並存：一個給人看，一個給機器判。
+            // 數值影響：seq 是 **per-room 編號**（tavern 15000+ vs 側房 109），拿它當跨房水位
+            //          會讓側房的 @ 永遠算不出「新的」—— 那是永久靜默不是延遲
+            //          （2026-08-15 實測 163 筆看不見的 @，六個 persona 全中）。
+            // ⚠ 這一行**曾經存在**，2026-07-29 的版面精簡把它併進標題列時拿掉了；
+            //   那次精簡拿掉的正好是唯一能當水位的欄位，代價七個月後才現形。加回來而不是另發明格式，
+            //   是因為 tavern_catchup 的跳過清單早就認得 `_at `，wake_brief / inbox_ack 只讀標題列
+            //   ⇒ 三個 parser 一支都不用改。既有條目由 inbox_ts_backfill.py 回填（681 筆）。
+            sb.AppendLine($"_at {System.DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}_");
             if (!string.IsNullOrEmpty(body)) { sb.AppendLine(); sb.AppendLine(body); }
             File.AppendAllText(aPath, sb.ToString(), new UTF8Encoding(false));
             // T21 — append 後 lazy trim

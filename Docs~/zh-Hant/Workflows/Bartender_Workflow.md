@@ -1,9 +1,9 @@
 ---
 title: 酒保系統工作流 (Bartender Workflow)
-last_updated: 2026-07-13
+last_updated: 2026-08-15
 status: active
 theme: agent_activity
-summary: 駐留 Unity Editor 內的小型 daemon「酒保 (tavern-keeper)」的完整操作工作流 — 監看 tavern 訊息 + 系統時鐘, 條件命中時以酒保身分自動廣播。涵蓋兩大功能(keyword trigger 留言 / time rule 時間規則)的完整 op API、keyword + target + 時間規則 match 規則、HP penalty 累積廣播細節、agent 自主判斷四情境、與 v1 已知限制。
+summary: 駐留 Unity Editor 內的小型 daemon「酒保 (tavern-keeper)」的完整操作工作流 — 監看 tavern 訊息 + 系統時鐘, 條件命中時以酒保身分自動廣播。涵蓋兩大功能(keyword trigger 留言 / time rule 時間規則)的完整 op API、keyword + target + 時間規則 match 規則、HP penalty 累積廣播細節、agent 自主判斷四情境、與 v1 已知限制；另含四個觀測檔（心跳 / tick 階段 / 停跳台帳 / 慢 tick 相位分解）的分工與「Editor 卡住了卡在哪」的查法。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Bartender
 related:
@@ -161,3 +161,47 @@ Agent 看到下列情境**該主動考慮** Bartender:
 - **HP penalty 廣播但不扣血** — 等 EOV 端 listener 接 (meta.tag=time-penalty)
 - **Editor-only daemon** — Editor 關閉時 daemon 不跑 (v2: Python sidecar daemon)
 - **Substring match** — 無 regex / fuzzy
+- **跨日第一個 tick 很重** — 見下節；初開 Editor 卡住通常是它
+
+---
+
+## 九、觀測檔 — 「Editor 卡住了，卡在哪」怎麼查
+
+daemon 在 `AgentCommands/ChatTavern/bartender/` 下留四個觀測檔（全部 gitignore，屬 ephemeral）。
+**四個檔回答的是不同問題，不可互相取代** —— 挑錯檔會查到空手而回：
+
+| 檔案 | 回答什麼 | 形狀 | 死角 |
+|---|---|---|---|
+| `_heartbeat.txt` | Editor 的 update 迴圈**現在**活不活 | 儀表（每 0.5s 複寫） | 沒有歷史 |
+| `_tick_state.txt` | 酒保 tick **現在**在哪個階段 | 儀表（每階段複寫） | tick 正常結束會改回 `Idle`，**事後查永遠是 Idle** |
+| `_heartbeat_stalls.jsonl` | 剛剛凍了多久 | 紀錄（append，保 10 筆） | 只有 gap 長度，**答不出卡在哪一段** |
+| `_tick_phases.jsonl` | 那次慢 tick 的**相位分解** | 紀錄（append，保 30 筆） | 只在 tick 結束時才寫得出來；Editor 被殺 / 當掉則永遠沒有這一筆 |
+
+> ⚠ **兩個儀表要當場看，兩個紀錄才查得了事後。** 2026-08-15 之前只有前三個，
+> 於是「昨天早上卡三分鐘卡在哪」只能靠人工拿 stall gap 去對結帳檔 mtime 與廣播訊息時間夾區間 ——
+> 那是對帳不是機制。`_tick_phases.jsonl` 就是把那次人工對帳機制化的產物。
+
+### `_tick_phases.jsonl` 怎麼讀
+
+只有**總耗時 ≥ 3000ms** 的 tick 才寫一行（門檻刻意與停跳台帳的 3s 對齊，兩個檔可直接 join 時間）。
+正常 tick 是毫秒級，完全不寫 —— **檔案是空的 / 不存在 = 最近沒有慢 tick**，不是機制壞了。
+
+```bash
+python -c "import json;[print(json.dumps(json.loads(l),ensure_ascii=False,indent=2)) for l in open('AgentCommands/ChatTavern/bartender/_tick_phases.jsonl',encoding='utf-8') if l.strip()]"
+```
+
+每行欄位：`finished_at` / `total_ms` / `cross_day` / `phases[]`，
+其中每個相位帶 `name`、`ms`，以及 **`note`＝這個相位處理的基數**（檔數 / 帳戶數）。
+基數是刻意帶的：**只有時間分不出「單位成本高」還是「量太大」，而兩者的修法完全不同。**
+
+相位名稱對照：`CheckKeywordTriggers` / `CheckTimeRules` 是常態三段的前兩段；
+`overnight.*` 系列（`enter` / `closing` / `load_all_entries` / `exempt_scan` / `charge_loop` / `broadcast`）
+只在 **`cross_day: true`** 那一天出現 —— 那是跨日保管費結算的重路徑，一天只走一次。
+
+### 為什麼跨日那一次特別重
+
+`overnight.load_all_entries` 是整個 tick 唯一 **O(全部歷史)** 的動作：它逐檔 read + parse
+`Treasury/ledger/` 底下**每一個** entry 檔。本專案已累積 14,000+ 檔／20MB，
+而冷啟動時作業系統檔案快取是空的、逐檔開檔又各吃一次防毒即時掃描 ——
+熱讀 0.5 秒的東西，冷讀可以是分鐘級。餘額查詢那條路早已有增量快取 + 每日結帳熱啟，
+**但 `LoadAllEntries()` 沒有走那套**。看到 `load_all_entries` 佔掉大半 `total_ms` 就是這件事。

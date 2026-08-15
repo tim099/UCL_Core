@@ -64,6 +64,62 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         static bool s_ProgressBarShown = false;
 
+        // ===========================================================
+        // 區塊：Tick 相位計時器（2026-08-15，Tim 回報「初次啟動 Editor 卡三分鐘」）
+        // 物理意義：進度條只在**人在場**時有用；`_tick_state.txt` 又會在 tick 正常結束時被改回 Idle。
+        //          於是「昨天早上那次卡三分鐘卡在哪」事後無法回答 —— 這次能定位純靠人工拿
+        //          stall gap 去對 closing 檔 mtime 跟廣播訊息時間，那是對帳不是機制。
+        //          本計時器把每個相位的耗時記下來，tick 結束時交給 UCL_BartenderIO.AppendSlowTick 落盤。
+        // 數值影響：一個 Stopwatch + 每相位一筆 struct；正常 tick 不落盤（門檻 3s）。
+        // 設計取捨：
+        //   - **量測與落盤分層**：這裡只量，寫檔一律走 IO 層，避免 daemon 又長出一套檔案格式。
+        //   - note 欄位存「這個相位處理了幾個東西」（檔數 / 帳戶數）—— 只有時間沒有基數的話，
+        //     下次看到「170 秒」還是不知道是單位成本高還是量大，**兩者的修法完全不同**。
+        //   - static 單例：tick 在主執行緒序列化執行，不會有兩個 tick 同時在跑。
+        // ===========================================================
+        sealed class TickProfiler
+        {
+            readonly System.Diagnostics.Stopwatch m_Watch = System.Diagnostics.Stopwatch.StartNew();
+            readonly List<(string name, double ms, string note)> m_Phases = new List<(string, double, string)>();
+            double m_LastMarkMs = 0;
+
+            /// <summary>結算「上一個 Mark 到現在」為一個相位。note 填基數（檔數 / 筆數），可空。</summary>
+            public void Mark(string name, string note = null)
+            {
+                double now = m_Watch.Elapsed.TotalMilliseconds;
+                m_Phases.Add((name, now - m_LastMarkMs, note));
+                m_LastMarkMs = now;
+            }
+
+            public double TotalMs => m_Watch.Elapsed.TotalMilliseconds;
+
+            public string ToJsonArray()
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                var sb = new System.Text.StringBuilder("[");
+                for (int i = 0; i < m_Phases.Count; i++)
+                {
+                    var p = m_Phases[i];
+                    if (i > 0) sb.Append(',');
+                    sb.Append("{\"name\":\"").Append(UCL_BartenderIO.EscapeJsonString(p.name)).Append('"')
+                      .Append(",\"ms\":").Append(p.ms.ToString("F1", inv));
+                    if (!string.IsNullOrEmpty(p.note))
+                        sb.Append(",\"note\":\"").Append(UCL_BartenderIO.EscapeJsonString(p.note)).Append('"');
+                    sb.Append('}');
+                }
+                return sb.Append(']').ToString();
+            }
+        }
+
+        /// <summary>本次 tick 的計時器；只在 TickInternal 期間非 null（其餘時間讀到 null 是正常的）。</summary>
+        static TickProfiler s_Profiler;
+
+        /// <summary>相位標記 —— s_Profiler 為 null 時安靜跳過，讓被量測的程式碼不必到處判 null。</summary>
+        static void MarkPhase(string name, string note = null) => s_Profiler?.Mark(name, note);
+
+        /// <summary>本次 tick 是否走了跨日結算那條重路徑 —— 台帳用它一眼分開「日常 tick 變慢」與「跨日結算慢」。</summary>
+        static bool s_TickWasCrossDay = false;
+
         static void ShowProgress(string title, string info, float progress)
         {
             try
@@ -196,16 +252,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // 全 tick 包 try/finally — 任何階段丟例外或使用者按 Cancel 提早 return，
             // 進度條都保證被清掉，不留殘影卡住 Editor UI。
             bool completed = false;
+            var profiler = new TickProfiler();
+            s_Profiler = profiler;
+            s_TickWasCrossDay = false;
             try
             {
                 UCL_BartenderIO.WriteTickState(TickStateCheckKeywordTriggers);
                 CheckKeywordTriggers();
+                profiler.Mark(TickStateCheckKeywordTriggers);
 
                 UCL_BartenderIO.WriteTickState(TickStateCheckTimeRules);
                 CheckTimeRules();
+                profiler.Mark(TickStateCheckTimeRules);
 
                 UCL_BartenderIO.WriteTickState(TickStateCheckOvernightDeposits);
-                CheckOvernightDeposits();
+                CheckOvernightDeposits();   // 內部自行 Mark 子相位（跨日那條路才是重的）
                 completed = true;
             }
             finally
@@ -214,6 +275,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 // 僅在三段皆正常返回時改回 Idle；例外時保留最後進入的 state，
                 // 才不會把失敗位置覆寫掉，讓外部診斷重新失去證據。
                 if (completed) UCL_BartenderIO.WriteTickState(TickStateIdle);
+
+                // 相位台帳 —— 放在 finally 內，例外中斷的慢 tick 也留得下分解。
+                // ⚠ 但 Editor 被殺 / 當掉時這行不會執行（見 TickPhaseFile 的邊界註解）。
+                s_Profiler = null;
+                if (!completed) profiler.Mark("aborted");
+                UCL_BartenderIO.AppendSlowTick(profiler.TotalMs, profiler.ToJsonArray(), s_TickWasCrossDay);
             }
         }
 
@@ -947,29 +1014,43 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             // 同一天已 check 過 → skip (短路, 避免每 5s 重跑)
             if (state.last_overnight_check_date == today) return;
 
+            // 以下是**跨日重路徑** —— 一天只會走一次，而它就是初開 Editor 卡住的那一段。
+            // 每個子相位都留下耗時與基數（檔數 / 帳戶數），讓下次不必靠人工對帳去夾區間。
+            s_TickWasCrossDay = true;
+            MarkPhase("overnight.enter");
+
             // ── 每日結帳（掛在保管費之前）────────────────────────────────────
             // 物理意義：跨日 tick 是唯一能確定「前一天已經寫完了」的時點，所以結帳掛在這裡。
             //          先關帳再收費：保管費本身要讀全部帳戶餘額，結帳讓那件事變便宜。
             // 數值影響：只寫 closing/*.json，不動任何餘額；失敗不擋收費（結帳是加速不是前提）。
+            int closingWritten = 0;
             try
             {
-                int n = UCL_TreasuryClosing.GenerateMissing(out string closingSummary);
-                if (n > 0) Debug.Log($"[Bartender] 每日結帳：{closingSummary}");
+                closingWritten = UCL_TreasuryClosing.GenerateMissing(out string closingSummary);
+                if (closingWritten > 0) Debug.Log($"[Bartender] 每日結帳：{closingSummary}");
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Bartender] 每日結帳失敗（不擋保管費）：{ex.Message}");
             }
+            MarkPhase("overnight.closing", $"written={closingWritten}");
 
             // 跨日了 — 跑一輪檢查
             // 1. Load 全 ledger 一次 (cache reuse 兩個 pass)
+            // ⚠ 效能觀測點（2026-08-15）：這是本函式唯一 O(全部歷史) 的動作 —— 它 read+parse
+            //   ledger 底下**每一個** entry 檔（本專案已 14,000+ 檔）。冷啟動時作業系統檔案快取是空的，
+            //   逐檔開檔又會各吃一次防毒即時掃描，於是單位成本從「熱讀 0.04ms/檔」漲到毫秒級。
+            //   相位 note 同時記錄耗時與**檔數**：只有時間會分不出「單位成本高」還是「量太大」，
+            //   而這兩者的修法完全不同（前者改讀取方式，後者改保留策略）。
             List<TreasuryLedgerEntry> allEntries;
             try { allEntries = UCL_TreasuryLedger.LoadAllEntries(); }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Bartender] overnight check load ledger fail: {ex.Message}");
+                MarkPhase("overnight.load_all_entries", "FAILED");
                 return;  // 不更新 state, 隔下個 tick 再試
             }
+            MarkPhase("overnight.load_all_entries", $"entries={allEntries.Count}");
 
             // 2. 蒐集所有 unique account_id
             var allAccounts = new HashSet<string>();
@@ -1032,6 +1113,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 exemptReports.Add($"- 🏦 @{account}: **結算前** balance {balText} " +
                                   "(**央行豁免** — 對自己收費會讓 debit/credit 落在同一帳號)");
             }
+            // 這一段含**本輪第一次 GetBalance** —— 而第一次會觸發 balance 快取初掃
+            // （列舉 ledger 全目錄 + 由每日結帳熱啟）。把它跟扣費迴圈分開量，
+            // 才分得出「慢在快取初掃」還是「慢在逐帳戶扣費」。
+            MarkPhase("overnight.exempt_scan", $"exempt={exemptAccounts.Count}");
 
             // 4. 對每 account 算超額 fee + debit（已排除豁免帳戶）
             //    Tim 2026-05-14 拍板補: audit broadcast 也列出沒扣費的 account 餘額 (full transparency)
@@ -1105,6 +1190,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     Debug.LogWarning($"[Bartender] overnight fee debit fail for {account}: {ex.Message}");
                 }
             }
+
+            MarkPhase("overnight.charge_loop",
+                      $"accounts={allAccounts.Count} charged={feeReports.Count} safe={safeReports.Count}");
 
             // 5. 推進 state.last_overnight_check_date (即使無人扣費也推進, 避免重跑)
             state.last_overnight_check_date = today;
@@ -1193,6 +1281,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 },
             };
             UCL_ChatTavernIO.AppendMessage("tavern", msg);  // 預設 fire mirror = Discord broadcast
+            MarkPhase("overnight.broadcast", $"body_len={body.Length}");
         }
     }
 }

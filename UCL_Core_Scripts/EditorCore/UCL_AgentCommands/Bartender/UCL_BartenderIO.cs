@@ -73,6 +73,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         const int STALL_KEEP = 10;
 
         // ===========================================================
+        // 區塊職責：慢 tick 的**相位耗時台帳**（2026-08-15，Tim 回報初開 Editor 卡三分鐘）
+        // 物理意義：既有兩個觀測檔各自答一半，而**都答不出「剛剛那次卡在哪個相位」**：
+        //          - `_tick_state.txt` 是**儀表**：只存「現在在哪」，而且 tick 正常結束會被改回 Idle
+        //            → 事後去看永遠是 Idle。要抓到它必須在卡住的當下去讀，人不在場就沒有證據。
+        //          - `_heartbeat_stalls.jsonl` 是**紀錄**：活得下來，但它只有 gap 長度，
+        //            答得出「凍了 170 秒」，答不出「那 170 秒花在 LoadAllEntries 還是別的地方」。
+        //          本檔補的是第三格：**事後仍在、且帶相位分解**。
+        //          （2026-08-15 之所以還能定位，是靠 stall gap 去跟 closing 檔 mtime、
+        //            廣播訊息時間交叉夾出區間 —— 那是人工對帳，不是機制。本檔把它機制化。）
+        // 數值影響：只有總耗時 ≥ TICK_PHASE_LOG_THRESHOLD_MS 的 tick 才寫一行；
+        //          正常 tick（毫秒級）完全不寫，磁碟成本為零。單檔 ring 保最近 TICK_PHASE_KEEP 筆。
+        // ⚠ 邊界（別讓名字比事實大）：本檔在 **tick 結束時**才寫得出來。
+        //   Editor 在 tick 中途被殺 / 當掉 → 這一筆永遠不會出現，
+        //   那種情形只能靠 `_tick_state.txt` 的即時值 + stall 台帳。**沒有條目 ≠ 沒有慢 tick。**
+        //   兩個檔是互補的，不可互相取代（一個活在當下、一個活在事後）。
+        public const string TickPhaseFile = "_tick_phases.jsonl";
+
+        // 門檻與 STALL_THRESHOLD_SECONDS 刻意對齊 3s：這樣任何一次寫進 stall 台帳的凍結，
+        // 只要成因是酒保 tick，就一定在本檔有對應的一行 —— 兩個檔可以直接對時間 join。
+        // 不對齊的話會出現「stall 有、相位沒有」的空窗，而那個空窗看起來會像「不是 tick 造成的」。
+        const double TICK_PHASE_LOG_THRESHOLD_MS = 3000.0;
+        const int TICK_PHASE_KEEP = 30;
+
+        // ===========================================================
         // 路徑 helper
         // ===========================================================
 
@@ -86,6 +110,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static string GetHeartbeatPath() => Path.Combine(GetBartenderDir(), HeartbeatFile);
         public static string GetTickStatePath() => Path.Combine(GetBartenderDir(), TickStateFile);
         public static string GetStallPath() => Path.Combine(GetBartenderDir(), StallFile);
+        public static string GetTickPhasePath() => Path.Combine(GetBartenderDir(), TickPhaseFile);
 
         // ===========================================================
         // 區塊職責：寫一拍心跳 —— **單檔、單行、每次複寫**（Tim 2026-08-04 定調）
@@ -182,6 +207,75 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
             if (File.Exists(path)) File.Delete(path);
             File.Move(tmp, path);
+        }
+
+        // ===========================================================
+        // 區塊職責：把一次「慢 tick」的相位分解 append 進台帳，並裁到最近 TICK_PHASE_KEEP 筆
+        // 物理意義：phasesJsonArray 是呼叫端組好的 JSON 陣列字串（每元素 {name, ms, note}），
+        //          本函式只負責包上時間與總耗時後落盤 —— 量測歸 daemon，落盤歸 IO，不混層。
+        // 數值影響：totalMs < TICK_PHASE_LOG_THRESHOLD_MS 直接 return（正常 tick 零磁碟成本）。
+        //          超門檻才讀整檔（≤ TICK_PHASE_KEEP 行）→ 加一行 → 裁切 → atomic 覆寫。
+        // 邊界：任何失敗都吞掉。**診斷工具不可以是本業的失敗來源** —— 這條在本檔三個觀測檔一致。
+        // ===========================================================
+        public static void AppendSlowTick(double totalMs, string phasesJsonArray, bool crossDay)
+        {
+            if (totalMs < TICK_PHASE_LOG_THRESHOLD_MS) return;
+            try
+            {
+                EnsureBartenderDir();
+                string path = GetTickPhasePath();
+                var lines = new System.Collections.Generic.List<string>();
+                if (File.Exists(path))
+                {
+                    foreach (var l in File.ReadAllLines(path))
+                    {
+                        if (!string.IsNullOrWhiteSpace(l)) lines.Add(l);
+                    }
+                }
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                lines.Add("{\"finished_at\":\"" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z\""
+                          + ",\"total_ms\":" + totalMs.ToString("F1", inv)
+                          + ",\"cross_day\":" + (crossDay ? "true" : "false")
+                          + ",\"threshold_ms\":" + TICK_PHASE_LOG_THRESHOLD_MS.ToString("F0", inv)
+                          + ",\"phases\":" + (string.IsNullOrEmpty(phasesJsonArray) ? "[]" : phasesJsonArray)
+                          + "}");
+                if (lines.Count > TICK_PHASE_KEEP) lines.RemoveRange(0, lines.Count - TICK_PHASE_KEEP);
+
+                string tmp = path + ".tmp";
+                File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(tmp, path);
+            }
+            catch { /* 觀測訊號寫不進去就算了，不能影響 daemon 本業 */ }
+        }
+
+        /// <summary>JSON 字串值逃脫 —— 相位的 note 由呼叫端自由填字，不逃脫會把整份台帳寫成壞 JSON。</summary>
+        /// <remarks>
+        /// 這裡刻意自己寫而不是拼字串就算了：本 repo 有過「在講逃脫的地方犯逃脫問題」的血債
+        /// （把控制字元直接寫進檔案讓它變成 binary）。診斷檔壞掉的代價是**下次卡住時沒有證據**。
+        /// </remarks>
+        public static string EscapeJsonString(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new StringBuilder(s.Length + 8);
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
         }
 
         public static void EnsureBartenderDir()

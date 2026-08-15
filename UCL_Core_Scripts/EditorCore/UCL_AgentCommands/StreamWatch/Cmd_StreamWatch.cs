@@ -17,6 +17,7 @@ using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.JsonLib;
+using UCL.Core.EditorLib.AgentCommands.Treasury;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
@@ -215,33 +216,29 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             bool aExpired = aEnd.HasValue && aNow >= aEnd.Value;
             bool aRecordingOff = !IsRecordingEnabled(out string aCfgNote);
 
-            // ── 終止判定（唯一的一處）─────────────────────────────
+            // ── 終止判定（唯一的一處）───────────────────
             if (aExpired || aRecordingOff)
             {
-                string aReason = aRecordingOff ? "Tim 停止錄影（_config.json enabled=false）" : "到期";
+                bool aByInterrupt = aRecordingOff;
+                string aReason = aByInterrupt ? "Tim 停止錄影（_config.json enabled=false）" : "到期";
                 aR.AppendLine("## 收工判定");
                 aR.AppendLine($"- 判定: **{aReason}**");
-                aR.AppendLine($"- 依據: {(aRecordingOff ? aCfgNote : $"now={aNow:HH:mm:ss} >= ends_at={aEnd:HH:mm:ss}")}");
-                aR.AppendLine($"- ⚠ 本判定只認**顯式狀態**（系統時鐘／`enabled` 欄位），不推論 frame 新鮮度。");
+                aR.AppendLine($"- 依據: {(aByInterrupt ? aCfgNote : $"now={aNow:HH:mm:ss} >= ends_at={aEnd:HH:mm:ss}")}");
+                aR.AppendLine("- ⚠ 本判定只認**顯式狀態**（系統時鐘／`enabled` 欄位），不推論 frame 新鮮度。");
                 aR.AppendLine();
-                aR.AppendLine($"- 本場統計: cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}｜接續點={(ReadBool(aS, "note_written") ? "已寫" : "**未寫**")}");
-                aR.AppendLine();
-                aR.AppendLine("## next");
+
+                // 接續點未寫 ⇒ **不擋**（Tim 拍板），但要**吵**：這裡列、收播公告也列
                 if (!ReadBool(aS, "note_written"))
                 {
-                    aR.AppendLine($"1. **先寫接續點**（下次續看要靠它接回進度）：");
-                    aR.AppendLine($"   run_cmd.py run StreamWatch --arg step=note --arg persona={iPersona} --arg-file body=<接續點>");
-                    aR.AppendLine("   內容至少要有：**看到哪／下次從哪接／人物與伏筆的當前狀態**。");
-                    aR.AppendLine($"2. 再跑一次 step=cycle 完成結算。");
+                    aR.AppendLine("⚠ **本場未寫接續點** —— 不擋結算，但下次續看接不回進度。");
+                    aR.AppendLine($"   要補：run_cmd.py run StreamWatch --arg step=note --arg persona={iPersona} --arg-file body=<接續點>");
+                    aR.AppendLine("   （至少要有：看到哪／下次從哪接／人物與伏筆狀態）");
+                    aR.AppendLine();
                 }
-                else
-                {
-                    aR.AppendLine("1. 接續點已寫 —— 再跑一次 step=cycle 完成結算。");
-                }
-                aR.AppendLine();
-                aR.AppendLine("⚠ 結算與收播公告尚未實作（本次施工只到 start/cycle 的判定）—— session 仍為 active。");
+
+                await SettleAsync(iPersona, aS, aByInterrupt, aNow, aEnd, aR, iToken);
                 WritePayload(aPath, aR.ToString());
-                Debug.Log($"[StreamWatch] step=cycle 判定收工（{aReason}）→ {aPath}");
+                Debug.Log($"[StreamWatch] step=cycle 收工結算（{aReason}）→ {aPath}");
                 return;
             }
 
@@ -321,6 +318,144 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"3. 之後再跑 step=cycle —— **收工不用你判斷**，時間到或 Tim 停錄影時這一步會告訴你。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
+        }
+
+        // ===========================================================
+        // 區塊：結算 ＋ 收播公告（Plan §6）
+        // 物理意義：費率以帳上真的在跑的東西為錨 —— 一筆 commit ＝ 5 token。
+        //   在場費 1 token/10 分鐘（上限 6，僅 primary）＋ observation 1 token/筆（上限 12）。
+        //   **零 observation ⇒ 在場費也不發** —— phantom 守衛：
+        //   否則「在場」變成一個掛著就能滿足的訊號（phantom-alive 的計酬版）。
+        // ⚠ paid_min 的上限方向：
+        //   到期 ⇒ 算到 **ends_at**（不是 agent 回來呼叫的時間，否則回得越晚領越多）
+        //   中斷 ⇒ 算到 **中斷被發現的時刻**（沒看的不能領）
+        // ⚠ 判重兩層：熱路徑讀 session 的 settled_at（本來就在讀那個檔，零額外成本）；
+        //   寫入閘讀 ledger 的 useRef（事實源）。代理可以錯，只要它錯的方向是「多問一次」。
+        // ===========================================================
+        const int BASE_MINUTES_PER_TOKEN = 10;
+        const int BASE_CAP = 6;
+
+        static async UniTask SettleAsync(string iPersona, JsonData ioS, bool iByInterrupt,
+                                         DateTime iNow, DateTime? iEnd, StringBuilder ioR, CancellationToken iToken)
+        {
+            // 熱路徑判重
+            string aSettledAt = ReadStr(ioS, "settled_at");
+            if (!string.IsNullOrEmpty(aSettledAt))
+            {
+                ioR.AppendLine($"- 結算: **已於 {aSettledAt} 結算過**（熱路徑判重，未重複發薪）");
+                ioR.AppendLine();
+                ioR.AppendLine("## next");
+                ioR.AppendLine("1. 本場已收工。要再看請跑 step=start 開新場。");
+                return;
+            }
+
+            string aSessionId = ReadStr(ioS, "session_id");
+            string aMedia = ReadStr(ioS, "media_id");
+            int aObs = ReadInt(ioS, "observations");
+            DateTime? aStart = ParseIsoLocal(ReadStr(ioS, "start_ts"));
+            // ⚠ 上限**永遠**是 ends_at —— 兩個終止條件可能同時成立（到期了、Tim 也停了錄影），
+            //   而中斷被發現的時刻可以晚於截止。取中斷時刻 ⇒ **回得越晚領越多**，
+            //   正是 Plan §6 點名要防的那條。2026-08-15 首次結算實踩：
+            //   start 17:06 / ends_at 17:15 / 中斷發現於 17:20 ⇒ 誤算 14 分（應為 8 分），多發 1 token。
+            //   ⇒ 兩者取小：沒看的不能領，過了截止的也不能領。
+            DateTime aPaidUntil = iByInterrupt ? iNow : (iEnd ?? iNow);
+            if (iEnd.HasValue && aPaidUntil > iEnd.Value) aPaidUntil = iEnd.Value;
+            int aPaidMin = aStart.HasValue ? (int)Math.Max(0, (aPaidUntil - aStart.Value).TotalMinutes) : 0;
+
+            int aObsPay = Math.Min(aObs, OBSERVATION_CAP);
+            int aBasePay = Math.Min(aPaidMin / BASE_MINUTES_PER_TOKEN, BASE_CAP);
+            bool aPhantom = aObs <= 0;
+            if (aPhantom) aBasePay = 0;
+            int aTotal = aBasePay + aObsPay;
+
+            string aPayNote;
+            if (aPhantom)
+            {
+                aPayNote = "**未發薪** —— 本場 0 筆 observation（phantom 守衛：在場費也不發）";
+                aTotal = 0;
+            }
+            else
+            {
+                var aRes = UCL_TreasuryAccountResolver.Resolve(iPersona);
+                if (aRes.IsUnresolved || string.IsNullOrEmpty(aRes.AccountId))
+                {
+                    aPayNote = $"**未發薪** —— persona `{iPersona}` 解析不到正式帳號（{aRes.Trace}）";
+                    aTotal = 0;
+                }
+                else if (AlreadyCredited($"streamwatch-{aSessionId}"))
+                {
+                    aPayNote = $"**未重複發薪** —— ledger 已有 `streamwatch-{aSessionId}`（寫入閘判重，事實源）";
+                    aTotal = 0;
+                }
+                else
+                {
+                    try
+                    {
+                        UCL_TreasuryLedger.Credit(
+                            accountId: aRes.AccountId, amount: aTotal,
+                            sourceKind: "stream_watch",
+                            sourceRef: $"streamwatch-{aSessionId}",
+                            description: $"觀影結算 {aMedia}：在場 {aPaidMin} 分→{aBasePay} ＋ observation {aObs}→{aObsPay}",
+                            callerAgentId: "system", cmdId: $"streamwatch-{aSessionId}");
+                        aPayNote = $"**+{aTotal} token** → `{aRes.AccountId}`（在場 {aPaidMin} 分＝{aBasePay}／observation {aObs} 筆＝{aObsPay}）";
+                    }
+                    catch (Exception e)
+                    {
+                        aPayNote = $"**發薪失敗** —— {e.Message}（session 仍關閉，帳待補）";
+                        aTotal = 0;
+                    }
+                }
+            }
+
+            // 收播公告（記 end_seq —— 匯出區間右端點）
+            var aBody = new StringBuilder();
+            aBody.AppendLine($"📺 [{iPersona} 大小姐] 收播 — {(iByInterrupt ? "**Tim 停止錄影**" : "**到期**")}｜媒材 `{aMedia}`");
+            aBody.AppendLine();
+            aBody.AppendLine($"- 本場：{ReadInt(ioS, "cycles")} 輪 ／ **{aObs} 筆觀戰評論** ／ 在場 {aPaidMin} 分鐘");
+            aBody.AppendLine($"- 結算：{aPayNote}");
+            if (!ReadBool(ioS, "note_written"))
+                aBody.AppendLine("- ⚠ **本場未寫接續點** —— 下次續看接不回進度（不擋結算，但這件事要看得見）");
+            aBody.AppendLine($"- 場次紀錄：seq {ReadInt(ioS, "start_seq")} → 本則（`tavern` 房；中間混雜其他訊息是刻意的）");
+            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-end", iToken);
+
+            ioS["active"] = new JsonData(false);
+            ioS["settled_at"] = new JsonData(UCL_AwakeningService.NowIso());
+            ioS["end_reason"] = new JsonData(iByInterrupt ? "recording-stopped" : "expired");
+            ioS["paid_minutes"] = new JsonData(aPaidMin);
+            ioS["paid_total"] = new JsonData(aTotal);
+            ioS["end_seq"] = new JsonData(aSeq);
+            AtomicWrite(SessionPath(iPersona), ioS.ToJsonBeautify());
+
+            ioR.AppendLine($"- 本場統計: cycles={ReadInt(ioS, "cycles")}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
+            ioR.AppendLine($"- 結算    : {aPayNote}");
+            ioR.AppendLine($"- 收播公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
+            ioR.AppendLine($"- 場次紀錄: seq **{ReadInt(ioS, "start_seq")} → {aSeq}**（匯出區間，`tavern` 房）");
+            ioR.AppendLine();
+            ioR.AppendLine("## next");
+            ioR.AppendLine("1. 本場已收工結算，session 已關閉。");
+            ioR.AppendLine($"2. 要再看：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+        }
+
+        // 區塊職責：ledger 判重 —— **有界掃描**（只掃最近結帳日之後）
+        // ⚠ 不用 LoadAllEntries()：那支重放全帳本（本專案 14,700+ 檔），
+        //   2026-08-15 已因為它讓初開 Editor 卡三分鐘而從跨日結算移除（見 1188e7a）。
+        // ⚠ 查詢失敗時**保守視為已發**：壞要往安全的方向壞 —— 少發一次可以補，重複發薪收不回。
+        static bool AlreadyCredited(string iUseRef)
+        {
+            try
+            {
+                string aToday = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                var aRec = UCL_TreasuryClosing.LoadLatestBefore(aToday);
+                var aEntries = UCL_TreasuryLedger.LoadEntriesAfterDate(aRec?.DateKey);
+                foreach (var e in aEntries)
+                    if (e != null && e.type == "credit" && e.source_ref == iUseRef) return true;
+                return false;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StreamWatch] ledger 判重失敗，保守視為已發（不重複發薪）：{e.Message}");
+                return true;
+            }
         }
 
         // ===========================================================

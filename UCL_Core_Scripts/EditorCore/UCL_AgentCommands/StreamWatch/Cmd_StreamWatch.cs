@@ -39,11 +39,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public override string CommandType => "StreamWatch";
 
         public override string ShortDescription =>
-            "觀影模式 Cmd（step=start/cycle/observe/note）。start 鎖定媒材＋註冊看到幾點；" +
-            "cycle 自己合成縮圖牆並判定到期/中斷；**沒有 end —— agent 不能自己結束 session**。";
+            "觀影模式 Cmd（step=peek/start/join/cycle/observe/note）。**peek 不開場、不記帳，看一眼就走**（也是測試探針）；" +
+            "start 鎖定媒材＋註冊看到幾點；cycle 自己合成縮圖牆並判定到期/中斷；" +
+            "**沒有 end —— agent 不能自己結束 session**。";
 
         public override string ArgsSchema =>
-            "step=start|join|cycle|observe|note (必填) | persona=<name> — 全步驟必填 | " +
+            "step=peek|start|join|cycle|observe|note (必填) | persona=<name> — **peek 以外全步驟必填**（peek 不帶則歸 _peek） | " +
+            "seconds=<5..600> — peek 選填，看最近幾秒（預設 60） | raw=1 — peek 選填，不夾感官水位（看最新畫面，代價寫在回傳檔） | " +
             "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問） | " +
             "body=<內文> — observe/note 必填（長文走 --arg-file） | " +
             "回傳落檔 letters/<persona>/_streamwatch_<step>.md（路徑隨 run_cmd verdict 印出）";
@@ -58,15 +60,25 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>每場 observation 計酬上限（Plan §6：沒有上限的按量計酬就是印鈔許可證）。</summary>
         const int OBSERVATION_CAP = 12;
 
+        /// <summary>peek 沒帶 persona 時的回傳檔歸屬（不是 persona，是一個放檔案的地方）。</summary>
+        const string PEEK_OWNER = "_peek";
+
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
             string aStep = GetArg(args, "step", "").Trim().ToLowerInvariant();
             string aPersona = GetArg(args, "persona", "").Trim();
+            // peek 是**唯一不需要身分的 step**：它不開 session、不記帳、不發文，
+            // 所以沒有「這筆算誰的」這個問題 —— 要求 persona 只會讓「還沒登入就想看一眼」卡住。
             if (string.IsNullOrEmpty(aPersona))
-                throw new Exception($"[StreamWatch] persona 必填。ArgsSchema: {ArgsSchema}");
+            {
+                if (aStep == "peek") aPersona = PEEK_OWNER;
+                else throw new Exception($"[StreamWatch] persona 必填。ArgsSchema: {ArgsSchema}");
+            }
 
             switch (aStep)
             {
+                case "peek": await StepPeek(aPersona, GetArg(args, "seconds", "").Trim(),
+                                            GetArg(args, "raw", "").Trim(), token); return;
                 case "start": await StepStart(aPersona, GetArg(args, "until", "").Trim(),
                                               GetArg(args, "media", "").Trim(), token); return;
                 case "cycle": await StepCycle(aPersona, token); return;
@@ -74,8 +86,121 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "note": await StepNote(aPersona, GetArg(args, "body", ""), token); return;
                 case "join": await StepJoin(aPersona, token); return;
                 default:
-                    throw new Exception($"[StreamWatch] step 必為 start|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    throw new Exception($"[StreamWatch] step 必為 peek|start|join|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
+        }
+
+        // ===========================================================
+        // 區塊：step=peek — **不開場、看一眼**（Tim 2026-08-15 追加）
+        // 物理意義：觀影 session 是一個**承諾**（看到幾點、要寫心得、會結算），
+        //          而「直播開著，我看一眼」與「我想測 montage/感官管線通不通」兩件事都**不該付那個承諾的代價**。
+        //          ⇒ peek 走同一條取材與對帳程式碼，但：**不讀 session、不寫 session、不記帳、不發文**。
+        //          共用取材程式碼是刻意的：測試探針若走另一條路，它綠了也不代表正式路徑會綠
+        //          （2026-08-15 血證：手跑 montage 全綠，而 Cmd 那條在同一分鐘 exit=1）。
+        // 數值影響：零 token。輸出落 `_montage_peek_<owner>.jpg` —— **與 session 的 `_montage_<persona>.jpg` 分開**，
+        //          否則進行中的觀影場會被一次 peek 蓋掉素材（而它不會報錯）。
+        // 邊界：seconds 5–600（預設 60）；raw=1 時不夾感官水位 ⇒ 看得到最新畫面，
+        //      但尾端那幾格可能沒有字幕/語音 —— 這件事由對帳行**明說「未夾」**，不靠讀的人記得。
+        // ===========================================================
+        async UniTask StepPeek(string iOwner, string iSeconds, string iRaw, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iOwner, "peek");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=peek owner={iOwner}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            aR.AppendLine("> **這不是一場觀影** —— 不開 session／不記帳／不發酒館／不動任何進行中的場次。");
+            aR.AppendLine();
+
+            int aSec = 60;
+            if (!string.IsNullOrEmpty(iSeconds) && int.TryParse(iSeconds, out int aParsed)) aSec = aParsed;
+            aSec = Math.Max(5, Math.Min(600, aSec));
+            bool aRaw = iRaw == "1" || iRaw.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+            string aScript = ResolveMontageScript();
+            if (string.IsNullOrEmpty(aScript))
+            {
+                Blocked(aR, aPath, "解析不到 screenstream_montage.py（CorePath 空或檔案不存在）",
+                        "確認 UCL_Core 掛載位置與 Tools~/AgentCommands/screenstream_montage.py 是否存在");
+                throw new Exception($"[StreamWatch] step=peek blocked：找不到縮圖牆工具（詳見 {aPath}）");
+            }
+            string aOutPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", $"_montage_peek_{iOwner}.jpg");
+
+            // ⚠ 錄影關掉時**不擋** —— ring buffer 裡還有畫面，看一眼仍然有意義。
+            //   但必須把 enabled 的**讀值印出來**：否則「直播沒開」與「這段剛好沒畫面」在輸出上同形。
+            bool aLive = IsRecordingEnabled(out _);
+            var (aOcrOn, aSttOn) = ReadSensorFlags();
+            // 水位**兩條路都算**（raw 只是不拿它去夾）—— 這樣 raw 的回傳檔仍印得出
+            // 「你放棄的是什麼」：少了幾秒的感官涵蓋，而不是一句沒有數字的「未夾」。
+            double aWmValue = SensorWatermark(aOcrOn, aSttOn, out string aWmNote);
+            double aWatermark = aRaw ? 0 : aWmValue;
+            double aAfter = ToEpoch(DateTime.UtcNow) - aSec;
+
+            DateTime aRunStart = DateTime.Now;
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aAfter, aWatermark, aOutPath, aOcrOn, aSttOn, iToken);
+            string aBoth = (aStdout ?? "") + "\n" + (aErr ?? "");
+            if (!aOk && (aBoth.Contains("無 frame 命中") || aBoth.Contains("OCR watermark 還沒趕上")))
+            {
+                aR.AppendLine("## 這段窗口沒有畫面（不是錯誤）");
+                aR.AppendLine($"- 錄影中  : {(aLive ? "是" : "**否**（`_config.json` 的 `enabled=false`）—— buffer 只剩舊畫面")}");
+                aR.AppendLine($"- 窗口    : 最近 {aSec}s（{FromEpochLocal(aAfter):HH:mm:ss} → 現在）");
+                aR.AppendLine($"- 感官水位: {aWmNote}"
+                            + (aWatermark > 0 ? $"　⇒ {FromEpochLocal(aWatermark):HH:mm:ss}（窗口尾端夾在這）" : "　（raw：未夾）"));
+                aR.AppendLine();
+                aR.AppendLine("## next");
+                aR.AppendLine($"- 窗口拉長：--arg seconds=180");
+                aR.AppendLine($"- 不等字幕/語音、直接看最新畫面：--arg raw=1（代價：尾端可能沒有感官資料）");
+                WritePayload(aPath, aR.ToString());
+                Debug.Log($"[StreamWatch] step=peek 無素材 → {aPath}");
+                return;
+            }
+            if (!aOk)
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine($"- reason: 縮圖牆合成失敗 — {aErr}");
+                if (!string.IsNullOrWhiteSpace(aStdout))
+                    aR.AppendLine($"- stdout: {Truncate(aStdout.Trim(), 500)}");
+                aR.AppendLine("- exit: 確認 ScreenStream 是否有 frame；重跑 step=peek");
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=peek blocked：montage 失敗（詳見 {aPath}）");
+            }
+
+            var aInfo = ParseMontageReport(aStdout);
+            string aSubPath = Path.ChangeExtension(aOutPath, ".subtitles.md");
+            bool aHasSub = false; string aSubNote = "";
+            try
+            {
+                if (File.Exists(aSubPath))
+                {
+                    DateTime aM = File.GetLastWriteTime(aSubPath);
+                    if (aM >= aRunStart.AddSeconds(-1)) aHasSub = true;
+                    else aSubNote = $"（磁碟上有一份 {aM:MM-dd HH:mm} 的殘留檔 —— **不是這次的，已忽略**）";
+                }
+            }
+            catch { }
+
+            aR.AppendLine("## 看到什麼");
+            aR.AppendLine($"- 縮圖牆   : `{aOutPath}`　← 直接 Read");
+            aR.AppendLine(aHasSub
+                ? $"- 字幕     : `{aSubPath}`　← 直接 Read（**這次產出**，mtime 已驗）"
+                : $"- 字幕     : **這次無字幕**{aSubNote}");
+            aR.AppendLine($"- 錄影中   : {(aLive ? "是" : "**否**（`enabled=false`）—— 以下畫面是 buffer 殘留，不是當下")}");
+            aR.AppendLine($"- 涵蓋     : {aInfo.SpanText}（要求窗口：最近 {aSec}s）");
+            aR.AppendLine($"- 格數     : {aInfo.Tiles}　**每格 ≈{aInfo.PerTileSeconds:F0}s**");
+            AppendRetentionLine(aR);
+            aR.AppendLine($"- 感官     : OCR {(aOcrOn ? "開" : "關")}／STT {(aSttOn ? "開" : "關")}（讀自 _config.json）");
+            AppendSttLine(aR, aSttOn, aInfo);
+            if (aRaw)
+                aR.AppendLine($"- 窗口對帳 : **raw=1，刻意未夾** —— 看的是最新畫面；"
+                            + (aWmValue > 0 && aInfo.NextCursor > 0
+                               ? $"尾端 {FromEpochLocal(aInfo.NextCursor):HH:mm:ss} 超出感官水位 {FromEpochLocal(aWmValue):HH:mm:ss} 約 {(aInfo.NextCursor - aWmValue):F0}s ⇒ 那幾格的「沒字幕」不可信"
+                               : $"感官水位：{aWmNote}"));
+            else AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine("- 這是一次性的一眼；**沒有下一步**，也沒有進度可接。要正式看請開場：");
+            aR.AppendLine($"  run_cmd.py run StreamWatch --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work>");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=peek tiles={aInfo.Tiles} → {aPath}");
         }
 
         // ===========================================================
@@ -273,11 +398,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             double aWatermark = SensorWatermark(aOcrOn, aSttOn, out string aWmNote);
             DateTime aRunStart = DateTime.Now;
             var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aWatermark, aOutPath, aOcrOn, aSttOn, iToken);
-            if (!aOk && (aErr ?? "").Contains("無 frame 命中"))
+            // ⚠ **軟條件的訊息在 stdout，不在 stderr**（2026-08-15 實測：`--before-mtime` 夾出空窗口時
+            //   montage `print("ERROR: 選擇條件下無 frame 命中")` ⇒ 走 stdout、exit=1，stderr 全空）。
+            //   舊版只比對 stderr ⇒ **這條軟路徑一次都沒被執行過**，每輪都退成 blocked 拋例外，
+            //   而「水位還沒追上」是觀影開場的常態（STT 落後 ~29s，剛 start 的第一輪必中）。
+            //   同族：檢查寫了但永遠不觸發 —— 跟今天稍早那四隻「旗標被接受卻靜默不套用」同一支。
+            // ⇒ 兩條流都比對；exit=2（OCR 水位還沒追上任何 frame）同屬軟條件，一起收。
+            string aBoth = (aStdout ?? "") + "\n" + (aErr ?? "");
+            if (!aOk && (aBoth.Contains("無 frame 命中") || aBoth.Contains("OCR watermark 還沒趕上")))
             {
                 // 不是失敗，是**感官水位還沒追上上一輪的 cursor** —— 等一下再來就有了。
                 aR.AppendLine("## 本輪無新素材（不是錯誤）");
-                aR.AppendLine($"- 感官水位: {aWmNote}　←　尚未越過上一輪的 cursor");
+                // 同 AppendClampAudit 的判準：印兩個讀數的比較，不印「尚未越過」這種宣告 ——
+                // 沒有讀數撐著的話，這一行在「水位真的落後」與「cursor 被算錯」時長得一模一樣。
+                aR.AppendLine($"- 上輪 cursor: {(aCursor > 0 ? FromEpochLocal(aCursor).ToString("HH:mm:ss") : "(無)")}");
+                aR.AppendLine($"- 感官水位  : {aWmNote}"
+                            + (aWatermark > 0 ? $"　⇒ {FromEpochLocal(aWatermark):HH:mm:ss}"
+                                                + $"　←　落後 cursor {(aCursor - aWatermark):F0}s" : ""));
                 aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
                 aR.AppendLine();
                 aR.AppendLine("## next");
@@ -290,6 +427,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: 縮圖牆合成失敗 — {aErr}");
+                // ⚠ 這支工具的錯誤訊息會走 stdout（見上），所以 stderr 空**不代表沒有原因**。
+                //   實測那次回傳檔只印得出 `exit=1;` 後面空白 —— 診斷得再去手跑一次才看得到。
+                if (!string.IsNullOrWhiteSpace(aStdout))
+                    aR.AppendLine($"- stdout: {Truncate(aStdout.Trim(), 500)}");
                 aR.AppendLine("- exit: 確認 ScreenStream 是否有 frame；重跑 step=cycle");
                 WritePayload(aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=cycle blocked：montage 失敗（詳見 {aPath}）");
@@ -336,7 +477,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 格數     : {aInfo.Tiles}　**每格 ≈{aInfo.PerTileSeconds:F0}s**　← 落後越多每格越粗，丟的是細節不是時間");
             AppendRetentionLine(aR);
             aR.AppendLine($"- 感官     : OCR {(aOcrOn ? "開" : "關")}／STT {(aSttOn ? "開" : "關")}（讀自 _config.json，**不必傳旗標**）");
-            aR.AppendLine($"- 感官水位 : {aWmNote}　←　**窗口尾端夾在這裡**：看的是已辨識完的段落，不是最新畫面");
+            AppendSttLine(aR, aSttOn, aInfo);
+            AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
             aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
             aR.AppendLine();
@@ -679,13 +821,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"# StreamWatch step=note persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
+            // ⚠ **收工後補寫必須放行**（2026-08-15 實跑撞到）：cycle 的收工分支會印
+            //   「本場未寫接續點 —— 要補：跑 step=note」，而**那一步剛好把 session 關掉了** ⇒
+            //   舊版在這裡擋掉 ⇒ 它指的是一條它自己封死的路，接續點永遠補不上。
+            //   （比靜默失效更難看的一種：**指路存在、而且會大聲失敗**。）
+            // ⇒ 沒有 active session 時退回**最近一場已關閉的 session**補寫，並在發文與回傳檔
+            //   雙邊標明「補寫」與那場的結束時刻 —— 不能讓補的接續點看起來像當場寫的。
             var aS = LoadSession(iPersona);
-            if (aS == null || !ReadBool(aS, "active"))
+            if (aS == null)
             {
-                Blocked(aR, aPath, "無進行中的觀影 session",
+                Blocked(aR, aPath, "查無任何觀影 session（連已結束的都沒有）",
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
-                throw new Exception($"[StreamWatch] step=note blocked：無 active session（詳見 {aPath}）");
+                throw new Exception($"[StreamWatch] step=note blocked：無 session 檔（詳見 {aPath}）");
             }
+            bool aLate = !ReadBool(aS, "active");
             if (string.IsNullOrWhiteSpace(iBody))
             {
                 aR.AppendLine("## blocked");
@@ -699,22 +848,35 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             string aMedia = ReadStr(aS, "media_id");
+            // ⚠ 欄位名是 `settled_at`（SettleAsync 寫的），不是 `ended_at` ——
+            //   讀錯欄位時 ReadStr 靜默回空，回傳檔就會印「結束時刻未記」這句**假話**。
+            string aEnded = ReadStr(aS, "settled_at");
             var aBody = new StringBuilder();
-            aBody.AppendLine($"📌 [{iPersona} 大小姐] 觀影接續點 — 媒材 `{aMedia}`");
+            aBody.AppendLine($"📌 [{iPersona} 大小姐] 觀影接續點 — 媒材 `{aMedia}`"
+                           + (aLate ? "　**（補寫：本場已於收工時結算）**" : ""));
+            if (aLate && !string.IsNullOrEmpty(aEnded))
+                aBody.AppendLine($"　　場次結束於 `{aEnded}` —— 這段文字寫在收工之後，不是當場記的。");
             aBody.AppendLine();
             aBody.AppendLine(iBody.TrimEnd());
             int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-note", iToken);
 
             aS["note_written"] = new JsonData(true);
             aS["note_seq"] = new JsonData(aSeq);
+            if (aLate) aS["note_late"] = new JsonData(true);
             AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
 
             aR.AppendLine($"- 接續點已寫並發布: {(aSeq > 0 ? $"seq **{aSeq}**" : "發文失敗（**接續點仍已記進 session**）")}");
             aR.AppendLine($"- media: `{aMedia}`");
+            if (aLate) aR.AppendLine($"- ⚠ **補寫**：本場已結算收工（{(string.IsNullOrEmpty(aEnded) ? "結束時刻未記" : aEnded)}）；已標 `note_late=true`，不冒充當場寫的");
             aR.AppendLine();
             aR.AppendLine("## next");
-            aR.AppendLine($"1. 跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            aR.AppendLine("   —— 若已到期／Tim 已停錄影，那一步會完成收工；否則會繼續給下一輪素材。");
+            if (aLate)
+                aR.AppendLine("1. 本場已收工，這筆補寫就是最後一步 —— 沒有下一步。");
+            else
+            {
+                aR.AppendLine($"1. 跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+                aR.AppendLine("   —— 若已到期／Tim 已停錄影，那一步會完成收工；否則會繼續給下一輪素材。");
+            }
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=note seq={aSeq} → {aPath}");
         }
@@ -790,6 +952,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             public double SpanSeconds;
             public double NextCursor;
             public string SpanText;
+            // STT 原句（montage 的 `stt :` 那行）—— **原樣搬，不由 C# 改寫**：
+            // 「0 段」與「無 cache」是兩件事，而它們在 python 端已經分開了，
+            // 這裡任何重新措辭都可能把那個區別磨平（2026-08-15 血證：本輪無語音／STT 沒接上同形）。
+            public string SttRaw;
+            public string SttWarn;
             public double PerTileSeconds => Tiles > 0 ? SpanSeconds / Tiles : 0;
         }
 
@@ -808,6 +975,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aCur = System.Text.RegularExpressions.Regex.Match(iStdout, @"next-cursor\s*:\s*(\d+(?:\.\d+)?)");
             if (aCur.Success) double.TryParse(aCur.Groups[1].Value, System.Globalization.NumberStyles.Float,
                                               System.Globalization.CultureInfo.InvariantCulture, out aInfo.NextCursor);
+            // ⚠ `stt` 那行**可有可無**：沒有它不代表「本輪沒語音」，代表**這一輪根本沒跑 STT**。
+            //   兩者在舊回傳檔上同形（都是不印），所以這裡分開帶，呼叫端才有辦法說出區別。
+            var aStt = System.Text.RegularExpressions.Regex.Match(iStdout, @"^\s*stt\s*:\s*(.+)$",
+                                                                 System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (aStt.Success) aInfo.SttRaw = aStt.Groups[1].Value.Trim();
+            var aSttW = System.Text.RegularExpressions.Regex.Match(iStdout, @"^\s*(⚠ STT 段渲染失敗.*)$",
+                                                                  System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (aSttW.Success) aInfo.SttWarn = aSttW.Groups[1].Value.Trim();
             return aInfo;
         }
 
@@ -870,6 +1045,51 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             catch { }
             oNote = aParts.Count > 0 ? string.Join("／", aParts) : "(無 cache，未夾尾端)";
             return aWm;
+        }
+
+        // ===========================================================
+        // 區塊：窗口對帳 —— **印比較結果，不印意圖**（2026-08-15 血債 #4 的正解）
+        // 物理意義：夾子（--before-mtime）有沒有生效，是一個**兩個讀數的比較**，
+        //          而舊版印的是「窗口尾端夾在這裡」—— 那是一句宣告，它在夾子完全沒生效的那一輪
+        //          （首輪 cursor=0 ⇒ 整個過濾分支沒進去）**照樣印得一模一樣**。
+        //          ⇒ 沒做卻報告做了，而回傳檔是我唯一的事後證據。
+        // 數值影響：純輸出；判定門檻放 1 秒（frame mtime 與水位取樣本就不同源，
+        //          差在秒內不算沒夾）。壞要往吵的方向壞：讀不到就說讀不到，不填「大概有」。
+        // 邊界：水位 ≤ 0 ＝ 沒夾（感官全關或無 cache）；窗口尾端 ≤ 0 ＝ montage 沒回報 next-cursor
+        //      ⇒ 兩者都**明說無法對帳**，不得沉默通過。
+        // ===========================================================
+        static void AppendClampAudit(StringBuilder ioR, double iWindowEnd, double iWatermark, string iWmNote)
+        {
+            if (iWatermark <= 0)
+            {
+                ioR.AppendLine($"- 窗口對帳 : **未夾** —— 感官水位讀不到（{iWmNote}）⇒ 尾端可能落在還沒辨識完的段落");
+                return;
+            }
+            if (iWindowEnd <= 0)
+            {
+                ioR.AppendLine($"- 窗口對帳 : ⚠ **無讀數** —— montage 沒回報 next-cursor，"
+                             + $"無法確認夾子是否生效（水位 {FromEpochLocal(iWatermark):HH:mm:ss}）。**當成沒生效看待。**");
+                return;
+            }
+            double aDiff = iWatermark - iWindowEnd;   // 正 = 尾端在水位之內（正確）
+            ioR.AppendLine(aDiff >= -1.0
+                ? $"- 窗口對帳 : 窗口尾端 {FromEpochLocal(iWindowEnd):HH:mm:ss} ≤ 水位 {FromEpochLocal(iWatermark):HH:mm:ss} ✅（夾子生效，餘裕 {aDiff:F0}s）"
+                : $"- 窗口對帳 : ⚠ 窗口尾端 {FromEpochLocal(iWindowEnd):HH:mm:ss} **>** 水位 {FromEpochLocal(iWatermark):HH:mm:ss} ❌ "
+                  + $"**夾子沒生效** —— 尾端那 {-aDiff:F0}s 沒有完整感官資料，那幾格的「沒字幕」不可信");
+            ioR.AppendLine($"　　　　　　 （水位來源：{iWmNote}）");
+        }
+
+        // 區塊職責：STT 段數回報 —— 讓「本輪沒語音」與「STT 沒接上」不再同形（2026-08-15 見叢 ①）
+        // ⚠ montage 的原句原樣搬（`0 段` / `無 cache …`）：那個區別是 python 端分出來的，
+        //   在這裡重新措辭等於把它磨平。C# 只補「這一行不存在」那一格 —— 那是第三種狀態。
+        static void AppendSttLine(StringBuilder ioR, bool iSttOn, MontageInfo iInfo)
+        {
+            if (!string.IsNullOrEmpty(iInfo.SttWarn)) { ioR.AppendLine($"- STT      : {iInfo.SttWarn}"); return; }
+            if (!string.IsNullOrEmpty(iInfo.SttRaw)) { ioR.AppendLine($"- STT      : {iInfo.SttRaw}"); return; }
+            ioR.AppendLine(iSttOn
+                ? "- STT      : ⚠ **本輪沒有 STT 回報** —— config 說 STT 開著，而 montage 一行都沒印。"
+                  + "這**不是**「沒有語音」，是這一輪的語音管線沒跑起來"
+                : "- STT      : 關（`_config.json` 的 `stt_enabled=false`）—— 沒有語音段是預期的，不是故障");
         }
 
         static double ToEpoch(DateTime iUtc) => (iUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;

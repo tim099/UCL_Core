@@ -1,7 +1,7 @@
 ---
 title: 觀影模式重做 — Cmd_StreamWatch 分步 + 計酬整合 + 場次匯出
 slug: streamwatch-cmd
-status: spec-approved（2026-08-15 Tim 拍板全部規格題；code 一行未動）
+status: shipped（2026-08-15 六步全落地並實跑：peek/start/join/cycle/observe/note；殘項見 §12 尾）
 created_at: 2026-08-15T06:55:00Z
 created_by: summit
 location: UCL_Core (cross-project)
@@ -93,6 +93,7 @@ Tim 的原話是「時間到會自動通知結束而不用另外判斷」。
 ## 3. Cmd 介面
 
 ```
+run_cmd.py run StreamWatch --arg step=peek    [--arg persona=<P>] [--arg seconds=<5..600>] [--arg raw=1]
 run_cmd.py run StreamWatch --arg step=start   --arg persona=<P> --arg until=<HH:mm> [--arg media=<work>]
 run_cmd.py run StreamWatch --arg step=join    --arg persona=<P>
 run_cmd.py run StreamWatch --arg step=cycle   --arg persona=<P>
@@ -102,11 +103,12 @@ run_cmd.py run StreamWatch --arg step=note    --arg persona=<P> --arg-file body=
 
 | step | 做什麼 |
 |---|---|
+| `peek` | **不開場、看一眼**（§3.4）：合成一張最近 N 秒的縮圖牆就走。**不讀/不寫 session、不記帳、不發文**；`persona` 選填 |
 | `start` | 主觀影者：解析並鎖定 `media_id`（§4）→ 註冊 `ends_at` → 開播公告（記 `start_seq`） |
 | `join` | 陪同觀眾：**繼承** primary 的 `media_id`，並取回至今評論摘要＋酒館游標（追上劇情） |
 | `cycle` | **自己跑縮圖牆合成**（§3.2）→ 回傳圖／字幕／剩餘時間；**到期與中斷判定在此**；`## next` 狀態相依 |
 | `observe` | **先發文、後記帳**；frame 數取自 `cycle` 當下記進 session 的值（agent 不傳數字也不傳路徑） |
-| `note` | 寫接續點 → **自己發文** |
+| `note` | 寫接續點 → **自己發文**。**收工後可補寫**（標 `note_late`，見 §7） |
 
 ### 3.1 每步回傳檔的 `## next` 必須狀態相依
 
@@ -199,6 +201,40 @@ Tim 2026-08-15：**讀字幕、畫面等流程盡量整合到 Cmd，且詳細給
 
 ⚠ **字幕沒有時要明寫「本輪無字幕」，不可以省略那一行** ——
 省略之後「沒有字幕」與「這個欄位不存在」在讀者眼裡同形。（`empty-is-a-question`）
+
+### 3.4 `peek` —— 不開場的一眼（Tim 2026-08-15 追加）
+
+> 「需要**非活動（session）下也能運作**的一套 Cmd，可以用來短暫觀看畫面（直播開啟時看一眼），
+> 然後同時也能測試用。」
+
+**為什麼不是「開一場很短的 session」**：session 是一個**承諾**（看到幾點、要寫接續點、會結算）。
+「直播開著我瞄一眼」與「我想確認 montage／OCR／STT 這條管線通不通」都不該付那個承諾的代價 ——
+而如果它們被迫開場，帳本裡就會多出一堆一分鐘、零評論、沒有接續點的場次，
+**每一筆都會在「這個人有沒有好好看」的統計裡說謊。**
+
+| 性質 | `peek` | `cycle` |
+|---|---|---|
+| session | **完全不碰**（不讀、不寫、不建） | 讀寫 |
+| 計酬 | **零** | 在場費＋observation |
+| 酒館 | **不發文** | observe/收播會發 |
+| 產物 | `_montage_peek_<owner>.jpg` | `_montage_<persona>.jpg` |
+| 窗口 | 最近 `seconds` 秒（預設 60） | 上輪 cursor → 感官水位 |
+| persona | 選填（不帶則歸 `_peek`） | 必填且必須在線 |
+
+⚠ **產物路徑必須跟 session 的分開**：共用一個檔名的話，一次 peek 會蓋掉進行中觀影場的素材，
+而那件事**不會報錯** —— agent 下一步照樣 Read 得到一張圖，只是內容不是它那一輪的。
+
+**`raw=1`**：不夾感官水位，看得到最新畫面，代價是尾端幾格可能還沒被 OCR/STT 辨識到。
+⇒ 回傳檔在這條路上**必須把代價量出來**（「尾端 19:56:49 超出感官水位 19:56:35 約 14s」），
+不可以只寫「未夾」——「未夾」是一個狀態，「超出 14 秒」才是讀數。
+
+**它同時是測試探針，而這件事有一個硬性要求：走同一條取材與對帳程式碼。**
+探針若自己走一條路，它綠了也不代表正式路徑會綠。
+> 🩸 2026-08-15 實證：手跑 `screenstream_montage.py` 全綠、exit 0，
+> 而同一分鐘 `step=cycle` 在同一台機器上 exit=1 —— 差別只在 Cmd 那條多夾了一個 `--before-mtime`。
+> **手跑通過從來不是 Cmd 通過。**
+
+---
 
 ## 4. `media_id` 是共享鍵，不是各自命名
 
@@ -332,6 +368,19 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
 
 > 遺漏的代價本來就落在未來 —— 那就讓未來的那個人**在需要它的那一刻**看見。
 
+### 7.1 收工後必須能補寫（2026-08-15 實跑修正）
+
+🩸 首版把 `note` 擋在「必須有 active session」上，而 `cycle` 的收工分支會印
+「本場未寫接續點 —— 要補：跑 `step=note`」 —— **而那一步剛好把 session 關掉了。**
+⇒ 它指的是一條**它自己封死的路**：照著做一定 blocked，接續點永遠補不上。
+
+> 這比靜默失效還難看一級：**指路存在、而且會大聲失敗。**
+> 一條規則會不會被遵守，不看它寫得多清楚，看**照著做走不走得通**。
+
+⇒ 現行行為：沒有 active session 時，退回**最近一場已結束的 session** 補寫，並且
+**發文與回傳檔雙邊標明「補寫」＋那場的 `settled_at`**，session 記 `note_late=true`。
+補寫可以晚，但**不可以看起來像當場寫的** —— 那就是把時間差藏起來。
+
 ---
 
 ## 8. 場次匯出
@@ -431,3 +480,24 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
 - **匯出**：`[start_seq, end_seq]` 的兩端與實際訊息檔逐字對得上（**回磁碟查，不看 Success**）
 
 ⚠ **驗收要站在收件端 / 事實源**：不看 stdout、不看退出碼、不看 md 投影。
+
+---
+
+### 12.1 已驗收（2026-08-15 實跑，讀數附在後面）
+
+- ✅ **到期不多發**：18:27 開場、`ends_at=18:45`，而我 **19:57** 才回來跑 `cycle` ——
+  結算 `在場 17 分鐘 / +2 token`，**沒有按 90 分鐘算**。這條首場曾經紅過（多發 1 token），
+  這次是**意外的異源驗收**：不是特地去測的，是我埋頭改 code 忘了回來，剛好踩到那條路。
+- ✅ **窗口對帳**：`窗口尾端 18:29:51 ≤ 水位 18:29:52 ✅（餘裕 1s）`＋水位來源 `OCR 18:30:12／STT 18:29:52`。
+  ⇒ 夾子生不生效現在是**一行可讀的比較**，不是一句宣告。
+- ✅ **STT 段數**：`27 段 (cache-only, 命中 5 chunk)`；`0 段`／`無 cache`／`config 開著卻沒回報` 三種狀態各有各的句子。
+- ✅ **`peek` 兩條路**：夾（餘裕 1s）與 `raw=1`（尾端超出水位 14s，代價量出來）。
+- ✅ **收工後補寫接續點**：`note_late=true`，發文與回傳檔雙邊標明。
+
+### 12.2 仍未做（別讓它們安靜）
+
+- **場次匯出的實際產出**：`start_seq`/`end_seq` 已記，但「把區間拉出來落成 Library media」那一步沒有。
+- **酒館同步**：`--tavern-self` / `--tavern-since-seq` 沒傳，sidecar 的酒館段仍是未過濾預設值。
+- **companion 兩人同場**：只驗過編譯與紅路。
+- **舊件退場**：`stream_watch_session.py`（911 行）與舊 `Skills~/ucl-stream-watch/SKILL.md`
+  （**5 處寫死 600s，實際保存期 2400s**）仍在，而後者現在仍是 `/ucl-stream-watch` 載入的那一份。

@@ -734,6 +734,52 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ==========================================================
+        // 區塊職責：只載入「某個結帳日之後」的 entry（跨日結算用）
+        // 物理意義：結帳檔是已關帳期間的權威記錄（見 UCL_TreasuryClosing 檔頭），
+        //          所以「結帳日之後的日期夾」就是全部尚未被結帳涵蓋的帳。
+        //          呼叫端把結帳檔的餘額當種子、再疊上本函式回傳的 entry，
+        //          即可得到與全量重放**等價**的結果，而成本從 O(全部歷史) 降到 O(未關帳期間)。
+        // 數值影響：純讀。日期夾以 yyyy-MM-dd 命名，字典序 == 時間序，直接字串比大小。
+        // ⚠ 邊界（這裡有一隻紅隊抓到的坑）：範圍必須是「**結帳日之後全部**」，
+        //   不可以只抓「今天前後幾夾」。實測：結帳落後 3 天時，固定三夾會漏掉
+        //   08-12 才誕生的 `Template` 帳戶 —— 而結帳落後正是 GenerateMissing 失敗時的常態
+        //   （它包在 try/catch 裡、刻意不擋保管費）。**降級路徑上的假設最容易沒人驗。**
+        // ⚠ afterDateKeyExclusive 為 null/空 → 回傳全部（等同 LoadAllEntries 的集合，
+        //   但不排序）。呼叫端沒有結帳檔可用時就是走這條，慢但正確。
+        // ==========================================================
+        public static List<TreasuryLedgerEntry> LoadEntriesAfterDate(string afterDateKeyExclusive)
+        {
+            var list = new List<TreasuryLedgerEntry>();
+            string root = UCL_TreasuryPaths.GetLedgerRoot();
+            if (!Directory.Exists(root)) return list;
+
+            foreach (var dir in Directory.GetDirectories(root))
+            {
+                string dayKey = Path.GetFileName(dir);
+                // 非日期夾一律跳過（不猜、不容錯 —— 猜錯會把不該算的錢算進來）
+                if (!DateTime.TryParseExact(dayKey, "yyyy-MM-dd",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out _)) continue;
+                if (!string.IsNullOrEmpty(afterDateKeyExclusive)
+                    && string.CompareOrdinal(dayKey, afterDateKeyExclusive) <= 0) continue;
+
+                foreach (var f in Directory.GetFiles(dir, "*.json"))
+                {
+                    try
+                    {
+                        var entry = ParseEntry(File.ReadAllText(f, Encoding.UTF8));
+                        if (entry != null) list.Add(entry);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Treasury] Skipping malformed ledger entry {Path.GetFileName(f)}: {ex.Message}");
+                    }
+                }
+            }
+            return list;
+        }
+
+        // ==========================================================
         // 區塊職責：Audit — 給定 account 列其全 ledger entries
         // ==========================================================
         public static List<TreasuryLedgerEntry> Audit(string accountId, string sinceTs = null)

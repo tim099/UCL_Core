@@ -161,7 +161,7 @@ Agent 看到下列情境**該主動考慮** Bartender:
 - **HP penalty 廣播但不扣血** — 等 EOV 端 listener 接 (meta.tag=time-penalty)
 - **Editor-only daemon** — Editor 關閉時 daemon 不跑 (v2: Python sidecar daemon)
 - **Substring match** — 無 regex / fuzzy
-- **跨日第一個 tick 很重** — 見下節；初開 Editor 卡住通常是它
+- **跨日第一個 tick 較重** — 見下節（2026-08-15 已從全帳本重放降到只讀未關帳期間）
 
 ---
 
@@ -195,13 +195,30 @@ python -c "import json;[print(json.dumps(json.loads(l),ensure_ascii=False,indent
 基數是刻意帶的：**只有時間分不出「單位成本高」還是「量太大」，而兩者的修法完全不同。**
 
 相位名稱對照：`CheckKeywordTriggers` / `CheckTimeRules` 是常態三段的前兩段；
-`overnight.*` 系列（`enter` / `closing` / `load_all_entries` / `exempt_scan` / `charge_loop` / `broadcast`）
+`overnight.*` 系列（`enter` / `closing` / `load_entries` / `exempt_scan` / `charge_loop` / `broadcast`）
 只在 **`cross_day: true`** 那一天出現 —— 那是跨日保管費結算的重路徑，一天只走一次。
 
-### 為什麼跨日那一次特別重
+`overnight.load_entries` 的 note 會標出本輪的取材基準，三種形狀各有意義：
 
-`overnight.load_all_entries` 是整個 tick 唯一 **O(全部歷史)** 的動作：它逐檔 read + parse
-`Treasury/ledger/` 底下**每一個** entry 檔。本專案已累積 14,000+ 檔／20MB，
-而冷啟動時作業系統檔案快取是空的、逐檔開檔又各吃一次防毒即時掃描 ——
-熱讀 0.5 秒的東西，冷讀可以是分鐘級。餘額查詢那條路早已有增量快取 + 每日結帳熱啟，
-**但 `LoadAllEntries()` 沒有走那套**。看到 `load_all_entries` 佔掉大半 `total_ms` 就是這件事。
+| note 形狀 | 意思 | 該不該擔心 |
+|---|---|---|
+| `base=<日期> seeded=N entries=M` | 正常：以該日結帳檔為種子，只讀其後的 entry | 否 |
+| `base=NONE(fallback-full) entries=M` | **找不到任何結帳檔**，退回全量重放 | 是 —— 慢，且反覆出現代表結帳沒在產出 |
+| `FAILED` | 讀取拋例外，本輪不推進 state，下個 tick 重試 | 是 |
+
+### 為什麼跨日那一次曾經特別重（2026-08-15 已修）
+
+原本這裡呼叫 `UCL_TreasuryLedger.LoadAllEntries()` —— 逐檔 read + parse `Treasury/ledger/` 底下
+**每一個** entry 檔（本專案已 14,700+ 檔／20MB）。冷啟動時 OS 檔案快取是空的、逐檔開檔又各吃一次
+防毒即時掃描，於是熱讀 0.5 秒的東西冷讀是分鐘級 —— 那就是 08-14 / 08-15 兩次
+「初開 Editor 卡住」的那 111 秒與 166 秒。
+
+**修法不是加快取，是不要讀。** 快取是記憶體的，而 domain reload 清光 static ——
+「初次啟動 Editor」定義上就是冷 domain，快取那一刻必然是空的。
+改成以**最近一份結帳檔**當帳戶種子（它已列出每個帳戶，含餘額 0 的），
+只用 `LoadEntriesAfterDate(結帳日)` 讀尚未關帳的日期夾。實測 14,709 檔 → 30 檔。
+
+> ⚠ 範圍必須是「**結帳日之後全部**」，不是「今天前後幾夾」。
+> 紅隊實測：結帳落後 3 天時，固定三夾會漏掉 08-12 才誕生的 `Template` 帳戶 ——
+> 而結帳落後正是 `GenerateMissing` 失敗時的常態（它刻意不擋保管費）。
+> **漏掉帳戶＝那個帳戶今天不被收保管費，而它不會叫。**

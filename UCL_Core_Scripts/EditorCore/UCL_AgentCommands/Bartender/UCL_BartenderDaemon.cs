@@ -1036,28 +1036,74 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             MarkPhase("overnight.closing", $"written={closingWritten}");
 
             // 跨日了 — 跑一輪檢查
-            // 1. Load 全 ledger 一次 (cache reuse 兩個 pass)
-            // ⚠ 效能觀測點（2026-08-15）：這是本函式唯一 O(全部歷史) 的動作 —— 它 read+parse
-            //   ledger 底下**每一個** entry 檔（本專案已 14,000+ 檔）。冷啟動時作業系統檔案快取是空的，
-            //   逐檔開檔又會各吃一次防毒即時掃描，於是單位成本從「熱讀 0.04ms/檔」漲到毫秒級。
-            //   相位 note 同時記錄耗時與**檔數**：只有時間會分不出「單位成本高」還是「量太大」，
-            //   而這兩者的修法完全不同（前者改讀取方式，後者改保留策略）。
+            // ===========================================================
+            // 1. 取得本輪需要的帳（**不是全部歷史**）
+            //
+            // 2026-08-15 修：原本這裡呼叫 `LoadAllEntries()`，read+parse ledger 底下**每一個**
+            //   entry 檔（本專案已 14,700+ 檔 / 20MB）。冷啟動時 OS 檔案快取是空的、逐檔開檔又各吃
+            //   一次防毒即時掃描 —— 這就是 Tim 回報「初開 Editor 卡三分鐘」的那一段
+            //   （08-14 / 08-15 兩個獨立樣本，結帳寫完到廣播落地各 111s / 166s）。
+            //
+            // 為什麼不是「加快取」而是「不要讀」：快取是**記憶體**的，而 domain reload 會清光 static ——
+            //   「初次啟動 Editor」定義上就是冷 domain，快取在那一刻必然是空的，該讀的一檔都少不掉。
+            //   要跨啟動存活就得落盤，而把 14,700 筆 entry 落成一個檔＝重新發明一次 ledger。
+            //   （餘額快取能救是因為它存的是 41 個 int，不是 14,700 個物件。）
+            //
+            // 本函式其實只需要三樣東西，全都拿得到便宜貨：
+            //   ① 全部 unique account   → 最近一份**結帳檔**已列出每個帳戶（含餘額 0 的）
+            //   ② 今日保管費 debit 判重 → useRef 內嵌 today、ledger 按 UTC 日分桶 ⇒ 只在未關帳的夾裡
+            //   ③ 已扣未存的補償金額     → 同 ②
+            //
+            // ⚠ 範圍必須是「**結帳日之後全部**」而不是「今天前後幾夾」——
+            //   紅隊實測：結帳落後 3 天時，固定三夾會漏掉 08-12 才誕生的 `Template` 帳戶，
+            //   而結帳落後正是 `GenerateMissing` 失敗時的常態（它刻意不擋保管費）。
+            //   漏掉帳戶＝那個帳戶今天不會被收保管費，**而它不會叫**。
+            // ⚠ 沒有任何結帳檔（初次上線 / 結帳檔被刪）→ 退回全量重放。慢，但正確。
+            //   壞要往安全的方向壞：少收一天保管費可以補，收錯 / 漏收而無聲不行。
+            // ===========================================================
             List<TreasuryLedgerEntry> allEntries;
-            try { allEntries = UCL_TreasuryLedger.LoadAllEntries(); }
+            var allAccounts = new HashSet<string>();
+            string scanNote;
+            try
+            {
+                var closingBase = UCL_TreasuryClosing.LoadLatestBefore(today);
+                if (closingBase != null)
+                {
+                    // 結帳檔的 key 是 accountId + "\n" + currency（見 TreasuryClosingRecord）——
+                    // 這裡只要帳戶名，幣別不參與「誰要被檢查」的判斷。
+                    foreach (var key in closingBase.Balances.Keys)
+                    {
+                        int sep = key.IndexOf('\n');
+                        string acc = sep < 0 ? key : key.Substring(0, sep);
+                        if (!string.IsNullOrEmpty(acc)) allAccounts.Add(acc);
+                    }
+                    allEntries = UCL_TreasuryLedger.LoadEntriesAfterDate(closingBase.DateKey);
+                    scanNote = $"base={closingBase.DateKey} seeded={allAccounts.Count} entries={allEntries.Count}";
+                }
+                else
+                {
+                    // 沒有結帳基準 —— 只能重放全部。記一筆 warning，否則這條降級路徑會靜默地慢下去，
+                    // 而「慢」跟「壞」在使用者眼裡長得一樣（都是 Editor 卡住）。
+                    Debug.LogWarning("[Bartender] 找不到任何結帳檔 —— 跨日結算退回全量重放（正確但慢）。"
+                                     + " 若這行反覆出現，去看 UCL_TreasuryClosing.GenerateMissing 為何沒產出。");
+                    allEntries = UCL_TreasuryLedger.LoadAllEntries();
+                    scanNote = $"base=NONE(fallback-full) entries={allEntries.Count}";
+                }
+            }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Bartender] overnight check load ledger fail: {ex.Message}");
-                MarkPhase("overnight.load_all_entries", "FAILED");
+                MarkPhase("overnight.load_entries", "FAILED");
                 return;  // 不更新 state, 隔下個 tick 再試
             }
-            MarkPhase("overnight.load_all_entries", $"entries={allEntries.Count}");
 
-            // 2. 蒐集所有 unique account_id
-            var allAccounts = new HashSet<string>();
+            // 2. 補上「結帳之後才出現」的新帳戶（今天才開的帳戶不在昨天的結帳檔裡，
+            //    而它一樣可能被一筆大額轉入推過門檻）
             foreach (var e in allEntries)
             {
                 if (!string.IsNullOrEmpty(e.account_id)) allAccounts.Add(e.account_id);
             }
+            MarkPhase("overnight.load_entries", $"{scanNote} accounts={allAccounts.Count}");
 
             // 3. Pre-build useRef set (idempotency check, 防 state crash mid-loop 後重跑重複扣)
             // 注意: Debit caller 用 useRef 參數名, 但 TreasuryLedgerEntry 內部欄位是 source_ref

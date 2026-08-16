@@ -561,6 +561,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                             + (aWatermark > 0 ? $"　⇒ {FromEpochLocal(aWatermark):HH:mm:ss}"
                                                 + $"　←　落後 cursor {(aCursor - aWatermark):F0}s" : ""));
                 aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
+                // ⚠ **無素材時同樣要印同場訊息** —— 這條是我 2026-08-16 自己寫了「每一段永遠存在」
+                //   卻在同一次改動裡違反的那格：AppendSidecar 原本只掛在有素材那條路徑上。
+                //   而「我這輪沒東西看」正是**最需要看別人講了什麼**的時刻（他的窗口跟我的不一樣）。
+                //   ⇒ 兩條路徑都印；本輪無 sidecar，所以字幕/語音段會誠實地印「無」。
+                AppendSidecar(aR, Path.ChangeExtension(aOutPath, ".subtitles.md"), false,
+                              iPersona, ParseTavernShown(aStdout), ReadInt(aS, "tavern_seq"));
                 aR.AppendLine();
                 aR.AppendLine("## next");
                 aR.AppendLine($"1. 等 30–60 秒再跑一次 step=cycle（不必改任何參數）。");
@@ -593,8 +599,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   游標卡住 ⇒ 每輪都從同一個舊起點重列同一批，同場的人後來講的話永遠排在額度外。
             //   （這正是 2026-08-16 那隻的第二半；只傳 --tavern-since-seq 而不推進，第二輪起就會復發。）
             // ⚠ 只前進不後退：max 保底，避免某輪 0 筆未讀時把游標打回去。
+            // 🩸 2026-08-16 第二隻（長在第一隻的修法裡）：本輪 **0 筆未讀時也照樣推進游標** ⇒
+            //   第一輪跑在同事發言之前、游標卻已跳到當前最大 seq ⇒ 他之後發的整段被永久跳過。
+            //   症狀：sidecar 酒館段整段消失，而「沒人說話」與「游標跳過了說話的人」同形
+            //   （我當時還替它編了個無害的理由，說那是 0 筆）。
+            // ⇒ **沒讀到東西就沒有「已讀」到那裡**：shown==0 不推進。
+            int aTavernShown = ParseTavernShown(aStdout);
             int aTavernMax = ParseTavernMaxSeq(aStdout);
-            if (aTavernMax > 0)
+            if (aTavernShown > 0 && aTavernMax > 0)
                 aS["tavern_seq"] = new JsonData(Math.Max(aTavernMax, ReadInt(aS, "tavern_seq")));
             aS["cycles"] = new JsonData(ReadInt(aS, "cycles") + 1);
             aS["tiles_total"] = new JsonData(ReadInt(aS, "tiles_total") + aInfo.Tiles);
@@ -634,6 +646,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
             aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
+            // 單一入口：字幕／語音／同場訊息全部嵌進本檔（Tim 2026-08-16）
+            AppendSidecar(aR, aSubPath, aHasSub, iPersona, aTavernShown, ReadInt(aS, "tavern_seq"));
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. Read 上面的縮圖牆{(aHasSub ? "與字幕" : "")}路徑");
@@ -1622,6 +1636,52 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (string.IsNullOrEmpty(iStdout)) return 0;
             var aM = Regex.Match(iStdout, @"tavern_max_seq=(\d+)");
             return aM.Success && int.TryParse(aM.Groups[1].Value, out int aV) ? aV : 0;
+        }
+
+        // 本輪酒館段實際顯示了幾筆（montage stdout：`tavern tail : N 筆未讀 …`）。撈不到回 -1＝未知。
+        // ⚠ 0 與「未知」要分開：0 是讀數（同事沒發言），-1 是通道沒回報（可能壞了）。
+        //   兩者都不推進游標，但**印給人看的字不一樣** —— 這正是本檔今天修過兩次的那條界線。
+        static int ParseTavernShown(string iStdout)
+        {
+            if (string.IsNullOrEmpty(iStdout)) return -1;
+            var aM = Regex.Match(iStdout, @"tavern tail\s*:\s*(\d+) 筆未讀");
+            return aM.Success && int.TryParse(aM.Groups[1].Value, out int aV) ? aV : -1;
+        }
+
+        // 區塊職責：把 montage 的 sidecar 併進 cycle 回傳檔，成為**單一入口**（Tim 2026-08-16）。
+        // 物理意義：sidecar 是產物，本函式只**嵌入**不重算 —— 對齊本檔「數字一律取自產出端」的鐵律。
+        // 🩸 為什麼要合併：今天兩次沒讀到同場的人，共同結構都是「關鍵資訊住在第二個檔，而我讀的是第一個」。
+        //   教人「記得也要開 sidecar」是防記性；把它搬過來是**把問題移走**。
+        // ⚠ 規格：每一段**永遠存在**，空的時候印零狀態 —— 否則合併只是把洞搬進同一個檔。
+        //   順序刻意是「同場訊息 → 畫面字幕 → 語音」：訊息是我看不到的那半邊，稀缺的排前面。
+        static void AppendSidecar(StringBuilder ioR, string iSubPath, bool iHasSub,
+                                  string iPersona, int iShown, int iCursorSeq)
+        {
+            ioR.AppendLine();
+            ioR.AppendLine("## 💬 同場訊息（已排除自己）");
+            string aState = iShown < 0 ? "**⚠ 通道未回報**（不是 0 筆 —— 這代表酒館段沒跑起來，先查通道）"
+                          : iShown == 0 ? "0 筆 —— 同場此刻沒有新發言"
+                          : $"**{iShown} 筆**";
+            ioR.AppendLine($"- {aState}｜排除 @{iPersona}｜已讀游標 seq={iCursorSeq}");
+            if (iShown == 0)
+                ioR.AppendLine("- ⚠ 0 筆**不推進游標** —— 沒讀到東西就沒有「已讀」到那裡（2026-08-16 血證）");
+
+            string aBody = "";
+            try { if (iHasSub && File.Exists(iSubPath)) aBody = File.ReadAllText(iSubPath); } catch { }
+            if (string.IsNullOrEmpty(aBody))
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("## 📖 畫面字幕（OCR）");
+                ioR.AppendLine("- **本輪無 sidecar** —— 見上方素材區的字幕註記（殘留檔一律不端）");
+                ioR.AppendLine();
+                ioR.AppendLine("## 🎙 語音轉錄（STT）");
+                ioR.AppendLine("- **本輪無 sidecar**");
+                return;
+            }
+            // sidecar 原文照嵌（含其自己的段落標題），不重排、不摘要 —— 摘要就是重算。
+            ioR.AppendLine();
+            ioR.AppendLine("<!-- 以下自 montage sidecar 原文嵌入；來源：" + iSubPath + " -->");
+            ioR.AppendLine(aBody.TrimEnd());
         }
         static double ReadDouble(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? double.Parse(iJd[iKey].ToString(), System.Globalization.CultureInfo.InvariantCulture) : 0; } catch { return 0; } }
         static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }

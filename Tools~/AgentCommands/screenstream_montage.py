@@ -154,8 +154,17 @@ _TAVERN_NOISE_RE = re.compile(r"^\s*-\s*(meta|refs):")
 _TAVERN_ATTACH_RE = re.compile(r"attachments=(\[.*?\])`")
 # refs 行 fallback: '  - refs: [path](path)' 取小括號內本地路徑 (attachments JSON 解析不出時用)
 _TAVERN_REFS_RE = re.compile(r"^\s*-\s*refs:\s*\[[^\]]*\]\(([^)]+)\)")
-# 單筆 body 過長 (e.g. 含 glossary auto-attach) → 截斷防 sidecar 爆量, 截斷標 … 並誠實附原長
-_TAVERN_BODY_CAP = 280
+# 單筆 body 上限 (0 = 不截斷)。
+# ⚠ Tim 2026-08-16 拍板改成**不截斷**：「為了交流方便＆同步劇情細節，請顯示完整訊息，
+#   而非跟酒館 inbox 一樣只顯示片段」。
+# 🩸 為什麼原本的 280 是錯的：陪看的價值**全部在同場的人補的那幾格細節裡** ——
+#   而那些細節（他抓到的台詞原文、他的窗口涵蓋哪一段、他推翻了什麼）幾乎一定落在 280 字之後。
+#   截斷之後留下的是開場白，剛好是**最沒有資訊量**的那一段；於是「有讀到」與「讀到有用的東西」同形。
+#   實測（2026-08-16 三方陪看）：被截掉的正是 gura 的 Procyon 判定與 basecamp 的 STT 位置更正 ——
+#   兩者都是**推翻主觀影者結論**的內容，而它們被換成了「…（原 2133 字, 完整內容跑 op=read）」。
+# ⇒ 爆量的原始顧慮改由 `--tavern-limit`（筆數）控制，不由字數控制：
+#   少幾筆但每筆完整 > 多幾筆但每筆只剩開場白。
+_TAVERN_BODY_CAP = 0
 
 
 def _extract_tavern_images(line: str, cur: dict):
@@ -264,7 +273,8 @@ def render_tavern_tail(self_persona: str, since_seq: int, limit: int):
     img_count = 0
     for d in shown:
         body = " ".join(s.strip() for s in d["body"] if s.strip())
-        if len(body) > _TAVERN_BODY_CAP:
+        # _TAVERN_BODY_CAP == 0 ⇒ 不截斷（Tim 2026-08-16：同場評論要完整，交流與劇情細節都在後半段）
+        if _TAVERN_BODY_CAP > 0 and len(body) > _TAVERN_BODY_CAP:
             body = body[:_TAVERN_BODY_CAP] + f"…（原 {len(body)} 字, 完整內容跑 op=read）"
         lines.append(f"- **[seq {d['seq']}] {d['time']} {d['sender']}**: {body}")
         # Discord 附件圖片: 列出本地路徑, agent 用 Read 工具直接看 (sidecar 純文字無法 inline 顯圖)

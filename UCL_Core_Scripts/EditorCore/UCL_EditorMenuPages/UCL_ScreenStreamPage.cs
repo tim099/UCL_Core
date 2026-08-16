@@ -1,12 +1,8 @@
 ﻿// 區塊職責: ScreenStream 控制 Page (UCL_Core 版) — 獨立的 toggle UI, 跟 LoginStatusPage 隔離 concern。
-//            自 EOV 專案的 RCG_ScreenStreamPage 遷移 (Tim 2026-07-26 拍板「相關功能遷移到 UCL_Core;
-//            確認新版可用後移除 RCG 版」); 功能對齊 RCG 版 T13/T14/T19/T-STT-PageToggle/T-STT-StaleFix 全量。
 // 物理意義: 讀寫 <主專案>/AgentCommands/_screenstream/_config.json — daemon 端每 loop reload 此檔反應 toggle。
 // 設計取捨:
-//   - 獨立 Page (per Tim 2026-05-16 拍板) 防誤觸 + 視覺強烈警示「錄影中」
 //   - 純讀寫 config + 顯示 daemon 端寫的 frame_count/started_at 資訊
 //   - 新增「🎬 影音管理」入口按鈕跳轉 UCL_MediaAdminPage (Tim 2026-07-26 要求) — STT/OCR 安裝與細部設定歸那頁
-// 2026-07-26 kaguya (Luna) — 自 RCG_ScreenStreamPage (T13 basecamp 2026-05-16) 遷移
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

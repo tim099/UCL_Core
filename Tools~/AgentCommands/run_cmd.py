@@ -408,7 +408,14 @@ def _resolve_catalog_path() -> Path:
 CATALOG_PATH = _resolve_catalog_path()
 
 # ensure_idle 預設值
-DEFAULT_ACK_TIMEOUT = 60.0   # 等前一輪 trigger 消失的最久秒數
+# ③ 等前一輪 trigger 消失的最久秒數（Tim 2026-08-16 由 60 → 180）
+# 物理意義：60s 是**單人時代**的值；一輪 StreamWatch `cycle` 本身就要 20–40s，
+#          排在別人後面很容易超過，而逾時的處置是 SystemExit ⇒ 呼叫端看起來像被拒絕。
+# ⚠ 而這條**不是今晚塞車的解** —— 解是上面那條 ①（per-persona queue 路由）：
+#   每個 persona 走自己的 lane 之後，`ensure_idle` 只會等到**自己上一筆**，
+#   跨 persona 的互等從結構上消失。這裡拉長只是給「自己上一筆很慢」留餘裕。
+#   （拉長等待來解互等，等於用更長的忍耐去撐一個錯的拓樸 —— 那是防症狀。）
+DEFAULT_ACK_TIMEOUT = 180.0
 DEFAULT_POLL_INTERVAL = 1.0
 DEFAULT_RUN_TIMEOUT = 120    # wait 階段整體超時
 
@@ -857,7 +864,48 @@ def cmd_wait(args: argparse.Namespace) -> int:
 
     print_fail_verdict(f"  ✗ Timeout after {timeout_sec}s — Editor not running, "
                        f"or UCL_AgentCommandWatcher disabled?")
+    _warn_stale_payload(args)
     return 3
+
+
+def _warn_stale_payload(args) -> None:
+    """② stale-read 防呆（Tim 2026-08-16 拍板）：這一筆沒跑成 ⇒ **回傳檔還是上一輪的**。
+
+    區塊職責：在失敗／逾時的出口，明說「別讀那個檔」，並把它的 mtime 印出來當佐證。
+    物理意義：本工具成功時會印 `📄 回傳檔：<路徑>`，而**失敗時什麼都不印** ——
+             於是呼叫端最自然的下一步（去讀上次那個路徑）會拿到**上一輪的內容**，
+             而那份內容格式完整、數字合理、沒有任何一格會紅。
+    🩸 2026-08-16 血證（summit 親踩，觀影中）：`cycle` 逾時後我照著重跑並讀回傳檔，
+       讀到的是 4 分鐘前那一輪；我是靠檔頭的 `ts=22:27:27` 才發現。
+       **失敗那次沒有留下任何「這不是你的結果」的標記。**
+    數值影響：純輸出，不改行為也不刪檔 —— 刪掉舊回傳檔會讓「上一輪的結論」跟著消失，
+             而那份通常還有用。要防的是**誤讀**，不是它的存在。
+    """
+    try:
+        cmd_type = (getattr(args, "cmd_type", "") or "").strip()
+        path = CMD_OUTPUT_FILES.get(cmd_type) or CMD_OUTPUT_FILES.get(cmd_type.lower())
+        print("  ⚠ 本筆未完成 ⇒ **回傳檔沒有被更新**。若下一步要讀它，先確認檔頭時間戳。",
+              file=sys.stderr)
+        stale = []
+        if path:
+            p = Path(DATA_ROOT) / path if not Path(path).is_absolute() else Path(path)
+            if p.exists():
+                stale.append(p)
+        # 儀式類 Cmd（StreamWatch / GoodMorning / GoodNight / Library…）的回傳檔是
+        # letters/<persona>/_<cmdtype><step>.md —— 路徑帶 persona，靜態表放不下。
+        # ⇒ 有 persona 就用它 glob 出來，沒有就只印上面那句通用提醒（不猜）。
+        who = _persona_from_cmd_args(args) or (getattr(args, "persona", None) or "").strip()
+        if who and cmd_type:
+            d = Path(DATA_ROOT) / "ChatTavern" / "baton" / "letters" / who
+            if d.is_dir():
+                stale += sorted(d.glob(f"_{cmd_type.lower()}*.md"),
+                                key=lambda f: f.stat().st_mtime, reverse=True)[:2]
+        for p in stale:
+            mt = datetime.fromtimestamp(p.stat().st_mtime).strftime("%H:%M:%S")
+            print(f"     ↳ 現存檔 mtime＝{mt}（**上一輪的**，不是這一筆）：{p}", file=sys.stderr)
+        sys.stderr.flush()
+    except Exception:
+        pass      # 這是提醒不是主線 —— 它自己壞掉不該再蓋掉上面那行真正的失敗判決
 
 
 def _commit_catchup_cursor_if_post(args, arg_pairs: dict) -> None:
@@ -1230,6 +1278,35 @@ def expand_arg_files(arg_pairs: dict, arg_file_items: list[str]) -> tuple[bool, 
 # CLI
 # ===========================================================
 
+def _persona_from_cmd_args(args: argparse.Namespace) -> str | None:
+    """從 `--arg persona=<P>` / `--arg-file persona=<檔>` 取出 persona，供 queue 自動路由用。
+
+    區塊職責：只讀不寫 —— 回傳一個字串或 None，不動任何全域狀態。
+    ⚠ 刻意**不吃 `--arg-stdin persona`**：stdin 只能讀一次，在這裡讀掉的話真正的
+      arg 解析就拿不到了（而那個失敗會是靜默的：cmd 收到空 body）。
+      persona 是短值，沒有人會用 stdin 傳它。
+    ⚠ 也刻意**不做 alias / 大小寫正規化**：路由只認呼叫端寫的字面值。
+      這裡若自作聰明把 `Summit` 正規化成 `summit`，就會出現「args 裡是 Summit、
+      queue 落在 summit」的分岔，而那種不一致沒有任何一格會叫。
+    """
+    for raw in (getattr(args, "arg", None) or []):
+        k, sep, v = str(raw).partition("=")
+        if sep and k.strip() == "persona":
+            v = v.strip()
+            if v:
+                return v
+    for raw in (getattr(args, "arg_file", None) or []):
+        k, sep, path = str(raw).partition("=")
+        if sep and k.strip() == "persona":
+            try:
+                v = Path(path.strip()).read_text(encoding="utf-8").strip()
+            except Exception:
+                return None      # 讀不到就當沒有 —— 路由退回 anonymous，真正的錯由後面的 arg 解析報
+            if v:
+                return v
+    return None
+
+
 def add_common_submit_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mode", default="OneShot", choices=["OneShot", "Repeatable"])
     p.add_argument("--arg", action="append", default=[],
@@ -1354,6 +1431,21 @@ def main() -> int:
     #   （e.g. basecamp-sw 看直播專用 queue），身分仍由 --persona 宣告並戳進 args ——
     #   **路由與身分是兩件事，只是預設情況下同一個值**。
     _persona = (getattr(args, "persona", None) or "").strip() or None
+    # ── ① queue 自動路由（Tim 2026-08-16 拍板）────────────────────────────
+    # 區塊職責：沒帶 `--persona` 但 cmd args 裡有 `persona=<P>` 時，用它決定 queue 路由。
+    # 物理意義：`--persona`（run_cmd 的旗標，決定走哪條 lane）與 `--arg persona=`（Cmd 的參數，
+    #          決定這筆 cmd 代表誰）**是兩個不同的東西**，而實務上呼叫端只會帶後者 ——
+    #          於是所有人都掉進 `queues/anonymous/`，四個 persona 擠同一條 lane 互相阻塞。
+    # 🩸 2026-08-16 血證（summit 親踩，觀影同場四人）：一晚兩次 `ensure_idle` 逾時 SystemExit，
+    #    錯誤訊息裡的路徑是 `queues/anonymous/pending.trigger`，而 `queues/summit/` 好端端空在旁邊。
+    #    **功能在、路由在、旗標在 —— 沒有人被指向它。** 規則要長在通道上，不要掛在呼叫端的記憶裡。
+    # 數值影響：只在 `--agent-id` 與 `--persona` 皆未提供時生效 ⇒ 顯式指定者行為逐位元不變；
+    #          `--arg persona=` 也沒有時仍落 anonymous（與改動前相同）。
+    if not _base_agent and not _persona:
+        _persona = _persona_from_cmd_args(args)
+        if _persona:
+            print(f"  ↪ queue 路由：由 --arg persona={_persona} 推得 → queues/{_persona}/"
+                  f"（未帶 --persona；要走別條通道請顯式帶 --persona / --agent-id）")
     _base_agent = _base_agent or _persona
     # lane 是**檔名後綴**不是 id 的一部分：queues/<persona>/queue-<lane>.json。
     # 分隔符從舊制的 '~' 改成 '/' —— 它現在對應真實的目錄層級，不是一個編碼在字串裡的假層級。

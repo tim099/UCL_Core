@@ -222,8 +222,41 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return File.Exists(aScript) ? aScript : null;
         }
 
+        /// <summary>
+        /// 區塊職責：解析 persona → bank → 目前餘額，組成 brief 的 --bank-balance 值。
+        /// 物理意義：餘額的唯一算法擁有者是 UCL_TreasuryLedger（增量快取 + snapshot + 每日結帳）。
+        ///          brief 那行「餘額 N tavern_token」以前由 python 自己全掃帳本重算 ——
+        ///          🩸 14,985 檔逐檔 json.load，冷檔案快取下近兩分鐘，step=brief 被拖到 112s，
+        ///          08-13 那次直接撞 120s timeout 被 kill。改成「Cmd 流程內查好餵過去」。
+        /// 數值影響：回傳 "<bank>=<balance>"（python 端帳號對不上就忽略並自行重算，不會印錯帳號的數）。
+        ///          任何一步解析不出來 → 回 null（= 不餵，python 走舊的重算路，慢但正確）。
+        /// ⚠ **必須在主執行緒呼叫** —— DataRoot / ResolveData 走 PlayerPrefs 與 AssetDatabase。
+        /// </summary>
+        public static string ResolveBankBalanceArg(string iPersona)
+        {
+            try
+            {
+                string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
+                if (!File.Exists(aPersonaPath)) return null;
+                var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
+                var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+                string aAgent = NormalizeAgent(aMeta, aRaw.GetString("agent", ""));
+                if (string.IsNullOrEmpty(aAgent)) return null;
+                string aBank = ResolveBankAccount(aMeta, aAgent);
+                if (string.IsNullOrEmpty(aBank)) return null;
+                return $"{aBank}={Treasury.UCL_TreasuryLedger.GetBalance(aBank, "tavern_token")}";
+            }
+            catch (Exception e)
+            {
+                // 這是純顯示欄位的加速路，壞了就不餵 —— 不讓它擋掉整個 morning。
+                UnityEngine.Debug.LogWarning($"[AwakeningService] 餘額預查失敗（brief 改自行重算）：{e.Message}");
+                return null;
+            }
+        }
+
         public static (bool ok, string report, string briefPath, int briefLines) RunBrief(
-            string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null)
+            string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null,
+            string iBankBalanceArg = null)
         {
             string aScript = iScriptPath ?? ResolveAwakeningScriptPath();
             if (string.IsNullOrEmpty(aScript))
@@ -240,6 +273,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             DateTime aStartedUtc = DateTime.UtcNow;
 
             string aArgs = $"\"{aScript}\" brief --persona \"{iPersona}\"";
+            if (!string.IsNullOrEmpty(iBankBalanceArg))
+                aArgs += $" --bank-balance \"{iBankBalanceArg}\"";
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs, UCL_RepoPath.RepoRoot,
                 PROC_TAG, iCallerName, iTimeoutMs);
 

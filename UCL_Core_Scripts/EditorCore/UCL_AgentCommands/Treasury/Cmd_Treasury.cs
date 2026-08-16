@@ -99,6 +99,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("balance 缺少 account"); return; }
 
             int balance = UCL_TreasuryLedger.GetBalance(account, currency);
+            // 機器可讀的回報 —— 呼叫端（python `_lib/treasury_cmd.treasury_balance`）拿這個值，
+            // 不必去 parse markdown。⚠ 沒有這一欄的時代，python 端各自全掃帳本自己算：
+            // 四份複製品、每份 14,985 檔逐檔 json.load，冷檔案快取下近兩分鐘
+            // （2026-08-16 basecamp 量測：morning 的 brief 被拖到 112s，08-13 更撞 timeout 被 kill）。
+            // 「銀行/token 一律走 C#」是 Tim 2026-08-04 的定調，寫入端當時就搬了，讀取端漏在原地。
+            UCL_AgentCommandRunner.ReportOutputValue("balance", balance.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue("account", account);
+            UCL_AgentCommandRunner.ReportOutputValue("currency", currency);
             string md = $"# 💰 Treasury balance\n\n- account: `{account}`\n- currency: {currency}\n- **balance: {balance}**\n";
             Cmd_Tavern_Helpers.WriteLastOp(md);
             Debug.Log($"[Treasury] balance {account} = {balance} {currency}");

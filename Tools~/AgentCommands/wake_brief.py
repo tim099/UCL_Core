@@ -18,6 +18,44 @@
 
 BRIEF_LINE_CAP = 2000       # 主檔行數上限（Tim 2026-07-31 由 1000 放寬，為併入營運層讓空間）
 BRIEF_CATCHUP_COUNT = 10    # §8 撈幾筆的**預設**；實際值優先讀後台設定（見 _catchup_count）
+BUILD_MS_TOP_N = 5          # frontmatter build_ms 只列最慢的前幾段（其餘併進 total）
+
+import time as _time        # noqa: E402 — 對齊本檔既有慣例（`import re as _re` 亦置於使用處附近）
+
+
+class _TimedSections(list):
+    """
+    區塊職責：當 sections 容器用，同時**自動量出每一段花了多久**，不必改任何 append 呼叫點。
+    物理意義：每段的內容都是在 append 之前就算完的 —— 所以「上一次 append 到這一次 append」
+             的時間差，恰好就是這一段的建構成本。標籤直接取該段的標題。
+    數值影響：純觀測，不改變任何輸出內容；量出來的數字寫進 frontmatter 的 build_ms。
+    🩸 為什麼要有它：2026-08-16 brief 被單一區塊拖到 112s（§0 身分卡的餘額全掃帳本），
+       而當時板子上**什麼都看不到** —— 只知道「brief 慢」。追出「是誰慢」花掉一整輪挖掘，
+       而那一輪唯一的線索是 frontmatter 的 generated_at 與檔案 mtime 差了 111 秒。
+       ⇒ 與其下次再挖一次，不如把尺留在現場（Tim 2026-08-16 拍板：修 A 順手裝儀器 C）。
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.marks = []                       # [(區塊標題, 毫秒)]
+        self._last = _time.perf_counter()
+
+    def append(self, item):
+        now = _time.perf_counter()
+        title = item[0] if isinstance(item, tuple) and item else "?"
+        self.marks.append((title, (now - self._last) * 1000.0))
+        self._last = now
+        super().append(item)
+
+    def render_marks(self) -> str:
+        """→ `total=871 §0=712 §4=41 …`（只列最慢前 N 段；標題壓成 §N 免得 frontmatter 難讀）"""
+        total = sum(ms for _, ms in self.marks)
+        top = sorted(self.marks, key=lambda kv: -kv[1])[:BUILD_MS_TOP_N]
+        parts = []
+        for title, ms in top:
+            m = _re.search(r"§[\d.]+", title)
+            parts.append(f"{m.group(0) if m else title[:8]}={ms:.0f}")
+        return f"total={total:.0f} " + " ".join(parts)
 
 
 def _catchup_count(aw) -> int:
@@ -467,10 +505,14 @@ def _identity_card_lines(aw, persona: str, p: dict) -> list:
             "fallback": "全域 fallback", "unset": "**未設定**"}.get(mail["source"], mail["source"])
     lines.append(f"- **mail**：`{mail['email']}`（{_src}）")
     if bank:
+        # 餘額由 Cmd 流程（C# 增量快取）餵進來；None ＝ 這次沒查（Editor 未開的純讀路）。
+        # ⚠ 不印 0 頂替 —— 「不知道」跟「沒錢」印成同一個字，就是把缺口偽裝成事實。
         try:
-            lines.append(f"- **bank**：`{bank}`（餘額 {aw.get_treasury_balance(bank)} tavern_token）")
+            bal = aw.get_treasury_balance(bank)
         except Exception:
-            lines.append(f"- **bank**：`{bank}`")
+            bal = None
+        lines.append(f"- **bank**：`{bank}`（餘額 {bal} tavern_token）" if bal is not None
+                     else f"- **bank**：`{bank}`（餘額未查詢 —— 需經 Cmd 流程；Editor 未開時銀行操作本就封鎖）")
     if lock:
         lines.append(f"- **lock**：`{lock.get('session_key', '?')}` / pid={lock.get('pid', '?')} / "
                      f"locked_at={lock.get('locked_at', '?')}")
@@ -996,7 +1038,7 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     # 而**一份會被移走的憲法不算憲法**。
     head += _constitution_lines(aw, persona, p)
 
-    sections = []   # (title, lines, essential)
+    sections = _TimedSections()   # (title, lines, essential) ＋ 每段自動計時（見該 class）
 
     # §0 身分卡 — 取代舊 Step 1 的 status 輸出（必讀，最短）
     sections.append(("🪪 §0 身分卡", _identity_card_lines(aw, persona, p), True))
@@ -1139,6 +1181,13 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     # _inbox_lines / _tavern_catchup_lines 保留：後台「⚙ 參數設定」與 ding 工具仍是消費者的
     # 潛在共用點，等 P4b 收攏歸屬時一起處置，本輪不動實作只斷接線。
     sections.append(("🎯 §9 今日動作清單", _next_actions_lines(persona, st, fst, threshold), True))
+
+    # 儀器：把「哪一段吃了多少時間」寫進 frontmatter（見 _TimedSections）。
+    # 🩸 2026-08-16：brief 曾被單一區塊拖到 112s（§0 的餘額全掃帳本），而當時**板子上什麼都看不到**
+    #    —— 只知道「brief 慢」，追出是誰慢花了一輪挖掘。下次再慢，第一眼就看得到是哪一段。
+    # ⚠ 位置用「找 frontmatter 的收尾 ---」而不是偏移量：head 後面還會被 append 憲法全文，
+    #   任何 len(head)-N 的寫法都會在別人加內容那天靜靜地插到正文裡去。
+    head.insert(head.index("---", 1), f"build_ms: {sections.render_marks()}")
 
     # 組裝 + 上限處理：超出上限的「非必讀」區塊整段移進續讀檔
     main, overflow, used = list(head), [], len(head)

@@ -135,7 +135,7 @@ DEFAULT_REGISTRY_META = "AgentCommands/AwakenInit/_registry_meta.json"
 # 財務操作一律走 Cmd（C# server 端）—— 見 _lib/treasury_cmd.py 的四條理由
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from _lib.treasury_cmd import treasury_debit, canvas_voucher_consume  # noqa: E402
+from _lib.treasury_cmd import treasury_debit, canvas_voucher_consume, treasury_balance  # noqa: E402
 
 def utcnow():
     """區塊職責：回 UTC datetime（單一時間源，避免多次呼叫漂移）"""
@@ -662,33 +662,20 @@ def render_latest(P: Paths, buf: bytearray, mask: bytearray = None):
 
 # ───────────────────────── Treasury 整合 ─────────────────────────
 
-def ledger_balance(P: Paths, account_id: str, currency: str = "tavern_token") -> int:
+def ledger_balance(P: Paths, account_id: str, currency: str = "tavern_token"):
     """
-    區塊職責：算指定 bank 的 token 餘額（sum credit - sum debit）
-    物理意義：對齊 balance_query.py 的計算邏輯，純讀檔。
+    區塊職責：查指定 bank 的 token 餘額 —— **走 Cmd（C# 端），本檔不自己算**。
+    物理意義：與同檔 write_ledger_entry 被移除（2026-08-04）是同一條規矩的兩半 ——
+             寫入端當時搬去 Cmd 了，**讀取端這支被留在原地**，繼續逐檔重放整本帳。
+    數值影響：回 int，或 **None ＝ 查不到**（Editor 未開 / Cmd 失敗）。
+             ⚠ 呼叫端不可把 None 當 0：那會讓「查不到」長得像「沒錢」，
+             而付款判斷看到 0 會拒付並回一句與事實無關的錯誤訊息。
+    🩸 為什麼搬（2026-08-16 basecamp 量測）：舊版每次呼叫逐檔 json.load 全本帳（14,985 檔），
+       暖快取 0.6s、冷快取近兩分鐘 —— 而放一個像素就要查一次。
+       同族的四份複製品裡，morning 那份把 step=brief 拖到 112s（08-13 更撞 timeout 被 kill）。
     """
-    total_credit = 0
-    total_debit = 0
-    if not P.ledger.is_dir():
-        return 0
-    for date_dir in sorted(P.ledger.iterdir()):
-        if not date_dir.is_dir():
-            continue
-        for ef in sorted(date_dir.iterdir()):
-            if ef.suffix != ".json":
-                continue
-            e = read_json(ef)
-            if e is None:
-                continue
-            if e.get("account_id") != account_id:
-                continue
-            if e.get("currency", "tavern_token") != currency:
-                continue
-            if e.get("type") == "credit":
-                total_credit += e.get("amount", 0)
-            elif e.get("type") == "debit":
-                total_debit += e.get("amount", 0)
-    return total_credit - total_debit
+    del P  # 路徑不再需要 —— 帳本由 C# 端讀（保留參數以免動到所有呼叫點的形狀）
+    return treasury_balance(account_id, currency)
 
 
 # 註（2026-08-04）：原本這裡有 write_ledger_entry —— **filesystem 直寫 Treasury ledger**。
@@ -835,6 +822,12 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
     free_avail = free_pixels_available(P, persona, now)
     voucher_avail = voucher_balance(P, persona)
     token_avail = ledger_balance(P, bank)
+    if token_avail is None:
+        # 查不到餘額就**不要猜**。當 0 會拒付並回一句「餘額不足」——
+        # 那是拿「不知道」冒充「沒錢」，而使用者會照著那句去補錢。
+        raise ValueError(
+            f"查不到 {bank} 的餘額（餘額查詢走 Cmd → C# 端，需 Editor 開著）。"
+            "本次不扣款、不放點 —— 這是「不知道」不是「沒錢」，別照著這句去加值。")
 
     use_free = use_voucher = use_token = 0
 
@@ -1001,7 +994,8 @@ def cmd_place(args):
     print(f"  persona     : {persona} (agent={agent}, bank={bank})")
     print(f"  pay_breakdown: freetime={plan['free']} voucher={plan['voucher']} token={plan['token']}")
     print(f"  voucher bal : {voucher_balance(P, persona)}")
-    print(f"  token bal   : {ledger_balance(P, bank)}")
+    _bal = ledger_balance(P, bank)
+    print(f"  token bal   : {_bal if _bal is not None else '查不到（需 Editor 開著；不是 0）'}")
     print(f"  ledger_refs : {ledger_refs}")
     print(f"  canvas_latest: {P.latest_png}")
     print(f"  canvas_latest_t: {P.latest_t_png} (透明變體)")

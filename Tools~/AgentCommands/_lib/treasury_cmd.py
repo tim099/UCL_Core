@@ -46,6 +46,32 @@ def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, st
     return ok, out[-500:]
 
 
+def treasury_balance(account: str, currency: str = "tavern_token", *,
+                     timeout: float = 60.0) -> "int | None":
+    """
+    區塊職責：查餘額 —— 走 Cmd（C# 的 UCL_TreasuryLedger 增量快取），**python 不自己算**。
+    物理意義：這是把 2026-08-04「銀行/token 一律走 C#」那條定調的**讀取端**補完 ——
+             當時寫入端搬了（treasury_debit / credit），查詢端沒搬。
+    數值影響：回傳 int；查不到（Editor 未開 / Cmd 失敗 / 沒回值）→ **None**，
+             不回 0。⚠ 呼叫端要把 None 當「不知道」處理，不可拿它當「沒錢」去做付款判斷。
+    🩸 為什麼一定要搬（2026-08-16 basecamp 量測）：python 端各自全掃帳本的複製品有四份，
+       每份 14,985 檔逐檔 json.load —— 暖快取 0.6s，冷快取近兩分鐘。
+       morning 的 brief 被它拖到 112s，08-13 那次直接撞 120s timeout 被 kill。
+    """
+    ok, out = _run("Treasury", {"op": "balance", "account": account, "currency": currency},
+                   timeout=timeout)
+    if not ok:
+        return None
+    # run_cmd 把 handler 回報的值印成 `  🔢 balance = 6208`（見 run_cmd.print_cmd_outputs）
+    for line in reversed(out.splitlines()):
+        if "🔢" in line and "balance" in line and "=" in line:
+            try:
+                return int(line.split("=", 1)[1].strip())
+            except ValueError:
+                return None
+    return None
+
+
 def treasury_debit(*, account: str, amount: int, source_kind: str, source_ref: str,
                    description: str, caller: str = "", currency: str = "tavern_token"):
     """扣款。amount <= 0 直接視為成功（沒有要扣的東西，不必打擾 Editor）。"""

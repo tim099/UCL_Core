@@ -204,6 +204,13 @@ namespace UCL.Core.EditorLib.Page
         string m_LatestOcrText = "", m_LatestOcrTime = "";
         double m_LatestSttEpoch = 0, m_LatestOcrEpoch = 0;
         bool m_ShowSttHistory = false, m_ShowOcrHistory = false;
+        // 整區折疊 (Tim 2026-08-16)：OCR 一筆 = 整螢幕逐行辨識, 單筆就可能幾十行, 把下方所有設定推出視野。
+        // 預設展開 —— 折疊是逃生門不是新預設, 改預設會讓既有使用者以為功能不見了。
+        bool m_ShowSttOcrPanel = true;
+        // 「最新」那兩行的行數上限 (Tim 2026-08-16)：整區展開時也不該被單筆長文洗版。
+        // 超過就截斷並標明**還有幾行**（不是「…」了事 —— 看不見的量要是個數字, 否則截斷與資料就是這麼多同形）。
+        const int LATEST_PREVIEW_LINES = 3;
+        bool m_ShowFullLatestStt = false, m_ShowFullLatestOcr = false;
         int m_SttHistPage = 0, m_OcrHistPage = 0;
         readonly Dictionary<string, List<(double epoch, string text)>> m_SttFileEntries = new();
         readonly Dictionary<string, List<(double epoch, string text)>> m_OcrFileEntries = new();
@@ -271,21 +278,120 @@ namespace UCL.Core.EditorLib.Page
             return page;
         }
 
+        // ===========================================================
+        // ⏱ 開頁耗時記錄器 (summit 2026-08-16, Tim 指定) —— **常駐**, 不是一次性儀器
+        // 區塊職責: 每次開本頁, 把首幀各主執行緒段落的毫秒數記進 Console + 磁碟。
+        // 物理意義: 已知系統內唯一十幾秒級的成本是 `import whisper` (10.7s) + medium.pt (1.53GB)
+        //          模型載入, 而那跑在**子行程**。本表只量**主執行緒實際佔用** ⇒
+        //          合計對得上觀察到的卡頓 ⇒ 兇手在表上某一列;
+        //          合計遠小於卡頓     ⇒ 主執行緒沒被擋, 卡的是機器被子行程吃滿 / 開頁之前。
+        //          ⚠ 那兩種在使用者眼裡同形 (畫面都不動), 這張表存在的唯一理由就是分辨它們。
+        // 數值影響: 純量測, 不改任何行為。單次成本 = 每段一顆 Stopwatch + 一次檔案 append (μs 級)。
+        //
+        // ⚠ 為什麼常駐而不是查完移除 (2026-08-16 拍板, Tim「下次遇到卡頓時確保目前埋的資訊可以排查即可」):
+        //   卡頓**只在 Editor 開啟後第一次開本頁**發生, 而那一刻沒有人會先去開儀器。
+        //   一次性儀器要求「先預期它會發生」—— 那正是它抓不到的原因。
+        // ⚠ 三條刻意的設計 (每條都對應一次撞過的坑):
+        //   ① **落磁碟**: Unity 每次啟動會把 Editor.log 輪替成 Editor-prev.log, 而慢的那次
+        //      正好緊接在啟動之後 ⇒ 再重開一次 Editor 讀數就永久消失。磁碟是斷線時唯一還活著的通道。
+        //   ② **慢就升級成 Warning**: 靠人「記得去看 Console」等於沒有記錄。超過門檻自己跳黃字。
+        //   ③ **記 timeSinceStartup**: 它跨 domain reload 不重置 ⇒ 可直接分辨
+        //      「Editor 啟動後第一次開」與「後來再開」, 不必靠回憶。
+        // ===========================================================
+        const string PROFILE_LOG_RELATIVE = "AgentCommands/_screenstream/_page_open_profile.log";
+        // 超過此毫秒數就把 Console 那筆升級成 Warning —— 正常開頁實測 ~390ms, 取 1500 留兩倍餘裕
+        const double PROFILE_WARN_MS = 1500.0;
+        readonly System.Text.StringBuilder m_ProfLog = new System.Text.StringBuilder();
+        bool m_ProfPrinted = false;
+        string m_ProfFirstCaller = "";
+        double m_ProfSumMs = 0;   // 各段落合計 (不含「頁建構 → 首次 OnGUI」)
+        // 頁物件建構時刻 —— 與首次 OnGUI 的差 = 「開頁到第一次繪製」之間的成本 (靜態初始化 / 選單建構 /
+        // domain reload 等)。若卡頓在那段, 下面每一列都會是小數字而這一格會很大。
+        // ⚠ timeSinceStartup 是「Editor **行程**啟動以來」, domain reload 不重置 —— 這正是它的用途。
+        readonly double m_ProfCtorTime = UnityEditor.EditorApplication.timeSinceStartup;
+
+        // 量一段並記帳。印完後直接執行、不再計時 (避免每幀 Stopwatch + 閉包配置)。
+        void ProfSeg(string iLabel, Action iWork)
+        {
+            if (m_ProfPrinted) { iWork(); return; }
+            var aSw = System.Diagnostics.Stopwatch.StartNew();
+            iWork();
+            aSw.Stop();
+            double aMs = aSw.Elapsed.TotalMilliseconds;
+            m_ProfSumMs += aMs;
+            m_ProfLog.AppendLine($"    {iLabel,-34}{aMs,9:0.0} ms");
+        }
+
+        // 首幀結束時呼叫一次 —— 本 Page instance 之後不再計時 (重開本頁 = 新 instance = 重新記一筆)
+        void ProfFlush(double iFirstGuiRealtime)
+        {
+            if (m_ProfPrinted) return;
+            m_ProfPrinted = true;
+            double aCtorToGui = (iFirstGuiRealtime - m_ProfCtorTime) * 1000.0;
+            double aTotal = aCtorToGui + m_ProfSumMs;
+            var aSb = new System.Text.StringBuilder();
+            aSb.AppendLine($"⏱ [ScreenStreamPage] 開頁首幀耗時 — 合計 {aTotal:0.0} ms"
+                + (aTotal >= PROFILE_WARN_MS ? "  🐢 **異常慢**" : ""));
+            // Editor 行程啟動後多久開的 —— 判斷「是不是啟動後第一次」的客觀依據, 不靠回憶
+            aSb.AppendLine($"    Editor 啟動後 {iFirstGuiRealtime:0.0} s 開啟本頁"
+                + (iFirstGuiRealtime < 120 ? "  ← 啟動後不久 (慢的那次符合此特徵)" : ""));
+            aSb.AppendLine($"    {"頁建構 → 首次 OnGUI",-30}{aCtorToGui,9:0.0} ms   ← 不在下列任何段落內");
+            aSb.AppendLine($"    首次觸發 EnsureInitialReload 的來源: {m_ProfFirstCaller}");
+            aSb.Append(m_ProfLog);
+            aSb.AppendLine($"    {"（各段落合計）",-30}{m_ProfSumMs,9:0.0} ms");
+            aSb.AppendLine("    ── 以上皆為主執行緒佔用; 不在表上的成本本表看不見 ──");
+            aSb.AppendLine($"    現況: stt_enabled={m_SttEnabledCfg} / ocr_enabled={m_OcrEnabled} / daemonAlive={m_DaemonAlive}");
+            // 子行程狀態 —— 「主執行緒沒被擋但機器被吃滿」那條路徑的證據在這兩行
+            try
+            {
+                aSb.AppendLine($"    STT worker: {AgentCommands.MediaAdmin.UCL_SttWorkerSupervisor.StatusLine}");
+                aSb.AppendLine($"    OCR worker: {AgentCommands.MediaAdmin.UCL_OcrWorkerSupervisor.StatusLine}");
+            }
+            catch (Exception e) { aSb.AppendLine($"    (worker 狀態讀取失敗: {e.Message})"); }
+
+            string aText = aSb.ToString();
+            // 慢就跳 Warning —— 不靠人記得去看 Console
+            if (aTotal >= PROFILE_WARN_MS) UnityEngine.Debug.LogWarning(aText);
+            else UnityEngine.Debug.Log(aText);
+
+            // ① 落磁碟 (append-only): Editor.log 會在下次啟動被輪替掉, 而慢的那次緊接在啟動之後
+            try
+            {
+                string aPath = Path.Combine(GetRepoRoot(), PROFILE_LOG_RELATIVE);
+                string aDir = Path.GetDirectoryName(aPath);
+                if (!string.IsNullOrEmpty(aDir) && !Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
+                File.AppendAllText(aPath,
+                    $"===== {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====\n{aText}\n");
+            }
+            catch (Exception e)
+            {
+                // 落檔失敗要出聲 —— 靜默失敗的話下次卡頓時會以為「沒記錄 = 沒發生」
+                Debug.LogWarning($"[ScreenStreamPage] 開頁耗時落檔失敗 ({PROFILE_LOG_RELATIVE}): {e.Message}");
+            }
+        }
+
         // T14 fix (2026-05-16): UCL_CommonEditorPage 沒有 OnEnter virtual; lazy init 改用 first-OnGUI 觸發
         // 設計取捨: Init 過早 (沒 EditorApplication context); ContentOnGUI 首次跑時 init 最穩
         bool m_FirstGuiDone = false;
 
-        void EnsureInitialReload()
+        void EnsureInitialReload(string iCaller = "?")
         {
             if (m_FirstGuiDone) return;
-            ReloadFromDisk();
-            ReloadMonitors();
-            ReloadPreview();
+            m_ProfFirstCaller = iCaller;
+            ProfSeg("EnsureInitial: ReloadFromDisk", ReloadFromDisk);
+            ProfSeg("EnsureInitial: ReloadMonitors", ReloadMonitors);
+            ProfSeg("EnsureInitial: ReloadPreview", ReloadPreview);
             // 螢幕清單預熱 (Tim 2026-07-28): daemon 存活已綁錄影開關, 未錄影時 _monitors.json 可能缺/舊
             // → 開啟本頁時 one-shot 枚舉補寫快取 (fire-and-forget ~1s, 2s reload tick 自動撿到);
             //   daemon 運行中則它啟動時已寫過, 不必重複 spawn。熱插拔螢幕另有「🔄」鈕手動刷新。
+            // ⚠ 診斷重點: 這一段內含 UCL_ScreenStreamDaemon 的**靜態建構**(首次觸碰) 與
+            //   ResolvePython() 的 `WaitForExit(3000)` ×2 候選 —— 後者在 PATH 撞上 Store stub 時
+            //   會是 6 秒主執行緒硬卡, 而 catch{} 會把原因吞光。它若是兇手, 就顯示在這一列。
             if (!m_DaemonAlive)
-                AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.EnumerateMonitorsOneShot();
+                ProfSeg("EnsureInitial: EnumMonitors(spawn)",
+                    () => AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.EnumerateMonitorsOneShot());
+            else
+                m_ProfLog.AppendLine($"    {"EnsureInitial: EnumMonitors(spawn)",-34}     skip   (daemonAlive)");
             m_FirstGuiDone = true;
         }
         protected override void TopBarButtons()
@@ -296,7 +402,7 @@ namespace UCL.Core.EditorLib.Page
             //          該欄由 Page 擁有, 開播不再清空); daemon 每 loop reload config 反應 enabled toggle。
             // 數值影響: TopBarButtons 可能先於 ContentOnGUI 執行 → 先走 EnsureInitialReload 保 config 已載;
             //          config 未載入 (檔不存在) 時不畫錄影鈕, 走內文的「初始化」流程。
-            EnsureInitialReload();
+            EnsureInitialReload("TopBarButtons");
             if (m_ConfigLoaded)
             {
                 var aOldBg = GUI.backgroundColor;
@@ -810,15 +916,21 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         protected override void ContentOnGUI()
         {
-            EnsureInitialReload();   // T14 fix: lazy init 代 OnEnter (base class 沒 OnEnter virtual)
+            EnsureInitialReload("ContentOnGUI");   // T14 fix: lazy init 代 OnEnter (base class 沒 OnEnter virtual)
 
             // Auto reload every N seconds
             double now = UnityEditor.EditorApplication.timeSinceStartup;
             if (now - m_LastReloadTime > RELOAD_INTERVAL_SEC)
             {
-                ReloadFromDisk();
-                ReloadMonitors();
-                ReloadLatestSttOcr();   // 增量掃 STT/OCR cache (mtime watermark; 最新+歷史共用快取)
+                // ⚠ 診斷發現 (summit 2026-08-16): m_LastReloadTime 初值 -1.0 ⇒ 本條件首幀**必為 true**,
+                //    於是 ReloadFromDisk / ReloadMonitors 在首幀跑第二次 (EnsureInitialReload 已跑過一次)。
+                //    單次便宜所以看不出來, 但那是白做的。修不修等這輪讀數出來再拍。
+                ProfSeg("firstTick: ReloadFromDisk(2nd)", ReloadFromDisk);
+                ProfSeg("firstTick: ReloadMonitors(2nd)", ReloadMonitors);
+                // 增量掃 STT/OCR cache (mtime watermark; 最新+歷史共用快取)
+                // ⚠ 首次 watermark=0 ⇒ 全量掃。離線量過 2400 檔 read+parse = 92ms (python 路徑),
+                //    C# JsonData 解析器可能數倍 —— 這一列就是驗那個外推對不對的地方。
+                ProfSeg("firstTick: ReloadLatestSttOcr", ReloadLatestSttOcr);
                 m_LastReloadTime = now;
             }
             // T14 — Preview reload (獨立節奏, 比 config reload 頻繁)
@@ -826,10 +938,11 @@ namespace UCL.Core.EditorLib.Page
             {
                 if (m_ShowPreview && m_Enabled)
                 {
-                    ReloadPreview();
+                    ProfSeg("firstTick: ReloadPreview", ReloadPreview);
                 }
                 m_LastPreviewReload = now;
             }
+            ProfFlush(now);   // ⏱ 臨時診斷儀器 — 首幀印一次後全面停用
 
             GUILayout.Space(10);
             GUILayout.BeginHorizontal();
@@ -953,8 +1066,6 @@ namespace UCL.Core.EditorLib.Page
             // STT / OCR 顯示 (Tim 2026-07-27) — 最新 + 可展開分頁歷史
             DrawSttOcrPanel();
             GUILayout.Space(8);
-
-            GUILayout.Space(15);
 
             // ===========================================================
             // Config 設定
@@ -1435,52 +1546,108 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("🎙 STT / 📖 OCR（語音轉錄 / 字幕辨識）",
-                    new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
-                GUILayout.Label("🎙 最新 STT：" + (m_LatestSttText.Length == 0
-                    ? "(無 — daemon STT 未啟用或無音訊)" : $"[{m_LatestSttTime}] {m_LatestSttText}")
-                    + StaleSuffix(m_LatestSttEpoch, 60, m_SttEnabledCfg), SubWrapStyle);
-                GUILayout.Label("📖 最新 OCR：" + (m_LatestOcrText.Length == 0
-                    ? "(無 — daemon OCR 未啟用或無字幕)" : $"[{m_LatestOcrTime}] {m_LatestOcrText}")
-                    + StaleSuffix(m_LatestOcrEpoch, 30, m_OcrEnabledCfg), SubWrapStyle);
-                // daemon STT worker 的失敗原因 (stt/_status.json error 欄) — 禁靜默失敗的 UI 出口
-                if (m_SttStatusError.Length > 0)
+                // 整區折疊頭 (Tim 2026-08-16) — 沿用本頁既有的 ▼/▶ Toggle 慣例, 不另造折疊元件
+                //bool aNewPanel = GUILayout.Toggle(m_ShowSttOcrPanel,
+                //    (m_ShowSttOcrPanel ? "▼ " : "▶ ") + "🎙 STT / 📖 OCR（語音轉錄 / 字幕辨識）",
+                //    UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                //m_ShowSttOcrPanel = aNewPanel;
+
+                using (new GUILayout.HorizontalScope())
                 {
-                    using (new GUILayout.HorizontalScope())
+                    m_ShowSttOcrPanel = UCL_GUILayout.Toggle(m_ShowSttOcrPanel);
+                    string label = "🎙 STT / 📖 OCR（語音轉錄 / 字幕辨識）";
+                    // 收合時仍要看得到「有沒有錯誤」—— 折疊藏的是量, 不是狀態。
+                    if (m_SttStatusError.Length > 0) label += ", ⛔ STT worker 有錯誤（展開查看）";
+                    using (new GUILayout.VerticalScope())
                     {
-                        // 複製鈕 (Tim 2026-07-27): 一鍵把完整錯誤進剪貼簿, 方便直接貼給 agent 查案
-                        if (GUILayout.Button("📋 複製", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        GUILayout.Label(label, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+                        if (m_ShowSttOcrPanel)
                         {
-                            UnityEditor.EditorGUIUtility.systemCopyBuffer = $"STT worker 錯誤: {m_SttStatusError}";
-                            Debug.Log("[UCL_ScreenStreamPage] STT 錯誤訊息已複製到剪貼簿");
+                            DrawLatestSubtitleLine("🎙 最新 STT：", m_LatestSttText, m_LatestSttTime,
+                                "(無 — daemon STT 未啟用或無音訊)",
+                                StaleSuffix(m_LatestSttEpoch, 60, m_SttEnabledCfg), ref m_ShowFullLatestStt);
+                            DrawLatestSubtitleLine("📖 最新 OCR：", m_LatestOcrText, m_LatestOcrTime,
+                                "(無 — daemon OCR 未啟用或無字幕)",
+                                StaleSuffix(m_LatestOcrEpoch, 30, m_OcrEnabledCfg), ref m_ShowFullLatestOcr);
+                            // daemon STT worker 的失敗原因 (stt/_status.json error 欄) — 禁靜默失敗的 UI 出口
+                            if (m_SttStatusError.Length > 0)
+                            {
+                                using (new GUILayout.HorizontalScope())
+                                {
+                                    // 複製鈕 (Tim 2026-07-27): 一鍵把完整錯誤進剪貼簿, 方便直接貼給 agent 查案
+                                    if (GUILayout.Button("📋 複製", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                    {
+                                        UnityEditor.EditorGUIUtility.systemCopyBuffer = $"STT worker 錯誤: {m_SttStatusError}";
+                                        Debug.Log("[UCL_ScreenStreamPage] STT 錯誤訊息已複製到剪貼簿");
+                                    }
+                                    GUILayout.Label($"⛔ STT worker 錯誤: {m_SttStatusError}", ErrWrapStyle);
+                                }
+                            }
+
+                            GUILayout.Space(4);
+                            // 展開即顯示 (快取常駐, 由 2s tick 增量維護); 第 1 頁 dirty 時自動重建 = 自動追新
+                            bool newStt = GUILayout.Toggle(m_ShowSttHistory,
+                                m_ShowSttHistory ? "▼ 隱藏歷史 STT" : "▶ 展開歷史 STT", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                            if (newStt != m_ShowSttHistory) { m_ShowSttHistory = newStt; if (newStt) m_SttHistDirty = true; }
+                            if (m_ShowSttHistory)
+                            {
+                                if ((m_SttHistDirty && m_SttHistPage == 0) || m_SttHistory == null)
+                                { m_SttHistory = BuildHistory(m_SttFileEntries); m_SttHistDirty = false; }
+                                DrawSubtitleHistory(m_SttHistory, ref m_SttHistPage, "STT", m_SttHistDirty, () => ForceRescan(stt: true));
+                            }
+
+                            GUILayout.Space(2);
+                            bool newOcr = GUILayout.Toggle(m_ShowOcrHistory,
+                                m_ShowOcrHistory ? "▼ 隱藏歷史 OCR" : "▶ 展開歷史 OCR", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
+                            if (newOcr != m_ShowOcrHistory) { m_ShowOcrHistory = newOcr; if (newOcr) m_OcrHistDirty = true; }
+                            if (m_ShowOcrHistory)
+                            {
+                                if ((m_OcrHistDirty && m_OcrHistPage == 0) || m_OcrHistory == null)
+                                { m_OcrHistory = BuildHistory(m_OcrFileEntries); m_OcrHistDirty = false; }
+                                DrawSubtitleHistory(m_OcrHistory, ref m_OcrHistPage, "OCR", m_OcrHistDirty, () => ForceRescan(stt: false));
+                            }
                         }
-                        GUILayout.Label($"⛔ STT worker 錯誤: {m_SttStatusError}", ErrWrapStyle);
                     }
                 }
 
-                GUILayout.Space(4);
-                // 展開即顯示 (快取常駐, 由 2s tick 增量維護); 第 1 頁 dirty 時自動重建 = 自動追新
-                bool newStt = GUILayout.Toggle(m_ShowSttHistory,
-                    m_ShowSttHistory ? "▼ 隱藏歷史 STT" : "▶ 展開歷史 STT", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                if (newStt != m_ShowSttHistory) { m_ShowSttHistory = newStt; if (newStt) m_SttHistDirty = true; }
-                if (m_ShowSttHistory)
-                {
-                    if ((m_SttHistDirty && m_SttHistPage == 0) || m_SttHistory == null)
-                    { m_SttHistory = BuildHistory(m_SttFileEntries); m_SttHistDirty = false; }
-                    DrawSubtitleHistory(m_SttHistory, ref m_SttHistPage, "STT", m_SttHistDirty, () => ForceRescan(stt: true));
-                }
 
-                GUILayout.Space(2);
-                bool newOcr = GUILayout.Toggle(m_ShowOcrHistory,
-                    m_ShowOcrHistory ? "▼ 隱藏歷史 OCR" : "▶ 展開歷史 OCR", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                if (newOcr != m_ShowOcrHistory) { m_ShowOcrHistory = newOcr; if (newOcr) m_OcrHistDirty = true; }
-                if (m_ShowOcrHistory)
-                {
-                    if ((m_OcrHistDirty && m_OcrHistPage == 0) || m_OcrHistory == null)
-                    { m_OcrHistory = BuildHistory(m_OcrFileEntries); m_OcrHistDirty = false; }
-                    DrawSubtitleHistory(m_OcrHistory, ref m_OcrHistPage, "OCR", m_OcrHistDirty, () => ForceRescan(stt: false));
-                }
+
             }
+        }
+
+        // 區塊職責: 畫「最新 STT / 最新 OCR」單行 —— 超過 LATEST_PREVIEW_LINES 行就截斷 + 給展開鈕。
+        // 物理意義: 一筆 OCR = 該幀整螢幕的逐行辨識結果 (瀏覽器分頁標題、書籤列…都會進去),
+        //          單筆數十行是常態而非例外 (Tim 2026-08-16 回報)。不截斷的話這一行會把整頁推走。
+        // 數值影響: 截斷只影響顯示, 不動 m_Latest*Text 本體 —— 展開鈕按下即回到全文, 資料沒有被丟。
+        // ⚠ 截斷提示必須帶**行數**: 只寫「…」的話,「被截掉 2 行」與「被截掉 200 行」長得一樣,
+        //   而那正是本專案追了一整天的 empty-is-a-question 同族 (看不見的量要是個數字)。
+        void DrawLatestSubtitleLine(string iPrefix, string iText, string iTime,
+            string iEmptyHint, string iStaleSuffix, ref bool ioShowFull)
+        {
+            if (iText.Length == 0)
+            {
+                GUILayout.Label(iPrefix + iEmptyHint + iStaleSuffix, SubWrapStyle);
+                return;
+            }
+            string[] aLines = iText.Split('\n');
+            int aHidden = aLines.Length - LATEST_PREVIEW_LINES;
+            if (aHidden <= 0 || ioShowFull)
+            {
+                GUILayout.Label($"{iPrefix}[{iTime}] {iText}{iStaleSuffix}", SubWrapStyle);
+                if (aHidden > 0)
+                {
+                    if (GUILayout.Button($"▲ 收合（共 {aLines.Length} 行）",
+                            UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        ioShowFull = false;
+                }
+                return;
+            }
+            string aHead = string.Join("\n", aLines, 0, LATEST_PREVIEW_LINES);
+            GUILayout.Label($"{iPrefix}[{iTime}] {aHead}{iStaleSuffix}", SubWrapStyle);
+            if (GUILayout.Button($"▼ 還有 {aHidden} 行（共 {aLines.Length} 行）— 展開全文",
+                    UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                ioShowFull = true;
         }
 
         // 分頁歷史列表 — newest-first, page 0 = 最新頁 (仿聊天酒館分頁)。

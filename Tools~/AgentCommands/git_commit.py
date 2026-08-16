@@ -147,6 +147,11 @@ def build_announcement(message: str, sha: str, repo: str, personas: list, intro:
     return "\n".join(out)
 
 
+# 公告前等佇列空出來的上限（秒）。run_cmd 預設 60s —— 多人同時用時不夠。
+# 逾時的語意是「沒送出」（ensure_idle 在寫 trigger 前就 SystemExit），所以拉長是純等待、不是重試。
+ANNOUNCE_ACK_TIMEOUT_SEC = 240
+
+
 def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
     """發酒館公告；回 (成功, 說明)。走 run_cmd.py Tavern，body 經檔案避免引號地獄。"""
     here = Path(__file__).resolve().parent
@@ -157,10 +162,20 @@ def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
     try:
         tmp.write_text(body, encoding="utf-8")
         meta = json.dumps({"tag": "commit", "sha": sha, "category": "meta"}, ensure_ascii=False)
+        # 區塊職責：等佇列空出來的時間要夠長 —— 這是多人共用同一條 lane 時最常見的失敗。
+        # 物理意義：run_cmd 的 ensure_idle 預設只等 60s，逾時會 SystemExit **而且是在寫 trigger 之前**
+        #          ⇒ 那種失敗代表「根本沒送出」，不是「可能送出了」。
+        # 🩸 2026-08-16：BookNotes 那筆 commit 落地了但公告失敗（「previous batch is 'running'」），
+        #    薪沒領、要人工補一則。當時同事正在跑一連串 Cmd，60 秒等不到。
+        # ⚠ 這裡**只拉長等待、不做失敗重試** —— 重試的風險是不對稱的：
+        #    ensure_idle 逾時＝沒送出（重試安全），但**送出之後**的任何失敗都可能其實已經貼上了
+        #    （今天實測過「CLI 逾時而產物已落地」），而同一個 SHA 貼兩次 = **付兩次錢**。
+        #    ⇒ 分不清的時候不要自動重試；讓它誠實失敗，人工補一則（工具已經會這樣提示）。
         cmd = [sys.executable, str(run_cmd), "run", "Tavern",
                "--arg", "op=post", "--arg", "room=tavern",
                "--arg", f"sender_id={sender}", "--arg", f"persona={persona}",
                "--arg", f"meta={meta}", "--wait-reply", "0",
+               "--ack-timeout", str(ANNOUNCE_ACK_TIMEOUT_SEC),
                "--arg-file", f"body={tmp}"]
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
         ok = r.returncode == 0 and "Success" in (r.stdout or "")

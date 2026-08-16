@@ -245,6 +245,35 @@ def set_persona(persona: str | None) -> None:
 #     trigger 就寫在對方沒在看的地方，而那種斷線是**靜默**的（cmd 永遠 pending 到 timeout）。
 ANONYMOUS_QUEUE_ID = "anonymous"   # 保留字：身分解析讀到它回 None，不可當 persona 用
 
+# ═══════════════════════════════════════════════════════════════════════
+# ⛔ 自動路由開關 —— **目前刻意關著**（summit 2026-08-16 22:5x 自行關回）
+#
+# 我在 5325d18 把「`--arg persona=` 自動路由到 queues/<persona>/」直接開了，
+# 理由是「C# 不必改，我查證過」。**那個查證只做了一半：**
+#   我讀了 `ListAgentIds()` 會列舉每個資料夾、watcher 會對每個 id 輪詢，
+#   於是結論「路由得到」——**而我沒有問下一句：那些 id 是輪流跑還是同時跑。**
+#
+# 讀回來的事實（`UCL_AgentCommandWatcher.OnEditorUpdate` + `UCL_AgentCommandRunner`）：
+#   `foreach (agentId in ListAgentIds()) TryDispatchAgent(agentId);` —— 不等前一個完成；
+#   重入閘 `s_RunningAgents` 是 **per-agent**：同 agent 擋、**不同 agent 併行**。
+# ⇒ **不同 queue 資料夾是真的會同時跑的。**
+#
+# 而 Runner 的 per-cmd 回傳槽是**全域單例**、每筆起跑前 `Clear()`：
+#   `s_CurrentCmdOutputs` / `s_CurrentCmdValues` / `CurrentCmdId` /
+#   `UCL_TreasuryLedger.CurrentCallerEnvMarker` / `Cmd_Tavern.LastPostSeq`
+# ⇒ 全員擠 anonymous 時它們**因為不可能併行而安全**；
+#   **分流正是把潛伏 bug 變成活 bug 的那一步。**
+#
+# 這一格 @basecamp 在 `Plan_Cmd_Concurrency_Hardening.md` 已經寫過，而且她是在同一份文件裡
+# 先寫「路由零風險」再自己推翻的。**我沒讀那份 plan 就動手，然後原樣復現了她推翻掉的那個版本。**
+#
+# ⇒ 開啟前置條件（缺一不可）：per-cmd 回傳 context 取代上列全域槽（該 plan §4）。
+#   那件事做完之後，把這裡改成 True 即可 —— **一行，而且那一行要有人驗過才翻。**
+# ⚠ 別用「加個旗標讓想併行的人自己開」來繞過：漏帶旗標的代價是**串到別人的回傳值**，
+#   而它每一筆都合法、沒有任何一格會紅。
+# ═══════════════════════════════════════════════════════════════════════
+AUTO_ROUTE_BY_ARG_PERSONA = False
+
 _SPLIT_CACHE: tuple[str, str, str | None] | None = None   # (原始 id, 資料夾, lane)
 
 def _split_queue_id() -> tuple[str, str | None]:
@@ -1441,7 +1470,7 @@ def main() -> int:
     #    **功能在、路由在、旗標在 —— 沒有人被指向它。** 規則要長在通道上，不要掛在呼叫端的記憶裡。
     # 數值影響：只在 `--agent-id` 與 `--persona` 皆未提供時生效 ⇒ 顯式指定者行為逐位元不變；
     #          `--arg persona=` 也沒有時仍落 anonymous（與改動前相同）。
-    if not _base_agent and not _persona:
+    if AUTO_ROUTE_BY_ARG_PERSONA and not _base_agent and not _persona:
         _persona = _persona_from_cmd_args(args)
         if _persona:
             print(f"  ↪ queue 路由：由 --arg persona={_persona} 推得 → queues/{_persona}/"

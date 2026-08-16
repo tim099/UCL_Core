@@ -44,6 +44,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows cp950 / console encoding safety
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 _HERE = Path(__file__).resolve().parent
 
 

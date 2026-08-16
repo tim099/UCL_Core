@@ -568,8 +568,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 //   卻在同一次改動裡違反的那格：AppendSidecar 原本只掛在有素材那條路徑上。
                 //   而「我這輪沒東西看」正是**最需要看別人講了什麼**的時刻（他的窗口跟我的不一樣）。
                 //   ⇒ 兩條路徑都印；本輪無 sidecar，所以字幕/語音段會誠實地印「無」。
+                // ⚠ 游標印**實際餵給 montage 的那個**（aTavernSince，已含 start_seq 退回），不是 session 原欄位：
+                //   第一輪 tavern_seq 還沒寫，印原欄位會印出 seq=0，而那一輪真正用的是 start_seq（瑕疵③）。
+                //   montageRan=false —— 這條路徑上 montage 提早收工，酒館段根本沒跑到（瑕疵②）。
                 AppendSidecar(aR, Path.ChangeExtension(aOutPath, ".subtitles.md"), false,
-                              iPersona, ParseTavernShown(aStdout), ReadInt(aS, "tavern_seq"));
+                              iPersona, ParseTavernShown(aStdout), Math.Max(0, aTavernSince), false);
                 AppendHotspots(aR, iPersona);   // 無素材時更該印 —— 沒東西看正是該去領熱點的時刻
                 aR.AppendLine();
                 aR.AppendLine("## next");
@@ -651,7 +654,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
             // 單一入口：字幕／語音／同場訊息全部嵌進本檔（Tim 2026-08-16）
-            AppendSidecar(aR, aSubPath, aHasSub, iPersona, aTavernShown, ReadInt(aS, "tavern_seq"));
+            // 游標印本輪實際餵進去的那個（aTavernSince），與 sidecar 標題的 `已讀 seq≤N` 同源 —— 見瑕疵①③。
+            AppendSidecar(aR, aSubPath, aHasSub, iPersona, aTavernShown, Math.Max(0, aTavernSince), true);
             AppendHotspots(aR, iPersona);   // 熱點清單 —— 有沒有都印（零狀態必印）
             aR.AppendLine();
             aR.AppendLine("## next");
@@ -1940,15 +1944,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //   教人「記得也要開 sidecar」是防記性；把它搬過來是**把問題移走**。
         // ⚠ 規格：每一段**永遠存在**，空的時候印零狀態 —— 否則合併只是把洞搬進同一個檔。
         //   順序刻意是「同場訊息 → 畫面字幕 → 語音」：訊息是我看不到的那半邊，稀缺的排前面。
+        // 三個參數的物理意義（2026-08-17 修，三隻小瑕疵都出在這裡）：
+        //   iShown      本輪酒館段顯示筆數；-1＝通道沒回報（未知），0＝讀數就是 0。
+        //   iCursorSeq  **本輪實際餵給 montage 的那個游標**（已含 start_seq 退回），不是 session 原欄位。
+        //   iMontageRan montage 這一輪有沒有真的跑到酒館段（無素材時它在更早就 exit）。
         static void AppendSidecar(StringBuilder ioR, string iSubPath, bool iHasSub,
-                                  string iPersona, int iShown, int iCursorSeq)
+                                  string iPersona, int iShown, int iCursorSeq, bool iMontageRan)
         {
             ioR.AppendLine();
             ioR.AppendLine("## 💬 同場訊息（已排除自己）");
-            string aState = iShown < 0 ? "**⚠ 通道未回報**（不是 0 筆 —— 這代表酒館段沒跑起來，先查通道）"
-                          : iShown == 0 ? "0 筆 —— 同場此刻沒有新發言"
-                          : $"**{iShown} 筆**";
-            ioR.AppendLine($"- {aState}｜排除 @{iPersona}｜已讀游標 seq={iCursorSeq}");
+            // 🩸 瑕疵②（狼來了）：無素材那條路徑上 montage 在酒館段之前就 exit，stdout 本來就不會有
+            //   `tavern tail`⇒ 解析回 -1 ⇒ 每一輪都印「先查通道」。而通道好端端的。
+            //   一個每次都亮的紅燈＝沒有紅燈（answered-alarm 同族）⇒ 未知要再分成「沒跑」與「跑了沒回報」。
+            string aState = iShown >= 0 ? (iShown == 0 ? "0 筆 —— 同場此刻沒有新發言" : $"**{iShown} 筆**")
+                          : iMontageRan ? "**⚠ 通道未回報**（不是 0 筆 —— 酒館段跑了卻沒印讀數，先查通道）"
+                          : "**本輪未執行**（montage 在無素材時提早收工，酒館段沒跑到 —— **不是通道壞**）";
+            ioR.AppendLine($"- {aState}｜排除 @{iPersona}｜已讀游標 seq={iCursorSeq}"
+                         + (iCursorSeq <= 0 ? "（⚠ 0＝本場 start_seq 也讀不到，等於從全庫最舊開始列）" : ""));
             if (iShown == 0)
                 ioR.AppendLine("- ⚠ 0 筆**不推進游標** —— 沒讀到東西就沒有「已讀」到那裡（2026-08-16 血證）");
 
@@ -1965,7 +1977,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 return;
             }
             // sidecar 原文照嵌（含其自己的段落標題），不重排、不摘要 —— 摘要就是重算。
+            // 🩸 瑕疵①（同一個 seq 讀數列兩次）：嵌進來的 sidecar 自帶一行
+            //   「## 💬 聊天酒館當前訊息（未讀 N 筆…已讀 seq≤M）」，跟上面那行是**同一批資料的兩個標題**。
+            //   兩行同時存在不是冗餘而已 —— 上面印 session 欄位、下面印 montage 收到的參數，
+            //   數字不一致時讀的人會以為看到兩批訊息。⇒ ①兩邊改成同一個來源（見 iCursorSeq 註解）
+            //   ②在接縫處明寫「同一批」，讓重複看得出是重複。
             ioR.AppendLine();
+            ioR.AppendLine("- ↓ 下面 sidecar 自帶的「聊天酒館當前訊息」標題**就是上面這一批**（同一輪、同一個游標），不是另一批。");
             ioR.AppendLine("<!-- 以下自 montage sidecar 原文嵌入；來源：" + iSubPath + " -->");
             ioR.AppendLine(aBody.TrimEnd());
         }

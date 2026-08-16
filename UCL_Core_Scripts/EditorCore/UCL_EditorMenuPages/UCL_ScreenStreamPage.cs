@@ -1722,12 +1722,7 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                // 整區折疊頭 (Tim 2026-08-16) — 沿用本頁既有的 ▼/▶ Toggle 慣例, 不另造折疊元件
-                //bool aNewPanel = GUILayout.Toggle(m_ShowSttOcrPanel,
-                //    (m_ShowSttOcrPanel ? "▼ " : "▶ ") + "🎙 STT / 📖 OCR（語音轉錄 / 字幕辨識）",
-                //    UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                //m_ShowSttOcrPanel = aNewPanel;
-
+                // 整區折疊頭 (Tim 2026-08-16) — 走 UCL_GUILayout.Toggle (▼/► 方鈕), 不另造折疊元件
                 using (new GUILayout.HorizontalScope())
                 {
                     m_ShowSttOcrPanel = UCL_GUILayout.Toggle(m_ShowSttOcrPanel);
@@ -1741,12 +1736,12 @@ namespace UCL.Core.EditorLib.Page
                         if (m_ShowSttOcrPanel)
                         {
                             // 分批載入進度 —— **看不見的量要是個數字**。
-                // 沒有這行的話「歷史只有 64 筆」與「總共就這麼多」在畫面上同形, 而那是本專案追了一整天的形狀。
-                if (m_SttPending > 0 || m_OcrPending > 0)
-                    GUILayout.Label($"⏳ 尚未讀入 STT {m_SttPending} 筆 / OCR {m_OcrPending} 筆"
-                        + $"（每 {RELOAD_INTERVAL_SEC:0} 秒補 {SCAN_PARSE_BUDGET} 筆，由新到舊；最新那筆已經是最新的）",
-                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
-                DrawLatestSubtitleLine("🎙 最新 STT：", m_LatestSttText, m_LatestSttTime,
+                            // 沒有這行的話「歷史只有 64 筆」與「總共就這麼多」在畫面上同形, 而那是本專案追了一整天的形狀。
+                            if (m_SttPending > 0 || m_OcrPending > 0)
+                                GUILayout.Label($"⏳ 尚未讀入 STT {m_SttPending} 筆 / OCR {m_OcrPending} 筆"
+                                    + $"（每 {RELOAD_INTERVAL_SEC:0} 秒補 {SCAN_PARSE_BUDGET} 筆，由新到舊；最新那筆已經是最新的）",
+                                    new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                            DrawLatestSubtitleLine("🎙 最新 STT：", m_LatestSttText, m_LatestSttTime,
                                 "(無 — daemon STT 未啟用或無音訊)",
                                 StaleSuffix(m_LatestSttEpoch, 60, m_SttEnabledCfg), ref m_ShowFullLatestStt);
                             DrawLatestSubtitleLine("📖 最新 OCR：", m_LatestOcrText, m_LatestOcrTime,

@@ -30,14 +30,14 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
 [status]                       環境 / 模型 / 索引狀態 (含可用 target 清單)
 [install]   [full=true]        pip 安裝依賴 (FlagEmbedding；full=true 顯式加 torch)
 [prefetch]                     下載並預熱 bge-m3 權重 (~1.2GB)
-[reindex]   target=docs|lessons   掃描目標語料庫、切塊、建向量索引
-[search]    query=<文字> [target=docs] [topk=5]   向量檢索 top-k (Editor 驗證用)
+[reindex]   target=<語料庫>    掃描目標語料庫、切塊、建向量索引 (增量：文字沒變的 chunk 沿用舊向量)
+[search]    query=<文字> [target=docs] [topk=5]   向量檢索 top-k
+            ⚠ 索引缺 / 過期時**會就地建或增量更新**再查 (Tim 2026-08-16)，故單次可能數十秒~數分鐘
+[stale]     [target=all]       索引是否該更新 (唯讀、秒級、不載模型)
 [embed]     text=<文字>        單句嵌入測試 (維度 + 延遲)
 
-target 參數（要索引 / 檢索哪個語料庫）— 目前僅這兩個合法值，填其他報未知 target：
-  docs    = 專案文檔，掃 <repo>/Docs/**/*.md
-  lessons = Agent 經驗庫，掃 AgentCommands/Lessons/*.jsonl + *.md
-  (新增 target 需開發者改 knowledge_base.py 的 TARGET_DEFS，非自由欄位)";
+target 參數（要索引 / 檢索哪個語料庫）— 合法值由 kb_targets.json 定義 (config-driven)，
+可逗號多選或 all；填未知值會回完整合法清單。跑 op=status 看目前有哪些。";
 
         public override string ExampleArgs => "op=status";
 
@@ -60,7 +60,7 @@ target 參數（要索引 / 檢索哪個語料庫）— 目前僅這兩個合法
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                WriteLastOp("❌ 缺少 op 參數。支援: status / install / prefetch / reindex / search / embed");
+                WriteLastOp("❌ 缺少 op 參數。支援: status / install / prefetch / reindex / search / stale / embed");
                 return;
             }
 
@@ -73,7 +73,12 @@ target 參數（要索引 / 檢索哪個語料庫）— 目前僅這兩個合法
                     return;
                 }
 
-                int timeoutMs = (op == "install" || op == "prefetch") ? 1800000 : 120000;
+                // ⚠ search 也要吃長 timeout：自 2026-08-16 起「缺索引就地建 / 過期就增量更新」，
+                //   一次 search 有可能真的在建索引。沿用 120s 會在 agent 端把「正在做對的事」
+                //   砍成「失敗」，而且砍掉的那次已經寫了一半的算力 —— 這正是舊 STT 守護程式
+                //   看 worker 90s 沒產出就重啟、把下載中的模型連砍三次的同一個形狀。
+                int timeoutMs = (op == "install" || op == "prefetch" || op == "reindex" || op == "search")
+                                ? 1800000 : 120000;
                 var r = await UCL_KnowledgeBaseRunner.RunAsync(argLine, token, timeoutMs);
                 WriteLastOp(r.DisplayText);
             }
@@ -116,6 +121,9 @@ target 參數（要索引 / 檢索哪個語料庫）— 目前僅這兩個合法
                     string topk = GetArg(args, "topk", "5");
                     return $"search --query {UCL_KnowledgeBaseRunner.QuoteArg(query)} --target {target} --topk {topk}";
                 }
+                case "stale":
+                    // 唯讀新鮮度檢查（純 stat，不載模型）— 想知道「該不該更新」而**不想付更新代價**時走這裡。
+                    return $"stale --target {GetArg(args, "target", "all")}";
                 case "embed":
                 {
                     string text = GetArg(args, "text", "");
@@ -123,7 +131,7 @@ target 參數（要索引 / 檢索哪個語料庫）— 目前僅這兩個合法
                     return $"embed --text {UCL_KnowledgeBaseRunner.QuoteArg(text)}";
                 }
                 default:
-                    argErr = $"❌ 未知 op='{op}'. 支援: status / install / prefetch / reindex / search / embed";
+                    argErr = $"❌ 未知 op='{op}'. 支援: status / install / prefetch / reindex / search / stale / embed";
                     return null;
             }
         }

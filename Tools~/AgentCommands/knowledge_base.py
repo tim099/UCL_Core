@@ -702,6 +702,74 @@ def op_prefetch(args):
     }
 
 
+def _fingerprint_files(files) -> dict:
+    """來源檔指紋 {絕對路徑: [mtime_int, size]} —— 純 stat，不讀內容。
+
+    # 區塊職責: 「索引建立當下磁碟長什麼樣」的快照，供 stale_report 比對
+    # 物理意義: mtime+size 是**便宜的變動訊號**，不是內容雜湊。
+    # ⚠ 失效方向（明寫，別讓下一個人以為它是保證）：內容改了但 size 相同、且 mtime 被還原
+    #   （git checkout 舊版、touch 回去）→ 這裡看起來沒變。⇒ 它會漏報「該更新」，不會誤報。
+    #   要 100% 準得改讀內容雜湊（成本 = 每次檢查全量讀檔），目前刻意不付那筆。
+    # 數值影響: 每檔一次 stat（11k 檔 SSD 約數十 ms）—— 便宜到可以每次查詢都跑。
+    """
+    out = {}
+    for fp in files:
+        try:
+            st = Path(fp).stat()
+            out[str(fp)] = [int(st.st_mtime), int(st.st_size)]
+        except Exception:
+            continue
+    return out
+
+
+def stale_report(target: str) -> dict:
+    """索引 vs 磁碟現況的差異（純 IO，不載模型）。
+
+    # 區塊職責: 回答「這份索引還跟得上磁碟嗎」——Tim 2026-08-16 問的『是否要有機制檢查該不該更新』
+    # 物理意義: 三種變動分開數 —— added(新檔) / removed(檔沒了) / modified(指紋變了)。
+    #          合併成單一 bool 會讓「多了 3 篇沒進索引」跟「改了 1 個字」長得一樣。
+    # 數值影響: state ∈ missing / manifest_only / unknown / fresh / stale。
+    #          ⚠ unknown = 舊索引沒有 sources 欄（本次改動之前建的）——**不准當成 fresh**，
+    #            那是「我不知道」，重建一次即可建立基準。
+    """
+    ip = index_path(target)
+    if not ip.is_file():
+        return {"target": target, "state": "missing"}
+    try:
+        meta = json.loads(ip.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {"target": target, "state": "unreadable", "error": str(e)}
+    if not meta.get("has_vectors"):
+        return {"target": target, "state": "manifest_only", "built_at": meta.get("built_at", "")}
+    old = meta.get("sources")
+    now = _fingerprint_files(resolve_target_sources(target)["files"])
+    if not isinstance(old, dict):
+        return {"target": target, "state": "unknown", "built_at": meta.get("built_at", ""),
+                "files_now": len(now),
+                "reason": "此索引建立時尚無來源指紋（舊格式）→ 無法判斷是否過期；重建一次即可建立基準"}
+    added = [f for f in now if f not in old]
+    removed = [f for f in old if f not in now]
+    modified = [f for f in now if f in old and old[f] != now[f]]
+    stale = bool(added or removed or modified)
+    return {"target": target, "state": "stale" if stale else "fresh",
+            "built_at": meta.get("built_at", ""),
+            "added": len(added), "removed": len(removed), "modified": len(modified),
+            "files_now": len(now), "files_indexed": len(old),
+            "samples": [str(Path(f).name) for f in (modified + added)[:5]]}
+
+
+def op_stale(args):
+    """檢查一到多個 target 的索引是否過期（唯讀、秒級，不載模型）。"""
+    targets = parse_targets(args.target)
+    known = set(valid_targets())
+    unknown = [t for t in targets if t not in known]
+    if unknown:
+        return {"ok": False, "error": f"未知 target {unknown}。合法值：{', '.join(sorted(known))}"}
+    reports = [stale_report(t) for t in targets]
+    return {"ok": True, "reports": reports,
+            "any_stale": any(r["state"] in ("stale", "missing", "manifest_only", "unknown") for r in reports)}
+
+
 def op_reindex(args):
     """支援單一 / 逗號多選 / all — 逐 target 建索引，多筆時回 multi 聚合。"""
     targets = parse_targets(args.target)
@@ -741,11 +809,28 @@ def _reindex_one(target: str, args):
     # → abort，一個位元組都別動**；manifest-only 只在「首建、沒東西可失」時才是 feature。
     ip = index_path(target)
     existing_has_vectors = False
+    existing_meta = None
     if ip.is_file():
         try:
-            existing_has_vectors = bool(json.loads(ip.read_text(encoding="utf-8")).get("has_vectors"))
+            existing_meta = json.loads(ip.read_text(encoding="utf-8"))
+            existing_has_vectors = bool(existing_meta.get("has_vectors"))
         except Exception:
-            existing_has_vectors = False   # 讀不動的舊檔不視為「有價值資產」，容許覆蓋重建
+            existing_meta, existing_has_vectors = None, False   # 讀不動的舊檔不視為「有價值資產」，容許覆蓋重建
+
+    # ── 增量重建：文字沒變的 chunk 直接沿用舊向量 ──────────────────────
+    # 區塊職責：把「重建索引」的成本從『整個語料庫』降到『真的變了的那幾檔』(Tim 2026-08-16 提問)
+    # 物理意義：同一個模型對同一段文字算出的向量是同一個 —— 所以**文字相同就沒有重算的理由**。
+    #          key 用 (file, chunk 文字) 而不是 mtime：mtime 只是「可能變了」的訊號，
+    #          文字相同才是「向量仍然有效」的**充分條件**。改檔名/搬動/重存但內容沒變 → 照樣命中重用。
+    # ⚠ 換模型必須全部重算：向量空間不同，混用會讓分數不可比而且不報錯（沉默地全錯）。
+    #   故只有 existing.model == 現行 MODEL_NAME 時才重用。
+    # 數值影響：coredocs 11604 chunks 改一篇 → 只嵌那篇的數個 chunk（分鐘級 → 秒級）。
+    reuse = {}
+    if existing_has_vectors and (existing_meta or {}).get("model") == MODEL_NAME:
+        for c in existing_meta.get("chunks", []):
+            if c.get("vec"):
+                reuse[(c.get("file"), c.get("text"))] = c["vec"]
+    reused_n = 0
 
     diag = diagnose_backend()
     backend_ok = diag["state"] == "installed"
@@ -771,10 +856,19 @@ def _reindex_one(target: str, args):
         has_vectors, embed_err, took_ms = False, None, 0.0
         if chunks:
             t0 = time.time()
-            vecs, embed_err = embed_texts([c["text"] for c in chunks])
+            # 先吃舊向量（文字未變者），只把真的沒有的送去嵌入
+            todo = []
+            for c in chunks:
+                v = reuse.get((c["file"], c["text"]))
+                if v is not None:
+                    c["vec"] = v
+                    reused_n += 1
+                else:
+                    todo.append(c)
+            vecs, embed_err = (([], None) if not todo else embed_texts([c["text"] for c in todo]))
             took_ms = round((time.time() - t0) * 1000, 1)
             if vecs is not None:
-                for c, v in zip(chunks, vecs):
+                for c, v in zip(todo, vecs):
                     c["vec"] = v
                 has_vectors = True
             else:
@@ -799,6 +893,8 @@ def _reindex_one(target: str, args):
         "manifest_only": not has_vectors,   # 誠實標籤（gura 拍磚）：別讓佔位檔跟真索引撞名
         "searchable": has_vectors,
         "built_at": args._now or "",
+        # 來源指紋 —— 供 stale_report() 判斷「磁碟變了沒」。存的是建索引當下的事實，不是推論。
+        "sources": _fingerprint_files(src["files"]),
     }
     vectors_dir().mkdir(parents=True, exist_ok=True)
     # 原子換檔：寫 .partial → os.replace，寫一半失敗等於什麼都沒發生
@@ -808,6 +904,8 @@ def _reindex_one(target: str, args):
         "target": target,
         "files": len(src["files"]),
         "chunks": len(chunks),
+        "reused": reused_n,                 # 沿用舊向量的 chunk 數（增量重建的證據，不是推論）
+        "embedded": len(chunks) - reused_n,  # 真的付了算力的那些
         "has_vectors": has_vectors,
         "manifest_only": not has_vectors,
         "searchable": has_vectors,
@@ -850,30 +948,76 @@ def op_search(args):
                 "error": diag["hint"]}
 
     # 收集選定 targets 的所有含向量 chunks（各 chunk 記住來源 target）
+    # 區塊職責：讀索引 → 缺的就地補建（Tim 2026-08-16 拍板「查詢時尚未建索引就自動建，而不是報錯」）
+    # 物理意義：「未建索引」不是使用者的錯，是這台機器還沒付過那筆一次性成本；報錯只是把成本
+    #          轉成一句要人自己去讀的指示。⚠ 但補建**不可靜默** —— 它會花數十秒到數分鐘、
+    #          且結果會被當成「本來就有」；所以每一次自動補建都落 auto_reindexed 欄位，text/json 都印。
+    # 數值影響：--no-auto-reindex 關掉此行為（回舊語意：缺就報錯）；補建失敗不 crash，
+    #          該 target 退回 missing 清單，其餘 target 照常檢索（部分可用 > 全盤失敗）。
+    auto_on = not getattr(args, "no_auto_reindex", False)
     entries = []          # list of (target, chunk)
-    missing, pending = [], []
-    for t in targets:
+    missing, pending, auto_log = [], [], []
+
+    def _collect(t):
+        """讀一個 target 的索引 → 回 (狀態, chunk 數)；狀態 ∈ ok/missing/pending/error。"""
         ip = index_path(t)
         if not ip.is_file():
-            missing.append(t)
-            continue
+            return "missing", None
         try:
             meta = json.loads(ip.read_text(encoding="utf-8"))
         except Exception as e:
-            return {"ok": False, "error": f"索引 '{t}' 讀取失敗: {e}"}
+            return f"error:{e}", None
         if not meta.get("has_vectors"):
+            return "pending", None
+        return "ok", [c for c in meta.get("chunks", []) if c.get("vec")]
+
+    for t in targets:
+        state, chunks = _collect(t)
+        if state.startswith("error:"):
+            return {"ok": False, "error": f"索引 '{t}' 讀取失敗: {state[6:]}"}
+        # 索引在、但磁碟已經變了 → 增量更新（只嵌真的變了的 chunk，其餘沿用舊向量）
+        # ⚠ 這條之所以敢預設開，是因為上面的重用機制讓成本正比於「改了多少」而不是「總量多大」。
+        #   沒有增量重建的話這裡應該只警告不自動做 —— 別把一次查詢變成十分鐘。
+        if state == "ok" and auto_on and not getattr(args, "no_refresh_stale", False):
+            sr = stale_report(t)
+            if sr.get("state") in ("stale", "unknown"):
+                rr = _reindex_one(t, args)
+                auto_log.append({"target": t, "ok": bool(rr.get("ok")),
+                                 "files": rr.get("files"), "chunks": rr.get("chunks"),
+                                 "reused": rr.get("reused"), "embedded": rr.get("embedded"),
+                                 "was": sr.get("state"),
+                                 "detail": (f"+{sr.get('added', 0)}/-{sr.get('removed', 0)}/~{sr.get('modified', 0)}"
+                                            if sr.get("state") == "stale" else sr.get("reason", "")),
+                                 "error": None if rr.get("ok") else (rr.get("error") or "reindex 失敗")})
+                if rr.get("ok") and rr.get("has_vectors"):
+                    state, chunks = _collect(t)   # 回讀
+        # 缺索引 / 只有 manifest（無向量）→ 兩種都是「查不了」，自動補建對兩種都適用
+        if state in ("missing", "pending") and auto_on:
+            rr = _reindex_one(t, args)
+            auto_log.append({"target": t, "ok": bool(rr.get("ok")),
+                             "files": rr.get("files"), "chunks": rr.get("chunks"),
+                             "was": state,
+                             "error": None if rr.get("ok") else (rr.get("error") or "reindex 失敗")})
+            if rr.get("ok") and rr.get("has_vectors"):
+                state, chunks = _collect(t)   # 回讀（不推論 —— 建完要真的讀得到才算數）
+        if state == "ok" and chunks:
+            entries += [(t, c) for c in chunks]
+        elif state == "missing":
+            missing.append(t)
+        elif state == "pending":
             pending.append(t)
-            continue
-        for c in meta.get("chunks", []):
-            if c.get("vec"):
-                entries.append((t, c))
     if not entries:
         detail = []
         if missing:
-            detail.append(f"未建索引 {missing}（先 reindex）")
+            detail.append(f"未建索引 {missing}（先 reindex）" if not auto_on
+                          else f"未建索引且自動補建未成功 {missing}")
         if pending:
             detail.append(f"無向量(manifest-only) {pending}")
-        return {"ok": False, "error": "；".join(detail) or "選定 target 無可用向量"}
+        for a in auto_log:
+            if not a["ok"]:
+                detail.append(f"自動補建 {a['target']} 失敗: {a['error']}")
+        return {"ok": False, "error": "；".join(detail) or "選定 target 無可用向量",
+                "auto_reindexed": auto_log or None}
 
     t0 = time.time()
     qvec, err = embed_texts([args.query])
@@ -889,12 +1033,43 @@ def op_search(args):
     k = max(1, args.topk)
     order = np.argsort(-sims)[:k]
 
+    # 區塊職責：每筆 hit 補上「人與 UI 能用來定位」的三欄 — 絕對路徑 / repo 相對路徑 / 起始行號
+    # 物理意義：chunk 只記 file 與序號，UI 端無從「定位 / 預覽 / 開啟」（DocSearchPage 那三顆按鈕的前提）。
+    #          rel 供顯示與 ucl_core: prefix 判斷；line 讓人知道要往檔案哪一段看。
+    # 數值影響：每次檢索最多讀 topk 個檔（同檔快取），SSD 上數 ms 級；
+    #          ⚠ line 是「chunk 首行在檔內第一次出現的位置」—— 同一行在檔中重複出現時會指到第一處，
+    #            所以它是**導航線索不是事實欄**，找不到就給 0（不猜、不報錯）。
+    _file_cache = {}
+
+    def _locate(fp: str, chunk_text_: str) -> int:
+        try:
+            if fp not in _file_cache:
+                _file_cache[fp] = Path(fp).read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
+            raw = _file_cache[fp]
+            head = (chunk_text_.split("\n", 1)[0] or "").strip()
+            if not head:
+                return 0
+            pos = raw.find(head)
+            return raw.count("\n", 0, pos) + 1 if pos >= 0 else 0
+        except Exception:
+            return 0
+
+    def _rel(fp: str) -> str:
+        for base in (repo_root(),):
+            try:
+                return str(Path(fp).resolve().relative_to(Path(base).resolve())).replace("\\", "/")
+            except Exception:
+                pass
+        return str(fp).replace("\\", "/")
+
     hits = []
     for i in order:
         idx = int(i)
         t, c = entries[idx]
         hits.append({"score": round(float(sims[idx]), 4), "target": t,
-                     "id": c["id"], "file": c["file"], "preview": c["text"][:200]})
+                     "id": c["id"], "file": c["file"],
+                     "rel": _rel(c["file"]), "line": _locate(c["file"], c.get("text", "")),
+                     "preview": c["text"][:200]})
     return {
         "ok": True,
         "targets": targets,
@@ -902,6 +1077,7 @@ def op_search(args):
         "searched_chunks": len(entries),
         "latency_ms": round((time.time() - t0) * 1000, 1),
         "hits": hits,
+        "auto_reindexed": auto_log or None,
         "note": (f"略過未建索引 {missing}" if missing else None),
     }
 
@@ -929,6 +1105,33 @@ def op_embed(args):
 # ─────────────────────────────────────────────────────────────────────────
 # 輸出 — json (機器/C# parse) 或 text (人類可讀 markdown)
 # ─────────────────────────────────────────────────────────────────────────
+def _render_auto_reindex(r: dict) -> str:
+    """自動補建索引的紀錄 → 文字行（成功與失敗都印；沒發生就完全不出現）。
+
+    # 區塊職責: search 的「缺索引就地補建」在 text 模式的可見性
+    # 物理意義: 補建是一筆花了數十秒~數分鐘、且改變了磁碟的動作 —— 它必須在畫面上留下痕跡，
+    #          否則下一個人會以為那份索引本來就在（而它其實是這次查詢順手建的）。
+    # 數值影響: 純顯示；auto_reindexed 為空 → 回空字串，舊輸出格式完全不變。
+    """
+    log = r.get("auto_reindexed")
+    if not log:
+        return ""
+    out = []
+    was_label = {"missing": "未建索引", "pending": "manifest-only(無向量)",
+                 "stale": "索引過期", "unknown": "無來源指紋(舊格式索引)"}
+    for a in log:
+        was = was_label.get(a.get("was"), a.get("was", "?"))
+        detail = f" {a['detail']}" if a.get("detail") else ""
+        if a.get("ok"):
+            inc = (f"（沿用 {a['reused']} / 新算 {a['embedded']}）"
+                   if a.get("reused") is not None else "")
+            out.append(f"  🔨 自動建索引 `{a['target']}`（原本{was}{detail}）: "
+                       f"{a.get('files', '?')} 檔 → {a.get('chunks', '?')} chunks {inc}")
+        else:
+            out.append(f"  ⚠ 自動建索引 `{a['target']}` 失敗（原本{was}{detail}）: {a.get('error')}")
+    return "\n" + "\n".join(out)
+
+
 def render_text(op: str, r: dict) -> str:
     # 多 target reindex → 逐筆展開（先於 ok 檢查，失敗細節不被吞）
     if r.get("multi"):
@@ -938,7 +1141,9 @@ def render_text(op: str, r: dict) -> str:
         if r.get("protected"):
             # 失敗但「什麼都沒壞」也要說清楚 — 使用者最怕的是不知道既有資產動沒動
             head = f"🛡️ {op} 已中止（既有索引受保護，未被覆寫）"
-        return f"{head}: {r.get('error') or r.get('note') or r}"
+        body = f"{head}: {r.get('error') or r.get('note') or r}"
+        # 失敗路徑上也要印自動補建的嘗試 —— 否則「試過但沒成功」會長得跟「沒試過」一樣
+        return body + _render_auto_reindex(r)
     if op == "status":
         # 後端一行分三態說話 — 「壞了」絕不能再印成「未安裝」（誤報 bug 的源頭）
         state = r.get("state", "installed" if r["backend_installed"] else "missing")
@@ -987,15 +1192,41 @@ def render_text(op: str, r: dict) -> str:
         return "\n".join(lines)
     if op == "reindex":
         flag = "" if r.get("searchable", r.get("has_vectors")) else " ⚠ manifest-only(不可檢索)"
+        inc = (f" / 沿用舊向量 {r['reused']}、新算 {r['embedded']}"
+               if r.get("reused") is not None else "")
         return (f"✅ reindex `{r['target']}`: {r['files']} 檔 → {r['chunks']} chunks / "
-                f"status={r['status']}{flag}" + (f"\n   {r['note']}" if r.get('note') else ""))
+                f"status={r['status']}{flag}{inc}" + (f"\n   {r['note']}" if r.get('note') else ""))
+    if op == "stale":
+        icon = {"fresh": "✅ 最新", "stale": "🔨 過期（該更新）", "missing": "⚠ 未建索引",
+                "manifest_only": "⚠ manifest-only(不可檢索)", "unknown": "❔ 無法判斷",
+                "unreadable": "🩸 索引讀不動"}
+        out = []
+        for rep in r["reports"]:
+            head = f"- {rep['target']}: {icon.get(rep['state'], rep['state'])}"
+            if rep["state"] == "stale":
+                head += (f" — 新增 {rep['added']} / 移除 {rep['removed']} / 修改 {rep['modified']}"
+                         f"（索引建於 {rep.get('built_at', '?')}）")
+                if rep.get("samples"):
+                    head += f"\n    例: {', '.join(rep['samples'])}"
+            elif rep["state"] == "fresh":
+                head += f" — {rep.get('files_now', '?')} 檔（索引建於 {rep.get('built_at', '?')}）"
+            elif rep["state"] == "unknown":
+                head += f" — {rep.get('reason', '')}"
+            out.append(head)
+        return "# 🧭 索引新鮮度\n" + "\n".join(out)
     if op == "search":
         tgts = ",".join(r.get("targets", []))
         out = [f"🔍 `{r['query']}` @ [{tgts}] ({r['latency_ms']}ms, {r.get('searched_chunks', '?')} chunks)"]
+        auto = _render_auto_reindex(r)
+        if auto:
+            out.append(auto.lstrip("\n"))
         if r.get("note"):
             out.append(f"  ⚠ {r['note']}")
         for h in r["hits"]:
-            out.append(f"  [{h['score']}] ({h.get('target', '?')}) {h['id']}\n     {h['preview']}")
+            loc = h.get("rel") or h.get("file", "")
+            line = f":{h['line']}" if h.get("line") else ""
+            out.append(f"  [{h['score']}] ({h.get('target', '?')}) {h['id']}\n"
+                       f"     📄 {loc}{line}\n     {h['preview']}")
         return "\n".join(out)
     if op == "targets":
         # 一行一個 "name\tdesc" — C# 讀行、split '\t' 取 [0] 建下拉
@@ -1034,7 +1265,15 @@ def main():
     p = sub.add_parser("prefetch"); p.add_argument("--format", default="text"); _add_model(p)
     _tgt_help = "語料庫 (可逗號多選或 all；合法: " + " / ".join(valid_targets()) + ")"
     p = sub.add_parser("reindex"); p.add_argument("--target", required=True, help=_tgt_help); p.add_argument("--format", default="text"); _add_model(p)
-    p = sub.add_parser("search"); p.add_argument("--query", required=True); p.add_argument("--target", default="docs", help=_tgt_help); p.add_argument("--topk", type=int, default=5); p.add_argument("--format", default="text"); _add_model(p)
+    p = sub.add_parser("search"); p.add_argument("--query", required=True); p.add_argument("--target", default="docs", help=_tgt_help); p.add_argument("--topk", type=int, default=5); p.add_argument("--format", default="text")
+    # 預設「缺索引就自動補建」(Tim 2026-08-16)；此旗標保留舊語意給「只想知道現在查不查得到」的呼叫端
+    # （例如健康檢查 / 想量『索引存在嗎』的人 —— 那種呼叫最不該被一次數分鐘的補建卡住）。
+    p.add_argument("--no-auto-reindex", dest="no_auto_reindex", action="store_true",
+                   help="缺索引時不自動補建，直接回錯（預設會自動補建）")
+    p.add_argument("--no-refresh-stale", dest="no_refresh_stale", action="store_true",
+                   help="索引存在但過期時不自動增量更新（預設會更新；只想量『現在查得到什麼』時用）")
+    _add_model(p)
+    p = sub.add_parser("stale"); p.add_argument("--target", default="all", help=_tgt_help); p.add_argument("--format", default="text"); _add_model(p)
     p = sub.add_parser("embed"); p.add_argument("--text", required=True); p.add_argument("--format", default="text"); _add_model(p)
     p = sub.add_parser("targets"); p.add_argument("--format", default="text"); _add_model(p)
 
@@ -1049,7 +1288,7 @@ def main():
     handlers = {
         "status": op_status, "install": op_install, "prefetch": op_prefetch,
         "reindex": op_reindex, "search": op_search, "embed": op_embed,
-        "targets": op_targets,
+        "targets": op_targets, "stale": op_stale,
     }
     r = handlers[args.op](args)
     fmt = getattr(args, "format", "text")

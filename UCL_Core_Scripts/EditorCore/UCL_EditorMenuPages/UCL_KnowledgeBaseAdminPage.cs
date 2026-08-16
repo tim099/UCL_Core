@@ -5,6 +5,7 @@
 // 設計取捨：嵌入後端走 FlagEmbedding 的真 bge-m3，但頁面與後端解耦、命名走「知識庫」— 換模型不必改頁。
 //          UI 字串仿 UCL_ChatTavernAdminPage 慣例用 zh-Hant 硬編 (內部管理頁，不走 CodeLocalize)。
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using Cysharp.Threading.Tasks;
@@ -45,7 +46,25 @@ namespace UCL.Core.EditorLib.Page
         string TargetStr => (m_Targets != null && m_TargetIdx >= 0 && m_TargetIdx < m_Targets.Length)
                             ? m_Targets[m_TargetIdx] : "docs";
 
+        // ==== 檢索結果（結構化）====
+        // 區塊職責：把 python `search --format json` 的 hits 存成可渲染的列，供每列掛「定位/預覽/開啟」。
+        // 物理意義：舊版只把 stdout 整坨丟進 Box —— 看得到命中卻**到不了那份檔**（要自己複製路徑去找）。
+        //          對齊 UCL_DocSearchPage 的三顆按鈕慣例（Tim 2026-08-16）。
+        // 數值影響：m_Hits == null → 尚未搜過；Count == 0 → 搜過但無命中（兩者顯示不同，別合併）。
+        class KbHit
+        {
+            public float Score;
+            public string Target, Id, File, Rel, Preview;
+            public int Line;
+        }
+        List<KbHit> m_Hits;
+        string m_SearchHeader = "";   // 查詢摘要（延遲 / chunks / 自動補建紀錄）
+        string m_SearchError = "";    // 檢索失敗訊息（含自動補建失敗原因）
+        string m_StaleText = "";      // 索引新鮮度（stale op 的輸出）
+
         GUIStyle m_WrapStyle;
+        GUIStyle m_TitleStyle;
+        GUIStyle TitleStyle => m_TitleStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
         private UCL_ObjectDictionary m_Dic = new();
         GUIStyle WrapStyle
         {
@@ -66,6 +85,24 @@ namespace UCL.Core.EditorLib.Page
         {
             LoadTargets();                                  // 直接讀 kb_targets.json 建下拉（同步、即時）
             RunOp("狀態", "status --format text", 60000);   // 抓一次狀態
+            RunStale();                                     // 順手抓新鮮度（唯讀、不載模型）
+        }
+
+        // 區塊職責：索引新鮮度 —— 「磁碟變了，索引還是舊的」這件事要在畫面上看得到（Tim 2026-08-16 提問）
+        // 物理意義：純 stat 比對，秒級、不載模型 ⇒ 便宜到可以開頁就跑。
+        // ⚠ 它跟 m_Busy 分開排隊：新鮮度是唯讀觀測，不該被一次 reindex 卡住，也不該卡住別人。
+        void RunStale()
+        {
+            RunStaleAsync().Forget();
+        }
+
+        async UniTaskVoid RunStaleAsync()
+        {
+            var r = await UCL_KnowledgeBaseRunner.RunAsync("stale --target all --format text",
+                                                           CancellationToken.None, 120000);
+            await UniTask.SwitchToMainThread();
+            m_StaleText = r.DisplayText;
+            EditorWindow.focusedWindow?.Repaint();
         }
 
         // 直接讀 kb_targets.json（與 python 同一份 config）建 target 下拉 —
@@ -196,27 +233,100 @@ namespace UCL.Core.EditorLib.Page
                         RunOp($"重建 {TargetStr} 索引", $"reindex --target {TargetStr}", 1800000);
                     if (GUILayout.Button("🧱 重建全部 (all)", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
                         RunOp("重建全部索引", "reindex --target all", 1800000);
+                    if (GUILayout.Button("🧭 檢查新鮮度", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                        RunStale();
                 }
+                // 區塊職責：把「哪份索引落後磁碟」直接攤在重建按鈕旁邊
+                // 物理意義：重建是有代價的動作，人需要先知道「有沒有必要」；
+                //          而檢索本身已經會自動增量更新 —— 這區是給「想先看清楚再決定」的人，不是必經步驟。
+                if (!string.IsNullOrEmpty(m_StaleText))
+                    GUILayout.Label(m_StaleText, WrapStyle);
             }
         }
 
-        // 區塊 4：檢索測試
+        // 區塊 4：檢索（含「缺索引就地補建」）
         void DrawSearchPanel()
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>4. 檢索測試</b>（Editor 內驗證；高頻檢索 agent 直接呼 python）", WrapStyle);
-                GUILayout.Label("Target 下拉來自 kb_targets.json；選 <b>all</b> 可跨全部語料庫一次搜（分數同空間可比）。", WrapStyle);
+                GUILayout.Label("<b>4. 檢索</b>（Editor 內查；高頻檢索 agent 直接呼 python）", WrapStyle);
+                GUILayout.Label("Target 下拉來自 kb_targets.json；選 <b>all</b> 可跨全部語料庫一次搜（分數同空間可比）。\n"
+                                + "選到<b>尚未建索引</b>的 target 時**不會報錯，會就地建**（首次可能數十秒~數分鐘，建完立刻查）。", WrapStyle);
                 DrawTargetPopup();
                 m_SearchQuery = GUILayout.TextField(m_SearchQuery, UCL_GUIStyle.TextFieldStyle);
                 using (new EditorGUI.DisabledScope(m_Busy || string.IsNullOrWhiteSpace(m_SearchQuery)))
                 {
                     if (GUILayout.Button("🔍 執行檢索", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
                     {
-                        string arg = $"search --query {UCL_KnowledgeBaseRunner.QuoteArg(m_SearchQuery)} --target {TargetStr} --topk 5";
-                        RunOp("檢索", arg, 120000);
+                        // ⚠ 逾時比照 reindex（不是 120s）——「查詢時自動建索引」讓 search 有可能真的花上數分鐘，
+                        //   沿用舊的 120s 會讓「正在建索引」長得跟「壞掉」一模一樣（而它其實正在做對的事）。
+                        string arg = $"search --query {UCL_KnowledgeBaseRunner.QuoteArg(m_SearchQuery)} --target {TargetStr} --topk 8 --format json";
+                        RunOp("檢索", arg, 1800000);
                     }
                 }
+                DrawSearchResults();
+            }
+        }
+
+        // ===========================================================
+        // 區塊：檢索結果列表 — 每列 定位 / 預覽 / 開啟（對齊 UCL_DocSearchPage）
+        // 物理意義：命中的是磁碟上一份真檔案，人要能**到得了它**；只印路徑字串等於要人自己再找一次。
+        // 數值影響：純顯示；按鈕行為委派既有實作（RevealInFinder / UCL_MarkdownViewerPage / OpenDocByUrl），
+        //          不在本頁重造第二套開檔邏輯。
+        // ===========================================================
+        void DrawSearchResults()
+        {
+            if (!string.IsNullOrEmpty(m_SearchError))
+                EditorGUILayout.HelpBox(m_SearchError, MessageType.Error);
+            if (m_Hits == null) return;
+
+            if (!string.IsNullOrEmpty(m_SearchHeader))
+                GUILayout.Label(m_SearchHeader, WrapStyle);
+            if (m_Hits.Count == 0)
+            {
+                // 「查了，0 命中」與「沒查」要能分辨 —— 空結果是一個答案，不是沒有答案
+                EditorGUILayout.HelpBox("查了，0 命中（索引存在但沒有語意相近的片段）。", MessageType.Info);
+                return;
+            }
+            for (int i = 0; i < m_Hits.Count; i++) DrawHitRow(i, m_Hits[i]);
+        }
+
+        void DrawHitRow(int idx, KbHit hit)
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                string abs = (hit.File ?? "").Replace('\\', '/');
+                string rel = string.IsNullOrEmpty(hit.Rel) ? abs : hit.Rel;
+                bool exists = !string.IsNullOrEmpty(abs) && File.Exists(abs);
+                using (new GUILayout.HorizontalScope())
+                {
+                    using (new EditorGUI.DisabledScope(!exists))
+                    {
+                        if (GUILayout.Button("📂 定位", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            EditorUtility.RevealInFinder(abs);
+                        // 預覽只給 .md —— MarkdownViewer 對 .jsonl（lessons）沒有意義，
+                        // 給一顆按下去只會顯示原始行的按鈕，是把「能看」講得比事實大。
+                        if (abs.EndsWith(".md", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (GUILayout.Button("📄 預覽", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                UCL_MarkdownViewerPage.Create(rel, abs);
+                        }
+                        if (GUILayout.Button("📖 開啟", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+                            UCL_DocSearchPage.OpenDocByUrl(rel, abs);
+                    }
+                    GUILayout.Label($"#{idx + 1}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                    GUILayout.Label($"★ {hit.Score:0.0000}", UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.83f, 0.48f)));
+                    GUILayout.Label($"({hit.Target}) {hit.Id}", TitleStyle);
+                    GUILayout.FlexibleSpace();
+                }
+                // 檔案不存在 = 索引比磁碟舊（檔被改名/刪了）。這種列必須說出來，
+                // 否則使用者會以為是按鈕壞了，而真相是該重建索引。
+                if (!exists)
+                    GUILayout.Label("  <color=#FF9B9B>⚠ 檔案不存在（索引比磁碟舊 → 重建該 target 索引）</color>", WrapStyle);
+                string line = hit.Line > 0 ? $" (L{hit.Line})" : "";
+                GUILayout.Label($"  {rel}{line}", UCL_GUIStyle.LabelStyle);
+                if (!string.IsNullOrEmpty(hit.Preview))
+                    GUILayout.Label($"  {hit.Preview}", WrapStyle);
             }
         }
 
@@ -259,7 +369,77 @@ namespace UCL.Core.EditorLib.Page
             m_BusyLabel = "";
             m_LastOutput = $"[{label}]\n{r.DisplayText}";
             if (label == "狀態") m_StatusText = r.DisplayText;
+            if (label == "檢索") ParseSearchJson(r.DisplayText);
             if (win != null) win.Repaint();
+        }
+
+        // ===========================================================
+        // 區塊：search --format json → m_Hits
+        // 物理意義：python 是唯一真相源，本頁只是把它的 hits 轉成可點的列；解析失敗**不吞**——
+        //          原始輸出仍留在「最近操作結果」面板，錯誤另外顯示（不要讓人對著空列表猜）。
+        // 數值影響：只認 stdout 裡第一個 '{' 到最後一個 '}'（tqdm 進度條走 stderr，正常不混入；
+        //          真混進來時這個夾子讓解析仍成立）。
+        // ===========================================================
+        void ParseSearchJson(string stdout)
+        {
+            m_Hits = null;
+            m_SearchHeader = "";
+            m_SearchError = "";
+            if (string.IsNullOrEmpty(stdout)) { m_SearchError = "檢索無輸出（python 未啟動或被逾時砍掉）。"; return; }
+            int s = stdout.IndexOf('{'), e = stdout.LastIndexOf('}');
+            if (s < 0 || e <= s) { m_SearchError = "檢索輸出不是 JSON（見下方原始輸出）。"; return; }
+            try
+            {
+                var root = JsonData.ParseJson(stdout.Substring(s, e - s + 1));
+                if (root == null || !root.IsObject) { m_SearchError = "檢索 JSON 解析失敗（見下方原始輸出）。"; return; }
+
+                // 自動補建紀錄：成功與失敗都顯示 —— 那是一筆改了磁碟的動作，不可靜默
+                string autoLine = "";
+                if (root.Contains("auto_reindexed") && root["auto_reindexed"] != null && root["auto_reindexed"].IsArray)
+                {
+                    var arr = root["auto_reindexed"];
+                    for (int i = 0; i < arr.Count; i++)
+                    {
+                        var a = arr[i];
+                        bool ok = a.Contains("ok") && a["ok"].GetString() != null && a["ok"].GetString().ToLower() == "true";
+                        autoLine += ok
+                            ? $"\n🔨 自動建索引 <b>{a.GetString("target", "?")}</b>：{a.GetString("files", "?")} 檔 → {a.GetString("chunks", "?")} chunks"
+                            : $"\n⚠ 自動建索引 <b>{a.GetString("target", "?")}</b> 失敗：{a.GetString("error", "")}";
+                    }
+                }
+
+                if (!root.Contains("hits") || root["hits"] == null || !root["hits"].IsArray)
+                {
+                    // ok=false 的失敗路徑：把 error 攤在面板上（含補建失敗原因）
+                    m_SearchError = root.GetString("error", "檢索失敗（無 hits 欄位）") + autoLine;
+                    return;
+                }
+                var hits = root["hits"];
+                var list = new List<KbHit>(hits.Count);
+                for (int i = 0; i < hits.Count; i++)
+                {
+                    var h = hits[i];
+                    list.Add(new KbHit
+                    {
+                        Score = h.GetFloat("score", 0f),
+                        Target = h.GetString("target", "?"),
+                        Id = h.GetString("id", ""),
+                        File = h.GetString("file", ""),
+                        Rel = h.GetString("rel", ""),
+                        Line = h.GetInt("line", 0),
+                        Preview = h.GetString("preview", ""),
+                    });
+                }
+                m_Hits = list;
+                m_SearchHeader = $"🔍 <b>{root.GetString("query", "")}</b> — {list.Count} 命中 / "
+                                 + $"掃 {root.GetString("searched_chunks", "?")} chunks / {root.GetString("latency_ms", "?")}ms"
+                                 + autoLine
+                                 + (root.Contains("note") && !string.IsNullOrEmpty(root.GetString("note", "")) ? $"\n⚠ {root.GetString("note", "")}" : "");
+            }
+            catch (System.Exception ex)
+            {
+                m_SearchError = $"檢索 JSON 解析例外：{ex.Message}（原始輸出見下方面板）";
+            }
         }
     }
 }

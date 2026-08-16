@@ -98,6 +98,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "observe": await StepObserve(aPersona, GetArg(args, "body", ""), token); return;
                 case "note": await StepNote(aPersona, GetArg(args, "body", ""), token); return;
                 case "join": await StepJoin(aPersona, token); return;
+                case "hotspot": await StepHotspot(aPersona, GetArg(args, "from", "").Trim(),
+                        GetArg(args, "to", "").Trim(), GetArg(args, "why", ""), token); return;
+                case "claim": await StepClaim(aPersona, GetArg(args, "hotspot", "").Trim(), token); return;
                 default:
                     throw new Exception($"[StreamWatch] step 必為 peek|start|join|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
@@ -567,6 +570,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 //   ⇒ 兩條路徑都印；本輪無 sidecar，所以字幕/語音段會誠實地印「無」。
                 AppendSidecar(aR, Path.ChangeExtension(aOutPath, ".subtitles.md"), false,
                               iPersona, ParseTavernShown(aStdout), ReadInt(aS, "tavern_seq"));
+                AppendHotspots(aR, iPersona);   // 無素材時更該印 —— 沒東西看正是該去領熱點的時刻
                 aR.AppendLine();
                 aR.AppendLine("## next");
                 aR.AppendLine($"1. 等 30–60 秒再跑一次 step=cycle（不必改任何參數）。");
@@ -648,6 +652,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
             // 單一入口：字幕／語音／同場訊息全部嵌進本檔（Tim 2026-08-16）
             AppendSidecar(aR, aSubPath, aHasSub, iPersona, aTavernShown, ReadInt(aS, "tavern_seq"));
+            AppendHotspots(aR, iPersona);   // 熱點清單 —— 有沒有都印（零狀態必印）
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. Read 上面的縮圖牆{(aHasSub ? "與字幕" : "")}路徑");
@@ -1092,7 +1097,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ===========================================================
         static async UniTask<(bool ok, string stdout, string err)> RunMontageAsync(
             string iScript, double iCursor, double iBefore, string iOutPath, bool iOcr, bool iStt,
-            string iTavernSelf, int iTavernSinceSeq, CancellationToken iToken)
+            string iTavernSelf, int iTavernSinceSeq, CancellationToken iToken, int iMaxTiles = 0)
         {
             try
             {
@@ -1100,7 +1105,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aArgs.Append("\"").Append(iScript).Append("\" make");
                 if (iCursor > 0) aArgs.Append(" --after-mtime ").Append(iCursor.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 if (iBefore > 0) aArgs.Append(" --before-mtime ").Append(iBefore.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
-                aArgs.Append(" --max-tiles ").Append(MAX_TILES);
+                aArgs.Append(" --max-tiles ").Append(iMaxTiles > 0 ? iMaxTiles : MAX_TILES);
                 // 區塊職責：感官旗標**不由呼叫端記得帶**（Tim 2026-08-15）——
                 // 物理意義：OCR/STT 的開關已經在 _config.json 裡（`ocr_enabled` / `stt_enabled`），
                 //          那才是事實源。要人再傳一次 flag，等於把同一件事存兩個地方，
@@ -1370,6 +1375,287 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //          daemon 重啟／手動清檔都會讓「檔案數 × fps」跟真實時間分家）。
         // 邊界：讀不到就把**原因**印出來（壞要往吵的方向壞）；不得只印「讀取失敗」。
         // ===========================================================
+        // ===========================================================
+        // 區塊：熱點（hotspot）—— 標記值得細看的時間段，由陪看者**獨占認領**後拉細看
+        // 物理意義：每輪 cycle 的每格間隔實測 2s～33s（2026-08-16 三場實測），
+        //          打鬥／表情轉折／快速對話**全部落在格與格之間**；而陪看者的窗口彼此不重疊
+        //          ⇒ 目前「沒人看過某段」與「看過沒事」同形。熱點是把那個差別變成讀數的機制。
+        // 數值影響：熱點存**共享檔**（不是 per-persona session）—— 主觀影者標、陪看者認領，
+        //          兩者不同 persona，放進誰的 session 都會讓另一邊看不到。
+        // ⚠ **認領是獨占鎖，不是宣告**（Tim 2026-08-16 拍板）：目的是把眼睛**分散**到不同熱點，
+        //   不是三個人疊在同一段。已被認領的要擋下並列出還沒人領的。
+        // ===========================================================
+        static string HotspotsPath() =>
+            Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "hotspots.json");
+
+        // step=hotspot —— 標記一段值得細看的時間區間
+        async UniTask StepHotspot(string iPersona, string iFrom, string iTo, string iWhy, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iPersona, "hotspot");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=hotspot persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            double aFrom = ParseClockToEpoch(iFrom), aTo = ParseClockToEpoch(iTo);
+            if (aFrom <= 0 || aTo <= 0 || aTo <= aFrom)
+            {
+                Blocked(aR, aPath, $"時間區間解析失敗或首尾顛倒（from=`{iFrom}` to=`{iTo}`）",
+                        "格式 --arg from=HH:mm:ss --arg to=HH:mm:ss（同一天，to 必須晚於 from）");
+                throw new Exception($"[StreamWatch] step=hotspot blocked：時間區間無效（詳見 {aPath}）");
+            }
+            if (string.IsNullOrWhiteSpace(iWhy))
+            {
+                Blocked(aR, aPath, "未說明為什麼值得細看（`why` 空）",
+                        "--arg why=<一句話>　—— 沒有理由的熱點，別人無從判斷要不要領");
+                throw new Exception($"[StreamWatch] step=hotspot blocked：why 未填（詳見 {aPath}）");
+            }
+
+            // ⚠ ring buffer 左界檢查：**不可以讓人標一個已經不存在的區間**（標了也領不到）
+            double aOldest = OldestFrameEpoch();
+            string aCover = aOldest <= 0
+                ? "⚠ 讀不到最舊 frame ⇒ **無法確認這段還在不在**（當成不確定，不是當成還在）"
+                : aFrom < aOldest
+                    ? $"⛔ **已被覆蓋** —— 區間起點 {FromEpochLocal(aFrom):HH:mm:ss} 早於最舊 frame {FromEpochLocal(aOldest):HH:mm:ss}"
+                    : $"✅ 仍在 ring buffer 內（最舊 frame {FromEpochLocal(aOldest):HH:mm:ss}）";
+
+            var aJd = LoadHotspots() ?? new JsonData();
+            if (!aJd.Contains("hotspots")) aJd["hotspots"] = JsonData.ParseJson("[]");
+            var aList = aJd["hotspots"];
+            string aId = "h" + (aList.Count + 1);
+            var aH = new JsonData();
+            aH["id"] = new JsonData(aId);
+            aH["from_epoch"] = new JsonData(aFrom);
+            aH["to_epoch"] = new JsonData(aTo);
+            aH["why"] = new JsonData(iWhy.Trim());
+            aH["opened_by"] = new JsonData(iPersona);
+            aH["opened_at"] = new JsonData(UCL_AwakeningService.NowIso());
+            aH["claimed_by"] = new JsonData("");
+            aH["claimed_at"] = new JsonData("");
+            aList.Add(aH);
+            string aDir = Path.GetDirectoryName(HotspotsPath());
+            if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
+            AtomicWrite(HotspotsPath(), aJd.ToJsonBeautify());
+
+            aR.AppendLine($"- 熱點   : **[{aId}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}"
+                        + $"（{(aTo - aFrom):F0}s）");
+            aR.AppendLine($"- 理由   : {iWhy.Trim()}");
+            aR.AppendLine($"- 涵蓋   : {aCover}");
+            aR.AppendLine($"- 狀態   : **未認領** —— 一個熱點只能被領一次（先領先得）");
+
+            var aBody = new StringBuilder();
+            aBody.AppendLine($"🔍 [{iPersona}] 標記熱點 **[{aId}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}");
+            aBody.AppendLine($"　理由：{iWhy.Trim()}");
+            aBody.AppendLine($"　認領：`run_cmd.py run StreamWatch --arg step=claim --arg persona=<你> --arg hotspot={aId}`");
+            aBody.AppendLine("　⚠ **一個熱點只能被領一次** —— 目的是把眼睛分散到不同段，不是疊在同一段。");
+            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-hotspot", iToken);
+            aR.AppendLine($"- 公告   : {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. 繼續取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=hotspot {aId} → {aPath}");
+        }
+
+        static JsonData LoadHotspots()
+        {
+            try
+            {
+                string aP = HotspotsPath();
+                if (!File.Exists(aP)) return null;
+                return JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
+            }
+            catch { return null; }
+        }
+
+        /// <summary>磁碟上最舊 frame 的 epoch（ring buffer 左界）。讀不到回 0 —— 呼叫端**不可把 0 當成「都還在」**。</summary>
+        static double OldestFrameEpoch()
+        {
+            try
+            {
+                var aDir = new DirectoryInfo(Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "frames"));
+                if (!aDir.Exists) return 0;
+                double aMin = 0;
+                foreach (var f in aDir.GetFiles("*.jpg"))
+                {
+                    double e = ToEpoch(f.LastWriteTimeUtc);
+                    if (aMin <= 0 || e < aMin) aMin = e;
+                }
+                return aMin;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>`HH:mm:ss` / `HH:mm` → 今日該時刻的 epoch。解析不出回 0。</summary>
+        static double ParseClockToEpoch(string iClock)
+        {
+            if (string.IsNullOrWhiteSpace(iClock)) return 0;
+            var aFmts = new[] { "HH:mm:ss", "H:mm:ss", "HH:mm", "H:mm" };
+            foreach (var f in aFmts)
+            {
+                if (DateTime.TryParseExact(iClock.Trim(), f, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out DateTime aT))
+                {
+                    var aToday = DateTime.Today.Add(aT.TimeOfDay);
+                    return ToEpoch(aToday.ToUniversalTime());
+                }
+            }
+            return 0;
+        }
+
+        // step=claim —— **獨占**認領一個熱點，並拉出該區間的高密度縮圖牆
+        async UniTask StepClaim(string iPersona, string iHotspot, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iPersona, "claim");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=claim persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            // ⚠ **認領只給陪看者**（Tim 2026-08-16）：熱點是「回頭把某段拉細」，而那要花一整輪；
+            //   主觀影者一離開主線，**整場的主劇情就斷了**（陪看者的窗口只是挑段，接不起來）。
+            //   ⇒ 標記人人可（誰看到都能標），但**看熱點是 join 者的工作**。分工不是階級，是覆蓋率：
+            //     primary 顧連續性、companion 顧解析度。
+            var aMySession = LoadSession(iPersona);
+            if (aMySession != null && ReadBool(aMySession, "active") && ReadStr(aMySession, "role") == "primary")
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine($"- reason: @{iPersona} 是本場**主觀影者** —— 認領熱點是陪看者（`step=join`）的工作");
+                aR.AppendLine("- why: 主觀影者一離開主線去細看某一段，**整場的主劇情就斷了**；"
+                            + "陪看者的窗口本來就是挑段，接不起來的成本比較小");
+                aR.AppendLine("- how: 妳可以繼續**標記**熱點（`step=hotspot` 人人可用），把細看留給 join 的人；"
+                            + "沒有陪看者時就讓它掛著 —— **掛著的熱點是「還沒人看」的讀數，不是失敗**");
+                AppendHotspots(aR, iPersona);
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=claim blocked：主觀影者不認領熱點（詳見 {aPath}）");
+            }
+
+            var aJd = LoadHotspots();
+            var aList = aJd != null && aJd.Contains("hotspots") ? aJd["hotspots"] : null;
+            JsonData aH = null; int aIdx = -1;
+            if (aList != null && aList.IsArray)
+                for (int i = 0; i < aList.Count; i++)
+                    if (ReadStr(aList[i], "id") == (iHotspot ?? "").Trim()) { aH = aList[i]; aIdx = i; break; }
+
+            if (aH == null)
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine($"- reason: 找不到熱點 `{iHotspot}`");
+                AppendHotspots(aR, iPersona);
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=claim blocked：熱點不存在（詳見 {aPath}）");
+            }
+
+            // ⚠ **獨占**（Tim 2026-08-16）：已被領走就擋，並把還沒人領的列出來 ——
+            //   目的是把眼睛分散到不同段。擋下時**要給替代選項**，否則使用者只會原地重試。
+            string aBy = ReadStr(aH, "claimed_by");
+            if (!string.IsNullOrEmpty(aBy))
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine($"- reason: `{iHotspot}` **已被 @{aBy} 認領**（{ReadStr(aH, "claimed_at")}）");
+                aR.AppendLine("- why: 一個熱點只能被領一次 —— 兩個人細看同一段，等於沒人看另一段");
+                AppendHotspots(aR, iPersona);
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=claim blocked：已被認領（詳見 {aPath}）");
+            }
+
+            double aFrom = ReadDouble(aH, "from_epoch"), aTo = ReadDouble(aH, "to_epoch");
+            double aOldest = OldestFrameEpoch();
+            if (aOldest > 0 && aFrom < aOldest)
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine($"- reason: `{iHotspot}` 的區間**已被 ring buffer 覆蓋** "
+                    + $"（起點 {FromEpochLocal(aFrom):HH:mm:ss} < 最舊 frame {FromEpochLocal(aOldest):HH:mm:ss}）");
+                aR.AppendLine("- why: 認領一個已經不存在的區間 = 拿不到畫面，而失敗會發生在你寫完評論之後");
+                AppendHotspots(aR, iPersona);
+                WritePayload(aPath, aR.ToString());
+                throw new Exception($"[StreamWatch] step=claim blocked：區間已過期（詳見 {aPath}）");
+            }
+
+            // 先落鎖再取材 —— 反過來的話，取材那幾秒會讓第二個人也搶到同一個熱點
+            aH["claimed_by"] = new JsonData(iPersona);
+            aH["claimed_at"] = new JsonData(UCL_AwakeningService.NowIso());
+            aList[aIdx] = aH;
+            AtomicWrite(HotspotsPath(), aJd.ToJsonBeautify());
+
+            string aScript = ResolveMontageScript();
+            string aOutPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream",
+                                           $"_montage_hotspot_{iPersona}.jpg");
+            var (aOcrOn, aSttOn) = ReadSensorFlags();
+            // 熱點的重點就是**拉細** ⇒ tiles 上限放大到 MAX_TILES 的兩倍；
+            // 區間短時 montage 自然取到接近逐幀（每格 1–2s）。
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aFrom, aTo, aOutPath, aOcrOn, aSttOn,
+                                                            iPersona, 0, iToken, MAX_TILES * 2);
+            aR.AppendLine($"- 熱點   : **[{ReadStr(aH, "id")}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}"
+                        + $"（{(aTo - aFrom):F0}s）｜開於 @{ReadStr(aH, "opened_by")}");
+            aR.AppendLine($"- 理由   : {ReadStr(aH, "why")}");
+            aR.AppendLine($"- 認領   : ✅ **@{iPersona}**（鎖已落，其他人此後領這個會被擋）");
+            if (aOk)
+            {
+                var aInfo = ParseMontageReport(aStdout);
+                aR.AppendLine($"- 縮圖牆 : `{aOutPath}`　← 直接 Read");
+                aR.AppendLine($"- 字幕   : `{Path.ChangeExtension(aOutPath, ".subtitles.md")}`");
+                aR.AppendLine($"- 格數   : {aInfo.Tiles}（**上限 {MAX_TILES * 2}，比一般 cycle 密**）");
+            }
+            else
+            {
+                aR.AppendLine($"- ⚠ 取材失敗：{Truncate((aStdout ?? "") + (aErr ?? ""), 300)}");
+                aR.AppendLine("- ⚠ **鎖已經落了** —— 失敗不自動退鎖（退鎖會讓兩個人同時以為自己領到）。");
+                aR.AppendLine("  真要放掉請人工改 `StreamWatch/hotspots.json` 的 `claimed_by`。");
+            }
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine("1. Read 上面的縮圖牆與字幕 → 細看");
+            aR.AppendLine($"2. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
+            aR.AppendLine("   ⚠ 評論裡註明這是熱點 " + ReadStr(aH, "id") + " 的細看結果 —— 讓開熱點的人知道有人看過了");
+            aR.AppendLine($"3. 回到一般取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            WritePayload(aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=claim {iHotspot} by {iPersona} ok={aOk} → {aPath}");
+        }
+
+        // 區塊職責：把熱點清單印進 cycle 回傳檔 —— **有沒有都印**。
+        // ⚠ 零狀態必印：今天連兩次的通道 bug 都是「整段消失」造成的，
+        //   而「沒有熱點」與「熱點段沒跑起來」必須分得開。
+        static void AppendHotspots(StringBuilder ioR, string iPersona)
+        {
+            ioR.AppendLine();
+            ioR.AppendLine("## 🔍 熱點");
+            var aJd = LoadHotspots();
+            var aList = aJd != null && aJd.Contains("hotspots") ? aJd["hotspots"] : null;
+            double aOldest = OldestFrameEpoch();
+            int aShown = 0, aFree = 0;
+            if (aList != null && aList.IsArray)
+            {
+                for (int i = 0; i < aList.Count; i++)
+                {
+                    var h = aList[i];
+                    double aFrom = ReadDouble(h, "from_epoch");
+                    bool aExpired = aOldest > 0 && aFrom < aOldest;
+                    string aBy = ReadStr(h, "claimed_by");
+                    string aState = aExpired ? "⛔ **已被 ring buffer 覆蓋，無法細看**"
+                                  : string.IsNullOrEmpty(aBy) ? "**未認領**"
+                                  : $"認領 @{aBy}";
+                    if (!aExpired && string.IsNullOrEmpty(aBy)) aFree++;
+                    ioR.AppendLine($"- [{ReadStr(h, "id")}] {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(ReadDouble(h, "to_epoch")):HH:mm:ss}"
+                        + $"「{ReadStr(h, "why")}」— 開於 @{ReadStr(h, "opened_by")}｜{aState}");
+                    aShown++;
+                }
+            }
+            if (aShown == 0)
+            {
+                ioR.AppendLine("- **目前無熱點**（不是讀取失敗 —— 清單讀到了，內容是空的）");
+                ioR.AppendLine($"- 標一個：`run_cmd.py run StreamWatch --arg step=hotspot --arg persona={iPersona} "
+                    + "--arg from=<HH:mm:ss> --arg to=<HH:mm:ss> --arg why=<為什麼值得細看>`");
+            }
+            else if (aFree > 0)
+                ioR.AppendLine($"- ⇒ 還有 **{aFree}** 個沒人領：`run_cmd.py run StreamWatch --arg step=claim "
+                    + $"--arg persona={iPersona} --arg hotspot=<id>`（**先領先得，一個熱點只能被領一次**）");
+            else
+                ioR.AppendLine("- ⇒ 全部已認領或已過期 —— 沒有可領的");
+        }
+
+        // （ReadDouble 已存在於本檔下方，用 InvariantCulture —— 不重造第二個。
+        //   🩸 我剛才寫了一個，而且沒帶 InvariantCulture ⇒ 在逗號小數點的 locale 上會解析錯。
+        //   「這件事聽起來像不像已經有人做過」—— 答案是有，而且做得比我好。）
+
         static void AppendRetentionLine(StringBuilder ioR)
         {
             try

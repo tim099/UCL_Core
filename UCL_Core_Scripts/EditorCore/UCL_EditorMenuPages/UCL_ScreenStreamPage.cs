@@ -834,10 +834,27 @@ namespace UCL.Core.EditorLib.Page
                 File.WriteAllText(aPath, aCfg.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
                 PostStreamAnnounceStatic(iOn, aCfg);
                 AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
+
+                // 區塊職責：停播時收掉所有陪看者的 montage 子行程（Tim 2026-08-16 提出）
+                // 物理意義：montage 的 tag 已拆成 `streamwatch_montage_<persona>` 以免互相誤殺，
+                //          代價是**沒有任何單一 tag 掃得到全部** ⇒ 停播這個唯一咽喉要用前綴收攤。
+                //          沒有人再看的時候還在跑的 montage，讀的是即將被覆蓋的 ring buffer，
+                //          留著它只會產出**看起來正常但沒人要的**縮圖牆，並佔著 CPU。
+                // 數值影響：只在「關」的那一次跑（開播不動）；沒有活著的就回 0，不出聲。
+                //          身分驗證沿用 KillAllByTag（Dead/PidReused 只清記錄、Unknown 不動）。
+                int aKilledMontage = 0;
+                if (!iOn)
+                {
+                    try { aKilledMontage = UCL_ProcessRegistryService.KillAllByTagPrefix("streamwatch_montage"); }
+                    catch (System.Exception e2)
+                    { Debug.LogWarning($"[ScreenStream] 停播收攤 montage 失敗（不擋停播）：{e2.Message}"); }
+                }
+
                 bool aStt = aCfg.Contains("stt_enabled") && (bool)aCfg["stt_enabled"];
                 return $"{(iOn ? "▶ 已開始錄影" : "⏹ 已停止錄影")}（by {iBy}）"
                      + $"｜`enabled`={iOn.ToString().ToLowerInvariant()}｜`stt_enabled`={aStt.ToString().ToLowerInvariant()}"
-                     + $"｜已戳 `enabled_changed_at`｜已發酒保公告並要求 daemon 同步";
+                     + $"｜已戳 `enabled_changed_at`｜已發酒保公告並要求 daemon 同步"
+                     + (iOn ? "" : $"｜收攤 montage 子行程 {aKilledMontage} 顆");
             }
             catch (System.Exception e) { return $"⚠ 切換失敗：{e.Message}"; }
         }

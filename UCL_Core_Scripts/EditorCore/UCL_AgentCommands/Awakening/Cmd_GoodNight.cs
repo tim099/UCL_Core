@@ -54,14 +54,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 case "check":
                 {
                     var aResult = UCL_AwakeningService.StepCheck(aPersona);
-                    WriteAndVerdict(aPersona, "check", aResult);
+                    WriteAndVerdict(args, aPersona, "check", aResult);
                     return;
                 }
 
                 case "letter":
                 {
                     var aResult = UCL_AwakeningService.StepLetter(aPersona, GetArg(args, "letter_body", ""));
-                    WriteAndVerdict(aPersona, "letter", aResult);
+                    WriteAndVerdict(args, aPersona, "letter", aResult);
                     return;
                 }
 
@@ -74,7 +74,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         out string aBroadcastBody, out string aToken, out var aP);
                     if (!aResult.ok)
                     {
-                        WriteAndVerdict(aPersona, aStep, aResult);
+                        WriteAndVerdict(args, aPersona, aStep, aResult);
                         return;   // WriteAndVerdict 已 throw
                     }
 
@@ -100,12 +100,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     // 對齊舊 goodnight --session-token "" 的三態語意）
                     bool aNoToken = GetArg(args, "no_token", "").ToLowerInvariant() == "true";
                     if (!aNoToken && !string.IsNullOrEmpty(aToken)) aPostArgs["session_token"] = aToken;
-                    ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+                    var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "GoodNight.broadcast");
+                    if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
                     bool aPostOk = false;
                     try
                     {
+                        UCL_AgentCmdContexts.PropagateCmdId(args, aPostArgs);
                         await new ChatTavern.Cmd_Tavern().ExecuteAsync(aPostArgs, token);
-                        aPostOk = ChatTavern.Cmd_Tavern.LastPostSeq > 0;
+                        aPostOk = (aPostCtx?.LastPostSeq ?? 0) > 0;
                     }
                     catch (Exception e)
                     {
@@ -118,14 +120,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine();
                     aSb.AppendLine("## verify（讀回的事實）");
                     aSb.AppendLine($"- lock: exists={File.Exists(UCL_AwakeningService.LockPath(aPersona))}（應為 False）");
-                    aSb.AppendLine($"- broadcast: {(aPostOk ? $"seq **{ChatTavern.Cmd_Tavern.LastPostSeq}**" : "未發（核心已落地，補發非必要 —— 同事看 lock 判在線）")}");
+                    aSb.AppendLine($"- broadcast: {(aPostOk ? $"seq **{aPostCtx?.LastPostSeq ?? 0}**" : "未發（核心已落地，補發非必要 —— 同事看 lock 判在線）")}");
                     aSb.AppendLine($"- session_token expired: {aExpired} 筆");
                     aSb.AppendLine("## next");
                     aSb.AppendLine("- 收工。明天醒來：run_cmd.py run GoodMorning --arg step=wake --arg persona=" + aPersona);
                     if (!aNoLetter)
                         aSb.AppendLine("- （可選）還想花錢再睡 → ucl-spending-time（消費時間不綁死晚安）");
                     string aOutPath = PayloadPath(aPersona, aStep);
-                    WritePayload(aOutPath, aSb.ToString());
+                    WritePayload(args, aOutPath, aSb.ToString());
                     Debug.Log($"[GoodNight] step={aStep} 完成 → {aOutPath}");
                     return;
                 }
@@ -138,23 +140,23 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         static string PayloadPath(string iPersona, string iStep)
             => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_goodnight_{iStep}.md");
 
-        void WriteAndVerdict(string iPersona, string iStep, UCL_AwakeningService.StepResult iResult)
+        void WriteAndVerdict(IDictionary<string, string> iArgs, string iPersona, string iStep, UCL_AwakeningService.StepResult iResult)
         {
             string aPath = PayloadPath(iPersona, iStep);
-            WritePayload(aPath, iResult.report);
+            WritePayload(iArgs, aPath, iResult.report);
             if (!iResult.ok)
                 throw new Exception($"[GoodNight] step={iStep} blocked/失敗（詳見 {aPath}）");
             Debug.Log($"[GoodNight] step={iStep} 完成 → {aPath}");
         }
 
-        static void WritePayload(string iPath, string iReport)
+        static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(iPath));
                 File.WriteAllText(iPath, iReport, new UTF8Encoding(false));
                 // 回報產出檔 → result 檔 outputs 欄，run_cmd 端隨 verdict 印路徑（不再靠 skill 背）
-                UCL_AgentCommandRunner.ReportOutputFile(iPath);
+                UCL_AgentCommandRunner.ReportOutputFile(iArgs, iPath);
             }
             catch (Exception e)
             {

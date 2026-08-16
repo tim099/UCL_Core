@@ -63,17 +63,23 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          outputs 欄位 → run_cmd.py 隨 verdict 一起印，路徑不再靠背。
         // 數值影響：成功與失敗都寫（blocked 也會先落 payload 再 throw，路徑同樣有用）；
         //          同路徑去重、保序。非 queue 路徑（IMGUI 手動跑 handler）沒有 result 檔，
-        //          回報無處可去 —— 清單在下一筆 cmd 起跑前 Clear，不跨筆污染。
-        static readonly List<string> s_CurrentCmdOutputs = new List<string>();
+        //          回報無處可去 —— 取不到 context 時 fail-soft 略過並出聲。
+        //
+        // 🩸 2026-08-16 改制（basecamp，Tim 拍板「讓 Cmd 能平行跑」）：
+        //    原本這裡是一顆 `static readonly List<string> s_CurrentCmdOutputs`，每筆 cmd 起跑前 Clear。
+        //    那個設計**只在串行下正確** —— queue 依 persona 分 lane 後 watcher 會並行派遣，
+        //    兩條 lane 會互相 Clear／互相寫入，而結果是「拿到別人的回傳檔路徑」，**完全無聲**。
+        //    ⇒ 改成 per-cmd context，由 `args["_cmd_id"]` 顯式索引（不是 ambient —— AsyncLocal
+        //      在 UniTask 下不隔離，實測見 `UCL_AgentCmdScopeProbe.SelfTestConcurrent`）。
+        //    ⚠ 舊的無參數多載**刻意不保留**：留著它，漏改的呼叫端會安靜地走回全域；
+        //      刪掉它，漏改的呼叫端是**編譯錯誤**。壞掉要壞在看得見的地方。
 
         /// <summary>handler 回報本次執行落了哪個檔（絕對路徑）；會寫進 result 檔 outputs 欄，caller 端隨 verdict 印出。</summary>
-        public static void ReportOutputFile(string iPath)
+        /// <param name="iArgs">handler 收到的那份 args —— context 由其中的 <c>_cmd_id</c> 索引。</param>
+        public static void ReportOutputFile(IDictionary<string, string> iArgs, string iPath)
         {
             if (string.IsNullOrEmpty(iPath)) return;
-            lock (s_CurrentCmdOutputs)
-            {
-                if (!s_CurrentCmdOutputs.Contains(iPath)) s_CurrentCmdOutputs.Add(iPath);
-            }
+            UCL_AgentCmdContexts.FromArgs(iArgs, nameof(ReportOutputFile))?.AddOutput(iPath);
         }
 
         // 區塊職責：per-cmd 回傳「值」收集 slot（2026-08-15）——與 s_CurrentCmdOutputs 對稱，
@@ -88,19 +94,18 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          run_cmd.py 不印。「沒有人用它」是預設狀態，不是失敗狀態。
         // 邊界：同 key 重複回報 → **保留全部、不覆寫**（單一 cmd 內 Op_Post 可能跑不只一次，
         //      例如 task_done→share 的 Cmd_Tavern.cs:2355；後面蓋前面會讓 caller 拿到另一筆的號碼，
-        //      而它長得完全正常）。清單在下一筆 cmd 起跑前 Clear，不跨筆污染。
-        static readonly List<(string Key, string Value)> s_CurrentCmdValues = new List<(string, string)>();
+        //      而它長得完全正常）。存放處同 outputs：per-cmd context，不再是全域清單。
 
         /// <summary>handler 回報本次執行的一個純量結果（如 post_seq）；寫進 result 檔 values 欄，caller 端隨 verdict 印出。</summary>
         /// <remarks>
         /// **在產生值的當下呼叫（push），不要事後去撈某個 static（pull）。**
-        /// pull 的寫法會讓值離開它的壽命 —— `Cmd_Tavern.LastPostSeq` 的註解明寫「只在同一筆 cmd 的
-        /// 執行流程內讀」，而單一 cmd 內 Op_Post 可能跑兩次。push 讓那個競態**不存在**，而不是把它管好。
+        /// pull 的寫法會讓值離開它的壽命，而單一 cmd 內 Op_Post 可能跑兩次。
+        /// push 讓那個競態**不存在**，而不是把它管好。
         /// </remarks>
-        public static void ReportOutputValue(string iKey, string iValue)
+        public static void ReportOutputValue(IDictionary<string, string> iArgs, string iKey, string iValue)
         {
             if (string.IsNullOrEmpty(iKey)) return;
-            lock (s_CurrentCmdValues) s_CurrentCmdValues.Add((iKey, iValue ?? ""));
+            UCL_AgentCmdContexts.FromArgs(iArgs, nameof(ReportOutputValue))?.AddValue(iKey, iValue);
         }
 
         /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
@@ -298,12 +303,18 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // T-LastOp-CmdId (2026-06-12)：把當前 cmd 的 queue Id 放進 static slot，
                     // 供下游 WriteLastOp stamp 進 _last_op.md（per-cmd finally 清掉防 cross-cmd leak）
                     CurrentCmdId = c.Id;
-                    // 產出檔 collector 每筆起跑前歸零 —— WriteCmdResult 在 finally 之前讀，
-                    // 這裡不清的話上一筆（或非 queue 路徑）的回報會混進本筆 outputs
-                    lock (s_CurrentCmdOutputs) s_CurrentCmdOutputs.Clear();
-                    // 回傳值 collector 同理歸零 —— 漏這一行的話「上一筆的 seq」會出現在本筆的
-                    // result 檔裡，而它是個完全合理的數字，沒有任何地方會叫。
-                    lock (s_CurrentCmdValues) s_CurrentCmdValues.Clear();
+
+                    // ===========================================================
+                    // 區塊職責：建立本筆 cmd 的 context，並把 id **顯式塞進 args** 讓 handler 拿得到
+                    // 物理意義：併行下不能靠「全域清空再寫入」——那是串行才成立的假設。
+                    //          context 以 cmd id 為鍵；handler 由自己手上的 args 索引回來。
+                    // 數值影響：args 多一個 `_cmd_id` 欄（底線前綴＝框架欄，與 `_caller_env_marker` 同族）；
+                    //          舊 handler 不讀它也不受影響。⚠ in-process 呼叫別的 Cmd 時，
+                    //          呼叫端要把這個欄位帶進子 args，否則子流程的回報無處可去（會出聲）。
+                    // ===========================================================
+                    if (c.Args == null) c.Args = new Dictionary<string, string>();
+                    UCL_AgentCmdContexts.Create(c.Id, norm, callerEnvMarker);
+                    c.Args[UCL_AgentCmdContexts.ARG_CMD_ID] = c.Id;
                     // 區塊職責: per-cmd timeout (agent-command-handler-timeout T02, Tim 2026-05-13 拍板)
                     // 物理意義: handler.TimeoutSeconds (default 1200 = 20min) 為 type-level default
                     //          caller 帶 args._timeout_sec=N → 即時覆寫該筆 cmd timeout (per-call override)
@@ -435,6 +446,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                         UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = null;
                         // T-LastOp-CmdId：同步清 cmd_id slot — 防下一筆 cmd（或非 queue 路徑的 WriteLastOp）誤 stamp 上一筆的 id
                         CurrentCmdId = null;
+                        // per-cmd context 退場 —— **必須在 WriteCmdResult 之後**（result 檔要讀它的 outputs/values）。
+                        // ⚠ 這裡若提早釋放，症狀是 result 檔的 outputs 欄空掉，而 cmd 本身 Success ——
+                        //   又是一個「成功了但東西不見」的無聲失敗。
+                        UCL_AgentCmdContexts.Release(c.Id);
                     }
                 }
 
@@ -485,32 +500,31 @@ namespace UCL.Core.EditorLib.AgentCommands
                 jd["finished_at"] = new UCL.Core.JsonLib.JsonData(DateTime.UtcNow.ToString("o"));
                 // outputs：handler 經 ReportOutputFile 回報的產出檔（回傳檔 / payload）——
                 // caller 端（run_cmd.py）隨 verdict 一起印，agent 不用再靠 skill 文字背路徑
-                lock (s_CurrentCmdOutputs)
+                // ⚠ context 由 cmd id 取回（不是全域清單）—— 本函式必須在 finally 的 Release 之前被呼叫，
+                //   否則 outputs 會空掉而 cmd 仍 Success（「成功了但東西不見」的無聲失敗）。
+                var aCtx = UCL_AgentCmdContexts.Get(c.Id);
+                var aCtxOutputs = aCtx?.SnapshotOutputs();
+                if (aCtxOutputs != null && aCtxOutputs.Count > 0)
                 {
-                    if (s_CurrentCmdOutputs.Count > 0)
-                    {
-                        var aOutputs = new UCL.Core.JsonLib.JsonData();
-                        foreach (var aOut in s_CurrentCmdOutputs) aOutputs.Add(aOut);
-                        jd["outputs"] = aOutputs;
-                    }
+                    var aOutputs = new UCL.Core.JsonLib.JsonData();
+                    foreach (var aOut in aCtxOutputs) aOutputs.Add(aOut);
+                    jd["outputs"] = aOutputs;
                 }
                 // values：handler 經 ReportOutputValue 回報的純量結果（post_seq 等）。
                 // 陣列而非物件 —— 同一 key 可能出現多次（單一 cmd 內 Op_Post 跑兩次），
                 // 用物件會後面蓋前面，而被蓋掉的那筆長得完全正常。
-                lock (s_CurrentCmdValues)
+                var aCtxValues = aCtx?.SnapshotValues();
+                if (aCtxValues != null && aCtxValues.Count > 0)
                 {
-                    if (s_CurrentCmdValues.Count > 0)
+                    var aValues = new UCL.Core.JsonLib.JsonData();
+                    foreach (var aKv in aCtxValues)
                     {
-                        var aValues = new UCL.Core.JsonLib.JsonData();
-                        foreach (var aKv in s_CurrentCmdValues)
-                        {
-                            var aOne = new UCL.Core.JsonLib.JsonData();
-                            aOne["key"] = new UCL.Core.JsonLib.JsonData(aKv.Key);
-                            aOne["value"] = new UCL.Core.JsonLib.JsonData(aKv.Value);
-                            aValues.Add(aOne);
-                        }
-                        jd["values"] = aValues;
+                        var aOne = new UCL.Core.JsonLib.JsonData();
+                        aOne["key"] = new UCL.Core.JsonLib.JsonData(aKv.Key);
+                        aOne["value"] = new UCL.Core.JsonLib.JsonData(aKv.Value);
+                        aValues.Add(aOne);
                     }
+                    jd["values"] = aValues;
                 }
                 if (!success)
                 {

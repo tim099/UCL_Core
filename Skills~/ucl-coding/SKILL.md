@@ -23,6 +23,40 @@ description: |
 > 一句話：**動 C# 之前先確認「這件事有沒有既有基建」** —— UCL_Core 最常見的錯不是寫錯，
 > 是自己重造一套已經存在的東西，而重造出來的那套通常少了原版踩過坑之後補上的防護。
 
+> [!IMPORTANT]
+> ## 🔨 改完 .cs **一律觸發 `Cmd_Recompile`**（Tim 2026-08-16 拍板）
+>
+> **Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生** —— 所以「改完等它自己編」
+> 在 agent 的工作流裡是不存在的事。改完 .cs ⇒ **一律送 `Cmd_Recompile`**，這是確保有編到的唯一手勢。
+>
+> 而要**等到編完並拿到錯誤清單**，用 python 子命令（不是 `run Recompile`）：
+>
+> ```bash
+> python <UCL_Core>/Tools~/AgentCommands/run_cmd.py recompile
+> ```
+>
+> 它會：記下 pre-mtime → 送 Cmd → **等 `.compile_status.json` 推進且 `in_progress=false`** → 印 errors/warnings。
+> 而 `run_cmd.py run Recompile` 只是**丟出請求就返回**（Cmd_Recompile 刻意這樣設計 —— domain reload 會殺掉
+> in-flight 的 async Cmd，所以它不能自己 await 編譯完成）。
+>
+> ⚠ **`Cmd 回 Success` 只證明「請求被 Unity 收下」，不證明編譯發生過。**
+>
+> 🩸 **為什麼這支 Cmd 特別重要**：**Unity 失焦時不會自動重編** —— 而 agent 直接寫檔的場景
+> 幾乎都在失焦下發生。`Cmd_Recompile` 正是為此存在的入口（**失焦狀態下也能觸發編譯**，
+> 這是它的設計目的，不是副作用）。⇒「改完 .cs 不做任何事、等 Unity 自己編」在 agent 的
+> 工作流裡是**不會發生的事**。
+>
+> ⚠ basecamp 2026-08-16 實測到的另一格：**送出請求到 `.compile_status.json` 真的推進，曾經超過 120s**
+> —— `recompile` 子命令的等待窗口跑完了才編到，而那段期間 `check_compile.py` 一路標 STALE，
+> 看起來就像「完全沒編」。
+> ⛔ 我當時把工具印的提示（「切到前景再試」）當成量到的真因寫進本 skill —— **那是錯的，Tim 當場更正**。
+> 提示是候選解釋，不是讀數；**沒量過的因果不要寫成血證**。
+>
+> ⇒ 判準：**編譯過了的唯一憑據是 `check_compile.py` 沒標 STALE**（時間戳晚於你最後一次存檔）。
+> 還標著就是還沒編到 —— 再送一次 `recompile`，或直接讀 `.compile_status.json` 的時間戳，
+> **不要把「請求被收下」讀成「編譯完成」**。
+> 排查編譯錯誤的完整手勢 → skill `ucl-compile-error`。
+
 ## 規範本體（本 skill 只是指路，細節不在這裡重抄）
 
 | 主題 | 文件 |

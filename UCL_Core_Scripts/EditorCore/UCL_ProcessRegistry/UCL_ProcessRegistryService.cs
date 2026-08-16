@@ -442,6 +442,39 @@ namespace UCL.Core.EditorLib
             return killed;
         }
 
+        /// <summary>
+        /// Kill 所有 tag **以 prefix 開頭**的已註冊 process —— 給「一族 tag」用的收攤入口。
+        /// </summary>
+        /// <remarks>
+        /// 區塊職責: 當一種工作把 tag 拆成 <c>&lt;family&gt;_&lt;誰&gt;</c> 時，收攤需要掃整族而不是單一 tag。
+        /// 物理意義: <see cref="KillAllByTag"/> 是**精確比對**（那是刻意的 —— 精確才不會誤殺別族）；
+        ///          拆 tag 換來了隔離，代價就是「一次收乾淨」需要另一個入口。本函式補的正是那個代價。
+        /// 🩸 真實案例（basecamp 2026-08-16）：`streamwatch_montage` 原本全場共用，於是後起跑的陪看者
+        ///          會經由 Register 的 singleton 語意殺掉別人正在跑的那顆（症狀：exit=-1 且 stderr 全空）。
+        ///          改成 <c>streamwatch_montage_&lt;persona&gt;</c> 之後互不干擾，
+        ///          **但停播時就再也沒有一個 tag 掃得到全部** ⇒ 需要本函式。
+        /// 數值影響: 逐筆走與 KillAllByTag 相同的身分驗證（Alive 才 kill、Dead/PidReused 只清記錄、
+        ///          Unknown 保守不動），回傳實際 kill 掉的數量。prefix 為空 → 回 0（**不做全殺**：
+        ///          「空字串等於全部」是最容易誤觸的那種預設）。
+        /// </remarks>
+        public static int KillAllByTagPrefix(string tagPrefix, List<string> skippedReasons = null)
+        {
+            if (string.IsNullOrEmpty(tagPrefix)) return 0;
+            string wantPrefix = SanitizeTag(tagPrefix);
+            var aTags = new List<string>();
+            foreach (var rec in LoadAll())
+            {
+                if (rec.tag != null && rec.tag.StartsWith(wantPrefix, StringComparison.OrdinalIgnoreCase)
+                    && !aTags.Contains(rec.tag))
+                    aTags.Add(rec.tag);
+            }
+            int killed = 0;
+            foreach (var t in aTags) killed += KillAllByTag(t, skippedReasons);
+            if (killed > 0)
+                Debug.Log($"[UCL_ProcessRegistry] KillAllByTagPrefix({wantPrefix}): 收掉 {killed} 顆（涵蓋 tag：{string.Join(", ", aTags)}）");
+            return killed;
+        }
+
         /// <summary>清掉 Dead / PidReused 的殘留記錄檔。回傳清除數。</summary>
         public static int CleanupStale()
         {

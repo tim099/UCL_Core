@@ -117,14 +117,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 || !TryGetInt(iArgs, "z1", out int aZ1) || !TryGetInt(iArgs, "z2", out int aZ2))
             {
                 aR.AppendLine("## blocked\n- reason: 幾何參數缺漏 —— box/carve 需要 x1 x2 y1 y2 z1 z2 六個整數（0-255）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 幾何參數缺漏（詳見 {aPath}）");
             }
             int aVolume = ClampedVolume(ref aX1, ref aX2, ref aY1, ref aY2, ref aZ1, ref aZ2);
             if (iOp == "box" && aVolume > MAX_BOX_VOLUME)
             {
                 aR.AppendLine($"## blocked\n- reason: 單次 box 體積上限 {MAX_BOX_VOLUME:N0} voxels（本次 {aVolume:N0}）—— 拆多刀");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op=box 體積超限（詳見 {aPath}）");
             }
 
@@ -154,7 +154,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 aR.AppendLine($"- reason: 預授權不足 —— 本刀最壞費用 {aMaxUnits} 單位（體積 {aVolume:N0}/⌈{VOXELS_PER_UNIT}⌉），" +
                               $"pay={aPay} 可用 {aAuthorized}（免費像素 {aFreeAvail}＋券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
                 aR.AppendLine("- how: 縮小範圍、換 pay 模式、或先賺錢 —— 引擎未執行，未扣任何費用");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 預授權不足（詳見 {aPath}）");
             }
 
@@ -163,7 +163,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             if (aScript == null)
             {
                 aR.AppendLine("## blocked\n- reason: 解析不到 sculpt.py（CorePath 空或檔案不存在）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] 引擎不存在（詳見 {aPath}）");
             }
             string aColor = GetArg(iArgs, "color", "19");
@@ -176,7 +176,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             {
                 aR.AppendLine($"## blocked\n- reason: 引擎執行失敗（exit={aExit}）—— 未扣任何費用");
                 aR.AppendLine("```\n" + (aSo ?? "").Trim() + (string.IsNullOrEmpty(aSe) ? "" : "\n── stderr ──\n" + aSe.Trim()) + "\n```");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 引擎失敗（詳見 {aPath}）");
             }
 
@@ -195,7 +195,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：run_cmd.py run Sculpture --arg op=view [--arg region=…] [--arg exclude_color=…]（免費）");
             aR.AppendLine("- 驗收慣例：宣稱含內部結構的作品，交件附外觀＋室內（region 裁進去）各一張。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[Sculpture] op={iOp} {aActual} voxels, charged {aCharge}（f{aUsedFree}/v{aUsedVoucher}/t{aUsedToken}） → {aPath}");
         }
 
@@ -225,7 +225,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             if (string.IsNullOrEmpty(aAt))
             {
                 aR.AppendLine("## blocked\n- reason: 缺 --arg at=<x,y,z>（圖左上角要貼在 3D 的哪一點）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 缺 at（詳見 {aPath}）");
             }
             int aThickness = Math.Max(1, TryGetInt(iArgs, "thickness", out int aT) ? aT : 1);
@@ -240,7 +240,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                     || !TryGetInt(iArgs, "src_x2", out int aSx2) || !TryGetInt(iArgs, "src_y2", out int aSy2))
                 {
                     aR.AppendLine("## blocked\n- reason: stamp2d 需要 src_x1 src_y1 src_x2 src_y2 四個整數（2D 畫布座標 0-2047）");
-                    WritePayload(aPath, aR.ToString());
+                    WritePayload(iArgs, aPath, aR.ToString());
                     throw new Exception($"[Sculpture] op=stamp2d 來源區域缺漏（詳見 {aPath}）");
                 }
                 int aW = Math.Abs(aSx2 - aSx1) + 1, aH = Math.Abs(aSy2 - aSy1) + 1;
@@ -254,13 +254,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 if (string.IsNullOrEmpty(aPng) || !File.Exists(aPng))
                 {
                     aR.AppendLine($"## blocked\n- reason: stampimg 需要存在的 --arg png=<路徑>（got '{aPng}'）");
-                    WritePayload(aPath, aR.ToString());
+                    WritePayload(iArgs, aPath, aR.ToString());
                     throw new Exception($"[Sculpture] op=stampimg 圖檔不存在（詳見 {aPath}）");
                 }
                 if (!TryReadPngSize(aPng, out int aPw, out int aPh))
                 {
                     aR.AppendLine($"## blocked\n- reason: 讀不到 PNG 尺寸（非 PNG 或檔案損毀）: {aPng}");
-                    WritePayload(aPath, aR.ToString());
+                    WritePayload(iArgs, aPath, aR.ToString());
                     throw new Exception($"[Sculpture] op=stampimg PNG 尺寸讀取失敗（詳見 {aPath}）");
                 }
                 // resize 有給就以 resize 後尺寸算面積（那才是真正會落地的格數上限）
@@ -275,7 +275,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             if (aWorstVolume > MAX_BOX_VOLUME)
             {
                 aR.AppendLine($"## blocked\n- reason: 最壞體積 {aWorstVolume:N0} 超過上限 {MAX_BOX_VOLUME:N0}（{aSrcDesc} × thickness {aThickness}）—— 縮圖或降 thickness");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 體積超限（詳見 {aPath}）");
             }
 
@@ -305,7 +305,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                               $"pay={aPay} 可用 {aAuthorized}（免費像素 {aFreeAvail}＋券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
                 aR.AppendLine("- how: 縮小來源、降 thickness、換 pay 模式、或先賺錢 —— 引擎未執行，未扣任何費用");
                 aR.AppendLine("- 註：透明像素不落地，實際帳單通常遠低於此上限；預授權擋的是**最壞情況**。");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 預授權不足（詳見 {aPath}）");
             }
 
@@ -314,7 +314,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             if (aScript == null)
             {
                 aR.AppendLine("## blocked\n- reason: 解析不到 sculpt.py（CorePath 空或檔案不存在）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] 引擎不存在（詳見 {aPath}）");
             }
             // ⚠ 一律 `--opt=value`：facing 的值以 'z-' 之類收尾、路徑可能含空白，
@@ -352,7 +352,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 if (aStatus == "out_of_bounds")
                     aR.AppendLine("- how: 改小 at、用 resize 縮圖，或顯式 allow_clip=true 接受裁切（別讓「只貼了一角」看起來像成功）。");
                 aR.AppendLine("```\n" + (aSo ?? "").Trim() + (string.IsNullOrEmpty(aSe) ? "" : "\n── stderr ──\n" + aSe.Trim()) + "\n```");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 未貼成（詳見 {aPath}）");
             }
 
@@ -385,17 +385,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 if (!string.IsNullOrEmpty(aWarn)) aR.AppendLine($"- ⚠ {aWarn}");
                 string aPhoto = ReadStr(aEx, "photo");
                 if (!string.IsNullOrEmpty(aPhoto) && File.Exists(aPhoto))
-                    UCL_AgentCommandRunner.ReportOutputFile(aPhoto);
+                    UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPhoto);
             }
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：run_cmd.py run Sculpture --arg op=view [--arg region=…]（免費）" +
                           (aEx != null && aEx.IsObject ? $"；或 --arg exhibit={ReadStr(aEx, "id")} 一鍵載入本作品 preset" : ""));
             aR.AppendLine("- 下次貼圖：先 `canvas.py view --region x,y,w,h` 看預覽 → 把它印的 non_transparent_pixels 當 expect_pixels 帶回來。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
 
             // 預覽 PNG 也一併端出來 —— 讀者不必再去翻檔案才知道「貼進去的是哪張」
             string aPreview = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture", "_stamp_src.png");
-            if (iOp == "stamp2d" && File.Exists(aPreview)) UCL_AgentCommandRunner.ReportOutputFile(aPreview);
+            if (iOp == "stamp2d" && File.Exists(aPreview)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPreview);
 
             Debug.Log($"[Sculpture] op={iOp} {aActual} voxels（非透明 {aPainted}）, charged {aCharge}（f{aUsedFree}/v{aUsedVoucher}/t{aUsedToken}） → {aPath}");
         }
@@ -450,11 +450,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine($"# Sculpture op={iOp}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
             aR.AppendLine();
             aR.AppendLine("```\n" + (aSo ?? "").Trim() + (string.IsNullOrEmpty(aSe) ? "" : "\n── stderr ──\n" + aSe.Trim()) + "\n```");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             if (iOp == "view")
             {
                 string aPng = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture", "_last_view.png");
-                if (File.Exists(aPng)) UCL_AgentCommandRunner.ReportOutputFile(aPng);
+                if (File.Exists(aPng)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPng);
             }
             else if (iOp == "slice")
             {
@@ -462,7 +462,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 string aOutPng = ReadStr(ParseEngineJson(aSo), "output_path");
                 if (string.IsNullOrEmpty(aOutPng))
                     aOutPng = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture", "_last_slice.png");
-                if (File.Exists(aOutPng)) UCL_AgentCommandRunner.ReportOutputFile(aOutPng);
+                if (File.Exists(aOutPng)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aOutPng);
             }
             if (aExit != 0) throw new Exception($"[Sculpture] op={iOp} 引擎失敗（詳見 {aPath}）");
             Debug.Log($"[Sculpture] op={iOp} 完成 → {aPath}");
@@ -643,13 +643,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         static string PayloadPath(string iPersona, string iOp)
             => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_sculpture_{iOp}.md");
 
-        static void WritePayload(string iPath, string iReport)
+        static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(iPath));
                 File.WriteAllText(iPath, iReport, new UTF8Encoding(false));
-                UCL_AgentCommandRunner.ReportOutputFile(iPath);
+                UCL_AgentCommandRunner.ReportOutputFile(iArgs, iPath);
             }
             catch (Exception e)
             {

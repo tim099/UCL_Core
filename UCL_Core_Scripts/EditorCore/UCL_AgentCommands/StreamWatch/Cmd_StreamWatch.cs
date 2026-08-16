@@ -82,10 +82,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             switch (aStep)
             {
-                case "peek": await StepPeek(aPersona, GetArg(args, "seconds", "").Trim(),
+                case "peek": await StepPeek(args, aPersona, GetArg(args, "seconds", "").Trim(),
                                             GetArg(args, "raw", "").Trim(), token); return;
-                case "capture": StepCapture(aPersona, GetArg(args, "on", "").Trim()); return;
-                case "start": await StepStart(aPersona, GetArg(args, "until", "").Trim(),
+                case "capture": StepCapture(args, aPersona, GetArg(args, "on", "").Trim()); return;
+                case "start": await StepStart(args, aPersona, GetArg(args, "until", "").Trim(),
                                               GetArg(args, "media", "").Trim(),
                                               new SourceMeta
                                               {
@@ -94,13 +94,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                                                   VideoDesc = GetArg(args, "desc", "").Trim(),
                                                   Url = GetArg(args, "url", "").Trim(),
                                               }, token); return;
-                case "cycle": await StepCycle(aPersona, token); return;
-                case "observe": await StepObserve(aPersona, GetArg(args, "body", ""), token); return;
-                case "note": await StepNote(aPersona, GetArg(args, "body", ""), token); return;
-                case "join": await StepJoin(aPersona, token); return;
-                case "hotspot": await StepHotspot(aPersona, GetArg(args, "from", "").Trim(),
+                case "cycle": await StepCycle(args, aPersona, token); return;
+                case "observe": await StepObserve(args, aPersona, GetArg(args, "body", ""), token); return;
+                case "note": await StepNote(args, aPersona, GetArg(args, "body", ""), token); return;
+                case "join": await StepJoin(args, aPersona, token); return;
+                case "hotspot": await StepHotspot(args, aPersona, GetArg(args, "from", "").Trim(),
                         GetArg(args, "to", "").Trim(), GetArg(args, "why", ""), token); return;
-                case "claim": await StepClaim(aPersona, GetArg(args, "hotspot", "").Trim(), token); return;
+                case "claim": await StepClaim(args, aPersona, GetArg(args, "hotspot", "").Trim(), token); return;
                 default:
                     throw new Exception($"[StreamWatch] step 必為 peek|start|join|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
@@ -115,7 +115,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //   Cmd 若自己寫 `enabled`，就會出現「誰後寫誰贏、而誰後寫取決於呼叫順序」。
         // 邊界：已經是該狀態 ⇒ 明說「未動作」並印讀值，不假裝做了一次切換。
         // ===========================================================
-        void StepCapture(string iPersona, string iOn)
+        void StepCapture(IDictionary<string, string> iArgs, string iPersona, string iOn)
         {
             string aPath = PayloadPath(iPersona, "capture");
             var aR = new StringBuilder();
@@ -127,7 +127,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             else if (iOn == "0" || iOn.Equals("false", StringComparison.OrdinalIgnoreCase) || iOn == "off") aOn = false;
             else
             {
-                Blocked(aR, aPath, $"on 必須是 1/0（true/false、on/off 亦可）—— 收到 '{iOn}'",
+                Blocked(iArgs, aR, aPath, $"on 必須是 1/0（true/false、on/off 亦可）—— 收到 '{iOn}'",
                         $"run_cmd.py run StreamWatch --arg step=capture --arg persona={iPersona} --arg on=1");
                 throw new Exception($"[StreamWatch] step=capture blocked：on 參數無效（詳見 {aPath}）");
             }
@@ -144,7 +144,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 ? $"1. 看一眼：run_cmd.py run StreamWatch --arg step=peek --arg seconds=60\n"
                 + $"2. 正式開場：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>"
                 : "1. 已停止擷取。進行中的觀影 session 會在下一次 cycle 被判定為「Tim 停止錄影」並結算。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=capture on={aOn} → {aPath}");
         }
 
@@ -160,7 +160,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 邊界：seconds 5–600（預設 60）；raw=1 時不夾感官水位 ⇒ 看得到最新畫面，
         //      但尾端那幾格可能沒有字幕/語音 —— 這件事由對帳行**明說「未夾」**，不靠讀的人記得。
         // ===========================================================
-        async UniTask StepPeek(string iOwner, string iSeconds, string iRaw, CancellationToken iToken)
+        async UniTask StepPeek(IDictionary<string, string> iArgs, string iOwner, string iSeconds, string iRaw, CancellationToken iToken)
         {
             string aPath = PayloadPath(iOwner, "peek");
             var aR = new StringBuilder();
@@ -177,7 +177,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aScript = ResolveMontageScript();
             if (string.IsNullOrEmpty(aScript))
             {
-                Blocked(aR, aPath, "解析不到 screenstream_montage.py（CorePath 空或檔案不存在）",
+                Blocked(iArgs, aR, aPath, "解析不到 screenstream_montage.py（CorePath 空或檔案不存在）",
                         "確認 UCL_Core 掛載位置與 Tools~/AgentCommands/screenstream_montage.py 是否存在");
                 throw new Exception($"[StreamWatch] step=peek blocked：找不到縮圖牆工具（詳見 {aPath}）");
             }
@@ -210,7 +210,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("## next");
                 aR.AppendLine($"- 窗口拉長：--arg seconds=180");
                 aR.AppendLine($"- 不等字幕/語音、直接看最新畫面：--arg raw=1（代價：尾端可能沒有感官資料）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[StreamWatch] step=peek 無素材 → {aPath}");
                 return;
             }
@@ -221,7 +221,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (!string.IsNullOrWhiteSpace(aStdout))
                     aR.AppendLine($"- stdout: {Truncate(aStdout.Trim(), 500)}");
                 aR.AppendLine("- exit: 確認 ScreenStream 是否有 frame；重跑 step=peek");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=peek blocked：montage 失敗（詳見 {aPath}）");
             }
 
@@ -260,7 +260,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine("## next");
             aR.AppendLine("- 這是一次性的一眼；**沒有下一步**，也沒有進度可接。要正式看請開場：");
             aR.AppendLine($"  run_cmd.py run StreamWatch --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work>");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=peek tiles={aInfo.Tiles} → {aPath}");
         }
 
@@ -283,7 +283,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             public string Url;          // 影片網址（可回溯的原始出處）
         }
 
-        async UniTask StepStart(string iPersona, string iUntil, string iMedia, SourceMeta iSrc, CancellationToken iToken)
+        async UniTask StepStart(IDictionary<string, string> iArgs, string iPersona, string iUntil, string iMedia, SourceMeta iSrc, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "start");
             var aR = new StringBuilder();
@@ -293,7 +293,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 守衛①：必須在線
             if (!UCL_AwakeningService.IsOnline(iPersona))
             {
-                Blocked(aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
+                Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
                         $"先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=start blocked：persona 不在線（詳見 {aPath}）");
             }
@@ -302,7 +302,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             DateTime aNow = DateTime.Now;
             if (!TryParseUntil(iUntil, aNow, out DateTime aUntil, out string aUntilErr))
             {
-                Blocked(aR, aPath, aUntilErr, "--arg until=<HH:mm 本地時刻>（例 until=23:30；深夜跨日自動判定）");
+                Blocked(iArgs, aR, aPath, aUntilErr, "--arg until=<HH:mm 本地時刻>（例 until=23:30；深夜跨日自動判定）");
                 throw new Exception($"[StreamWatch] step=start blocked：until 無效（詳見 {aPath}）");
             }
 
@@ -313,7 +313,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 DateTime? aOldEnd = ParseIsoLocal(ReadStr(aOld, "end_ts"));
                 if (aOldEnd.HasValue && aNow <= aOldEnd.Value)
                 {
-                    Blocked(aR, aPath, $"已有進行中的觀影 session（至 {aOldEnd.Value:HH:mm} 本地）—— 不疊開",
+                    Blocked(iArgs, aR, aPath, $"已有進行中的觀影 session（至 {aOldEnd.Value:HH:mm} 本地）—— 不疊開",
                             $"跑 step=cycle 繼續；到期或 Tim 停錄影時 cycle 會自己判定收工");
                     throw new Exception($"[StreamWatch] step=start blocked：session 已存在（詳見 {aPath}）");
                 }
@@ -337,7 +337,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("### bilibili 場（Tim 2026-08-15 拍板）");
                 aR.AppendLine("- **鍵按 up 主分**：`media=bilibili-<up主 slug>` ＋ **必帶** `--arg up=<up主名>`");
                 aR.AppendLine("- 影片標題／介紹／網址走 `--arg title= / --arg desc= / --arg url=` —— 那是**場次層**，不進 work 名");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=start blocked：media 未指定（詳見 {aPath}）");
             }
 
@@ -354,14 +354,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 bool aGeneric = aTail.Length == 0 || aTail == "stream" || aTail == "video" || aTail == "live";
                 if (aGeneric || string.IsNullOrEmpty(iSrc.Up))
                 {
-                    Blocked(aR, aPath,
+                    Blocked(iArgs, aR, aPath,
                         aGeneric ? $"`{iMedia}` 是泛名 —— 它會把**所有 bilibili 影片併成同一個 work**"
                                  : $"bilibili 場必須帶 `--arg up=<up主名>` —— up 主就是這個 work 的身分",
                         $"改成 --arg media=bilibili-<up主 slug> --arg up=<up主名> "
                         + "[--arg title=<影片標題>] [--arg desc=<影片介紹>] [--arg url=<網址>]");
                     aR.AppendLine("> 一個 up 主 = 一個 work（跨場累積心得）；一支影片 = 一場（`title`/`desc`/`url` 記在場次上）。");
                     aR.AppendLine("> 🩸 `bilibili-stream` 是 2026-08-15 我自己取的，當天就被 Tim 打回：**名字比事實大**。");
-                    WritePayload(aPath, aR.ToString());
+                    WritePayload(iArgs, aPath, aR.ToString());
                     throw new Exception($"[StreamWatch] step=start blocked：bilibili 鍵需按 up 主分（詳見 {aPath}）");
                 }
             }
@@ -410,7 +410,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!string.IsNullOrEmpty(iSrc.Url)) aBody.AppendLine($"　出處：{iSrc.Url}");
             aBody.AppendLine();
             aBody.AppendLine("陪同觀眾可跑 `step=join` 加入（挑段細看；主劇情由本場主觀影者在酒館帶）。");
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-start", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-start", iToken);
             if (aSeq > 0)
             {
                 aSession["start_seq"] = new JsonData(aSeq);
@@ -441,7 +441,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
             //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
             aR.AppendLine("4. 回到 1，繼續下一輪。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=start 完成 session={aSessionId} media={iMedia} → {aPath}");
         }
 
@@ -451,7 +451,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ 中斷判定**不推論 frame 新鮮度**：實測活樣本 enabled=false 而 994 張 frame 仍在磁碟上 ——
         //   「錄影停了」與「frame 沒變新」是兩件事，用後者推論會把 daemon 打嗝讀成中斷而誤殺 session。
         // ===========================================================
-        async UniTask StepCycle(string iPersona, CancellationToken iToken)
+        async UniTask StepCycle(IDictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "cycle");
             var aR = new StringBuilder();
@@ -461,7 +461,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aS = LoadSession(iPersona);
             if (aS == null || !ReadBool(aS, "active"))
             {
-                Blocked(aR, aPath, "無進行中的觀影 session",
+                Blocked(iArgs, aR, aPath, "無進行中的觀影 session",
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=cycle blocked：無 active session（詳見 {aPath}）");
             }
@@ -505,8 +505,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     aR.AppendLine();
                 }
 
-                await SettleAsync(iPersona, aS, aByInterrupt, aNow, aEnd, aR, iToken);
-                WritePayload(aPath, aR.ToString());
+                await SettleAsync(iArgs, iPersona, aS, aByInterrupt, aNow, aEnd, aR, iToken);
+                WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[StreamWatch] step=cycle 收工結算（{aReason}）→ {aPath}");
                 return;
             }
@@ -532,7 +532,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             if (string.IsNullOrEmpty(aScript))
             {
-                Blocked(aR, aPath, "解析不到 screenstream_montage.py（CorePath 空或檔案不存在）",
+                Blocked(iArgs, aR, aPath, "解析不到 screenstream_montage.py（CorePath 空或檔案不存在）",
                         "確認 UCL_Core 掛載位置與 Tools~/AgentCommands/screenstream_montage.py 是否存在");
                 throw new Exception($"[StreamWatch] step=cycle blocked：找不到縮圖牆工具（詳見 {aPath}）");
             }
@@ -577,7 +577,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine();
                 aR.AppendLine("## next");
                 aR.AppendLine($"1. 等 30–60 秒再跑一次 step=cycle（不必改任何參數）。");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[StreamWatch] step=cycle 感官水位未追上 → {aPath}");
                 return;
             }
@@ -590,7 +590,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (!string.IsNullOrWhiteSpace(aStdout))
                     aR.AppendLine($"- stdout: {Truncate(aStdout.Trim(), 500)}");
                 aR.AppendLine("- exit: 確認 ScreenStream 是否有 frame；重跑 step=cycle");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=cycle blocked：montage 失敗（詳見 {aPath}）");
             }
 
@@ -667,7 +667,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
             //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
             aR.AppendLine($"3. 之後再跑 step=cycle 繼續下一輪。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
         }
 
@@ -679,7 +679,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //            並拿到 primary 至今的評論摘要 ＋ 酒館游標，一進場就在同一個劇情點上。
         // ⚠ media_id 不由 companion 自己解析：憑印象取 slug 正是製造 work 分裂的那一步。
         // ===========================================================
-        async UniTask StepJoin(string iPersona, CancellationToken iToken)
+        async UniTask StepJoin(IDictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "join");
             var aR = new StringBuilder();
@@ -688,7 +688,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             if (!UCL_AwakeningService.IsOnline(iPersona))
             {
-                Blocked(aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
+                Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
                         $"先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=join blocked：persona 不在線（詳見 {aPath}）");
             }
@@ -696,7 +696,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aOwn = LoadSession(iPersona);
             if (aOwn != null && ReadBool(aOwn, "active"))
             {
-                Blocked(aR, aPath, "你已經有進行中的觀影 session —— 不疊開",
+                Blocked(iArgs, aR, aPath, "你已經有進行中的觀影 session —— 不疊開",
                         "跑 step=cycle 繼續你自己那場");
                 throw new Exception($"[StreamWatch] step=join blocked：已有 session（詳見 {aPath}）");
             }
@@ -723,7 +723,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             if (aPrimary == null)
             {
-                Blocked(aR, aPath, "找不到進行中的主觀影場",
+                Blocked(iArgs, aR, aPath, "找不到進行中的主觀影場",
                         $"自己開一場：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=join blocked：無 primary 場（詳見 {aPath}）");
             }
@@ -755,7 +755,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aBody.AppendLine($"🍿 [{iPersona} 大小姐] 加入觀影 — 陪同 @{aPrimaryPersona} 的場｜媒材 `{aMedia}`");
             aBody.AppendLine();
             aBody.AppendLine("陪同觀眾**挑段細看**，主劇情由主觀影者在酒館帶 —— gap 對我是正常的，不是漏看。");
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-join", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-join", iToken);
             if (aSeq > 0) { aS["start_seq"] = new JsonData(aSeq); AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify()); }
 
             aR.AppendLine($"- session : `{aSessionId}`（role=**companion**）");
@@ -773,7 +773,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"1. 取素材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
             aR.AppendLine($"2. 讀主觀影者的劇情線：run_cmd.py run Tavern --arg op=read --arg room=tavern --arg limit=20");
             aR.AppendLine($"3. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=join {iPersona} → 陪同 {aPrimaryPersona} media={aMedia}");
         }
 
@@ -792,7 +792,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         const int BASE_MINUTES_PER_TOKEN = 10;
         const int BASE_CAP = 6;
 
-        static async UniTask SettleAsync(string iPersona, JsonData ioS, bool iByInterrupt,
+        static async UniTask SettleAsync(IDictionary<string, string> iArgs, string iPersona, JsonData ioS, bool iByInterrupt,
                                          DateTime iNow, DateTime? iEnd, StringBuilder ioR, CancellationToken iToken)
         {
             // 熱路徑判重
@@ -897,7 +897,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!ReadBool(ioS, "note_written"))
                 aBody.AppendLine("- ⚠ **本場未寫接續點** —— 下次續看接不回進度（不擋結算，但這件事要看得見）");
             aBody.AppendLine($"- 場次紀錄：seq {ReadInt(ioS, "start_seq")} → 本則（`tavern` 房；中間混雜其他訊息是刻意的）");
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-end", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-end", iToken);
 
             ioS["active"] = new JsonData(false);
             ioS["settled_at"] = new JsonData(UCL_AwakeningService.NowIso());
@@ -950,7 +950,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //   之所以存在，正因為兩者是兩步。**合併之後那個分岔不存在了，規則不必記。**
         // ⚠ frame 數不由 agent 傳 —— 取自上一次 cycle 當下記進 session 的值（幹活的副產物）。
         // ===========================================================
-        async UniTask StepObserve(string iPersona, string iBody, CancellationToken iToken)
+        async UniTask StepObserve(IDictionary<string, string> iArgs, string iPersona, string iBody, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "observe");
             var aR = new StringBuilder();
@@ -960,13 +960,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aS = LoadSession(iPersona);
             if (aS == null || !ReadBool(aS, "active"))
             {
-                Blocked(aR, aPath, "無進行中的觀影 session",
+                Blocked(iArgs, aR, aPath, "無進行中的觀影 session",
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=observe blocked：無 active session（詳見 {aPath}）");
             }
             if (string.IsNullOrWhiteSpace(iBody))
             {
-                Blocked(aR, aPath, "body 為空 —— 觀戰評論不能是空的",
+                Blocked(iArgs, aR, aPath, "body 為空 —— 觀戰評論不能是空的",
                         $"--arg-file body=<檔案>（長文走檔案，不經 shell）");
                 throw new Exception($"[StreamWatch] step=observe blocked：body 為空（詳見 {aPath}）");
             }
@@ -974,7 +974,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             int aLastTiles = ReadInt(aS, "last_tiles");
             if (ReadInt(aS, "cycles") <= 0 || aLastTiles <= 0)
             {
-                Blocked(aR, aPath, "本場尚無取材紀錄 —— 沒看過就沒有可記的觀察",
+                Blocked(iArgs, aR, aPath, "本場尚無取材紀錄 —— 沒看過就沒有可記的觀察",
                         $"先跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=observe blocked：無取材紀錄（詳見 {aPath}）");
             }
@@ -985,7 +985,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aBody.AppendLine(iBody.TrimEnd());
             aBody.AppendLine();
             aBody.AppendLine($"— 本輪素材：{aLastTiles} 格／涵蓋 {aSpan:F0}s（**每格 ≈{(aLastTiles > 0 ? aSpan / aLastTiles : 0):F0}s**）｜媒材 `{ReadStr(aS, "media_id")}`");
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-observe", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-observe", iToken);
 
             // ② 後記帳（發文失敗就不記 —— 帳上不留沒人看過的評論）
             if (aSeq <= 0)
@@ -993,7 +993,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 酒館發文失敗 ⇒ **不記帳**（先記後發會在帳上留一筆沒人看過的評論）");
                 aR.AppendLine("- exit: 重跑 step=observe（評論內容請保留）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=observe blocked：發文失敗，未記帳（詳見 {aPath}）");
             }
             int aObs = ReadInt(aS, "observations") + 1;
@@ -1014,7 +1014,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
             //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
             aR.AppendLine($"1. 繼續：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=observe seq={aSeq} obs={aObs} → {aPath}");
         }
 
@@ -1025,7 +1025,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ Tim 拍板**不擋結算**（擋的失敗模式是 agent 消失 ⇒ 錢卡住而心得照樣沒寫）。
         //   所以本步只負責「寫得容易」，遺漏由收工通知與下一場 start 明列 —— **不擋，但也不安靜**。
         // ===========================================================
-        async UniTask StepNote(string iPersona, string iBody, CancellationToken iToken)
+        async UniTask StepNote(IDictionary<string, string> iArgs, string iPersona, string iBody, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "note");
             var aR = new StringBuilder();
@@ -1041,7 +1041,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aS = LoadSession(iPersona);
             if (aS == null)
             {
-                Blocked(aR, aPath, "查無任何觀影 session（連已結束的都沒有）",
+                Blocked(iArgs, aR, aPath, "查無任何觀影 session（連已結束的都沒有）",
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=note blocked：無 session 檔（詳見 {aPath}）");
             }
@@ -1054,7 +1054,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("  1. **看到哪**（集數／時間點／劇情位置）");
                 aR.AppendLine("  2. **下次從哪接**");
                 aR.AppendLine("  3. **人物與伏筆的當前狀態**");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=note blocked：body 為空（詳見 {aPath}）");
             }
 
@@ -1069,7 +1069,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aBody.AppendLine($"　　場次結束於 `{aEnded}` —— 這段文字寫在收工之後，不是當場記的。");
             aBody.AppendLine();
             aBody.AppendLine(iBody.TrimEnd());
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-note", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-note", iToken);
 
             aS["note_written"] = new JsonData(true);
             aS["note_seq"] = new JsonData(aSeq);
@@ -1088,7 +1088,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine($"1. 跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
                 aR.AppendLine("   —— 若已到期／Tim 已停錄影，那一步會完成收工；否則會繼續給下一輪素材。");
             }
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=note seq={aSeq} → {aPath}");
         }
 
@@ -1147,8 +1147,21 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (aProc == null) return (false, "", "Process.Start 回 null");
 
                 // 硬規則：每顆外部 Process 都要登記（Coding_Standards「外部 Process」）
+                // 🩸 tag **串 persona**（Tim 2026-08-16 拍板；basecamp 定位根因）：
+                //    原本是全場共用的 `streamwatch_montage`，而 Register 預設 singleton
+                //    ⇒ 內部呼叫 KillAllByTag(tag)，**後起跑的陪看者會殺掉別人正在跑的 montage**。
+                //    症狀：`exit=-1` 且 **stderr 全空**（被殺不是自己失敗）；四人同場時只有最後起跑那個活下來
+                //    （2026-08-16 實測：basecamp/gura/Sirius blocked、summit 那筆成功）。
+                // ⚠ 修法不是 `allowMultiple: true` —— 那是把保護整個關掉，同一個人連續 cycle 會堆積孤兒。
+                //    正確的是**把 singleton 的適用範圍縮到 per-viewer**：同一 persona 的新 cycle 收掉自己
+                //    上一顆（防堆積、也順手清掉卡住的），其他人的完全不碰。
+                //    KillAllByTag 是精確比對（`string.Equals` OrdinalIgnoreCase），故不同 persona 天然隔離。
+                // 數值影響：persona 為空（理論上不會，step 都驗過）時退回原 tag —— 那時全場只有一個人，
+                //          singleton 語意仍然正確。
+                string aProcTag = string.IsNullOrEmpty(iTavernSelf)
+                    ? "streamwatch_montage" : $"streamwatch_montage_{iTavernSelf}";
                 using var aScope = UCL_ProcessRegistryService.RegisterScope(
-                    aProc, "streamwatch_montage", "縮圖牆合成（cycle 內）", nameof(Cmd_StreamWatch));
+                    aProc, aProcTag, $"縮圖牆合成（cycle 內・{iTavernSelf}）", nameof(Cmd_StreamWatch));
 
                 string aOut = "", aErr = "";
                 // ⚠ 這裡是本檔唯一會等外部程式的地方 —— 丟 thread pool，主執行緒不凍。
@@ -1393,7 +1406,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "hotspots.json");
 
         // step=hotspot —— 標記一段值得細看的時間區間
-        async UniTask StepHotspot(string iPersona, string iFrom, string iTo, string iWhy, CancellationToken iToken)
+        async UniTask StepHotspot(IDictionary<string, string> iArgs, string iPersona, string iFrom, string iTo, string iWhy, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "hotspot");
             var aR = new StringBuilder();
@@ -1403,13 +1416,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             double aFrom = ParseClockToEpoch(iFrom), aTo = ParseClockToEpoch(iTo);
             if (aFrom <= 0 || aTo <= 0 || aTo <= aFrom)
             {
-                Blocked(aR, aPath, $"時間區間解析失敗或首尾顛倒（from=`{iFrom}` to=`{iTo}`）",
+                Blocked(iArgs, aR, aPath, $"時間區間解析失敗或首尾顛倒（from=`{iFrom}` to=`{iTo}`）",
                         "格式 --arg from=HH:mm:ss --arg to=HH:mm:ss（同一天，to 必須晚於 from）");
                 throw new Exception($"[StreamWatch] step=hotspot blocked：時間區間無效（詳見 {aPath}）");
             }
             if (string.IsNullOrWhiteSpace(iWhy))
             {
-                Blocked(aR, aPath, "未說明為什麼值得細看（`why` 空）",
+                Blocked(iArgs, aR, aPath, "未說明為什麼值得細看（`why` 空）",
                         "--arg why=<一句話>　—— 沒有理由的熱點，別人無從判斷要不要領");
                 throw new Exception($"[StreamWatch] step=hotspot blocked：why 未填（詳見 {aPath}）");
             }
@@ -1451,12 +1464,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aBody.AppendLine($"　理由：{iWhy.Trim()}");
             aBody.AppendLine($"　認領：`run_cmd.py run StreamWatch --arg step=claim --arg persona=<你> --arg hotspot={aId}`");
             aBody.AppendLine("　⚠ **一個熱點只能被領一次** —— 目的是把眼睛分散到不同段，不是疊在同一段。");
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "watch-hotspot", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-hotspot", iToken);
             aR.AppendLine($"- 公告   : {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. 繼續取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=hotspot {aId} → {aPath}");
         }
 
@@ -1507,7 +1520,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         }
 
         // step=claim —— **獨占**認領一個熱點，並拉出該區間的高密度縮圖牆
-        async UniTask StepClaim(string iPersona, string iHotspot, CancellationToken iToken)
+        async UniTask StepClaim(IDictionary<string, string> iArgs, string iPersona, string iHotspot, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "claim");
             var aR = new StringBuilder();
@@ -1528,7 +1541,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("- how: 妳可以繼續**標記**熱點（`step=hotspot` 人人可用），把細看留給 join 的人；"
                             + "沒有陪看者時就讓它掛著 —— **掛著的熱點是「還沒人看」的讀數，不是失敗**");
                 AppendHotspots(aR, iPersona);
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=claim blocked：主觀影者不認領熱點（詳見 {aPath}）");
             }
 
@@ -1544,7 +1557,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: 找不到熱點 `{iHotspot}`");
                 AppendHotspots(aR, iPersona);
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=claim blocked：熱點不存在（詳見 {aPath}）");
             }
 
@@ -1557,7 +1570,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine($"- reason: `{iHotspot}` **已被 @{aBy} 認領**（{ReadStr(aH, "claimed_at")}）");
                 aR.AppendLine("- why: 一個熱點只能被領一次 —— 兩個人細看同一段，等於沒人看另一段");
                 AppendHotspots(aR, iPersona);
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=claim blocked：已被認領（詳見 {aPath}）");
             }
 
@@ -1570,7 +1583,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     + $"（起點 {FromEpochLocal(aFrom):HH:mm:ss} < 最舊 frame {FromEpochLocal(aOldest):HH:mm:ss}）");
                 aR.AppendLine("- why: 認領一個已經不存在的區間 = 拿不到畫面，而失敗會發生在你寫完評論之後");
                 AppendHotspots(aR, iPersona);
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=claim blocked：區間已過期（詳見 {aPath}）");
             }
 
@@ -1611,7 +1624,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"2. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
             aR.AppendLine("   ⚠ 評論裡註明這是熱點 " + ReadStr(aH, "id") + " 的細看結果 —— 讓開熱點的人知道有人看過了");
             aR.AppendLine($"3. 回到一般取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=claim {iHotspot} by {iPersona} ok={aOk} → {aPath}");
         }
 
@@ -1864,21 +1877,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "letters",
                             iPersona, $"_streamwatch_{iStep}.md");
 
-        static void WritePayload(string iPath, string iContent)
+        static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iContent)
         {
             AtomicWrite(iPath, iContent);
-            UCL_AgentCommandRunner.ReportOutputFile(iPath);
+            UCL_AgentCommandRunner.ReportOutputFile(iArgs, iPath);
         }
 
-        static void Blocked(StringBuilder ioR, string iPath, string iReason, string iExit)
+        static void Blocked(IDictionary<string, string> iArgs, StringBuilder ioR, string iPath, string iReason, string iExit)
         {
             ioR.AppendLine("## blocked");
             ioR.AppendLine($"- reason: {iReason}");
             ioR.AppendLine($"- exit: {iExit}");
-            WritePayload(iPath, ioR.ToString());
+            WritePayload(iArgs, iPath, ioR.ToString());
         }
 
-        static async UniTask<int> TavernPost(string iPersona, string iBody, string iSubtag, CancellationToken iToken)
+        // ⚠ iCmdArgs：本筆 cmd 的 args —— 用來把 `_cmd_id` 帶進子 Cmd，讓 seq 回得到呼叫者的 context。
+        //   併行下這是唯一正確的遞出路徑（舊制的全域 static 會拿到別人的號碼）。
+        static async UniTask<int> TavernPost(IDictionary<string, string> iCmdArgs, string iPersona, string iBody, string iSubtag, CancellationToken iToken)
         {
             try
             {
@@ -1889,9 +1904,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     { "meta", $"{{\"tag\":\"stream-watch\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}" },
                 };
                 if (aLock != null && !string.IsNullOrEmpty(aLock.session_token)) aArgs["session_token"] = aLock.session_token;
-                ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+                UCL_AgentCmdContexts.PropagateCmdId(iCmdArgs, aArgs);
+                var aPostCtx = UCL_AgentCmdContexts.FromArgs(iCmdArgs, "StreamWatch.TavernPost");
+                if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
                 await new ChatTavern.Cmd_Tavern().ExecuteAsync(aArgs, iToken);
-                return ChatTavern.Cmd_Tavern.LastPostSeq;
+                return aPostCtx?.LastPostSeq ?? 0;
             }
             catch (Exception e)
             {

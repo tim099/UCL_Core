@@ -505,12 +505,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         static string GetAgentArg(Dictionary<string, string> args, string defaultVal = "")
             => GetArg(UCL_CmdArgsValidator.ResolveAlias(args, s_AgentAliases), "agent", defaultVal);
 
-        // 區塊職責：最近一次 Op_Post 寫入的 seq —— 給 in-process 呼叫端（Cmd_Library op=share 等）取回。
-        // 物理意義：Op_Post 是 400 行熱路徑，不為回傳值改控制流；用與 CurrentCmdId 同型的
-        //          static slot 慣例遞出。Runner 單線程逐筆執行，slot 不會被並發覆寫。
-        // 數值影響：Op_Post 進場歸零；成功寫入後 = seq。呼叫端讀到 0 = post 被拒或未寫入
-        //          （原因在 _last_op.md）。**只在同一筆 cmd 的執行流程內讀**，跨 cmd 讀是舊值。
-        public static int LastPostSeq;
+        // 🩸 `public static int LastPostSeq` 已於 2026-08-16 移除（basecamp，Tim 拍板「讓 Cmd 能平行跑」）。
+        //    舊註解寫著「Runner 單線程逐筆執行，slot 不會被並發覆寫」—— **那個前提在 queue 依 persona
+        //    分 lane 之後不再成立**（watcher 逐 agentId 派遣且不等待，見 UCL_AgentCommandWatcher:147）。
+        //    而它的用法是「歸零 → await → 讀回」，寫入與讀取之間隔著 await ⇒ 併行時讀到別人的 seq，
+        //    **那是一個完全合法的數字，回傳檔照印，沒有一格會紅**。
+        //    ⇒ 改由 per-cmd context 遞出：`UCL_AgentCmdContexts.FromArgs(args)?.LastPostSeq`。
+        //    ⚠ in-process 呼叫本 Cmd 時，呼叫端**必須把 `_cmd_id` 帶進子 args**
+        //      （用 `UCL_AgentCmdContexts.PropagateCmdId(parentArgs, childArgs)`），否則子流程的
+        //      seq 無處可回 —— 那一格會出聲，不會靜默。
 
         // 區塊職責：匿名發言的顯示身分
         // 物理意義：沒帶 persona 也沒帶 sender_id 時的 fallback。用一個**固定且看得出是匿名**的
@@ -520,7 +523,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
-            LastPostSeq = 0;
             string roomId = GetArg(args, "room", "");
             // 正名 agent；sender / sender_id / agent_id 為別名，id 另外補（與 op=join 的 id 命名相容）
             string senderId = GetAgentArg(args, GetArg(args, "id", ""));
@@ -880,7 +882,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // quiet=true (測試用) → 跳過 Discord mirror (其他 IO 寫檔行為照舊).
             bool quiet = string.Equals(GetArg(args, "quiet", "false"), "true", StringComparison.OrdinalIgnoreCase);
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, msg);
-            LastPostSeq = seq;   // in-process 呼叫端（op=share 等）由此取回 —— 見欄位註解
+            // in-process 呼叫端（op=share / GoodMorning intro / StreamWatch 公告…）由 context 取回。
+            // ⚠ 舊制是 `LastPostSeq` 這顆全域 static —— 併行時兩條 lane 會互相覆寫，
+            //   而拿到的是**別人的合法 seq**（summit 交接 §6 點名的第一隻）。
+            //   context 由呼叫端傳進來的 args["_cmd_id"] 索引 ⇒ 各 lane 各自一份。
+            var aCmdCtx = UCL_AgentCmdContexts.FromArgs(args, "Cmd_Tavern.Op_Post");
+            if (aCmdCtx != null) aCmdCtx.LastPostSeq = seq;
             // 區塊職責：把剛寫進去的 seq 回報給 caller（out-of-process）。
             // 物理意義：agent 發完文拿不到自己的 seq，就只能**用數的**；而 git_commit 的自動公告
             //          會在兩人回合之間吃掉號碼 ⇒ 手數必漂，漂掉之後每一則 `↩seq=` 都長得完全正常
@@ -888,8 +895,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // ⚠ 在**寫入的當下** push，不是事後去撈 LastPostSeq —— 那顆 static 的壽命只到本流程內，
             //   而單一 cmd 內本方法可能跑不只一次（:2355 task_done→share）。push 讓那個競態不存在。
             //   同名多筆會各自出現在 result 的 values 陣列裡（刻意不合併，見 ReportOutputValue 註解）。
-            UCL_AgentCommandRunner.ReportOutputValue("post_seq", seq.ToString());
-            UCL_AgentCommandRunner.ReportOutputValue("post_room", roomId ?? "");
+            UCL_AgentCommandRunner.ReportOutputValue(args, "post_seq", seq.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "post_room", roomId ?? "");
 
             // R7 (T07 chat-flow-robust) — 每次發言自動更新 sender presence（status=active + current_room）
             // 物理意義：跟 R7 mention parser + cross-channel notify 配套 — 查 presence.current_room 提示對方來哪個房

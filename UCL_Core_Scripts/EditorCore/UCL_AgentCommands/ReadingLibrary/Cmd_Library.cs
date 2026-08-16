@@ -313,9 +313,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (args.TryGetValue("_caller_env_marker", out string cem) && !string.IsNullOrEmpty(cem))
                 tavernArgs["_caller_env_marker"] = cem;
 
-            ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+            // `_cmd_id` 隨子 args 穿透 —— 子 Cmd 的 seq 才回得到本筆 context（併行下唯一正確的路徑）
+            UCL_AgentCmdContexts.PropagateCmdId(args, tavernArgs);
+            var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "Library.share");
+            if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
             await tavern.ExecuteAsync(tavernArgs, token);
-            int seq = ChatTavern.Cmd_Tavern.LastPostSeq;
+            int seq = aPostCtx?.LastPostSeq ?? 0;
             if (seq <= 0)
                 throw new InvalidOperationException(
                     $"[{CommandType}] 酒館發文未取得 seq —— post 可能被 Op_Post 拒絕（原因見 _last_op.md）。" +

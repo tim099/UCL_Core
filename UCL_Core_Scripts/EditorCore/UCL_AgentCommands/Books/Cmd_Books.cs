@@ -142,9 +142,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 tavernArgs["_caller_env_marker"] = cem;
             try
             {
-                ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+                // `_cmd_id` 隨子 args 穿透 —— 子 Cmd 的 seq 才回得到本筆 context（併行下唯一正確的路徑）
+                UCL_AgentCmdContexts.PropagateCmdId(args, tavernArgs);
+                var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "Books.share");
+                if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
                 await tavern.ExecuteAsync(tavernArgs, token);
-                int seq = ChatTavern.Cmd_Tavern.LastPostSeq;
+                int seq = aPostCtx?.LastPostSeq ?? 0;
                 return seq > 0 ? $"- 📣 酒館廣播已發送（seq={seq}）"
                     : "> [!WARNING]\n> 廣播被 Op_Post 拒絕（原因見上一則 _last_op）—— 登記/帳不受影響";
             }

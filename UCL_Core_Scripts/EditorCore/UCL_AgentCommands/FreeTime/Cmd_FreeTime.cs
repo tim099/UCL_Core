@@ -64,9 +64,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             switch (aStep)
             {
-                case "start": await StepStart(aPersona, GetArg(args, "until", "").Trim(), token); return;
-                case "next":  await StepNext(aPersona, token, iEarlyEnd: false, iReason: null); return;
-                case "end":   await StepNext(aPersona, token, iEarlyEnd: true, iReason: GetArg(args, "reason", "").Trim()); return;
+                case "start": await StepStart(args, aPersona, GetArg(args, "until", "").Trim(), token); return;
+                case "next":  await StepNext(args, aPersona, token, iEarlyEnd: false, iReason: null); return;
+                case "end":   await StepNext(args, aPersona, token, iEarlyEnd: true, iReason: GetArg(args, "reason", "").Trim()); return;
                 default:
                     throw new Exception($"[FreeTime] step 必為 start|next|end（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
@@ -78,7 +78,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          既有 active session 未到期即 blocked（不疊開）；已到期的殘留 session
         //          視為 stale 自動收掉再開新場（超時沒跑 next 的人不該被卡死在沒有出口的房間）。
         // ===========================================================
-        async UniTask StepStart(string iPersona, string iUntil, CancellationToken iToken)
+        async UniTask StepStart(IDictionary<string, string> iArgs, string iPersona, string iUntil, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "start");
             var aR = new StringBuilder();
@@ -91,7 +91,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: '{iPersona}' 不在線（無 session lock）—— 自由時間是登入後的狀態");
                 aR.AppendLine($"- exit: 先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[FreeTime] step=start blocked：persona 不在線（詳見 {aPath}）");
             }
 
@@ -102,7 +102,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: {aUntilErr}");
                 aR.AppendLine("- how: --arg until=<HH:mm 本地時刻>（例 until=12:30；深夜跨日自動判定）");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[FreeTime] step=start blocked：until 參數無效（詳見 {aPath}）");
             }
 
@@ -116,7 +116,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     aR.AppendLine("## blocked");
                     aR.AppendLine($"- reason: 已有進行中的自由時間 session（至 {aOldEnd.Value:HH:mm} 本地）—— 不疊開");
                     aR.AppendLine($"- exit: 換活動跑 step=next；提前收工跑 step=end --arg reason=<一句>");
-                    WritePayload(aPath, aR.ToString());
+                    WritePayload(iArgs, aPath, aR.ToString());
                     throw new Exception($"[FreeTime] step=start blocked：session 已存在（詳見 {aPath}）");
                 }
                 // 到期殘留：自動收工（不宣告 —— 那場的收工時刻早已過去，補宣告只會誤導時間軸）
@@ -153,7 +153,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             for (int i = 0; i < aList.Count; i++) aBody.AppendLine($"{i + 1}. {aList[i].name}");
             aBody.AppendLine();
             aBody.AppendLine($"[{aSource}] 活動事件結束時跑 step=next 換骰面，時間到自動收工。");
-            int aSeq = await TavernPost(iPersona, aBody.ToString(), "dice-roll-entry", iToken);
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "dice-roll-entry", iToken);
 
             // 回傳檔：三個時間欄（拍板：時間感由 Cmd 供給）＋骰面（附活動 md 實路徑 —— 傳遞不反推）＋ next
             AppendTimeFields(aR, aNow, aUntil);
@@ -168,7 +168,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ run_cmd.py run FreeTime --arg step=next --arg persona={iPersona}");
             aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
             aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=start 完成 session={aSessionId} → {aPath}");
         }
 
@@ -179,7 +179,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          「過期的 session 再 next 一次」必須是收工不是報錯（卡點 3 —— 超時回來的人
         //          要有出口）。
         // ===========================================================
-        async UniTask StepNext(string iPersona, CancellationToken iToken, bool iEarlyEnd, string iReason)
+        async UniTask StepNext(IDictionary<string, string> iArgs, string iPersona, CancellationToken iToken, bool iEarlyEnd, string iReason)
         {
             string aStepName = iEarlyEnd ? "end" : "next";
             string aPath = PayloadPath(iPersona, aStepName);
@@ -193,7 +193,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 沒有進行中的自由時間 session");
                 aR.AppendLine($"- exit: 先跑 run_cmd.py run FreeTime --arg step=start --arg persona={iPersona} --arg until=<HH:mm>");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[FreeTime] step={aStepName} blocked：無 active session（詳見 {aPath}）");
             }
 
@@ -215,7 +215,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     ? $"🏁 [{iPersona} 大小姐] 自由時間提前收工（{(string.IsNullOrEmpty(iReason) ? "未附 reason" : iReason)}）"
                     : $"⏰ [{iPersona} 大小姐] 自由時間到點收工（至 {aUntil:HH:mm}）");
                 aBody.AppendLine($"本場 {aRounds} 輪活動｜🎨 免費像素用 {aUsed} 顆{(aForfeited > 0 ? $"、歸零作廢 {aForfeited} 顆" : "")}。回工位了。");
-                int aSeq = await TavernPost(iPersona, aBody.ToString(), iEarlyEnd ? "session-end-early" : "session-end", iToken);
+                int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), iEarlyEnd ? "session-end-early" : "session-end", iToken);
 
                 AppendTimeFields(aR, aNow, aUntil);
                 aR.AppendLine(aExpired && !iEarlyEnd ? "- ⏰ **時間到** —— session 已收工" : "- 🏁 提前收工 —— session 已收工");
@@ -226,7 +226,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine("## next");
                 aR.AppendLine("- 回工作；或走晚安流程：run_cmd.py run GoodNight --arg step=check --arg persona=" + iPersona);
                 aR.AppendLine("- 還想花錢再睡 →（可選）ucl-spending-time（不綁死晚安）。");
-                WritePayload(aPath, aR.ToString());
+                WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[FreeTime] step={aStepName} 收工（{aEndReason}） → {aPath}");
                 return;
             }
@@ -257,7 +257,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             if (aIsLive) aDiceBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制）");
             for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
             aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
-            int aDiceSeq = await TavernPost(iPersona, aDiceBody.ToString(), "dice-roll", iToken);
+            int aDiceSeq = await TavernPost(iArgs, iPersona, aDiceBody.ToString(), "dice-roll", iToken);
 
             AppendTimeFields(aR, aNow, aUntil);
             aR.AppendLine($"- 輪次: **{aRound}**");
@@ -269,7 +269,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
             aR.AppendLine("2. 活動事件自然結束 → 再跑 step=next（**截止是軟的**：時間到不打斷進行中活動，最後一件做完跑 next 才通知收工）。");
             aR.AppendLine("3. step=end（提前收工）除非 Tim 明確指示，不要用。");
-            WritePayload(aPath, aR.ToString());
+            WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=next 第 {aRound} 輪 → {aPath}");
         }
 
@@ -506,7 +506,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // ===========================================================
         // 區塊：酒館宣告（in-process Cmd_Tavern，best-effort —— 權威狀態先落地、廣播殿後）
         // ===========================================================
-        static async UniTask<int> TavernPost(string iPersona, string iBody, string iSubtag, CancellationToken iToken)
+        // ⚠ iArgs：本筆 cmd 的 args（`_cmd_id` 由此傳給子 Cmd，seq 才回得到本筆 context）。
+        static async UniTask<int> TavernPost(IDictionary<string, string> iArgs, string iPersona, string iBody, string iSubtag, CancellationToken iToken)
         {
             try
             {
@@ -527,9 +528,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     { "meta", $"{{\"tag\":\"free-time\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}" },
                 };
                 if (aLock != null && !string.IsNullOrEmpty(aLock.session_token)) aArgs["session_token"] = aLock.session_token;
-                ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+                var aPostCtx = UCL_AgentCmdContexts.FromArgs(iArgs, "FreeTime.post");
+                if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
+                UCL_AgentCmdContexts.PropagateCmdId(iArgs, aArgs);
                 await new ChatTavern.Cmd_Tavern().ExecuteAsync(aArgs, iToken);
-                return ChatTavern.Cmd_Tavern.LastPostSeq;
+                return aPostCtx?.LastPostSeq ?? 0;
             }
             catch (Exception e)
             {
@@ -603,14 +606,14 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         static string PayloadPath(string iPersona, string iStep)
             => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_freetime_{iStep}.md");
 
-        static void WritePayload(string iPath, string iReport)
+        static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(iPath));
                 File.WriteAllText(iPath, iReport, new UTF8Encoding(false));
                 // 回報產出檔 → result 檔 outputs 欄，run_cmd 端隨 verdict 印路徑（不再靠 skill 背）
-                UCL_AgentCommandRunner.ReportOutputFile(iPath);
+                UCL_AgentCommandRunner.ReportOutputFile(iArgs, iPath);
             }
             catch (Exception e)
             {

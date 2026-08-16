@@ -62,7 +62,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     string aReport = UCL_AwakeningService.AuditReport()
                         + "\n## next\n- 對帳有 ⚠/🔧 → 人工看該 persona 的 wakes/ 與 registry；全綠 → 無事。\n";
                     string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "_goodmorning_audit.md");
-                    WritePayload(aPath, aReport);
+                    WritePayload(args, aPath, aReport);
                     Debug.Log($"[GoodMorning] step=audit 完成 → {aPath}");
                     return;
                 }
@@ -73,7 +73,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     var aResult = UCL_AwakeningService.StepWake(
                         aPersona, GetArg(args, "model", ""), GetArg(args, "actual_agent", ""), aEnvMarker);
                     string aPath = UCL_AwakeningService.StepPayloadPath(aPersona, "wake");
-                    WritePayload(aPath, aResult.report);
+                    WritePayload(args, aPath, aResult.report);
                     if (!aResult.ok)
                         throw new Exception($"[GoodMorning] step=wake blocked/失敗（詳見 {aPath}）");
                     Debug.Log($"[GoodMorning] step=wake 完成 → {aPath}");
@@ -117,7 +117,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         aSb.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
                     }
                     string aPath = UCL_AwakeningService.StepPayloadPath(aPersona, "brief");
-                    WritePayload(aPath, aSb.ToString());
+                    WritePayload(args, aPath, aSb.ToString());
                     if (!aResult.ok)
                         throw new Exception($"[GoodMorning] brief 生成失敗（詳見 {aPath}）");
                     Debug.Log($"[GoodMorning] step=brief 完成（{aResult.briefLines} 行）→ {aPath}");
@@ -131,7 +131,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     string aPath = UCL_AwakeningService.StepPayloadPath(aPersona, "intro");
                     if (string.IsNullOrEmpty(aBody))
                     {
-                        WritePayload(aPath, "## blocked\n- reason: intro 缺 body —— 自介內容必須 persona 親筆（憲法⑥：屬於自己的東西自己寫），Cmd 只組系統欄位\n- how: --arg-stdin body（長文不經 shell 解析層）\n");
+                        WritePayload(args, aPath, "## blocked\n- reason: intro 缺 body —— 自介內容必須 persona 親筆（憲法⑥：屬於自己的東西自己寫），Cmd 只組系統欄位\n- how: --arg-stdin body（長文不經 shell 解析層）\n");
                         throw new Exception($"[GoodMorning] step=intro 缺 body（詳見 {aPath}）");
                     }
 
@@ -139,7 +139,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     var aCheck = UCL_AwakeningService.PrecheckIntro(aPersona);
                     if (!aCheck.ok)
                     {
-                        WritePayload(aPath, $"# GoodMorning step=intro persona={aPersona}\n\n## blocked\n- reason: {aCheck.error}\n");
+                        WritePayload(args, aPath, $"# GoodMorning step=intro persona={aPersona}\n\n## blocked\n- reason: {aCheck.error}\n");
                         throw new Exception($"[GoodMorning] step=intro 前置檢查未過（詳見 {aPath}）");
                     }
                     var aLock = aCheck.lockData;
@@ -170,9 +170,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         { "session_token", aLock.session_token },   // enforce ON 時的通行證；OFF 時無害
                         { "meta", "{\"tag\":\"goodmorning-protocol\",\"category\":\"meta\",\"status-change\":\"online\",\"decision\":\"preferred\"}" },
                     };
-                    ChatTavern.Cmd_Tavern.LastPostSeq = 0;
+                    // in-process 呼叫 → 把「我是哪筆 cmd」帶進子 args，seq 才回得到我的 context
+                    // （舊制走 Cmd_Tavern.LastPostSeq 全域 static，併行時會拿到別人的號碼）
+                    UCL_AgentCmdContexts.PropagateCmdId(args, aPostArgs);
+                    var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "GoodMorning.intro");
+                    if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
                     await new ChatTavern.Cmd_Tavern().ExecuteAsync(aPostArgs, token);
-                    int aSeq = ChatTavern.Cmd_Tavern.LastPostSeq;
+                    int aSeq = aPostCtx?.LastPostSeq ?? 0;
 
                     var aSb = new StringBuilder();
                     aSb.AppendLine($"# GoodMorning step=intro persona={aPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
@@ -180,7 +184,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     if (aSeq <= 0)
                     {
                         aSb.AppendLine("## blocked\n- reason: 廣播未落檔（Cmd_Tavern 拒絕或失敗 —— 詳見 ChatTavern/_last_op.md）");
-                        WritePayload(aPath, aSb.ToString());
+                        WritePayload(args, aPath, aSb.ToString());
                         throw new Exception($"[GoodMorning] step=intro 廣播失敗（詳見 {aPath} 與 ChatTavern/_last_op.md）");
                     }
                     // verify：讀回落地的訊息檔（可讀回的事實，不是 ✓）
@@ -194,7 +198,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine($"1. **required** — 酒館 catchup（知道在線同事＋追上訊息；照 ucl-ding 流程但**不強制回**）：");
                     aSb.AppendLine($"   python AgentCommands/Tools/tavern_catchup.py --persona {aPersona} --quiet-system");
                     aSb.AppendLine("2. 之後照 brief §9 的今日動作清單走（見林 OVERDUE / 見森待折是 morning 的一部分，不是選配）。");
-                    WritePayload(aPath, aSb.ToString());
+                    WritePayload(args, aPath, aSb.ToString());
                     Debug.Log($"[GoodMorning] step=intro 完成 seq={aSeq} → {aPath}");
                     return;
                 }
@@ -211,14 +215,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 throw new Exception($"[GoodMorning] step={iStep} 需要 --arg persona=<name>");
         }
 
-        static void WritePayload(string iPath, string iReport)
+        static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(iPath));
                 File.WriteAllText(iPath, iReport, new UTF8Encoding(false));
                 // 回報產出檔 → result 檔 outputs 欄，run_cmd 端隨 verdict 印路徑（不再靠 skill 背）
-                UCL_AgentCommandRunner.ReportOutputFile(iPath);
+                UCL_AgentCommandRunner.ReportOutputFile(iArgs, iPath);
             }
             catch (Exception e)
             {

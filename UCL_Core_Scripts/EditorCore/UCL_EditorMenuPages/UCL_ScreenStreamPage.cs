@@ -82,8 +82,14 @@ namespace UCL.Core.EditorLib.Page
         //      直播現場實測把五段真對白全砍光（那批 nsp=0.685 但 logp=-0.291，模型其實很有信心）。
         //      改回官方 AND 語意後正常。門檻放上來是為了讓這種事**下次能當場調出來**，不用改 code。
         float m_SttRmsGate = 0.005f;      // 低於此 RMS 的 chunk 不送 whisper（0 = 停用前置閘）
+        // 門檻族第四個成員（Tim 2026-08-16）：Silero VAD 前置切靜音。
+        // ⚠ **只有 faster-whisper 有這個參數** —— openai-whisper 的 transcribe() 收到它會 TypeError，
+        //   所以 python 端只在 faster-whisper 分岔傳它，而 UI 在別的後端下把它**標成不支援並鎖住**
+        //   （不是隱藏 —— 隱藏會讓人以為自己設的值生效了，那正是能力矩陣要防的事）。
+        bool m_SttVadFilter = false;
         float m_SttNoSpeechMax = 0.6f;    // 對齊官方 no_speech_threshold
         float m_SttLogprobMin = -1.0f;    // 對齊官方 logprob_threshold
+        string m_SttBackend = "openai-whisper";   // 實際跑轉錄的工具（見 s_SttBackendValues）
         string m_SttModel = "small";
         string m_SttLang = "";
         // 區塊職責: stt_prompt = whisper 人名詞彙偏置 (initial_prompt) —— **Page 可編輯欄位** (Tim 2026-08-11)。
@@ -115,7 +121,7 @@ namespace UCL.Core.EditorLib.Page
         int m_OcrWorkers = 2;
         float m_OcrMinConf = 0.5f;
         // 主字幕帶 — 與額外區域共用 OcrBand 型別 (Tim 2026-08-04: 抽成同一個 class)
-        readonly OcrBand m_OcrBand = new OcrBand(0f, 0.12f);
+        readonly OcrBand m_OcrBand = new OcrBand(0f, 0.12f);   // Enable 預設 true（見 OcrBand）
         // 額外字幕判定區域 — 同型別, 同 UI, 同序列化
         readonly List<OcrBand> m_OcrExtraRegions = new List<OcrBand>();
         bool m_ShowOcrExtraRegions = false;   // 可折疊 List 開合狀態
@@ -132,6 +138,11 @@ namespace UCL.Core.EditorLib.Page
         //          所以舊設定檔讀進來的 OCR 結果一格都不會變。
         public class OcrBand
         {
+            // 區塊職責：這條帶要不要真的拿去掃（Tim 2026-08-16）。
+            // 物理意義：關掉 = 這條帶不進 OCR 的 region 清單，**不是畫面上灰掉而已**。
+            // 數值影響：預設 true；**舊 config 沒有這個欄位一律視為 true** —— 讀進舊設定檔
+            //          的行為與加這功能之前逐格相同（同 x_center/w 那次的相容規矩）。
+            public bool Enable = true;
             public float YBottomPct;
             public float HPct;
             public float XCenterPct = DEFAULT_X_CENTER_PCT;
@@ -167,6 +178,8 @@ namespace UCL.Core.EditorLib.Page
         int m_BaseQuality = 65;
         string m_BaseMonitor = "primary";
         bool m_BaseSttSetting = false;
+        bool m_BaseSttVadFilter = false;
+        string m_BaseSttBackend = "openai-whisper";
         string m_BaseSttModel = "small";
         string m_BaseSttLang = "";
         // stt_prompt 進 3-way merge (Tim 2026-08-11): 它現在有**兩個寫入者** (Tim 手打 / 陪看 skill),
@@ -181,13 +194,63 @@ namespace UCL.Core.EditorLib.Page
         float m_BaseOcrWPct = DEFAULT_W_PCT;
         float m_BaseOcrMinConf = 0.5f;
         // 額外區域的 baseline 用序列化字串比對 (list 整體當單一欄位做 3-way merge)
+        bool m_BaseOcrMainEnable = true;
         string m_BaseOcrExtraRegions = "";
         // config 檔 mtime 快照 — 沒變就跳過 parse (省 IO), 變了才走 merge reload
         long m_ConfigMtime = 0;
         static readonly string[] s_SttModelOptions = { "tiny", "base", "small", "medium", "large-v3" };
-        // lang: 空字串=自動偵測; 顯示 label 與實際值分開 (空值不好按)
-        static readonly string[] s_SttLangLabels = { "自動", "ja 日", "en 英", "zh 中" };
-        static readonly string[] s_SttLangValues = { "", "ja", "en", "zh" };
+
+        // ── STT 後端 ──────────────────────────────────────────────
+        // 區塊職責：選「實際跑轉錄的是哪一支工具」。
+        // 物理意義：兩者用同一批模型權重與同一套語言清單，差別在 runtime ——
+        //          openai-whisper 走 torch；faster-whisper 走 CTranslate2（自帶 runtime、支援量化，
+        //          且**只有它有 vad_filter**，那是「切在靜音處」而不是固定秒數硬切的前提）。
+        // 數值影響：寫進 _config.json 的 stt_backend；daemon 重起 worker 才吃到（同 stt_model）。
+        // ⚠ 值是 pip 套件名不是顯示名 —— 顯示名改了不影響行為，值改了會讓 python 端找不到後端。
+        static readonly string[] s_SttBackendValues = { "openai-whisper", "faster-whisper" };
+        static readonly string[] s_SttBackendLabels =
+        {
+            "openai-whisper（現行 · torch）",
+            "faster-whisper（CTranslate2 · 有 vad_filter / 可量化）",
+        };
+
+        // ── STT 語言 ──────────────────────────────────────────────
+        // 區塊職責：轉錄語言（空字串＝自動偵測）。
+        // 物理意義：清單由**已安裝的 whisper 套件**產生（whisper.tokenizer.LANGUAGES，2026-08-16 實測
+        //          100 種；faster-whisper 同一套，實測 len 相同且同樣含 ru），不是手打的。
+        //          ⇒ 兩個後端共用本清單是有依據的，不是假設。
+        // 數值影響：常用五項（自動 / 日 / 英 / 中 / 俄）刻意排最前（Tim 2026-08-16），其餘依代碼排序；
+        //          下拉走 PopupSearchCache，可直接打字搜尋，所以長清單不是負擔。
+        static readonly string[] s_SttLangValues = {
+            "", "ja", "en", "zh", "ru", "af", "am", "ar", "as", "az", "ba", "be",
+            "bg", "bn", "bo", "br", "bs", "ca", "cs", "cy", "da", "de", "el", "es",
+            "et", "eu", "fa", "fi", "fo", "fr", "gl", "gu", "ha", "haw", "he", "hi",
+            "hr", "ht", "hu", "hy", "id", "is", "it", "jw", "ka", "kk", "km", "kn",
+            "ko", "la", "lb", "ln", "lo", "lt", "lv", "mg", "mi", "mk", "ml", "mn",
+            "mr", "ms", "mt", "my", "ne", "nl", "nn", "no", "oc", "pa", "pl", "ps",
+            "pt", "ro", "sa", "sd", "si", "sk", "sl", "sn", "so", "sq", "sr", "su",
+            "sv", "sw", "ta", "te", "tg", "th", "tk", "tl", "tr", "tt", "uk", "ur",
+            "uz", "vi", "yi", "yo", "yue",
+        };
+        static readonly string[] s_SttLangLabelsFull = {
+            "自動", "ja 日", "en 英", "zh 中", "ru 俄", "af afrikaans",
+            "am amharic", "ar arabic", "as assamese", "az azerbaijani", "ba bashkir", "be belarusian",
+            "bg bulgarian", "bn bengali", "bo tibetan", "br breton", "bs bosnian", "ca catalan",
+            "cs czech", "cy welsh", "da danish", "de german", "el greek", "es spanish",
+            "et estonian", "eu basque", "fa persian", "fi finnish", "fo faroese", "fr french",
+            "gl galician", "gu gujarati", "ha hausa", "haw hawaiian", "he hebrew", "hi hindi",
+            "hr croatian", "ht haitian creole", "hu hungarian", "hy armenian", "id indonesian", "is icelandic",
+            "it italian", "jw javanese", "ka georgian", "kk kazakh", "km khmer", "kn kannada",
+            "ko korean", "la latin", "lb luxembourgish", "ln lingala", "lo lao", "lt lithuanian",
+            "lv latvian", "mg malagasy", "mi maori", "mk macedonian", "ml malayalam", "mn mongolian",
+            "mr marathi", "ms malay", "mt maltese", "my myanmar", "ne nepali", "nl dutch",
+            "nn nynorsk", "no norwegian", "oc occitan", "pa punjabi", "pl polish", "ps pashto",
+            "pt portuguese", "ro romanian", "sa sanskrit", "sd sindhi", "si sinhala", "sk slovak",
+            "sl slovenian", "sn shona", "so somali", "sq albanian", "sr serbian", "su sundanese",
+            "sv swedish", "sw swahili", "ta tamil", "te telugu", "tg tajik", "th thai",
+            "tk turkmen", "tl tagalog", "tr turkish", "tt tatar", "uk ukrainian", "ur urdu",
+            "uz uzbek", "vi vietnamese", "yi yiddish", "yo yoruba", "yue cantonese",
+        };
 
         long m_FrameCount = 0;
         string m_StartedAt = "";
@@ -567,7 +630,10 @@ namespace UCL.Core.EditorLib.Page
                 sb.Append(r.YBottomPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
                 sb.Append(r.HPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
                 sb.Append(r.XCenterPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
-                sb.Append(r.WPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(';');
+                sb.Append(r.WPct.ToString("0.####", CultureInfo.InvariantCulture)).Append(',');
+                // enable 也要進 baseline 鍵 —— 少了它，只切開關會被判成「Tim 沒動過」，
+                // 下一次 reload 就被磁碟值靜默蓋回去（同上一段水平兩欄的血證）。
+                sb.Append(r.Enable ? '1' : '0').Append(';');
             }
             return sb.ToString();
         }
@@ -586,7 +652,8 @@ namespace UCL.Core.EditorLib.Page
                 if (e.IsObject)
                     list.Add(new OcrBand(e.GetFloat("y_bottom_pct", 0f), e.GetFloat("h_pct", 0f),
                                          e.GetFloat("x_center_pct", DEFAULT_X_CENTER_PCT),
-                                         e.GetFloat("w_pct", DEFAULT_W_PCT)));
+                                         e.GetFloat("w_pct", DEFAULT_W_PCT))
+                             { Enable = e.GetBool("enable", true) });   // 缺席=開啟（舊 config 行為不變）
                 else if (e.IsArray && e.Count >= 2)
                     list.Add(new OcrBand(e[0].GetFloat(0f), e[1].GetFloat(0f),
                                          e.Count >= 4 ? e[2].GetFloat(DEFAULT_X_CENTER_PCT) : DEFAULT_X_CENTER_PCT,
@@ -638,6 +705,10 @@ namespace UCL.Core.EditorLib.Page
                         // STT: stt_setting 是 Page 意圖; 舊 config 只有 stt_enabled → fallback 讀它做遷移
                         m_SttSetting = MergeField(m_SttSetting, ref m_BaseSttSetting,
                             data.GetBool("stt_setting", data.GetBool("stt_enabled", false)));
+                        m_SttBackend = MergeField(m_SttBackend, ref m_BaseSttBackend,
+                            data.GetString("stt_backend", "openai-whisper"));
+                        m_SttVadFilter = MergeField(m_SttVadFilter, ref m_BaseSttVadFilter,
+                            data.GetBool("stt_vad_filter", false));
                         m_SttModel = MergeField(m_SttModel, ref m_BaseSttModel, data.GetString("stt_model", "small"));
                         m_SttRmsGate = (float)data.GetDouble("stt_rms_gate", 0.005);
                         m_SttNoSpeechMax = (float)data.GetDouble("stt_no_speech_max", 0.6);
@@ -654,6 +725,8 @@ namespace UCL.Core.EditorLib.Page
                             : (data.Contains("ocr_y_pct")
                                 ? Mathf.Clamp01(1f - data.GetFloat("ocr_y_pct", 0.78f) - diskOcrH)
                                 : 0f);
+                        m_OcrBand.Enable = MergeField(m_OcrBand.Enable, ref m_BaseOcrMainEnable,
+                            data.GetBool("ocr_main_enable", true));   // 缺席=開啟（舊 config 行為不變）
                         m_OcrBand.YBottomPct = MergeField(m_OcrBand.YBottomPct, ref m_BaseOcrYBottomPct, diskOcrYBottom);
                         m_OcrBand.HPct = MergeField(m_OcrBand.HPct, ref m_BaseOcrHPct, diskOcrH);
                         m_OcrBand.XCenterPct = MergeField(m_OcrBand.XCenterPct, ref m_BaseOcrXCenterPct,
@@ -840,6 +913,8 @@ namespace UCL.Core.EditorLib.Page
                 // → 開始錄影 (m_Enabled=true) 且 stt_setting=on → daemon 下次 reload 起 whisper; 停錄影自動關.
                 existing["stt_setting"] = new JsonData(m_SttSetting);
                 existing["stt_enabled"] = new JsonData(m_Enabled && m_SttSetting);
+                existing["stt_backend"] = new JsonData(m_SttBackend);
+                existing["stt_vad_filter"] = new JsonData(m_SttVadFilter);
                 existing["stt_model"] = new JsonData(m_SttModel);
                 existing["stt_rms_gate"] = new JsonData(m_SttRmsGate);
                 existing["stt_no_speech_max"] = new JsonData(m_SttNoSpeechMax);
@@ -856,6 +931,7 @@ namespace UCL.Core.EditorLib.Page
                 existing["ocr_h_pct"] = new JsonData(m_OcrBand.HPct);
                 existing["ocr_x_center_pct"] = new JsonData(m_OcrBand.XCenterPct);
                 existing["ocr_w_pct"] = new JsonData(m_OcrBand.WPct);
+                existing["ocr_main_enable"] = new JsonData(m_OcrBand.Enable);
                 existing["ocr_min_conf"] = new JsonData(m_OcrMinConf);
                 var regionsArr = new JsonData().ToArray();
                 foreach (var r in m_OcrExtraRegions)
@@ -865,6 +941,7 @@ namespace UCL.Core.EditorLib.Page
                     o["h_pct"] = new JsonData(r.HPct);
                     o["x_center_pct"] = new JsonData(r.XCenterPct);
                     o["w_pct"] = new JsonData(r.WPct);
+                    o["enable"] = new JsonData(r.Enable);
                     regionsArr.Add(o);
                 }
                 existing["ocr_extra_regions"] = regionsArr;
@@ -890,6 +967,9 @@ namespace UCL.Core.EditorLib.Page
                 m_BaseQuality = m_Quality;
                 m_BaseMonitor = m_Monitor;
                 m_BaseSttSetting = m_SttSetting;
+                m_BaseSttBackend = m_SttBackend;
+                m_BaseSttVadFilter = m_SttVadFilter;
+                m_BaseOcrMainEnable = m_OcrBand.Enable;
                 m_BaseSttModel = m_SttModel;
                 m_BaseSttLang = m_SttLang;
                 m_BaseSttPrompt = m_SttPrompt;
@@ -1229,11 +1309,22 @@ namespace UCL.Core.EditorLib.Page
 
                 if (aShowStt)
                 {
+                    // 後端 / model / 語言三個下拉（Tim 2026-08-16 要求由 SelectionGrid 改下拉）。
+                    // 走 PopupSearchCache 而非 EditorGUILayout.Popup：語言有 101 項，
+                    // 沒有搜尋的話「找到 ru」本身就是一件苦差事。
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("後端:", GUILayout.Width(60));
+                    int bIdx = Array.IndexOf(s_SttBackendValues, m_SttBackend);
+                    if (bIdx < 0) bIdx = 0;   // 認不得的值 → 落回現行後端（不靜默沿用壞值）
+                    int bNew = UCL_GUILayout.PopupSearchCache(bIdx, s_SttBackendLabels, m_Dic, "m_SttBackend");
+                    if (bNew != bIdx) m_SttBackend = s_SttBackendValues[bNew];
+                    GUILayout.EndHorizontal();
+
                     GUILayout.BeginHorizontal();
                     GUILayout.Label("model:", GUILayout.Width(60));
                     int mIdx = Array.IndexOf(s_SttModelOptions, m_SttModel);
                     if (mIdx < 0) mIdx = 2; // default small
-                    int mNew = GUILayout.SelectionGrid(mIdx, s_SttModelOptions, s_SttModelOptions.Length);
+                    int mNew = UCL_GUILayout.PopupSearchCache(mIdx, s_SttModelOptions, m_Dic, "m_SttModel");
                     if (mNew != mIdx) m_SttModel = s_SttModelOptions[mNew];
                     GUILayout.EndHorizontal();
 
@@ -1241,7 +1332,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("語言:", GUILayout.Width(60));
                     int lIdx = Array.IndexOf(s_SttLangValues, m_SttLang);
                     if (lIdx < 0) lIdx = 0; // default 自動
-                    int lNew = GUILayout.SelectionGrid(lIdx, s_SttLangLabels, s_SttLangLabels.Length);
+                    int lNew = UCL_GUILayout.PopupSearchCache(lIdx, s_SttLangLabelsFull, m_Dic, "m_SttLang");
                     if (lNew != lIdx) m_SttLang = s_SttLangValues[lNew];
                     GUILayout.EndHorizontal();
 
@@ -1259,6 +1350,20 @@ namespace UCL.Core.EditorLib.Page
                         + "後兩者對齊 whisper 官方門檻, 且**兩者同時**成立才丟棄段落 —— "
                         + "單獨用 no_speech 會把真對白砍掉 (2026-08-01 實測: 真對白的 no_speech_prob 可達 0.685).",
                         new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    // 能力矩陣：欄位永遠畫出來，不支援的後端下**鎖住並明說**（plan §2b①）。
+                    bool aVadSupported = (m_SttBackend == "faster-whisper");
+                    GUILayout.BeginHorizontal();
+                    using (new UnityEditor.EditorGUI.DisabledScope(!aVadSupported))
+                    {
+                        bool aVadNew = UnityEditor.EditorGUILayout.ToggleLeft(
+                            " VAD 前置切靜音 (stt_vad_filter)", m_SttVadFilter, GUILayout.Width(220));
+                        if (aVadSupported) m_SttVadFilter = aVadNew;   // 不支援時連值都不准被改
+                    }
+                    if (!aVadSupported)
+                        GUILayout.Label("← 此後端不支援（僅 faster-whisper 有）",
+                            new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    GUILayout.FlexibleSpace();
+                    GUILayout.EndHorizontal();
                     GUILayout.Label("  ⚠ 改這幾個值要 **toggle STT 開關 off→on** 才生效 —— python 模組已載入記憶體, 改 config 不會重載 code.",
                         new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
 
@@ -1828,10 +1933,23 @@ namespace UCL.Core.EditorLib.Page
         static void DrawBandFields(OcrBand iBand, string iPrefix)
         {
             string p = string.IsNullOrEmpty(iPrefix) ? "" : iPrefix;
+            // 開關擺在幾何欄位**之前** —— 先看到「這條要不要用」，再看它的座標。
+            // 關掉時把幾何欄位一起 disable：值仍看得見（要知道關掉的是哪一條），但不能改，
+            // 免得調了半天才發現調的是一條沒生效的帶。
+            GUILayout.BeginHorizontal();
+            iBand.Enable = UCL_GUILayout.CheckBox(iBand.Enable, p + " 啟用");
+            if (!iBand.Enable)
+                GUILayout.Label("（已關閉 — 這條不會進 OCR 掃描範圍）",
+                    new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            using (new UnityEditor.EditorGUI.DisabledScope(!iBand.Enable))
+            {
             iBand.YBottomPct = UnityEditor.EditorGUILayout.Slider(p + "起始 y (0=畫面下方)", iBand.YBottomPct, 0f, 1f);
             iBand.HPct = UnityEditor.EditorGUILayout.Slider(p + "高度 (從 y 往上長)", iBand.HPct, 0.02f, 0.5f);
             iBand.WPct = UnityEditor.EditorGUILayout.Slider(p + "寬度 (1=滿寬)", iBand.WPct, 0.05f, 1f);
             iBand.XCenterPct = UnityEditor.EditorGUILayout.Slider(p + "x 中心 (0.5=正中)", iBand.XCenterPct, 0f, 1f);
+            }
         }
 
         // 區塊職責: 字幕帶視覺化 — 底圖=當前畫面 (錄影中有 _latest.jpg) 或灰框 (16:9);

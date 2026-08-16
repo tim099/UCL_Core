@@ -66,6 +66,19 @@ namespace UCL.Core.EditorLib.Page
         PluginInfo[] m_Plugins = new PluginInfo[0];
         int m_PluginIdx = 0;
 
+        // ==== 模型權重清單 (media_admin.py list-models 的 C# 鏡像) ====
+        // 物理意義：插件是 pip 套件、模型是快取目錄，兩者生命週期不同 —— 卸掉套件不會收回 1.5GB 權重。
+        // ⚠ partial 欄是「下載中斷留下的碎片」：它會佔磁碟但**不算已安裝**
+        //   （🩸 2026-08-16 本機曾累積 1383MB 殘骸，而第一版把它算成「已安裝」）。
+        class ModelInfo
+        {
+            public string Id, Backend, SizeName, PathStr;
+            public float Mb, PartialMb;
+            public bool Installed;
+        }
+        ModelInfo[] m_Models = new ModelInfo[0];
+        int m_ModelIdx = 0;
+
         // ==== 試錄參數 ====
         int m_TestSec = 8;              // 試錄秒數 (擷取即 wall-clock 阻塞，別設太長)
 
@@ -90,6 +103,7 @@ namespace UCL.Core.EditorLib.Page
             RunOp("狀態", "status", 60000);
             RunOp("讀取設定", "get-config", 30000);
             RunOp("插件清單", "list-plugins", 60000);
+            RunOp("模型清單", "list-models", 60000);
         }
 
         protected override void TopBarButtons()
@@ -120,6 +134,8 @@ namespace UCL.Core.EditorLib.Page
             DrawStatusPanel();
             GUILayout.Space(6);
             DrawInstallPanel();
+            GUILayout.Space(6);
+            DrawModelPanel();
             GUILayout.Space(6);
             DrawSttSettingsPanel();
             GUILayout.Space(6);
@@ -186,6 +202,100 @@ namespace UCL.Core.EditorLib.Page
                             GUILayout.Label($"　↳ {a.Hint}", WrapStyle);
                     }
                 }
+            }
+        }
+
+        // 區塊職責：模型權重管理 — 下載 / 刪除 / 清殘骸。
+        // 物理意義：權重不在本機就沒得跑，而它們是 GB 級的東西 —— 需要看得到「佔多少、在哪、完不完整」。
+        // ⚠ 首次下載刻意做在**這裡**而不是讓即時 worker 邊跑邊下載：
+        //   🩸 2026-08-16 實測 worker 首跑下載 medium 期間沒有產物，被 supervisor 的 90s
+        //   停滯偵測連砍 3 次，下載永遠完不成（且留下 1383MB 殘骸）。管理頁沒有那個門檻。
+        void DrawModelPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("<b>3. 模型權重</b>（GB 級；下載請在此做，不要靠 worker 首跑邊跑邊下）", WrapStyle);
+                if (m_Models == null || m_Models.Length == 0)
+                {
+                    EditorGUILayout.HelpBox("模型清單尚未載入 — 按上方「🔄 重新整理狀態」。", MessageType.None);
+                    return;
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("模型", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(50)));
+                    m_ModelIdx = Mathf.Clamp(m_ModelIdx, 0, m_Models.Length - 1);
+                    m_ModelIdx = UCL_GUILayout.PopupSearchCache(m_ModelIdx, ModelMenuNames(), m_Dic, "m_ModelIdx");
+                }
+                var m = m_Models[Mathf.Clamp(m_ModelIdx, 0, m_Models.Length - 1)];
+                GUILayout.Label(m.Installed ? $"已安裝 {m.Mb} MB" : "未安裝", WrapStyle);
+                GUILayout.Label(m.PathStr, WrapStyle);
+                if (m.PartialMb > 0f)
+                    GUILayout.Label($"⚠ 另有 <b>{m.PartialMb} MB</b> 未完成碎片（下載被中斷留下的，"
+                                    + "不算模型的一部分、可安全清掉）", WrapStyle);
+                GUILayout.Space(4);
+                using (new EditorGUI.DisabledScope(m_Busy))
+                {
+                    if (!m.Installed && GUILayout.Button("📥 下載", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                        RunOp($"下載模型 {m.Id}", $"model --id {m.Id} --action download", 3600000);
+                    if (m.PartialMb > 0f && GUILayout.Button("🧹 清掉未完成碎片", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                        RunOp($"清碎片 {m.Id}", $"model --id {m.Id} --action clean-partial", 120000);
+                    if (m.Installed && GUILayout.Button("🗑 刪除權重", UCL_GUIStyle.ButtonStyle, GUILayout.Height(28)))
+                    {
+                        // 不可逆且要重下 GB 級檔案 —— 把「你正要刪什麼、多大、在哪」原樣攤開，不用泛稱
+                        bool ok = EditorUtility.DisplayDialog(
+                            "確認刪除模型權重",
+                            $"模型：{m.Id}\n大小：{m.Mb} MB\n路徑：{m.PathStr}\n\n"
+                            + "刪掉要重新下載（GB 級）。若 STT 正在跑會被拒絕，請先停錄影。\n\n確定刪除？",
+                            "確定刪除", "取消");
+                        if (ok) RunOp($"刪除模型 {m.Id}", $"model --id {m.Id} --action delete", 300000);
+                    }
+                }
+            }
+        }
+
+        string[] ModelMenuNames()
+        {
+            var names = new string[m_Models.Length];
+            for (int i = 0; i < m_Models.Length; i++)
+            {
+                var m = m_Models[i];
+                string mark = m.Installed ? "✅" : (m.PartialMb > 0f ? "⚠" : "⬜");
+                names[i] = $"{mark} {m.Id}" + (m.Installed ? $"（{m.Mb} MB）" : "");
+            }
+            return names;
+        }
+
+        void ParseModelsJson(string iStdout)
+        {
+            try
+            {
+                var d = JsonData.ParseJson(iStdout);
+                var arr = d?.Get("models");
+                if (arr == null || !arr.IsArray) return;
+                var list = new System.Collections.Generic.List<ModelInfo>();
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var e = arr[i];
+                    if (e == null) continue;
+                    string id = e.GetString("id", "");
+                    if (string.IsNullOrEmpty(id)) continue;
+                    list.Add(new ModelInfo
+                    {
+                        Id = id,
+                        Backend = e.GetString("backend", ""),
+                        SizeName = e.GetString("size_name", ""),
+                        PathStr = e.GetString("path", ""),
+                        Mb = e.GetFloat("mb", 0f),
+                        PartialMb = e.GetFloat("partial_mb", 0f),
+                        Installed = e.GetBool("installed", false),
+                    });
+                }
+                m_Models = list.ToArray();
+            }
+            catch (System.Exception ex)
+            {
+                // 解析失敗不靜默 —— 面板空著跟「沒有模型」長得一樣
+                Debug.LogWarning($"[MediaAdmin] list-models 解析失敗：{ex.Message}");
             }
         }
 
@@ -560,7 +670,7 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         // 唯讀輕量 op — 可與其他操作並行，且不搶 m_Busy 旗標
         static bool IsReadOnlyOp(string label) =>
-            label == "讀取設定" || label == "插件清單" || label == "狀態刷新";
+            label == "讀取設定" || label == "插件清單" || label == "模型清單" || label == "狀態刷新";
 
         void RunOp(string label, string argLine, int timeoutMs)
         {
@@ -583,6 +693,7 @@ namespace UCL.Core.EditorLib.Page
             if (label == "狀態" || label == "狀態刷新") m_StatusText = r.DisplayText;
             if (label == "讀取設定") ParseConfigJson(r.Stdout ?? "");
             if (label == "插件清單") ParsePluginsJson(r.Stdout ?? "");
+            if (label == "模型清單") ParseModelsJson(r.Stdout ?? "");
             // 套用設定成功後回讀一次，確保頁面顯示 = 檔案實況 (cross-layer 驗證，不只信自己送出的值)
             if (label.StartsWith("套用") && r.ExitCode == 0)
                 RunOp("讀取設定", "get-config", 30000);

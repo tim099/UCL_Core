@@ -41,6 +41,17 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         /// <summary>停滯門檻下限（秒）—— chunk 設很小時不要變成秒殺重起。</summary>
         const double STALL_FLOOR_SEC = 90.0;
 
+        /// <summary>
+        /// **冷啟動**（本次啟動後尚未產出任何 chunk）的停滯門檻（秒）。
+        /// 🩸 2026-08-16 現場：切成 faster-whisper + medium 後，worker 首跑要先下載 1.5GB 權重，
+        ///    期間**完全沒有產物** → 90s 門檻判它停滯 → 砍掉重起 → 下載重來。連砍 3 次，
+        ///    留下 1383MB 未完成碎片，而且永遠不會成功（守護者自己造成的 livelock）。
+        ///    ⇒ 「還沒開始產出」與「產出中斷了」是兩種狀態，處方相反：前者要等，後者要重起。
+        /// 30 分鐘足夠一次 GB 級下載；真的掛了也還是會被判出來，只是晚一點。
+        /// （結構解在影音管理頁的「模型權重」面板 —— 下載該在那裡做完再開錄。）
+        /// </summary>
+        const double COLD_START_LIMIT_SEC = 1800.0;
+
         /// <summary>連續重起幾次仍無產出就升級成 Error（不再靜靜地無限重試）。</summary>
         const int RESTART_ESCALATE = 3;
 
@@ -49,6 +60,9 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         static string s_RunningSig = "";        // 運行中那顆的設定簽章（model/lang/prompt/chunk）
         static double s_LastWatermark;          // 上次看到的產出水位（epoch 秒）
         static double s_LastProgressAt;         // 水位最後推進的**本機**時刻（EditorApplication.timeSinceStartup）
+        // 本次啟動之後有沒有產出過 —— **不可用「水位是否為 0」代替**：
+        // 水位可能停在昨天的值（2026-08-16 現場就是 23:57:54），那樣冷啟動會被誤判成熱啟動。
+        static bool s_ProducedSinceSpawn;
         static int s_StallRestarts;
         static string s_LastNote = "(尚未巡檢)";
 
@@ -91,9 +105,13 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                     s_LastWatermark = aWm;
                     s_LastProgressAt = EditorApplication.timeSinceStartup;
                     s_StallRestarts = 0;
+                    s_ProducedSinceSpawn = true;
                 }
                 double aChunk = ReadDouble(aCfg, "stt_chunk_sec", 15.0);
-                double aLimit = Math.Max(aChunk * STALL_CHUNKS, STALL_FLOOR_SEC);
+                // 冷啟動（尚未產出過）走寬限門檻 —— 首跑可能正在下載 GB 級權重（見 COLD_START_LIMIT_SEC）
+                double aLimit = s_ProducedSinceSpawn
+                    ? Math.Max(aChunk * STALL_CHUNKS, STALL_FLOOR_SEC)
+                    : COLD_START_LIMIT_SEC;
                 double aSince = EditorApplication.timeSinceStartup - s_LastProgressAt;
 
                 if (aSince > aLimit)
@@ -103,6 +121,9 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                     string aMsg = $"[UCL_STT] ⚠ 停滯 {aSince:F0}s（門檻 {aLimit:F0}s，水位 "
                                 + $"{(s_LastWatermark > 0 ? FromEpochLocal(s_LastWatermark).ToString("HH:mm:ss") : "從未產出")}）"
                                 + $" → 重起第 {s_StallRestarts} 次";
+                    if (!s_ProducedSinceSpawn)
+                        aMsg += "（冷啟動門檻）—— 本次啟動從未產出。若剛換模型/後端，權重可能還在下載："
+                             + "請到「影音管理」頁的『模型權重』面板先把它下載完，再開錄影。";
                     if (aLvl == "ERROR") Debug.LogError(aMsg + "　—— 連續重起無效，這不是抖動，去查環境（音訊裝置／模型）");
                     else Debug.LogWarning(aMsg);
                     Stop("產出停滯");
@@ -152,6 +173,8 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 
         static void Spawn(JsonData iCfg, string iSig, string iWhy)
         {
+            // 每次啟動都重置 —— 上一顆有沒有產出過與這一顆無關（重起後又是一次冷啟動）
+            s_ProducedSinceSpawn = false;
             string aScript = Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
                                           "Tools~", "AgentCommands", "audio_transcribe.py").Replace('\\', '/');
             if (!File.Exists(aScript)) { s_LastNote = $"⚠ 找不到 {aScript}"; Debug.LogWarning($"[UCL_STT] {s_LastNote}"); return; }
@@ -162,12 +185,19 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             int aKilled = UCL_ProcessRegistryService.KillAllByTag(TAG);
             if (aKilled > 0) Debug.LogWarning($"[UCL_STT] singleton guard：收掉 {aKilled} 顆殘留（防兩顆併寫同一份 cache）");
 
+            // 後端：認不得的值不猜，交給 python 端落回現行後端（見 audio_transcribe.DEFAULT_BACKEND）。
+            string aBackend = ReadStr(iCfg, "stt_backend", "openai-whisper");
             string aModel = ReadStr(iCfg, "stt_model", "small");
             string aLang = ReadStr(iCfg, "stt_lang", "");
             string aPrompt = ReadStr(iCfg, "stt_prompt", "");
             double aChunk = ReadDouble(iCfg, "stt_chunk_sec", 15.0);
             var aArgs = new System.Text.StringBuilder();
             aArgs.Append('"').Append(aScript).Append("\" serve");
+            aArgs.Append(" --backend ").Append(aBackend);
+            // VAD 只在 faster-whisper 帶 —— openai-whisper 端沒有這個參數，
+            // 帶了不會報錯只會被忽略，而「被忽略的旗標」正是讓人以為設定生效的那種東西。
+            if (aBackend == "faster-whisper" && ReadBool(iCfg, "stt_vad_filter", false))
+                aArgs.Append(" --vad");
             aArgs.Append(" --model ").Append(aModel);
             if (!string.IsNullOrEmpty(aLang)) aArgs.Append(" --lang ").Append(aLang);
             if (!string.IsNullOrEmpty(aPrompt)) aArgs.Append(" --prompt \"").Append(aPrompt.Replace("\"", "'")).Append('"');
@@ -233,7 +263,9 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         // 設定簽章 —— 只放「改了就必須重起」的欄位。放太多會變成一直重起，放太少會靜默沿用舊值
         // （🩸 血證：換片後 stt_lang/stt_prompt 殘留上一場，whisper 幻聽出舊片人名）。
         static string Signature(JsonData iCfg)
-            => $"{ReadStr(iCfg, "stt_model", "")}|{ReadStr(iCfg, "stt_lang", "")}|"
+            // ⚠ 後端也要進簽章 —— 少了它，改後端不會重起 worker，於是「選了新後端」
+            //   與「仍在跑舊後端」在畫面上長得一模一樣（設定顯示新值、實際跑舊值）。
+            => $"{ReadStr(iCfg, "stt_backend", "")}|{ReadBool(iCfg, "stt_vad_filter", false)}|{ReadStr(iCfg, "stt_model", "")}|{ReadStr(iCfg, "stt_lang", "")}|"
              + $"{ReadStr(iCfg, "stt_prompt", "")}|{ReadDouble(iCfg, "stt_chunk_sec", 15.0):F1}";
 
         static JsonData ReadConfig()
@@ -245,6 +277,21 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 
         static string ReadStr(JsonData d, string k, string def)
             => d != null && d.Contains(k) ? (d[k].ToString() ?? def) : def;
+
+        // 區塊職責：讀 config 的 bool 欄。
+        // 物理意義：JsonLib 的值可能是原生 true/false，也可能是字串 "True"/"true"（兩端寫入者不同）。
+        // ⚠ 這裡刻意用 bool.TryParse（大小寫不敏感）而不是 == "True" 字面比較 ——
+        //   🩸 2026-07 Discord Mirror 那隻就是 `GetString()=="True"` 寫死，python 寫的原生 true
+        //   永遠對不上，於是**所有 config flag 靜默變 false**，一行修好救活兩條命。
+        static bool ReadBool(JsonData d, string k, bool def)
+        {
+            try
+            {
+                if (d == null || !d.Contains(k)) return def;
+                return bool.TryParse(d[k].ToString(), out bool v) ? v : def;
+            }
+            catch { return def; }
+        }
 
         static double ReadDouble(JsonData d, string k, double def)
         {

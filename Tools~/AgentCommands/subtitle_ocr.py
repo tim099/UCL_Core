@@ -122,10 +122,21 @@ def regions_from_config(cfg: dict) -> list:
         y_bottom = DEFAULT_Y_BOTTOM_PCT
     x_center = float(cfg.get("ocr_x_center_pct", DEFAULT_X_CENTER_PCT))
     w = float(cfg.get("ocr_w_pct", DEFAULT_W_PCT))
-    regions = [(y_bottom, h, x_center, w)]
+    # 區塊職責：開關過濾 —— 關掉的帶**不進掃描清單**（Tim 2026-08-16 的 CheckBox）。
+    # 物理意義：「關掉」是使用者的明確意圖，跟「幾何無效被剔除」不是同一件事。
+    #          ⚠ 所以這裡不能讓它掉進 normalize_regions 的「全剔光回預設單帶」那條保護 ——
+    #          那條是為了防垃圾輸入讓 OCR 沒帶可裁；用在這裡會變成「關了照掃」，
+    #          而畫面上開關是關的 ⇒ 設定與行為脫鉤，正是最難查的那種。
+    # 數值影響：全部關閉 → 回 []（呼叫端據此完全不掃）；缺 enable 欄一律視為開啟。
+    regions = []
+    if bool(cfg.get("ocr_main_enable", True)):
+        regions.append((y_bottom, h, x_center, w))
     extra = cfg.get("ocr_extra_regions")
     if isinstance(extra, list):
-        regions += extra
+        regions += [r for r in extra
+                    if not (isinstance(r, dict) and not bool(r.get("enable", True)))]
+    if not regions:
+        return []
     return normalize_regions(regions)
 
 # T-OCR-CPU-Fix (2026-06-10 事故, summit 止血 + 定罪, basecamp 根治)
@@ -461,7 +472,10 @@ class OcrWorkerPool:
                  adaptive: bool = True):
         self.cache_dir = Path(cache_dir)
         # regions = [(y_bottom_pct, h_pct), ...] 底部原點 (見模組頂座標語意); 建構時即正規化定形
-        self.regions = normalize_regions(regions)
+        # ⚠ **明確給空清單 = 使用者把所有帶都關了**，不可再落回 normalize_regions 的預設單帶 ——
+        #   那條保護是給「垃圾輸入」用的，用在這裡會變成「畫面上關著、實際照掃」。
+        #   兩者的差別是 None（沒給 → 用預設）vs []（給了、而且是空的 → 什麼都不掃）。
+        self.regions = [] if regions == [] else normalize_regions(regions)
         self.min_confidence = min_confidence
         self.workers = max(1, int(workers))
         self._queue: "queue.Queue" = queue.Queue(maxsize=max_backlog)

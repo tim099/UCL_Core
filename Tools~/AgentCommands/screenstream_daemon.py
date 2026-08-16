@@ -176,6 +176,11 @@ DEFAULT_CONFIG = {
     # 物理意義: 開啟後背景 worker 連續錄 chunk 轉錄寫 stt/stt_<epoch>.json; montage --stt cache-only 讀。
     # 數值影響: whisper GPU 常駐 (small ~460MB VRAM); 預設 OFF (跟 ocr_enabled 一樣須手動開)。
     "stt_enabled": False,
+    # 實際跑轉錄的工具（UCL_ScreenStreamPage 的「後端」下拉寫入）。
+    # openai-whisper=現行(torch) / faster-whisper=CTranslate2(有 vad_filter、可量化)。
+    "stt_backend": "openai-whisper",
+    # Silero VAD 前置切靜音。⚠ 僅 faster-whisper 支援；其他後端下 supervisor 不會帶這個旗標。
+    "stt_vad_filter": False,
     "stt_model": "small",       # tiny/base/small/medium/large-v3
     "stt_lang": "",             # en/zh/空=自動偵測
     "stt_chunk_sec": 15,        # 每個 cache chunk 音訊長度

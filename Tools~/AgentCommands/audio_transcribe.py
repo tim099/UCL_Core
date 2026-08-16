@@ -47,6 +47,11 @@ WHISPER_SAMPLE_RATE = 16000
 # 預設模型: 環境變數 STT_WHISPER_MODEL 可覆蓋 (Tim QA 可切 tiny/base/small/medium/large-v3)。
 # small 是中英文品質 vs 速度的甜蜜點; RTX4080 12GB 連 large-v3 都跑得動。
 DEFAULT_MODEL = os.environ.get("STT_WHISPER_MODEL", "small")
+# 後端：實際跑轉錄的工具。"openai-whisper"(現行, torch) / "faster-whisper"(CTranslate2)。
+# ⚠ 認不得的值一律當 openai-whisper（不猜、不模糊比對）—— 打錯字的代價應該是「沿用現行」，
+#   不是「靜默換一個後端」。真正的選擇由 UCL_ScreenStreamPage 的下拉寫進 _config.json 的 stt_backend。
+DEFAULT_BACKEND = os.environ.get("STT_BACKEND", "openai-whisper")
+SUPPORTED_BACKENDS = ("openai-whisper", "faster-whisper")
 # 擷取端每次即時抓的秒數上限 (防 montage 窗口過長時抓太久阻塞)。
 DEFAULT_CAPTURE_CAP_SEC = 30.0
 
@@ -281,12 +286,74 @@ def audio_rms(audio: np.ndarray) -> float:
         return 0.0
 
 
+_fw_model = None            # faster-whisper WhisperModel 單例
+_fw_key = None              # (model_size, device, compute_type)
+
+
+def _transcribe_faster_whisper(audio: np.ndarray, language: str | None,
+                               model_size: str, device: str | None,
+                               no_speech_max: float, logprob_min: float,
+                               vad_filter: bool) -> list[dict]:
+    """
+    區塊職責：faster-whisper (CTranslate2) 後端的轉錄實作。
+    物理意義：與 openai-whisper 用同一批模型權重、同一套 100 種語言清單，差別在 runtime ——
+             它不經 torch，且**只有它有 vad_filter**（Silero VAD 前置切靜音）。
+    數值影響：GPU 走 float16、CPU 走 int8（CTranslate2 的量化能力正是它在 6GB VRAM 上限下
+             還吃得下大模型的原因）。回傳格式與 openai 分支**逐欄位相同**，
+             呼叫端不必知道自己拿到的是哪個後端的結果。
+    ⚠ 後過濾沿用同一條 AND 規則（見 openai 分支 ③ 的血證）—— 兩邊判準若各走各的，
+      換後端就會連帶改變「哪些段被丟掉」，而那個差異會被誤讀成模型變好/變差。
+    """
+    global _fw_model, _fw_key, _init_error
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as e:
+        _init_error = (f"faster-whisper 未安裝（{e}）—— 影音管理頁 → 插件管理 → "
+                       f"「📦 安裝 faster-whisper」。本輪不轉錄，不退回別的後端。")
+        return []
+    try:
+        dev = device or _pick_device()
+        compute = "float16" if dev == "cuda" else "int8"
+        key = (model_size, dev, compute)
+        if _fw_model is None or _fw_key != key:
+            _fw_model = WhisperModel(model_size, device=dev, compute_type=compute)
+            _fw_key = key
+        segments, _info = _fw_model.transcribe(
+            audio.astype(np.float32),
+            language=(language or None),
+            vad_filter=vad_filter,
+            condition_on_previous_text=False,   # 同 openai 分支：防跨窗幻覺滾雪球
+            no_speech_threshold=no_speech_max,
+            log_prob_threshold=logprob_min,
+            compression_ratio_threshold=2.4)
+        segs = []
+        dropped = 0
+        for s in segments:                      # ⚠ generator —— 不 iterate 就等於沒轉錄
+            txt = (s.text or "").strip()
+            if not txt:
+                continue
+            nsp = float(getattr(s, "no_speech_prob", 0.0) or 0.0)
+            alp = float(getattr(s, "avg_logprob", 0.0) or 0.0)
+            if nsp > no_speech_max and alp < logprob_min:   # AND，同 openai 分支
+                dropped += 1
+                continue
+            segs.append({"start": float(s.start), "end": float(s.end), "text": txt,
+                         "no_speech_prob": round(nsp, 4), "avg_logprob": round(alp, 4)})
+        globals()["_last_filtered_count"] = dropped
+        return segs
+    except Exception as e:
+        _init_error = f"faster-whisper transcribe 失敗: {e}"
+        return []
+
+
 def transcribe(audio: np.ndarray, language: str | None = None,
                model_size: str = DEFAULT_MODEL, device: str | None = None,
                initial_prompt: str | None = None,
                rms_gate: float = DEFAULT_RMS_GATE,
                no_speech_max: float = DEFAULT_NO_SPEECH_MAX,
-               logprob_min: float = DEFAULT_LOGPROB_MIN) -> list[dict]:
+               logprob_min: float = DEFAULT_LOGPROB_MIN,
+               backend: str = DEFAULT_BACKEND,
+               vad_filter: bool = False) -> list[dict]:
     """把 float32 16k mono audio 丟 whisper 轉錄, 回帶時間戳的段列表。
 
     Args:
@@ -305,6 +372,16 @@ def transcribe(audio: np.ndarray, language: str | None = None,
         rms = audio_rms(audio)
         if rms < rms_gate:
             return []
+    # ② 後端分岔 —— faster-whisper 走完全不同的 runtime（CTranslate2，不經 torch）。
+    #    刻意**不共用**下面那段 openai-whisper 的參數：兩邊的參數名相近但語意不同
+    #    （fp16 vs compute_type、result["segments"] vs generator），硬要共用會寫出一個
+    #    「看起來通用其實兩邊都半對」的函式。血證的形狀見本檔 ③ 那段 AND/OR 的教訓。
+    if backend == "faster-whisper":
+        return _transcribe_faster_whisper(
+            audio, language=language, model_size=model_size, device=device,
+            no_speech_max=no_speech_max, logprob_min=logprob_min,
+            vad_filter=vad_filter)
+
     model = get_model(model_size, device)
     if model is None:
         return []
@@ -575,13 +652,17 @@ class SttCacheWorker:
                  progress_cb=None, prompt: str | None = None, warn_cb=None,
                  rms_gate: float = DEFAULT_RMS_GATE,
                  no_speech_max: float = DEFAULT_NO_SPEECH_MAX,
-                 logprob_min: float = DEFAULT_LOGPROB_MIN):
+                 logprob_min: float = DEFAULT_LOGPROB_MIN,
+                 backend: str = DEFAULT_BACKEND, vad_filter: bool = False):
         self.cache_dir = Path(cache_dir)
         self.model_size = model_size
         self.language = language
         # prompt: whisper initial_prompt (登場人物名詞彙偏置); 綁 worker 生命週期,
         #   改動需 toggle off→on 重起才生效 (同 model/lang)。空=不偏置。
         self.prompt = (prompt or "").strip() or None
+        # 後端與 VAD：同 model/lang，綁 worker 生命週期（改了要 toggle off→on 才生效）。
+        self.backend = backend if backend in SUPPORTED_BACKENDS else DEFAULT_BACKEND
+        self.vad_filter = bool(vad_filter)
         self.chunk_sec = float(chunk_sec)
         # 靜音幻覺三層防治的門檻（可從 daemon config 調，Tim QA 用）—— 見 transcribe() 上方區塊註解
         self.rms_gate = float(rms_gate)
@@ -698,7 +779,8 @@ class SttCacheWorker:
             segs = transcribe(audio, language=self.language, model_size=self.model_size,
                               rms_gate=self.rms_gate, no_speech_max=self.no_speech_max,
                               logprob_min=self.logprob_min,
-                              initial_prompt=self.prompt)
+                              initial_prompt=self.prompt,
+                              backend=self.backend, vad_filter=self.vad_filter)
             t1 = time.time()
             try:
                 # audio.size / SR = 這一圈真的送進 whisper 的秒數 (不是 chunk_sec 設定值, 也不是 t1-t0)
@@ -812,10 +894,14 @@ def _main(argv: list[str]) -> int:
     p_live.add_argument("seconds", type=float, nargs="?", default=8.0)
     p_live.add_argument("--model", default=DEFAULT_MODEL)
     p_live.add_argument("--lang", default=None)
+    p_live.add_argument("--backend", default=DEFAULT_BACKEND, choices=SUPPORTED_BACKENDS)
+    p_live.add_argument("--vad", action="store_true", help="faster-whisper 專用：Silero VAD 前置切靜音")
     p_file = sub.add_parser("file")
     p_file.add_argument("path")
     p_file.add_argument("--model", default=DEFAULT_MODEL)
     p_file.add_argument("--lang", default=None)
+    p_file.add_argument("--backend", default=DEFAULT_BACKEND, choices=SUPPORTED_BACKENDS)
+    p_file.add_argument("--vad", action="store_true")
     # cache worker 自驗: 跑 N 秒持續 cache, 之後停 (模擬 daemon 端)
     p_cw = sub.add_parser("cache-worker")
     p_cw.add_argument("seconds", type=float, nargs="?", default=45.0)
@@ -836,6 +922,8 @@ def _main(argv: list[str]) -> int:
     p_sv.add_argument("--model", default=DEFAULT_MODEL)
     p_sv.add_argument("--lang", default=None)
     p_sv.add_argument("--prompt", default=None)
+    p_sv.add_argument("--backend", default=DEFAULT_BACKEND, choices=SUPPORTED_BACKENDS)
+    p_sv.add_argument("--vad", action="store_true", help="faster-whisper 專用：Silero VAD 前置切靜音")
     p_sv.add_argument("--chunk", type=float, default=DEFAULT_CHUNK_SEC)
     p_sv.add_argument("--retention", type=float, default=DEFAULT_CACHE_RETENTION_SEC)
     p_sv.add_argument("--rms-gate", type=float, default=DEFAULT_RMS_GATE)
@@ -859,7 +947,11 @@ def _main(argv: list[str]) -> int:
 
     if args.cmd == "serve":
         # 起手先把「我拿到什麼設定」印出來 —— 由 C# 傳進來的參數若被誤解, 這一行是唯一的對帳點。
-        print(f"[stt-serve] model={args.model} lang={args.lang or '(auto)'} chunk={args.chunk}s "
+        # ⚠ backend / vad 一定要在這行 —— 2026-08-16 現場：切成 faster-whisper 之後，
+        #   log 只印 model/lang/chunk，於是「跑的是哪個後端」在板子上完全看不到，
+        #   只能靠 HF 下載訊息反推。對帳點漏掉要對的那一欄，等於沒有對帳點。
+        print(f"[stt-serve] backend={args.backend} vad={'on' if args.vad else 'off'} "
+              f"model={args.model} lang={args.lang or '(auto)'} chunk={args.chunk}s "
               f"retention={args.retention}s prompt={'(有)' if (args.prompt or '').strip() else '(無)'}",
               flush=True)
         if not is_available():
@@ -872,6 +964,7 @@ def _main(argv: list[str]) -> int:
             retention_sec=args.retention, prompt=args.prompt,
             rms_gate=args.rms_gate, no_speech_max=args.no_speech_max,
             logprob_min=args.logprob_min,
+            backend=args.backend, vad_filter=args.vad,
             progress_cb=lambda n, segs, end_ep: print(
                 f"[stt-serve] chunk#{n} segs={segs} end={time.strftime('%H:%M:%S', time.localtime(end_ep))}",
                 flush=True),
@@ -897,7 +990,8 @@ def _main(argv: list[str]) -> int:
         audio = capture_live(args.seconds)
         print(f"  取得 {audio.size} samples ({audio.size/WHISPER_SAMPLE_RATE:.1f}s), "
               f"RMS={float(np.sqrt(np.mean(audio**2))) if audio.size else 0:.4f}")
-        segs = transcribe(audio, language=args.lang, model_size=args.model)
+        segs = transcribe(audio, language=args.lang, model_size=args.model,
+                          backend=args.backend, vad_filter=args.vad)
         print(build_stt_section(segs, window_label=f"live {args.seconds}s", model_size=args.model))
         if init_error():
             print(f"init_error: {init_error()}")
@@ -906,7 +1000,8 @@ def _main(argv: list[str]) -> int:
     if args.cmd == "file":
         audio = load_wav(args.path)
         print(f"讀 {args.path}: {audio.size} samples ({audio.size/WHISPER_SAMPLE_RATE:.1f}s)")
-        segs = transcribe(audio, language=args.lang, model_size=args.model)
+        segs = transcribe(audio, language=args.lang, model_size=args.model,
+                          backend=args.backend, vad_filter=args.vad)
         print(build_stt_section(segs, window_label=Path(args.path).name, model_size=args.model))
         return 0
 

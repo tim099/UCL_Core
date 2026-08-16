@@ -526,6 +526,73 @@ def _verify_torch_cuda() -> int:
     return r.returncode
 
 
+def _install_faster_whisper() -> int:
+    # 區塊職責：裝 faster-whisper，**而且不准弄壞 OCR 的 GPU onnxruntime**。
+    # 物理意義：faster-whisper 宣告相依 `onnxruntime`（vad_filter 的 Silero 走 ONNX）。
+    #          但本機 OCR 走的是 `onnxruntime-gpu` —— 兩者是**不同 dist、同一個 package 目錄**，
+    #          pip 不會認為 gpu 版滿足 `onnxruntime` 這條需求，於是會把 CPU 版裝上去疊在一起。
+    #          🩸 這正是本檔 `_reinstall_ort_gpu` 與 OCR 插件註解早就寫過的坑，後果是
+    #          **OCR 安靜退回 CPU**（providers 少掉 CUDA，不報錯、不 crash，只是慢一個量級）。
+    # 數值影響：偵測到 onnxruntime-gpu → 走 --no-deps 再補裝其餘相依（不含 onnxruntime）；
+    #          沒有 gpu 版 → 照常安裝，讓 pip 自己把 CPU 版拉進來。
+    # ⚠ 判斷依據是 **pip 的 dist 名**，不是 `import onnxruntime` 成不成功 ——
+    #   後者兩種 dist 都會成功，用它判等於沒判。
+    r = subprocess.run([sys.executable, "-m", "pip", "show", "onnxruntime-gpu"],
+                       capture_output=True, text=True)
+    has_ort_gpu = (r.returncode == 0)
+    if not has_ort_gpu:
+        return _pip_install(["faster-whisper"])
+
+    print("ℹ 偵測到 onnxruntime-gpu（OCR 在用）—— 改走 --no-deps 安裝，避免疊上 CPU 版 onnxruntime。")
+    rc = _pip_install(["--no-deps", "faster-whisper"])
+    if rc != 0:
+        return rc
+    # faster-whisper 的其餘相依顯式補齊（刻意不含 onnxruntime）。
+    # 已滿足的項目 pip 是 no-op，所以多列不會重裝；漏列才會變成 import 期才發現的缺件。
+    return _pip_install(["av", "ctranslate2", "tokenizers", "huggingface-hub", "tqdm"])
+
+
+def _verify_faster_whisper_cuda() -> int:
+    # 區塊職責：安裝後驗收 —— 在 CUDA 上**實跑一次**，不是問「裝了沒」。
+    # 物理意義：ctranslate2 自帶 runtime，缺 cuDNN / cuBLAS 時的行為是**安靜退回 CPU**（不拋例外、
+    #          不印警告）—— 於是「跑得完」與「跑在 GPU 上」在 stdout 上長得一模一樣。
+    #          所以驗收條件是 device 建得起來 ＋ 真的轉一段音訊出來，兩者都過才算。
+    # 數值影響：下載 tiny 的 CTranslate2 權重（約 75MB，HuggingFace）；VRAM 佔用極小。
+    #          失敗回非 0，頁面會顯示紅字 —— 與 _verify_torch_cuda / onnxruntime 驗收同一套路。
+    # ⚠ 子行程 import 而非本行程：本行程可能已載入舊版模組，那會讓驗收驗到不是等下要跑的那份。
+    # ⚠ 退出碼要能分辨「沒裝」與「裝了但 GPU 沒通」——**兩個成因的處方相反**
+    #   （前者去按安裝，後者去查 cuDNN）。印成同一句話的代價是叫人去修一個沒壞的東西。
+    #   3 = import 失敗（沒裝）／1 = 裝了但 CUDA 這條路不通／0 = 實跑成功。
+    code = (
+        "import sys\n"
+        "sys.path.insert(0, r'" + str(_THIS.parent) + "')\n"
+        "import media_admin\n"
+        "media_admin._ensure_user_site()\n"
+        "try:\n"
+        "    import numpy as np, ctranslate2\n"
+        "    from faster_whisper import WhisperModel\n"
+        "except ImportError as e:\n"
+        "    print(f'verify: 尚未安裝 ({e})'); sys.exit(3)\n"
+        "n = ctranslate2.get_cuda_device_count()\n"
+        "print(f'verify: ctranslate2 {ctranslate2.__version__}, cuda_device_count={n}')\n"
+        "if n < 1: sys.exit(1)\n"
+        "m = WhisperModel('tiny', device='cuda', compute_type='float16')\n"
+        "segs, info = m.transcribe(np.zeros(16000, dtype=np.float32), vad_filter=True)\n"
+        "list(segs)\n"
+        "print('✅ CUDA 實跑成功 — faster-whisper tiny @ float16, vad_filter 可用')\n"
+        "sys.exit(0)\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code])
+    if r.returncode == 3:
+        print("❌ 尚未安裝 faster-whisper —— 請先按「📦 安裝 faster-whisper」。")
+        print("   （這不是 GPU 問題，別去查 cuDNN。）")
+    elif r.returncode != 0:
+        print("❌ faster-whisper GPU 驗收失敗 —— 套件裝好了，但 CUDA 這條路沒通。")
+        print("   最常見成因：ctranslate2 找不到 cuDNN 9 / cuBLAS（CUDA 12 需要）。")
+        print("   ⚠ 未通過時**不要當它能用** —— 它會安靜退回 CPU，速度差一個量級而且不報錯。")
+    return r.returncode
+
+
 # ===========================================================
 # 區塊：插件註冊表 — 「一個插件 = 一組動作」的唯一定義處
 # 物理意義：頁面的下拉選單、動作按鈕、確認文案全部由這張表生成 —— 新增一個插件只改這裡，
@@ -559,6 +626,29 @@ PLUGINS = {
              "hint": "⚠ 卸掉後 whisper 無法推論，STT 整條鏈停擺。重裝需重新下載數 GB。", "danger": True},
         ],
     },
+    "faster-whisper": {
+        "name": "STT 後端 · faster-whisper (CTranslate2)",
+        # ⚠ 這些字串會被 IMGUI 的 richText Label 直接印出來 —— 支援的是 <b>/<color>，
+        #   **markdown** 與 `反引號` 都會原樣顯示（2026-08-16 現場截圖抓到）。要強調用 <b>。
+        "desc": ("openai-whisper 的替代後端。① 有 vad_filter（Silero VAD）＝「自動切在靜音處」的前提，"
+                 "openai-whisper 沒有這個參數；② 支援量化，同模型 VRAM 大降"
+                 "（本機實測 openai medium 佔 ~4.6GB）。不依賴 torch，與現行後端可並存、可回退。"),
+        "probe": ["faster_whisper", "ctranslate2"],
+        "actions": [
+            {"id": "install", "label": "📦 安裝 faster-whisper",
+             "hint": ("純加法：不動 torch、不動 numpy。偵測到 OCR 的 onnxruntime-gpu 會自動改走 "
+                      "--no-deps，否則 CPU 版會疊上去讓 OCR <b>安靜退回 CPU</b>。裝完自動驗 GPU。"),
+             "danger": False},
+            {"id": "verify", "label": "🔍 只驗 GPU（不安裝）",
+             "hint": ("下載 tiny（約 75MB）在 CUDA 實跑一次。必要 —— ctranslate2 找不到 cuDNN 時會"
+                      "<b>安靜退回 CPU</b>，不報錯。"),
+             "danger": False},
+            {"id": "uninstall", "label": "🗑 解除安裝 faster-whisper",
+             "hint": ("卸 faster-whisper + ctranslate2 + av。onnxruntime <b>保留</b> —— OCR 共用，"
+                      "一起卸會靜默弄壞字幕辨識。"),
+             "danger": True},
+        ],
+    },
     "ocr": {
         "name": "OCR 字幕讀取 (rapidocr)",
         "desc": "縮圖牆字幕辨識。底層走 onnxruntime，CPU/GPU 兩個 dist 不可疊裝。",
@@ -576,6 +666,175 @@ PLUGINS = {
         ],
     },
 }
+
+
+# ===========================================================
+# 區塊：模型權重管理 — 「插件是 pip 套件、模型是快取目錄」，兩件事分開管
+# 物理意義：兩個後端的權重落在**完全不同的快取**：
+#          openai-whisper → ~/.cache/whisper/<size>.pt（單檔）
+#          faster-whisper → HuggingFace hub/models--Systran--faster-whisper-<size>/（目錄）
+# 數值影響：medium 級距 openai 約 1.4GB、faster-whisper 約 1.5GB —— 這是「刪掉能拿回多少空間」的量級。
+# ⛔ **絕不提供「清空 HF 快取」這種動作**：同一個 hub 目錄裡躺著別的系統在用的模型
+#    （2026-08-16 實測本機有 BAAI--bge-m3 8.5GB）。一律**逐個具名**刪。
+# ===========================================================
+MODEL_SIZES = ("tiny", "base", "small", "medium", "large-v3")
+_FW_REPO_TPL = "Systran/faster-whisper-{size}"
+
+
+def _whisper_cache_root() -> Path:
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "whisper"
+
+
+def _hf_hub_root() -> Path:
+    hf = os.environ.get("HF_HOME")
+    base = Path(hf) if hf else (Path.home() / ".cache" / "huggingface")
+    return base / "hub"
+
+
+def _dir_size_bytes(path: Path) -> tuple[int, int]:
+    """→ (完整檔位元組, 未完成檔位元組)。
+
+    # ⚠ **`.incomplete` 不算數** —— HuggingFace 下載中斷會留下部分 blob，
+    #   把它們算進大小的話，面板會顯示「✅ 已安裝 1385MB」而模型其實載不起來。
+    #   🩸 2026-08-16 現場：worker 被 supervisor 連砍 3 次，留下 8 個 .incomplete，
+    #   而我第一版就是這樣把殘骸算成了「已安裝」。**外觀 OK ≠ 真的 OK，我自己犯的那次。**
+    """
+    if path.is_file():
+        return path.stat().st_size, 0
+    if not path.is_dir():
+        return 0, 0
+    done = part = 0
+    for f in path.rglob("*"):
+        if not f.is_file():
+            continue
+        if f.name.endswith(".incomplete"):
+            part += f.stat().st_size
+        else:
+            done += f.stat().st_size
+    return done, part
+
+
+def _model_entry(backend: str, size: str) -> dict:
+    if backend == "openai-whisper":
+        path = _whisper_cache_root() / f"{size}.pt"
+    else:
+        path = _hf_hub_root() / ("models--" + _FW_REPO_TPL.format(size=size).replace("/", "--"))
+    n, partial = _dir_size_bytes(path)
+    # installed 的判準刻意帶下限：殘骸也有位元組，>0 會把「下載中斷」讀成「已安裝」。
+    # 32MB 低於任何一個 whisper 級距（最小的 tiny 就 72MB），所以不會誤判真的小模型。
+    return {"id": f"{backend}:{size}", "backend": backend, "size_name": size,
+            "path": str(path), "bytes": n, "mb": round(n / 1048576, 1),
+            "partial_mb": round(partial / 1048576, 1),
+            "installed": n > 32 * 1048576}
+
+
+def op_list_models() -> int:
+    # 區塊職責：把兩個快取的現況吐成 JSON 給頁面建下拉（同 list-plugins 的分工：清單不在 C# 維護）
+    out = {"models": []}
+    for backend in ("openai-whisper", "faster-whisper"):
+        for size in MODEL_SIZES:
+            out["models"].append(_model_entry(backend, size))
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
+
+
+def _stt_worker_busy() -> str:
+    """回非空字串＝現在不該動權重檔（字串本身就是理由）。空字串＝可以動。"""
+    # 物理意義：worker 跑起來時權重檔是**開著的**，Windows 上刪不掉（而錯誤訊息會長得像檔案損毀）。
+    #          與其讓人看一個 IOException 去猜，不如在動手前就說清楚「先停錄影」。
+    try:
+        cfg_path = data_root() / "_screenstream" / "_config.json"
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""      # 讀不到設定 → 不阻擋（讀不到 ≠ 正在跑）
+    if cfg.get("stt_enabled") or cfg.get("enabled"):
+        return "STT worker 可能正在執行（config: enabled/stt_enabled 為 true）—— 先在錄影頁停錄影再刪"
+    return ""
+
+
+def op_model(model_id: str, action: str) -> int:
+    # ⚠ 未知 id/action 一律 fail-fast 並列出合法值（同 op_plugin —— 刪權重不可逆，猜錯代價是重下 1.5GB）
+    valid_actions = ("download", "delete", "clean-partial")
+    if action not in valid_actions:
+        print(f"❌ 未知動作 `{action}` (可用: {', '.join(valid_actions)})")
+        return 1
+    try:
+        backend, size = model_id.split(":", 1)
+    except ValueError:
+        print(f"❌ id 格式應為 <backend>:<size>，收到 `{model_id}`")
+        return 1
+    if backend not in ("openai-whisper", "faster-whisper") or size not in MODEL_SIZES:
+        print(f"❌ 未知模型 `{model_id}`（backend 需為 openai-whisper/faster-whisper，"
+              f"size 需為 {', '.join(MODEL_SIZES)}）")
+        return 1
+
+    e = _model_entry(backend, size)
+    if action == "clean-partial":
+        # 區塊職責：清掉 HuggingFace 下載中斷留下的 .incomplete blob。
+        # 物理意義：它們不是模型的一部分，只是沒下完的碎片；留著純浪費磁碟，
+        #          而且會讓「這個模型佔多大」這個問題答錯（見 _dir_size_bytes 的血證）。
+        # ⚠ 只刪 .incomplete，**不碰任何完整檔** —— 清殘骸不該有把模型清掉的風險。
+        root = Path(e["path"])
+        if not root.is_dir():
+            print(f"ℹ {model_id} 沒有目錄可清（{root}）")
+            return 0
+        n_del = freed = 0
+        for f in root.rglob("*.incomplete"):
+            try:
+                freed += f.stat().st_size
+                f.unlink()
+                n_del += 1
+            except OSError as ex:
+                print(f"⚠ 刪不掉 {f.name}: {ex}")
+        print(f"🧹 清掉 {n_del} 個未完成碎片，釋出 {round(freed / 1048576, 1)} MB")
+        return 0
+
+    if action == "delete":
+        if not e["installed"]:
+            print(f"ℹ {model_id} 本來就不存在（{e['path']}）—— 不當成失敗。")
+            return 0
+        busy = _stt_worker_busy()
+        if busy:
+            print(f"❌ 拒絕刪除：{busy}")
+            return 1
+        import shutil
+        target = Path(e["path"])
+        print(f"🗑 刪除 {model_id} — {e['mb']} MB")
+        print(f"   {target}")
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        except OSError as ex:
+            print(f"❌ 刪除失敗（檔案可能仍被開著）：{ex}")
+            return 1
+        after = _model_entry(backend, size)
+        print("✅ 已刪除" if not after["installed"] else f"❌ 刪不乾淨，仍有 {after['mb']} MB")
+        return 0 if not after["installed"] else 1
+
+    # download —— 刻意**在管理頁下載**而不是讓即時 worker 首跑時邊跑邊下載：
+    # 🩸 2026-08-16 實測：worker 首跑下載 medium(1.5GB) 期間沒有任何產物，
+    #    被 supervisor 的 90s 停滯偵測連砍 3 次 → 下載永遠完不成（livelock）。
+    print(f"📥 下載 {model_id} … 這步會花數分鐘且不可省（權重不在本機就沒得跑）")
+    sys.stdout.flush()
+    if backend == "faster-whisper":
+        code = ("from huggingface_hub import snapshot_download; "
+                f"p = snapshot_download(repo_id='{_FW_REPO_TPL.format(size=size)}'); "
+                "print('✅ 下載完成:', p)")
+    else:
+        code = ("import whisper, os; "
+                f"p = whisper._download(whisper._MODELS['{size}'], "
+                "os.path.join(os.path.expanduser('~'), '.cache', 'whisper'), False); "
+                "print('✅ 下載完成:', p if isinstance(p, str) else '(已快取)')")
+    r = subprocess.run([sys.executable, "-c", code])
+    if r.returncode != 0:
+        print("❌ 下載失敗 —— 上方是原始錯誤；網路/HF 限流是最常見成因。")
+        return r.returncode
+    after = _model_entry(backend, size)
+    print(f"📦 落地檢查：{after['mb']} MB @ {after['path']}")
+    # ⚠ 驗收看落地檔不看 exit code —— 「跑完了」與「東西在磁碟上」是兩件事
+    return 0 if after["installed"] else 1
 
 
 def op_list_plugins() -> int:
@@ -631,6 +890,19 @@ def op_plugin(plugin_id: str, action: str) -> int:
             rc = _pip_uninstall(["torch"])
             print("ℹ torch 已卸除 — whisper 將無法推論。要恢復請先跑 STT 插件的『安裝』(會拉回 CPU 版 torch)。")
             return rc
+    if plugin_id == "faster-whisper":
+        if action == "install":
+            rc = _install_faster_whisper()
+            if rc != 0:
+                return rc
+            return _verify_faster_whisper_cuda()
+        if action == "verify":
+            return _verify_faster_whisper_cuda()
+        if action == "uninstall":
+            # ⚠ onnxruntime 不卸 —— OCR 插件共用（同 numpy/torch 的共用套件規則）
+            rc = _pip_uninstall(["faster-whisper", "ctranslate2", "av"])
+            print("ℹ onnxruntime 保留（OCR 插件共用）。openai-whisper 未受影響，STT 仍可用舊後端。")
+            return rc
     if plugin_id == "ocr":
         if action == "install":
             return _pip_install(["rapidocr-onnxruntime"])
@@ -673,6 +945,10 @@ def main(argv: list[str]) -> int:
     p_set = sub.add_parser("set-config")
     p_set.add_argument("pairs", nargs="+", help="key=value (白名單欄位)")
     sub.add_parser("list-plugins")
+    sub.add_parser("list-models")
+    p_md = sub.add_parser("model")
+    p_md.add_argument("--id", required=True, help="<backend>:<size>，見 list-models")
+    p_md.add_argument("--action", required=True, help="download / delete")
     p_pl = sub.add_parser("plugin")
     p_pl.add_argument("--id", required=True, help="插件 id (見 list-plugins)")
     p_pl.add_argument("--action", required=True, help="動作 id (見 list-plugins)")
@@ -689,6 +965,10 @@ def main(argv: list[str]) -> int:
         return op_set_config(a.pairs)
     if a.op == "list-plugins":
         return op_list_plugins()
+    if a.op == "list-models":
+        return op_list_models()
+    if a.op == "model":
+        return op_model(a.id, a.action)
     if a.op == "plugin":
         return op_plugin(a.id, a.action)
     if a.op == "test-stt":

@@ -14,6 +14,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.JsonLib;
@@ -190,7 +191,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             double aAfter = ToEpoch(DateTime.UtcNow) - aSec;
 
             DateTime aRunStart = DateTime.Now;
-            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aAfter, aWatermark, aOutPath, aOcrOn, aSttOn, iToken);
+            // peek 沒有 session ⇒ 沒有已讀游標；排除自己仍然照做（額度留給別人講的）。
+            // since=0 ＝ 從頭算未讀，但 peek 只看一眼、不推進游標，所以不會污染任何場次的進度。
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aAfter, aWatermark, aOutPath, aOcrOn, aSttOn,
+                                                            iOwner, 0, iToken);
             string aBoth = (aStdout ?? "") + "\n" + (aErr ?? "");
             if (!aOk && (aBoth.Contains("無 frame 命中") || aBoth.Contains("OCR watermark 還沒趕上")))
             {
@@ -421,11 +425,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 開播公告: {(aSeq > 0 ? $"seq **{aSeq}**（匯出區間左端點）" : "未發（best-effort，不影響 session）")}");
             AppendRetentionLine(aR);
             aR.AppendLine();
+            // 續看／續集的入口 —— 印在**開場那一步**，因為那是唯一還來得及追回的時刻（Tim 2026-08-16）
+            aR.Append(ReaderProgressBlock(iMedia, iPersona));
+            aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. **取素材**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
             aR.AppendLine("2. 依回傳檔給的**絕對路徑** Read 縮圖牆與字幕 → 寫觀戰評論");
             aR.AppendLine($"3. **發評論**：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
-            aR.AppendLine("4. 回到 1 —— **收工不用你判斷**：到期或 Tim 停錄影時，cycle 會告訴你並提示寫接續點。");
+            // ⚠ **next 只寫「往前」，不提收工**（Tim 2026-08-16 拍板）。
+            //    原本這裡寫「收工不用你判斷 —— 到期時 cycle 會告訴你」，本意是防 agent 自行收手，
+            //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
+            //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
+            //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
+            aR.AppendLine("4. 回到 1，繼續下一輪。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=start 完成 session={aSessionId} media={iMedia} → {aPath}");
         }
@@ -470,9 +482,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // 接續點未寫 ⇒ **不擋**（Tim 拍板），但要**吵**：這裡列、收播公告也列
                 if (!ReadBool(aS, "note_written"))
                 {
+                    // ⚠ 接續點**走閱讀心得那條路**（Tim 2026-08-16）——「接續觀影跟接續閱讀走一樣的流程」。
+                    //   不另建格式：Cmd_Library 的 media/reader/chapter 模型本來就是為分段觀看設計的
+                    //   （它有 `time_range`「手動切段留下的事實」與 `display_number`）。
+                    //   ⇒ StreamWatch 不重造第四套，只把 session 的事實預填進指令。
                     aR.AppendLine("⚠ **本場未寫接續點** —— 不擋結算，但下次續看接不回進度。");
-                    aR.AppendLine($"   要補：run_cmd.py run StreamWatch --arg step=note --arg persona={iPersona} --arg-file body=<接續點>");
-                    aR.AppendLine("   （至少要有：看到哪／下次從哪接／人物與伏筆狀態）");
+                    aR.AppendLine("   **接續點＝閱讀心得**，走 Library（與接續閱讀同一條路，不是另一種格式）：");
+                    aR.AppendLine($"   1. 心得：`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} "
+                        + "--arg media_id=<anim|film|series>-" + ReadStr(aS, "media_id")
+                        + " --arg chapter=<四位數，0001 起> --arg title=<章節名> --arg display_number=<第 N 話> "
+                        + "--arg-file body=<心得>`");
+                    aR.AppendLine($"   2. 書籤：`run_cmd.py run Library --arg op=bookmark --arg persona={iPersona} "
+                        + "--arg media_id=<同上> --arg note=<下次從哪接> --arg impression=<當前看法>`");
+                    aR.AppendLine("   3. 人物：`op=add_character` / `op=revise_view`（改觀要寫 `change_reason`）");
+                    aR.AppendLine("   ⚠ **一話一 round，場次中斷續寫同一個 round**；`r2` 只留給真正的重看。");
+                    aR.AppendLine("      （場次是我的切法，話數是作品的切法 —— round 認後者。）");
+                    aR.AppendLine("   ⇒ 下次續看：`run_cmd.py run Library --arg op=recall --arg persona="
+                        + iPersona + " --arg media_id=<同上>`");
                     aR.AppendLine();
                 }
 
@@ -511,7 +537,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var (aOcrOn, aSttOn) = ReadSensorFlags();
             double aWatermark = SensorWatermark(aOcrOn, aSttOn, out string aWmNote);
             DateTime aRunStart = DateTime.Now;
-            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aWatermark, aOutPath, aOcrOn, aSttOn, iToken);
+            // 酒館已讀游標：優先用 session 記的 `tavern_seq`；沒有就退回 `start_seq`（＝開播那則，本場起點）。
+            // ⚠ 退回值**不可以是 -1** —— 那會讓 sidecar 從全庫最舊開始列，正是 2026-08-16 那隻的成因。
+            int aTavernSince = aS != null ? ReadInt(aS, "tavern_seq") : 0;
+            if (aTavernSince <= 0 && aS != null) aTavernSince = ReadInt(aS, "start_seq");
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aWatermark, aOutPath, aOcrOn, aSttOn,
+                                                            iPersona, Math.Max(0, aTavernSince), iToken);
             // ⚠ **軟條件的訊息在 stdout，不在 stderr**（2026-08-15 實測：`--before-mtime` 夾出空窗口時
             //   montage `print("ERROR: 選擇條件下無 frame 命中")` ⇒ 走 stdout、exit=1，stderr 全空）。
             //   舊版只比對 stderr ⇒ **這條軟路徑一次都沒被執行過**，每輪都退成 blocked 拋例外，
@@ -557,6 +588,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 aS["cursor_epoch"] = new JsonData(aInfo.NextCursor);
             }
+            // 推進酒館已讀游標 —— montage 印 `tavern_max_seq=<N>`（本輪實際顯示到的最大 seq）。
+            // ⚠ **不推進的後果不是「重複看到」，是「永遠看不到新的」**：未讀是從游標往後數、顯示有額度上限，
+            //   游標卡住 ⇒ 每輪都從同一個舊起點重列同一批，同場的人後來講的話永遠排在額度外。
+            //   （這正是 2026-08-16 那隻的第二半；只傳 --tavern-since-seq 而不推進，第二輪起就會復發。）
+            // ⚠ 只前進不後退：max 保底，避免某輪 0 筆未讀時把游標打回去。
+            int aTavernMax = ParseTavernMaxSeq(aStdout);
+            if (aTavernMax > 0)
+                aS["tavern_seq"] = new JsonData(Math.Max(aTavernMax, ReadInt(aS, "tavern_seq")));
             aS["cycles"] = new JsonData(ReadInt(aS, "cycles") + 1);
             aS["tiles_total"] = new JsonData(ReadInt(aS, "tiles_total") + aInfo.Tiles);
             aS["last_tiles"] = new JsonData(aInfo.Tiles);
@@ -599,7 +638,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine("## next");
             aR.AppendLine($"1. Read 上面的縮圖牆{(aHasSub ? "與字幕" : "")}路徑");
             aR.AppendLine($"2. run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<你的評論>");
-            aR.AppendLine($"3. 之後再跑 step=cycle —— **收工不用你判斷**，時間到或 Tim 停錄影時這一步會告訴你。");
+            // ⚠ **next 只寫「往前」，不提收工**（Tim 2026-08-16 拍板）。
+            //    原本這裡寫「收工不用你判斷 —— 到期時 cycle 會告訴你」，本意是防 agent 自行收手，
+            //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
+            //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
+            //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
+            aR.AppendLine($"3. 之後再跑 step=cycle 繼續下一輪。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
         }
@@ -941,8 +985,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 剩餘    : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine();
             aR.AppendLine("## next");
+            // ⚠ **next 只寫「往前」，不提收工**（Tim 2026-08-16 拍板）。
+            //    原本這裡寫「收工不用你判斷 —— 到期時 cycle 會告訴你」，本意是防 agent 自行收手，
+            //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
+            //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
+            //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
             aR.AppendLine($"1. 繼續：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            aR.AppendLine("2. **收工不用你判斷** —— 到期或 Tim 停錄影時，cycle 會告訴你並提示寫接續點。");
             WritePayload(aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=observe seq={aSeq} obs={aObs} → {aPath}");
         }
@@ -1029,7 +1077,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ async 化讓 out 參數消失 ⇒ 回 tuple；**呼叫端漏接 err 就是靜默失敗**，所以失敗必落回傳檔。
         // ===========================================================
         static async UniTask<(bool ok, string stdout, string err)> RunMontageAsync(
-            string iScript, double iCursor, double iBefore, string iOutPath, bool iOcr, bool iStt, CancellationToken iToken)
+            string iScript, double iCursor, double iBefore, string iOutPath, bool iOcr, bool iStt,
+            string iTavernSelf, int iTavernSinceSeq, CancellationToken iToken)
         {
             try
             {
@@ -1046,6 +1095,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // ⇒ 開著就給，不用問。規則長在通道上，不掛在記憶裡。
                 if (iOcr) aArgs.Append(" --ocr");
                 if (iStt) aArgs.Append(" --stt");
+                // 區塊職責：酒館段**必開**（Tim 2026-08-16）——「設計目的就是互相補足觀影的細節，所以一定要讀酒館訊息」。
+                // 物理意義：陪看時同場的人各自看到不同的格，他們的觀察就是我看不到的那半邊；
+                //          sidecar 的酒館段是那半邊唯一的入口。⇒ 跟 OCR/STT 同一條規則：**開著就給，不給旋鈕。**
+                // 🩸 2026-08-16 血證（本人親踩，一整場）：python 端 `--tavern-self` / `--tavern-since-seq`
+                //   早就實作好，而 Cmd 從來沒傳過 ⇒ 標題列一路印 `未排除自己, 已讀 seq≤-1`，
+                //   於是它從**最舊**開始列（我自己早上的登入自介、幾小時前的酒保廣播），
+                //   把同場 basecamp 即時發的 6 則觀察全部擠出顯示額度。
+                //   ⚠ 它的失效方式是「那一段一直都有內容」—— 我讀了 11 次都沒發現同場的人不在裡面。
+                //   排除自己不是省字，是**把額度留給我看不到的那半邊**。
+                if (!string.IsNullOrEmpty(iTavernSelf)) aArgs.Append(" --tavern-self ").Append(iTavernSelf);
+                if (iTavernSinceSeq >= 0) aArgs.Append(" --tavern-since-seq ").Append(iTavernSinceSeq);
                 aArgs.Append(" --out \"").Append(iOutPath).Append("\"");
 
                 var aPsi = new System.Diagnostics.ProcessStartInfo
@@ -1335,6 +1395,61 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 區塊：Library work 解析 —— media_id 是共享鍵（Plan §4）
         // ===========================================================
         static string WorksRoot() => Path.Combine(UCL_AgentCommandsPath.DataRoot, "BookNotes", "Library", "works");
+        static string MediaRoot() => Path.Combine(UCL_AgentCommandsPath.DataRoot, "BookNotes", "Library", "media");
+
+        // 區塊職責：開場前把「這個 persona 對這部作品讀過什麼」攤在桌上 —— **有沒有進度都印**。
+        // 物理意義：續看第二話、看電影續集、看過漫畫再看動畫 —— 這幾種都需要先追回，
+        //          而「記得要追回」靠人是不成立的（今天實證：我看第二場時完全沒想到要 recall）。
+        //          ⇒ 把它從記憶搬到通道上：起手那一步就報讀數。
+        // 數值影響：純讀，不建檔。媒材比對用「目錄名 == work 或以 -<work> 結尾」，
+        //          因此 anim- / film- / comic- / book- 全涵蓋，不必先知道 media_kind。
+        // ⚠ 沒有進度時**也要印一行**：「查過了沒有」與「沒查」在畫面上同形，而後者會讓人以為系統壞了。
+        static string ReaderProgressBlock(string iWork, string iPersona)
+        {
+            var aSb = new StringBuilder();
+            aSb.AppendLine("## 既有進度（讀回的事實）");
+            var aHits = new List<string>();
+            try
+            {
+                string aRoot = MediaRoot();
+                if (Directory.Exists(aRoot))
+                {
+                    foreach (var aDir in Directory.GetDirectories(aRoot))
+                    {
+                        string aMid = Path.GetFileName(aDir);
+                        if (aMid != iWork && !aMid.EndsWith("-" + iWork, StringComparison.Ordinal)) continue;
+                        string aJson = Path.Combine(aDir, "readers", iPersona, "reader.json");
+                        if (!File.Exists(aJson)) continue;
+                        var aJd = JsonData.ParseJson(File.ReadAllText(aJson));
+                        string aStatus = ReadStr(aJd, "status");
+                        var aProg = aJd != null && aJd.Contains("progress") ? aJd["progress"] : null;
+                        string aCh = aProg != null ? ReadStr(aProg, "current_chapter_id") : "";
+                        string aLast = aProg != null ? ReadStr(aProg, "last_read") : "";
+                        aHits.Add($"- `{aMid}` — status **{aStatus}**｜章 `{(string.IsNullOrEmpty(aCh) ? "(未開始)" : aCh)}`｜最後閱讀 {aLast}");
+                    }
+                }
+            }
+            catch (Exception e) { aSb.AppendLine($"- ⚠ 讀取失敗（fail-soft，不擋開場）：{e.Message}"); }
+
+            if (aHits.Count == 0)
+            {
+                aSb.AppendLine($"- `Library/media/*-{iWork}/readers/{iPersona}/reader.json` **不存在** ⇒ 首次觀看");
+                aSb.AppendLine("- ⇒ 寫心得前要先建媒材（`media_kind` 前綴須與 `media_id` 同字）：");
+                aSb.AppendLine($"  `run_cmd.py run Library --arg op=media_init --arg persona={iPersona} "
+                    + $"--arg work_id={iWork} --arg media_id=<anim|film|series|stream>-{iWork} "
+                    + "--arg media_kind=<同上> --arg title=<作品中文名>`");
+            }
+            else
+            {
+                aSb.AppendLine($"- ✅ 妳讀過這部（{aHits.Count} 個媒材）：");
+                foreach (var h in aHits) aSb.AppendLine(h);
+                aSb.AppendLine("- ⚠ **開看前先追回** —— 否則等於從零開始看續篇：");
+                aSb.AppendLine($"  `run_cmd.py run Library --arg op=recall --arg persona={iPersona} --arg media_id=<上面那個>`");
+                aSb.AppendLine("  → 產物落 `letters/<persona>/_reading_recall_<media-id>.md`，**Read 它**再開看。");
+                aSb.AppendLine("- ℹ 媒材進度各自獨立（改編不是原作的第二版）；跨媒材時仍值得先 recall 一次。");
+            }
+            return aSb.ToString();
+        }
 
         static bool WorkExists(string iSlug)
         {
@@ -1497,6 +1612,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         static string ReadStr(JsonData iJd, string iKey) => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
         static int ReadInt(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? int.Parse(iJd[iKey].ToString()) : 0; } catch { return 0; } }
+
+        // 區塊職責：自 montage stdout 撈 `tavern_max_seq=<N>`（本輪酒館段實際顯示到的最大 seq）。
+        // 物理意義：它是**產物回報的讀數**，不是我這邊算的 —— 對齊本檔既有的 next-cursor 鐵律
+        //          （游標一律取自產出端，呼叫端不自己編，2026-08-15 w40/w44 同一隻踩過兩次）。
+        // 數值影響：撈不到回 0 ⇒ 呼叫端不推進（寧可原地，不可亂跳）。
+        static int ParseTavernMaxSeq(string iStdout)
+        {
+            if (string.IsNullOrEmpty(iStdout)) return 0;
+            var aM = Regex.Match(iStdout, @"tavern_max_seq=(\d+)");
+            return aM.Success && int.TryParse(aM.Groups[1].Value, out int aV) ? aV : 0;
+        }
         static double ReadDouble(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? double.Parse(iJd[iKey].ToString(), System.Globalization.CultureInfo.InvariantCulture) : 0; } catch { return 0; } }
         static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }
 

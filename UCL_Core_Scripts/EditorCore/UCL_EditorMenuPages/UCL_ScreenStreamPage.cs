@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;   // 字幕 cache 掃描非阻塞化 (2026-08-16) — 樣板見 WorkMemory/unitask-editor-async
 using UCL.Core.ATTR;
 using UCL.Core.JsonLib;
 using UCL.Core.UI;
@@ -277,7 +279,19 @@ namespace UCL.Core.EditorLib.Page
         int m_SttHistPage = 0, m_OcrHistPage = 0;
         readonly Dictionary<string, List<(double epoch, string text)>> m_SttFileEntries = new();
         readonly Dictionary<string, List<(double epoch, string text)>> m_OcrFileEntries = new();
-        long m_SttWatermark = 0, m_OcrWatermark = 0;
+        // 已 parse 的每檔 mtime (取代舊的單一 watermark, 2026-08-16)。
+        // 為什麼改成 per-file: 單一水位只能表達「這條線以下都讀過」, 於是①預算式分批載入無法表達
+        // (跳過的舊檔會被水位永久蓋住 = 靜默丟資料) ②目錄整批重建要靠「mtime 倒退就全清」的補丁繞。
+        // per-file 對照則是: **任一檔的 mtime 跟上次不同就重讀**, 前進後退都涵蓋, 補丁與二輪迴圈一起消失。
+        readonly Dictionary<string, long> m_SttMtimes = new();
+        readonly Dictionary<string, long> m_OcrMtimes = new();
+        // 單輪 parse 上限 —— 冷啟時只讀最新的這麼多筆, 其餘由後續 tick 補完 (由新到舊)。
+        // 物理意義: 畫面只需要「最新那一筆」+ 歷史第 1 頁 (10 筆), 讀滿 2400 個檔是為了兩行字。
+        // 🩸 2026-08-16 血證: 錄影中開頁, 全量 parse 2400 檔耗 21,773 ms (未錄影時同樣 2400 檔只要 310ms
+        //    —— 同一批檔案慢 70 倍)。所以上限的意義不是「快一點」, 是**讓最壞情況有界**。
+        const int SCAN_PARSE_BUDGET = 64;
+        bool m_ScanRunning = false;          // 防重入 guard —— 在 async 內 set / finally reset (knowhow 第 3 條)
+        int m_SttPending = 0, m_OcrPending = 0;   // 預算外尚未讀取的檔數 (顯示在 UI, 不靜默)
         bool m_SttHistDirty = false, m_OcrHistDirty = false;   // 快取有變動、顯示列表待重建
         List<(double epoch, string text)> m_SttHistory;   // 顯示用排序列表 (null = 尚未建)
         List<(double epoch, string text)> m_OcrHistory;
@@ -1007,10 +1021,11 @@ namespace UCL.Core.EditorLib.Page
                 //    單次便宜所以看不出來, 但那是白做的。修不修等這輪讀數出來再拍。
                 ProfSeg("firstTick: ReloadFromDisk(2nd)", ReloadFromDisk);
                 ProfSeg("firstTick: ReloadMonitors(2nd)", ReloadMonitors);
-                // 增量掃 STT/OCR cache (mtime watermark; 最新+歷史共用快取)
-                // ⚠ 首次 watermark=0 ⇒ 全量掃。離線量過 2400 檔 read+parse = 92ms (python 路徑),
-                //    C# JsonData 解析器可能數倍 —— 這一列就是驗那個外推對不對的地方。
-                ProfSeg("firstTick: ReloadLatestSttOcr", ReloadLatestSttOcr);
+                // 增量掃 STT/OCR cache —— **發射即忘**, 檔案 IO 全在 thread pool
+                // (knowhow 第 2/4 條: 繪製方法不能 await, 按鈕/OnGUI 用 .Forget())。
+                // 這一列現在量到的只是「發射」的成本 (μs 級); 真正的讀取不再擋畫面。
+                // 🩸 改 async 之前這裡同步跑, 錄影中實測 21,773 ms —— 那筆讀數留在 _page_open_profile.log。
+                ProfSeg("firstTick: 發射 STT/OCR 掃描", () => ReloadLatestSttOcrAsync().Forget());
                 m_LastReloadTime = now;
             }
             // T14 — Preview reload (獨立節奏, 比 config reload 頻繁)
@@ -1447,76 +1462,135 @@ namespace UCL.Core.EditorLib.Page
         //          STT 是 append-only (stt_<epoch>.json) + retention 刪舊檔, 同一套機制天然涵蓋。
         // 數值影響: 回傳是否有變動 (供 latest 重算 + 歷史 dirty 標記);
         //          全目錄 mtime 整批倒退 (目錄被清空重建) → 重置 watermark 全量重掃, 不會卡死在舊水位。
-        static bool ScanSubtitleDir(string dir, string pattern,
-            Dictionary<string, List<(double epoch, string text)>> fileEntries, ref long watermark,
-            Func<string, List<(double epoch, string text)>> parser)
+        // 一輪掃描的結果 —— **背景執行緒只產生它, 不碰任何頁面欄位**;
+        // 套用 (改 dictionary / 重算 latest) 一律回主執行緒做, 否則 GUI 讀到一半的字典會炸。
+        sealed class SubtitleScanResult
         {
-            bool changed = false;
+            public List<string> Removed = new List<string>();                    // 檔案已消失, 要從快取移除
+            public Dictionary<string, List<(double epoch, string text)>> Parsed  // 本輪讀到的
+                = new Dictionary<string, List<(double epoch, string text)>>();
+            public Dictionary<string, long> ParsedMtime = new Dictionary<string, long>();
+            public int Pending;      // 預算外、本輪沒讀的數量 —— **要讓它可見**, 不是靜默截斷
+            public int Total;        // 目錄檔案總數
+            public string Error = "";
+        }
+
+        // 區塊職責: 掃描字幕 cache 目錄並讀取「有變動的檔」, 單輪最多 SCAN_PARSE_BUDGET 個, **由新到舊**。
+        // 物理意義: OCR ring buffer 就地覆寫 (frame_NNNN.json), 檔名序 ≠ 時間序; mtime 才是新舊依據
+        //          (這條沿用原設計, 是 2026-07-27 修掉「最新 OCR 落後一整圈」那隻的成因)。
+        //          由新到舊排序 ⇒ 預算用完時**先被讀到的一定是畫面要顯示的那些**, 舊的下一輪再補。
+        // 數值影響: stat 全目錄仍是全量 (實測 2400 檔 31ms, 且刪檔偵測需要它); 昂貴的是 parse, 只有它受預算限制。
+        // ⚠ 本方法在**背景執行緒**跑 —— 只准碰參數與區域變數, 不准碰頁面欄位或任何 Unity API。
+        static SubtitleScanResult ScanSubtitleDirBg(string iDir, string iPattern,
+            Dictionary<string, long> iKnownMtimes, HashSet<string> iKnownFiles,
+            Func<string, List<(double epoch, string text)>> iParser, int iBudget)
+        {
+            var aResult = new SubtitleScanResult();
             try
             {
-                if (!Directory.Exists(dir))
+                if (!Directory.Exists(iDir))
                 {
-                    if (fileEntries.Count > 0) { fileEntries.Clear(); changed = true; }
-                    watermark = 0;
-                    return changed;
+                    aResult.Removed.AddRange(iKnownFiles);   // 目錄沒了 = 全部移除
+                    return aResult;
                 }
-                for (int pass = 0; pass < 2; pass++)   // 第 2 輪只在 watermark 重置時跑
+                var aFiles = Directory.GetFiles(iDir, iPattern);
+                aResult.Total = aFiles.Length;
+                var aSeen = new HashSet<string>(aFiles);
+                foreach (var k in iKnownFiles)
+                    if (!aSeen.Contains(k)) aResult.Removed.Add(k);
+
+                // 待讀 = 沒讀過的, 或 mtime 跟上次讀的時候不同 (前進或後退都算 —— 目錄整批重建天然涵蓋)
+                var aPending = new List<(string path, long mtime)>();
+                foreach (var f in aFiles)
                 {
-                    var files = Directory.GetFiles(dir, pattern);
-                    var seen = new HashSet<string>(files);
-                    List<string> removed = null;
-                    foreach (var k in fileEntries.Keys)
-                        if (!seen.Contains(k)) (removed ??= new List<string>()).Add(k);
-                    if (removed != null)
-                    {
-                        foreach (var k in removed) fileEntries.Remove(k);
-                        changed = true;
-                    }
-                    long curMax = 0, newMark = watermark;
-                    foreach (var f in files)
-                    {
-                        long t = File.GetLastWriteTimeUtc(f).Ticks;
-                        if (t > curMax) curMax = t;
-                        if (t <= watermark) continue;
-                        fileEntries[f] = parser(f);
-                        changed = true;
-                        if (t > newMark) newMark = t;
-                    }
-                    if (curMax < watermark)   // mtime 倒退 = 目錄整批重建 → 重掃
-                    {
-                        watermark = 0;
-                        fileEntries.Clear();
-                        changed = true;
-                        continue;
-                    }
-                    watermark = newMark;
-                    break;
+                    long t = File.GetLastWriteTimeUtc(f).Ticks;
+                    if (iKnownMtimes.TryGetValue(f, out long aOld) && aOld == t) continue;
+                    aPending.Add((f, t));
+                }
+                aPending.Sort((a, b) => b.mtime.CompareTo(a.mtime));   // 新 → 舊
+                int aTake = Math.Min(iBudget, aPending.Count);
+                aResult.Pending = aPending.Count - aTake;
+                for (int i = 0; i < aTake; i++)
+                {
+                    var (aPath, aMtime) = aPending[i];
+                    aResult.Parsed[aPath] = iParser(aPath);
+                    aResult.ParsedMtime[aPath] = aMtime;
                 }
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[UCL_ScreenStreamPage] scan subtitle dir fail ({dir}): {e.Message}");
+                // 背景執行緒不能碰 Debug.Log 以外的 Unity API; 錯誤帶回主執行緒再出聲。
+                // ⚠ 吞掉的話症狀會是「歷史永遠少幾筆而沒有任何提示」—— 靜默失敗, 最難查的那種。
+                aResult.Error = e.Message;
             }
-            return changed;
+            return aResult;
         }
 
-        // 每 2s tick 進入點: 增量掃兩個目錄, 有變動才重算「最新」+ 標歷史 dirty
-        void ReloadLatestSttOcr()
+        // 主執行緒套用掃描結果 —— 回傳是否有變動 (供 latest 重算 + 歷史 dirty 標記)
+        static bool ApplyScanResult(SubtitleScanResult iResult,
+            Dictionary<string, List<(double epoch, string text)>> ioEntries,
+            Dictionary<string, long> ioMtimes)
         {
-            string root = GetRepoRoot();
-            if (ScanSubtitleDir(Path.Combine(root, STT_DIR_RELATIVE), "stt_*.json",
-                    m_SttFileEntries, ref m_SttWatermark, ParseSttFile))
+            bool aChanged = false;
+            foreach (var k in iResult.Removed)
             {
-                m_SttHistDirty = true;
-                RecomputeLatest(m_SttFileEntries, ref m_LatestSttEpoch, ref m_LatestSttText, ref m_LatestSttTime);
+                if (ioEntries.Remove(k)) aChanged = true;
+                ioMtimes.Remove(k);
             }
-            if (ScanSubtitleDir(Path.Combine(root, OCR_DIR_RELATIVE), "frame_*.json",
-                    m_OcrFileEntries, ref m_OcrWatermark, ParseOcrFileEntries))
+            foreach (var kv in iResult.Parsed)
             {
-                m_OcrHistDirty = true;
-                RecomputeLatest(m_OcrFileEntries, ref m_LatestOcrEpoch, ref m_LatestOcrText, ref m_LatestOcrTime);
+                ioEntries[kv.Key] = kv.Value;
+                aChanged = true;
             }
-            ReloadSttStatusError();
+            foreach (var kv in iResult.ParsedMtime) ioMtimes[kv.Key] = kv.Value;
+            return aChanged;
+        }
+
+        // 每 2s tick 的進入點 —— **非阻塞**: 檔案 IO 丟 thread pool, await 回來已在主執行緒才動資料。
+        // ⚠ 本方法不可由繪製路徑 await (knowhow 第 4 條: IMGUI 繪製方法禁 async) ——
+        //   ContentOnGUI 用 .Forget() 發射即忘, 資料好了下一次 repaint 自然顯示。
+        // 🩸 2026-08-16: 改 async 之前這段同步跑在 OnGUI 裡, 錄影中開頁實測凍結 21.8 秒。
+        async UniTask ReloadLatestSttOcrAsync()
+        {
+            if (m_ScanRunning) return;      // 防重入 —— 2s tick 比掃描快時會疊
+            m_ScanRunning = true;
+            try
+            {
+                string aRoot = GetRepoRoot();
+                string aSttDir = Path.Combine(aRoot, STT_DIR_RELATIVE);
+                string aOcrDir = Path.Combine(aRoot, OCR_DIR_RELATIVE);
+                // 快照後傳進背景 —— 直接把頁面欄位交給另一條執行緒讀, 是最難重現的那種 bug
+                var aSttKnown = new Dictionary<string, long>(m_SttMtimes);
+                var aOcrKnown = new Dictionary<string, long>(m_OcrMtimes);
+                var aSttFiles = new HashSet<string>(m_SttFileEntries.Keys);
+                var aOcrFiles = new HashSet<string>(m_OcrFileEntries.Keys);
+
+                var aStt = await Task.Run(() => ScanSubtitleDirBg(aSttDir, "stt_*.json",
+                    aSttKnown, aSttFiles, ParseSttFile, SCAN_PARSE_BUDGET));
+                var aOcr = await Task.Run(() => ScanSubtitleDirBg(aOcrDir, "frame_*.json",
+                    aOcrKnown, aOcrFiles, ParseOcrFileEntries, SCAN_PARSE_BUDGET));
+                // ── 以下已回到主執行緒 (UniTask 的 continuation 走 EditorApplication.update) ──
+                if (aStt.Error.Length > 0) Debug.LogWarning($"[UCL_ScreenStreamPage] scan STT dir fail: {aStt.Error}");
+                if (aOcr.Error.Length > 0) Debug.LogWarning($"[UCL_ScreenStreamPage] scan OCR dir fail: {aOcr.Error}");
+                m_SttPending = aStt.Pending;
+                m_OcrPending = aOcr.Pending;
+                if (ApplyScanResult(aStt, m_SttFileEntries, m_SttMtimes))
+                {
+                    m_SttHistDirty = true;
+                    RecomputeLatest(m_SttFileEntries, ref m_LatestSttEpoch, ref m_LatestSttText, ref m_LatestSttTime);
+                }
+                if (ApplyScanResult(aOcr, m_OcrFileEntries, m_OcrMtimes))
+                {
+                    m_OcrHistDirty = true;
+                    RecomputeLatest(m_OcrFileEntries, ref m_LatestOcrEpoch, ref m_LatestOcrText, ref m_LatestOcrTime);
+                }
+                ReloadSttStatusError();
+            }
+            finally
+            {
+                // finally 而非成功路徑 —— 例外時沒放掉旗標的話, 這頁的字幕就再也不更新了 (而且不會叫)
+                m_ScanRunning = false;
+            }
         }
 
         // 「最新」= 快取內 epoch 最大的非空 entry — 不再依賴檔名序 (ring buffer 陷阱), 刪檔也正確回退
@@ -1561,13 +1635,14 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 🔄 手動重新整理 = 不信任快取的逃生門: 重置 watermark 全量重掃 + 立即重建列表回第 1 頁
+        // ⚠ 非同步化後這裡不能再「清空 → 立刻重建列表」—— 重建那一刻資料還沒讀回來, 會顯示成空的,
+        //   而「空」與「還在讀」在畫面上同形。改成: 清快取 → 發射掃描 → 標 dirty, 讀回來由 tick 自然重建。
+        //   歷史頁一併回第 1 頁 (使用者按重新整理就是想看最新)。
         void ForceRescan(bool stt)
         {
-            if (stt) { m_SttWatermark = 0; m_SttFileEntries.Clear(); }
-            else { m_OcrWatermark = 0; m_OcrFileEntries.Clear(); }
-            ReloadLatestSttOcr();
-            if (stt) { m_SttHistory = BuildHistory(m_SttFileEntries); m_SttHistDirty = false; m_SttHistPage = 0; }
-            else { m_OcrHistory = BuildHistory(m_OcrFileEntries); m_OcrHistDirty = false; m_OcrHistPage = 0; }
+            if (stt) { m_SttMtimes.Clear(); m_SttFileEntries.Clear(); m_SttHistDirty = true; m_SttHistPage = 0; }
+            else { m_OcrMtimes.Clear(); m_OcrFileEntries.Clear(); m_OcrHistDirty = true; m_OcrHistPage = 0; }
+            ReloadLatestSttOcrAsync().Forget();
         }
 
         static List<(double epoch, string text)> ParseSttFile(string path)
@@ -1669,7 +1744,13 @@ namespace UCL.Core.EditorLib.Page
 
                         if (m_ShowSttOcrPanel)
                         {
-                            DrawLatestSubtitleLine("🎙 最新 STT：", m_LatestSttText, m_LatestSttTime,
+                            // 分批載入進度 —— **看不見的量要是個數字**。
+                // 沒有這行的話「歷史只有 64 筆」與「總共就這麼多」在畫面上同形, 而那是本專案追了一整天的形狀。
+                if (m_SttPending > 0 || m_OcrPending > 0)
+                    GUILayout.Label($"⏳ 尚未讀入 STT {m_SttPending} 筆 / OCR {m_OcrPending} 筆"
+                        + $"（每 {RELOAD_INTERVAL_SEC:0} 秒補 {SCAN_PARSE_BUDGET} 筆，由新到舊；最新那筆已經是最新的）",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                DrawLatestSubtitleLine("🎙 最新 STT：", m_LatestSttText, m_LatestSttTime,
                                 "(無 — daemon STT 未啟用或無音訊)",
                                 StaleSuffix(m_LatestSttEpoch, 60, m_SttEnabledCfg), ref m_ShowFullLatestStt);
                             DrawLatestSubtitleLine("📖 最新 OCR：", m_LatestOcrText, m_LatestOcrTime,

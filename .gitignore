@@ -21,3 +21,7 @@ __pycache__/
 # CommandResolver runtime caches（fetch_sheet 5s TTL cache / per-agent EMA weights）
 Tools~/AgentCommands/CommandResolver/_resolver_cache/
 Tools~/AgentCommands/CommandResolver/weights.json
+
+# 路徑快照 —— Editor 每次 domain reload 重算後寫入，per-checkout 絕對路徑
+# 絕不入版控：進了版控別人 clone 後會拿到一台不存在的機器路徑，而且不會報錯
+.agentcommands_root.local

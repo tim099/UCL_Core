@@ -80,8 +80,95 @@ def _find_git_root_by_walk(start: Path) -> Path | None:
 #   fallback 退回 UCL_Core 根（極端無 .git 環境；至少不炸，不亂猜到別的磁碟位置）
 # 數值影響：lru_cache 後同 process 內只算一次，之後 O(1)。
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# 路徑快照（pointer 檔）—— Editor 端量到的值，兩端唯一的共同來源
+# 區塊職責：讀 <UCL_Core>/.agentcommands_root.local，取得 C# 端解析出的 repo_root / data_root。
+# 物理意義：C# **只寫不讀**（每次 domain reload 重算後覆寫）；Python **只讀不寫**（外加自癒刪檔）。
+#   ⇒ 「寫錯會被固化」這個風險不存在：下一次 recompile 就會被正確值覆蓋。
+# 🩸 為什麼檔案放在 <UCL_Core>/ 而不是 repo root：
+#   放 repo root 的話，**要讀到它必須先知道 repo root** —— 於是它只能同步
+#   「data_root ≠ repo_root/AgentCommands」的情形，碰不到「兩端 repo_root 推導不一致」那格，
+#   而後者才是會咬人的（C# 與 Python 的 tier 順序至今不同）。
+#   UCL_Core 兩端都能在**不知道 repo root** 的情況下定位（C# 從 Application.dataPath 搜資料夾名、
+#   Python 從 __file__ 往上找目錄名）⇒ 放這裡才真的同步得到 repo_root。
+# 數值影響：純讀 + 存在性驗證；驗不過就刪檔（下次 Editor reload 會重寫）。
+# ⚠ tier 順序變更（覆寫 summit 2026-07-04 的「CLAUDE_PROJECT_DIR 為 tier-1」裁決，
+#   Tim 2026-08-17 重新拍板）：pointer 是**唯一被實際量到**的值（Editor 知道自己在哪），
+#   其餘都是推導或注入。所以 pointer 排在最前面。這條是明改，不是忘了舊裁決。
+# ─────────────────────────────────────────────────────────────────────────
+POINTER_FILENAME = ".agentcommands_root.local"
+_pointer_cache: dict | None = None
+
+
+def pointer_file() -> Path | None:
+    return (_UCL_CORE_DIR / POINTER_FILENAME) if _UCL_CORE_DIR else None
+
+
+def _parse_pointer(text: str) -> dict:
+    """吃兩種格式：schema=2 的 key=value 多行，以及舊版「單行絕對路徑」。"""
+    out: dict = {}
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return out
+    if "=" not in lines[0]:
+        out["data_root"] = lines[0]          # 舊格式：整檔就是一條 data_root
+        out["_legacy"] = True
+        return out
+    for ln in lines:
+        if "=" in ln:
+            k, _, v = ln.partition("=")
+            out[k.strip()] = v.strip()
+    return out
+
+
+def read_pointer() -> dict:
+    """回 {'repo_root': Path, 'data_root': Path}（缺的 key 就不放）。
+
+    驗存在性 —— 任一路徑不存在即視為過期：**刪檔**並回 {}。
+    自癒的代價只是「下次 Editor reload 之前 Python 自己推導」，
+    而留著一個指向不存在目錄的快照，會讓每一支工具都安靜地讀錯地方。
+    """
+    global _pointer_cache
+    if _pointer_cache is not None:
+        return _pointer_cache
+    _pointer_cache = {}
+    p = pointer_file()
+    if p is None or not p.is_file():
+        return _pointer_cache
+    try:
+        kv = _parse_pointer(p.read_text(encoding="utf-8"))
+    except Exception:
+        return _pointer_cache
+    got, stale = {}, False
+    for key in ("repo_root", "data_root"):
+        raw = (kv.get(key) or "").strip()
+        if not raw:
+            continue
+        cand = Path(raw)
+        if not cand.is_absolute():
+            stale = True
+            break
+        if not cand.exists():
+            stale = True
+            break
+        got[key] = cand.resolve()
+    if stale or not got:
+        try:
+            p.unlink()          # 自癒：過期快照就地移除，下次 Editor reload 重寫
+        except Exception:
+            pass
+        return _pointer_cache
+    _pointer_cache = got
+    return _pointer_cache
+
+
 @lru_cache(maxsize=1)
 def repo_root() -> Path:
+    # tier-0：Editor 寫下的路徑快照（唯一被量到的值，優先於任何推導）
+    snap = read_pointer().get("repo_root")
+    if snap is not None:
+        return snap
+
     # tier-1：顯式 env override（須通過 is_dir 驗證才採用，避免指到不存在的路徑靜默誤用）
     env_root = os.environ.get("CLAUDE_PROJECT_DIR")            # 讀 hook 注入的專案根
     if env_root and Path(env_root).is_dir():                   # 有值且確實是資料夾才採信
@@ -132,19 +219,11 @@ def ucl_core_dir() -> Path:
 # ─────────────────────────────────────────────────────────────────────────
 @lru_cache(maxsize=1)
 def data_root() -> Path:
-    root = repo_root()                                         # 先取 host repo root
-    pointer = root / ".agentcommands_root.local"              # pointer 檔固定放 repo root 下
-    try:
-        if pointer.exists():                                  # 有 pointer 檔才嘗試讀
-            content = pointer.read_text(encoding="utf-8").strip()  # 讀內容並去頭尾空白
-            if content:                                       # 非空
-                p = Path(content)
-                if p.is_absolute():                           # 僅接受絕對路徑（相對值歧義故忽略）
-                    return p.resolve()                        # 採用 pointer 指定的搬遷後資料根
-    except Exception:
-        # 讀檔失敗（權限／編碼／IO）→ 靜默退回預設，路徑解析不因 pointer 壞掉而中斷
-        pass
-    return (root / "AgentCommands").resolve()                 # 預設：repo_root/AgentCommands
+    # tier-0：Editor 寫下的路徑快照（存在性已在 read_pointer 驗過，過期會被刪掉不會走到這）
+    snap = read_pointer().get("data_root")
+    if snap is not None:
+        return snap
+    return (repo_root() / "AgentCommands").resolve()          # 預設：repo_root/AgentCommands
 
 
 # ─────────────────────────────────────────────────────────────────────────

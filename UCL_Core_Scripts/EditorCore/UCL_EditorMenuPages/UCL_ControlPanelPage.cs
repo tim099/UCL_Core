@@ -503,10 +503,22 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label(
                     "持久狀態資料 (酒館 / 銀行 / persona / 書籍 / Lessons / baton / Rules) 的存放根目錄。\n" +
                     "RPC queue 與腳本 (Tools / PromptQueue) 永遠錨在專案的 RepoRoot/AgentCommands,不受此設定影響。\n" +
-                    "設定走 PlayerPrefs (per-machine),Apply 時把絕對路徑寫到 git-root 的 .agentcommands_root.local 讓 Python 端同步。",
+                    "⚠ 2026-08-17：資料根 override（全域絕對 / 專案相對）暫時停用，只走預設。\n" +
+                    "  理由：兩個 override 模式至今一次都沒被實跑過，卻讓「資料根在哪」變成三分支、\n" +
+                    "  且 C#/Python 兩端各要對一次。未驗證的彈性不是彈性，是三倍的待驗表面積。\n" +
+                    "  規格想清楚（含 pointer 檔語意）再補回來。",
                     UCL_GUIStyle.LabelStyle);
                 GUILayout.Space(4);
 
+                // ---- 模式（停用中：只走預設）----
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("模式", UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    GUILayout.Label("預設 (RepoRoot/AgentCommands) —— override 模式停用中", UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+
+                /* --- 停用中：模式切換與兩種 override 的輸入欄（想好規格再補） ---
                 // ---- 模式 dropdown ----
                 // 採 UCL_GUILayout.PopupSearchCache (runtime-safe, 自帶搜尋 + per-popup 快取), 對齊 UCL_EditorMenuPage 的 page picker 用法
                 using (new GUILayout.HorizontalScope())
@@ -546,6 +558,8 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label("  預設模式:走 RepoRoot/AgentCommands (現行行為,跨 layout 安全,無 override)", UCL_GUIStyle.LabelStyle);
                 }
+
+                --- 停用中結束 --- */
 
                 GUILayout.Space(4);
 

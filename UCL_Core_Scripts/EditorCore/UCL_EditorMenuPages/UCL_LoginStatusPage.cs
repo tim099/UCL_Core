@@ -27,7 +27,11 @@ namespace UCL.Core.EditorLib.Page
     // 完成回呼走 EditorApplication.delayCall 重整資料; 常駐 repaint 讓「處理中」提示 + 完成後的
     // 列表更新即時反映, 不必等使用者滑鼠移動觸發 repaint。
     [UCL.Core.ATTR.RequiresConstantRepaint]
-    [HelpURL("ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md")]
+    // 說明連結改指本頁自己的文件（Tim 2026-08-17）。
+    // 舊值 `Plan/Plan_Awakening_Init_Protocol.md` 有兩個問題：
+    //   ① 那份檔**整個 UCL_Core 都不存在**（死連結，按了沒反應）
+    //   ② 即使存在，Plan 是設計沿革不是操作說明 —— 使用者按「說明」要的是「這頁怎麼用」
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_LoginStatusPage.md")]
     public class UCL_LoginStatusPage : UCL_CommonEditorPage
     {
         // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。

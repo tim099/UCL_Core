@@ -292,6 +292,82 @@ tested_at: {date_iso}
         
     return file_path
 
+# 區塊職責: persona → (sender bank id, agent) 反查 — 委派 awakening.load_registry()
+# 物理意義: 酒館 post 的 sender 是 bank id (e.g. Myth), caller 只報 persona (e.g. kiara)。
+#          registry 是 per-persona split 檔 (v3), 自己 parse 會跟 schema 漂移 —
+#          直接 lazy import 同目錄 awakening 借它的 loader (同 freetime.py 的既有作法)。
+# 數值影響: 查無 persona / 無 bank / import 失敗 → 回 (None, None), caller 印警告跳過分享
+#          (測驗結果本體已落盤, 分享失敗不影響算分與存檔)。
+def _resolve_sender(persona: str):
+    try:
+        import awakening  # 同目錄 lazy import (含 registry path 解析 + sys.path 注入副作用)
+        reg = awakening.load_registry()
+        agent = (reg.get("personas", {}).get(persona) or {}).get("agent")
+        if not agent:
+            return None, None
+        return reg.get("agent_banks", {}).get(agent), agent
+    except Exception as e:
+        print(f"⚠ registry 反查失敗: {e}", file=sys.stderr)
+        return None, None
+
+
+# 區塊職責: 組酒館分享的訊息內文
+# 物理意義: 型別 / 五維度 / 8 認知功能是**測驗算出來的數據**, 工具代組沒有代筆問題;
+#          note 那段是本人對自己結果的看法 — 那才是親筆, 工具不生成、只轉載。
+# 數值影響: note 為空時整段省略 (不塞「本工具自動生成的感想」冒充當事人的話)。
+def build_share_body(persona: str, result: dict, wake_count: int, letter_rel: str, note: str = "") -> str:
+    pct = result["percentages"]
+    cog = result["cognitive_functions"]
+    cog_line = " ・ ".join(f"{k} {v}%" for k, v in sorted(cog.items(), key=lambda kv: -kv[1]))
+    lines = [
+        f"🧠 **MBTI 2.0 測驗結果｜{persona}（wake #{wake_count}）**",
+        "",
+        f"✨ **{result['type']}** — {result['title']}",
+        f"> {result['description']}",
+        "",
+        # 印的是**偏向的那一極**與其百分比（跟 full_type 的四個字母同源），
+        # 不固定印 E/S/T/J —— 否則內向的人會看到「E 30%」這種要自己心算反轉的數字。
+        "📊 **五維度**：" + " ／ ".join(
+            f"{hi if a >= 50 else lo} `{max(a, 100 - a)}%`"
+            for hi, lo, a in [
+                ("E", "I", pct["E"]), ("S", "N", pct["S"]),
+                ("T", "F", pct["T"]), ("J", "P", pct["J"]),
+                ("-A", "-T", pct["A"]),
+            ]
+        ),
+        "",
+        f"🕸️ **認知功能**：{cog_line}",
+    ]
+    if note:
+        lines += ["", "---", "", note.strip()]
+    lines += ["", f"📄 詳細存檔：`{letter_rel}`"]
+    return "\n".join(lines)
+
+
+# 區塊職責: 把測驗結果同步到酒館 (eval --persona 的預設副作用)
+# 物理意義: 走 awakening.tavern_post → Cmd_Tavern op=post 正規路徑, **絕不直寫 jsonl**;
+#          分享是廣播 (沒人要回), 所以 wait_reply=0 由 awakening.tavern_post 內部固定。
+# 數值影響: best-effort — 失敗只回 False 並印警告, 不改變 eval 的 exit code
+#          (算分與兩處存檔已完成, 讓整條指令因為公告失敗而報錯會誤導成「測驗沒跑成」)。
+def share_to_tavern(persona: str, result: dict, wake_count: int, letter_rel: str, note: str = "") -> bool:
+    sender, agent = _resolve_sender(persona)
+    if not sender:
+        print(f"⚠ 查不到 {persona} 的 bank（registry 無此 persona 或 agent 欄空白）→ 跳過酒館分享",
+              file=sys.stderr)
+        return False
+    body = build_share_body(persona, result, wake_count, letter_rel, note)
+    try:
+        import awakening  # 同目錄 lazy import
+        return awakening.tavern_post(
+            sender, persona, body,
+            meta={"tag": "mbti", "category": "chat"},
+            timeout=60.0,
+        )
+    except Exception as e:
+        print(f"⚠ 酒館分享 exception（測驗結果不受影響）: {e}", file=sys.stderr)
+        return False
+
+
 def cmd_list(args):
     questions = load_questions()
     print(f"📋 MBTI 2.0 測驗題目清單 (共 {len(questions)} 題, 支援 Likert 1-5 打分):")
@@ -341,11 +417,35 @@ def cmd_eval(args):
     print(f"  Ti: {cog['Ti']}% | Te: {cog['Te']}% | Fi: {cog['Fi']}% | Fe: {cog['Fe']}%")
     print("=" * 60)
     
-    if args.persona:
-        save_record(args.persona, res)
-        print(f"💾 已記錄 {args.persona} 的 2.0 測驗結果至 AgentCommands/MBTI/mbti_records_v2.json")
-        letter_file = save_to_letter(args.persona, res, ans_str)
-        print(f"✉️ 已同步存檔至 {args.persona} 個人信箱紀錄：\n   {letter_file}")
+    if not args.persona:
+        return
+
+    save_record(args.persona, res)
+    print(f"💾 已記錄 {args.persona} 的 2.0 測驗結果至 AgentCommands/MBTI/mbti_records_v2.json")
+    letter_file = save_to_letter(args.persona, res, ans_str)
+    print(f"✉️ 已同步存檔至 {args.persona} 個人信箱紀錄：\n   {letter_file}")
+
+    # 區塊職責: 酒館分享 — 帶 --persona 時預設開啟, --no-share 關閉
+    # 物理意義: 對齊 git_commit.py 的既有慣例「提交後自動公告」——
+    #          做完了卻倒在門外(結果只有自己看得到)是這套系統踩過的坑, 不是新設計。
+    # 數值影響: best-effort; 失敗不改 exit code, 但會印出「未分享」讓人看得見要補。
+    if args.no_share:
+        print("🔕 已跳過酒館分享（--no-share）")
+        return
+
+    note = ""
+    if args.share_note_file:
+        try:
+            note = Path(args.share_note_file).read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"⚠ 讀不到 --share-note-file（本次分享不附感想）: {e}", file=sys.stderr)
+
+    wake_count = get_persona_wake_count(args.persona)
+    letter_rel = f"letters/{args.persona}/mbti/{Path(letter_file).name}"
+    if share_to_tavern(args.persona, res, wake_count, letter_rel, note):
+        print("📣 已分享至酒館（room=tavern, tag=mbti）")
+    else:
+        print("⚠ 酒館分享未成功 —— 結果已落盤，補發請重跑 eval 或手動 post", file=sys.stderr)
 
 def cmd_show(args):
     records = load_records()
@@ -377,7 +477,11 @@ def main():
     # eval
     p_eval = subparsers.add_parser("eval", help="評估 1-5 階 Likert 答案字串")
     p_eval.add_argument("--answers", "-a", required=True, help="1-5 階數字或 A/B 答案字串 (長度 24 題)")
-    p_eval.add_argument("--persona", "-p", help="Persona 名稱 (若填寫則自動存檔)")
+    p_eval.add_argument("--persona", "-p", help="Persona 名稱 (若填寫則自動存檔並分享至酒館)")
+    p_eval.add_argument("--no-share", action="store_true",
+                        help="跑完不分享到酒館 (預設帶 --persona 就會分享)")
+    p_eval.add_argument("--share-note-file",
+                        help="分享訊息要附的**親筆**感想檔 (長文一律走檔案, 不用 inline 避開 shell 解析)")
     p_eval.set_defaults(func=cmd_eval)
 
     # show

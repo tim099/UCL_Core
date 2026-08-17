@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
-last_updated: 2026-05-18
+last_updated: 2026-08-17
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -12,6 +12,15 @@ related:
 # 🐍 UCL_Core Python Tools 索引
 
 > 一句話: UCL_Core 的 Python 工具集中在 `Tools~/AgentCommands/`, 跨專案共用; 真正 project-specific 的 Python tool 放主專案 `AgentCommands/Tools/` (見最末段對照)。
+
+> [!WARNING]
+> **本索引目前只覆蓋約三分之一的工具。** 2026-08-17 對著磁碟點過：UCL_Core 實有 **62 支** .py，
+> 本檔提及的只有 21 支，**41 支從未列入**（`canvas.py` / `library.py` / `memory.py` /
+> `knowledge_base.py` / `work_memory.py` / `freetime.py` / `git_commit.py` / `chess.py` …）。
+> 同一輪也修掉 6 個**指向已刪除工具**的條目。
+>
+> ⇒ 查不到某支工具**不代表它不存在**（借 gura 那句：別把「我沒找到」當成「不存在」）——
+> 直接 `ls <UCL_Core>/Tools~/AgentCommands/` 是比本索引可信的來源。補齊尚未排程。
 
 ## 📂 目錄結構
 
@@ -24,7 +33,6 @@ Tools~/
     ├── check_compile.py                # Editor 編譯報告
     ├── check_task_lease.py             # 動 code 前 lease 守門
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
-    ├── rebuild_latest_pointers.py      # baton/letters/_latest.md 重建
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
     ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
     ├── migrate_session_to_persona_locks.py  # (one-shot) session lock 遷 persona-keyed
@@ -134,9 +142,11 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 
 ## 🛠 Misc
 
-### `rebuild_latest_pointers.py` — letters `_latest.md` 重建
+### ~~`rebuild_latest_pointers.py`~~ — 已移除
 
-掃 `AgentCommands/ChatTavern/baton/letters/<actor>/<persona>/` 目錄, 為每個 persona 子目錄重生 `_latest.md` 指向最新一封。kyouko-persona-binding T04 follow-up。
+**檔案已不存在**（2026-08-17 稽核到本節仍在指路）。維護責任已搬進兩個必經點：寫信端
+`awakening.write_letter()` 每次覆寫 pointer，早安生成 brief 時 `wake_brief.sync_latest_pointer()`
+再對一次帳並在不一致時標明修補 —— 與其事後重建，不如長在必經路上。
 
 ### `migrate_*.py` — One-shot 遷移腳本 (跑完即廢)
 
@@ -174,19 +184,27 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 
 UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle / treasury):
 
+> ⚠ 本節 2026-08-17 對著磁碟重新點過一次 —— 原本列的 11 項裡有 **6 項已不存在**（`balance_query.py` /
+> `discord_inbound_bot.py` / `gold_convert.py` / `secret_install.py` / `secrets_crypto.py` /
+> `treasury_revert.py`），而索引仍在替它們指路。**一份指向不存在工具的索引，讀起來跟正確的索引一模一樣。**
+
 | Tool | 用途 |
 |---|---|
-| `affinity_update.py` | gura→Tim affinity CLI |
-| `balance_query.py` | Treasury 餘額 + 近 N 筆 audit |
+| `affinity_update.py` | affinity（好感度）更新 CLI |
 | `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary) |
-| `discord_inbound_bot.py` | Discord → Tavern 中繼 daemon |
-| `gold_convert.py` | Treasury currency 遷移 |
-| `qa_*.py` (3 個) | QA battle 工具 (record / score / balance report) |
-| `screenshot.py` / `screenstream_*.py` (2 個) | 螢幕串流 daemon + annotate |
-| `secret_install.py` / `secrets_crypto.py` | 機密管理 |
+| `screenshot.py` | 單張截圖（串流 daemon 已搬 UCL_Core `screenstream_*.py`） |
+| `tavern_catchup.py` | 叮 / 早安的酒館 catch-up（在線一覽＋未讀＋inbox） |
 | `tavern_query.py` | tavern 查工具 |
-| `treasury_revert.py` | Treasury rollback |
 | `workflow_patch.py` | workflow-patch register |
+
+**已退役（別再照舊文件找）**：
+
+| 原工具 | 現在走哪 |
+|---|---|
+| `balance_query.py` | **餘額一律走 CMD** —— `Cmd_Bartender op=balance`（C# 原生查 `UCL_TreasuryLedger`）。刪它的理由是它會靜默算到另一棵資料樹，血證在 `UCL_BartenderDaemon.RunBalanceQuery` |
+| `secret_install.py` / `secrets_crypto.py` | UCL_Core `ucl_secret.py` ＋ `_lib/ucl_secrets_crypto.py` |
+| `gold_convert.py` / `treasury_revert.py` | 移除 —— 動錢一律走 Cmd（`_lib/treasury_cmd.py`），不留可直寫帳本的 python 入口 |
+| `qa_*.py`（record / score / balance report）、`agent_task.py`、`shared_notes.py`、`persona_ding.py`、`morning_status.py`、`plan_index.py` 等 | 對應系統已退役或併入 Cmd；`AgentCommands/Tools/README.md` 有逐項清單 |
 
 → 跨專案搬 UCL_Core 時這些**不會跟著**, 各 project 自己有自己版本。
 

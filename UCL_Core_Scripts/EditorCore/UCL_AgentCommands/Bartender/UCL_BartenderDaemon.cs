@@ -523,9 +523,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             if (kind == UCL_BartenderInlineParser.InlineCommandKind.BalanceQuery)
             {
-                // 區塊職責：使用者於 tavern 發 [查詢餘額] → spawn python balance_query.py → 酒保 post 結果
+                // 區塊職責：使用者於 tavern 發 [查詢餘額] → C# 原生查 UCL_TreasuryLedger → 酒保 post 結果
                 // 物理意義：account 未指定 → 預設查 sender 自己 (msg.sender_id)
-                //          spawn 走 main thread 的同步呼叫 (5s timeout fail-safe), tick 期間 IO 接受
+                //          2026-08-17 起不再 spawn python（`balance_query.py` 已刪除，理由見
+                //          RunBalanceQuery 的血證註解）—— 純記憶體/檔案查詢，無外部 process
                 // 數值影響：純 read-only 查詢, 不 mutate state; 失敗 fall back 錯誤訊息
                 var spec = UCL_BartenderInlineParser.ParseBalanceQuery(msg.body);
                 string targetAccount = string.IsNullOrEmpty(spec.account) ? creator : spec.account;
@@ -604,15 +605,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max) + "…");
 
         // ===========================================================
-        // 區塊職責：spawn python AgentCommands/Tools/balance_query.py 取得 markdown 報表
-        // 物理意義：read-only 查詢 — daemon 內同步呼叫 (5s timeout), 失敗回 null + err 字串
-        // 設計取捨：
-        //   - 用 System.Diagnostics.Process 直接 spawn, 不走 queue.json (節省一次 RPC 來回)
-        //   - WorkingDirectory = repo root (Application.dataPath / .. / .. = 主專案根, 不是 UCL_Core)
-        //     這樣 balance_query.py 內 _REPO_ROOT 自動算對 (它走 Tools/balance_query.py.parent.parent)
-        //   - timeout 5s — 339 筆 ledger 全 scan 實測 < 200ms, 留 25x headroom
-        //   - python 解析器: 優先 'python', PATH 沒命中由 OS 報錯 (主流系統 Python 都裝)
-        // 數值影響：stdout 直接當 markdown 貼回 tavern; stderr / exit code 非 0 視為錯誤
+        // 區塊職責：查 UCL_TreasuryLedger 產生餘額 + 近 N 筆進出帳的 markdown 報表（C# 原生）
+        // 物理意義：read-only —— 餘額的唯一擁有者是 UCL_TreasuryLedger（增量快取 + snapshot），
+        //          這裡只讀不算第二套。inline [查詢餘額] 與 Cmd_Bartender op=balance 共用本方法，
+        //          於是「同一個餘額只有一套算法」。
+        // 數值影響：回傳 markdown 直接貼回 tavern；失敗回 null + err 字串（不吞例外）。
+        //          ⚠ 舊版是 spawn python balance_query.py，路徑推導把它帶去另一棵資料樹、
+        //          回報了差 876 token 的假數字 —— 完整血證寫在 RunBalanceQuery 內。
         // ===========================================================
         /// <summary>Public wrapper — 給 Cmd_Bartender op=balance 共用同 spawn 邏輯, 避免 duplicate code.</summary>
         public static string RunBalanceQueryPublic(string account, int limit, out string err)

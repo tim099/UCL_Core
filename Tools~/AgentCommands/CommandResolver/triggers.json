@@ -1,9 +1,9 @@
 {
   "_schema_version": 1,
-  "_synced_from": "../../../Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-05-10T11:23:11Z",
+  "_synced_from": "Assets/Plugins/UCL_Core/Docs~/zh-Hant/CommandTable.md",
+  "_synced_at": "2026-08-17T12:01:18Z",
   "_synced_by": "sync_command_table.py",
-  "_entry_count": 19,
+  "_entry_count": 21,
   "triggers": [
     {
       "entry_id": "entry_dd5b15",
@@ -108,6 +108,26 @@
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md",
       "intent": "依 Commit_Workflow 規範把工作區改動分批 commit — 代碼一筆 / 酒館訊息獨立一筆 / submodule 三層 bump / DebugLogs 排除",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "commit_all_commit",
+      "display_name": "Commit All / 全部 commit",
+      "tags": [],
+      "phrases": [
+        "Commit All",
+        "commit all",
+        "全部 commit",
+        "全包 commit",
+        "通通 commit",
+        "commit 全部",
+        "commit 通通"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md",
+      "intent": "把所有未 commit 的工作區改動全包 (除白名單) 提交；可按主題拆多筆 commit (但禁止亂拆刷 token)",
       "lang": [
         "zh",
         "en"
@@ -269,6 +289,36 @@
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Hook_Setup_Workflow.md",
       "intent": "配置 Claude Code 的 `PostToolUse`（每次工具呼叫後早期警告）與 `Stop`（turn 結束前強制驗證）hooks，寫/改 UCL_Asset JSON 時自動觸發 schema 與 reference 驗證。",
+      "lang": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "entry_id": "entry_c8c492",
+      "display_name": "酒保留言 / 時間規則 / 留個話",
+      "tags": [],
+      "phrases": [
+        "留言",
+        "留個話",
+        "留一條",
+        "幫我留話",
+        "leave message",
+        "leave a note",
+        "酒保",
+        "bartender",
+        "提醒我睡覺",
+        "該睡了",
+        "熬夜提醒",
+        "sleep reminder",
+        "時間規則",
+        "time rule",
+        "定時提醒",
+        "關鍵字觸發",
+        "自動發言"
+      ],
+      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Bartender_Workflow.md",
+      "intent": "透過酒保 (tavern-keeper) daemon 註冊兩類自動廣播 — (1) 留言 keyword trigger (當目標說關鍵字時酒保自動轉達) / (2) 時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播).",
       "lang": [
         "zh",
         "en"

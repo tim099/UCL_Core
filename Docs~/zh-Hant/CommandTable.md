@@ -249,7 +249,8 @@ related:
 - **觸發詞**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔` / `translate_docs.py`
 - **對應 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)
 - **意圖**: 翻譯或本地化 Markdown 文件或說明文檔，確保多語系對齊、術語精準及高雅傲嬌語氣。
-- **必做**: 優先調用 `Tools~/translate_docs.py`；遵守術語對齊（`Glossary-First`，讀取 `translate_glossary.json`）；使用雙軌 Fallback 連結防止死連結；針對 Persona/導覽文檔保留傲嬌靈魂。
+- **必做**: 遵守術語對齊（`Glossary-First`，讀取 `translate_glossary.json`）；使用雙軌 Fallback 連結防止死連結；針對 Persona/導覽文檔保留傲嬌靈魂。
+- **不要做**: 找 `Tools~/translate_docs.py`（**該工具不存在、也從未寫過**，2026-08-17 稽核；路徑推算與 frontmatter 初始化目前全手動）
 
 > _(後續 entry 在此往下加)_
 

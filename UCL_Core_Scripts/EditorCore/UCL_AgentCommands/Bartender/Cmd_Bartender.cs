@@ -66,7 +66,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 [notify_scan] 自動通知掃描診斷 — 回答「通知池為什麼是空的」(逐人判定 + 逐房 inbox 分解)
   ⚠ **純觀測**: 不寫 state / 不發告警 / 不戳任何人, 查幾次都不改變系統
 
-[balance]     查詢 Treasury 帳戶餘額 + 最近 N 筆進出帳 (走 AgentCommands/Tools/balance_query.py)
+[balance]     查詢 Treasury 帳戶餘額 + 最近 N 筆進出帳 (C# 原生查詢, 餘額一律走 CMD)
   account=<id>          要查的 account (e.g. claude-da-xiaojie / Tim)
   limit=<int>           近期進出帳筆數, 預設 10 (cap 100)
   post=<true/false>     是否同時 post 到 tavern (預設 false, 只寫 _last_op.md)
@@ -304,7 +304,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         // ===========================================================
         // op=balance — 查 Treasury 帳戶餘額 + 最近 N 筆進出帳
-        // 物理意義：CMD path 對稱於 inline [查詢餘額] — 都走 daemon 的 RunBalanceQuery → balance_query.py
+        // 物理意義：CMD path 對稱於 inline [查詢餘額] — 都走 daemon 的 RunBalanceQuery（2026-08-17 起
+        //          已是 C# 原生查詢，`balance_query.py` 已刪除；餘額查詢統一走 CMD，不再 spawn python）
         // 設計取捨：預設只寫 _last_op.md (供 caller 看), post=true 才同步 post 到 tavern (酒保身分)
         // ===========================================================
         void Op_Balance(Dictionary<string, string> args)

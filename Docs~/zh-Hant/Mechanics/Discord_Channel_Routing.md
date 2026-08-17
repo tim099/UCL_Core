@@ -1,7 +1,7 @@
 ---
 title: Discord Channel Routing
 description: Discord channel → ChatTavern room 路由設定 — 多對一支援、來源 metadata、Channel ID 驗證與名稱快取，以及 C# native inbound 中繼器的 IMGUI 編輯流程
-last_updated: 2026-08-14
+last_updated: 2026-08-17
 target_audience: [AI_Agent, Developer]
 aliases: [discord routing, channel routing, channel mappings]
 tags: [discord, chat-tavern, routing, config]
@@ -272,8 +272,11 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 
 ## 10. 相關文件
 
-- [`<UCL_Core>/Tools~/AgentCommands/discord_inbound_bot.py`](../../../Tools~/AgentCommands/discord_inbound_bot.py)
-- [`<UCL_Core>/Tools~/AgentCommands/waiter_session.py`](../../../Tools~/AgentCommands/waiter_session.py)
+- ~~`Tools~/AgentCommands/discord_inbound_bot.py`~~ / ~~`waiter_session.py`~~ —— **兩支皆已刪除**
+  （2026-08-17 稽核到本節還掛著可點的連結，點下去是 404）。inbound 中繼看
+  [`UCL_DiscordInboundDaemon.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordInboundDaemon.cs)
+  ＋ [`UCL_DiscordGatewayClient.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordGatewayClient.cs)；
+  §6 / §8 提到的 `waiter_session.py cycle` 是**該支還活著時的行為紀錄**，不是現在的入口。
 - [`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs)
 - [`docs/Workflows/Discord_Inbound_Workflow.md`](../../../../../../docs/Workflows/Discord_Inbound_Workflow.md)（主專案，整體 setup SOP）
 

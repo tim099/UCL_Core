@@ -33,7 +33,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             "[進行時間規則]", "[時間規則]", "[time rule]", "[bartender time]",
         };
         // 區塊職責：餘額查詢 marker — 任一命中即視為「請酒保查帳」
-        // 物理意義：daemon 偵測後 spawn AgentCommands/Tools/balance_query.py 並把 stdout post 回 tavern
+        // 物理意義：daemon 偵測後走 C# 原生查詢（UCL_BartenderDaemon.RunBalanceQuery → UCL_TreasuryLedger）
+        //          並把 markdown post 回 tavern；2026-08-17 起不再 spawn python
         // 數值影響：純 read-only 查詢，無 ledger 變動
         static readonly string[] BalanceQueryMarkers =
         {

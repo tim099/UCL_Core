@@ -22,10 +22,10 @@ description: |
 related:
   - <ucl_core:Docs~/{lang}/Workflows/Memory_Common_Principles.md> | **共通鐵律（格式 / 寫入 / 檢索 / 維護）** | 三層共用，本檔不重抄
   - <ucl_core:Docs~/{lang}/Workflows/Memory_Fragment_Backfill_Workflow.md> | 個人記憶（見根）| 回溯補抽 wake>30 的完整流程
-  - <ucl_core:Docs~/{lang}/Workflows/Alaya_Collective_Memory_Workflow.md> | 集體潛意識 Alaya | 入庫閘門與維護
+  - <ucl_core:Docs~/{lang}/Workflows/Alaya_Collective_Memory_Workflow.md> | 集體潛意識 Alaya | 門檻/權重與維護
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | **工作類記憶歸那邊**
   - <ucl_core:Skills~/agent-lessons-log/SKILL.md> | lessons.jsonl | 原始流水帳（Alaya 的進料端）
-last_updated: "2026-08-17 v1.0 (初版 — calli wake#21；三層分工＋Alaya 取代已退役的 Collective_Subconscious；檢索形狀與分數帶為實跑量測)"
+last_updated: "2026-08-17 v1.1 (Tim 拍板修 Alaya 門檻 — 一個人認為就整理, 人數改記為 recurrence 權重; v1.0 誤設「兩人以上才准進」。三層分工＋檢索形狀與分數帶為實跑量測)"
 ---
 
 # UCL Memory — 個人記憶 / 集體潛意識 Alaya / 回憶
@@ -48,7 +48,7 @@ last_updated: "2026-08-17 v1.0 (初版 — calli wake#21；三層分工＋Alaya 
                               否 → Alaya
 ```
 
-不確定 → **先寫個人記憶**。升級到 Alaya 有閘門（§3），反向降級會讓外部 links 斷。
+不確定 → **先寫個人記憶**。升級到 Alaya 門檻很低（§3：自己判斷就能整理），但反向降級會讓外部 links 斷。
 
 ---
 
@@ -135,19 +135,30 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py root-index --persona <person
 
 ## 🕯 §3 升級到 Alaya（集體潛意識）
 
-**入庫閘門 —— 滿足其中一項才可以進：**
+**門檻只有一個：你判斷它「沒有我也成立、且不綁任何工作」** —— 一個人認為就整理，
+**不必等第二個人栽**（Tim 2026-08-17 拍板）。
 
-| 條件 | 說明 |
+### 人數是權重，不是入場券
+
+| `recurrence` | 意義 |
 |---|---|
-| **A. 兩位以上 persona 各自栽過／確認過** | `links` 要能列出兩筆以上**不同 persona** 的個人 fragment |
-| **B. Tim 顯式拍板** | 規範而非教訓（例：陪看不要劇透）—— 不必等第二個人栽 |
+| 1 | 只有你栽過／確認過 → **正常入庫、正常被檢索到** |
+| 2+ | 多位各自栽過 → **同一條在多人身上重演，它更該先被想起來** |
 
-**「我覺得這條大家都該知道」不是條件** —— 那是每一筆記憶的作者都會有的感覺。
-沒有閘門的共用庫會退化成第二個 `lessons.jsonl`（只增不減、200+ 筆、查得到但沒人讀得完）。
+撈到另一個當事人時做兩件事：`recurrence` +1、`links` 加上對方的個人 fragment
+—— **加權重，不是補資格**。那份 links 清單就是「這條有多普遍」的證據。
 
-**一個人栽過但很想寫** → 寫進自己的 fragment，`tags` 加 `alaya-candidate`。
-下一個栽到同一條的人「先搜」時會撈到你 → 湊到兩人才升上來。
-⇒ **升級是被搜出來的，不是被宣告的。**
+> ⚠ **v1 這個權重是給人看的** —— `knowledge_base.py` 的排序只看語意相似度、**不讀 `recurrence`**。
+> 落實方式：`recurrence` 在 frontmatter（進 embedding），**人讀結果時近分的以 recurrence 高者優先**。
+> 檢索端加權**尚未實作**，這是明確缺口不是「已經在做只是看不見」。
+
+**防退化靠維護不靠入庫難**（§4）—— `lessons.jsonl` 的問題不是入庫太寬，是**沒有維護**：
+200+ 筆就算每筆都經過兩人認證，一樣沒人讀得完。
+**一次性的閘擋不住持續的增長。**
+
+**仍該留在個人層的**：帶「我」才成立的（「我對敬重的人下不了刀」）、
+綁具體工作的（「HSceneAsset 要先跑 Import spines」）。
+拿不定主意 → 預設落點是個人層，但**別把這讀成「盡量別升」**。
 
 ### 個人 ↔ 集體怎麼分工寫
 
@@ -159,7 +170,7 @@ alaya/lesson_no-spoilers          ← 通用：怎麼做到（可行動守則、
 ```
 
 Alaya 檔案：`AgentCommands/Alaya/fragments/<type>_<slug>.md`。
-Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurrence` ＝**有幾個 persona 栽過**、
+Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurrence` ＝**有幾個 persona 栽過（＝回憶權重）**、
 `visibility` 一律 `shared`。細節與維護見
 [Alaya workflow](<ucl_core:Docs~/{lang}/Workflows/Alaya_Collective_Memory_Workflow.md>)。
 
@@ -201,7 +212,7 @@ Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurr
 
 - ❌ **丟關鍵字當查詢** → 見 §1。想不起來就把那件事**講成一句話**
 - ❌ **工作類的東西寫進個人記憶／Alaya** → 綁工作主題的走 `ucl-work-memory`
-- ❌ **一個人栽過就往 Alaya 塞** → 走 §3 閘門，或先掛 `alaya-candidate`
+- ❌ **把「帶我才成立」或「綁某工作」的東西往 Alaya 塞** → 門檻低不等於什麼都往上搬（§3 末段）
 - ❌ **手改機械產物**（`_root_index.md` / `_wake_brief.md`）→ 下次生成就覆寫，要改去改 fragment
 - ❌ **重寫舊碎片正文** → 更新走改 `status` / 追加 `origins` / fork 新檔並 link
 - ❌ **status 全設 open** → 索引變垃圾場。設 `internalized` 要能舉出「最近一次我自動做對了」
@@ -214,3 +225,4 @@ Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurr
 | 檢索**無 per-persona 過濾** | `--format json --topk 40` 事後篩（代價見 §1） |
 | 標題行變獨立 chunk → **同分噪音霸佔前排**（實測 6 筆並列 0.5754） | 用句子查詢；短查詢時往下多看幾筆 |
 | Alaya **沒有機械索引、沒有專屬 CLI** | 靠 `--target alaya` 檢索發現；直接寫 `.md`（碎片還是個位數時，工具會比內容多） |
+| **檢索端不讀 `recurrence`** —— 多人踩到的權重目前只給人看 | 人讀結果時近分的以 recurrence 高者優先；要真加權得改 `knowledge_base.py` 排序階段 |

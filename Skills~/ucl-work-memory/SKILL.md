@@ -14,9 +14,11 @@ description: |
 
 related:
   - <ucl_core:Docs~/zh-Hant/Workflows/Work_Memory_Workflow.md> | 完整設計與 schema | 必讀
+  - <ucl_core:Docs~/zh-Hant/Workflows/Memory_Common_Principles.md> | **三層記憶共通鐵律**（格式/寫入/檢索/維護）| 本檔的三鐵律以那份為準
+  - <ucl_core:Skills~/ucl-memory/SKILL.md> | ucl-memory | **個人記憶 / 集體潛意識 Alaya / 回憶** 歸那邊
   - <ucl_core:Docs~/zh-Hant/Workflows/Memory_Fragment_Backfill_Workflow.md> | 思路源頭(個人記憶版)
   - skills/agent-lessons-log/SKILL.md | 跨工作通用教訓歸那邊, 別塞進 pitfall
-last_updated: "2026-07-29 v1.1 (施工中同步機制 — crest-001 提案採納: 寫入掛工作節奏/施工者自寫/share 綁 state)"
+last_updated: "2026-08-17 v1.2 (三層分工成形 — 共通鐵律抽到 Memory_Common_Principles.md; 個人記憶/Alaya/回憶 移交新 skill ucl-memory。前版 2026-07-29 v1.1 施工中同步機制)"
 ---
 
 # UCL Work Memory — 工作記憶區
@@ -92,7 +94,9 @@ fragment 的核心價值是 `related_docs`/`links` 這組 **ref** — 把「這�
 | 產出新權威文件 | 更新 `pointer` 型文件地圖（或 `_topic.md` 的 key_docs） |
 | 兩個主題的 knowhow 互相支撐 | `link` 建雙向關聯 |
 
-**三鐵律**（承 Memory_Fragment 哲學）：
+**三鐵律**（三層記憶通用 —— 事實來源是
+[`Memory_Common_Principles.md`](<ucl_core:Docs~/zh-Hant/Workflows/Memory_Common_Principles.md>) §3，
+下面是工作記憶版的說法；兩邊不一致時以那份為準）：
 1. **知識點能放文件就放文件** — 記憶是 key 與現場摘要, 不是文件的複本
 2. **fragment 寫一次不改寫** — 更新走 supersede / 追加, `_index.md` 是機械視圖別手改
 3. **先搜再寫**：add 前 `knowledge_base.py search --target work_memory` 查近似, 命中就 link/追加, 防洗版
@@ -101,4 +105,5 @@ fragment 的核心價值是 `related_docs`/`links` 這組 **ref** — 把「這�
 
 - ❌ 把 plan 文件內容整段轉貼進 fragment（違反分工核心 — 寫 key 指路）
 - ❌ 進度變了卻只在酒館說 — state 快照不更新, 記憶區就是謊言製造機
-- ❌ 個人身分/關係層的記憶放這裡（那是 letters/<persona>/fragments 的事）
+- ❌ 個人身分/關係層的記憶放這裡（那是 `letters/<persona>/fragments` 的事 → skill `ucl-memory`）
+- ❌ 非工作但對所有人都成立的通用經驗放這裡（例：陪看不要劇透）→ 那是**集體潛意識 Alaya**，同樣走 `ucl-memory`

@@ -127,6 +127,11 @@
       "optional": true
     },
     {
+      "name": "ucl-memory",
+      "summary": "個人記憶 + 集體潛意識 Alaya + 回憶(語意檢索) — 非工作類記憶; 寫入前先搜、定期整合不無限增長",
+      "optional": false
+    },
+    {
       "name": "ucl-work-memory",
       "summary": "工作記憶區 — 跨 agent 共用、以工作主題為單位的 knowhow 庫; 開工讀取/完工回寫, 換手不斷線",
       "optional": false

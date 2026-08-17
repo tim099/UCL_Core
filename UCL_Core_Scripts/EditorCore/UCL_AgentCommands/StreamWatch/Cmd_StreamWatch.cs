@@ -906,6 +906,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioS["paid_total"] = new JsonData(aTotal);
             ioS["end_seq"] = new JsonData(aSeq);
             AtomicWrite(SessionPath(iPersona), ioS.ToJsonBeautify());
+            AppendSessionLog(ioS, iPersona, aSeq, aPaidMin, aTotal);
 
             ioR.AppendLine($"- 本場統計: cycles={ReadInt(ioS, "cycles")}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
             if (!string.IsNullOrEmpty(aStopNote))
@@ -913,10 +914,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine($"- 結算    : {aPayNote}");
             ioR.AppendLine($"- 收播公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             ioR.AppendLine($"- 場次紀錄: seq **{ReadInt(ioS, "start_seq")} → {aSeq}**（匯出區間，`tavern` 房）");
+            ioR.AppendLine($"- 實錄台帳: 已 append `StreamWatch/{SESSION_LOG_NAME}`（append-only；per-persona session 檔下一場就被覆寫，台帳不會）");
             ioR.AppendLine();
             ioR.AppendLine("## next");
             ioR.AppendLine("1. 本場已收工結算，session 已關閉。");
             ioR.AppendLine($"2. 要再看：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+            // 實錄匯出：**不自動跑**。章 ≠ 場（重播、殘場、一話跨數場都發生過，001 章末就記了一次併章），
+            // 而章名要親筆 ⇒ 這裡只把可直接貼的指令連同已量到的區間交出去，別讓它變成要人自己記得的事。
+            ioR.AppendLine($"3. 本場實錄可匯出成章（章 ≠ 場：一話跨數場就把區間一起給）：");
+            ioR.AppendLine($"   `python <UCL_Core>/Tools~/AgentCommands/library.py export-watch --media {aMedia} "
+                + $"--seq-ranges {ReadInt(ioS, "start_seq")}-{aSeq} --title <章名> --work-title <作品 第N話> --sessions {aSessionId}`");
+            ioR.AppendLine($"   （同一話的其它場次區間查 `StreamWatch/{SESSION_LOG_NAME}`；章名與併章判斷是人的事，工具不代取）");
         }
 
         // 區塊職責：ledger 判重 —— **有界掃描**（只掃最近結帳日之後）
@@ -1836,6 +1844,49 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ===========================================================
         static string SessionPath(string iPersona)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions", $"{iPersona}.json");
+
+        // ===========================================================
+        // 區塊職責：收工時把本場的 seq 區間 append 進一份**永不覆寫**的台帳。
+        // 物理意義：`sessions/<persona>.json` 是「當前那一場」，**開下一場就被蓋掉** ——
+        //   於是 start_seq/end_seq 這兩個只有當下才知道的事實，過了就再也拿不回來。
+        // 🩸 血證：apocalypse-hotel 02-04 話的實錄補不出來，不是因為訊息不見了（它們都在磁碟上），
+        //   是因為**沒有任何地方記得那幾場的區間**，要重建只能人工去讀開播/收播公告反推。
+        //   而更早的 python 版狀態檔（ChatTavern/stream_watch_sessions.json）自 2026-08-11 起就沒再被寫過，
+        //   看起來卻完全正常 —— 那份不能當歷史來源。
+        // 數值影響：一行一場 JSON、append-only、失敗只 warning（結算不能因為寫台帳失敗而回頭）。
+        //   欄位是給 `library.py export-watch` 用的：media_id + start_seq/end_seq 就是匯出區間。
+        // ===========================================================
+        const string SESSION_LOG_NAME = "sessions_log.jsonl";
+
+        static void AppendSessionLog(JsonData iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal)
+        {
+            try
+            {
+                string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", SESSION_LOG_NAME);
+                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+                var aRec = new JsonData();
+                aRec["session_id"] = new JsonData(ReadStr(iS, "session_id"));
+                aRec["persona"] = new JsonData(iPersona);
+                aRec["role"] = new JsonData(ReadStr(iS, "role"));
+                aRec["media_id"] = new JsonData(ReadStr(iS, "media_id"));
+                aRec["parent_session_id"] = new JsonData(ReadStr(iS, "parent_session_id"));
+                aRec["start_ts"] = new JsonData(ReadStr(iS, "start_ts"));
+                aRec["settled_at"] = new JsonData(ReadStr(iS, "settled_at"));
+                aRec["end_reason"] = new JsonData(ReadStr(iS, "end_reason"));
+                aRec["start_seq"] = new JsonData(ReadInt(iS, "start_seq"));
+                aRec["end_seq"] = new JsonData(iEndSeq);
+                aRec["cycles"] = new JsonData(ReadInt(iS, "cycles"));
+                aRec["observations"] = new JsonData(ReadInt(iS, "observations"));
+                aRec["paid_minutes"] = new JsonData(iPaidMin);
+                aRec["paid_total"] = new JsonData(iPaidTotal);
+                aRec["exported_chapter"] = new JsonData("");   // 匯出後由人/工具回填，空＝這一場還沒進任何一章
+                File.AppendAllText(aPath, aRec.ToJson() + "\n", new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StreamWatch] 實錄台帳 append 失敗（不影響結算）: {e.Message}");
+            }
+        }
 
         static string MontageOutPath(string iPersona)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", $"_montage_{iPersona}.jpg");

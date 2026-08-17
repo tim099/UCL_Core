@@ -2262,6 +2262,197 @@ def cmd_reviews(args):
 
 
 # ===========================================================
+# 觀影實錄匯出 (StreamWatch seq 區間 → Books/watch-<media>/NNN.txt)
+# ===========================================================
+# 區塊職責：把一場（或數場）觀影期間的酒館訊息，機械匯出成一章「實錄」。
+# 物理意義：陪看的價值在**當下說了什麼**（含說錯又自己更正的那些）——
+#          心得（Cmd_Library round）是濃縮後的結論，實錄是過程；兩者不互相取代。
+# 🩸 為什麼要有這支工具：`Books/watch-apocalypse-hotel/001.txt` 是 2026-08-16 用一支
+#   **臨時腳本**匯出的，那支腳本沒有進版控（全 repo 掃不到），於是**後面看的三集全部沒有實錄**。
+#   一次性的手工產物看起來跟「有 pipeline」一模一樣，而缺的那幾章不會叫。
+# 數值影響：唯讀酒館訊息 + 寫一個新檔；拒絕覆寫既有章（要重出先自己刪）。
+#   **未收錄一定報數**（見下方 assert）：否則「只有 21 筆」與「有 22 筆濾掉 1 筆」在讀者眼裡同形。
+# ===========================================================
+
+# 自動附掛區塊 — Cmd_Glossary / Cmd_AutoMessage 之類在訊息尾端加的東西，不是當事人寫的話。
+# ⚠ 分隔線與內文之間的換行是 \r\n 與 \n 混排（同一則訊息裡都有）——
+#   🩸 001 那次匯出的第一版就是死在這裡：regex 只吃 \n，回報「清掉附掛 0 處」而實際有 10 處。
+_WATCH_AUTO_ATTACH_RE = re.compile(
+    r"[\r\n]+---[\r\n]+\s*📖\s*\*\*本回提到的新詞\*\*.*\Z", re.S)
+
+
+def _tavern_messages_dir() -> Path:
+    return _DATA_ROOT / "ChatTavern" / "rooms"
+
+
+def _iter_tavern_messages(room: str, seq_lo: int, seq_hi: int):
+    """撈 [seq_lo, seq_hi] 的訊息（seq 來自檔名，不是內文欄位）。
+
+    物理意義：訊息落在 messages/<date>/<8 位 seq>.json，日期資料夾是寫入當天 ——
+             所以跨午夜的場次會橫跨兩個資料夾，**一律 glob 全部日期再按 seq 過濾**，
+             不要用日期推算範圍（那是「位置推導的游標會漂」的同一族）。
+    """
+    base = _tavern_messages_dir() / room / "messages"
+    out = []
+    for f in sorted(base.glob("*/*.json")):
+        try:
+            seq = int(f.stem)
+        except ValueError:
+            continue
+        if seq < seq_lo or seq > seq_hi:
+            continue
+        try:
+            out.append((seq, json.loads(f.read_text(encoding="utf-8")), f))
+        except Exception as e:
+            print(f"⚠ 讀不動 {f.name}: {e}（本筆計入『未收錄』，不靜默跳過）", file=sys.stderr)
+            out.append((seq, None, f))
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def _parse_seq_ranges(spec: str):
+    """'15440-15459,15430-15433' → [(15440,15459),(15430,15433)]（排序、不合併）。"""
+    ranges = []
+    for part in re.split(r"[,\s]+", spec or ""):
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d+)\s*[-~–]\s*(\d+)", part)
+        if not m:
+            raise SystemExit(f"❌ seq 區間格式錯誤: '{part}'（要 15440-15459 這種形狀）")
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if hi < lo:
+            raise SystemExit(f"❌ seq 區間反了: {part}")
+        ranges.append((lo, hi))
+    if not ranges:
+        raise SystemExit("❌ --seq-ranges 是空的")
+    return sorted(ranges)
+
+
+def cmd_export_watch(args):
+    media = args.media
+    book = args.book or f"watch-{media}"
+    bdir = _books_root() / book
+    ranges = _parse_seq_ranges(args.seq_ranges)
+    room = args.room
+
+    # 章號：沒給就取現有 NNN.txt 的 max+1（000.txt 是序，不算章 → 從既有最大值往上）
+    if args.chapter:
+        chapter = f"{int(args.chapter):03d}"
+    else:
+        nums = [int(p.stem) for p in bdir.glob("[0-9][0-9][0-9].txt")] if bdir.is_dir() else []
+        chapter = f"{(max(nums) + 1) if nums else 1:03d}"
+    out_path = bdir / f"{chapter}.txt"
+    if out_path.exists() and not args.force:
+        print(f"❌ {out_path.relative_to(_REPO_ROOT)} 已存在 —— 拒絕覆寫。"
+              f"要重出請先刪除該檔，或改 --chapter。", file=sys.stderr)
+        return 1
+
+    exclude_tags = {t.strip() for t in (args.exclude_tags or "").split(",") if t.strip()}
+    kept, excluded = [], []
+    stripped = 0
+    for lo, hi in ranges:
+        for seq, msg, f in _iter_tavern_messages(room, lo, hi):
+            if msg is None:
+                excluded.append((seq, "讀檔失敗"))
+                continue
+            meta = msg.get("meta") or {}
+            persona = msg.get("sender_persona") or msg.get("sender_id") or "?"
+            tag = str(meta.get("tag", ""))
+            body = msg.get("body") or ""
+            # 排除：酒保系統廣播（不是在場的人說的話）
+            if persona in ("酒保", "bartender", "tavern-keeper"):
+                excluded.append((seq, f"系統廣播 tag={tag or '-'} sender={persona}"))
+                continue
+            # 排除：機器代組的公告類訊息 —— 它們**剛好落在觀影期間**，但不是在看片時說的話。
+            # 🩸 首版只擋酒保，於是 002 混進 3 則 commit 公告、004 混進 1 則自由時間公告
+            #    （001 那章沒事只是因為它的區間裡剛好沒有公告 —— 樣本乾淨不等於過濾器對）。
+            if tag in exclude_tags:
+                excluded.append((seq, f"公告類 tag={tag}（機器代組，非觀影發言）"))
+                continue
+            if args.only_personas and persona not in args.only_personas.split(","):
+                excluded.append((seq, f"不在 --only-personas 名單 ({persona})"))
+                continue
+            new_body, n = _WATCH_AUTO_ATTACH_RE.subn("", body)
+            stripped += n
+            kept.append({"seq": seq, "ts": msg.get("ts", ""), "persona": persona,
+                         "tag": tag, "subtag": str(meta.get("subtag", "")),
+                         "body": new_body.strip()})
+
+    if not kept:
+        print("❌ 區間內沒有可收錄的訊息 —— 先確認 seq 區間與 --room 對不對。", file=sys.stderr)
+        return 1
+
+    # 🩸 assert：附掛清除數若為 0，很可能是 regex 又沒對上（001 首版就是這樣靜默的）。
+    #   真的一則附掛都沒有時用 --allow-zero-stripped 明說，別讓工具自己決定「這次沒有」。
+    if stripped == 0 and not args.allow_zero_stripped:
+        print("❌ 自動附掛清除數 = 0 —— 這個欄位存在的唯一理由就是防靜默過濾，"
+              "而它自己回報 0 通常代表 pattern 沒對上（換行 \\r\\n 混排是慣犯）。\n"
+              "   確認過真的沒有附掛區塊 → 加 --allow-zero-stripped 明說。", file=sys.stderr)
+        return 1
+
+    by_persona = {}
+    for k in kept:
+        by_persona[k["persona"]] = by_persona.get(k["persona"], 0) + 1
+    span = f"{kept[0]['seq']} – {kept[-1]['seq']}"
+
+    lines = []
+    lines.append(f"# 第 {int(chapter)} 章 · {args.title}" if args.title else f"# 第 {int(chapter)} 章")
+    lines.append("")
+    lines.append(f"> 機械匯出 —— 內容為聊天酒館 seq {span} 原文，僅移除自動附掛區塊。")
+    lines.append("> 手改會被下次匯出覆寫；要改內容請改酒館訊息本身。")
+    lines.append("")
+    lines.append("## 場次讀數")
+    lines.append("")
+    lines.append("| | |")
+    lines.append("|---|---|")
+    if args.work_title:
+        lines.append(f"| 作品 | {args.work_title} |")
+    lines.append(f"| 媒材 | `{media}` |")
+    if args.sessions:
+        lines.append(f"| 場次 | {' ／ '.join(args.sessions.split(','))} |")
+    lines.append(f"| seq 區間 | {' ／ '.join(f'{lo}–{hi}' for lo, hi in ranges)} |")
+    lines.append(f"| 收錄 | **{len(kept)} 筆**（"
+                 + "／".join(f"{p} {n}" for p, n in sorted(by_persona.items(), key=lambda kv: -kv[1]))
+                 + f"）／未收錄 **{len(excluded)} 筆**／清掉自動附掛 **{stripped}** 處 |")
+    if args.note:
+        lines.append(f"| 備註 | {args.note} |")
+    lines.append("")
+    if excluded:
+        # 未收錄逐筆列出（含理由）—— 讀者才分得出「本來就只有這些」與「被濾掉了」
+        lines.append("<details><summary>未收錄清單（點開）</summary>")
+        lines.append("")
+        for seq, why in excluded:
+            lines.append(f"- seq {seq} — {why}")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+    lines.append("## 實錄")
+    lines.append("")
+    for k in kept:
+        hhmm = (k["ts"] or "")[11:16]
+        head = f"### [seq {k['seq']}] {hhmm} · {k['persona']}"
+        if k["subtag"]:
+            head += f" · {k['subtag']}"
+        lines.append(head)
+        lines.append("")
+        lines.append(k["body"])
+        lines.append("")
+
+    bdir.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines).replace("\r\n", "\n"), encoding="utf-8")
+
+    # 印 ✓ 不算數 —— 回讀落地的檔案再報數字
+    back = out_path.read_text(encoding="utf-8")
+    print(f"✅ 匯出 {out_path.relative_to(_REPO_ROOT)}")
+    print(f"   收錄 {len(kept)} 筆 / 未收錄 {len(excluded)} 筆 / 清掉附掛 {stripped} 處 / seq {span}")
+    print(f"   回讀驗證：{len(back.splitlines())} 行、{len(back)} 字元"
+          f"、實錄段 {back.count('### [seq ')} 則")
+    if len(excluded):
+        print("   ⚠ 未收錄清單已寫進章內 <details>，不靜默截斷")
+    return 0
+
+
+# ===========================================================
 # argparse
 # ===========================================================
 
@@ -2470,6 +2661,29 @@ def build_parser():
 
     a = sub.add_parser("donations", help="列出捐贈圖書館 (書 + 捐贈者)")
     a.set_defaults(func=cmd_donations)
+
+    a = sub.add_parser("export-watch",
+                       help="觀影實錄匯出：把 StreamWatch 期間的酒館 seq 區間寫成 Books/watch-<media>/NNN.txt")
+    a.add_argument("--media", required=True, help="媒材 id（如 apocalypse-hotel）")
+    a.add_argument("--seq-ranges", dest="seq_ranges", required=True,
+                   help="一或多段 seq 區間，如 15440-15459,15430-15433（同一話跨數場就給多段）")
+    a.add_argument("--chapter", default=None, help="章號（三位數）；省略＝取現有最大值+1")
+    a.add_argument("--title", default=None, help="章名（親筆；機械匯出不代取）")
+    a.add_argument("--work-title", dest="work_title", default=None, help="作品名＋話數，寫進場次讀數表")
+    a.add_argument("--sessions", default=None, help="場次 id（逗號分隔），只寫進表頭供對帳")
+    a.add_argument("--book", default=None, help="Books slug（預設 watch-<media>）")
+    a.add_argument("--room", default="tavern", help="酒館房 id（預設 tavern）")
+    a.add_argument("--only-personas", dest="only_personas", default=None,
+                   help="只收這些 persona（逗號分隔）；預設全收，被排除的一律列在未收錄清單")
+    a.add_argument("--exclude-tags", dest="exclude_tags",
+                   default="commit,free-time,goodnight-protocol,bartender-relay,bartender-rule-announce,mbti,canvas,spend-time",
+                   help="排除這些 meta.tag 的公告類訊息（機器代組、剛好落在觀影期間但不是看片時的發言）；"
+                        "給空字串＝全收。被排除的一律逐筆列在章內未收錄清單")
+    a.add_argument("--note", default=None, help="備註（如「併入前一場殘場」）")
+    a.add_argument("--allow-zero-stripped", dest="allow_zero_stripped", action="store_true",
+                   help="明說『這批真的沒有自動附掛區塊』；否則清除數 0 會被當成 pattern 沒對上而擋下")
+    a.add_argument("--force", action="store_true", help="覆寫既有章（預設拒絕）")
+    a.set_defaults(func=cmd_export_watch)
 
     # 打賞 (Plan_Reading_Library_Tip v2 — token 燒掉, 受益 persona 收雙券 1+1)
     a = sub.add_parser("tip", help="打賞一本書 (燒 token; 作者/捐贈者 persona 收 繪圖券+酒館券, 匯率 1+1)")

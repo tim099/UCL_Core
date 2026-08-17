@@ -82,12 +82,22 @@ $KB search --target all            --query "<同上>" --topk 12    # 連文件/�
 | 0.42 ~ 0.65 | 灰帶 —— 沾到但不是這條，**或是該回填的訊號**（§4） |
 | ≤ 0.42 | 無關 |
 
-**只想看自己的**（v1 沒有原生 persona 過濾）：
+**只想看自己的** → 用自己那份**單 persona 索引** `frag_<persona>`：
 
 ```bash
-$KB search --target fragments --query "<句子>" --topk 40 --format json   # 再自行篩路徑含 /<persona>/
+$KB search --target frag_<persona>,alaya --query "<句子>" --topk 8
 ```
-⚠ `topk` 是**過濾前**的截斷 —— 自己的碎片排在 41 名就永遠看不到，**而那個缺席不會叫**。
+
+它由 config 依磁碟自動展開（新 persona 一出現就有自己的 target，沒有要手維護的名單），
+第一次查會就地建、之後只有**自己的碎片變動**才重建。實測（basecamp 117 chunks）：
+查詢 **54ms**，而共用 `fragments` 索引是 **4291ms**（28.5 MB 要整份載入）；
+別人改一筆碎片就讓共用索引 stale、一次重建 **7.6s**，切開之後那些 churn 不再落在你的路徑上。
+
+⛔ `frag_*` **不進 `--target all`** —— 它跟 `fragments` 蓋同一批檔案，兩者一起進 all 會讓
+同一段文字算兩次、同分並列，看起來像兩筆獨立證據。要跨人看就用 `fragments`（那份仍在）。
+
+⚠ 用共用 `fragments` 撈自己的東西時，`topk` 是**過濾前**的截斷 ——
+自己的碎片排在 41 名就永遠看不到，**而那個缺席不會叫**。這正是單 persona 索引要解的問題。
 
 ---
 
@@ -222,7 +232,7 @@ Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurr
 
 | 缺什麼 | 現在怎麼過 |
 |---|---|
-| 檢索**無 per-persona 過濾** | `--format json --topk 40` 事後篩（代價見 §1） |
+| 檢索**無 per-persona 過濾**（單一 target 內） | 改查自己的單 persona 索引 `frag_<persona>`（§1）—— 不再需要事後篩 |
 | 標題行變獨立 chunk → **同分噪音霸佔前排**（實測 6 筆並列 0.5754） | 用句子查詢；短查詢時往下多看幾筆 |
 | Alaya **沒有機械索引、沒有專屬 CLI** | 靠 `--target alaya` 檢索發現；直接寫 `.md`（碎片還是個位數時，工具會比內容多） |
 | **檢索端不讀 `recurrence`** —— 多人踩到的權重目前只給人看 | 人讀結果時近分的以 recurrence 高者優先；要真加權得改 `knowledge_base.py` 排序階段 |

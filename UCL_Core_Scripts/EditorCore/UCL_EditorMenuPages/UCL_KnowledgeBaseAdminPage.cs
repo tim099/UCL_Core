@@ -84,6 +84,7 @@ namespace UCL.Core.EditorLib.Page
         void RefreshAll()
         {
             LoadTargets();                                  // 直接讀 kb_targets.json 建下拉（同步、即時）
+            RefreshTargetsFromPython();                     // 再補上 config `expand` 自動展開的 target（唯讀、62ms）
             RunOp("狀態", "status --format text", 60000);   // 抓一次狀態
             RunStale();                                     // 順手抓新鮮度（唯讀、不載模型）
         }
@@ -105,8 +106,57 @@ namespace UCL.Core.EditorLib.Page
             EditorWindow.focusedWindow?.Repaint();
         }
 
+        // ===========================================================
+        // 區塊職責：把 python 端 `expand` **自動展開**的 target（如 frag_<persona> 每人一份索引）補進下拉。
+        // 物理意義：`LoadTargets()` 只看 config 的 targets 字面 key，看不到展開結果 ——
+        //          而展開的名單來自磁碟（新 persona 一出現就有），只有 python 那端知道全貌。
+        //          `targets` op 就是為此存在的（唯讀、不載模型，實測 62ms），所以開頁時補跑一次。
+        // 數值影響：純顯示層。失敗不清空既有下拉（寧可少幾個選項，不要突然只剩 fallback 的 docs）；
+        //          合併後**依名字**還原選取項，不用 index —— 名單長度會變，index 會指到別的 target。
+        // ===========================================================
+        void RefreshTargetsFromPython() => RefreshTargetsFromPythonAsync().Forget();
+
+        async UniTaskVoid RefreshTargetsFromPythonAsync()
+        {
+            var r = await UCL_KnowledgeBaseRunner.RunAsync("targets --format json",
+                                                           CancellationToken.None, 60000);
+            await UniTask.SwitchToMainThread();
+            string stdout = r.Stdout ?? "";
+            int s = stdout.IndexOf('{'), e = stdout.LastIndexOf('}');
+            if (s < 0 || e <= s) return;                     // 拿不到就維持現況（同步那份仍可用）
+            try
+            {
+                var root = JsonData.ParseJson(stdout.Substring(s, e - s + 1));
+                if (root == null || !root.IsObject || !root.Contains("targets")) return;
+                var arr = root["targets"];
+                if (arr == null || !arr.IsArray || arr.Count == 0) return;
+
+                string selected = TargetStr;                 // 先記名字，合併後照名字找回來
+                var list = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var pair = arr[i];                       // [name, desc]
+                    string name = (pair != null && pair.IsArray && pair.Count > 0) ? pair[0].GetString() : null;
+                    if (!string.IsNullOrEmpty(name) && !name.StartsWith("_") && !list.Contains(name))
+                        list.Add(name);
+                }
+                if (list.Count == 0) return;
+                list.Add("all");
+                m_Targets = list.ToArray();
+                int idx = System.Array.IndexOf(m_Targets, selected);
+                m_TargetIdx = idx >= 0 ? idx : Mathf.Clamp(m_TargetIdx, 0, m_Targets.Length - 1);
+                EditorWindow.focusedWindow?.Repaint();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[KnowledgeBaseAdminPage] targets op 解析失敗，維持 config 字面清單: {ex.Message}");
+            }
+        }
+
         // 直接讀 kb_targets.json（與 python 同一份 config）建 target 下拉 —
         // 同步、開頁即時，免 subprocess/async。config-driven：加 target = 改 config，本頁零改動。
+        // ⚠ 這裡只看得到 config 的字面 key；`expand` 展開出來的（frag_<persona>）由
+        //   RefreshTargetsFromPython() 補 —— 兩者刻意分開：同步那份保證開頁立刻有東西可選。
         void LoadTargets()
         {
             //Debug.LogError("LoadTargets");

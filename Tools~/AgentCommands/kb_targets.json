@@ -64,5 +64,17 @@
         "data:WorkMemory/*/_topic.md"
       ]
     }
-  }
+  },
+  "_expand_comment": "expand: 依磁碟現況自動展開成「一個 owner 一份索引」的 target（不寫名單 —— 列舉會漂，而漂掉的那一個不會叫；見 fragments 的 _note 血證）。展開出的 target 帶 exclude_from_all=true，不進 `--target all`，否則同一份文字在 all 裡會出現兩次、同分並列，看起來像兩筆獨立證據。",
+  "expand": [
+    {
+      "id": "frag_per_persona",
+      "desc_tpl": "個人碎片（單 persona 索引）— letters/{name}/fragments/*.md；載入與重建成本只跟自己的碎片量有關",
+      "kind": "markdown",
+      "enumerate_dirs": "data:ChatTavern/baton/letters/*/fragments",
+      "owner_dir_index": -2,
+      "name_tpl": "frag_{name}",
+      "glob_tpl": "data:ChatTavern/baton/letters/{name}/fragments/[!_]*.md"
+    }
+  ]
 }

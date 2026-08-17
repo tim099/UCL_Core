@@ -415,15 +415,56 @@ _DEFAULT_TARGETS = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# 區塊職責：把「一個 owner 一份索引」的 target 由**磁碟現況自動展開**，不寫名單。
+# 物理意義：per-owner 切索引是效能決定，不是分類偏好 —— 實測（basecamp wake#61）：
+#   共用 fragments 索引 28.5 MB ⇒ 每次查詢光載入就 297ms（read 97 + parse 200），
+#   而 13 個 persona 任一人改一筆碎片就讓整份 stale，一次重建 7.6s（沿用 987 / 新算 0 ——
+#   成本全在掃檔、切塊、寫 28.5 MB，跟「真的變了多少」無關）。
+#   切成 per-persona：載入 ~35ms、且只有自己的改動會觸發重建。
+# 數值影響：⛔ 展開出來的 target **不進 `all`**（否則同一份文字在 all 裡出現兩次，
+#   分數一樣、看起來像重複命中，而那個重複不會報錯）。
+# 🩸 為什麼是自動展開而不是在 config 裡列 13 個 persona：本檔 fragments 的 `_note` 已經記過
+#   同一隻 —— 枚舉五型碎片後新增第六型 `howto_`，新檔靜默不進索引而 reindex 照樣印綠燈。
+#   **列舉會漂，而漂掉的那一個不會叫。** 名單交給磁碟，新 persona 一出現就自動有自己的索引。
+# ─────────────────────────────────────────────────────────────────────────
+def _expand_targets(spec: dict) -> dict:
+    """依 spec 掃磁碟展開成多個 target。回 {name: cfg}；spec 壞掉一律回 {} 不 crash。"""
+    out = {}
+    try:
+        base, pat = _glob_base(spec.get("enumerate_dirs", ""))
+        name_tpl = spec.get("name_tpl", "{name}")
+        glob_tpl = spec.get("glob_tpl", "")
+        owner_at = int(spec.get("owner_dir_index", -2))   # 相對於匹配到的目錄，owner 名在哪一層
+        for d in sorted(base.glob(pat)):
+            if not d.is_dir():
+                continue
+            owner = d.parts[owner_at]
+            out[name_tpl.format(name=owner)] = {
+                "desc": spec.get("desc_tpl", "{name}").format(name=owner),
+                "kind": spec.get("kind", "markdown"),
+                "globs": [glob_tpl.format(name=owner)],
+                "exclude_from_all": True,     # 見上方「數值影響」：避免 all 裡同一份文字出現兩次
+                "expanded_from": spec.get("id", "?"),
+            }
+    except Exception:
+        return {}
+    return out
+
+
 def load_targets() -> dict:
-    """讀 kb_targets.json 的 targets 區塊；缺失/壞檔 → 回內建預設（不 crash）。"""
+    """讀 kb_targets.json 的 targets 區塊（＋ `expand` 自動展開）；缺失/壞檔 → 回內建預設（不 crash）。"""
     cfg_path = _THIS.parent / "kb_targets.json"
     try:
         if cfg_path.exists():
             data = json.loads(cfg_path.read_text(encoding="utf-8"))
             tgts = data.get("targets") if isinstance(data, dict) else None
             if isinstance(tgts, dict) and tgts:
-                return tgts
+                merged = dict(tgts)
+                for spec in (data.get("expand") or []):
+                    for k, v in _expand_targets(spec).items():
+                        merged.setdefault(k, v)   # 顯式定義優先，展開只補沒有的
+                return merged
     except Exception:
         pass
     return _DEFAULT_TARGETS
@@ -466,11 +507,16 @@ def resolve_target_sources(target: str):
 
 
 def parse_targets(arg: str):
-    """'all' → 全部合法 target；'a,b' → [a,b]；單一 → [a]（不驗合法性，交 caller）。"""
+    """'all' → 全部合法 target（⛔ 排除 exclude_from_all 的展開 target）；'a,b' → [a,b]；單一 → [a]。
+
+    數值影響：per-owner 展開的 target 與其母 target 蓋同一批檔案，兩者同時進 all
+    ⇒ 同一段文字被算兩次、同分並列，看起來像「兩筆獨立證據」。顯式指名照樣可查。
+    """
     if not arg:
         return []
     if arg.strip().lower() == "all":
-        return valid_targets()
+        tg = load_targets()
+        return [k for k, v in tg.items() if not (isinstance(v, dict) and v.get("exclude_from_all"))]
     return [t.strip() for t in arg.split(",") if t.strip()]
 
 

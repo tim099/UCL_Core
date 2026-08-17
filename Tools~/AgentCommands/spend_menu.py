@@ -76,14 +76,16 @@ def _repo_root() -> Path:
         額度顯示成「查不到」，看起來像餘額工具壞了，其實是路徑推錯。
       **一個根因兩個症狀**，而兩個症狀都不指向真因 —— 所以順序是
       env > cwd walk（主專案 .git 比 submodule 先命中）> 本檔 walk（最後手段）。
+    2026-08-17 起改為**委派 `_lib/ucl_paths`**（Tim 定調：python 端路徑一律走它）——
+    上面那段血證仍然成立，只是修法從「自己排對 fallback 順序」升級成
+    「不要自己排」：ucl_paths 讀 C# 寫的路徑快照，與 C# 端保證同源。
     """
-    import os
-    env_root = os.environ.get("CLAUDE_PROJECT_DIR")
-    if env_root and Path(env_root).is_dir():
-        return Path(env_root).resolve()
-    return (_find_git_root_by_walk(Path.cwd())
-            or _find_git_root_by_walk(_HERE)
-            or Path.cwd().resolve())
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_spend", _HERE / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.repo_root()
 
 
 REPO_ROOT = _repo_root()
@@ -151,19 +153,28 @@ def load_items():
 
 
 def query_balance(account: str) -> int | None:
-    """讀帳戶餘額。讀不到回 None —— **不回 0**：0 是「有帳戶但沒錢」，
-    None 是「問不到」，兩者混淆會讓額度顯示成 0 而看起來像「你破產了」。"""
-    tool = REPO_ROOT / "AgentCommands" / "Tools" / "balance_query.py"
-    if not tool.exists():
-        return None
-    try:
-        r = subprocess.run([sys.executable, str(tool), "--account", account, "--format", "json"],
-                           capture_output=True, encoding="utf-8", errors="replace", timeout=60)
-        if r.returncode != 0:
-            return None
-        return int(json.loads(r.stdout).get("balance"))
-    except Exception:
-        return None
+    """讀帳戶餘額 —— 走 Cmd_Treasury（C# 是餘額的唯一擁有者）。
+
+    讀不到回 None —— **不回 0**：0 是「有帳戶但沒錢」，None 是「問不到」，
+    兩者混淆會讓額度顯示成 0 而看起來像「你破產了」。
+
+    🩸 2026-08-17：本函式原本 spawn `AgentCommands/Tools/balance_query.py`（全掃 ledger 自己算）。
+      那支已退役，理由不是「多一顆 process」，是**它算的跟 C# 不是同一個數字** ——
+      python 全掃磁碟，C# 走增量快取 + snapshot；而且 python 那條的路徑推導一旦漂掉，
+      會安靜地掃到另一棵資料樹（實測 Myth 帳戶：舊路徑 453、真實帳本 1330，差 877）。
+      餘額只能有一個擁有者。
+    """
+    return _treasury_cmd().treasury_balance(account)   # 已直接回 int | None，語意與本函式一致
+
+
+def _treasury_cmd():
+    """lazy import 同目錄 _lib/treasury_cmd（沿用 library.py / mbti.py 既有慣例）。"""
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_treasury_cmd_spend", _HERE / "_lib" / "treasury_cmd.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m
 
 
 # 區塊職責：酒館 post —— 委派 awakening.tavern_post（比照 freetime.py 的既有形狀）

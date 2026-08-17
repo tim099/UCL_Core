@@ -111,3 +111,24 @@ def canvas_voucher_consume(*, persona: str, amount: int, source_ref: str, descri
         "op": "consume", "persona": persona, "amount": amount,
         "ref": source_ref, "description": description or f"canvas consume x{amount}",
     })
+
+
+def canvas_voucher_grant(*, persona: str, amount: int, source: str = "manual_grant",
+                         source_ref: str = "", description: str = ""):
+    """發繪圖券 —— 走 Cmd_CanvasVoucher（C# 是券的 canonical owner）。
+
+    🩸 2026-08-17 補這支的理由：**券是最後一種還能被 python 直寫的錢。**
+      consume 早就走 Cmd 了，grant 卻留著 `canvas.py voucher grant` 與
+      `chess.py grant_voucher()` 兩處直寫 —— 於是券成了本檔開頭那四條後果
+      （快取靜默失準 / 繞過冪等 / 簽章不可信 / balance 欄自行維護）唯一的缺口。
+      而缺口真的漏了：chess.py 的路徑推導 bug 把券寫到 repo 外，兩份帳本各自累積
+      真實交易後分歧（summit 643 vs 231、basecamp 75 vs 254，四個 persona 只存在於錯的那邊）。
+      **路徑 bug 是導火線，但能燒起來是因為那裡本來就允許直寫。**
+    """
+    if amount <= 0:
+        return True, "amount<=0，無需發券"
+    return _run("CanvasVoucher", {
+        "op": "grant", "persona": persona, "amount": amount,
+        "source": source, "ref": source_ref,
+        "description": description or f"grant x{amount}",
+    })

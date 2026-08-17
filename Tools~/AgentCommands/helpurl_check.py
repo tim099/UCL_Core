@@ -38,9 +38,20 @@ try:
 except Exception:
     pass
 
-# 區塊職責: UCL_Core 根目錄解析（不寫死安裝路徑 — 各專案掛載位置不同）
-# 物理意義: 本檔位於 <UCL_Core>/Tools~/AgentCommands/，上推兩層即 core 根。
-_CORE_ROOT = Path(__file__).resolve().parent.parent.parent
+# 區塊職責: UCL_Core 根目錄解析 —— 委派 _lib/ucl_paths（路徑解析的唯一擁有者）。
+# 🩸 本檔第一版自己寫 `Path(__file__).parent.parent.parent`。那在目前的目錄深度下**剛好對**，
+#   但「剛好對」正是這類 bug 的溫床：同日 chess.py 就是靠自推導落到 repo 外，
+#   而且它連錯了都不會叫。⇒ python 端路徑一律走 ucl_paths（Tim 2026-08-17 定調）。
+def _core_root() -> Path:
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_helpurl", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.ucl_core_dir()
+
+
+_CORE_ROOT = _core_root()
 
 # 語系回退順序: 任一存在即算通過（對齊 UCL_URL 的 {lang} → en 回退）
 LANGS = ["zh-Hant", "en", "ja", "zh-Hans"]

@@ -567,23 +567,43 @@ def append_history(g, uci, by, prior_fen, result_fen, say=""):
 # 區塊職責: 繪圖券綁 persona, 跟 ucl-canvas 共用同一份 ledger (AgentCommands/Canvas/vouchers/<persona>.json)。
 #   格式: {persona, balance, history:[{ts,uuid,type,amount,source,ref}]}。
 def grant_voucher(persona, amount, source, ref):
+    """發對局獎勵券 —— 走 Cmd_CanvasVoucher（C# 是券的 canonical owner）。回發放後餘額。
+
+    🩸 2026-08-17：本函式原本**直寫 `<voucher_dir>/<persona>.json`**，
+      而 `_VOUCHER_DIR` 又跟著壞掉的 repo root 推導跑到 repo 外 ——
+      兩個問題疊起來，棋局獎勵券就寫進了另一個宇宙，跟 C# 那份帳各自累積後分歧。
+      路徑已修，但**只修路徑不夠**：直寫這件事本身就繞過了冪等判重與餘額快取，
+      下一次任何路徑抖動都會重演。⇒ 寫入端收斂到 Cmd，python 只當 API 層。
+    """
     if not persona or amount <= 0:
         return 0
-    ensure_dirs()
-    p = _VOUCHER_DIR / f"{persona}.json"
-    if p.exists():
-        data = json.loads(p.read_text(encoding="utf-8"))
-    else:
-        data = {"persona": persona, "balance": 0, "history": []}
-    data["balance"] = data.get("balance", 0) + amount
-    data.setdefault("history", []).append({
-        "ts": utcnow_iso(), "uuid": short_uuid(), "type": "grant",
-        "amount": amount, "source": source, "ref": ref,
-    })
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, p)
-    return data["balance"]
+    ok, msg = _canvas_voucher_grant(
+        persona=persona, amount=amount, source=source, source_ref=ref)
+    if not ok:
+        # best-effort：發券失敗不該讓整局結算炸掉（棋局狀態已落盤），但**必須出聲**
+        print(f"⚠ 發券失敗 {persona} +{amount}（棋局結果不受影響，券需補發）: {msg}",
+              file=sys.stderr)
+        return 0
+    return _voucher_balance(persona)
+
+
+def _canvas_voucher_grant(**kw):
+    """lazy import 同目錄 _lib/treasury_cmd（避免 import 期就拉起 Cmd 相依）。"""
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_treasury_cmd_chess", _THIS.parent / "_lib" / "treasury_cmd.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.canvas_voucher_grant(**kw)
+
+
+def _voucher_balance(persona):
+    """讀回落地後的餘額 —— 印 ✓ 不算數，讀回來才算。"""
+    try:
+        p = _VOUCHER_DIR / f"{persona}.json"
+        return json.loads(p.read_text(encoding="utf-8")).get("balance", 0) if p.exists() else 0
+    except Exception:
+        return 0
 
 
 # 發券數資料驅動: 取自 rulebook.reward (缺值補預設)。擴新棋類改 yaml 即可調獎勵。

@@ -52,17 +52,18 @@ FRAGMENT_STATUS = ("active", "superseded", "closed")
 # 路徑解析 — repo root（對齊 freetime.py / knowledge_base.py 慣例）
 # ===========================================================
 def _resolve_repo_root() -> Path:
-    import os
-    env = os.environ.get("CLAUDE_PROJECT_DIR")
-    if env and (Path(env) / ".git").exists():
-        return Path(env)
-    for start in (Path.cwd(), Path(__file__).resolve().parent):
-        p = start
-        while p != p.parent:
-            if (p / ".git").is_dir():
-                return p
-            p = p.parent
-    return Path(__file__).resolve().parents[2]
+    """委派 _lib/ucl_paths —— python 端路徑解析的唯一擁有者（Tim 2026-08-17 定調）。
+
+    🩸 原本的最後一層 fallback 是 `parents[2]` —— 那是寫死目錄深度。
+      工作記憶整批（WM_ROOT / READ_BRIEF_ROOT）都掛在這個 root 底下，
+      推錯的症狀是「記憶讀得到、但讀到的是另一棵樹的」，而且不會報錯。
+    """
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_wm", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.repo_root()
 
 
 REPO_ROOT = _resolve_repo_root()

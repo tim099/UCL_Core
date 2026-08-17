@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
@@ -640,90 +641,54 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             err = null;
             try
             {
-                string repoRoot = System.IO.Path.GetFullPath(
-                    System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", ".."));
-                string scriptPath = System.IO.Path.Combine(repoRoot, "AgentCommands", "Tools", "balance_query.py");
-                if (!System.IO.File.Exists(scriptPath))
+                // 2026-08-17：本方法原本 **spawn python balance_query.py**，已整段改為 C# 原生查詢。
+                //
+                // 🩸 為什麼非換不可（不是為了少一顆 process，是它一直在報錯的數字）：
+                //   舊版用 `Path.Combine(Application.dataPath, "..", "..")` 推 repo root ——
+                //   那假設 Unity 專案是 repo 的**子目錄**（EOV 的 CardGame/Assets）。
+                //   扁平佈局的專案算出來是 **repo 的上一層**，而那裡剛好留著一整棵舊的
+                //   AgentCommands（含 Tools/balance_query.py）。於是它**沒有報錯**，
+                //   還成功回傳了一個看起來完全正常的數字 —— 實測 Myth 帳戶
+                //   舊路徑回 453、真實帳本是 1329，**差 876 token，而酒館裡每個人查到的都是 453**。
+                //   「找不到檔」至少會喊；「找到另一個宇宙的檔」不會。
+                //
+                // 換掉之後一次消滅四件事：路徑推導、外部 process（含註冊/逾時/取消/進度條）、
+                // python 相依、以及「同一個餘額有兩套算法」。
+                // UCL_TreasuryLedger 是餘額的唯一擁有者（增量快取 + snapshot），也比全掃快。
+                int bal = Treasury.UCL_TreasuryLedger.GetBalance(account);
+                var entries = Treasury.UCL_TreasuryLedger.Audit(account);
+
+                int credit = 0, debit = 0;
+                foreach (var e in entries)
                 {
-                    err = $"balance_query.py 不存在於 {scriptPath} (本專案未啟用餘額查詢)";
-                    return null;
+                    if (e.type == "credit") credit += e.amount; else debit += e.amount;
                 }
 
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = $"\"{scriptPath}\" --account \"{account}\" --limit {limit} --format markdown",
-                    WorkingDirectory = repoRoot,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8,
-                    StandardErrorEncoding = System.Text.Encoding.UTF8,
-                };
-                using (var proc = System.Diagnostics.Process.Start(psi))
-                {
-                    if (proc == null) { err = "Process.Start return null"; return null; }
+                var sb = new StringBuilder();
+                sb.AppendLine($"💰 **{account} 帳戶餘額**: `{bal}` tavern_token");
+                sb.AppendLine($"📊 累計: +{credit} / -{debit} (共 {entries.Count} 筆 ledger entry)");
 
-                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
-                    // 這一顆在 **daemon tick 內**，所以是全 core 裡最容易累積的一處：
-                    // 單顆只活 5 秒，但 tick 反覆跑，而 domain reload 會讓下面那個 Kill 失去對象。
-                    // using 宣告 → 正常結束、逾時 kill、使用者 Cancel、丟例外，四條路都會反登記。
-                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
-                        proc, PROC_TAG_PY, "treasury 餘額查詢（tick 內）", nameof(UCL_BartenderDaemon));
-
-                    // 進度可視化 + 可取消 (2026-07-26)：原本 proc.WaitForExit(5000) 是單一阻塞呼叫，
-                    // 卡住時 Editor 的 "Hold on..." 對話框只會顯示 daemon.Tick 這一整包，看不出是在等
-                    // python 子行程。改成每 POLL_STEP_MS 檢查一次是否結束，順便更新進度條 + 讓使用者可
-                    // 按 Cancel 提早放棄 (kill 子行程) — 邊界不變：總等待上限仍是 5000ms。
-                    const int totalTimeoutMs = 5000;
-                    const int pollStepMs = 100;
-                    int waited = 0;
-                    bool exited = false;
-                    bool userCancelled = false;
-                    while (waited < totalTimeoutMs)
+                if (limit > 0 && entries.Count > 0)
+                {
+                    entries.Sort((a, b) => string.CompareOrdinal(b.ts, a.ts));   // newest first
+                    sb.AppendLine();
+                    int n = Math.Min(limit, entries.Count);
+                    sb.AppendLine($"**最近 {n} 筆進出帳** (newest first):");
+                    for (int i = 0; i < n; i++)
                     {
-                        if (proc.WaitForExit(pollStepMs)) { exited = true; break; }
-                        waited += pollStepMs;
-                        if (ShowCancelableProgress(
-                                "酒保 — 餘額查詢中",
-                                $"等待 python 子行程回應 ({waited}ms / {totalTimeoutMs}ms, account={account})…",
-                                (float)waited / totalTimeoutMs))
-                        {
-                            userCancelled = true;
-                            break;
-                        }
+                        var e = entries[i];
+                        string arrow = e.type == "credit" ? "↑+" : "↓-";
+                        string desc = Truncate(e.source_description ?? "", 80);
+                        string refPart = string.IsNullOrEmpty(e.source_ref) ? "" : $" [ref: `{e.source_ref}`]";
+                        sb.AppendLine($"- `{e.ts}` {arrow}{e.amount} `{e.source_kind}` → 餘額 {e.balance_after}"
+                                      + (string.IsNullOrEmpty(desc) ? "" : $" — {desc}") + refPart);
                     }
-                    if (userCancelled)
-                    {
-                        try { proc.Kill(); } catch { }
-                        err = "使用者取消 (Cancel)";
-                        return null;
-                    }
-                    if (!exited)
-                    {
-                        try { proc.Kill(); } catch { }
-                        err = "timeout (>5s)";
-                        return null;
-                    }
-                    string stdout = proc.StandardOutput.ReadToEnd();
-                    string stderr = proc.StandardError.ReadToEnd();
-                    if (proc.ExitCode != 0)
-                    {
-                        err = $"exit={proc.ExitCode}; stderr={Truncate(stderr ?? "", 300)}";
-                        return null;
-                    }
-                    if (string.IsNullOrWhiteSpace(stdout))
-                    {
-                        err = "empty stdout";
-                        return null;
-                    }
-                    return stdout.TrimEnd();
                 }
+                return sb.ToString().TrimEnd();
             }
             catch (Exception e)
             {
-                err = $"spawn exception: {e.Message}";
+                err = $"餘額查詢失敗: {e.Message}";
                 return null;
             }
         }

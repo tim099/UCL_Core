@@ -52,18 +52,26 @@ RUN_CMD_PY = SCRIPT_DIR / "run_cmd.py"
 
 
 def find_repo_root() -> Path:
+    """委派 _lib/ucl_paths —— python 端路徑解析的唯一擁有者（Tim 2026-08-17 定調）。
+
+    🩸 本函式原本自己沿 parent 鏈找 `.git`，找不到就「保守上跳 5 層」。
+      那個 fallback 是寫死 EOV 的目錄深度（…/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands），
+      在別的佈局下會跳到 **repo 的外面**，而且**不會報錯** ——
+      2026-08-17 同族的 chess.py 就是這樣把整批棋局寫進 repo 外，
+      UCL_BartenderDaemon 更誇張：跳出去之後剛好命中一棵舊資料樹，
+      於是餘額查詢回報了一個「看起來完全正常」但差了 876 token 的數字。
     """
-    區塊職責：從 script_dir 反推主專案 repo root
-    物理意義：UCL_Core 是 submodule，不知 host repo 結構，沿 parent 鏈找 .git 目錄
-    數值影響：找不到 → 回 SCRIPT_DIR 的祖父祖父祖父（5 層上去，best effort）
-    """
-    cur = SCRIPT_DIR
-    for _ in range(8):  # 最多上跳 8 層，防無限迴圈
-        if (cur / ".git").exists() and (cur / "AgentCommands").exists():
-            return cur
-        cur = cur.parent
-    # fallback：保守上跳 5 層 (Tools~/AgentCommands → Tools~ → UCL_Core → UCL → Assets → CardGame → repo_root)
-    return SCRIPT_DIR.parent.parent.parent.parent.parent.parent
+    return _ucl_paths_mod().repo_root()
+
+
+def _ucl_paths_mod():
+    """lazy import 同目錄 _lib/ucl_paths（沿用 library.py / mbti.py 既有慣例）。"""
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_ritual", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m
 
 
 REPO_ROOT = find_repo_root()

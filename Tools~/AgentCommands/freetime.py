@@ -84,16 +84,25 @@ def _find_git_root_by_walk(start: Path):
 
 
 def _resolve_repo_root() -> Path:
-    env_root = os.environ.get("CLAUDE_PROJECT_DIR")
-    if env_root and Path(env_root).is_dir():
-        return Path(env_root).resolve()
-    walked = _find_git_root_by_walk(Path.cwd())
-    if walked:
-        return walked
-    walked = _find_git_root_by_walk(_HERE)
-    if walked:
-        return walked
-    return Path.cwd().resolve()
+    """委派 _lib/ucl_paths —— 路徑解析的唯一擁有者（Tim 2026-08-17 定調）。
+
+    🩸 本函式原本自己三層 fallback（env → cwd walk → 檔案 walk）。三層看起來很穩，
+      但它跟 C# 端**不同源**：C# 走 UCL_AgentCommandsPath.DataRoot（讀路徑快照），
+      python 這邊自己猜。兩端一旦猜出不同答案，症狀是「骰面說輪到你、對方的骰面說等對方走」——
+      兩邊都言之鑿鑿，因為讀的是不同宇宙（2026-08-17 chess.py 實撞）。
+      ucl_paths 讀 C# 寫的 `.agentcommands_root.local`，兩端因此保證同源。
+    """
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_freetime", _HERE / "_lib" / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        return _m.repo_root()
+    except Exception as e:      # 參考工具不該因路徑解析失敗而完全不能跑
+        print(f"⚠ ucl_paths 解析失敗，退回 cwd（骰面仍可擲，但棋局/session 判定可能失準）: {e}",
+              file=sys.stderr)
+        return Path.cwd().resolve()
 
 
 _REPO_ROOT = _resolve_repo_root()

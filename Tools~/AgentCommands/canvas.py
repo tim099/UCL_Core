@@ -135,7 +135,8 @@ DEFAULT_REGISTRY_META = "AgentCommands/AwakenInit/_registry_meta.json"
 # 財務操作一律走 Cmd（C# server 端）—— 見 _lib/treasury_cmd.py 的四條理由
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from _lib.treasury_cmd import treasury_debit, canvas_voucher_consume, treasury_balance  # noqa: E402
+from _lib.treasury_cmd import (treasury_debit, canvas_voucher_consume,  # noqa: E402
+                               canvas_voucher_grant, treasury_balance)
 
 def utcnow():
     """區塊職責：回 UTC datetime（單一時間源，避免多次呼叫漂移）"""
@@ -1254,19 +1255,19 @@ def cmd_voucher(args):
         if args.amount is None or args.amount <= 0:
             print("❌ grant 需 --amount > 0", file=sys.stderr)
             sys.exit(2)
-        v = load_voucher(P, persona)
-        v["balance"] = v.get("balance", 0) + args.amount
-        v["history"].append({
-            "ts": iso_ms(now), "uuid": secrets.token_hex(3),
-            "type": "grant", "amount": args.amount,
-            # source/ref 可由 caller 覆寫 (e.g. library.py 打賞發券 source=book_tip ref=book:<slug>),
-            # 預設維持 manual_grant 向後相容
-            "source": getattr(args, "source", None) or "manual_grant",
-            "ref": getattr(args, "ref", None) or "",
-        })
-        write_json(voucher_path(P, persona), v)
+        # 2026-08-17：改走 Cmd（C# 是券的 canonical owner）——
+        # 這裡原本直寫 json，是 consume 已經走 Cmd 之後**唯一還在直寫的券路徑**。
+        # 直寫的代價見 _lib/treasury_cmd.py 檔頭四條；實際爆掉的形狀是兩份帳本分歧。
+        ok, msg = canvas_voucher_grant(
+            persona=persona, amount=args.amount,
+            source=getattr(args, "source", None) or "manual_grant",
+            source_ref=getattr(args, "ref", None) or "",
+        )
+        if not ok:
+            print(f"❌ 發券失敗（未寫入任何東西）: {msg}", file=sys.stderr)
+            sys.exit(1)
         print(f"# 🎟 granted {args.amount} 繪畫券 → {persona}")
-        print(f"  new balance: {v['balance']}")
+        print(f"  new balance: {voucher_balance(P, persona)}")   # 讀回來，不用記憶體值假裝已生效
     elif sub == "history":
         v = load_voucher(P, persona)
         print(f"# 🎟 {persona} 繪畫券歷史 (balance={v.get('balance', 0)}):")

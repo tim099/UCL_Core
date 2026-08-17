@@ -1,12 +1,18 @@
 ---
 name: ucl-coding
 description: |
-  UCL_Core C# 撰寫規範入口 — 動 C# 之前該知道的硬規則與慣例。
-  涵蓋：外部 Process 一律走 UCL_ProcessRegistryService（防屍潮）、設定與 JSON 資料的 typed model 原則、
+  UCL_Core 撰寫規範入口（C# 與 Python）— 動 code 之前該知道的硬規則與慣例。
+  涵蓋：**路徑一律走既有解析器不自己推導**（三端對照；自推導的失敗是靜默的）、
+  **錢一律走 Cmd**（token 與券，python 不直寫帳本）、
+  外部 Process 一律走 UCL_ProcessRegistryService（防屍潮）、設定與 JSON 資料的 typed model 原則、
   字串 key 常數化、註解規範、IMGUI 一律走 UCL 封裝（優先 DrawObjectData 自動繪製），
   以及「該用哪個既有基建而不是自己重造」的指路。
+  ⚠ **要寫 .py 前先讀 Python_Coding_Standards.md**（本 skill 有指路）。
   觸發詞（case-insensitive substring，任一命中即 lazy-load）：
   - coding 規範 / coding standard / 撰寫規範 / 程式規範 / code style / 命名規範
+  - 我要寫 python / 改 .py / 新增工具腳本 / Tools~ 底下 / CLI 工具
+  - 路徑推導 / repo root / data root / ucl_paths / 寫死路徑 / 平行宇宙 / 寫到 repo 外
+  - 直寫帳本 / 發券 / 扣券 / 查餘額 / treasury_cmd
   - 開 Process / Process.Start / spawn process / 子行程 / daemon / 屍潮 / 殭屍行程 / process 卡死
   - JsonData / typed model / 設定檔欄位 / EditorPrefs key / const string / 字串 key
   - 註解怎麼寫 / 區塊職責 / 物理意義 / 數值影響
@@ -62,6 +68,7 @@ description: |
 | 主題 | 文件 |
 |---|---|
 | C# 撰寫規範（設定/JSON、字串 key、**外部 Process**） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+| **Python 撰寫規範（寫任何 .py 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
 | 程式碼註解規範（區塊職責 / 物理意義 / 數值影響） | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
 | 文件撰寫與 AI 可讀性 | `ucl_core:Docs~/{lang}/Agent/AI_READABILITY_GUIDELINES.md` |
 | UCL_Core 路徑解析（不要寫死安裝路徑） | skill `ucl-core-paths` |
@@ -123,8 +130,31 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 
 **② 持久化資料一律繼承 `UCL_Asset<T>`**，禁止裸 `ScriptableObject` 或自寫存檔（見 `ucl-create-asset`）。
 
-**③ 不要寫死 UCL_Core 的安裝路徑** —— 各專案掛載位置不同，寫死跨專案必壞，
-而且通常是**靜默壞**（`File.Exists` 失敗後 fail-soft return，連 warning 都沒有）。見 `ucl-core-paths`。
+**③ 路徑一律走既有解析器，不要自己推導。**
+各專案掛載位置與佈局不同，自推導跨專案必壞，而且**幾乎都是靜默壞**。
+
+| 端 | 用什麼 | ❌ 不要 |
+|---|---|---|
+| **Python** | `_lib/ucl_paths.py`（`repo_root()` / `data_root()` / `ucl_core_dir()`） | `parents[N]`、自己 walk `.git`、自排 env/cwd fallback |
+| **C#** | `UCL_AgentCommandsPath.DataRoot` / `UCL_RepoPath` / `UCL_EditorPath.CorePath` | `Application.dataPath + "../.."` |
+| **文件** | `ucl_core:` / `repo:` prefix | 寫死 `Assets/Plugins/UCL_Core/...` |
+
+> 🩸 **2026-08-17 一天內同一個病撞到三次，全部無聲**：
+> `chess.py` 判準寫死 `CardGame/`（別的專案的目錄名）→ fallback 跳到 **repo 外**，
+> 整批棋局檔不在版控裡，而 C# 讀 repo 內的舊快照 ⇒ **兩邊骰面對同一局講出相反的話**。
+> `UCL_BartenderDaemon` 用 `dataPath/../..` → 跳出去**剛好命中一棵舊資料樹**，
+> 餘額查詢回報 453、真實帳本 1330 —— **差 877，連錯誤訊息都沒有**。
+> `hook_validate_modified.py` 寫死 `Path("CardGame")/"AgentCommands"` → 報告寫進假目錄，
+> 而寫檔會自動建目錄 ⇒ **憑空長出一個資料夾**。
+>
+> 最壞的失敗**不是找不到檔，是找到了另一個宇宙的檔** —— 前者會喊，後者回一個看起來正常的數字。
+> ⇒ **路徑不該被推導，該被傳遞。** `ucl_paths` 讀 C# 寫的路徑快照，兩端因此保證同源。
+>
+> 細節與三端對照 → skill `ucl-core-paths`；Python 端完整規範 → `Python_Coding_Standards.md`。
+
+**④ 錢一律走 Cmd** —— token 與券都是。python 端用 `_lib/treasury_cmd.py`，**不直寫帳本**
+（直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零）。2026-08-17 券的帳本分裂，
+路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。
 
 ## 🔌 不開 Editor 頁也能操作 C# —— `Cmd_Invoke` 反射呼叫
 

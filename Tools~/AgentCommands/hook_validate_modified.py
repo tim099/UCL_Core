@@ -67,18 +67,38 @@ def _find_git_root_by_walk(start: Path) -> Path | None:
 # 區塊職責：依序嘗試三種解析方式定出 git root
 # 物理意義：hook 一定要找到 git root 才能找到 AgentCommands/queue.json + .claude/state/
 # 數值影響：找錯 root 會讓 state file / queue 寫到錯位置，整套機制失靈
-_env_root = os.environ.get("CLAUDE_PROJECT_DIR")
-if _env_root and Path(_env_root).is_dir():
-    GIT_ROOT = Path(_env_root).resolve()
-else:
-    _walked = _find_git_root_by_walk(Path(__file__))
-    GIT_ROOT = _walked if _walked else Path(__file__).resolve().parents[2]
+def _ucl_paths():
+    """lazy import 同目錄 _lib/ucl_paths —— python 端路徑解析的唯一擁有者（Tim 2026-08-17 定調）。"""
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_hook", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m
+
+
+def _resolve_git_root() -> Path:
+    return _ucl_paths().repo_root()
+
+
+def _resolve_data_root() -> Path:
+    return _ucl_paths().data_root()
+
+
+GIT_ROOT = _resolve_git_root()
 
 # run_cmd.py 一定與本檔同目錄（Tools~/AgentCommands/）
 RUN_CMD = Path(__file__).resolve().parent / "run_cmd.py"
 STATE_DIR = GIT_ROOT / ".claude" / "state"
 STATE_FILE = STATE_DIR / "pending_validations.txt"
-REPORT_DIR_REL = Path("CardGame") / "AgentCommands"
+
+# 🩸 2026-08-17：本行原本是 `Path("CardGame") / "AgentCommands"` —— **寫死 EOV 的專案名**。
+#   在扁平佈局的專案（Unity 專案就在 repo 根）底下，報告會被寫進一個不存在的
+#   `<repo>/CardGame/AgentCommands/`，而寫檔會自動建目錄 ⇒ **憑空長出一個假資料夾，
+#   而且不會報錯**，人去 AgentCommands/ 找報告只會找不到。
+#   改走 data_root 的相對位置：資料落在哪由 ucl_paths 決定，本檔不假設專案叫什麼名字。
+REPORT_DIR_REL = Path(_resolve_data_root().relative_to(GIT_ROOT)) \
+    if _resolve_data_root().is_relative_to(GIT_ROOT) else Path("AgentCommands")
 
 # ===========================================================
 # Asset path matching

@@ -75,10 +75,17 @@ def _find_repo_root(start: Path):
 
 
 def _repo_root() -> Path:
-    env = os.environ.get("CLAUDE_PROJECT_DIR")
-    if env and Path(env).is_dir():
-        return Path(env).resolve()
-    return _find_repo_root(Path.cwd()) or _find_repo_root(_HERE) or Path.cwd().resolve()
+    """委派 _lib/ucl_paths —— python 端路徑解析的唯一擁有者（Tim 2026-08-17 定調）。
+
+    原本是 env → cwd walk → 檔案 walk 三層 fallback。三層看起來很穩，
+    但它跟 C# 端**不同源**（C# 走路徑快照），兩端各自猜就會猜出不同答案。
+    """
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_portraits", _HERE / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.repo_root()
 
 
 REPO_ROOT = _repo_root()

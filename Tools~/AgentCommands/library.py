@@ -2446,6 +2446,11 @@ def cmd_export_watch(args):
 
     lines = []
     lines.append(f"# 第 {int(chapter)} 章 · {args.title}" if args.title else f"# 第 {int(chapter)} 章")
+    # 副標：併章時保留另一位匯出者取的章名 —— 併章是為了不讓同一段 seq 出現兩次，
+    #       不是為了讓其中一個人的命名消失。
+    if args.subtitle:
+        lines.append("")
+        lines.append(f"### —— {args.subtitle}")
     lines.append("")
     lines.append(f"> 機械匯出 —— 內容為聊天酒館 seq {span} 原文，僅移除自動附掛區塊。")
     lines.append("> 手改會被下次匯出覆寫；要改內容請改酒館訊息本身。")
@@ -2719,6 +2724,8 @@ def build_parser():
     a.add_argument("--chapter", default=None, help="章號（三位數）；省略＝取現有最大值+1")
     a.add_argument("--title", default=None, help="章名（親筆；機械匯出不代取）")
     a.add_argument("--work-title", dest="work_title", default=None, help="作品名＋話數，寫進場次讀數表")
+    a.add_argument("--subtitle", default=None,
+                   help="副標（併章時保留另一位匯出者的章名；會以 `### —— <副標>` 印在標題下）")
     a.add_argument("--sessions", default=None, help="場次 id（逗號分隔），只寫進表頭供對帳")
     a.add_argument("--book", default=None, help="Books slug（預設 watch-<media>）")
     a.add_argument("--room", default="tavern", help="酒館房 id（預設 tavern）")

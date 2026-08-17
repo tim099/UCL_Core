@@ -175,5 +175,33 @@ public class CombineSettingAsset { ... }
 *   **`UCL_URL.cs`**：URL 解析主流程，擁有 prefix → resolver 註冊表，並負責 `{lang}` 替換與 en 回退。
 *   **`IUCL_UrlPrefixResolver`**：Resolver 契約介面（與 `UCL_URL` 同檔），只定義 `Prefix` 與單一 `Resolve` 方法；Editor / Build 差異由註冊端負責切換。
 *   **`UCL_UrlPrefixResolver`**：以 Lambda 委派為策略的 Resolver 輕量實作，省去下游為單一 prefix 開新類別。
-*   **`UCL_GUILayoutDrawObject.DrawHelpButton`**：GUI 層級的封裝，繪製 `?` 按鈕並呼叫 `UCL_URL.OpenURL`。
+*   **`UCL_GUILayoutDrawObject.DrawHelpButton`**：GUI 層級的封裝，繪製 `?` 按鈕。見下節「點下去會發生什麼」。
 *   **`UCL_EditorPage.cs`**：頁面基類，自動快取 `HelpURL` 屬性並在 TopBar 繪製。
+
+## 5. 點下 `?` 會發生什麼（Editor）
+
+解析完之後**依目標型態分三條路**（Tim 2026-08-17 拍板改走內嵌檢視頁）：
+
+| 解析結果 | 行為 |
+|---|---|
+| 本地 `.md` **且檔案存在** | 開內嵌的 **`UCL_MarkdownViewerPage`**（不離開 Unity 視窗） |
+| `http(s)://` 或非 `.md` | `Application.OpenURL` —— 行為與過去相同 |
+| 本地 `.md` **但檔案不存在** | **`LogWarning` 附解析後實路徑**，然後仍走 `Application.OpenURL` |
+
+**為什麼改開內嵌頁**：`UCL_MarkdownViewerPage` 的 TopBar 本來就有 Reveal / OS Open / Copy raw，
+**它是 OS 開檔的超集** —— 改走它不會少掉任何原本做得到的事，卻多了「不必離開 Unity」。
+入口形狀對齊 `UCL_DocSearchPage` 的「📄 預覽」按鈕。
+
+> [!WARNING]
+> **第三列那個 LogWarning 是 2026-08-17 補的，在那之前這個情況完全靜默。**
+> 鏈路是四層 fail-soft 疊起來：`{lang}` 找不到 → en 回退也找不到 → **維持原路徑**
+> （§1.4 的註解說「最終由 Resolve 回傳的 URL 自行處理 404」，但本地檔案路徑沒有 404 這回事）
+> → `Application.OpenURL(不存在的路徑)` → Windows shell 靜默無視，不丟例外也不寫 log。
+> 使用者只看到「按了沒反應」。
+>
+> 每一層單獨看都合理（回退不該炸、OpenURL 不該擋 UI），但**沒有任何一層負責說「我找不到」**。
+> 實測全 UCL_Core 80 筆 `ucl_core:` HelpURL 中有 **22 筆指向不存在的文件**，長期沒被發現，
+> 正是因為它不會叫。
+>
+> ⚠ 警告**只在點擊時**發出，不做開頁掃描 —— 沒人要看的警告會變成背景音。
+> 想一次盤點所有斷連，該做的是獨立的對帳工具，不是把 Console 洗版。

@@ -119,7 +119,7 @@ tags: [api, ui, imgui, editor]
 | `DrawObjectData(target, DrawObjectParams)` | 參數化版 |
 | `DrawField(obj, dic, displayName, ...)` | 反射展開所有欄位（遞迴呼叫自己） |
 | `DrawCopyPaste(ref obj, dic, fieldType)` | Copy/Paste 按鈕組（JSON 序列化），回傳 `true` 表示貼上成功 |
-| `DrawHelpButton(url)` | 對應 `[HelpURLAttribute]` 的「?」按鈕，點下開啟 URL（已被 `UCL_EditorPage.TopBar` 使用） |
+| `DrawHelpButton(url)` | 對應 `[HelpURLAttribute]` 的「?」按鈕（已被 `UCL_EditorPage.TopBar` 使用）。Editor 下目標是**存在的本地 .md** → 開內嵌 `UCL_MarkdownViewerPage`；http URL / 非 md → `Application.OpenURL`；**檔案不存在 → LogWarning**（在此之前是完全靜默的）。詳見 [HelpURL_Workflow §5](../../Workflows/HelpURL_Workflow.md) |
 | `Preview.OnGUI(name, target, dic, space)` | 唯讀預覽（遞迴顯示但不可編輯） |
 
 支援的屬性繪製擴展：`[Header]`（自動在地化）、`[SerializeReference]` 多型、`IShowInCondition`（條件顯示）、`IStrList`（字串下拉）、`IValueDropdown`、`ITexture2D`、`UCL_FolderExplorerAttribute`、`UCL_IntSliderAttribute`、`UCL_SliderAttribute`。

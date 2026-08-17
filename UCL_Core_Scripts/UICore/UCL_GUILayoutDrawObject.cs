@@ -554,6 +554,10 @@ namespace UCL.Core.UI
         /// <summary>
         /// [職責] 繪製 HelpURL 對應的幫助按鈕，並處理點擊開啟邏輯。
         /// [物理意義] 如果存在 HelpURLAttribute，則在介面上顯示一個 "?" 按鈕。點擊時自動判斷路徑類型並開啟。
+        /// [Editor 行為] 目標是**存在的本地 .md** → 開內嵌的 <c>UCL_MarkdownViewerPage</c>
+        ///   （對齊 UCL_DocSearchPage 的「📄 預覽」入口：不離開 Unity 視窗，且該頁 TopBar 另有
+        ///   Reveal / OS Open / Copy raw，功能是 OS 開檔的超集）。其餘情形（http URL、非 md）
+        ///   維持 <c>Application.OpenURL</c>。
         /// </summary>
         /// <param name="url">要開啟的 URL 字串或相對路徑。</param>
         public static void DrawHelpButton(string url)
@@ -567,10 +571,76 @@ namespace UCL.Core.UI
             float size = UCL_GUIStyle.GetScaledSize(20);
             if (GUILayout.Button("?", UCL_GUIStyle.ButtonStyle, GUILayout.Width(size), GUILayout.Height(size)))
             {
+#if UNITY_EDITOR
+                if (TryOpenHelpInMarkdownViewer(url)) return;
+#endif
                 // [職責] 透過 UCL_URLLib 解析並開啟 URL。
                 UCL_URL.OpenURL(url);
             }
         }
+
+#if UNITY_EDITOR
+        // ===========================================================
+        // 區塊職責：把 HelpURL 導向內嵌 markdown 檢視頁（Tim 2026-08-17）。
+        // 物理意義：HelpURL 十之八九指向 repo 內的 .md。用 OS 預設應用開它，等於把人踢出 Unity，
+        //          而 UCL_MarkdownViewerPage 本身就內建 Reveal / OS Open / Copy raw ——
+        //          **它是 OS 開檔的超集**，所以改走它不會少掉任何原本做得到的事。
+        // 數值影響：只攔截「本地 .md 且檔案存在」；http URL 與非 md 一律讓原路徑處理，行為不變。
+        //
+        // ⚠ 順帶補掉一個靜默失敗（2026-08-17 分析 UCL_FreeTimeAdminPage 的 ? 按鈕沒反應時挖出來）：
+        //   HelpURL 指向不存在的檔時，原本的鏈路是四層 fail-soft 疊起來 ——
+        //   {lang} 找不到 → en fallback 也找不到 → 維持原路徑 → Application.OpenURL(不存在的路徑)
+        //   → Windows shell 靜默無視，不丟例外、不寫 log。使用者只看到「按了沒反應」。
+        //   每一層單獨看都合理，但**沒有任何一層負責說「我找不到」**。
+        //   實測全 UCL_Core 80 筆 ucl_core: HelpURL 中有 22 筆指向不存在的文件，長期沒人發現，
+        //   正是因為它不會叫。這裡補上那句話：找不到就 LogWarning 附解析後的實路徑。
+        //   （只在點擊時喊，不做開頁掃描 —— 沒人要看的警告會變成背景音。）
+        // ===========================================================
+        static bool TryOpenHelpInMarkdownViewer(string iUrl)
+        {
+            try
+            {
+                string aResolved = UCL_URL.ResolveURL(iUrl);
+                if (string.IsNullOrEmpty(aResolved)) return false;
+                if (aResolved.Contains("://")) return false;                     // 雲端 URL → 交給瀏覽器
+                if (!aResolved.EndsWith(".md", System.StringComparison.OrdinalIgnoreCase)) return false;
+
+                if (!System.IO.File.Exists(aResolved))
+                {
+                    Debug.LogWarning($"[HelpURL] 找不到說明文件：`{iUrl}`\n  解析後：{aResolved}\n"
+                        + "  —— 該 HelpURL 指向一個不存在的檔（多半是文件還沒寫，或改名後沒同步）。"
+                        + "在此之前這個情況是**完全靜默**的：按鈕看起來壞了，但沒有任何地方會說話。");
+                    return false;   // 仍讓原路徑跑 —— 這裡只負責讓它出聲，不改變既有行為
+                }
+
+                string aRel = ToRepoRelative(aResolved);
+                UCL.Core.EditorLib.Page.UCL_MarkdownViewerPage.Create(aRel, aResolved);
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                // 開說明頁失敗不該擋住使用者 —— 退回 OS 開檔那條原路。
+                Debug.LogWarning($"[HelpURL] 內嵌檢視頁開啟失敗，改走 OS 開檔：{e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>絕對路徑 → git-root 相對（純顯示用；推不出來就原樣回傳，不要為了好看而騙人）。</summary>
+        static string ToRepoRelative(string iAbsolute)
+        {
+            try
+            {
+                string aRoot = UCL.Core.EditorLib.UCL_RepoPath.RepoRoot;
+                if (string.IsNullOrEmpty(aRoot)) return iAbsolute;
+                string aFull = System.IO.Path.GetFullPath(iAbsolute).Replace('\\', '/');
+                string aRootFull = System.IO.Path.GetFullPath(aRoot).Replace('\\', '/').TrimEnd('/') + "/";
+                return aFull.StartsWith(aRootFull, System.StringComparison.OrdinalIgnoreCase)
+                    ? aFull.Substring(aRootFull.Length)
+                    : aFull;
+            }
+            catch (System.Exception) { return iAbsolute; }
+        }
+#endif
 
 
         private static Dictionary<System.Type, TypeFieldInfoCache> s_TypeFieldInfoCacheDic = null;

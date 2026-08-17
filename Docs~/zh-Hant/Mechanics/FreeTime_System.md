@@ -156,9 +156,57 @@ sender bank 自動從 persona registry 反查、post 失敗 fail-swallow 不影�
 | **共用層** | [`<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities/`](../FreeTime/Activities/_README.md) | 跨專案通用活動（讀書 / 畫圖 / 寫信 / 酒館閒聊…） |
 | **專案層**（可選 overlay） | `<repo>/docs/FreeTime/Activities/` | 該專案限定活動；或同 id + `enabled: false` **停用覆蓋**不適用的共用活動（e.g. 沒 canvas infra 的專案關 canvas-draw） |
 
-**新增 / 更新活動 = 直接增改對應層的 md 檔**（frontmatter: id/name/how/enabled + body SOP），
+**新增 / 更新活動 = 直接增改對應層的 md 檔**（frontmatter: id/name/how/enabled/min_minutes/kind + body SOP），
 工具即自動同步 — 不需要改 code、不需要回來改本檔。格式詳見 [`Activities/_README.md`](../FreeTime/Activities/_README.md)。
 enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 merge 前過濾使停用覆蓋失效的缺口，已修）。
+
+### 4.1.1 骰面的三道處理（Tim 2026-08-17 拍板 `kind` 標記方案）
+
+骰面不再是「全清單一視同仁隨機」。三道處理各自防的是不同的事，**別混為一談**：
+
+| 處理 | 條件 | 效果 | 為什麼是這個效果 |
+|---|---|---|---|
+| **① 可用性** | 活動 `kind` 的特殊邏輯判定不成立 | **整項隱藏**（不列入候選） | 這件事現在**根本做不成** —— 沒開播的陪看留在骰面上只是佔一個位置 |
+| **② 優先層** | `kind` 的特殊邏輯判定成立 | 排在**前段**，層內**仍隨機** | 這件事現在**特別值得做**；優先不是指定，仍可不選 |
+| **③ 時間感知** | `min_minutes` > 剩餘時間 | 降到**最尾**並標明，**不隱藏** | 做得成但不划算 —— 資訊留著讓人自己判斷 |
+
+③ **壓過** ②：「最優先但這場做不完」是自相矛盾的建議，所以降級時也會拿掉優先標記。
+
+目前有實作的 `kind`（新增一種要同時改 `UCL_FreeTimeActivityKind` enum 與 `UCL_FreeTimeGating`）：
+
+- **`StreamWatch`**（用於 `stream-watch`）：沒開播 → 隱藏；開播 → 優先層＋附本場節目名。
+  判定會拿 `_live_info.json` 跟 `_config.json.enabled` **對帳**（孤兒旗標血證 2026-07-30）。
+- **`Chess`**（用於 `chess`）：有未完成棋局**且對手也在自由時間**（active 且未過 end_ts 的 session）
+  → 優先層。**不隱藏** —— 隨時可開新局徵人。判準是「對手在不在」而不是「你欠一步棋」：
+  對手正在挑活動時，你走一步馬上有人接。
+
+⚠ **`kind` 存在活動 md 的 frontmatter，不另存設定檔** —— 活動的事實來源只有 md 一處
+（v1 的 `activities.json` 正是因雙源漂移被廢止）。Editor「自由時間管理」頁的下拉選單
+就地改寫該欄位。認不得的值不會報錯也不會生效，只退回 `Default` 並掛 ⚠ 標記。
+
+⚠ **權威實作在 C#**（`Cmd_FreeTime` 走的那條）。`freetime.py shuffle` 有一份**鏡像**供純參考擲骰用，
+跨語言無法共用實作 —— **改判定規則要同步改兩邊**。（py 端沒帶 `--persona` 時棋局判定會跳過並明說。）
+
+### 4.1.2 配對簡報 `_freetime_partners.md`（Tim 2026-08-17）
+
+要對手的活動（下棋 / TRPG / 聊天）佔了自由時間的一半，但「現在找誰、玩什麼」原本散在四處：
+在線 lock、各人的 free-time session、棋局檔、酒館 inbox。step=start / next 會把它們**合成一份檔**：
+
+| 欄位 | 來源 | 為什麼在這 |
+|---|---|---|
+| 在線 persona ＋ agent | `UCL_ActivePersonaLocks.ListOnline()`（lock 檔，不是 registry 的 status 欄）| 登出沒走完時 status 會停在 online，拿它會 @ 到不在的人 |
+| 是否**也在自由時間** | `FreeTime/sessions/<P>.json`（active 且未過 `end_ts`）| 在線 ≠ 有空一起玩；對方也在挑活動時最容易接得上 |
+| 與你的未完棋局（局號 / 輪到誰）| `Chess/games/*.json` ＋ FEN 第二段 | 配對表直接回答「跟他還有什麼沒下完」 |
+| 酒館 inbox 待處理 | `rooms/tavern/inbox/<P>.md`（durable 層）| 誰在等你回話 |
+
+主回傳檔只放**數字＋路徑**（在線 N 位／其中 M 位也在自由時間／inbox K 筆），細節在檔裡 ——
+形狀對齊 stream-watch。指路刻意帶數字：只寫「詳見某檔」的話，沒有東西告訴人值不值得點開。
+
+⚠ **唯讀，不推進酒館已讀 cursor。** 刻意**不**去 spawn `tavern_catchup.py`：
+那支跑完就把訊息標成已讀，而 `step=next` 每輪都會跑一次 ——
+未讀訊息會在 agent 真的看到之前就被消耗掉，而且下一輪的檔案會覆寫掉前一輪的內容。
+**「自動幫你讀掉」跟「幫你看見」是兩件事**，本簡報只做後者；
+要完整未讀訊息（含非 @ 你的近況）由 agent 顯式跑 catchup，簡報的 `## next` 段附了指令。
 
 ### 4.2 將來可能擴充 (Brainstorm Backlog)
 

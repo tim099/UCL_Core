@@ -35,7 +35,18 @@ namespace UCL.Core.EditorLib.Page
         //          症狀是「按了某個按鈕就自動展開、而且收不起來」，看起來像 key 撞名。
         readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
 
+        // 區塊職責：下拉選單（PopupSearchCache）專用容器 —— 同樣不與折疊狀態共用。
+        // 物理意義：兩者的生命週期不同（折疊值要活過 Reload，選單快取不必），
+        //          共用一個容器就是把上面那條血證再踩一次。
+        readonly UCL_ObjectDictionary m_PickerDic = new UCL_ObjectDictionary();
+
         List<UCL_FreeTimeActivity> m_Activities = new List<UCL_FreeTimeActivity>();
+        // 下拉選單的選項與選中索引（Tim 2026-08-17：改為「選一項來編輯」，不再整頁列出所有活動）
+        readonly List<string> m_ActivityOptions = new List<string>();
+        int m_SelectedIdx;
+        // 選中的活動 id —— 記 id 不記索引：Reload 後清單順序可能變（新增活動／改 id），
+        // 只記索引會**安靜地切到另一個活動**，而畫面上看起來像什麼都沒發生。
+        string m_SelectedId = "";
         // 編輯中的暫存值（key = 活動 id）—— TextField 每幀回傳字串，直接寫檔會變成每個按鍵都落一次盤
         readonly Dictionary<string, string> m_DraftMinMinutes = new Dictionary<string, string>();
         readonly Dictionary<string, string> m_DraftName = new Dictionary<string, string>();
@@ -66,7 +77,29 @@ namespace UCL.Core.EditorLib.Page
             m_DraftMinMinutes.Clear();
             m_DraftName.Clear();
             m_DraftHow.Clear();
+            RebuildOptions();
             m_Loaded = true;
+        }
+
+        // 區塊職責：重建下拉選項，並把選取**依 id 對回去**（不是依索引）。
+        // 物理意義：選項字串帶 kind／層級／啟用狀態 —— 下拉收合時只看得到一行，
+        //          那一行要能回答「我選的是哪一個、它現在是什麼狀態」。
+        // 數值影響：找不到原本的 id（被刪 / 改名）→ 退回第 0 項並更新 m_SelectedId，
+        //          **不留一個指向不存在活動的索引**（那會讓後續編輯寫到別人的 md）。
+        void RebuildOptions()
+        {
+            m_ActivityOptions.Clear();
+            foreach (var a in m_Activities)
+            {
+                string aKind = a.kind == UCL_FreeTimeActivityKind.Default ? "" : $" [{a.kind}]";
+                string aLayer = a.isProjectLayer ? "🏠" : "📦";
+                m_ActivityOptions.Add($"{(a.enabled ? "" : "（停用）")}{aLayer} {a.id}{aKind}");
+            }
+            m_SelectedIdx = 0;
+            if (string.IsNullOrEmpty(m_SelectedId)) { m_SelectedId = m_Activities.Count > 0 ? m_Activities[0].id : ""; return; }
+            for (int i = 0; i < m_Activities.Count; i++)
+                if (m_Activities[i].id == m_SelectedId) { m_SelectedIdx = i; return; }
+            m_SelectedId = m_Activities.Count > 0 ? m_Activities[0].id : "";   // 原本那個沒了 → 誠實地換人
         }
 
         protected override void ContentOnGUI()
@@ -123,10 +156,27 @@ namespace UCL.Core.EditorLib.Page
                         WrapLabelStyle);
                     return;
                 }
-                GUILayout.Label("建議時間（min_minutes）：剩餘時間不足時該活動會被排到骰面尾端並標明，"
-                    + "**不隱藏**（資訊不丟，判斷已由 Cmd 代做）。0 ＝ 不做時間感知排序。", WrapLabelStyle);
 
-                foreach (var aAct in m_Activities) DrawActivityRow(aAct);
+                // 選一項來編輯（Tim 2026-08-17）—— 活動數量會長，整頁攤開時每一項都只露出一小截，
+                // 反而看不清正在改哪一個。⚠ PopupSearchCache 選項為 0 會 LogError，上面已擋。
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("編輯活動", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    int aNewIdx = UCL_GUILayout.PopupSearchCache(m_SelectedIdx, m_ActivityOptions, m_PickerDic,
+                        "FreeTimeActivityPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(320)));
+                    if (aNewIdx != m_SelectedIdx && aNewIdx >= 0 && aNewIdx < m_Activities.Count)
+                    {
+                        m_SelectedIdx = aNewIdx;
+                        m_SelectedId = m_Activities[aNewIdx].id;   // 以 id 為準，索引只是當下的位置
+                    }
+                    GUILayout.Label("📦 共用層／🏠 專案層（同 id 專案層覆蓋共用層）", UCL_GUIStyle.LabelStyle,
+                        GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+
+                if (m_SelectedIdx < 0 || m_SelectedIdx >= m_Activities.Count) return;
+                DrawActivityRow(m_Activities[m_SelectedIdx]);
             }
         }
 
@@ -147,6 +197,8 @@ namespace UCL.Core.EditorLib.Page
                         OpenDir(iAct.path);
                     GUILayout.FlexibleSpace();
                 }
+
+                DrawKindRow(iAct);
 
                 // 建議時間：草稿 + 明確的「套用」，不邊打字邊寫檔
                 using (new GUILayout.HorizontalScope())
@@ -169,8 +221,54 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.FlexibleSpace();
                 }
 
+                GUILayout.Label("建議時間：剩餘時間不足時該活動會被排到骰面尾端並標明，"
+                    + "<b>不隱藏</b>（做得成但不划算，資訊留著讓人自己判斷）。0 ＝ 不做時間感知排序。",
+                    WrapLabelStyle);
+
                 DrawDraftField(iAct, "顯示名稱", "name", iAct.name, m_DraftName);
                 DrawDraftField(iAct, "做法(how)", "how", iAct.how, m_DraftHow);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：kind（特殊邏輯標記）下拉 —— 寫回 md frontmatter 的 `kind` 欄位。
+        // 物理意義：用 enum 下拉而不是文字欄，是因為打錯的標記**不會報錯也不會生效**
+        //          （`live-strem` 這種 typo 會安靜地退回 Default）。下拉選單根本打不出那個值。
+        // 數值影響：改完立刻寫檔＋重掃；每個 kind 附一行「它實際會做什麼」——
+        //          一個只有名字沒有說明的標記，使用者只能猜它管什麼。
+        // ===========================================================
+        void DrawKindRow(UCL_FreeTimeActivity iAct)
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("特殊邏輯", UCL_GUIStyle.LabelStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
+                var aNames = Enum.GetNames(typeof(UCL_FreeTimeActivityKind));
+                int aCur = Array.IndexOf(aNames, iAct.kind.ToString());
+                if (aCur < 0) aCur = 0;
+                int aNew = UCL_GUILayout.Popup(aCur, aNames, m_PickerDic, $"Kind_{iAct.id}",
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                if (aNew != aCur && aNew >= 0 && aNew < aNames.Length)
+                    WriteField(iAct, "kind", aNames[aNew]);
+                GUILayout.Label(KindHint(iAct.kind), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                GUILayout.FlexibleSpace();
+            }
+            // 標記打錯要在**設定它的地方**就看得到，不能只在骰面上才顯形。
+            if (!string.IsNullOrEmpty(iAct.kindParseError))
+                GUILayout.Label($"⚠ md 裡的 kind='{iAct.kindParseError}' 認不得，目前當一般活動處理"
+                    + "（用上面的下拉重設一次即可寫回正確值）。", WrapLabelStyle);
+        }
+
+        static string KindHint(UCL_FreeTimeActivityKind iKind)
+        {
+            switch (iKind)
+            {
+                case UCL_FreeTimeActivityKind.StreamWatch:
+                    return "沒開播 → 從骰面隱藏；開播 → 進優先層並附本場節目名";
+                case UCL_FreeTimeActivityKind.Chess:
+                    return "有未完成棋局且對手也在自由時間 → 進優先層（不隱藏，隨時可開新局）";
+                default:
+                    return "一般活動 —— 不走任何特殊邏輯";
             }
         }
 

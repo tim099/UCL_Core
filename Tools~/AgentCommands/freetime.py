@@ -36,6 +36,14 @@ Usage:
   python <UCL_Core>/Tools~/AgentCommands/freetime.py show --id reading    # 看單一活動完整 md (含 body SOP)
   python <UCL_Core>/Tools~/AgentCommands/freetime.py init                 # 用內建預設 scaffold 活動 md 資料夾
 
+v4 骰面 gating (Tim 2026-08-17 拍板 kind 標記方案):
+  活動 md 的 frontmatter 選填 `kind`，骰面據此做兩件**不同**的事:
+    - **可用性**: 條件不成立 → **整項隱藏** (kind=StreamWatch 沒開播時)。做不成的事不該佔候選位置。
+    - **優先層**: 條件成立 → 排前段, **層內仍隨機** (kind=Chess 有未完成棋局且對手也在自由時間時)。
+  這跟既有的 `min_minutes` 時間感知是第三種處理 (降尾標明、不隱藏) —— 三者別混為一談。
+  ⚠ **權威實作在 C# `UCL_FreeTimeGating`** (真正的自由時間走 Cmd_FreeTime); 本檔是純參考擲骰的鏡像,
+    跨語言無法共用實作 —— **改判定規則兩邊都要改**。沒帶 --persona 時棋局判定會跳過並明說。
+
 酒館同步 (v4): shuffle 帶 --persona 時自動把擲骰結果 post 進酒館 (meta tag:free-time subtag:dice-roll);
 sender bank 從 persona_registry.json 反查 (persona → agent → agent_banks)。post 失敗 fail-swallow
 不影響 shuffle 輸出 (對齊 awakening.py tavern_post pattern)。沒帶 --persona = 純本地擲骰不發。
@@ -173,9 +181,18 @@ def _scan_dir(folder: Path):
             "name": meta.get("name", md.stem),
             "how": meta.get("how", ""),
             "enabled": str(meta.get("enabled", "true")).lower() != "false",
+            "kind": (meta.get("kind", "") or "Default").strip(),
+            "min_minutes": _int_or_zero(meta.get("min_minutes", "")),
             "_path": md,
         }
     return items
+
+
+def _int_or_zero(val) -> int:
+    try:
+        return int(str(val).strip())
+    except (TypeError, ValueError):
+        return 0
 
 
 # 區塊職責: 活動清單載入 (v3 雙層合併: UCL_Core 共用層 + 專案層, fallback 內建)
@@ -246,19 +263,107 @@ def _live_stream_info():
     return None
 
 
-def _apply_live_stream(shuffled: list) -> tuple:
-    """直播中 → stream-watch 改名 (附本場節目) + 提到清單第 1 位。回 (清單, 是否直播中)。"""
-    info = _live_stream_info()
-    if not info:
-        return shuffled, False
-    idx = next((i for i, a in enumerate(shuffled) if a.get("id") == STREAM_WATCH_ID), None)
-    if idx is None:
-        return shuffled, False   # 本專案沒有 stream-watch 活動 (或被停用) → 不動
-    decorated = dict(shuffled[idx])
-    title = str(info.get("stream_title") or "").strip()
-    base = decorated.get("name", "觀看直播")
-    decorated["name"] = f"{base} 本場節目: {title}" if title else f"{base} (直播中)"
-    return [decorated] + shuffled[:idx] + shuffled[idx + 1:], True
+# ⚠⚠ 以下 gating 區塊是 C# `UCL_FreeTimeGating` 的**鏡像**（Tim 2026-08-17 拍板 kind 標記方案）。
+#     權威實作在 C# —— 真正的自由時間走 Cmd_FreeTime，本工具只是「純參考擲骰」的旁路。
+#     兩份存在的理由：跨語言無法共用實作，而讓本工具照舊列出「沒開播的陪看」會給出**錯的清單**。
+#     ⇒ 改任何一邊的判定規則，另一邊要同步改。判定所依據的檔案格式是兩端唯一的接縫。
+CHESS_GAMES_DIR = _REPO_ROOT / "AgentCommands" / "Chess" / "games"
+FREETIME_SESSIONS_DIR = _REPO_ROOT / "AgentCommands" / "FreeTime" / "sessions"
+
+
+def _is_in_free_time(persona: str) -> bool:
+    """某 persona 此刻是否在自由時間中 — active 且**未過 end_ts**。
+
+    ⚠ 只看 active 不夠：收工才會翻 false，超時沒回來跑 next 的人會一直停在 active=true。
+      把過期 session 讀成「他在」＝叫人去 @ 一個早就下線的對手。
+    """
+    try:
+        from datetime import datetime, timezone
+        path = FREETIME_SESSIONS_DIR / f"{persona}.json"
+        if not path.is_file():
+            return False
+        s = json.loads(path.read_text(encoding="utf-8"))
+        if not s.get("active"):
+            return False
+        end = str(s.get("end_ts") or "").strip()
+        if not end:
+            return True             # 沒有截止欄位 → 只能信 active
+        dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        return datetime.now(timezone.utc) <= dt
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def _find_waiting_chess(persona: str):
+    """有未完成棋局且**對手也在自由時間** → 回 (對手, 局號, 是否輪到我)；否則 None。
+
+    決定「現在該不該下棋」的不是剩幾分鐘（每步落盤、沒有時間壓力），是**對手在不在**。
+    """
+    if not persona or not CHESS_GAMES_DIR.is_dir():
+        return None
+    for f in sorted(CHESS_GAMES_DIR.glob("*.json")):
+        try:
+            g = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue                # 單一壞檔不該讓整個判定失效
+        if str(g.get("status", "")).lower() != "in_progress":
+            continue
+        seats = g.get("seats") or {}
+        white, black = seats.get("white", ""), seats.get("black", "")
+        if persona == white:
+            opp, i_am_white = black, True
+        elif persona == black:
+            opp, i_am_white = white, False
+        else:
+            continue
+        if not opp or opp == persona:   # 空座位＝還在徵人；solo 局不算「有人在等」
+            continue
+        if not _is_in_free_time(opp):
+            continue
+        parts = str(g.get("fen", "")).split()
+        my_turn = len(parts) >= 2 and ((parts[1] == "w") == i_am_white)
+        return opp, g.get("index", 0), my_turn
+    return None
+
+
+def _gate(act: dict, persona: str) -> tuple:
+    """回 (visible, priority, name_suffix) — 對應 C# UCL_FreeTimeGating.Evaluate。"""
+    kind = (act.get("kind") or "Default").strip().lower()
+    if kind in ("", "default"):
+        return True, False, ""
+    if kind == "streamwatch":
+        info = _live_stream_info()
+        if not info:
+            return False, False, ""          # 沒開播 → 隱藏（做不成，不只是不划算）
+        title = str(info.get("stream_title") or "").strip()
+        return True, True, (f" 本場節目: {title}" if title else "（直播中）")
+    if kind == "chess":
+        hit = _find_waiting_chess(persona)
+        if not hit:
+            return True, False, ""           # 不隱藏 — 隨時可開新局徵人
+        opp, idx, my_turn = hit
+        return True, True, (f" ♟ 第 {idx} 局輪到你，@{opp} 也在自由時間" if my_turn
+                            else f" ♟ 第 {idx} 局進行中，@{opp} 也在自由時間（等他走）")
+    print(f"⚠ 認不得的 kind='{act.get('kind')}'（活動 {act.get('id')}）— 當一般活動處理", file=sys.stderr)
+    return True, False, f" ⚠（kind='{act.get('kind')}' 認不得）"
+
+
+def _order_activities(activities: list, persona: str, rng) -> tuple:
+    """可用性過濾 → 兩層各自洗牌（優先層在前）。回 (清單, 優先層筆數, 是否直播中)。"""
+    priority, normal, is_live = [], [], False
+    for a in activities:
+        visible, is_pri, suffix = _gate(a, persona)
+        if not visible:
+            continue
+        item = dict(a)
+        item["name"] = f"{a.get('name', a.get('id', '?'))}{suffix}"
+        item["_priority"] = is_pri
+        if (a.get("kind") or "").strip().lower() == "streamwatch":
+            is_live = True          # 看得到它就是在播（隱藏規則保證了這點）
+        (priority if is_pri else normal).append(item)
+    rng.shuffle(priority)           # 優先層內部也隨機 — 優先不是指定
+    rng.shuffle(normal)
+    return priority + normal, len(priority), is_live
 
 
 # 區塊職責: persona → (sender bank id, agent) 反查 — 委派 awakening.load_registry()
@@ -305,23 +410,27 @@ def op_shuffle(args):
         print("⚠ 沒有任何 enabled 活動 — 檢查活動 md 資料夾")
         return 1
     rng = random.Random(args.seed) if args.seed is not None else random.Random()
-    shuffled = list(activities)
-    rng.shuffle(shuffled)
-    # 直播感知: 先鎖定再截 count — 避免 --count 把直播中的 stream-watch 截掉
-    shuffled, is_live = _apply_live_stream(shuffled)
+    # 可用性過濾 + 兩層排序（優先層在前, 層內仍隨機）。截 count 在排序**之後** —
+    # 否則 --count 會把剛頂上來的優先項截掉。
+    shuffled, n_priority, is_live = _order_activities(activities, args.persona, rng)
+    n_visible = len(shuffled)
     if args.count is not None and args.count > 0:
         shuffled = shuffled[: args.count]
-    print("🎲 自由時間活動參考順序 (隨機排序, 僅供參考 — 自由意志優先):")
-    if is_live:
-        print("  📺 Tim 直播中 — 「觀看直播」鎖定第 1 位 (不強制; 選它 → 直接走 /ucl-stream-watch skill)")
+    print("🎲 自由時間活動參考順序 (兩層隨機排序, 僅供參考 — 自由意志優先):")
+    if n_priority > 0:
+        print(f"  ⭐ 優先層 {n_priority} 項排在前面{' (含📺直播中)' if is_live else ''} — 層內仍隨機, 不強制")
+    if not args.persona:
+        print("  ℹ 沒帶 --persona → **棋局優先判定跳過**（不知道是誰的棋局）")
     for i, a in enumerate(shuffled, 1):
-        line = f"  {i}. {a.get('name', a.get('id', '?'))}"
+        line = f"  {i}. {'⭐ ' if a.get('_priority') else ''}{a.get('name', a.get('id', '?'))}"
         if args.verbose and a.get("how"):
             line += f" — {a['how']}"
         print(line)
     if not args.verbose:
         print("  (加 --verbose 看每項的操作提示; show --id <X> 看完整活動 md)")
-    print(f"  [清單來源: {source} | 共 {len(activities)} 項 enabled]")
+    hidden = len(activities) - n_visible
+    print(f"  [清單來源: {source} | enabled {len(activities)} 項"
+          f"{f', 條件不成立隱藏 {hidden} 項' if hidden else ''}]")
 
     # 區塊職責: 擲骰結果同步發酒館 (--persona 帶了才發; --no-post 顯式關)
     # 物理意義: body = 編號清單 (只列 name, 不帶 how — 酒館訊息保持輕量), meta 標 dice-roll

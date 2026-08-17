@@ -17,6 +17,41 @@ using UCL.Core.EditorLib.AgentCommands.Awakening;
 namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 {
     /// <summary>
+    /// 活動的**特殊邏輯標記**（Tim 2026-08-17 拍板；frontmatter 欄位 `kind`）。
+    /// <para>
+    /// 為什麼是 enum 而不是自由字串規則名：管理頁要能給下拉選單。字串欄位打錯
+    /// （`live-strem`）會**安靜地什麼都不做**，而下拉選單根本打不出那個值。
+    /// </para>
+    /// <para>
+    /// 為什麼存在 md frontmatter 而不是另一份設定檔：活動的事實來源只有 md 一處。
+    /// 這條是本系統付過學費的 —— v1 的 `AgentCommands/FreeTime/activities.json`
+    /// 正是因為「雙源同步漂移」被廢止，管理頁也明著寫了「不另存一份 override 設定」。
+    /// </para>
+    /// <para>
+    /// 新增一種 kind ＝ 改這個 enum ＋ 在 <see cref="UCL_FreeTimeGating"/> 補對應邏輯。
+    /// 兩邊都要動是刻意的：**沒有實作的標記不該存在**（名字比事實大的東西，
+    /// 會讓人以為那裡有一道邏輯）。
+    /// </para>
+    /// </summary>
+    public enum UCL_FreeTimeActivityKind
+    {
+        /// <summary>一般活動 —— 永遠可選、永遠在普通層，不走任何特殊邏輯。</summary>
+        Default = 0,
+
+        /// <summary>
+        /// 觀看直播：**沒開播就隱藏**（不列入候選 —— 陪看一個不存在的節目是純粹的浪費）；
+        /// 開播時進最優先層並附上本場節目名。
+        /// </summary>
+        StreamWatch = 1,
+
+        /// <summary>
+        /// 下棋：有未完成棋局、且**對手也在自由時間中**時進最優先層（對手在線才接得上手）。
+        /// 沒有這個條件時仍是普通活動 —— 隨時可以開新局徵人，不隱藏。
+        /// </summary>
+        Chess = 2,
+    }
+
+    /// <summary>
     /// 一筆自由時間活動（來源＝一個 md 檔的 frontmatter；正文是給人讀的說明，不進本型別）。
     /// </summary>
     public class UCL_FreeTimeActivity
@@ -28,6 +63,16 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         public int minMinutes;          // 建議所需分鐘；0＝未設定（不做時間感知排序）
         public bool enabled = true;
         public bool isProjectLayer;     // true＝專案層（同 id 會覆蓋共用層）
+
+        /// <summary>特殊邏輯標記（frontmatter `kind`；缺欄位＝Default）。</summary>
+        public UCL_FreeTimeActivityKind kind = UCL_FreeTimeActivityKind.Default;
+
+        /// <summary>
+        /// `kind` 欄位的原始字串 —— **只在解析失敗時非空**。
+        /// 存它是為了讓「打錯的標記」在骰面上顯形，而不是靜靜地退回 Default：
+        /// 靜默退回的症狀是「我明明標了直播，它卻還是照常出現」，而沒有任何地方會喊。
+        /// </summary>
+        public string kindParseError = "";
     }
 
     /// <summary>
@@ -79,8 +124,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 {
                     string aId = Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "id"), Path.GetFileNameWithoutExtension(aMd));
                     int.TryParse(UCL_AwakeningService.ReadFrontmatterField(aMd, "min_minutes") ?? "", out int aMinMinutes);
+                    var aKind = ParseKind(UCL_AwakeningService.ReadFrontmatterField(aMd, "kind"), out string aKindErr);
                     ioMerged[aId] = new UCL_FreeTimeActivity
                     {
+                        kind = aKind,
+                        kindParseError = aKindErr,
                         id = aId,
                         name = Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "name"), Path.GetFileNameWithoutExtension(aMd)),
                         how = UCL_AwakeningService.ReadFrontmatterField(aMd, "how") ?? "",
@@ -96,6 +144,26 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     Debug.LogWarning($"[FreeTime] 活動 md 讀取失敗，跳過：{aMd}（{e.Message}）");
                 }
             }
+        }
+
+        /// <summary>
+        /// 區塊職責：`kind` 欄位字串 → enum。
+        /// 物理意義：空值／缺欄位＝Default（絕大多數活動不需要特殊邏輯，不該逼每份 md 都寫）。
+        /// 數值影響：**認不得的值不是靜默 Default**，會回填 oParseError 讓它在管理頁與骰面上顯形 ——
+        ///          標記打錯而系統照常運作，是「以為有防護其實沒有」那一類最難查的壞法。
+        /// </summary>
+        public static UCL_FreeTimeActivityKind ParseKind(string iRaw, out string oParseError)
+        {
+            oParseError = "";
+            string aVal = (iRaw ?? "").Trim();
+            if (aVal.Length == 0) return UCL_FreeTimeActivityKind.Default;
+            if (Enum.TryParse(aVal, true, out UCL_FreeTimeActivityKind aKind)
+                && Enum.IsDefined(typeof(UCL_FreeTimeActivityKind), aKind))
+                return aKind;
+            oParseError = aVal;
+            Debug.LogWarning($"[FreeTime] 認不得的 kind='{aVal}' —— 視為 Default，並在骰面標記。"
+                + $" 可用值：{string.Join(" / ", Enum.GetNames(typeof(UCL_FreeTimeActivityKind)))}");
+            return UCL_FreeTimeActivityKind.Default;
         }
 
         static string Nz(string iVal, string iFallback) => string.IsNullOrEmpty(iVal) ? iFallback : iVal;

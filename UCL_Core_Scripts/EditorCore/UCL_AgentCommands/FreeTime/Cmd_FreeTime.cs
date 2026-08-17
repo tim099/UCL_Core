@@ -140,15 +140,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // 免費像素發放：整份覆寫額度欄（per-session 清零 —— 拍板②），history 保留供回溯
             GrantFreePixels(iPersona, aSessionId, out int aPrevForfeit);
 
-            // 開場擲骰（全清單隨機排序；時間感知排序＋直播感知：直播中 stream-watch 鎖第 1 位不強制）
+            // 開場擲骰（兩層隨機排序：優先層在前、層內仍隨機；做不成的活動已隱藏；時間不夠的降尾端）
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
-            var (aList, aSource, aIsLive) = RollActivities(aMinutes);
+            var (aList, aSource, aIsLive) = RollActivities(iPersona, aMinutes);
 
             // 酒館開場宣告（單則：時段＋像素額度＋骰面 —— in-process 走 Cmd_Tavern，計酬/mirror 全沿用）
             var aBody = new StringBuilder();
             aBody.AppendLine($"🎫 [{iPersona} 大小姐] 進入自由時間 — 至 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜🎨 免費像素 {FREE_PIXELS_PER_SESSION} 顆已發放（本場有效，用不完歸零）");
             aBody.AppendLine();
-            if (aIsLive) aBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制；選它 → /ucl-stream-watch）");
+            AppendPriorityNote(aBody, aList, aIsLive);
             aBody.AppendLine("開場擲骰 🎲 全清單隨機排序（僅供參考 — 自由意志優先）：");
             for (int i = 0; i < aList.Count; i++) aBody.AppendLine($"{i + 1}. {aList[i].name}");
             aBody.AppendLine();
@@ -161,6 +161,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"- 免費像素: **{FREE_PIXELS_PER_SESSION} 顆**（canvas.py place --pay auto 自動優先用；per-session 清零{(aPrevForfeit > 0 ? $"，上場作廢 {aPrevForfeit} 顆" : "")}）");
             aR.AppendLine($"- 酒館開場宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort，不影響 session）")}");
             AppendOnlineSection(aR, iPersona);
+            AppendPartnerBriefSection(aR, iPersona);
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑活動開做（無明確意圖 → 前 3 名挑一；有明確意圖 → 自由意志優先，但開場 post 註明「本輪未跟骰」）。");
@@ -238,7 +239,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             double aRemainSec = Math.Max(0, (aUntil - aNow).TotalSeconds);
             int aRemain = (int)(aRemainSec / 60);
-            var (aList, aSource, aIsLive) = RollActivities(aRemain);
+            var (aList, aSource, aIsLive) = RollActivities(iPersona, aRemain);
             (int aGranted, int aUsedNow) = ReadFreePixelUsage(iPersona);
             string aRemainText = aRemainSec < 60 ? $"{(int)aRemainSec} 秒" : $"{aRemain} 分";
 
@@ -254,7 +255,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //   還是在防「我沒有把問題本身移走」。** 這次是後者。
             var aDiceBody = new StringBuilder();
             aDiceBody.AppendLine($"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）：");
-            if (aIsLive) aDiceBody.AppendLine("📺 Tim 直播中 — 「觀看直播」鎖定第 1 位（不強制）");
+            AppendPriorityNote(aDiceBody, aList, aIsLive);
             for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
             aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
             int aDiceSeq = await TavernPost(iArgs, iPersona, aDiceBody.ToString(), "dice-roll", iToken);
@@ -264,6 +265,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"- 免費像素: 已用 {aUsedNow}/{aGranted}");
             aR.AppendLine($"- 換骰宣告: {(aDiceSeq > 0 ? $"seq **{aDiceSeq}**" : "未發（best-effort）")}");
             AppendOnlineSection(aR, iPersona);
+            AppendPartnerBriefSection(aR, iPersona);
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
@@ -319,43 +321,246 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 string aAgent = string.IsNullOrEmpty(l.Agent) ? "?" : l.Agent;
                 string aActual = string.IsNullOrEmpty(l.ActualAgentRaw) ? "" : $" / {l.ActualAgentRaw}";
-                ioR.AppendLine($"- **@{l.Persona}**（{aAgent}{aActual}）");
+                // 自由時間狀態直接標在名字旁 —— 「誰在線」跟「誰此刻有空一起玩」是兩件事，
+                // 只給前者的話，配對對象仍要自己一個個去查。
+                bool aFree = UCL_FreeTimeGating.IsInFreeTime(l.Persona);
+                ioR.AppendLine($"- **@{l.Persona}**（{aAgent}{aActual}）{(aFree ? " 🎫 **自由時間中**" : "")}");
             }
             ioR.AppendLine("- 需要對手的活動（下棋 / TRPG）先 @ 一聲再開局 —— 開了才問等於替對方決定了他的自由時間。");
         }
 
-        struct ActivityInfo { public string id; public string name; public string how; public string path; public int minMinutes; }
+        // 區塊職責：把配對簡報寫檔並在回傳檔指路（形狀對齊 stream-watch：細節落檔、主回傳只指路）。
+        // 物理意義：**指路要帶數字** —— 只寫「詳見某檔」的話，沒有東西告訴人值不值得點開，
+        //          於是它會被跳過。帶上「3 位在線 / 1 位也在自由時間 / 21 筆 inbox」才是決策資訊。
+        static void AppendPartnerBriefSection(StringBuilder ioR, string iPersona)
+        {
+            var (aPath, aOnline, aFree, aInbox) = WritePartnerBrief(iPersona);
+            ioR.AppendLine("## 配對簡報（要對手的活動從這裡挑人）");
+            if (string.IsNullOrEmpty(aPath))
+            {
+                ioR.AppendLine("- ⚠ 簡報落檔失敗（見 Console）—— 在線清單見上一段，inbox 請自行跑 catchup。");
+                return;
+            }
+            ioR.AppendLine($"- 在線 **{aOnline}** 位｜其中 **{aFree}** 位也在自由時間｜酒館 inbox **{aInbox}** 筆待處理");
+            ioR.AppendLine($"- 📄 **Read `{aPath}`** —— 誰在線 ✕ 誰也在自由時間 ✕ 跟誰有沒下完的棋 ✕ 誰在等你回話");
+            ioR.AppendLine("- ⚠ 本簡報**唯讀**，不推進酒館已讀 cursor。要完整未讀訊息另跑 catchup（簡報內附指令）——");
+            ioR.AppendLine("  自動幫你讀掉跟幫你看見是兩件事，這裡只做後者。");
+        }
+
+        // ===========================================================
+        // 區塊職責：配對簡報落檔（Tim 2026-08-17）—— 在線名單 ✕ 自由時間狀態 ✕ 未完棋局 ✕ 酒館 inbox。
+        // 物理意義：自由時間有一半的活動**要有人才成立**（下棋 / TRPG / 聊天）。這些事實原本散在四處，
+        //          agent 得自己跑 catchup、自己查 session、自己翻棋局檔才拼得出「現在找誰、玩什麼」。
+        //          回傳檔塞不下這些細節（骰面已經很長），所以照 stream-watch 的既有形狀：
+        //          **細節寫成一份檔，主回傳檔只指路**。
+        // 數值影響：**唯讀，不推進任何 cursor**。刻意不去 spawn `tavern_catchup.py` ——
+        //          那支會推進 per-persona 已讀 cursor，而 step=next 每輪都跑一次；
+        //          未讀訊息會在 agent 還沒看到之前就被標成已讀，且下一輪的檔案覆寫掉前一輪的內容。
+        //          「自動幫你讀掉」跟「幫你看見」是兩件事，這裡只做後者。
+        //          要完整未讀訊息仍走 catchup（本檔的 next 段指路過去），那是 agent 顯式的動作。
+        // ===========================================================
+        static (string path, int online, int freeTime, int inbox) WritePartnerBrief(string iPersona)
+        {
+            string aPath = Path.Combine(UCL_AwakeningService.LettersDir, iPersona, "_freetime_partners.md");
+            var aB = new StringBuilder();
+            aB.AppendLine($"# FreeTime 配對簡報 — {iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aB.AppendLine();
+            aB.AppendLine("> 誰在線、誰此刻也在自由時間、跟誰還有沒下完的棋、酒館還有誰在等你回話 ——");
+            aB.AppendLine("> 要對手的活動（下棋 / TRPG / 聊天）從這裡挑人。");
+            aB.AppendLine("> ⚠ 本檔**唯讀產生**，不推進酒館已讀 cursor；每次 start / next 覆寫。");
+            aB.AppendLine();
+
+            // ── 在線 ✕ 自由時間 ✕ 棋局 ──
+            int aOnline = 0, aFree = 0;
+            aB.AppendLine("## 在線同事");
+            try
+            {
+                var aLocks = UCL_ActivePersonaLocks.ListOnline();
+                var aRows = new List<string>();
+                foreach (var l in aLocks)
+                {
+                    if (string.Equals(l.Persona, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                    aOnline++;
+                    bool aInFt = UCL_FreeTimeGating.IsInFreeTime(l.Persona);
+                    if (aInFt) aFree++;
+                    string aChess = ChessNoteWith(iPersona, l.Persona);
+                    aRows.Add($"| **@{l.Persona}** | {(string.IsNullOrEmpty(l.Agent) ? "?" : l.Agent)} "
+                        + $"| {(aInFt ? "🎫 是" : "—")} | {aChess} |");
+                }
+                if (aRows.Count == 0)
+                {
+                    aB.AppendLine("（查不到其他人的 lock）");
+                    aB.AppendLine();
+                    aB.AppendLine("⚠ **空 ≠ 今天沒人**，只代表現在讀不到在線紀錄。想找人照樣去酒館問一聲 ——");
+                    aB.AppendLine("把空清單當成「不用問了」，是這份簡報唯一能造成的傷害。");
+                }
+                else
+                {
+                    aB.AppendLine("| persona | agent | 自由時間中 | 與你的棋局 |");
+                    aB.AppendLine("|---|---|---|---|");
+                    foreach (var r in aRows) aB.AppendLine(r);
+                    aB.AppendLine();
+                    aB.AppendLine("- 「自由時間中」＝對方此刻也在挑活動，約局最容易接得上。");
+                    aB.AppendLine("- 開新局前先 @ 一聲 —— 開了才問等於替對方決定了他的自由時間。");
+                }
+            }
+            catch (Exception e)
+            {
+                aB.AppendLine($"⚠ 在線清單讀取失敗（{e.Message}）—— **不代表沒人，代表沒讀到**。");
+            }
+
+            // ── 酒館 inbox（durable 層，唯讀）──
+            aB.AppendLine();
+            int aInbox = AppendInboxSection(aB, iPersona);
+
+            aB.AppendLine();
+            aB.AppendLine("## next");
+            aB.AppendLine($"- 要**完整未讀訊息**（含非 @ 你的近況）→ `python AgentCommands/Tools/tavern_catchup.py --persona {iPersona}`");
+            aB.AppendLine("  ⚠ 那支**會推進已讀 cursor**（跑了就算看過），所以本簡報不替你跑 —— 讀不讀由你決定。");
+            aB.AppendLine($"- inbox 處理完歸檔 → `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent {iPersona}`");
+            aB.AppendLine("- 約局 / 回話一律走酒館 `op=post`（chat 邊回不算數 —— 對方看的是酒館）。");
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+                File.WriteAllText(aPath, aB.ToString(), new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[FreeTime] 配對簡報落檔失敗 {aPath}: {e.Message}");
+                return (null, aOnline, aFree, aInbox);
+            }
+            return (aPath, aOnline, aFree, aInbox);
+        }
+
+        /// <summary>兩人之間有沒有未完的棋局 —— 有就標局號與輪到誰（配對表的一欄）。</summary>
+        static string ChessNoteWith(string iSelf, string iOther)
+        {
+            try
+            {
+                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Chess", "games");
+                if (!Directory.Exists(aDir)) return "—";
+                foreach (var aFile in Directory.GetFiles(aDir, "*.json"))
+                {
+                    JsonData aG;
+                    try { aG = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8)); }
+                    catch (Exception) { continue; }
+                    if (aG == null || !aG.Contains("seats")) continue;
+                    if (!string.Equals(ReadStr(aG, "status"), "in_progress", StringComparison.OrdinalIgnoreCase)) continue;
+                    string aW = ReadStr(aG["seats"], "white"), aB2 = ReadStr(aG["seats"], "black");
+                    bool aMeW = string.Equals(aW, iSelf, StringComparison.OrdinalIgnoreCase);
+                    bool aMeB = string.Equals(aB2, iSelf, StringComparison.OrdinalIgnoreCase);
+                    bool aOpp = string.Equals(aMeW ? aB2 : aW, iOther, StringComparison.OrdinalIgnoreCase);
+                    if ((!aMeW && !aMeB) || !aOpp) continue;
+                    string[] aFen = ReadStr(aG, "fen").Split(' ');
+                    string aTurn = aFen.Length >= 2
+                        ? (((aFen[1] == "w") == aMeW) ? "**輪到你**" : "等他走")
+                        : "進行中";
+                    return $"♟ 第 {ReadStr(aG, "index")} 局 · {aTurn}";
+                }
+            }
+            catch (Exception) { /* 配對表的一欄而已，讀不到就留白，不炸整份簡報 */ }
+            return "—";
+        }
 
         /// <summary>
-        /// 擲骰＋時間感知排序（Tim 2026-08-13 補拍，源自 apex-one seq 11180 實跑回饋）：
-        /// 活動 md 選填 `min_minutes`（建議所需分鐘，如 TRPG 20）——剩餘時間不足的活動
-        /// **排到清單尾端並標明時間不夠**（不隱藏 —— 資訊不丟，判斷已由 Cmd 代做）。
-        /// 「一個在任何剩餘時間下都輸出同一份建議的 Cmd，它的建議沒有鑑別力」。
+        /// 區塊職責：讀 durable inbox（`rooms/tavern/inbox/&lt;persona&gt;.md`）列出待處理項。
+        /// 物理意義：durable inbox 存的是**@ 你而且還沒歸檔**的訊息 —— 它不隨 catchup cursor 走，
+        ///          所以讀它不會消耗任何未讀狀態（歸檔是 inbox_ack.py 的顯式動作）。
+        /// 數值影響：只取標題行（`## [seq=N] … (時間)`），不搬內文 —— 簡報是索引不是轉錄；
+        ///          要看全文去酒館撈那個 seq。回傳待處理筆數。
         /// </summary>
-        static (List<ActivityInfo> list, string source, bool isLive) RollActivities(int iRemainMinutes)
+        static int AppendInboxSection(StringBuilder ioB, string iPersona)
+        {
+            string aInboxPath = Path.Combine(UCL_AgentCommandsPath.DataRoot,
+                "ChatTavern", "rooms", "tavern", "inbox", $"{iPersona}.md");
+            if (!File.Exists(aInboxPath))
+            {
+                ioB.AppendLine("## 酒館 inbox");
+                ioB.AppendLine($"- 沒有 inbox 檔（`{aInboxPath}`）—— 代表目前沒有 @ 你且待處理的訊息。");
+                return 0;
+            }
+            var aHeads = new List<string>();
+            try
+            {
+                foreach (var aLine in File.ReadAllLines(aInboxPath))
+                    if (aLine.StartsWith("## [seq=", StringComparison.Ordinal))
+                        aHeads.Add(aLine.Substring(3).Trim());
+            }
+            catch (Exception e)
+            {
+                ioB.AppendLine($"## 酒館 inbox\n- ⚠ 讀取失敗（{e.Message}）—— 沒讀到不等於沒有。");
+                return 0;
+            }
+
+            ioB.AppendLine($"## 酒館 inbox（{aHeads.Count} 筆待處理 · @ 你的訊息 · 唯讀不歸檔）");
+            if (aHeads.Count == 0)
+            {
+                ioB.AppendLine("- 清空狀態 —— 沒有待處理的 @。");
+                return 0;
+            }
+            // 只列最新 10 筆：簡報要能一眼看完；全部都在檔案裡，路徑就在下面。
+            int aStart = Math.Max(0, aHeads.Count - 10);
+            for (int i = aHeads.Count - 1; i >= aStart; i--) ioB.AppendLine($"- {aHeads[i]}");
+            if (aStart > 0) ioB.AppendLine($"- …另有 **{aStart} 筆較舊**（最舊的在檔案頂端）");
+            ioB.AppendLine($"- 全文：`{aInboxPath}`");
+            return aHeads.Count;
+        }
+
+        struct ActivityInfo { public string id; public string name; public string how; public string path; public int minMinutes; public bool priority; }
+
+        /// <summary>
+        /// 擲骰＋兩層排序（Tim 2026-08-17 拍板 kind 標記方案）。
+        /// <para>順序的三道處理，各自防的是不同的事：</para>
+        /// <list type="number">
+        /// <item><b>可用性（隱藏）</b>：kind 特殊邏輯判定做不成的活動**整項不列入候選**
+        ///       —— 沒開播的陪看留在骰面上，是在浪費一個選項的位置。</item>
+        /// <item><b>優先層</b>：條件成立的活動排在前段（<b>層內仍隨機</b> —— 優先不等於指定，
+        ///       多項同時優先時彼此的順序仍是骰出來的）。</item>
+        /// <item><b>時間感知</b>：min_minutes 不足者一律降到最尾並標明（<b>不隱藏</b> ——
+        ///       做得成但不划算，資訊留著讓人自己判斷）。這道**壓過優先層**：
+        ///       「最優先但這場做不完」是自相矛盾的建議。</item>
+        /// </list>
+        /// </summary>
+        static (List<ActivityInfo> list, string source, bool isLive) RollActivities(string iPersona, int iRemainMinutes)
         {
             // 掃描走 UCL_FreeTimeIO 的唯一實作（管理頁共用同一份 —— 兩份掃描器的漂移
             // 症狀是「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯）。
             // 過濾在 merge 之後：專案層的 enabled:false 才擋得住共用層的啟用（kotoko QA 血證）。
             var aScanned = UCL_FreeTimeIO.ScanActivities();
             int aSharedCount = 0, aProjectCount = 0;
-            var aList = new List<ActivityInfo>();
+            bool aIsLive = false;
+            var aPriority = new List<ActivityInfo>();
+            var aNormal = new List<ActivityInfo>();
             foreach (var a in aScanned)
             {
                 if (!a.enabled) continue;
-                aList.Add(new ActivityInfo { id = a.id, name = a.name, how = a.how, path = a.path, minMinutes = a.minMinutes });
+                var aGate = UCL_FreeTimeGating.Evaluate(a, iPersona);
+                if (!aGate.visible) continue;                       // 條件不成立 → 隱藏，不佔候選位置
+                if (a.kind == UCL_FreeTimeActivityKind.StreamWatch) aIsLive = true;   // 看得到它就是在播
+                var aInfo = new ActivityInfo
+                {
+                    id = a.id,
+                    name = a.name + (aGate.nameSuffix ?? ""),
+                    how = a.how,
+                    path = a.path,
+                    minMinutes = a.minMinutes,
+                    priority = aGate.priority,
+                };
+                if (aGate.priority) aPriority.Add(aInfo); else aNormal.Add(aInfo);
                 if (a.isProjectLayer) aProjectCount++; else aSharedCount++;
             }
 
-            // Fisher-Yates（System.Random —— 擲骰不需要密碼學強度）
-            var aRng = new System.Random();
-            for (int i = aList.Count - 1; i > 0; i--)
-            {
-                int j = aRng.Next(i + 1);
-                (aList[i], aList[j]) = (aList[j], aList[i]);
-            }
+            // 兩層各自洗牌 —— 優先層內部也要隨機（拍板：最優先有多項時一樣隨機排序）
+            Shuffle(aPriority);
+            Shuffle(aNormal);
+            var aList = new List<ActivityInfo>(aPriority.Count + aNormal.Count);
+            aList.AddRange(aPriority);
+            aList.AddRange(aNormal);
 
             // 時間感知：min_minutes > 剩餘 → 移到尾端＋名字標「時間不夠」（量了就要用在輸出上）
+            // ⚠ 這道在兩層排序**之後**：時間不夠壓過優先，否則會推薦一件這場做不完的事。
+            //   下棋不設 min_minutes（每步落盤、沒有時間壓力），所以不受本道影響。
             if (iRemainMinutes > 0)
             {
                 var aFit = new List<ActivityInfo>();
@@ -365,6 +570,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     if (a.minMinutes > 0 && a.minMinutes > iRemainMinutes)
                     {
                         var aDeco = a;
+                        aDeco.priority = false;   // 降級了就不該再標成優先（標記要跟實際位置一致）
                         aDeco.name = $"{a.name} ⏳（建議 ≥{a.minMinutes} 分，剩 {iRemainMinutes} 分 —— 本場時間不夠）";
                         aTooLong.Add(aDeco);
                     }
@@ -374,41 +580,18 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aList = aFit;
             }
 
-            // 直播感知：旗標＋控制開關對帳（孤兒旗標血證 2026-07-30 —— enabled=false 視為沒直播）
-            bool aIsLive = TryGetLiveTitle(out string aLiveTitle);
-            if (aIsLive)
-            {
-                int aIdx = aList.FindIndex(a => a.id == "stream-watch");
-                if (aIdx < 0) aIsLive = false;
-                else
-                {
-                    var aDeco = aList[aIdx];
-                    aDeco.name = string.IsNullOrEmpty(aLiveTitle) ? $"{aDeco.name} (直播中)" : $"{aDeco.name} 本場節目: {aLiveTitle}";
-                    aList.RemoveAt(aIdx);
-                    aList.Insert(0, aDeco);
-                }
-            }
             return (aList, $"UCL_Core 共用 {aSharedCount} + 專案 {aProjectCount}", aIsLive);
         }
 
-        static bool TryGetLiveTitle(out string oTitle)
+        /// <summary>Fisher-Yates（System.Random —— 擲骰不需要密碼學強度）。</summary>
+        static void Shuffle(List<ActivityInfo> ioList)
         {
-            oTitle = null;
-            try
+            var aRng = new System.Random();
+            for (int i = ioList.Count - 1; i > 0; i--)
             {
-                string aInfoPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_live_info.json");
-                if (!File.Exists(aInfoPath)) return false;
-                string aCfgPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-                if (File.Exists(aCfgPath))
-                {
-                    var aCfg = JsonData.ParseJson(File.ReadAllText(aCfgPath, Encoding.UTF8));
-                    if (aCfg != null && aCfg.Contains("enabled") && !(bool)aCfg["enabled"]) return false;   // 旗標是殘留不是事實
-                }
-                var aInfo = JsonData.ParseJson(File.ReadAllText(aInfoPath, Encoding.UTF8));
-                if (aInfo != null && aInfo.Contains("stream_title")) oTitle = aInfo["stream_title"].ToString();
-                return true;
+                int j = aRng.Next(i + 1);
+                (ioList[i], ioList[j]) = (ioList[j], ioList[i]);
             }
-            catch (Exception) { return false; }   // fail-soft：誤判沒直播只少一個推薦，誤判有直播會誤導三個 persona
         }
 
         // ===========================================================
@@ -553,14 +736,27 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine($"- 剩餘: **{(int)Math.Max(0, (iUntil - iNow).TotalMinutes)} 分鐘**");
         }
 
+        // 區塊職責：優先層的一行說明（開場宣告／換骰宣告共用一份 —— 兩處各寫一次，
+        //          遲早只有一邊跟著改）。物理意義：優先**不是指定**，仍是參考。
+        static void AppendPriorityNote(StringBuilder ioBody, List<ActivityInfo> iList, bool iIsLive)
+        {
+            int aPri = 0;
+            foreach (var a in iList) if (a.priority) aPri++;
+            if (aPri <= 0) return;
+            ioBody.AppendLine(iIsLive
+                ? $"⭐ 優先層 {aPri} 項排在前面（含📺直播中；層內仍隨機、不強制）"
+                : $"⭐ 優先層 {aPri} 項排在前面（條件成立才會進來；層內仍隨機、不強制）");
+        }
+
         static void AppendDiceSection(StringBuilder ioR, List<ActivityInfo> iList, string iSource, bool iIsLive)
         {
-            ioR.AppendLine("## dice（隨機排序，僅供參考 — 自由意志優先；無明確意圖從前 3 挑）");
-            if (iIsLive) ioR.AppendLine("- 📺 直播中 — stream-watch 鎖第 1 位（不強制）");
+            ioR.AppendLine("## dice（兩層隨機排序，僅供參考 — 自由意志優先；無明確意圖從前 3 挑）");
+            ioR.AppendLine("- ⭐＝優先層（條件成立：直播中／棋局對手也在自由時間）；層內仍隨機。");
+            ioR.AppendLine("- 做不成的活動**已隱藏**（例：沒開播時不列「觀看直播」）—— 清單長度會隨當下狀況變動，那是正常的。");
             for (int i = 0; i < iList.Count; i++)
             {
                 var a = iList[i];
-                ioR.AppendLine($"{i + 1}. **{a.name}**{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
+                ioR.AppendLine($"{i + 1}. {(a.priority ? "⭐ " : "")}**{a.name}**{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
                 ioR.AppendLine($"   （md: `{a.path}`）");   // 掃描端傳遞實路徑，不讓 agent 拿活動名反推雙層目錄
             }
             ioR.AppendLine($"- [清單來源: {iSource}]");

@@ -151,9 +151,9 @@ run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
 
 | step | 做什麼 | 回傳檔 | 誰寫內容 |
 |---|---|---|---|
-| `start` | 守衛（**必須在線**＋不疊開；過期殘留 session 自動收掉）→ session 註冊（until）→ **發 10 顆免費像素**（per-session 清零）→ 開場擲骰（雙層活動 md，直播感知）→ 酒館開場宣告 | `letters/<P>/_freetime_start.md` | 工具 |
+| `start` | 守衛（**必須在線**＋不疊開；過期殘留 session 自動收掉）→ session 註冊（until）→ **發 10 顆免費像素**（per-session 清零）→ 開場擲骰（雙層活動 md ＋ `kind` 可用性/優先層判定）→ 酒館開場宣告 | `letters/<P>/_freetime_start.md` | 工具 |
 | （做活動） | 骰面挑活動（跟骰規則）＋維持對話流（引擎 `--wait-reply` —— **Cmd 不管 turn 存續**）| — | persona |
-| `next` | **活動事件自然結束時跑**（棋局終局／繪圖收筆／聊天告一段落 —— Tim 拍板的觸發點）。對系統時鐘：未到期→輪次+1 重擲＋宣告（**剩 <5 分改印「不建議起新活動」**，不再給整副骰面）；**已到期→收工**（關 session＋像素作廢＋收工宣告）——過期再 next 是收工不是報錯 | `letters/<P>/_freetime_next.md` | 工具 |
+| `next` | **活動事件自然結束時跑**（棋局終局／繪圖收筆／聊天告一段落 —— Tim 拍板的觸發點）。對系統時鐘：未到期→輪次+1 重擲＋宣告；**已到期→收工**（關 session＋像素作廢＋收工宣告）——過期再 next 是收工不是報錯 | `letters/<P>/_freetime_next.md` | 工具 |
 | `end` | 提前收工（reason 進宣告與 payload）。**除非 Tim 明確指示，不要用** —— 正常收工一律由 next 對時鐘自動判定 | `letters/<P>/_freetime_end.md` | 工具 |
 
 ```bash
@@ -164,8 +164,14 @@ run_cmd.py run FreeTime --arg step=end   --arg persona=<P> [--arg reason=<一句
 
 - **每步回傳三個時間欄**（當前時間／自由時間到／剩餘分鐘）——時間感由 Cmd 供給，
   agent 不自己心算（自報時刻第七型未遂血證）；到期判定在 Cmd 內對系統時鐘。
-- **骰面每項附活動 md 實路徑**（掃描端傳遞，不讓 agent 反推雙層目錄）；
-  直播感知沿用 freetime.py 的旗標＋控制開關對帳（孤兒旗標視為沒直播）。
+- **骰面每項附活動 md 實路徑**（掃描端傳遞，不讓 agent 反推雙層目錄）。
+- **配對簡報**（Tim 2026-08-17）：start / next 另落一份 `letters/<P>/_freetime_partners.md` ——
+  在線名單 ✕ 誰也在自由時間 ✕ 跟誰有沒下完的棋 ✕ 酒館 inbox 待處理，主回傳檔只帶數字＋指路
+  （形狀對齊 stream-watch：細節落檔、回傳指路）。**指路要帶數字** —— 只寫「詳見某檔」
+  沒有東西告訴人值不值得點開，於是會被跳過。
+  ⚠ 本簡報**唯讀，不推進酒館已讀 cursor**。刻意不 spawn `tavern_catchup.py`：那支會標已讀，
+  而 next 每輪都跑一次 —— 未讀訊息會在 agent 看到之前就被消耗掉，且下一輪覆寫掉前一輪的檔。
+  **「自動幫你讀掉」跟「幫你看見」是兩件事**，這裡只做後者；要完整未讀訊息由 agent 顯式跑 catchup。
 - **免費像素兩端分工**：C#（step=start）發放、`canvas.py place --pay auto|freetime` 消費；
   session state `<DataRoot>/FreeTime/sessions/<P>.json`、額度 `<DataRoot>/Canvas/freetime/<P>.json`
   —— **改任一端 schema 必須同步另一端**（Cmd_FreeTime.cs ↔ canvas.py）。
@@ -173,9 +179,15 @@ run_cmd.py run FreeTime --arg step=end   --arg persona=<P> [--arg reason=<一句
 - **截止是軟的**（Tim 2026-08-13 補拍）：until 到了**不打斷進行中的活動**——最後一件活動
   做完跑 next 才通知收工（例：14:10 截止、14:12 繪圖收筆 → 此時的 next 才宣布收工）。
   免費像素在收工前仍可用（canvas 端只認 session active 旗標，不拿 end_ts 掐額度）。
-- **活動時間需求**（apex-one seq 11180 回饋 → Tim 拍板）：活動 md 選填 `min_minutes`
-  （建議所需分鐘，如 gaming/stream-watch=20）——擲骰時剩餘時間不足的活動**排尾＋標明
-  「時間不夠」**（不隱藏）；剩 <5 分時 next 直接改印「不建議起新活動」。
+- **骰面的三道處理**（詳見 `Mechanics/FreeTime_System.md` §4.1.1）——三者防的不是同一件事：
+  ① **可用性**：`kind` 判定做不成 → **整項隱藏**（例：沒開播不列「觀看直播」）。
+  ② **優先層**：`kind` 判定成立 → 排前段，**層內仍隨機**（例：棋局對手也在自由時間 → 下棋優先）。
+  ③ **時間感知**：活動 md 選填 `min_minutes`，不足者**降到最尾＋標明「時間不夠」**（不隱藏）。
+  ③ 壓過 ②（「最優先但這場做不完」自相矛盾）。下棋不設 `min_minutes` —— 每步落盤，沒有時間壓力。
+  ⚠ 權威實作在 C#（`UCL_FreeTimeGating`）；`freetime.py shuffle` 有一份鏡像，**改規則要同步兩邊**。
+- ⚠ 曾經有一條「剩 <5 分改印『不建議起新活動』」的末段提示，**2026-08-14 Tim 拍板整個拔掉**
+  （同一句警語連吐五次就會被訓練成背景音；且門檻設 3 秒／設 0／功能不存在在回傳檔上長得一樣）。
+  截止是軟的，晚起的活動只會讓場次順延，本來就不需要擋。
 - `freetime.py enter` 已退役為指路 stub（exit 2）；純參考擲骰用 `freetime.py shuffle`。
 
 ## 11. 完整一天（Template 測試殼可整輪重放）

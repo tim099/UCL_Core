@@ -1494,7 +1494,7 @@ namespace UCL.Core.EditorLib.Page
                     summary.Add($"酒館券 +{tavernAmount}（{tavernBefore} → {tavernAfter}）");
                     announcement.AppendLine($"🍺 酒館券／自由時間券 +{tavernAmount}（bank {bank}），餘額 {tavernBefore} → **{tavernAfter}**。");
                 }
-                announcement.AppendLine("📝 兩種券各自走 canonical C# ledger；填 0 的券種已略過。");
+                //announcement.AppendLine("📝 兩種券各自走 canonical C# ledger；填 0 的券種已略過。");
                 announcement.Append($"📌 本次備註：{desc}");
                 SetResult($"✅ 發券：'{persona}' {string.Join("｜", summary)}");
                 Debug.Log($"[BankAdmin] 發券 {persona} canvas={canvasAmount} tavern={tavernAmount}");

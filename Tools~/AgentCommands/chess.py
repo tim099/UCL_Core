@@ -45,26 +45,39 @@ import uuid
 from pathlib import Path
 
 # ───────────────────────── 路徑解析 ─────────────────────────
-# 區塊職責: 解析 repo root → chess 狀態目錄 (主專案側) + 繪圖券 ledger (跟 canvas 共用)。
+# 區塊職責: 解析 data root → chess 狀態目錄 + 繪圖券 ledger (跟 canvas 共用)。
 # 物理意義: 本檔在 UCL_Core/Tools~/AgentCommands/ (跨專案共用 code); 狀態落主專案 AgentCommands/。
+#
+# 🩸 2026-08-17 kiara 實撞：這裡原本自己推導 repo root，判準是
+#     `(p/"AgentCommands").is_dir() and (p/"CardGame").is_dir()` —— **寫死了 EOV 的目錄佈局**。
+#   本專案 (LY) 沒有 CardGame/，12 圈迴圈全部落空，於是走 fallback `_THIS.parents[6]`
+#   = **repo 的上一層**（D:\Unity）。後果三個，全部靜默：
+#     ① 所有棋局檔寫在 repo 外、不在版控裡（重灌即蒸發，沒有人會發現）
+#     ② C# 端 (Cmd_FreeTime 的下棋優先判定) 讀 repo 內的 DataRoot，兩端讀寫**不是同一批檔**
+#     ③ 走子印 ✅、盤面也畫出來了，但 repo 內那份 json 的 mtime 停在一個半月前
+#   最惡劣的是 fallback 本身：**找不到就往上數六層然後裝作沒事**，連一句 warning 都沒有。
+#
+# ⇒ 修法不是換一個更聰明的推導式，是**不要自己推導**：委派 _lib/ucl_paths（與 mbti.py /
+#   tavern_paths 同一條路），它讀 C# 寫的路徑快照 `.agentcommands_root.local`，
+#   兩端因此保證同源。**路徑不該被推導，該被傳遞。**
 _THIS = Path(__file__).resolve()
 
 
-def find_repo_root() -> Path:
-    """從本檔往上找含 AgentCommands/ 的 repo root。"""
-    p = _THIS
-    for _ in range(12):
-        p = p.parent
-        if (p / "AgentCommands").is_dir() and (p / "CardGame").is_dir():
-            return p
-    # fallback: 由已知層級 (…/CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/chess.py)
-    return _THIS.parents[6]
+def _ucl_paths():
+    """lazy import 同目錄 _lib/ucl_paths（路徑解析的唯一擁有者）。"""
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_chess", _THIS.parent / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m
 
 
-_REPO = find_repo_root()
-_CHESS_DIR = _REPO / "AgentCommands" / "Chess"
+_DATA_ROOT = _ucl_paths().data_root()
+_REPO = _ucl_paths().repo_root()
+_CHESS_DIR = _DATA_ROOT / "Chess"
 _GAMES_DIR = _CHESS_DIR / "games"                                # runtime 對局狀態 (per-project, 留主專案)
-_VOUCHER_DIR = _REPO / "AgentCommands" / "Canvas" / "vouchers"   # 跟 canvas 共用券餘額 (per-project)
+_VOUCHER_DIR = _DATA_ROOT / "Canvas" / "vouchers"                # 跟 canvas 共用券餘額 (per-project)
 _RUN_CMD = _THIS.parent / "run_cmd.py"                            # 同目錄, 廣播用
 _RULEBOOK_DIR = _THIS.parent / "rulebooks"                       # 規則書 spec (跨專案共用, 隨 code 放 UCL_Core)
 

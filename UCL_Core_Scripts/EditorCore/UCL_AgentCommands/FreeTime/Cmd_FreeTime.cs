@@ -453,8 +453,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     bool aOpp = string.Equals(aMeW ? aB2 : aW, iOther, StringComparison.OrdinalIgnoreCase);
                     if ((!aMeW && !aMeB) || !aOpp) continue;
                     string[] aFen = ReadStr(aG, "fen").Split(' ');
+                    // 用「對方」不用「他」—— 簡報不該替沒說明稱謂的人做假設（同 UCL_FreeTimeGating）
                     string aTurn = aFen.Length >= 2
-                        ? (((aFen[1] == "w") == aMeW) ? "**輪到你**" : "等他走")
+                        ? (((aFen[1] == "w") == aMeW) ? "**輪到你**" : "等對方走")
                         : "進行中";
                     return $"♟ 第 {ReadStr(aG, "index")} 局 · {aTurn}";
                 }

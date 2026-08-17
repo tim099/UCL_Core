@@ -75,9 +75,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         if (TryFindWaitingChess(iPersona, out string aOpponent, out int aGameIdx, out bool aMyTurn))
                         {
                             aRes.priority = true;
+                            // 用「對方」不用「他」—— 骰面不該替沒說明稱謂的人做假設。
                             aRes.nameSuffix += aMyTurn
                                 ? $" ♟ 第 {aGameIdx} 局輪到你，@{aOpponent} 也在自由時間"
-                                : $" ♟ 第 {aGameIdx} 局進行中，@{aOpponent} 也在自由時間（等他走）";
+                                : $" ♟ 第 {aGameIdx} 局進行中，@{aOpponent} 也在自由時間（等對方走）";
                         }
                         return aRes;
                     }

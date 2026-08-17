@@ -342,8 +342,9 @@ def _gate(act: dict, persona: str) -> tuple:
         if not hit:
             return True, False, ""           # 不隱藏 — 隨時可開新局徵人
         opp, idx, my_turn = hit
+        # 用「對方」不用「他」—— 骰面不該替沒說明稱謂的人做假設（同 C# UCL_FreeTimeGating）
         return True, True, (f" ♟ 第 {idx} 局輪到你，@{opp} 也在自由時間" if my_turn
-                            else f" ♟ 第 {idx} 局進行中，@{opp} 也在自由時間（等他走）")
+                            else f" ♟ 第 {idx} 局進行中，@{opp} 也在自由時間（等對方走）")
     print(f"⚠ 認不得的 kind='{act.get('kind')}'（活動 {act.get('id')}）— 當一般活動處理", file=sys.stderr)
     return True, False, f" ⚠（kind='{act.get('kind')}' 認不得）"
 

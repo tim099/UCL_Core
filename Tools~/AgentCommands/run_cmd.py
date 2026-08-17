@@ -194,22 +194,40 @@ else:
 # 跟 C# UCL_RepoPath.AgentCommandsDir 對齊, 不跟資料搬。
 QUEUE_DIR = GIT_ROOT / "AgentCommands"
 
+# 共用路徑解析器載入 —— 顯式檔案路徑（裸 `_lib` 名稱在部分執行環境會被專案狀態側的
+# _lib package 綁走；同 awakening.py / memory.py idiom）。lazy + cache：本檔在 Editor
+# 熱路徑被反覆呼叫，模組只 exec 一次。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_for_run_cmd", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+        _mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _UCL_PATHS_CACHE = _mod
+    return _UCL_PATHS_CACHE
+
+
 # T-PATH-01 (2026-05-28): AgentCommands 資料根 pointer 檔解析
 # 物理意義: C# 控制台 Apply 把絕對資料根寫到 <git-root>/.agentcommands_root.local;
 #          本 helper 讀檔得實際資料根, 沒有 → 預設 GIT_ROOT/AgentCommands (與舊行為相同)。
 # 數值影響: 跨語言 (C#/Python) 共讀同一檔, per-machine (gitignored)。
+# ⚠ 2026-08-17（Tim 拍板）：本函式的實作已收斂到 _lib/ucl_paths.py。
+#   pointer 檔的讀取原本有 **10 份平行實作**（run_cmd / library / knowledge_base /
+#   media_admin / audio_transcribe / screenstream_daemon / screenstream_montage /
+#   inbox_ack / inbox_ts_backfill / tavern_paths），每份都自己 read_text().strip()。
+#   十份都對，但十份就是十個會各自漂移的真相源 —— 而漂移的症狀是
+#   「這支工具讀 A 目錄、那支讀 B 目錄」，兩邊都不報錯。
+#   ⇒ 之後要改 pointer 檔格式（加 source= 那行）時，只需要改一處；
+#     十份平行實作的情況下改格式會讓十支工具**同時靜默退回推導**。
+# 參數 git_root 保留給既有呼叫端，實際根由 ucl_paths 決定（tier: CLAUDE_PROJECT_DIR
+#   → __file__ walk → cwd walk），與本檔舊語意在預設情境下同解。
 def _resolve_agentcommands_data_root(git_root: Path) -> Path:
-    pointer = git_root / ".agentcommands_root.local"
-    try:
-        if pointer.exists():
-            content = pointer.read_text(encoding="utf-8").strip()
-            if content:
-                p = Path(content)
-                if p.is_absolute():
-                    return p.resolve()
-    except Exception:
-        pass
-    return (git_root / "AgentCommands").resolve()
+    return _ucl_paths_mod().data_root()
 
 # DATA_ROOT = 可 override 的資料根 (給 ChatTavern / _last_op.md / etc.); 預設 = QUEUE_DIR。
 DATA_ROOT = _resolve_agentcommands_data_root(GIT_ROOT)

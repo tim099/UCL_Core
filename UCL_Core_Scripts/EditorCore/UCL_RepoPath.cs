@@ -71,21 +71,39 @@ namespace UCL.Core.EditorLib
         //          本 getter 純檔案系統搜尋 ⇒ 三個問題一起消失，且與 Python
         //          `_lib/ucl_paths.py::_find_ucl_core_dir` **同演算法**（都是找目錄名）。
         // 數值影響：cache 後不重算；找不到 → raise，不回專案外的另一份 checkout。
-        public static string UCLCoreDir
+        // ⚠ 唯一來源是**相對**那份，絕對由它組出來（Tim 2026-08-17 拍板）。
+        //   🩸 為什麼不是兩個各自解析：那就是兩個會各自漂移的真相源 ——
+        //     本檔今天稍早正是這樣（UCL_EditorPath.CorePath 走 AssetDatabase 算相對、
+        //     本類走資料夾搜尋算絕對），兩者哪天不一致時**兩邊都不會報錯**。
+        //   為什麼「相對」是源而不是「絕對」：
+        //     ① Unity 資產側（AssetDatabase / Resources 路徑）只吃相對，反向剝前綴會在
+        //        core 不在 Assets 底下時失敗；
+        //     ② 絕對可由 UnityProjectRoot + 相對**無損**組出。
+        //   ⚠ 相對那份**不再走 AssetDatabase** —— 否則 main-thread only 的限制會沿著
+        //     「絕對由相對組出」傳染回絕對側，等於把剛拿掉的限制又裝回去。
+        public static string UCLCoreRelative
         {
             get
             {
                 if (string.IsNullOrEmpty(s_CachedUCLCoreDir))
                 {
-                    s_CachedUCLCoreDir = FindUCLCoreDir();
-                    if (string.IsNullOrEmpty(s_CachedUCLCoreDir))
+                    string aAbs = FindUCLCoreDir();
+                    if (string.IsNullOrEmpty(aAbs))
                         throw new System.IO.DirectoryNotFoundException(
                             "[UCL_RepoPath] Unity 專案樹內找不到 UCL_Core 資料夾。" +
                             "⚠ 刻意不往專案外搜 —— 專案外可能存在另一份 checkout，撿到它不會報錯但全錯。");
+                    string aProj = UnityProjectRoot.TrimEnd('/') + "/";
+                    s_CachedUCLCoreDir = aAbs.StartsWith(aProj, System.StringComparison.OrdinalIgnoreCase)
+                        ? aAbs.Substring(aProj.Length)      // 例：Assets/Plugins/UCL_Core
+                        : aAbs;                              // 專案外（理論上到不了，FindUCLCoreDir 只搜 Assets/）
                 }
                 return s_CachedUCLCoreDir;
             }
         }
+
+        /// <summary>UCL_Core 根的絕對路徑 —— 由 <see cref="UCLCoreRelative"/> 組出，兩者不可能不一致。</summary>
+        public static string UCLCoreDir =>
+            Path.Combine(UnityProjectRoot, UCLCoreRelative).Replace('\\', '/');
 
         /// <summary>&lt;UCL_Core&gt;/Tools~/AgentCommands 絕對路徑 —— python 工具都住這裡。</summary>
         /// <remarks>

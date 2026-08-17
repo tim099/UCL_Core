@@ -1,36 +1,21 @@
 ﻿public static class UCL_EditorPath
 {
 
-    private static string s_UCLCorePath = null;
     /// <summary>
-    /// [職責] 自動定位 UCL_Core 模組在專案中的根目錄路徑。
-    /// [物理意義] 用於解析相對於模組的路徑，支持模組在不同專案中的移植。
+    /// [職責] UCL_Core 模組根的**專案相對**路徑（例：<c>Assets/Plugins/UCL_Core</c>）。
+    /// [物理意義] 薄殼 —— 實作已收斂到 <see cref="UCL.Core.EditorLib.UCL_RepoPath.UCLCoreRelative"/>，
+    ///           本屬性只為既有呼叫端相容而保留。要絕對路徑用 <c>UCL_RepoPath.UCLCoreDir</c>；
+    ///           要 Tools~ 底下的腳本用 <c>UCL_RepoPath.CoreTool(name)</c>。
+    /// [計算邏輯] 舊版走 <c>AssetDatabase.FindAssets("UCL_GUILayoutDrawObject t:Script")</c> ——
+    ///           ① **main-thread only**（逼出 UCL_AwakeningService 那條「只能在主執行緒呼叫」）
+    ///           ② 靠「特定腳本檔名 + 路徑含 UCL_Core」的啟發式，撞名不會叫
+    ///           ③ 與絕對路徑那份是**兩個獨立解析器**，不一致時兩邊都不報錯
+    ///           現改為單一來源，三個問題一起消失。
+    /// [數值影響] 解析失敗時 <c>UCL_RepoPath</c> 會 throw（舊版回 null）——
+    ///           呼叫端若依賴「回 null 代表找不到」，那是刻意的行為變更：
+    ///           null 會一路傳成看起來正常的錯路徑，raise 才停得住。
     /// </summary>
-    public static string CorePath
-    {
-        get
-        {
-#if UNITY_EDITOR
-            if (string.IsNullOrEmpty(s_UCLCorePath))
-            {
-                // [計算邏輯] 透過搜尋特定的腳本檔案來定位模組路徑。
-                string[] aGuids = UnityEditor.AssetDatabase.FindAssets("UCL_GUILayoutDrawObject t:Script");
-                foreach (string aGuid in aGuids)
-                {
-                    string aPath = UnityEditor.AssetDatabase.GUIDToAssetPath(aGuid);
-                    if (aPath.Contains("UCL_Core"))
-                    {
-                        // 範例路徑: Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutDrawObject.cs
-                        int aIndex = aPath.IndexOf("UCL_Core");
-                        s_UCLCorePath = aPath.Substring(0, aIndex + "UCL_Core".Length);
-                        break;
-                    }
-                }
-            }
-#endif
-            return s_UCLCorePath;
-        }
-    }
+    public static string CorePath => UCL.Core.EditorLib.UCL_RepoPath.UCLCoreRelative;
 
     /// <summary>
     /// [職責] 將任一絕對 / 專案相對路徑，表達成「相對於 UCL_Core 根」的 forward-slash 相對路徑。

@@ -50,18 +50,28 @@ def _repo_root() -> str:
     return _find_git_root(os.getcwd()) or os.path.abspath(os.path.join(_HERE, "..", "..", "..", "..", "..", ".."))
 
 
-def _data_root(root: str) -> str:
-    """AgentCommands 資料根 — honors <repo>/.agentcommands_root.local pointer（C#/Python 共讀）。"""
-    pointer = os.path.join(root, ".agentcommands_root.local")
-    try:
-        if os.path.isfile(pointer):
-            with open(pointer, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-            if content and os.path.isabs(content):
-                return os.path.abspath(content)
-    except OSError:
-        pass
-    return os.path.join(root, "AgentCommands")
+
+# ⚠ pointer 檔讀取已收斂到 _lib/ucl_paths.py（Tim 2026-08-17 拍板）。
+#   原本有 10 份平行實作，每份自己 read_text().strip()。十份都對，
+#   但十份就是十個會各自漂移的真相源；而漂移的症狀是「這支讀 A 目錄、那支讀 B 目錄」，
+#   兩邊都不報錯。⇒ 之後改 pointer 檔格式只需改一處。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_shared", _P(__file__).resolve().parent.parent / "_lib" / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _UCL_PATHS_CACHE = _m
+    return _UCL_PATHS_CACHE
+
+
+def _data_root(root: str) -> str:    return str(_ucl_paths_mod().data_root())    # 委派唯一實作
 
 
 # AgentCommands/ChatTavern/rooms/<room>/inbox/<agent>.md

@@ -445,30 +445,26 @@ def transcribe(audio: np.ndarray, language: str | None = None,
 # 預設 STT cache 目錄 (跟 frames/ 與 ocr/ 平行, 由 daemon 寫 / montage 讀)。
 # 本檔已遷入 <UCL_Core>/Tools~/AgentCommands (2026-07-26) — 不能再用「上一層 = AgentCommands 根」假設,
 # 改 repo-walk (.git 只認資料夾跳過 gitlink) + honors .agentcommands_root.local, cache 落主專案。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_shared", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _UCL_PATHS_CACHE = _m
+    return _UCL_PATHS_CACHE
+
+
+# ⚠ 2026-08-17：repo-walk 與 pointer 讀取都收斂到 _lib/ucl_paths.py。
+#   本檔原本把「找 repo 根」與「讀 pointer」寫在同一支裡（第 10 份平行實作）——
+#   十份都對，而漂移的症狀是「這支讀 A 目錄、那支讀 B 目錄」，兩邊都不報錯。
 def _stt_data_root() -> Path:
-    _here = Path(__file__).resolve().parent
-    env = os.environ.get("CLAUDE_PROJECT_DIR")
-    root = None
-    if env and Path(env).is_dir():
-        root = Path(env).resolve()
-    else:
-        p = _here
-        while p != p.parent:
-            if (p / ".git").is_dir():
-                root = p
-                break
-            p = p.parent
-        if root is None:
-            root = _here.parent.parent
-    pointer = root / ".agentcommands_root.local"
-    try:
-        if pointer.exists():
-            content = pointer.read_text(encoding="utf-8").strip()
-            if content and Path(content).is_absolute():
-                return Path(content).resolve()
-    except Exception:
-        pass
-    return (root / "AgentCommands").resolve()
+    return _ucl_paths_mod().data_root()
 
 
 STT_CACHE_DIR = _stt_data_root() / "_screenstream" / "stt"

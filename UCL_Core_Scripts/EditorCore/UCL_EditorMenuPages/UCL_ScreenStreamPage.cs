@@ -859,6 +859,45 @@ namespace UCL.Core.EditorLib.Page
             catch (System.Exception e) { return $"⚠ 切換失敗：{e.Message}"; }
         }
 
+        // ===========================================================
+        // 區塊職責：設定「本場節目」名（＋選配 stt_prompt）—— 給 StreamWatch 的準備階段用。
+        // 物理意義：`stream_title` 是開播酒館廣播裡「📺 本場節目: …」那行的唯一來源，
+        //          而它是**每片一份**的欄位（換片要改）。準備階段填它，等於讓「這場在看什麼」
+        //          在開播公告、實錄章、閱讀心得三處指向同一個字串。
+        // ⚠ 開播順序有意義：**先填標題再開錄影** —— 反過來的話公告已經發出去了，
+        //   標題改了也追不回那則（公告不可 amend）。呼叫端請照這個順序。
+        // 數值影響：只寫 config 的兩個欄位、不動 `enabled`（開播仍走 SetRecordingEnabled，
+        //          維持「同一件事只有一個寫入端」）；寫完**回讀**再組回傳字串。
+        // ===========================================================
+        public static string SetStreamTitle(string iTitle, string iSttPrompt, string iBy)
+        {
+            try
+            {
+                string aPath = Path.Combine(GetRepoRoot(), CONFIG_RELATIVE);
+                if (!File.Exists(aPath)) return $"⚠ 找不到 {aPath} —— 先開一次 ScreenStream 頁初始化";
+                var aCfg = JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
+                if (aCfg == null) return "⚠ _config.json 解析失敗";
+
+                string aPrev = aCfg.Contains("stream_title") ? aCfg["stream_title"].GetString() : "";
+                aCfg["stream_title"] = new JsonData(iTitle ?? "");
+                bool aPromptSet = false;
+                if (iSttPrompt != null)                     // null = 不動；空字串 = 明確清空
+                {
+                    aCfg["stt_prompt"] = new JsonData(iSttPrompt);
+                    aPromptSet = true;
+                }
+                File.WriteAllText(aPath, aCfg.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+                AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
+
+                var aBack = JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
+                string aNow = (aBack != null && aBack.Contains("stream_title")) ? aBack["stream_title"].GetString() : "";
+                return $"📺 本場節目已設為「{aNow}」（by {iBy}；前值「{aPrev}」）"
+                     + (aPromptSet ? $"｜`stt_prompt` 已更新（{(string.IsNullOrEmpty(iSttPrompt) ? "清空" : $"{iSttPrompt.Length} 字")}）" : "")
+                     + "｜已回讀 config 確認";
+            }
+            catch (System.Exception e) { return $"⚠ 設定本場節目失敗：{e.Message}"; }
+        }
+
         /// <summary>公告的靜態版 —— 標題/解析度/fps/monitor 一律**讀 config**，不讀 GUI 欄位
         /// （頁面沒開時 GUI 欄位是空的，而公告內容不該取決於有沒有人開著那一頁）。</summary>
         static void PostStreamAnnounceStatic(bool iStart, JsonData iCfg)

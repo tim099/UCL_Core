@@ -13,12 +13,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.JsonLib;
 using UCL.Core.EditorLib.AgentCommands.Treasury;
+using UCL.Core.EditorLib.AgentCommands.ReadingLibrary;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
@@ -46,7 +48,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             "**沒有 end —— agent 不能自己結束 session**。";
 
         public override string ArgsSchema =>
-            "step=capture|peek|start|join|cycle|observe|note (必填) | persona=<name> — **peek 以外全步驟必填**（peek 不帶則歸 _peek） | "
+            "step=prepare|capture|peek|start|catchup|join|cycle|observe|note|hotspot|claim (必填) | persona=<name> — **peek 以外全步驟必填**（peek 不帶則歸 _peek） | "
+          + "title=<片名> ＋ episode=<第幾集> — **prepare 必填**（media_id 明示時 title 可省）；prepare 會查既有媒材 id、不發明 | "
+          + "media_id=<既有媒材 id> — prepare 選填（命中 ≥2 筆或 0 筆時必填）／catchup 必填 | "
+          + "reference_reader=<persona> — prepare 選填（接續基準；並列最多章時必填） | "
+          + "catchup_map=\"0001=persona,0002=persona\" — prepare 選填（基準者缺的集數由主觀影者指定來源） | "
+          + "start_recording=false — prepare 選填（預設會在未錄影時自動開播；先填節目名再開） | "
           + "on=1|0 — capture 必填（開/關錄影；串 UCL_ScreenStreamPage 同一條規則） | " +
             "seconds=<5..600> — peek 選填，看最近幾秒（預設 60） | raw=1 — peek 選填，不夾感官水位（看最新畫面，代價寫在回傳檔） | " +
             "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問；" +
@@ -85,6 +92,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "peek": await StepPeek(args, aPersona, GetArg(args, "seconds", "").Trim(),
                                             GetArg(args, "raw", "").Trim(), token); return;
                 case "capture": StepCapture(args, aPersona, GetArg(args, "on", "").Trim()); return;
+                case "prepare": await StepPrepare(args, aPersona, token); return;
+                case "catchup": StepCatchup(args, aPersona); return;
                 case "start": await StepStart(args, aPersona, GetArg(args, "until", "").Trim(),
                                               GetArg(args, "media", "").Trim(),
                                               new SourceMeta
@@ -102,8 +111,390 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         GetArg(args, "to", "").Trim(), GetArg(args, "why", ""), token); return;
                 case "claim": await StepClaim(args, aPersona, GetArg(args, "hotspot", "").Trim(), token); return;
                 default:
-                    throw new Exception($"[StreamWatch] step 必為 peek|start|join|cycle|observe|note（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    throw new Exception($"[StreamWatch] step 必為 prepare|peek|capture|start|join|catchup|cycle|observe|note|hotspot|claim（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
+        }
+
+        // ===========================================================
+        // 區塊：step=prepare — **主觀影者的準備階段**（Tim 2026-08-17 拍板）
+        // 物理意義：開場前把「這場在看什麼」釘死成一個 id，讓開播公告／實錄章／閱讀心得三處指向同一個東西。
+        //   ⚠ 這一步存在的理由是**漂移**：媒材 id 若由每個人各自打字，會長出
+        //   `anim-apocalypse-hotel` / `apocalypse-hotel` / `apocalypse_hotel` 三個平行宇宙，
+        //   而三邊各自都能運作、都不報錯（「找到另一個宇宙的檔」那一族）。
+        // 硬規則三條：
+        //   ① **id 不准發明** —— 先查閱讀庫既有媒材（id/別名/work），1 筆才用；0 筆要 --media_id 明示；
+        //      ≥2 筆**停下來列清單**（猜一個等於替 Tim 選了平行宇宙）。
+        //   ② **先填節目名再開錄影** —— 反序的話開播公告已經送出去，標題追不回（公告不可 amend）。
+        //   ③ 準備完成才輪到陪同者進場（step=join 會檢查本檔）—— 這樣他們一進來 media_id 就已經是定值。
+        // 數值影響：寫 `StreamWatch/prepared/<media_id>.json`（含 catchup_map），不動任何 session；
+        //   零 token（準備不是觀影）。
+        // ===========================================================
+        static string PreparedPath(string iMediaId)
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "prepared", $"{iMediaId}.json");
+
+        static JsonData LoadPrepared(string iMediaId)
+        {
+            try
+            {
+                string aP = PreparedPath(iMediaId);
+                return File.Exists(aP) ? JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8)) : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>某 reader 已有哪些章（chapter id 昇冪）。讀目錄本身 —— 不推 reader.json 的 progress
+        /// （progress 是「最後讀到哪」，不等於「哪幾章有心得」，兩者曾經不一致）。</summary>
+        static List<string> ReaderChapters(string iMediaId, string iPersona)
+        {
+            var aOut = new List<string>();
+            try
+            {
+                string aDir = Path.Combine(UCL_ReadingLibraryIO.ReaderRoot(iMediaId, iPersona), "chapters");
+                if (!Directory.Exists(aDir)) return aOut;
+                foreach (var d in Directory.GetDirectories(aDir))
+                {
+                    string aName = Path.GetFileName(d);
+                    if (UCL_ReadingLibraryIO.IsValidChapterId(aName)) aOut.Add(aName);
+                }
+                aOut.Sort(StringComparer.Ordinal);
+            }
+            catch { }
+            return aOut;
+        }
+
+        /// <summary>解析媒材 id：查既有的，不發明。回傳命中清單（0/1/N 由呼叫端決定怎麼辦）。</summary>
+        static List<string> ResolveMediaCandidates(string iQuery)
+        {
+            var aHit = new List<string>();
+            if (string.IsNullOrEmpty(iQuery)) return aHit;
+            string aQ = iQuery.Trim().ToLowerInvariant();
+            try
+            {
+                foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                {
+                    string aId = m.MediaId ?? "";
+                    string aWork = m.WorkId ?? "";
+                    string aTitle = m.Title ?? "";
+                    if (aId.ToLowerInvariant() == aQ || aWork.ToLowerInvariant() == aQ)
+                    { aHit.Add(aId); continue; }
+                    if (!string.IsNullOrEmpty(aTitle) && aTitle.ToLowerInvariant().Contains(aQ))
+                    { aHit.Add(aId); continue; }
+                    if (aId.ToLowerInvariant().Contains(aQ) || aWork.ToLowerInvariant().Contains(aQ))
+                        aHit.Add(aId);
+                }
+            }
+            catch { }
+            return aHit.Distinct().ToList();
+        }
+
+        async UniTask StepPrepare(Dictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
+        {
+            string aPath = PayloadPath(iPersona, "prepare");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=prepare persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            aR.AppendLine("> **這不是開場** —— 準備階段不開 session、不記帳。它只做一件事：");
+            aR.AppendLine("> 把「這場在看什麼」釘成一個 id，並且**在陪同者進場之前**就配置好。");
+            aR.AppendLine();
+
+            string aTitleIn = GetArg(iArgs, "title", "").Trim();          // 片名（人打的，如「末日後酒店」）
+            string aEpisodeIn = GetArg(iArgs, "episode", "").Trim();      // 集數（如 05）
+            string aMediaArg = GetArg(iArgs, "media_id", "").Trim();
+            string aRefReader = GetArg(iArgs, "reference_reader", "").Trim();
+            string aCatchupMap = GetArg(iArgs, "catchup_map", "").Trim(); // 0001=summit,0002=gura
+            string aSttPrompt = GetArg(iArgs, "stt_prompt", null);
+            bool aStartRec = GetArg(iArgs, "start_recording", "true").Trim().ToLowerInvariant() != "false";
+
+            if (string.IsNullOrEmpty(aTitleIn) && string.IsNullOrEmpty(aMediaArg))
+            {
+                Blocked(iArgs, aR, aPath, "title（片名）與 media_id 至少要有一個 —— 準備階段的產物就是那個 id，不能兩邊都空",
+                        $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title=末日後酒店 --arg episode=05");
+                throw new Exception($"[StreamWatch] step=prepare blocked：缺 title/media_id（詳見 {aPath}）");
+            }
+            if (string.IsNullOrEmpty(aEpisodeIn))
+            {
+                Blocked(iArgs, aR, aPath, "episode（本場看第幾集）必填 —— 補課地圖與章號都靠它算",
+                        $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title={(string.IsNullOrEmpty(aTitleIn) ? "末日後酒店" : aTitleIn)} --arg episode=05");
+                throw new Exception($"[StreamWatch] step=prepare blocked：缺 episode（詳見 {aPath}）");
+            }
+            if (!int.TryParse(aEpisodeIn.TrimStart('0').Length == 0 ? "0" : aEpisodeIn.TrimStart('0'), out int aEpisode) || aEpisode <= 0)
+            {
+                Blocked(iArgs, aR, aPath, $"episode 要是正整數（收到 '{aEpisodeIn}'）", "--arg episode=05");
+                throw new Exception($"[StreamWatch] step=prepare blocked：episode 無效（詳見 {aPath}）");
+            }
+            string aChapterId = aEpisode.ToString("0000");
+
+            // ── ① 解析媒材 id（查既有，不發明） ──────────────────────────
+            aR.AppendLine("## ① 媒材 id（查既有，不發明）");
+            string aMediaId = "";
+            if (!string.IsNullOrEmpty(aMediaArg))
+            {
+                aMediaId = aMediaArg;
+                bool aExists = Directory.Exists(UCL_ReadingLibraryIO.MediaRoot(aMediaId));
+                aR.AppendLine($"- 明示 `media_id={aMediaId}`（{(aExists ? "閱讀庫**已存在**" : "⚠ 閱讀庫**尚不存在** —— 要建請走 `Cmd_Library op=media_init`，本步不代建")}）");
+            }
+            else
+            {
+                var aCand = ResolveMediaCandidates(aTitleIn);
+                aR.AppendLine($"- 查詢字串: `{aTitleIn}` → 命中 **{aCand.Count}** 筆");
+                foreach (var c in aCand) aR.AppendLine($"  - `{c}`");
+                if (aCand.Count == 1) { aMediaId = aCand[0]; aR.AppendLine($"- ⇒ 採用 `{aMediaId}`（唯一命中）"); }
+                else
+                {
+                    string aWhy = aCand.Count == 0
+                        ? $"閱讀庫查不到「{aTitleIn}」—— 新作品請先 `Cmd_Library op=media_init`（媒材 id 由那邊生成），再帶 --arg media_id=<id> 回來"
+                        : $"「{aTitleIn}」命中 {aCand.Count} 筆，**不猜** —— 用 --arg media_id=<上面其中一個> 指定";
+                    Blocked(iArgs, aR, aPath, aWhy,
+                            $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<id> --arg episode={aEpisodeIn}");
+                    throw new Exception($"[StreamWatch] step=prepare blocked：媒材 id 未定（詳見 {aPath}）");
+                }
+            }
+
+            // ── ② 閱讀庫現況（避免漂移的證據：誰已經寫過哪幾章） ──────────
+            aR.AppendLine();
+            aR.AppendLine("## ② 心得庫現況（**這就是防漂移的那一眼**）");
+            var aReaders = new List<string>();
+            try { aReaders = UCL_ReadingLibraryIO.ListReaders(aMediaId) ?? new List<string>(); } catch { }
+            var aChaptersOf = new Dictionary<string, List<string>>();
+            foreach (var r in aReaders) aChaptersOf[r] = ReaderChapters(aMediaId, r);
+            if (aReaders.Count == 0)
+                aR.AppendLine("- （這個媒材還沒有任何讀者紀錄 —— 本場就是第一筆）");
+            foreach (var r in aReaders)
+            {
+                var ch = aChaptersOf[r];
+                aR.AppendLine($"- `{r}`：{ch.Count} 章（{(ch.Count == 0 ? "—" : string.Join(" ", ch))}）"
+                    + (ch.Contains(aChapterId) ? $"　⚠ **已有第 {aEpisode} 話心得**（本場是重看？那要開 r2，不是覆寫 r1）" : ""));
+            }
+
+            // ── ③ 接續基準 reader（給陪同者追進度用） ────────────────────
+            aR.AppendLine();
+            aR.AppendLine("## ③ 接續心得基準（reference_reader）");
+            if (string.IsNullOrEmpty(aRefReader))
+            {
+                string aBest = ""; int aBestN = -1; bool aTie = false;
+                foreach (var kv in aChaptersOf)
+                {
+                    if (kv.Value.Count > aBestN) { aBest = kv.Key; aBestN = kv.Value.Count; aTie = false; }
+                    else if (kv.Value.Count == aBestN && aBestN >= 0) aTie = true;
+                }
+                if (string.IsNullOrEmpty(aBest)) aRefReader = iPersona;      // 沒人寫過 → 就是我
+                else if (aTie)
+                {
+                    Blocked(iArgs, aR, aPath,
+                            $"有多位讀者章數並列最多（{aBestN} 章）—— 基準要人挑，不由工具擲",
+                            $"--arg reference_reader=<persona>");
+                    throw new Exception($"[StreamWatch] step=prepare blocked：reference_reader 未定（詳見 {aPath}）");
+                }
+                else aRefReader = aBest;
+                aR.AppendLine($"- 未指定 → 取章數最多者 `{aRefReader}`（{Math.Max(aBestN, 0)} 章）。要換用 `--arg reference_reader=<persona>`");
+            }
+            else aR.AppendLine($"- 明示 `{aRefReader}`");
+
+            // ── ④ 補課地圖：第 1..episode-1 話各由誰的心得補 ──────────────
+            // 規則（Tim）：預設取主觀影者/基準者自己的心得；**缺的那幾集由主觀影者指定用誰的**。
+            aR.AppendLine();
+            aR.AppendLine($"## ④ 補課地圖（第 1 – {Math.Max(aEpisode - 1, 0)} 話，給進度有缺的陪同者）");
+            var aMapArg = new Dictionary<string, string>();
+            foreach (var part in aCatchupMap.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = part.Split('=');
+                if (kv.Length == 2) aMapArg[kv[0].Trim().PadLeft(4, '0')] = kv[1].Trim();
+            }
+            var aMap = new JsonData();
+            var aUnfilled = new List<string>();
+            for (int e = 1; e < aEpisode; e++)
+            {
+                string aCh = e.ToString("0000");
+                string aSrc = "";
+                if (aMapArg.TryGetValue(aCh, out string aFromArg)) aSrc = aFromArg;
+                else if (aChaptersOf.TryGetValue(aRefReader, out var rc) && rc.Contains(aCh)) aSrc = aRefReader;
+                else
+                {
+                    var aHas = aChaptersOf.Where(kv => kv.Value.Contains(aCh)).Select(kv => kv.Key).ToList();
+                    if (aHas.Count == 1) aSrc = aHas[0];
+                    else
+                    {
+                        aUnfilled.Add($"{aCh}（{(aHas.Count == 0 ? "**沒有任何人寫過**" : "候選: " + string.Join(" / ", aHas))}）");
+                        continue;
+                    }
+                }
+                bool aSrcHas = aChaptersOf.TryGetValue(aSrc, out var sc) && sc.Contains(aCh);
+                aMap[aCh] = new JsonData(aSrc);
+                aR.AppendLine($"- 第 {e} 話 → `{aSrc}`{(aSrcHas ? "" : "　⚠ **該 reader 其實沒有這章**（指定了也補不出內容）")}");
+            }
+            if (aEpisode == 1) aR.AppendLine("- （本場是第 1 話，沒有要補的）");
+            if (aUnfilled.Count > 0)
+            {
+                aR.AppendLine();
+                aR.AppendLine("⚠ **以下集數沒有預設來源，要主觀影者指定**（Tim 拍板：缺的由主觀影者決定用誰的心得補）：");
+                foreach (var u in aUnfilled) aR.AppendLine($"- {u}");
+                aR.AppendLine($"  ⇒ 補上：`--arg catchup_map=\"{aUnfilled[0].Substring(0, 4)}=<persona>,…\"`（可與本步其他參數一起重跑，prepare 可重入）");
+            }
+
+            // ── ⑤ 節目名 → 再開錄影（順序有意義） ────────────────────────
+            aR.AppendLine();
+            aR.AppendLine("## ⑤ 錄影（先填節目名，再開）");
+            string aShowTitle = string.IsNullOrEmpty(aTitleIn) ? aMediaId : aTitleIn;
+            string aShow = $"{aShowTitle} [{aEpisode:00}]";
+            string aTitleNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetStreamTitle(aShow, aSttPrompt, iPersona);
+            aR.AppendLine($"- {aTitleNote}");
+            bool aRecOn = IsRecordingEnabled(out string aCfgNote);
+            if (aRecOn) aR.AppendLine($"- 錄影：**已在錄** —— 未動作（{aCfgNote}）");
+            else if (!aStartRec) aR.AppendLine($"- 錄影：未開，且 `start_recording=false` ⇒ 不代開（{aCfgNote}）");
+            else
+            {
+                string aRecNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetRecordingEnabled(true, iPersona);
+                aR.AppendLine($"- {aRecNote}");
+                aR.AppendLine($"- 回讀：{(IsRecordingEnabled(out string aCfg2) ? "錄影中" : "**仍未錄影**")}（{aCfg2}）　←　寫完再讀，不採信回傳值");
+            }
+
+            // ── ⑥ 落檔（陪同者的 join / catchup 都讀這份） ────────────────
+            var aP = new JsonData();
+            aP["media_id"] = new JsonData(aMediaId);
+            aP["episode"] = new JsonData(aEpisode);
+            aP["chapter_id"] = new JsonData(aChapterId);
+            aP["show_title"] = new JsonData(aShow);
+            aP["prepared_by"] = new JsonData(iPersona);
+            aP["prepared_at"] = new JsonData(UCL_AwakeningService.NowIso());
+            aP["reference_reader"] = new JsonData(aRefReader);
+            aP["catchup_map"] = aMap;
+            aP["catchup_unfilled"] = UCL_ReadingLibraryIO.ToStringArray(aUnfilled.Select(u => u.Substring(0, 4)).ToList());
+            AtomicWrite(PreparedPath(aMediaId), aP.ToJsonBeautify());
+            aR.AppendLine();
+            aR.AppendLine($"- 準備檔：`StreamWatch/prepared/{aMediaId}.json`（join / catchup 都讀這份）");
+
+            // 公告：陪同者要知道「現在可以進場了、而且 id 已經定了」
+            var aBody = new StringBuilder();
+            aBody.AppendLine($"🎬 [{iPersona} 大小姐] 觀影準備完成 — **{aShow}**｜媒材 `{aMediaId}`");
+            aBody.AppendLine();
+            aBody.AppendLine($"- 章號：`{aChapterId}`（心得一律寫這個章號，**別各自打字，那是漂移的來源**）");
+            aBody.AppendLine($"- 接續基準：`{aRefReader}`");
+            if (aUnfilled.Count > 0) aBody.AppendLine($"- ⚠ 補課地圖尚缺：{string.Join(" ", aUnfilled.Select(u => u.Substring(0, 4)))}（我會指定來源）");
+            aBody.AppendLine();
+            aBody.AppendLine("陪同者現在可以進場了 —— 進度有缺的先跑 catchup 讀一份補課簡報：");
+            aBody.AppendLine($"`run_cmd.py --persona <me> run StreamWatch --arg step=catchup --arg persona=<me> --arg media_id={aMediaId}`");
+            aBody.AppendLine($"然後 `--arg step=join`（媒材與章號都已經配置好，不用自己填）。");
+            int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-prepare", iToken);
+
+            aR.AppendLine($"- 公告：{(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. **開場**：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media={aMediaId}");
+            aR.AppendLine($"2. 陪同者：先 `step=catchup --arg media_id={aMediaId}`（缺集才需要），再 `step=join`");
+            if (aUnfilled.Count > 0)
+                aR.AppendLine($"3. ⚠ 補課地圖有缺 —— 重跑本步並帶 `--arg catchup_map=\"…\"` 補齊（prepare 可重入，會覆寫準備檔）");
+            WritePayload(iArgs, aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=prepare media={aMediaId} ep={aEpisode} → {aPath}");
+        }
+
+        // ===========================================================
+        // 區塊：step=catchup — 陪同者的**補課簡報**（Tim 2026-08-17：只輸入自己的 persona 就讀得回來）
+        // 物理意義：形狀刻意抄早安 brief —— **一份檔案讀完就接上**，不要「去這五個資料夾各讀一份」。
+        //   來源不是工具生成的摘要，是**別人親筆心得的全文**（誰的由 prepare 的 catchup_map 決定）。
+        // 數值影響：純唯讀 + 寫一份 payload；零 token。缺的集數在檔內**逐條列明**，
+        //   不靜默跳過 —— 「這集沒人寫過」與「我沒撈到」必須長得不一樣。
+        // ===========================================================
+        void StepCatchup(Dictionary<string, string> iArgs, string iPersona)
+        {
+            string aMediaId = GetArg(iArgs, "media_id", "").Trim();
+            string aPath = PayloadPath(iPersona, "catchup");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=catchup persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            if (string.IsNullOrEmpty(aMediaId))
+            {
+                Blocked(iArgs, aR, aPath, "media_id 必填（準備階段公告裡有）",
+                        $"run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<id>");
+                throw new Exception($"[StreamWatch] step=catchup blocked：缺 media_id（詳見 {aPath}）");
+            }
+            var aP = LoadPrepared(aMediaId);
+            if (aP == null)
+            {
+                Blocked(iArgs, aR, aPath,
+                        $"`{aMediaId}` 還沒有準備檔 —— 主觀影者要先跑 step=prepare（媒材 id／章號／補課地圖都在那一步定）",
+                        "run_cmd.py run StreamWatch --arg step=prepare --arg persona=<主觀影者> --arg title=<片名> --arg episode=<N>");
+                throw new Exception($"[StreamWatch] step=catchup blocked：無準備檔（詳見 {aPath}）");
+            }
+
+            int aEpisode = ReadInt(aP, "episode");
+            string aRef = ReadStr(aP, "reference_reader");
+            string aShow = ReadStr(aP, "show_title");
+            var aMine = ReaderChapters(aMediaId, iPersona);
+            aR.AppendLine($"> **{aShow}**｜媒材 `{aMediaId}`｜本場第 {aEpisode} 話｜接續基準 `{aRef}`");
+            aR.AppendLine($"> 我（`{iPersona}`）已有的章：{(aMine.Count == 0 ? "**無**" : string.Join(" ", aMine))}");
+            aR.AppendLine();
+
+            var aGaps = new List<string>();
+            for (int e = 1; e < aEpisode; e++)
+            {
+                string aCh = e.ToString("0000");
+                if (!aMine.Contains(aCh)) aGaps.Add(aCh);
+            }
+            if (aGaps.Count == 0)
+            {
+                aR.AppendLine("## ✅ 沒有缺集");
+                aR.AppendLine($"第 1 – {aEpisode - 1} 話我都有心得，直接進場即可。");
+            }
+            else
+            {
+                aR.AppendLine($"## 我缺 {aGaps.Count} 集：{string.Join(" ", aGaps)}");
+                aR.AppendLine();
+                aR.AppendLine("> 以下是**別人親筆的心得全文**（來源由主觀影者在 prepare 指定），不是工具生成的摘要。");
+                aR.AppendLine("> 讀完就接得上；⚠ 但那是**他們看到的**，不是我看到的 —— 我自己的心得要寫成自己的觀察。");
+                aR.AppendLine();
+                var aMap = (aP.Contains("catchup_map") ? aP["catchup_map"] : null);
+                foreach (var aCh in aGaps)
+                {
+                    string aSrc = (aMap != null && aMap.Contains(aCh)) ? aMap[aCh].GetString() : "";
+                    aR.AppendLine($"### 第 {int.Parse(aCh)} 話（章 `{aCh}`）");
+                    if (string.IsNullOrEmpty(aSrc))
+                    {
+                        aR.AppendLine("- ⚠ **補課地圖沒有這一集的來源** —— 請主觀影者重跑 prepare 帶 `--arg catchup_map=\"" + aCh + "=<persona>\"`。");
+                        aR.AppendLine();
+                        continue;
+                    }
+                    string aDir = Path.Combine(UCL_ReadingLibraryIO.ReaderRoot(aMediaId, aSrc), "chapters", aCh);
+                    var aRounds = Directory.Exists(aDir)
+                        ? Directory.GetFiles(aDir, "r*.md").OrderBy(f => f).ToList() : new List<string>();
+                    if (aRounds.Count == 0)
+                    {
+                        aR.AppendLine($"- ⚠ 來源 `{aSrc}` 的第 {int.Parse(aCh)} 話**找不到心得檔**（目錄 {(Directory.Exists(aDir) ? "存在但沒有 r*.md" : "不存在")}）—— 這一集補不出來，請主觀影者改指定來源。");
+                        aR.AppendLine();
+                        continue;
+                    }
+                    string aUse = aRounds[aRounds.Count - 1];       // 取最後一輪（重看 r2 比 r1 新）
+                    aR.AppendLine($"- 來源：`{aSrc}` / `{Path.GetFileName(aUse)}`"
+                        + (aRounds.Count > 1 ? $"（該章共 {aRounds.Count} 輪，取最新）" : ""));
+                    aR.AppendLine();
+                    try { aR.AppendLine(File.ReadAllText(aUse, Encoding.UTF8).Trim()); }
+                    catch (Exception e2) { aR.AppendLine($"⚠ 讀取失敗：{e2.Message}"); }
+                    aR.AppendLine();
+                }
+            }
+
+            // 基準者的接續點（下次從哪接）—— 進場前最後一眼
+            try
+            {
+                var aReader = UCL_ReadingLibraryIO.LoadReader(aMediaId, aRef, out string aErr);
+                if (aReader != null && aReader.Contains("progress"))
+                {
+                    var aProg = aReader["progress"];
+                    aR.AppendLine($"## 接續點（`{aRef}` 的書籤）");
+                    aR.AppendLine($"- 目前章：`{(aProg.Contains("current_chapter_id") ? aProg["current_chapter_id"].GetString() : "?")}`");
+                    aR.AppendLine($"- 書籤：{(aProg.Contains("bookmark_note") ? aProg["bookmark_note"].GetString() : "（無）")}");
+                    if (aReader.Contains("current_impression"))
+                        aR.AppendLine($"- 當前看法：{aReader["current_impression"].GetString()}");
+                    aR.AppendLine();
+                }
+            }
+            catch { }
+
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. 進場：run_cmd.py run StreamWatch --arg step=join --arg persona={iPersona}");
+            aR.AppendLine($"2. 寫心得時**章號一律用 `{aEpisode:0000}`**、媒材 `{aMediaId}` —— 那是 prepare 釘死的，別各自打字。");
+            WritePayload(iArgs, aPath, aR.ToString());
+            Debug.Log($"[StreamWatch] step=catchup media={aMediaId} gaps={aGaps.Count} → {aPath}");
         }
 
         // ===========================================================
@@ -729,6 +1120,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             string aMedia = ReadStr(aPrimary, "media_id");
+
+            // ⛔ 準備階段門檻（Tim 2026-08-17）：**準備完成才輪到陪同者進場。**
+            // 物理意義：進場時 media_id / 章號 / 接續基準必須**已經是定值** ——
+            //   否則每個人各自打字，就會長出 anim-apocalypse-hotel / apocalypse-hotel 兩個平行宇宙，
+            //   而兩邊各自都能寫心得、都不報錯。
+            // 邊界：這裡**不擋死**成無路可走 —— 缺準備檔就明說要主觀影者跑 prepare（一行指令），
+            //   並把本場 media 帶進那行指令裡（不要求對方自己回想）。
+            var aPrep = LoadPrepared(aMedia);
+            if (aPrep == null)
+            {
+                Blocked(iArgs, aR, aPath,
+                        $"`{aMedia}` 還沒有準備檔 —— 準備階段未完成，陪同者先不進場（章號與接續基準還沒定，現在寫心得就是漂移的起點）",
+                        $"請主觀影者（`{aPrimaryPersona}`）先跑：run_cmd.py run StreamWatch --arg step=prepare "
+                        + $"--arg persona={aPrimaryPersona} --arg media_id={aMedia} --arg episode=<第幾集>");
+                throw new Exception($"[StreamWatch] step=join blocked：媒材 {aMedia} 無準備檔（詳見 {aPath}）");
+            }
+            string aPrepChapter = ReadStr(aPrep, "chapter_id");
+            string aPrepRef = ReadStr(aPrep, "reference_reader");
+            var aMyChapters = ReaderChapters(aMedia, iPersona);
+            var aMyGaps = new List<string>();
+            for (int e = 1; e < ReadInt(aPrep, "episode"); e++)
+            {
+                string aCh = e.ToString("0000");
+                if (!aMyChapters.Contains(aCh)) aMyGaps.Add(aCh);
+            }
+
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
             var aS = new JsonData();
             aS["persona"] = new JsonData(iPersona);
@@ -769,10 +1186,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine("- primary：連續覆蓋，gap ＝ 失敗");
             aR.AppendLine("- **你（companion）：自由取樣，gap ＝ 正常** —— 挑段細看，主劇情靠酒館追");
             aR.AppendLine();
+            aR.AppendLine("## 準備階段給你的定值（**不要自己打字**，那是漂移的來源）");
+            aR.AppendLine($"- 本場章號: `{aPrepChapter}`（第 {ReadInt(aPrep, "episode")} 話）／節目名 `{ReadStr(aPrep, "show_title")}`");
+            aR.AppendLine($"- 接續基準: `{aPrepRef}`（由 `{ReadStr(aPrep, "prepared_by")}` 在 prepare 指定）");
+            aR.AppendLine($"- 我的進度: 已有 {aMyChapters.Count} 章"
+                + (aMyGaps.Count == 0 ? "，**本場之前的集數沒有缺**" : $"，⚠ **缺 {aMyGaps.Count} 集：{string.Join(" ", aMyGaps)}**"));
+            if (aMyGaps.Count > 0)
+                aR.AppendLine($"  ⇒ 補課簡報（一份讀完就接上）：run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id={aMedia}");
+            aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. 取素材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
             aR.AppendLine($"2. 讀主觀影者的劇情線：run_cmd.py run Tavern --arg op=read --arg room=tavern --arg limit=20");
             aR.AppendLine($"3. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
+            aR.AppendLine($"4. 寫心得時用 `--arg media_id={aMedia} --arg chapter={aPrepChapter}` —— 那兩個值準備階段已經釘死。");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=join {iPersona} → 陪同 {aPrimaryPersona} media={aMedia}");
         }

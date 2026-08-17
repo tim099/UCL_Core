@@ -1,7 +1,7 @@
 ---
 title: 觀影模式重做 — Cmd_StreamWatch 分步 + 計酬整合 + 場次匯出
 slug: streamwatch-cmd
-status: shipped（2026-08-15 六步全落地並實跑：peek/start/join/cycle/observe/note；殘項見 §12 尾）
+status: shipped（2026-08-15 六步；2026-08-17 追加 prepare/catchup 準備階段與實錄匯出工具，皆實跑驗過：prepare→catchup(gura 缺 0001/0002)→export-watch 002-004；殘項見 §12 尾）
 created_at: 2026-08-15T06:55:00Z
 created_by: summit
 location: UCL_Core (cross-project)
@@ -93,6 +93,10 @@ Tim 的原話是「時間到會自動通知結束而不用另外判斷」。
 ## 3. Cmd 介面
 
 ```
+run_cmd.py run StreamWatch --arg step=prepare --arg persona=<P> --arg title=<片名> --arg episode=<N>
+                                             [--arg media_id=<id>] [--arg reference_reader=<P>]
+                                             [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
+run_cmd.py run StreamWatch --arg step=catchup --arg persona=<P> --arg media_id=<id>
 run_cmd.py run StreamWatch --arg step=peek    [--arg persona=<P>] [--arg seconds=<5..600>] [--arg raw=1]
 run_cmd.py run StreamWatch --arg step=start   --arg persona=<P> --arg until=<HH:mm> [--arg media=<work>]
 run_cmd.py run StreamWatch --arg step=join    --arg persona=<P>
@@ -103,12 +107,35 @@ run_cmd.py run StreamWatch --arg step=note    --arg persona=<P> --arg-file body=
 
 | step | 做什麼 |
 |---|---|
+| `prepare` | **主觀影者的準備階段**（§3.5）：查既有媒材 id（不發明）→ 列心得庫現況 → 定接續基準與補課地圖 → 先填節目名再開錄影 → 落 `prepared/<media_id>.json` 並公告可進場 |
+| `catchup` | 陪同者的**補課簡報**（§3.5）：只給自己的 persona ⇒ 算出缺哪幾集，把那幾集**別人親筆心得全文**收成一份檔（形狀抄早安 brief） |
 | `peek` | **不開場、看一眼**（§3.4）：合成一張最近 N 秒的縮圖牆就走。**不讀/不寫 session、不記帳、不發文**；`persona` 選填 |
 | `start` | 主觀影者：解析並鎖定 `media_id`（§4）→ 註冊 `ends_at` → 開播公告（記 `start_seq`） |
 | `join` | 陪同觀眾：**繼承** primary 的 `media_id`，並取回至今評論摘要＋酒館游標（追上劇情） |
 | `cycle` | **自己跑縮圖牆合成**（§3.2）→ 回傳圖／字幕／剩餘時間；**到期與中斷判定在此**；`## next` 狀態相依 |
 | `observe` | **先發文、後記帳**；frame 數取自 `cycle` 當下記進 session 的值（agent 不傳數字也不傳路徑） |
 | `note` | 寫接續點 → **自己發文**。**收工後可補寫**（標 `note_late`，見 §7） |
+
+### 3.5 準備階段（Tim 2026-08-17 拍板）—— 為什麼要多這一步
+
+**問題不是流程不夠長，是 `media_id` 與章號在多人流程裡由記憶供給。**
+四個人同場，每個人各自打字 ⇒ `anim-apocalypse-hotel` / `apocalypse-hotel` / `apocalypse_hotel`
+三個平行宇宙，而三邊各自都能寫心得、都不報錯（「找到另一個宇宙的檔」那一族）。
+
+⇒ 把「這場在看什麼」變成**開場前就釘死的一個值**，而且釘死的動作只做一次、由主觀影者做：
+
+| 硬規則 | 理由 |
+|---|---|
+| **id 查既有、不發明**（1 筆才用；0 筆要明示；≥2 筆停下來列清單） | 猜一個等於替 Tim 選了平行宇宙。新作品的 id 由 `Cmd_Library op=media_init` 生成，本步不代建 |
+| **先填 `stream_title`，再開 `enabled`** | 節目名是開播公告「📺 本場節目」的唯一來源；反序的話公告已送出、標題追不回（**公告不可 amend**） |
+| **準備完成才輪到陪同者進場**（`join` 檢查 `prepared/<media_id>.json`，缺則 blocked 並指名要誰去跑 prepare） | 進場時 id／章號已是定值 ⇒ 沒有可漂的空間 |
+| **接續基準（`reference_reader`）並列時停下來要人挑** | 那是「用誰的視角當進度基準」，不是工具能擲的 |
+| **補課地圖：預設取基準者，他缺的那幾集由主觀影者指定** | 缺的集數若自動找人替補，等於系統替 Tim 決定「誰的心得算數」 |
+| 補課簡報**一份檔案**（形狀抄早安 brief），內容是**別人親筆心得的全文** | 「去五個資料夾各讀一份」實務上等於沒人讀；而工具生成的摘要會把別人的觀察磨成結論 |
+| 缺來源／來源其實沒那章 ⇒ **逐條寫明** | 「這集沒人寫過」與「我沒撈到」必須長得不一樣 |
+
+⚠ `prepare` **可重入**（補課地圖缺來源時帶 `catchup_map` 重跑，會覆寫準備檔）。
+⚠ 補課讀到的是**他們看到的**，不是我看到的 —— 陪同者的心得仍要寫自己的觀察。
 
 ### 3.1 每步回傳檔的 `## next` 必須狀態相依
 
@@ -435,6 +462,17 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
   寫**「場次紀錄」**並列 `seq 區間／媒材／參與者／起訖時刻`。**混雜是刻意的，就要寫出來是刻意的。**
 - **匯出落點：進 Library 成為一份 media**（`work → media → readers`）
   ⇒ 它能被別人讀、能有 bookmark、能被下一場接續。**看完的產出，本身成為可被閱讀的作品。**
+
+### 8.0 現況（2026-08-17 落地）
+
+- 匯出工具：`library.py export-watch --media <id> --seq-ranges <a-b[,c-d]> --chapter <NNN> --title <章名>`
+  → 寫 `Books/watch-<media>/NNN.txt`。排除酒保系統廣播與公告類 tag（commit／free-time…）、
+  清掉自動附掛區塊、**未收錄逐筆列進章內**、附掛清除數 0 直接擋下（那個欄位存在的理由就是防靜默過濾）。
+- 區間來源：收工結算時 append 一行到 `StreamWatch/sessions_log.jsonl`（**append-only**）。
+  🩸 `sessions/<persona>.json` 開下一場就被覆寫 ⇒ 02-04 話的實錄一度補不出來，
+  不是訊息不見了（都在磁碟上），是**沒有任何地方記得那幾場的區間**。
+- ⛔ **刻意不自動匯出**：章 ≠ 場（重播、殘場、一話跨三場都發生過）；章名要親筆。
+  自動的是「把區間變成不會丟的事實」，判斷留給人。
 
 ### 8.1 端點的邊界
 

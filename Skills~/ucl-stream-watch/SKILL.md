@@ -2,7 +2,7 @@
 name: ucl-stream-watch
 description: |
   觀影模式 (Stream Watch) — 陪 Tim 看 ScreenStream 直播畫面流，或不開場只看一眼。
-  走 `Cmd_StreamWatch` 分步（capture / peek / start / join / cycle / observe / note），
+  走 `Cmd_StreamWatch` 分步（**prepare** / capture / peek / start / catchup / join / cycle / observe / note），
   每一步的回傳檔會告訴你下一步；**沒有 end —— 到期或 Tim 停錄影時由 Cmd 宣布收工並結算**。
   跟 ucl-watch-video (看 YouTube 影片抓轉錄稿) 是兩回事 — 本 skill 看的是 Tim 的即時螢幕。
   觸發詞 (case-insensitive substring): 看直播 / 觀看直播 / 陪看 / 陪我看直播 / 觀戰直播 / 直播陪看 /
@@ -25,6 +25,41 @@ description: |
    ⇒ **場次進行中回 chat：要嘛不回，要嘛回完立刻 `cycle`，不要留在報告裡。**
 2. **媒材鍵是共享鍵，不能由記憶供給。** 不確定就讓 Cmd blocked 給你既有清單，
    **片名不確定問 Tim，不要猜**。取錯名 ⇒ 既有 reader 的心得對新場次永遠隱形**且不報錯**。
+
+## 第 0 步 —— **主觀影者的準備階段**（Tim 2026-08-17 拍板；陪同者在這之後才進場）
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch     --arg step=prepare --arg persona=<P> --arg title=<片名> --arg episode=<第幾集>     [--arg media_id=<既有媒材 id>] [--arg reference_reader=<persona>]     [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
+```
+
+它一次把**開場前該定的東西全部定死**，然後發一則「準備完成」公告叫陪同者進場：
+
+| 做什麼 | 為什麼 |
+|---|---|
+| **媒材 id 查既有、不發明** | 命中 1 筆才用；0 筆要 `--arg media_id=` 明示（新作品先走 `Cmd_Library op=media_init`）；**≥2 筆停下來列清單** —— 猜一個等於替 Tim 選了平行宇宙 |
+| 列出**心得庫現況**（誰已寫過哪幾章） | 這就是防漂移的那一眼；本場章號已有心得 ⇒ 提醒「這是重看？要開 r2」 |
+| 定 **reference_reader**（接續基準） | 給陪同者追進度用；未指定＝取章數最多者，**並列時停下來要人挑** |
+| 產 **補課地圖**（第 1..N-1 話各由誰的心得補） | 預設取基準者自己的；**他缺的那幾集由主觀影者指定用誰的**（`--arg catchup_map=`），沒指定就列出候選並擋下 |
+| **先填節目名，再開錄影** | `stream_title` 是開播公告「📺 本場節目」的唯一來源；反序的話公告已送出、標題追不回（公告不可 amend）。已在錄就不動作 |
+| 落 `StreamWatch/prepared/<media_id>.json` | `join` / `catchup` 都讀這份 ⇒ 陪同者一進場，媒材與章號**已經是定值** |
+
+**prepare 可重入** —— 補課地圖缺來源時就帶著 `catchup_map` 重跑一次。
+
+### 陪同者：一份檔案讀完就接上（形狀抄早安 brief）
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch     --arg step=catchup --arg persona=<me> --arg media_id=<prepare 公告裡那個 id>
+```
+
+- 只要給自己的 persona ⇒ 自動算出**我缺哪幾集**，並把那幾集**別人親筆心得的全文**收進一份檔
+  （`letters/<me>/_streamwatch_catchup.md`），末尾附基準者的接續點與當前看法。
+- 缺的來源若沒指定／該 reader 其實沒那章 ⇒ **逐條寫明**，不靜默跳過
+  （「這集沒人寫過」與「我沒撈到」必須長得不一樣）。
+- 讀完再 `step=join`。⚠ 補課讀到的是**他們看到的**，不是我看到的 —— 自己的心得要寫自己的觀察。
+
+> ⛔ **沒有準備檔時 `step=join` 會被擋下**，並指名要主觀影者去跑 prepare。
+> 理由：進場時若 media_id／章號還沒定，每個人各自打字就會長出兩個平行宇宙，
+> 而兩邊都能寫心得、都不報錯。
 
 ## 第一步（唯一要背的一步）
 

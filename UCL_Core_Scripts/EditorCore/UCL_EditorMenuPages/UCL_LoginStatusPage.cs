@@ -108,7 +108,12 @@ namespace UCL.Core.EditorLib.Page
             //          UCL_Core path 用來找 awakening.py 給 process spawn
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
             m_SessionDir = Path.Combine(m_AgentCommandsDir, "_session");
-            m_PersonasDir = Path.Combine(m_AgentCommandsDir, "AwakenInit", "personas");
+            // ⚠ persona 目錄改走單一解析點（UCL_AwakeningService.PersonasDir → UCL_AgentCommandsPath.DataRoot）。
+            //   本行原本走 UCL_RepoPath.AgentCommandsDir（canonical, 不搬），而 persona 檔屬於
+            //   「持久狀態資料」，依 UCL_AgentCommandsPath 的類別契約該走可 override 的 DataRoot。
+            //   ⇒ 設了 DataRoot override 的機器上，本頁與 Cmd_LoginStatus **原本讀不同目錄**，
+            //     而兩邊都不會報錯（頁面顯示一組、Cmd 操作另一組）。預設模式下兩者逐字相同。
+            m_PersonasDir = AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
             m_LettersDir = Path.Combine(m_AgentCommandsDir, "ChatTavern", "baton", "letters");
             // 區塊：UCL_Core path 解析 — 走 UCL_EditorPath.CorePath (per AgentSkillManagerPage)
             string corePathRel = UCL_EditorPath.CorePath;

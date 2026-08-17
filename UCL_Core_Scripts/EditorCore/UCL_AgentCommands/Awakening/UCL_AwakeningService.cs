@@ -33,35 +33,53 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         public static string PersonasDir => Path.Combine(DataRoot, "AwakenInit", "personas");
         public static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
-        public static string SessionDir => ResolveOverridablePath("session_dir", "_session");
-        public static string LettersDir => ResolveOverridablePath("letters_dir", Path.Combine("ChatTavern", "baton", "letters"));
 
-        static string ResolveOverridablePath(string iConfigKey, string iDefaultSub)
+        // ===========================================================
+        // 區塊職責：persona 檔的**唯一**解析點（C# 這一端）。
+        // 物理意義：目前實體位置 = <DataRoot>/AwakenInit/personas/<persona>.json。
+        //          本方法出現之前，這條路徑被 10 處 C# 各自 Path.Combine 拼出來
+        //          （Cmd_LoginStatus / UCL_LoginStatusPage / UCL_PersonaInspectorPage /
+        //           UCL_PersonaAgentAdminPage / UCL_BankAdminPage / UCL_TreasuryAccountResolver /
+        //           UCL_ChatTavernIO / UCL_AgentEmailRegistry / UCL_AgentModelRegistry），
+        //          Python 端另有 9 處。**多一條路徑的代價不是重複，是遷移時改不完的那幾處
+        //          會靜默讀到舊檔** —— 舊檔還在、讀得到，兩邊各自成功、各自綠燈，沒有一格會紅。
+        //          ⇒ 本方法存在的理由不是少打字，是讓第二條路徑**沒有地方存在**。
+        // 數值影響：純字串組合，不檢查存在性；預設模式下與改動前**逐字相同**（本次收斂的驗收判準）。
+        // ⚠ 為什麼家在這裡而不在 UCL_AgentCommandsPath：後者是通用 path helper，
+        //   不認得 _config/tavern_paths.json 的 letters_dir override。而 persona 檔之後要
+        //   改成「letters 優先」，那時需要 LettersDir 的 override 語意 —— 本類同時擁有兩者。
+        // ⚠ 對側契約：Python 等價入口是 _lib/ucl_paths.py 的 personas_dir() / persona_file()。
+        //   兩端要一起改 —— 只改一端的後果是兩邊各看各的目錄，而**兩邊都不會報錯**。
+        // ===========================================================
+        public static string ResolvePersonaFile(string iPersona)
+            => Path.Combine(PersonasDir, iPersona + ".json").Replace('\\', '/');
+        public static string SessionDir => ResolveDataSub("_session");
+        public static string LettersDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "letters"));
+
+        // ===========================================================
+        // 區塊職責：資料根底下的子路徑解析（legacy 細粒度 override 已廢除，Tim 2026-08-17 拍板）。
+        // 物理意義：原本這裡是 ResolveOverridablePath —— 讀 _config/tavern_paths.json 的
+        //          letters_dir / session_dir 逐項覆寫。該機制自 2026-05-28 起被
+        //          .agentcommands_root.local pointer 檔取代（整個資料根一次搬遷）。
+        //          查證：`git log --all -- _config/tavern_paths.json` 為空 ——
+        //          **所有分支、整段歷史都沒有提交過那個檔**，版控裡只有 .example.json 範本。
+        // 🩸 為什麼「存在即 raise」而不是安靜移除支援：那個檔是 per-machine / gitignored，
+        //   我證得到「從沒被提交」，證不到「沒有任何一台機器留著一份」。
+        //   安靜移除支援 ⇒ 那台機器的路徑**無聲改成另一個目錄，兩邊都不報錯**。
+        //   ⇒ 用一個吵的失敗換掉一個安靜的漂移。
+        // 數值影響：純字串組合；有殘留設定檔時在第一次解析路徑處就炸，不會走到讀寫資料。
+        // ⚠ 對側契約：Python 端等價處置在 _lib/ucl_paths.py（同樣 raise，訊息對齊）。
+        // ===========================================================
+        static string ResolveDataSub(string iDefaultSub)
         {
-            try
-            {
-                string aCfgPath = Path.Combine(DataRoot, "_config", "tavern_paths.json");
-                if (File.Exists(aCfgPath))
-                {
-                    var aCfg = JsonData.ParseJson(File.ReadAllText(aCfgPath));
-                    string aOverride = aCfg?.GetString(iConfigKey, "")?.Trim() ?? "";
-                    if (!string.IsNullOrEmpty(aOverride))
-                    {
-                        // 對齊 Python：~ / $VAR 展開、相對路徑以 RepoRoot 為基準
-                        aOverride = Environment.ExpandEnvironmentVariables(aOverride);
-                        if (aOverride.StartsWith("~"))
-                            aOverride = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-                                        + aOverride.Substring(1);
-                        if (!Path.IsPathRooted(aOverride))
-                            aOverride = Path.Combine(UCL_RepoPath.RepoRoot, aOverride);
-                        return Path.GetFullPath(aOverride);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                UnityEngine.Debug.LogWarning($"[AwakeningService] tavern_paths.json 讀取失敗（fallback 預設）: {e.Message}");
-            }
+            string aLegacy = Path.Combine(DataRoot, "_config", "tavern_paths.json");
+            if (File.Exists(aLegacy))
+                throw new Exception(
+                    $"[AwakeningService] 偵測到已廢除的細粒度路徑覆寫檔：{aLegacy}\n"
+                    + "  該機制已被 <repo-root>/.agentcommands_root.local pointer 檔取代（整個資料根一次搬遷）。\n"
+                    + "  處置：把 letters_dir / session_dir 的意圖改成資料根 override（控制台「AgentCommands 路徑」→ 套用），\n"
+                    + "        然後刪除或改名該檔（例如加 .disabled 後綴）。\n"
+                    + "  ⚠ 這裡刻意不 fallback —— 靜默改讀另一個目錄比停下來糟。");
             return Path.Combine(DataRoot, iDefaultSub);
         }
 
@@ -330,7 +348,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //            admin page 接生=tab），json 值層完全等價。
         // 數值影響：寫 registry（patch-write）/ lock / _tokens.json / memo 四處 —— 全部 tmp+replace 原子寫。
         // ===========================================================
-        public static string MemosDir => ResolveOverridablePath("memos_dir", Path.Combine("ChatTavern", "baton", "memos"));
+        public static string MemosDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "memos"));
 
         public const int SESSION_LOCK_TTL_HOURS = 24;   // ⚠ 與 awakening.py SESSION_LOCK_TTL_HOURS / Cmd_Tavern PERSONA_LOCK_TTL_HOURS 同步
         public const int CONSOLIDATE_GAP_THRESHOLD = 10;

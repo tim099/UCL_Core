@@ -41,17 +41,26 @@ UNSET_SENTINEL = "unset@invalid"
 KNOWN_ACTUAL_AGENTS = ["Codex", "ClaudeCode", "Antigravity"]
 
 
+# ⚠ 路徑一律委派 _lib/ucl_paths.py（Tim 2026-08-17 拍板）。
+# 🩸 本檔原本自算 `<含 .git 的 ancestor>/AgentCommands`，**完全不看 .agentcommands_root.local
+#   pointer 檔** —— 於是設了資料根 override 的機器上，本檔跟其他所有工具讀不同目錄，
+#   而兩邊都不會報錯（信箱查不到就落哨兵 unset@invalid，看起來像「這人沒設信箱」）。
+import importlib.util as _ilu_paths
+
+
+def _load_ucl_paths():
+    spec = _ilu_paths.spec_from_file_location(
+        "_ucl_paths_for_agent_email", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+    mod = _ilu_paths.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_paths = _load_ucl_paths()
+
+
 def _data_root() -> Path:
-    """AgentCommands 資料根 —— 走既有解析器，不自己重算 repo 根。"""
-    try:
-        from _lib.repo_root import find_repo_root       # type: ignore
-        return Path(find_repo_root()) / "AgentCommands"
-    except Exception:
-        p = Path(__file__).resolve()
-        for parent in p.parents:
-            if (parent / ".git").is_dir():
-                return parent / "AgentCommands"
-        return Path.cwd() / "AgentCommands"
+    return _paths.data_root()
 
 
 def registry_path() -> Path:

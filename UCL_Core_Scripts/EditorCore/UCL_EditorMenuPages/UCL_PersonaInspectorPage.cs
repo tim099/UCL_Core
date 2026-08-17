@@ -98,7 +98,10 @@ namespace UCL.Core.EditorLib.Page
             base.Init(p_Controller);
             // 區塊：路徑解析 — 用 UCL_RepoPath.AgentCommandsDir 撈 cross-project 共用 awakening state
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
-            m_PersonasDir = Path.Combine(m_AgentCommandsDir, "AwakenInit", "personas");
+            // ⚠ 同 UCL_LoginStatusPage：persona 目錄改走單一解析點（可 override 的 DataRoot），
+            //   原本走 UCL_RepoPath.AgentCommandsDir。設了 override 的機器上本頁與 Cmd 讀不同目錄，
+            //   而兩邊都不會報錯。預設模式下兩者逐字相同。
+            m_PersonasDir = AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
             m_LettersDir = Path.Combine(m_AgentCommandsDir, "ChatTavern", "baton", "letters");
             LoadData();
         }

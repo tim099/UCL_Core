@@ -84,7 +84,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             // 物理意義: 走可 override 資料根撈 _session 跟 AwakenInit/personas (預設 = RepoRoot/AgentCommands)
             string agentCmdDir = UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot;
             string sessionDir = Path.Combine(agentCmdDir, "_session");
-            string personasDir = Path.Combine(agentCmdDir, "AwakenInit", "personas");
+            // persona 目錄走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
+            string personasDir = Awakening.UCL_AwakeningService.PersonasDir;
             string outDir = Path.Combine(agentCmdDir, "AwakenInit");
             try { Directory.CreateDirectory(outDir); }
             catch (Exception ex) { throw new Exception($"[LoginStatus] 建立輸出目錄失敗: {ex.Message}"); }

@@ -53,7 +53,8 @@ namespace UCL.Core.EditorLib.Page
         // ==== 路徑（與 BankAdminPage 同一套解析根：DataRoot = <RepoRoot>/AgentCommands）====
         static string DataRoot => UCL_AgentCommandsPath.DataRoot;
         static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
-        static string PersonasDir => Path.Combine(DataRoot, "AwakenInit", "personas");
+        // persona 目錄走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
+        static string PersonasDir => AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
         static string SessionLockDir => Path.Combine(DataRoot, "_session");
 
         // ==== awakening.py 的常數（改動前先確認兩端一致）====

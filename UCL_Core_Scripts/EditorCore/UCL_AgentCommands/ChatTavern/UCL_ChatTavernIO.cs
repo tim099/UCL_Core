@@ -180,8 +180,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// </summary>
         public static HashSet<string> LoadPersonaIds()
         {
-            // 路徑：走可 override 資料根，對齊 Cmd_LoginStatus 的 personasDir 解析（DataRoot = <repo>/AgentCommands）
-            string personasDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas");
+            // 路徑：走 persona 檔的單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
+            string personasDir = Awakening.UCL_AwakeningService.PersonasDir;
             // dir mtime cache：目錄內新增/刪除 persona 檔會改 dir mtime → 命中即回 cache（避免每筆 post 重列目錄 IO）
             long mtime;
             try { mtime = Directory.Exists(personasDir) ? Directory.GetLastWriteTimeUtc(personasDir).Ticks : -1L; }

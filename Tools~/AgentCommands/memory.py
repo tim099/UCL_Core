@@ -72,26 +72,12 @@ REPO_ROOT = _paths.repo_root()
 DATA_ROOT = _paths.data_root()
 
 # legacy 細粒度覆寫（deprecated，但 awakening.py 仍 honor ⇒ 這裡不能不 honor）
-_PATH_CONFIG_PATH = REPO_ROOT / "AgentCommands" / "_config" / "tavern_paths.json"
-
-
-def _resolve_letters_root() -> Path:
-    if _PATH_CONFIG_PATH.exists():
-        try:
-            cfg = json.loads(_PATH_CONFIG_PATH.read_text(encoding="utf-8"))
-            override = (cfg.get("letters_dir") or "").strip()
-            if override:
-                p = Path(os.path.expandvars(os.path.expanduser(override)))
-                if not p.is_absolute():
-                    p = REPO_ROOT / p
-                return p.resolve()
-        except Exception as e:
-            print(f"⚠ path config 讀取失敗 ({_PATH_CONFIG_PATH.name}): {e} — fallback 預設",
-                  file=sys.stderr)
-    return (DATA_ROOT / "ChatTavern" / "baton" / "letters").resolve()
-
-
-LETTERS_ROOT = _resolve_letters_root()
+# 🩸 2026-08-17（Tim 拍板 A）：本檔原本自帶一份 letters_dir override 實作 —— 連同
+#   awakening.py 與 C# ResolveOverridablePath 共三份。三份都對，但**三份就是三個會各自
+#   漂移的真相源**，而漂移的症狀是「兩邊各看各的目錄，且兩邊都不報錯」。
+#   ⇒ 收斂到 _lib/ucl_paths.py。行為差異：override 命中時本檔現在也會印 deprecation
+#     warning（原本只有 awakening.py 印）—— 多一行 stderr，不影響回傳值。
+LETTERS_ROOT = _paths.letters_root()
 
 
 # ─── 常數 ────────────────────────────────────────────────────────────────

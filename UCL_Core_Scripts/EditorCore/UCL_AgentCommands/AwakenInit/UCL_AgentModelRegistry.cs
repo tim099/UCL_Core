@@ -28,8 +28,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static string RegistryPath =>
             Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "agent_models.json").Replace('\\', '/');
 
+        // persona 檔一律走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
         static string PersonaPath(string persona) =>
-            Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas", persona + ".json").Replace('\\', '/');
+            Awakening.UCL_AwakeningService.ResolvePersonaFile(persona);
 
         // 已知會被填進 model 欄的 agent 別名 → 正規 actual_agent。
         // 收的是**人真的會寫出來的字**，不是理論上的正確值；漏一個就翻不出來，多一個沒有代價。

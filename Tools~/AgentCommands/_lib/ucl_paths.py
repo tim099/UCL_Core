@@ -148,6 +148,83 @@ def data_root() -> Path:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# API 5 — resolve_data_path(default_subpath, config_key)
+# 區塊職責：legacy 細粒度 override（_config/tavern_paths.json）+ pointer-aware 資料根，
+#          合成「某個狀態子路徑到底在哪」的**唯一**解析點。
+# 物理意義：本函式原本有三份各自實作 —— awakening.py `_resolve_data_path`、
+#          memory.py `_resolve_letters_root`、C# `UCL_AwakeningService.ResolveOverridablePath`。
+#          三份都對，但**三份就是三個會各自漂移的真相源**；而漂移的症狀是
+#          「兩邊各看各的目錄，且兩邊都不報錯」——沒有任何一格會紅。
+#          （Tim 2026-08-17 拍板 A 案：override 感知搬進本檔，awakening/memory 改委派。）
+# 數值影響：純唯讀；override 命中時印一次 deprecation warning（per-process，旗標在本檔）。
+# ⚠ config 檔位置是 **repo root 錨**（<repo_root>/AgentCommands/_config/tavern_paths.json），
+#   **不是** data_root 錨 —— 原本兩份實作都這樣寫。看起來像該跟著資料根搬，
+#   但改了就會在設 pointer 的機器上讀不到既有 override（靜默失去覆寫）。照抄，不「順手改對」。
+# ─────────────────────────────────────────────────────────────────────────
+def _path_config_file() -> Path:
+    """已廢除的 legacy 覆寫檔位置（僅用於偵測殘留並 raise）。
+
+    ⚠ 位置是 **repo root 錨**，不是 data_root 錨 —— 原本三份實作都這樣寫。
+      看起來像該跟著資料根搬，但改了就偵測不到設 pointer 的機器上的殘留檔。
+    """
+    return repo_root() / "AgentCommands" / "_config" / "tavern_paths.json"
+
+
+def resolve_data_path(default_subpath: str, config_key: str = "") -> Path:
+    """資料根底下的子路徑。`config_key` 僅為呼叫端相容保留，已無作用。
+
+    🩸 legacy 細粒度覆寫（_config/tavern_paths.json）已廢除（Tim 2026-08-17 拍板）。
+      查證：`git log --all -- _config/tavern_paths.json` 為空 —— 所有分支、整段歷史
+      都沒提交過那個檔，版控裡只有 .example.json 範本。
+      但它是 per-machine / gitignored ⇒ 證得到「從沒被提交」，證不到「沒有機器留著」。
+      ⇒ 存在即 raise，不安靜移除支援：**用一個吵的失敗換掉一個安靜的漂移**。
+    """
+    cfg_path = _path_config_file()
+    if cfg_path.exists():
+        raise RuntimeError(
+            f"偵測到已廢除的細粒度路徑覆寫檔：{cfg_path}\n"
+            "  該機制已被 <repo-root>/.agentcommands_root.local pointer 檔取代"
+            "（整個資料根一次搬遷）。\n"
+            "  處置：把 letters_dir / session_dir 的意圖改成資料根 override"
+            "（Unity 控制台「AgentCommands 路徑」→ 套用），然後刪除或改名該檔。\n"
+            "  ⚠ 這裡刻意不 fallback —— 靜默改讀另一個目錄比停下來糟。")
+    if default_subpath.startswith("AgentCommands/"):
+        return (data_root() / default_subpath[len("AgentCommands/"):]).resolve()
+    return (data_root() / default_subpath).resolve()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# API 6 — personas_dir() / persona_file(persona) / letters_root()
+# 區塊職責：persona 檔（登入狀態 / wake_count / 見林書籤 / 身分向量…）與信件根的**唯一**解析點。
+# 物理意義：persona 檔目前 = <registry_path 的目錄>/personas/<persona>.json。
+#          在這裡出現之前，這條路徑被 19 處各自用字串拼出來（Python 9 / C# 10）。
+#          **多一條路徑的代價不是重複，是遷移時改不完的那幾處會靜默讀到舊檔**——
+#          舊檔還在、讀得到，兩邊各自成功、各自綠燈，沒有一格會紅。
+#          ⇒ 存在的理由不是少打字，是讓第二條路徑**沒有地方存在**。
+# 數值影響：純字串組合，不檢查存在性（caller 自負；與 ucl_tool 同慣例）。
+# ⚠ personas_dir 刻意從 `registry_path` 的**父目錄**推導，而不是直接 data_root/AwakenInit ——
+#   那是 awakening.py 既有的語意（`_REGISTRY_PATH.parent / "personas"`）。
+#   改成前者會在設了 registry_path override 的機器上指到別處，**而且不會報錯**。
+# ⚠ 對側契約：C# 等價入口 = UCL_AwakeningService.PersonasDir / ResolvePersonaFile(persona)
+#   / LettersDir。兩端要一起改 —— 只改一端 = 兩邊各看各的目錄，兩邊都不報錯。
+# ─────────────────────────────────────────────────────────────────────────
+def registry_path() -> Path:
+    return resolve_data_path("AgentCommands/AwakenInit/persona_registry.json", "registry_path")
+
+
+def personas_dir() -> Path:
+    return registry_path().parent / "personas"
+
+
+def persona_file(persona: str) -> Path:
+    return personas_dir() / f"{persona}.json"
+
+
+def letters_root() -> Path:
+    return resolve_data_path("AgentCommands/ChatTavern/baton/letters", "letters_dir")
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # API 4 — ucl_tool(name)
 # 區塊職責：組出 UCL_Core 內某支工具腳本的絕對路徑（e.g. run_cmd.py / awakening.py）。
 # 物理意義：所有工具都在 <UCL_Core>/Tools~/AgentCommands/ 下；本函式把「認死那段相對路徑」

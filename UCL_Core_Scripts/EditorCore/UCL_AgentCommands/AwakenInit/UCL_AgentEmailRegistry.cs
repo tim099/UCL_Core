@@ -31,8 +31,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static string RegistryPath =>
             Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "agent_emails.json").Replace('\\', '/');
 
+        // persona 檔一律走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
         static string PersonaPath(string persona) =>
-            Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas", persona + ".json").Replace('\\', '/');
+            Awakening.UCL_AwakeningService.ResolvePersonaFile(persona);
 
         /// <summary>預設表（actual_agent → email）。檔案不存在時回三個空欄，讓後台有東西可填。</summary>
         public static Dictionary<string, string> LoadDefaults()

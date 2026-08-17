@@ -105,104 +105,42 @@ except Exception:
 _HERE = Path(__file__).resolve().parent
 
 
-def _find_git_root_by_walk(start: Path) -> Path | None:
-    p = start.resolve()
-    while p != p.parent:
-        # 只認「.git 資料夾」為真 repo 根，跳過 submodule 的 .git gitlink 檔。
-        # (對齊 _lib/ucl_paths.py 慣例) — 否則從 submodule 內 cwd 跑會誤把
-        # UCL_Core submodule 當 host root, state 寫進影子 <submodule>/AgentCommands。
-        if (p / ".git").is_dir():
-            return p
-        p = p.parent
-    return None
+# ⚠ 本檔不再自帶路徑解析 —— 全部委派 _lib/ucl_paths.py（Tim 2026-08-17 拍板 A/A1）。
+# 顯式檔案路徑載入：裸 `_lib` 這個名字在本檔下方 sys.path.insert(0, <repo>/AgentCommands) 之後
+# 會被「專案狀態側」的 _lib package 綁走（見下方區塊註解），走檔案路徑繞開名稱遮蔽。
+import importlib.util as _ilu_paths
 
 
-def _resolve_repo_root() -> Path:
-    env_root = os.environ.get("CLAUDE_PROJECT_DIR")
-    if env_root and Path(env_root).is_dir():
-        return Path(env_root).resolve()
-    # walk from cwd first; is_dir 過濾確保跳過 submodule gitlink，命中真主專案 .git 資料夾
-    walked = _find_git_root_by_walk(Path.cwd())
-    if walked:
-        return walked
-    walked = _find_git_root_by_walk(_HERE)
-    if walked:
-        return walked
-    return Path.cwd().resolve()
+def _load_ucl_paths():
+    spec = _ilu_paths.spec_from_file_location(
+        "_ucl_paths_for_awakening", _HERE / "_lib" / "ucl_paths.py")
+    mod = _ilu_paths.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
-_REPO_ROOT = _resolve_repo_root()
+_paths = _load_ucl_paths()
 
-# ─── T-PATH-01 (2026-05-28): AgentCommands 資料根 pointer 檔 ─────
-# 區塊職責: 讀 <git-root>/.agentcommands_root.local pointer 檔得資料根 (C# 控制台 Apply 寫入)。
-# 物理意義: 兩語言共讀同一 pointer 檔, per-machine (gitignored), 沒 → 預設 git_root/AgentCommands。
-def _resolve_agentcommands_data_root(git_root: Path) -> Path:
-    pointer = git_root / ".agentcommands_root.local"
-    try:
-        if pointer.exists():
-            content = pointer.read_text(encoding="utf-8").strip()
-            if content:
-                p = Path(content)
-                if p.is_absolute():
-                    return p.resolve()
-    except Exception:
-        pass
-    return (git_root / "AgentCommands").resolve()
-
-_DATA_ROOT = _resolve_agentcommands_data_root(_REPO_ROOT)
+# 🩸 repo root 的 tier 順序改用 ucl_paths 的語意（Tim 2026-08-17 拍板 A1）：
+#   舊：CLAUDE_PROJECT_DIR → **cwd** walk → __file__ walk
+#   新：CLAUDE_PROJECT_DIR → **__file__** walk → cwd walk
+#   差在 tier-2。本專案兩者同解，但 **cwd 落在另一個 git repo 時會分歧** ——
+#   例如 cwd=D:/Unity/persona/kiara（獨立 repo）時，舊語意會把登入態與信件寫進 kiara/AgentCommands。
+#   ucl_paths 檔頭直接點名 cwd-walk 是「2026-06-16 cwd 路徑詐欺 bug 家族的病灶」。
+#   ⇒ 代價：cd 進別的專案跑本工具**不再自動切換目標**，要切請顯式帶 CLAUDE_PROJECT_DIR。
+_REPO_ROOT = _paths.repo_root()
+_DATA_ROOT = _paths.data_root()
 
 # ─── Path Config Override (legacy, Tim 2026-05-12 → 2026-05-28 deprecation) ─
 # 區塊職責: tavern_paths.json 細粒度 override (registry/session/letters/etc.) — 已被 pointer 檔取代。
 # 物理意義: 若殘留檔 → 仍 honor (transition window), 但印一次 deprecation warning,
 #          Phase 後續移除。新方案走 pointer 檔 (整個資料根一次 override) + CLI 參數做 ad-hoc。
-_PATH_CONFIG_PATH = _REPO_ROOT / "AgentCommands" / "_config" / "tavern_paths.json"
-_tavern_paths_deprecation_warned = False
+_PATH_CONFIG_PATH = _paths._path_config_file()
+_resolve_data_path = _paths.resolve_data_path      # 委派：override 感知的唯一實作在 ucl_paths
 
-
-def _warn_tavern_paths_deprecated_once() -> None:
-    global _tavern_paths_deprecation_warned
-    if _tavern_paths_deprecation_warned:
-        return
-    _tavern_paths_deprecation_warned = True
-    print(
-        f"⚠ DEPRECATION: {_PATH_CONFIG_PATH.name} 細粒度 path override 已 deprecated (T-PATH-01)。\n"
-        f"   新方案: 控制台改 AgentCommands 資料根 → 寫 <git-root>/.agentcommands_root.local pointer 檔。\n"
-        f"   過渡窗口: 仍 honor 既有 tavern_paths.json,但會在後續 Phase 移除。",
-        file=sys.stderr,
-    )
-
-
-def _resolve_data_path(default_subpath: str, config_key: str) -> Path:
-    """覆寫機制 (T-PATH-01 後): legacy tavern_paths.json 仍 honor (deprecated),
-    否則用 pointer-aware 資料根映射 (default_subpath 形如 'AgentCommands/X' → _DATA_ROOT/X)。"""
-    if _PATH_CONFIG_PATH.exists():
-        try:
-            with open(_PATH_CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            override = (cfg.get(config_key) or "").strip()
-            if override:
-                _warn_tavern_paths_deprecated_once()
-                expanded = os.path.expandvars(os.path.expanduser(override))
-                p = Path(expanded)
-                if not p.is_absolute():
-                    p = _REPO_ROOT / p
-                return p.resolve()
-        except Exception as e:
-            print(f"⚠ path config 讀取失敗 ({_PATH_CONFIG_PATH.name}): {e} — fallback pointer/default",
-                  file=sys.stderr)
-    # 把 default_subpath 「AgentCommands/<sub>」前綴換成 _DATA_ROOT (pointer-aware)
-    if default_subpath.startswith("AgentCommands/"):
-        return (_DATA_ROOT / default_subpath[len("AgentCommands/"):]).resolve()
-    return (_DATA_ROOT / default_subpath).resolve()
-
-
-_REGISTRY_PATH = _resolve_data_path(
-    "AgentCommands/AwakenInit/persona_registry.json", "registry_path"
-)
+_REGISTRY_PATH = _paths.registry_path()
 _SESSION_DIR = _resolve_data_path("AgentCommands/_session", "session_dir")
-_LETTERS_DIR_TPL = _resolve_data_path(
-    "AgentCommands/ChatTavern/baton/letters", "letters_dir"
-)
+_LETTERS_DIR_TPL = _paths.letters_root()
 _BONUS_QUOTA_PATH = _resolve_data_path(
     "AgentCommands/ChatTavern/agent_bonus_quota.json", "bonus_quota_path"
 )
@@ -341,7 +279,7 @@ def similarity_tier(s: float) -> str:
 
 _REGISTRY_DIR = _REGISTRY_PATH.parent
 _REGISTRY_META_PATH = _REGISTRY_DIR / "_registry_meta.json"
-_PERSONAS_DIR = _REGISTRY_DIR / "personas"
+_PERSONAS_DIR = _paths.personas_dir()   # 委派：persona 目錄的唯一解析點（對側 = C# ResolvePersonaFile）
 _REGISTRY_MIGRATION_MARKER = _REGISTRY_DIR / ".migrated_from_v2_single_file"
 
 

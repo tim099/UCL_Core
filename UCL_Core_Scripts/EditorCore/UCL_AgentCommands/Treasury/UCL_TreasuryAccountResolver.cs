@@ -85,8 +85,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         static string RegistryMetaPath
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "_registry_meta.json");
-        static string PersonasDir
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas");
+        // persona 路徑一律走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
+        static string PersonasDir => Awakening.UCL_AwakeningService.PersonasDir;
 
         /// <summary>強制下次解析重讀 registry（開戶 / 銷戶 / 手改 JSON 後呼叫）。</summary>
         public static void Invalidate()

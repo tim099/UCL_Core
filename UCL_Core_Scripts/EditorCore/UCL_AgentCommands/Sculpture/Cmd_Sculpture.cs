@@ -68,7 +68,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
 
         public override string ExampleArgs => "op=stats";
 
-        public override string HelpURL => "ucl_core:Docs~/zh-Hant/Plan/Plan_Sculpture_3D.md";
+        // 2026-08-17：該 Plan 已完工歸檔到 Plan/completed/，路徑跟著搬 ——
+        // 舊值指向的檔早就不在，而按鈕的失敗形式是「完全沒反應」（不會報錯）。
+        public override string HelpURL => "ucl_core:Docs~/zh-Hant/Plan/completed/Plan_Sculpture_3D.md";
 
         const string PROC_TAG = "sculpture_engine";
         const int ENGINE_TIMEOUT_MS = 120000;

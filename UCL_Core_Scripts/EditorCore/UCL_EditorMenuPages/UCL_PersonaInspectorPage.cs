@@ -26,7 +26,10 @@ namespace UCL.Core.EditorLib.Page
     //   awakening.py 只看 canonical actor 拿不到散落信」而生, 帶 canonical/misrouted/orphan 三套機制。
     //   2026-06-15 Tim 拍板 letter 結構壓平為單層 letters/<persona>/ (砍 agent 層, persona 名全域唯一),
     //   散落 / misroute / orphan 問題從根消除 — 本版全數移除那套機制, 回歸單純 persona↔chain 檢視。
-    [HelpURL("ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md")]
+    // 2026-08-17：舊值指向的 Plan 整個 UCL_Core 都不存在（死連結）。改指本頁的操作說明 ——
+    // 就算那份 Plan 存在也不該指它：Plan 是設計沿革，而按「說明」的人要的是「這頁怎麼用」。
+    // 另補 {lang}：舊值寫死 zh-Hant，其他語系拿不到回退。
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_PersonaInspectorPage.md")]
     public class UCL_PersonaInspectorPage : UCL_CommonEditorPage
     {
         public override string WindowName => UCL_CodeLocalize.Get("PersonaInspector.Title");

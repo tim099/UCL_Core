@@ -60,8 +60,10 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
         public override string ExampleArgs =>
             "filter_status=online;filter_agent=claude-code;format=both";
 
+        // 2026-08-17：舊值指向的 Plan 整個 UCL_Core 都不存在（死連結）。改指本 Cmd 的說明文件。
+        // 另補 {lang}：舊值寫死 zh-Hant，其他語系拿不到回退。
         public override string HelpURL =>
-            "ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Init_Protocol.md";
+            "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_LoginStatus.md";
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {

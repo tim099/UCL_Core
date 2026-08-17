@@ -24,7 +24,8 @@ namespace UCL.Core.EditorLib.Page
     /// <summary>
     /// 3D 雕刻觀測頁 — 展品一鍵導覽（讀 exhibits.json preset）或手動設定觀測參數渲染。
     /// </summary>
-    [HelpURL("ucl_core:Docs~/{lang}/Plan/Plan_Sculpture_3D.md")]
+    // 2026-08-17：該 Plan 已完工歸檔到 Plan/completed/，路徑跟著搬（同 Cmd_Sculpture）。
+    [HelpURL("ucl_core:Docs~/{lang}/Plan/completed/Plan_Sculpture_3D.md")]
     public class UCL_SculptureViewerPage : UCL_CommonEditorPage
     {
         public static UCL_SculptureViewerPage Create()

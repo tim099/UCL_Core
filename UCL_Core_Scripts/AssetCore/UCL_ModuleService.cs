@@ -45,7 +45,10 @@ namespace UCL.Core
     /// Responsible for module initialization, loading, installation, Asset path resolution, cache management, and Inspector GUI rendering.
     /// All UCL_Asset access paths are determined by this service, serving as the core entry point for the entire UCL asset framework.
     /// </summary>
-    [HelpURL("ucl_core:Docs~/{lang}/UCL_ModuleService/ModuleInstallation.md")]
+    // 2026-08-17：ModuleInstallation.md 不存在（死連結）。安裝與同步的內容已收在
+    // UCL_ModuleSystem_Architecture.md 的「安裝與同步 (Installation & Sync)」一節 ——
+    // 是文件被合併，不是沒寫，所以改指路徑即可，不必重寫一份。
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_ModuleService/UCL_ModuleSystem_Architecture.md")]
     public class UCL_ModuleService
     {
         // ─────────────────────────────────────────────

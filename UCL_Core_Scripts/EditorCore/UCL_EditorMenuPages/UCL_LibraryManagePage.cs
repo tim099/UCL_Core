@@ -26,7 +26,11 @@ namespace UCL.Core.EditorLib.Page
     // 設計理由 (Tim 2026-05-26 派 task)：
     //   原生 library.py 只有 CLI 介面，Tim / agent 想一眼看「圖書館裡有哪些書、誰捐的、進度到哪」沒有可視化介面。
     //   本 page 補可視化清單 + 常用操作 GUI fallback，結構對齊 UCL_LoginStatusPage（讀 per-project 資料 + spawn UCL_Core 工具）。
-    [HelpURL("ucl_core:Docs~/{lang}/Mechanics/Reading_Library.md")]
+    // 2026-08-17：Mechanics/Reading_Library.md 不存在（死連結）。暫改指既有的閱讀庫 workflow ——
+    // ⚠ 這是**止血不是治好**：按「說明」的人要的是「這頁怎麼用」，而 workflow 講的是流程。
+    //   本頁該有自己的 UCL_EditorPage/ 文件，但它同日剛被大改（外部漫畫庫入口），
+    //   由沒寫那段功能的人反推著寫，很可能隔天就跟實作對不上 —— 留給功能作者補比較誠實。
+    [HelpURL("ucl_core:Docs~/{lang}/Workflows/Reading_Library_Workflow.md")]
     public class UCL_LibraryManagePage : UCL_CommonEditorPage
     {
         public static UCL_LibraryManagePage Create()

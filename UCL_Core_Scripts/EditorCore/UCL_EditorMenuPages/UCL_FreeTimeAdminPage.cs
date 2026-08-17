@@ -48,7 +48,7 @@ namespace UCL.Core.EditorLib.Page
         bool m_Loaded;
 
         public override string WindowName => "自由時間管理";
-        public override bool ShowInPageMenu => false;
+        //public override bool ShowInPageMenu => false;
         public static UCL_FreeTimeAdminPage Create() => UCL_EditorPage.Create<UCL_FreeTimeAdminPage>();
 
         public override void Init(UCL_GUIPageController iGUIPage)

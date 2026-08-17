@@ -24,7 +24,7 @@ description: |
 ## 第一步（唯一要背的一步）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodNight \
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
     --arg step=check --arg persona=<P>
 ```
 

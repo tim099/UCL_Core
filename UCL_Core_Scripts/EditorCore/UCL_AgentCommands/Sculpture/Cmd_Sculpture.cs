@@ -187,7 +187,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             int aSkipped = ReadInt(aResult, "skipped_count");
             string aEventFile = ReadStr(aResult, "event_file");
             int aCharge = aActual > 0 ? CeilDiv(aActual, VOXELS_PER_UNIT) : 0;
-            var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile);
+            var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
+                UCL_AgentCmdContexts.FromArgs(iArgs)?.CmdId);
 
             aR.AppendLine("## result（引擎回報＝結算依據）");
             aR.AppendLine($"- {(iOp == "box" ? "placed" : "carved")}: **{aActual}**{(aSkipped > 0 ? $"（skip {aSkipped} —— 禁覆蓋，不收費）" : "")} / 體積 {aVolume:N0}");
@@ -366,7 +367,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             int aBlack = ReadInt(aResult, "remapped_black");
             string aEventFile = ReadStr(aResult, "event_file");
             int aCharge = aActual > 0 ? CeilDiv(aActual, VOXELS_PER_UNIT) : 0;
-            var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile);
+            var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
+                UCL_AgentCmdContexts.FromArgs(iArgs)?.CmdId);
 
             aR.AppendLine("## result（引擎回報＝結算依據）");
             aR.AppendLine($"- source: {aSrcDesc} → 非透明像素 **{aPainted}**（透明＝未繪製，不放 voxel）");
@@ -478,8 +480,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         //          persona→bank 反查保證）、免費像素寫 Canvas/freetime/<P>.json used 欄
         //          （與 canvas.py 消費端同 schema —— 兩端對齊義務）。
         // ===========================================================
+        // ⚠ iCmdId：2026-08-17 加 —— 記帳的 env_marker 依它查 per-cmd context。
+        //   原本走 UCL_AgentCommandRunner.CurrentCmdId（全域單例），
+        //   Cmd 併行時會拿到別人的 id ⇒ **這筆帳的來源記成別人**（不會報錯）。
         (int usedFree, int usedVoucher, int usedToken) ConsumePayment(
-            string iPersona, string iBank, int iCharge, string iPay, string iEventRef)
+            string iPersona, string iBank, int iCharge, string iPay, string iEventRef, string iCmdId)
         {
             if (iCharge <= 0) return (0, 0, 0);
             int aRemain = iCharge;
@@ -508,7 +513,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             if (aUseToken && aRemain > 0)
             {
                 Treasury.UCL_TreasuryLedger.Debit(iBank, aRemain, "sculpture_place", aRef,
-                    $"3D sculpture {iCharge} unit(s) by {iPersona}", "system", UCL_AgentCommandRunner.CurrentCmdId);
+                    $"3D sculpture {iCharge} unit(s) by {iPersona}", "system", iCmdId);
                 aToken = aRemain;
                 aRemain = 0;
             }

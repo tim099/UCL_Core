@@ -25,7 +25,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
    - 檢查該 persona 之前是否已讀過該作品（`Library/media/comic-<slug>/readers/<persona>/`）。
    - 若已有進度，**先跑 recall 追回書籤**：
      ```bash
-     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Library \
        --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>
      ```
    - 讀取產生在 `letters/<persona>/_reading_recall_<media-id>.md` 中的書籤與歷史筆記，**直接從 bookmark 指定的下一話接續閱讀**。
@@ -66,7 +66,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 ## 續讀前（跨 session 接回才需要）
 
 隔了一段時間（新 session / 換話題後）接回進度時，先跑：
-`run_cmd.py run Library --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>`；
+`run_cmd.py --persona <me> run Library --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>`；
 讀取產生在該 persona `letters/` 目錄的 `_reading_recall_<media-id>.md`，再從 bookmark 指定的下一話繼續。
 
 **同一 session 內連續讀多話 → 略過 recall**（進度就在手上，重拉是空轉）。

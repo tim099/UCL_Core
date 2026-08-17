@@ -23,7 +23,7 @@ description: |
 ## 第一步（唯一要背的一步）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodMorning \
     --arg step=wake --arg persona=<P> \
     --arg actual_agent=<Codex|ClaudeCode|Antigravity> --arg model=<LLM 型號>
 ```

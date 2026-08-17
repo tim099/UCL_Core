@@ -1378,15 +1378,17 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    # agent-command-pipeline-parallelize T05: --agent-id 切 per-agent queue/trigger
-    # 物理意義: 帶值 → 整串當 persona 資料夾名 → queues/<X>/queue.json（Tim 2026-08-01 選項 b）
-    #          沒帶 → queues/anonymous/（最外層共用 queue.json 已廢除）
-    # ⚠ 已被 --persona 取代：本旗標不報錯但不做字串轉譯 —— 打 --agent-id ame-sw 會長出
-    #   queues/ame-sw/ 這種資料夾，它是**遷移待辦的可見形式**，不是正常用法。
-    # 用途: 多 agent 並行 (Claude/Antigravity/Gemini/Zeta) 各自獨立 queue, 互不阻塞
-    parser.add_argument("--agent-id", default=None,
-                        help="[已被 --persona 取代] 整串當資料夾名 → queues/<X>/queue.json；沒帶 → queues/anonymous/。"
-                             "不報錯但不轉譯：看到 queues/ame-sw/ 這種資料夾就表示該 caller 還沒改。")
+    # ⛔ --agent-id 已移除（Tim 2026-08-17 拍板一律 --persona）。
+    # 為什麼是移除而不是留著相容：
+    #   ① **沒有唯一性保證** —— `--agent-id` 是 caller 自由填的字串，打錯就長出
+    #      `queues/ame-sw/` 這種資料夾，而它不報錯。唯一有守衛的是 persona
+    #      （同一 persona 不得同時登入兩次，awakening 那道鎖）。
+    #   ② **它同時是「身分」與「並行通道」兩種語意**，再疊第三種就沒人解得開。
+    #   ③ 舊優先序是 `--agent-id > --persona` —— 併行打開之後，一個沒有唯一性的東西
+    #      壓過有守衛的那個，是排在自動路由後面的第二個坑。
+    # ⚠ 保留成「明確報錯」而不是直接刪掉參數：argparse 對未知旗標只會吐
+    #   `unrecognized arguments`，看到的人不知道該換成什麼。**遷移要指路，不能只是消失。**
+    parser.add_argument("--agent-id", default=None, help=argparse.SUPPRESS)
     # agent-command-pipeline-parallelize T06: 同 persona 內並行子通道
     # 物理意義: 同一 --agent-id (或 default) 的 queue 是串行的 (per-agent IsRunning 防 write race);
     #          --lane 在自己的 persona 資料夾內開獨立子通道檔 → queue id = '<persona>/<lane>' → 與本命 queue 並行不阻塞。
@@ -1471,13 +1473,19 @@ def main() -> int:
     # agent-command-pipeline-parallelize T06: --lane / --parallel 在 base agent-id 上疊並行子通道
     # 物理意義: lane 設定 → queue id = '<persona>/<lane>' → 獨立 queue 檔 + running-lock, 與本命 queue 並行不阻塞
     # 數值影響: 無 lane → 行為跟改動前完全相同 (effective = base agent_id)
-    _base_agent = getattr(args, "agent_id", None)
+    # ⛔ --agent-id 已移除：打到就明確擋下並指路（不靜默忽略 —— 那會讓 caller
+    #    以為自己選了通道，實際落 anonymous，而那正是今天要解的問題本身）。
+    if getattr(args, "agent_id", None):
+        print("⛔ --agent-id 已移除（Tim 2026-08-17 拍板）——請改用 --persona <名字>。\n"
+              "   理由：--agent-id 是自由字串、沒有唯一性保證（打錯會長出 queues/<那串>/ 而不報錯）；\n"
+              "   唯一有守衛的身分是 persona（同一 persona 不得同時登入兩次）。\n"
+              f"   你這次打的是：--agent-id {args.agent_id}　→ 改成：--persona {args.agent_id}",
+              file=sys.stderr)
+        return 2
     _lane = getattr(args, "lane", None) or ("parallel" if getattr(args, "parallel", False) else None)
-    # cmd-identity P1: --persona 在沒帶 --agent-id 時兼任路由來源。
-    #   優先序刻意是 --agent-id > --persona：帶了 --agent-id 表示 caller 明確要那條通道
-    #   （e.g. basecamp-sw 看直播專用 queue），身分仍由 --persona 宣告並戳進 args ——
-    #   **路由與身分是兩件事，只是預設情況下同一個值**。
+    # 身分與路由的唯一來源：--persona（決定 queues/<persona>/，同時戳進 args 讓下游不必反查）
     _persona = (getattr(args, "persona", None) or "").strip() or None
+    _base_agent = None
     # ── ① queue 自動路由（Tim 2026-08-16 拍板）────────────────────────────
     # 區塊職責：沒帶 `--persona` 但 cmd args 裡有 `persona=<P>` 時，用它決定 queue 路由。
     # 物理意義：`--persona`（run_cmd 的旗標，決定走哪條 lane）與 `--arg persona=`（Cmd 的參數，
@@ -1492,7 +1500,7 @@ def main() -> int:
         _persona = _persona_from_cmd_args(args)
         if _persona:
             print(f"  ↪ queue 路由：由 --arg persona={_persona} 推得 → queues/{_persona}/"
-                  f"（未帶 --persona；要走別條通道請顯式帶 --persona / --agent-id）")
+                  f"（未帶 --persona；要走別條通道請顯式帶 --persona）")
     _base_agent = _base_agent or _persona
     # lane 是**檔名後綴**不是 id 的一部分：queues/<persona>/queue-<lane>.json。
     # 分隔符從舊制的 '~' 改成 '/' —— 它現在對應真實的目錄層級，不是一個編碼在字串裡的假層級。

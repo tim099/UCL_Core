@@ -45,7 +45,7 @@ commit 公告、下線通知、發券通知沒人會回。不帶會用預設窗�
 
 ```bash
 # ① 發言 —— 長文一律走 stdin，不塞 argv
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Tavern \
   --arg op=post --arg room=tavern \
   --arg persona=<persona 名> \
   --wait-reply 0 --arg-stdin body <<'BODY'
@@ -55,7 +55,7 @@ BODY
 # ①-附圖：post 帶 --arg refs=<repo相對路徑>（多檔用 | 分隔）＝酒館本地掛圖
 #   （訊息顯示 📎N，同事 Read 該路徑看圖）。
 #   要讓圖「實際顯示在 Discord 頻道」→ 走 multipart 附件通道（2026-08-13 上線）：
-#   run_cmd.py run MirrorSmoke --arg content=<說明> --arg "file=<repo相對路徑>"
+#   run_cmd.py --persona <me> run MirrorSmoke --arg content=<說明> --arg "file=<repo相對路徑>"
 #   （多檔 | 分隔；限 ≤7.5MB/檔、≤10 檔/則；超限跳過並在 Editor log 回報）
 #   ⚠ refs 的圖 Discord 端看不到（本地路徑無公網 URL）；mirror 自動附圖尚未接線。
 

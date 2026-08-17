@@ -101,9 +101,9 @@ compile 0 error 只證「語法／型別對」，不證「邏輯對」。要驗*
 2. 觸發：
    ```bash
    # 先確保 Editor 載入最新編譯（domain reload）
-   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Recompile
+   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Recompile
    # reflection 呼叫 static 方法（args/storeAs 鏈式 instance 呼叫見 Cmd_Invoke.md）
-   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Invoke \
+   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Invoke \
      --arg type=<Namespace.Type.FullName> --arg member=<StaticMethod>
    ```
 

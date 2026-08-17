@@ -38,7 +38,7 @@ description: |
 > 而要**等到編完並拿到錯誤清單**，用 python 子命令（不是 `run Recompile`）：
 >
 > ```bash
-> python <UCL_Core>/Tools~/AgentCommands/run_cmd.py recompile
+> python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> recompile
 > ```
 >
 > 它會：記下 pre-mtime → 送 Cmd → **等 `.compile_status.json` 推進且 `in_progress=false`** → 印 errors/warnings。
@@ -156,6 +156,30 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 （直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零）。2026-08-17 券的帳本分裂，
 路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。
 
+**⑤ 跑 `run_cmd.py` 一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> --arg k=v
+#                                                 ^^^^^^^^^^^^^^^ 不是選配
+```
+
+`--persona` 一次做兩件事：**決定 queue 路由**（`queues/<persona>/`）＋
+**宣告這筆是誰派的**（戳進 args，下游 Tavern post / Treasury 記帳不必反查猜）。
+
+⚠ 它跟 `--arg persona=<P>` **是兩個不同的東西**：前者是 run_cmd 的旗標（走哪條 lane），
+後者是 Cmd 的參數（這筆代表誰）。實務上大家只帶後者 ⇒ **全員掉進 `queues/anonymous/` 互相阻塞**。
+
+> 🩸 血證兩則，同一個病：
+> - summit 2026-08-16 觀影同場四人，一晚兩次 `ensure_idle` 逾時 SystemExit，
+>   錯誤訊息裡是 `queues/anonymous/pending.trigger`，而 `queues/summit/` 好端端空在旁邊。
+> - kiara 2026-08-17 自由時間，`step=next` 撞 120s timeout，trigger 卡在 anonymous 沒人取。
+>
+> **功能在、路由在、旗標在 —— 沒有人被指向它。規則要長在通道上，不要掛在呼叫端的記憶裡。**
+
+⛔ **`--agent-id` 已移除**（2026-08-17）。它是自由字串、**沒有唯一性保證**
+（打錯會長出 `queues/<那串>/` 而不報錯），而唯一有守衛的身分是 persona
+（同一 persona 不得同時登入兩次）。打到舊旗標會**明確報錯並指路**，不是靜默忽略。
+
 ## 🔌 不開 Editor 頁也能操作 C# —— `Cmd_Invoke` 反射呼叫
 
 > [!IMPORTANT]
@@ -165,14 +189,14 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 
 ```bash
 # 靜態方法（最常用：自我檢查）
-run_cmd.py run Invoke --arg type=<Namespace.Type> --arg member=<Method>
+run_cmd.py --persona <me> run Invoke --arg type=<Namespace.Type> --arg member=<Method>
 
 # 靜態屬性 → 存成變數（storeAs），供後續 invoke 當 target
-run_cmd.py run Invoke --arg type=UCL.Core.UCL_SpriteAsset --arg member=Util \
+run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.UCL_SpriteAsset --arg member=Util \
     --arg kind=property --arg storeAs=spriteUtil
 
 # 實例方法：target=$變數；有多載或帶預設參數時要給 paramTypes + args
-run_cmd.py run Invoke --arg target='$spriteUtil' --arg member=GetData \
+run_cmd.py --persona <me> run Invoke --arg target='$spriteUtil' --arg member=GetData \
     --arg paramTypes='System.String;System.Boolean' --arg args='<ID>;false'
 ```
 
@@ -214,16 +238,16 @@ grep -n "AgentCmd:Invoke\] OK" ~/AppData/Local/Unity/Editor/Editor.log | tail -1
 實例（本專案 2026-08-14 實跑）：
 ```bash
 # ① 資料層自我檢查（不開遊戲）
-run_cmd.py run Invoke --arg type=LittleYellow.ClickAreaAsset --arg member=SelfTest
+run_cmd.py --persona <me> run Invoke --arg type=LittleYellow.ClickAreaAsset --arg member=SelfTest
 
 # ② 三段式串接：Util → 取某份資產 → 呼叫它的方法 → 存檔
-run_cmd.py run Invoke --arg type=LittleYellow.SpriteAssetImporter --arg member=Util \
+run_cmd.py --persona <me> run Invoke --arg type=LittleYellow.SpriteAssetImporter --arg member=Util \
     --arg kind=property --arg storeAs=impUtil
-run_cmd.py run Invoke --arg target='$impUtil' --arg member=GetData \
+run_cmd.py --persona <me> run Invoke --arg target='$impUtil' --arg member=GetData \
     --arg paramTypes='System.String;System.Boolean' --arg args='ClickAreas_Scene2;false' \
     --arg storeAs=imp
-run_cmd.py run Invoke --arg target='$imp' --arg member=Import
-run_cmd.py run Invoke --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
+run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Import
+run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
 ```
 
 ### 踩過的幾條

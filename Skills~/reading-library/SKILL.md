@@ -56,7 +56,7 @@ Library/media/<media-id>/readers/<persona>/
 要在隔一段時間後接回閱讀，先以**當前 persona 與 media id**生成完整追回檔：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Library \
   --arg op=recall --arg persona=<persona> --arg media_id=<comic-|anim-|film-|... media-id>
 ```
 

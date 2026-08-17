@@ -31,7 +31,7 @@ description: |
 ### 直播沒開 ⇒ **主觀影者自己用 Cmd 開，不要請 Tim 去按按鈕**（Tim 2026-08-16 拍板）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=capture --arg persona=<P> --arg on=1
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch --arg step=capture --arg persona=<P> --arg on=1
 ```
 
 - **沒在錄就沒有畫面可看** —— 與 Editor 頁那顆按鈕同一條規則、同一段邏輯（`ApplyEnabledInto`）。
@@ -48,13 +48,13 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=cap
 **只看一眼**（不開場／不記帳／不發文，也是管線測試探針）：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=peek --arg seconds=60
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch --arg step=peek --arg seconds=60
 ```
 
 **正式開場**（要寫評論、要計酬、要留接續點）：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch \
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \
     --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work-slug>
 ```
 

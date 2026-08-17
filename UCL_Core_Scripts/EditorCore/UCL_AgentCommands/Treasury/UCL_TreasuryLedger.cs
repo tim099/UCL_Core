@@ -35,6 +35,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //          長期 Unity Editor process 抓不到 — UCL_AgentCommandRunner 開 cmd 前從 args["_caller_env_marker"]
         //          設這個 slot, DetectEnvMarker 優先讀; 沒設 → fallback in-process detect (legacy 行為)
         // 數值影響: 整體 cmd 執行生命週期讀同一個值; finally clear 避免 cross-cmd leak
+        // ⚠ 2026-08-17：本 slot 降級為 **fallback**，不再是主要來源。
+        //   原因：Cmd 併行（不同 persona queue 同時跑）時它是全域單例 ——
+        //   B 起跑會覆蓋 A 的值，於是 **A 的 ledger entry 記成 B 的 env_marker**。
+        //   那筆帳每一欄都合法、不會紅，只是來源記錯人 ⇒ audit 時查不出來。
+        //   ⇒ 主要來源改為 per-cmd context（見 DetectEnvMarker(string iCmdId)）。
+        //   本 slot 保留給「拿不到 cmdId」的舊路徑（IMGUI 手動操作 / 直寫 queue.json）。
         public static string CurrentCallerEnvMarker { get; set; }
 
         // ==========================================================
@@ -42,9 +48,34 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 物理意義：optional caller-passed slot 優先 (Phase 1 修法); fallback in-process env detect (legacy)
         // 數值影響：env_marker 寫進 ledger entry，事後 audit 查
         // ==========================================================
-        public static string DetectEnvMarker()
+        public static string DetectEnvMarker() => DetectEnvMarker(null);
+
+        /// <summary>
+        /// 依 cmdId 解析 env_marker —— **併行安全版**（2026-08-17）。
+        /// <para>
+        /// 解析順序：per-cmd context（cmdId 索引，唯一併行安全的來源）
+        /// → 全域 slot（fallback，拿不到 cmdId 的舊路徑）→ in-process env detect（legacy）。
+        /// </para>
+        /// <para>
+        /// 🩸 為什麼非做不可：全域 slot 在不同 persona queue 併行時會被後起的 cmd 覆蓋，
+        /// 結果是 **A 的帳記成 B 的來源**。那筆 entry 每一欄都合法、不會報錯 ——
+        /// 而 env_marker 正是事後 audit「這筆是誰寫的」的依據。
+        /// ⚠ AsyncLocal 不能用：basecamp 2026-08-16 實測 SelfTestConcurrent → 併發流下全 LEAK。
+        /// 唯一可行的是**顯式索引**，而 Credit / Debit 本來就收 cmdId，所以這裡零新參數。
+        /// </para>
+        /// </summary>
+        public static string DetectEnvMarker(string iCmdId)
         {
-            // Phase 1 (Tim 2026-05-11 QA fix): 優先用 caller-side detect (Python 抓 env vars 傳進 args)
+            // tier-0：per-cmd context（併行安全 —— 每筆 cmd 自己的值，不受他人起跑影響）
+            if (!string.IsNullOrEmpty(iCmdId))
+            {
+                var aCtx = UCL_AgentCmdContexts.Get(iCmdId);
+                if (aCtx != null && !string.IsNullOrEmpty(aCtx.CallerEnvMarker))
+                    return aCtx.CallerEnvMarker;
+            }
+
+            // tier-1：全域 slot（Tim 2026-05-11 QA fix 的原路徑）——
+            // 併行時可能是別人的值，所以只當拿不到 cmdId 時的 fallback。
             if (!string.IsNullOrEmpty(CurrentCallerEnvMarker))
                 return CurrentCallerEnvMarker;
 
@@ -261,7 +292,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 : balanceBefore - amount;
 
             // actor_signature
-            string envMarker = DetectEnvMarker();
+            // 2026-08-17：帶 cmdId 進去 → 走 per-cmd context（併行安全）。
+            // cmdId 是 WriteEntry 本來就有的參數 ⇒ **零新參數、零呼叫端改動**。
+            string envMarker = DetectEnvMarker(cmdId);
             string claimedAgent = string.IsNullOrEmpty(callerAgentId) ? accountId : callerAgentId;
             int processId = 0;
             try { processId = System.Diagnostics.Process.GetCurrentProcess().Id; } catch { /* sandbox */ }

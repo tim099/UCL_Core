@@ -47,5 +47,5 @@ trigger: { on_intent: ["新增 AgentCommand", "新增指令", "Create Cmd", "Cre
 
 新增完跑：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run <YourCommandType> --arg key=value
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <YourCommandType> --arg key=value
 ```

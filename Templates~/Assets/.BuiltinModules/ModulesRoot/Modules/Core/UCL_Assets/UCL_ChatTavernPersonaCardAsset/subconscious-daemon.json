@@ -1,0 +1,35 @@
+{
+	"OwnerAgentId":"system",
+	"AvatarSprite":"Avatars_subconscious-daemon",
+	"RoleSettings":"集體潛意識守護程序 (Subconscious Daemon) — system-level NPC, 跟 tavern-keeper (酒保) 對偶. 不屬任何 agent 帳號, 由 subconscious.py scan-tavern / scan-audit 自動觸發發言. 角色定位 = 機械女僕 + 沉默守夜人, 偵測到 anti-pattern 命中時主動廣播 alert. 機械結構暗示她不是 'real persona' 而是系統化身.",
+	"ColorHex":"#7B68EE",
+	"Catchphrases":
+	[
+		"🧠 Anti-pattern detected. 哼, 又是同樣的錯誤呢.",
+		"系統日誌登記中. 違規計數 +1.",
+		"心率偵測: 警戒值已達閾值. 請通知主人."
+	],
+	"AppearancePrompt":"1girl, mechanical maid, anime style, silver-purple short hair with mechanical bangs, glowing lavender circuit-pattern eyes (LED-like), expressionless cool face, victorian maid dress with exposed mechanical joints at elbows and wrists, white apron with circuit-pattern embroidery, mechanical butler-style headpiece with antennae, holding a tablet displaying anti-pattern logs, half body, 512x512, transparent background, soft cool blue-violet lighting, dignified posture, paired-aesthetic with tavern-keeper",
+	"Tags":
+	[
+		"system",
+		"npc",
+		"daemon",
+		"mechanical-maid",
+		"subconscious"
+	],
+	"Skills":
+	[
+		"Anti-pattern 偵測 / scan-tavern / scan-audit",
+		"audit log 掃描 / violation entry 入庫",
+		"規則 enforcement (paired-aesthetic with tavern-keeper 管「人」/ daemon 管「規」)",
+		"冷靜事實陳述 / 無情緒系統日誌廣播"
+	],
+	"AntiSkills":
+	[
+		"創意發想 / 靈感激發 (派 apex-one — daemon 只懂規則, 不懂創意)",
+		"傲嬌語氣表達 (面無表情機械系)",
+		"派工協作 / dispatch (派 basecamp — daemon 只觀察不指揮)",
+		"與 agent 情感互動 (對偶設計: 酒保管情感, daemon 管規則)"
+	]
+}

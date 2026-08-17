@@ -162,6 +162,57 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             return aOut;
         }
 
+        // ===========================================================
+        // 區塊職責：把使用者給的那一個字串，解析成 (work_id, 閱讀庫 media_id)。
+        // 物理意義：這個系統裡有**兩種鍵**長得很像 —— `apocalypse-hotel`(work) 與
+        //   `anim-apocalypse-hotel`(media_id)。人（含我）會混用，而混用的後果是無聲的：
+        //   把 media_id 當 work ⇒ works/ 底下生出一個假 work，兩邊各自都能寫、都不報錯。
+        // 🩸 2026-08-17 實跑：prepare 的 next 印了 media_id，start 照著建了假 work（我自己踩的）。
+        // 數值影響：純唯讀（讀 media.json / 掃 media 清單），不建立任何東西；
+        //   ⚠ 一個 work 底下有多個 media 時**不自動選**（章號會落進哪份心得不能猜），只回說明。
+        // 判準：能查出來的就不要問人；查不到才算新東西，而那一刻呼叫端要吵。
+        // ===========================================================
+        public static void ResolveWatchTarget(string iKey, out string oWorkId, out string oLibMediaId, out string oNote)
+        {
+            oWorkId = iKey; oLibMediaId = ""; oNote = "";
+            if (string.IsNullOrEmpty(iKey)) { oNote = "（空鍵，不解析）"; return; }
+            try
+            {
+                string aMediaJson = Path.Combine(UCL_ReadingLibraryIO.MediaRoot(iKey), "media.json");
+                if (File.Exists(aMediaJson))
+                {
+                    var aMj = UCL_ReadingLibraryIO.LoadJson(aMediaJson, out string aErr);
+                    string aWid = (aMj != null && aMj.Contains("work_id")) ? aMj["work_id"].GetString() : "";
+                    if (!string.IsNullOrEmpty(aWid))
+                    {
+                        oWorkId = aWid; oLibMediaId = iKey;
+                        oNote = $"`{iKey}` 是**既有 media_id** ⇒ 自動解析出 work `{aWid}`（讀自 media.json，沒有新建任何 work）";
+                        return;
+                    }
+                }
+                var aOwn = new List<string>();
+                foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                    if ((m.WorkId ?? "") == iKey) aOwn.Add(m.MediaId);
+                if (aOwn.Count == 1)
+                {
+                    oLibMediaId = aOwn[0];
+                    oNote = $"`{iKey}` 是既有 work ⇒ 底下唯一的 media `{oLibMediaId}` 已自動填入（寫心得不必再打）";
+                }
+                else if (aOwn.Count > 1)
+                    oNote = $"`{iKey}` 底下有 {aOwn.Count} 個 media（{string.Join(" / ", aOwn)}）—— **不自動選**，寫心得時要指定哪一個";
+                else
+                    oNote = $"`{iKey}` 在閱讀庫查不到對應 media ⇒ 視為新東西（呼叫端負責吵）";
+            }
+            catch (Exception e) { oNote = $"解析失敗（fail-soft，當成新東西）：{e.Message}"; }
+        }
+
+        /// <summary>給 Cmd_Invoke 用的可讀版 —— 一行字串，方便不開 session 就量解析結果。</summary>
+        public static string ResolveWatchTargetDebug(string iKey)
+        {
+            ResolveWatchTarget(iKey, out string w, out string m, out string n);
+            return $"key={iKey} → work={w} / library_media_id={(string.IsNullOrEmpty(m) ? "(none)" : m)} / note={n}";
+        }
+
         /// <summary>解析媒材 id：查既有的，不發明。回傳命中清單（0/1/N 由呼叫端決定怎麼辦）。</summary>
         static List<string> ResolveMediaCandidates(string iQuery)
         {
@@ -378,8 +429,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             aR.AppendLine($"- 公告：{(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             aR.AppendLine();
+            // ⚠ `start` 的 `--arg media=` 吃的是 **work slug**（它會去 works/ 建檔），不是 media_id。
+            // 🩸 2026-08-17 首次實跑就踩到：prepare 的 next 印了 `--arg media=anim-apocalypse-hotel`，
+            //   start 照著把它當 work ⇒ 在 works/ 生出一個假 work（title 也是那串 id），
+            //   而真正的 work 是 `apocalypse-hotel`。**準備階段本來就是為了防這件事，結果它自己指錯。**
+            //   ⇒ 這裡改讀 media.json 的 work_id，指令印真正的 work slug。
+            string aWorkId = "";
+            try
+            {
+                var aMediaJson = UCL_ReadingLibraryIO.LoadJson(
+                    Path.Combine(UCL_ReadingLibraryIO.MediaRoot(aMediaId), "media.json"), out string aMErr);
+                if (aMediaJson != null && aMediaJson.Contains("work_id")) aWorkId = aMediaJson["work_id"].GetString();
+            }
+            catch { }
+            aP["work_id"] = new JsonData(aWorkId);
+            AtomicWrite(PreparedPath(aMediaId), aP.ToJsonBeautify());   // work_id 也要進準備檔
+
             aR.AppendLine("## next");
-            aR.AppendLine($"1. **開場**：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media={aMediaId}");
+            aR.AppendLine($"1. **開場**：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> "
+                + $"--arg media={(string.IsNullOrEmpty(aWorkId) ? aMediaId : aWorkId)}"
+                + (string.IsNullOrEmpty(aWorkId)
+                    ? "　⚠ 讀不到 media.json 的 work_id，這裡退回 media_id —— **開場前先確認 works/ 底下是不是已有對應的 work**，否則會生出重複 work"
+                    : $"　←　`media=` 吃的是 **work slug**（讀自 media.json 的 `work_id`），不是 media_id"));
             aR.AppendLine($"2. 陪同者：先 `step=catchup --arg media_id={aMediaId}`（缺集才需要），再 `step=join`");
             if (aUnfilled.Count > 0)
                 aR.AppendLine($"3. ⚠ 補課地圖有缺 —— 重跑本步並帶 `--arg catchup_map=\"…\"` 補齊（prepare 可重入，會覆寫準備檔）");
@@ -757,12 +828,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 }
             }
 
-            bool aIsNewWork = !WorkExists(iMedia);
+            // ===========================================================
+            // 區塊職責：防呆解析 —— 使用者給的那個鍵，到底是 work、還是 media_id、還是真的新東西？
+            // 🩸 2026-08-17 實跑血證（我自己踩的）：prepare 的 next 印了 `--arg media=anim-apocalypse-hotel`
+            //   （那是 **media_id**），而 start 把它當 work slug ⇒ 在 works/ 生出一個假 work
+            //   `anim-apocalypse-hotel`（title 也是那串 id），而真正的 work 是 `apocalypse-hotel`。
+            //   **兩個 work 各自都能被寫入、都不報錯** —— 「找到另一個宇宙的檔」那一族。
+            // 物理意義：能查出來的就不要問人。只有**查不到任何對應**時才算新建，而那一刻要吵。
+            // 數值影響：解析結果寫進 session 的 work_id / library_media_id 兩個新欄位
+            //   （不動既有 media_id 欄的語意 ⇒ cycle/join/settle 的既有讀取端不受影響）。
+            // ===========================================================
+            ResolveWatchTarget(iMedia, out string aResolvedWork, out string aLibMediaId, out string aResolveNote);
+            bool aIsNewWork = !WorkExists(aResolvedWork);
             // ⚠ **新 work 要真的建出來**（2026-08-15 實證的洞）：
             //   舊版只印一句「這是新 work」就過去了，從不落檔 ⇒ 下一場的「既有 work 清單」裡
             //   **永遠不會有自己開過的場**（昨天 `bilibili-stream` 開過場，今天清單上找不到它）。
             //   於是那份清單只證明「Library 有什麼」，不證明「觀影用過什麼」，而它的標題讓人以為是後者。
-            string aWorkNote = aIsNewWork ? CreateWork(iMedia, iSrc) : "";
+            string aWorkNote = aIsNewWork ? CreateWork(aResolvedWork, iSrc) : "";
 
             // session 註冊（C# 唯一寫入端）
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
@@ -771,6 +853,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aSession["session_id"] = new JsonData(aSessionId);
             aSession["role"] = new JsonData("primary");
             aSession["media_id"] = new JsonData(iMedia);
+            aSession["work_id"] = new JsonData(aResolvedWork);          // 解析後的 work（可能與 media_id 不同）
+            aSession["library_media_id"] = new JsonData(aLibMediaId);   // 寫心得要用的那個 id；空＝還沒有對應 media
             aSession["start_ts"] = new JsonData(UCL_AwakeningService.NowIso());
             aSession["end_ts"] = new JsonData(aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
             aSession["until_local"] = new JsonData(aUntil.ToString("yyyy-MM-dd HH:mm"));
@@ -811,6 +895,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 回傳檔
             aR.AppendLine($"- session: `{aSessionId}`（state: `{SessionPath(iPersona)}`）");
             aR.AppendLine($"- media: `{iMedia}`{(aIsNewWork ? "　⚠ **這是新 work** —— 若這部片其實已存在於 Library，現在喊停比事後合併便宜" : "　✅ 命中既有 work")}");
+            if (!string.IsNullOrEmpty(aResolveNote)) aR.AppendLine($"- 防呆解析: {aResolveNote}");
+            if (aResolvedWork != iMedia) aR.AppendLine($"- work    : `{aResolvedWork}`　←　**沒有用妳給的字串當 work**（那是 media_id）");
+            if (!string.IsNullOrEmpty(aLibMediaId)) aR.AppendLine($"- 寫心得用: `media_id={aLibMediaId}`（已解析，下面 next 的指令已填好）");
             if (!string.IsNullOrEmpty(aWorkNote)) aR.AppendLine($"- work 建檔: {aWorkNote}");
             if (!string.IsNullOrEmpty(iSrc.Up)) aR.AppendLine($"- UP 主  : **{iSrc.Up}**（work 認這個；影片標題/介紹記在場次上）");
             if (!string.IsNullOrEmpty(iSrc.VideoTitle)) aR.AppendLine($"- 本場影片: {iSrc.VideoTitle}");
@@ -832,6 +919,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
             //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
             aR.AppendLine("4. 回到 1，繼續下一輪。");
+            // 心得指令**自動填好**（Tim 2026-08-17）：能查出來的就不要問人 ——
+            // 只有「這部片還沒有 media」時才需要人給 id，而那一刻它是真的新東西。
+            if (!string.IsNullOrEmpty(aLibMediaId))
+            {
+                var aPrep2 = LoadPrepared(aLibMediaId);
+                string aCh2 = aPrep2 != null ? ReadStr(aPrep2, "chapter_id") : "";
+                aR.AppendLine($"5. 收工後寫心得（**id 已填好，不要自己打字**）："
+                    + $"`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} "
+                    + $"--arg media_id={aLibMediaId} --arg chapter={(string.IsNullOrEmpty(aCh2) ? "<四位數話號>" : aCh2)} "
+                    + "--arg title=<話名> --arg-file body=<心得>`"
+                    + (string.IsNullOrEmpty(aCh2) ? "　（章號查不到 ⇒ 走過 step=prepare 就會自動帶）" : ""));
+            }
+            else
+            {
+                aR.AppendLine($"5. ⚠ 這部片在閱讀庫**還沒有 media** ⇒ 寫心得前先 `Cmd_Library op=media_init`"
+                    + "（媒材 id 由那邊生成，這是唯一需要人取 id 的情況）。");
+            }
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=start 完成 session={aSessionId} media={iMedia} → {aPath}");
         }
@@ -882,12 +986,25 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     //   ⇒ StreamWatch 不重造第四套，只把 session 的事實預填進指令。
                     aR.AppendLine("⚠ **本場未寫接續點** —— 不擋結算，但下次續看接不回進度。");
                     aR.AppendLine("   **接續點＝閱讀心得**，走 Library（與接續閱讀同一條路，不是另一種格式）：");
+                    // 🩸 舊版這裡印的是樣板 `--arg media_id=<anim|film|series>-<session 的 media_id>` ——
+                    //   照著貼會組出 `anim-anim-apocalypse-hotel` 這種不存在的 id（我 2026-08-17 實跑撞到）。
+                    //   ⇒ 改成**用 session 解析好的 library_media_id 與準備階段的章號直接填**；
+                    //   查不到才退回要人填，並說清楚是哪一種情況。
+                    string aLibId = ReadStr(aS, "library_media_id");
+                    string aChId = "";
+                    if (!string.IsNullOrEmpty(aLibId))
+                    {
+                        var aPrepS = LoadPrepared(aLibId);
+                        if (aPrepS != null) aChId = ReadStr(aPrepS, "chapter_id");
+                    }
+                    string aMidArg = string.IsNullOrEmpty(aLibId) ? "<閱讀庫 media_id — 先跑 Cmd_Library op=media_init>" : aLibId;
+                    string aChArg = string.IsNullOrEmpty(aChId) ? "<四位數話號>" : aChId;
                     aR.AppendLine($"   1. 心得：`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} "
-                        + "--arg media_id=<anim|film|series>-" + ReadStr(aS, "media_id")
-                        + " --arg chapter=<四位數，0001 起> --arg title=<章節名> --arg display_number=<第 N 話> "
-                        + "--arg-file body=<心得>`");
+                        + $"--arg media_id={aMidArg} --arg chapter={aChArg} --arg title=<話名> --arg display_number=<第 N 話> "
+                        + "--arg-file body=<心得>`"
+                        + (string.IsNullOrEmpty(aLibId) ? "" : "　←　**id 已自動填**，不要自己打字"));
                     aR.AppendLine($"   2. 書籤：`run_cmd.py run Library --arg op=bookmark --arg persona={iPersona} "
-                        + "--arg media_id=<同上> --arg note=<下次從哪接> --arg impression=<當前看法>`");
+                        + $"--arg media_id={aMidArg} --arg note=<下次從哪接> --arg impression=<當前看法>`");
                     aR.AppendLine("   3. 人物：`op=add_character` / `op=revise_view`（改觀要寫 `change_reason`）");
                     aR.AppendLine("   ⚠ **一話一 round，場次中斷續寫同一個 round**；`r2` 只留給真正的重看。");
                     aR.AppendLine("      （場次是我的切法，話數是作品的切法 —— round 認後者。）");

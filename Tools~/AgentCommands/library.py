@@ -2285,6 +2285,11 @@ def _tavern_messages_dir() -> Path:
     return _DATA_ROOT / "ChatTavern" / "rooms"
 
 
+def _media_root(media_id: str) -> Path:
+    """新 Library（work → media → readers）的 media 目錄 —— 對側是 C# UCL_ReadingLibraryIO.MediaRoot。"""
+    return _DATA_ROOT / "BookNotes" / "Library" / "media" / media_id
+
+
 def _iter_tavern_messages(room: str, seq_lo: int, seq_hi: int):
     """撈 [seq_lo, seq_hi] 的訊息（seq 來自檔名，不是內文欄位）。
 
@@ -2330,7 +2335,25 @@ def _parse_seq_ranges(spec: str):
 
 def cmd_export_watch(args):
     media = args.media
-    book = args.book or f"watch-{media}"
+    # 區塊職責：決定書的 slug。
+    # 🩸 2026-08-17 實跑踩到：預設寫成 `watch-<media_id>`，而既有那本是 `watch-<work_id>`
+    #   （media `anim-apocalypse-hotel` 的 work 是 `apocalypse-hotel`）⇒ 同一部片長出兩本書，
+    #   而**兩邊都能寫、都不報錯**。⇒ 先看既有目錄，再決定；兩本都不存在時才用 media 命名。
+    book = args.book
+    if not book:
+        cands = [f"watch-{media}"]
+        try:
+            mj = json.loads((_media_root(media) / "media.json").read_text(encoding="utf-8")) \
+                if (_media_root(media) / "media.json").is_file() else {}
+            wid = (mj or {}).get("work_id") or ""
+            if wid:
+                cands.append(f"watch-{wid}")
+        except Exception:
+            pass
+        existing = [c for c in cands if (_books_root() / c).is_dir()]
+        if len(existing) > 1:
+            raise SystemExit(f"❌ 同一部片有多本觀影實錄：{existing} —— 不猜，用 --book 指定要寫哪一本")
+        book = existing[0] if existing else cands[-1]
     bdir = _books_root() / book
     ranges = _parse_seq_ranges(args.seq_ranges)
     room = args.room
@@ -2346,6 +2369,32 @@ def cmd_export_watch(args):
         print(f"❌ {out_path.relative_to(_REPO_ROOT)} 已存在 —— 拒絕覆寫。"
               f"要重出請先刪除該檔，或改 --chapter。", file=sys.stderr)
         return 1
+
+    # 區塊職責：擋「同一段 seq 被兩章各自收錄」。
+    # 🩸 2026-08-17 首日就發生：basecamp 匯出 005（15777-15817）、gura 十分鐘後匯出 006（15780-15816）——
+    #   同一話兩章、區間重疊，而**兩邊都成功、都不報錯**。章 ≠ 場，但一話也不該有兩章。
+    # 物理意義：既有章的表頭本來就寫著自己的 seq 區間（機械產物、可回讀）⇒ 拿它當事實源，不另建索引。
+    # 數值影響：重疊即擋下並指名是哪一章；真的要並存（例如刻意保留另一人視角）走 --allow-overlap 明說。
+    if bdir.is_dir():
+        clash = []
+        for prev in sorted(bdir.glob("[0-9][0-9][0-9].txt")):
+            if prev.name == out_path.name:
+                continue
+            head = prev.read_text(encoding="utf-8", errors="replace")[:2000]
+            m = re.search(r"seq 區間 \|([^|]+)\|", head)
+            if not m:
+                continue
+            for seg in re.findall(r"(\d+)\s*[–\-]\s*(\d+)", m.group(1)):
+                a, b = int(seg[0]), int(seg[1])
+                for lo, hi in ranges:
+                    if lo <= b and a <= hi:
+                        clash.append((prev.name, a, b))
+        if clash and not args.allow_overlap:
+            print("❌ seq 區間與既有章重疊 —— 一話不該有兩章：", file=sys.stderr)
+            for name, a, b in clash:
+                print(f"   {name} 已收錄 {a}–{b}", file=sys.stderr)
+            print("   ⇒ 併成一章（把兩邊區間一起給、覆寫那一章）或 --allow-overlap 明說要並存。", file=sys.stderr)
+            return 1
 
     exclude_tags = {t.strip() for t in (args.exclude_tags or "").split(",") if t.strip()}
     kept, excluded = [], []
@@ -2682,6 +2731,8 @@ def build_parser():
     a.add_argument("--note", default=None, help="備註（如「併入前一場殘場」）")
     a.add_argument("--allow-zero-stripped", dest="allow_zero_stripped", action="store_true",
                    help="明說『這批真的沒有自動附掛區塊』；否則清除數 0 會被當成 pattern 沒對上而擋下")
+    a.add_argument("--allow-overlap", dest="allow_overlap", action="store_true",
+                   help="明說要與既有章的 seq 區間並存（預設重疊即擋下 —— 一話不該有兩章）")
     a.add_argument("--force", action="store_true", help="覆寫既有章（預設拒絕）")
     a.set_defaults(func=cmd_export_watch)
 

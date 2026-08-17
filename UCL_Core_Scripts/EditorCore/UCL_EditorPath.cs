@@ -11,11 +11,22 @@
     ///           ② 靠「特定腳本檔名 + 路徑含 UCL_Core」的啟發式，撞名不會叫
     ///           ③ 與絕對路徑那份是**兩個獨立解析器**，不一致時兩邊都不報錯
     ///           現改為單一來源，三個問題一起消失。
-    /// [數值影響] 解析失敗時 <c>UCL_RepoPath</c> 會 throw（舊版回 null）——
-    ///           呼叫端若依賴「回 null 代表找不到」，那是刻意的行為變更：
-    ///           null 會一路傳成看起來正常的錯路徑，raise 才停得住。
+    /// [數值影響] **維持舊契約：解析失敗回 null，不 throw。**
+    ///           🩸 上一版我讓它跟著 <c>UCL_RepoPath.UCLCoreRelative</c> 一起 throw，那是錯的 ——
+    ///           現存 24 個呼叫端裡有數個寫著 <c>if (IsNullOrEmpty(core)) …</c> 的優雅降級，
+    ///           其中 <c>UCL_CoreDocsBootstrap</c> 更是在**註冊期**（domain reload）跑的：
+    ///           在那裡 throw 會把「找不到 core」升級成「Editor 初始化炸掉」。
+    ///           薄殼的職責是**保持呼叫端行為不變**，不是順手改契約。
+    ///           要「找不到就大聲停住」的語意 → 直接用 <c>UCL_RepoPath.UCLCoreRelative</c>（會 throw）。
     /// </summary>
-    public static string CorePath => UCL.Core.EditorLib.UCL_RepoPath.UCLCoreRelative;
+    public static string CorePath
+    {
+        get
+        {
+            try { return UCL.Core.EditorLib.UCL_RepoPath.UCLCoreRelative; }
+            catch (System.IO.DirectoryNotFoundException) { return null; }
+        }
+    }
 
     /// <summary>
     /// [職責] 將任一絕對 / 專案相對路徑，表達成「相對於 UCL_Core 根」的 forward-slash 相對路徑。

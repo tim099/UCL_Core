@@ -175,8 +175,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         {
             // 每次啟動都重置 —— 上一顆有沒有產出過與這一顆無關（重起後又是一次冷啟動）
             s_ProducedSinceSpawn = false;
-            string aScript = Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
-                                          "Tools~", "AgentCommands", "audio_transcribe.py").Replace('\\', '/');
+            string aScript = UCL_RepoPath.CoreTool("audio_transcribe.py");
             if (!File.Exists(aScript)) { s_LastNote = $"⚠ 找不到 {aScript}"; Debug.LogWarning($"[UCL_STT] {s_LastNote}"); return; }
             string aPy = UCL_ScreenStreamDaemon.ResolvePythonPublic();
             if (string.IsNullOrEmpty(aPy)) { s_LastNote = "⚠ PATH 內找不到 python"; Debug.LogWarning($"[UCL_STT] {s_LastNote}"); return; }

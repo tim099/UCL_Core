@@ -179,14 +179,63 @@ def repo_root() -> Path:
     if walked:                                                 # 命中真實 .git 資料夾
         return walked
 
-    # tier-3：從 cwd 往上 walk（本檔在奇特打包／複製情境下失效時的補救）
-    walked_cwd = _find_git_root_by_walk(Path.cwd())            # 從當前工作目錄起 walk
-    if walked_cwd:
-        return walked_cwd
+    # tier-3：UCL_Core 的 submodule gitlink 精確上溯 —— 對齊 C# UCL_RepoPath 的同名 tier。
+    #   `gitdir: ../../../.git/modules/<path>` 那串 `../` 是 git 自己寫下的**精確層數**，
+    #   不是啟發式、也不吃 cwd；數幾個就上溯幾層。
+    if _UCL_CORE_DIR is not None:
+        up = _superproject_from_gitlink(_UCL_CORE_DIR)
+        if up is not None:
+            return up
 
-    # fallback：完全找不到 .git（罕見；e.g. tarball 解壓無 git 環境）→ 退回 UCL_Core 根
-    #          刻意不退 cwd／不亂猜，維持可預期行為，caller 可自行帶 CLAUDE_PROJECT_DIR 校正。
-    return _UCL_CORE_DIR
+    # tier-4：AgentCommands 直探（它依定義直掛 repo 根）—— 對齊 C# 的同名 tier。
+    if _UCL_CORE_DIR is not None:
+        for cand in _UCL_CORE_DIR.parents:
+            if (cand / "AgentCommands").is_dir():
+                return cand
+
+    # 🩸 2026-08-17：拿掉兩件東西，兩件都是「看起來合理的錯答案」的來源
+    #   ① **cwd 往上 walk**（原 tier-3）—— 本檔檔頭自己點名它是「2026-06-16 cwd 路徑詐欺
+    #      bug 家族的病灶」，而它一直還留在這裡當一個 tier。實例：cwd 在 D:/Unity/persona/kiara
+    #      （獨立 repo）時跑工具，會把登入態與信件寫進 kiara/AgentCommands。
+    #   ② **fallback 回 `_UCL_CORE_DIR`** —— 那是一個格式正確、看起來完全正常、
+    #      而且**一定不對**的 repo 根（UCL_Core 是 submodule，不是 host repo）。
+    #      C# 端今天已把同族的 `dataPath/../..` 換成 throw，本檔對齊。
+    #   ⇒ 猜一個看起來合理的根，會讓狀態檔安靜寫到別的地方；raise 才停得住。
+    raise RuntimeError(
+        "解析不到 host repo 根：ucl_paths.py 之上沒有 .git 資料夾、UCL_Core 不是 submodule、"
+        "也找不到 AgentCommands 資料夾。\n"
+        "  處置：設 CLAUDE_PROJECT_DIR 指向專案根，或確認專案結構。\n"
+        "  ⚠ 刻意不 fallback 到 cwd／UCL_Core 根 —— 猜一個看起來合理的根，"
+        "會讓狀態檔安靜地寫到別的地方。")
+
+
+def _superproject_from_gitlink(sub_dir: Path) -> Path | None:
+    """讀 submodule 的 `.git` gitlink，數 `../` 精確上溯到 superproject 根。
+
+    失敗處置：`.git` 是資料夾（獨立 repo）／內容是絕對路徑（worktree）／格式不符 → 回 None，
+    交由呼叫端走下一 tier。**不猜。**
+    ⚠ 與 C# `UCL_RepoPath.ResolveSuperprojectFromGitlink` 逐條對齊 —— 改一端要同步改另一端。
+    """
+    try:
+        gl = sub_dir / ".git"
+        if not gl.is_file():
+            return None                          # 資料夾 = 獨立 repo；不存在 = 非 git
+        line = gl.read_text(encoding="utf-8").strip()
+        if not line.startswith("gitdir:"):
+            return None
+        rel = line[len("gitdir:"):].strip().replace("\\", "/")
+        if not rel.startswith("../"):
+            return None                          # 絕對路徑（worktree）→ 不處理
+        up = 0
+        while rel.startswith("../"):
+            up += 1
+            rel = rel[3:]
+        p = sub_dir
+        for _ in range(up):
+            p = p.parent
+        return p.resolve()
+    except Exception:
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────

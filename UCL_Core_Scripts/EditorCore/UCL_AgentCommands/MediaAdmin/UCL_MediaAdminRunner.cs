@@ -47,8 +47,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         /// 跨專案安全 (不硬編 Assets/Plugins/UCL_Core)。
         /// </summary>
         public static string ScriptPath =>
-            Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
-                         "Tools~", "AgentCommands", "media_admin.py").Replace('\\', '/');
+            UCL_RepoPath.CoreTool("media_admin.py");
 
         public static bool ScriptExists => File.Exists(ScriptPath);
 

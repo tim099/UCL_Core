@@ -158,8 +158,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         /// 跨專案安全 (不硬編 AgentCommands/Tools 專案相對路徑; ucl-core-paths 慣例)。
         /// </summary>
         public static string ScriptPath =>
-            Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
-                         "Tools~", "AgentCommands", "screenstream_daemon.py").Replace('\\', '/');
+            UCL_RepoPath.CoreTool("screenstream_daemon.py");
 
         // ===========================================================
         // Spawn — 啟動 python screenstream_daemon.py (UCL_Core Tools~ 版)

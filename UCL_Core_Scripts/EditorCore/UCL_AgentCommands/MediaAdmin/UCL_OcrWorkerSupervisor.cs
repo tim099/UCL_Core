@@ -131,8 +131,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 
         static void Spawn(JsonData iCfg, string iSig, string iWhy)
         {
-            string aScript = Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
-                                          "Tools~", "AgentCommands", "subtitle_ocr.py").Replace('\\', '/');
+            string aScript = UCL_RepoPath.CoreTool("subtitle_ocr.py");
             if (!File.Exists(aScript)) { s_LastNote = $"⚠ 找不到 {aScript}"; Debug.LogWarning($"[UCL_OCR] {s_LastNote}"); return; }
             string aPy = UCL_ScreenStreamDaemon.ResolvePythonPublic();
             if (string.IsNullOrEmpty(aPy)) { s_LastNote = "⚠ PATH 內找不到 python"; Debug.LogWarning($"[UCL_OCR] {s_LastNote}"); return; }

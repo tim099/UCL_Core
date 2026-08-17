@@ -185,8 +185,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             Path.Combine(UCL_BartenderIO.GetBartenderDir(), PreviewFileName).Replace('\\', '/');
 
         public static string ScriptPath =>
-            Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
-                         "Tools~", "AgentCommands", "persona_ocr_locate.py").Replace('\\', '/');
+            UCL_RepoPath.CoreTool("persona_ocr_locate.py");
 
         public static string DiagnosticPath =>
             Path.Combine(UCL_BartenderIO.GetBartenderDir(), DiagnosticFileName);

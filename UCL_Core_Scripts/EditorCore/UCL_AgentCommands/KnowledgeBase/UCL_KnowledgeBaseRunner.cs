@@ -47,8 +47,7 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
         /// 跨專案安全 (不硬編 Assets/Plugins/UCL_Core)。
         /// </summary>
         public static string ScriptPath =>
-            Path.Combine(UCL_RepoPath.UnityProjectRoot, UCL_EditorPath.CorePath,
-                         "Tools~", "AgentCommands", "knowledge_base.py").Replace('\\', '/');
+            UCL_RepoPath.CoreTool("knowledge_base.py");
 
         public static bool ScriptExists => File.Exists(ScriptPath);
 
